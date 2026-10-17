@@ -3969,7 +3969,7 @@ run_check "INVARIANT" rg -n '^theorem bootSafeVSpaceRoot_mappingsSafe($|[ ({:\[\
 # capability or an out-of-range badge is refused, and the soundness bridge
 # concludes every conjunct of `bootSafeObject` rather than the structural part.
 run_check "INVARIANT" rg -n '^def bootSafeCapCheck($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
-run_check "INVARIANT" rg -n '^    cn\.slots\.fold true \(fun acc _ cap => acc && bootSafeCapCheck cap\)$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^    cn\.allCells \(fun _ cap => bootSafeCapCheck cap\)$' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^theorem bootSafeObjectCheck_sound \(obj : KernelObject\)$' SeLe4n/Platform/Boot.lean
 run_negative_check "INVARIANT" rg -n 'bootSafeObjectCheck_sound_structural' SeLe4n tests
 # The v0.36.2 audit: a boot untyped is pristine — the check reads its carve
@@ -21960,7 +21960,7 @@ run_check "INVARIANT" rg -n '^theorem spliceNode_mapsWellFormed($|[ ({:\[\]])' S
 run_check "INVARIANT" rg -n '^def spliceDeletedCdtNode($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
 run_check "INVARIANT" rg -n -U '    \| \.ok \(\(\), st.\) => \.ok \(\(\), spliceDeletedCdtNode st. \(st\.lookupCdtNodeOfSlot addr\)\)' SeLe4n/Kernel/Capability/Operations.lean
 run_check "INVARIANT" rg -n -U 'def detachDestroyedSlot \(acc : SystemState\) \(ref : SlotRef\) : SystemState :=\n  SystemState\.detachSlotFromCdt \(spliceDeletedCdtNode acc \(acc\.lookupCdtNodeOfSlot ref\)\) ref' SeLe4n/Kernel/Capability/Operations.lean
-run_check "INVARIANT" rg -n -U '  cn\.slots\.fold st \(fun acc slot _cap =>\n    detachDestroyedSlot acc \{ cnode := cnodeId, slot := slot \}' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" rg -n -U '  cn\.foldCells st \(fun acc slot _cap =>\n    detachDestroyedSlot acc \{ cnode := cnodeId, slot := slot \}' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
 run_check "INVARIANT" rg -n -U '    if CNode\.revokeTargetLocalKeeps sourceSlot target slot cap then acc\n    else detachDestroyedSlot acc \{ cnode := cnodeId, slot := slot \}' SeLe4n/Kernel/Capability/Operations.lean
 run_check "INVARIANT" rg -n -U '            \| \.ok \(\(\), st..\) =>\n                \.ok \(\(\), detachRevokedSlots st.. addr\.cnode cn addr\.slot parent\.target\)' SeLe4n/Kernel/Capability/Operations.lean
 run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlot_ok_decompose($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean

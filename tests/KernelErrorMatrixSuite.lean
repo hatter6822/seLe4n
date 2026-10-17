@@ -127,11 +127,7 @@ private def mkTcb (tid : Nat) : TCB :=
 /-- An empty CNode with depth/radix sized for ABI-decoded slot indices.  The
 default `radixWidth = 16` is large enough for every test's chosen slots. -/
 private def mkEmptyCNode (depth : Nat := 16) : CNode :=
-  { depth := depth
-    guardWidth := 0
-    guardValue := 0
-    radixWidth := 16
-    slots := SeLe4n.UniqueSlotMap.empty }
+  (SeLe4n.Model.CNode.ofSlots depth 0 0 16 SeLe4n.UniqueSlotMap.empty)
 
 /-- Build a `SyscallDecodeResult` directly so decode-helper rows (rights >
 0x1F, etc.) do not need a register file.  `inlineCount = msgRegs.size` keeps

@@ -538,8 +538,8 @@ theorem cspaceRevoke_preserves_cdtMapsConsistent
   suffices (detachRevokedSlots stS addr.cnode cn addr.slot parent.target).cdt.mapsWellFormed from
     ⟨this.1, this.2.1⟩
   unfold detachRevokedSlots
-  refine SeLe4n.Kernel.RobinHood.RHTable.fold_preserves cn.slots.table stS _
-    (fun acc => acc.cdt.mapsWellFormed) hS (fun acc slot cap hAcc => ?_)
+  refine SeLe4n.Model.CNode.foldCells_preserves cn stS _
+    (fun acc => acc.cdt.mapsWellFormed) hS (fun acc slot cap _ hAcc => ?_)
   split
   · exact hAcc
   · exact detachDestroyedSlot_preserves_mapsWellFormed acc _ hAcc

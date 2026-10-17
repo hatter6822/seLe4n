@@ -1264,4 +1264,59 @@ theorem cnode_capacity_always_ge4 [BEq α] [Hashable α] [LawfulBEq α] :
     4 ≤ (RHTable.empty 16 (by omega) : RHTable α β).capacity := by
   simp [RHTable.empty]
 
+/-- WS-ZA ZA5.3: erasing a key lowers the size by at most one. -/
+theorem RHTable.size_le_size_erase_succ [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) (k : α) :
+    t.size ≤ (t.erase k).size + 1 := by
+  unfold RHTable.erase
+  simp only
+  split
+  · omega
+  · dsimp only; omega
+
+/-- WS-ZA ZA5.3: a table whose keys an injective `f` sends into a duplicate-free
+list `S` holds at most `S.length` entries (pigeonhole).  Each step erases one
+present key and its image from `S`. -/
+theorem RHTable.size_le_length_of_keys_mem [BEq α] [Hashable α] [LawfulBEq α]
+    (f : α → Nat) (hf : ∀ a b, f a = f b → a = b) (S : List Nat) (hS : S.Nodup)
+    (t : RHTable α β) (hExt : t.invExt) (hLt : t.size < t.capacity)
+    (hKeys : ∀ k v, t.get? k = some v → f k ∈ S) :
+    t.size ≤ S.length := by
+  by_cases h0 : t.size = 0
+  · omega
+  have hCount : 0 < countOccupied t.slots := by rw [← hExt.1.sizeCount]; omega
+  unfold countOccupied at hCount
+  obtain ⟨o, hMem, hSome⟩ := List.countP_pos_iff.mp hCount
+  obtain ⟨e, rfl⟩ := Option.isSome_iff_exists.mp (by simpa using hSome)
+  obtain ⟨j, hj, hjEq⟩ := List.getElem_of_mem hMem
+  have hjCap : j < t.capacity := by
+    rw [← t.hSlotsLen]; simpa using hj
+  have hSlot : t.slots[j]'(t.hSlotsLen ▸ hjCap) = some e := by
+    simpa using hjEq
+  have hGet := RHTable.slot_entry_implies_get t j hjCap e hSlot hExt
+  have hIn : f e.key ∈ S := hKeys _ _ hGet
+  have hExt' := RHTable.erase_preserves_invExt t e.key hExt hLt
+  have hLt' := RHTable.erase_size_lt_capacity t e.key hLt
+  have hKeys' : ∀ k v, (t.erase e.key).get? k = some v → f k ∈ S.erase (f e.key) := by
+    intro k v hk
+    by_cases hke : (e.key == k) = true
+    · have hEq : e.key = k := eq_of_beq hke
+      subst hEq
+      rw [RHTable.get_after_erase_eq t _ hExt] at hk
+      cases hk
+    · rw [RHTable.get_after_erase_ne t e.key k hke hExt hLt] at hk
+      have hNe : f k ≠ f e.key := fun hfe => hke (by rw [hf _ _ hfe]; exact beq_self_eq_true _)
+      exact (List.mem_erase_of_ne hNe).mpr (hKeys _ _ hk)
+  have ih := RHTable.size_le_length_of_keys_mem f hf (S.erase (f e.key)) (hS.erase _)
+    (t.erase e.key) hExt' hLt' hKeys'
+  have hLen := List.length_erase_of_mem hIn
+  have hPos : 0 < S.length := List.length_pos_of_mem hIn
+  have hStep := RHTable.size_le_size_erase_succ t e.key
+  omega
+  termination_by S.length
+  decreasing_by
+    rw [List.length_erase_of_mem (hKeys _ _ (RHTable.slot_entry_implies_get t j hjCap e hSlot hExt))]
+    have := List.length_pos_of_mem (hKeys _ _ (RHTable.slot_entry_implies_get t j hjCap e hSlot hExt))
+    omega
+
 end SeLe4n.Kernel.RobinHood

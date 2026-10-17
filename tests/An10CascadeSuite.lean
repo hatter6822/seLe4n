@@ -147,11 +147,7 @@ def an10_b_getUntyped_populated : IO Bool := do
 def an10_b_getCNode_populated : IO Bool := do
   let id : ObjId := ObjId.ofNat 600
   let cn : CNode :=
-    { depth      := 8
-    , guardWidth := 0
-    , guardValue := 0
-    , radixWidth := 8
-    , slots      := SeLe4n.UniqueSlotMap.empty }
+    (SeLe4n.Model.CNode.ofSlots 8 0 0 8 SeLe4n.UniqueSlotMap.empty)
   let st : SystemState := { (default : SystemState) with
     objects := (default : SystemState).objects.insert id (.cnode cn) }
   return st.getCNode? id |>.isSome
@@ -572,8 +568,7 @@ def an10_e_cspaceLookupSlot_cnode_no_slot_is_invalidCapability : IO Bool := do
   let slotAddr : SeLe4n.Slot := SeLe4n.Slot.ofNat 99
   let addr : CSpaceAddr := { cnode := cnodeAddr, slot := slotAddr }
   -- Store an empty CNode (4-bit radix, no entries).
-  let cn : CNode := { radixWidth := 4, depth := 4, guardWidth := 0, guardValue := 0,
-                      slots := default }
+  let cn : CNode := (SeLe4n.Model.CNode.ofSlots 4 0 0 4 default)
   let st : SystemState := { (default : SystemState) with
     objects := (default : SystemState).objects.insert cnodeAddr (.cnode cn) }
   match SeLe4n.Kernel.cspaceLookupSlot addr st with

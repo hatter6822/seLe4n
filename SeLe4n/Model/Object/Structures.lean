@@ -766,8 +766,7 @@ inductive ResolveError where
   deriving Repr, DecidableEq
 
 def empty : CNode :=
-  { depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0,
-    slots := SeLe4n.UniqueSlotMap.empty }
+  ofSlots 0 0 0 0 SeLe4n.UniqueSlotMap.empty
 
 /-- Construct a CNode at a given depth with guard/radix parameters.
     WS-RC R4.A: `s` is now `UniqueSlotMap Capability` carrying `invExtK`
@@ -776,8 +775,7 @@ def empty : CNode :=
     literals via `RHTable.ofList` should use `SeLe4n.UniqueSlotMap.ofListWF`. -/
 
 def mk' (d gw gv rw : Nat) : CNode :=
-  { depth := d, guardWidth := gw, guardValue := gv, radixWidth := rw,
-    slots := SeLe4n.UniqueSlotMap.empty }
+  ofSlots d gw gv rw SeLe4n.UniqueSlotMap.empty
 
 /-- Number of addressable slots represented by this CNode radix width. -/
 def slotCount (node : CNode) : Nat :=
@@ -833,7 +831,7 @@ theorem resolveSlot_mask_idempotent (n : Nat) (h : n < SeLe4n.machineWordMax) :
 
 /-- WS-G5/F-P03: O(1) amortized slot lookup via `RHTable.get?`.  WS-ZA ZA5.3:
 compiled code reads the slot array instead (`lookup_eq_lookupCells`). -/
-def lookup (node : CNode) (slot : SeLe4n.Slot) : Option Capability :=
+noncomputable def lookup (node : CNode) (slot : SeLe4n.Slot) : Option Capability :=
   node.slots.get? slot
 
 /-- WS-ZA ZA5.3: the slot's capability, read from the slot array.  Inlined, so
@@ -846,6 +844,156 @@ a caller that matches the result builds no `some` (WS-ZA ZA2.5). -/
 @[csimp] theorem lookup_eq_lookupCells : @lookup = @lookupCells := by
   funext node slot; exact node.slots_agree slot
 
+/-- WS-ZA ZA5.3: the slot's array entry is its lookup. -/
+theorem lookup_ofNat_eq_cells (node : CNode) (i : Nat) (h : i < node.cells.size) :
+    node.lookup (SeLe4n.Slot.ofNat i) = node.cells[i] := by
+  rw [lookup_eq_lookupCells]
+  simp [lookupCells, slotArrayGet, SeLe4n.Slot.toNat_ofNat, h]
+
+/-- WS-ZA ZA5.3: a fold over the occupied entries of the slot array, in slot
+order.  It walks the array by index, so it builds nothing of its own.  The walk
+counts down a fuel of one step per cell, structurally, so the kernel reduces it
+too (boot-configuration proofs evaluate it by `decide`). -/
+@[specialize] def foldCellsGo {γ : Type} (node : CNode)
+    (f : γ → SeLe4n.Slot → Capability → γ) (fuel i : Nat) (acc : γ) : γ :=
+  match fuel with
+  | 0 => acc
+  | fuel + 1 =>
+    if h : i < node.cells.size then
+      foldCellsGo node f fuel (i + 1) (match node.cells[i] with
+        | some c => f acc (SeLe4n.Slot.ofNat i) c
+        | none => acc)
+    else acc
+
+@[inline, inherit_doc foldCellsGo] def foldCells {γ : Type} (node : CNode) (init : γ)
+    (f : γ → SeLe4n.Slot → Capability → γ) : γ :=
+  foldCellsGo node f node.cells.size 0 init
+
+theorem foldCells_go_preserves {γ : Type} (node : CNode)
+    (f : γ → SeLe4n.Slot → Capability → γ) (P : γ → Prop)
+    (hStep : ∀ acc s c, node.lookup s = some c → P acc → P (f acc s c)) :
+    ∀ (fuel i : Nat) (acc : γ), P acc → P (foldCellsGo node f fuel i acc) := by
+  intro fuel
+  induction fuel with
+  | zero => intro i acc hAcc; exact hAcc
+  | succ fuel ih =>
+    intro i acc hAcc
+    simp only [foldCellsGo]
+    split
+    · rename_i h
+      apply ih
+      split
+      · rename_i c hc
+        exact hStep acc _ c (by rw [lookup_ofNat_eq_cells node i h]; exact hc) hAcc
+      · exact hAcc
+    · exact hAcc
+
+/-- WS-ZA ZA5.3: a property kept by every step at an occupied slot holds after
+the fold. -/
+theorem foldCells_preserves {γ : Type} (node : CNode) (init : γ)
+    (f : γ → SeLe4n.Slot → Capability → γ) (P : γ → Prop) (hInit : P init)
+    (hStep : ∀ acc s c, node.lookup s = some c → P acc → P (f acc s c)) :
+    P (node.foldCells init f) :=
+  foldCells_go_preserves node f P hStep _ 0 init hInit
+
+theorem foldCells_go_and (node : CNode) (p : SeLe4n.Slot → Capability → Bool) :
+    ∀ (fuel i : Nat) (acc : Bool), node.cells.size ≤ i + fuel →
+      (foldCellsGo node (fun acc s c => acc && p s c) fuel i acc = true ↔
+        acc = true ∧ ∀ (j : Nat) (hj : j < node.cells.size), i ≤ j →
+          ∀ c, node.cells[j] = some c → p (SeLe4n.Slot.ofNat j) c = true) := by
+  intro fuel
+  induction fuel with
+  | zero =>
+    intro i acc hFuel
+    simp only [foldCellsGo]
+    constructor
+    · intro hA; exact ⟨hA, fun j hj hij => absurd hj (by omega)⟩
+    · exact fun h' => h'.1
+  | succ fuel ih =>
+    intro i acc hFuel
+    simp only [foldCellsGo]
+    split
+    · rename_i h
+      rw [ih (i + 1) _ (by omega)]
+      constructor
+      · rintro ⟨hA, hRest⟩
+        have hA' : acc = true ∧ ∀ c, node.cells[i] = some c → p (SeLe4n.Slot.ofNat i) c = true := by
+          revert hA; cases hc : node.cells[i] with
+          | none => intro hA; exact ⟨hA, fun c hc' => by cases hc'⟩
+          | some c0 =>
+            intro hA; simp only [Bool.and_eq_true] at hA
+            exact ⟨hA.1, fun c hc' => by cases hc'; exact hA.2⟩
+        refine ⟨hA'.1, fun j hj hij c hc => ?_⟩
+        by_cases hji : j = i
+        · subst hji; exact hA'.2 c hc
+        · exact hRest j hj (by omega) c hc
+      · rintro ⟨hA, hAll⟩
+        refine ⟨?_, fun j hj hij c hc => hAll j hj (by omega) c hc⟩
+        cases hc : node.cells[i] with
+        | none => exact hA
+        | some c0 => simp only [hA, Bool.true_and]; exact hAll i h (Nat.le_refl _) c0 hc
+    · rename_i h
+      constructor
+      · intro hA; exact ⟨hA, fun j hj hij => absurd hj (by omega)⟩
+      · exact fun h' => h'.1
+
+/-- WS-ZA ZA5.3: a conjunction folded over the slot array holds exactly when
+it holds of every occupied slot. -/
+theorem foldCells_and_eq_true_iff (node : CNode) (p : SeLe4n.Slot → Capability → Bool) :
+    node.foldCells true (fun acc s c => acc && p s c) = true ↔
+      ∀ s c, node.lookup s = some c → p s c = true := by
+  unfold foldCells
+  rw [foldCells_go_and node p _ 0 true (by omega)]
+  constructor
+  · rintro ⟨-, hAll⟩ s c hs
+    have hl : s.toNat < node.cells.size := by
+      rw [lookup_eq_lookupCells] at hs
+      unfold lookupCells slotArrayGet at hs
+      by_cases hl : s.toNat < node.cells.size
+      · exact hl
+      · simp [hl] at hs
+    have := hAll s.toNat hl (Nat.zero_le _) c (by
+      rw [← lookup_ofNat_eq_cells node _ hl, SeLe4n.Slot.ofNat_toNat]; exact hs)
+    rwa [SeLe4n.Slot.ofNat_toNat] at this
+  · intro hAll
+    exact ⟨rfl, fun j hj _ c hc => hAll _ c (by rw [lookup_ofNat_eq_cells node j hj]; exact hc)⟩
+
+/-- WS-ZA ZA5.3: the same conjunction folded over the ghost slot map. -/
+theorem slots_fold_and_eq_true_iff (node : CNode) (p : SeLe4n.Slot → Capability → Bool) :
+    node.slots.fold true (fun acc s c => acc && p s c) = true ↔
+      ∀ s c, node.lookup s = some c → p s c = true := by
+  constructor
+  · intro hFold s c hs
+    exact SeLe4n.Kernel.RobinHood.RHTable.fold_and_true_of_get? node.slots.table p hFold hs
+  · intro hAll
+    exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves_of_lookup node.slots.table true _
+      (fun acc => acc = true) node.slots.hWF.1 rfl
+      (fun acc k v hk hAcc => by simp only [hAcc, Bool.true_and]; exact hAll k v hk)
+
+/-- WS-ZA ZA5.3: does every occupied slot satisfy `p`?  The theorems read it
+over the slot map; compiled code walks the slot array (`allSlots_eq_allCells`). -/
+noncomputable abbrev allSlots (node : CNode) (p : SeLe4n.Slot → Capability → Bool) : Bool :=
+  node.slots.fold true (fun acc s c => acc && p s c)
+
+/-- WS-ZA ZA5.3: `allSlots` over the slot array. -/
+@[inline] def allCells (node : CNode) (p : SeLe4n.Slot → Capability → Bool) : Bool :=
+  node.foldCells true (fun acc s c => acc && p s c)
+
+@[csimp] theorem allSlots_eq_allCells : @allSlots = @allCells := by
+  funext node p
+  exact Bool.eq_iff_iff.2 ((slots_fold_and_eq_true_iff node p).trans
+    (foldCells_and_eq_true_iff node p).symm)
+
+/-- WS-ZA ZA5.3: how many slots hold a capability, counted over the slot array. -/
+def occupiedCount (node : CNode) : Nat :=
+  node.foldCells 0 fun n _ _ => n + 1
+
+/-- WS-ZA ZA5.3: the occupied slots with their capabilities, in slot order,
+read from the slot array.  Builds a list, so only tests and the trace harness
+call it. -/
+def occupiedSlots (node : CNode) : List (SeLe4n.Slot × Capability) :=
+  (node.foldCells [] fun acc s c => (s, c) :: acc).reverse
+
 /-- WS-G5/F-P03: O(1) amortized slot insert via `RHTable.insert`.
 RHTable key uniqueness (noDupKeys invariant) ensures the old entry for `slot` is replaced.
 
@@ -856,11 +1004,11 @@ CNode unchanged; `cspaceInsertSlot` refuses such a slot before it gets here
 def insert (node : CNode) (slot : SeLe4n.Slot) (cap : Capability) : CNode :=
   if h : slot.toNat < node.cells.size then
     { node with
-      slots := node.slots.insert slot cap
+      slotsGhost := node.slotsGhost.map (·.insert slot cap)
       cells := node.cells.set slot.toNat (some cap) h
       cells_size := by rw [Array.size_set]; exact node.cells_size
       slots_agree := fun s => by
-        rw [SeLe4n.UniqueSlotMap.get?_insert, slotArrayGet_set, node.slots_agree s]
+        rw [SeLe4n.Erased.out_map, SeLe4n.UniqueSlotMap.get?_insert, slotArrayGet_set, node.slots_agree s]
         by_cases e : slot = s
         · subst e; simp
         · have : s.toNat ≠ slot.toNat := fun h' => e (by
@@ -878,16 +1026,21 @@ def ofList (d gw gv rw : Nat) (xs : List (SeLe4n.Slot × Capability)) : CNode :=
 the slot's array entry is cleared in place. -/
 def remove (node : CNode) (slot : SeLe4n.Slot) : CNode :=
   { node with
-    slots := node.slots.erase slot
+    slotsGhost := node.slotsGhost.map (·.erase slot)
     cells := node.cells.setIfInBounds slot.toNat none
     cells_size := by rw [Array.size_setIfInBounds]; exact node.cells_size
     slots_agree := fun s => by
-      rw [SeLe4n.UniqueSlotMap.get?_erase, slotArrayGet_setIfInBounds, node.slots_agree s]
+      rw [SeLe4n.Erased.out_map, SeLe4n.UniqueSlotMap.get?_erase, slotArrayGet_setIfInBounds, node.slots_agree s]
       by_cases e : slot = s
       · subst e; simp
       · have : s.toNat ≠ slot.toNat := fun h' => e (by
           cases slot; cases s; simp_all [SeLe4n.Slot.toNat])
         simp [e, this] }
+
+/-- WS-ZA ZA5.3: a removal erases the slot from the ghost map. -/
+@[simp] theorem slots_remove (node : CNode) (slot : SeLe4n.Slot) :
+    (node.remove slot).slots = node.slots.erase slot := by
+  simp [remove, slots, SeLe4n.Erased.out_map]
 
 /-- M-D01: Find the first empty slot in a CNode starting from `base`,
 scanning up to `limit` consecutive slot indices. Returns `none` if all
@@ -1016,7 +1169,7 @@ mapped (`cspaceDeleteSlotFinalising`), which a CNode's destruction by retype doe
 not perform, so the retype refuses a CNode for which this holds — delete those
 capabilities first. -/
 def holdsFrameMappingRecord (node : CNode) : Bool :=
-  node.slots.fold false (fun acc _ cap => acc || cap.mapping.isSome)
+  node.cells.any fun e => e.any (·.mapping.isSome)
 
 /-- Which slots the local revoke keeps: the source, and every slot naming another
 target.  One predicate for the CNode rewrite (`revokeTargetLocal`) and for the
@@ -1029,14 +1182,19 @@ abbrev revokeTargetLocalKeeps (sourceSlot : SeLe4n.Slot) (target : CapTarget)
 in the slot array alike. -/
 def filterSlots (node : CNode) (f : SeLe4n.Slot → Capability → Bool) : CNode :=
   { node with
-    slots := node.slots.filter f
+    slotsGhost := node.slotsGhost.map (·.filter f)
     cells := node.cells.mapIdx fun i e => e.filter (f (SeLe4n.Slot.ofNat i))
     cells_size := by rw [Array.size_mapIdx]; exact node.cells_size
     slots_agree := fun s => by
-      rw [SeLe4n.UniqueSlotMap.get?_filter, slotArrayGet_mapIdx, node.slots_agree s]
+      rw [SeLe4n.Erased.out_map, SeLe4n.UniqueSlotMap.get?_filter, slotArrayGet_mapIdx, node.slots_agree s]
       by_cases h : s.toNat < node.cells.size
       · simp only [h, if_true]; rfl
       · simp [slotArrayGet, h] }
+
+/-- WS-ZA ZA5.3: the filter on the ghost map. -/
+@[simp] theorem slots_filterSlots (node : CNode) (f : SeLe4n.Slot → Capability → Bool) :
+    (node.filterSlots f).slots = node.slots.filter f := by
+  simp [filterSlots, slots, SeLe4n.Erased.out_map]
 
 /-- The local same-TARGET sweep: keep the source slot, delete every other slot in
 this CNode that names the same capability target.
@@ -1091,7 +1249,7 @@ Maps directly to `RHTable.getElem?_erase_self`. Requires slot invariant
 theorem lookup_remove_eq_none (node : CNode) (slot : SeLe4n.Slot)
     (hUniq : node.slotsUnique) :
     (node.remove slot).lookup slot = none := by
-  simp only [remove, lookup, SeLe4n.UniqueSlotMap.get?, SeLe4n.UniqueSlotMap.erase]
+  simp only [lookup, slots_remove, SeLe4n.UniqueSlotMap.get?, SeLe4n.UniqueSlotMap.erase]
   exact RHTable.getElem?_erase_self node.slots.table slot hUniq.1
 
 /-- WS-G5: If `lookup` returns `some`, the slot key is present in the RHTable.
@@ -1154,7 +1312,7 @@ theorem lookup_revokeTargetLocal_source_eq_lookup
     (target : CapTarget)
     (hUniq : node.slotsUnique) :
     (node.revokeTargetLocal sourceSlot target).lookup sourceSlot = node.lookup sourceSlot := by
-  simp only [revokeTargetLocal, lookup, SeLe4n.UniqueSlotMap.get?,
+  simp only [revokeTargetLocal, lookup, slots_filterSlots, SeLe4n.UniqueSlotMap.get?,
     SeLe4n.UniqueSlotMap.filter]
   exact RHTable.filter_preserves_key node.slots.table _ sourceSlot
     (fun k' _ hBeq => by simp [eq_of_beq hBeq]) hUniq.1
@@ -1172,7 +1330,7 @@ theorem lookup_revokeTargetLocal_sub
     (hUniq : node.slotsUnique)
     (hLookup : (node.revokeTargetLocal sourceSlot target).lookup slot = some cap) :
     node.lookup slot = some cap := by
-  simp only [revokeTargetLocal, lookup, SeLe4n.UniqueSlotMap.get?,
+  simp only [revokeTargetLocal, lookup, slots_filterSlots, SeLe4n.UniqueSlotMap.get?,
     SeLe4n.UniqueSlotMap.filter] at hLookup ⊢
   exact RHTable.filter_get_subset node.slots.table _ slot cap hUniq.1 hLookup
 
@@ -1227,6 +1385,30 @@ WS-RC R4.A: `cn.slots.size` is the `UniqueSlotMap.size` accessor
 def slotCountBounded (cn : CNode) : Prop :=
   cn.slots.size ≤ cn.slotCount
 
+/-- WS-ZA ZA5.3: every occupied slot of a CNode is below `2 ^ radixWidth`: the
+slot map agrees with the slot array, which has no cell beyond that. -/
+theorem slots_get?_bounded (cn : CNode) :
+    ∀ s : SeLe4n.Slot, cn.slots.table.get? s ≠ none → s.toNat < 2 ^ cn.radixWidth := by
+  intro s hs
+  have h := cn.slots_agree s
+  have hne : slotArrayGet cn.cells s ≠ none := by
+    rw [← h]; exact hs
+  unfold slotArrayGet at hne
+  by_cases hl : s.toNat < cn.cells.size
+  · rw [cn.cells_size] at hl; exact hl
+  · simp [hl] at hne
+
+/-- WS-ZA ZA5.3: every CNode holds at most `slotCount` capabilities.  Its slots
+are distinct indices below `2 ^ radixWidth` (`slots_get?_bounded`), so the
+bound is the pigeonhole principle, not a property each operation re-proves. -/
+theorem slotCountBounded_holds (cn : CNode) : cn.slotCountBounded := by
+  have hWF := cn.slots.hWF
+  have h := SeLe4n.Kernel.RobinHood.RHTable.size_le_length_of_keys_mem
+    (fun s : SeLe4n.Slot => s.toNat) (fun a b hab => SeLe4n.Slot.ext hab)
+    (List.range (2 ^ cn.radixWidth)) List.nodup_range cn.slots.table hWF.1 hWF.2.1
+    (fun k v hk => List.mem_range.mpr (cn.slots_get?_bounded k (by rw [hk]; simp)))
+  simpa [slotCountBounded, slotCount, SeLe4n.UniqueSlotMap.size] using h
+
 /-- **WS-RR RR8.16** (`v0.35.201`): *is this slot index addressable by this
 CNode's radix width?*
 
@@ -1252,7 +1434,7 @@ theorem slotAddressable_of_lookup (cn : CNode) (slot : SeLe4n.Slot) (cap : Capab
     (h : cn.lookup slot = some cap) : cn.slotAddressable slot := by
   rw [slotAddressable_iff_lt_cells]
   have := cn.slots_agree slot
-  unfold lookup at h; rw [h] at this
+  unfold lookup slots at h; rw [h] at this
   unfold slotArrayGet at this
   by_cases hl : slot.toNat < cn.cells.size
   · exact hl
@@ -1270,6 +1452,7 @@ theorem insert_slots_of_addressable (cn : CNode) (slot : SeLe4n.Slot) (cap : Cap
     (h : cn.slotAddressable slot) :
     (cn.insert slot cap).slots = cn.slots.insert slot cap := by
   unfold insert; rw [dif_pos ((slotAddressable_iff_lt_cells cn slot).1 h)]
+  simp [slots, SeLe4n.Erased.out_map]
 
 theorem insert_eq_self_of_not_addressable (cn : CNode) (slot : SeLe4n.Slot) (cap : Capability)
     (h : ¬ cn.slotAddressable slot) : cn.insert slot cap = cn := by
@@ -1327,7 +1510,13 @@ theorem resolveSlot_slotAddressable
 /-- Empty CNode satisfies slot-count bound (0 ≤ 2^0 = 1). -/
 theorem empty_slotCountBounded : CNode.empty.slotCountBounded := by
   unfold slotCountBounded empty slotCount
-  simp [SeLe4n.UniqueSlotMap.empty, SeLe4n.UniqueSlotMap.size, RHTable.empty]
+  rw [slots_ofSlots]
+  have h := RHTable.size_filter_le_size (SeLe4n.UniqueSlotMap.empty : SeLe4n.UniqueSlotMap Capability).table
+    (fun s _ => decide (s.toNat < 2 ^ 0)) (SeLe4n.UniqueSlotMap.empty : SeLe4n.UniqueSlotMap Capability).hWF.1.1
+  have h0 : (SeLe4n.UniqueSlotMap.empty : SeLe4n.UniqueSlotMap Capability).table.size = 0 := by
+    simp [SeLe4n.UniqueSlotMap.empty, RHTable.empty]
+  simp only [SeLe4n.UniqueSlotMap.size, SeLe4n.UniqueSlotMap.filter, CNode.ofSlots_radixWidth]
+  omega
 
 /-- Removing a slot preserves the slot-count bound (size can only decrease).
 
@@ -1338,7 +1527,8 @@ theorem remove_slotCountBounded
     (cn : CNode) (slot : SeLe4n.Slot)
     (hBounded : cn.slotCountBounded) :
     (cn.remove slot).slotCountBounded := by
-  show (cn.slots.erase slot).table.size ≤ 2 ^ cn.radixWidth
+  show (cn.remove slot).slots.table.size ≤ 2 ^ cn.radixWidth
+  rw [slots_remove]
   have h : (cn.slots.erase slot).table.size ≤ cn.slots.table.size :=
     RHTable.size_erase_le cn.slots.table slot
   exact Nat.le_trans h hBounded
@@ -1366,8 +1556,8 @@ theorem revokeTargetLocal_slotCountBounded
     (cn.revokeTargetLocal sourceSlot target).slotCountBounded := by
   -- WS-RC R4.A: cn.slots is `UniqueSlotMap`; `.filter` returns a
   -- `UniqueSlotMap`. Size is forwarded to the underlying `RHTable`.
-  show (cn.slots.filter (revokeTargetLocalKeeps sourceSlot target)).table.size
-    ≤ 2 ^ cn.radixWidth
+  show (cn.revokeTargetLocal sourceSlot target).slots.table.size ≤ 2 ^ cn.radixWidth
+  rw [revokeTargetLocal, slots_filterSlots]
   have h := RHTable.size_filter_le_size cn.slots.table
     (revokeTargetLocalKeeps sourceSlot target) hUniq.1.1
   exact Nat.le_trans h hBounded
@@ -1415,7 +1605,7 @@ theorem lookup_remove_ne
     (hNe : slot ≠ slot')
     (hUniq : cn.slotsUnique) :
     (cn.remove slot).lookup slot' = cn.lookup slot' := by
-  simp only [remove, lookup]
+  simp only [lookup, slots_remove]
   -- WS-RC R4.A: cn.slots is `UniqueSlotMap`; project to `.table` for the
   -- underlying `RHTable` lemma.
   exact RHTable.getElem?_erase_ne_K cn.slots.table slot slot'
@@ -1431,21 +1621,22 @@ instance : BEq CNode where
   beq a b :=
     a.depth == b.depth && a.guardWidth == b.guardWidth &&
     a.guardValue == b.guardValue && a.radixWidth == b.radixWidth &&
-    a.slots.size == b.slots.size &&
-    a.slots.fold (init := true) (fun acc k v => acc && b.slots.get? k == some v)
+    decide (a.cells = b.cells)
 
 /-- WS-H13: CNode BEq soundness — when BEq returns true, the two CNodes have
-equal depth, guardWidth, guardValue, radixWidth, and slot count.
+equal depth, guardWidth, guardValue, radixWidth, and the same capability at
+every slot (WS-ZA ZA5.3: the two slot arrays are equal).
 
 WS-SM SM3.A.3 audit-pass note: written with `obtain` so that a future per-CNode
 field added to `BEq` does not silently shift positional indices. -/
 theorem CNode.beq_sound (a b : CNode) (h : (a == b) = true) :
     a.depth = b.depth ∧ a.guardWidth = b.guardWidth ∧
     a.guardValue = b.guardValue ∧ a.radixWidth = b.radixWidth ∧
-    a.slots.size = b.slots.size := by
+    ∀ s, a.lookup s = b.lookup s := by
   simp only [BEq.beq, Bool.and_eq_true_iff, decide_eq_true_eq] at h
-  obtain ⟨⟨⟨⟨⟨hDepth, hGuardWidth⟩, hGuardValue⟩, hRadixWidth⟩, hSlotsSize⟩, _hFold⟩ := h
-  exact ⟨hDepth, hGuardWidth, hGuardValue, hRadixWidth, hSlotsSize⟩
+  obtain ⟨⟨⟨⟨hDepth, hGuardWidth⟩, hGuardValue⟩, hRadixWidth⟩, hCells⟩ := h
+  refine ⟨hDepth, hGuardWidth, hGuardValue, hRadixWidth, fun s => ?_⟩
+  rw [CNode.lookup_eq_lookupCells]; simp only [CNode.lookupCells, hCells]
 
 -- ============================================================================
 -- WS-H13: CSpace depth consistency predicates

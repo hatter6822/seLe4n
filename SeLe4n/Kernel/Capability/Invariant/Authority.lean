@@ -117,8 +117,8 @@ theorem cspaceRevoke_local_target_reduction
             -- Convert to get? form for RHTable bridge lemmas
             -- WS-RC R4.A: project to `.table` for the underlying RHTable bridge.
             have hFilterGet : (cn.slots.filter (fun s c => s == addr.slot || !(c.target == parent.target))).table.get? slot = some cap := by
-              rw [CNode.revokeTargetLocal, CNode.lookup] at hFilterLookup
-              simp only [SeLe4n.UniqueSlotMap.get?, SeLe4n.UniqueSlotMap.filter] at hFilterLookup
+              rw [CNode.revokeTargetLocal, CNode.lookup, CNode.slots_filterSlots] at hFilterLookup
+              simp only [SeLe4n.UniqueSlotMap.get?] at hFilterLookup
               exact hFilterLookup
             -- By filter_get_pred, the predicate holds for (slot, cap)
             have hPredTrue := SeLe4n.Kernel.RobinHood.RHTable.filter_get_pred cn.slots.table

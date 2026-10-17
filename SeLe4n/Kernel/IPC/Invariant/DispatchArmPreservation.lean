@@ -3316,8 +3316,8 @@ def retypeReplacementFresh : KernelObject → Prop
 theorem objectOfKernelType_replacementFresh (k : KernelObjectType) (n : Nat) :
     retypeReplacementFresh (objectOfKernelType k n) := by
   cases k <;>
-    simp [objectOfKernelType, retypeReplacementFresh, CNode.lookup,
-      UniqueSlotMap.get?, RobinHood.RHTable.getElem?_empty, Reply.empty]
+    simp [objectOfKernelType, retypeReplacementFresh, CNode.lookup, CNode.slots_ofSlots,
+      UniqueSlotMap.get?_filter, UniqueSlotMap.get?_empty, Reply.empty]
 
 /-- **`v0.35.187`**: and stamping the target's identity into it leaves it
 pristine — `KernelObject.withIdentity` writes the *identity* field and nothing

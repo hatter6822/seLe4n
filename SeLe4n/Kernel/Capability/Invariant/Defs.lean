@@ -1069,7 +1069,7 @@ private theorem CNode.remove_slots_sub (cn : CNode) (slot : SeLe4n.Slot)
     ∀ (s : SeLe4n.Slot) (cap : Capability),
       (cn.remove slot).slots.get? s = some cap → cn.slots.get? s = some cap := by
   intro s cap hLookup
-  simp only [CNode.remove, SeLe4n.UniqueSlotMap.get?,
+  simp only [CNode.slots_remove, SeLe4n.UniqueSlotMap.get?,
     SeLe4n.UniqueSlotMap.erase] at hLookup
   by_cases h : (slot == s) = true
   · -- s = slot: erase returns none, contradicting some cap
@@ -1101,7 +1101,7 @@ private theorem CNode.revokeTargetLocal_slots_sub (cn : CNode) (sourceSlot : SeL
       (cn.revokeTargetLocal sourceSlot target).slots.get? s = some cap →
       cn.slots.get? s = some cap := by
   intro s cap hLookup
-  simp only [CNode.revokeTargetLocal, SeLe4n.UniqueSlotMap.get?,
+  simp only [CNode.revokeTargetLocal, CNode.slots_filterSlots, SeLe4n.UniqueSlotMap.get?,
     SeLe4n.UniqueSlotMap.filter] at hLookup
   exact SeLe4n.Kernel.RobinHood.RHTable.filter_get_subset cn.slots.table _ s cap hUniq.1 hLookup
 

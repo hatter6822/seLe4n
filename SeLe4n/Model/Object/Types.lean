@@ -15,6 +15,7 @@ import SeLe4n.Kernel.RobinHood
 -- invariants, which would sit on the model layer's critical path).
 import SeLe4n.Kernel.SchedContext.Types
 import SeLe4n.Model.Object.UniqueSlotMap
+import SeLe4n.Model.Erased
 
 namespace SeLe4n.Model
 
@@ -2993,25 +2994,59 @@ is now via `SeLe4n.Model.CNode.slotsUnique_holds`.  Defined in
 
 WS-ZA ZA5.3: the slots the kernel reads and writes are `cells`, a fixed array
 of `2 ^ radixWidth` entries made with the CNode (seL4's `cte_t` array), so an
-insert or a removal writes one entry in place.  `slots` is the map the
-theorems state their claims over, and `slots_agree` says the two hold the
-same capability at every slot; a slot at or past `2 ^ radixWidth` therefore
-holds nothing, by construction.  A literal that gives only `slots` gets the
-array built from it, and the agreement is discharged for the empty map and
-for a literal list whose slots are all below `2 ^ radixWidth`. -/
+insert or a removal writes one entry in place.  The map the theorems state
+their claims over is ghost state (`slotsGhost`, read as `CNode.slots`): the
+compiled kernel never builds it, and `slots_agree` says it holds the array's
+capability at every slot, so a slot at or past `2 ^ radixWidth` holds nothing.
+A CNode is built with `CNode.ofSlots`. -/
 structure CNode where
   depth      : Nat          -- maximum remaining depth in bits from this node to any leaf
   guardWidth : Nat          -- width of guard field in bits
   guardValue : Nat          -- expected guard value to match
   radixWidth : Nat          -- width of slot index in bits (2^radixWidth slots)
-  slots      : SeLe4n.UniqueSlotMap Capability
-  cells      : Array (Option Capability) := slotArrayOf radixWidth slots
-  cells_size : cells.size = 2 ^ radixWidth := by exact slotArrayOf_size _ _
-  slots_agree : ∀ s, slots.get? s = slotArrayGet cells s := by
-    first
-    | exact slotArrayOf_agree _ _ (fun s _ => SeLe4n.UniqueSlotMap.get?_empty s)
-    | exact slotArrayOf_agree _ _ (SeLe4n.UniqueSlotMap.get?_ofListWF_of_bounded _ _ (by decide))
+  slotsGhost : SeLe4n.Erased (SeLe4n.UniqueSlotMap Capability)
+  cells      : Array (Option Capability)
+  cells_size : cells.size = 2 ^ radixWidth
+  slots_agree : ∀ s, slotsGhost.out.get? s = slotArrayGet cells s
   deriving Repr
+
+/-- WS-ZA ZA5.3: the slot map the theorems read; ghost state, equal to the slot
+array at every slot (`CNode.slots_agree`). -/
+noncomputable def CNode.slots (cn : CNode) : SeLe4n.UniqueSlotMap Capability :=
+  cn.slotsGhost.out
+
+/-- WS-ZA ZA5.3: the CNode of the given geometry holding `m`'s capability at
+each slot below `2 ^ rw`; a slot at or past it holds nothing. -/
+def CNode.ofSlots (depth guardWidth guardValue radixWidth : Nat)
+    (m : SeLe4n.UniqueSlotMap Capability) : CNode where
+  depth := depth
+  guardWidth := guardWidth
+  guardValue := guardValue
+  radixWidth := radixWidth
+  slotsGhost := .mk (m.filter fun s _ => decide (s.toNat < 2 ^ radixWidth))
+  cells := slotArrayOf radixWidth m
+  cells_size := slotArrayOf_size _ _
+  slots_agree := fun s => by
+    rw [SeLe4n.Erased.out_mk, SeLe4n.UniqueSlotMap.get?_filter]
+    unfold slotArrayGet
+    by_cases h : s.toNat < 2 ^ radixWidth
+    · simp only [slotArrayOf, Array.size_ofFn, h, dite_true, Array.getElem_ofFn,
+        SeLe4n.Slot.ofNat_toNat]
+      cases m.get? s <;> simp [Option.filter, h]
+    · simp only [slotArrayOf, Array.size_ofFn, h, dite_false]
+      cases m.get? s <;> simp [Option.filter, h]
+
+@[simp] theorem CNode.ofSlots_depth (d gw gv rw : Nat) (m : SeLe4n.UniqueSlotMap Capability) :
+    (CNode.ofSlots d gw gv rw m).depth = d := rfl
+@[simp] theorem CNode.ofSlots_guardWidth (d gw gv rw : Nat) (m : SeLe4n.UniqueSlotMap Capability) :
+    (CNode.ofSlots d gw gv rw m).guardWidth = gw := rfl
+@[simp] theorem CNode.ofSlots_guardValue (d gw gv rw : Nat) (m : SeLe4n.UniqueSlotMap Capability) :
+    (CNode.ofSlots d gw gv rw m).guardValue = gv := rfl
+@[simp] theorem CNode.ofSlots_radixWidth (d gw gv rw : Nat) (m : SeLe4n.UniqueSlotMap Capability) :
+    (CNode.ofSlots d gw gv rw m).radixWidth = rw := rfl
+@[simp] theorem CNode.slots_ofSlots (d gw gv rw : Nat) (m : SeLe4n.UniqueSlotMap Capability) :
+    (CNode.ofSlots d gw gv rw m).slots = m.filter fun s _ => decide (s.toNat < 2 ^ rw) := by
+  simp [CNode.ofSlots, CNode.slots]
 
 /-- Maximum CSpace address width (matching ARM64 word size). -/
 def maxCSpaceDepth : Nat := 64

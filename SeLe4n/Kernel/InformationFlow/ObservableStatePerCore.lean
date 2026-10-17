@@ -1182,7 +1182,7 @@ theorem projectCNode_lookup_monotone (ctx : LabelingContext) {L₁ L₂ : Securi
     (hFlow : securityFlowsTo L₁ L₂ = true) (cn : CNode) (slot : SeLe4n.Slot) (cap : Capability)
     (h : (projectCNode ctx (IfObserver.ofLabel L₁) cn).lookup slot = some cap) :
     (projectCNode ctx (IfObserver.ofLabel L₂) cn).lookup slot = some cap := by
-  simp only [projectCNode, CNode.lookup, CNode.filterSlots,
+  simp only [projectCNode, CNode.lookup, CNode.slots_filterSlots,
     SeLe4n.UniqueSlotMap.get?_filter, Option.filter_eq_some_iff] at h ⊢
   obtain ⟨hOrig, hPred⟩ := h
   exact ⟨hOrig, capTargetObservable_monotone ctx hFlow _ hPred⟩
@@ -1250,7 +1250,9 @@ theorem eq_of_cnodeVisibilityLe_of_slots_eq {cn₁ cn₂ : CNode}
       have e₁ := cn₁.slots_agree (SeLe4n.Slot.ofNat i)
       have e₂ := cn₂.slots_agree (SeLe4n.Slot.ofNat i)
       simp only [slotArrayGet, SeLe4n.Slot.toNat_ofNat, hi₁, hi₂, dif_pos] at e₁ e₂
-      rw [← e₁, ← e₂, hSlots]
+      have hS : cn₁.slotsGhost.out = cn₂.slotsGhost.out := hSlots
+      rw [← e₁, ← e₂, hS]
+  have hGhost : cn₁.slotsGhost = cn₂.slotsGhost := SeLe4n.Erased.ext hSlots
   obtain ⟨d₁, gw₁, gv₁, rw₁, s₁, c₁, _, _⟩ := cn₁
   obtain ⟨d₂, gw₂, gv₂, rw₂, s₂, c₂, _, _⟩ := cn₂
   obtain ⟨hd, hgw, hgv, hrw, _⟩ := h

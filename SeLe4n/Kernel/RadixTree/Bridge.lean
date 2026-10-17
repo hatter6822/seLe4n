@@ -9,6 +9,7 @@
 
 import SeLe4n.Kernel.RadixTree.Invariant
 import SeLe4n.Kernel.RobinHood.Bridge
+import SeLe4n.Model.Object.Structures
 
 /-!
 # Q4-D: Builder Equivalence Bridge
@@ -114,9 +115,17 @@ def CNodeConfig.ofCNode (cn : CNode) : CNodeConfig :=
     guardValue := cn.guardValue
     radixWidth := cn.radixWidth }
 
-/-- Build a `CNodeRadix` directly from a `CNode`. -/
-def CNodeRadix.ofCNode (cn : CNode) : CNodeRadix :=
+/-- Build a `CNodeRadix` directly from a `CNode`.  WS-ZA ZA5.3: compiled code
+takes the CNode's slot array as it stands (`ofCNode_eq_ofCNodeCells`). -/
+noncomputable def CNodeRadix.ofCNode (cn : CNode) : CNodeRadix :=
   buildCNodeRadix cn.slots (CNodeConfig.ofCNode cn)
+
+/-- WS-ZA ZA5.3: a CNode's slot array, read as the frozen radix tree: both are
+`2 ^ radixWidth` entries indexed by slot. -/
+def CNodeRadix.ofCNodeCells (cn : CNode) : CNodeRadix :=
+  { guardWidth := cn.guardWidth, guardValue := cn.guardValue,
+    radixWidth := cn.radixWidth, slots := cn.cells, hSlotSize := cn.cells_size }
+
 
 -- ============================================================================
 -- Q4-D7: buildCNodeRadix from empty RHTable
@@ -451,46 +460,49 @@ theorem buildCNodeRadix_hNoPhantom_auto_discharge
     (fun s hBnd => extractBits_identity s.toNat radixWidth hBnd)
 
 -- ============================================================================
--- AE2-B (U-29): Checked buildCNodeRadix with runtime key-bounds validation
+-- WS-ZA ZA5.3: the frozen radix tree is the slot array
 -- ============================================================================
 
-/-- AE2-B (U-29): Runtime predicate — all keys in the table are bounded by
-    `2^radixWidth`. When this holds, `UniqueRadixIndices` and `hNoPhantom`
-    are automatically satisfied (see `uniqueRadixIndices_sufficient`). -/
-def allKeysBounded (rt : RHTable SeLe4n.Slot Capability) (radixWidth : Nat) : Bool :=
-  rt.fold true fun acc k _ => acc && (k.toNat < 2 ^ radixWidth)
+/-- WS-ZA ZA5.3: building the radix tree from the slot map yields the slot
+array, since every occupied slot is below `2 ^ radixWidth` and so is its own
+radix index. -/
+theorem CNodeRadix.ofCNode_eq_ofCNodeCells (cn : CNode) :
+    CNodeRadix.ofCNode cn = CNodeRadix.ofCNodeCells cn := by
+  have hB := CNode.slots_get?_bounded cn
+  have hUri : UniqueRadixIndices cn.slots.table cn.radixWidth := by
+    intro s₁ s₂ h₁ h₂ hne heq
+    rw [extractBits_identity _ _ (hB s₁ h₁), extractBits_identity _ _ (hB s₂ h₂)] at heq
+    apply hne
+    rw [← SeLe4n.Slot.ofNat_toNat s₁, ← SeLe4n.Slot.ofNat_toNat s₂, heq]
+  have hgw := buildCNodeRadix_guardWidth cn.slots.table (CNodeConfig.ofCNode cn)
+  have hgv := buildCNodeRadix_guardValue cn.slots.table (CNodeConfig.ofCNode cn)
+  have hrw := buildCNodeRadix_radixWidth cn.slots.table (CNodeConfig.ofCNode cn)
+  have hLk : ∀ i, i < 2 ^ cn.radixWidth →
+      (buildCNodeRadix cn.slots.table (CNodeConfig.ofCNode cn)).lookup (SeLe4n.Slot.ofNat i) =
+        slotArrayGet cn.cells (SeLe4n.Slot.ofNat i) := by
+    intro i hi
+    rw [buildCNodeRadix_lookup_equiv _ _ _ cn.slots.hWF.1 hUri
+      (buildCNodeRadix_hNoPhantom_auto_discharge _ _ hB _ hi)]
+    exact cn.slots_agree _
+  unfold CNodeRadix.ofCNode CNodeRadix.ofCNodeCells
+  generalize hR : buildCNodeRadix cn.slots.table (CNodeConfig.ofCNode cn) = R at hgw hgv hrw hLk
+  obtain ⟨gw, gv, rw, sl, hs⟩ := R
+  simp only [CNodeConfig.ofCNode] at hgw hgv hrw
+  subst hgw hgv hrw
+  have hSl : sl = cn.cells := by
+    apply Array.ext (by rw [hs, cn.cells_size])
+    intro i h₁ h₂
+    have hi : i < 2 ^ cn.radixWidth := by rw [← hs]; exact h₁
+    have := hLk i hi
+    simp only [CNodeRadix.lookup, SeLe4n.Slot.toNat_ofNat, extractBits_identity _ _ hi,
+      slotArrayGet, h₂, dite_true] at this
+    exact this
+  subst hSl
+  rfl
 
-/-- AE2-B (U-29): Checked variant of `buildCNodeRadix` with runtime key-bounds
-    validation. Falls back to an empty radix tree if any key exceeds
-    `2^radixWidth`, preventing index-out-of-range in the flat array.
-
-    In well-formed CNodes, all slot keys are bounded by `2^radixWidth`
-    (enforced by CNode construction), so the fallback is unreachable under
-    maintained invariants. This provides defense-in-depth against unbounded
-    keys bypassing the `UniqueRadixIndices` precondition. -/
-def buildCNodeRadixChecked (rt : RHTable SeLe4n.Slot Capability) (config : CNodeConfig)
-    : CNodeRadix :=
-  if allKeysBounded rt config.radixWidth then
-    buildCNodeRadix rt config
-  else
-    -- AUDIT-NOTE: U-29 — Safe fallback: empty radix on invalid keys.
-    -- Unreachable under CNode invariants (all slot keys < 2^radixWidth).
-    CNodeRadix.empty config.guardWidth config.guardValue config.radixWidth
-
-/-- AE2-B: When all keys are bounded, the checked variant equals the unchecked. -/
-theorem buildCNodeRadixChecked_eq_of_bounded
-    (rt : RHTable SeLe4n.Slot Capability) (config : CNodeConfig)
-    (hBounded : allKeysBounded rt config.radixWidth = true) :
-    buildCNodeRadixChecked rt config = buildCNodeRadix rt config := by
-  simp [buildCNodeRadixChecked, hBounded]
-
-/-- AE2-B: When keys are out of bounds, the checked variant returns empty. -/
-theorem buildCNodeRadixChecked_fallback
-    (rt : RHTable SeLe4n.Slot Capability) (config : CNodeConfig)
-    (hNotBounded : allKeysBounded rt config.radixWidth = false) :
-    buildCNodeRadixChecked rt config =
-      CNodeRadix.empty config.guardWidth config.guardValue config.radixWidth := by
-  simp [buildCNodeRadixChecked, hNotBounded]
+@[csimp] theorem CNodeRadix.ofCNode_eq_impl :
+    @CNodeRadix.ofCNode = @CNodeRadix.ofCNodeCells := by
+  funext cn; exact CNodeRadix.ofCNode_eq_ofCNodeCells cn
 
 -- ============================================================================
 -- Q4-D10: freezeCNodeSlots — integration point for Q5
@@ -501,72 +513,13 @@ This is the integration point for Q5's freeze operation: during freeze,
 each CNode's `slots : RHTable Slot Capability` is converted to a
 `CNodeRadix` via this function.
 
-**AK8-I (WS-AK / DS-M03) — Checked variant:** This function uses the
-unchecked `CNodeRadix.ofCNode` which internally calls `buildCNodeRadix`
-and trusts the caller to have established `UniqueRadixIndices` at the
-call site (e.g., `FreezeProofs.lean:914` which discharges it as an
-explicit hypothesis). New code that cannot establish the
-`UniqueRadixIndices` hypothesis statically should use
-`freezeCNodeSlotsChecked` (below), which returns `Option CNodeRadix`
-and produces `none` on phantom-key or radix-collision conditions. -/
+WS-ZA ZA5.3: every CNode holds its slots in a `2 ^ radixWidth` array whose
+occupied entries are below that bound (`CNode.slots_get?_bounded`), so
+`UniqueRadixIndices` always holds and the freeze is the slot array itself
+(`CNodeRadix.ofCNode_eq_ofCNodeCells`); the checked variant AK8-I added for
+phantom keys has nothing left to check and is retired. -/
 def freezeCNodeSlots (cn : CNode) : CNodeRadix :=
   CNodeRadix.ofCNode cn
-
-/-- AK8-I (WS-AK / DS-M03): Option-returning variant of `freezeCNodeSlots`
-that validates radix well-formedness at freeze time via
-`buildCNodeRadixChecked`'s `allKeysBounded` precondition.
-
-Returns `some radix` when every slot key fits in the CNode's
-`2^radixWidth` addressable range (the well-formedness precondition of
-`buildCNodeRadix_lookup_equiv` / `UniqueRadixIndices`). Returns `none`
-when any slot key exceeds the bound, surfacing the phantom-key condition
-as a freeze-time failure rather than silently producing a radix tree
-with collisions in the lower bits (the legacy behaviour of the unchecked
-`freezeCNodeSlots`).
-
-The plan (AUDIT §DS-M03) calls for converting `freezeCNodeSlots` to this
-`Option`-valued signature. For compatibility with the existing
-`FreezeProofs.lean:914` caller (which establishes `UniqueRadixIndices`
-as an explicit Prop-level hypothesis), we introduce the checked variant
-additively — new consumers should prefer the checked entry point, while
-proof-layer code that already discharges the precondition continues to
-use the unchecked `freezeCNodeSlots`. -/
-def freezeCNodeSlotsChecked (cn : CNode) : Option CNodeRadix :=
-  if allKeysBounded cn.slots cn.radixWidth then
-    some (buildCNodeRadixChecked cn.slots (CNodeConfig.ofCNode cn))
-  else
-    none
-
-/-- AK8-I (DS-M03): Soundness — when `freezeCNodeSlotsChecked` returns
-`some radix`, it produces the same value as the unchecked
-`freezeCNodeSlots`. Allows proofs that transport results about
-`freezeCNodeSlots` to the checked variant's success case. -/
-theorem freezeCNodeSlotsChecked_some_eq_freezeCNodeSlots
-    (cn : CNode) (radix : CNodeRadix)
-    (hOk : freezeCNodeSlotsChecked cn = some radix) :
-    freezeCNodeSlots cn = radix := by
-  unfold freezeCNodeSlotsChecked at hOk
-  unfold freezeCNodeSlots CNodeRadix.ofCNode
-  by_cases hB : allKeysBounded cn.slots cn.radixWidth
-  · simp [hB] at hOk
-    rw [buildCNodeRadixChecked_eq_of_bounded cn.slots (CNodeConfig.ofCNode cn) hB] at hOk
-    exact hOk
-  · simp [hB] at hOk
-
-/-- AK8-I (DS-M03): `freezeCNodeSlotsChecked` failure condition. Returns
-`none` iff there exists a slot key exceeding the CNode's radix bound. -/
-theorem freezeCNodeSlotsChecked_none_iff_phantom
-    (cn : CNode) :
-    freezeCNodeSlotsChecked cn = none ↔
-    allKeysBounded cn.slots cn.radixWidth = false := by
-  unfold freezeCNodeSlotsChecked
-  constructor
-  · intro h
-    by_cases hB : allKeysBounded cn.slots cn.radixWidth
-    · simp [hB] at h
-    · simpa using hB
-  · intro hNot
-    simp [hNot]
 
 /-- `freezeCNodeSlots` preserves guard parameters from the source CNode. -/
 theorem freezeCNodeSlots_guardWidth (cn : CNode) :

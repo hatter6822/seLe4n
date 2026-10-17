@@ -110,7 +110,7 @@ does not perform — so the retype refuses a CNode for which this holds, as it
 refuses one holding a frame capability's mapping record.  Delete those
 capabilities first. -/
 def cnodeHoldsInstalledPageTableCap (st : SystemState) (cn : CNode) : Bool :=
-  cn.slots.fold false (fun acc _ cap => acc || capabilityNamesInstalledPageTable st cap)
+  !(cn.allSlots fun _ cap => !capabilityNamesInstalledPageTable st cap)
 
 /-- The mappings of `root` whose walk passes through the table installed at
 `inst` — the pages that stop translating when that table leaves the walk. -/

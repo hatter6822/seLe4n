@@ -131,7 +131,7 @@ private def fp010_cnodeRadixSingle : IO Unit := do
   | .cnode fc =>
     -- Source lookup matches radix lookup
     expect "radix finds cap" (fc.slots.lookup (SeLe4n.Slot.ofNat 3) == some cap)
-    expect "source agrees" (cn.slots.get? (SeLe4n.Slot.ofNat 3) == some cap)
+    expect "source agrees" (cn.lookup (SeLe4n.Slot.ofNat 3) == some cap)
     expect "radix misses absent" (fc.slots.lookup (SeLe4n.Slot.ofNat 7) == none)
   | _ => throw <| IO.userError "expected FrozenCNode"
 
@@ -157,9 +157,7 @@ private def fp011_cnodeRadixMulti : IO Unit := do
 /-- FP-012: CNode radix — empty CNode slots all none -/
 private def fp012_cnodeRadixEmpty : IO Unit := do
   let cn : CNode :=
-    { depth := 16, guardWidth := 4, guardValue := 0
-      radixWidth := 4
-      slots := SeLe4n.UniqueSlotMap.empty }
+    (SeLe4n.Model.CNode.ofSlots 16 4 0 4 SeLe4n.UniqueSlotMap.empty)
   let frozen := freezeObject (.cnode cn)
   match frozen with
   | .cnode fc =>

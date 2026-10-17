@@ -234,7 +234,7 @@ private def cspaceSlotCoherencyChecks (objectIds : List SeLe4n.ObjId) (st : Syst
   objectIds.foldr (fun oid acc =>
     match st.getCNode? oid with
     | some cn =>
-        cn.slots.fold acc (fun inner slot cap =>
+        cn.foldCells acc (fun inner slot cap =>
           let ok := match cap.target with
             -- Kind-agnostic by intent: the claim is that *some* object backs
             -- the target, whatever its variant, so `getObject?` is the reader
@@ -278,7 +278,7 @@ private def cspaceSlotAddressableChecks (objectIds : List SeLe4n.ObjId) (st : Sy
   objectIds.foldr (fun oid acc =>
     match st.getCNode? oid with
     | some cn =>
-        cn.slots.fold acc (fun inner slot _ =>
+        cn.foldCells acc (fun inner slot _ =>
           (s!"cspace slot addressable: oid={oid} slot={slot} slotCount={cn.slotCount}",
             cn.slotAddressable slot) :: inner)
     | _ => acc) []
@@ -291,7 +291,7 @@ private def capabilityRightsStructuralChecks (objectIds : List SeLe4n.ObjId) (st
   objectIds.foldr (fun oid acc =>
     match st.getCNode? oid with
     | some cn =>
-        cn.slots.fold acc (fun inner slot cap =>
+        cn.foldCells acc (fun inner slot cap =>
           let ok := match cap.badge with
             | some _ => cap.rights.bits != 0  -- WS-F5/D2: non-empty rights (bitmask)
             | none => true

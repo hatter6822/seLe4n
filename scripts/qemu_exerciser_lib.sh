@@ -240,18 +240,18 @@ for driver in drivers:
         # operation's own cells (slot, tree and object writes, the store's
         # copy); the rows that bring them to zero lower these pins.
         pinned.update({
-            "cspace-copy": (55, 47), "cspace-move": (45, 45), "cspace-delete": (41, 41),
-            "cspace-mint": (51, 51), "cspace-revoke": (48, 48),
-            "reply-cap-delete": (38, 38), "reply-cap-mint": (48, 48),
-            "untyped-retype-page-table-1": (98, 90), "page-table-map-1": (47, 47),
-            "untyped-retype-page-table-2": (89, 89), "page-table-map-2": (53, 53),
-            "untyped-retype-page-table-3": (159, 91), "page-table-map-3": (56, 56),
-            "untyped-retype-frame": (108, 110), "vspace-map": (109, 108),
+            "cspace-copy": (52, 44), "cspace-move": (40, 40), "cspace-delete": (39, 39),
+            "cspace-mint": (48, 48), "cspace-revoke": (46, 46),
+            "reply-cap-delete": (36, 36), "reply-cap-mint": (45, 45),
+            "untyped-retype-page-table-1": (95, 87), "page-table-map-1": (47, 47),
+            "untyped-retype-page-table-2": (86, 86), "page-table-map-2": (53, 53),
+            "untyped-retype-page-table-3": (88, 88), "page-table-map-3": (56, 56),
+            "untyped-retype-frame": (105, 107), "vspace-map": (107, 106),
             "vspace-unify-instruction": (10, 10),
-            "vspace-unmap": (119, 119), "frame-delete": (62, 64),
-            "page-table-unmap-3": (42, 42), "page-table-delete-3": (50, 50),
-            "page-table-unmap-2": (41, 41), "page-table-delete-2": (42, 42),
-            "page-table-unmap-1": (38, 38), "page-table-delete-1": (36, 36),
+            "vspace-unmap": (119, 119), "frame-delete": (60, 62),
+            "page-table-unmap-3": (42, 42), "page-table-delete-3": (48, 48),
+            "page-table-unmap-2": (41, 41), "page-table-delete-2": (40, 40),
+            "page-table-unmap-1": (38, 38), "page-table-delete-1": (34, 34),
             "untyped-reset": (153, 153),
         })
         expected = set(pinned)

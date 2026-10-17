@@ -55,33 +55,21 @@ private def baseState : SystemState :=
     -- declared `radixWidth := 0` — one slot — while the checks below move,
     -- mint and map CDT nodes at slot indices up to 12, none of which any CPtr
     -- could have named.
-    |>.withObject cnodeId (.cnode {
-      depth := 4
-      guardWidth := 0
-      guardValue := 0
-      radixWidth := 4
-      slots := SeLe4n.UniqueSlotMap.ofListWF [
+    |>.withObject cnodeId (.cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [
         (SeLe4n.Slot.ofNat 0, {
           target := .object endpointId
           rights := AccessRightSet.ofList [.read, .write]
           badge := none
         })
-      ]
-    })
+      ])))
     |>.withObject wrongTypeId (.endpoint {})
-    |>.withObject guardedCnodeId (.cnode {
-      depth := 0
-      guardWidth := 1
-      guardValue := 1
-      radixWidth := 2
-      slots := SeLe4n.UniqueSlotMap.ofListWF [
+    |>.withObject guardedCnodeId (.cnode (SeLe4n.Model.CNode.ofSlots 0 1 1 2 (SeLe4n.UniqueSlotMap.ofListWF [
         (SeLe4n.Slot.ofNat 1, {
           target := .object endpointId
           rights := AccessRightSet.ofList [.read]
           badge := none
         })
-      ]
-    })
+      ])))
     |>.withObject ⟨6⟩ (.tcb {
       tid := ⟨6⟩
       priority := ⟨43⟩
@@ -229,19 +217,13 @@ private def f2UntypedState : SystemState :=
       children := []
       isDevice := false
     })
-    |>.withObject f2UntypedAuthCnode (.cnode {
-      depth := 0
-      guardWidth := 0
-      guardValue := 0
-      radixWidth := 0
-      slots := SeLe4n.UniqueSlotMap.ofListWF [
+    |>.withObject f2UntypedAuthCnode (.cnode (SeLe4n.Model.CNode.ofSlots 0 0 0 0 (SeLe4n.UniqueSlotMap.ofListWF [
         (SeLe4n.Slot.ofNat 0, {
           target := .object f2UntypedObjId
           rights := AccessRightSet.ofList [.read, .write, .grant, .retype]
           badge := none
         })
-      ]
-    })
+      ])))
     |>.withLifecycleObjectType f2UntypedObjId .untyped
     |>.withLifecycleObjectType f2UntypedAuthCnode .cnode
     |>.buildChecked)
@@ -257,19 +239,13 @@ private def f2DeviceState : SystemState :=
       children := []
       isDevice := true
     })
-    |>.withObject f2UntypedAuthCnode (.cnode {
-      depth := 0
-      guardWidth := 0
-      guardValue := 0
-      radixWidth := 0
-      slots := SeLe4n.UniqueSlotMap.ofListWF [
+    |>.withObject f2UntypedAuthCnode (.cnode (SeLe4n.Model.CNode.ofSlots 0 0 0 0 (SeLe4n.UniqueSlotMap.ofListWF [
         (SeLe4n.Slot.ofNat 0, {
           target := .object f2DeviceUntypedId
           rights := AccessRightSet.ofList [.read, .write, .grant, .retype]
           badge := none
         })
-      ]
-    })
+      ])))
     |>.withLifecycleObjectType f2DeviceUntypedId .untyped
     |>.withLifecycleObjectType f2UntypedAuthCnode .cnode
     |>.buildChecked)
@@ -383,14 +359,7 @@ private def runCspaceMutationAndRevokeNegativeChecks : IO Unit := do
   let strictChildNodeBad : CdtNodeId := ⟨32⟩
   let strictSeed : SystemState :=
     { baseState with
-      objects := baseState.objects.insert cnodeId (.cnode {
-            -- WS-RR RR8.16 (`v0.35.201`): the same sixteen slots `baseState`
-            -- declares; this rebuild holds capabilities at 5 and 6.
-            depth := 4
-            guardWidth := 0
-            guardValue := 0
-            radixWidth := 4
-            slots := SeLe4n.UniqueSlotMap.ofListWF [
+      objects := baseState.objects.insert cnodeId (.cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [
               (strictRootSlot.slot, {
                 target := .object endpointId
                 rights := AccessRightSet.ofList [.read, .write]
@@ -401,8 +370,7 @@ private def runCspaceMutationAndRevokeNegativeChecks : IO Unit := do
                 rights := AccessRightSet.ofList [.read]
                 badge := none
               })
-            ]
-          })
+            ])))
       cdt := CapDerivationTree.empty
         |>.addEdge strictRootNode strictChildNodeBad .mint
         |>.addEdge strictRootNode strictChildNodeOk .copy
@@ -1191,19 +1159,13 @@ private def runUntypedF2NegativeChecks : IO Unit := do
         children := []
         isDevice := false
       })
-      |>.withObject f2UntypedAuthCnode (.cnode {
-        depth := 0
-        guardWidth := 0
-        guardValue := 0
-        radixWidth := 0
-        slots := SeLe4n.UniqueSlotMap.ofListWF [
+      |>.withObject f2UntypedAuthCnode (.cnode (SeLe4n.Model.CNode.ofSlots 0 0 0 0 (SeLe4n.UniqueSlotMap.ofListWF [
           (SeLe4n.Slot.ofNat 0, {
             target := .object f2UntypedObjId
             rights := AccessRightSet.ofList [.read, .write, .grant, .retype]
             badge := none
           })
-        ]
-      })
+        ])))
       |>.withLifecycleObjectType f2UntypedObjId .untyped
       |>.withLifecycleObjectType f2UntypedAuthCnode .cnode
       |>.buildChecked)
@@ -1710,19 +1672,13 @@ private def runH2NegativeChecks : IO Unit := do
         children := [{ objId := ⟨60⟩, offset := 0, size := 64 }]
         isDevice := false
       })
-      |>.withObject f2UntypedAuthCnode (.cnode {
-        depth := 0
-        guardWidth := 0
-        guardValue := 0
-        radixWidth := 0
-        slots := SeLe4n.UniqueSlotMap.ofListWF [
+      |>.withObject f2UntypedAuthCnode (.cnode (SeLe4n.Model.CNode.ofSlots 0 0 0 0 (SeLe4n.UniqueSlotMap.ofListWF [
           (SeLe4n.Slot.ofNat 0, {
             target := .object f2UntypedObjId
             rights := AccessRightSet.ofList [.read, .write, .grant, .retype]
             badge := none
           })
-        ]
-      })
+        ])))
       |>.withLifecycleObjectType f2UntypedObjId .untyped
       |>.withLifecycleObjectType f2UntypedAuthCnode .cnode
       |>.buildChecked)
@@ -1842,11 +1798,8 @@ private def runAuditCoverageChecks : IO Unit := do
   -- runtime-test surface. Constructs a small CNode with `Capability.null`
   -- in slot 0 and asserts the rejection path returns the explicit
   -- `.nullCapability` error code.
-  let nullSrcCnode : CNode := {
-    depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0,
-    slots := SeLe4n.UniqueSlotMap.ofListWF
-      [(SeLe4n.Slot.ofNat 0, Capability.null)]
-  }
+  let nullSrcCnode : CNode := (SeLe4n.Model.CNode.ofSlots 0 0 0 0 (SeLe4n.UniqueSlotMap.ofListWF
+      [(SeLe4n.Slot.ofNat 0, Capability.null)]))
   let nullCnodeId : SeLe4n.ObjId := ⟨200⟩
   let nullSlot : SeLe4n.Kernel.CSpaceAddr :=
     { cnode := nullCnodeId, slot := SeLe4n.Slot.ofNat 0 }
@@ -1874,17 +1827,15 @@ private def runWSH7Checks : IO Unit := do
   let capA : Capability := { target := .object endpointId, rights := AccessRightSet.ofList [.read], badge := none }
   let capB : Capability := { target := .object notificationId, rights := AccessRightSet.ofList [.read, .write], badge := none }
   let cn1 : CNode :=
-    { depth := 2, guardWidth := 0, guardValue := 0, radixWidth := 2
-      slots := SeLe4n.UniqueSlotMap.ofListWF [(SeLe4n.Slot.ofNat 1, capA), (SeLe4n.Slot.ofNat 2, capB)] }
+    (SeLe4n.Model.CNode.ofSlots 2 0 0 2 (SeLe4n.UniqueSlotMap.ofListWF [(SeLe4n.Slot.ofNat 1, capA), (SeLe4n.Slot.ofNat 2, capB)]))
   let cn2 : CNode :=
-    { depth := 2, guardWidth := 0, guardValue := 0, radixWidth := 2
-      slots := SeLe4n.UniqueSlotMap.ofListWF [(SeLe4n.Slot.ofNat 2, capB), (SeLe4n.Slot.ofNat 1, capA)] }
+    (SeLe4n.Model.CNode.ofSlots 2 0 0 2 (SeLe4n.UniqueSlotMap.ofListWF [(SeLe4n.Slot.ofNat 2, capB), (SeLe4n.Slot.ofNat 1, capA)]))
   if cn1 == cn2 then
     IO.println "positive check passed [WS-H7 CNode BEq ignores insertion order]"
   else
     throw <| IO.userError "CNode BEq ignores insertion order: expected true"
 
-  let lifecycleCnode : KernelObject := .cnode { depth := 1, guardWidth := 0, guardValue := 0, radixWidth := 1, slots := SeLe4n.UniqueSlotMap.ofListWF [(SeLe4n.Slot.ofNat 0, capA)] }
+  let lifecycleCnode : KernelObject := .cnode (SeLe4n.Model.CNode.ofSlots 1 0 0 1 (SeLe4n.UniqueSlotMap.ofListWF [(SeLe4n.Slot.ofNat 0, capA)]))
   let lifecycleEndpoint : KernelObject := .endpoint {}
 
   let stAfterCnode :=
@@ -2168,13 +2119,10 @@ private def runWSH15Checks : IO Unit := do
   let callerId : SeLe4n.ThreadId := ⟨1⟩
   let writeCap : Capability := { target := .object epId, rights := AccessRightSet.ofList [.write], badge := none }
   let readOnlyCap : Capability := { target := .object epId, rights := AccessRightSet.ofList [.read], badge := none }
-  let cn : CNode := {
-    depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-    slots := SeLe4n.UniqueSlotMap.ofListWF [
+  let cn : CNode := (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [
       (SeLe4n.Slot.ofNat 0, writeCap),
       (SeLe4n.Slot.ofNat 1, readOnlyCap)
-    ]
-  }
+    ]))
   let ep : KernelObject := .endpoint (Endpoint.ofQueues {} {})
   let st : SystemState :=
     (BootstrapBuilder.empty
@@ -2348,19 +2296,13 @@ def runWSH16LifecycleChecks : IO Unit := do
   let h16MismatchState : SystemState :=
     (BootstrapBuilder.empty
       |>.withObject h16TargetId (.endpoint {})
-      |>.withObject h16CnodeId (.cnode {
-        depth := 0
-        guardWidth := 0
-        guardValue := 0
-        radixWidth := 0
-        slots := SeLe4n.UniqueSlotMap.ofListWF [
+      |>.withObject h16CnodeId (.cnode (SeLe4n.Model.CNode.ofSlots 0 0 0 0 (SeLe4n.UniqueSlotMap.ofListWF [
           (SeLe4n.Slot.ofNat 0, {
             target := .object h16TargetId
             rights := AccessRightSet.ofList [.read, .write]
             badge := none
           })
-        ]
-      })
+        ])))
       -- Uses .build intentionally: lifecycleObjectType .tcb mismatches actual .endpoint
       -- (check 2b would reject). Tests kernel handling of metadata mismatch.
       |>.withLifecycleObjectType h16TargetId .tcb  -- mismatch: object is endpoint but metadata says tcb
@@ -2406,19 +2348,13 @@ def runWSH16LifecycleChecks : IO Unit := do
         children := []
         isDevice := false
       })
-      |>.withObject h16ExhaustedCnodeId (.cnode {
-        depth := 0
-        guardWidth := 0
-        guardValue := 0
-        radixWidth := 0
-        slots := SeLe4n.UniqueSlotMap.ofListWF [
+      |>.withObject h16ExhaustedCnodeId (.cnode (SeLe4n.Model.CNode.ofSlots 0 0 0 0 (SeLe4n.UniqueSlotMap.ofListWF [
           (SeLe4n.Slot.ofNat 0, {
             target := .object h16ExhaustedUntypedId
             rights := AccessRightSet.ofList [.read, .write, .grant, .retype]
             badge := none
           })
-        ]
-      })
+        ])))
       |>.withLifecycleObjectType h16ExhaustedUntypedId .untyped
       |>.withLifecycleObjectType h16ExhaustedCnodeId .cnode
       |>.buildChecked)
@@ -2449,19 +2385,13 @@ def runWSH16LifecycleChecks : IO Unit := do
         children := []
         isDevice := true     -- device untyped
       })
-      |>.withObject h16DeviceCnodeId (.cnode {
-        depth := 0
-        guardWidth := 0
-        guardValue := 0
-        radixWidth := 0
-        slots := SeLe4n.UniqueSlotMap.ofListWF [
+      |>.withObject h16DeviceCnodeId (.cnode (SeLe4n.Model.CNode.ofSlots 0 0 0 0 (SeLe4n.UniqueSlotMap.ofListWF [
           (SeLe4n.Slot.ofNat 0, {
             target := .object h16DeviceUntypedId
             rights := AccessRightSet.ofList [.read, .write, .grant, .retype]
             badge := none
           })
-        ]
-      })
+        ])))
       |>.withLifecycleObjectType h16DeviceUntypedId .untyped
       |>.withLifecycleObjectType h16DeviceCnodeId .cnode
       |>.buildChecked)
@@ -2500,14 +2430,12 @@ def runAN4A5LifecycleVisibilityChecks : IO Unit := do
   let a5State : SystemState :=
     (BootstrapBuilder.empty
       |>.withObject a5RetypeTcbId (.tcb a5Tcb)
-      |>.withObject a5CnodeId (.cnode {
-        depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0
-        slots := SeLe4n.UniqueSlotMap.ofListWF [
+      |>.withObject a5CnodeId (.cnode (SeLe4n.Model.CNode.ofSlots 0 0 0 0 (SeLe4n.UniqueSlotMap.ofListWF [
           (SeLe4n.Slot.ofNat 0, {
             target := .object a5RetypeTcbId
             rights := AccessRightSet.ofList [.read, .write, .retype]
             badge := none })
-        ] })
+        ])))
       |>.withLifecycleObjectType a5RetypeTcbId .tcb
       |>.withLifecycleObjectType a5CnodeId .cnode
       |>.withRunnable [a5Tcb.tid]
@@ -2751,10 +2679,7 @@ private def runWSKGCSpaceChecks : IO Unit := do
   -- K-G-NEG-06: cspaceCopy fails — source slot empty (invalidCapability)
   let emptyCnodeState : SystemState :=
     (BootstrapBuilder.empty
-      |>.withObject ⟨200⟩ (.cnode {
-        depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0
-        slots := SeLe4n.UniqueSlotMap.empty  -- no slots occupied
-      })
+      |>.withObject ⟨200⟩ (.cnode (SeLe4n.Model.CNode.ofSlots 0 0 0 0 SeLe4n.UniqueSlotMap.empty))  -- no slots occupied
       |>.withLifecycleObjectType ⟨200⟩ .cnode
       |>.buildChecked)
   let emptySlot : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨200⟩, slot := SeLe4n.Slot.ofNat 0 }
@@ -3224,15 +3149,9 @@ private def runWSM4GuardOnlyChecks : IO Unit := do
   let guardOnlyTarget : SeLe4n.ObjId := ⟨6001⟩
   let stGuardOnly :=
     (BootstrapBuilder.empty
-      |>.withObject guardOnlyRoot (.cnode {
-          depth := 4
-          guardWidth := 4
-          guardValue := 0xA
-          radixWidth := 0
-          slots := SeLe4n.UniqueSlotMap.ofListWF [
+      |>.withObject guardOnlyRoot (.cnode (SeLe4n.Model.CNode.ofSlots 4 4 0xA 0 (SeLe4n.UniqueSlotMap.ofListWF [
             (SeLe4n.Slot.ofNat 0, { target := .object guardOnlyTarget, rights := AccessRightSet.ofList [.read], badge := none })
-          ]
-        })
+          ])))
       |>.withObject guardOnlyTarget (.endpoint {})
       |>.buildChecked)
 
@@ -3267,15 +3186,9 @@ private def runWSM4SmallBitsChecks : IO Unit := do
   let leafTarget : SeLe4n.ObjId := ⟨6011⟩
   let stLeaf :=
     (BootstrapBuilder.empty
-      |>.withObject leafRoot (.cnode {
-          depth := 4
-          guardWidth := 0
-          guardValue := 0
-          radixWidth := 4
-          slots := SeLe4n.UniqueSlotMap.ofListWF [
+      |>.withObject leafRoot (.cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [
             (SeLe4n.Slot.ofNat 5, { target := .object leafTarget, rights := AccessRightSet.ofList [.read, .write], badge := none })
-          ]
-        })
+          ])))
       |>.withObject leafTarget (.endpoint {})
       |>.buildChecked)
 
@@ -3294,13 +3207,7 @@ private def runWSM4SmallBitsChecks : IO Unit := do
   let partialRoot : SeLe4n.ObjId := ⟨6020⟩
   let stPartial :=
     (BootstrapBuilder.empty
-      |>.withObject partialRoot (.cnode {
-          depth := 6
-          guardWidth := 2
-          guardValue := 0
-          radixWidth := 4
-          slots := SeLe4n.UniqueSlotMap.empty
-        })
+      |>.withObject partialRoot (.cnode (SeLe4n.Model.CNode.ofSlots 6 2 0 4 SeLe4n.UniqueSlotMap.empty))
       |>.buildChecked)
 
   let resultPartial := SeLe4n.Kernel.resolveCapAddress partialRoot (SeLe4n.CPtr.ofNat 0) 4 stPartial
@@ -3350,33 +3257,15 @@ private def runWSM4GuardMismatchChecks : IO Unit := do
   -- Wrong addr = 0b_11_00_10_00_0111 = 0xC87
   let stMidGuard :=
     (BootstrapBuilder.empty
-      |>.withObject lvl0 (.cnode {
-          depth := 12
-          guardWidth := 2
-          guardValue := 3
-          radixWidth := 2
-          slots := SeLe4n.UniqueSlotMap.ofListWF [
+      |>.withObject lvl0 (.cnode (SeLe4n.Model.CNode.ofSlots 12 2 3 2 (SeLe4n.UniqueSlotMap.ofListWF [
             (SeLe4n.Slot.ofNat 0, { target := .object lvl1, rights := AccessRightSet.ofList [.read, .write], badge := none })
-          ]
-        })
-      |>.withObject lvl1 (.cnode {
-          depth := 8
-          guardWidth := 2
-          guardValue := 1
-          radixWidth := 2
-          slots := SeLe4n.UniqueSlotMap.ofListWF [
+          ])))
+      |>.withObject lvl1 (.cnode (SeLe4n.Model.CNode.ofSlots 8 2 1 2 (SeLe4n.UniqueSlotMap.ofListWF [
             (SeLe4n.Slot.ofNat 0, { target := .object lvl2, rights := AccessRightSet.ofList [.read, .write], badge := none })
-          ]
-        })
-      |>.withObject lvl2 (.cnode {
-          depth := 4
-          guardWidth := 0
-          guardValue := 0
-          radixWidth := 4
-          slots := SeLe4n.UniqueSlotMap.ofListWF [
+          ])))
+      |>.withObject lvl2 (.cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [
             (SeLe4n.Slot.ofNat 7, { target := .object lvl2Target, rights := AccessRightSet.ofList [.read], badge := none })
-          ]
-        })
+          ])))
       |>.withObject lvl2Target (.endpoint {})
       |>.buildChecked)
 
@@ -3426,15 +3315,9 @@ private def runWSM4MaxDepthLoopChecks : IO Unit := do
         (SeLe4n.Slot.ofNat 1, { target := .object nextId, rights := AccessRightSet.ofList [.read, .write], badge := none })
       ]))
   -- Level 7 (leaf): slot 1 holds the target cap
-  builder := builder.withObject maxDepthIds[7]! (.cnode {
-    depth := 8
-    guardWidth := 0
-    guardValue := 0
-    radixWidth := 8
-    slots := SeLe4n.UniqueSlotMap.ofListWF [
+  builder := builder.withObject maxDepthIds[7]! (.cnode (SeLe4n.Model.CNode.ofSlots 8 0 0 8 (SeLe4n.UniqueSlotMap.ofListWF [
       (SeLe4n.Slot.ofNat 1, { target := .object maxDepthLeafTarget, rights := AccessRightSet.ofList [.read], badge := none })
-    ]
-  })
+    ])))
   builder := builder.withObject maxDepthLeafTarget (.endpoint {})
   let stMaxDepth := builder.buildChecked
 
@@ -3478,22 +3361,10 @@ private def runWSM4SlotEdgeChecks : IO Unit := do
   let emptyMidChild : SeLe4n.ObjId := ⟨6041⟩
   let stEmptyMid :=
     (BootstrapBuilder.empty
-      |>.withObject emptyMidRoot (.cnode {
-          depth := 10
-          guardWidth := 0
-          guardValue := 0
-          radixWidth := 4
-          slots := SeLe4n.UniqueSlotMap.ofListWF [
+      |>.withObject emptyMidRoot (.cnode (SeLe4n.Model.CNode.ofSlots 10 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [
             (SeLe4n.Slot.ofNat 3, { target := .object emptyMidChild, rights := AccessRightSet.ofList [.read], badge := none })
-          ]
-        })
-      |>.withObject emptyMidChild (.cnode {
-          depth := 6
-          guardWidth := 0
-          guardValue := 0
-          radixWidth := 4
-          slots := SeLe4n.UniqueSlotMap.empty  -- all slots empty
-        })
+          ])))
+      |>.withObject emptyMidChild (.cnode (SeLe4n.Model.CNode.ofSlots 6 0 0 4 SeLe4n.UniqueSlotMap.empty))  -- all slots empty
       |>.buildChecked)
 
   -- addr=0xC0 (10 bits): lvl0 shift=(10-4)=6, 0xC0>>>6=3, slot 3 → lvl1.
@@ -3514,15 +3385,9 @@ private def runWSM4SlotEdgeChecks : IO Unit := do
   let nonCnodeMidEp : SeLe4n.ObjId := ⟨6051⟩
   let stNonCnodeMid :=
     (BootstrapBuilder.empty
-      |>.withObject nonCnodeMidRoot (.cnode {
-          depth := 8
-          guardWidth := 0
-          guardValue := 0
-          radixWidth := 4
-          slots := SeLe4n.UniqueSlotMap.ofListWF [
+      |>.withObject nonCnodeMidRoot (.cnode (SeLe4n.Model.CNode.ofSlots 8 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [
             (SeLe4n.Slot.ofNat 1, { target := .object nonCnodeMidEp, rights := AccessRightSet.ofList [.read], badge := none })
-          ]
-        })
+          ])))
       |>.withObject nonCnodeMidEp (.endpoint {})
       |>.buildChecked)
 
@@ -3547,15 +3412,9 @@ private def runWSM4WrapperIntegrationChecks : IO Unit := do
   let leafTarget : SeLe4n.ObjId := ⟨6011⟩
   let stLeaf :=
     (BootstrapBuilder.empty
-      |>.withObject leafRoot (.cnode {
-          depth := 4
-          guardWidth := 0
-          guardValue := 0
-          radixWidth := 4
-          slots := SeLe4n.UniqueSlotMap.ofListWF [
+      |>.withObject leafRoot (.cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [
             (SeLe4n.Slot.ofNat 5, { target := .object leafTarget, rights := AccessRightSet.ofList [.read, .write], badge := none })
-          ]
-        })
+          ])))
       |>.withObject leafTarget (.endpoint {})
       |>.buildChecked)
 
@@ -3619,10 +3478,7 @@ def runWSR2RevocationChecks : IO Unit := do
   let r2BadSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := r2BadCnodeId, slot := SeLe4n.Slot.ofNat 0 }
   let r2State : SystemState :=
     (BootstrapBuilder.empty
-      |>.withObject r2CnodeId (.cnode {
-            depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0,
-            slots := SeLe4n.UniqueSlotMap.ofListWF []
-          })
+      |>.withObject r2CnodeId (.cnode (SeLe4n.Model.CNode.ofSlots 0 0 0 0 (SeLe4n.UniqueSlotMap.ofListWF [])))
       |>.buildChecked)
   let r2Seed := { r2State with
     cdtNodeSlot := r2State.cdtNodeSlot.insert r2NodeId r2BadSlot
@@ -3852,22 +3708,13 @@ private def runS2GCapabilityErrorTests : IO Unit := do
   let mintSrc : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 0 }
   let mintDst : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 3 }
   -- slot0 in baseState has rights [read, write]; create a read-only source
-  let readOnlyCnode : KernelObject := .cnode {
-    -- WS-RR RR8.16 (`v0.35.201`): four addressable slots, so the destination
-    -- (slot 3) is in range and the refusal this check names — rights
-    -- attenuation — is the only one that can produce it.
-    depth := 2
-    guardWidth := 0
-    guardValue := 0
-    radixWidth := 2
-    slots := SeLe4n.UniqueSlotMap.ofListWF [
+  let readOnlyCnode : KernelObject := .cnode (SeLe4n.Model.CNode.ofSlots 2 0 0 2 (SeLe4n.UniqueSlotMap.ofListWF [
       (SeLe4n.Slot.ofNat 0, {
         target := .object endpointId
         rights := AccessRightSet.ofList [.read]
         badge := none
       })
-    ]
-  }
+    ]))
   let readOnlyState : SystemState :=
     { baseState with objects := baseState.objects.insert cnodeId readOnlyCnode }
   -- Attempt to mint with read+write from a read-only source
@@ -3906,15 +3753,12 @@ private def runS2GCapabilityErrorTests : IO Unit := do
   -- against a comment that has always said 2, so "full" named a CNode holding
   -- three capabilities no CPtr could reach.  At radix 2 it is genuinely full.
   let fullCnodeId : SeLe4n.ObjId := ⟨70⟩
-  let fullCnode : KernelObject := .cnode {
-    depth := 2, guardWidth := 0, guardValue := 0, radixWidth := 2,
-    slots := SeLe4n.UniqueSlotMap.ofListWF [
+  let fullCnode : KernelObject := .cnode (SeLe4n.Model.CNode.ofSlots 2 0 0 2 (SeLe4n.UniqueSlotMap.ofListWF [
       (SeLe4n.Slot.ofNat 0, { target := .object endpointId, rights := AccessRightSet.ofList [.read, .write], badge := none }),
       (SeLe4n.Slot.ofNat 1, { target := .object endpointId, rights := AccessRightSet.ofList [.read], badge := none }),
       (SeLe4n.Slot.ofNat 2, { target := .object endpointId, rights := AccessRightSet.ofList [.write], badge := none }),
       (SeLe4n.Slot.ofNat 3, { target := .object endpointId, rights := AccessRightSet.ofList [.read, .write], badge := none })
-    ]
-  }
+    ]))
   let fullCnodeState := { baseState with objects := baseState.objects.insert fullCnodeId fullCnode }
   -- Copy from slot0 in cnodeId into slot 0 of full CNode (occupied)
   let fullCopySrc : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 0 }
@@ -4020,16 +3864,13 @@ private def runS2HLifecycleErrorTests : IO Unit := do
         children := []
         isDevice := false
       })
-      |>.withObject exhaustedAuthCnode (.cnode {
-        depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0,
-        slots := SeLe4n.UniqueSlotMap.ofListWF [
+      |>.withObject exhaustedAuthCnode (.cnode (SeLe4n.Model.CNode.ofSlots 0 0 0 0 (SeLe4n.UniqueSlotMap.ofListWF [
           (SeLe4n.Slot.ofNat 0, {
             target := .object exhaustedUntypedId
             rights := AccessRightSet.ofList [.read, .write, .grant, .retype]
             badge := none
           })
-        ]
-      })
+        ])))
       |>.withLifecycleObjectType exhaustedUntypedId .untyped
       |>.withLifecycleObjectType exhaustedAuthCnode .cnode
       |>.buildChecked)
@@ -4405,9 +4246,7 @@ def runAC1CdtTrackingChecks : IO Unit := do
 
   -- Create CNodes with proper structure
   let srcCnode : CNode := CNode.ofList 0 0 0 4 [(srcSlot, cap)]
-  let dstCnode : CNode := {
-    depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 4,
-    slots := SeLe4n.UniqueSlotMap.empty }
+  let dstCnode : CNode := (SeLe4n.Model.CNode.ofSlots 0 0 0 4 SeLe4n.UniqueSlotMap.empty)
 
   let st1 := { st0 with
     objects := st0.objects
@@ -4470,11 +4309,9 @@ private def r1BaseState : SystemState :=
     |>.withObject r1EpId (.endpoint {})
     |>.withObject r1TargetObj (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
     |>.withObject r1CallerCNode (.cnode
-        { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-          slots := SeLe4n.UniqueSlotMap.ofListWF [((SeLe4n.Slot.ofNat 0), r1Cap)] })
+        (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [((SeLe4n.Slot.ofNat 0), r1Cap)])))
     |>.withObject r1ReceiverCNode (.cnode
-        { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-          slots := SeLe4n.UniqueSlotMap.ofListWF [] })
+        (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [])))
     |>.withObject r1CallerTid.toObjId (.tcb
         { tid := r1CallerTid, priority := ⟨1⟩, domain := ⟨0⟩,
           cspaceRoot := r1CallerCNode, vspaceRoot := ⟨0⟩,
@@ -4655,12 +4492,9 @@ private def runWSRR8CSpaceSlotRangeChecks : IO Unit := do
   IO.println "=== WS-RR RR8.16: CSpace destination slots are radix-bounded ==="
   -- A four-slot CNode (indices 0..3) holding one capability at slot 0.
   let rangeCnodeId : SeLe4n.ObjId := ⟨71⟩
-  let rangeCnode : CNode := {
-    depth := 2, guardWidth := 0, guardValue := 0, radixWidth := 2,
-    slots := SeLe4n.UniqueSlotMap.ofListWF [
+  let rangeCnode : CNode := (SeLe4n.Model.CNode.ofSlots 2 0 0 2 (SeLe4n.UniqueSlotMap.ofListWF [
       (SeLe4n.Slot.ofNat 0, ({ target := .object endpointId, rights := AccessRightSet.ofList [.read, .write], badge := none } : Capability))
-    ]
-  }
+    ]))
   let rangeState : SystemState :=
     { baseState with objects := baseState.objects.insert rangeCnodeId (.cnode rangeCnode) }
   let rangeSrc : SeLe4n.Kernel.CSpaceAddr := { cnode := rangeCnodeId, slot := SeLe4n.Slot.ofNat 0 }
@@ -4712,7 +4546,7 @@ private def runWSRR8CSpaceSlotRangeChecks : IO Unit := do
       match unguardedState.getCNode? fullCnodeId with
       | none => throw <| IO.userError "RR8-CSR-05: the target CNode vanished"
       | some cn' =>
-          if cn'.slots.size > cn'.slotCount then
+          if cn'.occupiedCount > cn'.slotCount then
             throw <| IO.userError
               "RR8-CSR-05: an insert past the radix broke slotCountBounded"
           else if (cn'.lookup (SeLe4n.Slot.ofNat 9)).isSome then
@@ -4722,7 +4556,7 @@ private def runWSRR8CSpaceSlotRangeChecks : IO Unit := do
             IO.println
               ("negative check passed [RR8-CSR-05: the retired unguarded insert at "
                ++ s!"slot 9 of a {cn'.slotCount}-slot CNode stores nothing, leaving "
-               ++ s!"slots.size = {cn'.slots.size}]")
+               ++ s!"slots.size = {cn'.occupiedCount}]")
 
   -- The IPC transfer path scans within the radix, so a receiver with no free
   -- in-range slot answers `.noSlot` rather than installing out of range.

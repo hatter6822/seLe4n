@@ -268,10 +268,7 @@ def objectOfTypeTag (typeTag : Nat) (sizeHint : Nat)
       state := .idle, 
       hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero
     })
-  | 3 => .ok (.cnode {
-      depth := 0, guardWidth := 0, guardValue := 0,
-      radixWidth := 0, slots := SeLe4n.UniqueSlotMap.empty
-    })
+  | 3 => .ok (.cnode (SeLe4n.Model.CNode.ofSlots 0 0 0 0 SeLe4n.UniqueSlotMap.empty))
   -- `v0.36.9`: a VSpace root built here carries ASID 0, the boot VSpace root's
   -- ASID, and the retype's admissibility guard refuses it
   -- (`KernelObjectType.memoryBacked`): a translation table is memory, carved
@@ -323,10 +320,7 @@ def objectOfKernelType (objType : KernelObjectType) (sizeHint : Nat) : KernelObj
       state := .idle, 
       hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero
     }
-  | .cnode => .cnode {
-      depth := 0, guardWidth := 0, guardValue := 0,
-      radixWidth := 0, slots := SeLe4n.UniqueSlotMap.empty
-    }
+  | .cnode => .cnode (SeLe4n.Model.CNode.ofSlots 0 0 0 0 SeLe4n.UniqueSlotMap.empty)
   | .vspaceRoot => .vspaceRoot {
       asid := SeLe4n.ASID.ofNat 0, mappings := {}
     }

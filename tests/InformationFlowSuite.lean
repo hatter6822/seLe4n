@@ -702,8 +702,8 @@ def runInformationFlowChecks : IO Unit := do
   -- cspaceMintChecked: same-domain mint should be allowed
   let mintState :=
     (BootstrapBuilder.empty
-      |>.withObject ⟨100⟩ (.cnode { depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8, slots := (SeLe4n.UniqueSlotMap.ofListWF [((SeLe4n.Slot.ofNat 0), { target := .object ⟨200⟩, rights := AccessRightSet.ofList [.read, .write], badge := none })]) })
-      |>.withObject ⟨101⟩ (.cnode { depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8, slots := (SeLe4n.UniqueSlotMap.ofListWF []) })
+      |>.withObject ⟨100⟩ (.cnode (SeLe4n.Model.CNode.ofSlots 8 0 0 8 ((SeLe4n.UniqueSlotMap.ofListWF [((SeLe4n.Slot.ofNat 0), { target := .object ⟨200⟩, rights := AccessRightSet.ofList [.read, .write], badge := none })]))))
+      |>.withObject ⟨101⟩ (.cnode (SeLe4n.Model.CNode.ofSlots 8 0 0 8 ((SeLe4n.UniqueSlotMap.ofListWF []))))
       |>.buildChecked)
 
   let sameDomainMintCtx : SeLe4n.Kernel.LabelingContext :=
@@ -1027,11 +1027,11 @@ def runInformationFlowChecks : IO Unit := do
     (BootstrapBuilder.empty
       |>.withObject ⟨1⟩ (.endpoint {})  -- public target
       |>.withObject ⟨2⟩ (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })  -- secret target
-      |>.withObject ⟨50⟩ (.cnode { depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8, slots := (SeLe4n.UniqueSlotMap.ofListWF
+      |>.withObject ⟨50⟩ (.cnode (SeLe4n.Model.CNode.ofSlots 8 0 0 8 ((SeLe4n.UniqueSlotMap.ofListWF
           [ ((SeLe4n.Slot.ofNat 0), { target := .object ⟨1⟩, rights := AccessRightSet.ofList [.read], badge := none })
           , ((SeLe4n.Slot.ofNat 1), { target := .object ⟨2⟩, rights := AccessRightSet.ofList [.read, .write], badge := none })
           , ((SeLe4n.Slot.ofNat 2), { target := .replyCap (SeLe4n.ReplyId.ofNat 1), rights := AccessRightSet.ofList [.read], badge := none })
-          ]) })
+          ]))))
       |>.buildChecked)
 
   -- oid 50 (the CNode) is public so both observers can see it
@@ -1049,16 +1049,16 @@ def runInformationFlowChecks : IO Unit := do
   | some (.cnode cn) =>
     -- Slot 0 (target: public obj 1) should be present
     expect "public observer sees cap slot targeting public object"
-      (cn.slots.contains (SeLe4n.Slot.ofNat 0))
+      ((cn.lookup (SeLe4n.Slot.ofNat 0)).isSome)
     -- Slot 1 (target: secret obj 2) should be filtered out
     expect "public observer cannot see cap slot targeting secret object"
-      (!cn.slots.contains (SeLe4n.Slot.ofNat 1))
+      (!(cn.lookup (SeLe4n.Slot.ofNat 1)).isSome)
     -- Slot 2 (target: replyCap to public thread 1) should be present
     expect "public observer sees reply cap to public thread"
-      (cn.slots.contains (SeLe4n.Slot.ofNat 2))
+      ((cn.lookup (SeLe4n.Slot.ofNat 2)).isSome)
     -- Verify slot count
     expect "public observer sees exactly 2 of 3 slots"
-      (cn.slots.size = 2)
+      (cn.occupiedCount = 2)
   | _ =>
     throw <| IO.userError "public observer should see CNode object at oid 50"
 
@@ -1066,7 +1066,7 @@ def runInformationFlowChecks : IO Unit := do
   match cnodeAdminProj.objects ⟨50⟩ with
   | some (.cnode cn) =>
     expect "admin observer sees all 3 cap slots"
-      (cn.slots.size = 3)
+      (cn.occupiedCount = 3)
   | _ =>
     throw <| IO.userError "admin observer should see CNode object at oid 50"
 
@@ -1083,21 +1083,21 @@ def runInformationFlowChecks : IO Unit := do
     (BootstrapBuilder.empty
       |>.withObject ⟨1⟩ (.endpoint {})  -- public target
       |>.withObject ⟨2⟩ (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })  -- secret target
-      |>.withObject ⟨60⟩ (.cnode { depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8, slots := (SeLe4n.UniqueSlotMap.ofListWF
+      |>.withObject ⟨60⟩ (.cnode (SeLe4n.Model.CNode.ofSlots 8 0 0 8 ((SeLe4n.UniqueSlotMap.ofListWF
           [ ((SeLe4n.Slot.ofNat 0), { target := .cnodeSlot ⟨1⟩ (SeLe4n.Slot.ofNat 0), rights := AccessRightSet.ofList [.read], badge := none })
           , ((SeLe4n.Slot.ofNat 1), { target := .cnodeSlot ⟨2⟩ (SeLe4n.Slot.ofNat 0), rights := AccessRightSet.ofList [.read], badge := none })
-          ]) })
+          ]))))
       |>.buildChecked)
 
   let cnodeSlotProj := SeLe4n.Kernel.projectStateByLinks cnodeLabeling reviewer cnodeSlotState
   match cnodeSlotProj.objects ⟨60⟩ with
   | some (.cnode cn) =>
     expect "cnodeSlot target to public CNode is visible"
-      (cn.slots.contains (SeLe4n.Slot.ofNat 0))
+      ((cn.lookup (SeLe4n.Slot.ofNat 0)).isSome)
     expect "cnodeSlot target to secret CNode is filtered"
-      (!cn.slots.contains (SeLe4n.Slot.ofNat 1))
+      (!(cn.lookup (SeLe4n.Slot.ofNat 1)).isSome)
     expect "cnodeSlot variant: exactly 1 of 2 slots visible"
-      (cn.slots.size = 1)
+      (cn.occupiedCount = 1)
   | _ =>
     throw <| IO.userError "CNode at oid 60 should be visible for cnodeSlot test"
 
@@ -1601,8 +1601,7 @@ def runInformationFlowChecks : IO Unit := do
         |>.withObject targetObj (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
         |>.withObject nonCNodeRoot (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
         |>.withObject senderCNode (.cnode
-            { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-              slots := SeLe4n.UniqueSlotMap.ofListWF [((SeLe4n.Slot.ofNat 0), cap1)] })
+            (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [((SeLe4n.Slot.ofNat 0), cap1)])))
         |>.buildChecked)
     let msgWithCaps : IpcMessage :=
       { registers := #[], caps := #[TransferCap.fromNode cap1 0], badge := none }
@@ -1626,8 +1625,7 @@ def runInformationFlowChecks : IO Unit := do
         |>.withObject epId (.endpoint {})
         |>.withObject targetObj (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
         |>.withObject senderCNode (.cnode
-            { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-              slots := SeLe4n.UniqueSlotMap.ofListWF [((SeLe4n.Slot.ofNat 0), cap1)] })
+            (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [((SeLe4n.Slot.ofNat 0), cap1)])))
         |>.withObject senderTid.toObjId (.tcb
             { tid := senderTid, priority := ⟨1⟩, domain := ⟨0⟩,
               cspaceRoot := senderCNode, vspaceRoot := ⟨0⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 0)
@@ -1689,8 +1687,7 @@ def runInformationFlowChecks : IO Unit := do
         (BootstrapBuilder.empty
           |>.withObject epId (.endpoint {})
           |>.withObject callerCNode (.cnode
-              { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-                slots := SeLe4n.UniqueSlotMap.ofListWF [((SeLe4n.Slot.ofNat 0), cap1)] })
+              (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [((SeLe4n.Slot.ofNat 0), cap1)])))
           |>.withObject callerTid.toObjId (.tcb
               { tid := callerTid, priority := ⟨1⟩, domain := ⟨0⟩,
                 cspaceRoot := callerCNode, vspaceRoot := ⟨0⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 0)

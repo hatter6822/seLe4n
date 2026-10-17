@@ -1680,9 +1680,8 @@ private def rtMultiState : SeLe4n.Model.SystemState :=
     |>.withObject rtVsp (.vspaceRoot { asid := asid5, mappings := {} })
     |>.withObject rtEp (.endpoint {})
     |>.withObject rtCn (.cnode
-        { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-          slots := SeLe4n.UniqueSlotMap.ofListWF
-            [(SeLe4n.Slot.ofNat 0, capVsp), (SeLe4n.Slot.ofNat 1, capEp)] })
+        (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF
+            [(SeLe4n.Slot.ofNat 0, capVsp), (SeLe4n.Slot.ofNat 1, capEp)])))
     |>.withLifecycleObjectType rtVsp .vspaceRoot
     |>.withLifecycleObjectType rtEp .endpoint
     |>.withLifecycleObjectType rtCn .cnode

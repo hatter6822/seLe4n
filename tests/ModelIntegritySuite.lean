@@ -338,12 +338,8 @@ def capability_toNonNull_roundtrip : IO Unit := do
 /-- Build a SystemState with `Capability.null` in slot 0 of a CNode for the
 NonNullCap end-to-end tests. -/
 private def al1bStateWithNullCapSlot : SystemState :=
-  let srcCnode : CNode := {
-    depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0
-    slots := SeLe4n.UniqueSlotMap.ofListWF [((SeLe4n.Slot.ofNat 0), Capability.null)] }
-  let dstCnode : CNode := {
-    depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0
-    slots := SeLe4n.UniqueSlotMap.ofListWF ([] : List (Slot × Capability)) }
+  let srcCnode : CNode := (SeLe4n.Model.CNode.ofSlots 0 0 0 0 (SeLe4n.UniqueSlotMap.ofListWF [((SeLe4n.Slot.ofNat 0), Capability.null)]))
+  let dstCnode : CNode := (SeLe4n.Model.CNode.ofSlots 0 0 0 0 (SeLe4n.UniqueSlotMap.ofListWF ([] : List (Slot × Capability))))
   let base : SystemState := default
   let st1 : SystemState :=
     { base with objects := base.objects.insert ⟨10⟩ (.cnode srcCnode) }
@@ -725,12 +721,11 @@ def mintReplyCap_derives_backed_reply_cap : IO Unit := do
   let plain : SeLe4n.ObjId := ⟨201⟩   -- a non-Reply object (endpoint)
   let cnId : SeLe4n.ObjId := ⟨100⟩
   let mkCn : KernelObject := .cnode
-    { depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8,
-      slots := SeLe4n.UniqueSlotMap.ofListWF
+    (SeLe4n.Model.CNode.ofSlots 8 0 0 8 (SeLe4n.UniqueSlotMap.ofListWF
         [ ((SeLe4n.Slot.ofNat 0),
             { target := .object target, rights := AccessRightSet.ofList [.read, .write], badge := none })
         , ((SeLe4n.Slot.ofNat 2),
-            { target := .object plain, rights := AccessRightSet.ofList [.read, .write], badge := none }) ] }
+            { target := .object plain, rights := AccessRightSet.ofList [.read, .write], badge := none }) ]))
   let st : SystemState :=
     (SeLe4n.Testing.BootstrapBuilder.empty
       |>.withObject target (.reply { replyId := rid })
@@ -887,12 +882,11 @@ def replyCapPointsToValidReply_distinguishes_backed_and_dangling : IO Unit := do
   let danglingRid : SeLe4n.ReplyId := SeLe4n.ReplyId.ofObjId ⟨301⟩
   let cnId : SeLe4n.ObjId := ⟨110⟩
   let mkCn : KernelObject := .cnode
-    { depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8,
-      slots := SeLe4n.UniqueSlotMap.ofListWF
+    (SeLe4n.Model.CNode.ofSlots 8 0 0 8 (SeLe4n.UniqueSlotMap.ofListWF
         [ ((SeLe4n.Slot.ofNat 0),
             { target := .replyCap liveRid, rights := AccessRightSet.ofList [.read, .write], badge := none })
         , ((SeLe4n.Slot.ofNat 1),
-            { target := .replyCap danglingRid, rights := AccessRightSet.ofList [.read, .write], badge := none }) ] }
+            { target := .replyCap danglingRid, rights := AccessRightSet.ofList [.read, .write], badge := none }) ]))
   let st : SystemState :=
     (SeLe4n.Testing.BootstrapBuilder.empty
       |>.withObject liveObj (.reply { replyId := liveRid })
@@ -931,8 +925,7 @@ def reply_cap_end_to_end_retype_mint_link : IO Unit := do
     { target := .object target,
       rights := AccessRightSet.ofList [.read, .write, .retype], badge := none }
   let mkCn : KernelObject := .cnode
-    { depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8,
-      slots := SeLe4n.UniqueSlotMap.ofListWF [ ((SeLe4n.Slot.ofNat 0), authCap) ] }
+    (SeLe4n.Model.CNode.ofSlots 8 0 0 8 (SeLe4n.UniqueSlotMap.ofListWF [ ((SeLe4n.Slot.ofNat 0), authCap) ]))
   let callerTcb : TCB :=
     { tid := caller, priority := ⟨0⟩, domain := ⟨0⟩, cspaceRoot := ⟨0⟩,
       vspaceRoot := ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0 }

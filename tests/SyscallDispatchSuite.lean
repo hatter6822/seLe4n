@@ -924,10 +924,8 @@ private def dispatcherRefusesCallerNotCurrentOnCore : IO Unit := do
       (caller.toObjId, .tcb { (mkTcb 1) with cspaceRoot := cnId }),
       (other.toObjId, .tcb { (mkTcb 70) with cspaceRoot := cnId }),
       (ntfnId, .notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }),
-      (cnId, .cnode {
-          depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-          slots := SeLe4n.UniqueSlotMap.ofListWF
-            [(SeLe4n.Slot.ofNat 0, tcbCap), (SeLe4n.Slot.ofNat 1, ntfnCap)] })
+      (cnId, .cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF
+            [(SeLe4n.Slot.ofNat 0, tcbCap), (SeLe4n.Slot.ofNat 1, ntfnCap)])))
     ]
   let decoded : SyscallDecodeResult :=
     { capAddr := SeLe4n.CPtr.ofNat 0,
@@ -984,10 +982,8 @@ private def sd054_idleTargetCapabilityUnresolvable : IO Unit := do
     mkState [
       (caller.toObjId, .tcb { (mkTcb 1) with cspaceRoot := cnId }),
       (tgtTcb, .tcb { (mkTcb 70) with cspaceRoot := cnId }),
-      (cnId, .cnode {
-          depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-          slots := SeLe4n.UniqueSlotMap.ofListWF
-            [(SeLe4n.Slot.ofNat 0, idleCap), (SeLe4n.Slot.ofNat 1, tcbCap)] })
+      (cnId, .cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF
+            [(SeLe4n.Slot.ofNat 0, idleCap), (SeLe4n.Slot.ofNat 1, tcbCap)])))
     ]
   let gate (slot : Nat) : SyscallGate :=
     { callerId := caller, cspaceRoot := cnId, capAddr := SeLe4n.CPtr.ofNat slot,
@@ -1796,10 +1792,8 @@ private def sd061_retype_never_mints_or_destroys_memory_authority : IO Unit := d
       (caller.toObjId, .tcb { (mkTcb 1) with cspaceRoot := cnId }),
       (epObj, .endpoint {}),
       (frObj, .frame { base := SeLe4n.PAddr.ofNat 0x20000 }),
-      (cnId, .cnode {
-          depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-          slots := SeLe4n.UniqueSlotMap.ofListWF
-            [(SeLe4n.Slot.ofNat 0, epCap), (SeLe4n.Slot.ofNat 1, frCap)] }) ]
+      (cnId, .cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF
+            [(SeLe4n.Slot.ofNat 0, epCap), (SeLe4n.Slot.ofNat 1, frCap)]))) ]
     lifecycleObjectTypes := [
       (caller.toObjId, .tcb), (epObj, .endpoint), (frObj, .frame), (cnId, .cnode) ] }
   let st : SystemState := builder.buildChecked

@@ -257,10 +257,8 @@ private def rhInt004_slotCountBounded : IO Unit := do
   -- Insert several capabilities and verify slot count stays bounded
   for i in List.range 8 do
     cn := cn.insert (SeLe4n.Slot.ofNat i) cap
-  -- The RHTable size should reflect the number of inserted slots
-  expect "RH-INT-004a slot count" (cn.slots.size == 8)
-  -- Capacity should be at least 16 (initial capacity of an empty CNode)
-  expect "RH-INT-004b capacity >= 16" (cn.slots.capacity ≥ 16)
+  -- The slot array should hold one capability per inserted slot
+  expect "RH-INT-004a slot count" (cn.occupiedCount == 8)
 
 open CNode in
 /-- RH-INT-005: Multi-level CSpace resolution with RHTable-backed CNodes -/

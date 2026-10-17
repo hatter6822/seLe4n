@@ -178,8 +178,12 @@ scheduling-context invocations do too, configure routed; the entry captures
 overflow words into a per-core buffer and never writes model memory.  At
 `v0.36.100` (ZA5.4 part 1) a scrub of a range that already reads zero leaves
 model memory as it was, so no carve or reset loop grows the heap.  At
-`v0.36.101` a delete, and a CNode retype for each slot, removes the slot's
-leaf node from the derivation tree, so no copy-and-delete loop grows it.  The
+`v0.36.101` a delete, a CNode retype for each slot and the local revoke for
+each slot it empties splice the slot's node out of the derivation tree, as
+seL4's `cteDelete`, so no copy-and-delete loop grows it.  At `v0.36.102`
+(ZA5.3 part 1) a CNode's slots are a fixed array of `2 ^ radixWidth` cells,
+written in place; the slot map is ghost state (`Erased`) the theorems read,
+tied to the array by `CNode.slots_agree`.  The
 suspend of a thread blocked in IPC or holding a donated context is the one
 syscall arm left on the general path (ZA6.1).  ZA6 covers the other
 entries and makes the rule standing.  Plan:

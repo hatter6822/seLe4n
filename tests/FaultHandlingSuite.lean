@@ -279,11 +279,7 @@ send-and-grant reading refused it. -/
 private def grantReplyCPtr : SeLe4n.CPtr := SeLe4n.CPtr.ofNat 2
 
 private def rootCnode : CNode :=
-  { depth := 2
-    guardWidth := 0
-    guardValue := 0
-    radixWidth := 2
-    slots := SeLe4n.UniqueSlotMap.ofListWF [
+  (SeLe4n.Model.CNode.ofSlots 2 0 0 2 (SeLe4n.UniqueSlotMap.ofListWF [
       (SeLe4n.Slot.ofNat 0,
         { target := .object epHandler
           rights := AccessRightSet.ofList [.read, .write, .grant]
@@ -296,7 +292,7 @@ private def rootCnode : CNode :=
         { target := .object epHandler
           rights := AccessRightSet.ofList [.write, .grantReply]
           badge := some (SeLe4n.Badge.ofNat 9) })
-    ] }
+    ]))
 
 private def mkTcb (tid : Nat) (prio : Nat) (aff : Option CoreId)
     (fh : Option SeLe4n.CPtr) : TCB :=

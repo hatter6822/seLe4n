@@ -587,8 +587,7 @@ private def carveScenario : SystemState :=
           { regionBase := SeLe4n.PAddr.ofNat carveDevBase, regionSize := 0x1000,
             isDevice := true })
       |>.withObject carveCn (.cnode
-          { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-            slots := SeLe4n.UniqueSlotMap.ofListWF
+          (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF
               [(SeLe4n.Slot.ofNat slotUtRetype, frameCapTo carveUt [.read, .write, .retype]),
                (SeLe4n.Slot.ofNat slotOwnCnRW, frameCapTo carveCn [.read, .write]),
                (SeLe4n.Slot.ofNat slotOwnVsp, frameCapTo carveVsp [.read, .write]),
@@ -596,7 +595,7 @@ private def carveScenario : SystemState :=
                (SeLe4n.Slot.ofNat slotDevUt, frameCapTo carveDevUt [.read, .write, .retype]),
                (SeLe4n.Slot.ofNat slotOwnCnRO, frameCapTo carveCn [.read]),
                (SeLe4n.Slot.ofNat slotVspRetype, frameCapTo carveVsp [.read, .retype]),
-               (SeLe4n.Slot.ofNat slotOwnCnGrant, frameCapTo carveCn [.read, .write, .grant])] })
+               (SeLe4n.Slot.ofNat slotOwnCnGrant, frameCapTo carveCn [.read, .write, .grant])])))
       |>.withObject carveOwner.toObjId (.tcb
           { tid := carveOwner, priority := ⟨40⟩, domain := ⟨0⟩,
             cspaceRoot := carveCn, vspaceRoot := carveVsp,
@@ -1597,7 +1596,7 @@ private def tableScenario : SystemState :=
     -- WS-ZA ZA5.3: a wider radix needs a wider slot array, so the root is
     -- rebuilt at radix 5 holding the same capabilities.
     match storeObject carveCn
-        (.cnode (CNode.ofList 5 cn.guardWidth cn.guardValue 5 cn.slots.toList)) st1 with
+        (.cnode (CNode.ofList 5 cn.guardWidth cn.guardValue 5 cn.occupiedSlots)) st1 with
     | .ok ((), s) => s
     | .error _ => st1
   | none => st1

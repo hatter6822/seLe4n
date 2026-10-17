@@ -1875,17 +1875,16 @@ theorem detachSlotFromCdt_lifecycle_eq (st : SystemState) (ref : SlotRef) :
     its node (`detachDestroyedSlot`), so neither orphaned references nor dead edges
     outlive the CNode. -/
 def detachCNodeSlots (st : SystemState) (cnodeId : SeLe4n.ObjId) (cn : CNode) : SystemState :=
-  cn.slots.fold st (fun acc slot _cap =>
-    detachDestroyedSlot acc { cnode := cnodeId, slot := slot }
-  )
+  cn.foldCells st (fun acc slot _cap =>
+    detachDestroyedSlot acc { cnode := cnodeId, slot := slot })
 
 /-- `detachCNodeSlots` preserves the objects store (CDT-only operation). -/
 theorem detachCNodeSlots_objects_eq
     (st : SystemState) (cnodeId : SeLe4n.ObjId) (cn : CNode) :
     (detachCNodeSlots st cnodeId cn).objects = st.objects := by
   simp only [detachCNodeSlots]
-  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves cn.slots.table st _ (fun acc => acc.objects = st.objects)
-    rfl (fun acc slot _cap hAcc => by
+  exact SeLe4n.Model.CNode.foldCells_preserves cn st _ (fun acc => acc.objects = st.objects)
+    rfl (fun acc slot _cap _ hAcc => by
       simp only [detachDestroyedSlot]
       exact (detachSlotFromCdt_objects_eq _ { cnode := cnodeId, slot := slot }).trans
         ((spliceDeletedCdtNode_objects _ _).trans hAcc))
@@ -1895,8 +1894,8 @@ theorem detachCNodeSlots_lifecycle_eq
     (st : SystemState) (cnodeId : SeLe4n.ObjId) (cn : CNode) :
     (detachCNodeSlots st cnodeId cn).lifecycle = st.lifecycle := by
   simp only [detachCNodeSlots]
-  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves cn.slots.table st _ (fun acc => acc.lifecycle = st.lifecycle)
-    rfl (fun acc slot _cap hAcc => by
+  exact SeLe4n.Model.CNode.foldCells_preserves cn st _ (fun acc => acc.lifecycle = st.lifecycle)
+    rfl (fun acc slot _cap _ hAcc => by
       simp only [detachDestroyedSlot]
       exact (detachSlotFromCdt_lifecycle_eq _ { cnode := cnodeId, slot := slot }).trans
         ((spliceDeletedCdtNode_lifecycle _ _).trans hAcc))
@@ -2240,8 +2239,8 @@ theorem detachCNodeSlots_scheduler_eq
     (st : SystemState) (cnodeId : SeLe4n.ObjId) (cn : CNode) :
     (detachCNodeSlots st cnodeId cn).scheduler = st.scheduler := by
   simp only [detachCNodeSlots]
-  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves cn.slots.table st _ (fun acc => acc.scheduler = st.scheduler)
-    rfl (fun acc slot _cap hAcc => by
+  exact SeLe4n.Model.CNode.foldCells_preserves cn st _ (fun acc => acc.scheduler = st.scheduler)
+    rfl (fun acc slot _cap _ hAcc => by
       have : (detachDestroyedSlot acc { cnode := cnodeId, slot := slot }).scheduler
           = acc.scheduler := by
         simp only [detachDestroyedSlot]
@@ -2257,9 +2256,9 @@ theorem detachCNodeSlots_machine_eq
     (st : SystemState) (cnodeId : SeLe4n.ObjId) (cn : CNode) :
     (detachCNodeSlots st cnodeId cn).machine = st.machine := by
   simp only [detachCNodeSlots]
-  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves cn.slots.table st _
+  exact SeLe4n.Model.CNode.foldCells_preserves cn st _
     (fun acc => acc.machine = st.machine)
-    rfl (fun acc slot _cap hAcc => by
+    rfl (fun acc slot _cap _ hAcc => by
       have : (detachDestroyedSlot acc { cnode := cnodeId, slot := slot }).machine
           = acc.machine := by
         simp only [detachDestroyedSlot]
@@ -2272,9 +2271,9 @@ theorem detachCNodeSlots_tlbShootdown_eq
     (st : SystemState) (cnodeId : SeLe4n.ObjId) (cn : CNode) :
     (detachCNodeSlots st cnodeId cn).tlbShootdown = st.tlbShootdown := by
   simp only [detachCNodeSlots]
-  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves cn.slots.table st _
+  exact SeLe4n.Model.CNode.foldCells_preserves cn st _
     (fun acc => acc.tlbShootdown = st.tlbShootdown)
-    rfl (fun acc slot _cap hAcc => by
+    rfl (fun acc slot _cap _ hAcc => by
       simp only [detachDestroyedSlot]
       exact (SystemState.detachSlotFromCdt_tlbShootdown_eq _
         { cnode := cnodeId, slot := slot }).trans

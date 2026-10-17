@@ -1239,11 +1239,9 @@ private def stCapBase : SystemState :=
   (BootstrapBuilder.empty
     |>.withObject capEp (.endpoint {})
     |>.withObject capCallerCn (.cnode
-        { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-          slots := SeLe4n.UniqueSlotMap.ofListWF [(payloadSrcSlot, payloadCap)] })
+        (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [(payloadSrcSlot, payloadCap)])))
     |>.withObject capServerCn (.cnode
-        { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-          slots := SeLe4n.UniqueSlotMap.ofListWF [] })
+        (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [])))
     |>.withObject capCaller.toObjId (.tcb { mkTcb 852 40 none with cspaceRoot := capCallerCn })
     |>.withObject capServer.toObjId (.tcb { mkTcb 853 50 (some c1) with cspaceRoot := capServerCn })
     |>.withObject capReply.toObjId (.reply { replyId := capReply })
@@ -1272,7 +1270,7 @@ private def summaryInstalledInto (s : CapTransferSummary) (cn : SeLe4n.ObjId) : 
 private def cnodeSlotCap (st : SystemState) (cn : SeLe4n.ObjId) (slot : SeLe4n.Slot) :
     Option Capability :=
   match st.objects[cn]? with
-  | some (.cnode c) => c.slots[slot]?
+  | some (.cnode c) => (c.lookup slot)
   | _ => none
 /-- `true` iff CNode `cn`'s slot `slot` holds the transferred payload cap
 **intact** — full value equality (target AND rights AND badge), so a transfer
@@ -4041,8 +4039,7 @@ no-op. -/
 private def stOrphanHeadReplyRecv : SystemState :=
   (BootstrapBuilder.empty
     |>.withObject cnRoot (.cnode
-        { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-          slots := SeLe4n.UniqueSlotMap.ofListWF [] })
+        (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [])))
     |>.withObject orphanEp (.endpoint
         (Endpoint.ofQueues ({ head := some orphanSender, tail := some orphanSender } : IntrusiveQueue) {}))
     |>.withObject orphanReply.toObjId (.reply
