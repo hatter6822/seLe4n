@@ -1210,7 +1210,7 @@ takes the destroyed-slot step (`detachDestroyedSlot`), so no capability the
 revoke destroyed keeps a node or a slot mapping. -/
 def detachRevokedSlots (st : SystemState) (cnodeId : SeLe4n.ObjId) (cn : CNode)
     (sourceSlot : SeLe4n.Slot) (target : CapTarget) : SystemState :=
-  cn.slots.fold st (fun acc slot cap =>
+  cn.foldCells st (fun acc slot cap =>
     if CNode.revokeTargetLocalKeeps sourceSlot target slot cap then acc
     else detachDestroyedSlot acc { cnode := cnodeId, slot := slot })
 
@@ -1220,9 +1220,9 @@ theorem detachRevokedSlots_shape (st : SystemState) (cnodeId : SeLe4n.ObjId) (cn
     ∃ cdt sn ns, detachRevokedSlots st cnodeId cn sourceSlot target =
       { st with cdt := cdt, cdtSlotNode := sn, cdtNodeSlot := ns } := by
   unfold detachRevokedSlots
-  refine SeLe4n.Kernel.RobinHood.RHTable.fold_preserves cn.slots.table st _
+  refine SeLe4n.Model.CNode.foldCells_preserves cn st _
     (fun acc => ∃ cdt sn ns, acc = { st with cdt := cdt, cdtSlotNode := sn, cdtNodeSlot := ns })
-    ⟨_, _, _, rfl⟩ (fun acc slot cap ⟨c, a, b, hAcc⟩ => ?_)
+    ⟨_, _, _, rfl⟩ (fun acc slot cap _ ⟨c, a, b, hAcc⟩ => ?_)
   split
   · exact ⟨c, a, b, hAcc⟩
   · obtain ⟨c', a', b', h⟩ := detachDestroyedSlot_shape acc { cnode := cnodeId, slot := slot }

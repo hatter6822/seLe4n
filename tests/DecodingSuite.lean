@@ -616,10 +616,7 @@ private def buildIpcDecodeState
         ipcBuffer := ipcBufferVA,
         registerContext := SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun i => (regFile ⟨i⟩).val.toUInt64)
     })
-    |>.withObject cnodeId (.cnode {
-        depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-        slots := SeLe4n.UniqueSlotMap.ofListWF []
-    })
+    |>.withObject cnodeId (.cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [])))
     |>.withObject vsId (.vspaceRoot vsRoot)
     |>.withLifecycleObjectType tid.toObjId .tcb
     |>.withLifecycleObjectType cnodeId .cnode

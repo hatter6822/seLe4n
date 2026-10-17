@@ -535,8 +535,7 @@ private def cacheState (slots : List (SeLe4n.Slot × Capability)) : SystemState 
   (BootstrapBuilder.empty
     |>.withObject udVsp (.vspaceRoot { asid := asid5, mappings := {} })
     |>.withObject udCn (.cnode
-        { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-          slots := SeLe4n.UniqueSlotMap.ofListWF slots })
+        (CNode.ofList 4 0 0 4 slots))
     |>.withObject udCaller.toObjId (.tcb
         { tid := udCaller, priority := ⟨40⟩, domain := ⟨0⟩,
           cspaceRoot := udCn, vspaceRoot := udVsp,

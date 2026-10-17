@@ -93,12 +93,7 @@ def bootstrapState : SystemState :=
     -- 7.  It declared `radixWidth := 0` — one slot — so `cspaceSlotCountBounded`
     -- was false of the harness's own root CSpace and every capability but slot
     -- 0's was unreachable by any CPtr.
-    |>.withObject ⟨10⟩ (.cnode {
-      depth := 3
-      guardWidth := 0
-      guardValue := 0
-      radixWidth := 3
-      slots := SeLe4n.UniqueSlotMap.ofListWF
+    |>.withObject ⟨10⟩ (.cnode (SeLe4n.Model.CNode.ofSlots 3 0 0 3 (SeLe4n.UniqueSlotMap.ofListWF
         [ (SeLe4n.Slot.ofNat 0, {
             target := .object ⟨1⟩
             rights := AccessRightSet.ofList [.read, .write, .grant]
@@ -113,8 +108,7 @@ def bootstrapState : SystemState :=
             target := .object demoUntyped
             rights := AccessRightSet.ofList [.read, .write, .retype]
             badge := none
-          }) ]
-    })
+          }) ])))
     |>.withObject ⟨12⟩ (.tcb {
       tid := ⟨12⟩
       priority := ⟨10⟩
@@ -432,16 +426,10 @@ private def runServiceAndStressTrace (counter : IO.Ref Nat) (st1 : SystemState) 
     | .ok _ => IO.println "[SRG-010] unexpected cycle allowed"
   checkInvariants counter "post-SRG-tests" st1
 
-  let deepRadixCNode : CNode := {
-    depth := 14
-    guardWidth := 2
-    guardValue := 3
-    radixWidth := 12
-    slots := SeLe4n.UniqueSlotMap.ofListWF [
+  let deepRadixCNode : CNode := (SeLe4n.Model.CNode.ofSlots 14 2 3 12 (SeLe4n.UniqueSlotMap.ofListWF [
       (SeLe4n.Slot.ofNat 1, { target := .object ⟨1⟩, rights := AccessRightSet.ofList [.read], badge := none }),
       (SeLe4n.Slot.ofNat 1024, { target := .object ⟨12⟩, rights := AccessRightSet.ofList [.read, .write], badge := none })
-    ]
-  }
+    ]))
   let stDeepCNode : SystemState :=
     st1.withObjectStored ⟨200⟩ (.cnode deepRadixCNode)
   IO.println s!"[SST-021] deep cnode radix fixture: {reprStr <| (stDeepCNode.getCNode? ⟨200⟩).map (fun cn => cn.radixWidth)}"
@@ -1116,13 +1104,11 @@ private def runUntypedMemoryTrace (counter : IO.Ref Nat) (st1 : SystemState) : I
           watermark := 0, children := [], isDevice := true })
         -- WS-RR RR8.16 (`v0.35.201`): eight addressable slots — this variant
         -- holds capabilities at 0, 5, 6 and 7.
-        |>.withObjectStored ⟨10⟩ (.cnode {
-          depth := 3, guardWidth := 0, guardValue := 0, radixWidth := 3,
-          slots := SeLe4n.UniqueSlotMap.ofListWF [
+        |>.withObjectStored ⟨10⟩ (.cnode (SeLe4n.Model.CNode.ofSlots 3 0 0 3 (SeLe4n.UniqueSlotMap.ofListWF [
             (SeLe4n.Slot.ofNat 0, { target := .object ⟨1⟩, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none }),
             (SeLe4n.Slot.ofNat 5, { target := .object ⟨12⟩, rights := AccessRightSet.ofList [.read, .write, .retype], badge := none }),
             (SeLe4n.Slot.ofNat 6, { target := .object demoUntyped, rights := AccessRightSet.ofList [.read, .write, .retype], badge := none }),
-            (SeLe4n.Slot.ofNat 7, { target := .object deviceUntypedId, rights := AccessRightSet.ofList [.read, .write, .retype], badge := none }) ] })
+            (SeLe4n.Slot.ofNat 7, { target := .object deviceUntypedId, rights := AccessRightSet.ofList [.read, .write, .retype], badge := none }) ])))
   let devAuthSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨10⟩, slot := SeLe4n.Slot.ofNat 7 }
   let devTcb : KernelObject := .tcb {
     tid := ⟨53⟩, priority := ⟨50⟩, domain := ⟨0⟩,
@@ -1340,14 +1326,11 @@ private def runSyscallGateTrace (counter : IO.Ref Nat) (st1 : SystemState) : IO 
   let writeCap : Capability := { target := .object epId, rights := AccessRightSet.ofList [.write], badge := none }
   let readOnlyCap : Capability := { target := .object epId, rights := AccessRightSet.ofList [.read], badge := none }
   let retypeCap : Capability := { target := .object demoUntyped, rights := AccessRightSet.ofList [.retype], badge := none }
-  let cn : CNode := {
-    depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-    slots := SeLe4n.UniqueSlotMap.ofListWF [
+  let cn : CNode := CNode.ofList 4 0 0 4 [
       (SeLe4n.Slot.ofNat 0, writeCap),
       (SeLe4n.Slot.ofNat 1, readOnlyCap),
       (SeLe4n.Slot.ofNat 2, retypeCap)
     ]
-  }
   -- Insert the CNode and a fresh endpoint into the state
   let ep : KernelObject := .endpoint (Endpoint.ofQueues {} {})
   let stLocal := st1.withObjectStored cnodeId (.cnode cn)
@@ -1477,11 +1460,9 @@ private def runRegisterDecodeTrace (counter : IO.Ref Nat) (st1 : SystemState) : 
         cspaceRoot := rdtCn, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
         registerContext := validRegs })
       |>.withObject rdtEp (.endpoint {})
-      |>.withObject rdtCn (.cnode {
-        depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-        slots := SeLe4n.UniqueSlotMap.ofListWF [
+      |>.withObject rdtCn (.cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [
           (SeLe4n.Slot.ofNat 0, ({ target := .object rdtEp, rights := AccessRightSet.ofList [.read, .write], badge := none } : Capability))
-        ] })
+        ])))
       |>.withObject ⟨20⟩ (.vspaceRoot { asid := ⟨1⟩, mappings := {} })
       |>.withLifecycleObjectType rdtTid .tcb
       |>.withLifecycleObjectType rdtEp .endpoint
@@ -1513,11 +1494,9 @@ private def runRegisterDecodeTrace (counter : IO.Ref Nat) (st1 : SystemState) : 
         cspaceRoot := rdtCn, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
         registerContext := invalidSyscallRegs })
       |>.withObject rdtEp (.endpoint {})
-      |>.withObject rdtCn (.cnode {
-        depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-        slots := SeLe4n.UniqueSlotMap.ofListWF [
+      |>.withObject rdtCn (.cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [
           (SeLe4n.Slot.ofNat 0, ({ target := .object rdtEp, rights := AccessRightSet.ofList [.read, .write], badge := none } : Capability))
-        ] })
+        ])))
       |>.withObject ⟨20⟩ (.vspaceRoot { asid := ⟨1⟩, mappings := {} })
       |>.withLifecycleObjectType rdtTid .tcb
       |>.withLifecycleObjectType rdtEp .endpoint
@@ -1546,11 +1525,9 @@ private def runRegisterDecodeTrace (counter : IO.Ref Nat) (st1 : SystemState) : 
         cspaceRoot := rdtCn, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
         registerContext := malformedMsgInfoRegs })
       |>.withObject rdtEp (.endpoint {})
-      |>.withObject rdtCn (.cnode {
-        depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-        slots := SeLe4n.UniqueSlotMap.ofListWF [
+      |>.withObject rdtCn (.cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [
           (SeLe4n.Slot.ofNat 0, ({ target := .object rdtEp, rights := AccessRightSet.ofList [.read, .write], badge := none } : Capability))
-        ] })
+        ])))
       |>.withObject ⟨20⟩ (.vspaceRoot { asid := ⟨1⟩, mappings := {} })
       |>.withLifecycleObjectType rdtTid .tcb
       |>.withLifecycleObjectType rdtEp .endpoint
@@ -1594,12 +1571,9 @@ private def runSyscallDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState) :
       |>.withObject ksdEpId (.endpoint {})
       -- WS-RR RR8.16 (`v0.35.201`): two addressable slots — the decoded
       -- register arguments below name destination slot 1.
-      |>.withObject ksdCnodeId (.cnode {
-        depth := 1, guardWidth := 0, guardValue := 0, radixWidth := 1
-        slots := SeLe4n.UniqueSlotMap.ofListWF [
+      |>.withObject ksdCnodeId (.cnode (SeLe4n.Model.CNode.ofSlots 1 0 0 1 (SeLe4n.UniqueSlotMap.ofListWF [
           (SeLe4n.Slot.ofNat 0, { target := .object ksdEpId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
-        ]
-      })
+        ])))
       |>.withLifecycleObjectType ksdEpId .endpoint
       |>.withLifecycleObjectType ksdCnodeId .cnode
       |>.buildChecked)
@@ -1716,9 +1690,7 @@ private def runSyscallDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState) :
           cspaceRoot := ksdMapCnode, vspaceRoot := ksdVspaceId,
           ipcBuffer := (SeLe4n.VAddr.ofNat 4096) })
       |>.withLifecycleObjectType ksdMapCaller.toObjId .tcb
-      |>.withObject ksdMapCnode (.cnode {
-          depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-          slots := SeLe4n.UniqueSlotMap.ofListWF [(SeLe4n.Slot.ofNat 0, ksdFrameCap)] })
+      |>.withObject ksdMapCnode (.cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [(SeLe4n.Slot.ofNat 0, ksdFrameCap)])))
       |>.withLifecycleObjectType ksdMapCnode .cnode
       |>.withObject ksdFrameId (.frame { base := SeLe4n.PAddr.ofNat 8192 })
       |>.withLifecycleObjectType ksdFrameId .frame
@@ -1830,13 +1802,11 @@ private def runCheckedPipelineTrace (counter : IO.Ref Nat) (_st1 : SystemState) 
         registerContext := pipeRegs })
       |>.withObject pipeEp (.endpoint {})
       |>.withObject pipeNtfn (.notification { state := .idle })
-      |>.withObject pipeCn (.cnode {
-        depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-        slots := SeLe4n.UniqueSlotMap.ofListWF [
+      |>.withObject pipeCn (.cnode (CNode.ofList 4 0 0 4 [
           (SeLe4n.Slot.ofNat 0, ({ target := .object pipeEp, rights := AccessRightSet.ofList [.read, .write], badge := none } : Capability)),
           (SeLe4n.Slot.ofNat 1, ({ target := .object pipeNtfn, rights := AccessRightSet.ofList [.read, .write], badge := none } : Capability)),
           (SeLe4n.Slot.ofNat 2, ({ target := .object pipeCn, rights := AccessRightSet.ofList [.read], badge := none } : Capability))
-        ] })
+        ]))
       |>.withObject pipeVs (.vspaceRoot { asid := ⟨1⟩, mappings := {} })
       |>.withLifecycleObjectType pipeTid .tcb
       |>.withLifecycleObjectType pipeEp .endpoint
@@ -1915,12 +1885,9 @@ private def runCspaceMoveTrace (counter : IO.Ref Nat) (_st1 : SystemState) : IO 
       |>.withObject moveEpId (.endpoint {})
       -- WS-RR RR8.16 (`v0.35.201`): four addressable slots — the decoded move
       -- arguments below name destination slot 2.
-      |>.withObject moveCnId (.cnode {
-        depth := 2, guardWidth := 0, guardValue := 0, radixWidth := 2
-        slots := SeLe4n.UniqueSlotMap.ofListWF [
+      |>.withObject moveCnId (.cnode (SeLe4n.Model.CNode.ofSlots 2 0 0 2 (SeLe4n.UniqueSlotMap.ofListWF [
           (SeLe4n.Slot.ofNat 0, ({ target := .object moveEpId, rights := AccessRightSet.ofList [.read, .write], badge := none } : Capability))
-        ]
-      })
+        ])))
       |>.withLifecycleObjectType moveEpId .endpoint
       |>.withLifecycleObjectType moveCnId .cnode
       |>.buildChecked)
@@ -2062,12 +2029,9 @@ private def runEndpointLifecycleTrace (counter : IO.Ref Nat) (st1 : SystemState)
   let lcAuthSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨10⟩, slot := SeLe4n.Slot.ofNat 0 }
   -- Fresh endpoint and CNode with authority cap for lifecycle retype
   let lcEp : KernelObject := .endpoint (Endpoint.ofQueues {} {})
-  let lcCnode : KernelObject := .cnode {
-    depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0,
-    slots := SeLe4n.UniqueSlotMap.ofListWF [
+  let lcCnode : KernelObject := .cnode (SeLe4n.Model.CNode.ofSlots 0 0 0 0 (SeLe4n.UniqueSlotMap.ofListWF [
       (SeLe4n.Slot.ofNat 0, ({ target := .object lcEpId, rights := AccessRightSet.ofList [.read, .write, .retype], badge := none } : Capability))
-    ]
-  }
+    ]))
   -- Build state with lifecycle metadata
   let stBase : SystemState :=
     (BootstrapBuilder.empty
@@ -3329,7 +3293,7 @@ private def buildParameterizedTopology
   let cnodeSlots : List (SeLe4n.Slot × Capability) :=
     (List.range threadCount).map fun i =>
       (SeLe4n.Slot.ofNat i, { target := .object ⟨1000 + i⟩, rights := AccessRightSet.ofList [.read, .write], badge := none })
-  let cnodeObj : KernelObject := .cnode { depth := radix, guardWidth := 0, guardValue := 0, radixWidth := radix, slots := SeLe4n.UniqueSlotMap.ofListWF cnodeSlots }
+  let cnodeObj : KernelObject := .cnode (CNode.ofList radix 0 0 radix cnodeSlots)
   let vspaceRoots : List (SeLe4n.ObjId × KernelObject) :=
     (List.range asidCount).map fun i =>
       let oid : SeLe4n.ObjId := ⟨3000 + i⟩

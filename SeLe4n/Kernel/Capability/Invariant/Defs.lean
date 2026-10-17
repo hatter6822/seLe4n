@@ -1040,7 +1040,9 @@ theorem cspaceDepthConsistent_of_storeObject_insertCNode
   by_cases hEq : cnodeId = targetOid
   · rw [hEq] at hObj
     rw [storeObject_objects_eq st st' targetOid _ hObjInv hStore] at hObj; cases hObj
-    exact hDepth targetOid preCn hPreObj
+    simpa only [CNode.wellFormed, CNode.bitsConsumed, CNode.guardBounded, CNode.insert_depth,
+      CNode.insert_guardWidth, CNode.insert_guardValue, CNode.insert_radixWidth]
+      using hDepth targetOid preCn hPreObj
   · rw [storeObject_objects_ne st st' targetOid cnodeId _ hEq hObjInv hStore] at hObj
     exact hDepth cnodeId cn hObj
 
@@ -1067,7 +1069,7 @@ private theorem CNode.remove_slots_sub (cn : CNode) (slot : SeLe4n.Slot)
     ∀ (s : SeLe4n.Slot) (cap : Capability),
       (cn.remove slot).slots.get? s = some cap → cn.slots.get? s = some cap := by
   intro s cap hLookup
-  simp only [CNode.remove, SeLe4n.UniqueSlotMap.get?,
+  simp only [CNode.slots_remove, SeLe4n.UniqueSlotMap.get?,
     SeLe4n.UniqueSlotMap.erase] at hLookup
   by_cases h : (slot == s) = true
   · -- s = slot: erase returns none, contradicting some cap
@@ -1099,19 +1101,9 @@ private theorem CNode.revokeTargetLocal_slots_sub (cn : CNode) (sourceSlot : SeL
       (cn.revokeTargetLocal sourceSlot target).slots.get? s = some cap →
       cn.slots.get? s = some cap := by
   intro s cap hLookup
-  simp only [CNode.revokeTargetLocal, SeLe4n.UniqueSlotMap.get?,
+  simp only [CNode.revokeTargetLocal, CNode.slots_filterSlots, SeLe4n.UniqueSlotMap.get?,
     SeLe4n.UniqueSlotMap.filter] at hLookup
   exact SeLe4n.Kernel.RobinHood.RHTable.filter_get_subset cn.slots.table _ s cap hUniq.1 hLookup
-
-/-- WS-H13: CNode.insert preserves depth/guardWidth/radixWidth. -/
-private theorem CNode.insert_depth_eq (cn : CNode) (slot : SeLe4n.Slot) (cap : Capability) :
-    (cn.insert slot cap).depth = cn.depth := rfl
-
-private theorem CNode.insert_guardWidth_eq (cn : CNode) (slot : SeLe4n.Slot) (cap : Capability) :
-    (cn.insert slot cap).guardWidth = cn.guardWidth := rfl
-
-private theorem CNode.insert_radixWidth_eq (cn : CNode) (slot : SeLe4n.Slot) (cap : Capability) :
-    (cn.insert slot cap).radixWidth = cn.radixWidth := rfl
 
 /-- WS-H4: CDT-only state update preserves cspaceSlotCountBounded and cdtCompleteness.
 Used for `{ st with cdt := cdt' }` where objects and cdtNodeSlot are unchanged. -/

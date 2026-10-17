@@ -53,21 +53,9 @@ def KernelObject.unshare (o : KernelObject) : KernelObject := o
 
 @[simp] theorem KernelObject.unshare_eq (o : KernelObject) : o.unshare = o := rfl
 
-/-- A slot map whose table is unshared. -/
-def _root_.SeLe4n.UniqueSlotMap.unshareImpl {V : Type} (m : SeLe4n.UniqueSlotMap V) :
-    SeLe4n.UniqueSlotMap V :=
-  { table := m.table.unshareImpl
-    hWF := (RHTable.unshareImpl_eq m.table).symm ▸ m.hWF }
-
-theorem _root_.SeLe4n.UniqueSlotMap.unshareImpl_eq {V : Type} (m : SeLe4n.UniqueSlotMap V) :
-    m.unshareImpl = m := by
-  cases m with
-  | mk table hWF =>
-    simp only [SeLe4n.UniqueSlotMap.unshareImpl, RHTable.unshareImpl_eq]
-
 /-- `KernelObject.unshare` as compiled.  Each record is rebuilt with one field
 passed through `opaqueId`, so a shared record is copied and an exclusive one
-written in place; a thread's register file, a CNode's slot table and a VSpace
+written in place; a thread's register file, a CNode's slot array and a VSpace
 root's mapping and epoch tables are rebuilt the same way. -/
 def KernelObject.unshareImpl : KernelObject → KernelObject
   | .tcb t => .tcb { t with
@@ -75,7 +63,13 @@ def KernelObject.unshareImpl : KernelObject → KernelObject
       registerContext := { t.registerContext with x0 := opaqueId t.registerContext.x0 } }
   | .endpoint e => .endpoint { e with sendHeadCode := opaqueId e.sendHeadCode }
   | .notification n => .notification { n with state := opaqueId n.state }
-  | .cnode c => .cnode { c with depth := opaqueId c.depth, slots := c.slots.unshareImpl }
+  | .cnode c => .cnode { c with
+      depth := opaqueId c.depth
+      cells := c.cells.map opaqueId
+      cells_size := by rw [Array.size_map]; exact c.cells_size
+      slots_agree := by
+        have h : (opaqueId : Option Capability → Option Capability) = id := rfl
+        rw [h, Array.map_id]; exact c.slots_agree }
   | .vspaceRoot v => .vspaceRoot { v with
       asid := opaqueId v.asid
       mappings := v.mappings.unshare
@@ -89,8 +83,9 @@ def KernelObject.unshareImpl : KernelObject → KernelObject
 @[csimp] theorem KernelObject.unshare_eq_impl :
     @KernelObject.unshare = @KernelObject.unshareImpl := by
   funext o
+  have hId : (opaqueId : Option Capability → Option Capability) = id := rfl
   cases o <;>
-    simp only [KernelObject.unshare, KernelObject.unshareImpl, opaqueId,
-      SeLe4n.UniqueSlotMap.unshareImpl_eq, RHTable.unshare]
+    simp only [KernelObject.unshare, KernelObject.unshareImpl, hId, Array.map_id, opaqueId,
+      RHTable.unshare]
 
 end SeLe4n.Model

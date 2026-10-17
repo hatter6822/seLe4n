@@ -1023,9 +1023,8 @@ empty, which is agreement about nothing. -/
 private def diffAddCSpace (ist : IntermediateState)
     (caps : List (SeLe4n.Slot × Capability)) : IntermediateState :=
   Builder.createObject ist diffCnId
-    (.cnode { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-              slots := SeLe4n.UniqueSlotMap.ofListWF caps })
-    (fun _ h => by cases h; exact (SeLe4n.UniqueSlotMap.ofListWF caps).hWF)
+    (.cnode (CNode.ofList 4 0 0 4 caps))
+    (fun _ h => by cases h; exact SeLe4n.Model.CNode.slotsUnique_holds _)
     (fun _ h => nomatch h)
 
 /-- The capability naming `oid`, as an actor's CSpace would hold it. -/

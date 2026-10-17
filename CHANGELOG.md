@@ -1,3 +1,60 @@
+## v0.36.102 — WS-ZA ZA5.3 part 1: a CNode's slots are a fixed array
+
+A CNode now holds its slots as seL4 does: an array of `2 ^ radixWidth` cells,
+one per addressable slot, made when the CNode is created.  Insert and remove
+write the slot's cell in place, so a copy, move, mint or delete builds no
+slot-table entry.
+
+- **`CNode.cells`** (`Model/Object/Types.lean`) is the executable state.  The
+  slot map the theorems read, `CNode.slots`, is ghost state
+  (`SeLe4n.Erased`): the compiled kernel never stores it.  `CNode.slots_agree`
+  ties the two (every lookup answers alike), so compiled code reads the array
+  (`CNode.lookup_eq_lookupCells`) and every slot walk is one fold over it
+  (`CNode.foldCells`, `CNode.allCells`, the compiled form of
+  `CNode.allSlots`).  The walk counts down one step per cell structurally, so
+  the boot-configuration proofs still evaluate the boot checks by `decide`.
+  `CNode.ofSlots` builds a CNode from a map of its geometry's slots.
+- **The slot-count bound is a theorem.**  A CNode's slots are distinct indices
+  below `2 ^ radixWidth`, so `CNode.slotCountBounded_holds` proves it holds at
+  most `slotCount` capabilities, by pigeonhole
+  (`RHTable.size_le_length_of_keys_mem`).  The boot CNode check no longer
+  counts slots.  The capability bundle's `cspaceSlotCountBounded` conjunct is
+  now redundant; the plan's ZA5.3 part 4 retires it with the hypotheses that
+  carry it.
+- **The frozen radix tree is the slot array.**  `CNodeRadix.ofCNode` equals
+  `CNodeRadix.ofCNodeCells` (`CNodeRadix.ofCNode_eq_impl`), so the freeze reads
+  the array; the key-bounds check it ran before
+  (`freezeCNodeSlotsChecked`, `buildCNodeRadixChecked`, `allKeysBounded`) is
+  retired, since every slot is in range by construction.
+- **Readers moved to the array**: the page teardown and page-table install
+  scans, the boot checks, the frozen-state agreement check, the cleanup and
+  revoke detach folds, `holdsFrameMappingRecord` and `BEq CNode` (geometry and
+  cells).  The trace harness and suites build CNodes with `CNode.ofSlots` and
+  read them through `CNode.lookup`, `CNode.occupiedCount` and
+  `CNode.occupiedSlots`.  `UniqueSlotMap.unshareImpl` is retired: `unshare`
+  rebuilds the slot array.
+- **QEMU exerciser, normal build, first call / steady state, v0.36.101 →
+  v0.36.102**: every pin moves down.
+
+  | scenario | v0.36.101 | v0.36.102 |
+  |---|---|---|
+  | CSpace copy | 55 / 47 | 52 / 44 |
+  | CSpace move | 45 / 45 | 40 / 40 |
+  | CSpace delete | 41 / 41 | 39 / 39 |
+  | CSpace mint | 51 / 51 | 48 / 48 |
+  | CSpace revoke | 48 / 48 | 46 / 46 |
+  | reply-cap delete / mint | 38 / 48 | 36 / 45 |
+  | page-table retype 1 / 2 / 3 (first call) | 98 / 89 / 159 | 95 / 86 / 88 |
+  | frame retype | 108 / 110 | 105 / 107 |
+  | VSpace map | 109 / 108 | 107 / 106 |
+  | frame delete | 62 / 64 | 60 / 62 |
+  | page-table delete 3 / 2 / 1 | 50 / 42 / 36 | 48 / 40 / 34 |
+
+  The first page-table retype after boot no longer copies the root CNode's
+  slot table (159 → 88).  Parts 2 to 4 (the capability as words, the
+  derivation links in the slots, the ghost tree) take the capability
+  operations to 0.
+
 ## v0.36.101 — WS-ZA: a deleted capability leaves the derivation tree, as seL4's cteDelete (security)
 
 **Security (Medium): a thread holding a CNode capability with copy rights

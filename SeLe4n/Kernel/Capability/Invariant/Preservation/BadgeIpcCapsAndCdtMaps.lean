@@ -98,7 +98,8 @@ theorem cspaceMint_preserves_badgeWellFormed
           (fun slot' cap' badge' hLk hBdg => by
             by_cases hSlotEq : dst.slot = slot'
             · subst hSlotEq
-              rw [CNode.lookup_insert_eq cn dst.slot child hUniq] at hLk
+              rw [CNode.lookup_insert_eq cn dst.slot child hUniq
+                (CNode.slotAddressable_of_lookup_insert _ _ _ _ _ hLk)] at hLk
               cases hLk; rw [hChildBadge] at hBdg
               exact hBadgeValid badge' hBdg
             · rw [CNode.lookup_insert_ne cn dst.slot slot' child hSlotEq hUniq] at hLk
@@ -154,7 +155,8 @@ theorem cspaceMutate_preserves_badgeWellFormed
                   by_cases hSlotEq : addr.slot = slot'
                   · -- The mutated slot
                     subst hSlotEq
-                    rw [CNode.lookup_insert_eq cn addr.slot _ hUniq] at hLk; cases hLk
+                    rw [CNode.lookup_insert_eq cn addr.slot _ hUniq
+                      (CNode.slotAddressable_of_lookup_insert _ _ _ _ _ hLk)] at hLk; cases hLk
                     -- mutatedCap.badge = badge.or pair.1.badge
                     cases hBadge : badge with
                     | some b =>
@@ -536,8 +538,8 @@ theorem cspaceRevoke_preserves_cdtMapsConsistent
   suffices (detachRevokedSlots stS addr.cnode cn addr.slot parent.target).cdt.mapsWellFormed from
     ⟨this.1, this.2.1⟩
   unfold detachRevokedSlots
-  refine SeLe4n.Kernel.RobinHood.RHTable.fold_preserves cn.slots.table stS _
-    (fun acc => acc.cdt.mapsWellFormed) hS (fun acc slot cap hAcc => ?_)
+  refine SeLe4n.Model.CNode.foldCells_preserves cn stS _
+    (fun acc => acc.cdt.mapsWellFormed) hS (fun acc slot cap _ hAcc => ?_)
   split
   · exact hAcc
   · exact detachDestroyedSlot_preserves_mapsWellFormed acc _ hAcc

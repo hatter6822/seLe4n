@@ -133,6 +133,67 @@ instance [Inhabited V] : GetElem? (UniqueSlotMap V) SeLe4n.Slot V (fun _ _ => Tr
     (f : SeLe4n.Slot → V → Bool) :
     (u.filter f).table = u.table.filter f := rfl
 
+/-! ## Lookup lemmas
+
+WS-ZA ZA5.3: what a lookup answers after each smart constructor, stated over
+`get?` so a CNode's slot array can be shown to agree with its map. -/
+
+theorem get?_empty (s : SeLe4n.Slot) : (empty : UniqueSlotMap V).get? s = none :=
+  RHTable.getElem?_empty 16 (by omega) s
+
+theorem get?_insert (u : UniqueSlotMap V) (k s : SeLe4n.Slot) (c : V) :
+    (u.insert k c).get? s = if k = s then some c else u.get? s := by
+  by_cases h : k = s
+  · subst h; simp only [if_true]
+    exact RHTable.getElem?_insert_self _ _ _ u.hWF.1
+  · simp only [h, if_false]
+    exact RHTable.getElem?_insert_ne _ _ _ _ (by simpa using h) u.hWF.1
+
+theorem get?_erase (u : UniqueSlotMap V) (k s : SeLe4n.Slot) :
+    (u.erase k).get? s = if k = s then none else u.get? s := by
+  by_cases h : k = s
+  · subst h; simp only [if_true]
+    exact RHTable.getElem?_erase_self _ _ u.hWF.1
+  · simp only [h, if_false]
+    exact RHTable.getElem?_erase_ne_K _ _ _ (by simpa using h) u.hWF
+
+theorem get?_filter (u : UniqueSlotMap V) (f : SeLe4n.Slot → V → Bool)
+    (s : SeLe4n.Slot) :
+    (u.filter f).get? s = (u.get? s).filter (f s) := by
+  show (u.table.filter f).get? s = (u.table.get? s).filter (f s)
+  cases h : (u.table.filter f).get? s with
+  | none =>
+    cases h' : u.table.get? s with
+    | none => rfl
+    | some v =>
+      by_cases hf : f s v = true
+      · have := (RHTable.filter_getElem?_iff u.table f s v u.hWF.1).2 ⟨h', hf⟩
+        rw [h] at this; cases this
+      · simp [Option.filter, hf]
+  | some v =>
+    have ⟨h1, h2⟩ := (RHTable.filter_getElem?_iff u.table f s v u.hWF.1).1 h
+    simp [h1, Option.filter, h2]
+
+/-- A map built from a literal list whose slots all lie below `2 ^ rw` holds
+nothing at or past `2 ^ rw`. -/
+theorem get?_ofListWF_of_bounded (rw : Nat) (xs : List (SeLe4n.Slot × V))
+    (h : xs.all (fun p => decide (p.1.toNat < 2 ^ rw)) = true) :
+    ∀ s : SeLe4n.Slot, 2 ^ rw ≤ s.toNat → (ofListWF xs).get? s = none := by
+  intro s hs
+  unfold ofListWF
+  suffices ∀ acc : UniqueSlotMap V, acc.get? s = none →
+      (xs.foldl (fun acc kv => acc.insert kv.1 kv.2) acc).get? s = none from
+    this _ (get?_empty s)
+  induction xs with
+  | nil => intro acc hAcc; simpa using hAcc
+  | cons x xs ih =>
+    intro acc hAcc
+    simp only [List.all_cons, Bool.and_eq_true, decide_eq_true_eq] at h
+    simp only [List.foldl_cons]
+    apply ih h.2
+    have hNe : x.1 ≠ s := by intro e; subst e; omega
+    rw [get?_insert]; simp [hNe, hAcc]
+
 /-! ## Witness theorems for the WS-RC R4.A discharge index -/
 
 /-- WS-RC R4.A / DEEP-MODEL-01: every `UniqueSlotMap` has unique keys

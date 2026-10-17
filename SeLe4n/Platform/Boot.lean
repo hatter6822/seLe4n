@@ -842,8 +842,8 @@ def notificationReferencesReservedIdleSlot (notif : Notification) : Bool :=
     (`capTargetsReservedIdleObject`). -/
 def cnodeReferencesReservedIdleSlot (cn : CNode) : Bool :=
   match cn with
-  | ⟨_depth, _guardWidth, _guardValue, _radixWidth, slots⟩ =>
-    slots.toList.any (fun s => SeLe4n.Kernel.capTargetsReservedIdleObject s.2)
+  | ⟨_depth, _guardWidth, _guardValue, _radixWidth, _slotsGhost, _cells, _, _⟩ =>
+    !(cn.allCells fun _ cap => !SeLe4n.Kernel.capTargetsReservedIdleObject cap)
 
 /-- PR #889 review round 8: every field of a boot **TCB** that can hold an
     object, thread, scheduling-context or reply id, classified one by one.
@@ -1746,24 +1746,27 @@ def bootSafeCapCheck (cap : Capability) : Bool :=
 
 /-- A boot **CNode** is structurally well-formed, and every capability it holds
     passes `bootSafeCapCheck`.  The structural conditions are over derived
-    projections (`slotCount`, `bitsConsumed`, `guardBounded`), which the
-    pattern's fields determine; the per-capability condition is a fold over the
-    slots, read back per lookup by `RHTable.fold_and_true_of_get?`. -/
+    projections (`bitsConsumed`, `guardBounded`), which the pattern's fields
+    determine; the slot count needs no check, since every CNode holds at most
+    `slotCount` capabilities (`CNode.slotCountBounded_holds`).  The
+    per-capability condition walks the slot array, so `decide` evaluates it on
+    a configured CNode; `bootSafeCnodeCheck_def` reads it back as a fold over
+    the slot map (`CNode.allSlots_eq_allCells`). -/
 def bootSafeCnodeCheck (cn : CNode) : Bool :=
   match cn with
-  | ⟨_depth, _guardWidth, _guardValue, _radixWidth, _slots⟩ =>
-    decide (cn.slots.size ≤ cn.slotCount) &&
+  | ⟨_depth, _guardWidth, _guardValue, _radixWidth, _slotsGhost, _cells, _, _⟩ =>
     decide (cn.depth ≤ maxCSpaceDepth) &&
     decide (cn.bitsConsumed > 0 → cn.bitsConsumed ≤ cn.depth ∧ 0 < cn.bitsConsumed ∧ cn.guardBounded) &&
-    cn.slots.fold true (fun acc _ cap => acc && bootSafeCapCheck cap)
+    cn.allCells (fun _ cap => bootSafeCapCheck cap)
 
 @[simp] theorem bootSafeCnodeCheck_def (cn : CNode) :
     bootSafeCnodeCheck cn =
-      (decide (cn.slots.size ≤ cn.slotCount) &&
-       decide (cn.depth ≤ maxCSpaceDepth) &&
+      (decide (cn.depth ≤ maxCSpaceDepth) &&
        decide (cn.bitsConsumed > 0 →
          cn.bitsConsumed ≤ cn.depth ∧ 0 < cn.bitsConsumed ∧ cn.guardBounded) &&
-       cn.slots.fold true (fun acc _ cap => acc && bootSafeCapCheck cap)) := rfl
+       cn.slots.fold true (fun acc _ cap => acc && bootSafeCapCheck cap)) := by
+  unfold bootSafeCnodeCheck
+  rw [← CNode.allSlots_eq_allCells]
 
 /-- **WS-BP BP3.5**: what a passed CNode check says of each capability. -/
 theorem bootSafeCnodeCheck_caps {cn : CNode}
@@ -2061,11 +2064,11 @@ private theorem bootSafeObjectCheck_sound_core (obj : KernelObject)
   | cnode cn =>
     simp only [bootSafeObjectCheck, bootSafeCnodeCheck_def, Bool.and_eq_true,
       decide_eq_true_eq] at h
-    obtain ⟨⟨⟨hSlots, hDepth⟩, hWf⟩, hCaps⟩ := h
+    obtain ⟨⟨hDepth, hWf⟩, hCaps⟩ := h
     exact ⟨fun _ he => by injection he, fun _ he => by injection he,
            fun c hc => by
              injection hc; subst_vars
-             exact ⟨hSlots, hDepth, hWf,
+             exact ⟨CNode.slotCountBounded_holds _, hDepth, hWf,
                fun _ _ badge hL hB => (bootSafeCnodeCheck_caps hCaps hL).1 badge hB,
                fun _ _ rid hL => (bootSafeCnodeCheck_caps hCaps hL).2.1 rid⟩,
            fun _ he => by injection he, fun _ he => by injection he,

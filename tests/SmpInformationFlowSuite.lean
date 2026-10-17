@@ -3037,8 +3037,7 @@ private def highSlotCap : Capability :=
   { target := .object highEndpoint, rights := AccessRightSet.ofList [.read] }
 /-- The raw CNode the fixture stores (both slots present, unredacted). -/
 private def probeCNodeValue : CNode :=
-  { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-    slots := SeLe4n.UniqueSlotMap.ofListWF [(lowSlot, lowSlotCap), (highSlot, highSlotCap)] }
+  (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [(lowSlot, lowSlotCap), (highSlot, highSlotCap)]))
 
 /-- The CSpace root every fixture TCB names.
 
@@ -3050,8 +3049,7 @@ an unreachable state.  Both roots are therefore real objects, and §3.0 checks
 the well-formedness that makes them necessary.  Empty slots: this root exists to
 be *referenced*, and the redaction probe is `probeCNode`. -/
 private def rootCNodeValue : CNode :=
-  { depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8,
-    slots := SeLe4n.UniqueSlotMap.ofListWF [] }
+  (SeLe4n.Model.CNode.ofSlots 8 0 0 8 (SeLe4n.UniqueSlotMap.ofListWF []))
 
 /-- The VSpace root every fixture TCB names.  Its ASID is distinct from any
 other in the fixture (it is the only VSpaceRoot), so the builder's ASID
@@ -3745,7 +3743,7 @@ private def runCNodeRedactionChecks : IO Unit := do
     (have _h : (projectCNode probeLabeling highObserver probeCNodeValue).lookup lowSlot
         = some lowSlotCap :=
       projectCNode_lookup_monotone probeLabeling lowLabel_flowsTo_highLabel probeCNodeValue
-        lowSlot lowSlotCap (by decide)
+        lowSlot lowSlotCap (by first | decide | (simp only [SeLe4n.Model.CNode.lookup_eq_lookupCells]; decide))
      true)
   -- The same story at the observable-state layer, on every core.
   assertBool "the observable CNode IS the filtered CNode, on every core (theorem level)"
@@ -3754,7 +3752,7 @@ private def runCNodeRedactionChecks : IO Unit := do
           = some (.cnode (projectCNode probeLabeling (IfObserver.ofLabel lowLabel)
               probeCNodeValue)) :=
         onCore_objects_cnode probeLabeling c lowLabel probeState probeCNode probeCNodeValue
-          probeState_holds_probeCNode (by decide)
+          probeState_holds_probeCNode (by first | decide | (simp only [SeLe4n.Model.CNode.lookup_eq_lookupCells]; decide))
       true))
   assertBool "END-TO-END: through the observable state the low observer sees only the low slot"
     (allCores.all (fun c =>
@@ -3774,11 +3772,11 @@ private def runCNodeRedactionChecks : IO Unit := do
           (ObservableState.onCore probeLabeling c highLabel probeState).objects probeCNode
             = some (.cnode cn₂) ∧ cn₂.lookup lowSlot = some lowSlotCap :=
         onCore_objects_cnode_slot_monotone probeLabeling c lowLabel_flowsTo_highLabel probeState
-          probeCNode probeCNodeValue lowSlot lowSlotCap probeState_holds_probeCNode (by decide)
+          probeCNode probeCNodeValue lowSlot lowSlotCap probeState_holds_probeCNode (by first | decide | (simp only [SeLe4n.Model.CNode.lookup_eq_lookupCells]; decide))
           (fun cn₁ h => by
             rw [onCore_objects_cnode probeLabeling c lowLabel probeState probeCNode
-              probeCNodeValue probeState_holds_probeCNode (by decide)] at h
-            injection h with h; injection h with h; subst h; decide)
+              probeCNodeValue probeState_holds_probeCNode (by first | decide | (simp only [SeLe4n.Model.CNode.lookup_eq_lookupCells]; decide))] at h
+            injection h with h; injection h with h; subst h; first | decide | (simp only [SeLe4n.Model.CNode.lookup_eq_lookupCells]; decide))
       true))
   -- Capability-target observability: all three CapTarget arms.
   assertBool "capTargetObservable gates .object by the target's label"
@@ -5770,14 +5768,13 @@ carries the retype authority on it (the lifecycle case). -/
 private def declassChainCNode : SeLe4n.ObjId := ⟨1033⟩
 
 private def declassChainCNodeValue : CNode :=
-  { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-    slots := SeLe4n.UniqueSlotMap.ofListWF
+  (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF
       [(SeLe4n.Slot.ofNat 2,
         { target := .object declassTargetA,
           rights := AccessRightSet.ofList [.read, .write] }),
        (SeLe4n.Slot.ofNat 4,
         { target := .object declassTargetA,
-          rights := AccessRightSet.ofList [.retype] })] }
+          rights := AccessRightSet.ofList [.retype] })]))
 
 /-- PR #874 review — stage a syscall in a thread's registers exactly as the
 boundary would: `x0` the capability pointer, `x1` the msgInfo word, `x2`-`x4`
@@ -7671,8 +7668,7 @@ private def suspendSlotCap : Capability :=
 /-- Depth 4 = `radixWidth`, so resolution consumes every bit in one step and the
 leaf **is** this root — the single-level resolution `entryCapTarget` requires. -/
 private def suspendCNodeValue : CNode :=
-  { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-    slots := SeLe4n.UniqueSlotMap.ofListWF [(suspendSlot, suspendSlotCap)] }
+  (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [(suspendSlot, suspendSlotCap)]))
 
 private def suspendCallerTcb : TCB :=
   { mkTcb 1011 50 (some c1) with
@@ -10253,8 +10249,7 @@ private def declassNotifSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 2
 private def declassNotifCap : Capability :=
   { target := .object highNotification, rights := AccessRightSet.ofList [.write] }
 private def declassCapCNodeValue : CNode :=
-  { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-    slots := SeLe4n.UniqueSlotMap.ofListWF [(declassNotifSlot, declassNotifCap)] }
+  (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [(declassNotifSlot, declassNotifCap)]))
 private def declassSeamState : SystemState :=
   { declassSignalState with
       objects := (declassSignalState.objects.insert declassCapCNode
@@ -10666,10 +10661,8 @@ private def replyLegState : SystemState :=
   { successEntryState with
       objects :=
         (successEntryState.objects.insert probeCNode
-          (.cnode { probeCNodeValue with
-              slots := SeLe4n.UniqueSlotMap.ofListWF
-                [(lowSlot, lowSlotCap), (highSlot, highSlotCap),
-                 (replyLegSlot, replyLegCap)] })).insert replyLegReply.toObjId
+          (.cnode (probeCNodeValue.insert replyLegSlot replyLegCap))).insert
+            replyLegReply.toObjId
           (.reply { replyId := replyLegReply, callerCode := SeLe4n.ThreadId.optCode (some lowCurrent) }),
       declassificationTaint :=
         SeLe4n.Kernel.TaintTable.empty.joinAt highCurrent.toObjId

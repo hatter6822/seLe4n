@@ -164,12 +164,6 @@ def buildValidated (builder : BootstrapBuilder) : Except String SystemState :=
       !builder.objects.any (fun (oid, obj) =>
         oid.toNat = tid.toNat && match obj with | .tcb _ => true | _ => false))
     .error s!"BuilderTestState check 3 failed: runnable thread(s) do not reference existing TCB(s): {bad}"
-  -- Check 4: CNode slot table capacity bounds
-  else if builder.objects.any (fun (_, obj) =>
-    match obj with
-    | .cnode cn => cn.slots.capacity < 4 || cn.slots.size >= cn.slots.capacity
-    | _ => false) then
-    .error "BuilderTestState check 4 failed: CNode slots violate capacity bounds (need 4 ≤ capacity, size < capacity)"
   -- Check 8 (PR #932 review): no supplied TCB already claims a run-queue
   -- place, so the fold over `runnable` builds the queue the builder names.
   else if builder.objects.any (fun (_, obj) =>

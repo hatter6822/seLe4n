@@ -174,9 +174,8 @@ private def witnessState : SystemState :=
   BootstrapBuilder.empty
     |>.withObject callerVsp (.vspaceRoot { asid := SeLe4n.ASID.ofNat 7, mappings := {} })
     |>.withObject callerCn (.cnode
-        { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-          slots := SeLe4n.UniqueSlotMap.ofListWF
-            [(SeLe4n.Slot.ofNat capPtrValue, ntfnCap)] })
+        (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF
+            [(SeLe4n.Slot.ofNat capPtrValue, ntfnCap)])))
     |>.withObject ntfnId (.notification
         { state := .idle, 
           hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCBCode := 0 })
@@ -260,14 +259,13 @@ transfer pair: the no-grant endpoint cap + the payload cap).  Slot 0 is
 deliberately free — it is the default `capRecvSlot` the granted transfer
 installs into. -/
 private def sharedCn : SeLe4n.Model.CNode :=
-  { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-    slots := SeLe4n.UniqueSlotMap.ofListWF
+  (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF
       [(SeLe4n.Slot.ofNat capPtrValue, ntfnCap),
        (SeLe4n.Slot.ofNat epCapPtr, epCap),
        (SeLe4n.Slot.ofNat replyCapPtr, replyCapability),
        (SeLe4n.Slot.ofNat selfTcbCapPtr, selfTcbCap),
        (SeLe4n.Slot.ofNat epCapNoGrantPtr, epCapNoGrant),
-       (SeLe4n.Slot.ofNat payloadCapPtr, payloadCapability)] }
+       (SeLe4n.Slot.ofNat payloadCapPtr, payloadCapability)]))
 
 /-- Two threads on two cores: `callerTid` current on the boot core (the
 thread that blocks), `peerTid` current on core 1 (the thread whose
@@ -588,7 +586,7 @@ private def capsSendScenario (epPtr : Nat) :
     | some tcb => (tcb.pendingMessage.map (·.caps.size)).getD 0
     | none => 0
   let slot0Occupied := match st2.objects[callerCn]? with
-    | some (.cnode c) => (c.slots[SeLe4n.Slot.ofNat 0]?).isSome
+    | some (.cnode c) => ((c.lookup (SeLe4n.Slot.ofNat 0))).isSome
     | _ => false
   pure (stagedFrame st2 callerTid, deliveredCaps, slot0Occupied)
 
@@ -659,8 +657,7 @@ private def auditWitnessState : SystemState :=
   { (BootstrapBuilder.empty
       |>.withObject callerVsp (.vspaceRoot { asid := SeLe4n.ASID.ofNat 7, mappings := {} })
       |>.withObject callerCn (.cnode
-          { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-            slots := SeLe4n.UniqueSlotMap.ofListWF
+          (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF
               [(SeLe4n.Slot.ofNat capPtrValue, ntfnCap),
                (SeLe4n.Slot.ofNat auditCapPtr, auditCap),
                (SeLe4n.Slot.ofNat ordinaryCapPtr,
@@ -671,7 +668,7 @@ private def auditWitnessState : SystemState :=
                    rights := AccessRightSet.ofList [] }),
                (SeLe4n.Slot.ofNat readOnlyAuditCapPtr,
                  { target := .auditTrail,
-                   rights := AccessRightSet.ofList [.read] })] })
+                   rights := AccessRightSet.ofList [.read] })])))
       |>.withObject ntfnId (.notification
           { state := .idle, 
             hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCBCode := 0 })

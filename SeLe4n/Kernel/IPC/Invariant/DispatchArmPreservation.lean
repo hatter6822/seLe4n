@@ -1643,7 +1643,8 @@ theorem cspaceRecordFrameMapping_preserves_ipcInvariantFull
         simpa only [Option.some.injEq, KernelObject.cnode.injEq] using hCn'
       by_cases hSlot : addr.slot = slot
       · subst hSlot
-        rw [CNode.lookup_insert_eq cn addr.slot _ (CNode.slotsUnique_holds cn)] at hLk'
+        rw [CNode.lookup_insert_eq cn addr.slot _ (CNode.slotsUnique_holds cn)
+          (CNode.slotAddressable_of_lookup_insert _ _ _ _ _ hLk')] at hLk'
         cases hLk'
         exact hInv.badgeWellFormed.2 addr.cnode cn addr.slot cap badge (hK ▸ hPre) hLk hB
       · rw [CNode.lookup_insert_ne cn addr.slot slot _ hSlot
@@ -3315,8 +3316,8 @@ def retypeReplacementFresh : KernelObject → Prop
 theorem objectOfKernelType_replacementFresh (k : KernelObjectType) (n : Nat) :
     retypeReplacementFresh (objectOfKernelType k n) := by
   cases k <;>
-    simp [objectOfKernelType, retypeReplacementFresh, CNode.lookup,
-      UniqueSlotMap.get?, RobinHood.RHTable.getElem?_empty, Reply.empty]
+    simp [objectOfKernelType, retypeReplacementFresh, CNode.lookup, CNode.slots_ofSlots,
+      UniqueSlotMap.get?_filter, UniqueSlotMap.get?_empty, Reply.empty]
 
 /-- **`v0.35.187`**: and stamping the target's identity into it leaves it
 pristine — `KernelObject.withIdentity` writes the *identity* field and nothing

@@ -2513,6 +2513,7 @@ theorem vspaceMapFromFrameCap_ok_records (tid : SeLe4n.ThreadId) (executingCore 
   rw [hAt]
   simp only
   exact CNode.lookup_insert_eq cn frameSlot.slot _ (CNode.slotsUnique_holds cn)
+    (CNode.slotAddressable_of_lookup cn _ _ hLk)
 
 /-- V8-H/Z5-J/D1/AE1-A/AE1-B: Shared dispatch for capability-only syscalls — these 14 arms
 derive authority entirely from capability possession and require no

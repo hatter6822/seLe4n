@@ -250,12 +250,12 @@ def insertCap (ist : IntermediateState)
     : IntermediateState :=
   -- WS-RC R4.A: `cn.slots.insert slot cap` returns `UniqueSlotMap` directly;
   -- the `slotsUnique` discharge is structural via `(insert _ _ _).slots.hWF`.
-  createObject ist cnodeId (KernelObject.cnode { cn with slots := cn.slots.insert slot cap })
+  createObject ist cnodeId (KernelObject.cnode (cn.insert slot cap))
     (fun cn'' hEq => by
       cases hEq
       -- WS-RC R4.A: structural discharge.
       have _hSU := ist.hPerObjectSlots cnodeId cn hLookup
-      exact (cn.slots.insert slot cap).hWF)
+      exact (cn.insert slot cap).slots.hWF)
     (fun vs hEq => by cases hEq)
 
 -- ============================================================================

@@ -117,8 +117,8 @@ theorem cspaceRevoke_local_target_reduction
             -- Convert to get? form for RHTable bridge lemmas
             -- WS-RC R4.A: project to `.table` for the underlying RHTable bridge.
             have hFilterGet : (cn.slots.filter (fun s c => s == addr.slot || !(c.target == parent.target))).table.get? slot = some cap := by
-              rw [CNode.revokeTargetLocal, CNode.lookup] at hFilterLookup
-              simp only [SeLe4n.UniqueSlotMap.get?, SeLe4n.UniqueSlotMap.filter] at hFilterLookup
+              rw [CNode.revokeTargetLocal, CNode.lookup, CNode.slots_filterSlots] at hFilterLookup
+              simp only [SeLe4n.UniqueSlotMap.get?] at hFilterLookup
               exact hFilterLookup
             -- By filter_get_pred, the predicate holds for (slot, cap)
             have hPredTrue := SeLe4n.Kernel.RobinHood.RHTable.filter_get_pred cn.slots.table
@@ -154,7 +154,7 @@ private theorem cspaceInsertSlot_lookup_eq
     (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
     cspaceLookupSlot addr st' = .ok (cap, st') := by
   rcases addr with ⟨cnodeId, slot⟩
-  obtain ⟨cn, _, _, _, hStore⟩ := cspaceInsertSlot_ok_decompose st st' _ cap hStep
+  obtain ⟨cn, _, hAddr, _, hStore⟩ := cspaceInsertSlot_ok_decompose st st' _ cap hStep
   have hUniq := SeLe4n.Model.CNode.slotsUnique_holds cn
   simp only [SeLe4n.Model.storeObject] at hStore
   cases hStore
@@ -164,7 +164,7 @@ private theorem cspaceInsertSlot_lookup_eq
   simp only [cspaceLookupSlot, SystemState.lookupSlotCap, SystemState.lookupCNode,
     SystemState.getCNode?, RHTable_getElem?_eq_get?]
   rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
-  simp [CNode.lookup_insert_eq cn slot cap hUniq]
+  simp [CNode.lookup_insert_eq cn slot cap hUniq hAddr]
 
 theorem cspaceInsertSlot_establishes_ownsSlot
     (st st' : SystemState)

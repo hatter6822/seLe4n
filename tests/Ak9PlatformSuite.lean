@@ -1936,7 +1936,7 @@ def kernelEntry_boots_the_deployment_on_every_variant : IO Unit := do
           (decide (exts.length = ramUntypedCount gib))
         let rootSlots : List (SeLe4n.Slot × Capability) :=
           match ist.state.objects[rpi5RootTaskCNodeId]? with
-          | some (.cnode cn) => cn.slots.toList
+          | some (.cnode cn) => cn.occupiedSlots
           | _ => []
         for (e, i) in exts.zipIdx do
           let installed := match ist.state.objects[rpi5RootTaskUntypedId i]? with
