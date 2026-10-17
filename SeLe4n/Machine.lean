@@ -1759,6 +1759,57 @@ theorem zeroMemoryRange_zero_size_memory
   · rename_i h; omega
   · rfl
 
+/-- Whether the `n` bytes at `base, base + 1, …` all read zero.  A loop over the
+range's bytes that builds nothing. -/
+def rangeReadsZero (mem : Memory) (base : Nat) : Nat → Bool
+  | 0 => true
+  | n + 1 => if mem (PAddr.ofNat (base + n)) = 0 then rangeReadsZero mem base n else false
+
+theorem rangeReadsZero_spec {mem : Memory} {base : Nat} :
+    ∀ {n : Nat}, rangeReadsZero mem base n = true → ∀ k, k < n → mem (PAddr.ofNat (base + k)) = 0
+  | 0, _, k, hk => absurd hk (Nat.not_lt_zero k)
+  | n + 1, h, k, hk => by
+      unfold rangeReadsZero at h
+      split at h
+      · rename_i hz
+        rcases Nat.lt_succ_iff_lt_or_eq.mp hk with hlt | heq
+        · exact rangeReadsZero_spec h k hlt
+        · subst heq; exact hz
+      · exact absurd h (by simp)
+
+/-- **WS-ZA: zeroing a range that already reads zero changes nothing.**  The
+model's memory is a function, so `zeroMemoryRange` adds a closure to it on every
+call and the closure never collapses: a thread holding an untyped capability
+could grow the kernel heap without bound by carving and resetting the same page.
+A range whose every byte already reads zero is left as it is, so a zeroing adds
+a closure only over a byte some earlier write made non-zero. -/
+def zeroMemoryRangeImpl (ms : MachineState) (base : PAddr) (size : Nat) : MachineState :=
+  if rangeReadsZero ms.memory base.toNat size then ms else zeroMemoryRange ms base size
+
+/-- Zeroing a range that reads zero is the identity. -/
+theorem zeroMemoryRange_of_rangeReadsZero (ms : MachineState) (base : PAddr) (size : Nat)
+    (h : rangeReadsZero ms.memory base.toNat size = true) :
+    zeroMemoryRange ms base size = ms := by
+  have hMem : (fun addr : PAddr =>
+      if base.toNat ≤ addr.toNat ∧ addr.toNat < base.toNat + size then (0 : UInt8)
+      else ms.memory addr) = ms.memory := by
+    funext addr
+    split
+    · rename_i hIn
+      have hk := rangeReadsZero_spec h (addr.toNat - base.toNat) (by omega)
+      have hAddr : PAddr.ofNat (base.toNat + (addr.toNat - base.toNat)) = addr := by
+        cases addr; simp only [PAddr.ofNat, PAddr.toNat] at hIn ⊢; congr 1; omega
+      rw [hAddr] at hk; exact hk.symm
+    · rfl
+  simp only [zeroMemoryRange, hMem]
+
+@[csimp] theorem zeroMemoryRange_eq_impl : @zeroMemoryRange = @zeroMemoryRangeImpl := by
+  funext ms base size
+  unfold zeroMemoryRangeImpl
+  split
+  · rename_i h; exact zeroMemoryRange_of_rangeReadsZero ms base size h
+  · rfl
+
 -- ============================================================================
 -- AG3-G: System register read/write operations and frame lemmas
 -- ============================================================================
