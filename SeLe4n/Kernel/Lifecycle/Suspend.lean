@@ -405,13 +405,17 @@ def resumeThreadOnCore (st : SystemState) (vtid : SeLe4n.ValidThreadId) (executi
   | none => .error .invalidArgument
 
 /-- WS-ZA ZA5.2: the checks `.tcbResume` makes, asked before any write: the
-target is a TCB in `.Inactive` carrying no pending fault (a faulted thread's
-resume first answers its fault, `retirePendingFaultForResume`, and takes the
-general path).  When they pass the operation's state is `resumePerform`
-(`resumeThreadOnCore_of_admitted`). -/
+target is a TCB in `.Inactive`.  A thread carrying a pending fault has it
+answered first (`retirePendingFaultForResume`, one TCB write), and the check
+also asks that the TCB's slot is found where it lies, so that write reads back
+(`RHTable.findsInPlace`; it holds of every slot under the store's invariant).
+When they pass the operation's state is `resumePerform` of the answered state
+(`resumeThreadOnCore_of_admitted`, `resumeAdmitted_retirePendingFault`). -/
 @[inline] def resumeAdmitted (st : SystemState) (tid : SeLe4n.ThreadId) : Bool :=
   match st.getTcb? tid with
-  | some tcb => tcb.pendingFault.isNone && !(tcb.threadState != .Inactive)
+  | some tcb =>
+    !(tcb.threadState != .Inactive) &&
+      (tcb.pendingFault.isNone || st.objects.findsInPlace tid.toObjId)
   | none => false
 
 /-- WS-ZA ZA5.2: the resume once admitted.  The home core and the thread's
@@ -441,7 +445,7 @@ theorem resumeThreadOnCore_of_admitted (st : SystemState) (vtid : SeLe4n.ValidTh
   | none => simp [hT] at h
   | some tcb =>
     simp only [hT, Bool.and_eq_true, Bool.not_eq_true'] at h
-    obtain ⟨_, hS⟩ := h
+    obtain ⟨hS, _⟩ := h
     unfold resumeThreadOnCore resumePerform
     simp only [hT, hS, Bool.false_eq_true, ↓reduceIte]
     have hM : markKeyChangeFrom st (resumeReadyMidState st vtid.val) vtid.val

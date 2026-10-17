@@ -412,19 +412,30 @@ theorem dispatchWithCapChecked_eq_invocationBy (ctx : LabelingContext)
       hIpcBuf, hAff, hFault, hSpace, hPt, decodeVSpaceUnifyInstructionArgs]
   all_goals rfl
 
-/-- WS-ZA ZA5.2: an admitted resume carries no fault, so answering one first is
-the identity. -/
-theorem retirePendingFaultForResume_of_resumeAdmitted {st : SystemState}
+/-- WS-ZA ZA5.2: answering an admitted resume's pending fault keeps it admitted:
+the write reads back (its slot is found in place), and it clears the fault and
+leaves the thread state. -/
+theorem resumeAdmitted_retirePendingFault {st : SystemState}
     {tid : SeLe4n.ThreadId} (h : Lifecycle.Suspend.resumeAdmitted st tid = true) :
-    retirePendingFaultForResume st tid = st := by
+    Lifecycle.Suspend.resumeAdmitted (retirePendingFaultForResume st tid) tid = true := by
   unfold Lifecycle.Suspend.resumeAdmitted at h
-  unfold retirePendingFaultForResume
   cases hT : st.getTcb? tid with
-  | none => rfl
+  | none => rw [hT] at h; cases h
   | some tcb =>
     rw [hT] at h
-    simp only [Bool.and_eq_true, Option.isNone_iff_eq_none] at h
-    simp only [h.1]
+    cases hF : tcb.pendingFault with
+    | none =>
+      have hE : retirePendingFaultForResume st tid = st := by
+        simp only [retirePendingFaultForResume, hT, hF]
+      rw [hE]; unfold Lifecycle.Suspend.resumeAdmitted; rw [hT]; exact h
+    | some tf =>
+      simp only [hF, Option.isNone_some, Bool.false_or, Bool.and_eq_true] at h
+      unfold Lifecycle.Suspend.resumeAdmitted
+      simp only [retirePendingFaultForResume, hT, hF, applyFaultRestart]
+      rw [updateTcb_getTcb?_self_of_findsInPlace _ hT h.2]
+      simp only [TCB.withRestartFrame_threadState, Option.isNone_none, Bool.true_or,
+        Bool.and_true]
+      exact h.1
 
 /-- WS-ZA ZA5.2: `dispatchInvocationBy`, refusal-carrying, with each arm whose
 write has been split into its checks and its in-slot write
@@ -523,7 +534,8 @@ the write alone.  An arm whose checks refuse, and every arm not yet split, is
       | .error e => .error (e, st)
       | .ok vtid =>
         RefusalCarrying.ofChecked (Lifecycle.Suspend.resumeAdmitted st vtid.val)
-          (fun st => Lifecycle.Suspend.resumePerform st vtid.val executingCore)
+          (fun st => Lifecycle.Suspend.resumePerform
+            (retirePendingFaultForResume st vtid.val) vtid.val executingCore)
           (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
     | _ => .error (.invalidCapability, st)
   | .tcbSetFaultHandler =>
@@ -760,8 +772,9 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
         dsimp only
         apply RefusalCarrying.ofChecked_eq
         intro hA
-        obtain ⟨sgi, hS⟩ := Lifecycle.Suspend.resumeThreadOnCore_of_admitted _ _ executingCore hA
-        simp only [dispatchInvocationBy, hT, retirePendingFaultForResume_of_resumeAdmitted hA, hS]
+        obtain ⟨sgi, hS⟩ := Lifecycle.Suspend.resumeThreadOnCore_of_admitted _ _ executingCore
+          (resumeAdmitted_retirePendingFault hA)
+        simp only [dispatchInvocationBy, hT, hS]
     all_goals rfl
   case tcbSetFaultHandler =>
     cases target

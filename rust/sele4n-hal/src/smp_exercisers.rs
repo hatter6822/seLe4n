@@ -1751,7 +1751,8 @@ const PARTNER_PRIORITY: u64 = 255;
 ///   deleted; and the untyped reset.  While the frame is mapped it is also the
 ///   root task's IPC buffer, and the image's scheduling context is configured
 ///   (its fifth word read from that buffer), bound to the suspended partner
-///   and unbound.
+///   and unbound, then bound again and held while the partner is resumed and
+///   suspended, which releases it.
 ///
 /// No service is in the image, so the service revoke and query are not
 /// issued.
@@ -1955,6 +1956,14 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 5] = [
             SCHED_CONTEXT_CAP,
             [0; 4],
         ),
+        invocation(
+            "sched-context-rebind",
+            SCHED_CONTEXT_BIND,
+            SCHED_CONTEXT_CAP,
+            [PARTNER_TCB_CAP, 0, 0, 0],
+        ),
+        invocation("tcb-resume-bound", TCB_RESUME, PARTNER_TCB_CAP, [0; 4]),
+        invocation("tcb-suspend-bound", TCB_SUSPEND, PARTNER_TCB_CAP, [0; 4]),
         invocation(
             "vspace-unmap",
             VSPACE_UNMAP,

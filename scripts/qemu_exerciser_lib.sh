@@ -229,9 +229,12 @@ for driver in drivers:
             "tcb-set-priority", "tcb-set-mc-priority", "tcb-set-affinity",
             "tcb-set-fault-handler", "tcb-bind-notification", "tcb-unbind-notification",
             "tcb-set-space", "tcb-resume", "tcb-suspend", "tcb-set-ipc-buffer",
-            # and the scheduling-context arms, behind the root task's own
-            # IPC-buffer set that the configure's fifth word is read through.
-            "root-set-ipc-buffer", "sched-context-bind", "sched-context-unbind")}
+            # and the scheduling-context arms (the partner resumed and
+            # suspended while it holds the context, the suspend releasing it),
+            # behind the root task's own IPC-buffer set that the configure's
+            # fifth word is read through.
+            "root-set-ipc-buffer", "sched-context-bind", "sched-context-unbind",
+            "sched-context-rebind", "tcb-resume-bound", "tcb-suspend-bound")}
         # A configure's first call on a context with no refill yet builds the
         # first refill entry and its list cell; CBS row CB1.7 makes a refill
         # one entry per context, stored in place (docs/REGISTERED_DEBT.md).
