@@ -1204,52 +1204,6 @@ theorem cspaceDeleteSlot_ok_decompose (addr : CSpaceAddr) (st st' : SystemState)
       simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at h
       exact ⟨stC, rfl, h.symm⟩
 
-/-- The core delete never reads the derivation tree, so removing a node from the
-tree commutes with it. -/
-theorem cspaceDeleteSlotCore_removeDeletedCdtLeaf (addr : CSpaceAddr) (st : SystemState)
-    (node? : Option CdtNodeId) :
-    cspaceDeleteSlotCore addr (removeDeletedCdtLeaf st node?) =
-      match cspaceDeleteSlotCore addr st with
-      | .error e => .error e
-      | .ok ((), st') => .ok ((), removeDeletedCdtLeaf st' node?) := by
-  cases node? with
-  | none =>
-    show cspaceDeleteSlotCore addr st = _
-    cases cspaceDeleteSlotCore addr st with
-    | error e => rfl
-    | ok pr => obtain ⟨⟨⟩, _⟩ := pr; rfl
-  | some n =>
-    unfold cspaceDeleteSlotCore removeDeletedCdtLeaf
-    cases hCn : st.getCNode? addr.cnode with
-    | none =>
-      have : ({ st with cdt := st.cdt.removeNode n } : SystemState).getCNode? addr.cnode = none := hCn
-      rw [this]
-    | some cn =>
-      have : ({ st with cdt := st.cdt.removeNode n } : SystemState).getCNode? addr.cnode =
-          some cn := hCn
-      rw [this]
-      simp only [storeObject, SystemState.detachSlotFromCdt]
-      split <;> rfl
-
-/-- **The compiled guarded delete.**  It reads the slot's node and removes the
-leaf before the core delete writes the slot, so no state is read after a later
-one is built from it: the specification reads the pre-delete state's slot map
-after the core delete, which keeps that state alive across the store and makes
-the store copy the object table instead of writing it in place. -/
-def cspaceDeleteSlotImpl (addr : CSpaceAddr) : Kernel Unit :=
-  fun st =>
-    if slotIsDerivationParent st addr then
-      .error .revocationRequired
-    else
-      cspaceDeleteSlotCore addr (removeDeletedCdtLeaf st (st.lookupCdtNodeOfSlot addr))
-
-@[csimp] theorem cspaceDeleteSlot_eq_impl : @cspaceDeleteSlot = @cspaceDeleteSlotImpl := by
-  funext addr st
-  unfold cspaceDeleteSlot cspaceDeleteSlotImpl
-  split
-  · rfl
-  · rw [cspaceDeleteSlotCore_removeDeletedCdtLeaf]
-
 /-- ...and so does the guarded delete. -/
 theorem cspaceDeleteSlot_scheduler_machine (addr : CSpaceAddr) (st st' : SystemState)
     (h : cspaceDeleteSlot addr st = .ok ((), st')) :

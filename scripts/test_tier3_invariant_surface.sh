@@ -21967,7 +21967,4 @@ run_check "INVARIANT" rg -n -U '      \| \.ok \(\(\), st.\) => \.ok \(\(\), remo
 run_check "INVARIANT" rg -n -U 'def detachCNodeSlot \(acc : SystemState\) \(ref : SlotRef\) : SystemState :=\n  SystemState\.detachSlotFromCdt \(removeDeletedCdtLeaf acc \(acc\.lookupCdtNodeOfSlot ref\)\) ref' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
 run_check "INVARIANT" rg -n -U '  cn\.slots\.fold st \(fun acc slot _cap =>\n    detachCNodeSlot acc \{ cnode := cnodeId, slot := slot \}' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
 run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlot_ok_decompose($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
-# The compiled delete removes the leaf before the core delete writes the slot.
-run_check "INVARIANT" rg -n -U '      cspaceDeleteSlotCore addr \(removeDeletedCdtLeaf st \(st\.lookupCdtNodeOfSlot addr\)\)' SeLe4n/Kernel/Capability/Operations.lean
-run_check "INVARIANT" rg -n -U '^@\[csimp\] theorem cspaceDeleteSlot_eq_impl : @cspaceDeleteSlot = @cspaceDeleteSlotImpl' SeLe4n/Kernel/Capability/Operations.lean
 finalize_report
