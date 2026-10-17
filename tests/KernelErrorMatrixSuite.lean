@@ -974,6 +974,43 @@ private def row_childIdSelfOverwrite : KernelErrorRejection :=
       runUnit (SeLe4n.Kernel.retypeFromUntyped
         ⟨cnodeId, SeLe4n.Slot.ofNat 0⟩ untypedId untypedId newObj 256 st) }
 
+/-- Row: `retypeFromUntyped` with a child whose extent lies past the machine's
+physical address width returns `.addressOutOfBounds`. -/
+private def row_addressOutOfBounds_childExtent : KernelErrorRejection :=
+  { syscall       := "retypeFromUntyped"
+    expectedError := .addressOutOfBounds
+    scenarioTag   := "ZA5.4.addressOutOfBounds.child_extent_over_width"
+    scenarioDesc  := "retypeFromUntyped rejects a child identifier whose" ++
+                     " largest extent (id x page) ends past" ++
+                     " 2^physicalAddressWidth, so no object's scrub, now or" ++
+                     " after an in-place retype, names an address no memory has"
+    runScenario   := fun _ =>
+      let untypedId : ObjId := ObjId.ofNat 1150
+      let cnodeId : ObjId := ObjId.ofNat 1152
+      -- The default machine is 52 bits wide and the largest kind is a 4-KiB
+      -- page, so 2^40 is the first identifier refused, even for a 64-byte
+      -- endpoint (a later retype could make it a page-sized kind).
+      let childId : ObjId := ObjId.ofNat (2 ^ 40)
+      let ut : UntypedObject :=
+        { regionBase := SeLe4n.PAddr.ofNat 0x10000
+          regionSize := 4096
+          watermark := 0
+          isDevice := false
+          children := []
+          parent := none }
+      let authCap : Capability :=
+        { target := .object untypedId
+          rights := AccessRightSet.singleton .write
+          badge := none }
+      let cn : CNode := { mkEmptyCNode with
+        slots := (mkEmptyCNode).slots.insert (SeLe4n.Slot.ofNat 0) authCap }
+      let st : SystemState := { (default : SystemState) with
+        objects := ((default : SystemState).objects.insert untypedId
+          (.untyped ut)).insert cnodeId (.cnode cn) }
+      let newObj : KernelObject := .endpoint {}
+      runUnit (SeLe4n.Kernel.retypeFromUntyped
+        ⟨cnodeId, SeLe4n.Slot.ofNat 0⟩ untypedId childId newObj 256 st) }
+
 /-- Row: `retypeFromUntyped` from a device untyped to a non-untyped
 target returns `.untypedDeviceRestriction`. -/
 private def row_untypedDeviceRestriction : KernelErrorRejection :=
@@ -1065,6 +1102,7 @@ def errorMatrix : List KernelErrorRejection :=
     row_endpointQueueEmpty_pop_empty,
     row_untypedTypeMismatch,
     row_childIdSelfOverwrite,
+    row_addressOutOfBounds_childExtent,
     row_untypedDeviceRestriction ]
 
 -- ============================================================================

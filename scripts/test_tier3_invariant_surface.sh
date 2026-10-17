@@ -21951,4 +21951,12 @@ run_check "INVARIANT" rg -n '^@\[simp\] theorem SchedContext\.withReplenishments
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem preemptCurrentOnCore_eq_impl :' SeLe4n/Kernel/Scheduler/Operations/Selection.lean
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem remove_eq_impl : @remove = @removeImpl' SeLe4n/Kernel/SchedContext/ReplenishQueue.lean
 
+# WS-ZA ZA5.4 part 1: the compiled zeroing leaves memory as it was over a range
+# that already reads zero, so a carve/reset loop cannot grow the heap.
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem zeroMemoryRange_eq_impl : @zeroMemoryRange = @zeroMemoryRangeImpl' SeLe4n/Machine.lean
+run_check "INVARIANT" rg -n '^  if rangeReadsZero ms\.memory base\.toNat size then ms else zeroMemoryRange ms base size$' SeLe4n/Machine.lean
+run_check "INVARIANT" rg -n '^theorem zeroMemoryRange_of_rangeReadsZero ' SeLe4n/Machine.lean
+# A retype refuses a child identifier whose largest extent ends past the physical address width.
+run_check "INVARIANT" rg -n -U '        else if !objectIdInAddressSpace st\.machine childId then\n          \.error \.addressOutOfBounds' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+
 finalize_report

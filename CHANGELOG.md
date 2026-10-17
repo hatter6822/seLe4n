@@ -1,3 +1,57 @@
+## v0.36.100 — WS-ZA ZA5.4 part 1: a scrub of a zero page builds nothing (security)
+
+**Security (Medium): a thread holding an untyped capability could grow the
+kernel heap without bound.**  The model's memory is a function
+(`Memory := PAddr → UInt8`), so every `zeroMemoryRange` wrapped it in a new
+closure that the committed state keeps forever.  The untyped carve
+(`carveZeroFrame`) and the object scrub (`scrubObjectMemory`) both zero memory,
+so a loop of carve and reset, or retype and delete, over the same page added a
+closure on every call, independent of the untyped's size.  Each read of
+memory also walked the growing chain.
+
+- **`zeroMemoryRangeImpl`** (`Machine.lean`) reads the range first
+  (`rangeReadsZero`, a loop that builds nothing) and returns the machine state
+  unchanged when every byte already reads zero.  It is the compiled form of
+  `zeroMemoryRange` through `zeroMemoryRange_eq_impl` (`@[csimp]`), proven from
+  `zeroMemoryRange_of_rangeReadsZero`; the specification and every theorem over
+  it are unchanged.  A zeroing now adds a closure only over a byte some earlier
+  write made non-zero, and the compiled kernel writes no such byte (it owes
+  user-memory stores to RAM as `PhysicalWrite`s since BP7.8, and reads a
+  thread's words from the entry buffer since `v0.36.98`), so no carve, reset,
+  retype or delete grows the heap through memory.
+- **A child's extent is physical memory** (Codex review on #950).  An object's
+  model scrub range is `scrubExtent` (identifier × size), and a retype accepted
+  any identifier, so a child at identifier 2^51 or above had a range past 2^63:
+  each byte address the zero-check formed was a big number, about 4096
+  allocations per retype of a 4-KiB child.  `retypeFromUntyped` now refuses a
+  child identifier whose extent at the largest kind (`maxObjectAllocSize`, a
+  page) ends past `2 ^ physicalAddressWidth`, with `addressOutOfBounds`
+  (`objectIdInAddressSpace`, compared by division so a refused identifier is
+  never multiplied out).  The bound is the identifier's, not the first kind's,
+  because a later in-place retype may give the same identifier a larger kind;
+  `objectIdInAddressSpace_extent` proves every kind's extent fits.  At the
+  40-bit QEMU and RPi5 widths every scrub address stays below 2^40.
+  `tests/KernelErrorMatrixSuite.lean` holds the refusal
+  (`row_addressOutOfBounds_childExtent`).
+- **Regression test**: `tests/VSpaceCapabilityBindingSuite.lean` §5d checks
+  that the scrub of a page holding a non-zero byte produces a new memory value
+  and that the scrub of a page that already reads zero leaves the memory value
+  the same object (`ptrAddrUnsafe`).
+
+Normal-build allocations per call (QEMU exerciser, core 0; first call /
+steady state), `v0.36.98` and `v0.36.100`:
+
+| Scenario | v0.36.98 | v0.36.100 |
+|---|---|---|
+| page-table retype 1 | 100 / 91 | 98 / 89 |
+| page-table retype 2 | 91 / 91 | 89 / 89 |
+| page-table retype 3 | 161 / 93 | 159 / 91 |
+| frame retype | 110 / 112 | 108 / 110 |
+
+Every other scenario reads as before.  The exerciser gate pins the four
+retypes at their new readings; the rest of each retype's cells are the new
+object's and the store's, which ZA5.4's remaining parts own.
+
 ## v0.36.99 — Test build: the suites call the kernel entries out of line
 
 **The five suites that drive the syscall entry now compile in about 7

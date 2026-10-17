@@ -635,6 +635,14 @@ private def decodeOwnMap (vaddr frameSlot perms : Nat) : SyscallDecodeResult :=
   , msgRegs   := #[SeLe4n.RegValue.ofNat 6, SeLe4n.RegValue.ofNat (SeLe4n.VAddr.userWindowBase + vaddr),
                    SeLe4n.RegValue.ofNat frameSlot, SeLe4n.RegValue.ofNat perms] }
 
+/-- The address of a machine state's memory value.  The same address before and
+after a transition means the transition left the model's memory as it was:
+`zeroMemoryRange` over a range that already reads zero builds nothing. -/
+private unsafe def memoryAddrUnsafe (ms : SeLe4n.MachineState) : USize := ptrAddrUnsafe ms.memory
+
+@[implemented_by memoryAddrUnsafe]
+private opaque memoryAddr (ms : SeLe4n.MachineState) : USize
+
 private def runCarveChecks : IO Unit := do
   IO.println "-- §5d `.untypedRetype` carves a frame, and `.vspaceMap` maps it (WS-BP BP7.1)"
   let st := carveScenario
@@ -652,6 +660,18 @@ private def runCarveChecks : IO Unit := do
       (watermarkOf st1 carveUt == some SeLe4n.pageBytes)
     assertBool "the carved RAM page is zeroed before any capability to it exists"
       (SeLe4n.readMem st1.machine (SeLe4n.PAddr.ofNat carveUtBase) == 0)
+    -- WS-ZA: the scrub of a page holding a non-zero byte writes the model's
+    -- memory; the scrub of a page that already reads zero leaves it as it was,
+    -- so carving and resetting the same page cannot grow the kernel heap.
+    assertBool "the scrub of a page holding a non-zero byte writes the model's memory"
+      (memoryAddr st1.machine != memoryAddr st.machine)
+    match dispatchSyscallAsCurrent (decodeCarve slotUtRetype frameTag 951 slotOwnCnRW 9)
+        carveOwner Concurrency.bootCoreId st1 with
+    | .error e => assertBool s!"a second carve succeeds (got {repr e})" false
+    | .ok ((), st2) =>
+      assertBool "the scrub of a page that already reads zero leaves the model's memory as it was"
+        (memoryAddr st2.machine == memoryAddr st1.machine &&
+         SeLe4n.readMem st2.machine (SeLe4n.PAddr.ofNat (carveUtBase + SeLe4n.pageBytes)) == 0)
     assertBool "the destination slot holds a read/write/grant capability to the frame"
       (SystemState.lookupSlotCap st1 { cnode := carveCn, slot := SeLe4n.Slot.ofNat slotCarved }
         == some (frameCapability (SeLe4n.ObjId.ofNat 950)))
