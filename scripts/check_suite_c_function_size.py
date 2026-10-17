@@ -13,9 +13,11 @@ in function size: four suites built that way took 30-100 minutes each to
 compile.  The suites call the out-of-line copies in
 `SeLe4n/Testing/DispatchEntryCalls.lean` instead, which are compiled once.
 
-This gate reads the C Lean generated for each named executable's root module
-and fails if any function in it exceeds the budget.  The executable-to-module
-map is read from `lakefile.toml` with `tomllib`.  A function's extent is
+This gate generates the C for each named executable's root module (Lake's
+`:c` facet, which elaborates the module but compiles nothing) and fails if any
+function in it exceeds the budget, so a regression is reported before clang
+spends its hours on it.  The executable-to-module map is read from
+`lakefile.toml` with `tomllib` (Python 3.11+) or its backport `tomli`.  A function's extent is
 over-approximated as the run of lines from one definition header (a line
 opening with `LEAN_EXPORT ` or `static ` and ending in `{`, the shape Lean's C
 emitter gives every function it defines) to the next.  Whatever sits between
@@ -23,10 +25,21 @@ two headers is counted into the earlier run, so a header the pattern misses
 only makes a run longer and the gate fails closed.  A missing C file is
 a failure, never an empty pass.
 """
+from __future__ import annotations
+
 import pathlib
 import re
+import subprocess
 import sys
-import tomllib
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python < 3.11
+    try:
+        import tomli as tomllib
+    except ModuleNotFoundError:
+        sys.exit("check_suite_c_function_size.py: needs Python 3.11+ (tomllib) "
+                 "or the tomli package to read lakefile.toml")
 
 BUDGET_LINES = 40_000
 HEADER = re.compile(r"^(LEAN_EXPORT|static) .*\{$")
@@ -39,11 +52,15 @@ def main(argv: list[str]) -> int:
         return 2
     lake = tomllib.loads((root / "lakefile.toml").read_text())
     roots = {exe["name"]: exe["root"] for exe in lake.get("lean_exe", [])}
-    failures = []
-    for exe in argv:
-        if exe not in roots:
-            failures.append(f"{exe}: no [[lean_exe]] with this name in lakefile.toml")
-            continue
+    failures = [f"{exe}: no [[lean_exe]] with this name in lakefile.toml"
+                for exe in argv if exe not in roots]
+    known = [exe for exe in argv if exe in roots]
+    generate = subprocess.run(
+        ["lake", "build", *(roots[exe] + ":c" for exe in known)], cwd=root)
+    if generate.returncode != 0:
+        failures.append(f"lake could not generate the suites' C (exit {generate.returncode})")
+        known = []
+    for exe in known:
         c_file = root / ".lake/build/ir" / (roots[exe].replace(".", "/") + ".c")
         if not c_file.is_file():
             failures.append(f"{exe}: generated C not found at {c_file.relative_to(root)}")

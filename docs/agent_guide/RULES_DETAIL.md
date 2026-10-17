@@ -173,8 +173,10 @@ step took under a second.
 `dispatchCrossCoreStep`, `dispatchCrossCoreBracketedStep`, `dispatchBracket`).
 Each is the entry it names by `rfl`, so a suite still checks the exported
 function, and the kernel body is compiled once for every suite.  Tier 2
-(`scripts/check_suite_c_function_size.py`) reads the C generated for every
-suite it builds and fails on a function over 40,000 lines.
+(`scripts/check_suite_c_function_size.py`) generates the C for every suite it
+builds before compiling any of it (Lake's `:c` facet) and fails on a function
+over 40,000 lines, so the regression is reported before clang spends hours on
+it.
 
 ## Handling large search and command output
 

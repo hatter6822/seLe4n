@@ -30,10 +30,12 @@ Clang time per generated C file, before and after (same machine):
 - **The suites call those copies**: 21 call sites in `FaultHandlingSuite`,
   `SmpCrossCoreCallSuite`, `SmpInformationFlowSuite`, `SyscallDispatchSuite`
   and `SyscallReturnAbiSuite`.  Every suite's output is unchanged.
-- **New Tier 2 check, `scripts/check_suite_c_function_size.py`**: after the
-  tier builds its suites it reads the C Lean generated for each one (the
-  executable-to-module map comes from `lakefile.toml` through `tomllib`) and
-  fails on any function over 40,000 lines.  Run against the v0.36.98 C it
+- **New Tier 2 check, `scripts/check_suite_c_function_size.py`**: before the
+  tier compiles its suites it generates the C for each one with Lake's `:c`
+  facet, which compiles nothing (the executable-to-module map comes from
+  `lakefile.toml` through `tomllib`, or the `tomli` backport before Python
+  3.11), and fails on any function over 40,000 lines, so a regression is
+  reported before clang spends hours on it.  Run against the v0.36.98 C it
   fails all five suites (largest 189,861 lines); on this tree the largest
   suite function is 6,612 lines.  A missing C file fails rather than passing.
 - `CLAUDE.md` and `docs/agent_guide/RULES_DETAIL.md` state the rule.

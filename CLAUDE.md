@@ -172,8 +172,7 @@ the hand-curated **Known large files** list lives in
   ≤ ~150 lines and use the thin-dispatcher pattern
   (`tests/NegativeStateSuite.lean`'s `runNegativeChecks`).
 - **Suites never call an `@[inline]` kernel entry directly**: each call site
-  inlines the whole kernel into one C function that clang takes tens of
-  minutes to compile. Call the out-of-line copies in
+  inlines the whole kernel into one C function. Call the out-of-line copies in
   `SeLe4n/Testing/DispatchEntryCalls.lean`; Tier 2's
   `check_suite_c_function_size.py` holds every suite function to budget.
 
