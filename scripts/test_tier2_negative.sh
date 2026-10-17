@@ -28,6 +28,13 @@ while read -r exe; do suite_exes+=("${exe}"); done < <(
   grep -oE '^run_check_with_timeout "TRACE" lake exe [[:alnum:]_]+' \
     "${BASH_SOURCE[0]}" | awk '{print $5}')
 
+# A suite that calls an `@[inline]` kernel entry directly gets the whole kernel
+# inlined into one C function, which clang takes tens of minutes to compile;
+# the suites call `SeLe4n.Testing.DispatchEntryCalls` instead.  The check
+# generates every suite's C (no compilation) and holds each function to budget
+# before the build below hands that C to clang.
+run_check "BUILD" python3 "${SCRIPT_DIR}/check_suite_c_function_size.py" "${suite_exes[@]}"
+
 run_check "BUILD" lake build "${suite_exes[@]}"
 
 # `negative_state_suite`, `information_flow_suite` and `robin_hood_suite` ran

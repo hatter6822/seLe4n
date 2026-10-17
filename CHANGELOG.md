@@ -1,3 +1,45 @@
+## v0.36.99 — Test build: the suites call the kernel entries out of line
+
+**The five suites that drive the syscall entry now compile in about 7
+minutes together instead of about 3.8 hours of clang time.**  The time was
+never the linker (every suite links in under a second); it was clang -O3 on
+single C functions of 70k–190k lines.  The kernel's syscall entries are
+`@[inline]` so the exported entry builds no result record, and every suite
+helper that called one received the whole kernel inlined into it.
+
+Clang time per generated C file, before and after (same machine):
+
+| File | Before | After |
+|---|---|---|
+| `tests/SyscallDispatchSuite.c` | 6082 s | 19 s |
+| `tests/SyscallReturnAbiSuite.c` | 2886 s | 5 s |
+| `tests/SmpCrossCoreCallSuite.c` | 2580 s | 4 s |
+| `tests/SmpInformationFlowSuite.c` | 1894 s | 43 s |
+| `tests/FaultHandlingSuite.c` | 351 s | 25 s |
+| `SeLe4n/Testing/DispatchEntryCalls.c` (new) | — | 434 s |
+
+- **`SeLe4n/Testing/DispatchEntryCalls.lean`** holds out-of-line copies of
+  `Platform.FFI.syscallDispatchFromAbi`, `syscallDispatchCrossCoreStep`,
+  `syscallDispatchCrossCoreBracketedStep` and `syscallDispatchBracket`.  The
+  ABI entry and the cross-core step are compiled once; the bracketed step and
+  the bracket record call that one step.  Each is the entry it names by `rfl`
+  (`dispatchFromAbi_eq`, `dispatchCrossCoreStep_eq`,
+  `dispatchCrossCoreBracketedStep_eq`, `dispatchBracket_eq`), so the suites
+  still check the function the kernel exports.  The module sits outside
+  `SeLe4n.lean`'s import closure, so the kernel archive is unchanged.
+- **The suites call those copies**: 21 call sites in `FaultHandlingSuite`,
+  `SmpCrossCoreCallSuite`, `SmpInformationFlowSuite`, `SyscallDispatchSuite`
+  and `SyscallReturnAbiSuite`.  Every suite's output is unchanged.
+- **New Tier 2 check, `scripts/check_suite_c_function_size.py`**: before the
+  tier compiles its suites it generates the C for each one with Lake's `:c`
+  facet, which compiles nothing (the executable-to-module map comes from
+  `lakefile.toml` through `tomllib`, or the `tomli` backport before Python
+  3.11), and fails on any function over 40,000 lines, so a regression is
+  reported before clang spends hours on it.  Run against the v0.36.98 C it
+  fails all five suites (largest 189,861 lines); on this tree the largest
+  suite function is 6,612 lines.  A missing C file fails rather than passing.
+- `CLAUDE.md` and `docs/agent_guide/RULES_DETAIL.md` state the rule.
+
 ## v0.36.98 — WS-ZA ZA5.2 part 2 (objects change in their slot): the scheduling-context invocations allocate nothing
 
 **Configure, bind and unbind now read 0 allocations, at the first call and

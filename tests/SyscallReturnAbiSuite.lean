@@ -7,6 +7,7 @@
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
 
+import SeLe4n.Testing.DispatchEntryCalls
 import SeLe4n.Platform.FFI
 import SeLe4n.Kernel.SchedLockBracket
 import SeLe4n.Kernel.SyscallDispatchEntry
@@ -194,7 +195,7 @@ checked entry, and the WS-RA outcome exit (`syscallReturnOutcome`). -/
 private def dispatchFromAbi (syscallId : Nat) (msgInfoRaw : UInt64)
     (x2 : UInt64) (st : SystemState) :
     Except KernelError (Kernel.Architecture.SyscallOutcome × SystemState) :=
-  SeLe4n.Platform.FFI.syscallDispatchFromAbi trustedLabeling
+  SeLe4n.Testing.dispatchFromAbi trustedLabeling
     SeLe4n.Kernel.Concurrency.bootCoreId
     syscallId.toUInt32
     capPtrValue.toUInt64 msgInfoRaw x2 0 0 0
@@ -332,7 +333,7 @@ private def dispatchFromAbiOn (core : SeLe4n.Kernel.Concurrency.CoreId)
     (syscallId : Nat) (msgInfoRaw : UInt64) (capPtr : UInt64)
     (x2 x3 x4 : UInt64) (st : SystemState) :
     Except KernelError (Kernel.Architecture.SyscallOutcome × SystemState) :=
-  SeLe4n.Platform.FFI.syscallDispatchFromAbi trustedLabeling core
+  SeLe4n.Testing.dispatchFromAbi trustedLabeling core
     syscallId.toUInt32 capPtr msgInfoRaw x2 x3 x4 0
     0 0 0 0 0 st
 
@@ -691,7 +692,7 @@ private def dispatchAudit (ctx : LabelingContext) (syscallId : Nat) (capPtr : Na
   -- `MessageInfo {length, extraCaps := 0, label := 0}` encodes to `length`
   -- (the §4 note pins the same identity for length 1).
   let msgInfoRaw : UInt64 := regCount.toUInt64
-  SeLe4n.Platform.FFI.syscallDispatchFromAbi ctx
+  SeLe4n.Testing.dispatchFromAbi ctx
     SeLe4n.Kernel.Concurrency.bootCoreId
     syscallId.toUInt32
     capPtr.toUInt64 msgInfoRaw r0.toUInt64 r1.toUInt64 r2.toUInt64 0
@@ -1207,7 +1208,7 @@ dispatch, the caller's return staging, the local scheduling point and the
 restore target, exactly as `syscallDispatchCrossCoreEntry` commits them. -/
 private def entryStepOn (ctx : LabelingContext) (core : SeLe4n.Kernel.Concurrency.CoreId)
     (syscallId : Nat) (msgInfoRaw capPtr x2 : UInt64) (st : SystemState) :=
-  SeLe4n.Kernel.syscallDispatchCrossCoreBracketedStep ctx core syscallId.toUInt32
+  SeLe4n.Testing.dispatchCrossCoreBracketedStep ctx core syscallId.toUInt32
     (.ofRegisterFile { (default : SeLe4n.RegisterFile) with x0 := capPtr, x1 := msgInfoRaw, x2 := x2 })
     st
 
@@ -1332,7 +1333,7 @@ private def overflowSendRun (rxWrite sync : Bool) :
   if out1 != .blocks then throw .illegalState
   let addrs := Kernel.Architecture.IpcBufferRead.callerOverflowAddrs st1 peerTid sevenRegisters
   let stS := if sync then syncSenderOverflow st1 sevenRegisters else st1
-  let (_, st2) ← SeLe4n.Platform.FFI.syscallDispatchFromAbi trustedLabeling core1
+  let (_, st2) ← SeLe4n.Testing.dispatchFromAbi trustedLabeling core1
     SyscallId.send.toNat.toUInt32 epCapPtr.toUInt64 sevenRegisters 1 2 3 4 0
     0 0 0 0 stS
   pure (stagedFrame st2 callerTid, st2.pendingPhysicalWrites, addrs)
@@ -1352,7 +1353,7 @@ entry reads the blocked sender's slots as well as the caller's
 private def blockedSenderReceiveRun (senderToo : Bool) :
     Except KernelError (List Kernel.Architecture.PhysicalWrite × List SeLe4n.PAddr) := do
   let st0 := mappedBuffersState true
-  let (out1, st1) ← SeLe4n.Platform.FFI.syscallDispatchFromAbi trustedLabeling core1
+  let (out1, st1) ← SeLe4n.Testing.dispatchFromAbi trustedLabeling core1
     SyscallId.send.toNat.toUInt32 epCapPtr.toUInt64 sevenRegisters 1 2 3 4 0
     0 0 0 0 (syncSenderOverflow st0 sevenRegisters)
   if out1 != .blocks then throw .illegalState
@@ -1399,7 +1400,7 @@ private def runOverflowDeliveryWitnesses : IO Unit := do
       SyscallId.receive.toNat 0 epCapPtr.toUInt64 0 0 0 (mappedBuffersState true) with
   | .error e => assertBool s!"12 SEAM: the receive runs (got .error {reprStr e})" false
   | .ok (_, st1) => do
-      let (r, stC) := SeLe4n.Kernel.syscallDispatchCrossCoreStep trustedLabeling core1
+      let (r, stC) := SeLe4n.Testing.dispatchCrossCoreStep trustedLabeling core1
         SyscallId.send.toNat.toUInt32 epCapPtr.toUInt64 sevenRegisters 1 2 3 4 0
         0 0 0 0 (syncSenderOverflow st1 sevenRegisters)
       assertBool "12 SEAM: the step hands the runtime the three user-word stores"
