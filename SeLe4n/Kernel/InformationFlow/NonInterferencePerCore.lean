@@ -1396,10 +1396,11 @@ theorem cspaceDeleteSlotCore_confinedToCore (st st' : SystemState) (addr : CSpac
 theorem cspaceDeleteSlot_confinedToCore (st st' : SystemState) (addr : CSpaceAddr) (c₀ : CoreId)
     (hStep : SeLe4n.Kernel.cspaceDeleteSlot addr st = .ok ((), st')) :
     observableSlotsConfinedToCore st st' c₀ := by
-  unfold SeLe4n.Kernel.cspaceDeleteSlot at hStep
-  split at hStep
-  · simp at hStep
-  · exact cspaceDeleteSlotCore_confinedToCore st st' addr c₀ hStep
+  obtain ⟨stC, hCore, rfl⟩ := SeLe4n.Kernel.cspaceDeleteSlot_ok_decompose addr st st' hStep
+  exact observableSlotsConfinedToCore_trans
+    (cspaceDeleteSlotCore_confinedToCore st stC addr c₀ hCore)
+    (observableSlotsConfinedToCore_of_scheduler_machine_eq c₀
+      (SeLe4n.Kernel.spliceDeletedCdtNode_scheduler _ _) (SeLe4n.Kernel.spliceDeletedCdtNode_machine _ _))
 
 /-- SM8.B.3: `cspaceCopy` writes only the object store and the CDT. -/
 theorem cspaceCopy_confinedToCore (st st' : SystemState) (src dst : CSpaceAddr) (c₀ : CoreId)
@@ -1498,27 +1499,16 @@ theorem cspaceMint_confinedToCore (st st' : SystemState) (src dst : CSpaceAddr)
         simp only [hMint] at hStep
         exact cspaceInsertSlot_confinedToCore st st' dst child c₀ hStep
 
-/-- SM8.B.3: `cspaceRevoke` writes only the object store. -/
+/-- SM8.B.3: `cspaceRevoke` writes only the object store and the CDT. -/
 theorem cspaceRevoke_confinedToCore (st st' : SystemState) (addr : CSpaceAddr) (c₀ : CoreId)
     (hStep : SeLe4n.Kernel.cspaceRevoke addr st = .ok ((), st')) :
     observableSlotsConfinedToCore st st' c₀ := by
-  unfold SeLe4n.Kernel.cspaceRevoke SystemState.getCNode? at hStep
-  cases hL : cspaceLookupSlot addr st with
-  | error e => simp [hL] at hStep
-  | ok pair =>
-    obtain ⟨parent, stL⟩ := pair
-    have hEqL : stL = st := cspaceLookupSlot_preserves_state st stL addr parent hL
-    subst stL
-    simp only [hL] at hStep
-    cases hObj : st.objects[addr.cnode]? with
-    | none => simp [hObj] at hStep
-    | some obj =>
-      cases obj with
-      | cnode cn =>
-        simp only [hObj] at hStep
-        exact storeObject_confinedToCore st st' addr.cnode _ c₀ hStep
-      | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ =>
-        simp [hObj] at hStep
+  obtain ⟨_, _, stS, _, _, hS, rfl⟩ := SeLe4n.Kernel.cspaceRevoke_ok_decompose addr st st' hStep
+  exact observableSlotsConfinedToCore_trans
+    (storeObject_confinedToCore st stS addr.cnode _ c₀ hS)
+    (observableSlotsConfinedToCore_of_scheduler_machine_eq c₀
+      (SeLe4n.Kernel.detachRevokedSlots_scheduler _ _ _ _ _)
+      (SeLe4n.Kernel.detachRevokedSlots_machine _ _ _ _ _))
 
 /-- SM8.B.3: `cspaceMutate` writes only the object store. -/
 theorem cspaceMutate_confinedToCore (st st' : SystemState) (addr : CSpaceAddr)

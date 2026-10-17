@@ -15,8 +15,9 @@ AN4-F.3 (CAP-M03) child module extracted from
 preservation cluster: `processRevokeNode` + the private fold helpers
 (`revokeCdtFoldBody`, `revokeCdtFold_preserves`), the compositional
 preservation theorems for `cspaceRevokeCdt`, `cspaceRevokeCdtStrict`,
-and `cspaceRevokeCdtStreaming`, and the `capabilityInvariantBundle_of_cdt_update`
-helper. Private fold infrastructure is promoted to public so the hub and
+and `cspaceRevokeCdtStreaming`.  The `capabilityInvariantBundle_of_cdt_update`
+helper they use lives in the Delete sibling, whose splice uses it first.
+Private fold infrastructure is promoted to public so the hub and
 future cross-subsystem consumers can reason about the fold shape.
 All declarations retain their original names, order, and proofs.
 -/
@@ -29,22 +30,6 @@ open Internal
 -- ============================================================================
 -- WS-F4/F-06: cspaceRevokeCdt and cspaceRevokeCdtStrict preservation
 -- ============================================================================
-
-/-- Helper: CDT-only state updates preserve capabilityInvariantBundle,
-given that the new CDT is acyclic. -/
-theorem capabilityInvariantBundle_of_cdt_update
-    (st : SystemState) (cdt' : CapDerivationTree)
-    (hInv : capabilityInvariantBundle st)
-    (hAcyclic' : cdt'.edgeWellFounded) :
-    capabilityInvariantBundle { st with cdt := cdt' } := by
-  rcases hInv with ⟨_, hBnd, hComp, _, hDepthPre, hObjInvPre⟩
-  have hObjEq : ({ st with cdt := cdt' } : SystemState).objects = st.objects := rfl
-  -- WS-RC R4.A.6: cspaceSlotUnique conjunct removed from bundle; the new
-  -- 6-tuple skips the legacy uniqueness slot.
-  exact ⟨cspaceLookupSound_holds _,
-    hBnd, hComp, hAcyclic',
-    cspaceDepthConsistent_of_objects_eq st _ hDepthPre hObjEq,
-    hObjEq ▸ hObjInvPre⟩
 
 /-- `processRevokeNode` preserves `cdtNodeSlot.invExtK`
 when it succeeds. -/

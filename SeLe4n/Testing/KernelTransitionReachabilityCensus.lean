@@ -1120,6 +1120,9 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.declassifyStoreFromCore
   , `SeLe4n.Kernel.declassifyStoreOnCore
   , `SeLe4n.Kernel.descheduleThread
+  -- #951: the local revoke's splice of the siblings it empties; it runs only
+  -- inside `cspaceRevoke`, which is on this list.
+  , `SeLe4n.Kernel.detachRevokedSlots
   -- WS-ZA ZA5.2: the routed configure's specification arm; the entry runs its
   -- refusal-carrying form `dispatchConfigureByR` (`dispatchConfigureByR_eq`).
   , `SeLe4n.Kernel.dispatchConfigureBy

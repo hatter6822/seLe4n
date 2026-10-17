@@ -177,7 +177,9 @@ write in place, and read 0.  At `v0.36.98` (ZA5.2 part 2) the
 scheduling-context invocations do too, configure routed; the entry captures
 overflow words into a per-core buffer and never writes model memory.  At
 `v0.36.100` (ZA5.4 part 1) a scrub of a range that already reads zero leaves
-model memory as it was, so no carve or reset loop grows the heap.  The
+model memory as it was, so no carve or reset loop grows the heap.  At
+`v0.36.101` a delete, and a CNode retype for each slot, removes the slot's
+leaf node from the derivation tree, so no copy-and-delete loop grows it.  The
 suspend of a thread blocked in IPC or holding a donated context is the one
 syscall arm left on the general path (ZA6.1).  ZA6 covers the other
 entries and makes the rule standing.  Plan:

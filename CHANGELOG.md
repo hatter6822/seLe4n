@@ -1,3 +1,85 @@
+## v0.36.101 — WS-ZA: a deleted capability leaves the derivation tree, as seL4's cteDelete (security)
+
+**Security (Medium): a thread holding a CNode capability with copy rights
+could grow the kernel heap without bound and make a capability undeletable.**
+The delete (`cspaceDeleteSlot`) only unmapped the deleted slot from its
+derivation node (`detachSlotFromCdt`); the node's edge to its parent and the
+parent's child entry stayed in the tree.  `cspaceCopy` allocates a fresh node
+for each copy, so a loop of copy and delete added an edge on every round, each
+revocation walked the growing list, and the source reported a derived child
+that no longer existed, so its own delete was refused with
+`revocationRequired` until it was revoked.  Retyping a CNode had the same
+fault for every slot it held (`detachCNodeSlots`), and the local revoke
+(`cspaceRevoke`) left every sibling it emptied mapped to its node.
+
+**Security (Medium, PR #951 review): the delete's refusal was an
+information-flow channel.**  The delete refused with `revocationRequired` while
+the slot had derived capabilities, so a thread holding a copy of another
+domain's capability decided, by deleting or keeping the copy, whether that
+domain's next delete succeeded.  The noninterference theorems did not see it,
+because they constrain only runs in which both executions succeed; that gap is
+registered in `docs/REGISTERED_DEBT.md` (table C, "Low-equivalence preservation
+constrains only runs in which both executions succeed").
+
+- **`CapDerivationTree.spliceNode`** (`Model/Object/Structures.lean`): a node
+  leaves the tree with its edges, and each child it had is derived from its
+  parent instead, by the operation it was derived by; a root's children become
+  roots.  This is seL4's `cteDelete`, which unlinks a capability from the
+  mapping database without asking about its children.  The splice keeps the
+  tree acyclic (`spliceNode_edgeWellFounded`: each new edge shortcuts a
+  two-edge path, through `edgeWellFounded_of_edges_transGen`) and its index maps
+  consistent and well formed (`spliceNode_mapsWellFormed`).
+- **The delete never refuses on the tree** (`Capability/Operations.lean`):
+  `cspaceDeleteSlot` runs the core delete and splices the slot's node out
+  (`spliceDeletedCdtNode`); `cspaceDeleteSlot_isOk_iff_core` states that its
+  outcome is the core delete's.  `slotIsDerivationParent`,
+  `cnodeHasDerivationParentSlot` and `cspaceDeleteSlot_refuses_existing_children`
+  are retired, and the CNode retype drops the guard of the same kind.
+- **One step for every destroyer**: `detachDestroyedSlot` splices a destroyed
+  slot's node out and clears its slot maps.  The CNode retype takes it for each
+  slot it held, and the local revoke for each sibling it empties
+  (`detachRevokedSlots`, reading the same keep predicate as
+  `revokeTargetLocal`, `CNode.revokeTargetLocalKeeps`).  The local revoke's
+  complexity contract now counts those splices: O(n + r·E) for `r` removed
+  slots over a tree of `E` edges.  Every preservation
+  theorem over the delete and the local revoke (capability bundle, CDT maps,
+  node-slot table, IPC bundle, run-queue stage, projection, low equivalence,
+  confinement, key inputs, fields outside) is restated through
+  `cspaceDeleteSlot_ok_decompose` and `cspaceRevoke_ok_decompose`;
+  `cspaceRevoke_preserves_capabilityInvariantBundle` and
+  `cspaceRevoke_preserves_cdtMapsConsistent` now take the node-slot and map
+  tables' `invExtK`, which `allTablesInvExtK` carries.
+- **Tests**: `tests/OperationChainSuite.lean`'s `chain5b` runs seventeen
+  copy-and-delete rounds and checks the tree is empty after each and the source
+  deletable, and `chain5c` copies into a CNode, retypes it and checks no edge
+  remains (`chain5b` failed before the fix).  `tests/NegativeStateSuite.lean`
+  deletes a slot with a parent and a child and checks the child is re-derived
+  from the parent with its operation; the error matrix's `revocationRequired`
+  row is now an in-use Reply retype.
+
+Normal-build allocations per call (QEMU exerciser, core 0; first call /
+steady state), `v0.36.100` and `v0.36.101`:
+
+| Scenario | v0.36.100 | v0.36.101 |
+|---|---|---|
+| CSpace copy | 55 / 46 | 55 / 47 |
+| CSpace delete | 31 / 31 | 41 / 41 |
+| CSpace mint | 50 / 51 | 51 / 51 |
+| CSpace revoke | 67 / 48 | 48 / 48 |
+| reply-cap mint | 47 / 47 | 48 / 48 |
+| reply-cap delete | 29 / 29 | 38 / 38 |
+| frame delete | 45 / 47 | 62 / 64 |
+| page-table delete 3 / 2 / 1 | 35 / 29 / 26 | 50 / 42 / 36 |
+| page-table retype 1 (steady) | 89 | 90 |
+
+A delete now builds the tree's smaller edge list and maps (the removal's
+cells), which it did not before; what it no longer does is leave the copy's
+edge alive, so the heap the tree holds stays bounded across any number of
+rounds.  The first revoke reads 19 cells fewer because it no longer walks the
+edges earlier scenarios left behind.  The exerciser gate pins every scenario
+above at its new reading; ZA5.3, which links the tree through the slots as
+seL4's mapping database does, owns bringing the tree's cells to 0.
+
 ## v0.36.100 — WS-ZA ZA5.4 part 1: a scrub of a zero page builds nothing (security)
 
 **Security (Medium): a thread holding an untyped capability could grow the

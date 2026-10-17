@@ -4147,7 +4147,7 @@ run_negative_check "INVARIANT" rg -n 'cspaceRevokeCdtCollecting|revokeCdtCollect
 run_check "INVARIANT" rg -n -U 'def finaliseFramePages[^\n]*(\n([ \t][^\n]*)?)*    match unmapLivePages executingCore pages st with(\n([ \t][^\n]*)?)*      if !livePagesCleared st1 pages then \.error \.illegalState' SeLe4n/Kernel/Capability/FrameFinalise.lean
 run_check "INVARIANT" rg -n '            match cspaceInsertSlot dst capNN\.val\.withoutMapping st. with' SeLe4n/Kernel/Capability/Operations.lean
 run_check "INVARIANT" rg -n '            match cspaceInsertSlot dstAddr cap\.withoutMapping st with' SeLe4n/Kernel/Capability/Operations.lean
-run_check "INVARIANT" rg -n -U '    if cnodeHasDerivationParentSlot st target cn then\n      \.error \.revocationRequired(\n[ \t]*(--[^\n]*)?)*\n    else if cn\.holdsFrameMappingRecord \|\| Architecture\.cnodeHoldsInstalledPageTableCap st cn then\n      \.error \.revocationRequired' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" rg -n -U '    if cn\.holdsFrameMappingRecord \|\| Architecture\.cnodeHoldsInstalledPageTableCap st cn then\n      \.error \.revocationRequired\n    else\n      \.ok \(detachCNodeSlots st target cn\)' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
 run_check "INVARIANT" rg -n -U 'def bootSafeCapCheck[^\n]*(\n([ \t][^\n]*)?)*  cap\.mapping\.isNone' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n -U 'def frozenCspaceDelete[^\n]*(\n([ \t][^\n]*)?)*      if \(cn\.slots\.lookup slot\)\.any\n          \(fun cap => cap\.mapping\.isSome \|\| frozenCapNamesInstalledPageTable st cap\) then\n        \.error \.revocationRequired' SeLe4n/Kernel/FrozenOps/Operations.lean
 run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlotFinalising_ok_unmapped($|[ ({:\[\]])' SeLe4n/Kernel/Capability/FrameFinalise.lean
@@ -4254,7 +4254,6 @@ run_check "INVARIANT" rg -n '^theorem finaliseDestroyedCapabilities_framed($|[ (
 run_check "INVARIANT" rg -n '^      if pageTableInstallLive st tableId then \.error \.invalidCapability$' SeLe4n/Kernel/Architecture/PageTableInstall.lean
 run_negative_check "INVARIANT" rg -n 'installedIn\.isSome then' SeLe4n/Kernel/Architecture/PageTableInstall.lean
 run_check "INVARIANT" rg -n '^        \| some inst => ids\.contains inst\.root \|\| !Architecture\.pageTableInstallLive st id$' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
-run_check "INVARIANT" rg -n '^    else if cn\.holdsFrameMappingRecord \|\| Architecture\.cnodeHoldsInstalledPageTableCap st cn then$' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
 run_check "INVARIANT" rg -n '\(fun cap => cap\.mapping\.isSome \|\| frozenCapNamesInstalledPageTable st cap\) then' SeLe4n/Kernel/FrozenOps/Operations.lean
 run_check "INVARIANT" rg -n 'deleting a table.s last capability takes it, and the two tables beneath it, out of the root' tests/VSpaceCapabilityBindingSuite.lean
 run_check "INVARIANT" rg -n 'a table another capability still names stays installed, with everything beneath it' tests/VSpaceCapabilityBindingSuite.lean
@@ -9956,19 +9955,11 @@ run_negative_check "INVARIANT" rg -n 'def parkedCarriesCaps' SeLe4n/Kernel/Infor
 # check below pins out — so requiring its text in this file contradicted that
 # check and could not pass.  The gate itself is unchanged; it is a property of
 # the IPC transition, and this file no longer restates it.
-# The delete guard: a slot with CDT children cannot be deleted (no transfer is
-# in flight between syscalls since WS-ZA ZA4.7, so children are the question).
-run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlot_refuses_existing_children($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
+# A delete's outcome never depends on the derivation tree: it fails exactly when
+# the core delete does (seL4's cteDelete; refusing on children was a channel).
+run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlot_isOk_iff_core($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
 
-# The derivation-parent predicate has two callers — the slot delete and the
-# CNode retype — and they must read the same one, so both the factored
-# predicate and each caller's use of it are pinned.
-run_check "INVARIANT" rg -n '^def slotIsDerivationParent($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
-run_check "INVARIANT" rg -n '^def cnodeHasDerivationParentSlot($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
-run_check "INVARIANT" rg -n 'if slotIsDerivationParent st addr then' SeLe4n/Kernel/Capability/Operations.lean
-run_check "INVARIANT" rg -n 'if cnodeHasDerivationParentSlot st target cn then' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
-
-# The guarantee those guards are the ergonomics for: the single creator of an
+# The guarantee behind every destroyer's detach: the single creator of an
 # `.ipcTransfer` edge declines when the source node has no slot, so no
 # destroyer — present or future — can leave an unrevokable child behind.
 run_check "INVARIANT" rg -n '^  \| sourceRevoked$' SeLe4n/Model/Object/Types.lean
@@ -21959,4 +21950,18 @@ run_check "INVARIANT" rg -n '^theorem zeroMemoryRange_of_rangeReadsZero ' SeLe4n
 # A retype refuses a child identifier whose largest extent ends past the physical address width.
 run_check "INVARIANT" rg -n -U '        else if !objectIdInAddressSpace st\.machine childId then\n          \.error \.addressOutOfBounds' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 
+
+# v0.36.101: a delete splices its slot's node out of the derivation tree (its
+# children re-derived from its parent, as seL4's cteDelete), and a CNode retype
+# and the local revoke do the same for each slot they destroy.
+run_check "INVARIANT" rg -n '^def spliceNode($|[ ({:\[\]])' SeLe4n/Model/Object/Structures.lean
+run_check "INVARIANT" rg -n '^theorem spliceNode_edgeWellFounded($|[ ({:\[\]])' SeLe4n/Model/Object/Structures.lean
+run_check "INVARIANT" rg -n '^theorem spliceNode_mapsWellFormed($|[ ({:\[\]])' SeLe4n/Model/Object/Structures.lean
+run_check "INVARIANT" rg -n '^def spliceDeletedCdtNode($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n -U '    \| \.ok \(\(\), st.\) => \.ok \(\(\), spliceDeletedCdtNode st. \(st\.lookupCdtNodeOfSlot addr\)\)' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n -U 'def detachDestroyedSlot \(acc : SystemState\) \(ref : SlotRef\) : SystemState :=\n  SystemState\.detachSlotFromCdt \(spliceDeletedCdtNode acc \(acc\.lookupCdtNodeOfSlot ref\)\) ref' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n -U '  cn\.slots\.fold st \(fun acc slot _cap =>\n    detachDestroyedSlot acc \{ cnode := cnodeId, slot := slot \}' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" rg -n -U '    if CNode\.revokeTargetLocalKeeps sourceSlot target slot cap then acc\n    else detachDestroyedSlot acc \{ cnode := cnodeId, slot := slot \}' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n -U '            \| \.ok \(\(\), st..\) =>\n                \.ok \(\(\), detachRevokedSlots st.. addr\.cnode cn addr\.slot parent\.target\)' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlot_ok_decompose($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
 finalize_report

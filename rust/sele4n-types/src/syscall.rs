@@ -104,8 +104,7 @@ pub enum SyscallId {
     ///
     /// The source slot itself **survives**: revocation destroys a capability's
     /// derivations, not the capability, which is what distinguishes it from
-    /// `CSpaceDelete` and what makes that syscall's `RevocationRequired`
-    /// refusal dischargeable — a caller revokes, then deletes.  It takes the
+    /// `CSpaceDelete`.  It takes the
     /// delete's argument layout (one message register naming the slot), since
     /// both name one slot of the invoked CNode.
     CspaceRevoke = 35,

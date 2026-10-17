@@ -951,16 +951,16 @@ theorem cspaceDeleteSlotCore_preserves_ipcInvariantFull
       hInv.passiveServerIdle)
     hCap hInv
 
-/-- `.cspaceDelete`: the guard adds no state change on top of the core. -/
+/-- `.cspaceDelete`: the core delete and the splice touch no IPC state. -/
 theorem cspaceDeleteSlot_preserves_ipcInvariantFull
     (st st' : SystemState) (addr : CSpaceAddr)
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
     (hStep : cspaceDeleteSlot addr st = .ok ((), st')) :
     ipcInvariantFull st' := by
-  unfold cspaceDeleteSlot at hStep
-  split at hStep
-  · contradiction
-  · exact cspaceDeleteSlotCore_preserves_ipcInvariantFull st st' addr hObjInv hInv hStep
+  obtain ⟨stC, hCore, rfl⟩ := cspaceDeleteSlot_ok_decompose addr st st' hStep
+  have hC := cspaceDeleteSlotCore_preserves_ipcInvariantFull st stC addr hObjInv hInv hCore
+  exact ipcInvariantFull_of_objects_scheduler_eq (st := stC)
+    (spliceDeletedCdtNode_objects _ _) (spliceDeletedCdtNode_scheduler _ _) hC
 
 /-- `.cspaceDelete`'s store invariant: the delete writes one CNode and the CDT,
 so `objects.invExt` carries — what the finalising delete's teardown, which runs on
@@ -968,11 +968,9 @@ the delete's post-state, needs. -/
 theorem cspaceDeleteSlot_preserves_objects_invExt
     (st st' : SystemState) (addr : CSpaceAddr) (hObjInv : st.objects.invExt)
     (hStep : cspaceDeleteSlot addr st = .ok ((), st')) : st'.objects.invExt := by
-  unfold cspaceDeleteSlot at hStep
-  split at hStep
-  · contradiction
-  · obtain ⟨_, _, _, _, _, hExt⟩ := cspaceDeleteSlotCore_shape st st' addr hObjInv hStep
-    exact hExt
+  obtain ⟨stC, hCore, rfl⟩ := cspaceDeleteSlot_ok_decompose addr st st' hStep
+  obtain ⟨_, _, _, _, _, hExt⟩ := cspaceDeleteSlotCore_shape st stC addr hObjInv hCore
+  rw [spliceDeletedCdtNode_objects]; exact hExt
 
 -- ============================================================================
 -- WS-RR RR8.16 (`v0.35.190`): the revocation family preserves `ipcInvariantFull`
@@ -1003,26 +1001,16 @@ private theorem cspaceRevoke_shape
       st'.objects[addr.cnode]? = some (.cnode (cn.revokeTargetLocal addr.slot parent.target)) ∧
       (∀ oid : SeLe4n.ObjId, oid ≠ addr.cnode → st'.objects[oid]? = st.objects[oid]?) ∧
       st'.scheduler = st.scheduler ∧ st'.objects.invExt := by
-  unfold cspaceRevoke SystemState.getCNode? at hStep
-  cases hL : cspaceLookupSlot addr st with
-  | error e => simp [hL] at hStep
-  | ok p =>
-    rcases p with ⟨parent, stL⟩
-    have hEqL : stL = st := cspaceLookupSlot_preserves_state st stL addr parent hL
-    subst stL
-    cases hC : st.objects[addr.cnode]? with
-    | none => simp [hL, hC] at hStep
-    | some obj =>
-      cases obj with
-      | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
-      | schedContext _ | reply _ | frame _ | pageTable _ => simp [hL, hC] at hStep
-      | cnode cn =>
-        simp only [hL, hC] at hStep
-        exact ⟨cn, parent, rfl,
-          storeObject_objects_eq st st' addr.cnode _ hObjInv hStep,
-          fun oid hNe => storeObject_objects_ne st st' addr.cnode oid _ hNe hObjInv hStep,
-          storeObject_scheduler_eq st st' addr.cnode _ hStep,
-          storeObject_preserves_objects_invExt st st' addr.cnode _ hObjInv hStep⟩
+  obtain ⟨parent, cn, stS, _, hCn, hStore, rfl⟩ := cspaceRevoke_ok_decompose addr st st' hStep
+  have hPre : st.objects[addr.cnode]? = some (.cnode cn) := by
+    unfold SystemState.getCNode? at hCn
+    split at hCn <;> simp_all
+  simp only [detachRevokedSlots_objects, detachRevokedSlots_scheduler]
+  exact ⟨cn, parent, hPre,
+    storeObject_objects_eq st stS addr.cnode _ hObjInv hStore,
+    fun oid hNe => storeObject_objects_ne st stS addr.cnode oid _ hNe hObjInv hStore,
+    storeObject_scheduler_eq st stS addr.cnode _ hStore,
+    storeObject_preserves_objects_invExt st stS addr.cnode _ hObjInv hStore⟩
 
 /-- `cspaceRevoke` preserves the bundle: local revocation only *removes* slots
 (`CNode.lookup_revokeTargetLocal_sub`), so the badge clause carries from the
@@ -4401,12 +4389,10 @@ theorem lifecyclePreRetypeCleanup_detached_frame
       simp only [] at hStep
       split at hStep
       · contradiction
-      · split at hStep
-        · contradiction
-        · cases hStep
-          exact ⟨detachCNodeSlots_objects_eq st target cn,
-            detachCNodeSlots_scheduler_eq st target cn,
-            by rw [detachCNodeSlots_machine_eq st target cn]⟩
+      · cases hStep
+        exact ⟨detachCNodeSlots_objects_eq st target cn,
+          detachCNodeSlots_scheduler_eq st target cn,
+          by rw [detachCNodeSlots_machine_eq st target cn]⟩
   | reply r =>
       simp only [] at hStep
       split at hStep

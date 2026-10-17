@@ -1030,45 +1030,19 @@ def cspaceMint
             | .ok child => cspaceInsertSlot dst child st'
 
 /-- U-H03: Check whether a CSpace slot has CDT children (derived capabilities).
-Returns `true` if the slot's CDT node has any children, indicating that
-`cspaceRevoke` must be called before deletion. -/
+Returns `true` if the slot's CDT node has any children.  No operation refuses on
+it: a delete splices the slot's node out and its children are re-derived from
+its parent (`spliceDeletedCdtNode`). -/
 def hasCdtChildren (st : SystemState) (addr : CSpaceAddr) : Bool :=
   match st.lookupCdtNodeOfSlot addr with
   | none => false  -- no CDT node → no children
   | some node => !(st.cdt.childrenOf node).isEmpty
 
-/-- **Is this slot still standing as a derivation parent?** — it has CDT
-children.  Destroying such a slot severs `cdtNodeSlot` while the node and its
-edges survive, and `cspaceRevokeCdt` resolves *through* that mapping — so the
-derived capabilities would keep their authority with nothing able to revoke
-them.
-
-No capability is ever in flight between syscalls (WS-ZA ZA4.7): a blocked
-sender keeps only the addresses of the capabilities it sends, in its saved
-registers, and the receive that takes the message resolves them in the
-sender's CSpace as it then stands and installs them in the same step, as seL4
-does.  So the children are the whole question.
-
-Factored out because it has more than one caller and they must test the same
-condition: `cspaceDeleteSlot` destroys one slot, and retyping a CNode destroys
-every slot it contains. -/
-def slotIsDerivationParent (st : SystemState) (addr : CSpaceAddr) : Bool :=
-  hasCdtChildren st addr
-
-/-- **Does any slot of this CNode still stand as a derivation parent?**
-
-The CNode-wide form, for retype.  Folds `slotIsDerivationParent` over the
-occupied slots, which is exactly the set whose `cdtSlotNode` entries a retype
-would erase. -/
-def cnodeHasDerivationParentSlot
-    (st : SystemState) (cnodeId : SeLe4n.ObjId) (cn : CNode) : Bool :=
-  cn.slots.fold false (fun acc slot _cap =>
-    acc || slotIsDerivationParent st { cnode := cnodeId, slot := slot })
-
-/-- Core capability slot deletion without CDT children guard.
-Used by `cspaceDeleteSlot` (which adds the guard) and by internal kernel
-operations (`processRevokeNode`, `cspaceRevokeCdtStrict`, `cspaceMove`) that
-manage CDT children themselves. -/
+/-- Core capability slot deletion: empties the slot and unmaps it from its
+derivation node, leaving the tree's edges to the caller.
+Used by `cspaceDeleteSlot` (which then splices the node out of the tree) and by
+internal kernel operations (`processRevokeNode`, `cspaceRevokeCdtStrict`,
+`cspaceMove`) that manage the node themselves. -/
 def cspaceDeleteSlotCore (addr : CSpaceAddr) : Kernel Unit :=
   fun st =>
     match st.getCNode? addr.cnode with
@@ -1079,19 +1053,47 @@ def cspaceDeleteSlotCore (addr : CSpaceAddr) : Kernel Unit :=
         | .ok (_, st') => .ok ((), SystemState.detachSlotFromCdt st' addr)
     | none => .error .objectNotFound
 
+/-- Splice a deleted slot's derivation node out of the tree, if it had one
+(`CapDerivationTree.spliceNode`): its edges go and its children are derived from
+its parent instead, as seL4's `cteDelete` unlinks a capability from the mapping
+database. -/
+def spliceDeletedCdtNode (st : SystemState) : Option CdtNodeId → SystemState
+  | none => st
+  | some node => { st with cdt := st.cdt.spliceNode node }
+
+/-- **A destroyed slot leaves the derivation tree**: its node is spliced out
+(`spliceDeletedCdtNode`) and its slot mappings are cleared.  The one step every
+destroyer of an already-emptied slot takes: retyping a CNode for each of its
+slots, and the local revoke for each sibling it empties.  The node is read and
+spliced out before the slot maps are written, so a fold of this step never reads
+a state after building the next one from it (which would copy the slot maps). -/
+def detachDestroyedSlot (acc : SystemState) (ref : SlotRef) : SystemState :=
+  SystemState.detachSlotFromCdt (spliceDeletedCdtNode acc (acc.lookupCdtNodeOfSlot ref)) ref
+
+/-- The destroyed-slot step writes the tree and the two slot maps alone. -/
+theorem detachDestroyedSlot_shape (acc : SystemState) (ref : SlotRef) :
+    ∃ cdt sn ns, detachDestroyedSlot acc ref =
+      { acc with cdt := cdt, cdtSlotNode := sn, cdtNodeSlot := ns } := by
+  unfold detachDestroyedSlot SystemState.detachSlotFromCdt
+  cases acc.lookupCdtNodeOfSlot ref <;> simp only [spliceDeletedCdtNode] <;> split <;>
+    exact ⟨_, _, _, rfl⟩
+
 /-- Delete the capability currently stored in `addr`.
 
-U-H03: Before deleting, checks that no CDT children exist for the slot.
-Returns `.revocationRequired` if children are found, enforcing the
-`revokeBeforeDelete` proof obligation as a runtime check. -/
+The slot's derivation node leaves the tree with it, and any capabilities derived
+from it are re-derived from its parent (`spliceDeletedCdtNode`), as seL4's
+`cteDelete` unlinks a capability from the mapping database.  So a delete never
+depends on whether the slot has derived capabilities: refusing while it had
+some let a thread that holds a derived copy decide whether a delete by another
+thread succeeds, which is a channel between them.  Revoking an ancestor still
+reaches every capability derived through the deleted one.  Unmapping the slot
+alone, as an earlier version did, left the node's edges behind, so each
+copy-and-delete round grew the tree without bound. -/
 def cspaceDeleteSlot (addr : CSpaceAddr) : Kernel Unit :=
   fun st =>
-    -- `slotIsDerivationParent` is the condition the CNode retype guard reads
-    -- too, so the two destroyers refuse on one answer.
-    if slotIsDerivationParent st addr then
-      .error .revocationRequired
-    else
-      cspaceDeleteSlotCore addr st
+    match cspaceDeleteSlotCore addr st with
+    | .error e => .error e
+    | .ok ((), st') => .ok ((), spliceDeletedCdtNode st' (st.lookupCdtNodeOfSlot addr))
 
 /-- **WS-BP BP7.1 (`v0.36.7`)**: the core delete writes one CNode and the CDT —
 never the scheduler or the machine. -/
@@ -1117,20 +1119,114 @@ theorem cspaceDeleteSlotCore_scheduler_machine (addr : CSpaceAddr) (st st' : Sys
       exact ⟨hD.1.trans (storeObject_scheduler_eq _ _ _ _ hS),
         hD.2.trans (storeObject_machine_eq _ _ _ _ hS)⟩
 
+/-- The core delete unmaps the slot from its node but leaves the tree's edges
+and maps as they were; the guarded wrapper removes the leaf. -/
+theorem cspaceDeleteSlotCore_cdt_eq (st st' : SystemState) (addr : CSpaceAddr)
+    (h : cspaceDeleteSlotCore addr st = .ok ((), st')) :
+    st'.cdt = st.cdt := by
+  unfold cspaceDeleteSlotCore at h
+  cases hCn : st.getCNode? addr.cnode with
+  | none => rw [hCn] at h; cases h
+  | some cn =>
+    rw [hCn] at h
+    simp only at h
+    cases hS : storeObject addr.cnode (.cnode (cn.remove addr.slot)) st with
+    | error e => rw [hS] at h; cases h
+    | ok pr =>
+      obtain ⟨u, st1⟩ := pr; cases u
+      rw [hS] at h
+      simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at h
+      subst h
+      have hD : (SystemState.detachSlotFromCdt st1 addr).cdt = st1.cdt := by
+        unfold SystemState.detachSlotFromCdt; split <;> rfl
+      exact hD.trans (storeObject_cdt_eq _ _ _ _ hS)
+
+/-- The splice writes the tree alone. -/
+theorem spliceDeletedCdtNode_eq (st : SystemState) (node? : Option CdtNodeId) :
+    spliceDeletedCdtNode st node? =
+      { st with cdt := match node? with | none => st.cdt | some n => st.cdt.spliceNode n } := by
+  cases node? <;> rfl
+
+@[simp] theorem spliceDeletedCdtNode_objects (st : SystemState) (node? : Option CdtNodeId) :
+    (spliceDeletedCdtNode st node?).objects = st.objects := by cases node? <;> rfl
+
+@[simp] theorem spliceDeletedCdtNode_scheduler (st : SystemState) (node? : Option CdtNodeId) :
+    (spliceDeletedCdtNode st node?).scheduler = st.scheduler := by cases node? <;> rfl
+
+@[simp] theorem spliceDeletedCdtNode_machine (st : SystemState) (node? : Option CdtNodeId) :
+    (spliceDeletedCdtNode st node?).machine = st.machine := by cases node? <;> rfl
+
+@[simp] theorem spliceDeletedCdtNode_cdtSlotNode (st : SystemState) (node? : Option CdtNodeId) :
+    (spliceDeletedCdtNode st node?).cdtSlotNode = st.cdtSlotNode := by cases node? <;> rfl
+
+@[simp] theorem spliceDeletedCdtNode_cdtNodeSlot (st : SystemState) (node? : Option CdtNodeId) :
+    (spliceDeletedCdtNode st node?).cdtNodeSlot = st.cdtNodeSlot := by cases node? <;> rfl
+
+@[simp] theorem spliceDeletedCdtNode_lifecycle (st : SystemState) (node? : Option CdtNodeId) :
+    (spliceDeletedCdtNode st node?).lifecycle = st.lifecycle := by cases node? <;> rfl
+
+@[simp] theorem spliceDeletedCdtNode_tlbShootdown (st : SystemState) (node? : Option CdtNodeId) :
+    (spliceDeletedCdtNode st node?).tlbShootdown = st.tlbShootdown := by cases node? <;> rfl
+
+@[simp] theorem spliceDeletedCdtNode_cdtNextNode (st : SystemState) (node? : Option CdtNodeId) :
+    (spliceDeletedCdtNode st node?).cdtNextNode = st.cdtNextNode := by cases node? <;> rfl
+
+/-- **The delete's success shape**: the core delete succeeded and the deleted
+slot's node was spliced out of the tree. -/
+theorem cspaceDeleteSlot_ok_decompose (addr : CSpaceAddr) (st st' : SystemState)
+    (h : cspaceDeleteSlot addr st = .ok ((), st')) :
+    ∃ stC, cspaceDeleteSlotCore addr st = .ok ((), stC) ∧
+      st' = spliceDeletedCdtNode stC (st.lookupCdtNodeOfSlot addr) := by
+  unfold cspaceDeleteSlot at h
+  cases hC : cspaceDeleteSlotCore addr st with
+  | error e => rw [hC] at h; cases h
+  | ok pr =>
+    obtain ⟨u, stC⟩ := pr; cases u
+    rw [hC] at h
+    simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at h
+    exact ⟨stC, rfl, h.symm⟩
+
+/-- **A delete's outcome never depends on the derivation tree**: it fails
+exactly when the core delete does, whatever capabilities were derived from the
+slot. -/
+theorem cspaceDeleteSlot_isOk_iff_core (addr : CSpaceAddr) (st : SystemState) :
+    (cspaceDeleteSlot addr st).isOk = (cspaceDeleteSlotCore addr st).isOk := by
+  unfold cspaceDeleteSlot
+  cases cspaceDeleteSlotCore addr st with
+  | error e => rfl
+  | ok pr => obtain ⟨u, _⟩ := pr; cases u; rfl
+
 /-- ...and so does the guarded delete. -/
 theorem cspaceDeleteSlot_scheduler_machine (addr : CSpaceAddr) (st st' : SystemState)
     (h : cspaceDeleteSlot addr st = .ok ((), st')) :
     st'.scheduler = st.scheduler ∧ st'.machine = st.machine := by
-  unfold cspaceDeleteSlot at h
-  split at h
-  · cases h
-  · exact cspaceDeleteSlotCore_scheduler_machine addr st st' h
+  obtain ⟨stC, hC, rfl⟩ := cspaceDeleteSlot_ok_decompose addr st st' h
+  rw [spliceDeletedCdtNode_eq]
+  exact cspaceDeleteSlotCore_scheduler_machine addr st stC hC
 
-/-- The guard: an existing child forces a revoke first. -/
-theorem cspaceDeleteSlot_refuses_existing_children (st : SystemState) (addr : CSpaceAddr)
-    (h : hasCdtChildren st addr = true) :
-    cspaceDeleteSlot addr st = .error .revocationRequired := by
-  simp [cspaceDeleteSlot, slotIsDerivationParent, h]
+/-- **The siblings the local revoke empties leave the derivation tree**: each
+slot `revokeTargetLocal` drops (every slot but the source naming its target)
+takes the destroyed-slot step (`detachDestroyedSlot`), so no capability the
+revoke destroyed keeps a node or a slot mapping. -/
+def detachRevokedSlots (st : SystemState) (cnodeId : SeLe4n.ObjId) (cn : CNode)
+    (sourceSlot : SeLe4n.Slot) (target : CapTarget) : SystemState :=
+  cn.slots.fold st (fun acc slot cap =>
+    if CNode.revokeTargetLocalKeeps sourceSlot target slot cap then acc
+    else detachDestroyedSlot acc { cnode := cnodeId, slot := slot })
+
+/-- Detaching the revoked siblings writes the tree and the two slot maps alone. -/
+theorem detachRevokedSlots_shape (st : SystemState) (cnodeId : SeLe4n.ObjId) (cn : CNode)
+    (sourceSlot : SeLe4n.Slot) (target : CapTarget) :
+    ∃ cdt sn ns, detachRevokedSlots st cnodeId cn sourceSlot target =
+      { st with cdt := cdt, cdtSlotNode := sn, cdtNodeSlot := ns } := by
+  unfold detachRevokedSlots
+  refine SeLe4n.Kernel.RobinHood.RHTable.fold_preserves cn.slots.table st _
+    (fun acc => ∃ cdt sn ns, acc = { st with cdt := cdt, cdtSlotNode := sn, cdtNodeSlot := ns })
+    ⟨_, _, _, rfl⟩ (fun acc slot cap ⟨c, a, b, hAcc⟩ => ?_)
+  split
+  · exact ⟨c, a, b, hAcc⟩
+  · obtain ⟨c', a', b', h⟩ := detachDestroyedSlot_shape acc { cnode := cnodeId, slot := slot }
+    exact ⟨c', a', b', by rw [h, hAcc]⟩
 
 /-- V5-G (M-DEF-7): **Revocation routing guide.**
 
@@ -1138,8 +1234,9 @@ seLe4n provides three revocation entry points for different use cases:
 
 - **`cspaceRevoke`** (this function): the local same-TARGET sweep.  Removes
   every capability in the source's CNode that names the source slot's target,
-  whether or not it was derived from the source, and does NOT traverse the CDT
-  or touch the CDT maps.  **It is not seL4's revoke**: `seL4_CNode_Revoke`
+  whether or not it was derived from the source.  It walks no derivations, but
+  each capability it removes leaves the CDT as a delete's does
+  (`detachRevokedSlots`, splicing the slot's node out).  **It is not seL4's revoke**: `seL4_CNode_Revoke`
   destroys exactly the source's derivations, and a target match reaches an
   independently rooted capability to the same object and the source's own
   parent as well.  It predates the CDT, and since `v0.36.1` no syscall reaches
@@ -1176,9 +1273,15 @@ The source slot remains present and sibling slots naming the same target are rem
 
 **S4-L: Complexity analysis.** Local revocation performs a single `RHTable.fold`
 pass over the source CNode's slots, filtering entries whose `CapTarget` matches
-the source capability. This is O(n) in the slot count of the containing CNode.
-The slot count is bounded by the CNode's `2^radixWidth` capacity, which is at
-most `2^maxCSpaceDepth = 2^64` in theory but typically ≤ 1024 in practice.
+the source capability, then splices the node of each slot it removed out of the
+CDT (`detachRevokedSlots`, a second pass over the same slots).  Each splice scans
+the tree's edge list for the node's parent edge and child edges, so the cost is
+O(n + r·E), where `n` is the slot count of the containing CNode, `r` the number of
+slots removed and `E` the CDT's edge count.  The slot count is bounded by the
+CNode's `2^radixWidth` capacity, which is at most `2^maxCSpaceDepth = 2^64` in
+theory but typically ≤ 1024 in practice.  WS-ZA ZA5.3, which links the tree
+through the slots as seL4's mapping database does, makes each splice
+proportional to the removed node's children.
 
 For CDT-based cross-CNode revocation (`cspaceRevokeCdt`), the traversal visits
 all descendants of the source node in the Capability Derivation Tree. This is
@@ -1196,8 +1299,101 @@ def cspaceRevoke (addr : CSpaceAddr) : Kernel Unit :=
         match st'.getCNode? addr.cnode with
         | some cn =>
             let cn' := cn.revokeTargetLocal addr.slot parent.target
-            storeObject addr.cnode (.cnode cn') st'
+            match storeObject addr.cnode (.cnode cn') st' with
+            | .error e => .error e
+            | .ok ((), st'') =>
+                .ok ((), detachRevokedSlots st'' addr.cnode cn addr.slot parent.target)
         | none => .error .objectNotFound
+
+@[simp] theorem detachRevokedSlots_objects (st : SystemState) (cnodeId : SeLe4n.ObjId)
+    (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget) :
+    (detachRevokedSlots st cnodeId cn sourceSlot target).objects = st.objects := by
+  obtain ⟨_, _, _, h⟩ := detachRevokedSlots_shape st cnodeId cn sourceSlot target; rw [h]
+
+@[simp] theorem detachRevokedSlots_scheduler (st : SystemState) (cnodeId : SeLe4n.ObjId)
+    (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget) :
+    (detachRevokedSlots st cnodeId cn sourceSlot target).scheduler = st.scheduler := by
+  obtain ⟨_, _, _, h⟩ := detachRevokedSlots_shape st cnodeId cn sourceSlot target; rw [h]
+
+@[simp] theorem detachRevokedSlots_machine (st : SystemState) (cnodeId : SeLe4n.ObjId)
+    (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget) :
+    (detachRevokedSlots st cnodeId cn sourceSlot target).machine = st.machine := by
+  obtain ⟨_, _, _, h⟩ := detachRevokedSlots_shape st cnodeId cn sourceSlot target; rw [h]
+
+@[simp] theorem detachRevokedSlots_lifecycle (st : SystemState) (cnodeId : SeLe4n.ObjId)
+    (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget) :
+    (detachRevokedSlots st cnodeId cn sourceSlot target).lifecycle = st.lifecycle := by
+  obtain ⟨_, _, _, h⟩ := detachRevokedSlots_shape st cnodeId cn sourceSlot target; rw [h]
+
+@[simp] theorem detachRevokedSlots_tlbShootdown (st : SystemState) (cnodeId : SeLe4n.ObjId)
+    (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget) :
+    (detachRevokedSlots st cnodeId cn sourceSlot target).tlbShootdown = st.tlbShootdown := by
+  obtain ⟨_, _, _, h⟩ := detachRevokedSlots_shape st cnodeId cn sourceSlot target; rw [h]
+
+@[simp] theorem detachRevokedSlots_objectIndex (st : SystemState) (cnodeId : SeLe4n.ObjId)
+    (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget) :
+    (detachRevokedSlots st cnodeId cn sourceSlot target).objectIndex = st.objectIndex := by
+  obtain ⟨_, _, _, h⟩ := detachRevokedSlots_shape st cnodeId cn sourceSlot target; rw [h]
+
+@[simp] theorem detachRevokedSlots_objectIndexSet (st : SystemState) (cnodeId : SeLe4n.ObjId)
+    (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget) :
+    (detachRevokedSlots st cnodeId cn sourceSlot target).objectIndexSet = st.objectIndexSet := by
+  obtain ⟨_, _, _, h⟩ := detachRevokedSlots_shape st cnodeId cn sourceSlot target; rw [h]
+
+@[simp] theorem detachRevokedSlots_services (st : SystemState) (cnodeId : SeLe4n.ObjId)
+    (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget) :
+    (detachRevokedSlots st cnodeId cn sourceSlot target).services = st.services := by
+  obtain ⟨_, _, _, h⟩ := detachRevokedSlots_shape st cnodeId cn sourceSlot target; rw [h]
+
+@[simp] theorem detachRevokedSlots_irqHandlers (st : SystemState) (cnodeId : SeLe4n.ObjId)
+    (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget) :
+    (detachRevokedSlots st cnodeId cn sourceSlot target).irqHandlers = st.irqHandlers := by
+  obtain ⟨_, _, _, h⟩ := detachRevokedSlots_shape st cnodeId cn sourceSlot target; rw [h]
+
+@[simp] theorem detachRevokedSlots_asidTable (st : SystemState) (cnodeId : SeLe4n.ObjId)
+    (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget) :
+    (detachRevokedSlots st cnodeId cn sourceSlot target).asidTable = st.asidTable := by
+  obtain ⟨_, _, _, h⟩ := detachRevokedSlots_shape st cnodeId cn sourceSlot target; rw [h]
+
+@[simp] theorem detachRevokedSlots_cdtNextNode (st : SystemState) (cnodeId : SeLe4n.ObjId)
+    (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget) :
+    (detachRevokedSlots st cnodeId cn sourceSlot target).cdtNextNode = st.cdtNextNode := by
+  obtain ⟨_, _, _, h⟩ := detachRevokedSlots_shape st cnodeId cn sourceSlot target; rw [h]
+
+/-- **The local revoke's success shape**: the source resolved, its CNode was
+rewritten without the revoked siblings, and those siblings left the tree. -/
+theorem cspaceRevoke_ok_decompose (addr : CSpaceAddr) (st st' : SystemState)
+    (h : cspaceRevoke addr st = .ok ((), st')) :
+    ∃ parent cn stS, cspaceLookupSlot addr st = .ok (parent, st) ∧
+      st.getCNode? addr.cnode = some cn ∧
+      storeObject addr.cnode (.cnode (cn.revokeTargetLocal addr.slot parent.target)) st =
+        .ok ((), stS) ∧
+      st' = detachRevokedSlots stS addr.cnode cn addr.slot parent.target := by
+  unfold cspaceRevoke at h
+  cases hL : cspaceLookupSlot addr st with
+  | error e => rw [hL] at h; cases h
+  | ok pr =>
+    obtain ⟨parent, stL⟩ := pr
+    have hEq : stL = st := by
+      unfold cspaceLookupSlot at hL
+      split at hL
+      · cases hL; rfl
+      · split at hL <;> cases hL
+    subst hEq
+    rw [hL] at h
+    simp only at h
+    cases hCn : stL.getCNode? addr.cnode with
+    | none => rw [hCn] at h; cases h
+    | some cn =>
+      rw [hCn] at h
+      simp only at h
+      cases hS : storeObject addr.cnode (.cnode (cn.revokeTargetLocal addr.slot parent.target)) stL with
+      | error e => rw [hS] at h; cases h
+      | ok pr =>
+        obtain ⟨u, stS⟩ := pr; cases u
+        rw [hS] at h
+        simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at h
+        exact ⟨parent, cn, stS, rfl, rfl, hS, h.symm⟩
 
 -- ============================================================================
 -- WS-E4/C-02: Capability copy, move, and mutate operations
@@ -2280,20 +2476,16 @@ def ipcTransferSingleCap
             -- The condition is `cdtNodeIsRevocable`, which is revocation's own
             -- precondition rather than a restatement of it.  Round 18: this
             -- asked only whether `cdtSlotNode` still mapped the node, on the
-            -- premise that every destroyer severs that mapping.  The first three
-            -- do; the sibling sweep does not, because the local revoke writes
-            -- only the CNode and touches no CDT map — so the mapping outlived
-            -- the capability and the check passed on an empty slot.
+            -- premise that every destroyer severs that mapping.  The local
+            -- revoke once wrote only the CNode and touched no CDT map, so the
+            -- mapping outlived the capability and the check passed on an empty
+            -- slot; every destroyer now takes the slot out of the tree
+            -- (`detachDestroyedSlot`), but the check stays.
             --
             -- Checking here rather than at each destroyer is deliberate.  The
             -- destroyers are open-ended — delete, CNode retype and revoke
             -- today, and whatever later transition frees a slot — and any one of
-            -- them that forgets a guard reopens the hole silently.  The creator is exactly one function.
-            -- `cspaceDeleteSlot` and the CNode retype guard still refuse up
-            -- front, because `.revocationRequired` tells a caller to revoke
-            -- first and that is a better answer than a silently dropped
-            -- capability; but they are the ergonomics, and this is the
-            -- guarantee.
+            -- them that forgets to detach reopens the hole silently.  The creator is exactly one function.
             --
             -- Placed after the receiver-root and empty-slot resolution rather
             -- than before it, so that `.ok` still witnesses a CNode at the

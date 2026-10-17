@@ -1196,10 +1196,12 @@ theorem cspaceDeleteSlot_preserves_projection
     (hObjInv : st.objects.invExt)
     (hStep : cspaceDeleteSlot addr st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
-  unfold cspaceDeleteSlot at hStep
-  split at hStep
-  · simp at hStep
-  · exact cspaceDeleteSlotCore_preserves_projection ctx observer addr st st' hAddrHigh hObjInv hStep
+  obtain ⟨stC, hCore, rfl⟩ := cspaceDeleteSlot_ok_decompose addr st st' hStep
+  have hLeaf : projectState ctx observer (spliceDeletedCdtNode stC (st.lookupCdtNodeOfSlot addr)) =
+      projectState ctx observer stC := by
+    cases st.lookupCdtNodeOfSlot addr <;> rfl
+  rw [hLeaf]
+  exact cspaceDeleteSlotCore_preserves_projection ctx observer addr st stC hAddrHigh hObjInv hCore
 
 /-- WS-H9: cspaceDeleteSlot preserves low-equivalence. -/
 private theorem cspaceDeleteSlot_preserves_lowEquivalent
@@ -1227,31 +1229,22 @@ theorem cspaceRevoke_preserves_projection
     (hObjInv : st.objects.invExt)
     (hStep : cspaceRevoke addr st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
-  unfold cspaceRevoke SystemState.getCNode? at hStep
-  cases hL : cspaceLookupSlot addr st with
-  | error e => simp [hL] at hStep
-  | ok p =>
-    rcases p with ⟨par, stL⟩
-    have hEqL : stL = st := cspaceLookupSlot_preserves_state st stL addr par hL
-    subst stL
-    cases hC : st.objects[addr.cnode]? with
-    | none => simp [hL, hC] at hStep
-    | some obj =>
-      cases obj with
-      | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ => simp [hL, hC] at hStep
-      | cnode cn =>
-        simp [hL, hC, storeObject] at hStep; cases hStep
-        simp only [projectState]; congr 1
-        · funext oid; by_cases hObs : objectObservable ctx observer oid
-          · simp [projectObjects, hObs, SystemState.getObject?]
-            have hNe : oid ≠ addr.cnode := by
-              intro hEq; subst hEq; simp [hAddrHigh] at hObs
-            simp only [RHTable_getElem?_eq_get?]; rw [RHTable_getElem?_insert st.objects _ _ hObjInv]; simp [Ne.symm hNe]
-          · simp [projectObjects, hObs]
-        · simp only [projectObjectIndex]
-          split
-          · rfl
-          · rw [List.filter_cons]; simp [hAddrHigh]
+  obtain ⟨par, cn, stS, _, hCn, hS, rfl⟩ := cspaceRevoke_ok_decompose addr st st' hStep
+  rw [projectState_detachRevokedSlots]
+  have hC : st.objects[addr.cnode]? = some (.cnode cn) := by
+    unfold SystemState.getCNode? at hCn; split at hCn <;> simp_all
+  simp [hC, storeObject] at hS; cases hS
+  simp only [projectState]; congr 1
+  · funext oid; by_cases hObs : objectObservable ctx observer oid
+    · simp [projectObjects, hObs, SystemState.getObject?]
+      have hNe : oid ≠ addr.cnode := by
+        intro hEq; subst hEq; simp [hAddrHigh] at hObs
+      simp only [RHTable_getElem?_eq_get?]; rw [RHTable_getElem?_insert st.objects _ _ hObjInv]; simp [Ne.symm hNe]
+    · simp [projectObjects, hObs]
+  · simp only [projectObjectIndex]
+    split
+    · rfl
+    · rw [List.filter_cons]; simp [hAddrHigh]
 
 -- AF5-I (AF-48): Duplicate `cdt_only_preserves_projection` and
 -- `ensureCdtNodeForSlot_preserves_projection` removed. The canonical
@@ -3062,41 +3055,27 @@ theorem lifecycleRevokeDeleteRetype_preserves_projection
   -- Propagate invExt through cspaceRevoke: cspaceRevoke does cspaceLookupSlot (preserves state)
   -- + storeObject (preserves invExt)
   have hObjInvRevoked : stRevoked.objects.invExt := by
-    unfold cspaceRevoke SystemState.getCNode? at hRevoke
-    cases hL : cspaceLookupSlot cleanup st with
-    | error e => simp [hL] at hRevoke
-    | ok p =>
-      rcases p with ⟨par, stL⟩
-      have hEqL := cspaceLookupSlot_preserves_state st stL cleanup par hL
-      subst stL
-      cases hC : st.objects[cleanup.cnode]? with
-      | none => simp [hL, hC] at hRevoke
-      | some obj =>
-        cases obj with
-        | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ => simp [hL, hC] at hRevoke
-        | cnode cn =>
-          simp [hL, hC, storeObject] at hRevoke; cases hRevoke
-          exact RHTable_insert_preserves_invExt st.objects _ _ hObjInv
+    obtain ⟨_, _, stS, _, _, hS, rfl⟩ := cspaceRevoke_ok_decompose cleanup st stRevoked hRevoke
+    rw [detachRevokedSlots_objects]
+    exact storeObject_preserves_objects_invExt st stS cleanup.cnode _ hObjInv hS
   -- Propagate invExt through cspaceDeleteSlot: cspaceDeleteSlot does storeObject + detachSlotFromCdt
   have hObjInvDeleted : stDeleted.objects.invExt := by
-    unfold cspaceDeleteSlot at hDelete
-    -- U-H03: Discharge CDT children guard
-    split at hDelete
-    · simp at hDelete
-    · unfold cspaceDeleteSlotCore SystemState.getCNode? at hDelete
+    obtain ⟨stC, hCoreDel, rfl⟩ := cspaceDeleteSlot_ok_decompose _ _ _ hDelete
+    rw [spliceDeletedCdtNode_objects]
+    · unfold cspaceDeleteSlotCore SystemState.getCNode? at hCoreDel
       cases hObj : stRevoked.objects[cleanup.cnode]? with
-      | none => simp [hObj] at hDelete
+      | none => simp [hObj] at hCoreDel
       | some obj =>
         cases obj with
-        | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ => simp [hObj] at hDelete
+        | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ => simp [hObj] at hCoreDel
         | cnode cn =>
-          simp only [hObj] at hDelete
+          simp only [hObj] at hCoreDel
           cases hSt : storeObject cleanup.cnode (.cnode (cn.remove cleanup.slot)) stRevoked with
-          | error e => simp [hSt] at hDelete
+          | error e => simp [hSt] at hCoreDel
           | ok pair₁ =>
-            simp only [hSt] at hDelete
+            simp only [hSt] at hCoreDel
             have hInvPair := storeObject_preserves_objects_invExt stRevoked pair₁.2 cleanup.cnode _ hObjInvRevoked hSt
-            cases hDelete
+            cases hCoreDel
             -- detachSlotFromCdt only modifies CDT
             simp only [SystemState.detachSlotFromCdt]; split
             · exact hInvPair

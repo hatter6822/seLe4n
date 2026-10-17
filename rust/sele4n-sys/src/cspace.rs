@@ -84,6 +84,10 @@ pub fn cspace_move(
 /// `finaliseCap` → `unmapPage`).  A mapping recorded on the capability that is
 /// no longer in place — the address was unmapped through a VSpace capability
 /// since — removes nothing.
+///
+/// A slot with derived capabilities is deleted like any other: they stay, now
+/// derived from the deleted capability's own parent (seL4's `cteDelete`), so a
+/// revoke of that parent still reaches them.
 #[inline]
 pub fn cspace_delete(cnode_cap: CPtr, target_slot: Slot) -> KernelResult<SyscallResponse> {
     let args = CSpaceDeleteArgs { target_slot };
@@ -104,8 +108,8 @@ pub fn cspace_delete(cnode_cap: CPtr, target_slot: Slot) -> KernelResult<Syscall
 /// CNode.
 ///
 /// The source slot itself **survives**: revocation destroys a capability's
-/// derivations, not the capability, which is what makes `cspace_delete`'s
-/// `RevocationRequired` refusal dischargeable — revoke, then delete.  It takes
+/// derivations, not the capability, which is what distinguishes it from
+/// `cspace_delete`.  It takes
 /// the delete's register shape (`decodeCSpaceDeleteArgs`: targetSlot MR\[0\]),
 /// since both name one slot of the invoked CNode.  Every mapping a destroyed
 /// frame capability made is removed with it (`cspaceRevokeCdtFinalising`).

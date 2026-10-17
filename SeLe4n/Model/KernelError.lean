@@ -90,7 +90,7 @@ inductive KernelError where
   | invalidCapPtr           -- S4-K: capability pointer exceeds word64 bounds
   | objectStoreCapacityExceeded  -- S4-B: object count exceeds maxObjects capacity
   | allocationMisaligned  -- S5-G: allocation base not page-aligned for VSpace-bound objects
-  | revocationRequired    -- U-H03: delete attempted on slot with CDT children (must revoke first)
+  | revocationRequired    -- U-H03: destroying an object or mapping still in use (unmap, cancel or revoke first)
   | invalidArgument      -- U5-E/U-M07: syscall argument decode failed (e.g., invalid permission bits)
   | mmioUnaligned        -- V4-B/M-HW-1: MMIO access at unaligned address (4-byte for 32-bit, 8-byte for 64-bit)
   | invalidSyscallArgument  -- X5-E/M-11: syscall-specific argument decode failure (distinct from generic invalidArgument)
