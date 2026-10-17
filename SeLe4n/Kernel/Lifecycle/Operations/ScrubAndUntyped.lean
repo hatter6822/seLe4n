@@ -178,6 +178,31 @@ theorem scrubObjectMemory_establishes_memoryZeroed
   simp only [scrubObjectMemory]
   exact SeLe4n.zeroMemoryRange_establishes_memoryZeroed st.machine _ _
 
+/-- Whether the extent `scrubExtent childId ty` lies inside the machine's
+physical address space: `(childId + 1) × size ≤ 2 ^ physicalAddressWidth`,
+compared as `childId < 2 ^ width / size` so a refused identifier is never
+multiplied out.  An object is memory, so its extent is a physical range; an
+extent past the address width named no memory, and on a model scrub its byte
+addresses outgrew a machine word, so every byte a zero-check read built a
+fresh big number. -/
+def objectExtentInAddressSpace (ms : MachineState) (childId : SeLe4n.ObjId)
+    (ty : KernelObjectType) : Bool :=
+  childId.toNat < 2 ^ ms.physicalAddressWidth / objectTypeAllocSize ty
+
+theorem objectExtentInAddressSpace_extent (ms : MachineState) (childId : SeLe4n.ObjId)
+    (ty : KernelObjectType) (h : objectExtentInAddressSpace ms childId ty = true) :
+    (scrubExtent childId ty).fst.toNat + (scrubExtent childId ty).snd ≤
+      2 ^ ms.physicalAddressWidth := by
+  have hPos : 0 < objectTypeAllocSize ty := by
+    cases ty <;> simp [objectTypeAllocSize, SeLe4n.pageBytes]
+  have hLt : childId.toNat < 2 ^ ms.physicalAddressWidth / objectTypeAllocSize ty := by
+    simpa [objectExtentInAddressSpace] using h
+  have hLe : (childId.toNat + 1) * objectTypeAllocSize ty ≤ 2 ^ ms.physicalAddressWidth :=
+    (Nat.le_div_iff_mul_le hPos).mp hLt
+  simp only [scrubExtent, SeLe4n.PAddr.toNat_ofNat]
+  rw [Nat.succ_mul] at hLe
+  exact hLe
+
 /-- WS-F2: Retype a new typed object from an untyped memory region.
 
 Deterministic branch contract:
@@ -186,22 +211,24 @@ Deterministic branch contract:
    admits — other untypeds and frames; never a translation table, since a table
    walk reading a device reads a register (`untypedDeviceRestriction` if
    violated).
-3. The allocation size must be at least `objectTypeAllocSize` for the target type
+3. The child's extent (`scrubExtent`) must lie inside the machine's physical
+   address space (`objectExtentInAddressSpace`; `addressOutOfBounds` otherwise).
+4. The allocation size must be at least `objectTypeAllocSize` for the target type
    (`untypedAllocSizeTooSmall` otherwise).
-4. S5-G: For the kinds `requiresPageAlignment` names — VSpace roots, CNodes,
+5. S5-G: For the kinds `requiresPageAlignment` names — VSpace roots, CNodes,
    frames, page tables and child untypeds — the allocation base address
    (`regionBase + watermark`) must be page-aligned (4KB boundary).
    Returns `allocationMisaligned` if violated. This matches seL4's requirement
    that page-table backing memory be page-aligned.
-5. Authority capability must target the untyped object and include the `retype`
+6. Authority capability must target the untyped object and include the `retype`
    right (`lifecycleRetypeAuthority`; `illegalAuthority` otherwise).
-6. The requested allocation size must fit within the remaining region space
+7. The requested allocation size must fit within the remaining region space
    (`untypedRegionExhausted` otherwise).
-7. U-H02: Post-allocation alignment re-verification — after advancing the watermark,
+8. U-H02: Post-allocation alignment re-verification — after advancing the watermark,
    the new base must still be page-aligned for VSpace-bound objects
    (`allocationMisaligned` otherwise). This prevents non-page-aligned allocations
    from shifting subsequent allocations to unaligned bases.
-8. On success: watermark is advanced, new child is recorded, and the new typed
+9. On success: watermark is advanced, new child is recorded, and the new typed
    object is stored at `childId` via `storeObject`. -/
 def retypeFromUntyped
     (authority : CSpaceAddr)
@@ -235,6 +262,9 @@ def retypeFromUntyped
         -- table is memory, and must be RAM (`deviceBackable`).
         else if ut.isDevice && !newObj.objectType.deviceBackable then
           .error .untypedDeviceRestriction
+        -- The child's extent must be physical memory (`objectExtentInAddressSpace`)
+        else if !objectExtentInAddressSpace st.machine childId newObj.objectType then
+          .error .addressOutOfBounds
         -- Allocation size must be at least the minimum for the target object type
         else if allocSize < objectTypeAllocSize newObj.objectType then
           .error .untypedAllocSizeTooSmall
@@ -411,6 +441,11 @@ theorem retypeFromUntyped_ok_decompose
           cases hDevBool : ut.isDevice <;> simp only [hDevBool] at hStep
           · -- ut.isDevice = false: device check trivially passes
             simp only [Bool.false_and, Bool.false_eq_true, ↓reduceIte] at hStep
+            have hExt : objectExtentInAddressSpace st.machine childId newObj.objectType = true := by
+              cases h : objectExtentInAddressSpace st.machine childId newObj.objectType
+              · simp [h] at hStep
+              · rfl
+            simp only [hExt, Bool.not_true, Bool.false_eq_true, ↓reduceIte] at hStep
             by_cases hAllocSz : allocSize < objectTypeAllocSize newObj.objectType
             · simp [hAllocSz] at hStep
             · simp only [hAllocSz, ↓reduceIte] at hStep
@@ -444,6 +479,11 @@ theorem retypeFromUntyped_ok_decompose
             by_cases hObjType : newObj.objectType.deviceBackable = true
             · simp only [hObjType, Bool.not_true, Bool.and_false, Bool.false_eq_true,
                 ↓reduceIte] at hStep
+              have hExt : objectExtentInAddressSpace st.machine childId newObj.objectType = true := by
+                cases h : objectExtentInAddressSpace st.machine childId newObj.objectType
+                · simp [h] at hStep
+                · rfl
+              simp only [hExt, Bool.not_true, Bool.false_eq_true, ↓reduceIte] at hStep
               by_cases hAllocSz : allocSize < objectTypeAllocSize newObj.objectType
               · simp [hAllocSz] at hStep
               · simp only [hAllocSz, ↓reduceIte] at hStep
@@ -542,6 +582,7 @@ theorem retypeFromUntyped_error_allocSizeTooSmall
     (hNoCollision : st.objects[childId]?.isSome = false)
     (hFreshChildren : ut.children.any (fun c => c.objId == childId) = false)
     (hNotDev : ut.isDevice = false ∨ newObj.objectType.deviceBackable = true)
+    (hExt : objectExtentInAddressSpace st.machine childId newObj.objectType = true)
     (hSmall : allocSize < objectTypeAllocSize newObj.objectType) :
     retypeFromUntyped authority untypedId childId newObj allocSize st =
       .error .untypedAllocSizeTooSmall := by
@@ -549,11 +590,11 @@ theorem retypeFromUntyped_error_allocSizeTooSmall
   have hCapF : ¬(st.objectIndex.length ≥ maxObjects) := by omega
   simp [hObj, hCapF, hNeSelf, hNoCollision, hFreshChildren]
   cases hNotDev with
-  | inl hFalse => simp [hFalse, hSmall]
+  | inl hFalse => simp [hFalse, hExt, hSmall]
   | inr hMB =>
       by_cases hDevBool : ut.isDevice
-      · simp [hDevBool, hMB, hSmall]
-      · simp [hDevBool, hSmall]
+      · simp [hDevBool, hMB, hExt, hSmall]
+      · simp [hDevBool, hExt, hSmall]
 
 /-- WS-F2: `retypeFromUntyped` returns `untypedRegionExhausted` when allocation cannot fit.
 S5-G: Alignment check must pass (or type doesn't require it) for this error to be reached. -/
@@ -567,6 +608,7 @@ theorem retypeFromUntyped_error_regionExhausted
     (hNoCollision : st.objects[childId]?.isSome = false)
     (hFreshChildren : ut.children.any (fun c => c.objId == childId) = false)
     (hNotDev : ut.isDevice = false ∨ newObj.objectType.deviceBackable = true)
+    (hExt : objectExtentInAddressSpace st.machine childId newObj.objectType = true)
     (hAllocSzOk : ¬(allocSize < objectTypeAllocSize newObj.objectType))
     (hAlignOk : (requiresPageAlignment newObj.objectType && !allocationBasePageAligned ut) = false)
     (hLookup : cspaceLookupSlot authority st = .ok (cap, st))
@@ -579,14 +621,14 @@ theorem retypeFromUntyped_error_regionExhausted
   simp only [hObj, hCapF, ↓reduceIte, hNeSelf, hNoCollision, hFreshChildren]
   cases hNotDev with
   | inl hFalse =>
-      simp only [hFalse, Bool.false_and, Bool.false_eq_true, ↓reduceIte, hAllocSzOk, hAlignOk,
-        ↓reduceIte, hLookup, hAuth, hNoFit]
+      simp only [hFalse, Bool.false_and, Bool.false_eq_true, ↓reduceIte, hExt, Bool.not_true,
+        hAllocSzOk, hAlignOk, ↓reduceIte, hLookup, hAuth, hNoFit]
   | inr hMB =>
       by_cases hDevBool : ut.isDevice
       · simp only [hDevBool, hMB, Bool.not_true, Bool.true_and, Bool.false_eq_true, ↓reduceIte,
-          hAllocSzOk, hAlignOk, ↓reduceIte, hLookup, hAuth, hNoFit]
+          hExt, hAllocSzOk, hAlignOk, ↓reduceIte, hLookup, hAuth, hNoFit]
       · simp only [hDevBool, Bool.false_and, Bool.false_eq_true, ↓reduceIte,
-          hAllocSzOk, hAlignOk, ↓reduceIte, hLookup, hAuth, hNoFit]
+          hExt, Bool.not_true, hAllocSzOk, hAlignOk, ↓reduceIte, hLookup, hAuth, hNoFit]
 
 /- Local lifecycle transition helper lemmas (M4-A step 4).
 These theorems keep preservation scripts focused on invariant obligations rather than

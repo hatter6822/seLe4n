@@ -19,6 +19,18 @@ memory also walked the growing chain.
   user-memory stores to RAM as `PhysicalWrite`s since BP7.8, and reads a
   thread's words from the entry buffer since `v0.36.98`), so no carve, reset,
   retype or delete grows the heap through memory.
+- **A child's extent is physical memory** (Codex review on #950).  An object's
+  model scrub range is `scrubExtent` (identifier × size), and a retype accepted
+  any identifier, so a child at identifier 2^51 or above had a range past 2^63:
+  each byte address the zero-check formed was a big number, about 4096
+  allocations per retype of a 4-KiB child.  `retypeFromUntyped` now refuses a
+  child whose extent ends past `2 ^ physicalAddressWidth` with
+  `addressOutOfBounds` (`objectExtentInAddressSpace`, compared by division so a
+  refused identifier is never multiplied out; `objectExtentInAddressSpace_extent`
+  states the bound).  At the 40-bit QEMU and RPi5 widths every scrub address,
+  including a later retype of the same identifier to a larger kind, stays below
+  2^63.  `tests/KernelErrorMatrixSuite.lean` holds the refusal
+  (`row_addressOutOfBounds_childExtent`).
 - **Regression test**: `tests/VSpaceCapabilityBindingSuite.lean` §5d checks
   that the scrub of a page holding a non-zero byte produces a new memory value
   and that the scrub of a page that already reads zero leaves the memory value
