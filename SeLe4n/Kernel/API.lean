@@ -2559,9 +2559,7 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
   -- naming the slot), since both name one slot of the invoked CNode and a
   -- second decoder for one operand is a spelling nobody needs.  And the source
   -- slot **survives**: revocation destroys the derivations of a capability, not
-  -- the capability itself, which is what distinguishes it from the delete and
-  -- what makes `cspaceDeleteSlot`'s own `.revocationRequired` refusal
-  -- discharegable — a caller revokes, then deletes.
+  -- the capability itself, which is what distinguishes it from the delete.
   | .cspaceRevoke =>
     some <| match cap.target with
     | .object cnodeId =>

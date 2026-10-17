@@ -1177,6 +1177,17 @@ theorem cspaceMint_preserves_lowEquivalent
 -- Non-interference theorem #4: cspaceRevoke (WS-D2, F-05, TPI-D02)
 -- ============================================================================
 
+/-- Detaching the local revoke's emptied siblings is invisible to every observer:
+it writes only the derivation tree and the two slot maps, which the projection
+does not read. -/
+theorem projectState_detachRevokedSlots (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (cnodeId : SeLe4n.ObjId) (cn : CNode) (sourceSlot : SeLe4n.Slot)
+    (target : CapTarget) :
+    projectState ctx observer (detachRevokedSlots st cnodeId cn sourceSlot target) =
+      projectState ctx observer st := by
+  obtain ⟨_, _, _, h⟩ := detachRevokedSlots_shape st cnodeId cn sourceSlot target
+  rw [h]; rfl
+
 /-- Revoking capabilities in a non-observable CNode preserves low-equivalence. -/
 theorem cspaceRevoke_preserves_lowEquivalent
     (ctx : LabelingContext)
@@ -1194,88 +1205,73 @@ theorem cspaceRevoke_preserves_lowEquivalent
   have hRunLow := congrArg ObservableState.runnable hLow
   have hCurLow := congrArg ObservableState.current hLow
   have hSvcLow := congrArg ObservableState.services hLow
-  unfold cspaceRevoke SystemState.getCNode? at hStep₁ hStep₂
-  cases hL₁ : cspaceLookupSlot addr s₁ with
-  | error e => simp [hL₁] at hStep₁
-  | ok p₁ =>
-    rcases p₁ with ⟨par₁, stL₁⟩
-    have hEq₁ : stL₁ = s₁ := cspaceLookupSlot_preserves_state s₁ stL₁ addr par₁ hL₁
-    subst stL₁
-    cases hL₂ : cspaceLookupSlot addr s₂ with
-    | error e => simp [hL₂] at hStep₂
-    | ok p₂ =>
-      rcases p₂ with ⟨par₂, stL₂⟩
-      have hEq₂ : stL₂ = s₂ := cspaceLookupSlot_preserves_state s₂ stL₂ addr par₂ hL₂
-      subst stL₂
-      cases hC₁ : s₁.objects[addr.cnode]? with
-      | none => simp [hL₁, hC₁] at hStep₁
-      | some o₁ =>
-        cases o₁ with
-        | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ => simp [hL₁, hC₁] at hStep₁
-        | cnode cn₁ =>
-          cases hC₂ : s₂.objects[addr.cnode]? with
-          | none => simp [hL₂, hC₂] at hStep₂
-          | some o₂ =>
-            cases o₂ with
-            | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ => simp [hL₂, hC₂] at hStep₂
-            | cnode cn₂ =>
-              simp [hL₁, hC₁, storeObject] at hStep₁
-              simp [hL₂, hC₂, storeObject] at hStep₂
-              cases hStep₁; cases hStep₂
-              unfold lowEquivalent projectState
-              -- `v0.35.78`: the post-state is `storeObject`'s record itself (the
-              -- revoke stores once), so its `scheduler` and `services` fields are
-              -- `s₁`'s / `s₂`'s definitionally and `congr 1` closes the runnable,
-              -- current and services components from `hRunLow`, `hCurLow` and
-              -- `hSvcLow` by assumption; the bullets below are the rest.
-              congr 1
-              · funext oid
-                by_cases hObs : objectObservable ctx observer oid
-                · have hNe : oid ≠ addr.cnode := by
-                    intro hEq; subst hEq; simp [hCNodeHigh] at hObs
-                  have hBase : projectObjects ctx observer s₁ oid = projectObjects ctx observer s₂ oid :=
-                    congrFun hObjLow oid
-                  simp [projectObjects, hObs, SystemState.getObject?] at hBase ⊢
-                  simp only [RHTable_getElem?_eq_get?]
-                  rw [RHTable_getElem?_insert _ _ _ hObjInv₁, RHTable_getElem?_insert _ _ _ hObjInv₂]
-                  simp [Ne.symm hNe]
-                  exact hBase
-                · simp [projectObjects, hObs]
-              · -- activeDomain
-                simp only [projectActiveDomain]
-                exact congrArg ObservableState.activeDomain hLow
-              · -- irqHandlers
-                funext irq
-                simp only [projectIrqHandlers]
-                exact congrFun (congrArg ObservableState.irqHandlers hLow) irq
-              · -- objectIndex
-                simp only [projectObjectIndex]
-                have hIdx := congrArg ObservableState.objectIndex hLow
-                -- Both sides: if objectIndexSet.contains addr.cnode then idx else addr.cnode :: idx
-                -- Since hCNodeHigh filters addr.cnode out, prepending it is invisible
-                split <;> split
-                · exact hIdx
-                · rw [List.filter_cons]; simp [hCNodeHigh]; exact hIdx
-                · rw [List.filter_cons]; simp [hCNodeHigh]; exact hIdx
-                · rw [List.filter_cons, List.filter_cons]; simp [hCNodeHigh]; exact hIdx
-              · -- domainTimeRemaining
-                simp only [projectDomainTimeRemaining]
-                exact congrArg ObservableState.domainTimeRemaining hLow
-              · -- domainSchedule
-                simp only [projectDomainSchedule]
-                exact congrArg ObservableState.domainSchedule hLow
-              · -- domainScheduleIndex
-                simp only [projectDomainScheduleIndex]
-                exact congrArg ObservableState.domainScheduleIndex hLow
-              · -- machineRegs
-                simp only [projectMachineRegs]
-                exact congrArg ObservableState.machineRegs hLow
-              · -- R5-C.1: memory
-                funext paddr; simp only [projectMemory]
-                exact congrFun (congrArg ObservableState.memory hLow) paddr
-              · -- V6-E: serviceRegistry
-                funext sid; simp only [projectServiceRegistry]
-                exact congrFun (congrArg ObservableState.serviceRegistry hLow) sid
+  obtain ⟨par₁, cn₁, t₁, _, hCn₁, hS₁, rfl⟩ := cspaceRevoke_ok_decompose addr s₁ s₁' hStep₁
+  obtain ⟨par₂, cn₂, t₂, _, hCn₂, hS₂, rfl⟩ := cspaceRevoke_ok_decompose addr s₂ s₂' hStep₂
+  -- The revoked siblings leave the tree and the slot maps, which the observer
+  -- does not see; what is left is the one CNode store.
+  unfold lowEquivalent
+  rw [projectState_detachRevokedSlots, projectState_detachRevokedSlots]
+  have hC₁ : s₁.objects[addr.cnode]? = some (.cnode cn₁) := by
+    unfold SystemState.getCNode? at hCn₁; split at hCn₁ <;> simp_all
+  have hC₂ : s₂.objects[addr.cnode]? = some (.cnode cn₂) := by
+    unfold SystemState.getCNode? at hCn₂; split at hCn₂ <;> simp_all
+  simp [hC₁, storeObject] at hS₁
+  simp [hC₂, storeObject] at hS₂
+  cases hS₁; cases hS₂
+  unfold projectState
+  -- `v0.35.78`: past the detach the state is `storeObject`'s record (the
+  -- revoke stores once), so its `scheduler` and `services` fields are
+  -- `s₁`'s / `s₂`'s definitionally and `congr 1` closes the runnable,
+  -- current and services components from `hRunLow`, `hCurLow` and
+  -- `hSvcLow` by assumption; the bullets below are the rest.
+  congr 1
+  · funext oid
+    by_cases hObs : objectObservable ctx observer oid
+    · have hNe : oid ≠ addr.cnode := by
+        intro hEq; subst hEq; simp [hCNodeHigh] at hObs
+      have hBase : projectObjects ctx observer s₁ oid = projectObjects ctx observer s₂ oid :=
+        congrFun hObjLow oid
+      simp [projectObjects, hObs, SystemState.getObject?] at hBase ⊢
+      simp only [RHTable_getElem?_eq_get?]
+      rw [RHTable_getElem?_insert _ _ _ hObjInv₁, RHTable_getElem?_insert _ _ _ hObjInv₂]
+      simp [Ne.symm hNe]
+      exact hBase
+    · simp [projectObjects, hObs]
+  · -- activeDomain
+    simp only [projectActiveDomain]
+    exact congrArg ObservableState.activeDomain hLow
+  · -- irqHandlers
+    funext irq
+    simp only [projectIrqHandlers]
+    exact congrFun (congrArg ObservableState.irqHandlers hLow) irq
+  · -- objectIndex
+    simp only [projectObjectIndex]
+    have hIdx := congrArg ObservableState.objectIndex hLow
+    -- Both sides: if objectIndexSet.contains addr.cnode then idx else addr.cnode :: idx
+    -- Since hCNodeHigh filters addr.cnode out, prepending it is invisible
+    split <;> split
+    · exact hIdx
+    · rw [List.filter_cons]; simp [hCNodeHigh]; exact hIdx
+    · rw [List.filter_cons]; simp [hCNodeHigh]; exact hIdx
+    · rw [List.filter_cons, List.filter_cons]; simp [hCNodeHigh]; exact hIdx
+  · -- domainTimeRemaining
+    simp only [projectDomainTimeRemaining]
+    exact congrArg ObservableState.domainTimeRemaining hLow
+  · -- domainSchedule
+    simp only [projectDomainSchedule]
+    exact congrArg ObservableState.domainSchedule hLow
+  · -- domainScheduleIndex
+    simp only [projectDomainScheduleIndex]
+    exact congrArg ObservableState.domainScheduleIndex hLow
+  · -- machineRegs
+    simp only [projectMachineRegs]
+    exact congrArg ObservableState.machineRegs hLow
+  · -- R5-C.1: memory
+    funext paddr; simp only [projectMemory]
+    exact congrFun (congrArg ObservableState.memory hLow) paddr
+  · -- V6-E: serviceRegistry
+    funext sid; simp only [projectServiceRegistry]
+    exact congrFun (congrArg ObservableState.serviceRegistry hLow) sid
 
 -- ============================================================================
 -- Non-interference theorem #5: lifecycleRetypeObject (WS-D2, F-05, TPI-D03)

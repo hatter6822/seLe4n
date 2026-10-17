@@ -354,38 +354,20 @@ private def row_nullCapability_mint : KernelErrorRejection :=
 -- dependencyViolation, replyCapInvalid.
 -- ============================================================================
 
-/-- Row: `cspaceDeleteSlot` rejects deletion of a slot with CDT children
-with `.revocationRequired`. -/
-private def row_revocationRequired_delete_with_children : KernelErrorRejection :=
-  { syscall       := "cspaceDeleteSlot"
+/-- Row: retyping a Reply a caller is still blocked on is refused with
+`.revocationRequired` (the caller would be stranded). -/
+private def row_revocationRequired_retype_inUse_reply : KernelErrorRejection :=
+  { syscall       := "lifecyclePreRetypeCleanup"
     expectedError := .revocationRequired
-    scenarioTag   := "AN11A.3.revocationRequired.delete_with_children"
-    scenarioDesc  := "U-H03: cspaceDeleteSlot rejects a slot whose CDT" ++
-                     " node has children — caller must cspaceRevoke first"
+    scenarioTag   := "AN11A.3.revocationRequired.retype_inUse_reply"
+    scenarioDesc  := "SM6.D: retyping a Reply whose caller still waits on it" ++
+                     " is refused — the call must unwind or be cancelled first"
     runScenario   := fun _ =>
-      -- Build a state where the source slot has a CDT node with a child.
-      let cnodeId : ObjId := ObjId.ofNat 110
-      let parentSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 0
-      let childSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 1
-      let cap : Capability :=
-        { target := .object (ObjId.ofNat 200), rights := AccessRightSet.empty,
-          badge := none }
-      let cn : CNode := { mkEmptyCNode with
-        slots := ((mkEmptyCNode).slots.insert parentSlot cap).insert
-          childSlot cap }
-      let stBase : SystemState := { (default : SystemState) with
-        objects := (default : SystemState).objects.insert cnodeId
-          (.cnode cn) }
-      let parentRef : SlotRef := ⟨cnodeId, parentSlot⟩
-      let childRef  : SlotRef := ⟨cnodeId, childSlot⟩
-      -- Allocate CDT nodes for both slots through the official helper so the
-      -- slot ↔ node maps remain consistent.
-      let (parentNode, st1) := SystemState.ensureCdtNodeForSlot stBase parentRef
-      let (childNode,  st2) := SystemState.ensureCdtNodeForSlot st1     childRef
-      -- Wire parent → child via the CDT add-edge helper.
-      let st : SystemState := { st2 with
-        cdt := st2.cdt.addEdge parentNode childNode .copy }
-      runUnit (cspaceDeleteSlot ⟨cnodeId, parentSlot⟩ st) }
+      let target : ObjId := ObjId.ofNat 505
+      let inUse : KernelObject :=
+        .reply { replyId := ⟨505⟩, callerCode := SeLe4n.ThreadId.optCode (some ⟨2⟩) }
+      runUnit (SeLe4n.Kernel.lifecyclePreRetypeCleanup (default : SystemState) target inUse
+        (.reply { replyId := ⟨999⟩ })) }
 
 /-- Row: `decodeVSpaceMapArgs` rejects ASID at or above maxASID with
 `.asidNotBound`. -/
@@ -1066,7 +1048,7 @@ def errorMatrix : List KernelErrorRejection :=
     row_policyDenied_insecure_default,
     row_nullCapability_mint,
     -- AN11-A.3 security-priority
-    row_revocationRequired_delete_with_children,
+    row_revocationRequired_retype_inUse_reply,
     row_asidNotBound_vspaceMap,
     row_schedulerInvariantViolation,
     row_alignmentError_security,

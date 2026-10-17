@@ -67,7 +67,7 @@ pub enum KernelError {
     ObjectStoreCapacityExceeded = 36,
     /// T1-F/H-4: Allocation base not page-aligned for VSpace-bound objects
     AllocationMisaligned = 37,
-    /// U-H03: Delete attempted on slot with CDT children (must revoke first)
+    /// U-H03: Destroying an object or mapping still in use (unmap, cancel or revoke first)
     RevocationRequired = 38,
     /// U5-E/U-M07: Syscall argument decode failed (e.g., invalid permission bits)
     InvalidArgument = 39,

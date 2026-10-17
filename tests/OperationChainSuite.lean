@@ -1645,8 +1645,8 @@ private def revokeLeavesIndependentSibling : IO Unit := do
   | .ok ((), stSwept) =>
       expect "independent-sibling: RETIRED — the local sweep emptied the independent sibling"
         (!(slotFilled stSwept senderCNode siblingSlot))
-      expect "independent-sibling: RETIRED — and left its node mapped to the empty slot"
-        ((SystemState.lookupCdtSlotOfNode stSwept siblingNode).isSome)
+      expect "independent-sibling: RETIRED — and took the emptied sibling's node out of the tree"
+        ((SystemState.lookupCdtSlotOfNode stSwept siblingNode).isNone)
       expect "independent-sibling: RETIRED — so no revocation can enter that node any more"
         (!(SeLe4n.Kernel.cdtNodeIsRevocable stSwept siblingNode))
       -- A parked sender whose source slot was emptied, by whatever writer,

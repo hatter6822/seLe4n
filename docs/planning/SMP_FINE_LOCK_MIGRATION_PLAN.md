@@ -249,12 +249,10 @@ answering `CapTransferResult.sourceRevoked`, leaving the state untouched — whe
 guarantee, and it holds against every destroyer at once, including ones not yet
 written.
 
-The two guards remain, and are deliberately not the guarantee.
-`cspaceDeleteSlot` and the CNode retype arm both refuse via the shared
-`slotIsDerivationParent` predicate, because `.revocationRequired` tells a caller
-to revoke first, which is a better answer than a capability that silently fails
-to arrive. They are the ergonomics; the creator-side check is what makes the
-orphan unconstructible.
+Since `v0.36.101` no destroyer refuses on derived capabilities: each takes the
+slot out of the tree by splicing its node out (`detachDestroyedSlot`), as seL4's
+`cteDelete` does, because a refusal on another thread's derivations is a channel
+between them.  The creator-side check is what makes the orphan unconstructible.
 
 Sighting 5 is the one that shows where the creator-side check *stops*, and it is
 worth stating precisely because the check reads as if it covered everything. It

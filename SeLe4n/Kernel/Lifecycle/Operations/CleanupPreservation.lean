@@ -1870,22 +1870,13 @@ theorem detachSlotFromCdt_lifecycle_eq (st : SystemState) (ref : SlotRef) :
     (SystemState.detachSlotFromCdt st ref).lifecycle = st.lifecycle := by
   unfold SystemState.detachSlotFromCdt; split <;> rfl
 
-/-- One slot of a CNode being replaced leaves the derivation tree: its
-cdtSlotNode/cdtNodeSlot mappings are cleared and its node, a leaf past the
-retype guard, is removed with its edge to its parent, exactly as the guarded
-delete removes a deleted slot's node (`removeDeletedCdtLeaf`).  The node is read
-and the leaf removed before the slot maps are written, so the fold never reads a
-state after building the next one from it (which would copy the slot maps). -/
-def detachCNodeSlot (acc : SystemState) (ref : SlotRef) : SystemState :=
-  SystemState.detachSlotFromCdt (removeDeletedCdtLeaf acc (acc.lookupCdtNodeOfSlot ref)) ref
-
 /-- WS-H2/A-11: Detach all CDT slot references for a CNode being replaced.
-    Iterates the CNode's slots, clearing each slot's mappings and removing its
-    leaf node (`detachCNodeSlot`), so neither orphaned references nor dead
-    edges outlive the CNode. -/
+    Iterates the CNode's slots, clearing each slot's mappings and splicing out
+    its node (`detachDestroyedSlot`), so neither orphaned references nor dead edges
+    outlive the CNode. -/
 def detachCNodeSlots (st : SystemState) (cnodeId : SeLe4n.ObjId) (cn : CNode) : SystemState :=
   cn.slots.fold st (fun acc slot _cap =>
-    detachCNodeSlot acc { cnode := cnodeId, slot := slot }
+    detachDestroyedSlot acc { cnode := cnodeId, slot := slot }
   )
 
 /-- `detachCNodeSlots` preserves the objects store (CDT-only operation). -/
@@ -1895,9 +1886,9 @@ theorem detachCNodeSlots_objects_eq
   simp only [detachCNodeSlots]
   exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves cn.slots.table st _ (fun acc => acc.objects = st.objects)
     rfl (fun acc slot _cap hAcc => by
-      simp only [detachCNodeSlot]
+      simp only [detachDestroyedSlot]
       exact (detachSlotFromCdt_objects_eq _ { cnode := cnodeId, slot := slot }).trans
-        ((removeDeletedCdtLeaf_objects _ _).trans hAcc))
+        ((spliceDeletedCdtNode_objects _ _).trans hAcc))
 
 /-- `detachCNodeSlots` preserves lifecycle metadata (CDT-only operation). -/
 theorem detachCNodeSlots_lifecycle_eq
@@ -1906,9 +1897,9 @@ theorem detachCNodeSlots_lifecycle_eq
   simp only [detachCNodeSlots]
   exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves cn.slots.table st _ (fun acc => acc.lifecycle = st.lifecycle)
     rfl (fun acc slot _cap hAcc => by
-      simp only [detachCNodeSlot]
+      simp only [detachDestroyedSlot]
       exact (detachSlotFromCdt_lifecycle_eq _ { cnode := cnodeId, slot := slot }).trans
-        ((removeDeletedCdtLeaf_lifecycle _ _).trans hAcc))
+        ((spliceDeletedCdtNode_lifecycle _ _).trans hAcc))
 
 -- WS-SM SM6.D (PR #827 review #6): `replyIsStashed` (the server-first stash query —
 -- "does any blocked receiver reserve `rid`?") moved down to
@@ -1924,11 +1915,11 @@ theorem detachCNodeSlots_lifecycle_eq
       since `v0.35.164`), then clean up scheduler + IPC references.
     - If the current object is an endpoint: revoke service registrations
       backed by this endpoint to preserve `registryEndpointValid`.
-    - If the current object is a CNode: refuse when any slot is still a
-      derivation parent, and otherwise detach that CNode's CDT slot mappings.
-      Retype destroys every slot the CNode holds, so it owes what
-      `cspaceDeleteSlot` owes for one — see the arm for why the refusal is not
-      optional and why the detach no longer depends on the replacement's
+    - If the current object is a CNode: refuse when a slot still records a
+      frame mapping or names an installed page table, and otherwise take every
+      slot out of the derivation tree as a delete does.  Retype destroys every
+      slot the CNode holds, so it owes what `cspaceDeleteSlot` owes for one —
+      see the arm for why the detach no longer depends on the replacement's
       shape. -/
 def lifecyclePreRetypeCleanup (st : SystemState) (target : SeLe4n.ObjId)
     (currentObj _newObj : KernelObject) : Except KernelError SystemState :=
@@ -1986,14 +1977,10 @@ def lifecyclePreRetypeCleanup (st : SystemState) (target : SeLe4n.ObjId)
     -- **Retype destroys every slot this CNode holds, so it owes what
     -- `cspaceDeleteSlot` owes — for all of them at once.**
     --
-    -- A slot that is still a derivation parent cannot be destroyed: severing
-    -- `cdtSlotNode` leaves the node and its edges behind, and `cspaceRevokeCdt`
-    -- resolves *through* that mapping, so the derived capabilities keep their
-    -- authority with nothing able to reach them.  `cspaceDeleteSlot` refuses one
-    -- such slot; this refuses a CNode containing any, reading the same
-    -- `slotIsDerivationParent` predicate so the two cannot diverge.
-    -- `.revocationRequired` is the error both use: revoke the derived
-    -- capabilities first, then retype.
+    -- Each slot leaves the derivation tree as a deleted one does: its node is
+    -- spliced out and its children re-derived from its parent
+    -- (`detachDestroyedSlot`), so a retype, like a delete, never depends on what
+    -- was derived from the slots it destroys.
     --
     -- Both target shapes then detach, which is why this arm no longer reads
     -- `newObj`.  CNode → CNode used to skip the detach on the grounds that no
@@ -2004,25 +1991,21 @@ def lifecyclePreRetypeCleanup (st : SystemState) (target : SeLe4n.ObjId)
     -- skipping left every mapping pointing into a CNode that no longer holds
     -- the capability it was minted for: a capability later placed at such a
     -- slot inherits a destroyed one's derivation node, and revoking *that*
-    -- node's ancestor takes the unrelated newcomer with it.  Past the guard the
-    -- detach is unconditionally correct — every mapping it erases belongs to a
-    -- node with no descendants.
+    -- node's ancestor takes the unrelated newcomer with it.
     --
-    -- **WS-BP BP7.1 (`v0.36.7`): and a slot holding a capability that records a
-    -- frame mapping cannot be destroyed here either** — destroying it owes the
+    -- **WS-BP BP7.1 (`v0.36.7`): a slot holding a capability that records a
+    -- frame mapping cannot be destroyed here** — destroying it owes the
     -- unmapping of what it mapped (seL4's `finaliseCap`), which only the
     -- finalising delete performs (`cspaceDeleteSlotFinalising`); a retype that
     -- dropped it would leave its page mapped with no capability left to name
     -- the mapping.  Refused with the same error: delete those capabilities
     -- first.
-    if cnodeHasDerivationParentSlot st target cn then
-      .error .revocationRequired
     --
     -- WS-BP BP7.1 (`v0.36.12`): nor a capability naming an installed page
     -- table — destroying the last one owes taking the table out of its address
     -- space (`finaliseDestroyedCapabilities`), which only the finalising delete
     -- and revocation perform.
-    else if cn.holdsFrameMappingRecord || Architecture.cnodeHoldsInstalledPageTableCap st cn then
+    if cn.holdsFrameMappingRecord || Architecture.cnodeHoldsInstalledPageTableCap st cn then
       .error .revocationRequired
     else
       .ok (detachCNodeSlots st target cn)
@@ -2259,16 +2242,16 @@ theorem detachCNodeSlots_scheduler_eq
   simp only [detachCNodeSlots]
   exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves cn.slots.table st _ (fun acc => acc.scheduler = st.scheduler)
     rfl (fun acc slot _cap hAcc => by
-      have : (detachCNodeSlot acc { cnode := cnodeId, slot := slot }).scheduler
+      have : (detachDestroyedSlot acc { cnode := cnodeId, slot := slot }).scheduler
           = acc.scheduler := by
-        simp only [detachCNodeSlot]
-        unfold SystemState.detachSlotFromCdt; split <;> exact removeDeletedCdtLeaf_scheduler _ _
+        simp only [detachDestroyedSlot]
+        unfold SystemState.detachSlotFromCdt; split <;> exact spliceDeletedCdtNode_scheduler _ _
       exact this.trans hAcc)
 
 /-- WS-SM SM8.B.2: CDT cleanup writes no register bank.
 
 The `machine` companion of `detachCNodeSlots_scheduler_eq`, by the same
-`RHTable.fold_preserves` argument: each slot's step (`detachCNodeSlot`) rewrites
+`RHTable.fold_preserves` argument: each slot's step (`detachDestroyedSlot`) rewrites
 the CDT maps and the tree and nothing else. -/
 theorem detachCNodeSlots_machine_eq
     (st : SystemState) (cnodeId : SeLe4n.ObjId) (cn : CNode) :
@@ -2277,10 +2260,10 @@ theorem detachCNodeSlots_machine_eq
   exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves cn.slots.table st _
     (fun acc => acc.machine = st.machine)
     rfl (fun acc slot _cap hAcc => by
-      have : (detachCNodeSlot acc { cnode := cnodeId, slot := slot }).machine
+      have : (detachDestroyedSlot acc { cnode := cnodeId, slot := slot }).machine
           = acc.machine := by
-        simp only [detachCNodeSlot]
-        unfold SystemState.detachSlotFromCdt; split <;> exact removeDeletedCdtLeaf_machine _ _
+        simp only [detachDestroyedSlot]
+        unfold SystemState.detachSlotFromCdt; split <;> exact spliceDeletedCdtNode_machine _ _
       exact this.trans hAcc)
 
 /-- WS-SM SM7.B: CDT cleanup is CDT-only — the TLB-shootdown state is
@@ -2292,10 +2275,10 @@ theorem detachCNodeSlots_tlbShootdown_eq
   exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves cn.slots.table st _
     (fun acc => acc.tlbShootdown = st.tlbShootdown)
     rfl (fun acc slot _cap hAcc => by
-      simp only [detachCNodeSlot]
+      simp only [detachDestroyedSlot]
       exact (SystemState.detachSlotFromCdt_tlbShootdown_eq _
         { cnode := cnodeId, slot := slot }).trans
-        ((removeDeletedCdtLeaf_tlbShootdown _ _).trans hAcc))
+        ((spliceDeletedCdtNode_tlbShootdown _ _).trans hAcc))
 
 /-- Cleanup preserves the scheduler state. -/
 theorem cleanupTcbReferences_scheduler_eq_removeRunnableFromAllCores
@@ -2396,9 +2379,7 @@ theorem lifecyclePreRetypeCleanup_flat_subset
     -- detached one, whose scheduler is framed.
     split at hOk
     · exact absurd hOk (by simp)
-    · split at hOk
-      · exact absurd hOk (by simp)
-      injection hOk with hOk; subst hOk
+    · injection hOk with hOk; subst hOk
       have hSched := detachCNodeSlots_scheduler_eq st target cn
       rw [show ((detachCNodeSlots st target cn).scheduler.runQueueOnCore bootCoreId).toList =
             (st.scheduler.runQueueOnCore bootCoreId).toList from by rw [hSched]] at h
@@ -2473,13 +2454,11 @@ theorem lifecyclePreRetypeCleanup_tlbShootdown_eq
       exact hArmShoot
   | cnode cn =>
     simp only [lifecyclePreRetypeCleanup] at hOk
-    -- Same shape as the scheduler frame: the guard's reject is vacuous here,
+    -- Same shape as the scheduler frame: the guards' reject is vacuous here,
     -- and the detach frames the shootdown state.
     split at hOk
     · exact absurd hOk (by simp)
-    · split at hOk
-      · exact absurd hOk (by simp)
-      injection hOk with hOk; subst hOk
+    · injection hOk with hOk; subst hOk
       exact detachCNodeSlots_tlbShootdown_eq st target cn
   | endpoint _ =>
     simp only [lifecyclePreRetypeCleanup] at hOk

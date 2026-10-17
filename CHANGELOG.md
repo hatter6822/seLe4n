@@ -1,35 +1,59 @@
-## v0.36.101 — WS-ZA: a deleted capability leaves the derivation tree (security)
+## v0.36.101 — WS-ZA: a deleted capability leaves the derivation tree, as seL4's cteDelete (security)
 
 **Security (Medium): a thread holding a CNode capability with copy rights
 could grow the kernel heap without bound and make a capability undeletable.**
-The guarded delete (`cspaceDeleteSlot`) only unmapped the deleted slot from its
+The delete (`cspaceDeleteSlot`) only unmapped the deleted slot from its
 derivation node (`detachSlotFromCdt`); the node's edge to its parent and the
 parent's child entry stayed in the tree.  `cspaceCopy` allocates a fresh node
 for each copy, so a loop of copy and delete added an edge on every round, each
 revocation walked the growing list, and the source reported a derived child
 that no longer existed, so its own delete was refused with
 `revocationRequired` until it was revoked.  Retyping a CNode had the same
-fault for every slot it held (`detachCNodeSlots`).
+fault for every slot it held (`detachCNodeSlots`), and the local revoke
+(`cspaceRevoke`) left every sibling it emptied mapped to its node.
 
-- **`removeDeletedCdtLeaf`** (`Capability/Operations.lean`): past the guard the
-  deleted slot's node has no children, so the delete removes it from the tree
-  with its edge (`CapDerivationTree.removeNode`), as seL4's `cteDelete` removes
-  a leaf from the mapping database.  `cspaceDeleteSlot_ok_decompose` states the
-  delete's success shape, and every preservation theorem over the delete
-  (capability bundle, CDT maps, node-slot table, IPC bundle, run-queue stage,
-  projection, confinement, key inputs, fields outside) is restated through it;
-  the tree's acyclicity carries by `edgeWellFounded_sub` over
-  `removeNode_edges_sub`, and `capabilityInvariantBundle_of_cdt_update` moves
-  from `Preservation/Revoke.lean` to `Preservation/Delete.lean`, beside its new
-  consumer.  `cspaceDeleteSlot_preserves_cdtMapsConsistent` now takes the two
-  map tables' `invExtK`, which `allTablesInvExtK` carries.
-- **`detachCNodeSlot`** (`Lifecycle/Operations/CleanupPreservation.lean`): the
-  CNode retype's per-slot step is the same unmap-and-remove, past the same
-  no-derivation-parent guard.
-- **Regression tests** (`tests/OperationChainSuite.lean`): `chain5b` runs
-  seventeen copy-and-delete rounds and checks the tree is empty after each and
-  the source deletable; `chain5c` copies into a CNode, retypes it, and checks
-  no edge remains.  `chain5b` failed before the fix.
+**Security (Medium, PR #951 review): the delete's refusal was an
+information-flow channel.**  The delete refused with `revocationRequired` while
+the slot had derived capabilities, so a thread holding a copy of another
+domain's capability decided, by deleting or keeping the copy, whether that
+domain's next delete succeeded.  The noninterference theorems did not see it,
+because they constrain only runs in which both executions succeed; that gap is
+registered in `docs/REGISTERED_DEBT.md` (table C, "Low-equivalence preservation
+constrains only runs in which both executions succeed").
+
+- **`CapDerivationTree.spliceNode`** (`Model/Object/Structures.lean`): a node
+  leaves the tree with its edges, and each child it had is derived from its
+  parent instead, by the operation it was derived by; a root's children become
+  roots.  This is seL4's `cteDelete`, which unlinks a capability from the
+  mapping database without asking about its children.  The splice keeps the
+  tree acyclic (`spliceNode_edgeWellFounded`: each new edge shortcuts a
+  two-edge path, through `edgeWellFounded_of_edges_transGen`) and its index maps
+  consistent and well formed (`spliceNode_mapsWellFormed`).
+- **The delete never refuses on the tree** (`Capability/Operations.lean`):
+  `cspaceDeleteSlot` runs the core delete and splices the slot's node out
+  (`spliceDeletedCdtNode`); `cspaceDeleteSlot_isOk_iff_core` states that its
+  outcome is the core delete's.  `slotIsDerivationParent`,
+  `cnodeHasDerivationParentSlot` and `cspaceDeleteSlot_refuses_existing_children`
+  are retired, and the CNode retype drops the guard of the same kind.
+- **One step for every destroyer**: `detachDestroyedSlot` splices a destroyed
+  slot's node out and clears its slot maps.  The CNode retype takes it for each
+  slot it held, and the local revoke for each sibling it empties
+  (`detachRevokedSlots`, reading the same keep predicate as
+  `revokeTargetLocal`, `CNode.revokeTargetLocalKeeps`).  Every preservation
+  theorem over the delete and the local revoke (capability bundle, CDT maps,
+  node-slot table, IPC bundle, run-queue stage, projection, low equivalence,
+  confinement, key inputs, fields outside) is restated through
+  `cspaceDeleteSlot_ok_decompose` and `cspaceRevoke_ok_decompose`;
+  `cspaceRevoke_preserves_capabilityInvariantBundle` and
+  `cspaceRevoke_preserves_cdtMapsConsistent` now take the node-slot and map
+  tables' `invExtK`, which `allTablesInvExtK` carries.
+- **Tests**: `tests/OperationChainSuite.lean`'s `chain5b` runs seventeen
+  copy-and-delete rounds and checks the tree is empty after each and the source
+  deletable, and `chain5c` copies into a CNode, retypes it and checks no edge
+  remains (`chain5b` failed before the fix).  `tests/NegativeStateSuite.lean`
+  deletes a slot with a parent and a child and checks the child is re-derived
+  from the parent with its operation; the error matrix's `revocationRequired`
+  row is now an in-use Reply retype.
 
 Normal-build allocations per call (QEMU exerciser, core 0; first call /
 steady state), `v0.36.100` and `v0.36.101`:
@@ -43,7 +67,7 @@ steady state), `v0.36.100` and `v0.36.101`:
 | reply-cap mint | 47 / 47 | 48 / 48 |
 | reply-cap delete | 29 / 29 | 38 / 38 |
 | frame delete | 45 / 47 | 62 / 64 |
-| page-table delete 3 / 2 / 1 | 35 / 29 / 26 | 50 / 41 / 35 |
+| page-table delete 3 / 2 / 1 | 35 / 29 / 26 | 50 / 42 / 36 |
 | page-table retype 1 (steady) | 89 | 90 |
 
 A delete now builds the tree's smaller edge list and maps (the removal's

@@ -19,7 +19,7 @@ Private `cdtNodeSlot` preservation helpers are promoted to public so
 the Revoke sibling module can invoke them for transitive CDT-revocation
 fold induction, and `capabilityInvariantBundle_of_cdt_update` (a CDT-only
 update keeps the bundle when the new tree is acyclic) sits here for the
-guarded delete's leaf removal and the revocation sweep alike.
+delete's splice and the revocation sweep alike.
 -/
 
 namespace SeLe4n.Kernel
@@ -90,9 +90,9 @@ theorem capabilityInvariantBundle_of_cdt_update
     cspaceDepthConsistent_of_objects_eq st _ hDepthPre hObjEq,
     hObjEq ▸ hObjInvPre⟩
 
-/-- WS-E2 / H-01: Compositional preservation of `cspaceDeleteSlot` (guarded wrapper).
-Delegates to `cspaceDeleteSlotCore_preserves_capabilityInvariantBundle` after discharging
-the U-H03 CDT children guard. -/
+/-- WS-E2 / H-01: Compositional preservation of `cspaceDeleteSlot`.
+Delegates to `cspaceDeleteSlotCore_preserves_capabilityInvariantBundle`, then keeps
+acyclicity through the splice of the deleted slot's node. -/
 theorem cspaceDeleteSlot_preserves_capabilityInvariantBundle
     (st st' : SystemState)
     (addr : CSpaceAddr)
@@ -100,15 +100,14 @@ theorem cspaceDeleteSlot_preserves_capabilityInvariantBundle
     (hNodeSlotK : st.cdtNodeSlot.invExtK)
     (hStep : cspaceDeleteSlot addr st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
-  obtain ⟨_, stC, hCore, rfl⟩ := cspaceDeleteSlot_ok_decompose addr st st' hStep
+  obtain ⟨stC, hCore, rfl⟩ := cspaceDeleteSlot_ok_decompose addr st st' hStep
   have hInvC := cspaceDeleteSlotCore_preserves_capabilityInvariantBundle
     st stC addr hInv hNodeSlotK hCore
   cases st.lookupCdtNodeOfSlot addr with
   | none => exact hInvC
   | some node =>
     exact capabilityInvariantBundle_of_cdt_update stC _ hInvC
-      (CapDerivationTree.edgeWellFounded_sub _ _ hInvC.2.2.2.1
-        (CapDerivationTree.removeNode_edges_sub stC.cdt node))
+      (CapDerivationTree.spliceNode_edgeWellFounded _ node hInvC.2.2.2.1)
 
 /-- Core: `cspaceDeleteSlotCore` preserves `cdtNodeSlot.invExtK`. -/
 theorem cspaceDeleteSlotCore_preserves_cdtNodeSlot
@@ -148,9 +147,89 @@ theorem cspaceDeleteSlot_preserves_cdtNodeSlot
     (hNodeSlotK : st.cdtNodeSlot.invExtK)
     (hStep : cspaceDeleteSlot addr st = .ok ((), st')) :
     st'.cdtNodeSlot.invExtK := by
-  obtain ⟨_, stC, hCore, rfl⟩ := cspaceDeleteSlot_ok_decompose addr st st' hStep
-  rw [removeDeletedCdtLeaf_cdtNodeSlot]
+  obtain ⟨stC, hCore, rfl⟩ := cspaceDeleteSlot_ok_decompose addr st st' hStep
+  rw [spliceDeletedCdtNode_cdtNodeSlot]
   exact cspaceDeleteSlotCore_preserves_cdtNodeSlot st stC addr hNodeSlotK hCore
+
+/-- **The destroyed-slot step keeps the structural capability invariants**: it
+writes only the tree (a splice, which keeps it acyclic) and the two slot maps
+(erasures, which keep every remaining node-to-slot entry backed by an object). -/
+theorem detachDestroyedSlot_preserves (st : SystemState) (ref : SlotRef)
+    (hBnd : cspaceSlotCountBounded st) (hComp : cdtCompleteness st)
+    (hAcyc : cdtAcyclicity st) (hDepth : cspaceDepthConsistent st)
+    (hObjInv : st.objects.invExt) (hK : st.cdtNodeSlot.invExtK) :
+    cspaceSlotCountBounded (detachDestroyedSlot st ref) ∧
+    cdtCompleteness (detachDestroyedSlot st ref) ∧
+    cdtAcyclicity (detachDestroyedSlot st ref) ∧
+    cspaceDepthConsistent (detachDestroyedSlot st ref) ∧
+    (detachDestroyedSlot st ref).objects.invExt ∧
+    (detachDestroyedSlot st ref).cdtNodeSlot.invExtK := by
+  unfold detachDestroyedSlot
+  generalize hS : spliceDeletedCdtNode st (st.lookupCdtNodeOfSlot ref) = stS
+  have hObj : stS.objects = st.objects := hS ▸ spliceDeletedCdtNode_objects _ _
+  have hNS : stS.cdtNodeSlot = st.cdtNodeSlot := hS ▸ spliceDeletedCdtNode_cdtNodeSlot _ _
+  have hAcycS : cdtAcyclicity stS := by
+    subst hS
+    cases st.lookupCdtNodeOfSlot ref with
+    | none => exact hAcyc
+    | some n => exact CapDerivationTree.spliceNode_edgeWellFounded _ n hAcyc
+  have hCompS : cdtCompleteness stS := fun n r h => by
+    rw [hObj]; exact hComp n r (hNS ▸ h)
+  have hKS : stS.cdtNodeSlot.invExtK := hNS ▸ hK
+  refine ⟨cspaceSlotCountBounded_of_detachSlotFromCdt _ ref
+      (cspaceSlotCountBounded_of_objects_eq st _ hBnd hObj),
+    cdtCompleteness_of_detachSlotFromCdt _ ref hCompS hKS,
+    cdtAcyclicity_of_detachSlotFromCdt _ ref hAcycS,
+    cspaceDepthConsistent_of_detachSlotFromCdt _ ref
+      (cspaceDepthConsistent_of_objects_eq st _ hDepth hObj),
+    (SystemState.detachSlotFromCdt_objects_eq stS ref) ▸ hObj ▸ hObjInv, ?_⟩
+  unfold SystemState.detachSlotFromCdt
+  split
+  · exact hKS
+  · exact stS.cdtNodeSlot.erase_preserves_invExtK _ hKS
+
+/-- ...and so does detaching every sibling the local revoke empties. -/
+theorem detachRevokedSlots_preserves (st : SystemState) (cnodeId : SeLe4n.ObjId)
+    (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget)
+    (hBnd : cspaceSlotCountBounded st) (hComp : cdtCompleteness st)
+    (hAcyc : cdtAcyclicity st) (hDepth : cspaceDepthConsistent st)
+    (hObjInv : st.objects.invExt) (hK : st.cdtNodeSlot.invExtK) :
+    let st' := detachRevokedSlots st cnodeId cn sourceSlot target
+    cspaceSlotCountBounded st' ∧ cdtCompleteness st' ∧ cdtAcyclicity st' ∧
+      cspaceDepthConsistent st' ∧ st'.objects.invExt ∧ st'.cdtNodeSlot.invExtK := by
+  unfold detachRevokedSlots
+  refine SeLe4n.Kernel.RobinHood.RHTable.fold_preserves cn.slots.table st _
+    (fun acc => cspaceSlotCountBounded acc ∧ cdtCompleteness acc ∧ cdtAcyclicity acc ∧
+      cspaceDepthConsistent acc ∧ acc.objects.invExt ∧ acc.cdtNodeSlot.invExtK)
+    ⟨hBnd, hComp, hAcyc, hDepth, hObjInv, hK⟩ (fun acc slot cap h => ?_)
+  split
+  · exact h
+  · obtain ⟨h1, h2, h3, h4, h5, h6⟩ := h
+    exact detachDestroyedSlot_preserves acc _ h1 h2 h3 h4 h5 h6
+
+/-- The local revoke keeps `cdtNodeSlot.invExtK`. -/
+theorem cspaceRevoke_preserves_cdtNodeSlot
+    (st st' : SystemState) (addr : CSpaceAddr)
+    (hInv : capabilityInvariantBundle st)
+    (hNodeSlotK : st.cdtNodeSlot.invExtK)
+    (hStep : cspaceRevoke addr st = .ok ((), st')) :
+    st'.cdtNodeSlot.invExtK := by
+  obtain ⟨parent, cn, stS, _, hCn, hStore, rfl⟩ := cspaceRevoke_ok_decompose addr st st' hStep
+  rcases hInv with ⟨_, hBnd, hComp, hAcyc, hDepth, hObjInv, _⟩
+  have hNS := (storeObject_cdtNodeSlot_eq st stS addr.cnode _ hStore).1
+  have hObjInvS := storeObject_preserves_objects_invExt st stS addr.cnode _ hObjInv hStore
+  have hPre : st.objects[addr.cnode]? = some (.cnode cn) := by
+    unfold SystemState.getCNode? at hCn
+    split at hCn <;> simp_all
+  exact (detachRevokedSlots_preserves stS addr.cnode cn addr.slot parent.target
+    (cspaceSlotCountBounded_of_storeObject_cnode st stS addr.cnode _ hBnd hObjInv hStore
+      (CNode.revokeTargetLocal_slotCountBounded cn addr.slot parent.target
+        (hBnd addr.cnode cn hPre) (SeLe4n.Model.CNode.slotsUnique_holds cn)))
+    (cdtCompleteness_of_storeObject st stS addr.cnode _ hComp hObjInv hStore hNS)
+    (cdtAcyclicity_of_cdt_eq st stS hAcyc (storeObject_cdt_eq st stS addr.cnode _ hStore))
+    (cspaceDepthConsistent_of_storeObject_sameCNode st stS addr.cnode cn
+      (cn.revokeTargetLocal addr.slot parent.target) hDepth hObjInv hPre hStore rfl rfl rfl rfl)
+    hObjInvS (hNS ▸ hNodeSlotK)).2.2.2.2.2
 
 /-- WS-SM SM6.D / PR #822 Phase H (#1.a): `cspaceRevoke` preserves `replyCapPointsToValidReply`.
 Revoke only *removes* caps with the revoked target from the local CNode (`revokeTargetLocal`), so
@@ -180,8 +259,8 @@ theorem cspaceRevoke_preserves_replyCapPointsToValidReply
         | error e => simp [hStore] at hStep
         | ok pair =>
           obtain ⟨_, stMid⟩ := pair; simp [hStore] at hStep
-          -- `hStep : stMid = st'`
-          have hObjFrame : st'.objects = stMid.objects := by rw [hStep]
+          -- `hStep : detachRevokedSlots stMid … = st'`, which frames the objects
+          have hObjFrame : st'.objects = stMid.objects := by rw [← hStep, detachRevokedSlots_objects]
           have hMidSelf : stMid.objects[addr.cnode]? = some (.cnode (preCn.revokeTargetLocal addr.slot parent.target)) :=
             storeObject_objects_eq st stMid addr.cnode _ hObjInv hStore
           have hMidNe : ∀ oid, oid ≠ addr.cnode → stMid.objects[oid]? = st.objects[oid]? :=
@@ -215,6 +294,7 @@ theorem cspaceRevoke_preserves_capabilityInvariantBundle
     (st st' : SystemState)
     (addr : CSpaceAddr)
     (hInv : capabilityInvariantBundle st)
+    (hNodeSlotK : st.cdtNodeSlot.invExtK)
     (hStep : cspaceRevoke addr st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
   rcases hInv with ⟨_hSound, hBounded, hComp, hAcyclic, hDepthPre, hObjInv, hRCPV⟩
@@ -249,8 +329,12 @@ theorem cspaceRevoke_preserves_capabilityInvariantBundle
               st stMid addr.cnode preCn (preCn.revokeTargetLocal addr.slot parent.target)
               hDepthPre hObjInv hPre hStore rfl rfl rfl rfl
             have hObjInvMid := storeObject_preserves_objects_invExt st stMid addr.cnode _ hObjInv hStore
+            have hKMid : stMid.cdtNodeSlot.invExtK := by
+              rw [(storeObject_cdtNodeSlot_eq st stMid addr.cnode _ hStore).1]; exact hNodeSlotK
             subst hStep
-            exact ⟨hBndMid, hCompMid, hAcyclicMid, hDepthMid, hObjInvMid⟩
+            obtain ⟨h1, h2, h3, h4, h5, _⟩ := detachRevokedSlots_preserves stMid addr.cnode preCn
+              addr.slot parent.target hBndMid hCompMid hAcyclicMid hDepthMid hObjInvMid hKMid
+            exact ⟨h1, h2, h3, h4, h5⟩
   exact ⟨cspaceLookupSound_holds st',
     hBounded', hComp', hAcyclic', hDepth', hObjInv',
     cspaceRevoke_preserves_replyCapPointsToValidReply st st' addr hRCPV hObjInv hStep⟩

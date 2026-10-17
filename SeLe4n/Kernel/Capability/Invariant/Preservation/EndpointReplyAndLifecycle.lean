@@ -1337,27 +1337,12 @@ theorem lifecycleRevokeDeleteRetype_preserves_capabilityInvariantBundle
   rcases lifecycleRevokeDeleteRetype_ok_implies_staged_steps st st' authority cleanup target newObj hStep with
     ⟨stRevoked, stDeleted, _hNe, hRevoke, hDelete, _hLookupDeleted, hRetype⟩
   have hRevoked : capabilityInvariantBundle stRevoked :=
-    cspaceRevoke_preserves_capabilityInvariantBundle st stRevoked cleanup hInv hRevoke
-  -- cspaceRevoke preserves cdtNodeSlot
-  have hRevokedNS : stRevoked.cdtNodeSlot = st.cdtNodeSlot := by
-    unfold cspaceRevoke SystemState.getCNode? at hRevoke
-    cases hLookup : cspaceLookupSlot cleanup st with
-    | error e => simp [hLookup] at hRevoke
-    | ok pair =>
-      rcases pair with ⟨parent, st1⟩
-      have hSt1 : st1 = st := cspaceLookupSlot_preserves_state st st1 cleanup parent hLookup
-      subst st1; simp [hLookup] at hRevoke
-      cases hObj : st.objects[cleanup.cnode]? with
-      | none => simp [hObj] at hRevoke
-      | some obj =>
-        cases obj with
-        | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ => simp [hObj] at hRevoke
-        | cnode preCn =>
-          simp [hObj] at hRevoke
-          exact (storeObject_cdtNodeSlot_eq st _ cleanup.cnode _ hRevoke).1
+    cspaceRevoke_preserves_capabilityInvariantBundle st stRevoked cleanup hInv hNodeSlotK hRevoke
+  have hRevokedK : stRevoked.cdtNodeSlot.invExtK :=
+    cspaceRevoke_preserves_cdtNodeSlot st stRevoked cleanup hInv hNodeSlotK hRevoke
   have hDeleted : capabilityInvariantBundle stDeleted :=
     cspaceDeleteSlot_preserves_capabilityInvariantBundle stRevoked stDeleted cleanup hRevoked
-      (hRevokedNS ▸ hNodeSlotK) hDelete
+      hRevokedK hDelete
   exact lifecycleRetypeObject_preserves_capabilityInvariantBundle stDeleted st' authority target newObj
     hDeleted hNewObjCNodeUniq hNewObjCNodeBounded hNewObjCNodeDepth hReplyBacked' hRetype
 

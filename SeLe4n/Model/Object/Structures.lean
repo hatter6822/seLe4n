@@ -974,6 +974,13 @@ capabilities first. -/
 def holdsFrameMappingRecord (node : CNode) : Bool :=
   node.slots.fold false (fun acc _ cap => acc || cap.mapping.isSome)
 
+/-- Which slots the local revoke keeps: the source, and every slot naming another
+target.  One predicate for the CNode rewrite (`revokeTargetLocal`) and for the
+detach of the slots it drops (`detachRevokedSlots`). -/
+abbrev revokeTargetLocalKeeps (sourceSlot : SeLe4n.Slot) (target : CapTarget)
+    (s : SeLe4n.Slot) (c : Capability) : Bool :=
+  s == sourceSlot || !(c.target == target)
+
 /-- The local same-TARGET sweep: keep the source slot, delete every other slot in
 this CNode that names the same capability target.
 
@@ -991,7 +998,7 @@ WS-G5/F-P03: Inherently O(m) (filter-by-target), uses `RHTable.filter`. -/
 def revokeTargetLocal (node : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget) : CNode :=
   {
     node with
-      slots := node.slots.filter fun s c => s == sourceSlot || !(c.target == target)
+      slots := node.slots.filter (revokeTargetLocalKeeps sourceSlot target)
   }
 
 -- ============================================================================
@@ -1252,10 +1259,10 @@ theorem revokeTargetLocal_slotCountBounded
     (cn.revokeTargetLocal sourceSlot target).slotCountBounded := by
   -- WS-RC R4.A: cn.slots is `UniqueSlotMap`; `.filter` returns a
   -- `UniqueSlotMap`. Size is forwarded to the underlying `RHTable`.
-  show (cn.slots.filter (fun s c => s == sourceSlot || !(c.target == target))).table.size
+  show (cn.slots.filter (revokeTargetLocalKeeps sourceSlot target)).table.size
     ≤ 2 ^ cn.radixWidth
   have h := RHTable.size_filter_le_size cn.slots.table
-    (fun s c => s == sourceSlot || !(c.target == target)) hUniq.1.1
+    (revokeTargetLocalKeeps sourceSlot target) hUniq.1.1
   exact Nat.le_trans h hBounded
 
 /-- WS-G5: If a slot is present in the RHTable, lookup returns its value.
@@ -2385,6 +2392,209 @@ theorem addEdge_preserves_edgeWellFounded_noParent
           congr 1; omega
         rwa [← this]
   · exact ⟨e, hOld, hep, hec⟩
+
+-- ============================================================================
+-- WS-ZA (#951): splicing a node out of the tree
+-- ============================================================================
+
+/-- A path whose every step is `r` relates its first element to its last by the
+transitive closure of `r`. -/
+theorem transGen_of_steps {α : Type} {r : α → α → Prop} :
+    ∀ (path : List α) (a b : α), path.length > 1 → path.head? = some a →
+      path.getLast? = some b → (∀ i (h : i + 1 < path.length), r path[i] path[i + 1]) →
+      Relation.TransGen r a b
+  | [], _, _, h, _, _, _ => by simp at h
+  | [_], _, _, h, _, _, _ => by simp at h
+  | x :: y :: rest, a, b, _, hHead, hLast, hSteps => by
+    simp only [List.head?, Option.some.injEq] at hHead; subst hHead
+    have h0 : r x y := hSteps 0 (by simp)
+    cases rest with
+    | nil =>
+      simp at hLast; subst hLast; exact .single h0
+    | cons z rest' =>
+      have ih := transGen_of_steps (y :: z :: rest') y b (by simp) rfl
+        (by simpa [List.getLast?_cons_cons] using hLast)
+        (fun i h => hSteps (i + 1) (by simp at h ⊢; omega))
+      exact Relation.TransGen.trans (.single h0) ih
+
+/-- The converse: the transitive closure of `r` is witnessed by a path of `r` steps. -/
+theorem steps_of_transGen {α : Type} {r : α → α → Prop} {a b : α}
+    (h : Relation.TransGen r a b) :
+    ∃ path : List α, path.length > 1 ∧ path.head? = some a ∧ path.getLast? = some b ∧
+      ∀ i (h : i + 1 < path.length), r path[i] path[i + 1] := by
+  induction h with
+  | single h => exact ⟨[a, _], by simp, rfl, rfl, fun i hi => by
+      have : i = 0 := by simp at hi; omega
+      subst this; simpa using h⟩
+  | @tail c d _ hcd ih =>
+    obtain ⟨p, hLen, hHead, hLast, hSteps⟩ := ih
+    refine ⟨p ++ [d], by simp; omega, ?_, by simp, fun i hi => ?_⟩
+    · cases p with
+      | nil => simp at hLen
+      | cons x xs => simpa using hHead
+    · simp only [List.length_append, List.length_singleton] at hi
+      by_cases hlt : i + 1 < p.length
+      · rw [List.getElem_append_left (by omega), List.getElem_append_left hlt]
+        exact hSteps i hlt
+      · have hi' : i + 1 = p.length := by omega
+        have hc : p[i]'(by omega) = c := by
+          rw [List.getLast?_eq_getElem?] at hLast
+          have := (List.getElem?_eq_some_iff.mp hLast).2
+          simp only [show p.length - 1 = i by omega] at this; exact this
+        rw [List.getElem_append_left (by omega), List.getElem_append_right (by omega)]
+        simp only [hi', Nat.sub_self, List.getElem_singleton]
+        rw [hc]; exact hcd
+
+/-- Transitive closure is monotone in a relation whose steps are reached in `s`. -/
+theorem transGen_lift {α : Type} {r s : α → α → Prop} {a b : α}
+    (h : Relation.TransGen r a b) (hrs : ∀ x y, r x y → Relation.TransGen s x y) :
+    Relation.TransGen s a b := by
+  induction h with
+  | single h => exact hrs _ _ h
+  | tail _ h ih => exact ih.trans (hrs _ _ h)
+
+/-- One step along a derivation edge of `cdt`. -/
+def edgeStep (cdt : CapDerivationTree) (a b : CdtNodeId) : Prop :=
+  ∃ e ∈ cdt.edges, e.parent = a ∧ e.child = b
+
+/-- Acyclicity carries over to a tree each of whose edges joins two nodes the old
+tree already linked by a path: a cycle in the new tree would trace a cycle in
+the old one. -/
+theorem edgeWellFounded_of_edges_transGen (cdt cdt' : CapDerivationTree)
+    (hWF : cdt.edgeWellFounded)
+    (hReach : ∀ e ∈ cdt'.edges, Relation.TransGen (edgeStep cdt) e.parent e.child) :
+    cdt'.edgeWellFounded := by
+  intro node ⟨path, hLen, hHead, hLast, hEdges⟩
+  have hNew : Relation.TransGen (edgeStep cdt') node node :=
+    transGen_of_steps path node node hLen hHead hLast hEdges
+  have hOld := transGen_lift hNew (fun x y ⟨e, he, hp, hc⟩ => hp ▸ hc ▸ hReach e he)
+  exact hWF node (steps_of_transGen hOld)
+
+
+/-- **Splice `node` out of the tree**, as seL4's `cteDelete` unlinks a capability
+from the mapping database: `node`'s edges go, and each child it had is derived
+from `node`'s own parent instead, by the operation it was derived by.  A root
+node's children become roots.  Deleting a slot therefore never depends on
+whether it has derived capabilities, and revoking an ancestor still reaches
+every capability derived through the deleted one.
+
+A child already holding a parent in the tree (impossible while the maps agree
+with the edges, since `removeNode` erased each child's entry) is left alone,
+so the parent map stays a function. -/
+def spliceNode (cdt : CapDerivationTree) (node : CdtNodeId) : CapDerivationTree :=
+  match cdt.edges.find? (fun e => e.isChildOf node) with
+  | none => cdt.removeNode node
+  | some up =>
+    (cdt.edges.filter (fun e => e.isParentOf node)).foldl
+      (fun acc e => if (acc.parentMap[e.child]?).isNone then acc.addEdge up.parent e.child e.op
+        else acc)
+      (cdt.removeNode node)
+
+private theorem foldl_addEdge_edges (cdt : CapDerivationTree) (node p : CdtNodeId) :
+    ∀ (l : List CapDerivationEdge) (acc : CapDerivationTree),
+      (∀ e ∈ l, e ∈ cdt.edges ∧ e.parent = node) →
+      ∀ e' ∈ (l.foldl (fun acc e => if (acc.parentMap[e.child]?).isNone then
+          acc.addEdge p e.child e.op else acc) acc).edges,
+        e' ∈ acc.edges ∨ (e'.parent = p ∧ ∃ e ∈ cdt.edges, e.parent = node ∧ e.child = e'.child)
+  | [], acc, _, e', h => .inl h
+  | x :: xs, acc, hl, e', h => by
+    simp only [List.foldl_cons] at h
+    rcases foldl_addEdge_edges cdt node p xs _ (fun e he => hl e (.tail _ he)) e' h with h' | h'
+    · split at h'
+      · simp only [addEdge, List.mem_cons] at h'
+        rcases h' with rfl | h'
+        · exact .inr ⟨rfl, x, (hl x (.head _)).1, (hl x (.head _)).2, rfl⟩
+        · exact .inl h'
+      · exact .inl h'
+    · exact .inr h'
+
+/-- Every edge after a splice is an old edge or joins `node`'s parent to one of
+`node`'s children. -/
+theorem spliceNode_edges (cdt : CapDerivationTree) (node : CdtNodeId) :
+    ∀ e' ∈ (cdt.spliceNode node).edges, e' ∈ cdt.edges ∨
+      ∃ up ∈ cdt.edges, ∃ e ∈ cdt.edges, up.child = node ∧ e.parent = node ∧
+        e'.parent = up.parent ∧ e'.child = e.child := by
+  intro e' h
+  unfold spliceNode at h
+  split at h
+  · exact .inl (removeNode_edges_sub cdt node e' h)
+  · rename_i up hUp
+    have hUpMem := List.mem_of_find?_eq_some hUp
+    have hUpChild : up.child = node := by
+      simpa [CapDerivationEdge.isChildOf] using List.find?_some hUp
+    rcases foldl_addEdge_edges cdt node up.parent _ _ (fun e he => by
+        simp only [List.mem_filter, CapDerivationEdge.isParentOf, decide_eq_true_eq] at he
+        exact he) e' h with h' | ⟨hp, e, he, hep, hec⟩
+    · exact .inl (removeNode_edges_sub cdt node e' h')
+    · exact .inr ⟨up, hUpMem, e, he, hUpChild, hep, hp, hec.symm⟩
+
+/-- A splice keeps the tree acyclic: each new edge shortcuts an old two-edge path. -/
+theorem spliceNode_edgeWellFounded (cdt : CapDerivationTree) (node : CdtNodeId)
+    (hWF : cdt.edgeWellFounded) : (cdt.spliceNode node).edgeWellFounded :=
+  edgeWellFounded_of_edges_transGen cdt _ hWF fun e' he' => by
+    rcases spliceNode_edges cdt node e' he' with h | ⟨up, hUp, e, he, hUc, hEp, hP, hC⟩
+    · exact .single ⟨e', h, rfl, rfl⟩
+    · exact .tail (.single ⟨up, hUp, hP.symm, hUc⟩) ⟨e, he, hEp, hC.symm⟩
+
+
+/-- `removeNode` keeps the child map's `invExtK`. -/
+theorem removeNode_childMap_invExtK (cdt : CapDerivationTree) (node : CdtNodeId)
+    (hK : cdt.childMap.invExtK) : (cdt.removeNode node).childMap.invExtK := by
+  have hE := SeLe4n.Kernel.RobinHood.RHTable.erase_preserves_invExtK _ node hK
+  simp only [removeNode]
+  split
+  · split
+    · exact SeLe4n.Kernel.RobinHood.RHTable.erase_preserves_invExtK _ _ hE
+    · exact SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExtK _ _ _ hE
+  · exact hE
+
+/-- `removeNode` keeps the parent map's `invExtK`. -/
+theorem removeNode_parentMap_invExtK (cdt : CapDerivationTree) (node : CdtNodeId)
+    (hK : cdt.parentMap.invExtK) : (cdt.removeNode node).parentMap.invExtK := by
+  simp only [removeNode]
+  apply SeLe4n.Kernel.RobinHood.RHTable.erase_preserves_invExtK
+  generalize (cdt.childMap.get? node).getD [] = l
+  suffices ∀ (m : SeLe4n.Kernel.RobinHood.RHTable CdtNodeId CdtNodeId), m.invExtK →
+      (l.foldl (fun m c => m.erase c) m).invExtK from this _ hK
+  induction l with
+  | nil => exact fun _ h => h
+  | cons x xs ih => exact fun m h => ih _ (SeLe4n.Kernel.RobinHood.RHTable.erase_preserves_invExtK _ x h)
+
+/-- The index maps agree with the edges, and both satisfy `invExtK`. -/
+def mapsWellFormed (cdt : CapDerivationTree) : Prop :=
+  cdt.childMapConsistent ∧ cdt.parentMapConsistent ∧
+    cdt.childMap.invExtK ∧ cdt.parentMap.invExtK
+
+private theorem foldl_addEdge_mapsWellFormed (p : CdtNodeId) :
+    ∀ (l : List CapDerivationEdge) (acc : CapDerivationTree), acc.mapsWellFormed →
+      (l.foldl (fun acc e => if (acc.parentMap[e.child]?).isNone then
+          acc.addEdge p e.child e.op else acc) acc).mapsWellFormed
+  | [], _, h => h
+  | x :: xs, acc, ⟨hC, hP, hCK, hPK⟩ => by
+    simp only [List.foldl_cons]
+    apply foldl_addEdge_mapsWellFormed p xs
+    split
+    · rename_i hNone
+      have hFresh : acc.parentMap[x.child]? = none := Option.isNone_iff_eq_none.mp hNone
+      obtain ⟨hC', hP'⟩ := addEdge_preserves_cdtMapsConsistent acc p x.child x.op hC hP hFresh
+        hCK.1 hPK.1
+      exact ⟨hC', hP', SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExtK _ _ _ hCK,
+        SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExtK _ _ _ hPK⟩
+    · exact ⟨hC, hP, hCK, hPK⟩
+
+/-- A splice keeps both index maps consistent with the edges and well formed. -/
+theorem spliceNode_mapsWellFormed (cdt : CapDerivationTree) (node : CdtNodeId)
+    (h : cdt.mapsWellFormed) : (cdt.spliceNode node).mapsWellFormed := by
+  obtain ⟨hC, hP, hCK, hPK⟩ := h
+  have hR : (cdt.removeNode node).mapsWellFormed :=
+    ⟨removeNode_childMapConsistent _ node hC hP hCK,
+      removeNode_parentMapConsistent _ node hP hC hPK,
+      removeNode_childMap_invExtK _ node hCK, removeNode_parentMap_invExtK _ node hPK⟩
+  unfold spliceNode
+  split
+  · exact hR
+  · exact foldl_addEdge_mapsWellFormed _ _ _ hR
+
 
 -- ============================================================================
 -- S3-A: CDT maps consistency invariant

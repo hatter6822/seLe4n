@@ -16,7 +16,7 @@ preservation cluster: `processRevokeNode` + the private fold helpers
 (`revokeCdtFoldBody`, `revokeCdtFold_preserves`), the compositional
 preservation theorems for `cspaceRevokeCdt`, `cspaceRevokeCdtStrict`,
 and `cspaceRevokeCdtStreaming`.  The `capabilityInvariantBundle_of_cdt_update`
-helper they use lives in the Delete sibling, whose leaf removal uses it first.
+helper they use lives in the Delete sibling, whose splice uses it first.
 Private fold infrastructure is promoted to public so the hub and
 future cross-subsystem consumers can reason about the fold shape.
 All declarations retain their original names, order, and proofs.

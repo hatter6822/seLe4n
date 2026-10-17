@@ -529,13 +529,12 @@ theorem lifecyclePreRetypeCleanup_confinedToCores
       observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
         (detachCNodeSlots_scheduler_eq st target cn)
         (detachCNodeSlots_machine_eq st target cn)
-    -- The derivation-parent guard rejects (vacuous on the `.ok` path); past it
-    -- the cleanup is the detach, whatever the replacement's shape.
+    -- The frame-mapping and installed-page-table guard rejects (vacuous on the
+    -- `.ok` path); past it the cleanup is the detach, whatever the replacement's
+    -- shape.
     split at hOk
     · cases hOk
-    · split at hOk
-      · cases hOk
-      · injection hOk with hOk; subst hOk; exact hDetach
+    · injection hOk with hOk; subst hOk; exact hDetach
   | endpoint _ =>
     simp only [lifecyclePreRetypeCleanup, lifecycleRetypeWriteSetOf] at hOk ⊢
     injection hOk with hOk; subst hOk

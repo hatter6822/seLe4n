@@ -48,7 +48,7 @@ private theorem cspaceDeleteSlot_authority_reduction
     (hObjInv : st.objects.invExt)
     (hStep : cspaceDeleteSlot addr st = .ok ((), st')) :
     SystemState.lookupSlotCap st' addr = none := by
-  obtain ⟨_, stC, hC, rfl⟩ := cspaceDeleteSlot_ok_decompose addr st st' hStep
+  obtain ⟨stC, hC, rfl⟩ := cspaceDeleteSlot_ok_decompose addr st st' hStep
   have h := cspaceDeleteSlotCore_authority_reduction st stC addr hObjInv hC
   cases hN : st.lookupCdtNodeOfSlot addr <;> exact h
 
@@ -213,11 +213,11 @@ theorem cspaceDeleteSlot_lookup_eq_none
     (hObjInv : st.objects.invExt)
     (hStep : cspaceDeleteSlot addr st = .ok ((), st')) :
     cspaceLookupSlot addr st' = .error .invalidCapability := by
-  obtain ⟨_, stC, hC, rfl⟩ := cspaceDeleteSlot_ok_decompose addr st st' hStep
+  obtain ⟨stC, hC, rfl⟩ := cspaceDeleteSlot_ok_decompose addr st st' hStep
   have h := cspaceDeleteSlotCore_lookup_eq_none st stC addr hObjInv hC
-  have hL : SystemState.lookupSlotCap (removeDeletedCdtLeaf stC (st.lookupCdtNodeOfSlot addr)) addr =
+  have hL : SystemState.lookupSlotCap (spliceDeletedCdtNode stC (st.lookupCdtNodeOfSlot addr)) addr =
       SystemState.lookupSlotCap stC addr := by cases st.lookupCdtNodeOfSlot addr <;> rfl
-  have hG : (removeDeletedCdtLeaf stC (st.lookupCdtNodeOfSlot addr)).getCNode? addr.cnode =
+  have hG : (spliceDeletedCdtNode stC (st.lookupCdtNodeOfSlot addr)).getCNode? addr.cnode =
       stC.getCNode? addr.cnode := by cases st.lookupCdtNodeOfSlot addr <;> rfl
   unfold cspaceLookupSlot at h ⊢
   rw [hL, hG]

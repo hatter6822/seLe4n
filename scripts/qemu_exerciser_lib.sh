@@ -250,8 +250,8 @@ for driver in drivers:
             "vspace-unify-instruction": (10, 10),
             "vspace-unmap": (119, 119), "frame-delete": (62, 64),
             "page-table-unmap-3": (42, 42), "page-table-delete-3": (50, 50),
-            "page-table-unmap-2": (41, 41), "page-table-delete-2": (41, 41),
-            "page-table-unmap-1": (38, 38), "page-table-delete-1": (35, 35),
+            "page-table-unmap-2": (41, 41), "page-table-delete-2": (42, 42),
+            "page-table-unmap-1": (38, 38), "page-table-delete-1": (36, 36),
             "untyped-reset": (153, 153),
         })
         expected = set(pinned)

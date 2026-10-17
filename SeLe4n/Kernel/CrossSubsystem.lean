@@ -1669,7 +1669,7 @@ theorem cspaceDeleteSlot_preservesFieldsOutside
     (addr : CSpaceAddr) (st st' : SystemState)
     (hStep : cspaceDeleteSlot addr st = .ok ((), st')) :
     preservesFieldsOutside capabilityOp_modifiedFields st st' := by
-  obtain ⟨_, stC, hCore, rfl⟩ := cspaceDeleteSlot_ok_decompose addr st st' hStep
+  obtain ⟨stC, hCore, rfl⟩ := cspaceDeleteSlot_ok_decompose addr st st' hStep
   refine preservesFieldsOutside_trans
     (cspaceDeleteSlotCore_preservesFieldsOutside _ _ _ hCore) ?_
   cases st.lookupCdtNodeOfSlot addr with

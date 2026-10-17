@@ -77,11 +77,11 @@ theorem cspaceDeleteSlot_keyInputsEq (st st' : SystemState) (addr : CSpaceAddr)
     (hObjInv : st.objects.invExt)
     (hStep : cspaceDeleteSlot addr st = .ok ((), st')) :
     keyInputsEq st st' ∧ st'.scheduler = st.scheduler ∧ st'.objects.invExt := by
-  obtain ⟨_, stC, hCore, rfl⟩ := cspaceDeleteSlot_ok_decompose addr st st' hStep
+  obtain ⟨stC, hCore, rfl⟩ := cspaceDeleteSlot_ok_decompose addr st st' hStep
   obtain ⟨hK, hS, hE⟩ := cspaceDeleteSlotCore_keyInputsEq st stC addr hObjInv hCore
-  exact ⟨keyInputsEq_trans hK (keyInputsEq_of_objects_eq (removeDeletedCdtLeaf_objects _ _)),
-    (removeDeletedCdtLeaf_scheduler _ _).trans hS,
-    by rw [removeDeletedCdtLeaf_objects]; exact hE⟩
+  exact ⟨keyInputsEq_trans hK (keyInputsEq_of_objects_eq (spliceDeletedCdtNode_objects _ _)),
+    (spliceDeletedCdtNode_scheduler _ _).trans hS,
+    by rw [spliceDeletedCdtNode_objects]; exact hE⟩
 
 /-- The CDT bookkeeping writes no object and no scheduler state. -/
 theorem ensureCdtNodeForSlot_objects_scheduler (st : SystemState) (ref : SlotRef) :

@@ -346,22 +346,33 @@ private def runCspaceMutationAndRevokeNegativeChecks : IO Unit := do
   else
     throw <| IO.userError "cspaceDeleteSlot must clear stale CDT slot/node mapping"
 
-  -- U-H03: cspaceDeleteSlot rejects deletion when CDT children exist.
+  -- A delete never refuses because the slot has derived capabilities (seL4's
+  -- cteDelete): the slot's node is spliced out and its child is re-derived from
+  -- the node's own parent, so revoking that parent still reaches it.
   let childBearingNode : CdtNodeId := ⟨10⟩
   let childOfBearing : CdtNodeId := ⟨11⟩
+  let bearingParent : CdtNodeId := ⟨12⟩
   let childBearingSeed : SystemState :=
     { baseState with
       cdt := CapDerivationTree.empty
+        |>.addEdge bearingParent childBearingNode .copy
         |>.addEdge childBearingNode childOfBearing .mint
       cdtSlotNode := baseState.cdtSlotNode.insert slot0 childBearingNode
       cdtNodeSlot := ((baseState.cdtNodeSlot
         |>.insert childBearingNode slot0)
         |>.insert childOfBearing { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 9 })
-      cdtNextNode := ⟨12⟩
+      cdtNextNode := ⟨13⟩
     }
-  expectErr "cspaceDeleteSlot rejects delete with CDT children"
+  let (_, splicedSt) ← expectOkSt "cspaceDeleteSlot deletes a slot with CDT children"
     (SeLe4n.Kernel.cspaceDeleteSlot slot0 childBearingSeed)
-    .revocationRequired
+  if splicedSt.cdt.parentMap[childOfBearing]? = some bearingParent ∧
+      splicedSt.cdt.childrenOf childBearingNode = [] ∧
+      splicedSt.cdt.parentMap[childBearingNode]? = none ∧
+      (splicedSt.cdt.edges.any fun e =>
+        e.parent == bearingParent && e.child == childOfBearing && e.op == .mint) then
+    IO.println "positive check passed [cspaceDeleteSlot splices a parent's node out of the tree]"
+  else
+    throw <| IO.userError "cspaceDeleteSlot must re-derive the deleted node's child from its parent"
 
   -- WS-E4/C-04 strict variant: surface first descendant deletion failure with context.
   let strictRootSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 5 }

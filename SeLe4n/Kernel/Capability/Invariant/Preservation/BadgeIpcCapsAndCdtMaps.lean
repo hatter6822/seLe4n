@@ -479,17 +479,18 @@ theorem cspaceDeleteSlot_preserves_cdtMapsConsistent
     (hChildK : st.cdt.childMap.invExtK) (hParentK : st.cdt.parentMap.invExtK)
     (hStep : cspaceDeleteSlot addr st = .ok ((), st')) :
     cdtMapsConsistent st' := by
-  obtain ⟨_, stC, hCore, rfl⟩ := cspaceDeleteSlot_ok_decompose addr st st' hStep
+  obtain ⟨stC, hCore, rfl⟩ := cspaceDeleteSlot_ok_decompose addr st st' hStep
   have hConC := cspaceDeleteSlotCore_preserves_cdtMapsConsistent st stC addr hCon hCore
   have hCdt : stC.cdt = st.cdt := cspaceDeleteSlotCore_cdt_eq st stC addr hCore
   cases st.lookupCdtNodeOfSlot addr with
   | none => exact hConC
   | some node =>
     unfold cdtMapsConsistent at hConC ⊢
-    rw [removeDeletedCdtLeaf_eq]; dsimp only
+    rw [spliceDeletedCdtNode_eq]; dsimp only
     rw [hCdt] at hConC ⊢
-    exact ⟨CapDerivationTree.removeNode_childMapConsistent _ node hConC.1 hConC.2 hChildK,
-      CapDerivationTree.removeNode_parentMapConsistent _ node hConC.2 hConC.1 hParentK⟩
+    obtain ⟨h1, h2, _, _⟩ := CapDerivationTree.spliceNode_mapsWellFormed _ node
+      ⟨hConC.1, hConC.2, hChildK, hParentK⟩
+    exact ⟨h1, h2⟩
 
 /-- S3-D: `cspaceCopy` preserves `cdtMapsConsistent`. Copy calls `addEdge`
     on the CDT, so the postcondition is taken as a hypothesis, matching
@@ -508,30 +509,38 @@ theorem cspaceMove_preserves_cdtMapsConsistent
     (_hStep : cspaceMove src dst st = .ok ((), st')) :
     cdtMapsConsistent st' := hCdtMapsPost
 
-/-- S3-D: `cspaceRevoke` preserves `cdtMapsConsistent`. Revoke stores the
-    CNode `revokeTargetLocal` leaves, which does not modify the CDT structure. -/
+/-- The destroyed-slot step keeps the tree's index maps consistent and well
+formed: the slot maps it erases are not the tree's, and the splice keeps them. -/
+theorem detachDestroyedSlot_preserves_mapsWellFormed (st : SystemState) (ref : SlotRef)
+    (h : st.cdt.mapsWellFormed) : (detachDestroyedSlot st ref).cdt.mapsWellFormed := by
+  unfold detachDestroyedSlot
+  have hD : ∀ x : SystemState, (SystemState.detachSlotFromCdt x ref).cdt = x.cdt := by
+    intro x; unfold SystemState.detachSlotFromCdt; split <;> rfl
+  rw [hD, spliceDeletedCdtNode_eq]
+  cases st.lookupCdtNodeOfSlot ref with
+  | none => exact h
+  | some n => exact CapDerivationTree.spliceNode_mapsWellFormed _ n h
+
+/-- S3-D: `cspaceRevoke` preserves `cdtMapsConsistent`.  Revoke stores the CNode
+    `revokeTargetLocal` leaves, which does not touch the tree, and then each
+    sibling it emptied takes the destroyed-slot step, which keeps the maps. -/
 theorem cspaceRevoke_preserves_cdtMapsConsistent
     (st st' : SystemState) (addr : CSpaceAddr)
     (hCon : cdtMapsConsistent st)
+    (hChildK : st.cdt.childMap.invExtK) (hParentK : st.cdt.parentMap.invExtK)
     (hStep : cspaceRevoke addr st = .ok ((), st')) :
     cdtMapsConsistent st' := by
-  unfold cspaceRevoke SystemState.getCNode? at hStep
-  cases hLook : cspaceLookupSlot addr st with
-  | error e => simp [hLook] at hStep
-  | ok pair =>
-      rcases pair with ⟨parent, stLook⟩
-      have hStLook : stLook = st := cspaceLookupSlot_preserves_state st stLook addr parent hLook
-      subst stLook
-      simp [hLook] at hStep
-      cases hPre : st.objects[addr.cnode]? with
-      | none => simp [hPre] at hStep
-      | some obj =>
-        cases obj with
-        | cnode cn =>
-          simp [hPre] at hStep
-          -- revokeTargetLocal modifies the CNode, not the CDT
-          exact cdtMapsConsistent_of_storeObject st st' addr.cnode _ hCon hStep
-        | _ => simp [hPre] at hStep
+  obtain ⟨parent, cn, stS, _, _, hStore, rfl⟩ := cspaceRevoke_ok_decompose addr st st' hStep
+  have hCdt := storeObject_cdt_eq st stS addr.cnode _ hStore
+  have hS : stS.cdt.mapsWellFormed := hCdt ▸ ⟨hCon.1, hCon.2, hChildK, hParentK⟩
+  suffices (detachRevokedSlots stS addr.cnode cn addr.slot parent.target).cdt.mapsWellFormed from
+    ⟨this.1, this.2.1⟩
+  unfold detachRevokedSlots
+  refine SeLe4n.Kernel.RobinHood.RHTable.fold_preserves cn.slots.table stS _
+    (fun acc => acc.cdt.mapsWellFormed) hS (fun acc slot cap hAcc => ?_)
+  split
+  · exact hAcc
+  · exact detachDestroyedSlot_preserves_mapsWellFormed acc _ hAcc
 
 -- ============================================================================
 -- V3-D (M-PRF-1): CDT Acyclicity Discharge Chain Documentation

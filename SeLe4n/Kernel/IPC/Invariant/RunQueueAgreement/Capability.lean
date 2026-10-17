@@ -186,7 +186,7 @@ theorem mintReplyCapWithCdt_runQueueStage {st st' : SystemState} {src dst : CSpa
 
 theorem cspaceDeleteSlot_runQueueStage {st st' : SystemState} {addr : CSpaceAddr}
     (h : cspaceDeleteSlot addr st = .ok ((), st')) : RunQueueStage st st' := by
-  obtain ⟨_, stC, hCore, rfl⟩ := cspaceDeleteSlot_ok_decompose addr st st' h
+  obtain ⟨stC, hCore, rfl⟩ := cspaceDeleteSlot_ok_decompose addr st st' h
   refine (cspaceDeleteSlotCore_runQueueStage hCore).trans ?_
   cases st.lookupCdtNodeOfSlot addr with
   | none => exact RunQueueStage.refl _
