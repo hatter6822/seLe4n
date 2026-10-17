@@ -3274,10 +3274,10 @@ theorem cancelBoundDonationOnCore_preserves_ipcInvariant
     -- Two in-place rewrites, a SchedContext then a TCB — neither is a
     -- notification, so the notification lookups are the pre-state's.
     have hInv1 : (st.updateSchedContext scId fun sc =>
-        { sc with boundThread := none, isActive := false, donationOrigin := none }).objects.invExt :=
+        { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }).objects.invExt :=
       SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hInv
     have hIpc1 : ipcInvariant (st.updateSchedContext scId fun sc =>
-        { sc with boundThread := none, isActive := false, donationOrigin := none }) := by
+        { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) := by
       unfold SystemState.updateSchedContext
       split
       · intro oid ntfn hL
@@ -4462,17 +4462,60 @@ theorem currentDeboostedFrom_eq_code (st post : SystemState) (ec : CoreId) :
       rw [currentOnCore_beq_some]
       rfl
 
-/-- WS-ZA ZA5.2: the checks `.tcbSuspend` makes on its quiescent arm, asked
-before any write: the victim is a TCB, not already `.Inactive`, blocked on no
-IPC (so no teardown, reclaim or priority-inheritance revert runs) and bound to no
-scheduling context (so no donation is cancelled).  When they pass the operation's
-state is `suspendPerform` (`suspendThreadOnCore_of_admitted`). -/
+/-- WS-ZA ZA5.2: the checks `.tcbSuspend` makes on its arm without a teardown,
+asked before any write: the victim is a TCB, not already `.Inactive`, blocked on
+no IPC (so no teardown, reclaim or priority-inheritance revert runs) and holding
+no donated scheduling context (whose return can refuse).  A context bound to it
+is released, which never refuses.  When they pass the operation's state is
+`suspendPerform` (`suspendThreadOnCore_of_admitted`). -/
 @[inline] def suspendAdmitted (st : SystemState) (tid : SeLe4n.ThreadId) : Bool :=
   match st.getTcb? tid with
   | some tcb =>
     !(tcb.threadState == .Inactive) && tcb.ipcObjectCode == 0 && tcb.ipcStateCode == 0
-      && (match tcb.schedContextBinding with | .unbound => true | _ => false)
+      && (match tcb.schedContextBinding with | .donated _ _ => false | _ => true)
   | none => false
+
+/-- WS-ZA ZA5.2: drop a context's entry from core `c`'s replenish queue, the
+queue rewritten in its slot.  Kept out of line so the state reaches the
+scheduler update whole: inlined, the branches around it hand the state's
+fields to a join point and the scheduler and the state are rebuilt. -/
+@[noinline] def suspendDropReplenishment (st : SystemState) (c : CoreId)
+    (scId : SeLe4n.SchedContextId) : SystemState :=
+  let sched := st.scheduler.modifyReplenishQueueOnCore c (ReplenishQueue.remove · scId)
+  { st with scheduler := sched }
+
+/-- WS-ZA ZA5.2: the suspend's release of a context bound to the victim
+(`cancelBoundDonationOnCore` at the victim's home core), the home core and the
+victim's entry-time scheduling key read before anything is written; the
+identity on a victim holding no bound context. -/
+def suspendReleasePerform (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
+  match st.getTcb? tid with
+  | some tcb =>
+    match tcb.schedContextBinding with
+    | .bound scId =>
+      let home := determineTargetCore st tid
+      let p0 := tcb.boostedPriority
+      let d0 := effectiveDeadline st tcb
+      let dom0 := tcb.domain
+      let st1 : SystemState := st.updateSchedContext scId fun sc =>
+        { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }
+      let st2 := suspendDropReplenishment st1 home scId
+      markKeyChangeParts
+        (st2.updateTcb tid fun tcb' => { tcb' with scBindingScCode := 0, scBindingOwnerCode := 0 })
+        tid p0 d0 dom0
+    | _ => st
+  | none => st
+
+theorem cancelBoundDonationOnCore_eq_release {st : SystemState} {tid : SeLe4n.ThreadId}
+    {tcb : TCB} {scId : SeLe4n.SchedContextId} (hT : st.getTcb? tid = some tcb)
+    (hB : tcb.schedContextBinding = .bound scId) :
+    cancelBoundDonationOnCore st tid tcb (determineTargetCore st tid) =
+      .ok (suspendReleasePerform st tid) := by
+  unfold cancelBoundDonationOnCore suspendReleasePerform suspendDropReplenishment
+  simp only [hT, hB]
+  unfold markKeyChangeFrom
+  simp only [hT, SchedulerState.modifyReplenishQueueOnCore_eq]
+  rw [markKeyChangeFor_eq_parts, effectiveSchedParams_eq_parts]
 
 /-- WS-ZA ZA5.2: the quiescent suspend once admitted.  The placement, the core
 running the victim and the executing core's current priority are read before
@@ -4484,7 +4527,8 @@ def suspendPerform (st : SystemState) (vtid : SeLe4n.ValidThreadId) (executingCo
   let runningCore? := runningCoreOf? st tid
   let curCode := st.scheduler.currentCode.get executingCore
   let prioCode := currentEffectivePrioCode st executingCore
-  let st1 := descheduleAt st tid placed
+  let st0 := suspendReleasePerform st tid
+  let st1 := descheduleAt st0 tid placed
   let st2 := clearPendingStateValid st1 vtid
   let st3 := st2.updateTcb tid fun t => { t with threadState := .Inactive }
   suspendRescheduleState st3 (runningCore?.getD executingCore) executingCore
@@ -4509,12 +4553,19 @@ theorem suspendThreadOnCore_of_admitted (st : SystemState) (vtid : SeLe4n.ValidT
     have hBS : PriorityInheritance.blockingServer st vtid.val = none := by
       unfold PriorityInheritance.blockingServer
       rw [hT]; simp [TCB.blockingServer?, hReady]
-    have hU : tcb.schedContextBinding = .unbound := by
-      cases hb : tcb.schedContextBinding <;> simp_all
     unfold suspendThreadOnCore suspendPerform
-    simp only [hT, hI, Bool.false_eq_true, ↓reduceIte, hC, hBS, Option.getD_some, hU,
+    simp only [hT, hI, Bool.false_eq_true, ↓reduceIte, hC, hBS, Option.getD_some,
       currentDeboostedFrom_eq_code st]
-    exact suspendRescheduleOnCore_eq_state _ _ _ _ _
+    cases hb : tcb.schedContextBinding with
+    | unbound =>
+      have hR : suspendReleasePerform st vtid.val = st := by
+        simp only [suspendReleasePerform, hT, hb]
+      simp only [hR]
+      exact suspendRescheduleOnCore_eq_state _ _ _ _ _
+    | bound scId =>
+      simp only [cancelBoundDonationOnCore_eq_release hT hb]
+      exact suspendRescheduleOnCore_eq_state _ _ _ _ _
+    | donated scId owner => rw [hb] at hB; cases hB
 
 -- ============================================================================
 -- §14  WS-RR RR2.17 — the `.tcbSuspend` operation preserves `ipcInvariant`

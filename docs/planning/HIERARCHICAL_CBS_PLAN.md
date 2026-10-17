@@ -216,8 +216,8 @@ This workstream delivers, in order:
   a bound thread whose budget went from zero to positive), then charges the
   running thread's SchedContext one tick (`timerTickBudgetOnCore`): on
   exhaustion it schedules the replenishment above, re-enqueues the thread,
-  times out the threads the SchedContext bounds (`timeoutBlockedThreads`, via
-  `scThreadIndex`) and preempts.  An exhausted thread stays queued and is
+  times out the thread the SchedContext bounds (`timeoutBlockedThreads`, via
+  the context's `boundThread`) and preempts.  An exhausted thread stays queued and is
   skipped by eligibility; its deadline moves only when the refill lands.
 * Threads leave the runnable set through `removeRunnableOnCore`
   (`SeLe4n/Kernel/Scheduler/Operations/Selection.lean`) — the per-core
@@ -638,7 +638,7 @@ def replenishHomeOf? (st) (scId) : Option CoreId
 /-- The thread whose reservation a leaf is, while a donation is in flight:
     `boundThread` is then the **donee**, and the owner is recorded only in the
     donee's `.donated scId owner` binding, reached through the leaf's
-    `scThreadIndex` entry.  Every rule that needs the owner reads it here —
+    `boundThread`.  Every rule that needs the owner reads it here —
     `chargedCoresOf`, the affinity rule, bind's refusal and the departure
     refusals (§4.6, §4.8) — so no second derivation from `boundThread` can
     name the donee twice. -/
@@ -1661,10 +1661,8 @@ mirror through CB1.8, then restated at CB1.10 over the per-domain FIFOs —
 retiring with the buckets, audit KSC-2); `runQueueOnCoreWellFormed` (restated
 at CB1.10 for the new representation); the waiter-index consistency
 `waiterIndexConsistent` (from CB0.8, store-level, audit KSC-3 — the index
-equals `waitersOf`, in the `scThreadIndex` pattern; note that the
-`scThreadIndex` analogue `scThreadIndexConsistent` is still prose-only at
-`v0.36.46`, a registered debt row, so CB0.8 states and proves its own
-predicate rather than citing one); `replenishment_within_period`, `replenishment_dead_time_exact`
+equals `waitersOf`; the `scThreadIndex` it was first patterned on is
+retired at `v0.36.98`, so CB0.8 states and proves its own predicate); `replenishment_within_period`, `replenishment_dead_time_exact`
 (restated as `refill_dead_time_le_period`); `cbs_bandwidth_bounded` (kept, now
 implied by `window_consumption_le_budget` with a tighter constant).
 

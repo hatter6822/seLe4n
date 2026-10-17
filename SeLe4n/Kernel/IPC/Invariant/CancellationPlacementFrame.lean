@@ -238,7 +238,7 @@ private theorem returnDonationToCancelledCaller_linkFrame_frame (st : SystemStat
       | error _ => rfl
       | ok st' =>
         obtain ⟨newOwner?, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hRet
-        rw [returnDonatedSchedContext_getTcb?_map_eq TCB.linkFrame (fun _ _ => rfl) _ st' holder
+        rw [returnDonatedSchedContext_getTcb?_map_eq TCB.linkFrame (fun _ _ _ => rfl) _ st' holder
             scId v (Lifecycle.Suspend.abortHolderPendingIpc_preserves_objects_invExt st holder hInv)
             newOwner? hPop x,
           abortHolderPendingIpc_linkFrame_frame st holder hInv x]

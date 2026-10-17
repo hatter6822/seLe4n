@@ -532,68 +532,41 @@ private def sd036_entryWithoutContext_faults : IO Unit := do
   | _ => failLine "sd036_tcb_missing" "TCB missing after the frame-less arm"
 
 open Kernel.Architecture.IpcBufferRead in
-/-- SD-037 (`v0.36.47` audit): the sender's overflow words cross in runs.
-`wordRuns` groups consecutive same-page words and nothing else; `wordsOfBytes`
-decodes a run's `8 · n` little-endian bytes and refuses any other size; and
-`overflowWordsOrFaulted` zips the decoded batches back onto the addresses, or
-answers the `.faulted` tag — the arm the hardware never reaches, since the HAL
-halts on a refused run rather than answering a short one. -/
-private def sd037_overflowWordsCrossInRuns : IO Unit := do
+/-- SD-037 (`v0.36.47` audit; the entry-word buffer at WS-ZA ZA5.2): the words
+the entry reads land as sixteen-byte address/word pairs, little-endian; the
+decode's read finds the first pair naming its address, else falls back to
+the model's memory, and an entry holding no pairs reads memory alone. -/
+private def sd037_entryWordPairs : IO Unit := do
   let pa (n : Nat) : SeLe4n.PAddr := SeLe4n.PAddr.ofNat n
-  -- Three consecutive words of one page are one run; a gap, or a page
-  -- boundary, starts another; the runs expand back to the list.
-  expect "sd037a_consecutive_words_are_one_run"
-    (wordRuns [pa 0x1000, pa 0x1008, pa 0x1010] == [(pa 0x1000, 3)])
-    "three consecutive same-page words must form one run"
-  expect "sd037b_a_gap_splits_the_run"
-    (wordRuns [pa 0x1000, pa 0x1010] == [(pa 0x1000, 1), (pa 0x1010, 1)])
-    "non-consecutive words must not share a run"
-  expect "sd037c_a_page_boundary_splits_the_run"
-    (wordRuns [pa 0x1FF0, pa 0x1FF8, pa 0x2000, pa 0x2008]
-      == [(pa 0x1FF0, 2), (pa 0x2000, 2)])
-    "a run must never cross a page boundary"
-  let straddling := (List.range 116).map (fun i => pa (0x1E00 + 8 * i))
-  expect "sd037d_a_116_word_buffer_straddling_a_page_is_two_runs"
-    (wordRuns straddling == [(pa 0x1E00, 64), (pa 0x2000, 52)] &&
-      expandRuns (wordRuns straddling) == straddling)
-    "a 512-aligned buffer across a page boundary must be exactly two runs"
-  let inPage := (List.range 116).map (fun i => pa (0x3000 + 8 * i))
-  expect "sd037e_a_116_word_buffer_inside_a_page_is_one_run"
-    (wordRuns inPage == [(pa 0x3000, 116)])
-    "a buffer inside one page must be one run (one extern call)"
-  -- The decode: little-endian words, exact size only.
-  let bytes := ByteArray.mk #[0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
-                              0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80]
-  expect "sd037f_little_endian_decode"
-    (wordsOfBytes 2 bytes == some [0x0807060504030201, 0x80000000000000FF])
-    "a run's bytes must decode little-endian, word by word"
-  expect "sd037g_wrong_size_is_refused"
-    ((wordsOfBytes 3 bytes).isNone && (wordsOfBytes 1 bytes).isNone &&
-      wordsOfBytes 0 (ByteArray.mk #[]) == some [])
-    "a batch of any size but 8·n must decode to nothing; an empty run to no words"
-  -- The seam's decode: the pairs carry the addresses in order, or fail closed.
-  let addrs := [pa 0x1000, pa 0x1008]
-  let faulted := Kernel.Architecture.SyscallOutcome.faulted.tagWord
-  expect "sd037h_batches_zip_onto_the_addresses"
-    (match overflowWordsOrFaulted addrs (wordRuns addrs) [bytes] with
-      | .ok pairs => pairs == [(pa 0x1000, 0x0807060504030201), (pa 0x1008, 0x80000000000000FF)]
-      | .error _ => false)
-    "a decoded batch must pair each address with its word, in order"
-  expect "sd037i_a_short_batch_is_the_faulted_tag"
-    (match overflowWordsOrFaulted addrs (wordRuns addrs) [bytes.extract 0 8] with
-      | .error tag => tag == faulted && tag == 2
-      | .ok _ => false)
-    "a batch not of its run's size must answer the .faulted tag (2)"
-  expect "sd037j_a_missing_batch_is_the_faulted_tag"
-    (match overflowWordsOrFaulted addrs (wordRuns addrs) [] with
-      | .error tag => tag == faulted
-      | .ok _ => false)
-    "fewer batches than runs must answer the .faulted tag"
-  expect "sd037k_no_overflow_reads_nothing"
-    (match overflowWordsOrFaulted [] (wordRuns []) [] with
-      | .ok pairs => pairs.isEmpty
-      | .error _ => false)
-    "a syscall with no overflow must sync no words and not fault"
+  let bytes := encodeWordPairs
+    [(pa 0x1000, 0x0807060504030201), (pa 0x1008, 0x80000000000000FF), (pa 0x1000, 7)]
+  expect "sd037a_pairs_are_sixteen_bytes_each"
+    (bytes.size == 48)
+    "three pairs must take forty-eight bytes"
+  expect "sd037b_little_endian_layout"
+    (bytes.get! 0 == 0x00 && bytes.get! 1 == 0x10 && bytes.get! 8 == 0x01 &&
+      bytes.get! 15 == 0x08 && bytes.get! 31 == 0x80)
+    "each pair must be its address then its word, little-endian"
+  expect "sd037c_pairs_decode"
+    (pairAddr bytes 0 == 0x1000 && pairWord bytes 0 == 0x0807060504030201 &&
+      pairAddr bytes 1 == 0x1008 && pairWord bytes 1 == 0x80000000000000FF)
+    "a pair must decode to the address and word it was laid out from"
+  let mem : SeLe4n.Memory := fun _ => 0x11
+  expect "sd037d_the_first_pair_wins"
+    (syncedWordAt mem bytes 3 (pa 0x1000) == 0x0807060504030201)
+    "the read must answer the first pair naming the address"
+  expect "sd037e_an_address_no_pair_names_reads_memory"
+    (syncedWordAt mem bytes 3 (pa 0x2000) == 0x1111111111111111)
+    "an address outside the pairs must read the model's memory"
+  expect "sd037f_only_the_counted_pairs_are_read"
+    (syncedWordAt mem bytes 1 (pa 0x1008) == 0x1111111111111111 &&
+      syncedWordAt mem bytes 0 (pa 0x1000) == 0x1111111111111111)
+    "pairs past the entry's count must not be read"
+  expect "sd037g_a_high_bit_message_info_asks_its_overflow"
+    (overflowStop 7 == 3 && overflowStop 4 == 0 && overflowStop 121 == 0 &&
+      overflowStop ((7 : UInt64) ||| ((1 : UInt64) <<< 63)) == 0 &&
+      overflowStop ((7 : UInt64) ||| ((5 : UInt64) <<< 9)) == 3)
+    "the overflow count must follow the MessageInfo decode, label bits included"
 
 /-- SD-035: Sequential dispatches — the IO.Ref state evolves
     correctly across multiple syscall invocations.
@@ -1987,15 +1960,15 @@ private def sd052b_replyRecv_donation_switch : IO Unit := do
     (SeLe4n.Testing.BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
       |>.withObject server.toObjId
-          (.tcb (TCB.setIpcState { mkTcb 1 with schedContextBinding := .donated scA clientA } .ready))
+          (.tcb (TCB.setIpcState { mkTcb 1 with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated scA clientA), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated scA clientA) } .ready))
       |>.withObject clientA.toObjId
           -- **WS-HP HP4.6**: a donor that has donated its context is `.unbound`,
           -- not `.bound` -- two threads bound to one SchedContext is the
           -- malformation the pop's recipient guard refuses, and the binding-driven
           -- trigger never looked at the recipient so nothing caught it here.
-          (.tcb (TCB.setIpcState { mkTcb 2 with replyObjectCode := SeLe4n.ReplyId.optCode (some rid), schedContextBinding := SeLe4n.Kernel.SchedContextBinding.unbound } (.blockedOnReply epId (some server))))
+          (.tcb (TCB.setIpcState { mkTcb 2 with replyObjectCode := SeLe4n.ReplyId.optCode (some rid), scBindingScCode := 0, scBindingOwnerCode := 0 } (.blockedOnReply epId (some server))))
       |>.withObject clientB.toObjId
-          (.tcb (TCB.setIpcState { mkTcb 3 with schedContextBinding := .bound scB } .ready))
+          (.tcb (TCB.setIpcState { mkTcb 3 with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scB), scBindingOwnerCode := 0 } .ready))
       -- **WS-OD OD4.1 / WS-HP HP4**: a `.donated` binding always has a FRAME on
       -- the context's reply stack -- `donateSchedContext` is a four-store push
       -- that is fail-closed on the donor's `replyObject`, so a donation with no
@@ -2006,9 +1979,9 @@ private def sd052b_replyRecv_donation_switch : IO Unit := do
           (.reply { replyId := rid, callerCode := SeLe4n.ThreadId.optCode (some clientA), next := some (.head scA) })
       |>.withObject scA.toObjId
           (.schedContext { SeLe4n.Kernel.SchedContext.empty scA with
-            boundThread := some server, scReply := some rid })
+            boundThreadCode := SeLe4n.ThreadId.optCode (some server), scReply := some rid })
       |>.withObject scB.toObjId
-          (.schedContext { SeLe4n.Kernel.SchedContext.empty scB with boundThread := some clientB })
+          (.schedContext { SeLe4n.Kernel.SchedContext.empty scB with boundThreadCode := SeLe4n.ThreadId.optCode (some clientB) })
       |>.withRunnable [server]
       |>.build)
   -- **WS-HP HP4**: the pop is head-driven, so assert the trigger resolves on the
@@ -2060,15 +2033,15 @@ private def sd052c_replyRecv_delegated_returns_recorded_server_donation : IO Uni
     (SeLe4n.Testing.BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
       |>.withObject server.toObjId
-          (.tcb (TCB.setIpcState { mkTcb 1 with schedContextBinding := .donated scA clientA } .ready))
+          (.tcb (TCB.setIpcState { mkTcb 1 with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated scA clientA), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated scA clientA) } .ready))
       |>.withObject clientA.toObjId
           -- **WS-HP HP4.6**: a donor that has donated its context is `.unbound`,
           -- not `.bound` -- two threads bound to one SchedContext is the
           -- malformation the pop's recipient guard refuses, and the binding-driven
           -- trigger never looked at the recipient so nothing caught it here.
-          (.tcb (TCB.setIpcState { mkTcb 2 with replyObjectCode := SeLe4n.ReplyId.optCode (some rid), schedContextBinding := SeLe4n.Kernel.SchedContextBinding.unbound } (.blockedOnReply epId (some server))))
+          (.tcb (TCB.setIpcState { mkTcb 2 with replyObjectCode := SeLe4n.ReplyId.optCode (some rid), scBindingScCode := 0, scBindingOwnerCode := 0 } (.blockedOnReply epId (some server))))
       |>.withObject delegate.toObjId
-          (.tcb (TCB.setIpcState { mkTcb 5 with schedContextBinding := .unbound } .ready))
+          (.tcb (TCB.setIpcState { mkTcb 5 with scBindingScCode := 0, scBindingOwnerCode := 0 } .ready))
       -- The reply stack the donating Call left, as in sd052b above: a `.donated`
       -- binding with no frame is unreachable, and the head-driven pop reads the
       -- frame rather than the binding.
@@ -2076,7 +2049,7 @@ private def sd052c_replyRecv_delegated_returns_recorded_server_donation : IO Uni
           (.reply { replyId := rid, callerCode := SeLe4n.ThreadId.optCode (some clientA), next := some (.head scA) })
       |>.withObject scA.toObjId
           (.schedContext { SeLe4n.Kernel.SchedContext.empty scA with
-            boundThread := some server, scReply := some rid })
+            boundThreadCode := SeLe4n.ThreadId.optCode (some server), scReply := some rid })
       |>.withRunnable [server, delegate]
       |>.build)
   let msg : IpcMessage :=
@@ -2305,7 +2278,7 @@ def main : IO Unit := do
   sd035_sequentialDispatches
   sd036_entryWithoutContext_faults
   sd038_idleCallerRefused
-  sd037_overflowWordsCrossInRuns
+  sd037_entryWordPairs
   IO.println "--- R2.A: bootAndInitialiseFromPlatform integration ---"
   sd040_bootInitialise_emptyConfig_succeeds
   sd041_bootInitialise_withLabelingContext

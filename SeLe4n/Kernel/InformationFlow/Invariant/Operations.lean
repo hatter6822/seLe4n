@@ -1771,13 +1771,13 @@ private theorem returnDonatedSchedContext_preserves_projection
   have hP2 := storeDonationHeadPop_preserves_projection ctx observer hC1 hSet1 hInv1 hClear
   have hP3 := storeObject_projectionStable_preserves_projection ctx observer s2 s3
     originalOwner.toObjId _ (.tcb clientTcb) (lookupTcb_some_objects s2 originalOwner clientTcb hL1)
-    (projectKernelObject_tcb_schedContextBinding_invariant ctx observer clientTcb _)
+    (projectKernelObject_tcb_schedContextBinding_invariant ctx observer clientTcb _ _)
     (hC2 originalOwner.toObjId (by
       rw [lookupTcb_some_objects s2 originalOwner clientTcb hL1]; intro hx; cases hx))
     hInv2 hS3
   have hP4 := storeObject_projectionStable_preserves_projection ctx observer s3 s4
     serverTid.toObjId _ (.tcb serverTcb) (lookupTcb_some_objects s3 serverTid serverTcb hL2)
-    (projectKernelObject_tcb_schedContextBinding_invariant ctx observer serverTcb _)
+    (projectKernelObject_tcb_schedContextBinding_invariant ctx observer serverTcb _ _)
     (hC3 serverTid.toObjId (by
       rw [lookupTcb_some_objects s3 serverTid serverTcb hL2]; intro hx; cases hx))
     hInv3 hS4
@@ -3321,13 +3321,13 @@ private theorem donateSchedContext_preserves_projection
     ((SystemState.getReply?_eq_some_iff _ _ _).mpr hRep1) hS2
   have hP3 := storeObject_projectionStable_preserves_projection ctx observer s2 s3
     clientTid.toObjId _ (.tcb clientTcb) (lookupTcb_some_objects s2 clientTid clientTcb hL1)
-    (projectKernelObject_tcb_schedContextBinding_invariant ctx observer clientTcb _)
+    (projectKernelObject_tcb_schedContextBinding_invariant ctx observer clientTcb _ _)
     (hC2 clientTid.toObjId (by
       rw [lookupTcb_some_objects s2 clientTid clientTcb hL1]; intro hx; cases hx))
     hInv2 hS3
   have hP4 := storeObject_projectionStable_preserves_projection ctx observer s3 s4
     serverTid.toObjId _ (.tcb serverTcb) (lookupTcb_some_objects s3 serverTid serverTcb hL2)
-    (projectKernelObject_tcb_schedContextBinding_invariant ctx observer serverTcb _)
+    (projectKernelObject_tcb_schedContextBinding_invariant ctx observer serverTcb _ _)
     (hC3 serverTid.toObjId (by
       rw [lookupTcb_some_objects s3 serverTid serverTcb hL2]; intro hx; cases hx))
     hInv3 hS4
@@ -5328,7 +5328,6 @@ theorem schedContextBind_frame_runQueue_rebucket
     - `objects_insert_preserves_projection_high` at high scId (SC update).
     - `objects_insert_preserves_projection_high` at high threadId.toObjId (TCB update).
     - `schedContextBind_frame_runQueue_rebucket` at thread-high threadId.
-    - `projectState_scThreadIndex_eq` (trivial).
     Each phase composes via `Eq.trans`. ≈25 LOC total discharge. -/
 theorem schedContextBind_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
@@ -5354,7 +5353,6 @@ theorem schedContextBind_preserves_projection
     - `removeRunnable_preserves_projection` (optional H2 runQueue-remove).
     - `objects_insert_preserves_projection_high` × 2 (SC and TCB updates).
     - `projectState_replenishQueue_eq` (H3 replenQueue-remove).
-    - `projectState_scThreadIndex_eq` (scThreadIndex-remove, trivial).
     Typical discharge: ≈30 LOC. -/
 theorem schedContextUnbind_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
@@ -5408,7 +5406,7 @@ theorem lifecycleRetypeDirectWithCleanup_preserves_projection
     Closure form; substantive 3-arm discharge:
     - **`.unbound`** arm: `st' = st` directly. `rfl`.
     - **`.bound scId`** arm: SC unbind via `objects_insert_preserves_projection_high`
-      at high scId + `projectState_replenishQueue_eq` + `projectState_scThreadIndex_eq`.
+      at high scId + `projectState_replenishQueue_eq`.
     - **`.donated scId donor`** arm: uses `returnDonatedSchedContext` which
       internally performs SC insert + donor TCB insert. Requires donor high,
       derivable from the SC invariant `donationOwnerValid` plus the
@@ -5436,7 +5434,7 @@ theorem cancelDonation_preserves_projection
     in-place-unbind arm of the split. Substantive 1-arm discharge:
     `.bound scId` case performs SC unbind via
     `objects_insert_preserves_projection_high` at high scId +
-    `projectState_replenishQueue_eq` + `projectState_scThreadIndex_eq`;
+    `projectState_replenishQueue_eq`;
     wrong-variant inputs error out so no projection obligation arises.
     Typical discharge: ≈30 LOC. -/
 theorem cancelBoundDonation_preserves_projection

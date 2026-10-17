@@ -879,7 +879,8 @@ theorem crossSubsystemInvariant_composition_gap_documented
     and the four declassification ledgers — had no constructor, so
     `preservesFieldsOutside` could not even *state* a write to them: an
     operation that wrote `scThreadIndex` (the receive path's donation return
-    does) satisfied every write-set claim in the tree.  An enumeration of a
+    did, until WS-ZA ZA5.2 retired that index for the context's own
+    `boundThread`) satisfied every write-set claim in the tree.  An enumeration of a
     structure's fields is the enumeration-standing-in-for-a-derivation shape,
     and the derivation is `SystemState.eq_of_fieldEq_all` below: agreement on
     every constructor here *is* equality of states, which fails to elaborate the
@@ -890,7 +891,7 @@ inductive StateField where
   | services | scheduler | irqHandlers | lifecycle
   | asidTable | interfaceRegistry | serviceRegistry
   | cdt | cdtSlotNode | cdtNodeSlot | cdtNextNode
-  | scThreadIndex | tlb | tlbShootdown
+  | tlb | tlbShootdown
   | perCoreTlb | perCoreICache | pendingIcacheMaintenance | pendingPhysicalWrites
   | declassificationAuditLog | declassificationAuditEpoch
   | declassificationRefusals | declassificationTaint
@@ -1229,19 +1230,16 @@ def lifecycleRetypeObject_modifiedFields : List StateField :=
 /-- W2-A1: Fields modified by IPC endpoint operations (`endpointSendDual`,
     `endpointReceiveDual`, etc.).
 
-    **`storeObject`'s set, plus `.scheduler` and `.scThreadIndex`** (WS-RR RR7
-    audit round, v0.34.109).  RR7.19 widened this list from a narrow object-only
-    set to `storeObject`'s, on the argument that the narrower list rested on two
-    unproved conditional facts; that widening was right and still short by two
-    fields, each written on every path of both operations' definitions.
-    `ensureRunnable` / `removeRunnable` write **`scheduler`** — the rendezvous
-    wakes the receiver and the parking arm deschedules the sender — and the
-    receive path's `cleanupPreReceiveDonationChecked` runs
-    `returnDonatedSchedContext`, whose last step rewrites **`scThreadIndex`**,
-    the SchedContext → threads index.  Neither could have been declared at
-    v0.34.70: `StateField` had no `scThreadIndex` constructor, which is what
-    `SystemState.eq_of_fieldEq_all` now rules out.  Both are proved at this
-    list: `endpointSendDual_preservesFieldsOutside` and
+    **`storeObject`'s set, plus `.scheduler`** (WS-RR RR7 audit round,
+    v0.34.109).  RR7.19 widened this list from a narrow object-only set to
+    `storeObject`'s, on the argument that the narrower list rested on two
+    unproved conditional facts; that widening was right and still short of
+    **`scheduler`**, written on every path of both operations' definitions:
+    `ensureRunnable` / `removeRunnable` — the rendezvous wakes the receiver and
+    the parking arm deschedules the sender.  (The list also carried the
+    SchedContext → threads index, which the donation return rewrote, until
+    WS-ZA ZA5.2 retired the index: a context's bound thread is its own
+    `boundThread` word, as seL4's `scTcb`.)  The list is proved at: `endpointSendDual_preservesFieldsOutside` and
     `endpointReceiveDual_preservesFieldsOutside`, composed from one lemma per
     primitive the two operations are built from.
 
@@ -1252,7 +1250,7 @@ def lifecycleRetypeObject_modifiedFields : List StateField :=
     is a no-op on a present key, and that IPC never stores a `.vspaceRoot`;
     registered rather than assumed. -/
 def ipcEndpointOp_modifiedFields : List StateField :=
-  storeObject_modifiedFields ++ [.scheduler, .scThreadIndex]
+  storeObject_modifiedFields ++ [.scheduler]
 
 /-- W2-A1: Fields modified by capability operations (`cspaceMintWithCdt`,
     `cspaceCopy`, `cspaceMove`, `cspaceDeleteSlot`).
@@ -1340,7 +1338,6 @@ def SystemState.fieldEq : StateField → SystemState → SystemState → Prop
   | .cdtSlotNode,                st, st' => st'.cdtSlotNode = st.cdtSlotNode
   | .cdtNodeSlot,                st, st' => st'.cdtNodeSlot = st.cdtNodeSlot
   | .cdtNextNode,                st, st' => st'.cdtNextNode = st.cdtNextNode
-  | .scThreadIndex,              st, st' => st'.scThreadIndex = st.scThreadIndex
   | .tlb,                        st, st' => st'.tlb = st.tlb
   | .tlbShootdown,               st, st' => st'.tlbShootdown = st.tlbShootdown
   | .perCoreTlb,                 st, st' => st'.perCoreTlb = st.perCoreTlb
@@ -1371,7 +1368,7 @@ theorem SystemState.eq_of_fieldEq_all (st st' : SystemState)
     h .services, h .scheduler, h .irqHandlers, h .lifecycle,
     h .asidTable, h .interfaceRegistry, h .serviceRegistry,
     h .cdt, h .cdtSlotNode, h .cdtNodeSlot, h .cdtNextNode,
-    h .scThreadIndex, h .tlb, h .tlbShootdown,
+    h .tlb, h .tlbShootdown,
     h .perCoreTlb, h .perCoreICache, h .pendingIcacheMaintenance, h .pendingPhysicalWrites,
     h .declassificationAuditLog, h .declassificationAuditEpoch,
     h .declassificationRefusals, h .declassificationTaint⟩

@@ -75,9 +75,9 @@ private def mkEmptySchedContext (id : Nat := 200) : Kernel.SchedContext :=
     deadline := { val := 0 }
     domain := ⟨0⟩
     budgetRemaining := { val := 100 }
-    boundThread := none
+    boundThreadCode := 0
     isActive := false
-    replenishments := [] }
+    refillTail := [] }
 
 -- ============================================================================
 -- AN10-B (reader hygiene) — typed-helper kind discrimination
@@ -355,7 +355,7 @@ def an10_d_getCurrentPriority_bound : IO Bool := do
   let sc : Kernel.SchedContext :=
     { mkEmptySchedContext 300 with priority := ⟨42⟩ }
   let tcb : TCB :=
-    { mkTcb 51 with schedContextBinding := .bound scId, priority := ⟨5⟩ }
+    { mkTcb 51 with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scId), scBindingOwnerCode := 0, priority := ⟨5⟩ }
   let st : SystemState := { (default : SystemState) with
     objects := ((default : SystemState).objects
       |>.insert scId.toObjId (.schedContext sc)) }
@@ -368,7 +368,7 @@ def an10_d_getCurrentPriority_bound : IO Bool := do
 unaffected by the typed-helper migration. -/
 def an10_d_getCurrentPriority_unbound : IO Bool := do
   let tcb : TCB :=
-    { mkTcb 52 with schedContextBinding := .unbound, priority := ⟨13⟩ }
+    { mkTcb 52 with scBindingScCode := 0, scBindingOwnerCode := 0, priority := ⟨13⟩ }
   let st : SystemState := default
   return SeLe4n.Kernel.SchedContext.PriorityManagement.getCurrentPriority st tcb == ⟨13⟩
 
@@ -379,7 +379,7 @@ fall-through path; unreachable under
 def an10_d_getCurrentPriority_bound_missing : IO Bool := do
   let scId : SchedContextId := SchedContextId.ofNat 9001
   let tcb : TCB :=
-    { mkTcb 53 with schedContextBinding := .bound scId, priority := ⟨21⟩ }
+    { mkTcb 53 with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scId), scBindingOwnerCode := 0, priority := ⟨21⟩ }
   let st : SystemState := default  -- SchedContext absent
   return SeLe4n.Kernel.SchedContext.PriorityManagement.getCurrentPriority st tcb == ⟨21⟩
 
@@ -391,7 +391,7 @@ def an10_d_hasSufficientBudget_positive : IO Bool := do
   let sc : Kernel.SchedContext :=
     { mkEmptySchedContext 400 with budgetRemaining := { val := 50 } }
   let tcb : TCB :=
-    { mkTcb 54 with schedContextBinding := .bound scId }
+    { mkTcb 54 with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scId), scBindingOwnerCode := 0 }
   let st : SystemState := { (default : SystemState) with
     objects := (default : SystemState).objects.insert scId.toObjId (.schedContext sc) }
   return SeLe4n.Kernel.hasSufficientBudget st tcb == true
@@ -403,7 +403,7 @@ def an10_d_hasSufficientBudget_zero : IO Bool := do
   let sc : Kernel.SchedContext :=
     { mkEmptySchedContext 401 with budgetRemaining := { val := 0 } }
   let tcb : TCB :=
-    { mkTcb 55 with schedContextBinding := .bound scId }
+    { mkTcb 55 with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scId), scBindingOwnerCode := 0 }
   let st : SystemState := { (default : SystemState) with
     objects := (default : SystemState).objects.insert scId.toObjId (.schedContext sc) }
   return SeLe4n.Kernel.hasSufficientBudget st tcb == false
@@ -529,7 +529,7 @@ def an10_e_cancelDonationValid_reduces : IO Bool := do
   let vtid : ValidThreadId := ⟨tid, by decide⟩
   let tcbUnbound : TCB := mkTcb 5
   let scId : SchedContextId := SchedContextId.ofNat 200
-  let tcbBound : TCB := { mkTcb 5 with schedContextBinding := .bound scId }
+  let tcbBound : TCB := { mkTcb 5 with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scId), scBindingOwnerCode := 0 }
   let st : SystemState := default
   -- Unbound arm: both forms return `.ok st` unchanged.
   let unboundOk : Bool :=
@@ -626,8 +626,8 @@ def an10_e_donateSchedContextValid_reduces : IO Bool := do
   -- would have made this "success" path a second error path agreeing with the
   -- first, i.e. a test that asserts nothing.
   let replyId : ReplyId := ReplyId.ofNat 101
-  let sc : Kernel.SchedContext := { mkEmptySchedContext 100 with boundThread := some clientTid }
-  let clientTcb : TCB := { mkTcb 1 with schedContextBinding := .bound scId,
+  let sc : Kernel.SchedContext := { mkEmptySchedContext 100 with boundThreadCode := SeLe4n.ThreadId.optCode (some clientTid) }
+  let clientTcb : TCB := { mkTcb 1 with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scId), scBindingOwnerCode := 0,
                                         replyObjectCode := SeLe4n.ReplyId.optCode (some replyId) }
   let serverTcb : TCB := mkTcb 2
   let stPop : SystemState := { (default : SystemState) with
@@ -672,8 +672,8 @@ def an10_e_returnDonatedSchedContextValid_reduces : IO Bool := do
     | Except.error e1, Except.error e2 => e1 == e2
     | _, _ => false
   -- Success path: state with donated-binding server + bound client.
-  let sc : Kernel.SchedContext := { mkEmptySchedContext 100 with boundThread := some serverTid }
-  let serverTcb : TCB := { mkTcb 1 with schedContextBinding := .donated scId originalOwnerTid }
+  let sc : Kernel.SchedContext := { mkEmptySchedContext 100 with boundThreadCode := SeLe4n.ThreadId.optCode (some serverTid) }
+  let serverTcb : TCB := { mkTcb 1 with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated scId originalOwnerTid), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated scId originalOwnerTid) }
   let ownerTcb : TCB := mkTcb 2
   -- WS-OD OD3.4: the pop validates its donee, so the outer caller of the `some`
   -- arm must be a *waiting donor* — `.unbound` and `.blockedOnReply`.  A plain
@@ -721,13 +721,13 @@ def an10_e_applyCallDonation_wires_h5 : IO Bool := do
   let receiverVtid : ValidThreadId := ⟨receiverTid, by decide⟩
   let scId : SchedContextId := SchedContextId.ofNat 30
   let replyId : ReplyId := ReplyId.ofNat 31
-  let sc : Kernel.SchedContext := { mkEmptySchedContext 30 with boundThread := some callerTid }
+  let sc : Kernel.SchedContext := { mkEmptySchedContext 30 with boundThreadCode := SeLe4n.ThreadId.optCode (some callerTid) }
   -- WS-OD OD4.1: a donating caller is a `Call` caller, so it carries the reply
   -- object the push records the donation on.
-  let callerTcb : TCB := { mkTcb 10 with schedContextBinding := .bound scId,
+  let callerTcb : TCB := { mkTcb 10 with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scId), scBindingOwnerCode := 0,
                                          replyObjectCode := SeLe4n.ReplyId.optCode (some replyId) }
   -- Receiver is passive (.unbound) — trigger the donation path.
-  let receiverTcb : TCB := { mkTcb 20 with schedContextBinding := .unbound }
+  let receiverTcb : TCB := { mkTcb 20 with scBindingScCode := 0, scBindingOwnerCode := 0 }
   let st : SystemState := { (default : SystemState) with
     objects := ((default : SystemState).objects
       |>.insert scId.toObjId (.schedContext sc)
@@ -763,9 +763,9 @@ def an10_e_applyReplyDonation_wires_h6 : IO Bool := do
   let scId : SchedContextId := SchedContextId.ofNat 30
   let ownerReplyId : SeLe4n.ReplyId := ⟨40⟩
   let sc : Kernel.SchedContext := { mkEmptySchedContext 30 with
-    boundThread := some replierTid, scReply := some ownerReplyId }
+    boundThreadCode := SeLe4n.ThreadId.optCode (some replierTid), scReply := some ownerReplyId }
   let replierTcb : TCB := { mkTcb 10 with
-    schedContextBinding := .donated scId originalOwnerTid }
+    scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated scId originalOwnerTid), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated scId originalOwnerTid) }
   let ownerTcb : TCB := { mkTcb 20 with replyObjectCode := SeLe4n.ReplyId.optCode (some ownerReplyId) }
   let ownerReply : Kernel.Reply :=
     { Kernel.Reply.empty ownerReplyId with

@@ -752,7 +752,7 @@ theorem donationChainWitness_pop_wellFormed
     (owner : SeLe4n.ThreadId) {s1 s2 : SystemState}
     (hS1 : storeObject donationChainWitnessContext.toObjId
       (.schedContext { witnessChainSchedContext with
-          boundThread := some owner, scReply := some donationChainWitnessOuter })
+          boundThreadCode := SeLe4n.ThreadId.optCode (some owner), scReply := some donationChainWitnessOuter })
       donationChainWitness = .ok ((), s1))
     (hPop : storeDonationHeadPop donationChainWitnessContext
       (some (donationChainWitnessInner, witnessChainInnerReply)) s1 = .ok s2) :
@@ -775,7 +775,7 @@ theorem donationChainWitness_pop_chain
     (owner : SeLe4n.ThreadId) {s1 s2 : SystemState}
     (hS1 : storeObject donationChainWitnessContext.toObjId
       (.schedContext { witnessChainSchedContext with
-          boundThread := some owner, scReply := some donationChainWitnessOuter })
+          boundThreadCode := SeLe4n.ThreadId.optCode (some owner), scReply := some donationChainWitnessOuter })
       donationChainWitness = .ok ((), s1))
     (hPop : storeDonationHeadPop donationChainWitnessContext
       (some (donationChainWitnessInner, witnessChainInnerReply)) s1 = .ok s2) :

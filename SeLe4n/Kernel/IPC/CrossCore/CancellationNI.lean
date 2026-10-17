@@ -701,7 +701,7 @@ theorem returnDonationToCancelledCaller_preserves_projection
       have hP2 := storeDonationHeadPop_preserves_projection ctx observer hC1 hSet1 hInv1 hClear
       have hP3 := storeObject_projectionStable_preserves_projection ctx observer s2 s3
         victim.toObjId _ (.tcb clientTcb) (lookupTcb_some_objects s2 victim clientTcb hL1)
-        (projectKernelObject_tcb_schedContextBinding_invariant ctx observer clientTcb _)
+        (projectKernelObject_tcb_schedContextBinding_invariant ctx observer clientTcb _ _)
         (hC2 victim.toObjId (by
           rw [lookupTcb_some_objects s2 victim clientTcb hL1]
           intro hx
@@ -709,7 +709,7 @@ theorem returnDonationToCancelledCaller_preserves_projection
         hInv2 hS3
       have hP4 := storeObject_projectionStable_preserves_projection ctx observer s3 s4
         holder.toObjId _ (.tcb serverTcb) (lookupTcb_some_objects s3 holder serverTcb hL2)
-        (projectKernelObject_tcb_schedContextBinding_invariant ctx observer serverTcb _)
+        (projectKernelObject_tcb_schedContextBinding_invariant ctx observer serverTcb _ _)
         (hC3 holder.toObjId (by
           rw [lookupTcb_some_objects s3 holder serverTcb hL2]
           intro hx

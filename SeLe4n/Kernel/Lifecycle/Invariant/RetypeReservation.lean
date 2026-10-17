@@ -484,7 +484,7 @@ theorem releaseSchedContextBinding_refutes_schedContextBindingConsistent
   -- invariant reads objects alone, so it transfers to the rewrite's state.
   have hObjEq := releaseSchedContextBinding_objects_of_bound st scId sc tid tcb hBound hTcb
   replace hCons := schedContextBindingConsistent_transfer
-    (st' := st.updateTcb tid fun t => { t with schedContextBinding := SchedContextBinding.unbound })
+    (st' := st.updateTcb tid fun t => { t with scBindingScCode := 0, scBindingOwnerCode := 0 })
     (fun _ => by unfold SystemState.getTcb?; rw [hObjEq])
     (fun _ => by unfold SystemState.getSchedContext?; rw [hObjEq]) hCons
   -- The released state still holds `sc` at `scId`: the arm writes a TCB, a
@@ -492,21 +492,21 @@ theorem releaseSchedContextBinding_refutes_schedContextBindingConsistent
   -- and the last two are record updates of fields `getSchedContext?` never reads
   -- — so the released state's object table *is* the `updateTcb`'s.
   have hScPost : (st.updateTcb tid
-      (fun t => { t with schedContextBinding := SchedContextBinding.unbound
+      (fun t => { t with scBindingScCode := 0, scBindingOwnerCode := 0
         })).getSchedContext? scId = some sc := by
     rw [SystemState.updateTcb_getSchedContext? _ _ _ hInv]; exact hSc
   obtain ⟨tcbPost, hTcbPost, hBindPost⟩ := hCons.2 scId sc
     ((SystemState.getSchedContext?_eq_some_iff _ scId sc).mp hScPost) tid hBound
   -- ...but the thread it names is now unbound, which is what the release wrote.
   have hTcbRead : (st.updateTcb tid
-      (fun t => { t with schedContextBinding := SchedContextBinding.unbound })).getTcb? tid
-      = some { tcb with schedContextBinding := SchedContextBinding.unbound } := by
+      (fun t => { t with scBindingScCode := 0, scBindingOwnerCode := 0 })).getTcb? tid
+      = some { tcb with scBindingScCode := 0, scBindingOwnerCode := 0 } := by
     rw [SystemState.updateTcb_getTcb?_self _ _ _ hInv, hTcb]; rfl
   have hPostRead : (st.updateTcb tid
-      (fun t => { t with schedContextBinding := SchedContextBinding.unbound })).getTcb? tid
+      (fun t => { t with scBindingScCode := 0, scBindingOwnerCode := 0 })).getTcb? tid
       = some tcbPost :=
     (SystemState.getTcb?_eq_some_iff _ tid tcbPost).mpr hTcbPost
-  have hSame : tcbPost = { tcb with schedContextBinding := SchedContextBinding.unbound } :=
+  have hSame : tcbPost = { tcb with scBindingScCode := 0, scBindingOwnerCode := 0 } :=
     Option.some.inj (hPostRead.symm.trans hTcbRead)
   rw [hSame] at hBindPost
   rcases hBindPost with hc | ⟨_, hc⟩ <;> exact absurd hc (by simp)
@@ -684,9 +684,9 @@ theorem cancelDonatedDonationOnCore_target_unbound
         returnDonatedSchedContext_getTcb?_char st s tid scId owner hInv hNe newOwner? hPop
       intro tX hRead
       rw [hRead] at hSrvPost
-      have hEq : tX = { srvTcb with schedContextBinding := SchedContextBinding.unbound } :=
+      have hEq : tX = { srvTcb with scBindingScCode := 0, scBindingOwnerCode := 0 } :=
         Option.some.inj hSrvPost
-      rw [hEq]
+      rw [hEq]; rfl
 
 /-- **`v0.35.185`: and so does the reservation arm, on every binding.**
 

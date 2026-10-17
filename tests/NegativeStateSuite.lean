@@ -3145,7 +3145,7 @@ def runL13CapTransferShortCircuitChecks : IO Unit := do
     vspaceRoot := senderRoot,
     ipcBuffer := (SeLe4n.VAddr.ofNat 0),
     timeSlice := 5,
-    schedContextBinding := .unbound
+    scBindingScCode := 0, scBindingOwnerCode := 0
   }
 
   let senderCNode : CNode := {
@@ -4208,7 +4208,7 @@ private def runX2RuntimeInvariantTests : IO Unit := do
     tid := x2Tid, priority := ⟨100⟩, domain := ⟨0⟩,
     cspaceRoot := SeLe4n.ObjId.ofNat 0, vspaceRoot := SeLe4n.ObjId.ofNat 0,
     ipcBuffer := SeLe4n.VAddr.ofNat 0, timeSlice := 9,
-    schedContextBinding := .unbound }
+    scBindingScCode := 0, scBindingOwnerCode := 0 }
   let x2Base : SystemState :=
     (BootstrapBuilder.empty
       |>.withObject x2Tid.toObjId (.tcb x2Tcb)
@@ -4308,7 +4308,7 @@ def runZ8SchedContextNegativeChecks : IO Unit := do
     .objectNotFound
 
   -- Z8-L-05: Bind when SC already has a bound thread (double-bind)
-  let scBound := { sc0 with boundThread := some ⟨1⟩ }
+  let scBound := { sc0 with boundThreadCode := SeLe4n.ThreadId.optCode (some ⟨1⟩) }
   let stBound := { st0 with
     objects := st0.objects.insert scId (.schedContext scBound)
     objectIndex := scId :: st0.objectIndex
@@ -4321,7 +4321,7 @@ def runZ8SchedContextNegativeChecks : IO Unit := do
   let tcbAlreadyBound : TCB := {
     tid := tid, priority := ⟨50⟩, domain := ⟨0⟩,
     cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
-    schedContextBinding := .bound ⟨8888⟩ }
+    scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound ⟨8888⟩), scBindingOwnerCode := 0 }
   let stTcbBound := { stWithSc with
     objects := stWithSc.objects.insert tid.toObjId (.tcb tcbAlreadyBound) }
   expectErr "bind TCB already bound"
@@ -4354,7 +4354,7 @@ def runAC1BudgetFailClosedChecks : IO Unit := do
   let tcbUnbound : TCB := {
     tid := tid, priority := ⟨50⟩, domain := ⟨0⟩,
     cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
-    schedContextBinding := .unbound }
+    scBindingScCode := 0, scBindingOwnerCode := 0 }
   if SeLe4n.Kernel.hasSufficientBudget st0 tcbUnbound != true then
     throw <| IO.userError "unbound thread should have sufficient budget"
 
@@ -4362,7 +4362,7 @@ def runAC1BudgetFailClosedChecks : IO Unit := do
   let tcbBoundMissing : TCB := {
     tid := tid, priority := ⟨50⟩, domain := ⟨0⟩,
     cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
-    schedContextBinding := .bound ⟨7777⟩ }
+    scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound ⟨7777⟩), scBindingOwnerCode := 0 }
   if SeLe4n.Kernel.hasSufficientBudget st0 tcbBoundMissing != false then
     throw <| IO.userError "missing SchedContext should fail-closed (return false)"
 
@@ -4370,7 +4370,7 @@ def runAC1BudgetFailClosedChecks : IO Unit := do
   let tcbDonatedMissing : TCB := {
     tid := tid, priority := ⟨50⟩, domain := ⟨0⟩,
     cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
-    schedContextBinding := .donated ⟨8888⟩ ⟨9999⟩ }
+    scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated ⟨8888⟩ ⟨9999⟩), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated ⟨8888⟩ ⟨9999⟩) }
   if SeLe4n.Kernel.hasSufficientBudget st0 tcbDonatedMissing != false then
     throw <| IO.userError "donated missing SchedContext should fail-closed"
 
@@ -4383,7 +4383,7 @@ def runAC1BudgetFailClosedChecks : IO Unit := do
   let tcbBound : TCB := {
     tid := tid, priority := ⟨50⟩, domain := ⟨0⟩,
     cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
-    schedContextBinding := .bound ⟨6001⟩ }
+    scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound ⟨6001⟩), scBindingOwnerCode := 0 }
   if SeLe4n.Kernel.hasSufficientBudget stWithSc tcbBound != true then
     throw <| IO.userError "bound with positive budget should be true"
 
@@ -4600,7 +4600,7 @@ private def r5eOrphanedBoundState : SystemState :=
         { tid := r5eOrphanedTid, priority := ⟨1⟩, domain := ⟨0⟩,
           cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩,
           ipcBuffer := (SeLe4n.VAddr.ofNat 0),
-          schedContextBinding := .bound r5eOrphanedScId,
+          scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound r5eOrphanedScId), scBindingOwnerCode := 0,
           timeSlice := 1 })
     |>.withCurrent r5eOrphanedTid
     |>.buildChecked)

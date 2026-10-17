@@ -545,7 +545,8 @@ correction cannot be reverted without breaking the build.
 **The RR7 audit round (v0.34.109) found the same class twice more, and one
 level up.**  The IPC list was `storeObject`'s set while both dual-queue
 operations also write `scheduler` (the wake and the deschedule) and the receive
-path writes `scThreadIndex` (the donation return); the capability list omitted
+path wrote the per-context thread index (the donation return; the index is
+retired since WS-ZA ZA5.2); the capability list omitted
 `storeObject`'s own index and ASID fields, under the sentence RR7.19 had
 retracted for the IPC list.  And `StateField` named sixteen of `SystemState`'s
 twenty-seven fields, so a write to `scThreadIndex` could not be *declared* at
@@ -575,25 +576,24 @@ private def runModifiedFieldsChecks : IO Unit := do
   -- both, and the theorems at the widened lists are what say so.
   assertBool "retype write-set IS storeObject's"
     (decide (lifecycleRetypeObject_modifiedFields = storeObject_modifiedFields))
-  assertBool "IPC write-set is storeObject's plus scheduler and scThreadIndex"
+  assertBool "IPC write-set is storeObject's plus scheduler"
     (decide (ipcEndpointOp_modifiedFields =
-               storeObject_modifiedFields ++ [.scheduler, .scThreadIndex]))
+               storeObject_modifiedFields ++ [.scheduler]))
   assertBool "capability write-set is storeObject's plus the four CDT fields"
     (decide (capabilityOp_modifiedFields =
                storeObject_modifiedFields ++ [.cdt, .cdtSlotNode, .cdtNodeSlot, .cdtNextNode]))
   -- The fields the v0.34.70 lists omitted, as facts rather than as prose.
-  assertBool "IPC write-set declares .scheduler and .scThreadIndex (the audit-round correction)"
-    (decide (StateField.scheduler ∈ ipcEndpointOp_modifiedFields ∧
-             StateField.scThreadIndex ∈ ipcEndpointOp_modifiedFields))
+  assertBool "IPC write-set declares .scheduler (the audit-round correction)"
+    (decide (StateField.scheduler ∈ ipcEndpointOp_modifiedFields))
   assertBool "capability write-set declares storeObject's index and ASID fields"
     (decide (StateField.objectIndex ∈ capabilityOp_modifiedFields ∧
              StateField.objectIndexSet ∈ capabilityOp_modifiedFields ∧
              StateField.asidTable ∈ capabilityOp_modifiedFields))
-  -- The nine fields `StateField` could not name before the audit round: each
-  -- is outside `storeObject`'s set, and each can now be SAID to be.
-  assertBool "NEGATIVE: storeObject declares none of the nine fields StateField gained"
-    (decide (StateField.scThreadIndex ∉ storeObject_modifiedFields ∧
-             StateField.tlbShootdown ∉ storeObject_modifiedFields ∧
+  -- The fields `StateField` could not name before the audit round (the
+  -- per-context thread index among them, retired in WS-ZA ZA5.2): each is
+  -- outside `storeObject`'s set, and each can now be SAID to be.
+  assertBool "NEGATIVE: storeObject declares none of the fields StateField gained"
+    (decide (StateField.tlbShootdown ∉ storeObject_modifiedFields ∧
              StateField.perCoreTlb ∉ storeObject_modifiedFields ∧
              StateField.perCoreICache ∉ storeObject_modifiedFields ∧
              StateField.pendingIcacheMaintenance ∉ storeObject_modifiedFields ∧

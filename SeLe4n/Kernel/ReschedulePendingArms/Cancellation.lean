@@ -218,7 +218,7 @@ theorem returnDonatedSchedContext_stepCovers (e : CoreId) {st st' : SystemState}
               simp only []
               cases hS3 : storeObject originalOwner.toObjId
                   (.tcb { clientTcb with
-                            schedContextBinding := donationReturnBinding scId newOwner? }) s2 with
+                            scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (donationReturnBinding scId newOwner?), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (donationReturnBinding scId newOwner?) }) s2 with
               | error _ => intro h; cases h
               | ok p3 =>
                 simp only []
@@ -227,7 +227,7 @@ theorem returnDonatedSchedContext_stepCovers (e : CoreId) {st st' : SystemState}
                 | some serverTcb =>
                   simp only []
                   cases hS4 : storeObject serverTid.toObjId
-                      (.tcb { serverTcb with schedContextBinding := .unbound }) p3.2 with
+                      (.tcb { serverTcb with scBindingScCode := 0, scBindingOwnerCode := 0 }) p3.2 with
                   | error _ => intro h; cases h
                   | ok p4 =>
                     simp only []
@@ -237,8 +237,8 @@ theorem returnDonatedSchedContext_stepCovers (e : CoreId) {st st' : SystemState}
                       (sc' := donationReturnSchedContext sc originalOwner
                         (head?.bind (fun p => p.2.prev)) newOwner?)
                       (ct' := { clientTcb with
-                        schedContextBinding := donationReturnBinding scId newOwner? })
-                      (stcb' := { serverTcb with schedContextBinding := .unbound }) hInv hObj rfl
+                        scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (donationReturnBinding scId newOwner?), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (donationReturnBinding scId newOwner?) })
+                      (stcb' := { serverTcb with scBindingScCode := 0, scBindingOwnerCode := 0 }) hInv hObj rfl
                       (by rw [← hS1]) hS2 hL1 (by rw [← hS3]) hL2 (by rw [← hS4]) rfl rfl
                     exact ⟨stepCovers_markKeyChangeFrom_pair
                       (fun t ho hs => hK t ho hs) hS hR,
@@ -536,15 +536,15 @@ theorem cancelBoundDonationOnCore_stepCovers (e : CoreId) {st st' : SystemState}
     injection h with h
     subst h
     have hInv1 := SystemState.updateSchedContext_preserves_objects_invExt st scId
-      (fun sc => { sc with boundThread := none, isActive := false, donationOrigin := none }) hInv
+      (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) hInv
     have k1 := updateSchedContext_keyInputsEq st scId
-      (fun sc => { sc with boundThread := none, isActive := false, donationOrigin := none }) hInv
+      (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) hInv
       (fun _ => rfl)
     have hS1 := SystemState.updateSchedContext_scheduler st scId
-      (fun sc => { sc with boundThread := none, isActive := false, donationOrigin := none })
+      (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })
     refine ⟨stepCovers_markKeyChangeFrom (fun t ht => ?_)
       ((SystemState.RunCoresAgree.updateTcb (tid := tid)
-        (f := fun tcb' => { tcb' with schedContextBinding := .unbound }) (by exact hInv1) (fun _ => rfl)).trans
+        (f := fun tcb' => { tcb' with scBindingScCode := 0, scBindingOwnerCode := 0 }) (by exact hInv1) (fun _ => rfl)).trans
         ((SystemState.RunCoresAgree.of_objects rfl).trans k1.runCoresAgree))
       (fun c => ?_) (fun c hc => ?_), ?_⟩
     · rw [schedKeyView_updateTcb_ne _ tid _ ?_ ht]

@@ -836,6 +836,7 @@ theorem scheduleReplenishment_replenishments_bounded (sc : SchedContext)
     (currentTime : Nat) (consumed : Budget) :
     (scheduleReplenishment sc currentTime consumed).replenishments.length ≤ maxReplenishments := by
   unfold scheduleReplenishment
+  simp only [SchedContext.withReplenishments_replenishments]
   exact truncateReplenishments_length_le _
 
 -- ============================================================================
@@ -1355,7 +1356,7 @@ theorem timeoutBlockedThreads_replenishQueueOnCore (st : SystemState)
     (scId : SeLe4n.SchedContextId) (execCore : CoreId) (c : CoreId) :
     (timeoutBlockedThreads st scId execCore).1.scheduler.replenishQueueOnCore c
       = st.scheduler.replenishQueueOnCore c := by
-  unfold timeoutBlockedThreads
+  rw [timeoutBlockedThreads_eq_fold]; delta timeoutBlockedThreadStep
   -- prove the fold preserves the queue from any accumulator
   suffices hFold : ∀ (tids : List SeLe4n.ThreadId)
       (acc : SystemState × List (SeLe4n.ThreadId × KernelError) × List (CoreId × SgiKind)),

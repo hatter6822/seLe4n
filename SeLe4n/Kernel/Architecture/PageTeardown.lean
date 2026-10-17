@@ -386,7 +386,10 @@ theorem vspaceMapPageCheckedWithShootdownFromStatePerCore_ok_frame
     have hTail : st'.objects = stM.objects ∧ st'.scheduler = stM.scheduler := by
       subst hStep
       unfold Architecture.tlbFillOnCore Architecture.drainInitiatorPerCoreView
-      split <;> exact ⟨rfl, rfl⟩
+      split
+      · exact ⟨rfl, rfl⟩
+      · exact ⟨(Architecture.tlbInsertOnCore_frame _ _ _).1,
+          (Architecture.tlbInsertOnCore_frame _ _ _).2.2.1⟩
     unfold Architecture.vspaceMapPageCheckedWithShootdownFromState at hS
     dsimp only at hS
     cases hF : Architecture.vspaceMapPageCheckedWithFlushFromState asid vaddr paddr perms st with

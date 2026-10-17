@@ -422,31 +422,41 @@ theorem syscallDispatchCrossCoreStep_runQueueEntryStage {ctx : LabelingContext} 
     (settleResidencyOnCore_runQueueEntryStage _ e)).trans (clearLedgers_runQueueStage' _).entry)
 
 /-- **The syscall entry's committed state keeps the agreement**: the trap-frame
-save, the IPC-buffer words synced into memory, and the step. -/
+save, the entry's IPC-buffer words handed to the state, the step, and the
+committed state dropping the words. -/
 theorem syscallDispatchEntryState_runQueueEntryStage (ctx : LabelingContext) (e : CoreId)
     (syscallId : UInt32) (trapped : Architecture.InFlightContext)
-    (frame : Option Architecture.InFlightContext) (words : List (SeLe4n.PAddr × UInt64))
+    (frame : Option Architecture.InFlightContext) (bytes : ByteArray) (n : Nat)
     (st : SystemState)
     (hDet : ∀ tid, (Architecture.IpcBufferRead.syncUserWords
-        (Architecture.saveCapturedSyscallFrame st e frame) words).scheduler.currentOnCore e
+        (Architecture.saveCapturedSyscallFrame st e frame) bytes n).scheduler.currentOnCore e
           = some tid →
       entryRetypeDetached e SeLe4n.arm64DefaultLayout 32
         (Platform.FFI.writeFfiRegistersToTcb (Architecture.IpcBufferRead.syncUserWords
-          (Architecture.saveCapturedSyscallFrame st e frame) words) tid syscallId
+          (Architecture.saveCapturedSyscallFrame st e frame) bytes n) tid syscallId
           trapped.x0 trapped.x1 trapped.x2 trapped.x3 trapped.x4 trapped.x5))
     (E : EntryPremises st) :
-    SystemState.RunQueueEntryStage st (syscallDispatchCrossCoreBracketedStepWords ctx e syscallId trapped
-      (Architecture.IpcBufferRead.syncUserWords
-        (Architecture.saveCapturedSyscallFrame st e frame) words)).2 :=
+    SystemState.RunQueueEntryStage st (Architecture.IpcBufferRead.clearUserWords
+      (syscallDispatchCrossCoreBracketedStepWords ctx e syscallId trapped
+        (Architecture.IpcBufferRead.syncUserWords
+          (Architecture.saveCapturedSyscallFrame st e frame) bytes n)).2) :=
   have hS := (saveCapturedSyscallFrame_runQueueStage st e frame).trans
-    (RunQueueStage.of_frame (Architecture.IpcBufferRead.syncUserWords_objects _ _)
+    (RunQueueStage.of_frame (Architecture.IpcBufferRead.syncUserWords_objects _ _ _)
       (by rw [Architecture.IpcBufferRead.syncUserWords_scheduler])
       (by rw [Architecture.IpcBufferRead.syncUserWords_scheduler])
       (by rw [Architecture.IpcBufferRead.syncUserWords_scheduler]))
   have hF := (saveCapturedSyscallFrame_ipcFrame st e frame).trans
-    (IpcFrame.of_frame (Architecture.IpcBufferRead.syncUserWords_objects _ _)
+    (IpcFrame.of_frame (Architecture.IpcBufferRead.syncUserWords_objects _ _ _)
       fun _ => by rw [Architecture.IpcBufferRead.syncUserWords_scheduler])
-  hS.entry.trans (syscallDispatchCrossCoreStep_runQueueEntryStage hDet (E.of_ipcFrame hS hF))
+  have hC := RunQueueStage.of_frame (Architecture.IpcBufferRead.syncUserWords_objects
+      (syscallDispatchCrossCoreBracketedStepWords ctx e syscallId trapped
+        (Architecture.IpcBufferRead.syncUserWords
+          (Architecture.saveCapturedSyscallFrame st e frame) bytes n)).2 ByteArray.empty 0)
+    (by rw [Architecture.IpcBufferRead.syncUserWords_scheduler])
+    (by rw [Architecture.IpcBufferRead.syncUserWords_scheduler])
+    (by rw [Architecture.IpcBufferRead.syncUserWords_scheduler])
+  (hS.entry.trans (syscallDispatchCrossCoreStep_runQueueEntryStage hDet (E.of_ipcFrame hS hF))).trans
+    hC.entry
 
 /-! ### The suspend, timer, reschedule, fault and FP/SIMD entries -/
 

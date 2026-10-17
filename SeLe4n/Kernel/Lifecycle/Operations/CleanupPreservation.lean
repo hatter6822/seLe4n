@@ -1609,8 +1609,8 @@ theorem cancelBoundDonationOnCore_preserves_replenishQueueAffinityConsistent_smp
     (fun x => determineTargetCore_congr _ _ x (by rw [markKeyChangeFrom_getTcb?]))).mpr ?_
   simp only [markKeyChangeFrom_replenishQueueOnCore] at hQself hQne
   exact unbind_shape_preserves_replenishQueueAffinityConsistent_smp st _ scId rqCore
-    (fun sc => { sc with boundThread := none, isActive := false, donationOrigin := none })
-    (fun _ => rfl) tid (fun tcb' => { tcb' with schedContextBinding := .unbound })
+    (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })
+    (fun _ => rfl) tid (fun tcb' => { tcb' with scBindingScCode := 0, scBindingOwnerCode := 0 })
     (fun _ => rfl) hInv hQself hQne rfl hCons
 
 /-- **`v0.35.164`: the donated arm preserves replenish-queue affinity** -- the
@@ -1789,7 +1789,7 @@ theorem releaseSchedContextBinding_preserves_replenishQueueAffinityConsistent_sm
         rw [markKeyChangeFor_replenishQueueOnCore] at hMem
         have hMem' : e ∈ ((SchedContextOps.purgeReplenishmentOnCore
             (st.updateTcb tid fun t =>
-              { t with schedContextBinding := SchedContextBinding.unbound })
+              { t with scBindingScCode := 0, scBindingOwnerCode := 0 })
             (determineTargetCore st tid) scId).scheduler.replenishQueueOnCore c).entries := hMem
         simp only [SchedContextOps.purgeReplenishmentOnCore,
           SystemState.updateTcb_scheduler] at hMem'
@@ -1804,7 +1804,7 @@ theorem releaseSchedContextBinding_preserves_replenishQueueAffinityConsistent_sm
         dsimp only
         rw [markKeyChangeFor_getSchedContext?]
         show ((st.updateTcb tid fun t =>
-          { t with schedContextBinding := SchedContextBinding.unbound }).getSchedContext? k).map _
+          { t with scBindingScCode := 0, scBindingOwnerCode := 0 }).getSchedContext? k).map _
             = _
         rw [SystemState.updateTcb_getSchedContext? st tid _ hInv k]
       · -- Home cores: the TCB write moves no `cpuAffinity`.
@@ -1813,7 +1813,7 @@ theorem releaseSchedContextBinding_preserves_replenishQueueAffinityConsistent_sm
         dsimp only
         rw [markKeyChangeFor_getTcb?]
         show ((st.updateTcb tid fun t =>
-          { t with schedContextBinding := SchedContextBinding.unbound }).getTcb? x).map
+          { t with scBindingScCode := 0, scBindingOwnerCode := 0 }).getTcb? x).map
             (·.cpuAffinity) = _
         by_cases hx : tid.toObjId = x.toObjId
         · have hEq : tid = x := SeLe4n.ThreadId.toObjId_injective _ _ hx
@@ -1950,8 +1950,8 @@ def lifecyclePreRetypeCleanup (st : SystemState) (target : SeLe4n.ObjId)
           -- owner's home, an `.unbound` thread is left alone.  Until this
           -- version the arm was the bare `cleanupDonatedSchedContext` — a
           -- return that migrates nothing (register row 57's class, on the
-          -- destroy path) — and a `.bound` thread had only its `scThreadIndex`
-          -- entry removed below, leaving the SchedContext bound to a destroyed
+          -- destroy path) — and a `.bound` thread had only its entry in the
+          -- (since retired) context-to-threads index removed, leaving the SchedContext bound to a destroyed
           -- thread with its replenishment queued on that thread's home core:
           -- `schedContextBindingConsistent` and
           -- `replenishQueueAffinityConsistent_smp` were both false after a
@@ -1960,9 +1960,6 @@ def lifecyclePreRetypeCleanup (st : SystemState) (target : SeLe4n.ObjId)
     | _ => .ok st) with
   | .error e => .error e
   | .ok st =>
-  -- The `scThreadIndex` entry of a `.bound` thread used to be removed here on
-  -- its own (S-05/PERF-O1); `cancelBoundDonationOnCore` removes it as part of
-  -- the unbind, and a `.donated` holder's entry is the return's to move.
   let st := match currentObj with
     | .tcb tcb => cleanupTcbReferences st tcb.tid
     | _ => st
@@ -2080,8 +2077,7 @@ def lifecyclePreRetypeCleanup (st : SystemState) (target : SeLe4n.ObjId)
     -- The head guard above refuses a context frames still name; it says nothing
     -- about the thread the context is bound to, so a retype used to leave that
     -- thread `.bound scId` (or `.donated scId owner`, the binding a donee holds)
-    -- naming an object the slot no longer carries, with its `scThreadIndex`
-    -- entry in place and `scId`'s replenish entries queued on its home core
+    -- naming an object the slot no longer carries, with `scId`'s replenish entries queued on its home core
     -- under an id the slot's next occupant inherits.  seL4's `finaliseCap` runs
     -- `schedContext_unbindAllTCBs` on a scheduling-context capability;
     -- `releaseSchedContextBinding` is that, per core, composed from
@@ -3618,13 +3614,13 @@ theorem cancelBoundDonationOnCore_runQueueStage {st st' : SystemState}
     cases h
     have key : ∀ X : SystemState, SystemState.RunQueueStage st X →
         SystemState.RunQueueStage st (markKeyChangeFrom st
-          (X.updateTcb tid fun tcb' => { tcb' with schedContextBinding := .unbound }) tid) :=
+          (X.updateTcb tid fun tcb' => { tcb' with scBindingScCode := 0, scBindingOwnerCode := 0 }) tid) :=
       fun X hX => hX.trans ((SystemState.RunQueueStage.updateTcb X tid
-        (f := fun tcb' => { tcb' with schedContextBinding := .unbound }) (fun _ _ => rfl)).trans
+        (f := fun tcb' => { tcb' with scBindingScCode := 0, scBindingOwnerCode := 0 }) (fun _ _ => rfl)).trans
         (markKeyChangeFrom_runQueueStage st _ tid))
     apply key
     have hU := SystemState.updateSchedContext_scheduler st scId
-      (fun sc => { sc with boundThread := none, isActive := false, donationOrigin := none })
+      (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })
     apply SystemState.RunQueueStage.of_placement
     · exact fun hInv => SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hInv
     · show (st.updateSchedContext scId _).scheduler.runQueue = _
@@ -3693,14 +3689,14 @@ theorem cancelBoundDonationOnCore_currentPlacementFrame {st st' : SystemState}
     cases h
     refine SystemState.CurrentPlacementFrame.trans ?_ (markKeyChangeFrom_currentPlacementFrame _ _ _ c)
     have hU := SystemState.updateSchedContext_scheduler st scId
-      (fun sc => { sc with boundThread := none, isActive := false, donationOrigin := none })
+      (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })
     have hInv1 := SystemState.updateSchedContext_preserves_objects_invExt st scId
-      (fun sc => { sc with boundThread := none, isActive := false, donationOrigin := none }) hInv
+      (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) hInv
     refine SystemState.CurrentPlacementFrame.trans ?_
       (SystemState.CurrentPlacementFrame.updateTcb c _ tid _ (fun _ => rfl) hInv1)
     refine SystemState.CurrentPlacementFrame.trans
       (SystemState.CurrentPlacementFrame.of_parts (st' := st.updateSchedContext scId
-        (fun sc => { sc with boundThread := none, isActive := false, donationOrigin := none }))
+        (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }))
         (by rw [hU]) (fun y => by rw [SystemState.updateSchedContext_getTcb? _ _ _ hInv])) ?_
     exact SystemState.CurrentPlacementFrame.of_frame rfl rfl
   · cases h
@@ -3732,14 +3728,14 @@ theorem cancelBoundDonationOnCore_runCoresAgree {st st' : SystemState}
   · rename_i scId _
     cases h
     have hInv1 := SystemState.updateSchedContext_preserves_objects_invExt st scId
-      (fun sc => { sc with boundThread := none, isActive := false, donationOrigin := none }) hInv
+      (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) hInv
     refine SystemState.RunCoresAgree.trans
       (SystemState.RunCoresAgree.of_objects (markKeyChangeFrom_objects _ _ _)) ?_
     refine SystemState.RunCoresAgree.trans
       (SystemState.updateTcb_runCoreCode _ tid _ (by intro _; rfl) hInv1) ?_
     exact SystemState.RunCoresAgree.trans (SystemState.RunCoresAgree.of_objects
         (st := st.updateSchedContext scId
-          (fun sc => { sc with boundThread := none, isActive := false, donationOrigin := none })) rfl)
+          (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })) rfl)
       (fun y => by rw [SystemState.updateSchedContext_getTcb? _ _ _ hInv])
   · cases h
 

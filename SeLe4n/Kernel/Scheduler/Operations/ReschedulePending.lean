@@ -386,12 +386,6 @@ theorem markKeyChangeFor_onlyObjectsSchedulerDiffer (st : SystemState) (tid : Se
   markKeyChangeFor_extract_frame (fun s => s.cdtNodeSlot) st tid k
     (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
 
-@[simp] theorem markKeyChangeFor_scThreadIndex (st : SystemState) (tid : SeLe4n.ThreadId)
-    (k : SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId) :
-    (markKeyChangeFor st tid k).scThreadIndex = st.scThreadIndex :=
-  markKeyChangeFor_extract_frame (fun s => s.scThreadIndex) st tid k
-    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
-
 @[simp] theorem markKeyChangeFor_irqHandlers (st : SystemState) (tid : SeLe4n.ThreadId)
     (k : SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId) :
     (markKeyChangeFor st tid k).irqHandlers = st.irqHandlers :=
@@ -639,11 +633,6 @@ theorem markKeyChangeFor_reschedulePendingOnCore_mono (st : SystemState)
   markKeyChangeFrom_extract_frame (fun s => s.cdtNodeSlot) pre st tid
     (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
 
-@[simp] theorem markKeyChangeFrom_scThreadIndex (pre st : SystemState) (tid : SeLe4n.ThreadId) :
-    (markKeyChangeFrom pre st tid).scThreadIndex = st.scThreadIndex :=
-  markKeyChangeFrom_extract_frame (fun s => s.scThreadIndex) pre st tid
-    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
-
 @[simp] theorem markKeyChangeFrom_irqHandlers (pre st : SystemState) (tid : SeLe4n.ThreadId) :
     (markKeyChangeFrom pre st tid).irqHandlers = st.irqHandlers :=
   markKeyChangeFrom_extract_frame (fun s => s.irqHandlers) pre st tid
@@ -832,19 +821,16 @@ theorem markKeyChangeFrom_eq_with_scheduler (pre st : SystemState) (tid : SeLe4n
     pre st tid (fun _ _ => rfl)
 
 /-- Two hooks in a row (a binding writer's pair) write the reschedule flags
-only: the result is its input with the result's flag vector and its own
-`scThreadIndex` — the form the donation and return store chains state their
-last step in, so every other reading of the step is definitional. -/
+only: the result is its input with the result's flag vector — the form the
+donation and return store chains state their last step in, so every other reading of the step is definitional. -/
 theorem markKeyChangeFrom_twice_eq_with (pre X : SystemState) (a b : SeLe4n.ThreadId) :
     markKeyChangeFrom pre (markKeyChangeFrom pre X a) b =
       { X with
           scheduler := { X.scheduler with reschedulePending :=
-            (markKeyChangeFrom pre (markKeyChangeFrom pre X a) b).scheduler.reschedulePending },
-          scThreadIndex := (markKeyChangeFrom pre (markKeyChangeFrom pre X a) b).scThreadIndex } :=
+            (markKeyChangeFrom pre (markKeyChangeFrom pre X a) b).scheduler.reschedulePending }} :=
   let Y := markKeyChangeFrom pre (markKeyChangeFrom pre X a) b
   let f := fun s : SystemState =>
-    ({ s with scheduler := { s.scheduler with reschedulePending := Y.scheduler.reschedulePending },
-              scThreadIndex := Y.scThreadIndex } : SystemState)
+    ({ s with scheduler := { s.scheduler with reschedulePending := Y.scheduler.reschedulePending }} : SystemState)
   (markKeyChangeFrom_extract_frame f pre _ b (fun _ _ => rfl)).trans
     (markKeyChangeFrom_extract_frame f pre X a (fun _ _ => rfl))
 

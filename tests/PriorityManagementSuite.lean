@@ -38,7 +38,7 @@ private def mkTcb (tid : Nat) (prio : Nat := 10) (mcp : Nat := 0xFF)
   { tid := ⟨tid⟩, priority := ⟨prio⟩, domain := ⟨0⟩,
     cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 0),
     threadState := state, maxControlledPriority := ⟨mcp⟩,
-    schedContextBinding := binding }
+    scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (binding), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (binding) }
 
 /-- Helper: build a minimal SystemState with objects. -/
 private def mkState (objs : List (ObjId × KernelObject))
@@ -184,7 +184,7 @@ private def pm009_setPriorityBoundThread : IO Unit := do
   let sc : SeLe4n.Kernel.SchedContext := {
     scId := scId, budget := ⟨100⟩, period := ⟨200⟩,
     priority := ⟨30⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
-    budgetRemaining := ⟨100⟩, boundThread := some targetTid
+    budgetRemaining := ⟨100⟩, boundThreadCode := SeLe4n.ThreadId.optCode (some targetTid)
   }
   let st := mkState [
     (⟨1⟩, .tcb (mkTcb 1 (prio := 50) (mcp := 200))),
@@ -232,7 +232,7 @@ private def pm010b_setMCPriorityCapsSchedContextBound : IO Unit := do
   let sc : SeLe4n.Kernel.SchedContext := {
     scId := scId, budget := ⟨100⟩, period := ⟨200⟩,
     priority := ⟨80⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
-    budgetRemaining := ⟨100⟩, boundThread := some targetTid
+    budgetRemaining := ⟨100⟩, boundThreadCode := SeLe4n.ThreadId.optCode (some targetTid)
   }
   -- Target runs at 80 and its reservation is configured to 80 (the propagation
   -- `schedContextBind` establishes); we set MCP to 50, so the cap must fire.
@@ -277,7 +277,7 @@ private def pm010c_setMCPriorityReadsThreadNotReservation : IO Unit := do
   let sc : SeLe4n.Kernel.SchedContext := {
     scId := scId, budget := ⟨100⟩, period := ⟨200⟩,
     priority := ⟨80⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
-    budgetRemaining := ⟨100⟩, boundThread := some targetTid
+    budgetRemaining := ⟨100⟩, boundThreadCode := SeLe4n.ThreadId.optCode (some targetTid)
   }
   let st := mkState [
     (⟨1⟩, .tcb (mkTcb 1 (prio := 50) (mcp := 200))),
@@ -416,7 +416,7 @@ private def pm_ak2b_01_bindPropagatesPriority : IO Unit := do
   let sc : SeLe4n.Kernel.SchedContext := {
     scId := scId, budget := ⟨100⟩, period := ⟨200⟩,
     priority := ⟨77⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
-    budgetRemaining := ⟨100⟩, boundThread := none
+    budgetRemaining := ⟨100⟩, boundThreadCode := 0
   }
   let st := mkState [
     (targetTid.toObjId, .tcb (mkTcb 42 (prio := 10) (mcp := 200))),
@@ -442,7 +442,7 @@ private def pm_ak2b_02_configurePropagatesPriority : IO Unit := do
   let sc : SeLe4n.Kernel.SchedContext := {
     scId := scId, budget := ⟨100⟩, period := ⟨200⟩,
     priority := ⟨50⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
-    budgetRemaining := ⟨100⟩, boundThread := some targetTid
+    budgetRemaining := ⟨100⟩, boundThreadCode := SeLe4n.ThreadId.optCode (some targetTid)
   }
   let st := mkState [
     (targetTid.toObjId, .tcb (mkTcb 42 (prio := 50) (mcp := 200)
@@ -474,7 +474,7 @@ private def pm_ak2b_03_configureRebucketsBoundThread : IO Unit := do
   let sc : SeLe4n.Kernel.SchedContext := {
     scId := scId, budget := ⟨100⟩, period := ⟨200⟩,
     priority := ⟨50⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
-    budgetRemaining := ⟨100⟩, boundThread := some targetTid
+    budgetRemaining := ⟨100⟩, boundThreadCode := SeLe4n.ThreadId.optCode (some targetTid)
   }
   let stBase := mkState [
     (targetTid.toObjId, .tcb (mkTcb 42 (prio := 50) (mcp := 200)
@@ -512,7 +512,7 @@ private def pm_r5g_01_configurePropagatesDomain : IO Unit := do
   let sc : SeLe4n.Kernel.SchedContext := {
     scId := scId, budget := ⟨100⟩, period := ⟨200⟩,
     priority := ⟨50⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
-    budgetRemaining := ⟨100⟩, boundThread := some targetTid
+    budgetRemaining := ⟨100⟩, boundThreadCode := SeLe4n.ThreadId.optCode (some targetTid)
   }
   let st := mkState [
     (targetTid.toObjId, .tcb (mkTcb 42 (prio := 50) (mcp := 200)
@@ -544,7 +544,7 @@ private def pm_r5g_02_configureDomainNoopWhenEqual : IO Unit := do
   let sc : SeLe4n.Kernel.SchedContext := {
     scId := scId, budget := ⟨100⟩, period := ⟨200⟩,
     priority := ⟨50⟩, deadline := ⟨0⟩, domain := ⟨5⟩,
-    budgetRemaining := ⟨100⟩, boundThread := some targetTid
+    budgetRemaining := ⟨100⟩, boundThreadCode := SeLe4n.ThreadId.optCode (some targetTid)
   }
   let st := mkState [
     (targetTid.toObjId, .tcb { mkTcb 42 (prio := 50) (mcp := 200)
@@ -569,7 +569,7 @@ private def pm_r5g_03_configurePropagatesBothFields : IO Unit := do
   let sc : SeLe4n.Kernel.SchedContext := {
     scId := scId, budget := ⟨100⟩, period := ⟨200⟩,
     priority := ⟨50⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
-    budgetRemaining := ⟨100⟩, boundThread := some targetTid
+    budgetRemaining := ⟨100⟩, boundThreadCode := SeLe4n.ThreadId.optCode (some targetTid)
   }
   let st := mkState [
     (targetTid.toObjId, .tcb (mkTcb 42 (prio := 50) (mcp := 200)
@@ -603,7 +603,7 @@ private def pm_r5g_04_substantive_invariant_preservation : IO Unit := do
   let sc : SeLe4n.Kernel.SchedContext := {
     scId := scId, budget := ⟨100⟩, period := ⟨200⟩,
     priority := ⟨50⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
-    budgetRemaining := ⟨100⟩, boundThread := some targetTid
+    budgetRemaining := ⟨100⟩, boundThreadCode := SeLe4n.ThreadId.optCode (some targetTid)
   }
   let initTcb := { mkTcb 42 (prio := 50) (mcp := 200) (binding := .bound scId)
                    with domain := ⟨0⟩ }
@@ -775,7 +775,7 @@ private def odDonatedSc (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId
     : SeLe4n.Kernel.SchedContext :=
   { scId := scId, budget := ⟨100⟩, period := ⟨200⟩,
     priority := ⟨odDonorPriority⟩, deadline := ⟨500⟩, domain := ⟨odDonorDomain⟩,
-    budgetRemaining := ⟨100⟩, boundThread := some holder }
+    budgetRemaining := ⟨100⟩, boundThreadCode := SeLe4n.ThreadId.optCode (some holder) }
 
 /-- A caller (1) with authority, a passive server (2) holding a donated context,
 and the donor client (3) whose reservation it is. -/
@@ -985,7 +985,7 @@ private def pm_od_07_configureOnDonatedReservationSparesTheDonee : IO Unit := do
   let sc : SeLe4n.Kernel.SchedContext := {
     scId := scId, budget := ⟨100⟩, period := ⟨200⟩,
     priority := ⟨50⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
-    budgetRemaining := ⟨100⟩, boundThread := some doneeTid
+    budgetRemaining := ⟨100⟩, boundThreadCode := SeLe4n.ThreadId.optCode (some doneeTid)
   }
   let st := mkState [
     (doneeTid.toObjId, .tcb (mkTcb 42 (prio := odDoneePriority) (mcp := 200)
@@ -1023,7 +1023,7 @@ private def pm_od_08_configureBoundControlStillPropagates : IO Unit := do
   let sc : SeLe4n.Kernel.SchedContext := {
     scId := scId, budget := ⟨100⟩, period := ⟨200⟩,
     priority := ⟨50⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
-    budgetRemaining := ⟨100⟩, boundThread := some boundTid
+    budgetRemaining := ⟨100⟩, boundThreadCode := SeLe4n.ThreadId.optCode (some boundTid)
   }
   let st := mkState [
     (boundTid.toObjId, .tcb (mkTcb 42 (prio := 50) (mcp := 200)
@@ -1081,7 +1081,7 @@ private def pm_od_09_reconfiguredLoanComesBackDisagreeing : IO Unit := do
   let sc : SeLe4n.Kernel.SchedContext := {
     scId := scId, budget := ⟨100⟩, period := ⟨200⟩,
     priority := ⟨50⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
-    budgetRemaining := ⟨100⟩, boundThread := some doneeTid,
+    budgetRemaining := ⟨100⟩, boundThreadCode := SeLe4n.ThreadId.optCode (some doneeTid),
     donationOrigin := some originTid
   }
   -- The origin has given up its binding and waits on its reply — the shape
@@ -1132,7 +1132,7 @@ private def pm_od_10_unreconfiguredLoanComesBackAgreeing : IO Unit := do
   let sc : SeLe4n.Kernel.SchedContext := {
     scId := scId, budget := ⟨100⟩, period := ⟨200⟩,
     priority := ⟨50⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
-    budgetRemaining := ⟨100⟩, boundThread := some doneeTid,
+    budgetRemaining := ⟨100⟩, boundThreadCode := SeLe4n.ThreadId.optCode (some doneeTid),
     donationOrigin := some originTid
   }
   let st := mkState [
@@ -1168,7 +1168,7 @@ private def pm_frozenBasePriorityAgreesWithTheLiveWrite : IO Unit := do
   let sc : SeLe4n.Kernel.SchedContext :=
     { scId := scId, budget := ⟨100⟩, period := ⟨200⟩, priority := ⟨50⟩,
       deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨100⟩,
-      boundThread := some targetTid }
+      boundThreadCode := SeLe4n.ThreadId.optCode (some targetTid) }
   let liveSt := mkState [
     (callerTid.toObjId, .tcb (mkTcb 1 (prio := 50) (mcp := 200))),
     (targetTid.toObjId, .tcb (mkTcb 2 (prio := 50) (binding := .bound scId))),
@@ -1222,7 +1222,7 @@ private def pm_frozenCeilingAgreesWithTheLiveWrite : IO Unit := do
   let sc : SeLe4n.Kernel.SchedContext :=
     { scId := scId, budget := ⟨100⟩, period := ⟨200⟩, priority := ⟨80⟩,
       deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨100⟩,
-      boundThread := some targetTid }
+      boundThreadCode := SeLe4n.ThreadId.optCode (some targetTid) }
   let objs : List (ObjId × KernelObject) := [
     (callerTid.toObjId, .tcb (mkTcb 1 (prio := 50) (mcp := 200))),
     (targetTid.toObjId, .tcb (mkTcb 2 (prio := 80) (binding := .bound scId))),
@@ -1316,7 +1316,7 @@ private def pm_frozenBasePriorityRebucketsLikeTheLiveWrite : IO Unit := do
   let sc : SeLe4n.Kernel.SchedContext :=
     { scId := scId, budget := ⟨100⟩, period := ⟨200⟩, priority := ⟨50⟩,
       deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨100⟩,
-      boundThread := some targetTid }
+      boundThreadCode := SeLe4n.ThreadId.optCode (some targetTid) }
   -- The caller is priority 50 as well, so bucket 50 has a second member: a
   -- re-bucket that dropped the whole bucket rather than the one thread would
   -- pass against a singleton and fail here.
@@ -1370,7 +1370,7 @@ private def pm_frozenCeilingRebucketsLikeTheLiveWrite : IO Unit := do
   let sc : SeLe4n.Kernel.SchedContext :=
     { scId := scId, budget := ⟨100⟩, period := ⟨200⟩, priority := ⟨80⟩,
       deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨100⟩,
-      boundThread := some targetTid }
+      boundThreadCode := SeLe4n.ThreadId.optCode (some targetTid) }
   let objs : List (ObjId × KernelObject) := [
     (callerTid.toObjId, .tcb (mkTcb 1 (prio := 50) (mcp := 200))),
     (targetTid.toObjId, .tcb (mkTcb 2 (prio := 80) (binding := .bound scId))),
@@ -1421,7 +1421,7 @@ private def boundInSyncState (callerTid targetTid : SeLe4n.ThreadId)
   let sc : SeLe4n.Kernel.SchedContext :=
     { scId := scId, budget := ⟨100⟩, period := ⟨200⟩, priority := ⟨50⟩,
       deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨100⟩,
-      boundThread := some targetTid }
+      boundThreadCode := SeLe4n.ThreadId.optCode (some targetTid) }
   mkState [
     (callerTid.toObjId, .tcb (mkTcb callerTid.toNat (prio := 50) (mcp := 200))),
     (targetTid.toObjId, .tcb (mkTcb targetTid.toNat (prio := 50)
@@ -1604,7 +1604,7 @@ private def pm_pip_02_configureReboostsServer : IO Unit := do
   let sc : SeLe4n.Kernel.SchedContext := {
     scId := scId, budget := ⟨100⟩, period := ⟨200⟩,
     priority := ⟨50⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
-    budgetRemaining := ⟨100⟩, boundThread := some waiterTid
+    budgetRemaining := ⟨100⟩, boundThreadCode := SeLe4n.ThreadId.optCode (some waiterTid)
   }
   let st := pipWaiterState callerTid serverTid waiterTid (.bound scId)
     [(scObjId, .schedContext sc)]

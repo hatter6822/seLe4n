@@ -7184,7 +7184,7 @@ theorem cleanupPreReceiveDonation_tcb_ipcState_backward
         -- WS-OD OD3.2: the shared TCB rewrite backward, rather than a copy of the
         -- operation's per-store case analysis.
         obtain ⟨n, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hReturn
-        obtain ⟨tcb, hPre, sb, rfl⟩ :=
+        obtain ⟨tcb, hPre, _, _, rfl⟩ :=
           returnDonatedSchedContext_tcb_rewrite_backward st st' receiver scId originalOwner
             n hObjInv hPop tid.toObjId tcb' hTcb'
         exact ⟨tcb, hPre, rfl⟩
@@ -7286,7 +7286,7 @@ theorem returnDonatedSchedContext_tcb_queue_backward
   -- WS-OD OD3.2: an instance of the shared TCB binding rewrite — the donation
   -- return moves one field, so every other field agrees by `rfl` on the record
   -- update rather than by a copy of the operation's case analysis.
-  obtain ⟨tcb, hPre, sb, rfl⟩ :=
+  obtain ⟨tcb, hPre, _, _, rfl⟩ :=
     returnDonatedSchedContext_tcb_rewrite_backward st st' serverTid scId originalOwner
       newOwner? hObjInv h tid tcb' hTcb'
   exact ⟨tcb, hPre, rfl, rfl, rfl, rfl⟩
@@ -7308,7 +7308,7 @@ theorem returnDonatedSchedContext_tcb_ipcState_replyObject_backward
     ∃ tcb, st.objects[tid]? = some (.tcb tcb) ∧
       tcb.ipcState = tcb'.ipcState ∧ tcb.replyObject = tcb'.replyObject := by
   -- WS-OD OD3.2: an instance of the shared TCB binding rewrite.
-  obtain ⟨tcb, hPre, sb, rfl⟩ :=
+  obtain ⟨tcb, hPre, _, _, rfl⟩ :=
     returnDonatedSchedContext_tcb_rewrite_backward st st' serverTid scId originalOwner
       newOwner? hObjInv h tid tcb' hTcb'
   exact ⟨tcb, hPre, rfl, rfl⟩
@@ -7329,7 +7329,7 @@ theorem returnDonatedSchedContext_tcb_timeoutBudget_backward
     ∃ tcb, st.objects[tid]? = some (.tcb tcb) ∧
       tcb.timeoutBudget = tcb'.timeoutBudget := by
   -- WS-OD OD3.2: an instance of the shared TCB binding rewrite.
-  obtain ⟨tcb, hPre, sb, rfl⟩ :=
+  obtain ⟨tcb, hPre, _, _, rfl⟩ :=
     returnDonatedSchedContext_tcb_rewrite_backward st st' serverTid scId originalOwner
       newOwner? hObjInv h tid tcb' hTcb'
   exact ⟨tcb, hPre, rfl⟩
@@ -7905,7 +7905,7 @@ theorem returnDonatedSchedContext_tcb_pendingReceiveReply_backward
     ∃ tcb, st.objects[tid]? = some (.tcb tcb) ∧
       tcb.pendingReceiveReply = tcb'.pendingReceiveReply := by
   -- WS-OD OD3.2: an instance of the shared TCB binding rewrite.
-  obtain ⟨tcb, hPre, sb, rfl⟩ :=
+  obtain ⟨tcb, hPre, _, _, rfl⟩ :=
     returnDonatedSchedContext_tcb_rewrite_backward st st' serverTid scId originalOwner
       newOwner? hObjInv h tid tcb' hTcb'
   exact ⟨tcb, hPre, rfl⟩
@@ -8019,7 +8019,7 @@ theorem returnDonatedSchedContext_tcb_queue_forward
       tcb'.queueNext = tcb.queueNext ∧ tcb'.queuePrev = tcb.queuePrev ∧
       tcb'.ipcState = tcb.ipcState ∧ tcb'.pendingMessage = tcb.pendingMessage := by
   -- WS-OD OD3.2: the forward half of the same shared rewrite.
-  obtain ⟨tcb', hPost, sb, rfl⟩ :=
+  obtain ⟨tcb', hPost, _, _, rfl⟩ :=
     returnDonatedSchedContext_tcb_rewrite st st' serverTid scId originalOwner
       hObjInv newOwner? h tid tcb hTcb
   exact ⟨_, hPost, rfl, rfl, rfl, rfl⟩
@@ -8187,7 +8187,7 @@ theorem cleanupPreReceiveDonation_preserves_dualQueueSystemInvariant
           refine ⟨hEmpty, ?_, ?_⟩
           · intro hd hHd
             obtain ⟨tcb, hTcb, hPrev, hPP⟩ := hHead hd hHd
-            obtain ⟨tcb', hTcb', sb, rfl⟩ :=
+            obtain ⟨tcb', hTcb', _, _, rfl⟩ :=
               returnDonatedSchedContext_tcb_rewrite st st' receiver scId originalOwner hObjInv
                 newOwner? hRet hd.toObjId tcb hTcb
             exact ⟨_, hTcb', hPrev, hPP⟩
@@ -8235,7 +8235,7 @@ theorem cleanupPreReceiveDonation_preserves_dualQueueSystemInvariant
         -- and omits `queuePPrev` — the very field-enumeration gap this conjunct
         -- exists to close, one level down.
         refine queuePPrevAgreesWithPrev_of_frame (fun tid tcb' hTcb' => ?_) hPP
-        obtain ⟨tcb, hPre, sb, rfl⟩ :=
+        obtain ⟨tcb, hPre, _, _, rfl⟩ :=
           returnDonatedSchedContext_tcb_rewrite_backward st st' receiver scId originalOwner
             newOwner? hObjInv hRet tid.toObjId tcb' hTcb'
         exact ⟨tcb, hPre, rfl, rfl⟩
@@ -8591,7 +8591,7 @@ theorem returnDonatedSchedContext_ok_of_boundAndRecipient
       rw [hOwnerObj2]
     simp only [hLkOwner2]
     generalize hS3 : storeObject owner.toObjId
-        (.tcb { ownerTcb with schedContextBinding := donationReturnBinding scId newOwner? }) s2
+        (.tcb { ownerTcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (donationReturnBinding scId newOwner?), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (donationReturnBinding scId newOwner?) }) s2
           = result3
     match result3, hS3 with
     | .ok pair3, hS3 =>
@@ -8609,7 +8609,7 @@ theorem returnDonatedSchedContext_ok_of_boundAndRecipient
         rw [hRecvObj3]
       simp only [hLkRecv3]
       generalize hS4 : storeObject receiver.toObjId
-          (.tcb { recvTcb with schedContextBinding := .unbound }) pair3.2 = result4
+          (.tcb { recvTcb with scBindingScCode := 0, scBindingOwnerCode := 0 }) pair3.2 = result4
       match result4, hS4 with
       | .ok pair4, hS4 =>
         simp only []

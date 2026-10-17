@@ -3356,7 +3356,7 @@ theorem cancelIpcBlocking_replyArm_preserves_ipcInvariantFull
     hObjInv hLookup hBundle hChain hAllBudgetsNone hOwed hStack hCoh
   have hBudgetsR := returnDonationToCancelledCaller_preserves_allTimeoutBudgetsNone st v tcbV
     hObjInv hAllBudgetsNone
-  obtain ⟨tcbR, hAtR, sb, hEqR⟩ := returnDonationToCancelledCaller_victim_tcb_rewrite st v tcbV
+  obtain ⟨tcbR, hAtR, _, _, hEqR⟩ := returnDonationToCancelledCaller_victim_tcb_rewrite st v tcbV
     hObjInv hLink hBundle.donationOwnerValid hOff hLookup hOwed
   -- Step 2: the splice, which writes no TCB at all.
   have hInvS := spliceThreadReplyFrameOut_preserves_objects_invExt

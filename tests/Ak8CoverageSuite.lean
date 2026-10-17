@@ -73,7 +73,7 @@ def test_AK8_E_unbound_returns_tcb_priority : IO Bool := do
       cspaceRoot := ObjId.ofNat 0
       vspaceRoot := ObjId.ofNat 0
       ipcBuffer := SeLe4n.VAddr.ofNat 0
-      schedContextBinding := .unbound }
+      scBindingScCode := 0, scBindingOwnerCode := 0 }
   match SeLe4n.Kernel.SchedContext.PriorityManagement.getCurrentPriorityChecked
           (default : SystemState) tcb with
   | .ok p => return p.val == 42
@@ -99,8 +99,8 @@ def test_checkedPriority_bound_reads_thread_field : IO Bool := do
       budget := ⟨100⟩, period := ⟨1000⟩
       priority := ⟨77⟩, deadline := ⟨0⟩
       domain := ⟨0⟩, budgetRemaining := ⟨100⟩
-      boundThread := none, isActive := false
-      replenishments := [] }
+      boundThreadCode := 0, isActive := false
+      refillTail := [] }
   let tcb : TCB :=
     { tid := ThreadId.ofNat 2
       priority := ⟨5⟩
@@ -108,7 +108,7 @@ def test_checkedPriority_bound_reads_thread_field : IO Bool := do
       cspaceRoot := ObjId.ofNat 0
       vspaceRoot := ObjId.ofNat 0
       ipcBuffer := SeLe4n.VAddr.ofNat 0
-      schedContextBinding := .bound scId }
+      scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scId), scBindingOwnerCode := 0 }
   let st : SystemState := { (default : SystemState) with
     objects := (default : SystemState).objects.insert scId.toObjId
       (.schedContext sc) }
@@ -128,7 +128,7 @@ def test_AK8_E_bound_missing_sc_is_objectNotFound : IO Bool := do
       cspaceRoot := ObjId.ofNat 0
       vspaceRoot := ObjId.ofNat 0
       ipcBuffer := SeLe4n.VAddr.ofNat 0
-      schedContextBinding := .bound scId }
+      scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scId), scBindingOwnerCode := 0 }
   match SeLe4n.Kernel.SchedContext.PriorityManagement.getCurrentPriorityChecked
           (default : SystemState) tcb with
   | .ok _ => return false
@@ -200,7 +200,6 @@ private def emptyFrozenState : FrozenSystemState :=
     machine := default
     objectIndex := []
     objectIndexSet := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
-    scThreadIndex := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
     tlb := TlbState.empty
     perCoreTlb := _root_.Vector.replicate SeLe4n.Kernel.Concurrency.numCores TlbState.empty
     declassificationAuditLog := []
@@ -309,9 +308,9 @@ def test_AK8_H_unbind_missing_tcb_no_partial_mutation : IO Bool := do
       budget := ⟨100⟩, period := ⟨1000⟩
       priority := ⟨0⟩, deadline := ⟨0⟩
       domain := ⟨0⟩, budgetRemaining := ⟨100⟩
-      boundThread := some danglingTid
+      boundThreadCode := SeLe4n.ThreadId.optCode (some danglingTid)
       isActive := true
-      replenishments := [] }
+      refillTail := [] }
   let st := mkFrozenStateWith [(scId, (.schedContext sc))]
   match SeLe4n.Kernel.FrozenOps.frozenSchedContextUnbind scId st with
   | .ok _ => return false
@@ -337,9 +336,9 @@ def test_AK8_H_unbind_happy_path : IO Bool := do
       budget := ⟨100⟩, period := ⟨1000⟩
       priority := ⟨0⟩, deadline := ⟨0⟩
       domain := ⟨0⟩, budgetRemaining := ⟨100⟩
-      boundThread := some tid
+      boundThreadCode := SeLe4n.ThreadId.optCode (some tid)
       isActive := true
-      replenishments := [] }
+      refillTail := [] }
   let tcb : TCB :=
     { tid := tid
       priority := ⟨5⟩
@@ -347,7 +346,7 @@ def test_AK8_H_unbind_happy_path : IO Bool := do
       cspaceRoot := ObjId.ofNat 0
       vspaceRoot := ObjId.ofNat 0
       ipcBuffer := SeLe4n.VAddr.ofNat 0
-      schedContextBinding := .bound (SchedContextId.ofObjId scId) }
+      scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound (SchedContextId.ofObjId scId)), scBindingOwnerCode := 0 }
   let st1 := mkFrozenStateWith
     [ (scId, .schedContext sc)
     , (tid.toObjId, .tcb tcb) ]

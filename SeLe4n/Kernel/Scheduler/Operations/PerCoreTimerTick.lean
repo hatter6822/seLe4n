@@ -842,8 +842,8 @@ object-store invariant — each fold step either keeps the state or applies
 theorem timeoutBlockedThreads_preserves_objects_invExt (st : SystemState)
     (scId : SeLe4n.SchedContextId) (execCore : CoreId) (hInv : st.objects.invExt) :
     (timeoutBlockedThreads st scId execCore).1.objects.invExt := by
-  unfold timeoutBlockedThreads
-  generalize (st.scThreadIndex[scId]?.getD []) = tids
+  rw [timeoutBlockedThreads_eq_fold]; delta timeoutBlockedThreadStep
+  generalize (schedContextTimeoutThreads st scId) = tids
   have hAccInv : ((st, ([] : List (SeLe4n.ThreadId × KernelError)),
       ([] : List (CoreId × SgiKind)))).1.objects.invExt := hInv
   generalize ((st, ([] : List (SeLe4n.ThreadId × KernelError)),

@@ -173,7 +173,11 @@ any nonzero reading.  At `v0.36.95` a capability address is a machine word
 arguments read as words; the exerciser pins each at its reading, the
 operation's own cells, which ZA5.2–ZA5.5 take to zero.  At `v0.36.97`
 (ZA5.2 part 1) the ten thread and notification invocations check first and
-write in place, and read 0.  ZA6 covers the other
+write in place, and read 0.  At `v0.36.98` (ZA5.2 part 2) the
+scheduling-context invocations do too, configure routed; the entry captures
+overflow words into a per-core buffer and never writes model memory.  The
+suspend of a thread blocked in IPC or holding a donated context is the one
+syscall arm left on the general path (ZA6.1).  ZA6 covers the other
 entries and makes the rule standing.  Plan:
 [`docs/planning/ZERO_ALLOCATION_SYSCALL_PLAN.md`](../planning/ZERO_ALLOCATION_SYSCALL_PLAN.md)
 (phases ZA1–ZA6).
@@ -191,7 +195,11 @@ in the notification; a thread blocked on a notification is linked by its own
 it linked into, or out of, exactly one queue.  No idle thread is ever enqueued
 (`runEnqueueAdmits` refuses one) and none ever traps (the syscall seam and the
 fault entry refuse one); a kernel entry's proof discharges
-`RunQueueEntryStage`, which carries `currentDequeuedUnique`.
+`RunQueueEntryStage`, which carries `currentDequeuedUnique`.  No kernel entry
+writes model memory as a cache: a caller's overflow words are read through
+`userWordAt` from the per-core capture buffer.  A scheduling context names its
+one bound thread (`SchedContext.boundThread`); there is no per-context thread
+index.
 
 ### WS-CB Hierarchical constant-bandwidth servers — PLANNED (registered v0.34.49; opens after WS-CV)
 

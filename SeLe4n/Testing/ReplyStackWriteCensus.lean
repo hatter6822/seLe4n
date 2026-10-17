@@ -334,6 +334,26 @@ def chainNeutralConstructors : List (Name × String) :=
       "`{ sc with boundThread := some _ }`; reads `sc.scReply` as the bind guard and assigns it nowhere")
   , (`SeLe4n.Kernel.SchedContextOps.schedContextUnbind,
       "`{ sc with boundThread := none, isActive := false }`; `scReply` is untouched")
+    -- WS-ZA ZA5.2 part 2: the checks-first performs of the configure, bind and
+    -- unbind, their compiled forms, and the bound suspend's perform and
+    -- release.  Each writes the same fields as the operation it is proven equal
+    -- to, which is exempt above for the same reason.
+  , (`SeLe4n.Kernel.SchedContextOps.schedContextConfigurePerform,
+      "stores `configuredSchedContext`, whose update assigns the CBS parameters and the refill head; `scReply` is untouched")
+  , (`SeLe4n.Kernel.SchedContextOps.schedContextConfigurePerformImpl,
+      "the compiled form of the same configure, written one field at a time in the slot; `scReply` is untouched")
+  , (`SeLe4n.Kernel.SchedContextOps.schedContextBindPerform,
+      "`{ sc with boundThreadCode := _, donationOrigin := none }` and the TCB's binding codes; `scReply` is untouched")
+  , (`SeLe4n.Kernel.SchedContextOps.schedContextBindPerformImpl,
+      "the compiled form of the same bind; same reason")
+  , (`SeLe4n.Kernel.SchedContextOps.schedContextUnbindPerform,
+      "`{ sc with boundThreadCode := 0, isActive := false, donationOrigin := none }` and the TCB's binding codes; `scReply` is untouched")
+  , (`SeLe4n.Kernel.SchedContextOps.schedContextUnbindPerformImpl,
+      "the compiled form of the same unbind; same reason")
+  , (`SeLe4n.Kernel.Lifecycle.Suspend.suspendReleasePerform,
+      "the bound release proven equal to `cancelBoundDonationOnCore` (exempt below): `{ sc with boundThreadCode := 0, isActive := false, donationOrigin := none }`; `scReply` is untouched")
+  , (`SeLe4n.Kernel.Lifecycle.Suspend.suspendPerform,
+      "the admitted suspend: `suspendReleasePerform`, the deschedule and the TCB's state; a victim blocked on nothing holds no reply link to consume")
   , (`SeLe4n.Kernel.SchedContextOps.schedContextYieldTo,
       "rebuilds both SchedContexts for their budget accounting; `scReply` is in neither assignment list")
   , (`SeLe4n.Kernel.SchedContext.PriorityManagement.updatePrioritySource,

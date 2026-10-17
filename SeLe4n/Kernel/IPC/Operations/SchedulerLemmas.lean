@@ -759,7 +759,7 @@ theorem donateSchedContext_ok_server_donated
   have hInv1 : s1.objects.invExt := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
   have hInv2 : s2.objects.invExt := storeDonationFramePush_preserves_objects_invExt hInv1 hS2
   have hInv3 : s3.objects.invExt := storeObject_preserves_objects_invExt s2 s3 _ _ hInv2 hS3
-  refine ⟨{ serverTcb with schedContextBinding := .donated clientScId clientTid }, ?_, rfl⟩
+  refine ⟨{ serverTcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated clientScId clientTid), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated clientScId clientTid) }, ?_, rfl⟩
   rw [hEq]
   show s4.objects[serverTid.toObjId]? = _
   exact storeObject_objects_eq s3 s4 serverTid.toObjId _ hInv3 hS4

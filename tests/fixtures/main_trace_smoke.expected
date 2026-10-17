@@ -206,7 +206,7 @@
 [SCO-032] endpointQueueRemove mid: head=tid1:true tail=tid3:true tid1.next=tid3:true tid3.prev=tid1:true
 [SCO-033] endpointQueueRemove receiveQ: head=tid2:true sendQ_unchanged:true
 [SCO-034] timeoutThread blockedOnCall: ready=true errCode=true
-[SCO-035] timeoutBlockedThreads multi: tid1_ready=true tid2_ready=true
+[SCO-035] timeoutBlockedThreads one context: tid1_ready=true tid2_still_blocked=true
 [Z7D-001] donateSchedContext: server_bound=true sc_points_server=true
 [Z7D-002] returnDonatedSchedContext: server_unbound=true caller_rebound=true sc_points_caller=true
 [Z7D-003] applyCallDonation passive: server_got_sc=true

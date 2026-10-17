@@ -152,13 +152,13 @@ theorem vspaceUnmapPageWithShootdownPerCore_framed (executingCore : CoreId)
     (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) :
     (Architecture.tlbFillOnCore st c asid vaddr).scheduler = st.scheduler := by
   unfold Architecture.tlbFillOnCore
-  split <;> rfl
+  split <;> simp
 
 @[simp] theorem tlbFillOnCore_machine (st : SystemState) (c : CoreId)
     (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) :
     (Architecture.tlbFillOnCore st c asid vaddr).machine = st.machine := by
   unfold Architecture.tlbFillOnCore
-  split <;> rfl
+  split <;> simp
 
 /-- SM8.B.2: mapping a page is one `storeObject` of the rewritten root. -/
 theorem vspaceMapPage_framed (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
@@ -432,8 +432,8 @@ theorem cspaceRevokeCdtFinalising_confinedToCores
 -- sweep's step to be *guarded* by `threadOccupiesCore`: an unoccupied core is
 -- left literally untouched rather than rewritten with equal values.
 --
--- Everything else the retype pipeline does — the donation return, the
--- `scThreadIndex` removal, the two IPC-reference sweeps, the service-registration
+-- Everything else the retype pipeline does — the donation return, the two
+-- IPC-reference sweeps, the service-registration
 -- cleanup, the CDT detach, the memory scrub, the object store, the ASID
 -- shootdown rounds, the initiator's own TLB drain and the I-cache broadcast —
 -- writes no scheduler slot and no register bank, and each of those is discharged

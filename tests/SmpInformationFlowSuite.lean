@@ -193,7 +193,6 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @onCore_setRegsOnCore_ne
 #check @onCore_setReplenishQueueOnCore
 #check @onCore_setLastTimeoutErrorsOnCore
-#check @onCore_scThreadIndex
 #check @onCore_machineTimer
 #check @onCore_perCoreTlb
 #check @onCore_perCoreICache
@@ -4978,8 +4977,8 @@ private def replenishScValue : SchedContext :=
   { scId := replenishScId
     budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨40⟩, deadline := ⟨0⟩, domain := ⟨0⟩
     budgetRemaining := ⟨100⟩
-    replenishments := [{ amount := ⟨100⟩, eligibleAt := 500 }]
-    boundThread := some remoteHomedThread
+    refillHeadPresent := true, refillHeadAmount := 100, refillHeadEligibleAt := 500
+    boundThreadCode := SeLe4n.ThreadId.optCode (some remoteHomedThread)
     isActive := true }
 
 /-- The bound thread carries the reverse link, so `schedContextUnbind` reaches
@@ -4988,7 +4987,7 @@ private def replenishState : SystemState :=
   let withSc := crossCoreState.objects.insert replenishSc (.schedContext replenishScValue)
   let withTcb := withSc.insert remoteHomedThread.toObjId
     (.tcb { mkTcb 1018 40 (some c2) with
-              schedContextBinding := .bound replenishScId })
+              scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound replenishScId), scBindingOwnerCode := 0 })
   { crossCoreState with
       objects := withTcb
       scheduler := crossCoreState.scheduler.setReplenishQueueOnCore c2
@@ -5014,7 +5013,7 @@ private def unboundAffinityRunningRemoteState : SystemState :=
   let withSc := crossCoreState.objects.insert replenishSc (.schedContext replenishScValue)
   let withTcb := withSc.insert remoteHomedThread.toObjId
     (.tcb { mkTcb 1018 40 none with
-              schedContextBinding := .bound replenishScId })
+              scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound replenishScId), scBindingOwnerCode := 0 })
   { crossCoreState with
       objects := withTcb
       scheduler := crossCoreState.scheduler.setCurrentOnCore c2 (some remoteHomedThread) }
@@ -5064,7 +5063,7 @@ private def runReplenishHomeCoreChecks : IO Unit := do
   -- An unbound SC has no home and no entry to strand: the boot-core default.
   assertBool "NEGATIVE: an unbound SC resolves to the boot core, not core 2"
     (decide (SeLe4n.Kernel.SchedContextOps.schedContextReplenishHome
-      replenishState { replenishScValue with boundThread := none } = c0))
+      replenishState { replenishScValue with boundThreadCode := 0 } = c0))
 
 /-- §5.8  The unbind guard and its scheduling point read the SAME core
 (rounds 39/40).
@@ -7761,7 +7760,7 @@ private def ipcDonatedScId : SeLe4n.SchedContextId := ⟨1045⟩
 /-- A parked `Call` sender holding its own budget, with a caps-bearing message:
 the rendezvous both installs and donates. -/
 private def ipcDonatingSenderTcb : TCB :=
-  { ipcSenderTcb with schedContextBinding := .bound ipcDonatedScId }
+  { ipcSenderTcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound ipcDonatedScId), scBindingOwnerCode := 0 }
 
 /-- ...and the **passive-server steady state**: the same donating sender with a
 capless message.  This is the arm OD3.6 exists for — it writes
@@ -7769,7 +7768,7 @@ capless message.  This is the arm OD3.6 exists for — it writes
 conditioned on `installsCaps` alone would be absent exactly here. -/
 private def ipcDonatingCaplessSenderTcb : TCB :=
   (TCB.setIpcState { mkTcb 1044 40 (some c0) with
-      schedContextBinding := .bound ipcDonatedScId } (.blockedOnCall lowEndpoint))
+      scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound ipcDonatedScId), scBindingOwnerCode := 0 } (.blockedOnCall lowEndpoint))
 
 /-- The fixture with a donating, caps-carrying rendezvous sender. -/
 private def ipcDonatingFootprintState : SystemState :=
@@ -12066,14 +12065,14 @@ private def flowSc : SeLe4n.SchedContextId := SchedContextId.ofNat 1213
 private def flowClientSc : SchedContext :=
   { scId := flowSc, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨40⟩,
     deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩,
-    boundThread := some flowClient, isActive := true }
+    boundThreadCode := SeLe4n.ThreadId.optCode (some flowClient), isActive := true }
 
 private def flowClientTcb : TCB :=
-  { mkTcb 1211 40 none with schedContextBinding := .bound flowSc }
+  { mkTcb 1211 40 none with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound flowSc), scBindingOwnerCode := 0 }
 
 /-- The passive server, before it receives: `.ready` and holding no reservation. -/
 private def flowServerTcb : TCB :=
-  { mkTcb 1212 20 none with schedContextBinding := .unbound }
+  { mkTcb 1212 20 none with scBindingScCode := 0, scBindingOwnerCode := 0 }
 
 private def flowReply : SeLe4n.ReplyId := ⟨1214⟩
 

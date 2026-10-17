@@ -1,3 +1,92 @@
+## v0.36.98 — WS-ZA ZA5.2 part 2 (objects change in their slot): the scheduling-context invocations allocate nothing
+
+**Configure, bind and unbind now read 0 allocations, at the first call and
+in steady state.**  The QEMU image gains a scheduling context, so each has
+a scenario for the first time.  So do the resume and the suspend of a
+thread that holds one; both read 0.  Two heap-growth vulnerabilities on the
+entry path are closed (below).
+
+Normal-build allocations per call (QEMU exerciser, core 0; first call /
+steady state where they differ), on the `v0.36.97` tree with the new
+scenarios added and on `v0.36.98`:
+
+| Scenario | v0.36.97 | v0.36.98 |
+|---|---|---|
+| scheduling-context configure (general path) | 94 | 0 |
+| scheduling-context bind | 26 | 0 |
+| scheduling-context unbind | 21 | 0 |
+| resume of a thread holding a context | general path | 0 |
+| suspend of a thread holding a context | general path | 0 |
+| every IPC scenario, receive-from-sender included | 0 | 0 |
+| the ten thread and notification invocations | 0 | 0 |
+
+The image's extra objects move four retype and reset readings: page-table
+retype 3 reads 161 first call (was 93), frame retype 110 / 112 (was
+160 / 94), untyped reset 153 (was 137).  ZA5.4 owns them.  The exerciser
+gate pins the scheduling-context scenarios at 0.
+
+- **Security: the entry no longer writes model memory.**  Model memory is a
+  function, so each write in a committed state is a closure that never
+  collapses.  The entry copied a caller's overflow message words into
+  memory before decoding, so any thread with an IPC buffer could grow the
+  kernel heap by up to 116 closures per syscall, refused or not, with no
+  capability needed.  Rust now captures the words run by run into a
+  persistent per-core buffer of (address, word) pairs
+  (`ffi_capture_user_words`).  The planner `overflowRuns` is proven to name
+  exactly the slots the decode reads, within one page.  `userWordAt` reads
+  the pairs ahead of memory, and the committed state drops them.  A receive
+  or reply-receive also captures its blocked sender's overflow slots at the
+  rendezvous, as seL4 reads the sender's buffer
+  (`rendezvousSenderOverflowAddrs`).  A regression test checks memory is
+  unchanged across the entry.
+- **Security: the IPC-buffer TLB fill caches a translation once.**
+  `tlbInsertOnCore` prepended unconditionally, so every decode that read an
+  overflow slot grew the core's TLB view, and the heap, by one entry,
+  refused syscalls included.  A core's view now holds each translation at
+  most once (`tlbInsertOnCore_of_mem`, `_idem`, `mem_tlbInsertOnCore_self`);
+  the regression test is in the shootdown suite.
+- **The configure is routed.**  Its fifth word is overflow slot 0, read
+  through `ipcBufferReadMrK`.  Its arm splits into
+  `schedContextConfigureAdmitted` and the in-slot
+  `schedContextConfigurePerform`.  When the core already caches the
+  buffer's translation the decode's TLB fill writes nothing
+  (`tlbFillIpcBufferOnCore_of_held`); otherwise a refusal restores the TLB
+  it was handed (`tlbFillIpcBufferOnCore_restore`).
+  `syscallEntryCheckedR_eq` covers the new arm.
+- **A context names its one bound thread, as seL4's `sc->scTcb`.**
+  `SystemState.scThreadIndex` duplicated `sc.boundThread` and cost a cell
+  on every bind; it is deleted with its writes, its invariant conjunct, its
+  frozen copy and the theorems that framed it.  `SchedContext.boundThread`
+  is a view of one word and `TCB.schedContextBinding` of two
+  (`SchedContextBinding.ofCodes`), so a bind, unbind or donation writes
+  words.  Trace SCO-035 bound two threads to one context, a state no
+  operation produces; each now has its own context.
+- **The first refill lives in the context's fields.**  A context keeps its
+  head refill as plain fields (`refillHeadPresent`, `refillHeadAmount`,
+  `refillHeadEligibleAt`) beside `refillTail`.  The list is a view
+  (`SchedContext.replenishments`) written through
+  `SchedContext.withReplenishments`, so the replenishment theorems are
+  unchanged in statement, and a context's first configure writes in place.
+- **The bound suspend and the faulted resume run checks first.**
+  `suspendAdmitted` admits a victim holding a bound context: its release
+  (`suspendReleasePerform`, proven equal to `cancelBoundDonationOnCore` at
+  the home core) never refuses.  `resumeAdmitted` admits a thread with a
+  pending fault when its slot is found in place, so the fault's retirement
+  reads back (`resumeAdmitted_retirePendingFault`).
+- **Writes that rebuilt records write in place.**  The preemption saves the
+  core's registers into the outgoing thread's own file
+  (`preemptCurrentOnCore_eq_impl`).  The replenish-queue removal reuses the
+  queue's cells (`ReplenishQueue.remove_eq_impl`) through
+  `SchedulerState.modifyReplenishQueueOnCore`.  Bind reads the insert
+  priority from the thread directly, unbind's vacate is its own compiled
+  definition, and the memory-map check scans without a closure
+  (`ramRegionsContain`).
+- **Registered debt.**  The suspend of a thread blocked in IPC or holding a
+  donated context still takes the general path: whether it can refuse after
+  its teardown is a fact of the store invariant, which the compiled entry's
+  unconditional equality cannot assume.  ZA6.1 owns it
+  (`docs/REGISTERED_DEBT.md`).
+
 ## v0.36.97 — WS-ZA ZA5.2 part 1 (objects change in their slot): the thread and notification invocations allocate nothing
 
 **Ten capability invocations now read 0 allocations, at the first call and

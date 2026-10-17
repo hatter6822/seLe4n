@@ -166,8 +166,22 @@ structure SchedContext where
   domain : SeLe4n.DomainId
   budgetRemaining : Budget
   periodStart : Nat := 0
-  replenishments : List ReplenishmentEntry := []
-  boundThread : Option SeLe4n.ThreadId := none
+  /-- WS-ZA ZA5.2: the pending replenishments, read through
+      `SchedContext.replenishments` and written through
+      `SchedContext.withReplenishments`.  The first entry is held in the
+      context's own fields (`refillHeadPresent`, `refillHeadAmount`,
+      `refillHeadEligibleAt`) and the rest in `refillTail`, so the refill a
+      configure installs is written in the context's slot; a list held whole
+      was two fresh cells on a context with no refill yet. -/
+  refillHeadPresent : Bool := false
+  refillHeadAmount : Nat := 0
+  refillHeadEligibleAt : Nat := 0
+  refillTail : List ReplenishmentEntry := []
+  /-- WS-ZA ZA5.2: the thread this context is bound to, as its code
+      (`SeLe4n.ThreadId.optCode`; `0` is none), read through
+      `SchedContext.boundThread`.  A bound thread written as `some t` was a heap
+      cell on every bind and donation. -/
+  boundThreadCode : Nat := 0
   /-- WS-OD OD2.1: the head of this SchedContext's MCS reply stack — seL4-MCS's
       `sc->scReply`.  A `Call` that donates this context pushes the donor's
       Reply object here (`Reply.next = some (.head scId)`, `Reply.prev` = the
@@ -228,6 +242,123 @@ structure SchedContext where
   donationOrigin : Option SeLe4n.ThreadId := none
   isActive : Bool := false
 deriving Repr
+
+/-- WS-ZA ZA5.2: the thread this context is bound to, read from its code.
+Reducible, so a record update that leaves the code alone reads the old value by
+`rfl`.  Written as `boundThreadCode := SeLe4n.ThreadId.optCode t`. -/
+@[reducible, inline] def SchedContext.boundThread (sc : SchedContext) :
+    Option SeLe4n.ThreadId :=
+  SeLe4n.ThreadId.ofOptCode sc.boundThreadCode
+
+/-- WS-ZA ZA5.2: the context's pending replenishments, its first entry read
+from its fields.  A record update that leaves the refill fields alone reads
+the old list by `rfl`. -/
+@[inline] def SchedContext.replenishments (sc : SchedContext) :
+    List ReplenishmentEntry :=
+  if sc.refillHeadPresent then
+    { amount := ⟨sc.refillHeadAmount⟩, eligibleAt := sc.refillHeadEligibleAt } :: sc.refillTail
+  else []
+
+/-- WS-ZA ZA5.2: a record update that leaves the refill fields reads the old
+list. -/
+@[simp] theorem SchedContext.replenishments_mk_self (sc : SchedContext)
+    (scId : SeLe4n.SchedContextId) (budget : Budget) (period : Period)
+    (priority : SeLe4n.Priority) (deadline : SeLe4n.Deadline) (domain : SeLe4n.DomainId)
+    (budgetRemaining : Budget) (periodStart boundThreadCode : Nat)
+    (scReply : Option SeLe4n.ReplyId) (donationOrigin : Option SeLe4n.ThreadId)
+    (isActive : Bool) :
+    (SchedContext.mk scId budget period priority deadline domain budgetRemaining periodStart
+      sc.refillHeadPresent sc.refillHeadAmount sc.refillHeadEligibleAt sc.refillTail
+      boundThreadCode scReply donationOrigin isActive).replenishments = sc.replenishments := rfl
+
+/-- WS-ZA ZA5.2: a context whose first entry is present reads it first. -/
+@[simp] theorem SchedContext.replenishments_mk_true
+    (scId : SeLe4n.SchedContextId) (budget : Budget) (period : Period)
+    (priority : SeLe4n.Priority) (deadline : SeLe4n.Deadline) (domain : SeLe4n.DomainId)
+    (budgetRemaining : Budget) (periodStart amount eligibleAt boundThreadCode : Nat)
+    (tail : List ReplenishmentEntry)
+    (scReply : Option SeLe4n.ReplyId) (donationOrigin : Option SeLe4n.ThreadId)
+    (isActive : Bool) :
+    (SchedContext.mk scId budget period priority deadline domain budgetRemaining periodStart
+      true amount eligibleAt tail boundThreadCode scReply donationOrigin isActive).replenishments =
+      { amount := ⟨amount⟩, eligibleAt := eligibleAt } :: tail := rfl
+
+/-- WS-ZA ZA5.2: a context with no first entry holds none. -/
+@[simp] theorem SchedContext.replenishments_mk_false
+    (scId : SeLe4n.SchedContextId) (budget : Budget) (period : Period)
+    (priority : SeLe4n.Priority) (deadline : SeLe4n.Deadline) (domain : SeLe4n.DomainId)
+    (budgetRemaining : Budget) (periodStart amount eligibleAt boundThreadCode : Nat)
+    (tail : List ReplenishmentEntry)
+    (scReply : Option SeLe4n.ReplyId) (donationOrigin : Option SeLe4n.ThreadId)
+    (isActive : Bool) :
+    (SchedContext.mk scId budget period priority deadline domain budgetRemaining periodStart
+      false amount eligibleAt tail boundThreadCode scReply donationOrigin isActive).replenishments =
+      [] := rfl
+
+/-- WS-ZA ZA5.2: the context with `rs` as its pending replenishments, the first
+entry written into its fields. -/
+@[inline] def SchedContext.withReplenishments (sc : SchedContext)
+    (rs : List ReplenishmentEntry) : SchedContext :=
+  { sc with
+    refillHeadPresent := !rs.isEmpty
+    refillHeadAmount := match rs with | e :: _ => e.amount.val | [] => sc.refillHeadAmount
+    refillHeadEligibleAt := match rs with | e :: _ => e.eligibleAt | [] => sc.refillHeadEligibleAt
+    refillTail := rs.tail }
+
+@[simp] theorem SchedContext.withReplenishments_replenishments (sc : SchedContext)
+    (rs : List ReplenishmentEntry) : (sc.withReplenishments rs).replenishments = rs := by
+  cases rs with
+  | nil => rfl
+  | cons e rest => rcases e with ⟨⟨a⟩, t⟩; rfl
+
+/-- WS-ZA ZA5.2: writing the replenishments leaves every other field. -/
+@[simp] theorem SchedContext.withReplenishments_scId (sc : SchedContext)
+    (rs : List ReplenishmentEntry) : (sc.withReplenishments rs).scId = sc.scId := by
+  rfl
+
+@[simp] theorem SchedContext.withReplenishments_budget (sc : SchedContext)
+    (rs : List ReplenishmentEntry) : (sc.withReplenishments rs).budget = sc.budget := by
+  rfl
+
+@[simp] theorem SchedContext.withReplenishments_period (sc : SchedContext)
+    (rs : List ReplenishmentEntry) : (sc.withReplenishments rs).period = sc.period := by
+  rfl
+
+@[simp] theorem SchedContext.withReplenishments_priority (sc : SchedContext)
+    (rs : List ReplenishmentEntry) : (sc.withReplenishments rs).priority = sc.priority := by
+  rfl
+
+@[simp] theorem SchedContext.withReplenishments_deadline (sc : SchedContext)
+    (rs : List ReplenishmentEntry) : (sc.withReplenishments rs).deadline = sc.deadline := by
+  rfl
+
+@[simp] theorem SchedContext.withReplenishments_domain (sc : SchedContext)
+    (rs : List ReplenishmentEntry) : (sc.withReplenishments rs).domain = sc.domain := by
+  rfl
+
+@[simp] theorem SchedContext.withReplenishments_budgetRemaining (sc : SchedContext)
+    (rs : List ReplenishmentEntry) : (sc.withReplenishments rs).budgetRemaining = sc.budgetRemaining := by
+  rfl
+
+@[simp] theorem SchedContext.withReplenishments_periodStart (sc : SchedContext)
+    (rs : List ReplenishmentEntry) : (sc.withReplenishments rs).periodStart = sc.periodStart := by
+  rfl
+
+@[simp] theorem SchedContext.withReplenishments_boundThreadCode (sc : SchedContext)
+    (rs : List ReplenishmentEntry) : (sc.withReplenishments rs).boundThreadCode = sc.boundThreadCode := by
+  rfl
+
+@[simp] theorem SchedContext.withReplenishments_scReply (sc : SchedContext)
+    (rs : List ReplenishmentEntry) : (sc.withReplenishments rs).scReply = sc.scReply := by
+  rfl
+
+@[simp] theorem SchedContext.withReplenishments_donationOrigin (sc : SchedContext)
+    (rs : List ReplenishmentEntry) : (sc.withReplenishments rs).donationOrigin = sc.donationOrigin := by
+  rfl
+
+@[simp] theorem SchedContext.withReplenishments_isActive (sc : SchedContext)
+    (rs : List ReplenishmentEntry) : (sc.withReplenishments rs).isActive = sc.isActive := by
+  rfl
 
 -- ============================================================================
 -- Z1-G: SchedContext.wellFormed predicate
@@ -313,7 +444,7 @@ namespace SchedContextBinding
 /-- `v0.35.4`: is this binding a donation?  The one-word form of the question
 `schedContextUnbind` asks (a donated holder is not unbound in place), so the
 transition and every proof about it read one predicate. -/
-def isDonated : SchedContextBinding → Bool
+@[inline] def isDonated : SchedContextBinding → Bool
   | .donated _ _ => true
   | _ => false
 
@@ -408,6 +539,55 @@ theorem ownScId?_eq_some_iff (b : SchedContextBinding)
 @[inline] def isBound : SchedContextBinding → Bool
   | .unbound => false
   | _ => true
+
+/-! WS-ZA ZA5.2: a binding as two scalar codes, the form the TCB stores it in
+(`TCB.scBindingScCode`, `TCB.scBindingOwnerCode`): a constructor with a payload
+is a heap cell, so a store of `.bound scId` allocated on every bind.  The context
+code is `0` for `unbound` and the context's id plus one otherwise; the owner code
+is the donation's original owner plus one, `0` for any other binding. -/
+
+/-- The context word of the binding's code. -/
+@[inline] def scCode : SchedContextBinding → Nat
+  | .unbound => 0
+  | .bound s => s.val + 1
+  | .donated s _ => s.val + 1
+
+/-- The owner word of the binding's code. -/
+@[inline] def ownerCode : SchedContextBinding → Nat
+  | .donated _ o => o.val + 1
+  | _ => 0
+
+/-- The binding a pair of codes stands for. -/
+@[inline] def ofCodes (sc owner : Nat) : SchedContextBinding :=
+  match sc with
+  | 0 => .unbound
+  | s + 1 =>
+    match owner with
+    | 0 => .bound ⟨s⟩
+    | o + 1 => .donated ⟨s⟩ ⟨o⟩
+
+@[simp] theorem ofCodes_codes (b : SchedContextBinding) :
+    ofCodes b.scCode b.ownerCode = b := by
+  cases b <;> rfl
+
+@[simp] theorem ownerCode_bound (s : SchedContextId) : (bound s).ownerCode = 0 := rfl
+@[simp] theorem ownerCode_unbound : unbound.ownerCode = 0 := rfl
+@[simp] theorem scCode_unbound : unbound.scCode = 0 := rfl
+
+/-- A `.bound` binding's codes read back as that binding once its owner word has
+been simplified to `0` (`ownerCode_bound`). -/
+@[simp] theorem ofCodes_scCode_bound (s : SchedContextId) : ofCodes (bound s).scCode 0 = bound s := rfl
+
+@[simp] theorem ofCodes_zero (owner : Nat) : ofCodes 0 owner = .unbound := rfl
+
+@[simp] theorem scCode_ofCodes (sc owner : Nat) : (ofCodes sc owner).scCode = sc := by
+  cases sc <;> cases owner <;> rfl
+
+/-- The owner word of a binding read from codes is the stored owner word, when
+the context word names a context: the one case the owner word is read in. -/
+theorem ownerCode_ofCodes_succ (s owner : Nat) :
+    (ofCodes (s + 1) owner).ownerCode = owner := by
+  cases owner <;> rfl
 
 end SchedContextBinding
 

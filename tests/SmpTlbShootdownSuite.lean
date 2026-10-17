@@ -481,6 +481,9 @@ open SeLe4n.Kernel.Concurrency
 #check @tlbInsertOnCore
 #check @tlbInsertOnCore_mem
 #check @tlbInsertOnCore_tlbOnCore_ne
+#check @tlbInsertOnCore_of_mem
+#check @tlbInsertOnCore_idem
+#check @mem_tlbInsertOnCore_self
 -- SM7.C.3 tlbInvalidateOnCore (local, this-core invalidation):
 #check @tlbInvalidateOnCore
 #check @tlbInvalidateOnCore_removes
@@ -1948,6 +1951,19 @@ private def runPerCoreTlbLocalChecks : IO Unit := do
   assertBool "tlbInsertOnCore fills only the target core's view"
     (tlbHasEntry (tlbOnCore stIns core0) entryTarget &&
      (tlbOnCore stIns core1).entries.isEmpty)
+  -- WS-ZA ZA5.2: a fill of a translation the core already caches writes
+  -- nothing.  Before this the walker prepended unconditionally, so a user loop
+  -- of syscalls reading an IPC-buffer overflow slot grew the executing core's
+  -- view (and the kernel heap) by one entry per call, refused calls included.
+  let stRefill := (List.range 256).foldl
+    (fun s _ => tlbInsertOnCore s core0 entryTarget) stIns
+  assertBool "repeated fills of one translation cache it once (no unbounded growth)"
+    ((tlbOnCore stRefill core0).entries.length == 1 &&
+     tlbHasEntry (tlbOnCore stRefill core0) entryTarget)
+  let stTwo := tlbInsertOnCore (tlbInsertOnCore stIns core0 entryOtherVaddr) core0 entryTarget
+  assertBool "a fill of a cached translation keeps the other cached entries"
+    ((tlbOnCore stTwo core0).entries.length == 2 &&
+     tlbHasEntry (tlbOnCore stTwo core0) entryOtherVaddr)
   -- SM7.C.3: a local invalidation reaches EXACTLY this core — the precise
   -- SMP hazard the cross-core broadcast (§5.2) closes.
   let stInv := tlbInvalidateOnCore perCoreSeeded core0 opUnmapTarget

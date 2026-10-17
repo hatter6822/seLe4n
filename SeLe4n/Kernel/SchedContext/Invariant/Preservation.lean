@@ -95,7 +95,10 @@ def applyConfigureParamsFull (sc : SchedContext)
     deadline := ⟨deadline⟩
     domain := ⟨domain⟩
     budgetRemaining := ⟨budget⟩
-    replenishments := [{ amount := ⟨budget⟩, eligibleAt := timer + period }] }
+    refillHeadPresent := true
+    refillHeadAmount := budget
+    refillHeadEligibleAt := timer + period
+    refillTail := [] }
 
 /-- Z5-M: When parameters pass validation and the original SchedContext has
 bounded replenishments, the configured SchedContext is well-formed. -/
@@ -242,8 +245,8 @@ preservation. -/
 theorem schedContextBind_output_bidirectional
     (sc : SchedContext) (tcb : TCB) (threadId : ThreadId) (scId : ObjId) :
     let scIdTyped : SchedContextId := ⟨scId.toNat⟩
-    let updatedSc := { sc with boundThread := some threadId }
-    let updatedTcb := { tcb with schedContextBinding := SchedContextBinding.bound scIdTyped }
+    let updatedSc := { sc with boundThreadCode := SeLe4n.ThreadId.optCode (some threadId) }
+    let updatedTcb := { tcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (SchedContextBinding.bound scIdTyped), scBindingOwnerCode := 0 }
     updatedSc.boundThread = some threadId ∧
     updatedTcb.schedContextBinding = SchedContextBinding.bound scIdTyped := by
   constructor <;> rfl
@@ -257,8 +260,8 @@ is `none`, `isActive` is `false`, and the updated TCB's binding is `.unbound`.
 This is the local correctness property for unbinding. -/
 theorem schedContextUnbind_output_cleared
     (sc : SchedContext) (tcb : TCB) :
-    let updatedSc := { sc with boundThread := none, isActive := false }
-    let updatedTcb := { tcb with schedContextBinding := SchedContextBinding.unbound }
+    let updatedSc := { sc with boundThreadCode := 0, isActive := false }
+    let updatedTcb := { tcb with scBindingScCode := 0, scBindingOwnerCode := 0 }
     updatedSc.boundThread = none ∧
     updatedSc.isActive = false ∧
     updatedTcb.schedContextBinding = SchedContextBinding.unbound := by

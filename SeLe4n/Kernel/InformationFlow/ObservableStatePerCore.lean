@@ -946,15 +946,6 @@ theorem onCore_setLastTimeoutErrorsOnCore (ctx : LabelingContext) (L : SecurityL
       = ObservableState.onCore ctx c L s := by
   refine onCore_perCore_independence ctx L rfl rfl rfl rfl rfl rfl ?_ ?_ ?_ ?_ ?_ rfl <;> simp
 
-/-- SM8.A.4: the SchedContext→threads performance index is invisible.
-(Per-core form of `projectState_scThreadIndex_eq`.) -/
-theorem onCore_scThreadIndex (ctx : LabelingContext) (L : SecurityLabel)
-    (s : SystemState) (c : CoreId)
-    (idx : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.SchedContextId (List SeLe4n.ThreadId)) :
-    ObservableState.onCore ctx c L { s with scThreadIndex := idx }
-      = ObservableState.onCore ctx c L s :=
-  onCore_perCore_independence ctx L rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl
-
 /-- SM8.A.4: the machine timer is invisible to every per-core observer.
 
 This is the per-core restatement of the deliberate `ObservableState`

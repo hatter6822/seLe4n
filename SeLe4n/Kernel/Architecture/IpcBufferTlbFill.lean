@@ -71,10 +71,11 @@ open SeLe4n.Kernel.Architecture.IpcBufferRead
 
 /-- The distinct pages a decode reading `overflowCount` overflow slots walks.
 
-    Distinct, because `tlbInsertOnCore` prepends without deduplicating and a
-    TLB caches one entry per page: the 116 slots of a page-aligned buffer all
-    live on one page, and filling per-slot would stack 116 copies of a single
-    translation into the modelled view. -/
+    Distinct, because a TLB caches one entry per page: the 116 slots of a
+    page-aligned buffer all live on one page, so the walk visits it once.
+    (`tlbInsertOnCore` also refuses to cache a translation twice, since WS-ZA
+    ZA5.2; the distinct list keeps the walk from re-checking one page per
+    slot.) -/
 def ipcBufferOverflowPages (ipcBuffer : VAddr) (overflowCount : Nat) :
     List VAddr :=
   ((List.range overflowCount).map (ipcBufferSlotPage ipcBuffer)).eraseDups
@@ -156,6 +157,131 @@ def tlbFillIpcBufferOnCore (st : SystemState) (c : CoreId) (tid : ThreadId)
     subst hNil
     rfl
 
+/-- WS-ZA ZA5.2: whether core `c` already caches every translation the fill
+for `tid`'s `overflowCount` overflow slots would insert; when it does the fill
+writes nothing (`tlbFillIpcBufferOnCore_of_held`). -/
+@[inline] def ipcBufferFillHeld (st : SystemState) (c : CoreId) (tid : ThreadId)
+    (overflowCount : Nat) : Bool :=
+  match ipcBufferWalkPlan st tid overflowCount with
+  | none => true
+  | some plan =>
+    plan.2.all (fun page =>
+      match tlbWalkEntry st plan.1 page with
+      | none => true
+      | some entry => tlbEntriesHold (tlbOnCore st c).entries entry)
+
+/-- WS-ZA ZA5.2: whether `entries` holds the entry a walk of `vaddr` in
+`asid` would cache (`tlbWalkEntry`'s shape, generation 0), compared field by
+field so the entry is never built. -/
+def tlbEntriesHoldWalked : List TlbEntry → SeLe4n.ASID → VAddr → PAddr →
+    PagePermissions → Bool
+  | [], _, _, _, _ => false
+  | x :: xs, asid, vaddr, paddr, perms =>
+    if x.asid = asid ∧ x.vaddr = vaddr ∧ x.paddr = paddr ∧ x.perms = perms ∧
+        x.asidGeneration = 0 then true
+    else tlbEntriesHoldWalked xs asid vaddr paddr perms
+
+theorem tlbEntriesHoldWalked_eq (l : List TlbEntry) (asid : SeLe4n.ASID) (vaddr : VAddr)
+    (paddr : PAddr) (perms : PagePermissions) :
+    tlbEntriesHoldWalked l asid vaddr paddr perms =
+      tlbEntriesHold l { asid := asid, vaddr := vaddr, paddr := paddr, perms := perms } := by
+  induction l with
+  | nil => rfl
+  | cons x xs ih =>
+    unfold tlbEntriesHoldWalked tlbEntriesHold
+    rw [ih]
+    congr 1
+    obtain ⟨a, v, p, m, g⟩ := x
+    simp only [TlbEntry.mk.injEq]
+
+/-- WS-ZA ZA5.2: `ipcBufferFillHeld` for the one overflow slot a
+scheduling-context configure reads, as the entry compiles it: the walk's
+`tlbWalkEntry`, `resolveAsidRoot` and page list are read in place, so the
+check builds nothing (`ipcBufferFillHeld_one`). -/
+@[inline] def ipcBufferFillHeldOne (st : SystemState) (c : CoreId) (tid : ThreadId) : Bool :=
+  match st.getTcb? tid with
+  | none => true
+  | some tcb =>
+    match st.getVSpaceRoot? tcb.vspaceRoot with
+    | none => true
+    | some root =>
+      let page := ipcBufferSlotPage tcb.ipcBuffer 0
+      match st.asidTable[root.asid]? with
+      | none => true
+      | some oid =>
+        match st.getVSpaceRoot? oid with
+        | none => true
+        | some r =>
+          if r.asid = root.asid then
+            match r.lookup page with
+            | none => true
+            | some q => tlbEntriesHoldWalked (tlbOnCore st c).entries root.asid page q.1 q.2
+          else true
+
+theorem ipcBufferFillHeld_one (st : SystemState) (c : CoreId) (tid : ThreadId) :
+    ipcBufferFillHeld st c tid 1 = ipcBufferFillHeldOne st c tid := by
+  unfold ipcBufferFillHeld ipcBufferFillHeldOne ipcBufferWalkPlan
+  cases hT : st.getTcb? tid with
+  | none => rfl
+  | some tcb =>
+  dsimp only
+  cases hR : st.getVSpaceRoot? tcb.vspaceRoot with
+  | none => rfl
+  | some root =>
+  dsimp only
+  have hE : ipcBufferOverflowPages tcb.ipcBuffer 1 = [ipcBufferSlotPage tcb.ipcBuffer 0] := by
+    simp [ipcBufferOverflowPages, List.eraseDups, List.eraseDupsBy, List.eraseDupsBy.loop]
+  simp only [hE, List.all_cons, List.all_nil, Bool.and_true, tlbWalkEntry, resolveAsidRoot]
+  cases hA : st.asidTable[root.asid]? with
+  | none => rfl
+  | some oid =>
+  dsimp only
+  cases hV : st.getVSpaceRoot? oid with
+  | none => rfl
+  | some r =>
+  dsimp only
+  by_cases hEq : r.asid = root.asid
+  · simp only [hEq, if_true]
+    cases hL : r.lookup (ipcBufferSlotPage tcb.ipcBuffer 0) with
+    | none => rfl
+    | some q => exact (tlbEntriesHoldWalked_eq _ _ _ _ _).symm
+  · simp only [hEq, if_false]
+
+private theorem foldl_tlbFillOnCore_of_held (c : CoreId) (asid : SeLe4n.ASID)
+    (st : SystemState) (pages : List VAddr)
+    (h : pages.all (fun page =>
+      match tlbWalkEntry st asid page with
+      | none => true
+      | some entry => tlbEntriesHold (tlbOnCore st c).entries entry) = true) :
+    pages.foldl (fun s page => tlbFillOnCore s c asid page) st = st := by
+  induction pages with
+  | nil => rfl
+  | cons page rest ih =>
+    simp only [List.all_cons, Bool.and_eq_true] at h
+    simp only [List.foldl_cons]
+    have hStep : tlbFillOnCore st c asid page = st := by
+      unfold tlbFillOnCore
+      have h1 := h.1
+      cases hW : tlbWalkEntry st asid page with
+      | none => rfl
+      | some entry =>
+        rw [hW] at h1
+        exact tlbInsertOnCore_of_mem ((tlbEntriesHold_iff _ _).mp h1)
+    rw [hStep]
+    exact ih h.2
+
+/-- A fill whose translations core `c` already caches writes nothing. -/
+theorem tlbFillIpcBufferOnCore_of_held {st : SystemState} {c : CoreId} {tid : ThreadId}
+    {overflowCount : Nat} (h : ipcBufferFillHeld st c tid overflowCount = true) :
+    tlbFillIpcBufferOnCore st c tid overflowCount = st := by
+  unfold ipcBufferFillHeld at h
+  unfold tlbFillIpcBufferOnCore
+  cases hPlan : ipcBufferWalkPlan st tid overflowCount with
+  | none => rfl
+  | some plan =>
+    rw [hPlan] at h
+    exact foldl_tlbFillOnCore_of_held c plan.1 st plan.2 h
+
 -- ============================================================================
 -- SM7.F.5 — frames
 -- ============================================================================
@@ -212,7 +338,7 @@ theorem tlbFillIpcBufferOnCore_scheduler
       simp only [List.foldl_cons]
       rw [ih]
       unfold tlbFillOnCore
-      cases tlbWalkEntry st plan.1 page <;> rfl
+      cases tlbWalkEntry st plan.1 page <;> simp
 
 /-- The fold leaves every other core's view untouched. -/
 private theorem foldl_tlbFillOnCore_tlbOnCore_ne
@@ -280,7 +406,7 @@ theorem tlbFillIpcBufferOnCore_preserves_tlbInvalidationConsistent_perCore
 -- SM7.F.5 — the fill caches what the read walked
 -- ============================================================================
 
-/-- A fill only ever prepends, so an entry already cached stays cached. -/
+/-- A fill only ever adds, so an entry already cached stays cached. -/
 private theorem tlbFillOnCore_entries_mono
     (st : SystemState) (c : CoreId) (asid : SeLe4n.ASID) (vaddr : VAddr)
     {e : TlbEntry} (h : e ∈ (tlbOnCore st c).entries) :
@@ -288,10 +414,7 @@ private theorem tlbFillOnCore_entries_mono
   unfold tlbFillOnCore
   cases hw : tlbWalkEntry st asid vaddr with
   | none => exact h
-  | some entry =>
-    unfold tlbInsertOnCore
-    simp only [setTlbOnCore_tlbOnCore_self]
-    exact List.mem_cons_of_mem _ h
+  | some entry => exact mem_tlbInsertOnCore_self.mpr (Or.inr h)
 
 private theorem foldl_tlbFillOnCore_entries_mono
     (c : CoreId) (asid : SeLe4n.ASID) :
@@ -330,13 +453,11 @@ private theorem foldl_tlbFillOnCore_mem
     simp only [List.foldl_cons]
     rcases List.mem_cons.mp hMem with rfl | hRest
     · -- the head is the page we care about: this step caches it, and every
-      -- later step only prepends.
+      -- later step only adds.
       refine foldl_tlbFillOnCore_entries_mono c asid rest _ ?_
       unfold tlbFillOnCore
       rw [hWalk]
-      unfold tlbInsertOnCore
-      simp only [setTlbOnCore_tlbOnCore_self]
-      simp
+      exact tlbInsertOnCore_mem _ _ _
     · -- a later page: the walk is unchanged by this step's fill (frame).
       refine ih (tlbFillOnCore st c asid p) hRest ?_
       have hFrame := tlbFillOnCore_frame st c asid p
@@ -383,7 +504,7 @@ theorem tlbFillIpcBufferOnCore_caches_read_translation
       e.vaddr = ipcBufferSlotPage tcb.ipcBuffer idx ∧
       e.paddr = pa ∧
       ipcBufferReadMr st tid idx
-        = .ok (readUInt64 st.machine.memory
+        = .ok (userWordAt st.machine
                  (PAddr.ofNat
                    (e.paddr.toNat
                      + (ipcBufferSlotAddr tcb.ipcBuffer idx).pageOffset))) := by
@@ -421,7 +542,7 @@ private theorem tlbFillOnCore_eq_setPerCoreTlb
   unfold tlbFillOnCore
   cases tlbWalkEntry st asid vaddr with
   | none => exact ⟨st.perCoreTlb, rfl⟩
-  | some entry => exact ⟨_, rfl⟩
+  | some entry => exact tlbInsertOnCore_eq_with st c entry
 
 private theorem foldl_tlbFillOnCore_eq_setPerCoreTlb
     (c : CoreId) (asid : SeLe4n.ASID) :
@@ -450,6 +571,14 @@ theorem tlbFillIpcBufferOnCore_eq_setPerCoreTlb
   cases hPlan : ipcBufferWalkPlan st tid overflowCount with
   | none => exact ⟨st.perCoreTlb, rfl⟩
   | some plan => exact foldl_tlbFillOnCore_eq_setPerCoreTlb c plan.1 plan.2 st
+
+/-- WS-ZA ZA5.2: the fill undone: its state with the TLB it was handed is
+that state. -/
+theorem tlbFillIpcBufferOnCore_restore (st : SystemState) (c : CoreId) (tid : ThreadId)
+    (overflowCount : Nat) :
+    { tlbFillIpcBufferOnCore st c tid overflowCount with perCoreTlb := st.perCoreTlb } = st := by
+  obtain ⟨t, ht⟩ := tlbFillIpcBufferOnCore_eq_setPerCoreTlb st c tid overflowCount
+  rw [ht]
 
 /-!
 ### Whole-bundle carriage

@@ -557,55 +557,76 @@ def tcbBlockingInfo (tcb : TCB) : Option (SeLe4n.ObjId × Bool) :=
   | .blockedOnReply epId _ => some (epId, false)    -- not in queue but still blocked
   | _ => none
 
-/-- Z6-E: Timeout all threads blocked on IPC whose SchedContext budget
-has been exhausted.
+/-- The one timeout step of `timeoutBlockedThreads`: a thread blocked in IPC is
+timed out of its endpoint, any other thread is left as it is.  A timeout wake is
+target-aware (PR #880 round 8): it lands on the thread's home core, and a remote
+home core's `.reschedule` SGI is accumulated for the caller to emit after its
+state commit.  A refused timeout is collected rather than swallowed (AG1-B);
+under `crossSubsystemInvariant` it is unreachable. -/
+def timeoutBlockedThreadStep (execCore : CoreId)
+    (acc : SystemState × List (SeLe4n.ThreadId × KernelError) × List (CoreId × SgiKind))
+    (tid : SeLe4n.ThreadId) :
+    SystemState × List (SeLe4n.ThreadId × KernelError) × List (CoreId × SgiKind) :=
+  let (st', errs, sgis) := acc
+  match st'.getTcb? tid with
+  | some tcb =>
+    match tcbBlockingInfo tcb with
+    | some (epId, isReceiveQ) =>
+      match timeoutThread epId isReceiveQ tid execCore st' with
+      | .ok r => (r.1, errs, sgis ++ r.2.toList)
+      | .error e => (st', errs ++ [(tid, e)], sgis)
+    | none => (st', errs, sgis)  -- not blocked on IPC
+  | none => (st', errs, sgis)
 
-When a SchedContext's budget reaches zero, any thread that was relying on
-that SchedContext's budget to bound its IPC blocking time must be unblocked.
-This function looks up the per-SchedContext thread index (`scThreadIndex`)
-to find threads with `schedContextBinding.scId? = some scId`, then calls
-`timeoutThread` to unblock each from its respective endpoint queue.
+/-- The threads an exhausted context's timeout pass visits: the one thread the
+context is bound to (`SchedContext.boundThread`, seL4's `sc->scTcb`), which a
+donation moves to the server running on it, or none. -/
+def schedContextTimeoutThreads (st : SystemState) (scId : SeLe4n.SchedContextId) :
+    List SeLe4n.ThreadId :=
+  match st.getSchedContext? scId with
+  | some sc => sc.boundThread.toList
+  | none => []
 
-**Complexity**: O(1) RHTable lookup + O(k) iteration where k is the number
-of threads referencing the exhausted SchedContext (typically 1–3 due to the
-1:1 binding model + IPC donation). This replaces the prior O(n) full
-object-store scan (finding S-05/AE3-K).
+/-- Z6-E: Timeout the thread blocked on IPC whose SchedContext budget has been
+exhausted.
 
-**Frequency**: Budget exhaustion is rare under well-configured CBS admission
-control. The admission check (`admissionControl` in Budget.lean) ensures
-total bandwidth ≤ 1.0, so exhaustion occurs only when a thread fully consumes
-its allocated budget within a single period.
+When a SchedContext's budget reaches zero, the thread relying on it to bound
+its IPC blocking time must be unblocked.  That thread is the context's bound
+thread: a context names at most one thread (`SchedContext.boundThread`, seL4's
+`sc->scTcb`), and a donation rebinds it to the server it lends to, so a
+descheduled donor is never visited.  Reading the context replaces the
+per-context thread index (`scThreadIndex`, retired in WS-ZA ZA5.2), which
+held the same one thread in a list every bind consed into.
 
 Note: threads in `blockedOnReply` are also timed out. In seL4 MCS, this
 handles the case where a client's donated budget expires while the server
 is running — the client is unblocked with a timeout error (Z6-E integration
-with Z7 donation). -/
+with Z7 donation).
+
+The definition matches on the context directly, so the pass builds no list;
+`timeoutBlockedThreads_eq_fold` states it as the fold of
+`timeoutBlockedThreadStep` over `schedContextTimeoutThreads`, the form proofs
+reason about. -/
 def timeoutBlockedThreads (st : SystemState) (scId : SeLe4n.SchedContextId)
     (execCore : CoreId)
     : SystemState × List (SeLe4n.ThreadId × KernelError) × List (CoreId × SgiKind) :=
-  -- S-05/PERF-O1: O(1) RHTable lookup replaces O(n) object store scan
-  let tids := st.scThreadIndex[scId]?.getD []
-  tids.foldl (fun (acc : SystemState × List (SeLe4n.ThreadId × KernelError) × List (CoreId × SgiKind)) tid =>
-    let (st', errs, sgis) := acc
-    -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration. The
-    -- original `_` arm collapsed wrong-variant and absent into the same
-    -- identity fall-through, so migration is semantics-preserving.
-    match st'.getTcb? tid with
-    | some tcb =>
-      match tcbBlockingInfo tcb with
-      | some (epId, isReceiveQ) =>
-        -- PR #880 round 8: the timeout wake is target-aware (the thread's home
-        -- core, not the boot queue); a remote home core's `.reschedule` SGI is
-        -- accumulated for the caller to emit after its state commit.
-        match timeoutThread epId isReceiveQ tid execCore st' with
-        | .ok r => (r.1, errs, sgis ++ r.2.toList)
-        -- AG1-B: Collect errors instead of silently swallowing.
-        -- Under crossSubsystemInvariant, timeoutThread failures are unreachable.
-        -- A non-empty error list indicates an invariant violation.
-        | .error e => (st', errs ++ [(tid, e)], sgis)
-      | none => (st', errs, sgis)  -- not blocked on IPC
-    | none => (st', errs, sgis)  -- index entry for non-TCB (invariant violation)
-  ) (st, [], [])
+  match st.getSchedContext? scId with
+  | some sc =>
+    match sc.boundThread with
+    | some tid => timeoutBlockedThreadStep execCore (st, [], []) tid
+    | none => (st, [], [])
+  | none => (st, [], [])
+
+/-- The timeout pass is the fold of its step over the context's threads. -/
+theorem timeoutBlockedThreads_eq_fold (st : SystemState) (scId : SeLe4n.SchedContextId)
+    (execCore : CoreId) :
+    timeoutBlockedThreads st scId execCore =
+      (schedContextTimeoutThreads st scId).foldl (timeoutBlockedThreadStep execCore)
+        (st, [], []) := by
+  unfold timeoutBlockedThreads schedContextTimeoutThreads
+  cases st.getSchedContext? scId with
+  | none => rfl
+  | some sc => dsimp only; cases sc.boundThread <;> rfl
 
 
 

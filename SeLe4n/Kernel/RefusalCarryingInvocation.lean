@@ -412,19 +412,30 @@ theorem dispatchWithCapChecked_eq_invocationBy (ctx : LabelingContext)
       hIpcBuf, hAff, hFault, hSpace, hPt, decodeVSpaceUnifyInstructionArgs]
   all_goals rfl
 
-/-- WS-ZA ZA5.2: an admitted resume carries no fault, so answering one first is
-the identity. -/
-theorem retirePendingFaultForResume_of_resumeAdmitted {st : SystemState}
+/-- WS-ZA ZA5.2: answering an admitted resume's pending fault keeps it admitted:
+the write reads back (its slot is found in place), and it clears the fault and
+leaves the thread state. -/
+theorem resumeAdmitted_retirePendingFault {st : SystemState}
     {tid : SeLe4n.ThreadId} (h : Lifecycle.Suspend.resumeAdmitted st tid = true) :
-    retirePendingFaultForResume st tid = st := by
+    Lifecycle.Suspend.resumeAdmitted (retirePendingFaultForResume st tid) tid = true := by
   unfold Lifecycle.Suspend.resumeAdmitted at h
-  unfold retirePendingFaultForResume
   cases hT : st.getTcb? tid with
-  | none => rfl
+  | none => rw [hT] at h; cases h
   | some tcb =>
     rw [hT] at h
-    simp only [Bool.and_eq_true, Option.isNone_iff_eq_none] at h
-    simp only [h.1]
+    cases hF : tcb.pendingFault with
+    | none =>
+      have hE : retirePendingFaultForResume st tid = st := by
+        simp only [retirePendingFaultForResume, hT, hF]
+      rw [hE]; unfold Lifecycle.Suspend.resumeAdmitted; rw [hT]; exact h
+    | some tf =>
+      simp only [hF, Option.isNone_some, Bool.false_or, Bool.and_eq_true] at h
+      unfold Lifecycle.Suspend.resumeAdmitted
+      simp only [retirePendingFaultForResume, hT, hF, applyFaultRestart]
+      rw [updateTcb_getTcb?_self_of_findsInPlace _ hT h.2]
+      simp only [TCB.withRestartFrame_threadState, Option.isNone_none, Bool.true_or,
+        Bool.and_true]
+      exact h.1
 
 /-- WS-ZA ZA5.2: `dispatchInvocationBy`, refusal-carrying, with each arm whose
 write has been split into its checks and its in-slot write
@@ -523,7 +534,8 @@ the write alone.  An arm whose checks refuse, and every arm not yet split, is
       | .error e => .error (e, st)
       | .ok vtid =>
         RefusalCarrying.ofChecked (Lifecycle.Suspend.resumeAdmitted st vtid.val)
-          (fun st => Lifecycle.Suspend.resumePerform st vtid.val executingCore)
+          (fun st => Lifecycle.Suspend.resumePerform
+            (retirePendingFaultForResume st vtid.val) vtid.val executingCore)
           (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
     | _ => .error (.invalidCapability, st)
   | .tcbSetFaultHandler =>
@@ -554,6 +566,55 @@ the write alone.  An arm whose checks refuse, and every arm not yet split, is
               (fun st => st.updateTcb vtid.val
                 (fun t => { t with cspaceRoot := cnId, vspaceRoot := vrId }))
               (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st)
+    | _ => .error (.invalidCapability, st)
+  | .schedContextBind =>
+    match cap.target with
+    | .object scObjId =>
+      match decodeSchedContextBindArgsBy (msgRegOfFile layout regs) with
+      | .error e => .error (e, st)
+      | .ok args =>
+        match st.getTcb? tid with
+        | some callerTcb =>
+          match st.getCNode? callerTcb.cspaceRoot with
+          | some rootCn =>
+            resolveCapAddressKUnrolled callerTcb.cspaceRoot args.tcbCPtr rootCn.depth st
+              (fun e => .error (e, st))
+              (fun cnode slot =>
+                match SystemState.lookupSlotCap st { cnode := cnode, slot := slot } with
+                | none => .error (.invalidCapability, st)
+                | some tcbCap =>
+                  if SeLe4n.Kernel.capTargetsReservedIdleObject tcbCap then
+                    .error (.invalidCapability, st)
+                  else if tcbCap.hasRight .write then
+                    match tcbCap.target with
+                    | .object tcbObjId =>
+                      match st.getTcb? (SeLe4n.ThreadId.ofNat tcbObjId.toNat) with
+                      | none => .error (.invalidCapability, st)
+                      | some _ =>
+                        match validateThreadIdArg (SeLe4n.ThreadId.ofNat tcbObjId.toNat) with
+                        | .error e => .error (e, st)
+                        | .ok vThreadId =>
+                          match validateObjIdArg scObjId with
+                          | .error e => .error (e, st)
+                          | .ok vScId =>
+                            RefusalCarrying.ofChecked
+                              (SchedContextOps.schedContextBindAdmitted st vScId vThreadId)
+                              (fun st => SchedContextOps.schedContextBindPerform st vScId vThreadId)
+                              (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
+                    | _ => .error (.invalidCapability, st)
+                  else .error (.illegalAuthority, st))
+          | none => .error (.invalidCapability, st)
+        | none => .error (.objectNotFound, st)
+    | _ => .error (.invalidCapability, st)
+  | .schedContextUnbind =>
+    match cap.target with
+    | .object scObjId =>
+      match validateObjIdArg scObjId with
+      | .error e => .error (e, st)
+      | .ok vScId =>
+        RefusalCarrying.ofChecked (SchedContextOps.schedContextUnbindAdmitted st vScId)
+          (fun st => SchedContextOps.schedContextUnbindOnCorePerform st vScId executingCore)
+          (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
     | _ => .error (.invalidCapability, st)
   | .tcbBindNotification =>
     match cap.target with
@@ -711,8 +772,9 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
         dsimp only
         apply RefusalCarrying.ofChecked_eq
         intro hA
-        obtain ⟨sgi, hS⟩ := Lifecycle.Suspend.resumeThreadOnCore_of_admitted _ _ executingCore hA
-        simp only [dispatchInvocationBy, hT, retirePendingFaultForResume_of_resumeAdmitted hA, hS]
+        obtain ⟨sgi, hS⟩ := Lifecycle.Suspend.resumeThreadOnCore_of_admitted _ _ executingCore
+          (resumeAdmitted_retirePendingFault hA)
+        simp only [dispatchInvocationBy, hT, hS]
     all_goals rfl
   case tcbSetFaultHandler =>
     cases target
@@ -749,6 +811,94 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
             apply RefusalCarrying.ofChecked_eq
             intro hA
             simp only [dispatchInvocationBy, hD, hT, hR, setThreadSpace_of_admitted _ _ _ _ hA]
+    all_goals rfl
+  case schedContextBind =>
+    cases target
+    case object objId =>
+      dsimp only
+      cases hD : decodeSchedContextBindArgsBy (msgRegOfFile layout regs) with
+      | error e =>
+        simp [RefusalCarrying.ofKernel, dispatchInvocationBy, resolveSchedContextBindThread, hD]
+      | ok args =>
+        cases hC : st.getTcb? tid with
+        | none =>
+          simp [RefusalCarrying.ofKernel, dispatchInvocationBy, resolveSchedContextBindThread,
+            hD, hC]
+        | some callerTcb =>
+          dsimp only
+          cases hN : st.getCNode? callerTcb.cspaceRoot with
+          | none =>
+            simp [RefusalCarrying.ofKernel, dispatchInvocationBy, resolveSchedContextBindThread,
+              hD, hC, hN]
+          | some rootCn =>
+            dsimp only
+            rw [resolveCapAddressKUnrolled_eq, resolveCapAddressK_eq]
+            cases hRes : resolveCapAddress callerTcb.cspaceRoot args.tcbCPtr rootCn.depth st with
+            | error e =>
+              simp [RefusalCarrying.ofKernel, dispatchInvocationBy, resolveSchedContextBindThread,
+                hD, hC, hN, syscallLookupCap, syscallResolveCap, hRes]
+            | ok ref =>
+              obtain ⟨cnode, slot⟩ := ref
+              dsimp only
+              cases hL : SystemState.lookupSlotCap st { cnode := cnode, slot := slot } with
+              | none =>
+                simp [RefusalCarrying.ofKernel, dispatchInvocationBy, resolveSchedContextBindThread,
+                  hD, hC, hN, syscallLookupCap, syscallResolveCap, hRes, hL]
+              | some tcbCap =>
+                dsimp only
+                by_cases hIdle : SeLe4n.Kernel.capTargetsReservedIdleObject tcbCap = true
+                · simp [RefusalCarrying.ofKernel, dispatchInvocationBy,
+                    resolveSchedContextBindThread, hD, hC, hN, syscallLookupCap,
+                    syscallResolveCap, hRes, hL, hIdle]
+                · by_cases hRight : tcbCap.hasRight .write = true
+                  · cases hTg : tcbCap.target with
+                    | object tcbObjId =>
+                      cases hT : st.getTcb? (SeLe4n.ThreadId.ofNat tcbObjId.toNat) with
+                      | none =>
+                        simp [RefusalCarrying.ofKernel, dispatchInvocationBy,
+                          resolveSchedContextBindThread, hD, hC, hN, syscallLookupCap,
+                          syscallResolveCap, hRes, hL, hIdle, hRight, hTg, hT]
+                      | some _ =>
+                        cases hV : validateThreadIdArg (SeLe4n.ThreadId.ofNat tcbObjId.toNat) with
+                        | error e =>
+                          simp [RefusalCarrying.ofKernel, dispatchInvocationBy,
+                            resolveSchedContextBindThread, hD, hC, hN, syscallLookupCap,
+                            syscallResolveCap, hRes, hL, hIdle, hRight, hTg, hT, hV]
+                        | ok vThreadId =>
+                          cases hS : validateObjIdArg objId with
+                          | error e =>
+                            simp [RefusalCarrying.ofKernel, dispatchInvocationBy,
+                              resolveSchedContextBindThread, hD, hC, hN, syscallLookupCap,
+                              syscallResolveCap, hRes, hL, hIdle, hRight, hTg, hT, hV, hS]
+                          | ok vScId =>
+                            simp only [hIdle, hRight, hTg, hT, hV, hS, Bool.false_eq_true,
+                              ↓reduceIte]
+                            apply RefusalCarrying.ofChecked_eq
+                            intro hA
+                            simp only [dispatchInvocationBy, resolveSchedContextBindThread, hD, hC,
+                              hN, syscallLookupCap, syscallResolveCap, hRes, hL, hIdle, hRight,
+                              hTg, hT, hV, hS, Bool.false_eq_true, ↓reduceIte,
+                              SchedContextOps.schedContextBind_of_admitted _ _ _ hA]
+                    | _ => simp [RefusalCarrying.ofKernel, dispatchInvocationBy,
+                      resolveSchedContextBindThread, hD, hC, hN, syscallLookupCap,
+                      syscallResolveCap, hRes, hL, hIdle, hRight, hTg]
+                  · simp [RefusalCarrying.ofKernel, dispatchInvocationBy,
+                      resolveSchedContextBindThread, hD, hC, hN, syscallLookupCap,
+                      syscallResolveCap, hRes, hL, hIdle, hRight]
+    all_goals rfl
+  case schedContextUnbind =>
+    cases target
+    case object objId =>
+      dsimp only
+      cases hS : validateObjIdArg objId with
+      | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hS]
+      | ok vScId =>
+        dsimp only
+        apply RefusalCarrying.ofChecked_eq
+        intro hA
+        obtain ⟨sgi, hU⟩ := SchedContextOps.schedContextUnbindOnCore_of_admitted st vScId
+          executingCore hA
+        simp only [dispatchInvocationBy, hS, hU]
     all_goals rfl
   case tcbBindNotification =>
     cases target
@@ -863,6 +1013,161 @@ theorem dispatchInvocationCheckedR_eq (ctx : LabelingContext)
           { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
             capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
           cap st hRouted hRegs]
+        rcases dispatchWithCapChecked ctx decoded tid executingCore _ cap st with
+          _ | ⟨⟨⟩, stPost⟩ <;> rfl
+      · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true]
+
+/-! ## The scheduling-context configure
+
+WS-ZA ZA5.2.  A configure carries five argument words, one more than the
+layout's message registers: the fifth (the domain) is overflow slot 0 of the
+caller's IPC buffer, read at the entry (`ipcBufferReadMrK`) and handed here as
+the word `w`.  Its taint step is the identity and its rights are checked in the
+classic order, as a routed invocation's are. -/
+
+/-- `dispatchWithCapChecked`'s configure arm, its arguments read from the
+register file `regs` through `layout` and then the overflow word `w`
+(`dispatchWithCapChecked_eq_configureBy`). -/
+@[inline] def dispatchConfigureBy (layout : SyscallRegisterLayout) (regs : RegisterFile)
+    (w : UInt64) (cap : Capability) (st : SystemState) :
+    Except KernelError (Unit × SystemState) :=
+  match cap.target with
+  | .object scId =>
+    match decodeSchedContextConfigureArgsCheckedBy (msgRegOfFileThen layout regs w) with
+    | .error e => .error e
+    | .ok args =>
+      match validateObjIdArg scId with
+      | .error e => .error e
+      | .ok vScId =>
+        SchedContextOps.schedContextConfigure vScId args.budget args.period
+          args.priority args.deadline args.domain st
+  | _ => .error .invalidCapability
+
+theorem dispatchWithCapChecked_eq_configureBy (ctx : LabelingContext)
+    (decoded : SyscallDecodeResult) (layout : SyscallRegisterLayout) (regs : RegisterFile)
+    (w : UInt64) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
+    (gate : SyscallGate) (cap : Capability) (st : SystemState)
+    (h : decoded.syscallId = .schedContextConfigure)
+    (hRegs : decoded.msgRegs = layout.msgRegs.map (readReg regs) ++ #[(⟨w.toNat⟩ : RegValue)]) :
+    dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
+      dispatchConfigureBy layout regs w cap st := by
+  have hDec := decodeSchedContextConfigureArgsChecked_eq_by layout regs w decoded hRegs
+  rcases decoded with ⟨capAddr, msgInfo, sid, msgRegs, capRecvSlot, inlineCount, overflowCount⟩
+  rcases cap with ⟨target, rights, badge, mapping⟩
+  simp only at h
+  subst h
+  cases target <;>
+    simp only [dispatchWithCapChecked, dispatchCapabilityOnly, dispatchConfigureBy, hDec]
+  all_goals rfl
+
+/-- `dispatchConfigureBy`, refusal-carrying: the checks read first
+(`schedContextConfigureAdmitted`) and the state handed to the in-slot write
+alone (`schedContextConfigurePerform`); a refusal is in the state handed in
+(`dispatchConfigureByR_eq`). -/
+@[inline] def dispatchConfigureByR (layout : SyscallRegisterLayout) (regs : RegisterFile)
+    (w : UInt64) (cap : Capability) : RefusalCarrying Unit :=
+  fun st =>
+  match cap.target with
+  | .object scId =>
+    match decodeSchedContextConfigureArgsCheckedBy (msgRegOfFileThen layout regs w) with
+    | .error e => .error (e, st)
+    | .ok args =>
+      match validateObjIdArg scId with
+      | .error e => .error (e, st)
+      | .ok vScId =>
+        RefusalCarrying.ofChecked
+          (SchedContextOps.schedContextConfigureAdmitted st vScId args.budget args.period
+            args.priority args.deadline args.domain)
+          (fun st => SchedContextOps.schedContextConfigurePerform st vScId args.budget
+            args.period args.priority args.deadline args.domain)
+          (SchedContextOps.schedContextConfigure vScId args.budget args.period
+            args.priority args.deadline args.domain) st
+  | _ => .error (.invalidCapability, st)
+
+theorem dispatchConfigureByR_eq (layout : SyscallRegisterLayout) (regs : RegisterFile)
+    (w : UInt64) (cap : Capability) (st : SystemState) :
+    dispatchConfigureByR layout regs w cap st =
+      RefusalCarrying.ofKernel (dispatchConfigureBy layout regs w cap) st := by
+  unfold dispatchConfigureByR dispatchConfigureBy
+  cases cap.target with
+  | object scId =>
+    dsimp only
+    cases decodeSchedContextConfigureArgsCheckedBy (msgRegOfFileThen layout regs w) with
+    | error e => rfl
+    | ok args =>
+      dsimp only
+      cases validateObjIdArg scId with
+      | error e => rfl
+      | ok vScId =>
+        dsimp only
+        apply RefusalCarrying.ofChecked_eq
+        intro hA
+        exact SchedContextOps.schedContextConfigure_of_admitted _ _ _ _ _ _ _ hA
+  | _ => rfl
+
+/-- A configure's taint step leaves the state as its arm left it. -/
+theorem applySyscallTaintAfter_configure (st : SystemState) (tid : SeLe4n.ThreadId)
+    (decoded : SyscallDecodeResult) (h : decoded.syscallId = .schedContextConfigure)
+    (preEpoch : Nat) (preLog : DeclassificationAuditLog) (preTaint : TaintTable)
+    (post : SystemState) :
+    applySyscallTaintAfter (syscallTaintPlan st tid decoded) preEpoch preLog preTaint post =
+      post := by
+  simp only [applySyscallTaintAfter, syscallTaintPlan, h, contentFlowClass,
+    syscallRecordsDeclassification, Bool.false_eq_true, ↓reduceIte, applyOrigination,
+    applyTaintFlow, applyTaintClears, List.foldl, List.filter]
+
+/-- The configure's arm behind the operand check: the rights gate
+`syscallLookupCap` applies, then `dispatchConfigureByR`. -/
+@[inline] def configureOperandArmR (regs : RegisterFile) (w : UInt64) :
+    TaintTable → Option Capability → RefusalCarrying Unit :=
+  fun _ operand st =>
+    match operand with
+    | none => .error (.invalidCapability, st)
+    | some cap =>
+        if SeLe4n.Kernel.capTargetsReservedIdleObject cap then .error (.invalidCapability, st)
+        else if cap.hasRight (syscallRequiredRight .schedContextConfigure) then
+          dispatchConfigureByR SeLe4n.arm64DefaultLayout regs w cap st
+        else .error (.illegalAuthority, st)
+
+/-- `dispatchSyscallChecked` for a configure whose fifth word is `w`
+(`dispatchConfigureCheckedR_eq`). -/
+@[inline] def dispatchConfigureCheckedR (capAddr : SeLe4n.CPtr) (regs : RegisterFile)
+    (w : UInt64) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) :
+    RefusalCarrying Unit :=
+  dispatchOperandCheckedR capAddr tid executingCore (configureOperandArmR regs w)
+
+theorem dispatchConfigureCheckedR_eq (ctx : LabelingContext)
+    (decoded : SyscallDecodeResult) (regs : RegisterFile) (w : UInt64)
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
+    (hSid : decoded.syscallId = .schedContextConfigure)
+    (hRegs : decoded.msgRegs =
+      SeLe4n.arm64DefaultLayout.msgRegs.map (readReg regs) ++ #[(⟨w.toNat⟩ : RegValue)]) :
+    dispatchConfigureCheckedR decoded.capAddr regs w tid executingCore =
+      RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) := by
+  have hFirst : syscallChecksTargetFirst decoded.syscallId = false := by
+    rw [hSid]; rfl
+  have hNotYield : decoded.syscallId ≠ .yield := by
+    rw [hSid]; exact fun h => SyscallId.noConfusion h
+  apply dispatchOperandCheckedR_eq ctx decoded tid executingCore _ hFirst hNotYield
+  intro st tcb rootCn ref _ _ hRef
+  simp only [dispatchCheckedArmThenTaint, RefusalCarrying.ofKernel, hFirst,
+    Bool.false_eq_true, ↓reduceIte, syscallInvoke, syscallLookupCap, syscallResolveCap, hRef,
+    applySyscallTaintAfter_configure st tid decoded hSid]
+  generalize SystemState.lookupSlotCap st ref = operand
+  rcases operand with _ | cap
+  · rfl
+  · simp only [configureOperandArmR, hSid]
+    by_cases hIdle : SeLe4n.Kernel.capTargetsReservedIdleObject cap = true
+    · simp only [hIdle, ↓reduceIte]
+    · by_cases hRight : cap.hasRight (syscallRequiredRight .schedContextConfigure) = true
+      · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true]
+        rw [dispatchConfigureByR_eq]
+        simp only [RefusalCarrying.ofKernel]
+        rw [← dispatchWithCapChecked_eq_configureBy ctx decoded SeLe4n.arm64DefaultLayout regs w
+          tid executingCore
+          { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
+            capDepth := rootCn.depth, requiredRight := syscallRequiredRight .schedContextConfigure }
+          cap st hSid hRegs]
         rcases dispatchWithCapChecked ctx decoded tid executingCore _ cap st with
           _ | ⟨⟨⟩, stPost⟩ <;> rfl
       · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true]

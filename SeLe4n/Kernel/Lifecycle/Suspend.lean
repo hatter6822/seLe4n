@@ -405,13 +405,17 @@ def resumeThreadOnCore (st : SystemState) (vtid : SeLe4n.ValidThreadId) (executi
   | none => .error .invalidArgument
 
 /-- WS-ZA ZA5.2: the checks `.tcbResume` makes, asked before any write: the
-target is a TCB in `.Inactive` carrying no pending fault (a faulted thread's
-resume first answers its fault, `retirePendingFaultForResume`, and takes the
-general path).  When they pass the operation's state is `resumePerform`
-(`resumeThreadOnCore_of_admitted`). -/
+target is a TCB in `.Inactive`.  A thread carrying a pending fault has it
+answered first (`retirePendingFaultForResume`, one TCB write), and the check
+also asks that the TCB's slot is found where it lies, so that write reads back
+(`RHTable.findsInPlace`; it holds of every slot under the store's invariant).
+When they pass the operation's state is `resumePerform` of the answered state
+(`resumeThreadOnCore_of_admitted`, `resumeAdmitted_retirePendingFault`). -/
 @[inline] def resumeAdmitted (st : SystemState) (tid : SeLe4n.ThreadId) : Bool :=
   match st.getTcb? tid with
-  | some tcb => tcb.pendingFault.isNone && !(tcb.threadState != .Inactive)
+  | some tcb =>
+    !(tcb.threadState != .Inactive) &&
+      (tcb.pendingFault.isNone || st.objects.findsInPlace tid.toObjId)
   | none => false
 
 /-- WS-ZA ZA5.2: the resume once admitted.  The home core and the thread's
@@ -441,7 +445,7 @@ theorem resumeThreadOnCore_of_admitted (st : SystemState) (vtid : SeLe4n.ValidTh
   | none => simp [hT] at h
   | some tcb =>
     simp only [hT, Bool.and_eq_true, Bool.not_eq_true'] at h
-    obtain ⟨_, hS⟩ := h
+    obtain ⟨hS, _⟩ := h
     unfold resumeThreadOnCore resumePerform
     simp only [hT, hS, Bool.false_eq_true, ↓reduceIte]
     have hM : markKeyChangeFrom st (resumeReadyMidState st vtid.val) vtid.val
@@ -885,18 +889,15 @@ def cancelBoundDonation (st : SystemState) (tid : SeLe4n.ThreadId)
       -- being owned" — and two spellings of one loan-ender are free to diverge.
       -- The suspend path reaches it for a `.bound` victim, so a context whose
       -- origin survived a suspend would carry it into whatever binds it next.
-      { sc with boundThread := none, isActive := false, donationOrigin := none }
+      { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }
     -- AE3-C/SC-07: Remove SchedContext from replenish queue (consistent with schedContextUnbind)
     let st2 := { st1 with scheduler := st1.scheduler.setReplenishQueueOnCore bootCoreId (ReplenishQueue.remove (st1.scheduler.replenishQueueOnCore bootCoreId) scId) }
-    -- S-05/PERF-O1: Remove thread from per-SchedContext thread index
-    let st2 := { st2 with scThreadIndex :=
-      (scThreadIndexRemove st2.scThreadIndex scId tid) }
     -- Clear TCB binding
     -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.  The binding
     -- write moves `tid`'s key, so it ends in the key hook (KSC-1), exactly as the
     -- per-core twin `cancelBoundDonationOnCore` does.
     .ok (markKeyChangeFrom st
-      (st2.updateTcb tid fun tcb' => { tcb' with schedContextBinding := .unbound }) tid)
+      (st2.updateTcb tid fun tcb' => { tcb' with scBindingScCode := 0, scBindingOwnerCode := 0 }) tid)
   | _ => .error .illegalState
 
 /-- D1-D / R5.A (DEEP-SUSP-02): Cancel a donated SchedContext binding.

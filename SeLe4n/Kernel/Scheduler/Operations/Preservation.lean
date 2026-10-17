@@ -3587,7 +3587,7 @@ theorem timerTickBudget_unbound_nopreempt_objects_key
   have hfst := congrArg Prod.fst hinj
   simp only [] at hfst
   subst hfst
-  exact ⟨{ tcb with timeSlice := tcb.timeSlice - 1, schedContextBinding := .unbound }, rfl⟩
+  exact ⟨_, rfl⟩
 
 /-- Z4-S1b: `timerTickBudget` unbound preempt inserts only a `.tcb` into the
 object store. All SchedContext objects are untouched. -/
@@ -3603,7 +3603,7 @@ theorem timerTickBudget_unbound_preempt_objects_key
   have hfst := congrArg Prod.fst hinj
   simp only [] at hfst
   subst hfst
-  exact ⟨{ tcb with timeSlice := st.scheduler.configDefaultTimeSlice, schedContextBinding := .unbound }, rfl⟩
+  exact ⟨_, rfl⟩
 
 -- Z4-S2 (substantive): consumeBudget preserves per-SchedContext well-formedness.
 

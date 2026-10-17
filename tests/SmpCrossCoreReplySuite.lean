@@ -635,7 +635,7 @@ private def runDonationChecks : IO Unit := do
       |>.withObject epId (.endpoint {})
       |>.withObject serverTid.toObjId
           (.tcb { mkTcb 601 50 none .ready with
-                    schedContextBinding := .donated scId clientLocalTid })
+                    scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated scId clientLocalTid), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated scId clientLocalTid) })
       |>.withObject clientLocalTid.toObjId
           (.tcb { mkTcb 602 30 none (.blockedOnReply epId (some serverTid)) with
                     replyObjectCode := SeLe4n.ReplyId.optCode (some replyId707) })
@@ -644,7 +644,7 @@ private def runDonationChecks : IO Unit := do
                     next := some (.head scId) })
       |>.withObject scId.toObjId
           (.schedContext { SchedContext.empty scId with
-                            boundThread := some serverTid,
+                            boundThreadCode := SeLe4n.ThreadId.optCode (some serverTid),
                             scReply := some replyId707 })
       |>.withObject wrongTid.toObjId (.tcb (mkTcb 604 40 none .ready))
       |>.withRunnable [serverTid]
@@ -696,7 +696,7 @@ private def runDonationChecks : IO Unit := do
       |>.withObject epId (.endpoint {})
       |>.withObject serverTid.toObjId
           (.tcb { mkTcb 601 50 none .ready with
-                    schedContextBinding := .donated scId clientLocalTid })
+                    scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated scId clientLocalTid), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated scId clientLocalTid) })
       |>.withObject orphanHolderTid.toObjId (.tcb (mkTcb 605 45 none .ready))
       |>.withObject clientLocalTid.toObjId
           (.tcb { mkTcb 602 30 none (.blockedOnReply epId (some serverTid)) with
@@ -706,7 +706,7 @@ private def runDonationChecks : IO Unit := do
                     next := some (.head scId) })
       |>.withObject scId.toObjId
           (.schedContext { SchedContext.empty scId with
-                            boundThread := some orphanHolderTid,
+                            boundThreadCode := SeLe4n.ThreadId.optCode (some orphanHolderTid),
                             scReply := some replyId709 })
       |>.withRunnable [serverTid]
       |>.build)
@@ -763,7 +763,7 @@ private def runDonationChecks : IO Unit := do
         |>.withObject epId (.endpoint {})
         |>.withObject serverTid.toObjId
             (.tcb { mkTcb 601 50 none .ready with
-                      schedContextBinding := .donated scId clientLocalTid })
+                      scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated scId clientLocalTid), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated scId clientLocalTid) })
         |>.withObject clientLocalTid.toObjId
             (.tcb { mkTcb 602 30 none (.blockedOnReply epId (some serverTid)) with
                       replyObjectCode := SeLe4n.ReplyId.optCode (some replyId707) })
@@ -772,7 +772,7 @@ private def runDonationChecks : IO Unit := do
                       next := some (.head scId) })
         |>.withObject scId.toObjId
             (.schedContext { SchedContext.empty scId with
-                              boundThread := some serverTid,
+                              boundThreadCode := SeLe4n.ThreadId.optCode (some serverTid),
                               scReply := some replyId707 })
         |>.withRunnable []
         |>.build)

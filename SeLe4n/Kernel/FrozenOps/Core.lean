@@ -1118,11 +1118,9 @@ handed one, and -- since WS-HP HP4.7 made this surface's pop head-driven -- so
 must the recipient.  The order is the live order, and all three precede every
 write.
 
-**`scThreadIndex` is deliberately not maintained**, and that is this surface's
-existing answer rather than an omission here: no frozen operation writes it --
-`frozenSchedContextBind` and `frozenSchedContextUnbind` rebind without touching
-it -- and `frozenStateAgrees` does not compare it.  Becoming its only writer
-would be a second answer to a question the surface has already settled. -/
+The context's own `boundThread` is the only record of which thread runs on it
+(seL4's `sc->scTcb`); WS-ZA ZA5.2 retired the separate context-to-threads index
+the live state used to keep beside it. -/
 def frozenReturnDonatedSchedContext (st : FrozenSystemState)
     (serverTid : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId)
     (originalOwner : SeLe4n.ThreadId) (newOwner? : Option SeLe4n.ThreadId) :
@@ -1176,15 +1174,16 @@ def frozenReturnDonatedSchedContext (st : FrozenSystemState)
             | some ownerTcb =>
               match frozenWithObjectStored st2 originalOwner.toObjId
                       (.tcb { ownerTcb with
-                        schedContextBinding :=
-                          SeLe4n.Kernel.donationReturnBinding scId newOwner? }) with
+                        scBindingScCode :=
+                          SeLe4n.Kernel.SchedContextBinding.scCode (SeLe4n.Kernel.donationReturnBinding scId newOwner?),
+                        scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (SeLe4n.Kernel.donationReturnBinding scId newOwner?) }) with
               | .error e => .error e
               | .ok st3 =>
                 match frozenLookupTcb st3 serverTid with
                 | none => .error .objectNotFound
                 | some serverTcb =>
                   frozenWithObjectStored st3 serverTid.toObjId
-                    (.tcb { serverTcb with schedContextBinding := .unbound })
+                    (.tcb { serverTcb with scBindingScCode := 0, scBindingOwnerCode := 0 })
 
 /-- **WS-HP HP10.7/HP10.8, frozen mirror (`v0.35.157`)**: the origin may be rebound
 without invalidating a live donation -- the bind's own admissibility, asked of the

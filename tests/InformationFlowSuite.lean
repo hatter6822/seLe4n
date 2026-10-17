@@ -152,10 +152,9 @@ def test_applyConfigureParamsFull_post_state_shape : IO Bool := do
       deadline := { val := 0 }
       domain := ⟨0⟩
       budgetRemaining := { val := 50 }
-      boundThread := none
+      boundThreadCode := 0
       isActive := false
-      replenishments := [{ amount := { val := 50 },
-                           eligibleAt := 0 }] }
+      refillHeadPresent := true, refillHeadAmount := 50, refillHeadEligibleAt := 0 }
   let post := SeLe4n.Kernel.SchedContextOps.applyConfigureParamsFull
                 scInit (budget := 100) (period := 1000)
                 (priority := 5) (deadline := 0) (domain := 0) (timer := 7)
@@ -189,9 +188,9 @@ def test_schedContext_configure_replenishment_eligibility : IO Bool := do
       deadline := { val := 0 }
       domain := ⟨0⟩
       budgetRemaining := { val := 50 }
-      boundThread := none
+      boundThreadCode := 0
       isActive := false
-      replenishments := [] }
+      refillTail := [] }
   let post := SeLe4n.Kernel.SchedContextOps.applyConfigureParamsFull
                 scInit (budget := 100) (period := 1000)
                 (priority := 0) (deadline := 0) (domain := 0) (timer := 100)
@@ -214,9 +213,9 @@ def test_schedContext_yield_self_returns_state_unchanged : IO Bool := do
       deadline := { val := 0 }
       domain := ⟨0⟩
       budgetRemaining := { val := 60 }
-      boundThread := none
+      boundThreadCode := 0
       isActive := true
-      replenishments := [] }
+      refillTail := [] }
   let st : SystemState := { (default : SystemState) with
     objects := (default : SystemState).objects.insert scId.toObjId
       (.schedContext sc) }
@@ -1383,16 +1382,17 @@ def runInformationFlowChecks : IO Unit := do
   -- elaboration-time fact this runtime count merely mirrors).
   -- WS-BP BP7.2 (v0.36.15): 28, with the physical-write ledger.
   -- WS-LS (v0.36.70): 26, the two kernel-state lock fields deleted.
-  expect "StateField enum has 26 variants, one per SystemState field"
+  -- WS-ZA ZA5.2: 25, the per-context thread index retired.
+  expect "StateField enum has 25 variants, one per SystemState field"
     ([ SeLe4n.Kernel.StateField.machine, .objects, .objectIndex, .objectIndexSet,
        .services, .scheduler, .irqHandlers, .lifecycle,
        .asidTable, .interfaceRegistry, .serviceRegistry,
        .cdt, .cdtSlotNode, .cdtNodeSlot, .cdtNextNode,
-       .scThreadIndex, .tlb,
+       .tlb,
        .tlbShootdown,
        .perCoreTlb, .perCoreICache, .pendingIcacheMaintenance, .pendingPhysicalWrites,
        .declassificationAuditLog, .declassificationAuditEpoch,
-       .declassificationRefusals, .declassificationTaint ].length = 26)
+       .declassificationRefusals, .declassificationTaint ].length = 25)
   expect "StateField is total over SystemState (eq_of_fieldEq_all elaborates)"
     (have _ := @SeLe4n.Kernel.SystemState.eq_of_fieldEq_all; true)
   -- AM4 audit remediation: field-set catalog extended from 10 to 11

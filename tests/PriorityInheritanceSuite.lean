@@ -205,7 +205,7 @@ private def pip014_effectiveSchedParamsSchedContextBound : IO Unit := do
   }
   let scId : SeLe4n.SchedContextId := SeLe4n.SchedContextId.ofNat 10
   let tcb : TCB := { mkTcb 1 (prio := 20) (pipBoost := some ⟨90⟩)
-    with schedContextBinding := .bound scId }
+    with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scId), scBindingOwnerCode := 0 }
   let st := mkState [
     (⟨1⟩, .tcb tcb),
     (⟨10⟩, .schedContext sc)

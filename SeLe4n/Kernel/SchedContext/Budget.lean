@@ -94,7 +94,7 @@ def scheduleReplenishment (sc : SchedContext) (currentTime : Nat)
     (consumed : Budget) : SchedContext :=
   let entry := mkReplenishmentEntry consumed currentTime sc.period
   let newList := sc.replenishments ++ [entry]
-  { sc with replenishments := truncateReplenishments newList }
+  sc.withReplenishments (truncateReplenishments newList)
 
 -- ============================================================================
 -- Z2-D1: partitionEligible helper
@@ -156,7 +156,7 @@ def processReplenishments (sc : SchedContext) (currentTime : Nat) : SchedContext
   let (eligible, remaining) := partitionEligible sc.replenishments currentTime
   let refillAmount := sumReplenishments eligible
   let refilled := applyRefill sc refillAmount
-  { refilled with replenishments := remaining }
+  refilled.withReplenishments remaining
 
 -- ============================================================================
 -- Z2-E: cbsUpdateDeadline operation

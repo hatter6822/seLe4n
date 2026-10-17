@@ -292,8 +292,7 @@ def createBootObject (ist : IntermediateState) (entry : ObjectEntry) : Intermedi
               h.2.2.2.1, h.2.2.2.2.1, h.2.2.2.2.2.1,
               h.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.1,
               h.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.1,
-              h.2.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.2.1,
-              h.2.2.2.2.2.2.2.2.2.2.2.2⟩
+              h.2.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.2⟩
     hPerObjectSlots := fun oid cn hLookup => created.hPerObjectSlots oid cn hLookup
     hPerObjectMappings := fun oid vs hLookup => created.hPerObjectMappings oid vs hLookup
     hLifecycleConsistent := created.hLifecycleConsistent }
@@ -881,7 +880,7 @@ def tcbReferencesReservedIdleSlot (tcb : TCB) : Bool :=
   match tcb with
   | ⟨tid, _priority, _domain, cspaceRoot, vspaceRoot, _ipcBuffer, _ipcObjectCode, _threadState,
      _timeSlice, _deadline, queuePrevCode, queuePPrevCode, queueNextCode, pendingMessage, _registerContext,
-     _faultHandlerSet, _faultHandlerWord, boundNotificationCode, schedContextBinding, timeoutBudget,
+     _faultHandlerSet, _faultHandlerWord, boundNotificationCode, scBindingScCode, scBindingOwnerCode, timeoutBudget,
      _maxControlledPriority, _pipBoost, _timedOut, _cpuAffinity, replyObjectCode,
      pendingReceiveReplyCode, _pendingFault, _fpContext, ntfnPrevCode, ntfnNextCode,
      _runCoreCode, _runPrio, _runPrevCode, _runNextCode, _runBucketPrevCode, _runBucketNextCode,
@@ -898,7 +897,7 @@ def tcbReferencesReservedIdleSlot (tcb : TCB) : Bool :=
     pendingMessage.any (fun msg =>
       msg.caps.any (fun tc => SeLe4n.Kernel.capTargetsReservedIdleObject tc.cap)) ||
     timeoutBudget.any (fun sc => SeLe4n.Kernel.isIdleObjId sc.toObjId) ||
-    (match schedContextBinding with
+    (match SeLe4n.Kernel.SchedContextBinding.ofCodes scBindingScCode scBindingOwnerCode with
      | .unbound => false
      | .bound scId => SeLe4n.Kernel.isIdleObjId scId.toObjId
      | .donated scId owner =>
@@ -989,9 +988,10 @@ def untypedReferencesReservedIdleSlot (ut : UntypedObject) : Bool :=
 def schedContextReferencesReservedIdleSlot (sc : SchedContext) : Bool :=
   match sc with
   | ⟨scId, _budget, _period, _priority, _deadline, _domain, _budgetRemaining, _periodStart,
-     _replenishments, boundThread, scReply, donationOrigin, _isActive⟩ =>
+     _refillHeadPresent, _refillHeadAmount, _refillHeadEligibleAt, _refillTail,
+     boundThreadCode, scReply, donationOrigin, _isActive⟩ =>
     SeLe4n.Kernel.isIdleObjId scId.toObjId ||
-    boundThread.any SeLe4n.Kernel.isIdleThreadId ||
+    (SeLe4n.ThreadId.ofOptCode boundThreadCode).any SeLe4n.Kernel.isIdleThreadId ||
     scReply.any (fun rid => SeLe4n.Kernel.isIdleObjId rid.toObjId) ||
     -- **WS-HP HP10.3**: and the recorded reservation origin, which is a
     -- `ThreadId` and so can name a reserved idle thread exactly as `boundThread`
@@ -1820,7 +1820,7 @@ def bootSafeTcbCheck (tcb : TCB) : Bool :=
   match tcb with
   | ⟨_tid, _priority, _domain, _cspaceRoot, _vspaceRoot, _ipcBuffer, _ipcObjectCode, _threadState,
      _timeSlice, _deadline, _queuePrev, _queuePPrev, _queueNext, _pendingMessage,
-     _registerContext, _faultHandlerSet, _faultHandlerWord, _boundNotification, _schedContextBinding, _timeoutBudget,
+     _registerContext, _faultHandlerSet, _faultHandlerWord, _boundNotification, _scBindingScCode, _scBindingOwnerCode, _timeoutBudget,
      _maxControlledPriority, _pipBoost, _timedOut, _cpuAffinity, _replyObject,
      _pendingReceiveReply, _pendingFault, _fpContext, _ntfnPrevCode, _ntfnNextCode,
      _runCoreCode, _runPrio, _runPrevCode, _runNextCode, _runBucketPrevCode, _runBucketNextCode,
@@ -1889,7 +1889,8 @@ def bootSafeUntypedCheck (ut : UntypedObject) : Bool :=
 def bootSafeSchedContextCheck (sc : SchedContext) : Bool :=
   match sc with
   | ⟨_scId, _budget, _period, _priority, _deadline, _domain, _budgetRemaining, _periodStart,
-     _replenishments, _boundThread, _scReply, _donationOrigin, _isActive⟩ =>
+     _refillHeadPresent, _refillHeadAmount, _refillHeadEligibleAt, _refillTail,
+     _boundThread, _scReply, _donationOrigin, _isActive⟩ =>
     sc.period.isPositive &&
     decide (sc.budget.val ≤ sc.period.val) &&
     decide (sc.budgetRemaining.val ≤ sc.budget.val) &&
@@ -4026,7 +4027,7 @@ def tcbAffinityDeclared (cores : List SeLe4n.Kernel.Concurrency.CoreId) (tcb : T
   match tcb with
   | ⟨_tid, _priority, _domain, _cspaceRoot, _vspaceRoot, _ipcBuffer, _ipcObjectCode, _threadState,
      _timeSlice, _deadline, _queuePrev, _queuePPrev, _queueNext, _pendingMessage,
-     _registerContext, _faultHandlerSet, _faultHandlerWord, _boundNotification, _schedContextBinding, _timeoutBudget,
+     _registerContext, _faultHandlerSet, _faultHandlerWord, _boundNotification, _scBindingScCode, _scBindingOwnerCode, _timeoutBudget,
      _maxControlledPriority, _pipBoost, _timedOut, _cpuAffinity, _replyObject,
      _pendingReceiveReply, _pendingFault, _fpContext, _ntfnPrevCode, _ntfnNextCode,
      _runCoreCode, _runPrio, _runPrevCode, _runNextCode, _runBucketPrevCode, _runBucketNextCode,

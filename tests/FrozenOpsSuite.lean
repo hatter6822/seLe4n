@@ -149,8 +149,8 @@ private def fo004c_replyToStackHeadPopsDonation : IO Unit := do
     replyObjectCode := SeLe4n.ReplyId.optCode (some rid) } (.blockedOnReply ⟨10⟩ (some ⟨3⟩)))
   -- The passive server holds the caller's context by donation, and the context
   -- heads the reply stack at `rid` — the live depth-1 `Call` shape.
-  let serverTcb : TCB := { mkTcb 3 with schedContextBinding := .donated scId ⟨2⟩ }
-  let sc : SeLe4n.Kernel.SchedContext := { scId := scId, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨0⟩, deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩, boundThread := some ⟨3⟩, scReply := some rid }
+  let serverTcb : TCB := { mkTcb 3 with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated scId ⟨2⟩), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated scId ⟨2⟩) }
+  let sc : SeLe4n.Kernel.SchedContext := { scId := scId, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨0⟩, deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩, boundThreadCode := SeLe4n.ThreadId.optCode (some ⟨3⟩), scReply := some rid }
   let replyObj : SeLe4n.Kernel.Reply :=
     { replyId := rid, callerCode := SeLe4n.ThreadId.optCode (some ⟨2⟩), prev := none, next := some (.head scId) }
   let fst := mkFrozenState
@@ -199,8 +199,8 @@ private def fo004e_replyDeschedulesTheServer : IO Unit := do
   let scId : SeLe4n.SchedContextId := ⟨77⟩
   let callerTcb : TCB := (TCB.setIpcState { mkTcb 2 with
     replyObjectCode := SeLe4n.ReplyId.optCode (some rid) } (.blockedOnReply ⟨10⟩ (some ⟨3⟩)))
-  let serverTcb : TCB := { mkTcb 3 with schedContextBinding := .donated scId ⟨2⟩ }
-  let sc : SeLe4n.Kernel.SchedContext := { scId := scId, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨0⟩, deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩, boundThread := some ⟨3⟩, scReply := some rid }
+  let serverTcb : TCB := { mkTcb 3 with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated scId ⟨2⟩), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated scId ⟨2⟩) }
+  let sc : SeLe4n.Kernel.SchedContext := { scId := scId, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨0⟩, deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩, boundThreadCode := SeLe4n.ThreadId.optCode (some ⟨3⟩), scReply := some rid }
   let replyObj : SeLe4n.Kernel.Reply :=
     { replyId := rid, callerCode := SeLe4n.ThreadId.optCode (some ⟨2⟩), prev := none, next := some (.head scId) }
   let st0 := mkFrozenState
@@ -1114,7 +1114,7 @@ private def diffScId : SeLe4n.SchedContextId := SeLe4n.SchedContextId.ofNat 66
 private def diffDonatedSc (head? : Option SeLe4n.ReplyId) : SeLe4n.Kernel.SchedContext :=
   { scId := diffScId, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨40⟩,
     deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩,
-    boundThread := some diffB, scReply := head?, isActive := true }
+    boundThreadCode := SeLe4n.ThreadId.optCode (some diffB), scReply := head?, isActive := true }
 
 /-- **WS-HP HP4.7**: a reservation the *answered caller* holds in its own right.
 
@@ -1126,7 +1126,7 @@ private def diffOwnScId : SeLe4n.SchedContextId := SeLe4n.SchedContextId.ofNat 6
 private def diffCallerOwnSc : SeLe4n.Kernel.SchedContext :=
   { scId := diffOwnScId, budget := ⟨80⟩, period := ⟨800⟩, priority := ⟨30⟩,
     deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨40⟩,
-    boundThread := some diffA, isActive := true }
+    boundThreadCode := SeLe4n.ThreadId.optCode (some diffA), isActive := true }
 
 /-! ### Comparing like layers
 
@@ -1561,11 +1561,11 @@ private def differentialEndpointReplyDonationAgrees : IO Unit := do
   -- because it donated its context away at the `Call`.
   let caller : TCB := (TCB.setIpcState { diffTcb 62 with
     replyObjectCode := SeLe4n.ReplyId.optCode (some rid),
-    schedContextBinding := SeLe4n.Kernel.SchedContextBinding.unbound } (.blockedOnReply diffEpId (some diffB)))
+    scBindingScCode := 0, scBindingOwnerCode := 0 } (.blockedOnReply diffEpId (some diffB)))
   -- The recorded server: holds the donation, runnable, and carrying the boost the
   -- reversion must clear, so the two live steps are both observable.
   let server : TCB := { diffTcb 63 with
-    pipBoostCode := SeLe4n.Priority.optCode (some ⟨200⟩), schedContextBinding := .donated diffScId diffA }
+    pipBoostCode := SeLe4n.Priority.optCode (some ⟨200⟩), scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated diffScId diffA), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated diffScId diffA) }
   -- ### Half one: the frame HEADS the context, so both sides pop.
   let heading := diffAddSchedContext (diffAddReply (diffAddTcb (diffAddTcb
     (diffAddEndpoint mkEmptyIntermediateState diffEpId {}) caller) server)
@@ -1635,7 +1635,7 @@ private def differentialEndpointReplyDonationAgrees : IO Unit := do
   -- already seen hold nothing, so this half could not have existed before HP4.
   let ownCaller : TCB := (TCB.setIpcState { diffTcb 62 with
     replyObjectCode := SeLe4n.ReplyId.optCode (some rid),
-    schedContextBinding := .bound diffOwnScId } (.blockedOnReply diffEpId (some diffB)))
+    scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound diffOwnScId), scBindingOwnerCode := 0 } (.blockedOnReply diffEpId (some diffB)))
   let bound := diffAddSchedContext (diffAddSchedContext (diffAddReply (diffAddTcb (diffAddTcb
     (diffAddEndpoint mkEmptyIntermediateState diffEpId {}) ownCaller) server)
     rid { replyId := rid, callerCode := SeLe4n.ThreadId.optCode (some diffA), next := some (.head diffScId) })
@@ -1662,7 +1662,7 @@ private def differentialEndpointReplyDonationAgrees : IO Unit := do
   -- the same condition in this surface's own vocabulary (`frozenLookupTcb` is
   -- defined by it, and `isReserved` is exactly `= sentinel`).
   let sentinelSc : SeLe4n.Kernel.SchedContext :=
-    { diffDonatedSc (some rid) with boundThread := some ⟨0⟩ }
+    { diffDonatedSc (some rid) with boundThreadCode := SeLe4n.ThreadId.optCode (some ⟨0⟩) }
   let sentinelHeld := diffAddSchedContext (diffAddReply (diffAddTcb (diffAddTcb
     (diffAddEndpoint mkEmptyIntermediateState diffEpId {}) caller) server)
     rid { replyId := rid, callerCode := SeLe4n.ThreadId.optCode (some diffA), next := some (.head diffScId) })
@@ -1731,10 +1731,10 @@ private def differentialEndpointReplyMiddleFrameSplices : IO Unit := do
   -- The answered caller holds the MIDDLE frame.
   let caller : TCB := (TCB.setIpcState { diffTcb 62 with
     replyObjectCode := SeLe4n.ReplyId.optCode (some midRid),
-    schedContextBinding := SeLe4n.Kernel.SchedContextBinding.unbound } (.blockedOnReply diffEpId (some diffB)))
+    scBindingScCode := 0, scBindingOwnerCode := 0 } (.blockedOnReply diffEpId (some diffB)))
   -- The recorded server, holding the donation the TOP frame heads.
   let server : TCB := { diffTcb 63 with
-    schedContextBinding := .donated diffScId diffA }
+    scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated diffScId diffA), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated diffScId diffA) }
   let chain := diffAddSchedContext (diffAddReply (diffAddReply (diffAddReply
     (diffAddTcb (diffAddTcb (diffAddEndpoint mkEmptyIntermediateState diffEpId {})
       caller) server)
@@ -1881,15 +1881,15 @@ private def differentialEndpointReplyRedirectsToOrigin : IO Unit := do
   -- The answered caller: reply-blocked on the recorded server, holding nothing.
   let caller : TCB := (TCB.setIpcState { diffTcb 62 with
     replyObjectCode := SeLe4n.ReplyId.optCode (some rid),
-    schedContextBinding := SeLe4n.Kernel.SchedContextBinding.unbound } (.blockedOnReply diffEpId (some diffB)))
+    scBindingScCode := 0, scBindingOwnerCode := 0 } (.blockedOnReply diffEpId (some diffB)))
   -- The recorded server, holding the donation.
   let server : TCB := { diffTcb 63 with
-    schedContextBinding := .donated diffScId diffA }
+    scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated diffScId diffA), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated diffScId diffA) }
   -- **The origin**: a thread whose own frame left the stack, so it is awake, holds
   -- nothing, and is on no stack.  Both guards admit it — which is the state the
   -- depth-2 defect leaves behind.
   let origin : TCB := { diffTcb 65 with
-    schedContextBinding := SeLe4n.Kernel.SchedContextBinding.unbound }
+    scBindingScCode := 0, scBindingOwnerCode := 0 }
   -- ### Half one: the origin DIFFERS from the answered caller.
   let redirected := diffAddSchedContext (diffAddReply (diffAddTcb (diffAddTcb (diffAddTcb
     (diffAddEndpoint mkEmptyIntermediateState diffEpId {}) caller) server) origin)
@@ -2512,7 +2512,7 @@ private def differentialSchedContextBindClearsOrigin : IO Unit := do
   let scWithOrigin : SeLe4n.Kernel.SchedContext :=
     { scId := diffScId, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨40⟩,
       deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩,
-      boundThread := none, scReply := none, donationOrigin := some diffB,
+      boundThreadCode := 0, scReply := none, donationOrigin := some diffB,
       isActive := false }
   let ist := diffAddSchedContext
     (diffAddTcb (diffAddTcb mkEmptyIntermediateState (diffTcb 62)) (diffTcb 63))
@@ -2591,11 +2591,11 @@ private def differentialSchedContextUnbindClearsOrigin : IO Unit := do
   let boundTcb : TCB :=
     { diffTcb 62 with
       priority := ⟨40⟩,
-      schedContextBinding := SeLe4n.Kernel.SchedContextBinding.bound diffScId }
+      scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (SeLe4n.Kernel.SchedContextBinding.bound diffScId), scBindingOwnerCode := 0 }
   let scBoundWithOrigin : SeLe4n.Kernel.SchedContext :=
     { scId := diffScId, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨40⟩,
       deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩,
-      boundThread := some diffA, scReply := none, donationOrigin := some diffB,
+      boundThreadCode := SeLe4n.ThreadId.optCode (some diffA), scReply := none, donationOrigin := some diffB,
       isActive := true }
   let ist := diffAddSchedContext
     (diffAddTcb (diffAddTcb mkEmptyIntermediateState boundTcb) (diffTcb 63))
@@ -2645,7 +2645,7 @@ private def differentialSchedContextBindPlacesParked : IO Unit := do
   let scFree : SeLe4n.Kernel.SchedContext :=
     { scId := diffScId, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨40⟩,
       deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩,
-      boundThread := none, scReply := none, isActive := false }
+      boundThreadCode := 0, scReply := none, isActive := false }
   let istParked := diffAddSchedContext
     (Builder.createObject (diffAddTcb mkEmptyIntermediateState (diffTcb 63))
       parkedTcb.tid.toObjId (.tcb parkedTcb) (fun _ h => nomatch h) (fun _ h => nomatch h))
@@ -2692,7 +2692,7 @@ private def differentialSchedContextBindPlacesParked : IO Unit := do
     expect "FO-050 NEGATIVE: the RETIRED frozen writer leaves it in none"
       (match SeLe4n.Kernel.FrozenOps.frozenWriteTcbRebucketed fz diffA
           { (fz.getTcb? diffA).getD (diffTcb 62) with
-            schedContextBinding := SeLe4n.Kernel.SchedContextBinding.bound diffScId } with
+            scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (SeLe4n.Kernel.SchedContextBinding.bound diffScId), scBindingOwnerCode := 0 } with
        | .ok fzRetired => !SeLe4n.Kernel.FrozenOps.frozenQueuedAnywhere fzRetired diffA
        | .error _ => false)
     -- CONTROL: on a thread that was already in a bucket both writers re-bucket,
@@ -2704,7 +2704,7 @@ private def differentialSchedContextBindPlacesParked : IO Unit := do
     expect "FO-050 CONTROL: on an already-queued thread both writers keep it queued"
       (match SeLe4n.Kernel.FrozenOps.frozenWriteTcbRebucketed fzQueued diffA
           { (fzQueued.getTcb? diffA).getD (diffTcb 62) with
-            schedContextBinding := SeLe4n.Kernel.SchedContextBinding.bound diffScId } with
+            scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (SeLe4n.Kernel.SchedContextBinding.bound diffScId), scBindingOwnerCode := 0 } with
        | .ok fzR => SeLe4n.Kernel.FrozenOps.frozenQueuedAnywhere fzR diffA
        | .error _ => false)
   -- (3) PR #900 review (`v0.36.1`): the SAME parked thread on an EXHAUSTED
@@ -2766,7 +2766,7 @@ private def differentialSchedContextBindRefusalsAgree : IO Unit := do
   let scHeading : SeLe4n.Kernel.SchedContext :=
     { scId := diffScId, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨40⟩,
       deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩,
-      boundThread := none, scReply := some headRid, isActive := false }
+      boundThreadCode := 0, scReply := some headRid, isActive := false }
   let istHeading := diffAddSchedContext (diffAddReply
     (diffAddTcb (diffAddTcb mkEmptyIntermediateState (diffTcb 62)) (diffTcb 63))
     headRid headReply) diffScId scHeading
@@ -2780,7 +2780,7 @@ private def differentialSchedContextBindRefusalsAgree : IO Unit := do
   let scDomainZero : SeLe4n.Kernel.SchedContext :=
     { scId := diffScId, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨40⟩,
       deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩,
-      boundThread := none, scReply := none, isActive := false }
+      boundThreadCode := 0, scReply := none, isActive := false }
   let istDomain := diffAddSchedContext
     (diffAddTcb (diffAddTcb mkEmptyIntermediateState otherDomainTcb) (diffTcb 63))
     diffScId scDomainZero
@@ -2895,13 +2895,13 @@ scenario could have reached this operation at all; that is the measurement
 private def differentialSchedContextConfigureDomainOnlyKeepsOrder : IO Unit := do
   let cfgScId : SeLe4n.SchedContextId := diffScId
   let boundTcb : TCB :=
-    { diffTcb 62 with schedContextBinding := SeLe4n.Kernel.SchedContextBinding.bound cfgScId }
+    { diffTcb 62 with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (SeLe4n.Kernel.SchedContextBinding.bound cfgScId), scBindingOwnerCode := 0 }
   let peerTcb : TCB := diffTcb 63
   let cfgSc : SeLe4n.Kernel.SchedContext :=
     { scId := cfgScId, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨0⟩,
       deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨100⟩,
-      replenishments := [{ amount := ⟨100⟩, eligibleAt := 1000 }],
-      boundThread := some diffA }
+      refillHeadPresent := true, refillHeadAmount := 100, refillHeadEligibleAt := 1000,
+      boundThreadCode := SeLe4n.ThreadId.optCode (some diffA) }
   let ist := diffAddTcb (diffAddTcb
     (diffAddSchedContext mkEmptyIntermediateState cfgScId cfgSc) boundTcb) peerTcb
   let liveAt (prio dom at_ : Nat) : Option (List SeLe4n.ThreadId) :=

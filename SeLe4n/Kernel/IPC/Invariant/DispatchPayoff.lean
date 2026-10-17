@@ -1679,14 +1679,14 @@ private def witnessTcbFresh : TCB :=
     vspaceRoot := ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0 }
 
 private def witnessTcbBound : TCB :=
-  { witnessTcbFresh with schedContextBinding := .bound witnessScId }
+  { witnessTcbFresh with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound witnessScId), scBindingOwnerCode := 0 }
 
 private def witnessScFresh : SeLe4n.Kernel.SchedContext :=
   { scId := witnessScId, budget := ⟨1⟩, period := ⟨1⟩, priority := ⟨0⟩,
     deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨1⟩ }
 
 private def witnessScBound : SeLe4n.Kernel.SchedContext :=
-  { witnessScFresh with boundThread := some witnessTid }
+  { witnessScFresh with boundThreadCode := SeLe4n.ThreadId.optCode (some witnessTid) }
 
 -- The two retype writes are the pure store (`withObjectStored`, `v0.35.73`):
 -- each key held nothing before, which is exactly the case the store exists

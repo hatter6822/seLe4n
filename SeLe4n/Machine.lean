@@ -1030,6 +1030,21 @@ structure MachineState where
       (`Architecture.residentElsewhere`). -/
   residentCode : _root_.Vector Nat numCores :=
     _root_.Vector.replicate numCores 0
+  /-- **WS-ZA ZA5.2: the IPC-buffer words this entry read from RAM**, as
+      `entryWordCount` sixteen-byte pairs — each a physical address then the
+      word there, little-endian (`IpcBufferRead.pairAddr`, `pairWord`) — which
+      the syscall decode reads for an overflow message register ahead of
+      `memory` (`IpcBufferRead.userWordAt`).  The entry hands the step its
+      core's buffer (`IpcBufferRead.syncUserWords`) and the committed state
+      drops it (`IpcBufferRead.clearUserWords`), so no state outlives its
+      entry holding words and nothing accumulates.  Writing the words into
+      `memory` instead, as the entry did until this field, wrapped the memory
+      function in one closure per word on every syscall that carried overflow
+      registers: kernel heap growth without bound, reachable by any thread
+      with a mapped IPC buffer. -/
+  entryWordBytes : ByteArray := ByteArray.empty
+  /-- **WS-ZA ZA5.2**: how many pairs of `entryWordBytes` this entry read. -/
+  entryWordCount : Nat := 0
 
 instance : Inhabited MachineState where
   default := { coreRegs := _root_.Vector.replicate numCores default, memory := (fun _ => 0), timer := 0 }
@@ -1431,6 +1446,28 @@ def writeMem (ms : MachineState) (addr : PAddr) (value : UInt8) : MachineState :
 @[inline] def MachineState.addrInRange (ms : MachineState) (addr : PAddr) : Bool :=
   addr.toNat < 2 ^ ms.physicalAddressWidth &&
   ms.memoryMap.any (fun r => r.kind == .ram && r.contains addr)
+
+/-- WS-ZA ZA5.2: whether a RAM region of `rs` holds `addr`, walked by
+recursion — `List.any` over the capturing predicate builds a closure on every
+call. -/
+def ramRegionsContain : List MemoryRegion → PAddr → Bool
+  | [], _ => false
+  | r :: rs, addr => (r.kind == .ram && r.contains addr) || ramRegionsContain rs addr
+
+theorem ramRegionsContain_eq (rs : List MemoryRegion) (addr : PAddr) :
+    ramRegionsContain rs addr = rs.any (fun r => r.kind == .ram && r.contains addr) := by
+  induction rs with
+  | nil => rfl
+  | cons r rs ih => simp [ramRegionsContain, List.any_cons, ih]
+
+/-- The compiled `addrInRange`: the region walk without a closure. -/
+@[inline] def MachineState.addrInRangeImpl (ms : MachineState) (addr : PAddr) : Bool :=
+  addr.toNat < 2 ^ ms.physicalAddressWidth && ramRegionsContain ms.memoryMap addr
+
+@[csimp] theorem MachineState.addrInRange_eq_impl :
+    @MachineState.addrInRange = @MachineState.addrInRangeImpl := by
+  funext ms addr
+  simp only [MachineState.addrInRange, MachineState.addrInRangeImpl, ramRegionsContain_eq]
 
 /-- AK7-C (F-M01): Bounds-checked memory read. Returns `some byte` when the
     address satisfies `addrInRange`, `none` otherwise. Designed for consumers

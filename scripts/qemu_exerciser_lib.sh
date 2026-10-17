@@ -228,7 +228,14 @@ for driver in drivers:
             # objects in place.
             "tcb-set-priority", "tcb-set-mc-priority", "tcb-set-affinity",
             "tcb-set-fault-handler", "tcb-bind-notification", "tcb-unbind-notification",
-            "tcb-set-space", "tcb-resume", "tcb-suspend", "tcb-set-ipc-buffer")}
+            "tcb-set-space", "tcb-resume", "tcb-suspend", "tcb-set-ipc-buffer",
+            # and the scheduling-context arms (the partner resumed and
+            # suspended while it holds the context, the suspend releasing it),
+            # behind the root task's own IPC-buffer set that the configure's
+            # fifth word is read through.
+            "root-set-ipc-buffer", "sched-context-configure", "sched-context-bind",
+            "sched-context-unbind", "sched-context-rebind", "tcb-resume-bound",
+            "tcb-suspend-bound")}
         # WS-ZA ZA5.1: the capability invocations' readings today, each the
         # operation's own cells (slot, tree and object writes, the store's
         # copy); the rows that bring them to zero lower these pins.
@@ -238,14 +245,14 @@ for driver in drivers:
             "reply-cap-delete": (29, 29), "reply-cap-mint": (47, 47),
             "untyped-retype-page-table-1": (100, 91), "page-table-map-1": (47, 47),
             "untyped-retype-page-table-2": (91, 91), "page-table-map-2": (53, 53),
-            "untyped-retype-page-table-3": (93, 93), "page-table-map-3": (56, 56),
-            "untyped-retype-frame": (160, 94), "vspace-map": (109, 108),
+            "untyped-retype-page-table-3": (161, 93), "page-table-map-3": (56, 56),
+            "untyped-retype-frame": (110, 112), "vspace-map": (109, 108),
             "vspace-unify-instruction": (10, 10),
             "vspace-unmap": (119, 119), "frame-delete": (45, 47),
             "page-table-unmap-3": (42, 42), "page-table-delete-3": (35, 35),
             "page-table-unmap-2": (41, 41), "page-table-delete-2": (29, 29),
             "page-table-unmap-1": (38, 38), "page-table-delete-1": (26, 26),
-            "untyped-reset": (137, 137),
+            "untyped-reset": (153, 153),
         })
         expected = set(pinned)
         observed = set(names) | {m.group(1) for m in returned}

@@ -1523,6 +1523,50 @@ def preemptCurrentOnCore (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreI
           prevTcb.boostedPriority
       | none => st
 
+/-- WS-ZA ZA5.2: **the compiled preemption.**  The core's words are written
+into the file the outgoing TCB already owns (`RegisterFile.overwriteWith`),
+read off the machine before the store is written, and the TCB is rewritten in
+its slot (`updateTcb`), as `saveOutgoingContextOnCoreImpl` does: a TCB rebuilt
+from the copy the lookup returned was a fresh 41-field record, and a file the
+TCB and the core's bank both held was copied by the incoming thread's restore.
+Proven equal (`preemptCurrentOnCore_eq_impl`). -/
+def preemptCurrentOnCoreImpl (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreId)
+    (incoming : SeLe4n.ThreadId) : SystemState :=
+  match st.scheduler.currentOnCore c with
+  | none => st
+  | some prevTid =>
+    if prevTid == incoming then st
+    else
+      match st.getTcb? prevTid with
+      | some prevTcb =>
+        let regs := st.machine.regsOnCore c
+        let prio := prevTcb.boostedPriority
+        (st.updateTcb prevTid fun t =>
+            { t with registerContext := SeLe4n.RegisterFile.overwriteWith regs t.registerContext }
+          ).runEnqueueOnCore c prevTid prio
+      | none => st
+
+@[csimp] theorem preemptCurrentOnCore_eq_impl :
+    @preemptCurrentOnCore = @preemptCurrentOnCoreImpl := by
+  funext st c incoming
+  unfold preemptCurrentOnCore preemptCurrentOnCoreImpl
+  split
+  · rfl
+  · split
+    · rfl
+    · rename_i prevTid _ _
+      split
+      · next prevTcb hT _ =>
+        simp only [hT, SeLe4n.RegisterFile.overwriteWith_eq]
+        rw [SystemState.rewriteObject_tcb_eq_updateTcb hT
+          (fun t => { t with registerContext := st.machine.regsOnCore c })]
+      · next hN =>
+        have hT : st.getTcb? prevTid = none := by
+          cases hT : st.getTcb? prevTid with
+          | none => rfl
+          | some t => rw [SystemState.getTcbWitnessed?_eq_some hT] at hN; cases hN
+        simp only [hT]
+
 /-- WS-SM SM5.B.3 (frame): `preemptCurrentOnCore` never writes *any* core's
 `current` slot — it only saves the outgoing thread's context (objects) and
 re-enqueues it into core `c`'s run queue (scheduler).  So *every* core's

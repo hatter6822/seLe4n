@@ -67,10 +67,10 @@ theorem donateSchedContext_getTcb?_char
     (hObjInv : st.objects.invExt) (hNe : clientTid ≠ serverTid)
     (h : donateSchedContext st clientTid serverTid clientScId = .ok st') :
     (∃ clientTcb, st.getTcb? clientTid = some clientTcb ∧
-        st'.getTcb? clientTid = some { clientTcb with schedContextBinding := .unbound }) ∧
+        st'.getTcb? clientTid = some { clientTcb with scBindingScCode := 0, scBindingOwnerCode := 0 }) ∧
     (∃ serverTcb, st.getTcb? serverTid = some serverTcb ∧
         st'.getTcb? serverTid = some
-          { serverTcb with schedContextBinding := .donated clientScId clientTid }) ∧
+          { serverTcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated clientScId clientTid), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated clientScId clientTid) }) ∧
     (∀ tid, tid ≠ clientTid → tid ≠ serverTid → st'.getTcb? tid = st.getTcb? tid) := by
   -- WS-OD OD4.1: on the four-store chain.  The SchedContext store and the
   -- reply-stack push both land at keys holding non-TCB objects, so every TCB
@@ -139,9 +139,9 @@ theorem returnDonatedSchedContext_getTcb?_char
     (h : returnDonatedSchedContext st serverTid scId originalOwner newOwner? = .ok st') :
     (∃ ownerTcb, st.getTcb? originalOwner = some ownerTcb ∧
         st'.getTcb? originalOwner =
-          some { ownerTcb with schedContextBinding := donationReturnBinding scId newOwner? }) ∧
+          some { ownerTcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (donationReturnBinding scId newOwner?), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (donationReturnBinding scId newOwner?) }) ∧
     (∃ serverTcb, st.getTcb? serverTid = some serverTcb ∧
-        st'.getTcb? serverTid = some { serverTcb with schedContextBinding := .unbound }) ∧
+        st'.getTcb? serverTid = some { serverTcb with scBindingScCode := 0, scBindingOwnerCode := 0 }) ∧
     (∀ tid, tid ≠ originalOwner → tid ≠ serverTid → st'.getTcb? tid = st.getTcb? tid) := by
   -- WS-OD OD3.2: read off `returnDonatedSchedContext_ok_storeChain`, the shared
   -- derivation, rather than off a second copy of the operation's case analysis.
@@ -307,27 +307,29 @@ theorem applyCallDonation_preserves_donationOwnerValid
     intro tid tcb' scId' owner' hTcb' hBind'
     by_cases hTidR : tid = receiverVtid.val
     · -- The new donation.
-      have hEq : tcb' = { rTcb with schedContextBinding := .donated scId callerVtid.val } := by
+      have hEq : tcb' = { rTcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated scId callerVtid.val), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated scId callerVtid.val) } := by
         have hx := hRPost.symm.trans
           ((getTcb?_eq_some_iff st' receiverVtid.val tcb').mpr (hTidR ▸ hTcb'))
         exact (Option.some.inj hx).symm
       rw [hEq] at hBind'
-      simp only [] at hBind'
+      simp only [TCB.schedContextBinding, SchedContextBinding.ofCodes_codes,
+        SchedContextBinding.ofCodes_zero] at hBind'
       obtain ⟨hScEq, hOwnEq⟩ := SchedContextBinding.donated.inj hBind'
       subst hScEq; subst hOwnEq
       refine ⟨⟨scPost, (getSchedContext?_eq_some_iff st' scId scPost).mp hScPost,
         by rw [hTidR]; exact hScPostBound⟩, ?_⟩
       obtain ⟨ep, rt, hIpc⟩ := hCallerBlockedOnReply cTcb hCPre
-      exact ⟨{ cTcb with schedContextBinding := .unbound },
+      exact ⟨{ cTcb with scBindingScCode := 0, scBindingOwnerCode := 0 },
         (getTcb?_eq_some_iff st' callerVtid.val _).mp hCPost, rfl, ⟨ep, rt, hIpc⟩⟩
     · by_cases hTidC : tid = callerVtid.val
       · -- The donor is left `.unbound`, so it is not a donation.
-        have hEq : tcb' = { cTcb with schedContextBinding := .unbound } := by
+        have hEq : tcb' = { cTcb with scBindingScCode := 0, scBindingOwnerCode := 0 } := by
           have hx := hCPost.symm.trans
             ((getTcb?_eq_some_iff st' callerVtid.val tcb').mpr (hTidC ▸ hTcb'))
           exact (Option.some.inj hx).symm
         rw [hEq] at hBind'
-        simp only [] at hBind'
+        simp only [TCB.schedContextBinding, SchedContextBinding.ofCodes_codes,
+        SchedContextBinding.ofCodes_zero] at hBind'
         cases hBind'
       · -- An untouched donation.
         have hPre : st.getTcb? tid = some tcb' := by
@@ -379,9 +381,9 @@ theorem applyCallDonation_donating_char
       st.getTcb? callerVtid.val = some cTcb ∧
       cTcb.schedContextBinding.scId? = some scId ∧
       st.getTcb? receiverVtid.val = some rTcb ∧ rTcb.schedContextBinding = .unbound ∧
-      st'.getTcb? callerVtid.val = some { cTcb with schedContextBinding := .unbound } ∧
+      st'.getTcb? callerVtid.val = some { cTcb with scBindingScCode := 0, scBindingOwnerCode := 0 } ∧
       st'.getTcb? receiverVtid.val =
-        some { rTcb with schedContextBinding := .donated scId callerVtid.val } ∧
+        some { rTcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated scId callerVtid.val), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated scId callerVtid.val) } ∧
       (∀ tid, tid ≠ callerVtid.val → tid ≠ receiverVtid.val →
         st'.getTcb? tid = st.getTcb? tid) ∧
       (∃ scPost, st'.getSchedContext? scId = some scPost ∧
@@ -427,14 +429,14 @@ theorem applyCallDonation_donating_binding
     applyCallDonation_donating_char st st' callerVtid receiverVtid scId hObjInv hSc h
   by_cases hCid : tid = callerVtid.val
   · rw [hCid] at hTcb'
-    have hEq : { cTcb with schedContextBinding := .unbound } = tcb' :=
+    have hEq : { cTcb with scBindingScCode := 0, scBindingOwnerCode := 0 } = tcb' :=
       Option.some.inj (hCPost.symm.trans hTcb')
-    exact Or.inl ⟨hCid, by rw [← hEq]⟩
+    exact Or.inl ⟨hCid, by rw [← hEq]; simp [TCB.schedContextBinding]⟩
   · by_cases hRid : tid = receiverVtid.val
     · rw [hRid] at hTcb'
-      have hEq : { rTcb with schedContextBinding := .donated scId callerVtid.val } = tcb' :=
+      have hEq : { rTcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated scId callerVtid.val), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated scId callerVtid.val) } = tcb' :=
         Option.some.inj (hRPost.symm.trans hTcb')
-      exact Or.inr (Or.inl ⟨hRid, by rw [← hEq]⟩)
+      exact Or.inr (Or.inl ⟨hRid, by rw [← hEq]; simp [TCB.schedContextBinding]⟩)
     · exact Or.inr (Or.inr ⟨hCid, hRid, (hOther tid hCid hRid) ▸ hTcb'⟩)
 
 /-- **WS-RR RR2.5**: the call donation preserves `donationOwnerUnique`.
@@ -567,14 +569,14 @@ theorem applyCallDonation_preserves_passiveServerIdle
     by_cases hCid : tid = callerVtid.val
     · -- The donor: `ipcState` is untouched, and it is blocked awaiting the reply.
       rw [hCid] at hT
-      have hEq : { cTcb with schedContextBinding := .unbound } = tcb' :=
+      have hEq : { cTcb with scBindingScCode := 0, scBindingOwnerCode := 0 } = tcb' :=
         Option.some.inj (hCPost.symm.trans hT)
       obtain ⟨ep, rt, hIpcC⟩ := hCallerBlockedOnReply cTcb hCPre
       exact Or.inr (Or.inr ⟨ep, rt, by rw [← hEq]; exact hIpcC⟩)
     · by_cases hRid : tid = receiverVtid.val
       · -- The donee is no longer `.unbound`, so it carries no obligation.
         rw [hRid] at hT
-        have hEq : { rTcb with schedContextBinding := .donated scId callerVtid.val } = tcb' :=
+        have hEq : { rTcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated scId callerVtid.val), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated scId callerVtid.val) } = tcb' :=
           Option.some.inj (hRPost.symm.trans hT)
         rw [← hEq] at hUnbound
         cases hUnbound
@@ -797,7 +799,7 @@ theorem donationReadAgreement_of_tcbBindingStore
     (b : SchedContextBinding)
     (hPre : st.objects[tcbKey]? = some (.tcb oldTcb))
     (hObjInv : st.objects.invExt)
-    (hStore : storeObject tcbKey (.tcb { oldTcb with schedContextBinding := b }) st
+    (hStore : storeObject tcbKey (.tcb { oldTcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (b), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (b) }) st
       = .ok ((), st')) :
     donationReadAgreement st st' :=
   donationReadAgreement_of_tcbFieldUpdate st st' tcbKey oldTcb _ hPre
@@ -1361,7 +1363,7 @@ theorem donateSchedContext_preserves_objects_invExt
 
 /-- **WS-RR RR8.16** (`v0.35.200`): the donation push is a `kindPreservingWrite`
 — a SchedContext for a SchedContext, the frame push's Reply writes, then two
-TCBs for two TCBs, with the closing `scThreadIndex` rewrite touching no object.
+TCBs for two TCBs, with the closing reschedule-flag write touching no object.
 
 The `.call` chain's counterpart of `returnDonatedSchedContext_kindPreservingWrite`,
 composed by `.trans` off the same `_ok_storeChain` its `invExt` proof runs, so
@@ -1778,8 +1780,8 @@ theorem returnDonatedSchedContext_binding_trichotomy
     (newOwner? : Option SeLe4n.ThreadId)
     (pTcb oTcb : TCB)
     (hOPost : st'.getTcb? owner
-      = some { oTcb with schedContextBinding := donationReturnBinding scId newOwner? })
-    (hPPost : st'.getTcb? replier = some { pTcb with schedContextBinding := .unbound })
+      = some { oTcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (donationReturnBinding scId newOwner?), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (donationReturnBinding scId newOwner?) })
+    (hPPost : st'.getTcb? replier = some { pTcb with scBindingScCode := 0, scBindingOwnerCode := 0 })
     (hOther : ∀ tid, tid ≠ owner → tid ≠ replier → st'.getTcb? tid = st.getTcb? tid)
     (tid : SeLe4n.ThreadId) (tcb' : TCB) (hTcb' : st'.getTcb? tid = some tcb') :
     (tid = owner ∧ tcb'.schedContextBinding = donationReturnBinding scId newOwner?) ∨
@@ -1787,14 +1789,14 @@ theorem returnDonatedSchedContext_binding_trichotomy
     (tid ≠ owner ∧ tid ≠ replier ∧ st.getTcb? tid = some tcb') := by
   by_cases hO : tid = owner
   · rw [hO] at hTcb'
-    have hEq : { oTcb with schedContextBinding := donationReturnBinding scId newOwner? } = tcb' :=
+    have hEq : { oTcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (donationReturnBinding scId newOwner?), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (donationReturnBinding scId newOwner?) } = tcb' :=
       Option.some.inj (hOPost.symm.trans hTcb')
-    exact Or.inl ⟨hO, by rw [← hEq]⟩
+    exact Or.inl ⟨hO, by rw [← hEq]; simp [TCB.schedContextBinding]⟩
   · by_cases hP : tid = replier
     · rw [hP] at hTcb'
-      have hEq : { pTcb with schedContextBinding := .unbound } = tcb' :=
+      have hEq : { pTcb with scBindingScCode := 0, scBindingOwnerCode := 0 } = tcb' :=
         Option.some.inj (hPPost.symm.trans hTcb')
-      exact Or.inr (Or.inl ⟨hP, by rw [← hEq]⟩)
+      exact Or.inr (Or.inl ⟨hP, by rw [← hEq]; simp [TCB.schedContextBinding]⟩)
     · exact Or.inr (Or.inr ⟨hO, hP, (hOther tid hO hP) ▸ hTcb'⟩)
 
 /-- **WS-RR RR2.5**: the donation return preserves the whole IPC bundle.
@@ -1888,7 +1890,7 @@ theorem returnDonatedSchedContext_establishes_ipcInvariantFull_of_except
     · rw [hBnd] at hUnbound
       exact absurd hUnbound (donationReturnBinding_ne_unbound scId newOwner?)
     · rw [hP] at hTcb'
-      have hEq : { pTcb with schedContextBinding := .unbound } = tcb' :=
+      have hEq : { pTcb with scBindingScCode := 0, scBindingOwnerCode := 0 } = tcb' :=
         Option.some.inj (hPPost.symm.trans ((getTcb?_eq_some_iff st' _ tcb').mpr hTcb'))
       rw [← hEq]
       exact hAllowed
@@ -1983,7 +1985,7 @@ theorem returnDonatedSchedContext_establishes_ipcInvariantFull_of_except_redirec
     · rw [hBnd] at hUnbound
       exact absurd hUnbound (donationReturnBinding_ne_unbound scId newOwner?)
     · rw [hP] at hTcb'
-      have hEq : { pTcb with schedContextBinding := .unbound } = tcb' :=
+      have hEq : { pTcb with scBindingScCode := 0, scBindingOwnerCode := 0 } = tcb' :=
         Option.some.inj (hPPost.symm.trans ((getTcb?_eq_some_iff st' _ tcb').mpr hTcb'))
       rw [← hEq]
       exact hAllowed
@@ -2198,7 +2200,7 @@ theorem applyReplyDonation_preserves_ipcInvariantFull
     refine ipcInvariantFull_of_descheduleFrame st' _ hFull'
       (removeRunnable_objectsAgreeOffRunLinks st' holderVtid.val)
       (removeRunnable_passiveServerIdleFrame st' holderVtid.val (fun tcb hTcb => ?_))
-    have hEqT : { pTcb with schedContextBinding := .unbound } = tcb :=
+    have hEqT : { pTcb with scBindingScCode := 0, scBindingOwnerCode := 0 } = tcb :=
       Option.some.inj (hPPost.symm.trans ((getTcb?_eq_some_iff st' _ tcb).mpr hTcb))
     exact Or.inr (by rw [← hEqT]; exact hIdle pTcb hPPre)
 
@@ -2332,7 +2334,7 @@ theorem applyReplyDonation_establishes_ipcInvariantFull_of_except
       refine ipcInvariantFull_of_descheduleFrame st' _ hFull'
         (removeRunnable_objectsAgreeOffRunLinks st' holderVtid.val)
         (removeRunnable_passiveServerIdleFrame st' holderVtid.val (fun tcb hTcb => ?_))
-      have hEqT : { pTcb with schedContextBinding := .unbound } = tcb :=
+      have hEqT : { pTcb with scBindingScCode := 0, scBindingOwnerCode := 0 } = tcb :=
         Option.some.inj (hPPost.symm.trans ((getTcb?_eq_some_iff st' _ tcb).mpr hTcb))
       exact Or.inr (by rw [← hEqT]; exact hIdle pTcb hPPre)
   · -- Nothing is donated by the woken thread, so the relaxation is empty.
@@ -3664,7 +3666,7 @@ is preserved by every kernel transition and `ipcReachable` carries it rather tha
 assuming it.
 
 The push's last two stores rewrite two TCBs' `schedContextBinding` and the
-closing step refreshes `scThreadIndex`; none of the three is chain data, so they
+closing step writes the reschedule flags; none of the three is chain data, so they
 compose through `donationChainFrame` exactly as the pop's do. -/
 theorem donateSchedContext_preserves_donationChainWellFormed
     (st st' : SystemState) (clientTid serverTid : SeLe4n.ThreadId)
@@ -3829,7 +3831,7 @@ theorem cancelledMiddleCaller_splices_at_cut
     cancelledMiddleCallerPolicy = CancelledMiddleCallerPolicy.spliceOutTheCut ∧
     (∃ ownerTcb, st.getTcb? originalOwner = some ownerTcb ∧
       st'.getTcb? originalOwner =
-        some { ownerTcb with schedContextBinding := .donated scId outer }) ∧
+        some { ownerTcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated scId outer), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated scId outer) }) ∧
     (∀ tid, tid ≠ originalOwner → tid ≠ serverTid → st'.getTcb? tid = st.getTcb? tid) := by
   have hRes : replyStackOuterCaller? st scId = .ok (some outer) :=
     (replyStackOuterCaller?_follows_policy st scId sc rid r below b outer hSc hHead hCut
@@ -3987,7 +3989,7 @@ theorem donationAccountingPreserved_atCallDepthThree
       replyStackOuterCaller? st' scId = .ok (some outer) ∧
       (∃ tcb, st'.getTcb? targetTid = some tcb ∧
         st''.getTcb? targetTid
-          = some { tcb with schedContextBinding := .donated scId outer }) := by
+          = some { tcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated scId outer), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated scId outer) }) := by
   -- The removal's two reciprocal writes.
   obtain ⟨hTopPost, hBottomPost⟩ :=
     removeCallerReplyFrame_splices_reciprocally st st' caller rid top bottom r t bm hObjInv
@@ -4119,7 +4121,7 @@ theorem donationAccountingPreserved_atCallDepthTwo
     replyStackOuterCaller? st' scId = .ok none ∧
       replyDonationRecipient st' scId answeredCaller = origin ∧
       (∃ tcb, st'.getTcb? origin = some tcb ∧
-        st''.getTcb? origin = some { tcb with schedContextBinding := .bound scId }) := by
+        st''.getTcb? origin = some { tcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scId), scBindingOwnerCode := 0 }) := by
   -- The removal severs at the bottom: the frame above loses its downward link
   -- and becomes the bottom of what is left.
   have hTopPost : st'.getReply? top = some { t with prev := none } :=
@@ -4248,14 +4250,14 @@ theorem returnDonatedSchedContext_preserves_schedContextBindingConsistent
       -- context is bound to it.
       rw [hXO, hOwnerPost] at hX
       rw [← Option.some.inj hX] at hBoundX
-      have hSId : s = scId := hRetNames s hBoundX
+      have hSId : s = scId := hRetNames s (by simpa using hBoundX)
       rw [hSId]
       exact ⟨scPost, (SystemState.getSchedContext?_eq_some_iff st' scId scPost).mp hScPost,
         hXO ▸ hScPostBound⟩
     · by_cases hXS : x = serverTid
       · rw [hXS, hSrvPost] at hX
         rw [← Option.some.inj hX] at hBoundX
-        exact absurd hBoundX (by simp)
+        exact absurd hBoundX (by intro h; cases h)
       · rw [hOther x hXO hXS] at hX
         obtain ⟨sc0, hSc0Raw, hBound0⟩ := hCons.1 x tcbX
           ((SystemState.getTcb?_eq_some_iff st x tcbX).mp hX) s hBoundX
@@ -4276,10 +4278,10 @@ theorem returnDonatedSchedContext_preserves_schedContextBindingConsistent
       rw [hSS, hScPost] at hS
       rw [← Option.some.inj hS, hScPostBound] at hBoundY
       have hY : y = originalOwner := (Option.some.inj hBoundY).symm
-      refine ⟨{ ownerTcb with schedContextBinding := donationReturnBinding scId newOwner? },
+      refine ⟨{ ownerTcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (donationReturnBinding scId newOwner?), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (donationReturnBinding scId newOwner?) },
         (SystemState.getTcb?_eq_some_iff st' y _).mp (by rw [hY]; exact hOwnerPost), ?_⟩
       rw [hSS]
-      exact hRetCites
+      simpa using hRetCites
     · rw [hScNe s hSS] at hS
       obtain ⟨tcb0, hT0, hBind0⟩ := hCons.2 s scX
         ((SystemState.getSchedContext?_eq_some_iff st s scX).mp hS) y hBoundY

@@ -283,7 +283,7 @@ private def core1 : CoreId := ⟨1, by decide⟩
 
 /-- An unbound thread with an explicit time-slice (for the SM5.D.5 budget tick). -/
 private def mkUnboundTcb (ts : Nat) : TCB :=
-  { mkTcb 300 10 0 with schedContextBinding := .unbound, timeSlice := ts }
+  { mkTcb 300 10 0 with scBindingScCode := 0, scBindingOwnerCode := 0, timeSlice := ts }
 
 /-- A freshly-booted (idle) state: no current thread on any core, empty run /
 replenish queues, single-domain mode, domain time = 5. -/
@@ -738,13 +738,13 @@ private def runLocalReplenishRescheduleChecks : IO Unit := do
   let tidHi := ThreadId.ofNat 311   -- high-priority, bound to an exhausted SC
   let scHi : SeLe4n.SchedContextId := ⟨88⟩
   let tcbLo : TCB :=
-    { mkTcb 310 5 0 with schedContextBinding := .unbound, timeSlice := 10, threadState := .Ready }
-  let tcbHi : TCB := { mkTcb 311 20 0 with schedContextBinding := .bound scHi, threadState := .Ready }
+    { mkTcb 310 5 0 with scBindingScCode := 0, scBindingOwnerCode := 0, timeSlice := 10, threadState := .Ready }
+  let tcbHi : TCB := { mkTcb 311 20 0 with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scHi), scBindingOwnerCode := 0, threadState := .Ready }
   let scObj : SchedContext :=
     { (default : SchedContext) with
-        priority := ⟨20⟩, boundThread := some tidHi,
+        priority := ⟨20⟩, boundThreadCode := SeLe4n.ThreadId.optCode (some tidHi),
         budget := ⟨5⟩, period := ⟨10⟩, budgetRemaining := ⟨0⟩,
-        replenishments := [{ amount := ⟨5⟩, eligibleAt := 0 }] }
+        refillHeadPresent := true, refillHeadAmount := 5, refillHeadEligibleAt := 0 }
   -- exhausted tidHi queued on the boot core (its exhaustion re-enqueue), tidLo
   -- current with plenty of slice, single-domain mode (the RPi5 default).
   let stBase : SystemState :=
@@ -796,13 +796,13 @@ private def runReplenishNoWakeBlockedChecks : IO Unit := do
   let scB : SeLe4n.SchedContextId := ⟨89⟩
   let scObj : SchedContext :=
     { (default : SchedContext) with
-        priority := ⟨20⟩, boundThread := some tidB,
+        priority := ⟨20⟩, boundThreadCode := SeLe4n.ThreadId.optCode (some tidB),
         budget := ⟨5⟩, period := ⟨10⟩, budgetRemaining := ⟨0⟩,
-        replenishments := [{ amount := ⟨5⟩, eligibleAt := 0 }] }
+        refillHeadPresent := true, refillHeadAmount := 5, refillHeadEligibleAt := 0 }
   let mkState (tcb : TCB) : SystemState :=
     (((BootstrapBuilder.empty.withObject tidB.toObjId (.tcb tcb)).withObject
         scB.toObjId (.schedContext scObj))).build
-  let base : TCB := { mkTcb 312 20 0 with schedContextBinding := .bound scB, threadState := .Ready }
+  let base : TCB := { mkTcb 312 20 0 with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scB), scBindingOwnerCode := 0, threadState := .Ready }
   let cases : List (String × TCB) :=
     [("blocked in receive",
         (TCB.setIpcState { base with threadState := .BlockedRecv } (.blockedOnReceive (ObjId.ofNat 900)))),
@@ -820,22 +820,25 @@ private def runReplenishNoWakeBlockedChecks : IO Unit := do
            r.1.scheduler.currentOnCore bootCoreId != some tidB
        | .error _ => false)
 
-/-- §3.14 fixture: core 1 runs `tidCur` (bound to an SC one charge from
-exhaustion); `tidW` — blocked on the endpoint's send queue, budget-bounded by
-the same SC (`scThreadIndex`), with the given `cpuAffinity` — is the thread the
-exhaustion timeout will wake. -/
+/-- §3.14 fixture: core 1 runs `tidCur`, charged on an SC one charge from
+exhaustion; `tidW` — blocked on the endpoint's send queue with the given
+`cpuAffinity` — is the SC's bound thread, the one thread the exhaustion
+timeout visits (`timeoutBlockedThreads` reads `sc.boundThread`, as seL4's
+`sc->scTcb`).  The two-sided binding is deliberately split so the charge and
+the timeout name different threads: the check is the timeout's wake routing,
+not how the state arose. -/
 private def mkTimeoutWakeState (aff : Option CoreId) : SystemState :=
   let tidCur := ThreadId.ofNat 320
   let tidW := ThreadId.ofNat 321
   let scW : SeLe4n.SchedContextId := ⟨90⟩
   let epW : SeLe4n.ObjId := ⟨91⟩
-  let tcbCur : TCB := { mkTcb 320 15 0 with schedContextBinding := .bound scW }
+  let tcbCur : TCB := { mkTcb 320 15 0 with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scW), scBindingOwnerCode := 0 }
   let tcbW : TCB := (TCB.setIpcState { mkTcb 321 12 0 with
-    schedContextBinding := .bound scW, cpuAffinity := aff,
+    scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scW), scBindingOwnerCode := 0, cpuAffinity := aff,
     queuePrevCode := 0, queueNextCode := 0, queuePPrevCode := 1 } (.blockedOnSend epW))
   let scObj : SchedContext :=
     { (default : SchedContext) with
-        priority := ⟨15⟩, boundThread := some tidCur,
+        priority := ⟨15⟩, boundThreadCode := SeLe4n.ThreadId.optCode (some tidW),
         budget := ⟨5⟩, period := ⟨10⟩, budgetRemaining := ⟨1⟩ }
   let epObj : Endpoint := (Endpoint.ofQueues { head := some tidW, tail := some tidW } {})
   let stBase : SystemState :=
@@ -844,8 +847,7 @@ private def mkTimeoutWakeState (aff : Option CoreId) : SystemState :=
         scW.toObjId (.schedContext scObj)).withObject
         epW (.endpoint epObj)).build
   { stBase with
-    scheduler := stBase.scheduler.setCurrentOnCore core1 (some tidCur),
-    scThreadIndex := scThreadIndexAdd stBase.scThreadIndex scW tidW }
+    scheduler := stBase.scheduler.setCurrentOnCore core1 (some tidCur) }
 
 /-- §3.14 (PR #880 round 8 — affinity-aware budget-timeout wakes): a thread
 whose budget-bounded IPC times out on a secondary core's tick wakes onto its

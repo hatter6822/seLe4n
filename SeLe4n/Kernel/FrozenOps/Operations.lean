@@ -532,7 +532,7 @@ def frozenNotificationWait (notificationId : SeLe4n.ObjId)
 
 /-- WS-ZA ZA4.7: an overflow word of a frozen thread's IPC buffer, read as the
 live `ipcBufferReadMr` reads it (slot bound, the thread's VSpace root, the page
-the slot resolves through, then memory), every failure the live decode's
+the slot resolves through, then the synced word or memory), every failure the live decode's
 `.invalidMessageInfo`. -/
 private def frozenReadOverflowWord (st : FrozenSystemState) (tid : SeLe4n.ThreadId)
     (idx : Nat) : Except KernelError UInt64 :=
@@ -544,7 +544,7 @@ private def frozenReadOverflowWord (st : FrozenSystemState) (tid : SeLe4n.Thread
     | some (.vspaceRoot root) =>
       match root.mappings.get? (Architecture.IpcBufferRead.ipcBufferSlotPage tcb.ipcBuffer idx) with
       | some (paddr, _) =>
-          .ok (Architecture.readUInt64 st.machine.memory
+          .ok (Architecture.IpcBufferRead.userWordAt st.machine
             (SeLe4n.PAddr.ofNat (paddr.toNat +
               (Architecture.IpcBufferRead.ipcBufferSlotAddr tcb.ipcBuffer idx).pageOffset)))
       | none => .error .invalidMessageInfo
@@ -1451,8 +1451,10 @@ def frozenSchedContextConfigure (scId : SeLe4n.ObjId)
             -- across reconfigures. The frozen timer is 0 at boot, so
             -- the first eligibility aligns with `period`; any subsequent
             -- reconfigure honors `timer + period` like the runtime path.
-            replenishments := [{ amount := ⟨budget⟩,
-                                 eligibleAt := 0 + period }] }
+            refillHeadPresent := true
+            refillHeadAmount := budget
+            refillHeadEligibleAt := 0 + period
+            refillTail := [] }
         -- Admission control: collect all SchedContexts from frozen store
         let allScs := st.objects.fold (init := []) fun acc _id obj =>
           match obj with
@@ -1584,7 +1586,7 @@ def frozenSchedContextBind (scId : SeLe4n.ObjId) (threadId : SeLe4n.ThreadId)
             -- which is the thread-id-reuse hazard the field's own docstring names.
             -- A field added to a shared record is a sweep of **both** surfaces,
             -- not of the one whose transition motivated it.
-            let updatedSc := { sc with boundThread := some threadId,
+            let updatedSc := { sc with boundThreadCode := SeLe4n.ThreadId.optCode (some threadId),
                                        donationOrigin := none }
             -- **AK2-B option B (S-H04), frozen mirror (PR #897 review)**: and the
             -- SchedContext's priority reaches the TCB, as the live bind's does.
@@ -1593,7 +1595,7 @@ def frozenSchedContextBind (scId : SeLe4n.ObjId) (threadId : SeLe4n.ThreadId)
             -- exists to establish -- so the mirror was not merely narrower than
             -- its subject but produced states the live kernel cannot reach.
             let updatedTcb := { tcb with
-              schedContextBinding := SeLe4n.Kernel.SchedContextBinding.bound scIdTyped,
+              scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (SeLe4n.Kernel.SchedContextBinding.bound scIdTyped), scBindingOwnerCode := 0,
               priority := sc.priority }
             match frozenWithObjectStored st scId (.schedContext updatedSc) with
             | .ok st1 =>
@@ -1675,10 +1677,10 @@ def frozenSchedContextUnbind (scId : SeLe4n.ObjId) : FrozenKernel Unit :=
           -- subject.  Both live arms of `schedContextUnbind` clear it; a mirror
           -- that keeps history the kernel erases is a mirror that answers a later
           -- pop differently.
-          let updatedSc := { sc with boundThread := none, isActive := false,
+          let updatedSc := { sc with boundThreadCode := 0, isActive := false,
                                      donationOrigin := none }
           let updatedTcb := { tcb with
-            schedContextBinding := SeLe4n.Kernel.SchedContextBinding.unbound }
+            scBindingScCode := 0, scBindingOwnerCode := 0 }
           match frozenWithObjectStored st0 scId (.schedContext updatedSc) with
           | .error e => .error e
           | .ok st1 =>

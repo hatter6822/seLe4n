@@ -342,14 +342,14 @@ private def tid0 : SeLe4n.ThreadId := ThreadId.ofNat 100
 /-- A CBS SchedContext bound to thread `tid0`, budget 100, period 1000, remaining 50. -/
 private def sc0 : SchedContext :=
   { scId := scId0, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨5⟩, deadline := ⟨0⟩,
-    domain := ⟨0⟩, budgetRemaining := ⟨50⟩, boundThread := some tid0, isActive := true,
-    replenishments := [] }
+    domain := ⟨0⟩, budgetRemaining := ⟨50⟩, boundThreadCode := SeLe4n.ThreadId.optCode (some tid0), isActive := true,
+    refillTail := [] }
 
 /-- `tid0`'s TCB, bound to `sc0` and pinned (`cpuAffinity`) to core 1. -/
 private def tcb0 : TCB :=
   { tid := tid0, priority := ⟨5⟩, domain := ⟨0⟩, cspaceRoot := ObjId.ofNat 0,
     vspaceRoot := ObjId.ofNat 0, ipcBuffer := SeLe4n.VAddr.ofNat 0,
-    schedContextBinding := .bound scId0, cpuAffinity := some core1 }
+    scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scId0), scBindingOwnerCode := 0, cpuAffinity := some core1 }
 
 /-- A CBS state: `sc0` + `tcb0` in the object store; core 1's replenish queue holds
 `scId0`'s pending replenishment (eligible at tick 5000); machine timer = 0.  This is
@@ -452,7 +452,7 @@ private def runCompositeScenarios : IO Unit := do
   -- composite is just the affinity write + run-queue migration.
   let stUnbound : SystemState :=
     let base := (BootstrapBuilder.empty.withObject (ThreadId.ofNat 300).toObjId
-      (.tcb { tcb0 with tid := ThreadId.ofNat 300, schedContextBinding := .unbound })).build
+      (.tcb { tcb0 with tid := ThreadId.ofNat 300, scBindingScCode := 0, scBindingOwnerCode := 0 })).build
     base
   assertBool "composite on an unbound thread succeeds (affinity + run-queue write only)"
     (match setThreadCpuAffinityWithMigration stUnbound (ThreadId.ofNat 300) (some bootCoreId) core1 with
@@ -657,7 +657,7 @@ private def runLiveTickScenarios : IO Unit := do
           let stUnboundThread : SystemState :=
             { stCbs with
                 objects := stCbs.objects.insert tid0.toObjId
-                  (.tcb { tcb0 with schedContextBinding := .unbound, timeSlice := 3 }) }
+                  (.tcb { tcb0 with scBindingScCode := 0, scBindingOwnerCode := 0, timeSlice := 3 }) }
           assertBool "A4: an UNBOUND time-slice tick leaves core 1's replenish queue untouched"
             (match stUnboundThread.getTcbWitnessed? tid0 with
              | some ⟨tcbU, hU⟩ =>
@@ -867,14 +867,14 @@ private def tidLifecycle : SeLe4n.ThreadId := ThreadId.ofNat 110
 admits. -/
 private def scLifecycle : SchedContext :=
   { scId := scIdLifecycle, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨7⟩,
-    deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩, boundThread := none,
-    isActive := false, replenishments := [] }
+    deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩, boundThreadCode := 0,
+    isActive := false, refillTail := [] }
 
 /-- `tidLifecycle`'s TCB: unbound, same domain as `scLifecycle`, pinned to core 1. -/
 private def tcbLifecycle : TCB :=
   { tid := tidLifecycle, priority := ⟨3⟩, domain := ⟨0⟩, cspaceRoot := ObjId.ofNat 0,
     vspaceRoot := ObjId.ofNat 0, ipcBuffer := SeLe4n.VAddr.ofNat 0,
-    schedContextBinding := .unbound, cpuAffinity := some core1 }
+    scBindingScCode := 0, scBindingOwnerCode := 0, cpuAffinity := some core1 }
 
 /-- The §3 CBS fixture plus the unbound pair: core 1's queue holds the *bound*
 SchedContext's entry `(scId0, 5000)`; `scIdLifecycle` holds none (orphan-free). -/
@@ -904,7 +904,7 @@ private def scIdDangling : SchedContextId := SchedContextId.ofNat 220
 private def scDangling : SchedContext :=
   { scId := scIdDangling, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨6⟩,
     deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩,
-    boundThread := some tidDangling, isActive := true, replenishments := [] }
+    boundThreadCode := SeLe4n.ThreadId.optCode (some tidDangling), isActive := true, refillTail := [] }
 private def stDangling : SystemState :=
   let base := (BootstrapBuilder.empty.withObject scIdDangling.toObjId
     (.schedContext scDangling)).build
@@ -1001,7 +1001,7 @@ private def tidUnbound : SeLe4n.ThreadId := ThreadId.ofNat 130
 private def tcbUnbound : TCB :=
   { tid := tidUnbound, priority := ⟨5⟩, domain := ⟨0⟩, cspaceRoot := ObjId.ofNat 0,
     vspaceRoot := ObjId.ofNat 0, ipcBuffer := SeLe4n.VAddr.ofNat 0,
-    schedContextBinding := .unbound, cpuAffinity := some core1 }
+    scBindingScCode := 0, scBindingOwnerCode := 0, cpuAffinity := some core1 }
 
 private def stAffinityFp : SystemState :=
   let base := (((BootstrapBuilder.empty.withObject scId0.toObjId (.schedContext sc0)).withObject
