@@ -4475,6 +4475,15 @@ is released, which never refuses.  When they pass the operation's state is
       && (match tcb.schedContextBinding with | .donated _ _ => false | _ => true)
   | none => false
 
+/-- WS-ZA ZA5.2: drop a context's entry from core `c`'s replenish queue, the
+queue rewritten in its slot.  Kept out of line so the state reaches the
+scheduler update whole: inlined, the branches around it hand the state's
+fields to a join point and the scheduler and the state are rebuilt. -/
+@[noinline] def suspendDropReplenishment (st : SystemState) (c : CoreId)
+    (scId : SeLe4n.SchedContextId) : SystemState :=
+  let sched := st.scheduler.modifyReplenishQueueOnCore c (ReplenishQueue.remove · scId)
+  { st with scheduler := sched }
+
 /-- WS-ZA ZA5.2: the suspend's release of a context bound to the victim
 (`cancelBoundDonationOnCore` at the victim's home core), the home core and the
 victim's entry-time scheduling key read before anything is written; the
@@ -4490,9 +4499,7 @@ def suspendReleasePerform (st : SystemState) (tid : SeLe4n.ThreadId) : SystemSta
       let dom0 := tcb.domain
       let st1 : SystemState := st.updateSchedContext scId fun sc =>
         { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }
-      let sched := st1.scheduler.modifyReplenishQueueOnCore home
-        (fun q => ReplenishQueue.remove q scId)
-      let st2 : SystemState := { st1 with scheduler := sched }
+      let st2 := suspendDropReplenishment st1 home scId
       markKeyChangeParts
         (st2.updateTcb tid fun tcb' => { tcb' with scBindingScCode := 0, scBindingOwnerCode := 0 })
         tid p0 d0 dom0
@@ -4504,7 +4511,7 @@ theorem cancelBoundDonationOnCore_eq_release {st : SystemState} {tid : SeLe4n.Th
     (hB : tcb.schedContextBinding = .bound scId) :
     cancelBoundDonationOnCore st tid tcb (determineTargetCore st tid) =
       .ok (suspendReleasePerform st tid) := by
-  unfold cancelBoundDonationOnCore suspendReleasePerform
+  unfold cancelBoundDonationOnCore suspendReleasePerform suspendDropReplenishment
   simp only [hT, hB]
   unfold markKeyChangeFrom
   simp only [hT, SchedulerState.modifyReplenishQueueOnCore_eq]
