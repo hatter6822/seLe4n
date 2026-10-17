@@ -851,13 +851,9 @@ theorem schedContextConfigure_of_admitted (st : SystemState) (vScId : ValidObjId
       rw [← hCfg, storeObject_eq_of_leaves hLeavesC]
       have hSC : stC.getSchedContext? (SchedContextId.ofObjId vScId.val) = some sc := by
         rw [SystemState.getSchedContext?_frame hCObj]; exact hS
-      have hStored : stC.updateSchedContext (SchedContextId.ofObjId vScId.val)
-          (configuredSchedContext budget period priority deadline domain st.machine.timer) =
-          { stC with objects := stC.objects.insert vScId.val (KernelObject.schedContext
-              (configuredSchedContext budget period priority deadline domain
-                st.machine.timer sc)) } :=
-        SystemState.updateSchedContext_eq_of_some hSC _
-      rw [hStored]
+      rw [SystemState.updateSchedContext_eq_of_some hSC
+        (configuredSchedContext budget period priority deadline domain st.machine.timer),
+        SeLe4n.SchedContextId.toObjId_ofObjId]
       cases sc.boundThread with
       | none => rfl
       | some boundTid =>

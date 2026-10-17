@@ -1604,8 +1604,8 @@ run_check "INVARIANT" rg -n '^  scReply : Option SeLe4n\.ReplyId := none$' SeLe4
 run_check "INVARIANT" rg -n 'a\.scReply == b\.scReply &&' SeLe4n/Kernel/SchedContext/Types.lean
 # The two exhaustive positional patterns keep their arity pin: a field added to
 # `SchedContext` fails these definitions rather than defaulting to "unread".
-run_check "INVARIANT" bash -lc 'rg -U -n "_replenishments, boundThread, scReply, donationOrigin, _isActive⟩" SeLe4n/Platform/Boot.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "_replenishments, _boundThread, _scReply, _donationOrigin, _isActive⟩" SeLe4n/Platform/Boot.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "_refillHeadPresent, _refillHeadAmount, _refillHeadEligibleAt, _refillTail,\n\s*boundThreadCode, scReply, donationOrigin, _isActive⟩" SeLe4n/Platform/Boot.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "_refillHeadPresent, _refillHeadAmount, _refillHeadEligibleAt, _refillTail,\n\s*_boundThread, _scReply, _donationOrigin, _isActive⟩" SeLe4n/Platform/Boot.lean'
 # A boot SchedContext heads no reply stack: every admissible boot Reply is inert
 # (`bootSafeReplyCheck` refuses a linked one), so a config-supplied head could
 # only dangle — a `donationChainWellFormed` violation installed before the first
@@ -1624,11 +1624,11 @@ run_check "INVARIANT" rg -n '^theorem projectKernelObject_reply_next_invariant($
 run_check "INVARIANT" rg -n '^theorem projectKernelObject_reply_prev_invariant($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Projection.lean
 # ...and the pair read as one projection, which is what the chain frame consumes.
 run_check "INVARIANT" rg -n '^theorem projectKernelObject_reply_stackLinks_invariant($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Projection.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "\.schedContext \{ sc with boundThread := none, scReply := none," SeLe4n/Kernel/InformationFlow/Projection.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "\.schedContext \{ sc with boundThreadCode := 0, scReply := none," SeLe4n/Kernel/InformationFlow/Projection.lean'
 # NEGATIVE: the pre-OD2.2 arm, which erased `boundThread` alone.  The mutation
 # that finds this keeps the arm and the erasure it already had, and drops the
 # head — deleting the whole arm would be caught by the positive above.
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "\.schedContext \{ sc with boundThread := none,\n                              lock :=" SeLe4n/Kernel/InformationFlow/Projection.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "\.schedContext \{ sc with boundThreadCode := 0,\n                              lock :=" SeLe4n/Kernel/InformationFlow/Projection.lean'
 # OD2.3 / `v0.35.4`: `Reply.wellFormed` states the half of the reply-stack
 # discipline that is a property of the object alone — seL4's `reply_unlink`
 # invariant, a stack link in EITHER direction only on a reply whose caller is
@@ -1743,8 +1743,8 @@ run_check "INVARIANT" bash -lc 'rg -U -n "  runHandlerContentionChecks\n  runDon
 # directly, which is what the pre-OD3 body did and which the negative below
 # refuses.
 run_check "INVARIANT" rg -n '^@\[inline\] def donationReturnBinding' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "schedContextBinding := donationReturnBinding scId newOwner\? \}" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "let clientTcb. := \{ clientTcb with schedContextBinding := \.bound scId \}" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "scBindingScCode := SeLe4n\.Kernel\.SchedContextBinding\.scCode \(donationReturnBinding scId newOwner\?\), scBindingOwnerCode := SeLe4n\.Kernel\.SchedContextBinding\.ownerCode \(donationReturnBinding scId newOwner\?\) \}" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "let clientTcb. := \{ clientTcb with scBindingScCode := SeLe4n\.Kernel\.SchedContextBinding\.scCode \(\.bound scId\)" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
 # ...and both arms name the SAME context, which is what keeps every consumer that
 # only asks "which scheduling context does this thread reference" — the
 # `scThreadIndex` discipline in particular — insensitive to the stack depth.
@@ -1762,7 +1762,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "let sc. := donationReturnSchedContext 
 # NEGATIVE: and the inlined literal must not come back anywhere in either file --
 # the de-duplication is the point, and a second copy reads exactly like the one
 # definition in a diff.
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "boundThread := some originalOwner,\n\s*scReply := head\?\.bind" SeLe4n/Kernel/IPC/Operations/Endpoint.lean SeLe4n/Kernel/FrozenOps/Core.lean SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean SeLe4n/Kernel/IPC/Invariant/Defs.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "boundThreadCode := SeLe4n\.ThreadId\.optCode \(some originalOwner\),\n\s*scReply := head\?\.bind" SeLe4n/Kernel/IPC/Operations/Endpoint.lean SeLe4n/Kernel/FrozenOps/Core.lean SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean SeLe4n/Kernel/IPC/Invariant/Defs.lean'
 # The priority mirror is deliberately NOT a fourth field: `SchedContext.priority`
 # survives `projectKernelObject`, so writing a possibly-high recipient's band
 # into a possibly-low reservation makes the pop projection-visible and
@@ -1796,7 +1796,7 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "if r\.next != some \(\.head s
 # to be pinning something the cut retired, and the only one of the four that failed
 # LOUDLY (a positive on a vanished literal), which is why the other three had to be
 # swept for rather than waited for.
-run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def donationReturnSchedContext[^\n]*(\n([ \t][^\n]*)?)*boundThread := some originalOwner,\n\s*scReply := nextHead\?,\n\s*donationOrigin :=" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def donationReturnSchedContext[^\n]*(\n([ \t][^\n]*)?)*boundThreadCode := SeLe4n\.ThreadId\.optCode \(some originalOwner\),\n\s*scReply := nextHead\?,\n\s*donationOrigin :=" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
 # The head clear is its own step with its own frames, so a downstream frame
 # extends by one rewrite rather than by a second arm through the whole proof.
 run_check "INVARIANT" rg -n '^def storeDonationHeadClear($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
@@ -2552,7 +2552,7 @@ run_check "INVARIANT" rg -n '^theorem cancelledMiddleCaller_splices_at_cut($|[ (
 # below the cut is touched.  A statement that only exhibited the target's new
 # binding would be true of both policies; one that exhibited `.bound scId` would be
 # the sever's, which is why the binding is anchored too.
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem cancelledMiddleCaller_splices_at_cut[^\n]*(\n([ \t][^\n]*)?)*schedContextBinding := \.donated scId outer" SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem cancelledMiddleCaller_splices_at_cut[^\n]*(\n([ \t][^\n]*)?)*scBindingScCode := SeLe4n\.Kernel\.SchedContextBinding\.scCode \(\.donated scId outer\)" SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem cancelledMiddleCaller_splices_at_cut[^\n]*(\n([ \t][^\n]*)?)*∀ tid, tid ≠ originalOwner → tid ≠ serverTid → st.\.getTcb\? tid = st\.getTcb\? tid" SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean'
 # WS-HP HP6.7 / HP6.9: the two facts the splice buys, which the sever could not
 # state -- the removal leaves the stack CONNECTED across the cut, and the pop that
@@ -2576,7 +2576,7 @@ run_check "INVARIANT" bash -lc 'rg -n "PAYOFF: pop three delivers it HOME .[.]bo
 # in the WS-OD block above, which names every runner of this group in order, so no
 # standalone presence check is added here: a second anchor asking the same question
 # is the duplication this file exists to avoid.
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem donationAccountingPreserved_atCallDepthThree[^\n]*(\n([ \t][^\n]*)?)*schedContextBinding := \.donated scId outer" SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem donationAccountingPreserved_atCallDepthThree[^\n]*(\n([ \t][^\n]*)?)*scBindingScCode := SeLe4n\.Kernel\.SchedContextBinding\.scCode \(\.donated scId outer\)" SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean'
 # **WS-HP HP10.3/HP10.4/HP10.5**: the reservation's ORIGIN.  The field is *history
 # the kernel validates*, not an invariant -- no `donationChainWellFormed` clause can
 # relate it to the store, because "the origin is the bottom frame's thread, OR a
@@ -2795,7 +2795,7 @@ run_check "INVARIANT" rg -n '^theorem donationAccountingPreserved_atCallDepthTwo
 # thread reachability names.  Bounded to the declaration, since the depth-three
 # payoff five hundred lines away concludes `.donated scId outer` and a file-wide
 # anchor could not tell the two apart.
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem donationAccountingPreserved_atCallDepthTwo[^\n]*(\n([ \t][^\n]*)?)*schedContextBinding := \.bound scId" SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem donationAccountingPreserved_atCallDepthTwo[^\n]*(\n([ \t][^\n]*)?)*scBindingScCode := SeLe4n\.Kernel\.SchedContextBinding\.scCode \(\.bound scId\), scBindingOwnerCode := 0" SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean'
 # The reachability answer the redirect OVERRIDES is derived from the removal
 # rather than hypothesised -- `replyStackOuterCaller? st. scId = .ok none` is a
 # CONCLUSION of this theorem, not a premise of it.
@@ -3344,13 +3344,13 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextConfigureBou
 # The bind: the SchedContext under its lookup's witness, then the TCB through
 # the typed rewrite over the rewritten state.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextBind[^\n]*(\n([ \t][^\n]*)?)*    match st\.getSchedContextWitnessed\? \(SchedContextId\.ofObjId vScId\.val\) with\n    \| some ⟨sc, hSc⟩ =>" SeLe4n/Kernel/SchedContext/Operations.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextBind[^\n]*(\n([ \t][^\n]*)?)*            let st1 := st\.rewriteObject vScId\.val \(KernelObject\.schedContext updatedSc\)\n              \(SystemState\.rewriteAdmissible_schedContext hSc updatedSc\)\n            let st2 := st1\.updateTcb vThreadId\.val fun t =>\n              \{ t with schedContextBinding := SchedContextBinding\.bound scIdTyped,\n                       priority := sc\.priority \}" SeLe4n/Kernel/SchedContext/Operations.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextBind[^\n]*(\n([ \t][^\n]*)?)*            let st1 := st\.rewriteObject vScId\.val \(KernelObject\.schedContext updatedSc\)\n              \(SystemState\.rewriteAdmissible_schedContext hSc updatedSc\)\n            let st2 := st1\.updateTcb vThreadId\.val fun t =>\n              \{ t with scBindingScCode := SeLe4n\.Kernel\.SchedContextBinding\.scCode \(SchedContextBinding\.bound scIdTyped\), scBindingOwnerCode := 0,\n                       priority := sc\.priority \}" SeLe4n/Kernel/SchedContext/Operations.lean'
 # The unbind: the scheduler stage is a scheduler-only update of the pre-state,
 # so the SchedContext witness taken at `st` is the stage's own; the
 # SchedContext rewrite runs OVER THE STAGE under that witness, the TCB through
 # the typed rewrite after it, and the TCB-missing arm rewrites at `st`.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextUnbind[^\n]*(\n([ \t][^\n]*)?)*    match st\.getSchedContextWitnessed\? \(SchedContextId\.ofObjId vScId\.val\) with\n    \| some ⟨sc, hSc⟩ =>" SeLe4n/Kernel/SchedContext/Operations.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextUnbind[^\n]*(\n([ \t][^\n]*)?)*          let st1 : SystemState := \{ st with scheduler := sched0 \}(\n([ \t][^\n]*)?)*          let st2 := st1\.rewriteObject vScId\.val \(KernelObject\.schedContext updatedSc\)\n            \(SystemState\.rewriteAdmissible_schedContext hSc updatedSc\)(\n([ \t][^\n]*)?)*          let st3 := st2\.updateTcb tid fun t =>\n            \{ t with schedContextBinding := SchedContextBinding\.unbound \}" SeLe4n/Kernel/SchedContext/Operations.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextUnbind[^\n]*(\n([ \t][^\n]*)?)*          let st1 : SystemState := \{ st with scheduler := sched0 \}(\n([ \t][^\n]*)?)*          let st2 := st1\.rewriteObject vScId\.val \(KernelObject\.schedContext updatedSc\)\n            \(SystemState\.rewriteAdmissible_schedContext hSc updatedSc\)(\n([ \t][^\n]*)?)*          let st3 := st2\.updateTcb tid fun t =>\n            \{ t with scBindingScCode := 0, scBindingOwnerCode := 0 \}" SeLe4n/Kernel/SchedContext/Operations.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextUnbind[^\n]*(\n([ \t][^\n]*)?)*        \| none =>(\n([ \t][^\n]*)?)*          let st1 := st\.rewriteObject vScId\.val \(KernelObject\.schedContext updatedSc\)\n            \(SystemState\.rewriteAdmissible_schedContext hSc updatedSc\)" SeLe4n/Kernel/SchedContext/Operations.lean'
 # NEGATIVE: neither binding operation resolves the SchedContext bare, and the
 # unbind's writes do not bypass the scheduler stage.
@@ -5918,7 +5918,6 @@ run_check "INVARIANT" rg -n '^theorem onCore_setDomainScheduleIndexOnCore_ne($|[
 run_check "INVARIANT" rg -n '^theorem onCore_setRegsOnCore_ne($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
 run_check "INVARIANT" rg -n '^theorem onCore_setReplenishQueueOnCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
 run_check "INVARIANT" rg -n '^theorem onCore_setLastTimeoutErrorsOnCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem onCore_scThreadIndex($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
 run_check "INVARIANT" rg -n '^theorem onCore_machineTimer($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
 run_check "INVARIANT" rg -n '^theorem onCore_perCoreTlb($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
 run_check "INVARIANT" rg -n '^theorem onCore_perCoreICache($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
@@ -7671,7 +7670,7 @@ run_check "INVARIANT" rg -n '^  runDeclassifiedBadgeDeliveryWitnesses$' tests/Sy
 # delivery records user-word stores and counts them in the frame's length, both
 # fault seams drain the ledger, and the HAL never stores a user word into the
 # table pool.
-run_check "INVARIANT" rg -n '^def ipcBufferSlotPAddr\? \(st : SystemState\) \(tcb : SeLe4n\.Model\.TCB\) \(idx : Nat\)$' SeLe4n/Kernel/Architecture/IpcBufferRead.lean
+run_check "INVARIANT" rg -n '^@\[inline\] def ipcBufferSlotPAddr\? \(st : SystemState\) \(tcb : SeLe4n\.Model\.TCB\) \(idx : Nat\)$' SeLe4n/Kernel/Architecture/IpcBufferRead.lean
 run_check "INVARIANT" rg -n 'st\.machine\.addrInRange pa && \(!needWrite \|\| perms\.write\)' SeLe4n/Kernel/Architecture/IpcBufferRead.lean
 run_check "INVARIANT" rg -n '^theorem ipcBufferReadMr_syncUserWord($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/IpcBufferRead.lean
 run_check "INVARIANT" rg -n '^theorem readUInt64_writeUInt64($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PageTable.lean
@@ -9591,10 +9590,11 @@ run_check "INVARIANT" rg -n '\.objectIndexSet, \.lifecycle, \.asidTable\]' SeLe4
 run_check "INVARIANT" bash -lc 'rg -U -n "def lifecycleRetypeObject_modifiedFields : List StateField :=\n  storeObject_modifiedFields\n" SeLe4n/Kernel/CrossSubsystem.lean'
 # WS-RR RR7 audit round (v0.34.109): the IPC list carries the two fields the
 # dual-queue operations write beyond the store — `scheduler` (the wake and the
-# deschedule) and `scThreadIndex` (the receive path's donation return) — and the
+# deschedule; `scThreadIndex`, the receive path's donation return, was the
+# second until its retirement at `v0.36.98`) — and the
 # capability list carries storeObject's own index/ASID fields beneath the CDT
 # four.  Both were FALSE at the v0.34.70 lists; the theorems below say so.
-run_check "INVARIANT" bash -lc 'rg -U -n "def ipcEndpointOp_modifiedFields : List StateField :=\n  storeObject_modifiedFields \+\+ \[\.scheduler, \.scThreadIndex\]" SeLe4n/Kernel/CrossSubsystem.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "def ipcEndpointOp_modifiedFields : List StateField :=\n  storeObject_modifiedFields \+\+ \[\.scheduler\]\n" SeLe4n/Kernel/CrossSubsystem.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "def capabilityOp_modifiedFields : List StateField :=\n  storeObject_modifiedFields \+\+ \[\.cdt, \.cdtSlotNode, \.cdtNodeSlot, \.cdtNextNode\]" SeLe4n/Kernel/CrossSubsystem.lean'
 # `StateField` is total over `SystemState`, and the pin is a theorem: field-wise
 # agreement on every constructor IS state equality, proved through
@@ -9603,9 +9603,9 @@ run_check "INVARIANT" bash -lc 'rg -U -n "def capabilityOp_modifiedFields : List
 # pinned by their two closing lines.
 run_check "INVARIANT" rg -n '^theorem SystemState.eq_of_fieldEq_all($|[ ({:\[\]])' SeLe4n/Kernel/CrossSubsystem.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "theorem SystemState.eq_of_fieldEq_all \(st st. : SystemState\)\n    \(h : ∀ f : StateField, SystemState.fieldEq f st st.\) : st. = st := by\n  cases st; cases st.\n  simp only \[SystemState.mk.injEq\]" SeLe4n/Kernel/CrossSubsystem.lean'
-run_check "INVARIANT" rg -n '^  \| scThreadIndex \| tlb \| tlbShootdown$' SeLe4n/Kernel/CrossSubsystem.lean
+run_check "INVARIANT" rg -n '^  \| tlb \| tlbShootdown$' SeLe4n/Kernel/CrossSubsystem.lean
 run_check "INVARIANT" rg -n '^  \| declassificationRefusals \| declassificationTaint$' SeLe4n/Kernel/CrossSubsystem.lean
-run_check "INVARIANT" rg -n '^  \| \.scThreadIndex, +st, st. => st.\.scThreadIndex = st\.scThreadIndex' SeLe4n/Kernel/CrossSubsystem.lean
+run_check "INVARIANT" rg -n '^  \| \.tlb, +st, st. => st.\.tlb = st\.tlb' SeLe4n/Kernel/CrossSubsystem.lean
 # Every declared list carries its honesty theorem AT ITS OWN LIST.  Each anchor
 # ties the operation named in the step hypothesis to the list in the conclusion
 # on the very next line — no wildcard, so a conclusion moved to another list, or
@@ -9632,7 +9632,7 @@ run_check "INVARIANT" rg -n 'cleanupPreReceiveDonationChecked_preservesFieldsOut
 run_check "INVARIANT" bash -lc 'rg -U -n "returnDonatedSchedContextResolved_lift hStep\n[ \t]*\(fun n s hs => returnDonatedSchedContext_preservesFieldsOutside _ _ _ _ _ n hs\)" SeLe4n/Kernel/CrossSubsystem.lean'
 run_negative_check "INVARIANT" rg -n 'returnDonatedSchedContext_preservesFieldsOutside _ _ _ _ _ none hStep' SeLe4n/Kernel/CrossSubsystem.lean
 run_check "INVARIANT" rg -n 'writeSetSurfaceElaborates' tests/CrossSubsystemPerCoreSuite.lean
-run_check "INVARIANT" rg -n 'StateField enum has 26 variants' tests/InformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'StateField enum has 25 variants' tests/InformationFlowSuite.lean
 # The medium-severity sweep's plan names these eight artefacts by name and the
 # surface pinned none of them: a plan-named theorem the anchors do not read is
 # a claim a rename or a deletion would leave standing.  Presence anchors, on
@@ -11668,16 +11668,17 @@ run_check "INVARIANT" rg -n '\(c\) CONTROL: on an unbound target the two reading
 # an object the slot no longer carries.  seL4's `finaliseCap` runs
 # `schedContext_unbindAllTCBs` on a scheduling-context capability.
 run_check "INVARIANT" rg -n '^def releaseSchedContextBinding \(' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
-# RELATION: the release is THREE writes in one match -- the unbind, the purge at
-# the bound thread's OWN home, and the index removal -- with the missing-TCB arm
-# purging EVERY core, since no thread is left to name one.  Mutation: keep every
-# name and drop the purge (the record update then reads `st1`), or purge one core
-# on the arm that has no thread.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def releaseSchedContextBinding[^\n]*(\n([ \t][^\n]*)?)*match sc\.boundThread with\n *\| none => st\n *\| some tid =>\n *match st\.getTcb\? tid with\n *\| some tcb =>\n *let st1 := st\.updateTcb tid fun t =>\n *\{ t with schedContextBinding := SchedContextBinding\.unbound \}\n *let st2 := SchedContextOps\.purgeReplenishmentOnCore st1 \(determineTargetCore st tid\) scId\n( *\n)* *markKeyChangeFor \{ st2 with scThreadIndex := scThreadIndexRemove st2\.scThreadIndex scId tid \}\n *tid \(effectiveSchedParams st tcb\)\n *\| none =>\n *let st1 := SchedContextOps\.purgeReplenishmentFromAllCores st scId" SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean'
-# NEGATIVE: the unbind without the purge -- the index removal then reads the
-# unbound state rather than the purged one, which is the defect one field over
+# RELATION: the release is TWO writes in one match -- the unbind and the purge at
+# the bound thread's OWN home -- with the missing-TCB arm purging EVERY core,
+# since no thread is left to name one (the context-to-threads index these once
+# also cleared is retired at `v0.36.98`).  Mutation: keep every name and drop the
+# purge (the key hook then reads `st1`), or purge one core on the arm that has
+# no thread.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def releaseSchedContextBinding[^\n]*(\n([ \t][^\n]*)?)*match sc\.boundThread with\n *\| none => st\n *\| some tid =>\n *match st\.getTcb\? tid with\n *\| some tcb =>\n *let st1 := st\.updateTcb tid fun t =>\n *\{ t with scBindingScCode := 0, scBindingOwnerCode := 0 \}\n *let st2 := SchedContextOps\.purgeReplenishmentOnCore st1 \(determineTargetCore st tid\) scId\s*markKeyChangeFor st2\n *tid \(effectiveSchedParams st tcb\)\n *\| none =>\n *let st1 := SchedContextOps\.purgeReplenishmentFromAllCores st scId" SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean'
+# NEGATIVE: the unbind without the purge -- the key hook then reads the unbound
+# state rather than the purged one, which is the defect one field over
 # (`v0.35.164`'s S-05 index-only arm).  Mutation: delete the `st2` binding.
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def releaseSchedContextBinding[^\n]*(\n([ \t][^\n]*)?)*let st1 := st\.updateTcb tid fun t =>\n *\{ t with schedContextBinding := SchedContextBinding\.unbound \}\n *\{ st1 with scThreadIndex" SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def releaseSchedContextBinding[^\n]*(\n([ \t][^\n]*)?)*let st1 := st\.updateTcb tid fun t =>\n *\{ t with scBindingScCode := 0, scBindingOwnerCode := 0 \}\s*markKeyChangeFor st1" SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean'
 # NEGATIVE: a single-core purge on the arm whose thread does not resolve -- there
 # is no home to read, so the entries can sit on any core.  Mutation: swap
 # `purgeReplenishmentFromAllCores` for the per-core purge at the boot core.
@@ -16763,8 +16764,8 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextUnbind[^\n]*(\n
 # mid-chain carries one; WS-HP HP10.4 landed the field's clears on the live side
 # at three sites and both frozen mirrors kept the history the kernel erases, so
 # `frozenDonationOriginRecipient?` could still name a thread whose loan had ended.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextBind \([^\n]*(\n([ \t][^\n]*)?)*boundThread := some threadId,(\n([ \t][^\n]*)?)*donationOrigin := none" SeLe4n/Kernel/FrozenOps/Operations.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextUnbind \([^\n]*(\n([ \t][^\n]*)?)*boundThread := none, isActive := false,(\n([ \t][^\n]*)?)*donationOrigin := none" SeLe4n/Kernel/FrozenOps/Operations.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextBind \([^\n]*(\n([ \t][^\n]*)?)*boundThreadCode := SeLe4n\.ThreadId\.optCode \(some threadId\),(\n([ \t][^\n]*)?)*donationOrigin := none" SeLe4n/Kernel/FrozenOps/Operations.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextUnbind \([^\n]*(\n([ \t][^\n]*)?)*boundThreadCode := 0, isActive := false,(\n([ \t][^\n]*)?)*donationOrigin := none" SeLe4n/Kernel/FrozenOps/Operations.lean'
 # ...and the three refusals the mirror did not carry.  The live bind refuses four
 # things and this one refused one, so on three concrete states it SUCCEEDED where
 # the kernel refuses -- the direction that matters on a differential surface, and
@@ -21926,5 +21927,28 @@ run_check "INVARIANT" rg -n '^def runReschedulePendingChecks : IO Unit := do$' t
 # name the clear — a clear outside the two scheduling points would retire an
 # owed scheduling point without running one.
 run_negative_check "INVARIANT" rg -n 'clearReschedulePendingOnCore' SeLe4n/Kernel/IPC/Operations/Endpoint.lean SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean SeLe4n/Kernel/SchedContext/Operations.lean SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean SeLe4n/Kernel/SchedContext/PriorityManagementPerCore.lean SeLe4n/Kernel/Scheduler/Operations/InitialThreadStart.lean SeLe4n/Kernel/Lifecycle/Suspend.lean SeLe4n/Kernel/Scheduler/Operations/ReschedulePending.lean
+
+# WS-ZA ZA5.2 part 2 (`v0.36.98`): the scheduling-context arms and the bound
+# suspend write in place.  RELATION: the admitted suspend's release is the one
+# definition the equality to the specification's `cancelBoundDonationOnCore`
+# names, and the suspend reaches it; its queue drop is out of line, which is
+# what keeps the state whole into the scheduler update.  Mutation: inline the
+# drop, or have the suspend call the specification's release.
+run_check "INVARIANT" rg -n '^theorem cancelBoundDonationOnCore_eq_release \{' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^def suspendPerform \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*  let st0 := suspendReleasePerform st tid" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def suspendReleasePerform \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*      let st2 := suspendDropReplenishment st1 home scId" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+run_check "INVARIANT" rg -n '^@\[noinline\] def suspendDropReplenishment \(st : SystemState\)' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+# The faulted resume is admitted only when its slot is found in place, which is
+# what lets the fault's retirement read back without the store invariant.
+run_check "INVARIANT" rg -n '\(tcb\.pendingFault\.isNone \|\| st\.objects\.findsInPlace tid\.toObjId\)' SeLe4n/Kernel/Lifecycle/Suspend.lean
+run_check "INVARIANT" rg -n '^theorem resumeAdmitted_retirePendingFault \{' SeLe4n/Kernel/RefusalCarryingInvocation.lean
+# A configure writes the context's first refill into its own fields, never a
+# fresh list cell: the pin ends at the record's close, so a tail entry fails it.
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def configuredSchedContext[^\n]*(\n([ \t][^\n]*)?)*    refillHeadPresent := true\n    refillHeadAmount := budget\n    refillHeadEligibleAt := timer \+ period\n    refillTail := \[\] \}" SeLe4n/Kernel/SchedContext/Operations.lean'
+run_check "INVARIANT" rg -n '^@\[simp\] theorem SchedContext\.withReplenishments_replenishments' SeLe4n/Kernel/SchedContext/Types.lean
+# The preemption and the queue removal replace their specifications through
+# proven equalities.
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem preemptCurrentOnCore_eq_impl :' SeLe4n/Kernel/Scheduler/Operations/Selection.lean
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem remove_eq_impl : @remove = @removeImpl' SeLe4n/Kernel/SchedContext/ReplenishQueue.lean
 
 finalize_report
