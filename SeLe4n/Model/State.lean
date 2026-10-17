@@ -285,6 +285,13 @@ theorem modifyRunQueueEndsOnCore_eq (s : SchedulerState) (c : CoreId)
 /-- Write core `c`'s CBS replenishment-queue slot. -/
 def setReplenishQueueOnCore (s : SchedulerState) (c : CoreId) (v : SeLe4n.Kernel.ReplenishQueue) :
     SchedulerState := { s with replenishQueue := s.replenishQueue.set c.val v c.isLt }
+/-- WS-ZA ZA5.2: core `c`'s replenish queue rewritten by `f` in its slot; the
+array takes the queue out of the slot before `f` runs (`Array.modify`), so on
+an exclusively held state `f` receives its only reference
+(`modifyReplenishQueueOnCore_eq`). -/
+@[inline] def modifyReplenishQueueOnCore (s : SchedulerState) (c : CoreId)
+    (f : SeLe4n.Kernel.ReplenishQueue → SeLe4n.Kernel.ReplenishQueue) : SchedulerState :=
+  { s with replenishQueue := ⟨s.replenishQueue.toArray.modify c.val f, by simp⟩ }
 /-- Write core `c`'s active-domain slot. -/
 def setActiveDomainOnCore (s : SchedulerState) (c : CoreId) (v : SeLe4n.DomainId) :
     SchedulerState := { s with activeDomain := s.activeDomain.set c.val v c.isLt }
@@ -376,6 +383,25 @@ every pair of cores (the fields are independent `Vector`s). -/
 @[simp] theorem setReplenishQueueOnCore_replenishQueueOnCore_self (s : SchedulerState) (c : CoreId) (v : SeLe4n.Kernel.ReplenishQueue) :
     (s.setReplenishQueueOnCore c v).replenishQueueOnCore c = v := by
   simp [SchedulerState.setReplenishQueueOnCore, SchedulerState.replenishQueueOnCore]
+/-- WS-ZA ZA5.2: the in-slot rewrite is the write of `f` of the read. -/
+theorem modifyReplenishQueueOnCore_eq (s : SchedulerState) (c : CoreId)
+    (f : SeLe4n.Kernel.ReplenishQueue → SeLe4n.Kernel.ReplenishQueue) :
+    s.modifyReplenishQueueOnCore c f = s.setReplenishQueueOnCore c (f (s.replenishQueueOnCore c)) := by
+  simp only [SchedulerState.modifyReplenishQueueOnCore, SchedulerState.setReplenishQueueOnCore,
+    SchedulerState.replenishQueueOnCore]
+  congr 1
+  apply Vector.ext
+  intro j hj
+  show (s.replenishQueue.toArray.modify c.val f)[j]'(by simpa using hj) = _
+  rw [Vector.getElem_set]
+  by_cases h : c.val = j
+  · subst h
+    simp only [if_pos rfl]
+    rw [Array.getElem_modify_self]
+    rfl
+  · simp only [if_neg h]
+    rw [Array.getElem_modify_of_ne h]
+    rfl
 @[simp] theorem setActiveDomainOnCore_activeDomainOnCore_self (s : SchedulerState) (c : CoreId) (v : SeLe4n.DomainId) :
     (s.setActiveDomainOnCore c v).activeDomainOnCore c = v := by
   simp [SchedulerState.setActiveDomainOnCore, SchedulerState.activeDomainOnCore]

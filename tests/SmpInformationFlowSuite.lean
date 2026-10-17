@@ -4977,7 +4977,7 @@ private def replenishScValue : SchedContext :=
   { scId := replenishScId
     budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨40⟩, deadline := ⟨0⟩, domain := ⟨0⟩
     budgetRemaining := ⟨100⟩
-    replenishments := [{ amount := ⟨100⟩, eligibleAt := 500 }]
+    refillHeadPresent := true, refillHeadAmount := 100, refillHeadEligibleAt := 500
     boundThreadCode := SeLe4n.ThreadId.optCode (some remoteHomedThread)
     isActive := true }
 

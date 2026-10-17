@@ -863,7 +863,7 @@ private def row_invalidObjectType_cross_variant : KernelErrorRejection :=
           priority := ⟨0⟩, deadline := ⟨0⟩
           domain := ⟨0⟩, budgetRemaining := ⟨100⟩
           boundThreadCode := 0, isActive := false
-          replenishments := [] }
+          refillTail := [] }
       let st : SystemState := { (default : SystemState) with
         objects := (default : SystemState).objects.insert oid (.tcb tcb) }
       runUnit (SeLe4n.Model.storeObjectKindChecked oid (.schedContext sc) st) }

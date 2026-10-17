@@ -836,6 +836,7 @@ theorem scheduleReplenishment_replenishments_bounded (sc : SchedContext)
     (currentTime : Nat) (consumed : Budget) :
     (scheduleReplenishment sc currentTime consumed).replenishments.length ≤ maxReplenishments := by
   unfold scheduleReplenishment
+  simp only [SchedContext.withReplenishments_replenishments]
   exact truncateReplenishments_length_le _
 
 -- ============================================================================

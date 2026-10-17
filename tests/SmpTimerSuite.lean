@@ -744,7 +744,7 @@ private def runLocalReplenishRescheduleChecks : IO Unit := do
     { (default : SchedContext) with
         priority := ⟨20⟩, boundThreadCode := SeLe4n.ThreadId.optCode (some tidHi),
         budget := ⟨5⟩, period := ⟨10⟩, budgetRemaining := ⟨0⟩,
-        replenishments := [{ amount := ⟨5⟩, eligibleAt := 0 }] }
+        refillHeadPresent := true, refillHeadAmount := 5, refillHeadEligibleAt := 0 }
   -- exhausted tidHi queued on the boot core (its exhaustion re-enqueue), tidLo
   -- current with plenty of slice, single-domain mode (the RPi5 default).
   let stBase : SystemState :=
@@ -798,7 +798,7 @@ private def runReplenishNoWakeBlockedChecks : IO Unit := do
     { (default : SchedContext) with
         priority := ⟨20⟩, boundThreadCode := SeLe4n.ThreadId.optCode (some tidB),
         budget := ⟨5⟩, period := ⟨10⟩, budgetRemaining := ⟨0⟩,
-        replenishments := [{ amount := ⟨5⟩, eligibleAt := 0 }] }
+        refillHeadPresent := true, refillHeadAmount := 5, refillHeadEligibleAt := 0 }
   let mkState (tcb : TCB) : SystemState :=
     (((BootstrapBuilder.empty.withObject tidB.toObjId (.tcb tcb)).withObject
         scB.toObjId (.schedContext scObj))).build

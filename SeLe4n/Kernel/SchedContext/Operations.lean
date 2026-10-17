@@ -639,8 +639,10 @@ def schedContextConfigure (vScId : ValidObjId) (budget period priority deadline 
             -- receive `budgetRemaining := budget` AND an immediately-eligible
             -- replenishment of `amount := budget`, giving it two full budgets
             -- per period and doubling its effective CBS bandwidth.
-            replenishments := [{ amount := ⟨budget⟩,
-                                 eligibleAt := st.machine.timer + period }] }
+            refillHeadPresent := true
+            refillHeadAmount := budget
+            refillHeadEligibleAt := st.machine.timer + period
+            refillTail := [] }
         if checkAdmission st updated (some vScId.val) then
           -- AK2-G: purge stale system replenishQueue entries for this vScId.val
           -- before storing the reconfigured object.
@@ -698,34 +700,6 @@ def schedContextConfigure (vScId : ValidObjId) (budget period priority deadline 
           .error .resourceExhausted
       | none => .error .objectNotFound
 
-/-- **WS-ZA ZA5.2**: a replenishment entry with its amount rewritten.  The
-compiler reuses a record's cell only for an update that keeps a field, so a
-configure rewrites its entry one field at a time, each step compiled on its
-own: an update of both fields at once builds a fresh entry. -/
-@[noinline] def replenishmentWithAmount (e : ReplenishmentEntry) (budget : Nat) :
-    ReplenishmentEntry :=
-  { e with amount := ⟨budget⟩ }
-
-/-- **WS-ZA ZA5.2**: a replenishment entry with its eligibility rewritten
-(`replenishmentWithAmount`'s twin). -/
-@[noinline] def replenishmentWithEligibleAt (e : ReplenishmentEntry) (eligibleAt : Nat) :
-    ReplenishmentEntry :=
-  { e with eligibleAt := eligibleAt }
-
-/-- **WS-ZA ZA5.2**: a configure's one fresh replenishment, written over the
-list it replaces: when the context held an entry, that cell is rewritten
-(`freshReplenishment_eq`), so a configure of an exclusively held context builds
-no list cell. -/
-@[inline] def freshReplenishment (old : List ReplenishmentEntry) (budget eligibleAt : Nat) :
-    List ReplenishmentEntry :=
-  match old with
-  | e :: _ => [replenishmentWithEligibleAt (replenishmentWithAmount e budget) eligibleAt]
-  | [] => [{ amount := ⟨budget⟩, eligibleAt := eligibleAt }]
-
-theorem freshReplenishment_eq (old : List ReplenishmentEntry) (budget eligibleAt : Nat) :
-    freshReplenishment old budget eligibleAt = [{ amount := ⟨budget⟩, eligibleAt := eligibleAt }] := by
-  rcases old with _ | ⟨⟨_, _⟩, _⟩ <;> rfl
-
 /-- **WS-ZA ZA5.2**: the context `schedContextConfigure` stores, as a function of
 the stored one, so the store can rewrite it in its slot. -/
 @[inline] def configuredSchedContext (budget period priority deadline domain timer : Nat)
@@ -737,7 +711,10 @@ the stored one, so the store can rewrite it in its slot. -/
     deadline := ⟨deadline⟩
     domain := ⟨domain⟩
     budgetRemaining := ⟨budget⟩
-    replenishments := freshReplenishment sc.replenishments budget (timer + period) }
+    refillHeadPresent := true
+    refillHeadAmount := budget
+    refillHeadEligibleAt := timer + period
+    refillTail := [] }
 
 /-- **WS-ZA ZA5.2**: `schedContextConfigure`'s checks, read before any write:
 the parameters, the context, admission (`checkAdmission` of the configured
@@ -847,8 +824,8 @@ theorem schedContextConfigure_of_admitted (st : SystemState) (vScId : ValidObjId
       have hCheck : checkAdmission st
           { sc with budget := ⟨budget⟩, period := ⟨period⟩, priority := ⟨priority⟩,
                     deadline := ⟨deadline⟩, domain := ⟨domain⟩, budgetRemaining := ⟨budget⟩,
-                    replenishments := [{ amount := ⟨budget⟩,
-                                         eligibleAt := st.machine.timer + period }] }
+                    refillHeadPresent := true, refillHeadAmount := budget,
+                    refillHeadEligibleAt := st.machine.timer + period, refillTail := [] }
           (some vScId.val) = true := by
         rw [checkAdmission_eq_impl]
         simpa [checkAdmissionImpl, admissionUtilizationOf, SchedContext.utilizationPerMille,
@@ -858,9 +835,9 @@ theorem schedContextConfigure_of_admitted (st : SystemState) (vScId : ValidObjId
       have hCfg : configuredSchedContext budget period priority deadline domain st.machine.timer sc =
           { sc with budget := ⟨budget⟩, period := ⟨period⟩, priority := ⟨priority⟩,
                     deadline := ⟨deadline⟩, domain := ⟨domain⟩, budgetRemaining := ⟨budget⟩,
-                    replenishments := [{ amount := ⟨budget⟩,
-                                         eligibleAt := st.machine.timer + period }] } := by
-        simp only [configuredSchedContext, freshReplenishment_eq]
+                    refillHeadPresent := true, refillHeadAmount := budget,
+                    refillHeadEligibleAt := st.machine.timer + period, refillTail := [] } := by
+        simp only [configuredSchedContext]
       generalize hC : purgeReplenishmentOnCore st (schedContextReplenishHome st sc)
         ⟨vScId.val.toNat⟩ = stC
       have hCObj : stC.objects = st.objects := by rw [← hC]; rfl

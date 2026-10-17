@@ -233,12 +233,9 @@ for driver in drivers:
             # suspended while it holds the context, the suspend releasing it),
             # behind the root task's own IPC-buffer set that the configure's
             # fifth word is read through.
-            "root-set-ipc-buffer", "sched-context-bind", "sched-context-unbind",
-            "sched-context-rebind", "tcb-resume-bound", "tcb-suspend-bound")}
-        # A configure's first call on a context with no refill yet builds the
-        # first refill entry and its list cell; CBS row CB1.7 makes a refill
-        # one entry per context, stored in place (docs/REGISTERED_DEBT.md).
-        pinned["sched-context-configure"] = (2, 0)
+            "root-set-ipc-buffer", "sched-context-configure", "sched-context-bind",
+            "sched-context-unbind", "sched-context-rebind", "tcb-resume-bound",
+            "tcb-suspend-bound")}
         # WS-ZA ZA5.1: the capability invocations' readings today, each the
         # operation's own cells (slot, tree and object writes, the store's
         # copy); the rows that bring them to zero lower these pins.

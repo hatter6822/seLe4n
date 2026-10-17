@@ -2900,7 +2900,7 @@ private def differentialSchedContextConfigureDomainOnlyKeepsOrder : IO Unit := d
   let cfgSc : SeLe4n.Kernel.SchedContext :=
     { scId := cfgScId, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨0⟩,
       deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨100⟩,
-      replenishments := [{ amount := ⟨100⟩, eligibleAt := 1000 }],
+      refillHeadPresent := true, refillHeadAmount := 100, refillHeadEligibleAt := 1000,
       boundThreadCode := SeLe4n.ThreadId.optCode (some diffA) }
   let ist := diffAddTcb (diffAddTcb
     (diffAddSchedContext mkEmptyIntermediateState cfgScId cfgSc) boundTcb) peerTcb

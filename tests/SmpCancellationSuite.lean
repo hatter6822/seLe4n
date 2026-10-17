@@ -1056,7 +1056,7 @@ private def mkSc (bound : Option SeLe4n.ThreadId) (active : Bool) : SchedContext
   { scId := scId, boundThreadCode := SeLe4n.ThreadId.optCode (bound),
     budget := ⟨1000⟩, period := ⟨1000⟩,
     priority := ⟨10⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
-    budgetRemaining := ⟨1000⟩, isActive := active, replenishments := [] }
+    budgetRemaining := ⟨1000⟩, isActive := active, refillTail := [] }
 
 private def stBoundDonation : SystemState :=
   let base :=
@@ -2793,7 +2793,7 @@ leaves behind. -/
 private def exhaustedSc : SchedContext :=
   { mkSc (some auxTid) false with
     scId := scIdOther, priority := ⟨50⟩, budgetRemaining := ⟨0⟩,
-    replenishments := [{ amount := ⟨1000⟩, eligibleAt := 5000 }] }
+    refillHeadPresent := true, refillHeadAmount := 1000, refillHeadEligibleAt := 5000 }
 
 /-- **The RETIRED placement guard, computed here and nowhere else**: Cut B2's
 three conjuncts, before the reservation's budget was one of them. -/

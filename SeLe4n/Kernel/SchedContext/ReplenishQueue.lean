@@ -128,6 +128,35 @@ def remove (rq : ReplenishQueue) (scId : SchedContextId) : ReplenishQueue :=
   { entries := filtered
     size := filtered.length }
 
+/-- WS-ZA ZA5.2: the entries `remove` keeps, by structural recursion, so each
+kept cell is rewritten in place when the queue is held once (`List.filter`
+compiles to an accumulator and a reverse, a fresh cell per kept entry). -/
+def removeEntries (scId : SchedContextId) :
+    List (SchedContextId × Nat) → List (SchedContextId × Nat)
+  | [] => []
+  | e :: rest => if e.1 == scId then removeEntries scId rest else e :: removeEntries scId rest
+
+theorem removeEntries_eq (scId : SchedContextId) (l : List (SchedContextId × Nat)) :
+    removeEntries scId l = l.filter (fun (id, _) => !(id == scId)) := by
+  induction l with
+  | nil => rfl
+  | cons e rest ih =>
+    obtain ⟨id, t⟩ := e
+    by_cases h : id == scId <;> simp [removeEntries, List.filter, h, ih]
+
+/-- WS-ZA ZA5.2: the compiled `remove` (`remove_eq_impl`): the queue is taken
+apart before it is rebuilt, so its record is reused too. -/
+def removeImpl (rq : ReplenishQueue) (scId : SchedContextId) : ReplenishQueue :=
+  match rq with
+  | ⟨entries, _⟩ =>
+    let filtered := removeEntries scId entries
+    ⟨filtered, filtered.length⟩
+
+@[csimp] theorem remove_eq_impl : @remove = @removeImpl := by
+  funext rq scId
+  rcases rq with ⟨entries, size⟩
+  simp only [remove, removeImpl, removeEntries_eq]
+
 -- ============================================================================
 -- Z3-F: ReplenishQueue.peek (next due time)
 -- ============================================================================

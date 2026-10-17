@@ -166,7 +166,17 @@ structure SchedContext where
   domain : SeLe4n.DomainId
   budgetRemaining : Budget
   periodStart : Nat := 0
-  replenishments : List ReplenishmentEntry := []
+  /-- WS-ZA ZA5.2: the pending replenishments, read through
+      `SchedContext.replenishments` and written through
+      `SchedContext.withReplenishments`.  The first entry is held in the
+      context's own fields (`refillHeadPresent`, `refillHeadAmount`,
+      `refillHeadEligibleAt`) and the rest in `refillTail`, so the refill a
+      configure installs is written in the context's slot; a list held whole
+      was two fresh cells on a context with no refill yet. -/
+  refillHeadPresent : Bool := false
+  refillHeadAmount : Nat := 0
+  refillHeadEligibleAt : Nat := 0
+  refillTail : List ReplenishmentEntry := []
   /-- WS-ZA ZA5.2: the thread this context is bound to, as its code
       (`SeLe4n.ThreadId.optCode`; `0` is none), read through
       `SchedContext.boundThread`.  A bound thread written as `some t` was a heap
@@ -239,6 +249,116 @@ Reducible, so a record update that leaves the code alone reads the old value by
 @[reducible, inline] def SchedContext.boundThread (sc : SchedContext) :
     Option SeLe4n.ThreadId :=
   SeLe4n.ThreadId.ofOptCode sc.boundThreadCode
+
+/-- WS-ZA ZA5.2: the context's pending replenishments, its first entry read
+from its fields.  A record update that leaves the refill fields alone reads
+the old list by `rfl`. -/
+@[inline] def SchedContext.replenishments (sc : SchedContext) :
+    List ReplenishmentEntry :=
+  if sc.refillHeadPresent then
+    { amount := ⟨sc.refillHeadAmount⟩, eligibleAt := sc.refillHeadEligibleAt } :: sc.refillTail
+  else []
+
+/-- WS-ZA ZA5.2: a record update that leaves the refill fields reads the old
+list. -/
+@[simp] theorem SchedContext.replenishments_mk_self (sc : SchedContext)
+    (scId : SeLe4n.SchedContextId) (budget : Budget) (period : Period)
+    (priority : SeLe4n.Priority) (deadline : SeLe4n.Deadline) (domain : SeLe4n.DomainId)
+    (budgetRemaining : Budget) (periodStart boundThreadCode : Nat)
+    (scReply : Option SeLe4n.ReplyId) (donationOrigin : Option SeLe4n.ThreadId)
+    (isActive : Bool) :
+    (SchedContext.mk scId budget period priority deadline domain budgetRemaining periodStart
+      sc.refillHeadPresent sc.refillHeadAmount sc.refillHeadEligibleAt sc.refillTail
+      boundThreadCode scReply donationOrigin isActive).replenishments = sc.replenishments := rfl
+
+/-- WS-ZA ZA5.2: a context whose first entry is present reads it first. -/
+@[simp] theorem SchedContext.replenishments_mk_true
+    (scId : SeLe4n.SchedContextId) (budget : Budget) (period : Period)
+    (priority : SeLe4n.Priority) (deadline : SeLe4n.Deadline) (domain : SeLe4n.DomainId)
+    (budgetRemaining : Budget) (periodStart amount eligibleAt boundThreadCode : Nat)
+    (tail : List ReplenishmentEntry)
+    (scReply : Option SeLe4n.ReplyId) (donationOrigin : Option SeLe4n.ThreadId)
+    (isActive : Bool) :
+    (SchedContext.mk scId budget period priority deadline domain budgetRemaining periodStart
+      true amount eligibleAt tail boundThreadCode scReply donationOrigin isActive).replenishments =
+      { amount := ⟨amount⟩, eligibleAt := eligibleAt } :: tail := rfl
+
+/-- WS-ZA ZA5.2: a context with no first entry holds none. -/
+@[simp] theorem SchedContext.replenishments_mk_false
+    (scId : SeLe4n.SchedContextId) (budget : Budget) (period : Period)
+    (priority : SeLe4n.Priority) (deadline : SeLe4n.Deadline) (domain : SeLe4n.DomainId)
+    (budgetRemaining : Budget) (periodStart amount eligibleAt boundThreadCode : Nat)
+    (tail : List ReplenishmentEntry)
+    (scReply : Option SeLe4n.ReplyId) (donationOrigin : Option SeLe4n.ThreadId)
+    (isActive : Bool) :
+    (SchedContext.mk scId budget period priority deadline domain budgetRemaining periodStart
+      false amount eligibleAt tail boundThreadCode scReply donationOrigin isActive).replenishments =
+      [] := rfl
+
+/-- WS-ZA ZA5.2: the context with `rs` as its pending replenishments, the first
+entry written into its fields. -/
+@[inline] def SchedContext.withReplenishments (sc : SchedContext)
+    (rs : List ReplenishmentEntry) : SchedContext :=
+  { sc with
+    refillHeadPresent := !rs.isEmpty
+    refillHeadAmount := match rs with | e :: _ => e.amount.val | [] => sc.refillHeadAmount
+    refillHeadEligibleAt := match rs with | e :: _ => e.eligibleAt | [] => sc.refillHeadEligibleAt
+    refillTail := rs.tail }
+
+@[simp] theorem SchedContext.withReplenishments_replenishments (sc : SchedContext)
+    (rs : List ReplenishmentEntry) : (sc.withReplenishments rs).replenishments = rs := by
+  cases rs with
+  | nil => rfl
+  | cons e rest => rcases e with ⟨⟨a⟩, t⟩; rfl
+
+/-- WS-ZA ZA5.2: writing the replenishments leaves every other field. -/
+@[simp] theorem SchedContext.withReplenishments_scId (sc : SchedContext)
+    (rs : List ReplenishmentEntry) : (sc.withReplenishments rs).scId = sc.scId := by
+  rfl
+
+@[simp] theorem SchedContext.withReplenishments_budget (sc : SchedContext)
+    (rs : List ReplenishmentEntry) : (sc.withReplenishments rs).budget = sc.budget := by
+  rfl
+
+@[simp] theorem SchedContext.withReplenishments_period (sc : SchedContext)
+    (rs : List ReplenishmentEntry) : (sc.withReplenishments rs).period = sc.period := by
+  rfl
+
+@[simp] theorem SchedContext.withReplenishments_priority (sc : SchedContext)
+    (rs : List ReplenishmentEntry) : (sc.withReplenishments rs).priority = sc.priority := by
+  rfl
+
+@[simp] theorem SchedContext.withReplenishments_deadline (sc : SchedContext)
+    (rs : List ReplenishmentEntry) : (sc.withReplenishments rs).deadline = sc.deadline := by
+  rfl
+
+@[simp] theorem SchedContext.withReplenishments_domain (sc : SchedContext)
+    (rs : List ReplenishmentEntry) : (sc.withReplenishments rs).domain = sc.domain := by
+  rfl
+
+@[simp] theorem SchedContext.withReplenishments_budgetRemaining (sc : SchedContext)
+    (rs : List ReplenishmentEntry) : (sc.withReplenishments rs).budgetRemaining = sc.budgetRemaining := by
+  rfl
+
+@[simp] theorem SchedContext.withReplenishments_periodStart (sc : SchedContext)
+    (rs : List ReplenishmentEntry) : (sc.withReplenishments rs).periodStart = sc.periodStart := by
+  rfl
+
+@[simp] theorem SchedContext.withReplenishments_boundThreadCode (sc : SchedContext)
+    (rs : List ReplenishmentEntry) : (sc.withReplenishments rs).boundThreadCode = sc.boundThreadCode := by
+  rfl
+
+@[simp] theorem SchedContext.withReplenishments_scReply (sc : SchedContext)
+    (rs : List ReplenishmentEntry) : (sc.withReplenishments rs).scReply = sc.scReply := by
+  rfl
+
+@[simp] theorem SchedContext.withReplenishments_donationOrigin (sc : SchedContext)
+    (rs : List ReplenishmentEntry) : (sc.withReplenishments rs).donationOrigin = sc.donationOrigin := by
+  rfl
+
+@[simp] theorem SchedContext.withReplenishments_isActive (sc : SchedContext)
+    (rs : List ReplenishmentEntry) : (sc.withReplenishments rs).isActive = sc.isActive := by
+  rfl
 
 -- ============================================================================
 -- Z1-G: SchedContext.wellFormed predicate

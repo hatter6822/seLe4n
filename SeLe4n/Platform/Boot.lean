@@ -988,7 +988,8 @@ def untypedReferencesReservedIdleSlot (ut : UntypedObject) : Bool :=
 def schedContextReferencesReservedIdleSlot (sc : SchedContext) : Bool :=
   match sc with
   | ⟨scId, _budget, _period, _priority, _deadline, _domain, _budgetRemaining, _periodStart,
-     _replenishments, boundThreadCode, scReply, donationOrigin, _isActive⟩ =>
+     _refillHeadPresent, _refillHeadAmount, _refillHeadEligibleAt, _refillTail,
+     boundThreadCode, scReply, donationOrigin, _isActive⟩ =>
     SeLe4n.Kernel.isIdleObjId scId.toObjId ||
     (SeLe4n.ThreadId.ofOptCode boundThreadCode).any SeLe4n.Kernel.isIdleThreadId ||
     scReply.any (fun rid => SeLe4n.Kernel.isIdleObjId rid.toObjId) ||
@@ -1888,7 +1889,8 @@ def bootSafeUntypedCheck (ut : UntypedObject) : Bool :=
 def bootSafeSchedContextCheck (sc : SchedContext) : Bool :=
   match sc with
   | ⟨_scId, _budget, _period, _priority, _deadline, _domain, _budgetRemaining, _periodStart,
-     _replenishments, _boundThread, _scReply, _donationOrigin, _isActive⟩ =>
+     _refillHeadPresent, _refillHeadAmount, _refillHeadEligibleAt, _refillTail,
+     _boundThread, _scReply, _donationOrigin, _isActive⟩ =>
     sc.period.isPositive &&
     decide (sc.budget.val ≤ sc.period.val) &&
     decide (sc.budgetRemaining.val ≤ sc.budget.val) &&

@@ -77,7 +77,7 @@ private def mkEmptySchedContext (id : Nat := 200) : Kernel.SchedContext :=
     budgetRemaining := { val := 100 }
     boundThreadCode := 0
     isActive := false
-    replenishments := [] }
+    refillTail := [] }
 
 -- ============================================================================
 -- AN10-B (reader hygiene) — typed-helper kind discrimination

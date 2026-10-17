@@ -100,7 +100,7 @@ def test_checkedPriority_bound_reads_thread_field : IO Bool := do
       priority := ⟨77⟩, deadline := ⟨0⟩
       domain := ⟨0⟩, budgetRemaining := ⟨100⟩
       boundThreadCode := 0, isActive := false
-      replenishments := [] }
+      refillTail := [] }
   let tcb : TCB :=
     { tid := ThreadId.ofNat 2
       priority := ⟨5⟩
@@ -310,7 +310,7 @@ def test_AK8_H_unbind_missing_tcb_no_partial_mutation : IO Bool := do
       domain := ⟨0⟩, budgetRemaining := ⟨100⟩
       boundThreadCode := SeLe4n.ThreadId.optCode (some danglingTid)
       isActive := true
-      replenishments := [] }
+      refillTail := [] }
   let st := mkFrozenStateWith [(scId, (.schedContext sc))]
   match SeLe4n.Kernel.FrozenOps.frozenSchedContextUnbind scId st with
   | .ok _ => return false
@@ -338,7 +338,7 @@ def test_AK8_H_unbind_happy_path : IO Bool := do
       domain := ⟨0⟩, budgetRemaining := ⟨100⟩
       boundThreadCode := SeLe4n.ThreadId.optCode (some tid)
       isActive := true
-      replenishments := [] }
+      refillTail := [] }
   let tcb : TCB :=
     { tid := tid
       priority := ⟨5⟩

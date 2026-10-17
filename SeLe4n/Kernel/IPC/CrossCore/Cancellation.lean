@@ -4490,8 +4490,9 @@ def suspendReleasePerform (st : SystemState) (tid : SeLe4n.ThreadId) : SystemSta
       let dom0 := tcb.domain
       let st1 : SystemState := st.updateSchedContext scId fun sc =>
         { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }
-      let rq := ReplenishQueue.remove (st1.scheduler.replenishQueueOnCore home) scId
-      let st2 := { st1 with scheduler := st1.scheduler.setReplenishQueueOnCore home rq }
+      let sched := st1.scheduler.modifyReplenishQueueOnCore home
+        (fun q => ReplenishQueue.remove q scId)
+      let st2 : SystemState := { st1 with scheduler := sched }
       markKeyChangeParts
         (st2.updateTcb tid fun tcb' => { tcb' with scBindingScCode := 0, scBindingOwnerCode := 0 })
         tid p0 d0 dom0
@@ -4506,7 +4507,7 @@ theorem cancelBoundDonationOnCore_eq_release {st : SystemState} {tid : SeLe4n.Th
   unfold cancelBoundDonationOnCore suspendReleasePerform
   simp only [hT, hB]
   unfold markKeyChangeFrom
-  simp only [hT]
+  simp only [hT, SchedulerState.modifyReplenishQueueOnCore_eq]
   rw [markKeyChangeFor_eq_parts, effectiveSchedParams_eq_parts]
 
 /-- WS-ZA ZA5.2: the quiescent suspend once admitted.  The placement, the core

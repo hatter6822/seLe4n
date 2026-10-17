@@ -95,7 +95,10 @@ def applyConfigureParamsFull (sc : SchedContext)
     deadline := ⟨deadline⟩
     domain := ⟨domain⟩
     budgetRemaining := ⟨budget⟩
-    replenishments := [{ amount := ⟨budget⟩, eligibleAt := timer + period }] }
+    refillHeadPresent := true
+    refillHeadAmount := budget
+    refillHeadEligibleAt := timer + period
+    refillTail := [] }
 
 /-- Z5-M: When parameters pass validation and the original SchedContext has
 bounded replenishments, the configured SchedContext is well-formed. -/

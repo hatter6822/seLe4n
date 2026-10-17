@@ -343,7 +343,7 @@ private def tid0 : SeLe4n.ThreadId := ThreadId.ofNat 100
 private def sc0 : SchedContext :=
   { scId := scId0, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨5⟩, deadline := ⟨0⟩,
     domain := ⟨0⟩, budgetRemaining := ⟨50⟩, boundThreadCode := SeLe4n.ThreadId.optCode (some tid0), isActive := true,
-    replenishments := [] }
+    refillTail := [] }
 
 /-- `tid0`'s TCB, bound to `sc0` and pinned (`cpuAffinity`) to core 1. -/
 private def tcb0 : TCB :=
@@ -868,7 +868,7 @@ admits. -/
 private def scLifecycle : SchedContext :=
   { scId := scIdLifecycle, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨7⟩,
     deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩, boundThreadCode := 0,
-    isActive := false, replenishments := [] }
+    isActive := false, refillTail := [] }
 
 /-- `tidLifecycle`'s TCB: unbound, same domain as `scLifecycle`, pinned to core 1. -/
 private def tcbLifecycle : TCB :=
@@ -904,7 +904,7 @@ private def scIdDangling : SchedContextId := SchedContextId.ofNat 220
 private def scDangling : SchedContext :=
   { scId := scIdDangling, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨6⟩,
     deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩,
-    boundThreadCode := SeLe4n.ThreadId.optCode (some tidDangling), isActive := true, replenishments := [] }
+    boundThreadCode := SeLe4n.ThreadId.optCode (some tidDangling), isActive := true, refillTail := [] }
 private def stDangling : SystemState :=
   let base := (BootstrapBuilder.empty.withObject scIdDangling.toObjId
     (.schedContext scDangling)).build
