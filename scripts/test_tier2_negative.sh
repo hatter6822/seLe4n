@@ -30,6 +30,12 @@ while read -r exe; do suite_exes+=("${exe}"); done < <(
 
 run_check "BUILD" lake build "${suite_exes[@]}"
 
+# A suite that calls an `@[inline]` kernel entry directly gets the whole kernel
+# inlined into one C function, which clang takes tens of minutes to compile;
+# the suites call `SeLe4n.Testing.DispatchEntryCalls` instead.  Read the C the
+# build just generated for every suite above and hold each function to budget.
+run_check "BUILD" python3 "${SCRIPT_DIR}/check_suite_c_function_size.py" "${suite_exes[@]}"
+
 # `negative_state_suite`, `information_flow_suite` and `robin_hood_suite` ran
 # through the Lean *interpreter* (`lake env lean --run`) from the day the first
 # of them blew clang's `-fbracket-depth`; the thin-dispatcher pattern CLAUDE.md

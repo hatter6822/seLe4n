@@ -7,6 +7,7 @@
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
 
+import SeLe4n.Testing.DispatchEntryCalls
 import SeLe4n.Kernel.IPC.CrossCore.Fault
 import SeLe4n.Kernel.IPC.Invariant.FaultPreservation
 import SeLe4n.Kernel.IPC.Invariant.FaultProgress
@@ -1352,7 +1353,7 @@ private def svcX30 : UInt64 := 0xBEEF
 CPtr and an empty message, through the typed ABI entry the hardware calls. -/
 private def seamDispatch (ctx : LabelingContext) (sid : SyscallId) (cptr : UInt64) :
     Except KernelError (SyscallOutcome × SystemState) :=
-  Platform.FFI.syscallDispatchFromAbi ctx c0 sid.toNat.toUInt32 cptr 0 0 0 0 0 0
+  SeLe4n.Testing.dispatchFromAbi ctx c0 sid.toNat.toUInt32 cptr 0 0 0 0 0 0
     svcElr svcSpsr svcSpEl0 svcX30 stRunning
 
 /-- The seam pipeline: a `Call` at CPtr 3 — a slot the root CNode does not

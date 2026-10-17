@@ -7,6 +7,7 @@
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
 
+import SeLe4n.Testing.DispatchEntryCalls
 import SeLe4n
 import SeLe4n.Platform.FFI
 import SeLe4n.Testing.StateBuilder
@@ -393,7 +394,7 @@ private def dispatchViaRef (syscallId : UInt32)
     IO Kernel.Architecture.SyscallOutcome := do
   let st ← getKernelState
   let ctx ← getKernelLabelingContext
-  match syscallDispatchFromAbi ctx SeLe4n.Kernel.Concurrency.bootCoreId
+  match SeLe4n.Testing.dispatchFromAbi ctx SeLe4n.Kernel.Concurrency.bootCoreId
       syscallId x0 x1 x2 x3 x4 x5 ipcBuf 0 0 0 0 st with
   | Except.ok (outcome, st') =>
       initialiseKernelState st'
@@ -471,7 +472,7 @@ private def sd033_dispatchFromAbi_total : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨9⟩
   let st := mkState [(⟨9⟩, .tcb (mkTcb 9 .Ready))] (some tid)
   let ctx := SeLe4n.Kernel.testLabelingContext
-  match syscallDispatchFromAbi ctx SeLe4n.Kernel.Concurrency.bootCoreId 99 0 0 0 0 0 0 0
+  match SeLe4n.Testing.dispatchFromAbi ctx SeLe4n.Kernel.Concurrency.bootCoreId 99 0 0 0 0 0 0 0
       0 0 0 0 st with
   | Except.ok _ =>
       passLine "sd033_dispatchFromAbi_returns_ok"
@@ -488,7 +489,7 @@ private def sd038_idleCallerRefused : IO Unit := do
   let idle := idleThreadId bootCoreId
   let st := mkState [(idle.toObjId, .tcb (readyIdleThread bootCoreId))] (some idle)
   let ctx := SeLe4n.Kernel.testLabelingContext
-  match syscallDispatchFromAbi ctx bootCoreId 0 0xdead 1 2 3 4 5 0 0 0 0 0 st with
+  match SeLe4n.Testing.dispatchFromAbi ctx bootCoreId 0 0xdead 1 2 3 4 5 0 0 0 0 0 st with
   | .ok (outcome, st') =>
       expect "sd038a_idle_caller_gets_illegalState"
         (isErrorFrameFor outcome .illegalState)

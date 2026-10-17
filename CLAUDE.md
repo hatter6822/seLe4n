@@ -11,7 +11,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.36.98.
+Lean 4.28.0 toolchain, Lake build system, version 0.36.99.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -171,6 +171,11 @@ the hand-curated **Known large files** list lives in
   suite is compiled (`bracket nesting level exceeded`). Keep test helpers
   ≤ ~150 lines and use the thin-dispatcher pattern
   (`tests/NegativeStateSuite.lean`'s `runNegativeChecks`).
+- **Suites never call an `@[inline]` kernel entry directly**: each call site
+  inlines the whole kernel into one C function that clang takes tens of
+  minutes to compile. Call the out-of-line copies in
+  `SeLe4n/Testing/DispatchEntryCalls.lean`; Tier 2's
+  `check_suite_c_function_size.py` holds every suite function to budget.
 
 ## Handling large search and command output
 

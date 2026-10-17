@@ -157,6 +157,25 @@ function boundary in the codegen, so each sub-helper stays well below
 the limit. Factor large `do`-blocks into per-area `private def`s up
 front rather than waiting for the build to break.
 
+### Build-fragile pattern: calling an inlined kernel entry from a suite
+
+The syscall entries are `@[inline]` so the exported kernel builds no result
+record (`syscallDispatchFromAbiImpl`, `syscallDispatchCrossCoreStep`,
+`syscallDispatchCrossCoreBracketedStep`, `syscallDispatchBracket`).  A suite
+helper that calls one directly receives the whole kernel inlined into that
+helper, which Lean emits as one C function of 70k–190k lines, and clang -O3
+time grows faster than linearly in function size.  Before v0.36.99 four suites
+called them this way and each took 30–100 minutes of clang time; the link
+step took under a second.
+
+**Rule**: suites call the out-of-line copies in
+`SeLe4n/Testing/DispatchEntryCalls.lean` (`dispatchFromAbi`,
+`dispatchCrossCoreStep`, `dispatchCrossCoreBracketedStep`, `dispatchBracket`).
+Each is the entry it names by `rfl`, so a suite still checks the exported
+function, and the kernel body is compiled once for every suite.  Tier 2
+(`scripts/check_suite_c_function_size.py`) reads the C generated for every
+suite it builds and fails on a function over 40,000 lines.
+
 ## Handling large search and command output
 
 Search and command output can saturate context if unbounded. Constrain
