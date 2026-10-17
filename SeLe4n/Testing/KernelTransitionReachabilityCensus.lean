@@ -1120,6 +1120,9 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.declassifyStoreFromCore
   , `SeLe4n.Kernel.declassifyStoreOnCore
   , `SeLe4n.Kernel.descheduleThread
+  -- WS-ZA ZA5.2: the routed configure's specification arm; the entry runs its
+  -- refusal-carrying form `dispatchConfigureByR` (`dispatchConfigureByR_eq`).
+  , `SeLe4n.Kernel.dispatchConfigureBy
   , `SeLe4n.Kernel.dispatchSyscall
   , `SeLe4n.Kernel.dispatchWithCap
   , `SeLe4n.Kernel.donationChainWitness

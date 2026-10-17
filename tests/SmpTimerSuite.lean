@@ -820,10 +820,13 @@ private def runReplenishNoWakeBlockedChecks : IO Unit := do
            r.1.scheduler.currentOnCore bootCoreId != some tidB
        | .error _ => false)
 
-/-- §3.14 fixture: core 1 runs `tidCur` (bound to an SC one charge from
-exhaustion); `tidW` — blocked on the endpoint's send queue, budget-bounded by
-the same SC (`scThreadIndex`), with the given `cpuAffinity` — is the thread the
-exhaustion timeout will wake. -/
+/-- §3.14 fixture: core 1 runs `tidCur`, charged on an SC one charge from
+exhaustion; `tidW` — blocked on the endpoint's send queue with the given
+`cpuAffinity` — is the SC's bound thread, the one thread the exhaustion
+timeout visits (`timeoutBlockedThreads` reads `sc.boundThread`, as seL4's
+`sc->scTcb`).  The two-sided binding is deliberately split so the charge and
+the timeout name different threads: the check is the timeout's wake routing,
+not how the state arose. -/
 private def mkTimeoutWakeState (aff : Option CoreId) : SystemState :=
   let tidCur := ThreadId.ofNat 320
   let tidW := ThreadId.ofNat 321
@@ -835,7 +838,7 @@ private def mkTimeoutWakeState (aff : Option CoreId) : SystemState :=
     queuePrevCode := 0, queueNextCode := 0, queuePPrevCode := 1 } (.blockedOnSend epW))
   let scObj : SchedContext :=
     { (default : SchedContext) with
-        priority := ⟨15⟩, boundThreadCode := SeLe4n.ThreadId.optCode (some tidCur),
+        priority := ⟨15⟩, boundThreadCode := SeLe4n.ThreadId.optCode (some tidW),
         budget := ⟨5⟩, period := ⟨10⟩, budgetRemaining := ⟨1⟩ }
   let epObj : Endpoint := (Endpoint.ofQueues { head := some tidW, tail := some tidW } {})
   let stBase : SystemState :=
