@@ -1164,7 +1164,7 @@ theorem memoryAddressObservable_monotone (ctx : LabelingContext) {L₁ L₂ : Se
 CNode carries no lock word since WS-LS LS3.1, so there is nothing to erase
 beside the slot filter.) -/
 def projectCNode (ctx : LabelingContext) (observer : IfObserver) (cn : CNode) : CNode :=
-  { cn with slots := cn.slots.filter (fun _ cap => capTargetObservable ctx observer cap.target) }
+  cn.filterSlots (fun _ cap => capTargetObservable ctx observer cap.target)
 
 /-- Definition-pinning: `projectKernelObject`'s `.cnode` arm **is**
 `projectCNode`, so the slot lemmas below are statements about the live
@@ -1182,13 +1182,10 @@ theorem projectCNode_lookup_monotone (ctx : LabelingContext) {L₁ L₂ : Securi
     (hFlow : securityFlowsTo L₁ L₂ = true) (cn : CNode) (slot : SeLe4n.Slot) (cap : Capability)
     (h : (projectCNode ctx (IfObserver.ofLabel L₁) cn).lookup slot = some cap) :
     (projectCNode ctx (IfObserver.ofLabel L₂) cn).lookup slot = some cap := by
-  have hInv : cn.slots.table.invExt := SeLe4n.Kernel.RobinHood.RHTable.invExtK_invExt cn.slots.hWF
-  simp only [projectCNode, CNode.lookup, SeLe4n.UniqueSlotMap.get?,
-    SeLe4n.UniqueSlotMap.table_filter] at h ⊢
-  obtain ⟨hOrig, hPred⟩ :=
-    (SeLe4n.Kernel.RobinHood.RHTable.filter_getElem?_iff _ _ _ _ hInv).mp h
-  exact (SeLe4n.Kernel.RobinHood.RHTable.filter_getElem?_iff _ _ _ _ hInv).mpr
-    ⟨hOrig, capTargetObservable_monotone ctx hFlow _ hPred⟩
+  simp only [projectCNode, CNode.lookup, CNode.filterSlots,
+    SeLe4n.UniqueSlotMap.get?_filter, Option.filter_eq_some_iff] at h ⊢
+  obtain ⟨hOrig, hPred⟩ := h
+  exact ⟨hOrig, capTargetObservable_monotone ctx hFlow _ hPred⟩
 
 /-- SM8.A.5: off the CNode arm, `projectKernelObject` does not read the
 observer at all — the TCB / SchedContext / Reply erasures are structural and
@@ -1212,7 +1209,7 @@ as much". -/
 
 /-- SM8.A.5: the visibility order on a **projected CNode**.
 
-`projectCNode` is `{ cn with slots := cn.slots.filter … }`, so raising the
+`projectCNode` is `cn.filterSlots …` (map and slot array alike), so raising the
 clearance may re-admit redacted slots and may do nothing else.  This relation
 says exactly that: the five non-slot fields are pinned, and every capability
 the narrower observer can look up is still there — same slot, same capability
@@ -1244,8 +1241,18 @@ added to `CNode` makes this proof fail, which is how the relation learns it has
 to grow. -/
 theorem eq_of_cnodeVisibilityLe_of_slots_eq {cn₁ cn₂ : CNode}
     (h : cnodeVisibilityLe cn₁ cn₂) (hSlots : cn₁.slots = cn₂.slots) : cn₁ = cn₂ := by
-  obtain ⟨d₁, gw₁, gv₁, rw₁, s₁⟩ := cn₁
-  obtain ⟨d₂, gw₂, gv₂, rw₂, s₂⟩ := cn₂
+  -- The slot array is pinned by the map: equal radix widths give equal sizes,
+  -- and `slots_agree` reads every entry back from the (equal) map.
+  have hCells : cn₁.cells = cn₂.cells := by
+    apply Array.ext
+    · rw [cn₁.cells_size, cn₂.cells_size, h.radixWidth]
+    · intro i hi₁ hi₂
+      have e₁ := cn₁.slots_agree (SeLe4n.Slot.ofNat i)
+      have e₂ := cn₂.slots_agree (SeLe4n.Slot.ofNat i)
+      simp only [slotArrayGet, SeLe4n.Slot.toNat_ofNat, hi₁, hi₂, dif_pos] at e₁ e₂
+      rw [← e₁, ← e₂, hSlots]
+  obtain ⟨d₁, gw₁, gv₁, rw₁, s₁, c₁, _, _⟩ := cn₁
+  obtain ⟨d₂, gw₂, gv₂, rw₂, s₂, c₂, _, _⟩ := cn₂
   obtain ⟨hd, hgw, hgv, hrw, _⟩ := h
   simp_all
 

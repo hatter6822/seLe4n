@@ -1643,7 +1643,8 @@ theorem cspaceRecordFrameMapping_preserves_ipcInvariantFull
         simpa only [Option.some.injEq, KernelObject.cnode.injEq] using hCn'
       by_cases hSlot : addr.slot = slot
       · subst hSlot
-        rw [CNode.lookup_insert_eq cn addr.slot _ (CNode.slotsUnique_holds cn)] at hLk'
+        rw [CNode.lookup_insert_eq cn addr.slot _ (CNode.slotsUnique_holds cn)
+          (CNode.slotAddressable_of_lookup_insert _ _ _ _ _ hLk')] at hLk'
         cases hLk'
         exact hInv.badgeWellFormed.2 addr.cnode cn addr.slot cap badge (hK ▸ hPre) hLk hB
       · rw [CNode.lookup_insert_ne cn addr.slot slot _ hSlot

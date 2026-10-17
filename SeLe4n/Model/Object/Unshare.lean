@@ -75,7 +75,14 @@ def KernelObject.unshareImpl : KernelObject → KernelObject
       registerContext := { t.registerContext with x0 := opaqueId t.registerContext.x0 } }
   | .endpoint e => .endpoint { e with sendHeadCode := opaqueId e.sendHeadCode }
   | .notification n => .notification { n with state := opaqueId n.state }
-  | .cnode c => .cnode { c with depth := opaqueId c.depth, slots := c.slots.unshareImpl }
+  | .cnode c => .cnode { c with
+      depth := opaqueId c.depth
+      slots := c.slots.unshareImpl
+      cells := c.cells.map opaqueId
+      cells_size := by rw [Array.size_map]; exact c.cells_size
+      slots_agree := by
+        have h : (opaqueId : Option Capability → Option Capability) = id := rfl
+        rw [SeLe4n.UniqueSlotMap.unshareImpl_eq, h, Array.map_id]; exact c.slots_agree }
   | .vspaceRoot v => .vspaceRoot { v with
       asid := opaqueId v.asid
       mappings := v.mappings.unshare
@@ -89,8 +96,9 @@ def KernelObject.unshareImpl : KernelObject → KernelObject
 @[csimp] theorem KernelObject.unshare_eq_impl :
     @KernelObject.unshare = @KernelObject.unshareImpl := by
   funext o
+  have hId : (opaqueId : Option Capability → Option Capability) = id := rfl
   cases o <;>
-    simp only [KernelObject.unshare, KernelObject.unshareImpl, opaqueId,
+    simp only [KernelObject.unshare, KernelObject.unshareImpl, hId, Array.map_id, opaqueId,
       SeLe4n.UniqueSlotMap.unshareImpl_eq, RHTable.unshare]
 
 end SeLe4n.Model

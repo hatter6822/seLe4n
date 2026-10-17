@@ -775,9 +775,9 @@ def empty : CNode :=
     pass `SeLe4n.UniqueSlotMap.empty`; callers that built tables from
     literals via `RHTable.ofList` should use `SeLe4n.UniqueSlotMap.ofListWF`. -/
 
-def mk' (d gw gv rw : Nat)
-    (s : SeLe4n.UniqueSlotMap Capability := SeLe4n.UniqueSlotMap.empty) : CNode :=
-  { depth := d, guardWidth := gw, guardValue := gv, radixWidth := rw, slots := s }
+def mk' (d gw gv rw : Nat) : CNode :=
+  { depth := d, guardWidth := gw, guardValue := gv, radixWidth := rw,
+    slots := SeLe4n.UniqueSlotMap.empty }
 
 /-- Number of addressable slots represented by this CNode radix width. -/
 def slotCount (node : CNode) : Nat :=
@@ -831,19 +831,63 @@ theorem resolveSlot_mask_idempotent (n : Nat) (h : n < SeLe4n.machineWordMax) :
     n % SeLe4n.machineWordMax = n :=
   Nat.mod_eq_of_lt h
 
-/-- WS-G5/F-P03: O(1) amortized slot lookup via `RHTable.get?`.  Inlined, so a
-caller that matches the result builds no `some` (WS-ZA ZA2.5). -/
-@[inline] def lookup (node : CNode) (slot : SeLe4n.Slot) : Option Capability :=
+/-- WS-G5/F-P03: O(1) amortized slot lookup via `RHTable.get?`.  WS-ZA ZA5.3:
+compiled code reads the slot array instead (`lookup_eq_lookupCells`). -/
+def lookup (node : CNode) (slot : SeLe4n.Slot) : Option Capability :=
   node.slots.get? slot
 
-/-- WS-G5/F-P03: O(1) amortized slot insert via `RHTable.insert`.
-RHTable key uniqueness (noDupKeys invariant) ensures the old entry for `slot` is replaced. -/
-def insert (node : CNode) (slot : SeLe4n.Slot) (cap : Capability) : CNode :=
-  { node with slots := node.slots.insert slot cap }
+/-- WS-ZA ZA5.3: the slot's capability, read from the slot array.  Inlined, so
+a caller that matches the result builds no `some` (WS-ZA ZA2.5). -/
+@[inline] def lookupCells (node : CNode) (slot : SeLe4n.Slot) : Option Capability :=
+  slotArrayGet node.cells slot
 
-/-- WS-G5/F-P03: O(1) amortized slot removal via `RHTable.erase`. -/
+/-- WS-ZA ZA5.3: the map and the slot array answer every lookup alike
+(`slots_agree`), so compiled code reads the array. -/
+@[csimp] theorem lookup_eq_lookupCells : @lookup = @lookupCells := by
+  funext node slot; exact node.slots_agree slot
+
+/-- WS-G5/F-P03: O(1) amortized slot insert via `RHTable.insert`.
+RHTable key uniqueness (noDupKeys invariant) ensures the old entry for `slot` is replaced.
+
+WS-ZA ZA5.3: the capability is written into the slot's array entry in place.
+A slot at or past `2 ^ radixWidth` has no entry, so inserting there leaves the
+CNode unchanged; `cspaceInsertSlot` refuses such a slot before it gets here
+(`slotAddressable`). -/
+def insert (node : CNode) (slot : SeLe4n.Slot) (cap : Capability) : CNode :=
+  if h : slot.toNat < node.cells.size then
+    { node with
+      slots := node.slots.insert slot cap
+      cells := node.cells.set slot.toNat (some cap) h
+      cells_size := by rw [Array.size_set]; exact node.cells_size
+      slots_agree := fun s => by
+        rw [SeLe4n.UniqueSlotMap.get?_insert, slotArrayGet_set, node.slots_agree s]
+        by_cases e : slot = s
+        · subst e; simp
+        · have : s.toNat ≠ slot.toNat := fun h' => e (by
+            cases slot; cases s; simp_all [SeLe4n.Slot.toNat])
+          simp [e, this] }
+  else node
+
+/-- WS-ZA ZA5.3: a CNode of the given geometry holding `xs`, inserted in order
+(the last capability at a repeated slot wins); a slot at or past
+`2 ^ rw` holds nothing, as `insert` leaves it. -/
+def ofList (d gw gv rw : Nat) (xs : List (SeLe4n.Slot × Capability)) : CNode :=
+  xs.foldl (fun cn kv => cn.insert kv.1 kv.2) (mk' d gw gv rw)
+
+/-- WS-G5/F-P03: O(1) amortized slot removal via `RHTable.erase`.  WS-ZA ZA5.3:
+the slot's array entry is cleared in place. -/
 def remove (node : CNode) (slot : SeLe4n.Slot) : CNode :=
-  { node with slots := node.slots.erase slot }
+  { node with
+    slots := node.slots.erase slot
+    cells := node.cells.setIfInBounds slot.toNat none
+    cells_size := by rw [Array.size_setIfInBounds]; exact node.cells_size
+    slots_agree := fun s => by
+      rw [SeLe4n.UniqueSlotMap.get?_erase, slotArrayGet_setIfInBounds, node.slots_agree s]
+      by_cases e : slot = s
+      · subst e; simp
+      · have : s.toNat ≠ slot.toNat := fun h' => e (by
+          cases slot; cases s; simp_all [SeLe4n.Slot.toNat])
+        simp [e, this] }
 
 /-- M-D01: Find the first empty slot in a CNode starting from `base`,
 scanning up to `limit` consecutive slot indices. Returns `none` if all
@@ -981,6 +1025,19 @@ abbrev revokeTargetLocalKeeps (sourceSlot : SeLe4n.Slot) (target : CapTarget)
     (s : SeLe4n.Slot) (c : Capability) : Bool :=
   s == sourceSlot || !(c.target == target)
 
+/-- WS-ZA ZA5.3: keep the slots whose capability satisfies `f`, in the map and
+in the slot array alike. -/
+def filterSlots (node : CNode) (f : SeLe4n.Slot → Capability → Bool) : CNode :=
+  { node with
+    slots := node.slots.filter f
+    cells := node.cells.mapIdx fun i e => e.filter (f (SeLe4n.Slot.ofNat i))
+    cells_size := by rw [Array.size_mapIdx]; exact node.cells_size
+    slots_agree := fun s => by
+      rw [SeLe4n.UniqueSlotMap.get?_filter, slotArrayGet_mapIdx, node.slots_agree s]
+      by_cases h : s.toNat < node.cells.size
+      · simp only [h, if_true]; rfl
+      · simp [slotArrayGet, h] }
+
 /-- The local same-TARGET sweep: keep the source slot, delete every other slot in
 this CNode that names the same capability target.
 
@@ -996,10 +1053,7 @@ seL4's `cteRevoke` (read at `13.0.0`).  What still calls this is the local
 
 WS-G5/F-P03: Inherently O(m) (filter-by-target), uses `RHTable.filter`. -/
 def revokeTargetLocal (node : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget) : CNode :=
-  {
-    node with
-      slots := node.slots.filter (revokeTargetLocalKeeps sourceSlot target)
-  }
+  node.filterSlots (revokeTargetLocalKeeps sourceSlot target)
 
 -- ============================================================================
 -- WS-G5/WS-E2/C-01: CNode slot-index uniqueness infrastructure
@@ -1186,6 +1240,57 @@ lets a CNode grow without bound.  Every capability install asks it, at
 def slotAddressable (node : CNode) (s : SeLe4n.Slot) : Bool :=
   s.toNat < node.slotCount
 
+/-- WS-ZA ZA5.3: the slot array has an entry for exactly the addressable
+slots. -/
+theorem slotAddressable_iff_lt_cells (cn : CNode) (slot : SeLe4n.Slot) :
+    cn.slotAddressable slot ↔ slot.toNat < cn.cells.size := by
+  unfold slotAddressable slotCount; rw [cn.cells_size]; simp
+
+/-- WS-ZA ZA5.3: an occupied slot is addressable, since the slot array has no
+entry past `2 ^ radixWidth` (`slots_agree`). -/
+theorem slotAddressable_of_lookup (cn : CNode) (slot : SeLe4n.Slot) (cap : Capability)
+    (h : cn.lookup slot = some cap) : cn.slotAddressable slot := by
+  rw [slotAddressable_iff_lt_cells]
+  have := cn.slots_agree slot
+  unfold lookup at h; rw [h] at this
+  unfold slotArrayGet at this
+  by_cases hl : slot.toNat < cn.cells.size
+  · exact hl
+  · simp [hl] at this
+
+/-- WS-ZA ZA5.3: a slot occupied after an insert was addressable before it. -/
+theorem slotAddressable_of_lookup_insert (cn : CNode) (slot t : SeLe4n.Slot)
+    (cap x : Capability) (h : (cn.insert slot cap).lookup t = some x) :
+    cn.slotAddressable t := by
+  have := slotAddressable_of_lookup _ _ _ h
+  unfold slotAddressable slotCount at *
+  unfold insert at this; split at this <;> exact this
+
+theorem insert_slots_of_addressable (cn : CNode) (slot : SeLe4n.Slot) (cap : Capability)
+    (h : cn.slotAddressable slot) :
+    (cn.insert slot cap).slots = cn.slots.insert slot cap := by
+  unfold insert; rw [dif_pos ((slotAddressable_iff_lt_cells cn slot).1 h)]
+
+theorem insert_eq_self_of_not_addressable (cn : CNode) (slot : SeLe4n.Slot) (cap : Capability)
+    (h : ¬ cn.slotAddressable slot) : cn.insert slot cap = cn := by
+  unfold insert; rw [dif_neg (fun h' => h ((slotAddressable_iff_lt_cells cn slot).2 h'))]
+
+@[simp] theorem insert_radixWidth (cn : CNode) (slot : SeLe4n.Slot) (cap : Capability) :
+    (cn.insert slot cap).radixWidth = cn.radixWidth := by
+  unfold insert; split <;> rfl
+
+@[simp] theorem insert_depth (cn : CNode) (slot : SeLe4n.Slot) (cap : Capability) :
+    (cn.insert slot cap).depth = cn.depth := by
+  unfold insert; split <;> rfl
+
+@[simp] theorem insert_guardWidth (cn : CNode) (slot : SeLe4n.Slot) (cap : Capability) :
+    (cn.insert slot cap).guardWidth = cn.guardWidth := by
+  unfold insert; split <;> rfl
+
+@[simp] theorem insert_guardValue (cn : CNode) (slot : SeLe4n.Slot) (cap : Capability) :
+    (cn.insert slot cap).guardValue = cn.guardValue := by
+  unfold insert; split <;> rfl
+
 /-- **WS-RR RR8.16** (`v0.35.201`): the radix-bounded scan produces only
 addressable slots — `findFirstEmptySlotChecked_within_radix` restated in the
 vocabulary the insert guard reads, so the transfer path's `.ok` is provably not
@@ -1246,7 +1351,9 @@ theorem insert_slotCountBounded_of_lookup
     (cn : CNode) (slot : SeLe4n.Slot) (old new : Capability)
     (hBounded : cn.slotCountBounded) (hLk : cn.lookup slot = some old) :
     (cn.insert slot new).slotCountBounded := by
-  show (cn.slots.insert slot new).table.size ≤ 2 ^ cn.radixWidth
+  unfold slotCountBounded slotCount
+  rw [insert_slots_of_addressable cn slot new (slotAddressable_of_lookup cn slot old hLk),
+    insert_radixWidth]
   exact Nat.le_trans
     (RHTable.size_insert_le_of_get? cn.slots.table slot new old cn.slots.hWF.1 hLk) hBounded
 
@@ -1281,9 +1388,9 @@ return the inserted capability. Maps directly to `RHTable.getElem?_insert_self`.
 
 theorem lookup_insert_eq
     (cn : CNode) (slot : SeLe4n.Slot) (cap : Capability)
-    (hUniq : cn.slotsUnique) :
+    (hUniq : cn.slotsUnique) (hAddr : cn.slotAddressable slot) :
     (cn.insert slot cap).lookup slot = some cap := by
-  simp only [insert, lookup]
+  simp only [lookup, insert_slots_of_addressable cn slot cap hAddr]
   exact RHTable.getElem?_insert_self cn.slots slot cap hUniq.1
 
 /-- WS-G5: Insert at a different slot does not affect lookup.
@@ -1294,9 +1401,11 @@ theorem lookup_insert_ne
     (hNe : slot ≠ slot')
     (hUniq : cn.slotsUnique) :
     (cn.insert slot cap).lookup slot' = cn.lookup slot' := by
-  simp only [insert, lookup]
-  exact RHTable.getElem?_insert_ne cn.slots slot slot' cap
-    (fun h => hNe (eq_of_beq h)) hUniq.1
+  by_cases hAddr : cn.slotAddressable slot
+  · simp only [lookup, insert_slots_of_addressable cn slot cap hAddr]
+    exact RHTable.getElem?_insert_ne cn.slots slot slot' cap
+      (fun h => hNe (eq_of_beq h)) hUniq.1
+  · rw [insert_eq_self_of_not_addressable cn slot cap hAddr]
 
 /-- WS-G5: Remove at a different slot does not affect lookup.
 Maps directly to `RHTable.getElem?_erase_ne`. -/

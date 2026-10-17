@@ -2920,6 +2920,59 @@ theorem Notification.waitHeadCode_eq_zero_iff (n : Notification) :
     (waiter : SeLe4n.ThreadId) :
     (n.withWaiterAppended waiter).boundTCB = n.boundTCB := rfl
 
+/-- WS-ZA ZA5.3: the capability a CNode's slot array holds at `s`; `none` past
+its end. -/
+@[inline] def slotArrayGet (cells : Array (Option Capability)) (s : SeLe4n.Slot) :
+    Option Capability :=
+  if h : s.toNat < cells.size then cells[s.toNat] else none
+
+/-- WS-ZA ZA5.3: the `2 ^ rw`-entry slot array holding `m`'s capability at
+each slot below `2 ^ rw`. -/
+def slotArrayOf (rw : Nat) (m : SeLe4n.UniqueSlotMap Capability) :
+    Array (Option Capability) :=
+  Array.ofFn (n := 2 ^ rw) fun i => m.get? (SeLe4n.Slot.ofNat i.val)
+
+theorem slotArrayOf_size (rw : Nat) (m : SeLe4n.UniqueSlotMap Capability) :
+    (slotArrayOf rw m).size = 2 ^ rw := by
+  simp [slotArrayOf]
+
+/-- WS-ZA ZA5.3: a map holding nothing at or past `2 ^ rw` agrees with the
+slot array built from it. -/
+theorem slotArrayOf_agree (rw : Nat) (m : SeLe4n.UniqueSlotMap Capability)
+    (hb : ∀ s : SeLe4n.Slot, 2 ^ rw ≤ s.toNat → m.get? s = none) :
+    ∀ s, m.get? s = slotArrayGet (slotArrayOf rw m) s := by
+  intro s
+  unfold slotArrayGet
+  by_cases h : s.toNat < 2 ^ rw
+  · simp [slotArrayOf, h]; rfl
+  · simp [slotArrayOf, h]; exact hb s (by omega)
+
+theorem slotArrayGet_set (cells : Array (Option Capability)) (i : Nat) (v : Option Capability)
+    (h : i < cells.size) (s : SeLe4n.Slot) :
+    slotArrayGet (cells.set i v h) s = if s.toNat = i then v else slotArrayGet cells s := by
+  unfold slotArrayGet
+  by_cases hs : s.toNat = i
+  · subst hs; simp [h]
+  · simp [hs, Array.getElem_set, Ne.symm hs]
+
+theorem slotArrayGet_setIfInBounds (cells : Array (Option Capability)) (i : Nat)
+    (s : SeLe4n.Slot) :
+    slotArrayGet (cells.setIfInBounds i none) s =
+      if s.toNat = i then none else slotArrayGet cells s := by
+  unfold slotArrayGet
+  by_cases hs : s.toNat = i
+  · subst hs; by_cases h : s.toNat < cells.size <;> simp [h]
+  · by_cases h : s.toNat < cells.size
+    · simp [h, hs, Array.getElem_setIfInBounds]; intro e; exact absurd e.symm hs
+    · simp [h]
+
+theorem slotArrayGet_mapIdx (cells : Array (Option Capability))
+    (g : Nat → Option Capability → Option Capability) (s : SeLe4n.Slot) :
+    slotArrayGet (cells.mapIdx g) s =
+      if s.toNat < cells.size then g s.toNat (slotArrayGet cells s) else none := by
+  unfold slotArrayGet
+  by_cases h : s.toNat < cells.size <;> simp [h]
+
 /-- WS-H13/H-01: Depth-aware CNode with compressed-path guard.
 
 `depth` = maximum remaining CSpace depth in bits from this node to any leaf.
@@ -2936,13 +2989,28 @@ machine-checked proofs).  The wrapper carries `RHTable.invExtK`
 construction time.  The historical state-level `cspaceSlotUnique`
 predicate was deleted in the WS-RC R4.A close-out; per-CNode discharge
 is now via `SeLe4n.Model.CNode.slotsUnique_holds`.  Defined in
-`SeLe4n/Model/Object/UniqueSlotMap.lean`. -/
+`SeLe4n/Model/Object/UniqueSlotMap.lean`.
+
+WS-ZA ZA5.3: the slots the kernel reads and writes are `cells`, a fixed array
+of `2 ^ radixWidth` entries made with the CNode (seL4's `cte_t` array), so an
+insert or a removal writes one entry in place.  `slots` is the map the
+theorems state their claims over, and `slots_agree` says the two hold the
+same capability at every slot; a slot at or past `2 ^ radixWidth` therefore
+holds nothing, by construction.  A literal that gives only `slots` gets the
+array built from it, and the agreement is discharged for the empty map and
+for a literal list whose slots are all below `2 ^ radixWidth`. -/
 structure CNode where
   depth      : Nat          -- maximum remaining depth in bits from this node to any leaf
   guardWidth : Nat          -- width of guard field in bits
   guardValue : Nat          -- expected guard value to match
   radixWidth : Nat          -- width of slot index in bits (2^radixWidth slots)
   slots      : SeLe4n.UniqueSlotMap Capability
+  cells      : Array (Option Capability) := slotArrayOf radixWidth slots
+  cells_size : cells.size = 2 ^ radixWidth := by exact slotArrayOf_size _ _
+  slots_agree : ∀ s, slots.get? s = slotArrayGet cells s := by
+    first
+    | exact slotArrayOf_agree _ _ (fun s _ => SeLe4n.UniqueSlotMap.get?_empty s)
+    | exact slotArrayOf_agree _ _ (SeLe4n.UniqueSlotMap.get?_ofListWF_of_bounded _ _ (by decide))
   deriving Repr
 
 /-- Maximum CSpace address width (matching ARM64 word size). -/

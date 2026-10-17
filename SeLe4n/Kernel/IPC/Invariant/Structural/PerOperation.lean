@@ -121,7 +121,8 @@ theorem cspaceInsertSlot_preserves_badgeWellFormed
       (fun slot' cap' badge' hLk hBdg => by
         by_cases hSlotEq : addr.slot = slot'
         · subst hSlotEq
-          rw [CNode.lookup_insert_eq cn addr.slot cap hUniq] at hLk
+          rw [CNode.lookup_insert_eq cn addr.slot cap hUniq
+            (CNode.slotAddressable_of_lookup_insert _ _ _ _ _ hLk)] at hLk
           cases hLk; exact hCapValid badge' hBdg
         · rw [CNode.lookup_insert_ne cn addr.slot slot' cap hSlotEq hUniq] at hLk
           exact hCap addr.cnode cn slot' cap' badge' hObj hLk hBdg)

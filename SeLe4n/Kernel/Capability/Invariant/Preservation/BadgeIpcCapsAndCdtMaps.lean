@@ -98,7 +98,8 @@ theorem cspaceMint_preserves_badgeWellFormed
           (fun slot' cap' badge' hLk hBdg => by
             by_cases hSlotEq : dst.slot = slot'
             · subst hSlotEq
-              rw [CNode.lookup_insert_eq cn dst.slot child hUniq] at hLk
+              rw [CNode.lookup_insert_eq cn dst.slot child hUniq
+                (CNode.slotAddressable_of_lookup_insert _ _ _ _ _ hLk)] at hLk
               cases hLk; rw [hChildBadge] at hBdg
               exact hBadgeValid badge' hBdg
             · rw [CNode.lookup_insert_ne cn dst.slot slot' child hSlotEq hUniq] at hLk
@@ -154,7 +155,8 @@ theorem cspaceMutate_preserves_badgeWellFormed
                   by_cases hSlotEq : addr.slot = slot'
                   · -- The mutated slot
                     subst hSlotEq
-                    rw [CNode.lookup_insert_eq cn addr.slot _ hUniq] at hLk; cases hLk
+                    rw [CNode.lookup_insert_eq cn addr.slot _ hUniq
+                      (CNode.slotAddressable_of_lookup_insert _ _ _ _ _ hLk)] at hLk; cases hLk
                     -- mutatedCap.badge = badge.or pair.1.badge
                     cases hBadge : badge with
                     | some b =>

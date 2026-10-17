@@ -10666,10 +10666,8 @@ private def replyLegState : SystemState :=
   { successEntryState with
       objects :=
         (successEntryState.objects.insert probeCNode
-          (.cnode { probeCNodeValue with
-              slots := SeLe4n.UniqueSlotMap.ofListWF
-                [(lowSlot, lowSlotCap), (highSlot, highSlotCap),
-                 (replyLegSlot, replyLegCap)] })).insert replyLegReply.toObjId
+          (.cnode (probeCNodeValue.insert replyLegSlot replyLegCap))).insert
+            replyLegReply.toObjId
           (.reply { replyId := replyLegReply, callerCode := SeLe4n.ThreadId.optCode (some lowCurrent) }),
       declassificationTaint :=
         SeLe4n.Kernel.TaintTable.empty.joinAt highCurrent.toObjId

@@ -195,12 +195,18 @@ private def rh012_foldToList : IO Unit := do
 -- N5-B: CNode Integration Regression Tests (6 scenarios)
 -- ============================================================================
 
+/-- The CNode the integration tests start from: empty, with sixteen slots.
+WS-ZA ZA5.3: an insert writes the slot's array entry, and `CNode.empty`
+(`radixWidth := 0`) has only slot 0, so the tests that fill slots 1..7 need
+the wider radix. -/
+private def rhIntCNode : CNode := CNode.mk' 0 0 0 4
+
 open CNode in
 /-- RH-INT-001: CNode lookup/insert/remove with RHTable-backed slots -/
 private def rhInt001_cnodeLookupInsertRemove : IO Unit := do
   let cap1 : Capability := { target := .object ⟨100⟩, rights := AccessRightSet.ofList [.read], badge := none }
   let cap2 : Capability := { target := .object ⟨200⟩, rights := AccessRightSet.ofList [.write], badge := none }
-  let cn := CNode.empty
+  let cn := rhIntCNode
   -- Insert two capabilities
   let cn := cn.insert (SeLe4n.Slot.ofNat 0) cap1
   let cn := cn.insert (SeLe4n.Slot.ofNat 1) cap2
@@ -220,7 +226,7 @@ private def rhInt002_revokeTargetLocal : IO Unit := do
   let cap1 : Capability := { target := target, rights := AccessRightSet.ofList [.read, .grant], badge := none }
   let cap2 : Capability := { target := target, rights := AccessRightSet.ofList [.read], badge := none }
   let capOther : Capability := { target := otherTarget, rights := AccessRightSet.ofList [.write], badge := none }
-  let cn := ((CNode.empty.insert (SeLe4n.Slot.ofNat 0) cap1).insert (SeLe4n.Slot.ofNat 1) cap2).insert (SeLe4n.Slot.ofNat 2) capOther
+  let cn := ((rhIntCNode.insert (SeLe4n.Slot.ofNat 0) cap1).insert (SeLe4n.Slot.ofNat 1) cap2).insert (SeLe4n.Slot.ofNat 2) capOther
   -- Revoke target from slot 0 (source) — should keep slot 0, remove slot 1, keep slot 2
   let cn' := cn.revokeTargetLocal (SeLe4n.Slot.ofNat 0) target
   expect "RH-INT-002a source slot preserved" (cn'.lookup (SeLe4n.Slot.ofNat 0) == some cap1)
@@ -232,7 +238,7 @@ open CNode in
 private def rhInt003_findFirstEmptySlot : IO Unit := do
   let cap : Capability := { target := .object ⟨10⟩, rights := AccessRightSet.ofList [.read], badge := none }
   -- CNode with slots 0 and 1 occupied
-  let cn := (CNode.empty.insert (SeLe4n.Slot.ofNat 0) cap).insert (SeLe4n.Slot.ofNat 1) cap
+  let cn := (rhIntCNode.insert (SeLe4n.Slot.ofNat 0) cap).insert (SeLe4n.Slot.ofNat 1) cap
   -- Find first empty starting from slot 0 with limit 4
   let result := cn.findFirstEmptySlot (SeLe4n.Slot.ofNat 0) 4
   expect "RH-INT-003a finds empty slot" (result.isSome)
@@ -247,13 +253,13 @@ open CNode in
 /-- RH-INT-004: CNode slotCountBounded after insert sequence -/
 private def rhInt004_slotCountBounded : IO Unit := do
   let cap : Capability := { target := .object ⟨10⟩, rights := AccessRightSet.ofList [.read], badge := none }
-  let mut cn := CNode.empty
+  let mut cn := rhIntCNode
   -- Insert several capabilities and verify slot count stays bounded
   for i in List.range 8 do
     cn := cn.insert (SeLe4n.Slot.ofNat i) cap
   -- The RHTable size should reflect the number of inserted slots
   expect "RH-INT-004a slot count" (cn.slots.size == 8)
-  -- Capacity should be at least 16 (initial capacity of CNode.empty)
+  -- Capacity should be at least 16 (initial capacity of an empty CNode)
   expect "RH-INT-004b capacity >= 16" (cn.slots.capacity ≥ 16)
 
 open CNode in
@@ -261,7 +267,7 @@ open CNode in
 private def rhInt005_cspaceResolution : IO Unit := do
   -- Create a CNode with specific guard/radix for resolution testing
   let cap : Capability := { target := .object ⟨42⟩, rights := AccessRightSet.ofList [.read, .write], badge := none }
-  let cn := CNode.mk' 4 0 0 2 (SeLe4n.UniqueSlotMap.ofListWF [((SeLe4n.Slot.ofNat 0), cap), ((SeLe4n.Slot.ofNat 1), cap), ((SeLe4n.Slot.ofNat 3), cap)])
+  let cn := CNode.ofList 4 0 0 2 [((SeLe4n.Slot.ofNat 0), cap), ((SeLe4n.Slot.ofNat 1), cap), ((SeLe4n.Slot.ofNat 3), cap)]
   -- Resolve slot from CPtr
   let result := cn.resolveSlot (SeLe4n.CPtr.ofNat 3) 4
   match result with
@@ -278,11 +284,11 @@ open CNode in
 private def rhInt006_cnodeBEq : IO Unit := do
   let cap : Capability := { target := .object ⟨10⟩, rights := AccessRightSet.ofList [.read], badge := none }
   -- Two CNodes built identically should be BEq-equal
-  let cn1 := CNode.empty.insert (SeLe4n.Slot.ofNat 0) cap
-  let cn2 := CNode.empty.insert (SeLe4n.Slot.ofNat 0) cap
+  let cn1 := rhIntCNode.insert (SeLe4n.Slot.ofNat 0) cap
+  let cn2 := rhIntCNode.insert (SeLe4n.Slot.ofNat 0) cap
   expect "RH-INT-006a identical CNodes equal" (cn1 == cn2)
   -- Different CNodes should not be equal
-  let cn3 := CNode.empty.insert (SeLe4n.Slot.ofNat 1) cap
+  let cn3 := rhIntCNode.insert (SeLe4n.Slot.ofNat 1) cap
   expect "RH-INT-006b different CNodes not equal" (!(cn1 == cn3))
 
 private def runRobinHoodSuite : IO Unit := do

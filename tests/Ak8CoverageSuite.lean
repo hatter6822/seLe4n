@@ -145,9 +145,7 @@ def test_AK8_F_returns_first_free_slot : IO Bool := do
     { target := .object (ObjId.ofNat 100), rights := AccessRightSet.empty,
       badge := none }
   let cn : CNode :=
-    { depth := 16, guardWidth := 0, guardValue := 0, radixWidth := 4
-      slots := SeLe4n.UniqueSlotMap.empty.insert
-        (SeLe4n.Slot.ofNat 0) occupied }
+    CNode.ofList 16 0 0 4 [(SeLe4n.Slot.ofNat 0, occupied)]
   -- limit=10 is intentionally larger than 2^4-0 = 16; the checker should
   -- still bound the scan to the radix window.
   match cn.findFirstEmptySlotChecked (SeLe4n.Slot.ofNat 0) 100 with
@@ -369,25 +367,22 @@ def test_AK8_I_well_keyed_freeze_succeeds : IO Bool := do
     { target := .object (ObjId.ofNat 100), rights := AccessRightSet.empty,
       badge := none }
   let cn : CNode :=
-    { depth := 16, guardWidth := 0, guardValue := 0, radixWidth := 4
-      slots := (SeLe4n.UniqueSlotMap.empty.insert
-                  (SeLe4n.Slot.ofNat 0) cap).insert
-                  (SeLe4n.Slot.ofNat 5) cap }
+    CNode.ofList 16 0 0 4 [(SeLe4n.Slot.ofNat 0, cap), (SeLe4n.Slot.ofNat 5, cap)]
   -- 2^4 = 16; both keys (0, 5) are within range.
   return (SeLe4n.Kernel.RadixTree.freezeCNodeSlotsChecked cn).isSome
 
-/-- AK8-I failure: a CNode with a phantom key (≥ 2^radixWidth) is
-rejected at freeze time. -/
-def test_AK8_I_phantom_key_freeze_rejected : IO Bool := do
+/-- AK8-I phantom key: a key at or past `2 ^ radixWidth` cannot enter a CNode.
+WS-ZA ZA5.3: the slot array has no entry there (`CNode.slots_agree`), so the
+insert leaves the CNode unchanged; the lookup misses and the CNode, holding no
+phantom key, freezes. -/
+def test_phantom_key_insert_is_dropped : IO Bool := do
   let cap : Capability :=
     { target := .object (ObjId.ofNat 100), rights := AccessRightSet.empty,
       badge := none }
-  let cn : CNode :=
-    { depth := 16, guardWidth := 0, guardValue := 0, radixWidth := 2
-      -- 2^2 = 4; key 8 is a phantom (out of radix range).
-      slots := SeLe4n.UniqueSlotMap.empty.insert
-        (SeLe4n.Slot.ofNat 8) cap }
-  return (SeLe4n.Kernel.RadixTree.freezeCNodeSlotsChecked cn).isNone
+  -- 2^2 = 4; key 8 is a phantom (out of radix range).
+  let cn : CNode := CNode.ofList 16 0 0 2 [(SeLe4n.Slot.ofNat 8, cap)]
+  return (cn.lookup (SeLe4n.Slot.ofNat 8)).isNone &&
+    (SeLe4n.Kernel.RadixTree.freezeCNodeSlotsChecked cn).isSome
 
 -- ============================================================================
 -- Suite runner
@@ -421,8 +416,8 @@ def ak8Tests : List (String × IO Bool) :=
        test_AK8_H_unbind_happy_path)
   , ("AK8-I.1 well-keyed CNode freezes",
        test_AK8_I_well_keyed_freeze_succeeds)
-  , ("AK8-I.2 phantom-key CNode rejected",
-       test_AK8_I_phantom_key_freeze_rejected) ]
+  , ("AK8-I.2 phantom-key insert dropped",
+       test_phantom_key_insert_is_dropped) ]
 
 def runAll : IO Bool := do
   IO.println s!"AK8 coverage suite: {ak8Tests.length} rows"

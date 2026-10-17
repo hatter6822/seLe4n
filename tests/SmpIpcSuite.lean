@@ -1452,8 +1452,7 @@ private def stApi (slots : List (SeLe4n.Slot × Capability)) : SystemState :=
   (BootstrapBuilder.empty
     |>.withObject apiEp (.endpoint {})
     |>.withObject apiCn (.cnode
-        { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-          slots := SeLe4n.UniqueSlotMap.ofListWF slots })
+        (CNode.ofList 4 0 0 4 slots))
     |>.withObject apiCaller.toObjId (.tcb { mkTcb 862 40 none with cspaceRoot := apiCn })
     |>.withObject apiServer.toObjId (.tcb { mkTcb 863 50 (some c1) with cspaceRoot := apiCn })
     |>.withObject apiReply.toObjId (.reply { replyId := apiReply })

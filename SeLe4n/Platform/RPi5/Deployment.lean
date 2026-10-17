@@ -190,11 +190,7 @@ def rpi5InitialCap (target : SeLe4n.ObjId) (rights : List AccessRight) : Capabil
     guard and 16 slots, seL4's root-CNode convention — so a capability address
     is its slot number.  Slot 0 is left empty. -/
 def rpi5InitialCNode (slots : List (SeLe4n.Slot × Capability)) : CNode :=
-  { depth := 64
-    guardWidth := 60
-    guardValue := 0
-    radixWidth := 4
-    slots := SeLe4n.UniqueSlotMap.ofListWF slots }
+  CNode.ofList 64 60 0 4 slots
 
 /-- An empty user address space on `asid` — what `bootSafeUserVSpaceRootCheck`
     admits — whose top-level table is the `page`-th page of the binding's

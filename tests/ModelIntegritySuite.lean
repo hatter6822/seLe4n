@@ -481,8 +481,7 @@ def cnode_slotsUnique_holds_witness : IO Unit := do
   let cap : Capability :=
     { target := .object ⟨1⟩, rights := AccessRightSet.empty, badge := none }
   let cn : CNode :=
-    { depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0,
-      slots := SeLe4n.UniqueSlotMap.empty.insert (SeLe4n.Slot.ofNat 0) cap }
+    CNode.ofList 0 0 0 0 [(SeLe4n.Slot.ofNat 0, cap)]
   let _hUniq : cn.slotsUnique := SeLe4n.Model.CNode.slotsUnique_holds cn
   expect "CNode.slotsUnique_holds is reachable" true
 

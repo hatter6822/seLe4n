@@ -842,7 +842,7 @@ def notificationReferencesReservedIdleSlot (notif : Notification) : Bool :=
     (`capTargetsReservedIdleObject`). -/
 def cnodeReferencesReservedIdleSlot (cn : CNode) : Bool :=
   match cn with
-  | ⟨_depth, _guardWidth, _guardValue, _radixWidth, slots⟩ =>
+  | ⟨_depth, _guardWidth, _guardValue, _radixWidth, slots, _cells, _, _⟩ =>
     slots.toList.any (fun s => SeLe4n.Kernel.capTargetsReservedIdleObject s.2)
 
 /-- PR #889 review round 8: every field of a boot **TCB** that can hold an
@@ -1751,7 +1751,7 @@ def bootSafeCapCheck (cap : Capability) : Bool :=
     slots, read back per lookup by `RHTable.fold_and_true_of_get?`. -/
 def bootSafeCnodeCheck (cn : CNode) : Bool :=
   match cn with
-  | ⟨_depth, _guardWidth, _guardValue, _radixWidth, _slots⟩ =>
+  | ⟨_depth, _guardWidth, _guardValue, _radixWidth, _slots, _cells, _, _⟩ =>
     decide (cn.slots.size ≤ cn.slotCount) &&
     decide (cn.depth ≤ maxCSpaceDepth) &&
     decide (cn.bitsConsumed > 0 → cn.bitsConsumed ≤ cn.depth ∧ 0 < cn.bitsConsumed ∧ cn.guardBounded) &&

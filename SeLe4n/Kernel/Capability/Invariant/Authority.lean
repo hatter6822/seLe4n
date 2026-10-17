@@ -154,7 +154,7 @@ private theorem cspaceInsertSlot_lookup_eq
     (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
     cspaceLookupSlot addr st' = .ok (cap, st') := by
   rcases addr with ⟨cnodeId, slot⟩
-  obtain ⟨cn, _, _, _, hStore⟩ := cspaceInsertSlot_ok_decompose st st' _ cap hStep
+  obtain ⟨cn, _, hAddr, _, hStore⟩ := cspaceInsertSlot_ok_decompose st st' _ cap hStep
   have hUniq := SeLe4n.Model.CNode.slotsUnique_holds cn
   simp only [SeLe4n.Model.storeObject] at hStore
   cases hStore
@@ -164,7 +164,7 @@ private theorem cspaceInsertSlot_lookup_eq
   simp only [cspaceLookupSlot, SystemState.lookupSlotCap, SystemState.lookupCNode,
     SystemState.getCNode?, RHTable_getElem?_eq_get?]
   rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
-  simp [CNode.lookup_insert_eq cn slot cap hUniq]
+  simp [CNode.lookup_insert_eq cn slot cap hUniq hAddr]
 
 theorem cspaceInsertSlot_establishes_ownsSlot
     (st st' : SystemState)

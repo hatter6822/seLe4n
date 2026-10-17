@@ -962,10 +962,9 @@ private def runCSpaceWalkFootprintChecks : IO Unit := do
   let overCeiling : Nat := ceiling + 1
   let chainId : Nat → SeLe4n.ObjId := fun k => SeLe4n.ObjId.ofNat (100 + k)
   let link : Nat → SeLe4n.Model.CNode := fun k =>
-    { depth := 1, guardWidth := 0, guardValue := 0, radixWidth := 1,
-      slots := SeLe4n.UniqueSlotMap.empty.insert (SeLe4n.Slot.ofNat 0)
+    SeLe4n.Model.CNode.ofList 1 0 0 1 [(SeLe4n.Slot.ofNat 0,
         { target := .object (chainId (k + 1)),
-          rights := SeLe4n.Model.AccessRightSet.empty, badge := none } }
+          rights := SeLe4n.Model.AccessRightSet.empty, badge := none })]
   let stChain : SeLe4n.Model.SystemState :=
     (List.range overCeiling).foldl (fun s k => { s with
       objects := s.objects.insert (chainId k) (.cnode (link k)) }) st

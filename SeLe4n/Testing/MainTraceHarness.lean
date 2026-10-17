@@ -1340,14 +1340,11 @@ private def runSyscallGateTrace (counter : IO.Ref Nat) (st1 : SystemState) : IO 
   let writeCap : Capability := { target := .object epId, rights := AccessRightSet.ofList [.write], badge := none }
   let readOnlyCap : Capability := { target := .object epId, rights := AccessRightSet.ofList [.read], badge := none }
   let retypeCap : Capability := { target := .object demoUntyped, rights := AccessRightSet.ofList [.retype], badge := none }
-  let cn : CNode := {
-    depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-    slots := SeLe4n.UniqueSlotMap.ofListWF [
+  let cn : CNode := CNode.ofList 4 0 0 4 [
       (SeLe4n.Slot.ofNat 0, writeCap),
       (SeLe4n.Slot.ofNat 1, readOnlyCap),
       (SeLe4n.Slot.ofNat 2, retypeCap)
     ]
-  }
   -- Insert the CNode and a fresh endpoint into the state
   let ep : KernelObject := .endpoint (Endpoint.ofQueues {} {})
   let stLocal := st1.withObjectStored cnodeId (.cnode cn)
@@ -1830,13 +1827,11 @@ private def runCheckedPipelineTrace (counter : IO.Ref Nat) (_st1 : SystemState) 
         registerContext := pipeRegs })
       |>.withObject pipeEp (.endpoint {})
       |>.withObject pipeNtfn (.notification { state := .idle })
-      |>.withObject pipeCn (.cnode {
-        depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-        slots := SeLe4n.UniqueSlotMap.ofListWF [
+      |>.withObject pipeCn (.cnode (CNode.ofList 4 0 0 4 [
           (SeLe4n.Slot.ofNat 0, ({ target := .object pipeEp, rights := AccessRightSet.ofList [.read, .write], badge := none } : Capability)),
           (SeLe4n.Slot.ofNat 1, ({ target := .object pipeNtfn, rights := AccessRightSet.ofList [.read, .write], badge := none } : Capability)),
           (SeLe4n.Slot.ofNat 2, ({ target := .object pipeCn, rights := AccessRightSet.ofList [.read], badge := none } : Capability))
-        ] })
+        ]))
       |>.withObject pipeVs (.vspaceRoot { asid := ⟨1⟩, mappings := {} })
       |>.withLifecycleObjectType pipeTid .tcb
       |>.withLifecycleObjectType pipeEp .endpoint
@@ -3329,7 +3324,7 @@ private def buildParameterizedTopology
   let cnodeSlots : List (SeLe4n.Slot × Capability) :=
     (List.range threadCount).map fun i =>
       (SeLe4n.Slot.ofNat i, { target := .object ⟨1000 + i⟩, rights := AccessRightSet.ofList [.read, .write], badge := none })
-  let cnodeObj : KernelObject := .cnode { depth := radix, guardWidth := 0, guardValue := 0, radixWidth := radix, slots := SeLe4n.UniqueSlotMap.ofListWF cnodeSlots }
+  let cnodeObj : KernelObject := .cnode (CNode.ofList radix 0 0 radix cnodeSlots)
   let vspaceRoots : List (SeLe4n.ObjId × KernelObject) :=
     (List.range asidCount).map fun i =>
       let oid : SeLe4n.ObjId := ⟨3000 + i⟩

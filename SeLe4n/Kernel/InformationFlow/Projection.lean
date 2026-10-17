@@ -214,8 +214,8 @@ WS-G5: Uses `HashMap.filter` for O(m) filtering on HashMap-backed CNode slots. -
 def projectKernelObject (ctx : LabelingContext) (observer : IfObserver) (obj : KernelObject) : KernelObject :=
   match obj with
   | .cnode cn =>
-      .cnode { cn with slots := cn.slots.filter (fun _ cap =>
-        capTargetObservable ctx observer cap.target) }
+      .cnode (cn.filterSlots (fun _ cap =>
+        capTargetObservable ctx observer cap.target))
   | .tcb tcb =>
       -- WS-H12c: Strip registerContext from projected TCBs. Register context
       -- is saved/restored by schedule's inline context switch and is an
@@ -402,8 +402,8 @@ theorem projectKernelObject_idempotent
     | _, _ => True := by
   cases obj with
   | cnode cn =>
-    simp only [projectKernelObject, CNode.lookup, SeLe4n.UniqueSlotMap.get?,
-      SeLe4n.UniqueSlotMap.filter]
+    simp only [projectKernelObject, CNode.lookup, CNode.filterSlots,
+      SeLe4n.UniqueSlotMap.get?, SeLe4n.UniqueSlotMap.filter]
     -- WS-RC R4.A: project to `.table` for the underlying RHTable lemma.
     exact SeLe4n.Kernel.RobinHood.RHTable.filter_filter_getElem? cn.slots.table _ slot (hUniq cn rfl).1
   | _ => trivial

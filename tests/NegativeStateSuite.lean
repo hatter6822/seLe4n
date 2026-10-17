@@ -473,13 +473,9 @@ private def runCspaceMutationAndRevokeNegativeChecks : IO Unit := do
   }
   let txSeed : SeLe4n.Model.SystemState := {
     baseState with
-      objects := baseState.objects.insert cnodeId (.cnode {
-        depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8,
-        slots := ((SeLe4n.UniqueSlotMap.empty
-          |>.insert txRootSlot.slot rootCap)
-          |>.insert txChildSlotA.slot rootCap)
-          |>.insert txChildSlotB.slot rootCap
-      })
+      objects := baseState.objects.insert cnodeId (.cnode (CNode.ofList 8 0 0 8 [
+        (txRootSlot.slot, rootCap), (txChildSlotA.slot, rootCap),
+        (txChildSlotB.slot, rootCap)]))
       cdt := baseState.cdt
         |>.addEdge txRootNode txChildNodeA .copy
         |>.addEdge txRootNode txChildNodeB .copy
@@ -2315,12 +2311,9 @@ def runWSH16LifecycleChecks : IO Unit := do
   let h16State : SystemState :=
     (BootstrapBuilder.empty
       |>.withObject h16TargetId (.endpoint {})
-      |>.withObject h16CnodeId (.cnode {
-        depth := 0
-        guardWidth := 0
-        guardValue := 0
-        radixWidth := 0
-        slots := SeLe4n.UniqueSlotMap.ofListWF [
+      -- Radix 1: the cleanup and read-only slot is slot 1, which a radix-0
+      -- CNode has no entry for (WS-ZA ZA5.3 slot array).
+      |>.withObject h16CnodeId (.cnode (CNode.ofList 0 0 0 1 [
           (SeLe4n.Slot.ofNat 0, {
             target := .object h16TargetId
             rights := AccessRightSet.ofList [.read, .write]
@@ -2331,8 +2324,7 @@ def runWSH16LifecycleChecks : IO Unit := do
             rights := AccessRightSet.ofList [.read]
             badge := none
           })
-        ]
-      })
+        ]))
       |>.withObject h16TcbId (.tcb {
         tid := ⟨152⟩
         priority := ⟨10⟩
@@ -3077,20 +3069,14 @@ def runWSM3CapTransferNegativeChecks : IO Unit := do
   }
 
   -- CNode with radixWidth=2 → slotCount=4; fill all 4 slots
-  let fullCNode : CNode := {
-    depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 2,
-    slots := SeLe4n.UniqueSlotMap.ofListWF [
+  let fullCNode : CNode := CNode.ofList 4 0 0 2 [
       (SeLe4n.Slot.ofNat 0, cap), (SeLe4n.Slot.ofNat 1, cap), (SeLe4n.Slot.ofNat 2, cap), (SeLe4n.Slot.ofNat 3, cap)
     ]
-  }
 
   let st0 :=
     (BootstrapBuilder.empty
       |>.withObject receiverRoot (.cnode fullCNode)
-      |>.withObject senderRoot (.cnode {
-          depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-          slots := SeLe4n.UniqueSlotMap.ofListWF [(SeLe4n.Slot.ofNat 0, cap)]
-        })
+      |>.withObject senderRoot (.cnode (CNode.ofList 4 0 0 4 [(SeLe4n.Slot.ofNat 0, cap)]))
       |>.withObject targetObj (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
       |>.buildChecked)
 
@@ -3159,10 +3145,7 @@ def runL13CapTransferShortCircuitChecks : IO Unit := do
     scBindingScCode := 0, scBindingOwnerCode := 0
   }
 
-  let senderCNode : CNode := {
-    depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-    slots := SeLe4n.UniqueSlotMap.ofListWF [(SeLe4n.Slot.ofNat 0, cap), (SeLe4n.Slot.ofNat 1, cap), (SeLe4n.Slot.ofNat 2, cap)]
-  }
+  let senderCNode : CNode := CNode.ofList 4 0 0 4 [(SeLe4n.Slot.ofNat 0, cap), (SeLe4n.Slot.ofNat 1, cap), (SeLe4n.Slot.ofNat 2, cap)]
 
   let st0 :=
     (BootstrapBuilder.empty
@@ -3439,15 +3422,9 @@ private def runWSM4MaxDepthLoopChecks : IO Unit := do
   for i in List.range 7 do
     let cnodeId := maxDepthIds[i]!
     let nextId := maxDepthIds[i + 1]!
-    builder := builder.withObject cnodeId (.cnode {
-      depth := 64 - i * 8
-      guardWidth := 0
-      guardValue := 0
-      radixWidth := 8
-      slots := SeLe4n.UniqueSlotMap.ofListWF [
+    builder := builder.withObject cnodeId (.cnode (CNode.ofList (64 - i * 8) 0 0 8 [
         (SeLe4n.Slot.ofNat 1, { target := .object nextId, rights := AccessRightSet.ofList [.read, .write], badge := none })
-      ]
-    })
+      ]))
   -- Level 7 (leaf): slot 1 holds the target cap
   builder := builder.withObject maxDepthIds[7]! (.cnode {
     depth := 8
@@ -3696,16 +3673,15 @@ def runWSR2RevocationChecks : IO Unit := do
   let r2ChildBadSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := r2BadCnodeId, slot := SeLe4n.Slot.ofNat 0 }
   let r2RevokeSeed : SystemState :=
     { r2State with
-      objects := r2State.objects.insert r2CnodeId (.cnode {
-            depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0,
-            slots := SeLe4n.UniqueSlotMap.ofListWF [
+      -- Radix 3: the root cap sits at slot 5, which a radix-0 CNode has no
+      -- entry for (WS-ZA ZA5.3 slot array).
+      objects := r2State.objects.insert r2CnodeId (.cnode (CNode.ofList 0 0 0 3 [
               (r2RootSlot.slot, {
                 target := .object ⟨40⟩
                 rights := AccessRightSet.ofList [.read, .write]
                 badge := none
               })
-            ]
-          })
+            ]))
       cdt := CapDerivationTree.empty
         |>.addEdge r2RootNode r2ChildNode .mint
       cdtSlotNode := ((r2State.cdtSlotNode
@@ -4428,10 +4404,7 @@ def runAC1CdtTrackingChecks : IO Unit := do
     badge := none }
 
   -- Create CNodes with proper structure
-  let srcSlots := SeLe4n.UniqueSlotMap.empty.insert srcSlot cap
-  let srcCnode : CNode := {
-    depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 4,
-    slots := srcSlots }
+  let srcCnode : CNode := CNode.ofList 0 0 0 4 [(srcSlot, cap)]
   let dstCnode : CNode := {
     depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 4,
     slots := SeLe4n.UniqueSlotMap.empty }
@@ -4655,7 +4628,9 @@ private def runR5EOrphanedSchedContextChecks : IO Unit := do
 /-- `cspaceInsertSlot` as it read before `v0.35.201`: occupancy alone, with no
 radix bound.  Spelled here and nowhere else, so the checks below are known to
 **discriminate** between the two readings rather than merely to pass — every
-one of them succeeds under this reading and is refused by the live one. -/
+one of them succeeds under this reading and is refused by the live one.
+(WS-ZA ZA5.3: under this reading the store past the radix is now a no-op,
+since `CNode.insert` has no slot-array entry to write.) -/
 private def unguardedInsertSlot (addr : SeLe4n.Kernel.CSpaceAddr) (cap : Capability) :
     SeLe4n.Model.Kernel Unit :=
   fun st =>
@@ -4716,20 +4691,19 @@ private def runWSRR8CSpaceSlotRangeChecks : IO Unit := do
   let fullCnodeId : SeLe4n.ObjId := ⟨72⟩
   let occupied : Capability :=
     { target := .object endpointId, rights := AccessRightSet.ofList [.read], badge := none }
-  let fullCnode : CNode := {
-    depth := 2, guardWidth := 0, guardValue := 0, radixWidth := 2,
-    slots := SeLe4n.UniqueSlotMap.ofListWF [
+  let fullCnode : CNode := CNode.ofList 2 0 0 2 [
       (SeLe4n.Slot.ofNat 0, occupied), (SeLe4n.Slot.ofNat 1, occupied),
       (SeLe4n.Slot.ofNat 2, occupied), (SeLe4n.Slot.ofNat 3, occupied) ]
-  }
   let fullState : SystemState :=
     { baseState with objects := baseState.objects.insert fullCnodeId (.cnode fullCnode) }
   let fullOutOfRangeDst : SeLe4n.Kernel.CSpaceAddr :=
     { cnode := fullCnodeId, slot := SeLe4n.Slot.ofNat 9 }
 
-  -- ...and the retired reading installs there, leaving a CNode holding more
-  -- capabilities than it has slots — `cspaceSlotCountBounded` false at a
-  -- capability no CPtr can name.
+  -- ...and the retired reading, which once installed there and left a CNode
+  -- holding more capabilities than it has slots, now stores nothing: WS-ZA
+  -- ZA5.3's slot array has no entry past `2 ^ radixWidth`, so `CNode.insert`
+  -- at slot 9 leaves the CNode as it was and `cspaceSlotCountBounded` holds
+  -- even without the guard.
   match unguardedInsertSlot fullOutOfRangeDst occupied fullState with
   | .error e =>
       throw <| IO.userError
@@ -4738,17 +4712,17 @@ private def runWSRR8CSpaceSlotRangeChecks : IO Unit := do
       match unguardedState.getCNode? fullCnodeId with
       | none => throw <| IO.userError "RR8-CSR-05: the target CNode vanished"
       | some cn' =>
-          if cn'.slots.size ≤ cn'.slotCount then
+          if cn'.slots.size > cn'.slotCount then
             throw <| IO.userError
-              "RR8-CSR-05: the retired insert was expected to break slotCountBounded"
-          else if cn'.resolveSlot (SeLe4n.CPtr.ofNat 9) 2 == .ok (SeLe4n.Slot.ofNat 9) then
+              "RR8-CSR-05: an insert past the radix broke slotCountBounded"
+          else if (cn'.lookup (SeLe4n.Slot.ofNat 9)).isSome then
             throw <| IO.userError
-              "RR8-CSR-05: the unaddressable slot was expected to be unreachable by CPtr 9"
+              "RR8-CSR-05: an insert past the radix stored a capability at slot 9"
           else
             IO.println
-              ("negative check passed [RR8-CSR-05: the retired unguarded insert stores at "
-               ++ s!"slot 9 of a {cn'.slotCount}-slot CNode, leaving slots.size = {cn'.slots.size} "
-               ++ "and the capability unreachable by any CPtr]")
+              ("negative check passed [RR8-CSR-05: the retired unguarded insert at "
+               ++ s!"slot 9 of a {cn'.slotCount}-slot CNode stores nothing, leaving "
+               ++ s!"slots.size = {cn'.slots.size}]")
 
   -- The IPC transfer path scans within the radix, so a receiver with no free
   -- in-range slot answers `.noSlot` rather than installing out of range.

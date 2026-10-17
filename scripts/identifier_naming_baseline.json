@@ -786,9 +786,6 @@
  "test_AK8_H_unbind_missing_tcb_no_partial_mutation": {
   "tests/Ak8CoverageSuite.lean": 2
  },
- "test_AK8_I_phantom_key_freeze_rejected": {
-  "tests/Ak8CoverageSuite.lean": 2
- },
  "test_AK8_I_well_keyed_freeze_succeeds": {
   "tests/Ak8CoverageSuite.lean": 2
  },
