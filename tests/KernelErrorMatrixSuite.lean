@@ -980,15 +980,17 @@ private def row_addressOutOfBounds_childExtent : KernelErrorRejection :=
   { syscall       := "retypeFromUntyped"
     expectedError := .addressOutOfBounds
     scenarioTag   := "ZA5.4.addressOutOfBounds.child_extent_over_width"
-    scenarioDesc  := "retypeFromUntyped rejects a child whose extent" ++
-                     " (id x size) ends past 2^physicalAddressWidth, so no" ++
-                     " object's scrub names an address no memory has"
+    scenarioDesc  := "retypeFromUntyped rejects a child identifier whose" ++
+                     " largest extent (id x page) ends past" ++
+                     " 2^physicalAddressWidth, so no object's scrub, now or" ++
+                     " after an in-place retype, names an address no memory has"
     runScenario   := fun _ =>
       let untypedId : ObjId := ObjId.ofNat 1150
       let cnodeId : ObjId := ObjId.ofNat 1152
-      -- The default machine is 52 bits wide and an endpoint is 64 bytes, so
-      -- 2^46 is the first identifier whose extent ends past the width.
-      let childId : ObjId := ObjId.ofNat (2 ^ 46)
+      -- The default machine is 52 bits wide and the largest kind is a 4-KiB
+      -- page, so 2^40 is the first identifier refused, even for a 64-byte
+      -- endpoint (a later retype could make it a page-sized kind).
+      let childId : ObjId := ObjId.ofNat (2 ^ 40)
       let ut : UntypedObject :=
         { regionBase := SeLe4n.PAddr.ofNat 0x10000
           regionSize := 4096
