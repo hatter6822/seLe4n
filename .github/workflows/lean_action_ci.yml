@@ -139,7 +139,7 @@ jobs:
 
       - name: Upload CI telemetry (fast lane)
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ci-telemetry-fast
           path: .ci-artifacts/telemetry/
@@ -193,7 +193,7 @@ jobs:
 
       - name: Upload trace fixture diagnostics on failure
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: trace-fixture-diagnostics
           path: |
@@ -202,7 +202,7 @@ jobs:
 
       - name: Upload CI telemetry (smoke lane)
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ci-telemetry-smoke
           path: .ci-artifacts/telemetry/
@@ -247,7 +247,7 @@ jobs:
 
       - name: Upload CI telemetry (full lane)
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ci-telemetry-full
           path: .ci-artifacts/telemetry/
@@ -485,7 +485,7 @@ jobs:
       # kept with the run.
       - name: Upload the archive and its unresolved-symbol report
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: lean-aarch64-archive
           path: |
@@ -501,7 +501,7 @@ jobs:
       # here rather than on the board.
       - name: Upload the kernel image, its boot files and its size report
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: rpi5-kernel-image
           path: |
