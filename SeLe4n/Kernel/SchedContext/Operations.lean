@@ -698,6 +698,20 @@ def schedContextConfigure (vScId : ValidObjId) (budget period priority deadline 
           .error .resourceExhausted
       | none => .error .objectNotFound
 
+/-- **WS-ZA ZA5.2**: a replenishment entry with its amount rewritten.  The
+compiler reuses a record's cell only for an update that keeps a field, so a
+configure rewrites its entry one field at a time, each step compiled on its
+own: an update of both fields at once builds a fresh entry. -/
+@[noinline] def replenishmentWithAmount (e : ReplenishmentEntry) (budget : Nat) :
+    ReplenishmentEntry :=
+  { e with amount := ⟨budget⟩ }
+
+/-- **WS-ZA ZA5.2**: a replenishment entry with its eligibility rewritten
+(`replenishmentWithAmount`'s twin). -/
+@[noinline] def replenishmentWithEligibleAt (e : ReplenishmentEntry) (eligibleAt : Nat) :
+    ReplenishmentEntry :=
+  { e with eligibleAt := eligibleAt }
+
 /-- **WS-ZA ZA5.2**: a configure's one fresh replenishment, written over the
 list it replaces: when the context held an entry, that cell is rewritten
 (`freshReplenishment_eq`), so a configure of an exclusively held context builds
@@ -705,12 +719,12 @@ no list cell. -/
 @[inline] def freshReplenishment (old : List ReplenishmentEntry) (budget eligibleAt : Nat) :
     List ReplenishmentEntry :=
   match old with
-  | e :: _ => [{ e with amount := ⟨budget⟩, eligibleAt := eligibleAt }]
+  | e :: _ => [replenishmentWithEligibleAt (replenishmentWithAmount e budget) eligibleAt]
   | [] => [{ amount := ⟨budget⟩, eligibleAt := eligibleAt }]
 
 theorem freshReplenishment_eq (old : List ReplenishmentEntry) (budget eligibleAt : Nat) :
     freshReplenishment old budget eligibleAt = [{ amount := ⟨budget⟩, eligibleAt := eligibleAt }] := by
-  cases old <;> rfl
+  rcases old with _ | ⟨⟨_, _⟩, _⟩ <;> rfl
 
 /-- **WS-ZA ZA5.2**: the context `schedContextConfigure` stores, as a function of
 the stored one, so the store can rewrite it in its slot. -/
@@ -765,6 +779,52 @@ context, the specification's propagation over the stored state. -/
             (effectiveSchedParams st boundTcb)) boundTid
           (determineTargetCore st boundTid) st.objectIndex.length
       | none => stStored
+
+/-- **WS-ZA ZA5.2**: the compiled `schedContextConfigurePerform`.  The bound
+thread is cased on before the store, so a context with no bound thread is
+rewritten with nothing else holding the entry's state or the context: the
+store writes the object table and the context in their slots instead of
+copying both (the specification's later `match` keeps `st` and `sc` alive
+across it). -/
+@[inline] def schedContextConfigurePerformImpl (st : SystemState) (vScId : ValidObjId)
+    (budget period priority deadline domain : Nat) : SystemState :=
+  match st.getSchedContext? (SchedContextId.ofObjId vScId.val) with
+  | none => st
+  | some sc =>
+    let scIdTyped : SchedContextId := ⟨vScId.val.toNat⟩
+    match sc.boundThread with
+    | none =>
+      let timer := st.machine.timer
+      (purgeReplenishmentOnCore st bootCoreId scIdTyped).updateSchedContext
+        (SchedContextId.ofObjId vScId.val)
+        (configuredSchedContext budget period priority deadline domain timer)
+    | some boundTid =>
+      let stCleaned := purgeReplenishmentOnCore st (determineTargetCore st boundTid) scIdTyped
+      let stStored := stCleaned.updateSchedContext (SchedContextId.ofObjId vScId.val)
+        (configuredSchedContext budget period priority deadline domain st.machine.timer)
+      match stStored.getTcbWitnessed? boundTid with
+      | some ⟨boundTcb, hBound⟩ =>
+        PriorityInheritance.repropagateFromWaiter
+          (markKeyChangeFor (schedContextConfigureBoundPropagate stStored scIdTyped
+            boundTid boundTcb hBound priority domain) boundTid
+            (effectiveSchedParams st boundTcb)) boundTid
+          (determineTargetCore st boundTid) st.objectIndex.length
+      | none => stStored
+
+@[csimp] theorem schedContextConfigurePerform_eq_impl :
+    @schedContextConfigurePerform = @schedContextConfigurePerformImpl := by
+  funext st vScId budget period priority deadline domain
+  unfold schedContextConfigurePerform schedContextConfigurePerformImpl
+  cases st.getSchedContext? (SchedContextId.ofObjId vScId.val) with
+  | none => rfl
+  | some sc =>
+    dsimp only
+    unfold schedContextReplenishHome
+    cases sc.boundThread with
+    | none => rfl
+    | some b =>
+      dsimp only
+      split <;> rename_i h <;> simp only [h]
 
 /-- **WS-ZA ZA5.2**: an admitted configure succeeds, and its state is the
 perform's. -/
@@ -1230,8 +1290,12 @@ the context nor the TCB is held across a write and each is written in its slot
         { t with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (SchedContextBinding.bound scIdTyped), scBindingOwnerCode := 0,
                  priority := scPrio }
       let bindHome := determineTargetCore st2 vThreadId.val
+      -- The insertion band, `resolveInsertPriority`'s, as the boosted priority
+      -- every arm of the resolver yields
+      -- (`resolveEffectivePrioDeadline_fst_eq_boostedPriority`): the resolver's
+      -- pair, and the closure its fallback is shared through, are never built.
       let insertPrio : SeLe4n.Priority := match st2.getTcb? vThreadId.val with
-        | some t => (resolveEffectivePrioDeadline st2 t).1
+        | some t => t.boostedPriority
         | none => scPrio
       let st3 := if st2.queuedOn bindHome vThreadId.val then
         st2.runRequeueOnCore bindHome vThreadId.val insertPrio
@@ -1257,6 +1321,7 @@ the context nor the TCB is held across a write and each is written in its slot
       dsimp only
       rw [SystemState.updateSchedContext_eq_of_some hS, markKeyChangeFor_eq_parts,
         effectiveSchedParams_eq_parts]
+      simp only [resolveInsertPriority, resolveEffectivePrioDeadline_fst_eq_boostedPriority]
       rfl
 
 -- ============================================================================
@@ -1620,6 +1685,18 @@ theorem schedContextUnbind_of_admitted (st : SystemState) (vScId : ValidObjId)
         have hD : tcb.schedContextBinding.isDonated = false := by simpa using h
         simp only [hD, Bool.false_eq_true, ↓reduceIte]
 
+/-- **WS-ZA ZA5.2**: the unbind's scheduler write — the core running the
+unbound thread loses it as current and is flagged to reschedule.  Compiled on
+its own, so the state record is taken apart and rebuilt in one function and
+its cell is reused; written inline in the perform, the record died in one join
+point and was rebuilt in another, which allocates a fresh one. -/
+def unbindVacateRunningCore (st : SystemState) (runCore? : Option Concurrency.CoreId) :
+    SystemState :=
+  { st with scheduler := match runCore? with
+      | some runCore => (st.scheduler.setCurrentOnCore runCore none)
+          |>.markReschedulePendingOnCore runCore
+      | none => st.scheduler }
+
 /-- **WS-ZA ZA5.2**: the compiled `schedContextUnbindPerform`.  The bound
 thread is read from the context's code, and every read of the pre-state — the
 home core, the core running the thread, its old key as three parts — is made
@@ -1647,11 +1724,7 @@ across a write and each is written in its slot
         let p0 := tcb.boostedPriority
         let d0 := effectiveDeadline st tcb
         let dom0 := tcb.domain
-        let sched0 := match runCore? with
-          | some runCore => (st.scheduler.setCurrentOnCore runCore none)
-              |>.markReschedulePendingOnCore runCore
-          | none => st.scheduler
-        let st1 : SystemState := { st with scheduler := sched0 }
+        let st1 := unbindVacateRunningCore st runCore?
         let st2 := st1.updateSchedContext (SchedContextId.ofObjId vScId.val) clear
         let st3 := st2.updateTcb tid fun t =>
           { t with scBindingScCode := 0, scBindingOwnerCode := 0 }
@@ -1687,6 +1760,7 @@ across a write and each is written in its slot
         dsimp only
         have hS1 : ∀ sch, ({ st with scheduler := sch } : SystemState).getSchedContext?
             (SchedContextId.ofObjId vScId.val) = some sc := fun _ => hS
+        unfold unbindVacateRunningCore
         rw [SystemState.updateSchedContext_eq_of_some (hS1 _), markKeyChangeFor_eq_parts,
           effectiveSchedParams_eq_parts]
         rfl

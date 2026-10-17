@@ -572,6 +572,16 @@ def syscallDispatchCrossCoreBracketedStepWords (ctx : LabelingContext)
   unfold syscallDispatchCrossCoreBracketedStepWords syscallDispatchCrossCoreBracketedStepWordsImpl
   rw [syscallDispatchCrossCoreStepWords_eq, syscallDispatchCrossCoreBracketedStep_run]
 
+/-- WS-ZA ZA5.2: `receiveRendezvousSender?` as a match on the endpoint, the
+form the entry's capture reads in place (`rendezvousSenderCode`). -/
+theorem receiveRendezvousSender?_eq_endpoint (st : SystemState) (endpointId : SeLe4n.ObjId) :
+    receiveRendezvousSender? st endpointId =
+      match st.getEndpoint? endpointId with
+      | some ep => ep.sendQ.head
+      | none => none := by
+  unfold receiveRendezvousSender?
+  cases st.getEndpoint? endpointId <;> rfl
+
 /-- **WS-ZA ZA5.2: the sender a receive takes**, as a thread code (`0` for
 none, `k + 1` for thread `k`).  A receive or reply-receive that meets a blocked
 sender decodes that sender's saved frame at the rendezvous
@@ -599,8 +609,14 @@ words the step never uses.  A code, so the entry builds no `Option`. -/
             | some cap =>
               match cap.target with
               | .object epId =>
-                match receiveRendezvousSender? st epId with
-                | some sender => sender.toNat + 1
+                -- `receiveRendezvousSender?` read in place
+                -- (`receiveRendezvousSender?_eq_endpoint`): its lookup's
+                -- `some` is never built.
+                match st.getEndpoint? epId with
+                | some ep =>
+                  match ep.sendQ.head with
+                  | some sender => sender.toNat + 1
+                  | none => 0
                 | none => 0
               | _ => 0
             | none => 0)

@@ -324,7 +324,7 @@ namespace SchedContextBinding
 /-- `v0.35.4`: is this binding a donation?  The one-word form of the question
 `schedContextUnbind` asks (a donated holder is not unbound in place), so the
 transition and every proof about it read one predicate. -/
-def isDonated : SchedContextBinding → Bool
+@[inline] def isDonated : SchedContextBinding → Bool
   | .donated _ _ => true
   | _ => false
 

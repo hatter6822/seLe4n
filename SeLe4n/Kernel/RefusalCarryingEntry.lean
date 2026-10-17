@@ -91,7 +91,8 @@ specification's form. -/
         -- WS-ZA ZA5.2: a scheduling-context configure, its fifth word read from
         -- overflow slot 0 of the caller's IPC buffer.  The decode's walk fills
         -- this core's TLB; when the core already caches the translation the
-        -- fill writes nothing (`tlbFillIpcBufferOnCore_of_held`) and the
+        -- fill writes nothing (`tlbFillIpcBufferOnCore_of_held`, the check read
+        -- in place by `ipcBufferFillHeldOne`) and the
         -- dispatch is handed the entry's own state.  Otherwise the fill is the
         -- one write before the checks, and a refusal hands back the TLB the
         -- entry held (`tlbFillIpcBufferOnCore_restore`).
@@ -99,7 +100,7 @@ specification's form. -/
           SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMrK st tid 0
             (fun _ => .error (.invalidMessageInfo, st))
             (fun w =>
-              if SeLe4n.Kernel.Architecture.ipcBufferFillHeld st executingCore tid 1 then
+              if SeLe4n.Kernel.Architecture.ipcBufferFillHeldOne st executingCore tid then
                 dispatchConfigureCheckedR capAddr tcb.registerContext w tid executingCore st
               else
                 let tlb := st.perCoreTlb
@@ -259,6 +260,7 @@ theorem syscallEntryCheckedR_eq (ctx : LabelingContext) (executingCore : Concurr
               Bool.false_eq_true, ↓reduceIte]
             split
             · next hHeld =>
+              rw [← SeLe4n.Kernel.Architecture.ipcBufferFillHeld_one] at hHeld
               rw [SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_of_held hHeld]
               exact congrFun hD st
             · rw [congrFun hD]

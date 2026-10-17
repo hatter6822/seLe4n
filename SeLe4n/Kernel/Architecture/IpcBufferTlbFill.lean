@@ -170,6 +170,83 @@ writes nothing (`tlbFillIpcBufferOnCore_of_held`). -/
       | none => true
       | some entry => tlbEntriesHold (tlbOnCore st c).entries entry)
 
+/-- WS-ZA ZA5.2: whether `entries` holds the entry a walk of `vaddr` in
+`asid` would cache (`tlbWalkEntry`'s shape, generation 0), compared field by
+field so the entry is never built. -/
+def tlbEntriesHoldWalked : List TlbEntry → SeLe4n.ASID → VAddr → PAddr →
+    PagePermissions → Bool
+  | [], _, _, _, _ => false
+  | x :: xs, asid, vaddr, paddr, perms =>
+    if x.asid = asid ∧ x.vaddr = vaddr ∧ x.paddr = paddr ∧ x.perms = perms ∧
+        x.asidGeneration = 0 then true
+    else tlbEntriesHoldWalked xs asid vaddr paddr perms
+
+theorem tlbEntriesHoldWalked_eq (l : List TlbEntry) (asid : SeLe4n.ASID) (vaddr : VAddr)
+    (paddr : PAddr) (perms : PagePermissions) :
+    tlbEntriesHoldWalked l asid vaddr paddr perms =
+      tlbEntriesHold l { asid := asid, vaddr := vaddr, paddr := paddr, perms := perms } := by
+  induction l with
+  | nil => rfl
+  | cons x xs ih =>
+    unfold tlbEntriesHoldWalked tlbEntriesHold
+    rw [ih]
+    congr 1
+    obtain ⟨a, v, p, m, g⟩ := x
+    simp only [TlbEntry.mk.injEq]
+
+/-- WS-ZA ZA5.2: `ipcBufferFillHeld` for the one overflow slot a
+scheduling-context configure reads, as the entry compiles it: the walk's
+`tlbWalkEntry`, `resolveAsidRoot` and page list are read in place, so the
+check builds nothing (`ipcBufferFillHeld_one`). -/
+@[inline] def ipcBufferFillHeldOne (st : SystemState) (c : CoreId) (tid : ThreadId) : Bool :=
+  match st.getTcb? tid with
+  | none => true
+  | some tcb =>
+    match st.getVSpaceRoot? tcb.vspaceRoot with
+    | none => true
+    | some root =>
+      let page := ipcBufferSlotPage tcb.ipcBuffer 0
+      match st.asidTable[root.asid]? with
+      | none => true
+      | some oid =>
+        match st.getVSpaceRoot? oid with
+        | none => true
+        | some r =>
+          if r.asid = root.asid then
+            match r.lookup page with
+            | none => true
+            | some q => tlbEntriesHoldWalked (tlbOnCore st c).entries root.asid page q.1 q.2
+          else true
+
+theorem ipcBufferFillHeld_one (st : SystemState) (c : CoreId) (tid : ThreadId) :
+    ipcBufferFillHeld st c tid 1 = ipcBufferFillHeldOne st c tid := by
+  unfold ipcBufferFillHeld ipcBufferFillHeldOne ipcBufferWalkPlan
+  cases hT : st.getTcb? tid with
+  | none => rfl
+  | some tcb =>
+  dsimp only
+  cases hR : st.getVSpaceRoot? tcb.vspaceRoot with
+  | none => rfl
+  | some root =>
+  dsimp only
+  have hE : ipcBufferOverflowPages tcb.ipcBuffer 1 = [ipcBufferSlotPage tcb.ipcBuffer 0] := by
+    simp [ipcBufferOverflowPages, List.eraseDups, List.eraseDupsBy, List.eraseDupsBy.loop]
+  simp only [hE, List.all_cons, List.all_nil, Bool.and_true, tlbWalkEntry, resolveAsidRoot]
+  cases hA : st.asidTable[root.asid]? with
+  | none => rfl
+  | some oid =>
+  dsimp only
+  cases hV : st.getVSpaceRoot? oid with
+  | none => rfl
+  | some r =>
+  dsimp only
+  by_cases hEq : r.asid = root.asid
+  · simp only [hEq, if_true]
+    cases hL : r.lookup (ipcBufferSlotPage tcb.ipcBuffer 0) with
+    | none => rfl
+    | some q => exact (tlbEntriesHoldWalked_eq _ _ _ _ _).symm
+  · simp only [hEq, if_false]
+
 private theorem foldl_tlbFillOnCore_of_held (c : CoreId) (asid : SeLe4n.ASID)
     (st : SystemState) (pages : List VAddr)
     (h : pages.all (fun page =>

@@ -359,7 +359,7 @@ eight-byte aligned word of RAM past the kernel's reserved extent
 (`user_translation::user_word_admissible`), every address it answers is one the
 HAL performs: a mapped frame is carved from an untyped, and the boot refuses an
 untyped over the kernel's extent. -/
-def ipcBufferSlotPAddr? (st : SystemState) (tcb : SeLe4n.Model.TCB) (idx : Nat)
+@[inline] def ipcBufferSlotPAddr? (st : SystemState) (tcb : SeLe4n.Model.TCB) (idx : Nat)
     (needWrite : Bool) : Option PAddr :=
   if idx < maxOverflowSlots then
     match st.getVSpaceRoot? tcb.vspaceRoot with

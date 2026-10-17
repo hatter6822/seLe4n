@@ -1447,6 +1447,28 @@ def writeMem (ms : MachineState) (addr : PAddr) (value : UInt8) : MachineState :
   addr.toNat < 2 ^ ms.physicalAddressWidth &&
   ms.memoryMap.any (fun r => r.kind == .ram && r.contains addr)
 
+/-- WS-ZA ZA5.2: whether a RAM region of `rs` holds `addr`, walked by
+recursion — `List.any` over the capturing predicate builds a closure on every
+call. -/
+def ramRegionsContain : List MemoryRegion → PAddr → Bool
+  | [], _ => false
+  | r :: rs, addr => (r.kind == .ram && r.contains addr) || ramRegionsContain rs addr
+
+theorem ramRegionsContain_eq (rs : List MemoryRegion) (addr : PAddr) :
+    ramRegionsContain rs addr = rs.any (fun r => r.kind == .ram && r.contains addr) := by
+  induction rs with
+  | nil => rfl
+  | cons r rs ih => simp [ramRegionsContain, List.any_cons, ih]
+
+/-- The compiled `addrInRange`: the region walk without a closure. -/
+@[inline] def MachineState.addrInRangeImpl (ms : MachineState) (addr : PAddr) : Bool :=
+  addr.toNat < 2 ^ ms.physicalAddressWidth && ramRegionsContain ms.memoryMap addr
+
+@[csimp] theorem MachineState.addrInRange_eq_impl :
+    @MachineState.addrInRange = @MachineState.addrInRangeImpl := by
+  funext ms addr
+  simp only [MachineState.addrInRange, MachineState.addrInRangeImpl, ramRegionsContain_eq]
+
 /-- AK7-C (F-M01): Bounds-checked memory read. Returns `some byte` when the
     address satisfies `addrInRange`, `none` otherwise. Designed for consumers
     that want fail-closed semantics at the Lean model layer without altering
