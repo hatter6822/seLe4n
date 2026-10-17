@@ -1274,8 +1274,8 @@ def ipcEndpointOp_modifiedFields : List StateField :=
     both slots (`ensureCdtNodeForSlot`: `cdtNextNode`, `cdtSlotNode`,
     `cdtNodeSlot`) and record an edge (`cdt.addEdge`: `cdt`); move detaches the
     source and re-attaches the destination (`cdtSlotNode`, `cdtNodeSlot`);
-    `cspaceDeleteSlot` detaches only (`detachSlotFromCdt` — it does **not** call
-    `cdt.removeNode`; that is the revoke sweep's).  One list covers the four
+    `cspaceDeleteSlot` detaches the slot (`detachSlotFromCdt`) and removes its
+    childless node from the tree (`cdt.removeNode`: `cdt`).  One list covers the four
     because these lists exist to support *disjointness* arguments, and an
     omission makes two operations look independent when they contend. -/
 def capabilityOp_modifiedFields : List StateField :=
@@ -1669,10 +1669,16 @@ theorem cspaceDeleteSlot_preservesFieldsOutside
     (addr : CSpaceAddr) (st st' : SystemState)
     (hStep : cspaceDeleteSlot addr st = .ok ((), st')) :
     preservesFieldsOutside capabilityOp_modifiedFields st st' := by
-  unfold cspaceDeleteSlot at hStep
-  split at hStep
-  · cases hStep
-  · exact cspaceDeleteSlotCore_preservesFieldsOutside _ _ _ hStep
+  obtain ⟨_, stC, hCore, rfl⟩ := cspaceDeleteSlot_ok_decompose addr st st' hStep
+  refine preservesFieldsOutside_trans
+    (cspaceDeleteSlotCore_preservesFieldsOutside _ _ _ hCore) ?_
+  cases st.lookupCdtNodeOfSlot addr with
+  | none => exact preservesFieldsOutside_refl _ _
+  | some node =>
+    intro f hf
+    cases f <;> first
+      | rfl
+      | exact (hf (by decide)).elim
 
 theorem cspaceMint_preservesFieldsOutside
     (src dst : CSpaceAddr) (rights : AccessRightSet) (badge : Option SeLe4n.Badge)

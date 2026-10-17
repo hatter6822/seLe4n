@@ -17,8 +17,9 @@ preservation theorems for capability deletion operations
 `cspaceRevoke` primitive that loops delete over all derived children.
 Private `cdtNodeSlot` preservation helpers are promoted to public so
 the Revoke sibling module can invoke them for transitive CDT-revocation
-fold induction. All declarations retain their original names, order,
-and proofs.
+fold induction, and `capabilityInvariantBundle_of_cdt_update` (a CDT-only
+update keeps the bundle when the new tree is acyclic) sits here for the
+guarded delete's leaf removal and the revocation sweep alike.
 -/
 
 namespace SeLe4n.Kernel
@@ -73,6 +74,22 @@ theorem cspaceDeleteSlotCore_preserves_capabilityInvariantBundle
     hBounded', hComp', hAcyclic', hDepth', hObjInv',
     cspaceDeleteSlotCore_preserves_replyCapPointsToValidReply st st' addr hRCPV hObjInv hStep⟩
 
+/-- Helper: CDT-only state updates preserve capabilityInvariantBundle,
+given that the new CDT is acyclic. -/
+theorem capabilityInvariantBundle_of_cdt_update
+    (st : SystemState) (cdt' : CapDerivationTree)
+    (hInv : capabilityInvariantBundle st)
+    (hAcyclic' : cdt'.edgeWellFounded) :
+    capabilityInvariantBundle { st with cdt := cdt' } := by
+  rcases hInv with ⟨_, hBnd, hComp, _, hDepthPre, hObjInvPre⟩
+  have hObjEq : ({ st with cdt := cdt' } : SystemState).objects = st.objects := rfl
+  -- WS-RC R4.A.6: cspaceSlotUnique conjunct removed from bundle; the new
+  -- 6-tuple skips the legacy uniqueness slot.
+  exact ⟨cspaceLookupSound_holds _,
+    hBnd, hComp, hAcyclic',
+    cspaceDepthConsistent_of_objects_eq st _ hDepthPre hObjEq,
+    hObjEq ▸ hObjInvPre⟩
+
 /-- WS-E2 / H-01: Compositional preservation of `cspaceDeleteSlot` (guarded wrapper).
 Delegates to `cspaceDeleteSlotCore_preserves_capabilityInvariantBundle` after discharging
 the U-H03 CDT children guard. -/
@@ -83,11 +100,15 @@ theorem cspaceDeleteSlot_preserves_capabilityInvariantBundle
     (hNodeSlotK : st.cdtNodeSlot.invExtK)
     (hStep : cspaceDeleteSlot addr st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
-  unfold cspaceDeleteSlot at hStep
-  split at hStep
-  · simp at hStep
-  · exact cspaceDeleteSlotCore_preserves_capabilityInvariantBundle
-      st st' addr hInv hNodeSlotK hStep
+  obtain ⟨_, stC, hCore, rfl⟩ := cspaceDeleteSlot_ok_decompose addr st st' hStep
+  have hInvC := cspaceDeleteSlotCore_preserves_capabilityInvariantBundle
+    st stC addr hInv hNodeSlotK hCore
+  cases st.lookupCdtNodeOfSlot addr with
+  | none => exact hInvC
+  | some node =>
+    exact capabilityInvariantBundle_of_cdt_update stC _ hInvC
+      (CapDerivationTree.edgeWellFounded_sub _ _ hInvC.2.2.2.1
+        (CapDerivationTree.removeNode_edges_sub stC.cdt node))
 
 /-- Core: `cspaceDeleteSlotCore` preserves `cdtNodeSlot.invExtK`. -/
 theorem cspaceDeleteSlotCore_preserves_cdtNodeSlot
@@ -127,10 +148,9 @@ theorem cspaceDeleteSlot_preserves_cdtNodeSlot
     (hNodeSlotK : st.cdtNodeSlot.invExtK)
     (hStep : cspaceDeleteSlot addr st = .ok ((), st')) :
     st'.cdtNodeSlot.invExtK := by
-  unfold cspaceDeleteSlot at hStep
-  split at hStep
-  · simp at hStep
-  · exact cspaceDeleteSlotCore_preserves_cdtNodeSlot st st' addr hNodeSlotK hStep
+  obtain ⟨_, stC, hCore, rfl⟩ := cspaceDeleteSlot_ok_decompose addr st st' hStep
+  rw [removeDeletedCdtLeaf_cdtNodeSlot]
+  exact cspaceDeleteSlotCore_preserves_cdtNodeSlot st stC addr hNodeSlotK hCore
 
 /-- WS-SM SM6.D / PR #822 Phase H (#1.a): `cspaceRevoke` preserves `replyCapPointsToValidReply`.
 Revoke only *removes* caps with the revoked target from the local CNode (`revokeTargetLocal`), so

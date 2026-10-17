@@ -5919,6 +5919,13 @@ not the capability itself, which is what distinguishes it from the delete and
 what makes `cspaceDeleteSlot`'s own `.revocationRequired` refusal
 dischargeable: a caller revokes, then deletes.
 
+**A delete removes a leaf.**  Past that refusal the deleted slot's node has no
+children, and `cspaceDeleteSlot` removes it from the tree with its edge to its
+parent (`removeDeletedCdtLeaf`), as seL4's `cteDelete` removes a leaf from the
+mapping database; retyping a CNode does the same for each slot it held
+(`detachCNodeSlot`).  So the tree holds exactly the derivations of live
+capabilities, and no sequence of copies and deletes grows it (`v0.36.101`).
+
 **Invariants.**  `cspaceRevokeCdt_preserves_ipcInvariantFull` carries the arm
 in the capability-only dispatch payoff.  Three things that chain records:
 

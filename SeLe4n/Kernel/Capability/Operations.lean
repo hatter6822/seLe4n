@@ -1079,11 +1079,24 @@ def cspaceDeleteSlotCore (addr : CSpaceAddr) : Kernel Unit :=
         | .ok (_, st') => .ok ((), SystemState.detachSlotFromCdt st' addr)
     | none => .error .objectNotFound
 
+/-- Remove a deleted slot's derivation node from the tree, if it had one.
+The guarded delete calls this only for a slot with no derivation children, so
+the node is a leaf and the removal takes exactly its edge to its parent. -/
+def removeDeletedCdtLeaf (st : SystemState) : Option CdtNodeId → SystemState
+  | none => st
+  | some node => { st with cdt := st.cdt.removeNode node }
+
 /-- Delete the capability currently stored in `addr`.
 
 U-H03: Before deleting, checks that no CDT children exist for the slot.
 Returns `.revocationRequired` if children are found, enforcing the
-`revokeBeforeDelete` proof obligation as a runtime check. -/
+`revokeBeforeDelete` proof obligation as a runtime check.
+
+The deleted slot's node is a leaf, and it leaves the tree with its slot, as
+seL4's `cteDelete` removes a leaf from the mapping database.  Unmapping the slot
+alone left the node's edge to its parent behind, so each copy-and-delete round
+grew the tree without bound and the parent kept reporting a child that no longer
+existed (`removeDeletedCdtLeaf`). -/
 def cspaceDeleteSlot (addr : CSpaceAddr) : Kernel Unit :=
   fun st =>
     -- `slotIsDerivationParent` is the condition the CNode retype guard reads
@@ -1091,7 +1104,9 @@ def cspaceDeleteSlot (addr : CSpaceAddr) : Kernel Unit :=
     if slotIsDerivationParent st addr then
       .error .revocationRequired
     else
-      cspaceDeleteSlotCore addr st
+      match cspaceDeleteSlotCore addr st with
+      | .error e => .error e
+      | .ok ((), st') => .ok ((), removeDeletedCdtLeaf st' (st.lookupCdtNodeOfSlot addr))
 
 /-- **WS-BP BP7.1 (`v0.36.7`)**: the core delete writes one CNode and the CDT —
 never the scheduler or the machine. -/
@@ -1117,14 +1132,85 @@ theorem cspaceDeleteSlotCore_scheduler_machine (addr : CSpaceAddr) (st st' : Sys
       exact ⟨hD.1.trans (storeObject_scheduler_eq _ _ _ _ hS),
         hD.2.trans (storeObject_machine_eq _ _ _ _ hS)⟩
 
+/-- The core delete unmaps the slot from its node but leaves the tree's edges
+and maps as they were; the guarded wrapper removes the leaf. -/
+theorem cspaceDeleteSlotCore_cdt_eq (st st' : SystemState) (addr : CSpaceAddr)
+    (h : cspaceDeleteSlotCore addr st = .ok ((), st')) :
+    st'.cdt = st.cdt := by
+  unfold cspaceDeleteSlotCore at h
+  cases hCn : st.getCNode? addr.cnode with
+  | none => rw [hCn] at h; cases h
+  | some cn =>
+    rw [hCn] at h
+    simp only at h
+    cases hS : storeObject addr.cnode (.cnode (cn.remove addr.slot)) st with
+    | error e => rw [hS] at h; cases h
+    | ok pr =>
+      obtain ⟨u, st1⟩ := pr; cases u
+      rw [hS] at h
+      simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at h
+      subst h
+      have hD : (SystemState.detachSlotFromCdt st1 addr).cdt = st1.cdt := by
+        unfold SystemState.detachSlotFromCdt; split <;> rfl
+      exact hD.trans (storeObject_cdt_eq _ _ _ _ hS)
+
+/-- The leaf removal writes the tree alone. -/
+theorem removeDeletedCdtLeaf_eq (st : SystemState) (node? : Option CdtNodeId) :
+    removeDeletedCdtLeaf st node? =
+      { st with cdt := match node? with | none => st.cdt | some n => st.cdt.removeNode n } := by
+  cases node? <;> rfl
+
+@[simp] theorem removeDeletedCdtLeaf_objects (st : SystemState) (node? : Option CdtNodeId) :
+    (removeDeletedCdtLeaf st node?).objects = st.objects := by cases node? <;> rfl
+
+@[simp] theorem removeDeletedCdtLeaf_scheduler (st : SystemState) (node? : Option CdtNodeId) :
+    (removeDeletedCdtLeaf st node?).scheduler = st.scheduler := by cases node? <;> rfl
+
+@[simp] theorem removeDeletedCdtLeaf_machine (st : SystemState) (node? : Option CdtNodeId) :
+    (removeDeletedCdtLeaf st node?).machine = st.machine := by cases node? <;> rfl
+
+@[simp] theorem removeDeletedCdtLeaf_cdtSlotNode (st : SystemState) (node? : Option CdtNodeId) :
+    (removeDeletedCdtLeaf st node?).cdtSlotNode = st.cdtSlotNode := by cases node? <;> rfl
+
+@[simp] theorem removeDeletedCdtLeaf_cdtNodeSlot (st : SystemState) (node? : Option CdtNodeId) :
+    (removeDeletedCdtLeaf st node?).cdtNodeSlot = st.cdtNodeSlot := by cases node? <;> rfl
+
+@[simp] theorem removeDeletedCdtLeaf_lifecycle (st : SystemState) (node? : Option CdtNodeId) :
+    (removeDeletedCdtLeaf st node?).lifecycle = st.lifecycle := by cases node? <;> rfl
+
+@[simp] theorem removeDeletedCdtLeaf_tlbShootdown (st : SystemState) (node? : Option CdtNodeId) :
+    (removeDeletedCdtLeaf st node?).tlbShootdown = st.tlbShootdown := by cases node? <;> rfl
+
+@[simp] theorem removeDeletedCdtLeaf_cdtNextNode (st : SystemState) (node? : Option CdtNodeId) :
+    (removeDeletedCdtLeaf st node?).cdtNextNode = st.cdtNextNode := by cases node? <;> rfl
+
+/-- **The guarded delete's success shape**: the guard passed, the core delete
+succeeded, and the deleted slot's leaf left the tree. -/
+theorem cspaceDeleteSlot_ok_decompose (addr : CSpaceAddr) (st st' : SystemState)
+    (h : cspaceDeleteSlot addr st = .ok ((), st')) :
+    slotIsDerivationParent st addr = false ∧
+    ∃ stC, cspaceDeleteSlotCore addr st = .ok ((), stC) ∧
+      st' = removeDeletedCdtLeaf stC (st.lookupCdtNodeOfSlot addr) := by
+  unfold cspaceDeleteSlot at h
+  split at h
+  · cases h
+  · rename_i hG
+    refine ⟨by simpa using hG, ?_⟩
+    cases hC : cspaceDeleteSlotCore addr st with
+    | error e => rw [hC] at h; cases h
+    | ok pr =>
+      obtain ⟨u, stC⟩ := pr; cases u
+      rw [hC] at h
+      simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at h
+      exact ⟨stC, rfl, h.symm⟩
+
 /-- ...and so does the guarded delete. -/
 theorem cspaceDeleteSlot_scheduler_machine (addr : CSpaceAddr) (st st' : SystemState)
     (h : cspaceDeleteSlot addr st = .ok ((), st')) :
     st'.scheduler = st.scheduler ∧ st'.machine = st.machine := by
-  unfold cspaceDeleteSlot at h
-  split at h
-  · cases h
-  · exact cspaceDeleteSlotCore_scheduler_machine addr st st' h
+  obtain ⟨_, stC, hC, rfl⟩ := cspaceDeleteSlot_ok_decompose addr st st' h
+  rw [removeDeletedCdtLeaf_eq]
+  exact cspaceDeleteSlotCore_scheduler_machine addr st stC hC
 
 /-- The guard: an existing child forces a revoke first. -/
 theorem cspaceDeleteSlot_refuses_existing_children (st : SystemState) (addr : CSpaceAddr)

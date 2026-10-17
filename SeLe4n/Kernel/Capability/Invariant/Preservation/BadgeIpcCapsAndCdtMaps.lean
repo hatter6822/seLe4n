@@ -476,12 +476,20 @@ theorem cspaceDeleteSlotCore_preserves_cdtMapsConsistent
 theorem cspaceDeleteSlot_preserves_cdtMapsConsistent
     (st st' : SystemState) (addr : CSpaceAddr)
     (hCon : cdtMapsConsistent st)
+    (hChildK : st.cdt.childMap.invExtK) (hParentK : st.cdt.parentMap.invExtK)
     (hStep : cspaceDeleteSlot addr st = .ok ((), st')) :
     cdtMapsConsistent st' := by
-  unfold cspaceDeleteSlot at hStep
-  split at hStep
-  · simp at hStep
-  · exact cspaceDeleteSlotCore_preserves_cdtMapsConsistent st st' addr hCon hStep
+  obtain ⟨_, stC, hCore, rfl⟩ := cspaceDeleteSlot_ok_decompose addr st st' hStep
+  have hConC := cspaceDeleteSlotCore_preserves_cdtMapsConsistent st stC addr hCon hCore
+  have hCdt : stC.cdt = st.cdt := cspaceDeleteSlotCore_cdt_eq st stC addr hCore
+  cases st.lookupCdtNodeOfSlot addr with
+  | none => exact hConC
+  | some node =>
+    unfold cdtMapsConsistent at hConC ⊢
+    rw [removeDeletedCdtLeaf_eq]; dsimp only
+    rw [hCdt] at hConC ⊢
+    exact ⟨CapDerivationTree.removeNode_childMapConsistent _ node hConC.1 hConC.2 hChildK,
+      CapDerivationTree.removeNode_parentMapConsistent _ node hConC.2 hConC.1 hParentK⟩
 
 /-- S3-D: `cspaceCopy` preserves `cdtMapsConsistent`. Copy calls `addEdge`
     on the CDT, so the postcondition is taken as a hypothesis, matching

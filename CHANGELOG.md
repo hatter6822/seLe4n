@@ -1,3 +1,59 @@
+## v0.36.101 — WS-ZA: a deleted capability leaves the derivation tree (security)
+
+**Security (Medium): a thread holding a CNode capability with copy rights
+could grow the kernel heap without bound and make a capability undeletable.**
+The guarded delete (`cspaceDeleteSlot`) only unmapped the deleted slot from its
+derivation node (`detachSlotFromCdt`); the node's edge to its parent and the
+parent's child entry stayed in the tree.  `cspaceCopy` allocates a fresh node
+for each copy, so a loop of copy and delete added an edge on every round, each
+revocation walked the growing list, and the source reported a derived child
+that no longer existed, so its own delete was refused with
+`revocationRequired` until it was revoked.  Retyping a CNode had the same
+fault for every slot it held (`detachCNodeSlots`).
+
+- **`removeDeletedCdtLeaf`** (`Capability/Operations.lean`): past the guard the
+  deleted slot's node has no children, so the delete removes it from the tree
+  with its edge (`CapDerivationTree.removeNode`), as seL4's `cteDelete` removes
+  a leaf from the mapping database.  `cspaceDeleteSlot_ok_decompose` states the
+  delete's success shape, and every preservation theorem over the delete
+  (capability bundle, CDT maps, node-slot table, IPC bundle, run-queue stage,
+  projection, confinement, key inputs, fields outside) is restated through it;
+  the tree's acyclicity carries by `edgeWellFounded_sub` over
+  `removeNode_edges_sub`, and `capabilityInvariantBundle_of_cdt_update` moves
+  from `Preservation/Revoke.lean` to `Preservation/Delete.lean`, beside its new
+  consumer.  `cspaceDeleteSlot_preserves_cdtMapsConsistent` now takes the two
+  map tables' `invExtK`, which `allTablesInvExtK` carries.
+- **`detachCNodeSlot`** (`Lifecycle/Operations/CleanupPreservation.lean`): the
+  CNode retype's per-slot step is the same unmap-and-remove, past the same
+  no-derivation-parent guard.
+- **Regression tests** (`tests/OperationChainSuite.lean`): `chain5b` runs
+  seventeen copy-and-delete rounds and checks the tree is empty after each and
+  the source deletable; `chain5c` copies into a CNode, retypes it, and checks
+  no edge remains.  `chain5b` failed before the fix.
+
+Normal-build allocations per call (QEMU exerciser, core 0; first call /
+steady state), `v0.36.100` and `v0.36.101`:
+
+| Scenario | v0.36.100 | v0.36.101 |
+|---|---|---|
+| CSpace copy | 55 / 46 | 55 / 47 |
+| CSpace delete | 31 / 31 | 41 / 41 |
+| CSpace mint | 50 / 51 | 51 / 51 |
+| CSpace revoke | 67 / 48 | 48 / 48 |
+| reply-cap mint | 47 / 47 | 48 / 48 |
+| reply-cap delete | 29 / 29 | 38 / 38 |
+| frame delete | 45 / 47 | 62 / 64 |
+| page-table delete 3 / 2 / 1 | 35 / 29 / 26 | 50 / 41 / 35 |
+| page-table retype 1 (steady) | 89 | 90 |
+
+A delete now builds the tree's smaller edge list and maps (the removal's
+cells), which it did not before; what it no longer does is leave the copy's
+edge alive, so the heap the tree holds stays bounded across any number of
+rounds.  The first revoke reads 19 cells fewer because it no longer walks the
+edges earlier scenarios left behind.  The exerciser gate pins every scenario
+above at its new reading; ZA5.3, which links the tree through the slots as
+seL4's mapping database does, owns bringing the tree's cells to 0.
+
 ## v0.36.100 — WS-ZA ZA5.4 part 1: a scrub of a zero page builds nothing (security)
 
 **Security (Medium): a thread holding an untyped capability could grow the

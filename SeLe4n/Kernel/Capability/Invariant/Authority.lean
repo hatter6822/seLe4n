@@ -48,10 +48,9 @@ private theorem cspaceDeleteSlot_authority_reduction
     (hObjInv : st.objects.invExt)
     (hStep : cspaceDeleteSlot addr st = .ok ((), st')) :
     SystemState.lookupSlotCap st' addr = none := by
-  simp only [cspaceDeleteSlot] at hStep
-  split at hStep
-  · simp at hStep
-  · exact cspaceDeleteSlotCore_authority_reduction st st' addr hObjInv hStep
+  obtain ⟨_, stC, hC, rfl⟩ := cspaceDeleteSlot_ok_decompose addr st st' hStep
+  have h := cspaceDeleteSlotCore_authority_reduction st stC addr hObjInv hC
+  cases hN : st.lookupCdtNodeOfSlot addr <;> exact h
 
 /-- Revoke transition authority reduction clause: no sibling slot in the same CNode may retain
 the revoked target. -/
@@ -214,10 +213,16 @@ theorem cspaceDeleteSlot_lookup_eq_none
     (hObjInv : st.objects.invExt)
     (hStep : cspaceDeleteSlot addr st = .ok ((), st')) :
     cspaceLookupSlot addr st' = .error .invalidCapability := by
-  simp only [cspaceDeleteSlot] at hStep
-  split at hStep
-  · simp at hStep
-  · exact cspaceDeleteSlotCore_lookup_eq_none st st' addr hObjInv hStep
+  obtain ⟨_, stC, hC, rfl⟩ := cspaceDeleteSlot_ok_decompose addr st st' hStep
+  have h := cspaceDeleteSlotCore_lookup_eq_none st stC addr hObjInv hC
+  have hL : SystemState.lookupSlotCap (removeDeletedCdtLeaf stC (st.lookupCdtNodeOfSlot addr)) addr =
+      SystemState.lookupSlotCap stC addr := by cases st.lookupCdtNodeOfSlot addr <;> rfl
+  have hG : (removeDeletedCdtLeaf stC (st.lookupCdtNodeOfSlot addr)).getCNode? addr.cnode =
+      stC.getCNode? addr.cnode := by cases st.lookupCdtNodeOfSlot addr <;> rfl
+  unfold cspaceLookupSlot at h ⊢
+  rw [hL, hG]
+  revert h
+  cases SystemState.lookupSlotCap stC addr <;> simp
 
 theorem cspaceRevoke_preserves_source
     (st st' : SystemState)

@@ -190,6 +190,96 @@ private def chain5CopyMoveDelete : IO Unit := do
   | _ => throw <| IO.userError "chain5: CNode not found after delete"
   assertInvariants "chain5: copy→move→delete" st3
 
+/-- Copy `src` to `dst` and delete `dst`, `n` times. -/
+private def copyDeleteRounds (src dst : SeLe4n.Kernel.CSpaceAddr) :
+    Nat → SystemState → Except KernelError SystemState
+  | 0, st => .ok st
+  | n + 1, st =>
+    match SeLe4n.Kernel.cspaceCopy src dst st with
+    | .error e => .error e
+    | .ok ((), st1) =>
+      match SeLe4n.Kernel.cspaceDeleteSlot dst st1 with
+      | .error e => .error e
+      | .ok ((), st2) => copyDeleteRounds src dst n st2
+
+/-- Deleting a derived capability removes its derivation node, as seL4's
+`cteDelete` removes a leaf from the mapping database.  Before, the delete only
+unmapped the slot: every copy-and-delete round left an edge and a child entry
+behind, so the tree grew without bound and the parent reported children that
+no longer existed. -/
+private def chain5bLeafDeleteReclaimsNode : IO Unit := do
+  let cnodeId : SeLe4n.ObjId := ⟨240⟩
+  let target : SeLe4n.ObjId := ⟨241⟩
+  let src : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := (SeLe4n.Slot.ofNat 0) }
+  let dst : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := (SeLe4n.Slot.ofNat 1) }
+  let st0 :=
+    (BootstrapBuilder.empty
+      |>.withObject target (.endpoint {})
+      |>.withObject cnodeId (.cnode {
+          depth := 0
+          guardWidth := 0
+          guardValue := 0
+          radixWidth := 2
+          slots := SeLe4n.UniqueSlotMap.ofListWF [
+            ((SeLe4n.Slot.ofNat 0), { target := .object target, rights := AccessRightSet.ofList [.read, .write], badge := none })
+          ]
+        })
+      |>.withLifecycleObjectType target .endpoint
+      |>.withLifecycleObjectType cnodeId .cnode
+      |>.buildChecked)
+  match copyDeleteRounds src dst 1 st0 with
+  | .error e => throw <| IO.userError s!"chain5b: one copy-and-delete round failed: {toString e}"
+  | .ok st1 =>
+    expect "chain5b: one round leaves no derivation edge behind" (st1.cdt.edges.length == 0)
+    expect "chain5b: the source no longer reports a derived child"
+      (!SeLe4n.Kernel.hasCdtChildren st1 src)
+    match copyDeleteRounds src dst 16 st1 with
+    | .error e => throw <| IO.userError s!"chain5b: sixteen more rounds failed: {toString e}"
+    | .ok st17 =>
+      expect "chain5b: sixteen more rounds leave the tree as it was"
+        (st17.cdt.edges.length == 0 && st17.cdt.childMap.size == 0)
+      let (_, st18) ← expectOkSt "chain5b: the source is deletable once its copy is gone"
+        (SeLe4n.Kernel.cspaceDeleteSlot src st17)
+      assertInvariants "chain5b: copy/delete rounds, then the source deleted" st18
+
+/-- Retyping a CNode removes each of its slots' derivation nodes, as the delete
+does for one slot.  Before, the retype cleanup only unmapped the slots, so a
+copy into a CNode that was then retyped left its edge in the tree for good. -/
+private def chain5cCNodeRetypeReclaimsNodes : IO Unit := do
+  let srcCNode : SeLe4n.ObjId := ⟨243⟩
+  let dstCNode : SeLe4n.ObjId := ⟨244⟩
+  let target : SeLe4n.ObjId := ⟨245⟩
+  let src : SeLe4n.Kernel.CSpaceAddr := { cnode := srcCNode, slot := (SeLe4n.Slot.ofNat 0) }
+  let dst : SeLe4n.Kernel.CSpaceAddr := { cnode := dstCNode, slot := (SeLe4n.Slot.ofNat 0) }
+  let emptyCNode : CNode := {
+    depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 2
+    slots := SeLe4n.UniqueSlotMap.ofListWF [] }
+  let st0 :=
+    (BootstrapBuilder.empty
+      |>.withObject target (.endpoint {})
+      |>.withObject srcCNode (.cnode { emptyCNode with
+          slots := SeLe4n.UniqueSlotMap.ofListWF [
+            ((SeLe4n.Slot.ofNat 0), { target := .object target, rights := AccessRightSet.ofList [.read, .write], badge := none })
+          ] })
+      |>.withObject dstCNode (.cnode emptyCNode)
+      |>.withLifecycleObjectType target .endpoint
+      |>.withLifecycleObjectType srcCNode .cnode
+      |>.withLifecycleObjectType dstCNode .cnode
+      |>.buildChecked)
+  let (_, st1) ← expectOkSt "chain5c: copy into the second CNode"
+    (SeLe4n.Kernel.cspaceCopy src dst st0)
+  expect "chain5c: the copy recorded one derivation edge" (st1.cdt.edges.length == 1)
+  match st1.objects[dstCNode]? with
+  | some (.cnode cn) =>
+    match SeLe4n.Kernel.lifecyclePreRetypeCleanup st1 dstCNode (.cnode cn) (.cnode emptyCNode) with
+    | .error e => throw <| IO.userError s!"chain5c: retype cleanup of the CNode failed: {toString e}"
+    | .ok st2 =>
+      expect "chain5c: retyping the CNode leaves no derivation edge behind"
+        (st2.cdt.edges.length == 0 && st2.cdt.childMap.size == 0)
+      expect "chain5c: the source no longer reports a derived child"
+        (!SeLe4n.Kernel.hasCdtChildren st2 src)
+  | _ => throw <| IO.userError "chain5c: the second CNode is missing after the copy"
+
 private def chain6NotificationBadgeAccumulation : IO Unit := do
   let ntfnId : SeLe4n.ObjId := ⟨250⟩
   let waiter : SeLe4n.ThreadId := ⟨11⟩
@@ -3184,6 +3274,8 @@ private def runOperationChainSuite : IO Unit := do
   chain3MapLookupUnmapLookup
   chain4ServiceRegistryDependencyGraph
   chain5CopyMoveDelete
+  chain5bLeafDeleteReclaimsNode
+  chain5cCNodeRetypeReclaimsNodes
   chain6NotificationBadgeAccumulation
   chain7VSpaceMultiAsidSharedPage
   chain8IpcInterleavedSendOrdering

@@ -1196,10 +1196,12 @@ theorem cspaceDeleteSlot_preserves_projection
     (hObjInv : st.objects.invExt)
     (hStep : cspaceDeleteSlot addr st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
-  unfold cspaceDeleteSlot at hStep
-  split at hStep
-  · simp at hStep
-  · exact cspaceDeleteSlotCore_preserves_projection ctx observer addr st st' hAddrHigh hObjInv hStep
+  obtain ⟨_, stC, hCore, rfl⟩ := cspaceDeleteSlot_ok_decompose addr st st' hStep
+  have hLeaf : projectState ctx observer (removeDeletedCdtLeaf stC (st.lookupCdtNodeOfSlot addr)) =
+      projectState ctx observer stC := by
+    cases st.lookupCdtNodeOfSlot addr <;> rfl
+  rw [hLeaf]
+  exact cspaceDeleteSlotCore_preserves_projection ctx observer addr st stC hAddrHigh hObjInv hCore
 
 /-- WS-H9: cspaceDeleteSlot preserves low-equivalence. -/
 private theorem cspaceDeleteSlot_preserves_lowEquivalent
@@ -3079,24 +3081,22 @@ theorem lifecycleRevokeDeleteRetype_preserves_projection
           exact RHTable_insert_preserves_invExt st.objects _ _ hObjInv
   -- Propagate invExt through cspaceDeleteSlot: cspaceDeleteSlot does storeObject + detachSlotFromCdt
   have hObjInvDeleted : stDeleted.objects.invExt := by
-    unfold cspaceDeleteSlot at hDelete
-    -- U-H03: Discharge CDT children guard
-    split at hDelete
-    · simp at hDelete
-    · unfold cspaceDeleteSlotCore SystemState.getCNode? at hDelete
+    obtain ⟨_, stC, hCoreDel, rfl⟩ := cspaceDeleteSlot_ok_decompose _ _ _ hDelete
+    rw [removeDeletedCdtLeaf_objects]
+    · unfold cspaceDeleteSlotCore SystemState.getCNode? at hCoreDel
       cases hObj : stRevoked.objects[cleanup.cnode]? with
-      | none => simp [hObj] at hDelete
+      | none => simp [hObj] at hCoreDel
       | some obj =>
         cases obj with
-        | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ => simp [hObj] at hDelete
+        | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ => simp [hObj] at hCoreDel
         | cnode cn =>
-          simp only [hObj] at hDelete
+          simp only [hObj] at hCoreDel
           cases hSt : storeObject cleanup.cnode (.cnode (cn.remove cleanup.slot)) stRevoked with
-          | error e => simp [hSt] at hDelete
+          | error e => simp [hSt] at hCoreDel
           | ok pair₁ =>
-            simp only [hSt] at hDelete
+            simp only [hSt] at hCoreDel
             have hInvPair := storeObject_preserves_objects_invExt stRevoked pair₁.2 cleanup.cnode _ hObjInvRevoked hSt
-            cases hDelete
+            cases hCoreDel
             -- detachSlotFromCdt only modifies CDT
             simp only [SystemState.detachSlotFromCdt]; split
             · exact hInvPair

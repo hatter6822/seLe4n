@@ -951,16 +951,16 @@ theorem cspaceDeleteSlotCore_preserves_ipcInvariantFull
       hInv.passiveServerIdle)
     hCap hInv
 
-/-- `.cspaceDelete`: the guard adds no state change on top of the core. -/
+/-- `.cspaceDelete`: the guard and the leaf removal touch no IPC state. -/
 theorem cspaceDeleteSlot_preserves_ipcInvariantFull
     (st st' : SystemState) (addr : CSpaceAddr)
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
     (hStep : cspaceDeleteSlot addr st = .ok ((), st')) :
     ipcInvariantFull st' := by
-  unfold cspaceDeleteSlot at hStep
-  split at hStep
-  · contradiction
-  · exact cspaceDeleteSlotCore_preserves_ipcInvariantFull st st' addr hObjInv hInv hStep
+  obtain ⟨_, stC, hCore, rfl⟩ := cspaceDeleteSlot_ok_decompose addr st st' hStep
+  have hC := cspaceDeleteSlotCore_preserves_ipcInvariantFull st stC addr hObjInv hInv hCore
+  exact ipcInvariantFull_of_objects_scheduler_eq (st := stC)
+    (removeDeletedCdtLeaf_objects _ _) (removeDeletedCdtLeaf_scheduler _ _) hC
 
 /-- `.cspaceDelete`'s store invariant: the delete writes one CNode and the CDT,
 so `objects.invExt` carries — what the finalising delete's teardown, which runs on
@@ -968,11 +968,9 @@ the delete's post-state, needs. -/
 theorem cspaceDeleteSlot_preserves_objects_invExt
     (st st' : SystemState) (addr : CSpaceAddr) (hObjInv : st.objects.invExt)
     (hStep : cspaceDeleteSlot addr st = .ok ((), st')) : st'.objects.invExt := by
-  unfold cspaceDeleteSlot at hStep
-  split at hStep
-  · contradiction
-  · obtain ⟨_, _, _, _, _, hExt⟩ := cspaceDeleteSlotCore_shape st st' addr hObjInv hStep
-    exact hExt
+  obtain ⟨_, stC, hCore, rfl⟩ := cspaceDeleteSlot_ok_decompose addr st st' hStep
+  obtain ⟨_, _, _, _, _, hExt⟩ := cspaceDeleteSlotCore_shape st stC addr hObjInv hCore
+  rw [removeDeletedCdtLeaf_objects]; exact hExt
 
 -- ============================================================================
 -- WS-RR RR8.16 (`v0.35.190`): the revocation family preserves `ipcInvariantFull`

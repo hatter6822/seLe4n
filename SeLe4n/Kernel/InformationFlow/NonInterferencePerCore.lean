@@ -1396,10 +1396,11 @@ theorem cspaceDeleteSlotCore_confinedToCore (st st' : SystemState) (addr : CSpac
 theorem cspaceDeleteSlot_confinedToCore (st st' : SystemState) (addr : CSpaceAddr) (c₀ : CoreId)
     (hStep : SeLe4n.Kernel.cspaceDeleteSlot addr st = .ok ((), st')) :
     observableSlotsConfinedToCore st st' c₀ := by
-  unfold SeLe4n.Kernel.cspaceDeleteSlot at hStep
-  split at hStep
-  · simp at hStep
-  · exact cspaceDeleteSlotCore_confinedToCore st st' addr c₀ hStep
+  obtain ⟨_, stC, hCore, rfl⟩ := SeLe4n.Kernel.cspaceDeleteSlot_ok_decompose addr st st' hStep
+  exact observableSlotsConfinedToCore_trans
+    (cspaceDeleteSlotCore_confinedToCore st stC addr c₀ hCore)
+    (observableSlotsConfinedToCore_of_scheduler_machine_eq c₀
+      (SeLe4n.Kernel.removeDeletedCdtLeaf_scheduler _ _) (SeLe4n.Kernel.removeDeletedCdtLeaf_machine _ _))
 
 /-- SM8.B.3: `cspaceCopy` writes only the object store and the CDT. -/
 theorem cspaceCopy_confinedToCore (st st' : SystemState) (src dst : CSpaceAddr) (c₀ : CoreId)

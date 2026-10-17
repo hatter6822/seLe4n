@@ -21959,4 +21959,12 @@ run_check "INVARIANT" rg -n '^theorem zeroMemoryRange_of_rangeReadsZero ' SeLe4n
 # A retype refuses a child identifier whose largest extent ends past the physical address width.
 run_check "INVARIANT" rg -n -U '        else if !objectIdInAddressSpace st\.machine childId then\n          \.error \.addressOutOfBounds' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 
+
+# v0.36.101: a delete removes its slot's leaf from the derivation tree, and a
+# CNode retype does the same for each slot it held.
+run_check "INVARIANT" rg -n '^def removeDeletedCdtLeaf($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n -U '      \| \.ok \(\(\), st.\) => \.ok \(\(\), removeDeletedCdtLeaf st. \(st\.lookupCdtNodeOfSlot addr\)\)' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n -U 'def detachCNodeSlot \(acc : SystemState\) \(ref : SlotRef\) : SystemState :=\n  removeDeletedCdtLeaf \(SystemState\.detachSlotFromCdt acc ref\) \(acc\.lookupCdtNodeOfSlot ref\)' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" rg -n -U '  cn\.slots\.fold st \(fun acc slot _cap =>\n    detachCNodeSlot acc \{ cnode := cnodeId, slot := slot \}' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlot_ok_decompose($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
 finalize_report
