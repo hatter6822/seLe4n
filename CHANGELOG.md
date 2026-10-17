@@ -39,7 +39,9 @@ constrains only runs in which both executions succeed").
   slot's node out and clears its slot maps.  The CNode retype takes it for each
   slot it held, and the local revoke for each sibling it empties
   (`detachRevokedSlots`, reading the same keep predicate as
-  `revokeTargetLocal`, `CNode.revokeTargetLocalKeeps`).  Every preservation
+  `revokeTargetLocal`, `CNode.revokeTargetLocalKeeps`).  The local revoke's
+  complexity contract now counts those splices: O(n + r·E) for `r` removed
+  slots over a tree of `E` edges.  Every preservation
   theorem over the delete and the local revoke (capability bundle, CDT maps,
   node-slot table, IPC bundle, run-queue stage, projection, low equivalence,
   confinement, key inputs, fields outside) is restated through

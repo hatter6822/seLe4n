@@ -1234,8 +1234,9 @@ seLe4n provides three revocation entry points for different use cases:
 
 - **`cspaceRevoke`** (this function): the local same-TARGET sweep.  Removes
   every capability in the source's CNode that names the source slot's target,
-  whether or not it was derived from the source, and does NOT traverse the CDT
-  or touch the CDT maps.  **It is not seL4's revoke**: `seL4_CNode_Revoke`
+  whether or not it was derived from the source.  It walks no derivations, but
+  each capability it removes leaves the CDT as a delete's does
+  (`detachRevokedSlots`, splicing the slot's node out).  **It is not seL4's revoke**: `seL4_CNode_Revoke`
   destroys exactly the source's derivations, and a target match reaches an
   independently rooted capability to the same object and the source's own
   parent as well.  It predates the CDT, and since `v0.36.1` no syscall reaches
@@ -1272,9 +1273,15 @@ The source slot remains present and sibling slots naming the same target are rem
 
 **S4-L: Complexity analysis.** Local revocation performs a single `RHTable.fold`
 pass over the source CNode's slots, filtering entries whose `CapTarget` matches
-the source capability. This is O(n) in the slot count of the containing CNode.
-The slot count is bounded by the CNode's `2^radixWidth` capacity, which is at
-most `2^maxCSpaceDepth = 2^64` in theory but typically ≤ 1024 in practice.
+the source capability, then splices the node of each slot it removed out of the
+CDT (`detachRevokedSlots`, a second pass over the same slots).  Each splice scans
+the tree's edge list for the node's parent edge and child edges, so the cost is
+O(n + r·E), where `n` is the slot count of the containing CNode, `r` the number of
+slots removed and `E` the CDT's edge count.  The slot count is bounded by the
+CNode's `2^radixWidth` capacity, which is at most `2^maxCSpaceDepth = 2^64` in
+theory but typically ≤ 1024 in practice.  WS-ZA ZA5.3, which links the tree
+through the slots as seL4's mapping database does, makes each splice
+proportional to the removed node's children.
 
 For CDT-based cross-CNode revocation (`cspaceRevokeCdt`), the traversal visits
 all descendants of the source node in the Capability Derivation Tree. This is
