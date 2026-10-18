@@ -898,6 +898,20 @@ theorem cnode_fwd {oid : SeLe4n.ObjId} {cn : CNode} (hc : st.objects[oid]? = som
   · exact ⟨cn, e.trans hc, rfl⟩
   · rw [hc] at ha; cases ha; exact ⟨cn', hb, hw⟩
 
+/-- Link writes keep every slot inside or outside its CNode. -/
+theorem slotInCNode_iff (r : SlotRef) : st'.slotInCNode r ↔ st.slotInCNode r := by
+  constructor
+  · rintro ⟨cn', hc', hs⟩
+    obtain ⟨cn, hc, hw⟩ := h.cnode_back hc'
+    exact ⟨cn, hc, by
+      have := congrArg CNode.radixWidth hw; simp only [CNode.radixWidth_withoutLinks] at this
+      rw [← this]; exact hs⟩
+  · rintro ⟨cn, hc, hs⟩
+    obtain ⟨cn', hc', hw⟩ := h.cnode_fwd hc
+    exact ⟨cn', hc', by
+      have := congrArg CNode.radixWidth hw; simp only [CNode.radixWidth_withoutLinks] at this
+      rw [this]; exact hs⟩
+
 theorem obj_back {oid : SeLe4n.ObjId} {o : KernelObject} (h' : st'.objects[oid]? = some o)
     (hn : ∀ cn, o ≠ .cnode cn) : st.objects[oid]? = some o := by
   rcases h oid with e | ⟨cn, cn', ha, hb, hc⟩
@@ -1165,8 +1179,9 @@ theorem cdtAddChild_agree {st : SystemState} (hInv : st.objects.invExt)
     (fun x hx => hM x (hL.target_mentions hx))]
   exact hL.addChild op hcN hpc
 
-/-- Splicing `n` out of an acyclic tree keeps the links agreeing with it. -/
-theorem cdtSplice_agree {st : SystemState} (hInv : st.objects.invExt)
+/-- Splicing a slot of a live CNode out of an acyclic tree keeps the links
+agreeing with it (`cdtSplice_agree` drops the side condition). -/
+theorem cdtSplice_agree_of_slotInCNode {st : SystemState} (hInv : st.objects.invExt)
     (hL : LinksAgree st.slotLinkAt st.cdt) (hM : ∀ r, st.cdt.mentions r → st.slotInCNode r)
     (hWF : st.cdt.edgeWellFounded) {n : SlotRef} (hn : st.slotInCNode n) :
     LinksAgree (st.cdtSplice n).slotLinkAt (st.cdtSplice n).cdt := by
@@ -1218,7 +1233,7 @@ theorem cdtMove_agree {st : SystemState} (hInv : st.objects.invExt)
 
 /-- Removing node `n` keeps the links agreeing with the tree, when the tree is
 acyclic. -/
-theorem cdtRemove_agree {st : SystemState} (hInv : st.objects.invExt)
+theorem cdtRemove_agree_of_slotInCNode {st : SystemState} (hInv : st.objects.invExt)
     (hL : LinksAgree st.slotLinkAt st.cdt) (hM : ∀ r, st.cdt.mentions r → st.slotInCNode r)
     (hWF : st.cdt.edgeWellFounded) {n : SlotRef} (hn : st.slotInCNode n) :
     LinksAgree (st.cdtRemove n).slotLinkAt (st.cdtRemove n).cdt := by
@@ -1524,6 +1539,213 @@ theorem cdtRemove_fields (st : SystemState) (n : SlotRef) :
 theorem cdtRemove_agreeObjects {st : SystemState} (hInv : st.objects.invExt) (n : SlotRef) :
     objectsAgreeOffDerivationLinks (st.cdtRemove n) st ∧ (st.cdtRemove n).objects.invExt :=
   ⟨(cdtRemove_reach st n).agree hInv, (cdtRemove_reach st n).invExt hInv⟩
+
+/-! ### Steps that keep every slot's links
+
+A step that rewrites a CNode's capabilities or geometry but not its link words,
+or that writes no CNode, reads the same link at every slot. -/
+
+/-- The links read the same in two states whose CNodes hold the same link words,
+key by key. -/
+theorem slotLinkAt_eq_of_links {st st' : SystemState}
+    (h : ∀ oid, (st'.getCNode? oid).map CNode.links = (st.getCNode? oid).map CNode.links) :
+    st'.slotLinkAt = st.slotLinkAt := by
+  funext r f
+  have hr := h r.cnode
+  unfold slotLinkAt
+  cases h1 : st'.getCNode? r.cnode <;> cases h2 : st.getCNode? r.cnode <;>
+    rw [h1, h2] at hr <;> simp at hr <;>
+    simp only [CNode.linkAt, CNode.linkNodeWord, CNode.linkSlotWord, hr]
+
+/-- The links read the same in two states with the same CNodes. -/
+theorem slotLinkAt_eq_of_getCNode {st st' : SystemState}
+    (h : ∀ oid, st'.getCNode? oid = st.getCNode? oid) : st'.slotLinkAt = st.slotLinkAt :=
+  slotLinkAt_eq_of_links fun oid => by rw [h oid]
+
+/-- Storing over a CNode a CNode with the same link words keeps every slot's
+links: a capability write, a slot clear and a slot filter all are such stores. -/
+theorem slotLinkAt_storeObject_cnode {st st' : SystemState} {oid : SeLe4n.ObjId}
+    {cn cn' : CNode} (hObjInv : st.objects.invExt) (hPre : st.objects[oid]? = some (.cnode cn))
+    (hLinks : cn'.links = cn.links) (hStore : storeObject oid (.cnode cn') st = .ok ((), st')) :
+    st'.slotLinkAt = st.slotLinkAt := by
+  refine slotLinkAt_eq_of_links fun o => ?_
+  by_cases h : o = oid
+  · subst h
+    have h1 := storeObject_objects_eq st st' o _ hObjInv hStore
+    rw [(getCNode?_eq_some_iff st' o cn').mpr h1, (getCNode?_eq_some_iff st o cn).mpr hPre]
+    simp [hLinks]
+  · unfold getCNode?; rw [storeObject_objects_ne st st' oid o _ h hObjInv hStore]
+
+/-- Storing over a CNode a CNode of the same radix keeps every slot inside or
+outside its CNode. -/
+theorem slotInCNode_storeObject_cnode {st st' : SystemState} {oid : SeLe4n.ObjId}
+    {cn cn' : CNode} (hObjInv : st.objects.invExt) (hPre : st.objects[oid]? = some (.cnode cn))
+    (hRw : cn'.radixWidth = cn.radixWidth) (hStore : storeObject oid (.cnode cn') st = .ok ((), st'))
+    (r : SlotRef) : st'.slotInCNode r ↔ st.slotInCNode r := by
+  unfold slotInCNode
+  by_cases h : r.cnode = oid
+  · rw [h, storeObject_objects_eq st st' oid _ hObjInv hStore, hPre]
+    constructor
+    · rintro ⟨_, he, hs⟩; cases he; exact ⟨cn, rfl, hRw ▸ hs⟩
+    · rintro ⟨_, he, hs⟩; cases he; exact ⟨cn', rfl, hRw ▸ hs⟩
+  · rw [storeObject_objects_ne st st' oid r.cnode _ h hObjInv hStore]
+
+/-! ### A slot outside every CNode holds no link words
+
+Its words read 0 and writing them changes no link, so splicing it out of a tree
+that does not name it is the identity on the tree and on the links. -/
+
+theorem slotLinkWords_zero_of_not_slotInCNode {st : SystemState} {o : SeLe4n.ObjId}
+    {s : SeLe4n.Slot} (h : ¬ st.slotInCNode ⟨o, s⟩) (f : LinkField) :
+    st.slotLinkNodeWord o s f = 0 ∧ st.slotLinkSlotWord o s f = 0 := by
+  rw [slotLinkNodeWord_def, slotLinkSlotWord_def]
+  split
+  · next cn hcn =>
+    have hs : ¬ s.toNat < 2 ^ cn.radixWidth := fun hs => h ⟨cn, hcn, hs⟩
+    have hz := cn.links_size
+    have hf : f.offset + 1 < slotLinkWords := by
+      cases f <;> simp [LinkField.offset, slotLinkWords]
+    have hb : cn.links.size ≤ CNode.linkBase s f := by
+      unfold CNode.linkBase; rw [hz]
+      have := Nat.mul_le_mul_left slotLinkWords (Nat.le_of_not_lt hs); omega
+    simp only [CNode.linkNodeWord, CNode.linkSlotWord, Array.getD_eq_getD_getElem?,
+      Array.getElem?_eq_none (by omega : cn.links.size ≤ CNode.linkBase s f + 1),
+      Array.getElem?_eq_none hb, Option.getD_none, and_self]
+  · exact ⟨rfl, rfl⟩
+
+theorem slotLinkAt_setSlotLinkWords_of_not {st : SystemState} (hInv : st.objects.invExt)
+    {o : SeLe4n.ObjId} {s : SeLe4n.Slot} (h : ¬ st.slotInCNode ⟨o, s⟩) (f : LinkField) (c w : Nat) :
+    (st.setSlotLinkWords o s f c w).slotLinkAt = st.slotLinkAt := by
+  by_cases hc : ∃ cn, st.objects[o]? = some (.cnode cn)
+  · obtain ⟨cn, hcn⟩ := hc
+    have hs : ¬ s.toNat < 2 ^ cn.radixWidth := fun hs => h ⟨cn, hcn, hs⟩
+    have hf : f.offset + 1 < slotLinkWords := by
+      cases f <;> simp [LinkField.offset, slotLinkWords]
+    have hb : cn.links.size ≤ CNode.linkBase s f := by
+      unfold CNode.linkBase; rw [cn.links_size]
+      have := Nat.mul_le_mul_left slotLinkWords (Nat.le_of_not_lt hs); omega
+    have hL : (cn.setLinkWords s f c w).links = cn.links := by
+      simp only [CNode.setLinkWords]
+      rw [Array.setIfInBounds_eq_of_size_le hb,
+        Array.setIfInBounds_eq_of_size_le (by omega : cn.links.size ≤ CNode.linkBase s f + 1)]
+    refine slotLinkAt_eq_of_links fun x => ?_
+    unfold getCNode?
+    rw [setSlotLinkWords_objects hInv hcn]
+    by_cases hx : x = o
+    · subst hx; rw [if_pos rfl, hcn]; simp [hL]
+    · rw [if_neg hx]
+  · rw [setSlotLinkWords_of_not_cnode (fun cn hc' => hc ⟨cn, hc'⟩)]
+
+/-- The four link writes at a slot outside every CNode change no link and keep
+it outside every CNode. -/
+private theorem slotLinkAt_writes_of_not {st : SystemState} (hInv : st.objects.invExt)
+    {n : SlotRef} (h : ¬ st.slotInCNode n) (f : LinkField) (c w : Nat) :
+    (st.setSlotLinkWords n.cnode n.slot f c w).slotLinkAt = st.slotLinkAt ∧
+      ¬ (st.setSlotLinkWords n.cnode n.slot f c w).slotInCNode n ∧
+      (st.setSlotLinkWords n.cnode n.slot f c w).objects.invExt :=
+  ⟨slotLinkAt_setSlotLinkWords_of_not hInv h f c w,
+    fun h' => h ((slotInCNode_setSlotLinkWords hInv _ _ f c w n).mp h'),
+    setSlotLinkWords_invExt hInv _ _ f c w⟩
+
+/-- **Splicing a slot outside every CNode out of the tree changes nothing**:
+the tree does not name it, so the tree is unchanged, and its link words read 0,
+so every link write lands nowhere. -/
+theorem cdtSplice_of_not_slotInCNode {st : SystemState} (hInv : st.objects.invExt)
+    (hM : ∀ r, st.cdt.mentions r → st.slotInCNode r) {n : SlotRef} (hn : ¬ st.slotInCNode n) :
+    (st.cdtSplice n).slotLinkAt = st.slotLinkAt ∧ (st.cdtSplice n).cdt = st.cdt := by
+  have hNM : ¬ st.cdt.mentions n := fun h => hn (hM n h)
+  refine ⟨?_, ?_⟩
+  · let s0 : SystemState := { st with cdt := st.cdt.spliceNode n }
+    have hn0 : ¬ s0.slotInCNode n := hn
+    have hI0 : s0.objects.invExt := hInv
+    obtain ⟨zU, -⟩ := slotLinkWords_zero_of_not_slotInCNode hn0 .parent
+    obtain ⟨zF, -⟩ := slotLinkWords_zero_of_not_slotInCNode hn0 .firstChild
+    obtain ⟨zP, -⟩ := slotLinkWords_zero_of_not_slotInCNode hn0 .prev
+    obtain ⟨zN, -⟩ := slotLinkWords_zero_of_not_slotInCNode hn0 .next
+    unfold cdtSplice; simp only [modifyCdt_eq]
+    show (s0.linkSpliceNode n _).slotLinkAt = st.slotLinkAt
+    unfold linkSpliceNode linkRemoveNode linkUnlinkChild
+    simp only [zU, zF, zP, zN, if_true]
+    obtain ⟨e1, h1, i1⟩ := slotLinkAt_writes_of_not hI0 hn0 .parent 0 0
+    obtain ⟨e2, h2, i2⟩ := slotLinkAt_writes_of_not i1 h1 .next 0 0
+    obtain ⟨e3, h3, i3⟩ := slotLinkAt_writes_of_not i2 h2 .prev 0 0
+    have hOrph : ∀ k (t : SystemState) w, linkOrphanChain k t 0 w = t := by
+      intro k t w; cases k <;> rfl
+    rw [hOrph]
+    obtain ⟨e4, -, -⟩ := slotLinkAt_writes_of_not i3 h3 .firstChild 0 0
+    rw [e4, e3, e2, e1]; rfl
+  · rw [(cdtSplice_reach st n).cdt]
+    show st.cdt.spliceNode n = st.cdt
+    have hNone : st.cdt.edges.find? (fun e => e.isChildOf n) = none := by
+      rw [List.find?_eq_none]
+      intro e he hc
+      exact hNM ⟨e, he, .inr (by simpa [CapDerivationEdge.isChildOf] using hc)⟩
+    unfold CapDerivationTree.spliceNode CapDerivationTree.removeNode
+    rw [hNone]
+    simp only
+    rw [List.filter_eq_self.mpr]
+    intro e he
+    have h1 : e.parent ≠ n := fun h => hNM ⟨e, he, .inl h⟩
+    have h2 : e.child ≠ n := fun h => hNM ⟨e, he, .inr h⟩
+    simp [CapDerivationEdge.isParentOf, CapDerivationEdge.isChildOf, h1, h2]
+
+/-- **Splicing any slot out of an acyclic tree keeps the links agreeing with
+it**: a slot of a live CNode by the link rewrite, any other because the tree
+does not name it and the splice changes nothing. -/
+theorem cdtSplice_agree {st : SystemState} (hInv : st.objects.invExt)
+    (hL : LinksAgree st.slotLinkAt st.cdt) (hM : ∀ r, st.cdt.mentions r → st.slotInCNode r)
+    (hWF : st.cdt.edgeWellFounded) (n : SlotRef) :
+    LinksAgree (st.cdtSplice n).slotLinkAt (st.cdtSplice n).cdt := by
+  by_cases hn : st.slotInCNode n
+  · exact cdtSplice_agree_of_slotInCNode hInv hL hM hWF hn
+  · obtain ⟨e1, e2⟩ := cdtSplice_of_not_slotInCNode hInv hM hn
+    rw [e1, e2]; exact hL
+
+/-- **Removing a slot outside every CNode from the tree changes nothing**, for
+the reason the splice does (`cdtSplice_of_not_slotInCNode`). -/
+theorem cdtRemove_of_not_slotInCNode {st : SystemState} (hInv : st.objects.invExt)
+    (hM : ∀ r, st.cdt.mentions r → st.slotInCNode r) {n : SlotRef} (hn : ¬ st.slotInCNode n) :
+    (st.cdtRemove n).slotLinkAt = st.slotLinkAt ∧ (st.cdtRemove n).cdt = st.cdt := by
+  have hNM : ¬ st.cdt.mentions n := fun h => hn (hM n h)
+  refine ⟨?_, ?_⟩
+  · let s0 : SystemState := { st with cdt := st.cdt.removeNode n }
+    have hn0 : ¬ s0.slotInCNode n := hn
+    have hI0 : s0.objects.invExt := hInv
+    obtain ⟨zU, -⟩ := slotLinkWords_zero_of_not_slotInCNode hn0 .parent
+    obtain ⟨zF, -⟩ := slotLinkWords_zero_of_not_slotInCNode hn0 .firstChild
+    obtain ⟨zP, -⟩ := slotLinkWords_zero_of_not_slotInCNode hn0 .prev
+    obtain ⟨zN, -⟩ := slotLinkWords_zero_of_not_slotInCNode hn0 .next
+    unfold cdtRemove; simp only [modifyCdt_eq]
+    show (s0.linkRemoveNode n _).slotLinkAt = st.slotLinkAt
+    unfold linkRemoveNode linkUnlinkChild
+    simp only [zU, zF, zP, zN, if_true]
+    obtain ⟨e1, h1, i1⟩ := slotLinkAt_writes_of_not hI0 hn0 .parent 0 0
+    obtain ⟨e2, h2, i2⟩ := slotLinkAt_writes_of_not i1 h1 .next 0 0
+    obtain ⟨e3, h3, i3⟩ := slotLinkAt_writes_of_not i2 h2 .prev 0 0
+    have hOrph : ∀ k (t : SystemState) w, linkOrphanChain k t 0 w = t := by
+      intro k t w; cases k <;> rfl
+    rw [hOrph]
+    obtain ⟨e4, -, -⟩ := slotLinkAt_writes_of_not i3 h3 .firstChild 0 0
+    rw [e4, e3, e2, e1]; rfl
+  · rw [(cdtRemove_reach st n).cdt]
+    show st.cdt.removeNode n = st.cdt
+    unfold CapDerivationTree.removeNode
+    rw [List.filter_eq_self.mpr]
+    intro e he
+    have h1 : e.parent ≠ n := fun h => hNM ⟨e, he, .inl h⟩
+    have h2 : e.child ≠ n := fun h => hNM ⟨e, he, .inr h⟩
+    simp [CapDerivationEdge.isParentOf, CapDerivationEdge.isChildOf, h1, h2]
+
+/-- **Removing any slot from an acyclic tree keeps the links agreeing with it.** -/
+theorem cdtRemove_agree {st : SystemState} (hInv : st.objects.invExt)
+    (hL : LinksAgree st.slotLinkAt st.cdt) (hM : ∀ r, st.cdt.mentions r → st.slotInCNode r)
+    (hWF : st.cdt.edgeWellFounded) (n : SlotRef) :
+    LinksAgree (st.cdtRemove n).slotLinkAt (st.cdtRemove n).cdt := by
+  by_cases hn : st.slotInCNode n
+  · exact cdtRemove_agree_of_slotInCNode hInv hL hM hWF hn
+  · obtain ⟨e1, e2⟩ := cdtRemove_of_not_slotInCNode hInv hM hn
+    rw [e1, e2]; exact hL
+
 
 end SystemState
 

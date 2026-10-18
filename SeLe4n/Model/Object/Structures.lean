@@ -1265,6 +1265,18 @@ def withoutLinks (node : CNode) : CNode :=
     links_size := Array.size_replicate }
 
 @[simp] theorem slots_withoutLinks (node : CNode) : node.withoutLinks.slots = node.slots := rfl
+
+/-- WS-ZA ZA5.3 part 4: writing a capability, clearing a slot or filtering the
+slots leaves every derivation link where it was. -/
+@[simp] theorem insert_links (node : CNode) (slot : SeLe4n.Slot) (cap : Capability) :
+    (node.insert slot cap).links = node.links := by
+  unfold insert; split <;> rfl
+
+@[simp] theorem remove_links (node : CNode) (slot : SeLe4n.Slot) :
+    (node.remove slot).links = node.links := rfl
+
+@[simp] theorem filterSlots_links (node : CNode) (f : SeLe4n.Slot → Capability → Bool) :
+    (node.filterSlots f).links = node.links := rfl
 @[simp] theorem cells_withoutLinks (node : CNode) : node.withoutLinks.cells = node.cells := rfl
 @[simp] theorem depth_withoutLinks (node : CNode) : node.withoutLinks.depth = node.depth := rfl
 @[simp] theorem guardWidth_withoutLinks (node : CNode) :

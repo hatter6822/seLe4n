@@ -115,6 +115,23 @@ def linkAt (node : CNode) (s : SeLe4n.Slot) (f : LinkField) : Option SlotRef :=
 @[simp] theorem radixWidth_setLinkWords (node : CNode) (s : SeLe4n.Slot) (f : LinkField) (c w : Nat) :
     (node.setLinkWords s f c w).radixWidth = node.radixWidth := rfl
 
+/-- **Every link word is 0**: the CNode holds no derivation link.  The boot check
+reads it (a boot CNode derives nothing), and so does every fresh CNode. -/
+def linksClear (node : CNode) : Bool := node.links.toList.all (· == 0)
+
+theorem linkAt_of_linksClear {node : CNode} (h : node.linksClear = true)
+    (s : SeLe4n.Slot) (f : LinkField) : node.linkAt s f = none := by
+  have hz : node.linkNodeWord s f = 0 := by
+    unfold linkNodeWord
+    rw [Array.getD_eq_getD_getElem?]
+    cases hi : node.links[linkBase s f]? with
+    | none => rfl
+    | some v =>
+      have hm : v ∈ node.links := Array.mem_of_getElem? hi
+      have := (List.all_eq_true.mp h) v (Array.mem_def.mp hm)
+      simpa using this
+  unfold linkAt decodeLink; rw [hz]; rfl
+
 private theorem linkBase_ne {s s' : SeLe4n.Slot} {f f' : LinkField} (h : ¬ (s' = s ∧ f' = f)) :
     linkBase s f ≠ linkBase s' f' ∧ linkBase s f + 1 ≠ linkBase s' f' ∧
       linkBase s f ≠ linkBase s' f' + 1 ∧ linkBase s f + 1 ≠ linkBase s' f' + 1 := by
@@ -1280,6 +1297,29 @@ theorem moveNode (h : LinksAgree L cdt) (old new : SlotRef) (hnew : ¬ cdt.menti
       foldl_addChild_foldl_orphan _ _ hNd (fun x _ => by
         rw [addChild_firstChild, if_neg hnu, hL1new]; exact fun e => by cases e)] at hB
     exact hB
+
+/-- **A tree with no edge agrees with links that are all empty**: the state a
+boot or the default state starts from. -/
+theorem of_no_edges {L' : LinkView} {t : CapDerivationTree} (hE : t.edges = [])
+    (hL : ∀ r f, L' r f = none) : LinksAgree L' t := by
+  have hn : ∀ r, ¬ t.mentions r := by
+    rintro r ⟨e, he, -⟩; rw [hE] at he; cases he
+  refine ⟨by unfold CapDerivationTree.childrenUnique; rw [hE]; exact List.nodup_nil,
+    fun r => ?_, fun p => ?_, fun r => ?_, fun r => ?_⟩
+  · rw [hL, CapDerivationTree.parentOf_of_not_mentions (hn r)]
+  · rw [hL, CapDerivationTree.childrenOf_of_not_mentions (hn p)]; rfl
+  · rw [hL, CapDerivationTree.parentOf_of_not_mentions (hn r)]; rfl
+  · rw [hL, CapDerivationTree.parentOf_of_not_mentions (hn r)]; rfl
+
+/-- **A slot the tree does not name holds no link.** -/
+theorem none_of_not_mentions (h : LinksAgree L cdt) {r : SlotRef} (hn : ¬ cdt.mentions r)
+    (f : LinkField) : L r f = none := by
+  have hp := CapDerivationTree.parentOf_of_not_mentions hn
+  cases f
+  · rw [h.parent r, hp]
+  · rw [h.firstChild r, CapDerivationTree.childrenOf_of_not_mentions hn]; rfl
+  · rw [h.next r, hp]; rfl
+  · rw [h.prev r, hp]; rfl
 
 /-- **Every link names a slot the tree names.** -/
 theorem target_mentions (h : LinksAgree L cdt) {r : SlotRef} {f : LinkField} {x : SlotRef}

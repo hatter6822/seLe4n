@@ -121,10 +121,11 @@ theorem cspaceInsertSlot_preserves_capabilityInvariantBundle
     (hCapBacked : ∀ rid, cap.target = .replyCap rid → st.getReply? rid ≠ none)
     (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
-  rcases hInv with ⟨_hSound, hBounded, hComp, hAcyclic, hDepthPre, hObjInv, hRCPV⟩
+  rcases hInv with ⟨_hSound, hBounded, hComp, hAcyclic, hDepthPre, hObjInv, hRCPV, hLinks⟩
   -- WS-H4: Transfer new components through the storeObject(CNode) step
-  have ⟨hBounded', hComp', hAcyclic', hDepth', hObjInv'⟩ :
-      cspaceSlotCountBounded st' ∧ cdtCompleteness st' ∧ cdtAcyclicity st' ∧ cspaceDepthConsistent st' ∧ st'.objects.invExt := by
+  have ⟨hBounded', hComp', hAcyclic', hDepth', hObjInv', hLinks'⟩ :
+      cspaceSlotCountBounded st' ∧ cdtCompleteness st' ∧ cdtAcyclicity st' ∧
+        cspaceDepthConsistent st' ∧ st'.objects.invExt ∧ cdtLinksAgree st' := by
     obtain ⟨preCn, hCnOpt, _hAddr, _hLookup, hStore⟩ :=
       cspaceInsertSlot_ok_decompose st st' addr cap hStep
     have hPre : st.objects[addr.cnode]? = some (.cnode preCn) :=
@@ -138,10 +139,13 @@ theorem cspaceInsertSlot_preserves_capabilityInvariantBundle
         (storeObject_cdt_eq st st' addr.cnode _ hStore),
       cspaceDepthConsistent_of_storeObject_insertCNode
         st st' addr.cnode preCn addr.slot cap hDepthPre hObjInv hPre hStore,
-      storeObject_preserves_objects_invExt st st' addr.cnode _ hObjInv hStore⟩
+      storeObject_preserves_objects_invExt st st' addr.cnode _ hObjInv hStore,
+      cdtLinksAgree_of_eq hLinks (storeObject_cdt_eq st st' addr.cnode _ hStore)
+        (SystemState.slotLinkAt_storeObject_cnode hObjInv hPre (CNode.insert_links ..) hStore)⟩
   exact ⟨cspaceLookupSound_holds st',
     hBounded', hComp', hAcyclic', hDepth', hObjInv',
-    cspaceInsertSlot_preserves_replyCapPointsToValidReply st st' addr cap hRCPV hObjInv hCapBacked hStep⟩
+    cspaceInsertSlot_preserves_replyCapPointsToValidReply st st' addr cap hRCPV hObjInv hCapBacked hStep,
+    hLinks'⟩
 
 /-- WS-SM SM6.D / PR #822 Phase H (#1.b): `cspaceDeleteSlotCore` preserves
 `replyCapPointsToValidReply` — deletion only *removes* a cap (and detaches its CDT node,
@@ -317,8 +321,19 @@ theorem slotOccupied_of_lookupSlotCap (st : SystemState) (ref : SlotRef)
     · rename_i c hc; cases hL; exact hc
     · cases hL
 
+/-- An insert writes a capability in place: every slot keeps its links and stays
+inside or outside its CNode. -/
+theorem cspaceInsertSlot_links (st st' : SystemState) (addr : SlotRef) (cap : Capability)
+    (hObjInv : st.objects.invExt) (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
+    st'.slotLinkAt = st.slotLinkAt ∧ ∀ r, st'.slotInCNode r ↔ st.slotInCNode r := by
+  obtain ⟨cn, hGet, -, -, hStore⟩ := cspaceInsertSlot_ok_decompose st st' addr cap hStep
+  have hPre := (SystemState.getCNode?_eq_some_iff st addr.cnode cn).mp hGet
+  exact ⟨SystemState.slotLinkAt_storeObject_cnode hObjInv hPre (CNode.insert_links ..) hStore,
+    SystemState.slotInCNode_storeObject_cnode hObjInv hPre (CNode.insert_radixWidth ..) hStore⟩
+
 /-- **Installing a derived capability into an empty slot and recording its
-derivation keeps the tree complete and acyclic.**  The destination was empty, so
+derivation keeps the tree complete and acyclic, and the paired link writes keep the links
+agreeing with it.**  The destination was empty, so
 the tree did not name it (`cdtCompleteness`): the new edge reaches a fresh node
 and closes no cycle (`addEdge_preserves_edgeWellFounded_fresh`).  The source
 held a capability and still does; the destination now does.  This is the step
@@ -327,9 +342,10 @@ theorem cdt_addEdge_after_insert (st st1 : SystemState) (src dst : SlotRef)
     (cap : Capability) (op : DerivationOp)
     (hComp : cdtCompleteness st) (hAcyc : cdtAcyclicity st) (hObjInv : st.objects.invExt)
     (hSrc : (SystemState.lookupSlotCap st src).isSome)
-    (hIns : cspaceInsertSlot dst cap st = .ok ((), st1)) :
+    (hIns : cspaceInsertSlot dst cap st = .ok ((), st1)) (hLinks : cdtLinksAgree st) :
     cdtCompleteness { st1 with cdt := st1.cdt.addEdge src dst op } ∧
-      cdtAcyclicity { st1 with cdt := st1.cdt.addEdge src dst op } := by
+      cdtAcyclicity { st1 with cdt := st1.cdt.addEdge src dst op } ∧
+      cdtLinksAgree (st1.cdtAddChild src dst op) := by
   obtain ⟨cn, hGet, hAddr, hEmpty, hStore⟩ := cspaceInsertSlot_ok_decompose st st1 dst cap hIns
   have hPre : st.objects[dst.cnode]? = some (.cnode cn) :=
     (SystemState.getCNode?_eq_some_iff st dst.cnode cn).mp hGet
@@ -351,7 +367,7 @@ theorem cdt_addEdge_after_insert (st st1 : SystemState) (src dst : SlotRef)
     · rw [hc, hPre] at hCs; cases hCs
       exact ⟨_, by rw [hc]; exact hDstPost, CNode.lookup_insert_ne_none _ _ _ _ hLs⟩
     · exact ⟨cs, by rw [storeObject_objects_ne st st1 dst.cnode src.cnode _ hc hObjInv hStore]; exact hCs, hLs⟩
-  refine ⟨fun ref hM => ?_, ?_⟩
+  refine ⟨fun ref hM => ?_, ?_, ?_⟩
   · obtain ⟨e, he, hr⟩ := hM
     simp only [CapDerivationTree.addEdge, List.mem_cons] at he
     rcases he with rfl | he
@@ -363,5 +379,13 @@ theorem cdt_addEdge_after_insert (st st1 : SystemState) (src dst : SlotRef)
       (by unfold cdtAcyclicity at hAcyc; rw [hCdt]; exact hAcyc)
       fun e he => ⟨fun h => hDstFresh ⟨e, hCdt ▸ he, Or.inl h⟩,
         fun h => hDstFresh ⟨e, hCdt ▸ he, Or.inr h⟩⟩
+  · -- The insert keeps every link; the new edge's child was outside the tree.
+    have hL1 : cdtLinksAgree st1 := cdtLinksAgree_of_eq hLinks hCdt
+      (SystemState.slotLinkAt_storeObject_cnode hObjInv hPre (CNode.insert_links ..) hStore)
+    exact SystemState.cdtAddChild_agree
+      (storeObject_preserves_objects_invExt st st1 dst.cnode _ hObjInv hStore) hL1
+      (fun _ hM => hComp1.slotInCNode hM) op (slotInCNode_of_occupied hSrcPost)
+      (slotInCNode_of_occupied ⟨_, hDstPost, hDstOcc⟩)
+      (CapDerivationTree.parentOf_of_not_mentions (by rw [hCdt]; exact hDstFresh)) hNe
 
 end SeLe4n.Kernel

@@ -31,16 +31,27 @@ open Internal
 -- WS-F4/F-06: cspaceRevokeCdt and cspaceRevokeCdtStrict preservation
 -- ============================================================================
 
-/-- Removing an emptied slot's node from the tree restores the bundle: the store
-is untouched, the tree only loses edges, and the slot leaves it. -/
+/-- Removing an emptied slot's node from the tree restores the bundle but for the
+links: the store is untouched, the tree only loses edges, and the slot leaves it.
+The paired link writes restore the rest (`capabilityInvariantBundle_of_cdtRemove`). -/
 theorem capabilityInvariantBundle_of_removeNode (st : SystemState) (node : SlotRef)
     (hInv : capabilityInvariantBundleOff st (· = node)) :
-    capabilityInvariantBundle { st with cdt := st.cdt.removeNode node } :=
+    capabilityBundleOffLinks { st with cdt := st.cdt.removeNode node } :=
   capabilityInvariantBundle_of_off_cdt_update st _ _ hInv
     (CapDerivationTree.edgeWellFounded_sub _ _ hInv.2.2.2.1
       (CapDerivationTree.removeNode_edges_sub st.cdt node))
     (fun ref h => CapDerivationTree.removeNode_mentions st.cdt node ref h)
     fun ref hEq => by subst hEq; exact CapDerivationTree.removeNode_not_mentions_self _ _
+
+/-- Removing an emptied slot's node from the tree and its links restores the
+bundle. -/
+theorem capabilityInvariantBundle_of_cdtRemove (st : SystemState) (node : SlotRef)
+    (hInv : capabilityInvariantBundleOff st (· = node)) :
+    capabilityInvariantBundle (st.cdtRemove node) :=
+  capabilityInvariantBundle_of_linkReach (capabilityInvariantBundle_of_removeNode st node hInv)
+    (SystemState.cdtRemove_reach st node) hInv.2.2.2.2.2.1
+    (SystemState.cdtRemove_agree hInv.2.2.2.2.2.1 hInv.2.2.2.2.2.2.2.1 hInv.2.2.2.2.2.2.2.2
+      hInv.2.2.2.1 node)
 
 /-- R2-A/R2-F: `processRevokeNode` preserves the full capability invariant bundle
 when it succeeds: the slot's delete keeps it (`cspaceDeleteSlotCore`), and
@@ -63,9 +74,7 @@ theorem processRevokeNode_preserves_capabilityInvariantBundle
     obtain ⟨_, stDel⟩ := pair
     simp [hDel] at hStep; cases hStep
     have hOff := cspaceDeleteSlotCore_preserves_capabilityInvariantBundleOff st stDel node hInv hDel
-    exact capabilityInvariantBundle_of_linkReach
-      (capabilityInvariantBundle_of_removeNode stDel node hOff)
-      (SystemState.cdtRemove_reach stDel node) hOff.2.2.2.2.2.1
+    exact capabilityInvariantBundle_of_cdtRemove stDel node hOff
 
 -- **Tombstone (`v0.35.190`).**  `revokeCdtFoldBody`, `revokeCdtFoldBody_error`
 -- and `revokeCdtFoldBody_foldl_error` moved to `Capability/Operations.lean`,
@@ -191,9 +200,7 @@ theorem revokeCdtReportingStep_preserves
       obtain ⟨_, stDel⟩ := pair
       simp only []
       have hOff := cspaceDeleteSlotCore_preserves_capabilityInvariantBundleOff stAcc stDel node hInv hDel
-      exact capabilityInvariantBundle_of_linkReach
-        (capabilityInvariantBundle_of_removeNode stDel node hOff)
-        (SystemState.cdtRemove_reach stDel node) hOff.2.2.2.2.2.1
+      exact capabilityInvariantBundle_of_cdtRemove stDel node hOff
 
 /-- The reporting fold preserves the bundle, by induction on the node list. -/
 theorem revokeCdtReportingFold_preserves :

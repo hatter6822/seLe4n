@@ -610,10 +610,11 @@ theorem capabilityInvariantBundle_of_components
     (hAcyclic : cdtAcyclicity st)
     (hDepth : cspaceDepthConsistent st)
     (hObjInv : st.objects.invExt)
-    (hRCPV : replyCapPointsToValidReply st) :
+    (hRCPV : replyCapPointsToValidReply st)
+    (hLinks : cdtLinksAgree st) :
     capabilityInvariantBundle st :=
   ⟨cspaceLookupSound_holds st,
-    hBounded, hComp, hAcyclic, hDepth, hObjInv, hRCPV⟩
+    hBounded, hComp, hAcyclic, hDepth, hObjInv, hRCPV, hLinks⟩
 
 /-! ## WS-RR RR8.16 (`v0.35.197`) — what the capability bundle READS
 
@@ -639,6 +640,48 @@ So a step frames the bundle when it (a) keeps the CDT, (b) introduces
 no CNode that was not one, (c) keeps every CNode it had, and (d) removes no
 Reply.  Each
 is a fact the step's own object frame already states. -/
+/-- A step that keeps the tree and every CNode, key by key, keeps the links. -/
+theorem cdtLinksAgree_of_cnode_iff {st st' : SystemState} (h : cdtLinksAgree st)
+    (hCdt : st'.cdt = st.cdt)
+    (hCn : ∀ (oid : SeLe4n.ObjId) (cn : CNode),
+      st'.objects[oid]? = some (.cnode cn) ↔ st.objects[oid]? = some (.cnode cn)) :
+    cdtLinksAgree st' := by
+  refine cdtLinksAgree_of_eq h hCdt (SystemState.slotLinkAt_eq_of_getCNode fun oid => ?_)
+  unfold SystemState.getCNode?
+  cases h' : st'.objects[oid]? with
+  | some o' =>
+      cases o' with
+      | cnode cn => rw [(hCn oid cn).mp h']
+      | _ =>
+          cases h0 : st.objects[oid]? with
+          | some o =>
+              cases o with
+              | cnode cn => rw [(hCn oid cn).mpr h0] at h'; cases h'
+              | _ => rfl
+          | none => rfl
+  | none =>
+      cases h0 : st.objects[oid]? with
+      | some o =>
+          cases o with
+          | cnode cn => rw [(hCn oid cn).mpr h0] at h'; cases h'
+          | _ => rfl
+      | none => rfl
+
+/-- **A step that keeps the tree keeps the links when the slots the tree names
+keep theirs and every other slot reads no link**: the tree's other slots held
+none to begin with (`LinksAgree.none_of_not_mentions`).  The shape of a step
+that replaces an object none of whose slots the tree names by one that holds no
+link, which is what a retype does. -/
+theorem cdtLinksAgree_of_named {st st' : SystemState} (h : cdtLinksAgree st)
+    (hCdt : st'.cdt = st.cdt)
+    (hNamed : ∀ r f, st.cdt.mentions r → st'.slotLinkAt r f = st.slotLinkAt r f)
+    (hOff : ∀ r f, ¬ st.cdt.mentions r → st'.slotLinkAt r f = none) :
+    cdtLinksAgree st' := by
+  refine cdtLinksAgree_of_eq h hCdt (funext fun r => funext fun f => ?_)
+  by_cases hm : st.cdt.mentions r
+  · exact hNamed r f hm
+  · rw [hOff r f hm, h.none_of_not_mentions hm f]
+
 theorem capabilityInvariantBundle_of_frame {st st' : SystemState}
     (h : capabilityInvariantBundle st)
     (hCdt : st'.cdt = st.cdt)
@@ -649,8 +692,9 @@ theorem capabilityInvariantBundle_of_frame {st st' : SystemState}
     (hReply : ∀ rid : SeLe4n.ReplyId, st.getReply? rid ≠ none → st'.getReply? rid ≠ none)
     (hObjInv : st'.objects.invExt) :
     capabilityInvariantBundle st' := by
-  obtain ⟨_, hBounded, hComp, hAcyclic, hDepth, _, hRCPV⟩ := h
+  obtain ⟨_, hBounded, hComp, hAcyclic, hDepth, _, hRCPV, hLinks⟩ := h
   refine capabilityInvariantBundle_of_components st' ?_ ?_ ?_ ?_ hObjInv ?_
+    (cdtLinksAgree_of_cnode_iff hLinks hCdt fun oid cn => ⟨hCnode oid cn, hCnodeFwd oid cn⟩)
   · exact fun oid cn hCn => hBounded oid cn (hCnode oid cn hCn)
   · intro ref hRef
     rw [hCdt] at hRef
@@ -703,24 +747,26 @@ theorem replyCapPointsToValidReply_of_agree {st st' : SystemState}
     (by rw [← CNode.proj_eq_of_withoutLinks_eq (·.lookup slot) hw]; exact hL) hT
 
 /-- A step that keeps the tree and changes objects only in their CNodes' links
-keeps the bundle. -/
+keeps every conjunct but the links' own agreement, which the caller supplies. -/
 theorem capabilityInvariantBundle_of_agree {st st' : SystemState}
-    (h : capabilityInvariantBundle st)
+    (h : capabilityBundleOffLinks st)
     (hA : SystemState.objectsAgreeOffDerivationLinks st' st)
-    (hCdt : st'.cdt = st.cdt) (hObjInv : st'.objects.invExt) :
+    (hCdt : st'.cdt = st.cdt) (hObjInv : st'.objects.invExt)
+    (hLinks : cdtLinksAgree st') :
     capabilityInvariantBundle st' := by
   obtain ⟨_, hBounded, hComp, hAcyclic, hDepth, _, hRCPV⟩ := h
   refine capabilityInvariantBundle_of_components st'
     (cspaceSlotCountBounded_of_agree hA hBounded) (cdtCompleteness_of_agree hA hCdt hComp)
     ?_ (cspaceDepthConsistent_of_agree hA hDepth) hObjInv
-    (replyCapPointsToValidReply_of_agree hA hRCPV)
+    (replyCapPointsToValidReply_of_agree hA hRCPV) hLinks
   unfold cdtAcyclicity at hAcyclic ⊢; rw [hCdt]; exact hAcyclic
 
-/-- A run of link writes keeps the capability bundle: the bundle reads no link. -/
+/-- A run of link writes keeps the capability bundle when its links agree with the
+tree: the other conjuncts read no link. -/
 theorem capabilityInvariantBundle_of_linkReach {st₀ st : SystemState}
-    (h : capabilityInvariantBundle st₀) (hR : SystemState.linkReach st₀ st)
-    (hInv : st₀.objects.invExt) : capabilityInvariantBundle st :=
-  capabilityInvariantBundle_of_agree h (hR.agree hInv) hR.cdt (hR.invExt hInv)
+    (h : capabilityBundleOffLinks st₀) (hR : SystemState.linkReach st₀ st)
+    (hInv : st₀.objects.invExt) (hLinks : cdtLinksAgree st) : capabilityInvariantBundle st :=
+  capabilityInvariantBundle_of_agree h (hR.agree hInv) hR.cdt (hR.invExt hInv) hLinks
 
 /-- WS-RR RR8.16 (`v0.35.197`): the degenerate instance — a step that writes no
 object and no CDT table.  Kept beside the frame rather than left to each caller,

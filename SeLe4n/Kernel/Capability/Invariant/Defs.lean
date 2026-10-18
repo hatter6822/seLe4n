@@ -84,6 +84,32 @@ def cdtCompleteness (st : SystemState) : Prop :=
   ∀ ref : SlotRef, st.cdt.mentions ref →
     ∃ cn, st.objects[ref.cnode]? = some (.cnode cn) ∧ cn.lookup ref.slot ≠ none
 
+/-- WS-ZA ZA5.3: a slot the tree names lies in a live CNode's slot array, so its
+links have words to live in (`SystemState.slotInCNode`). -/
+theorem slotInCNode_of_occupied {st : SystemState} {ref : SlotRef}
+    (h : ∃ cn, st.objects[ref.cnode]? = some (.cnode cn) ∧ cn.lookup ref.slot ≠ none) :
+    st.slotInCNode ref := by
+  obtain ⟨cn, hCn, hL⟩ := h
+  obtain ⟨cap, hCap⟩ := Option.ne_none_iff_exists'.mp hL
+  exact ⟨cn, hCn, cn.slots_get?_bounded ref.slot (by
+    have := hCap; unfold CNode.lookup at this
+    unfold SeLe4n.UniqueSlotMap.get? at this; rw [this]; simp)⟩
+
+theorem cdtCompleteness.slotInCNode {st : SystemState} (h : cdtCompleteness st)
+    {ref : SlotRef} (hM : st.cdt.mentions ref) : st.slotInCNode ref :=
+  slotInCNode_of_occupied (h ref hM)
+
+/-- **WS-ZA ZA5.3: the slot links encode the derivation tree** (`LinksAgree`):
+each slot's parent, first-child, next and previous links are what the tree says
+they are, so the tree's executable reads can walk the links instead. -/
+def cdtLinksAgree (st : SystemState) : Prop :=
+  LinksAgree st.slotLinkAt st.cdt
+
+/-- A step that keeps the tree and every slot's links keeps the agreement. -/
+theorem cdtLinksAgree_of_eq {st st' : SystemState} (h : cdtLinksAgree st)
+    (hCdt : st'.cdt = st.cdt) (hL : st'.slotLinkAt = st.slotLinkAt) : cdtLinksAgree st' := by
+  unfold cdtLinksAgree at h ⊢; rw [hCdt, hL]; exact h
+
 /-- A slot the tree names lies in an object that exists. -/
 theorem cdtCompleteness.present {st : SystemState} (h : cdtCompleteness st)
     {ref : SlotRef} (hM : st.cdt.mentions ref) : st.objects[ref.cnode]? ≠ none := by
@@ -220,7 +246,8 @@ Per-CNode slot uniqueness is discharged directly via
 def capabilityInvariantBundle (st : SystemState) : Prop :=
   cspaceLookupSound st ∧
     cspaceSlotCountBounded st ∧ cdtCompleteness st ∧ cdtAcyclicity st ∧
-    cspaceDepthConsistent st ∧ st.objects.invExt ∧ replyCapPointsToValidReply st
+    cspaceDepthConsistent st ∧ st.objects.invExt ∧ replyCapPointsToValidReply st ∧
+    cdtLinksAgree st
 
 /-! ## AN4-F.5 (CAP-M05) — Named-projection refactor of `capabilityInvariantBundle`
 
@@ -244,6 +271,23 @@ A follow-up workstream (AN4-F.5.3..F.5.6, tracked for a subsequent commit
 that touches the 30+ primary sites simultaneously) will swap the primary
 def to the structure and delete the tuple form. Both forms are legal in
 the interim. -/
+
+/-- **The capability bundle less the slot-link agreement**: what a step leaves
+between writing the tree and writing the slot links that encode it.  A run of
+link writes (`SystemState.linkReach`) restores the full bundle once its links
+agree with the tree (`capabilityInvariantBundle_of_linkReach`). -/
+def capabilityBundleOffLinks (st : SystemState) : Prop :=
+  cspaceLookupSound st ∧
+    cspaceSlotCountBounded st ∧ cdtCompleteness st ∧ cdtAcyclicity st ∧
+    cspaceDepthConsistent st ∧ st.objects.invExt ∧ replyCapPointsToValidReply st
+
+theorem capabilityInvariantBundle.offLinks {st : SystemState} (h : capabilityInvariantBundle st) :
+    capabilityBundleOffLinks st :=
+  ⟨h.1, h.2.1, h.2.2.1, h.2.2.2.1, h.2.2.2.2.1, h.2.2.2.2.2.1, h.2.2.2.2.2.2.1⟩
+
+theorem capabilityBundleOffLinks.withLinks {st : SystemState} (h : capabilityBundleOffLinks st)
+    (hL : cdtLinksAgree st) : capabilityInvariantBundle st :=
+  ⟨h.1, h.2.1, h.2.2.1, h.2.2.2.1, h.2.2.2.2.1, h.2.2.2.2.2.1, h.2.2.2.2.2.2, hL⟩
 
 /-- AN4-F.5 (CAP-M05): Named-projection view of `capabilityInvariantBundle`.
 Each field records a distinct slot-level invariant (uniqueness,
@@ -270,6 +314,8 @@ structure CapabilityInvariantBundle (st : SystemState) : Prop where
   /-- WS-SM SM6.D / PR #822 Phase H (#1): every `.replyCap rid` in a CNode slot is
       backed by an existing Reply object (no dangling reply caps). -/
   replyCapBacked : replyCapPointsToValidReply st
+  /-- WS-ZA ZA5.3: the slot links encode the derivation tree. -/
+  linksAgree : cdtLinksAgree st
 
 /-- AN4-F.5.1 (CAP-M05): Bidirectional bridge between the tuple and named
 forms. Consumers can move freely between the two representations; the
@@ -279,15 +325,15 @@ theorem capabilityInvariantBundle_iff_CapabilityInvariantBundle
     (st : SystemState) :
     capabilityInvariantBundle st ↔ CapabilityInvariantBundle st := by
   constructor
-  · rintro ⟨hS, hB, hComp, hAcyc, hDep, hObj, hRCPV⟩
+  · rintro ⟨hS, hB, hComp, hAcyc, hDep, hObj, hRCPV, hLinks⟩
     exact { lookupSound := hS, slotCountBounded := hB
           , cdtCompleteness := hComp, cdtAcyclicity := hAcyc
           , depthConsistent := hDep, objectsInvExt := hObj
-          , replyCapBacked := hRCPV }
+          , replyCapBacked := hRCPV, linksAgree := hLinks }
   · intro h
     exact ⟨h.lookupSound, h.slotCountBounded,
            h.cdtCompleteness, h.cdtAcyclicity, h.depthConsistent,
-           h.objectsInvExt, h.replyCapBacked⟩
+           h.objectsInvExt, h.replyCapBacked, h.linksAgree⟩
 
 /-! ### AN4-F.5.2 (CAP-M05): `@[simp]` projection abbreviations
 
@@ -324,7 +370,11 @@ namespace capabilityInvariantBundle
 /-- WS-SM SM6.D / PR #822 Phase H (#1): extract `replyCapPointsToValidReply` from the
 tuple form (the 7th conjunct). -/
 @[simp] abbrev replyCapBacked {st : SystemState} (h : capabilityInvariantBundle st) :
-    _root_.SeLe4n.Kernel.replyCapPointsToValidReply st := h.2.2.2.2.2.2
+    _root_.SeLe4n.Kernel.replyCapPointsToValidReply st := h.2.2.2.2.2.2.1
+
+/-- WS-ZA ZA5.3: extract `cdtLinksAgree` from the tuple form (the 8th conjunct). -/
+@[simp] abbrev linksAgree {st : SystemState} (h : capabilityInvariantBundle st) :
+    _root_.SeLe4n.Kernel.cdtLinksAgree st := h.2.2.2.2.2.2.2
 
 end capabilityInvariantBundle
 
@@ -600,7 +650,12 @@ theorem objects_invExt_of_capabilityInvariantBundle
 /-- WS-SM SM6.D / PR #822 Phase H (#1): extract the reply-cap backing invariant. -/
 theorem replyCapPointsToValidReply_of_capabilityInvariantBundle
     (st : SystemState) (hInv : capabilityInvariantBundle st) :
-    replyCapPointsToValidReply st := hInv.2.2.2.2.2.2
+    replyCapPointsToValidReply st := hInv.2.2.2.2.2.2.1
+
+/-- WS-ZA ZA5.3: extract the slot-link agreement. -/
+theorem cdtLinksAgree_of_capabilityInvariantBundle
+    (st : SystemState) (hInv : capabilityInvariantBundle st) :
+    cdtLinksAgree st := hInv.2.2.2.2.2.2.2
 
 -- ============================================================================
 -- WS-H4: Transfer theorems for new components through state transitions
