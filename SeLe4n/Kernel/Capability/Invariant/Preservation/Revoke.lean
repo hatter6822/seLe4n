@@ -31,15 +31,16 @@ open Internal
 -- WS-F4/F-06: cspaceRevokeCdt and cspaceRevokeCdtStrict preservation
 -- ============================================================================
 
-/-- Removing one node from the tree keeps the bundle: the store is untouched and
-the tree only loses edges. -/
+/-- Removing an emptied slot's node from the tree restores the bundle: the store
+is untouched, the tree only loses edges, and the slot leaves it. -/
 theorem capabilityInvariantBundle_of_removeNode (st : SystemState) (node : SlotRef)
-    (hInv : capabilityInvariantBundle st) :
+    (hInv : capabilityInvariantBundleOff st (· = node)) :
     capabilityInvariantBundle { st with cdt := st.cdt.removeNode node } :=
-  capabilityInvariantBundle_of_cdt_update st _ hInv
+  capabilityInvariantBundle_of_off_cdt_update st _ _ hInv
     (CapDerivationTree.edgeWellFounded_sub _ _ hInv.2.2.2.1
       (CapDerivationTree.removeNode_edges_sub st.cdt node))
     (fun ref h => CapDerivationTree.removeNode_mentions st.cdt node ref h)
+    fun ref hEq => by subst hEq; exact CapDerivationTree.removeNode_not_mentions_self _ _
 
 /-- R2-A/R2-F: `processRevokeNode` preserves the full capability invariant bundle
 when it succeeds: the slot's delete keeps it (`cspaceDeleteSlotCore`), and
@@ -62,7 +63,7 @@ theorem processRevokeNode_preserves_capabilityInvariantBundle
     obtain ⟨_, stDel⟩ := pair
     simp [hDel] at hStep; cases hStep
     exact capabilityInvariantBundle_of_removeNode stDel node
-      (cspaceDeleteSlotCore_preserves_capabilityInvariantBundle st stDel node hInv hDel)
+      (cspaceDeleteSlotCore_preserves_capabilityInvariantBundleOff st stDel node hInv hDel)
 
 -- **Tombstone (`v0.35.190`).**  `revokeCdtFoldBody`, `revokeCdtFoldBody_error`
 -- and `revokeCdtFoldBody_foldl_error` moved to `Capability/Operations.lean`,
@@ -188,7 +189,7 @@ theorem revokeCdtReportingStep_preserves
       obtain ⟨_, stDel⟩ := pair
       simp only []
       exact capabilityInvariantBundle_of_removeNode stDel node
-        (cspaceDeleteSlotCore_preserves_capabilityInvariantBundle stAcc stDel node hInv hDel)
+        (cspaceDeleteSlotCore_preserves_capabilityInvariantBundleOff stAcc stDel node hInv hDel)
 
 /-- The reporting fold preserves the bundle, by induction on the node list. -/
 theorem revokeCdtReportingFold_preserves :

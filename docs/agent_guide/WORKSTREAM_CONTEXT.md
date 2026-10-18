@@ -188,7 +188,9 @@ slot is the derivation node, as seL4's `cte_t`: edges and the tree's maps are
 keyed by `SlotRef`, with no node identifier, counter or slot-to-node table.  At
 `v0.36.104` (ZA5.3 part 3) copy, mint, move and reply-cap mint check first and
 then write the CNode in its store slot and the tree in its field, and the hash
-index reduces a word hash, so no table lookup builds a big number.  The
+index reduces a word hash, so no table lookup builds a big number.  At
+`v0.36.105` every slot the tree names holds a capability, and copy, move, mint
+and IPC transfer prove the tree sound from the pre-state (no `hCdtPost`).  The
 suspend of a thread blocked in IPC or holding a donated context is the one
 syscall arm left on the general path (ZA6.1).  ZA6 covers the other
 entries and makes the rule standing.  Plan:

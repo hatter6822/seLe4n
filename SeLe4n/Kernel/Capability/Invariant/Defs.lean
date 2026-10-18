@@ -72,13 +72,55 @@ def cspaceSlotCountBounded (st : SystemState) : Prop :=
   ∀ (cnodeId : SeLe4n.ObjId) (cn : CNode),
     st.objects[cnodeId]? = some (KernelObject.cnode cn) → cn.slotCountBounded
 
-/-- WS-H4/M-08: CDT slot coherence — every slot the derivation tree names lies
-in an object that exists in the state, so CDT-based revocation can locate the
-capabilities the tree names.  Since WS-ZA ZA5.3 part 2 the tree's nodes are the
-slots themselves; the predicate is robust through every splice and removal,
-because those only drop names from the tree. -/
+/-- WS-H4/M-08: CDT slot coherence — every slot the derivation tree names holds
+a capability in a live CNode, so CDT-based revocation finds the capability each
+node stands for.  Since WS-ZA ZA5.3 part 2 the tree's nodes are the slots
+themselves, so an empty slot is outside the tree: a copy, mint, move or transfer
+into an empty slot adds a node the tree did not have, which is what keeps it
+acyclic (`addEdge_preserves_edgeWellFounded_fresh`).  Every operation that
+empties a slot takes it out of the tree in the same step (the splice, the
+revoke's removal, the move's rename). -/
 def cdtCompleteness (st : SystemState) : Prop :=
-  ∀ ref : SlotRef, st.cdt.mentions ref → st.objects[ref.cnode]? ≠ none
+  ∀ ref : SlotRef, st.cdt.mentions ref →
+    ∃ cn, st.objects[ref.cnode]? = some (.cnode cn) ∧ cn.lookup ref.slot ≠ none
+
+/-- A slot the tree names lies in an object that exists. -/
+theorem cdtCompleteness.present {st : SystemState} (h : cdtCompleteness st)
+    {ref : SlotRef} (hM : st.cdt.mentions ref) : st.objects[ref.cnode]? ≠ none := by
+  obtain ⟨cn, hCn, -⟩ := h ref hM
+  rw [hCn]; simp
+
+/-- An empty slot is outside the tree. -/
+theorem cdtCompleteness.not_mentions_of_empty {st : SystemState} (h : cdtCompleteness st)
+    {ref : SlotRef} (hEmpty : ∀ cn, st.objects[ref.cnode]? = some (.cnode cn) →
+      cn.lookup ref.slot = none) : ¬ st.cdt.mentions ref := by
+  intro hM
+  obtain ⟨cn, hCn, hSome⟩ := h ref hM
+  exact hSome (hEmpty cn hCn)
+
+/-- The tree's slots hold capabilities except, possibly, the slots `gone` names:
+the state a destroyer leaves between emptying slots and taking them out of the
+tree. -/
+def cdtCompletenessOff (st : SystemState) (gone : SlotRef → Prop) : Prop :=
+  ∀ ref : SlotRef, st.cdt.mentions ref → ¬ gone ref →
+    ∃ cn, st.objects[ref.cnode]? = some (.cnode cn) ∧ cn.lookup ref.slot ≠ none
+
+theorem cdtCompleteness.off {st : SystemState} (h : cdtCompleteness st)
+    (gone : SlotRef → Prop) : cdtCompletenessOff st gone :=
+  fun ref hM _ => h ref hM
+
+/-- Once the slots `gone` names have left the tree, it is complete again. -/
+theorem cdtCompletenessOff.complete {st : SystemState} {gone : SlotRef → Prop}
+    (h : cdtCompletenessOff st gone) (hGone : ∀ ref, gone ref → ¬ st.cdt.mentions ref) :
+    cdtCompleteness st :=
+  fun ref hM => h ref hM fun hG => hGone ref hG hM
+
+/-- A tree update that names no new slot keeps the relaxed completeness. -/
+theorem cdtCompletenessOff.of_cdt {st : SystemState} {gone : SlotRef → Prop}
+    (h : cdtCompletenessOff st gone) (cdt' : CapDerivationTree)
+    (hSub : ∀ ref, cdt'.mentions ref → st.cdt.mentions ref) :
+    cdtCompletenessOff { st with cdt := cdt' } gone :=
+  fun ref hM hG => h ref (hSub ref hM) hG
 
 /-- WS-H4/M-03: CDT acyclicity — the capability derivation tree has no cycles.
 Required for `descendantsOf` termination and revocation completeness. Uses the
@@ -154,11 +196,11 @@ effects, not a state property preserved through transitions). Both are retained 
 standalone operation-correctness lemmas in `Authority.lean`.
 
 **Design decisions (WS-H4):**
-- CDT-modifying operations (`cspaceCopy`, `cspaceMove`, `cspaceMintWithCdt`) take
-  `hCdtPost : cdtCompleteness st' ∧ cdtAcyclicity st'` as hypotheses rather than
-  proving acyclicity preservation through `addEdge`. This is because proving
-  `addEdge_preserves_acyclicity` requires a cycle-check precondition that must be
-  validated at the caller; the hypothesis pattern correctly defers this obligation.
+- CDT-expanding operations (`cspaceCopy`, `cspaceMove`, `cspaceMintWithCdt`,
+  reply-cap mint, IPC capability transfer) prove acyclicity from the pre-state:
+  each installs into a slot it found empty, which `cdtCompleteness` keeps out of
+  the tree, so the new edge reaches a fresh node
+  (`addEdge_preserves_edgeWellFounded_fresh`, `moveNode_edgeWellFounded`).
 - CDT-shrinking operations (revoke/delete) prove acyclicity via
   `CapDerivationTree.edgeWellFounded_sub` (edge subset preserves well-foundedness).
 - AF5-F (AF-26): This conjunction uses right-associative `∧` chains
@@ -701,27 +743,90 @@ theorem cdtCompleteness_of_objectsAgreeOffRunLinks {st st' : SystemState}
     (hCdtEq : st'.cdt = st.cdt) : cdtCompleteness st' := by
   intro ref hM
   rw [hCdtEq] at hM
-  exact fun hNone => hComp ref hM (hA.get_none_iff.mp hNone)
+  obtain ⟨cn, hCn, hL⟩ := hComp ref hM
+  exact ⟨cn, hA.get_cnode_iff.mpr hCn, hL⟩
 
 theorem cspaceDepthConsistent_of_objectsAgreeOffRunLinks {st st' : SystemState}
     (hA : st'.objectsAgreeOffRunLinks st) (hDepth : cspaceDepthConsistent st) :
     cspaceDepthConsistent st' :=
   fun cnodeId cn hObj => hDepth cnodeId cn (hA.get_cnode_iff.mp hObj)
 
-/-- WS-H4: Transfer cdtCompleteness through storeObject. After storeObject,
-objects may change but every key that was non-none stays non-none. -/
+/-- WS-H4: Transfer cdtCompleteness through storeObject.  Every key but `oid`
+keeps its object; at `oid` the stored object must hold every slot the tree names
+there (`hAt`). -/
 theorem cdtCompleteness_of_storeObject
     (st st' : SystemState) (oid : SeLe4n.ObjId) (obj : KernelObject)
     (hComp : cdtCompleteness st)
     (hObjInv : st.objects.invExt)
-    (hStore : storeObject oid obj st = .ok ((), st')) :
+    (hStore : storeObject oid obj st = .ok ((), st'))
+    (hAt : ∀ ref : SlotRef, st.cdt.mentions ref → ref.cnode = oid →
+      ∃ cn, obj = .cnode cn ∧ cn.lookup ref.slot ≠ none) :
     cdtCompleteness st' := by
   intro ref hM
   rw [storeObject_cdt_eq st st' oid obj hStore] at hM
-  have hPre := hComp ref hM
   by_cases hEq : ref.cnode = oid
-  · rw [hEq]; rw [storeObject_objects_eq st st' oid obj hObjInv hStore]; simp
-  · rw [storeObject_objects_ne st st' oid ref.cnode obj hEq hObjInv hStore]; exact hPre
+  · obtain ⟨cn, rfl, hL⟩ := hAt ref hM hEq
+    exact ⟨cn, by rw [hEq, storeObject_objects_eq st st' oid _ hObjInv hStore], hL⟩
+  · rw [storeObject_objects_ne st st' oid ref.cnode obj hEq hObjInv hStore]; exact hComp ref hM
+
+/-- A store at a key that holds no CNode keeps the tree's slots: the tree names
+no slot there. -/
+theorem cdtCompleteness_of_storeObject_notCNode
+    (st st' : SystemState) (oid : SeLe4n.ObjId) (obj : KernelObject)
+    (hComp : cdtCompleteness st)
+    (hObjInv : st.objects.invExt)
+    (hStore : storeObject oid obj st = .ok ((), st'))
+    (hPre : ∀ cn, st.objects[oid]? ≠ some (.cnode cn)) :
+    cdtCompleteness st' :=
+  cdtCompleteness_of_storeObject st st' oid obj hComp hObjInv hStore fun ref hM hEq => by
+    obtain ⟨cn, hCn, -⟩ := hComp ref hM
+    exact absurd (hEq ▸ hCn) (hPre cn)
+
+/-- A CNode store that keeps every occupied slot occupied keeps the tree's slots. -/
+theorem cdtCompleteness_of_storeObject_cnode_mono
+    (st st' : SystemState) (oid : SeLe4n.ObjId) (cn cn' : CNode)
+    (hComp : cdtCompleteness st)
+    (hObjInv : st.objects.invExt)
+    (hPre : st.objects[oid]? = some (.cnode cn))
+    (hStore : storeObject oid (.cnode cn') st = .ok ((), st'))
+    (hMono : ∀ s, cn.lookup s ≠ none → cn'.lookup s ≠ none) :
+    cdtCompleteness st' :=
+  cdtCompleteness_of_storeObject st st' oid _ hComp hObjInv hStore fun ref hM hEq => by
+    obtain ⟨cn₀, hCn, hL⟩ := hComp ref hM
+    rw [hEq, hPre] at hCn; cases hCn
+    exact ⟨cn', rfl, hMono _ hL⟩
+
+/-- A CNode store keeps the tree's slots when the new CNode still holds every slot
+the tree names in it. -/
+theorem cdtCompleteness_of_storeObject_cnode
+    (st st' : SystemState) (oid : SeLe4n.ObjId) (cn' : CNode)
+    (hComp : cdtCompleteness st)
+    (hObjInv : st.objects.invExt)
+    (hStore : storeObject oid (.cnode cn') st = .ok ((), st'))
+    (hKeep : ∀ s, st.cdt.mentions ⟨oid, s⟩ → cn'.lookup s ≠ none) :
+    cdtCompleteness st' :=
+  cdtCompleteness_of_storeObject st st' oid _ hComp hObjInv hStore fun ref hM hEq =>
+    ⟨cn', rfl, hKeep ref.slot (by cases ref; cases hEq; exact hM)⟩
+
+/-- A CNode store that empties slots keeps the tree's slots except the emptied
+ones, which `gone` must name. -/
+theorem cdtCompletenessOff_of_storeObject_cnode
+    (st st' : SystemState) (oid : SeLe4n.ObjId) (cn cn' : CNode) (gone : SlotRef → Prop)
+    (hComp : cdtCompleteness st)
+    (hObjInv : st.objects.invExt)
+    (hPre : st.objects[oid]? = some (.cnode cn))
+    (hStore : storeObject oid (.cnode cn') st = .ok ((), st'))
+    (hGone : ∀ s, cn.lookup s ≠ none → cn'.lookup s = none → gone ⟨oid, s⟩) :
+    cdtCompletenessOff st' gone := by
+  rintro ⟨c, s⟩ hM hNG
+  rw [storeObject_cdt_eq st st' oid _ hStore] at hM
+  by_cases hEq : c = oid
+  · subst hEq
+    obtain ⟨cn₀, hCn, hL⟩ := hComp ⟨c, s⟩ hM
+    simp only [hPre] at hCn; cases hCn
+    exact ⟨cn', storeObject_objects_eq st st' c _ hObjInv hStore,
+      fun hN => hNG (hGone s hL hN)⟩
+  · rw [storeObject_objects_ne st st' oid c _ hEq hObjInv hStore]; exact hComp ⟨c, s⟩ hM
 
 /-- WS-H4: Transfer cdtAcyclicity when CDT is unchanged. -/
 theorem cdtAcyclicity_of_cdt_eq
@@ -769,21 +874,6 @@ private theorem storeTcbIpcState_cdt_eq
 -- beside the primitive (`IPC/Operations/Endpoint.lean`), where the `.call` and
 -- `.reply` chains' bundle lifts read it.  Two answers to one question is what
 -- this project retires; the survivor is the one at the transition.
-
-/-- WS-H4: Transfer all three new predicates through a storeObject that is
-not a CNode. Combines cspaceSlotCountBounded + cdtCompleteness + cdtAcyclicity. -/
-private theorem cdtPredicates_of_storeObject_nonCNode
-    (st st' : SystemState) (oid : SeLe4n.ObjId) (obj : KernelObject)
-    (hBounded : cspaceSlotCountBounded st)
-    (hComp : cdtCompleteness st) (hAcyclic : cdtAcyclicity st)
-    (hObjInv : st.objects.invExt)
-    (hStore : storeObject oid obj st = .ok ((), st'))
-    (hNotCNode : ∀ cn, obj ≠ .cnode cn) :
-    cspaceSlotCountBounded st' ∧ cdtCompleteness st' ∧ cdtAcyclicity st' := by
-  have hCdt := storeObject_cdt_eq st st' oid obj hStore
-  exact ⟨cspaceSlotCountBounded_of_storeObject_nonCNode st st' oid obj hBounded hObjInv hStore hNotCNode,
-    cdtCompleteness_of_storeObject st st' oid obj hComp hObjInv hStore,
-    cdtAcyclicity_of_cdt_eq st st' hAcyclic hCdt⟩
 
 /-- WS-H4: Transfer all three new predicates when objects and CDT fields are
 both preserved. Used for scheduler-only updates (removeRunnable, ensureRunnable). -/
@@ -941,90 +1031,6 @@ private theorem boundedCompleteness_of_cdt_only_update
     cdtCompleteness { st with cdt := cdt' } :=
   ⟨hBounded, fun ref hM => hComp ref (hSub ref hM)⟩
 
-/-- WS-H4: Transfer WS-H4 predicates through endpoint/TCB blocking path.
-storeObject(.endpoint) → storeTcbIpcState → removeRunnable preserves all three. -/
-private theorem cdtPredicates_through_blocking_path
-    (st st1 st2 : SystemState) (endpointId : SeLe4n.ObjId) (target : SeLe4n.ThreadId)
-    (ep : Endpoint) (ipc : ThreadIpcState)
-    (hBounded : cspaceSlotCountBounded st)
-    (hComp : cdtCompleteness st) (hAcyclic : cdtAcyclicity st)
-    (hObjInv : st.objects.invExt)
-    (hStore : storeObject endpointId (.endpoint ep) st = .ok ((), st1))
-    (hTcb : storeTcbIpcState st1 target ipc = .ok st2) :
-    cspaceSlotCountBounded (removeRunnable st2 target) ∧
-    cdtCompleteness (removeRunnable st2 target) ∧
-    cdtAcyclicity (removeRunnable st2 target) := by
-  have hCdt1 := storeObject_cdt_eq st st1 endpointId (.endpoint ep) hStore
-  have hCdt2 := storeTcbIpcState_cdt_eq st1 st2 target ipc hTcb
-  have hObjInv1 : st1.objects.invExt := storeObject_preserves_objects_invExt st st1 endpointId _ hObjInv hStore
-  have hBnd1 := cspaceSlotCountBounded_of_storeObject_nonCNode st st1 endpointId (.endpoint ep)
-    hBounded hObjInv hStore (fun cn h => by cases h)
-  have hBnd2 := cspaceSlotCountBounded_of_storeTcbIpcState st1 st2 target ipc hBnd1 hObjInv1 hTcb
-  have hComp1 := cdtCompleteness_of_storeObject st st1 endpointId (.endpoint ep) hComp hObjInv hStore
-  have hComp2 : cdtCompleteness st2 := by
-    unfold storeTcbIpcState modifyTcb at hTcb
-    cases hLookup : lookupTcb st1 target with
-    | none => simp [hLookup] at hTcb
-    | some tcb =>
-      simp only [hLookup] at hTcb
-      cases hS : storeObject target.toObjId (.tcb (tcb.setIpcState ipc)) st1 with
-      | error e => simp [hS] at hTcb
-      | ok pair =>
-        simp only [hS] at hTcb
-        have hEq := Except.ok.inj hTcb; subst hEq
-        exact cdtCompleteness_of_storeObject st1 pair.2 target.toObjId _ hComp1 hObjInv1 hS
-  have hRem := removeRunnable_onlyObjectsSchedulerDiffer st2 target
-  unfold SystemState.onlyObjectsSchedulerDiffer at hRem
-  have hRemNS : (removeRunnable st2 target).cdt = st2.cdt := by rw [hRem]
-  have hRemCdt : (removeRunnable st2 target).cdt = st.cdt := by rw [hRem]; rw [hCdt2, hCdt1]
-  exact ⟨cspaceSlotCountBounded_of_objectsAgreeOffRunLinks
-      (removeRunnable_objectsAgreeOffRunLinks st2 target) hBnd2,
-    cdtCompleteness_of_objectsAgreeOffRunLinks
-      (removeRunnable_objectsAgreeOffRunLinks st2 target) hComp2 hRemNS,
-    cdtAcyclicity_of_cdt_eq st _ hAcyclic hRemCdt⟩
-
-/-- WS-H4: Transfer WS-H4 predicates through endpoint/TCB handshake path.
-storeObject(.endpoint) → storeTcbIpcState → ensureRunnable preserves all three. -/
-private theorem cdtPredicates_through_handshake_path
-    (st st1 st2 : SystemState) (endpointId : SeLe4n.ObjId) (target : SeLe4n.ThreadId)
-    (ep : Endpoint)
-    (hBounded : cspaceSlotCountBounded st)
-    (hComp : cdtCompleteness st) (hAcyclic : cdtAcyclicity st)
-    (hObjInv : st.objects.invExt)
-    (hStore : storeObject endpointId (.endpoint ep) st = .ok ((), st1))
-    (hTcb : storeTcbIpcState st1 target .ready = .ok st2) :
-    cspaceSlotCountBounded (ensureRunnable st2 target) ∧
-    cdtCompleteness (ensureRunnable st2 target) ∧
-    cdtAcyclicity (ensureRunnable st2 target) := by
-  have hCdt1 := storeObject_cdt_eq st st1 endpointId (.endpoint ep) hStore
-  have hCdt2 := storeTcbIpcState_cdt_eq st1 st2 target .ready hTcb
-  have hObjInv1 : st1.objects.invExt := storeObject_preserves_objects_invExt st st1 endpointId _ hObjInv hStore
-  have hBnd1 := cspaceSlotCountBounded_of_storeObject_nonCNode st st1 endpointId (.endpoint ep)
-    hBounded hObjInv hStore (fun cn h => by cases h)
-  have hBnd2 := cspaceSlotCountBounded_of_storeTcbIpcState st1 st2 target .ready hBnd1 hObjInv1 hTcb
-  have hComp1 := cdtCompleteness_of_storeObject st st1 endpointId (.endpoint ep) hComp hObjInv hStore
-  have hComp2 : cdtCompleteness st2 := by
-    unfold storeTcbIpcState modifyTcb at hTcb
-    cases hLookup : lookupTcb st1 target with
-    | none => simp [hLookup] at hTcb
-    | some tcb =>
-      simp only [hLookup] at hTcb
-      cases hS : storeObject target.toObjId (.tcb (tcb.setIpcState .ready)) st1 with
-      | error e => simp [hS] at hTcb
-      | ok pair =>
-        simp only [hS] at hTcb
-        have hEq := Except.ok.inj hTcb; subst hEq
-        exact cdtCompleteness_of_storeObject st1 pair.2 target.toObjId _ hComp1 hObjInv1 hS
-  have hEns := ensureRunnable_onlyObjectsSchedulerDiffer st2 target
-  unfold SystemState.onlyObjectsSchedulerDiffer at hEns
-  have hEnsNS : (ensureRunnable st2 target).cdt = st2.cdt := by rw [hEns]
-  have hEnsCdt : (ensureRunnable st2 target).cdt = st.cdt := by rw [hEns]; rw [hCdt2, hCdt1]
-  exact ⟨cspaceSlotCountBounded_of_objectsAgreeOffRunLinks
-      (ensureRunnable_objectsAgreeOffRunLinks st2 target) hBnd2,
-    cdtCompleteness_of_objectsAgreeOffRunLinks
-      (ensureRunnable_objectsAgreeOffRunLinks st2 target) hComp2 hEnsNS,
-    cdtAcyclicity_of_cdt_eq st _ hAcyclic hEnsCdt⟩
-
 /-- WS-H4: Transfer WS-H4 predicates through reply path.
 storeTcbIpcStateAndMessage → ensureRunnable preserves all three. -/
 theorem cdtPredicates_through_reply_path
@@ -1060,7 +1066,8 @@ theorem cdtPredicates_through_reply_path
       | error e => simp [hS] at hTcb
       | ok pair =>
         simp only [hS] at hTcb; have hEq := Except.ok.inj hTcb; subst hEq
-        exact cdtCompleteness_of_storeObject st pair.2 target.toObjId _ hComp hObjInv hS
+        exact cdtCompleteness_of_storeObject_notCNode st pair.2 target.toObjId _ hComp hObjInv hS
+          (fun cn h => by rw [lookupTcb_some_objects st target tcb hL] at h; cases h)
   have hEns := ensureRunnable_onlyObjectsSchedulerDiffer st1 target
   unfold SystemState.onlyObjectsSchedulerDiffer at hEns
   have hEnsNS : (ensureRunnable st1 target).cdt = st1.cdt := by rw [hEns]
