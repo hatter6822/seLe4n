@@ -1816,8 +1816,7 @@ the acyclicity invariant: no slot can be both ancestor and descendant of itself.
 **T2-B (H-2): Access-controlled construction.** Direct construction of
 `CapDerivationTree` values is restricted to the `CapDerivationTree` namespace:
 external code starts from `CapDerivationTree.empty` and changes the tree only
-through its operations (`addEdge`, `removeNode`, `spliceNode`, `moveNode`,
-`revokeDerivationEdge`).
+through its operations (`addEdge`, `removeNode`, `spliceNode`, `moveNode`).
 
 **WS-ZA ZA5.3 part 4: the edge list is the tree.**  Its parent and child reads
 (`parentOf`, `childrenOf`) are read off the edges; the kernel's executable
@@ -2483,26 +2482,6 @@ theorem moveNode_mentions (cdt : CapDerivationTree) (old new : SlotRef)
     · rw [hc] at hr; subst hr
       exact .inr ⟨fun hEq => edgeWellFounded_no_self_edge hWF he (hpo.trans hEq.symm),
         ⟨e, he, .inr rfl⟩⟩
-
-/-- S3-C/U-L03: Remove a specific edge from the CDT.  Exposed only through
-    `revokeTargetLocal`. -/
-private def removeEdge (cdt : CapDerivationTree) (parent child : SlotRef) : CapDerivationTree :=
-  { edges := cdt.edges.filter (fun e => ¬(e.parent = parent ∧ e.child = child)) }
-
-/-- S3-C: Public revocation-scoped edge removal. Wraps the private `removeEdge`
-    for use in revocation paths (`processRevokeNode`, `cspaceRevokeCdt`).
-
-    Unlike `removeNode` (which removes ALL edges involving a node), this removes
-    a single parent→child derivation edge — enabling fine-grained revocation
-    where a child capability's derivation is severed without destroying the
-    child node itself.
-
-    This is the only public entry point for `removeEdge`, satisfying the S3-C
-    spec requirement: "Expose only through `revokeTargetLocal`; do not export
-    standalone." -/
-def revokeDerivationEdge (cdt : CapDerivationTree)
-    (parent child : SlotRef) : CapDerivationTree :=
-  cdt.removeEdge parent child
 
 -- ============================================================================
 -- Y1-E: HashSet/List sync lemma for descendantsOf proofs

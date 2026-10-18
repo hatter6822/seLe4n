@@ -41,7 +41,7 @@ pre-state invariant. This is deliberate:
    slot state. Bundling them as hypotheses keeps each proof focused.
 
 2. **CDT operation complexity.** CDT mutations (`addEdge`, `removeNode`,
-   `revokeDerivationEdge`) modify an edge list. Proving acyclicity preservation for `addEdge` requires
+   `spliceNode`, `moveNode`) modify an edge list. Proving acyclicity preservation for `addEdge` requires
    a reachability argument over the graph (no path from child to parent
    in the pre-state). This argument is inherently CDT-specific and does
    not compose naturally with the slot-level induction used in capability
