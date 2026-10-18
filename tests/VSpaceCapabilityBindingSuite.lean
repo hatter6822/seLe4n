@@ -1836,7 +1836,7 @@ private def runPageTableChecks : IO Unit := do
               assertBool "RETIRED: the all-references reading does not count it orphaned, the live one does"
                 (match cspaceDeleteSlot at15 stPark with
                  | .ok ((), r) => !retiredAllReferencesOrphaned stPark r 983 &&
-                     (pageTablesOrphaned stPark r).any (·.1 == SeLe4n.ObjId.ofNat 983)
+                     (pageTablesOrphaned (slotPageTables stPark at15) r).any (·.1 == SeLe4n.ObjId.ofNat 983)
                  | .error _ => false)
           assertBool "a CNode holding an installed table's capability is not retyped in place"
             (match st3.objects[carveCn]? with

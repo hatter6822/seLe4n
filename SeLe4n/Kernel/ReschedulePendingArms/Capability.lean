@@ -250,12 +250,12 @@ theorem cspaceRevokeCdt_keyFrame (st st' : SystemState) (addr : CSpaceAddr)
     (fun stA stB nd hP hSt => hP.trans (processRevokeNode_keyFrame stA stB nd hP.2.2 hSt))
     st addr _ out (capabilityKeyFrame_of_objects_scheduler_eq hObjInv rfl rfl) hTrav
 
-theorem finaliseDestroyedCapabilities_keyFrame (ec : CoreId) (pre : SystemState)
+theorem finaliseDestroyedCapabilities_keyFrame (ec : CoreId) (named : List SeLe4n.ObjId)
     (pages : List MappedPage) (st st' : SystemState) (hObjInv : st.objects.invExt)
-    (hStep : finaliseDestroyedCapabilities ec pre pages st = .ok ((), st')) :
+    (hStep : finaliseDestroyedCapabilities ec named pages st = .ok ((), st')) :
     capabilityKeyFrame st st' := by
   obtain ⟨hExt, hW, hSched⟩ :=
-    finaliseDestroyedCapabilities_ok_frame ec pre pages st st' hObjInv hStep
+    finaliseDestroyedCapabilities_ok_frame ec named pages st st' hObjInv hStep
   exact ⟨keyInputsEq_of_vspaceRootOnlyWrite hW, hSched, hExt⟩
 
 theorem cspaceDeleteSlotFinalising_keyFrame (ec : CoreId) (addr : CSpaceAddr)
@@ -264,15 +264,18 @@ theorem cspaceDeleteSlotFinalising_keyFrame (ec : CoreId) (addr : CSpaceAddr)
     capabilityKeyFrame st st' := by
   obtain ⟨st1, hD, hF⟩ := cspaceDeleteSlotFinalising_ok ec addr st st' hStep
   have h1 : capabilityKeyFrame st st1 := cspaceDeleteSlot_keyInputsEq st st1 addr hObjInv hD
-  exact h1.trans (finaliseDestroyedCapabilities_keyFrame ec st _ st1 st' h1.2.2 hF)
+  exact h1.trans (finaliseDestroyedCapabilities_keyFrame ec _ _ st1 st' h1.2.2 hF)
 
 theorem cspaceRevokeCdtFinalising_keyFrame (ec : CoreId) (addr : CSpaceAddr)
     (st st' : SystemState) (hObjInv : st.objects.invExt)
     (hStep : cspaceRevokeCdtFinalising ec addr st = .ok ((), st')) :
-    capabilityKeyFrame st st' := by
-  obtain ⟨pages, st1, hR, hF⟩ := cspaceRevokeCdtFinalising_ok ec addr st st' hStep
-  have h1 := cspaceRevokeCdt_keyFrame st st1 addr pages hObjInv hR
-  exact h1.trans (finaliseDestroyedCapabilities_keyFrame ec st _ st1 st' h1.2.2 hF)
+    capabilityKeyFrame st st' :=
+  cspaceRevokeCdtFinalising_closed (capabilityKeyFrame st)
+    (fun c s s' hQ hD => hQ.trans (cspaceDeleteSlotFinalising_keyFrame ec c s s' hQ.2.2 hD))
+    (fun pages st1 hR hF =>
+      have h1 := cspaceRevokeCdt_keyFrame st st1 addr pages hObjInv hR
+      h1.trans (finaliseDestroyedCapabilities_keyFrame ec _ _ st1 st' h1.2.2 hF))
+    (capabilityKeyFrame_of_objects_scheduler_eq hObjInv rfl rfl) hStep
 
 /-! ### VSpace and untyped -/
 

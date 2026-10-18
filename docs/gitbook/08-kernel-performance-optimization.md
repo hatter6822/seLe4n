@@ -228,7 +228,7 @@ Preservation is proved in two layers:
 | CDT children lookup | O(E) edge scan | O(1) first-child link, then next links (slot links since v0.36.106) |
 | CDT descendant traversal | O(N*E) | O(N+E) |
 | Info-flow observability | O(n) per object | O(1) HashSet |
-| CDT revoke (descendant materialization) | O(N+E) upfront | Streaming BFS (per-level) |
+| CDT revoke (descendant materialization) | O(N+E) upfront | Streaming BFS (per-level); since v0.36.107 a revoke that finalises nothing deletes the source's first child until none is left (seL4 `cteRevoke`), building no list |
 
 ## 6. Proof impact
 
