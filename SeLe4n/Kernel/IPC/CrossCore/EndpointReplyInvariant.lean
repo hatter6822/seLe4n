@@ -1611,7 +1611,7 @@ theorem endpointReplyOnCore_preserves_capabilityInvariantBundle
         hObjInv hStore'
     have hCdt := storeTcbIpcStateAndMessage_fromTcb_cdt_eq hStore
     have h1 : capabilityInvariantBundle st' :=
-      capabilityInvariantBundle_of_kindPreserving h hCdt.2 hCdt.1 hObj'
+      capabilityInvariantBundle_of_kindPreserving h hCdt hObj'
         (storeTcbIpcStateAndMessage_fromTcb_kindPreservingWrite hObjInv
           (lookupTcb_some_objects st target tcb hLk) hStore)
     have hObjW : (wakeThread st' target executingCore).1.objects.invExt :=
@@ -1622,7 +1622,6 @@ theorem endpointReplyOnCore_preserves_capabilityInvariantBundle
     have hU : ∀ s, s.objects.invExt → capabilityInvariantBundle s →
         capabilityInvariantBundle (s.unlinkReplyWaiter target server) := fun s hI hB =>
       capabilityInvariantBundle_of_kindPreserving hB
-        (SystemState.unlinkReplyWaiter_cdtNodeSlot _ _ _)
         (SystemState.unlinkReplyWaiter_cdt _ _ _)
         (SystemState.unlinkReplyWaiter_objects_invExt _ _ _ hI)
         (SystemState.unlinkReplyWaiter_kindPreservingWrite _ _ _)
@@ -1630,7 +1629,6 @@ theorem endpointReplyOnCore_preserves_capabilityInvariantBundle
     · rw [hEq]; exact hU _ hObjW h2
     · exact hU _ (removeCallerReplyFrame_preserves_objects_invExt _ _ target rid hObjW hCons)
         (capabilityInvariantBundle_of_kindPreserving h2
-        (removeCallerReplyFrame_cdtNodeSlot_eq _ _ target rid hCons)
         (removeCallerReplyFrame_cdt_eq _ _ target rid hCons)
         (removeCallerReplyFrame_preserves_objects_invExt _ _ target rid hObjW hCons)
         (removeCallerReplyFrame_kindPreservingWrite _ _ target rid hObjW hCons))

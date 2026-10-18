@@ -45,6 +45,12 @@ private def expectErr
     (expected : KernelError) : IO Unit :=
   SeLe4n.Testing.expectError label actual expected (msgPrefix := "operation-chain check")
 
+/-- The slot's derivation node, if the tree names it.  Since WS-ZA ZA5.3 part 2
+the slot is the node, so this is the slot itself whenever an edge touches it. -/
+private def cdtNodeOf (st : SystemState) (ref : SeLe4n.Model.SlotRef) :
+    Option SeLe4n.Model.SlotRef :=
+  if st.cdt.edges.any (fun e => e.parent == ref || e.child == ref) then some ref else none
+
 private def assertInvariants (label : String) (st : SystemState) : IO Unit :=
   assertStateInvariantsFor label st.objectIndex st
 
@@ -441,9 +447,9 @@ private def chain9LifecycleCascadingRevokeAndAttenuation : IO Unit := do
   expect "chain9: grandchild slot removed after root revoke"
     (SystemState.lookupSlotCap st3 grandSlot = none)
   expect "chain9: child CDT node detached"
-    (SystemState.lookupCdtNodeOfSlot st3 childSlot = none)
+    (cdtNodeOf st3 childSlot = none)
   expect "chain9: grandchild CDT node detached"
-    (SystemState.lookupCdtNodeOfSlot st3 grandSlot = none)
+    (cdtNodeOf st3 grandSlot = none)
   assertInvariants "chain9: cascading revoke and authority degradation" st3
 
 private def buildParameterizedTopology
@@ -824,15 +830,13 @@ private def ipcCapTransferRevocable : IO Unit := do
   let (_, st1) ← expectOkSt "chain12b: receiver blocks on endpoint"
     (SeLe4n.Kernel.endpointReceiveDual epId receiver none st0)
 
-  -- Mint the derivation node for the real source slot exactly as
-  -- `resolveExtraCaps` does in production, and thread the resulting state: the
-  -- message carries that NODE, and `cspaceRevokeCdt` later looks the same node
-  -- up from the slot.  Naming a node the state does not bind to slot 5 would
-  -- make the revoke walk miss it, which is what this scenario is measuring.
-  let (srcNode, st1) :=
-    SystemState.ensureCdtNodeForSlot st1 { cnode := senderCNode, slot := srcSlot }
+  -- Name the real source slot exactly as `resolveExtraCaps` does in production:
+  -- the slot is the derivation node, and `cspaceRevokeCdt` later walks from the
+  -- same slot.  Naming any other slot would make the revoke walk miss the copy,
+  -- which is what this scenario is measuring.
+  let srcNode : SeLe4n.Model.SlotRef := { cnode := senderCNode, slot := srcSlot }
   let msg : IpcMessage :=
-    { registers := #[], caps := #[{ cap := payloadCap, srcNode := srcNode }], badge := none }
+    { registers := #[], caps := #[{ cap := payloadCap, srcSlot := srcNode }], badge := none }
   let (_, st2) ← expectOkSt "chain12b: send with caps"
     (SeLe4n.Kernel.endpointSendDualWithCaps epId sender (.frame msg.badge (grantRights.mem .grant))
       (SeLe4n.Slot.ofNat 0)
@@ -918,19 +922,20 @@ private def ipcCapTransferRevocable : IO Unit := do
   --
   -- What makes an orphaned derivation impossible is that the install — the
   -- single place an `.ipcTransfer` edge comes into existence — declines when the
-  -- source node has no slot.  So detach the source directly, standing in for any
+  -- source slot is empty.  So delete the source directly, standing in for any
   -- destroyer that reached the slot between resolution and install, and drive
   -- the unwrap with the message resolved before it.
-  let stOrphaned := SystemState.detachSlotFromCdt st1 { cnode := senderCNode, slot := srcSlot }
+  let (_, stOrphaned) ← expectOkSt "chain12b: delete the source before the unwrap"
+    (SeLe4n.Kernel.cspaceDeleteSlot { cnode := senderCNode, slot := srcSlot } st1)
   -- The control: with the source still bound, the very same unwrap installs.
   let (summaryLive, stLive) ← expectOkSt "chain12b: unwrap with the source still bound"
     (SeLe4n.Kernel.ipcUnwrapCaps msg receiverCNode (SeLe4n.Slot.ofNat 0) true st1)
   expect "chain12b: the control unwrap installs the capability"
     (summaryLive.results == #[.installed receiverCNode (SeLe4n.Slot.ofNat 0)] && receiverSlotFilled stLive)
-  -- The measurement: with the source detached, nothing is installed.
-  let (summaryOrphan, stOrphanRun) ← expectOkSt "chain12b: unwrap after the source was detached"
+  -- The measurement: with the source deleted, nothing is installed.
+  let (summaryOrphan, stOrphanRun) ← expectOkSt "chain12b: unwrap after the source was deleted"
     (SeLe4n.Kernel.ipcUnwrapCaps msg receiverCNode (SeLe4n.Slot.ofNat 0) true stOrphaned)
-  expect "chain12b: an install under a source no slot points at is DECLINED"
+  expect "chain12b: an install from an emptied source slot is DECLINED"
     (summaryOrphan.results == #[.sourceRevoked])
   expect "chain12b: NEGATIVE — the declined transfer installed nothing"
     (!receiverSlotFilled stOrphanRun)
@@ -983,13 +988,13 @@ private def ipcCapTransferArrivalOrder : IO Unit := do
       |>.withRunnable [sender, receiver]
       |>.buildChecked)
 
-  let (srcNode, stBase) :=
-    SystemState.ensureCdtNodeForSlot st0 { cnode := senderCNode, slot := srcSlot }
+  let srcNode : SeLe4n.Model.SlotRef := { cnode := senderCNode, slot := srcSlot }
+  let stBase := st0
   -- The message a granting sender builds: the live arms record the grant right
   -- on it (`capsGranted`), which is the authority the queued ordering reads back
   -- once the sender's endpoint capability is gone.
   let msg : IpcMessage :=
-    { registers := #[], caps := #[{ cap := payloadCap, srcNode := srcNode }],
+    { registers := #[], caps := #[{ cap := payloadCap, srcSlot := srcNode }],
       badge := none, capsGranted := grantRights.mem .grant }
 
   let receiverSlotFilled (st : SystemState) : Bool :=
@@ -1114,10 +1119,10 @@ private def replyRecvCapTransferArrivalOrder : IO Unit := do
       |>.withRunnable [server, nextSender]
       |>.buildChecked)
 
-  let (srcNode, stBase) :=
-    SystemState.ensureCdtNodeForSlot st0 { cnode := senderCNode, slot := srcSlot }
+  let srcNode : SeLe4n.Model.SlotRef := { cnode := senderCNode, slot := srcSlot }
+  let stBase := st0
   let requestMsg : IpcMessage :=
-    { registers := #[], caps := #[{ cap := payloadCap, srcNode := srcNode }],
+    { registers := #[], caps := #[{ cap := payloadCap, srcSlot := srcNode }],
       badge := none, capsGranted := grantRights.mem .grant }
   let replyMsg : IpcMessage :=
     { registers := #[SeLe4n.RegValue.ofNat 7], caps := #[], badge := none }
@@ -1238,10 +1243,10 @@ private def receiveWithoutSenderInstallsNothing : IO Unit := do
       |>.withRunnable [sender, receiver]
       |>.buildChecked)
 
-  let (srcNode, stBase) :=
-    SystemState.ensureCdtNodeForSlot st0 { cnode := senderCNode, slot := srcSlot }
+  let srcNode : SeLe4n.Model.SlotRef := { cnode := senderCNode, slot := srcSlot }
+  let stBase := st0
   let msg : IpcMessage :=
-    { registers := #[], caps := #[{ cap := payloadCap, srcNode := srcNode }],
+    { registers := #[], caps := #[{ cap := payloadCap, srcSlot := srcNode }],
       badge := none, capsGranted := grantRights.mem .grant }
 
   let slotFilled (st : SystemState) (s : SeLe4n.Slot) : Bool :=
@@ -1512,10 +1517,10 @@ private def revokeLeavesIndependentSibling : IO Unit := do
 
   let revokedAddr : SeLe4n.Kernel.CSpaceAddr := { cnode := senderCNode, slot := revokedSlot }
   let siblingAddr : SeLe4n.Kernel.CSpaceAddr := { cnode := senderCNode, slot := siblingSlot }
-  let (_, stRoot) := SystemState.ensureCdtNodeForSlot st0 revokedAddr
-  let (siblingNode, stBase) := SystemState.ensureCdtNodeForSlot stRoot siblingAddr
+  let siblingNode : SeLe4n.Model.SlotRef := siblingAddr
+  let stBase := st0
   let msg : IpcMessage :=
-    { registers := #[], caps := #[{ cap := payloadCap, srcNode := siblingNode }], badge := none, capsGranted := true }
+    { registers := #[], caps := #[{ cap := payloadCap, srcSlot := siblingNode }], badge := none, capsGranted := true }
 
   let (stParked, _) :=
     SeLe4n.Kernel.endpointSendDualWithCapsOnCore epId sender (.frame msg.badge (grantRights.mem .grant))
@@ -1565,7 +1570,7 @@ private def revokeLeavesIndependentSibling : IO Unit := do
       expect "independent-sibling: RETIRED — the local sweep emptied the independent sibling"
         (!(slotFilled stSwept senderCNode siblingSlot))
       expect "independent-sibling: RETIRED — and took the emptied sibling's node out of the tree"
-        ((SystemState.lookupCdtSlotOfNode stSwept siblingNode).isNone)
+        ((cdtNodeOf stSwept siblingNode).isNone)
       expect "independent-sibling: RETIRED — so no revocation can enter that node any more"
         (!(SeLe4n.Kernel.cdtNodeIsRevocable stSwept siblingNode))
       -- A parked sender whose source slot was emptied, by whatever writer,
@@ -1620,12 +1625,12 @@ private def endpointGrantDecidesBothOrderings : IO Unit := do
       |>.withRunnable [sender, receiver]
       |>.buildChecked)
 
-  let (srcNode, stBase) :=
-    SystemState.ensureCdtNodeForSlot st0 { cnode := senderCNode, slot := srcSlot }
+  let srcNode : SeLe4n.Model.SlotRef := { cnode := senderCNode, slot := srcSlot }
+  let stBase := st0
   -- The message as a caller who did NOT pre-stamp the bit builds it: the field
   -- keeps its default while the endpoint capability grants.
   let msg : IpcMessage :=
-    { registers := #[], caps := #[{ cap := payloadCap, srcNode := srcNode }], badge := none }
+    { registers := #[], caps := #[{ cap := payloadCap, srcSlot := srcNode }], badge := none }
   expect "chain12h: the message arrives with the grant bit at its default"
     (!msg.capsGranted)
 
@@ -1715,7 +1720,7 @@ private def chain13IpcCapTransferNoGrant : IO Unit := do
   let (_, st1) ← expectOkSt "chain13: receiver blocks"
     (SeLe4n.Kernel.endpointReceiveDual epId receiver none st0)
 
-  let msg : IpcMessage := { registers := #[⟨99⟩], caps := #[TransferCap.fromNode cap1 0], badge := none }
+  let msg : IpcMessage := { registers := #[⟨99⟩], caps := #[TransferCap.fromSlot cap1 { cnode := senderCNode, slot := SeLe4n.Slot.ofNat 0 }], badge := none }
   let (summary, st2) ← expectOkSt "chain13: send without grant right"
     (SeLe4n.Kernel.endpointSendDualWithCaps epId sender (.frame msg.badge (noGrantRights.mem .grant))
       (SeLe4n.Slot.ofNat 0) (SeLe4n.Testing.withSenderFrame st1 sender msg #[SeLe4n.CPtr.ofNat 0]))
@@ -1873,13 +1878,12 @@ private def chain15StrictRevokeDeepChain : IO Unit := do
   let rootCapOpt := SystemState.lookupSlotCap stFinal rootSlot
   expect "chain15: root slot still present" rootCapOpt.isSome
 
-  -- Verify: root CDT node survives revocation
-  let rootNodeOpt := SystemState.lookupCdtNodeOfSlot stFinal rootSlot
-  expect "chain15: root CDT node still present" rootNodeOpt.isSome
+  -- Verify: the root keeps no derived children
+  expect "chain15: root has no children left" (stFinal.cdt.childrenOf rootSlot).isEmpty
 
   -- Verify: CDT nodes detached for all descendants
   for i in List.range 15 do
-    let nodeOpt := SystemState.lookupCdtNodeOfSlot stFinal childSlots[i]!
+    let nodeOpt := cdtNodeOf stFinal childSlots[i]!
     expect s!"chain15: child{i} CDT node detached" nodeOpt.isNone
 
   assertInvariants "chain15: deep chain strict revoke invariants" stFinal
@@ -1942,7 +1946,7 @@ private def chain16StrictRevokePartialFail : IO Unit := do
         (failure.error = .objectNotFound)
       -- The offending slot should be child2's slot
       expect "chain16: offendingSlot matches child2"
-        (failure.offendingSlot = some childSlots[2]!)
+        (failure.offendingSlot = childSlots[2]!)
   | none =>
       throw <| IO.userError "chain16: expected firstFailure to be some"
 
@@ -1973,9 +1977,9 @@ private def chain16StrictRevokePartialFail : IO Unit := do
   expect "chain16: c4 slot preserved after halt" c4CapOpt.isSome
 
   -- Verify: c3 and c4 CDT nodes also survive the halt
-  let c3NodeOpt := SystemState.lookupCdtNodeOfSlot stFinal childSlots[3]!
+  let c3NodeOpt := cdtNodeOf stFinal childSlots[3]!
   expect "chain16: c3 CDT node survives halt" c3NodeOpt.isSome
-  let c4NodeOpt := SystemState.lookupCdtNodeOfSlot stFinal childSlots[4]!
+  let c4NodeOpt := cdtNodeOf stFinal childSlots[4]!
   expect "chain16: c4 CDT node survives halt" c4NodeOpt.isSome
 
   -- Note: assertInvariants is intentionally NOT called here because we
@@ -2063,7 +2067,7 @@ private def chain17StrictRevokeOrdering : IO Unit := do
 
   -- Verify: CDT nodes detached
   for (label, slot) in [("A", slotA), ("B", slotB), ("A1", slotA1), ("B1", slotB1), ("B2", slotB2)] do
-    let nodeOpt := SystemState.lookupCdtNodeOfSlot stFinal slot
+    let nodeOpt := cdtNodeOf stFinal slot
     expect s!"chain17: {label} CDT node detached" nodeOpt.isNone
 
   -- Verify: deletedSlots are all from the expected set of descendant slots
@@ -2165,7 +2169,7 @@ private def chain18StreamingRevokeBFS : IO Unit := do
 
   -- Verify: CDT nodes detached for all descendants
   for (label, slot) in [("A", slotA), ("B", slotB), ("A1", slotA1), ("B1", slotB1), ("B2", slotB2)] do
-    let nodeOpt := SystemState.lookupCdtNodeOfSlot stFinal slot
+    let nodeOpt := cdtNodeOf stFinal slot
     expect s!"chain18: {label} CDT node detached after streaming revoke" nodeOpt.isNone
 
   assertInvariants "chain18: streaming BFS revoke invariants" stFinal
@@ -2247,7 +2251,7 @@ private def chain20StreamingRevokeDeepChain : IO Unit := do
 
   -- CDT nodes detached
   for (label, slot) in [("A", slotA), ("B", slotB), ("C", slotC), ("D", slotD)] do
-    let nodeOpt := SystemState.lookupCdtNodeOfSlot stFinal slot
+    let nodeOpt := cdtNodeOf stFinal slot
     expect s!"chain20: {label} CDT node detached" nodeOpt.isNone
 
   assertInvariants "chain20: deep chain streaming BFS revoke invariants" stFinal

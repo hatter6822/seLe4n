@@ -2020,7 +2020,7 @@ theorem endpointQueueRemoveDual_preserves_ipcSchedulerContractPredicates
 -- M3-E4: ipcUnwrapCaps + WithCaps wrapper preservation theorems
 --
 -- Key structural property: ipcUnwrapCaps only modifies CNode objects (via
--- cspaceInsertSlot) and CDT fields (via ensureCdtNodeForSlot/addEdge). It
+-- cspaceInsertSlot) and the derivation tree (via addEdge). It
 -- does NOT touch endpoint objects, notification objects, TCB queue links,
 -- or scheduler state. Therefore all IPC invariants that depend only on
 -- these untouched components are trivially preserved.

@@ -2188,11 +2188,10 @@ theorem enqueueRunnableOnCore_preserves_objectTypeMetadataConsistent (st : Syste
 enqueue's two writes are one object and one run-queue slot. -/
 theorem enqueueRunnableOnCore_cdt (st : SystemState) (c : CoreId)
     (tid : SeLe4n.ThreadId) :
-    (enqueueRunnableOnCore st c tid).cdt = st.cdt
-      ∧ (enqueueRunnableOnCore st c tid).cdtNodeSlot = st.cdtNodeSlot := by
+    (enqueueRunnableOnCore st c tid).cdt = st.cdt := by
   have h := enqueueRunnableOnCore_onlyObjectsSchedulerDiffer st c tid
   unfold SystemState.onlyObjectsSchedulerDiffer at h
-  rw [h]; exact ⟨rfl, rfl⟩
+  rw [h]
 
 /-- WS-SM SM5.I: `enqueueRunnableOnCore` leaves every core's replenish-queue slot
 unchanged — it writes only objects (`ipcState := .ready`) and a run queue.
@@ -2539,17 +2538,16 @@ survive it. -/
 
 
 
-/-- **WS-RR RR8.16** (`v0.35.200`): ...and neither CDT table, for the same
+/-- **WS-RR RR8.16** (`v0.35.200`): ...and not the derivation tree, for the same
 reason.  Stated beside the object frame because the capability bundle reads
-`cdtNodeSlot` and `cdt` exactly as it reads the store, and both IPC spines end in
+`cdt` exactly as it reads the store, and both IPC spines end in
 this removal. -/
 @[simp] theorem removeRunnableOnCore_cdt (st : SystemState)
     (tid : SeLe4n.ThreadId) (c : CoreId) :
-    (removeRunnableOnCore st tid c).cdt = st.cdt
-      ∧ (removeRunnableOnCore st tid c).cdtNodeSlot = st.cdtNodeSlot := by
+    (removeRunnableOnCore st tid c).cdt = st.cdt := by
   have h := removeRunnableOnCore_onlyObjectsSchedulerDiffer st tid c
   unfold SystemState.onlyObjectsSchedulerDiffer at h
-  rw [h]; exact ⟨rfl, rfl⟩
+  rw [h]
 
 /-- The step writes no object off the run-queue links, at either branch
 (WS-ZA ZA4.5; was an object-store equality while the links lived in the
@@ -2580,22 +2578,6 @@ theorem descheduleAtPlacement_preserves_objects_invExt (st : SystemState)
   split
   · exact removeRunnableOnCore_objects_invExt _ _ _ hInv
   · exact hInv
-
-/-- **WS-RR RR8.16** (`v0.35.199`): ...and it writes neither capability-derivation
-table, at either branch.
-
-Stated beside the object frame for the same reason that one is stated here: the
-reply path's donation return composes this deschedule, and the *capability*
-bundle (`capabilityInvariantBundle`) reads `cdtNodeSlot` and `cdt` exactly as it
-reads the store — so a consumer that has the objects frame and re-derives these
-two by unfolding the step is doing at the call site what belongs at the
-transition. -/
-@[simp] theorem descheduleAtPlacement_cdtNodeSlot (st : SystemState)
-    (tid : SeLe4n.ThreadId) :
-    (descheduleAtPlacement st tid).cdtNodeSlot = st.cdtNodeSlot := by
-  have h := descheduleAtPlacement_onlyObjectsSchedulerDiffer st tid
-  unfold SystemState.onlyObjectsSchedulerDiffer at h
-  rw [h]
 
 /-- ...and the derivation tree itself (`v0.35.199`). -/
 @[simp] theorem descheduleAtPlacement_cdt (st : SystemState)

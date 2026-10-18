@@ -1293,9 +1293,12 @@ private def runBoundedMessageExtendedTrace (counter : IO.Ref Nat) (st1 : SystemS
   let maxCapsMsg : IpcMessage := {
     registers := #[],
     caps := #[
-      TransferCap.fromNode { target := .object ⟨1⟩, rights := AccessRightSet.ofList [.read] } 1,
-      TransferCap.fromNode { target := .object ⟨2⟩, rights := AccessRightSet.ofList [.write] } 2,
-      TransferCap.fromNode { target := .object ⟨3⟩, rights := AccessRightSet.ofList [.grant] } 3],
+      TransferCap.fromSlot { target := .object ⟨1⟩, rights := AccessRightSet.ofList [.read] }
+        { cnode := ⟨1⟩, slot := SeLe4n.Slot.ofNat 1 },
+      TransferCap.fromSlot { target := .object ⟨2⟩, rights := AccessRightSet.ofList [.write] }
+        { cnode := ⟨2⟩, slot := SeLe4n.Slot.ofNat 2 },
+      TransferCap.fromSlot { target := .object ⟨3⟩, rights := AccessRightSet.ofList [.grant] }
+        { cnode := ⟨3⟩, slot := SeLe4n.Slot.ofNat 3 }],
     badge := some (Badge.ofNatMasked 42) }
   let stFresh3 : SystemState := st1.withObjectStored epId ep0
   match SeLe4n.Kernel.endpointSendDual epId senderId (.frame maxCapsMsg.badge maxCapsMsg.capsGranted) (SeLe4n.Testing.withSenderFrame stFresh3 senderId maxCapsMsg) with

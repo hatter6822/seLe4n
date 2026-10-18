@@ -453,7 +453,7 @@ private theorem default_ipcSchedulerContractPredicates :
 
 /-- WS-H4 refactor: Extract default-state capabilityInvariantBundle construction
 to eliminate 4x duplication in `default_system_state_proofLayerInvariantBundle`.
-All components are vacuously true (empty objects/cdtNodeSlot) or use
+All components are vacuously true (empty objects and derivation tree) or use
 `CapDerivationTree.empty_edgeWellFounded`. -/
 private theorem default_capabilityInvariantBundle :
     capabilityInvariantBundle (default : SystemState) :=
@@ -462,11 +462,7 @@ private theorem default_capabilityInvariantBundle :
   -- vacuous on the empty default state (no CNode objects to hold a reply cap).
   ⟨by intro oid cn s c hObj; exact default_objects_absurd hObj,
    by intro oid cn hObj; exact default_objects_absurd hObj,
-   by
-    intro nodeId _ h
-    have hempty : (default : SystemState).cdtNodeSlot[nodeId]? = none := by
-      simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
-    rw [hempty] at h; exact absurd h (by simp),
+   by intro ref h; exact absurd h (CapDerivationTree.empty_not_mentions ref),
    by exact CapDerivationTree.empty_edgeWellFounded,
    by intro cnodeId cn hObj; exact default_objects_absurd hObj,
    by exact RHTable_empty_invExt 16 (by omega),

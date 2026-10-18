@@ -44,9 +44,9 @@ implemented (requires H3 IPC buffer layout). The full plumbing is in
 place: when receiver-side decode populates `capRecvSlot`, per-slot
 targeting will activate without any additional code changes.
 
-**CDT tracking**: Each transferred capability is tracked individually
-in the CDT via `ensureCdtNodeForSlot` with the actual target slot
-(not a shared slot). Revocation is precise per-capability.
+**CDT tracking**: Each transferred capability records a derivation edge
+from the slot it was read from to the slot it is installed in; the slots
+are the tree's nodes, so revocation is precise per-capability.
 -/
 
 namespace SeLe4n.Kernel
@@ -105,11 +105,11 @@ def receiveTransferCaps (req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)
     match req with
     | none => .ok ({ results := #[] }, st)
     | some (root, addrs, depth) =>
-        let (caps, st') := resolveExtraCaps root addrs depth true st
-        if caps.isEmpty then .ok ({ results := #[] }, st')
+        let caps := resolveExtraCaps root addrs depth true st
+        if caps.isEmpty then .ok ({ results := #[] }, st)
         else
           ipcUnwrapCaps { IpcMessage.empty with caps := caps, capsGranted := true }
-            receiverCspaceRoot receiverSlotBase true st'
+            receiverCspaceRoot receiverSlotBase true st
 
 /-- M-D01: Extended send with capability transfer.
 

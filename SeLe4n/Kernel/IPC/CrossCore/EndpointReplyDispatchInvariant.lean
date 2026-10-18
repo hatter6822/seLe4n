@@ -1073,8 +1073,7 @@ theorem applyReplyDonationOnCore_preserves_capabilityInvariantBundle
   · exact h
   · subst hEq
     have hRetB := returnDonatedSchedContext_preserves_capabilityInvariantBundle h hRet
-    refine capabilityInvariantBundle_of_kindPreserving hRetB ?_ ?_ ?_ ?_
-    · rw [descheduleAtPlacement_cdtNodeSlot, migrateSchedContextReplenishment_cdtNodeSlot]
+    refine capabilityInvariantBundle_of_kindPreserving hRetB ?_ ?_ ?_
     · rw [descheduleAtPlacement_cdt, migrateSchedContextReplenishment_cdt]
     · exact descheduleAtPlacement_preserves_objects_invExt _ _
         (by rw [migrateSchedContextReplenishment_objects]; exact hRetB.2.2.2.2.2.1)

@@ -184,14 +184,13 @@ theorem cspaceMutate_preserves_badgeWellFormed
 The proof decomposes into the `.noSlot` case (state unchanged, trivial) and
 the `.installed` case, which chains:
 1. `cspaceInsertSlot_preserves_capabilityInvariantBundle` — slot insertion
-2. `ensureCdtNodeForSlot` — CDT field preservation (objects unchanged)
-3. `addEdge` with `.ipcTransfer` — CDT edge addition
+2. `addEdge` with `.ipcTransfer` — CDT edge addition (objects unchanged)
 
 The `hCdtPost` hypothesis (CDT completeness + acyclicity of the post-state)
 follows the same pattern as `cspaceCopy_preserves_capabilityInvariantBundle`
 since IPC transfer is semantically a cross-CSpace copy. -/
 theorem ipcTransferSingleCap_preserves_capabilityInvariantBundle
-    (st st' : SystemState) (cap : Capability) (srcNode : CdtNodeId)
+    (st st' : SystemState) (cap : Capability) (srcNode : SlotRef)
     (receiverRoot : SeLe4n.ObjId) (slotBase : SeLe4n.Slot) (scanLimit : Nat)
     (result : CapTransferResult)
     (hInv : capabilityInvariantBundle st)
@@ -232,23 +231,16 @@ theorem ipcTransferSingleCap_preserves_capabilityInvariantBundle
             (fun cn' hObj' => hSlotCapacity cn' (by rw [hObj] at hObj'; cases hObj'; exact hObj) emptySlot)
             (objects_invExt_of_capabilityInvariantBundle st hInv) hCapBacked hIns
           rcases hBundleSt2 with ⟨_, hBnd2, _, _, hDepth2, hObjInv2, hRCPV2⟩
-          -- Only the destination slot needs a node minted now: the source node
-          -- travelled with the capability, so there is no second ensure here.
-          cases hEnsDst : SystemState.ensureCdtNodeForSlot st2 { cnode := receiverRoot, slot := emptySlot } with
-          | mk dstNode stDst =>
-            simp [hIns, hEnsDst] at hStep
-            obtain ⟨_, rfl⟩ := hStep
-            have hObjDst : stDst.objects = st2.objects := by
-              simpa [hEnsDst] using SystemState.ensureCdtNodeForSlot_objects_eq st2 { cnode := receiverRoot, slot := emptySlot }
-            have hObjFinal : ({ stDst with cdt := stDst.cdt.addEdge srcNode dstNode .ipcTransfer } : SystemState).objects = st2.objects := by
-              simp [hObjDst]
-            -- WS-RC R4.A.6: cspaceSlotUnique conjunct removed from bundle.
-            exact ⟨cspaceLookupSound_holds _,
-              cspaceSlotCountBounded_of_objects_eq st2 _ hBnd2 hObjFinal,
-              hCdtPost.1, hCdtPost.2,
-              cspaceDepthConsistent_of_objects_eq st2 _ hDepth2 hObjFinal,
-              hObjFinal ▸ hObjInv2,
-              replyCapPointsToValidReply_of_objects_eq hObjFinal hRCPV2⟩
+          simp [hIns] at hStep
+          obtain ⟨_, rfl⟩ := hStep
+          have hObjFinal : ∀ cdt' : CapDerivationTree,
+              ({ st2 with cdt := cdt' } : SystemState).objects = st2.objects := fun _ => rfl
+          exact ⟨cspaceLookupSound_holds _,
+            cspaceSlotCountBounded_of_objects_eq st2 _ hBnd2 (hObjFinal _),
+            hCdtPost.1, hCdtPost.2,
+            cspaceDepthConsistent_of_objects_eq st2 _ hDepth2 (hObjFinal _),
+            (hObjFinal _) ▸ hObjInv2,
+            replyCapPointsToValidReply_of_objects_eq (hObjFinal _) hRCPV2⟩
 
 /-- V3-E / M3-D3b: `ipcUnwrapCapsLoop` preserves `capabilityInvariantBundle`
 through fuel-indexed induction. Each iteration delegates to
@@ -269,7 +261,7 @@ theorem ipcUnwrapCapsLoop_preserves_capabilityInvariantBundle
         ∀ cn, stI.objects[receiverRoot]? = some (.cnode cn) →
           ∀ s, (cn.insert s cap).slotCountBounded)
     (hCdtPost : ∀ (stI stJ : SystemState) (cap : Capability)
-        (srcNode : CdtNodeId) (slotBase : SeLe4n.Slot)
+        (srcNode : SlotRef) (slotBase : SeLe4n.Slot)
         (scanLimit : Nat) (result : CapTransferResult),
         capabilityInvariantBundle stI →
         ipcTransferSingleCap cap srcNode receiverRoot slotBase scanLimit stI
@@ -295,7 +287,7 @@ theorem ipcUnwrapCapsLoop_preserves_capabilityInvariantBundle
       exact hInv
     | some tc =>
       simp [hCap] at hStep
-      cases hTransfer : ipcTransferSingleCap tc.cap tc.srcNode
+      cases hTransfer : ipcTransferSingleCap tc.cap tc.srcSlot
           receiverRoot nextBase maxExtraCaps st with
       | error e =>
         simp [hTransfer] at hStep
@@ -304,12 +296,12 @@ theorem ipcUnwrapCapsLoop_preserves_capabilityInvariantBundle
       | ok pair =>
         rcases pair with ⟨result, stNext⟩
         have hInvNext := ipcTransferSingleCap_preserves_capabilityInvariantBundle
-          st stNext tc.cap tc.srcNode
+          st stNext tc.cap tc.srcSlot
           receiverRoot nextBase maxExtraCaps result
           hInv
           (hSlotCap st tc.cap.withoutMapping hInv)
           (hCapBacked st tc.cap hInv)
-          (hCdtPost st stNext tc.cap tc.srcNode
+          (hCdtPost st stNext tc.cap tc.srcSlot
             nextBase maxExtraCaps result hInv hTransfer)
           hTransfer
         simp [hTransfer] at hStep
@@ -334,7 +326,7 @@ theorem ipcUnwrapCaps_preserves_capabilityInvariantBundle_grant
         ∀ cn, stI.objects[receiverRoot]? = some (.cnode cn) →
           ∀ s, (cn.insert s cap).slotCountBounded)
     (hCdtPost : ∀ (stI stJ : SystemState) (cap : Capability)
-        (srcNode : CdtNodeId) (slotBase' : SeLe4n.Slot)
+        (srcNode : SlotRef) (slotBase' : SeLe4n.Slot)
         (scanLimit : Nat) (result : CapTransferResult),
         capabilityInvariantBundle stI →
         ipcTransferSingleCap cap srcNode receiverRoot slotBase' scanLimit stI
@@ -393,7 +385,7 @@ theorem ipcUnwrapCaps_preserves_capabilityInvariantBundle
         ∀ cn, stI.objects[receiverRoot]? = some (.cnode cn) →
           ∀ s, (cn.insert s cap).slotCountBounded)
     (hCdtPost : ∀ (stI stJ : SystemState) (cap : Capability)
-        (srcNode : CdtNodeId) (slotBase' : SeLe4n.Slot)
+        (srcNode : SlotRef) (slotBase' : SeLe4n.Slot)
         (scanLimit : Nat) (result : CapTransferResult),
         capabilityInvariantBundle stI →
         ipcTransferSingleCap cap srcNode receiverRoot slotBase' scanLimit stI
@@ -467,11 +459,7 @@ theorem cspaceDeleteSlotCore_preserves_cdtMapsConsistent
         have h1 := storeObject_cdt_eq st stMid addr.cnode _ hStore
         simp only [hStore] at hStep
         simp at hStep; subst hStep
-        -- detachSlotFromCdt doesn't modify cdt
-        unfold SystemState.detachSlotFromCdt
-        split
-        · exact cdtMapsConsistent_of_cdt_eq st _ hCon h1
-        · exact cdtMapsConsistent_of_cdt_eq st _ hCon h1
+        exact cdtMapsConsistent_of_cdt_eq st _ hCon h1
     | _ => simp [hPre] at hStep
 
 /-- S3-D: `cspaceDeleteSlot` preserves `cdtMapsConsistent` (guarded wrapper). -/
@@ -484,15 +472,12 @@ theorem cspaceDeleteSlot_preserves_cdtMapsConsistent
   obtain ⟨stC, hCore, rfl⟩ := cspaceDeleteSlot_ok_decompose addr st st' hStep
   have hConC := cspaceDeleteSlotCore_preserves_cdtMapsConsistent st stC addr hCon hCore
   have hCdt : stC.cdt = st.cdt := cspaceDeleteSlotCore_cdt_eq st stC addr hCore
-  cases st.lookupCdtNodeOfSlot addr with
-  | none => exact hConC
-  | some node =>
-    unfold cdtMapsConsistent at hConC ⊢
-    rw [spliceDeletedCdtNode_eq]; dsimp only
-    rw [hCdt] at hConC ⊢
-    obtain ⟨h1, h2, _, _⟩ := CapDerivationTree.spliceNode_mapsWellFormed _ node
-      ⟨hConC.1, hConC.2, hChildK, hParentK⟩
-    exact ⟨h1, h2⟩
+  unfold cdtMapsConsistent at hConC ⊢
+  rw [spliceDeletedCdtNode_eq]; dsimp only
+  rw [hCdt] at hConC ⊢
+  obtain ⟨h1, h2, _, _⟩ := CapDerivationTree.spliceNode_mapsWellFormed _ addr
+    ⟨hConC.1, hConC.2, hChildK, hParentK⟩
+  exact ⟨h1, h2⟩
 
 /-- S3-D: `cspaceCopy` preserves `cdtMapsConsistent`. Copy calls `addEdge`
     on the CDT, so the postcondition is taken as a hypothesis, matching
@@ -512,16 +497,11 @@ theorem cspaceMove_preserves_cdtMapsConsistent
     cdtMapsConsistent st' := hCdtMapsPost
 
 /-- The destroyed-slot step keeps the tree's index maps consistent and well
-formed: the slot maps it erases are not the tree's, and the splice keeps them. -/
-theorem detachDestroyedSlot_preserves_mapsWellFormed (st : SystemState) (ref : SlotRef)
-    (h : st.cdt.mapsWellFormed) : (detachDestroyedSlot st ref).cdt.mapsWellFormed := by
-  unfold detachDestroyedSlot
-  have hD : ∀ x : SystemState, (SystemState.detachSlotFromCdt x ref).cdt = x.cdt := by
-    intro x; unfold SystemState.detachSlotFromCdt; split <;> rfl
-  rw [hD, spliceDeletedCdtNode_eq]
-  cases st.lookupCdtNodeOfSlot ref with
-  | none => exact h
-  | some n => exact CapDerivationTree.spliceNode_mapsWellFormed _ n h
+formed: the splice keeps them. -/
+theorem spliceDeletedCdtNode_preserves_mapsWellFormed (st : SystemState) (ref : SlotRef)
+    (h : st.cdt.mapsWellFormed) : (spliceDeletedCdtNode st ref).cdt.mapsWellFormed := by
+  rw [spliceDeletedCdtNode_eq]
+  exact CapDerivationTree.spliceNode_mapsWellFormed _ ref h
 
 /-- S3-D: `cspaceRevoke` preserves `cdtMapsConsistent`.  Revoke stores the CNode
     `revokeTargetLocal` leaves, which does not touch the tree, and then each
@@ -542,7 +522,7 @@ theorem cspaceRevoke_preserves_cdtMapsConsistent
     (fun acc => acc.cdt.mapsWellFormed) hS (fun acc slot cap _ hAcc => ?_)
   split
   · exact hAcc
-  · exact detachDestroyedSlot_preserves_mapsWellFormed acc _ hAcc
+  · exact spliceDeletedCdtNode_preserves_mapsWellFormed acc _ hAcc
 
 -- ============================================================================
 -- V3-D (M-PRF-1): CDT Acyclicity Discharge Chain Documentation
@@ -580,7 +560,7 @@ well-founded relation is well-founded).
 
 ### ipcTransferSingleCap (V3-D5)
 
-`ipcTransferSingleCap` adds a CDT edge via `cdt.addEdge srcNode dstNode .ipcTransfer`.
+`ipcTransferSingleCap` adds a CDT edge via `cdt.addEdge srcSlot dstSlot .ipcTransfer`.
 The `capabilityInvariantBundle` preservation is composed at the IPC operation
 level, where the `hCdtPost` hypothesis is threaded through the cap transfer
 loop (see V3-E for the loop composition proof).

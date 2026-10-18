@@ -1339,21 +1339,6 @@ The capability operations thread through the CDT bookkeeping fields, which the
 scheduler and the machine do not read and which no per-core slot lives in. -/
 
 /-- A CDT-field-only rewrite frames the scheduler and every register bank. -/
-theorem attachSlotToCdtNode_confinedToCore (st : SystemState) (ref : SlotRef)
-    (node : CdtNodeId) (c₀ : CoreId) :
-    observableSlotsConfinedToCore st (SystemState.attachSlotToCdtNode st ref node) c₀ :=
-  observableSlotsConfinedToCore_of_scheduler_machine_eq c₀ rfl rfl
-
-theorem detachSlotFromCdt_confinedToCore (st : SystemState) (ref : SlotRef) (c₀ : CoreId) :
-    observableSlotsConfinedToCore st (SystemState.detachSlotFromCdt st ref) c₀ := by
-  refine observableSlotsConfinedToCore_of_scheduler_machine_eq c₀ ?_ ?_ <;>
-    unfold SystemState.detachSlotFromCdt <;> split <;> rfl
-
-theorem ensureCdtNodeForSlot_confinedToCore (st : SystemState) (ref : SlotRef) (c₀ : CoreId) :
-    observableSlotsConfinedToCore st (SystemState.ensureCdtNodeForSlot st ref).2 c₀ := by
-  refine observableSlotsConfinedToCore_of_scheduler_machine_eq c₀ ?_ ?_ <;>
-    unfold SystemState.ensureCdtNodeForSlot <;> split <;> rfl
-
 theorem cdtEdge_confinedToCore (st : SystemState) (cdt' : CapDerivationTree) (c₀ : CoreId) :
     observableSlotsConfinedToCore st { st with cdt := cdt' } c₀ :=
   observableSlotsConfinedToCore_of_scheduler_machine_eq c₀ rfl rfl
@@ -1386,9 +1371,7 @@ theorem cspaceDeleteSlotCore_confinedToCore (st st' : SystemState) (addr : CSpac
         simp only [hStore, Except.ok.injEq, Prod.mk.injEq] at hStep
         obtain ⟨_, hEq⟩ := hStep
         subst hEq
-        refine observableSlotsConfinedToCore_trans
-          (storeObject_confinedToCore st pair.2 addr.cnode _ c₀ hStore) ?_
-        exact detachSlotFromCdt_confinedToCore pair.2 addr c₀
+        exact storeObject_confinedToCore st pair.2 addr.cnode _ c₀ hStore
     | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ =>
       simp [hObj] at hStep
 
@@ -1426,10 +1409,6 @@ theorem cspaceCopy_confinedToCore (st st' : SystemState) (src dst : CSpaceAddr) 
         subst hEq
         refine observableSlotsConfinedToCore_trans
           (cspaceInsertSlot_confinedToCore st pairI.2 dst capNN.val.withoutMapping c₀ hIns) ?_
-        refine observableSlotsConfinedToCore_trans
-          (ensureCdtNodeForSlot_confinedToCore pairI.2 src c₀) ?_
-        refine observableSlotsConfinedToCore_trans
-          (ensureCdtNodeForSlot_confinedToCore _ dst c₀) ?_
         exact cdtEdge_confinedToCore _ _ c₀
 
 /-- SM8.B.3: `cspaceMove` writes only the object store and the CDT. -/
@@ -1460,19 +1439,11 @@ theorem cspaceMove_confinedToCore (st st' : SystemState) (src dst : CSpaceAddr) 
           | ok pairD =>
             simp only [hDel] at hStep
             have hDelC := cspaceDeleteSlotCore_confinedToCore pairI.2 pairD.2 src c₀ hDel
-            cases hNode : SystemState.lookupCdtNodeOfSlot pairI.2 src with
-            | none =>
-              simp only [hNode, Except.ok.injEq, Prod.mk.injEq] at hStep
-              obtain ⟨_, hEq⟩ := hStep
-              subst hEq
-              exact observableSlotsConfinedToCore_trans hInsC hDelC
-            | some srcNode =>
-              simp only [hNode, Except.ok.injEq, Prod.mk.injEq] at hStep
-              obtain ⟨_, hEq⟩ := hStep
-              subst hEq
-              exact observableSlotsConfinedToCore_trans hInsC
-                (observableSlotsConfinedToCore_trans hDelC
-                  (attachSlotToCdtNode_confinedToCore pairD.2 dst srcNode c₀))
+            simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+            obtain ⟨_, hEq⟩ := hStep
+            subst hEq
+            exact observableSlotsConfinedToCore_trans hInsC
+              (observableSlotsConfinedToCore_trans hDelC (cdtEdge_confinedToCore _ _ c₀))
 
 
 /-- SM8.B.3: `cspaceMint` writes only the object store (the derived cap lands

@@ -37,7 +37,7 @@ private theorem cspaceDeleteSlotCore_authority_reduction
           simp [hObj] at hStep
           cases hStep
           simp only [SystemState.lookupSlotCap, SystemState.lookupCNode,
-            RHTable_getElem?_eq_get?, SystemState.detachSlotFromCdt_objects_eq]
+            RHTable_getElem?_eq_get?]
           rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
           simp [CNode.lookup_remove_eq_none cn slot hUniq]
 
@@ -49,8 +49,7 @@ private theorem cspaceDeleteSlot_authority_reduction
     (hStep : cspaceDeleteSlot addr st = .ok ((), st')) :
     SystemState.lookupSlotCap st' addr = none := by
   obtain ⟨stC, hC, rfl⟩ := cspaceDeleteSlot_ok_decompose addr st st' hStep
-  have h := cspaceDeleteSlotCore_authority_reduction st stC addr hObjInv hC
-  cases hN : st.lookupCdtNodeOfSlot addr <;> exact h
+  exact cspaceDeleteSlotCore_authority_reduction st stC addr hObjInv hC
 
 /-- Revoke transition authority reduction clause: no sibling slot in the same CNode may retain
 the revoked target. -/
@@ -202,8 +201,7 @@ theorem cspaceDeleteSlotCore_lookup_eq_none
           -- AN10-residual (R1): include `getCNode?` so the inner match
           -- (now over `getCNode?` instead of raw `objects[]?`) unfolds.
           simp only [cspaceLookupSlot, SystemState.lookupSlotCap, SystemState.lookupCNode,
-            SystemState.getCNode?, RHTable_getElem?_eq_get?,
-            SystemState.detachSlotFromCdt_objects_eq]
+            SystemState.getCNode?, RHTable_getElem?_eq_get?]
           rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
           simp [CNode.lookup_remove_eq_none cn slot hUniq]
 
@@ -215,10 +213,10 @@ theorem cspaceDeleteSlot_lookup_eq_none
     cspaceLookupSlot addr st' = .error .invalidCapability := by
   obtain ⟨stC, hC, rfl⟩ := cspaceDeleteSlot_ok_decompose addr st st' hStep
   have h := cspaceDeleteSlotCore_lookup_eq_none st stC addr hObjInv hC
-  have hL : SystemState.lookupSlotCap (spliceDeletedCdtNode stC (st.lookupCdtNodeOfSlot addr)) addr =
-      SystemState.lookupSlotCap stC addr := by cases st.lookupCdtNodeOfSlot addr <;> rfl
-  have hG : (spliceDeletedCdtNode stC (st.lookupCdtNodeOfSlot addr)).getCNode? addr.cnode =
-      stC.getCNode? addr.cnode := by cases st.lookupCdtNodeOfSlot addr <;> rfl
+  have hL : SystemState.lookupSlotCap (spliceDeletedCdtNode stC addr) addr =
+      SystemState.lookupSlotCap stC addr := rfl
+  have hG : (spliceDeletedCdtNode stC addr).getCNode? addr.cnode =
+      stC.getCNode? addr.cnode := rfl
   unfold cspaceLookupSlot at h ⊢
   rw [hL, hG]
   revert h
@@ -628,17 +626,16 @@ quantifiers suggest.  `cspaceLookupSound` is structural
 (`cspaceSlotCountBounded`, `cspaceDepthConsistent`, and the CNode half of
 `replyCapPointsToValidReply`) read **CNodes** and are transported **backward** —
 a post-state CNode must be a pre-state CNode, which is exactly what a store at a
-TCB key gives.  `cdtCompleteness` reads the CDT's slot map and asks that the
-named CNode's key be **present**, which is forward and which a store never
+TCB key gives.  `cdtCompleteness` reads the CDT and asks that every CNode a
+slot it mentions names be **present**, which is forward and which a store never
 breaks.  `cdtAcyclicity` reads `st.cdt` alone.  And the Reply half of
 `replyCapPointsToValidReply` asks that a Reply still resolve, which is forward.
 
-So a step frames the bundle when it (a) keeps the two CDT fields, (b) introduces
+So a step frames the bundle when it (a) keeps the CDT, (b) introduces
 no CNode that was not one, (c) removes no key, and (d) removes no Reply.  Each
 is a fact the step's own object frame already states. -/
 theorem capabilityInvariantBundle_of_frame {st st' : SystemState}
     (h : capabilityInvariantBundle st)
-    (hCdtNodeSlot : st'.cdtNodeSlot = st.cdtNodeSlot)
     (hCdt : st'.cdt = st.cdt)
     (hCnode : ∀ (oid : SeLe4n.ObjId) (cn : CNode),
       st'.objects[oid]? = some (.cnode cn) → st.objects[oid]? = some (.cnode cn))
@@ -649,9 +646,9 @@ theorem capabilityInvariantBundle_of_frame {st st' : SystemState}
   obtain ⟨_, hBounded, hComp, hAcyclic, hDepth, _, hRCPV⟩ := h
   refine capabilityInvariantBundle_of_components st' ?_ ?_ ?_ ?_ hObjInv ?_
   · exact fun oid cn hCn => hBounded oid cn (hCnode oid cn hCn)
-  · intro nodeId ref hRef
-    rw [hCdtNodeSlot] at hRef
-    exact hPresent ref.cnode (hComp nodeId ref hRef)
+  · intro ref hRef
+    rw [hCdt] at hRef
+    exact hPresent ref.cnode (hComp ref hRef)
   · unfold cdtAcyclicity at hAcyclic ⊢; rw [hCdt]; exact hAcyclic
   · exact fun oid cn hCn => hDepth oid cn (hCnode oid cn hCn)
   · exact fun oid cn slot cap rid hCn hLook hTgt =>
@@ -663,10 +660,9 @@ since it is the shape a scheduler-only step comes in. -/
 theorem capabilityInvariantBundle_of_objects_and_cdt_eq {st st' : SystemState}
     (h : capabilityInvariantBundle st)
     (hObjs : st'.objects = st.objects)
-    (hCdtNodeSlot : st'.cdtNodeSlot = st.cdtNodeSlot)
     (hCdt : st'.cdt = st.cdt) :
     capabilityInvariantBundle st' :=
-  capabilityInvariantBundle_of_frame h hCdtNodeSlot hCdt
+  capabilityInvariantBundle_of_frame h hCdt
     (fun _ _ hCn => by rw [hObjs] at hCn; exact hCn)
     (fun _ hP => by rw [hObjs]; exact hP)
     (fun _ hR => by unfold SystemState.getReply? at hR ⊢; rw [hObjs]; exact hR)
@@ -691,12 +687,11 @@ CNode-reading conjuncts are about the **value**.  A step that genuinely rewrites
 a CNode therefore takes the general frame and discharges `hCnode` itself. -/
 theorem capabilityInvariantBundle_of_kindPreserving {st st' : SystemState}
     (h : capabilityInvariantBundle st)
-    (hCdtNodeSlot : st'.cdtNodeSlot = st.cdtNodeSlot)
     (hCdt : st'.cdt = st.cdt)
     (hObjInv : st'.objects.invExt)
     (hAt : kindPreservingWrite st st') :
     capabilityInvariantBundle st' := by
-  refine capabilityInvariantBundle_of_frame h hCdtNodeSlot hCdt ?_ ?_ ?_ hObjInv
+  refine capabilityInvariantBundle_of_frame h hCdt ?_ ?_ ?_ hObjInv
   · intro oid cn hCn
     rcases hAt oid with hEq | ⟨_, post, _, hPost, _, hNe⟩
     · rw [← hEq]; exact hCn
@@ -723,8 +718,8 @@ capability invariant bundle** — the instance every IPC step's store chain is
 built from.
 
 `storeObject` writes `objects`, the two indices, the lifecycle table and the ASID
-table, and **no CDT table** (`storeObject_cdt_eq`, `storeObject_cdtNodeSlot_eq`);
-so of the frame's six hypotheses, four are that lemma pair and the `invExt`
+table, and **not the CDT** (`storeObject_cdt_eq`);
+so of the frame's five hypotheses, three are that lemma and the `invExt`
 frame, and what is left is the store's own key.  A store that replaces an object
 with one of the same kind — which is what every IPC transition's writes are, a
 TCB for a TCB, a Reply for a Reply, a SchedContext for a SchedContext — leaves
@@ -744,7 +739,6 @@ theorem storeObject_preserves_capabilityInvariantBundle_of_kind
     capabilityInvariantBundle st' := by
   have hObjInv : st.objects.invExt := h.2.2.2.2.2.1
   exact capabilityInvariantBundle_of_kindPreserving h
-    (storeObject_cdtNodeSlot_eq st st' oid obj hStore).1
     (storeObject_cdt_eq st st' oid obj hStore)
     (storeObject_preserves_objects_invExt st st' oid obj hObjInv hStore)
     (storeObject_kindPreservingWrite hObjInv hStore hPre hKind hNotCnode)
@@ -779,8 +773,6 @@ theorem propagatePipChainCrossCore_preserves_capabilityInvariantBundle
       (SeLe4n.Kernel.PriorityInheritance.propagatePipChainCrossCore st startTid ec fuel).1 := by
   have hInv : st.objects.invExt := h.2.2.2.2.2.1
   exact capabilityInvariantBundle_of_kindPreserving h
-    (SeLe4n.Kernel.PriorityInheritance.propagatePipChainCrossCore_cdtNodeSlot fuel st
-      startTid ec)
     (SeLe4n.Kernel.PriorityInheritance.propagatePipChainCrossCore_cdt fuel st startTid ec)
     (SeLe4n.Kernel.PriorityInheritance.propagatePipChainCrossCore_preserves_objects_invExt st
       startTid ec fuel hInv)
@@ -804,8 +796,7 @@ theorem returnDonatedSchedContext_preserves_capabilityInvariantBundle
     capabilityInvariantBundle st' := by
   have hObjInv : st.objects.invExt := h.2.2.2.2.2.1
   exact capabilityInvariantBundle_of_kindPreserving h
-    (SeLe4n.Kernel.returnDonatedSchedContext_cdt_eq hStep).2
-    (SeLe4n.Kernel.returnDonatedSchedContext_cdt_eq hStep).1
+    (SeLe4n.Kernel.returnDonatedSchedContext_cdt_eq hStep)
     (SeLe4n.Kernel.returnDonatedSchedContext_preserves_objects_invExt' st st' serverTid scId
       originalOwner newOwner? hObjInv hStep)
     (SeLe4n.Kernel.returnDonatedSchedContext_kindPreservingWrite hObjInv hStep)

@@ -44,9 +44,8 @@ and invariant discipline:
 - `FrozenMap.wellFormed`: `freezeMap_wellFormed` theorem + runtime
   `FrozenMap.wellFormed` check on freeze of the default state.
 - `Capability.requireNotNull`: `Capability.isNull` + `requireNotNull` gate helper.
-- CDT counter guard and VSpace frame uniqueness: F-M09 `ensureCdtNodeForSlotChecked` returns
-  `none` when counter at `maxCdtDepth`; F-M10
-  `noPhysicalFrameCollision` holds on empty VSpace.
+- VSpace frame uniqueness: F-M10 `noPhysicalFrameCollision` holds on empty
+  VSpace (the F-M09 CDT node counter is gone: the slot is the derivation node).
 - `PagePermissions` round-trip: Permission reverse round-trip on every 5-bit input.
 -/
 
@@ -1403,27 +1402,8 @@ def requireNotNull_complement_on_null_and_nonnull : IO Unit := do
     (cap2.requireNotNull.isSome = !cap2.isNull)
 
 -- ============================================================================
--- Structural invariants (CDT counter, VSpace collision)
+-- Structural invariants (VSpace collision)
 -- ============================================================================
-
-/-- `ensureCdtNodeForSlotChecked` fails when counter at maxCdtDepth. -/
-def ensureCdtNodeForSlotChecked_counter_overflow_rejected : IO Unit := do
-  -- Build a state where cdtNextNode.val = maxCdtDepth - 1 (so new alloc would go to maxCdtDepth)
-  let st : SystemState :=
-    { (default : SystemState) with cdtNextNode := ⟨65535⟩ }
-  let ref : SlotRef := { cnode := ⟨0⟩, slot := (SeLe4n.Slot.ofNat 0) }
-  let result : Option (CdtNodeId × SystemState) :=
-    SystemState.ensureCdtNodeForSlotChecked st ref
-  -- counter+1 = 65536 = maxCdtDepth, fails the `< maxCdtDepth` check
-  expect "cdt counter overflow rejected" (Option.isNone result)
-
-/-- `ensureCdtNodeForSlotChecked` succeeds when counter well below bound. -/
-def ensureCdtNodeForSlotChecked_counter_ok : IO Unit := do
-  let st : SystemState := default
-  let ref : SlotRef := { cnode := ⟨0⟩, slot := (SeLe4n.Slot.ofNat 0) }
-  let result : Option (CdtNodeId × SystemState) :=
-    SystemState.ensureCdtNodeForSlotChecked st ref
-  expect "cdt counter ok" (Option.isSome result)
 
 /-- F-M10 `noPhysicalFrameCollision` holds on empty VSpace. -/
 def vspaceRoot_noPhysicalFrameCollision_empty : IO Unit := do
@@ -1431,7 +1411,7 @@ def vspaceRoot_noPhysicalFrameCollision_empty : IO Unit := do
   expect "noPhysicalFrameCollision_empty exists" true
 
 -- ============================================================================
--- Permission round-trip + CdtNodeId sentinel
+-- Permission round-trip
 -- ============================================================================
 
 /-- `PagePermissions.toNat_ofNat_roundtrip` on a sample valid input. -/
@@ -1443,13 +1423,6 @@ def pagePermissions_toNat_ofNat_roundtrip : IO Unit := do
     unless back = n do
       throw <| IO.userError s!"roundtrip failed at n={n}: back={back}"
   expect "perms reverse roundtrip" true
-
-/-- `CdtNodeId.sentinel` is reserved; a non-zero id is not. -/
-def cdtNodeId_sentinel_isReserved : IO Unit := do
-  expect "sentinel isReserved"
-    (CdtNodeId.sentinel.isReserved = true)
-  expect "id ⟨1⟩ not reserved"
-    ((CdtNodeId.ofNat 1).isReserved = false)
 
 -- ============================================================================
 -- AK8-A (WS-AK / C-M01) audit remediation: untypedRegionsDisjoint regression
@@ -2294,12 +2267,9 @@ def main : IO Unit := do
   integration_null_cap_cross_kind_sentinel_rejected
   requireNotNull_complement_on_null_and_nonnull
   -- CDT / VSpace structural invariants
-  ensureCdtNodeForSlotChecked_counter_overflow_rejected
-  ensureCdtNodeForSlotChecked_counter_ok
   vspaceRoot_noPhysicalFrameCollision_empty
   -- Permission round-trip + sentinel convention
   pagePermissions_toNat_ofNat_roundtrip
-  cdtNodeId_sentinel_isReserved
   -- AK8-A (WS-AK / C-M01) audit remediation: untypedRegionsDisjoint regression
   ak8a_01_default_satisfies_untypedRegionsDisjoint
   ak8a_02_disjoint_untypeds_satisfy_predicate

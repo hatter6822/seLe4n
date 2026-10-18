@@ -183,7 +183,9 @@ each slot it empties splice the slot's node out of the derivation tree, as
 seL4's `cteDelete`, so no copy-and-delete loop grows it.  At `v0.36.102`
 (ZA5.3 part 1) a CNode's slots are a fixed array of `2 ^ radixWidth` cells,
 written in place; the slot map is ghost state (`Erased`) the theorems read,
-tied to the array by `CNode.slots_agree`.  The
+tied to the array by `CNode.slots_agree`.  At `v0.36.103` (ZA5.3 part 2) the
+slot is the derivation node, as seL4's `cte_t`: edges and the tree's maps are
+keyed by `SlotRef`, with no node identifier, counter or slot-to-node table.  The
 suspend of a thread blocked in IPC or holding a donated context is the one
 syscall arm left on the general path (ZA6.1).  ZA6 covers the other
 entries and makes the rule standing.  Plan:

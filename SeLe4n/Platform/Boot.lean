@@ -508,10 +508,6 @@ theorem applyMachineConfig_declassificationTaint_eq (ist : IntermediateState)
 theorem applyMachineConfig_lifecycle_eq (ist : IntermediateState) (config : MachineConfig) :
     (applyMachineConfig ist config).state.lifecycle = ist.state.lifecycle := rfl
 
-/-- AH2-F: `applyMachineConfig` preserves cdtNodeSlot. -/
-theorem applyMachineConfig_cdtNodeSlot_eq (ist : IntermediateState) (config : MachineConfig) :
-    (applyMachineConfig ist config).state.cdtNodeSlot = ist.state.cdtNodeSlot := rfl
-
 /-- AH2-F: `applyMachineConfig` preserves machine state (only modifies config fields). -/
 theorem applyMachineConfig_machine_fields (ist : IntermediateState) (config : MachineConfig) :
     (applyMachineConfig ist config).state.machine.regs = ist.state.machine.regs ∧
@@ -2932,9 +2928,6 @@ or satisfy the boot preconditions.
     (registerIrq ist irq handler).state.objectIndex = ist.state.objectIndex := rfl
 @[simp] private theorem registerIrq_objectIndexSet (ist : IntermediateState) irq handler :
     (registerIrq ist irq handler).state.objectIndexSet = ist.state.objectIndexSet := rfl
-@[simp] private theorem registerIrq_cdtNodeSlot (ist : IntermediateState) irq handler :
-    (registerIrq ist irq handler).state.cdtNodeSlot = ist.state.cdtNodeSlot := rfl
-
 -- Step 2: Per-field preservation for createObject
 @[simp] private theorem createObject_scheduler (ist : IntermediateState) id obj hS hM :
     (createObject ist id obj hS hM).state.scheduler = ist.state.scheduler := rfl
@@ -2954,8 +2947,6 @@ or satisfy the boot preconditions.
     (createObject ist id obj hS hM).state.machine = ist.state.machine := rfl
 @[simp] private theorem createObject_irqHandlers (ist : IntermediateState) id obj hS hM :
     (createObject ist id obj hS hM).state.irqHandlers = ist.state.irqHandlers := rfl
-@[simp] private theorem createObject_cdtNodeSlot (ist : IntermediateState) id obj hS hM :
-    (createObject ist id obj hS hM).state.cdtNodeSlot = ist.state.cdtNodeSlot := rfl
 @[simp] private theorem createObject_objects (ist : IntermediateState) id obj hS hM :
     (createObject ist id obj hS hM).state.objects = ist.state.objects.insert id obj := rfl
 
@@ -2977,8 +2968,6 @@ or satisfy the boot preconditions.
     (createBootObject ist e).state.machine = ist.state.machine := rfl
 @[simp] private theorem createBootObject_irqHandlers (ist : IntermediateState) (e : ObjectEntry) :
     (createBootObject ist e).state.irqHandlers = ist.state.irqHandlers := rfl
-@[simp] private theorem createBootObject_cdtNodeSlot (ist : IntermediateState) (e : ObjectEntry) :
-    (createBootObject ist e).state.cdtNodeSlot = ist.state.cdtNodeSlot := rfl
 @[simp] private theorem createBootObject_tlbShootdown (ist : IntermediateState) (e : ObjectEntry) :
     (createBootObject ist e).state.tlbShootdown = ist.state.tlbShootdown := rfl
 @[simp] private theorem createBootObject_perCoreTlb (ist : IntermediateState) (e : ObjectEntry) :
@@ -3131,12 +3120,6 @@ private theorem foldIrqs_objectIndexSet (irqs : List IrqEntry) (ist : Intermedia
   | nil => rfl
   | cons _ _ ih => simp [foldIrqs, List.foldl] at ih ⊢; exact ih _
 
-private theorem foldIrqs_cdtNodeSlot (irqs : List IrqEntry) (ist : IntermediateState) :
-    (foldIrqs irqs ist).state.cdtNodeSlot = ist.state.cdtNodeSlot := by
-  induction irqs generalizing ist with
-  | nil => rfl
-  | cons _ _ ih => simp [foldIrqs, List.foldl] at ih ⊢; exact ih _
-
 -- Step 4: Fold-level field preservation (foldObjects)
 private theorem foldObjects_scheduler (objs : List ObjectEntry) (ist : IntermediateState) :
     (foldObjects objs ist).state.scheduler = ist.state.scheduler := by
@@ -3259,12 +3242,6 @@ private theorem foldObjects_machine (objs : List ObjectEntry) (ist : Intermediat
 
 private theorem foldObjects_irqHandlers (objs : List ObjectEntry) (ist : IntermediateState) :
     (foldObjects objs ist).state.irqHandlers = ist.state.irqHandlers := by
-  induction objs generalizing ist with
-  | nil => rfl
-  | cons _ _ ih => simp [foldObjects, List.foldl] at ih ⊢; exact ih _
-
-private theorem foldObjects_cdtNodeSlot (objs : List ObjectEntry) (ist : IntermediateState) :
-    (foldObjects objs ist).state.cdtNodeSlot = ist.state.cdtNodeSlot := by
   induction objs generalizing ist with
   | nil => rfl
   | cons _ _ ih => simp [foldObjects, List.foldl] at ih ⊢; exact ih _
@@ -5058,13 +5035,6 @@ theorem bootFromPlatformWithIdleThreads_schedulerInvariantBundleFull (config : P
     rw [hDS] at he
     exact (List.not_mem_nil he).elim
 
-/-- V4-A5b: The post-boot state preserves cdtNodeSlot from default. -/
-theorem bootFromPlatform_cdtNodeSlot_eq (config : PlatformConfig) :
-    (bootFromPlatform config).state.cdtNodeSlot =
-    (default : SystemState).cdtNodeSlot := by
-  show _ = _; unfold bootFromPlatform
-  rw [applyMachineConfig_cdtNodeSlot_eq, foldObjects_cdtNodeSlot, foldIrqs_cdtNodeSlot, mkEmpty_state_eq_default]
-
 -- ============================================================================
 -- V4-A4/A8: Boot-safe object predicate
 -- ============================================================================
@@ -5506,7 +5476,6 @@ production boot are its two instances.
     idle threads, and each of those is framed here. -/
 def bootQuiescentFields (st : SystemState) : Prop :=
   st.cdt = (default : SystemState).cdt ∧
-  st.cdtNodeSlot = (default : SystemState).cdtNodeSlot ∧
   st.services = (default : SystemState).services ∧
   st.serviceRegistry = (default : SystemState).serviceRegistry ∧
   st.tlb = (default : SystemState).tlb ∧
@@ -5549,7 +5518,7 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
     (hEffective : effectiveParamsMatchRunQueue ist.state)
     (hRun : ist.state.runQueueRefined) :
     Architecture.proofLayerInvariantBundle ist.state := by
-  obtain ⟨hCdt, hCdtNS, hSvc, hSvcR, hTlb, hShoot, hPerCoreTlb, hPerCoreICache,
+  obtain ⟨hCdt, hSvc, hSvcR, hTlb, hShoot, hPerCoreTlb, hPerCoreICache,
     hAudit⟩ := hFields
   have hAllTables := ist.hAllTables
   have hBS := hShape
@@ -5574,11 +5543,9 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
     · -- cspaceSlotCountBounded
       intro cnodeId cn hObj
       exact ((hBS cnodeId _ hObj).2.2.1 cn rfl).1
-    · -- cdtCompleteness: cdtNodeSlot is empty
-      intro nodeId ref hLookup; rw [hCdtNS] at hLookup
-      have : (default : SystemState).cdtNodeSlot[nodeId]? = none := by
-        simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
-      rw [this] at hLookup; exact absurd hLookup (by simp)
+    · -- cdtCompleteness: the derivation tree is empty
+      intro ref hRef; rw [hCdt] at hRef
+      exact absurd hRef (CapDerivationTree.empty_not_mentions ref)
     · -- cdtAcyclicity: CDT is default (empty)
       show ist.state.cdt.edgeWellFounded
       rw [hCdt]; exact CapDerivationTree.empty_edgeWellFounded
@@ -6128,7 +6095,7 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
         simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
       rw [hEmpty] at hBase; exact absurd hBase (by simp)
   refine proofLayerInvariantBundle_of_bootShape (bootFromPlatform config) ?_
-    ⟨bootFromPlatform_cdt_eq config, bootFromPlatform_cdtNodeSlot_eq config,
+    ⟨bootFromPlatform_cdt_eq config,
      bootFromPlatform_services_eq config, bootFromPlatform_serviceRegistry_eq config,
      bootFromPlatform_tlb_eq config, bootFromPlatform_tlbShootdown_eq config,
      bootFromPlatform_perCoreTlb_eq config, bootFromPlatform_perCoreICache_eq config,
@@ -7144,7 +7111,7 @@ theorem foldl_storeIdleThread_bootQuiescentFields
     default. -/
 theorem bootFromPlatform_bootQuiescentFields (config : PlatformConfig) :
     bootQuiescentFields (bootFromPlatform config).state :=
-  ⟨bootFromPlatform_cdt_eq config, bootFromPlatform_cdtNodeSlot_eq config,
+  ⟨bootFromPlatform_cdt_eq config,
    bootFromPlatform_services_eq config, bootFromPlatform_serviceRegistry_eq config,
    bootFromPlatform_tlb_eq config, bootFromPlatform_tlbShootdown_eq config,
    bootFromPlatform_perCoreTlb_eq config, bootFromPlatform_perCoreICache_eq config,

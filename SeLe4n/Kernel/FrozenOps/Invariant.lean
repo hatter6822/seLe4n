@@ -81,15 +81,6 @@ theorem frozenStoreObject_preserves_cdtParentMap
   obtain ⟨_, _, hSt⟩ := frozenStoreObject_ok hOk
   subst hSt; rfl
 
-/-- Q7-E: `frozenStoreObject` preserves CDT next node counter. -/
-theorem frozenStoreObject_preserves_cdtNextNode
-    (id : SeLe4n.ObjId) (obj : FrozenKernelObject)
-    (st st' : FrozenSystemState)
-    (hOk : frozenStoreObject id obj st = .ok ((), st')) :
-    st'.cdtNextNode = st.cdtNextNode := by
-  obtain ⟨_, _, hSt⟩ := frozenStoreObject_ok hOk
-  subst hSt; rfl
-
 -- ============================================================================
 -- Q7-E: Additional frozenStoreObject Frame Lemmas via extracts_state
 -- ============================================================================
@@ -100,24 +91,6 @@ theorem frozenStoreObject_preserves_services
     (st st' : FrozenSystemState)
     (hOk : frozenStoreObject id obj st = .ok ((), st')) :
     st'.services = st.services := by
-  obtain ⟨_, _, hSt⟩ := frozenStoreObject_ok hOk
-  subst hSt; rfl
-
-/-- Q7-E: `frozenStoreObject` preserves CDT slot-node map. -/
-theorem frozenStoreObject_preserves_cdtSlotNode'
-    (id : SeLe4n.ObjId) (obj : FrozenKernelObject)
-    (st st' : FrozenSystemState)
-    (hOk : frozenStoreObject id obj st = .ok ((), st')) :
-    st'.cdtSlotNode = st.cdtSlotNode := by
-  obtain ⟨_, _, hSt⟩ := frozenStoreObject_ok hOk
-  subst hSt; rfl
-
-/-- Q7-E: `frozenStoreObject` preserves CDT node-slot map. -/
-theorem frozenStoreObject_preserves_cdtNodeSlot'
-    (id : SeLe4n.ObjId) (obj : FrozenKernelObject)
-    (st st' : FrozenSystemState)
-    (hOk : frozenStoreObject id obj st = .ok ((), st')) :
-    st'.cdtNodeSlot = st.cdtNodeSlot := by
   obtain ⟨_, _, hSt⟩ := frozenStoreObject_ok hOk
   subst hSt; rfl
 

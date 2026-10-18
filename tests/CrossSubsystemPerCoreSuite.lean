@@ -564,11 +564,8 @@ private def runModifiedFieldsChecks : IO Unit := do
              StateField.objectIndexSet ∈ storeObject_modifiedFields ∧
              StateField.lifecycle ∈ storeObject_modifiedFields))
   -- RR7.9's correction, still in place.
-  assertBool "capabilityOp's write-set declares all four CDT fields (RR7.9)"
-    (decide (StateField.cdt ∈ capabilityOp_modifiedFields ∧
-             StateField.cdtSlotNode ∈ capabilityOp_modifiedFields ∧
-             StateField.cdtNodeSlot ∈ capabilityOp_modifiedFields ∧
-             StateField.cdtNextNode ∈ capabilityOp_modifiedFields))
+  assertBool "capabilityOp's write-set declares the derivation tree (RR7.9)"
+    (decide (StateField.cdt ∈ capabilityOp_modifiedFields))
   -- The three lists that compose `storeObject` are DEFINED over its set, so a
   -- correction to it cannot reach one and miss another.  The IPC and capability
   -- lists each carry what their operations write beyond the store: the
@@ -579,9 +576,9 @@ private def runModifiedFieldsChecks : IO Unit := do
   assertBool "IPC write-set is storeObject's plus scheduler"
     (decide (ipcEndpointOp_modifiedFields =
                storeObject_modifiedFields ++ [.scheduler]))
-  assertBool "capability write-set is storeObject's plus the four CDT fields"
+  assertBool "capability write-set is storeObject's plus the derivation tree"
     (decide (capabilityOp_modifiedFields =
-               storeObject_modifiedFields ++ [.cdt, .cdtSlotNode, .cdtNodeSlot, .cdtNextNode]))
+               storeObject_modifiedFields ++ [.cdt]))
   -- The fields the v0.34.70 lists omitted, as facts rather than as prose.
   assertBool "IPC write-set declares .scheduler (the audit-round correction)"
     (decide (StateField.scheduler ∈ ipcEndpointOp_modifiedFields))

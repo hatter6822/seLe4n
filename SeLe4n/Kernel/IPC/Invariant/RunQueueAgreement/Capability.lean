@@ -63,48 +63,15 @@ theorem withCdt_runQueueStage (st : SystemState) (cdt : CapDerivationTree) :
     RunQueueStage st { st with cdt := cdt } :=
   RunQueueStage.of_frame rfl rfl rfl
 
-theorem ensureCdtNodeForSlot_runQueueStage (st : SystemState) (ref : SlotRef) :
-    RunQueueStage st (SystemState.ensureCdtNodeForSlot st ref).snd :=
-  RunQueueStage.of_frame (SystemState.ensureCdtNodeForSlot_objects_eq st ref)
-    (by rw [SystemState.ensureCdtNodeForSlot_scheduler_eq])
-    (by rw [SystemState.ensureCdtNodeForSlot_scheduler_eq]) (by rw [SystemState.ensureCdtNodeForSlot_scheduler_eq])
-
 theorem cdtRecord_runQueueStage (stM : SystemState) (src dst : CSpaceAddr)
     (kind : DerivationOp) :
-    RunQueueStage stM
-      (let p1 := SystemState.ensureCdtNodeForSlot stM src
-       let p2 := SystemState.ensureCdtNodeForSlot p1.snd dst
-       ({ p2.snd with cdt := p2.snd.cdt.addEdge p1.fst p2.fst kind } : SystemState)) :=
-  ((ensureCdtNodeForSlot_runQueueStage stM src).trans
-    (ensureCdtNodeForSlot_runQueueStage _ dst)).trans (withCdt_runQueueStage _ _)
-
-theorem ensureCdtNodeForSlot_runQueueStage' {st st' : SystemState} {ref : SlotRef}
-    {node : CdtNodeId} (h : SystemState.ensureCdtNodeForSlot st ref = (node, st')) :
-    RunQueueStage st st' := by
-  have s := ensureCdtNodeForSlot_runQueueStage st ref
-  rw [h] at s; exact s
-
-theorem detachSlotFromCdt_runQueueStage (st : SystemState) (ref : SlotRef) :
-    RunQueueStage st (SystemState.detachSlotFromCdt st ref) :=
-  RunQueueStage.of_frame (SystemState.detachSlotFromCdt_objects_eq st ref)
-    (by rw [detachSlotFromCdt_scheduler_eq]) (by rw [detachSlotFromCdt_scheduler_eq]) (by rw [detachSlotFromCdt_scheduler_eq])
-
-theorem attachSlotToCdtNode_runQueueStage (st : SystemState) (ref : SlotRef)
-    (node : CdtNodeId) : RunQueueStage st (SystemState.attachSlotToCdtNode st ref node) :=
-  RunQueueStage.of_frame (SystemState.attachSlotToCdtNode_objects_eq st ref node) rfl rfl
+    RunQueueStage stM ({ stM with cdt := stM.cdt.addEdge src dst kind } : SystemState) :=
+  withCdt_runQueueStage _ _
 
 theorem cspaceLookupSlot_runQueueStage {st st' : SystemState} {addr : CSpaceAddr}
     {cap : Capability} (h : cspaceLookupSlot addr st = .ok (cap, st')) : RunQueueStage st st' :=
   RunQueueStage.of_eq (cspaceLookupSlot_state_eq st st' addr cap h)
 
-macro_rules | `(tactic| run_queue_stage_step) => `(tactic|
-  refine RunQueueStage.trans ?_ (ensureCdtNodeForSlot_runQueueStage _ _))
-macro_rules | `(tactic| run_queue_stage_step) => `(tactic|
-  refine RunQueueStage.trans ?_ (ensureCdtNodeForSlot_runQueueStage' (by with_reducible assumption)))
-macro_rules | `(tactic| run_queue_stage_step) => `(tactic|
-  refine RunQueueStage.trans ?_ (detachSlotFromCdt_runQueueStage _ _))
-macro_rules | `(tactic| run_queue_stage_step) => `(tactic|
-  refine RunQueueStage.trans ?_ (attachSlotToCdtNode_runQueueStage _ _ _))
 macro_rules | `(tactic| run_queue_stage_step) => `(tactic|
   refine RunQueueStage.trans ?_ (cspaceLookupSlot_runQueueStage (by with_reducible assumption)))
 
@@ -141,7 +108,6 @@ theorem cspaceMintWithCdt_runQueueStage {st st' : SystemState} {src dst : CSpace
   split at h
   · contradiction
   · rename_i stM hMint
-    dsimp only [] at h
     cases h
     exact (cspaceMint_runQueueStage hMint).trans (cdtRecord_runQueueStage stM src dst .mint)
 
@@ -156,7 +122,6 @@ theorem cspaceCopy_runQueueStage {st st' : SystemState} {src dst : CSpaceAddr}
     · split at h
       · contradiction
       · rename_i st2 hIns
-        dsimp only [] at h
         cases h
         exact ((cspaceLookupSlot_runQueueStage hLk).trans
           (cspaceInsertSlot_runQueueStage hIns)).trans (cdtRecord_runQueueStage st2 src dst .copy)
@@ -170,7 +135,25 @@ macro_rules | `(tactic| run_queue_stage_step) => `(tactic|
 
 theorem cspaceMove_runQueueStage {st st' : SystemState} {src dst : CSpaceAddr}
     (h : cspaceMove src dst st = .ok ((), st')) : RunQueueStage st st' := by
-  unfold cspaceMove at h; run_queue_stage_at h
+  unfold cspaceMove at h
+  split at h
+  · contradiction
+  · split at h
+    · contradiction
+    · rename_i cap stL hLk
+      split at h
+      · contradiction
+      · rename_i capNN hNN
+        split at h
+        · contradiction
+        · rename_i st2 hIns
+          split at h
+          · contradiction
+          · rename_i st3 hDel
+            cases h
+            exact ((cspaceLookupSlot_runQueueStage hLk).trans
+              (cspaceInsertSlot_runQueueStage hIns)).trans
+              ((cspaceDeleteSlotCore_runQueueStage hDel).trans (withCdt_runQueueStage _ _))
 
 theorem mintReplyCapWithCdt_runQueueStage {st st' : SystemState} {src dst : CSpaceAddr}
     (h : mintReplyCapWithCdt src dst st = .ok ((), st')) : RunQueueStage st st' := by
@@ -178,7 +161,6 @@ theorem mintReplyCapWithCdt_runQueueStage {st st' : SystemState} {src dst : CSpa
   split at h
   · contradiction
   · rename_i stM hMint
-    dsimp only [] at h
     cases h
     have hM : RunQueueStage st stM := by
       unfold mintReplyCap at hMint; run_queue_stage_at hMint
@@ -187,32 +169,25 @@ theorem mintReplyCapWithCdt_runQueueStage {st st' : SystemState} {src dst : CSpa
 theorem cspaceDeleteSlot_runQueueStage {st st' : SystemState} {addr : CSpaceAddr}
     (h : cspaceDeleteSlot addr st = .ok ((), st')) : RunQueueStage st st' := by
   obtain ⟨stC, hCore, rfl⟩ := cspaceDeleteSlot_ok_decompose addr st st' h
-  refine (cspaceDeleteSlotCore_runQueueStage hCore).trans ?_
-  cases st.lookupCdtNodeOfSlot addr with
-  | none => exact RunQueueStage.refl _
-  | some _ => exact RunQueueStage.of_frame rfl rfl rfl
+  exact (cspaceDeleteSlotCore_runQueueStage hCore).trans (RunQueueStage.of_frame rfl rfl rfl)
 
-theorem processRevokeNode_runQueueStage {st st' : SystemState} {node : CdtNodeId}
+theorem processRevokeNode_runQueueStage {st st' : SystemState} {node : SlotRef}
     (h : processRevokeNode st node = .ok st') : RunQueueStage st st' := by
   unfold processRevokeNode at h
   split at h
-  · cases h; exact RunQueueStage.of_frame rfl rfl rfl
-  · split at h
-    · cases h
-    · rename_i stDel hDel
-      cases h
-      exact (cspaceDeleteSlotCore_runQueueStage hDel).trans (RunQueueStage.of_frame rfl rfl rfl)
+  · cases h
+  · rename_i stDel hDel
+    cases h
+    exact (cspaceDeleteSlotCore_runQueueStage hDel).trans (RunQueueStage.of_frame rfl rfl rfl)
 
 theorem cspaceRevokeCdt_runQueueStage {st st' : SystemState} {addr : CSpaceAddr}
     {pages : List MappedPage} (h : cspaceRevokeCdt addr st = .ok (pages, st')) :
     RunQueueStage st st' := by
-  obtain ⟨_, hRest⟩ :=
-    revokeCdtScaffold_ok_decompose [] revokeCdtMaterializedTraversal st st' addr pages h
-  rcases hRest with rfl | ⟨rootNode, out, hTrav, rfl⟩
-  · exact RunQueueStage.refl _
-  · exact (revokeCdtMaterializedTraversal_ok_induct (P := RunQueueStage st)
-      (fun _ _ _ hP hSt => hP.trans (processRevokeNode_runQueueStage hSt))
-      st rootNode _ out (RunQueueStage.refl _) hTrav)
+  obtain ⟨_, out, hTrav, rfl⟩ :=
+    revokeCdtScaffold_ok_decompose revokeCdtMaterializedTraversal st st' addr pages h
+  exact revokeCdtMaterializedTraversal_ok_induct (P := RunQueueStage st)
+    (fun _ _ _ hP hSt => hP.trans (processRevokeNode_runQueueStage hSt))
+    st addr _ out (RunQueueStage.refl _) hTrav
 
 theorem finaliseDestroyedCapabilities_runQueueStage {ec : Concurrency.CoreId} {pre : SystemState}
     {pages : List MappedPage} {st st' : SystemState}

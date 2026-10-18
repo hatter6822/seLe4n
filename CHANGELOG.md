@@ -1,3 +1,51 @@
+## v0.36.103 — WS-ZA ZA5.3 part 2: the slot is the derivation node
+
+The capability derivation tree is now keyed by slot address, as seL4's
+`cte_t` is its own mapping-database node.  The tree's edges, child map and
+parent map name `SlotRef`s directly; the separate node namespace and its
+counter are gone.
+
+- **Retired**: `CdtNodeId`, the `cdtSlotNode` / `cdtNodeSlot` maps, the
+  `cdtNextNode` counter, and the helpers that allocated and bound nodes
+  (`ensureCdtNodeForSlot`, `attachSlotToCdtNode`, `detachSlotFromCdt`,
+  `lookupCdtNodeOfSlot`, `detachDestroyedSlot`).  `allTablesInvExtK` loses its
+  two slot-node tables (10 conjuncts) and the frozen state its two fields.
+- **Copy and mint** add an edge between the two slots
+  (`CapDerivationTree.addEdge`); **move** renames its slot in the tree
+  (`CapDerivationTree.moveNode`, as seL4's `cteMove`); **delete**, the local
+  revoke and CNode retype splice their slot out
+  (`spliceDeletedCdtNode`, over `CapDerivationTree.spliceNode`).
+- **An IPC capability transfer is no longer refused when the node counter
+  fills**: there is no counter, as in seL4.  `TransferCap` carries its source
+  slot (`srcSlot : SlotRef`); `TransferCap.fromSlot` builds one.
+- **`cdtCompleteness`** now says every slot the tree names lies in a live
+  CNode; the boot and default states meet it by
+  `CapDerivationTree.empty_not_mentions`.  `cdtMintCompleteness` and the
+  live-source transfer lemma it fed are retired: the slot is the node, so
+  there is no node-to-slot binding to keep complete.
+- Proofs, information-flow projections, per-core confinement, the trace
+  harness, suites and Tier 3 anchors moved onto slots; the trace fixture is
+  unchanged.
+- **QEMU exerciser, normal build, first call / steady state, v0.36.102 →
+  v0.36.103**:
+
+  | scenario | v0.36.102 | v0.36.103 |
+  |---|---|---|
+  | CSpace copy | 52 / 44 | 33 / 33 |
+  | CSpace move | 40 / 40 | 48 / 48 |
+  | CSpace delete | 39 / 39 | 33 / 33 |
+  | CSpace mint | 48 / 48 | 37 / 37 |
+  | CSpace revoke | 46 / 46 | 42 / 42 |
+  | reply-cap delete / mint | 36 / 45 | 32 / 34 |
+  | page-table retype 1 / 2 / 3 (first call) | 95 / 86 / 88 | 77 / 76 / 77 |
+  | frame retype | 105 / 107 | 94 / 94 |
+  | frame delete | 60 / 62 | 56 / 56 |
+  | page-table delete 3 / 2 / 1 | 48 / 40 / 34 | 44 / 35 / 29 |
+
+  A move rises by 8: it rewrites the tree's parent and child maps where it
+  rebound the slot-node maps.  Part 3 puts the links in the slots, so a move
+  writes its neighbours' slots in place.
+
 ## v0.36.102 — WS-ZA ZA5.3 part 1: a CNode's slots are a fixed array
 
 A CNode now holds its slots as seL4 does: an array of `2 ^ radixWidth` cells,

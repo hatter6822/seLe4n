@@ -1383,16 +1383,17 @@ def runInformationFlowChecks : IO Unit := do
   -- WS-BP BP7.2 (v0.36.15): 28, with the physical-write ledger.
   -- WS-LS (v0.36.70): 26, the two kernel-state lock fields deleted.
   -- WS-ZA ZA5.2: 25, the per-context thread index retired.
-  expect "StateField enum has 25 variants, one per SystemState field"
+  -- WS-ZA ZA5.3 part 2: 22, the slot is the derivation node (three CDT index fields gone).
+  expect "StateField enum has 22 variants, one per SystemState field"
     ([ SeLe4n.Kernel.StateField.machine, .objects, .objectIndex, .objectIndexSet,
        .services, .scheduler, .irqHandlers, .lifecycle,
        .asidTable, .interfaceRegistry, .serviceRegistry,
-       .cdt, .cdtSlotNode, .cdtNodeSlot, .cdtNextNode,
+       .cdt,
        .tlb,
        .tlbShootdown,
        .perCoreTlb, .perCoreICache, .pendingIcacheMaintenance, .pendingPhysicalWrites,
        .declassificationAuditLog, .declassificationAuditEpoch,
-       .declassificationRefusals, .declassificationTaint ].length = 25)
+       .declassificationRefusals, .declassificationTaint ].length = 22)
   expect "StateField is total over SystemState (eq_of_fieldEq_all elaborates)"
     (have _ := @SeLe4n.Kernel.SystemState.eq_of_fieldEq_all; true)
   -- AM4 audit remediation: field-set catalog extended from 10 to 11
@@ -1604,7 +1605,7 @@ def runInformationFlowChecks : IO Unit := do
             (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [((SeLe4n.Slot.ofNat 0), cap1)])))
         |>.buildChecked)
     let msgWithCaps : IpcMessage :=
-      { registers := #[], caps := #[TransferCap.fromNode cap1 0], badge := none }
+      { registers := #[], caps := #[TransferCap.fromSlot cap1 { cnode := senderCNode, slot := SeLe4n.Slot.ofNat 0 }], badge := none }
     let result := SeLe4n.Kernel.ipcUnwrapCaps msgWithCaps nonCNodeRoot
       (SeLe4n.Slot.ofNat 0) true st
     expect "ipcUnwrapCaps with non-CNode root yields consistent outcome"

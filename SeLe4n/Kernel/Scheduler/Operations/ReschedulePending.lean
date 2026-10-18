@@ -380,12 +380,6 @@ theorem markKeyChangeFor_onlyObjectsSchedulerDiffer (st : SystemState) (tid : Se
   markKeyChangeFor_extract_frame (fun s => s.cdt) st tid k
     (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
 
-@[simp] theorem markKeyChangeFor_cdtNodeSlot (st : SystemState) (tid : SeLe4n.ThreadId)
-    (k : SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId) :
-    (markKeyChangeFor st tid k).cdtNodeSlot = st.cdtNodeSlot :=
-  markKeyChangeFor_extract_frame (fun s => s.cdtNodeSlot) st tid k
-    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
-
 @[simp] theorem markKeyChangeFor_irqHandlers (st : SystemState) (tid : SeLe4n.ThreadId)
     (k : SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId) :
     (markKeyChangeFor st tid k).irqHandlers = st.irqHandlers :=
@@ -456,18 +450,6 @@ theorem markKeyChangeFor_onlyObjectsSchedulerDiffer (st : SystemState) (tid : Se
     (k : SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId) :
     (markKeyChangeFor st tid k).interfaceRegistry = st.interfaceRegistry :=
   markKeyChangeFor_extract_frame (fun s => s.interfaceRegistry) st tid k
-    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
-
-@[simp] theorem markKeyChangeFor_cdtSlotNode (st : SystemState) (tid : SeLe4n.ThreadId)
-    (k : SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId) :
-    (markKeyChangeFor st tid k).cdtSlotNode = st.cdtSlotNode :=
-  markKeyChangeFor_extract_frame (fun s => s.cdtSlotNode) st tid k
-    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
-
-@[simp] theorem markKeyChangeFor_cdtNextNode (st : SystemState) (tid : SeLe4n.ThreadId)
-    (k : SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId) :
-    (markKeyChangeFor st tid k).cdtNextNode = st.cdtNextNode :=
-  markKeyChangeFor_extract_frame (fun s => s.cdtNextNode) st tid k
     (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
 
 @[simp] theorem markKeyChangeFor_tlb (st : SystemState) (tid : SeLe4n.ThreadId)
@@ -628,11 +610,6 @@ theorem markKeyChangeFor_reschedulePendingOnCore_mono (st : SystemState)
   markKeyChangeFrom_extract_frame (fun s => s.cdt) pre st tid
     (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
 
-@[simp] theorem markKeyChangeFrom_cdtNodeSlot (pre st : SystemState) (tid : SeLe4n.ThreadId) :
-    (markKeyChangeFrom pre st tid).cdtNodeSlot = st.cdtNodeSlot :=
-  markKeyChangeFrom_extract_frame (fun s => s.cdtNodeSlot) pre st tid
-    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
-
 @[simp] theorem markKeyChangeFrom_irqHandlers (pre st : SystemState) (tid : SeLe4n.ThreadId) :
     (markKeyChangeFrom pre st tid).irqHandlers = st.irqHandlers :=
   markKeyChangeFrom_extract_frame (fun s => s.irqHandlers) pre st tid
@@ -691,16 +668,6 @@ theorem markKeyChangeFor_reschedulePendingOnCore_mono (st : SystemState)
 @[simp] theorem markKeyChangeFrom_interfaceRegistry (pre st : SystemState) (tid : SeLe4n.ThreadId) :
     (markKeyChangeFrom pre st tid).interfaceRegistry = st.interfaceRegistry :=
   markKeyChangeFrom_extract_frame (fun s => s.interfaceRegistry) pre st tid
-    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
-
-@[simp] theorem markKeyChangeFrom_cdtSlotNode (pre st : SystemState) (tid : SeLe4n.ThreadId) :
-    (markKeyChangeFrom pre st tid).cdtSlotNode = st.cdtSlotNode :=
-  markKeyChangeFrom_extract_frame (fun s => s.cdtSlotNode) pre st tid
-    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
-
-@[simp] theorem markKeyChangeFrom_cdtNextNode (pre st : SystemState) (tid : SeLe4n.ThreadId) :
-    (markKeyChangeFrom pre st tid).cdtNextNode = st.cdtNextNode :=
-  markKeyChangeFrom_extract_frame (fun s => s.cdtNextNode) pre st tid
     (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
 
 @[simp] theorem markKeyChangeFrom_tlb (pre st : SystemState) (tid : SeLe4n.ThreadId) :

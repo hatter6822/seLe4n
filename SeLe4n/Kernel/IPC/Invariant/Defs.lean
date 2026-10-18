@@ -1040,86 +1040,40 @@ theorem lookupSlotCap_badge_valid (st : SystemState) (addr : CSpaceAddr)
           rfl
       exact hCapWf addr.cnode cn addr.slot cap b hObj hLk hB
 
-/-- **WS-LS LS2.3**: the resolution writes the derivation tree alone — every
-object and every scheduler slot is as it was.  (The derivation nodes it mints
-are what the transition that follows reads, which is why that transition runs
-from the resolved state and why `.call`'s scheduler footprint is read there.) -/
-theorem resolveExtraCaps_objects_scheduler_eq (cspaceRoot : SeLe4n.ObjId)
-    (capAddrs : Array SeLe4n.CPtr) (depth : Nat) (granted : Bool) (st : SystemState) :
-    (resolveExtraCaps cspaceRoot capAddrs depth granted st).2.objects = st.objects ∧
-      (resolveExtraCaps cspaceRoot capAddrs depth granted st).2.scheduler = st.scheduler := by
-  unfold resolveExtraCaps
-  split
-  · exact ⟨rfl, rfl⟩
-  · refine Array.foldl_induction
-      (motive := fun (_ : Nat) (acc : Array TransferCap × SystemState) =>
-        acc.2.objects = st.objects ∧ acc.2.scheduler = st.scheduler) ⟨rfl, rfl⟩ ?_
-    intro i acc hAcc
-    split
-    · exact hAcc
-    · split
-      · exact hAcc
-      · split
-        · exact hAcc
-        · rename_i node stNode hNode
-          unfold SystemState.ensureCdtNodeForSlotChecked at hNode
-          split at hNode
-          · cases hNode; exact hAcc
-          · split at hNode
-            · cases hNode; exact hAcc
-            · cases hNode
-
-/-- Resolution mints CDT nodes only: objects and scheduler are framed, and
-every resolved capability's badge is valid, because each one is read out of a
-CNode slot of a state whose store is the pre-state's. -/
-theorem resolveExtraCaps_shape
+/-- Every resolved capability's badge is valid: each one is read out of a CNode
+slot of the state it is resolved in. -/
+theorem resolveExtraCaps_badges_valid
     (cspaceRoot : SeLe4n.ObjId) (capAddrs : Array SeLe4n.CPtr) (depth : Nat)
     (granted : Bool) (st : SystemState)
     (hCapWf : capabilityBadgesWellFormed st) :
-    (resolveExtraCaps cspaceRoot capAddrs depth granted st).2.objects = st.objects ∧
-    (resolveExtraCaps cspaceRoot capAddrs depth granted st).2.scheduler = st.scheduler ∧
-    (∀ (i : Nat) (c : TransferCap),
-      (resolveExtraCaps cspaceRoot capAddrs depth granted st).1[i]? = some c →
-      ∀ b, c.cap.badge = some b → b.valid) := by
+    ∀ (i : Nat) (c : TransferCap),
+      (resolveExtraCaps cspaceRoot capAddrs depth granted st)[i]? = some c →
+      ∀ b, c.cap.badge = some b → b.valid := by
   unfold resolveExtraCaps
   split
-  · exact ⟨rfl, rfl, fun i c hc => by cases hc⟩
+  · exact fun i c hc => by cases hc
   · refine Array.foldl_induction
-      (motive := fun (_ : Nat) (acc : Array TransferCap × SystemState) =>
-        acc.2.objects = st.objects ∧ acc.2.scheduler = st.scheduler ∧
-        (∀ (i : Nat) (c : TransferCap), acc.1[i]? = some c →
-          ∀ b, c.cap.badge = some b → b.valid))
-      ⟨rfl, rfl, fun i c hc => by cases hc⟩ ?_
-    intro i acc hAcc
-    obtain ⟨hO, hS, hB⟩ := hAcc
+      (motive := fun (_ : Nat) (acc : Array TransferCap) =>
+        ∀ (i : Nat) (c : TransferCap), acc[i]? = some c →
+          ∀ b, c.cap.badge = some b → b.valid)
+      (fun i c hc => by cases hc) ?_
+    intro i acc hB
     split
-    · exact ⟨hO, hS, hB⟩
+    · exact hB
     · rename_i ref hRes
       split
-      · exact ⟨hO, hS, hB⟩
+      · exact hB
       · rename_i cap hLk
-        split
-        · exact ⟨hO, hS, hB⟩
-        · rename_i node stNode hNode
-          have hCapWfAcc : capabilityBadgesWellFormed acc.2 := by
-            intro oid cn slot c b hCn hLk2 hB2
-            rw [hO] at hCn
-            exact hCapWf oid cn slot c b hCn hLk2 hB2
-          refine ⟨(SystemState.ensureCdtNodeForSlotChecked_objects_eq acc.2 ref node
-              stNode hNode).trans hO,
-            (SystemState.ensureCdtNodeForSlotChecked_scheduler_eq acc.2 ref node stNode
-              hNode).trans hS, ?_⟩
-          intro j c hc b hBadge
-          rw [Array.getElem?_push] at hc
-          split at hc
-          · obtain rfl : ({ cap := cap, srcNode := node } : TransferCap) = c :=
-              Option.some.inj hc
-            exact lookupSlotCap_badge_valid acc.2 ref cap hCapWfAcc hLk b hBadge
-          · exact hB j c hc b hBadge
+        intro j c hc b hBadge
+        rw [Array.getElem?_push] at hc
+        split at hc
+        · obtain rfl : TransferCap.fromSlot cap ref = c := Option.some.inj hc
+          exact lookupSlotCap_badge_valid st ref cap hCapWf hLk b hBadge
+        · exact hB j c hc b hBadge
 
 
-/-- WS-ZA ZA4.7: **what a receive's capability transfer writes** -- the
-resolution's CDT nodes (objects and scheduler framed) and then, when anything
+/-- WS-ZA ZA4.7: **what a receive's capability transfer writes** -- nothing
+for the resolution (a pure read, so `stR` is the pre-state) and then, when anything
 resolved, one `ipcUnwrapCaps` of the resolved capabilities, whose badges are
 valid whenever the pre-state's are.  Every WithCaps receive preservation proof
 goes through this one shape. -/
@@ -1143,40 +1097,12 @@ theorem receiveTransferCaps_frame
   | some r =>
       obtain ⟨cr, addrs, depth⟩ := r
       simp only at h
-      refine ⟨(resolveExtraCaps cr addrs depth true st).2,
-        (resolveExtraCaps cr addrs depth true st).1,
-        (resolveExtraCaps_objects_scheduler_eq cr addrs depth true st).1,
-        (resolveExtraCaps_objects_scheduler_eq cr addrs depth true st).2,
-        fun hW => (resolveExtraCaps_shape cr addrs depth true st hW).2.2, ?_⟩
+      refine ⟨st, resolveExtraCaps cr addrs depth true st, rfl, rfl,
+        fun hW => resolveExtraCaps_badges_valid cr addrs depth true st hW, ?_⟩
       split at h
       · simp only [Except.ok.injEq, Prod.mk.injEq] at h
         exact Or.inl h.2.symm
       · exact Or.inr h
-
-/-- The resolution writes no register bank or other machine state. -/
-theorem resolveExtraCaps_machine_eq (cspaceRoot : SeLe4n.ObjId)
-    (capAddrs : Array SeLe4n.CPtr) (depth : Nat) (granted : Bool) (st : SystemState) :
-    (resolveExtraCaps cspaceRoot capAddrs depth granted st).2.machine = st.machine := by
-  unfold resolveExtraCaps
-  split
-  · rfl
-  · refine Array.foldl_induction
-      (motive := fun (_ : Nat) (acc : Array TransferCap × SystemState) =>
-        acc.2.machine = st.machine) rfl ?_
-    intro i acc hAcc
-    split
-    · exact hAcc
-    · split
-      · exact hAcc
-      · split
-        · exact hAcc
-        · rename_i node stNode hNode
-          unfold SystemState.ensureCdtNodeForSlotChecked at hNode
-          split at hNode
-          · cases hNode; exact hAcc
-          · split at hNode
-            · cases hNode; exact hAcc
-            · cases hNode
 
 /-- WS-ZA ZA4.7: the rendezvous capability lookup writes no machine state. -/
 theorem receiveTransferCaps_preserves_machine
@@ -1194,9 +1120,8 @@ theorem receiveTransferCaps_preserves_machine
       simp only at h
       split at h
       · simp only [Except.ok.injEq, Prod.mk.injEq] at h
-        rw [← h.2]; exact resolveExtraCaps_machine_eq cr addrs depth true st
-      · exact (ipcUnwrapCaps_preserves_machine _ _ _ _ _ _ _ h).trans
-          (resolveExtraCaps_machine_eq cr addrs depth true st)
+        rw [← h.2]
+      · exact ipcUnwrapCaps_preserves_machine _ _ _ _ _ _ _ h
 
 /-- WS-F5/D1d: System-wide badge well-formedness — all badges in notifications
 and capabilities are word-bounded to `machineWordBits` (64 bits). -/

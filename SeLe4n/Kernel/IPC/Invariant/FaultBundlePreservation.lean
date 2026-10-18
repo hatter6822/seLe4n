@@ -83,7 +83,7 @@ theorem faultSuspendOnCore_preserves_capabilityInvariantBundle (st : SystemState
     capabilityInvariantBundle (faultSuspendOnCore st tid c) := by
   have hObjInv : st.objects.invExt := h.2.2.2.2.2.1
   have hCdt := faultSuspendOnCore_cdt_eq st tid c
-  exact capabilityInvariantBundle_of_kindPreserving h hCdt.2 hCdt.1
+  exact capabilityInvariantBundle_of_kindPreserving h hCdt
     (faultSuspendOnCore_preserves_objects_invExt st tid c hObjInv)
     (faultSuspendOnCore_kindPreservingWrite st tid c hObjInv)
 
@@ -107,7 +107,7 @@ theorem faultAbandonOnCore_preserves_capabilityInvariantBundle (st : SystemState
     capabilityInvariantBundle (faultAbandonOnCore st tid c) := by
   have hObjInv : st.objects.invExt := h.2.2.2.2.2.1
   have hCdt := faultAbandonOnCore_cdt_eq st tid c
-  exact capabilityInvariantBundle_of_kindPreserving h hCdt.2 hCdt.1
+  exact capabilityInvariantBundle_of_kindPreserving h hCdt
     (faultAbandonOnCore_preserves_objects_invExt st tid c hObjInv)
     (faultAbandonOnCore_kindPreservingWrite st tid c hObjInv)
 
@@ -136,7 +136,7 @@ theorem faultReplyApplyOnCore_preserves_capabilityInvariantBundle (st : SystemSt
   cases outcome with
   | restart frame =>
       have hCdt := applyFaultRestart_cdt_eq st faulted frame
-      exact capabilityInvariantBundle_of_kindPreserving h hCdt.2 hCdt.1
+      exact capabilityInvariantBundle_of_kindPreserving h hCdt
         (applyFaultRestart_preserves_objects_invExt st faulted frame hObjInv)
         (applyFaultRestart_kindPreservingWrite st faulted frame hObjInv)
   | abandon => exact faultAbandonOnCore_preserves_capabilityInvariantBundle st faulted _ h
@@ -222,7 +222,7 @@ theorem faultDeliverOnCore_preserves_capabilityInvariantBundle (st : SystemState
       capabilityInvariantBundle
         (recordPendingFault (faultSuspendOnCore st tid executingCore) tid tf) := fun tf =>
     capabilityInvariantBundle_of_kindPreserving hSusp
-      (recordPendingFault_cdt_eq _ tid tf).2 (recordPendingFault_cdt_eq _ tid tf).1
+      (recordPendingFault_cdt_eq _ tid tf)
       (recordPendingFault_preserves_objects_invExt _ tid tf hSuspObj)
       (recordPendingFault_kindPreservingWrite _ tid tf hSuspObj)
   unfold faultDeliverOnCore
@@ -252,12 +252,11 @@ theorem faultDeliverOnCore_preserves_capabilityInvariantBundle (st : SystemState
                     ((st.getEndpoint? tgt.endpoint).bind (·.receiveQ.head))
                     summary.installedCount) :=
                 capabilityInvariantBundle_of_kindPreserving hC
-                  (Architecture.stageWokenDelivery_cdt_eq stC _ _).2
-                  (Architecture.stageWokenDelivery_cdt_eq stC _ _).1
+                  (Architecture.stageWokenDelivery_cdt_eq stC _ _)
                   hStageObj
                   (Architecture.stageWokenDelivery_kindPreservingWrite stC _ _ hCObj)
               exact capabilityInvariantBundle_of_kindPreserving hStage
-                (recordPendingFault_cdt_eq _ tid _).2 (recordPendingFault_cdt_eq _ tid _).1
+                (recordPendingFault_cdt_eq _ tid _)
                 (recordPendingFault_preserves_objects_invExt _ tid _ hStageObj)
                 (recordPendingFault_kindPreservingWrite _ tid _ hStageObj)
 

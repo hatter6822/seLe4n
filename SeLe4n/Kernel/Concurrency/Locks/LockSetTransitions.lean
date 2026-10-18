@@ -635,10 +635,9 @@ def lockSet_endpointReceive (callerTid : ThreadId)
   --
   -- **WS-RR RR7.11 — and the CDT maps, on the receive side too.**  The install
   -- is `ipcTransferSingleCap`, the same function the send and call sides run,
-  -- and it does not only write the slot: it mints a derivation node for the
-  -- destination (`ensureCdtNodeForSlot`, which advances the global
-  -- `cdtNextNode` counter and both keyed maps) and adds an `.ipcTransfer` edge
-  -- to `cdt`.  None of that decomposes by object.  RR7.7 declared it on the
+  -- and it does not only write the slot: it adds an `.ipcTransfer` edge to
+  -- `cdt`, whose edge list and child and parent maps are shared by every
+  -- CSpace.  None of that decomposes by object.  RR7.7 declared it on the
   -- two sending arms; the receiving arms install through the same call and had
   -- it on neither, so two receives on different endpoints, each dequeuing a
   -- caps-bearing sender into a different CSpace, had provably disjoint
@@ -1347,13 +1346,12 @@ CNode (write — minted cap is stored).
 
 **WS-RR RR7.9 — the CDT maps.**  All four capability operations write
 `SystemState`-level derivation structure, not only CNode slots: `cspaceMint`,
-`cspaceCopy` and `cspaceMove` mint nodes for both endpoints
-(`ensureCdtNodeForSlot`, which advances the global `cdtNextNode` counter and
-both keyed maps) and add an edge to `cdt`; `cspaceDelete` removes a node.  None
-of that decomposes by object, so with per-object members alone two of these on
-disjoint CNodes have provably disjoint footprints while allocating from one
-counter — the later commit either collides on a node id or loses a slot
-mapping.  `stateLevelLock` is the declared subject for `SystemState`-level
+`cspaceCopy` and `cspaceMove` add or move an edge in `cdt`; `cspaceDelete`
+splices a slot out of it.  The tree's edge list and child and parent maps are
+shared by every CSpace (an edge may join slots of different CNodes), so with
+per-object members alone two of these on disjoint CNodes have provably disjoint
+footprints while rewriting one tree — the later commit loses the earlier one's
+edge.  `stateLevelLock` is the declared subject for `SystemState`-level
 auxiliary structures (SM3.A.10), and it is unconditional here because these
 operations always write the CDT when they succeed. -/
 def lockSet_cspaceMint (callerTid : ThreadId)
@@ -1858,11 +1856,9 @@ theorem lockSet_auditRead_stateLevel_read_mem (callerTid : ThreadId)
 state-level **write** its CDT mutation needs.
 
 The membership half of the closure.  `cspaceMint`, `cspaceCopy` and
-`cspaceMove` mint CDT nodes for both endpoints — advancing the global
-`cdtNextNode` counter and both keyed maps — and add an edge; `cspaceDelete`
-removes a node.  None of that is keyed by an object, so a footprint of
-per-object members alone lets two of these on disjoint CNodes run concurrently
-against one counter.
+`cspaceMove` add or move a CDT edge; `cspaceDelete` splices a slot out of the
+tree.  The tree is not keyed by an object, so a footprint of per-object members
+alone lets two of these on disjoint CNodes run concurrently against one tree.
 
 Stated four times rather than once over a shared shape, because the four
 footprints are four definitions and a cut that drops the member from any one of
@@ -1977,9 +1973,9 @@ This is the statement `UncoveredLockDomain.cdtNodeAllocation` was registered
 for — deleted in the same cut, because a domain entry goes when the domain is
 covered — and the reason the member is unconditional.  Two capability operations on
 otherwise disjoint CSpaces used to have provably disjoint footprints while both
-allocating from `cdtNextNode`; a two-phase-locking consumer is entitled to run
-disjoint footprints concurrently, so the later commit would collide on a node
-id or lose a slot mapping.  With the member declared, no two of them are ever
+rewriting the one derivation tree; a two-phase-locking consumer is entitled to
+run disjoint footprints concurrently, so the later commit would lose the
+earlier one's edge.  With the member declared, no two of them are ever
 disjoint, so no consumer may. -/
 theorem capabilityOps_footprints_share_serialization
     (callerA callerB : ThreadId) (srcA dstA srcB dstB : ObjId) :
@@ -2833,9 +2829,8 @@ theorem lockSet_notificationWait_tail_tcb_write_mem (callerTid : ThreadId)
 state-level **write** its CDT mutation needs.
 
 The receive-side half of RR7.7's closure.  `ipcTransferSingleCap` is one
-function: whichever arm reaches it, it mints a derivation node for the
-destination slot (`ensureCdtNodeForSlot`, advancing the global `cdtNextNode`
-counter and both keyed maps) and adds an `.ipcTransfer` edge.  RR7.7 declared
+function: whichever arm reaches it, it adds an `.ipcTransfer` edge to the one
+derivation tree every CSpace shares.  RR7.7 declared
 that on `.send` and `.call`; the two receiving arms install through the very
 same call and declared it on neither, so a receive dequeuing a caps-bearing
 sender was provably disjoint from a concurrent send installing into a different

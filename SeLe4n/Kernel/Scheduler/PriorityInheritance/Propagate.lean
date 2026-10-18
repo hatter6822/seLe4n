@@ -1501,43 +1501,15 @@ theorem propagatePipChainCrossCore_runQueueUniqueOnCore :
             (pipBoostWithWake_runQueueUniqueOnCore st startTid ec c' h)
           simpa using hTail
 
-/-- WS-RR RR8.16 (`v0.35.197`): the boost writes no CDT table.  Its two writes are
-a `rewriteObject` (which touches `objects` alone) and a run-queue update (which
-touches `scheduler` alone), so both capability-side CDT conjuncts are framed. -/
-theorem updatePipBoostOnCore_cdtNodeSlot (st : SystemState) (c : CoreId) (tid : ThreadId) :
-    (updatePipBoostOnCore st c tid).cdtNodeSlot = st.cdtNodeSlot :=
-  congrArg (·.cdtNodeSlot) (updatePipBoostOnCore_onlyObjectsSchedulerDiffer st c tid)
-
 /-- WS-RR RR8.16 (`v0.35.197`): ...and no derivation tree. -/
 theorem updatePipBoostOnCore_cdt (st : SystemState) (c : CoreId) (tid : ThreadId) :
     (updatePipBoostOnCore st c tid).cdt = st.cdt :=
   congrArg (·.cdt) (updatePipBoostOnCore_onlyObjectsSchedulerDiffer st c tid)
 
 /-- WS-RR RR8.16 (`v0.35.197`): ...and so does the boost-with-wake step. -/
-theorem pipBoostWithWake_cdtNodeSlot (st : SystemState) (tid : ThreadId) (ec : CoreId) :
-    (pipBoostWithWake st tid ec).1.cdtNodeSlot = st.cdtNodeSlot := by
-  rw [pipBoostWithWake_state]; exact updatePipBoostOnCore_cdtNodeSlot st _ tid
-
-/-- WS-RR RR8.16 (`v0.35.197`): ...and so does the boost-with-wake step. -/
 theorem pipBoostWithWake_cdt (st : SystemState) (tid : ThreadId) (ec : CoreId) :
     (pipBoostWithWake st tid ec).1.cdt = st.cdt := by
   rw [pipBoostWithWake_state]; exact updatePipBoostOnCore_cdt st _ tid
-
-/-- WS-RR RR8.16 (`v0.35.197`): ...and the whole walk. -/
-theorem propagatePipChainCrossCore_cdtNodeSlot :
-    ∀ (fuel : Nat) (st : SystemState) (startTid : ThreadId) (ec : CoreId),
-      (propagatePipChainCrossCore st startTid ec fuel).1.cdtNodeSlot = st.cdtNodeSlot
-  | 0, st, startTid, ec => by rw [propagatePipChainCrossCore_zero]
-  | n + 1, st, startTid, ec => by
-      rw [propagatePipChainCrossCore_step]
-      simp only
-      cases hb : blockingServer st startTid with
-      | none => simpa using pipBoostWithWake_cdtNodeSlot st startTid ec
-      | some nextServer =>
-          have hTail := propagatePipChainCrossCore_cdtNodeSlot n
-            (pipBoostWithWake st startTid ec).1 nextServer ec
-          simp only at hTail ⊢
-          rw [hTail]; exact pipBoostWithWake_cdtNodeSlot st startTid ec
 
 /-- WS-RR RR8.16 (`v0.35.197`): ...and the whole walk. -/
 theorem propagatePipChainCrossCore_cdt :

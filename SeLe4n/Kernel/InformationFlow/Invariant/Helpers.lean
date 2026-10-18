@@ -1178,14 +1178,13 @@ theorem cspaceMint_preserves_lowEquivalent
 -- ============================================================================
 
 /-- Detaching the local revoke's emptied siblings is invisible to every observer:
-it writes only the derivation tree and the two slot maps, which the projection
-does not read. -/
+it writes only the derivation tree, which the projection does not read. -/
 theorem projectState_detachRevokedSlots (ctx : LabelingContext) (observer : IfObserver)
     (st : SystemState) (cnodeId : SeLe4n.ObjId) (cn : CNode) (sourceSlot : SeLe4n.Slot)
     (target : CapTarget) :
     projectState ctx observer (detachRevokedSlots st cnodeId cn sourceSlot target) =
       projectState ctx observer st := by
-  obtain ⟨_, _, _, h⟩ := detachRevokedSlots_shape st cnodeId cn sourceSlot target
+  obtain ⟨_, h⟩ := detachRevokedSlots_shape st cnodeId cn sourceSlot target
   rw [h]; rfl
 
 /-- Revoking capabilities in a non-observable CNode preserves low-equivalence. -/

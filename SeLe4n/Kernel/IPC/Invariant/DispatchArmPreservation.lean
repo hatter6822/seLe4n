@@ -811,23 +811,6 @@ theorem setThreadCpuAffinityOnCore_preserves_ipcInvariantFull
 --     `.cspaceMove`, `.mintReplyCap`)
 -- ============================================================================
 
-/-- The CDT node-allocation step touches only the CDT maps. -/
-theorem ensureCdtNodeForSlot_scheduler_eq (st : SystemState) (ref : SlotRef) :
-    (SystemState.ensureCdtNodeForSlot st ref).snd.scheduler = st.scheduler := by
-  unfold SystemState.ensureCdtNodeForSlot
-  split <;> rfl
-
-/-- The CDT attach step touches only the CDT maps. -/
-theorem attachSlotToCdtNode_scheduler_eq (st : SystemState) (ref : SlotRef)
-    (node : CdtNodeId) :
-    (SystemState.attachSlotToCdtNode st ref node).scheduler = st.scheduler := rfl
-
-/-- The CDT detach step touches only the CDT maps. -/
-theorem detachSlotFromCdt_scheduler_eq (st : SystemState) (ref : SlotRef) :
-    (SystemState.detachSlotFromCdt st ref).scheduler = st.scheduler := by
-  unfold SystemState.detachSlotFromCdt
-  split <;> rfl
-
 -- **WS-RR RR8.16** (`v0.35.201`): `cspaceInsertSlot_cnode_shape` was declared
 -- here, `private`, re-deriving the insert's success shape from the operation's
 -- own `match` tree.  It is `SeLe4n.Kernel.cspaceInsertSlot_objects_eq` now, in
@@ -892,20 +875,17 @@ theorem cspaceDeleteSlotCore_shape
       split at hStep
       · contradiction
       · rename_i st1 hStore
-        cases hStep
+        simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+        subst hStep
         refine ⟨cn, rfl, ?_, ?_, ?_, ?_⟩
-        · rw [SystemState.detachSlotFromCdt_objects_eq]
-          exact storeObject_objects_eq st st1 addr.cnode
+        · exact storeObject_objects_eq st st1 addr.cnode
             (.cnode (cn.remove addr.slot)) hObjInv hStore
         · intro oid hNe
-          rw [SystemState.detachSlotFromCdt_objects_eq]
           exact storeObject_objects_ne st st1 addr.cnode oid
             (.cnode (cn.remove addr.slot)) hNe hObjInv hStore
-        · rw [detachSlotFromCdt_scheduler_eq]
-          exact storeObject_scheduler_eq st st1 addr.cnode
+        · exact storeObject_scheduler_eq st st1 addr.cnode
             (.cnode (cn.remove addr.slot)) hStore
-        · rw [SystemState.detachSlotFromCdt_objects_eq]
-          exact storeObject_preserves_objects_invExt st st1 addr.cnode
+        · exact storeObject_preserves_objects_invExt st st1 addr.cnode
             (.cnode (cn.remove addr.slot)) hObjInv hStore
     | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
     | schedContext _ | reply _ | frame _ | pageTable _ => simp [hObj] at hStep
@@ -1054,38 +1034,31 @@ theorem cspaceRevoke_preserves_ipcInvariantFull
 /-- **One revoked node preserves the bundle, and the store invariant with it.**
 
 The node's slot deletion is `cspaceDeleteSlotCore`'s; the `cdt` field update that
-follows it — which is the whole of the no-slot arm — is invisible to every
-conjunct, since none of the twenty reads the derivation tree.
+follows it is invisible to every conjunct, since none of the twenty reads the derivation tree.
 
 The store invariant rides along because the fold needs it *between* iterations:
 `cspaceDeleteSlotCore` takes `st.objects.invExt` as a hypothesis, so a traversal
 has to carry the one the previous descendant's deletion left. -/
 theorem processRevokeNode_preserves_ipcInvariantFull
-    (st st' : SystemState) (node : CdtNodeId)
+    (st st' : SystemState) (node : SlotRef)
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
     (hStep : processRevokeNode st node = .ok st') :
     ipcInvariantFull st' ∧ st'.objects.invExt := by
   unfold processRevokeNode at hStep
-  cases hSlot : SystemState.lookupCdtSlotOfNode st node with
-  | none =>
-    simp [hSlot] at hStep; cases hStep
-    exact ⟨ipcInvariantFull_of_objects_scheduler_eq (st := st) rfl rfl hInv, hObjInv⟩
-  | some descAddr =>
-    simp [hSlot] at hStep
-    cases hDel : cspaceDeleteSlotCore descAddr st with
-    | error _ => simp [hDel] at hStep
-    | ok pair =>
-      obtain ⟨⟨⟩, stDel⟩ := pair
-      simp [hDel] at hStep; cases hStep
-      obtain ⟨_, _, _, _, _, hExtDel⟩ := cspaceDeleteSlotCore_shape st stDel descAddr hObjInv hDel
-      exact ⟨ipcInvariantFull_of_objects_scheduler_eq (st := stDel) rfl rfl
-        (cspaceDeleteSlotCore_preserves_ipcInvariantFull st stDel descAddr hObjInv hInv hDel),
-        hExtDel⟩
+  cases hDel : cspaceDeleteSlotCore node st with
+  | error _ => simp [hDel] at hStep
+  | ok pair =>
+    obtain ⟨⟨⟩, stDel⟩ := pair
+    simp [hDel] at hStep; cases hStep
+    obtain ⟨_, _, _, _, _, hExtDel⟩ := cspaceDeleteSlotCore_shape st stDel node hObjInv hDel
+    exact ⟨ipcInvariantFull_of_objects_scheduler_eq (st := stDel) rfl rfl
+      (cspaceDeleteSlotCore_preserves_ipcInvariantFull st stDel node hObjInv hInv hDel),
+      hExtDel⟩
 
 /-- The materialized traversal preserves the bundle — the shared induction
 (`revokeCdtMaterializedTraversal_ok_induct`) at the pair this bundle carries. -/
 theorem revokeCdtMaterializedTraversal_preserves_ipcInvariantFull
-    (stLocal : SystemState) (rootNode : CdtNodeId) (descendants : List CdtNodeId)
+    (stLocal : SystemState) (rootNode : SlotRef) (descendants : List SlotRef)
     (out : RevokeTraversalOutcome (List MappedPage))
     (hObjInv : stLocal.objects.invExt) (hInv : ipcInvariantFull stLocal)
     (hTrav : revokeCdtMaterializedTraversal stLocal rootNode descendants = .ok out) :
@@ -1103,25 +1076,22 @@ that exist and any that does not exist yet.  The case analysis is
 `revokeCdtScaffold_ok_decompose`'s, beside the definition, so the two bundles
 read one answer about what a successful revocation consists of. -/
 theorem revokeCdtScaffold_preserves_ipcInvariantFull {ρ : Type}
-    (emptyReport : ρ)
-    (traverse : SystemState → CdtNodeId → List CdtNodeId →
+    (traverse : SystemState → SlotRef → List SlotRef →
       Except KernelError (RevokeTraversalOutcome ρ))
-    (hTraverse : ∀ (stLocal : SystemState) (rootNode : CdtNodeId)
-        (descendants : List CdtNodeId) (out : RevokeTraversalOutcome ρ),
+    (hTraverse : ∀ (stLocal : SystemState) (rootNode : SlotRef)
+        (descendants : List SlotRef) (out : RevokeTraversalOutcome ρ),
         ipcInvariantFull stLocal → stLocal.objects.invExt →
         traverse stLocal rootNode descendants = .ok out →
         ipcInvariantFull out.state ∧ out.state.objects.invExt)
     (st st' : SystemState) (addr : CSpaceAddr) (r : ρ)
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
-    (hStep : revokeCdtScaffold emptyReport traverse addr st = .ok (r, st')) :
+    (hStep : revokeCdtScaffold traverse addr st = .ok (r, st')) :
     ipcInvariantFull st' ∧ st'.objects.invExt := by
   -- Since `v0.36.1` the scaffold's first step is a read of the source slot, so
   -- the walk starts from `st` itself and there is no local-revoke leg to carry.
-  obtain ⟨_, hRest⟩ :=
-    revokeCdtScaffold_ok_decompose emptyReport traverse st st' addr r hStep
-  rcases hRest with rfl | ⟨rootNode, out, hTrav, rfl⟩
-  · exact ⟨hInv, hObjInv⟩
-  · exact hTraverse st rootNode _ out hInv hObjInv hTrav
+  obtain ⟨_, out, hTrav, rfl⟩ :=
+    revokeCdtScaffold_ok_decompose traverse st st' addr r hStep
+  exact hTraverse st addr _ out hInv hObjInv hTrav
 
 /-- `.cspaceRevoke`: `seL4_CNode_Revoke` preserves the whole bundle.
 
@@ -1133,7 +1103,7 @@ theorem cspaceRevokeCdt_preserves_ipcInvariantFull
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
     (hStep : cspaceRevokeCdt addr st = .ok (pages, st')) :
     ipcInvariantFull st' :=
-  (revokeCdtScaffold_preserves_ipcInvariantFull [] revokeCdtMaterializedTraversal
+  (revokeCdtScaffold_preserves_ipcInvariantFull revokeCdtMaterializedTraversal
     (fun stL rn ds out h1 h2 h3 =>
       revokeCdtMaterializedTraversal_preserves_ipcInvariantFull stL rn ds out h2 h1 h3)
     st st' addr pages hObjInv hInv hStep).1
@@ -1182,17 +1152,8 @@ objects nor the scheduler. -/
 private theorem cdtRecord_bundle_frame (stM : SystemState) (src dst : CSpaceAddr)
     (kind : DerivationOp)
     (hInvM : ipcInvariantFull stM) :
-    ipcInvariantFull
-      (let p1 := SystemState.ensureCdtNodeForSlot stM src
-       let p2 := SystemState.ensureCdtNodeForSlot p1.snd dst
-       { p2.snd with cdt := p2.snd.cdt.addEdge p1.fst p2.fst kind }) := by
-  refine ipcInvariantFull_of_objects_scheduler_eq ?_ ?_ hInvM
-  · show (SystemState.ensureCdtNodeForSlot
-        (SystemState.ensureCdtNodeForSlot stM src).snd dst).snd.objects = stM.objects
-    rw [SystemState.ensureCdtNodeForSlot_objects_eq, SystemState.ensureCdtNodeForSlot_objects_eq]
-  · show (SystemState.ensureCdtNodeForSlot
-        (SystemState.ensureCdtNodeForSlot stM src).snd dst).snd.scheduler = stM.scheduler
-    rw [ensureCdtNodeForSlot_scheduler_eq, ensureCdtNodeForSlot_scheduler_eq]
+    ipcInvariantFull { stM with cdt := stM.cdt.addEdge src dst kind } :=
+  ipcInvariantFull_of_objects_scheduler_eq (st := stM) rfl rfl hInvM
 
 /-- `.cspaceMint`: the CDT-tracked form the dispatch routes through. -/
 theorem cspaceMintWithCdt_preserves_ipcInvariantFull
@@ -1206,7 +1167,6 @@ theorem cspaceMintWithCdt_preserves_ipcInvariantFull
   split at hStep
   · contradiction
   · rename_i stM hMint
-    dsimp only [] at hStep
     cases hStep
     exact cdtRecord_bundle_frame stM src dst DerivationOp.mint
       (cspaceMint_preserves_ipcInvariantFull st stM src dst rights badge
@@ -1230,7 +1190,6 @@ theorem cspaceCopy_preserves_ipcInvariantFull
       split at hStep
       · contradiction
       · rename_i st2 hIns
-        dsimp only [] at hStep
         cases hStep
         have hBadgeSrc := lookupSlotCap_badge_valid st src cap hInv.badgeWellFormed.2
           ((cspaceLookupSlot_ok_iff_lookupSlotCap st src cap).mp (hMid ▸ hLk))
@@ -1266,21 +1225,13 @@ theorem cspaceMove_preserves_ipcInvariantFull
             (fun b hb => hBadgeSrc b (toNonNull?_val_eq hNN ▸ hb)) hIns
           have hObjInv2 := cspaceInsertSlot_preserves_objects_invExt stMid st2 dst capNN.val
             (hMid.symm ▸ hObjInv) hIns
-          dsimp only [] at hStep
           split at hStep
           · contradiction
           · rename_i st3 hDel
             have hInv3 := cspaceDeleteSlotCore_preserves_ipcInvariantFull st2 st3 src
               hObjInv2 hInv2 hDel
-            split at hStep
-            · cases hStep
-              exact hInv3
-            · rename_i srcNode hNode
-              cases hStep
-              exact ipcInvariantFull_of_objects_scheduler_eq
-                (SystemState.attachSlotToCdtNode_objects_eq st3 dst srcNode)
-                (attachSlotToCdtNode_scheduler_eq st3 dst srcNode)
-                hInv3
+            cases hStep
+            exact ipcInvariantFull_of_objects_scheduler_eq (st := st3) rfl rfl hInv3
 
 /-- `.mintReplyCap` (core): the derived reply capability carries no badge, so
 the insert's badge obligation is vacuous. -/
@@ -1314,7 +1265,6 @@ theorem mintReplyCapWithCdt_preserves_ipcInvariantFull
   split at hStep
   · contradiction
   · rename_i stM hMint
-    dsimp only [] at hStep
     cases hStep
     exact cdtRecord_bundle_frame stM src dst DerivationOp.mint
       (mintReplyCap_preserves_ipcInvariantFull st stM src dst hObjInv hInv hMint)
@@ -1496,7 +1446,7 @@ theorem cspaceRevokeCdt_preserves_objects_invExt
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
     (hStep : cspaceRevokeCdt addr st = .ok (pages, st')) :
     st'.objects.invExt :=
-  (revokeCdtScaffold_preserves_ipcInvariantFull [] revokeCdtMaterializedTraversal
+  (revokeCdtScaffold_preserves_ipcInvariantFull revokeCdtMaterializedTraversal
     (fun stL rn ds out h1 h2 h3 =>
       revokeCdtMaterializedTraversal_preserves_ipcInvariantFull stL rn ds out h2 h1 h3)
     st st' addr pages hObjInv hInv hStep).2

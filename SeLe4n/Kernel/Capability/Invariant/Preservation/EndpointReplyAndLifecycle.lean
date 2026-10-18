@@ -136,10 +136,10 @@ theorem consumeCallerReply_preserves_capabilityInvariantBundle
   refine ⟨cspaceLookupSound_holds _, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro cnodeId cn hCn
     exact hBounded cnodeId cn (hCnodeBwd cnodeId cn hCn)
-  · intro nodeId ref hRef
-    rw [SystemState.consumeCallerReply_cdtNodeSlot_eq st st' caller rid hStep] at hRef
+  · intro ref hRef
+    rw [SystemState.consumeCallerReply_cdt_eq st st' caller rid hStep] at hRef
     exact SystemState.consumeCallerReply_objects_isSome st st' caller rid hObjInv hStep
-      ref.cnode (hComp nodeId ref hRef)
+      ref.cnode (hComp ref hRef)
   · unfold cdtAcyclicity
     rw [SystemState.consumeCallerReply_cdt_eq st st' caller rid hStep]
     exact hAcyclic
@@ -180,11 +180,11 @@ theorem removeCallerReplyFrame_preserves_capabilityInvariantBundle
   refine ⟨cspaceLookupSound_holds _, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro cnodeId cn hCn
     exact hBounded cnodeId cn (hCnodeBwd cnodeId cn hCn)
-  · intro nodeId ref hRef
-    rw [spliceReplyFrameOutOrSelf_cdtNodeSlot_eq st rid] at hRef
+  · intro ref hRef
+    rw [spliceReplyFrameOutOrSelf_cdt_eq st rid] at hRef
     intro hNone
     rcases spliceReplyFrameOutOrSelf_objects_rewrite st rid hObjInv ref.cnode with h | ⟨_, r', _, hr', _⟩
-    · exact hComp nodeId ref hRef (h ▸ hNone)
+    · exact hComp ref hRef (h ▸ hNone)
     · rw [hr'] at hNone; cases hNone
   · unfold cdtAcyclicity
     rw [spliceReplyFrameOutOrSelf_cdt_eq st rid]
@@ -485,7 +485,6 @@ theorem lifecycleRetypeObject_preserves_capabilityInvariantBundle
       cspaceSlotCountBounded st' ∧ cdtCompleteness st' ∧ cdtAcyclicity st' ∧ cspaceDepthConsistent st' ∧ st'.objects.invExt := by
     rcases lifecycleRetypeObject_ok_as_storeObject st st' authority target newObj hStep with
       ⟨_, _, _, _, _, _, hStore⟩
-    have hNS := (storeObject_cdtNodeSlot_eq st st' target newObj hStore).1
     refine ⟨?_, ?_, ?_, ?_, ?_⟩
     · intro cnodeId cn hObj
       by_cases hEq : cnodeId = target
@@ -495,7 +494,7 @@ theorem lifecycleRetypeObject_preserves_capabilityInvariantBundle
         | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ => cases hObj
       · rw [lifecycleRetypeObject_ok_lookup_preserved_ne st st' authority target cnodeId newObj hEq hObjInv hStep] at hObj
         exact hBounded cnodeId cn hObj
-    · exact cdtCompleteness_of_storeObject st st' target newObj hComp hObjInv hStore hNS
+    · exact cdtCompleteness_of_storeObject st st' target newObj hComp hObjInv hStore
     · exact cdtAcyclicity_of_cdt_eq st st' hAcyclic (storeObject_cdt_eq st st' target newObj hStore)
     · intro cnodeId cn hObj
       by_cases hEq : cnodeId = target
@@ -1331,18 +1330,15 @@ theorem lifecycleRevokeDeleteRetype_preserves_capabilityInvariantBundle
     (hNewObjCNodeDepth : ∀ cn, newObj = .cnode cn →
       cn.depth ≤ maxCSpaceDepth ∧ (cn.bitsConsumed > 0 → cn.wellFormed))
     (hReplyBacked' : replyCapPointsToValidReply st')
-    (hNodeSlotK : st.cdtNodeSlot.invExtK)
     (hStep : lifecycleRevokeDeleteRetype authority cleanup target newObj st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
   rcases lifecycleRevokeDeleteRetype_ok_implies_staged_steps st st' authority cleanup target newObj hStep with
     ⟨stRevoked, stDeleted, _hNe, hRevoke, hDelete, _hLookupDeleted, hRetype⟩
   have hRevoked : capabilityInvariantBundle stRevoked :=
-    cspaceRevoke_preserves_capabilityInvariantBundle st stRevoked cleanup hInv hNodeSlotK hRevoke
-  have hRevokedK : stRevoked.cdtNodeSlot.invExtK :=
-    cspaceRevoke_preserves_cdtNodeSlot st stRevoked cleanup hInv hNodeSlotK hRevoke
+    cspaceRevoke_preserves_capabilityInvariantBundle st stRevoked cleanup hInv hRevoke
   have hDeleted : capabilityInvariantBundle stDeleted :=
     cspaceDeleteSlot_preserves_capabilityInvariantBundle stRevoked stDeleted cleanup hRevoked
-      hRevokedK hDelete
+      hDelete
   exact lifecycleRetypeObject_preserves_capabilityInvariantBundle stDeleted st' authority target newObj
     hDeleted hNewObjCNodeUniq hNewObjCNodeBounded hNewObjCNodeDepth hReplyBacked' hRetype
 

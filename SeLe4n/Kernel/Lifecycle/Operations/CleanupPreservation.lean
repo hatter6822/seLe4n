@@ -1860,45 +1860,34 @@ theorem cleanupTcbReferences_lifecycle_eq
     removeFromAllEndpointQueues_lifecycle_eq (removeRunnableFromAllCores st tid) tid]
   exact removeRunnableFromAllCores_lifecycle st tid
 
-/-- CDT detach preserves the objects store. -/
-theorem detachSlotFromCdt_objects_eq (st : SystemState) (ref : SlotRef) :
-    (SystemState.detachSlotFromCdt st ref).objects = st.objects := by
-  unfold SystemState.detachSlotFromCdt; split <;> rfl
-
-/-- CDT detach preserves lifecycle metadata. -/
-theorem detachSlotFromCdt_lifecycle_eq (st : SystemState) (ref : SlotRef) :
-    (SystemState.detachSlotFromCdt st ref).lifecycle = st.lifecycle := by
-  unfold SystemState.detachSlotFromCdt; split <;> rfl
-
-/-- WS-H2/A-11: Detach all CDT slot references for a CNode being replaced.
-    Iterates the CNode's slots, clearing each slot's mappings and splicing out
-    its node (`detachDestroyedSlot`), so neither orphaned references nor dead edges
-    outlive the CNode. -/
+/-- WS-H2/A-11: Splice every slot of a CNode being replaced out of the
+    derivation tree (`spliceDeletedCdtNode`, the delete's own tree step), so no
+    edge outlives the CNode: each slot's children are derived from its parent
+    instead. -/
 def detachCNodeSlots (st : SystemState) (cnodeId : SeLe4n.ObjId) (cn : CNode) : SystemState :=
   cn.foldCells st (fun acc slot _cap =>
-    detachDestroyedSlot acc { cnode := cnodeId, slot := slot })
+    spliceDeletedCdtNode acc { cnode := cnodeId, slot := slot })
+
+/-- **`detachCNodeSlots` writes the tree alone**: every other field is the
+pre-state's. -/
+theorem detachCNodeSlots_shape (st : SystemState) (cnodeId : SeLe4n.ObjId) (cn : CNode) :
+    ∃ cdt, detachCNodeSlots st cnodeId cn = { st with cdt := cdt } := by
+  unfold detachCNodeSlots
+  exact SeLe4n.Model.CNode.foldCells_preserves cn st _
+    (fun acc => ∃ cdt, acc = { st with cdt := cdt })
+    ⟨_, rfl⟩ (fun acc slot _cap _ ⟨c, hAcc⟩ => by subst hAcc; exact ⟨_, rfl⟩)
 
 /-- `detachCNodeSlots` preserves the objects store (CDT-only operation). -/
 theorem detachCNodeSlots_objects_eq
     (st : SystemState) (cnodeId : SeLe4n.ObjId) (cn : CNode) :
     (detachCNodeSlots st cnodeId cn).objects = st.objects := by
-  simp only [detachCNodeSlots]
-  exact SeLe4n.Model.CNode.foldCells_preserves cn st _ (fun acc => acc.objects = st.objects)
-    rfl (fun acc slot _cap _ hAcc => by
-      simp only [detachDestroyedSlot]
-      exact (detachSlotFromCdt_objects_eq _ { cnode := cnodeId, slot := slot }).trans
-        ((spliceDeletedCdtNode_objects _ _).trans hAcc))
+  obtain ⟨_, h⟩ := detachCNodeSlots_shape st cnodeId cn; rw [h]
 
 /-- `detachCNodeSlots` preserves lifecycle metadata (CDT-only operation). -/
 theorem detachCNodeSlots_lifecycle_eq
     (st : SystemState) (cnodeId : SeLe4n.ObjId) (cn : CNode) :
     (detachCNodeSlots st cnodeId cn).lifecycle = st.lifecycle := by
-  simp only [detachCNodeSlots]
-  exact SeLe4n.Model.CNode.foldCells_preserves cn st _ (fun acc => acc.lifecycle = st.lifecycle)
-    rfl (fun acc slot _cap _ hAcc => by
-      simp only [detachDestroyedSlot]
-      exact (detachSlotFromCdt_lifecycle_eq _ { cnode := cnodeId, slot := slot }).trans
-        ((spliceDeletedCdtNode_lifecycle _ _).trans hAcc))
+  obtain ⟨_, h⟩ := detachCNodeSlots_shape st cnodeId cn; rw [h]
 
 -- WS-SM SM6.D (PR #827 review #6): `replyIsStashed` (the server-first stash query —
 -- "does any blocked receiver reserve `rid`?") moved down to
@@ -1978,7 +1967,7 @@ def lifecyclePreRetypeCleanup (st : SystemState) (target : SeLe4n.ObjId)
     --
     -- Each slot leaves the derivation tree as a deleted one does: its node is
     -- spliced out and its children re-derived from its parent
-    -- (`detachDestroyedSlot`), so a retype, like a delete, never depends on what
+    -- (`spliceDeletedCdtNode`), so a retype, like a delete, never depends on what
     -- was derived from the slots it destroys.
     --
     -- Both target shapes then detach, which is why this arm no longer reads
@@ -2238,46 +2227,20 @@ theorem cleanupTcbReferences_flat_subset
 theorem detachCNodeSlots_scheduler_eq
     (st : SystemState) (cnodeId : SeLe4n.ObjId) (cn : CNode) :
     (detachCNodeSlots st cnodeId cn).scheduler = st.scheduler := by
-  simp only [detachCNodeSlots]
-  exact SeLe4n.Model.CNode.foldCells_preserves cn st _ (fun acc => acc.scheduler = st.scheduler)
-    rfl (fun acc slot _cap _ hAcc => by
-      have : (detachDestroyedSlot acc { cnode := cnodeId, slot := slot }).scheduler
-          = acc.scheduler := by
-        simp only [detachDestroyedSlot]
-        unfold SystemState.detachSlotFromCdt; split <;> exact spliceDeletedCdtNode_scheduler _ _
-      exact this.trans hAcc)
+  obtain ⟨_, h⟩ := detachCNodeSlots_shape st cnodeId cn; rw [h]
 
-/-- WS-SM SM8.B.2: CDT cleanup writes no register bank.
-
-The `machine` companion of `detachCNodeSlots_scheduler_eq`, by the same
-`RHTable.fold_preserves` argument: each slot's step (`detachDestroyedSlot`) rewrites
-the CDT maps and the tree and nothing else. -/
+/-- WS-SM SM8.B.2: CDT cleanup writes no register bank. -/
 theorem detachCNodeSlots_machine_eq
     (st : SystemState) (cnodeId : SeLe4n.ObjId) (cn : CNode) :
     (detachCNodeSlots st cnodeId cn).machine = st.machine := by
-  simp only [detachCNodeSlots]
-  exact SeLe4n.Model.CNode.foldCells_preserves cn st _
-    (fun acc => acc.machine = st.machine)
-    rfl (fun acc slot _cap _ hAcc => by
-      have : (detachDestroyedSlot acc { cnode := cnodeId, slot := slot }).machine
-          = acc.machine := by
-        simp only [detachDestroyedSlot]
-        unfold SystemState.detachSlotFromCdt; split <;> exact spliceDeletedCdtNode_machine _ _
-      exact this.trans hAcc)
+  obtain ⟨_, h⟩ := detachCNodeSlots_shape st cnodeId cn; rw [h]
 
 /-- WS-SM SM7.B: CDT cleanup is CDT-only — the TLB-shootdown state is
 framed. -/
 theorem detachCNodeSlots_tlbShootdown_eq
     (st : SystemState) (cnodeId : SeLe4n.ObjId) (cn : CNode) :
     (detachCNodeSlots st cnodeId cn).tlbShootdown = st.tlbShootdown := by
-  simp only [detachCNodeSlots]
-  exact SeLe4n.Model.CNode.foldCells_preserves cn st _
-    (fun acc => acc.tlbShootdown = st.tlbShootdown)
-    rfl (fun acc slot _cap _ hAcc => by
-      simp only [detachDestroyedSlot]
-      exact (SystemState.detachSlotFromCdt_tlbShootdown_eq _
-        { cnode := cnodeId, slot := slot }).trans
-        ((spliceDeletedCdtNode_tlbShootdown _ _).trans hAcc))
+  obtain ⟨_, h⟩ := detachCNodeSlots_shape st cnodeId cn; rw [h]
 
 /-- Cleanup preserves the scheduler state. -/
 theorem cleanupTcbReferences_scheduler_eq_removeRunnableFromAllCores

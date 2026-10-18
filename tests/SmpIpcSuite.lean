@@ -1248,13 +1248,9 @@ private def stCapBase : SystemState :=
     |>.withRunnable [capCaller]
     |>.build)
 
-/-- Mint the payload slot's derivation node exactly as `resolveExtraCaps` does,
-and keep the state that binding lives in: the message names the NODE, and the
-transfer installs only while some slot still points at it. -/
-private def capSourceMint : SeLe4n.Model.CdtNodeId × SystemState :=
-  SystemState.ensureCdtNodeForSlot stCapBase { cnode := capCallerCn, slot := payloadSrcSlot }
-/-- The base state with the payload slot's derivation node bound. -/
-private def stCapBound : SystemState := capSourceMint.2
+/-- The base state: the payload slot is its own derivation node, so the
+transfer needs no binding step before the call resolves it. -/
+private def stCapBound : SystemState := stCapBase
 /-- The caller's frame names the payload slot as its one extra capability
 address, as the trap entry saves it; the call resolves it at the rendezvous. -/
 private def capCallerFramed (st : SystemState) : SystemState :=

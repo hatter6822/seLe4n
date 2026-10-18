@@ -1176,9 +1176,7 @@ def untypedRetypeObject (src : CSpaceAddr) (childId : SeLe4n.ObjId)
             match cspaceInsertSlot dst (req.capability childId) (req.scrub st1 ut) with
             | .error e => .error e
             | .ok ((), st2) =>
-              let (srcNode, stSrc) := SystemState.ensureCdtNodeForSlot st2 src
-              let (dstNode, stDst) := SystemState.ensureCdtNodeForSlot stSrc dst
-              .ok ((), { stDst with cdt := stDst.cdt.addEdge srcNode dstNode .retype })
+              .ok ((), { st2 with cdt := st2.cdt.addEdge src dst .retype })
       | _ => .error .invalidCapability
 
 
@@ -1219,9 +1217,7 @@ theorem untypedRetypeObject_ok_decompose
       retypeFromUntyped src untypedId childId (req.object untypedId ut) req.size st
         = .ok ((), st1) ∧
       cspaceInsertSlot dst (req.capability childId) (req.scrub st1 ut) = .ok ((), st2) ∧
-      st' = (let p1 := SystemState.ensureCdtNodeForSlot st2 src
-             let p2 := SystemState.ensureCdtNodeForSlot p1.snd dst
-             { p2.snd with cdt := p2.snd.cdt.addEdge p1.fst p2.fst .retype }) := by
+      st' = { st2 with cdt := st2.cdt.addEdge src dst .retype } := by
   unfold untypedRetypeObject at hStep
   cases hAdm : req.admissible st
   · simp only [hAdm, Bool.not_false, ↓reduceIte] at hStep; cases hStep
@@ -1492,8 +1488,8 @@ theorem untypedRetypeObject_ok_carved
     rw [cspaceInsertSlot_preserves_objects_ne _ _ _ _ _ hNe hInvZ hIns,
       CarveRequest.scrub_objects]; exact hAt1
   refine ⟨untypedId, ut, st1, hObj, hRt, ?_, cn, ?_⟩
-  · simp only [SystemState.ensureCdtNodeForSlot_objects_eq, hAt2]
-  · simp only [SystemState.ensureCdtNodeForSlot_objects_eq, hCnPost]
+  · exact hAt2
+  · exact hCnPost
 
 /-- **WS-BP BP7.1: a frame carve's payoff** — the frame is the page at the
 untyped's watermark, inside the untyped, on a page boundary and of its memory

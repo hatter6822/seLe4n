@@ -219,17 +219,6 @@ private theorem cdt_only_preserves_projection'
   · exact projectMemory_eq_of_memory_eq ctx observer st' st (by rw [hMachine])
   · exact projectServiceRegistry_eq_of_services_eq ctx observer st' st hServices
 
-/-- ensureCdtNodeForSlot preserves projection (modifies only CDT). -/
-private theorem ensureCdtNodeForSlot_preserves_projection'
-    (ctx : LabelingContext) (observer : IfObserver)
-    (st : SystemState) (ref : SlotRef) :
-    projectState ctx observer (SystemState.ensureCdtNodeForSlot st ref).2 =
-      projectState ctx observer st := by
-  unfold SystemState.ensureCdtNodeForSlot
-  cases st.cdtSlotNode[ref]? with
-  | some _ => rfl
-  | none => exact cdt_only_preserves_projection' ctx observer st _ rfl rfl rfl rfl rfl rfl
-
 -- ============================================================================
 -- WS-F3/F-20: Enforcement-NI bridge theorems
 -- ============================================================================
@@ -274,31 +263,14 @@ theorem cspaceMintChecked_NI
       have hMintLow := cspaceMint_preserves_lowEquivalent ctx observer src dst rights badge
         s₁ s₂ pair₁.2 pair₂.2 hLow hSrcHigh hDstHigh hObjInv₁ hObjInv₂
         hMint₁ hMint₂
-      -- CDT pipeline (ensureCdtNodeForSlot × 2 + addEdge) only modifies CDT
-      -- fields — none appear in projectState. Use early-defined helpers.
+      -- The CDT edge only modifies the CDT, which `projectState` does not read.
       unfold lowEquivalent at hMintLow ⊢
-      -- Each side: projectState ctx observer { stDst with cdt := ... }
-      -- Chain: {with cdt} → ensureCdt(dst) → ensureCdt(src) → original
       calc projectState ctx observer _
-          = projectState ctx observer
-              ((SystemState.ensureCdtNodeForSlot
-                (SystemState.ensureCdtNodeForSlot pair₁.2 src).2 dst).2) := by
-            exact cdt_only_preserves_projection' ctx observer _ _ rfl rfl rfl rfl rfl rfl
-        _ = projectState ctx observer
-              (SystemState.ensureCdtNodeForSlot pair₁.2 src).2 :=
-            ensureCdtNodeForSlot_preserves_projection' ctx observer _ dst
-        _ = projectState ctx observer pair₁.2 :=
-            ensureCdtNodeForSlot_preserves_projection' ctx observer _ src
+          = projectState ctx observer pair₁.2 :=
+            cdt_only_preserves_projection' ctx observer _ _ rfl rfl rfl rfl rfl rfl
         _ = projectState ctx observer pair₂.2 := hMintLow
-        _ = projectState ctx observer
-              (SystemState.ensureCdtNodeForSlot pair₂.2 src).2 :=
-            (ensureCdtNodeForSlot_preserves_projection' ctx observer _ src).symm
-        _ = projectState ctx observer
-              ((SystemState.ensureCdtNodeForSlot
-                (SystemState.ensureCdtNodeForSlot pair₂.2 src).2 dst).2) :=
-            (ensureCdtNodeForSlot_preserves_projection' ctx observer _ dst).symm
-        _ = projectState ctx observer _ := by
-            exact (cdt_only_preserves_projection' ctx observer _ _ rfl rfl rfl rfl rfl rfl).symm
+        _ = projectState ctx observer _ :=
+            (cdt_only_preserves_projection' ctx observer _ _ rfl rfl rfl rfl rfl rfl).symm
 
 -- ============================================================================
 -- WS-H8/H-07: Enforcement-NI bridge theorems for new wrappers
@@ -1178,15 +1150,7 @@ theorem cspaceDeleteSlotCore_preserves_projection
       | error e => simp [hStore] at hStep
       | ok pair₁ =>
         simp only [hStore] at hStep; cases hStep
-        -- detachSlotFromCdt only modifies CDT (not in projection)
-        have hDetach : projectState ctx observer (SystemState.detachSlotFromCdt pair₁.2 addr) =
-            projectState ctx observer pair₁.2 := by
-          simp only [projectState, SystemState.detachSlotFromCdt]
-          split
-          · rfl
-          · congr 1
-        rw [hDetach,
-            storeObject_preserves_projection ctx observer st pair₁.2 addr.cnode _ hAddrHigh hObjInv hStore]
+        exact storeObject_preserves_projection ctx observer st pair₁.2 addr.cnode _ hAddrHigh hObjInv hStore
 
 /-- WS-H9: cspaceDeleteSlot at a non-observable CNode preserves projection (guarded wrapper). -/
 theorem cspaceDeleteSlot_preserves_projection
@@ -1197,9 +1161,8 @@ theorem cspaceDeleteSlot_preserves_projection
     (hStep : cspaceDeleteSlot addr st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
   obtain ⟨stC, hCore, rfl⟩ := cspaceDeleteSlot_ok_decompose addr st st' hStep
-  have hLeaf : projectState ctx observer (spliceDeletedCdtNode stC (st.lookupCdtNodeOfSlot addr)) =
-      projectState ctx observer stC := by
-    cases st.lookupCdtNodeOfSlot addr <;> rfl
+  have hLeaf : projectState ctx observer (spliceDeletedCdtNode stC addr) =
+      projectState ctx observer stC := rfl
   rw [hLeaf]
   exact cspaceDeleteSlotCore_preserves_projection ctx observer addr st stC hAddrHigh hObjInv hCore
 
@@ -1246,20 +1209,6 @@ theorem cspaceRevoke_preserves_projection
     · rfl
     · rw [List.filter_cons]; simp [hAddrHigh]
 
--- AF5-I (AF-48): Duplicate `cdt_only_preserves_projection` and
--- `ensureCdtNodeForSlot_preserves_projection` removed. The canonical
--- definitions are `cdt_only_preserves_projection'` and
--- `ensureCdtNodeForSlot_preserves_projection'` (defined earlier in this file).
-
-/-- WS-H9: attachSlotToCdtNode preserves projection (modifies only CDT). -/
-private theorem attachSlotToCdtNode_preserves_projection
-    (ctx : LabelingContext) (observer : IfObserver)
-    (st : SystemState) (ref : SlotRef) (node : CdtNodeId) :
-    projectState ctx observer (SystemState.attachSlotToCdtNode st ref node) =
-      projectState ctx observer st := by
-  exact cdt_only_preserves_projection' ctx observer st _
-    (SystemState.attachSlotToCdtNode_objects_eq st ref node) rfl rfl rfl rfl rfl
-
 /-- WS-H9: cspaceInsertSlot at non-observable CNode preserves projection. -/
 private theorem cspaceInsertSlot_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
@@ -1299,7 +1248,7 @@ private theorem cspaceInsertSlot_preserves_projection
 
 /-- WS-H9: cspaceCopy at non-observable CNodes preserves projection.
 cspaceCopy = cspaceLookupSlot (read-only) + cspaceInsertSlot (at non-obs dst)
-+ ensureCdtNodeForSlot × 2 (CDT only) + CDT.addEdge (CDT only). -/
++ CDT.addEdge between the two slots (CDT only). -/
 theorem cspaceCopy_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (src dst : CSpaceAddr) (st st' : SystemState)
@@ -1334,8 +1283,6 @@ theorem cspaceCopy_preserves_projection
           projectState ctx observer stx := by
         intro stx _; simp only [projectState]; congr 1
       rw [hAddEdge,
-          ensureCdtNodeForSlot_preserves_projection' ctx observer _ dst,
-          ensureCdtNodeForSlot_preserves_projection' ctx observer _ src,
           cspaceInsertSlot_preserves_projection ctx observer dst cap.withoutMapping st stIns hDstHigh hObjInv hInsert]
 
 /-- WS-H9: cspaceCopy preserves low-equivalence. -/
@@ -1394,25 +1341,16 @@ theorem cspaceMove_preserves_projection
       | ok pair₃ =>
         rcases pair₃ with ⟨_, stDel⟩
         simp only [hDelete] at hStep
-        -- Split on srcNode? match (none → stDel, some → attachSlotToCdtNode stDel dst srcNode)
-        split at hStep
-        · -- none: st' = stDel
-          simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-          rw [← hStep.2]
-          have hObjInvIns := cspaceInsertSlot_preserves_objects_invExt st stIns dst cap hObjInv hInsert
-          rw [cspaceDeleteSlotCore_preserves_projection ctx observer src stIns stDel hSrcHigh hObjInvIns hDelete,
-              cspaceInsertSlot_preserves_projection ctx observer dst cap st stIns hDstHigh hObjInv hInsert]
-        · -- some srcNode: attachSlotToCdtNode only modifies CDT
-          next srcNode =>
-          simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-          rw [← hStep.2]
-          have hAttach : ∀ stx nodeId, projectState ctx observer (SystemState.attachSlotToCdtNode stx dst nodeId) =
-              projectState ctx observer stx := by
-            intro stx _; simp only [projectState, SystemState.attachSlotToCdtNode]; congr 1
-          have hObjInvIns := cspaceInsertSlot_preserves_objects_invExt st stIns dst cap hObjInv hInsert
-          rw [hAttach,
-              cspaceDeleteSlotCore_preserves_projection ctx observer src stIns stDel hSrcHigh hObjInvIns hDelete,
-              cspaceInsertSlot_preserves_projection ctx observer dst cap st stIns hDstHigh hObjInv hInsert]
+        -- The source's edges move to the destination (CDT only).
+        simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+        rw [← hStep.2]
+        have hMoveNode : ∀ stx cdt', projectState ctx observer { stx with cdt := cdt' } =
+            projectState ctx observer stx := by
+          intro stx _; simp only [projectState]; congr 1
+        have hObjInvIns := cspaceInsertSlot_preserves_objects_invExt st stIns dst cap hObjInv hInsert
+        rw [hMoveNode,
+            cspaceDeleteSlotCore_preserves_projection ctx observer src stIns stDel hSrcHigh hObjInvIns hDelete,
+            cspaceInsertSlot_preserves_projection ctx observer dst cap st stIns hDstHigh hObjInv hInsert]
 
 /-- WS-H9: cspaceMove preserves low-equivalence. -/
 private theorem cspaceMove_preserves_lowEquivalent
@@ -3058,7 +2996,7 @@ theorem lifecycleRevokeDeleteRetype_preserves_projection
     obtain ⟨_, _, stS, _, _, hS, rfl⟩ := cspaceRevoke_ok_decompose cleanup st stRevoked hRevoke
     rw [detachRevokedSlots_objects]
     exact storeObject_preserves_objects_invExt st stS cleanup.cnode _ hObjInv hS
-  -- Propagate invExt through cspaceDeleteSlot: cspaceDeleteSlot does storeObject + detachSlotFromCdt
+  -- Propagate invExt through cspaceDeleteSlot: storeObject, then a CDT-only splice
   have hObjInvDeleted : stDeleted.objects.invExt := by
     obtain ⟨stC, hCoreDel, rfl⟩ := cspaceDeleteSlot_ok_decompose _ _ _ hDelete
     rw [spliceDeletedCdtNode_objects]
@@ -3076,10 +3014,7 @@ theorem lifecycleRevokeDeleteRetype_preserves_projection
             simp only [hSt] at hCoreDel
             have hInvPair := storeObject_preserves_objects_invExt stRevoked pair₁.2 cleanup.cnode _ hObjInvRevoked hSt
             cases hCoreDel
-            -- detachSlotFromCdt only modifies CDT
-            simp only [SystemState.detachSlotFromCdt]; split
-            · exact hInvPair
-            · exact hInvPair
+            exact hInvPair
   rw [storeObject_preserves_projection ctx observer stDeleted st' target newObj hTargetHigh hObjInvDeleted hStore,
       cspaceDeleteSlot_preserves_projection ctx observer cleanup stRevoked stDeleted hCleanupHigh hObjInvRevoked hDelete,
       cspaceRevoke_preserves_projection ctx observer cleanup st stRevoked hCleanupHigh hObjInv hRevoke]

@@ -74,7 +74,7 @@ theorem storeTcbQueueLinks_cdt_eq
     {prev : Option SeLe4n.ThreadId} {pprev : Option QueuePPrev}
     {next : Option SeLe4n.ThreadId}
     (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st') :
-    st'.cdt = st.cdt ∧ st'.cdtNodeSlot = st.cdtNodeSlot :=
+    st'.cdt = st.cdt :=
   modifyTcb_cdt_eq hStep
 
 /-- WS-F1: storeTcbQueueLinks does not modify the scheduler. -/
@@ -617,7 +617,7 @@ theorem endpointQueuePopHead_cdt_eq
     {endpointId : SeLe4n.ObjId} {isReceiveQ : Bool}
     {st st' : SystemState} {tid : SeLe4n.ThreadId} {headTcb : TCB}
     (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (tid, headTcb, st')) :
-    st'.cdt = st.cdt ∧ st'.cdtNodeSlot = st.cdtNodeSlot := by
+    st'.cdt = st.cdt := by
   unfold endpointQueuePopHead SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
@@ -639,8 +639,8 @@ theorem endpointQueuePopHead_cdt_eq
           | error e => simp
           | ok pair =>
             obtain ⟨_, s1⟩ := pair
-            have e0 : s1.cdt = st.cdt ∧ s1.cdtNodeSlot = st.cdtNodeSlot :=
-              ⟨storeObject_cdt_eq _ _ _ _ hStore, storeObject_cdtNodeSlot_eq _ _ _ _ hStore⟩
+            have e0 : s1.cdt = st.cdt :=
+              storeObject_cdt_eq _ _ _ _ hStore
             cases hNext : tcb.queueNext with
             | none =>
               simp only []
@@ -650,7 +650,7 @@ theorem endpointQueuePopHead_cdt_eq
                 simp only [Except.ok.injEq, Prod.mk.injEq]
                 intro ⟨_, _, rfl⟩
                 have e1 := storeTcbQueueLinks_cdt_eq hFinal
-                exact ⟨e1.1.trans e0.1, e1.2.trans e0.2⟩
+                exact e1.trans e0
             | some nextTid =>
               simp only []
               cases hLookupNext : lookupTcb s1 nextTid with
@@ -669,7 +669,7 @@ theorem endpointQueuePopHead_cdt_eq
                     simp only [Except.ok.injEq, Prod.mk.injEq]
                     intro ⟨_, _, rfl⟩
                     have e2 := storeTcbQueueLinks_cdt_eq hFinal
-                    exact ⟨(e2.1.trans e1.1).trans e0.1, (e2.2.trans e1.2).trans e0.2⟩
+                    exact (e2.trans e1).trans e0
 
 /-- endpointQueueEnqueue preserves objects.invExt. -/
 theorem endpointQueueEnqueue_preserves_objects_invExt
@@ -792,7 +792,7 @@ theorem endpointQueueEnqueue_cdt_eq
     {endpointId : SeLe4n.ObjId} {isReceiveQ : Bool}
     {tid : SeLe4n.ThreadId} {st st' : SystemState}
     (hStep : endpointQueueEnqueue endpointId isReceiveQ tid st = .ok st') :
-    st'.cdt = st.cdt ∧ st'.cdtNodeSlot = st.cdtNodeSlot := by
+    st'.cdt = st.cdt := by
   unfold endpointQueueEnqueue SystemState.getObject? at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
@@ -819,8 +819,7 @@ theorem endpointQueueEnqueue_cdt_eq
                 simp only []
                 intro hStep
                 have e1 := storeTcbQueueLinks_cdt_eq hStep
-                exact ⟨e1.1.trans (storeObject_cdt_eq _ _ _ _ hStore),
-                  e1.2.trans (storeObject_cdtNodeSlot_eq _ _ _ _ hStore)⟩
+                exact e1.trans (storeObject_cdt_eq _ _ _ _ hStore)
             | some tailTid =>
               cases hLookupT : lookupTcb st tailTid
               · simp [hLookupT]
@@ -838,8 +837,7 @@ theorem endpointQueueEnqueue_cdt_eq
                     intro hStep
                     have e1 := storeTcbQueueLinks_cdt_eq hLink1
                     have e2 := storeTcbQueueLinks_cdt_eq hStep
-                    exact ⟨(e2.1.trans e1.1).trans (storeObject_cdt_eq _ _ _ _ hStore),
-                      (e2.2.trans e1.2).trans (storeObject_cdtNodeSlot_eq _ _ _ _ hStore)⟩
+                    exact (e2.trans e1).trans (storeObject_cdt_eq _ _ _ _ hStore)
 
 -- ============================================================================
 -- Z6-D: Mid-queue thread removal for timeout unblocking
