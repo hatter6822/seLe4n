@@ -1733,27 +1733,29 @@ end CNode
 
 /-- WS-H13/WS-N4: `BEq` instance for `CNode` using entry-wise comparison on the
 RHTable-backed slots. Two CNodes are equal iff their depth, guardWidth,
-guardValue, radixWidth, and all slot entries agree. -/
+guardValue, radixWidth, all slot entries and (WS-ZA ZA5.3 part 4) all derivation
+link words agree: a comparison that ignored the links would pass a CNode whose
+links a step wrote wrongly. -/
 
 instance : BEq CNode where
   beq a b :=
     a.depth == b.depth && a.guardWidth == b.guardWidth &&
     a.guardValue == b.guardValue && a.radixWidth == b.radixWidth &&
-    decide (a.cells = b.cells)
+    decide (a.cells = b.cells) && decide (a.links = b.links)
 
 /-- WS-H13: CNode BEq soundness — when BEq returns true, the two CNodes have
-equal depth, guardWidth, guardValue, radixWidth, and the same capability at
-every slot (WS-ZA ZA5.3: the two slot arrays are equal).
+equal depth, guardWidth, guardValue, radixWidth, the same capability at
+every slot (WS-ZA ZA5.3: the two slot arrays are equal) and the same link words.
 
 WS-SM SM3.A.3 audit-pass note: written with `obtain` so that a future per-CNode
 field added to `BEq` does not silently shift positional indices. -/
 theorem CNode.beq_sound (a b : CNode) (h : (a == b) = true) :
     a.depth = b.depth ∧ a.guardWidth = b.guardWidth ∧
     a.guardValue = b.guardValue ∧ a.radixWidth = b.radixWidth ∧
-    ∀ s, a.lookup s = b.lookup s := by
+    (∀ s, a.lookup s = b.lookup s) ∧ a.links = b.links := by
   simp only [BEq.beq, Bool.and_eq_true_iff, decide_eq_true_eq] at h
-  obtain ⟨⟨⟨⟨hDepth, hGuardWidth⟩, hGuardValue⟩, hRadixWidth⟩, hCells⟩ := h
-  refine ⟨hDepth, hGuardWidth, hGuardValue, hRadixWidth, fun s => ?_⟩
+  obtain ⟨⟨⟨⟨⟨hDepth, hGuardWidth⟩, hGuardValue⟩, hRadixWidth⟩, hCells⟩, hLinks⟩ := h
+  refine ⟨hDepth, hGuardWidth, hGuardValue, hRadixWidth, fun s => ?_, hLinks⟩
   rw [CNode.lookup_eq_lookupCells]; simp only [CNode.lookupCells, hCells]
 
 -- ============================================================================
