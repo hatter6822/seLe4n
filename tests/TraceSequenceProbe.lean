@@ -59,9 +59,7 @@ def probeBaseState (threadCount : Nat) : SystemState :=
   let cnodeSlots : List (SeLe4n.Slot × Capability) :=
     (List.range threadCount).map fun n =>
       (SeLe4n.Slot.ofNat n, ({ target := .object probeEndpointId, rights := AccessRightSet.ofList [.read, .write], badge := none } : Capability))
-  let cnodeObj : KernelObject := .cnode {
-    depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8,
-    slots := SeLe4n.UniqueSlotMap.ofListWF cnodeSlots }
+  let cnodeObj : KernelObject := .cnode (CNode.ofList 8 0 0 8 cnodeSlots)
   let allEntries :=
     (probeEndpointId, KernelObject.endpoint {}) ::
     (probeNotificationId, KernelObject.notification {

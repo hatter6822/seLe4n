@@ -880,9 +880,7 @@ private def sd050_bindNotification_requires_ntfn_cap : IO Unit := do
       (caller.toObjId, .tcb { (mkTcb 1) with cspaceRoot := cnId }),
       (tgtTcb, .tcb { (mkTcb 70) with cspaceRoot := cnId }),
       (ntfnId, .notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }),
-      (cnId, .cnode {
-          depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-          slots := SeLe4n.UniqueSlotMap.ofListWF slots })
+      (cnId, .cnode (CNode.ofList 4 0 0 4 slots))
     ]
   let decoded : SyscallDecodeResult :=
     { capAddr := SeLe4n.CPtr.ofNat 0,                 -- primary TCB cap at slot 0
@@ -926,10 +924,8 @@ private def dispatcherRefusesCallerNotCurrentOnCore : IO Unit := do
       (caller.toObjId, .tcb { (mkTcb 1) with cspaceRoot := cnId }),
       (other.toObjId, .tcb { (mkTcb 70) with cspaceRoot := cnId }),
       (ntfnId, .notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }),
-      (cnId, .cnode {
-          depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-          slots := SeLe4n.UniqueSlotMap.ofListWF
-            [(SeLe4n.Slot.ofNat 0, tcbCap), (SeLe4n.Slot.ofNat 1, ntfnCap)] })
+      (cnId, .cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF
+            [(SeLe4n.Slot.ofNat 0, tcbCap), (SeLe4n.Slot.ofNat 1, ntfnCap)])))
     ]
   let decoded : SyscallDecodeResult :=
     { capAddr := SeLe4n.CPtr.ofNat 0,
@@ -986,10 +982,8 @@ private def sd054_idleTargetCapabilityUnresolvable : IO Unit := do
     mkState [
       (caller.toObjId, .tcb { (mkTcb 1) with cspaceRoot := cnId }),
       (tgtTcb, .tcb { (mkTcb 70) with cspaceRoot := cnId }),
-      (cnId, .cnode {
-          depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-          slots := SeLe4n.UniqueSlotMap.ofListWF
-            [(SeLe4n.Slot.ofNat 0, idleCap), (SeLe4n.Slot.ofNat 1, tcbCap)] })
+      (cnId, .cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF
+            [(SeLe4n.Slot.ofNat 0, idleCap), (SeLe4n.Slot.ofNat 1, tcbCap)])))
     ]
   let gate (slot : Nat) : SyscallGate :=
     { callerId := caller, cspaceRoot := cnId, capAddr := SeLe4n.CPtr.ofNat slot,
@@ -1437,12 +1431,9 @@ private def sd058_mintReplyCapThroughTheSyscallGate : IO Unit := do
       (replyObj, .reply { replyId := rid }),
       (ntfnObj, .notification
         { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }),
-      (cnId, .cnode {
-          depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-          slots := SeLe4n.UniqueSlotMap.ofListWF
-            [ (SeLe4n.Slot.ofNat 0, primary)
+      (cnId, .cnode (CNode.ofList 4 0 0 4 [ (SeLe4n.Slot.ofNat 0, primary)
             , (SeLe4n.Slot.ofNat 1, replyObjectCap)
-            , (SeLe4n.Slot.ofNat 3, ntfnObjectCap) ] })
+            , (SeLe4n.Slot.ofNat 3, ntfnObjectCap) ]))
     ]
   -- src = slot 1, dst = slot 2 (empty).  Same two-register ABI as `.cspaceCopy`.
   let decoded (srcSlot dstSlot : Nat) : SyscallDecodeResult :=
@@ -1573,18 +1564,13 @@ private def sd059_cspaceRevokeThroughTheSyscallGate : IO Unit := do
       (caller.toObjId, .tcb { (mkTcb 1) with cspaceRoot := cnA }),
       (ntfnObj, .notification
         { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }),
-      (cnA, .cnode {
-          depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-          slots := SeLe4n.UniqueSlotMap.ofListWF
-            [ (SeLe4n.Slot.ofNat 0, primary)
+      (cnA, .cnode (CNode.ofList 4 0 0 4 [ (SeLe4n.Slot.ofNat 0, primary)
             , (SeLe4n.Slot.ofNat 1, ntfnCap)
             -- An INDEPENDENT capability to the same object: no CDT edge links it
             -- to slot 1, so revoking slot 1 must leave it alone.
             , (SeLe4n.Slot.ofNat 2, ntfnCap)
-            , (SeLe4n.Slot.ofNat 3, cnBCap) ] }),
-      (cnB, .cnode {
-          depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-          slots := SeLe4n.UniqueSlotMap.ofListWF [] })
+            , (SeLe4n.Slot.ofNat 3, cnBCap) ])),
+      (cnB, .cnode (CNode.ofList 4 0 0 4 []))
     ]
   let cnodeCapWrite : Capability :=
     { target := .object cnA, rights := AccessRightSet.ofList [.read, .write] }
@@ -1726,11 +1712,8 @@ private def sd060_schedContextBind_requires_tcb_capability : IO Unit := do
       (caller.toObjId, .tcb { (mkTcb 1) with cspaceRoot := cnId }),
       (tgtTcb, .tcb { (mkTcb 70) with cspaceRoot := cnId }),
       (scObj, .schedContext { SeLe4n.Kernel.SchedContext.empty scId with priority := ⟨20⟩ }),
-      (cnId, .cnode {
-          depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-          slots := SeLe4n.UniqueSlotMap.ofListWF
-            [(SeLe4n.Slot.ofNat 0, scCap), (SeLe4n.Slot.ofNat 1, tcbCap),
-             (SeLe4n.Slot.ofNat 2, tcbCapRO), (SeLe4n.Slot.ofNat 3, cnCap)] })
+      (cnId, .cnode (CNode.ofList 4 0 0 4 [(SeLe4n.Slot.ofNat 0, scCap), (SeLe4n.Slot.ofNat 1, tcbCap),
+             (SeLe4n.Slot.ofNat 2, tcbCapRO), (SeLe4n.Slot.ofNat 3, cnCap)]))
     ]
   let decoded (tcbCPtr : Nat) : SyscallDecodeResult :=
     { capAddr := SeLe4n.CPtr.ofNat 0,                 -- the SchedContext cap at slot 0
@@ -1809,10 +1792,8 @@ private def sd061_retype_never_mints_or_destroys_memory_authority : IO Unit := d
       (caller.toObjId, .tcb { (mkTcb 1) with cspaceRoot := cnId }),
       (epObj, .endpoint {}),
       (frObj, .frame { base := SeLe4n.PAddr.ofNat 0x20000 }),
-      (cnId, .cnode {
-          depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-          slots := SeLe4n.UniqueSlotMap.ofListWF
-            [(SeLe4n.Slot.ofNat 0, epCap), (SeLe4n.Slot.ofNat 1, frCap)] }) ]
+      (cnId, .cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF
+            [(SeLe4n.Slot.ofNat 0, epCap), (SeLe4n.Slot.ofNat 1, frCap)]))) ]
     lifecycleObjectTypes := [
       (caller.toObjId, .tcb), (epObj, .endpoint), (frObj, .frame), (cnId, .cnode) ] }
   let st : SystemState := builder.buildChecked

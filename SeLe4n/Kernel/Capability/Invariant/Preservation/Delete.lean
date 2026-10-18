@@ -198,10 +198,10 @@ theorem detachRevokedSlots_preserves (st : SystemState) (cnodeId : SeLe4n.ObjId)
     cspaceSlotCountBounded st' ∧ cdtCompleteness st' ∧ cdtAcyclicity st' ∧
       cspaceDepthConsistent st' ∧ st'.objects.invExt ∧ st'.cdtNodeSlot.invExtK := by
   unfold detachRevokedSlots
-  refine SeLe4n.Kernel.RobinHood.RHTable.fold_preserves cn.slots.table st _
+  refine SeLe4n.Model.CNode.foldCells_preserves cn st _
     (fun acc => cspaceSlotCountBounded acc ∧ cdtCompleteness acc ∧ cdtAcyclicity acc ∧
       cspaceDepthConsistent acc ∧ acc.objects.invExt ∧ acc.cdtNodeSlot.invExtK)
-    ⟨hBnd, hComp, hAcyc, hDepth, hObjInv, hK⟩ (fun acc slot cap h => ?_)
+    ⟨hBnd, hComp, hAcyc, hDepth, hObjInv, hK⟩ (fun acc slot cap _ h => ?_)
   split
   · exact h
   · obtain ⟨h1, h2, h3, h4, h5, h6⟩ := h

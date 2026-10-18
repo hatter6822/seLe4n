@@ -216,15 +216,13 @@ private def scenario (cap : Capability) : Option SystemState :=
       |>.withObject frameDev (.frame { base := SeLe4n.PAddr.ofNat 0xB0000, isDevice := true })
       |>.withObject frameOdd (.frame { base := SeLe4n.PAddr.ofNat 0xA0001 })
       |>.withObject attackerCn (.cnode
-          { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-            slots := SeLe4n.UniqueSlotMap.ofListWF
-              [(SeLe4n.Slot.ofNat 0, cap),
+          (CNode.ofList 4 0 0 4 [(SeLe4n.Slot.ofNat 0, cap),
                (SeLe4n.Slot.ofNat slotFrameRO, frameCapTo frameA [.read]),
                (SeLe4n.Slot.ofNat slotFrameRW, frameCapTo frameA [.read, .write]),
                (SeLe4n.Slot.ofNat slotFrameNoRead, frameCapTo frameA [.write]),
                (SeLe4n.Slot.ofNat slotFrameDev, frameCapTo frameDev [.read]),
                (SeLe4n.Slot.ofNat slotFrameOdd, frameCapTo frameOdd [.read]),
-               (SeLe4n.Slot.ofNat slotNotFrame, frameCapTo attacker.toObjId [.read])] })
+               (SeLe4n.Slot.ofNat slotNotFrame, frameCapTo attacker.toObjId [.read])]))
       |>.withObject attacker.toObjId (.tcb
           { tid := attacker, priority := ⟨40⟩, domain := ⟨0⟩,
             cspaceRoot := attackerCn, vspaceRoot := attackerVsp,
@@ -589,8 +587,7 @@ private def carveScenario : SystemState :=
           { regionBase := SeLe4n.PAddr.ofNat carveDevBase, regionSize := 0x1000,
             isDevice := true })
       |>.withObject carveCn (.cnode
-          { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-            slots := SeLe4n.UniqueSlotMap.ofListWF
+          (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF
               [(SeLe4n.Slot.ofNat slotUtRetype, frameCapTo carveUt [.read, .write, .retype]),
                (SeLe4n.Slot.ofNat slotOwnCnRW, frameCapTo carveCn [.read, .write]),
                (SeLe4n.Slot.ofNat slotOwnVsp, frameCapTo carveVsp [.read, .write]),
@@ -598,7 +595,7 @@ private def carveScenario : SystemState :=
                (SeLe4n.Slot.ofNat slotDevUt, frameCapTo carveDevUt [.read, .write, .retype]),
                (SeLe4n.Slot.ofNat slotOwnCnRO, frameCapTo carveCn [.read]),
                (SeLe4n.Slot.ofNat slotVspRetype, frameCapTo carveVsp [.read, .retype]),
-               (SeLe4n.Slot.ofNat slotOwnCnGrant, frameCapTo carveCn [.read, .write, .grant])] })
+               (SeLe4n.Slot.ofNat slotOwnCnGrant, frameCapTo carveCn [.read, .write, .grant])])))
       |>.withObject carveOwner.toObjId (.tcb
           { tid := carveOwner, priority := ⟨40⟩, domain := ⟨0⟩,
             cspaceRoot := carveCn, vspaceRoot := carveVsp,
@@ -1415,8 +1412,7 @@ private def runFrameFinaliseChecks : IO Unit := do
     { frameCapability (SeLe4n.ObjId.ofNat 950) with
       mapping := some { asid := carveAsid, vaddr := SeLe4n.Testing.fixtureUserVAddr 0x60000 } }
   let lone (cap : Capability) : CNode :=
-    { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-      slots := SeLe4n.UniqueSlotMap.ofListWF [(SeLe4n.Slot.ofNat 0, cap)] }
+    CNode.ofList 4 0 0 4 [(SeLe4n.Slot.ofNat 0, cap)]
   let retypeLone (cap : Capability) : Bool :=
     match storeObject (SeLe4n.ObjId.ofNat 970) (.cnode (lone cap)) carveScenario with
     | .error _ => false
@@ -1597,7 +1593,10 @@ private def tableScenario : SystemState :=
     | none => st
   match st1.getCNode? carveCn with
   | some cn =>
-    match storeObject carveCn (.cnode { cn with depth := 5, radixWidth := 5 }) st1 with
+    -- WS-ZA ZA5.3: a wider radix needs a wider slot array, so the root is
+    -- rebuilt at radix 5 holding the same capabilities.
+    match storeObject carveCn
+        (.cnode (CNode.ofList 5 cn.guardWidth cn.guardValue 5 cn.occupiedSlots)) st1 with
     | .ok ((), s) => s
     | .error _ => st1
   | none => st1

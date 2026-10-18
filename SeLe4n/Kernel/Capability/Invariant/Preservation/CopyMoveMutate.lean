@@ -319,7 +319,9 @@ theorem cspaceMutate_preserves_replyCapPointsToValidReply
               simp only [Option.some.injEq, KernelObject.cnode.injEq] at hObj
               subst hObj
               by_cases hs : slot = addr.slot
-              · rw [hs, CNode.lookup_insert_eq preCn addr.slot _ (CNode.slotsUnique_holds preCn)] at hLook
+              · rw [hs] at hLook
+                rw [CNode.lookup_insert_eq preCn addr.slot _ (CNode.slotsUnique_holds preCn)
+                  (CNode.slotAddressable_of_lookup_insert _ _ _ _ _ hLook)] at hLook
                 simp only [Option.some.injEq] at hLook
                 subst hLook
                 -- `{ cap with rights, badge }.target = cap.target` definitionally, so the
@@ -453,7 +455,9 @@ theorem cspaceRecordFrameMapping_preserves_capabilityInvariantBundle
     simp only [Option.some.injEq, KernelObject.cnode.injEq] at hObj
     subst hObj
     by_cases hs : slot = addr.slot
-    · rw [hs, CNode.lookup_insert_eq preCn addr.slot _ (CNode.slotsUnique_holds preCn)] at hLook
+    · rw [hs] at hLook
+      rw [CNode.lookup_insert_eq preCn addr.slot _ (CNode.slotsUnique_holds preCn)
+        (CNode.slotAddressable_of_lookup_insert _ _ _ _ _ hLook)] at hLook
       simp only [Option.some.injEq] at hLook
       subst hLook
       exact hRCPV addr.cnode preCn addr.slot cap rid hPre hLk hTgt

@@ -658,10 +658,8 @@ private def runBootValidationParityChecks : IO Unit := do
   -- CNode carrying a capability to an ordinary object does not; and the
   -- capability predicate itself decides by target.
   let cnodeWith (target : SeLe4n.ObjId) : KernelObject :=
-    .cnode { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-             slots := SeLe4n.UniqueSlotMap.ofListWF
-               [ (SeLe4n.Slot.ofNat 0,
-                  { target := .object target, rights := AccessRightSet.ofList [.write], badge := none }) ] }
+    .cnode (CNode.ofList 4 0 0 4 [ (SeLe4n.Slot.ofNat 0,
+                  { target := .object target, rights := AccessRightSet.ofList [.write], badge := none }) ])
   assertBool "NEGATIVE: a boot CNode holding a capability to an idle TCB references the slot"
     (SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot (cnodeWith idle0Obj) == true)
   assertBool "a boot CNode holding a capability to an ordinary object does not"

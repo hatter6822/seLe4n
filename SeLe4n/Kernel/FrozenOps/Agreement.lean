@@ -61,8 +61,8 @@ the frozen tree, and every frozen slot must be present and equal in the live
 map.  One direction alone would accept a frozen CNode carrying a capability the
 live one does not. -/
 def frozenCNodeSlotsAgree (f : FrozenCNode) (l : CNode) : Bool :=
-  l.slots.toList.all (fun kv => f.slots.lookup kv.1 == some kv.2)
-    && f.slots.toList.all (fun kv => l.slots.get? kv.1 == some kv.2)
+  l.allSlots (fun s c => f.slots.lookup s == some c)
+    && f.slots.toList.all (fun kv => l.lookup kv.1 == some kv.2)
 
 /-- Mapping-level agreement for the other re-represented variant, in both
 directions for the same reason. -/
@@ -102,7 +102,8 @@ def frozenObjectAgrees (f : FrozenKernelObject) (l : KernelObject) : Bool :=
   -- compared, which the unused-variable linter reports; adding a field to
   -- either structure breaks this pattern until someone decides about it.
   | .cnode (fc@⟨fd, fgw, fgv, frw, _fslots⟩),
-    .cnode (lc@⟨ld, lgw, lgv, lrw, _lslots⟩) =>
+    -- The live slot array is not compared: `slots_agree` makes it the slot map's.
+    .cnode (lc@⟨ld, lgw, lgv, lrw, _lslots, _lcells, _, _⟩) =>
       fd == ld && fgw == lgw && fgv == lgv && frw == lrw
         && frozenCNodeSlotsAgree fc lc
   | .vspaceRoot (fv@⟨fasid, _fm, fbase, ftables, _fepochs⟩),

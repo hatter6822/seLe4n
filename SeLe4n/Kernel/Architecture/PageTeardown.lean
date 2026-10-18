@@ -478,7 +478,7 @@ blocked sender has parked (its transfer capabilities install at the receiver
 later, so they are authority in flight).  No other object kind holds a
 `Capability`. -/
 def objectNamesListed (ids : List SeLe4n.ObjId) : KernelObject → Bool
-  | .cnode cn => !(cn.slots.fold true (fun acc _ cap => acc && !capNamesListed ids cap))
+  | .cnode cn => !(cn.allSlots fun _ cap => !capNamesListed ids cap)
   | .tcb t =>
       -- Slice 4b (`v0.36.10`): a thread's address space is named by its TCB's
       -- `vspaceRoot` field, not by a capability, so a carved root a thread
