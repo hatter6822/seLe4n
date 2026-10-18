@@ -5720,6 +5720,72 @@ no closure carries it; a call, so the caller's state arrives exclusive. -/
     · next t ht => exact absurd ht (hx t)
     · rfl
 
+/-- WS-ZA ZA5.3: the object update a CNode update performs. -/
+@[inline] def mapCNodeObject (f : CNode → CNode) : KernelObject → KernelObject
+  | .cnode cn => .cnode (f cn)
+  | o => o
+
+/-- WS-ZA ZA5.3: **the store of `f` of the CNode at `id`, written in its slot.**
+`storeObject id (.cnode (f cn))` over the CNode `cn` stored at `id`
+(`storeObject_cnode_eq_storeCNodeWith`): when the store leaves the index, type
+and ASID tables as they are (`storeLeavesIndexAndTypes`), the CNode is rewritten
+in its table slot (`modifyObject`), so on an exclusively owned state neither the
+table, the CNode nor its slot array is copied; otherwise it is the store.  The
+identity when `id` holds no CNode. -/
+@[specialize] def storeCNodeWith (st : SystemState) (id : SeLe4n.ObjId) (f : CNode → CNode) :
+    SystemState :=
+  match st.objects[id]? with
+  | some (.cnode cn) =>
+      if storeLeavesIndexAndTypes st id .cnode then st.modifyObject id (mapCNodeObject f)
+      else
+        match storeObject id (.cnode (f cn)) st with
+        | .ok ((), st') => st'
+        | .error _ => st
+  | _ => st
+
+theorem storeObject_cnode_eq_storeCNodeWith {st : SystemState} {id : SeLe4n.ObjId} {cn : CNode}
+    (h : st.objects[id]? = some (.cnode cn)) (f : CNode → CNode) :
+    storeObject id (.cnode (f cn)) st = .ok ((), st.storeCNodeWith id f) := by
+  unfold storeCNodeWith
+  rw [h]
+  dsimp only
+  split
+  · next hL =>
+    rw [storeObject_eq_impl]
+    unfold storeObjectImpl modifyObject
+    rw [show (KernelObject.cnode (f cn)).objectType = .cnode from rfl, if_pos hL,
+      RHTable.modify_of_get? h]
+    rfl
+  · obtain ⟨st', hS⟩ := storeObject_isOk st id (.cnode (f cn))
+    rw [hS]
+
+/-- WS-ZA ZA5.3: what `storeCNodeWith` writes into the object table. -/
+theorem storeCNodeWith_objects {st : SystemState} {id : SeLe4n.ObjId} {cn : CNode}
+    (h : st.objects[id]? = some (.cnode cn)) (f : CNode → CNode) :
+    (st.storeCNodeWith id f).objects = st.objects.insert id (.cnode (f cn)) := by
+  have hS := storeObject_cnode_eq_storeCNodeWith h f
+  unfold storeObject at hS
+  simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hS
+  rw [← hS]
+
+/-- WS-ZA ZA5.3: the state with the shared empty tree in its derivation-tree
+field.  A call, so the record update is not merged into the caller's. -/
+@[noinline] def withCdtTaken (st : SystemState) : SystemState :=
+  { st with cdt := CapDerivationTree.empty }
+
+/-- WS-ZA ZA5.3: **the derivation tree rewritten by `f` in its field.**  The tree
+is taken out of the state (`withCdtTaken`) before `f` runs, so on an exclusively
+owned state `f` receives its only reference and writes the tree's tables in
+place; `{ st with cdt := f st.cdt }` keeps the state holding the tree while `f`
+runs, so each table `f` writes is copied (`modifyCdt_eq`). -/
+@[inline] def modifyCdt (st : SystemState) (f : CapDerivationTree → CapDerivationTree) :
+    SystemState :=
+  let t := st.cdt
+  { withCdtTaken st with cdt := f t }
+
+theorem modifyCdt_eq (st : SystemState) (f : CapDerivationTree → CapDerivationTree) :
+    st.modifyCdt f = { st with cdt := f st.cdt } := rfl
+
 /-- **`v0.35.183` (register row 63)**: `updateTcb` reads and writes the object
 table and nothing else, so two states that agree on it agree after the update.
 

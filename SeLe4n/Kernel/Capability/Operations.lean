@@ -1572,6 +1572,237 @@ def mintReplyCapWithCdt (src dst : CSpaceAddr) : Kernel Unit :=
     | .ok ((), st') =>
         .ok ((), { st' with cdt := st'.cdt.addEdge src dst .mint })
 
+/-- WS-ZA ZA5.3: **the destination checks every install makes**: an
+addressable, empty slot of a CNode (`cspaceInsertSlot`'s refusals). -/
+def cspaceDstAdmitted (dst : CSpaceAddr) (st : SystemState) : Bool :=
+  match st.getCNode? dst.cnode with
+  | some cn => cn.slotAddressable dst.slot && (cn.lookup dst.slot).isNone
+  | none => false
+
+/-- WS-ZA ZA5.3: an admitted destination's insert is the capability written into
+its slot in place. -/
+theorem cspaceInsertSlot_of_admitted {dst : CSpaceAddr} {st : SystemState}
+    (h : cspaceDstAdmitted dst st = true) (cap : Capability) :
+    cspaceInsertSlot dst cap st = .ok ((), st.storeCNodeWith dst.cnode (·.insert dst.slot cap)) := by
+  unfold cspaceDstAdmitted at h
+  cases hD : st.getCNode? dst.cnode with
+  | none => simp [hD] at h
+  | some cn =>
+    simp only [hD, Bool.and_eq_true, Option.isNone_iff_eq_none] at h
+    obtain ⟨hA, hE⟩ := h
+    simp only [cspaceInsertSlot, hD, hA, hE, Bool.not_true, Bool.false_eq_true, ↓reduceIte]
+    exact SystemState.storeObject_cnode_eq_storeCNodeWith
+      ((SystemState.getCNode?_eq_some_iff st dst.cnode cn).mp hD) (·.insert dst.slot cap)
+
+/-- WS-ZA ZA5.3: **an install's writes**, in place: `child` written into the
+destination's slot (`storeCNodeWith`) and the derivation edge into the tree's
+tables (`modifyCdt`). -/
+@[inline] def cspaceInstallPerform (src dst : CSpaceAddr) (child : Capability)
+    (op : DerivationOp) (st : SystemState) : SystemState :=
+  (st.storeCNodeWith dst.cnode (·.insert dst.slot child)).modifyCdt (·.addEdge src dst op)
+
+/-- WS-ZA ZA5.3: the capability a mint of `parent` with `rights` and `badge`
+writes (`mintDerivedCap`'s). -/
+@[inline] def mintedCap (parent : Capability) (rights : AccessRightSet)
+    (badge : Option SeLe4n.Badge) : Capability :=
+  { target := parent.target, rights := rights, badge := badge }
+
+/-- WS-ZA ZA5.3: **`cspaceMintWithCdt`'s checks**, read before any write: the
+source holds a capability that is not null, the rights attenuate it, the minted
+capability is not null, and the destination is admitted
+(`cspaceMintWithCdt_of_admitted`). -/
+def cspaceMintAdmitted (src dst : CSpaceAddr) (rights : AccessRightSet)
+    (badge : Option SeLe4n.Badge) (st : SystemState) : Bool :=
+  (match SystemState.lookupSlotCap st src with
+   | some parent => parent.isNotNull && rightsSubset rights parent.rights &&
+       (mintedCap parent rights badge).isNotNull
+   | none => false) &&
+  cspaceDstAdmitted dst st
+
+/-- WS-ZA ZA5.3: **`cspaceMintWithCdt`'s writes**, in place. -/
+def cspaceMintPerform (src dst : CSpaceAddr) (rights : AccessRightSet)
+    (badge : Option SeLe4n.Badge) (st : SystemState) : SystemState :=
+  match SystemState.lookupSlotCap st src with
+  | some parent => cspaceInstallPerform src dst (mintedCap parent rights badge) .mint st
+  | none => st
+
+/-- WS-ZA ZA5.3: an admitted mint is its writes. -/
+theorem cspaceMintWithCdt_of_admitted {src dst : CSpaceAddr} {rights : AccessRightSet}
+    {badge : Option SeLe4n.Badge} {st : SystemState}
+    (h : cspaceMintAdmitted src dst rights badge st = true) :
+    cspaceMintWithCdt src dst rights badge st =
+      .ok ((), cspaceMintPerform src dst rights badge st) := by
+  unfold cspaceMintAdmitted at h
+  unfold cspaceMintWithCdt cspaceMint cspaceMintPerform cspaceLookupSlot
+  cases hL : SystemState.lookupSlotCap st src with
+  | none => simp [hL] at h
+  | some parent =>
+    simp only [hL, Capability.isNotNull, Bool.and_eq_true, Bool.not_eq_true'] at h
+    obtain ⟨⟨⟨hN, hR⟩, hC⟩, hD⟩ := h
+    have hNN : parent.toNonNull? = some ⟨parent, hN⟩ := by
+      unfold Capability.toNonNull?; rw [dif_pos hN]
+    have hM : mintDerivedCap ⟨parent, hN⟩ rights badge = .ok (mintedCap parent rights badge) := by
+      unfold mintDerivedCap mintedCap at *
+      simp only [hR, ↓reduceIte, hC, Bool.false_eq_true]
+    simp only [hNN, hM, cspaceInsertSlot_of_admitted hD]
+    rfl
+
+/-- WS-ZA ZA5.3: the reply capability a reply-capability mint writes. -/
+@[inline] def mintedReplyCap (rid : SeLe4n.ReplyId) : Capability :=
+  { target := .replyCap rid, rights := AccessRightSet.ofList [.write], badge := none }
+
+/-- WS-ZA ZA5.3: **`mintReplyCapWithCdt`'s checks**: the source names an object
+that is a reply object, and the destination is admitted
+(`mintReplyCapWithCdt_of_admitted`). -/
+def mintReplyCapAdmitted (src dst : CSpaceAddr) (st : SystemState) : Bool :=
+  (match SystemState.lookupSlotCap st src with
+   | some parent =>
+       match parent.target with
+       | .object target => (st.getReply? (SeLe4n.ReplyId.ofObjId target)).isSome
+       | _ => false
+   | none => false) &&
+  cspaceDstAdmitted dst st
+
+/-- WS-ZA ZA5.3: **`mintReplyCapWithCdt`'s writes**, in place. -/
+def mintReplyCapPerform (src dst : CSpaceAddr) (st : SystemState) : SystemState :=
+  match SystemState.lookupSlotCap st src with
+  | some parent =>
+      match parent.target with
+      | .object target =>
+          cspaceInstallPerform src dst (mintedReplyCap (SeLe4n.ReplyId.ofObjId target)) .mint st
+      | _ => st
+  | none => st
+
+/-- WS-ZA ZA5.3: an admitted reply-capability mint is its writes. -/
+theorem mintReplyCapWithCdt_of_admitted {src dst : CSpaceAddr} {st : SystemState}
+    (h : mintReplyCapAdmitted src dst st = true) :
+    mintReplyCapWithCdt src dst st = .ok ((), mintReplyCapPerform src dst st) := by
+  unfold mintReplyCapAdmitted at h
+  unfold mintReplyCapWithCdt mintReplyCap mintReplyCapPerform cspaceLookupSlot
+  cases hL : SystemState.lookupSlotCap st src with
+  | none => simp [hL] at h
+  | some parent =>
+    simp only [hL, Bool.and_eq_true] at h
+    obtain ⟨hT, hD⟩ := h
+    cases hP : parent.target with
+    | object target =>
+      rw [hP] at hT
+      simp only [Option.isSome_iff_exists] at hT
+      obtain ⟨r, hr⟩ := hT
+      simp only [hP, hr, cspaceInsertSlot_of_admitted hD]
+      rfl
+    | _ => rw [hP] at hT; simp at hT
+
+/-- WS-ZA ZA5.3: **`cspaceCopy`'s checks**, read before any write: the source
+slot holds a capability that is not null, and the destination is admitted.
+Exactly the copy's refusals (`cspaceCopy_of_admitted`), so a dispatcher that
+reads them first hands the state to `cspaceCopyPerform` alone. -/
+def cspaceCopyAdmitted (src dst : CSpaceAddr) (st : SystemState) : Bool :=
+  (match SystemState.lookupSlotCap st src with
+   | some cap => cap.isNotNull
+   | none => false) &&
+  cspaceDstAdmitted dst st
+
+/-- WS-ZA ZA5.3: **`cspaceCopy`'s writes**, in place: the derived capability and
+the copy's edge (`cspaceInstallPerform`). -/
+def cspaceCopyPerform (src dst : CSpaceAddr) (st : SystemState) : SystemState :=
+  match SystemState.lookupSlotCap st src with
+  | some cap => cspaceInstallPerform src dst cap.withoutMapping .copy st
+  | none => st
+
+/-- WS-ZA ZA5.3: an admitted copy is its writes. -/
+theorem cspaceCopy_of_admitted {src dst : CSpaceAddr} {st : SystemState}
+    (h : cspaceCopyAdmitted src dst st = true) :
+    cspaceCopy src dst st = .ok ((), cspaceCopyPerform src dst st) := by
+  unfold cspaceCopyAdmitted at h
+  unfold cspaceCopy cspaceCopyPerform cspaceLookupSlot
+  cases hL : SystemState.lookupSlotCap st src with
+  | none => simp [hL] at h
+  | some cap =>
+    simp only [hL, Capability.isNotNull, Bool.and_eq_true, Bool.not_eq_true'] at h
+    obtain ⟨hN, hD⟩ := h
+    have hNN : cap.toNonNull? = some ⟨cap, hN⟩ := by
+      unfold Capability.toNonNull?; rw [dif_pos hN]
+    simp only [hNN, cspaceInsertSlot_of_admitted hD]
+    rfl
+
+/-- WS-ZA ZA5.3: **`cspaceMove`'s checks**, read before any write: two distinct
+slots, the source holding a capability that is not null, an admitted
+destination, and a destination CNode the object table rewrites where it stands
+(`RHTable.findsInPlace`), so the source's CNode is read back unchanged, or as
+just written, by the source's write (`cspaceMove_of_admitted`). -/
+def cspaceMoveAdmitted (src dst : CSpaceAddr) (st : SystemState) : Bool :=
+  !decide (src = dst) &&
+  (match SystemState.lookupSlotCap st src with
+   | some cap => cap.isNotNull
+   | none => false) &&
+  cspaceDstAdmitted dst st &&
+  st.objects.findsInPlace dst.cnode
+
+/-- WS-ZA ZA5.3: **`cspaceMove`'s writes**, in place: the capability into the
+destination's slot, the source's slot emptied, and the source's edges moved to
+the destination (`CapDerivationTree.moveNode`). -/
+def cspaceMovePerform (src dst : CSpaceAddr) (st : SystemState) : SystemState :=
+  match SystemState.lookupSlotCap st src with
+  | some cap =>
+      ((st.storeCNodeWith dst.cnode (·.insert dst.slot cap)).storeCNodeWith src.cnode
+        (·.remove src.slot)).modifyCdt (·.moveNode src dst)
+  | none => st
+
+/-- WS-ZA ZA5.3: an admitted move is its writes. -/
+theorem cspaceMove_of_admitted {src dst : CSpaceAddr} {st : SystemState}
+    (h : cspaceMoveAdmitted src dst st = true) :
+    cspaceMove src dst st = .ok ((), cspaceMovePerform src dst st) := by
+  unfold cspaceMoveAdmitted at h
+  unfold cspaceMove cspaceMovePerform cspaceLookupSlot
+  cases hL : SystemState.lookupSlotCap st src with
+  | none => simp [hL] at h
+  | some cap =>
+    simp only [hL, Capability.isNotNull, Bool.and_eq_true, Bool.not_eq_true',
+      decide_eq_false_iff_not] at h
+    obtain ⟨⟨⟨hNe, hN⟩, hD⟩, hF⟩ := h
+    have hNN : cap.toNonNull? = some ⟨cap, hN⟩ := by
+      unfold Capability.toNonNull?; rw [dif_pos hN]
+    have hS : ∃ cnS, st.objects[src.cnode]? = some (.cnode cnS) := by
+      unfold SystemState.lookupSlotCap at hL
+      cases hC : SystemState.lookupCNode st src.cnode with
+      | none => rw [hC] at hL; cases hL
+      | some cnS =>
+        refine ⟨cnS, ?_⟩
+        unfold SystemState.lookupCNode at hC
+        split at hC
+        · next c hx => cases hC; exact hx
+        · cases hC
+    obtain ⟨cnS, hSrc⟩ := hS
+    have hD' := hD
+    unfold cspaceDstAdmitted at hD'
+    cases hDC : st.getCNode? dst.cnode with
+    | none => simp [hDC] at hD'
+    | some cnD =>
+    have hDst := (SystemState.getCNode?_eq_some_iff st dst.cnode cnD).mp hDC
+    simp only [hNe, ↓reduceIte, hNN, cspaceInsertSlot_of_admitted hD]
+    have h1 : (st.storeCNodeWith dst.cnode (·.insert dst.slot cap)).objects =
+        st.objects.insert dst.cnode (.cnode (cnD.insert dst.slot cap)) :=
+      SystemState.storeCNodeWith_objects hDst _
+    have hS1 : ∃ cn2, (st.storeCNodeWith dst.cnode (·.insert dst.slot cap)).objects[src.cnode]?
+        = some (.cnode cn2) := by
+      by_cases hEq : dst.cnode = src.cnode
+      · refine ⟨cnD.insert dst.slot cap, ?_⟩
+        show SeLe4n.Kernel.RobinHood.RHTable.get? _ src.cnode = _
+        rw [h1, ← hEq]
+        exact SeLe4n.Kernel.RobinHood.RHTable.get?_insert_self_of_findsInPlace _ hF
+      · refine ⟨cnS, ?_⟩
+        show SeLe4n.Kernel.RobinHood.RHTable.get? _ src.cnode = _
+        rw [h1, SeLe4n.Kernel.RobinHood.RHTable.get?_insert_ne_of_findsInPlace _ _ hF hEq]
+        exact hSrc
+    obtain ⟨cn2, hS2⟩ := hS1
+    have hG2 := (SystemState.getCNode?_eq_some_iff _ src.cnode cn2).mpr hS2
+    unfold cspaceDeleteSlotCore
+    rw [hG2]
+    dsimp only
+    rw [SystemState.storeObject_cnode_eq_storeCNodeWith hS2 (·.remove src.slot)]
+    rfl
+
 -- ============================================================================
 -- M-P04/M5: Shared per-node revocation step
 -- ============================================================================
