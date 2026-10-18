@@ -114,6 +114,11 @@ theorem setSlotLinkWords_of_cnode {st : SystemState} {o : SeLe4n.ObjId} {cn : CN
   rw [RHTable.modify_of_get? h]
   rfl
 
+@[simp] theorem setSlotLinkWords_cdt (st : SystemState) (o : SeLe4n.ObjId) (s : SeLe4n.Slot)
+    (f : LinkField) (c w : Nat) : (st.setSlotLinkWords o s f c w).cdt = st.cdt := by
+  unfold setSlotLinkWords modifyObject
+  split <;> rfl
+
 theorem setSlotLinkWords_objects {st : SystemState} (hInv : st.objects.invExt)
     {o : SeLe4n.ObjId} {cn : CNode} (h : st.objects[o]? = some (.cnode cn))
     (s : SeLe4n.Slot) (f : LinkField) (c w : Nat) (x : SeLe4n.ObjId) :
@@ -724,20 +729,48 @@ theorem linkMoveNode_spec {st : SystemState} (hInv : st.objects.invExt) {old new
   rw [e4, e3, hW, e2]
   rfl
 
-/-- A state reached from `st₀` by link writes alone, with its object table well
-formed: what each link writer below keeps. -/
-def linkReach (st₀ st : SystemState) : Prop := st.objects.invExt ∧ linksOnlyWrite st₀ st
+/-- **A state reached from `st₀` by link-word writes alone**: what every link
+writer below produces.  A property every single link write keeps holds of every
+state so reached (`linkReach.closed`), so a consumer frames a writer once, at
+`setSlotLinkWords`. -/
+inductive linkReach : SystemState → SystemState → Prop
+  | refl (st : SystemState) : linkReach st st
+  | step {st₀ st : SystemState} (h : linkReach st₀ st) (o : SeLe4n.ObjId)
+      (s : SeLe4n.Slot) (f : LinkField) (c w : Nat) :
+      linkReach st₀ (st.setSlotLinkWords o s f c w)
 
-theorem linkReach.refl {st : SystemState} (h : st.objects.invExt) : linkReach st st :=
-  ⟨h, linksOnlyWrite.refl st⟩
+theorem linkReach.trans {st₀ st₁ st₂ : SystemState} (h₁ : linkReach st₀ st₁)
+    (h₂ : linkReach st₁ st₂) : linkReach st₀ st₂ := by
+  induction h₂ with
+  | refl => exact h₁
+  | step _ o s f c w ih => exact ih.step o s f c w
 
-theorem linkReach.step {st₀ st : SystemState} (h : linkReach st₀ st) (o : SeLe4n.ObjId)
-    (s : SeLe4n.Slot) (f : LinkField) (c w : Nat) :
-    linkReach st₀ (st.setSlotLinkWords o s f c w) :=
-  ⟨setSlotLinkWords_invExt h.1 o s f c w, h.2.trans (setSlotLinkWords_linksOnlyWrite h.1 o s f c w)⟩
+/-- A property of well-formed states that every link write keeps holds after
+any run of link writes. -/
+theorem linkReach.closed {P : SystemState → Prop}
+    (hP : ∀ st o s f c w, st.objects.invExt → P st → P (st.setSlotLinkWords o s f c w))
+    {st₀ st : SystemState} (h : linkReach st₀ st) (hInv : st₀.objects.invExt) (h₀ : P st₀) :
+    P st ∧ st.objects.invExt := by
+  induction h with
+  | refl => exact ⟨h₀, hInv⟩
+  | step _ o s f c w ih =>
+      exact ⟨hP _ o s f c w ih.2 ih.1, setSlotLinkWords_invExt ih.2 o s f c w⟩
 
-theorem linkReach.trans {st₀ st₁ st₂ : SystemState} (h₁ : linkReach st₀ st₁) (h₂ : linkReach st₁ st₂) :
-    linkReach st₀ st₂ := ⟨h₂.1, h₁.2.trans h₂.2⟩
+theorem linkReach.cdt {st₀ st : SystemState} (h : linkReach st₀ st) : st.cdt = st₀.cdt := by
+  induction h with
+  | refl => rfl
+  | step _ o s f c w ih => rw [setSlotLinkWords_cdt]; exact ih
+
+theorem linkReach.invExt {st₀ st : SystemState} (h : linkReach st₀ st)
+    (hInv : st₀.objects.invExt) : st.objects.invExt :=
+  (h.closed (P := fun _ => True) (fun _ _ _ _ _ _ _ _ => trivial) hInv trivial).2
+
+theorem linkReach.linksOnly {st₀ st : SystemState} (h : linkReach st₀ st)
+    (hInv : st₀.objects.invExt) : linksOnlyWrite st₀ st := by
+  induction h with
+  | refl => exact linksOnlyWrite.refl _
+  | step h' o s f c w ih =>
+      exact ih.trans (setSlotLinkWords_linksOnlyWrite (h'.invExt hInv) o s f c w)
 
 theorem linkAddChild_reach {st₀ st : SystemState} (h : linkReach st₀ st) (p c : SlotRef) :
     linkReach st₀ (st.linkAddChild p c) := by
@@ -813,6 +846,131 @@ theorem linkMoveNode_reach {st₀ st : SystemState} (h : linkReach st₀ st) (ol
   split
   · exact h1
   · exact linkAddChild_reach h1 _ _
+
+/-! ## Tree updates with the links that spell them
+
+Each tree update the kernel makes, then its link writes (which read only links,
+so they may follow the tree's own update).  The walks' fuel is the pre-state's edge count, which bounds every child chain
+(`LinksAgree.walk_firstChild`).  Given links that agree with an acyclic tree
+whose every slot lies in a live CNode, the post-state's links agree with the
+post-state's tree. -/
+
+/-- **Record `c` as derived from `p`**: the edge, and the links that spell it. -/
+@[inline] def cdtAddChild (st : SystemState) (p c : SlotRef) (op : DerivationOp) : SystemState :=
+  ({ st with cdt := st.cdt.addEdge p c op } : SystemState).linkAddChild p c
+
+/-- **Splice `n` out of the tree**, its children moving to its parent. -/
+@[inline] def cdtSplice (st : SystemState) (n : SlotRef) : SystemState :=
+  ({ st with cdt := st.cdt.spliceNode n } : SystemState).linkSpliceNode n st.cdt.edges.length
+
+/-- **Move node `old` to slot `new`**. -/
+@[inline] def cdtMove (st : SystemState) (old new : SlotRef) : SystemState :=
+  ({ st with cdt := st.cdt.moveNode old new } : SystemState).linkMoveNode old new
+    st.cdt.edges.length
+
+/-- **Remove node `n` and every edge at it**, its children becoming roots. -/
+@[inline] def cdtRemove (st : SystemState) (n : SlotRef) : SystemState :=
+  ({ st with cdt := st.cdt.removeNode n } : SystemState).linkRemoveNode n st.cdt.edges.length
+
+theorem cdtAddChild_reach (st : SystemState) (p c : SlotRef) (op : DerivationOp) :
+    linkReach { st with cdt := st.cdt.addEdge p c op } (st.cdtAddChild p c op) :=
+  linkAddChild_reach (linkReach.refl _) p c
+
+theorem cdtSplice_reach (st : SystemState) (n : SlotRef) :
+    linkReach { st with cdt := st.cdt.spliceNode n } (st.cdtSplice n) :=
+  linkSpliceNode_reach (linkReach.refl _) n _
+
+theorem cdtMove_reach (st : SystemState) (old new : SlotRef) :
+    linkReach { st with cdt := st.cdt.moveNode old new } (st.cdtMove old new) :=
+  linkMoveNode_reach (linkReach.refl _) old new _
+
+theorem cdtRemove_reach (st : SystemState) (n : SlotRef) :
+    linkReach { st with cdt := st.cdt.removeNode n } (st.cdtRemove n) :=
+  linkRemoveNode_reach (linkReach.refl _) n _
+
+/-- Adding `c` under `p` keeps the links agreeing with the tree, when `c` has no
+parent yet and every slot involved lies in a live CNode. -/
+theorem cdtAddChild_agree {st : SystemState} (hInv : st.objects.invExt)
+    (hL : LinksAgree st.slotLinkAt st.cdt) (hM : ∀ r, st.cdt.mentions r → st.slotInCNode r)
+    {p c : SlotRef} (op : DerivationOp) (hp : st.slotInCNode p) (hc : st.slotInCNode c)
+    (hcN : st.cdt.parentOf c = none) (hpc : p ≠ c) :
+    LinksAgree (st.cdtAddChild p c op).slotLinkAt (st.cdtAddChild p c op).cdt := by
+  rw [(cdtAddChild_reach st p c op).cdt]
+  unfold cdtAddChild
+  rw [slotLinkAt_linkAddChild (st := { st with cdt := st.cdt.addEdge p c op }) hInv hp hc
+    (fun x hx => hM x (hL.target_mentions hx))]
+  exact hL.addChild op hcN hpc
+
+/-- Splicing `n` out of an acyclic tree keeps the links agreeing with it. -/
+theorem cdtSplice_agree {st : SystemState} (hInv : st.objects.invExt)
+    (hL : LinksAgree st.slotLinkAt st.cdt) (hM : ∀ r, st.cdt.mentions r → st.slotInCNode r)
+    (hWF : st.cdt.edgeWellFounded) {n : SlotRef} (hn : st.slotInCNode n) :
+    LinksAgree (st.cdtSplice n).slotLinkAt (st.cdtSplice n).cdt := by
+  rw [(cdtSplice_reach st n).cdt]
+  have hW := hL.walk_firstChild n (Nat.le_refl st.cdt.edges.length)
+  have hAll : ∀ r f x, st.slotLinkAt r f = some x → st.slotInCNode x :=
+    fun _ _ x hx => hM x (hL.target_mentions hx)
+  have hSelf := hL.children_not_self_or_prev (hL.parentOf_ne_self_of_wf hWF n)
+  have hX : ({ st with cdt := st.cdt.spliceNode n } : SystemState).slotLinkAt = st.slotLinkAt := rfl
+  obtain ⟨-, -, hV⟩ := linkSpliceNode_spec (st := { st with cdt := st.cdt.spliceNode n }) hInv
+    st.cdt.edges.length hn (by rw [hX]; exact hAll)
+    (by rw [hX, hW]; exact CapDerivationTree.childrenOf_nodup hL.childrenUnique n)
+    (by rw [hX, hW]; exact hSelf)
+  unfold cdtSplice
+  rw [hV, hX, hW, hL.parent n]
+  have hS := hL.spliceNode_of_wf hWF n
+  unfold LinkView.spliceLinks at hS
+  cases hu : st.cdt.parentOf n with
+  | none => rw [hu] at hS; exact hS
+  | some u => rw [hu] at hS; exact hS
+
+/-- Moving node `old` of an acyclic tree to a slot `new` outside it keeps the
+links agreeing with the tree. -/
+theorem cdtMove_agree {st : SystemState} (hInv : st.objects.invExt)
+    (hL : LinksAgree st.slotLinkAt st.cdt) (hM : ∀ r, st.cdt.mentions r → st.slotInCNode r)
+    (hWF : st.cdt.edgeWellFounded) {old new : SlotRef} (ho : st.slotInCNode old)
+    (hnw : st.slotInCNode new) (hnew : ¬ st.cdt.mentions new) (hon : old ≠ new) :
+    LinksAgree (st.cdtMove old new).slotLinkAt (st.cdtMove old new).cdt := by
+  rw [(cdtMove_reach st old new).cdt]
+  have hW := hL.walk_firstChild old (Nat.le_refl st.cdt.edges.length)
+  have hAll : ∀ r f x, st.slotLinkAt r f = some x → st.slotInCNode x :=
+    fun _ _ x hx => hM x (hL.target_mentions hx)
+  have hSelf := hL.children_not_self_or_prev (hL.parentOf_ne_self_of_wf hWF old)
+  have hX : ({ st with cdt := st.cdt.moveNode old new } : SystemState).slotLinkAt =
+      st.slotLinkAt := rfl
+  obtain ⟨-, -, hV⟩ := linkMoveNode_spec (st := { st with cdt := st.cdt.moveNode old new }) hInv
+    st.cdt.edges.length ho hnw (by rw [hX]; exact hAll)
+    (by rw [hX, hW]; exact CapDerivationTree.childrenOf_nodup hL.childrenUnique old)
+    (by
+      rw [hX, hW]
+      intro w hw
+      obtain ⟨h1, h2⟩ := hSelf w hw
+      refine ⟨h1, h2, fun e => hnew (e ▸ ?_)⟩
+      obtain ⟨e', he', -, hc⟩ := (CapDerivationTree.mem_childrenOf st.cdt old w).mp hw
+      exact ⟨e', he', .inr hc⟩)
+  unfold cdtMove
+  rw [hV, hX, hW, hL.parent old]
+  exact hL.moveNode_of_wf hWF old new hnew hon
+
+/-- Removing node `n` keeps the links agreeing with the tree, when the tree is
+acyclic. -/
+theorem cdtRemove_agree {st : SystemState} (hInv : st.objects.invExt)
+    (hL : LinksAgree st.slotLinkAt st.cdt) (hM : ∀ r, st.cdt.mentions r → st.slotInCNode r)
+    (hWF : st.cdt.edgeWellFounded) {n : SlotRef} (hn : st.slotInCNode n) :
+    LinksAgree (st.cdtRemove n).slotLinkAt (st.cdtRemove n).cdt := by
+  rw [(cdtRemove_reach st n).cdt]
+  have hW := hL.walk_firstChild n (Nat.le_refl st.cdt.edges.length)
+  have hAll : ∀ r f x, st.slotLinkAt r f = some x → st.slotInCNode x :=
+    fun _ _ x hx => hM x (hL.target_mentions hx)
+  have hSelf := hL.children_not_self_or_prev (hL.parentOf_ne_self_of_wf hWF n)
+  have hX : ({ st with cdt := st.cdt.removeNode n } : SystemState).slotLinkAt = st.slotLinkAt := rfl
+  obtain ⟨-, -, hV⟩ := linkRemoveNode_spec (st := { st with cdt := st.cdt.removeNode n }) hInv
+    st.cdt.edges.length hn (fun f x h => hAll n f x h) (walk_valid hAll _ n .firstChild)
+    (by rw [hX, hW]; exact CapDerivationTree.childrenOf_nodup hL.childrenUnique n)
+    (by rw [hX, hW]; exact hSelf)
+  unfold cdtRemove
+  rw [hV, hX, hW]
+  exact hL.removeNode n
 
 end SystemState
 

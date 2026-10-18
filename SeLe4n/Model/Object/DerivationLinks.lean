@@ -1301,5 +1301,32 @@ theorem target_mentions (h : LinksAgree L cdt) {r : SlotRef} {f : LinkField} {x 
     | none => rw [hP] at hx; cases hx
     | some p => rw [hP] at hx; exact child p (SlotList.predIn_mem hx)
 
+/-- An acyclic tree has no node that is its own parent. -/
+theorem parentOf_ne_self_of_wf (h : LinksAgree L cdt) (hWF : cdt.edgeWellFounded) (n : SlotRef) :
+    cdt.parentOf n ≠ some n := fun hp => by
+  obtain ⟨e, he, hpe, hce⟩ := (parentOf_eq_some_iff h.childrenUnique n n).mp hp
+  exact CapDerivationTree.edgeWellFounded_no_self_edge hWF he (hpe.trans hce.symm)
+
+/-- An acyclic tree has no node whose parent is a child of it. -/
+theorem parent_not_child_of_wf (h : LinksAgree L cdt) (hWF : cdt.edgeWellFounded) (n : SlotRef) :
+    ∀ c ∈ cdt.childrenOf n, cdt.parentOf n ≠ some c := fun c hc hp => by
+  obtain ⟨e₁, he₁, hp₁, hc₁⟩ := (mem_childrenOf cdt n c).mp hc
+  obtain ⟨e₂, he₂, hp₂, hc₂⟩ := (parentOf_eq_some_iff h.childrenUnique c n).mp hp
+  exact hWF n ⟨[n, c, n], by simp, rfl, rfl, fun i hi => by
+    match i, hi with
+    | 0, _ => exact ⟨e₁, he₁, hp₁, hc₁⟩
+    | 1, _ => exact ⟨e₂, he₂, hp₂, hc₂⟩⟩
+
+/-- **Splicing a node out of an acyclic tree** keeps the links agreeing. -/
+theorem spliceNode_of_wf (h : LinksAgree L cdt) (hWF : cdt.edgeWellFounded) (n : SlotRef) :
+    LinksAgree (L.spliceLinks n (cdt.parentOf n) (cdt.childrenOf n)) (cdt.spliceNode n) :=
+  h.spliceNode n (h.parent_not_child_of_wf hWF n) (h.parentOf_ne_self_of_wf hWF n)
+
+/-- **Moving a node of an acyclic tree to a slot outside it** keeps the links agreeing. -/
+theorem moveNode_of_wf (h : LinksAgree L cdt) (hWF : cdt.edgeWellFounded) (old new : SlotRef)
+    (hnew : ¬ cdt.mentions new) (hon : old ≠ new) :
+    LinksAgree (L.moveLinks old new (cdt.parentOf old) (cdt.childrenOf old)) (cdt.moveNode old new) :=
+  h.moveNode old new hnew hon (h.parentOf_ne_self_of_wf hWF old)
+
 end LinksAgree
 end SeLe4n.Model
