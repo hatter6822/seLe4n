@@ -5948,8 +5948,8 @@ copies and deletes grows it (`v0.36.101`).
 
 **The slot is the derivation node** (`v0.36.103`, WS-ZA ZA5.3 part 2).  As
 seL4's `cte_t` is its own mapping-database node, a derivation edge joins two
-slots (`CapDerivationEdge` over `SlotRef`), and the tree's child and parent
-maps are keyed by slot.  There is no node identifier, no node counter and no
+slots (`CapDerivationEdge` over `SlotRef`), and the tree is the list of those
+edges (since `v0.36.106` also linked through the slots, below).  There is no node identifier, no node counter and no
 slot-to-node table: a copy, mint or IPC transfer adds an edge between the two
 slots (`CapDerivationTree.addEdge`), a move carries the source's edges to the
 destination (`CapDerivationTree.moveNode`), a delete splices the slot out, and a
@@ -5959,7 +5959,8 @@ removes each one it deletes (`CapDerivationTree.removeNode`).  A transferred
 capability names the slot it was resolved from (`TransferCap.srcSlot`), and
 completeness reads the tree directly: every slot an edge names lies in a live
 object (`cdtCompleteness`).  None of these steps allocates a node, so a
-capability operation writes only the slots it names and the tree's own maps.
+capability operation writes only the slots it names and the tree's edge list
+(and, since `v0.36.106`, those slots' links).
 
 **Capability operations write in place** (`v0.36.104`, WS-ZA ZA5.3 part 3).
 Copy, mint, move and reply-cap mint split into an admission check and a perform
@@ -8807,7 +8808,7 @@ Unless a PR explicitly proposes spec-level change control, preserve:
 7. tiered validation command behavior (`test_fast`/`smoke`/`full`/`nightly`),
 8. top-level import hygiene: `SeLe4n/Kernel/API.lean` is the canonical aggregate API surface.
 9. syscall capability-checking: `SyscallGate` + `syscallLookupCap` model the seL4 CSpace-lookup + rights-check pattern; production path `syscallEntry` -> `dispatchSyscall` -> `syscallInvoke` -> `dispatchWithCap` (S5-A: deprecated `api*` wrappers removed); 3 soundness theorems prove capability requirements; 34 `SyscallId` variants (V2 added `notificationSignal`=14, `notificationWait`=15, `replyRecv`=16; growth through WS-SM SM9's `declassifySignal`=33); `MessageInfo` label bounded to 20 bits (seL4 convention).
-10. Hash-store equality for `VSpaceRoot` is order-independent (size + fold containment), `CNode` equality compares geometry and slot arrays (since `v0.36.102`), and the migrated state stores (`services`, `irqHandlers`, the derivation tree's child and parent maps; `cdtSlotNode` and `cdtNodeSlot` until the slot became the node at `v0.36.103`, `capabilityRefs` was among them until its retirement at `v0.35.78`) are backed by the verified Robin Hood table (`RHTable`, WS-Q2 — `CNode.slots` via `UniqueSlotMap` since WS-RC R4.A; no closure-chain metadata stores).
+10. Hash-store equality for `VSpaceRoot` is order-independent (size + fold containment), `CNode` equality compares geometry and slot arrays (since `v0.36.102`), and the migrated state stores (`services`, `irqHandlers`, the derivation tree's child and parent maps until the slot links replaced them at `v0.36.106`; `cdtSlotNode` and `cdtNodeSlot` until the slot became the node at `v0.36.103`, `capabilityRefs` was among them until its retirement at `v0.35.78`) are backed by the verified Robin Hood table (`RHTable`, WS-Q2 — `CNode.slots` via `UniqueSlotMap` since WS-RC R4.A; no closure-chain metadata stores).
 
 ---
 
