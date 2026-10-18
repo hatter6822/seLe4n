@@ -560,25 +560,31 @@ private def cdtChildrenUniqueCheck (st : SystemState) : List (String × Bool) :=
   [("cdt each slot has at most one parent edge", (st.cdt.edges.map (·.child)).Nodup)]
 
 /-- Runtime check of the capability bundle's link conjunct (`LinksAgree`): at
-every slot the tree names and every addressable slot of the listed CNodes,
-filled or empty, each of the four links the slot holds is the one the tree gives
-it (none, at a slot the tree does not name). -/
+every slot the tree names, each of the four links the slot holds is the one the
+tree gives it; at every other slot of the listed CNodes each link is none, which
+is its CNode word being 0 (`decodeLink`).  The second half reads the link words
+directly and asks the tree only about a slot holding a nonzero CNode word, so the
+check costs a pass over each CNode's words, not a tree query per addressable
+slot. -/
 private def cdtLinksAgreeCheck (objectIds : List SeLe4n.ObjId) (st : SystemState) :
     List (String × Bool) :=
   let cdt := st.cdt
   let named := cdt.edges.foldr (fun e acc => e.parent :: e.child :: acc) []
-  let addressable := objectIds.foldr (fun oid acc =>
-    match st.getCNode? oid with
-    | some cn => (List.range (2 ^ cn.radixWidth)).foldr
-        (fun i inner => { cnode := oid, slot := SeLe4n.Slot.ofNat i } :: inner) acc
-    | none => acc) []
   let agreesAt (r : SlotRef) : Bool :=
     let up := cdt.parentOf r
     st.slotLinkAt r .parent == up &&
     st.slotLinkAt r .firstChild == (cdt.childrenOf r).head? &&
     st.slotLinkAt r .next == up.bind (fun p => SlotList.succIn (cdt.childrenOf p) r) &&
     st.slotLinkAt r .prev == up.bind (fun p => SlotList.predIn (cdt.childrenOf p) r)
-  [("cdt slot links agree with the tree", (named ++ addressable).all agreesAt)]
+  -- A CNode word sits at an even offset within its slot's `slotLinkWords`.
+  let unnamedClear := objectIds.all fun oid =>
+    match st.getCNode? oid with
+    | some cn =>
+        Nat.all cn.links.size fun j _ =>
+          j % 2 != 0 || cn.links.getD j 0 == 0 ||
+            named.contains { cnode := oid, slot := SeLe4n.Slot.ofNat (j / slotLinkWords) }
+    | none => true
+  [("cdt slot links agree with the tree", named.all agreesAt && unnamedClear)]
 
 def stateInvariantChecksFor (objectIds : List SeLe4n.ObjId) (st : SystemState)
     (serviceIds : List ServiceId := []) : List (String × Bool) :=
