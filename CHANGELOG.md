@@ -1,3 +1,53 @@
+## v0.36.104 — WS-ZA ZA5.3 part 3: capability operations write in place
+
+Copy, mint, move and reply-cap mint now decide every refusal before their
+first write and then change the state in place.  Before, the routed arm kept
+the pre-state alive for the refusal it might report, so each write copied the
+CNode's store entry and the derivation tree's maps; part 1's in-place slot
+writes take effect only now.
+
+- **Check, then perform** (seL4's decode/perform split): each arm in
+  `dispatchInvocationByR` runs `RefusalCarrying.ofChecked` over an admission
+  check (`cspaceCopyAdmitted`, `cspaceMintAdmitted`, `cspaceMoveAdmitted`,
+  `mintReplyCapAdmitted`, with the information-flow check first for the
+  three cross-CNode operations) and a perform step that writes alone
+  (`cspaceCopyPerform`, `cspaceMintPerform`, `cspaceMovePerform`,
+  `mintReplyCapPerform`).  `cspaceCopy_of_admitted` and its siblings prove
+  each perform equal to the operation on an admitted state, so
+  `dispatchInvocationByR_eq` still states the routed arm equal to the spec.
+- **In-place writers**: `SystemState.storeCNodeWith` rewrites a CNode in its
+  store slot (`storeObject_cnode_eq_storeCNodeWith`), and
+  `SystemState.modifyCdt` rewrites the tree in its field, taking it out of
+  the record first so the update is not fused into a copy.
+- **The hash index builds no big number**: `idealIndexImpl` (an `@[csimp]`
+  replacement proven equal to `idealIndex`) reduces the word hash modulo a
+  word capacity, where `(hash k).toNat` built a big number for every hash at
+  or above 2^63.  It is `@[noinline]`: inlined, its two branches made a join
+  point that stopped `RHTable.modifyImpl` reusing the table's record, and
+  every in-place object write allocated.
+- **Delete and revoke** keep their combined form: their teardown compares
+  the state before the delete with the state after it
+  (`pageTablesOrphaned`), so their perform step waits for part 4's links.
+  They fall with the hash index alone.
+- **QEMU exerciser, first call / steady state, v0.36.103 → v0.36.104**
+  (every IPC, thread and scheduling-context scenario still reads 0):
+
+  | scenario | v0.36.103 | v0.36.104 |
+  |---|---|---|
+  | CSpace copy | 33 / 33 | 13 / 13 |
+  | CSpace move | 48 / 48 | 18 / 18 |
+  | CSpace mint | 37 / 37 | 16 / 16 |
+  | CSpace delete | 33 / 33 | 27 / 27 |
+  | CSpace revoke | 42 / 42 | 34 / 34 |
+  | reply-cap delete / mint | 32 / 34 | 26 / 14 |
+  | page-table retype 1 / 2 / 3 | 77 / 76 / 77 | 75 / 74 / 74 |
+  | frame retype | 94 | 91 |
+  | frame delete | 56 | 50 |
+  | page-table delete 3 / 2 / 1 | 44 / 35 / 29 | 38 / 33 / 27 |
+
+  The plan's ZA5.3 parts after this one are renumbered: the links are
+  part 4, the ghost tree part 5, the capability as words part 6.
+
 ## v0.36.103 — WS-ZA ZA5.3 part 2: the slot is the derivation node
 
 The capability derivation tree is now keyed by slot address, as seL4's

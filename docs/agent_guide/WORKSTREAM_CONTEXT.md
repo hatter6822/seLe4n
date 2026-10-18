@@ -185,7 +185,10 @@ seL4's `cteDelete`, so no copy-and-delete loop grows it.  At `v0.36.102`
 written in place; the slot map is ghost state (`Erased`) the theorems read,
 tied to the array by `CNode.slots_agree`.  At `v0.36.103` (ZA5.3 part 2) the
 slot is the derivation node, as seL4's `cte_t`: edges and the tree's maps are
-keyed by `SlotRef`, with no node identifier, counter or slot-to-node table.  The
+keyed by `SlotRef`, with no node identifier, counter or slot-to-node table.  At
+`v0.36.104` (ZA5.3 part 3) copy, mint, move and reply-cap mint check first and
+then write the CNode in its store slot and the tree in its field, and the hash
+index reduces a word hash, so no table lookup builds a big number.  The
 suspend of a thread blocked in IPC or holding a donated context is the one
 syscall arm left on the general path (ZA6.1).  ZA6 covers the other
 entries and makes the rule standing.  Plan:

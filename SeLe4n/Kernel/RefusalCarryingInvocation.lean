@@ -658,6 +658,62 @@ the write alone.  An arm whose checks refuse, and every arm not yet split, is
           notificationId)
         (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
     | _ => .error (.invalidCapability, st)
+  | .cspaceMint =>
+    match cap.target with
+    | .object cnodeId =>
+      match decodeCSpaceMintArgsBy (msgRegOfFile layout regs) with
+      | .error e => .error (e, st)
+      | .ok args =>
+        let src : CSpaceAddr := { cnode := cnodeId, slot := args.srcSlot }
+        let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
+        let badge : Option SeLe4n.Badge :=
+          if args.badge.val = 0 then none else some args.badge
+        RefusalCarrying.ofChecked
+          (securityFlowsTo (ctx.objectLabelOf src.cnode) (ctx.objectLabelOf dst.cnode) &&
+            cspaceMintAdmitted src dst args.rights badge st)
+          (fun st => cspaceMintPerform src dst args.rights badge st)
+          (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
+    | _ => .error (.invalidCapability, st)
+  | .cspaceMove =>
+    match cap.target with
+    | .object cnodeId =>
+      match decodeCSpaceMoveArgsBy (msgRegOfFile layout regs) with
+      | .error e => .error (e, st)
+      | .ok args =>
+        let src : CSpaceAddr := { cnode := cnodeId, slot := args.srcSlot }
+        let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
+        RefusalCarrying.ofChecked
+          (securityFlowsTo (ctx.objectLabelOf src.cnode) (ctx.objectLabelOf dst.cnode) &&
+            cspaceMoveAdmitted src dst st)
+          (fun st => cspaceMovePerform src dst st)
+          (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
+    | _ => .error (.invalidCapability, st)
+  | .mintReplyCap =>
+    match cap.target with
+    | .object cnodeId =>
+      match decodeCSpaceCopyArgsBy (msgRegOfFile layout regs) with
+      | .error e => .error (e, st)
+      | .ok args =>
+        let src : CSpaceAddr := { cnode := cnodeId, slot := args.srcSlot }
+        let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
+        RefusalCarrying.ofChecked (mintReplyCapAdmitted src dst st)
+          (fun st => mintReplyCapPerform src dst st)
+          (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
+    | _ => .error (.invalidCapability, st)
+  | .cspaceCopy =>
+    match cap.target with
+    | .object cnodeId =>
+      match decodeCSpaceCopyArgsBy (msgRegOfFile layout regs) with
+      | .error e => .error (e, st)
+      | .ok args =>
+        let src : CSpaceAddr := { cnode := cnodeId, slot := args.srcSlot }
+        let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
+        RefusalCarrying.ofChecked
+          (securityFlowsTo (ctx.objectLabelOf src.cnode) (ctx.objectLabelOf dst.cnode) &&
+            cspaceCopyAdmitted src dst st)
+          (fun st => cspaceCopyPerform src dst st)
+          (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
+    | _ => .error (.invalidCapability, st)
   | _ =>
     match dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap st with
     | .error e => .error (e, st)
@@ -954,6 +1010,60 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
       apply RefusalCarrying.ofChecked_eq
       intro hA
       simp only [dispatchInvocationBy, unbindNotification_of_inPlace _ _ hA]
+    all_goals rfl
+  case cspaceMint =>
+    cases target
+    case object cnodeId =>
+      dsimp only
+      cases hD : decodeCSpaceMintArgsBy (msgRegOfFile layout regs) with
+      | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD]
+      | ok args =>
+        dsimp only
+        apply RefusalCarrying.ofChecked_eq
+        intro hA
+        simp only [Bool.and_eq_true] at hA
+        simp only [dispatchInvocationBy, hD, cspaceMintChecked, hA.1, ↓reduceIte,
+          cspaceMintWithCdt_of_admitted hA.2]
+    all_goals rfl
+  case cspaceMove =>
+    cases target
+    case object cnodeId =>
+      dsimp only
+      cases hD : decodeCSpaceMoveArgsBy (msgRegOfFile layout regs) with
+      | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD]
+      | ok args =>
+        dsimp only
+        apply RefusalCarrying.ofChecked_eq
+        intro hA
+        simp only [Bool.and_eq_true] at hA
+        simp only [dispatchInvocationBy, hD, cspaceMoveChecked, hA.1, ↓reduceIte,
+          cspaceMove_of_admitted hA.2]
+    all_goals rfl
+  case mintReplyCap =>
+    cases target
+    case object cnodeId =>
+      dsimp only
+      cases hD : decodeCSpaceCopyArgsBy (msgRegOfFile layout regs) with
+      | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD]
+      | ok args =>
+        dsimp only
+        apply RefusalCarrying.ofChecked_eq
+        intro hA
+        simp only [dispatchInvocationBy, hD, mintReplyCapWithCdt_of_admitted hA]
+    all_goals rfl
+  case cspaceCopy =>
+    cases target
+    case object cnodeId =>
+      dsimp only
+      cases hD : decodeCSpaceCopyArgsBy (msgRegOfFile layout regs) with
+      | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD]
+      | ok args =>
+        dsimp only
+        apply RefusalCarrying.ofChecked_eq
+        intro hA
+        simp only [Bool.and_eq_true] at hA
+        simp only [dispatchInvocationBy, hD, cspaceCopyChecked, hA.1, ↓reduceIte,
+          cspaceCopy_of_admitted hA.2]
     all_goals rfl
   all_goals
     dsimp only [RefusalCarrying.ofKernel]

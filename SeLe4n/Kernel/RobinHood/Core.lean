@@ -64,6 +64,25 @@ instance [Repr α] [Repr β] : Repr (RHTable α β) where
     (_hCapPos : 0 < capacity) : Nat :=
   (hash k).toNat % capacity
 
+/-- WS-ZA ZA5.3: the compiled `idealIndex`, reduced in machine words.  A hash at
+or above `2 ^ 63` is a big number once it is a `Nat`, so `(hash k).toNat` built
+one on every insert and lookup of a key with a mixed hash (`SlotRef`); a word
+`%` by a capacity below `2 ^ 64` leaves only the index, a small number.  A call,
+specialised to the key's hash: inlined, its two arms split the caller's probe
+into a join point, and an in-place table update (`RHTable.modifyImpl`) then
+rebuilt the table record instead of reusing it. -/
+@[noinline, specialize] def idealIndexImpl [Hashable α] (k : α) (capacity : Nat)
+    (_hCapPos : 0 < capacity) : Nat :=
+  if capacity < UInt64.size then (hash k % capacity.toUInt64).toNat
+  else (hash k).toNat % capacity
+
+@[csimp] theorem idealIndex_eq_impl : @idealIndex = @idealIndexImpl := by
+  funext α _ k capacity h
+  unfold idealIndex idealIndexImpl
+  split
+  · next hc => rw [UInt64.toNat_mod, UInt64.toNat_ofNat_of_lt' hc]
+  · rfl
+
 /-- Advance to the next slot index with wrap-around. -/
 @[inline] def nextIndex (i : Nat) (capacity : Nat) : Nat :=
   (i + 1) % capacity
