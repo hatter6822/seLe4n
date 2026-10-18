@@ -101,13 +101,14 @@ def frozenObjectAgrees (f : FrozenKernelObject) (l : KernelObject) : Bool :=
   -- counterpart passed.  A binding here that goes unused is a field nobody
   -- compared, which the unused-variable linter reports; adding a field to
   -- either structure breaks this pattern until someone decides about it.
-  | .cnode (fc@⟨fd, fgw, fgv, frw, _fslots⟩),
+  | .cnode (fc@⟨fd, fgw, fgv, frw, _fslots, flinks⟩),
     -- The live slot array is not compared: `slots_agree` makes it the slot map's.
-    -- The derivation links are not compared: the frozen surface carries no
-    -- derivation tree, so it has nothing to hold them against.
-    .cnode (lc@⟨ld, lgw, lgv, lrw, _lslots, _lcells, _, _, _llinks, _⟩) =>
+    -- The derivation links are compared word for word (PR #956 review): the
+    -- frozen CNode carries them, and `frozenStateAgrees` compares the tree's
+    -- edges they index.
+    .cnode (lc@⟨ld, lgw, lgv, lrw, _lslots, _lcells, _, _, llinks, _⟩) =>
       fd == ld && fgw == lgw && fgv == lgv && frw == lrw
-        && frozenCNodeSlotsAgree fc lc
+        && frozenCNodeSlotsAgree fc lc && flinks == llinks
   | .vspaceRoot (fv@⟨fasid, _fm, fbase, ftables, _fepochs⟩),
     .vspaceRoot (lv@⟨lasid, _lm, lbase, ltables, _lepochs⟩) =>
       fasid == lasid && fbase == lbase && ftables == ltables
@@ -178,7 +179,11 @@ def frozenStateAgrees (fs : FrozenSystemState) (ls : SystemState) : Bool :=
     (lorder.map (bootRunQueuePrio ls)
         ++ fs.scheduler.byPriority.indexMap.toList.map Prod.fst).all (fun prio =>
       (fs.scheduler.byPriority.get? prio).getD [] == (lb.get? prio).getD [])
+  -- PR #956 review: the derivation tree's edges, which the frozen CNodes' links
+  -- index; comparing the links without the edges would accept a tree the links
+  -- no longer describe.
   objectsAgree && taintAgree && queueAgree
+    && decide (fs.cdtEdges = ls.cdt.edges)
     && fs.scheduler.current == ls.scheduler.currentOnCore Concurrency.bootCoreId
     && fs.scheduler.activeDomain == ls.scheduler.activeDomainOnCore Concurrency.bootCoreId
 
