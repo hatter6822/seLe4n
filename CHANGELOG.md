@@ -77,7 +77,10 @@ links to it.
 - **Runtime check and fixtures**: the state invariant checks compare every
   slot's links with the tree (`cdtLinksAgreeCheck`), and test fixtures build
   their trees through the paired operation
-  (`SystemState.withDerivationEdges`).
+  (`SystemState.withDerivationEdges`).  The check asks the tree only about the
+  slots it names and reads every other slot's link words directly, so a sparse
+  wide CNode costs a pass over its words, not a tree query per slot
+  (`tests/NegativeStateSuite.lean`, `runSlotLinkAgreementChecks`).
 
 Allocation readings (normal build): copy 13 → 6, mint 16 → 9, move 18 → 8,
 reply-cap mint 14 → 7, delete 27 → 22, revoke 34 → 32, reply-cap delete

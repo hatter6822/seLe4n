@@ -1589,6 +1589,41 @@ private def runBuilderRunPlacementChecks : IO Unit := do
      | .ok st => st.runQueueWalk SeLe4n.Kernel.Concurrency.bootCoreId == [tid]
      | .error _ => false) true
 
+/-- WS-ZA ZA5.3 part 4 review: the runtime link-agreement check reads a sparse
+radix-16 CNode's link words without querying the tree per addressable slot, and
+still refuses a stray link at a slot the tree does not name and a wrong link at
+one it does. -/
+private def runSlotLinkAgreementChecks : IO Unit := do
+  let expectBool (label : String) (actual expected : Bool) : IO Unit :=
+    if actual == expected then IO.println s!"positive check passed [{label}]"
+    else throw <| IO.userError s!"{label}: expected {expected}, got {actual}"
+  let wideId : SeLe4n.ObjId := ⟨5150⟩
+  let rootSlot : SlotRef := { cnode := wideId, slot := SeLe4n.Slot.ofNat 3 }
+  let childSlot : SlotRef := { cnode := wideId, slot := SeLe4n.Slot.ofNat 40000 }
+  let cap : Capability :=
+    { target := .object endpointId, rights := AccessRightSet.ofList [.read], badge := none }
+  let seed : SystemState := {
+    baseState with
+      objects := baseState.objects.insert wideId (.cnode (CNode.ofList 16 0 0 16
+        [(rootSlot.slot, cap), (childSlot.slot, cap)]))
+  } |>.withDerivationEdges [(rootSlot, childSlot, .copy)]
+  let ids := wideId :: invariantObjectIds
+  let linkCheckFails (st : SystemState) : Bool :=
+    (stateInvariantChecksFor ids st).any
+      (fun c => !c.2 && c.1 == "cdt slot links agree with the tree")
+  expectBool "control: a sparse radix-16 CNode's links agree with its tree"
+    (linkCheckFails seed) false
+  let withLink (st : SystemState) (s : SeLe4n.Slot) (f : LinkField) (c w : Nat) : SystemState :=
+    match st.getCNode? wideId with
+    | some cn => { st with objects := st.objects.insert wideId (.cnode (cn.setLinkWords s f c w)) }
+    | none => st
+  expectBool "a stray parent link at a slot the tree does not name is refused"
+    (linkCheckFails (withLink seed (SeLe4n.Slot.ofNat 65000) .parent (wideId.toNat + 1) 4)) true
+  expectBool "a wrong next link at a slot the tree names is refused"
+    (linkCheckFails (withLink seed childSlot.slot .next (wideId.toNat + 1) 4)) true
+  expectBool "a slot word alone, with no CNode word, is no link and is not refused"
+    (linkCheckFails (withLink seed (SeLe4n.Slot.ofNat 65000) .parent 0 4)) false
+
 private def runNegativeChecks : IO Unit := do
   runBaselineLookupNegativeChecks                       -- [was 248-262]
   runCspaceMutationAndRevokeNegativeChecks              -- [was 263-461; sections 2+3 combined for strictSeed/strictRootSlot reuse]
@@ -1600,6 +1635,7 @@ private def runNegativeChecks : IO Unit := do
   runDualQueueTailPairingChecks                         -- WS-RR RR8.4
   runEndpointQueueHeadDisjointChecks                    -- PR #897 review (v0.35.108)
   runBuilderRunPlacementChecks                          -- PR #932 review
+  runSlotLinkAgreementChecks                            -- PR #956 review
 
   -- ==========================================================================
   -- WS-D4 F-12: Double-wait prevention in notificationWait (was 1036-1043).
