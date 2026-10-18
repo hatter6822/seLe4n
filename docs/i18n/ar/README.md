@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.36.105-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.36.106-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -58,7 +58,7 @@ seLe4n هو نواة مصغرة بُنيت من الصفر بلغة Lean 4. كل
 
 - **مسارات ساخنة بتعقيد O(1) قائمة على التجزئة** — جميع مخازن الكائنات وطوابير التشغيل وفتحات CNode وتعيينات VSpace وطوابير IPC تستخدم جداول تجزئة Robin Hood محققة رسميًا مع ثوابت `distCorrect` و`noDupKeys` و`probeChainDominant`
 - **IPC بطابور مزدوج مضمّن (Intrusive dual-queue IPC)** — مؤشرات خلفية لكل خيط لإدراج وحذف وإزالة من منتصف الطابور بتعقيد O(1)
-- **شجرة اشتقاق صلاحيات مستقرة العقد** — فهارس `childMap` + `parentMap` لنقل الفتحات والإلغاء وتجول الأحفاد بتعقيد O(1)
+- **شجرة اشتقاق صلاحيات مربوطة عبر الفتحات** — تحمل كل فتحة روابط أصلها وأول أبنائها وأشقائها (قاعدة بيانات الربط في seL4)، مع برهان على توافقها مع الشجرة؛ ويسير نقل الفتحات والإلغاء وتجول الأحفاد عبر الروابط
 
 ### الأمان والتحقق
 
@@ -80,7 +80,7 @@ seLe4n هو نواة مصغرة بُنيت من الصفر بلغة Lean 4. كل
 
 | السمة | القيمة |
 |-------|--------|
-| **الإصدار** | `0.36.105` |
+| **الإصدار** | `0.36.106` |
 | **سلسلة أدوات Lean** | `v4.28.0` |
 | **أسطر Lean الإنتاجية** | 476,730 عبر 431 ملفًا |
 | **أسطر Lean للاختبارات** | 86,924 عبر 70 مجموعة اختبار |

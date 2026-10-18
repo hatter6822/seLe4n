@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Segurança" /></a>
-  <img src="https://img.shields.io/badge/version-0.36.105-blue" alt="Versão" />
+  <img src="https://img.shields.io/badge/version-0.36.106-blue" alt="Versão" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="Licença" /></a>
 </p>
@@ -69,7 +69,7 @@ provas do Lean 4:
 
 - **Caminhos críticos O(1) baseados em hash** — todos os armazenamentos de objetos, filas de execução, slots de CNode, mapeamentos de VSpace e filas de IPC utilizam tabelas hash Robin Hood formalmente verificadas com invariantes `distCorrect`, `noDupKeys` e `probeChainDominant`
 - **IPC intrusivo com fila dupla** — back-pointers por thread para enfileiramento, desenfileiramento e remoção no meio da fila em O(1)
-- **Árvore de derivação de capabilities estável por nó** — índices `childMap` + `parentMap` para transferência de slot, revogação e travessia de descendentes em O(1)
+- **Árvore de derivação de capabilities encadeada pelos slots** — cada slot guarda os links para o pai, o primeiro filho e os irmãos (o banco de mapeamento do seL4), com prova de que concordam com a árvore; transferência de slots, revogação e travessia de descendentes seguem os links
 
 ### Segurança e verificação
 
@@ -95,7 +95,7 @@ provas do Lean 4:
 
 | Atributo | Valor |
 |----------|-------|
-| **Versão** | `0.36.105` |
+| **Versão** | `0.36.106` |
 | **Toolchain Lean** | `v4.28.0` |
 | **LoC Lean de produção** | 476.730 em 431 arquivos |
 | **LoC Lean de testes** | 86.924 em 70 suítes de testes |

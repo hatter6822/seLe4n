@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.36.105-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.36.106-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -65,7 +65,7 @@ seLe4n は Lean 4 で一から構築されたマイクロカーネルです。�
 
 - **O(1) ハッシュベースのホットパス** ―― すべてのオブジェクトストア、ランキュー、CNode スロット、VSpace マッピング、IPC キューは、`distCorrect`、`noDupKeys`、`probeChainDominant` 不変条件を備えた形式検証済み Robin Hood ハッシュテーブルを使用
 - **侵入型デュアルキュー IPC** ―― スレッドごとのバックポインタにより O(1) のエンキュー、デキュー、キュー途中削除を実現
-- **ノード安定型ケイパビリティ派生ツリー** ―― `childMap` + `parentMap` インデックスにより O(1) のスロット転送、失効、子孫走査を実現
+- **スロットを通じて連結されたケイパビリティ派生ツリー** ―― 各スロットが親・最初の子・兄弟へのリンクを保持し（seL4 のマッピングデータベース）、ツリーとの一致を証明。スロット転送、失効、子孫走査はリンクをたどる
 
 ### セキュリティと検証
 
@@ -91,7 +91,7 @@ seLe4n は Lean 4 で一から構築されたマイクロカーネルです。�
 
 | 属性 | 値 |
 |------|-----|
-| **バージョン** | `0.36.105` |
+| **バージョン** | `0.36.106` |
 | **Lean ツールチェーン** | `v4.28.0` |
 | **本番 Lean コード行数** | 431 ファイルにわたる 476,730 行 |
 | **テスト Lean コード行数** | 70 テストスイートにわたる 86,924 行 |

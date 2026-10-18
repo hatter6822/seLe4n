@@ -1994,9 +1994,9 @@ private def chain16StrictRevokePartialFail : IO Unit := do
             → B2
 Total 5 descendants. Verifies deletedSlots.length = 5, all entries come
 from the expected descendant set, root is preserved, and CDT nodes are
-detached. Note: `descendantsOf` traverses children via HashMap-backed
-`childrenOf`, so sibling ordering (A vs B) is non-deterministic; we
-verify set membership rather than exact BFS ordering. -/
+detached. The walk reads each node's children newest first (along its
+first-child and next links), so the order is fixed; the checks below hold for
+any breadth-first order: set membership, and each parent before its child. -/
 private def chain17StrictRevokeOrdering : IO Unit := do
   let rootCNode : SeLe4n.ObjId := ⟨7400⟩
   let cnodeA : SeLe4n.ObjId := ⟨7401⟩
@@ -2076,8 +2076,6 @@ private def chain17StrictRevokeOrdering : IO Unit := do
   expect "chain17: all deletedSlots are from expected set" allInSet
 
   -- Verify partial BFS ordering: within each sub-chain, parent precedes child.
-  -- (Sibling ordering between A and B branches is non-deterministic due to
-  -- HashMap iteration order in childrenOf, so we only verify parent-before-child.)
   let indexOf (s : SeLe4n.Kernel.CSpaceAddr) (xs : List SeLe4n.Kernel.CSpaceAddr) : Option Nat :=
     let rec go (l : List SeLe4n.Kernel.CSpaceAddr) (i : Nat) : Option Nat :=
       match l with

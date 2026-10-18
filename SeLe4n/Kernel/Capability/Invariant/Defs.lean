@@ -238,9 +238,12 @@ standalone operation-correctness lemmas in `Authority.lean`.
 WS-RC R4.A.6: The historical `cspaceSlotUnique` conjunct was removed when
 `CNode.slots : SeLe4n.UniqueSlotMap Capability` carried the slot-uniqueness
 witness structurally at construction time (via `UniqueSlotMap.hWF`).  The
-bundle now has **7** conjuncts: the R4.A.6 close-out retired `cspaceSlotUnique`
-(7 → 6), then PR #822 Phase H #1.a added `replyCapPointsToValidReply` (the 7th,
-6 → 7) so the step-preserved bundle rules out dangling `.replyCap` slots.
+bundle now has **8** conjuncts: the R4.A.6 close-out retired `cspaceSlotUnique`
+(7 → 6), PR #822 Phase H #1.a added `replyCapPointsToValidReply` (the 7th,
+6 → 7) so the step-preserved bundle rules out dangling `.replyCap` slots, and
+WS-ZA ZA5.3 part 4 added `cdtLinksAgree` (the 8th): the derivation links the
+slots hold agree with the tree, so the executable children and descendant reads
+that walk them read the tree.
 Per-CNode slot uniqueness is discharged directly via
 `SeLe4n.Model.CNode.slotsUnique_holds`. -/
 def capabilityInvariantBundle (st : SystemState) : Prop :=
@@ -251,10 +254,10 @@ def capabilityInvariantBundle (st : SystemState) : Prop :=
 
 /-! ## AN4-F.5 (CAP-M05) — Named-projection refactor of `capabilityInvariantBundle`
 
-Mirror of the AN3-B playbook for IPC's `ipcInvariantFull`. The 7-conjunct
+Mirror of the AN3-B playbook for IPC's `ipcInvariantFull`. The 8-conjunct
 right-associative `∧` chain above (6 after the WS-RC R4.A.6 close-out retired
-`cspaceSlotUnique`, then 7 again once PR #822 Phase H #1.a added
-`replyCapPointsToValidReply`) is fragile to reason about —
+`cspaceSlotUnique`, 7 once PR #822 Phase H #1.a added
+`replyCapPointsToValidReply`, 8 with `cdtLinksAgree`) is fragile to reason about —
 consumers write `.2.2.1` to reach `cdtCompleteness`, `.2.2.2.1` for
 `cdtAcyclicity`, and so on. The audit's CAP-M05 finding calls for a named
 structure that exposes each field by name.

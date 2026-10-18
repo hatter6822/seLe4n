@@ -3969,7 +3969,7 @@ run_check "INVARIANT" rg -n '^theorem bootSafeVSpaceRoot_mappingsSafe($|[ ({:\[\
 # capability or an out-of-range badge is refused, and the soundness bridge
 # concludes every conjunct of `bootSafeObject` rather than the structural part.
 run_check "INVARIANT" rg -n '^def bootSafeCapCheck($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
-run_check "INVARIANT" rg -n '^    cn\.allCells \(fun _ cap => bootSafeCapCheck cap\)$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n -U '^    cn\.allCells \(fun _ cap => bootSafeCapCheck cap\) &&\n    cn\.linksClear$' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^theorem bootSafeObjectCheck_sound \(obj : KernelObject\)$' SeLe4n/Platform/Boot.lean
 run_negative_check "INVARIANT" rg -n 'bootSafeObjectCheck_sound_structural' SeLe4n tests
 # The v0.36.2 audit: a boot untyped is pristine — the check reads its carve
@@ -21948,7 +21948,12 @@ run_check "INVARIANT" rg -n -U '        else if !objectIdInAddressSpace st\.mach
 # and the local revoke do the same for each slot they destroy.
 run_check "INVARIANT" rg -n '^def spliceNode($|[ ({:\[\]])' SeLe4n/Model/Object/Structures.lean
 run_check "INVARIANT" rg -n '^theorem spliceNode_edgeWellFounded($|[ ({:\[\]])' SeLe4n/Model/Object/Structures.lean
-run_check "INVARIANT" rg -n '^theorem spliceNode_mapsWellFormed($|[ ({:\[\]])' SeLe4n/Model/Object/Structures.lean
+run_check "INVARIANT" rg -n '^theorem spliceNode \(h : LinksAgree L cdt\) \(n : SlotRef\)$' SeLe4n/Model/Object/DerivationLinks.lean
+# v0.36.106: the capability bundle carries the slot links' agreement with the
+# tree, and the revoke's descendant read walks the links.
+run_check "INVARIANT" rg -n -U '    cspaceDepthConsistent st ∧ st\.objects\.invExt ∧ replyCapPointsToValidReply st ∧\n    cdtLinksAgree st$' SeLe4n/Kernel/Capability/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^        match traverse st addr \(st\.linkDescendantsOf addr\) with$' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^theorem linkDescendantsOf_eq($|[ ({:\[\]])' SeLe4n/Model/SlotLinks.lean
 run_check "INVARIANT" rg -n '^def spliceDeletedCdtNode($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
 run_check "INVARIANT" rg -n -U '    \| \.ok \(\(\), st.\) => \.ok \(\(\), spliceDeletedCdtNode st. addr\)' SeLe4n/Kernel/Capability/Operations.lean
 run_check "INVARIANT" rg -n -U '  cn\.foldCells st \(fun acc slot _cap =>\n    spliceDeletedCdtNode acc \{ cnode := cnodeId, slot := slot \}' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean

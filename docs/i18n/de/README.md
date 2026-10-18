@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Sicherheit" /></a>
-  <img src="https://img.shields.io/badge/version-0.36.105-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.36.106-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="Lizenz" /></a>
 </p>
@@ -69,7 +69,7 @@ Lean-4-Beweissystem ermöglicht werden:
 
 - **O(1)-hashbasierte Hotpaths** — alle Object Stores, Run Queues, CNode Slots, VSpace-Mappings und IPC-Queues verwenden formal verifizierte Robin-Hood-Hashtabellen mit `distCorrect`-, `noDupKeys`- und `probeChainDominant`-Invarianten
 - **Intrusive Dual-Queue-IPC** — Rückzeiger pro Thread für O(1)-Einreihung, -Entnahme und -Entfernung aus der Warteschlangenmitte
-- **Knotenstabiler Capability-Ableitungsbaum** — `childMap` + `parentMap`-Indizes für O(1)-Slot-Transfer, Widerruf und Nachfahrendurchlauf
+- **Durch die Slots verketteter Capability-Ableitungsbaum** — jeder Slot hält Eltern-, Erstkind- und Geschwister-Links (die Mapping-Datenbank von seL4), bewiesen übereinstimmend mit dem Baum; Slot-Transfer, Widerruf und Nachfahrendurchlauf folgen den Links
 
 ### Sicherheit und Verifikation
 
@@ -95,7 +95,7 @@ Lean-4-Beweissystem ermöglicht werden:
 
 | Eigenschaft | Wert |
 |-------------|------|
-| **Version** | `0.36.105` |
+| **Version** | `0.36.106` |
 | **Lean-Toolchain** | `v4.28.0` |
 | **Produktions-LoC (Lean)** | 476.730 über 431 Dateien |
 | **Test-LoC (Lean)** | 86.924 über 70 Testsuiten |

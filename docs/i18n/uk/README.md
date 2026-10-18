@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Безпека" /></a>
-  <img src="https://img.shields.io/badge/version-0.36.105-blue" alt="Версія" />
+  <img src="https://img.shields.io/badge/version-0.36.106-blue" alt="Версія" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="Ліцензія" /></a>
 </p>
@@ -70,7 +70,7 @@ security model) від seL4, водночас впроваджуючи архі�
 
 - **O(1) хеш-операції на критичних шляхах** — усі сховища об'єктів, черги планувальника, слоти CNode, відображення VSpace та черги IPC використовують формально верифіковані хеш-таблиці Robin Hood з інваріантами `distCorrect`, `noDupKeys` та `probeChainDominant`
 - **Інтрузивна подвійна черга IPC** — зворотні вказівники (back-pointers) для кожного потоку для O(1) постановки, вилучення та видалення з середини черги
-- **Дерево виведення мандатів зі стабільними вузлами** — індекси `childMap` + `parentMap` для O(1) передачі слотів, відкликання та обходу нащадків
+- **Дерево виведення мандатів, зв'язане через слоти** — кожен слот зберігає посилання на батька, першого нащадка і сусідів (база відображень seL4), їхню узгодженість із деревом доведено; передача слотів, відкликання та обхід нащадків ідуть за посиланнями
 
 ### Безпека та верифікація
 
@@ -96,7 +96,7 @@ security model) від seL4, водночас впроваджуючи архі�
 
 | Атрибут | Значення |
 |---------|----------|
-| **Версія** | `0.36.105` |
+| **Версія** | `0.36.106` |
 | **Тулчейн Lean** | `v4.28.0` |
 | **Продуктовий код (Lean LoC)** | 476 730 рядків у 431 файлі |
 | **Тестовий код (Lean LoC)** | 86 924 рядки у 70 тест-сьютах |

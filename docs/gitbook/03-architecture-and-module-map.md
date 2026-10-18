@@ -306,7 +306,7 @@ inventory was written:
   - `Invariant/Preservation/CopyMoveMutate.lean` — `cspaceCopy` / `cspaceMove` / `cspaceMintWithCdt` / `cspaceMutate` preservation.
   - `Invariant/Preservation/Revoke.lean` — `processRevokeNode` + `cspaceRevokeCdt` (+ strict / streaming variants) preservation.
   - `Invariant/Preservation/EndpointReplyAndLifecycle.lean` — `endpointReply` + `coreIpcInvariantBundle` + `lifecycleRetypeObject` / `lifecycleRevokeDeleteRetype` preservation cluster.
-  - `Invariant/Preservation/BadgeIpcCapsAndCdtMaps.lean` — Mint / Mutate badge preservation + `ipcTransferSingleCap` / `ipcUnwrapCaps` variants + `cdtMapsConsistent` preservation + CDT composition witnesses.
+  - `Invariant/Preservation/BadgeIpcCapsAndCdtMaps.lean` — Mint / Mutate badge preservation + `ipcTransferSingleCap` / `ipcUnwrapCaps` variants + CDT composition witnesses.
 - **WS-N modules** (v0.17.0–v0.17.5, **PORTFOLIO COMPLETE**):
   - `SeLe4n/Kernel/RobinHood/Core.lean` — Robin Hood hash table types (`RHEntry`, `RHTable`), fuel-bounded operations (`insert`, `get?`, `erase`, `fold`, `resize`), `GetElem?`/`Membership` instances. 379 LoC. **N1 COMPLETED** (v0.17.1).
   - `SeLe4n/Kernel/RobinHood/Bridge.lean` — Kernel API bridge: `Inhabited`/`BEq` instances, 12 bridge lemmas, `filter`/`ofList` support. ~860 LoC. **N3 COMPLETED** (v0.17.3).
