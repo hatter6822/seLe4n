@@ -838,7 +838,8 @@ def notificationReferencesReservedIdleSlot (notif : Notification) : Bool :=
     (`capTargetsReservedIdleObject`). -/
 def cnodeReferencesReservedIdleSlot (cn : CNode) : Bool :=
   match cn with
-  | ⟨_depth, _guardWidth, _guardValue, _radixWidth, _slotsGhost, _cells, _, _⟩ =>
+  -- The derivation links name slots of CNodes, never an idle object.
+  | ⟨_depth, _guardWidth, _guardValue, _radixWidth, _slotsGhost, _cells, _, _, _links, _⟩ =>
     !(cn.allCells fun _ cap => !SeLe4n.Kernel.capTargetsReservedIdleObject cap)
 
 /-- PR #889 review round 8: every field of a boot **TCB** that can hold an
@@ -1750,7 +1751,7 @@ def bootSafeCapCheck (cap : Capability) : Bool :=
     the slot map (`CNode.allSlots_eq_allCells`). -/
 def bootSafeCnodeCheck (cn : CNode) : Bool :=
   match cn with
-  | ⟨_depth, _guardWidth, _guardValue, _radixWidth, _slotsGhost, _cells, _, _⟩ =>
+  | ⟨_depth, _guardWidth, _guardValue, _radixWidth, _slotsGhost, _cells, _, _, _links, _⟩ =>
     decide (cn.depth ≤ maxCSpaceDepth) &&
     decide (cn.bitsConsumed > 0 → cn.bitsConsumed ≤ cn.depth ∧ 0 < cn.bitsConsumed ∧ cn.guardBounded) &&
     cn.allCells (fun _ cap => bootSafeCapCheck cap)

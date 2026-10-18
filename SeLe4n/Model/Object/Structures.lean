@@ -1191,6 +1191,26 @@ def filterSlots (node : CNode) (f : SeLe4n.Slot → Capability → Bool) : CNode
       · simp only [h, if_true]; rfl
       · simp [slotArrayGet, h] }
 
+/-- WS-ZA ZA5.3 part 4: the CNode with every derivation link cleared.  The
+information-flow projection reads a CNode through this, so the links, like the
+derivation tree they encode, are never observable. -/
+def withoutLinks (node : CNode) : CNode :=
+  { node with
+    links := Array.replicate (slotLinkWords * 2 ^ node.radixWidth) 0
+    links_size := Array.size_replicate }
+
+@[simp] theorem slots_withoutLinks (node : CNode) : node.withoutLinks.slots = node.slots := rfl
+@[simp] theorem cells_withoutLinks (node : CNode) : node.withoutLinks.cells = node.cells := rfl
+@[simp] theorem depth_withoutLinks (node : CNode) : node.withoutLinks.depth = node.depth := rfl
+@[simp] theorem guardWidth_withoutLinks (node : CNode) :
+    node.withoutLinks.guardWidth = node.guardWidth := rfl
+@[simp] theorem guardValue_withoutLinks (node : CNode) :
+    node.withoutLinks.guardValue = node.guardValue := rfl
+@[simp] theorem radixWidth_withoutLinks (node : CNode) :
+    node.withoutLinks.radixWidth = node.radixWidth := rfl
+@[simp] theorem lookup_withoutLinks (node : CNode) (s : SeLe4n.Slot) :
+    node.withoutLinks.lookup s = node.lookup s := rfl
+
 /-- WS-ZA ZA5.3: the filter on the ghost map. -/
 @[simp] theorem slots_filterSlots (node : CNode) (f : SeLe4n.Slot → Capability → Bool) :
     (node.filterSlots f).slots = node.slots.filter f := by
