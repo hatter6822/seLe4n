@@ -166,10 +166,33 @@ theorem mintReplyCapWithCdt_runQueueStage {st st' : SystemState} {src dst : CSpa
       unfold mintReplyCap at hMint; run_queue_stage_at hMint
     exact hM.trans (cdtRecord_runQueueStage stM src dst .mint)
 
+/-- One slot-link write rewrites a CNode, which holds no run-queue state. -/
+theorem _root_.SeLe4n.Model.SystemState.RunQueueStage.setSlotLinkWords (st : SystemState)
+    (o : SeLe4n.ObjId) (s : SeLe4n.Slot) (f : SeLe4n.Model.LinkField) (c w : Nat) :
+    RunQueueStage st (st.setSlotLinkWords o s f c w) := by
+  cases hcn : st.objects[o]? with
+  | none => exact RunQueueStage.of_eq (by unfold SystemState.setSlotLinkWords; rw [hcn])
+  | some ob =>
+    cases ob with
+    | cnode cn =>
+      rw [SystemState.setSlotLinkWords_of_cnode hcn]
+      exact RunQueueStage.insert rfl rfl rfl (fun _ => by rw [hcn]; rfl)
+        (by rw [hcn]; exact ⟨fun _ hx => by simp [SystemState.objTcb?] at hx,
+          fun _ hx _ => by simp [SystemState.objTcb?] at hx⟩)
+    | _ => exact RunQueueStage.of_eq (by unfold SystemState.setSlotLinkWords; rw [hcn])
+
+/-- A run of slot-link writes is a run-queue stage. -/
+theorem _root_.SeLe4n.Model.SystemState.RunQueueStage.of_linkReach {st₀ st : SystemState}
+    (h : SystemState.linkReach st₀ st) : RunQueueStage st₀ st := by
+  induction h with
+  | refl => exact RunQueueStage.refl _
+  | step _ o s f c w ih => exact ih.trans (RunQueueStage.setSlotLinkWords _ o s f c w)
+
 theorem cspaceDeleteSlot_runQueueStage {st st' : SystemState} {addr : CSpaceAddr}
     (h : cspaceDeleteSlot addr st = .ok ((), st')) : RunQueueStage st st' := by
   obtain ⟨stC, hCore, rfl⟩ := cspaceDeleteSlot_ok_decompose addr st st' h
-  exact (cspaceDeleteSlotCore_runQueueStage hCore).trans (RunQueueStage.of_frame rfl rfl rfl)
+  exact (cspaceDeleteSlotCore_runQueueStage hCore).trans ((withCdt_runQueueStage _ _).trans
+    (RunQueueStage.of_linkReach (spliceDeletedCdtNode_reach stC addr)))
 
 theorem processRevokeNode_runQueueStage {st st' : SystemState} {node : SlotRef}
     (h : processRevokeNode st node = .ok st') : RunQueueStage st st' := by

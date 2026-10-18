@@ -89,6 +89,31 @@ theorem objects_of_not_cnode {st st' : SystemState} (h : linksOnlyWrite st st')
   · rw [e, ho]
   · rw [ho] at hc; cases hc; exact absurd rfl (hn cn)
 
+theorem cnode_back {st st' : SystemState} (h : linksOnlyWrite st st') {oid : SeLe4n.ObjId}
+    {cn' : CNode} (h' : st'.objects[oid]? = some (.cnode cn')) :
+    ∃ cn, st.objects[oid]? = some (.cnode cn) ∧ cn'.withoutLinks = cn.withoutLinks := by
+  rcases h.2 oid with e | ⟨cn, cn'', ha, hb, hc⟩
+  · exact ⟨cn', e ▸ h', rfl⟩
+  · rw [hb] at h'; cases h'; exact ⟨cn, ha, hc⟩
+
+theorem cnode_fwd {st st' : SystemState} (h : linksOnlyWrite st st') {oid : SeLe4n.ObjId}
+    {cn : CNode} (hc : st.objects[oid]? = some (.cnode cn)) :
+    ∃ cn', st'.objects[oid]? = some (.cnode cn') ∧ cn'.withoutLinks = cn.withoutLinks := by
+  rcases h.2 oid with e | ⟨cn0, cn', ha, hb, hw⟩
+  · exact ⟨cn, e.trans hc, rfl⟩
+  · rw [hc] at ha; cases ha; exact ⟨cn', hb, hw⟩
+
+theorem obj_back {st st' : SystemState} (h : linksOnlyWrite st st') {oid : SeLe4n.ObjId}
+    {o : KernelObject} (h' : st'.objects[oid]? = some o) (hn : ∀ cn, o ≠ .cnode cn) :
+    st.objects[oid]? = some o := by
+  rcases h.2 oid with e | ⟨cn, cn', ha, hb, hc⟩
+  · rw [← e]; exact h'
+  · rw [hb] at h'; cases h'; exact absurd rfl (hn cn')
+
+/-- Every field but the objects is the pre-state's. -/
+theorem fields {st st' : SystemState} (h : linksOnlyWrite st st') :
+    st' = { st with objects := st'.objects } := h.1
+
 end linksOnlyWrite
 
 /-- A slot inside a live CNode's slot array: a slot whose links can be written. -/
@@ -729,6 +754,120 @@ theorem linkMoveNode_spec {st : SystemState} (hInv : st.objects.invExt) {old new
   rw [e4, e3, hW, e2]
   rfl
 
+/-- Two CNodes that agree off their derivation links agree on anything that
+reads past those links (slots, geometry). -/
+@[elab_without_expected_type]
+theorem _root_.SeLe4n.Model.CNode.proj_eq_of_withoutLinks_eq {α : Sort _} {a b : CNode} (f : CNode → α)
+    (h : a.withoutLinks = b.withoutLinks)
+    (hf : ∀ c : CNode, f c.withoutLinks = f c := by intro; rfl) : f a = f b := by
+  rw [← hf a, ← hf b, h]
+
+/-- **`st'` holds `st`'s objects up to CNode derivation links**: at every key
+the same object, or a CNode that differs from `st`'s only in its links.  The
+object half of `linksOnlyWrite`, for a step that also rewrites the tree. -/
+def objectsAgreeOffDerivationLinks (st' st : SystemState) : Prop :=
+  ∀ oid : SeLe4n.ObjId, st'.objects[oid]? = st.objects[oid]? ∨
+    ∃ cn cn' : CNode, st.objects[oid]? = some (.cnode cn) ∧
+      st'.objects[oid]? = some (.cnode cn') ∧ cn'.withoutLinks = cn.withoutLinks
+
+namespace objectsAgreeOffDerivationLinks
+
+theorem refl (st : SystemState) : objectsAgreeOffDerivationLinks st st := fun _ => .inl rfl
+
+theorem of_objects_eq {st st' : SystemState} (h : st'.objects = st.objects) :
+    objectsAgreeOffDerivationLinks st' st := fun _ => .inl (by rw [h])
+
+theorem of_linksOnlyWrite {st st' : SystemState} (h : linksOnlyWrite st st') :
+    objectsAgreeOffDerivationLinks st' st := h.2
+
+/-- The relation reads the object stores alone. -/
+theorem congr {a a' b b' : SystemState} (ha : a'.objects = a.objects)
+    (hb : b'.objects = b.objects) (h : objectsAgreeOffDerivationLinks a b) :
+    objectsAgreeOffDerivationLinks a' b' := fun x => by rw [ha, hb]; exact h x
+
+theorem trans {st₁ st₂ st₃ : SystemState} (h₂ : objectsAgreeOffDerivationLinks st₃ st₂)
+    (h₁ : objectsAgreeOffDerivationLinks st₂ st₁) : objectsAgreeOffDerivationLinks st₃ st₁ := by
+  intro oid
+  rcases h₂ oid with e₂ | ⟨b, c, hb, hc, hbc⟩
+  · rcases h₁ oid with e₁ | ⟨a, b', ha, hb', hab⟩
+    · exact .inl (e₂.trans e₁)
+    · exact .inr ⟨a, b', ha, e₂.trans hb', hab⟩
+  · rcases h₁ oid with e₁ | ⟨a, b', ha, hb', hab⟩
+    · exact .inr ⟨b, c, e₁ ▸ hb, hc, hbc⟩
+    · rw [hb'] at hb; cases hb; exact .inr ⟨a, c, ha, hc, hbc.trans hab⟩
+
+variable {st st' : SystemState} (h : objectsAgreeOffDerivationLinks st' st)
+include h
+
+theorem cnode_back {oid : SeLe4n.ObjId} {cn' : CNode} (h' : st'.objects[oid]? = some (.cnode cn')) :
+    ∃ cn, st.objects[oid]? = some (.cnode cn) ∧ cn'.withoutLinks = cn.withoutLinks := by
+  rcases h oid with e | ⟨cn, cn'', ha, hb, hc⟩
+  · exact ⟨cn', e ▸ h', rfl⟩
+  · rw [hb] at h'; cases h'; exact ⟨cn, ha, hc⟩
+
+theorem cnode_fwd {oid : SeLe4n.ObjId} {cn : CNode} (hc : st.objects[oid]? = some (.cnode cn)) :
+    ∃ cn', st'.objects[oid]? = some (.cnode cn') ∧ cn'.withoutLinks = cn.withoutLinks := by
+  rcases h oid with e | ⟨cn0, cn', ha, hb, hw⟩
+  · exact ⟨cn, e.trans hc, rfl⟩
+  · rw [hc] at ha; cases ha; exact ⟨cn', hb, hw⟩
+
+theorem obj_back {oid : SeLe4n.ObjId} {o : KernelObject} (h' : st'.objects[oid]? = some o)
+    (hn : ∀ cn, o ≠ .cnode cn) : st.objects[oid]? = some o := by
+  rcases h oid with e | ⟨cn, cn', ha, hb, hc⟩
+  · rw [← e]; exact h'
+  · rw [hb] at h'; cases h'; exact absurd rfl (hn cn')
+
+theorem obj_fwd {oid : SeLe4n.ObjId} {o : KernelObject} (h' : st.objects[oid]? = some o)
+    (hn : ∀ cn, o ≠ .cnode cn) : st'.objects[oid]? = some o := by
+  rcases h oid with e | ⟨cn, cn', ha, hb, hc⟩
+  · rw [e]; exact h'
+  · rw [ha] at h'; cases h'; exact absurd rfl (hn cn)
+
+/-- A non-CNode object reads the same in both stores. -/
+theorem obj_iff {oid : SeLe4n.ObjId} {o : KernelObject} (hn : ∀ cn, o ≠ .cnode cn) :
+    st'.objects[oid]? = some o ↔ st.objects[oid]? = some o :=
+  ⟨fun e => h.obj_back e hn, fun e => h.obj_fwd e hn⟩
+
+theorem none_iff {oid : SeLe4n.ObjId} : st'.objects[oid]? = none ↔ st.objects[oid]? = none := by
+  rcases h oid with e | ⟨cn, cn', ha, hb, _⟩
+  · rw [e]
+  · rw [ha, hb]; simp
+
+/-- Slot lookups never read links. -/
+theorem lookupSlotCap (r : SlotRef) : st'.lookupSlotCap r = st.lookupSlotCap r := by
+  unfold SystemState.lookupSlotCap SystemState.lookupCNode
+  rcases h r.cnode with e | ⟨cn, cn', ha, hb, hw⟩
+  · rw [e]
+  · rw [ha, hb]; exact CNode.proj_eq_of_withoutLinks_eq (·.lookup r.slot) hw
+
+theorem getCNode?_isSome (id : SeLe4n.ObjId) :
+    (st'.getCNode? id).isSome = (st.getCNode? id).isSome := by
+  unfold SystemState.getCNode?
+  rcases h id with e | ⟨cn, cn', ha, hb, _⟩
+  · rw [e]
+  · rw [ha, hb]; rfl
+
+theorem getTcb? (tid : SeLe4n.ThreadId) : st'.getTcb? tid = st.getTcb? tid := by
+  unfold SystemState.getTcb?
+  rcases h tid.toObjId with e | ⟨cn, cn', ha, hb, _⟩
+  · rw [e]
+  · rw [ha, hb]
+
+theorem getSchedContext? (scId : SeLe4n.SchedContextId) :
+    st'.getSchedContext? scId = st.getSchedContext? scId := by
+  unfold SystemState.getSchedContext?
+  rcases h scId.toObjId with e | ⟨cn, cn', ha, hb, _⟩
+  · rw [e]
+  · rw [ha, hb]
+
+theorem getReply? (rid : SeLe4n.ReplyId) : st'.getReply? rid = st.getReply? rid := by
+  unfold SystemState.getReply?
+  rcases h rid.toObjId with e | ⟨cn, cn', ha, hb, _⟩
+  · rw [e]
+  · rw [ha, hb]
+
+end objectsAgreeOffDerivationLinks
+
 /-- **A state reached from `st₀` by link-word writes alone**: what every link
 writer below produces.  A property every single link write keeps holds of every
 state so reached (`linkReach.closed`), so a consumer frames a writer once, at
@@ -761,6 +900,38 @@ theorem linkReach.cdt {st₀ st : SystemState} (h : linkReach st₀ st) : st.cdt
   | refl => rfl
   | step _ o s f c w ih => rw [setSlotLinkWords_cdt]; exact ih
 
+theorem setSlotLinkWords_fields (st : SystemState) (o : SeLe4n.ObjId) (s : SeLe4n.Slot)
+    (f : LinkField) (c w : Nat) :
+    st.setSlotLinkWords o s f c w = { st with objects := (st.setSlotLinkWords o s f c w).objects } := by
+  unfold setSlotLinkWords modifyObject
+  split <;> rfl
+
+/-- A link write commutes with replacing the tree: it reads and writes objects alone. -/
+theorem setSlotLinkWords_with_cdt (st : SystemState) (cdt : CapDerivationTree) (o : SeLe4n.ObjId)
+    (s : SeLe4n.Slot) (f : LinkField) (c w : Nat) :
+    ({ st with cdt := cdt } : SystemState).setSlotLinkWords o s f c w =
+      { st.setSlotLinkWords o s f c w with cdt := cdt } := by
+  unfold setSlotLinkWords modifyObject
+  have e : ({ st with cdt := cdt } : SystemState).objects = st.objects := rfl
+  rw [e]
+  cases h : st.objects[o]? with
+  | none => rfl
+  | some ob => cases ob <;> rfl
+
+/-- Every field but the objects is the start state's. -/
+theorem linkReach.fields {st₀ st : SystemState} (h : linkReach st₀ st) :
+    st = { st₀ with objects := st.objects } := by
+  induction h with
+  | refl => rfl
+  | step _ o s f c w ih => rw [setSlotLinkWords_fields]; rw [ih]
+
+/-- Link writes run the same with the tree replaced. -/
+theorem linkReach.with_cdt {st₀ st : SystemState} (h : linkReach st₀ st) (cdt : CapDerivationTree) :
+    linkReach { st₀ with cdt := cdt } { st with cdt := cdt } := by
+  induction h with
+  | refl => exact .refl _
+  | step _ o s f c w ih => rw [← setSlotLinkWords_with_cdt]; exact ih.step o s f c w
+
 theorem linkReach.invExt {st₀ st : SystemState} (h : linkReach st₀ st)
     (hInv : st₀.objects.invExt) : st.objects.invExt :=
   (h.closed (P := fun _ => True) (fun _ _ _ _ _ _ _ _ => trivial) hInv trivial).2
@@ -771,6 +942,10 @@ theorem linkReach.linksOnly {st₀ st : SystemState} (h : linkReach st₀ st)
   | refl => exact linksOnlyWrite.refl _
   | step h' o s f c w ih =>
       exact ih.trans (setSlotLinkWords_linksOnlyWrite (h'.invExt hInv) o s f c w)
+
+theorem linkReach.agree {st₀ st : SystemState} (h : linkReach st₀ st)
+    (hInv : st₀.objects.invExt) : objectsAgreeOffDerivationLinks st st₀ :=
+  (h.linksOnly hInv).2
 
 theorem linkAddChild_reach {st₀ st : SystemState} (h : linkReach st₀ st) (p c : SlotRef) :
     linkReach st₀ (st.linkAddChild p c) := by

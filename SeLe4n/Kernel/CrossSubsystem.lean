@@ -1584,6 +1584,15 @@ theorem withCdt_preservesFieldsOutside (st : SystemState) (cdt : CapDerivationTr
     | rfl
     | exact (hf (by decide)).elim
 
+/-- A run of slot-link writes changes only the object store. -/
+theorem linkReach_preservesFieldsOutside {st₀ st : SystemState} (h : SystemState.linkReach st₀ st) :
+    preservesFieldsOutside capabilityOp_modifiedFields st₀ st := by
+  intro f hf
+  rw [h.fields]
+  cases f <;> first
+    | rfl
+    | exact (hf (by decide)).elim
+
 theorem cspaceInsertSlot_preservesFieldsOutside
     (addr : CSpaceAddr) (cap : Capability) (st st' : SystemState)
     (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
@@ -1615,7 +1624,9 @@ theorem cspaceDeleteSlot_preservesFieldsOutside
     preservesFieldsOutside capabilityOp_modifiedFields st st' := by
   obtain ⟨stC, hCore, rfl⟩ := cspaceDeleteSlot_ok_decompose addr st st' hStep
   exact preservesFieldsOutside_trans
-    (cspaceDeleteSlotCore_preservesFieldsOutside _ _ _ hCore) (withCdt_preservesFieldsOutside _ _)
+    (cspaceDeleteSlotCore_preservesFieldsOutside _ _ _ hCore)
+    (preservesFieldsOutside_trans (withCdt_preservesFieldsOutside _ _)
+      (linkReach_preservesFieldsOutside (spliceDeletedCdtNode_reach stC addr)))
 
 theorem cspaceMint_preservesFieldsOutside
     (src dst : CSpaceAddr) (rights : AccessRightSet) (badge : Option SeLe4n.Badge)

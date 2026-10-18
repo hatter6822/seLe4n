@@ -1177,15 +1177,39 @@ theorem cspaceMint_preserves_lowEquivalent
 -- Non-interference theorem #4: cspaceRevoke (WS-D2, F-05, TPI-D02)
 -- ============================================================================
 
+/-- A step that rewrites only derivation state (the tree and the CNode slots'
+link words) is invisible to every observer: the projection reads no tree and
+clears every projected CNode's links. -/
+theorem projectState_of_agreeOffDerivationLinks (ctx : LabelingContext)
+    (observer : IfObserver) {st st' : SystemState}
+    (h : SystemState.objectsAgreeOffDerivationLinks st' st)
+    (hF : st' = { st with objects := st'.objects, cdt := st'.cdt }) :
+    projectState ctx observer st' = projectState ctx observer st := by
+  have hO : projectObjects ctx observer st' = projectObjects ctx observer st := by
+    funext oid
+    unfold projectObjects SystemState.getObject?
+    rcases h oid with e | ⟨cn, cn', ha, hb, hw⟩
+    · rw [e]
+    · have hp : projectKernelObject ctx observer (.cnode cn') =
+          projectKernelObject ctx observer (.cnode cn) :=
+        CNode.proj_eq_of_withoutLinks_eq
+          (fun c => projectKernelObject ctx observer (.cnode c)) hw
+      rw [ha, hb]
+      simp only [Option.map_some, hp]
+  rw [hF]
+  simp only [projectState]
+  congr 1
+
 /-- Detaching the local revoke's emptied siblings is invisible to every observer:
-it writes only the derivation tree, which the projection does not read. -/
+it writes only derivation state, which the projection does not read. -/
 theorem projectState_detachRevokedSlots (ctx : LabelingContext) (observer : IfObserver)
     (st : SystemState) (cnodeId : SeLe4n.ObjId) (cn : CNode) (sourceSlot : SeLe4n.Slot)
-    (target : CapTarget) :
+    (target : CapTarget) (hInv : st.objects.invExt) :
     projectState ctx observer (detachRevokedSlots st cnodeId cn sourceSlot target) =
       projectState ctx observer st := by
   obtain ⟨_, h⟩ := detachRevokedSlots_shape st cnodeId cn sourceSlot target
-  rw [h]; rfl
+  exact projectState_of_agreeOffDerivationLinks ctx observer (h.agree hInv)
+    (by rw [h.cdt]; exact h.fields)
 
 /-- Revoking capabilities in a non-observable CNode preserves low-equivalence. -/
 theorem cspaceRevoke_preserves_lowEquivalent
@@ -1209,7 +1233,10 @@ theorem cspaceRevoke_preserves_lowEquivalent
   -- The revoked siblings leave the tree and the slot maps, which the observer
   -- does not see; what is left is the one CNode store.
   unfold lowEquivalent
-  rw [projectState_detachRevokedSlots, projectState_detachRevokedSlots]
+  rw [projectState_detachRevokedSlots ctx observer t₁ _ _ _ _
+      (storeObject_preserves_objects_invExt s₁ t₁ _ _ hObjInv₁ hS₁),
+    projectState_detachRevokedSlots ctx observer t₂ _ _ _ _
+      (storeObject_preserves_objects_invExt s₂ t₂ _ _ hObjInv₂ hS₂)]
   have hC₁ : s₁.objects[addr.cnode]? = some (.cnode cn₁) := by
     unfold SystemState.getCNode? at hCn₁; split at hCn₁ <;> simp_all
   have hC₂ : s₂.objects[addr.cnode]? = some (.cnode cn₂) := by

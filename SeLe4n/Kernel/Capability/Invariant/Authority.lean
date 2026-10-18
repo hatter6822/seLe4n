@@ -49,6 +49,7 @@ private theorem cspaceDeleteSlot_authority_reduction
     (hStep : cspaceDeleteSlot addr st = .ok ((), st')) :
     SystemState.lookupSlotCap st' addr = none := by
   obtain ⟨stC, hC, rfl⟩ := cspaceDeleteSlot_ok_decompose addr st st' hStep
+  rw [(spliceDeletedCdtNode_agree (cspaceDeleteSlotCore_invExt st stC addr hObjInv hC) addr).1.lookupSlotCap]
   exact cspaceDeleteSlotCore_authority_reduction st stC addr hObjInv hC
 
 /-- Revoke transition authority reduction clause: no sibling slot in the same CNode may retain
@@ -98,12 +99,16 @@ theorem cspaceRevoke_local_target_reduction
           | ok pair =>
             obtain ⟨_, stMid⟩ := pair
             simp [hObj, hStore] at hStep
-            have hObjEq : st'.objects = storedState.objects := by
-              unfold storeObject at hStore; cases hStore; subst hStep; simp [storedState, revokedObj]
+            have hInvMid := storeObject_preserves_objects_invExt st stMid addr.cnode _ hObjInv hStore
+            have hMidEq : stMid.objects = storedState.objects := by
+              unfold storeObject at hStore; cases hStore; simp [storedState, revokedObj]
+            have hAgree : SystemState.objectsAgreeOffDerivationLinks st' stMid := by
+              subst hStep; exact (detachRevokedSlots_agree hInvMid _ _ _ _).1
             have hLookupStored :
                 SystemState.lookupSlotCap storedState { cnode := addr.cnode, slot := slot } = some cap := by
-              have hEq := SystemState.lookupSlotCap_eq_of_objects_eq st' storedState
-                { cnode := addr.cnode, slot := slot } hObjEq
+              have hEq := (hAgree.lookupSlotCap { cnode := addr.cnode, slot := slot }).trans
+                (SystemState.lookupSlotCap_eq_of_objects_eq stMid storedState
+                  { cnode := addr.cnode, slot := slot } hMidEq)
               simpa [hEq] using hLookup
             have hUniq := SeLe4n.Model.CNode.slotsUnique_holds cn
             -- Extract that the filtered table lookup succeeds at `slot`
@@ -213,14 +218,9 @@ theorem cspaceDeleteSlot_lookup_eq_none
     cspaceLookupSlot addr st' = .error .invalidCapability := by
   obtain ⟨stC, hC, rfl⟩ := cspaceDeleteSlot_ok_decompose addr st st' hStep
   have h := cspaceDeleteSlotCore_lookup_eq_none st stC addr hObjInv hC
-  have hL : SystemState.lookupSlotCap (spliceDeletedCdtNode stC addr) addr =
-      SystemState.lookupSlotCap stC addr := rfl
-  have hG : (spliceDeletedCdtNode stC addr).getCNode? addr.cnode =
-      stC.getCNode? addr.cnode := rfl
-  unfold cspaceLookupSlot at h ⊢
-  rw [hL, hG]
-  revert h
-  cases SystemState.lookupSlotCap stC addr <;> simp
+  rw [cspaceLookupSlot_of_agree
+    (spliceDeletedCdtNode_agree (cspaceDeleteSlotCore_invExt st stC addr hObjInv hC) addr).1, h]
+  rfl
 
 theorem cspaceRevoke_preserves_source
     (st st' : SystemState)
@@ -266,8 +266,11 @@ theorem cspaceRevoke_preserves_source
               | ok pair =>
                 obtain ⟨_, stMid⟩ := pair
                 simp [hLookup, hObj, hStore] at hStep
-                have hObjEq : st'.objects = storedState.objects := by
-                  unfold storeObject at hStore; cases hStore; subst hStep; simp [storedState, revokedObj]
+                have hInvMid := storeObject_preserves_objects_invExt st stMid addr.cnode _ hObjInv hStore
+                have hMidEq : stMid.objects = storedState.objects := by
+                  unfold storeObject at hStore; cases hStore; simp [storedState, revokedObj]
+                have hAgree : SystemState.objectsAgreeOffDerivationLinks st' stMid := by
+                  subst hStep; exact (detachRevokedSlots_agree hInvMid _ _ _ _).1
                 have hCap : SystemState.lookupSlotCap st addr = some parent :=
                   (cspaceLookupSlot_ok_iff_lookupSlotCap st addr parent).1 hLookup
                 have hRevokePres := CNode.lookup_revokeTargetLocal_source_eq_lookup cn addr.slot parent.target hUniq
@@ -278,7 +281,8 @@ theorem cspaceRevoke_preserves_source
                   simp only [SystemState.lookupSlotCap, SystemState.lookupCNode] at hCap
                   simpa [hRevokePres, hObj] using hCap
                 have hCapFinal : SystemState.lookupSlotCap st' addr = some parent := by
-                  have hEq := SystemState.lookupSlotCap_eq_of_objects_eq st' storedState addr hObjEq
+                  have hEq := (hAgree.lookupSlotCap addr).trans
+                    (SystemState.lookupSlotCap_eq_of_objects_eq stMid storedState addr hMidEq)
                   simpa [hEq] using hCapStored
                 refine ⟨parent, ?_⟩
                 exact (cspaceLookupSlot_ok_iff_lookupSlotCap st' addr parent).2 hCapFinal
@@ -656,6 +660,61 @@ theorem capabilityInvariantBundle_of_frame {st st' : SystemState}
   · exact fun oid cn hCn => hDepth oid cn (hCnode oid cn hCn)
   · exact fun oid cn slot cap rid hCn hLook hTgt =>
       hReply rid (hRCPV oid cn slot cap rid (hCnode oid cn hCn) hLook hTgt)
+
+/-! ### WS-ZA ZA5.3: the bundle reads no derivation link
+
+Every conjunct reads a CNode through its slots and geometry, which the links do
+not touch, or reads the tree.  So a step whose objects agree with the pre-state's
+off the CNodes' derivation links (`objectsAgreeOffDerivationLinks`) keeps each
+conjunct, and keeps the tree-reading ones when it keeps the tree. -/
+
+theorem cspaceSlotCountBounded_of_agree {st st' : SystemState}
+    (hA : SystemState.objectsAgreeOffDerivationLinks st' st) (h : cspaceSlotCountBounded st) :
+    cspaceSlotCountBounded st' := fun oid cn' hO => by
+  obtain ⟨cn, hc, hw⟩ := hA.cnode_back hO
+  exact (CNode.proj_eq_of_withoutLinks_eq (fun c => c.slotCountBounded) hw).mpr (h oid cn hc)
+
+theorem cspaceDepthConsistent_of_agree {st st' : SystemState}
+    (hA : SystemState.objectsAgreeOffDerivationLinks st' st) (h : cspaceDepthConsistent st) :
+    cspaceDepthConsistent st' := fun oid cn' hO => by
+  obtain ⟨cn, hc, hw⟩ := hA.cnode_back hO
+  exact (CNode.proj_eq_of_withoutLinks_eq
+    (fun c => c.depth ≤ maxCSpaceDepth ∧ (c.bitsConsumed > 0 → c.wellFormed)) hw).mpr (h oid cn hc)
+
+theorem cdtCompletenessOff_of_agree {st st' : SystemState} {gone : SlotRef → Prop}
+    (hA : SystemState.objectsAgreeOffDerivationLinks st' st) (hCdt : st'.cdt = st.cdt)
+    (h : cdtCompletenessOff st gone) : cdtCompletenessOff st' gone := fun ref hM hG => by
+  rw [hCdt] at hM
+  obtain ⟨cn, hc, hl⟩ := h ref hM hG
+  obtain ⟨cn', hc', hw⟩ := hA.cnode_fwd hc
+  exact ⟨cn', hc', by rw [CNode.proj_eq_of_withoutLinks_eq (·.lookup ref.slot) hw]; exact hl⟩
+
+theorem cdtCompleteness_of_agree {st st' : SystemState}
+    (hA : SystemState.objectsAgreeOffDerivationLinks st' st) (hCdt : st'.cdt = st.cdt)
+    (h : cdtCompleteness st) : cdtCompleteness st' := fun ref hM =>
+  cdtCompletenessOff_of_agree (gone := fun _ => False) hA hCdt (h.off _) ref hM id
+
+theorem replyCapPointsToValidReply_of_agree {st st' : SystemState}
+    (hA : SystemState.objectsAgreeOffDerivationLinks st' st) (h : replyCapPointsToValidReply st) :
+    replyCapPointsToValidReply st' := fun oid cn' slot cap rid hO hL hT => by
+  obtain ⟨cn, hc, hw⟩ := hA.cnode_back hO
+  rw [hA.getReply? rid]
+  exact h oid cn slot cap rid hc
+    (by rw [← CNode.proj_eq_of_withoutLinks_eq (·.lookup slot) hw]; exact hL) hT
+
+/-- A step that keeps the tree and changes objects only in their CNodes' links
+keeps the bundle. -/
+theorem capabilityInvariantBundle_of_agree {st st' : SystemState}
+    (h : capabilityInvariantBundle st)
+    (hA : SystemState.objectsAgreeOffDerivationLinks st' st)
+    (hCdt : st'.cdt = st.cdt) (hObjInv : st'.objects.invExt) :
+    capabilityInvariantBundle st' := by
+  obtain ⟨_, hBounded, hComp, hAcyclic, hDepth, _, hRCPV⟩ := h
+  refine capabilityInvariantBundle_of_components st'
+    (cspaceSlotCountBounded_of_agree hA hBounded) (cdtCompleteness_of_agree hA hCdt hComp)
+    ?_ (cspaceDepthConsistent_of_agree hA hDepth) hObjInv
+    (replyCapPointsToValidReply_of_agree hA hRCPV)
+  unfold cdtAcyclicity at hAcyclic ⊢; rw [hCdt]; exact hAcyclic
 
 /-- WS-RR RR8.16 (`v0.35.197`): the degenerate instance — a step that writes no
 object and no CDT table.  Kept beside the frame rather than left to each caller,

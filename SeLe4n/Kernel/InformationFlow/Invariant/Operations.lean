@@ -1162,7 +1162,10 @@ theorem cspaceDeleteSlot_preserves_projection
     projectState ctx observer st' = projectState ctx observer st := by
   obtain ⟨stC, hCore, rfl⟩ := cspaceDeleteSlot_ok_decompose addr st st' hStep
   have hLeaf : projectState ctx observer (spliceDeletedCdtNode stC addr) =
-      projectState ctx observer stC := rfl
+      projectState ctx observer stC :=
+    projectState_of_agreeOffDerivationLinks ctx observer
+      (spliceDeletedCdtNode_agree (cspaceDeleteSlotCore_invExt _ _ _ hObjInv hCore) addr).1
+      (by rw [spliceDeletedCdtNode_cdt]; exact spliceDeletedCdtNode_fields stC addr)
   rw [hLeaf]
   exact cspaceDeleteSlotCore_preserves_projection ctx observer addr st stC hAddrHigh hObjInv hCore
 
@@ -1193,7 +1196,8 @@ theorem cspaceRevoke_preserves_projection
     (hStep : cspaceRevoke addr st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
   obtain ⟨par, cn, stS, _, hCn, hS, rfl⟩ := cspaceRevoke_ok_decompose addr st st' hStep
-  rw [projectState_detachRevokedSlots]
+  rw [projectState_detachRevokedSlots ctx observer stS _ _ _ _
+    (storeObject_preserves_objects_invExt st stS _ _ hObjInv hS)]
   have hC : st.objects[addr.cnode]? = some (.cnode cn) := by
     unfold SystemState.getCNode? at hCn; split at hCn <;> simp_all
   simp [hC, storeObject] at hS; cases hS
@@ -2994,27 +2998,13 @@ theorem lifecycleRevokeDeleteRetype_preserves_projection
   -- + storeObject (preserves invExt)
   have hObjInvRevoked : stRevoked.objects.invExt := by
     obtain ⟨_, _, stS, _, _, hS, rfl⟩ := cspaceRevoke_ok_decompose cleanup st stRevoked hRevoke
-    rw [detachRevokedSlots_objects]
-    exact storeObject_preserves_objects_invExt st stS cleanup.cnode _ hObjInv hS
-  -- Propagate invExt through cspaceDeleteSlot: storeObject, then a CDT-only splice
+    exact (detachRevokedSlots_agree
+      (storeObject_preserves_objects_invExt st stS cleanup.cnode _ hObjInv hS) _ _ _ _).2
+  -- Propagate invExt through cspaceDeleteSlot: storeObject, then the splice
   have hObjInvDeleted : stDeleted.objects.invExt := by
     obtain ⟨stC, hCoreDel, rfl⟩ := cspaceDeleteSlot_ok_decompose _ _ _ hDelete
-    rw [spliceDeletedCdtNode_objects]
-    · unfold cspaceDeleteSlotCore SystemState.getCNode? at hCoreDel
-      cases hObj : stRevoked.objects[cleanup.cnode]? with
-      | none => simp [hObj] at hCoreDel
-      | some obj =>
-        cases obj with
-        | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ => simp [hObj] at hCoreDel
-        | cnode cn =>
-          simp only [hObj] at hCoreDel
-          cases hSt : storeObject cleanup.cnode (.cnode (cn.remove cleanup.slot)) stRevoked with
-          | error e => simp [hSt] at hCoreDel
-          | ok pair₁ =>
-            simp only [hSt] at hCoreDel
-            have hInvPair := storeObject_preserves_objects_invExt stRevoked pair₁.2 cleanup.cnode _ hObjInvRevoked hSt
-            cases hCoreDel
-            exact hInvPair
+    exact (spliceDeletedCdtNode_agree
+      (cspaceDeleteSlotCore_invExt _ _ _ hObjInvRevoked hCoreDel) _).2
   rw [storeObject_preserves_projection ctx observer stDeleted st' target newObj hTargetHigh hObjInvDeleted hStore,
       cspaceDeleteSlot_preserves_projection ctx observer cleanup stRevoked stDeleted hCleanupHigh hObjInvRevoked hDelete,
       cspaceRevoke_preserves_projection ctx observer cleanup st stRevoked hCleanupHigh hObjInv hRevoke]

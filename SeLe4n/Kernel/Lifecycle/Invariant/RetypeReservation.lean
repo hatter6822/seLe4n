@@ -322,10 +322,10 @@ theorem lifecyclePreRetypeCleanup_preserves_replenishQueueAffinityConsistent_smp
     · exact absurd h (by simp)
     · injection h with h
       subst h
-      exact (replenishQueueAffinityConsistent_smp_frame
-        (st := st) (st' := detachCNodeSlots st target cn)
-        (fun c => by rw [detachCNodeSlots_scheduler_eq])
-        (detachCNodeSlots_objects_eq st target cn)).mpr hCons
+      have hA := (detachCNodeSlots_agree hInv target cn).1
+      exact fun c => (replenishQueueAffinityConsistentOnCore_congr
+        (by rw [detachCNodeSlots_scheduler_eq]) (fun scId => hA.getSchedContext? scId)
+        (fun tid => by unfold determineTargetCore; rw [hA.getTcb? tid])).mpr (hCons c)
   | reply r =>
     subst hC
     simp only at h
@@ -598,8 +598,9 @@ theorem lifecyclePreRetypeCleanup_preserves_schedContextBindingConsistent
     · exact absurd h (by simp)
     · injection h with h
       subst h
-      exact schedContextBindingConsistent_of_objects_eq
-        (detachCNodeSlots_objects_eq st target cn) hCons
+      have hA := (detachCNodeSlots_agree hInv target cn).1
+      exact schedContextBindingConsistent_transfer (fun tid => by rw [hA.getTcb? tid])
+        (fun scId => by rw [hA.getSchedContext? scId]) hCons
   | reply r =>
     subst hC
     simp only at h
@@ -791,7 +792,7 @@ theorem lifecyclePreRetypeCleanup_preserves_objects_invExt
     split at h
     · exact absurd h (by simp)
     · injection h with h; subst h
-      rw [detachCNodeSlots_objects_eq]; exact hInv
+      exact (detachCNodeSlots_agree hInv target cn).2
   | reply r =>
     subst hC; simp only at h
     split at h
@@ -898,10 +899,11 @@ theorem lifecyclePreRetypeCleanup_targetUnpaired
     split at h
     · exact absurd h (by simp)
     · injection h with h; subst h
-      exact retypeTargetUnpaired_of_objects_eq
-        (detachCNodeSlots_objects_eq st target cn)
-        ⟨fun t hT => by rw [hStored] at hT; exact absurd hT (by simp),
-         fun s0 hS => by rw [hStored] at hS; exact absurd hS (by simp)⟩
+      have hA := (detachCNodeSlots_agree hInv target cn).1
+      exact ⟨fun t hT => absurd (hA.obj_back hT (fun _ h => KernelObject.noConfusion h))
+          (by rw [hStored]; simp),
+        fun s0 hS => absurd (hA.obj_back hS (fun _ h => KernelObject.noConfusion h))
+          (by rw [hStored]; simp)⟩
   | reply r =>
     subst hC; simp only at h
     split at h

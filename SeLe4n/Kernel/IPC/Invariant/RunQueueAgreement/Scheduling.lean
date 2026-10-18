@@ -1342,20 +1342,34 @@ theorem lifecycleRetypeDirectWithCleanup_runQueueEntryStage {st st' : SystemStat
   obtain ⟨-, currentObj, stClean, hObj, hClean, hStore⟩ :=
     lifecycleRetypeDirectWithCleanup_ok_decompose hStep
   have hFr : st.objects.invExt →
-      (scrubObjectMemory stClean target currentObj.objectType).objects = st.objects ∧
+      RunQueueStage st (scrubObjectMemory stClean target currentObj.objectType) ∧
+      SystemState.objectsAgreeOffDerivationLinks
+        (scrubObjectMemory stClean target currentObj.objectType) st ∧
       (scrubObjectMemory stClean target currentObj.objectType).scheduler = st.scheduler :=
     fun hInv => by
-      obtain ⟨hCO, hCS, -⟩ := lifecyclePreRetypeCleanup_detached_frame st stClean target currentObj
-        newObj hInv hObj hDet hClean
-      exact ⟨(scrubObjectMemory_objects_eq stClean target currentObj.objectType).trans hCO,
-        (scrubObjectMemory_scheduler_eq stClean target currentObj.objectType).trans hCS⟩
+      obtain ⟨stM, hMO, hMS, -, hR⟩ := lifecyclePreRetypeCleanup_detached_frame st stClean target
+        currentObj newObj hInv hObj hDet hClean
+      have hCS : stClean.scheduler = st.scheduler :=
+        (congrArg SystemState.scheduler hR.fields).trans hMS
+      have hSS := (scrubObjectMemory_scheduler_eq stClean target currentObj.objectType).trans hCS
+      refine ⟨((RunQueueStage.of_frame hMO (by rw [hMS]) (by rw [hMS]) (by rw [hMS])).trans
+          (RunQueueStage.of_linkReach hR)).trans
+          (RunQueueStage.of_frame (scrubObjectMemory_objects_eq stClean target _)
+            (by rw [scrubObjectMemory_scheduler_eq]) (by rw [scrubObjectMemory_scheduler_eq])
+            (by rw [scrubObjectMemory_scheduler_eq])),
+        (hR.agree (hMO ▸ hInv)).congr (scrubObjectMemory_objects_eq stClean target _) hMO.symm,
+        hSS⟩
   have h1 : st.objects.invExt → RunQueueStage st (scrubObjectMemory stClean target currentObj.objectType) :=
-    fun hInv => RunQueueStage.of_frame (hFr hInv).1 (by rw [(hFr hInv).2]) (by rw [(hFr hInv).2])
-      (by rw [(hFr hInv).2])
+    fun hInv => (hFr hInv).1
   have hLk : st.objects.invExt → ∀ c, SystemState.objRunLinkOn (some newObj) c =
       SystemState.objRunLinkOn (scrubObjectMemory stClean target currentObj.objectType).objects[target]? c :=
     fun hInv c => by
-      rw [objRunLinkOn_of_retypeReplacementFresh hFresh c, (hFr hInv).1, hObj]
+      have e : SystemState.objRunLinkOn (scrubObjectMemory stClean target currentObj.objectType).objects[target]? c
+          = SystemState.objRunLinkOn st.objects[target]? c := by
+        rcases (hFr hInv).2.1 target with e | ⟨_, _, ha, hb, _⟩
+        · rw [e]
+        · rw [ha, hb]; rfl
+      rw [objRunLinkOn_of_retypeReplacementFresh hFresh c, e, hObj]
       cases currentObj with
       | tcb t =>
         have hT : st.getTcb? t.tid = some t := (SystemState.getTcb?_eq_some_iff _ _ _).mpr
@@ -1382,20 +1396,22 @@ theorem lifecycleRetypeDirectWithCleanup_runQueueEntryStage {st st' : SystemStat
   cases hCur : currentObj with
   | tcb x =>
     subst hCur
-    have hSS := (hFr hInv).2
+    have hSS := (hFr hInv).2.2
     refine SystemState.currentDequeuedUniqueExcept_insert_offTcb hInv1 hO (by rw [hC])
       (SystemState.runLinkOn_insert hInv1 hO (hLk hInv)) (hDet.tcbSelfId x hObj) d1
       (fun c h => (hDet.tcbDescheduled x hObj c).2.2 (by
         unfold SchedulerState.currentOnCore at h ⊢; rw [hSS] at h; exact h))
       (fun c => ?_) (hDet.tcbNotIdle x hObj) hNew
-    rw [SystemState.queuedOn_eq_runLinkOn, SystemState.runLinkOn_of_objects (hFr hInv).1,
+    rw [SystemState.queuedOn_eq_runLinkOn, SystemState.runLinkOn_of_getTcb? ((hFr hInv).2.1.getTcb? _),
       ← SystemState.queuedOn_eq_runLinkOn]
     exact (hDet.tcbDescheduled x hObj c).2.1
   | _ =>
     subst hCur
     refine (SystemState.RunQueueStage.storeObject hStore (hLk hInv) ⟨fun y hy => ?_,
       fun y hy _ => hNew y hy⟩).2.1 none hInv1 hR1 hR' d1
-    rw [(hFr hInv).1, hObj] at hy; cases hy
+    rcases (hFr hInv).2.1 target with e | ⟨_, _, ha, hb, _⟩
+    · rw [e, hObj] at hy; cases hy
+    · rw [hb] at hy; cases hy
 
 /-- The shootdown form: the destroy path, then ASID rounds that write neither
 objects nor scheduler. -/

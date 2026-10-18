@@ -145,11 +145,13 @@ theorem cspaceDeleteSlot_preserves_capabilityInvariantBundle
   obtain ⟨stC, hCore, rfl⟩ := cspaceDeleteSlot_ok_decompose addr st st' hStep
   have hInvC := cspaceDeleteSlotCore_preserves_capabilityInvariantBundleOff
     st stC addr hInv hCore
-  exact capabilityInvariantBundle_of_off_cdt_update stC _ _ hInvC
+  have hTree := capabilityInvariantBundle_of_off_cdt_update stC _ _ hInvC
     (CapDerivationTree.spliceNode_edgeWellFounded _ addr hInvC.2.2.2.1)
     (CapDerivationTree.spliceNode_mentions stC.cdt addr)
     fun ref hEq => by
       subst hEq; exact CapDerivationTree.spliceNode_not_mentions_self _ _ hInvC.2.2.2.1
+  obtain ⟨hA, hI⟩ := spliceDeletedCdtNode_agree hInvC.2.2.2.2.2.1 addr
+  exact capabilityInvariantBundle_of_agree hTree hA (spliceDeletedCdtNode_reach stC addr).cdt hI
 
 /-- The slots of `cn` (stored at `cnodeId`) the local revoke empties: every
 occupied slot `revokeTargetLocalKeeps` drops. -/
@@ -188,19 +190,27 @@ theorem detachRevokedSlots_preserves (st : SystemState) (cnodeId : SeLe4n.ObjId)
       split
       · exact h
       · obtain ⟨g1, g2, g3, g4, g5⟩ := h
-        exact ⟨g1, g2.of_cdt _ (CapDerivationTree.spliceNode_mentions acc.cdt _),
-          CapDerivationTree.spliceNode_edgeWellFounded _ _ g3, g4, g5⟩)
+        obtain ⟨hA, hI⟩ := spliceDeletedCdtNode_agree g5 { cnode := cnodeId, slot := slot }
+        have hC := (spliceDeletedCdtNode_reach acc { cnode := cnodeId, slot := slot }).cdt
+        exact ⟨cspaceSlotCountBounded_of_agree hA g1,
+          cdtCompletenessOff_of_agree (st := { acc with cdt := acc.cdt.spliceNode _ }) hA hC
+            (g2.of_cdt _ (CapDerivationTree.spliceNode_mentions acc.cdt _)),
+          by unfold cdtAcyclicity; rw [spliceDeletedCdtNode_cdt]
+             exact CapDerivationTree.spliceNode_edgeWellFounded _ _ g3,
+          cspaceDepthConsistent_of_agree hA g4, hI⟩)
     (fun acc slot cap hL h c hL' hK => by
       rw [hL] at hL'; cases hL'
       simp only [] at h ⊢
       split
       · rename_i hT; rw [hK] at hT; cases hT
-      · exact CapDerivationTree.spliceNode_not_mentions_self _ _ h.2.2.1)
+      · rw [spliceDeletedCdtNode_cdt]
+        exact CapDerivationTree.spliceNode_not_mentions_self _ _ h.2.2.1)
     (fun acc slot cap s' _ _ hRs c hL' hK hM => by
       simp only [] at hRs hM
       split at hM
       · exact hRs c hL' hK hM
-      · exact hRs c hL' hK (CapDerivationTree.spliceNode_mentions _ _ _ hM))
+      · rw [spliceDeletedCdtNode_cdt] at hM
+        exact hRs c hL' hK (CapDerivationTree.spliceNode_mentions _ _ _ hM))
   exact ⟨h1, h2.complete fun ref ⟨hc, c, hL, hK⟩ => by
       obtain ⟨rc, rs⟩ := ref; simp only at hc hL hK; subst hc; exact hR rs c hL c hL hK,
     h3, h4, h5⟩
@@ -217,7 +227,8 @@ theorem detachRevokedSlots_mentions_sub (st : SystemState) (cnodeId : SeLe4n.Obj
   simp only []
   split
   · exact h
-  · exact fun r hR => h r (CapDerivationTree.spliceNode_mentions _ _ _ hR)
+  · exact fun r hR => h r (CapDerivationTree.spliceNode_mentions _ _ _
+      (by rw [spliceDeletedCdtNode_cdt] at hR; exact hR))
 
 /-- The local revoke names no slot the tree did not. -/
 theorem cspaceRevoke_mentions_sub (addr : CSpaceAddr) (st st' : SystemState)
@@ -233,6 +244,7 @@ theorem cspaceDeleteSlot_mentions_sub (addr : CSpaceAddr) (st st' : SystemState)
     (hM : st'.cdt.mentions ref) : st.cdt.mentions ref := by
   obtain ⟨stC, hCore, rfl⟩ := cspaceDeleteSlot_ok_decompose addr st st' hStep
   rw [← cspaceDeleteSlotCore_cdt_eq st stC addr hCore]
+  rw [spliceDeletedCdtNode_cdt] at hM
   exact CapDerivationTree.spliceNode_mentions _ _ _ hM
 
 /-- WS-SM SM6.D / PR #822 Phase H (#1.a): `cspaceRevoke` preserves `replyCapPointsToValidReply`.
@@ -264,14 +276,17 @@ theorem cspaceRevoke_preserves_replyCapPointsToValidReply
         | ok pair =>
           obtain ⟨_, stMid⟩ := pair; simp [hStore] at hStep
           -- `hStep : detachRevokedSlots stMid … = st'`, which frames the objects
-          have hObjFrame : st'.objects = stMid.objects := by rw [← hStep, detachRevokedSlots_objects]
+          have hInvMid := storeObject_preserves_objects_invExt st stMid addr.cnode _ hObjInv hStore
+          subst hStep
+          refine replyCapPointsToValidReply_of_agree (detachRevokedSlots_agree hInvMid _ _ _ _).1 ?_
+          have hObjFrame : stMid.objects = stMid.objects := rfl
           have hMidSelf : stMid.objects[addr.cnode]? = some (.cnode (preCn.revokeTargetLocal addr.slot parent.target)) :=
             storeObject_objects_eq st stMid addr.cnode _ hObjInv hStore
           have hMidNe : ∀ oid, oid ≠ addr.cnode → stMid.objects[oid]? = st.objects[oid]? :=
             fun oid h => storeObject_objects_ne st stMid addr.cnode oid _ h hObjInv hStore
-          have hGetReply : ∀ rid : SeLe4n.ReplyId, st'.getReply? rid = st.getReply? rid := by
+          have hGetReply : ∀ rid : SeLe4n.ReplyId, stMid.getReply? rid = st.getReply? rid := by
             intro rid
-            simp only [SystemState.getReply?, hObjFrame]
+            simp only [SystemState.getReply?]
             by_cases hc : rid.toObjId = addr.cnode
             · rw [hc, hMidSelf, hPre]
             · rw [hMidNe rid.toObjId hc]

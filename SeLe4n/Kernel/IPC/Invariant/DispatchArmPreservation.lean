@@ -931,6 +931,33 @@ theorem cspaceDeleteSlotCore_preserves_ipcInvariantFull
       hInv.passiveServerIdle)
     hCap hInv
 
+/-- **A step that rewrites only derivation state keeps the IPC bundle.**  The
+bundle reads no derivation tree and no link word: every object it reads through
+the store is a non-CNode, which the step leaves as it was, and its one CNode
+clause (`capabilityBadgesWellFormed`) reads slot contents, which the step keeps. -/
+theorem ipcInvariantFull_of_agreeOffDerivationLinks {st st' : SystemState}
+    (h : SystemState.objectsAgreeOffDerivationLinks st' st)
+    (hSched : st'.scheduler = st.scheduler)
+    (hInv : ipcInvariantFull st) : ipcInvariantFull st' := by
+  have hView : ipcReadViewAgreement st st' := ipcReadViewAgreement.of_inertWrites fun oid => by
+    rcases h oid with e | ⟨cn, cn', ha, hb, _⟩
+    · exact .inl e
+    · exact .inr ⟨by rw [ha]; trivial, by rw [hb]; trivial⟩
+  have hBack : ∀ (tid : SeLe4n.ThreadId) (tcb' : TCB),
+      st'.objects[tid.toObjId]? = some (.tcb tcb') →
+      ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) ∧
+        tcb.ipcState = tcb'.ipcState ∧ tcb.schedContextBinding = tcb'.schedContextBinding :=
+    fun _ tcb' hT => ⟨tcb', h.obj_back hT (fun _ hx => KernelObject.noConfusion hx), rfl, rfl⟩
+  have hCap : capabilityBadgesWellFormed st' := by
+    intro oid cn' slot cap badge hCn hLk hB
+    obtain ⟨cn, hc, hw⟩ := h.cnode_back hCn
+    exact hInv.badgeWellFormed.2 oid cn slot cap badge hc
+      (by rw [← CNode.proj_eq_of_withoutLinks_eq (·.lookup slot) hw]; exact hLk) hB
+  exact ipcInvariantFull_of_readViewAgreement hView
+    (passiveServerIdle_of_frame (passiveServerIdleFrame_of_backward hBack hSched)
+      hInv.passiveServerIdle)
+    hCap hInv
+
 /-- `.cspaceDelete`: the core delete and the splice touch no IPC state. -/
 theorem cspaceDeleteSlot_preserves_ipcInvariantFull
     (st st' : SystemState) (addr : CSpaceAddr)
@@ -939,8 +966,9 @@ theorem cspaceDeleteSlot_preserves_ipcInvariantFull
     ipcInvariantFull st' := by
   obtain ⟨stC, hCore, rfl⟩ := cspaceDeleteSlot_ok_decompose addr st st' hStep
   have hC := cspaceDeleteSlotCore_preserves_ipcInvariantFull st stC addr hObjInv hInv hCore
-  exact ipcInvariantFull_of_objects_scheduler_eq (st := stC)
-    (spliceDeletedCdtNode_objects _ _) (spliceDeletedCdtNode_scheduler _ _) hC
+  exact ipcInvariantFull_of_agreeOffDerivationLinks
+    (spliceDeletedCdtNode_agree (cspaceDeleteSlotCore_invExt _ _ _ hObjInv hCore) addr).1
+    (spliceDeletedCdtNode_scheduler _ _) hC
 
 /-- `.cspaceDelete`'s store invariant: the delete writes one CNode and the CDT,
 so `objects.invExt` carries — what the finalising delete's teardown, which runs on
@@ -949,8 +977,7 @@ theorem cspaceDeleteSlot_preserves_objects_invExt
     (st st' : SystemState) (addr : CSpaceAddr) (hObjInv : st.objects.invExt)
     (hStep : cspaceDeleteSlot addr st = .ok ((), st')) : st'.objects.invExt := by
   obtain ⟨stC, hCore, rfl⟩ := cspaceDeleteSlot_ok_decompose addr st st' hStep
-  obtain ⟨_, _, _, _, _, hExt⟩ := cspaceDeleteSlotCore_shape st stC addr hObjInv hCore
-  rw [spliceDeletedCdtNode_objects]; exact hExt
+  exact (spliceDeletedCdtNode_agree (cspaceDeleteSlotCore_invExt _ _ _ hObjInv hCore) addr).2
 
 -- ============================================================================
 -- WS-RR RR8.16 (`v0.35.190`): the revocation family preserves `ipcInvariantFull`
@@ -976,17 +1003,17 @@ private theorem cspaceRevoke_shape
     (st st' : SystemState) (addr : CSpaceAddr)
     (hObjInv : st.objects.invExt)
     (hStep : cspaceRevoke addr st = .ok ((), st')) :
-    ∃ (cn : CNode) (parent : Capability),
+    ∃ (cn : CNode) (parent : Capability) (stS : SystemState),
+      st' = detachRevokedSlots stS addr.cnode cn addr.slot parent.target ∧
       st.objects[addr.cnode]? = some (.cnode cn) ∧
-      st'.objects[addr.cnode]? = some (.cnode (cn.revokeTargetLocal addr.slot parent.target)) ∧
-      (∀ oid : SeLe4n.ObjId, oid ≠ addr.cnode → st'.objects[oid]? = st.objects[oid]?) ∧
-      st'.scheduler = st.scheduler ∧ st'.objects.invExt := by
+      stS.objects[addr.cnode]? = some (.cnode (cn.revokeTargetLocal addr.slot parent.target)) ∧
+      (∀ oid : SeLe4n.ObjId, oid ≠ addr.cnode → stS.objects[oid]? = st.objects[oid]?) ∧
+      stS.scheduler = st.scheduler ∧ stS.objects.invExt := by
   obtain ⟨parent, cn, stS, _, hCn, hStore, rfl⟩ := cspaceRevoke_ok_decompose addr st st' hStep
   have hPre : st.objects[addr.cnode]? = some (.cnode cn) := by
     unfold SystemState.getCNode? at hCn
     split at hCn <;> simp_all
-  simp only [detachRevokedSlots_objects, detachRevokedSlots_scheduler]
-  exact ⟨cn, parent, hPre,
+  exact ⟨cn, parent, stS, rfl, hPre,
     storeObject_objects_eq st stS addr.cnode _ hObjInv hStore,
     fun oid hNe => storeObject_objects_ne st stS addr.cnode oid _ hNe hObjInv hStore,
     storeObject_scheduler_eq st stS addr.cnode _ hStore,
@@ -1000,12 +1027,14 @@ theorem cspaceRevoke_preserves_ipcInvariantFull
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
     (hStep : cspaceRevoke addr st = .ok ((), st')) :
     ipcInvariantFull st' := by
-  obtain ⟨cn, parent, hPre, hAt, hNe, hSched, _⟩ :=
+  obtain ⟨cn, parent, stS, rfl, hPre, hAt, hNe, hSched, hInvS⟩ :=
     cspaceRevoke_shape st st' addr hObjInv hStep
+  refine ipcInvariantFull_of_agreeOffDerivationLinks
+    (detachRevokedSlots_agree hInvS _ _ _ _).1 (detachRevokedSlots_scheduler _ _ _ _ _) ?_
   have hView := ipcReadViewAgreement.of_single_inert_write hNe
     (by rw [hPre]; trivial) (by rw [hAt]; trivial)
   have hBack : ∀ (tid : SeLe4n.ThreadId) (tcb' : TCB),
-      st'.objects[tid.toObjId]? = some (.tcb tcb') →
+      stS.objects[tid.toObjId]? = some (.tcb tcb') →
       ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) ∧
         tcb.ipcState = tcb'.ipcState ∧ tcb.schedContextBinding = tcb'.schedContextBinding := by
     intro tid tcb' h
@@ -1014,7 +1043,7 @@ theorem cspaceRevoke_preserves_ipcInvariantFull
       exact absurd (Option.some.inj h) (fun hx => KernelObject.noConfusion hx)
     · rw [hNe _ hK] at h
       exact ⟨tcb', h, rfl, rfl⟩
-  have hCap : capabilityBadgesWellFormed st' := by
+  have hCap : capabilityBadgesWellFormed stS := by
     intro oid cn' slot cap badge hCn hLk hB
     by_cases hK : oid = addr.cnode
     · rw [hK, hAt] at hCn
@@ -4289,17 +4318,19 @@ private theorem cleanupTcbReferences_id_of_detached
       exact hDet.tcbNotDonationOrigin tcb hObj oid sc hS)
 
 /-- Under the detachment pack a successful pre-retype cleanup changes neither
-the object store nor the scheduler — the sweeps are identities, the reservation
-arm is the identity (the pack refuses a bound or donated target, `v0.35.164`),
-and the CDT/serviceRegistry writes are outside the bundle's read set. -/
+the object store nor the scheduler, up to derivation-link words: the sweeps are
+identities, the reservation arm is the identity (the pack refuses a bound or
+donated target, `v0.35.164`), the CDT/serviceRegistry writes are outside the
+bundle's read set, and a CNode target's slots leave the tree through a run of
+link writes (`linkReach`) from a state with the pre-state's objects. -/
 theorem lifecyclePreRetypeCleanup_detached_frame
     (st stClean : SystemState) (target : SeLe4n.ObjId) (currentObj newObj : KernelObject)
     (hObjInv : st.objects.invExt)
     (hObj : st.objects[target]? = some currentObj)
     (hDet : retypeTargetDetached st target)
     (hStep : lifecyclePreRetypeCleanup st target currentObj newObj = .ok stClean) :
-    stClean.objects = st.objects ∧ stClean.scheduler = st.scheduler ∧
-      stClean.machine = st.machine := by
+    ∃ stM : SystemState, stM.objects = st.objects ∧ stM.scheduler = st.scheduler ∧
+      stM.machine = st.machine ∧ SystemState.linkReach stM stClean := by
   unfold lifecyclePreRetypeCleanup at hStep
   cases currentObj with
   | tcb tcb =>
@@ -4329,30 +4360,29 @@ theorem lifecyclePreRetypeCleanup_detached_frame
       split at hStep
       · contradiction
       · cases hStep
-        exact ⟨rfl, rfl, rfl⟩
+        exact ⟨_, rfl, rfl, rfl, .refl _⟩
   | endpoint ep =>
       simp only [] at hStep
       cases hStep
-      exact ⟨cleanupEndpointServiceRegistrations_objects_eq st target,
+      exact ⟨_, cleanupEndpointServiceRegistrations_objects_eq st target,
         cleanupEndpointServiceRegistrations_scheduler_eq st target,
-        by rw [cleanupEndpointServiceRegistrations_machine_eq st target]⟩
+        by rw [cleanupEndpointServiceRegistrations_machine_eq st target], .refl _⟩
   | cnode cn =>
       simp only [] at hStep
       split at hStep
       · contradiction
       · cases hStep
-        exact ⟨detachCNodeSlots_objects_eq st target cn,
-          detachCNodeSlots_scheduler_eq st target cn,
-          by rw [detachCNodeSlots_machine_eq st target cn]⟩
+        obtain ⟨cdt, h⟩ := detachCNodeSlots_shape st target cn
+        exact ⟨{ st with cdt := cdt }, rfl, rfl, rfl, h⟩
   | reply r =>
       simp only [] at hStep
       split at hStep
       · contradiction
       · cases hStep
-        exact ⟨rfl, rfl, rfl⟩
+        exact ⟨_, rfl, rfl, rfl, .refl _⟩
   | notification n =>
       cases hStep
-      exact ⟨rfl, rfl, rfl⟩
+      exact ⟨_, rfl, rfl, rfl, .refl _⟩
   | untyped _ | vspaceRoot _ =>
       -- WS-BP BP7.1 slice 4: an untyped target is refused, as a frame is;
       -- `v0.36.35`: and so is a VSpace root.
@@ -4373,47 +4403,47 @@ theorem lifecyclePreRetypeCleanup_detached_frame
 
 /-- The detachment pack transports across any objects- and scheduler-preserving
 step (the cleanup and scrub stages). -/
-private theorem retypeTargetDetached_of_objects_scheduler_eq
+private theorem retypeTargetDetached_of_agreeOffDerivationLinks
     {st st2 : SystemState} {target : SeLe4n.ObjId}
-    (hObjs : st2.objects = st.objects) (hSched : st2.scheduler = st.scheduler)
+    (hObjs : SystemState.objectsAgreeOffDerivationLinks st2 st) (hSched : st2.scheduler = st.scheduler)
     (hFpOwner : st2.machine.fpOwner = st.machine.fpOwner)
     (hResident : st2.machine.residentCode = st.machine.residentCode)
     (hDet : retypeTargetDetached st target) : retypeTargetDetached st2 target := by
   constructor
-  · intro sc; rw [hObjs]; exact hDet.notSc sc
-  · intro t hT; rw [hObjs] at hT; exact hDet.notOwner t hT
-  · intro t hT; rw [hObjs] at hT; exact hDet.tcbNoNext t hT
-  · intro t hT; rw [hObjs] at hT; exact hDet.tcbNoPrev t hT
-  · intro t hT; rw [hObjs] at hT; exact hDet.tcbSelfId t hT
-  · intro t hT; rw [hObjs] at hT; exact hDet.tcbAllowedState t hT
-  · intro t hT; rw [hObjs] at hT; exact hDet.tcbNotDonated t hT
-  · intro t hT; rw [hObjs] at hT; exact hDet.tcbNotBound t hT
-  · intro t hT; rw [hObjs] at hT; exact hDet.tcbNotWaiter t hT
+  · intro sc hS; exact hDet.notSc sc (hObjs.obj_back hS (fun _ h => KernelObject.noConfusion h))
+  · intro t hT; replace hT := hObjs.obj_back hT (fun _ h => KernelObject.noConfusion h); exact hDet.notOwner t hT
+  · intro t hT; replace hT := hObjs.obj_back hT (fun _ h => KernelObject.noConfusion h); exact hDet.tcbNoNext t hT
+  · intro t hT; replace hT := hObjs.obj_back hT (fun _ h => KernelObject.noConfusion h); exact hDet.tcbNoPrev t hT
+  · intro t hT; replace hT := hObjs.obj_back hT (fun _ h => KernelObject.noConfusion h); exact hDet.tcbSelfId t hT
+  · intro t hT; replace hT := hObjs.obj_back hT (fun _ h => KernelObject.noConfusion h); exact hDet.tcbAllowedState t hT
+  · intro t hT; replace hT := hObjs.obj_back hT (fun _ h => KernelObject.noConfusion h); exact hDet.tcbNotDonated t hT
+  · intro t hT; replace hT := hObjs.obj_back hT (fun _ h => KernelObject.noConfusion h); exact hDet.tcbNotBound t hT
+  · intro t hT; replace hT := hObjs.obj_back hT (fun _ h => KernelObject.noConfusion h); exact hDet.tcbNotWaiter t hT
   -- **WS-HP HP10.5**: the origin clause travels on `objects` alone, like its
   -- neighbours above.
-  · intro t hT oid sc hS; rw [hObjs] at hT hS
+  · intro t hT oid sc hS; replace hT := hObjs.obj_back hT (fun _ h => KernelObject.noConfusion h); replace hS := hObjs.obj_back hS (fun _ h => KernelObject.noConfusion h)
     exact hDet.tcbNotDonationOrigin t hT oid sc hS
-  · intro t hT c; rw [hObjs] at hT
-    rw [hSched, (SystemState.RunCoresAgree.of_objects hObjs).queuedOn]
+  · intro t hT c; replace hT := hObjs.obj_back hT (fun _ h => KernelObject.noConfusion h)
+    rw [hSched, (show SystemState.RunCoresAgree st2 st from fun y => by rw [hObjs.getTcb? y]).queuedOn]
     exact hDet.tcbDescheduled t hT c
-  · intro t hT; rw [hObjs] at hT; exact hDet.tcbNotIdle t hT
+  · intro t hT; replace hT := hObjs.obj_back hT (fun _ h => KernelObject.noConfusion h); exact hDet.tcbNotIdle t hT
   -- WS-BP BP7.9: the FP-owner clause travels on the owner table alone.
-  · intro t hT c; rw [hObjs] at hT
+  · intro t hT c; replace hT := hObjs.obj_back hT (fun _ h => KernelObject.noConfusion h)
     show st2.machine.fpOwner.get c ≠ some t.tid
     rw [hFpOwner]; exact hDet.tcbFpReleased t hT c
   -- PR #904 review (`v0.36.41`): and the residency clause on its own table.
-  · intro t hT c; rw [hObjs] at hT
+  · intro t hT c; replace hT := hObjs.obj_back hT (fun _ h => KernelObject.noConfusion h)
     have h := hDet.tcbResidencyReleased t hT c
     simp only [MachineState.resident, MachineState.residentOnCore] at h ⊢
     rwa [hResident]
-  · intro tid tcb hT; rw [hObjs] at hT; exact hDet.blockedRefsAvoid tid tcb hT
-  · intro a tcbA b hA hN; rw [hObjs] at hA; exact hDet.notQueueLinked a tcbA b hA hN
-  · intro b tcbB a hB hP; rw [hObjs] at hB; exact hDet.notPrevLinked b tcbB a hB hP
-  · intro epId ep hd hEp hH; rw [hObjs] at hEp; exact hDet.notHead epId ep hd hEp hH
-  · intro epId ep tl hEp hT; rw [hObjs] at hEp; exact hDet.notTail epId ep tl hEp hT
-  · intro tid tcb hT; rw [hObjs] at hT; exact hDet.noSelfLoops tid tcb hT
-  · intro tid tcb rid hT hRO; rw [hObjs] at hT; exact hDet.notReplyLinked tid tcb rid hT hRO
-  · intro tid tcb rid hT hP; rw [hObjs] at hT; exact hDet.notStashed tid tcb rid hT hP
+  · intro tid tcb hT; replace hT := hObjs.obj_back hT (fun _ h => KernelObject.noConfusion h); exact hDet.blockedRefsAvoid tid tcb hT
+  · intro a tcbA b hA hN; replace hA := hObjs.obj_back hA (fun _ h => KernelObject.noConfusion h); exact hDet.notQueueLinked a tcbA b hA hN
+  · intro b tcbB a hB hP; replace hB := hObjs.obj_back hB (fun _ h => KernelObject.noConfusion h); exact hDet.notPrevLinked b tcbB a hB hP
+  · intro epId ep hd hEp hH; replace hEp := hObjs.obj_back hEp (fun _ h => KernelObject.noConfusion h); exact hDet.notHead epId ep hd hEp hH
+  · intro epId ep tl hEp hT; replace hEp := hObjs.obj_back hEp (fun _ h => KernelObject.noConfusion h); exact hDet.notTail epId ep tl hEp hT
+  · intro tid tcb hT; replace hT := hObjs.obj_back hT (fun _ h => KernelObject.noConfusion h); exact hDet.noSelfLoops tid tcb hT
+  · intro tid tcb rid hT hRO; replace hT := hObjs.obj_back hT (fun _ h => KernelObject.noConfusion h); exact hDet.notReplyLinked tid tcb rid hT hRO
+  · intro tid tcb rid hT hP; replace hT := hObjs.obj_back hT (fun _ h => KernelObject.noConfusion h); exact hDet.notStashed tid tcb rid hT hP
 
 /-- The pre-resolved-authority retype base: guards then one pristine write. -/
 theorem lifecycleRetypeDirect_preserves_ipcInvariantFull
@@ -4467,21 +4497,25 @@ theorem lifecycleRetypeDirectWithCleanup_preserves_ipcInvariantFull
         | ok stClean =>
             rw [hClean] at hStep
             dsimp only [] at hStep
-            obtain ⟨hCO, hCS, hCF⟩ := lifecyclePreRetypeCleanup_detached_frame st stClean target
-              currentObj newObj hObjInv hObj hDet hClean
-            have hSO : (scrubObjectMemory stClean target currentObj.objectType).objects
-                = st.objects :=
-              (scrubObjectMemory_objects_eq stClean target currentObj.objectType).trans hCO
+            obtain ⟨stM, hMO, hMS, hMM, hR⟩ := lifecyclePreRetypeCleanup_detached_frame st
+              stClean target currentObj newObj hObjInv hObj hDet hClean
+            have hInvM : stM.objects.invExt := hMO ▸ hObjInv
+            have hAg : SystemState.objectsAgreeOffDerivationLinks
+                (scrubObjectMemory stClean target currentObj.objectType) st :=
+              (hR.agree hInvM).congr (scrubObjectMemory_objects_eq stClean target _) hMO.symm
+            have hCF : stClean.machine = st.machine :=
+              (congrArg SystemState.machine hR.fields).trans hMM
             have hSS : (scrubObjectMemory stClean target currentObj.objectType).scheduler
                 = st.scheduler :=
-              (scrubObjectMemory_scheduler_eq stClean target currentObj.objectType).trans hCS
+              (scrubObjectMemory_scheduler_eq stClean target currentObj.objectType).trans
+                ((congrArg SystemState.scheduler hR.fields).trans hMS)
             exact lifecycleRetypeDirect_preserves_ipcInvariantFull _ st' authCap target newObj
-              (hSO ▸ hObjInv)
+              (by rw [scrubObjectMemory_objects_eq]; exact hR.invExt hInvM)
               hFresh
-              (retypeTargetDetached_of_objects_scheduler_eq hSO hSS
+              (retypeTargetDetached_of_agreeOffDerivationLinks hAg hSS
                 (show stClean.machine.fpOwner = st.machine.fpOwner by rw [hCF])
                 (show stClean.machine.residentCode = st.machine.residentCode by rw [hCF]) hDet)
-              (ipcInvariantFull_of_objects_scheduler_eq hSO hSS hInv)
+              (ipcInvariantFull_of_agreeOffDerivationLinks hAg hSS hInv)
               hStep
 
 /-- The ASID shootdown stage is `tlb`/`tlbShootdown`-only. -/
