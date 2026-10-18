@@ -554,40 +554,10 @@ private def uniqueWaitersCheck (objectIds : List SeLe4n.ObjId) (st : SystemState
     let hasDuplicates := !allWaiters.Nodup
     [("notification waiters globally unique", !hasDuplicates)]
 
-/-- Audit: Runtime check for CDT `childMapConsistent` — verifies that the
-`childMap` HashMap mirrors the parent→child edges in the `edges` list.
-Checks both directions: every childMap entry has a corresponding edge,
-and every edge has a corresponding childMap entry. -/
-private def cdtChildMapConsistentCheck (st : SystemState) : List (String × Bool) :=
-  let cdt := st.cdt
-  -- Forward: every childMap entry has a corresponding edge
-  let forwardChecks := cdt.childMap.toList.foldl (fun acc ⟨parent, children⟩ =>
-    children.foldr (fun child inner =>
-      let ok := cdt.edges.any fun e => e.parent == parent && e.child == child
-      (s!"cdt childMap→edges: parent={reprStr parent} child={reprStr child}", ok) :: inner) acc) []
-  -- Backward: every edge has a corresponding childMap entry
-  let backwardChecks := cdt.edges.map fun e =>
-    let ok := match cdt.childMap[e.parent]? with
-      | some children => children.any (· == e.child)
-      | none => false
-    (s!"cdt edges→childMap: parent={reprStr e.parent} child={reprStr e.child}", ok)
-  forwardChecks ++ backwardChecks
-
-/-- M-P02: Runtime check for CDT `parentMapConsistent` — verifies that the
-`parentMap` HashMap mirrors the child→parent edges in the `edges` list. -/
-private def cdtParentMapConsistentCheck (st : SystemState) : List (String × Bool) :=
-  let cdt := st.cdt
-  -- Forward: every parentMap entry has a corresponding edge
-  let forwardChecks := cdt.parentMap.toList.foldl (fun acc ⟨child, parent⟩ =>
-    let ok := cdt.edges.any fun e => e.parent == parent && e.child == child
-    (s!"cdt parentMap→edges: child={reprStr child} parent={reprStr parent}", ok) :: acc) []
-  -- Backward: every edge has a corresponding parentMap entry
-  let backwardChecks := cdt.edges.map fun e =>
-    let ok := match cdt.parentMap[e.child]? with
-      | some parent => parent == e.parent
-      | none => false
-    (s!"cdt edges→parentMap: child={reprStr e.child} parent={reprStr e.parent}", ok)
-  forwardChecks ++ backwardChecks
+/-- Runtime check that each slot is the child of at most one derivation edge
+(`childrenUnique`): a slot holds one parent link. -/
+private def cdtChildrenUniqueCheck (st : SystemState) : List (String × Bool) :=
+  [("cdt each slot has at most one parent edge", (st.cdt.edges.map (·.child)).Nodup)]
 
 def stateInvariantChecksFor (objectIds : List SeLe4n.ObjId) (st : SystemState)
     (serviceIds : List ServiceId := []) : List (String × Bool) :=
@@ -632,8 +602,7 @@ def stateInvariantChecksFor (objectIds : List SeLe4n.ObjId) (st : SystemState)
     ++ untypedWatermarkChecks objectIds st
     ++ notificationWaiterConsistentChecks objectIds st
     ++ replyWaitersConsistentChecks objectIds st
-    ++ cdtChildMapConsistentCheck st
-    ++ cdtParentMapConsistentCheck st
+    ++ cdtChildrenUniqueCheck st
     ++ blockedOnSendNotRunnableChecks objectIds st
     ++ blockedThreadPendingMessageChecks objectIds st
     ++ blockedOnReceiveNotRunnableChecks objectIds st

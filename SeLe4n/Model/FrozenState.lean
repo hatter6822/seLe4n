@@ -410,10 +410,8 @@ structure FrozenSystemState where
   interfaceRegistry : FrozenMap SeLe4n.InterfaceId InterfaceSpec
   services          : FrozenMap ServiceId ServiceGraphEntry
 
-  -- CDT (FrozenMap — dual index)
-  cdtChildMap       : FrozenMap SlotRef (List SlotRef)
-  cdtParentMap      : FrozenMap SlotRef SlotRef
-  cdtEdges          : List CapDerivationEdge  -- proof anchor (retained)
+  -- CDT: the edge list (the slots' derivation links index it)
+  cdtEdges          : List CapDerivationEdge
 
   -- Scheduler
   scheduler         : FrozenSchedulerState
@@ -669,8 +667,6 @@ def freeze (ist : IntermediateState) : FrozenSystemState :=
     serviceRegistry := freezeMap st.serviceRegistry
     interfaceRegistry := freezeMap st.interfaceRegistry
     services := freezeMap st.services
-    cdtChildMap := freezeMap st.cdt.childMap
-    cdtParentMap := freezeMap st.cdt.parentMap
     cdtEdges := st.cdt.edges
     scheduler := freezeScheduler st
     objectTypes := freezeMap st.lifecycle.objectTypes

@@ -287,12 +287,7 @@ def createBootObject (ist : IntermediateState) (entry : ObjectEntry) : Intermedi
     hAllTables := by
       have h := created.hAllTables
       unfold SystemState.allTablesInvExtK at h ⊢
-      refine ⟨h.1, h.2.1,
-              bootEntryAsidTable_invExtK _ _ h.2.2.1,
-              h.2.2.2.1, h.2.2.2.2.1, h.2.2.2.2.2.1,
-              h.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.1,
-              h.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.1,
-              h.2.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.2⟩
+      exact ⟨h.1, h.2.1, bootEntryAsidTable_invExtK _ _ h.2.2.1, h.2.2.2⟩
     hPerObjectSlots := fun oid cn hLookup => created.hPerObjectSlots oid cn hLookup
     hPerObjectMappings := fun oid vs hLookup => created.hPerObjectMappings oid vs hLookup
     hLifecycleConsistent := created.hLifecycleConsistent }

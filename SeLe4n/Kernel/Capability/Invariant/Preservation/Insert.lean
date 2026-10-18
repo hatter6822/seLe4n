@@ -41,8 +41,7 @@ pre-state invariant. This is deliberate:
    slot state. Bundling them as hypotheses keeps each proof focused.
 
 2. **CDT operation complexity.** CDT mutations (`addEdge`, `removeNode`,
-   `revokeDerivationEdge`) modify an edge list and two maps (`childMap`,
-   `parentMap`). Proving acyclicity preservation for `addEdge` requires
+   `revokeDerivationEdge`) modify an edge list. Proving acyclicity preservation for `addEdge` requires
    a reachability argument over the graph (no path from child to parent
    in the pre-state). This argument is inherently CDT-specific and does
    not compose naturally with the slot-level induction used in capability
@@ -213,21 +212,6 @@ theorem cspaceDeleteSlotCore_preserves_replyCapPointsToValidReply
             exact hRCPV addr.cnode cn slot cap' rid hPre hLook hTgt
         · rw [hMidNe oid hc] at hObj
           exact hRCPV oid cn' slot cap' rid hObj hLook hTgt
-
--- **WS-RR RR8.16** (`v0.35.201`): `cspaceInsertSlot_cdt_eq` was declared here,
--- beside its `cdtMapsConsistent` consumer.  It is a *frame over a primitive*, so
--- it lives beside the primitive in `Kernel/Capability/Operations.lean` now,
--- Its consumer stays here, which is where an invariant-preservation
--- statement belongs.
-
-/-- S3-D: `cspaceInsertSlot` preserves `cdtMapsConsistent`. Insert only calls
-    `storeObject`, which does not modify the CDT. -/
-theorem cspaceInsertSlot_preserves_cdtMapsConsistent
-    (st st' : SystemState) (addr : CSpaceAddr) (cap : Capability)
-    (hCon : cdtMapsConsistent st)
-    (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
-    cdtMapsConsistent st' :=
-  cdtMapsConsistent_of_cdt_eq st st' hCon (cspaceInsertSlot_cdt_eq st st' addr cap hStep)
 
 /-- WS-SM SM6.D / PR #822 Phase H (#1.a): a capability resolved from a CSpace slot in a state
 satisfying `capabilityInvariantBundle` is reply-backed — if its target is a reply cap, the

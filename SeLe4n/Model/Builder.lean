@@ -40,15 +40,15 @@ private theorem allTablesInvExtK_irqHandlers {st : SystemState}
 
 /-- Extract services invExtK from allTablesInvExtK. -/
 private theorem allTablesInvExtK_services {st : SystemState}
-    (h : st.allTablesInvExtK) : st.services.invExtK := h.2.2.2.2.2.2.1
+    (h : st.allTablesInvExtK) : st.services.invExtK := h.2.2.2.2.1
 
 /-- Extract serviceRegistry invExtK from allTablesInvExtK. -/
 private theorem allTablesInvExtK_serviceRegistry {st : SystemState}
-    (h : st.allTablesInvExtK) : st.serviceRegistry.invExtK := h.2.2.2.2.2.2.2.2.1
+    (h : st.allTablesInvExtK) : st.serviceRegistry.invExtK := h.2.2.2.2.2.2.1
 
 /-- Extract interfaceRegistry invExtK from allTablesInvExtK. -/
 private theorem allTablesInvExtK_interfaceRegistry {st : SystemState}
-    (h : st.allTablesInvExtK) : st.interfaceRegistry.invExtK := h.2.2.2.2.2.2.2.1
+    (h : st.allTablesInvExtK) : st.interfaceRegistry.invExtK := h.2.2.2.2.2.1
 
 /-- Extract objectTypes invExtK from allTablesInvExtK. -/
 private theorem allTablesInvExtK_objectTypes {st : SystemState}
@@ -56,35 +56,26 @@ private theorem allTablesInvExtK_objectTypes {st : SystemState}
 
 /-- Extract objectIndexSet invExtK from allTablesInvExtK. -/
 private theorem allTablesInvExtK_objectIndexSet {st : SystemState}
-    (h : st.allTablesInvExtK) : st.objectIndexSet.table.invExtK := h.2.2.2.2.2.2.2.2.2
+    (h : st.allTablesInvExtK) : st.objectIndexSet.table.invExtK := h.2.2.2.2.2.2.2
 
 /-- Extract asidTable invExtK from allTablesInvExtK. -/
 private theorem allTablesInvExtK_asidTable {st : SystemState}
     (h : st.allTablesInvExtK) : st.asidTable.invExtK := h.2.2.1
 
-/-- Y1-F: Extract cdt.childMap invExtK from allTablesInvExtK. -/
-private theorem allTablesInvExtK_cdtChildMap {st : SystemState}
-    (h : st.allTablesInvExtK) : st.cdt.childMap.invExtK := h.2.2.2.2.1
-
-/-- Y1-F: Extract cdt.parentMap invExtK from allTablesInvExtK. -/
-private theorem allTablesInvExtK_cdtParentMap {st : SystemState}
-    (h : st.allTablesInvExtK) : st.cdt.parentMap.invExtK := h.2.2.2.2.2.1
-
--- Y1-G: Completeness note — all 10 conjuncts of `allTablesInvExtK` have named
+-- Y1-G: Completeness note — all 8 conjuncts of `allTablesInvExtK` have named
 -- accessors. The full list (matching the definition order in State.lean;
 -- `v0.35.78` retired the capability-reference table's conjunct, which sat
 -- seventh, WS-ZA ZA5.2 the per-context thread index's, which sat last, and
--- WS-ZA ZA5.3 the two slot/node tables', which sat fourth and fifth):
+-- WS-ZA ZA5.3 the two slot/node tables', which sat fourth and fifth, and
+-- the derivation tree's child and parent maps, which sat fifth and sixth):
 --  1. allTablesInvExtK_objects         (objects)
 --  2. allTablesInvExtK_irqHandlers     (irqHandlers)
 --  3. allTablesInvExtK_asidTable       (asidTable)
 --  4. allTablesInvExtK_objectTypes     (lifecycle.objectTypes)
---  5. allTablesInvExtK_cdtChildMap     (cdt.childMap)
---  6. allTablesInvExtK_cdtParentMap    (cdt.parentMap)
---  7. allTablesInvExtK_services       (services)
---  8. allTablesInvExtK_interfaceRegistry (interfaceRegistry)
---  9. allTablesInvExtK_serviceRegistry (serviceRegistry)
--- 10. allTablesInvExtK_objectIndexSet (objectIndexSet.table)
+--  5. allTablesInvExtK_services       (services)
+--  6. allTablesInvExtK_interfaceRegistry (interfaceRegistry)
+--  7. allTablesInvExtK_serviceRegistry (serviceRegistry)
+--  8. allTablesInvExtK_objectIndexSet (objectIndexSet.table)
 -- (The run queue's tables are not in the bundle: `RunQueue` carries their
 -- invariants as its own fields, WS-ZA ZA4.5.)
 -- WARNING: Do not use raw tuple projections (.2.2.2...) on allTablesInvExtK.
@@ -134,9 +125,9 @@ def registerService (ist : IntermediateState) (sid : ServiceId)
   hAllTables := by
     have h := ist.hAllTables
     unfold SystemState.allTablesInvExtK at h ⊢
-    exact ⟨h.1, h.2.1, h.2.2.1, h.2.2.2.1, h.2.2.2.2.1, h.2.2.2.2.2.1, h.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.1,
-           RHTable.insert_preserves_invExtK _ _ _ h.2.2.2.2.2.2.2.2.1,
-           h.2.2.2.2.2.2.2.2.2⟩
+    exact ⟨h.1, h.2.1, h.2.2.1, h.2.2.2.1, h.2.2.2.2.1, h.2.2.2.2.2.1,
+           RHTable.insert_preserves_invExtK _ _ _ h.2.2.2.2.2.2.1,
+           h.2.2.2.2.2.2.2⟩
   hPerObjectSlots := by
     intro id cn hObj; exact ist.hPerObjectSlots id cn hObj
   hPerObjectMappings := by
@@ -181,9 +172,9 @@ def createObject (ist : IntermediateState)
     refine ⟨RHTable.insert_preserves_invExtK _ _ _ h.1,
            h.2.1, h.2.2.1,
            RHTable.insert_preserves_invExtK _ _ _ h.2.2.2.1,
-           h.2.2.2.2.1, h.2.2.2.2.2.1, h.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.1,
+           h.2.2.2.2.1, h.2.2.2.2.2.1, h.2.2.2.2.2.2.1,
            ?_⟩
-    exact RHSet.insert_preserves_invExtK ist.state.objectIndexSet id h.2.2.2.2.2.2.2.2.2
+    exact RHSet.insert_preserves_invExtK ist.state.objectIndexSet id h.2.2.2.2.2.2.2
   hPerObjectSlots := by
     unfold perObjectSlotsInvariant
     intro oid cn hObj

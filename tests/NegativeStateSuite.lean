@@ -287,9 +287,9 @@ private def runCspaceMutationAndRevokeNegativeChecks : IO Unit := do
     }
   let (_, moveState) ← expectOkSt "cspaceMove moves the source's tree position"
     (SeLe4n.Kernel.cspaceMove slot0 moveDst moveSeed)
-  if moveState.cdt.parentMap[moveDst]? = some moveParentSlot ∧
+  if moveState.cdt.parentOf moveDst = some moveParentSlot ∧
       moveState.cdt.childrenOf moveDst = [moveChildSlot] ∧
-      moveState.cdt.parentMap[slot0]? = none ∧
+      moveState.cdt.parentOf slot0 = none ∧
       moveState.cdt.childrenOf slot0 = [] then
     IO.println "positive check passed [cspaceMove carries the source's parent and children to dst]"
   else
@@ -306,7 +306,7 @@ private def runCspaceMutationAndRevokeNegativeChecks : IO Unit := do
     }
   let (_, deletedMoveDst) ← expectOkSt "cspaceDeleteSlot removes a leaf from the tree"
     (SeLe4n.Kernel.cspaceDeleteSlot moveDst leafDeleteSeed)
-  if deletedMoveDst.cdt.parentMap[moveDst]? = none ∧
+  if deletedMoveDst.cdt.parentOf moveDst = none ∧
       deletedMoveDst.cdt.childrenOf moveParentSlot = [] ∧
       deletedMoveDst.cdt.edges = [] then
     IO.println "positive check passed [cspaceDeleteSlot takes the slot's edges out of the tree]"
@@ -326,9 +326,9 @@ private def runCspaceMutationAndRevokeNegativeChecks : IO Unit := do
     }
   let (_, splicedSt) ← expectOkSt "cspaceDeleteSlot deletes a slot with CDT children"
     (SeLe4n.Kernel.cspaceDeleteSlot slot0 childBearingSeed)
-  if splicedSt.cdt.parentMap[childOfBearing]? = some bearingParent ∧
+  if splicedSt.cdt.parentOf childOfBearing = some bearingParent ∧
       splicedSt.cdt.childrenOf slot0 = [] ∧
-      splicedSt.cdt.parentMap[slot0]? = none ∧
+      splicedSt.cdt.parentOf slot0 = none ∧
       (splicedSt.cdt.edges.any fun e =>
         e.parent == bearingParent && e.child == childOfBearing && e.op == .mint) then
     IO.println "positive check passed [cspaceDeleteSlot splices a parent slot out of the tree]"

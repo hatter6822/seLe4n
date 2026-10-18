@@ -225,7 +225,7 @@ private def chain5bLeafDeleteReclaimsNode : IO Unit := do
     | .error e => throw <| IO.userError s!"chain5b: sixteen more rounds failed: {toString e}"
     | .ok st17 =>
       expect "chain5b: sixteen more rounds leave the tree as it was"
-        (st17.cdt.edges.length == 0 && st17.cdt.childMap.size == 0)
+        (st17.cdt.edges.length == 0)
       let (_, st18) ← expectOkSt "chain5b: the source is deletable once its copy is gone"
         (SeLe4n.Kernel.cspaceDeleteSlot src st17)
       assertInvariants "chain5b: copy/delete rounds, then the source deleted" st18
@@ -260,7 +260,7 @@ private def chain5cCNodeRetypeReclaimsNodes : IO Unit := do
     | .error e => throw <| IO.userError s!"chain5c: retype cleanup of the CNode failed: {toString e}"
     | .ok st2 =>
       expect "chain5c: retyping the CNode leaves no derivation edge behind"
-        (st2.cdt.edges.length == 0 && st2.cdt.childMap.size == 0)
+        (st2.cdt.edges.length == 0)
       expect "chain5c: the source no longer reports a derived child"
         (!SeLe4n.Kernel.hasCdtChildren st2 src)
   | _ => throw <| IO.userError "chain5c: the second CNode is missing after the copy"

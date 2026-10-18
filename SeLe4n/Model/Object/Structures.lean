@@ -1814,90 +1814,55 @@ WS-E4/C-03: A list of derivation edges forming a forest. Operations maintain
 the acyclicity invariant: no slot can be both ancestor and descendant of itself.
 
 **T2-B (H-2): Access-controlled construction.** Direct construction of
-`CapDerivationTree` values is restricted to the `CapDerivationTree` namespace.
-External code must use `CapDerivationTree.empty` or `CapDerivationTree.mk_checked`
-(which requires a `cdtMapsConsistent` witness). This prevents construction of
-CDT values with inconsistent `edges`/`childMap`/`parentMap` fields. All CDT
-mutation operations (`addEdge`, `removeNode`, etc.) are within this namespace
-and maintain the consistency invariant internally. -/
+`CapDerivationTree` values is restricted to the `CapDerivationTree` namespace:
+external code starts from `CapDerivationTree.empty` and changes the tree only
+through its operations (`addEdge`, `removeNode`, `spliceNode`, `moveNode`,
+`revokeDerivationEdge`).
+
+**WS-ZA ZA5.3 part 4: the edge list is the tree.**  Its parent and child reads
+(`parentOf`, `childrenOf`) are read off the edges; the kernel's executable
+reads walk the derivation links each slot holds (seL4's mapping database),
+which an invariant ties to these. -/
 structure CapDerivationTree where
   private mk ::
   edges : List CapDerivationEdge := []
-  /-- WS-G8/F-P14: Parent-indexed child map for O(1) `childrenOf` lookup.
-  Runtime index maintained in parallel with `edges`; `edges` remains the
-  proof anchor. -/
-  childMap : SeLe4n.Kernel.RobinHood.RHTable SlotRef (List SlotRef) := {}
-  /-- M-P02: Child-indexed parent map for O(1) `parentOf` lookup.
-  Maps each child node to its unique parent. Symmetric to `childMap`. -/
-  parentMap : SeLe4n.Kernel.RobinHood.RHTable SlotRef SlotRef := {}
   deriving Repr
 
 namespace CapDerivationTree
 
-/- W6-I (LOW-04): CDT edge theorems — complete proof suite.
-   The following CDT section provides machine-checked proofs for capability
-   derivation tree edge operations (`addEdge`, `removeNode`, `removeEdge`):
-   - `addEdge_preserves_edgeWellFounded_fresh` / `_noParent`: Acyclicity preservation
-   - `addEdge_childMapConsistent` / `parentMapConsistent`: Index consistency
-   - `addEdge_preserves_cdtMapsConsistent`: Composite preservation
-   - `removeNode_edges_sub`, `removeNode_parentMapConsistent`, `removeNode_childMapConsistent`
-   Most are specification surface — not directly composed into the kernel proof
-   chain. Exception: `removeNode_edges_sub` is actively used by capability
-   invariant preservation proofs (Capability/Invariant/Preservation.lean).
-   Retained as machine-checked documentation of CDT correctness properties. -/
+/-- T2-C (H-2): The canonical empty CDT with no edges. -/
+def empty : CapDerivationTree := CapDerivationTree.mk []
 
-/-- T2-C (H-2): The canonical empty CDT with no edges and empty index maps.
-    Satisfies all CDT invariants by construction (vacuously). -/
-def empty : CapDerivationTree := CapDerivationTree.mk [] {} {}
-
-/-- Add a derivation edge from parent to child.
-WS-G8: Maintains `childMap` index alongside `edges`. -/
+/-- Add a derivation edge from parent to child.  The new edge is first, so the
+new child is the parent's first child (`childrenOf`). -/
 def addEdge (cdt : CapDerivationTree) (parent child : SlotRef)
     (op : DerivationOp) : CapDerivationTree :=
-  let currentChildren := cdt.childMap.get? parent |>.getD []
-  { edges := { parent, child, op } :: cdt.edges,
-    childMap := cdt.childMap.insert parent (child :: currentChildren),
-    parentMap := cdt.parentMap.insert child parent }
+  { edges := { parent, child, op } :: cdt.edges }
 
 /-- **A slot the tree names**: an endpoint of one of its edges.  A slot the tree
 does not name is outside it: no parent, no children. -/
 def mentions (cdt : CapDerivationTree) (ref : SlotRef) : Prop :=
   ∃ e ∈ cdt.edges, e.parent = ref ∨ e.child = ref
 
-/-- Find all direct children of a given node.
-WS-G8/F-P14: O(1) lookup via `childMap` instead of O(E) edge scan. -/
-def childrenOf (cdt : CapDerivationTree) (node : SlotRef)
-    : List SlotRef :=
-  cdt.childMap.get? node |>.getD []
+/-- The direct children of `node`, newest first (the order `addEdge` puts them
+in, and the order the links' sibling chain holds them in). -/
+def childrenOf (cdt : CapDerivationTree) (node : SlotRef) : List SlotRef :=
+  (cdt.edges.filter (·.isParentOf node)).map (·.child)
 
-/-- Remove all edges where the given node appears as parent or child.
-M-P03: Targeted `parentMap`/`childMap` updates instead of full rebuild. -/
+/-- The parent of `node`: the parent of its newest parent edge.  The tree gives
+each slot at most one parent edge (`childrenUnique`), so this is its parent. -/
+def parentOf (cdt : CapDerivationTree) (node : SlotRef) : Option SlotRef :=
+  (cdt.edges.find? (·.isChildOf node)).map (·.parent)
+
+/-- Remove all edges where the given node appears as parent or child. -/
 def removeNode (cdt : CapDerivationTree) (node : SlotRef)
     : CapDerivationTree :=
-  -- Phase 1: Remove as parent (erase children's parentMap entries + own childMap entry)
-  let children := (cdt.childMap.get? node).getD []
-  let parentMapWithoutChildren := children.foldl (fun m c => m.erase c) cdt.parentMap
-  -- Phase 2: Remove as child (erase own parentMap entry + splice parent's childMap)
-  let parentMapFinal := parentMapWithoutChildren.erase node
-  let parentNode? := cdt.parentMap[node]?
-  let childMapWithoutSelf := cdt.childMap.erase node
-  let childMapFinal := match parentNode? with
-    | some p =>
-      let siblings := (childMapWithoutSelf.get? p).getD []
-      let filtered := siblings.filter (· != node)
-      if filtered.isEmpty then childMapWithoutSelf.erase p
-      else childMapWithoutSelf.insert p filtered
-    | none => childMapWithoutSelf
-  -- Phase 3: Filter edges (proof anchor)
-  let edgesFiltered := cdt.edges.filter
-    (fun e => ¬e.isParentOf node ∧ ¬e.isChildOf node)
-  { edges := edgesFiltered, childMap := childMapFinal, parentMap := parentMapFinal }
+  { edges := cdt.edges.filter (fun e => ¬e.isParentOf node ∧ ¬e.isChildOf node) }
 
 /-- Collect all descendants of a slot via bounded BFS traversal.
 Uses fuel = edges.length to ensure termination and completeness
 for acyclic trees.
-WS-G8/F-P14: Uses `childrenOf` (O(1) via `childMap`) instead of inline
-edge scan, yielding O(N+E) total traversal.
+Each step reads a node's children (`childrenOf`).
 Y1-E: Uses `Std.HashSet` for O(1) visited-set membership checks (was O(n²)
 with `List.Mem`). The `visited` parameter mirrors `acc` for membership;
 `acc` remains the result list.
@@ -2088,562 +2053,6 @@ theorem freshChild_not_reachable
     | cons a rest => simp [List.head?] at hHead; exact hHead
   -- e.parent = path[0] = child, but hFresh says no edge has parent = child
   exact (hFresh e hMem).1 (hep.trans hP0)
-
-/-- WS-G8: Consistency invariant — `childMap` mirrors the parent→child
-relationship in `edges`. -/
-def childMapConsistent (cdt : CapDerivationTree) : Prop :=
-  ∀ parent child,
-    child ∈ (cdt.childMap.get? parent).getD [] ↔
-      ∃ e ∈ cdt.edges, e.parent = parent ∧ e.child = child
-
-theorem empty_childMapConsistent : CapDerivationTree.empty.childMapConsistent := by
-  intro parent child
-  simp only [CapDerivationTree.empty]
-  constructor
-  · intro h
-    have : ({} : SeLe4n.Kernel.RobinHood.RHTable SlotRef (List SlotRef)).get? parent = none :=
-      SeLe4n.Kernel.RobinHood.RHTable.getElem?_empty 16 (by omega) parent
-    rw [this] at h; simp at h
-  · rintro ⟨_, hMem, _⟩; cases hMem
-
-theorem addEdge_childMapConsistent (cdt : CapDerivationTree)
-    (p c : SlotRef) (op : DerivationOp)
-    (hCon : cdt.childMapConsistent)
-    (hExt : cdt.childMap.invExt) :
-    (cdt.addEdge p c op).childMapConsistent := by
-  intro parent child
-  constructor
-  · -- Forward: child in new childMap → edge exists
-    intro hIn
-    simp only [addEdge] at hIn
-    by_cases heq : (p == parent) = true
-    · -- p == parent is true
-      have hPeq : p = parent := eq_of_beq heq
-      subst hPeq
-      rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self _ _ _ hExt] at hIn
-      simp only [Option.getD] at hIn
-      rcases List.mem_cons.mp hIn with hChildEq | hTail
-      · exact ⟨⟨p, c, op⟩, .head _, rfl, hChildEq.symm⟩
-      · have ⟨e, heMem, hep, hec⟩ := (hCon p child).mp hTail
-        exact ⟨e, List.mem_cons_of_mem _ heMem, hep, hec⟩
-    · -- p == parent is false
-      rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne _ _ _ _ heq hExt] at hIn
-      have ⟨e, heMem, hep, hec⟩ := (hCon parent child).mp hIn
-      exact ⟨e, List.mem_cons_of_mem _ heMem, hep, hec⟩
-  · -- Backward: edge exists → child in new childMap
-    rintro ⟨e, heMem, hep, hec⟩
-    simp only [addEdge]
-    rcases List.mem_cons.mp heMem with heq | hTail
-    · -- e is the new edge
-      subst heq
-      simp only at hep hec
-      subst hep; subst hec
-      rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self _ _ _ hExt]
-      simp only [Option.getD]
-      exact .head _
-    · -- e is from existing edges
-      by_cases heq : (p == parent) = true
-      · -- p == parent is true
-        have hPeq : p = parent := eq_of_beq heq
-        subst hPeq
-        rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self _ _ _ hExt]
-        simp only [Option.getD]
-        exact List.mem_cons_of_mem _ ((hCon p child).mpr ⟨e, hTail, hep, hec⟩)
-      · -- p == parent is false
-        rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne _ _ _ _ heq hExt]
-        exact (hCon parent child).mpr ⟨e, hTail, hep, hec⟩
-
-/-- M-P02: Consistency invariant — `parentMap` mirrors the child→parent
-relationship in `edges`. Each child has at most one parent (forest property). -/
-def parentMapConsistent (cdt : CapDerivationTree) : Prop :=
-  ∀ child parent,
-    cdt.parentMap[child]? = some parent ↔
-      ∃ e ∈ cdt.edges, e.parent = parent ∧ e.child = child
-
-theorem empty_parentMapConsistent : CapDerivationTree.empty.parentMapConsistent := by
-  intro child parent
-  simp only [CapDerivationTree.empty]
-  constructor
-  · intro h
-    have : ({} : SeLe4n.Kernel.RobinHood.RHTable SlotRef SlotRef)[child]? = none :=
-      SeLe4n.Kernel.RobinHood.RHTable.getElem?_empty 16 (by omega) child
-    rw [this] at h; cases h
-  · rintro ⟨_, hMem, _⟩; cases hMem
-
-theorem addEdge_parentMapConsistent (cdt : CapDerivationTree)
-    (p c : SlotRef) (op : DerivationOp)
-    (hCon : cdt.parentMapConsistent)
-    (hFresh : cdt.parentMap[c]? = none)
-    (hExt : cdt.parentMap.invExt) :
-    (cdt.addEdge p c op).parentMapConsistent := by
-  intro child parent
-  constructor
-  · -- Forward: parentMap entry → edge exists
-    intro hIn
-    simp only [addEdge] at hIn
-    -- Normalize [k]? to get? for RHTable rewriting
-    change (cdt.parentMap.insert c p).get? child = some parent at hIn
-    by_cases heq : (c == child) = true
-    · -- c == child is true
-      have hCeq : c = child := eq_of_beq heq
-      subst hCeq
-      rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self _ _ _ hExt] at hIn
-      cases hIn
-      exact ⟨⟨p, c, op⟩, .head _, rfl, rfl⟩
-    · -- c == child is false
-      rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne _ _ _ _ heq hExt] at hIn
-      have ⟨e, heMem, hep, hec⟩ := (hCon child parent).mp hIn
-      exact ⟨e, List.mem_cons_of_mem _ heMem, hep, hec⟩
-  · -- Backward: edge exists → parentMap entry
-    rintro ⟨e, heMem, hep, hec⟩
-    simp only [addEdge]
-    -- Normalize [k]? to get? for RHTable rewriting
-    show (cdt.parentMap.insert c p).get? child = some parent
-    rcases List.mem_cons.mp heMem with heq | hTail
-    · -- e is the new edge
-      subst heq
-      simp only at hep hec
-      subst hep; subst hec
-      rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self _ _ _ hExt]
-    · -- e is from existing edges
-      by_cases heq : (c == child) = true
-      · -- c == child is true
-        have hCeq : c = child := eq_of_beq heq
-        subst hCeq
-        -- child = c, but hFresh says parentMap[c]? = none
-        -- yet we have an old edge with e.child = c, so hCon would give parentMap[c]? = some e.parent
-        have := (hCon c e.parent).mpr ⟨e, hTail, rfl, hec⟩
-        rw [hFresh] at this; cases this
-      · -- c == child is false
-        rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne _ _ _ _ heq hExt]
-        exact (hCon child parent).mpr ⟨e, hTail, hep, hec⟩
-
-/-- S3-B/U-M03: Composite preservation — `addEdge` preserves both
-    `childMapConsistent` and `parentMapConsistent`. -/
-theorem addEdge_preserves_cdtMapsConsistent (cdt : CapDerivationTree)
-    (p c : SlotRef) (op : DerivationOp)
-    (hChild : cdt.childMapConsistent)
-    (hParent : cdt.parentMapConsistent)
-    (hFresh : cdt.parentMap[c]? = none)
-    (hChildExt : cdt.childMap.invExt)
-    (hParentExt : cdt.parentMap.invExt) :
-    (cdt.addEdge p c op).childMapConsistent ∧
-    (cdt.addEdge p c op).parentMapConsistent :=
-  ⟨addEdge_childMapConsistent cdt p c op hChild hChildExt,
-   addEdge_parentMapConsistent cdt p c op hParent hFresh hParentExt⟩
-
-/-- M-P02: Helper — `foldl erase` preserves entries for keys not in the list.
-Requires `invExt` and `size < capacity` for RHTable erase correctness. -/
-private theorem foldl_erase_preserves
-    (xs : List SlotRef) (m : SeLe4n.Kernel.RobinHood.RHTable SlotRef SlotRef) (k : SlotRef)
-    (hNotAny : ∀ c ∈ xs, (c == k) = false)
-    (hK : m.invExtK) :
-    (xs.foldl (fun acc c => acc.erase c) m)[k]? = m[k]? := by
-  induction xs generalizing m with
-  | nil => rfl
-  | cons x rest ih =>
-    simp only [List.foldl_cons]
-    have hxk : (x == k) = false := hNotAny x (.head _)
-    have hRest : ∀ c ∈ rest, (c == k) = false :=
-      fun c hc => hNotAny c (.tail _ hc)
-    have hKE := m.erase_preserves_invExtK x hK
-    have h1 := ih _ hRest hKE
-    have h2 := SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne_K m x k (by simp [hxk]) hK
-    -- h1 : foldl[k]? = (m.erase x)[k]?, h2 : (m.erase x).get? k = m.get? k
-    -- Both [k]? and .get? are definitionally equal for RHTable
-    exact h1.trans h2
-
-/-- M-P02: Helper — once `[k]? = none`, further `foldl erase` keeps it none.
-Requires `invExtK` for RHTable erase correctness. -/
-private theorem foldl_erase_none
-    (xs : List SlotRef) (m : SeLe4n.Kernel.RobinHood.RHTable SlotRef SlotRef) (k : SlotRef)
-    (hNone : m[k]? = none)
-    (hK : m.invExtK) :
-    (xs.foldl (fun acc c => acc.erase c) m)[k]? = none := by
-  induction xs generalizing m with
-  | nil => exact hNone
-  | cons x rest ih =>
-    simp only [List.foldl_cons]
-    have hKE := m.erase_preserves_invExtK x hK
-    apply ih _ _ hKE
-    show (m.erase x).get? k = none
-    by_cases hxk : (x == k) = true
-    · have hkEq : x = k := eq_of_beq hxk
-      rw [hkEq]; exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_self m k hK.1
-    · rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne_K m x k hxk hK]; exact hNone
-
-/-- M-P02: Helper — `foldl erase` erases entries for keys in the list.
-Requires `invExtK` for RHTable erase correctness. -/
-private theorem foldl_erase_mem
-    (xs : List SlotRef) (m : SeLe4n.Kernel.RobinHood.RHTable SlotRef SlotRef) (k : SlotRef)
-    (hMem : ∃ c ∈ xs, (c == k) = true)
-    (hK : m.invExtK) :
-    (xs.foldl (fun acc c => acc.erase c) m)[k]? = none := by
-  induction xs generalizing m with
-  | nil => obtain ⟨_, hMem, _⟩ := hMem; cases hMem
-  | cons x rest ih =>
-    simp only [List.foldl_cons]
-    have hKE := m.erase_preserves_invExtK x hK
-    obtain ⟨c, hcMem, hck⟩ := hMem
-    rcases List.mem_cons.mp hcMem with hcx | hTail
-    · -- c = x, so x == k is true
-      have hxk : (x == k) = true := hcx ▸ hck
-      have hkEq : x = k := eq_of_beq hxk
-      apply foldl_erase_none _ _ _ _ hKE
-      show (m.erase x).get? k = none
-      rw [hkEq]; exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_self m k hK.1
-    · exact ih _ ⟨c, hTail, hck⟩ hKE
-
-/-- M-P02: `removeNode` preserves `parentMapConsistent`.
-
-The proof shows that after removing all edges mentioning `node`:
-- Children of `node` have their `parentMap` entries erased (matching edge removal)
-- `node` itself has its `parentMap` entry erased (matching edge removal)
-- All other entries are unchanged (matching surviving edges) -/
-theorem removeNode_parentMapConsistent
-    (cdt : CapDerivationTree) (node : SlotRef)
-    (hCon : cdt.parentMapConsistent)
-    (hChildCon : cdt.childMapConsistent)
-    (hK : cdt.parentMap.invExtK) :
-    (cdt.removeNode node).parentMapConsistent := by
-  intro child parent
-  simp only [removeNode]
-  -- Establish invExtK for the fold result via auxiliary lemma
-  have foldl_erase_invExtK : ∀ (xs : List SlotRef)
-      (m : SeLe4n.Kernel.RobinHood.RHTable SlotRef SlotRef),
-      m.invExtK →
-      (xs.foldl (fun acc c => acc.erase c) m).invExtK := by
-    intro xs
-    induction xs with
-    | nil => intro m hM; exact hM
-    | cons x rest ih =>
-      intro m hM
-      simp only [List.foldl_cons]
-      exact ih _ (m.erase_preserves_invExtK x hM)
-  have hFoldK := foldl_erase_invExtK
-    ((cdt.childMap.get? node).getD []) cdt.parentMap hK
-  have hFoldExt := hFoldK.1
-  constructor
-  · -- Forward: parentMapFinal[child]? = some parent → surviving edge exists
-    intro hIn
-    -- Normalize [k]? to .get? for RHTable rewriting
-    change ((List.foldl (fun m c => m.erase c) cdt.parentMap
-      ((cdt.childMap.get? node).getD [])).erase node).get? child = some parent at hIn
-    by_cases hNeNodeBool : (node == child) = true
-    · -- node == child: erase_self gives none, contradicts some parent
-      have hNodeEq : node = child := eq_of_beq hNeNodeBool
-      subst hNodeEq
-      rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_self _ node hFoldExt] at hIn
-      cases hIn
-    · -- child ≠ node
-      rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne_K _ node child hNeNodeBool
-        hFoldK] at hIn
-      have hNotChild : ∀ c ∈ (cdt.childMap.get? node).getD [], (c == child) = false := by
-        intro c hc
-        cases h : (c == child)
-        · rfl
-        · exfalso
-          have hNone : (List.foldl (fun acc c => acc.erase c) cdt.parentMap
-            ((cdt.childMap.get? node).getD [])).get? child = none :=
-            foldl_erase_mem _ cdt.parentMap child ⟨c, hc, h⟩ hK
-          rw [hNone] at hIn; exact absurd hIn (by simp)
-      have hPreserves : (List.foldl (fun acc c => acc.erase c) cdt.parentMap
-        ((cdt.childMap.get? node).getD [])).get? child = cdt.parentMap.get? child :=
-        foldl_erase_preserves _ _ _ hNotChild hK
-      rw [hPreserves] at hIn
-      have ⟨e, heMem, hep, hec⟩ := (hCon child parent).mp hIn
-      refine ⟨e, List.mem_filter.mpr ⟨heMem, ?_⟩, hep, hec⟩
-      simp only [decide_eq_true_eq]
-      constructor
-      · -- ¬e.isParentOf node = true
-        intro hParent
-        have hChildInMap : child ∈ (cdt.childMap.get? node).getD [] := by
-          apply (hChildCon node child).mpr
-          simp only [CapDerivationEdge.isParentOf] at hParent
-          exact ⟨e, heMem, eq_of_beq hParent, hec⟩
-        have := hNotChild child hChildInMap
-        simp at this
-      · -- ¬e.isChildOf node = true
-        intro hChild
-        simp only [CapDerivationEdge.isChildOf] at hChild
-        have hChildEqNode : e.child = node := of_decide_eq_true hChild
-        have : child = node := hec.symm.trans hChildEqNode
-        subst this
-        simp at hNeNodeBool
-  · -- Backward: surviving edge → parentMapFinal[child]? = some parent
-    rintro ⟨e, heMem, hep, hec⟩
-    have ⟨heMemOrig, hFilter⟩ := List.mem_filter.mp heMem
-    simp only [decide_eq_true_eq] at hFilter
-    have ⟨hNotParent, hNotChild⟩ := hFilter
-    -- child ≠ node
-    have hNeNode : ¬(node == child) = true := by
-      intro h
-      have hNodeEqChild : node = child := eq_of_beq h
-      simp only [CapDerivationEdge.isChildOf] at hNotChild
-      exact hNotChild (decide_eq_true (by rw [hec, hNodeEqChild]))
-    -- Normalize [k]? to .get? for RHTable rewriting
-    show ((List.foldl (fun m c => m.erase c) cdt.parentMap
-      ((cdt.childMap.get? node).getD [])).erase node).get? child = some parent
-    rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne_K _ node child hNeNode
-      hFoldK]
-    -- Now goal is foldl result .get? child = some parent
-    show (List.foldl (fun m c => m.erase c) cdt.parentMap
-      ((cdt.childMap.get? node).getD [])).get? child = some parent
-    -- child not in children list
-    have hNotInChildren : ∀ c ∈ (cdt.childMap.get? node).getD [], (c == child) = false := by
-      intro c hc
-      cases h : (c == child)
-      · rfl
-      · exfalso
-        have hCeq : c = child := eq_of_beq h
-        -- Use c = child to substitute
-        rw [hCeq] at hc
-        have ⟨e', he'Mem, he'p, he'c⟩ := (hChildCon node child).mp hc
-        have hParentFromOld := (hCon child node).mpr ⟨e', he'Mem, he'p, he'c⟩
-        have hParentFromEdge := (hCon child parent).mpr ⟨e, heMemOrig, hep, hec⟩
-        rw [hParentFromOld] at hParentFromEdge
-        cases hParentFromEdge
-        simp only [CapDerivationEdge.isParentOf] at hNotParent
-        exact hNotParent (decide_eq_true hep)
-    have hPreserves : (List.foldl (fun m c => m.erase c) cdt.parentMap
-      ((cdt.childMap.get? node).getD [])).get? child = cdt.parentMap.get? child :=
-      foldl_erase_preserves _ _ _ hNotInChildren hK
-    rw [hPreserves]
-    exact (hCon child parent).mpr ⟨e, heMemOrig, hep, hec⟩
-
-/-- R3/R2-C: `removeNode` preserves `childMapConsistent`.
-
-After removing all edges mentioning `node`:
-- Node's own `childMap` entry is erased (matching edge removal)
-- Parent's `childMap` entry has `node` filtered out (matching edge removal)
-- All other entries are unchanged (matching surviving edges) -/
-theorem removeNode_childMapConsistent
-    (cdt : CapDerivationTree) (node : SlotRef)
-    (hCon : cdt.childMapConsistent)
-    (hParentCon : cdt.parentMapConsistent)
-    (hK : cdt.childMap.invExtK) :
-    (cdt.removeNode node).childMapConsistent := by
-  intro parent child
-  simp only [removeNode]
-  -- Establish invExtK for childMap.erase node
-  have hKE := cdt.childMap.erase_preserves_invExtK node hK
-  have hEraseExt := hKE.1
-  constructor
-  · -- Forward: child ∈ (childMapFinal.get? parent).getD [] → ∃ e ∈ edgesFiltered, ...
-    intro hIn
-    -- Case split on parentMap[node]?
-    split at hIn
-    · -- Case: cdt.parentMap[node]? = some p
-      rename_i p hParent
-      -- Case split on filtered.isEmpty
-      split at hIn
-      · -- filtered.isEmpty = true → childMapFinal = (childMap.erase node).erase p
-        rename_i hEmpty
-        -- parent ≠ node and parent ≠ p (both erased)
-        -- Need to show child was in original childMap
-        -- After erase p from (erase node), get? parent goes through both erases
-        by_cases hpn : (node == parent) = true
-        · -- parent = node: erased, so get? node = none, contradiction
-          have hNodeEq : node = parent := eq_of_beq hpn
-          subst hNodeEq
-          have : ((cdt.childMap.erase node).erase p).get? node = none := by
-            by_cases hpn2 : (p == node) = true
-            · have := eq_of_beq hpn2; subst this
-              exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_self _ _ hEraseExt
-            · rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne_K _ p node hpn2 hKE]
-              exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_self _ _ hK.1
-          rw [this] at hIn; simp at hIn
-        · by_cases hpp : (p == parent) = true
-          · -- parent = p: erased, so get? p = none, contradiction
-            have hPeq : p = parent := eq_of_beq hpp
-            subst hPeq
-            have : ((cdt.childMap.erase node).erase p).get? p = none :=
-              SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_self _ _ hEraseExt
-            rw [this] at hIn; simp at hIn
-          · -- parent ≠ node and parent ≠ p: both erases are no-ops for parent
-            rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne_K _ p parent hpp hKE] at hIn
-            rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne_K _ node parent hpn hK] at hIn
-            have ⟨e, heMem, hep, hec⟩ := (hCon parent child).mp hIn
-            refine ⟨e, List.mem_filter.mpr ⟨heMem, ?_⟩, hep, hec⟩
-            simp only [decide_eq_true_eq]
-            constructor
-            · intro hIsP
-              simp only [CapDerivationEdge.isParentOf] at hIsP
-              have : e.parent = node := of_decide_eq_true hIsP
-              rw [hep] at this; subst this; simp at hpn
-            · intro hIsC
-              simp only [CapDerivationEdge.isChildOf] at hIsC
-              have hChildNode : e.child = node := of_decide_eq_true hIsC
-              have hParentMap := (hParentCon node parent).mpr ⟨e, heMem, hep, hChildNode⟩
-              rw [hParent] at hParentMap; cases hParentMap; simp at hpp
-      · -- filtered.isEmpty = false → childMapFinal = (childMap.erase node).insert p filtered
-        rename_i hNotEmpty
-        by_cases hpn : (p == parent) = true
-        · -- parent = p: insert p filtered, so get? p = some filtered
-          have hPeq : p = parent := eq_of_beq hpn
-          subst hPeq
-          rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self _ _ _ hEraseExt] at hIn
-          simp only [Option.getD] at hIn
-          -- child ∈ filtered = ((childMap.erase node).get? p).getD []).filter (· != node)
-          have hFilt := List.mem_filter.mp hIn
-          have ⟨hSib, hNeNode⟩ := hFilt
-          -- hSib: child ∈ ((childMap.erase node).get? p).getD []
-          by_cases hpn2 : (node == p) = true
-          · have hNodeP : node = p := eq_of_beq hpn2
-            subst hNodeP
-            rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_self _ _ hK.1] at hSib
-            simp at hSib
-          · rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne_K _ node p hpn2 hK] at hSib
-            have ⟨e, heMem, hep, hec⟩ := (hCon p child).mp hSib
-            refine ⟨e, List.mem_filter.mpr ⟨heMem, ?_⟩, hep, hec⟩
-            simp only [decide_eq_true_eq]
-            constructor
-            · intro hIsP
-              simp only [CapDerivationEdge.isParentOf] at hIsP
-              have : e.parent = node := of_decide_eq_true hIsP
-              rw [hep] at this; subst this; simp at hpn2
-            · intro hIsC
-              simp only [CapDerivationEdge.isChildOf] at hIsC
-              have hChildNode : e.child = node := of_decide_eq_true hIsC
-              have hChildEqNode : child = node := hec.symm.trans hChildNode
-              subst hChildEqNode
-              simp at hNeNode
-        · -- parent ≠ p: insert is a no-op for parent
-          rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne _ _ _ _ hpn hEraseExt] at hIn
-          by_cases hpn2 : (node == parent) = true
-          · have hNodeEq : node = parent := eq_of_beq hpn2
-            subst hNodeEq
-            rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_self _ _ hK.1] at hIn
-            simp at hIn
-          · rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne_K _ node parent hpn2 hK] at hIn
-            have ⟨e, heMem, hep, hec⟩ := (hCon parent child).mp hIn
-            refine ⟨e, List.mem_filter.mpr ⟨heMem, ?_⟩, hep, hec⟩
-            simp only [decide_eq_true_eq]
-            constructor
-            · intro hIsP
-              simp only [CapDerivationEdge.isParentOf] at hIsP
-              have : e.parent = node := of_decide_eq_true hIsP
-              rw [hep] at this; subst this; simp at hpn2
-            · intro hIsC
-              simp only [CapDerivationEdge.isChildOf] at hIsC
-              have hChildNode : e.child = node := of_decide_eq_true hIsC
-              have hParentMap := (hParentCon node parent).mpr ⟨e, heMem, hep, hChildNode⟩
-              rw [hParent] at hParentMap; cases hParentMap; simp at hpn
-    · -- Case: cdt.parentMap[node]? = none → childMapFinal = childMap.erase node
-      rename_i hNoParent
-      by_cases hpn : (node == parent) = true
-      · have hNodeEq : node = parent := eq_of_beq hpn
-        subst hNodeEq
-        rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_self _ _ hK.1] at hIn
-        simp at hIn
-      · rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne_K _ node parent hpn hK] at hIn
-        have ⟨e, heMem, hep, hec⟩ := (hCon parent child).mp hIn
-        refine ⟨e, List.mem_filter.mpr ⟨heMem, ?_⟩, hep, hec⟩
-        simp only [decide_eq_true_eq]
-        constructor
-        · intro hIsP
-          simp only [CapDerivationEdge.isParentOf] at hIsP
-          have : e.parent = node := of_decide_eq_true hIsP
-          rw [hep] at this; subst this; simp at hpn
-        · intro hIsC
-          simp only [CapDerivationEdge.isChildOf] at hIsC
-          have hChildNode : e.child = node := of_decide_eq_true hIsC
-          have hPM := (hParentCon node parent).mpr ⟨e, heMem, hep, hChildNode⟩
-          rw [hNoParent] at hPM; cases hPM
-  · -- Backward: ∃ e ∈ edgesFiltered, ... → child ∈ (childMapFinal.get? parent).getD []
-    rintro ⟨e, heMem, hep, hec⟩
-    have ⟨heMemOrig, hFilter⟩ := List.mem_filter.mp heMem
-    simp only [decide_eq_true_eq] at hFilter
-    have ⟨hNotParent, hNotChild⟩ := hFilter
-    -- e.parent ≠ node and e.child ≠ node
-    have hParentNeNode : ¬(node == parent) = true := by
-      intro h
-      have := eq_of_beq h
-      simp only [CapDerivationEdge.isParentOf] at hNotParent
-      exact hNotParent (decide_eq_true (by rw [hep, this]))
-    have hChildNeNode : ¬(node == child) = true := by
-      intro h
-      have := eq_of_beq h
-      simp only [CapDerivationEdge.isChildOf] at hNotChild
-      exact hNotChild (decide_eq_true (by rw [hec, this]))
-    -- child was in original childMap
-    have hOriginal := (hCon parent child).mpr ⟨e, heMemOrig, hep, hec⟩
-    -- Case split on parentMap[node]?
-    split
-    · -- some p
-      rename_i p hParent
-      -- Case split on filtered.isEmpty
-      split
-      · -- filtered.isEmpty = true → childMapFinal = (childMap.erase node).erase p
-        rename_i hEmpty
-        -- Need: child ∈ ((childMap.erase node).erase p).get? parent).getD []
-        -- parent ≠ node (shown above), need parent ≠ p
-        by_cases hpp : (p == parent) = true
-        · -- parent = p, so we need to show node was the only child of parent
-          -- But e has e.parent = parent and e.child = child ≠ node
-          -- So child should be in siblings.filter (· != node)
-          -- But filtered.isEmpty, contradiction
-          have hPeq : p = parent := eq_of_beq hpp
-          subst hPeq
-          -- siblings = ((childMap.erase node).get? p).getD []
-          -- filtered = siblings.filter (· != node) is empty
-          -- But child ∈ original childMap at p, and child ≠ node
-          -- So child ∈ (childMap.erase node).get? p).getD [] (since p ≠ node)
-          by_cases hpn2 : (node == p) = true
-          · have hNodeP : node = p := eq_of_beq hpn2
-            subst hNodeP
-            -- parent = node, contradiction with hParentNeNode
-            simp at hParentNeNode
-          · have hSiblings : (cdt.childMap.erase node).get? p = cdt.childMap.get? p :=
-              SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne_K _ node p hpn2 hK
-            -- child ∈ original siblings
-            -- child ∈ siblings (after erase node from childMap, but key is p ≠ node)
-            have hChildInSibs : child ∈ ((cdt.childMap.erase node).get? p).getD [] := by
-              rw [hSiblings]; exact hOriginal
-            -- child ≠ node, so child survives filter
-            have hChildSurvives : child ∈ (((cdt.childMap.erase node).get? p).getD []).filter (· != node) := by
-              apply List.mem_filter.mpr
-              constructor
-              · exact hChildInSibs
-              · simp only [bne_iff_ne, ne_eq]
-                intro h; apply hChildNeNode; exact beq_of_eq h.symm
-            -- But filtered.isEmpty = true means no elements in filter
-            have : (((cdt.childMap.erase node).get? p).getD []).filter (· != node) = [] := by
-              exact List.isEmpty_iff.mp hEmpty
-            rw [this] at hChildSurvives; cases hChildSurvives
-        · -- parent ≠ p: both erases are no-ops for parent
-          rw [show ((cdt.childMap.erase node).erase p).get? parent = cdt.childMap.get? parent from by
-            rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne_K _ p parent hpp hKE]
-            exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne_K _ node parent hParentNeNode hK]
-          exact hOriginal
-      · -- filtered.isEmpty = false → childMapFinal = (childMap.erase node).insert p filtered
-        rename_i hNotEmpty
-        by_cases hpp : (p == parent) = true
-        · -- parent = p
-          have hPeq : p = parent := eq_of_beq hpp
-          subst hPeq
-          rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self _ _ _ hEraseExt]
-          simp only [Option.getD]
-          -- Need: child ∈ filtered
-          -- filtered = ((childMap.erase node).get? p).getD []).filter (· != node)
-          apply List.mem_filter.mpr
-          constructor
-          · -- child ∈ siblings
-            by_cases hpn2 : (node == p) = true
-            · have hNodeP : node = p := eq_of_beq hpn2
-              subst hNodeP; simp at hParentNeNode
-            · rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne_K _ node p hpn2 hK]
-              exact hOriginal
-          · simp only [bne_iff_ne, ne_eq]
-            intro h; apply hChildNeNode; exact beq_of_eq h.symm
-        · -- parent ≠ p
-          rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne _ _ _ _ hpp hEraseExt]
-          rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne_K _ node parent hParentNeNode hK]
-          exact hOriginal
-    · -- none
-      rename_i hNoParent
-      rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne_K _ node parent hParentNeNode hK]
-      exact hOriginal
 
 -- W2-H (L-3): 2M heartbeats — highest in the codebase. Inherent complexity from
 -- CDT acyclicity reasoning: the proof projects each cycle edge onto old CDT edges,
@@ -2869,16 +2278,14 @@ node's children become roots.  Deleting a slot therefore never depends on
 whether it has derived capabilities, and revoking an ancestor still reaches
 every capability derived through the deleted one.
 
-A child already holding a parent in the tree (impossible while the maps agree
-with the edges, since `removeNode` erased each child's entry) is left alone,
-so the parent map stays a function. -/
+Each child's one parent edge is `node`'s (`childrenUnique`), which `removeNode`
+takes away, so each re-made edge is again the child's only parent edge. -/
 def spliceNode (cdt : CapDerivationTree) (node : SlotRef) : CapDerivationTree :=
   match cdt.edges.find? (fun e => e.isChildOf node) with
   | none => cdt.removeNode node
   | some up =>
     (cdt.edges.filter (fun e => e.isParentOf node)).foldl
-      (fun acc e => if (acc.parentMap[e.child]?).isNone then acc.addEdge up.parent e.child e.op
-        else acc)
+      (fun acc e => acc.addEdge up.parent e.child e.op)
       (cdt.removeNode node)
 
 /-- **Move node `old` to slot `new`**, as seL4's `cteMove` rewrites the moved
@@ -2899,18 +2306,15 @@ def moveNode (cdt : CapDerivationTree) (old new : SlotRef) : CapDerivationTree :
 private theorem foldl_addEdge_edges (cdt : CapDerivationTree) (node p : SlotRef) :
     ∀ (l : List CapDerivationEdge) (acc : CapDerivationTree),
       (∀ e ∈ l, e ∈ cdt.edges ∧ e.parent = node) →
-      ∀ e' ∈ (l.foldl (fun acc e => if (acc.parentMap[e.child]?).isNone then
-          acc.addEdge p e.child e.op else acc) acc).edges,
+      ∀ e' ∈ (l.foldl (fun acc e => acc.addEdge p e.child e.op) acc).edges,
         e' ∈ acc.edges ∨ (e'.parent = p ∧ ∃ e ∈ cdt.edges, e.parent = node ∧ e.child = e'.child)
   | [], acc, _, e', h => .inl h
   | x :: xs, acc, hl, e', h => by
     simp only [List.foldl_cons] at h
     rcases foldl_addEdge_edges cdt node p xs _ (fun e he => hl e (.tail _ he)) e' h with h' | h'
-    · split at h'
-      · simp only [addEdge, List.mem_cons] at h'
-        rcases h' with rfl | h'
-        · exact .inr ⟨rfl, x, (hl x (.head _)).1, (hl x (.head _)).2, rfl⟩
-        · exact .inl h'
+    · simp only [addEdge, List.mem_cons] at h'
+      rcases h' with rfl | h'
+      · exact .inr ⟨rfl, x, (hl x (.head _)).1, (hl x (.head _)).2, rfl⟩
       · exact .inl h'
     · exact .inr h'
 
@@ -3080,124 +2484,10 @@ theorem moveNode_mentions (cdt : CapDerivationTree) (old new : SlotRef)
       exact .inr ⟨fun hEq => edgeWellFounded_no_self_edge hWF he (hpo.trans hEq.symm),
         ⟨e, he, .inr rfl⟩⟩
 
-/-- `removeNode` keeps the child map's `invExtK`. -/
-theorem removeNode_childMap_invExtK (cdt : CapDerivationTree) (node : SlotRef)
-    (hK : cdt.childMap.invExtK) : (cdt.removeNode node).childMap.invExtK := by
-  have hE := SeLe4n.Kernel.RobinHood.RHTable.erase_preserves_invExtK _ node hK
-  simp only [removeNode]
-  split
-  · split
-    · exact SeLe4n.Kernel.RobinHood.RHTable.erase_preserves_invExtK _ _ hE
-    · exact SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExtK _ _ _ hE
-  · exact hE
-
-/-- `removeNode` keeps the parent map's `invExtK`. -/
-theorem removeNode_parentMap_invExtK (cdt : CapDerivationTree) (node : SlotRef)
-    (hK : cdt.parentMap.invExtK) : (cdt.removeNode node).parentMap.invExtK := by
-  simp only [removeNode]
-  apply SeLe4n.Kernel.RobinHood.RHTable.erase_preserves_invExtK
-  generalize (cdt.childMap.get? node).getD [] = l
-  suffices ∀ (m : SeLe4n.Kernel.RobinHood.RHTable SlotRef SlotRef), m.invExtK →
-      (l.foldl (fun m c => m.erase c) m).invExtK from this _ hK
-  induction l with
-  | nil => exact fun _ h => h
-  | cons x xs ih => exact fun m h => ih _ (SeLe4n.Kernel.RobinHood.RHTable.erase_preserves_invExtK _ x h)
-
-/-- The index maps agree with the edges, and both satisfy `invExtK`. -/
-def mapsWellFormed (cdt : CapDerivationTree) : Prop :=
-  cdt.childMapConsistent ∧ cdt.parentMapConsistent ∧
-    cdt.childMap.invExtK ∧ cdt.parentMap.invExtK
-
-private theorem foldl_addEdge_mapsWellFormed (p : SlotRef) :
-    ∀ (l : List CapDerivationEdge) (acc : CapDerivationTree), acc.mapsWellFormed →
-      (l.foldl (fun acc e => if (acc.parentMap[e.child]?).isNone then
-          acc.addEdge p e.child e.op else acc) acc).mapsWellFormed
-  | [], _, h => h
-  | x :: xs, acc, ⟨hC, hP, hCK, hPK⟩ => by
-    simp only [List.foldl_cons]
-    apply foldl_addEdge_mapsWellFormed p xs
-    split
-    · rename_i hNone
-      have hFresh : acc.parentMap[x.child]? = none := Option.isNone_iff_eq_none.mp hNone
-      obtain ⟨hC', hP'⟩ := addEdge_preserves_cdtMapsConsistent acc p x.child x.op hC hP hFresh
-        hCK.1 hPK.1
-      exact ⟨hC', hP', SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExtK _ _ _ hCK,
-        SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExtK _ _ _ hPK⟩
-    · exact ⟨hC, hP, hCK, hPK⟩
-
-/-- A splice keeps both index maps consistent with the edges and well formed. -/
-theorem spliceNode_mapsWellFormed (cdt : CapDerivationTree) (node : SlotRef)
-    (h : cdt.mapsWellFormed) : (cdt.spliceNode node).mapsWellFormed := by
-  obtain ⟨hC, hP, hCK, hPK⟩ := h
-  have hR : (cdt.removeNode node).mapsWellFormed :=
-    ⟨removeNode_childMapConsistent _ node hC hP hCK,
-      removeNode_parentMapConsistent _ node hP hC hPK,
-      removeNode_childMap_invExtK _ node hCK, removeNode_parentMap_invExtK _ node hPK⟩
-  unfold spliceNode
-  split
-  · exact hR
-  · exact foldl_addEdge_mapsWellFormed _ _ _ hR
-
-
--- ============================================================================
--- S3-A: CDT maps consistency invariant
--- ============================================================================
-
-/-- S3-A/U-M03: The CDT's `childMap` and `parentMap` are consistent with `edges`.
-    For every edge `(p, c)` in the edge list, `c` appears in `childMap[p]` and
-    `parentMap[c] = some p`. This ensures the O(1) lookup indices are faithful
-    to the proof-anchor edge list. -/
-def cdtMapsConsistent (cdt : CapDerivationTree) : Prop :=
-  -- Forward: every edge is reflected in childMap and parentMap
-  (∀ e ∈ cdt.edges, e.child ∈ (cdt.childMap.get? e.parent).getD [] ∧
-                     cdt.parentMap[e.child]? = some e.parent) ∧
-  -- Reverse childMap: every child in childMap has a corresponding edge
-  (∀ p children, cdt.childMap.get? p = some children →
-    ∀ c ∈ children, ∃ e ∈ cdt.edges, e.parent = p ∧ e.child = c) ∧
-  -- Reverse parentMap: every entry in parentMap has a corresponding edge
-  (∀ c p, cdt.parentMap[c]? = some p →
-    ∃ e ∈ cdt.edges, e.parent = p ∧ e.child = c)
-
-/-- Helper: default RHTable lookup returns none. -/
-private theorem rhtable_default_get?_none [BEq α] [Hashable α] [LawfulBEq α] (k : α) :
-    (default : SeLe4n.Kernel.RobinHood.RHTable α β).get? k = none :=
-  SeLe4n.Kernel.RobinHood.RHTable.getElem?_empty 16 (by omega) k
-
-/-- S3-A: The empty CDT trivially satisfies maps consistency.
-    All three conjuncts are vacuously true since the empty CDT has no edges,
-    and both childMap and parentMap are empty tables with no entries. -/
-theorem empty_cdtMapsConsistent : CapDerivationTree.empty.cdtMapsConsistent := by
-  constructor
-  · intro e hMem
-    simp only [CapDerivationTree.empty] at hMem
-    nomatch hMem
-  constructor
-  · intro p children h c _
-    have hNone : CapDerivationTree.empty.childMap.get? p = none := by
-      show (default : SeLe4n.Kernel.RobinHood.RHTable SlotRef (List SlotRef)).get? p = none
-      exact rhtable_default_get?_none p
-    rw [hNone] at h; exact absurd h (by simp)
-  · intro c p h
-    have hNone : CapDerivationTree.empty.parentMap.get? c = none := by
-      show (default : SeLe4n.Kernel.RobinHood.RHTable SlotRef SlotRef).get? c = none
-      exact rhtable_default_get?_none c
-    -- h uses [c]? which is getElem?, which delegates to get?
-    have hChange : CapDerivationTree.empty.parentMap[c]? = CapDerivationTree.empty.parentMap.get? c := rfl
-    rw [hChange, hNone] at h; exact absurd h (by simp)
-
-/-- S3-C/U-L03: Remove a specific edge from the CDT. Removes from `edges`,
-    updates `childMap` (removes child from parent's list), and erases the
-    child's `parentMap` entry. Exposed only through `revokeTargetLocal`. -/
+/-- S3-C/U-L03: Remove a specific edge from the CDT.  Exposed only through
+    `revokeTargetLocal`. -/
 private def removeEdge (cdt : CapDerivationTree) (parent child : SlotRef) : CapDerivationTree :=
-  let currentChildren := (cdt.childMap.get? parent).getD []
-  let filteredChildren := currentChildren.filter (· != child)
-  let childMap' := if filteredChildren.isEmpty then
-    cdt.childMap.erase parent
-  else
-    cdt.childMap.insert parent filteredChildren
-  { edges := cdt.edges.filter (fun e => ¬(e.parent = parent ∧ e.child = child)),
-    childMap := childMap',
-    parentMap := cdt.parentMap.erase child }
+  { edges := cdt.edges.filter (fun e => ¬(e.parent = parent ∧ e.child = child)) }
 
 /-- S3-C: Public revocation-scoped edge removal. Wraps the private `removeEdge`
     for use in revocation paths (`processRevokeNode`, `cspaceRevokeCdt`).
@@ -3213,31 +2503,6 @@ private def removeEdge (cdt : CapDerivationTree) (parent child : SlotRef) : CapD
 def revokeDerivationEdge (cdt : CapDerivationTree)
     (parent child : SlotRef) : CapDerivationTree :=
   cdt.removeEdge parent child
-
-/-- T2-C (H-2): Verified CDT constructor requiring a `cdtMapsConsistent`
-    witness. External code that needs to construct a CDT from raw components
-    must provide proof that `edges`, `childMap`, and `parentMap` are mutually
-    consistent.
-
-    This is the access-controlled alternative to the private `mk` constructor.
-    Most code should use `empty` + mutation operations (`addEdge`, `removeNode`)
-    instead of constructing CDTs from raw parts. -/
-def mk_checked
-    (edges : List CapDerivationEdge)
-    (childMap : SeLe4n.Kernel.RobinHood.RHTable SlotRef (List SlotRef))
-    (parentMap : SeLe4n.Kernel.RobinHood.RHTable SlotRef SlotRef)
-    (_hConsistent : (CapDerivationTree.mk edges childMap parentMap).cdtMapsConsistent) :
-    CapDerivationTree :=
-  CapDerivationTree.mk edges childMap parentMap
-
-/-- T2-C (H-2): `mk_checked` preserves `cdtMapsConsistent` by construction. -/
-theorem mk_checked_cdtMapsConsistent
-    (edges : List CapDerivationEdge)
-    (childMap : SeLe4n.Kernel.RobinHood.RHTable SlotRef (List SlotRef))
-    (parentMap : SeLe4n.Kernel.RobinHood.RHTable SlotRef SlotRef)
-    (hConsistent : (CapDerivationTree.mk edges childMap parentMap).cdtMapsConsistent) :
-    (mk_checked edges childMap parentMap hConsistent).cdtMapsConsistent :=
-  hConsistent
 
 -- ============================================================================
 -- Y1-E: HashSet/List sync lemma for descendantsOf proofs
@@ -3528,29 +2793,33 @@ theorem descendantsOf_go_mem_children_found
 -- AG8-E: childrenOf → edge bridge + CdtChildReachable → cdtReachable
 -- ============================================================================
 
-/-- AG8-E: Under `cdtMapsConsistent`, membership in `childrenOf` implies
-existence of a corresponding edge in `cdt.edges`. Bridges the O(1) `childMap`
-lookup to the proof-anchor edge list. -/
-theorem childrenOf_to_edge (cdt : CapDerivationTree)
-    (hConsistent : cdt.cdtMapsConsistent) (parent child : SlotRef)
+/-- AG8-E: a child `childrenOf` reads is the child of one of the tree's edges. -/
+theorem childrenOf_to_edge (cdt : CapDerivationTree) (parent child : SlotRef)
     (hChild : child ∈ cdt.childrenOf parent) :
     ∃ e ∈ cdt.edges, e.parent = parent ∧ e.child = child := by
-  simp only [childrenOf] at hChild
-  cases hGet : cdt.childMap.get? parent with
-  | none => rw [hGet] at hChild; simp at hChild
-  | some cs => rw [hGet] at hChild; simp at hChild; exact hConsistent.2.1 parent cs hGet child hChild
+  simp only [childrenOf, List.mem_map, List.mem_filter, CapDerivationEdge.isParentOf,
+    decide_eq_true_eq] at hChild
+  obtain ⟨e, ⟨he, hp⟩, hc⟩ := hChild
+  exact ⟨e, he, hp, hc⟩
 
-/-- AG8-E: Under `cdtMapsConsistent`, `CdtChildReachable` (inductive reachability
+/-- A child of one of the tree's edges is one `childrenOf` reads. -/
+theorem mem_childrenOf (cdt : CapDerivationTree) (parent child : SlotRef) :
+    child ∈ cdt.childrenOf parent ↔ ∃ e ∈ cdt.edges, e.parent = parent ∧ e.child = child := by
+  refine ⟨childrenOf_to_edge cdt parent child, fun ⟨e, he, hp, hc⟩ => ?_⟩
+  simp only [childrenOf, List.mem_map, List.mem_filter, CapDerivationEdge.isParentOf,
+    decide_eq_true_eq]
+  exact ⟨e, ⟨he, hp⟩, hc⟩
+
+/-- AG8-E: `CdtChildReachable` (inductive reachability
 through `childrenOf`) implies `cdtReachable` (path-based reachability through
 `edges`). This bridges the BFS-level reachability definition with the
 proof-anchor edge list, enabling composition with `edgeWellFounded`. -/
 theorem CdtChildReachable_implies_cdtReachable (cdt : CapDerivationTree)
-    (hConsistent : cdt.cdtMapsConsistent)
     {root n : SlotRef} (hReach : CdtChildReachable cdt root n) :
     cdt.cdtReachable root n := by
   induction hReach with
   | child hChild =>
-    obtain ⟨e, heMem, heP, heC⟩ := childrenOf_to_edge cdt hConsistent _ _ hChild
+    obtain ⟨e, heMem, heP, heC⟩ := childrenOf_to_edge cdt _ _ hChild
     refine ⟨[_, _], ?_, rfl, rfl, fun i hi => ?_⟩
     · show (2 : Nat) > 1; omega
     · simp only [List.length_cons, List.length_nil] at hi
@@ -3559,7 +2828,7 @@ theorem CdtChildReachable_implies_cdtReachable (cdt : CapDerivationTree)
   | trans _hReach hChild ih =>
     rename_i mid c
     obtain ⟨path, hLen, hHead, hLast, hEdges⟩ := ih
-    obtain ⟨e, heMem, heP, heC⟩ := childrenOf_to_edge cdt hConsistent _ _ hChild
+    obtain ⟨e, heMem, heP, heC⟩ := childrenOf_to_edge cdt _ _ hChild
     refine ⟨path ++ [c], ?_, ?_, ?_, ?_⟩
     · -- length > 1
       simp [List.length_append]; omega
@@ -4009,7 +3278,7 @@ sufficient for complete BFS traversal.
 Value: matches `maxObjects` (65536) from `Model/State.lean`. -/
 def maxCdtDepth : Nat := 65536
 
-/-- AG8-E: Acyclicity transfer — under `edgeWellFounded` and `cdtMapsConsistent`,
+/-- AG8-E: Acyclicity transfer — under `edgeWellFounded`,
 no CDT node can reach itself via `CdtChildReachable`. This bridges the
 inductive reachability definition (used by BFS infrastructure) with the
 path-based acyclicity definition (used by `edgeWellFounded`).
@@ -4023,11 +3292,10 @@ This is the key acyclicity property needed for BFS fuel sufficiency: in an
 acyclic CDT, BFS processes each node at most once (via the visited set),
 ensuring that `edges.length` fuel suffices for complete traversal. -/
 theorem edgeWellFounded_no_self_reachable (cdt : CapDerivationTree)
-    (hAcyclic : cdt.edgeWellFounded)
-    (hConsistent : cdt.cdtMapsConsistent) :
+    (hAcyclic : cdt.edgeWellFounded) :
     ∀ root, ¬ CapDerivationTree.CdtChildReachable cdt root root := by
   intro root hReach
-  have hPath := cdt.CdtChildReachable_implies_cdtReachable hConsistent hReach
+  have hPath := cdt.CdtChildReachable_implies_cdtReachable hReach
   exact hAcyclic root hPath
 
 /-- AG8-E: `addEdge` increases `edges.length` by exactly 1. This is the
@@ -4036,9 +3304,8 @@ through operations: each `addEdge` call (invoked by `retypeFromUntyped`) adds
 exactly one edge, so the bound is maintained as long as the pre-operation
 count is strictly less than `maxCdtDepth`.
 
-Combined with `addEdge_preserves_edgeWellFounded_fresh` (acyclicity preservation)
-and `addEdge_preserves_cdtMapsConsistent` (index consistency preservation), this
-provides the full maintenance argument for CDT depth bounds. -/
+Combined with `addEdge_preserves_edgeWellFounded_fresh` (acyclicity
+preservation), this provides the full maintenance argument for CDT depth bounds. -/
 theorem addEdge_edges_length (cdt : CapDerivationTree)
     (parent child : SlotRef) (op : DerivationOp) :
     (cdt.addEdge parent child op).edges.length = cdt.edges.length + 1 := by

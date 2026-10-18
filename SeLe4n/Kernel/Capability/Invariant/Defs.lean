@@ -257,8 +257,7 @@ structure CapabilityInvariantBundle (st : SystemState) : Prop where
   lookupSound : cspaceLookupSound st
   /-- Every CNode slot table satisfies its `slotCountBounded` invariant. -/
   slotCountBounded : cspaceSlotCountBounded st
-  /-- The CDT `childMap`/`parentMap`/`slotNode`/`nodeSlot` bookkeeping
-      covers every capability edge emitted by the graph. -/
+  /-- Every slot the derivation tree names holds a capability. -/
   cdtCompleteness : cdtCompleteness st
   /-- The capability derivation graph is acyclic. -/
   cdtAcyclicity : cdtAcyclicity st
@@ -573,67 +572,6 @@ have to drop into the type-erased internal primitive. -/
 
 instance {st : SystemState} : CoeHead (RetypeTarget st) SeLe4n.ObjId where
   coe tgt := tgt.id
-
--- ============================================================================
--- S3-D/U-M03: CDT maps consistency as state-level invariant
--- ============================================================================
-
-/-- S3-D: CDT maps consistency — the bidirectional maps (`childMap`,
-    `parentMap`) are consistent with the canonical `edges` list.
-    This lifts the CDT-level `childMapConsistent ∧ parentMapConsistent`
-    to a state-level invariant predicate. -/
-def cdtMapsConsistent (st : SystemState) : Prop :=
-  st.cdt.childMapConsistent ∧ st.cdt.parentMapConsistent
-
-/-- S3-D: Default state has empty CDT, so maps consistency holds vacuously.
-    Both directions of the iff are trivially false (no edges, no map entries). -/
-theorem cdtMapsConsistent_default : cdtMapsConsistent (default : SystemState) := by
-  -- Empty CDT: edges = [], childMap = empty, parentMap = empty.
-  -- Both iff directions have one side trivially false.
-  refine ⟨?_, ?_⟩
-  · -- childMapConsistent
-    intro parent child; constructor
-    · intro hMem
-      -- childMap.get? parent = none for empty table
-      exfalso
-      have hGet : (default : SystemState).cdt.childMap.get? parent = none :=
-        RobinHood.RHTable.getElem?_empty 16 (by omega) parent
-      -- The goal's getD uses default.cdt.childMap.get?, which equals none
-      change child ∈ ((default : SystemState).cdt.childMap.get? parent).getD [] at hMem
-      rw [hGet] at hMem; exact (nomatch hMem)
-    · intro ⟨_, hE, _, _⟩
-      have : (default : SystemState).cdt.edges = [] := rfl
-      rw [this] at hE; exact (nomatch hE)
-  · -- parentMapConsistent
-    intro child parent; constructor
-    · intro hLookup
-      have hGet : (default : SystemState).cdt.parentMap.get? child = none :=
-        RobinHood.RHTable.getElem?_empty 16 (by omega) child
-      change (default : SystemState).cdt.parentMap.get? child = some parent at hLookup
-      rw [hGet] at hLookup; exact (nomatch hLookup)
-    · intro ⟨_, hE, _, _⟩
-      have : (default : SystemState).cdt.edges = [] := rfl
-      rw [this] at hE; exact (nomatch hE)
-
--- ============================================================================
--- S3-D: cdtMapsConsistent transfer and frame theorems
--- ============================================================================
-
-/-- S3-D: Transfer `cdtMapsConsistent` through state changes that preserve `cdt`. -/
-theorem cdtMapsConsistent_of_cdt_eq
-    (st st' : SystemState)
-    (hCon : cdtMapsConsistent st)
-    (hCdtEq : st'.cdt = st.cdt) :
-    cdtMapsConsistent st' := by
-  unfold cdtMapsConsistent at hCon ⊢; rw [hCdtEq]; exact hCon
-
-/-- S3-D: `storeObject` preserves `cdtMapsConsistent` (CDT unchanged). -/
-theorem cdtMapsConsistent_of_storeObject
-    (st st' : SystemState) (oid : ObjId) (obj : KernelObject)
-    (hCon : cdtMapsConsistent st)
-    (hStore : storeObject oid obj st = .ok ((), st')) :
-    cdtMapsConsistent st' :=
-  cdtMapsConsistent_of_cdt_eq st st' hCon (storeObject_cdt_eq st st' oid obj hStore)
 
 -- ============================================================================
 -- WS-H4: Extraction theorems for new bundle components

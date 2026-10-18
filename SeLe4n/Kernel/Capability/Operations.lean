@@ -758,9 +758,8 @@ theorem cspaceInsertSlot_preserves_machine
 `storeObject`, which touches objects, the lifecycle table and the object index
 and nothing else.
 
-Relocated here at `v0.35.201` from `Capability/Invariant/Preservation/Insert.lean`,
-where it sat beside its `cdtMapsConsistent` consumer: a *frame over a primitive*
-belongs beside the primitive, so the CDT pair reads like the scheduler, services,
+Relocated here at `v0.35.201` from `Capability/Invariant/Preservation/Insert.lean`:
+a *frame over a primitive* belongs beside the primitive, so the CDT pair reads like the scheduler, services,
 machine and IRQ frames above rather than like an invariant argument. -/
 theorem cspaceInsertSlot_cdt_eq
     (st st' : SystemState) (addr : CSpaceAddr) (cap : Capability)
@@ -1493,10 +1492,8 @@ def cspaceMutate (addr : CSpaceAddr) (rights : AccessRightSet)
           -- Direct overwrite: bypass H-02 guard since we are replacing in-place.
           -- AN4-I (LOW) cross-reference: the preservation guarantee for this
           -- path is `cspaceMutate_preserves_capabilityInvariantBundle` in
-          -- `Capability/Invariant/Preservation/CopyMoveMutate.lean` (and its
-          -- `_preserves_cdtMapsConsistent` companion in
-          -- `Preservation/BadgeIpcCapsAndCdtMaps.lean`) — both witness that
-          -- the in-place overwrite leaves CDT bookkeeping consistent.
+          -- `Capability/Invariant/Preservation/CopyMoveMutate.lean`, which
+          -- witnesses that the in-place overwrite leaves the tree sound.
           match st'.getCNode? addr.cnode with
           | some cn =>
               let cn' := cn.insert addr.slot mutatedCap
