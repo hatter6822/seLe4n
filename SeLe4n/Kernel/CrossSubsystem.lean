@@ -25,7 +25,7 @@ import SeLe4n.Kernel.SchedContext.Invariant.PriorityPreservation
 -- Cannot live in Scheduler/Invariant.lean (import cycle via Operations/Core →
 -- Selection → Invariant), so integrated here at the cross-subsystem boundary.
 import SeLe4n.Kernel.Scheduler.Liveness
--- AE4-D (U-36): Import capability invariant definitions for cdtMintCompleteness
+-- AE4-D (U-36): Import capability invariant definitions for the
 -- cross-subsystem composition.
 import SeLe4n.Kernel.Capability.Invariant.Defs
 
@@ -786,32 +786,6 @@ theorem default_crossSubsystemInvariant :
     exact default_untypedRegionsDisjoint
 
 -- ============================================================================
--- AE4-D (U-36/C-CAP06): Extended cross-subsystem composition with mint completeness
--- ============================================================================
-
-/-- AE4-D (U-36/C-CAP06): Full cross-subsystem invariant with CDT mint completeness.
-
-Combines `crossSubsystemInvariant` (12 predicates: 11 after WS-AM AM4, plus
-`untypedRegionsDisjoint`) with
-`capabilityInvariantBundleWithMintCompleteness` (standard bundle + mint completeness).
-This ensures CDT-based revocation via `cspaceRevokeCdt` is exhaustive at the
-composition layer without modifying the 60+ theorems that destructure the
-standard 7-tuple `capabilityInvariantBundle`. -/
-def crossSubsystemInvariantWithCdtCoverage (st : SystemState) : Prop :=
-  crossSubsystemInvariant st ∧
-  capabilityInvariantBundleWithMintCompleteness st
-
-/-- AE4-D: Extract `cdtMintCompleteness` from the full composition. -/
-theorem crossSubsystemInvariantWithCdtCoverage_to_mintCompleteness
-    (st : SystemState) (h : crossSubsystemInvariantWithCdtCoverage st) :
-    cdtMintCompleteness st := h.2.2
-
-/-- AE4-D: Extract the standard capability bundle from the full composition. -/
-theorem crossSubsystemInvariantWithCdtCoverage_to_capabilityBundle
-    (st : SystemState) (h : crossSubsystemInvariantWithCdtCoverage st) :
-    capabilityInvariantBundle st := h.2.1
-
--- ============================================================================
 -- W2-B (H-1): Cross-subsystem invariant composition gap documentation
 -- ============================================================================
 
@@ -890,7 +864,7 @@ inductive StateField where
   | machine | objects | objectIndex | objectIndexSet
   | services | scheduler | irqHandlers | lifecycle
   | asidTable | interfaceRegistry | serviceRegistry
-  | cdt | cdtSlotNode | cdtNodeSlot | cdtNextNode
+  | cdt
   | tlb | tlbShootdown
   | perCoreTlb | perCoreICache | pendingIcacheMaintenance | pendingPhysicalWrites
   | declassificationAuditLog | declassificationAuditEpoch
@@ -1255,7 +1229,7 @@ def ipcEndpointOp_modifiedFields : List StateField :=
 /-- W2-A1: Fields modified by capability operations (`cspaceMintWithCdt`,
     `cspaceCopy`, `cspaceMove`, `cspaceDeleteSlot`).
 
-    **`storeObject`'s set, plus the four CDT fields** (WS-RR RR7 audit round,
+    **`storeObject`'s set, plus the CDT** (WS-RR RR7 audit round,
     v0.34.109).  RR7.9 added the CDT fields, which the list had omitted.  The
     v0.34.70 list still read `[.objects, .lifecycle, …]` under a sentence — "for
     in-place CNode mutations, `objectIndex`/`objectIndexSet` are unchanged" —
@@ -1270,16 +1244,15 @@ def ipcEndpointOp_modifiedFields : List StateField :=
     `cspaceDeleteSlot_…`, with the base `cspaceMint`, `cspaceInsertSlot` and
     `cspaceDeleteSlotCore` beneath them.
 
-    Which CDT fields each operation writes: mint and copy allocate nodes for
-    both slots (`ensureCdtNodeForSlot`: `cdtNextNode`, `cdtSlotNode`,
-    `cdtNodeSlot`) and record an edge (`cdt.addEdge`: `cdt`); move detaches the
-    source and re-attaches the destination (`cdtSlotNode`, `cdtNodeSlot`);
-    `cspaceDeleteSlot` detaches the slot (`detachSlotFromCdt`) and removes its
-    childless node from the tree (`cdt.removeNode`: `cdt`).  One list covers the four
+    The CDT field each operation writes: mint and copy record an edge between
+    the two slots (`cdt.addEdge`), move hands the source slot's place in the tree
+    to the destination (`cdt.moveNode`), and `cspaceDeleteSlot` splices the slot
+    out of the tree (`cdt.spliceNode`) — each slot is its own node, so the tree
+    is the one field.  One list covers the four
     because these lists exist to support *disjointness* arguments, and an
     omission makes two operations look independent when they contend. -/
 def capabilityOp_modifiedFields : List StateField :=
-  storeObject_modifiedFields ++ [.cdt, .cdtSlotNode, .cdtNodeSlot, .cdtNextNode]
+  storeObject_modifiedFields ++ [.cdt]
 
 /-- W2-A1: Fields modified by `revokeService` / `removeDependenciesOf`.
     `revokeService` erases from `serviceRegistry`, then `removeDependenciesOf`
@@ -1295,7 +1268,7 @@ def revokeService_modifiedFields : List StateField :=
 -- declared, maintained by hand, and read by nothing — so an operation could
 -- write a field its own list omits and no proof would notice.  RR7.9 found
 -- exactly that: `capabilityOp_modifiedFields` read `[.objects, .lifecycle]`
--- while all four capability operations also write the four CDT fields, and the
+-- while all four capability operations also write the CDT, and the
 -- direction matters — these lists support *disjointness* arguments, so an
 -- omission makes two contending operations look independent.
 --
@@ -1335,9 +1308,6 @@ def SystemState.fieldEq : StateField → SystemState → SystemState → Prop
   | .interfaceRegistry,          st, st' => st'.interfaceRegistry = st.interfaceRegistry
   | .serviceRegistry,            st, st' => st'.serviceRegistry = st.serviceRegistry
   | .cdt,                        st, st' => st'.cdt = st.cdt
-  | .cdtSlotNode,                st, st' => st'.cdtSlotNode = st.cdtSlotNode
-  | .cdtNodeSlot,                st, st' => st'.cdtNodeSlot = st.cdtNodeSlot
-  | .cdtNextNode,                st, st' => st'.cdtNextNode = st.cdtNextNode
   | .tlb,                        st, st' => st'.tlb = st.tlb
   | .tlbShootdown,               st, st' => st'.tlbShootdown = st.tlbShootdown
   | .perCoreTlb,                 st, st' => st'.perCoreTlb = st.perCoreTlb
@@ -1367,7 +1337,7 @@ theorem SystemState.eq_of_fieldEq_all (st st' : SystemState)
   exact ⟨h .machine, h .objects, h .objectIndex, h .objectIndexSet,
     h .services, h .scheduler, h .irqHandlers, h .lifecycle,
     h .asidTable, h .interfaceRegistry, h .serviceRegistry,
-    h .cdt, h .cdtSlotNode, h .cdtNodeSlot, h .cdtNextNode,
+    h .cdt,
     h .tlb, h .tlbShootdown,
     h .perCoreTlb, h .perCoreICache, h .pendingIcacheMaintenance, h .pendingPhysicalWrites,
     h .declassificationAuditLog, h .declassificationAuditEpoch,
@@ -1595,7 +1565,7 @@ theorem lifecycleRetypeObject_preservesFieldsOutside
     · cases hStep
 
 -- Every capability operation is built from `storeObject`, the lifecycle
--- reference map, and the four CDT fields; each primitive is stated at the
+-- reference map, and the CDT; each primitive is stated at the
 -- capability list so the compositions below are plain transitivity.
 
 theorem storeObject_preservesFieldsOutside_capability
@@ -1605,34 +1575,10 @@ theorem storeObject_preservesFieldsOutside_capability
   preservesFieldsOutside_mono (fun _ hf => List.mem_append_left _ hf)
     (storeObject_preservesFieldsOutside id obj st st' hStep)
 
-theorem detachSlotFromCdt_preservesFieldsOutside (st : SystemState) (ref : SlotRef) :
-    preservesFieldsOutside capabilityOp_modifiedFields st (st.detachSlotFromCdt ref) := by
-  unfold SystemState.detachSlotFromCdt
-  cases hN : st.cdtSlotNode[ref]? with
-  | none => exact preservesFieldsOutside_refl _ _
-  | some node =>
-    intro f hf
-    cases f <;> first
-      | rfl
-      | exact (hf (by decide)).elim
-
-theorem ensureCdtNodeForSlot_preservesFieldsOutside (st : SystemState) (ref : SlotRef) :
-    preservesFieldsOutside capabilityOp_modifiedFields st
-      (SystemState.ensureCdtNodeForSlot st ref).2 := by
-  unfold SystemState.ensureCdtNodeForSlot
-  cases hN : st.cdtSlotNode[ref]? with
-  | none =>
-    intro f hf
-    cases f <;> first
-      | rfl
-      | exact (hf (by decide)).elim
-  | some node => exact preservesFieldsOutside_refl _ _
-
-theorem attachSlotToCdtNode_preservesFieldsOutside
-    (st : SystemState) (ref : SlotRef) (node : CdtNodeId) :
-    preservesFieldsOutside capabilityOp_modifiedFields st
-      (SystemState.attachSlotToCdtNode st ref node) := by
-  unfold SystemState.attachSlotToCdtNode
+/-- A write of the derivation tree alone — the tail of every capability
+operation — writes no field outside the capability write set. -/
+theorem withCdt_preservesFieldsOutside (st : SystemState) (cdt : CapDerivationTree) :
+    preservesFieldsOutside capabilityOp_modifiedFields st { st with cdt := cdt } := by
   intro f hf
   cases f <;> first
     | rfl
@@ -1660,9 +1606,7 @@ theorem cspaceDeleteSlotCore_preservesFieldsOutside
       simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
       obtain ⟨-, hEq⟩ := hStep
       subst hEq
-      exact preservesFieldsOutside_trans
-        (storeObject_preservesFieldsOutside_capability _ _ _ _ hStore)
-        (detachSlotFromCdt_preservesFieldsOutside _ _)
+      exact storeObject_preservesFieldsOutside_capability _ _ _ _ hStore
   · cases hStep
 
 theorem cspaceDeleteSlot_preservesFieldsOutside
@@ -1670,15 +1614,8 @@ theorem cspaceDeleteSlot_preservesFieldsOutside
     (hStep : cspaceDeleteSlot addr st = .ok ((), st')) :
     preservesFieldsOutside capabilityOp_modifiedFields st st' := by
   obtain ⟨stC, hCore, rfl⟩ := cspaceDeleteSlot_ok_decompose addr st st' hStep
-  refine preservesFieldsOutside_trans
-    (cspaceDeleteSlotCore_preservesFieldsOutside _ _ _ hCore) ?_
-  cases st.lookupCdtNodeOfSlot addr with
-  | none => exact preservesFieldsOutside_refl _ _
-  | some node =>
-    intro f hf
-    cases f <;> first
-      | rfl
-      | exact (hf (by decide)).elim
+  exact preservesFieldsOutside_trans
+    (cspaceDeleteSlotCore_preservesFieldsOutside _ _ _ hCore) (withCdt_preservesFieldsOutside _ _)
 
 theorem cspaceMint_preservesFieldsOutside
     (src dst : CSpaceAddr) (rights : AccessRightSet) (badge : Option SeLe4n.Badge)
@@ -1711,14 +1648,8 @@ theorem cspaceMintWithCdt_preservesFieldsOutside
     simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
     obtain ⟨-, hEq⟩ := hStep
     subst hEq
-    refine preservesFieldsOutside_trans (cspaceMint_preservesFieldsOutside _ _ _ _ _ _ hMint) ?_
-    refine preservesFieldsOutside_trans (ensureCdtNodeForSlot_preservesFieldsOutside st₁ src) ?_
-    refine preservesFieldsOutside_trans
-      (ensureCdtNodeForSlot_preservesFieldsOutside _ dst) ?_
-    intro f hf
-    cases f <;> first
-      | rfl
-      | exact (hf (by decide)).elim
+    exact preservesFieldsOutside_trans (cspaceMint_preservesFieldsOutside _ _ _ _ _ _ hMint)
+      (withCdt_preservesFieldsOutside _ _)
 
 theorem cspaceCopy_preservesFieldsOutside
     (src dst : CSpaceAddr) (st st' : SystemState)
@@ -1740,14 +1671,8 @@ theorem cspaceCopy_preservesFieldsOutside
         simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
         obtain ⟨-, hEq⟩ := hStep
         subst hEq
-        refine preservesFieldsOutside_trans (cspaceInsertSlot_preservesFieldsOutside _ _ _ _ hIns) ?_
-        refine preservesFieldsOutside_trans (ensureCdtNodeForSlot_preservesFieldsOutside st₂ src) ?_
-        refine preservesFieldsOutside_trans
-          (ensureCdtNodeForSlot_preservesFieldsOutside _ dst) ?_
-        intro f hf
-        cases f <;> first
-          | rfl
-          | exact (hf (by decide)).elim
+        exact preservesFieldsOutside_trans (cspaceInsertSlot_preservesFieldsOutside _ _ _ _ hIns)
+          (withCdt_preservesFieldsOutside _ _)
 
 theorem cspaceMove_preservesFieldsOutside
     (src dst : CSpaceAddr) (st st' : SystemState)
@@ -1774,16 +1699,10 @@ theorem cspaceMove_preservesFieldsOutside
             have hPre := preservesFieldsOutside_trans
               (cspaceInsertSlot_preservesFieldsOutside _ _ _ _ hIns)
               (cspaceDeleteSlotCore_preservesFieldsOutside _ _ _ hDel)
-            split at hStep
-            · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-              obtain ⟨-, hEq⟩ := hStep
-              subst hEq
-              exact hPre
-            · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-              obtain ⟨-, hEq⟩ := hStep
-              subst hEq
-              exact preservesFieldsOutside_trans hPre
-                (attachSlotToCdtNode_preservesFieldsOutside _ _ _)
+            simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+            obtain ⟨-, hEq⟩ := hStep
+            subst hEq
+            exact preservesFieldsOutside_trans hPre (withCdt_preservesFieldsOutside _ _)
 
 
 theorem storeObject_preservesFieldsOutside_ipc

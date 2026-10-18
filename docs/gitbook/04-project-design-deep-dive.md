@@ -130,7 +130,7 @@ seLe4n uses `Std.HashMap` and `Std.HashSet` for all kernel hot paths. This is a 
 | CNode slots | Array indexed by slot | `UniqueSlotMap Capability` (WS-RC R4.A structural promotion of the WS-N4 `RHTable Slot Capability`) |
 | VSpace mappings | Page table tree | `RHTable VAddr (PAddr × PagePermissions)` with W^X enforcement (WS-Q2) |
 | Run queue | Linked list | Per-core doubly linked list with a list per priority, links in the TCBs (as seL4) and the ends per core, written in place; dequeue-on-dispatch (WS-H12b, WS-Q2, WS-ZA ZA4.5) |
-| CDT children | Linked list | `RHTable CdtNodeId (List CdtNodeId)` (WS-Q2) |
+| CDT children | Linked list through the slots (`cte_t`) | `RHTable SlotRef (List SlotRef)` keyed by slot (WS-Q2, WS-ZA ZA5.3) |
 
 HashMap key uniqueness is structural (guaranteed by the data structure), so properties like `slotsUnique` become trivially true. This eliminated entire classes of proof obligations during the WS-G migration.
 
@@ -150,17 +150,21 @@ WS-H5 formalized this with `intrusiveQueueWellFormed` and `tcbQueueLinkIntegrity
 
 WS-L1 (v0.16.9) eliminated 4 redundant TCB lookups on IPC hot paths by returning the pre-dequeue TCB from `endpointQueuePopHead` and adding `_fromTcb` variants of store operations with equivalence theorems. This avoids O(log n) HashMap lookups on every endpoint receive, reply, and notification wait — zero new preservation lemmas needed.
 
-## 4. Capability derivation tree: node-stable CDT
+## 4. Capability derivation tree: the slot is the node
 
-seL4's CDT uses mutable doubly-linked lists. seLe4n replaces this with a node-stable design:
+As in seL4, where each `cte_t` is its own mapping-database node, a derivation
+edge joins two slots (since `v0.36.103`, WS-ZA ZA5.3 part 2):
 
-- **Derivation edges** connect stable node IDs, not mutable slot pointers.
-- **Bidirectional maps** (`cdtSlotNode`, `cdtNodeSlot`) link slots to nodes.
-- **`cspaceMove`** updates slot-to-node ownership without rewriting CDT edges.
-- **`childMap : RHTable CdtNodeId (List CdtNodeId)`** gives O(1) children lookup.
+- **Derivation edges** connect `SlotRef`s; there is no separate node identifier, counter or slot-to-node table.
+- **`cspaceMove`** carries the source slot's parent and children to the destination (`CapDerivationTree.moveNode`).
+- **A delete** splices the slot out, re-deriving its children from its parent (`spliceNode`).
+- **`childMap : RHTable SlotRef (List SlotRef)`** gives O(1) children lookup.
 - **`descendantsOf`** runs in O(n+e) via DFS with `HashSet` visited tracking.
 
-This eliminates dangling-pointer hazards and makes revocation semantics cleaner: `cspaceRevokeCdtStrict` reports the first descendant deletion failure with offending slot context.
+Revocation walks the descendants of the revoked slot itself, and
+`cspaceRevokeCdtStrict` reports the first descendant deletion failure with the
+offending slot.  The canonical statement is in the
+[specification](../spec/SELE4N_SPEC.md).
 
 **Streaming BFS revocation (WS-M5, v0.16.19–v0.17.0):** `cspaceRevokeCdtStreaming` performs level-by-level BFS revocation via `streamingRevokeBFS`, processing one CDT node at a time without materializing the full `descendantsOf` set. The per-node transition is factored into `processRevokeNode`, shared by both the materialized fold (`cspaceRevokeCdt`) and the streaming BFS path. Preservation is proved via `processRevokeNode_preserves_capabilityInvariantBundle` (shared per-node proof) and `streamingRevokeBFS_preserves` (fuel induction), culminating in `cspaceRevokeCdtStreaming_preserves_capabilityInvariantBundle`.
 

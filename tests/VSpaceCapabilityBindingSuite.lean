@@ -855,7 +855,8 @@ private def runResetChecks : IO Unit := do
           vspaceRoot := carveVsp, ipcBuffer := SeLe4n.VAddr.ofNat 8192,
           pendingMessage := some
             { registers := #[],
-              caps := #[TransferCap.fromNode (frameCapability (SeLe4n.ObjId.ofNat 950)) 0] } }
+              caps := #[TransferCap.fromSlot (frameCapability (SeLe4n.ObjId.ofNat 950))
+                { cnode := carveCn, slot := SeLe4n.Slot.ofNat 0 }] } }
       match storeObject (SeLe4n.ObjId.ofNat 990) (.tcb inFlight) stRev with
       | .error _ => assertBool "the in-flight fixture stores" false
       | .ok ((), stFly) =>
@@ -1821,7 +1822,8 @@ private def runPageTableChecks : IO Unit := do
               vspaceRoot := carveVsp, ipcBuffer := SeLe4n.VAddr.ofNat 8192,
               pendingMessage := some
                 { registers := #[],
-                  caps := #[TransferCap.fromNode (pageTableCapability (SeLe4n.ObjId.ofNat 983)) 0] } }
+                  caps := #[TransferCap.fromSlot (pageTableCapability (SeLe4n.ObjId.ofNat 983))
+                    { cnode := carveCn, slot := SeLe4n.Slot.ofNat 0 }] } }
           match storeObject (SeLe4n.ObjId.ofNat 990) (.tcb parked) st3 with
           | .error _ => assertBool "the parked-copy fixture stores" false
           | .ok ((), stPark) =>

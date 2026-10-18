@@ -128,11 +128,11 @@ theorem cspaceInsertSlot_preserves_badgeWellFormed
           exact hCap addr.cnode cn slot' cap' badge' hObj hLk hBdg)
 
 /-- IPC de-threading D8: `ipcTransferSingleCap` preserves `badgeWellFormed` when the
-transferred cap has a valid badge. The CDT-edge steps (`ensureCdtNodeForSlot` ×2 +
-`addEdge`) leave objects unchanged, so the badge effect is exactly the
+transferred cap has a valid badge. The CDT-edge step (`addEdge`) leaves objects
+unchanged, so the badge effect is exactly the
 `cspaceInsertSlot` write. -/
 theorem ipcTransferSingleCap_preserves_badgeWellFormed
-    (cap : Capability) (srcNode : CdtNodeId)
+    (cap : Capability) (srcNode : SlotRef)
     (receiverRoot : SeLe4n.ObjId) (slotBase : SeLe4n.Slot)
     (scanLimit : Nat) (st st' : SystemState) (result : CapTransferResult)
     (hInv : badgeWellFormed st) (hObjInv : st.objects.invExt)
@@ -163,9 +163,7 @@ theorem ipcTransferSingleCap_preserves_badgeWellFormed
           have hBadgeMid := cspaceInsertSlot_preserves_badgeWellFormed st pair.2
             { cnode := receiverRoot, slot := emptySlot } cap.withoutMapping hInv hObjInv hCapValid
             (by rw [show pair = (pair.1, pair.2) from by simp]; exact hIns)
-          have hObjSrc := SystemState.ensureCdtNodeForSlot_objects_eq pair.2
-            { cnode := receiverRoot, slot := emptySlot }
-          exact badgeWellFormed_of_objects_eq pair.2 _ (by simp only [hObjSrc]) hBadgeMid
+          exact badgeWellFormed_of_objects_eq pair.2 _ rfl hBadgeMid
 
 /-- IPC de-threading D8: `ipcUnwrapCapsLoop` preserves `badgeWellFormed` when every
 cap in `caps` carries a valid badge (each transferred cap feeds the single-cap
@@ -189,7 +187,7 @@ theorem ipcUnwrapCapsLoop_preserves_badgeWellFormed
     | none => simp [hCap] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInv
     | some tc =>
       simp [hCap] at hStep
-      cases hTransfer : ipcTransferSingleCap tc.cap tc.srcNode
+      cases hTransfer : ipcTransferSingleCap tc.cap tc.srcSlot
           receiverRoot nextBase maxExtraCaps st with
       | error e =>
         simp [hTransfer] at hStep

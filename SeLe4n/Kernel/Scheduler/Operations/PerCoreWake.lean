@@ -2097,11 +2097,10 @@ theorem wakeThread_preserves_capabilityInvariantBundle (st : SystemState)
     (h : capabilityInvariantBundle st) :
     capabilityInvariantBundle (wakeThread st tid executingCore).1 := by
   have hCdt := enqueueRunnableOnCore_cdt st (determineTargetCore st tid) tid
-  refine capabilityInvariantBundle_of_kindPreserving h ?_ ?_
+  refine capabilityInvariantBundle_of_kindPreserving h ?_
     (wakeThread_preserves_objects_invExt st tid executingCore hInv)
     (wakeThread_kindPreservingWrite st tid executingCore hInv)
-  · rw [wakeThread_state_eq_enqueue]; exact hCdt.2
-  · rw [wakeThread_state_eq_enqueue]; exact hCdt.1
+  rw [wakeThread_state_eq_enqueue]; exact hCdt
 
 /-- WS-SM SM5.I.8 (preservation, SM4.C `runnableThreadsAreTCBsOnCore`): a wake on
 core `c` preserves runnable-threads-are-TCBs on **every** core `c'`.  A sibling's

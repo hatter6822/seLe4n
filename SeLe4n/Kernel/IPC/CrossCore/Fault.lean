@@ -158,11 +158,9 @@ theorem faultSuspendOnCore_kindPreservingWrite (st : SystemState) (tid : SeLe4n.
       (removeRunnableOnCore_objects_invExt st tid c hObjInv))
 
 theorem faultSuspendOnCore_cdt_eq (st : SystemState) (tid : SeLe4n.ThreadId) (c : CoreId) :
-    (faultSuspendOnCore st tid c).cdt = st.cdt
-    ∧ (faultSuspendOnCore st tid c).cdtNodeSlot = st.cdtNodeSlot := by
+    (faultSuspendOnCore st tid c).cdt = st.cdt := by
   unfold faultSuspendOnCore
-  exact ⟨(SystemState.updateTcb_cdt _ tid _).trans (removeRunnableOnCore_cdt st tid c).1,
-    (SystemState.updateTcb_cdtNodeSlot _ tid _).trans (removeRunnableOnCore_cdt st tid c).2⟩
+  exact (SystemState.updateTcb_cdt _ tid _).trans (removeRunnableOnCore_cdt st tid c)
 
 theorem faultAbandonOnCore_kindPreservingWrite (st : SystemState) (tid : SeLe4n.ThreadId)
     (c : CoreId) (hObjInv : st.objects.invExt) :
@@ -173,11 +171,9 @@ theorem faultAbandonOnCore_kindPreservingWrite (st : SystemState) (tid : SeLe4n.
       (removeRunnableOnCore_objects_invExt st tid c hObjInv))
 
 theorem faultAbandonOnCore_cdt_eq (st : SystemState) (tid : SeLe4n.ThreadId) (c : CoreId) :
-    (faultAbandonOnCore st tid c).cdt = st.cdt
-    ∧ (faultAbandonOnCore st tid c).cdtNodeSlot = st.cdtNodeSlot := by
+    (faultAbandonOnCore st tid c).cdt = st.cdt := by
   unfold faultAbandonOnCore
-  exact ⟨(SystemState.updateTcb_cdt _ tid _).trans (removeRunnableOnCore_cdt st tid c).1,
-    (SystemState.updateTcb_cdtNodeSlot _ tid _).trans (removeRunnableOnCore_cdt st tid c).2⟩
+  exact (SystemState.updateTcb_cdt _ tid _).trans (removeRunnableOnCore_cdt st tid c)
 
 /-- **WS-RR RR8.12 Cut C6d** (frame): and the machine mirror is the deschedule's
 — the `.Inactive`/`pendingFault := none` store writes the thread's TCB, never

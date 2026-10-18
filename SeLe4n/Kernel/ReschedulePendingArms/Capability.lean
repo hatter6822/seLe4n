@@ -83,29 +83,13 @@ theorem cspaceDeleteSlot_keyInputsEq (st st' : SystemState) (addr : CSpaceAddr)
     (spliceDeletedCdtNode_scheduler _ _).trans hS,
     by rw [spliceDeletedCdtNode_objects]; exact hE⟩
 
-/-- The CDT bookkeeping writes no object and no scheduler state. -/
-theorem ensureCdtNodeForSlot_objects_scheduler (st : SystemState) (ref : SlotRef) :
-    (SystemState.ensureCdtNodeForSlot st ref).snd.objects = st.objects ∧
-    (SystemState.ensureCdtNodeForSlot st ref).snd.scheduler = st.scheduler :=
-  ⟨SystemState.ensureCdtNodeForSlot_objects_eq st ref,
-   SystemState.ensureCdtNodeForSlot_scheduler_eq st ref⟩
-
 /-- The CDT edge every `WithCdt` form ends with writes no object and no scheduler
 state. -/
 theorem cdtRecord_objects_scheduler (stM : SystemState) (src dst : CSpaceAddr)
     (kind : DerivationOp) :
-    (let p1 := SystemState.ensureCdtNodeForSlot stM src
-     let p2 := SystemState.ensureCdtNodeForSlot p1.snd dst
-     ({ p2.snd with cdt := p2.snd.cdt.addEdge p1.fst p2.fst kind } : SystemState)).objects
-        = stM.objects ∧
-    (let p1 := SystemState.ensureCdtNodeForSlot stM src
-     let p2 := SystemState.ensureCdtNodeForSlot p1.snd dst
-     ({ p2.snd with cdt := p2.snd.cdt.addEdge p1.fst p2.fst kind } : SystemState)).scheduler
-        = stM.scheduler := by
-  obtain ⟨h1o, h1s⟩ := ensureCdtNodeForSlot_objects_scheduler stM src
-  obtain ⟨h2o, h2s⟩ := ensureCdtNodeForSlot_objects_scheduler
-    (SystemState.ensureCdtNodeForSlot stM src).snd dst
-  exact ⟨h2o.trans h1o, h2s.trans h1s⟩
+    ({ stM with cdt := stM.cdt.addEdge src dst kind } : SystemState).objects = stM.objects ∧
+    ({ stM with cdt := stM.cdt.addEdge src dst kind } : SystemState).scheduler
+        = stM.scheduler := ⟨rfl, rfl⟩
 
 /-- What every capability arm establishes: no key input, no scheduler field and
 no store invariant moved. -/
@@ -156,7 +140,6 @@ theorem cspaceMintWithCdt_keyFrame (st st' : SystemState) (src dst : CSpaceAddr)
   split at hStep
   · contradiction
   · rename_i stM hMint
-    dsimp only [] at hStep
     cases hStep
     have hM := cspaceMint_keyFrame st stM src dst rights badge hObjInv hMint
     obtain ⟨hO, hS⟩ := cdtRecord_objects_scheduler stM src dst .mint
@@ -176,7 +159,6 @@ theorem cspaceCopy_keyFrame (st st' : SystemState) (src dst : CSpaceAddr)
     · split at hStep
       · contradiction
       · rename_i st2 hIns
-        dsimp only [] at hStep
         cases hStep
         have hI := cspaceInsertSlot_keyFrame _ st2 dst _ hObjInv hIns
         obtain ⟨hO, hS⟩ := cdtRecord_objects_scheduler st2 src dst .copy
@@ -199,19 +181,13 @@ theorem cspaceMove_keyFrame (st st' : SystemState) (src dst : CSpaceAddr)
         · contradiction
         · rename_i st2 hIns
           have hI := cspaceInsertSlot_keyFrame _ st2 dst _ hObjInv hIns
-          dsimp only [] at hStep
           split at hStep
           · contradiction
           · rename_i st3 hDel
             have hD := cspaceDeleteSlotCore_keyInputsEq st2 st3 src hI.2.2 hDel
             have h3 := hI.trans hD
-            split at hStep
-            · cases hStep; exact h3
-            · rename_i srcNode _
-              cases hStep
-              exact h3.trans (capabilityKeyFrame_of_objects_scheduler_eq hD.2.2
-                (SystemState.attachSlotToCdtNode_objects_eq st3 dst srcNode)
-                (attachSlotToCdtNode_scheduler_eq st3 dst srcNode))
+            cases hStep
+            exact h3.trans (capabilityKeyFrame_of_objects_scheduler_eq hD.2.2 rfl rfl)
 
 theorem mintReplyCapWithCdt_keyFrame (st st' : SystemState) (src dst : CSpaceAddr)
     (hObjInv : st.objects.invExt) (hStep : mintReplyCapWithCdt src dst st = .ok ((), st')) :
@@ -220,7 +196,6 @@ theorem mintReplyCapWithCdt_keyFrame (st st' : SystemState) (src dst : CSpaceAdd
   split at hStep
   · contradiction
   · rename_i stM hMint
-    dsimp only [] at hStep
     cases hStep
     have hM : capabilityKeyFrame st stM := by
       unfold mintReplyCap at hMint
@@ -240,33 +215,25 @@ theorem mintReplyCapWithCdt_keyFrame (st st' : SystemState) (src dst : CSpaceAdd
 
 /-! ### The revocation family -/
 
-theorem processRevokeNode_keyFrame (st st' : SystemState) (node : CdtNodeId)
+theorem processRevokeNode_keyFrame (st st' : SystemState) (node : SlotRef)
     (hObjInv : st.objects.invExt) (hStep : processRevokeNode st node = .ok st') :
     capabilityKeyFrame st st' := by
   unfold processRevokeNode at hStep
-  cases hSlot : SystemState.lookupCdtSlotOfNode st node with
-  | none =>
-    simp [hSlot] at hStep; cases hStep
-    exact capabilityKeyFrame_of_objects_scheduler_eq hObjInv rfl rfl
-  | some descAddr =>
-    simp [hSlot] at hStep
-    cases hDel : cspaceDeleteSlotCore descAddr st with
-    | error _ => simp [hDel] at hStep
-    | ok pair =>
-      obtain ⟨⟨⟩, stDel⟩ := pair
-      simp [hDel] at hStep; cases hStep
-      exact cspaceDeleteSlotCore_keyInputsEq st stDel descAddr hObjInv hDel
+  cases hDel : cspaceDeleteSlotCore node st with
+  | error _ => simp [hDel] at hStep
+  | ok pair =>
+    obtain ⟨⟨⟩, stDel⟩ := pair
+    simp [hDel] at hStep; cases hStep
+    exact cspaceDeleteSlotCore_keyInputsEq st stDel node hObjInv hDel
 
 theorem cspaceRevokeCdt_keyFrame (st st' : SystemState) (addr : CSpaceAddr)
     (pages : List MappedPage) (hObjInv : st.objects.invExt)
     (hStep : cspaceRevokeCdt addr st = .ok (pages, st')) : capabilityKeyFrame st st' := by
-  obtain ⟨_, hRest⟩ :=
-    revokeCdtScaffold_ok_decompose [] revokeCdtMaterializedTraversal st st' addr pages hStep
-  rcases hRest with rfl | ⟨rootNode, out, hTrav, rfl⟩
-  · exact capabilityKeyFrame_of_objects_scheduler_eq hObjInv rfl rfl
-  · exact revokeCdtMaterializedTraversal_ok_induct (P := capabilityKeyFrame st)
-      (fun stA stB nd hP hSt => hP.trans (processRevokeNode_keyFrame stA stB nd hP.2.2 hSt))
-      st rootNode _ out (capabilityKeyFrame_of_objects_scheduler_eq hObjInv rfl rfl) hTrav
+  obtain ⟨_, out, hTrav, rfl⟩ :=
+    revokeCdtScaffold_ok_decompose revokeCdtMaterializedTraversal st st' addr pages hStep
+  exact revokeCdtMaterializedTraversal_ok_induct (P := capabilityKeyFrame st)
+    (fun stA stB nd hP hSt => hP.trans (processRevokeNode_keyFrame stA stB nd hP.2.2 hSt))
+    st addr _ out (capabilityKeyFrame_of_objects_scheduler_eq hObjInv rfl rfl) hTrav
 
 theorem finaliseDestroyedCapabilities_keyFrame (ec : CoreId) (pre : SystemState)
     (pages : List MappedPage) (st st' : SystemState) (hObjInv : st.objects.invExt)

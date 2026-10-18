@@ -4047,7 +4047,7 @@ run_check "INVARIANT" rg -n -U 'def resolveUntypedRetype[^\n]*(\n([ \t][^\n]*)?)
 run_check "INVARIANT" rg -n -U 'def resolveUntypedRetype[^\n]*(\n([ \t][^\n]*)?)*      match resolveCapAddress callerTcb\.cspaceRoot srcAddr rootCn\.depth st with' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U 'def untypedRetypeObject[^\n]*(\n([ \t][^\n]*)?)*          match retypeFromUntyped src untypedId childId \(req\.object untypedId ut\) req\.size st with' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n -U 'def untypedRetypeObject[^\n]*(\n([ \t][^\n]*)?)*            match cspaceInsertSlot dst \(req\.capability childId\) \(req\.scrub st1 ut\) with' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
-run_check "INVARIANT" rg -n -U 'def untypedRetypeObject[^\n]*(\n([ \t][^\n]*)?)*stDst\.cdt\.addEdge srcNode dstNode \.retype' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n -U 'def untypedRetypeObject[^\n]*(\n([ \t][^\n]*)?)*st2\.cdt\.addEdge src dst \.retype' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n -U 'def CarveRequest\.scrub[^\n]*\n  \| \.frame => carveZeroFrame st \(untypedNextFrame ut\)\n  \| \.untyped _ => st' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n -U 'def untypedNextChild[^\n]*(\n([ \t][^\n]*)?)*    parent := some parentId \}' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n -U 'def requiresPageAlignment[^\n]*(\n([ \t][^\n]*)?)*  \| \.untyped => true' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
@@ -4140,8 +4140,8 @@ run_check "INVARIANT" rg -n -U 'def cspaceRevokeCdtFinalising[^\n]*\n[^\n]*\n  f
 # One revocation: the materialized fold REPORTS the page each destroyed
 # capability recorded, read from the slot it deletes, and there is no second
 # state-only fold beside it (the collecting duplicate was deleted, not pinned).
-run_check "INVARIANT" rg -n -U 'def revokeCdtFoldBody\n    \(acc : Except KernelError \(List MappedPage × SystemState\)\) \(node : CdtNodeId\) :' SeLe4n/Kernel/Capability/Operations.lean
-run_check "INVARIANT" rg -n -U 'def cspaceRevokeCdt \(addr : CSpaceAddr\) : Kernel \(List MappedPage\) :=\n  revokeCdtScaffold \[\] revokeCdtMaterializedTraversal addr' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n -U 'def revokeCdtFoldBody\n    \(acc : Except KernelError \(List MappedPage × SystemState\)\) \(node : SlotRef\) :' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n -U 'def cspaceRevokeCdt \(addr : CSpaceAddr\) : Kernel \(List MappedPage\) :=\n  revokeCdtScaffold revokeCdtMaterializedTraversal addr' SeLe4n/Kernel/Capability/Operations.lean
 run_check "INVARIANT" rg -n '^theorem revokeCdtFoldBody_records($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
 run_negative_check "INVARIANT" rg -n 'cspaceRevokeCdtCollecting|revokeCdtCollectingFoldBody|revokeCdtCollectingTraversal' SeLe4n tests
 run_check "INVARIANT" rg -n -U 'def finaliseFramePages[^\n]*(\n([ \t][^\n]*)?)*    match unmapLivePages executingCore pages st with(\n([ \t][^\n]*)?)*      if !livePagesCleared st1 pages then \.error \.illegalState' SeLe4n/Kernel/Capability/FrameFinalise.lean
@@ -6062,9 +6062,6 @@ run_check "INVARIANT" rg -n '^theorem endpointReceiveDual_confinedToBootCore($|[
 run_check "INVARIANT" rg -n '^theorem endpointCall_confinedToBootCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^theorem endpointReply_confinedToBootCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^theorem endpointReplyRecv_confinedToBootCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem attachSlotToCdtNode_confinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem detachSlotFromCdt_confinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem ensureCdtNodeForSlot_confinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^theorem cdtEdge_confinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^theorem cspaceLookupSlot_confinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^theorem cspaceInsertSlot_confinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
@@ -9005,9 +9002,9 @@ run_check "INVARIANT" rg -n '^theorem taintWriteKeys_disjoint_order_independent(
 # copy survived a revoke meant to destroy it, and an unrelated capability at the
 # stand-in address was destroyed by a revoke that had nothing to do with it.
 run_check "INVARIANT" rg -n '^structure TransferCap($|[ ({:\[\]])' SeLe4n/Model/Object/Types.lean
-run_check "INVARIANT" rg -n 'srcNode : CdtNodeId' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n 'srcSlot : SlotRef' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n 'caps : Array TransferCap' SeLe4n/Model/Object/Types.lean
-run_check "INVARIANT" rg -n 'ipcTransferSingleCap tc.cap tc.srcNode' SeLe4n/Kernel/IPC/Operations/CapTransfer.lean
+run_check "INVARIANT" rg -n 'ipcTransferSingleCap tc.cap tc.srcSlot' SeLe4n/Kernel/IPC/Operations/CapTransfer.lean
 # …and a reusable slot ADDRESS must not come back as the carried identity: a
 # parked send outlives the slot, so an address names whatever occupies it later.
 run_negative_check "INVARIANT" rg -n 'srcRef : SlotRef' SeLe4n/Model/Object/Types.lean
@@ -9181,7 +9178,7 @@ run_check "INVARIANT" rg -n 'every capability operation declares the state-level
 # at `.objects` while all four write CDT structure.  These lists support
 # DISJOINTNESS arguments, so an omission makes two contending operations look
 # independent.
-run_check "INVARIANT" rg -n 'cdtSlotNode, .cdtNodeSlot, .cdtNextNode\]' SeLe4n/Kernel/CrossSubsystem.lean
+run_check "INVARIANT" rg -n 'storeObject_modifiedFields \+\+ \[\.cdt\]' SeLe4n/Kernel/CrossSubsystem.lean
 # WS-RR RR7.11: the seven IPC hot-path footprints are DECLARED, with their
 # coverage.  Three things get pinned, and the second is this cut's finding.
 #
@@ -9592,9 +9589,9 @@ run_check "INVARIANT" bash -lc 'rg -U -n "def lifecycleRetypeObject_modifiedFiel
 # deschedule; `scThreadIndex`, the receive path's donation return, was the
 # second until its retirement at `v0.36.98`) — and the
 # capability list carries storeObject's own index/ASID fields beneath the CDT
-# four.  Both were FALSE at the v0.34.70 lists; the theorems below say so.
+# (one field since WS-ZA ZA5.3 part 2: the slot is the derivation node).  Both were FALSE at the v0.34.70 lists; the theorems below say so.
 run_check "INVARIANT" bash -lc 'rg -U -n "def ipcEndpointOp_modifiedFields : List StateField :=\n  storeObject_modifiedFields \+\+ \[\.scheduler\]\n" SeLe4n/Kernel/CrossSubsystem.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "def capabilityOp_modifiedFields : List StateField :=\n  storeObject_modifiedFields \+\+ \[\.cdt, \.cdtSlotNode, \.cdtNodeSlot, \.cdtNextNode\]" SeLe4n/Kernel/CrossSubsystem.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "def capabilityOp_modifiedFields : List StateField :=\n  storeObject_modifiedFields \+\+ \[\.cdt\]" SeLe4n/Kernel/CrossSubsystem.lean'
 # `StateField` is total over `SystemState`, and the pin is a theorem: field-wise
 # agreement on every constructor IS state equality, proved through
 # `SystemState.mk.injEq`, so a structure field with no constructor leaves a
@@ -9631,7 +9628,7 @@ run_check "INVARIANT" rg -n 'cleanupPreReceiveDonationChecked_preservesFieldsOut
 run_check "INVARIANT" bash -lc 'rg -U -n "returnDonatedSchedContextResolved_lift hStep\n[ \t]*\(fun n s hs => returnDonatedSchedContext_preservesFieldsOutside _ _ _ _ _ n hs\)" SeLe4n/Kernel/CrossSubsystem.lean'
 run_negative_check "INVARIANT" rg -n 'returnDonatedSchedContext_preservesFieldsOutside _ _ _ _ _ none hStep' SeLe4n/Kernel/CrossSubsystem.lean
 run_check "INVARIANT" rg -n 'writeSetSurfaceElaborates' tests/CrossSubsystemPerCoreSuite.lean
-run_check "INVARIANT" rg -n 'StateField enum has 25 variants' tests/InformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'StateField enum has 22 variants' tests/InformationFlowSuite.lean
 # The medium-severity sweep's plan names these eight artefacts by name and the
 # surface pinned none of them: a plan-named theorem the anchors do not read is
 # a claim a rename or a deletion would leave standing.  Presence anchors, on
@@ -9960,10 +9957,9 @@ run_negative_check "INVARIANT" rg -n 'def parkedCarriesCaps' SeLe4n/Kernel/Infor
 run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlot_isOk_iff_core($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
 
 # The guarantee behind every destroyer's detach: the single creator of an
-# `.ipcTransfer` edge declines when the source node has no slot, so no
+# `.ipcTransfer` edge declines when the source slot is empty, so no
 # destroyer — present or future — can leave an unrevokable child behind.
 run_check "INVARIANT" rg -n '^  \| sourceRevoked$' SeLe4n/Model/Object/Types.lean
-run_check "INVARIANT" rg -n '^theorem ipcTransferSingleCap_installed_implies_live_source($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
 run_check "INVARIANT" rg -n '^theorem ipcTransferSingleCap_sourceRevoked_preserves_state($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
 # PR #873 round 18: that check asked whether the node still MAPPED to a slot, on
 # the premise that every destroyer severs the mapping.  Delete, CNode retype and
@@ -9983,7 +9979,7 @@ run_check "INVARIANT" rg -n '^theorem cdtNodeIsRevocable_false_revoke_refuses($|
 # the scaffold at an arbitrary traversal -- since none of them runs the local
 # sweep any more, and the refusal theorem quantifies over the scaffold.
 run_check "INVARIANT" rg -n '^theorem revokeCdtScaffold_ok_implies_slot_occupied($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem cdtNodeIsRevocable_false_revoke_refuses[^\n]*(\n([ \t][^\n]*)?)*revokeCdtScaffold emptyReport traverse addr st" SeLe4n/Kernel/Capability/Operations.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem cdtNodeIsRevocable_false_revoke_refuses[^\n]*(\n([ \t][^\n]*)?)*revokeCdtScaffold traverse node st" SeLe4n/Kernel/Capability/Operations.lean'
 # The mapping-only test must not come back at the install site.
 run_negative_check "INVARIANT" rg -n 'match SystemState.lookupCdtSlotOfNode st srcNode with' SeLe4n/Kernel/Capability/Operations.lean
 # v0.36.1 (PR #900 review): the swept-sibling regression INVERTED.  Revocation no
@@ -21519,7 +21515,6 @@ run_check "INVARIANT" rg -n '^theorem propagatePipChainCrossCore_preserves_capab
 run_check "INVARIANT" rg -n '^theorem propagatePipChainCrossCore_runQueueUniqueOnCore($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean
 run_check "INVARIANT" rg -n '^theorem propagatePipChainCrossCore_getTcb\?_isSome' SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean
 run_check "INVARIANT" rg -n '^theorem propagatePipChainCrossCore_objects_pointwise($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean
-run_check "INVARIANT" rg -n '^theorem propagatePipChainCrossCore_cdtNodeSlot($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean
 run_check "INVARIANT" rg -n '^theorem removeRunnableOnCore_preserves_schedulerInvariantBase_smp($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean
 run_check "INVARIANT" rg -n '^theorem descheduleAtPlacement_preserves_schedulerInvariantBase_smp($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean
 run_check "INVARIANT" rg -n '^theorem migrateSchedContextReplenishment_preserves_schedulerInvariantBase_smp($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean
@@ -21562,7 +21557,6 @@ run_check "INVARIANT" rg -n '^theorem enqueueRunnableOnCore_kindPreservingWrite(
 run_check "INVARIANT" rg -n '^theorem wakeThread_kindPreservingWrite($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/PerCoreWake.lean
 # The CDT frames each lift consumes, beside the transitions they frame.
 run_check "INVARIANT" rg -n '^theorem storeTcbIpcStateAndMessage_fromTcb_cdt_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
-run_check "INVARIANT" rg -n '^@\[simp\] theorem descheduleAtPlacement_cdtNodeSlot($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/Selection.lean
 run_check "INVARIANT" rg -n '^@\[simp\] theorem descheduleAtPlacement_cdt($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/Selection.lean
 run_check "INVARIANT" rg -n '^@\[simp\] theorem migrateSchedContextReplenishment_cdt($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/ReplenishAffinity.lean
 run_check "INVARIANT" rg -n '^theorem enqueueRunnableOnCore_cdt($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/Selection.lean
@@ -21606,7 +21600,6 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointReplyCrossCo
 run_check "INVARIANT" rg -n '^theorem updateTcb_kindPreservingWrite($|[ ({:\[\]])' SeLe4n/Model/State.lean
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem updateTcb_kindPreservingWrite[^\n]*(\n([ \t][^\n]*)?)*hNotCnode" SeLe4n/Model/State.lean'
 run_check "INVARIANT" rg -n '^theorem updateTcb_cdt($|[ ({:\[\]])' SeLe4n/Model/State.lean
-run_check "INVARIANT" rg -n '^theorem updateTcb_cdtNodeSlot($|[ ({:\[\]])' SeLe4n/Model/State.lean
 # The call chain's five store primitives, each with the pair the reply side has.
 run_check "INVARIANT" rg -n '^theorem endpointQueueEnqueue_kindPreservingWrite($|[ ({:\[\]])' SeLe4n/Kernel/IPC/DualQueue/Core.lean
 run_check "INVARIANT" rg -n '^theorem endpointQueuePopHead_kindPreservingWrite($|[ ({:\[\]])' SeLe4n/Kernel/IPC/DualQueue/Core.lean
@@ -21735,12 +21728,10 @@ run_negative_check "INVARIANT" rg -n 'findFirstEmptySlot slotBase' SeLe4n/Kernel
 # inline from the operation's own `match` tree and the guard broke all eight.
 run_check "INVARIANT" rg -n '^theorem cspaceInsertSlot_ok_decompose($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
 run_negative_check "INVARIANT" rg -n 'unfold cspaceInsertSlot SystemState\.getCNode\? at hStep' SeLe4n/Kernel/Capability/Invariant/Preservation/Insert.lean SeLe4n/Kernel/Capability/Invariant/Preservation/CopyMoveMutate.lean SeLe4n/Kernel/Capability/Invariant/Preservation/BadgeIpcCapsAndCdtMaps.lean SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean SeLe4n/Kernel/CrossSubsystem.lean SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
-# ...and three frames live beside the primitive, where a frame over a primitive
-# belongs: `_cdt_eq` relocated out of a preservation module, `_cdtNodeSlot_eq`
-# and `_objects_eq` new -- the last replacing a `private` copy in an IPC
-# dispatch module.
+# ...and two frames live beside the primitive, where a frame over a primitive
+# belongs: `_cdt_eq` relocated out of a preservation module, and `_objects_eq`
+# new, replacing a `private` copy in an IPC dispatch module.
 run_check "INVARIANT" rg -n '^theorem cspaceInsertSlot_cdt_eq($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
-run_check "INVARIANT" rg -n '^theorem cspaceInsertSlot_cdtNodeSlot_eq($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
 run_check "INVARIANT" rg -n '^theorem cspaceInsertSlot_objects_eq($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
 run_negative_check "INVARIANT" rg -n 'theorem cspaceInsertSlot_cdt_eq' SeLe4n/Kernel/Capability/Invariant/Preservation/Insert.lean
 run_negative_check "INVARIANT" rg -n 'cspaceInsertSlot_cnode_shape' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
@@ -21958,10 +21949,17 @@ run_check "INVARIANT" rg -n '^def spliceNode($|[ ({:\[\]])' SeLe4n/Model/Object/
 run_check "INVARIANT" rg -n '^theorem spliceNode_edgeWellFounded($|[ ({:\[\]])' SeLe4n/Model/Object/Structures.lean
 run_check "INVARIANT" rg -n '^theorem spliceNode_mapsWellFormed($|[ ({:\[\]])' SeLe4n/Model/Object/Structures.lean
 run_check "INVARIANT" rg -n '^def spliceDeletedCdtNode($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
-run_check "INVARIANT" rg -n -U '    \| \.ok \(\(\), st.\) => \.ok \(\(\), spliceDeletedCdtNode st. \(st\.lookupCdtNodeOfSlot addr\)\)' SeLe4n/Kernel/Capability/Operations.lean
-run_check "INVARIANT" rg -n -U 'def detachDestroyedSlot \(acc : SystemState\) \(ref : SlotRef\) : SystemState :=\n  SystemState\.detachSlotFromCdt \(spliceDeletedCdtNode acc \(acc\.lookupCdtNodeOfSlot ref\)\) ref' SeLe4n/Kernel/Capability/Operations.lean
-run_check "INVARIANT" rg -n -U '  cn\.foldCells st \(fun acc slot _cap =>\n    detachDestroyedSlot acc \{ cnode := cnodeId, slot := slot \}' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
-run_check "INVARIANT" rg -n -U '    if CNode\.revokeTargetLocalKeeps sourceSlot target slot cap then acc\n    else detachDestroyedSlot acc \{ cnode := cnodeId, slot := slot \}' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n -U '    \| \.ok \(\(\), st.\) => \.ok \(\(\), spliceDeletedCdtNode st. addr\)' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n -U '  cn\.foldCells st \(fun acc slot _cap =>\n    spliceDeletedCdtNode acc \{ cnode := cnodeId, slot := slot \}' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" rg -n -U '    if CNode\.revokeTargetLocalKeeps sourceSlot target slot cap then acc\n    else spliceDeletedCdtNode acc \{ cnode := cnodeId, slot := slot \}' SeLe4n/Kernel/Capability/Operations.lean
 run_check "INVARIANT" rg -n -U '            \| \.ok \(\(\), st..\) =>\n                \.ok \(\(\), detachRevokedSlots st.. addr\.cnode cn addr\.slot parent\.target\)' SeLe4n/Kernel/Capability/Operations.lean
 run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlot_ok_decompose($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
+# WS-ZA ZA5.3 part 2: the slot is the derivation node (seL4's cte_t is its own
+# mapping-database node).  The tree's edges and maps are keyed by SlotRef, no
+# node identifier, counter or slot<->node table remains, and completeness reads
+# the tree directly.
+run_check "INVARIANT" rg -n -U '^def cdtCompleteness \(st : SystemState\) : Prop :=\n  ∀ ref : SlotRef, st\.cdt\.mentions ref → st\.objects\[ref\.cnode\]\? ≠ none' SeLe4n/Kernel/Capability/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem empty_not_mentions($|[ ({:\[\]])' SeLe4n/Model/Object/Structures.lean
+run_check "INVARIANT" rg -n -U '                \| \.ok \(\(\), st...\) => \.ok \(\(\), \{ st... with cdt := st...\.cdt\.moveNode src dst \}\)' SeLe4n/Kernel/Capability/Operations.lean
+run_negative_check "INVARIANT" rg -n 'CdtNodeId|cdtNodeSlot|cdtSlotNode|cdtNextNode|ensureCdtNodeForSlot|attachSlotToCdtNode|detachSlotFromCdt|lookupCdtNodeOfSlot' SeLe4n
 finalize_report

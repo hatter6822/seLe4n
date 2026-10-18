@@ -111,13 +111,13 @@ def ipcUnwrapCapsLoop
     | some tc =>
       fun st =>
         -- The derivation parent is the slot this capability was actually
-        -- resolved from (`tc.srcNode`).  CDT nodes are keyed by the full
+        -- resolved from (`tc.srcSlot`).  CDT nodes are keyed by the full
         -- `SlotRef`, so recording the edge from any other address puts the
         -- transferred copy under a node that revoking the true source never
         -- reaches — the copy would survive a revoke that was meant to destroy
         -- it, and an unrelated capability at the stand-in address would be
         -- destroyed by a revoke that had nothing to do with it.
-        match ipcTransferSingleCap tc.cap tc.srcNode
+        match ipcTransferSingleCap tc.cap tc.srcSlot
             receiverCspaceRoot nextBase maxExtraCaps st with
         | .error _e =>
             -- Fatal error: receiver CSpace root is not a CNode (or insert
@@ -216,7 +216,7 @@ theorem ipcUnwrapCapsLoop_state_eq_of_root_not_cnode
       exact hStep.2.symm
     | some tc =>
       simp only [hCap] at hStep
-      have hErr : ipcTransferSingleCap tc.cap tc.srcNode receiverRoot nextBase maxExtraCaps st
+      have hErr : ipcTransferSingleCap tc.cap tc.srcSlot receiverRoot nextBase maxExtraCaps st
           = .error .objectNotFound := by
         simp only [ipcTransferSingleCap, hNotCnode]
       simp only [hErr, Except.ok.injEq, Prod.mk.injEq] at hStep
@@ -254,7 +254,7 @@ theorem ipcUnwrapCapsLoop_preserves_scheduler
     | none => simp [hCap] at hStep; obtain ⟨_, rfl⟩ := hStep; rfl
     | some tc =>
       simp [hCap] at hStep
-      cases hTransfer : ipcTransferSingleCap tc.cap tc.srcNode
+      cases hTransfer : ipcTransferSingleCap tc.cap tc.srcSlot
           receiverRoot nextBase maxExtraCaps st with
       | error e =>
         simp [hTransfer] at hStep
@@ -303,7 +303,7 @@ theorem ipcUnwrapCapsLoop_preserves_machine
     | none => simp [hCap] at hStep; obtain ⟨_, rfl⟩ := hStep; rfl
     | some tc =>
       simp [hCap] at hStep
-      cases hTransfer : ipcTransferSingleCap tc.cap tc.srcNode
+      cases hTransfer : ipcTransferSingleCap tc.cap tc.srcSlot
           receiverRoot nextBase maxExtraCaps st with
       | error e =>
         simp [hTransfer] at hStep
@@ -352,7 +352,7 @@ theorem ipcUnwrapCapsLoop_preserves_services
     | none => simp [hCap] at hStep; obtain ⟨_, rfl⟩ := hStep; rfl
     | some tc =>
       simp [hCap] at hStep
-      cases hTransfer : ipcTransferSingleCap tc.cap tc.srcNode
+      cases hTransfer : ipcTransferSingleCap tc.cap tc.srcSlot
           receiverRoot nextBase maxExtraCaps st with
       | error e =>
         simp [hTransfer] at hStep
@@ -400,7 +400,7 @@ theorem ipcUnwrapCapsLoop_preserves_objects_ne
     | none => simp [hCap] at hStep; obtain ⟨_, rfl⟩ := hStep; rfl
     | some tc =>
       simp [hCap] at hStep
-      cases hTransfer : ipcTransferSingleCap tc.cap tc.srcNode
+      cases hTransfer : ipcTransferSingleCap tc.cap tc.srcSlot
           receiverRoot nextBase maxExtraCaps st with
       | error e =>
         simp [hTransfer] at hStep
@@ -438,7 +438,7 @@ theorem ipcUnwrapCapsLoop_preserves_objects_invExt
     | none => simp [hCap] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hObjInv
     | some tc =>
       simp [hCap] at hStep
-      cases hTransfer : ipcTransferSingleCap tc.cap tc.srcNode
+      cases hTransfer : ipcTransferSingleCap tc.cap tc.srcSlot
           receiverRoot nextBase maxExtraCaps st with
       | error e =>
         simp [hTransfer] at hStep
@@ -507,7 +507,7 @@ theorem ipcUnwrapCapsLoop_preserves_ntfn_objects
     | none => simp [hCap] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hNtfn
     | some tc =>
       simp [hCap] at hStep
-      cases hTransfer : ipcTransferSingleCap tc.cap tc.srcNode
+      cases hTransfer : ipcTransferSingleCap tc.cap tc.srcSlot
           receiverRoot nextBase maxExtraCaps st with
       | error e =>
         simp [hTransfer] at hStep
@@ -566,7 +566,7 @@ theorem ipcUnwrapCapsLoop_preserves_reply_objects
     | none => simp [hCap] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hReply
     | some tc =>
       simp [hCap] at hStep
-      cases hTransfer : ipcTransferSingleCap tc.cap tc.srcNode
+      cases hTransfer : ipcTransferSingleCap tc.cap tc.srcSlot
           receiverRoot nextBase maxExtraCaps st with
       | error e =>
         simp [hTransfer] at hStep
@@ -621,7 +621,7 @@ theorem ipcUnwrapCapsLoop_receiverRoot_not_ntfn
     | none => simp [hCap] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hNotNtfn
     | some tc =>
       simp [hCap] at hStep
-      cases hTransfer : ipcTransferSingleCap tc.cap tc.srcNode
+      cases hTransfer : ipcTransferSingleCap tc.cap tc.srcSlot
           receiverRoot nextBase maxExtraCaps st with
       | error e =>
         simp [hTransfer] at hStep
@@ -659,7 +659,7 @@ theorem ipcUnwrapCapsLoop_preserves_ep_objects
     | none => simp [hCap] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hEp
     | some tc =>
       simp [hCap] at hStep
-      cases hTransfer : ipcTransferSingleCap tc.cap tc.srcNode
+      cases hTransfer : ipcTransferSingleCap tc.cap tc.srcSlot
           receiverRoot nextBase maxExtraCaps st with
       | error e =>
         simp [hTransfer] at hStep
@@ -713,7 +713,7 @@ theorem ipcUnwrapCapsLoop_preserves_tcb_objects
     | none => simp [hCap] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hTcb
     | some tc =>
       simp [hCap] at hStep
-      cases hTransfer : ipcTransferSingleCap tc.cap tc.srcNode
+      cases hTransfer : ipcTransferSingleCap tc.cap tc.srcSlot
           receiverRoot nextBase maxExtraCaps st with
       | error e =>
         simp [hTransfer] at hStep
@@ -753,7 +753,7 @@ theorem ipcUnwrapCapsLoop_preserves_schedContext_objects
     | none => simp [hCap] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hSc
     | some tc =>
       simp [hCap] at hStep
-      cases hTransfer : ipcTransferSingleCap tc.cap tc.srcNode
+      cases hTransfer : ipcTransferSingleCap tc.cap tc.srcSlot
           receiverRoot nextBase maxExtraCaps st with
       | error e =>
         simp [hTransfer] at hStep
@@ -827,7 +827,7 @@ theorem ipcUnwrapCapsLoop_objects_at_root_orig_or_cnode
     | none => simp [hCap] at hStep; obtain ⟨_, rfl⟩ := hStep; exact Or.inl rfl
     | some tc =>
       simp [hCap] at hStep
-      cases hTransfer : ipcTransferSingleCap tc.cap tc.srcNode
+      cases hTransfer : ipcTransferSingleCap tc.cap tc.srcSlot
           receiverRoot nextBase maxExtraCaps st with
       | error e => simp [hTransfer] at hStep; obtain ⟨_, rfl⟩ := hStep; exact Or.inl rfl
       | ok pair =>
@@ -873,7 +873,7 @@ theorem ipcUnwrapCapsLoop_preserves_cnode_at_root
     | none => simp [hCap] at hStep; obtain ⟨_, rfl⟩ := hStep; exact ⟨cn, hCn⟩
     | some tc =>
       simp [hCap] at hStep
-      cases hTransfer : ipcTransferSingleCap tc.cap tc.srcNode
+      cases hTransfer : ipcTransferSingleCap tc.cap tc.srcSlot
           receiverRoot nextBase maxExtraCaps st with
       | error e =>
         simp [hTransfer] at hStep
@@ -883,7 +883,7 @@ theorem ipcUnwrapCapsLoop_preserves_cnode_at_root
         simp [hTransfer] at hStep
         have hObjInvNext := ipcTransferSingleCap_preserves_objects_invExt tc.cap _ receiverRoot nextBase
           maxExtraCaps st stNext result hObjInv hTransfer
-        have ⟨cn', hCn'⟩ := ipcTransferSingleCap_receiverRoot_stays_cnode tc.cap tc.srcNode
+        have ⟨cn', hCn'⟩ := ipcTransferSingleCap_receiverRoot_stays_cnode tc.cap tc.srcSlot
           receiverRoot nextBase maxExtraCaps st stNext result cn hCn hObjInv hTransfer
         cases result with
         | installed c s => exact ih _ _ _ _ _ hCn' hObjInvNext hStep

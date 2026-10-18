@@ -250,7 +250,7 @@ guarantee, and it holds against every destroyer at once, including ones not yet
 written.
 
 Since `v0.36.101` no destroyer refuses on derived capabilities: each takes the
-slot out of the tree by splicing its node out (`detachDestroyedSlot`), as seL4's
+slot out of the tree by splicing it out (`spliceDeletedCdtNode`), as seL4's
 `cteDelete` does, because a refusal on another thread's derivations is a channel
 between them.  The creator-side check is what makes the orphan unconstructible.
 
@@ -289,7 +289,7 @@ simply not found.  `revokePendingTransfersFrom`, the pending-transfer delete
 guard and the parked list are gone; the creator-side check stays.
 
 Still open, and deliberately: an invariant stating parent-liveness directly
-(`∀ node, node is a derivation parent → cdtNodeSlot[node] ≠ none`) would let the
+(`∀ slot, slot is a derivation parent → the slot holds a capability`) would let the
 proof surface reject a future destroyer at elaboration time rather than relying
 on the creator's runtime check. It belongs with the CDT coverage work in PR 5,
 where the four `cspace{Mint,Copy,Move,Delete}` footprints are already being
@@ -629,9 +629,9 @@ gated on BP6, validated at BP8).**  Consumes PR 12.
 ## 5. Cross-cutting design notes
 
 - **CDT coverage = one `(stateLevelLock, .write)` member**, chosen over per-key
-  decomposition. It covers `cdt.edges` (List cons), `cdtNextNode` (counter), and
-  both `cdtSlotNode`/`cdtNodeSlot` keyed maps — including the sender-side keyed
-  entry — in one member, so the caller-root member stays READ (no read→write
+  decomposition. It covers `cdt.edges` (List cons) and the tree's child and
+  parent maps (until `v0.36.103` also the node counter and the two slot/node
+  maps) — including the sender-side keyed entry — in one member, so the caller-root member stays READ (no read→write
   upgrade that would break the shared "caller root read" shape). `stateLevelLock`
   (`LockSetTransitions.lean`) is already the declared serialization subject
   for the audit trail's List, so this is the established SM3.A.10 convention, not

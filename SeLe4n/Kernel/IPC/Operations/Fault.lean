@@ -414,9 +414,8 @@ theorem recordPendingFault_kindPreservingWrite (st : SystemState)
 
 theorem recordPendingFault_cdt_eq (st : SystemState) (tid : SeLe4n.ThreadId)
     (tf : ThreadFault) :
-    (recordPendingFault st tid tf).cdt = st.cdt
-    ∧ (recordPendingFault st tid tf).cdtNodeSlot = st.cdtNodeSlot :=
-  ⟨SystemState.updateTcb_cdt st tid _, SystemState.updateTcb_cdtNodeSlot st tid _⟩
+    (recordPendingFault st tid tf).cdt = st.cdt :=
+  SystemState.updateTcb_cdt st tid _
 
 /-- WS-RR RR4.17 (frame): recording a fault is a single TCB write — the
 scheduler is untouched, so a delivery's runnability statement reads through
@@ -590,9 +589,8 @@ theorem applyFaultRestart_kindPreservingWrite (st : SystemState)
 
 theorem applyFaultRestart_cdt_eq (st : SystemState) (faulted : SeLe4n.ThreadId)
     (frame : Architecture.FaultRestartFrame) :
-    (applyFaultRestart st faulted frame).cdt = st.cdt
-    ∧ (applyFaultRestart st faulted frame).cdtNodeSlot = st.cdtNodeSlot :=
-  ⟨SystemState.updateTcb_cdt st faulted _, SystemState.updateTcb_cdtNodeSlot st faulted _⟩
+    (applyFaultRestart st faulted frame).cdt = st.cdt :=
+  SystemState.updateTcb_cdt st faulted _
 
 /-- WS-RR RR4.15 (frame): installing a restart frame never touches the
 scheduler — it decides *where the thread resumes*, not *whether* it is

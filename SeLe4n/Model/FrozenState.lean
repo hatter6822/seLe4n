@@ -411,12 +411,9 @@ structure FrozenSystemState where
   services          : FrozenMap ServiceId ServiceGraphEntry
 
   -- CDT (FrozenMap — dual index)
-  cdtChildMap       : FrozenMap CdtNodeId (List CdtNodeId)
-  cdtParentMap      : FrozenMap CdtNodeId CdtNodeId
-  cdtSlotNode       : FrozenMap SlotRef CdtNodeId
-  cdtNodeSlot       : FrozenMap CdtNodeId SlotRef
+  cdtChildMap       : FrozenMap SlotRef (List SlotRef)
+  cdtParentMap      : FrozenMap SlotRef SlotRef
   cdtEdges          : List CapDerivationEdge  -- proof anchor (retained)
-  cdtNextNode       : CdtNodeId
 
   -- Scheduler
   scheduler         : FrozenSchedulerState
@@ -674,10 +671,7 @@ def freeze (ist : IntermediateState) : FrozenSystemState :=
     services := freezeMap st.services
     cdtChildMap := freezeMap st.cdt.childMap
     cdtParentMap := freezeMap st.cdt.parentMap
-    cdtSlotNode := freezeMap st.cdtSlotNode
-    cdtNodeSlot := freezeMap st.cdtNodeSlot
     cdtEdges := st.cdt.edges
-    cdtNextNode := st.cdtNextNode
     scheduler := freezeScheduler st
     objectTypes := freezeMap st.lifecycle.objectTypes
     machine := st.machine
@@ -719,10 +713,6 @@ theorem freeze_preserves_objectIndex (ist : IntermediateState) :
 /-- Q5-C: `freeze` preserves the CDT edges (proof anchor). -/
 theorem freeze_preserves_cdtEdges (ist : IntermediateState) :
     (freeze ist).cdtEdges = ist.state.cdt.edges := rfl
-
-/-- Q5-C: `freeze` preserves the CDT next-node counter. -/
-theorem freeze_preserves_cdtNextNode (ist : IntermediateState) :
-    (freeze ist).cdtNextNode = ist.state.cdtNextNode := rfl
 
 /-- Q5-C: `freeze` preserves the machine state. -/
 theorem freeze_preserves_machine (ist : IntermediateState) :

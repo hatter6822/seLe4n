@@ -102,7 +102,7 @@ private def fp008_objectTypes : IO Unit := do
 private def fp009_cdtMaps : IO Unit := do
   let ist := mkEmptyIntermediateState
   let fss := freeze ist
-  let nodeId : CdtNodeId := ⟨0⟩
+  let nodeId : SlotRef := { cnode := ⟨0⟩, slot := SeLe4n.Slot.ofNat 0 }
   expect "cdtChildMap empty" (fss.cdtChildMap.get? nodeId == none)
   expect "cdtParentMap empty" (fss.cdtParentMap.get? nodeId == none)
 

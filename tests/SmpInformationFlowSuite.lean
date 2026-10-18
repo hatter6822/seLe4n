@@ -307,9 +307,6 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @endpointCall_confinedToBootCore
 #check @endpointReply_confinedToBootCore
 #check @endpointReplyRecv_confinedToBootCore
-#check @attachSlotToCdtNode_confinedToCore
-#check @detachSlotFromCdt_confinedToCore
-#check @ensureCdtNodeForSlot_confinedToCore
 #check @cdtEdge_confinedToCore
 #check @cspaceLookupSlot_confinedToCore
 #check @cspaceInsertSlot_confinedToCore
@@ -7712,7 +7709,7 @@ private def ipcCapsMessage : IpcMessage :=
   { registers := #[],
     caps := #[{ cap := { target := .object lowEndpoint,
                          rights := AccessRightSet.ofList [.read] },
-                srcNode := ⟨0⟩ }],
+                srcSlot := { cnode := ⟨0⟩, slot := SeLe4n.Slot.ofNat 0 } }],
     capsGranted := true }
 
 /-- The capless shape, for the negatives. -/
@@ -10606,7 +10603,8 @@ private def transferredCap : Capability :=
   { target := .object lowNotification, rights := AccessRightSet.ofList [] }
 
 private def transferMessage : IpcMessage :=
-  { registers := #[], caps := #[TransferCap.fromNode transferredCap 0], badge := none }
+  { registers := #[], caps := #[TransferCap.fromSlot transferredCap
+    { cnode := SeLe4n.ObjId.ofNat 0, slot := SeLe4n.Slot.ofNat 0 }], badge := none }
 
 private def taintedEndpointState : SystemState :=
   let base : SystemState :=

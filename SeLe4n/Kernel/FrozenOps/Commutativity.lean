@@ -145,26 +145,6 @@ theorem FrozenMap.set_contains_eq [BEq κ] [Hashable κ] [LawfulBEq κ]
   unfold FrozenMap.contains
   rw [FrozenMap.set_indexMap_eq fm fm' k v hSet]
 
-/-- Q7-D: `frozenStoreObject` preserves CDT slot-node map. -/
-theorem frozenStoreObject_preserves_cdtSlotNode
-    (id : SeLe4n.ObjId) (obj : FrozenKernelObject)
-    (st st' : FrozenSystemState)
-    (hOk : frozenStoreObject id obj st = .ok ((), st')) :
-    st'.cdtSlotNode = st.cdtSlotNode := by
-  -- The frame is the write's, stated once at `frozenWithObjectStored`.
-  obtain ⟨_, _, hSt⟩ := frozenStoreObject_ok hOk
-  rw [hSt]
-
-/-- Q7-D: `frozenStoreObject` preserves CDT node-slot map. -/
-theorem frozenStoreObject_preserves_cdtNodeSlot
-    (id : SeLe4n.ObjId) (obj : FrozenKernelObject)
-    (st st' : FrozenSystemState)
-    (hOk : frozenStoreObject id obj st = .ok ((), st')) :
-    st'.cdtNodeSlot = st.cdtNodeSlot := by
-  -- The frame is the write's, stated once at `frozenWithObjectStored`.
-  obtain ⟨_, _, hSt⟩ := frozenStoreObject_ok hOk
-  rw [hSt]
-
 /-- Q7-D: `frozenStoreObject` preserves object types metadata. -/
 theorem frozenStoreObject_preserves_objectTypes
     (id : SeLe4n.ObjId) (obj : FrozenKernelObject)

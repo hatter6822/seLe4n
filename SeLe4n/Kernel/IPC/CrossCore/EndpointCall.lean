@@ -659,8 +659,7 @@ theorem lockSet_endpointSendOnCore_correct
 `ipcTransferSingleCap` — the one place an `.ipcTransfer` edge is made — writes
 exactly two things on its installing path: the **CNode at
 `receiverCspaceRoot`** (through `cspaceInsertSlot`), and the **`SystemState`-level
-CDT structure** (`ensureCdtNodeForSlot`'s counter and both keyed maps, plus the
-edge itself). Nothing else in the transfer mutates state.
+derivation tree** (the edge and both of its maps). Nothing else in the transfer mutates state.
 
 Both are declared, and each theorem below names one. The destination is the
 resolver's own output, so there is no gap between "the lock the bracket takes"
@@ -2107,66 +2106,57 @@ on any path. -/
 theorem endpointCallOnCore_cdt_eq
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
     (executingCore : CoreId) (st : SystemState) :
-    (endpointCallOnCore endpointId caller payload executingCore st).1.cdt = st.cdt
-      ∧ (endpointCallOnCore endpointId caller payload executingCore st).1.cdtNodeSlot
-          = st.cdtNodeSlot := by
+    (endpointCallOnCore endpointId caller payload executingCore st).1.cdt = st.cdt := by
   unfold endpointCallOnCore
   cases hEp : st.getEndpoint? endpointId with
-  | none => simp only; split <;> constructor <;> first | rfl | trivial
+  | none => simp only; split <;> rfl
   | some ep =>
     simp only
     cases hHead : ep.receiveQ.head with
     | none =>
       simp only
       cases hEnq : endpointQueueEnqueue endpointId false caller st with
-      | error e => simp only; constructor <;> first | rfl | trivial
+      | error e => simp only
       | ok st' =>
         simp only
         have e1 := endpointQueueEnqueue_cdt_eq hEnq
         cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) none with
-        | error e => simp only; constructor <;> first | rfl | trivial
+        | error e => simp only
         | ok st'' =>
           simp only
           have e2 := storeTcbIpcStateAndMessage_cdt_eq hMsg
-          exact ⟨(removeRunnableOnCore_cdt st'' caller executingCore).1.trans (e2.1.trans e1.1),
-            (removeRunnableOnCore_cdt st'' caller executingCore).2.trans (e2.2.trans e1.2)⟩
+          exact (removeRunnableOnCore_cdt st'' caller executingCore).trans (e2.trans e1)
     | some _ =>
       simp only
       cases hPop : endpointQueuePopHead endpointId true st with
-      | error e => simp only; constructor <;> first | rfl | trivial
+      | error e => simp only
       | ok pair =>
         simp only
         have e1 := endpointQueuePopHead_cdt_eq
           (show endpointQueuePopHead endpointId true st = .ok (pair.1, pair.2.1, pair.2.2) by
             rw [hPop])
         cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready (some (sendPayloadMessage st caller payload)) with
-        | error e => simp only; constructor <;> first | rfl | trivial
+        | error e => simp only
         | ok st2 =>
           simp only
           have e2 := storeTcbIpcStateAndMessage_cdt_eq hMsg
           have e3 := enqueueRunnableOnCore_cdt st2 (determineTargetCore st2 pair.1) pair.1
           cases hCS : storeTcbIpcStateAndMessage (wakeThread st2 pair.1 executingCore).1 caller
               (.blockedOnReply endpointId (some pair.1)) none with
-          | error e => simp only; constructor <;> first | rfl | trivial
+          | error e => simp only
           | ok st4 =>
             simp only
             have e4 := storeTcbIpcStateAndMessage_cdt_eq hCS
             cases hLink : SystemState.linkServerStashedReply caller pair.1 st4 with
-            | error e => simp only; constructor <;> first | rfl | trivial
+            | error e => simp only
             | ok pL =>
               obtain ⟨_, st5⟩ := pL
               simp only
               have e5 := SystemState.linkServerStashedReply_cdt_eq st4 st5 caller pair.1 hLink
-              have eW : (wakeThread st2 pair.1 executingCore).1.cdt = st2.cdt
-                  ∧ (wakeThread st2 pair.1 executingCore).1.cdtNodeSlot = st2.cdtNodeSlot := by
+              have eW : (wakeThread st2 pair.1 executingCore).1.cdt = st2.cdt := by
                 rw [wakeThread_state_eq_enqueue]; exact e3
-              refine ⟨?_, ?_⟩
-              · rw [SystemState.linkReplyWaiter_cdt,
-                  (removeRunnableOnCore_cdt st5 caller executingCore).1, e5.1, e4.1, eW.1,
-                  e2.1, e1.1]
-              · rw [SystemState.linkReplyWaiter_cdtNodeSlot,
-                  (removeRunnableOnCore_cdt st5 caller executingCore).2, e5.2, e4.2, eW.2,
-                  e2.2, e1.2]
+              rw [SystemState.linkReplyWaiter_cdt,
+                removeRunnableOnCore_cdt st5 caller executingCore, e5, e4, eW, e2, e1]
 
 open SeLe4n.Model.SystemState in
 /-- D6 (per-core): a `wakeThread` of a `.ready` thread preserves every TCB's binding (its state
@@ -2698,8 +2688,7 @@ theorem endpointCallOnCore_preserves_capabilityInvariantBundle
     capabilityInvariantBundle (endpointCallOnCore endpointId caller payload executingCore st).1 := by
   have hObjInv : st.objects.invExt := h.2.2.2.2.2.1
   exact capabilityInvariantBundle_of_kindPreserving h
-    (endpointCallOnCore_cdt_eq endpointId caller payload executingCore st).2
-    (endpointCallOnCore_cdt_eq endpointId caller payload executingCore st).1
+    (endpointCallOnCore_cdt_eq endpointId caller payload executingCore st)
     (endpointCallOnCore_preserves_objects_invExt endpointId caller payload executingCore st hObjInv)
     (endpointCallOnCore_kindPreservingWrite endpointId caller payload executingCore st hObjInv)
 

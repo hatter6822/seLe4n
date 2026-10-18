@@ -1144,10 +1144,10 @@ structure SystemState where
   interfaceRegistry : RHTable SeLe4n.InterfaceId InterfaceSpec := {}
   /-- WS-Q1-B: Registry of capability-mediated service registrations keyed by ServiceId. -/
   serviceRegistry : RHTable ServiceId ServiceRegistration := {}
-  cdt : CapDerivationTree := .empty   -- WS-E4/C-03: node-based Capability Derivation Tree
-  cdtSlotNode : RHTable SlotRef CdtNodeId := {}
-  cdtNodeSlot : RHTable CdtNodeId SlotRef := {}
-  cdtNextNode : CdtNodeId := ⟨0⟩
+  /-- WS-E4/C-03: the Capability Derivation Tree.  Its nodes are slots: since
+      WS-ZA ZA5.3 part 2 a slot is its own derivation node, as seL4's `cte_t`
+      is its own mapping-database node. -/
+  cdt : CapDerivationTree := .empty
   /-- R7-A.1/M-17: Abstract TLB state, tracking cached address translations.
       Empty by default (no stale entries at boot). Operations that modify page
       tables must flush the TLB to maintain `tlbConsistent`.
@@ -1598,9 +1598,6 @@ instance : Inhabited SystemState where
     interfaceRegistry := {}
     serviceRegistry := {}
     cdt := .empty
-    cdtSlotNode := {}
-    cdtNodeSlot := {}
-    cdtNextNode := ⟨0⟩
     tlb := TlbState.empty
     -- WS-SM SM7.A: TLB-shootdown coordination state starts quiescent
     -- at boot (all pending queues empty; every acknowledged
@@ -1679,8 +1676,6 @@ def SystemState.allTablesInvExtK (st : SystemState) : Prop :=
   st.objects.invExtK ∧
   st.irqHandlers.invExtK ∧
   st.asidTable.invExtK ∧
-  st.cdtSlotNode.invExtK ∧
-  st.cdtNodeSlot.invExtK ∧
   -- LifecycleMetadata
   st.lifecycle.objectTypes.invExtK ∧
   -- CDT
@@ -1696,8 +1691,6 @@ def SystemState.allTablesInvExtK (st : SystemState) : Prop :=
 /-- The default SystemState satisfies `allTablesInvExtK` because all tables are
 empty, and empty RHTables with capacity 16 trivially satisfy `invExtK`. -/
 theorem default_allTablesInvExtK : (default : SystemState).allTablesInvExtK := by
-  constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK 16 (by omega)
-  constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK 16 (by omega)
   constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK 16 (by omega)
   constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK 16 (by omega)
   constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK 16 (by omega)
@@ -1837,15 +1830,13 @@ theorem default_auditLogBounded :
   SeLe4n.Kernel.auditLogBounded_nil
 
 /-- U2-M: Compile-time completeness witness for `allTablesInvExtK`.
-    This theorem destructures `allTablesInvExtK` into exactly 12 named conjuncts.
+    This theorem destructures `allTablesInvExtK` into exactly 10 named conjuncts.
     If a new RHTable field is added to `SystemState` and included in
     `allTablesInvExtK` without updating this witness, the proof fails. -/
 theorem allTablesInvExtK_witness (st : SystemState) (h : st.allTablesInvExtK) :
     st.objects.invExtK ∧
     st.irqHandlers.invExtK ∧
     st.asidTable.invExtK ∧
-    st.cdtSlotNode.invExtK ∧
-    st.cdtNodeSlot.invExtK ∧
     st.lifecycle.objectTypes.invExtK ∧
     st.cdt.childMap.invExtK ∧
     st.cdt.parentMap.invExtK ∧
@@ -1958,26 +1949,6 @@ theorem default_objectCount_le_maxObjects :
     objectCount_le_maxObjects (default : SystemState) := by
   unfold objectCount_le_maxObjects objectIndexBounded maxObjects
   simp [List.length]
-
-/-- AK7-J (F-M09): Advisory invariant — the CDT next-node counter
-(`cdtNextNode`) stays strictly below the advisory bound `maxCdtDepth`
-(shared with the CDT fuel bound defined in `Model/Object/Structures.lean`).
-
-Rationale: `ensureCdtNodeForSlot` increments `cdtNextNode` each time a
-fresh CDT node must be allocated for a slot. The abstract model uses
-unbounded `Nat`, but any hardware mapping to fixed-width CDT node ids
-risks silent ID reuse once the counter overflows the hardware width.
-Callers that expose CDT node identifiers to user space via capabilities
-should gate `ensureCdtNodeForSlot` by this predicate (or its decidable
-counterpart) to preserve uniqueness. -/
-def cdtNextNodeBounded (st : SystemState) : Prop :=
-  st.cdtNextNode.val < maxCdtDepth
-
-/-- AK7-J (F-M09): The default system state satisfies `cdtNextNodeBounded`. -/
-theorem default_cdtNextNodeBounded :
-    cdtNextNodeBounded (default : SystemState) := by
-  unfold cdtNextNodeBounded maxCdtDepth
-  decide
 
 /-- Replace the object stored at `id` with `obj`.
 
@@ -2659,17 +2630,6 @@ theorem storeObject_cdt_eq
     (obj : KernelObject)
     (hStore : storeObject id obj st = .ok ((), st')) :
     st'.cdt = st.cdt := by
-  unfold storeObject at hStore; cases hStore
-  rfl
-
-/-- PR #827 #3 fold: `storeObject` preserves the CDT node→slot mapping (it only
-touches objects/lifecycle/index). -/
-theorem storeObject_cdtNodeSlot_eq
-    (st st' : SystemState)
-    (id : SeLe4n.ObjId)
-    (obj : KernelObject)
-    (hStore : storeObject id obj st = .ok ((), st')) :
-    st'.cdtNodeSlot = st.cdtNodeSlot := by
   unfold storeObject at hStore; cases hStore
   rfl
 
@@ -4428,7 +4388,7 @@ table — every one of their stores is a `storeObject`. -/
 theorem linkReply_cdt_eq (st st' : SystemState)
     (rid : SeLe4n.ReplyId) (caller : SeLe4n.ThreadId)
     (hStep : linkReply rid caller st = .ok ((), st')) :
-    st'.cdt = st.cdt ∧ st'.cdtNodeSlot = st.cdtNodeSlot := by
+    st'.cdt = st.cdt := by
   unfold linkReply at hStep
   cases hGet : st.getReply? rid with
   | none => rw [hGet] at hStep; simp at hStep
@@ -4437,7 +4397,7 @@ theorem linkReply_cdt_eq (st st' : SystemState)
     cases hCond : r.isFree with
     | true =>
       rw [if_pos hCond] at hStep
-      exact ⟨storeObject_cdt_eq _ _ _ _ hStep, storeObject_cdtNodeSlot_eq _ _ _ _ hStep⟩
+      exact storeObject_cdt_eq _ _ _ _ hStep
     | false =>
       rw [if_neg (by simp [hCond])] at hStep
       simp at hStep
@@ -4445,7 +4405,7 @@ theorem linkReply_cdt_eq (st st' : SystemState)
 theorem linkCallerReply_cdt_eq (st st' : SystemState)
     (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
     (hStep : linkCallerReply caller rid st = .ok ((), st')) :
-    st'.cdt = st.cdt ∧ st'.cdtNodeSlot = st.cdtNodeSlot := by
+    st'.cdt = st.cdt := by
   unfold linkCallerReply at hStep
   cases hLink : linkReply rid caller st with
   | error e => simp [hLink] at hStep
@@ -4458,14 +4418,13 @@ theorem linkCallerReply_cdt_eq (st st' : SystemState)
     | some tcb =>
       simp only [hT] at hStep
       split at hStep
-      · exact ⟨(storeObject_cdt_eq _ _ _ _ hStep).trans e1.1,
-          (storeObject_cdtNodeSlot_eq _ _ _ _ hStep).trans e1.2⟩
+      · exact (storeObject_cdt_eq _ _ _ _ hStep).trans e1
       · simp at hStep
 
 theorem linkServerStashedReply_cdt_eq (st st' : SystemState)
     (caller server : SeLe4n.ThreadId)
     (hStep : linkServerStashedReply caller server st = .ok ((), st')) :
-    st'.cdt = st.cdt ∧ st'.cdtNodeSlot = st.cdtNodeSlot := by
+    st'.cdt = st.cdt := by
   unfold linkServerStashedReply at hStep
   cases hStash : (st.getTcb? server).bind (·.pendingReceiveReply) with
   | none => simp [hStash] at hStep
@@ -4483,8 +4442,7 @@ theorem linkServerStashedReply_cdt_eq (st st' : SystemState)
         rw [← hStep]; exact e1
       | some sTcb =>
         simp only [hT] at hStep
-        exact ⟨(storeObject_cdt_eq _ _ _ _ hStep).trans e1.1,
-          (storeObject_cdtNodeSlot_eq _ _ _ _ hStep).trans e1.2⟩
+        exact (storeObject_cdt_eq _ _ _ _ hStep).trans e1
 
 /-- **WS-RR RR8.16** (`v0.35.199`): `consumeReply` is a `kindPreservingWrite` —
 its one store replaces a Reply with that Reply's own consumed record. -/
@@ -4815,30 +4773,6 @@ theorem consumeCallerReply_cdt_eq (st st' : SystemState)
       simp only [hT] at hStep
       rw [storeObject_cdt_eq st1 st' caller.toObjId _ hStep]; exact h1
 
-/-- PR #827 #3 fold: `consumeCallerReply` preserves the CDT node→slot mapping. -/
-theorem consumeCallerReply_cdtNodeSlot_eq (st st' : SystemState)
-    (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
-    (hStep : consumeCallerReply caller rid st = .ok ((), st')) :
-    st'.cdtNodeSlot = st.cdtNodeSlot := by
-  unfold consumeCallerReply at hStep
-  cases hCons : consumeReply rid st with
-  | error e => simp [hCons] at hStep
-  | ok p1 =>
-    obtain ⟨_, st1⟩ := p1
-    simp only [hCons] at hStep
-    have h1 : st1.cdtNodeSlot = st.cdtNodeSlot := by
-      unfold consumeReply at hCons
-      cases hGet : st.getReply? rid with
-      | none => rw [hGet] at hCons; cases hCons; rfl
-      | some r => rw [hGet] at hCons; exact storeObject_cdtNodeSlot_eq st st1 rid.toObjId _ hCons
-    cases hT : st1.getTcb? caller with
-    | none =>
-      simp only [hT, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
-      rw [← hStep]; exact h1
-    | some tcb =>
-      simp only [hT] at hStep
-      rw [storeObject_cdtNodeSlot_eq st1 st' caller.toObjId _ hStep]; exact h1
-
 /-- PR #827 #3 fold: `consumeCallerReply` never removes an object — both legs
 overwrite existing slots, so object presence is preserved. -/
 theorem consumeCallerReply_objects_isSome (st st' : SystemState)
@@ -5100,194 +5034,6 @@ noncomputable def ownedSlots (st : SystemState) (owner : CSpaceOwner) : List (Se
 def lookupObjectTypeMeta (st : SystemState) (id : SeLe4n.ObjId) : Option KernelObjectType :=
   st.lifecycle.objectTypes[id]?
 
-/-- Read the stable CDT node currently referenced by a CSpace slot, if any. -/
-def lookupCdtNodeOfSlot (st : SystemState) (ref : SlotRef) : Option CdtNodeId :=
-  st.cdtSlotNode[ref]?
-
-/-- Read the current CSpace slot backpointer of a stable CDT node, if any. -/
-def lookupCdtSlotOfNode (st : SystemState) (node : CdtNodeId) : Option SlotRef :=
-  st.cdtNodeSlot[node]?
-
-
-/-- Attach slot `ref` to `node` and maintain bidirectional consistency.
-If the slot/node already point elsewhere, stale opposite links are cleared.
-
-**T2-L (M-ST-2): Stale-link cleanup ordering rationale.**
-
-The function performs two cleanups before inserting the new bidirectional link:
-1. Erase `cdtSlotNode[prevRef]` — if `node` was previously mapped to a
-   different slot `prevRef`, that stale slot→node link must be removed.
-2. Erase `cdtNodeSlot[prevNode]` — if `ref` was previously mapped to a
-   different node `prevNode`, that stale node→slot link must be removed.
-
-These two cleanups are **independent**: they operate on different maps
-(`cdtSlotNode` vs `cdtNodeSlot`) and target different keys (`prevRef` vs
-`prevNode`). Their ordering does not matter for correctness because:
-- Each cleanup erases from a different map, so they commute.
-- The final `insert` on both maps overwrites any residual stale entry for
-  the primary key pair `(ref, node)`, so even if a cleanup is a no-op
-  (because the stale link was already absent), the result is the same.
-- The CDT consistency invariant (S3-A) requires `cdtSlotNode[ref] = some node`
-  iff `cdtNodeSlot[node] = some ref`. Both cleanups + both inserts are needed
-  to re-establish this; the order of cleanups is irrelevant. -/
-def attachSlotToCdtNode (st : SystemState) (ref : SlotRef) (node : CdtNodeId) : SystemState :=
-  let prevNode := st.cdtSlotNode[ref]?
-  let prevRef := st.cdtNodeSlot[node]?
-  let cdtSlotNode' :=
-    match prevRef with
-    | some oldRef => st.cdtSlotNode.erase oldRef
-    | none => st.cdtSlotNode
-  let cdtNodeSlot' :=
-    match prevNode with
-    | some oldNode => st.cdtNodeSlot.erase oldNode
-    | none => st.cdtNodeSlot
-  {
-    st with
-      cdtSlotNode := cdtSlotNode'.insert ref node
-      cdtNodeSlot := cdtNodeSlot'.insert node ref
-  }
-
-/-- Detach a slot from its CDT node, clearing both slot→node and node→slot maps. -/
-def detachSlotFromCdt (st : SystemState) (ref : SlotRef) : SystemState :=
-  match st.cdtSlotNode[ref]? with
-  | none => st
-  | some node =>
-      {
-        st with
-          cdtSlotNode := st.cdtSlotNode.erase ref
-          cdtNodeSlot := st.cdtNodeSlot.erase node
-      }
-
-/-- WS-SM SM7.B: `detachSlotFromCdt` is CDT-only — the TLB-shootdown
-state is framed (`pendingBounded` bundle-carriage leaf). -/
-theorem detachSlotFromCdt_tlbShootdown_eq (st : SystemState) (ref : SlotRef) :
-    (st.detachSlotFromCdt ref).tlbShootdown = st.tlbShootdown := by
-  unfold detachSlotFromCdt; split <;> rfl
-
-/-- Ensure `ref` has a CDT node; allocate one if absent. -/
-def ensureCdtNodeForSlot (st : SystemState) (ref : SlotRef) : CdtNodeId × SystemState :=
-  match st.cdtSlotNode[ref]? with
-  | some node => (node, st)
-  | none =>
-      let node := st.cdtNextNode
-      let st' :=
-        {
-          st with
-            cdtNextNode := ⟨node.val + 1⟩
-            cdtSlotNode := st.cdtSlotNode.insert ref node
-            cdtNodeSlot := st.cdtNodeSlot.insert node ref
-        }
-      (node, st')
-
-/-- AK7-J (F-M09 / MEDIUM): Checked variant of `ensureCdtNodeForSlot`
-that preserves the `cdtNextNodeBounded` invariant (defined below at
-`SystemState.lean:526`).
-
-Fails with `none` when:
-1. A fresh node would be allocated, and
-2. The current `cdtNextNode.val` is already at or above `maxCdtDepth`.
-
-Returns `some (node, st')` in the non-allocating branch (slot already
-has a CDT node) and in the allocating branch when the new counter value
-still satisfies the advisory bound. `ensureCdtNodeForSlot` remains
-available for unchecked callers; production CDT entry points that must
-guarantee bounded hardware-id allocation should route through the
-checked variant. -/
-def ensureCdtNodeForSlotChecked (st : SystemState) (ref : SlotRef) :
-    Option (CdtNodeId × SystemState) :=
-  match st.cdtSlotNode[ref]? with
-  | some node => some (node, st)
-  | none =>
-      if st.cdtNextNode.val + 1 < maxCdtDepth then
-        let node := st.cdtNextNode
-        let st' :=
-          {
-            st with
-              cdtNextNode := ⟨node.val + 1⟩
-              cdtSlotNode := st.cdtSlotNode.insert ref node
-              cdtNodeSlot := st.cdtNodeSlot.insert node ref
-          }
-        some (node, st')
-      else
-        none
-
-
-theorem attachSlotToCdtNode_objects_eq (st : SystemState) (ref : SlotRef) (node : CdtNodeId) :
-    (attachSlotToCdtNode st ref node).objects = st.objects := by
-  simp [attachSlotToCdtNode]
-
-theorem detachSlotFromCdt_objects_eq (st : SystemState) (ref : SlotRef) :
-    (detachSlotFromCdt st ref).objects = st.objects := by
-  unfold detachSlotFromCdt
-  split <;> simp
-
-theorem ensureCdtNodeForSlot_objects_eq (st : SystemState) (ref : SlotRef) :
-    (ensureCdtNodeForSlot st ref).snd.objects = st.objects := by
-  unfold ensureCdtNodeForSlot
-  split <;> rfl
-
-theorem ensureCdtNodeForSlot_scheduler_eq (st : SystemState) (ref : SlotRef) :
-    (ensureCdtNodeForSlot st ref).snd.scheduler = st.scheduler := by
-  unfold ensureCdtNodeForSlot
-  split <;> rfl
-
-/-- AK7-J (F-M09 / MEDIUM): `ensureCdtNodeForSlotChecked` preserves the
-`cdtNextNodeBounded` invariant — whenever it returns `some (_, st')`,
-the post-state satisfies the bound.
-
-This is the preservation proof that makes the checked variant safe to
-use at CDT entry points when hardware-width id uniqueness must be
-preserved. -/
-theorem ensureCdtNodeForSlotChecked_preserves_bounded
-    (st : SystemState) (ref : SlotRef) (node : CdtNodeId) (st' : SystemState)
-    (hBound : cdtNextNodeBounded st)
-    (h : ensureCdtNodeForSlotChecked st ref = some (node, st')) :
-    cdtNextNodeBounded st' := by
-  unfold ensureCdtNodeForSlotChecked at h
-  split at h
-  · -- Already has a node — state unchanged
-    cases h; exact hBound
-  · -- Fresh allocation branch
-    split at h
-    · rename_i hCheck
-      cases h
-      simp [cdtNextNodeBounded] at *
-      exact hCheck
-    · cases h
-
-/-- AK7-J (F-M09): `ensureCdtNodeForSlotChecked` preserves the object store. -/
-theorem ensureCdtNodeForSlotChecked_objects_eq
-    (st : SystemState) (ref : SlotRef) (node : CdtNodeId) (st' : SystemState)
-    (h : ensureCdtNodeForSlotChecked st ref = some (node, st')) :
-    st'.objects = st.objects := by
-  unfold ensureCdtNodeForSlotChecked at h
-  split at h
-  · cases h; rfl
-  · split at h
-    · cases h; rfl
-    · cases h
-
-theorem ensureCdtNodeForSlotChecked_scheduler_eq
-    (st : SystemState) (ref : SlotRef) (node : CdtNodeId) (st' : SystemState)
-    (h : ensureCdtNodeForSlotChecked st ref = some (node, st')) :
-    st'.scheduler = st.scheduler := by
-  unfold ensureCdtNodeForSlotChecked at h
-  split at h
-  · cases h; rfl
-  · split at h
-    · cases h; rfl
-    · cases h
-
-/-- AK7-J (F-M09): `ensureCdtNodeForSlotChecked` agrees with the unchecked
-variant whenever the invariant holds pre-call AND there's still a slot
-available. In the already-allocated branch the result matches unconditionally. -/
-theorem ensureCdtNodeForSlotChecked_eq_unchecked_of_allocated
-    (st : SystemState) (ref : SlotRef) (node : CdtNodeId)
-    (hLookup : st.cdtSlotNode[ref]? = some node) :
-    ensureCdtNodeForSlotChecked st ref = some (node, st) := by
-  unfold ensureCdtNodeForSlotChecked
-  rw [hLookup]
-
 /-- `lookupSlotCap` is determined entirely by the object store. -/
 theorem lookupSlotCap_eq_of_objects_eq
     (st₁ st₂ : SystemState)
@@ -5383,15 +5129,13 @@ theorem storeObject_preserves_allTablesInvExtK
   have hObj := hAll.1
   have hIrq := hAll.2.1
   have hAsid := hAll.2.2.1
-  have hCdtSN := hAll.2.2.2.1
-  have hCdtNS := hAll.2.2.2.2.1
-  have hObjTypes := hAll.2.2.2.2.2.1
-  have hChildMap := hAll.2.2.2.2.2.2.1
-  have hParentMap := hAll.2.2.2.2.2.2.2.1
-  have hServices := hAll.2.2.2.2.2.2.2.2.1
-  have hIfaceReg := hAll.2.2.2.2.2.2.2.2.2.1
-  have hSvcReg := hAll.2.2.2.2.2.2.2.2.2.2.1
-  have hObjIdxSet := hAll.2.2.2.2.2.2.2.2.2.2.2
+  have hObjTypes := hAll.2.2.2.1
+  have hChildMap := hAll.2.2.2.2.1
+  have hParentMap := hAll.2.2.2.2.2.1
+  have hServices := hAll.2.2.2.2.2.2.1
+  have hIfaceReg := hAll.2.2.2.2.2.2.2.1
+  have hSvcReg := hAll.2.2.2.2.2.2.2.2.1
+  have hObjIdxSet := hAll.2.2.2.2.2.2.2.2.2
   -- Prove objects insert preserves invExtK
   have hObj' := RHTable.insert_preserves_invExtK st.objects id obj hObj
   -- Prove objectTypes insert preserves invExtK
@@ -5415,8 +5159,8 @@ theorem storeObject_preserves_allTablesInvExtK
     cases obj with
     | vspaceRoot vs => exact RHTable.insert_preserves_invExtK _ _ _ hCleared
     | _ => exact hCleared
-  -- Compose all 12 components
-  exact ⟨hObj', hIrq, hAsid', hCdtSN, hCdtNS, hObjTypes',
+  -- Compose all 10 components
+  exact ⟨hObj', hIrq, hAsid', hObjTypes',
          hChildMap, hParentMap, hServices, hIfaceReg, hSvcReg,
          hObjIdxSet'⟩
 
@@ -6037,10 +5781,6 @@ either derivation table — it is `rewriteObject` at one key, and a rewrite writ
 the object store and nothing else. -/
 theorem updateTcb_cdt (st : SystemState) (tid : SeLe4n.ThreadId) (f : TCB → TCB) :
     (st.updateTcb tid f).cdt = st.cdt := by
-  unfold updateTcb; split <;> rfl
-
-theorem updateTcb_cdtNodeSlot (st : SystemState) (tid : SeLe4n.ThreadId) (f : TCB → TCB) :
-    (st.updateTcb tid f).cdtNodeSlot = st.cdtNodeSlot := by
   unfold updateTcb; split <;> rfl
 
 /-- **WS-RR RR8.16** (`v0.35.200`): ...and it is a `kindPreservingWrite`, with no

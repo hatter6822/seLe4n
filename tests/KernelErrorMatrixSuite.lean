@@ -286,7 +286,8 @@ private def row_ipcMessageTooManyCaps : KernelErrorRejection :=
       let oversized : IpcMessage :=
         { registers := #[]
           caps := Array.replicate (maxExtraCaps + 1)
-                    (TransferCap.fromNode Capability.null 0)
+                    (TransferCap.fromSlot Capability.null
+                      { cnode := SeLe4n.ObjId.ofNat 0, slot := SeLe4n.Slot.ofNat 0 })
           badge := none }
       runUnit (endpointReply (ThreadId.ofNat 1) (ThreadId.ofNat 2)
         oversized (default : SystemState)) }

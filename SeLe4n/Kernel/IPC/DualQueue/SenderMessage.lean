@@ -90,50 +90,25 @@ Returns the resolved capabilities as an array. -/
    normative specification, including the seL4 reference C kernel equivalence. -/
 def resolveExtraCaps (cspaceRoot : SeLe4n.ObjId)
     (capAddrs : Array SeLe4n.CPtr) (depth : Nat) (granted : Bool)
-    (st : SystemState) : Array TransferCap × SystemState :=
-  -- PR #873 round 14: **the authority is checked where the resource is
-  -- committed.**  Resolution mints a persistent CDT node per source slot; were
-  -- the Grant right consulted only later, at the unwrap, a sender holding Write
-  -- but not Grant would spend the bounded global node counter on every send for
-  -- a derivation that could never materialise.  One authority, read once, at
-  -- the point it decides something.
-  if !granted then (#[], st) else
+    (st : SystemState) : Array TransferCap :=
+  -- PR #873 round 14: **the authority is checked once, where it decides
+  -- something** -- a sender without the Grant right transfers nothing, so its
+  -- addresses are not looked up at all.
+  --
+  -- WS-ZA ZA5.3: resolution is a pure read (seL4 `lookupExtraCaps`).  Each
+  -- capability carries the address of the slot it was read from: the slot is
+  -- its own derivation node, so the transfer that installs it records the edge
+  -- from that slot, and nothing is minted here.  A send resolves its addresses
+  -- at the rendezvous only, so no source address is ever held across a
+  -- syscall.
+  if !granted then #[] else
   capAddrs.foldl (fun acc addr =>
-    match resolveCapAddress cspaceRoot addr depth acc.2 with
+    match resolveCapAddress cspaceRoot addr depth st with
     | .error _ => acc
     | .ok ref =>
-        match SystemState.lookupSlotCap acc.2 ref with
+        match SystemState.lookupSlotCap st ref with
         | none => acc
-        -- The derivation node of the real source slot is **minted here**, at
-        -- resolution, and carried in the message: a node id is stable across
-        -- slot moves and reuse by construction, which is what `CdtNodeId` is
-        -- for.  A send resolves its addresses at the trap (seL4's
-        -- `lookupExtraCaps`); a send that blocks discards what it resolved,
-        -- and the receive that takes its message resolves the addresses again
-        -- (WS-ZA ZA4.7, as seL4's `doNormalTransfer`), so no derivation is
-        -- ever in flight between syscalls.
-        --
-        -- Minting is idempotent for a slot that already has a node, so this
-        -- costs an allocation only the first time a slot is used as a source.
-        --
-        -- PR #873 round 8: through the **checked** minter.  The unchecked one
-        -- advances `cdtNextNode` without consulting `cdtNextNodeBounded`, and
-        -- this fold runs up to `maxExtraCaps` times per syscall — so a resolver
-        -- near the bound could carry the counter past it in one call, and a
-        -- *blocking* send commits that state before any unwrap runs.  A
-        -- fixed-width runtime allocating node ids past the bound eventually
-        -- reuses one, and a reused derivation node is a revocation that reaches
-        -- the wrong children.
-        --
-        -- Exhaustion drops the cap, which is this resolver's existing semantics
-        -- for an address it cannot resolve (seL4's silent drop) — and it is
-        -- fail-closed: a capability with no derivation node is not transferred,
-        -- so nothing is installed untracked.
-        | some cap =>
-            match SystemState.ensureCdtNodeForSlotChecked acc.2 ref with
-            | none => acc
-            | some (node, stNode) =>
-                (acc.1.push { cap := cap, srcNode := node }, stNode)) (#[], st)
+        | some cap => acc.push (TransferCap.fromSlot cap ref)) #[]
 
 
 /-- WS-ZA ZA4.7: the decode of a blocked sender's saved frame — the entry's own

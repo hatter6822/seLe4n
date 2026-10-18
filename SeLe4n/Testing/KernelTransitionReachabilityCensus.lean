@@ -1263,9 +1263,7 @@ something on this tree; the control beside it is deliberately absent, since its
 result type is not `SystemState` and a widening that admitted it would fail
 here. -/
 def nonExecutedTransitionsPrivate : List Name :=
-  [ privateIn `SeLe4n.Kernel.API `SeLe4n.Kernel.resolveExtraCapsDetailed
-  , privateIn `SeLe4n.Kernel.API `SeLe4n.Kernel.resolveExtraCapsGated
-  , privateIn `SeLe4n.Kernel.Capability.Invariant.Defs `SeLe4n.Kernel.ScrubTokenImpl.stPre
+  [ privateIn `SeLe4n.Kernel.Capability.Invariant.Defs `SeLe4n.Kernel.ScrubTokenImpl.stPre
   , privateIn `SeLe4n.Kernel.IPC.Invariant.DispatchPayoff `SeLe4n.Kernel.witnessSt1
   , privateIn `SeLe4n.Kernel.IPC.Invariant.DispatchPayoff `SeLe4n.Kernel.witnessSt2
   , privateIn `SeLe4n.Kernel.IPC.Invariant.DispatchPayoff `SeLe4n.Kernel.witnessSt3

@@ -582,10 +582,6 @@ variable (st : SystemState) (w s : ThreadId)
   (congrArg SystemState.machine (linkReplyWaiter_eq_objects st w s) :)
 @[simp] theorem linkReplyWaiter_cdt : (st.linkReplyWaiter w s).cdt = st.cdt :=
   (congrArg SystemState.cdt (linkReplyWaiter_eq_objects st w s) :)
-@[simp] theorem linkReplyWaiter_cdtNodeSlot : (st.linkReplyWaiter w s).cdtNodeSlot = st.cdtNodeSlot :=
-  (congrArg SystemState.cdtNodeSlot (linkReplyWaiter_eq_objects st w s) :)
-@[simp] theorem linkReplyWaiter_cdtSlotNode : (st.linkReplyWaiter w s).cdtSlotNode = st.cdtSlotNode :=
-  (congrArg SystemState.cdtSlotNode (linkReplyWaiter_eq_objects st w s) :)
 @[simp] theorem linkReplyWaiter_lifecycle : (st.linkReplyWaiter w s).lifecycle = st.lifecycle :=
   (congrArg SystemState.lifecycle (linkReplyWaiter_eq_objects st w s) :)
 @[simp] theorem linkReplyWaiter_objectIndex : (st.linkReplyWaiter w s).objectIndex = st.objectIndex :=
@@ -599,12 +595,6 @@ variable (st : SystemState) (w s : ThreadId)
   (congrArg SystemState.machine (unlinkReplyWaiter_eq_objects st w s) :)
 @[simp] theorem unlinkReplyWaiter_cdt : (st.unlinkReplyWaiter w s).cdt = st.cdt :=
   (congrArg SystemState.cdt (unlinkReplyWaiter_eq_objects st w s) :)
-@[simp] theorem unlinkReplyWaiter_cdtNodeSlot :
-    (st.unlinkReplyWaiter w s).cdtNodeSlot = st.cdtNodeSlot :=
-  (congrArg SystemState.cdtNodeSlot (unlinkReplyWaiter_eq_objects st w s) :)
-@[simp] theorem unlinkReplyWaiter_cdtSlotNode :
-    (st.unlinkReplyWaiter w s).cdtSlotNode = st.cdtSlotNode :=
-  (congrArg SystemState.cdtSlotNode (unlinkReplyWaiter_eq_objects st w s) :)
 @[simp] theorem unlinkReplyWaiter_lifecycle : (st.unlinkReplyWaiter w s).lifecycle = st.lifecycle :=
   (congrArg SystemState.lifecycle (unlinkReplyWaiter_eq_objects st w s) :)
 @[simp] theorem unlinkReplyWaiter_objectIndex :
@@ -711,9 +701,6 @@ theorem unlinkReplyWaiterOpt_runQueueRefined (h : st.runQueueRefined) :
     (st.unlinkReplyWaiterOpt w s?).machine = st.machine := by cases s? <;> simp [unlinkReplyWaiterOpt]
 @[simp] theorem unlinkReplyWaiterOpt_cdt :
     (st.unlinkReplyWaiterOpt w s?).cdt = st.cdt := by cases s? <;> simp [unlinkReplyWaiterOpt]
-@[simp] theorem unlinkReplyWaiterOpt_cdtNodeSlot :
-    (st.unlinkReplyWaiterOpt w s?).cdtNodeSlot = st.cdtNodeSlot := by
-  cases s? <;> simp [unlinkReplyWaiterOpt]
 @[simp] theorem unlinkReplyWaiterOpt_lifecycle :
     (st.unlinkReplyWaiterOpt w s?).lifecycle = st.lifecycle := by
   cases s? <;> simp [unlinkReplyWaiterOpt]

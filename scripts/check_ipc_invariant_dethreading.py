@@ -271,7 +271,7 @@ MACHINERY_PINS = {
     # `macro_rules` adds one tactic-category alternative (a step's stage) and
     # `macro` declares the driver tactics; none mints a declaration.
     ("SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Capability.lean", "macro"): 1,
-    ("SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Capability.lean", "macro_rules"): 8,
+    ("SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Capability.lean", "macro_rules"): 4,
     ("SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Endpoint.lean", "macro"): 4,
     ("SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Endpoint.lean", "macro_rules"): 23,
     ("SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Endpoint.lean", "syntax"): 3,

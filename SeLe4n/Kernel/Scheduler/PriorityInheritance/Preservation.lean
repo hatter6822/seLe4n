@@ -125,24 +125,6 @@ theorem updatePipBoost_preserves_cdt (st : SystemState) (tid : ThreadId) :
   updatePipBoost_frame (fun s => s.cdt) st tid
     (by intro _; rfl) (by intro _ _ _ _; rfl) (by intro _ _; rfl)
 
-/-- D4-P: `updatePipBoost` preserves `cdtSlotNode`. -/
-theorem updatePipBoost_preserves_cdtSlotNode (st : SystemState) (tid : ThreadId) :
-    (updatePipBoost st tid).cdtSlotNode = st.cdtSlotNode :=
-  updatePipBoost_frame (fun s => s.cdtSlotNode) st tid
-    (by intro _; rfl) (by intro _ _ _ _; rfl) (by intro _ _; rfl)
-
-/-- D4-P: `updatePipBoost` preserves `cdtNodeSlot`. -/
-theorem updatePipBoost_preserves_cdtNodeSlot (st : SystemState) (tid : ThreadId) :
-    (updatePipBoost st tid).cdtNodeSlot = st.cdtNodeSlot :=
-  updatePipBoost_frame (fun s => s.cdtNodeSlot) st tid
-    (by intro _; rfl) (by intro _ _ _ _; rfl) (by intro _ _; rfl)
-
-/-- D4-P: `updatePipBoost` preserves `cdtNextNode`. -/
-theorem updatePipBoost_preserves_cdtNextNode (st : SystemState) (tid : ThreadId) :
-    (updatePipBoost st tid).cdtNextNode = st.cdtNextNode :=
-  updatePipBoost_frame (fun s => s.cdtNextNode) st tid
-    (by intro _; rfl) (by intro _ _ _ _; rfl) (by intro _ _; rfl)
-
 /-- D4-P: `updatePipBoost` preserves `interfaceRegistry`. -/
 theorem updatePipBoost_preserves_interfaceRegistry (st : SystemState) (tid : ThreadId) :
     (updatePipBoost st tid).interfaceRegistry = st.interfaceRegistry :=
@@ -352,42 +334,6 @@ theorem propagate_preserves_cdt (st : SystemState) (tid : ThreadId)
     split
     · rw [ih]; exact updatePipBoost_preserves_cdt st tid
     · exact updatePipBoost_preserves_cdt st tid
-
-/-- D4-P: `propagatePriorityInheritance` preserves `cdtSlotNode`. -/
-theorem propagate_preserves_cdtSlotNode (st : SystemState) (tid : ThreadId)
-    (fuel : Nat) :
-    (propagatePriorityInheritance st tid fuel).cdtSlotNode = st.cdtSlotNode := by
-  induction fuel generalizing st tid with
-  | zero => simp [propagatePriorityInheritance]
-  | succ n ih =>
-    simp only [propagatePriorityInheritance]
-    split
-    · rw [ih]; exact updatePipBoost_preserves_cdtSlotNode st tid
-    · exact updatePipBoost_preserves_cdtSlotNode st tid
-
-/-- D4-P: `propagatePriorityInheritance` preserves `cdtNodeSlot`. -/
-theorem propagate_preserves_cdtNodeSlot (st : SystemState) (tid : ThreadId)
-    (fuel : Nat) :
-    (propagatePriorityInheritance st tid fuel).cdtNodeSlot = st.cdtNodeSlot := by
-  induction fuel generalizing st tid with
-  | zero => simp [propagatePriorityInheritance]
-  | succ n ih =>
-    simp only [propagatePriorityInheritance]
-    split
-    · rw [ih]; exact updatePipBoost_preserves_cdtNodeSlot st tid
-    · exact updatePipBoost_preserves_cdtNodeSlot st tid
-
-/-- D4-P: `propagatePriorityInheritance` preserves `cdtNextNode`. -/
-theorem propagate_preserves_cdtNextNode (st : SystemState) (tid : ThreadId)
-    (fuel : Nat) :
-    (propagatePriorityInheritance st tid fuel).cdtNextNode = st.cdtNextNode := by
-  induction fuel generalizing st tid with
-  | zero => simp [propagatePriorityInheritance]
-  | succ n ih =>
-    simp only [propagatePriorityInheritance]
-    split
-    · rw [ih]; exact updatePipBoost_preserves_cdtNextNode st tid
-    · exact updatePipBoost_preserves_cdtNextNode st tid
 
 /-- D4-P: `propagatePriorityInheritance` preserves `interfaceRegistry`. -/
 theorem propagate_preserves_interfaceRegistry (st : SystemState) (tid : ThreadId)

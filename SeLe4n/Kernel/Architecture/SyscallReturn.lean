@@ -754,9 +754,8 @@ theorem writeDeliveredFrameToTcb_kindPreservingWrite (st : SystemState)
 
 theorem writeDeliveredFrameToTcb_cdt_eq (st : SystemState) (tid : SeLe4n.ThreadId)
     (frame : SyscallReturnFrame) :
-    (writeDeliveredFrameToTcb st tid frame).cdt = st.cdt
-    ∧ (writeDeliveredFrameToTcb st tid frame).cdtNodeSlot = st.cdtNodeSlot :=
-  ⟨SystemState.updateTcb_cdt st tid _, SystemState.updateTcb_cdtNodeSlot st tid _⟩
+    (writeDeliveredFrameToTcb st tid frame).cdt = st.cdt :=
+  SystemState.updateTcb_cdt st tid _
 
 /-- WS-RA RA.B.2: read the staged return frame back out of a thread's
 register context — `Platform.FFI.readReturnValue` generalised to the
@@ -998,9 +997,8 @@ theorem writeReturnFrameToTcb_kindPreservingWrite (st : SystemState)
 
 theorem writeReturnFrameToTcb_cdt_eq (st : SystemState) (tid : SeLe4n.ThreadId)
     (frame : SyscallReturnFrame) :
-    (writeReturnFrameToTcb st tid frame).cdt = st.cdt
-    ∧ (writeReturnFrameToTcb st tid frame).cdtNodeSlot = st.cdtNodeSlot :=
-  ⟨SystemState.updateTcb_cdt st tid _, SystemState.updateTcb_cdtNodeSlot st tid _⟩
+    (writeReturnFrameToTcb st tid frame).cdt = st.cdt :=
+  SystemState.updateTcb_cdt st tid _
 
 /-- RA.B.5b frame lemma: delivery staging never touches the scheduler —
 every arm is either `writeReturnFrameToTcb` (whose `_scheduler_eq` this
@@ -1206,19 +1204,18 @@ theorem stageDeliveredMessage_kindPreservingWrite (st : SystemState)
 /-- **WS-RR RR8.16** (`v0.35.200`): ...and writes neither derivation table. -/
 theorem stageDeliveredMessage_cdt_eq (st : SystemState) (tid : SeLe4n.ThreadId)
     (installedCaps : Nat) :
-    (stageDeliveredMessage st tid installedCaps).cdt = st.cdt
-    ∧ (stageDeliveredMessage st tid installedCaps).cdtNodeSlot = st.cdtNodeSlot := by
+    (stageDeliveredMessage st tid installedCaps).cdt = st.cdt := by
   unfold stageDeliveredMessage
   cases st.getTcb? tid with
-  | none => constructor <;> first | rfl | trivial
+  | none => all_goals rfl
   | some tcb =>
       by_cases hReady : tcb.ipcState = .ready
       · simp only [hReady, if_pos]
         cases tcb.pendingMessage with
-        | none => constructor <;> first | rfl | trivial
+        | none => all_goals rfl
         | some msg => exact writeDeliveredFrameToTcb_cdt_eq st tid _
       · simp only [hReady, if_false]
-        constructor <;> first | rfl | trivial
+        all_goals rfl
 
 /-- **WS-RR RR8.16** (`v0.35.200`): and the woken-delivery stager inherits both. -/
 theorem stageWokenDelivery_kindPreservingWrite (st : SystemState)
@@ -1230,10 +1227,9 @@ theorem stageWokenDelivery_kindPreservingWrite (st : SystemState)
 
 theorem stageWokenDelivery_cdt_eq (st : SystemState)
     (woken? : Option SeLe4n.ThreadId) (installedCaps : Nat) :
-    (stageWokenDelivery st woken? installedCaps).cdt = st.cdt
-    ∧ (stageWokenDelivery st woken? installedCaps).cdtNodeSlot = st.cdtNodeSlot := by
+    (stageWokenDelivery st woken? installedCaps).cdt = st.cdt := by
   cases woken? with
-  | none => constructor <;> first | rfl | trivial
+  | none => all_goals rfl
   | some tid => exact stageDeliveredMessage_cdt_eq st tid installedCaps
 
 /-- RA.B.5b frame lemma: neither stager touches the machine. -/

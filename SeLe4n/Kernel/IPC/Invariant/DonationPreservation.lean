@@ -1418,19 +1418,17 @@ theorem donateSchedContext_cdt_eq
     (st st' : SystemState) (clientTid serverTid : SeLe4n.ThreadId)
     (clientScId : SeLe4n.SchedContextId)
     (h : donateSchedContext st clientTid serverTid clientScId = .ok st') :
-    st'.cdt = st.cdt ∧ st'.cdtNodeSlot = st.cdtNodeSlot := by
+    st'.cdt = st.cdt := by
   obtain ⟨_, _, _, _, _, _, s1, s2, s3, s4, _, _, _, _, hS1, hS2, _, hS3, _, hS4, hEq⟩ :=
     donateSchedContext_ok_storeChain st st' clientTid serverTid clientScId h
-  have e1 : s1.cdt = st.cdt ∧ s1.cdtNodeSlot = st.cdtNodeSlot :=
-    ⟨storeObject_cdt_eq _ _ _ _ hS1, (storeObject_cdtNodeSlot_eq _ _ _ _ hS1).1⟩
+  have e1 : s1.cdt = st.cdt :=
+    storeObject_cdt_eq _ _ _ _ hS1
   have e2 := storeDonationFramePush_cdt_eq hS2
-  have e3 : s3.cdt = s2.cdt ∧ s3.cdtNodeSlot = s2.cdtNodeSlot :=
-    ⟨storeObject_cdt_eq _ _ _ _ hS3, (storeObject_cdtNodeSlot_eq _ _ _ _ hS3).1⟩
-  have e4 : s4.cdt = s3.cdt ∧ s4.cdtNodeSlot = s3.cdtNodeSlot :=
-    ⟨storeObject_cdt_eq _ _ _ _ hS4, (storeObject_cdtNodeSlot_eq _ _ _ _ hS4).1⟩
-  refine ⟨?_, ?_⟩
-  · rw [show st'.cdt = s4.cdt by rw [hEq], e4.1, e3.1, e2.1, e1.1]
-  · rw [show st'.cdtNodeSlot = s4.cdtNodeSlot by rw [hEq], e4.2, e3.2, e2.2, e1.2]
+  have e3 : s3.cdt = s2.cdt :=
+    storeObject_cdt_eq _ _ _ _ hS3
+  have e4 : s4.cdt = s3.cdt :=
+    storeObject_cdt_eq _ _ _ _ hS4
+  rw [show st'.cdt = s4.cdt by rw [hEq], e4, e3, e2, e1]
 
 /-- WS-RR RR2.6: `applyCallDonation` preserves the object store's extended
 invariant — the no-op arm trivially, the donating arm through
@@ -1490,9 +1488,9 @@ theorem applyCallDonation_kindPreservingWrite
 theorem applyCallDonation_cdt_eq
     (st st' : SystemState) (callerVtid receiverVtid : SeLe4n.ValidThreadId)
     (h : applyCallDonation st callerVtid receiverVtid = .ok st') :
-    st'.cdt = st.cdt ∧ st'.cdtNodeSlot = st.cdtNodeSlot := by
+    st'.cdt = st.cdt := by
   cases hSc : callDonationSchedContext? st callerVtid.val receiverVtid.val with
-  | none => rw [applyCallDonation_characterisation, hSc] at h; cases h; exact ⟨rfl, rfl⟩
+  | none => rw [applyCallDonation_characterisation, hSc] at h; cases h; exact rfl
   | some scId =>
       rw [applyCallDonation_characterisation, hSc] at h
       exact donateSchedContext_cdt_eq st st' callerVtid.val receiverVtid.val scId h
@@ -1519,14 +1517,13 @@ theorem applyCallDonationOnCore_cdt_eq
     (st st'' : SystemState) (callerVtid receiverVtid : SeLe4n.ValidThreadId)
     (donorHome doneeHome : CoreId)
     (h : applyCallDonationOnCore st callerVtid receiverVtid donorHome doneeHome = .ok st'') :
-    st''.cdt = st.cdt ∧ st''.cdtNodeSlot = st.cdtNodeSlot := by
+    st''.cdt = st.cdt := by
   obtain ⟨st1, hDon, harm⟩ := applyCallDonationOnCore_ok_decompose st st'' callerVtid receiverVtid
     donorHome doneeHome h
   have e1 := applyCallDonation_cdt_eq st st1 callerVtid receiverVtid hDon
   rcases harm with ⟨_, hEq⟩ | ⟨scId, _, hEq⟩ <;> subst hEq
   · exact e1
-  · exact ⟨(migrateSchedContextReplenishment_cdt _ _ _ _).trans e1.1,
-      (migrateSchedContextReplenishment_cdtNodeSlot _ _ _ _).trans e1.2⟩
+  · exact (migrateSchedContextReplenishment_cdt _ _ _ _).trans e1
 
 /-- WS-RR RR2.5: `applyCallDonation` establishes the read agreement — the no-op
 arm reflexively, the donating arm through `donateSchedContext`. -/

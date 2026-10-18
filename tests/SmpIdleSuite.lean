@@ -836,7 +836,8 @@ private def runBootValidationParityChecks : IO Unit := do
      SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot
        (.tcb { tcbWithTid ⟨9⟩ with
                 pendingMessage := some { registers := #[],
-                                         caps := #[{ cap := idleCap, srcNode := ⟨0⟩ }] } }) == true)
+                                         caps := #[{ cap := idleCap,
+                                                     srcSlot := { cnode := ⟨0⟩, slot := SeLe4n.Slot.ofNat 0 } }] } }) == true)
   assertBool "NEGATIVE: a boot Reply's own id and its prev link are read"
     (SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot
        (.reply { replyId := idleReplyId }) == true &&

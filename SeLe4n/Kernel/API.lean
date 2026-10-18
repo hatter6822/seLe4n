@@ -1188,27 +1188,20 @@ theorem syscallChecksTargetFirst_iff (id : SyscallId) :
     resolver and `resolveExtraCapsGated` have no production caller. -/
 private def resolveExtraCapsDetailed (cspaceRoot : SeLe4n.ObjId)
     (capAddrs : Array SeLe4n.CPtr) (depth : Nat) (granted : Bool)
-    (st : SystemState) : (Array TransferCap × Bool) × SystemState :=
+    (st : SystemState) : Array TransferCap × Bool :=
   -- PR #873 round 14: the same gate, for the same reason.  `isPartial` stays
   -- `false`: a sender without Grant did not fail to resolve anything, it had
   -- nothing to resolve, and reporting a partial resolution would tell a caller
   -- its capabilities were dropped when they were never eligible.
-  if !granted then ((#[], false), st) else
+  if !granted then (#[], false) else
   capAddrs.foldl (fun acc addr =>
-    match resolveCapAddress cspaceRoot addr depth acc.2 with
-    | .error _ => ((acc.1.1, true), acc.2)   -- partial: lookup failed
+    match resolveCapAddress cspaceRoot addr depth st with
+    | .error _ => (acc.1, true)   -- partial: lookup failed
     | .ok ref =>
-        match SystemState.lookupSlotCap acc.2 ref with
-        | none => ((acc.1.1, true), acc.2)   -- partial: slot empty
-        | some cap =>
-            -- PR #873 round 8: the checked minter here too, and exhaustion is
-            -- reported rather than dropped silently — this resolver's whole
-            -- purpose is to surface what the ABI path drops.
-            match SystemState.ensureCdtNodeForSlotChecked acc.2 ref with
-            | none => ((acc.1.1, true), acc.2)   -- partial: CDT node budget exhausted
-            | some (node, stNode) =>
-                ((acc.1.1.push { cap := cap, srcNode := node }, acc.1.2), stNode))
-    ((#[], false), st)
+        match SystemState.lookupSlotCap st ref with
+        | none => (acc.1, true)   -- partial: slot empty
+        | some cap => (acc.1.push (TransferCap.fromSlot cap ref), acc.2))
+    (#[], false)
 
 /- **Retired at `v0.36.2` (WS-BP BP1.1 preparation): the
 `sele4n.debug.noisyResolution` option.**  It was a `register_option` that no
@@ -1229,7 +1222,7 @@ partial-resolution policy"): a deployment constant the dispatch arms read. -/
     candidate; registered in `docs/REGISTERED_DEBT.md` (Registered debt index, C.1). -/
 theorem resolveExtraCapsDetailed_empty
     (cspaceRoot : SeLe4n.ObjId) (depth : Nat) (granted : Bool) (st : SystemState) :
-    resolveExtraCapsDetailed cspaceRoot #[] depth granted st = ((#[], false), st) := by
+    resolveExtraCapsDetailed cspaceRoot #[] depth granted st = (#[], false) := by
   cases granted <;> rfl
 
 /-- AN7-E (API-M01): the silent-drop variant on the empty input is also
@@ -1237,25 +1230,24 @@ theorem resolveExtraCapsDetailed_empty
     that in the base case both variants agree (vacuously). -/
 theorem resolveExtraCaps_empty
     (cspaceRoot : SeLe4n.ObjId) (depth : Nat) (granted : Bool) (st : SystemState) :
-    resolveExtraCaps cspaceRoot #[] depth granted st = (#[], st) := by
+    resolveExtraCaps cspaceRoot #[] depth granted st = #[] := by
   cases granted <;> rfl
 
 /-- **PR #873 round 14: a sender without Grant resolves nothing, whatever it
-asked for.**  The statement the gate is for: not merely that the caps are
-denied later, but that the *state is untouched* -- no CDT node minted, no slot
-marked as having a transfer in flight.  Stated over an arbitrary address array,
-so it is the resolver's contract rather than a fact about one input. -/
+asked for.**  The statement the gate is for: its addresses are not even looked
+up.  Stated over an arbitrary address array, so it is the resolver's contract
+rather than a fact about one input. -/
 theorem resolveExtraCaps_ungranted
     (cspaceRoot : SeLe4n.ObjId) (capAddrs : Array SeLe4n.CPtr) (depth : Nat)
     (st : SystemState) :
-    resolveExtraCaps cspaceRoot capAddrs depth false st = (#[], st) := rfl
+    resolveExtraCaps cspaceRoot capAddrs depth false st = #[] := rfl
 
 /-- The same for the detailed resolver, including that it reports **complete**
 rather than partial: nothing failed to resolve, there was nothing eligible. -/
 theorem resolveExtraCapsDetailed_ungranted
     (cspaceRoot : SeLe4n.ObjId) (capAddrs : Array SeLe4n.CPtr) (depth : Nat)
     (st : SystemState) :
-    resolveExtraCapsDetailed cspaceRoot capAddrs depth false st = ((#[], false), st) := rfl
+    resolveExtraCapsDetailed cspaceRoot capAddrs depth false st = (#[], false) := rfl
 
 /-- AN7-E (API-M01): Gated resolver for production dispatch arms that
     want to surface partial resolution explicitly.  Returns
@@ -1266,16 +1258,16 @@ theorem resolveExtraCapsDetailed_ungranted
     `resolveExtraCapsDetailed`). -/
 private def resolveExtraCapsGated (cspaceRoot : SeLe4n.ObjId)
     (capAddrs : Array SeLe4n.CPtr) (depth : Nat) (granted : Bool)
-    (st : SystemState) : Except KernelError (Array TransferCap × SystemState) :=
-  let ((caps, isPartial), stNodes) := resolveExtraCapsDetailed cspaceRoot capAddrs depth granted st
-  if isPartial then .error .partialResolution else .ok (caps, stNodes)
+    (st : SystemState) : Except KernelError (Array TransferCap) :=
+  let (caps, isPartial) := resolveExtraCapsDetailed cspaceRoot capAddrs depth granted st
+  if isPartial then .error .partialResolution else .ok caps
 
 /-- AN7-E (API-M01): The gated resolver returns `.ok #[]` on empty input
     (no addresses to resolve → no partial condition possible).  Base case
     of the gated-resolver contract. -/
 theorem resolveExtraCapsGated_empty
     (cspaceRoot : SeLe4n.ObjId) (depth : Nat) (granted : Bool) (st : SystemState) :
-    resolveExtraCapsGated cspaceRoot #[] depth granted st = .ok (#[], st) := by
+    resolveExtraCapsGated cspaceRoot #[] depth granted st = .ok #[] := by
   unfold resolveExtraCapsGated
   simp [resolveExtraCapsDetailed_empty]
 

@@ -148,8 +148,7 @@ theorem cspaceInsertSlot_preserves_capabilityInvariantBundle
     exact ⟨cspaceSlotCountBounded_of_storeObject_cnode st st' addr.cnode
         (preCn.insert addr.slot cap) hBounded hObjInv hStore (hSlotCapacity preCn hPre),
       cdtCompleteness_of_storeObject st st' addr.cnode
-        (.cnode (preCn.insert addr.slot cap)) hComp hObjInv hStore
-        (storeObject_cdtNodeSlot_eq st st' addr.cnode _ hStore).1,
+        (.cnode (preCn.insert addr.slot cap)) hComp hObjInv hStore,
       cdtAcyclicity_of_cdt_eq st st' hAcyclic
         (storeObject_cdt_eq st st' addr.cnode _ hStore),
       cspaceDepthConsistent_of_storeObject_insertCNode
@@ -184,18 +183,17 @@ theorem cspaceDeleteSlotCore_preserves_replyCapPointsToValidReply
       | ok pair =>
         obtain ⟨_, st1⟩ := pair
         simp only [hStore] at hStep
-        obtain ⟨rfl⟩ : st' = SystemState.detachSlotFromCdt st1 addr ∧ True := by
-          simp only [Except.ok.injEq, Prod.mk.injEq] at hStep; exact ⟨hStep.2.symm, trivial⟩
-        have hObjChain : (SystemState.detachSlotFromCdt st1 addr).objects = st1.objects :=
-          SystemState.detachSlotFromCdt_objects_eq st1 addr
+        have hEq : st' = st1 := by
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hStep; exact hStep.2.symm
+        rw [hEq]
         have hMidSelf : st1.objects[addr.cnode]? = some (.cnode (cn.remove addr.slot)) :=
           storeObject_objects_eq st st1 addr.cnode _ hObjInv hStore
         have hMidNe : ∀ oid, oid ≠ addr.cnode → st1.objects[oid]? = st.objects[oid]? :=
           fun oid h => storeObject_objects_ne st st1 addr.cnode oid _ h hObjInv hStore
         have hGetReply : ∀ rid : SeLe4n.ReplyId,
-            (SystemState.detachSlotFromCdt st1 addr).getReply? rid = st.getReply? rid := by
+            st1.getReply? rid = st.getReply? rid := by
           intro rid
-          simp only [SystemState.getReply?, hObjChain]
+          simp only [SystemState.getReply?]
           by_cases hc : rid.toObjId = addr.cnode
           · rw [hc, hMidSelf, hPre]
           · rw [hMidNe rid.toObjId hc]
@@ -203,7 +201,7 @@ theorem cspaceDeleteSlotCore_preserves_replyCapPointsToValidReply
         rw [hGetReply]
         by_cases hc : oid = addr.cnode
         · subst hc
-          rw [hObjChain, hMidSelf] at hObj
+          rw [hMidSelf] at hObj
           simp only [Option.some.injEq, KernelObject.cnode.injEq] at hObj
           subst hObj
           by_cases hs : slot = addr.slot
@@ -212,14 +210,13 @@ theorem cspaceDeleteSlotCore_preserves_replyCapPointsToValidReply
           · rw [CNode.lookup_remove_ne cn addr.slot slot (Ne.symm hs)
               (CNode.slotsUnique_holds cn)] at hLook
             exact hRCPV addr.cnode cn slot cap' rid hPre hLook hTgt
-        · rw [hObjChain, hMidNe oid hc] at hObj
+        · rw [hMidNe oid hc] at hObj
           exact hRCPV oid cn' slot cap' rid hObj hLook hTgt
 
 -- **WS-RR RR8.16** (`v0.35.201`): `cspaceInsertSlot_cdt_eq` was declared here,
 -- beside its `cdtMapsConsistent` consumer.  It is a *frame over a primitive*, so
 -- it lives beside the primitive in `Kernel/Capability/Operations.lean` now,
--- together with the `cdtNodeSlot` sibling the copy/move path used to re-derive
--- inline.  Its consumer stays here, which is where an invariant-preservation
+-- Its consumer stays here, which is where an invariant-preservation
 -- statement belongs.
 
 /-- S3-D: `cspaceInsertSlot` preserves `cdtMapsConsistent`. Insert only calls

@@ -1286,9 +1286,9 @@ theorem modifyTcb_kindPreservingWrite {st st' : SystemState} {tid : SeLe4n.Threa
 /-- **Audit IPC-5**: ...and it writes neither CDT table. -/
 theorem modifyTcb_cdt_eq {st st' : SystemState} {tid : SeLe4n.ThreadId}
     {f : TCB → TCB} (h : modifyTcb st tid f = .ok st') :
-    st'.cdt = st.cdt ∧ st'.cdtNodeSlot = st.cdtNodeSlot := by
+    st'.cdt = st.cdt := by
   obtain ⟨_, _, hS⟩ := modifyTcb_ok_decompose h
-  exact ⟨storeObject_cdt_eq _ _ _ _ hS, storeObject_cdtNodeSlot_eq _ _ _ _ hS⟩
+  exact storeObject_cdt_eq _ _ _ _ hS
 
 /-- WS-ZA ZA4.4: a notification survives a TCB field write — the key the write
 stores at held a TCB. -/
@@ -1368,9 +1368,9 @@ theorem modifyTcbOpt_kindPreservingWrite {st st' : SystemState}
 
 theorem modifyTcbOpt_cdt_eq {st st' : SystemState} {t? : Option SeLe4n.ThreadId}
     {f : TCB → TCB} (h : modifyTcbOpt st t? f = .ok st') :
-    st'.cdt = st.cdt ∧ st'.cdtNodeSlot = st.cdtNodeSlot := by
+    st'.cdt = st.cdt := by
   rcases modifyTcbOpt_ok_cases h with ⟨_, rfl⟩ | ⟨_, _, h⟩
-  · exact ⟨rfl, rfl⟩
+  · exact rfl
   · exact modifyTcb_cdt_eq h
 
 /-- **WS-RR RR8.16** (`v0.35.200`): the resolving spelling of the delivery store
@@ -1393,7 +1393,7 @@ theorem storeTcbIpcStateAndMessage_cdt_eq
     {st st' : SystemState} {tid : SeLe4n.ThreadId}
     {ipcState : ThreadIpcState} {msg : Option IpcMessage}
     (hStore : storeTcbIpcStateAndMessage st tid ipcState msg = .ok st') :
-    st'.cdt = st.cdt ∧ st'.cdtNodeSlot = st.cdtNodeSlot :=
+    st'.cdt = st.cdt :=
   modifyTcb_cdt_eq hStore
 
 /-- **WS-RR RR8.16** (`v0.35.199`): the delivery store is a
@@ -1430,7 +1430,7 @@ theorem storeTcbIpcStateAndMessage_fromTcb_cdt_eq
     {st st' : SystemState} {tid : SeLe4n.ThreadId} {tcb : TCB}
     {ipcState : ThreadIpcState} {msg : Option IpcMessage}
     (hStore : storeTcbIpcStateAndMessage_fromTcb st tid tcb ipcState msg = .ok st') :
-    st'.cdt = st.cdt ∧ st'.cdtNodeSlot = st.cdtNodeSlot := by
+    st'.cdt = st.cdt := by
   unfold storeTcbIpcStateAndMessage_fromTcb at hStore
   cases hS : storeObject tid.toObjId
       (.tcb (TCB.setIpcState { tcb with pendingMessage := msg } ipcState)) st with
@@ -1440,7 +1440,7 @@ theorem storeTcbIpcStateAndMessage_fromTcb_cdt_eq
     rw [hS] at hStore
     simp only [Except.ok.injEq] at hStore
     subst hStore
-    exact ⟨storeObject_cdt_eq _ _ _ _ hS, storeObject_cdtNodeSlot_eq _ _ _ _ hS⟩
+    exact storeObject_cdt_eq _ _ _ _ hS
 
 /-- WS-L1/L1-B: Equivalence theorem — `_fromTcb` produces identical results
 to the original when the provided TCB matches the state. All existing
@@ -1815,14 +1815,13 @@ theorem storeDonationFramePush_cdt_eq
     {scId : SeLe4n.SchedContextId} {pushRid : SeLe4n.ReplyId} {pushReply : Reply}
     {oldHead? : Option SeLe4n.ReplyId} {st st' : SystemState}
     (h : storeDonationFramePush scId pushRid pushReply oldHead? st = .ok st') :
-    st'.cdt = st.cdt ∧ st'.cdtNodeSlot = st.cdtNodeSlot := by
+    st'.cdt = st.cdt := by
   obtain ⟨_, s1, hS1, hRest⟩ := storeDonationFramePush_cases h
-  have e1 : s1.cdt = st.cdt ∧ s1.cdtNodeSlot = st.cdtNodeSlot :=
-    ⟨storeObject_cdt_eq _ _ _ _ hS1, storeObject_cdtNodeSlot_eq _ _ _ _ hS1⟩
+  have e1 : s1.cdt = st.cdt :=
+    storeObject_cdt_eq _ _ _ _ hS1
   rcases hRest with ⟨_, rfl⟩ | ⟨_, _, _, _, hS2⟩
   · exact e1
-  · exact ⟨(storeObject_cdt_eq _ _ _ _ hS2).trans e1.1,
-      (storeObject_cdtNodeSlot_eq _ _ _ _ hS2).trans e1.2⟩
+  · exact (storeObject_cdt_eq _ _ _ _ hS2).trans e1
 
 /-- The pushed frame's record afterwards. -/
 theorem storeDonationFramePush_getReply?_pushed
@@ -4554,27 +4553,27 @@ theorem storeDonationHeadPop_non_reply_eq
 the ASID table. -/
 theorem storeDonationHeadClear_cdt_eq {head? : Option SeLe4n.ReplyId} {st st' : SystemState}
     (h : storeDonationHeadClear head? st = .ok st') :
-    st'.cdt = st.cdt ∧ st'.cdtNodeSlot = st.cdtNodeSlot := by
+    st'.cdt = st.cdt := by
   rcases storeDonationHeadClear_cases h with rfl | ⟨rid, r, _, _, hS⟩
-  · exact ⟨rfl, rfl⟩
-  · exact ⟨storeObject_cdt_eq _ _ _ _ hS, storeObject_cdtNodeSlot_eq _ _ _ _ hS⟩
+  · exact rfl
+  · exact storeObject_cdt_eq _ _ _ _ hS
 
 /-- WS-RR RR8.16 (`v0.35.199`): and neither does the re-head. -/
 theorem storeReplyReHead_cdt_eq {scId : SeLe4n.SchedContextId}
     {below? : Option SeLe4n.ReplyId} {st st' : SystemState}
     (h : storeReplyReHead scId below? st = .ok st') :
-    st'.cdt = st.cdt ∧ st'.cdtNodeSlot = st.cdtNodeSlot := by
+    st'.cdt = st.cdt := by
   rcases storeReplyReHead_cases h with rfl | ⟨rid, r, _, _, hS⟩
-  · exact ⟨rfl, rfl⟩
-  · exact ⟨storeObject_cdt_eq _ _ _ _ hS, storeObject_cdtNodeSlot_eq _ _ _ _ hS⟩
+  · exact rfl
+  · exact storeObject_cdt_eq _ _ _ _ hS
 
 /-- WS-RR RR8.16 (`v0.35.199`): so the pop writes no CDT table either. -/
 theorem storeDonationHeadPop_cdt_eq {scId : SeLe4n.SchedContextId}
     {head? : Option (SeLe4n.ReplyId × Reply)} {st st' : SystemState}
     (h : storeDonationHeadPop scId head? st = .ok st') :
-    st'.cdt = st.cdt ∧ st'.cdtNodeSlot = st.cdtNodeSlot := by
+    st'.cdt = st.cdt := by
   cases head? with
-  | none => cases h; exact ⟨rfl, rfl⟩
+  | none => cases h; exact rfl
   | some p =>
       obtain ⟨rid, r⟩ := p
       rw [storeDonationHeadPop_some] at h
@@ -4586,7 +4585,7 @@ theorem storeDonationHeadPop_cdt_eq {scId : SeLe4n.SchedContextId}
           simp only at h
           have h1 := storeDonationHeadClear_cdt_eq hClear
           have h2 := storeReplyReHead_cdt_eq h
-          exact ⟨h2.1.trans h1.1, h2.2.trans h1.2⟩
+          exact h2.trans h1
 
 /-- WS-RR RR8.16 (`v0.35.199`): the pop is a `kindPreservingWrite` — every key
 it touches held a Reply and still holds one, and every other key is untouched.
@@ -5000,16 +4999,6 @@ theorem spliceReplyFrameStores_cdt_eq {st st' : SystemState}
   · exact storeObject_cdt_eq st st' _ _ hS
   · exact ((storeObject_cdt_eq s2 st' _ _ hS3).trans
       (storeObject_cdt_eq s1 s2 _ _ hS2)).trans (storeObject_cdt_eq st s1 _ _ hS1)
-
-theorem spliceReplyFrameStores_cdtNodeSlot_eq {st st' : SystemState}
-    {rid above : SeLe4n.ReplyId} {r a : Reply}
-    (h : spliceReplyFrameStores st rid above r a = .ok st') :
-    st'.cdtNodeSlot = st.cdtNodeSlot := by
-  rcases spliceReplyFrameStores_cases h with ⟨_, hS⟩ | ⟨_, _, s1, s2, _, hS1, hS2, hS3⟩
-  · exact storeObject_cdtNodeSlot_eq st st' _ _ hS
-  · exact ((storeObject_cdtNodeSlot_eq s2 st' _ _ hS3).trans
-      (storeObject_cdtNodeSlot_eq s1 s2 _ _ hS2)).trans
-      (storeObject_cdtNodeSlot_eq st s1 _ _ hS1)
 
 /-- A key holding no Reply is untouched. -/
 theorem spliceReplyFrameStores_non_reply_eq {st st' : SystemState}
@@ -6199,12 +6188,6 @@ theorem spliceReplyFrameOut_cdt_eq {st st' : SystemState} {rid : SeLe4n.ReplyId}
   · rfl
   · exact spliceReplyFrameStores_cdt_eq hS
 
-theorem spliceReplyFrameOut_cdtNodeSlot_eq {st st' : SystemState} {rid : SeLe4n.ReplyId}
-    (h : spliceReplyFrameOut st rid = .ok st') : st'.cdtNodeSlot = st.cdtNodeSlot := by
-  rcases spliceReplyFrameOut_cases h with rfl | ⟨_, _, _, _, _, _, _, hS⟩
-  · rfl
-  · exact spliceReplyFrameStores_cdtNodeSlot_eq hS
-
 /-- The splice refuses only where there is a frame above to repair, so a `rid`
 with none is the identity on either arm. -/
 theorem spliceReplyFrameOutOrSelf_eq_self_of_no_frame_above (st : SystemState)
@@ -6248,12 +6231,6 @@ theorem spliceReplyFrameOutOrSelf_cdt_eq (st : SystemState) (rid : SeLe4n.ReplyI
   rcases spliceReplyFrameOutOrSelf_cases st rid with h | h
   · rw [h]
   · exact spliceReplyFrameOut_cdt_eq h
-
-theorem spliceReplyFrameOutOrSelf_cdtNodeSlot_eq (st : SystemState) (rid : SeLe4n.ReplyId) :
-    (spliceReplyFrameOutOrSelf st rid).cdtNodeSlot = st.cdtNodeSlot := by
-  rcases spliceReplyFrameOutOrSelf_cases st rid with h | h
-  · rw [h]
-  · exact spliceReplyFrameOut_cdtNodeSlot_eq h
 
 theorem spliceReplyFrameOutOrSelf_preserves_objects_invExt (st : SystemState)
     (rid : SeLe4n.ReplyId) (hInv : st.objects.invExt) :
@@ -6460,14 +6437,6 @@ theorem removeCallerReplyFrame_cdt_eq (st st' : SystemState)
   rw [removeCallerReplyFrame_eq] at hStep
   exact (SystemState.consumeCallerReply_cdt_eq _ st' caller rid hStep).trans
     (spliceReplyFrameOutOrSelf_cdt_eq st rid)
-
-theorem removeCallerReplyFrame_cdtNodeSlot_eq (st st' : SystemState)
-    (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
-    (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :
-    st'.cdtNodeSlot = st.cdtNodeSlot := by
-  rw [removeCallerReplyFrame_eq] at hStep
-  exact (SystemState.consumeCallerReply_cdtNodeSlot_eq _ st' caller rid hStep).trans
-    (spliceReplyFrameOutOrSelf_cdtNodeSlot_eq st rid)
 
 /-- **WS-RR RR8.16** (`v0.35.199`): the splice is a `kindPreservingWrite` — it
 rewrites the stack links of up to three Reply objects and touches nothing else,
@@ -8330,22 +8299,16 @@ theorem returnDonatedSchedContext_cdt_eq
     {scId : SeLe4n.SchedContextId} {originalOwner : SeLe4n.ThreadId}
     {newOwner? : Option SeLe4n.ThreadId}
     (h : returnDonatedSchedContext st serverTid scId originalOwner newOwner? = .ok st') :
-    st'.cdt = st.cdt ∧ st'.cdtNodeSlot = st.cdtNodeSlot := by
+    st'.cdt = st.cdt := by
   obtain ⟨sc, head?, clientTcb, serverTcb, s1, s2, s3, s4,
     _hSc, _, _, _hHead, hS1, hClear, _hL1, hS3, _hL2, hS4, hEq⟩ :=
     returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
   have e1 := storeObject_cdt_eq st s1 _ _ hS1
-  have e1' := storeObject_cdtNodeSlot_eq st s1 _ _ hS1
   have e2 := storeDonationHeadPop_cdt_eq hClear
   have e3 := storeObject_cdt_eq s2 s3 _ _ hS3
-  have e3' := storeObject_cdtNodeSlot_eq s2 s3 _ _ hS3
   have e4 := storeObject_cdt_eq s3 s4 _ _ hS4
-  have e4' := storeObject_cdtNodeSlot_eq s3 s4 _ _ hS4
-  refine ⟨?_, ?_⟩
-  · rw [hEq]; simp only
-    rw [e4, e3, e2.1, e1]
-  · rw [hEq]; simp only
-    rw [e4', e3', e2.2, e1']
+  rw [hEq]; simp only
+  rw [e4, e3, e2, e1]
 
 /-- WS-OD OD3.2: the donation return preserves the object store's extended
 invariant.  Relocated off the store chain, where it was a fifth copy of the

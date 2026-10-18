@@ -274,89 +274,71 @@ private def runBaselineLookupNegativeChecks : IO Unit := do
     (3 cases).  Extracted from `runNegativeChecks` (Phase 1; was lines 263-461).
     Sections combined because both reuse `strictSeed`/`strictRootSlot`. -/
 private def runCspaceMutationAndRevokeNegativeChecks : IO Unit := do
-  -- WS-E4/C-02/C-03 refinement: move updates slot↔node mappings without rewriting edges.
+  -- WS-E4/C-02/C-03, WS-ZA ZA5.3 part 2: the slot is the derivation node, so a
+  -- move carries the source's parent and children to the destination.
   let moveDst : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 2 }
-  let moveSrcNode : CdtNodeId := ⟨0⟩
-  let moveParentNode : CdtNodeId := ⟨1⟩
-  let moveChildNode : CdtNodeId := ⟨2⟩
+  let moveParentSlot : SlotRef := { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 7 }
+  let moveChildSlot : SlotRef := { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 8 }
   let moveSeed : SystemState :=
     { baseState with
       cdt := CapDerivationTree.empty
-        |>.addEdge moveSrcNode moveChildNode .mint
-        |>.addEdge moveParentNode moveSrcNode .copy
-      cdtSlotNode := baseState.cdtSlotNode.insert slot0 moveSrcNode
-      cdtNodeSlot := (((baseState.cdtNodeSlot
-        |>.insert moveSrcNode slot0)
-        |>.insert moveParentNode { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 7 })
-        |>.insert moveChildNode { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 8 })
-      cdtNextNode := ⟨3⟩
+        |>.addEdge slot0 moveChildSlot .mint
+        |>.addEdge moveParentSlot slot0 .copy
     }
-  let (_, moveState) ← expectOkSt "cspaceMove remaps slot-node pointer"
+  let (_, moveState) ← expectOkSt "cspaceMove moves the source's tree position"
     (SeLe4n.Kernel.cspaceMove slot0 moveDst moveSeed)
-  if SystemState.lookupCdtNodeOfSlot moveState slot0 = none ∧
-      SystemState.lookupCdtNodeOfSlot moveState moveDst = some moveSrcNode ∧
-      SystemState.lookupCdtSlotOfNode moveState moveSrcNode = some moveDst then
-    IO.println "positive check passed [cspaceMove updates CDT slot-node/backpointer mappings]"
+  if moveState.cdt.parentMap[moveDst]? = some moveParentSlot ∧
+      moveState.cdt.childrenOf moveDst = [moveChildSlot] ∧
+      moveState.cdt.parentMap[slot0]? = none ∧
+      moveState.cdt.childrenOf slot0 = [] then
+    IO.println "positive check passed [cspaceMove carries the source's parent and children to dst]"
   else
-    throw <| IO.userError "cspaceMove should clear src mapping and rebind node to dst"
-  if moveState.cdt.edges = moveSeed.cdt.edges then
-    IO.println "positive check passed [cspaceMove keeps node-level CDT edges unchanged]"
+    throw <| IO.userError "cspaceMove should move the source slot's edges onto dst"
+  if moveState.cdt.edges.length = moveSeed.cdt.edges.length then
+    IO.println "positive check passed [cspaceMove neither adds nor drops CDT edges]"
   else
-    throw <| IO.userError "cspaceMove unexpectedly rewrote node-level CDT edges"
+    throw <| IO.userError "cspaceMove unexpectedly changed the number of CDT edges"
 
-  -- Test cspaceDeleteSlot CDT cleanup on a leaf node (no children → guard passes).
-  -- Use a fresh state where moveDst has a CDT node but no children.
-  let leafNode : CdtNodeId := ⟨20⟩
+  -- cspaceDeleteSlot on a leaf: its one edge leaves the tree with it.
   let leafDeleteSeed : SystemState :=
     { baseState with
-      cdt := CapDerivationTree.empty  -- no edges → no children
-      cdtSlotNode := baseState.cdtSlotNode.insert moveDst leafNode
-      cdtNodeSlot := baseState.cdtNodeSlot.insert leafNode moveDst
-      cdtNextNode := ⟨21⟩
+      cdt := CapDerivationTree.empty |>.addEdge moveParentSlot moveDst .copy
     }
-  let (_, deletedMoveDst) ← expectOkSt "cspaceDeleteSlot clears stale CDT slot mapping"
+  let (_, deletedMoveDst) ← expectOkSt "cspaceDeleteSlot removes a leaf from the tree"
     (SeLe4n.Kernel.cspaceDeleteSlot moveDst leafDeleteSeed)
-  if SystemState.lookupCdtNodeOfSlot deletedMoveDst moveDst = none ∧
-      SystemState.lookupCdtSlotOfNode deletedMoveDst leafNode = none then
-    IO.println "positive check passed [cspaceDeleteSlot detaches slot-node/backpointer mapping]"
+  if deletedMoveDst.cdt.parentMap[moveDst]? = none ∧
+      deletedMoveDst.cdt.childrenOf moveParentSlot = [] ∧
+      deletedMoveDst.cdt.edges = [] then
+    IO.println "positive check passed [cspaceDeleteSlot takes the slot's edges out of the tree]"
   else
-    throw <| IO.userError "cspaceDeleteSlot must clear stale CDT slot/node mapping"
+    throw <| IO.userError "cspaceDeleteSlot must remove the deleted slot's edges"
 
   -- A delete never refuses because the slot has derived capabilities (seL4's
-  -- cteDelete): the slot's node is spliced out and its child is re-derived from
-  -- the node's own parent, so revoking that parent still reaches it.
-  let childBearingNode : CdtNodeId := ⟨10⟩
-  let childOfBearing : CdtNodeId := ⟨11⟩
-  let bearingParent : CdtNodeId := ⟨12⟩
+  -- cteDelete): the slot is spliced out and its child is re-derived from the
+  -- slot's own parent, so revoking that parent still reaches it.
+  let childOfBearing : SlotRef := { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 9 }
+  let bearingParent : SlotRef := { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 13 }
   let childBearingSeed : SystemState :=
     { baseState with
       cdt := CapDerivationTree.empty
-        |>.addEdge bearingParent childBearingNode .copy
-        |>.addEdge childBearingNode childOfBearing .mint
-      cdtSlotNode := baseState.cdtSlotNode.insert slot0 childBearingNode
-      cdtNodeSlot := ((baseState.cdtNodeSlot
-        |>.insert childBearingNode slot0)
-        |>.insert childOfBearing { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 9 })
-      cdtNextNode := ⟨13⟩
+        |>.addEdge bearingParent slot0 .copy
+        |>.addEdge slot0 childOfBearing .mint
     }
   let (_, splicedSt) ← expectOkSt "cspaceDeleteSlot deletes a slot with CDT children"
     (SeLe4n.Kernel.cspaceDeleteSlot slot0 childBearingSeed)
   if splicedSt.cdt.parentMap[childOfBearing]? = some bearingParent ∧
-      splicedSt.cdt.childrenOf childBearingNode = [] ∧
-      splicedSt.cdt.parentMap[childBearingNode]? = none ∧
+      splicedSt.cdt.childrenOf slot0 = [] ∧
+      splicedSt.cdt.parentMap[slot0]? = none ∧
       (splicedSt.cdt.edges.any fun e =>
         e.parent == bearingParent && e.child == childOfBearing && e.op == .mint) then
-    IO.println "positive check passed [cspaceDeleteSlot splices a parent's node out of the tree]"
+    IO.println "positive check passed [cspaceDeleteSlot splices a parent slot out of the tree]"
   else
-    throw <| IO.userError "cspaceDeleteSlot must re-derive the deleted node's child from its parent"
+    throw <| IO.userError "cspaceDeleteSlot must re-derive the deleted slot's child from its parent"
 
   -- WS-E4/C-04 strict variant: surface first descendant deletion failure with context.
   let strictRootSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 5 }
   let strictChildSlotOk : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 6 }
   let strictChildSlotBad : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨777⟩, slot := SeLe4n.Slot.ofNat 0 }
-  let strictRootNode : CdtNodeId := ⟨30⟩
-  let strictChildNodeOk : CdtNodeId := ⟨31⟩
-  let strictChildNodeBad : CdtNodeId := ⟨32⟩
   let strictSeed : SystemState :=
     { baseState with
       objects := baseState.objects.insert cnodeId (.cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [
@@ -372,17 +354,8 @@ private def runCspaceMutationAndRevokeNegativeChecks : IO Unit := do
               })
             ])))
       cdt := CapDerivationTree.empty
-        |>.addEdge strictRootNode strictChildNodeBad .mint
-        |>.addEdge strictRootNode strictChildNodeOk .copy
-      cdtSlotNode := ((((baseState.cdtSlotNode
-        |>.insert strictRootSlot strictRootNode)
-        |>.insert strictChildSlotOk strictChildNodeOk)
-        |>.insert strictChildSlotBad strictChildNodeBad))
-      cdtNodeSlot := (((baseState.cdtNodeSlot
-        |>.insert strictRootNode strictRootSlot)
-        |>.insert strictChildNodeOk strictChildSlotOk)
-        |>.insert strictChildNodeBad strictChildSlotBad)
-      cdtNextNode := ⟨33⟩
+        |>.addEdge strictRootSlot strictChildSlotBad .mint
+        |>.addEdge strictRootSlot strictChildSlotOk .copy
     }
 
   let (strictReport, strictState) ← expectOkSt "cspaceRevokeCdtStrict returns report"
@@ -394,8 +367,7 @@ private def runCspaceMutationAndRevokeNegativeChecks : IO Unit := do
 
   match strictReport.firstFailure with
   | some failure =>
-      if failure.offendingNode = strictChildNodeBad ∧
-          failure.offendingSlot = some strictChildSlotBad ∧
+      if failure.offendingSlot = strictChildSlotBad ∧
           failure.error = .objectNotFound then
         IO.println "positive check passed [cspaceRevokeCdtStrict captures offending slot context]"
       else
@@ -403,10 +375,10 @@ private def runCspaceMutationAndRevokeNegativeChecks : IO Unit := do
   | none =>
       throw <| IO.userError "cspaceRevokeCdtStrict must surface first descendant deletion failure"
 
-  if SystemState.lookupCdtNodeOfSlot strictState strictChildSlotOk = none then
-    IO.println "positive check passed [cspaceRevokeCdtStrict detaches successfully deleted descendant mapping]"
+  if !(strictState.cdt.edges.any fun e => e.parent == strictChildSlotOk || e.child == strictChildSlotOk) then
+    IO.println "positive check passed [cspaceRevokeCdtStrict takes a deleted descendant out of the tree]"
   else
-    throw <| IO.userError "cspaceRevokeCdtStrict should detach successful descendant slot mapping"
+    throw <| IO.userError "cspaceRevokeCdtStrict should remove a successfully deleted descendant's edges"
 
   -- ===========================================================================
   -- AK8-B (WS-AK / C-M02): cspaceRevokeCdtTransactional atomicity regression
@@ -425,9 +397,6 @@ private def runCspaceMutationAndRevokeNegativeChecks : IO Unit := do
 
   -- Case 2: Transactional variant SUCCEEDS when all descendants have valid CNodes
   -- (construct a clean seed with both descendants pointing at valid CNodes).
-  let txRootNode : CdtNodeId := ⟨40⟩
-  let txChildNodeA : CdtNodeId := ⟨41⟩
-  let txChildNodeB : CdtNodeId := ⟨42⟩
   let txRootSlot : SeLe4n.Kernel.CSpaceAddr :=
     { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 10 }
   let txChildSlotA : SeLe4n.Kernel.CSpaceAddr :=
@@ -445,17 +414,8 @@ private def runCspaceMutationAndRevokeNegativeChecks : IO Unit := do
         (txRootSlot.slot, rootCap), (txChildSlotA.slot, rootCap),
         (txChildSlotB.slot, rootCap)]))
       cdt := baseState.cdt
-        |>.addEdge txRootNode txChildNodeA .copy
-        |>.addEdge txRootNode txChildNodeB .copy
-      cdtSlotNode := ((baseState.cdtSlotNode
-        |>.insert txRootSlot txRootNode)
-        |>.insert txChildSlotA txChildNodeA)
-        |>.insert txChildSlotB txChildNodeB
-      cdtNodeSlot := ((baseState.cdtNodeSlot
-        |>.insert txRootNode txRootSlot)
-        |>.insert txChildNodeA txChildSlotA)
-        |>.insert txChildNodeB txChildSlotB
-      cdtNextNode := ⟨43⟩
+        |>.addEdge txRootSlot txChildSlotA .copy
+        |>.addEdge txRootSlot txChildSlotB .copy
   }
   match SeLe4n.Kernel.cspaceRevokeCdtTransactional txRootSlot txSeed with
   | .ok (report, _stFinal) =>
@@ -672,10 +632,14 @@ private def runIpcPayloadBoundsNegativeChecks : IO Unit := do
     (SeLe4n.Kernel.endpointReply (SeLe4n.ThreadId.ofNat 1)
       (SeLe4n.ThreadId.ofNat 2)
       { registers := #[],
-        caps := #[TransferCap.fromNode { target := .object ⟨1⟩, rights := AccessRightSet.ofList [] } 1,
-                  TransferCap.fromNode { target := .object ⟨2⟩, rights := AccessRightSet.ofList [] } 2,
-                  TransferCap.fromNode { target := .object ⟨3⟩, rights := AccessRightSet.ofList [] } 3,
-                  TransferCap.fromNode { target := .object ⟨4⟩, rights := AccessRightSet.ofList [] } 4],
+        caps := #[TransferCap.fromSlot { target := .object ⟨1⟩, rights := AccessRightSet.ofList [] }
+                    { cnode := ⟨1⟩, slot := SeLe4n.Slot.ofNat 1 },
+                  TransferCap.fromSlot { target := .object ⟨2⟩, rights := AccessRightSet.ofList [] }
+                    { cnode := ⟨2⟩, slot := SeLe4n.Slot.ofNat 2 },
+                  TransferCap.fromSlot { target := .object ⟨3⟩, rights := AccessRightSet.ofList [] }
+                    { cnode := ⟨3⟩, slot := SeLe4n.Slot.ofNat 3 },
+                  TransferCap.fromSlot { target := .object ⟨4⟩, rights := AccessRightSet.ofList [] }
+                    { cnode := ⟨4⟩, slot := SeLe4n.Slot.ofNat 4 }],
         badge := none } baseState)
     .ipcMessageTooManyCaps
 
@@ -691,10 +655,14 @@ private def runIpcPayloadBoundsNegativeChecks : IO Unit := do
     (SeLe4n.Kernel.endpointReplyRecv endpointId (SeLe4n.ThreadId.ofNat 1)
       (SeLe4n.ThreadId.ofNat 2)
       { registers := #[],
-        caps := #[TransferCap.fromNode { target := .object ⟨1⟩, rights := AccessRightSet.ofList [] } 1,
-                  TransferCap.fromNode { target := .object ⟨2⟩, rights := AccessRightSet.ofList [] } 2,
-                  TransferCap.fromNode { target := .object ⟨3⟩, rights := AccessRightSet.ofList [] } 3,
-                  TransferCap.fromNode { target := .object ⟨4⟩, rights := AccessRightSet.ofList [] } 4],
+        caps := #[TransferCap.fromSlot { target := .object ⟨1⟩, rights := AccessRightSet.ofList [] }
+                    { cnode := ⟨1⟩, slot := SeLe4n.Slot.ofNat 1 },
+                  TransferCap.fromSlot { target := .object ⟨2⟩, rights := AccessRightSet.ofList [] }
+                    { cnode := ⟨2⟩, slot := SeLe4n.Slot.ofNat 2 },
+                  TransferCap.fromSlot { target := .object ⟨3⟩, rights := AccessRightSet.ofList [] }
+                    { cnode := ⟨3⟩, slot := SeLe4n.Slot.ofNat 3 },
+                  TransferCap.fromSlot { target := .object ⟨4⟩, rights := AccessRightSet.ofList [] }
+                    { cnode := ⟨4⟩, slot := SeLe4n.Slot.ofNat 4 }],
         badge := none } none baseState)
     .ipcMessageTooManyCaps
 
@@ -3006,13 +2974,10 @@ def runWSM3CapTransferNegativeChecks : IO Unit := do
       |>.buildChecked)
 
   -- ipcTransferSingleCap with scanLimit covering all 4 slots → should get .noSlot.
-  -- The derivation parent is a NODE now, minted for the source slot the way
-  -- `resolveExtraCaps` mints it, so the transfer records the same identity the
-  -- revoke walk would later look up.
-  let (srcNode, st0) :=
-    SeLe4n.Model.SystemState.ensureCdtNodeForSlot st0
-      { cnode := senderRoot, slot := SeLe4n.Slot.ofNat 0 }
-  let result := SeLe4n.Kernel.ipcTransferSingleCap cap srcNode receiverRoot (SeLe4n.Slot.ofNat 0) 4 st0
+  -- The derivation parent is the source slot itself, as `resolveExtraCaps`
+  -- names it, so the transfer records the slot the revoke walk would reach.
+  let srcSlot : SlotRef := { cnode := senderRoot, slot := SeLe4n.Slot.ofNat 0 }
+  let result := SeLe4n.Kernel.ipcTransferSingleCap cap srcSlot receiverRoot (SeLe4n.Slot.ofNat 0) 4 st0
   match result with
   | .ok (transferResult, st') =>
     let isNoSlot := match transferResult with
@@ -3083,9 +3048,9 @@ def runL13CapTransferShortCircuitChecks : IO Unit := do
   -- each capability's own slot, so a fixture that reused one address would
   -- not exercise the per-capability provenance the loop now threads.
   let caps : Array TransferCap :=
-    #[TransferCap.fromNode cap 0,
-      TransferCap.fromNode cap 1,
-      TransferCap.fromNode cap 2]
+    #[TransferCap.fromSlot cap { cnode := senderRoot, slot := SeLe4n.Slot.ofNat 0 },
+      TransferCap.fromSlot cap { cnode := senderRoot, slot := SeLe4n.Slot.ofNat 1 },
+      TransferCap.fromSlot cap { cnode := senderRoot, slot := SeLe4n.Slot.ofNat 2 }]
 
   -- L13-01: 3 caps with receiver root = TCB → short-circuit, all .noSlot
   let result := SeLe4n.Kernel.ipcUnwrapCapsLoop caps receiverRoot
@@ -3118,7 +3083,8 @@ def runL13CapTransferShortCircuitChecks : IO Unit := do
       |>.withObject targetObj (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
       |>.buildChecked)
 
-  let result1 := SeLe4n.Kernel.ipcUnwrapCapsLoop #[TransferCap.fromNode cap 0] missingRoot
+  let result1 := SeLe4n.Kernel.ipcUnwrapCapsLoop #[TransferCap.fromSlot cap { cnode := senderRoot, slot := SeLe4n.Slot.ofNat 0 }]
+    missingRoot
     0 (SeLe4n.Slot.ofNat 0) #[] 1 st1
   match result1 with
   | .ok (summary1, st1') =>
@@ -3471,22 +3437,16 @@ Verifies that:
 - `cspaceRevokeCdt` propagates descendant delete failures -/
 def runWSR2RevocationChecks : IO Unit := do
   -- R2-NEG-01: processRevokeNode propagates error when cspaceDeleteSlot fails
-  -- Set up: CDT node mapped to a slot in a non-existent CNode → delete fails
+  -- Set up: the revoked slot lives in a non-existent CNode → delete fails
   let r2CnodeId : SeLe4n.ObjId := ⟨10⟩
   let r2BadCnodeId : SeLe4n.ObjId := ⟨777⟩
-  let r2NodeId : CdtNodeId := ⟨50⟩
   let r2BadSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := r2BadCnodeId, slot := SeLe4n.Slot.ofNat 0 }
   let r2State : SystemState :=
     (BootstrapBuilder.empty
       |>.withObject r2CnodeId (.cnode (SeLe4n.Model.CNode.ofSlots 0 0 0 0 (SeLe4n.UniqueSlotMap.ofListWF [])))
       |>.buildChecked)
-  let r2Seed := { r2State with
-    cdtNodeSlot := r2State.cdtNodeSlot.insert r2NodeId r2BadSlot
-    cdtSlotNode := r2State.cdtSlotNode.insert r2BadSlot r2NodeId
-    cdtNextNode := ⟨51⟩
-  }
-  -- processRevokeNode should return error (slot points to non-existent CNode 777)
-  match SeLe4n.Kernel.processRevokeNode r2Seed r2NodeId with
+  -- processRevokeNode should return error (the slot is in non-existent CNode 777)
+  match SeLe4n.Kernel.processRevokeNode r2State r2BadSlot with
   | .error e =>
     if e = .objectNotFound then
       IO.println "negative check passed [R2-NEG-01: processRevokeNode propagates cspaceDeleteSlot error]"
@@ -3496,19 +3456,11 @@ def runWSR2RevocationChecks : IO Unit := do
     throw <| IO.userError "processRevokeNode should propagate error, not succeed"
 
   -- R2-NEG-02: streamingRevokeBFS returns resourceExhausted on fuel exhaustion
-  let r2Node1 : CdtNodeId := ⟨60⟩
-  let r2Node2 : CdtNodeId := ⟨61⟩
-  let r2Slot1 : SeLe4n.Kernel.CSpaceAddr := { cnode := r2CnodeId, slot := SeLe4n.Slot.ofNat 0 }
+  let r2Node1 : SlotRef := { cnode := r2CnodeId, slot := SeLe4n.Slot.ofNat 0 }
+  let r2Node2 : SlotRef := { cnode := r2CnodeId, slot := SeLe4n.Slot.ofNat 1 }
   let r2BfsSeed := { r2State with
     cdt := CapDerivationTree.empty
       |>.addEdge r2Node1 r2Node2 .mint
-    cdtNodeSlot := (r2State.cdtNodeSlot
-      |>.insert r2Node1 r2Slot1)
-      |>.insert r2Node2 { cnode := r2CnodeId, slot := SeLe4n.Slot.ofNat 1 }
-    cdtSlotNode := (r2State.cdtSlotNode
-      |>.insert r2Slot1 r2Node1)
-      |>.insert { cnode := r2CnodeId, slot := SeLe4n.Slot.ofNat 1 } r2Node2
-    cdtNextNode := ⟨62⟩
   }
   -- Fuel = 0 with non-empty queue → resourceExhausted
   match SeLe4n.Kernel.streamingRevokeBFS 0 [r2Node1, r2Node2] r2BfsSeed with
@@ -3521,11 +3473,9 @@ def runWSR2RevocationChecks : IO Unit := do
     throw <| IO.userError "streamingRevokeBFS with fuel=0 should return error, not succeed"
 
   -- R2-NEG-03: cspaceRevokeCdt propagates descendant delete failures
-  -- Set up: CNode with root cap at slot 5. CDT: rootNode → childNode (bad slot).
+  -- Set up: CNode with root cap at slot 5. CDT: root slot → child (bad slot).
   -- cspaceRevokeCdt should fail because descendant deletion fails.
   let r2RootSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := r2CnodeId, slot := SeLe4n.Slot.ofNat 5 }
-  let r2RootNode : CdtNodeId := ⟨70⟩
-  let r2ChildNode : CdtNodeId := ⟨71⟩
   let r2ChildBadSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := r2BadCnodeId, slot := SeLe4n.Slot.ofNat 0 }
   let r2RevokeSeed : SystemState :=
     { r2State with
@@ -3539,14 +3489,7 @@ def runWSR2RevocationChecks : IO Unit := do
               })
             ]))
       cdt := CapDerivationTree.empty
-        |>.addEdge r2RootNode r2ChildNode .mint
-      cdtSlotNode := ((r2State.cdtSlotNode
-        |>.insert r2RootSlot r2RootNode)
-        |>.insert r2ChildBadSlot r2ChildNode)
-      cdtNodeSlot := ((r2State.cdtNodeSlot
-        |>.insert r2RootNode r2RootSlot)
-        |>.insert r2ChildNode r2ChildBadSlot)
-      cdtNextNode := ⟨72⟩
+        |>.addEdge r2RootSlot r2ChildBadSlot .mint
     }
   match SeLe4n.Kernel.cspaceRevokeCdt r2RootSlot r2RevokeSeed with
   | .error e =>
@@ -3769,14 +3712,13 @@ private def runS2GCapabilityErrorTests : IO Unit := do
 
   -- S2-G-06: cspaceRevokeCdtStrict with deep CDT chain (depth > 4)
   -- Build a 5-deep CDT chain: root → n1 → n2 → n3 → n4 → n5
-  let deepRoot : CdtNodeId := ⟨50⟩
-  let deepN1 : CdtNodeId := ⟨51⟩
-  let deepN2 : CdtNodeId := ⟨52⟩
-  let deepN3 : CdtNodeId := ⟨53⟩
-  let deepN4 : CdtNodeId := ⟨54⟩
-  let deepN5 : CdtNodeId := ⟨55⟩
   let deepRootSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 0 }
-  -- All descendants map to cnodeId slot 0 (which exists); all have valid caps
+  let deepRoot : SlotRef := deepRootSlot
+  let deepN1 : SlotRef := { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 3 }
+  let deepN2 : SlotRef := { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 4 }
+  let deepN3 : SlotRef := { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 5 }
+  let deepN4 : SlotRef := { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 6 }
+  let deepN5 : SlotRef := { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 7 }
   let deepSeed : SystemState :=
     { baseState with
       cdt := CapDerivationTree.empty
@@ -3785,21 +3727,6 @@ private def runS2GCapabilityErrorTests : IO Unit := do
         |>.addEdge deepN2 deepN3 .mint
         |>.addEdge deepN3 deepN4 .copy
         |>.addEdge deepN4 deepN5 .mint
-      cdtSlotNode := baseState.cdtSlotNode
-        |>.insert deepRootSlot deepRoot
-        |>.insert { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 3 } deepN1
-        |>.insert { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 4 } deepN2
-        |>.insert { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 5 } deepN3
-        |>.insert { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 6 } deepN4
-        |>.insert { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 7 } deepN5
-      cdtNodeSlot := baseState.cdtNodeSlot
-        |>.insert deepRoot deepRootSlot
-        |>.insert deepN1 { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 3 }
-        |>.insert deepN2 { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 4 }
-        |>.insert deepN3 { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 5 }
-        |>.insert deepN4 { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 6 }
-        |>.insert deepN5 { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 7 }
-      cdtNextNode := ⟨60⟩
     }
   -- Deep revoke must handle 5 levels of descendants. Since slots 3-7 don't exist
   -- in cnodeId (only slot 0 does), deletion of descendants will fail with objectNotFound
@@ -4561,7 +4488,8 @@ private def runWSRR8CSpaceSlotRangeChecks : IO Unit := do
   -- The IPC transfer path scans within the radix, so a receiver with no free
   -- in-range slot answers `.noSlot` rather than installing out of range.
   let (transferResult, _) ← expectOkVal "RR8-CSR-06 ipcTransferSingleCap on a full receiver CNode"
-    (SeLe4n.Kernel.ipcTransferSingleCap occupied ⟨0⟩ fullCnodeId (SeLe4n.Slot.ofNat 0) 8 fullState)
+    (SeLe4n.Kernel.ipcTransferSingleCap occupied
+      { cnode := fullCnodeId, slot := SeLe4n.Slot.ofNat 0 } fullCnodeId (SeLe4n.Slot.ofNat 0) 8 fullState)
   match transferResult with
   | .noSlot => IO.println "negative check passed [RR8-CSR-06: a full receiver CNode answers .noSlot]"
   | other =>

@@ -1070,7 +1070,7 @@ theorem applyCallDonationOnCore_preserves_capabilityInvariantBundle
   have hObjInv : st.objects.invExt := h.2.2.2.2.2.1
   have hCdt := applyCallDonationOnCore_cdt_eq st st'' callerVtid receiverVtid donorHome doneeHome
     hStep
-  exact capabilityInvariantBundle_of_kindPreserving h hCdt.2 hCdt.1
+  exact capabilityInvariantBundle_of_kindPreserving h hCdt
     (applyCallDonationOnCore_preserves_objects_invExt st st'' callerVtid receiverVtid donorHome
       doneeHome hObjInv hStep)
     (applyCallDonationOnCore_kindPreservingWrite st st'' callerVtid receiverVtid donorHome

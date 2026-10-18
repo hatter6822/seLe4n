@@ -1677,29 +1677,27 @@ inductive DerivationOp where
   | retype
   deriving Repr, DecidableEq
 
--- `CdtNodeId` and its instances live in `Model/Object/Types.lean`, beside
--- `SlotRef` and `TransferCap`.  A capability in transit carries the derivation
--- node it was resolved from, and `IpcMessage` sits below this module, so the
--- identifier has to be visible there.  Same namespace (`SeLe4n.Model`), so the
--- qualified name is unchanged and every reference here still resolves.
+-- The tree's nodes are slot addresses (`SlotRef`, in `Model/Object/Types.lean`):
+-- since WS-ZA ZA5.3 part 2 a slot is its own derivation node, as seL4's
+-- `cte_t` is its own mapping-database node.
 
 /-- A single edge in the Capability Derivation Tree.
 
-WS-E4/C-03: Each edge records parent/child stable node IDs and the operation
+WS-E4/C-03: Each edge records the parent and child slots and the operation
 that created the derivation. The CDT is a forest: each node has at most one
 parent but may have many children. -/
 structure CapDerivationEdge where
-  parent : CdtNodeId
-  child : CdtNodeId
+  parent : SlotRef
+  child : SlotRef
   op : DerivationOp
   deriving Repr, DecidableEq
 
 namespace CapDerivationEdge
 
-def isChildOf (edge : CapDerivationEdge) (node : CdtNodeId) : Bool :=
+def isChildOf (edge : CapDerivationEdge) (node : SlotRef) : Bool :=
   edge.child = node
 
-def isParentOf (edge : CapDerivationEdge) (node : CdtNodeId) : Bool :=
+def isParentOf (edge : CapDerivationEdge) (node : SlotRef) : Bool :=
   edge.parent = node
 
 end CapDerivationEdge
@@ -1722,10 +1720,10 @@ structure CapDerivationTree where
   /-- WS-G8/F-P14: Parent-indexed child map for O(1) `childrenOf` lookup.
   Runtime index maintained in parallel with `edges`; `edges` remains the
   proof anchor. -/
-  childMap : SeLe4n.Kernel.RobinHood.RHTable CdtNodeId (List CdtNodeId) := {}
+  childMap : SeLe4n.Kernel.RobinHood.RHTable SlotRef (List SlotRef) := {}
   /-- M-P02: Child-indexed parent map for O(1) `parentOf` lookup.
   Maps each child node to its unique parent. Symmetric to `childMap`. -/
-  parentMap : SeLe4n.Kernel.RobinHood.RHTable CdtNodeId CdtNodeId := {}
+  parentMap : SeLe4n.Kernel.RobinHood.RHTable SlotRef SlotRef := {}
   deriving Repr
 
 namespace CapDerivationTree
@@ -1749,22 +1747,27 @@ def empty : CapDerivationTree := CapDerivationTree.mk [] {} {}
 
 /-- Add a derivation edge from parent to child.
 WS-G8: Maintains `childMap` index alongside `edges`. -/
-def addEdge (cdt : CapDerivationTree) (parent child : CdtNodeId)
+def addEdge (cdt : CapDerivationTree) (parent child : SlotRef)
     (op : DerivationOp) : CapDerivationTree :=
   let currentChildren := cdt.childMap.get? parent |>.getD []
   { edges := { parent, child, op } :: cdt.edges,
     childMap := cdt.childMap.insert parent (child :: currentChildren),
     parentMap := cdt.parentMap.insert child parent }
 
+/-- **A slot the tree names**: an endpoint of one of its edges.  A slot the tree
+does not name is outside it: no parent, no children. -/
+def mentions (cdt : CapDerivationTree) (ref : SlotRef) : Prop :=
+  ∃ e ∈ cdt.edges, e.parent = ref ∨ e.child = ref
+
 /-- Find all direct children of a given node.
 WS-G8/F-P14: O(1) lookup via `childMap` instead of O(E) edge scan. -/
-def childrenOf (cdt : CapDerivationTree) (node : CdtNodeId)
-    : List CdtNodeId :=
+def childrenOf (cdt : CapDerivationTree) (node : SlotRef)
+    : List SlotRef :=
   cdt.childMap.get? node |>.getD []
 
 /-- Remove all edges where the given node appears as parent or child.
 M-P03: Targeted `parentMap`/`childMap` updates instead of full rebuild. -/
-def removeNode (cdt : CapDerivationTree) (node : CdtNodeId)
+def removeNode (cdt : CapDerivationTree) (node : SlotRef)
     : CapDerivationTree :=
   -- Phase 1: Remove as parent (erase children's parentMap entries + own childMap entry)
   let children := (cdt.childMap.get? node).getD []
@@ -1805,11 +1808,11 @@ Structural argument (informal): the CDT is acyclic (proven by `cdtAcyclicity`
 reachable node — each edge is traversed at most once, and fuel ≥ edge
 count guarantees no premature termination. The visited-set filter ensures
 each node is processed at most once. -/
-def descendantsOf (cdt : CapDerivationTree) (root : CdtNodeId)
-    : List CdtNodeId :=
+def descendantsOf (cdt : CapDerivationTree) (root : SlotRef)
+    : List SlotRef :=
   go cdt.edges.length [root] {} []
 where
-  go : Nat → List CdtNodeId → Std.HashSet CdtNodeId → List CdtNodeId → List CdtNodeId
+  go : Nat → List SlotRef → Std.HashSet SlotRef → List SlotRef → List SlotRef
     | 0, _, _, acc => acc
     | _ + 1, [], _, acc => acc
     | fuel + 1, node :: rest, visited, acc =>
@@ -1826,6 +1829,11 @@ theorem empty_acyclic : CapDerivationTree.empty.acyclic := by
   intro e hMem
   simp [CapDerivationTree.empty] at hMem
 
+/-- The empty tree names no slot. -/
+theorem empty_not_mentions (ref : SlotRef) : ¬ CapDerivationTree.empty.mentions ref := by
+  rintro ⟨e, hMem, _⟩
+  simp [CapDerivationTree.empty] at hMem
+
 -- ============================================================================
 -- WS-H4: Edge-well-founded acyclicity (simpler formulation for subset proofs)
 -- ============================================================================
@@ -1835,8 +1843,8 @@ through a non-empty path of derivation edges. This formulation enables clean
 subset-preservation proofs: if edges' ⊆ edges and edges is well-founded,
 then edges' is well-founded. -/
 def edgeWellFounded (cdt : CapDerivationTree) : Prop :=
-  ∀ (node : CdtNodeId),
-    ¬(∃ (path : List CdtNodeId),
+  ∀ (node : SlotRef),
+    ¬(∃ (path : List SlotRef),
         path.length > 1 ∧
         path.head? = some node ∧
         path.getLast? = some node ∧
@@ -1864,7 +1872,7 @@ theorem edgeWellFounded_sub
     exact ⟨e, hSub e hMem, hp, hc⟩⟩
 
 /-- Removing a node preserves a subset of edges. -/
-theorem removeNode_edges_sub (cdt : CapDerivationTree) (node : CdtNodeId) :
+theorem removeNode_edges_sub (cdt : CapDerivationTree) (node : SlotRef) :
     ∀ e ∈ (cdt.removeNode node).edges, e ∈ cdt.edges := by
   intro e hMem
   simp [removeNode] at hMem
@@ -1873,8 +1881,7 @@ theorem removeNode_edges_sub (cdt : CapDerivationTree) (node : CdtNodeId) :
 /-- WS-H4/M-G03: Adding an edge preserves edge-well-foundedness when the child
 node does not appear in any existing edge (as either parent or child). The parent
 node MAY already participate in edges. This covers the common case in kernel
-operations where `ensureCdtNodeForSlot` creates a fresh CDT node for the
-destination slot.
+operations, where the destination slot was empty and so outside the tree.
 
 For nodes that already participate in derivation edges, callers should supply
 `hCdtPost : cdtCompleteness st' ∧ cdtAcyclicity st'` directly (the hypothesis
@@ -1882,7 +1889,7 @@ pattern used by `cspaceCopy_preserves_capabilityInvariantBundle` et al.).
 The general `descendantsOf`-based theorem requires a BFS completeness proof
 that is deferred to Phase 2 (WS-M2) when the CDT structure is refactored. -/
 theorem addEdge_preserves_edgeWellFounded_fresh
-    (cdt : CapDerivationTree) (parent child : CdtNodeId) (op : DerivationOp)
+    (cdt : CapDerivationTree) (parent child : SlotRef) (op : DerivationOp)
     (hNeq : parent ≠ child)
     (hAcyclic : cdt.edgeWellFounded)
     (hFreshChild : ∀ e ∈ cdt.edges, e.parent ≠ child ∧ e.child ≠ child) :
@@ -1948,14 +1955,14 @@ theorem addEdge_preserves_edgeWellFounded_fresh
 /-- WS-H4/M-G03: Runtime cycle-check — returns `true` if adding edge
 (parent → child) would NOT create a cycle. Checks that parent ≠ child and
 parent is not reachable from child via existing edges. -/
-def addEdgeWouldBeSafe (cdt : CapDerivationTree) (parent child : CdtNodeId) : Bool :=
+def addEdgeWouldBeSafe (cdt : CapDerivationTree) (parent child : SlotRef) : Bool :=
   parent != child && parent ∉ cdt.descendantsOf child
 
 /-- AE4-C (U-18/CAP-02): Propositional reachability — `src` can reach `dst`
 through a non-empty path of edges. Used as the specification-level reachability
 predicate for CDT acyclicity analysis. -/
-def cdtReachable (cdt : CapDerivationTree) (src dst : CdtNodeId) : Prop :=
-  ∃ (path : List CdtNodeId),
+def cdtReachable (cdt : CapDerivationTree) (src dst : SlotRef) : Prop :=
+  ∃ (path : List SlotRef),
     path.length > 1 ∧
     path.head? = some src ∧
     path.getLast? = some dst ∧
@@ -1966,7 +1973,7 @@ def cdtReachable (cdt : CapDerivationTree) (src dst : CdtNodeId) : Prop :=
 This bridges the gap between `addEdge_preserves_edgeWellFounded_fresh`
 (which requires freshness) and the reachability-based specification. -/
 theorem freshChild_not_reachable
-    (cdt : CapDerivationTree) (child target : CdtNodeId)
+    (cdt : CapDerivationTree) (child target : SlotRef)
     (hFresh : ∀ e ∈ cdt.edges, e.parent ≠ child ∧ e.child ≠ child) :
     ¬ cdt.cdtReachable child target := by
   intro ⟨path, hLen, hHead, hLast, hEdges⟩
@@ -1993,13 +2000,13 @@ theorem empty_childMapConsistent : CapDerivationTree.empty.childMapConsistent :=
   simp only [CapDerivationTree.empty]
   constructor
   · intro h
-    have : ({} : SeLe4n.Kernel.RobinHood.RHTable CdtNodeId (List CdtNodeId)).get? parent = none :=
+    have : ({} : SeLe4n.Kernel.RobinHood.RHTable SlotRef (List SlotRef)).get? parent = none :=
       SeLe4n.Kernel.RobinHood.RHTable.getElem?_empty 16 (by omega) parent
     rw [this] at h; simp at h
   · rintro ⟨_, hMem, _⟩; cases hMem
 
 theorem addEdge_childMapConsistent (cdt : CapDerivationTree)
-    (p c : CdtNodeId) (op : DerivationOp)
+    (p c : SlotRef) (op : DerivationOp)
     (hCon : cdt.childMapConsistent)
     (hExt : cdt.childMap.invExt) :
     (cdt.addEdge p c op).childMapConsistent := by
@@ -2057,13 +2064,13 @@ theorem empty_parentMapConsistent : CapDerivationTree.empty.parentMapConsistent 
   simp only [CapDerivationTree.empty]
   constructor
   · intro h
-    have : ({} : SeLe4n.Kernel.RobinHood.RHTable CdtNodeId CdtNodeId)[child]? = none :=
+    have : ({} : SeLe4n.Kernel.RobinHood.RHTable SlotRef SlotRef)[child]? = none :=
       SeLe4n.Kernel.RobinHood.RHTable.getElem?_empty 16 (by omega) child
     rw [this] at h; cases h
   · rintro ⟨_, hMem, _⟩; cases hMem
 
 theorem addEdge_parentMapConsistent (cdt : CapDerivationTree)
-    (p c : CdtNodeId) (op : DerivationOp)
+    (p c : SlotRef) (op : DerivationOp)
     (hCon : cdt.parentMapConsistent)
     (hFresh : cdt.parentMap[c]? = none)
     (hExt : cdt.parentMap.invExt) :
@@ -2113,7 +2120,7 @@ theorem addEdge_parentMapConsistent (cdt : CapDerivationTree)
 /-- S3-B/U-M03: Composite preservation — `addEdge` preserves both
     `childMapConsistent` and `parentMapConsistent`. -/
 theorem addEdge_preserves_cdtMapsConsistent (cdt : CapDerivationTree)
-    (p c : CdtNodeId) (op : DerivationOp)
+    (p c : SlotRef) (op : DerivationOp)
     (hChild : cdt.childMapConsistent)
     (hParent : cdt.parentMapConsistent)
     (hFresh : cdt.parentMap[c]? = none)
@@ -2127,7 +2134,7 @@ theorem addEdge_preserves_cdtMapsConsistent (cdt : CapDerivationTree)
 /-- M-P02: Helper — `foldl erase` preserves entries for keys not in the list.
 Requires `invExt` and `size < capacity` for RHTable erase correctness. -/
 private theorem foldl_erase_preserves
-    (xs : List CdtNodeId) (m : SeLe4n.Kernel.RobinHood.RHTable CdtNodeId CdtNodeId) (k : CdtNodeId)
+    (xs : List SlotRef) (m : SeLe4n.Kernel.RobinHood.RHTable SlotRef SlotRef) (k : SlotRef)
     (hNotAny : ∀ c ∈ xs, (c == k) = false)
     (hK : m.invExtK) :
     (xs.foldl (fun acc c => acc.erase c) m)[k]? = m[k]? := by
@@ -2148,7 +2155,7 @@ private theorem foldl_erase_preserves
 /-- M-P02: Helper — once `[k]? = none`, further `foldl erase` keeps it none.
 Requires `invExtK` for RHTable erase correctness. -/
 private theorem foldl_erase_none
-    (xs : List CdtNodeId) (m : SeLe4n.Kernel.RobinHood.RHTable CdtNodeId CdtNodeId) (k : CdtNodeId)
+    (xs : List SlotRef) (m : SeLe4n.Kernel.RobinHood.RHTable SlotRef SlotRef) (k : SlotRef)
     (hNone : m[k]? = none)
     (hK : m.invExtK) :
     (xs.foldl (fun acc c => acc.erase c) m)[k]? = none := by
@@ -2167,7 +2174,7 @@ private theorem foldl_erase_none
 /-- M-P02: Helper — `foldl erase` erases entries for keys in the list.
 Requires `invExtK` for RHTable erase correctness. -/
 private theorem foldl_erase_mem
-    (xs : List CdtNodeId) (m : SeLe4n.Kernel.RobinHood.RHTable CdtNodeId CdtNodeId) (k : CdtNodeId)
+    (xs : List SlotRef) (m : SeLe4n.Kernel.RobinHood.RHTable SlotRef SlotRef) (k : SlotRef)
     (hMem : ∃ c ∈ xs, (c == k) = true)
     (hK : m.invExtK) :
     (xs.foldl (fun acc c => acc.erase c) m)[k]? = none := by
@@ -2193,7 +2200,7 @@ The proof shows that after removing all edges mentioning `node`:
 - `node` itself has its `parentMap` entry erased (matching edge removal)
 - All other entries are unchanged (matching surviving edges) -/
 theorem removeNode_parentMapConsistent
-    (cdt : CapDerivationTree) (node : CdtNodeId)
+    (cdt : CapDerivationTree) (node : SlotRef)
     (hCon : cdt.parentMapConsistent)
     (hChildCon : cdt.childMapConsistent)
     (hK : cdt.parentMap.invExtK) :
@@ -2201,8 +2208,8 @@ theorem removeNode_parentMapConsistent
   intro child parent
   simp only [removeNode]
   -- Establish invExtK for the fold result via auxiliary lemma
-  have foldl_erase_invExtK : ∀ (xs : List CdtNodeId)
-      (m : SeLe4n.Kernel.RobinHood.RHTable CdtNodeId CdtNodeId),
+  have foldl_erase_invExtK : ∀ (xs : List SlotRef)
+      (m : SeLe4n.Kernel.RobinHood.RHTable SlotRef SlotRef),
       m.invExtK →
       (xs.foldl (fun acc c => acc.erase c) m).invExtK := by
     intro xs
@@ -2310,7 +2317,7 @@ After removing all edges mentioning `node`:
 - Parent's `childMap` entry has `node` filtered out (matching edge removal)
 - All other entries are unchanged (matching surviving edges) -/
 theorem removeNode_childMapConsistent
-    (cdt : CapDerivationTree) (node : CdtNodeId)
+    (cdt : CapDerivationTree) (node : SlotRef)
     (hCon : cdt.childMapConsistent)
     (hParentCon : cdt.parentMapConsistent)
     (hK : cdt.childMap.invExtK) :
@@ -2537,23 +2544,6 @@ theorem removeNode_childMapConsistent
       rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne_K _ node parent hParentNeNode hK]
       exact hOriginal
 
-/-- Slot-address view of a CDT edge (projection through slot backpointers). -/
-structure ObservedDerivationEdge where
-  parent : SlotAddr
-  child : SlotAddr
-  op : DerivationOp
-  deriving Repr, DecidableEq
-
-/-- Project node-based CDT edges through a node→slot mapping. -/
-def projectObservedEdges
-    (cdt : CapDerivationTree)
-    (nodeSlot : CdtNodeId → Option SlotAddr) : List ObservedDerivationEdge :=
-  cdt.edges.filterMap (fun e =>
-    match nodeSlot e.parent, nodeSlot e.child with
-    | some p, some c => some { parent := p, child := c, op := e.op }
-    | _, _ => none)
-
-
 -- W2-H (L-3): 2M heartbeats — highest in the codebase. Inherent complexity from
 -- CDT acyclicity reasoning: the proof projects each cycle edge onto old CDT edges,
 -- constructs a rotated sub-path from child to parent, and derives a contradiction.
@@ -2570,11 +2560,11 @@ Generalizes `addEdge_preserves_edgeWellFounded_fresh` to non-fresh child nodes
 old CDT edges; when the new edge is encountered, constructs a rotated sub-path
 from child to parent using only old edges, contradicting hypothesis 4. -/
 theorem addEdge_preserves_edgeWellFounded_noParent
-    (cdt : CapDerivationTree) (parent child : CdtNodeId) (op : DerivationOp)
+    (cdt : CapDerivationTree) (parent child : SlotRef) (op : DerivationOp)
     (hNeq : parent ≠ child)
     (hAcyclic : cdt.edgeWellFounded)
     (_hNoIncoming : ∀ e ∈ cdt.edges, e.child ≠ child)
-    (hNoPath : ∀ (p : List CdtNodeId),
+    (hNoPath : ∀ (p : List SlotRef),
       p.length > 1 → p.head? = some child → p.getLast? = some parent →
       (∀ i, (h : i + 1 < p.length) → ∃ e ∈ cdt.edges, e.parent = p[i] ∧ e.child = p[i + 1]) →
       False) :
@@ -2615,7 +2605,7 @@ theorem addEdge_preserves_edgeWellFounded_noParent
       · exact h
     -- Build rotated path from child (at idx+1) back to parent (at idx)
     let L := path.length
-    let nodeAt : Fin (L - 1) → CdtNodeId := fun k =>
+    let nodeAt : Fin (L - 1) → SlotRef := fun k =>
       if h : idx + 1 + k.val < L then path[idx + 1 + k.val]
       else path[idx + 1 + k.val - L + 1]'(by omega)
     let rotPath := List.ofFn nodeAt
@@ -2754,7 +2744,7 @@ theorem transGen_lift {α : Type} {r s : α → α → Prop} {a b : α}
   | tail _ h ih => exact ih.trans (hrs _ _ h)
 
 /-- One step along a derivation edge of `cdt`. -/
-def edgeStep (cdt : CapDerivationTree) (a b : CdtNodeId) : Prop :=
+def edgeStep (cdt : CapDerivationTree) (a b : SlotRef) : Prop :=
   ∃ e ∈ cdt.edges, e.parent = a ∧ e.child = b
 
 /-- Acyclicity carries over to a tree each of whose edges joins two nodes the old
@@ -2781,7 +2771,7 @@ every capability derived through the deleted one.
 A child already holding a parent in the tree (impossible while the maps agree
 with the edges, since `removeNode` erased each child's entry) is left alone,
 so the parent map stays a function. -/
-def spliceNode (cdt : CapDerivationTree) (node : CdtNodeId) : CapDerivationTree :=
+def spliceNode (cdt : CapDerivationTree) (node : SlotRef) : CapDerivationTree :=
   match cdt.edges.find? (fun e => e.isChildOf node) with
   | none => cdt.removeNode node
   | some up =>
@@ -2790,7 +2780,22 @@ def spliceNode (cdt : CapDerivationTree) (node : CdtNodeId) : CapDerivationTree 
         else acc)
       (cdt.removeNode node)
 
-private theorem foldl_addEdge_edges (cdt : CapDerivationTree) (node p : CdtNodeId) :
+/-- **Move node `old` to slot `new`**, as seL4's `cteMove` rewrites the moved
+slot's mapping-database neighbours to name its new address: `old`'s parent edge
+and child edges are re-made at `new`, each by the operation it was made by, and
+`old` leaves the tree.  A slot outside the tree moves no edge.
+
+`new` is the move's destination, an empty slot, and an empty slot is in no edge:
+every delete splices its slot out of the tree (`spliceNode`). -/
+def moveNode (cdt : CapDerivationTree) (old new : SlotRef) : CapDerivationTree :=
+  let base := cdt.removeNode old
+  let withParent := match cdt.edges.find? (fun e => e.isChildOf old) with
+    | some up => base.addEdge up.parent new up.op
+    | none => base
+  (cdt.edges.filter (fun e => e.isParentOf old)).foldl
+    (fun acc e => acc.addEdge new e.child e.op) withParent
+
+private theorem foldl_addEdge_edges (cdt : CapDerivationTree) (node p : SlotRef) :
     ∀ (l : List CapDerivationEdge) (acc : CapDerivationTree),
       (∀ e ∈ l, e ∈ cdt.edges ∧ e.parent = node) →
       ∀ e' ∈ (l.foldl (fun acc e => if (acc.parentMap[e.child]?).isNone then
@@ -2810,7 +2815,7 @@ private theorem foldl_addEdge_edges (cdt : CapDerivationTree) (node p : CdtNodeI
 
 /-- Every edge after a splice is an old edge or joins `node`'s parent to one of
 `node`'s children. -/
-theorem spliceNode_edges (cdt : CapDerivationTree) (node : CdtNodeId) :
+theorem spliceNode_edges (cdt : CapDerivationTree) (node : SlotRef) :
     ∀ e' ∈ (cdt.spliceNode node).edges, e' ∈ cdt.edges ∨
       ∃ up ∈ cdt.edges, ∃ e ∈ cdt.edges, up.child = node ∧ e.parent = node ∧
         e'.parent = up.parent ∧ e'.child = e.child := by
@@ -2829,7 +2834,7 @@ theorem spliceNode_edges (cdt : CapDerivationTree) (node : CdtNodeId) :
     · exact .inr ⟨up, hUpMem, e, he, hUpChild, hep, hp, hec.symm⟩
 
 /-- A splice keeps the tree acyclic: each new edge shortcuts an old two-edge path. -/
-theorem spliceNode_edgeWellFounded (cdt : CapDerivationTree) (node : CdtNodeId)
+theorem spliceNode_edgeWellFounded (cdt : CapDerivationTree) (node : SlotRef)
     (hWF : cdt.edgeWellFounded) : (cdt.spliceNode node).edgeWellFounded :=
   edgeWellFounded_of_edges_transGen cdt _ hWF fun e' he' => by
     rcases spliceNode_edges cdt node e' he' with h | ⟨up, hUp, e, he, hUc, hEp, hP, hC⟩
@@ -2837,8 +2842,24 @@ theorem spliceNode_edgeWellFounded (cdt : CapDerivationTree) (node : CdtNodeId)
     · exact .tail (.single ⟨up, hUp, hP.symm, hUc⟩) ⟨e, he, hEp, hC.symm⟩
 
 
+/-- A removal names no slot the tree did not name. -/
+theorem removeNode_mentions (cdt : CapDerivationTree) (node ref : SlotRef)
+    (h : (cdt.removeNode node).mentions ref) : cdt.mentions ref :=
+  let ⟨e, he, hr⟩ := h
+  ⟨e, removeNode_edges_sub cdt node e he, hr⟩
+
+/-- Nor does a splice: each edge it makes joins two slots the tree named. -/
+theorem spliceNode_mentions (cdt : CapDerivationTree) (node ref : SlotRef)
+    (h : (cdt.spliceNode node).mentions ref) : cdt.mentions ref := by
+  obtain ⟨e', he', hr⟩ := h
+  rcases spliceNode_edges cdt node e' he' with h | ⟨up, hUp, e, he, _, _, hP, hC⟩
+  · exact ⟨e', h, hr⟩
+  · rcases hr with hr | hr
+    · exact ⟨up, hUp, .inl (hP ▸ hr)⟩
+    · exact ⟨e, he, .inr (hC ▸ hr)⟩
+
 /-- `removeNode` keeps the child map's `invExtK`. -/
-theorem removeNode_childMap_invExtK (cdt : CapDerivationTree) (node : CdtNodeId)
+theorem removeNode_childMap_invExtK (cdt : CapDerivationTree) (node : SlotRef)
     (hK : cdt.childMap.invExtK) : (cdt.removeNode node).childMap.invExtK := by
   have hE := SeLe4n.Kernel.RobinHood.RHTable.erase_preserves_invExtK _ node hK
   simp only [removeNode]
@@ -2849,12 +2870,12 @@ theorem removeNode_childMap_invExtK (cdt : CapDerivationTree) (node : CdtNodeId)
   · exact hE
 
 /-- `removeNode` keeps the parent map's `invExtK`. -/
-theorem removeNode_parentMap_invExtK (cdt : CapDerivationTree) (node : CdtNodeId)
+theorem removeNode_parentMap_invExtK (cdt : CapDerivationTree) (node : SlotRef)
     (hK : cdt.parentMap.invExtK) : (cdt.removeNode node).parentMap.invExtK := by
   simp only [removeNode]
   apply SeLe4n.Kernel.RobinHood.RHTable.erase_preserves_invExtK
   generalize (cdt.childMap.get? node).getD [] = l
-  suffices ∀ (m : SeLe4n.Kernel.RobinHood.RHTable CdtNodeId CdtNodeId), m.invExtK →
+  suffices ∀ (m : SeLe4n.Kernel.RobinHood.RHTable SlotRef SlotRef), m.invExtK →
       (l.foldl (fun m c => m.erase c) m).invExtK from this _ hK
   induction l with
   | nil => exact fun _ h => h
@@ -2865,7 +2886,7 @@ def mapsWellFormed (cdt : CapDerivationTree) : Prop :=
   cdt.childMapConsistent ∧ cdt.parentMapConsistent ∧
     cdt.childMap.invExtK ∧ cdt.parentMap.invExtK
 
-private theorem foldl_addEdge_mapsWellFormed (p : CdtNodeId) :
+private theorem foldl_addEdge_mapsWellFormed (p : SlotRef) :
     ∀ (l : List CapDerivationEdge) (acc : CapDerivationTree), acc.mapsWellFormed →
       (l.foldl (fun acc e => if (acc.parentMap[e.child]?).isNone then
           acc.addEdge p e.child e.op else acc) acc).mapsWellFormed
@@ -2883,7 +2904,7 @@ private theorem foldl_addEdge_mapsWellFormed (p : CdtNodeId) :
     · exact ⟨hC, hP, hCK, hPK⟩
 
 /-- A splice keeps both index maps consistent with the edges and well formed. -/
-theorem spliceNode_mapsWellFormed (cdt : CapDerivationTree) (node : CdtNodeId)
+theorem spliceNode_mapsWellFormed (cdt : CapDerivationTree) (node : SlotRef)
     (h : cdt.mapsWellFormed) : (cdt.spliceNode node).mapsWellFormed := by
   obtain ⟨hC, hP, hCK, hPK⟩ := h
   have hR : (cdt.removeNode node).mapsWellFormed :=
@@ -2931,12 +2952,12 @@ theorem empty_cdtMapsConsistent : CapDerivationTree.empty.cdtMapsConsistent := b
   constructor
   · intro p children h c _
     have hNone : CapDerivationTree.empty.childMap.get? p = none := by
-      show (default : SeLe4n.Kernel.RobinHood.RHTable CdtNodeId (List CdtNodeId)).get? p = none
+      show (default : SeLe4n.Kernel.RobinHood.RHTable SlotRef (List SlotRef)).get? p = none
       exact rhtable_default_get?_none p
     rw [hNone] at h; exact absurd h (by simp)
   · intro c p h
     have hNone : CapDerivationTree.empty.parentMap.get? c = none := by
-      show (default : SeLe4n.Kernel.RobinHood.RHTable CdtNodeId CdtNodeId).get? c = none
+      show (default : SeLe4n.Kernel.RobinHood.RHTable SlotRef SlotRef).get? c = none
       exact rhtable_default_get?_none c
     -- h uses [c]? which is getElem?, which delegates to get?
     have hChange : CapDerivationTree.empty.parentMap[c]? = CapDerivationTree.empty.parentMap.get? c := rfl
@@ -2945,7 +2966,7 @@ theorem empty_cdtMapsConsistent : CapDerivationTree.empty.cdtMapsConsistent := b
 /-- S3-C/U-L03: Remove a specific edge from the CDT. Removes from `edges`,
     updates `childMap` (removes child from parent's list), and erases the
     child's `parentMap` entry. Exposed only through `revokeTargetLocal`. -/
-private def removeEdge (cdt : CapDerivationTree) (parent child : CdtNodeId) : CapDerivationTree :=
+private def removeEdge (cdt : CapDerivationTree) (parent child : SlotRef) : CapDerivationTree :=
   let currentChildren := (cdt.childMap.get? parent).getD []
   let filteredChildren := currentChildren.filter (· != child)
   let childMap' := if filteredChildren.isEmpty then
@@ -2958,7 +2979,7 @@ private def removeEdge (cdt : CapDerivationTree) (parent child : CdtNodeId) : Ca
 
 /-- S3-C: Surviving edges after removeEdge have e.child ≠ c0. -/
 private theorem removeEdge_surviving_child_ne
-    (cdt : CapDerivationTree) (p0 c0 : CdtNodeId)
+    (cdt : CapDerivationTree) (p0 c0 : SlotRef)
     (hUniq : ∀ e1 e2, e1 ∈ cdt.edges → e2 ∈ cdt.edges →
       e1.child = e2.child → e1.parent = e2.parent)
     (hExists : ∃ e ∈ cdt.edges, e.parent = p0 ∧ e.child = c0)
@@ -2975,7 +2996,7 @@ private theorem removeEdge_surviving_child_ne
     provides the post-state invariant. The `removeEdge_surviving_child_ne`
     helper enables callers to discharge this obligation. -/
 private theorem removeEdge_preserves_cdtMapsConsistent
-    (cdt : CapDerivationTree) (p0 c0 : CdtNodeId)
+    (cdt : CapDerivationTree) (p0 c0 : SlotRef)
     (hPost : (cdt.removeEdge p0 c0).childMapConsistent ∧
              (cdt.removeEdge p0 c0).parentMapConsistent) :
     (cdt.removeEdge p0 c0).childMapConsistent ∧
@@ -2993,7 +3014,7 @@ private theorem removeEdge_preserves_cdtMapsConsistent
     spec requirement: "Expose only through `revokeTargetLocal`; do not export
     standalone." -/
 def revokeDerivationEdge (cdt : CapDerivationTree)
-    (parent child : CdtNodeId) : CapDerivationTree :=
+    (parent child : SlotRef) : CapDerivationTree :=
   cdt.removeEdge parent child
 
 /-- T2-C (H-2): Verified CDT constructor requiring a `cdtMapsConsistent`
@@ -3006,8 +3027,8 @@ def revokeDerivationEdge (cdt : CapDerivationTree)
     instead of constructing CDTs from raw parts. -/
 def mk_checked
     (edges : List CapDerivationEdge)
-    (childMap : SeLe4n.Kernel.RobinHood.RHTable CdtNodeId (List CdtNodeId))
-    (parentMap : SeLe4n.Kernel.RobinHood.RHTable CdtNodeId CdtNodeId)
+    (childMap : SeLe4n.Kernel.RobinHood.RHTable SlotRef (List SlotRef))
+    (parentMap : SeLe4n.Kernel.RobinHood.RHTable SlotRef SlotRef)
     (_hConsistent : (CapDerivationTree.mk edges childMap parentMap).cdtMapsConsistent) :
     CapDerivationTree :=
   CapDerivationTree.mk edges childMap parentMap
@@ -3015,8 +3036,8 @@ def mk_checked
 /-- T2-C (H-2): `mk_checked` preserves `cdtMapsConsistent` by construction. -/
 theorem mk_checked_cdtMapsConsistent
     (edges : List CapDerivationEdge)
-    (childMap : SeLe4n.Kernel.RobinHood.RHTable CdtNodeId (List CdtNodeId))
-    (parentMap : SeLe4n.Kernel.RobinHood.RHTable CdtNodeId CdtNodeId)
+    (childMap : SeLe4n.Kernel.RobinHood.RHTable SlotRef (List SlotRef))
+    (parentMap : SeLe4n.Kernel.RobinHood.RHTable SlotRef SlotRef)
     (hConsistent : (CapDerivationTree.mk edges childMap parentMap).cdtMapsConsistent) :
     (mk_checked edges childMap parentMap hConsistent).cdtMapsConsistent :=
   hConsistent
@@ -3029,7 +3050,7 @@ theorem mk_checked_cdtMapsConsistent
     contains exactly the elements of the original HashSet plus the new elements.
     Used to maintain the visited/acc sync invariant through BFS iterations. -/
 private theorem foldl_insert_contains
-    (visited : Std.HashSet CdtNodeId) (newChildren : List CdtNodeId) (x : CdtNodeId) :
+    (visited : Std.HashSet SlotRef) (newChildren : List SlotRef) (x : SlotRef) :
     (newChildren.foldl (fun s c => s.insert c) visited).contains x = true ↔
     visited.contains x = true ∨ x ∈ newChildren := by
   induction newChildren generalizing visited with
@@ -3052,7 +3073,7 @@ private theorem foldl_insert_contains
 /-- Y1-E: Sync invariant maintenance — if `visited` and `acc` are in sync,
     then extending both with `newChildren` preserves sync. -/
 private theorem sync_after_extend
-    (visited : Std.HashSet CdtNodeId) (acc newChildren : List CdtNodeId)
+    (visited : Std.HashSet SlotRef) (acc newChildren : List SlotRef)
     (hSync : ∀ x, x ∈ acc ↔ visited.contains x = true) :
     ∀ x, x ∈ (acc ++ newChildren) ↔
     (newChildren.foldl (fun s c => s.insert c) visited).contains x = true := by
@@ -3067,15 +3088,15 @@ private theorem sync_after_extend
 
 /-- T4-G: Reachability via childrenOf — inductive definition of nodes
 reachable from a root through the CDT's child map. -/
-inductive CdtChildReachable (cdt : CapDerivationTree) : CdtNodeId → CdtNodeId → Prop where
+inductive CdtChildReachable (cdt : CapDerivationTree) : SlotRef → SlotRef → Prop where
   | child : ∀ {root c}, c ∈ cdt.childrenOf root → CdtChildReachable cdt root c
   | trans : ∀ {root mid c}, CdtChildReachable cdt root mid →
       c ∈ cdt.childrenOf mid → CdtChildReachable cdt root c
 
 /-- T4-G: Unfolding lemma for descendantsOf.go at a cons queue step. -/
 private theorem descendantsOf_go_cons (cdt : CapDerivationTree) (fuel : Nat)
-    (node : CdtNodeId) (rest : List CdtNodeId)
-    (visited : Std.HashSet CdtNodeId) (acc : List CdtNodeId) :
+    (node : SlotRef) (rest : List SlotRef)
+    (visited : Std.HashSet SlotRef) (acc : List SlotRef) :
     descendantsOf.go cdt (fuel + 1) (node :: rest) visited acc =
     descendantsOf.go cdt fuel
       (rest ++ (cdt.childrenOf node).filter (fun c => !visited.contains c))
@@ -3085,15 +3106,15 @@ private theorem descendantsOf_go_cons (cdt : CapDerivationTree) (fuel : Nat)
 
 /-- T4-G: Unfolding lemma for descendantsOf.go at an empty queue. -/
 private theorem descendantsOf_go_nil (cdt : CapDerivationTree) (fuel : Nat)
-    (visited : Std.HashSet CdtNodeId) (acc : List CdtNodeId) :
+    (visited : Std.HashSet SlotRef) (acc : List SlotRef) :
     descendantsOf.go cdt (fuel + 1) [] visited acc = acc := by
   rfl
 
 /-- T4-G: BFS accumulator monotonicity — `descendantsOf.go` only adds to acc,
 never removes. -/
 theorem descendantsOf_go_acc_subset
-    (cdt : CapDerivationTree) (fuel : Nat) (queue : List CdtNodeId)
-    (visited : Std.HashSet CdtNodeId) (acc : List CdtNodeId) :
+    (cdt : CapDerivationTree) (fuel : Nat) (queue : List SlotRef)
+    (visited : Std.HashSet SlotRef) (acc : List SlotRef) :
     ∀ x ∈ acc, x ∈ descendantsOf.go cdt fuel queue visited acc := by
   induction fuel generalizing queue visited acc with
   | zero => intro x hx; exact hx
@@ -3111,9 +3132,9 @@ theorem descendantsOf_go_acc_subset
 /-- T4-G: Direct children of root appear in descendantsOf result when
 fuel ≥ 1 and root is in the BFS queue. -/
 theorem descendantsOf_go_children_found
-    (cdt : CapDerivationTree) (fuel : Nat) (rest : List CdtNodeId)
-    (visited : Std.HashSet CdtNodeId) (acc : List CdtNodeId)
-    (root : CdtNodeId) (c : CdtNodeId)
+    (cdt : CapDerivationTree) (fuel : Nat) (rest : List SlotRef)
+    (visited : Std.HashSet SlotRef) (acc : List SlotRef)
+    (root : SlotRef) (c : SlotRef)
     (hChild : c ∈ cdt.childrenOf root)
     (hNotInAcc : c ∉ acc)
     (hSync : ∀ x, x ∈ acc ↔ visited.contains x = true) :
@@ -3133,8 +3154,8 @@ theorem descendantsOf_go_children_found
 /-- T4-G: Direct children of the root are in the descendantsOf result,
 provided the CDT has at least one edge (ensuring fuel ≥ 1). -/
 theorem descendantsOf_children_subset
-    (cdt : CapDerivationTree) (root : CdtNodeId)
-    (c : CdtNodeId) (hChild : c ∈ cdt.childrenOf root)
+    (cdt : CapDerivationTree) (root : SlotRef)
+    (c : SlotRef) (hChild : c ∈ cdt.childrenOf root)
     (hEdges : cdt.edges.length > 0) :
     c ∈ cdt.descendantsOf root := by
   simp only [descendantsOf]
@@ -3146,9 +3167,9 @@ theorem descendantsOf_children_subset
 /-- T4-G: BFS monotonicity — adding more fuel does not lose results.
 If a node is found with fuel `n`, it is also found with fuel `n + k`. -/
 theorem descendantsOf_go_fuel_mono
-    (cdt : CapDerivationTree) (n : Nat) (queue : List CdtNodeId)
-    (visited : Std.HashSet CdtNodeId) (acc : List CdtNodeId)
-    (x : CdtNodeId) (hIn : x ∈ descendantsOf.go cdt n queue visited acc) :
+    (cdt : CapDerivationTree) (n : Nat) (queue : List SlotRef)
+    (visited : Std.HashSet SlotRef) (acc : List SlotRef)
+    (x : SlotRef) (hIn : x ∈ descendantsOf.go cdt n queue visited acc) :
     ∀ k, x ∈ descendantsOf.go cdt (n + k) queue visited acc := by
   induction n generalizing queue visited acc with
   | zero =>
@@ -3173,9 +3194,9 @@ then all children of `node` end up in the BFS result (go processes
 the head and adds its unvisited children to both queue and acc).
 Requires visited/acc sync invariant: `∀ x, x ∈ acc ↔ visited.contains x`. -/
 theorem descendantsOf_go_head_children_found
-    (cdt : CapDerivationTree) (fuel : Nat) (rest : List CdtNodeId)
-    (visited : Std.HashSet CdtNodeId) (acc : List CdtNodeId)
-    (node : CdtNodeId) (c : CdtNodeId)
+    (cdt : CapDerivationTree) (fuel : Nat) (rest : List SlotRef)
+    (visited : Std.HashSet SlotRef) (acc : List SlotRef)
+    (node : SlotRef) (c : SlotRef)
     (hChild : c ∈ cdt.childrenOf node)
     (hSync : ∀ x, x ∈ acc ↔ visited.contains x = true) :
     c ∈ descendantsOf.go cdt (fuel + 1) (node :: rest) visited acc := by
@@ -3197,8 +3218,8 @@ direct children of the root are discovered. Combined with
 never loses previously discovered nodes, providing the foundation
 for the fuel sufficiency argument. -/
 theorem descendantsOf_fuel_bound
-    (cdt : CapDerivationTree) (root : CdtNodeId)
-    (c : CdtNodeId) (hChild : c ∈ cdt.childrenOf root)
+    (cdt : CapDerivationTree) (root : SlotRef)
+    (c : SlotRef) (hChild : c ∈ cdt.childrenOf root)
     (fuel : Nat) (hFuel : fuel ≥ 1) :
     c ∈ descendantsOf.go cdt fuel [root] {} [] := by
   obtain ⟨k, hk⟩ : ∃ k, fuel = k + 1 := ⟨fuel - 1, by omega⟩
@@ -3231,13 +3252,13 @@ AI6-D (M-21): See TPI-DOC for full fuel sufficiency formal bridge
 `docs/REGISTERED_DEBT.md`, Registered debt index, C.1).
 `edgeWellFounded` (Model/Object/Structures.lean:1058)
 provides the inductive well-foundedness foundation: CDT edges form a
-well-founded relation on `CdtNodeId`, ensuring termination of any
+well-founded relation on `SlotRef`, ensuring termination of any
 traversal. The depth-1 proof here is the base case; the inductive step
 connecting `CdtChildReachable` transitivity to BFS fuel bounds requires
 composing `edgeWellFounded` with the U4-N positional queue lemmas. -/
 theorem descendantsOf_fuel_sufficiency
-    (cdt : CapDerivationTree) (root : CdtNodeId)
-    (c : CdtNodeId) (hChild : c ∈ cdt.childrenOf root)
+    (cdt : CapDerivationTree) (root : SlotRef)
+    (c : SlotRef) (hChild : c ∈ cdt.childrenOf root)
     (hEdges : cdt.edges.length > 0) :
     c ∈ cdt.descendantsOf root :=
   descendantsOf_children_subset cdt root c hChild hEdges
@@ -3252,9 +3273,9 @@ theorem descendantsOf_fuel_sufficiency
     delegates to `descendantsOf_go_head_children_found`; the step unfolds one
     BFS iteration via `descendantsOf_go_cons` and reassociates the queue. -/
 private theorem descendantsOf_go_queue_pos_children_found
-    (cdt : CapDerivationTree) (fuel : Nat) (before after : List CdtNodeId)
-    (visited : Std.HashSet CdtNodeId) (acc : List CdtNodeId)
-    (mid c : CdtNodeId) (hChild : c ∈ cdt.childrenOf mid)
+    (cdt : CapDerivationTree) (fuel : Nat) (before after : List SlotRef)
+    (visited : Std.HashSet SlotRef) (acc : List SlotRef)
+    (mid c : SlotRef) (hChild : c ∈ cdt.childrenOf mid)
     (hFuel : fuel > before.length)
     (hSync : ∀ x, x ∈ acc ↔ visited.contains x = true) :
     c ∈ descendantsOf.go cdt fuel (before ++ mid :: after) visited acc := by
@@ -3294,9 +3315,9 @@ private theorem list_mem_split {a : α} {l : List α} (h : a ∈ l) :
     appears in the BFS result. Decomposes queue membership into a positional
     split and delegates to `descendantsOf_go_queue_pos_children_found`. -/
 theorem descendantsOf_go_mem_children_found
-    (cdt : CapDerivationTree) (fuel : Nat) (queue : List CdtNodeId)
-    (visited : Std.HashSet CdtNodeId) (acc : List CdtNodeId)
-    (mid c : CdtNodeId)
+    (cdt : CapDerivationTree) (fuel : Nat) (queue : List SlotRef)
+    (visited : Std.HashSet SlotRef) (acc : List SlotRef)
+    (mid c : SlotRef)
     (hMid : mid ∈ queue) (hChild : c ∈ cdt.childrenOf mid)
     (hFuel : fuel ≥ queue.length)
     (hSync : ∀ x, x ∈ acc ↔ visited.contains x = true) :
@@ -3314,7 +3335,7 @@ theorem descendantsOf_go_mem_children_found
 existence of a corresponding edge in `cdt.edges`. Bridges the O(1) `childMap`
 lookup to the proof-anchor edge list. -/
 theorem childrenOf_to_edge (cdt : CapDerivationTree)
-    (hConsistent : cdt.cdtMapsConsistent) (parent child : CdtNodeId)
+    (hConsistent : cdt.cdtMapsConsistent) (parent child : SlotRef)
     (hChild : child ∈ cdt.childrenOf parent) :
     ∃ e ∈ cdt.edges, e.parent = parent ∧ e.child = child := by
   simp only [childrenOf] at hChild
@@ -3328,7 +3349,7 @@ through `childrenOf`) implies `cdtReachable` (path-based reachability through
 proof-anchor edge list, enabling composition with `edgeWellFounded`. -/
 theorem CdtChildReachable_implies_cdtReachable (cdt : CapDerivationTree)
     (hConsistent : cdt.cdtMapsConsistent)
-    {root n : CdtNodeId} (hReach : CdtChildReachable cdt root n) :
+    {root n : SlotRef} (hReach : CdtChildReachable cdt root n) :
     cdt.cdtReachable root n := by
   induction hReach with
   | child hChild =>
@@ -3822,7 +3843,7 @@ Combined with `addEdge_preserves_edgeWellFounded_fresh` (acyclicity preservation
 and `addEdge_preserves_cdtMapsConsistent` (index consistency preservation), this
 provides the full maintenance argument for CDT depth bounds. -/
 theorem addEdge_edges_length (cdt : CapDerivationTree)
-    (parent child : CdtNodeId) (op : DerivationOp) :
+    (parent child : SlotRef) (op : DerivationOp) :
     (cdt.addEdge parent child op).edges.length = cdt.edges.length + 1 := by
   simp [CapDerivationTree.addEdge, List.length_cons]
 
@@ -3834,7 +3855,7 @@ for the system-wide CDT depth invariant.
 **Proof**: `addEdge` increments `edges.length` by 1 (via `addEdge_edges_length`).
 If the pre-count is `< maxCdtDepth`, the post-count is `≤ maxCdtDepth`. -/
 theorem addEdge_maintains_depth_bound (cdt : CapDerivationTree)
-    (parent child : CdtNodeId) (op : DerivationOp)
+    (parent child : SlotRef) (op : DerivationOp)
     (hBound : cdt.edges.length < maxCdtDepth) :
     (cdt.addEdge parent child op).edges.length ≤ maxCdtDepth := by
   rw [addEdge_edges_length]; omega

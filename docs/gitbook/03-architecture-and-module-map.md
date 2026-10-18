@@ -294,7 +294,7 @@ inventory was written:
 
 - `SeLe4n/Kernel/Capability/Operations.lean`
   - CSpace transitions (`lookup`, `insert`, `mint`, `delete`, `revoke`, `copy`, `move`, CDT-aware revoke, streaming BFS revoke).
-  - Node-stable CDT integration: slot↔node mapping (`cdtSlotNode`/`cdtNodeSlot`), move-as-pointer-update semantics, delete-time mapping detachment to avoid stale slot reuse aliasing, and strict revoke reporting (`cspaceRevokeCdtStrict`) that returns first descendant-delete failure context.
+  - Slot-keyed CDT integration (the slot is the derivation node, as seL4's `cte_t`): copy/mint/transfer add an edge between slots, move carries the source's edges to the destination, delete splices the slot out, and strict revoke reporting (`cspaceRevokeCdtStrict`) that returns first descendant-delete failure context.
   - Streaming BFS revoke (`cspaceRevokeCdtStreaming`): level-by-level BFS traversal via `streamingRevokeBFS`, eliminating full `descendantsOf` materialization. Preserves `capabilityInvariantBundle` with proved step and composed preservation theorems.
   - **The syscall arm (WS-RR RR8.16, `v0.35.190`)**: `SyscallId.cspaceRevoke` dispatches `cspaceRevokeCdt` — the family had no ABI path at all before it. The scaffold's case analysis (`revokeCdtScaffold_ok_decompose`) and the fold's induction (`revokeCdtFold_induct`, `revokeCdtMaterializedTraversal_ok_induct`) live here, **predicate-free**, so the capability bundle's preservation argument and `ipcInvariantFull`'s are one answer rather than two; `revokeCdtFoldBody` moved here with them and `revokeCdtMaterializedTraversal` is defined through it.
 - `SeLe4n/Kernel/Capability/Invariant.lean` (re-export hub)

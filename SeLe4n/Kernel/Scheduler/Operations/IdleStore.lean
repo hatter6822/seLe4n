@@ -190,6 +190,6 @@ theorem storeIdleThreadOnCore_preserves_objectTypeMetadataConsistent (st : Syste
     (hC : SystemState.objectTypeMetadataConsistent st) :
     SystemState.objectTypeMetadataConsistent (storeIdleThreadOnCore st c) :=
   SystemState.withObjectStored_preserves_objectTypeMetadataConsistent _ _ _
-    hAll.1.1 hAll.2.2.2.2.2.1.1 hC
+    hAll.1.1 hAll.2.2.2.1.1 hC
 
 end SeLe4n.Kernel
