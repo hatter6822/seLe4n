@@ -1821,7 +1821,6 @@ namespace CapDerivationTree
    - `addEdge_childMapConsistent` / `parentMapConsistent`: Index consistency
    - `addEdge_preserves_cdtMapsConsistent`: Composite preservation
    - `removeNode_edges_sub`, `removeNode_parentMapConsistent`, `removeNode_childMapConsistent`
-   - `removeEdge_surviving_child_ne`, `removeEdge_preserves_cdtMapsConsistent`
    Most are specification surface — not directly composed into the kernel proof
    chain. Exception: `removeNode_edges_sub` is actively used by capability
    invariant preservation proofs (Capability/Invariant/Preservation.lean).
@@ -3179,31 +3178,6 @@ private def removeEdge (cdt : CapDerivationTree) (parent child : SlotRef) : CapD
   { edges := cdt.edges.filter (fun e => ¬(e.parent = parent ∧ e.child = child)),
     childMap := childMap',
     parentMap := cdt.parentMap.erase child }
-
-/-- S3-C: Surviving edges after removeEdge have e.child ≠ c0. -/
-private theorem removeEdge_surviving_child_ne
-    (cdt : CapDerivationTree) (p0 c0 : SlotRef)
-    (hUniq : ∀ e1 e2, e1 ∈ cdt.edges → e2 ∈ cdt.edges →
-      e1.child = e2.child → e1.parent = e2.parent)
-    (hExists : ∃ e ∈ cdt.edges, e.parent = p0 ∧ e.child = c0)
-    (e : CapDerivationEdge) (hMem : e ∈ cdt.edges)
-    (hSurv : ¬(e.parent = p0 ∧ e.child = c0)) :
-    e.child ≠ c0 := by
-  intro hc
-  obtain ⟨e', hMem', hep', hec'⟩ := hExists
-  exact hSurv ⟨(hUniq e e' hMem hMem' (hc ▸ hec'.symm)) ▸ hep', hc⟩
-
-/-- S3-C/U-L03: `removeEdge` preserves `childMapConsistent ∧ parentMapConsistent`.
-    For CDT-modifying operations, the postcondition hypothesis pattern is used
-    (matching `cspaceCopy`/`cspaceMove` for `addEdge`), where the caller
-    provides the post-state invariant. The `removeEdge_surviving_child_ne`
-    helper enables callers to discharge this obligation. -/
-private theorem removeEdge_preserves_cdtMapsConsistent
-    (cdt : CapDerivationTree) (p0 c0 : SlotRef)
-    (hPost : (cdt.removeEdge p0 c0).childMapConsistent ∧
-             (cdt.removeEdge p0 c0).parentMapConsistent) :
-    (cdt.removeEdge p0 c0).childMapConsistent ∧
-    (cdt.removeEdge p0 c0).parentMapConsistent := hPost
 
 /-- S3-C: Public revocation-scoped edge removal. Wraps the private `removeEdge`
     for use in revocation paths (`processRevokeNode`, `cspaceRevokeCdt`).

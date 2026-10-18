@@ -31,7 +31,13 @@ every operation that grows the tree.  Each operation now proves it.
 - **Retired**: the `hCdtPost` parameters, the six
   `*_cdt_hypothesis_discharged_at` companions and their index marker, the
   vacuous `cdtExpandingOp_preserves_bundle_with_hypothesis`, and
-  `cspaceMintWithCdt_cdtAcyclicity_of_freshDst`.
+  `cspaceMintWithCdt_cdtAcyclicity_of_freshDst`.  Three more theorems of the
+  same shape, which returned their own hypothesis about the post-state's index
+  maps and had no consumer, are removed: `cspaceCopy_preserves_cdtMapsConsistent`,
+  `cspaceMove_preserves_cdtMapsConsistent` and the private
+  `removeEdge_preserves_cdtMapsConsistent` (with its private helper).  Copy and
+  move carry no map-consistency theorem; the maps themselves give way to the
+  slot links in the rest of part 4.
 
 ## v0.36.104 — WS-ZA ZA5.3 part 3: capability operations write in place
 
