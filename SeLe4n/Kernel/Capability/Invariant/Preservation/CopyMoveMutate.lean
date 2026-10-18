@@ -117,7 +117,7 @@ theorem cspaceMove_preserves_capabilityInvariantBundle
                 (fun cn hObj => hDstCapacity cn cap hObj)
                 (objects_invExt_of_capabilityInvariantBundle st hInv)
                 (replyCapBacked_of_source_slot st src cap hInv hSrc) hInsert
-              have hBundleSt3 := cspaceDeleteSlotCore_preserves_capabilityInvariantBundle st2 st3 src
+              have hBundleSt3 := cspaceDeleteSlotCore_preserves_capabilityInvariantBundleOff st2 st3 src
                 hBundleSt2 hDelete
               rcases hBundleSt3 with ⟨_, hBnd3, _, _, hDepth3, hObjInv3, hRCPV3⟩
               simp [hSrc, hToNN, hInsert, hDelete] at hStep
@@ -331,7 +331,8 @@ theorem cspaceMutate_preserves_capabilityInvariantBundle
               have hRefObj : st'.objects = stMid.objects := by rw [hStep]
               have hBndMid := cspaceSlotCountBounded_of_storeObject_cnode st stMid addr.cnode _ hBounded hObjInv hStore
                 (hSlotCapacity preCn _ hPre)
-              have hCompMid := cdtCompleteness_of_storeObject st stMid addr.cnode _ hComp hObjInv hStore
+              have hCompMid := cdtCompleteness_of_storeObject_cnode_mono st stMid addr.cnode preCn _ hComp
+                hObjInv hPre hStore fun s h => CNode.lookup_insert_ne_none preCn addr.slot s _ h
               have hAcyclicMid := cdtAcyclicity_of_cdt_eq st stMid hAcyclic
                 (storeObject_cdt_eq st stMid addr.cnode _ hStore)
               have hDepthMid := cspaceDepthConsistent_of_storeObject_insertCNode
@@ -375,7 +376,8 @@ theorem cspaceRecordFrameMapping_preserves_capabilityInvariantBundle
       (hBounded addr.cnode preCn hPre) hLk
   have hBnd := cspaceSlotCountBounded_of_storeObject_cnode st st' addr.cnode _ hBounded hObjInv
     hStore hCapBound
-  have hCompMid := cdtCompleteness_of_storeObject st st' addr.cnode _ hComp hObjInv hStore
+  have hCompMid := cdtCompleteness_of_storeObject_cnode_mono st st' addr.cnode preCn _ hComp
+                hObjInv hPre hStore fun s h => CNode.lookup_insert_ne_none preCn addr.slot s _ h
   have hAcyclicMid := cdtAcyclicity_of_cdt_eq st st' hAcyclic
     (storeObject_cdt_eq st st' addr.cnode _ hStore)
   have hDepthMid := cspaceDepthConsistent_of_storeObject_insertCNode

@@ -626,20 +626,22 @@ quantifiers suggest.  `cspaceLookupSound` is structural
 (`cspaceSlotCountBounded`, `cspaceDepthConsistent`, and the CNode half of
 `replyCapPointsToValidReply`) read **CNodes** and are transported **backward** —
 a post-state CNode must be a pre-state CNode, which is exactly what a store at a
-TCB key gives.  `cdtCompleteness` reads the CDT and asks that every CNode a
-slot it mentions names be **present**, which is forward and which a store never
-breaks.  `cdtAcyclicity` reads `st.cdt` alone.  And the Reply half of
+TCB key gives.  `cdtCompleteness` reads the CDT and asks that every slot it
+names hold a capability in a live CNode, which is **forward**: a pre-state CNode
+must still be there, unchanged, which a store at a TCB key also gives.  `cdtAcyclicity` reads `st.cdt` alone.  And the Reply half of
 `replyCapPointsToValidReply` asks that a Reply still resolve, which is forward.
 
 So a step frames the bundle when it (a) keeps the CDT, (b) introduces
-no CNode that was not one, (c) removes no key, and (d) removes no Reply.  Each
+no CNode that was not one, (c) keeps every CNode it had, and (d) removes no
+Reply.  Each
 is a fact the step's own object frame already states. -/
 theorem capabilityInvariantBundle_of_frame {st st' : SystemState}
     (h : capabilityInvariantBundle st)
     (hCdt : st'.cdt = st.cdt)
     (hCnode : ∀ (oid : SeLe4n.ObjId) (cn : CNode),
       st'.objects[oid]? = some (.cnode cn) → st.objects[oid]? = some (.cnode cn))
-    (hPresent : ∀ oid : SeLe4n.ObjId, st.objects[oid]? ≠ none → st'.objects[oid]? ≠ none)
+    (hCnodeFwd : ∀ (oid : SeLe4n.ObjId) (cn : CNode),
+      st.objects[oid]? = some (.cnode cn) → st'.objects[oid]? = some (.cnode cn))
     (hReply : ∀ rid : SeLe4n.ReplyId, st.getReply? rid ≠ none → st'.getReply? rid ≠ none)
     (hObjInv : st'.objects.invExt) :
     capabilityInvariantBundle st' := by
@@ -648,7 +650,8 @@ theorem capabilityInvariantBundle_of_frame {st st' : SystemState}
   · exact fun oid cn hCn => hBounded oid cn (hCnode oid cn hCn)
   · intro ref hRef
     rw [hCdt] at hRef
-    exact hPresent ref.cnode (hComp ref hRef)
+    obtain ⟨cn, hCn, hL⟩ := hComp ref hRef
+    exact ⟨cn, hCnodeFwd _ cn hCn, hL⟩
   · unfold cdtAcyclicity at hAcyclic ⊢; rw [hCdt]; exact hAcyclic
   · exact fun oid cn hCn => hDepth oid cn (hCnode oid cn hCn)
   · exact fun oid cn slot cap rid hCn hLook hTgt =>
@@ -664,7 +667,7 @@ theorem capabilityInvariantBundle_of_objects_and_cdt_eq {st st' : SystemState}
     capabilityInvariantBundle st' :=
   capabilityInvariantBundle_of_frame h hCdt
     (fun _ _ hCn => by rw [hObjs] at hCn; exact hCn)
-    (fun _ hP => by rw [hObjs]; exact hP)
+    (fun _ _ hCn => by rw [hObjs]; exact hCn)
     (fun _ hR => by unfold SystemState.getReply? at hR ⊢; rw [hObjs]; exact hR)
     (by rw [hObjs]; exact h.2.2.2.2.2.1)
 
@@ -698,10 +701,11 @@ theorem capabilityInvariantBundle_of_kindPreserving {st st' : SystemState}
     · rw [hPost] at hCn
       cases hCn
       exact absurd rfl hNe
-  · intro oid hP
-    rcases hAt oid with hEq | ⟨_, _, _, hPost, _, _⟩
-    · rw [hEq]; exact hP
-    · rw [hPost]; simp
+  · intro oid cn hCn
+    rcases hAt oid with hEq | ⟨pre, post, hPre, _, hType, hNe⟩
+    · rw [hEq]; exact hCn
+    · rw [hCn] at hPre; cases hPre
+      exact absurd hType hNe
   · intro rid hR
     unfold SystemState.getReply? at hR ⊢
     rcases hAt rid.toObjId with hEq | ⟨pre, post, hPre, hPost, hType, _⟩

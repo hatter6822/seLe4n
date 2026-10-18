@@ -896,6 +896,71 @@ theorem foldCells_preserves {γ : Type} (node : CNode) (init : γ)
     P (node.foldCells init f) :=
   foldCells_go_preserves node f P hStep _ 0 init hInit
 
+theorem foldCells_go_visited {γ : Type} (node : CNode)
+    (f : γ → SeLe4n.Slot → Capability → γ) (P : γ → Prop) (R : SeLe4n.Slot → γ → Prop)
+    (hStep : ∀ acc s c, node.lookup s = some c → P acc → P (f acc s c))
+    (hEst : ∀ acc s c, node.lookup s = some c → P acc → R s (f acc s c))
+    (hKeep : ∀ acc s c s', node.lookup s = some c → P acc → R s' acc → R s' (f acc s c)) :
+    ∀ (fuel i : Nat) (acc : γ), node.cells.size ≤ i + fuel → P acc →
+      (∀ j (hj : j < node.cells.size), j < i → ∀ c, node.cells[j] = some c →
+        R (SeLe4n.Slot.ofNat j) acc) →
+      P (foldCellsGo node f fuel i acc) ∧
+        ∀ j (hj : j < node.cells.size), ∀ c, node.cells[j] = some c →
+          R (SeLe4n.Slot.ofNat j) (foldCellsGo node f fuel i acc) := by
+  intro fuel
+  induction fuel with
+  | zero =>
+    intro i acc hFuel hP hR
+    exact ⟨hP, fun j hj c hc => hR j hj (by omega) c hc⟩
+  | succ fuel ih =>
+    intro i acc hFuel hP hR
+    simp only [foldCellsGo]
+    split
+    · rename_i h
+      have hLk : node.lookup (SeLe4n.Slot.ofNat i) = node.cells[i] := lookup_ofNat_eq_cells node i h
+      cases hc : node.cells[i] with
+      | none =>
+        refine ih (i + 1) acc (by omega) hP (fun j hj hji c hcj => ?_)
+        by_cases hji' : j < i
+        · exact hR j hj hji' c hcj
+        · have hEq : j = i := by omega
+          subst hEq
+          exact absurd (hcj.symm.trans hc) (by simp)
+      | some c0 =>
+        refine ih (i + 1) _ (by omega) (hStep acc _ c0 (hLk.trans hc) hP)
+          (fun j hj hji c hcj => ?_)
+        by_cases hji' : j < i
+        · exact hKeep acc _ c0 _ (hLk.trans hc) hP (hR j hj hji' c hcj)
+        · have hEq : j = i := by omega
+          subst hEq
+          exact hEst acc _ c0 (hLk.trans hc) hP
+    · rename_i h
+      exact ⟨hP, fun j hj c hc => hR j hj (by omega) c hc⟩
+
+/-- WS-ZA ZA5.3: a property each step establishes at its own slot and every
+later step keeps holds after the fold at every occupied slot, beside a
+property every step keeps. -/
+theorem foldCells_preserves_visited {γ : Type} (node : CNode) (init : γ)
+    (f : γ → SeLe4n.Slot → Capability → γ) (P : γ → Prop) (R : SeLe4n.Slot → γ → Prop)
+    (hInit : P init)
+    (hStep : ∀ acc s c, node.lookup s = some c → P acc → P (f acc s c))
+    (hEst : ∀ acc s c, node.lookup s = some c → P acc → R s (f acc s c))
+    (hKeep : ∀ acc s c s', node.lookup s = some c → P acc → R s' acc → R s' (f acc s c)) :
+    P (node.foldCells init f) ∧
+      ∀ s c, node.lookup s = some c → R s (node.foldCells init f) := by
+  have h := foldCells_go_visited node f P R hStep hEst hKeep node.cells.size 0 init
+    (by omega) hInit (fun j _ hj => absurd hj (Nat.not_lt_zero _))
+  refine ⟨h.1, fun s c hs => ?_⟩
+  have hl : s.toNat < node.cells.size := by
+    rw [lookup_eq_lookupCells] at hs
+    unfold lookupCells slotArrayGet at hs
+    by_cases hl : s.toNat < node.cells.size
+    · exact hl
+    · simp [hl] at hs
+  have := h.2 s.toNat hl c (by
+    rw [← lookup_ofNat_eq_cells node _ hl, SeLe4n.Slot.ofNat_toNat]; exact hs)
+  rwa [SeLe4n.Slot.ofNat_toNat] at this
+
 theorem foldCells_go_and (node : CNode) (p : SeLe4n.Slot → Capability → Bool) :
     ∀ (fuel i : Nat) (acc : Bool), node.cells.size ≤ i + fuel →
       (foldCellsGo node (fun acc s c => acc && p s c) fuel i acc = true ↔
@@ -1354,6 +1419,17 @@ theorem lookup_revokeTargetLocal_sub
     SeLe4n.UniqueSlotMap.filter] at hLookup ⊢
   exact RHTable.filter_get_subset node.slots.table _ slot cap hUniq.1 hLookup
 
+/-- ...and a slot the revoke keeps keeps its capability. -/
+theorem lookup_revokeTargetLocal_of_keeps
+    (node : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget)
+    (slot : SeLe4n.Slot) (cap : Capability) (hUniq : node.slotsUnique)
+    (hLookup : node.lookup slot = some cap)
+    (hKeeps : revokeTargetLocalKeeps sourceSlot target slot cap = true) :
+    (node.revokeTargetLocal sourceSlot target).lookup slot = some cap := by
+  simp only [revokeTargetLocal, lookup, slots_filterSlots, SeLe4n.UniqueSlotMap.get?,
+    SeLe4n.UniqueSlotMap.filter] at hLookup ⊢
+  exact RHTable.filter_getElem?_of_pred node.slots.table _ slot cap hUniq.1 hLookup hKeeps
+
 /-- T2-J (L-NEW-4): The empty CNode trivially satisfies `guardBounded`
     (guardValue = 0 < 2^0 = 1). -/
 theorem empty_guardBounded : CNode.empty.guardBounded := by
@@ -1630,6 +1706,16 @@ theorem lookup_remove_ne
   -- underlying `RHTable` lemma.
   exact RHTable.getElem?_erase_ne_K cn.slots.table slot slot'
     (fun h => hNe (eq_of_beq h)) hUniq
+
+/-- An insert keeps every occupied slot occupied. -/
+theorem lookup_insert_ne_none (cn : CNode) (slot s : SeLe4n.Slot) (cap : Capability)
+    (h : cn.lookup s ≠ none) : (cn.insert slot cap).lookup s ≠ none := by
+  by_cases hEq : slot = s
+  · subst hEq
+    by_cases hAddr : cn.slotAddressable slot
+    · rw [lookup_insert_eq cn slot cap (slotsUnique_holds cn) hAddr]; simp
+    · rw [insert_eq_self_of_not_addressable cn slot cap hAddr]; exact h
+  · rw [lookup_insert_ne cn slot s cap hEq (slotsUnique_holds cn)]; exact h
 
 end CNode
 
@@ -2836,13 +2922,13 @@ private theorem foldl_addEdge_edges (cdt : CapDerivationTree) (node p : SlotRef)
 /-- Every edge after a splice is an old edge or joins `node`'s parent to one of
 `node`'s children. -/
 theorem spliceNode_edges (cdt : CapDerivationTree) (node : SlotRef) :
-    ∀ e' ∈ (cdt.spliceNode node).edges, e' ∈ cdt.edges ∨
+    ∀ e' ∈ (cdt.spliceNode node).edges, e' ∈ (cdt.removeNode node).edges ∨
       ∃ up ∈ cdt.edges, ∃ e ∈ cdt.edges, up.child = node ∧ e.parent = node ∧
         e'.parent = up.parent ∧ e'.child = e.child := by
   intro e' h
   unfold spliceNode at h
   split at h
-  · exact .inl (removeNode_edges_sub cdt node e' h)
+  · exact .inl h
   · rename_i up hUp
     have hUpMem := List.mem_of_find?_eq_some hUp
     have hUpChild : up.child = node := by
@@ -2850,7 +2936,7 @@ theorem spliceNode_edges (cdt : CapDerivationTree) (node : SlotRef) :
     rcases foldl_addEdge_edges cdt node up.parent _ _ (fun e he => by
         simp only [List.mem_filter, CapDerivationEdge.isParentOf, decide_eq_true_eq] at he
         exact he) e' h with h' | ⟨hp, e, he, hep, hec⟩
-    · exact .inl (removeNode_edges_sub cdt node e' h')
+    · exact .inl h'
     · exact .inr ⟨up, hUpMem, e, he, hUpChild, hep, hp, hec.symm⟩
 
 /-- A splice keeps the tree acyclic: each new edge shortcuts an old two-edge path. -/
@@ -2858,7 +2944,7 @@ theorem spliceNode_edgeWellFounded (cdt : CapDerivationTree) (node : SlotRef)
     (hWF : cdt.edgeWellFounded) : (cdt.spliceNode node).edgeWellFounded :=
   edgeWellFounded_of_edges_transGen cdt _ hWF fun e' he' => by
     rcases spliceNode_edges cdt node e' he' with h | ⟨up, hUp, e, he, hUc, hEp, hP, hC⟩
-    · exact .single ⟨e', h, rfl, rfl⟩
+    · exact .single ⟨e', removeNode_edges_sub cdt node e' h, rfl, rfl⟩
     · exact .tail (.single ⟨up, hUp, hP.symm, hUc⟩) ⟨e, he, hEp, hC.symm⟩
 
 
@@ -2873,10 +2959,42 @@ theorem spliceNode_mentions (cdt : CapDerivationTree) (node ref : SlotRef)
     (h : (cdt.spliceNode node).mentions ref) : cdt.mentions ref := by
   obtain ⟨e', he', hr⟩ := h
   rcases spliceNode_edges cdt node e' he' with h | ⟨up, hUp, e, he, _, _, hP, hC⟩
-  · exact ⟨e', h, hr⟩
+  · exact ⟨e', removeNode_edges_sub cdt node e' h, hr⟩
   · rcases hr with hr | hr
     · exact ⟨up, hUp, .inl (hP ▸ hr)⟩
     · exact ⟨e, he, .inr (hC ▸ hr)⟩
+
+/-- A removal takes its node out of the tree. -/
+theorem removeNode_not_mentions_self (cdt : CapDerivationTree) (node : SlotRef) :
+    ¬ (cdt.removeNode node).mentions node := by
+  rintro ⟨e, he, hr⟩
+  simp only [removeNode, List.mem_filter, CapDerivationEdge.isParentOf,
+    CapDerivationEdge.isChildOf, decide_eq_true_eq] at he
+  rcases hr with hr | hr
+  · exact he.2.1 hr
+  · exact he.2.2 hr
+
+/-- An acyclic tree has no edge from a node to itself. -/
+theorem edgeWellFounded_no_self_edge {cdt : CapDerivationTree} (hWF : cdt.edgeWellFounded)
+    {e : CapDerivationEdge} (he : e ∈ cdt.edges) : e.parent ≠ e.child := by
+  intro hEq
+  exact hWF e.parent ⟨[e.parent, e.child], by simp, rfl, by simp [hEq],
+    fun i hi => by
+      have : i = 0 := by simp at hi; omega
+      subst this
+      exact ⟨e, he, rfl, rfl⟩⟩
+
+/-- A splice of an acyclic tree takes its node out of the tree: the edges it
+makes join the node's parent to the node's children, neither of which is the
+node. -/
+theorem spliceNode_not_mentions_self (cdt : CapDerivationTree) (node : SlotRef)
+    (hWF : cdt.edgeWellFounded) : ¬ (cdt.spliceNode node).mentions node := by
+  rintro ⟨e', he', hr⟩
+  rcases spliceNode_edges cdt node e' he' with h | ⟨up, hUp, e, he, hUc, hEp, hP, hC⟩
+  · exact removeNode_not_mentions_self cdt node ⟨e', h, hr⟩
+  · rcases hr with hr | hr
+    · exact edgeWellFounded_no_self_edge hWF hUp (by rw [hUc, ← hr, hP])
+    · exact edgeWellFounded_no_self_edge hWF he (by rw [hEp, ← hr, hC])
 
 /-- `removeNode` keeps the child map's `invExtK`. -/
 theorem removeNode_childMap_invExtK (cdt : CapDerivationTree) (node : SlotRef)

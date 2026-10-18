@@ -147,8 +147,9 @@ theorem cspaceInsertSlot_preserves_capabilityInvariantBundle
       (SystemState.getCNode?_eq_some_iff st addr.cnode preCn).mp hCnOpt
     exact ⟨cspaceSlotCountBounded_of_storeObject_cnode st st' addr.cnode
         (preCn.insert addr.slot cap) hBounded hObjInv hStore (hSlotCapacity preCn hPre),
-      cdtCompleteness_of_storeObject st st' addr.cnode
-        (.cnode (preCn.insert addr.slot cap)) hComp hObjInv hStore,
+      cdtCompleteness_of_storeObject_cnode_mono st st' addr.cnode preCn
+        (preCn.insert addr.slot cap) hComp hObjInv hPre hStore
+        (fun s h => CNode.lookup_insert_ne_none preCn addr.slot s cap h),
       cdtAcyclicity_of_cdt_eq st st' hAcyclic
         (storeObject_cdt_eq st st' addr.cnode _ hStore),
       cspaceDepthConsistent_of_storeObject_insertCNode
