@@ -4156,6 +4156,10 @@ run_check "INVARIANT" rg -n '^theorem vspaceMapFromFrameCap_ok_records($|[ ({:\[
 run_check "INVARIANT" rg -n '^theorem cspaceRecordFrameMapping_preserves_capabilityInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/CopyMoveMutate.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_cspaceDelete_unmappedRoot_write_mem($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_vspaceMap_frameCnode_write_mem($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+# PR #956 review: the map rewrites a CNode whose slots' links a capability
+# operation may relink, so it declares the tree's subject and meets every link writer.
+run_check "INVARIANT" rg -n '^theorem lockSet_vspaceMap_stateLevel_mem($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem vspaceMap_capabilityOps_share_serialization($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n 'RETIRED: the non-finalising delete left the deleted capability.s mapping in place' tests/VSpaceCapabilityBindingSuite.lean
 run_check "INVARIANT" rg -n 'a stale record removes nothing: the other frame.s mapping survives' tests/VSpaceCapabilityBindingSuite.lean
 run_negative_check "INVARIANT" rg -n 'untypedResetUnmap' SeLe4n tests
@@ -7718,7 +7722,7 @@ run_prose_check "INVARIANT" rg -n 'RETIRED: without the deferral core 1 resumes 
 # frame is written by the map, so it is a write member of the footprint.
 run_check "INVARIANT" rg -n -U '^      match p\.epoch with\n      \| none => true\n      \| some e => root\.mappingEpochs\[p\.vaddr\]\? == some e$' SeLe4n/Kernel/Architecture/PageTeardown.lean
 run_check "INVARIANT" rg -n '^            match tagFrameMapping args\.asid args\.vaddr \(frameCapObjId frameCap\) st1 with$' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^     \(pageLock frameObjId, \.write\)\]$' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n -U '^     \(pageLock frameObjId, \.write\),\n     \(stateLevelLock, \.read\)\]$' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_negative_check "INVARIANT" rg -n '\(pageLock frameObjId, \.read\)' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_vspaceMap_frame_write_mem($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 # PR #904 (v0.36.41): the HAL validates what a descriptor says; a table store is

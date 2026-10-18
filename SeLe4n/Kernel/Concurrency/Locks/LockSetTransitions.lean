@@ -1502,7 +1502,19 @@ modes to one write member.
 **PR #904 review (`v0.36.41`)**: the frame is a **write** member.  The mapping
 takes the frame's next epoch (`tagFrameMapping`), which advances the frame's
 `mapEpoch` — so two `.vspaceMap`s of one frame on two cores serialise on the
-frame and cannot hand two mappings the same epoch. -/
+frame and cannot hand two mappings the same epoch.
+
+**WS-ZA ZA5.3 part 4 (PR #956 review)**: and `stateLevelLock` for **read**.
+Since `v0.36.106` each CNode slot holds its derivation links, and an operation
+that adds, splices, moves or removes a tree edge rewrites the link words of
+slots in CNodes other than the ones it names (a parent's, a sibling's, a
+child's), declared under `stateLevelLock` (write) as the tree's subject.  The
+mapping record is stored by rewriting the frame capability's whole CNode, link
+words included, so without this member a map and a capability operation that
+relinks a slot of that CNode had provably disjoint footprints while both
+rewriting the CNode, and one of the two updates could be lost.  Read mode is
+the honest one: the map reads the link words and writes them back unchanged,
+so it conflicts with every link writer and with no other map. -/
 def lockSet_vspaceMap (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) (vspaceRootObjId : ObjId)
     (frameCnodeObjId frameObjId : ObjId) : LockSet :=
@@ -1511,7 +1523,8 @@ def lockSet_vspaceMap (callerTid : ThreadId)
      (cnodeLock cnodeRootObjId, .read),
      (vspaceRootLock vspaceRootObjId, .write),
      (cnodeLock frameCnodeObjId, .write),
-     (pageLock frameObjId, .write)]
+     (pageLock frameObjId, .write),
+     (stateLevelLock, .read)]
 
 /-- WS-SM SM3.B.3: `lockSet` for `vspaceUnmap`. -/
 def lockSet_vspaceUnmap (callerTid : ThreadId)
@@ -1944,7 +1957,8 @@ theorem lockSet_vspaceMap_frameCnode_write_mem (callerTid : ThreadId)
   unfold lockSet_vspaceMap lockSetOfList
   simp only [List.foldl]
   exact LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
-    (LockSet.mem_insertOrMerge_write_self _ _)
+    (LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
+      (LockSet.mem_insertOrMerge_write_self _ _))
 
 /-- **PR #904 review (`v0.36.41`)**: `vspaceMap` declares the frame in **write**
 mode — the frame `tagFrameMapping` rewrites to advance its mapping epoch. -/
@@ -1955,7 +1969,40 @@ theorem lockSet_vspaceMap_frame_write_mem (callerTid : ThreadId)
           frameCnodeObjId frameObjId).pairs := by
   unfold lockSet_vspaceMap lockSetOfList
   simp only [List.foldl]
-  exact LockSet.mem_insertOrMerge_write_self _ _
+  exact LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
+    (LockSet.mem_insertOrMerge_write_self _ _)
+
+/-- **WS-ZA ZA5.3 part 4 (PR #956 review)**: `vspaceMap` declares the
+derivation tree's subject, so it meets every operation that rewrites slot links
+(each declares that subject for write) on one key.  The map rewrites the frame
+capability's whole CNode, and a link writer may rewrite the link words of a slot
+in that same CNode without naming it; this is the member that makes the two
+conflict rather than run concurrently. -/
+theorem lockSet_vspaceMap_stateLevel_mem (callerTid : ThreadId)
+    (cnodeRootObjId vspaceRootObjId frameCnodeObjId frameObjId : ObjId) :
+    ∃ m, (stateLevelLock, m)
+      ∈ (lockSet_vspaceMap callerTid cnodeRootObjId vspaceRootObjId
+          frameCnodeObjId frameObjId).pairs := by
+  unfold lockSet_vspaceMap lockSetOfList
+  simp only [List.foldl]
+  exact LockSet.mem_insertOrMerge_self _ _ _
+
+/-- **WS-ZA ZA5.3 part 4 (PR #956 review)**: a map and any of the four
+capability operations share `stateLevelLock` with the capability operation
+holding it for write, so no two-phase-locking consumer may run them
+concurrently. -/
+theorem vspaceMap_capabilityOps_share_serialization (callerA callerB : ThreadId)
+    (cnRoot vRoot frameCn frame src dst : ObjId) :
+    (∃ m, (stateLevelLock, m) ∈ (lockSet_vspaceMap callerA cnRoot vRoot frameCn frame).pairs) ∧
+    (stateLevelLock, AccessMode.write) ∈ (lockSet_cspaceMint callerB src dst).pairs ∧
+    (stateLevelLock, AccessMode.write) ∈ (lockSet_cspaceCopy callerB src dst).pairs ∧
+    (stateLevelLock, AccessMode.write) ∈ (lockSet_cspaceMove callerB src dst).pairs ∧
+    (stateLevelLock, AccessMode.write) ∈ (lockSet_cspaceDelete callerB src dst none).pairs :=
+  ⟨lockSet_vspaceMap_stateLevel_mem callerA cnRoot vRoot frameCn frame,
+   lockSet_cspaceMint_stateLevel_write_mem callerB src dst,
+   lockSet_cspaceCopy_stateLevel_write_mem callerB src dst,
+   lockSet_cspaceMove_stateLevel_write_mem callerB src dst,
+   lockSet_cspaceDelete_stateLevel_write_mem callerB src dst none⟩
 
 /-- **WS-RR RR7.9**: `mintReplyCap` inherits the member, by definition rather
 than by repetition. -/
@@ -4948,7 +4995,7 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
   -- **WS-BP BP7.1 (`v0.36.7`)**: the map reads the frame its capability names
   -- and writes that capability's mapping record.
   | .vspaceMap =>
-      [.tcb, .cnode, .vspaceRoot, .page]
+      [.tcb, .cnode, .vspaceRoot, .page, .objStore]
   -- WS-SM SM8.C.9: `.declassify` reads the caller TCB (to resolve the running
   -- subject's domain) and the caller's CNode (capability resolution), and its
   -- only state-level write is `SystemState.declassificationAuditLog` —
@@ -6664,6 +6711,8 @@ theorem lockSet_consistent_vspaceMap (callerTid : ThreadId)
         · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp [pageLock]; decide
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp [stateLevelLock]; decide
         exact absurd hMem (by intro h; cases h))
 
 /-- WS-SM SM7.D for `.vspaceUnifyInstruction`. -/
