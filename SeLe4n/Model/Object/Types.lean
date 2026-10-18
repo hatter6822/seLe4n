@@ -2915,6 +2915,10 @@ theorem slotArrayGet_mapIdx (cells : Array (Option Capability))
   unfold slotArrayGet
   by_cases h : s.toNat < cells.size <;> simp [h]
 
+/-- WS-ZA ZA5.3 part 4: the words of derivation links one slot holds (parent,
+first child, next sibling, previous sibling; a CNode word and a slot word each). -/
+def slotLinkWords : Nat := 8
+
 /-- WS-H13/H-01: Depth-aware CNode with compressed-path guard.
 
 `depth` = maximum remaining CSpace depth in bits from this node to any leaf.
@@ -2949,6 +2953,13 @@ structure CNode where
   cells      : Array (Option Capability)
   cells_size : cells.size = 2 ^ radixWidth
   slots_agree : ∀ s, slotsGhost.out.get? s = slotArrayGet cells s
+  /-- WS-ZA ZA5.3 part 4: each slot's derivation links (seL4's mapping-database
+  words in `cte_t`), `slotLinkWords` words per slot: parent, first child, next
+  and previous sibling, each a CNode word and a slot word, a word of 0 meaning
+  no link and any other word `n` the object or slot `n - 1`.  Words, not
+  records, so a link is written in place and no entry is shared. -/
+  links      : Array Nat
+  links_size : links.size = slotLinkWords * 2 ^ radixWidth
   deriving Repr
 
 /-- WS-ZA ZA5.3: the slot map the theorems read; ghost state, equal to the slot
@@ -2967,6 +2978,8 @@ def CNode.ofSlots (depth guardWidth guardValue radixWidth : Nat)
   slotsGhost := .mk (m.filter fun s _ => decide (s.toNat < 2 ^ radixWidth))
   cells := slotArrayOf radixWidth m
   cells_size := slotArrayOf_size _ _
+  links := Array.replicate (slotLinkWords * 2 ^ radixWidth) 0
+  links_size := Array.size_replicate
   slots_agree := fun s => by
     rw [SeLe4n.Erased.out_mk, SeLe4n.UniqueSlotMap.get?_filter]
     unfold slotArrayGet

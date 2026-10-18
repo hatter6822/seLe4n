@@ -103,7 +103,9 @@ def frozenObjectAgrees (f : FrozenKernelObject) (l : KernelObject) : Bool :=
   -- either structure breaks this pattern until someone decides about it.
   | .cnode (fc@⟨fd, fgw, fgv, frw, _fslots⟩),
     -- The live slot array is not compared: `slots_agree` makes it the slot map's.
-    .cnode (lc@⟨ld, lgw, lgv, lrw, _lslots, _lcells, _, _⟩) =>
+    -- The derivation links are not compared: the frozen surface carries no
+    -- derivation tree, so it has nothing to hold them against.
+    .cnode (lc@⟨ld, lgw, lgv, lrw, _lslots, _lcells, _, _, _llinks, _⟩) =>
       fd == ld && fgw == lgw && fgv == lgv && frw == lrw
         && frozenCNodeSlotsAgree fc lc
   | .vspaceRoot (fv@⟨fasid, _fm, fbase, ftables, _fepochs⟩),

@@ -69,7 +69,9 @@ def KernelObject.unshareImpl : KernelObject → KernelObject
       cells_size := by rw [Array.size_map]; exact c.cells_size
       slots_agree := by
         have h : (opaqueId : Option Capability → Option Capability) = id := rfl
-        rw [h, Array.map_id]; exact c.slots_agree }
+        rw [h, Array.map_id]; exact c.slots_agree
+      links := c.links.map opaqueId
+      links_size := by rw [Array.size_map]; exact c.links_size }
   | .vspaceRoot v => .vspaceRoot { v with
       asid := opaqueId v.asid
       mappings := v.mappings.unshare
@@ -84,8 +86,9 @@ def KernelObject.unshareImpl : KernelObject → KernelObject
     @KernelObject.unshare = @KernelObject.unshareImpl := by
   funext o
   have hId : (opaqueId : Option Capability → Option Capability) = id := rfl
+  have hIdN : (opaqueId : Nat → Nat) = id := rfl
   cases o <;>
-    simp only [KernelObject.unshare, KernelObject.unshareImpl, hId, Array.map_id, opaqueId,
+    simp only [KernelObject.unshare, KernelObject.unshareImpl, hId, hIdN, Array.map_id, opaqueId,
       RHTable.unshare]
 
 end SeLe4n.Model
