@@ -1747,6 +1747,70 @@ theorem cdtRemove_agree {st : SystemState} (hInv : st.objects.invExt)
     rw [e1, e2]; exact hL
 
 
+
+/-- **The children the links name** (seL4's mapping-database children read):
+`p`'s first-child link and the next links after it, at most the tree's edge
+count of them.  Equal to the tree's `childrenOf` under the links' agreement
+(`linkChildrenOf_eq`). -/
+def linkChildrenOf (st : SystemState) (p : SlotRef) : List SlotRef :=
+  st.slotLinkAt.walk st.cdt.edges.length (st.slotLinkAt p .firstChild)
+
+theorem linkChildrenOf_eq {st : SystemState} (h : LinksAgree st.slotLinkAt st.cdt)
+    (p : SlotRef) : st.linkChildrenOf p = st.cdt.childrenOf p :=
+  h.walk_firstChild p (Nat.le_refl _)
+
+/-- **Whether the links name a child of `(o, s)`**: its first-child link's CNode
+word is nonzero.  One word read, no decode. -/
+@[inline] def linkHasChild (st : SystemState) (r : SlotRef) : Bool :=
+  st.slotLinkNodeWord r.cnode r.slot .firstChild != 0
+
+theorem linkHasChild_eq {st : SystemState} (h : LinksAgree st.slotLinkAt st.cdt)
+    (r : SlotRef) : st.linkHasChild r = !(st.cdt.childrenOf r).isEmpty := by
+  have hF := h.firstChild r
+  rw [slotLinkAt_eq_decode] at hF
+  unfold linkHasChild
+  cases hc : st.cdt.childrenOf r with
+  | nil =>
+    rw [hc] at hF
+    by_cases hz : st.slotLinkNodeWord r.cnode r.slot .firstChild = 0
+    · simp [hz]
+    · simp [decodeLink, hz] at hF
+  | cons a l =>
+    rw [hc] at hF
+    by_cases hz : st.slotLinkNodeWord r.cnode r.slot .firstChild = 0
+    · simp [decodeLink, hz] at hF
+    · simp [hz]
+
+/-- **Descendants read along the links**: `CapDerivationTree.descendantsOf`'s
+breadth-first walk with each node's children read off its links
+(`linkChildrenOf`).  Equal to the tree's under the links' agreement
+(`linkDescendantsOf_eq`). -/
+def linkDescendantsOf (st : SystemState) (root : SlotRef) : List SlotRef :=
+  go st.cdt.edges.length [root] {} []
+where
+  go : Nat → List SlotRef → Std.HashSet SlotRef → List SlotRef → List SlotRef
+    | 0, _, _, acc => acc
+    | _ + 1, [], _, acc => acc
+    | fuel + 1, node :: rest, visited, acc =>
+        let children := st.linkChildrenOf node
+        let newChildren := children.filter (fun c => !visited.contains c)
+        let visited' := newChildren.foldl (fun s c => s.insert c) visited
+        go fuel (rest ++ newChildren) visited' (acc ++ newChildren)
+
+theorem linkDescendantsOf_go_eq {st : SystemState} (h : LinksAgree st.slotLinkAt st.cdt) :
+    ∀ (fuel : Nat) (q : List SlotRef) (v : Std.HashSet SlotRef) (acc : List SlotRef),
+      linkDescendantsOf.go st fuel q v acc = CapDerivationTree.descendantsOf.go st.cdt fuel q v acc
+  | 0, _, _, _ => by simp [linkDescendantsOf.go, CapDerivationTree.descendantsOf.go]
+  | _ + 1, [], _, _ => by simp [linkDescendantsOf.go, CapDerivationTree.descendantsOf.go]
+  | fuel + 1, n :: rest, v, acc => by
+    simp only [linkDescendantsOf.go, CapDerivationTree.descendantsOf.go, linkChildrenOf_eq h]
+    exact linkDescendantsOf_go_eq h ..
+
+theorem linkDescendantsOf_eq {st : SystemState} (h : LinksAgree st.slotLinkAt st.cdt)
+    (root : SlotRef) : st.linkDescendantsOf root = st.cdt.descendantsOf root :=
+  linkDescendantsOf_go_eq h ..
+
+
 end SystemState
 
 end SeLe4n.Model

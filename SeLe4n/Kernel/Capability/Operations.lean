@@ -1017,11 +1017,18 @@ def cspaceMint
             | .ok child => cspaceInsertSlot dst child st'
 
 /-- U-H03: Check whether a CSpace slot has CDT children (derived capabilities).
-Returns `true` if the slot has any children in the tree.  No operation refuses on
-it: a delete splices the slot's node out and its children are re-derived from
-its parent (`spliceDeletedCdtNode`). -/
+Returns `true` if the slot has any children in the tree, read off its first-child
+link (`SystemState.linkHasChild`, equal to the tree's read under the links'
+agreement: `hasCdtChildren_eq_tree`).  No operation refuses on it: a delete
+splices the slot's node out and its children are re-derived from its parent
+(`spliceDeletedCdtNode`). -/
 def hasCdtChildren (st : SystemState) (addr : CSpaceAddr) : Bool :=
-  !(st.cdt.childrenOf addr).isEmpty
+  st.linkHasChild addr
+
+theorem hasCdtChildren_eq_tree {st : SystemState}
+    (h : LinksAgree st.slotLinkAt st.cdt) (addr : CSpaceAddr) :
+    hasCdtChildren st addr = !(st.cdt.childrenOf addr).isEmpty :=
+  SystemState.linkHasChild_eq h addr
 
 /-- Core capability slot deletion: empties the slot, leaving the derivation tree
 to the caller.
@@ -1944,7 +1951,7 @@ def revokeCdtScaffold {ρ : Type}
     match cspaceLookupSlot addr st with
     | .error e => .error e
     | .ok _ =>
-        match traverse st addr (st.cdt.descendantsOf addr) with
+        match traverse st addr (st.linkDescendantsOf addr) with
         | .error e => .error e
         | .ok out => .ok (out.report, out.state)
 
@@ -1970,7 +1977,7 @@ theorem revokeCdtScaffold_ok_decompose {ρ : Type}
     (hStep : revokeCdtScaffold traverse addr st = .ok (r, st')) :
     (∃ cap, cspaceLookupSlot addr st = .ok (cap, st)) ∧
       ∃ (out : RevokeTraversalOutcome ρ),
-        traverse st addr (st.cdt.descendantsOf addr) = .ok out ∧ st' = out.state := by
+        traverse st addr (st.linkDescendantsOf addr) = .ok out ∧ st' = out.state := by
   unfold revokeCdtScaffold at hStep
   split at hStep
   · simp at hStep
@@ -2029,7 +2036,8 @@ state-only fold it replaced, which it therefore is on the state component.
 Materializing the descendant list and folding this over it is what
 `revokeCdtMaterializedTraversal` below is.
 
-AJ-L10: `descendantsOf` materializes the full descendant list before folding.
+AJ-L10: the descendant read (`SystemState.linkDescendantsOf`, the tree's
+`descendantsOf` read along the slot links) materializes the full list before folding.
 For deep CDT trees this is a performance concern (O(n) allocation), not a
 correctness issue; `revokeCdtStreamingTraversal` is the O(branching-factor)
 alternative. -/
@@ -2251,7 +2259,7 @@ children before removing the node from the CDT.
 
 Each iteration:
 1. Dequeues the head node from the BFS queue.
-2. Reads the node's children via `childrenOf` (before removal).
+2. Reads the node's children off its links (`SystemState.linkChildrenOf`, before removal).
 3. Delegates to `processRevokeNode` for the actual delete/detach/removeNode.
 4. Appends newly-discovered children to the queue tail.
 
@@ -2270,7 +2278,7 @@ def streamingRevokeBFS
       match processRevokeNode st node with
       | .error e => .error e
       | .ok stNext =>
-          let children := st.cdt.childrenOf node
+          let children := st.linkChildrenOf node
           streamingRevokeBFS fuel (rest ++ children) stNext
 
 /-- M-P04: Interleave BFS discovery with deletion instead of materializing the
@@ -2283,7 +2291,7 @@ def revokeCdtStreamingTraversal (stLocal : SystemState) (rootNode : SlotRef)
     (_descendants : List SlotRef)
     : Except KernelError (RevokeTraversalOutcome Unit) :=
   match streamingRevokeBFS stLocal.cdt.edges.length
-      (stLocal.cdt.childrenOf rootNode) stLocal with
+      (stLocal.linkChildrenOf rootNode) stLocal with
   | .error e => .error e
   | .ok ((), stDone) =>
       -- An empty BFS queue is the only `.ok`, so every node reachable from the
@@ -2434,10 +2442,12 @@ full monotonicity lemma tracked for AN12-B. -/
 theorem cspaceRevokeCdtTransactional_no_failure_no_descendants
     (addr : CSpaceAddr) (st : SystemState) (cap : Capability)
     (hLookup : cspaceLookupSlot addr st = .ok (cap, st))
+    (hLinks : LinksAgree st.slotLinkAt st.cdt)
     (hNoDesc : st.cdt.descendantsOf addr = []) :
     cspaceRevokeCdtTransactional addr st
       = .ok ({ deletedSlots := [], firstFailure := none }, st) := by
-  simp [cspaceRevokeCdtTransactional, revokeCdtScaffold, hLookup, hNoDesc,
+  simp [cspaceRevokeCdtTransactional, revokeCdtScaffold, hLookup,
+    SystemState.linkDescendantsOf_eq hLinks, hNoDesc,
     revokeCdtTransactionalTraversal, validateRevokeCdtDescendants_empty,
     revokeCdtReportingOutcome]
 
