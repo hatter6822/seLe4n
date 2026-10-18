@@ -559,6 +559,25 @@ private def uniqueWaitersCheck (objectIds : List SeLe4n.ObjId) (st : SystemState
 private def cdtChildrenUniqueCheck (st : SystemState) : List (String × Bool) :=
   [("cdt each slot has at most one parent edge", (st.cdt.edges.map (·.child)).Nodup)]
 
+/-- Runtime check of the capability bundle's link conjunct (`LinksAgree`): at
+every slot the tree names and every filled slot of the listed CNodes, each of
+the four links the slot holds is the one the tree gives it. -/
+private def cdtLinksAgreeCheck (objectIds : List SeLe4n.ObjId) (st : SystemState) :
+    List (String × Bool) :=
+  let cdt := st.cdt
+  let named := cdt.edges.foldr (fun e acc => e.parent :: e.child :: acc) []
+  let filled := objectIds.foldr (fun oid acc =>
+    match st.getCNode? oid with
+    | some cn => cn.foldCells acc (fun inner slot _ => { cnode := oid, slot := slot } :: inner)
+    | none => acc) []
+  let agreesAt (r : SlotRef) : Bool :=
+    let up := cdt.parentOf r
+    st.slotLinkAt r .parent == up &&
+    st.slotLinkAt r .firstChild == (cdt.childrenOf r).head? &&
+    st.slotLinkAt r .next == up.bind (fun p => SlotList.succIn (cdt.childrenOf p) r) &&
+    st.slotLinkAt r .prev == up.bind (fun p => SlotList.predIn (cdt.childrenOf p) r)
+  [("cdt slot links agree with the tree", (named ++ filled).all agreesAt)]
+
 def stateInvariantChecksFor (objectIds : List SeLe4n.ObjId) (st : SystemState)
     (serviceIds : List ServiceId := []) : List (String × Bool) :=
   let schedulerChecks : List (String × Bool) :=
@@ -603,6 +622,7 @@ def stateInvariantChecksFor (objectIds : List SeLe4n.ObjId) (st : SystemState)
     ++ notificationWaiterConsistentChecks objectIds st
     ++ replyWaitersConsistentChecks objectIds st
     ++ cdtChildrenUniqueCheck st
+    ++ cdtLinksAgreeCheck objectIds st
     ++ blockedOnSendNotRunnableChecks objectIds st
     ++ blockedThreadPendingMessageChecks objectIds st
     ++ blockedOnReceiveNotRunnableChecks objectIds st

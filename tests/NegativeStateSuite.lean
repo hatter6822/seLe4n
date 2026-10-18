@@ -282,9 +282,7 @@ private def runCspaceMutationAndRevokeNegativeChecks : IO Unit := do
   let moveSeed : SystemState :=
     { baseState with
       cdt := CapDerivationTree.empty
-        |>.addEdge slot0 moveChildSlot .mint
-        |>.addEdge moveParentSlot slot0 .copy
-    }
+    } |>.withDerivationEdges [(slot0, moveChildSlot, .mint), (moveParentSlot, slot0, .copy)]
   let (_, moveState) ← expectOkSt "cspaceMove moves the source's tree position"
     (SeLe4n.Kernel.cspaceMove slot0 moveDst moveSeed)
   if moveState.cdt.parentOf moveDst = some moveParentSlot ∧
@@ -302,8 +300,8 @@ private def runCspaceMutationAndRevokeNegativeChecks : IO Unit := do
   -- cspaceDeleteSlot on a leaf: its one edge leaves the tree with it.
   let leafDeleteSeed : SystemState :=
     { baseState with
-      cdt := CapDerivationTree.empty |>.addEdge moveParentSlot moveDst .copy
-    }
+      cdt := CapDerivationTree.empty
+    } |>.withDerivationEdges [(moveParentSlot, moveDst, .copy)]
   let (_, deletedMoveDst) ← expectOkSt "cspaceDeleteSlot removes a leaf from the tree"
     (SeLe4n.Kernel.cspaceDeleteSlot moveDst leafDeleteSeed)
   if deletedMoveDst.cdt.parentOf moveDst = none ∧
@@ -321,9 +319,7 @@ private def runCspaceMutationAndRevokeNegativeChecks : IO Unit := do
   let childBearingSeed : SystemState :=
     { baseState with
       cdt := CapDerivationTree.empty
-        |>.addEdge bearingParent slot0 .copy
-        |>.addEdge slot0 childOfBearing .mint
-    }
+    } |>.withDerivationEdges [(bearingParent, slot0, .copy), (slot0, childOfBearing, .mint)]
   let (_, splicedSt) ← expectOkSt "cspaceDeleteSlot deletes a slot with CDT children"
     (SeLe4n.Kernel.cspaceDeleteSlot slot0 childBearingSeed)
   if splicedSt.cdt.parentOf childOfBearing = some bearingParent ∧
@@ -354,12 +350,16 @@ private def runCspaceMutationAndRevokeNegativeChecks : IO Unit := do
               })
             ])))
       cdt := CapDerivationTree.empty
-        |>.addEdge strictRootSlot strictChildSlotBad .mint
-        |>.addEdge strictRootSlot strictChildSlotOk .copy
-    }
+    } |>.withDerivationEdges
+      [(strictRootSlot, strictChildSlotBad, .mint), (strictRootSlot, strictChildSlotOk, .copy)]
 
-  let (strictReport, strictState) ← expectOkSt "cspaceRevokeCdtStrict returns report"
-    (SeLe4n.Kernel.cspaceRevokeCdtStrict strictRootSlot strictSeed)
+  -- The seed derives a slot of a CNode that does not exist, which no kernel run
+  -- reaches (a destroyed CNode's slots leave the tree first), so its slot links
+  -- cannot agree with its tree: the run is checked for its report, not for the
+  -- state invariants.
+  let (strictReport, strictState) ← SeLe4n.Testing.expectOkState
+    "cspaceRevokeCdtStrict returns report"
+    (SeLe4n.Kernel.cspaceRevokeCdtStrict strictRootSlot strictSeed) (msgPrefix := "positive check")
   if strictReport.deletedSlots = [strictChildSlotOk] then
     IO.println "positive check passed [cspaceRevokeCdtStrict records deleted descendants before failure]"
   else
@@ -414,9 +414,7 @@ private def runCspaceMutationAndRevokeNegativeChecks : IO Unit := do
         (txRootSlot.slot, rootCap), (txChildSlotA.slot, rootCap),
         (txChildSlotB.slot, rootCap)]))
       cdt := baseState.cdt
-        |>.addEdge txRootSlot txChildSlotA .copy
-        |>.addEdge txRootSlot txChildSlotB .copy
-  }
+  } |>.withDerivationEdges [(txRootSlot, txChildSlotA, .copy), (txRootSlot, txChildSlotB, .copy)]
   match SeLe4n.Kernel.cspaceRevokeCdtTransactional txRootSlot txSeed with
   | .ok (report, _stFinal) =>
       if report.firstFailure = none then
@@ -3460,8 +3458,7 @@ def runWSR2RevocationChecks : IO Unit := do
   let r2Node2 : SlotRef := { cnode := r2CnodeId, slot := SeLe4n.Slot.ofNat 1 }
   let r2BfsSeed := { r2State with
     cdt := CapDerivationTree.empty
-      |>.addEdge r2Node1 r2Node2 .mint
-  }
+  } |>.withDerivationEdges [(r2Node1, r2Node2, .mint)]
   -- Fuel = 0 with non-empty queue → resourceExhausted
   match SeLe4n.Kernel.streamingRevokeBFS 0 [r2Node1, r2Node2] r2BfsSeed with
   | .error e =>
@@ -3489,8 +3486,7 @@ def runWSR2RevocationChecks : IO Unit := do
               })
             ]))
       cdt := CapDerivationTree.empty
-        |>.addEdge r2RootSlot r2ChildBadSlot .mint
-    }
+    } |>.withDerivationEdges [(r2RootSlot, r2ChildBadSlot, .mint)]
   match SeLe4n.Kernel.cspaceRevokeCdt r2RootSlot r2RevokeSeed with
   | .error e =>
     if e = .objectNotFound then
@@ -3722,12 +3718,9 @@ private def runS2GCapabilityErrorTests : IO Unit := do
   let deepSeed : SystemState :=
     { baseState with
       cdt := CapDerivationTree.empty
-        |>.addEdge deepRoot deepN1 .mint
-        |>.addEdge deepN1 deepN2 .copy
-        |>.addEdge deepN2 deepN3 .mint
-        |>.addEdge deepN3 deepN4 .copy
-        |>.addEdge deepN4 deepN5 .mint
-    }
+    } |>.withDerivationEdges
+      [(deepRoot, deepN1, .mint), (deepN1, deepN2, .copy), (deepN2, deepN3, .mint),
+       (deepN3, deepN4, .copy), (deepN4, deepN5, .mint)]
   -- Deep revoke must handle 5 levels of descendants. Since slots 3-7 don't exist
   -- in cnodeId (only slot 0 does), deletion of descendants will fail with objectNotFound
   -- at the slots that have no capability. This exercises deep traversal + error propagation.
