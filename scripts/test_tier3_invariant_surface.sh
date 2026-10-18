@@ -4047,7 +4047,7 @@ run_check "INVARIANT" rg -n -U 'def resolveUntypedRetype[^\n]*(\n([ \t][^\n]*)?)
 run_check "INVARIANT" rg -n -U 'def resolveUntypedRetype[^\n]*(\n([ \t][^\n]*)?)*      match resolveCapAddress callerTcb\.cspaceRoot srcAddr rootCn\.depth st with' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U 'def untypedRetypeObject[^\n]*(\n([ \t][^\n]*)?)*          match retypeFromUntyped src untypedId childId \(req\.object untypedId ut\) req\.size st with' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n -U 'def untypedRetypeObject[^\n]*(\n([ \t][^\n]*)?)*            match cspaceInsertSlot dst \(req\.capability childId\) \(req\.scrub st1 ut\) with' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
-run_check "INVARIANT" rg -n -U 'def untypedRetypeObject[^\n]*(\n([ \t][^\n]*)?)*st2\.cdt\.addEdge src dst \.retype' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n -U 'def untypedRetypeObject[^\n]*(\n([ \t][^\n]*)?)*st2\.cdtAddChild src dst \.retype' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n -U 'def CarveRequest\.scrub[^\n]*\n  \| \.frame => carveZeroFrame st \(untypedNextFrame ut\)\n  \| \.untyped _ => st' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n -U 'def untypedNextChild[^\n]*(\n([ \t][^\n]*)?)*    parent := some parentId \}' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n -U 'def requiresPageAlignment[^\n]*(\n([ \t][^\n]*)?)*  \| \.untyped => true' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
@@ -21964,6 +21964,6 @@ run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlot_ok_decompose($|[ ({:\[\]]
 run_check "INVARIANT" rg -n -U '^def cdtCompleteness \(st : SystemState\) : Prop :=\n  ∀ ref : SlotRef, st\.cdt\.mentions ref →\n    ∃ cn, st\.objects\[ref\.cnode\]\? = some \(\.cnode cn\) ∧ cn\.lookup ref\.slot ≠ none' SeLe4n/Kernel/Capability/Invariant/Defs.lean
 run_negative_check "INVARIANT" rg -n 'hCdtPost|hCdtMapsPost|cspaceCopy_preserves_cdtMapsConsistent|cspaceMove_preserves_cdtMapsConsistent' SeLe4n
 run_check "INVARIANT" rg -n '^theorem empty_not_mentions($|[ ({:\[\]])' SeLe4n/Model/Object/Structures.lean
-run_check "INVARIANT" rg -n -U '                \| \.ok \(\(\), st...\) => \.ok \(\(\), \{ st... with cdt := st...\.cdt\.moveNode src dst \}\)' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n -U '                \| \.ok \(\(\), st...\) => \.ok \(\(\), st...\.cdtMove src dst\)' SeLe4n/Kernel/Capability/Operations.lean
 run_negative_check "INVARIANT" rg -n 'CdtNodeId|cdtNodeSlot|cdtSlotNode|cdtNextNode|ensureCdtNodeForSlot|attachSlotToCdtNode|detachSlotFromCdt|lookupCdtNodeOfSlot' SeLe4n
 finalize_report

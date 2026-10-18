@@ -68,7 +68,7 @@ theorem _root_.SeLe4n.Model.SystemState.RunQueueStage.setSlotLinkWords (st : Sys
     (o : SeLe4n.ObjId) (s : SeLe4n.Slot) (f : SeLe4n.Model.LinkField) (c w : Nat) :
     RunQueueStage st (st.setSlotLinkWords o s f c w) := by
   cases hcn : st.objects[o]? with
-  | none => exact RunQueueStage.of_eq (by unfold SystemState.setSlotLinkWords; rw [hcn])
+  | none => exact RunQueueStage.of_eq (by rw [SystemState.setSlotLinkWords_def, hcn])
   | some ob =>
     cases ob with
     | cnode cn =>
@@ -76,7 +76,7 @@ theorem _root_.SeLe4n.Model.SystemState.RunQueueStage.setSlotLinkWords (st : Sys
       exact RunQueueStage.insert rfl rfl rfl (fun _ => by rw [hcn]; rfl)
         (by rw [hcn]; exact ⟨fun _ hx => by simp [SystemState.objTcb?] at hx,
           fun _ hx _ => by simp [SystemState.objTcb?] at hx⟩)
-    | _ => exact RunQueueStage.of_eq (by unfold SystemState.setSlotLinkWords; rw [hcn])
+    | _ => exact RunQueueStage.of_eq (by rw [SystemState.setSlotLinkWords_def, hcn])
 
 /-- A run of slot-link writes is a run-queue stage. -/
 theorem _root_.SeLe4n.Model.SystemState.RunQueueStage.of_linkReach {st₀ st : SystemState}

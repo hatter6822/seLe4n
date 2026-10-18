@@ -1339,9 +1339,15 @@ The capability operations thread through the CDT bookkeeping fields, which the
 scheduler and the machine do not read and which no per-core slot lives in. -/
 
 /-- A CDT-field-only rewrite frames the scheduler and every register bank. -/
-theorem cdtEdge_confinedToCore (st : SystemState) (cdt' : CapDerivationTree) (c₀ : CoreId) :
-    observableSlotsConfinedToCore st { st with cdt := cdt' } c₀ :=
-  observableSlotsConfinedToCore_of_scheduler_machine_eq c₀ rfl rfl
+theorem cdtAddChild_confinedToCore (st : SystemState) (p c : SlotRef) (op : DerivationOp)
+    (c₀ : CoreId) : observableSlotsConfinedToCore st (st.cdtAddChild p c op) c₀ :=
+  observableSlotsConfinedToCore_of_scheduler_machine_eq c₀
+    (SystemState.cdtAddChild_scheduler st p c op) (SystemState.cdtAddChild_machine st p c op)
+
+theorem cdtMove_confinedToCore (st : SystemState) (old new : SlotRef) (c₀ : CoreId) :
+    observableSlotsConfinedToCore st (st.cdtMove old new) c₀ :=
+  observableSlotsConfinedToCore_of_scheduler_machine_eq c₀
+    (SystemState.cdtMove_scheduler st old new) (SystemState.cdtMove_machine st old new)
 
 theorem cspaceLookupSlot_confinedToCore (st st' : SystemState) (addr : CSpaceAddr)
     (cap : Capability) (c₀ : CoreId) (hStep : cspaceLookupSlot addr st = .ok (cap, st')) :
@@ -1409,7 +1415,7 @@ theorem cspaceCopy_confinedToCore (st st' : SystemState) (src dst : CSpaceAddr) 
         subst hEq
         refine observableSlotsConfinedToCore_trans
           (cspaceInsertSlot_confinedToCore st pairI.2 dst capNN.val.withoutMapping c₀ hIns) ?_
-        exact cdtEdge_confinedToCore _ _ c₀
+        exact cdtAddChild_confinedToCore _ _ _ _ c₀
 
 /-- SM8.B.3: `cspaceMove` writes only the object store and the CDT. -/
 theorem cspaceMove_confinedToCore (st st' : SystemState) (src dst : CSpaceAddr) (c₀ : CoreId)
@@ -1443,7 +1449,7 @@ theorem cspaceMove_confinedToCore (st st' : SystemState) (src dst : CSpaceAddr) 
             obtain ⟨_, hEq⟩ := hStep
             subst hEq
             exact observableSlotsConfinedToCore_trans hInsC
-              (observableSlotsConfinedToCore_trans hDelC (cdtEdge_confinedToCore _ _ c₀))
+              (observableSlotsConfinedToCore_trans hDelC (cdtMove_confinedToCore _ _ _ c₀))
 
 
 /-- SM8.B.3: `cspaceMint` writes only the object store (the derived cap lands

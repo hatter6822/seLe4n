@@ -28,28 +28,55 @@ namespace SystemState
 /-- **The derivation links the slots hold**: link `f` of slot `r`, read from its
 CNode's link words.  A slot of no CNode holds none. -/
 def slotLinkAt (st : SystemState) : LinkView := fun r f =>
-  match st.objects[r.cnode]? with
-  | some (.cnode cn) => cn.linkAt r.slot f
-  | _ => none
+  match st.getCNode? r.cnode with
+  | some cn => cn.linkAt r.slot f
+  | none => none
+
+theorem slotLinkAt_def (st : SystemState) (r : SlotRef) (f : LinkField) :
+    st.slotLinkAt r f = match st.objects[r.cnode]? with
+      | some (.cnode cn) => cn.linkAt r.slot f
+      | _ => none := by
+  unfold slotLinkAt getCNode?
+  cases st.objects[r.cnode]? with
+  | none => rfl
+  | some o => cases o <;> rfl
 
 /-- The CNode word of link `f` of slot `(o, s)` (0 when it has no target). -/
 @[inline] def slotLinkNodeWord (st : SystemState) (o : SeLe4n.ObjId) (s : SeLe4n.Slot)
     (f : LinkField) : Nat :=
-  match st.objects[o]? with
-  | some (.cnode cn) => cn.linkNodeWord s f
-  | _ => 0
+  match st.getCNode? o with
+  | some cn => cn.linkNodeWord s f
+  | none => 0
+
+theorem slotLinkNodeWord_def (st : SystemState) (o : SeLe4n.ObjId) (s : SeLe4n.Slot)
+    (f : LinkField) : st.slotLinkNodeWord o s f = match st.objects[o]? with
+      | some (.cnode cn) => cn.linkNodeWord s f
+      | _ => 0 := by
+  unfold slotLinkNodeWord getCNode?
+  cases st.objects[o]? with
+  | none => rfl
+  | some ob => cases ob <;> rfl
 
 /-- The slot word of link `f` of slot `(o, s)`. -/
 @[inline] def slotLinkSlotWord (st : SystemState) (o : SeLe4n.ObjId) (s : SeLe4n.Slot)
     (f : LinkField) : Nat :=
-  match st.objects[o]? with
-  | some (.cnode cn) => cn.linkSlotWord s f
-  | _ => 0
+  match st.getCNode? o with
+  | some cn => cn.linkSlotWord s f
+  | none => 0
+
+theorem slotLinkSlotWord_def (st : SystemState) (o : SeLe4n.ObjId) (s : SeLe4n.Slot)
+    (f : LinkField) : st.slotLinkSlotWord o s f = match st.objects[o]? with
+      | some (.cnode cn) => cn.linkSlotWord s f
+      | _ => 0 := by
+  unfold slotLinkSlotWord getCNode?
+  cases st.objects[o]? with
+  | none => rfl
+  | some ob => cases ob <;> rfl
 
 theorem slotLinkAt_eq_decode (st : SystemState) (r : SlotRef) (f : LinkField) :
     st.slotLinkAt r f =
       decodeLink (st.slotLinkNodeWord r.cnode r.slot f) (st.slotLinkSlotWord r.cnode r.slot f) := by
-  unfold slotLinkAt slotLinkNodeWord slotLinkSlotWord
+  rw [slotLinkAt_def, slotLinkNodeWord_def, slotLinkSlotWord_def]
   split <;> rfl
 
 /-- **`st'` is `st` with only derivation-link words rewritten**: every other
@@ -125,15 +152,24 @@ is rewritten in its object-table slot and nothing else in the state changes.
 The identity when `o` holds no CNode. -/
 @[inline] def setSlotLinkWords (st : SystemState) (o : SeLe4n.ObjId) (s : SeLe4n.Slot)
     (f : LinkField) (c w : Nat) : SystemState :=
-  match st.objects[o]? with
-  | some (.cnode _) => st.modifyObject o (mapCNodeObject (·.setLinkWords s f c w))
-  | _ => st
+  match st.getCNode? o with
+  | some _ => st.modifyObject o (mapCNodeObject (·.setLinkWords s f c w))
+  | none => st
+
+theorem setSlotLinkWords_def (st : SystemState) (o : SeLe4n.ObjId) (s : SeLe4n.Slot)
+    (f : LinkField) (c w : Nat) : st.setSlotLinkWords o s f c w = match st.objects[o]? with
+      | some (.cnode _) => st.modifyObject o (mapCNodeObject (·.setLinkWords s f c w))
+      | _ => st := by
+  unfold setSlotLinkWords getCNode?
+  cases st.objects[o]? with
+  | none => rfl
+  | some ob => cases ob <;> rfl
 
 theorem setSlotLinkWords_of_cnode {st : SystemState} {o : SeLe4n.ObjId} {cn : CNode}
     (h : st.objects[o]? = some (.cnode cn)) (s : SeLe4n.Slot) (f : LinkField) (c w : Nat) :
     st.setSlotLinkWords o s f c w =
       { st with objects := st.objects.insert o (.cnode (cn.setLinkWords s f c w)) } := by
-  unfold setSlotLinkWords modifyObject
+  rw [setSlotLinkWords_def]; unfold modifyObject
   rw [h]
   simp only
   rw [RHTable.modify_of_get? h]
@@ -141,7 +177,7 @@ theorem setSlotLinkWords_of_cnode {st : SystemState} {o : SeLe4n.ObjId} {cn : CN
 
 @[simp] theorem setSlotLinkWords_cdt (st : SystemState) (o : SeLe4n.ObjId) (s : SeLe4n.Slot)
     (f : LinkField) (c w : Nat) : (st.setSlotLinkWords o s f c w).cdt = st.cdt := by
-  unfold setSlotLinkWords modifyObject
+  rw [setSlotLinkWords_def]; unfold modifyObject
   split <;> rfl
 
 theorem setSlotLinkWords_objects {st : SystemState} (hInv : st.objects.invExt)
@@ -160,7 +196,7 @@ theorem setSlotLinkWords_objects {st : SystemState} (hInv : st.objects.invExt)
 theorem setSlotLinkWords_of_not_cnode {st : SystemState} {o : SeLe4n.ObjId}
     (h : ∀ cn, st.objects[o]? ≠ some (.cnode cn)) (s : SeLe4n.Slot) (f : LinkField) (c w : Nat) :
     st.setSlotLinkWords o s f c w = st := by
-  unfold setSlotLinkWords
+  rw [setSlotLinkWords_def]
   split
   · next cn hc => exact absurd hc (h cn)
   · rfl
@@ -194,7 +230,7 @@ theorem slotLinkAt_setSlotLinkWords {st : SystemState} (hInv : st.objects.invExt
     (st.setSlotLinkWords o s f c w).slotLinkAt = st.slotLinkAt.set ⟨o, s⟩ f (decodeLink c w) := by
   obtain ⟨cn, hcn, hs⟩ := h
   funext r f'
-  simp only [slotLinkAt, LinkView.set]
+  simp only [slotLinkAt_def, LinkView.set]
   rw [setSlotLinkWords_objects hInv hcn]
   by_cases hr : r.cnode = o
   · rw [if_pos hr, hr, hcn]
@@ -954,7 +990,7 @@ theorem linkReach.cdt {st₀ st : SystemState} (h : linkReach st₀ st) : st.cdt
 theorem setSlotLinkWords_fields (st : SystemState) (o : SeLe4n.ObjId) (s : SeLe4n.Slot)
     (f : LinkField) (c w : Nat) :
     st.setSlotLinkWords o s f c w = { st with objects := (st.setSlotLinkWords o s f c w).objects } := by
-  unfold setSlotLinkWords modifyObject
+  rw [setSlotLinkWords_def]; unfold modifyObject
   split <;> rfl
 
 /-- A link write commutes with replacing the tree: it reads and writes objects alone. -/
@@ -962,7 +998,7 @@ theorem setSlotLinkWords_with_cdt (st : SystemState) (cdt : CapDerivationTree) (
     (s : SeLe4n.Slot) (f : LinkField) (c w : Nat) :
     ({ st with cdt := cdt } : SystemState).setSlotLinkWords o s f c w =
       { st.setSlotLinkWords o s f c w with cdt := cdt } := by
-  unfold setSlotLinkWords modifyObject
+  simp only [setSlotLinkWords_def]; unfold modifyObject
   have e : ({ st with cdt := cdt } : SystemState).objects = st.objects := rfl
   rw [e]
   cases h : st.objects[o]? with
