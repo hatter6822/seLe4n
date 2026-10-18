@@ -26,40 +26,24 @@ open SeLe4n.Model
 open Internal
 
 
-/-! ## U4-L / U-M26: CDT Hypothesis Pattern Rationale
+/-! ## U4-L / U-M26: the derivation tree's invariants from the pre-state
 
-CDT-modifying operations (`cspaceCopy`, `cspaceMove`, `cspaceDeleteSlot`,
-`cspaceRevoke`) take `cdtCompleteness st' ∧ cdtAcyclicity st'` as an
-**externalized post-state hypothesis** rather than proving it from the
-pre-state invariant. This is deliberate:
+Every operation that changes the derivation tree proves `cdtCompleteness` and
+`cdtAcyclicity` of its post-state from the pre-state's bundle; none takes them as
+a hypothesis about the state it produces.
 
-1. **Structural separation.** The capability invariant bundle
-   (`capabilityInvariantBundle`) covers slot-level properties (uniqueness,
-   soundness, bounded slot count, depth consistency, `objects.invExt`).
-   CDT structural properties (completeness, acyclicity) are logically
-   orthogonal — they depend on the CDT graph shape, not on per-CNode
-   slot state. Bundling them as hypotheses keeps each proof focused.
-
-2. **CDT operation complexity.** CDT mutations (`addEdge`, `removeNode`,
-   `revokeDerivationEdge`) modify an edge list and two maps (`childMap`,
-   `parentMap`). Proving acyclicity preservation for `addEdge` requires
-   a reachability argument over the graph (no path from child to parent
-   in the pre-state). This argument is inherently CDT-specific and does
-   not compose naturally with the slot-level induction used in capability
-   preservation proofs.
-
-3. **Caller context.** The CDT hypotheses are discharged at the
-   cross-subsystem composition layer (`proofLayerInvariantBundle` in
-   `Architecture/Invariant.lean`), where the full kernel invariant —
-   including CDT acyclicity from `capabilityInvariantBundle` — is
-   available. The decomposition `pre-state bundle → per-subsystem
-   preservation → post-state bundle` works because each subsystem
-   preservation theorem contributes its piece and receives the CDT
-   piece from the composed invariant.
-
-This pattern is consistent with the IPC `dualQueueSystemInvariant`
-externalization (U-M31) and the information flow `hProjection` pattern
-(U-H09). -/
+- **Growing the tree** (`cspaceCopy`, `cspaceMintWithCdt`, the reply-cap mint,
+  IPC capability transfer): each installs into a slot it found empty, which
+  `cdtCompleteness` keeps out of the tree, so the new edge reaches a fresh node
+  and cannot close a cycle (`addEdge_preserves_edgeWellFounded_fresh`).
+- **Moving a node** (`cspaceMove`): the destination is empty, so outside the
+  tree, and renaming a node to a fresh one maps every cycle onto a cycle of the
+  pre-state (`moveNode_edgeWellFounded`).
+- **Shrinking the tree** (`cspaceDeleteSlot`, `cspaceRevoke`, the local revoke,
+  CNode retype): the splice and the removal keep or contract edges of the
+  pre-state (`CapDerivationTree.edgeWellFounded_sub`,
+  `spliceNode_edgeWellFounded`) and take each emptied slot out of the tree, so
+  completeness is restored once every emptied slot has left it. -/
 
 theorem cspaceLookupSlot_preserves_capabilityInvariantBundle
     (st st' : SystemState)
