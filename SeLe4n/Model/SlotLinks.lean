@@ -21,6 +21,8 @@ that view as `LinkView.addChild`, … do, so the agreement proofs of
 
 namespace SeLe4n.Model
 
+open SeLe4n.Kernel.RobinHood
+
 namespace SystemState
 
 /-- **The derivation links the slots hold**: link `f` of slot `r`, read from its
@@ -50,30 +52,85 @@ theorem slotLinkAt_eq_decode (st : SystemState) (r : SlotRef) (f : LinkField) :
   unfold slotLinkAt slotLinkNodeWord slotLinkSlotWord
   split <;> rfl
 
+/-- **`st'` is `st` with only derivation-link words rewritten**: every other
+field is `st`'s, and every object is unchanged or a CNode that differs only in
+its links.  Every link writer below is one (`linksOnlyWrite` lemmas), and every
+reader that ignores links — slot lookups, the CNode's geometry, every other
+object — reads the same in both. -/
+def linksOnlyWrite (st st' : SystemState) : Prop :=
+  st' = { st with objects := st'.objects } ∧
+  ∀ oid : SeLe4n.ObjId, st'.objects[oid]? = st.objects[oid]? ∨
+    ∃ cn cn' : CNode, st.objects[oid]? = some (.cnode cn) ∧
+      st'.objects[oid]? = some (.cnode cn') ∧ cn'.withoutLinks = cn.withoutLinks
+
+namespace linksOnlyWrite
+
+theorem refl (st : SystemState) : linksOnlyWrite st st :=
+  ⟨rfl, fun _ => .inl rfl⟩
+
+theorem trans {st₁ st₂ st₃ : SystemState} (h₁ : linksOnlyWrite st₁ st₂)
+    (h₂ : linksOnlyWrite st₂ st₃) : linksOnlyWrite st₁ st₃ := by
+  refine ⟨?_, fun oid => ?_⟩
+  · rw [h₂.1, h₁.1]
+  · rcases h₂.2 oid with e₂ | ⟨b, c, hb, hc, hbc⟩
+    · rcases h₁.2 oid with e₁ | ⟨a, b', ha, hb', hab⟩
+      · exact .inl (e₂.trans e₁)
+      · exact .inr ⟨a, b', ha, e₂.trans hb', hab⟩
+    · rcases h₁.2 oid with e₁ | ⟨a, b', ha, hb', hab⟩
+      · exact .inr ⟨b, c, e₁ ▸ hb, hc, hbc⟩
+      · rw [hb'] at hb; cases hb
+        exact .inr ⟨a, c, ha, hc, hbc.trans hab⟩
+
+/-- Every object other than a CNode reads the same. -/
+theorem objects_of_not_cnode {st st' : SystemState} (h : linksOnlyWrite st st')
+    {oid : SeLe4n.ObjId} {o : KernelObject} (ho : st.objects[oid]? = some o)
+    (hn : ∀ cn, o ≠ .cnode cn) : st'.objects[oid]? = some o := by
+  rcases h.2 oid with e | ⟨cn, _, hc, _, _⟩
+  · rw [e, ho]
+  · rw [ho] at hc; cases hc; exact absurd rfl (hn cn)
+
+end linksOnlyWrite
+
 /-- A slot inside a live CNode's slot array: a slot whose links can be written. -/
 def slotInCNode (st : SystemState) (r : SlotRef) : Prop :=
   ∃ cn, st.objects[r.cnode]? = some (.cnode cn) ∧ r.slot.toNat < 2 ^ cn.radixWidth
 
-/-- **Write link `f` of slot `(o, s)`** as its two words, in place. -/
+/-- **Write link `f` of slot `(o, s)`** as its two words, in place: the CNode
+is rewritten in its object-table slot and nothing else in the state changes.
+The identity when `o` holds no CNode. -/
 @[inline] def setSlotLinkWords (st : SystemState) (o : SeLe4n.ObjId) (s : SeLe4n.Slot)
     (f : LinkField) (c w : Nat) : SystemState :=
-  st.storeCNodeWith o (·.setLinkWords s f c w)
+  match st.objects[o]? with
+  | some (.cnode _) => st.modifyObject o (mapCNodeObject (·.setLinkWords s f c w))
+  | _ => st
+
+theorem setSlotLinkWords_of_cnode {st : SystemState} {o : SeLe4n.ObjId} {cn : CNode}
+    (h : st.objects[o]? = some (.cnode cn)) (s : SeLe4n.Slot) (f : LinkField) (c w : Nat) :
+    st.setSlotLinkWords o s f c w =
+      { st with objects := st.objects.insert o (.cnode (cn.setLinkWords s f c w)) } := by
+  unfold setSlotLinkWords modifyObject
+  rw [h]
+  simp only
+  rw [RHTable.modify_of_get? h]
+  rfl
 
 theorem setSlotLinkWords_objects {st : SystemState} (hInv : st.objects.invExt)
     {o : SeLe4n.ObjId} {cn : CNode} (h : st.objects[o]? = some (.cnode cn))
     (s : SeLe4n.Slot) (f : LinkField) (c w : Nat) (x : SeLe4n.ObjId) :
     (st.setSlotLinkWords o s f c w).objects[x]? =
       if x = o then some (.cnode (cn.setLinkWords s f c w)) else st.objects[x]? := by
-  have hS := storeObject_cnode_eq_storeCNodeWith h (·.setLinkWords s f c w)
-  unfold setSlotLinkWords
+  rw [setSlotLinkWords_of_cnode h]
+  simp only
   split
-  · next hx => subst hx; exact storeObject_objects_eq _ _ _ _ hInv hS
-  · next hx => exact storeObject_objects_ne _ _ _ _ _ hx hInv hS
+  · next hx => subst hx; exact RHTable.getElem?_insert_self _ _ _ hInv
+  · next hx =>
+    have hNe : ¬((o == x) = true) := by intro heq; exact hx (eq_of_beq heq).symm
+    exact RHTable.getElem?_insert_ne _ _ _ _ hNe hInv
 
 theorem setSlotLinkWords_of_not_cnode {st : SystemState} {o : SeLe4n.ObjId}
     (h : ∀ cn, st.objects[o]? ≠ some (.cnode cn)) (s : SeLe4n.Slot) (f : LinkField) (c w : Nat) :
     st.setSlotLinkWords o s f c w = st := by
-  unfold setSlotLinkWords storeCNodeWith
+  unfold setSlotLinkWords
   split
   · next cn hc => exact absurd hc (h cn)
   · rfl
@@ -83,9 +140,22 @@ theorem setSlotLinkWords_invExt {st : SystemState} (hInv : st.objects.invExt)
     (st.setSlotLinkWords o s f c w).objects.invExt := by
   by_cases h : ∃ cn, st.objects[o]? = some (.cnode cn)
   · obtain ⟨cn, hcn⟩ := h
-    exact storeObject_preserves_objects_invExt _ _ _ _ hInv
-      (storeObject_cnode_eq_storeCNodeWith hcn (·.setLinkWords s f c w))
+    rw [setSlotLinkWords_of_cnode hcn]
+    exact RHTable_insert_preserves_invExt _ _ _ hInv
   · rw [setSlotLinkWords_of_not_cnode (fun cn hc => h ⟨cn, hc⟩)]; exact hInv
+
+theorem setSlotLinkWords_linksOnlyWrite {st : SystemState} (hInv : st.objects.invExt)
+    (o : SeLe4n.ObjId) (s : SeLe4n.Slot) (f : LinkField) (c w : Nat) :
+    linksOnlyWrite st (st.setSlotLinkWords o s f c w) := by
+  by_cases h : ∃ cn, st.objects[o]? = some (.cnode cn)
+  · obtain ⟨cn, hcn⟩ := h
+    refine ⟨by rw [setSlotLinkWords_of_cnode hcn], fun x => ?_⟩
+    rw [setSlotLinkWords_objects hInv hcn]
+    split
+    · next hx => subst hx; exact .inr ⟨cn, _, hcn, rfl, rfl⟩
+    · exact .inl rfl
+  · rw [setSlotLinkWords_of_not_cnode (fun cn hc => h ⟨cn, hc⟩)]
+    exact linksOnlyWrite.refl st
 
 /-- **A link write acts on the link view as `LinkView.set`**, for a slot inside
 a live CNode. -/
@@ -118,7 +188,7 @@ theorem slotInCNode_setSlotLinkWords {st : SystemState} (hInv : st.objects.invEx
     unfold slotInCNode
     rw [setSlotLinkWords_objects hInv hcn]
     by_cases hr : r.cnode = o
-    · simp only [if_pos hr, hr, hcn]
+    · simp only [hr, hcn]
       constructor
       · rintro ⟨_, he, hs⟩; cases he; exact ⟨cn, rfl, hs⟩
       · rintro ⟨_, he, hs⟩; cases he; exact ⟨_, rfl, hs⟩
@@ -653,6 +723,96 @@ theorem linkMoveNode_spec {st : SystemState} (hInv : st.objects.invExt) {old new
   refine ⟨i4, fun r => ((v4 r).trans (v3 r)).trans (v2 r), ?_⟩
   rw [e4, e3, hW, e2]
   rfl
+
+/-- A state reached from `st₀` by link writes alone, with its object table well
+formed: what each link writer below keeps. -/
+def linkReach (st₀ st : SystemState) : Prop := st.objects.invExt ∧ linksOnlyWrite st₀ st
+
+theorem linkReach.refl {st : SystemState} (h : st.objects.invExt) : linkReach st st :=
+  ⟨h, linksOnlyWrite.refl st⟩
+
+theorem linkReach.step {st₀ st : SystemState} (h : linkReach st₀ st) (o : SeLe4n.ObjId)
+    (s : SeLe4n.Slot) (f : LinkField) (c w : Nat) :
+    linkReach st₀ (st.setSlotLinkWords o s f c w) :=
+  ⟨setSlotLinkWords_invExt h.1 o s f c w, h.2.trans (setSlotLinkWords_linksOnlyWrite h.1 o s f c w)⟩
+
+theorem linkReach.trans {st₀ st₁ st₂ : SystemState} (h₁ : linkReach st₀ st₁) (h₂ : linkReach st₁ st₂) :
+    linkReach st₀ st₂ := ⟨h₂.1, h₁.2.trans h₂.2⟩
+
+theorem linkAddChild_reach {st₀ st : SystemState} (h : linkReach st₀ st) (p c : SlotRef) :
+    linkReach st₀ (st.linkAddChild p c) := by
+  have h3 := ((h.step c.cnode c.slot .parent (p.cnode.toNat + 1) (p.slot.toNat + 1)).step
+    c.cnode c.slot .next (st.slotLinkNodeWord p.cnode p.slot .firstChild)
+      (st.slotLinkSlotWord p.cnode p.slot .firstChild)).step c.cnode c.slot .prev 0 0
+  unfold linkAddChild
+  simp only
+  split
+  · exact h3.step _ _ _ _ _
+  · exact (h3.step _ _ _ _ _).step _ _ _ _ _
+
+theorem linkUnlinkChild_reach {st₀ st : SystemState} (h : linkReach st₀ st) (n : SlotRef) :
+    linkReach st₀ (st.linkUnlinkChild n) := by
+  unfold linkUnlinkChild; simp only
+  have h1 : linkReach st₀ (if st.slotLinkNodeWord n.cnode n.slot .prev = 0 then
+      (if st.slotLinkNodeWord n.cnode n.slot .parent = 0 then st
+       else st.setSlotLinkWords (SeLe4n.ObjId.ofNat (st.slotLinkNodeWord n.cnode n.slot .parent - 1))
+        (SeLe4n.Slot.ofNat (st.slotLinkSlotWord n.cnode n.slot .parent - 1)) .firstChild
+        (st.slotLinkNodeWord n.cnode n.slot .next) (st.slotLinkSlotWord n.cnode n.slot .next))
+      else st.setSlotLinkWords (SeLe4n.ObjId.ofNat (st.slotLinkNodeWord n.cnode n.slot .prev - 1))
+        (SeLe4n.Slot.ofNat (st.slotLinkSlotWord n.cnode n.slot .prev - 1)) .next
+        (st.slotLinkNodeWord n.cnode n.slot .next) (st.slotLinkSlotWord n.cnode n.slot .next)) := by
+    split
+    · split
+      · exact h
+      · exact h.step _ _ _ _ _
+    · exact h.step _ _ _ _ _
+  generalize (if st.slotLinkNodeWord n.cnode n.slot .prev = 0 then _ else _) = st1 at h1 ⊢
+  have h2 : linkReach st₀ (if st.slotLinkNodeWord n.cnode n.slot .next = 0 then st1
+      else st1.setSlotLinkWords (SeLe4n.ObjId.ofNat (st.slotLinkNodeWord n.cnode n.slot .next - 1))
+        (SeLe4n.Slot.ofNat (st.slotLinkSlotWord n.cnode n.slot .next - 1)) .prev
+        (st.slotLinkNodeWord n.cnode n.slot .prev) (st.slotLinkSlotWord n.cnode n.slot .prev)) := by
+    split
+    · exact h1
+    · exact h1.step _ _ _ _ _
+  exact ((h2.step _ _ _ _ _).step _ _ _ _ _).step _ _ _ _ _
+
+theorem linkOrphanChain_reach : ∀ (k : Nat) {st₀ st : SystemState} (c w : Nat), linkReach st₀ st →
+    linkReach st₀ (linkOrphanChain k st c w)
+  | 0, _, _, _, _, h => h
+  | k + 1, _, _, c, _, h => by
+    unfold linkOrphanChain
+    split
+    · exact h
+    · exact linkOrphanChain_reach k _ _ (((h.step _ _ _ _ _).step _ _ _ _ _).step _ _ _ _ _)
+
+theorem linkReparentChain_reach : ∀ (k : Nat) {st₀ st : SystemState} (u : SlotRef) (c w : Nat),
+    linkReach st₀ st → linkReach st₀ (linkReparentChain k st u c w)
+  | 0, _, _, _, _, _, h => h
+  | k + 1, _, _, u, c, _, h => by
+    unfold linkReparentChain
+    split
+    · exact h
+    · exact linkReparentChain_reach k u _ _ (linkAddChild_reach h _ _)
+
+theorem linkRemoveNode_reach {st₀ st : SystemState} (h : linkReach st₀ st) (n : SlotRef) (k : Nat) :
+    linkReach st₀ (st.linkRemoveNode n k) :=
+  (linkOrphanChain_reach k _ _ (linkUnlinkChild_reach h n)).step _ _ _ _ _
+
+theorem linkSpliceNode_reach {st₀ st : SystemState} (h : linkReach st₀ st) (n : SlotRef) (k : Nat) :
+    linkReach st₀ (st.linkSpliceNode n k) := by
+  unfold linkSpliceNode; simp only
+  split
+  · exact linkRemoveNode_reach h n k
+  · exact (linkReparentChain_reach k _ _ _ (linkUnlinkChild_reach h n)).step _ _ _ _ _
+
+theorem linkMoveNode_reach {st₀ st : SystemState} (h : linkReach st₀ st) (old new : SlotRef)
+    (k : Nat) : linkReach st₀ (st.linkMoveNode old new k) := by
+  unfold linkMoveNode; simp only
+  have h1 := linkUnlinkChild_reach h old
+  refine (linkReparentChain_reach k _ _ _ ?_).step _ _ _ _ _
+  split
+  · exact h1
+  · exact linkAddChild_reach h1 _ _
 
 end SystemState
 
