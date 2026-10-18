@@ -186,9 +186,9 @@ the `.installed` case, which chains:
 1. `cspaceInsertSlot_preserves_capabilityInvariantBundle` — slot insertion
 2. `addEdge` with `.ipcTransfer` — CDT edge addition (objects unchanged)
 
-The `hCdtPost` hypothesis (CDT completeness + acyclicity of the post-state)
-follows the same pattern as `cspaceCopy_preserves_capabilityInvariantBundle`
-since IPC transfer is semantically a cross-CSpace copy. -/
+The tree stays complete and acyclic as for `cspaceCopy`: the source still holds
+its capability (`cdtNodeIsRevocable`) and the edge reaches the slot the insert
+found empty (`cdt_addEdge_after_insert`). -/
 theorem ipcTransferSingleCap_preserves_capabilityInvariantBundle
     (st st' : SystemState) (cap : Capability) (srcNode : SlotRef)
     (receiverRoot : SeLe4n.ObjId) (slotBase : SeLe4n.Slot) (scanLimit : Nat)
@@ -197,7 +197,6 @@ theorem ipcTransferSingleCap_preserves_capabilityInvariantBundle
     (hSlotCapacity : ∀ cn, st.objects[receiverRoot]? = some (.cnode cn) →
       ∀ s, (cn.insert s cap.withoutMapping).slotCountBounded)
     (hCapBacked : ∀ rid, cap.target = .replyCap rid → st.getReply? rid ≠ none)
-    (hCdtPost : cdtCompleteness st' ∧ cdtAcyclicity st')
     (hStep : ipcTransferSingleCap cap srcNode receiverRoot slotBase scanLimit st
              = .ok (result, st')) :
     capabilityInvariantBundle st' := by
@@ -230,6 +229,10 @@ theorem ipcTransferSingleCap_preserves_capabilityInvariantBundle
             { cnode := receiverRoot, slot := emptySlot } cap.withoutMapping hInv
             (fun cn' hObj' => hSlotCapacity cn' (by rw [hObj] at hObj'; cases hObj'; exact hObj) emptySlot)
             (objects_invExt_of_capabilityInvariantBundle st hInv) hCapBacked hIns
+          have hCdt := cdt_addEdge_after_insert st st2 srcNode
+            { cnode := receiverRoot, slot := emptySlot } cap.withoutMapping .ipcTransfer
+            hInv.2.2.1 hInv.2.2.2.1 (objects_invExt_of_capabilityInvariantBundle st hInv)
+            (by unfold cdtNodeIsRevocable at hSrc; exact hSrc) hIns
           rcases hBundleSt2 with ⟨_, hBnd2, _, _, hDepth2, hObjInv2, hRCPV2⟩
           simp [hIns] at hStep
           obtain ⟨_, rfl⟩ := hStep
@@ -237,7 +240,7 @@ theorem ipcTransferSingleCap_preserves_capabilityInvariantBundle
               ({ st2 with cdt := cdt' } : SystemState).objects = st2.objects := fun _ => rfl
           exact ⟨cspaceLookupSound_holds _,
             cspaceSlotCountBounded_of_objects_eq st2 _ hBnd2 (hObjFinal _),
-            hCdtPost.1, hCdtPost.2,
+            hCdt.1, hCdt.2,
             cspaceDepthConsistent_of_objects_eq st2 _ hDepth2 (hObjFinal _),
             (hObjFinal _) ▸ hObjInv2,
             replyCapPointsToValidReply_of_objects_eq (hObjFinal _) hRCPV2⟩
@@ -245,12 +248,8 @@ theorem ipcTransferSingleCap_preserves_capabilityInvariantBundle
 /-- V3-E / M3-D3b: `ipcUnwrapCapsLoop` preserves `capabilityInvariantBundle`
 through fuel-indexed induction. Each iteration delegates to
 `ipcTransferSingleCap_preserves_capabilityInvariantBundle`, threading
-`hSlotCap` (slot capacity) and `hCdtPost` (CDT completeness + acyclicity)
-through the recursive structure.
-
-The `hCdtPost` hypothesis is externalized following the standard pattern for
-CDT-expanding operations (see `cspaceCopy_preserves_capabilityInvariantBundle`).
-The caller (API layer) is responsible for discharging CDT obligations. -/
+`hSlotCap` (slot capacity) through the recursive structure; each step keeps
+the tree sound from its own pre-state. -/
 theorem ipcUnwrapCapsLoop_preserves_capabilityInvariantBundle
     (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
     (idx : Nat) (nextBase : SeLe4n.Slot) (accResults : Array CapTransferResult)
@@ -260,13 +259,6 @@ theorem ipcUnwrapCapsLoop_preserves_capabilityInvariantBundle
         capabilityInvariantBundle stI →
         ∀ cn, stI.objects[receiverRoot]? = some (.cnode cn) →
           ∀ s, (cn.insert s cap).slotCountBounded)
-    (hCdtPost : ∀ (stI stJ : SystemState) (cap : Capability)
-        (srcNode : SlotRef) (slotBase : SeLe4n.Slot)
-        (scanLimit : Nat) (result : CapTransferResult),
-        capabilityInvariantBundle stI →
-        ipcTransferSingleCap cap srcNode receiverRoot slotBase scanLimit stI
-          = .ok (result, stJ) →
-        cdtCompleteness stJ ∧ cdtAcyclicity stJ)
     (hCapBacked : ∀ (stI : SystemState) (cap : Capability),
         capabilityInvariantBundle stI →
         ∀ rid, cap.target = .replyCap rid → stI.getReply? rid ≠ none)
@@ -301,8 +293,6 @@ theorem ipcUnwrapCapsLoop_preserves_capabilityInvariantBundle
           hInv
           (hSlotCap st tc.cap.withoutMapping hInv)
           (hCapBacked st tc.cap hInv)
-          (hCdtPost st stNext tc.cap tc.srcSlot
-            nextBase maxExtraCaps result hInv hTransfer)
           hTransfer
         simp [hTransfer] at hStep
         cases result with
@@ -325,13 +315,6 @@ theorem ipcUnwrapCaps_preserves_capabilityInvariantBundle_grant
         capabilityInvariantBundle stI →
         ∀ cn, stI.objects[receiverRoot]? = some (.cnode cn) →
           ∀ s, (cn.insert s cap).slotCountBounded)
-    (hCdtPost : ∀ (stI stJ : SystemState) (cap : Capability)
-        (srcNode : SlotRef) (slotBase' : SeLe4n.Slot)
-        (scanLimit : Nat) (result : CapTransferResult),
-        capabilityInvariantBundle stI →
-        ipcTransferSingleCap cap srcNode receiverRoot slotBase' scanLimit stI
-          = .ok (result, stJ) →
-        cdtCompleteness stJ ∧ cdtAcyclicity stJ)
     (hCapBacked : ∀ (stI : SystemState) (cap : Capability),
         capabilityInvariantBundle stI →
         ∀ rid, cap.target = .replyCap rid → stI.getReply? rid ≠ none)
@@ -342,7 +325,7 @@ theorem ipcUnwrapCaps_preserves_capabilityInvariantBundle_grant
   exact ipcUnwrapCapsLoop_preserves_capabilityInvariantBundle
     msg.caps receiverRoot
     0 slotBase #[] msg.caps.size
-    st st' summary hInv hSlotCap hCdtPost hCapBacked hStep
+    st st' summary hInv hSlotCap hCapBacked hStep
 
 /-- M3-D3 / V3-E: ipcUnwrapCaps preserves capabilityInvariantBundle when the
 endpoint lacks Grant right (grantRight = false). In this case, all caps are
@@ -369,10 +352,10 @@ the IPC rendezvous composition chain.
 
 - **Grant=false**: State unchanged (no transfers), trivially preserved.
 - **Grant=true**: Fuel-indexed induction over `ipcUnwrapCapsLoop`, threading
-  slot capacity and CDT postcondition hypotheses per-iteration.
+  the slot-capacity hypothesis per-iteration.
 
-The `hSlotCap` and `hCdtPost` hypotheses are vacuous when Grant=false
-(no `ipcTransferSingleCap` calls occur). -/
+The `hSlotCap` hypothesis is vacuous when Grant=false (no
+`ipcTransferSingleCap` calls occur). -/
 theorem ipcUnwrapCaps_preserves_capabilityInvariantBundle
     (st st' : SystemState) (msg : IpcMessage)
     (receiverRoot : SeLe4n.ObjId)
@@ -384,13 +367,6 @@ theorem ipcUnwrapCaps_preserves_capabilityInvariantBundle
         capabilityInvariantBundle stI →
         ∀ cn, stI.objects[receiverRoot]? = some (.cnode cn) →
           ∀ s, (cn.insert s cap).slotCountBounded)
-    (hCdtPost : ∀ (stI stJ : SystemState) (cap : Capability)
-        (srcNode : SlotRef) (slotBase' : SeLe4n.Slot)
-        (scanLimit : Nat) (result : CapTransferResult),
-        capabilityInvariantBundle stI →
-        ipcTransferSingleCap cap srcNode receiverRoot slotBase' scanLimit stI
-          = .ok (result, stJ) →
-        cdtCompleteness stJ ∧ cdtAcyclicity stJ)
     (hCapBacked : ∀ (stI : SystemState) (cap : Capability),
         capabilityInvariantBundle stI →
         ∀ rid, cap.target = .replyCap rid → stI.getReply? rid ≠ none)
@@ -404,7 +380,7 @@ theorem ipcUnwrapCaps_preserves_capabilityInvariantBundle
   | true =>
     exact ipcUnwrapCaps_preserves_capabilityInvariantBundle_grant
       st st' msg receiverRoot slotBase summary
-      hInv hSlotCap hCdtPost hCapBacked hStep
+      hInv hSlotCap hCapBacked hStep
 
 -- ============================================================================
 -- S3-D: cdtMapsConsistent preservation theorems
@@ -528,53 +504,21 @@ theorem cspaceRevoke_preserves_cdtMapsConsistent
 -- V3-D (M-PRF-1): CDT Acyclicity Discharge Chain Documentation
 -- ============================================================================
 
-/-! ## V3-D: CDT Acyclicity Discharge Chain
+/-! ## V3-D: CDT soundness through tree-changing operations
 
-The `cdtAcyclicity` hypothesis is handled differently depending on
-whether the operation **expands** or **shrinks** the CDT:
+Every slot the tree names holds a capability (`cdtCompleteness`), so an empty
+slot is outside the tree.  That one fact carries both directions:
 
-### CDT-expanding operations (externalized hypothesis)
-
-| Operation | Theorem | Pattern |
-|-----------|---------|---------|
-| `cspaceCopy` | `cspaceCopy_preserves_capabilityInvariantBundle` | `hCdtPost` parameter |
-| `cspaceMove` | `cspaceMove_preserves_capabilityInvariantBundle` | `hCdtPost` parameter |
-| `cspaceMintWithCdt` | `cspaceMintWithCdt_preserves_capabilityInvariantBundle` | `hCdtPost` parameter |
-| `ipcTransferSingleCap` | (via `cspaceInsertSlot` + CDT `addEdge`) | Composition-level |
-
-These operations add CDT edges. The `hCdtPost : cdtCompleteness st' ∧ cdtAcyclicity st'`
-hypothesis is discharged at the API dispatch layer, where the full
-`proofLayerInvariantBundle` provides the CDT acyclicity from the pre-state,
-and the caller proves the specific edge addition preserves acyclicity (e.g.,
-adding a parent→child edge when the child has no descendants).
-
-### CDT-shrinking operations (proven internally)
-
-| Operation | Theorem | Proof method |
-|-----------|---------|--------------|
-| `cspaceDeleteSlot` | `cspaceDeleteSlot_preserves_capabilityInvariantBundle` | `edgeWellFounded_sub` |
-| `cspaceRevoke` | `cspaceRevoke_preserves_capabilityInvariantBundle` | `edgeWellFounded_sub` |
-
-Edge removal trivially preserves well-foundedness (a subset of a
-well-founded relation is well-founded).
-
-### ipcTransferSingleCap (V3-D5)
-
-`ipcTransferSingleCap` adds a CDT edge via `cdt.addEdge srcSlot dstSlot .ipcTransfer`.
-The `capabilityInvariantBundle` preservation is composed at the IPC operation
-level, where the `hCdtPost` hypothesis is threaded through the cap transfer
-loop (see V3-E for the loop composition proof).
+- **Edge-adding operations** (`cspaceCopy`, `cspaceMintWithCdt`,
+  `mintReplyCapWithCdt`, `ipcTransferSingleCap`) install into a slot the insert
+  found empty, so the new edge reaches a fresh node and closes no cycle
+  (`cdt_addEdge_after_insert`).  `cspaceMove` renames the source's node onto
+  its empty destination (`moveNode_edgeWellFounded`).  Each theorem derives the
+  post-state tree's soundness from its pre-state bundle.
+- **Edge-removing operations** (`cspaceDeleteSlot`, `cspaceRevoke`) only lose
+  edges (`edgeWellFounded_sub`), and take each slot they empty out of the tree
+  (`capabilityInvariantBundleOff` between the two steps).
 -/
-
-/-- V3-D2/D3: Documentation theorem: CDT-expanding operations preserve
-    `capabilityInvariantBundle` when the caller provides post-state CDT
-    properties. This is the composition pattern used by `cspaceCopy`,
-    `cspaceMove`, and `cspaceMintWithCdt`. -/
-theorem cdtExpandingOp_preserves_bundle_with_hypothesis
-    (_st _st' : SystemState) (_hInv : capabilityInvariantBundle _st)
-    (hCdtPost : cdtCompleteness _st' ∧ cdtAcyclicity _st')
-    (_hObjEq : _st'.objects = _st.objects) :
-    cdtCompleteness _st' ∧ cdtAcyclicity _st' := hCdtPost
 
 /-- V3-D4: CDT-shrinking operations (delete, revoke) preserve acyclicity
     unconditionally. Removing edges from an acyclic graph yields an acyclic
@@ -595,38 +539,12 @@ theorem cdtShrinkingOps_preserve_acyclicity
 
 /-! ## V3-E: Loop Composition for `ipcUnwrapCapsLoop`
 
-The per-step theorem `ipcTransferSingleCap_preserves_capabilityInvariantBundle`
-(line 1935 above) is fully proved. The loop composition requires threading
-`hSlotCapacity` and `hCdtPost` through each iteration of `ipcUnwrapCapsLoop`.
-
-**Loop invariant**: at each step `i` of the loop:
-- `capabilityInvariantBundle` holds for the intermediate state
-- The receiver CNode can accommodate further insertions (`hSlotCapacity`)
-- CDT post-conditions are supplied per-step by the caller
-
-**Base case** (fuel = 0 or idx ≥ caps.size): the loop returns unchanged
-state, trivially preserving the invariant.
-
-**Inductive step**: given the invariant holds at step `i`, and the per-step
-proof establishes preservation for `ipcTransferSingleCap`, the invariant
-holds at step `i+1`.
-
-**Key design**: `ipcUnwrapCapsLoop` is `private` in `CapTransfer.lean`.
-The composition proof works at the `ipcUnwrapCaps` level using the public
-preservation theorems for scheduler, services, and objects that already
-exist (lines 93-291 of `CapTransfer.lean`). The capability bundle
-preservation for the Grant=true path threads `hCdtPost` per-iteration.
-
-The noGrant case is already proven above as
-`ipcUnwrapCaps_preserves_capabilityInvariantBundle_noGrant`.
+`ipcUnwrapCapsLoop_preserves_capabilityInvariantBundle` composes the per-step
+`ipcTransferSingleCap_preserves_capabilityInvariantBundle` by induction on the
+fuel, threading only the receiver's slot capacity (`hSlotCap`).  The no-Grant
+case leaves the state unchanged
+(`ipcUnwrapCaps_preserves_capabilityInvariantBundle_noGrant`).
 -/
-
--- V3-E2: The loop invariant for `ipcUnwrapCapsLoop` is `capabilityInvariantBundle`.
--- The grant=false case is proven by `ipcUnwrapCaps_preserves_capabilityInvariantBundle_noGrant`.
--- The grant=true loop composition requires per-step CDT preservation hypotheses
--- (same pattern as `cdtExpandingOp_preserves_bundle_with_hypothesis`).
--- Individual loop preservation proofs (scheduler, services, objects) are proven
--- in CapTransfer.lean (9 private theorems + 7 public wrappers).
 
 -- ============================================================================
 -- V3-F (M-PRF-3): Post-resolution rights check composition

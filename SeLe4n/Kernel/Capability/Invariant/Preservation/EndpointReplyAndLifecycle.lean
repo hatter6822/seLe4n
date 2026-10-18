@@ -459,13 +459,16 @@ Requires new CNode objects to have unique slots (analogous to existing
 `hNewObjEndpointInv` / `hNewObjNotificationInv` side conditions on IPC proofs).
 
 WS-SM SM6.D / PR #822 Phase H (#1.a): `replyCapPointsToValidReply st'` is taken as an
-**externalized post-state hypothesis** (`hReplyBacked'`), exactly like the `hCdtPost`
-discharge for CDT-modifying ops and the `hRCL'`/`hPRR'`/`hDOV'` externalizations at this
-layer.  Retype overwrites the object at `target`: it can *orphan* a reply cap (if a cap
+**externalized post-state hypothesis** (`hReplyBacked'`), like the
+`hRCL'`/`hPRR'`/`hDOV'` externalizations at this layer.  Retype overwrites the object at `target`: it can *orphan* a reply cap (if a cap
 references a reply that is retyped away) or introduce a reply cap (in a fresh CNode), so —
 unlike `cspaceCopy`/`Move`/`Mutate`, which preserve the property from the pre-state — the
 property is not derivable from the pre-state alone and is discharged by the caller that knows
-the retype target is unreferenced and the new object is fresh. -/
+the retype target is unreferenced and the new object is fresh.
+
+`hTargetOffTree`: the primitive overwrites `target` without taking its slots out
+of the derivation tree, so the caller shows the tree names none of them (every
+slot the tree names must hold a capability, `cdtCompleteness`). -/
 theorem lifecycleRetypeObject_preserves_capabilityInvariantBundle
     (st st' : SystemState)
     (authority : CSpaceAddr)

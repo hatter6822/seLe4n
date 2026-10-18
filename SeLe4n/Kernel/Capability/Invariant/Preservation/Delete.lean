@@ -79,6 +79,33 @@ theorem cspaceDeleteSlotCore_preserves_capabilityInvariantBundleOff
     hBounded', hComp', hAcyclic', hDepth', hObjInv',
     cspaceDeleteSlotCore_preserves_replyCapPointsToValidReply st st' addr hRCPV hObjInv hStep⟩
 
+/-- The core delete keeps every other slot's capability. -/
+theorem cspaceDeleteSlotCore_keeps_other_slot (st st' : SystemState) (addr ref : SlotRef)
+    (hObjInv : st.objects.invExt) (hNe : ref ≠ addr)
+    (hStep : cspaceDeleteSlotCore addr st = .ok ((), st'))
+    (hOcc : ∃ cn, st.objects[ref.cnode]? = some (.cnode cn) ∧ cn.lookup ref.slot ≠ none) :
+    ∃ cn, st'.objects[ref.cnode]? = some (.cnode cn) ∧ cn.lookup ref.slot ≠ none := by
+  unfold cspaceDeleteSlotCore SystemState.getCNode? at hStep
+  cases hPre : st.objects[addr.cnode]? with
+  | none => simp [hPre] at hStep
+  | some preObj =>
+    cases preObj with
+    | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ => simp [hPre] at hStep
+    | cnode preCn =>
+      simp [hPre] at hStep
+      cases hStore : storeObject addr.cnode (.cnode (preCn.remove addr.slot)) st with
+      | error e => simp [hStore] at hStep
+      | ok pair =>
+        obtain ⟨_, stMid⟩ := pair
+        simp [hStore] at hStep; subst hStep
+        obtain ⟨cn, hCn, hL⟩ := hOcc
+        by_cases hc : ref.cnode = addr.cnode
+        · rw [hc, hPre] at hCn; cases hCn
+          have hs : addr.slot ≠ ref.slot := fun h => hNe (by cases ref; cases addr; simp_all)
+          refine ⟨_, by rw [hc]; exact storeObject_objects_eq st stMid _ _ hObjInv hStore, ?_⟩
+          rw [CNode.lookup_remove_ne _ _ _ hs (CNode.slotsUnique_holds _)]; exact hL
+        · exact ⟨cn, by rw [storeObject_objects_ne st stMid addr.cnode ref.cnode _ hc hObjInv hStore]; exact hCn, hL⟩
+
 /-- A tree update that keeps the tree acyclic, names no new slot and none of
 the slots `gone` names restores the full bundle. -/
 theorem capabilityInvariantBundle_of_off_cdt_update

@@ -29,6 +29,45 @@ open Internal
 -- WS-E4/C-02: Preservation theorems for new capability operations
 -- ============================================================================
 
+/-- A successful mint read its source and installed into its destination. -/
+theorem cspaceMint_ok_decompose (src dst : CSpaceAddr) (rights : AccessRightSet)
+    (badge : Option SeLe4n.Badge) (st st1 : SystemState)
+    (h : cspaceMint src dst rights badge st = .ok ((), st1)) :
+    ∃ parent child, cspaceLookupSlot src st = .ok (parent, st) ∧
+      cspaceInsertSlot dst child st = .ok ((), st1) := by
+  unfold cspaceMint at h
+  cases hL : cspaceLookupSlot src st with
+  | error e => simp [hL] at h
+  | ok pr =>
+    obtain ⟨parent, stL⟩ := pr
+    have hEq := cspaceLookupSlot_preserves_state st stL src parent hL; subst hEq
+    simp only [hL] at h
+    cases hNN : parent.toNonNull? with
+    | none => simp [hNN] at h
+    | some pNN =>
+      simp only [hNN] at h
+      cases hM : mintDerivedCap pNN rights badge with
+      | error e => simp [hM] at h
+      | ok child => simp only [hM] at h; exact ⟨parent, child, rfl, h⟩
+
+/-- A successful reply-cap mint read its source and installed into its destination. -/
+theorem mintReplyCap_ok_decompose (src dst : CSpaceAddr) (st st1 : SystemState)
+    (h : mintReplyCap src dst st = .ok ((), st1)) :
+    ∃ parent child, cspaceLookupSlot src st = .ok (parent, st) ∧
+      cspaceInsertSlot dst child st = .ok ((), st1) := by
+  unfold mintReplyCap at h
+  cases hL : cspaceLookupSlot src st with
+  | error e => simp [hL] at h
+  | ok pr =>
+    obtain ⟨parent, stL⟩ := pr
+    have hEq := cspaceLookupSlot_preserves_state st stL src parent hL; subst hEq
+    simp only [hL] at h
+    split at h
+    · split at h
+      · exact ⟨parent, _, rfl, h⟩
+      · cases h
+    · cases h
+
 /-- WS-E4/C-02: cspaceCopy preserves capabilityInvariantBundle.
 Copy composes cspaceLookupSlot + cspaceInsertSlot, both of which preserve the bundle,
 plus a CDT update that only touches the cdt field. -/
@@ -38,7 +77,6 @@ theorem cspaceCopy_preserves_capabilityInvariantBundle
     (hInv : capabilityInvariantBundle st)
     (hDstCapacity : ∀ cn cap, st.objects[dst.cnode]? = some (.cnode cn) →
       (cn.insert dst.slot cap).slotCountBounded)
-    (hCdtPost : cdtCompleteness st' ∧ cdtAcyclicity st')
     (hStep : cspaceCopy src dst st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
   unfold cspaceCopy at hStep
@@ -63,28 +101,33 @@ theorem cspaceCopy_preserves_capabilityInvariantBundle
             (fun cn hObj => hDstCapacity cn cap.withoutMapping hObj)
             (objects_invExt_of_capabilityInvariantBundle st hInv)
             (replyCapBacked_of_source_slot st src cap hInv hSrc) hInsert
+          have hCdt := cdt_addEdge_after_insert st st2 src dst cap.withoutMapping .copy
+            hInv.2.2.1 hInv.2.2.2.1 (objects_invExt_of_capabilityInvariantBundle st hInv)
+            (by rw [(cspaceLookupSlot_ok_iff_lookupSlotCap st src cap).1 hSrc]; rfl) hInsert
           rcases hBundleSt2 with ⟨_, hBnd2, hComp2, _, hDepth2, hObjInv2, hRCPV2⟩
           simp [hSrc, hToNN, hInsert] at hStep
           cases hStep
           have hObjFinal : ({ st2 with cdt := st2.cdt.addEdge src dst .copy }).objects = st2.objects := rfl
-          -- WS-H4: cspaceSlotCountBounded transfers via objects equality;
-          -- cdtCompleteness and cdtAcyclicity for CDT-modifying ops taken as hypotheses.
+          -- WS-H4: cspaceSlotCountBounded transfers via objects equality; the
+          -- tree keeps its soundness because the new edge reaches an empty slot.
           exact ⟨cspaceLookupSound_holds _,
             cspaceSlotCountBounded_of_objects_eq st2 _ hBnd2 hObjFinal,
-            hCdtPost.1, hCdtPost.2,
+            hCdt.1, hCdt.2,
             cspaceDepthConsistent_of_objects_eq st2 _ hDepth2 hObjFinal,
             hObjFinal ▸ hObjInv2,
             replyCapPointsToValidReply_of_objects_eq hObjFinal hRCPV2⟩
 
 /-- WS-E4/C-02: cspaceMove preserves capabilityInvariantBundle.
-Move composes lookup + insert + delete, all of which preserve the bundle. -/
+Move composes lookup + insert + the core delete, then renames the source's tree
+node to the destination (`moveNode`).  The destination was empty, so the tree did
+not name it: the rename keeps the tree acyclic (`moveNode_edgeWellFounded`) and
+takes the emptied source out of it (`moveNode_mentions`). -/
 theorem cspaceMove_preserves_capabilityInvariantBundle
     (st st' : SystemState)
     (src dst : CSpaceAddr)
     (hInv : capabilityInvariantBundle st)
     (hDstCapacity : ∀ cn cap, st.objects[dst.cnode]? = some (.cnode cn) →
       (cn.insert dst.slot cap).slotCountBounded)
-    (hCdtPost : cdtCompleteness st' ∧ cdtAcyclicity st')
     (hStep : cspaceMove src dst st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
   unfold cspaceMove at hStep
@@ -119,13 +162,36 @@ theorem cspaceMove_preserves_capabilityInvariantBundle
                 (replyCapBacked_of_source_slot st src cap hInv hSrc) hInsert
               have hBundleSt3 := cspaceDeleteSlotCore_preserves_capabilityInvariantBundleOff st2 st3 src
                 hBundleSt2 hDelete
-              rcases hBundleSt3 with ⟨_, hBnd3, _, _, hDepth3, hObjInv3, hRCPV3⟩
+              obtain ⟨cnD, hGetD, hAddrD, hEmptyD, hStoreD⟩ :=
+                cspaceInsertSlot_ok_decompose st st2 dst cap hInsert
+              have hPreD : st.objects[dst.cnode]? = some (.cnode cnD) :=
+                (SystemState.getCNode?_eq_some_iff _ _ _).mp hGetD
+              have hCdt3 : st3.cdt = st.cdt :=
+                (cspaceDeleteSlotCore_cdt_eq st2 st3 src hDelete).trans
+                  (storeObject_cdt_eq st st2 _ _ hStoreD)
+              have hFresh : ¬ st3.cdt.mentions dst := by
+                rw [hCdt3]
+                exact hInv.2.2.1.not_mentions_of_empty fun cn' h => by
+                  rw [hPreD] at h; cases h; exact hEmptyD
+              have hDst2 : ∃ cn, st2.objects[dst.cnode]? = some (.cnode cn) ∧
+                  cn.lookup dst.slot ≠ none :=
+                ⟨_, storeObject_objects_eq st st2 _ _
+                    (objects_invExt_of_capabilityInvariantBundle st hInv) hStoreD,
+                  by rw [CNode.lookup_insert_eq _ _ _ (CNode.slotsUnique_holds _) hAddrD]; simp⟩
+              have hDst3 := cspaceDeleteSlotCore_keeps_other_slot st2 st3 src dst
+                hBundleSt2.2.2.2.2.2.1 (Ne.symm hSelf) hDelete hDst2
+              rcases hBundleSt3 with ⟨_, hBnd3, hComp3, hAcyc3, hDepth3, hObjInv3, hRCPV3⟩
               simp [hSrc, hToNN, hInsert, hDelete] at hStep
               cases hStep
               have hObjEq : ({ st3 with cdt := st3.cdt.moveNode src dst }).objects = st3.objects := rfl
               exact ⟨cspaceLookupSound_holds _,
                 cspaceSlotCountBounded_of_objects_eq st3 _ hBnd3 hObjEq,
-                hCdtPost.1, hCdtPost.2,
+                fun ref hM => by
+                  rcases CapDerivationTree.moveNode_mentions st3.cdt src dst hAcyc3 ref hM with
+                    rfl | ⟨hNe, hM'⟩
+                  · exact hDst3
+                  · exact hComp3 ref hM' hNe,
+                CapDerivationTree.moveNode_edgeWellFounded st3.cdt src dst hAcyc3 hFresh,
                 cspaceDepthConsistent_of_objects_eq st3 _ hDepth3 hObjEq,
                 hObjEq ▸ hObjInv3,
                 replyCapPointsToValidReply_of_objects_eq hObjEq hRCPV3⟩
@@ -140,7 +206,6 @@ theorem cspaceMintWithCdt_preserves_capabilityInvariantBundle
     (hInv : capabilityInvariantBundle st)
     (hDstCapacity : ∀ cn cap, st.objects[dst.cnode]? = some (.cnode cn) →
       (cn.insert dst.slot cap).slotCountBounded)
-    (hCdtPost : cdtCompleteness st' ∧ cdtAcyclicity st')
     (hStep : cspaceMintWithCdt src dst rights badge st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
   unfold cspaceMintWithCdt at hStep
@@ -150,28 +215,31 @@ theorem cspaceMintWithCdt_preserves_capabilityInvariantBundle
       rcases pair with ⟨_, st1⟩
       have hBundle := cspaceMint_preserves_capabilityInvariantBundle st st1 src dst rights badge hInv
         hDstCapacity hMint
+      obtain ⟨parent, child, hL, hI⟩ := cspaceMint_ok_decompose src dst rights badge st st1 hMint
+      have hCdt := cdt_addEdge_after_insert st st1 src dst child .mint
+        hInv.2.2.1 hInv.2.2.2.1 (objects_invExt_of_capabilityInvariantBundle st hInv)
+        (by rw [(cspaceLookupSlot_ok_iff_lookupSlotCap st src parent).1 hL]; rfl) hI
       rcases hBundle with ⟨_, hBnd1, _, _, hDepth1, hObjInv1⟩
       simp [hMint] at hStep
       cases hStep
       have hObjFinal : ({ st1 with cdt := st1.cdt.addEdge src dst .mint }).objects = st1.objects := rfl
       exact ⟨cspaceLookupSound_holds _,
         cspaceSlotCountBounded_of_objects_eq st1 _ hBnd1 hObjFinal,
-        hCdtPost.1, hCdtPost.2,
+        hCdt.1, hCdt.2,
         cspaceDepthConsistent_of_objects_eq st1 _ hDepth1 hObjFinal,
         hObjFinal ▸ hObjInv1⟩
 
 /-- WS-SM SM6.D / PR #822 Phase H: `mintReplyCapWithCdt` (the live `.mintReplyCap` dispatch
 op) preserves `capabilityInvariantBundle`.  Mirrors `cspaceMintWithCdt_preserves_*`: the
 reply-cap insert preserves the bundle (`mintReplyCap_preserves_*`), then the CDT mint-edge
-addition only touches `cdt`, so the remaining conjuncts frame past `objects` and the CDT pair is supplied
-by `hCdtPost` (dischargeable via `cspaceMintWithCdt_cdtAcyclicity_of_freshDst` for a fresh
-destination, exactly as for `cspaceMintWithCdt`). -/
+addition only touches `cdt`, so the remaining conjuncts frame past `objects`, and the tree
+stays complete and acyclic because the edge reaches the slot the insert found empty
+(`cdt_addEdge_after_insert`), exactly as for `cspaceMintWithCdt`. -/
 theorem mintReplyCapWithCdt_preserves_capabilityInvariantBundle
     (st st' : SystemState) (src dst : CSpaceAddr)
     (hInv : capabilityInvariantBundle st)
     (hDstCapacity : ∀ cn cap, st.objects[dst.cnode]? = some (.cnode cn) →
       (cn.insert dst.slot cap).slotCountBounded)
-    (hCdtPost : cdtCompleteness st' ∧ cdtAcyclicity st')
     (hStep : mintReplyCapWithCdt src dst st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
   unfold mintReplyCapWithCdt at hStep
@@ -181,30 +249,19 @@ theorem mintReplyCapWithCdt_preserves_capabilityInvariantBundle
       rcases pair with ⟨_, st1⟩
       have hBundle := mintReplyCap_preserves_capabilityInvariantBundle st st1 src dst hInv
         hDstCapacity hMint
+      obtain ⟨parent, child, hL, hI⟩ := mintReplyCap_ok_decompose src dst st st1 hMint
+      have hCdt := cdt_addEdge_after_insert st st1 src dst child .mint
+        hInv.2.2.1 hInv.2.2.2.1 (objects_invExt_of_capabilityInvariantBundle st hInv)
+        (by rw [(cspaceLookupSlot_ok_iff_lookupSlotCap st src parent).1 hL]; rfl) hI
       rcases hBundle with ⟨_, hBnd1, _, _, hDepth1, hObjInv1⟩
       simp [hMint] at hStep
       cases hStep
       have hObjFinal : ({ st1 with cdt := st1.cdt.addEdge src dst .mint }).objects = st1.objects := rfl
       exact ⟨cspaceLookupSound_holds _,
         cspaceSlotCountBounded_of_objects_eq st1 _ hBnd1 hObjFinal,
-        hCdtPost.1, hCdtPost.2,
+        hCdt.1, hCdt.2,
         cspaceDepthConsistent_of_objects_eq st1 _ hDepth1 hObjFinal,
         hObjFinal ▸ hObjInv1⟩
-
-/-- AE4-C (U-18/CAP-02): Discharge CDT acyclicity for `cspaceMintWithCdt`
-when the destination slot is fresh in the tree (no edge mentions it).
-
-A mint installs into an empty slot, and a slot leaves the tree when its
-capability is destroyed (delete splices it out, revoke removes it), so the
-destination is fresh exactly when the tree holds nothing stale for it.  Adding
-an edge to a fresh child keeps the tree well-founded. -/
-theorem cspaceMintWithCdt_cdtAcyclicity_of_freshDst
-    (cdt : CapDerivationTree) (src dst : SlotRef) (hNeq : src ≠ dst)
-    (hAcyclic : cdt.edgeWellFounded)
-    (hFreshDst : ∀ e ∈ cdt.edges, e.parent ≠ dst ∧ e.child ≠ dst) :
-    (cdt.addEdge src dst .mint).edgeWellFounded :=
-  CapDerivationTree.addEdge_preserves_edgeWellFounded_fresh cdt src dst .mint
-    hNeq hAcyclic hFreshDst
 
 -- ============================================================================
 -- WS-F4/F-06: cspaceMutate preservation

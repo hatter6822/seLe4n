@@ -3822,113 +3822,14 @@ theorem handleInterrupt_crossSubsystemInvariant_bridge
   crossSubsystemInvariant_objects_change_bridge st st' hPre hServices hSvcReg hIfaceReg hObjIdx
     hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
 
--- ============================================================================
--- AN4-C (H-04): CDT hypothesis discharge index (Theme 4.1 anchor)
--- ============================================================================
-
-/-! ## AN4-C (H-04) — CDT hypothesis discharge index
-
-CDT-modifying capability operations take `cdtCompleteness st' ∧
-cdtAcyclicity st'` as post-state hypotheses rather than proving them from the
-pre-state invariant (see the rationale block at the head of
-`Capability/Invariant/Preservation.lean`). The discharge mechanism at the
-kernel-composition layer is: the post-state CDT predicates are recovered from
-`capabilityInvariantBundle st'` (which `_preserves_capabilityInvariantBundle`
-produces after the pre-state bundle is threaded through), and the invocation
-at the composition site supplies the threaded post-state bundle.
-
-This section records the **index of discharge sites** — a mechanically
-searchable mapping from each CDT-taking operation to the companion theorem
-that bridges from `capabilityInvariantBundle st'` back to the pair
-`(cdtCompleteness st', cdtAcyclicity st')`. The marker theorem below is
-documentation-as-code; the companion theorems are the per-operation
-projections that callers can invoke without repeating the ad-hoc destructure
-chain. This establishes the anchor for AN12-A's broader Theme 4.1
-discharge-index table (which will extend to H-07 projection and SC-M02
-`hSchedProj`).
-
-### Discharge-site map
-
-| Operation                  | Takes `hCdtPost` at                                    | Companion bridge                                            |
-|----------------------------|--------------------------------------------------------|-------------------------------------------------------------|
-| `cspaceCopy`               | `Capability/Invariant/Preservation.lean:486`           | `cspaceCopy_cdt_hypothesis_discharged_at`                   |
-| `cspaceMove`               | `Capability/Invariant/Preservation.lean:540`           | `cspaceMove_cdt_hypothesis_discharged_at`                   |
-| `cspaceMintWithCdt`        | `Capability/Invariant/Preservation.lean:627`           | `cspaceMintWithCdt_cdt_hypothesis_discharged_at`            |
-| `cspaceMutate` (*)         | covered by bundle transfer, no `hCdtPost` in sig       | `cspaceMutate_cdt_hypothesis_discharged_at`                 |
-| `cspaceDeleteSlot`         | delete path uses bundle transfer (no `hCdtPost`)       | `cspaceDeleteSlot_cdt_hypothesis_discharged_at`             |
-| `cspaceRevoke`             | revoke path uses bundle transfer (no `hCdtPost`)       | `cspaceRevoke_cdt_hypothesis_discharged_at`                 |
-
-(*) `cspaceMutate` does not expand the CDT; the entry is included for index
-completeness so AN12-A can extend the table uniformly without a
-special-case gap. -/
-
-/-- AN4-C (H-04): Discharge index marker. Use this symbol to locate the
-discharge-site map (see the docstring above) and to anchor downstream
-Theme 4.1 extensions. The body is `()` per the marker-theorem pattern
-(CAP-M01 convention); substantive content lives in the docstring and the
-per-operation companion theorems below. -/
-def capabilityInvariantBundle_cdt_hypothesis_discharge_index : Unit := ()
-
-/-- AN4-C (H-04): `cspaceCopy` companion — bridge from post-state
-`capabilityInvariantBundle` to the pair `(cdtCompleteness, cdtAcyclicity)`
-that discharges the `hCdtPost` hypothesis at its preservation theorem
-(`Capability/Invariant/Preservation.lean:486`). -/
-theorem cspaceCopy_cdt_hypothesis_discharged_at
-    (st' : SystemState) (hBundle : capabilityInvariantBundle st') :
-    cdtCompleteness st' ∧ cdtAcyclicity st' :=
-  ⟨hBundle.2.2.1, hBundle.2.2.2.1⟩
-
-/-- AN4-C (H-04): `cspaceMove` companion — same bridge as `cspaceCopy`;
-both are in-place CNode mutations that take `hCdtPost` at
-`Capability/Invariant/Preservation.lean:540`. -/
-theorem cspaceMove_cdt_hypothesis_discharged_at
-    (st' : SystemState) (hBundle : capabilityInvariantBundle st') :
-    cdtCompleteness st' ∧ cdtAcyclicity st' :=
-  ⟨hBundle.2.2.1, hBundle.2.2.2.1⟩
-
-/-- AN4-C (H-04): `cspaceMintWithCdt` companion — CDT-expanding mint path
-takes `hCdtPost` at `Capability/Invariant/Preservation.lean:627`. -/
-theorem cspaceMintWithCdt_cdt_hypothesis_discharged_at
-    (st' : SystemState) (hBundle : capabilityInvariantBundle st') :
-    cdtCompleteness st' ∧ cdtAcyclicity st' :=
-  ⟨hBundle.2.2.1, hBundle.2.2.2.1⟩
-
-/-- AN4-C (H-04): `cspaceMutate` companion — does not expand the CDT; the
-CDT predicates transfer through `_preserves_capabilityInvariantBundle`
-without a dedicated `hCdtPost` parameter. Included for Theme 4.1 index
-completeness. -/
-theorem cspaceMutate_cdt_hypothesis_discharged_at
-    (st' : SystemState) (hBundle : capabilityInvariantBundle st') :
-    cdtCompleteness st' ∧ cdtAcyclicity st' :=
-  ⟨hBundle.2.2.1, hBundle.2.2.2.1⟩
-
-/-- AN4-C (H-04): `cspaceDeleteSlot` companion — the delete path transfers
-the CDT predicates through its preservation theorem without a dedicated
-`hCdtPost` parameter. Included for Theme 4.1 index completeness. -/
-theorem cspaceDeleteSlot_cdt_hypothesis_discharged_at
-    (st' : SystemState) (hBundle : capabilityInvariantBundle st') :
-    cdtCompleteness st' ∧ cdtAcyclicity st' :=
-  ⟨hBundle.2.2.1, hBundle.2.2.2.1⟩
-
-/-- AN4-C (H-04): `cspaceRevoke` companion — bulk revoke loops the delete
-path over every descendant; the CDT predicates transfer through the
-revoke preservation theorem without a dedicated `hCdtPost` parameter.
-Included for Theme 4.1 index completeness. -/
-theorem cspaceRevoke_cdt_hypothesis_discharged_at
-    (st' : SystemState) (hBundle : capabilityInvariantBundle st') :
-    cdtCompleteness st' ∧ cdtAcyclicity st' :=
-  ⟨hBundle.2.2.1, hBundle.2.2.2.1⟩
-
 /-- AN12-A (Theme 4.1) — closure-form discharge index marker.
 
 The full index lives in `docs/audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md`
-(active) and maps every closure-form hypothesis (`hCdtPost`,
-`hProjEq`, `hSchedProj`, `hServiceProjEq`) in the proof surface to
-either a substantively proven companion bridge
-(`{cspaceCopy,cspaceMove,cspaceMintWithCdt,cspaceMutate,
-cspaceDeleteSlot,cspaceRevoke}_cdt_hypothesis_discharged_at` above) or a
-named frame-lemma recipe in `SeLe4n/Kernel/InformationFlow/Invariant/
-Operations.lean`.
+(active) and maps every closure-form hypothesis (`hProjEq`, `hSchedProj`,
+`hServiceProjEq`) in the proof surface to a named frame-lemma recipe in
+`SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean`.  The tree-changing
+capability operations take no such hypothesis: each derives the post-state
+tree's soundness from its pre-state bundle.
 
 This marker theorem exists so that a tier-3 invariant-surface check can
 locate the index by name; the body is `trivial` per the marker-theorem

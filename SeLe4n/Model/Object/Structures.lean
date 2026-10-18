@@ -1986,14 +1986,10 @@ theorem removeNode_edges_sub (cdt : CapDerivationTree) (node : SlotRef) :
 
 /-- WS-H4/M-G03: Adding an edge preserves edge-well-foundedness when the child
 node does not appear in any existing edge (as either parent or child). The parent
-node MAY already participate in edges. This covers the common case in kernel
-operations, where the destination slot was empty and so outside the tree.
-
-For nodes that already participate in derivation edges, callers should supply
-`hCdtPost : cdtCompleteness st' ∧ cdtAcyclicity st'` directly (the hypothesis
-pattern used by `cspaceCopy_preserves_capabilityInvariantBundle` et al.).
-The general `descendantsOf`-based theorem requires a BFS completeness proof
-that is deferred to Phase 2 (WS-M2) when the CDT structure is refactored. -/
+node MAY already participate in edges.  Every kernel operation that adds an edge
+installs into a slot it found empty, and an empty slot is outside the tree
+(`cdtCompleteness`), so this is the only form the kernel needs
+(`cdt_addEdge_after_insert`). -/
 theorem addEdge_preserves_edgeWellFounded_fresh
     (cdt : CapDerivationTree) (parent child : SlotRef) (op : DerivationOp)
     (hNeq : parent ≠ child)
@@ -2995,6 +2991,95 @@ theorem spliceNode_not_mentions_self (cdt : CapDerivationTree) (node : SlotRef)
   · rcases hr with hr | hr
     · exact edgeWellFounded_no_self_edge hWF hUp (by rw [hUc, ← hr, hP])
     · exact edgeWellFounded_no_self_edge hWF he (by rw [hEp, ← hr, hC])
+
+/-- A tree each of whose edges maps, under `f`, onto an edge of a well-founded
+tree is well-founded: a cycle would map onto a cycle. -/
+theorem edgeWellFounded_of_map (cdt cdt' : CapDerivationTree) (f : SlotRef → SlotRef)
+    (hWF : cdt.edgeWellFounded)
+    (hMap : ∀ e' ∈ cdt'.edges, ∃ e ∈ cdt.edges, e.parent = f e'.parent ∧ e.child = f e'.child) :
+    cdt'.edgeWellFounded := by
+  intro node ⟨path, hLen, hHead, hLast, hEdges⟩
+  refine hWF (f node) ⟨path.map f, by simpa using hLen, ?_, ?_, fun i hi => ?_⟩
+  · rw [List.head?_map, hHead]; rfl
+  · rw [List.getLast?_map, hLast]; rfl
+  · have hi' : i + 1 < path.length := by simpa using hi
+    obtain ⟨e', he', hp, hc⟩ := hEdges i hi'
+    obtain ⟨e, he, hp', hc'⟩ := hMap e' he'
+    exact ⟨e, he, by rw [hp', hp, List.getElem_map], by rw [hc', hc, List.getElem_map]⟩
+
+private theorem foldl_addEdge_from_edges (new : SlotRef) :
+    ∀ (l : List CapDerivationEdge) (acc : CapDerivationTree),
+      ∀ e' ∈ (l.foldl (fun acc e => acc.addEdge new e.child e.op) acc).edges,
+        e' ∈ acc.edges ∨ (e'.parent = new ∧ ∃ e ∈ l, e'.child = e.child)
+  | [], _, _, h => .inl h
+  | x :: xs, acc, e', h => by
+    simp only [List.foldl_cons] at h
+    rcases foldl_addEdge_from_edges new xs _ e' h with h' | ⟨hp, e, he, hc⟩
+    · simp only [addEdge, List.mem_cons] at h'
+      rcases h' with rfl | h'
+      · exact .inr ⟨rfl, x, .head _, rfl⟩
+      · exact .inl h'
+    · exact .inr ⟨hp, e, .tail _ he, hc⟩
+
+/-- Every edge of the moved tree is an old edge clear of `old`, the edge from
+`old`'s parent to `new`, or an edge from `new` to one of `old`'s children. -/
+theorem moveNode_edges (cdt : CapDerivationTree) (old new : SlotRef) :
+    ∀ e' ∈ (cdt.moveNode old new).edges,
+      e' ∈ (cdt.removeNode old).edges ∨
+      (∃ up ∈ cdt.edges, up.child = old ∧ e'.parent = up.parent ∧ e'.child = new) ∨
+      (e'.parent = new ∧ ∃ e ∈ cdt.edges, e.parent = old ∧ e'.child = e.child) := by
+  intro e' he'
+  simp only [moveNode] at he'
+  rcases foldl_addEdge_from_edges new _ _ e' he' with h | ⟨hp, e, he, hc⟩
+  · split at h
+    · rename_i up hUp
+      simp only [addEdge, List.mem_cons] at h
+      rcases h with rfl | h
+      · have hC := List.find?_some hUp
+        exact .inr (.inl ⟨up, List.mem_of_find?_eq_some hUp,
+          by simpa [CapDerivationEdge.isChildOf] using hC, rfl, rfl⟩)
+      · exact .inl h
+    · exact .inl h
+  · simp only [List.mem_filter] at he
+    exact .inr (.inr ⟨hp, e, he.1, by simpa [CapDerivationEdge.isParentOf] using he.2, hc⟩)
+
+/-- **Moving a node to a fresh slot keeps the tree acyclic**: the moved tree is
+the old one with `old` renamed `new`. -/
+theorem moveNode_edgeWellFounded (cdt : CapDerivationTree) (old new : SlotRef)
+    (hWF : cdt.edgeWellFounded) (hFresh : ¬ cdt.mentions new) :
+    (cdt.moveNode old new).edgeWellFounded :=
+  edgeWellFounded_of_map cdt _ (fun x => if x = new then old else x) hWF fun e' he' => by
+    rcases moveNode_edges cdt old new e' he' with h | ⟨up, hUp, hc, hp, hcn⟩ | ⟨hp, e, he, hpo, hc⟩
+    · have h0 := removeNode_edges_sub cdt old e' h
+      refine ⟨e', h0, ?_, ?_⟩ <;> dsimp only
+      · rw [if_neg fun hEq => hFresh ⟨e', h0, .inl hEq⟩]
+      · rw [if_neg fun hEq => hFresh ⟨e', h0, .inr hEq⟩]
+    · refine ⟨up, hUp, ?_, ?_⟩ <;> dsimp only
+      · rw [hp, if_neg fun hEq => hFresh ⟨up, hUp, .inl hEq⟩]
+      · rw [hcn, if_pos rfl, hc]
+    · refine ⟨e, he, ?_, ?_⟩ <;> dsimp only
+      · rw [hp, if_pos rfl, hpo]
+      · rw [hc, if_neg fun hEq => hFresh ⟨e, he, .inr hEq⟩]
+
+/-- The moved tree names `new` and, other than `old`, only slots the old tree
+named. -/
+theorem moveNode_mentions (cdt : CapDerivationTree) (old new : SlotRef)
+    (hWF : cdt.edgeWellFounded) (ref : SlotRef) (h : (cdt.moveNode old new).mentions ref) :
+    ref = new ∨ (ref ≠ old ∧ cdt.mentions ref) := by
+  obtain ⟨e', he', hr⟩ := h
+  rcases moveNode_edges cdt old new e' he' with h | ⟨up, hUp, hc, hp, hcn⟩ | ⟨hp, e, he, hpo, hc⟩
+  · refine .inr ⟨?_, ⟨e', removeNode_edges_sub cdt old e' h, hr⟩⟩
+    rintro rfl; exact removeNode_not_mentions_self cdt ref ⟨e', h, hr⟩
+  · rcases hr with hr | hr
+    · rw [hp] at hr; subst hr
+      exact .inr ⟨fun hEq => edgeWellFounded_no_self_edge hWF hUp (hEq.trans hc.symm),
+        ⟨up, hUp, .inl rfl⟩⟩
+    · exact .inl (hr ▸ hcn)
+  · rcases hr with hr | hr
+    · exact .inl (hr ▸ hp)
+    · rw [hc] at hr; subst hr
+      exact .inr ⟨fun hEq => edgeWellFounded_no_self_edge hWF he (hpo.trans hEq.symm),
+        ⟨e, he, .inr rfl⟩⟩
 
 /-- `removeNode` keeps the child map's `invExtK`. -/
 theorem removeNode_childMap_invExtK (cdt : CapDerivationTree) (node : SlotRef)

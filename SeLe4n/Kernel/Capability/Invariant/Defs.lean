@@ -196,11 +196,11 @@ effects, not a state property preserved through transitions). Both are retained 
 standalone operation-correctness lemmas in `Authority.lean`.
 
 **Design decisions (WS-H4):**
-- CDT-modifying operations (`cspaceCopy`, `cspaceMove`, `cspaceMintWithCdt`) take
-  `hCdtPost : cdtCompleteness st' ∧ cdtAcyclicity st'` as hypotheses rather than
-  proving acyclicity preservation through `addEdge`. This is because proving
-  `addEdge_preserves_acyclicity` requires a cycle-check precondition that must be
-  validated at the caller; the hypothesis pattern correctly defers this obligation.
+- CDT-expanding operations (`cspaceCopy`, `cspaceMove`, `cspaceMintWithCdt`,
+  reply-cap mint, IPC capability transfer) prove acyclicity from the pre-state:
+  each installs into a slot it found empty, which `cdtCompleteness` keeps out of
+  the tree, so the new edge reaches a fresh node
+  (`addEdge_preserves_edgeWellFounded_fresh`, `moveNode_edgeWellFounded`).
 - CDT-shrinking operations (revoke/delete) prove acyclicity via
   `CapDerivationTree.edgeWellFounded_sub` (edge subset preserves well-foundedness).
 - AF5-F (AF-26): This conjunction uses right-associative `∧` chains

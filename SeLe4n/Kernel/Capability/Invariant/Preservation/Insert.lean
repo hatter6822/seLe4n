@@ -333,5 +333,66 @@ theorem mintReplyCap_preserves_capabilityInvariantBundle
       | replyCap rid => simp [hSrc, hTgt] at hStep
       | auditTrail => simp [hSrc, hTgt] at hStep
 
+/-- A slot `lookupSlotCap` reads a capability from is occupied in a live CNode. -/
+theorem slotOccupied_of_lookupSlotCap (st : SystemState) (ref : SlotRef)
+    (h : (SystemState.lookupSlotCap st ref).isSome) :
+    ∃ cn, st.objects[ref.cnode]? = some (.cnode cn) ∧ cn.lookup ref.slot ≠ none := by
+  unfold SystemState.lookupSlotCap at h
+  cases hL : SystemState.lookupCNode st ref.cnode with
+  | none => simp [hL] at h
+  | some cn =>
+    simp only [hL] at h
+    refine ⟨cn, ?_, by simpa [Option.isSome_iff_ne_none] using h⟩
+    unfold SystemState.lookupCNode at hL
+    split at hL
+    · rename_i c hc; cases hL; exact hc
+    · cases hL
+
+/-- **Installing a derived capability into an empty slot and recording its
+derivation keeps the tree complete and acyclic.**  The destination was empty, so
+the tree did not name it (`cdtCompleteness`): the new edge reaches a fresh node
+and closes no cycle (`addEdge_preserves_edgeWellFounded_fresh`).  The source
+held a capability and still does; the destination now does.  This is the step
+copy, mint, reply-cap mint and IPC capability transfer share. -/
+theorem cdt_addEdge_after_insert (st st1 : SystemState) (src dst : SlotRef)
+    (cap : Capability) (op : DerivationOp)
+    (hComp : cdtCompleteness st) (hAcyc : cdtAcyclicity st) (hObjInv : st.objects.invExt)
+    (hSrc : (SystemState.lookupSlotCap st src).isSome)
+    (hIns : cspaceInsertSlot dst cap st = .ok ((), st1)) :
+    cdtCompleteness { st1 with cdt := st1.cdt.addEdge src dst op } ∧
+      cdtAcyclicity { st1 with cdt := st1.cdt.addEdge src dst op } := by
+  obtain ⟨cn, hGet, hAddr, hEmpty, hStore⟩ := cspaceInsertSlot_ok_decompose st st1 dst cap hIns
+  have hPre : st.objects[dst.cnode]? = some (.cnode cn) :=
+    (SystemState.getCNode?_eq_some_iff st dst.cnode cn).mp hGet
+  have hCdt : st1.cdt = st.cdt := storeObject_cdt_eq st st1 dst.cnode _ hStore
+  have hComp1 : cdtCompleteness st1 :=
+    cdtCompleteness_of_storeObject_cnode_mono st st1 dst.cnode cn _ hComp hObjInv hPre hStore
+      fun s h => CNode.lookup_insert_ne_none cn dst.slot s cap h
+  have hDstPost : st1.objects[dst.cnode]? = some (.cnode (cn.insert dst.slot cap)) :=
+    storeObject_objects_eq st st1 dst.cnode _ hObjInv hStore
+  have hDstOcc : (cn.insert dst.slot cap).lookup dst.slot ≠ none := by
+    rw [CNode.lookup_insert_eq cn dst.slot cap (CNode.slotsUnique_holds _) hAddr]; simp
+  have hDstFresh : ¬ st.cdt.mentions dst :=
+    hComp.not_mentions_of_empty fun cn' h => by rw [hPre] at h; cases h; exact hEmpty
+  obtain ⟨cs, hCs, hLs⟩ := slotOccupied_of_lookupSlotCap st src hSrc
+  have hNe : src ≠ dst := by
+    rintro rfl; rw [hPre] at hCs; cases hCs; exact hLs hEmpty
+  have hSrcPost : ∃ cn, st1.objects[src.cnode]? = some (.cnode cn) ∧ cn.lookup src.slot ≠ none := by
+    by_cases hc : src.cnode = dst.cnode
+    · rw [hc, hPre] at hCs; cases hCs
+      exact ⟨_, by rw [hc]; exact hDstPost, CNode.lookup_insert_ne_none _ _ _ _ hLs⟩
+    · exact ⟨cs, by rw [storeObject_objects_ne st st1 dst.cnode src.cnode _ hc hObjInv hStore]; exact hCs, hLs⟩
+  refine ⟨fun ref hM => ?_, ?_⟩
+  · obtain ⟨e, he, hr⟩ := hM
+    simp only [CapDerivationTree.addEdge, List.mem_cons] at he
+    rcases he with rfl | he
+    · rcases hr with h | h <;> simp only at h <;> subst h
+      · exact hSrcPost
+      · exact ⟨_, hDstPost, hDstOcc⟩
+    · exact hComp1 ref ⟨e, he, hr⟩
+  · exact CapDerivationTree.addEdge_preserves_edgeWellFounded_fresh st1.cdt src dst op hNe
+      (by unfold cdtAcyclicity at hAcyc; rw [hCdt]; exact hAcyc)
+      fun e he => ⟨fun h => hDstFresh ⟨e, hCdt ▸ he, Or.inl h⟩,
+        fun h => hDstFresh ⟨e, hCdt ▸ he, Or.inr h⟩⟩
 
 end SeLe4n.Kernel
