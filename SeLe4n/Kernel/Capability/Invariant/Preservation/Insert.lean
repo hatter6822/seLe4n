@@ -26,40 +26,24 @@ open SeLe4n.Model
 open Internal
 
 
-/-! ## U4-L / U-M26: CDT Hypothesis Pattern Rationale
+/-! ## U4-L / U-M26: the derivation tree's invariants from the pre-state
 
-CDT-modifying operations (`cspaceCopy`, `cspaceMove`, `cspaceDeleteSlot`,
-`cspaceRevoke`) take `cdtCompleteness st' ∧ cdtAcyclicity st'` as an
-**externalized post-state hypothesis** rather than proving it from the
-pre-state invariant. This is deliberate:
+Every operation that changes the derivation tree proves `cdtCompleteness` and
+`cdtAcyclicity` of its post-state from the pre-state's bundle; none takes them as
+a hypothesis about the state it produces.
 
-1. **Structural separation.** The capability invariant bundle
-   (`capabilityInvariantBundle`) covers slot-level properties (uniqueness,
-   soundness, bounded slot count, depth consistency, `objects.invExt`).
-   CDT structural properties (completeness, acyclicity) are logically
-   orthogonal — they depend on the CDT graph shape, not on per-CNode
-   slot state. Bundling them as hypotheses keeps each proof focused.
-
-2. **CDT operation complexity.** CDT mutations (`addEdge`, `removeNode`,
-   `revokeDerivationEdge`) modify an edge list and two maps (`childMap`,
-   `parentMap`). Proving acyclicity preservation for `addEdge` requires
-   a reachability argument over the graph (no path from child to parent
-   in the pre-state). This argument is inherently CDT-specific and does
-   not compose naturally with the slot-level induction used in capability
-   preservation proofs.
-
-3. **Caller context.** The CDT hypotheses are discharged at the
-   cross-subsystem composition layer (`proofLayerInvariantBundle` in
-   `Architecture/Invariant.lean`), where the full kernel invariant —
-   including CDT acyclicity from `capabilityInvariantBundle` — is
-   available. The decomposition `pre-state bundle → per-subsystem
-   preservation → post-state bundle` works because each subsystem
-   preservation theorem contributes its piece and receives the CDT
-   piece from the composed invariant.
-
-This pattern is consistent with the IPC `dualQueueSystemInvariant`
-externalization (U-M31) and the information flow `hProjection` pattern
-(U-H09). -/
+- **Growing the tree** (`cspaceCopy`, `cspaceMintWithCdt`, the reply-cap mint,
+  IPC capability transfer): each installs into a slot it found empty, which
+  `cdtCompleteness` keeps out of the tree, so the new edge reaches a fresh node
+  and cannot close a cycle (`addEdge_preserves_edgeWellFounded_fresh`).
+- **Moving a node** (`cspaceMove`): the destination is empty, so outside the
+  tree, and renaming a node to a fresh one maps every cycle onto a cycle of the
+  pre-state (`moveNode_edgeWellFounded`).
+- **Shrinking the tree** (`cspaceDeleteSlot`, `cspaceRevoke`, the local revoke,
+  CNode retype): the splice and the removal keep or contract edges of the
+  pre-state (`CapDerivationTree.edgeWellFounded_sub`,
+  `spliceNode_edgeWellFounded`) and take each emptied slot out of the tree, so
+  completeness is restored once every emptied slot has left it. -/
 
 theorem cspaceLookupSlot_preserves_capabilityInvariantBundle
     (st st' : SystemState)
@@ -147,8 +131,9 @@ theorem cspaceInsertSlot_preserves_capabilityInvariantBundle
       (SystemState.getCNode?_eq_some_iff st addr.cnode preCn).mp hCnOpt
     exact ⟨cspaceSlotCountBounded_of_storeObject_cnode st st' addr.cnode
         (preCn.insert addr.slot cap) hBounded hObjInv hStore (hSlotCapacity preCn hPre),
-      cdtCompleteness_of_storeObject st st' addr.cnode
-        (.cnode (preCn.insert addr.slot cap)) hComp hObjInv hStore,
+      cdtCompleteness_of_storeObject_cnode_mono st st' addr.cnode preCn
+        (preCn.insert addr.slot cap) hComp hObjInv hPre hStore
+        (fun s h => CNode.lookup_insert_ne_none preCn addr.slot s cap h),
       cdtAcyclicity_of_cdt_eq st st' hAcyclic
         (storeObject_cdt_eq st st' addr.cnode _ hStore),
       cspaceDepthConsistent_of_storeObject_insertCNode
@@ -332,5 +317,66 @@ theorem mintReplyCap_preserves_capabilityInvariantBundle
       | replyCap rid => simp [hSrc, hTgt] at hStep
       | auditTrail => simp [hSrc, hTgt] at hStep
 
+/-- A slot `lookupSlotCap` reads a capability from is occupied in a live CNode. -/
+theorem slotOccupied_of_lookupSlotCap (st : SystemState) (ref : SlotRef)
+    (h : (SystemState.lookupSlotCap st ref).isSome) :
+    ∃ cn, st.objects[ref.cnode]? = some (.cnode cn) ∧ cn.lookup ref.slot ≠ none := by
+  unfold SystemState.lookupSlotCap at h
+  cases hL : SystemState.lookupCNode st ref.cnode with
+  | none => simp [hL] at h
+  | some cn =>
+    simp only [hL] at h
+    refine ⟨cn, ?_, by simpa [Option.isSome_iff_ne_none] using h⟩
+    unfold SystemState.lookupCNode at hL
+    split at hL
+    · rename_i c hc; cases hL; exact hc
+    · cases hL
+
+/-- **Installing a derived capability into an empty slot and recording its
+derivation keeps the tree complete and acyclic.**  The destination was empty, so
+the tree did not name it (`cdtCompleteness`): the new edge reaches a fresh node
+and closes no cycle (`addEdge_preserves_edgeWellFounded_fresh`).  The source
+held a capability and still does; the destination now does.  This is the step
+copy, mint, reply-cap mint and IPC capability transfer share. -/
+theorem cdt_addEdge_after_insert (st st1 : SystemState) (src dst : SlotRef)
+    (cap : Capability) (op : DerivationOp)
+    (hComp : cdtCompleteness st) (hAcyc : cdtAcyclicity st) (hObjInv : st.objects.invExt)
+    (hSrc : (SystemState.lookupSlotCap st src).isSome)
+    (hIns : cspaceInsertSlot dst cap st = .ok ((), st1)) :
+    cdtCompleteness { st1 with cdt := st1.cdt.addEdge src dst op } ∧
+      cdtAcyclicity { st1 with cdt := st1.cdt.addEdge src dst op } := by
+  obtain ⟨cn, hGet, hAddr, hEmpty, hStore⟩ := cspaceInsertSlot_ok_decompose st st1 dst cap hIns
+  have hPre : st.objects[dst.cnode]? = some (.cnode cn) :=
+    (SystemState.getCNode?_eq_some_iff st dst.cnode cn).mp hGet
+  have hCdt : st1.cdt = st.cdt := storeObject_cdt_eq st st1 dst.cnode _ hStore
+  have hComp1 : cdtCompleteness st1 :=
+    cdtCompleteness_of_storeObject_cnode_mono st st1 dst.cnode cn _ hComp hObjInv hPre hStore
+      fun s h => CNode.lookup_insert_ne_none cn dst.slot s cap h
+  have hDstPost : st1.objects[dst.cnode]? = some (.cnode (cn.insert dst.slot cap)) :=
+    storeObject_objects_eq st st1 dst.cnode _ hObjInv hStore
+  have hDstOcc : (cn.insert dst.slot cap).lookup dst.slot ≠ none := by
+    rw [CNode.lookup_insert_eq cn dst.slot cap (CNode.slotsUnique_holds _) hAddr]; simp
+  have hDstFresh : ¬ st.cdt.mentions dst :=
+    hComp.not_mentions_of_empty fun cn' h => by rw [hPre] at h; cases h; exact hEmpty
+  obtain ⟨cs, hCs, hLs⟩ := slotOccupied_of_lookupSlotCap st src hSrc
+  have hNe : src ≠ dst := by
+    rintro rfl; rw [hPre] at hCs; cases hCs; exact hLs hEmpty
+  have hSrcPost : ∃ cn, st1.objects[src.cnode]? = some (.cnode cn) ∧ cn.lookup src.slot ≠ none := by
+    by_cases hc : src.cnode = dst.cnode
+    · rw [hc, hPre] at hCs; cases hCs
+      exact ⟨_, by rw [hc]; exact hDstPost, CNode.lookup_insert_ne_none _ _ _ _ hLs⟩
+    · exact ⟨cs, by rw [storeObject_objects_ne st st1 dst.cnode src.cnode _ hc hObjInv hStore]; exact hCs, hLs⟩
+  refine ⟨fun ref hM => ?_, ?_⟩
+  · obtain ⟨e, he, hr⟩ := hM
+    simp only [CapDerivationTree.addEdge, List.mem_cons] at he
+    rcases he with rfl | he
+    · rcases hr with h | h <;> simp only at h <;> subst h
+      · exact hSrcPost
+      · exact ⟨_, hDstPost, hDstOcc⟩
+    · exact hComp1 ref ⟨e, he, hr⟩
+  · exact CapDerivationTree.addEdge_preserves_edgeWellFounded_fresh st1.cdt src dst op hNe
+      (by unfold cdtAcyclicity at hAcyc; rw [hCdt]; exact hAcyc)
+      fun e he => ⟨fun h => hDstFresh ⟨e, hCdt ▸ he, Or.inl h⟩,
+        fun h => hDstFresh ⟨e, hCdt ▸ he, Or.inr h⟩⟩
 
 end SeLe4n.Kernel

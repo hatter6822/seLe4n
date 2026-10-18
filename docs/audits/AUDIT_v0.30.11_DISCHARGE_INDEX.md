@@ -67,7 +67,7 @@ will be added in the same PR as the corresponding R-phase landing.
 
 | § | Theme | Closure / claim | Owning phase | Audit IDs | Status |
 |---|-------|----------------|--------------|-----------|--------|
-| 3.A | CDT post-state witnesses | `hCdtPost` | (predecessor AN4-C) | H-04 | CARRIED — see [v0.30.6 index §3.A](../dev_history/audits/AUDIT_v0.30.6_DISCHARGE_INDEX.md#3a--cdt-post-state-discharge-h-04--an4-c) |
+| 3.A | CDT post-state witnesses | `hCdtPost` | WS-ZA ZA5.3 part 4 | H-04 | **RETIRED** (`v0.36.105`) — copy, move, mint, reply-cap mint and IPC capability transfer derive the post-state tree's completeness and acyclicity from the pre-state (`cdt_addEdge_after_insert`, `moveNode_edgeWellFounded`); no theorem takes `hCdtPost` |
 | 3.B | Projection closures | `hProjEq` | (predecessor AN6-A / AK6-F) | H-07, AK6F.13–19 | CARRIED — see [v0.30.6 index §3.B](../dev_history/audits/AUDIT_v0.30.6_DISCHARGE_INDEX.md#3b--projection-closures-h-07--an6-a--ak6f1319) |
 | 3.C | Schedule / Service closures | `hSchedProj`, `hServiceProjEq` | (predecessor AN5-D / AK6-F) | SC-M02, AK6F.11/12 | CARRIED — see [v0.30.6 index §3.C](../dev_history/audits/AUDIT_v0.30.6_DISCHARGE_INDEX.md#3c--schedule--service-closures-sc-m02--ak6f1112) |
 | 3.D | NoDup / structural promotions | type-level invariant | R4.A / R4.B / R4.C | DEEP-MODEL-01, DEEP-CAP-04, DEEP-IPC-05 | **LANDED** — see §3.D below |

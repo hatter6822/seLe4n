@@ -101,7 +101,8 @@ def cspaceCopyMoveMutate_smpLatent : SmpLatentAssumption :=
   { identifier        := `SeLe4n.Kernel.cspaceCopy
     singleCoreWitness :=
       "Single-core: AM4 lifecycleObjectTypeLockstep invariant pins object kind \
-       per ObjId; CDT post-state (`hCdtPost`) discharge composes uniformly."
+       per ObjId; each operation derives the post-state tree's soundness \
+       from its pre-state bundle."
     smpDischarge      :=
       "SMP: same AM4 invariant carries; storeObject is a single Lean step \
        and the FFI bracket prevents interleaved capability operations."
