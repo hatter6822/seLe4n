@@ -266,6 +266,10 @@ structure FrozenCNode where
   guardValue : Nat
   radixWidth : Nat
   slots      : CNodeRadix
+  /-- WS-ZA ZA5.3 part 4 (PR #956 review): the slots' derivation links, the
+      live CNode's `links` words forwarded verbatim by `freezeCNode`, so the
+      frozen state keeps the tree's executable index beside `cdtEdges`. -/
+  links      : Array Nat := #[]
   deriving Repr
 
 /-- Q5-B: Frozen VSpaceRoot — mappings backed by `FrozenMap` instead of
@@ -537,7 +541,8 @@ def freezeCNode (cn : CNode) : FrozenCNode :=
     guardWidth := cn.guardWidth
     guardValue := cn.guardValue
     radixWidth := cn.radixWidth
-    slots := freezeCNodeSlots cn }
+    slots := freezeCNodeSlots cn
+    links := cn.links }
 
 /-- Q5-C: Freeze a VSpaceRoot's RHTable-backed mappings into a `FrozenMap`. -/
 def freezeVSpaceRoot (vs : VSpaceRoot) : FrozenVSpaceRoot :=

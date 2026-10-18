@@ -88,6 +88,10 @@ links to it.
   (`lockSet_vspaceMap`), so a map and a relinking capability operation on one
   CNode can no longer run with disjoint footprints and lose an update
   (`vspaceMap_capabilityOps_share_serialization`).
+- **Frozen state**: a frozen CNode carries its slots' link words
+  (`FrozenCNode.links`, forwarded by `freezeCNode`), and `frozenStateAgrees`
+  compares them and the tree's edges, so a frozen state no longer drops the
+  tree's executable index (`tests/FrozenOpsSuite.lean`, FO-051).
 
 Allocation readings (normal build): copy 13 → 6, mint 16 → 9, move 18 → 8,
 reply-cap mint 14 → 7, delete 27 → 22, revoke 34 → 32, reply-cap delete
