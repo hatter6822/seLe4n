@@ -476,8 +476,9 @@ example : permittedKinds .cspaceDelete = [.tcb, .cnode, .objStore, .vspaceRoot] 
 example : permittedKinds .lifecycleRetype =
     [.tcb, .cnode, .untyped,
      .objStore, .endpoint, .notification, .reply, .schedContext, .vspaceRoot, .page] := by decide
--- WS-BP BP7.1 (v0.36.7): the map reads the frame its capability names.
-example : permittedKinds .vspaceMap = [.tcb, .cnode, .vspaceRoot, .page] := by decide
+-- WS-BP BP7.1 (v0.36.7): the map reads the frame its capability names; PR #956
+-- review: and declares the derivation tree's subject, since it rewrites a CNode.
+example : permittedKinds .vspaceMap = [.tcb, .cnode, .vspaceRoot, .page, .objStore] := by decide
 example : permittedKinds .vspaceUnmap = [.tcb, .cnode, .vspaceRoot] := by decide
 -- WS-RR RR7.23: `.objStore` on all three — `serviceRegistry` is a
 -- `SystemState`-level map and `stateLevelLock` is the only member that can name
@@ -856,7 +857,7 @@ private def runPermittedKindsChecks : IO Unit := do
   assertBool "permittedKinds .send"
     (decide (permittedKinds .send = [.tcb, .cnode, .endpoint, .objStore]))
   assertBool "permittedKinds .vspaceMap"
-    (decide (permittedKinds .vspaceMap = [.tcb, .cnode, .vspaceRoot, .page]))
+    (decide (permittedKinds .vspaceMap = [.tcb, .cnode, .vspaceRoot, .page, .objStore]))
   -- PR #873 round 7: every kind, because the retype's taint clear keys on
   -- `args.targetObj`, whose type the state decides.  The fixed four are pinned
   -- separately by `lockSet_lifecycleRetype_nonTarget_kinds`.
@@ -994,13 +995,19 @@ private def runPerTransitionShapeChecks : IO Unit := do
   -- caller's root and the VSpace root (WS-BP BP7.1, v0.36.7).  With the frame
   -- capability in the caller's own root CNode — the single-level CSpace the
   -- live seam admits — `insertOrMerge` lubs the root's read into the record's
-  -- write, so the footprint is four keys; in a second CNode it is five.
-  assertBool "vspaceMap size = 4 (frame capability in the caller's root)"
+  -- write, so the footprint is five keys (with the derivation tree's subject,
+  -- read: the map rewrites a CNode whose slots' links a capability operation
+  -- may relink); in a second CNode it is six.
+  assertBool "vspaceMap size = 5 (frame capability in the caller's root)"
     (decide ((lockSet_vspaceMap ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
-              (ObjId.ofNat 10) (ObjId.ofNat 30)).size = 4))
-  assertBool "vspaceMap size = 5 (frame capability in another CNode)"
+              (ObjId.ofNat 10) (ObjId.ofNat 30)).size = 5))
+  assertBool "vspaceMap size = 6 (frame capability in another CNode)"
     (decide ((lockSet_vspaceMap ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
-              (ObjId.ofNat 40) (ObjId.ofNat 30)).size = 5))
+              (ObjId.ofNat 40) (ObjId.ofNat 30)).size = 6))
+  assertBool "vspaceMap declares the derivation tree's subject for read"
+    (decide ((stateLevelLock, AccessMode.read)
+        ∈ (lockSet_vspaceMap ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
+            (ObjId.ofNat 10) (ObjId.ofNat 30)).pairs))
   assertBool "vspaceMap declares the frame for write (its mapping epoch)"
     (decide ((pageLock (ObjId.ofNat 30), AccessMode.write)
         ∈ (lockSet_vspaceMap ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)

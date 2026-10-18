@@ -6010,7 +6010,12 @@ tree's read under the agreement (`linkHasChild_eq`, `linkChildrenOf_eq`,
 `linkDescendantsOf_eq`).  A boot CNode carries no link (`CNode.linksClear`, part
 of `bootSafeObjectCheck`), retype admits a new CNode only with its links clear,
 and the information-flow projection reads a CNode with its links cleared
-(`CNode.withoutLinks`), so the links are never observable.
+(`CNode.withoutLinks`), so the links are never observable.  A link write may
+reach a slot in a CNode the operation does not name, so the links' lock subject
+is the derivation tree's, `stateLevelLock`: every link writer holds it for write,
+and the one CNode writer that relinks nothing, `.vspaceMap`, holds it for read,
+so it meets every link writer on one key
+(`vspaceMap_capabilityOps_share_serialization`).
 
 **Delete and revoke check, then perform** (`v0.36.107`, WS-ZA ZA5.3 part 4).
 A destroying step names the page tables it may orphan from the capabilities it

@@ -81,6 +81,13 @@ links to it.
   slots it names and reads every other slot's link words directly, so a sparse
   wide CNode costs a pass over its words, not a tree query per slot
   (`tests/NegativeStateSuite.lean`, `runSlotLinkAgreementChecks`).
+- **Lock footprints**: a capability operation that adds, splices, moves or
+  removes an edge rewrites link words in CNodes it does not name (a parent's, a
+  sibling's, a child's) under `stateLevelLock`.  `.vspaceMap`, the one CNode
+  writer that did not declare that lock, now declares it for read
+  (`lockSet_vspaceMap`), so a map and a relinking capability operation on one
+  CNode can no longer run with disjoint footprints and lose an update
+  (`vspaceMap_capabilityOps_share_serialization`).
 
 Allocation readings (normal build): copy 13 → 6, mint 16 → 9, move 18 → 8,
 reply-cap mint 14 → 7, delete 27 → 22, revoke 34 → 32, reply-cap delete
