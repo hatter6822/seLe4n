@@ -62,8 +62,10 @@ theorem processRevokeNode_preserves_capabilityInvariantBundle
   | ok pair =>
     obtain ⟨_, stDel⟩ := pair
     simp [hDel] at hStep; cases hStep
-    exact capabilityInvariantBundle_of_removeNode stDel node
-      (cspaceDeleteSlotCore_preserves_capabilityInvariantBundleOff st stDel node hInv hDel)
+    have hOff := cspaceDeleteSlotCore_preserves_capabilityInvariantBundleOff st stDel node hInv hDel
+    exact capabilityInvariantBundle_of_linkReach
+      (capabilityInvariantBundle_of_removeNode stDel node hOff)
+      (SystemState.cdtRemove_reach stDel node) hOff.2.2.2.2.2.1
 
 -- **Tombstone (`v0.35.190`).**  `revokeCdtFoldBody`, `revokeCdtFoldBody_error`
 -- and `revokeCdtFoldBody_foldl_error` moved to `Capability/Operations.lean`,
@@ -188,8 +190,10 @@ theorem revokeCdtReportingStep_preserves
     | ok pair =>
       obtain ⟨_, stDel⟩ := pair
       simp only []
-      exact capabilityInvariantBundle_of_removeNode stDel node
-        (cspaceDeleteSlotCore_preserves_capabilityInvariantBundleOff stAcc stDel node hInv hDel)
+      have hOff := cspaceDeleteSlotCore_preserves_capabilityInvariantBundleOff stAcc stDel node hInv hDel
+      exact capabilityInvariantBundle_of_linkReach
+        (capabilityInvariantBundle_of_removeNode stDel node hOff)
+        (SystemState.cdtRemove_reach stDel node) hOff.2.2.2.2.2.1
 
 /-- The reporting fold preserves the bundle, by induction on the node list. -/
 theorem revokeCdtReportingFold_preserves :

@@ -389,22 +389,22 @@ theorem ipcUnwrapCapsLoop_preserves_objects_ne
     (hObjInv : st.objects.invExt)
     (hStep : ipcUnwrapCapsLoop caps receiverRoot idx nextBase accResults fuel st
              = .ok (summary, st')) :
-    st'.objects[oid]? = st.objects[oid]? := by
+    SystemState.objectAgreesOffDerivationLinksAt st' st oid := by
   induction fuel generalizing idx nextBase accResults st with
   | zero =>
     simp [ipcUnwrapCapsLoop] at hStep
-    obtain ⟨_, rfl⟩ := hStep; rfl
+    obtain ⟨_, rfl⟩ := hStep; exact Or.inl rfl
   | succ n ih =>
     simp only [ipcUnwrapCapsLoop] at hStep
     cases hCap : caps[idx]? with
-    | none => simp [hCap] at hStep; obtain ⟨_, rfl⟩ := hStep; rfl
+    | none => simp [hCap] at hStep; obtain ⟨_, rfl⟩ := hStep; exact Or.inl rfl
     | some tc =>
       simp [hCap] at hStep
       cases hTransfer : ipcTransferSingleCap tc.cap tc.srcSlot
           receiverRoot nextBase maxExtraCaps st with
       | error e =>
         simp [hTransfer] at hStep
-        obtain ⟨_, rfl⟩ := hStep; rfl
+        obtain ⟨_, rfl⟩ := hStep; exact Or.inl rfl
       | ok pair =>
         rcases pair with ⟨result, stNext⟩
         have hObjInvNext := ipcTransferSingleCap_preserves_objects_invExt tc.cap _ receiverRoot nextBase
@@ -413,10 +413,10 @@ theorem ipcUnwrapCapsLoop_preserves_objects_ne
           maxExtraCaps st stNext result oid hNe hObjInv hTransfer
         simp [hTransfer] at hStep
         cases result with
-        | installed c s => rw [ih _ _ _ _ hObjInvNext hStep, hObj]
-        | noSlot => rw [ih _ _ _ _ hObjInvNext hStep, hObj]
-        | grantDenied => rw [ih _ _ _ _ hObjInvNext hStep, hObj]
-        | sourceRevoked => rw [ih _ _ _ _ hObjInvNext hStep, hObj]
+        | installed c s => exact (ih _ _ _ _ hObjInvNext hStep).trans hObj
+        | noSlot => exact (ih _ _ _ _ hObjInvNext hStep).trans hObj
+        | grantDenied => exact (ih _ _ _ _ hObjInvNext hStep).trans hObj
+        | sourceRevoked => exact (ih _ _ _ _ hObjInvNext hStep).trans hObj
 
 /-- WS-RR RR2.6: the transfer loop preserves the object store's extended
 invariant — every write it makes is an `ipcTransferSingleCap`, which does. -/
@@ -481,10 +481,10 @@ theorem ipcUnwrapCaps_preserves_objects_ne
     (hObjInv : st.objects.invExt)
     (hStep : ipcUnwrapCaps msg receiverRoot slotBase grantRight st
              = .ok (summary, st')) :
-    st'.objects[oid]? = st.objects[oid]? := by
+    SystemState.objectAgreesOffDerivationLinksAt st' st oid := by
   unfold ipcUnwrapCaps at hStep
   split at hStep
-  · simp at hStep; obtain ⟨_, rfl⟩ := hStep; rfl
+  · simp at hStep; obtain ⟨_, rfl⟩ := hStep; exact Or.inl rfl
   · exact ipcUnwrapCapsLoop_preserves_objects_ne _ _ _ _ _ _ _ _ _ _ hNe hObjInv hStep
 
 theorem ipcUnwrapCapsLoop_preserves_ntfn_objects
@@ -946,9 +946,9 @@ theorem ipcUnwrapCaps_tcb_backward
       grantRight st st' summary hObjInv hStep with h | h
     · rw [h] at hTcb'; exact hTcb'
     · obtain ⟨cn', hCn'⟩ := h; rw [hCn'] at hTcb'; exact absurd hTcb' (by simp)
-  · rw [ipcUnwrapCaps_preserves_objects_ne msg receiverRoot slotBase grantRight
-        st st' summary oid hNe hObjInv hStep] at hTcb'
-    exact hTcb'
+  · exact (ipcUnwrapCaps_preserves_objects_ne msg receiverRoot slotBase grantRight
+        st st' summary oid hNe hObjInv hStep).obj_back hTcb'
+      (fun _ h => KernelObject.noConfusion h)
 
 /-- IPC de-threading D4 Slice 2b: `ipcUnwrapCaps` backward-preserves endpoints (mirror of
 `ipcUnwrapCaps_tcb_backward`): a post-state endpoint pulls back to the same pre-state endpoint,
@@ -969,9 +969,9 @@ theorem ipcUnwrapCaps_endpoint_backward
       grantRight st st' summary hObjInv hStep with h | h
     · rw [h] at hEp'; exact hEp'
     · obtain ⟨cn', hCn'⟩ := h; rw [hCn'] at hEp'; exact absurd hEp' (by simp)
-  · rw [ipcUnwrapCaps_preserves_objects_ne msg receiverRoot slotBase grantRight
-        st st' summary oid hNe hObjInv hStep] at hEp'
-    exact hEp'
+  · exact (ipcUnwrapCaps_preserves_objects_ne msg receiverRoot slotBase grantRight
+        st st' summary oid hNe hObjInv hStep).obj_back hEp'
+      (fun _ h => KernelObject.noConfusion h)
 
 /-- M3-E4: receiverRoot is never a notification after ipcUnwrapCaps. In the
 grant-denied path state is unchanged. In the loop, each ipcTransferSingleCap

@@ -716,6 +716,12 @@ theorem capabilityInvariantBundle_of_agree {st st' : SystemState}
     (replyCapPointsToValidReply_of_agree hA hRCPV)
   unfold cdtAcyclicity at hAcyclic ⊢; rw [hCdt]; exact hAcyclic
 
+/-- A run of link writes keeps the capability bundle: the bundle reads no link. -/
+theorem capabilityInvariantBundle_of_linkReach {st₀ st : SystemState}
+    (h : capabilityInvariantBundle st₀) (hR : SystemState.linkReach st₀ st)
+    (hInv : st₀.objects.invExt) : capabilityInvariantBundle st :=
+  capabilityInvariantBundle_of_agree h (hR.agree hInv) hR.cdt (hR.invExt hInv)
+
 /-- WS-RR RR8.16 (`v0.35.197`): the degenerate instance — a step that writes no
 object and no CDT table.  Kept beside the frame rather than left to each caller,
 since it is the shape a scheduler-only step comes in. -/

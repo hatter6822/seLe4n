@@ -229,11 +229,14 @@ theorem ipcTransferSingleCap_preserves_capabilityInvariantBundle
             { cnode := receiverRoot, slot := emptySlot } cap.withoutMapping .ipcTransfer
             hInv.2.2.1 hInv.2.2.2.1 (objects_invExt_of_capabilityInvariantBundle st hInv)
             (by unfold cdtNodeIsRevocable at hSrc; exact hSrc) hIns
+          have hIX := objects_invExt_of_capabilityInvariantBundle _ hBundleSt2
           rcases hBundleSt2 with ⟨_, hBnd2, _, _, hDepth2, hObjInv2, hRCPV2⟩
           simp [hIns] at hStep
           obtain ⟨_, rfl⟩ := hStep
           have hObjFinal : ∀ cdt' : CapDerivationTree,
               ({ st2 with cdt := cdt' } : SystemState).objects = st2.objects := fun _ => rfl
+          refine capabilityInvariantBundle_of_linkReach ?_
+            (SystemState.cdtAddChild_reach st2 srcNode _ .ipcTransfer) hIX
           exact ⟨cspaceLookupSound_holds _,
             cspaceSlotCountBounded_of_objects_eq st2 _ hBnd2 (hObjFinal _),
             hCdt.1, hCdt.2,

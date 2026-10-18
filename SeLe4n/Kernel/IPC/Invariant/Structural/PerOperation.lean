@@ -88,6 +88,18 @@ theorem badgeWellFormed_of_objects_eq
   ⟨fun oid ntfn badge hLk hP => hInv.1 oid ntfn badge (by rw [hObj] at hLk; exact hLk) hP,
    fun oid cn slot cap badge hLk hS hB => hInv.2 oid cn slot cap badge (by rw [hObj] at hLk; exact hLk) hS hB⟩
 
+/-- `badgeWellFormed` reads no derivation link, so it carries across a step that
+rewrites objects only in their CNodes' links. -/
+theorem badgeWellFormed_of_agreeOffDerivationLinks {st st' : SystemState}
+    (h : SystemState.objectsAgreeOffDerivationLinks st' st) (hInv : badgeWellFormed st) :
+    badgeWellFormed st' :=
+  ⟨fun oid ntfn badge hLk hP =>
+      hInv.1 oid ntfn badge (h.obj_back hLk (fun _ e => KernelObject.noConfusion e)) hP,
+   fun oid cn slot cap badge hLk hS hB => by
+      obtain ⟨cn0, hc, hw⟩ := h.cnode_back hLk
+      exact hInv.2 oid cn0 slot cap badge hc
+        (by rw [← CNode.proj_eq_of_withoutLinks_eq (·.lookup slot) hw]; exact hS) hB⟩
+
 -- ============================================================================
 -- IPC de-threading D8: cap-transfer `badgeWellFormed` frame.
 -- `ipcUnwrapCaps` inserts the message caps into the receiver's CSpace, so it is
@@ -163,7 +175,11 @@ theorem ipcTransferSingleCap_preserves_badgeWellFormed
           have hBadgeMid := cspaceInsertSlot_preserves_badgeWellFormed st pair.2
             { cnode := receiverRoot, slot := emptySlot } cap.withoutMapping hInv hObjInv hCapValid
             (by rw [show pair = (pair.1, pair.2) from by simp]; exact hIns)
-          exact badgeWellFormed_of_objects_eq pair.2 _ rfl hBadgeMid
+          exact badgeWellFormed_of_agreeOffDerivationLinks
+            (SystemState.cdtAddChild_agreeObjects (cspaceInsertSlot_preserves_objects_invExt st
+              pair.2 _ cap.withoutMapping hObjInv
+              (by rw [show pair = (pair.1, pair.2) from by simp] at hIns; exact hIns)) _ _ _).1
+            hBadgeMid
 
 /-- IPC de-threading D8: `ipcUnwrapCapsLoop` preserves `badgeWellFormed` when every
 cap in `caps` carries a valid badge (each transferred cap feeds the single-cap
@@ -263,10 +279,10 @@ theorem ipcUnwrapCaps_preserves_dualQueueSystemInvariant
     fun oid tcb h => ipcUnwrapCaps_preserves_tcb_objects msg receiverRoot slotBase
       grantRight st st' summary oid tcb h hObjInv hStep
   -- Helper: transfer object identity from st' to st for non-receiverRoot
-  have objBack : ∀ oid, oid ≠ receiverRoot →
-      st'.objects[oid]? = st.objects[oid]? :=
-    fun oid hNe => ipcUnwrapCaps_preserves_objects_ne msg receiverRoot slotBase
-      grantRight st st' summary oid hNe hObjInv hStep
+  have objBack : ∀ oid, oid ≠ receiverRoot → ∀ {o : KernelObject},
+      st'.objects[oid]? = some o → (∀ cn, o ≠ .cnode cn) → st.objects[oid]? = some o :=
+    fun oid hNe => (ipcUnwrapCaps_preserves_objects_ne msg receiverRoot slotBase
+      grantRight st st' summary oid hNe hObjInv hStep).obj_back
   have hLinkFwd := hLink.1
   have hLinkBwd := hLink.2
   refine ⟨?_, ?_, ?_, ?_, ?_⟩
@@ -276,7 +292,7 @@ theorem ipcUnwrapCaps_preserves_dualQueueSystemInvariant
     have hEpPre : st.objects[epId]? = some (.endpoint ep) := by
       by_cases hNe : epId = receiverRoot
       · subst hNe; simp [hCn'] at hEpSt'
-      · rw [objBack epId hNe] at hEpSt'; exact hEpSt'
+      · exact objBack epId hNe hEpSt' (fun _ e => KernelObject.noConfusion e)
     -- dualQueueEndpointWellFormed in st, reduced via hEpPre
     have hWf := hEpWf epId ep hEpPre
     unfold dualQueueEndpointWellFormed at hWf ⊢
@@ -302,14 +318,14 @@ theorem ipcUnwrapCaps_preserves_dualQueueSystemInvariant
       have hTcbAPre : st.objects[a.toObjId]? = some (.tcb tcbA) := by
         by_cases hNe : a.toObjId = receiverRoot
         · subst hNe; simp [hCn'] at hTcbA'
-        · rw [objBack _ hNe] at hTcbA'; exact hTcbA'
+        · exact objBack _ hNe hTcbA' (fun _ e => KernelObject.noConfusion e)
       obtain ⟨tcbB, hTcbB, hPrev⟩ := hLinkFwd a tcbA hTcbAPre b hNext
       exact ⟨tcbB, tcbTransfer _ _ hTcbB, hPrev⟩
     · intro b tcbB hTcbB' a hPrev
       have hTcbBPre : st.objects[b.toObjId]? = some (.tcb tcbB) := by
         by_cases hNe : b.toObjId = receiverRoot
         · subst hNe; simp [hCn'] at hTcbB'
-        · rw [objBack _ hNe] at hTcbB'; exact hTcbB'
+        · exact objBack _ hNe hTcbB' (fun _ e => KernelObject.noConfusion e)
       obtain ⟨tcbA, hTcbA, hNext⟩ := hLinkBwd b tcbB hTcbBPre a hPrev
       exact ⟨tcbA, tcbTransfer _ _ hTcbA, hNext⟩
   -- Part 3: TCB queue chain acyclicity (only CNode at receiverRoot changes, not TCBs)
@@ -320,13 +336,13 @@ theorem ipcUnwrapCaps_preserves_dualQueueSystemInvariant
         have hObjPre : st.objects[x.toObjId]? = some (.tcb tcbX) := by
           by_cases hNe : x.toObjId = receiverRoot
           · subst hNe; simp [hCn'] at hObj
-          · rw [objBack _ hNe] at hObj; exact hObj
+          · exact objBack _ hNe hObj (fun _ e => KernelObject.noConfusion e)
         exact .single x y tcbX hObjPre hNext
       | cons x y z tcbX hObj hNext _ ih =>
         have hObjPre : st.objects[x.toObjId]? = some (.tcb tcbX) := by
           by_cases hNe : x.toObjId = receiverRoot
           · subst hNe; simp [hCn'] at hObj
-          · rw [objBack _ hNe] at hObj; exact hObj
+          · exact objBack _ hNe hObj (fun _ e => KernelObject.noConfusion e)
         exact .cons x y z tcbX hObjPre hNext ih
     intro t hp; exact hAcyclic t (hTransfer t t hp)
   -- Part 4 (**WS-RR RR8.3**): the pairing.  The transfer writes the receiver's
@@ -335,13 +351,13 @@ theorem ipcUnwrapCaps_preserves_dualQueueSystemInvariant
     refine hPP tid tcb ?_
     by_cases hNe : tid.toObjId = receiverRoot
     · subst hNe; simp [hCn'] at hTcb
-    · rw [objBack _ hNe] at hTcb; exact hTcb
+    · exact objBack _ hNe hTcb (fun _ e => KernelObject.noConfusion e)
   -- Part 5 (**PR #897 review**): the fifth conjunct.  The transfer writes the
   -- receiver's CSpace root, so no endpoint object moves.
   · refine endpointQueueHeadDisjoint_of_endpointBackward (fun epId ep hEp => ?_) hHD
     by_cases hNe : epId = receiverRoot
     · subst hNe; simp [hCn'] at hEp
-    · rw [objBack _ hNe] at hEp; exact hEp
+    · exact objBack _ hNe hEp (fun _ e => KernelObject.noConfusion e)
 
 /-- WS-RR RR2.14: a Reply object present after a capability transfer was present
 before it. The transfer writes the receiver's CSpace root and nothing else
@@ -364,9 +380,9 @@ theorem ipcUnwrapCaps_reply_backward
       grantRight st st' summary hObjInv hStep with h | ⟨cn, h⟩
     · rw [← h]; exact hReply'
     · rw [h] at hReply'; cases hReply'
-  · rw [ipcUnwrapCaps_preserves_objects_ne msg receiverRoot slotBase grantRight
-      st st' summary oid hNe hObjInv hStep] at hReply'
-    exact hReply'
+  · exact (ipcUnwrapCaps_preserves_objects_ne msg receiverRoot slotBase grantRight
+      st st' summary oid hNe hObjInv hStep).obj_back hReply'
+      (fun _ e => KernelObject.noConfusion e)
 
 /-- WS-RR RR2.14: the capability transfer preserves
 `blockedThreadsPendingMessageConsistent` — it writes no TCB, so every post-state

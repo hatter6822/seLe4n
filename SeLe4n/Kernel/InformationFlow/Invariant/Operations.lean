@@ -189,37 +189,6 @@ with CDT-specific frame lemmas.
 -/
 
 -- ============================================================================
--- CDT-only state modifications preserve projection (needed early for NI proofs)
--- ============================================================================
-
-/-- A state modification that only changes CDT fields preserves projection.
-    Moved before NI bridge theorems so cspaceMintChecked_NI can reference it. -/
-private theorem cdt_only_preserves_projection'
-    (ctx : LabelingContext) (observer : IfObserver)
-    (st st' : SystemState)
-    (hObjects : st'.objects = st.objects)
-    (hScheduler : st'.scheduler = st.scheduler)
-    (hServices : st'.services = st.services)
-    (hIrq : st'.irqHandlers = st.irqHandlers)
-    (hObjIdx : st'.objectIndex = st.objectIndex)
-    (hMachine : st'.machine = st.machine) :
-    projectState ctx observer st' = projectState ctx observer st := by
-  simp only [projectState]; congr 1
-  · funext oid; simp only [projectObjects, hObjects, SystemState.getObject?]
-  · simp [projectRunnable, hScheduler]
-  · simp [projectCurrent, hScheduler]
-  · funext sid; simp only [projectServicePresence, lookupService, hServices]
-  · simp [projectActiveDomain, hScheduler]
-  · funext irq; simp only [projectIrqHandlers, hIrq]
-  · simp only [projectObjectIndex, hObjIdx]
-  · simp [projectDomainTimeRemaining, hScheduler]
-  · simp [projectDomainSchedule, hScheduler]
-  · simp [projectDomainScheduleIndex, hScheduler]
-  · simp [projectMachineRegs, hScheduler, hMachine]
-  · exact projectMemory_eq_of_memory_eq ctx observer st' st (by rw [hMachine])
-  · exact projectServiceRegistry_eq_of_services_eq ctx observer st' st hServices
-
--- ============================================================================
 -- WS-F3/F-20: Enforcement-NI bridge theorems
 -- ============================================================================
 
@@ -265,12 +234,17 @@ theorem cspaceMintChecked_NI
         hMint₁ hMint₂
       -- The CDT edge only modifies the CDT, which `projectState` does not read.
       unfold lowEquivalent at hMintLow ⊢
+      have hInvOf : ∀ s s' : SystemState, s.objects.invExt →
+          cspaceMint src dst rights badge s = .ok ((), s') → s'.objects.invExt := by
+        intro s s' hI h
+        obtain ⟨_, _, _, hIns⟩ := cspaceMint_ok_decompose src dst rights badge s s' h
+        exact cspaceInsertSlot_preserves_objects_invExt s s' dst _ hI hIns
       calc projectState ctx observer _
           = projectState ctx observer pair₁.2 :=
-            cdt_only_preserves_projection' ctx observer _ _ rfl rfl rfl rfl rfl rfl
+            projectState_cdtAddChild ctx observer _ _ _ _ (hInvOf _ _ hObjInv₁ hMint₁)
         _ = projectState ctx observer pair₂.2 := hMintLow
         _ = projectState ctx observer _ :=
-            (cdt_only_preserves_projection' ctx observer _ _ rfl rfl rfl rfl rfl rfl).symm
+            (projectState_cdtAddChild ctx observer _ _ _ _ (hInvOf _ _ hObjInv₂ hMint₂)).symm
 
 -- ============================================================================
 -- WS-H8/H-07: Enforcement-NI bridge theorems for new wrappers
@@ -1283,10 +1257,8 @@ theorem cspaceCopy_preserves_projection
       rcases pair₂ with ⟨_, stIns⟩
       simp only [hInsert, Except.ok.injEq, Prod.mk.injEq] at hStep
       have hEq := hStep.2.symm; subst hEq
-      have hAddEdge : ∀ stx cdt', projectState ctx observer { stx with cdt := cdt' } =
-          projectState ctx observer stx := by
-        intro stx _; simp only [projectState]; congr 1
-      rw [hAddEdge,
+      rw [projectState_cdtAddChild ctx observer _ _ _ _
+            (cspaceInsertSlot_preserves_objects_invExt st stIns dst _ hObjInv hInsert),
           cspaceInsertSlot_preserves_projection ctx observer dst cap.withoutMapping st stIns hDstHigh hObjInv hInsert]
 
 /-- WS-H9: cspaceCopy preserves low-equivalence. -/
@@ -1348,11 +1320,9 @@ theorem cspaceMove_preserves_projection
         -- The source's edges move to the destination (CDT only).
         simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
         rw [← hStep.2]
-        have hMoveNode : ∀ stx cdt', projectState ctx observer { stx with cdt := cdt' } =
-            projectState ctx observer stx := by
-          intro stx _; simp only [projectState]; congr 1
         have hObjInvIns := cspaceInsertSlot_preserves_objects_invExt st stIns dst cap hObjInv hInsert
-        rw [hMoveNode,
+        rw [projectState_cdtMove ctx observer _ _ _
+              (cspaceDeleteSlotCore_invExt stIns stDel src hObjInvIns hDelete),
             cspaceDeleteSlotCore_preserves_projection ctx observer src stIns stDel hSrcHigh hObjInvIns hDelete,
             cspaceInsertSlot_preserves_projection ctx observer dst cap st stIns hDstHigh hObjInv hInsert]
 

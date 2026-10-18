@@ -1660,7 +1660,8 @@ theorem cspaceMintWithCdt_preservesFieldsOutside
     obtain ⟨-, hEq⟩ := hStep
     subst hEq
     exact preservesFieldsOutside_trans (cspaceMint_preservesFieldsOutside _ _ _ _ _ _ hMint)
-      (withCdt_preservesFieldsOutside _ _)
+      (preservesFieldsOutside_trans (withCdt_preservesFieldsOutside _ _)
+        (linkReach_preservesFieldsOutside (SystemState.cdtAddChild_reach _ _ _ _)))
 
 theorem cspaceCopy_preservesFieldsOutside
     (src dst : CSpaceAddr) (st st' : SystemState)
@@ -1683,7 +1684,8 @@ theorem cspaceCopy_preservesFieldsOutside
         obtain ⟨-, hEq⟩ := hStep
         subst hEq
         exact preservesFieldsOutside_trans (cspaceInsertSlot_preservesFieldsOutside _ _ _ _ hIns)
-          (withCdt_preservesFieldsOutside _ _)
+          (preservesFieldsOutside_trans (withCdt_preservesFieldsOutside _ _)
+            (linkReach_preservesFieldsOutside (SystemState.cdtAddChild_reach _ _ _ _)))
 
 theorem cspaceMove_preservesFieldsOutside
     (src dst : CSpaceAddr) (st st' : SystemState)
@@ -1713,7 +1715,9 @@ theorem cspaceMove_preservesFieldsOutside
             simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨-, hEq⟩ := hStep
             subst hEq
-            exact preservesFieldsOutside_trans hPre (withCdt_preservesFieldsOutside _ _)
+            exact preservesFieldsOutside_trans hPre
+              (preservesFieldsOutside_trans (withCdt_preservesFieldsOutside _ _)
+                (linkReach_preservesFieldsOutside (SystemState.cdtMove_reach _ _ _)))
 
 
 theorem storeObject_preservesFieldsOutside_ipc

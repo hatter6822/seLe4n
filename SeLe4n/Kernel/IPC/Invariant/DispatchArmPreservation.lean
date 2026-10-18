@@ -958,6 +958,13 @@ theorem ipcInvariantFull_of_agreeOffDerivationLinks {st st' : SystemState}
       hInv.passiveServerIdle)
     hCap hInv
 
+/-- A run of slot-link writes keeps the IPC bundle: it changes only CNode
+derivation links, which no IPC conjunct reads. -/
+theorem ipcInvariantFull_of_linkReach {st₀ st : SystemState} (hR : SystemState.linkReach st₀ st)
+    (hObjInv : st₀.objects.invExt) (hInv : ipcInvariantFull st₀) : ipcInvariantFull st :=
+  ipcInvariantFull_of_agreeOffDerivationLinks (hR.agree hObjInv)
+    (by have h := congrArg SystemState.scheduler hR.fields; exact h) hInv
+
 /-- `.cspaceDelete`: the core delete and the splice touch no IPC state. -/
 theorem cspaceDeleteSlot_preserves_ipcInvariantFull
     (st st' : SystemState) (addr : CSpaceAddr)
@@ -1080,9 +1087,10 @@ theorem processRevokeNode_preserves_ipcInvariantFull
     obtain ⟨⟨⟩, stDel⟩ := pair
     simp [hDel] at hStep; cases hStep
     obtain ⟨_, _, _, _, _, hExtDel⟩ := cspaceDeleteSlotCore_shape st stDel node hObjInv hDel
-    exact ⟨ipcInvariantFull_of_objects_scheduler_eq (st := stDel) rfl rfl
-      (cspaceDeleteSlotCore_preserves_ipcInvariantFull st stDel node hObjInv hInv hDel),
-      hExtDel⟩
+    exact ⟨ipcInvariantFull_of_linkReach (SystemState.cdtRemove_reach stDel node) hExtDel
+      (ipcInvariantFull_of_objects_scheduler_eq (st := stDel) rfl rfl
+        (cspaceDeleteSlotCore_preserves_ipcInvariantFull st stDel node hObjInv hInv hDel)),
+      (SystemState.cdtRemove_reach stDel node).invExt hExtDel⟩
 
 /-- The materialized traversal preserves the bundle — the shared induction
 (`revokeCdtMaterializedTraversal_ok_induct`) at the pair this bundle carries. -/
@@ -1179,10 +1187,11 @@ theorem cspaceMint_preserves_ipcInvariantFull
 /-- The CDT-recording tail every `WithCdt` form ends in touches neither
 objects nor the scheduler. -/
 private theorem cdtRecord_bundle_frame (stM : SystemState) (src dst : CSpaceAddr)
-    (kind : DerivationOp)
+    (kind : DerivationOp) (hObjInvM : stM.objects.invExt)
     (hInvM : ipcInvariantFull stM) :
-    ipcInvariantFull { stM with cdt := stM.cdt.addEdge src dst kind } :=
-  ipcInvariantFull_of_objects_scheduler_eq (st := stM) rfl rfl hInvM
+    ipcInvariantFull (stM.cdtAddChild src dst kind) :=
+  ipcInvariantFull_of_linkReach (SystemState.cdtAddChild_reach stM src dst kind) hObjInvM
+    (ipcInvariantFull_of_objects_scheduler_eq (st := stM) rfl rfl hInvM)
 
 /-- `.cspaceMint`: the CDT-tracked form the dispatch routes through. -/
 theorem cspaceMintWithCdt_preserves_ipcInvariantFull
@@ -1197,7 +1206,9 @@ theorem cspaceMintWithCdt_preserves_ipcInvariantFull
   · contradiction
   · rename_i stM hMint
     cases hStep
+    obtain ⟨_, _, _, hInsM⟩ := cspaceMint_ok_decompose src dst rights badge st stM hMint
     exact cdtRecord_bundle_frame stM src dst DerivationOp.mint
+      (cspaceInsertSlot_preserves_objects_invExt st stM dst _ hObjInv hInsM)
       (cspaceMint_preserves_ipcInvariantFull st stM src dst rights badge
         hObjInv hInv hBadgeValid hMint)
 
@@ -1223,6 +1234,7 @@ theorem cspaceCopy_preserves_ipcInvariantFull
         have hBadgeSrc := lookupSlotCap_badge_valid st src cap hInv.badgeWellFormed.2
           ((cspaceLookupSlot_ok_iff_lookupSlotCap st src cap).mp (hMid ▸ hLk))
         exact cdtRecord_bundle_frame st2 src dst DerivationOp.copy
+          (cspaceInsertSlot_preserves_objects_invExt stMid st2 dst _ (hMid.symm ▸ hObjInv) hIns)
           (cspaceInsertSlot_preserves_ipcInvariantFull stMid st2 dst capNN.val.withoutMapping
             (hMid.symm ▸ hObjInv) (hMid.symm ▸ hInv)
             (fun b hb => hBadgeSrc b (toNonNull?_val_eq hNN ▸ hb)) hIns)
@@ -1260,7 +1272,9 @@ theorem cspaceMove_preserves_ipcInvariantFull
             have hInv3 := cspaceDeleteSlotCore_preserves_ipcInvariantFull st2 st3 src
               hObjInv2 hInv2 hDel
             cases hStep
-            exact ipcInvariantFull_of_objects_scheduler_eq (st := st3) rfl rfl hInv3
+            exact ipcInvariantFull_of_linkReach (SystemState.cdtMove_reach st3 src dst)
+              (cspaceDeleteSlotCore_invExt st2 st3 src hObjInv2 hDel)
+              (ipcInvariantFull_of_objects_scheduler_eq (st := st3) rfl rfl hInv3)
 
 /-- `.mintReplyCap` (core): the derived reply capability carries no badge, so
 the insert's badge obligation is vacuous. -/
@@ -1295,7 +1309,9 @@ theorem mintReplyCapWithCdt_preserves_ipcInvariantFull
   · contradiction
   · rename_i stM hMint
     cases hStep
+    obtain ⟨_, _, _, hInsM⟩ := mintReplyCap_ok_decompose src dst st stM hMint
     exact cdtRecord_bundle_frame stM src dst DerivationOp.mint
+      (cspaceInsertSlot_preserves_objects_invExt st stM dst _ hObjInv hInsM)
       (mintReplyCap_preserves_ipcInvariantFull st stM src dst hObjInv hInv hMint)
 
 /-- **WS-BP BP7.1 (`v0.36.5`)**: a store at a key that held **no** object, or an
@@ -1403,6 +1419,7 @@ theorem untypedRetypeObject_preserves_ipcInvariantFull
   have hObjInvZ : (req.scrub st1 ut).objects.invExt := by
     rw [CarveRequest.scrub_objects]; exact hObjInv1
   exact cdtRecord_bundle_frame st2 src dst DerivationOp.retype
+    (cspaceInsertSlot_preserves_objects_invExt _ st2 dst _ hObjInvZ hIns)
     (cspaceInsertSlot_preserves_ipcInvariantFull _ st2 dst _ hObjInvZ hInvZ
       (fun b hb => by
         cases req <;> simp [CarveRequest.capability, frameCapability, untypedCapability,

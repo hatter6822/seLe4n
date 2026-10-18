@@ -770,6 +770,57 @@ def objectsAgreeOffDerivationLinks (st' st : SystemState) : Prop :=
     ∃ cn cn' : CNode, st.objects[oid]? = some (.cnode cn) ∧
       st'.objects[oid]? = some (.cnode cn') ∧ cn'.withoutLinks = cn.withoutLinks
 
+/-- **`st'` holds `st`'s object at `oid` up to CNode derivation links**: the
+pointwise body of `objectsAgreeOffDerivationLinks`. -/
+def objectAgreesOffDerivationLinksAt (st' st : SystemState) (oid : SeLe4n.ObjId) : Prop :=
+  st'.objects[oid]? = st.objects[oid]? ∨
+    ∃ cn cn' : CNode, st.objects[oid]? = some (.cnode cn) ∧
+      st'.objects[oid]? = some (.cnode cn') ∧ cn'.withoutLinks = cn.withoutLinks
+
+namespace objectAgreesOffDerivationLinksAt
+
+variable {st st' : SystemState} {oid : SeLe4n.ObjId}
+
+theorem of_eq (h : st'.objects[oid]? = st.objects[oid]?) :
+    objectAgreesOffDerivationLinksAt st' st oid := .inl h
+
+theorem trans {st₁ st₂ st₃ : SystemState} (h₂ : objectAgreesOffDerivationLinksAt st₃ st₂ oid)
+    (h₁ : objectAgreesOffDerivationLinksAt st₂ st₁ oid) :
+    objectAgreesOffDerivationLinksAt st₃ st₁ oid := by
+  rcases h₂ with e₂ | ⟨b, c, hb, hc, hbc⟩
+  · rcases h₁ with e₁ | ⟨a, b', ha, hb', hab⟩
+    · exact .inl (e₂.trans e₁)
+    · exact .inr ⟨a, b', ha, e₂.trans hb', hab⟩
+  · rcases h₁ with e₁ | ⟨a, b', ha, hb', hab⟩
+    · exact .inr ⟨b, c, e₁ ▸ hb, hc, hbc⟩
+    · rw [hb'] at hb; cases hb
+      exact .inr ⟨a, c, ha, hc, hbc.trans hab⟩
+
+/-- A non-CNode object read in the later state was there before. -/
+theorem obj_back (h : objectAgreesOffDerivationLinksAt st' st oid) {o : KernelObject}
+    (h' : st'.objects[oid]? = some o) (hn : ∀ cn, o ≠ .cnode cn) :
+    st.objects[oid]? = some o := by
+  rcases h with e | ⟨_, _, _, hb, _⟩
+  · rw [← e]; exact h'
+  · rw [hb] at h'; cases h'; exact absurd rfl (hn _)
+
+/-- A non-CNode object is still there afterwards. -/
+theorem obj_fwd (h : objectAgreesOffDerivationLinksAt st' st oid) {o : KernelObject}
+    (h' : st.objects[oid]? = some o) (hn : ∀ cn, o ≠ .cnode cn) :
+    st'.objects[oid]? = some o := by
+  rcases h with e | ⟨_, _, ha, _, _⟩
+  · rw [e]; exact h'
+  · rw [ha] at h'; cases h'; exact absurd rfl (hn _)
+
+theorem cnode_fwd (h : objectAgreesOffDerivationLinksAt st' st oid) {cn : CNode}
+    (hc : st.objects[oid]? = some (.cnode cn)) :
+    ∃ cn', st'.objects[oid]? = some (.cnode cn') ∧ cn'.withoutLinks = cn.withoutLinks := by
+  rcases h with e | ⟨cn0, cn', ha, hb, hw⟩
+  · exact ⟨cn, e.trans hc, rfl⟩
+  · rw [ha] at hc; cases hc; exact ⟨cn', hb, hw⟩
+
+end objectAgreesOffDerivationLinksAt
+
 namespace objectsAgreeOffDerivationLinks
 
 theorem refl (st : SystemState) : objectsAgreeOffDerivationLinks st st := fun _ => .inl rfl
@@ -1032,20 +1083,22 @@ post-state's tree. -/
 
 /-- **Record `c` as derived from `p`**: the edge, and the links that spell it. -/
 @[inline] def cdtAddChild (st : SystemState) (p c : SlotRef) (op : DerivationOp) : SystemState :=
-  ({ st with cdt := st.cdt.addEdge p c op } : SystemState).linkAddChild p c
+  (st.modifyCdt (·.addEdge p c op)).linkAddChild p c
 
 /-- **Splice `n` out of the tree**, its children moving to its parent. -/
 @[inline] def cdtSplice (st : SystemState) (n : SlotRef) : SystemState :=
-  ({ st with cdt := st.cdt.spliceNode n } : SystemState).linkSpliceNode n st.cdt.edges.length
+  let k := st.cdt.edges.length
+  (st.modifyCdt (·.spliceNode n)).linkSpliceNode n k
 
 /-- **Move node `old` to slot `new`**. -/
 @[inline] def cdtMove (st : SystemState) (old new : SlotRef) : SystemState :=
-  ({ st with cdt := st.cdt.moveNode old new } : SystemState).linkMoveNode old new
-    st.cdt.edges.length
+  let k := st.cdt.edges.length
+  (st.modifyCdt (·.moveNode old new)).linkMoveNode old new k
 
 /-- **Remove node `n` and every edge at it**, its children becoming roots. -/
 @[inline] def cdtRemove (st : SystemState) (n : SlotRef) : SystemState :=
-  ({ st with cdt := st.cdt.removeNode n } : SystemState).linkRemoveNode n st.cdt.edges.length
+  let k := st.cdt.edges.length
+  (st.modifyCdt (·.removeNode n)).linkRemoveNode n k
 
 theorem cdtAddChild_reach (st : SystemState) (p c : SlotRef) (op : DerivationOp) :
     linkReach { st with cdt := st.cdt.addEdge p c op } (st.cdtAddChild p c op) :=
@@ -1071,7 +1124,7 @@ theorem cdtAddChild_agree {st : SystemState} (hInv : st.objects.invExt)
     (hcN : st.cdt.parentOf c = none) (hpc : p ≠ c) :
     LinksAgree (st.cdtAddChild p c op).slotLinkAt (st.cdtAddChild p c op).cdt := by
   rw [(cdtAddChild_reach st p c op).cdt]
-  unfold cdtAddChild
+  unfold cdtAddChild; simp only [modifyCdt_eq]
   rw [slotLinkAt_linkAddChild (st := { st with cdt := st.cdt.addEdge p c op }) hInv hp hc
     (fun x hx => hM x (hL.target_mentions hx))]
   exact hL.addChild op hcN hpc
@@ -1091,7 +1144,7 @@ theorem cdtSplice_agree {st : SystemState} (hInv : st.objects.invExt)
     st.cdt.edges.length hn (by rw [hX]; exact hAll)
     (by rw [hX, hW]; exact CapDerivationTree.childrenOf_nodup hL.childrenUnique n)
     (by rw [hX, hW]; exact hSelf)
-  unfold cdtSplice
+  unfold cdtSplice; simp only [modifyCdt_eq]
   rw [hV, hX, hW, hL.parent n]
   have hS := hL.spliceNode_of_wf hWF n
   unfold LinkView.spliceLinks at hS
@@ -1123,7 +1176,7 @@ theorem cdtMove_agree {st : SystemState} (hInv : st.objects.invExt)
       refine ⟨h1, h2, fun e => hnew (e ▸ ?_)⟩
       obtain ⟨e', he', -, hc⟩ := (CapDerivationTree.mem_childrenOf st.cdt old w).mp hw
       exact ⟨e', he', .inr hc⟩)
-  unfold cdtMove
+  unfold cdtMove; simp only [modifyCdt_eq]
   rw [hV, hX, hW, hL.parent old]
   exact hL.moveNode_of_wf hWF old new hnew hon
 
@@ -1143,9 +1196,298 @@ theorem cdtRemove_agree {st : SystemState} (hInv : st.objects.invExt)
     st.cdt.edges.length hn (fun f x h => hAll n f x h) (walk_valid hAll _ n .firstChild)
     (by rw [hX, hW]; exact CapDerivationTree.childrenOf_nodup hL.childrenUnique n)
     (by rw [hX, hW]; exact hSelf)
-  unfold cdtRemove
+  unfold cdtRemove; simp only [modifyCdt_eq]
   rw [hV, hX, hW]
   exact hL.removeNode n
+
+/-! ### What a paired tree update leaves alone
+
+Every field but the tree and the object store is the pre-state's, and the
+objects agree with the pre-state's up to derivation links. -/
+
+theorem cdtAddChild_fields (st : SystemState) (p c : SlotRef) (op : DerivationOp) :
+    st.cdtAddChild p c op = { st with cdt := st.cdt.addEdge p c op, objects := (st.cdtAddChild p c op).objects } :=
+  (cdtAddChild_reach st p c op).fields
+
+@[simp] theorem cdtAddChild_cdt (st : SystemState) (p c : SlotRef) (op : DerivationOp) :
+    (st.cdtAddChild p c op).cdt = st.cdt.addEdge p c op := (cdtAddChild_reach st p c op).cdt
+
+@[simp] theorem cdtAddChild_machine (st : SystemState) (p c : SlotRef) (op : DerivationOp) :
+    (st.cdtAddChild p c op).machine = st.machine := by rw [cdtAddChild_fields]
+
+@[simp] theorem cdtAddChild_objectIndex (st : SystemState) (p c : SlotRef) (op : DerivationOp) :
+    (st.cdtAddChild p c op).objectIndex = st.objectIndex := by rw [cdtAddChild_fields]
+
+@[simp] theorem cdtAddChild_objectIndexSet (st : SystemState) (p c : SlotRef) (op : DerivationOp) :
+    (st.cdtAddChild p c op).objectIndexSet = st.objectIndexSet := by rw [cdtAddChild_fields]
+
+@[simp] theorem cdtAddChild_services (st : SystemState) (p c : SlotRef) (op : DerivationOp) :
+    (st.cdtAddChild p c op).services = st.services := by rw [cdtAddChild_fields]
+
+@[simp] theorem cdtAddChild_scheduler (st : SystemState) (p c : SlotRef) (op : DerivationOp) :
+    (st.cdtAddChild p c op).scheduler = st.scheduler := by rw [cdtAddChild_fields]
+
+@[simp] theorem cdtAddChild_irqHandlers (st : SystemState) (p c : SlotRef) (op : DerivationOp) :
+    (st.cdtAddChild p c op).irqHandlers = st.irqHandlers := by rw [cdtAddChild_fields]
+
+@[simp] theorem cdtAddChild_lifecycle (st : SystemState) (p c : SlotRef) (op : DerivationOp) :
+    (st.cdtAddChild p c op).lifecycle = st.lifecycle := by rw [cdtAddChild_fields]
+
+@[simp] theorem cdtAddChild_asidTable (st : SystemState) (p c : SlotRef) (op : DerivationOp) :
+    (st.cdtAddChild p c op).asidTable = st.asidTable := by rw [cdtAddChild_fields]
+
+@[simp] theorem cdtAddChild_interfaceRegistry (st : SystemState) (p c : SlotRef) (op : DerivationOp) :
+    (st.cdtAddChild p c op).interfaceRegistry = st.interfaceRegistry := by rw [cdtAddChild_fields]
+
+@[simp] theorem cdtAddChild_serviceRegistry (st : SystemState) (p c : SlotRef) (op : DerivationOp) :
+    (st.cdtAddChild p c op).serviceRegistry = st.serviceRegistry := by rw [cdtAddChild_fields]
+
+@[simp] theorem cdtAddChild_tlb (st : SystemState) (p c : SlotRef) (op : DerivationOp) :
+    (st.cdtAddChild p c op).tlb = st.tlb := by rw [cdtAddChild_fields]
+
+@[simp] theorem cdtAddChild_tlbShootdown (st : SystemState) (p c : SlotRef) (op : DerivationOp) :
+    (st.cdtAddChild p c op).tlbShootdown = st.tlbShootdown := by rw [cdtAddChild_fields]
+
+@[simp] theorem cdtAddChild_perCoreTlb (st : SystemState) (p c : SlotRef) (op : DerivationOp) :
+    (st.cdtAddChild p c op).perCoreTlb = st.perCoreTlb := by rw [cdtAddChild_fields]
+
+@[simp] theorem cdtAddChild_perCoreICache (st : SystemState) (p c : SlotRef) (op : DerivationOp) :
+    (st.cdtAddChild p c op).perCoreICache = st.perCoreICache := by rw [cdtAddChild_fields]
+
+@[simp] theorem cdtAddChild_pendingIcacheMaintenance (st : SystemState) (p c : SlotRef) (op : DerivationOp) :
+    (st.cdtAddChild p c op).pendingIcacheMaintenance = st.pendingIcacheMaintenance := by rw [cdtAddChild_fields]
+
+@[simp] theorem cdtAddChild_pendingPhysicalWrites (st : SystemState) (p c : SlotRef) (op : DerivationOp) :
+    (st.cdtAddChild p c op).pendingPhysicalWrites = st.pendingPhysicalWrites := by rw [cdtAddChild_fields]
+
+@[simp] theorem cdtAddChild_declassificationAuditLog (st : SystemState) (p c : SlotRef) (op : DerivationOp) :
+    (st.cdtAddChild p c op).declassificationAuditLog = st.declassificationAuditLog := by rw [cdtAddChild_fields]
+
+@[simp] theorem cdtAddChild_declassificationAuditEpoch (st : SystemState) (p c : SlotRef) (op : DerivationOp) :
+    (st.cdtAddChild p c op).declassificationAuditEpoch = st.declassificationAuditEpoch := by rw [cdtAddChild_fields]
+
+@[simp] theorem cdtAddChild_declassificationRefusals (st : SystemState) (p c : SlotRef) (op : DerivationOp) :
+    (st.cdtAddChild p c op).declassificationRefusals = st.declassificationRefusals := by rw [cdtAddChild_fields]
+
+@[simp] theorem cdtAddChild_declassificationTaint (st : SystemState) (p c : SlotRef) (op : DerivationOp) :
+    (st.cdtAddChild p c op).declassificationTaint = st.declassificationTaint := by rw [cdtAddChild_fields]
+
+theorem cdtAddChild_agreeObjects {st : SystemState} (hInv : st.objects.invExt) (p c : SlotRef) (op : DerivationOp) :
+    objectsAgreeOffDerivationLinks (st.cdtAddChild p c op) st ∧ (st.cdtAddChild p c op).objects.invExt :=
+  ⟨(cdtAddChild_reach st p c op).agree hInv, (cdtAddChild_reach st p c op).invExt hInv⟩
+
+theorem cdtSplice_fields (st : SystemState) (n : SlotRef) :
+    st.cdtSplice n = { st with cdt := st.cdt.spliceNode n, objects := (st.cdtSplice n).objects } :=
+  (cdtSplice_reach st n).fields
+
+@[simp] theorem cdtSplice_cdt (st : SystemState) (n : SlotRef) :
+    (st.cdtSplice n).cdt = st.cdt.spliceNode n := (cdtSplice_reach st n).cdt
+
+@[simp] theorem cdtSplice_machine (st : SystemState) (n : SlotRef) :
+    (st.cdtSplice n).machine = st.machine := by rw [cdtSplice_fields]
+
+@[simp] theorem cdtSplice_objectIndex (st : SystemState) (n : SlotRef) :
+    (st.cdtSplice n).objectIndex = st.objectIndex := by rw [cdtSplice_fields]
+
+@[simp] theorem cdtSplice_objectIndexSet (st : SystemState) (n : SlotRef) :
+    (st.cdtSplice n).objectIndexSet = st.objectIndexSet := by rw [cdtSplice_fields]
+
+@[simp] theorem cdtSplice_services (st : SystemState) (n : SlotRef) :
+    (st.cdtSplice n).services = st.services := by rw [cdtSplice_fields]
+
+@[simp] theorem cdtSplice_scheduler (st : SystemState) (n : SlotRef) :
+    (st.cdtSplice n).scheduler = st.scheduler := by rw [cdtSplice_fields]
+
+@[simp] theorem cdtSplice_irqHandlers (st : SystemState) (n : SlotRef) :
+    (st.cdtSplice n).irqHandlers = st.irqHandlers := by rw [cdtSplice_fields]
+
+@[simp] theorem cdtSplice_lifecycle (st : SystemState) (n : SlotRef) :
+    (st.cdtSplice n).lifecycle = st.lifecycle := by rw [cdtSplice_fields]
+
+@[simp] theorem cdtSplice_asidTable (st : SystemState) (n : SlotRef) :
+    (st.cdtSplice n).asidTable = st.asidTable := by rw [cdtSplice_fields]
+
+@[simp] theorem cdtSplice_interfaceRegistry (st : SystemState) (n : SlotRef) :
+    (st.cdtSplice n).interfaceRegistry = st.interfaceRegistry := by rw [cdtSplice_fields]
+
+@[simp] theorem cdtSplice_serviceRegistry (st : SystemState) (n : SlotRef) :
+    (st.cdtSplice n).serviceRegistry = st.serviceRegistry := by rw [cdtSplice_fields]
+
+@[simp] theorem cdtSplice_tlb (st : SystemState) (n : SlotRef) :
+    (st.cdtSplice n).tlb = st.tlb := by rw [cdtSplice_fields]
+
+@[simp] theorem cdtSplice_tlbShootdown (st : SystemState) (n : SlotRef) :
+    (st.cdtSplice n).tlbShootdown = st.tlbShootdown := by rw [cdtSplice_fields]
+
+@[simp] theorem cdtSplice_perCoreTlb (st : SystemState) (n : SlotRef) :
+    (st.cdtSplice n).perCoreTlb = st.perCoreTlb := by rw [cdtSplice_fields]
+
+@[simp] theorem cdtSplice_perCoreICache (st : SystemState) (n : SlotRef) :
+    (st.cdtSplice n).perCoreICache = st.perCoreICache := by rw [cdtSplice_fields]
+
+@[simp] theorem cdtSplice_pendingIcacheMaintenance (st : SystemState) (n : SlotRef) :
+    (st.cdtSplice n).pendingIcacheMaintenance = st.pendingIcacheMaintenance := by rw [cdtSplice_fields]
+
+@[simp] theorem cdtSplice_pendingPhysicalWrites (st : SystemState) (n : SlotRef) :
+    (st.cdtSplice n).pendingPhysicalWrites = st.pendingPhysicalWrites := by rw [cdtSplice_fields]
+
+@[simp] theorem cdtSplice_declassificationAuditLog (st : SystemState) (n : SlotRef) :
+    (st.cdtSplice n).declassificationAuditLog = st.declassificationAuditLog := by rw [cdtSplice_fields]
+
+@[simp] theorem cdtSplice_declassificationAuditEpoch (st : SystemState) (n : SlotRef) :
+    (st.cdtSplice n).declassificationAuditEpoch = st.declassificationAuditEpoch := by rw [cdtSplice_fields]
+
+@[simp] theorem cdtSplice_declassificationRefusals (st : SystemState) (n : SlotRef) :
+    (st.cdtSplice n).declassificationRefusals = st.declassificationRefusals := by rw [cdtSplice_fields]
+
+@[simp] theorem cdtSplice_declassificationTaint (st : SystemState) (n : SlotRef) :
+    (st.cdtSplice n).declassificationTaint = st.declassificationTaint := by rw [cdtSplice_fields]
+
+theorem cdtSplice_agreeObjects {st : SystemState} (hInv : st.objects.invExt) (n : SlotRef) :
+    objectsAgreeOffDerivationLinks (st.cdtSplice n) st ∧ (st.cdtSplice n).objects.invExt :=
+  ⟨(cdtSplice_reach st n).agree hInv, (cdtSplice_reach st n).invExt hInv⟩
+
+theorem cdtMove_fields (st : SystemState) (old new : SlotRef) :
+    st.cdtMove old new = { st with cdt := st.cdt.moveNode old new, objects := (st.cdtMove old new).objects } :=
+  (cdtMove_reach st old new).fields
+
+@[simp] theorem cdtMove_cdt (st : SystemState) (old new : SlotRef) :
+    (st.cdtMove old new).cdt = st.cdt.moveNode old new := (cdtMove_reach st old new).cdt
+
+@[simp] theorem cdtMove_machine (st : SystemState) (old new : SlotRef) :
+    (st.cdtMove old new).machine = st.machine := by rw [cdtMove_fields]
+
+@[simp] theorem cdtMove_objectIndex (st : SystemState) (old new : SlotRef) :
+    (st.cdtMove old new).objectIndex = st.objectIndex := by rw [cdtMove_fields]
+
+@[simp] theorem cdtMove_objectIndexSet (st : SystemState) (old new : SlotRef) :
+    (st.cdtMove old new).objectIndexSet = st.objectIndexSet := by rw [cdtMove_fields]
+
+@[simp] theorem cdtMove_services (st : SystemState) (old new : SlotRef) :
+    (st.cdtMove old new).services = st.services := by rw [cdtMove_fields]
+
+@[simp] theorem cdtMove_scheduler (st : SystemState) (old new : SlotRef) :
+    (st.cdtMove old new).scheduler = st.scheduler := by rw [cdtMove_fields]
+
+@[simp] theorem cdtMove_irqHandlers (st : SystemState) (old new : SlotRef) :
+    (st.cdtMove old new).irqHandlers = st.irqHandlers := by rw [cdtMove_fields]
+
+@[simp] theorem cdtMove_lifecycle (st : SystemState) (old new : SlotRef) :
+    (st.cdtMove old new).lifecycle = st.lifecycle := by rw [cdtMove_fields]
+
+@[simp] theorem cdtMove_asidTable (st : SystemState) (old new : SlotRef) :
+    (st.cdtMove old new).asidTable = st.asidTable := by rw [cdtMove_fields]
+
+@[simp] theorem cdtMove_interfaceRegistry (st : SystemState) (old new : SlotRef) :
+    (st.cdtMove old new).interfaceRegistry = st.interfaceRegistry := by rw [cdtMove_fields]
+
+@[simp] theorem cdtMove_serviceRegistry (st : SystemState) (old new : SlotRef) :
+    (st.cdtMove old new).serviceRegistry = st.serviceRegistry := by rw [cdtMove_fields]
+
+@[simp] theorem cdtMove_tlb (st : SystemState) (old new : SlotRef) :
+    (st.cdtMove old new).tlb = st.tlb := by rw [cdtMove_fields]
+
+@[simp] theorem cdtMove_tlbShootdown (st : SystemState) (old new : SlotRef) :
+    (st.cdtMove old new).tlbShootdown = st.tlbShootdown := by rw [cdtMove_fields]
+
+@[simp] theorem cdtMove_perCoreTlb (st : SystemState) (old new : SlotRef) :
+    (st.cdtMove old new).perCoreTlb = st.perCoreTlb := by rw [cdtMove_fields]
+
+@[simp] theorem cdtMove_perCoreICache (st : SystemState) (old new : SlotRef) :
+    (st.cdtMove old new).perCoreICache = st.perCoreICache := by rw [cdtMove_fields]
+
+@[simp] theorem cdtMove_pendingIcacheMaintenance (st : SystemState) (old new : SlotRef) :
+    (st.cdtMove old new).pendingIcacheMaintenance = st.pendingIcacheMaintenance := by rw [cdtMove_fields]
+
+@[simp] theorem cdtMove_pendingPhysicalWrites (st : SystemState) (old new : SlotRef) :
+    (st.cdtMove old new).pendingPhysicalWrites = st.pendingPhysicalWrites := by rw [cdtMove_fields]
+
+@[simp] theorem cdtMove_declassificationAuditLog (st : SystemState) (old new : SlotRef) :
+    (st.cdtMove old new).declassificationAuditLog = st.declassificationAuditLog := by rw [cdtMove_fields]
+
+@[simp] theorem cdtMove_declassificationAuditEpoch (st : SystemState) (old new : SlotRef) :
+    (st.cdtMove old new).declassificationAuditEpoch = st.declassificationAuditEpoch := by rw [cdtMove_fields]
+
+@[simp] theorem cdtMove_declassificationRefusals (st : SystemState) (old new : SlotRef) :
+    (st.cdtMove old new).declassificationRefusals = st.declassificationRefusals := by rw [cdtMove_fields]
+
+@[simp] theorem cdtMove_declassificationTaint (st : SystemState) (old new : SlotRef) :
+    (st.cdtMove old new).declassificationTaint = st.declassificationTaint := by rw [cdtMove_fields]
+
+theorem cdtMove_agreeObjects {st : SystemState} (hInv : st.objects.invExt) (old new : SlotRef) :
+    objectsAgreeOffDerivationLinks (st.cdtMove old new) st ∧ (st.cdtMove old new).objects.invExt :=
+  ⟨(cdtMove_reach st old new).agree hInv, (cdtMove_reach st old new).invExt hInv⟩
+
+theorem cdtRemove_fields (st : SystemState) (n : SlotRef) :
+    st.cdtRemove n = { st with cdt := st.cdt.removeNode n, objects := (st.cdtRemove n).objects } :=
+  (cdtRemove_reach st n).fields
+
+@[simp] theorem cdtRemove_cdt (st : SystemState) (n : SlotRef) :
+    (st.cdtRemove n).cdt = st.cdt.removeNode n := (cdtRemove_reach st n).cdt
+
+@[simp] theorem cdtRemove_machine (st : SystemState) (n : SlotRef) :
+    (st.cdtRemove n).machine = st.machine := by rw [cdtRemove_fields]
+
+@[simp] theorem cdtRemove_objectIndex (st : SystemState) (n : SlotRef) :
+    (st.cdtRemove n).objectIndex = st.objectIndex := by rw [cdtRemove_fields]
+
+@[simp] theorem cdtRemove_objectIndexSet (st : SystemState) (n : SlotRef) :
+    (st.cdtRemove n).objectIndexSet = st.objectIndexSet := by rw [cdtRemove_fields]
+
+@[simp] theorem cdtRemove_services (st : SystemState) (n : SlotRef) :
+    (st.cdtRemove n).services = st.services := by rw [cdtRemove_fields]
+
+@[simp] theorem cdtRemove_scheduler (st : SystemState) (n : SlotRef) :
+    (st.cdtRemove n).scheduler = st.scheduler := by rw [cdtRemove_fields]
+
+@[simp] theorem cdtRemove_irqHandlers (st : SystemState) (n : SlotRef) :
+    (st.cdtRemove n).irqHandlers = st.irqHandlers := by rw [cdtRemove_fields]
+
+@[simp] theorem cdtRemove_lifecycle (st : SystemState) (n : SlotRef) :
+    (st.cdtRemove n).lifecycle = st.lifecycle := by rw [cdtRemove_fields]
+
+@[simp] theorem cdtRemove_asidTable (st : SystemState) (n : SlotRef) :
+    (st.cdtRemove n).asidTable = st.asidTable := by rw [cdtRemove_fields]
+
+@[simp] theorem cdtRemove_interfaceRegistry (st : SystemState) (n : SlotRef) :
+    (st.cdtRemove n).interfaceRegistry = st.interfaceRegistry := by rw [cdtRemove_fields]
+
+@[simp] theorem cdtRemove_serviceRegistry (st : SystemState) (n : SlotRef) :
+    (st.cdtRemove n).serviceRegistry = st.serviceRegistry := by rw [cdtRemove_fields]
+
+@[simp] theorem cdtRemove_tlb (st : SystemState) (n : SlotRef) :
+    (st.cdtRemove n).tlb = st.tlb := by rw [cdtRemove_fields]
+
+@[simp] theorem cdtRemove_tlbShootdown (st : SystemState) (n : SlotRef) :
+    (st.cdtRemove n).tlbShootdown = st.tlbShootdown := by rw [cdtRemove_fields]
+
+@[simp] theorem cdtRemove_perCoreTlb (st : SystemState) (n : SlotRef) :
+    (st.cdtRemove n).perCoreTlb = st.perCoreTlb := by rw [cdtRemove_fields]
+
+@[simp] theorem cdtRemove_perCoreICache (st : SystemState) (n : SlotRef) :
+    (st.cdtRemove n).perCoreICache = st.perCoreICache := by rw [cdtRemove_fields]
+
+@[simp] theorem cdtRemove_pendingIcacheMaintenance (st : SystemState) (n : SlotRef) :
+    (st.cdtRemove n).pendingIcacheMaintenance = st.pendingIcacheMaintenance := by rw [cdtRemove_fields]
+
+@[simp] theorem cdtRemove_pendingPhysicalWrites (st : SystemState) (n : SlotRef) :
+    (st.cdtRemove n).pendingPhysicalWrites = st.pendingPhysicalWrites := by rw [cdtRemove_fields]
+
+@[simp] theorem cdtRemove_declassificationAuditLog (st : SystemState) (n : SlotRef) :
+    (st.cdtRemove n).declassificationAuditLog = st.declassificationAuditLog := by rw [cdtRemove_fields]
+
+@[simp] theorem cdtRemove_declassificationAuditEpoch (st : SystemState) (n : SlotRef) :
+    (st.cdtRemove n).declassificationAuditEpoch = st.declassificationAuditEpoch := by rw [cdtRemove_fields]
+
+@[simp] theorem cdtRemove_declassificationRefusals (st : SystemState) (n : SlotRef) :
+    (st.cdtRemove n).declassificationRefusals = st.declassificationRefusals := by rw [cdtRemove_fields]
+
+@[simp] theorem cdtRemove_declassificationTaint (st : SystemState) (n : SlotRef) :
+    (st.cdtRemove n).declassificationTaint = st.declassificationTaint := by rw [cdtRemove_fields]
+
+theorem cdtRemove_agreeObjects {st : SystemState} (hInv : st.objects.invExt) (n : SlotRef) :
+    objectsAgreeOffDerivationLinks (st.cdtRemove n) st ∧ (st.cdtRemove n).objects.invExt :=
+  ⟨(cdtRemove_reach st n).agree hInv, (cdtRemove_reach st n).invExt hInv⟩
 
 end SystemState
 
