@@ -1,3 +1,38 @@
+## v0.36.105 — WS-ZA ZA5.3 part 4: the derivation tree is proven sound from the pre-state
+
+Copy, move, mint, reply-cap mint and IPC capability transfer took the
+post-state tree's completeness and acyclicity as a hypothesis (`hCdtPost`)
+that no caller discharged from the pre-state.  The bundle's claim that
+capability derivation stays acyclic therefore rested on an assumption for
+every operation that grows the tree.  Each operation now proves it.
+
+- **A slot the tree names holds a capability**: `cdtCompleteness` requires
+  every slot a derivation edge names to hold a capability in a live CNode,
+  where it asked only that the object exist.  An empty slot is then outside
+  the tree, which is what the acyclicity argument needs.
+- **Edge-adding operations prove the tree sound**:
+  `cdt_addEdge_after_insert` shows that an edge into the slot an insert found
+  empty keeps the tree complete and acyclic (the destination is a fresh node,
+  `addEdge_preserves_edgeWellFounded_fresh`).  Copy, mint, reply-cap mint and
+  IPC capability transfer use it; a move renames the source's node onto its
+  empty destination (`moveNode_edgeWellFounded`, `moveNode_mentions`, through
+  `edgeWellFounded_of_map`).
+- **Destroyers carry the relaxed form**: between emptying a slot and taking it
+  out of the tree, completeness holds everywhere else
+  (`cdtCompletenessOff`, `capabilityInvariantBundleOff`).  The core delete
+  yields it; the splice, the revoke's node removal, the move's rename and the
+  local revoke's detach (`foldCells_preserves_visited`) restore the full
+  form (`capabilityInvariantBundle_of_off_cdt_update`).
+- **The raw retype primitive** (`lifecycleRetypeObject`, internal) overwrites
+  an object without taking its slots out of the tree, so its preservation
+  theorems take `hTargetOffTree`; the composite revoke-delete-retype carries
+  it from its pre-state (`cspaceRevoke_mentions_sub`,
+  `cspaceDeleteSlot_mentions_sub`).
+- **Retired**: the `hCdtPost` parameters, the six
+  `*_cdt_hypothesis_discharged_at` companions and their index marker, the
+  vacuous `cdtExpandingOp_preserves_bundle_with_hypothesis`, and
+  `cspaceMintWithCdt_cdtAcyclicity_of_freshDst`.
+
 ## v0.36.104 — WS-ZA ZA5.3 part 3: capability operations write in place
 
 Copy, mint, move and reply-cap mint now decide every refusal before their
