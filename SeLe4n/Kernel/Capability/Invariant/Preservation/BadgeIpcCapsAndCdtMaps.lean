@@ -16,9 +16,8 @@ preservation stratum covering four operation families: (1)
 `cspaceMint`/`cspaceMutate` badge-wellformedness preservation; (2)
 `ipcTransferSingleCap` / `ipcUnwrapCapsLoop` / `ipcUnwrapCaps` (grant and
 no-grant variants) capability-invariant-bundle preservation; (3)
-`cdtMapsConsistent` preservation for every CDT-modifying operation
-(`cspaceMint`, `cspaceDeleteSlotCore`/`cspaceDeleteSlot`, `cspaceCopy`,
-`cspaceMove`, `cspaceRevoke`); (4) the CDT-expanding / CDT-shrinking
+`cdtMapsConsistent` preservation for mint, delete and revoke
+(`cspaceMint`, `cspaceDeleteSlotCore`/`cspaceDeleteSlot`, `cspaceRevoke`); (4) the CDT-expanding / CDT-shrinking
 composition witnesses and the V3-E / V3-F post-resolution rights
 commentary blocks. All declarations retain their original names, order,
 and proofs.
@@ -454,23 +453,6 @@ theorem cspaceDeleteSlot_preserves_cdtMapsConsistent
   obtain ⟨h1, h2, _, _⟩ := CapDerivationTree.spliceNode_mapsWellFormed _ addr
     ⟨hConC.1, hConC.2, hChildK, hParentK⟩
   exact ⟨h1, h2⟩
-
-/-- S3-D: `cspaceCopy` preserves `cdtMapsConsistent`. Copy calls `addEdge`
-    on the CDT, so the postcondition is taken as a hypothesis, matching
-    the existing pattern for `cdtCompleteness`/`cdtAcyclicity`. -/
-theorem cspaceCopy_preserves_cdtMapsConsistent
-    (st st' : SystemState) (src dst : CSpaceAddr)
-    (hCdtMapsPost : cdtMapsConsistent st')
-    (_hStep : cspaceCopy src dst st = .ok ((), st')) :
-    cdtMapsConsistent st' := hCdtMapsPost
-
-/-- S3-D: `cspaceMove` preserves `cdtMapsConsistent`. Move composes
-    insert + delete + addEdge; postcondition taken as hypothesis. -/
-theorem cspaceMove_preserves_cdtMapsConsistent
-    (st st' : SystemState) (src dst : CSpaceAddr)
-    (hCdtMapsPost : cdtMapsConsistent st')
-    (_hStep : cspaceMove src dst st = .ok ((), st')) :
-    cdtMapsConsistent st' := hCdtMapsPost
 
 /-- The destroyed-slot step keeps the tree's index maps consistent and well
 formed: the splice keeps them. -/

@@ -21962,7 +21962,7 @@ run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlot_ok_decompose($|[ ({:\[\]]
 # operation proves the tree's soundness from its pre-state and no theorem takes
 # the post-state tree as a hypothesis.
 run_check "INVARIANT" rg -n -U '^def cdtCompleteness \(st : SystemState\) : Prop :=\n  ∀ ref : SlotRef, st\.cdt\.mentions ref →\n    ∃ cn, st\.objects\[ref\.cnode\]\? = some \(\.cnode cn\) ∧ cn\.lookup ref\.slot ≠ none' SeLe4n/Kernel/Capability/Invariant/Defs.lean
-run_negative_check "INVARIANT" rg -n 'hCdtPost' SeLe4n
+run_negative_check "INVARIANT" rg -n 'hCdtPost|hCdtMapsPost|cspaceCopy_preserves_cdtMapsConsistent|cspaceMove_preserves_cdtMapsConsistent' SeLe4n
 run_check "INVARIANT" rg -n '^theorem empty_not_mentions($|[ ({:\[\]])' SeLe4n/Model/Object/Structures.lean
 run_check "INVARIANT" rg -n -U '                \| \.ok \(\(\), st...\) => \.ok \(\(\), \{ st... with cdt := st...\.cdt\.moveNode src dst \}\)' SeLe4n/Kernel/Capability/Operations.lean
 run_negative_check "INVARIANT" rg -n 'CdtNodeId|cdtNodeSlot|cdtSlotNode|cdtNextNode|ensureCdtNodeForSlot|attachSlotToCdtNode|detachSlotFromCdt|lookupCdtNodeOfSlot' SeLe4n
