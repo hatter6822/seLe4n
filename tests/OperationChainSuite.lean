@@ -2311,6 +2311,63 @@ private def chain21StreamingRevokeEquivalence : IO Unit := do
   assertInvariants "chain21: materialized revoke invariants" stMaterialized
   assertInvariants "chain21: streaming revoke invariants" stStreaming
 
+/-- WS-ZA ZA5.3 part 4 (the delete/revoke perform step): a revoke whose subtree
+holds only capabilities that finalise nothing takes the plain seL4 `cteRevoke`
+loop (delete the source's first child until none is left), and a delete of such
+a capability takes the plain delete.  Tree: root → A → B and root → C, so the
+loop must splice B under the root before deleting it. -/
+private def revokeFinalisingTakesPlainLoop : IO Unit := do
+  let rootCNode : SeLe4n.ObjId := ⟨8210⟩
+  let cnodeA : SeLe4n.ObjId := ⟨8211⟩
+  let cnodeB : SeLe4n.ObjId := ⟨8212⟩
+  let cnodeC : SeLe4n.ObjId := ⟨8213⟩
+  let targetId : SeLe4n.ObjId := ⟨8310⟩
+  let rootSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := rootCNode, slot := (SeLe4n.Slot.ofNat 0) }
+  let slotA : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeA, slot := (SeLe4n.Slot.ofNat 0) }
+  let slotB : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeB, slot := (SeLe4n.Slot.ofNat 0) }
+  let slotC : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeC, slot := (SeLe4n.Slot.ofNat 0) }
+  let rights := AccessRightSet.ofList [.read, .write, .grant]
+  let mut builder := BootstrapBuilder.empty
+  builder := builder.withObject targetId (.endpoint {})
+  for cid in [rootCNode, cnodeA, cnodeB, cnodeC] do
+    builder := builder.withObject cid (.cnode (CNode.ofList 4 0 0 4
+      (if cid = rootCNode then [
+          ((SeLe4n.Slot.ofNat 0), { target := .object targetId, rights := rights, badge := none })
+        ] else [])))
+  let st0 := builder.buildChecked
+  let (_, st1) ← expectOkSt "plain revoke: mint root→A"
+    (SeLe4n.Kernel.cspaceMintWithCdt rootSlot slotA rights none st0)
+  let (_, st2) ← expectOkSt "plain revoke: mint A→B"
+    (SeLe4n.Kernel.cspaceMintWithCdt slotA slotB rights none st1)
+  let (_, st3) ← expectOkSt "plain revoke: mint root→C"
+    (SeLe4n.Kernel.cspaceMintWithCdt rootSlot slotC rights none st2)
+
+  expect "plain revoke: a subtree of endpoint capabilities is admitted"
+    (SeLe4n.Kernel.cspaceRevokeAdmitted rootSlot st3)
+  let (_, stRevoked) ← expectOkSt "plain revoke: revoke the root"
+    (SeLe4n.Kernel.cspaceRevokeCdtFinalising bootCoreId rootSlot st3)
+  for (label, slot) in [("A", slotA), ("B", slotB), ("C", slotC)] do
+    expect s!"plain revoke: {label} emptied" (SystemState.lookupSlotCap stRevoked slot).isNone
+  expect "plain revoke: the root keeps its capability"
+    (SystemState.lookupSlotCap stRevoked rootSlot).isSome
+  expect "plain revoke: the root is left with no children"
+    (stRevoked.linkDescendantsOf rootSlot).isEmpty
+  assertInvariants "plain revoke: invariants after the loop" stRevoked
+
+  -- The plain delete: a leaf holding a capability that finalises nothing.
+  expect "plain delete: a leaf endpoint capability is admitted"
+    (SeLe4n.Kernel.cspaceDeleteAdmitted slotB st3)
+  let (_, stDeleted) ← expectOkSt "plain delete: delete the leaf B"
+    (SeLe4n.Kernel.cspaceDeleteSlotFinalising bootCoreId slotB st3)
+  expect "plain delete: B emptied" (SystemState.lookupSlotCap stDeleted slotB).isNone
+  expect "plain delete: A and C untouched"
+    ((SystemState.lookupSlotCap stDeleted slotA).isSome &&
+      (SystemState.lookupSlotCap stDeleted slotC).isSome)
+  expect "plain delete: the step equals the plain perform"
+    ((SystemState.lookupSlotCap (SeLe4n.Kernel.cspaceDeletePerform slotB st3) slotB).isNone &&
+      (stDeleted.linkDescendantsOf slotA).isEmpty)
+  assertInvariants "plain delete: invariants after the step" stDeleted
+
 /-- R3-A.3: Badge delivery test — verifies that notificationSignal delivers
 the badge to the woken waiter's pendingMessage when waking a blocked thread.
 Steps: wait (blocks waiter) → signal (wakes waiter with badge) → verify badge. -/
@@ -3151,6 +3208,7 @@ private def runOperationChainSuite : IO Unit := do
   chain19StreamingRevokeEmpty
   chain20StreamingRevokeDeepChain
   chain21StreamingRevokeEquivalence
+  revokeFinalisingTakesPlainLoop
   chain22NotificationBadgeDelivery
   chain23CdtDeepCascadeWithMidDelete
   chain24HandleYieldEmptyQueue

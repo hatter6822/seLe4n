@@ -382,14 +382,24 @@ theorem untypedResetWithShootdown_confinedToCores
 operation owes — the page-table detach, stores to VSpace roots, and the page
 teardown, the `.vspaceUnmap` arm's own transition — writes no scheduler and no
 machine state. -/
-theorem finaliseDestroyedCapabilities_framed (executingCore : CoreId) (pre : SystemState)
+theorem finaliseDestroyedCapabilities_framed (executingCore : CoreId) (named : List SeLe4n.ObjId)
     (pages : List MappedPage) (st st' : SystemState)
-    (h : finaliseDestroyedCapabilities executingCore pre pages st = .ok ((), st')) :
+    (h : finaliseDestroyedCapabilities executingCore named pages st = .ok ((), st')) :
     SchedulerMachineFramed st st' := by
-  obtain ⟨st1, hD, hF, -⟩ := finaliseDestroyedCapabilities_ok executingCore pre pages st st' h
+  obtain ⟨st1, hD, hF, -⟩ := finaliseDestroyedCapabilities_ok executingCore named pages st st' h
   obtain ⟨hs1, hm1⟩ := detachPageTables_ok_scheduler_machine _ st st1 hD
   obtain ⟨hs2, hm2⟩ :=
     unmapLivePages_framed executingCore _ st1 st' (finaliseFramePages_ok _ _ _ _ hF).1
+  exact ⟨hs2.trans hs1, hm2.trans hm1⟩
+
+/-- The finalising delete writes no scheduler and no machine state. -/
+theorem cspaceDeleteSlotFinalising_framed
+    (executingCore : CoreId) (addr : CSpaceAddr) (st st' : SystemState)
+    (hStep : cspaceDeleteSlotFinalising executingCore addr st = .ok ((), st')) :
+    SchedulerMachineFramed st st' := by
+  obtain ⟨st1, hD, hF⟩ := cspaceDeleteSlotFinalising_ok executingCore addr st st' hStep
+  obtain ⟨hs1, hm1⟩ := cspaceDeleteSlot_scheduler_machine addr st st1 hD
+  obtain ⟨hs2, hm2⟩ := finaliseDestroyedCapabilities_framed executingCore _ _ st1 st' hF
   exact ⟨hs2.trans hs1, hm2.trans hm1⟩
 
 /-- WS-BP BP7.1 (`v0.36.7`): **the live `.cspaceDelete` arm writes no core.**  The
@@ -399,11 +409,9 @@ executing core only initiates. -/
 theorem cspaceDeleteSlotFinalising_confinedToCores
     (executingCore : CoreId) (addr : CSpaceAddr) (st st' : SystemState)
     (hStep : cspaceDeleteSlotFinalising executingCore addr st = .ok ((), st')) :
-    observableSlotsConfinedToCores st st' [] := by
-  obtain ⟨st1, hD, hF⟩ := cspaceDeleteSlotFinalising_ok executingCore addr st st' hStep
-  obtain ⟨hs1, hm1⟩ := cspaceDeleteSlot_scheduler_machine addr st st1 hD
-  obtain ⟨hs2, hm2⟩ := finaliseDestroyedCapabilities_framed executingCore st _ st1 st' hF
-  exact observableSlotsConfinedToCores_nil_of_framed ⟨hs2.trans hs1, hm2.trans hm1⟩
+    observableSlotsConfinedToCores st st' [] :=
+  observableSlotsConfinedToCores_nil_of_framed
+    (cspaceDeleteSlotFinalising_framed executingCore addr st st' hStep)
 
 /-- WS-BP BP7.1 (`v0.36.7`): **the live `.cspaceRevoke` arm writes no core.**  The
 revocation writes CNodes, the CDT and parked messages in TCB records; the
@@ -412,10 +420,14 @@ theorem cspaceRevokeCdtFinalising_confinedToCores
     (executingCore : CoreId) (addr : CSpaceAddr) (st st' : SystemState)
     (hStep : cspaceRevokeCdtFinalising executingCore addr st = .ok ((), st')) :
     observableSlotsConfinedToCores st st' [] := by
-  obtain ⟨pages, st1, hR, hF⟩ := cspaceRevokeCdtFinalising_ok executingCore addr st st' hStep
-  obtain ⟨hs1, hm1⟩ := cspaceRevokeCdt_scheduler_machine addr st st1 pages hR
-  obtain ⟨hs2, hm2⟩ := finaliseDestroyedCapabilities_framed executingCore st _ st1 st' hF
-  exact observableSlotsConfinedToCores_nil_of_framed ⟨hs2.trans hs1, hm2.trans hm1⟩
+  refine observableSlotsConfinedToCores_nil_of_framed
+    (cspaceRevokeCdtFinalising_closed (SchedulerMachineFramed st)
+      (fun c s s' hQ hD => ?_) (fun pages st1 hR hF => ?_) ⟨rfl, rfl⟩ hStep)
+  · obtain ⟨hs, hm⟩ := cspaceDeleteSlotFinalising_framed executingCore c s s' hD
+    exact ⟨hs.trans hQ.1, hm.trans hQ.2⟩
+  · obtain ⟨hs1, hm1⟩ := cspaceRevokeCdt_scheduler_machine addr st st1 pages hR
+    obtain ⟨hs2, hm2⟩ := finaliseDestroyedCapabilities_framed executingCore _ _ st1 st' hF
+    exact ⟨hs2.trans hs1, hm2.trans hm1⟩
 
 -- ============================================================================
 -- §5k The live `.lifecycleRetype` arm — a sweep bounded by occupancy

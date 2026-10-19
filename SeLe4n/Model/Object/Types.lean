@@ -2986,9 +2986,9 @@ def CNode.ofSlots (depth guardWidth guardValue radixWidth : Nat)
     by_cases h : s.toNat < 2 ^ radixWidth
     · simp only [slotArrayOf, Array.size_ofFn, h, dite_true, Array.getElem_ofFn,
         SeLe4n.Slot.ofNat_toNat]
-      cases m.get? s <;> simp [Option.filter, h]
+      cases m.get? s <;> simp [Option.filter]
     · simp only [slotArrayOf, Array.size_ofFn, h, dite_false]
-      cases m.get? s <;> simp [Option.filter, h]
+      cases m.get? s <;> simp [Option.filter]
 
 @[simp] theorem CNode.ofSlots_depth (d gw gv rw : Nat) (m : SeLe4n.UniqueSlotMap Capability) :
     (CNode.ofSlots d gw gv rw m).depth = d := rfl

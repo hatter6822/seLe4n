@@ -231,7 +231,7 @@ abbrev drop (l : List SlotRef) (n : SlotRef) : List SlotRef := l.filter (fun x =
 
 theorem drop_cons (a : SlotRef) (l : List SlotRef) (n : SlotRef) :
     drop (a :: l) n = if a = n then drop l n else a :: drop l n := by
-  by_cases h : a = n <;> simp [drop, List.filter_cons, h]
+  by_cases h : a = n <;> simp [drop, h]
 
 theorem drop_of_not_mem : ∀ {l : List SlotRef} {n : SlotRef}, n ∉ l → drop l n = l
   | [], _, _ => rfl
@@ -310,7 +310,7 @@ private theorem predAux_drop : ∀ {l : List SlotRef} {prev : Option SlotRef} {n
     by_cases ha : a = n
     · subst ha
       rw [if_pos rfl, drop_of_not_mem haL]
-      simp only [predAux, if_neg (Ne.symm hw), if_pos rfl]
+      simp only [predAux, if_neg (Ne.symm hw)]
       by_cases hh : l.head? = some w
       · cases l with
         | nil => cases hh
@@ -486,17 +486,17 @@ theorem parentOf_addEdge (cdt : CapDerivationTree) (p c r : SlotRef) (op : Deriv
     (cdt.addEdge p c op).parentOf r = if r = c then some p else cdt.parentOf r := by
   unfold parentOf addEdge
   by_cases h : r = c
-  · subst h; simp [List.find?_cons, CapDerivationEdge.isChildOf]
+  · subst h; simp [CapDerivationEdge.isChildOf]
   · have h' : ¬ (c = r) := fun e => h e.symm
-    simp [List.find?_cons, CapDerivationEdge.isChildOf, h, h']
+    simp [CapDerivationEdge.isChildOf, h, h']
 
 theorem childrenOf_addEdge (cdt : CapDerivationTree) (p c q : SlotRef) (op : DerivationOp) :
     (cdt.addEdge p c op).childrenOf q = if q = p then c :: cdt.childrenOf q else cdt.childrenOf q := by
   unfold childrenOf addEdge
   by_cases h : q = p
-  · subst h; simp [List.filter_cons, CapDerivationEdge.isParentOf]
+  · subst h; simp [CapDerivationEdge.isParentOf]
   · have h' : ¬ (p = q) := fun e => h e.symm
-    simp [List.filter_cons, CapDerivationEdge.isParentOf, h, h']
+    simp [CapDerivationEdge.isParentOf, h, h']
 
 theorem parentOf_of_not_mentions {cdt : CapDerivationTree} {c : SlotRef} (h : ¬ cdt.mentions c) :
     cdt.parentOf c = none :=
@@ -689,7 +689,7 @@ theorem addChild_firstChild (L : LinkView) (p c r : SlotRef) :
 
 theorem addChild_next (L : LinkView) (p c r : SlotRef) :
     L.addChild p c r .next = if r = c then L p .firstChild else L r .next := by
-  unfold addChild; cases hf : L p .firstChild <;> by_cases h : r = c <;> simp [set, h, hf]
+  unfold addChild; cases hf : L p .firstChild <;> by_cases h : r = c <;> simp [set, h]
 
 theorem addChild_prev (L : LinkView) (p c r : SlotRef) :
     L.addChild p c r .prev =
@@ -911,7 +911,7 @@ theorem foldl_orphan_addChild_comm {u c : SlotRef} :
     have hxc : x ≠ c := fun e => hc (e ▸ List.mem_cons_self ..)
     rw [← orphan_addChild_comm M hxc (hx x (List.mem_cons_self ..))]
     refine foldl_orphan_addChild_comm l _ (fun h => hc (List.mem_cons_of_mem _ h)) (fun y hy => ?_)
-    rw [orphan_apply]; simp only [ne_eq, reduceCtorEq, not_true_eq_false, and_false, if_false]
+    rw [orphan_apply]; simp only [ne_eq, not_true_eq_false, and_false, if_false]
     exact hx y (List.mem_cons_of_mem _ hy)
 
 /-- **Linking each slot of `l` under `u` overwrites orphaning them first**, when

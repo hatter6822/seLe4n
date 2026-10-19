@@ -688,6 +688,28 @@ the write alone.  An arm whose checks refuse, and every arm not yet split, is
           (fun st => cspaceMovePerform src dst st)
           (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
     | _ => .error (.invalidCapability, st)
+  | .cspaceDelete =>
+    match cap.target with
+    | .object cnodeId =>
+      match decodeCSpaceDeleteArgsBy (msgRegOfFile layout regs) with
+      | .error e => .error (e, st)
+      | .ok args =>
+        let addr : CSpaceAddr := { cnode := cnodeId, slot := args.targetSlot }
+        RefusalCarrying.ofChecked (cspaceDeleteAdmitted addr st)
+          (fun st => cspaceDeletePerform addr st)
+          (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
+    | _ => .error (.invalidCapability, st)
+  | .cspaceRevoke =>
+    match cap.target with
+    | .object cnodeId =>
+      match decodeCSpaceDeleteArgsBy (msgRegOfFile layout regs) with
+      | .error e => .error (e, st)
+      | .ok args =>
+        let addr : CSpaceAddr := { cnode := cnodeId, slot := args.targetSlot }
+        RefusalCarrying.ofChecked (cspaceRevokeAdmitted addr st)
+          (fun st => cspaceRevokePerform addr st)
+          (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
+    | _ => .error (.invalidCapability, st)
   | .mintReplyCap =>
     match cap.target with
     | .object cnodeId =>
@@ -1038,6 +1060,30 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
         simp only [Bool.and_eq_true] at hA
         simp only [dispatchInvocationBy, hD, cspaceMoveChecked, hA.1, ↓reduceIte,
           cspaceMove_of_admitted hA.2]
+    all_goals rfl
+  case cspaceDelete =>
+    cases target
+    case object cnodeId =>
+      dsimp only
+      cases hD : decodeCSpaceDeleteArgsBy (msgRegOfFile layout regs) with
+      | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD]
+      | ok args =>
+        dsimp only
+        apply RefusalCarrying.ofChecked_eq
+        intro hA
+        simp only [dispatchInvocationBy, hD, cspaceDeleteSlotFinalising_of_admitted hA]
+    all_goals rfl
+  case cspaceRevoke =>
+    cases target
+    case object cnodeId =>
+      dsimp only
+      cases hD : decodeCSpaceDeleteArgsBy (msgRegOfFile layout regs) with
+      | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD]
+      | ok args =>
+        dsimp only
+        apply RefusalCarrying.ofChecked_eq
+        intro hA
+        simp only [dispatchInvocationBy, hD, cspaceRevokeCdtFinalising, hA, ↓reduceIte]
     all_goals rfl
   case mintReplyCap =>
     cases target
