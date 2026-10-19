@@ -200,7 +200,11 @@ nothing is admitted before any write and performed in place, a revoke as seL4's
 destroyed capabilities.  At `v0.36.108` the tree's edges are a ghost
 (`Erased`): at run time the tree is its edge-count bound, executable code reads
 it only through the slot links, and the capability bundle drops the slot-count
-conjunct, a theorem since the slot array.  The
+conjunct, a theorem since the slot array.  At `v0.36.109` each slot owns its
+capability record for the CNode's life, kept when the slot is emptied and
+overwritten by the next capability written there, and a capability's badge is a
+word and a flag, so every capability operation (copy, move, delete, mint,
+revoke, reply-cap delete and mint) allocates nothing.  The
 suspend of a thread blocked in IPC or holding a donated context is the one
 syscall arm left on the general path (ZA6.1).  ZA6 covers the other
 entries and makes the rule standing.  Plan:
