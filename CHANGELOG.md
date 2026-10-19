@@ -14,7 +14,12 @@ tree is one word and executable code reads it only through the slot links.
 - **Runtime checks**: `cdtLinksConsistentCheck` checks that the stored slot
   links fit together as a tree, replacing the two checks that read the edges;
   the suites read the tree through `slotLinkAt`, `linkChildrenOf`,
-  `linkedDerivationEdges` and `linkMentions`.
+  `linkedDerivationEdges` and `linkMentions`.  Every linked slot holds a
+  capability, every parent chain and child walk ends without repeating a slot,
+  each slot's child count equals the number of slots naming it as parent, and
+  the tree's edge bound covers the linked edges (`linkedDerivationEdges` folds
+  over the object store, so a CNode the object index does not list is still
+  read).  `runSlotLinkShapeChecks` breaks each relation in turn.
 - **Slot-count conjunct retired**: `cspaceSlotCountBounded` was a theorem of
   every state since part 1's slot array (`CNode.slotCountBounded_holds`).  It
   leaves `capabilityInvariantBundle` (seven conjuncts) and
@@ -25,7 +30,7 @@ tree is one word and executable code reads it only through the slot links.
   move 3 (8), delete 2 (5), revoke 3 (6), reply-cap delete 2 (4), reply-cap mint
   5 (7), each page-table retype 63 (64), frame retype 80 (81), frame delete 29
   (34), page-table deletes 23 each (27, 26, 25).
-- **Fixture**: the trace runs 36 state invariant checks (37 before).
+- **Fixture**: the trace runs 39 state invariant checks (37 before).
 
 ## v0.36.107 — WS-ZA ZA5.3 part 4: delete and revoke check, then perform
 
