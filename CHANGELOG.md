@@ -11,11 +11,9 @@ word.
   fields.  A remove keeps the slot's capability as its record
   (`SpareCells.keep`, `CNode.removeImpl`); an insert takes the record out
   before matching it and writes the new capability's fields over it
-  (`CNode.insertCellWith`, `Capability.overwrite`).  A reply capability
-  rewrites the record's target cell too (`Capability.overwriteReply`,
-  `CNode.insertReplyCap`).  A slot with no record gets a capability built out
-  of line (`Capability.ofFields`, `Capability.ofReply`), so a caller's literal
-  is never built.  `CNode.insert` and `CNode.remove` are unchanged; the
+  (`CNode.insertCellWith`, `Capability.overwrite`).  A slot with no record
+  gets a capability built out of line (`Capability.ofFields`), so a caller's
+  literal is never built.  `CNode.insert` and `CNode.remove` are unchanged; the
   compiled forms are `@[csimp]` replacements proven equal to them.
 - **Badge as a word**: `Capability` holds `badgeWord : Badge` and
   `badged : Bool`, as a blocked sender's TCB does, read through the
@@ -25,12 +23,24 @@ word.
   (`cspaceMintAdmittedAt`, `cspaceMintPerformAt`, 0 for no badge, as seL4's
   mint); the check reads no badge, and the perform writes the word and flag
   (`cspaceMintPerformWords`).
+- **Reply-capability target**: a `Reply` object holds the target every
+  reply capability to it carries (`Reply.capTarget`, with `capTarget_eq`),
+  built with the object and stamped by `withIdentity`.  A reply-capability
+  mint shares it (`replyCapTargetIn`, equal to `.replyCap rid` in every
+  state), so the mint builds no target whatever record the destination slot
+  keeps, including one whose target another capability shares or one left by
+  an audit-trail capability, whose target has no cell.
+- **Copy of a mapped capability**: the copy writes the source's fields with no
+  mapping record straight over the destination's record
+  (`cspaceCopyPerformImpl`), so it builds no unmapped capability first.
 - **In-place writes**: copy and move store the source slot's own capability;
   `cspaceInsertSlot`, `cspaceDeleteSlotCore` and `cspaceRecordFrameMapping`
   write their CNode in its store slot (`@[csimp]` via `storeCNodeWith`).
 - **Readings** (normal build, first call and steady state): copy, move,
   delete, mint, revoke, reply-cap delete and reply-cap mint 0 (4, 3, 2, 7, 3,
-  2, 5 before).  The exerciser pins them at 0.  Each page-table retype reads 65
+  2, 5 before).  The exerciser pins them at 0, and pins at 0 a copy of the
+  mapped frame capability, the copy's delete, a reply-capability mint over the
+  record the copy left and that capability's delete.  Each page-table retype reads 65
   (63) and the frame retype 82 (80): the retype's CNode is shared, so its
   records are copied with it, which the retype row's in-place write removes.
   Frame delete 27 (29), page-table deletes 21 each (23).

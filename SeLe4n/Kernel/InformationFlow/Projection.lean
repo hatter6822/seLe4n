@@ -365,7 +365,8 @@ def projectKernelObject (ctx : LabelingContext) (observer : IfObserver) (obj : K
       -- internal id would leak a hidden ReplyId through a low-visible Reply object.
       -- Erasing it to the canonical sentinel removes the channel.
       .reply { r with replyId := SeLe4n.ReplyId.sentinel,
-                      callerCode := 0, prev := none, next := none }
+                      callerCode := 0, prev := none, next := none,
+                      capTarget := .replyCap SeLe4n.ReplyId.sentinel, capTarget_eq := rfl }
   -- WS-SM SM8.B.4 stripped the per-object lock word here, because `RwLockState`
   -- carries core identities (`writerHeld`, `readers`, `waiters`) and an
   -- observer that could see an object would otherwise see the cores operating
