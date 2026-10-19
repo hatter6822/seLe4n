@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Kernel.RefusalCarryingDispatch
+import SeLe4n.Kernel.VSpacePerform
 
 /-!
 # Capability invocations on the register file
@@ -734,6 +735,66 @@ the write alone.  An arm whose checks refuse, and every arm not yet split, is
           (fun st => cspaceCopyPerformAt cnodeId args.srcSlot args.dstSlot st)
           (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
     | _ => .error (.invalidCapability, st)
+  | .vspaceMap =>
+    match cap.target with
+    | .object rootId =>
+      match decodeVSpaceMapArgsBy (msgRegOfFile layout regs) st.machine.maxASID with
+      | .error e => .error (e, st)
+      | .ok args =>
+        if !vspaceCapAuthorizesAsid cap args.asid st then .error (.illegalAuthority, st)
+        else
+          match resolveVSpaceMapFrame tid args st with
+          | .error e => .error (e, st)
+          | .ok (frameSlot, frameCap, frame) =>
+            RefusalCarrying.ofChecked (vspaceMapAdmittedAt st args frameCap frame rootId)
+              (fun st => vspaceMapPerformAt executingCore args.asid args.vaddr frame.base
+                args.perms rootId (frameCapObjId frameCap) frameSlot.cnode frameSlot.slot st)
+              (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
+    | _ => .error (.invalidCapability, st)
+  | .vspaceUnmap =>
+    match cap.target with
+    | .object rootId =>
+      match decodeVSpaceUnmapArgsBy (msgRegOfFile layout regs) st.machine.maxASID with
+      | .error e => .error (e, st)
+      | .ok args =>
+        if !vspaceCapAuthorizesAsid cap args.asid st then .error (.illegalAuthority, st)
+        else
+          RefusalCarrying.ofChecked (vspaceUnmapAdmittedAt st args.asid args.vaddr rootId)
+            (fun st => vspaceUnmapPerformAt executingCore args.asid args.vaddr rootId st)
+            (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
+    | _ => .error (.invalidCapability, st)
+  | .vspaceUnifyInstruction =>
+    match cap.target with
+    | .object _ =>
+      match decodeVSpaceUnmapArgsBy (msgRegOfFile layout regs) st.machine.maxASID with
+      | .error e => .error (e, st)
+      | .ok args =>
+        if !vspaceCapAuthorizesAsid cap args.asid st then .error (.illegalAuthority, st)
+        else
+          RefusalCarrying.ofChecked (vspaceUnifyAdmittedAt st args.asid args.vaddr)
+            (fun st => vspaceUnifyPerformAt args.asid args.vaddr st)
+            (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
+    | _ => .error (.invalidCapability, st)
+  | .pageTableMap =>
+    match cap.target with
+    | .object objId =>
+      match decodePageTableMapArgsBy (msgRegOfFile layout regs) with
+      | .error e => .error (e, st)
+      | .ok args =>
+        match resolveCallerCapObject tid args.vspaceRoot .write st with
+        | .error e => .error (e, st)
+        | .ok (_, rootId) =>
+          RefusalCarrying.ofChecked (pageTableMapAdmittedAt st objId rootId args.vaddr)
+            (fun st => pageTableMapPerformAt objId rootId args.vaddr st)
+            (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
+    | _ => .error (.invalidCapability, st)
+  | .pageTableUnmap =>
+    match cap.target with
+    | .object objId =>
+      RefusalCarrying.ofChecked (pageTableUnmapAdmittedAt st objId)
+        (fun st => pageTableUnmapPerformAt objId st)
+        (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
+    | _ => .error (.invalidCapability, st)
   | _ =>
     match dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap st with
     | .error e => .error (e, st)
@@ -1106,6 +1167,89 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
         simp only [Bool.and_eq_true] at hA
         simp only [dispatchInvocationBy, hD, cspaceCopyChecked, hA.1, ↓reduceIte,
           cspaceCopy_of_admitted hA.2]
+    all_goals rfl
+  case vspaceMap =>
+    cases target
+    case object rootId =>
+      dsimp only
+      cases hD : decodeVSpaceMapArgsBy (msgRegOfFile layout regs) st.machine.maxASID with
+      | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD]
+      | ok args =>
+        dsimp only
+        split
+        · next hAu => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hAu]
+        · next hAu =>
+          cases hRs : resolveVSpaceMapFrame tid args st with
+          | error e =>
+            simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hAu, vspaceMapFromFrameCap,
+              hRs]
+          | ok triple =>
+            obtain ⟨frameSlot, frameCap, frame⟩ := triple
+            dsimp only
+            apply RefusalCarrying.ofChecked_eq
+            intro hA
+            simp only [dispatchInvocationBy, hD, hAu, Bool.false_eq_true, ↓reduceIte,
+              vspaceMapFromFrameCap_of_admitted tid executingCore args st frameSlot frameCap frame
+                rootId hRs hA]
+    all_goals rfl
+  case vspaceUnmap =>
+    cases target
+    case object rootId =>
+      dsimp only
+      cases hD : decodeVSpaceUnmapArgsBy (msgRegOfFile layout regs) st.machine.maxASID with
+      | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD]
+      | ok args =>
+        dsimp only
+        split
+        · next hAu => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hAu]
+        · next hAu =>
+          apply RefusalCarrying.ofChecked_eq
+          intro hA
+          simp only [dispatchInvocationBy, hD, hAu, Bool.false_eq_true, ↓reduceIte,
+            vspaceUnmapPageWithShootdownAndIcacheBroadcast_of_admitted executingCore args.asid
+              args.vaddr rootId st hA]
+    all_goals rfl
+  case vspaceUnifyInstruction =>
+    cases target
+    case object rootId =>
+      dsimp only
+      cases hD : decodeVSpaceUnmapArgsBy (msgRegOfFile layout regs) st.machine.maxASID with
+      | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD]
+      | ok args =>
+        dsimp only
+        split
+        · next hAu => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hAu]
+        · next hAu =>
+          apply RefusalCarrying.ofChecked_eq
+          intro hA
+          simp only [dispatchInvocationBy, hD, hAu, Bool.false_eq_true, ↓reduceIte,
+            vspaceUnifyInstructionPage_of_admitted args.asid args.vaddr st hA]
+    all_goals rfl
+  case pageTableMap =>
+    cases target
+    case object objId =>
+      dsimp only
+      cases hD : decodePageTableMapArgsBy (msgRegOfFile layout regs) with
+      | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD]
+      | ok args =>
+        dsimp only
+        cases hRs : resolveCallerCapObject tid args.vspaceRoot .write st with
+        | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hRs]
+        | ok pr =>
+          obtain ⟨_, rootId⟩ := pr
+          dsimp only
+          apply RefusalCarrying.ofChecked_eq
+          intro hA
+          simp only [dispatchInvocationBy, hD, hRs,
+            pageTableMap_of_admitted objId rootId args.vaddr st hA]
+    all_goals rfl
+  case pageTableUnmap =>
+    cases target
+    case object objId =>
+      dsimp only
+      apply RefusalCarrying.ofChecked_eq
+      intro hA
+      simp only [dispatchInvocationBy, pageTableUnmap_of_admitted objId st hA]
     all_goals rfl
   all_goals
     dsimp only [RefusalCarrying.ofKernel]
