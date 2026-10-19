@@ -1661,7 +1661,7 @@ satisfies the Robin Hood invariant extension (WF ∧ distCorrect ∧ noDupKeys �
 probeChainDominant). This is the global well-formedness condition for the
 builder-phase state representation.
 
-AI6-D (L-02): This predicate uses a 13-deep conjunction (∧-chain) over the
+AI6-D (L-02): This predicate uses an 8-deep conjunction (∧-chain) over the
 RHTable/RHSet instances in the state.  The run queue's two tables are not in
 it: `RunQueue` carries their invariants as its own fields (WS-ZA ZA4.5). Tuple projection (e.g., `h.2.2.1`) is
 structurally fragile — adding a new table field shifts all subsequent
@@ -1678,9 +1678,6 @@ def SystemState.allTablesInvExtK (st : SystemState) : Prop :=
   st.asidTable.invExtK ∧
   -- LifecycleMetadata
   st.lifecycle.objectTypes.invExtK ∧
-  -- CDT
-  st.cdt.childMap.invExtK ∧
-  st.cdt.parentMap.invExtK ∧
   -- Service and registry
   st.services.invExtK ∧
   st.interfaceRegistry.invExtK ∧
@@ -1691,8 +1688,6 @@ def SystemState.allTablesInvExtK (st : SystemState) : Prop :=
 /-- The default SystemState satisfies `allTablesInvExtK` because all tables are
 empty, and empty RHTables with capacity 16 trivially satisfy `invExtK`. -/
 theorem default_allTablesInvExtK : (default : SystemState).allTablesInvExtK := by
-  constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK 16 (by omega)
-  constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK 16 (by omega)
   constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK 16 (by omega)
   constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK 16 (by omega)
   constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK 16 (by omega)
@@ -1830,7 +1825,7 @@ theorem default_auditLogBounded :
   SeLe4n.Kernel.auditLogBounded_nil
 
 /-- U2-M: Compile-time completeness witness for `allTablesInvExtK`.
-    This theorem destructures `allTablesInvExtK` into exactly 10 named conjuncts.
+    This theorem destructures `allTablesInvExtK` into exactly 8 named conjuncts.
     If a new RHTable field is added to `SystemState` and included in
     `allTablesInvExtK` without updating this witness, the proof fails. -/
 theorem allTablesInvExtK_witness (st : SystemState) (h : st.allTablesInvExtK) :
@@ -1838,8 +1833,6 @@ theorem allTablesInvExtK_witness (st : SystemState) (h : st.allTablesInvExtK) :
     st.irqHandlers.invExtK ∧
     st.asidTable.invExtK ∧
     st.lifecycle.objectTypes.invExtK ∧
-    st.cdt.childMap.invExtK ∧
-    st.cdt.parentMap.invExtK ∧
     st.services.invExtK ∧
     st.interfaceRegistry.invExtK ∧
     st.serviceRegistry.invExtK ∧
@@ -5130,12 +5123,10 @@ theorem storeObject_preserves_allTablesInvExtK
   have hIrq := hAll.2.1
   have hAsid := hAll.2.2.1
   have hObjTypes := hAll.2.2.2.1
-  have hChildMap := hAll.2.2.2.2.1
-  have hParentMap := hAll.2.2.2.2.2.1
-  have hServices := hAll.2.2.2.2.2.2.1
-  have hIfaceReg := hAll.2.2.2.2.2.2.2.1
-  have hSvcReg := hAll.2.2.2.2.2.2.2.2.1
-  have hObjIdxSet := hAll.2.2.2.2.2.2.2.2.2
+  have hServices := hAll.2.2.2.2.1
+  have hIfaceReg := hAll.2.2.2.2.2.1
+  have hSvcReg := hAll.2.2.2.2.2.2.1
+  have hObjIdxSet := hAll.2.2.2.2.2.2.2
   -- Prove objects insert preserves invExtK
   have hObj' := RHTable.insert_preserves_invExtK st.objects id obj hObj
   -- Prove objectTypes insert preserves invExtK
@@ -5159,9 +5150,8 @@ theorem storeObject_preserves_allTablesInvExtK
     cases obj with
     | vspaceRoot vs => exact RHTable.insert_preserves_invExtK _ _ _ hCleared
     | _ => exact hCleared
-  -- Compose all 10 components
-  exact ⟨hObj', hIrq, hAsid', hObjTypes',
-         hChildMap, hParentMap, hServices, hIfaceReg, hSvcReg,
+  -- Compose all 8 components
+  exact ⟨hObj', hIrq, hAsid', hObjTypes', hServices, hIfaceReg, hSvcReg,
          hObjIdxSet'⟩
 
 -- ============================================================================

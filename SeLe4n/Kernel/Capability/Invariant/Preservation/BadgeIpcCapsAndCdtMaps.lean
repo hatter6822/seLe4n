@@ -12,15 +12,12 @@ import SeLe4n.Kernel.Capability.Invariant.Preservation.EndpointReplyAndLifecycle
 /-!
 AN4-F.3 (CAP-M03) child module extracted from
 `SeLe4n.Kernel.Capability.Invariant.Preservation`. Contains the final
-preservation stratum covering four operation families: (1)
+preservation stratum covering three operation families: (1)
 `cspaceMint`/`cspaceMutate` badge-wellformedness preservation; (2)
 `ipcTransferSingleCap` / `ipcUnwrapCapsLoop` / `ipcUnwrapCaps` (grant and
-no-grant variants) capability-invariant-bundle preservation; (3)
-`cdtMapsConsistent` preservation for mint, delete and revoke
-(`cspaceMint`, `cspaceDeleteSlotCore`/`cspaceDeleteSlot`, `cspaceRevoke`); (4) the CDT-expanding / CDT-shrinking
-composition witnesses and the V3-E / V3-F post-resolution rights
-commentary blocks. All declarations retain their original names, order,
-and proofs.
+no-grant variants) capability-invariant-bundle preservation; (3) the
+CDT-shrinking composition witnesses and the V3-D / V3-E / V3-F commentary
+blocks.
 -/
 
 namespace SeLe4n.Kernel
@@ -231,15 +228,18 @@ theorem ipcTransferSingleCap_preserves_capabilityInvariantBundle
           have hCdt := cdt_addEdge_after_insert st st2 srcNode
             { cnode := receiverRoot, slot := emptySlot } cap.withoutMapping .ipcTransfer
             hInv.2.2.1 hInv.2.2.2.1 (objects_invExt_of_capabilityInvariantBundle st hInv)
-            (by unfold cdtNodeIsRevocable at hSrc; exact hSrc) hIns
-          rcases hBundleSt2 with ⟨_, hBnd2, _, _, hDepth2, hObjInv2, hRCPV2⟩
+            (by unfold cdtNodeIsRevocable at hSrc; exact hSrc) hIns hInv.linksAgree
+          have hIX := objects_invExt_of_capabilityInvariantBundle _ hBundleSt2
+          rcases hBundleSt2 with ⟨_, hBnd2, _, _, hDepth2, hObjInv2, hRCPV2, -⟩
           simp [hIns] at hStep
           obtain ⟨_, rfl⟩ := hStep
           have hObjFinal : ∀ cdt' : CapDerivationTree,
               ({ st2 with cdt := cdt' } : SystemState).objects = st2.objects := fun _ => rfl
+          refine capabilityInvariantBundle_of_linkReach ?_
+            (SystemState.cdtAddChild_reach st2 srcNode _ .ipcTransfer) hIX hCdt.2.2
           exact ⟨cspaceLookupSound_holds _,
             cspaceSlotCountBounded_of_objects_eq st2 _ hBnd2 (hObjFinal _),
-            hCdt.1, hCdt.2,
+            hCdt.1, hCdt.2.1,
             cspaceDepthConsistent_of_objects_eq st2 _ hDepth2 (hObjFinal _),
             (hObjFinal _) ▸ hObjInv2,
             replyCapPointsToValidReply_of_objects_eq (hObjFinal _) hRCPV2⟩
@@ -380,107 +380,6 @@ theorem ipcUnwrapCaps_preserves_capabilityInvariantBundle
     exact ipcUnwrapCaps_preserves_capabilityInvariantBundle_grant
       st st' msg receiverRoot slotBase summary
       hInv hSlotCap hCapBacked hStep
-
--- ============================================================================
--- S3-D: cdtMapsConsistent preservation theorems
--- ============================================================================
-
-/-- S3-D: `cspaceMint` preserves `cdtMapsConsistent`. Mint delegates to
-    `cspaceInsertSlot` which does not modify the CDT structure. -/
-theorem cspaceMint_preserves_cdtMapsConsistent
-    (st st' : SystemState)
-    (src dst : CSpaceAddr) (rights : AccessRightSet) (badge : Option SeLe4n.Badge)
-    (hCon : cdtMapsConsistent st)
-    (hStep : cspaceMint src dst rights badge st = .ok ((), st')) :
-    cdtMapsConsistent st' := by
-  unfold cspaceMint at hStep
-  cases hSrc : cspaceLookupSlot src st with
-  | error e => simp [hSrc] at hStep
-  | ok pair =>
-      rcases pair with ⟨parent, st1⟩
-      have hSt1 : st1 = st := cspaceLookupSlot_preserves_state st st1 src parent hSrc
-      subst st1
-      -- AL1b (AK7-I.cascade): promote parent via toNonNull?.
-      have hNotNull : parent.isNull = false := by
-        by_cases h : parent.isNull
-        · exfalso; simp [Capability.toNonNull?, h, hSrc] at hStep
-        · exact Bool.not_eq_true _ |>.mp h
-      have hToNN : parent.toNonNull? = some ⟨parent, hNotNull⟩ :=
-        Capability.toNonNull?_of_not_null hNotNull
-      cases hMint : mintDerivedCap ⟨parent, hNotNull⟩ rights badge with
-      | error e => simp [hSrc, hToNN, hMint] at hStep
-      | ok child =>
-          have hInsert : cspaceInsertSlot dst child st = .ok ((), st') := by
-            simpa [hSrc, hToNN, hMint] using hStep
-          exact cspaceInsertSlot_preserves_cdtMapsConsistent st st' dst child hCon hInsert
-
-/-- S3-D: Core `cspaceDeleteSlotCore` preserves `cdtMapsConsistent`. -/
-theorem cspaceDeleteSlotCore_preserves_cdtMapsConsistent
-    (st st' : SystemState) (addr : CSpaceAddr)
-    (hCon : cdtMapsConsistent st)
-    (hStep : cspaceDeleteSlotCore addr st = .ok ((), st')) :
-    cdtMapsConsistent st' := by
-  unfold cspaceDeleteSlotCore SystemState.getCNode? at hStep
-  cases hPre : st.objects[addr.cnode]? with
-  | none => simp [hPre] at hStep
-  | some obj =>
-    cases obj with
-    | cnode cn =>
-      simp only [hPre] at hStep
-      cases hStore : storeObject addr.cnode (.cnode (cn.remove addr.slot)) st with
-      | error e => simp [hStore] at hStep
-      | ok pair =>
-        rcases pair with ⟨_, stMid⟩
-        have h1 := storeObject_cdt_eq st stMid addr.cnode _ hStore
-        simp only [hStore] at hStep
-        simp at hStep; subst hStep
-        exact cdtMapsConsistent_of_cdt_eq st _ hCon h1
-    | _ => simp [hPre] at hStep
-
-/-- S3-D: `cspaceDeleteSlot` preserves `cdtMapsConsistent` (guarded wrapper). -/
-theorem cspaceDeleteSlot_preserves_cdtMapsConsistent
-    (st st' : SystemState) (addr : CSpaceAddr)
-    (hCon : cdtMapsConsistent st)
-    (hChildK : st.cdt.childMap.invExtK) (hParentK : st.cdt.parentMap.invExtK)
-    (hStep : cspaceDeleteSlot addr st = .ok ((), st')) :
-    cdtMapsConsistent st' := by
-  obtain ⟨stC, hCore, rfl⟩ := cspaceDeleteSlot_ok_decompose addr st st' hStep
-  have hConC := cspaceDeleteSlotCore_preserves_cdtMapsConsistent st stC addr hCon hCore
-  have hCdt : stC.cdt = st.cdt := cspaceDeleteSlotCore_cdt_eq st stC addr hCore
-  unfold cdtMapsConsistent at hConC ⊢
-  rw [spliceDeletedCdtNode_eq]; dsimp only
-  rw [hCdt] at hConC ⊢
-  obtain ⟨h1, h2, _, _⟩ := CapDerivationTree.spliceNode_mapsWellFormed _ addr
-    ⟨hConC.1, hConC.2, hChildK, hParentK⟩
-  exact ⟨h1, h2⟩
-
-/-- The destroyed-slot step keeps the tree's index maps consistent and well
-formed: the splice keeps them. -/
-theorem spliceDeletedCdtNode_preserves_mapsWellFormed (st : SystemState) (ref : SlotRef)
-    (h : st.cdt.mapsWellFormed) : (spliceDeletedCdtNode st ref).cdt.mapsWellFormed := by
-  rw [spliceDeletedCdtNode_eq]
-  exact CapDerivationTree.spliceNode_mapsWellFormed _ ref h
-
-/-- S3-D: `cspaceRevoke` preserves `cdtMapsConsistent`.  Revoke stores the CNode
-    `revokeTargetLocal` leaves, which does not touch the tree, and then each
-    sibling it emptied takes the destroyed-slot step, which keeps the maps. -/
-theorem cspaceRevoke_preserves_cdtMapsConsistent
-    (st st' : SystemState) (addr : CSpaceAddr)
-    (hCon : cdtMapsConsistent st)
-    (hChildK : st.cdt.childMap.invExtK) (hParentK : st.cdt.parentMap.invExtK)
-    (hStep : cspaceRevoke addr st = .ok ((), st')) :
-    cdtMapsConsistent st' := by
-  obtain ⟨parent, cn, stS, _, _, hStore, rfl⟩ := cspaceRevoke_ok_decompose addr st st' hStep
-  have hCdt := storeObject_cdt_eq st stS addr.cnode _ hStore
-  have hS : stS.cdt.mapsWellFormed := hCdt ▸ ⟨hCon.1, hCon.2, hChildK, hParentK⟩
-  suffices (detachRevokedSlots stS addr.cnode cn addr.slot parent.target).cdt.mapsWellFormed from
-    ⟨this.1, this.2.1⟩
-  unfold detachRevokedSlots
-  refine SeLe4n.Model.CNode.foldCells_preserves cn stS _
-    (fun acc => acc.cdt.mapsWellFormed) hS (fun acc slot cap _ hAcc => ?_)
-  split
-  · exact hAcc
-  · exact spliceDeletedCdtNode_preserves_mapsWellFormed acc _ hAcc
 
 -- ============================================================================
 -- V3-D (M-PRF-1): CDT Acyclicity Discharge Chain Documentation

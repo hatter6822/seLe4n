@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Sécurité" /></a>
-  <img src="https://img.shields.io/badge/version-0.36.105-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.36.106-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="Licence" /></a>
 </p>
@@ -70,7 +70,7 @@ de preuve de Lean 4 :
 
 - **Chemins chauds en O(1) par hachage** — tous les magasins d'objets, files d'exécution, emplacements CNode, projections VSpace et files IPC utilisent des tables de hachage Robin Hood formellement vérifiées avec les invariants `distCorrect`, `noDupKeys` et `probeChainDominant`
 - **IPC à double file intrusive** — pointeurs inverses par thread pour la mise en file, le retrait et la suppression en milieu de file en O(1)
-- **Arbre de dérivation de capacités à nœuds stables** — index `childMap` + `parentMap` pour le transfert d'emplacements, la révocation et la traversée des descendants en O(1)
+- **Arbre de dérivation de capacités chaîné par les emplacements** — chaque emplacement porte les liens vers son parent, son premier enfant et ses frères (la base de mappage de seL4), dont l'accord avec l'arbre est prouvé ; le transfert d'emplacements, la révocation et la traversée des descendants suivent les liens
 
 ### Sécurité et vérification
 
@@ -96,7 +96,7 @@ de preuve de Lean 4 :
 
 | Attribut | Valeur |
 |----------|--------|
-| **Version** | `0.36.105` |
+| **Version** | `0.36.106` |
 | **Chaîne d'outils Lean** | `v4.28.0` |
 | **LoC Lean de production** | 476 730 réparties sur 431 fichiers |
 | **LoC Lean de test** | 86 924 réparties sur 70 suites de tests |

@@ -3178,6 +3178,24 @@ private def differentialComparisonHasBite : IO Unit := do
         (frozenNotificationSignal diffNotifId diffB badge (freeze ist))
         (SeLe4n.Kernel.notificationSignal diffNotifId badge ist.state)))
 
+/-- PR #956 review: the frozen state keeps the derivation tree's edges and its
+CNodes' slot links, and agreement compares both.  A live state that gained an
+edge (and its links) since the freeze disagrees, and so does one whose link
+words alone changed. -/
+private def frozenAgreementComparesDerivationLinks : IO Unit := do
+  let ist := diffAddCSpace mkEmptyIntermediateState
+    [(SeLe4n.Slot.ofNat 0, diffObjCap diffEpId), (SeLe4n.Slot.ofNat 1, diffObjCap diffEpId)]
+  let a : SlotRef := { cnode := diffCnId, slot := SeLe4n.Slot.ofNat 0 }
+  let b : SlotRef := { cnode := diffCnId, slot := SeLe4n.Slot.ofNat 1 }
+  expect "FO-051: control — a freshly frozen state agrees with its live state"
+    (frozenStateAgrees (freeze ist) ist.state)
+  expect "FO-051: NEGATIVE — a live state that gained an edge disagrees"
+    (!(frozenStateAgrees (freeze ist) (ist.state.cdtAddChild a b .copy)))
+  expect "FO-051: NEGATIVE — a live state whose link words alone changed disagrees"
+    (!(frozenStateAgrees (freeze ist)
+        (ist.state.setSlotLinkWords diffCnId (SeLe4n.Slot.ofNat 1) .parent
+          (diffCnId.toNat + 1) 1)))
+
 end SeLe4n.Testing.FrozenOpsSuite
 
 open SeLe4n.Testing.FrozenOpsSuite in
@@ -3212,6 +3230,7 @@ def main : IO Unit := do
   fo013_cspaceDelete
   fo013b_cspaceDeleteRefusesMappedFrameCap
   fo013c_cspaceDeleteRefusesInstalledTableCap
+  frozenAgreementComparesDerivationLinks
   IO.println "--- TPH-014: Notification Signal/Wait ---"
   fo014_notificationSignal
   fo015_notificationWait

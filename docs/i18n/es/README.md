@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.36.105-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.36.106-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -70,7 +70,7 @@ demostración de Lean 4:
 
 - **Rutas críticas en O(1) basadas en hash** — todos los almacenes de objetos, colas de ejecución, ranuras de CNode, mapeos de VSpace y colas de IPC utilizan tablas hash Robin Hood verificadas formalmente con invariantes `distCorrect`, `noDupKeys` y `probeChainDominant`
 - **IPC de doble cola intrusiva** — punteros inversos por hilo para encolado, desencolado y eliminación en medio de la cola en O(1)
-- **Árbol de derivación de capacidades estable por nodo** — índices `childMap` + `parentMap` para transferencia de ranuras, revocación y recorrido de descendientes en O(1)
+- **Árbol de derivación de capacidades enlazado a través de las ranuras** — cada ranura guarda los enlaces a su padre, primer hijo y hermanos (la base de datos de mapeo de seL4), con prueba de que coinciden con el árbol; la transferencia de ranuras, la revocación y el recorrido de descendientes siguen los enlaces
 
 ### Seguridad y verificación
 
@@ -96,7 +96,7 @@ demostración de Lean 4:
 
 | Atributo | Valor |
 |----------|-------|
-| **Versión** | `0.36.105` |
+| **Versión** | `0.36.106` |
 | **Toolchain de Lean** | `v4.28.0` |
 | **LoC de producción en Lean** | 476.730 en 431 archivos |
 | **LoC de pruebas en Lean** | 86.924 en 70 suites de pruebas |

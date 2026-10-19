@@ -146,19 +146,29 @@ theorem lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_stepCovers (e : C
   obtain ⟨stB, hB, hObjB, hSchB⟩ :=
     lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_ok_frame h
   obtain ⟨_, cur, stClean, hCur, hClean, hStore⟩ := lifecycleRetypeDirectWithCleanup_ok_decompose hB
-  obtain ⟨hCO, hCS, _⟩ :=
+  obtain ⟨stM, hMO, hMS, _, hR⟩ :=
     lifecyclePreRetypeCleanup_detached_frame st stClean target cur newObj hInv hCur hDet hClean
+  have hInvM : stM.objects.invExt := hMO ▸ hInv
   have hScrubInv : (scrubObjectMemory stClean target cur.objectType).objects.invExt := by
-    rw [scrubObjectMemory_objects_eq, hCO]; exact hInv
+    rw [scrubObjectMemory_objects_eq]; exact hR.invExt hInvM
   have hSched : st'.scheduler = st.scheduler := by
-    rw [hSchB, storeObject_scheduler_eq _ _ _ _ hStore]; exact hCS
-  have hFrame : ∀ oid, oid ≠ target → st'.objects[oid]? = st.objects[oid]? := by
+    rw [hSchB, storeObject_scheduler_eq _ _ _ _ hStore, scrubObjectMemory_scheduler_eq]
+    have h := congrArg SystemState.scheduler hR.fields
+    exact h.trans hMS
+  -- The cleanup's tree detach writes only CNode derivation links.
+  have hFrame : ∀ oid, oid ≠ target → SystemState.objectAgreesOffDerivationLinksAt st' st oid := by
     intro oid hne
-    rw [hObjB, storeObject_objects_ne _ _ _ _ _ hne hScrubInv hStore,
-      scrubObjectMemory_objects_eq, hCO]
+    have e : st'.objects[oid]? = stClean.objects[oid]? := by
+      rw [hObjB, storeObject_objects_ne _ _ _ _ _ hne hScrubInv hStore, scrubObjectMemory_objects_eq]
+    rcases hR.agree hInvM oid with e2 | ⟨cn, cn', ha, hb, hw⟩
+    · exact .inl (by rw [e, e2, hMO])
+    · exact .inr ⟨cn, cn', by rw [← hMO]; exact ha, by rw [e]; exact hb, hw⟩
   have hKeyNe : ∀ t, t.toObjId ≠ target → schedKeyView st' t = schedKeyView st t := by
     intro t ht
-    refine schedKeyView_eq_of_slotUnread (fun oid hne => by rw [hFrame oid hne]) ht ?_
+    refine schedKeyView_eq_of_slotUnread (fun oid hne => by
+      rcases hFrame oid hne with e | ⟨_, _, ha, hb, _⟩
+      · rw [e]
+      · rw [ha, hb]; rfl) ht ?_
     intro tcb hT sc hsc hEq
     obtain ⟨sco, hSo, _⟩ := hBi t tcb sc ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hsc
     rw [hEq] at hSo
@@ -191,7 +201,9 @@ theorem lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_stepCovers (e : C
       | _ => simp
     have hq : st.queuedOn c t = true := by
       unfold SystemState.queuedOn SystemState.getTcb? at ht ⊢
-      rw [hFrame _ hne] at ht; exact ht
+      rcases hFrame _ hne with e | ⟨_, _, _, hb, _⟩
+      · rw [e] at ht; exact ht
+      · rw [hb] at ht; simp at ht
     exact ⟨hq, (hKeyNe t hne).symm⟩
   · rw [hSched] at ht; exact schedKeyNotWeakened_of_eq (hUnread c t ht).symm
   · rw [hObjB]; exact storeObject_preserves_objects_invExt _ _ _ _ hScrubInv hStore

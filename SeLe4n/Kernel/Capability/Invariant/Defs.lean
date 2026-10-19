@@ -84,6 +84,32 @@ def cdtCompleteness (st : SystemState) : Prop :=
   ∀ ref : SlotRef, st.cdt.mentions ref →
     ∃ cn, st.objects[ref.cnode]? = some (.cnode cn) ∧ cn.lookup ref.slot ≠ none
 
+/-- WS-ZA ZA5.3: a slot the tree names lies in a live CNode's slot array, so its
+links have words to live in (`SystemState.slotInCNode`). -/
+theorem slotInCNode_of_occupied {st : SystemState} {ref : SlotRef}
+    (h : ∃ cn, st.objects[ref.cnode]? = some (.cnode cn) ∧ cn.lookup ref.slot ≠ none) :
+    st.slotInCNode ref := by
+  obtain ⟨cn, hCn, hL⟩ := h
+  obtain ⟨cap, hCap⟩ := Option.ne_none_iff_exists'.mp hL
+  exact ⟨cn, hCn, cn.slots_get?_bounded ref.slot (by
+    have := hCap; unfold CNode.lookup at this
+    unfold SeLe4n.UniqueSlotMap.get? at this; rw [this]; simp)⟩
+
+theorem cdtCompleteness.slotInCNode {st : SystemState} (h : cdtCompleteness st)
+    {ref : SlotRef} (hM : st.cdt.mentions ref) : st.slotInCNode ref :=
+  slotInCNode_of_occupied (h ref hM)
+
+/-- **WS-ZA ZA5.3: the slot links encode the derivation tree** (`LinksAgree`):
+each slot's parent, first-child, next and previous links are what the tree says
+they are, so the tree's executable reads can walk the links instead. -/
+def cdtLinksAgree (st : SystemState) : Prop :=
+  LinksAgree st.slotLinkAt st.cdt
+
+/-- A step that keeps the tree and every slot's links keeps the agreement. -/
+theorem cdtLinksAgree_of_eq {st st' : SystemState} (h : cdtLinksAgree st)
+    (hCdt : st'.cdt = st.cdt) (hL : st'.slotLinkAt = st.slotLinkAt) : cdtLinksAgree st' := by
+  unfold cdtLinksAgree at h ⊢; rw [hCdt, hL]; exact h
+
 /-- A slot the tree names lies in an object that exists. -/
 theorem cdtCompleteness.present {st : SystemState} (h : cdtCompleteness st)
     {ref : SlotRef} (hM : st.cdt.mentions ref) : st.objects[ref.cnode]? ≠ none := by
@@ -212,22 +238,26 @@ standalone operation-correctness lemmas in `Authority.lean`.
 WS-RC R4.A.6: The historical `cspaceSlotUnique` conjunct was removed when
 `CNode.slots : SeLe4n.UniqueSlotMap Capability` carried the slot-uniqueness
 witness structurally at construction time (via `UniqueSlotMap.hWF`).  The
-bundle now has **7** conjuncts: the R4.A.6 close-out retired `cspaceSlotUnique`
-(7 → 6), then PR #822 Phase H #1.a added `replyCapPointsToValidReply` (the 7th,
-6 → 7) so the step-preserved bundle rules out dangling `.replyCap` slots.
+bundle now has **8** conjuncts: the R4.A.6 close-out retired `cspaceSlotUnique`
+(7 → 6), PR #822 Phase H #1.a added `replyCapPointsToValidReply` (the 7th,
+6 → 7) so the step-preserved bundle rules out dangling `.replyCap` slots, and
+WS-ZA ZA5.3 part 4 added `cdtLinksAgree` (the 8th): the derivation links the
+slots hold agree with the tree, so the executable children and descendant reads
+that walk them read the tree.
 Per-CNode slot uniqueness is discharged directly via
 `SeLe4n.Model.CNode.slotsUnique_holds`. -/
 def capabilityInvariantBundle (st : SystemState) : Prop :=
   cspaceLookupSound st ∧
     cspaceSlotCountBounded st ∧ cdtCompleteness st ∧ cdtAcyclicity st ∧
-    cspaceDepthConsistent st ∧ st.objects.invExt ∧ replyCapPointsToValidReply st
+    cspaceDepthConsistent st ∧ st.objects.invExt ∧ replyCapPointsToValidReply st ∧
+    cdtLinksAgree st
 
 /-! ## AN4-F.5 (CAP-M05) — Named-projection refactor of `capabilityInvariantBundle`
 
-Mirror of the AN3-B playbook for IPC's `ipcInvariantFull`. The 7-conjunct
+Mirror of the AN3-B playbook for IPC's `ipcInvariantFull`. The 8-conjunct
 right-associative `∧` chain above (6 after the WS-RC R4.A.6 close-out retired
-`cspaceSlotUnique`, then 7 again once PR #822 Phase H #1.a added
-`replyCapPointsToValidReply`) is fragile to reason about —
+`cspaceSlotUnique`, 7 once PR #822 Phase H #1.a added
+`replyCapPointsToValidReply`, 8 with `cdtLinksAgree`) is fragile to reason about —
 consumers write `.2.2.1` to reach `cdtCompleteness`, `.2.2.2.1` for
 `cdtAcyclicity`, and so on. The audit's CAP-M05 finding calls for a named
 structure that exposes each field by name.
@@ -245,6 +275,23 @@ that touches the 30+ primary sites simultaneously) will swap the primary
 def to the structure and delete the tuple form. Both forms are legal in
 the interim. -/
 
+/-- **The capability bundle less the slot-link agreement**: what a step leaves
+between writing the tree and writing the slot links that encode it.  A run of
+link writes (`SystemState.linkReach`) restores the full bundle once its links
+agree with the tree (`capabilityInvariantBundle_of_linkReach`). -/
+def capabilityBundleOffLinks (st : SystemState) : Prop :=
+  cspaceLookupSound st ∧
+    cspaceSlotCountBounded st ∧ cdtCompleteness st ∧ cdtAcyclicity st ∧
+    cspaceDepthConsistent st ∧ st.objects.invExt ∧ replyCapPointsToValidReply st
+
+theorem capabilityInvariantBundle.offLinks {st : SystemState} (h : capabilityInvariantBundle st) :
+    capabilityBundleOffLinks st :=
+  ⟨h.1, h.2.1, h.2.2.1, h.2.2.2.1, h.2.2.2.2.1, h.2.2.2.2.2.1, h.2.2.2.2.2.2.1⟩
+
+theorem capabilityBundleOffLinks.withLinks {st : SystemState} (h : capabilityBundleOffLinks st)
+    (hL : cdtLinksAgree st) : capabilityInvariantBundle st :=
+  ⟨h.1, h.2.1, h.2.2.1, h.2.2.2.1, h.2.2.2.2.1, h.2.2.2.2.2.1, h.2.2.2.2.2.2, hL⟩
+
 /-- AN4-F.5 (CAP-M05): Named-projection view of `capabilityInvariantBundle`.
 Each field records a distinct slot-level invariant (uniqueness,
 soundness, size-bounded) or a CDT structural invariant (completeness,
@@ -257,8 +304,7 @@ structure CapabilityInvariantBundle (st : SystemState) : Prop where
   lookupSound : cspaceLookupSound st
   /-- Every CNode slot table satisfies its `slotCountBounded` invariant. -/
   slotCountBounded : cspaceSlotCountBounded st
-  /-- The CDT `childMap`/`parentMap`/`slotNode`/`nodeSlot` bookkeeping
-      covers every capability edge emitted by the graph. -/
+  /-- Every slot the derivation tree names holds a capability. -/
   cdtCompleteness : cdtCompleteness st
   /-- The capability derivation graph is acyclic. -/
   cdtAcyclicity : cdtAcyclicity st
@@ -271,6 +317,8 @@ structure CapabilityInvariantBundle (st : SystemState) : Prop where
   /-- WS-SM SM6.D / PR #822 Phase H (#1): every `.replyCap rid` in a CNode slot is
       backed by an existing Reply object (no dangling reply caps). -/
   replyCapBacked : replyCapPointsToValidReply st
+  /-- WS-ZA ZA5.3: the slot links encode the derivation tree. -/
+  linksAgree : cdtLinksAgree st
 
 /-- AN4-F.5.1 (CAP-M05): Bidirectional bridge between the tuple and named
 forms. Consumers can move freely between the two representations; the
@@ -280,15 +328,15 @@ theorem capabilityInvariantBundle_iff_CapabilityInvariantBundle
     (st : SystemState) :
     capabilityInvariantBundle st ↔ CapabilityInvariantBundle st := by
   constructor
-  · rintro ⟨hS, hB, hComp, hAcyc, hDep, hObj, hRCPV⟩
+  · rintro ⟨hS, hB, hComp, hAcyc, hDep, hObj, hRCPV, hLinks⟩
     exact { lookupSound := hS, slotCountBounded := hB
           , cdtCompleteness := hComp, cdtAcyclicity := hAcyc
           , depthConsistent := hDep, objectsInvExt := hObj
-          , replyCapBacked := hRCPV }
+          , replyCapBacked := hRCPV, linksAgree := hLinks }
   · intro h
     exact ⟨h.lookupSound, h.slotCountBounded,
            h.cdtCompleteness, h.cdtAcyclicity, h.depthConsistent,
-           h.objectsInvExt, h.replyCapBacked⟩
+           h.objectsInvExt, h.replyCapBacked, h.linksAgree⟩
 
 /-! ### AN4-F.5.2 (CAP-M05): `@[simp]` projection abbreviations
 
@@ -325,7 +373,11 @@ namespace capabilityInvariantBundle
 /-- WS-SM SM6.D / PR #822 Phase H (#1): extract `replyCapPointsToValidReply` from the
 tuple form (the 7th conjunct). -/
 @[simp] abbrev replyCapBacked {st : SystemState} (h : capabilityInvariantBundle st) :
-    _root_.SeLe4n.Kernel.replyCapPointsToValidReply st := h.2.2.2.2.2.2
+    _root_.SeLe4n.Kernel.replyCapPointsToValidReply st := h.2.2.2.2.2.2.1
+
+/-- WS-ZA ZA5.3: extract `cdtLinksAgree` from the tuple form (the 8th conjunct). -/
+@[simp] abbrev linksAgree {st : SystemState} (h : capabilityInvariantBundle st) :
+    _root_.SeLe4n.Kernel.cdtLinksAgree st := h.2.2.2.2.2.2.2
 
 end capabilityInvariantBundle
 
@@ -575,67 +627,6 @@ instance {st : SystemState} : CoeHead (RetypeTarget st) SeLe4n.ObjId where
   coe tgt := tgt.id
 
 -- ============================================================================
--- S3-D/U-M03: CDT maps consistency as state-level invariant
--- ============================================================================
-
-/-- S3-D: CDT maps consistency — the bidirectional maps (`childMap`,
-    `parentMap`) are consistent with the canonical `edges` list.
-    This lifts the CDT-level `childMapConsistent ∧ parentMapConsistent`
-    to a state-level invariant predicate. -/
-def cdtMapsConsistent (st : SystemState) : Prop :=
-  st.cdt.childMapConsistent ∧ st.cdt.parentMapConsistent
-
-/-- S3-D: Default state has empty CDT, so maps consistency holds vacuously.
-    Both directions of the iff are trivially false (no edges, no map entries). -/
-theorem cdtMapsConsistent_default : cdtMapsConsistent (default : SystemState) := by
-  -- Empty CDT: edges = [], childMap = empty, parentMap = empty.
-  -- Both iff directions have one side trivially false.
-  refine ⟨?_, ?_⟩
-  · -- childMapConsistent
-    intro parent child; constructor
-    · intro hMem
-      -- childMap.get? parent = none for empty table
-      exfalso
-      have hGet : (default : SystemState).cdt.childMap.get? parent = none :=
-        RobinHood.RHTable.getElem?_empty 16 (by omega) parent
-      -- The goal's getD uses default.cdt.childMap.get?, which equals none
-      change child ∈ ((default : SystemState).cdt.childMap.get? parent).getD [] at hMem
-      rw [hGet] at hMem; exact (nomatch hMem)
-    · intro ⟨_, hE, _, _⟩
-      have : (default : SystemState).cdt.edges = [] := rfl
-      rw [this] at hE; exact (nomatch hE)
-  · -- parentMapConsistent
-    intro child parent; constructor
-    · intro hLookup
-      have hGet : (default : SystemState).cdt.parentMap.get? child = none :=
-        RobinHood.RHTable.getElem?_empty 16 (by omega) child
-      change (default : SystemState).cdt.parentMap.get? child = some parent at hLookup
-      rw [hGet] at hLookup; exact (nomatch hLookup)
-    · intro ⟨_, hE, _, _⟩
-      have : (default : SystemState).cdt.edges = [] := rfl
-      rw [this] at hE; exact (nomatch hE)
-
--- ============================================================================
--- S3-D: cdtMapsConsistent transfer and frame theorems
--- ============================================================================
-
-/-- S3-D: Transfer `cdtMapsConsistent` through state changes that preserve `cdt`. -/
-theorem cdtMapsConsistent_of_cdt_eq
-    (st st' : SystemState)
-    (hCon : cdtMapsConsistent st)
-    (hCdtEq : st'.cdt = st.cdt) :
-    cdtMapsConsistent st' := by
-  unfold cdtMapsConsistent at hCon ⊢; rw [hCdtEq]; exact hCon
-
-/-- S3-D: `storeObject` preserves `cdtMapsConsistent` (CDT unchanged). -/
-theorem cdtMapsConsistent_of_storeObject
-    (st st' : SystemState) (oid : ObjId) (obj : KernelObject)
-    (hCon : cdtMapsConsistent st)
-    (hStore : storeObject oid obj st = .ok ((), st')) :
-    cdtMapsConsistent st' :=
-  cdtMapsConsistent_of_cdt_eq st st' hCon (storeObject_cdt_eq st st' oid obj hStore)
-
--- ============================================================================
 -- WS-H4: Extraction theorems for new bundle components
 -- ============================================================================
 
@@ -662,7 +653,12 @@ theorem objects_invExt_of_capabilityInvariantBundle
 /-- WS-SM SM6.D / PR #822 Phase H (#1): extract the reply-cap backing invariant. -/
 theorem replyCapPointsToValidReply_of_capabilityInvariantBundle
     (st : SystemState) (hInv : capabilityInvariantBundle st) :
-    replyCapPointsToValidReply st := hInv.2.2.2.2.2.2
+    replyCapPointsToValidReply st := hInv.2.2.2.2.2.2.1
+
+/-- WS-ZA ZA5.3: extract the slot-link agreement. -/
+theorem cdtLinksAgree_of_capabilityInvariantBundle
+    (st : SystemState) (hInv : capabilityInvariantBundle st) :
+    cdtLinksAgree st := hInv.2.2.2.2.2.2.2
 
 -- ============================================================================
 -- WS-H4: Transfer theorems for new components through state transitions

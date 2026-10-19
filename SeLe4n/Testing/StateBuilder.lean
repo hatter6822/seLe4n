@@ -244,8 +244,6 @@ def emptyFrozenSystemState : FrozenSystemState :=
     serviceRegistry := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
     interfaceRegistry := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
     services := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
-    cdtChildMap := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
-    cdtParentMap := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
     cdtEdges := []
     scheduler :=
       { byPriority := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
@@ -408,3 +406,10 @@ def withSenderFrame (st : SystemState) (tid : SeLe4n.ThreadId) (msg : IpcMessage
       | .error _ => st
 
 end SeLe4n.Testing
+
+/-- Test fixtures: record each `(parent, child, op)` derivation edge through the
+kernel's paired tree-and-link op, so the fixture's slot links agree with its tree. -/
+def SeLe4n.Model.SystemState.withDerivationEdges (st : SeLe4n.Model.SystemState)
+    (es : List (SeLe4n.Model.SlotRef × SeLe4n.Model.SlotRef × SeLe4n.Model.DerivationOp)) :
+    SeLe4n.Model.SystemState :=
+  es.foldl (fun s e => s.cdtAddChild e.1 e.2.1 e.2.2) st

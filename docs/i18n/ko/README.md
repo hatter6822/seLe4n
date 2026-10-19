@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.36.105-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.36.106-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -68,7 +68,7 @@ seLe4n은 Lean 4로 처음부터 설계된 마이크로커널입니다. 모든 �
 
 - **O(1) 해시 기반 핫 패스** — 모든 객체 저장소, 실행 큐, CNode 슬롯, VSpace 매핑, IPC 큐가 `distCorrect`, `noDupKeys`, `probeChainDominant` 불변량을 갖춘 형식 검증된 Robin Hood 해시 테이블을 사용합니다
 - **침입형 이중 큐 IPC** — 스레드별 역방향 포인터로 O(1) 삽입, 삭제, 큐 중간 제거 지원
-- **노드 안정 능력 파생 트리** — O(1) 슬롯 전송, 폐기, 자손 순회를 위한 `childMap` + `parentMap` 인덱스
+- **슬롯을 통해 연결된 능력 파생 트리** — 각 슬롯이 부모, 첫 자식, 형제 링크를 보유하며(seL4의 매핑 데이터베이스) 트리와의 일치가 증명됨; 슬롯 전송, 폐기, 자손 순회는 링크를 따라감
 
 ### 보안과 검증
 
@@ -94,7 +94,7 @@ seLe4n은 Lean 4로 처음부터 설계된 마이크로커널입니다. 모든 �
 
 | 속성 | 값 |
 |------|-----|
-| **버전** | `0.36.105` |
+| **버전** | `0.36.106` |
 | **Lean 툴체인** | `v4.28.0` |
 | **프로덕션 Lean LoC** | 431개 파일, 476,730줄 |
 | **테스트 Lean LoC** | 70개 테스트 스위트, 86,924줄 |

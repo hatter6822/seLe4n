@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.36.105-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.36.106-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -65,7 +65,7 @@ seLe4n 是一个完全使用 Lean 4 从零构建的微内核。每一个内核�
 
 - **O(1) 基于哈希的热路径** —— 所有对象存储、运行队列、CNode 槽位、VSpace 映射和 IPC 队列均使用经过形式化验证的 Robin Hood 哈希表，具有 `distCorrect`、`noDupKeys` 和 `probeChainDominant` 不变量
 - **侵入式双队列 IPC** —— 每线程反向指针，实现 O(1) 入队、出队和队中移除
-- **节点稳定的能力派生树** —— `childMap` + `parentMap` 索引，实现 O(1) 槽位转移、撤销和后代节点遍历
+- **通过槽位链接的能力派生树** —— 每个槽位保存其父节点、首个子节点和兄弟节点的链接（seL4 的映射数据库），并证明与派生树一致；槽位转移、撤销和后代遍历沿链接进行
 
 ### 安全与验证
 
@@ -91,7 +91,7 @@ seLe4n 是一个完全使用 Lean 4 从零构建的微内核。每一个内核�
 
 | 属性 | 值 |
 |------|------|
-| **版本** | `0.36.105` |
+| **版本** | `0.36.106` |
 | **Lean 工具链** | `v4.28.0` |
 | **生产代码行数** | 476,730 行，分布于 431 个文件 |
 | **测试代码行数** | 86,924 行，分布于 70 个测试套件 |

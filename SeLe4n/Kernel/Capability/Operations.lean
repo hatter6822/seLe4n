@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Kernel.Scheduler.Invariant
+import SeLe4n.Model.SlotLinks
 
 /-! ### AK8-K (WS-AK) — Capability / Lifecycle / Service LOW-tier batch
 
@@ -758,9 +759,8 @@ theorem cspaceInsertSlot_preserves_machine
 `storeObject`, which touches objects, the lifecycle table and the object index
 and nothing else.
 
-Relocated here at `v0.35.201` from `Capability/Invariant/Preservation/Insert.lean`,
-where it sat beside its `cdtMapsConsistent` consumer: a *frame over a primitive*
-belongs beside the primitive, so the CDT pair reads like the scheduler, services,
+Relocated here at `v0.35.201` from `Capability/Invariant/Preservation/Insert.lean`:
+a *frame over a primitive* belongs beside the primitive, so the CDT pair reads like the scheduler, services,
 machine and IRQ frames above rather than like an invariant argument. -/
 theorem cspaceInsertSlot_cdt_eq
     (st st' : SystemState) (addr : CSpaceAddr) (cap : Capability)
@@ -1017,11 +1017,18 @@ def cspaceMint
             | .ok child => cspaceInsertSlot dst child st'
 
 /-- U-H03: Check whether a CSpace slot has CDT children (derived capabilities).
-Returns `true` if the slot has any children in the tree.  No operation refuses on
-it: a delete splices the slot's node out and its children are re-derived from
-its parent (`spliceDeletedCdtNode`). -/
+Returns `true` if the slot has any children in the tree, read off its first-child
+link (`SystemState.linkHasChild`, equal to the tree's read under the links'
+agreement: `hasCdtChildren_eq_tree`).  No operation refuses on it: a delete
+splices the slot's node out and its children are re-derived from its parent
+(`spliceDeletedCdtNode`). -/
 def hasCdtChildren (st : SystemState) (addr : CSpaceAddr) : Bool :=
-  !(st.cdt.childrenOf addr).isEmpty
+  st.linkHasChild addr
+
+theorem hasCdtChildren_eq_tree {st : SystemState}
+    (h : LinksAgree st.slotLinkAt st.cdt) (addr : CSpaceAddr) :
+    hasCdtChildren st addr = !(st.cdt.childrenOf addr).isEmpty :=
+  SystemState.linkHasChild_eq h addr
 
 /-- Core capability slot deletion: empties the slot, leaving the derivation tree
 to the caller.
@@ -1043,9 +1050,10 @@ its edges go and its children are derived from its parent instead, as seL4's
 `cteDelete` unlinks a capability from the mapping database.  The one tree step
 every destroyer of a slot takes: the delete, retyping a CNode for each of its
 slots, and the local revoke for each sibling it empties.  A slot outside the
-tree leaves it unchanged. -/
+tree leaves it unchanged.  The slots' derivation links are rewritten with the
+tree (`SystemState.cdtSplice`), as seL4 rewrites the mapping-database words. -/
 def spliceDeletedCdtNode (st : SystemState) (ref : SlotRef) : SystemState :=
-  { st with cdt := st.cdt.spliceNode ref }
+  st.cdtSplice ref
 
 /-- Delete the capability currently stored in `addr`.
 
@@ -1103,24 +1111,75 @@ theorem cspaceDeleteSlotCore_cdt_eq (st st' : SystemState) (addr : CSpaceAddr)
       subst h
       exact storeObject_cdt_eq _ _ _ _ hS
 
-/-- The splice writes the tree alone. -/
-theorem spliceDeletedCdtNode_eq (st : SystemState) (ref : SlotRef) :
-    spliceDeletedCdtNode st ref = { st with cdt := st.cdt.spliceNode ref } := rfl
+/-- The core delete keeps the object table well formed. -/
+theorem cspaceDeleteSlotCore_invExt (st st' : SystemState) (addr : CSpaceAddr)
+    (hObjInv : st.objects.invExt) (h : cspaceDeleteSlotCore addr st = .ok ((), st')) :
+    st'.objects.invExt := by
+  unfold cspaceDeleteSlotCore at h
+  cases hCn : st.getCNode? addr.cnode with
+  | none => rw [hCn] at h; cases h
+  | some cn =>
+    rw [hCn] at h
+    simp only at h
+    cases hS : storeObject addr.cnode (.cnode (cn.remove addr.slot)) st with
+    | error e => rw [hS] at h; cases h
+    | ok pr =>
+      obtain ⟨u, st1⟩ := pr; cases u
+      rw [hS] at h
+      simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at h
+      subst h
+      exact storeObject_preserves_objects_invExt _ _ _ _ hObjInv hS
 
-@[simp] theorem spliceDeletedCdtNode_objects (st : SystemState) (ref : SlotRef) :
-    (spliceDeletedCdtNode st ref).objects = st.objects := rfl
+/-- The splice writes the tree, then link words alone. -/
+theorem spliceDeletedCdtNode_reach (st : SystemState) (ref : SlotRef) :
+    SystemState.linkReach { st with cdt := st.cdt.spliceNode ref } (spliceDeletedCdtNode st ref) :=
+  SystemState.cdtSplice_reach st ref
+
+theorem spliceDeletedCdtNode_fields (st : SystemState) (ref : SlotRef) :
+    spliceDeletedCdtNode st ref =
+      { st with cdt := st.cdt.spliceNode ref, objects := (spliceDeletedCdtNode st ref).objects } :=
+  (spliceDeletedCdtNode_reach st ref).fields
+
+@[simp] theorem spliceDeletedCdtNode_cdt (st : SystemState) (ref : SlotRef) :
+    (spliceDeletedCdtNode st ref).cdt = st.cdt.spliceNode ref := by
+  rw [spliceDeletedCdtNode_fields]
 
 @[simp] theorem spliceDeletedCdtNode_scheduler (st : SystemState) (ref : SlotRef) :
-    (spliceDeletedCdtNode st ref).scheduler = st.scheduler := rfl
+    (spliceDeletedCdtNode st ref).scheduler = st.scheduler := by
+  rw [spliceDeletedCdtNode_fields]
 
 @[simp] theorem spliceDeletedCdtNode_machine (st : SystemState) (ref : SlotRef) :
-    (spliceDeletedCdtNode st ref).machine = st.machine := rfl
+    (spliceDeletedCdtNode st ref).machine = st.machine := by
+  rw [spliceDeletedCdtNode_fields]
 
 @[simp] theorem spliceDeletedCdtNode_lifecycle (st : SystemState) (ref : SlotRef) :
-    (spliceDeletedCdtNode st ref).lifecycle = st.lifecycle := rfl
+    (spliceDeletedCdtNode st ref).lifecycle = st.lifecycle := by
+  rw [spliceDeletedCdtNode_fields]
 
 @[simp] theorem spliceDeletedCdtNode_tlbShootdown (st : SystemState) (ref : SlotRef) :
-    (spliceDeletedCdtNode st ref).tlbShootdown = st.tlbShootdown := rfl
+    (spliceDeletedCdtNode st ref).tlbShootdown = st.tlbShootdown := by
+  rw [spliceDeletedCdtNode_fields]
+
+/-- The splice changes objects only in their derivation links, and keeps the
+object table well formed. -/
+theorem spliceDeletedCdtNode_agree {st : SystemState} (hInv : st.objects.invExt) (ref : SlotRef) :
+    SystemState.objectsAgreeOffDerivationLinks (spliceDeletedCdtNode st ref) st ∧
+      (spliceDeletedCdtNode st ref).objects.invExt :=
+  ⟨(spliceDeletedCdtNode_reach st ref).agree hInv, (spliceDeletedCdtNode_reach st ref).invExt hInv⟩
+
+/-- A slot lookup reads no derivation link: it answers alike in two states whose
+objects agree off those links. -/
+theorem cspaceLookupSlot_of_agree {st st' : SystemState}
+    (h : SystemState.objectsAgreeOffDerivationLinks st' st) (addr : CSpaceAddr) :
+    cspaceLookupSlot addr st' = (cspaceLookupSlot addr st).map (fun p => (p.1, st')) := by
+  unfold cspaceLookupSlot
+  rw [h.lookupSlotCap addr]
+  cases SystemState.lookupSlotCap st addr with
+  | some cap => rfl
+  | none =>
+    have hG := h.getCNode?_isSome addr.cnode
+    cases e : st.getCNode? addr.cnode <;> cases e' : st'.getCNode? addr.cnode <;>
+      simp_all [Except.map]
 
 /-- **The delete's success shape**: the core delete succeeded and the deleted
 slot was spliced out of the tree. -/
@@ -1152,7 +1211,7 @@ theorem cspaceDeleteSlot_scheduler_machine (addr : CSpaceAddr) (st st' : SystemS
     (h : cspaceDeleteSlot addr st = .ok ((), st')) :
     st'.scheduler = st.scheduler ∧ st'.machine = st.machine := by
   obtain ⟨stC, hC, rfl⟩ := cspaceDeleteSlot_ok_decompose addr st st' h
-  rw [spliceDeletedCdtNode_eq]
+  rw [spliceDeletedCdtNode_scheduler, spliceDeletedCdtNode_machine]
   exact cspaceDeleteSlotCore_scheduler_machine addr st stC hC
 
 /-- **The siblings the local revoke empties leave the derivation tree**: each
@@ -1165,17 +1224,25 @@ def detachRevokedSlots (st : SystemState) (cnodeId : SeLe4n.ObjId) (cn : CNode)
     if CNode.revokeTargetLocalKeeps sourceSlot target slot cap then acc
     else spliceDeletedCdtNode acc { cnode := cnodeId, slot := slot })
 
-/-- Detaching the revoked siblings writes the tree alone. -/
+/-- Detaching the revoked siblings writes the tree and link words alone. -/
 theorem detachRevokedSlots_shape (st : SystemState) (cnodeId : SeLe4n.ObjId) (cn : CNode)
     (sourceSlot : SeLe4n.Slot) (target : CapTarget) :
-    ∃ cdt, detachRevokedSlots st cnodeId cn sourceSlot target = { st with cdt := cdt } := by
+    ∃ cdt, SystemState.linkReach { st with cdt := cdt }
+      (detachRevokedSlots st cnodeId cn sourceSlot target) := by
   unfold detachRevokedSlots
   refine SeLe4n.Model.CNode.foldCells_preserves cn st _
-    (fun acc => ∃ cdt, acc = { st with cdt := cdt })
-    ⟨_, rfl⟩ (fun acc slot cap _ ⟨c, hAcc⟩ => ?_)
+    (fun acc => ∃ cdt, SystemState.linkReach { st with cdt := cdt } acc)
+    ⟨_, .refl _⟩ (fun acc slot cap _ ⟨c, hAcc⟩ => ?_)
   split
   · exact ⟨c, hAcc⟩
-  · exact ⟨_, by rw [spliceDeletedCdtNode_eq, hAcc]⟩
+  · exact ⟨_, (hAcc.with_cdt _).trans (spliceDeletedCdtNode_reach acc _)⟩
+
+theorem detachRevokedSlots_agree {st : SystemState} (hInv : st.objects.invExt)
+    (cnodeId : SeLe4n.ObjId) (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget) :
+    SystemState.objectsAgreeOffDerivationLinks (detachRevokedSlots st cnodeId cn sourceSlot target) st ∧
+      (detachRevokedSlots st cnodeId cn sourceSlot target).objects.invExt := by
+  obtain ⟨_, h⟩ := detachRevokedSlots_shape st cnodeId cn sourceSlot target
+  exact ⟨h.agree hInv, h.invExt hInv⟩
 
 /-- V5-G (M-DEF-7): **Revocation routing guide.**
 
@@ -1254,55 +1321,50 @@ def cspaceRevoke (addr : CSpaceAddr) : Kernel Unit :=
                 .ok ((), detachRevokedSlots st'' addr.cnode cn addr.slot parent.target)
         | none => .error .objectNotFound
 
-@[simp] theorem detachRevokedSlots_objects (st : SystemState) (cnodeId : SeLe4n.ObjId)
-    (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget) :
-    (detachRevokedSlots st cnodeId cn sourceSlot target).objects = st.objects := by
-  obtain ⟨_, h⟩ := detachRevokedSlots_shape st cnodeId cn sourceSlot target; rw [h]
-
 @[simp] theorem detachRevokedSlots_scheduler (st : SystemState) (cnodeId : SeLe4n.ObjId)
     (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget) :
     (detachRevokedSlots st cnodeId cn sourceSlot target).scheduler = st.scheduler := by
-  obtain ⟨_, h⟩ := detachRevokedSlots_shape st cnodeId cn sourceSlot target; rw [h]
+  obtain ⟨_, h⟩ := detachRevokedSlots_shape st cnodeId cn sourceSlot target; rw [h.fields]
 
 @[simp] theorem detachRevokedSlots_machine (st : SystemState) (cnodeId : SeLe4n.ObjId)
     (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget) :
     (detachRevokedSlots st cnodeId cn sourceSlot target).machine = st.machine := by
-  obtain ⟨_, h⟩ := detachRevokedSlots_shape st cnodeId cn sourceSlot target; rw [h]
+  obtain ⟨_, h⟩ := detachRevokedSlots_shape st cnodeId cn sourceSlot target; rw [h.fields]
 
 @[simp] theorem detachRevokedSlots_lifecycle (st : SystemState) (cnodeId : SeLe4n.ObjId)
     (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget) :
     (detachRevokedSlots st cnodeId cn sourceSlot target).lifecycle = st.lifecycle := by
-  obtain ⟨_, h⟩ := detachRevokedSlots_shape st cnodeId cn sourceSlot target; rw [h]
+  obtain ⟨_, h⟩ := detachRevokedSlots_shape st cnodeId cn sourceSlot target; rw [h.fields]
 
 @[simp] theorem detachRevokedSlots_tlbShootdown (st : SystemState) (cnodeId : SeLe4n.ObjId)
     (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget) :
     (detachRevokedSlots st cnodeId cn sourceSlot target).tlbShootdown = st.tlbShootdown := by
-  obtain ⟨_, h⟩ := detachRevokedSlots_shape st cnodeId cn sourceSlot target; rw [h]
+  obtain ⟨_, h⟩ := detachRevokedSlots_shape st cnodeId cn sourceSlot target; rw [h.fields]
 
 @[simp] theorem detachRevokedSlots_objectIndex (st : SystemState) (cnodeId : SeLe4n.ObjId)
     (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget) :
     (detachRevokedSlots st cnodeId cn sourceSlot target).objectIndex = st.objectIndex := by
-  obtain ⟨_, h⟩ := detachRevokedSlots_shape st cnodeId cn sourceSlot target; rw [h]
+  obtain ⟨_, h⟩ := detachRevokedSlots_shape st cnodeId cn sourceSlot target; rw [h.fields]
 
 @[simp] theorem detachRevokedSlots_objectIndexSet (st : SystemState) (cnodeId : SeLe4n.ObjId)
     (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget) :
     (detachRevokedSlots st cnodeId cn sourceSlot target).objectIndexSet = st.objectIndexSet := by
-  obtain ⟨_, h⟩ := detachRevokedSlots_shape st cnodeId cn sourceSlot target; rw [h]
+  obtain ⟨_, h⟩ := detachRevokedSlots_shape st cnodeId cn sourceSlot target; rw [h.fields]
 
 @[simp] theorem detachRevokedSlots_services (st : SystemState) (cnodeId : SeLe4n.ObjId)
     (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget) :
     (detachRevokedSlots st cnodeId cn sourceSlot target).services = st.services := by
-  obtain ⟨_, h⟩ := detachRevokedSlots_shape st cnodeId cn sourceSlot target; rw [h]
+  obtain ⟨_, h⟩ := detachRevokedSlots_shape st cnodeId cn sourceSlot target; rw [h.fields]
 
 @[simp] theorem detachRevokedSlots_irqHandlers (st : SystemState) (cnodeId : SeLe4n.ObjId)
     (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget) :
     (detachRevokedSlots st cnodeId cn sourceSlot target).irqHandlers = st.irqHandlers := by
-  obtain ⟨_, h⟩ := detachRevokedSlots_shape st cnodeId cn sourceSlot target; rw [h]
+  obtain ⟨_, h⟩ := detachRevokedSlots_shape st cnodeId cn sourceSlot target; rw [h.fields]
 
 @[simp] theorem detachRevokedSlots_asidTable (st : SystemState) (cnodeId : SeLe4n.ObjId)
     (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget) :
     (detachRevokedSlots st cnodeId cn sourceSlot target).asidTable = st.asidTable := by
-  obtain ⟨_, h⟩ := detachRevokedSlots_shape st cnodeId cn sourceSlot target; rw [h]
+  obtain ⟨_, h⟩ := detachRevokedSlots_shape st cnodeId cn sourceSlot target; rw [h.fields]
 
 /-- **The local revoke's success shape**: the source resolved, its CNode was
 rewritten without the revoked siblings, and those siblings left the tree. -/
@@ -1367,7 +1429,7 @@ def cspaceCopy (src dst : CSpaceAddr) : Kernel Unit :=
             match cspaceInsertSlot dst capNN.val.withoutMapping st' with
             | .error e => .error e
             | .ok ((), st'') =>
-                .ok ((), { st'' with cdt := st''.cdt.addEdge src dst .copy })
+                .ok ((), st''.cdtAddChild src dst .copy)
 
 /-- WS-E4/C-02: Move a capability from source to destination.
 
@@ -1402,7 +1464,7 @@ def cspaceMove (src dst : CSpaceAddr) : Kernel Unit :=
                 -- follow the capability (seL4's `cteMove`).
                 match cspaceDeleteSlotCore src st'' with
                 | .error e => .error e
-                | .ok ((), st''') => .ok ((), { st''' with cdt := st'''.cdt.moveNode src dst })
+                | .ok ((), st''') => .ok ((), st'''.cdtMove src dst)
 
 /-- WS-H13/A-21: `cspaceMove` error-path atomicity. On failure, no output
 state is produced — the `Except` error constructor carries only the error tag,
@@ -1493,10 +1555,8 @@ def cspaceMutate (addr : CSpaceAddr) (rights : AccessRightSet)
           -- Direct overwrite: bypass H-02 guard since we are replacing in-place.
           -- AN4-I (LOW) cross-reference: the preservation guarantee for this
           -- path is `cspaceMutate_preserves_capabilityInvariantBundle` in
-          -- `Capability/Invariant/Preservation/CopyMoveMutate.lean` (and its
-          -- `_preserves_cdtMapsConsistent` companion in
-          -- `Preservation/BadgeIpcCapsAndCdtMaps.lean`) — both witness that
-          -- the in-place overwrite leaves CDT bookkeeping consistent.
+          -- `Capability/Invariant/Preservation/CopyMoveMutate.lean`, which
+          -- witnesses that the in-place overwrite leaves the tree sound.
           match st'.getCNode? addr.cnode with
           | some cn =>
               let cn' := cn.insert addr.slot mutatedCap
@@ -1515,7 +1575,7 @@ def cspaceMintWithCdt (src dst : CSpaceAddr) (rights : AccessRightSet)
     match cspaceMint src dst rights badge st with
     | .error e => .error e
     | .ok ((), st') =>
-        .ok ((), { st' with cdt := st'.cdt.addEdge src dst .mint })
+        .ok ((), st'.cdtAddChild src dst .mint)
 
 /-- WS-SM SM6.D (PR #822 review, Phase H): **mint a reply capability** from an
 `.object` capability that targets a `.reply` object.  `lifecycleRetypeDirect` retypes
@@ -1570,7 +1630,7 @@ def mintReplyCapWithCdt (src dst : CSpaceAddr) : Kernel Unit :=
     match mintReplyCap src dst st with
     | .error e => .error e
     | .ok ((), st') =>
-        .ok ((), { st' with cdt := st'.cdt.addEdge src dst .mint })
+        .ok ((), st'.cdtAddChild src dst .mint)
 
 /-- WS-ZA ZA5.3: **the destination checks every install makes**: an
 addressable, empty slot of a CNode (`cspaceInsertSlot`'s refusals). -/
@@ -1599,7 +1659,7 @@ destination's slot (`storeCNodeWith`) and the derivation edge into the tree's
 tables (`modifyCdt`). -/
 @[inline] def cspaceInstallPerform (src dst : CSpaceAddr) (child : Capability)
     (op : DerivationOp) (st : SystemState) : SystemState :=
-  (st.storeCNodeWith dst.cnode (·.insert dst.slot child)).modifyCdt (·.addEdge src dst op)
+  (st.storeCNodeWith dst.cnode (·.insert dst.slot child)).cdtAddChild src dst op
 
 /-- WS-ZA ZA5.3: the capability a mint of `parent` with `rights` and `badge`
 writes (`mintDerivedCap`'s). -/
@@ -1746,7 +1806,7 @@ def cspaceMovePerform (src dst : CSpaceAddr) (st : SystemState) : SystemState :=
   match SystemState.lookupSlotCap st src with
   | some cap =>
       ((st.storeCNodeWith dst.cnode (·.insert dst.slot cap)).storeCNodeWith src.cnode
-        (·.remove src.slot)).modifyCdt (·.moveNode src dst)
+        (·.remove src.slot)).cdtMove src dst
   | none => st
 
 /-- WS-ZA ZA5.3: an admitted move is its writes. -/
@@ -1801,7 +1861,6 @@ theorem cspaceMove_of_admitted {src dst : CSpaceAddr} {st : SystemState}
     rw [hG2]
     dsimp only
     rw [SystemState.storeObject_cnode_eq_storeCNodeWith hS2 (·.remove src.slot)]
-    rfl
 
 -- ============================================================================
 -- M-P04/M5: Shared per-node revocation step
@@ -1821,7 +1880,7 @@ def processRevokeNode (st : SystemState) (node : SlotRef)
     : Except KernelError SystemState :=
   match cspaceDeleteSlotCore node st with
   | .error e => .error e
-  | .ok ((), stDel) => .ok { stDel with cdt := stDel.cdt.removeNode node }
+  | .ok ((), stDel) => .ok (stDel.cdtRemove node)
 
 -- ============================================================================
 -- WS-E4/C-04: Cross-CNode CDT revocation
@@ -1892,7 +1951,7 @@ def revokeCdtScaffold {ρ : Type}
     match cspaceLookupSlot addr st with
     | .error e => .error e
     | .ok _ =>
-        match traverse st addr (st.cdt.descendantsOf addr) with
+        match traverse st addr (st.linkDescendantsOf addr) with
         | .error e => .error e
         | .ok out => .ok (out.report, out.state)
 
@@ -1918,7 +1977,7 @@ theorem revokeCdtScaffold_ok_decompose {ρ : Type}
     (hStep : revokeCdtScaffold traverse addr st = .ok (r, st')) :
     (∃ cap, cspaceLookupSlot addr st = .ok (cap, st)) ∧
       ∃ (out : RevokeTraversalOutcome ρ),
-        traverse st addr (st.cdt.descendantsOf addr) = .ok out ∧ st' = out.state := by
+        traverse st addr (st.linkDescendantsOf addr) = .ok out ∧ st' = out.state := by
   unfold revokeCdtScaffold at hStep
   split at hStep
   · simp at hStep
@@ -1977,7 +2036,8 @@ state-only fold it replaced, which it therefore is on the state component.
 Materializing the descendant list and folding this over it is what
 `revokeCdtMaterializedTraversal` below is.
 
-AJ-L10: `descendantsOf` materializes the full descendant list before folding.
+AJ-L10: the descendant read (`SystemState.linkDescendantsOf`, the tree's
+`descendantsOf` read along the slot links) materializes the full list before folding.
 For deep CDT trees this is a performance concern (O(n) allocation), not a
 correctness issue; `revokeCdtStreamingTraversal` is the O(branching-factor)
 alternative. -/
@@ -2173,7 +2233,7 @@ theorem processRevokeNode_scheduler_machine (st st' : SystemState) (node : SlotR
     rw [hDel] at h
     simp only [Except.ok.injEq] at h
     subst h
-    exact cspaceDeleteSlotCore_scheduler_machine node st stDel hDel
+    simpa using cspaceDeleteSlotCore_scheduler_machine node st stDel hDel
 
 /-- **WS-BP BP7.1 (`v0.36.7`)**: the CDT revocation writes neither the scheduler
 nor the machine — the shared scaffold's decomposition and the traversal's
@@ -2199,7 +2259,7 @@ children before removing the node from the CDT.
 
 Each iteration:
 1. Dequeues the head node from the BFS queue.
-2. Reads the node's children via `childrenOf` (before removal).
+2. Reads the node's children off its links (`SystemState.linkChildrenOf`, before removal).
 3. Delegates to `processRevokeNode` for the actual delete/detach/removeNode.
 4. Appends newly-discovered children to the queue tail.
 
@@ -2218,7 +2278,7 @@ def streamingRevokeBFS
       match processRevokeNode st node with
       | .error e => .error e
       | .ok stNext =>
-          let children := st.cdt.childrenOf node
+          let children := st.linkChildrenOf node
           streamingRevokeBFS fuel (rest ++ children) stNext
 
 /-- M-P04: Interleave BFS discovery with deletion instead of materializing the
@@ -2231,7 +2291,7 @@ def revokeCdtStreamingTraversal (stLocal : SystemState) (rootNode : SlotRef)
     (_descendants : List SlotRef)
     : Except KernelError (RevokeTraversalOutcome Unit) :=
   match streamingRevokeBFS stLocal.cdt.edges.length
-      (stLocal.cdt.childrenOf rootNode) stLocal with
+      (stLocal.linkChildrenOf rootNode) stLocal with
   | .error e => .error e
   | .ok ((), stDone) =>
       -- An empty BFS queue is the only `.ok`, so every node reachable from the
@@ -2276,7 +2336,7 @@ def revokeCdtReportingStep (acc : RevokeCdtStrictReport × SystemState)
           ({ report with firstFailure := some { offendingSlot := node, error := err } }, stAcc)
       | .ok ((), stDel) =>
           ({ report with deletedSlots := node :: report.deletedSlots },
-           { stDel with cdt := stDel.cdt.removeNode node })
+           stDel.cdtRemove node)
 
 /-- **The reporting traversal's outcome**, shared by both reporting variants. -/
 def revokeCdtReportingOutcome (stLocal : SystemState) (descendants : List SlotRef)
@@ -2382,10 +2442,12 @@ full monotonicity lemma tracked for AN12-B. -/
 theorem cspaceRevokeCdtTransactional_no_failure_no_descendants
     (addr : CSpaceAddr) (st : SystemState) (cap : Capability)
     (hLookup : cspaceLookupSlot addr st = .ok (cap, st))
+    (hLinks : LinksAgree st.slotLinkAt st.cdt)
     (hNoDesc : st.cdt.descendantsOf addr = []) :
     cspaceRevokeCdtTransactional addr st
       = .ok ({ deletedSlots := [], firstFailure := none }, st) := by
-  simp [cspaceRevokeCdtTransactional, revokeCdtScaffold, hLookup, hNoDesc,
+  simp [cspaceRevokeCdtTransactional, revokeCdtScaffold, hLookup,
+    SystemState.linkDescendantsOf_eq hLinks, hNoDesc,
     revokeCdtTransactionalTraversal, validateRevokeCdtDescendants_empty,
     revokeCdtReportingOutcome]
 
@@ -2596,7 +2658,7 @@ def ipcTransferSingleCap
             | .error e => .error e
             | .ok ((), st') =>
                 .ok (.installed receiverCspaceRoot emptySlot,
-                     { st' with cdt := st'.cdt.addEdge srcNode dstAddr .ipcTransfer })
+                     st'.cdtAddChild srcNode dstAddr .ipcTransfer)
     | none => .error .objectNotFound
 
 /-- **No capability is ever installed beneath a source no revocation can reach.**
@@ -2742,7 +2804,7 @@ theorem ipcTransferSingleCap_preserves_objects_ne
     (hObjInv : st.objects.invExt)
     (hStep : ipcTransferSingleCap cap srcNode receiverRoot slotBase scanLimit st
              = .ok (result, st')) :
-    st'.objects[oid]? = st.objects[oid]? := by
+    SystemState.objectAgreesOffDerivationLinksAt st' st oid := by
   -- AN10-B: post-migration `ipcTransferSingleCap` reads via `getCNode?`.
   simp only [ipcTransferSingleCap] at hStep
   cases hCn : st.getCNode? receiverRoot with
@@ -2750,13 +2812,13 @@ theorem ipcTransferSingleCap_preserves_objects_ne
   | some cn =>
     simp [hCn] at hStep
     cases hSlot : cn.findFirstEmptySlotChecked slotBase scanLimit with
-    | none => simp [hSlot] at hStep; obtain ⟨_, rfl⟩ := hStep; rfl
+    | none => simp [hSlot] at hStep; obtain ⟨_, rfl⟩ := hStep; exact Or.inl rfl
     | some emptySlot =>
         simp [hSlot] at hStep
         -- A source destroyed since resolution declines the install and leaves
         -- the state untouched, so this frame holds there by reflexivity.
         cases hSrc : cdtNodeIsRevocable st srcNode with
-        | false => simp [hSrc] at hStep; obtain ⟨_, rfl⟩ := hStep; first | rfl | assumption
+        | false => simp [hSrc] at hStep; obtain ⟨_, rfl⟩ := hStep; exact Or.inl rfl
         | true =>
         simp only [hSrc] at hStep
         cases hIns : cspaceInsertSlot { cnode := receiverRoot, slot := emptySlot } cap.withoutMapping st with
@@ -2764,9 +2826,18 @@ theorem ipcTransferSingleCap_preserves_objects_ne
         | ok pair =>
           simp [hIns] at hStep
           obtain ⟨_, rfl⟩ := hStep
-          have hObjIns := cspaceInsertSlot_preserves_objects_ne st pair.2 _ cap.withoutMapping oid hNe hObjInv
-            (by rw [show pair = (pair.1, pair.2) from by simp]; exact hIns)
-          simp_all
+          have hIns' : cspaceInsertSlot { cnode := receiverRoot, slot := emptySlot }
+              cap.withoutMapping st = .ok ((), pair.2) := by
+            rw [show pair = (pair.1, pair.2) from by simp] at hIns; exact hIns
+          have hObjIns := cspaceInsertSlot_preserves_objects_ne st pair.2 _ cap.withoutMapping oid
+            hNe hObjInv hIns'
+          have hInvMid := cspaceInsertSlot_preserves_objects_invExt st pair.2 _ cap.withoutMapping
+            hObjInv hIns'
+          rcases (SystemState.cdtAddChild_agreeObjects hInvMid srcNode
+            { cnode := receiverRoot, slot := emptySlot } .ipcTransfer).1 oid with
+            e | ⟨cn1, cn2, ha, hb, hw⟩
+          · exact Or.inl (e.trans hObjIns)
+          · exact Or.inr ⟨cn1, cn2, by rw [← hObjIns]; exact ha, hb, hw⟩
 
 theorem ipcTransferSingleCap_preserves_services
     (cap : Capability) (srcNode : SlotRef)
@@ -2833,7 +2904,7 @@ theorem ipcTransferSingleCap_preserves_objects_invExt
           obtain ⟨_, rfl⟩ := hStep
           have hInvMid := cspaceInsertSlot_preserves_objects_invExt st pair.2 _ cap.withoutMapping hObjInv
             (by rw [show pair = (pair.1, pair.2) from by simp]; exact hIns)
-          exact hInvMid
+          exact (SystemState.cdtAddChild_agreeObjects hInvMid _ _ _).2
 
 /-- M3-E4 helper: ipcTransferSingleCap preserves all notification objects.
 When `oid = receiverRoot` and the object is a notification, the function
@@ -2856,9 +2927,10 @@ theorem ipcTransferSingleCap_preserves_ntfn_objects
     have hCnNone : st.getCNode? oid = none := by
       unfold SystemState.getCNode?; rw [hNtfn]
     simp [hCnNone] at hStep
-  · rw [ipcTransferSingleCap_preserves_objects_ne cap srcNode receiverRoot slotBase
-      scanLimit st st' result oid hNe hObjInv hStep]
-    exact hNtfn
+  · rcases ipcTransferSingleCap_preserves_objects_ne cap srcNode receiverRoot slotBase
+      scanLimit st st' result oid hNe hObjInv hStep with e | ⟨_, _, ha, _, _⟩
+    · rw [e]; exact hNtfn
+    · rw [hNtfn] at ha; cases ha
 
 /-- M3-E4 helper: receiverRoot is never a notification after ipcTransferSingleCap.
 The only success path requires receiverRoot to be a CNode in st. On the noSlot
@@ -2917,7 +2989,11 @@ theorem ipcTransferSingleCap_receiverRoot_not_ntfn
             cspaceInsertSlot_ok_decompose st pair.2
               { cnode := receiverRoot, slot := emptySlot } cap.withoutMapping hIns
           have hStoreObj := storeObject_objects_eq' st receiverRoot _ pair hObjInv hStore
-          rw [hStoreObj] at h
+          have hInvMid := cspaceInsertSlot_preserves_objects_invExt st pair.2 _ cap.withoutMapping
+            hObjInv (by rw [show pair = (pair.1, pair.2) from by simp] at hIns; exact hIns)
+          obtain ⟨_, hC, _⟩ := (SystemState.cdtAddChild_agreeObjects hInvMid srcNode
+            { cnode := receiverRoot, slot := emptySlot } .ipcTransfer).1.cnode_fwd hStoreObj
+          rw [hC] at h
           exact absurd h (by simp)
 
 /-- M3-E4 helper: ipcTransferSingleCap preserves all endpoint objects.
@@ -2941,9 +3017,10 @@ theorem ipcTransferSingleCap_preserves_ep_objects
     have hCnNone : st.getCNode? oid = none := by
       unfold SystemState.getCNode?; rw [hEp]
     simp [hCnNone] at hStep
-  · rw [ipcTransferSingleCap_preserves_objects_ne cap srcNode receiverRoot slotBase
-      scanLimit st st' result oid hNe hObjInv hStep]
-    exact hEp
+  · rcases ipcTransferSingleCap_preserves_objects_ne cap srcNode receiverRoot slotBase
+      scanLimit st st' result oid hNe hObjInv hStep with e | ⟨_, _, ha, _, _⟩
+    · rw [e]; exact hEp
+    · rw [hEp] at ha; cases ha
 
 /-- M3-E4 helper: ipcTransferSingleCap preserves all TCB objects.
 Same reasoning as endpoint preservation: TCBs at receiverRoot cause
@@ -2968,9 +3045,10 @@ theorem ipcTransferSingleCap_preserves_tcb_objects
     have hCnNone : st.getCNode? oid = none := by
       unfold SystemState.getCNode?; rw [hTcb]
     simp [hCnNone] at hStep
-  · rw [ipcTransferSingleCap_preserves_objects_ne cap srcNode receiverRoot slotBase
-      scanLimit st st' result oid hNe hObjInv hStep]
-    exact hTcb
+  · rcases ipcTransferSingleCap_preserves_objects_ne cap srcNode receiverRoot slotBase
+      scanLimit st st' result oid hNe hObjInv hStep with e | ⟨_, _, ha, _, _⟩
+    · rw [e]; exact hTcb
+    · rw [hTcb] at ha; cases ha
 
 /-- IPC de-threading D6 helper: ipcTransferSingleCap preserves all SchedContext objects.
 Same reasoning as TCB/endpoint preservation: a SchedContext at `receiverRoot` makes
@@ -2992,9 +3070,10 @@ theorem ipcTransferSingleCap_preserves_schedContext_objects
     have hCnNone : st.getCNode? oid = none := by
       unfold SystemState.getCNode?; rw [hSc]
     simp [hCnNone] at hStep
-  · rw [ipcTransferSingleCap_preserves_objects_ne cap srcNode receiverRoot slotBase
-      scanLimit st st' result oid hNe hObjInv hStep]
-    exact hSc
+  · rcases ipcTransferSingleCap_preserves_objects_ne cap srcNode receiverRoot slotBase
+      scanLimit st st' result oid hNe hObjInv hStep with e | ⟨_, _, ha, _, _⟩
+    · rw [e]; exact hSc
+    · rw [hSc] at ha; cases ha
 
 /-- IPC de-threading D3: ipcTransferSingleCap preserves all `.reply` objects.
 Same reasoning as the endpoint/TCB family: a `.reply` at `receiverRoot` makes
@@ -3016,9 +3095,10 @@ theorem ipcTransferSingleCap_preserves_reply_objects
     have hCnNone : st.getCNode? oid = none := by
       unfold SystemState.getCNode?; rw [hReply]
     simp [hCnNone] at hStep
-  · rw [ipcTransferSingleCap_preserves_objects_ne cap srcNode receiverRoot slotBase
-      scanLimit st st' result oid hNe hObjInv hStep]
-    exact hReply
+  · rcases ipcTransferSingleCap_preserves_objects_ne cap srcNode receiverRoot slotBase
+      scanLimit st st' result oid hNe hObjInv hStep with e | ⟨_, _, ha, _, _⟩
+    · rw [e]; exact hReply
+    · rw [hReply] at ha; cases ha
 
 /-- IPC de-threading D2: a successful `ipcTransferSingleCap` proves its `receiverRoot`
 was a CNode — the transfer reads `getCNode? receiverRoot` and fails closed
@@ -3079,7 +3159,10 @@ theorem ipcTransferSingleCap_receiverRoot_stays_cnode
         simp only [hCnTyped] at hCn'; exact (Option.some.inj hCn').symm
       subst hCnEq
       have hStoreObj := storeObject_objects_eq' st receiverRoot _ pair hObjInv hStore
-      refine ⟨cn'.insert emptySlot cap.withoutMapping, ?_⟩
-      exact hStoreObj
+      have hInvMid := cspaceInsertSlot_preserves_objects_invExt st pair.2 _ cap.withoutMapping
+        hObjInv (by rw [show pair = (pair.1, pair.2) from by simp] at hIns; exact hIns)
+      obtain ⟨c2, hC, _⟩ := (SystemState.cdtAddChild_agreeObjects hInvMid srcNode
+        { cnode := receiverRoot, slot := emptySlot } .ipcTransfer).1.cnode_fwd hStoreObj
+      exact ⟨c2, hC⟩
 
 end SeLe4n.Kernel

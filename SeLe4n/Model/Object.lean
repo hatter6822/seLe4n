@@ -9,6 +9,7 @@
 
 import SeLe4n.Model.Object.Types
 import SeLe4n.Model.Object.Structures
+import SeLe4n.Model.Object.DerivationLinks
 
 /-! # Kernel Objects — Re-export Hub
 
@@ -18,4 +19,6 @@ Decomposed into:
 - **Structures**: Complex kernel object structures (PagePermissions, VSpaceRoot
   with lookup/map/unmap and overlap invariants, CNode with resolve/insert/remove
   and slot-uniqueness/count-bound proofs, KernelObject sum type).
+- **DerivationLinks**: the derivation links each slot holds and the proofs that
+  they encode the derivation tree.
 -/

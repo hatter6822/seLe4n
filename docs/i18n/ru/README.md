@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Безопасность" /></a>
-  <img src="https://img.shields.io/badge/version-0.36.105-blue" alt="Версия" />
+  <img src="https://img.shields.io/badge/version-0.36.106-blue" alt="Версия" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="Лицензия" /></a>
 </p>
@@ -70,7 +70,7 @@ security model) от seL4, вводя при этом архитектурные
 
 - **O(1) хеш-операции на критических путях** — все хранилища объектов, очереди планировщика, слоты CNode, отображения VSpace и очереди IPC используют формально верифицированные хеш-таблицы Robin Hood с инвариантами `distCorrect`, `noDupKeys` и `probeChainDominant`
 - **Интрузивная двойная очередь IPC** — обратные указатели (back-pointers) на каждый поток для O(1) постановки, извлечения и удаления из середины очереди
-- **Дерево вывода мандатов со стабильными узлами** — индексы `childMap` + `parentMap` для O(1) передачи слотов, отзыва и обхода потомков
+- **Дерево вывода мандатов, связанное через слоты** — каждый слот хранит ссылки на родителя, первого потомка и соседей (база отображений seL4), их согласие с деревом доказано; передача слотов, отзыв и обход потомков идут по ссылкам
 
 ### Безопасность и верификация
 
@@ -96,7 +96,7 @@ security model) от seL4, вводя при этом архитектурные
 
 | Атрибут | Значение |
 |---------|----------|
-| **Версия** | `0.36.105` |
+| **Версия** | `0.36.106` |
 | **Тулчейн Lean** | `v4.28.0` |
 | **Продуктовый код (Lean LoC)** | 476 730 строк в 431 файле |
 | **Тестовый код (Lean LoC)** | 86 924 строки в 70 тест-сьютах |

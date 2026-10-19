@@ -158,8 +158,8 @@ edge joins two slots (since `v0.36.103`, WS-ZA ZA5.3 part 2):
 - **Derivation edges** connect `SlotRef`s; there is no separate node identifier, counter or slot-to-node table.
 - **`cspaceMove`** carries the source slot's parent and children to the destination (`CapDerivationTree.moveNode`).
 - **A delete** splices the slot out, re-deriving its children from its parent (`spliceNode`).
-- **`childMap : RHTable SlotRef (List SlotRef)`** gives O(1) children lookup.
-- **`descendantsOf`** runs in O(n+e) via DFS with `HashSet` visited tracking.
+- **Each slot holds its derivation links** (parent, first child, previous and next sibling) as words in its CNode, as seL4's mapping database (since `v0.36.106`, ZA5.3 part 4); the capability bundle proves they agree with the tree (`cdtLinksAgree`).
+- **Children and descendants are read along the links** (`linkChildrenOf`, `linkDescendantsOf`, a breadth-first walk with `HashSet` visited tracking), each proven equal to the tree's read.
 
 Revocation walks the descendants of the revoked slot itself, and
 `cspaceRevokeCdtStrict` reports the first descendant deletion failure with the

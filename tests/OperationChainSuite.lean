@@ -225,7 +225,7 @@ private def chain5bLeafDeleteReclaimsNode : IO Unit := do
     | .error e => throw <| IO.userError s!"chain5b: sixteen more rounds failed: {toString e}"
     | .ok st17 =>
       expect "chain5b: sixteen more rounds leave the tree as it was"
-        (st17.cdt.edges.length == 0 && st17.cdt.childMap.size == 0)
+        (st17.cdt.edges.length == 0)
       let (_, st18) ← expectOkSt "chain5b: the source is deletable once its copy is gone"
         (SeLe4n.Kernel.cspaceDeleteSlot src st17)
       assertInvariants "chain5b: copy/delete rounds, then the source deleted" st18
@@ -260,7 +260,7 @@ private def chain5cCNodeRetypeReclaimsNodes : IO Unit := do
     | .error e => throw <| IO.userError s!"chain5c: retype cleanup of the CNode failed: {toString e}"
     | .ok st2 =>
       expect "chain5c: retyping the CNode leaves no derivation edge behind"
-        (st2.cdt.edges.length == 0 && st2.cdt.childMap.size == 0)
+        (st2.cdt.edges.length == 0)
       expect "chain5c: the source no longer reports a derived child"
         (!SeLe4n.Kernel.hasCdtChildren st2 src)
   | _ => throw <| IO.userError "chain5c: the second CNode is missing after the copy"
@@ -1994,9 +1994,9 @@ private def chain16StrictRevokePartialFail : IO Unit := do
             → B2
 Total 5 descendants. Verifies deletedSlots.length = 5, all entries come
 from the expected descendant set, root is preserved, and CDT nodes are
-detached. Note: `descendantsOf` traverses children via HashMap-backed
-`childrenOf`, so sibling ordering (A vs B) is non-deterministic; we
-verify set membership rather than exact BFS ordering. -/
+detached. The walk reads each node's children newest first (along its
+first-child and next links), so the order is fixed; the checks below hold for
+any breadth-first order: set membership, and each parent before its child. -/
 private def chain17StrictRevokeOrdering : IO Unit := do
   let rootCNode : SeLe4n.ObjId := ⟨7400⟩
   let cnodeA : SeLe4n.ObjId := ⟨7401⟩
@@ -2076,8 +2076,6 @@ private def chain17StrictRevokeOrdering : IO Unit := do
   expect "chain17: all deletedSlots are from expected set" allInSet
 
   -- Verify partial BFS ordering: within each sub-chain, parent precedes child.
-  -- (Sibling ordering between A and B branches is non-deterministic due to
-  -- HashMap iteration order in childrenOf, so we only verify parent-before-child.)
   let indexOf (s : SeLe4n.Kernel.CSpaceAddr) (xs : List SeLe4n.Kernel.CSpaceAddr) : Option Nat :=
     let rec go (l : List SeLe4n.Kernel.CSpaceAddr) (i : Nat) : Option Nat :=
       match l with

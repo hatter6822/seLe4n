@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="सुरक्षा" /></a>
-  <img src="https://img.shields.io/badge/version-0.36.105-blue" alt="संस्करण" />
+  <img src="https://img.shields.io/badge/version-0.36.106-blue" alt="संस्करण" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="लाइसेंस" /></a>
 </p>
@@ -59,7 +59,7 @@ Lean प्रकार-परीक्षक द्वारा मशीन-�
 
 - **O(1) हैश-आधारित हॉट पाथ** — सभी ऑब्जेक्ट स्टोर, रन क्यू, CNode स्लॉट, VSpace मैपिंग, और IPC क्यू `distCorrect`, `noDupKeys`, और `probeChainDominant` अपरिवर्तनीयों सहित औपचारिक रूप से सत्यापित Robin Hood हैश टेबल का उपयोग करते हैं
 - **इंट्रूसिव ड्यूअल-क्यू IPC** — O(1) एनक्यू, डिक्यू, और मध्य-क्यू निष्कासन के लिए प्रति-थ्रेड बैक-पॉइंटर
-- **नोड-स्थिर क्षमता व्युत्पत्ति वृक्ष** — O(1) स्लॉट स्थानांतरण, निरसन, और वंशज अन्वेषण के लिए `childMap` + `parentMap` सूचकांक
+- **स्लॉटों से जुड़ा क्षमता व्युत्पत्ति वृक्ष** — हर स्लॉट अपने जनक, पहले शिशु और सहोदरों के लिंक रखता है (seL4 का मैपिंग डेटाबेस), जिनका वृक्ष से मेल सिद्ध है; स्लॉट स्थानांतरण, निरसन और वंशज भ्रमण इन लिंकों पर चलते हैं
 
 ### सुरक्षा और सत्यापन
 
@@ -81,7 +81,7 @@ Lean प्रकार-परीक्षक द्वारा मशीन-�
 
 | विशेषता | मान |
 |----------|------|
-| **संस्करण** | `0.36.105` |
+| **संस्करण** | `0.36.106` |
 | **Lean टूलचेन** | `v4.28.0` |
 | **उत्पादन Lean LoC** | 431 फ़ाइलों में 476,730 |
 | **परीक्षण Lean LoC** | 70 परीक्षण सुइट्स में 86,924 |

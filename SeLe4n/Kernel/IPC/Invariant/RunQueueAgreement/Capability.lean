@@ -63,10 +63,33 @@ theorem withCdt_runQueueStage (st : SystemState) (cdt : CapDerivationTree) :
     RunQueueStage st { st with cdt := cdt } :=
   RunQueueStage.of_frame rfl rfl rfl
 
+/-- One slot-link write rewrites a CNode, which holds no run-queue state. -/
+theorem _root_.SeLe4n.Model.SystemState.RunQueueStage.setSlotLinkWords (st : SystemState)
+    (o : SeLe4n.ObjId) (s : SeLe4n.Slot) (f : SeLe4n.Model.LinkField) (c w : Nat) :
+    RunQueueStage st (st.setSlotLinkWords o s f c w) := by
+  cases hcn : st.objects[o]? with
+  | none => exact RunQueueStage.of_eq (by rw [SystemState.setSlotLinkWords_def, hcn])
+  | some ob =>
+    cases ob with
+    | cnode cn =>
+      rw [SystemState.setSlotLinkWords_of_cnode hcn]
+      exact RunQueueStage.insert rfl rfl rfl (fun _ => by rw [hcn]; rfl)
+        (by rw [hcn]; exact ⟨fun _ hx => by simp [SystemState.objTcb?] at hx,
+          fun _ hx _ => by simp [SystemState.objTcb?] at hx⟩)
+    | _ => exact RunQueueStage.of_eq (by rw [SystemState.setSlotLinkWords_def, hcn])
+
+/-- A run of slot-link writes is a run-queue stage. -/
+theorem _root_.SeLe4n.Model.SystemState.RunQueueStage.of_linkReach {st₀ st : SystemState}
+    (h : SystemState.linkReach st₀ st) : RunQueueStage st₀ st := by
+  induction h with
+  | refl => exact RunQueueStage.refl _
+  | step _ o s f c w ih => exact ih.trans (RunQueueStage.setSlotLinkWords _ o s f c w)
+
 theorem cdtRecord_runQueueStage (stM : SystemState) (src dst : CSpaceAddr)
     (kind : DerivationOp) :
-    RunQueueStage stM ({ stM with cdt := stM.cdt.addEdge src dst kind } : SystemState) :=
-  withCdt_runQueueStage _ _
+    RunQueueStage stM (stM.cdtAddChild src dst kind) :=
+  (withCdt_runQueueStage _ _).trans
+    (RunQueueStage.of_linkReach (SystemState.cdtAddChild_reach stM src dst kind))
 
 theorem cspaceLookupSlot_runQueueStage {st st' : SystemState} {addr : CSpaceAddr}
     {cap : Capability} (h : cspaceLookupSlot addr st = .ok (cap, st')) : RunQueueStage st st' :=
@@ -153,7 +176,8 @@ theorem cspaceMove_runQueueStage {st st' : SystemState} {src dst : CSpaceAddr}
             cases h
             exact ((cspaceLookupSlot_runQueueStage hLk).trans
               (cspaceInsertSlot_runQueueStage hIns)).trans
-              ((cspaceDeleteSlotCore_runQueueStage hDel).trans (withCdt_runQueueStage _ _))
+              ((cspaceDeleteSlotCore_runQueueStage hDel).trans ((withCdt_runQueueStage _ _).trans
+                (RunQueueStage.of_linkReach (SystemState.cdtMove_reach st3 src dst))))
 
 theorem mintReplyCapWithCdt_runQueueStage {st st' : SystemState} {src dst : CSpaceAddr}
     (h : mintReplyCapWithCdt src dst st = .ok ((), st')) : RunQueueStage st st' := by
@@ -169,7 +193,8 @@ theorem mintReplyCapWithCdt_runQueueStage {st st' : SystemState} {src dst : CSpa
 theorem cspaceDeleteSlot_runQueueStage {st st' : SystemState} {addr : CSpaceAddr}
     (h : cspaceDeleteSlot addr st = .ok ((), st')) : RunQueueStage st st' := by
   obtain ⟨stC, hCore, rfl⟩ := cspaceDeleteSlot_ok_decompose addr st st' h
-  exact (cspaceDeleteSlotCore_runQueueStage hCore).trans (RunQueueStage.of_frame rfl rfl rfl)
+  exact (cspaceDeleteSlotCore_runQueueStage hCore).trans ((withCdt_runQueueStage _ _).trans
+    (RunQueueStage.of_linkReach (spliceDeletedCdtNode_reach stC addr)))
 
 theorem processRevokeNode_runQueueStage {st st' : SystemState} {node : SlotRef}
     (h : processRevokeNode st node = .ok st') : RunQueueStage st st' := by
@@ -178,7 +203,8 @@ theorem processRevokeNode_runQueueStage {st st' : SystemState} {node : SlotRef}
   · cases h
   · rename_i stDel hDel
     cases h
-    exact (cspaceDeleteSlotCore_runQueueStage hDel).trans (RunQueueStage.of_frame rfl rfl rfl)
+    exact (cspaceDeleteSlotCore_runQueueStage hDel).trans ((withCdt_runQueueStage _ _).trans
+      (RunQueueStage.of_linkReach (SystemState.cdtRemove_reach stDel node)))
 
 theorem cspaceRevokeCdt_runQueueStage {st st' : SystemState} {addr : CSpaceAddr}
     {pages : List MappedPage} (h : cspaceRevokeCdt addr st = .ok (pages, st')) :

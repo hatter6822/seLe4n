@@ -63,24 +63,6 @@ theorem frozenStoreObject_preserves_objectIndex
   obtain ⟨_, _, hSt⟩ := frozenStoreObject_ok hOk
   subst hSt; rfl
 
-/-- Q7-E: `frozenStoreObject` preserves CDT child map. -/
-theorem frozenStoreObject_preserves_cdtChildMap
-    (id : SeLe4n.ObjId) (obj : FrozenKernelObject)
-    (st st' : FrozenSystemState)
-    (hOk : frozenStoreObject id obj st = .ok ((), st')) :
-    st'.cdtChildMap = st.cdtChildMap := by
-  obtain ⟨_, _, hSt⟩ := frozenStoreObject_ok hOk
-  subst hSt; rfl
-
-/-- Q7-E: `frozenStoreObject` preserves CDT parent map. -/
-theorem frozenStoreObject_preserves_cdtParentMap
-    (id : SeLe4n.ObjId) (obj : FrozenKernelObject)
-    (st st' : FrozenSystemState)
-    (hOk : frozenStoreObject id obj st = .ok ((), st')) :
-    st'.cdtParentMap = st.cdtParentMap := by
-  obtain ⟨_, _, hSt⟩ := frozenStoreObject_ok hOk
-  subst hSt; rfl
-
 -- ============================================================================
 -- Q7-E: Additional frozenStoreObject Frame Lemmas via extracts_state
 -- ============================================================================

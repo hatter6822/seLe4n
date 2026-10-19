@@ -1,3 +1,67 @@
+## v0.36.106 — WS-ZA ZA5.3 part 4: the derivation tree links through the slots
+
+Each CNode slot now holds its derivation links, as seL4's mapping database:
+its parent, its first child and its previous and next siblings.  The tree's
+index maps are gone; the tree is its edge list, and an invariant ties the
+links to it.
+
+- **The links**: `CNode.links` holds two words per link per slot (a CNode word
+  and a slot word, 0 for none), read through `CNode.linkAt` and
+  `SystemState.slotLinkAt`.  A fresh CNode has every word 0.
+- **The tree is its edges**: `CapDerivationTree` keeps `edges` alone, with
+  `parentOf` and `childrenOf` read off them; the child and parent maps, their
+  consistency predicate and the theorems over them are removed.
+- **Paired updates**: every tree change goes through one operation that also
+  writes the link words of the slots it touches (`SystemState.cdtAddChild`,
+  `cdtSplice`, `cdtMove`, `cdtRemove`).  Each writes only link words
+  (`linksOnlyWrite`, `linkReach`) and keeps the links agreeing with the tree
+  (`cdtAddChild_agree`, `cdtSplice_agree`, `cdtMove_agree`,
+  `cdtRemove_agree`).  Copy, mint, move, reply-cap mint, IPC capability
+  transfer, delete, revoke and CNode retype use them.  Splicing or removing a
+  slot outside every CNode changes nothing.
+- **The invariant**: the capability bundle's eighth conjunct,
+  `cdtLinksAgree` (`LinksAgree`), says a slot's parent link is its tree
+  parent, its first-child link the newest of its children, and its sibling
+  links its neighbours among its parent's children.  Every transition
+  preserves it.  `capabilityBundleOffLinks` is the bundle less this conjunct,
+  the state between a tree write and its link writes.
+- **Fresh CNodes carry no links**: the boot check refuses a CNode with a
+  nonzero link word (`CNode.linksClear` in `bootSafeObjectCheck`), and retype
+  admits a new CNode only with its links clear.  The information-flow
+  projection reads a CNode with its links cleared (`CNode.withoutLinks`), so
+  the links are never observable.
+- **Reads walk the links**: `hasCdtChildren` reads one word
+  (`SystemState.linkHasChild`); the streaming revoke reads a node's children
+  along its first-child and next links (`linkChildrenOf`); the revoke
+  scaffold's descendants are the same breadth-first walk over the links
+  (`linkDescendantsOf`).  Each is proven equal to the tree's read under the
+  agreement (`linkHasChild_eq`, `linkChildrenOf_eq`,
+  `linkDescendantsOf_eq`).
+- **Runtime check and fixtures**: the state invariant checks compare every
+  slot's links with the tree (`cdtLinksAgreeCheck`), and test fixtures build
+  their trees through the paired operation
+  (`SystemState.withDerivationEdges`).  The check asks the tree only about the
+  slots it names and reads every other slot's link words directly, so a sparse
+  wide CNode costs a pass over its words, not a tree query per slot
+  (`tests/NegativeStateSuite.lean`, `runSlotLinkAgreementChecks`).
+- **Lock footprints**: a capability operation that adds, splices, moves or
+  removes an edge rewrites link words in CNodes it does not name (a parent's, a
+  sibling's, a child's) under `stateLevelLock`.  `.vspaceMap`, the one CNode
+  writer that did not declare that lock, now declares it for read
+  (`lockSet_vspaceMap`), so a map and a relinking capability operation on one
+  CNode can no longer run with disjoint footprints and lose an update
+  (`vspaceMap_capabilityOps_share_serialization`).
+- **Frozen state**: a frozen CNode carries its slots' link words
+  (`FrozenCNode.links`, forwarded by `freezeCNode`), and `frozenStateAgrees`
+  compares them and the tree's edges, so a frozen state no longer drops the
+  tree's executable index (`tests/FrozenOpsSuite.lean`, FO-051).
+
+Allocation readings (normal build): copy 13 → 6, mint 16 → 9, move 18 → 8,
+reply-cap mint 14 → 7, delete 27 → 22, revoke 34 → 32, reply-cap delete
+26 → 21, page-table retype 74-75 → 64, frame retype 91 → 81, frame delete
+50 → 41, page-table deletes 38 / 33 / 27 → 30 / 26 / 22.  The exerciser's
+pins move with them.  The delete and revoke perform step comes next in part 4.
+
 ## v0.36.105 — WS-ZA ZA5.3 part 4: the derivation tree is proven sound from the pre-state
 
 Copy, move, mint, reply-cap mint and IPC capability transfer took the

@@ -2063,9 +2063,9 @@ theorem ipcUnwrapCaps_preserves_ipcInvariant
           simp [hR]
         exact absurd hObj (ipcUnwrapCaps_receiverRoot_not_ntfn msg receiverRoot
           slotBase grantRight st st' summary hNotNtfn hObjInv hStep ntfn)
-  · rw [ipcUnwrapCaps_preserves_objects_ne msg receiverRoot slotBase
-      grantRight st st' summary oid hNe hObjInv hStep] at hObj
-    exact hInv oid ntfn hObj
+  · exact hInv oid ntfn ((ipcUnwrapCaps_preserves_objects_ne msg receiverRoot slotBase
+      grantRight st st' summary oid hNe hObjInv hStep).obj_back hObj
+      (fun _ h => KernelObject.noConfusion h))
 
 /-- endpointSendDual preserves st.objects.invExt. -/
 theorem endpointSendDual_preserves_objects_invExt

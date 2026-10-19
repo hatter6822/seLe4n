@@ -3969,7 +3969,7 @@ run_check "INVARIANT" rg -n '^theorem bootSafeVSpaceRoot_mappingsSafe($|[ ({:\[\
 # capability or an out-of-range badge is refused, and the soundness bridge
 # concludes every conjunct of `bootSafeObject` rather than the structural part.
 run_check "INVARIANT" rg -n '^def bootSafeCapCheck($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
-run_check "INVARIANT" rg -n '^    cn\.allCells \(fun _ cap => bootSafeCapCheck cap\)$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n -U '^    cn\.allCells \(fun _ cap => bootSafeCapCheck cap\) &&\n    cn\.linksClear$' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^theorem bootSafeObjectCheck_sound \(obj : KernelObject\)$' SeLe4n/Platform/Boot.lean
 run_negative_check "INVARIANT" rg -n 'bootSafeObjectCheck_sound_structural' SeLe4n tests
 # The v0.36.2 audit: a boot untyped is pristine — the check reads its carve
@@ -4047,7 +4047,7 @@ run_check "INVARIANT" rg -n -U 'def resolveUntypedRetype[^\n]*(\n([ \t][^\n]*)?)
 run_check "INVARIANT" rg -n -U 'def resolveUntypedRetype[^\n]*(\n([ \t][^\n]*)?)*      match resolveCapAddress callerTcb\.cspaceRoot srcAddr rootCn\.depth st with' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U 'def untypedRetypeObject[^\n]*(\n([ \t][^\n]*)?)*          match retypeFromUntyped src untypedId childId \(req\.object untypedId ut\) req\.size st with' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n -U 'def untypedRetypeObject[^\n]*(\n([ \t][^\n]*)?)*            match cspaceInsertSlot dst \(req\.capability childId\) \(req\.scrub st1 ut\) with' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
-run_check "INVARIANT" rg -n -U 'def untypedRetypeObject[^\n]*(\n([ \t][^\n]*)?)*st2\.cdt\.addEdge src dst \.retype' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n -U 'def untypedRetypeObject[^\n]*(\n([ \t][^\n]*)?)*st2\.cdtAddChild src dst \.retype' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n -U 'def CarveRequest\.scrub[^\n]*\n  \| \.frame => carveZeroFrame st \(untypedNextFrame ut\)\n  \| \.untyped _ => st' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n -U 'def untypedNextChild[^\n]*(\n([ \t][^\n]*)?)*    parent := some parentId \}' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n -U 'def requiresPageAlignment[^\n]*(\n([ \t][^\n]*)?)*  \| \.untyped => true' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
@@ -4156,6 +4156,10 @@ run_check "INVARIANT" rg -n '^theorem vspaceMapFromFrameCap_ok_records($|[ ({:\[
 run_check "INVARIANT" rg -n '^theorem cspaceRecordFrameMapping_preserves_capabilityInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/CopyMoveMutate.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_cspaceDelete_unmappedRoot_write_mem($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_vspaceMap_frameCnode_write_mem($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+# PR #956 review: the map rewrites a CNode whose slots' links a capability
+# operation may relink, so it declares the tree's subject and meets every link writer.
+run_check "INVARIANT" rg -n '^theorem lockSet_vspaceMap_stateLevel_mem($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem vspaceMap_capabilityOps_share_serialization($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n 'RETIRED: the non-finalising delete left the deleted capability.s mapping in place' tests/VSpaceCapabilityBindingSuite.lean
 run_check "INVARIANT" rg -n 'a stale record removes nothing: the other frame.s mapping survives' tests/VSpaceCapabilityBindingSuite.lean
 run_negative_check "INVARIANT" rg -n 'untypedResetUnmap' SeLe4n tests
@@ -6062,7 +6066,8 @@ run_check "INVARIANT" rg -n '^theorem endpointReceiveDual_confinedToBootCore($|[
 run_check "INVARIANT" rg -n '^theorem endpointCall_confinedToBootCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^theorem endpointReply_confinedToBootCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^theorem endpointReplyRecv_confinedToBootCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem cdtEdge_confinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem cdtAddChild_confinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem cdtMove_confinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^theorem cspaceLookupSlot_confinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^theorem cspaceInsertSlot_confinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlotCore_confinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
@@ -7717,7 +7722,7 @@ run_prose_check "INVARIANT" rg -n 'RETIRED: without the deferral core 1 resumes 
 # frame is written by the map, so it is a write member of the footprint.
 run_check "INVARIANT" rg -n -U '^      match p\.epoch with\n      \| none => true\n      \| some e => root\.mappingEpochs\[p\.vaddr\]\? == some e$' SeLe4n/Kernel/Architecture/PageTeardown.lean
 run_check "INVARIANT" rg -n '^            match tagFrameMapping args\.asid args\.vaddr \(frameCapObjId frameCap\) st1 with$' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^     \(pageLock frameObjId, \.write\)\]$' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n -U '^     \(pageLock frameObjId, \.write\),\n     \(stateLevelLock, \.read\)\]$' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_negative_check "INVARIANT" rg -n '\(pageLock frameObjId, \.read\)' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_vspaceMap_frame_write_mem($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 # PR #904 (v0.36.41): the HAL validates what a descriptor says; a table store is
@@ -21947,7 +21952,12 @@ run_check "INVARIANT" rg -n -U '        else if !objectIdInAddressSpace st\.mach
 # and the local revoke do the same for each slot they destroy.
 run_check "INVARIANT" rg -n '^def spliceNode($|[ ({:\[\]])' SeLe4n/Model/Object/Structures.lean
 run_check "INVARIANT" rg -n '^theorem spliceNode_edgeWellFounded($|[ ({:\[\]])' SeLe4n/Model/Object/Structures.lean
-run_check "INVARIANT" rg -n '^theorem spliceNode_mapsWellFormed($|[ ({:\[\]])' SeLe4n/Model/Object/Structures.lean
+run_check "INVARIANT" rg -n '^theorem spliceNode \(h : LinksAgree L cdt\) \(n : SlotRef\)$' SeLe4n/Model/Object/DerivationLinks.lean
+# v0.36.106: the capability bundle carries the slot links' agreement with the
+# tree, and the revoke's descendant read walks the links.
+run_check "INVARIANT" rg -n -U '    cspaceDepthConsistent st ∧ st\.objects\.invExt ∧ replyCapPointsToValidReply st ∧\n    cdtLinksAgree st$' SeLe4n/Kernel/Capability/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^        match traverse st addr \(st\.linkDescendantsOf addr\) with$' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^theorem linkDescendantsOf_eq($|[ ({:\[\]])' SeLe4n/Model/SlotLinks.lean
 run_check "INVARIANT" rg -n '^def spliceDeletedCdtNode($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
 run_check "INVARIANT" rg -n -U '    \| \.ok \(\(\), st.\) => \.ok \(\(\), spliceDeletedCdtNode st. addr\)' SeLe4n/Kernel/Capability/Operations.lean
 run_check "INVARIANT" rg -n -U '  cn\.foldCells st \(fun acc slot _cap =>\n    spliceDeletedCdtNode acc \{ cnode := cnodeId, slot := slot \}' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
@@ -21964,6 +21974,6 @@ run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlot_ok_decompose($|[ ({:\[\]]
 run_check "INVARIANT" rg -n -U '^def cdtCompleteness \(st : SystemState\) : Prop :=\n  ∀ ref : SlotRef, st\.cdt\.mentions ref →\n    ∃ cn, st\.objects\[ref\.cnode\]\? = some \(\.cnode cn\) ∧ cn\.lookup ref\.slot ≠ none' SeLe4n/Kernel/Capability/Invariant/Defs.lean
 run_negative_check "INVARIANT" rg -n 'hCdtPost|hCdtMapsPost|cspaceCopy_preserves_cdtMapsConsistent|cspaceMove_preserves_cdtMapsConsistent' SeLe4n
 run_check "INVARIANT" rg -n '^theorem empty_not_mentions($|[ ({:\[\]])' SeLe4n/Model/Object/Structures.lean
-run_check "INVARIANT" rg -n -U '                \| \.ok \(\(\), st...\) => \.ok \(\(\), \{ st... with cdt := st...\.cdt\.moveNode src dst \}\)' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n -U '                \| \.ok \(\(\), st...\) => \.ok \(\(\), st...\.cdtMove src dst\)' SeLe4n/Kernel/Capability/Operations.lean
 run_negative_check "INVARIANT" rg -n 'CdtNodeId|cdtNodeSlot|cdtSlotNode|cdtNextNode|ensureCdtNodeForSlot|attachSlotToCdtNode|detachSlotFromCdt|lookupCdtNodeOfSlot' SeLe4n
 finalize_report

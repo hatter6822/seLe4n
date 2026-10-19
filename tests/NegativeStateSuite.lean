@@ -282,14 +282,12 @@ private def runCspaceMutationAndRevokeNegativeChecks : IO Unit := do
   let moveSeed : SystemState :=
     { baseState with
       cdt := CapDerivationTree.empty
-        |>.addEdge slot0 moveChildSlot .mint
-        |>.addEdge moveParentSlot slot0 .copy
-    }
+    } |>.withDerivationEdges [(slot0, moveChildSlot, .mint), (moveParentSlot, slot0, .copy)]
   let (_, moveState) ← expectOkSt "cspaceMove moves the source's tree position"
     (SeLe4n.Kernel.cspaceMove slot0 moveDst moveSeed)
-  if moveState.cdt.parentMap[moveDst]? = some moveParentSlot ∧
+  if moveState.cdt.parentOf moveDst = some moveParentSlot ∧
       moveState.cdt.childrenOf moveDst = [moveChildSlot] ∧
-      moveState.cdt.parentMap[slot0]? = none ∧
+      moveState.cdt.parentOf slot0 = none ∧
       moveState.cdt.childrenOf slot0 = [] then
     IO.println "positive check passed [cspaceMove carries the source's parent and children to dst]"
   else
@@ -302,11 +300,11 @@ private def runCspaceMutationAndRevokeNegativeChecks : IO Unit := do
   -- cspaceDeleteSlot on a leaf: its one edge leaves the tree with it.
   let leafDeleteSeed : SystemState :=
     { baseState with
-      cdt := CapDerivationTree.empty |>.addEdge moveParentSlot moveDst .copy
-    }
+      cdt := CapDerivationTree.empty
+    } |>.withDerivationEdges [(moveParentSlot, moveDst, .copy)]
   let (_, deletedMoveDst) ← expectOkSt "cspaceDeleteSlot removes a leaf from the tree"
     (SeLe4n.Kernel.cspaceDeleteSlot moveDst leafDeleteSeed)
-  if deletedMoveDst.cdt.parentMap[moveDst]? = none ∧
+  if deletedMoveDst.cdt.parentOf moveDst = none ∧
       deletedMoveDst.cdt.childrenOf moveParentSlot = [] ∧
       deletedMoveDst.cdt.edges = [] then
     IO.println "positive check passed [cspaceDeleteSlot takes the slot's edges out of the tree]"
@@ -321,14 +319,12 @@ private def runCspaceMutationAndRevokeNegativeChecks : IO Unit := do
   let childBearingSeed : SystemState :=
     { baseState with
       cdt := CapDerivationTree.empty
-        |>.addEdge bearingParent slot0 .copy
-        |>.addEdge slot0 childOfBearing .mint
-    }
+    } |>.withDerivationEdges [(bearingParent, slot0, .copy), (slot0, childOfBearing, .mint)]
   let (_, splicedSt) ← expectOkSt "cspaceDeleteSlot deletes a slot with CDT children"
     (SeLe4n.Kernel.cspaceDeleteSlot slot0 childBearingSeed)
-  if splicedSt.cdt.parentMap[childOfBearing]? = some bearingParent ∧
+  if splicedSt.cdt.parentOf childOfBearing = some bearingParent ∧
       splicedSt.cdt.childrenOf slot0 = [] ∧
-      splicedSt.cdt.parentMap[slot0]? = none ∧
+      splicedSt.cdt.parentOf slot0 = none ∧
       (splicedSt.cdt.edges.any fun e =>
         e.parent == bearingParent && e.child == childOfBearing && e.op == .mint) then
     IO.println "positive check passed [cspaceDeleteSlot splices a parent slot out of the tree]"
@@ -354,12 +350,16 @@ private def runCspaceMutationAndRevokeNegativeChecks : IO Unit := do
               })
             ])))
       cdt := CapDerivationTree.empty
-        |>.addEdge strictRootSlot strictChildSlotBad .mint
-        |>.addEdge strictRootSlot strictChildSlotOk .copy
-    }
+    } |>.withDerivationEdges
+      [(strictRootSlot, strictChildSlotBad, .mint), (strictRootSlot, strictChildSlotOk, .copy)]
 
-  let (strictReport, strictState) ← expectOkSt "cspaceRevokeCdtStrict returns report"
-    (SeLe4n.Kernel.cspaceRevokeCdtStrict strictRootSlot strictSeed)
+  -- The seed derives a slot of a CNode that does not exist, which no kernel run
+  -- reaches (a destroyed CNode's slots leave the tree first), so its slot links
+  -- cannot agree with its tree: the run is checked for its report, not for the
+  -- state invariants.
+  let (strictReport, strictState) ← SeLe4n.Testing.expectOkState
+    "cspaceRevokeCdtStrict returns report"
+    (SeLe4n.Kernel.cspaceRevokeCdtStrict strictRootSlot strictSeed) (msgPrefix := "positive check")
   if strictReport.deletedSlots = [strictChildSlotOk] then
     IO.println "positive check passed [cspaceRevokeCdtStrict records deleted descendants before failure]"
   else
@@ -414,9 +414,7 @@ private def runCspaceMutationAndRevokeNegativeChecks : IO Unit := do
         (txRootSlot.slot, rootCap), (txChildSlotA.slot, rootCap),
         (txChildSlotB.slot, rootCap)]))
       cdt := baseState.cdt
-        |>.addEdge txRootSlot txChildSlotA .copy
-        |>.addEdge txRootSlot txChildSlotB .copy
-  }
+  } |>.withDerivationEdges [(txRootSlot, txChildSlotA, .copy), (txRootSlot, txChildSlotB, .copy)]
   match SeLe4n.Kernel.cspaceRevokeCdtTransactional txRootSlot txSeed with
   | .ok (report, _stFinal) =>
       if report.firstFailure = none then
@@ -1591,6 +1589,41 @@ private def runBuilderRunPlacementChecks : IO Unit := do
      | .ok st => st.runQueueWalk SeLe4n.Kernel.Concurrency.bootCoreId == [tid]
      | .error _ => false) true
 
+/-- WS-ZA ZA5.3 part 4 review: the runtime link-agreement check reads a sparse
+radix-16 CNode's link words without querying the tree per addressable slot, and
+still refuses a stray link at a slot the tree does not name and a wrong link at
+one it does. -/
+private def runSlotLinkAgreementChecks : IO Unit := do
+  let expectBool (label : String) (actual expected : Bool) : IO Unit :=
+    if actual == expected then IO.println s!"positive check passed [{label}]"
+    else throw <| IO.userError s!"{label}: expected {expected}, got {actual}"
+  let wideId : SeLe4n.ObjId := ⟨5150⟩
+  let rootSlot : SlotRef := { cnode := wideId, slot := SeLe4n.Slot.ofNat 3 }
+  let childSlot : SlotRef := { cnode := wideId, slot := SeLe4n.Slot.ofNat 40000 }
+  let cap : Capability :=
+    { target := .object endpointId, rights := AccessRightSet.ofList [.read], badge := none }
+  let seed : SystemState := {
+    baseState with
+      objects := baseState.objects.insert wideId (.cnode (CNode.ofList 16 0 0 16
+        [(rootSlot.slot, cap), (childSlot.slot, cap)]))
+  } |>.withDerivationEdges [(rootSlot, childSlot, .copy)]
+  let ids := wideId :: invariantObjectIds
+  let linkCheckFails (st : SystemState) : Bool :=
+    (stateInvariantChecksFor ids st).any
+      (fun c => !c.2 && c.1 == "cdt slot links agree with the tree")
+  expectBool "control: a sparse radix-16 CNode's links agree with its tree"
+    (linkCheckFails seed) false
+  let withLink (st : SystemState) (s : SeLe4n.Slot) (f : LinkField) (c w : Nat) : SystemState :=
+    match st.getCNode? wideId with
+    | some cn => { st with objects := st.objects.insert wideId (.cnode (cn.setLinkWords s f c w)) }
+    | none => st
+  expectBool "a stray parent link at a slot the tree does not name is refused"
+    (linkCheckFails (withLink seed (SeLe4n.Slot.ofNat 65000) .parent (wideId.toNat + 1) 4)) true
+  expectBool "a wrong next link at a slot the tree names is refused"
+    (linkCheckFails (withLink seed childSlot.slot .next (wideId.toNat + 1) 4)) true
+  expectBool "a slot word alone, with no CNode word, is no link and is not refused"
+    (linkCheckFails (withLink seed (SeLe4n.Slot.ofNat 65000) .parent 0 4)) false
+
 private def runNegativeChecks : IO Unit := do
   runBaselineLookupNegativeChecks                       -- [was 248-262]
   runCspaceMutationAndRevokeNegativeChecks              -- [was 263-461; sections 2+3 combined for strictSeed/strictRootSlot reuse]
@@ -1602,6 +1635,7 @@ private def runNegativeChecks : IO Unit := do
   runDualQueueTailPairingChecks                         -- WS-RR RR8.4
   runEndpointQueueHeadDisjointChecks                    -- PR #897 review (v0.35.108)
   runBuilderRunPlacementChecks                          -- PR #932 review
+  runSlotLinkAgreementChecks                            -- PR #956 review
 
   -- ==========================================================================
   -- WS-D4 F-12: Double-wait prevention in notificationWait (was 1036-1043).
@@ -3460,8 +3494,7 @@ def runWSR2RevocationChecks : IO Unit := do
   let r2Node2 : SlotRef := { cnode := r2CnodeId, slot := SeLe4n.Slot.ofNat 1 }
   let r2BfsSeed := { r2State with
     cdt := CapDerivationTree.empty
-      |>.addEdge r2Node1 r2Node2 .mint
-  }
+  } |>.withDerivationEdges [(r2Node1, r2Node2, .mint)]
   -- Fuel = 0 with non-empty queue → resourceExhausted
   match SeLe4n.Kernel.streamingRevokeBFS 0 [r2Node1, r2Node2] r2BfsSeed with
   | .error e =>
@@ -3489,8 +3522,7 @@ def runWSR2RevocationChecks : IO Unit := do
               })
             ]))
       cdt := CapDerivationTree.empty
-        |>.addEdge r2RootSlot r2ChildBadSlot .mint
-    }
+    } |>.withDerivationEdges [(r2RootSlot, r2ChildBadSlot, .mint)]
   match SeLe4n.Kernel.cspaceRevokeCdt r2RootSlot r2RevokeSeed with
   | .error e =>
     if e = .objectNotFound then
@@ -3722,12 +3754,9 @@ private def runS2GCapabilityErrorTests : IO Unit := do
   let deepSeed : SystemState :=
     { baseState with
       cdt := CapDerivationTree.empty
-        |>.addEdge deepRoot deepN1 .mint
-        |>.addEdge deepN1 deepN2 .copy
-        |>.addEdge deepN2 deepN3 .mint
-        |>.addEdge deepN3 deepN4 .copy
-        |>.addEdge deepN4 deepN5 .mint
-    }
+    } |>.withDerivationEdges
+      [(deepRoot, deepN1, .mint), (deepN1, deepN2, .copy), (deepN2, deepN3, .mint),
+       (deepN3, deepN4, .copy), (deepN4, deepN5, .mint)]
   -- Deep revoke must handle 5 levels of descendants. Since slots 3-7 don't exist
   -- in cnodeId (only slot 0 does), deletion of descendants will fail with objectNotFound
   -- at the slots that have no capability. This exercises deep traversal + error propagation.

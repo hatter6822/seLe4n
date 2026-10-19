@@ -307,7 +307,8 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @endpointCall_confinedToBootCore
 #check @endpointReply_confinedToBootCore
 #check @endpointReplyRecv_confinedToBootCore
-#check @cdtEdge_confinedToCore
+#check @cdtAddChild_confinedToCore
+#check @cdtMove_confinedToCore
 #check @cspaceLookupSlot_confinedToCore
 #check @cspaceInsertSlot_confinedToCore
 #check @cspaceDeleteSlotCore_confinedToCore

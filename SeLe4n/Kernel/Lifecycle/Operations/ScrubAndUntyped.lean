@@ -1176,7 +1176,7 @@ def untypedRetypeObject (src : CSpaceAddr) (childId : SeLe4n.ObjId)
             match cspaceInsertSlot dst (req.capability childId) (req.scrub st1 ut) with
             | .error e => .error e
             | .ok ((), st2) =>
-              .ok ((), { st2 with cdt := st2.cdt.addEdge src dst .retype })
+              .ok ((), st2.cdtAddChild src dst .retype)
       | _ => .error .invalidCapability
 
 
@@ -1217,7 +1217,7 @@ theorem untypedRetypeObject_ok_decompose
       retypeFromUntyped src untypedId childId (req.object untypedId ut) req.size st
         = .ok ((), st1) ∧
       cspaceInsertSlot dst (req.capability childId) (req.scrub st1 ut) = .ok ((), st2) ∧
-      st' = { st2 with cdt := st2.cdt.addEdge src dst .retype } := by
+      st' = st2.cdtAddChild src dst .retype := by
   unfold untypedRetypeObject at hStep
   cases hAdm : req.admissible st
   · simp only [hAdm, Bool.not_false, ↓reduceIte] at hStep; cases hStep
@@ -1462,9 +1462,10 @@ theorem untypedRetypeObject_ok_carved
       st.objects[untypedId]? = some (.untyped ut) ∧
       retypeFromUntyped src untypedId childId (req.object untypedId ut) req.size st
         = .ok ((), st1) ∧
-      st'.objects[childId]? = some (req.object untypedId ut) ∧
-      ∃ cn : CNode, st'.objects[dst.cnode]? =
-        some (.cnode (cn.insert dst.slot (req.capability childId))) := by
+      ((∀ cn, req.object untypedId ut ≠ .cnode cn) →
+        st'.objects[childId]? = some (req.object untypedId ut)) ∧
+      ∃ cn cn' : CNode, st'.objects[dst.cnode]? = some (.cnode cn') ∧
+        cn'.withoutLinks = (cn.insert dst.slot (req.capability childId)).withoutLinks := by
   obtain ⟨_, untypedId, ut, st1, st2, _, _, hUt, hRt, hIns, rfl⟩ :=
     untypedRetypeObject_ok_decompose src dst childId req st st' hStep
   have hObj : st.objects[untypedId]? = some (.untyped ut) :=
@@ -1487,9 +1488,10 @@ theorem untypedRetypeObject_ok_carved
   have hAt2 : st2.objects[childId]? = some (req.object untypedId ut) := by
     rw [cspaceInsertSlot_preserves_objects_ne _ _ _ _ _ hNe hInvZ hIns,
       CarveRequest.scrub_objects]; exact hAt1
-  refine ⟨untypedId, ut, st1, hObj, hRt, ?_, cn, ?_⟩
-  · exact hAt2
-  · exact hCnPost
+  have hR := (SystemState.cdtAddChild_agreeObjects
+    (cspaceInsertSlot_preserves_objects_invExt _ _ _ _ hInvZ hIns) src dst .retype).1
+  obtain ⟨cn', hC, hw⟩ := hR.cnode_fwd hCnPost
+  exact ⟨untypedId, ut, st1, hObj, hRt, fun hn => hR.obj_fwd hAt2 hn, cn, cn', hC, hw⟩
 
 /-- **WS-BP BP7.1: a frame carve's payoff** — the frame is the page at the
 untyped's watermark, inside the untyped, on a page boundary and of its memory
@@ -1506,14 +1508,15 @@ theorem untypedRetypeObject_ok_frame
         ut.regionBase.toNat + ut.regionSize ∧
       (untypedNextFrame ut).wellFormed ∧
       (untypedNextFrame ut).isDevice = ut.isDevice ∧
-      ∃ cn : CNode, st'.objects[dst.cnode]? =
-        some (.cnode (cn.insert dst.slot (frameCapability childId))) := by
+      ∃ cn cn' : CNode, st'.objects[dst.cnode]? = some (.cnode cn') ∧
+        cn'.withoutLinks = (cn.insert dst.slot (frameCapability childId)).withoutLinks := by
   obtain ⟨untypedId, ut, st1, hObj, hRt, hAt, hCn⟩ :=
     untypedRetypeObject_ok_carved src dst childId .frame st st' hObjInv hStep
   obtain ⟨hLo, hHi, hWf, hDev⟩ := untypedNextFrame_of_retype_ok st st1 src untypedId childId
     ut hObj hRt
   refine ⟨untypedId, ut, hObj, ?_, hLo, hHi, hWf, hDev, hCn⟩
-  simp only [SystemState.getFrame?, hAt, CarveRequest.object]
+  simp only [SystemState.getFrame?, hAt (by intro _ h; simp [CarveRequest.object] at h),
+    CarveRequest.object]
 
 /-- **WS-BP BP7.1 slice 4 (`v0.36.8`): a child-untyped carve's payoff** — the
 store holds, at the child id, an untyped whose region lies inside its parent's
@@ -1533,13 +1536,14 @@ theorem untypedRetypeObject_ok_untyped
       (untypedNextChild ut untypedId b).regionBase.toNat % SeLe4n.pageBytes = 0 ∧
       (untypedNextChild ut untypedId b).isDevice = ut.isDevice ∧
       (untypedNextChild ut untypedId b).parent = some untypedId ∧
-      ∃ cn : CNode, st'.objects[dst.cnode]? =
-        some (.cnode (cn.insert dst.slot (untypedCapability childId))) := by
+      ∃ cn cn' : CNode, st'.objects[dst.cnode]? = some (.cnode cn') ∧
+        cn'.withoutLinks = (cn.insert dst.slot (untypedCapability childId)).withoutLinks := by
   obtain ⟨untypedId, ut, st1, hObj, hRt, hAt, hCn⟩ :=
     untypedRetypeObject_ok_carved src dst childId (.untyped b) st st' hObjInv hStep
   obtain ⟨hLo, hHi, hAl, hDev, hPar, -, -⟩ :=
     untypedNextChild_of_retype_ok st st1 src untypedId childId ut b hObj hRt
-  exact ⟨untypedId, ut, hObj, hAt, hLo, hHi, hAl, hDev, hPar, hCn⟩
+  exact ⟨untypedId, ut, hObj, hAt (by intro _ h; simp [CarveRequest.object] at h),
+    hLo, hHi, hAl, hDev, hPar, hCn⟩
 
 /-- **WS-BP BP7.1 slice 4b (`v0.36.10`): a VSpace-root carve's payoff** — the
 store holds, at the child id, a root with no mappings, registered under an ASID
@@ -1563,8 +1567,8 @@ theorem untypedRetypeObject_ok_vspaceRoot
         ut.regionBase.toNat + ut.regionSize ∧
       (untypedNextFrame ut).base.toNat % SeLe4n.pageBytes = 0 ∧
       ut.isDevice = false ∧
-      ∃ cn : CNode, st'.objects[dst.cnode]? =
-        some (.cnode (cn.insert dst.slot (vspaceRootCapability childId))) := by
+      ∃ cn cn' : CNode, st'.objects[dst.cnode]? = some (.cnode cn') ∧
+        cn'.withoutLinks = (cn.insert dst.slot (vspaceRootCapability childId)).withoutLinks := by
   have hAdm := untypedRetypeObject_ok_admissible src dst childId _ st st' hStep
   simp only [CarveRequest.admissible, Bool.and_eq_true, bne_iff_ne, ne_eq,
     decide_eq_true_eq, Option.isNone_iff_eq_none] at hAdm
@@ -1573,7 +1577,8 @@ theorem untypedRetypeObject_ok_vspaceRoot
     untypedRetypeObject_ok_carved src dst childId (.vspaceRoot asid) st st' hObjInv hStep
   obtain ⟨hTb, hLo, hHi, hAl, hDev⟩ :=
     untypedNextVSpaceRoot_of_retype_ok st st1 src untypedId childId ut asid hObj hRt
-  exact ⟨untypedId, ut, hObj, hAt, hNz, hLt, hFree, hTb, hLo, hHi, hAl, hDev, hCn⟩
+  exact ⟨untypedId, ut, hObj, hAt (by intro _ h; simp [CarveRequest.object] at h),
+    hNz, hLt, hFree, hTb, hLo, hHi, hAl, hDev, hCn⟩
 
 
 

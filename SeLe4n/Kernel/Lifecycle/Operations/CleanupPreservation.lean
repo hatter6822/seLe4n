@@ -1868,26 +1868,30 @@ def detachCNodeSlots (st : SystemState) (cnodeId : SeLe4n.ObjId) (cn : CNode) : 
   cn.foldCells st (fun acc slot _cap =>
     spliceDeletedCdtNode acc { cnode := cnodeId, slot := slot })
 
-/-- **`detachCNodeSlots` writes the tree alone**: every other field is the
-pre-state's. -/
+/-- **`detachCNodeSlots` writes the tree and link words alone**: every other
+field is the pre-state's. -/
 theorem detachCNodeSlots_shape (st : SystemState) (cnodeId : SeLe4n.ObjId) (cn : CNode) :
-    ∃ cdt, detachCNodeSlots st cnodeId cn = { st with cdt := cdt } := by
+    ∃ cdt, SystemState.linkReach { st with cdt := cdt } (detachCNodeSlots st cnodeId cn) := by
   unfold detachCNodeSlots
   exact SeLe4n.Model.CNode.foldCells_preserves cn st _
-    (fun acc => ∃ cdt, acc = { st with cdt := cdt })
-    ⟨_, rfl⟩ (fun acc slot _cap _ ⟨c, hAcc⟩ => by subst hAcc; exact ⟨_, rfl⟩)
+    (fun acc => ∃ cdt, SystemState.linkReach { st with cdt := cdt } acc)
+    ⟨_, .refl _⟩ (fun acc slot _cap _ ⟨c, hAcc⟩ =>
+      ⟨_, (hAcc.with_cdt _).trans (spliceDeletedCdtNode_reach acc _)⟩)
 
-/-- `detachCNodeSlots` preserves the objects store (CDT-only operation). -/
-theorem detachCNodeSlots_objects_eq
-    (st : SystemState) (cnodeId : SeLe4n.ObjId) (cn : CNode) :
-    (detachCNodeSlots st cnodeId cn).objects = st.objects := by
-  obtain ⟨_, h⟩ := detachCNodeSlots_shape st cnodeId cn; rw [h]
+/-- `detachCNodeSlots` keeps every object up to derivation links, and the store
+invariant. -/
+theorem detachCNodeSlots_agree {st : SystemState} (hInv : st.objects.invExt)
+    (cnodeId : SeLe4n.ObjId) (cn : CNode) :
+    SystemState.objectsAgreeOffDerivationLinks (detachCNodeSlots st cnodeId cn) st ∧
+      (detachCNodeSlots st cnodeId cn).objects.invExt := by
+  obtain ⟨_, h⟩ := detachCNodeSlots_shape st cnodeId cn
+  exact ⟨h.agree hInv, h.invExt hInv⟩
 
 /-- `detachCNodeSlots` preserves lifecycle metadata (CDT-only operation). -/
 theorem detachCNodeSlots_lifecycle_eq
     (st : SystemState) (cnodeId : SeLe4n.ObjId) (cn : CNode) :
     (detachCNodeSlots st cnodeId cn).lifecycle = st.lifecycle := by
-  obtain ⟨_, h⟩ := detachCNodeSlots_shape st cnodeId cn; rw [h]
+  obtain ⟨_, h⟩ := detachCNodeSlots_shape st cnodeId cn; rw [h.fields]
 
 -- WS-SM SM6.D (PR #827 review #6): `replyIsStashed` (the server-first stash query —
 -- "does any blocked receiver reserve `rid`?") moved down to
@@ -2227,20 +2231,20 @@ theorem cleanupTcbReferences_flat_subset
 theorem detachCNodeSlots_scheduler_eq
     (st : SystemState) (cnodeId : SeLe4n.ObjId) (cn : CNode) :
     (detachCNodeSlots st cnodeId cn).scheduler = st.scheduler := by
-  obtain ⟨_, h⟩ := detachCNodeSlots_shape st cnodeId cn; rw [h]
+  obtain ⟨_, h⟩ := detachCNodeSlots_shape st cnodeId cn; rw [h.fields]
 
 /-- WS-SM SM8.B.2: CDT cleanup writes no register bank. -/
 theorem detachCNodeSlots_machine_eq
     (st : SystemState) (cnodeId : SeLe4n.ObjId) (cn : CNode) :
     (detachCNodeSlots st cnodeId cn).machine = st.machine := by
-  obtain ⟨_, h⟩ := detachCNodeSlots_shape st cnodeId cn; rw [h]
+  obtain ⟨_, h⟩ := detachCNodeSlots_shape st cnodeId cn; rw [h.fields]
 
 /-- WS-SM SM7.B: CDT cleanup is CDT-only — the TLB-shootdown state is
 framed. -/
 theorem detachCNodeSlots_tlbShootdown_eq
     (st : SystemState) (cnodeId : SeLe4n.ObjId) (cn : CNode) :
     (detachCNodeSlots st cnodeId cn).tlbShootdown = st.tlbShootdown := by
-  obtain ⟨_, h⟩ := detachCNodeSlots_shape st cnodeId cn; rw [h]
+  obtain ⟨_, h⟩ := detachCNodeSlots_shape st cnodeId cn; rw [h.fields]
 
 /-- Cleanup preserves the scheduler state. -/
 theorem cleanupTcbReferences_scheduler_eq_removeRunnableFromAllCores

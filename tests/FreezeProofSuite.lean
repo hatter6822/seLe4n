@@ -98,13 +98,11 @@ private def fp008_objectTypes : IO Unit := do
   let fss := freeze ist
   expect "empty objectTypes lookup" (fss.objectTypes.get? ⟨0⟩ == none)
 
-/-- FP-009: CDT maps — freeze preserves lookup -/
-private def fp009_cdtMaps : IO Unit := do
+/-- FP-009: CDT — freeze copies the (empty) edge list -/
+private def fp009_cdtEdges : IO Unit := do
   let ist := mkEmptyIntermediateState
   let fss := freeze ist
-  let nodeId : SlotRef := { cnode := ⟨0⟩, slot := SeLe4n.Slot.ofNat 0 }
-  expect "cdtChildMap empty" (fss.cdtChildMap.get? nodeId == none)
-  expect "cdtParentMap empty" (fss.cdtParentMap.get? nodeId == none)
+  expect "cdtEdges empty" fss.cdtEdges.isEmpty
 
 /-- FP-009c: Objects field — freeze preserves lookup with freezeObject transform -/
 private def fp009c_objectsField : IO Unit := do
@@ -296,7 +294,7 @@ def main : IO Unit := do
   fp006_irqHandlers
   fp007_asidTable
   fp008_objectTypes
-  fp009_cdtMaps
+  fp009_cdtEdges
   fp009c_objectsField
 
   -- Q6-T3: CNode Radix Equivalence

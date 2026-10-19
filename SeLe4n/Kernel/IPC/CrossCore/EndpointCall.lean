@@ -920,6 +920,13 @@ the same pre-state; since WS-ZA ZA4.7 the capability lookup before the unwrap
 writes no object, `receiveTransferCaps_frame`), and the resolver's output is declared
 (`lockSet_endpointSendOnCore_covers_capsDestination`).
 
+"Changes" is read off derivation links (`objectAgreesOffDerivationLinksAt`):
+the CDT's links live in the slots (WS-ZA ZA5.3), so recording the new child
+also writes link words in the parent's slot and its old first child's, in
+whatever CNodes those sit.  Those words are the derivation tree, and the tree
+is declared under the state-level lock (`lockSet_endpointSendOnCore_covers_cdt`),
+as it was when it was one map in `SystemState`.
+
 Stated contrapositively — *changed implies declared* — because that is the
 shape a 2PL consumer needs: it asks of an object it is about to write whether
 it holds the lock, not of a lock whether something used it. -/
@@ -934,7 +941,7 @@ theorem endpointSendDualWithCaps_object_writes_declared
     (hObjInv : st'.objects.invExt)
     (hStep : endpointSendDualWithCaps endpointId sender payload receiverSlotBase st
       = .ok (summary, st''))
-    (hChanged : st''.objects[oid]? ≠ st'.objects[oid]?) :
+    (hChanged : ¬ SystemState.objectAgreesOffDerivationLinksAt st'' st' oid) :
     (cnodeLock oid, AccessMode.write)
       ∈ (lockSet_endpointSendOnCore st endpointId sender cnodeRootObjId payload).pairs := by
   rw [endpointSendDualWithCaps_reduces_to_unwrap endpointId sender payload
@@ -947,9 +954,9 @@ theorem endpointSendDualWithCaps_object_writes_declared
     exact lockSet_endpointSendOnCore_covers_capsDestination st endpointId sender
       cnodeRootObjId payload oid hDest
   · rcases hOr with rfl | hU
-    · exact absurd (by rw [hO]) hChanged
+    · exact absurd (.of_eq (by rw [hO])) hChanged
     · exact absurd ((ipcUnwrapCaps_preserves_objects_ne _ _ _ _ _ _ _ _ hEq
-        (hO ▸ hObjInv) hU).trans (by rw [hO])) hChanged
+        (hO ▸ hObjInv) hU).trans (.of_eq (by rw [hO]))) hChanged
 
 /-- **WS-RR RR7.8**: and the same capstone on the `.call` arm — the same
 transfer, reached through the same resolver, declared in the same two
@@ -965,7 +972,7 @@ theorem endpointCallWithCaps_object_writes_declared
     (hObjInv : st'.objects.invExt)
     (hStep : endpointCallWithCaps endpointId caller payload receiverSlotBase st
       = .ok (summary, st''))
-    (hChanged : st''.objects[oid]? ≠ st'.objects[oid]?) :
+    (hChanged : ¬ SystemState.objectAgreesOffDerivationLinksAt st'' st' oid) :
     (cnodeLock oid, AccessMode.write)
       ∈ (lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId payload).pairs := by
   rw [endpointCallWithCaps_reduces_to_unwrap endpointId caller payload
@@ -976,9 +983,9 @@ theorem endpointCallWithCaps_object_writes_declared
     exact lockSet_endpointCallOnCore_covers_capsDestination st endpointId caller
       cnodeRootObjId payload oid hDest
   · rcases hOr with rfl | hU
-    · exact absurd (by rw [hO]) hChanged
+    · exact absurd (.of_eq (by rw [hO])) hChanged
     · exact absurd ((ipcUnwrapCaps_preserves_objects_ne _ _ _ _ _ _ _ _ hEq
-        (hO ▸ hObjInv) hU).trans (by rw [hO])) hChanged
+        (hO ▸ hObjInv) hU).trans (.of_eq (by rw [hO]))) hChanged
 
 -- ============================================================================
 -- §8 SM6.A.5 — Donation-chain lock-set extension
@@ -1872,7 +1879,7 @@ theorem linkCallerReply_getSchedContext?_eq (st st' : SystemState)
 and the CDT, and no SchedContext.  At the receiver's root a SchedContext already there
 is carried forward (`ipcUnwrapCaps_preserves_schedContext_objects`) and anything else
 either survives or becomes a CNode (`ipcUnwrapCaps_objects_at_root_orig_or_cnode`);
-every other key is untouched. -/
+every other key keeps its object, a CNode's derivation links aside. -/
 theorem ipcUnwrapCaps_getSchedContext?_eq (msg : IpcMessage)
     (receiverRoot : SeLe4n.ObjId) (slotBase : SeLe4n.Slot) (grantRight : Bool)
     (st st' : SystemState) (summary : CapTransferSummary) (scId : SeLe4n.SchedContextId)
@@ -1899,8 +1906,10 @@ theorem ipcUnwrapCaps_getSchedContext?_eq (msg : IpcMessage)
         st st' summary hObjInv hStep with hOrig | ⟨cn', hCn⟩
       · rw [hOrig, hPre]
       · rw [hCn]
-  · rw [ipcUnwrapCaps_preserves_objects_ne msg receiverRoot slotBase grantRight st st' summary
-      scId.toObjId hRoot hObjInv hStep]
+  · rcases ipcUnwrapCaps_preserves_objects_ne msg receiverRoot slotBase grantRight st st' summary
+      scId.toObjId hRoot hObjInv hStep with e | ⟨_, _, ha, hb, _⟩
+    · rw [e]
+    · rw [ha, hb]
 
 /-- `v0.35.161`: waking an already-`.ready` thread writes only TCB run-queue links,
 so it frames every SchedContext resolution — the shape the receive leg's plain-`Send` wake has,

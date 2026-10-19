@@ -696,27 +696,17 @@ theorem lookup_freeze_asidTable (ist : IntermediateState) (k : SeLe4n.ASID) :
 /-- Q6-A: serviceRegistry lookup preserved by freeze. -/
 theorem lookup_freeze_serviceRegistry (ist : IntermediateState) (k : SeLe4n.ServiceId) :
     ist.state.serviceRegistry.get? k = (freeze ist).serviceRegistry.get? k := by
-  exact freezeMap_get?_eq ist.state.serviceRegistry k ist.hAllTables.2.2.2.2.2.2.2.2.1.1
+  exact freezeMap_get?_eq ist.state.serviceRegistry k ist.hAllTables.2.2.2.2.2.2.1.1
 
 /-- Q6-A: interfaceRegistry lookup preserved by freeze. -/
 theorem lookup_freeze_interfaceRegistry (ist : IntermediateState) (k : SeLe4n.InterfaceId) :
     ist.state.interfaceRegistry.get? k = (freeze ist).interfaceRegistry.get? k := by
-  exact freezeMap_get?_eq ist.state.interfaceRegistry k ist.hAllTables.2.2.2.2.2.2.2.1.1
+  exact freezeMap_get?_eq ist.state.interfaceRegistry k ist.hAllTables.2.2.2.2.2.1.1
 
 /-- Q6-A: services lookup preserved by freeze. -/
 theorem lookup_freeze_services (ist : IntermediateState) (k : SeLe4n.ServiceId) :
     ist.state.services.get? k = (freeze ist).services.get? k := by
-  exact freezeMap_get?_eq ist.state.services k ist.hAllTables.2.2.2.2.2.2.1.1
-
-/-- Q6-A: cdtChildMap lookup preserved by freeze. -/
-theorem lookup_freeze_cdtChildMap (ist : IntermediateState) (k : SlotRef) :
-    ist.state.cdt.childMap.get? k = (freeze ist).cdtChildMap.get? k := by
-  exact freezeMap_get?_eq ist.state.cdt.childMap k ist.hAllTables.2.2.2.2.1.1
-
-/-- Q6-A: cdtParentMap lookup preserved by freeze. -/
-theorem lookup_freeze_cdtParentMap (ist : IntermediateState) (k : SlotRef) :
-    ist.state.cdt.parentMap.get? k = (freeze ist).cdtParentMap.get? k := by
-  exact freezeMap_get?_eq ist.state.cdt.parentMap k ist.hAllTables.2.2.2.2.2.1.1
+  exact freezeMap_get?_eq ist.state.services k ist.hAllTables.2.2.2.2.1.1
 
 /-- Q6-A: objectTypes lookup preserved by freeze. -/
 theorem lookup_freeze_objectTypes (ist : IntermediateState) (k : SeLe4n.ObjId) :
@@ -728,7 +718,7 @@ theorem lookup_freeze_objectIndexSet (ist : IntermediateState) (k : SeLe4n.ObjId
     ist.state.objectIndexSet.table.get? k =
       (freeze ist).objectIndexSet.get? k := by
   exact freezeMap_get?_eq ist.state.objectIndexSet.table k
-    ist.hAllTables.2.2.2.2.2.2.2.2.2.1
+    ist.hAllTables.2.2.2.2.2.2.2.1
 
 -- ============================================================================
 -- AK7-B (F-H02 / HIGH): Lookup-equivalence for scheduler runQueue sub-maps
@@ -1326,8 +1316,7 @@ The conjuncts cover every field of `FrozenSystemState`:
 
 - **Map fields (lookup-equivalent via `freezeMap`):** `objects` (with
   `freezeObject`), `irqHandlers`, `asidTable`, `serviceRegistry`,
-  `interfaceRegistry`, `services`, `cdtChildMap`, `cdtParentMap`,
-  `objectTypes`,
+  `interfaceRegistry`, `services`, `objectTypes`,
   `objectIndexSet`, plus scheduler sub-maps
   (`byPriority`, `threadPriority`, `membership`).
 - **Bitwise non-map fields:** `machine`, `objectIndex`, `tlb`,
@@ -1357,11 +1346,6 @@ def apiInvariantBundle_frozenDirectFull (fst : FrozenSystemState) : Prop :=
         sst.interfaceRegistry.get? iid = fst.interfaceRegistry.get? iid) ∧
     (∀ (sid : ServiceId),
         sst.services.get? sid = fst.services.get? sid) ∧
-    -- CDT maps (both indices)
-    (∀ (k : SlotRef),
-        sst.cdt.childMap.get? k = fst.cdtChildMap.get? k) ∧
-    (∀ (k : SlotRef),
-        sst.cdt.parentMap.get? k = fst.cdtParentMap.get? k) ∧
     -- Lifecycle metadata
     (∀ (oid : ObjId),
         sst.lifecycle.objectTypes.get? oid = fst.objectTypes.get? oid) ∧
@@ -1431,17 +1415,15 @@ theorem freeze_preserves_direct_invariants_full (ist : IntermediateState)
     (hInv : SeLe4n.Kernel.apiInvariantBundle ist.state) :
     apiInvariantBundle_frozenDirectFull (freeze ist) := by
   refine ⟨ist.state, hInv,
-    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
     ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
-  -- Map fields (13)
+  -- Map fields (11)
   · exact fun oid => lookup_freeze_objects ist oid
   · exact fun irq => lookup_freeze_irqHandlers ist irq
   · exact fun asid => lookup_freeze_asidTable ist asid
   · exact fun sid => lookup_freeze_serviceRegistry ist sid
   · exact fun iid => lookup_freeze_interfaceRegistry ist iid
   · exact fun sid => lookup_freeze_services ist sid
-  · exact fun k => lookup_freeze_cdtChildMap ist k
-  · exact fun k => lookup_freeze_cdtParentMap ist k
   · exact fun oid => lookup_freeze_objectTypes ist oid
   · exact fun oid => lookup_freeze_objectIndexSet ist oid
   · exact fun p => lookup_freeze_byPriority ist p (hInv.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2 bootCoreId)
@@ -1524,7 +1506,7 @@ are builder-only — they have no frozen counterpart.
 1. Store commutativity: builder insert then freeze ≡ freeze then frozen set
 2. Lookup commutativity: `(freezeMap t).get? k = t.get? k`
 3. Thread store/lookup commutativity: instantiation for objects table
-4. CDT update commutativity: instantiation for cdtChildMap/cdtParentMap
+4. CDT: the edge list is copied unchanged (`freeze_preserves_cdtEdges`)
 5. Composition: sequential value updates commute with freeze
 -/
 
@@ -1650,51 +1632,6 @@ theorem thread_store_preserves_irqHandlers_freeze
   show (freezeMap ist₁.state.irqHandlers).get? k =
        (freezeMap ist₂.state.irqHandlers).get? k
   rw [hIrq]
-
--- ============================================================================
--- Sub-task 4: CDT Update Commutativity
--- ============================================================================
-
-/-- CDT childMap lookup commutativity: looking up a CDT node in the frozen
-childMap yields the same result as looking up in the builder-phase childMap.
-Direct instantiation of `freezeMap_get?_eq`. -/
-theorem cdt_childMap_lookup_commutes (ist : IntermediateState)
-    (nodeId : SlotRef) :
-    ist.state.cdt.childMap.get? nodeId =
-    (freeze ist).cdtChildMap.get? nodeId :=
-  lookup_freeze_cdtChildMap ist nodeId
-
-/-- CDT parentMap lookup commutativity: looking up a CDT node in the frozen
-parentMap yields the same result as looking up in the builder-phase parentMap.
-Direct instantiation of `freezeMap_get?_eq`. -/
-theorem cdt_parentMap_lookup_commutes (ist : IntermediateState)
-    (nodeId : SlotRef) :
-    ist.state.cdt.parentMap.get? nodeId =
-    (freeze ist).cdtParentMap.get? nodeId :=
-  lookup_freeze_cdtParentMap ist nodeId
-
-/-- CDT childMap store commutativity: inserting a children list at an existing
-node, then freezing, produces the same lookup at that node as `some children`.
-Uses the generic `freezeMap_store_commutes_at_key` machinery. -/
-theorem cdt_childMap_store_commutes_at_key
-    (childMap : RHTable SlotRef (List SlotRef))
-    (nodeId : SlotRef) (children : List SlotRef)
-    (hExt : childMap.invExt)
-    (hExists : childMap.get? nodeId ≠ none) :
-    (freezeMap (childMap.insert nodeId children)).get? nodeId =
-    some children :=
-  freezeMap_store_commutes_at_key childMap nodeId children hExt hExists
-
-/-- CDT parentMap store commutativity: inserting a parent at an existing node,
-then freezing, produces the same lookup at that node as `some parent`. -/
-theorem cdt_parentMap_store_commutes_at_key
-    (parentMap : RHTable SlotRef SlotRef)
-    (child parent : SlotRef)
-    (hExt : parentMap.invExt)
-    (hExists : parentMap.get? child ≠ none) :
-    (freezeMap (parentMap.insert child parent)).get? child =
-    some parent :=
-  freezeMap_store_commutes_at_key parentMap child parent hExt hExists
 
 -- ============================================================================
 -- Sub-task 5: Composition Theorem

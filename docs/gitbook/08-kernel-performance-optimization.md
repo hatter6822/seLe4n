@@ -158,7 +158,9 @@ Extended `CapDerivationTree` with `childMap : Std.HashMap CdtNodeId
 (List CdtNodeId)` — a parent-indexed edge index enabling O(1)
 `childrenOf` lookup. `descendantsOf` drops from O(N*E) to O(N+E).
 `childMapConsistent` invariant with `empty`/`addEdge` preservation proofs.
-Closes F-P08, F-P14.
+Closes F-P08, F-P14.  *Superseded at v0.36.106 (WS-ZA ZA5.3 part 4): the
+index maps are gone; each slot holds its derivation links, and children and
+descendants are read along them (see §6 below and the spec).*
 
 ### WS-G9: Information-flow projection optimization (v0.12.14)
 
@@ -178,7 +180,7 @@ Post-completion quality sweep:
 - `MachineConfig.wellFormed` page-size validation via `isPowerOfTwo` (bitwise)
 - Dead code removal (`filterByDomain`)
 - Phantom object cleanup (ID 200 from `bootstrapInvariantObjectIds`)
-- Runtime invariant checks: `runQueueThreadPriorityConsistentB`, `cdtChildMapConsistentCheck`
+- Runtime invariant checks: `runQueueThreadPriorityConsistentB`, `cdtChildMapConsistentCheck` (the latter replaced at v0.36.106 by `cdtLinksAgreeCheck`)
 - `StateBuilder` TCB priority integration for correct RunQueue bucketing
 - `NegativeStateSuite` expansion: `endpointReplyRecv` and `cspaceMutate` coverage
 
@@ -190,7 +192,7 @@ subsystem. All resolved across Phases 2 and 5.
 | Finding | Issue | Resolution | Version |
 |---------|-------|------------|---------|
 | **M-P01** | `cspaceRevokeCdt` double-pass revoke fold | `revokeAndClearRefsState` fused revoke and clear-refs into a single-pass fold (retired at v0.35.78 with the capability-reference table it cleared; the revoke stores the swept CNode once) | v0.16.15 |
-| **M-P02** | CDT parent lookup O(E) edge scan | `parentMap : HashMap CdtNodeId CdtNodeId` index for O(1) `parentOf` | v0.16.15 |
+| **M-P02** | CDT parent lookup O(E) edge scan | `parentMap : HashMap CdtNodeId CdtNodeId` index for O(1) `parentOf` (superseded at v0.36.106 by each slot's parent link) | v0.16.15 |
 | **M-P03** | Reply lemma duplication across preservation proofs | Extracted shared infrastructure; new field preservation lemmas | v0.16.15 |
 | **M-P04** | `descendantsOf` materializes full O(N+E) set upfront | `processRevokeNode` shared step + `streamingRevokeBFS` BFS loop; `cspaceRevokeCdtStreaming` avoids full materialization | v0.16.19–v0.17.0 |
 | **M-P05** | `endpointReply_preserves_capabilityInvariantBundle` duplication | Unified via extracted lemmas from M-P03 | v0.16.15 |
@@ -223,7 +225,7 @@ Preservation is proved in two layers:
 | Endpoint queue append | O(n) list append | O(1) prepend |
 | Notification duplicate check | O(n) list scan | O(1) TCB state |
 | Service reachability | O(n^2) BFS | O(n+e) DFS |
-| CDT children lookup | O(E) edge scan | O(1) childMap |
+| CDT children lookup | O(E) edge scan | O(1) first-child link, then next links (slot links since v0.36.106) |
 | CDT descendant traversal | O(N*E) | O(N+E) |
 | Info-flow observability | O(n) per object | O(1) HashSet |
 | CDT revoke (descendant materialization) | O(N+E) upfront | Streaming BFS (per-level) |
@@ -239,7 +241,7 @@ All theorem/invariant declarations were re-verified after each workstream. Key p
 - **`slotsUnique` triviality** (WS-G5): HashMap key uniqueness replaces explicit proof
 - **`noVirtualOverlap` triviality** (WS-G6): same pattern for VSpace
 - **`notificationWaiterConsistent`** (WS-G7): TCB state ↔ queue membership
-- **`childMapConsistent`** (WS-G8): CDT childMap ↔ edges bidirectional
+- **`cdtLinksAgree`** (WS-ZA ZA5.3 part 4, replacing WS-G8's `childMapConsistent`): the slots' derivation links agree with the tree
 - **`projectStateFast_eq`** (WS-G9): fast ↔ original projection equivalence
 
 ## 7. Files modified
