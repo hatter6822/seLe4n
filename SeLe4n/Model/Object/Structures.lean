@@ -336,6 +336,16 @@ def walkCompleteUnrolled (root : VSpaceRoot) (vaddr : SeLe4n.VAddr) : Bool :=
   simp [walkComplete, walkCompleteUnrolled, translationLevels, slotAt?, slotPresentIn_eq,
     Bool.and_assoc]
 
+/-- WS-ZA ZA5.4: `translationReady` over the unrolled walk, so the map check
+compiled before `walkComplete_eq_unrolled` does not keep the closure form
+(`translationReady_eq_unrolled`). -/
+def translationReadyUnrolled (root : VSpaceRoot) (vaddr : SeLe4n.VAddr) : Bool :=
+  root.tableBase.isSome && walkCompleteUnrolled root vaddr
+
+@[csimp] theorem translationReady_eq_unrolled : @translationReady = @translationReadyUnrolled := by
+  funext root vaddr
+  rw [translationReady, translationReadyUnrolled, walkComplete_eq_unrolled]
+
 /-- WS-ZA ZA5.4: `missingLevel?` unrolled over the three levels; each `some` is a
 constant (`missingLevel?_eq_unrolled`). -/
 def missingLevelUnrolled (root : VSpaceRoot) (vaddr : SeLe4n.VAddr) : Option Nat :=

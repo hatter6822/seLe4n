@@ -71,7 +71,7 @@ def tablePageAt? (st : SystemState) (root : VSpaceRoot) (level index : Nat) :
 /-- WS-ZA ZA5.4: `tablePageAt?` with the slot found by first-order loops
 (`VSpaceRoot.slotPresentIn`, `slotTableIn`), so no predicate closure or slot
 `some` is built (`tablePageAt?_eq_loops`). -/
-def tablePageAtLoops (st : SystemState) (root : VSpaceRoot) (level index : Nat) :
+@[inline] def tablePageAtLoops (st : SystemState) (root : VSpaceRoot) (level index : Nat) :
     Option SeLe4n.PAddr :=
   if level = 0 then root.tableBase
   else if VSpaceRoot.slotPresentIn level index root.tables then
@@ -91,7 +91,7 @@ def tableDescriptorValue (base : SeLe4n.PAddr) : UInt64 :=
   descriptorToUInt64 (.table base)
 
 /-- The hardware attributes of a thread's page (see the module docstring). -/
-def userPageAttributes (perms : PagePermissions) : PageAttributes :=
+@[inline] def userPageAttributes (perms : PagePermissions) : PageAttributes :=
   { attrIndex  := if perms.cacheable then ⟨0, by omega⟩ else ⟨1, by omega⟩
     ap         := if perms.write then (if perms.user && perms.read then .rwAll else .rwEL1)
                   else (if perms.user && perms.read then .roAll else .roEL1)
@@ -109,6 +109,16 @@ def notGlobalBit : UInt64 := (1 : UInt64) <<< 11
 def userPageDescriptorValue (paddr : SeLe4n.PAddr) (perms : PagePermissions) : UInt64 :=
   descriptorToUInt64 (.page paddr (userPageAttributes perms)) ||| notGlobalBit
 
+/-- WS-ZA ZA5.4: the page descriptor's word computed directly — the page arm of
+`descriptorToUInt64` with the attributes encoded in place, so neither the
+descriptor nor its attributes record is built (`userPageDescriptorValue_eq_direct`). -/
+def userPageDescriptorValueDirect (paddr : SeLe4n.PAddr) (perms : PagePermissions) : UInt64 :=
+  (paddr.toNat.toUInt64 &&& outputAddrMask) ||| encodePageAttributes (userPageAttributes perms) |||
+    0b11 ||| notGlobalBit
+
+@[csimp] theorem userPageDescriptorValue_eq_direct :
+    @userPageDescriptorValue = @userPageDescriptorValueDirect := rfl
+
 /-- **The store that makes memory agree with `root`'s mapping at `vaddr`**: the
 level-3 entry the walker reads for `vaddr`, holding the page's descriptor when
 `root` maps `vaddr` and an invalid descriptor when it does not.  `none` when the
@@ -123,6 +133,19 @@ def mappingStore? (st : SystemState) (root : VSpaceRoot) (vaddr : SeLe4n.VAddr) 
        | some (paddr, perms) => userPageDescriptorValue paddr perms
        | none => 0)
 
+/-- WS-ZA ZA5.4: `mappingStore?` inlined into its readers, so the `Option` it
+answers cancels against the reader's match (`mappingStore?_eq_inline`). -/
+@[inline] def mappingStoreInline (st : SystemState) (root : VSpaceRoot) (vaddr : SeLe4n.VAddr) :
+    Option PhysicalWrite :=
+  if root.tableBase.isNone then none
+  else (tablePageAt? st root 3 (PageTableSlot.indexOf 3 vaddr)).map fun l3 =>
+    .storeDescriptor (tableEntryAddress l3 (vaddr.toNat >>> 12))
+      (match root.lookup vaddr with
+       | some (paddr, perms) => userPageDescriptorValue paddr perms
+       | none => 0)
+
+@[csimp] theorem mappingStore?_eq_inline : @mappingStore? = @mappingStoreInline := rfl
+
 /-- **The store that makes memory agree with `root`'s slot `(level, index)`**:
 the entry of the parent table page that names the level-`level` table, holding
 its table descriptor when the slot is present and an invalid descriptor when it
@@ -134,6 +157,18 @@ def slotStore? (st : SystemState) (root : VSpaceRoot) (level index : Nat) :
       (match tablePageAt? st root level index with
        | some base => tableDescriptorValue base
        | none => 0)
+
+/-- WS-ZA ZA5.4: `slotStore?` inlined into its readers, so the `Option` it
+answers cancels against the reader's match (`slotStore?_eq_inline`). -/
+@[inline] def slotStoreInline (st : SystemState) (root : VSpaceRoot) (level index : Nat) :
+    Option PhysicalWrite :=
+  (tablePageAt? st root (level - 1) (index >>> 9)).map fun parent =>
+    .storeTableDescriptor (tableEntryAddress parent index)
+      (match tablePageAt? st root level index with
+       | some base => tableDescriptorValue base
+       | none => 0)
+
+@[csimp] theorem slotStore?_eq_inline : @slotStore? = @slotStoreInline := rfl
 
 /-- **Record physical writes**: append `ws` to the ledger, in order. -/
 def recordPhysicalWrites (st : SystemState) (ws : List PhysicalWrite) : SystemState :=

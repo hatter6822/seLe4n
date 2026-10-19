@@ -161,7 +161,7 @@ def encodeAccessPermission (ap : AccessPermission) : UInt64 :=
     - [52]   Contiguous
     - [53]   PXN
     - [54]   UXN -/
-def encodePageAttributes (attrs : PageAttributes) : UInt64 :=
+@[inline] def encodePageAttributes (attrs : PageAttributes) : UInt64 :=
   let attrIdx : UInt64 := attrs.attrIndex.val.toUInt64 <<< 2
   let ap      : UInt64 := encodeAccessPermission attrs.ap <<< 6
   let sh      : UInt64 := encodeShareability attrs.sh <<< 8

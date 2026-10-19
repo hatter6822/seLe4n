@@ -743,13 +743,12 @@ the write alone.  An arm whose checks refuse, and every arm not yet split, is
       | .ok args =>
         if !vspaceCapAuthorizesAsid cap args.asid st then .error (.illegalAuthority, st)
         else
-          match resolveVSpaceMapFrame tid args st with
-          | .error e => .error (e, st)
-          | .ok (frameSlot, frameCap, frame) =>
-            RefusalCarrying.ofChecked (vspaceMapAdmittedAt st args frameCap frame rootId)
-              (fun st => vspaceMapPerformAt executingCore args.asid args.vaddr frame.base
-                args.perms rootId (frameCapObjId frameCap) frameSlot.cnode frameSlot.slot st)
-              (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
+          resolveVSpaceMapFrameK tid args st (fun e => .error (e, st))
+            (fun frameCnode frameSlot frameCap frame =>
+              RefusalCarrying.ofChecked (vspaceMapAdmittedAt st args frameCap frame rootId)
+                (fun st => vspaceMapPerformAt executingCore args.asid args.vaddr frame.base
+                  args.perms rootId (frameCapObjId frameCap) frameCnode frameSlot st)
+                (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st)
     | _ => .error (.invalidCapability, st)
   | .vspaceUnmap =>
     match cap.target with
@@ -781,12 +780,11 @@ the write alone.  An arm whose checks refuse, and every arm not yet split, is
       match decodePageTableMapArgsBy (msgRegOfFile layout regs) with
       | .error e => .error (e, st)
       | .ok args =>
-        match resolveCallerCapObject tid args.vspaceRoot .write st with
-        | .error e => .error (e, st)
-        | .ok (_, rootId) =>
-          RefusalCarrying.ofChecked (pageTableMapAdmittedAt st objId rootId args.vaddr)
-            (fun st => pageTableMapPerformAt objId rootId args.vaddr st)
-            (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
+        resolveCallerCapObjectK tid args.vspaceRoot .write st (fun e => .error (e, st))
+          (fun _ rootId =>
+            RefusalCarrying.ofChecked (pageTableMapAdmittedAt st objId rootId args.vaddr)
+              (fun st => pageTableMapPerformAt objId rootId args.vaddr st)
+              (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st)
     | _ => .error (.invalidCapability, st)
   | .pageTableUnmap =>
     match cap.target with
@@ -1179,6 +1177,7 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
         split
         · next hAu => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hAu]
         · next hAu =>
+          rw [resolveVSpaceMapFrameK_eq]
           cases hRs : resolveVSpaceMapFrame tid args st with
           | error e =>
             simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hAu, vspaceMapFromFrameCap,
@@ -1233,6 +1232,7 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
       | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD]
       | ok args =>
         dsimp only
+        rw [resolveCallerCapObjectK_eq]
         cases hRs : resolveCallerCapObject tid args.vspaceRoot .write st with
         | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hRs]
         | ok pr =>

@@ -1918,6 +1918,73 @@ theorem resolveSetSpaceK_eq {α : Type} (callerTid : SeLe4n.ThreadId)
           · simp only [hV, Bool.false_eq_true, ↓reduceIte]
     · simp only [hW, Bool.not_false, ↓reduceIte]
 
+/-- WS-ZA ZA5.4: `resolveVSpaceMapFrame` in continuation form: the frame
+capability's slot is resolved once, through `resolveCapAddressKUnrolled`, and
+handed on as its CNode and slot, so no gate, slot reference, capability pair or
+result triple is built (`resolveVSpaceMapFrameK_eq`). -/
+@[inline] def resolveVSpaceMapFrameK {α : Type} (callerTid : SeLe4n.ThreadId)
+    (args : VSpaceMapArgs) (st : SystemState) (onErr : KernelError → α)
+    (onOk : SeLe4n.ObjId → SeLe4n.Slot → Capability → FrameObject → α) : α :=
+  match st.getTcb? callerTid with
+  | none => onErr .objectNotFound
+  | some callerTcb =>
+    match st.getCNode? callerTcb.cspaceRoot with
+    | none => onErr .invalidCapability
+    | some rootCn =>
+      resolveCapAddressKUnrolled callerTcb.cspaceRoot args.frame rootCn.depth st onErr
+        (fun cnode slot =>
+          match SystemState.lookupSlotCap st { cnode := cnode, slot := slot } with
+          | none => onErr .invalidCapability
+          | some cap =>
+            if SeLe4n.Kernel.capTargetsReservedIdleObject cap then onErr .invalidCapability
+            else if cap.hasRight .read then
+              match cap.target with
+              | .object frameObjId =>
+                match st.getFrame? frameObjId with
+                | none => onErr .invalidCapability
+                | some frame => onOk cnode slot cap frame
+              | _ => onErr .invalidCapability
+            else onErr .illegalAuthority)
+
+theorem resolveVSpaceMapFrameK_eq {α : Type} (callerTid : SeLe4n.ThreadId)
+    (args : VSpaceMapArgs) (st : SystemState) (onErr : KernelError → α)
+    (onOk : SeLe4n.ObjId → SeLe4n.Slot → Capability → FrameObject → α) :
+    resolveVSpaceMapFrameK callerTid args st onErr onOk =
+      match resolveVSpaceMapFrame callerTid args st with
+      | .error e => onErr e
+      | .ok (frameSlot, frameCap, frame) => onOk frameSlot.cnode frameSlot.slot frameCap frame := by
+  unfold resolveVSpaceMapFrameK resolveVSpaceMapFrame
+  cases st.getTcb? callerTid with
+  | none => rfl
+  | some callerTcb =>
+    simp only []
+    cases st.getCNode? callerTcb.cspaceRoot with
+    | none => rfl
+    | some rootCn =>
+      simp only [syscallLookupCap, syscallResolveCap]
+      rw [resolveCapAddressKUnrolled_eq, resolveCapAddressK_eq]
+      cases hRes : resolveCapAddress callerTcb.cspaceRoot args.frame rootCn.depth st with
+      | error e => rfl
+      | ok ref =>
+        obtain ⟨cnode, slot⟩ := ref
+        simp only []
+        cases SystemState.lookupSlotCap st { cnode := cnode, slot := slot } with
+        | none => rfl
+        | some cap =>
+          simp only []
+          by_cases hIdle : SeLe4n.Kernel.capTargetsReservedIdleObject cap = true
+          · simp only [hIdle, ↓reduceIte]
+          · by_cases hR : cap.hasRight .read = true
+            · simp only [hIdle, hR, Bool.false_eq_true, ↓reduceIte]
+              cases cap.target with
+              | object fid =>
+                simp only []
+                cases st.getFrame? fid with
+                | none => rfl
+                | some frame => simp only [hRes]
+              | _ => rfl
+            · simp only [hIdle, hR, Bool.false_eq_true, ↓reduceIte]
+
 /-- **The authority fact the `.tcbSetSpace` arm rests on**: the CSpace root it
 installs is a CNode the caller holds a capability to with `.grant` and `.write`,
 and the VSpace root one it holds a capability to with `.write`. -/
