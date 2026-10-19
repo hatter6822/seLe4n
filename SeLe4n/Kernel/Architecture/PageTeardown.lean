@@ -34,12 +34,13 @@ own: the check compares the physical page, as seL4's `unmapPage` compares the
 PTE's frame address before it clears it.  The same check makes a repeated entry
 harmless, which two records of one mapping would otherwise make fatal.
 
-## The result is checked, not trusted
+## The result is a theorem
 
-`livePagesCleared` decides afterwards that no listed page is still live.  Every
-step only removes translations, so it cannot fail on a well-formed state; the
-callers refuse (`.illegalState`) if it ever does rather than claim a teardown
-that did not happen, and their payoff theorems are read off the check.
+The pass never refuses (`unmapLivePages_eq_ok_state`), and on a well-formed
+state — every mapping table well formed, every root resolved by its own ASID
+(`teardownWellFormed`) — no listed page is live after it
+(`unmapLivePagesState_clears`, in `PageTeardownClears`).  Before `v0.36.110`
+the callers decided that result afterwards and refused if it failed.
 -/
 
 namespace SeLe4n.Kernel
@@ -195,18 +196,116 @@ def unmapLivePages (executingCore : Concurrency.CoreId) :
         | .ok ((), st1) => unmapLivePages executingCore rest st1
       else unmapLivePages executingCore rest st
 
-/-- **No listed page is live** — the teardown's result, decided. -/
-def livePagesCleared (st : SystemState) (pages : List MappedPage) : Bool :=
-  pages.all fun p => !mappedPageLive st p
+/-- **The state a store leaves.**  `storeObject` never refuses
+(`storeObject_isOk`), so a step that cannot fail reads its state off it. -/
+@[inline] def storeObjectState (id : SeLe4n.ObjId) (obj : KernelObject) (st : SystemState) :
+    SystemState :=
+  match storeObject id obj st with
+  | .ok ((), st') => st'
+  | .error _ => st
 
-/-- The decided result, as a proposition about every listed page. -/
-theorem livePagesCleared_spec {st : SystemState} {pages : List MappedPage}
-    (h : livePagesCleared st pages = true) :
-    ∀ p ∈ pages, mappedPageLive st p = false := by
-  intro p hp
-  unfold livePagesCleared at h
-  have := List.all_eq_true.mp h p hp
-  simpa using this
+theorem storeObject_eq_storeObjectState (id : SeLe4n.ObjId) (obj : KernelObject)
+    (st : SystemState) : storeObject id obj st = .ok ((), storeObjectState id obj st) := rfl
+
+/-- WS-ZA ZA5.3: **one page's unmap, as a step that cannot fail.**  The ASID's
+root and the root without the page are read before any write; when either is
+missing the page is not mapped and the state is left as it is.  Otherwise it is
+`vspaceUnmapPageWithShootdownAndIcacheBroadcast` written out: the root stored
+without the page, the local flush, the shootdown round, the initiator's drain,
+and the instruction-cache broadcast the mapping owes
+(`vspaceUnmap_eq_unmapPageState`). -/
+def unmapPageState (executingCore : Concurrency.CoreId) (asid : SeLe4n.ASID)
+    (vaddr : SeLe4n.VAddr) (st : SystemState) : SystemState :=
+  match Architecture.resolveAsidRoot st asid with
+  | none => st
+  | some (rootId, root) =>
+    match root.unmapPage vaddr with
+    | none => st
+    | some root' =>
+      let op? := Architecture.unmapIcacheOperand st asid vaddr
+      let st1 := storeObjectState rootId (.vspaceRoot root')
+        (Architecture.recordPhysicalWrites st (Architecture.mappingStore? st root' vaddr).toList)
+      let inv := Architecture.encodePageInvalidation asid vaddr
+      let st2 := Architecture.drainInitiatorPerCoreView
+        (Architecture.tlbShootdownBroadcastCoalescing
+          { st1 with tlb := adapterFlushTlbByVAddr st1.tlb asid vaddr } executingCore
+          (Architecture.shootdownTargets executingCore) inv) executingCore [inv]
+      match op? with
+      | none => st2
+      | some op =>
+        Architecture.recordIcacheMaintenance
+          (Architecture.icInvalidateBroadcast st2 Architecture.icBroadcastReach op) op
+
+/-- The unmap the teardown runs succeeds as `unmapPageState` wherever the ASID
+resolves and its root maps the address. -/
+theorem vspaceUnmap_eq_unmapPageState (ec : Concurrency.CoreId) (asid : SeLe4n.ASID)
+    (vaddr : SeLe4n.VAddr) (st : SystemState) (rootId : SeLe4n.ObjId) (root root' : VSpaceRoot)
+    (hR : Architecture.resolveAsidRoot st asid = some (rootId, root))
+    (hU : root.unmapPage vaddr = some root') :
+    Architecture.vspaceUnmapPageWithShootdownAndIcacheBroadcast ec asid vaddr st =
+      .ok ((), unmapPageState ec asid vaddr st) := by
+  unfold Architecture.vspaceUnmapPageWithShootdownAndIcacheBroadcast
+    Architecture.withIcacheBroadcast Architecture.vspaceUnmapPageWithShootdownPerCore
+    Architecture.vspaceUnmapPageWithShootdown Architecture.vspaceUnmapPageWithFlush
+    Architecture.vspaceUnmapPage Architecture.withShootdownRound unmapPageState
+  rw [hR]
+  simp only [hU, storeObject_eq_storeObjectState]
+  cases Architecture.unmapIcacheOperand st asid vaddr <;> rfl
+
+/-- **Is the page mapped?**  A live page's ASID resolves and its root maps the
+address, so its unmap succeeds. -/
+theorem mappedPageLive_unmapPage {st : SystemState} {p : MappedPage}
+    (h : mappedPageLive st p = true) :
+    ∃ rootId root root', Architecture.resolveAsidRoot st p.asid = some (rootId, root) ∧
+      root.unmapPage p.vaddr = some root' := by
+  unfold mappedPageLive at h
+  cases hR : Architecture.resolveAsidRoot st p.asid with
+  | none => rw [hR] at h; cases h
+  | some pr =>
+    obtain ⟨rootId, root⟩ := pr
+    rw [hR] at h
+    simp only at h
+    cases hL : root.mappings[p.vaddr]? with
+    | none =>
+      have hN : root.lookup p.vaddr = none := hL
+      rw [hN] at h
+      simp at h
+    | some e =>
+      exact ⟨rootId, root, { root with mappings := root.mappings.erase p.vaddr }, rfl,
+        by simp [VSpaceRoot.unmapPage, hL]⟩
+
+/-- WS-ZA ZA5.3: **the teardown, as a step that cannot fail**: each listed page
+still live is unmapped (`unmapPageState`), in order; the compiled
+`unmapLivePages` (`unmapLivePages_eq_impl`). -/
+def unmapLivePagesState (executingCore : Concurrency.CoreId) :
+    List MappedPage → SystemState → SystemState
+  | [], st => st
+  | p :: rest, st =>
+      if mappedPageLive st p then
+        unmapLivePagesState executingCore rest (unmapPageState executingCore p.asid p.vaddr st)
+      else unmapLivePagesState executingCore rest st
+
+theorem unmapLivePages_eq_ok_state (ec : Concurrency.CoreId) :
+    ∀ (ps : List MappedPage) (st : SystemState),
+      unmapLivePages ec ps st = .ok ((), unmapLivePagesState ec ps st)
+  | [], _ => rfl
+  | p :: rest, st => by
+    unfold unmapLivePages unmapLivePagesState
+    split
+    · next hL =>
+      obtain ⟨rootId, root, root', hR, hU⟩ := mappedPageLive_unmapPage hL
+      rw [vspaceUnmap_eq_unmapPageState ec p.asid p.vaddr st rootId root root' hR hU]
+      exact unmapLivePages_eq_ok_state ec rest _
+    · exact unmapLivePages_eq_ok_state ec rest st
+
+/-- The teardown never refuses: compiled, it is `unmapLivePagesState`. -/
+@[inline] def unmapLivePagesImpl (executingCore : Concurrency.CoreId) (ps : List MappedPage) :
+    Kernel Unit :=
+  fun st => .ok ((), unmapLivePagesState executingCore ps st)
+
+@[csimp] theorem unmapLivePages_eq_impl : @unmapLivePages = @unmapLivePagesImpl := by
+  funext ec ps st
+  exact unmapLivePages_eq_ok_state ec ps st
 
 -- ============================================================================
 -- §2  Frames: what a teardown can change

@@ -1,3 +1,42 @@
+## v0.36.110 — WS-ZA ZA5.3 part 7: the teardown decides nothing afterwards
+
+A delete of a frame or page-table capability now runs through the checked
+path like every other delete: the teardown's results are theorems on a
+well-formed state, not checks that refuse after the writes (Adam's pick on the
+thread's card, "VSpace bundle").
+
+- **Steps that cannot refuse**: the table detach and the unmap pass are total
+  (`detachPageTablesState`, `unmapLivePagesState`, `unmapPageState`), each the
+  `@[csimp]` form of its specification (`detachPageTables_eq_impl`,
+  `unmapLivePages_eq_impl`), and so is the finalisation
+  (`finaliseDestroyedCapabilities_eq_ok_state`).
+- **Mapping tables in the VSpace bundle**: `vspaceMappingsWellFormed` (every
+  root's mapping table satisfies `RHTable.invExtK`) is the bundle's eighth
+  conjunct, kept by map and unmap and established at boot, whose root check
+  gains the table's room (`VSpaceRootTableRoom`).
+- **The results, proven** (`PageTeardownClears.lean`): on a state whose object
+  table, ASID table and bundle hold (`teardownWellFormed`), the unmap pass
+  leaves no listed page live (`unmapLivePagesState_clears`) and the detach and
+  pass take every orphaned table out (`pageTablesDetached_of_teardown`); the
+  delete, the revocation and the finalisation keep the premise
+  (`cspaceDeleteSlotFinalising_preserves_teardownWellFormed`,
+  `cspaceRevokeCdt_preserves_teardownWellFormed`).  `finaliseFramePages`,
+  `livePagesCleared` and the `.illegalState` refusals after the writes are
+  deleted; the payoffs take `teardownWellFormed`.  Carrying it across every
+  transition is a new `docs/REGISTERED_DEBT.md` table C row, owned by ZA5.4.
+- **Every delete on the checked path**: admitted when its CNode exists
+  (`cspaceDeleteFinalisingAdmitted`), performed by
+  `cspaceDeleteFinalisingPerformAt` — the plain write and splice for a
+  capability that finalises nothing, else the out-of-line teardown
+  (`cspaceDeleteTeardownAt`) — proven equal to the finalising delete
+  (`cspaceDeleteSlotFinalising_of_cnode`).
+- **Readings** (normal build, first call and steady state): frame delete 6
+  (27 before), page-table deletes 3 each (21), untyped reset 151 (153); every
+  other reading unchanged, the plain delete and reply-cap delete still 0.  The
+  exerciser pins move with them.
+- **Plan**: row ZA5.3 records part 7 and adds part 8, the revoke over
+  finalising capabilities as seL4's `cteRevoke` loop.
+
 ## v0.36.109 — WS-ZA ZA5.3 part 6: each slot owns its capability record
 
 Every capability operation (copy, move, delete, mint, revoke, reply-cap delete

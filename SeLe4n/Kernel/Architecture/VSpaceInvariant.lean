@@ -156,11 +156,21 @@ def vspaceCrossAsidIsolation (st : SystemState) : Prop :=
     oidA ≠ oidB →
     rootA.asid ≠ rootB.asid
 
+/-- WS-ZA ZA5.3: **every address space's mapping table is well formed** — the
+Robin Hood table invariant with room to spare (`RHTable.invExtK`), so a lookup
+after an erase or an insert reads what the step wrote and every other address as
+it was.  What lets the finalising teardown's results be theorems rather than
+checks: an unmap removes exactly its page (`finaliseDestroyedCapabilities`). -/
+def vspaceMappingsWellFormed (st : SystemState) : Prop :=
+  ∀ (oid : SeLe4n.ObjId) (root : VSpaceRoot),
+    st.objects[oid]? = some (.vspaceRoot root) → root.mappings.invExtK
+
 /-- WS-B1/WS-G3/WS-H11/WS-F6 architecture/VSpace invariant bundle entrypoint.
 
 WS-H11: Enriched with `wxExclusiveInvariant` and `boundedAddressTranslation`.
 WS-F6/D6: Extended from 5-tuple to 6-tuple with `vspaceCrossAsidIsolation`.
-U2-C: Extended to 7-tuple with `canonicalAddressInvariant`. -/
+U2-C: Extended to 7-tuple with `canonicalAddressInvariant`.
+WS-ZA ZA5.3: extended to 8 with `vspaceMappingsWellFormed`. -/
 def vspaceInvariantBundle (st : SystemState) (bound : Nat := 2^52) : Prop :=
   vspaceAsidRootsUnique st ∧
   vspaceRootNonOverlap st ∧
@@ -168,7 +178,8 @@ def vspaceInvariantBundle (st : SystemState) (bound : Nat := 2^52) : Prop :=
   wxExclusiveInvariant st ∧
   boundedAddressTranslation st bound ∧
   vspaceCrossAsidIsolation st ∧
-  canonicalAddressInvariant st
+  canonicalAddressInvariant st ∧
+  vspaceMappingsWellFormed st
 
 -- ============================================================================
 -- WS-G3: Shared asidTableConsistent preservation helper
@@ -383,8 +394,9 @@ theorem vspaceMapPage_success_preserves_vspaceInvariantBundle
                 | some (.vspaceRoot oldRoot) => st.asidTable.erase oldRoot.asid
                 | _ => st.asidTable).invExt := by
               simp only [hObjRoot]; exact hAsidInv rootId root hObjRoot
-            rcases hInv with ⟨hUniq, hNoOverlap, hConsist, hWxInv, hBoundInv, hCrossAsid, hCanonicalInv⟩
-            refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+            rcases hInv with ⟨hUniq, hNoOverlap, hConsist, hWxInv, hBoundInv, hCrossAsid, hCanonicalInv,
+              hMapWF⟩
+            refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
             -- 1. vspaceAsidRootsUnique st'
             · intro oid₁ oid₂ r₁ r₂ hObj₁ hObj₂ hAsidEq
               by_cases h₁ : oid₁ = rootId <;> by_cases h₂ : oid₂ = rootId
@@ -495,6 +507,15 @@ theorem vspaceMapPage_success_preserves_vspaceInvariantBundle
                   exact hCanonicalInv _ root v p pm hObjRoot hMap
               · rw [hObjNe oid hEq] at hObjR
                 exact hCanonicalInv oid r v p pm hObjR hMap
+            -- 8. vspaceMappingsWellFormed st' (an insert keeps the table invariant)
+            · intro oid r hObjR
+              have hInsert := VSpaceRoot.mapPage_mappings_insert root root' vaddr paddr perms hMapRoot
+              by_cases hEq : oid = rootId
+              · subst hEq; rw [hObjEq] at hObjR; cases hObjR
+                rw [hInsert]
+                exact SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExtK _ _ _ (hMapWF _ root hObjRoot)
+              · rw [hObjNe oid hEq] at hObjR
+                exact hMapWF oid r hObjR
       · have hWxF : perms.wxCompliant = false := by
           cases h : perms.wxCompliant <;> simp_all
         simp [hWxF] at hStep
@@ -536,8 +557,9 @@ theorem vspaceUnmapPage_success_preserves_vspaceInvariantBundle
               | some (.vspaceRoot oldRoot) => st.asidTable.erase oldRoot.asid
               | _ => st.asidTable).invExt := by
             simp only [hObjRoot]; exact hAsidInv rootId root hObjRoot
-          rcases hInv with ⟨hUniq, hNoOverlap, hConsist, hWxInv, hBoundInv, hCrossAsid, hCanonicalInv⟩
-          refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+          rcases hInv with ⟨hUniq, hNoOverlap, hConsist, hWxInv, hBoundInv, hCrossAsid, hCanonicalInv,
+            hMapWF⟩
+          refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
           -- 1. vspaceAsidRootsUnique st'
           · intro oid₁ oid₂ r₁ r₂ hObj₁ hObj₂ hAsidEq
             by_cases h₁ : oid₁ = rootId <;> by_cases h₂ : oid₂ = rootId
@@ -624,6 +646,114 @@ theorem vspaceUnmapPage_success_preserves_vspaceInvariantBundle
               exact hCanonicalInv _ root v p pm hObjRoot hRootMap
             · rw [hObjNe oid hEq] at hObjR
               exact hCanonicalInv oid r v p pm hObjR hMap
+          -- 8. vspaceMappingsWellFormed st' (an erase keeps the table invariant)
+          · intro oid r hObjR
+            have hErase := VSpaceRoot.unmapPage_mappings_erase root root' vaddr hUnmapRoot
+            by_cases hEq : oid = rootId
+            · subst hEq; rw [hObjEq] at hObjR; cases hObjR
+              rw [hErase]
+              exact SeLe4n.Kernel.RobinHood.RHTable.erase_preserves_invExtK _ _ (hMapWF _ root hObjRoot)
+            · rw [hObjNe oid hEq] at hObjR
+              exact hMapWF oid r hObjR
+
+-- ============================================================================
+-- WS-ZA ZA5.3: storing a root that only lost entries
+-- ============================================================================
+
+/-- **An unmapped root's entries were the root's**: every address the root
+without `vaddr` maps, the root mapped to the same entry. -/
+theorem VSpaceRoot.unmapPage_mappings_sub (root root' : VSpaceRoot) (vaddr : SeLe4n.VAddr)
+    (hK : root.mappings.invExtK) (hUnmap : root.unmapPage vaddr = some root') :
+    ∀ (v : SeLe4n.VAddr) (e : SeLe4n.PAddr × PagePermissions),
+      root'.mappings[v]? = some e → root.mappings[v]? = some e := by
+  intro v e hMap
+  rw [VSpaceRoot.unmapPage_mappings_erase root root' vaddr hUnmap] at hMap
+  exact RHTable_lookup_of_erase_lookup root.mappings vaddr v e.1 e.2 hK hMap
+
+/-- **The root without `vaddr` has a well-formed table.** -/
+theorem VSpaceRoot.unmapPage_mappings_invExtK (root root' : VSpaceRoot) (vaddr : SeLe4n.VAddr)
+    (hK : root.mappings.invExtK) (hUnmap : root.unmapPage vaddr = some root') :
+    root'.mappings.invExtK := by
+  rw [VSpaceRoot.unmapPage_mappings_erase root root' vaddr hUnmap]
+  exact SeLe4n.Kernel.RobinHood.RHTable.erase_preserves_invExtK _ _ hK
+
+/-- WS-ZA ZA5.3: **storing a root that only lost entries keeps the VSpace
+bundle** — the finalising teardown's one shape of write.  The root keeps its
+ASID, maps no address the old root did not map to the same entry, and its table
+is well formed; the ASID table stays well formed with it. -/
+theorem storeObject_shrunkRoot_preserves_vspaceInvariantBundle
+    (st st' : SystemState) (rootId : SeLe4n.ObjId) (root root' : VSpaceRoot)
+    (hInv : vspaceInvariantBundle st) (hObjInv : st.objects.invExt)
+    (hAsidK : st.asidTable.invExtK)
+    (hObjRoot : st.objects[rootId]? = some (.vspaceRoot root))
+    (hAsid : root'.asid = root.asid)
+    (hSub : ∀ (v : SeLe4n.VAddr) (e : SeLe4n.PAddr × PagePermissions),
+      root'.mappings[v]? = some e → root.mappings[v]? = some e)
+    (hWF : root'.mappings.invExtK)
+    (hStore : storeObject rootId (.vspaceRoot root') st = .ok ((), st')) :
+    vspaceInvariantBundle st' ∧ st'.asidTable.invExtK := by
+  rcases hInv with ⟨hUniq, hNoOverlap, hConsist, hWxInv, hBoundInv, hCrossAsid, hCanonicalInv,
+    hMapWF⟩
+  have hObjEq : st'.objects[rootId]? = some (.vspaceRoot root') :=
+    storeObject_objects_eq st st' rootId _ hObjInv hStore
+  have hObjNe : ∀ oid, oid ≠ rootId → st'.objects[oid]? = st.objects[oid]? :=
+    fun oid h => storeObject_objects_ne st st' rootId oid _ h hObjInv hStore
+  have hAsidTbl : st'.asidTable = (st.asidTable.erase root.asid).insert root'.asid rootId := by
+    unfold storeObject at hStore; cases hStore
+    simp only [hObjRoot]
+  -- every root after the store is the stored one or a root before it
+  have hBack : ∀ (oid : SeLe4n.ObjId) (r : VSpaceRoot), st'.objects[oid]? = some (.vspaceRoot r) →
+      (oid = rootId ∧ r = root') ∨ (oid ≠ rootId ∧ st.objects[oid]? = some (.vspaceRoot r)) := by
+    intro oid r h
+    by_cases hEq : oid = rootId
+    · subst hEq; rw [hObjEq] at h; cases h; exact Or.inl ⟨rfl, rfl⟩
+    · rw [hObjNe oid hEq] at h; exact Or.inr ⟨hEq, h⟩
+  -- a mapping after the store is one before it
+  have hMapBack : ∀ (oid : SeLe4n.ObjId) (r : VSpaceRoot) (v : SeLe4n.VAddr) (e : SeLe4n.PAddr × PagePermissions), st'.objects[oid]? = some (KernelObject.vspaceRoot r) → r.mappings[v]? = some e →
+      ∃ r0 : VSpaceRoot, st.objects[oid]? = some (KernelObject.vspaceRoot r0) ∧ r0.mappings[v]? = some e := by
+    intro oid r v e h hm
+    rcases hBack oid r h with ⟨rfl, rfl⟩ | ⟨_, h0⟩
+    · exact ⟨root, hObjRoot, hSub v e hm⟩
+    · exact ⟨r, h0, hm⟩
+  refine ⟨⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩, ?_⟩
+  · -- 1. one root per ASID
+    intro o₁ o₂ r₁ r₂ h₁ h₂ hEqA
+    rcases hBack o₁ r₁ h₁ with ⟨rfl, rfl⟩ | ⟨hN₁, h₁'⟩ <;>
+      rcases hBack o₂ r₂ h₂ with ⟨rfl, rfl⟩ | ⟨hN₂, h₂'⟩
+    · rfl
+    · exact hUniq _ _ root r₂ hObjRoot h₂' (hAsid ▸ hEqA)
+    · exact hUniq _ _ r₁ root h₁' hObjRoot (hEqA.trans hAsid)
+    · exact hUniq _ _ r₁ r₂ h₁' h₂' hEqA
+  · -- 2. no virtual overlap
+    intro oid r _; exact VSpaceRoot.noVirtualOverlap_trivial r
+  · -- 3. the ASID table agrees with the roots
+    exact asidTableConsistent_of_storeObject_vspaceRoot st st' rootId root root' hStore hObjRoot
+      hObjEq hObjNe hAsid hUniq hConsist
+      (by simp only [hObjRoot]; exact (SeLe4n.Kernel.RobinHood.RHTable.erase_preserves_invExtK _ _ hAsidK).1)
+      hAsidK
+  · intro oid r v p pm h hm
+    obtain ⟨r0, h0, hm0⟩ := hMapBack oid r v (p, pm) h hm
+    exact hWxInv oid r0 v p pm h0 hm0
+  · intro oid r v p pm h hm
+    obtain ⟨r0, h0, hm0⟩ := hMapBack oid r v (p, pm) h hm
+    exact hBoundInv oid r0 v p pm h0 hm0
+  · intro oA oB rA rB hA hB hNe
+    rcases hBack oA rA hA with ⟨rfl, rfl⟩ | ⟨hNA, hA'⟩ <;>
+      rcases hBack oB rB hB with ⟨rfl, rfl⟩ | ⟨hNB, hB'⟩
+    · exact absurd rfl hNe
+    · rw [hAsid]; exact hCrossAsid _ _ root rB hObjRoot hB' hNe
+    · rw [hAsid]; exact hCrossAsid _ _ rA root hA' hObjRoot hNe
+    · exact hCrossAsid _ _ rA rB hA' hB' hNe
+  · intro oid r v p pm h hm
+    obtain ⟨r0, h0, hm0⟩ := hMapBack oid r v (p, pm) h hm
+    exact hCanonicalInv oid r0 v p pm h0 hm0
+  · intro oid r h
+    rcases hBack oid r h with ⟨rfl, rfl⟩ | ⟨_, h0⟩
+    · exact hWF
+    · exact hMapWF oid r h0
+  · rw [hAsidTbl]
+    exact SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExtK _ _ _
+      (SeLe4n.Kernel.RobinHood.RHTable.erase_preserves_invExtK _ _ hAsidK)
 
 -- ============================================================================
 -- TPI-D05 / TPI-001: VSpace round-trip theorems

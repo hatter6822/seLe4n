@@ -1534,15 +1534,6 @@ theorem ipcInvariantFull_of_vspaceRootOnlyWrite {st st' : SystemState}
       hInv.passiveServerIdle)
     hCap hInv
 
-/-- **The page teardown preserves the bundle**, and the store invariant with it. -/
-theorem finaliseFramePages_preserves_ipcInvariantFull
-    (ec : Concurrency.CoreId) (pages : List MappedPage) (st st' : SystemState)
-    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
-    (hStep : finaliseFramePages ec pages st = .ok ((), st')) :
-    ipcInvariantFull st' ∧ st'.objects.invExt := by
-  obtain ⟨hExt, hW, hSched⟩ := finaliseFramePages_ok_frame ec pages st st' hObjInv hStep
-  exact ⟨ipcInvariantFull_of_vspaceRootOnlyWrite hW hSched hInv, hExt⟩
-
 /-- **The whole finalisation preserves the bundle** — the table detach and the
 page teardown are both VSpace-root-only writes. -/
 theorem finaliseDestroyedCapabilities_preserves_ipcInvariantFull

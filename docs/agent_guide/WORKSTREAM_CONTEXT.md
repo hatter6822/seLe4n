@@ -1432,12 +1432,16 @@ capability-creating path strips the record or states why it keeps it.  (3)
 arms run `cspaceDeleteSlotFinalising` / `cspaceRevokeCdtFinalising`, which
 remove every mapping a destroyed capability recorded through the `.vspaceUnmap`
 arm's own transition (`unmapLivePages`, in `Architecture/PageTeardown.lean`,
-shared with the untyped reset) and **decide** the result (`livePagesCleared`,
-`.illegalState` otherwise).  The revocation reports exactly the pages its
+shared with the untyped reset).  Since `v0.36.110` nothing is decided
+afterwards: on a well-formed state (`teardownWellFormed`) no recorded page
+survives and no orphaned table stays in its root, as theorems, and a delete
+whose CNode exists runs through `ofChecked`.  New code that consumes a payoff
+carries `teardownWellFormed`; carrying it across every transition is a
+registered debt row.  The revocation reports exactly the pages its
 traversal destroyed — `cspaceRevokeCdt` returns them, its fold reading each page
 from the slot it deletes (`revokeCdtFoldBody_records`) — and the payoffs are
 `cspaceDeleteSlotFinalising_ok_unmapped` and
-`cspaceRevokeCdtFinalising_ok_unmapped`.  There is **one** revocation traversal:
+`cspaceRevokeCdtFinalising_ok_unmapped`, both on a well-formed state.  There is **one** revocation traversal:
 a first draft added a reporting one beside the state-only one, the reachability
 census reported the state-only one as executed by nothing, and it was deleted
 rather than pinned.  The bare `cspaceDeleteSlot` / `cspaceRevokeCdt` stay as

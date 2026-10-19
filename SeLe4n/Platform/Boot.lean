@@ -5795,16 +5795,20 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
     exact (Option.some.inj t₁).symm
   have hVspaceBundle : Architecture.vspaceInvariantBundle
       ist.state := by
-    refine ⟨hAsidUnique, ?_, hAsidTable, ?_, ?_, ?_, ?_⟩
+    refine ⟨hAsidUnique, ?_, hAsidTable, ?_, ?_, ?_, ?_, ?_⟩
     · intro oid root _; exact VSpaceRoot.noVirtualOverlap_trivial root
     · intro oid root v p perms hObj hMap
-      exact ((hBS oid _ hObj).2.2.2.2.1 root rfl v p perms hMap).1
+      exact ((hBS oid _ hObj).2.2.2.2.1 root rfl).1 v p perms hMap |>.1
     · intro oid root v p perms hObj hMap
-      exact ((hBS oid _ hObj).2.2.2.2.1 root rfl v p perms hMap).2.1
+      exact ((hBS oid _ hObj).2.2.2.2.1 root rfl).1 v p perms hMap |>.2.1
     · intro oidA oidB rootA rootB hA hB hNe hEq
       exact hNe (hAsidUnique oidA oidB rootA rootB hA hB hEq)
     · intro oid root v p perms hObj hMap
-      exact ((hBS oid _ hObj).2.2.2.2.1 root rfl v p perms hMap).2.2
+      exact ((hBS oid _ hObj).2.2.2.2.1 root rfl).1 v p perms hMap |>.2.2
+    · -- every boot root's table carries the table invariant and has room
+      intro oid root hObj
+      obtain ⟨hLt, hCap⟩ := ((hBS oid _ hObj).2.2.2.2.1 root rfl).2
+      exact ⟨ist.hPerObjectMappings oid root hObj, hLt, hCap⟩
   -- 8. crossSubsystemInvariant (Z9-D + AE5-C + AF1-B + AM4-A + AK8-A: 12 predicates)
   have hCrossBundle : crossSubsystemInvariant ist.state := by
     refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩

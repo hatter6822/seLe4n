@@ -107,8 +107,9 @@ theorem simBootVSpaceRoot_bootSafe :
     SeLe4n.Platform.RPi5.VSpaceBoot.VSpaceRootWxCompliant
     SeLe4n.Platform.RPi5.VSpaceBoot.VSpaceRootPaddrBounded
     SeLe4n.Platform.RPi5.VSpaceBoot.VSpaceRootVaddrCanonical
+    SeLe4n.Platform.RPi5.VSpaceBoot.VSpaceRootTableRoom
     simBootVSpaceRoot simBootPerms
-  refine ⟨?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
   · -- asid = 0 ≤ maxAsidValue
     show (0 : Nat) ≤ maxAsidValue
     unfold maxAsidValue; omega
@@ -119,6 +120,8 @@ theorem simBootVSpaceRoot_bootSafe :
   · -- paddr < 2^40 (`bootRootPaddrBound`)
     decide
   · -- vaddr canonical (0x1000 < 2^48)
+    decide
+  · -- one entry in sixteen slots
     decide
 
 /-- **WS-RC R3**: The simulation boot root passes the runtime-decidable
