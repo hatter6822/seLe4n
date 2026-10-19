@@ -215,11 +215,11 @@ theorem cspaceRevokeCdt_runQueueStage {st st' : SystemState} {addr : CSpaceAddr}
     (fun _ _ _ hP hSt => hP.trans (processRevokeNode_runQueueStage hSt))
     st addr _ out (RunQueueStage.refl _) hTrav
 
-theorem finaliseDestroyedCapabilities_runQueueStage {ec : Concurrency.CoreId} {pre : SystemState}
+theorem finaliseDestroyedCapabilities_runQueueStage {ec : Concurrency.CoreId} {named : List SeLe4n.ObjId}
     {pages : List MappedPage} {st st' : SystemState}
-    (h : finaliseDestroyedCapabilities ec pre pages st = .ok ((), st')) : RunQueueStage st st' :=
+    (h : finaliseDestroyedCapabilities ec named pages st = .ok ((), st')) : RunQueueStage st st' :=
   vspaceRootOnlyWrite_runQueueStage fun hInv =>
-    finaliseDestroyedCapabilities_ok_frame ec pre pages st st' hInv h
+    finaliseDestroyedCapabilities_ok_frame ec named pages st st' hInv h
 
 theorem cspaceDeleteSlotFinalising_runQueueStage {ec : Concurrency.CoreId} {addr : CSpaceAddr}
     {st st' : SystemState} (h : cspaceDeleteSlotFinalising ec addr st = .ok ((), st')) :
@@ -229,9 +229,12 @@ theorem cspaceDeleteSlotFinalising_runQueueStage {ec : Concurrency.CoreId} {addr
 
 theorem cspaceRevokeCdtFinalising_runQueueStage {ec : Concurrency.CoreId} {addr : CSpaceAddr}
     {st st' : SystemState} (h : cspaceRevokeCdtFinalising ec addr st = .ok ((), st')) :
-    RunQueueStage st st' := by
-  obtain ⟨pages, st1, hR, hF⟩ := cspaceRevokeCdtFinalising_ok ec addr st st' h
-  exact (cspaceRevokeCdt_runQueueStage hR).trans (finaliseDestroyedCapabilities_runQueueStage hF)
+    RunQueueStage st st' :=
+  cspaceRevokeCdtFinalising_closed (RunQueueStage st)
+    (fun _ _ _ hQ hD => hQ.trans (cspaceDeleteSlotFinalising_runQueueStage hD))
+    (fun _ _ hR hF => (cspaceRevokeCdt_runQueueStage hR).trans
+      (finaliseDestroyedCapabilities_runQueueStage hF))
+    (RunQueueStage.refl st) h
 
 /-- A store whose slot holds no TCB on either side. -/
 theorem storeObject_inert_runQueueStage {st st' : SystemState} {oid : SeLe4n.ObjId}

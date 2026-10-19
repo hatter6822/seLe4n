@@ -4135,8 +4135,8 @@ run_check "INVARIANT" rg -n -U '        else if capabilityMappingLive st frameCa
 run_check "INVARIANT" rg -n -U 'def vspaceMapFromFrameCap[^\n]*(\n([ \t][^\n]*)?)*            cspaceRecordFrameMapping frameSlot\n              \{ asid := args\.asid, vaddr := args\.vaddr, epoch := epoch \} st2' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U '  \| \.cspaceDelete =>\n    some <\| match cap\.target with(\n([ \t][^\n]*)?){0,10}            cspaceDeleteSlotFinalising executingCore addr st' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U '  \| \.cspaceRevoke =>\n    some <\| match cap\.target with(\n([ \t][^\n]*)?){0,8}            cspaceRevokeCdtFinalising executingCore addr st' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n -U 'def cspaceDeleteSlotFinalising[^\n]*\n[^\n]*\n  fun st =>\n    match cspaceDeleteSlot addr st with\n    \| \.error e => \.error e\n    \| \.ok \(\(\), st1\) =>\n      finaliseDestroyedCapabilities executingCore st \(slotMappedPages st addr\) st1' SeLe4n/Kernel/Capability/FrameFinalise.lean
-run_check "INVARIANT" rg -n -U 'def cspaceRevokeCdtFinalising[^\n]*\n[^\n]*\n  fun st =>\n    match cspaceRevokeCdt addr st with\n    \| \.error e => \.error e\n    \| \.ok \(pages, st1\) => finaliseDestroyedCapabilities executingCore st pages st1' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n -U 'def cspaceDeleteSlotFinalising[^\n]*\n[^\n]*\n  fun st =>\n    cspaceDeleteThenFinalise executingCore \(slotPageTables st addr\)\n      \(slotMappedPages st addr\) addr st' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n -U 'def cspaceRevokeCdtFinalising[^\n]*\n[^\n]*\n  fun st =>\n    if cspaceRevokeAdmitted addr st then \.ok \(\(\), cspaceRevokePerform addr st\)\n    else cspaceRevokeThenFinalise executingCore \(revokedPageTables st addr\) addr st' SeLe4n/Kernel/Capability/FrameFinalise.lean
 # One revocation: the materialized fold REPORTS the page each destroyed
 # capability recorded, read from the slot it deletes, and there is no second
 # state-only fold beside it (the collecting duplicate was deleted, not pinned).
@@ -4234,14 +4234,20 @@ run_check "INVARIANT" rg -n 'runPageTableChecks$' tests/VSpaceCapabilityBindingS
 run_check "INVARIANT" rg -n 'so resetting the child alone is refused \(revocationRequired\)' tests/VSpaceCapabilityBindingSuite.lean
 # WS-BP BP7.1 (v0.36.12): destroying a table's LAST capability takes it out of
 # its address space (seL4's finaliseCap -> unmapPageTable).  Both destroying
-# arms run the one finalisation; the orphan set is "named before, named by none
-# after"; the root is the truth, so every reader asks the live question and the
+# arms run the one finalisation; the orphan set is "named by a destroyed
+# capability, read before the step, and named by no slot after"; the root is the truth, so every reader asks the live question and the
 # record-only reading must not come back.
-run_check "INVARIANT" rg -n -U 'def cspaceDeleteSlotFinalising [^\n]*(\n([ \t][^\n]*)?)*      finaliseDestroyedCapabilities executingCore st \(slotMappedPages st addr\) st1' SeLe4n/Kernel/Capability/FrameFinalise.lean
-run_check "INVARIANT" rg -n '^    \| \.ok \(pages, st1\) => finaliseDestroyedCapabilities executingCore st pages st1$' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n -U 'def cspaceDeleteThenFinalise [^\n]*(\n([ \t][^\n]*)?)*    \| \.ok \(\(\), st1\) => finaliseDestroyedCapabilities executingCore named pages st1' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n '^    \| \.ok \(pages, st1\) => finaliseDestroyedCapabilities executingCore named pages st1$' SeLe4n/Kernel/Capability/FrameFinalise.lean
 # v0.36.38: a table's final capability is decided on CNode slots — a copy parked
 # in a message can be dropped by a cancellation that finalises nothing.
-run_check "INVARIANT" rg -n -U 'def pageTablesOrphaned [^\n]*(\n([ \t][^\n]*)?)*        if Architecture\.pageTableInstallLive st id && !cnodeSlotsUnreferenced pre \[id\] &&\n            cnodeSlotsUnreferenced st \[id\] then \(id, inst\) :: acc' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n -U 'def pageTablesOrphaned [^\n]*(\n([ \t][^\n]*)?)*          if Architecture\.pageTableInstallLive st id && cnodeSlotsUnreferenced st \[id\] then\n            \(id, inst\) :: acc' SeLe4n/Kernel/Capability/FrameFinalise.lean
+# v0.36.107: a delete or revoke that finalises nothing is decided before any
+# write and performed in place; the revoke is seL4's first-child loop.
+run_check "INVARIANT" rg -n -U '        RefusalCarrying\.ofChecked \(cspaceDeleteAdmitted addr st\)\n          \(fun st => cspaceDeletePerform addr st\)' SeLe4n/Kernel/RefusalCarryingInvocation.lean
+run_check "INVARIANT" rg -n -U '        RefusalCarrying\.ofChecked \(cspaceRevokeAdmitted addr st\)\n          \(fun st => cspaceRevokePerform addr st\)' SeLe4n/Kernel/RefusalCarryingInvocation.lean
+run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlotFinalising_of_admitted($|[ ({:\[\]])' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdtFinalising_closed($|[ ({:\[\]])' SeLe4n/Kernel/Capability/FrameFinalise.lean
 run_check "INVARIANT" rg -n -U 'def cnodeSlotsUnreferenced [^\n]*(\n([ \t][^\n]*)?)*      \| \.cnode cn => objectNamesListed ids \(\.cnode cn\)\n      \| _ => false\)\)' SeLe4n/Kernel/Architecture/PageTeardown.lean
 run_check "INVARIANT" rg -n 'RETIRED: the all-references reading does not count it orphaned, the live one does' tests/VSpaceCapabilityBindingSuite.lean
 # v0.36.38: a frozen mint inserts a capability with no mapping record, and the

@@ -1,3 +1,40 @@
+## v0.36.107 — WS-ZA ZA5.3 part 4: delete and revoke check, then perform
+
+A delete or revoke that finalises nothing is now decided before any write and
+performed in place, as seL4's decode/perform split; a revoke is seL4's
+`cteRevoke` loop.
+
+- **Teardown candidates from the destroyed capability**: the page tables a
+  destroying step may orphan are read off the capabilities it destroys, before
+  the step (`slotPageTables`, `revokedPageTables`), as seL4's `finaliseCap`.
+  `pageTablesOrphaned` and `finaliseDestroyedCapabilities` take that list where
+  they took a copy of the state before the step, so no step compares the state
+  after it with the state before.
+- **Plain delete**: `cspaceDeleteAdmitted` (the CNode exists; the slot is empty
+  or its capability records no mapping and names no page table) admits
+  `cspaceDeletePerform`, the slot write and splice, proven equal to the
+  finalising delete (`cspaceDeleteSlotFinalising_of_admitted`).
+- **Plain revoke**: `cspaceRevokeAdmitted` walks the source's subtree over the
+  slot links without a stack (`linkSubtreeDeletable`); when admitted,
+  `cspaceRevokePerform` deletes the source's first child until it has none
+  (`revokeFirstChildLoop`).  `cspaceRevokeCdtFinalising` is that loop when
+  admitted and the general path otherwise; `cspaceRevokeCdtFinalising_closed`
+  carries any property the finalising deletes keep.
+- **Dispatch**: the `.cspaceDelete` and `.cspaceRevoke` arms of
+  `dispatchInvocationByR` run the admitted steps through
+  `RefusalCarrying.ofChecked`, so the store is written in place.
+- **Readings** (normal build, cells per call): delete 5 (22 before), revoke 6
+  (32), reply-cap delete 4 (21), frame delete 34 (41), page-table deletes 27,
+  26 and 25 (30, 26 and 22).  The third page-table delete reads 3 more: deletes
+  that finalise a frame or page table keep the general path, which holds the
+  earlier state for its refusal and now carries the candidate list.  The plan
+  row's new part 7 takes the finaliser's checks ahead of its writes.
+- **Tests**: `tests/OperationChainSuite.lean` runs the plain revoke over a
+  two-level tree with two branches and the plain delete of a leaf; the
+  exerciser pins in `scripts/qemu_exerciser_lib.sh` move to the new readings.
+- **Hygiene**: unused simp arguments in `Model/Object/Types.lean` and
+  `Model/Object/DerivationLinks.lean` removed.
+
 ## v0.36.106 — WS-ZA ZA5.3 part 4: the derivation tree links through the slots
 
 Each CNode slot now holds its derivation links, as seL4's mapping database:

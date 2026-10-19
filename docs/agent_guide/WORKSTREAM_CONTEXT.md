@@ -194,7 +194,10 @@ and IPC transfer prove the tree sound from the pre-state (no `hCdtPost`).  At
 `v0.36.106` each slot holds its derivation links (parent, first child,
 siblings) and the capability bundle says they agree with the tree
 (`cdtLinksAgree`); every tree update writes them with it, and the children and
-descendant reads walk them.  The
+descendant reads walk them.  At `v0.36.107` a delete or revoke that finalises
+nothing is admitted before any write and performed in place, a revoke as seL4's
+`cteRevoke` loop, and the page-table teardown names its candidates from the
+destroyed capabilities.  The
 suspend of a thread blocked in IPC or holding a donated context is the one
 syscall arm left on the general path (ZA6.1).  ZA6 covers the other
 entries and makes the rule standing.  Plan:

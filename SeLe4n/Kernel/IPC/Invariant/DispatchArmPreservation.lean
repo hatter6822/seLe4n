@@ -1546,12 +1546,12 @@ theorem finaliseFramePages_preserves_ipcInvariantFull
 /-- **The whole finalisation preserves the bundle** — the table detach and the
 page teardown are both VSpace-root-only writes. -/
 theorem finaliseDestroyedCapabilities_preserves_ipcInvariantFull
-    (ec : Concurrency.CoreId) (pre : SystemState) (pages : List MappedPage)
+    (ec : Concurrency.CoreId) (named : List SeLe4n.ObjId) (pages : List MappedPage)
     (st st' : SystemState) (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
-    (hStep : finaliseDestroyedCapabilities ec pre pages st = .ok ((), st')) :
+    (hStep : finaliseDestroyedCapabilities ec named pages st = .ok ((), st')) :
     ipcInvariantFull st' ∧ st'.objects.invExt := by
   obtain ⟨hExt, hW, hSched⟩ :=
-    finaliseDestroyedCapabilities_ok_frame ec pre pages st st' hObjInv hStep
+    finaliseDestroyedCapabilities_ok_frame ec named pages st st' hObjInv hStep
   exact ⟨ipcInvariantFull_of_vspaceRootOnlyWrite hW hSched hInv, hExt⟩
 
 /-- `.cspaceDelete`: the finalising delete preserves the bundle — the delete's
@@ -1562,9 +1562,19 @@ theorem cspaceDeleteSlotFinalising_preserves_ipcInvariantFull
     (hStep : cspaceDeleteSlotFinalising ec addr st = .ok ((), st')) :
     ipcInvariantFull st' := by
   obtain ⟨st1, hD, hF⟩ := cspaceDeleteSlotFinalising_ok ec addr st st' hStep
-  exact (finaliseDestroyedCapabilities_preserves_ipcInvariantFull ec st _ st1 st'
+  exact (finaliseDestroyedCapabilities_preserves_ipcInvariantFull ec _ _ st1 st'
     (cspaceDeleteSlot_preserves_objects_invExt st st1 addr hObjInv hD)
     (cspaceDeleteSlot_preserves_ipcInvariantFull st st1 addr hObjInv hInv hD) hF).1
+
+/-- The finalising delete keeps the object table well formed. -/
+theorem cspaceDeleteSlotFinalising_preserves_objects_invExt
+    (ec : Concurrency.CoreId) (addr : CSpaceAddr) (st st' : SystemState)
+    (hObjInv : st.objects.invExt)
+    (hStep : cspaceDeleteSlotFinalising ec addr st = .ok ((), st')) :
+    st'.objects.invExt := by
+  obtain ⟨st1, hD, hF⟩ := cspaceDeleteSlotFinalising_ok ec addr st st' hStep
+  exact (finaliseDestroyedCapabilities_ok_frame ec _ _ st1 st'
+    (cspaceDeleteSlot_preserves_objects_invExt st st1 addr hObjInv hD) hF).1
 
 /-- `.cspaceRevoke`: the finalising revocation preserves the bundle — the
 revocation's own theorem at the state it reaches, then the teardown's. -/
@@ -1573,10 +1583,13 @@ theorem cspaceRevokeCdtFinalising_preserves_ipcInvariantFull
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
     (hStep : cspaceRevokeCdtFinalising ec addr st = .ok ((), st')) :
     ipcInvariantFull st' := by
-  obtain ⟨pages, st1, hR, hF⟩ := cspaceRevokeCdtFinalising_ok ec addr st st' hStep
-  exact (finaliseDestroyedCapabilities_preserves_ipcInvariantFull ec st _ st1 st'
-    (cspaceRevokeCdt_preserves_objects_invExt st st1 addr pages hObjInv hInv hR)
-    (cspaceRevokeCdt_preserves_ipcInvariantFull st st1 addr pages hObjInv hInv hR) hF).1
+  refine (cspaceRevokeCdtFinalising_closed (fun s => ipcInvariantFull s ∧ s.objects.invExt)
+    (fun c s s' hQ hD => ⟨cspaceDeleteSlotFinalising_preserves_ipcInvariantFull ec c s s'
+      hQ.2 hQ.1 hD, cspaceDeleteSlotFinalising_preserves_objects_invExt ec c s s' hQ.2 hD⟩)
+    (fun pages st1 hR hF => finaliseDestroyedCapabilities_preserves_ipcInvariantFull ec _ _ st1 st'
+      (cspaceRevokeCdt_preserves_objects_invExt st st1 addr pages hObjInv hInv hR)
+      (cspaceRevokeCdt_preserves_ipcInvariantFull st st1 addr pages hObjInv hInv hR) hF)
+    ⟨hInv, hObjInv⟩ hStep).1
 
 /-- **PR #904 review (`v0.36.41`): the mapping-epoch tag preserves the bundle** —
 it stores back one VSpace root and one frame, both kinds the bundle never reads. -/
