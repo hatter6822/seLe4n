@@ -204,7 +204,10 @@ conjunct, a theorem since the slot array.  At `v0.36.109` each slot owns its
 capability record for the CNode's life, kept when the slot is emptied and
 overwritten by the next capability written there, and a capability's badge is a
 word and a flag, so every capability operation (copy, move, delete, mint,
-revoke, reply-cap delete and mint) allocates nothing.  The
+revoke, reply-cap delete and mint) allocates nothing.  At `v0.36.110` a
+finalising delete runs through `ofChecked`, its teardown's results theorems on
+a well-formed state, and at `v0.36.111` every revoke is the `cteRevoke` loop of
+finalising deletes.  The
 suspend of a thread blocked in IPC or holding a donated context is the one
 syscall arm left on the general path (ZA6.1).  ZA6 covers the other
 entries and makes the rule standing.  Plan:
@@ -1437,15 +1440,14 @@ afterwards: on a well-formed state (`teardownWellFormed`) no recorded page
 survives and no orphaned table stays in its root, as theorems, and a delete
 whose CNode exists runs through `ofChecked`.  New code that consumes a payoff
 carries `teardownWellFormed`; carrying it across every transition is a
-registered debt row.  The revocation reports exactly the pages its
-traversal destroyed — `cspaceRevokeCdt` returns them, its fold reading each page
-from the slot it deletes (`revokeCdtFoldBody_records`) — and the payoffs are
+registered debt row.  Since `v0.36.111` the revocation is seL4's `cteRevoke`
+loop of those finalising deletes (`revokeFirstChildLoop`), so each destroyed
+capability's page goes with its own delete and there is no batch teardown; the
+general revocation (`cspaceRevokeCdt` and its variants) is deleted.  A new
+property of the revoke is proven for one finalising delete and lifted through
+`cspaceRevokeCdtFinalising_closed`.  The payoffs are
 `cspaceDeleteSlotFinalising_ok_unmapped` and
-`cspaceRevokeCdtFinalising_ok_unmapped`, both on a well-formed state.  There is **one** revocation traversal:
-a first draft added a reporting one beside the state-only one, the reachability
-census reported the state-only one as executed by nothing, and it was deleted
-rather than pinned.  The bare `cspaceDeleteSlot` / `cspaceRevokeCdt` stay as
-the steps the finalising arms compose.  (4) **A stale record removes nothing**: `.vspaceUnmap`
+`cspaceRevokeCdtFinalising_ok_unmapped`, both on a well-formed state.  (4) **A stale record removes nothing**: `.vspaceUnmap`
 works through a VSpace capability, so a record can outlive its mapping, and each
 teardown step re-checks that the recorded address still maps the frame's own
 page (`mappedPageLive` — seL4's `unmapPage` paddr comparison), so a different

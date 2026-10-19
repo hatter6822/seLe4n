@@ -160,12 +160,13 @@ edge joins two slots (since `v0.36.103`, WS-ZA ZA5.3 part 2):
 - **Each slot holds its derivation links** (parent, first child, previous and next sibling) as words in its CNode, as seL4's mapping database (since `v0.36.106`, ZA5.3 part 4); the capability bundle proves they agree with the tree (`cdtLinksAgree`).
 - **Children and descendants are read along the links** (`linkChildrenOf`, `linkDescendantsOf`, a breadth-first walk with `HashSet` visited tracking), each proven equal to the tree's read.
 
-Revocation walks the descendants of the revoked slot itself, and
-`cspaceRevokeCdtStrict` reports the first descendant deletion failure with the
-offending slot.  The canonical statement is in the
-[specification](../spec/SELE4N_SPEC.md).
-
-**Streaming BFS revocation (WS-M5, v0.16.19–v0.17.0):** `cspaceRevokeCdtStreaming` performs level-by-level BFS revocation via `streamingRevokeBFS`, processing one CDT node at a time without materializing the full `descendantsOf` set. The per-node transition is factored into `processRevokeNode`, shared by both the materialized fold (`cspaceRevokeCdt`) and the streaming BFS path. Preservation is proved via `processRevokeNode_preserves_capabilityInvariantBundle` (shared per-node proof) and `streamingRevokeBFS_preserves` (fuel induction), culminating in `cspaceRevokeCdtStreaming_preserves_capabilityInvariantBundle`.
+Revocation destroys exactly the descendants of the revoked slot, as seL4's
+`cteRevoke` does: since `v0.36.111` (WS-ZA ZA5.3 part 8)
+`cspaceRevokeCdtFinalising` deletes and finalises the source's first child,
+read from the slot's own link, until it has none, so it needs no materialized
+descendant set and no breadth-first walk.  The earlier strict, streaming and
+transactional revocation variants were removed with that change.  The
+canonical statement is in the [specification](../spec/SELE4N_SPEC.md).
 
 ## 5. Information flow: N-domain configurable flow policy
 

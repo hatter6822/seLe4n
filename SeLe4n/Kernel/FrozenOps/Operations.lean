@@ -2042,12 +2042,12 @@ def frozenOpCoverage : SyscallId → Bool
   | .cspaceCopy => false      -- builder-only (structural copy)
   | .cspaceMove => false      -- builder-only (structural move)
   | .cspaceDelete => true     -- frozenCspaceDelete
-  | .cspaceRevoke => false    -- WS-RR RR8.16 (`v0.35.190`): the traversal's per-node
-                             -- step is `processRevokeNode`, which ends in
-                             -- `cdt.removeNode` — a *key removal* from the
-                             -- derivation tree, and the frozen CDT is four
-                             -- `FrozenMap`s with no `erase`, exactly as for
-                             -- `lifecycleRetype` and the two service ops.
+  | .cspaceRevoke => false    -- WS-RR RR8.16 (`v0.35.190`): builder-only.  Since
+                             -- WS-ZA ZA5.3 part 8 the arm is `cteRevoke`'s loop
+                             -- of finalising deletes
+                             -- (`cspaceRevokeCdtFinalising`), which tears down
+                             -- each destroyed frame's mapping; the frozen phase
+                             -- has no form of it.
   | .lifecycleRetype => false -- builder-only (adds keys)
   | .untypedRetype => false   -- WS-BP BP7.1 (`v0.36.5`): adds a key (the carved
                              -- frame) and a CDT node, which the frozen phase's

@@ -293,10 +293,10 @@ inventory was written:
 ### Capability subsystem
 
 - `SeLe4n/Kernel/Capability/Operations.lean`
-  - CSpace transitions (`lookup`, `insert`, `mint`, `delete`, `revoke`, `copy`, `move`, CDT-aware revoke, streaming BFS revoke).
-  - Slot-keyed CDT integration (the slot is the derivation node, as seL4's `cte_t`): copy/mint/transfer add an edge between slots, move carries the source's edges to the destination, delete splices the slot out, and strict revoke reporting (`cspaceRevokeCdtStrict`) that returns first descendant-delete failure context.
-  - Streaming BFS revoke (`cspaceRevokeCdtStreaming`): level-by-level BFS traversal via `streamingRevokeBFS`, eliminating full `descendantsOf` materialization. Preserves `capabilityInvariantBundle` with proved step and composed preservation theorems.
-  - **The syscall arm (WS-RR RR8.16, `v0.35.190`)**: `SyscallId.cspaceRevoke` dispatches `cspaceRevokeCdt` — the family had no ABI path at all before it. The scaffold's case analysis (`revokeCdtScaffold_ok_decompose`) and the fold's induction (`revokeCdtFold_induct`, `revokeCdtMaterializedTraversal_ok_induct`) live here, **predicate-free**, so the capability bundle's preservation argument and `ipcInvariantFull`'s are one answer rather than two; `revokeCdtFoldBody` moved here with them and `revokeCdtMaterializedTraversal` is defined through it.
+  - CSpace transitions (`lookup`, `insert`, `mint`, `delete`, the local same-CNode `revoke`, `copy`, `move`).
+  - Slot-keyed CDT integration (the slot is the derivation node, as seL4's `cte_t`): copy/mint/transfer add an edge between slots, move carries the source's edges to the destination, and delete splices the slot out.
+- `SeLe4n/Kernel/Capability/FrameFinalise.lean`
+  - The finalising delete and revoke the syscall arms dispatch. **`SyscallId.cspaceRevoke` (WS-RR RR8.16, `v0.35.190`)** runs `cspaceRevokeCdtFinalising`, seL4's `cteRevoke` since `v0.36.111` (WS-ZA ZA5.3 part 8): a loop (`revokeFirstChildLoop`, via `cspaceRevokePerformAt`) that deletes and finalises the source's first CDT child until it has none. Its preservation is one argument over chains of finalising deletes (`FinalisingDeleteChain`, `cspaceRevokeCdtFinalising_closed`). The general revocation it replaced (`cspaceRevokeCdt`, its scaffold and its strict, streaming and transactional variants) was removed in the same change.
 - `SeLe4n/Kernel/Capability/Invariant.lean` (re-export hub)
   - `Invariant/Defs.lean` — core invariant definitions, transfer theorems, depth consistency; AN4-F.4 `RetypeTarget` subtype + `cleanupHookDischarged` predicate; AN4-F.5 `CapabilityInvariantBundle` named-projection structure + bridge + `@[simp]` abbrevs.
   - `Invariant/Authority.lean` — authority reduction, attenuation, badge routing consistency.
@@ -304,7 +304,6 @@ inventory was written:
   - `Invariant/Preservation/Insert.lean` — `cspaceLookupSlot` / `cspaceInsertSlot` / `cspaceMint` base preservation.
   - `Invariant/Preservation/Delete.lean` — `cspaceDeleteSlotCore` / `cspaceDeleteSlot` / `cspaceRevoke` base preservation.
   - `Invariant/Preservation/CopyMoveMutate.lean` — `cspaceCopy` / `cspaceMove` / `cspaceMintWithCdt` / `cspaceMutate` preservation.
-  - `Invariant/Preservation/Revoke.lean` — `processRevokeNode` + `cspaceRevokeCdt` (+ strict / streaming variants) preservation.
   - `Invariant/Preservation/EndpointReplyAndLifecycle.lean` — `endpointReply` + `coreIpcInvariantBundle` + `lifecycleRetypeObject` / `lifecycleRevokeDeleteRetype` preservation cluster.
   - `Invariant/Preservation/BadgeIpcCapsAndCdtMaps.lean` — Mint / Mutate badge preservation + `ipcTransferSingleCap` / `ipcUnwrapCaps` variants + CDT composition witnesses.
 - **WS-N modules** (v0.17.0–v0.17.5, **PORTFOLIO COMPLETE**):

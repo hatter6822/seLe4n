@@ -82,8 +82,8 @@ private def chain1RetypeMintRevoke : IO Unit := do
   match st2.objects[cnodeId]? with
   | some (.cnode cn) => expect "chain1: mint dest slot populated" ((cn.lookup (((SeLe4n.Slot.ofNat 1) : SeLe4n.Slot))).isSome)
   | _ => throw <| IO.userError "chain1: CNode not found after mint"
-  let (_, st3) ← expectOkSt "chain1: cspaceRevokeCdtStrict"
-    (SeLe4n.Kernel.cspaceRevokeCdtStrict dstSlot st2)
+  let (_, st3) ← expectOkSt "chain1: cspaceRevokeCdtFinalising"
+    (SeLe4n.Kernel.cspaceRevokeCdtFinalising bootCoreId dstSlot st2)
   assertInvariants "chain1: retype→mint→revoke" st3
 
 private def chain2SendSendReceiveFifo : IO Unit := do
@@ -442,7 +442,7 @@ private def chain9LifecycleCascadingRevokeAndAttenuation : IO Unit := do
     .illegalAuthority
 
   let (_, st3) ← expectOkSt "chain9: revoke root cascades descendants"
-    (SeLe4n.Kernel.cspaceRevokeCdtStrict rootSlot st2)
+    (SeLe4n.Kernel.cspaceRevokeCdtFinalising bootCoreId rootSlot st2)
   expect "chain9: child slot removed after root revoke"
     (SystemState.lookupSlotCap st3 childSlot = none)
   expect "chain9: grandchild slot removed after root revoke"
@@ -832,7 +832,7 @@ private def ipcCapTransferRevocable : IO Unit := do
     (SeLe4n.Kernel.endpointReceiveDual epId receiver none st0)
 
   -- Name the real source slot exactly as `resolveExtraCaps` does in production:
-  -- the slot is the derivation node, and `cspaceRevokeCdt` later walks from the
+  -- the slot is the derivation node, and the revoke later walks from the
   -- same slot.  Naming any other slot would make the revoke walk miss the copy,
   -- which is what this scenario is measuring.
   let srcNode : SeLe4n.Model.SlotRef := { cnode := senderCNode, slot := srcSlot }
@@ -853,13 +853,13 @@ private def ipcCapTransferRevocable : IO Unit := do
   -- capability — must NOT reach the transferred copy.  Under the defect this
   -- was the address the edge was recorded from, so this revoke destroyed it.
   let (_, stRevokeWrong) ← expectOkSt "chain12b: revoke the unrelated slot 0"
-    (SeLe4n.Kernel.cspaceRevokeCdt { cnode := senderCNode, slot := SeLe4n.Slot.ofNat 0 } st2)
+    (SeLe4n.Kernel.cspaceRevokeCdtFinalising bootCoreId { cnode := senderCNode, slot := SeLe4n.Slot.ofNat 0 } st2)
   expect "chain12b: revoking an unrelated slot leaves the transferred cap alone"
     (receiverSlotFilled stRevokeWrong)
 
   -- POSITIVE: revoking the real source destroys the copy derived from it.
   let (_, stRevokeReal) ← expectOkSt "chain12b: revoke the REAL source slot"
-    (SeLe4n.Kernel.cspaceRevokeCdt { cnode := senderCNode, slot := srcSlot } st2)
+    (SeLe4n.Kernel.cspaceRevokeCdtFinalising bootCoreId { cnode := senderCNode, slot := srcSlot } st2)
   expect "chain12b: revoking the real source destroys the transferred cap"
     (!receiverSlotFilled stRevokeReal)
 
@@ -889,7 +889,7 @@ private def ipcCapTransferRevocable : IO Unit := do
       (SeLe4n.Slot.ofNat 0)
       (SeLe4n.Testing.withSenderFrame stOverwritten sender msg #[SeLe4n.CPtr.ofNat srcSlot.toNat]))
   let (_, stStaleRevoke) ← expectOkSt "chain12b: revoke the rewritten slot"
-    (SeLe4n.Kernel.cspaceRevokeCdt { cnode := senderCNode, slot := srcSlot } stStale)
+    (SeLe4n.Kernel.cspaceRevokeCdtFinalising bootCoreId { cnode := senderCNode, slot := srcSlot } stStale)
   expect "chain12b: an in-place rewrite keeps the slot's node, so the revoke still reaches"
     (!receiverSlotFilled stStaleRevoke)
   -- THE PARKED WINDOW (WS-ZA ZA4.7, as seL4).  A blocking send parks the
@@ -1359,31 +1359,17 @@ private def receiveTakesParkedSenderRegisters : IO Unit := do
       | some m => m.registers.toList.map SeLe4n.RegValue.val == [11]
       | none => false))
 
-/-- **Every revocation entry point, as the suite can run it.**
+/-- **The revocation entry point, as the suite can run it.**
 
-The report types differ (`Unit` for the two walking variants, a
-`RevokeCdtStrictReport` for the two reporting ones), so each runner projects to
-the state.  Listing them here rather than writing the scenario four times is the
-same reason `revokeCdtScaffold` exists: a claim about "revocation" that is only
-exercised on one entry point is a claim about that entry point. -/
+Since WS-ZA ZA5.3 part 8 there is one: `.cspaceRevoke`'s `cteRevoke` loop.  The
+general revocation and its streaming, strict and transactional variants this
+table used to list were removed with it; the table stays so a second entry
+point, if one is ever added, is exercised by the same scenarios. -/
 private def revocationEntryPoints :
     List (String × (SeLe4n.Kernel.CSpaceAddr → SystemState →
       Except KernelError (Unit × SystemState))) :=
-  [ ("cspaceRevokeCdt", fun addr st =>
-      -- WS-BP BP7.1 (`v0.36.7`): the materialized revocation also reports the
-      -- pages its destroyed capabilities had mapped; this table compares states.
-      match SeLe4n.Kernel.cspaceRevokeCdt addr st with
-      | .error e => .error e
-      | .ok (_, stDone) => .ok ((), stDone))
-  , ("cspaceRevokeCdtStreaming", fun addr st => SeLe4n.Kernel.cspaceRevokeCdtStreaming addr st)
-  , ("cspaceRevokeCdtStrict", fun addr st =>
-      match SeLe4n.Kernel.cspaceRevokeCdtStrict addr st with
-      | .error e => .error e
-      | .ok (_, stDone) => .ok ((), stDone))
-  , ("cspaceRevokeCdtTransactional", fun addr st =>
-      match SeLe4n.Kernel.cspaceRevokeCdtTransactional addr st with
-      | .error e => .error e
-      | .ok (_, stDone) => .ok ((), stDone)) ]
+  [ ("cspaceRevokeCdtFinalising", fun addr st =>
+      SeLe4n.Kernel.cspaceRevokeCdtFinalising bootCoreId addr st) ]
 
 /-- SCN-CAP-REVOKE-WHILE-PARKED (WS-ZA ZA4.7): **a capability revoked while its
 sender waits is never transferred** -- at every revocation entry point.
@@ -1450,9 +1436,6 @@ private def revokeWhileParkedTransfersNothing : IO Unit := do
   expect "revoke-parked: control — the same transfer installs when nothing revokes it"
     (slotFilled stControl receiverCNode recvSlot0)
 
-  expect "revoke-parked: all four revocation entry points are exercised"
-    (revocationEntryPoints.length == 4)
-
   for (name, revoke) in revocationEntryPoints do
     match revoke parentAddr stParked with
     | .error e =>
@@ -1480,7 +1463,7 @@ slots `isMDBParentOf` the source (read at `13.0.0`) — and it made the swept
 capability's own derivations unrevocable, since every revocation begins with a
 lookup of its slot and an empty slot refuses it.
 
-So this drives the four entry points on that state and asserts what revocation
+So this drives the revocation on that state and asserts what revocation
 must leave alone: the revoked slot itself, the independent sibling, the sibling's
 node (still revocable), and a parked transfer from the sibling, which lands.  The
 retired reading is computed beside it — the local `cspaceRevoke`, still an
@@ -1538,9 +1521,6 @@ private def revokeLeavesIndependentSibling : IO Unit := do
       recvSlot0 bootCoreId stParked
   expect "independent-sibling: control — the sibling-sourced transfer installs when nothing revokes"
     (slotFilled stControl receiverCNode recvSlot0)
-
-  expect "independent-sibling: all four revocation entry points are exercised"
-    (revocationEntryPoints.length == 4)
 
   -- THE FIX, at every entry point: nothing that was not derived is destroyed.
   for (name, revoke) in revocationEntryPoints do
@@ -1816,13 +1796,13 @@ private def chain14IpcBadgeAndCapTransfer : IO Unit := do
   assertInvariants "chain14: IPC badge + cap transfer combined" st2
 
 -- ============================================================================
--- WS-M4-B: Strict revocation stress tests (M-T02)
+-- WS-M4-B: Revocation stress tests (M-T02)
 -- ============================================================================
 
-/-- SCN-REVOKE-STRICT-DEEP (M4-B1): Strict revocation with 15-level deep
-derivation chain — verify all descendants are deleted and `deletedSlots`
-list is complete. Root slot remains present after revocation. -/
-private def chain15StrictRevokeDeepChain : IO Unit := do
+/-- SCN-REVOKE-STRICT-DEEP (M4-B1): Revocation with a 15-level deep derivation
+chain, across 16 CNodes — verify all descendants are deleted and the root is
+left with no children.  Root slot remains present after revocation. -/
+private def chain15RevokeDeepChain : IO Unit := do
   -- Create 16 CNodes: root + 15 levels
   let rootCNode : SeLe4n.ObjId := ⟨7000⟩
   let targetId : SeLe4n.ObjId := ⟨7100⟩
@@ -1858,17 +1838,9 @@ private def chain15StrictRevokeDeepChain : IO Unit := do
     let capOpt := SystemState.lookupSlotCap st childSlots[i]!
     expect s!"chain15: child{i} has cap" capOpt.isSome
 
-  -- Execute strict revocation on root
-  let (report, stFinal) ← expectOkSt "chain15: strict revoke deep chain"
-    (SeLe4n.Kernel.cspaceRevokeCdtStrict rootSlot st)
-
-  -- Verify: no failure
-  expect "chain15: no failure in deep revoke"
-    report.firstFailure.isNone
-
-  -- Verify: all 15 descendants deleted
-  expect s!"chain15: deletedSlots has 15 entries (got {report.deletedSlots.length})"
-    (report.deletedSlots.length = 15)
+  -- Revoke the root (seL4's `cteRevoke` loop)
+  let (_, stFinal) ← expectOkSt "chain15: revoke deep chain"
+    (SeLe4n.Kernel.cspaceRevokeCdtFinalising bootCoreId rootSlot st)
 
   -- Verify: all descendant slots are now empty
   for i in List.range 15 do
@@ -1887,118 +1859,16 @@ private def chain15StrictRevokeDeepChain : IO Unit := do
     let nodeOpt := cdtNodeOf stFinal childSlots[i]!
     expect s!"chain15: child{i} CDT node detached" nodeOpt.isNone
 
-  assertInvariants "chain15: deep chain strict revoke invariants" stFinal
+  assertInvariants "chain15: deep chain revoke invariants" stFinal
 
-/-- SCN-REVOKE-STRICT-PARTIAL-FAIL (M4-B2): Strict revocation with partial
-failure — one descendant's CNode is replaced with a non-CNode object, causing
-`cspaceDeleteSlot` to fail with `.objectNotFound`. Verifies `firstFailure`
-is populated and traversal halts. -/
-private def chain16StrictRevokePartialFail : IO Unit := do
-  let rootCNode : SeLe4n.ObjId := ⟨7200⟩
-  let targetId : SeLe4n.ObjId := ⟨7300⟩
-  let rootSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := rootCNode, slot := (SeLe4n.Slot.ofNat 0) }
-
-  -- 5 child CNodes
-  let childIds : List SeLe4n.ObjId := (List.range 5).map fun i => ⟨7201 + i⟩
-  let childSlots : List SeLe4n.Kernel.CSpaceAddr :=
-    childIds.map fun cid => { cnode := cid, slot := (SeLe4n.Slot.ofNat 0) }
-
-  let mut builder := BootstrapBuilder.empty
-  builder := builder.withObject targetId (.endpoint {})
-  builder := builder.withObject rootCNode (.cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [
-      ((SeLe4n.Slot.ofNat 0), { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant] })
-    ])))
-  for cid in childIds do
-    builder := builder.withObject cid (.cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 SeLe4n.UniqueSlotMap.empty))
-  let st0 := builder.buildChecked
-
-  -- Build 5-level chain: root → c0 → c1 → c2 → c3 → c4
-  let mut st := st0
-  let allSlots := rootSlot :: childSlots
-  for i in List.range 5 do
-    let srcSlot := allSlots[i]!
-    let dstSlot := allSlots[i + 1]!
-    let (_, st') ← expectOkSt s!"chain16: mint level {i}→{i+1}"
-      (SeLe4n.Kernel.cspaceMintWithCdt srcSlot dstSlot (AccessRightSet.ofList [.read, .write, .grant]) none st)
-    st := st'
-
-  -- Corrupt: replace child2's CNode object with an endpoint (non-CNode)
-  -- This will cause cspaceDeleteSlot for child2 to fail with objectNotFound
-  -- because it expects a CNode at that ObjId but finds an endpoint instead.
-  -- Also update lifecycle objectType metadata to stay consistent.
-  let corruptedCNodeId := childIds[2]!
-  let stCorrupted := { st with
-    objects := st.objects.insert corruptedCNodeId (.endpoint {}),
-    lifecycle := { st.lifecycle with
-      objectTypes := st.lifecycle.objectTypes.insert corruptedCNodeId .endpoint }
-  }
-
-  -- Execute strict revocation
-  let (report, stFinal) ← expectOkSt "chain16: strict revoke partial fail"
-    (SeLe4n.Kernel.cspaceRevokeCdtStrict rootSlot stCorrupted)
-
-  -- Verify: firstFailure is present
-  expect "chain16: firstFailure is some" report.firstFailure.isSome
-
-  -- Verify: firstFailure has correct error
-  match report.firstFailure with
-  | some failure =>
-      expect "chain16: failure error is objectNotFound"
-        (failure.error = .objectNotFound)
-      -- The offending slot should be child2's slot
-      expect "chain16: offendingSlot matches child2"
-        (failure.offendingSlot = childSlots[2]!)
-  | none =>
-      throw <| IO.userError "chain16: expected firstFailure to be some"
-
-  -- Verify: deletedSlots contains slots deleted BEFORE the failure.
-  -- BFS traversal on a linear chain root→c0→c1→c2→c3→c4 processes in
-  -- order [c0, c1, c2, c3, c4]. c0 and c1 are successfully deleted before
-  -- reaching c2 (the corrupted node where deletion fails). After failure,
-  -- traversal halts → exactly 2 slots deleted.
-  expect s!"chain16: deletedSlots has 2 entries before failure (got {report.deletedSlots.length})"
-    (report.deletedSlots.length = 2)
-
-  -- Verify: the specific slots deleted are c0 and c1 (the two before the failure)
-  let deletedSet := report.deletedSlots
-  expect "chain16: c0 slot in deletedSlots"
-    (deletedSet.any fun ds => ds == childSlots[0]!)
-  expect "chain16: c1 slot in deletedSlots"
-    (deletedSet.any fun ds => ds == childSlots[1]!)
-
-  -- Verify: root slot still present
-  let rootCapOpt := SystemState.lookupSlotCap stFinal rootSlot
-  expect "chain16: root slot still present" rootCapOpt.isSome
-
-  -- Verify: post-failure descendants (c3, c4) are untouched — traversal halted.
-  -- Their slots should still contain the capabilities minted earlier.
-  let c3CapOpt := SystemState.lookupSlotCap stFinal childSlots[3]!
-  expect "chain16: c3 slot preserved after halt" c3CapOpt.isSome
-  let c4CapOpt := SystemState.lookupSlotCap stFinal childSlots[4]!
-  expect "chain16: c4 slot preserved after halt" c4CapOpt.isSome
-
-  -- Verify: c3 and c4 CDT nodes also survive the halt
-  let c3NodeOpt := cdtNodeOf stFinal childSlots[3]!
-  expect "chain16: c3 CDT node survives halt" c3NodeOpt.isSome
-  let c4NodeOpt := cdtNodeOf stFinal childSlots[4]!
-  expect "chain16: c4 CDT node survives halt" c4NodeOpt.isSome
-
-  -- Note: assertInvariants is intentionally NOT called here because we
-  -- deliberately corrupted the state (replaced a CNode with an endpoint)
-  -- to trigger the partial failure. The corrupted object would fail the
-  -- lifecycle objectType consistency check. This is expected behavior.
-
-/-- SCN-REVOKE-STRICT-ORDER (M4-B3): Branching derivation tree verifies
-`deletedSlots` set completeness after revocation. Tree shape:
+/-- SCN-REVOKE-STRICT-ORDER (M4-B3): Revocation of a branching derivation tree
+across six CNodes. Tree shape:
   root → A → A1
        → B → B1
             → B2
-Total 5 descendants. Verifies deletedSlots.length = 5, all entries come
-from the expected descendant set, root is preserved, and CDT nodes are
-detached. The walk reads each node's children newest first (along its
-first-child and next links), so the order is fixed; the checks below hold for
-any breadth-first order: set membership, and each parent before its child. -/
-private def chain17StrictRevokeOrdering : IO Unit := do
+Every descendant is deleted, the root is preserved, and the descendants' CDT
+nodes are detached. -/
+private def chain17RevokeBranchingTree : IO Unit := do
   let rootCNode : SeLe4n.ObjId := ⟨7400⟩
   let cnodeA : SeLe4n.ObjId := ⟨7401⟩
   let cnodeB : SeLe4n.ObjId := ⟨7402⟩
@@ -2045,17 +1915,9 @@ private def chain17StrictRevokeOrdering : IO Unit := do
     let capOpt := SystemState.lookupSlotCap st5 slot
     expect s!"chain17: {label} has cap" capOpt.isSome
 
-  -- Execute strict revocation on root
-  let (report, stFinal) ← expectOkSt "chain17: strict revoke branching tree"
-    (SeLe4n.Kernel.cspaceRevokeCdtStrict rootSlot st5)
-
-  -- Verify: no failure
-  expect "chain17: no failure in branching revoke"
-    report.firstFailure.isNone
-
-  -- Verify: all 5 descendants deleted (A, B, A1, B1, B2)
-  expect s!"chain17: deletedSlots has 5 entries (got {report.deletedSlots.length})"
-    (report.deletedSlots.length = 5)
+  -- Revoke the root
+  let (_, stFinal) ← expectOkSt "chain17: revoke branching tree"
+    (SeLe4n.Kernel.cspaceRevokeCdtFinalising bootCoreId rootSlot st5)
 
   -- Verify: all descendant slots are now empty
   for (label, slot) in [("A", slotA), ("B", slotB), ("A1", slotA1), ("B1", slotB1), ("B2", slotB2)] do
@@ -2071,112 +1933,12 @@ private def chain17StrictRevokeOrdering : IO Unit := do
     let nodeOpt := cdtNodeOf stFinal slot
     expect s!"chain17: {label} CDT node detached" nodeOpt.isNone
 
-  -- Verify: deletedSlots are all from the expected set of descendant slots
-  let expectedSlotSet : List SeLe4n.Kernel.CSpaceAddr := [slotA, slotB, slotA1, slotB1, slotB2]
-  let allInSet := report.deletedSlots.all fun ds => ds ∈ expectedSlotSet
-  expect "chain17: all deletedSlots are from expected set" allInSet
-
-  -- Verify partial BFS ordering: within each sub-chain, parent precedes child.
-  let indexOf (s : SeLe4n.Kernel.CSpaceAddr) (xs : List SeLe4n.Kernel.CSpaceAddr) : Option Nat :=
-    let rec go (l : List SeLe4n.Kernel.CSpaceAddr) (i : Nat) : Option Nat :=
-      match l with
-      | [] => none
-      | h :: t => if h == s then some i else go t (i + 1)
-    go xs 0
-  let ds := report.deletedSlots
-  -- A appears before A1
-  match indexOf slotA ds, indexOf slotA1 ds with
-  | some ia, some ia1 => expect "chain17: A before A1 in deletedSlots" (ia < ia1)
-  | _, _ => throw <| IO.userError "chain17: A or A1 not found in deletedSlots"
-  -- B appears before B1
-  match indexOf slotB ds, indexOf slotB1 ds with
-  | some ib, some ib1 => expect "chain17: B before B1 in deletedSlots" (ib < ib1)
-  | _, _ => throw <| IO.userError "chain17: B or B1 not found in deletedSlots"
-  -- B appears before B2
-  match indexOf slotB ds, indexOf slotB2 ds with
-  | some ib, some ib2 => expect "chain17: B before B2 in deletedSlots" (ib < ib2)
-  | _, _ => throw <| IO.userError "chain17: B or B2 not found in deletedSlots"
-
   assertInvariants "chain17: branching revoke ordering invariants" stFinal
 
-/-- SCN-REVOKE-STREAMING-BFS (M5-A7): Streaming BFS revocation on a 5-node
-branching derivation tree. Verifies that `cspaceRevokeCdtStreaming` produces
-the same observable effects as `cspaceRevokeCdt`:
-  root → A → A1
-       → B → B1
-            → B2
-All 5 descendants deleted, root preserved, CDT nodes detached, invariants hold. -/
-private def chain18StreamingRevokeBFS : IO Unit := do
-  let rootCNode : SeLe4n.ObjId := ⟨7600⟩
-  let cnodeA : SeLe4n.ObjId := ⟨7601⟩
-  let cnodeB : SeLe4n.ObjId := ⟨7602⟩
-  let cnodeA1 : SeLe4n.ObjId := ⟨7603⟩
-  let cnodeB1 : SeLe4n.ObjId := ⟨7604⟩
-  let cnodeB2 : SeLe4n.ObjId := ⟨7605⟩
-  let targetId : SeLe4n.ObjId := ⟨7700⟩
-
-  let rootSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := rootCNode, slot := (SeLe4n.Slot.ofNat 0) }
-  let slotA : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeA, slot := (SeLe4n.Slot.ofNat 0) }
-  let slotB : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeB, slot := (SeLe4n.Slot.ofNat 0) }
-  let slotA1 : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeA1, slot := (SeLe4n.Slot.ofNat 0) }
-  let slotB1 : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeB1, slot := (SeLe4n.Slot.ofNat 0) }
-  let slotB2 : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeB2, slot := (SeLe4n.Slot.ofNat 0) }
-
-  let mut builder := BootstrapBuilder.empty
-  builder := builder.withObject targetId (.endpoint {})
-  for cid in [rootCNode, cnodeA, cnodeB, cnodeA1, cnodeB1, cnodeB2] do
-    builder := builder.withObject cid (.cnode (CNode.ofList 4 0 0 4
-      (if cid = rootCNode then [
-          ((SeLe4n.Slot.ofNat 0), { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant] })
-        ] else [])))
-  let st0 := builder.buildChecked
-
-  -- Build branching tree:
-  -- root → A (mint)
-  let (_, st1) ← expectOkSt "chain18: mint root→A"
-    (SeLe4n.Kernel.cspaceMintWithCdt rootSlot slotA (AccessRightSet.ofList [.read, .write, .grant]) none st0)
-  -- root → B (mint)
-  let (_, st2) ← expectOkSt "chain18: mint root→B"
-    (SeLe4n.Kernel.cspaceMintWithCdt rootSlot slotB (AccessRightSet.ofList [.read, .write, .grant]) none st1)
-  -- A → A1 (mint)
-  let (_, st3) ← expectOkSt "chain18: mint A→A1"
-    (SeLe4n.Kernel.cspaceMintWithCdt slotA slotA1 (AccessRightSet.ofList [.read, .write]) none st2)
-  -- B → B1 (mint)
-  let (_, st4) ← expectOkSt "chain18: mint B→B1"
-    (SeLe4n.Kernel.cspaceMintWithCdt slotB slotB1 (AccessRightSet.ofList [.read, .write]) none st3)
-  -- B → B2 (mint)
-  let (_, st5) ← expectOkSt "chain18: mint B→B2"
-    (SeLe4n.Kernel.cspaceMintWithCdt slotB slotB2 (AccessRightSet.ofList [.read]) none st4)
-
-  -- Verify tree was built: all 5 descendants have caps
-  for (label, slot) in [("A", slotA), ("B", slotB), ("A1", slotA1), ("B1", slotB1), ("B2", slotB2)] do
-    let capOpt := SystemState.lookupSlotCap st5 slot
-    expect s!"chain18: {label} has cap" capOpt.isSome
-
-  -- Execute streaming BFS revocation on root
-  let ((), stFinal) ← expectOkSt "chain18: streaming BFS revoke branching tree"
-    (SeLe4n.Kernel.cspaceRevokeCdtStreaming rootSlot st5)
-
-  -- Verify: all 5 descendant slots are now empty
-  for (label, slot) in [("A", slotA), ("B", slotB), ("A1", slotA1), ("B1", slotB1), ("B2", slotB2)] do
-    let capOpt := SystemState.lookupSlotCap stFinal slot
-    expect s!"chain18: {label} slot empty after streaming revoke" capOpt.isNone
-
-  -- Verify: root slot still present
-  let rootCapOpt := SystemState.lookupSlotCap stFinal rootSlot
-  expect "chain18: root slot still present after streaming revoke" rootCapOpt.isSome
-
-  -- Verify: CDT nodes detached for all descendants
-  for (label, slot) in [("A", slotA), ("B", slotB), ("A1", slotA1), ("B1", slotB1), ("B2", slotB2)] do
-    let nodeOpt := cdtNodeOf stFinal slot
-    expect s!"chain18: {label} CDT node detached after streaming revoke" nodeOpt.isNone
-
-  assertInvariants "chain18: streaming BFS revoke invariants" stFinal
-
-/-- SCN-REVOKE-STREAMING-EMPTY (M5): Streaming BFS on a root with no CDT
-children. Verifies that `cspaceRevokeCdtStreaming` is a no-op when the source
+/-- SCN-REVOKE-STREAMING-EMPTY (M5): Revocation of a root with no CDT
+children. Verifies that the revoke deletes nothing when the source
 slot has no derivation descendants — root capability preserved, state unchanged. -/
-private def chain19StreamingRevokeEmpty : IO Unit := do
+private def chain19RevokeNoDescendants : IO Unit := do
   let rootCNode : SeLe4n.ObjId := ⟨7800⟩
   let targetId : SeLe4n.ObjId := ⟨7900⟩
 
@@ -2189,20 +1951,19 @@ private def chain19StreamingRevokeEmpty : IO Unit := do
     ])))
   let st0 := builder.buildChecked
 
-  -- Execute streaming BFS revocation (no descendants)
-  let ((), stFinal) ← expectOkSt "chain19: streaming BFS revoke empty tree"
-    (SeLe4n.Kernel.cspaceRevokeCdtStreaming rootSlot st0)
+  -- Revoke (no descendants)
+  let ((), stFinal) ← expectOkSt "chain19: revoke with no descendants"
+    (SeLe4n.Kernel.cspaceRevokeCdtFinalising bootCoreId rootSlot st0)
 
   -- Root capability must still be present
   let rootCapOpt := SystemState.lookupSlotCap stFinal rootSlot
-  expect "chain19: root slot preserved after empty streaming revoke" rootCapOpt.isSome
+  expect "chain19: root slot preserved after revoke with no descendants" rootCapOpt.isSome
 
-  assertInvariants "chain19: empty streaming BFS revoke invariants" stFinal
+  assertInvariants "chain19: revoke with no descendants invariants" stFinal
 
-/-- SCN-REVOKE-STREAMING-DEEP (M5): Streaming BFS on a deep linear chain
-(root → A → B → C → D). Verifies correct traversal depth and that all 4
-descendants are deleted in order. -/
-private def chain20StreamingRevokeDeepChain : IO Unit := do
+/-- SCN-REVOKE-STREAMING-DEEP (M5): Revocation of a deep linear chain
+(root → A → B → C → D). Verifies that all 4 descendants are deleted. -/
+private def chain20RevokeLinearChain : IO Unit := do
   let rootCNode : SeLe4n.ObjId := ⟨8000⟩
   let cnodeA : SeLe4n.ObjId := ⟨8001⟩
   let cnodeB : SeLe4n.ObjId := ⟨8002⟩
@@ -2235,9 +1996,9 @@ private def chain20StreamingRevokeDeepChain : IO Unit := do
   let (_, st4) ← expectOkSt "chain20: mint C→D"
     (SeLe4n.Kernel.cspaceMintWithCdt slotC slotD (AccessRightSet.ofList [.read]) none st3)
 
-  -- Execute streaming BFS revocation on root
-  let ((), stFinal) ← expectOkSt "chain20: streaming BFS revoke deep chain"
-    (SeLe4n.Kernel.cspaceRevokeCdtStreaming rootSlot st4)
+  -- Revoke the root
+  let ((), stFinal) ← expectOkSt "chain20: revoke linear chain"
+    (SeLe4n.Kernel.cspaceRevokeCdtFinalising bootCoreId rootSlot st4)
 
   -- All 4 descendants deleted
   for (label, slot) in [("A", slotA), ("B", slotB), ("C", slotC), ("D", slotD)] do
@@ -2253,121 +2014,7 @@ private def chain20StreamingRevokeDeepChain : IO Unit := do
     let nodeOpt := cdtNodeOf stFinal slot
     expect s!"chain20: {label} CDT node detached" nodeOpt.isNone
 
-  assertInvariants "chain20: deep chain streaming BFS revoke invariants" stFinal
-
-/-- SCN-REVOKE-STREAMING-EQUIV (M5): Equivalence test — run both `cspaceRevokeCdt`
-and `cspaceRevokeCdtStreaming` on the same 3-node tree (root → A → B) and verify
-they produce identical observable state (same slots, same objects). -/
-private def chain21StreamingRevokeEquivalence : IO Unit := do
-  let rootCNode : SeLe4n.ObjId := ⟨8200⟩
-  let cnodeA : SeLe4n.ObjId := ⟨8201⟩
-  let cnodeB : SeLe4n.ObjId := ⟨8202⟩
-  let targetId : SeLe4n.ObjId := ⟨8300⟩
-
-  let rootSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := rootCNode, slot := (SeLe4n.Slot.ofNat 0) }
-  let slotA : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeA, slot := (SeLe4n.Slot.ofNat 0) }
-  let slotB : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeB, slot := (SeLe4n.Slot.ofNat 0) }
-
-  -- Build identical initial states for both variants
-  let mkState : IO SystemState := do
-    let mut builder := BootstrapBuilder.empty
-    builder := builder.withObject targetId (.endpoint {})
-    for cid in [rootCNode, cnodeA, cnodeB] do
-      builder := builder.withObject cid (.cnode (CNode.ofList 4 0 0 4
-        (if cid = rootCNode then [
-            ((SeLe4n.Slot.ofNat 0), { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant] })
-          ] else [])))
-    let st0 := builder.buildChecked
-    let (_, st1) ← expectOkSt "chain21: mint root→A"
-      (SeLe4n.Kernel.cspaceMintWithCdt rootSlot slotA (AccessRightSet.ofList [.read, .write, .grant]) none st0)
-    let (_, st2) ← expectOkSt "chain21: mint A→B"
-      (SeLe4n.Kernel.cspaceMintWithCdt slotA slotB (AccessRightSet.ofList [.read, .write]) none st1)
-    pure st2
-
-  let stPre ← mkState
-
-  -- Run materialized revocation
-  let (_, stMaterialized) ← expectOkSt "chain21: materialized revokeCdt"
-    (SeLe4n.Kernel.cspaceRevokeCdt rootSlot stPre)
-
-  -- Run streaming BFS revocation on same initial state
-  let ((), stStreaming) ← expectOkSt "chain21: streaming revokeCdtStreaming"
-    (SeLe4n.Kernel.cspaceRevokeCdtStreaming rootSlot stPre)
-
-  -- Compare observable slot state: both should have same slot contents
-  for (label, slot) in [("root", rootSlot), ("A", slotA), ("B", slotB)] do
-    let capMat := SystemState.lookupSlotCap stMaterialized slot
-    let capStr := SystemState.lookupSlotCap stStreaming slot
-    expect s!"chain21: {label} slot equivalence (both present or both absent)"
-      (capMat.isSome == capStr.isSome)
-
-  -- Both should have root present, A and B absent
-  expect "chain21: materialized root present" (SystemState.lookupSlotCap stMaterialized rootSlot).isSome
-  expect "chain21: streaming root present" (SystemState.lookupSlotCap stStreaming rootSlot).isSome
-  expect "chain21: materialized A absent" (SystemState.lookupSlotCap stMaterialized slotA).isNone
-  expect "chain21: streaming A absent" (SystemState.lookupSlotCap stStreaming slotA).isNone
-  expect "chain21: materialized B absent" (SystemState.lookupSlotCap stMaterialized slotB).isNone
-  expect "chain21: streaming B absent" (SystemState.lookupSlotCap stStreaming slotB).isNone
-
-  assertInvariants "chain21: materialized revoke invariants" stMaterialized
-  assertInvariants "chain21: streaming revoke invariants" stStreaming
-
-/-- WS-ZA ZA5.3 parts 4 and 8 (the delete/revoke perform step): a revoke is
-seL4's `cteRevoke` loop (delete the source's first child until none is left),
-admitted whenever the source holds a capability, and a delete of a capability
-that finalises nothing takes the plain delete.  Tree: root → A → B and root → C, so the
-loop must splice B under the root before deleting it. -/
-private def revokeFinalisingTakesPlainLoop : IO Unit := do
-  let rootCNode : SeLe4n.ObjId := ⟨8210⟩
-  let cnodeA : SeLe4n.ObjId := ⟨8211⟩
-  let cnodeB : SeLe4n.ObjId := ⟨8212⟩
-  let cnodeC : SeLe4n.ObjId := ⟨8213⟩
-  let targetId : SeLe4n.ObjId := ⟨8310⟩
-  let rootSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := rootCNode, slot := (SeLe4n.Slot.ofNat 0) }
-  let slotA : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeA, slot := (SeLe4n.Slot.ofNat 0) }
-  let slotB : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeB, slot := (SeLe4n.Slot.ofNat 0) }
-  let slotC : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeC, slot := (SeLe4n.Slot.ofNat 0) }
-  let rights := AccessRightSet.ofList [.read, .write, .grant]
-  let mut builder := BootstrapBuilder.empty
-  builder := builder.withObject targetId (.endpoint {})
-  for cid in [rootCNode, cnodeA, cnodeB, cnodeC] do
-    builder := builder.withObject cid (.cnode (CNode.ofList 4 0 0 4
-      (if cid = rootCNode then [
-          ((SeLe4n.Slot.ofNat 0), { target := .object targetId, rights := rights })
-        ] else [])))
-  let st0 := builder.buildChecked
-  let (_, st1) ← expectOkSt "plain revoke: mint root→A"
-    (SeLe4n.Kernel.cspaceMintWithCdt rootSlot slotA rights none st0)
-  let (_, st2) ← expectOkSt "plain revoke: mint A→B"
-    (SeLe4n.Kernel.cspaceMintWithCdt slotA slotB rights none st1)
-  let (_, st3) ← expectOkSt "plain revoke: mint root→C"
-    (SeLe4n.Kernel.cspaceMintWithCdt rootSlot slotC rights none st2)
-
-  expect "plain revoke: a source holding a capability is admitted"
-    (SeLe4n.Kernel.cspaceRevokeAdmitted rootSlot st3)
-  let (_, stRevoked) ← expectOkSt "plain revoke: revoke the root"
-    (SeLe4n.Kernel.cspaceRevokeCdtFinalising bootCoreId rootSlot st3)
-  for (label, slot) in [("A", slotA), ("B", slotB), ("C", slotC)] do
-    expect s!"plain revoke: {label} emptied" (SystemState.lookupSlotCap stRevoked slot).isNone
-  expect "plain revoke: the root keeps its capability"
-    (SystemState.lookupSlotCap stRevoked rootSlot).isSome
-  expect "plain revoke: the root is left with no children"
-    (stRevoked.linkDescendantsOf rootSlot).isEmpty
-  assertInvariants "plain revoke: invariants after the loop" stRevoked
-
-  -- The plain delete: a leaf holding a capability that finalises nothing.
-  expect "plain delete: a leaf endpoint capability is admitted"
-    (SeLe4n.Kernel.cspaceDeleteAdmitted slotB st3)
-  let (_, stDeleted) ← expectOkSt "plain delete: delete the leaf B"
-    (SeLe4n.Kernel.cspaceDeleteSlotFinalising bootCoreId slotB st3)
-  expect "plain delete: B emptied" (SystemState.lookupSlotCap stDeleted slotB).isNone
-  expect "plain delete: A and C untouched"
-    ((SystemState.lookupSlotCap stDeleted slotA).isSome &&
-      (SystemState.lookupSlotCap stDeleted slotC).isSome)
-  expect "plain delete: the step equals the plain perform"
-    ((SystemState.lookupSlotCap (SeLe4n.Kernel.cspaceDeletePerform slotB st3) slotB).isNone &&
-      (stDeleted.linkDescendantsOf slotA).isEmpty)
-  assertInvariants "plain delete: invariants after the step" stDeleted
+  assertInvariants "chain20: linear chain revoke invariants" stFinal
 
 /-- R3-A.3: Badge delivery test — verifies that notificationSignal delivers
 the badge to the woken waiter's pendingMessage when waking a blocked thread.
@@ -2412,7 +2059,7 @@ private def chain22NotificationBadgeDelivery : IO Unit := do
 
 -- ============================================================================
 -- T7-E: Deep CDT cascade test (L-P02) — 4-level capability derivation tree
--- with mid-tree strict revoke
+-- with mid-tree revoke
 -- ============================================================================
 
 /-- L-P02: Construct a 4-level CDT: root → child → grandchild → great-grandchild.
@@ -2460,9 +2107,9 @@ private def chain23CdtDeepCascadeWithMidDelete : IO Unit := do
      (SeLe4n.Model.SystemState.lookupSlotCap st3 slot1).isSome &&
      (SeLe4n.Model.SystemState.lookupSlotCap st3 slot2).isSome &&
      (SeLe4n.Model.SystemState.lookupSlotCap st3 slot3).isSome)
-  -- Strict revoke at child (slot 1) — should remove grandchild + great-grandchild
-  let (report, st4) ← expectOkSt "chain23: strict revoke at child"
-    (SeLe4n.Kernel.cspaceRevokeCdtStrict slot1 st3)
+  -- Revoke at child (slot 1) — should remove grandchild + great-grandchild
+  let (_, st4) ← expectOkSt "chain23: revoke at child"
+    (SeLe4n.Kernel.cspaceRevokeCdtFinalising bootCoreId slot1 st3)
   -- Root (slot 0) should still exist — it's in a different CNode
   expect "chain23: root cap preserved after revoke"
     ((SeLe4n.Model.SystemState.lookupSlotCap st4 slot0).isSome)
@@ -2472,8 +2119,7 @@ private def chain23CdtDeepCascadeWithMidDelete : IO Unit := do
   -- Great-grandchild (slot 3) should be removed
   expect "chain23: great-grandchild removed after revoke"
     ((SeLe4n.Model.SystemState.lookupSlotCap st4 slot3).isNone)
-  -- Verify revoke report has 2 deleted slots
-  expect "chain23: revoke report deletedSlots=2" (report.deletedSlots.length == 2)
+  expect "chain23: child keeps no children after revoke" (st4.linkChildrenOf slot1).isEmpty
   assertInvariants "chain23: deep CDT cascade" st4
   -- === Root-level revocation test (spec requirement) ===
   -- Clear slot1 (still occupied after revoke kept source cap), then re-mint full tree
@@ -2486,15 +2132,15 @@ private def chain23CdtDeepCascadeWithMidDelete : IO Unit := do
   let (_, st7) ← expectOkSt "chain23: remint great-grandchild"
     (SeLe4n.Kernel.cspaceMintWithCdt slot2 slot3 (AccessRightSet.ofList [.read]) none st6)
   -- Revoke at root (slot 0) — should remove all 3 descendants
-  let (rootReport, st8) ← expectOkSt "chain23: strict revoke at root"
-    (SeLe4n.Kernel.cspaceRevokeCdtStrict slot0 st7)
+  let (_, st8) ← expectOkSt "chain23: revoke at root"
+    (SeLe4n.Kernel.cspaceRevokeCdtFinalising bootCoreId slot0 st7)
   expect "chain23: child removed after root revoke"
     ((SeLe4n.Model.SystemState.lookupSlotCap st8 slot1).isNone)
   expect "chain23: grandchild removed after root revoke"
     ((SeLe4n.Model.SystemState.lookupSlotCap st8 slot2).isNone)
   expect "chain23: great-grandchild removed after root revoke"
     ((SeLe4n.Model.SystemState.lookupSlotCap st8 slot3).isNone)
-  expect "chain23: root revoke deletedSlots=3" (rootReport.deletedSlots.length == 3)
+  expect "chain23: root keeps no children after revoke" (st8.linkChildrenOf slot0).isEmpty
   -- === Mid-tree delete test (spec requirement) ===
   -- Rebuild tree again, then delete the grandchild CNode object
   let (_, st9) ← expectOkSt "chain23: rebuild child for delete test"
@@ -2505,10 +2151,10 @@ private def chain23CdtDeepCascadeWithMidDelete : IO Unit := do
     (SeLe4n.Kernel.cspaceMintWithCdt slot2 slot3 (AccessRightSet.ofList [.read]) none st10)
   -- Revoke at grandchild (mid-tree) to cascade great-grandchild removal,
   -- then delete the grandchild slot itself — full mid-tree sub-tree cleanup.
-  let (midReport, st11b) ← expectOkSt "chain23: revoke at grandchild (mid-tree)"
-    (SeLe4n.Kernel.cspaceRevokeCdtStrict slot2 st11)
+  let (_, st11b) ← expectOkSt "chain23: revoke at grandchild (mid-tree)"
+    (SeLe4n.Kernel.cspaceRevokeCdtFinalising bootCoreId slot2 st11)
   expect "chain23: mid-tree revoke removed great-grandchild"
-    (midReport.deletedSlots.length == 1)
+    ((SeLe4n.Model.SystemState.lookupSlotCap st11b slot3).isNone)
   let (_, st12) ← expectOkSt "chain23: delete grandchild slot"
     (SeLe4n.Kernel.cspaceDeleteSlot slot2 st11b)
   expect "chain23: root preserved after mid-delete"
@@ -3202,13 +2848,10 @@ private def runOperationChainSuite : IO Unit := do
   endpointGrantDecidesBothOrderings
   chain13IpcCapTransferNoGrant
   chain14IpcBadgeAndCapTransfer
-  chain15StrictRevokeDeepChain
-  chain16StrictRevokePartialFail
-  chain17StrictRevokeOrdering
-  chain18StreamingRevokeBFS
-  chain19StreamingRevokeEmpty
-  chain20StreamingRevokeDeepChain
-  chain21StreamingRevokeEquivalence
+  chain15RevokeDeepChain
+  chain17RevokeBranchingTree
+  chain19RevokeNoDescendants
+  chain20RevokeLinearChain
   revokeFinalisingTakesPlainLoop
   chain22NotificationBadgeDelivery
   chain23CdtDeepCascadeWithMidDelete

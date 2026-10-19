@@ -995,6 +995,31 @@ theorem cspaceRevokeCdtFinalising_of_admitted {ec : Concurrency.CoreId} {addr : 
   | none => rw [hL] at h; cases h
   | some _ => rfl
 
+/-- **A successful revocation witnesses an occupied source slot**: the tie that
+keeps `cdtNodeIsRevocable` revocation's own precondition rather than a second
+opinion about it. -/
+theorem cspaceRevokeCdtFinalising_ok_implies_slot_occupied {ec : Concurrency.CoreId}
+    {addr : CSpaceAddr} {st st' : SystemState}
+    (h : cspaceRevokeCdtFinalising ec addr st = .ok ((), st')) :
+    (SystemState.lookupSlotCap st addr).isSome := by
+  unfold cspaceRevokeCdtFinalising at h
+  split at h
+  · next hL => rw [hL]; rfl
+  · split at h <;> cases h
+
+/-- **A node `cdtNodeIsRevocable` refuses is a node no revocation can enter.**
+Were an IPC transfer to install beneath it anyway, the edge would hang beneath a
+slot that cannot be revoked, so nothing could destroy the installed
+capability. -/
+theorem cdtNodeIsRevocable_false_revoke_refuses (st : SystemState) (node : SlotRef)
+    (hNot : cdtNodeIsRevocable st node = false) (ec : Concurrency.CoreId)
+    (st' : SystemState) : cspaceRevokeCdtFinalising ec node st ≠ .ok ((), st') := by
+  intro hOk
+  have hOcc := cspaceRevokeCdtFinalising_ok_implies_slot_occupied hOk
+  unfold cdtNodeIsRevocable at hNot
+  rw [hOcc] at hNot
+  cases hNot
+
 /-- **What a successful finalising revocation is: a run of finalising
 deletes.** -/
 theorem cspaceRevokeCdtFinalising_chain (ec : Concurrency.CoreId) (addr : CSpaceAddr)

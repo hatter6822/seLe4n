@@ -718,8 +718,6 @@ run_check "TRACE" rg -n '7-field low-equivalence' tests/InformationFlowSuite.lea
 # WS-F4 proof gap closure anchors — timerTick, cspaceMutate, cspaceRevoke, notification preservation.
 run_check "INVARIANT" rg -n '^theorem timerTick_preserves_schedulerInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/Preservation.lean
 run_check "INVARIANT" rg -n '^theorem cspaceMutate_preserves_capabilityInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/CopyMoveMutate.lean
-run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdt_preserves_capabilityInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/Revoke.lean
-run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdtStrict_preserves_capabilityInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/Revoke.lean
 run_check "INVARIANT" rg -n '^theorem notificationSignal_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Structural/
 run_check "INVARIANT" rg -n '^theorem notificationSignal_preserves_schedulerInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/NotificationPreservation/
 run_check "INVARIANT" rg -n '^theorem notificationWait_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
@@ -4143,13 +4141,9 @@ run_check "INVARIANT" rg -n -U '      if cspaceDeleteFinalisingAdmitted \{ cnode
 run_check "INVARIANT" rg -n '^theorem revokeFirstChildLoop_chain($|[ ({:\[\]])' SeLe4n/Kernel/Capability/FrameFinalise.lean
 run_check "INVARIANT" rg -n '^theorem FinalisingDeleteChain\.unmapped($|[ ({:\[\]])' SeLe4n/Kernel/Capability/FrameFinalise.lean
 run_negative_check "INVARIANT" rg -n 'cspaceRevokeThenFinalise|revokedPageTables|linkSubtreeDeletable' SeLe4n
-# One revocation: the materialized fold REPORTS the page each destroyed
-# capability recorded, read from the slot it deletes, and there is no second
-# state-only fold beside it (the collecting duplicate was deleted, not pinned).
-run_check "INVARIANT" rg -n -U 'def revokeCdtFoldBody\n    \(acc : Except KernelError \(List MappedPage × SystemState\)\) \(node : SlotRef\) :' SeLe4n/Kernel/Capability/Operations.lean
-run_check "INVARIANT" rg -n -U 'def cspaceRevokeCdt \(addr : CSpaceAddr\) : Kernel \(List MappedPage\) :=\n  revokeCdtScaffold revokeCdtMaterializedTraversal addr' SeLe4n/Kernel/Capability/Operations.lean
-run_check "INVARIANT" rg -n '^theorem revokeCdtFoldBody_records($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
-run_negative_check "INVARIANT" rg -n 'cspaceRevokeCdtCollecting|revokeCdtCollectingFoldBody|revokeCdtCollectingTraversal' SeLe4n tests
+# The general revocation it replaced, with its scaffold, per-node step and
+# strict, streaming and transactional variants, was deleted, not kept beside it.
+run_negative_check "INVARIANT" rg -n -w 'cspaceRevokeCdt|cspaceRevokeCdtStrict|cspaceRevokeCdtStreaming|cspaceRevokeCdtTransactional|revokeCdtScaffold|revokeCdtFoldBody|revokeCdtMaterializedTraversal|processRevokeNode|streamingRevokeBFS|cdtRemove' SeLe4n tests
 # v0.36.110: the teardown decides nothing afterwards; its results are theorems
 # on a well-formed state, and the after-checks are gone.
 run_check "INVARIANT" rg -n '^    \| \.ok \(\(\), st1\) => unmapLivePages executingCore \(pages \+\+ orphanedTableMappings st orphans\) st1$' SeLe4n/Kernel/Capability/FrameFinalise.lean
@@ -6157,7 +6151,7 @@ run_check "INVARIANT" rg -n '^theorem crossCoreLeakage_bounded_by_globalProjecti
 run_check "INVARIANT" rg -n '^theorem crossCoreTransition_invisible_to_every_observer($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^def enforcementBoundaryPerCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_count($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore\.length = 68' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore\.length = 67' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_extends_canonical($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^def enforcementBoundaryPerCoreComplete($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_is_complete($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
@@ -6871,7 +6865,7 @@ run_check "INVARIANT" rg -n 'NEGATIVE: linearOrder disagrees on exactly one of t
 # SM9.A.11 took it 40 -> 42 with the two audit readers; WS-RR RR8.16
 # (`v0.35.190`) took it 44 -> 45 with `cspaceRevokeCdt`.  The anchor pins HEAD's
 # value; the arrows above are history, which is why they are not restated in it.
-run_check "INVARIANT" rg -n 'enforcementBoundaryExtended.length = 53' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
+run_check "INVARIANT" rg -n 'enforcementBoundaryExtended.length = 52' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
 run_check "INVARIANT" rg -n '^  runEndpointPolicyGateChecks' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'NEGATIVE: a widening override cannot open a flow the lattice denies' tests/SmpInformationFlowSuite.lean
 
@@ -7590,7 +7584,7 @@ run_check "INVARIANT" rg -n '^  runAuditDrainSignalChecks' tests/SmpInformationF
 run_check "INVARIANT" rg -n 'capabilityOnly "auditReadFromCore"' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
 run_negative_check "INVARIANT" rg -n 'capabilityOnly "auditReadWord"' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
 run_check "INVARIANT" rg -n 'capabilityOnly "auditDrainVisiblePrefix"' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
-run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore.length = 68' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore.length = 67' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^def lockSet_auditRead($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n '^def lockSet_auditDrain($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 # PR #870 round 6 (the lock domain): a declared footprint covers the COMMITTED
@@ -9131,23 +9125,8 @@ run_negative_check "INVARIANT" rg -n 'storeTcbIpcState st. receiver \(\.blockedO
 run_negative_check "INVARIANT" rg -n 'revokePendingTransfers|nodeHasPendingTransfer|slotHasPendingTransfer|pendingCapsDropped' SeLe4n/
 run_check "INVARIANT" rg -n 'let req := receiveCapRequest st endpointId' SeLe4n/Kernel/IPC/DualQueue/WithCaps.lean
 run_check "INVARIANT" rg -n 'match receiveTransferCaps req receiverCspaceRoot receiverSlotBase st. with' SeLe4n/Kernel/IPC/DualQueue/WithCaps.lean
-# The four revocation entry points are one scaffold at four traversals, so the
-# prologue is not a variant's to write.
-run_check "INVARIANT" rg -n '^def revokeCdtScaffold($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
-# The tie is definitional -- four `rfl`s, so a variant that stopped being the
-# scaffold would fail to elaborate rather than fail to be listed.
-run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdt_routes_through_scaffold($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
-run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdtStreaming_routes_through_scaffold($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
-run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdtStrict_routes_through_scaffold($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
-run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdtTransactional_routes_through_scaffold($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
-# The transactional variant had NO preservation theorem: the strict one restated
-# its fold inline instead of naming it, so there was nothing for a second variant
-# over the same fold to reuse.
-run_check "INVARIANT" rg -n '^theorem revokeCdtReportingStep_preserves($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/Revoke.lean
-run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdtTransactional_preserves_capabilityInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/Revoke.lean
 # The regression names revocation rather than one function: every entry point.
 run_check "INVARIANT" rg -n '^private def revocationEntryPoints($|[ ({:\[\]])' tests/OperationChainSuite.lean
-run_check "INVARIANT" rg -n 'revocationEntryPoints.length == 4' tests/OperationChainSuite.lean
 # And the send-side half of round 6's ordering independence.  The wrappers took
 # the grant authority TWICE -- the `endpointRights` argument for the rendezvous
 # arm, `msg.capsGranted` for the parked one -- and never tied them.  Since WS-ZA
@@ -9993,19 +9972,17 @@ run_check "INVARIANT" rg -n '^theorem ipcTransferSingleCap_sourceRevoked_preserv
 # empties every sibling naming the revoked target while the swept CNode is
 # stored without touching the CDT maps.  So the mapping outlived the capability, a
 # transfer parked against a swept sibling installed, and nothing could revoke the
-# copy afterwards: `cspaceRevokeCdt` on an empty slot fails at `cspaceLookupSlot`.
+# copy afterwards: revocation of an empty slot fails at its lookup.
 run_check "INVARIANT" rg -n '^def cdtNodeIsRevocable($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
 run_check "INVARIANT" rg -n 'match cdtNodeIsRevocable st srcNode with' SeLe4n/Kernel/Capability/Operations.lean
 run_check "INVARIANT" rg -n '^theorem ipcTransferSingleCap_installed_implies_revocable_source($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
 # The condition is revocation's own precondition, not a second opinion about it:
 # a change to what revocation requires breaks these rather than widening the check.
 run_check "INVARIANT" rg -n '^theorem cspaceRevoke_ok_implies_slot_occupied($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
-run_check "INVARIANT" rg -n '^theorem cdtNodeIsRevocable_false_revoke_refuses($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
-# v0.36.1 (PR #900 review): the tie is stated over EVERY revocation entry point --
-# the scaffold at an arbitrary traversal -- since none of them runs the local
-# sweep any more, and the refusal theorem quantifies over the scaffold.
-run_check "INVARIANT" rg -n '^theorem revokeCdtScaffold_ok_implies_slot_occupied($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem cdtNodeIsRevocable_false_revoke_refuses[^\n]*(\n([ \t][^\n]*)?)*revokeCdtScaffold traverse node st" SeLe4n/Kernel/Capability/Operations.lean'
+# v0.36.111: the tie is stated over the revocation `.cspaceRevoke` runs, the
+# finalising `cteRevoke` loop.
+run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdtFinalising_ok_implies_slot_occupied($|[ ({:\[\]])' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem cdtNodeIsRevocable_false_revoke_refuses[^\n]*(\n([ \t][^\n]*)?)*cspaceRevokeCdtFinalising ec node st" SeLe4n/Kernel/Capability/FrameFinalise.lean'
 # The mapping-only test must not come back at the install site.
 run_negative_check "INVARIANT" rg -n 'match SystemState.lookupCdtSlotOfNode st srcNode with' SeLe4n/Kernel/Capability/Operations.lean
 # v0.36.1 (PR #900 review): the swept-sibling regression INVERTED.  Revocation no
@@ -21302,36 +21279,21 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^  \| \.cspaceRevoke =>[^\n]*(\n([ \t]
 # derivation (mint/copy/move), and destroying one is not that authority.
 run_check "INVARIANT" rg -n '^  \| \.cspaceRevoke    => \.write' SeLe4n/Kernel/API.lean
 # 1b. v0.36.1 (PR #900 review): WHAT THE REVOCATION DESTROYS IS EXACTLY THE
-# SOURCE'S CDT DESCENDANTS.  The scaffold every entry point shares opened with the
-# local `cspaceRevoke`, which matches on the TARGET and so destroyed an
-# independently rooted capability to the same object, and the source's own parent
-# in the same CNode, leaving their nodes mapped to empty slots.  Its prologue is a
-# read of the source slot now; the negative refuses the sweep coming back into the
-# scaffold's own declaration, and the witnesses are SD-059 and
-# `revokeLeavesIndependentSibling`.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def revokeCdtScaffold[^\n]*(\n([ \t][^\n]*)?)*    match cspaceLookupSlot addr st with" SeLe4n/Kernel/Capability/Operations.lean'
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def revokeCdtScaffold[^\n]*(\n([ \t][^\n]*)?)*cspaceRevoke addr st" SeLe4n/Kernel/Capability/Operations.lean'
+# SOURCE'S CDT DESCENDANTS.  The revocation opened with the local
+# `cspaceRevoke`, which matches on the TARGET and so destroyed an independently
+# rooted capability to the same object, and the source's own parent in the same
+# CNode, leaving their nodes mapped to empty slots.  Since v0.36.111 the arm is
+# the finalising `cteRevoke` loop, which reads the source slot and deletes its
+# first child until it has none; the negative refuses the sweep coming back
+# into it, and the witnesses are SD-059 and `revokeLeavesIndependentSibling`.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def cspaceRevokeCdtFinalising[^\n]*(\n([ \t][^\n]*)?)*cspaceRevoke addr" SeLe4n/Kernel/Capability/FrameFinalise.lean'
 run_check "INVARIANT" rg -n 'sd059_dispatch_leaves_the_independent_sibling' tests/SyscallDispatchSuite.lean
 run_check "INVARIANT" rg -n 'sd059_dispatch_removes_the_same_cnode_derivation' tests/SyscallDispatchSuite.lean
 run_check "INVARIANT" rg -n 'sd059_local_only_destroys_the_independent_sibling' tests/SyscallDispatchSuite.lean
 # 3. THE DISPATCH PAYOFF covers it -- the arm is in
-# `dispatchCapabilityOnly_preserves_ipcInvariantFull`, whose chain this cut built
-# from nothing (the family's preservation surface was `capabilityInvariantBundle`
-# alone).
-run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdt_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
-run_check "INVARIANT" rg -n '^theorem revokeCdtScaffold_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
-run_check "INVARIANT" rg -n '^theorem processRevokeNode_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
-# 4. ONE QUESTION, ONE OWNER: the scaffold's case analysis and the traversal's
-# induction are PREDICATE-FREE and live beside their definitions, so the
-# capability bundle's argument and the IPC bundle's are one answer rather than
-# two.  The fold body moved with them and the traversal is DEFINED through it --
-# keeping it in an invariant module is what forced that traversal's proof to
-# `change` its way into an inlined lambda.
-run_check "INVARIANT" rg -n '^theorem revokeCdtScaffold_ok_decompose($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
-run_check "INVARIANT" rg -n '^theorem revokeCdtFold_induct($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
-run_check "INVARIANT" rg -n '^theorem revokeCdtMaterializedTraversal_ok_induct($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "^def revokeCdtMaterializedTraversal[^\n]*(\n([ \t][^\n]*)?)*descendants\.foldl revokeCdtFoldBody" SeLe4n/Kernel/Capability/Operations.lean'
-run_negative_check "INVARIANT" rg -n '^def revokeCdtFoldBody' SeLe4n/Kernel/Capability/Invariant/Preservation/Revoke.lean
+# `dispatchCapabilityOnly_preserves_ipcInvariantFull`, through the finalising
+# revoke's closure theorem (v0.36.111).
+run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdtFinalising_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
 # 5. A `donationReadAgreement` DOES NOT DEMAND pendingMessage EQUALITY: only
 # two conjuncts of the bundle read the field, and they read its presence.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def pendingMessageReadAgrees[^\n]*(\n([ \t][^\n]*)?)*mx\.isSome = my\.isSome" SeLe4n/Kernel/IPC/Invariant/Defs.lean'

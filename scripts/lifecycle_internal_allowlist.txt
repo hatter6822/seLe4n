@@ -32,7 +32,6 @@ SeLe4n/Kernel/Capability/Invariant/Preservation.lean
 SeLe4n/Kernel/Capability/Invariant/Preservation/Insert.lean
 SeLe4n/Kernel/Capability/Invariant/Preservation/Delete.lean
 SeLe4n/Kernel/Capability/Invariant/Preservation/CopyMoveMutate.lean
-SeLe4n/Kernel/Capability/Invariant/Preservation/Revoke.lean
 SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean
 SeLe4n/Kernel/Capability/Invariant/Preservation/BadgeIpcCapsAndCdtMaps.lean
 SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean

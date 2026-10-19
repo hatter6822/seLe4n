@@ -1405,7 +1405,7 @@ The five properties, none of them reachable without crossing the gate:
    rather than asserted.
 5. **The mint is CDT-tracked and therefore revocable.**  `mintReplyCapWithCdt`
    records `src → dst`; the arm's docstring promises revocability through
-   `cspaceRevokeCdt`, so the edge is checked *and* the revocation is run. -/
+   `.cspaceRevoke`, so the edge is checked *and* the revocation is run. -/
 private def sd058_mintReplyCapThroughTheSyscallGate : IO Unit := do
   let caller   : SeLe4n.ThreadId := ⟨1⟩
   let cnId     : SeLe4n.ObjId := ⟨50⟩
@@ -1481,7 +1481,7 @@ private def sd058_mintReplyCapThroughTheSyscallGate : IO Unit := do
       expect "sd058_mint_records_a_derivation_edge"
         ((stMinted.linkChildrenOf srcRef).contains dstRef)
         "the mint must record `src → dst` in the derivation tree"
-      match SeLe4n.Kernel.cspaceRevokeCdt src stMinted with
+      match SeLe4n.Kernel.cspaceRevokeCdtFinalising bootCoreId src stMinted with
       | .error e =>
           failLine "sd058_revoke_of_the_mint_source"
             s!"revoking the mint source must succeed; got: {repr e}"
@@ -1523,7 +1523,7 @@ no revocation arm at all, so no capability a thread could present revoked
 anything.  This drives the arm the dispatcher now routes, and its claims are
 the three the arm's own docstring decides:
 
-1. **It dispatches `cspaceRevokeCdt`, not the local `cspaceRevoke`.**  That is
+1. **It dispatches `cspaceRevokeCdtFinalising`, not the local `cspaceRevoke`.**  That is
    the whole of the arm's security content: the local primitive reaches only the
    *containing* CNode, so a derived capability copied into any other CSpace
    survives it, while the CDT walk follows the derivation tree across arbitrary

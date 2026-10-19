@@ -196,25 +196,6 @@ theorem cspaceDeleteSlot_runQueueStage {st st' : SystemState} {addr : CSpaceAddr
   exact (cspaceDeleteSlotCore_runQueueStage hCore).trans ((withCdt_runQueueStage _ _).trans
     (RunQueueStage.of_linkReach (spliceDeletedCdtNode_reach stC addr)))
 
-theorem processRevokeNode_runQueueStage {st st' : SystemState} {node : SlotRef}
-    (h : processRevokeNode st node = .ok st') : RunQueueStage st st' := by
-  unfold processRevokeNode at h
-  split at h
-  · cases h
-  · rename_i stDel hDel
-    cases h
-    exact (cspaceDeleteSlotCore_runQueueStage hDel).trans ((withCdt_runQueueStage _ _).trans
-      (RunQueueStage.of_linkReach (SystemState.cdtRemove_reach stDel node)))
-
-theorem cspaceRevokeCdt_runQueueStage {st st' : SystemState} {addr : CSpaceAddr}
-    {pages : List MappedPage} (h : cspaceRevokeCdt addr st = .ok (pages, st')) :
-    RunQueueStage st st' := by
-  obtain ⟨_, out, hTrav, rfl⟩ :=
-    revokeCdtScaffold_ok_decompose revokeCdtMaterializedTraversal st st' addr pages h
-  exact revokeCdtMaterializedTraversal_ok_induct (P := RunQueueStage st)
-    (fun _ _ _ hP hSt => hP.trans (processRevokeNode_runQueueStage hSt))
-    st addr _ out (RunQueueStage.refl _) hTrav
-
 theorem finaliseDestroyedCapabilities_runQueueStage {ec : Concurrency.CoreId} {named : List SeLe4n.ObjId}
     {pages : List MappedPage} {st st' : SystemState}
     (h : finaliseDestroyedCapabilities ec named pages st = .ok ((), st')) : RunQueueStage st st' :=

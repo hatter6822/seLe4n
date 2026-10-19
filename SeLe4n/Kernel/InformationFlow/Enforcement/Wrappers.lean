@@ -207,21 +207,17 @@ def enforcementBoundary : List EnforcementClass :=
   , .capabilityOnly "cspaceInsertSlot"
   , .capabilityOnly "cspaceDeleteSlot"
   , .capabilityOnly "cspaceRevoke"
-  -- **WS-RR RR8.16 (`v0.35.190`)**: the CDT-traversing revocation, and the entry
-  -- the live `.cspaceRevoke` arm calls.  The local `cspaceRevoke` above is the
-  -- single-CNode primitive it opens with; naming *that* one in the mapping would
-  -- be the PR #870 round-5 defect verbatim — a boundary entry for an inner step
-  -- while the seam a capability actually reaches is the composite that walks the
-  -- derivation tree across arbitrary CSpaces.
-  , .capabilityOnly "cspaceRevokeCdt"
   -- **WS-BP BP7.1 (`v0.36.7`)**: the two destroying arms' live transitions —
   -- the delete and the CDT revocation, each followed by the removal of every
   -- mapping a destroyed frame capability recorded (seL4's `finaliseCap`).
   -- Capability-only: the authority is the CNode capability the delete and the
   -- revocation already demand; what the teardown removes is mappings whose
   -- capabilities the caller is destroying, so no principal loses access it
-  -- still holds authority for.  The inner `cspaceDeleteSlot` / `cspaceRevokeCdt`
-  -- entries stay, as the internal steps other composites reach.
+  -- still holds authority for.  The inner `cspaceDeleteSlot` entry stays, as
+  -- the internal step other composites reach.  (WS-RR RR8.16's
+  -- `cspaceRevokeCdt` entry left with the general revocation it named, at
+  -- WS-ZA ZA5.3 part 8, `v0.36.111`: the revoke arm's live transition is the
+  -- finalising loop below.)
   , .capabilityOnly "cspaceDeleteSlotFinalising"
   , .capabilityOnly "cspaceRevokeCdtFinalising"
   -- **WS-BP BP7.1 (`v0.36.5`)**: the untyped carve, named at the transition the

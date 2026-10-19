@@ -194,22 +194,18 @@ subsystem. All resolved across Phases 2 and 5.
 | **M-P01** | `cspaceRevokeCdt` double-pass revoke fold | `revokeAndClearRefsState` fused revoke and clear-refs into a single-pass fold (retired at v0.35.78 with the capability-reference table it cleared; the revoke stores the swept CNode once) | v0.16.15 |
 | **M-P02** | CDT parent lookup O(E) edge scan | `parentMap : HashMap CdtNodeId CdtNodeId` index for O(1) `parentOf` (superseded at v0.36.106 by each slot's parent link) | v0.16.15 |
 | **M-P03** | Reply lemma duplication across preservation proofs | Extracted shared infrastructure; new field preservation lemmas | v0.16.15 |
-| **M-P04** | `descendantsOf` materializes full O(N+E) set upfront | `processRevokeNode` shared step + `streamingRevokeBFS` BFS loop; `cspaceRevokeCdtStreaming` avoids full materialization | v0.16.19–v0.17.0 |
+| **M-P04** | `descendantsOf` materializes full O(N+E) set upfront | `processRevokeNode` shared step + `streamingRevokeBFS` BFS loop; `cspaceRevokeCdtStreaming` avoids full materialization | v0.16.19–v0.17.0 (removed at v0.36.111) |
 | **M-P05** | `endpointReply_preserves_capabilityInvariantBundle` duplication | Unified via extracted lemmas from M-P03 | v0.16.15 |
 
-### M-P04: Streaming BFS revocation (v0.16.19, optimized v0.17.0)
+### M-P04: Streaming BFS revocation (v0.16.19, optimized v0.17.0; removed v0.36.111)
 
-`cspaceRevokeCdtStreaming` performs level-by-level BFS revocation via
-`streamingRevokeBFS`, processing one CDT node at a time without materializing
-the full `descendantsOf` set. Each BFS step discovers only the immediate children
-of the current node, avoiding O(N+E) upfront computation for deep derivation
-trees. The per-node transition is factored into `processRevokeNode`, shared by
-both the materialized fold (`cspaceRevokeCdt`) and the streaming BFS path.
-
-Preservation is proved in two layers:
-- `processRevokeNode_preserves_capabilityInvariantBundle` — shared per-node proof
-- `streamingRevokeBFS_preserves` — composed multi-level preservation
-- `cspaceRevokeCdtStreaming_preserves_capabilityInvariantBundle` — top-level bundle preservation
+The streaming BFS revocation (`cspaceRevokeCdtStreaming`) processed one CDT node
+at a time instead of materializing the full `descendantsOf` set.  It was removed
+at `v0.36.111` (WS-ZA ZA5.3 part 8) together with the materialized revocation it
+complemented: `.cspaceRevoke` now runs `cspaceRevokeCdtFinalising`, seL4's
+`cteRevoke`, which deletes the source's first child (read from the slot's own
+link) until it has none.  That loop materializes nothing and walks no queue, so
+the problem M-P04 addressed no longer arises.
 
 ## 5. Complexity improvements
 

@@ -1456,7 +1456,7 @@ a target match was the only available stand-in for "derived from the source", an
 it keeps that meaning — so it also deletes an independently rooted capability to
 the same object and the source's own parent when the two share a CNode.  The
 derivation tree the old docstring deferred exists (`SystemState.cdt`), and
-`revokeCdtScaffold` destroys exactly the source's CDT descendants, which is
+`cspaceRevokeCdtFinalising` destroys exactly the source's CDT descendants, which is
 seL4's `cteRevoke` (read at `13.0.0`).  What still calls this is the local
 `cspaceRevoke`, an internal operation.
 

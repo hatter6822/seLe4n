@@ -955,26 +955,19 @@ witnesses their two driven siblings have (`tests/NegativeStateSuite.lean`), whic
 closes *"no suite drives them"* while leaving *"outside the live closure"* true
 and recorded **here**, where it belongs.
 
-**The revocation family's residue closed at `v0.35.190` (WS-RR RR8.16)**, and
-what is left of it here is a *narrower* claim than the one that was registered.
-`API.lean` gained the `.cspaceRevoke` arm, so `cspaceRevoke`, `cspaceRevokeCdt`,
-`revokeCdtScaffold`, `revokeCdtMaterializedTraversal`, `revokeCdtFoldBody`,
-`processRevokeNode` and the in-flight sweep are all in the live closure and have
-left this list.  What remains are the three **reporting variants**
-(`cspaceRevokeCdtStrict`, `cspaceRevokeCdtStreaming`,
-`cspaceRevokeCdtTransactional`) with their traversals, the streaming BFS and the
-reporting fold step: each is the same scaffold at a different traversal, offered
-to *in-kernel* callers that want a structured failure report or an
-`O(branching-factor)` walk, and the syscall arm dispatches the materialized
-variant because a userspace invocation has no channel to receive a report
-through.  A variant with no in-kernel caller either gains one or is retired;
-that is a smaller question than the one the register row asked, and it is what
-the row was closed down to.
+**The revocation family's residue is gone since `v0.36.111` (WS-ZA ZA5.3 part 8).**
+`.cspaceRevoke` dispatches `cspaceRevokeCdtFinalising`, seL4's `cteRevoke`: a
+loop that deletes and finalises the source slot's first child until it has none.
+The general revocation it replaced (`cspaceRevokeCdt` with its scaffold,
+materialized traversal and per-node step) and the three reporting variants
+(strict, streaming and transactional, with their traversals and the streaming
+BFS) had no caller left once that arm moved, so they were deleted rather than
+listed here.
 
 **And the local `cspaceRevoke` is back on this list since `v0.36.1`** (PR #900
-review), for the opposite reason from the variants: it was in the live closure
-only as `revokeCdtScaffold`'s prologue, and that prologue is a read of the source
-slot now, because the local sweep matched on the **target** and so destroyed
+review): it was in the live closure
+only as the old general revocation's prologue, and that prologue became a read of
+the source slot, because the local sweep matched on the **target** and so destroyed
 capabilities that were not derivations — an independently rooted capability to
 the same object, and the revoked capability's own parent.  What still runs it is
 `lifecycleRevokeDeleteRetype`, an internal proof helper already on this list, and
@@ -1108,9 +1101,6 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.cspaceMutate
   , `SeLe4n.Kernel.cspaceResolvePath
   , `SeLe4n.Kernel.cspaceRevoke
-  , `SeLe4n.Kernel.cspaceRevokeCdtStreaming
-  , `SeLe4n.Kernel.cspaceRevokeCdtStrict
-  , `SeLe4n.Kernel.cspaceRevokeCdtTransactional
   -- WS-LS LS2.4: the STAGED CSpace walk's bracket (`CSpaceWalkFootprint.lean`
   -- §4), which no committing seam runs; its predecessor
   -- `resolveCapAddressUnderWalkLocks` was pinned here for the same reason.
@@ -1177,11 +1167,6 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.restoreIncomingContextChecked
   , `SeLe4n.Kernel.restoredAndConsumed
   , `SeLe4n.Kernel.returnDonatedSchedContextValid
-  , `SeLe4n.Kernel.revokeCdtReportingOutcome
-  , `SeLe4n.Kernel.revokeCdtReportingStep
-  , `SeLe4n.Kernel.revokeCdtStreamingTraversal
-  , `SeLe4n.Kernel.revokeCdtStrictTraversal
-  , `SeLe4n.Kernel.revokeCdtTransactionalTraversal
   , `SeLe4n.Kernel.saveOutgoingContext
   , `SeLe4n.Kernel.saveOutgoingContextChecked
   , `SeLe4n.Kernel.schedule
@@ -1195,7 +1180,6 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.storeServiceEntry
   , `SeLe4n.Kernel.storeTcbIpcState_fromTcb
   , `SeLe4n.Kernel.storeTcbPendingMessage
-  , `SeLe4n.Kernel.streamingRevokeBFS
   , `SeLe4n.Kernel.sweptAndRestored
   , `SeLe4n.Kernel.switchDomain
   , `SeLe4n.Kernel.switchDomainChecked

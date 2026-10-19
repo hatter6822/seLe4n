@@ -103,9 +103,9 @@ pub fn cspace_delete(cnode_cap: CPtr, target_slot: Slot) -> KernelResult<Syscall
 /// Revoke every capability derived from the one in `target_slot`.
 ///
 /// Lean: the `.cspaceRevoke` arm (API.lean, WS-RR RR8.16) — requires `.write`
-/// on `cnode_cap`, and routes to `cspaceRevokeCdt`, which walks the slot's CDT
-/// descendants across *arbitrary* CSpaces rather than only the containing
-/// CNode.
+/// on `cnode_cap`, and routes to `cspaceRevokeCdtFinalising`, seL4's
+/// `cteRevoke`: it deletes and finalises the slot's first CDT child until it
+/// has none, across *arbitrary* CSpaces rather than only the containing CNode.
 ///
 /// The source slot itself **survives**: revocation destroys a capability's
 /// derivations, not the capability, which is what distinguishes it from

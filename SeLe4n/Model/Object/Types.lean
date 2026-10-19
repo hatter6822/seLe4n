@@ -3609,7 +3609,7 @@ inductive SyscallId where
   | tcbSetFaultHandler     -- Review round (PR #887): install a thread's fault-handler CPtr
                            -- (seL4_TCB_SetSpace's fault_ep), validated at set time
   | cspaceRevoke           -- WS-RR RR8.16 (`v0.35.190`): revoke a capability's derivations
-                           -- (seL4_CNode_Revoke), dispatched through `cspaceRevokeCdt`
+                           -- (seL4_CNode_Revoke), dispatched through `cspaceRevokeCdtFinalising`
   | untypedRetype          -- WS-BP BP7.1 (`v0.36.5`): carve a frame — or since slice 4
                            -- (`v0.36.8`) a child untyped — out of an untyped the caller
                            -- holds (seL4_Untyped_Retype), through `untypedRetypeObject`

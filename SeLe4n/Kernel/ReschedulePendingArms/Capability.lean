@@ -226,29 +226,7 @@ theorem mintReplyCapWithCdt_keyFrame (st st' : SystemState) (src dst : CSpaceAdd
         · contradiction
     exact hM.trans (cdtRecord_keyFrame stM src dst .mint hM.2.2)
 
-/-! ### The revocation family -/
-
-theorem processRevokeNode_keyFrame (st st' : SystemState) (node : SlotRef)
-    (hObjInv : st.objects.invExt) (hStep : processRevokeNode st node = .ok st') :
-    capabilityKeyFrame st st' := by
-  unfold processRevokeNode at hStep
-  cases hDel : cspaceDeleteSlotCore node st with
-  | error _ => simp [hDel] at hStep
-  | ok pair =>
-    obtain ⟨⟨⟩, stDel⟩ := pair
-    simp [hDel] at hStep; cases hStep
-    have hD : capabilityKeyFrame st stDel := cspaceDeleteSlotCore_keyInputsEq st stDel node hObjInv hDel
-    exact hD.trans (capabilityKeyFrame_of_withCdt_linkReach
-      (SystemState.cdtRemove_reach stDel node) hD.2.2)
-
-theorem cspaceRevokeCdt_keyFrame (st st' : SystemState) (addr : CSpaceAddr)
-    (pages : List MappedPage) (hObjInv : st.objects.invExt)
-    (hStep : cspaceRevokeCdt addr st = .ok (pages, st')) : capabilityKeyFrame st st' := by
-  obtain ⟨_, out, hTrav, rfl⟩ :=
-    revokeCdtScaffold_ok_decompose revokeCdtMaterializedTraversal st st' addr pages hStep
-  exact revokeCdtMaterializedTraversal_ok_induct (P := capabilityKeyFrame st)
-    (fun stA stB nd hP hSt => hP.trans (processRevokeNode_keyFrame stA stB nd hP.2.2 hSt))
-    st addr _ out (capabilityKeyFrame_of_objects_scheduler_eq hObjInv rfl rfl) hTrav
+/-! ### Teardown of destroyed capabilities -/
 
 theorem finaliseDestroyedCapabilities_keyFrame (ec : CoreId) (named : List SeLe4n.ObjId)
     (pages : List MappedPage) (st st' : SystemState) (hObjInv : st.objects.invExt)

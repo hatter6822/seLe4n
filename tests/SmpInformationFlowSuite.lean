@@ -5379,8 +5379,8 @@ private def runPerCoreCoverageChecks : IO Unit := do
 private def runEnforcementBoundaryChecks : IO Unit := do
   IO.println "--- §4.7 the per-core enforcement boundary ---"
   assertBool "68 entries: 53 canonical (the 2PL bracket, the two audit readers, the declassifying signal, the fault-handler configuration, WS-RR RR8.16's revocation, WS-BP BP7.1's untyped carve and reset and the two finalising destroyers, the space change, the two page-table operations and the yield) + 15 cross-core wrappers"
-    (decide (enforcementBoundaryPerCore.length = 68) &&
-     decide (enforcementBoundaryExtended.length = 53) &&
+    (decide (enforcementBoundaryPerCore.length = 67) &&
+     decide (enforcementBoundaryExtended.length = 52) &&
      decide (crossCoreEnforcementEntries.length = 15))
   assertBool "every SyscallId is still covered by the extended boundary (single-core half)"
     (enforcementBoundaryPerCoreComplete)
