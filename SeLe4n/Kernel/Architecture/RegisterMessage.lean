@@ -91,6 +91,14 @@ theorem regMessageBody_word (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n
 @[noinline] def badgeWordOrZero (badge : Option SeLe4n.Badge) : UInt64 :=
   (badge.map SeLe4n.Badge.word).getD 0
 
+/-- `badgeWordOrZero` of the badge a word and flag stand for, read from the two
+(`badgeWordOrZero_opt`), so no `Option` is built. -/
+@[inline] def badgeWordIf (w : SeLe4n.Badge) (b : Bool) : UInt64 := if b then w.word else 0
+
+theorem badgeWordOrZero_opt (w : SeLe4n.Badge) (b : Bool) :
+    badgeWordOrZero (SeLe4n.Badge.opt w b) = badgeWordIf w b := by
+  cases b <;> rfl
+
 /-- The message-info word a frame of a register-routed message carries.  Out of
 line, as `regMessageWord`. -/
 @[noinline] def regMessageInfoWord (layout : SeLe4n.SyscallRegisterLayout) (len : Nat) :
@@ -110,6 +118,23 @@ word read from the register file. -/
     x3 := regMessageWord layout rf len 1
     x4 := regMessageWord layout rf len 2
     x5 := regMessageWord layout rf len 3 }
+
+/-- `regMessageFrame` of the badge a word and flag stand for, its badge word
+read from the two (`regMessageFrameW_eq`). -/
+@[inline] def regMessageFrameW (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile)
+    (len : Nat) (badgeWord : SeLe4n.Badge) (badged : Bool) : SyscallReturnFrame :=
+  { x0 := badgeWordIf badgeWord badged
+    x1 := regMessageInfoWord layout len
+    x2 := regMessageWord layout rf len 0
+    x3 := regMessageWord layout rf len 1
+    x4 := regMessageWord layout rf len 2
+    x5 := regMessageWord layout rf len 3 }
+
+theorem regMessageFrameW_eq (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile)
+    (len : Nat) (badgeWord : SeLe4n.Badge) (badged : Bool) :
+    regMessageFrameW layout rf len badgeWord badged =
+      regMessageFrame layout rf len (SeLe4n.Badge.opt badgeWord badged) := by
+  simp only [regMessageFrameW, regMessageFrame, badgeWordOrZero_opt]
 
 theorem returnFrameOfMessage_regMessageBody (layout : SeLe4n.SyscallRegisterLayout)
     (rf : SeLe4n.RegisterFile) (len : Nat) (badge : Option SeLe4n.Badge) (g : Bool) :
