@@ -218,11 +218,11 @@ theorem frozenQueuePushTail_preserves_serviceRegistry
   subst hSt; rfl
 
 /-- T1-E: `frozenQueuePushTail` preserves CDT edges. -/
-theorem frozenQueuePushTail_preserves_cdtEdges
+theorem frozenQueuePushTail_preserves_cdt
     (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
     (tid : SeLe4n.ThreadId) (st st' : FrozenSystemState)
     (hOk : frozenQueuePushTail endpointId isReceiveQ tid st = .ok st') :
-    st'.cdtEdges = st.cdtEdges := by
+    st'.cdt = st.cdt := by
   obtain ⟨_, hSt⟩ := frozenQueuePushTail_only_modifies_objects endpointId isReceiveQ tid st st' hOk
   subst hSt; rfl
 

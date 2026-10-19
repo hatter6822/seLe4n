@@ -197,7 +197,10 @@ siblings) and the capability bundle says they agree with the tree
 descendant reads walk them.  At `v0.36.107` a delete or revoke that finalises
 nothing is admitted before any write and performed in place, a revoke as seL4's
 `cteRevoke` loop, and the page-table teardown names its candidates from the
-destroyed capabilities.  The
+destroyed capabilities.  At `v0.36.108` the tree's edges are a ghost
+(`Erased`): at run time the tree is its edge-count bound, executable code reads
+it only through the slot links, and the capability bundle drops the slot-count
+conjunct, a theorem since the slot array.  The
 suspend of a thread blocked in IPC or holding a donated context is the one
 syscall arm left on the general path (ZA6.1).  ZA6 covers the other
 entries and makes the rule standing.  Plan:

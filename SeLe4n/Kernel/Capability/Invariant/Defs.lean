@@ -65,13 +65,6 @@ def lifecycleAuthorityMonotonicity (st : SystemState) : Prop :=
 -- WS-H4: Meaningful capability invariant predicates (replacing trivially-true)
 -- ============================================================================
 
-/-- WS-H4/C-03: Every CNode has at most `2^radixBits` occupied slots.
-This is the meaningful slot-capacity invariant that replaces the trivially-true
-`slotsUnique` predicate for actual security assurance. -/
-def cspaceSlotCountBounded (st : SystemState) : Prop :=
-  ∀ (cnodeId : SeLe4n.ObjId) (cn : CNode),
-    st.objects[cnodeId]? = some (KernelObject.cnode cn) → cn.slotCountBounded
-
 /-- WS-H4/M-08: CDT slot coherence — every slot the derivation tree names holds
 a capability in a live CNode, so CDT-based revocation finds the capability each
 node stands for.  Since WS-ZA ZA5.3 part 2 the tree's nodes are the slots
@@ -208,7 +201,6 @@ state predicates. Only genuine state invariants are included — predicates that
 properties of the system state and must be preserved through every transition.
 
 WS-H4: Extended with meaningful security predicates:
-- `cspaceSlotCountBounded`: slot capacity bound (replaces trivially-true `slotsUnique`)
 - `cdtCompleteness`: CDT slot reachability (every slot the tree names lies in an existing object)
 - `cdtAcyclicity`: CDT cycle-freedom for sound revocation
 
@@ -238,17 +230,19 @@ standalone operation-correctness lemmas in `Authority.lean`.
 WS-RC R4.A.6: The historical `cspaceSlotUnique` conjunct was removed when
 `CNode.slots : SeLe4n.UniqueSlotMap Capability` carried the slot-uniqueness
 witness structurally at construction time (via `UniqueSlotMap.hWF`).  The
-bundle now has **8** conjuncts: the R4.A.6 close-out retired `cspaceSlotUnique`
+bundle now has **7** conjuncts: the R4.A.6 close-out retired `cspaceSlotUnique`
 (7 → 6), PR #822 Phase H #1.a added `replyCapPointsToValidReply` (the 7th,
 6 → 7) so the step-preserved bundle rules out dangling `.replyCap` slots, and
 WS-ZA ZA5.3 part 4 added `cdtLinksAgree` (the 8th): the derivation links the
 slots hold agree with the tree, so the executable children and descendant reads
-that walk them read the tree.
+that walk them read the tree.  WS-ZA ZA5.3 part 5 retired the slot-count
+conjunct (8 → 7): a CNode's slots are a fixed array since part 1, so every CNode
+is within its slot count by construction (`CNode.slotCountBounded_holds`).
 Per-CNode slot uniqueness is discharged directly via
 `SeLe4n.Model.CNode.slotsUnique_holds`. -/
 def capabilityInvariantBundle (st : SystemState) : Prop :=
   cspaceLookupSound st ∧
-    cspaceSlotCountBounded st ∧ cdtCompleteness st ∧ cdtAcyclicity st ∧
+    cdtCompleteness st ∧ cdtAcyclicity st ∧
     cspaceDepthConsistent st ∧ st.objects.invExt ∧ replyCapPointsToValidReply st ∧
     cdtLinksAgree st
 
@@ -281,16 +275,16 @@ link writes (`SystemState.linkReach`) restores the full bundle once its links
 agree with the tree (`capabilityInvariantBundle_of_linkReach`). -/
 def capabilityBundleOffLinks (st : SystemState) : Prop :=
   cspaceLookupSound st ∧
-    cspaceSlotCountBounded st ∧ cdtCompleteness st ∧ cdtAcyclicity st ∧
+    cdtCompleteness st ∧ cdtAcyclicity st ∧
     cspaceDepthConsistent st ∧ st.objects.invExt ∧ replyCapPointsToValidReply st
 
 theorem capabilityInvariantBundle.offLinks {st : SystemState} (h : capabilityInvariantBundle st) :
     capabilityBundleOffLinks st :=
-  ⟨h.1, h.2.1, h.2.2.1, h.2.2.2.1, h.2.2.2.2.1, h.2.2.2.2.2.1, h.2.2.2.2.2.2.1⟩
+  ⟨h.1, h.2.1, h.2.2.1, h.2.2.2.1, h.2.2.2.2.1, h.2.2.2.2.2.1⟩
 
 theorem capabilityBundleOffLinks.withLinks {st : SystemState} (h : capabilityBundleOffLinks st)
     (hL : cdtLinksAgree st) : capabilityInvariantBundle st :=
-  ⟨h.1, h.2.1, h.2.2.1, h.2.2.2.1, h.2.2.2.2.1, h.2.2.2.2.2.1, h.2.2.2.2.2.2, hL⟩
+  ⟨h.1, h.2.1, h.2.2.1, h.2.2.2.1, h.2.2.2.2.1, h.2.2.2.2.2, hL⟩
 
 /-- AN4-F.5 (CAP-M05): Named-projection view of `capabilityInvariantBundle`.
 Each field records a distinct slot-level invariant (uniqueness,
@@ -302,8 +296,6 @@ structure CapabilityInvariantBundle (st : SystemState) : Prop where
   /-- `cspaceLookupSlot` agrees with the direct-object-store projection
       on every present CNode/slot pair. -/
   lookupSound : cspaceLookupSound st
-  /-- Every CNode slot table satisfies its `slotCountBounded` invariant. -/
-  slotCountBounded : cspaceSlotCountBounded st
   /-- Every slot the derivation tree names holds a capability. -/
   cdtCompleteness : cdtCompleteness st
   /-- The capability derivation graph is acyclic. -/
@@ -328,13 +320,13 @@ theorem capabilityInvariantBundle_iff_CapabilityInvariantBundle
     (st : SystemState) :
     capabilityInvariantBundle st ↔ CapabilityInvariantBundle st := by
   constructor
-  · rintro ⟨hS, hB, hComp, hAcyc, hDep, hObj, hRCPV, hLinks⟩
-    exact { lookupSound := hS, slotCountBounded := hB
+  · rintro ⟨hS, hComp, hAcyc, hDep, hObj, hRCPV, hLinks⟩
+    exact { lookupSound := hS
           , cdtCompleteness := hComp, cdtAcyclicity := hAcyc
           , depthConsistent := hDep, objectsInvExt := hObj
           , replyCapBacked := hRCPV, linksAgree := hLinks }
   · intro h
-    exact ⟨h.lookupSound, h.slotCountBounded,
+    exact ⟨h.lookupSound,
            h.cdtCompleteness, h.cdtAcyclicity, h.depthConsistent,
            h.objectsInvExt, h.replyCapBacked, h.linksAgree⟩
 
@@ -350,34 +342,30 @@ namespace capabilityInvariantBundle
 @[simp] abbrev lookupSound {st : SystemState} (h : capabilityInvariantBundle st) :
     cspaceLookupSound st := h.1
 
-/-- Extract `cspaceSlotCountBounded` from the tuple form. -/
-@[simp] abbrev slotCountBounded {st : SystemState} (h : capabilityInvariantBundle st) :
-    cspaceSlotCountBounded st := h.2.1
-
 /-- Extract `cdtCompleteness` from the tuple form. -/
 @[simp] abbrev cdtCompleteness {st : SystemState} (h : capabilityInvariantBundle st) :
-    _root_.SeLe4n.Kernel.cdtCompleteness st := h.2.2.1
+    _root_.SeLe4n.Kernel.cdtCompleteness st := h.2.1
 
 /-- Extract `cdtAcyclicity` from the tuple form. -/
 @[simp] abbrev cdtAcyclicity {st : SystemState} (h : capabilityInvariantBundle st) :
-    _root_.SeLe4n.Kernel.cdtAcyclicity st := h.2.2.2.1
+    _root_.SeLe4n.Kernel.cdtAcyclicity st := h.2.2.1
 
 /-- Extract `cspaceDepthConsistent` from the tuple form. -/
 @[simp] abbrev depthConsistent {st : SystemState} (h : capabilityInvariantBundle st) :
-    cspaceDepthConsistent st := h.2.2.2.2.1
+    cspaceDepthConsistent st := h.2.2.2.1
 
 /-- Extract `st.objects.invExt` from the tuple form. -/
 @[simp] abbrev objectsInvExt {st : SystemState} (h : capabilityInvariantBundle st) :
-    st.objects.invExt := h.2.2.2.2.2.1
+    st.objects.invExt := h.2.2.2.2.1
 
 /-- WS-SM SM6.D / PR #822 Phase H (#1): extract `replyCapPointsToValidReply` from the
-tuple form (the 7th conjunct). -/
+tuple form (the 6th conjunct). -/
 @[simp] abbrev replyCapBacked {st : SystemState} (h : capabilityInvariantBundle st) :
-    _root_.SeLe4n.Kernel.replyCapPointsToValidReply st := h.2.2.2.2.2.2.1
+    _root_.SeLe4n.Kernel.replyCapPointsToValidReply st := h.2.2.2.2.2.1
 
-/-- WS-ZA ZA5.3: extract `cdtLinksAgree` from the tuple form (the 8th conjunct). -/
+/-- WS-ZA ZA5.3: extract `cdtLinksAgree` from the tuple form (the 7th conjunct). -/
 @[simp] abbrev linksAgree {st : SystemState} (h : capabilityInvariantBundle st) :
-    _root_.SeLe4n.Kernel.cdtLinksAgree st := h.2.2.2.2.2.2.2
+    _root_.SeLe4n.Kernel.cdtLinksAgree st := h.2.2.2.2.2.2
 
 end capabilityInvariantBundle
 
@@ -630,89 +618,35 @@ instance {st : SystemState} : CoeHead (RetypeTarget st) SeLe4n.ObjId where
 -- WS-H4: Extraction theorems for new bundle components
 -- ============================================================================
 
-theorem cspaceSlotCountBounded_of_capabilityInvariantBundle
-    (st : SystemState) (hInv : capabilityInvariantBundle st) :
-    cspaceSlotCountBounded st := hInv.2.1
-
 theorem cdtCompleteness_of_capabilityInvariantBundle
     (st : SystemState) (hInv : capabilityInvariantBundle st) :
-    cdtCompleteness st := hInv.2.2.1
+    cdtCompleteness st := hInv.2.1
 
 theorem cdtAcyclicity_of_capabilityInvariantBundle
     (st : SystemState) (hInv : capabilityInvariantBundle st) :
-    cdtAcyclicity st := hInv.2.2.2.1
+    cdtAcyclicity st := hInv.2.2.1
 
 theorem cspaceDepthConsistent_of_capabilityInvariantBundle
     (st : SystemState) (hInv : capabilityInvariantBundle st) :
-    cspaceDepthConsistent st := hInv.2.2.2.2.1
+    cspaceDepthConsistent st := hInv.2.2.2.1
 
 theorem objects_invExt_of_capabilityInvariantBundle
     (st : SystemState) (hInv : capabilityInvariantBundle st) :
-    st.objects.invExt := hInv.2.2.2.2.2.1
+    st.objects.invExt := hInv.2.2.2.2.1
 
 /-- WS-SM SM6.D / PR #822 Phase H (#1): extract the reply-cap backing invariant. -/
 theorem replyCapPointsToValidReply_of_capabilityInvariantBundle
     (st : SystemState) (hInv : capabilityInvariantBundle st) :
-    replyCapPointsToValidReply st := hInv.2.2.2.2.2.2.1
+    replyCapPointsToValidReply st := hInv.2.2.2.2.2.1
 
 /-- WS-ZA ZA5.3: extract the slot-link agreement. -/
 theorem cdtLinksAgree_of_capabilityInvariantBundle
     (st : SystemState) (hInv : capabilityInvariantBundle st) :
-    cdtLinksAgree st := hInv.2.2.2.2.2.2.2
+    cdtLinksAgree st := hInv.2.2.2.2.2.2
 
 -- ============================================================================
 -- WS-H4: Transfer theorems for new components through state transitions
 -- ============================================================================
-
-/-- WS-H4: Transfer cspaceSlotCountBounded through storeObject when
-the stored object is NOT a CNode (endpoint, TCB, etc.). -/
-private theorem cspaceSlotCountBounded_of_storeObject_nonCNode
-    (st st' : SystemState) (oid : SeLe4n.ObjId) (obj : KernelObject)
-    (hBounded : cspaceSlotCountBounded st)
-    (hObjInv : st.objects.invExt)
-    (hStore : storeObject oid obj st = .ok ((), st'))
-    (hNotCNode : ∀ cn, obj ≠ .cnode cn) :
-    cspaceSlotCountBounded st' := by
-  intro cnodeId cn hObj
-  by_cases hEq : cnodeId = oid
-  · subst hEq
-    have := storeObject_objects_eq st st' cnodeId obj hObjInv hStore
-    rw [this] at hObj
-    cases obj with
-    | cnode cn' => exact absurd rfl (hNotCNode cn')
-    | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ => cases hObj
-  · have hPre := storeObject_objects_ne st st' oid cnodeId obj hEq hObjInv hStore
-    rw [hPre] at hObj
-    exact hBounded cnodeId cn hObj
-
-/-- WS-H4: Transfer cspaceSlotCountBounded through storeObject when
-the stored object IS a CNode (requires new CNode to be bounded). -/
-theorem cspaceSlotCountBounded_of_storeObject_cnode
-    (st st' : SystemState) (oid : SeLe4n.ObjId) (cn' : CNode)
-    (hBounded : cspaceSlotCountBounded st)
-    (hObjInv : st.objects.invExt)
-    (hStore : storeObject oid (.cnode cn') st = .ok ((), st'))
-    (hNewBounded : cn'.slotCountBounded) :
-    cspaceSlotCountBounded st' := by
-  intro cnodeId cn hObj
-  by_cases hEq : cnodeId = oid
-  · subst hEq
-    have := storeObject_objects_eq st st' cnodeId (.cnode cn') hObjInv hStore
-    rw [this] at hObj; cases hObj
-    exact hNewBounded
-  · have hPre := storeObject_objects_ne st st' oid cnodeId (.cnode cn') hEq hObjInv hStore
-    rw [hPre] at hObj
-    exact hBounded cnodeId cn hObj
-
-/-- WS-H4: Transfer cspaceSlotCountBounded when objects are unchanged. -/
-theorem cspaceSlotCountBounded_of_objects_eq
-    (st st' : SystemState)
-    (hBounded : cspaceSlotCountBounded st)
-    (hObjEq : st'.objects = st.objects) :
-    cspaceSlotCountBounded st' := by
-  intro cnodeId cn hObj
-  rw [hObjEq] at hObj
-  exact hBounded cnodeId cn hObj
 
 /-- WS-H4: Transfer cdtCompleteness when the objects and the tree are unchanged. -/
 theorem cdtCompleteness_of_objects_cdt_eq
@@ -726,14 +660,9 @@ theorem cdtCompleteness_of_objects_cdt_eq
   rw [hObjEq]
   exact hComp ref hM
 
-/-- WS-ZA ZA4.5: the three object-reading capability predicates carry across a
-step that writes only run-queue links (CNodes are not TCBs, and a key is
-occupied in one store exactly when it is in the other). -/
-theorem cspaceSlotCountBounded_of_objectsAgreeOffRunLinks {st st' : SystemState}
-    (hA : st'.objectsAgreeOffRunLinks st) (hBounded : cspaceSlotCountBounded st) :
-    cspaceSlotCountBounded st' :=
-  fun cnodeId cn hObj => hBounded cnodeId cn (hA.get_cnode_iff.mp hObj)
-
+/-- WS-ZA ZA4.5: the object-reading capability predicates carry across a step
+that writes only run-queue links (CNodes are not TCBs, and a key is occupied in
+one store exactly when it is in the other). -/
 theorem cdtCompleteness_of_objectsAgreeOffRunLinks {st st' : SystemState}
     (hA : st'.objectsAgreeOffRunLinks st) (hComp : cdtCompleteness st)
     (hCdtEq : st'.cdt = st.cdt) : cdtCompleteness st' := by
@@ -834,19 +763,6 @@ theorem cdtAcyclicity_of_cdt_eq
   rw [hCdtEq]
   exact hAcyclic
 
-/-- WS-H4: Transfer cspaceSlotCountBounded through storeTcbIpcState
-(stores a TCB, not a CNode, so slot bounds are preserved). -/
-private theorem cspaceSlotCountBounded_of_storeTcbIpcState
-    (st st' : SystemState) (tid : SeLe4n.ThreadId) (ipc : ThreadIpcState)
-    (hBounded : cspaceSlotCountBounded st)
-    (hObjInv : st.objects.invExt)
-    (hStep : storeTcbIpcState st tid ipc = .ok st') :
-    cspaceSlotCountBounded st' := by
-  intro cnodeId cn hObj
-  have hPre : st.objects[cnodeId]? = some (.cnode cn) :=
-    storeTcbIpcState_cnode_backward st st' tid ipc cnodeId cn hObjInv hStep hObj
-  exact hBounded cnodeId cn hPre
-
 /-- WS-H4: storeTcbIpcState preserves CDT fields (delegates to storeObject). -/
 private theorem storeTcbIpcState_cdt_eq
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (ipc : ThreadIpcState)
@@ -870,19 +786,6 @@ private theorem storeTcbIpcState_cdt_eq
 -- beside the primitive (`IPC/Operations/Endpoint.lean`), where the `.call` and
 -- `.reply` chains' bundle lifts read it.  Two answers to one question is what
 -- this project retires; the survivor is the one at the transition.
-
-/-- WS-H4: Transfer all three new predicates when objects and CDT fields are
-both preserved. Used for scheduler-only updates (removeRunnable, ensureRunnable). -/
-private theorem cdtPredicates_of_objects_cdt_eq
-    (st st' : SystemState)
-    (hBounded : cspaceSlotCountBounded st)
-    (hComp : cdtCompleteness st) (hAcyclic : cdtAcyclicity st)
-    (hObjEq : st'.objects = st.objects)
-    (hCdtEq : st'.cdt = st.cdt) :
-    cspaceSlotCountBounded st' ∧ cdtCompleteness st' ∧ cdtAcyclicity st' :=
-  ⟨cspaceSlotCountBounded_of_objects_eq st st' hBounded hObjEq,
-   cdtCompleteness_of_objects_cdt_eq st st' hComp hObjEq hCdtEq,
-   cdtAcyclicity_of_cdt_eq st st' hAcyclic hCdtEq⟩
 
 /-- WS-H13: Transfer cspaceDepthConsistent when objects are unchanged. -/
 theorem cspaceDepthConsistent_of_objects_eq
@@ -1015,43 +918,17 @@ private theorem CNode.revokeTargetLocal_slots_sub (cn : CNode) (sourceSlot : SeL
     SeLe4n.UniqueSlotMap.filter] at hLookup
   exact SeLe4n.Kernel.RobinHood.RHTable.filter_get_subset cn.slots.table _ s cap hUniq.1 hLookup
 
-/-- WS-H4: CDT-only state update preserves cspaceSlotCountBounded, and
-cdtCompleteness whenever every slot the new tree names was named by the old one.
-Used for `{ st with cdt := cdt' }` where the objects are unchanged. -/
-private theorem boundedCompleteness_of_cdt_only_update
-    (st : SystemState) (cdt' : CapDerivationTree)
-    (hBounded : cspaceSlotCountBounded st)
-    (hComp : cdtCompleteness st)
-    (hSub : ∀ ref, cdt'.mentions ref → st.cdt.mentions ref) :
-    cspaceSlotCountBounded { st with cdt := cdt' } ∧
-    cdtCompleteness { st with cdt := cdt' } :=
-  ⟨hBounded, fun ref hM => hComp ref (hSub ref hM)⟩
-
 /-- WS-H4: Transfer WS-H4 predicates through reply path.
-storeTcbIpcStateAndMessage → ensureRunnable preserves all three. -/
+storeTcbIpcStateAndMessage → ensureRunnable preserves both. -/
 theorem cdtPredicates_through_reply_path
     (st st1 : SystemState) (target : SeLe4n.ThreadId)
     (ipc : ThreadIpcState) (msg : Option IpcMessage)
-    (hBounded : cspaceSlotCountBounded st)
     (hComp : cdtCompleteness st) (hAcyclic : cdtAcyclicity st)
     (hObjInv : st.objects.invExt)
     (hTcb : storeTcbIpcStateAndMessage st target ipc msg = .ok st1) :
-    cspaceSlotCountBounded (ensureRunnable st1 target) ∧
     cdtCompleteness (ensureRunnable st1 target) ∧
     cdtAcyclicity (ensureRunnable st1 target) := by
   have hCdt1 := storeTcbIpcStateAndMessage_cdt_eq hTcb
-  have hBnd1 : cspaceSlotCountBounded st1 := by
-    unfold storeTcbIpcStateAndMessage modifyTcb at hTcb
-    cases hL : lookupTcb st target with
-    | none => simp [hL] at hTcb
-    | some tcb =>
-      simp only [hL] at hTcb
-      cases hS : storeObject target.toObjId (.tcb (TCB.setIpcState { tcb with pendingMessage := msg } ipc)) st with
-      | error e => simp [hS] at hTcb
-      | ok pair =>
-        simp only [hS] at hTcb; have hEq := Except.ok.inj hTcb; subst hEq
-        exact cspaceSlotCountBounded_of_storeObject_nonCNode st pair.2 target.toObjId _ hBounded hObjInv hS
-          (fun cn h => by cases h)
   have hComp1 : cdtCompleteness st1 := by
     unfold storeTcbIpcStateAndMessage modifyTcb at hTcb
     cases hL : lookupTcb st target with
@@ -1068,8 +945,6 @@ theorem cdtPredicates_through_reply_path
   unfold SystemState.onlyObjectsSchedulerDiffer at hEns
   have hEnsNS : (ensureRunnable st1 target).cdt = st1.cdt := by rw [hEns]
   have hEnsCdt : (ensureRunnable st1 target).cdt = st.cdt := by rw [hEns]; rw [hCdt1]
-  exact ⟨cspaceSlotCountBounded_of_objectsAgreeOffRunLinks
-      (ensureRunnable_objectsAgreeOffRunLinks st1 target) hBnd1,
-    cdtCompleteness_of_objectsAgreeOffRunLinks
+  exact ⟨cdtCompleteness_of_objectsAgreeOffRunLinks
       (ensureRunnable_objectsAgreeOffRunLinks st1 target) hComp1 hEnsNS,
     cdtAcyclicity_of_cdt_eq st _ hAcyclic hEnsCdt⟩

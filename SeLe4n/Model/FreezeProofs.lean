@@ -1320,7 +1320,7 @@ The conjuncts cover every field of `FrozenSystemState`:
   `objectIndexSet`, plus scheduler sub-maps
   (`byPriority`, `threadPriority`, `membership`).
 - **Bitwise non-map fields:** `machine`, `objectIndex`, `tlb`,
-  `cdtEdges`, `scheduler.{current, activeDomain,
+  `cdt`, `scheduler.{current, activeDomain,
   domainTimeRemaining, domainSchedule, domainScheduleIndex,
   configDefaultTimeSlice, replenishQueue}`.
 
@@ -1365,7 +1365,7 @@ def apiInvariantBundle_frozenDirectFull (fst : FrozenSystemState) : Prop :=
     sst.machine = fst.machine ∧
     sst.objectIndex = fst.objectIndex ∧
     sst.tlb = fst.tlb ∧
-    sst.cdt.edges = fst.cdtEdges ∧
+    sst.cdt = fst.cdt ∧
     (sst.scheduler.currentOnCore bootCoreId) = fst.scheduler.current ∧
     (sst.scheduler.activeDomainOnCore bootCoreId) = fst.scheduler.activeDomain ∧
     (sst.scheduler.domainTimeRemainingOnCore bootCoreId) = fst.scheduler.domainTimeRemaining ∧
@@ -1433,7 +1433,7 @@ theorem freeze_preserves_direct_invariants_full (ist : IntermediateState)
   · exact (freeze_preserves_machine ist).symm
   · exact (freeze_preserves_objectIndex ist).symm
   · exact (freeze_preserves_tlb ist).symm
-  · exact (freeze_preserves_cdtEdges ist).symm
+  · exact (freeze_preserves_cdt ist).symm
   · exact (freeze_preserves_current ist).symm
   · exact (freeze_preserves_activeDomain ist).symm
   · rfl
@@ -1506,7 +1506,7 @@ are builder-only — they have no frozen counterpart.
 1. Store commutativity: builder insert then freeze ≡ freeze then frozen set
 2. Lookup commutativity: `(freezeMap t).get? k = t.get? k`
 3. Thread store/lookup commutativity: instantiation for objects table
-4. CDT: the edge list is copied unchanged (`freeze_preserves_cdtEdges`)
+4. CDT: the tree is copied unchanged (`freeze_preserves_cdt`)
 5. Composition: sequential value updates commute with freeze
 -/
 

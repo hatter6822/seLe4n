@@ -34,8 +34,7 @@ schedulerInvariantBundle =
 -- (timeSlicePositive and the domain conjuncts live in the Full bundle)
 
 capabilityInvariantBundle =
-  cspaceSlotUnique ∧ cspaceLookupSound ∧ cdtWellFormed
-  ∧ cspaceSlotCountBounded ∧ cdtCompleteness ∧ cdtAcyclicity ∧ ...
+  cspaceLookupSound ∧ cdtCompleteness ∧ cdtAcyclicity ∧ ...
 ```
 
 Each component has a clear semantic meaning. Bundle composition is explicit and verified by Tier 3 anchor checks.

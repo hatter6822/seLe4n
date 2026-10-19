@@ -2695,7 +2695,7 @@ theorem endpointCallOnCore_preserves_capabilityInvariantBundle
     (executingCore : CoreId) (st : SystemState)
     (h : capabilityInvariantBundle st) :
     capabilityInvariantBundle (endpointCallOnCore endpointId caller payload executingCore st).1 := by
-  have hObjInv : st.objects.invExt := h.2.2.2.2.2.1
+  have hObjInv : st.objects.invExt := h.objectsInvExt
   exact capabilityInvariantBundle_of_kindPreserving h
     (endpointCallOnCore_cdt_eq endpointId caller payload executingCore st)
     (endpointCallOnCore_preserves_objects_invExt endpointId caller payload executingCore st hObjInv)

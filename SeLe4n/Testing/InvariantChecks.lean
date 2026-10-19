@@ -259,8 +259,9 @@ private def cspaceSlotCoherencyChecks (objectIds : List SeLe4n.ObjId) (st : Syst
 /-- **WS-RR RR8.16** (`v0.35.201`): every occupied slot of a CNode is addressable
 by that CNode's own radix width.
 
-`cspaceSlotCountBounded` — `cn.slots.size ≤ cn.slotCount` — is a conjunct of
-`capabilityInvariantBundle`, and **nothing here asserted it**: the word
+`cspaceSlotCountBounded` — `cn.slots.size ≤ cn.slotCount` — was a conjunct of
+`capabilityInvariantBundle` (a theorem since WS-ZA ZA5.3's fixed slot array),
+and **nothing here asserted it**: the word
 `slotCountBounded` appeared nowhere under `SeLe4n/Testing/`.  That is how six
 fixture CNodes came to declare `radixWidth := 0` — *one* slot — while holding
 capabilities at indices up to 12, the trace harness's own bootstrap root CSpace
@@ -554,37 +555,60 @@ private def uniqueWaitersCheck (objectIds : List SeLe4n.ObjId) (st : SystemState
     let hasDuplicates := !allWaiters.Nodup
     [("notification waiters globally unique", !hasDuplicates)]
 
-/-- Runtime check that each slot is the child of at most one derivation edge
-(`childrenUnique`): a slot holds one parent link. -/
-private def cdtChildrenUniqueCheck (st : SystemState) : List (String × Bool) :=
-  [("cdt each slot has at most one parent edge", (st.cdt.edges.map (·.child)).Nodup)]
-
-/-- Runtime check of the capability bundle's link conjunct (`LinksAgree`): at
-every slot the tree names, each of the four links the slot holds is the one the
-tree gives it; at every other slot of the listed CNodes each link is none, which
-is its CNode word being 0 (`decodeLink`).  The second half reads the link words
-directly and asks the tree only about a slot holding a nonzero CNode word, so the
-check costs a pass over each CNode's words, not a tree query per addressable
-slot. -/
-private def cdtLinksAgreeCheck (objectIds : List SeLe4n.ObjId) (st : SystemState) :
-    List (String × Bool) :=
-  let cdt := st.cdt
-  let named := cdt.edges.foldr (fun e acc => e.parent :: e.child :: acc) []
-  let agreesAt (r : SlotRef) : Bool :=
-    let up := cdt.parentOf r
-    st.slotLinkAt r .parent == up &&
-    st.slotLinkAt r .firstChild == (cdt.childrenOf r).head? &&
-    st.slotLinkAt r .next == up.bind (fun p => SlotList.succIn (cdt.childrenOf p) r) &&
-    st.slotLinkAt r .prev == up.bind (fun p => SlotList.predIn (cdt.childrenOf p) r)
-  -- A CNode word sits at an even offset within its slot's `slotLinkWords`.
-  let unnamedClear := objectIds.all fun oid =>
+/-- **The derivation edges the slot links name**, as (parent, child) pairs read
+from the stored words: one for each slot of a CNode in the object index whose
+parent link is set.  Since WS-ZA ZA5.3 part 5 the tree's edges are a ghost, so
+tests read the tree through the links that agree with it (`LinksAgree`). -/
+def linkedDerivationEdges (st : SystemState) : List (SlotRef × SlotRef) :=
+  st.objectIndex.foldr (fun oid acc =>
     match st.getCNode? oid with
     | some cn =>
-        Nat.all cn.links.size fun j _ =>
-          j % 2 != 0 || cn.links.getD j 0 == 0 ||
-            named.contains { cnode := oid, slot := SeLe4n.Slot.ofNat (j / slotLinkWords) }
-    | none => true
-  [("cdt slot links agree with the tree", named.all agreesAt && unnamedClear)]
+        (List.range (cn.links.size / slotLinkWords)).foldr (fun i acc =>
+          let r : SlotRef := { cnode := oid, slot := SeLe4n.Slot.ofNat i }
+          match st.slotLinkAt r .parent with
+          | some p => (p, r) :: acc
+          | none => acc) acc
+    | none => acc) []
+
+/-- Whether the slot links place `r` in the derivation tree: it has a parent or
+a child. -/
+def linkMentions (st : SystemState) (r : SlotRef) : Bool :=
+  (st.slotLinkAt r .parent).isSome || (st.slotLinkAt r .firstChild).isSome
+
+/-- Runtime check of the derivation links each slot holds (seL4's mapping
+database), read from the stored words alone: since WS-ZA ZA5.3 part 5 the tree
+they agree with (`LinksAgree`) is a ghost.  At every slot of the listed CNodes
+that holds a link, the links fit together as a tree's would: a next sibling
+names this slot as its previous one and shares its parent, a previous sibling
+names this slot as its next one, a slot with no previous sibling is its
+parent's first child, a first child names this slot as its parent and has no
+previous sibling, and only a slot with a parent has siblings. -/
+private def cdtLinksConsistentCheck (objectIds : List SeLe4n.ObjId) (st : SystemState) :
+    List (String × Bool) :=
+  let L := st.slotLinkAt
+  let linked : List SlotRef := objectIds.foldr (fun oid acc =>
+    match st.getCNode? oid with
+    | some cn =>
+        (List.range (cn.links.size / slotLinkWords)).foldr (fun i acc =>
+          let r : SlotRef := { cnode := oid, slot := SeLe4n.Slot.ofNat i }
+          if (L r .parent).isSome || (L r .firstChild).isSome || (L r .next).isSome ||
+              (L r .prev).isSome then r :: acc else acc) acc
+    | none => acc) []
+  let consistentAt (r : SlotRef) : Bool :=
+    let up := L r .parent
+    (match L r .next with
+      | some s => L s .prev == some r && L s .parent == up
+      | none => true) &&
+    (match L r .prev with
+      | some s => L s .next == some r
+      | none => match up with
+        | some p => L p .firstChild == some r
+        | none => true) &&
+    (match L r .firstChild with
+      | some c => L c .parent == some r && (L c .prev).isNone
+      | none => true) &&
+    (up.isSome || ((L r .next).isNone && (L r .prev).isNone))
+  [("cdt slot links fit together as a tree", linked.all consistentAt)]
 
 def stateInvariantChecksFor (objectIds : List SeLe4n.ObjId) (st : SystemState)
     (serviceIds : List ServiceId := []) : List (String × Bool) :=
@@ -629,8 +653,7 @@ def stateInvariantChecksFor (objectIds : List SeLe4n.ObjId) (st : SystemState)
     ++ untypedWatermarkChecks objectIds st
     ++ notificationWaiterConsistentChecks objectIds st
     ++ replyWaitersConsistentChecks objectIds st
-    ++ cdtChildrenUniqueCheck st
-    ++ cdtLinksAgreeCheck objectIds st
+    ++ cdtLinksConsistentCheck objectIds st
     ++ blockedOnSendNotRunnableChecks objectIds st
     ++ blockedThreadPendingMessageChecks objectIds st
     ++ blockedOnReceiveNotRunnableChecks objectIds st

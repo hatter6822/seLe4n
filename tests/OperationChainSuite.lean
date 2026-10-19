@@ -45,11 +45,12 @@ private def expectErr
     (expected : KernelError) : IO Unit :=
   SeLe4n.Testing.expectError label actual expected (msgPrefix := "operation-chain check")
 
-/-- The slot's derivation node, if the tree names it.  Since WS-ZA ZA5.3 part 2
-the slot is the node, so this is the slot itself whenever an edge touches it. -/
+/-- The slot's derivation node, if its links place it in the tree.  Since WS-ZA
+ZA5.3 part 2 the slot is the node, so this is the slot itself whenever an edge
+touches it. -/
 private def cdtNodeOf (st : SystemState) (ref : SeLe4n.Model.SlotRef) :
     Option SeLe4n.Model.SlotRef :=
-  if st.cdt.edges.any (fun e => e.parent == ref || e.child == ref) then some ref else none
+  if linkMentions st ref then some ref else none
 
 private def assertInvariants (label : String) (st : SystemState) : IO Unit :=
   assertStateInvariantsFor label st.objectIndex st
@@ -218,14 +219,14 @@ private def chain5bLeafDeleteReclaimsNode : IO Unit := do
   match copyDeleteRounds src dst 1 st0 with
   | .error e => throw <| IO.userError s!"chain5b: one copy-and-delete round failed: {toString e}"
   | .ok st1 =>
-    expect "chain5b: one round leaves no derivation edge behind" (st1.cdt.edges.length == 0)
+    expect "chain5b: one round leaves no derivation edge behind" ((linkedDerivationEdges st1).length == 0)
     expect "chain5b: the source no longer reports a derived child"
       (!SeLe4n.Kernel.hasCdtChildren st1 src)
     match copyDeleteRounds src dst 16 st1 with
     | .error e => throw <| IO.userError s!"chain5b: sixteen more rounds failed: {toString e}"
     | .ok st17 =>
       expect "chain5b: sixteen more rounds leave the tree as it was"
-        (st17.cdt.edges.length == 0)
+        ((linkedDerivationEdges st17).length == 0)
       let (_, st18) ← expectOkSt "chain5b: the source is deletable once its copy is gone"
         (SeLe4n.Kernel.cspaceDeleteSlot src st17)
       assertInvariants "chain5b: copy/delete rounds, then the source deleted" st18
@@ -253,14 +254,14 @@ private def chain5cCNodeRetypeReclaimsNodes : IO Unit := do
       |>.buildChecked)
   let (_, st1) ← expectOkSt "chain5c: copy into the second CNode"
     (SeLe4n.Kernel.cspaceCopy src dst st0)
-  expect "chain5c: the copy recorded one derivation edge" (st1.cdt.edges.length == 1)
+  expect "chain5c: the copy recorded one derivation edge" ((linkedDerivationEdges st1).length == 1)
   match st1.objects[dstCNode]? with
   | some (.cnode cn) =>
     match SeLe4n.Kernel.lifecyclePreRetypeCleanup st1 dstCNode (.cnode cn) (.cnode emptyCNode) with
     | .error e => throw <| IO.userError s!"chain5c: retype cleanup of the CNode failed: {toString e}"
     | .ok st2 =>
       expect "chain5c: retyping the CNode leaves no derivation edge behind"
-        (st2.cdt.edges.length == 0)
+        ((linkedDerivationEdges st2).length == 0)
       expect "chain5c: the source no longer reports a derived child"
         (!SeLe4n.Kernel.hasCdtChildren st2 src)
   | _ => throw <| IO.userError "chain5c: the second CNode is missing after the copy"
@@ -940,7 +941,7 @@ private def ipcCapTransferRevocable : IO Unit := do
   expect "chain12b: NEGATIVE — the declined transfer installed nothing"
     (!receiverSlotFilled stOrphanRun)
   expect "chain12b: the declined transfer left the state untouched"
-    (stOrphanRun.cdt.edges.length == stOrphaned.cdt.edges.length)
+    ((linkedDerivationEdges stOrphanRun).length == (linkedDerivationEdges stOrphaned).length)
   assertInvariants "chain12b: declining an orphaning transfer keeps the state well-formed" stOrphanRun
 
 /-- SCN-IPC-CAP-TRANSFER-ARRIVAL-ORDER (PR #873 round 6): **a capability
@@ -1559,7 +1560,7 @@ private def revokeLeavesIndependentSibling : IO Unit := do
         expect s!"independent-sibling: the sibling-sourced transfer still lands after {name}"
           (slotFilled stAfter receiverCNode recvSlot0)
         expect s!"independent-sibling: and hangs a child edge under the sibling's node after {name}"
-          (!(stAfter.cdt.childrenOf siblingNode).isEmpty)
+          (!(stAfter.linkChildrenOf siblingNode).isEmpty)
         assertInvariants s!"independent-sibling: {name} revoked nothing it did not derive" stAfter
 
   -- THE RETIRED READING, computed beside it: the local same-target sweep.
@@ -1581,7 +1582,7 @@ private def revokeLeavesIndependentSibling : IO Unit := do
       expect "independent-sibling: a parked transfer whose source slot was emptied installs nothing"
         (!(slotFilled stAfter receiverCNode recvSlot0))
       expect "independent-sibling: and hangs no child edge under the stranded node"
-        ((stAfter.cdt.childrenOf siblingNode).isEmpty)
+        ((stAfter.linkChildrenOf siblingNode).isEmpty)
       assertInvariants "independent-sibling: the emptied source declined the install" stAfter
 
 /-- SCN-IPC-CAP-TRANSFER-GRANT-STAMPED (PR #873 round 13): the endpoint's grant
@@ -1879,7 +1880,7 @@ private def chain15StrictRevokeDeepChain : IO Unit := do
   expect "chain15: root slot still present" rootCapOpt.isSome
 
   -- Verify: the root keeps no derived children
-  expect "chain15: root has no children left" (stFinal.cdt.childrenOf rootSlot).isEmpty
+  expect "chain15: root has no children left" (stFinal.linkChildrenOf rootSlot).isEmpty
 
   -- Verify: CDT nodes detached for all descendants
   for i in List.range 15 do
