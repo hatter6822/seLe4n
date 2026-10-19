@@ -476,11 +476,6 @@ returned as it is, so deriving it builds no record (WS-ZA ZA5.3 part 6). -/
   | none => cap
   | some _ => { cap with mapping := none }
 
-/-- A capability that records no mapping is its own derivation. -/
-theorem withoutMapping_of_mapping_none {cap : Capability} (h : cap.mapping = none) :
-    cap.withoutMapping = cap := by
-  cases cap; simp_all [withoutMapping]
-
 @[csimp] theorem withoutMapping_eq_impl : @withoutMapping = @withoutMappingImpl := by
   funext cap
   cases cap with
@@ -2950,6 +2945,42 @@ theorem slotArrayGet_mapIdx (cells : Array (Option Capability))
 first child, next sibling, previous sibling; a CNode word and a slot word each). -/
 def slotLinkWords : Nat := 8
 
+/-- WS-ZA ZA5.3 part 6: the capability with the given fields, written over the
+record `r` (a slot's spare): out of line, so `r` is the only record the
+compiler can write it into, and its rights read back through `r` so that `r`
+stays live, since an update of every field would drop `r` and build a fresh
+record.  Equal to the capability of those fields (`overwrite_eq`). -/
+@[noinline] def Capability.overwrite (r : Capability) (target : CapTarget) (rights : AccessRightSet)
+    (badge : Option SeLe4n.Badge) (mapping : Option FrameMapping) : Capability :=
+  { target, rights := if r.rights = rights then r.rights else rights, badge, mapping }
+
+theorem Capability.overwrite_eq (r : Capability) (target : CapTarget) (rights : AccessRightSet)
+    (badge : Option SeLe4n.Badge) (mapping : Option FrameMapping) :
+    r.overwrite target rights badge mapping = ⟨target, rights, badge, mapping⟩ := by
+  unfold overwrite; split <;> simp_all
+
+/-- WS-ZA ZA5.3 part 6: **the records a CNode's slots keep while empty** (seL4's
+`cte_t`, which a slot owns for the CNode's life).  Entry `i` is the capability
+cell slot `i` last held, kept when the slot is cleared so the next capability
+written there overwrites it in place instead of allocating one.  Logically a
+single value (`Squash`), so no theorem reads it and a CNode with any spares is
+the CNode with any other: only the compiled kernel sees the records. -/
+abbrev SpareCells := Squash (Array (Option Capability))
+
+instance : Repr SpareCells := ⟨fun _ _ => "spare cells"⟩
+
+namespace SpareCells
+
+/-- `sp` with slot `i` keeping the cell `o` (a cleared slot's record); a `none`
+leaves the slot's spare as it was. -/
+@[inline] def keep (sp : SpareCells) (i : Nat) (o : Option Capability) : SpareCells :=
+  Quot.lift (fun a => Squash.mk (match o with
+      | some _ => a.setIfInBounds i o
+      | none => a))
+    (fun _ _ _ => Quot.sound trivial) sp
+
+end SpareCells
+
 /-- WS-H13/H-01: Depth-aware CNode with compressed-path guard.
 
 `depth` = maximum remaining CSpace depth in bits from this node to any leaf.
@@ -2991,12 +3022,21 @@ structure CNode where
   records, so a link is written in place and no entry is shared. -/
   links      : Array Nat
   links_size : links.size = slotLinkWords * 2 ^ radixWidth
+  /-- WS-ZA ZA5.3 part 6: the records the slots keep while empty. -/
+  spare      : SpareCells
   deriving Repr
 
 /-- WS-ZA ZA5.3: the slot map the theorems read; ghost state, equal to the slot
 array at every slot (`CNode.slots_agree`). -/
 noncomputable def CNode.slots (cn : CNode) : SeLe4n.UniqueSlotMap Capability :=
   cn.slotsGhost.out
+
+/-- WS-ZA ZA5.3 part 6: a record of its own for each of a radix-`rw` CNode's
+slots, made with the CNode.  Each record's rights word is its slot number, so
+the compiler cannot share one record among the slots. -/
+def spareCellsFor (rw : Nat) : Array (Option Capability) :=
+  Array.ofFn (n := 2 ^ rw) fun i =>
+    some { target := .auditTrail, rights := AccessRightSet.ofNat i.val }
 
 /-- WS-ZA ZA5.3: the CNode of the given geometry holding `m`'s capability at
 each slot below `2 ^ rw`; a slot at or past it holds nothing. -/
@@ -3011,6 +3051,7 @@ def CNode.ofSlots (depth guardWidth guardValue radixWidth : Nat)
   cells_size := slotArrayOf_size _ _
   links := Array.replicate (slotLinkWords * 2 ^ radixWidth) 0
   links_size := Array.size_replicate
+  spare := Squash.mk (spareCellsFor radixWidth)
   slots_agree := fun s => by
     rw [SeLe4n.Erased.out_mk, SeLe4n.UniqueSlotMap.get?_filter]
     unfold slotArrayGet

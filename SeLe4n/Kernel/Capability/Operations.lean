@@ -643,6 +643,34 @@ def cspaceInsertSlot (addr : CSpaceAddr) (cap : Capability) : Kernel Unit :=
               storeObject addr.cnode (.cnode cn') st
     | none => .error .objectNotFound
 
+/-- `cspaceInsertSlot` as compiled: the CNode is written where it lies
+(`storeCNodeWith`) once the checks have read it, so a CNode nothing else holds
+is changed in place rather than copied and stored again (WS-ZA ZA5.3 part 6). -/
+@[inline] def cspaceInsertSlotImpl (addr : CSpaceAddr) (cap : Capability) : Kernel Unit :=
+  fun st =>
+    match st.getCNode? addr.cnode with
+    | some cn =>
+        if !cn.slotAddressable addr.slot then .error .invalidArgument
+        else
+          match cn.lookup addr.slot with
+          | some _ => .error .targetSlotOccupied
+          | none => .ok ((), st.storeCNodeWith addr.cnode (·.insert addr.slot cap))
+    | none => .error .objectNotFound
+
+@[csimp] theorem cspaceInsertSlot_eq_impl : @cspaceInsertSlot = @cspaceInsertSlotImpl := by
+  funext addr cap st
+  unfold cspaceInsertSlot cspaceInsertSlotImpl
+  cases hC : st.getCNode? addr.cnode with
+  | none => rfl
+  | some cn =>
+    dsimp only
+    split
+    · rfl
+    · split
+      · rfl
+      · exact SystemState.storeObject_cnode_eq_storeCNodeWith
+          ((SystemState.getCNode?_eq_some_iff st addr.cnode cn).1 hC) (·.insert addr.slot cap)
+
 /-- **WS-RR RR8.16** (`v0.35.201`): **what a successful insert consists of.**
 
 One description of the operation, so every frame over it is a citation rather
@@ -1058,6 +1086,25 @@ def cspaceDeleteSlotCore (addr : CSpaceAddr) : Kernel Unit :=
         | .error e => .error e
         | .ok (_, st') => .ok ((), st')
     | none => .error .objectNotFound
+
+/-- `cspaceDeleteSlotCore` as compiled: the slot is cleared where the CNode lies
+(`storeCNodeWith`), so a CNode nothing else holds is changed in place rather
+than copied (WS-ZA ZA5.3 part 6). -/
+@[inline] def cspaceDeleteSlotCoreImpl (addr : CSpaceAddr) : Kernel Unit :=
+  fun st =>
+    match st.getCNode? addr.cnode with
+    | some _ => .ok ((), st.storeCNodeWith addr.cnode (·.remove addr.slot))
+    | none => .error .objectNotFound
+
+@[csimp] theorem cspaceDeleteSlotCore_eq_impl : @cspaceDeleteSlotCore = @cspaceDeleteSlotCoreImpl := by
+  funext addr st
+  unfold cspaceDeleteSlotCore cspaceDeleteSlotCoreImpl
+  cases hC : st.getCNode? addr.cnode with
+  | none => rfl
+  | some cn =>
+    dsimp only
+    rw [SystemState.storeObject_cnode_eq_storeCNodeWith
+      ((SystemState.getCNode?_eq_some_iff st addr.cnode cn).1 hC) (·.remove addr.slot)]
 
 /-- **A destroyed slot leaves the derivation tree** (`CapDerivationTree.spliceNode`):
 its edges go and its children are derived from its parent instead, as seL4's
@@ -1694,11 +1741,27 @@ capability is not null, and the destination is admitted
   cspaceDstAdmitted dst st
 
 /-- WS-ZA ZA5.3: **`cspaceMintWithCdt`'s writes**, in place. -/
-@[inline] def cspaceMintPerform (src dst : CSpaceAddr) (rights : AccessRightSet)
+def cspaceMintPerform (src dst : CSpaceAddr) (rights : AccessRightSet)
     (badge : Option SeLe4n.Badge) (st : SystemState) : SystemState :=
   match SystemState.lookupSlotCap st src with
   | some parent => cspaceInstallPerform src dst (mintedCap parent rights badge) .mint st
   | none => st
+
+/-- `cspaceMintPerform` as compiled: the minted capability's fields are written
+straight over the destination slot's own record (`CNode.insertFields`), so the
+mint builds neither a capability nor its cell (WS-ZA ZA5.3 part 6). -/
+@[inline] def cspaceMintPerformImpl (src dst : CSpaceAddr) (rights : AccessRightSet)
+    (badge : Option SeLe4n.Badge) (st : SystemState) : SystemState :=
+  match SystemState.lookupSlotCap st src with
+  | some parent =>
+      (st.storeCNodeWith dst.cnode (·.insertFields dst.slot parent.target rights badge none)).cdtAddChild
+        src dst .mint
+  | none => st
+
+@[csimp] theorem cspaceMintPerform_eq_impl : @cspaceMintPerform = @cspaceMintPerformImpl := by
+  funext src dst rights badge st
+  unfold cspaceMintPerform cspaceMintPerformImpl cspaceInstallPerform
+  simp only [CNode.insertFields_eq_insert]; rfl
 
 /-- WS-ZA ZA5.3: an admitted mint is its writes. -/
 theorem cspaceMintWithCdt_of_admitted {src dst : CSpaceAddr} {rights : AccessRightSet}
@@ -1738,7 +1801,7 @@ that is a reply object, and the destination is admitted
   cspaceDstAdmitted dst st
 
 /-- WS-ZA ZA5.3: **`mintReplyCapWithCdt`'s writes**, in place. -/
-@[inline] def mintReplyCapPerform (src dst : CSpaceAddr) (st : SystemState) : SystemState :=
+def mintReplyCapPerform (src dst : CSpaceAddr) (st : SystemState) : SystemState :=
   match SystemState.lookupSlotCap st src with
   | some parent =>
       match parent.target with
@@ -1746,6 +1809,25 @@ that is a reply object, and the destination is admitted
           cspaceInstallPerform src dst (mintedReplyCap (SeLe4n.ReplyId.ofObjId target)) .mint st
       | _ => st
   | none => st
+
+/-- `mintReplyCapPerform` as compiled: the reply capability's fields are written
+over the destination slot's own record (`CNode.insertFields`; WS-ZA ZA5.3 part 6). -/
+@[inline] def mintReplyCapPerformImpl (src dst : CSpaceAddr) (st : SystemState) : SystemState :=
+  match SystemState.lookupSlotCap st src with
+  | some parent =>
+      match parent.target with
+      | .object target =>
+          (st.storeCNodeWith dst.cnode
+              (·.insertFields dst.slot (.replyCap (SeLe4n.ReplyId.ofObjId target))
+                (AccessRightSet.ofList [.write]) none none)).cdtAddChild
+            src dst .mint
+      | _ => st
+  | none => st
+
+@[csimp] theorem mintReplyCapPerform_eq_impl : @mintReplyCapPerform = @mintReplyCapPerformImpl := by
+  funext src dst st
+  unfold mintReplyCapPerform mintReplyCapPerformImpl cspaceInstallPerform
+  simp only [CNode.insertFields_eq_insert]; rfl
 
 /-- WS-ZA ZA5.3: an admitted reply-capability mint is its writes. -/
 theorem mintReplyCapWithCdt_of_admitted {src dst : CSpaceAddr} {st : SystemState}
@@ -1879,53 +1961,6 @@ theorem cspaceMove_of_admitted {src dst : CSpaceAddr} {st : SystemState}
 -- ============================================================================
 -- M-P04/M5: Shared per-node revocation step
 -- ============================================================================
-
-/-- `cspaceCopyPerform` as compiled: a source capability that records no
-mapping is its own derivation, so the destination takes the source slot's own
-entry (`CNode.setCell`) and the copy builds neither a capability nor an entry
-(WS-ZA ZA5.3 part 6). -/
-@[inline] def cspaceCopyPerformImpl (src dst : CSpaceAddr) (st : SystemState) : SystemState :=
-  let o := SystemState.lookupSlotCap st src
-  match ho : o with
-  | some cap =>
-    match cap.mapping with
-    | none => (st.storeCNodeWith dst.cnode (·.setCell dst.slot o cap ho)).cdtAddChild src dst .copy
-    | some _ => cspaceInstallPerform src dst cap.withoutMapping .copy st
-  | none => st
-
-@[csimp] theorem cspaceCopyPerform_eq_impl : @cspaceCopyPerform = @cspaceCopyPerformImpl := by
-  funext src dst st
-  unfold cspaceCopyPerform cspaceCopyPerformImpl
-  dsimp only
-  generalize SystemState.lookupSlotCap st src = o
-  cases o with
-  | none => rfl
-  | some cap =>
-    dsimp only
-    cases hm : cap.mapping with
-    | none =>
-      simp only [CNode.setCell_eq_insert, cspaceInstallPerform,
-        Capability.withoutMapping_of_mapping_none hm]
-    | some _ => rfl
-
-/-- `cspaceMovePerform` as compiled: the destination takes the source slot's own
-entry (`CNode.setCell`), so the move builds no entry (WS-ZA ZA5.3 part 6). -/
-@[inline] def cspaceMovePerformImpl (src dst : CSpaceAddr) (st : SystemState) : SystemState :=
-  let o := SystemState.lookupSlotCap st src
-  match ho : o with
-  | some cap =>
-      ((st.storeCNodeWith dst.cnode (·.setCell dst.slot o cap ho)).storeCNodeWith src.cnode
-        (·.remove src.slot)).cdtMove src dst
-  | none => st
-
-@[csimp] theorem cspaceMovePerform_eq_impl : @cspaceMovePerform = @cspaceMovePerformImpl := by
-  funext src dst st
-  unfold cspaceMovePerform cspaceMovePerformImpl
-  dsimp only
-  generalize SystemState.lookupSlotCap st src = o
-  cases o with
-  | none => rfl
-  | some cap => simp only [CNode.setCell_eq_insert]
 
 /-! ### The invoked CNode's slots, as words
 
@@ -2291,6 +2326,33 @@ def cspaceRecordFrameMapping (addr : CSpaceAddr) (m : FrameMapping) : Kernel Uni
       match cn.lookup addr.slot with
       | none => .error .invalidCapability
       | some cap => storeObject addr.cnode (.cnode (cn.insert addr.slot { cap with mapping := some m })) st
+
+/-- `cspaceRecordFrameMapping` as compiled: the record is written where the
+CNode lies (`storeCNodeWith`; WS-ZA ZA5.3 part 6). -/
+@[inline] def cspaceRecordFrameMappingImpl (addr : CSpaceAddr) (m : FrameMapping) : Kernel Unit :=
+  fun st =>
+    match st.getCNode? addr.cnode with
+    | none => .error .objectNotFound
+    | some cn =>
+      match cn.lookup addr.slot with
+      | none => .error .invalidCapability
+      | some cap =>
+          .ok ((), st.storeCNodeWith addr.cnode (·.insert addr.slot { cap with mapping := some m }))
+
+@[csimp] theorem cspaceRecordFrameMapping_eq_impl :
+    @cspaceRecordFrameMapping = @cspaceRecordFrameMappingImpl := by
+  funext addr m st
+  unfold cspaceRecordFrameMapping cspaceRecordFrameMappingImpl
+  cases hC : st.getCNode? addr.cnode with
+  | none => rfl
+  | some cn =>
+    dsimp only
+    cases cn.lookup addr.slot with
+    | none => rfl
+    | some cap =>
+      exact SystemState.storeObject_cnode_eq_storeCNodeWith
+        ((SystemState.getCNode?_eq_some_iff st addr.cnode cn).1 hC)
+        (·.insert addr.slot { cap with mapping := some m })
 
 /-- **What a successful record write is**: the slot held a capability, and the
 CNode was stored back with that capability carrying the record. -/

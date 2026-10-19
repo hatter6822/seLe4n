@@ -1081,29 +1081,115 @@ def insert (node : CNode) (slot : SeLe4n.Slot) (cap : Capability) : CNode :=
           simp [e, this] }
   else node
 
-/-- WS-ZA ZA5.3 part 6: **`insert` of an entry already built** — the slot's
-array entry set to `o`, which holds `cap`.  A copy or a move hands over the
-source slot's own entry, so the write builds no new one (`setCell_eq_insert`). -/
-def setCell (node : CNode) (slot : SeLe4n.Slot) (o : Option Capability) (cap : Capability)
-    (ho : o = some cap) : CNode :=
-  if h : slot.toNat < node.cells.size then
+/-- WS-ZA ZA5.3 part 6: two CNodes that agree on every field but their spare
+records are equal; the spares are logically one value. -/
+theorem ext_of_fields {a b : CNode} (h1 : a.depth = b.depth) (h2 : a.guardWidth = b.guardWidth)
+    (h3 : a.guardValue = b.guardValue) (h4 : a.radixWidth = b.radixWidth)
+    (h5 : a.slotsGhost = b.slotsGhost) (h6 : a.cells = b.cells) (h7 : a.links = b.links) :
+    a = b := by
+  cases a; cases b; simp only at h1 h2 h3 h4 h5 h6 h7; subst h1 h2 h3 h4 h5 h6 h7
+  congr; exact Subsingleton.elim _ _
+
+/-- The slot map with `cap` at `slot` agrees with the slot array holding it
+there (`insert`'s agreement). -/
+theorem insert_slots_agree (node : CNode) (slot : SeLe4n.Slot) (cap : Capability)
+    (h : slot.toNat < node.cells.size) :
+    ∀ s, (node.slotsGhost.map (fun m : SeLe4n.UniqueSlotMap Capability => m.insert slot cap)).out.get? s =
+      slotArrayGet (node.cells.set slot.toNat (some cap) h) s := fun s => by
+  rw [SeLe4n.Erased.out_map, SeLe4n.UniqueSlotMap.get?_insert, slotArrayGet_set, node.slots_agree s]
+  by_cases e : slot = s
+  · subst e; simp
+  · have : s.toNat ≠ slot.toNat := fun h' => e (by
+      cases slot; cases s; simp_all [SeLe4n.Slot.toNat])
+    simp [e, this]
+
+/-- `insertCell` given the spare records `a`: `cap` written over slot `slot`'s
+record, which leaves the spares.  The record is taken out of the spares before
+it is matched, so nothing else holds it and `Capability.overwrite` writes
+`cap`'s fields into it.  Each arm builds the CNode itself, so the CNode is
+written in place too, and builds its capability from `cap`'s fields, so a
+caller passing `cap` as a literal never builds it. -/
+@[inline] def insertCellFrom (node : CNode) (slot : SeLe4n.Slot) (cap : Capability)
+    (h : slot.toNat < node.cells.size) (a : Array (Option Capability)) : CNode :=
+  let i := slot.toNat
+  if ha : i < a.size then
+    let o := a[i]
+    let a' := a.set i none ha
+    match o with
+    | some r =>
+      let cell := Capability.overwrite r cap.target cap.rights cap.badge cap.mapping
+      have hc : cell = cap := by cases cap; exact Capability.overwrite_eq _ _ _ _ _
+      { node with
+        slotsGhost := node.slotsGhost.map (·.insert slot cap)
+        cells := node.cells.set i (some cell) h
+        cells_size := by rw [Array.size_set]; exact node.cells_size
+        slots_agree := by rw [hc]; exact insert_slots_agree node slot cap h
+        spare := Squash.mk a' }
+    | none =>
+      { node with
+        slotsGhost := node.slotsGhost.map (·.insert slot cap)
+        cells := node.cells.set i (some ⟨cap.target, cap.rights, cap.badge, cap.mapping⟩) h
+        cells_size := by rw [Array.size_set]; exact node.cells_size
+        slots_agree := insert_slots_agree node slot cap h
+        spare := Squash.mk a' }
+  else
     { node with
       slotsGhost := node.slotsGhost.map (·.insert slot cap)
-      cells := node.cells.set slot.toNat o h
+      cells := node.cells.set i (some ⟨cap.target, cap.rights, cap.badge, cap.mapping⟩) h
       cells_size := by rw [Array.size_set]; exact node.cells_size
-      slots_agree := fun s => by
-        subst ho
-        rw [SeLe4n.Erased.out_map, SeLe4n.UniqueSlotMap.get?_insert, slotArrayGet_set, node.slots_agree s]
-        by_cases e : slot = s
-        · subst e; simp
-        · have : s.toNat ≠ slot.toNat := fun h' => e (by
-            cases slot; cases s; simp_all [SeLe4n.Slot.toNat])
-          simp [e, this] }
+      slots_agree := insert_slots_agree node slot cap h
+      spare := Squash.mk a }
+
+theorem insertCellFrom_eq (node : CNode) (slot : SeLe4n.Slot) (cap : Capability)
+    (h : slot.toNat < node.cells.size) (a : Array (Option Capability)) :
+    node.insertCellFrom slot cap h a = node.insert slot cap := by
+  unfold insertCellFrom insert
+  simp only [h, dite_true]
+  split
+  · split
+    · next r _ =>
+      refine ext_of_fields rfl rfl rfl rfl rfl ?_ rfl
+      cases cap; simp only [Capability.overwrite_eq]
+    · exact ext_of_fields rfl rfl rfl rfl rfl rfl rfl
+  · exact ext_of_fields rfl rfl rfl rfl rfl rfl rfl
+
+/-- WS-ZA ZA5.3 part 6: **`insert` as compiled** — `cap` written over the
+slot's own record (its spare, `insertCellFrom`), so the write reuses the record
+and its cell rather than allocating them.  A caller that passes `cap` as a
+literal (mint) has its fields written straight into the record. -/
+@[inline] def insertCell (node : CNode) (slot : SeLe4n.Slot) (cap : Capability) : CNode :=
+  if h : slot.toNat < node.cells.size then
+    Quot.lift (node.insertCellFrom slot cap h)
+      (fun a b _ => by rw [insertCellFrom_eq, insertCellFrom_eq]) node.spare
   else node
 
-theorem setCell_eq_insert (node : CNode) (slot : SeLe4n.Slot) (o : Option Capability)
-    (cap : Capability) (ho : o = some cap) : node.setCell slot o cap ho = node.insert slot cap := by
-  subst ho; rfl
+theorem insertCell_eq_insert (node : CNode) (slot : SeLe4n.Slot) (cap : Capability) :
+    node.insertCell slot cap = node.insert slot cap := by
+  unfold insertCell
+  split
+  · next h =>
+    induction node.spare using Squash.ind with
+    | h a => exact insertCellFrom_eq node slot cap h a
+  · next h => unfold insert; simp only [h, dite_false]
+
+/-- `insert` as compiled (`insertCell`, out of line). -/
+def insertImpl (node : CNode) (slot : SeLe4n.Slot) (cap : Capability) : CNode :=
+  node.insertCell slot cap
+
+@[csimp] theorem insert_eq_impl : @insert = @insertImpl := by
+  funext node slot cap; exact (insertCell_eq_insert node slot cap).symm
+
+/-- WS-ZA ZA5.3 part 6: `insert` of the capability with these fields, out of
+line: the caller hands over its CNode, so the CNode is written in place, and
+the fields go straight into the slot's own record (mint). -/
+def insertFields (node : CNode) (slot : SeLe4n.Slot) (target : CapTarget) (rights : AccessRightSet)
+    (badge : Option SeLe4n.Badge) (mapping : Option FrameMapping) : CNode :=
+  node.insertCell slot ⟨target, rights, badge, mapping⟩
+
+theorem insertFields_eq_insert (node : CNode) (slot : SeLe4n.Slot) (target : CapTarget)
+    (rights : AccessRightSet) (badge : Option SeLe4n.Badge) (mapping : Option FrameMapping) :
+    node.insertFields slot target rights badge mapping = node.insert slot ⟨target, rights, badge, mapping⟩ :=
+  insertCell_eq_insert _ _ _
 
 /-- WS-ZA ZA5.3: a CNode of the given geometry holding `xs`, inserted in order
 (the last capability at a repeated slot wins); a slot at or past
@@ -1125,6 +1211,29 @@ def remove (node : CNode) (slot : SeLe4n.Slot) : CNode :=
       · have : s.toNat ≠ slot.toNat := fun h' => e (by
           cases slot; cases s; simp_all [SeLe4n.Slot.toNat])
         simp [e, this] }
+
+/-- WS-ZA ZA5.3 part 6: **`remove` as compiled** — the slot's cell is kept as
+its spare record (`SpareCells.keep`), so the next capability written there
+reuses it. -/
+def removeImpl (node : CNode) (slot : SeLe4n.Slot) : CNode :=
+  if h : slot.toNat < node.cells.size then
+    let o := node.cells[slot.toNat]
+    have hs : node.cells.set slot.toNat none h = node.cells.setIfInBounds slot.toNat none := by
+      simp [Array.setIfInBounds, h]
+    { node with
+      slotsGhost := node.slotsGhost.map (·.erase slot)
+      cells := node.cells.set slot.toNat none h
+      cells_size := by rw [hs]; exact (node.remove slot).cells_size
+      slots_agree := by rw [hs]; exact (node.remove slot).slots_agree
+      spare := node.spare.keep slot.toNat o }
+  else node.remove slot
+
+@[csimp] theorem remove_eq_impl : @remove = @removeImpl := by
+  funext node slot
+  unfold removeImpl
+  split
+  · next h => exact ext_of_fields rfl rfl rfl rfl rfl (by simp [remove, Array.setIfInBounds, h]) rfl
+  · rfl
 
 /-- WS-ZA ZA5.3: a removal erases the slot from the ghost map. -/
 @[simp] theorem slots_remove (node : CNode) (slot : SeLe4n.Slot) :
