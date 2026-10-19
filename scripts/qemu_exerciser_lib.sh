@@ -252,16 +252,16 @@ for driver in drivers:
         # operation's own cells (object writes, the store's copy); the rows
         # that bring them to zero lower these pins.
         pinned.update({
-            "untyped-retype-page-table-1": (65, 65), "page-table-map-1": (47, 47),
-            "untyped-retype-page-table-2": (65, 65), "page-table-map-2": (53, 53),
-            "untyped-retype-page-table-3": (65, 65), "page-table-map-3": (56, 56),
-            "untyped-retype-frame": (82, 82), "vspace-map": (107, 106),
-            "vspace-unify-instruction": (10, 10),
-            "vspace-map-copy": (108, 107), "frame-revoke": (110, 110),
-            "vspace-unmap": (119, 119), "frame-delete": (6, 6),
-            "page-table-unmap-3": (42, 42), "page-table-delete-3": (3, 3),
-            "page-table-unmap-2": (41, 41), "page-table-delete-2": (3, 3),
-            "page-table-unmap-1": (38, 38), "page-table-delete-1": (3, 3),
+            "untyped-retype-page-table-1": (65, 65), "page-table-map-1": (19, 19),
+            "untyped-retype-page-table-2": (65, 65), "page-table-map-2": (26, 26),
+            "untyped-retype-page-table-3": (65, 65), "page-table-map-3": (30, 30),
+            "untyped-retype-frame": (82, 82), "vspace-map": (50, 46),
+            "vspace-unify-instruction": (10, 9),
+            "vspace-map-copy": (50, 47), "frame-revoke": (106, 106),
+            "vspace-unmap": (86, 86), "frame-delete": (6, 6),
+            "page-table-unmap-3": (11, 11), "page-table-delete-3": (3, 3),
+            "page-table-unmap-2": (11, 11), "page-table-delete-2": (3, 3),
+            "page-table-unmap-1": (9, 9), "page-table-delete-1": (3, 3),
             "untyped-reset": (151, 151),
         })
         expected = set(pinned)

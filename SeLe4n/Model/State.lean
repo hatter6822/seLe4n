@@ -1943,6 +1943,19 @@ theorem default_objectCount_le_maxObjects :
   unfold objectCount_le_maxObjects objectIndexBounded maxObjects
   simp [List.length]
 
+/-- WS-ZA ZA5.4: **a store that leaves the ASID table as it is.**  A VSpace root
+replaces a VSpace root of the same ASID, at the id the table already names for
+that ASID, so erasing the old ASID and inserting the new one would put back the
+entry that is there.  Every store an address-space operation makes to the root it
+resolved is one of these, which is what lets the root be rewritten in its slot. -/
+@[inline] def storeKeepsAsid (st : SystemState) (id : SeLe4n.ObjId) (obj : KernelObject) : Bool :=
+  match obj with
+  | .vspaceRoot newRoot =>
+    (match st.objects[id]? with
+     | some (.vspaceRoot oldRoot) => oldRoot.asid == newRoot.asid
+     | _ => false) && st.asidTable.holds newRoot.asid id
+  | _ => false
+
 /-- Replace the object stored at `id` with `obj`.
 
 WS-G2/F-P01: Uses `HashMap.insert` instead of closure wrapping, eliminating
@@ -1951,6 +1964,9 @@ WS-G2/F-P10: Uses `objectIndexSet.contains` for O(1) membership check instead
 of O(n) list membership scan.
 WS-G3/F-P06: Maintains `asidTable` — erases old ASID when overwriting a
 VSpaceRoot, inserts new ASID when storing a VSpaceRoot.
+WS-ZA ZA5.4: a root stored over a root of the same ASID, at the id the table
+already names for it (`storeKeepsAsid`), leaves the table as it is: the erase
+and insert would put back the entry already there.
 
 `v0.35.78`: the store maintains **one** lifecycle table, `objectTypes`.  Up to
 `v0.35.77` it also maintained the capability-reference table — a whole-table
@@ -2001,6 +2017,7 @@ def storeObject (id : SeLe4n.ObjId) (obj : KernelObject) : Kernel Unit :=
           objectTypes := st.lifecycle.objectTypes.insert id obj.objectType
         }
         asidTable :=
+          if storeKeepsAsid st id obj then st.asidTable else
           let cleared := match st.objects[id]? with
             | some (.vspaceRoot oldRoot) => st.asidTable.erase oldRoot.asid
             | _ => st.asidTable
@@ -2045,6 +2062,7 @@ def storeObjectImpl (id : SeLe4n.ObjId) (obj : KernelObject) : Kernel Unit :=
           objectTypes := st.lifecycle.objectTypes.insert id obj.objectType
         }
         asidTable :=
+          if storeKeepsAsid st id obj then st.asidTable else
           let cleared := match st.objects[id]? with
             | some (.vspaceRoot oldRoot) => st.asidTable.erase oldRoot.asid
             | _ => st.asidTable
@@ -2052,6 +2070,31 @@ def storeObjectImpl (id : SeLe4n.ObjId) (obj : KernelObject) : Kernel Unit :=
           | .vspaceRoot newRoot => cleared.insert newRoot.asid id
           | _ => cleared
     })
+
+/-- WS-ZA ZA5.4: two states with one ASID table and the same root at `id` keep or
+rebuild the ASID table alike on a store at `id`. -/
+theorem storeKeepsAsid_congr {s1 s2 : SystemState} {id : SeLe4n.ObjId} {obj : KernelObject}
+    (hA : s1.asidTable = s2.asidTable)
+    (hO : ∀ r, s1.objects[id]? = some (.vspaceRoot r) ↔ s2.objects[id]? = some (.vspaceRoot r)) :
+    storeKeepsAsid s1 id obj = storeKeepsAsid s2 id obj := by
+  unfold storeKeepsAsid
+  cases obj with
+  | vspaceRoot newRoot =>
+    simp only [hA]
+    by_cases h : ∃ r, s1.objects[id]? = some (.vspaceRoot r)
+    · obtain ⟨r, hr⟩ := h; rw [hr, (hO r).1 hr]
+    · have h2 : ¬ ∃ r, s2.objects[id]? = some (.vspaceRoot r) :=
+        fun ⟨r, hr⟩ => h ⟨r, (hO r).2 hr⟩
+      have e : ∀ s : SystemState, (¬ ∃ r, s.objects[id]? = some (.vspaceRoot r)) →
+          (match s.objects[id]? with
+           | some (.vspaceRoot oldRoot) => oldRoot.asid == newRoot.asid
+           | _ => false) = false := by
+        intro s hs
+        split
+        · next r hr => exact absurd ⟨r, hr⟩ hs
+        · rfl
+      rw [e s1 h, e s2 h2]
+  | _ => rfl
 
 @[csimp] theorem storeObject_eq_impl : @storeObject = @storeObjectImpl := by
   funext id obj st
@@ -2069,7 +2112,7 @@ def storeObjectImpl (id : SeLe4n.ObjId) (obj : KernelObject) : Kernel Unit :=
     have hI : st.objectIndexSet.insert id = st.objectIndexSet := by
       unfold RHSet.insert; rw [RHTable.insert_eq_self_of_holds _ _ _ hSet]
     have hT := RHTable.insert_eq_self_of_holds _ _ _ hTy
-    simp only [hC, ↓reduceIte, hI, hT]
+    simp only [hC, ↓reduceIte, hI, hT, ite_self]
   · rw [if_neg h]
 
 /-- WS-ZA ZA1.4: a store that changes only `objects` is that one write. -/
@@ -2712,7 +2755,12 @@ theorem storeObject_asidTable_vspaceRoot
     st'.asidTable[newRoot.asid]? = some id := by
   unfold storeObject at hStore; cases hStore
   simp only []
-  exact RHTable.getElem?_insert_self _ _ _ hAsidInv
+  by_cases hK : storeKeepsAsid st id (.vspaceRoot newRoot) = true
+  · rw [if_pos hK, RHTable_getElem?_eq_get?]
+    simp only [storeKeepsAsid, Bool.and_eq_true] at hK
+    exact RHTable.get?_of_holds _ _ _ hK.2
+  · rw [if_neg hK]
+    exact RHTable.getElem?_insert_self _ _ _ hAsidInv
 
 /-- WS-G3: After storing a VSpaceRoot, a different ASID's table entry is unchanged
     unless it was the old root's ASID that got erased. -/
@@ -2720,6 +2768,7 @@ theorem storeObject_asidTable_vspaceRoot_ne
     (st st' : SystemState) (id : SeLe4n.ObjId) (newRoot : VSpaceRoot)
     (asid : SeLe4n.ASID)
     (hNe : asid ≠ newRoot.asid)
+    (hAsidK : st.asidTable.invExtK)
     (hAsidInv : (match st.objects[id]? with
       | some (.vspaceRoot oldRoot) => st.asidTable.erase oldRoot.asid
       | _ => st.asidTable).invExt)
@@ -2731,6 +2780,22 @@ theorem storeObject_asidTable_vspaceRoot_ne
   unfold storeObject at hStore; cases hStore
   simp only []
   have hNeBeq : ¬((newRoot.asid == asid) = true) := by intro heq; exact hNe (eq_of_beq heq).symm
+  by_cases hK : storeKeepsAsid st id (.vspaceRoot newRoot) = true
+  · rw [if_pos hK]
+    simp only [storeKeepsAsid, Bool.and_eq_true] at hK
+    obtain ⟨hSame, _⟩ := hK
+    cases hOld : st.objects[id]? with
+    | none => simp [hOld] at hSame
+    | some obj =>
+      cases obj with
+      | vspaceRoot oldRoot =>
+        simp only [hOld, beq_iff_eq] at hSame
+        have hNeOld : ¬((oldRoot.asid == asid) = true) := by rw [hSame]; exact hNeBeq
+        simp only [RHTable_getElem?_eq_get?]
+        exact (RHTable.getElem?_erase_ne_K _ _ _ hNeOld hAsidK).symm
+      | tcb _ | cnode _ | endpoint _ | notification _ | untyped _
+      | schedContext _ | reply _ | frame _ | pageTable _ => simp [hOld] at hSame
+  rw [if_neg hK]
   cases hOld : st.objects[id]? with
   | none =>
     simp only [hOld, RHTable_getElem?_eq_get?] at hAsidInv ⊢
@@ -5127,19 +5192,18 @@ theorem storeObject_preserves_allTablesInvExtK
   have hIfaceReg := hAll.2.2.2.2.2.1
   have hSvcReg := hAll.2.2.2.2.2.2.1
   have hObjIdxSet := hAll.2.2.2.2.2.2.2
-  -- Prove objects insert preserves invExtK
-  have hObj' := RHTable.insert_preserves_invExtK st.objects id obj hObj
-  -- Prove objectTypes insert preserves invExtK
-  have hObjTypes' := RHTable.insert_preserves_invExtK st.lifecycle.objectTypes id obj.objectType hObjTypes
   -- Prove objectIndexSet insert preserves invExtK
   have hObjIdxSet' := RHSet.insert_preserves_invExtK st.objectIndexSet id hObjIdxSet
   -- Prove asidTable preserves invExtK (erase + insert depending on obj type)
-  have hAsid' : (let cleared := match st.objects[id]? with
+  have hAsid' : (if storeKeepsAsid st id obj then st.asidTable else
+      let cleared := match st.objects[id]? with
         | some (.vspaceRoot oldRoot) => st.asidTable.erase oldRoot.asid
         | _ => st.asidTable
       match obj with
       | .vspaceRoot newRoot => cleared.insert newRoot.asid id
       | _ => cleared).invExtK := by
+    split
+    · exact hAsid
     -- The cleared table preserves invExtK via erase or identity
     have hCleared : (match st.objects[id]? with
         | some (.vspaceRoot oldRoot) => st.asidTable.erase oldRoot.asid
@@ -5150,6 +5214,10 @@ theorem storeObject_preserves_allTablesInvExtK
     cases obj with
     | vspaceRoot vs => exact RHTable.insert_preserves_invExtK _ _ _ hCleared
     | _ => exact hCleared
+  -- Prove objects insert preserves invExtK
+  have hObj' := RHTable.insert_preserves_invExtK st.objects id obj hObj
+  -- Prove objectTypes insert preserves invExtK
+  have hObjTypes' := RHTable.insert_preserves_invExtK st.lifecycle.objectTypes id obj.objectType hObjTypes
   -- Compose all 8 components
   exact ⟨hObj', hIrq, hAsid', hObjTypes', hServices, hIfaceReg, hSvcReg,
          hObjIdxSet'⟩
@@ -5754,6 +5822,180 @@ theorem storeCNodeWith_objects {st : SystemState} {id : SeLe4n.ObjId} {cn : CNod
     (h : st.objects[id]? = some (.cnode cn)) (f : CNode → CNode) :
     (st.storeCNodeWith id f).objects = st.objects.insert id (.cnode (f cn)) := by
   have hS := storeObject_cnode_eq_storeCNodeWith h f
+  unfold storeObject at hS
+  simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hS
+  rw [← hS]
+
+/-- WS-ZA ZA5.4: the object update a VSpace root update performs. -/
+@[inline] def mapVSpaceRootObject (f : VSpaceRoot → VSpaceRoot) : KernelObject → KernelObject
+  | .vspaceRoot r => .vspaceRoot (f r)
+  | o => o
+
+/-- WS-ZA ZA5.4: **a root store that changes only `objects`.**  The key is in the
+object index with the VSpace-root type, and the ASID table already names `id` for
+the root's ASID — the case of every store an address-space operation makes to the
+root it resolved, by an update that keeps the ASID (`storeKeepsAsid`). -/
+@[inline] def storeLeavesRootTables (st : SystemState) (id : SeLe4n.ObjId) (r : VSpaceRoot) :
+    Bool :=
+  st.objectIndexSet.table.holds id () &&
+  st.lifecycle.objectTypes.holds id .vspaceRoot &&
+  st.asidTable.holds r.asid id
+
+/-- WS-ZA ZA5.4: **the store of `f` of the VSpace root at `id`, written in its
+slot.**  `storeObject id (.vspaceRoot (f r))` over the root `r` stored at `id`
+(`storeObject_vspaceRoot_eq_storeVSpaceRootWith`), for an `f` that keeps the
+root's ASID: when the store leaves the index, type and ASID tables as they are
+(`storeLeavesRootTables`) the root is rewritten in its table slot
+(`modifyObject`), so on an exclusively owned state neither the table, the root
+nor its mapping tables are copied; otherwise it is the store.  The identity when
+`id` holds no root. -/
+@[specialize] def storeVSpaceRootWith (st : SystemState) (id : SeLe4n.ObjId)
+    (f : VSpaceRoot → VSpaceRoot) : SystemState :=
+  match st.objects[id]? with
+  | some (.vspaceRoot r) =>
+      if storeLeavesRootTables st id r then st.modifyObject id (mapVSpaceRootObject f)
+      else
+        match storeObject id (.vspaceRoot (f r)) st with
+        | .ok ((), st') => st'
+        | .error _ => st
+  | _ => st
+
+theorem storeObject_vspaceRoot_eq_storeVSpaceRootWith {st : SystemState} {id : SeLe4n.ObjId}
+    {r : VSpaceRoot} (h : st.objects[id]? = some (.vspaceRoot r)) (f : VSpaceRoot → VSpaceRoot)
+    (hf : (f r).asid = r.asid) :
+    storeObject id (.vspaceRoot (f r)) st = .ok ((), st.storeVSpaceRootWith id f) := by
+  unfold storeVSpaceRootWith
+  rw [h]
+  dsimp only
+  split
+  · next hL =>
+    simp only [storeLeavesRootTables, Bool.and_eq_true] at hL
+    obtain ⟨⟨hSet, hTy⟩, hA⟩ := hL
+    have hK : storeKeepsAsid st id (.vspaceRoot (f r)) = true := by
+      simp only [storeKeepsAsid, h, hf, beq_self_eq_true, Bool.true_and]; exact hA
+    have hC : st.objectIndexSet.contains id = true :=
+      RHTable.contains_of_holds _ _ _ hSet
+    have hI : st.objectIndexSet.insert id = st.objectIndexSet := by
+      unfold RHSet.insert; rw [RHTable.insert_eq_self_of_holds _ _ _ hSet]
+    have hT := RHTable.insert_eq_self_of_holds _ _ _ hTy
+    unfold storeObject modifyObject
+    rw [RHTable.modify_of_get? h]
+    simp only [hC, ↓reduceIte, hI, hK, KernelObject.objectType, hT]
+    rfl
+  · obtain ⟨st', hS⟩ := storeObject_isOk st id (.vspaceRoot (f r))
+    rw [hS]
+
+/-- WS-ZA ZA5.4: what `storeVSpaceRootWith` writes into the object table. -/
+theorem storeVSpaceRootWith_objects {st : SystemState} {id : SeLe4n.ObjId} {r : VSpaceRoot}
+    (h : st.objects[id]? = some (.vspaceRoot r)) (f : VSpaceRoot → VSpaceRoot)
+    (hf : (f r).asid = r.asid) :
+    (st.storeVSpaceRootWith id f).objects = st.objects.insert id (.vspaceRoot (f r)) := by
+  have hS := storeObject_vspaceRoot_eq_storeVSpaceRootWith h f hf
+  unfold storeObject at hS
+  simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hS
+  rw [← hS]
+
+/-- WS-ZA ZA5.4: a root write that keeps the root's ASID, at the id the ASID
+table names for it, leaves the ASID table as it is. -/
+theorem storeVSpaceRootWith_asidTable {st : SystemState} {id : SeLe4n.ObjId} {r : VSpaceRoot}
+    (h : st.objects[id]? = some (.vspaceRoot r)) (f : VSpaceRoot → VSpaceRoot)
+    (hf : (f r).asid = r.asid) (hA : st.asidTable.holds r.asid id = true) :
+    (st.storeVSpaceRootWith id f).asidTable = st.asidTable := by
+  have hS := storeObject_vspaceRoot_eq_storeVSpaceRootWith h f hf
+  have hK : storeKeepsAsid st id (.vspaceRoot (f r)) = true := by
+    simp only [storeKeepsAsid, h, hf, beq_self_eq_true, Bool.true_and]; exact hA
+  unfold storeObject at hS
+  simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hS
+  rw [← hS]
+  exact if_pos hK
+
+/-- WS-ZA ZA5.4: the object update a frame update performs. -/
+@[inline] def mapFrameObject (f : FrameObject → FrameObject) : KernelObject → KernelObject
+  | .frame fr => .frame (f fr)
+  | o => o
+
+/-- WS-ZA ZA5.4: **the store of `f` of the frame at `id`, written in its slot** —
+`storeCNodeWith` for a frame (`storeObject_frame_eq_storeFrameWith`).  The
+identity when `id` holds no frame. -/
+@[specialize] def storeFrameWith (st : SystemState) (id : SeLe4n.ObjId)
+    (f : FrameObject → FrameObject) : SystemState :=
+  match st.objects[id]? with
+  | some (.frame fr) =>
+      if storeLeavesIndexAndTypes st id .frame then st.modifyObject id (mapFrameObject f)
+      else
+        match storeObject id (.frame (f fr)) st with
+        | .ok ((), st') => st'
+        | .error _ => st
+  | _ => st
+
+theorem storeObject_frame_eq_storeFrameWith {st : SystemState} {id : SeLe4n.ObjId}
+    {fr : FrameObject} (h : st.objects[id]? = some (.frame fr)) (f : FrameObject → FrameObject) :
+    storeObject id (.frame (f fr)) st = .ok ((), st.storeFrameWith id f) := by
+  unfold storeFrameWith
+  rw [h]
+  dsimp only
+  split
+  · next hL =>
+    rw [storeObject_eq_impl]
+    unfold storeObjectImpl modifyObject
+    rw [show (KernelObject.frame (f fr)).objectType = .frame from rfl, if_pos hL,
+      RHTable.modify_of_get? h]
+    rfl
+  · obtain ⟨st', hS⟩ := storeObject_isOk st id (.frame (f fr))
+    rw [hS]
+
+/-- WS-ZA ZA5.4: what `storeFrameWith` writes into the object table. -/
+theorem storeFrameWith_objects {st : SystemState} {id : SeLe4n.ObjId} {fr : FrameObject}
+    (h : st.objects[id]? = some (.frame fr)) (f : FrameObject → FrameObject) :
+    (st.storeFrameWith id f).objects = st.objects.insert id (.frame (f fr)) := by
+  have hS := storeObject_frame_eq_storeFrameWith h f
+  unfold storeObject at hS
+  simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hS
+  rw [← hS]
+
+/-- WS-ZA ZA5.4: the object update a page-table update performs. -/
+@[inline] def mapPageTableObject (f : PageTableObject → PageTableObject) :
+    KernelObject → KernelObject
+  | .pageTable t => .pageTable (f t)
+  | o => o
+
+/-- WS-ZA ZA5.4: **the store of `f` of the page table at `id`, written in its
+slot** — `storeFrameWith` for a page table
+(`storeObject_pageTable_eq_storePageTableWith`).  The identity when `id` holds
+no page table. -/
+@[specialize] def storePageTableWith (st : SystemState) (id : SeLe4n.ObjId)
+    (f : PageTableObject → PageTableObject) : SystemState :=
+  match st.objects[id]? with
+  | some (.pageTable t) =>
+      if storeLeavesIndexAndTypes st id .pageTable then st.modifyObject id (mapPageTableObject f)
+      else
+        match storeObject id (.pageTable (f t)) st with
+        | .ok ((), st') => st'
+        | .error _ => st
+  | _ => st
+
+theorem storeObject_pageTable_eq_storePageTableWith {st : SystemState} {id : SeLe4n.ObjId}
+    {t : PageTableObject} (h : st.objects[id]? = some (.pageTable t))
+    (f : PageTableObject → PageTableObject) :
+    storeObject id (.pageTable (f t)) st = .ok ((), st.storePageTableWith id f) := by
+  unfold storePageTableWith
+  rw [h]
+  dsimp only
+  split
+  · next hL =>
+    rw [storeObject_eq_impl]
+    unfold storeObjectImpl modifyObject
+    rw [show (KernelObject.pageTable (f t)).objectType = .pageTable from rfl, if_pos hL,
+      RHTable.modify_of_get? h]
+    rfl
+  · obtain ⟨st', hS⟩ := storeObject_isOk st id (.pageTable (f t))
+    rw [hS]
+
+/-- WS-ZA ZA5.4: what `storePageTableWith` writes into the object table. -/
+theorem storePageTableWith_objects {st : SystemState} {id : SeLe4n.ObjId} {t : PageTableObject}
+    (h : st.objects[id]? = some (.pageTable t)) (f : PageTableObject → PageTableObject) :
+    (st.storePageTableWith id f).objects = st.objects.insert id (.pageTable (f t)) := by
+  have hS := storeObject_pageTable_eq_storePageTableWith h f
   unfold storeObject at hS
   simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hS
   rw [← hS]

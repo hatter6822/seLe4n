@@ -1,3 +1,39 @@
+## v0.36.112 — WS-ZA ZA5.4 part 2: address-space operations write in place
+
+The frame map and unmap, the instruction-cache unify and the page-table install
+and removal now run every check before any write and change each object in its
+own store slot, so the object table is no longer copied whole on every call.
+
+- **Check, then perform** (`Kernel/VSpacePerform.lean`): each of the five
+  operations has its checks (`vspaceMapAdmittedAt`, `vspaceUnmapAdmittedAt`,
+  `vspaceUnifyAdmittedAt`, `pageTableMapAdmittedAt`,
+  `pageTableUnmapAdmittedAt`) and its writes (`…PerformAt`), and the
+  dispatcher runs each pair through `RefusalCarrying.ofChecked`.  The
+  obligations `vspaceMapFromFrameCap_of_admitted`,
+  `vspaceUnmapPageWithShootdownAndIcacheBroadcast_of_admitted`,
+  `vspaceUnifyInstructionPage_of_admitted`, `pageTableMap_of_admitted` and
+  `pageTableUnmap_of_admitted` prove an admitted operation succeeds as its
+  writes, so `dispatchInvocationByR_eq` still makes the routed dispatcher the
+  specification's.  The ledger entry a write owes is read back from the root as
+  stored (`mappedRootLedger`, `rootSlotLedger`, `detachedSlotLedger`), equal to
+  the specification's because the page tables are unchanged
+  (`mappingStore?_congr`, `slotStore?_congr`).
+- **In-slot writers** (`Model/State.lean`): `storeVSpaceRootWith`,
+  `storeFrameWith` and `storePageTableWith` write an object through
+  `modifyObject`, each proven equal to `storeObject`
+  (`storeObject_vspaceRoot_eq_storeVSpaceRootWith`, …).  `storeObject` leaves
+  the ASID table as it is when a root replaces a root of the same ASID at the
+  id the table names (`storeKeepsAsid`), so a root can change in its slot;
+  `storeObject_asidTable_vspaceRoot_ne` now takes the table's `invExtK`.
+  `RHTable.get?_of_holds` reads a lookup off a `holds` probe.
+- **Readings** (normal build, first call / steady state): frame map 50 / 46
+  (107 / 106 before), map of a copied capability 50 / 47 (108 / 107), unmap 86
+  (119), revoke destroying a mapped frame 106 (110), unify 10 / 9 (10),
+  page-table installs 19, 26 and 30 (47, 53, 56), page-table removals 11, 11 and
+  9 (42, 41, 38).  The exerciser pins move to them.  What remains is the
+  operations' own data: the root's mapping tables, the TLB views and the
+  shootdown round, which the next parts of the row write in place.
+
 ## v0.36.111 — WS-ZA ZA5.3 part 8: every revoke is seL4's cteRevoke loop
 
 `.cspaceRevoke` now deletes and finalises the source's first derivation child

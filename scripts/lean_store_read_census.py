@@ -1563,13 +1563,16 @@ ACCESSOR_BODIES = {
     for d in ("storeObject", "storeObjectKindChecked")
 } | {
     # The compiled forms of the store and the TCB update (`@[csimp]`, each
-    # proven equal to the definition it replaces), and the in-place CNode
-    # store (proven equal to `storeObject` by
-    # `storeObject_cnode_eq_storeCNodeWith`): the in-place write reads the
-    # stored entry to decide whether the index and type rows change.
+    # proven equal to the definition it replaces), and the in-place CNode,
+    # VSpace-root, frame and page-table stores (each proven equal to
+    # `storeObject`, e.g. `storeObject_cnode_eq_storeCNodeWith`): the in-place
+    # write reads the stored entry to decide whether the index and type rows
+    # change.  `storeKeepsAsid` is `storeObject`'s own read of the stored root,
+    # deciding whether the ASID table changes.
     ("SeLe4n/Model/State.lean", d): "live object-store write primitive, compiled form"
     for d in ("storeLeavesIndexAndTypes", "storeObjectImpl", "updateTcbImpl",
-              "storeCNodeWith")
+              "storeCNodeWith", "storeVSpaceRootWith", "storeFrameWith",
+              "storePageTableWith", "storeKeepsAsid")
 } | {
     # The frozen object store -- `FrozenSystemState.objects`, which holds the
     # live `TCB` / `Reply` / `SchedContext` records verbatim.

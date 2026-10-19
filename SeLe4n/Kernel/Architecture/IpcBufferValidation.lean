@@ -386,7 +386,7 @@ theorem setIPCBufferOp_asidTable_eq
       have hRaw : st.objects[vtid.val.toObjId]? = some (.tcb tcb) :=
         (SystemState.getTcb?_eq_some_iff st vtid.val tcb).mp hLookup
       unfold storeObject at hOk; simp only [] at hOk; cases hOk
-      simp only [hRaw]
+      simp only [hRaw, storeKeepsAsid, Bool.false_eq_true, ↓reduceIte]
     · contradiction
 
 /-- D3-F: `setIPCBufferOp` determinism — the operation is a pure function
