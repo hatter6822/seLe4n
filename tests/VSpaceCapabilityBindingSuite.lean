@@ -830,24 +830,12 @@ private def runResetChecks : IO Unit := do
       -- WS-BP BP7.1 (`v0.36.7`): the revocation also REMOVES the mapping the
       -- destroyed frame capability made — seL4's `finaliseCap` → `unmapPage`.
       -- Until then it stayed until the reset, so a thread went on reading and
-      -- writing memory whose every capability had been revoked.  The revocation
-      -- STEP alone — the retired arm, with no teardown — is computed beside the
-      -- live arm on the same state, so the assertion is known to discriminate;
-      -- and the step REPORTS the destroyed capability's page, which is exactly
-      -- what the teardown then removes.
+      -- writing memory whose every capability had been revoked.  The mapping is
+      -- read live in the pre-state, so the assertion is known to discriminate.
+      assertBool "before the revocation the destroyed frame capability's mapping is live"
+        (mappedPaddr st carveAsid (SeLe4n.Testing.fixtureUserVAddr 0x60000) == some carveUtBase)
       assertBool "the revocation removes the mapping the destroyed frame capability recorded"
         (mappedPaddr stRev carveAsid (SeLe4n.Testing.fixtureUserVAddr 0x60000) == none)
-      assertBool "RETIRED: the revocation step without its teardown left that mapping in place"
-        (match cspaceRevokeCdt { cnode := carveCn, slot := SeLe4n.Slot.ofNat slotUtRetype } st with
-          | .ok (_, stOld) =>
-              mappedPaddr stOld carveAsid (SeLe4n.Testing.fixtureUserVAddr 0x60000) == some carveUtBase
-          | .error _ => false)
-      assertBool "the revocation step reports exactly the page the destroyed capability recorded"
-        (match cspaceRevokeCdt { cnode := carveCn, slot := SeLe4n.Slot.ofNat slotUtRetype } st with
-          | .ok (pages, _) =>
-              pages.map (fun p => (p.asid, p.vaddr.toNat, p.paddr.toNat))
-                == [(carveAsid, (SeLe4n.Testing.fixtureUserVAddr 0x60000).toNat, carveUtBase)]
-          | .error _ => false)
       assertBool "and it leaves the mapping of a page no destroyed capability recorded alone"
         (mappedPaddr stRev carveAsid (SeLe4n.Testing.fixtureUserVAddr 0x70000) == some carveDevBase)
       let inFlight : TCB :=
@@ -1860,10 +1848,8 @@ private def runPageTableChecks : IO Unit := do
                decodeTableMap 20 12 (2 ^ 39)] with
           | .error e => assertBool s!"carving a child untyped and a table from it, and installing it, succeeds (got {repr e})" false
           | .ok stA => do
-            assertBool "RETIRED: the bare revocation leaves the child's table in the surviving root"
-              (match cspaceRevokeCdt { cnode := carveCn, slot := SeLe4n.Slot.ofNat 19 } stA with
-               | .ok (_, r) => (slotsOf r 980).any (·.contains (1, 991))
-               | .error _ => false)
+            assertBool "before the revocation the child's table is installed in the parent's root"
+              ((slotsOf stA 980).any (·.contains (1, 991)))
             match dispatchSyscallAsCurrent (decodeRevoke 19) carveOwner Concurrency.bootCoreId stA with
             | .error e => assertBool s!"revoking the child's capability succeeds (got {repr e})" false
             | .ok ((), st5) => do

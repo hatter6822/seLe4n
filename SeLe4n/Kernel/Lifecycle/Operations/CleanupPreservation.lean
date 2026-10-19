@@ -2590,8 +2590,7 @@ a partially-cleaned form — specifically:
 
 Callers must therefore treat `.error` from this function as a **best-effort
 cleanup partially completed** outcome, NOT as a rollback. Callers needing
-strict transactional semantics should invoke `cspaceRevokeCdtTransactional`
-(AK8-B) separately before composing with this pipeline, or use
+strict transactional semantics should use
 `lifecycleRetypeWithCleanup` which wraps the strict cleanup pipeline and
 propagates errors before any retype is attempted. See `SELE4N_SPEC.md` §5
 "Lifecycle partial-failure semantics" for the rollback-escalation

@@ -99,18 +99,17 @@ complete. `objects.invExt` is the Robin Hood table's own well-formedness
 (§3.6), carried here because capability lookup goes through it.
 
 Since `v0.35.190` (WS-RR RR8.16) a thread can actually *reach* that machinery:
-`seL4_CNode_Revoke` has a dispatch arm (`SyscallId.cspaceRevoke`), which routes
-`cspaceRevokeCdt` — the variant that walks the derivation tree across arbitrary
-CSpaces, not the local `cspaceRevoke` that reaches only the invoked CNode.
-Before it, the whole family was verified and unreachable.  Since `v0.36.1` the
-walk is also all the revocation does: the shared scaffold no longer opens with
-the local same-target sweep, which had destroyed capabilities the source never
-derived, so a revocation destroys exactly the source's CDT descendants — seL4's
-`cteRevoke` — as the canonical spec's §8.11.1 records.  The arm carries the
-capability-only dispatch payoff (`cspaceRevokeCdt_preserves_ipcInvariantFull`),
-whose scaffold and fold arguments are stated **predicate-free** beside their
-definitions (`revokeCdtScaffold_ok_decompose`, `revokeCdtFold_induct`) so this
-bundle's argument and `ipcInvariantFull`'s are one induction rather than two.
+`seL4_CNode_Revoke` has a dispatch arm (`SyscallId.cspaceRevoke`), which
+destroys the source's CDT descendants across arbitrary CSpaces, not only the
+invoked CNode the local `cspaceRevoke` reaches.  Since `v0.36.1` a revocation
+destroys exactly those descendants, and since `v0.36.111` (WS-ZA ZA5.3 part 8)
+it is seL4's `cteRevoke` loop itself, `cspaceRevokeCdtFinalising`: the source's
+first child deleted and finalised until it has none, as the canonical spec's
+§8.11.1 records.  Its preservation is one argument over chains of finalising
+deletes (`FinalisingDeleteChain`, `cspaceRevokeCdtFinalising_closed`), which the
+capability-only dispatch payoff
+(`cspaceRevokeCdtFinalising_preserves_ipcInvariantFull`) instantiates; the
+refusal tie is `cdtNodeIsRevocable_false_revoke_refuses`.
 See `SELE4N_SPEC.md` §8.11.1 for the ABI, the authority and the two boundary
 statements the arm needed (no static lock footprint; a content-tracked field
 written with no tracked content moved).

@@ -4951,8 +4951,8 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
   -- **WS-RR RR8.16 (`v0.35.190`)**: `.cspaceRevoke` writes the same three kinds
   -- as the delete it generalises — CNodes, the CDT through `stateLevelLock`, and
   -- the caller's TCB in read mode.  It declares **no** static footprint, and
-  -- that is a decision rather than an omission: `cspaceRevokeCdt` walks the
-  -- source slot's CDT descendants across *arbitrary* CNodes, a set the state
+  -- that is a decision rather than an omission: `cspaceRevokeCdtFinalising`
+  -- walks the source slot's CDT descendants across *arbitrary* CNodes, a set the state
   -- discovers and nothing bounds, while a `LockSet` is capped at
   -- `maxLockSetSize`.  So this list says which kinds a future declaration may
   -- contain, in the shape the PIP chain walk's `pipChainStart_<τ>` markers take
@@ -5134,7 +5134,7 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
 /-- **WS-RR RR8.16 (`v0.35.190`): does this syscall declare a STATIC footprint?**
 
 Every arm but one does, and the exception is structural rather than unfinished:
-`cspaceRevokeCdt` walks the source slot's CDT descendants across *arbitrary*
+`cspaceRevokeCdtFinalising` walks the source slot's CDT descendants across *arbitrary*
 CNodes, a set the state discovers and nothing bounds, while a `LockSet` is
 capped at `maxLockSetSize`.  A static footprint naming only the source CNode
 would be **false** of the transition, which this project rates worse than no

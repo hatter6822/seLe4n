@@ -6,351 +6,266 @@
   This is free software, and you are welcome to redistribute it
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
-
-import SeLe4n.Kernel.Capability.Invariant.Preservation.CopyMoveMutate
+import SeLe4n.Kernel.Capability.Invariant.Preservation.BadgeIpcCapsAndCdtMaps
+import SeLe4n.Kernel.Capability.FrameFinalise
 
 /-!
-AN4-F.3 (CAP-M03) child module extracted from
-`SeLe4n.Kernel.Capability.Invariant.Preservation`. Contains the CDT-revocation
-preservation cluster: `processRevokeNode` + the private fold helpers
-(`revokeCdtFoldBody`, `revokeCdtFold_preserves`), the compositional
-preservation theorems for `cspaceRevokeCdt`, `cspaceRevokeCdtStrict`,
-and `cspaceRevokeCdtStreaming`.  The `capabilityInvariantBundle_of_cdt_update`
-helper they use lives in the Delete sibling, whose splice uses it first.
-Private fold infrastructure is promoted to public so the hub and
-future cross-subsystem consumers can reason about the fold shape.
-All declarations retain their original names, order, and proofs.
+# The finalising delete and revocation keep the capability invariants
+
+WS-ZA ZA5.3 part 8.  `.cspaceDelete` and `.cspaceRevoke` run the finalising
+delete (`cspaceDeleteSlotFinalising`): the delete, whose preservation is
+`cspaceDeleteSlot_preserves_capabilityInvariantBundle`, then the teardown of
+what the destroyed capability named, which writes address-space roots and
+hardware ledgers only.  The revocation is seL4's `cteRevoke`, a run of those
+deletes (`FinalisingDeleteChain`), so it keeps the bundle too
+(`cspaceRevokeCdtFinalising_preserves_capabilityInvariantBundle`).
+
+On a state the bundle holds in, the revocation is also **complete**: every
+first child the loop reads lies in a live CNode, so no delete is refused, and
+each delete takes one edge out of the tree, so the fuel the tree's edge bound
+gives is enough; the source has no children afterwards
+(`cspaceRevokeCdtFinalising_ok_childless`), as seL4's `cteRevoke` leaves it.
 -/
 
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model
-open Internal
 
 -- ============================================================================
--- WS-F4/F-06: cspaceRevokeCdt and cspaceRevokeCdtStrict preservation
+-- §1  The teardown writes no derivation edge
 -- ============================================================================
 
-/-- Removing an emptied slot's node from the tree restores the bundle but for the
-links: the store is untouched, the tree only loses edges, and the slot leaves it.
-The paired link writes restore the rest (`capabilityInvariantBundle_of_cdtRemove`). -/
-theorem capabilityInvariantBundle_of_removeNode (st : SystemState) (node : SlotRef)
-    (hInv : capabilityInvariantBundleOff st (· = node)) :
-    capabilityBundleOffLinks { st with cdt := st.cdt.removeNode node } :=
-  capabilityInvariantBundle_of_off_cdt_update st _ _ hInv
-    (CapDerivationTree.edgeWellFounded_sub _ _ hInv.2.2.1
-      (CapDerivationTree.removeNode_edges_sub st.cdt node))
-    (fun ref h => CapDerivationTree.removeNode_mentions st.cdt node ref h)
-    fun ref hEq => by subst hEq; exact CapDerivationTree.removeNode_not_mentions_self _ _
+theorem storeObjectState_cdt (id : SeLe4n.ObjId) (obj : KernelObject) (st : SystemState) :
+    (storeObjectState id obj st).cdt = st.cdt :=
+  storeObject_cdt_eq st _ id obj (storeObject_eq_storeObjectState id obj st)
 
-/-- Removing an emptied slot's node from the tree and its links restores the
-bundle. -/
-theorem capabilityInvariantBundle_of_cdtRemove (st : SystemState) (node : SlotRef)
-    (hInv : capabilityInvariantBundleOff st (· = node)) :
-    capabilityInvariantBundle (st.cdtRemove node) :=
-  capabilityInvariantBundle_of_linkReach (capabilityInvariantBundle_of_removeNode st node hInv)
-    (SystemState.cdtRemove_reach st node) hInv.2.2.2.2.1
-    (SystemState.cdtRemove_agree hInv.2.2.2.2.1 hInv.2.2.2.2.2.2.1 hInv.2.2.2.2.2.2.2
-      hInv.2.2.1 node)
-
-/-- R2-A/R2-F: `processRevokeNode` preserves the full capability invariant bundle
-when it succeeds: the slot's delete keeps it (`cspaceDeleteSlotCore`), and
-removing the slot's node from the tree keeps it.
-
-The error case (`cspaceDeleteSlotCore` fails) returns `.error` and produces no
-post-state.
-
-This is the single proof obligation for per-node revocation, shared by both the
-materialized fold (`cspaceRevokeCdt`) and streaming BFS (`streamingRevokeBFS`). -/
-theorem processRevokeNode_preserves_capabilityInvariantBundle
-    (st st' : SystemState) (node : SlotRef)
-    (hInv : capabilityInvariantBundle st)
-    (hStep : processRevokeNode st node = .ok st') :
-    capabilityInvariantBundle st' := by
-  unfold processRevokeNode at hStep
-  cases hDel : cspaceDeleteSlotCore node st with
-  | error _ => simp [hDel] at hStep
-  | ok pair =>
-    obtain ⟨_, stDel⟩ := pair
-    simp [hDel] at hStep; cases hStep
-    have hOff := cspaceDeleteSlotCore_preserves_capabilityInvariantBundleOff st stDel node hInv hDel
-    exact capabilityInvariantBundle_of_cdtRemove stDel node hOff
-
--- **Tombstone (`v0.35.190`).**  `revokeCdtFoldBody`, `revokeCdtFoldBody_error`
--- and `revokeCdtFoldBody_foldl_error` moved to `Capability/Operations.lean`,
--- beside `revokeCdtMaterializedTraversal`, which is now *defined* through the
--- body rather than inlining it.  The predicate-generic induction is
--- `revokeCdtFold_induct` / `revokeCdtMaterializedTraversal_ok_induct`, also
--- there, so the capability bundle's argument and the IPC bundle's are one
--- induction.
-
-/-- Single fold step preserves capabilityInvariantBundle.
-Delegates to `processRevokeNode_preserves_capabilityInvariantBundle`. -/
-theorem revokeCdtFoldBody_preserves
-    (psAcc psNext : List MappedPage) (stAcc stNext : SystemState) (node : SlotRef)
-    (hInv : capabilityInvariantBundle stAcc)
-    (hStep : revokeCdtFoldBody (.ok (psAcc, stAcc)) node = .ok (psNext, stNext)) :
-    capabilityInvariantBundle stNext := by
-  unfold revokeCdtFoldBody at hStep
-  simp only [] at hStep
-  cases hProc : processRevokeNode stAcc node with
-  | error e => simp [hProc] at hStep
-  | ok stMid =>
-    simp [hProc] at hStep; obtain ⟨-, rfl⟩ := hStep
-    exact processRevokeNode_preserves_capabilityInvariantBundle stAcc stMid node hInv hProc
-
-/-- Fold induction: the `cspaceRevokeCdt` fold preserves `capabilityInvariantBundle`
-(an instance of the shared `revokeCdtFold_induct`). -/
-theorem revokeCdtFold_preserves
-    (nodes : List SlotRef) (psInit psFinal : List MappedPage)
-    (stInit stFinal : SystemState)
-    (hInv : capabilityInvariantBundle stInit)
-    (hFold : nodes.foldl revokeCdtFoldBody (.ok (psInit, stInit)) = .ok (psFinal, stFinal)) :
-    capabilityInvariantBundle stFinal :=
-  revokeCdtFold_induct (P := capabilityInvariantBundle)
-    (fun stA stB node hP hStep =>
-      processRevokeNode_preserves_capabilityInvariantBundle stA stB node hP hStep)
-    nodes psInit psFinal stInit stFinal hInv hFold
-
-/-- **The scaffold preserves the bundle whenever its traversal does.**
-
-The revocation entry points share a preservation *argument* as well as a
-transition: a read of the source slot, then a walk.  Proved once here, a
-variant's obligation is exactly its traversal's — which is the only part that
-differs.  The first step writes nothing, so the walk starts from the pre-state.
-
-`hTraverse` is stated over an arbitrary traversal, so this covers the four
-variants that exist and any that do not exist yet. -/
-theorem revokeCdtScaffold_preserves_capabilityInvariantBundle {ρ : Type}
-    (traverse : SystemState → SlotRef → List SlotRef →
-      Except KernelError (RevokeTraversalOutcome ρ))
-    (hTraverse : ∀ (stLocal : SystemState) (rootNode : SlotRef)
-        (descendants : List SlotRef) (out : RevokeTraversalOutcome ρ),
-        capabilityInvariantBundle stLocal →
-        traverse stLocal rootNode descendants = .ok out →
-        capabilityInvariantBundle out.state)
-    (st st' : SystemState) (addr : CSpaceAddr) (r : ρ)
-    (hInv : capabilityInvariantBundle st)
-    (hStep : revokeCdtScaffold traverse addr st = .ok (r, st')) :
-    capabilityInvariantBundle st' := by
-  -- `v0.35.190`: the case analysis is `revokeCdtScaffold_ok_decompose`'s, beside
-  -- the definition, so this proof and the IPC bundle's read one answer.
-  obtain ⟨_, out, hTrav, rfl⟩ :=
-    revokeCdtScaffold_ok_decompose traverse st st' addr r hStep
-  exact hTraverse st addr _ out hInv hTrav
-
-/-- The materialized traversal preserves the bundle: it is `revokeCdtFoldBody`
-under a different spelling. -/
-theorem revokeCdtMaterializedTraversal_preserves
-    (stLocal : SystemState) (rootNode : SlotRef) (descendants : List SlotRef)
-    (out : RevokeTraversalOutcome (List MappedPage))
-    (hInv : capabilityInvariantBundle stLocal)
-    (hTrav : revokeCdtMaterializedTraversal stLocal rootNode descendants = .ok out) :
-    capabilityInvariantBundle out.state :=
-  revokeCdtMaterializedTraversal_ok_induct (P := capabilityInvariantBundle)
-    (fun stA stB node hP hStep =>
-      processRevokeNode_preserves_capabilityInvariantBundle stA stB node hP hStep)
-    stLocal rootNode descendants out hInv hTrav
-
-/-- R2-F: Error propagation consistency theorem. When `cspaceDeleteSlotCore` fails
-for a CDT descendant, `processRevokeNode` (and therefore `revokeCdtFoldBody`)
-propagates the error: the fold body returns the same error that
-`cspaceDeleteSlotCore` produced. -/
-theorem cspaceRevokeCdt_error_propagation_consistent
-    (psAcc : List MappedPage) (stAcc : SystemState) (node : SlotRef)
-    (err : KernelError)
-    (hDelErr : cspaceDeleteSlotCore node stAcc = .error err) :
-    revokeCdtFoldBody (.ok (psAcc, stAcc)) node = .error err := by
-  unfold revokeCdtFoldBody
-  simp only []
-  unfold processRevokeNode
-  simp [hDelErr]
-
-/-- R2-F/M-05: Fuel exhaustion preservation theorem. When `streamingRevokeBFS`
-returns `.error .resourceExhausted`, the input state is unchanged — the error
-is returned before any state modification occurs in the exhaustion case. -/
-theorem streamingRevokeBFS_fuel_exhaustion_returns_error
-    (queue : List SlotRef) (st : SystemState) (node : SlotRef)
-    (rest : List SlotRef)
-    (hQueue : queue = node :: rest) :
-    streamingRevokeBFS 0 queue st = .error .resourceExhausted := by
-  subst hQueue; unfold streamingRevokeBFS; rfl
-
-/-- **The shared reporting step preserves the bundle.**
-
-`cspaceRevokeCdtStrict` and `cspaceRevokeCdtTransactional` fold the same step, so
-this is proved once rather than restated inline in each variant's theorem.
-
-On a deletion failure the state is returned unchanged, so that branch is
-immediate. -/
-theorem revokeCdtReportingStep_preserves
-    (acc : RevokeCdtStrictReport × SystemState) (node : SlotRef)
-    (hInv : capabilityInvariantBundle acc.2) :
-    capabilityInvariantBundle (revokeCdtReportingStep acc node).2 := by
-  obtain ⟨report, stAcc⟩ := acc
-  unfold revokeCdtReportingStep
-  simp only []
-  cases report.firstFailure with
-  | some _ => exact hInv
-  | none =>
-    simp only []
-    cases hDel : cspaceDeleteSlotCore node stAcc with
-    | error err => simp only []; exact hInv
-    | ok pair =>
-      obtain ⟨_, stDel⟩ := pair
-      simp only []
-      have hOff := cspaceDeleteSlotCore_preserves_capabilityInvariantBundleOff stAcc stDel node hInv hDel
-      exact capabilityInvariantBundle_of_cdtRemove stDel node hOff
-
-/-- The reporting fold preserves the bundle, by induction on the node list. -/
-theorem revokeCdtReportingFold_preserves :
-    ∀ (nodes : List SlotRef) (acc : RevokeCdtStrictReport × SystemState),
-      capabilityInvariantBundle acc.2 →
-      capabilityInvariantBundle (nodes.foldl revokeCdtReportingStep acc).2 := by
-  intro nodes
-  induction nodes with
-  | nil => intro acc hI; exact hI
-  | cons node rest ih =>
-    intro acc hI
-    simp only [List.foldl_cons]
-    exact ih _ (revokeCdtReportingStep_preserves acc node hI)
-
-/-- The reporting outcome's state is the fold's state, so it inherits the fold's
-preservation. Shared by both reporting traversals. -/
-theorem revokeCdtReportingOutcome_preserves
-    (stLocal : SystemState) (descendants : List SlotRef)
-    (hInv : capabilityInvariantBundle stLocal) :
-    capabilityInvariantBundle (revokeCdtReportingOutcome stLocal descendants).state := by
-  unfold revokeCdtReportingOutcome
+/-- One page's unmap writes a VSpace root and the hardware ledgers, never the
+tree. -/
+theorem unmapPageState_cdt (ec : Concurrency.CoreId) (asid : SeLe4n.ASID)
+    (vaddr : SeLe4n.VAddr) (st : SystemState) :
+    (unmapPageState ec asid vaddr st).cdt = st.cdt := by
+  unfold unmapPageState
   split
-  · rename_i report stFinal hFold
-    have hFoldInv := revokeCdtReportingFold_preserves descendants
-      ({ deletedSlots := [], firstFailure := none }, stLocal) hInv
-    rw [hFold] at hFoldInv
-    exact hFoldInv
+  · rfl
+  · next rootId root _ =>
+    split
+    · rfl
+    · next root' _ =>
+      dsimp only
+      split <;>
+        exact storeObjectState_cdt rootId (.vspaceRoot root') (Architecture.recordPhysicalWrites st
+          (Architecture.mappingStore? st root' vaddr).toList)
 
-/-- The best-effort reporting traversal preserves the bundle. -/
-theorem revokeCdtStrictTraversal_preserves
-    (stLocal : SystemState) (rootNode : SlotRef) (descendants : List SlotRef)
-    (out : RevokeTraversalOutcome RevokeCdtStrictReport)
-    (hInv : capabilityInvariantBundle stLocal)
-    (hTrav : revokeCdtStrictTraversal stLocal rootNode descendants = .ok out) :
-    capabilityInvariantBundle out.state := by
-  unfold revokeCdtStrictTraversal at hTrav
-  simp only [Except.ok.injEq] at hTrav
-  subst hTrav
-  exact revokeCdtReportingOutcome_preserves stLocal descendants hInv
+theorem unmapLivePagesState_cdt (ec : Concurrency.CoreId) :
+    ∀ (ps : List MappedPage) (st : SystemState), (unmapLivePagesState ec ps st).cdt = st.cdt
+  | [], _ => rfl
+  | p :: rest, st => by
+    unfold unmapLivePagesState
+    split
+    · rw [unmapLivePagesState_cdt ec rest, unmapPageState_cdt]
+    · exact unmapLivePagesState_cdt ec rest st
 
-/-- The validated reporting traversal preserves the bundle: validation only
-inspects state, so a successful validation hands the same state to the same
-fold. -/
-theorem revokeCdtTransactionalTraversal_preserves
-    (stLocal : SystemState) (rootNode : SlotRef) (descendants : List SlotRef)
-    (out : RevokeTraversalOutcome RevokeCdtStrictReport)
-    (hInv : capabilityInvariantBundle stLocal)
-    (hTrav : revokeCdtTransactionalTraversal stLocal rootNode descendants = .ok out) :
-    capabilityInvariantBundle out.state := by
-  unfold revokeCdtTransactionalTraversal at hTrav
-  split at hTrav
-  · simp at hTrav
-  · simp only [Except.ok.injEq] at hTrav
-    subst hTrav
-    exact revokeCdtReportingOutcome_preserves stLocal descendants hInv
+theorem detachPageTablesState_cdt :
+    ∀ (os : List (SeLe4n.ObjId × PageTableInstall)) (st : SystemState),
+      (detachPageTablesState os st).cdt = st.cdt
+  | [], _ => rfl
+  | o :: rest, st => by
+    unfold detachPageTablesState
+    split
+    · exact detachPageTablesState_cdt rest st
+    · rw [detachPageTablesState_cdt rest, storeObjectState_cdt]; rfl
 
-
--- ============================================================================
--- M-P04: Streaming CDT revocation preservation (WS-M5)
--- ============================================================================
-
-/-- M-P04/R2-F: The full streaming BFS loop preserves the capability invariant bundle.
-Proof by induction on `fuel`. Each step processes one node (preserving
-the invariant by `processRevokeNode_preserves_capabilityInvariantBundle`) then
-recurses with fuel-1 and the updated queue + state.
-
-Fuel exhaustion (`0, _ :: _`) returns `.error`, so that case is vacuous. -/
-theorem streamingRevokeBFS_preserves
-    (fuel : Nat) (queue : List SlotRef)
-    (stInit stFinal : SystemState)
-    (hInv : capabilityInvariantBundle stInit)
-    (hBFS : streamingRevokeBFS fuel queue stInit = .ok ((), stFinal)) :
-    capabilityInvariantBundle stFinal := by
-  induction fuel generalizing queue stInit stFinal with
-  | zero =>
-    unfold streamingRevokeBFS at hBFS
-    cases queue with
-    | nil => simp at hBFS; cases hBFS; exact hInv
-    | cons _ _ => simp at hBFS
-  | succ n ih =>
-    unfold streamingRevokeBFS at hBFS
-    cases queue with
-    | nil => simp at hBFS; cases hBFS; exact hInv
-    | cons node rest =>
-      simp only [] at hBFS
-      cases hProc : processRevokeNode stInit node with
-      | error e => simp [hProc] at hBFS
-      | ok stNext =>
-        simp [hProc] at hBFS
-        exact ih _ _ _
-          (processRevokeNode_preserves_capabilityInvariantBundle stInit stNext node hInv hProc) hBFS
-
-/-- The streaming traversal preserves the bundle: the BFS loop is the whole of
-its state transformation. -/
-theorem revokeCdtStreamingTraversal_preserves
-    (stLocal : SystemState) (rootNode : SlotRef) (descendants : List SlotRef)
-    (out : RevokeTraversalOutcome Unit)
-    (hInv : capabilityInvariantBundle stLocal)
-    (hTrav : revokeCdtStreamingTraversal stLocal rootNode descendants = .ok out) :
-    capabilityInvariantBundle out.state := by
-  unfold revokeCdtStreamingTraversal at hTrav
-  split at hTrav
-  · simp at hTrav
-  · rename_i stDone hBfs
-    simp only [Except.ok.injEq] at hTrav
-    subst hTrav
-    exact streamingRevokeBFS_preserves _ _ stLocal stDone hInv hBfs
+/-- **The teardown writes no derivation edge.** -/
+theorem finaliseDestroyedCapabilitiesState_cdt (ec : Concurrency.CoreId)
+    (named : List SeLe4n.ObjId) (pages : List MappedPage) (st : SystemState) :
+    (finaliseDestroyedCapabilitiesState ec named pages st).cdt = st.cdt := by
+  unfold finaliseDestroyedCapabilitiesState
+  rw [unmapLivePagesState_cdt, detachPageTablesState_cdt]
 
 -- ============================================================================
--- Per-entry-point preservation: the scaffold lemma at each traversal
+-- §2  The finalising delete and revocation keep the bundle
 -- ============================================================================
 
-/-- WS-F4/F-06: `cspaceRevokeCdt` preserves `capabilityInvariantBundle`. -/
-theorem cspaceRevokeCdt_preserves_capabilityInvariantBundle
-    (st st' : SystemState) (addr : CSpaceAddr) (pages : List MappedPage)
+/-- **The finalising delete keeps the capability invariants**: the delete keeps
+them (`cspaceDeleteSlot_preserves_capabilityInvariantBundle`), and the teardown
+after it writes neither the tree nor any CNode or reply object
+(`finaliseDestroyedCapabilities_ok_frame`, `finaliseDestroyedCapabilitiesState_cdt`). -/
+theorem cspaceDeleteSlotFinalising_preserves_capabilityInvariantBundle
+    (ec : Concurrency.CoreId) (addr : CSpaceAddr) (st st' : SystemState)
     (hInv : capabilityInvariantBundle st)
-    (hStep : cspaceRevokeCdt addr st = .ok (pages, st')) :
-    capabilityInvariantBundle st' :=
-  revokeCdtScaffold_preserves_capabilityInvariantBundle _
-    (fun _ _ _ _ hI hT => revokeCdtMaterializedTraversal_preserves _ _ _ _ hI hT)
-    st st' addr pages hInv hStep
+    (h : cspaceDeleteSlotFinalising ec addr st = .ok ((), st')) :
+    capabilityInvariantBundle st' := by
+  obtain ⟨st1, hD, hF⟩ := cspaceDeleteSlotFinalising_ok ec addr st st' h
+  have h1 := cspaceDeleteSlot_preserves_capabilityInvariantBundle st st1 addr hInv hD
+  obtain ⟨hI', hW, -⟩ := finaliseDestroyedCapabilities_ok_frame ec _ _ st1 st' h1.2.2.2.2.1 hF
+  have hCdt : st'.cdt = st1.cdt := by
+    rw [finaliseDestroyedCapabilities_eq_ok_state] at hF
+    simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hF
+    subst hF
+    exact finaliseDestroyedCapabilitiesState_cdt ec _ _ st1
+  refine capabilityInvariantBundle_of_frame h1 hCdt ?_ ?_ ?_ hI'
+  · intro oid cn hC
+    rcases hW oid with e | ⟨-, ⟨r, hr⟩⟩
+    · rwa [← e]
+    · rw [hr] at hC; cases hC
+  · intro oid cn hC
+    rcases hW oid with e | ⟨⟨r, hr⟩, -⟩
+    · rwa [e]
+    · rw [hr] at hC; cases hC
+  · intro rid hR
+    unfold SystemState.getReply? at hR ⊢
+    rcases hW rid.toObjId with e | ⟨⟨r, hr⟩, -⟩
+    · rwa [e]
+    · rw [hr] at hR; exact absurd rfl hR
 
-/-- M-P04: `cspaceRevokeCdtStreaming` preserves `capabilityInvariantBundle`. -/
-theorem cspaceRevokeCdtStreaming_preserves_capabilityInvariantBundle
-    (st st' : SystemState) (addr : CSpaceAddr)
+/-- **The finalising revocation keeps the capability invariants**: it is a run
+of finalising deletes (`cspaceRevokeCdtFinalising_closed`). -/
+theorem cspaceRevokeCdtFinalising_preserves_capabilityInvariantBundle
+    (ec : Concurrency.CoreId) (addr : CSpaceAddr) (st st' : SystemState)
     (hInv : capabilityInvariantBundle st)
-    (hStep : cspaceRevokeCdtStreaming addr st = .ok ((), st')) :
+    (h : cspaceRevokeCdtFinalising ec addr st = .ok ((), st')) :
     capabilityInvariantBundle st' :=
-  revokeCdtScaffold_preserves_capabilityInvariantBundle _
-    (fun _ _ _ _ hI hT => revokeCdtStreamingTraversal_preserves _ _ _ _ hI hT)
-    st st' addr () hInv hStep
+  cspaceRevokeCdtFinalising_closed capabilityInvariantBundle
+    (fun c s s' hs hD => cspaceDeleteSlotFinalising_preserves_capabilityInvariantBundle ec c s s' hs hD)
+    hInv h
 
-/-- WS-F4/F-06: `cspaceRevokeCdtStrict` preserves `capabilityInvariantBundle`. -/
-theorem cspaceRevokeCdtStrict_preserves_capabilityInvariantBundle
-    (st st' : SystemState) (addr : CSpaceAddr) (report : RevokeCdtStrictReport)
-    (hInv : capabilityInvariantBundle st)
-    (hStep : cspaceRevokeCdtStrict addr st = .ok (report, st')) :
-    capabilityInvariantBundle st' :=
-  revokeCdtScaffold_preserves_capabilityInvariantBundle _
-    (fun _ _ _ _ hI hT => revokeCdtStrictTraversal_preserves _ _ _ _ hI hT)
-    st st' addr report hInv hStep
+-- ============================================================================
+-- §3  The revocation is complete
+-- ============================================================================
 
-/-- AK8-B: `cspaceRevokeCdtTransactional` preserves `capabilityInvariantBundle`. -/
-theorem cspaceRevokeCdtTransactional_preserves_capabilityInvariantBundle
-    (st st' : SystemState) (addr : CSpaceAddr) (report : RevokeCdtStrictReport)
-    (hInv : capabilityInvariantBundle st)
-    (hStep : cspaceRevokeCdtTransactional addr st = .ok (report, st')) :
-    capabilityInvariantBundle st' :=
-  revokeCdtScaffold_preserves_capabilityInvariantBundle _
-    (fun _ _ _ _ hI hT => revokeCdtTransactionalTraversal_preserves _ _ _ _ hI hT)
-    st st' addr report hInv hStep
+private theorem filter_neither_length_add_le {α : Type} (p q : α → Bool) :
+    ∀ (l : List α), (l.filter (fun e => !p e && !q e)).length + (l.filter p).length ≤ l.length
+  | [] => by simp
+  | x :: xs => by
+    have ih := filter_neither_length_add_le p q xs
+    cases hp : p x <;> cases hq : q x <;> simp [List.filter_cons, hp, hq] <;> omega
+
+/-- An element `q` keeps and `p` drops is in neither filter, so the two
+together are shorter than the list. -/
+private theorem filter_neither_length_add_lt {α : Type} (p q : α → Bool) :
+    ∀ (l : List α) (x : α), x ∈ l → q x = true → p x = false →
+      (l.filter (fun e => !p e && !q e)).length + (l.filter p).length < l.length
+  | [], _, hx, _, _ => by cases hx
+  | y :: ys, x, hx, hq, hp => by
+    rcases List.mem_cons.1 hx with rfl | hx
+    · have := filter_neither_length_add_le p q ys
+      simp [List.filter_cons, hp, hq]; omega
+    · have ih := filter_neither_length_add_lt p q ys x hx hq hp
+      cases hpy : p y <;> cases hqy : q y <;> simp [List.filter_cons, hpy, hqy] <;> omega
+
+/-- **A splice of a node with a parent edge takes an edge out**: the node's
+edges go and only its child edges are re-made, so its parent edge is the one
+lost.  (A parent edge from the node to itself would be re-made too; an acyclic
+tree has none.) -/
+theorem spliceEdges_length_lt_of_parent {es : List CapDerivationEdge} {node : SlotRef}
+    {up : CapDerivationEdge} (hF : es.find? (fun e => e.isChildOf node) = some up)
+    (hNe : up.parent ≠ node) : (CapDerivationTree.spliceEdges es node).length < es.length := by
+  unfold CapDerivationTree.spliceEdges
+  rw [hF, CapDerivationTree.reparentEdges_length]
+  have hq : up.isChildOf node = true := List.find?_some (p := fun (e : CapDerivationEdge) => e.isChildOf node) hF
+  have hp : up.isParentOf node = false := by
+    simp [CapDerivationEdge.isParentOf, hNe]
+  have := filter_neither_length_add_lt (·.isParentOf node) (·.isChildOf node) es up
+    (List.mem_of_find?_eq_some hF) hq hp
+  unfold CapDerivationTree.withoutNodeEdges
+  omega
+
+/-- **A child's splice in an acyclic tree takes an edge out of it.** -/
+theorem spliceNode_edges_length_lt {cdt : CapDerivationTree} {p c : SlotRef}
+    (hWF : cdt.edgeWellFounded) (hC : c ∈ cdt.childrenOf p) :
+    (cdt.spliceNode c).edges.length < cdt.edges.length := by
+  rw [CapDerivationTree.spliceNode_edges_eq]
+  unfold CapDerivationTree.childrenOf at hC
+  obtain ⟨e, he, rfl⟩ := List.mem_map.1 hC
+  have heE := (List.mem_filter.1 he).1
+  cases hF : cdt.edges.find? (fun x => x.isChildOf e.child) with
+  | none =>
+    have := List.find?_eq_none.1 hF e heE
+    simp [CapDerivationEdge.isChildOf] at this
+  | some up =>
+    have hUp := List.mem_of_find?_eq_some hF
+    have hUc : up.child = e.child := by
+      have := List.find?_some (p := fun (x : CapDerivationEdge) => x.isChildOf e.child) hF; simpa [CapDerivationEdge.isChildOf] using this
+    exact spliceEdges_length_lt_of_parent hF (hUc ▸ CapDerivationTree.edgeWellFounded_no_self_edge hWF hUp)
+
+/-- **A finalising delete's tree is the splice of its slot**: the delete
+splices the slot out and the teardown writes no edge. -/
+theorem cspaceDeleteSlotFinalising_ok_cdt {ec : Concurrency.CoreId} {addr : CSpaceAddr}
+    {st st' : SystemState} (h : cspaceDeleteSlotFinalising ec addr st = .ok ((), st')) :
+    st'.cdt = st.cdt.spliceNode addr := by
+  obtain ⟨st1, hD, hF⟩ := cspaceDeleteSlotFinalising_ok ec addr st st' h
+  rw [finaliseDestroyedCapabilities_eq_ok_state] at hF
+  simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hF
+  subst hF
+  obtain ⟨stC, hC, rfl⟩ := cspaceDeleteSlot_ok_decompose addr st st1 hD
+  rw [finaliseDestroyedCapabilitiesState_cdt, spliceDeletedCdtNode_cdt,
+    cspaceDeleteSlotCore_cdt_eq st stC addr hC]
+
+/-- A slot's link, read as the loop reads it: its two words, decoded. -/
+theorem slotLinkAt_eq_decodeLink (st : SystemState) (o : SeLe4n.ObjId) (s : SeLe4n.Slot)
+    (f : LinkField) :
+    st.slotLinkAt ⟨o, s⟩ f = decodeLink (st.slotLinkNodeWord o s f) (st.slotLinkSlotWord o s f) := by
+  unfold SystemState.slotLinkAt SystemState.slotLinkNodeWord SystemState.slotLinkSlotWord
+  cases st.getCNode? o with
+  | none => simp [decodeLink]
+  | some cn => rfl
+
+/-- **On a state the bundle holds in, the loop empties the source of children**
+when its fuel exceeds the tree's edges.  The source's first-child link is the
+head of its children (`cdtLinksAgree`); a child is in the tree, so its CNode is
+live (`cdtCompleteness`) and its delete is admitted, never the loop's stop;
+each delete keeps the bundle and splices one edge out
+(`spliceNode_edges_length_lt`), so the fuel never runs out first. -/
+theorem revokeFirstChildLoop_childless (ec : Concurrency.CoreId) (cnode : SeLe4n.ObjId)
+    (slot : SeLe4n.Slot) :
+    ∀ (n : Nat) (st : SystemState), capabilityInvariantBundle st →
+      st.cdt.edges.length < n →
+      (revokeFirstChildLoop ec cnode slot n st).cdt.childrenOf ⟨cnode, slot⟩ = []
+  | 0, _, _, hn => absurd hn (Nat.not_lt_zero _)
+  | n + 1, st, hInv, hn => by
+    have hHead := hInv.2.2.2.2.2.2.firstChild ⟨cnode, slot⟩
+    rw [slotLinkAt_eq_decodeLink] at hHead
+    unfold revokeFirstChildLoop
+    dsimp only
+    split
+    · next h0 =>
+      rw [h0] at hHead
+      exact List.head?_eq_none_iff.1 (by simpa [decodeLink] using hHead.symm)
+    · next h0 =>
+      simp only [decodeLink, h0, if_false] at hHead
+      have hMem := List.mem_of_mem_head? hHead.symm
+      have hMent : st.cdt.mentions ⟨SeLe4n.ObjId.ofNat (st.slotLinkNodeWord cnode slot .firstChild - 1),
+          SeLe4n.Slot.ofNat (st.slotLinkSlotWord cnode slot .firstChild - 1)⟩ := by
+        unfold CapDerivationTree.childrenOf at hMem
+        obtain ⟨e, he, hc⟩ := List.mem_map.1 hMem
+        exact ⟨e, (List.mem_filter.1 he).1, .inr hc⟩
+      obtain ⟨cn, hCn, -⟩ := hInv.2.1 _ hMent
+      have hAdm : cspaceDeleteFinalisingAdmitted
+          ⟨SeLe4n.ObjId.ofNat (st.slotLinkNodeWord cnode slot .firstChild - 1),
+            SeLe4n.Slot.ofNat (st.slotLinkSlotWord cnode slot .firstChild - 1)⟩ st = true := by
+        unfold cspaceDeleteFinalisingAdmitted
+        rw [(SystemState.getCNode?_eq_some_iff st _ cn).2 hCn]
+      rw [if_pos hAdm]
+      have hD := cspaceDeleteSlotFinalising_of_cnode (ec := ec) hAdm
+      have hInv2 := cspaceDeleteSlotFinalising_preserves_capabilityInvariantBundle ec _ st _ hInv hD
+      have hLt := spliceNode_edges_length_lt hInv.2.2.1 hMem
+      rw [← cspaceDeleteSlotFinalising_ok_cdt hD] at hLt
+      exact revokeFirstChildLoop_childless ec cnode slot n _ hInv2 (by omega)
+
+/-- **The revocation is complete**: on a state the capability invariants hold
+in, a successful revocation leaves its source with no children, as seL4's
+`cteRevoke` does.  The loop's fuel, one more than the tree's edge bound, exceeds
+its edges (`CapDerivationTree.edges_length_le`). -/
+theorem cspaceRevokeCdtFinalising_ok_childless (ec : Concurrency.CoreId) (addr : CSpaceAddr)
+    (st st' : SystemState) (hInv : capabilityInvariantBundle st)
+    (h : cspaceRevokeCdtFinalising ec addr st = .ok ((), st')) :
+    st'.cdt.childrenOf addr = [] := by
+  unfold cspaceRevokeCdtFinalising at h
+  split at h
+  · simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at h
+    subst h
+    exact revokeFirstChildLoop_childless ec addr.cnode addr.slot _ st hInv
+      (Nat.lt_succ_of_le (CapDerivationTree.edges_length_le _))
+  · split at h <;> cases h
 
 end SeLe4n.Kernel

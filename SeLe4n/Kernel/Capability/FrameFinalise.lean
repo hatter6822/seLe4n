@@ -32,9 +32,8 @@ does not carry it; and the two destroying arms are composites here:
 * `cspaceDeleteSlotFinalising` — the delete, then the page the destroyed
   capability's record names (`slotMappedPages`, read from the slot the delete
   destroys) removed;
-* `cspaceRevokeCdtFinalising` — the revocation, which reports the pages of
-  exactly the capabilities it destroyed (`cspaceRevokeCdt`'s result,
-  `revokeCdtFoldBody_records`), then those pages removed.
+* `cspaceRevokeCdtFinalising` — seL4's `cteRevoke`: the source's first child
+  deleted by `cspaceDeleteSlotFinalising` until it has none.
 
 Both remove pages through `unmapLivePages`, the untyped reset's own teardown, so
 a page is removed only while its address space still maps the address to that
@@ -74,20 +73,23 @@ table is refused for the same reason as a mapping record
 nothing (`capabilityFinalisesNothing`: no mapping record, not a page table) is
 admitted by `cspaceDeleteAdmitted` and is the plain store write and splice
 `cspaceDeletePerform`, proven equal to the finalising delete
-(`cspaceDeleteSlotFinalising_of_admitted`).  A revoke whose subtree holds only
-such capabilities (`cspaceRevokeAdmitted`, a stackless walk over the slot links)
-runs seL4's `cteRevoke` loop, deleting the source's first child until none is
-left (`cspaceRevokePerform`); `cspaceRevokeCdtFinalising` is that loop when
-admitted and the general path otherwise.  Both admissions read the state before
-any write, so the dispatcher runs the step through `RefusalCarrying.ofChecked`
-and the store is written in place.
+(`cspaceDeleteSlotFinalising_of_admitted`).
 
 **Every delete (WS-ZA ZA5.3 part 7, `v0.36.110`).**  The teardown no longer
 decides its result afterwards, so nothing can refuse a finalising delete once
 its CNode exists (`cspaceDeleteFinalisingAdmitted`): a delete of a frame or
 page-table capability is its writes too (`cspaceDeleteFinalisingPerformAt`,
 `cspaceDeleteSlotFinalising_of_cnode`) and runs through `ofChecked` like any
-other.  A revoke over such capabilities still takes the general path.
+other.
+
+**Every revoke (WS-ZA ZA5.3 part 8).**  A revocation is seL4's `cteRevoke`
+whatever its subtree holds: the source's first child deleted and finalised until
+none is left (`revokeFirstChildLoop`), each step a finalising delete
+(`cspaceRevokeCdtFinalising_chain`).  Its payoff is the chain's: every page a
+destroyed capability recorded is not live afterwards, since each delete clears
+its own page and every later one only shrinks roots
+(`FinalisingDeleteChain.unmapped`).  The general revocation and its batch
+teardown are retired.
 -/
 
 namespace SeLe4n.Kernel
@@ -641,26 +643,6 @@ theorem cspaceDeleteSlot_preserves_teardownWellFormed {addr : CSpaceAddr} {st st
     (teardownWellFormed_of_tables_eq (st := stC) rfl rfl
       (cspaceDeleteSlotCore_preserves_teardownWellFormed hW hC))
 
-/-- **The general revocation keeps the teardown's state well formed**: each
-descendant is a core delete, then its node removed from the tree. -/
-theorem cspaceRevokeCdt_preserves_teardownWellFormed {addr : CSpaceAddr} {st st' : SystemState}
-    {pages : List MappedPage} (hW : teardownWellFormed st)
-    (h : cspaceRevokeCdt addr st = .ok (pages, st')) : teardownWellFormed st' := by
-  obtain ⟨-, out, hT, rfl⟩ := revokeCdtScaffold_ok_decompose _ st st' addr pages h
-  refine revokeCdtMaterializedTraversal_ok_induct (P := teardownWellFormed)
-    (fun stA stB node hA hP => ?_) st addr _ out hW hT
-  unfold processRevokeNode at hP
-  cases hC : cspaceDeleteSlotCore node stA with
-  | error e => rw [hC] at hP; cases hP
-  | ok pr =>
-    obtain ⟨⟨⟩, stD⟩ := pr
-    rw [hC] at hP
-    simp only [Except.ok.injEq] at hP
-    subst hP
-    exact teardownWellFormed_of_linkReach (SystemState.cdtRemove_reach stD node)
-      (teardownWellFormed_of_tables_eq (st := stD) rfl rfl
-        (cspaceDeleteSlotCore_preserves_teardownWellFormed hA hC))
-
 /-- **The payoff: no mapping the deleted capability recorded survives it.**  On
 a well-formed state, if the capability in `addr` recorded a mapping of a frame,
 that frame's page is not mapped at the recorded address in the post-state. -/
@@ -826,184 +808,256 @@ theorem cspaceDeleteSlotFinalising_of_cnode {ec : Concurrency.CoreId} {cnode : S
 -- §4  The finalising revocation
 -- ============================================================================
 
-/-- **The page tables the capabilities a revocation destroys name**: those in
-the source's descendants, read before the revocation (`slotPageTables`). -/
-def revokedPageTables (st : SystemState) (addr : CSpaceAddr) : List SeLe4n.ObjId :=
-  (st.linkDescendantsOf addr).flatMap (slotPageTables st)
+/-- A step that keeps every address-space root it leaves shrinks the roots. -/
+theorem vspaceRootsShrink_of_roots {st st' : SystemState}
+    (h : ∀ (oid : SeLe4n.ObjId) (r : VSpaceRoot),
+      st'.objects[oid]? = some (KernelObject.vspaceRoot r) →
+        st.objects[oid]? = some (KernelObject.vspaceRoot r)) :
+    vspaceRootsShrink st st' :=
+  fun oid r' h' => ⟨r', h oid r' h', rfl, fun _ _ hm => hm, rfl, fun _ hs => hs⟩
 
-/-- The revocation, then the teardown of what its destroyed capabilities named
-(`named`, read before it by `cspaceRevokeCdtFinalising`) and recorded.  Out of
-line for the reason `cspaceDeleteThenFinalise` is. -/
-@[noinline] def cspaceRevokeThenFinalise (executingCore : Concurrency.CoreId)
-    (named : List SeLe4n.ObjId) (addr : CSpaceAddr) : Kernel Unit :=
-  fun st =>
-    match cspaceRevokeCdt addr st with
-    | .error e => .error e
-    | .ok (pages, st1) => finaliseDestroyedCapabilities executingCore named pages st1
+/-- **The core delete keeps every address-space root**: it writes a CNode where
+a CNode stands. -/
+theorem cspaceDeleteSlotCore_shrinks {addr : CSpaceAddr} {st st' : SystemState}
+    (hObjInv : st.objects.invExt) (hC : cspaceDeleteSlotCore addr st = .ok ((), st')) :
+    vspaceRootsShrink st st' := by
+  unfold cspaceDeleteSlotCore at hC
+  cases hG : st.getCNode? addr.cnode with
+  | none => rw [hG] at hC; cases hC
+  | some cn =>
+    rw [hG] at hC
+    simp only at hC
+    have hO : st.objects[addr.cnode]? = some (.cnode cn) :=
+      (SystemState.getCNode?_eq_some_iff st addr.cnode cn).1 hG
+    cases hS : storeObject addr.cnode (.cnode (cn.remove addr.slot)) st with
+    | error e => rw [hS] at hC; cases hC
+    | ok pr =>
+      obtain ⟨⟨⟩, st1⟩ := pr
+      rw [hS] at hC
+      simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hC
+      subst hC
+      refine vspaceRootsShrink_of_roots (fun oid r hR => ?_)
+      by_cases hK : oid = addr.cnode
+      · subst hK
+        rw [storeObject_objects_eq st _ _ _ hObjInv hS] at hR
+        cases hR
+      · rwa [storeObject_objects_ne st _ _ oid _ hK hObjInv hS] at hR
 
-/-- **Is every slot in a subtree one whose delete is admitted**
-(`cspaceDeleteAdmitted`), read along the slot links in preorder and without a
-stack: down a first-child link, else across a next-sibling link, else back up a
-parent link to the first ancestor with a next sibling, stopping on the way up at
-the root (`rc`, `rw`, its link codes).  `down` says whether `(c, w)` is being
-entered (it is checked and its children come next) or left (its subtree is
-done).  Each step reads link words only, so the walk builds nothing; running
-out of `fuel` reads as `false`. -/
-def linkSubtreeDeletable (st : SystemState) (rc rw : Nat) :
-    Nat → Nat → Nat → Bool → Bool
-  | 0, _, _, _ => false
-  | fuel + 1, c, w, true =>
-    let o := SeLe4n.ObjId.ofNat (c - 1)
-    let s := SeLe4n.Slot.ofNat (w - 1)
-    if cspaceDeleteAdmitted { cnode := o, slot := s } st then
-      let fc := st.slotLinkNodeWord o s .firstChild
-      if fc != 0 then
-        linkSubtreeDeletable st rc rw fuel fc (st.slotLinkSlotWord o s .firstChild) true
-      else linkSubtreeDeletable st rc rw fuel c w false
-    else false
-  | fuel + 1, c, w, false =>
-    if c == rc && w == rw then true
-    else
-      let o := SeLe4n.ObjId.ofNat (c - 1)
-      let s := SeLe4n.Slot.ofNat (w - 1)
-      let nc := st.slotLinkNodeWord o s .next
-      if nc != 0 then
-        linkSubtreeDeletable st rc rw fuel nc (st.slotLinkSlotWord o s .next) true
-      else
-        let pc := st.slotLinkNodeWord o s .parent
-        if pc != 0 then
-          linkSubtreeDeletable st rc rw fuel pc (st.slotLinkSlotWord o s .parent) false
-        else false
+/-- **The delete keeps every address-space root**: the core delete, then a write
+of derivation links. -/
+theorem cspaceDeleteSlot_shrinks {addr : CSpaceAddr} {st st' : SystemState}
+    (hW : teardownWellFormed st) (h : cspaceDeleteSlot addr st = .ok ((), st')) :
+    vspaceRootsShrink st st' := by
+  obtain ⟨stC, hC, rfl⟩ := cspaceDeleteSlot_ok_decompose addr st st' h
+  have hWC := cspaceDeleteSlotCore_preserves_teardownWellFormed hW hC
+  have hR := (spliceDeletedCdtNode_reach stC addr).agree hWC.1
+  exact (cspaceDeleteSlotCore_shrinks hW.1 hC).trans
+    (vspaceRootsShrink_of_roots (fun oid r h => (vspaceRoot_iff_of_agree hR oid r).1 h))
 
-/-- WS-ZA ZA5.3: **`.cspaceRevoke`'s checks**, read before any write: the
-source slot holds a capability, and every slot beneath it in the derivation
-tree is one whose delete is admitted (`linkSubtreeDeletable`), so no capability
-the revocation destroys has anything to finalise.  The walk's fuel covers a
-walk down and back up every edge. -/
-@[inline] def cspaceRevokeAdmitted (addr : CSpaceAddr) (st : SystemState) : Bool :=
-  (SystemState.lookupSlotCap st addr).isSome &&
-    (let fc := st.slotLinkNodeWord addr.cnode addr.slot .firstChild
-     fc == 0 ||
-       linkSubtreeDeletable st (addr.cnode.toNat + 1) (addr.slot.toNat + 1)
-         (2 * st.cdt.edgeBound + 2) fc
-         (st.slotLinkSlotWord addr.cnode addr.slot .firstChild) true)
+/-- **The finalisation only shrinks roots**: the table detach, then the unmap
+pass. -/
+theorem finaliseDestroyedCapabilities_shrinks (ec : Concurrency.CoreId)
+    (named : List SeLe4n.ObjId) (pages : List MappedPage) (st st' : SystemState)
+    (hW : teardownWellFormed st)
+    (h : finaliseDestroyedCapabilities ec named pages st = .ok ((), st')) :
+    vspaceRootsShrink st st' := by
+  rw [finaliseDestroyedCapabilities_eq_ok_state] at h
+  simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at h
+  subst h
+  obtain ⟨hW1, hS1, -⟩ := detachPageTablesState_wellFormed (pageTablesOrphaned named st) st hW
+  exact hS1.trans (unmapLivePagesState_clears ec _ _ hW1).2.1
 
-/-- **seL4's `cteRevoke`, on an admitted revocation**: delete the source's first
-child until it has none.  Each delete splices its slot out of the tree, so the
-deleted child's children become the source's, and the loop reaches every
-descendant without building a list of them.  A child whose delete is not
-admitted ends the loop; `fuel` bounds it by the tree's edges, one of which each
-splice removes. -/
-def revokeFirstChildLoop (cnode : SeLe4n.ObjId) (slot : SeLe4n.Slot) :
-    Nat → SystemState → SystemState
+/-- **The finalising delete only shrinks roots.** -/
+theorem cspaceDeleteSlotFinalising_shrinks (ec : Concurrency.CoreId) {addr : CSpaceAddr}
+    {st st' : SystemState} (hW : teardownWellFormed st)
+    (h : cspaceDeleteSlotFinalising ec addr st = .ok ((), st')) : vspaceRootsShrink st st' := by
+  obtain ⟨st1, hD, hF⟩ := cspaceDeleteSlotFinalising_ok ec addr st st' h
+  exact (cspaceDeleteSlot_shrinks hW hD).trans
+    (finaliseDestroyedCapabilities_shrinks ec _ _ st1 st'
+      (cspaceDeleteSlot_preserves_teardownWellFormed hW hD) hF)
+
+/-- **A run of finalising deletes**, one after another: what seL4's `cteRevoke`
+is made of. -/
+inductive FinalisingDeleteChain (ec : Concurrency.CoreId) : SystemState → SystemState → Prop
+  | refl (st : SystemState) : FinalisingDeleteChain ec st st
+  | step {s1 s2 s3 : SystemState} (c : CSpaceAddr)
+      (hD : cspaceDeleteSlotFinalising ec c s1 = .ok ((), s2))
+      (hRest : FinalisingDeleteChain ec s2 s3) : FinalisingDeleteChain ec s1 s3
+
+/-- **A chain keeps whatever every finalising delete keeps.** -/
+theorem FinalisingDeleteChain.closed {ec : Concurrency.CoreId} (Q : SystemState → Prop)
+    (hStep : ∀ (c : CSpaceAddr) (s s' : SystemState), Q s →
+      cspaceDeleteSlotFinalising ec c s = .ok ((), s') → Q s') :
+    ∀ {st st' : SystemState}, FinalisingDeleteChain ec st st' → Q st → Q st'
+  | _, _, .refl _, h => h
+  | _, _, .step c hD hRest, h => FinalisingDeleteChain.closed Q hStep hRest (hStep c _ _ h hD)
+
+/-- **A chain keeps the teardown's state well formed and only shrinks roots.** -/
+theorem FinalisingDeleteChain.wellFormed {ec : Concurrency.CoreId} :
+    ∀ {st st' : SystemState}, FinalisingDeleteChain ec st st' → teardownWellFormed st →
+      teardownWellFormed st' ∧ vspaceRootsShrink st st'
+  | _, _, .refl st, hW => ⟨hW, vspaceRootsShrink.refl st⟩
+  | _, _, .step _ hD hRest, hW =>
+    have hW1 := cspaceDeleteSlotFinalising_preserves_teardownWellFormed ec hW hD
+    have hR := FinalisingDeleteChain.wellFormed hRest hW1
+    ⟨hR.1, (cspaceDeleteSlotFinalising_shrinks ec hW hD).trans hR.2⟩
+
+/-- **No page a chain's delete destroyed survives the chain.**  The delete
+leaves the page its capability recorded not live
+(`cspaceDeleteSlotFinalising_ok_unmapped`), and every later delete only shrinks
+roots, so no later step brings it back (`mappedPageLive_false_of_shrink`). -/
+theorem FinalisingDeleteChain.unmapped {ec : Concurrency.CoreId} {s s2 st' : SystemState}
+    {c : CSpaceAddr} (hW : teardownWellFormed s)
+    (hD : cspaceDeleteSlotFinalising ec c s = .ok ((), s2))
+    (hRest : FinalisingDeleteChain ec s2 st')
+    (cap : Capability) (hCap : SystemState.lookupSlotCap s c = some cap)
+    (p : MappedPage) (hP : capabilityMappedPage s cap = some p) :
+    mappedPageLive st' p = false := by
+  have hW2 := cspaceDeleteSlotFinalising_preserves_teardownWellFormed ec hW hD
+  exact mappedPageLive_false_of_shrink hW2 (hRest.wellFormed hW2).2
+    (cspaceDeleteSlotFinalising_ok_unmapped ec c s s2 hW hD cap hCap p hP)
+
+/-- **seL4's `cteRevoke`**: delete the source's first child, finalising it,
+until the source has none.  Each delete splices its slot out of the tree, so
+the deleted child's children become the source's, and the loop reaches every
+descendant without building a list of them; `fuel` bounds it by the tree's
+edges, one of which each splice removes.  Each delete is admitted when its
+CNode exists (`cspaceDeleteFinalisingAdmitted`) and is then its writes
+(`cspaceDeleteFinalisingPerformAt`); a child outside every CNode ends the loop,
+which on a state the capability invariants hold in never happens: there the
+loop ends with the source childless (`cspaceRevokeCdtFinalising_ok_childless`).
+Retiring the stop is a `docs/REGISTERED_DEBT.md` table C row (ZA5.4). -/
+def revokeFirstChildLoop (executingCore : Concurrency.CoreId) (cnode : SeLe4n.ObjId)
+    (slot : SeLe4n.Slot) : Nat → SystemState → SystemState
   | 0, st => st
   | n + 1, st =>
     let fc := st.slotLinkNodeWord cnode slot .firstChild
     if fc = 0 then st
     else
-      let c : CSpaceAddr :=
-        { cnode := SeLe4n.ObjId.ofNat (fc - 1),
-          slot := SeLe4n.Slot.ofNat (st.slotLinkSlotWord cnode slot .firstChild - 1) }
-      if cspaceDeleteAdmitted c st then revokeFirstChildLoop cnode slot n (cspaceDeletePerform c st)
+      let cc := SeLe4n.ObjId.ofNat (fc - 1)
+      let cs := SeLe4n.Slot.ofNat (st.slotLinkSlotWord cnode slot .firstChild - 1)
+      if cspaceDeleteFinalisingAdmitted { cnode := cc, slot := cs } st then
+        revokeFirstChildLoop executingCore cnode slot n
+          (cspaceDeleteFinalisingPerformAt executingCore cc cs st)
       else st
 
-/-- WS-ZA ZA5.3: **an admitted revocation's writes**: the first-child loop, with
-fuel for every edge of the tree. -/
-@[inline] def cspaceRevokePerform (addr : CSpaceAddr) (st : SystemState) : SystemState :=
-  revokeFirstChildLoop addr.cnode addr.slot (st.cdt.edgeBound + 1) st
-
-/-- `cspaceRevokePerform` on slot `slot` of `cnode`, for the same reason. -/
-def cspaceRevokePerformAt (cnode : SeLe4n.ObjId) (slot : SeLe4n.Slot) (st : SystemState) :
-    SystemState :=
-  cspaceRevokePerform ⟨cnode, slot⟩ st
-
-/-- **What the first-child loop is made of: finalising deletes.**  Each step it
-takes is an admitted delete, which is the finalising delete
-(`cspaceDeleteSlotFinalising_of_admitted`), so any property every finalising
-delete keeps, the loop keeps. -/
-theorem revokeFirstChildLoop_closed {ec : Concurrency.CoreId} {addr : CSpaceAddr}
-    (Q : SystemState → Prop)
-    (hStep : ∀ (c : CSpaceAddr) (s s' : SystemState), Q s →
-      cspaceDeleteSlotFinalising ec c s = .ok ((), s') → Q s') :
-    ∀ (n : Nat) (st : SystemState), Q st → Q (revokeFirstChildLoop addr.cnode addr.slot n st)
-  | 0, _, h => h
-  | n + 1, st, h => by
+/-- **The loop is a run of finalising deletes.** -/
+theorem revokeFirstChildLoop_chain (ec : Concurrency.CoreId) (cnode : SeLe4n.ObjId)
+    (slot : SeLe4n.Slot) :
+    ∀ (n : Nat) (st : SystemState),
+      FinalisingDeleteChain ec st (revokeFirstChildLoop ec cnode slot n st)
+  | 0, st => .refl st
+  | n + 1, st => by
     unfold revokeFirstChildLoop
     dsimp only
     split
-    · exact h
+    · exact .refl st
     · split
       · next hA =>
-        exact revokeFirstChildLoop_closed Q hStep n _
-          (hStep _ st _ h (cspaceDeleteSlotFinalising_of_admitted hA))
-      · exact h
+        exact .step _ (cspaceDeleteSlotFinalising_of_cnode hA)
+          (revokeFirstChildLoop_chain ec cnode slot n _)
+      · exact .refl st
 
-/-- **`.cspaceRevoke`: revoke the capability in `addr`, then remove every mapping
-a destroyed capability recorded.**  seL4 splits the invocation into its checks
-and `cteRevoke`; so does this.  When every capability beneath the source has
-nothing to finalise (`cspaceRevokeAdmitted`), the revocation is the first-child
-loop (`cspaceRevokePerform`), written in place.  Otherwise it is the general
-revocation: the descendants destroyed in turn (`cspaceRevokeCdt`, which reports
-the pages of exactly the capabilities its traversal destroyed,
-`revokeCdtFoldBody_records`), then the teardown of what they named. -/
+/-- WS-ZA ZA5.3 part 8: **`.cspaceRevoke`'s check**, read before any write: the
+source slot holds a capability. -/
+@[inline] def cspaceRevokeAdmitted (addr : CSpaceAddr) (st : SystemState) : Bool :=
+  (SystemState.lookupSlotCap st addr).isSome
+
+/-- **An admitted revocation's writes**: the first-child loop, with fuel for
+every edge of the tree. -/
+def cspaceRevokePerformAt (executingCore : Concurrency.CoreId) (cnode : SeLe4n.ObjId)
+    (slot : SeLe4n.Slot) (st : SystemState) : SystemState :=
+  revokeFirstChildLoop executingCore cnode slot (st.cdt.edgeBound + 1) st
+
+/-- **`.cspaceRevoke`: revoke the capability in `addr`**, seL4's `cteRevoke`:
+the source slot is looked up, then its first child deleted and finalised until
+it has none (`revokeFirstChildLoop`), so every mapping a destroyed frame
+capability recorded and every page table that lost its last capability is
+torn down with the capability (`FinalisingDeleteChain.unmapped`).  The check
+reads the state before any write, so the dispatcher runs the step through
+`RefusalCarrying.ofChecked` and the store is written in place. -/
 def cspaceRevokeCdtFinalising (executingCore : Concurrency.CoreId) (addr : CSpaceAddr) :
     Kernel Unit :=
   fun st =>
-    if cspaceRevokeAdmitted addr st then .ok ((), cspaceRevokePerform addr st)
-    else cspaceRevokeThenFinalise executingCore (revokedPageTables st addr) addr st
+    match SystemState.lookupSlotCap st addr with
+    | some _ => .ok ((), cspaceRevokePerformAt executingCore addr.cnode addr.slot st)
+    | none =>
+      match st.getCNode? addr.cnode with
+      | some _ => .error .invalidCapability
+      | none => .error .objectNotFound
 
-/-- What a successful finalising revocation is: the first-child loop of an
-admitted revocation, or the general revocation and the teardown of the pages its
-destroyed capabilities recorded. -/
-theorem cspaceRevokeCdtFinalising_ok (ec : Concurrency.CoreId) (addr : CSpaceAddr)
-    (st st' : SystemState) (h : cspaceRevokeCdtFinalising ec addr st = .ok ((), st')) :
-    (cspaceRevokeAdmitted addr st = true ∧ st' = cspaceRevokePerform addr st) ∨
-      ∃ pages st1, cspaceRevokeCdt addr st = .ok (pages, st1) ∧
-        finaliseDestroyedCapabilities ec (revokedPageTables st addr) pages st1 =
-          .ok ((), st') := by
+/-- An admitted revocation is its writes. -/
+theorem cspaceRevokeCdtFinalising_of_admitted {ec : Concurrency.CoreId} {addr : CSpaceAddr}
+    {st : SystemState} (h : cspaceRevokeAdmitted addr st = true) :
+    cspaceRevokeCdtFinalising ec addr st =
+      .ok ((), cspaceRevokePerformAt ec addr.cnode addr.slot st) := by
+  unfold cspaceRevokeAdmitted at h
+  unfold cspaceRevokeCdtFinalising
+  cases hL : SystemState.lookupSlotCap st addr with
+  | none => rw [hL] at h; cases h
+  | some _ => rfl
+
+/-- **A successful revocation witnesses an occupied source slot**: the tie that
+keeps `cdtNodeIsRevocable` revocation's own precondition rather than a second
+opinion about it. -/
+theorem cspaceRevokeCdtFinalising_ok_implies_slot_occupied {ec : Concurrency.CoreId}
+    {addr : CSpaceAddr} {st st' : SystemState}
+    (h : cspaceRevokeCdtFinalising ec addr st = .ok ((), st')) :
+    (SystemState.lookupSlotCap st addr).isSome := by
   unfold cspaceRevokeCdtFinalising at h
   split at h
-  · next hA =>
-    simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at h
-    exact Or.inl ⟨hA, h.symm⟩
-  · unfold cspaceRevokeThenFinalise at h
-    cases hR : cspaceRevokeCdt addr st with
-    | error e => rw [hR] at h; cases h
-    | ok pr =>
-      obtain ⟨pages, st1⟩ := pr
-      rw [hR] at h
-      exact Or.inr ⟨pages, st1, rfl, h⟩
+  · next hL => rw [hL]; rfl
+  · split at h <;> cases h
 
-/-- **The finalising revocation keeps whatever every finalising delete and the
-general revocation's teardown keep.**  The consumers' one case analysis: the
-admitted loop is a chain of finalising deletes (`revokeFirstChildLoop_closed`),
-the general path the revocation then the teardown. -/
+/-- **A node `cdtNodeIsRevocable` refuses is a node no revocation can enter.**
+Were an IPC transfer to install beneath it anyway, the edge would hang beneath a
+slot that cannot be revoked, so nothing could destroy the installed
+capability. -/
+theorem cdtNodeIsRevocable_false_revoke_refuses (st : SystemState) (node : SlotRef)
+    (hNot : cdtNodeIsRevocable st node = false) (ec : Concurrency.CoreId)
+    (st' : SystemState) : cspaceRevokeCdtFinalising ec node st ≠ .ok ((), st') := by
+  intro hOk
+  have hOcc := cspaceRevokeCdtFinalising_ok_implies_slot_occupied hOk
+  unfold cdtNodeIsRevocable at hNot
+  rw [hOcc] at hNot
+  cases hNot
+
+/-- **What a successful finalising revocation is: a run of finalising
+deletes.** -/
+theorem cspaceRevokeCdtFinalising_chain (ec : Concurrency.CoreId) (addr : CSpaceAddr)
+    (st st' : SystemState) (h : cspaceRevokeCdtFinalising ec addr st = .ok ((), st')) :
+    FinalisingDeleteChain ec st st' := by
+  unfold cspaceRevokeCdtFinalising at h
+  split at h
+  · simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at h
+    subst h
+    exact revokeFirstChildLoop_chain ec _ _ _ st
+  · split at h <;> cases h
+
+/-- **The finalising revocation keeps whatever every finalising delete keeps.**
+The consumers' one argument: the revocation is a chain of them. -/
 theorem cspaceRevokeCdtFinalising_closed {ec : Concurrency.CoreId} {addr : CSpaceAddr}
     {st st' : SystemState} (Q : SystemState → Prop)
     (hDel : ∀ (c : CSpaceAddr) (s s' : SystemState), Q s →
       cspaceDeleteSlotFinalising ec c s = .ok ((), s') → Q s')
-    (hGen : ∀ pages st1, cspaceRevokeCdt addr st = .ok (pages, st1) →
-      finaliseDestroyedCapabilities ec (revokedPageTables st addr) pages st1 = .ok ((), st') →
-      Q st')
-    (hQ : Q st) (h : cspaceRevokeCdtFinalising ec addr st = .ok ((), st')) : Q st' := by
-  rcases cspaceRevokeCdtFinalising_ok ec addr st st' h with ⟨-, rfl⟩ | ⟨pages, st1, hR, hF⟩
-  · exact revokeFirstChildLoop_closed Q hDel _ st hQ
-  · exact hGen pages st1 hR hF
+    (hQ : Q st) (h : cspaceRevokeCdtFinalising ec addr st = .ok ((), st')) : Q st' :=
+  (cspaceRevokeCdtFinalising_chain ec addr st st' h).closed Q hDel hQ
 
-/-- **The payoff: no reported page survives the revocation.**  On a well-formed
-state: an admitted
-revocation destroys only capabilities that record no mapping; otherwise, with
-`revokeCdtFoldBody_records` — each step reports the page of the capability it
-destroys — no page a destroyed frame capability recorded is still mapped. -/
+/-- **The payoff: the finalising revocation keeps the teardown's state well
+formed, and no page a capability it destroyed recorded survives it.**  Every
+step is a finalising delete (`cspaceRevokeCdtFinalising_chain`), so each
+destroyed capability's page is not live after the whole revocation
+(`FinalisingDeleteChain.unmapped`). -/
 theorem cspaceRevokeCdtFinalising_ok_unmapped (ec : Concurrency.CoreId) (addr : CSpaceAddr)
     (st st' : SystemState) (hW : teardownWellFormed st)
     (h : cspaceRevokeCdtFinalising ec addr st = .ok ((), st')) :
-    cspaceRevokeAdmitted addr st = true ∨
-      ∃ pages, (∃ st1, cspaceRevokeCdt addr st = .ok (pages, st1)) ∧
-        ∀ p ∈ pages, mappedPageLive st' p = false := by
-  rcases cspaceRevokeCdtFinalising_ok ec addr st st' h with ⟨hA, -⟩ | ⟨pages, st1, hC, hF⟩
-  · exact Or.inl hA
-  · exact Or.inr ⟨pages, ⟨st1, hC⟩, finaliseDestroyedCapabilities_ok_unmapped ec _ pages st1 st'
-      (cspaceRevokeCdt_preserves_teardownWellFormed hW hC) hF⟩
+    teardownWellFormed st' ∧
+      ∀ (s s2 : SystemState) (c : CSpaceAddr), FinalisingDeleteChain ec st s →
+        cspaceDeleteSlotFinalising ec c s = .ok ((), s2) → FinalisingDeleteChain ec s2 st' →
+        ∀ (cap : Capability), SystemState.lookupSlotCap s c = some cap →
+        ∀ (p : MappedPage), capabilityMappedPage s cap = some p → mappedPageLive st' p = false :=
+  ⟨((cspaceRevokeCdtFinalising_chain ec addr st st' h).wellFormed hW).1,
+   fun _ _ _ hPre hD hRest cap hCap p hP =>
+     FinalisingDeleteChain.unmapped (hPre.wellFormed hW).1 hD hRest cap hCap p hP⟩
 
 end SeLe4n.Kernel

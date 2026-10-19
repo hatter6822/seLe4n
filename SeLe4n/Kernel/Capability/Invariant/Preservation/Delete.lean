@@ -42,8 +42,7 @@ theorem capabilityInvariantBundle.off {st : SystemState} (h : capabilityInvarian
 
 /-- Core preservation theorem for `cspaceDeleteSlotCore` (no CDT guard): the
 emptied slot is still in the tree, so completeness holds everywhere else.  Used
-by internal callers (processRevokeNode, cspaceMove, cspaceRevokeCdtStrict), which
-each take the slot out of the tree next, and by the `cspaceDeleteSlot` wrapper. -/
+by internal callers (cspaceMove), which take the slot out of the tree next, and by the `cspaceDeleteSlot` wrapper. -/
 theorem cspaceDeleteSlotCore_preserves_capabilityInvariantBundleOff
     (st st' : SystemState)
     (addr : CSpaceAddr)

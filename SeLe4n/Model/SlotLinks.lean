@@ -1155,11 +1155,6 @@ post-state's tree. -/
   let k := st.cdt.edgeBound
   (st.modifyCdt (·.moveNode old new)).linkMoveNode old.cnode old.slot new.cnode new.slot k
 
-/-- **Remove node `n` and every edge at it**, its children becoming roots. -/
-@[inline] def cdtRemove (st : SystemState) (n : SlotRef) : SystemState :=
-  let k := st.cdt.edgeBound
-  (st.modifyCdt (·.removeNode n)).linkRemoveNode n.cnode n.slot k
-
 theorem cdtAddChild_reach (st : SystemState) (p c : SlotRef) (op : DerivationOp) :
     linkReach { st with cdt := st.cdt.addEdge p c op } (st.cdtAddChild p c op) :=
   linkAddChild_reach (linkReach.refl _) p c
@@ -1171,10 +1166,6 @@ theorem cdtSplice_reach (st : SystemState) (n : SlotRef) :
 theorem cdtMove_reach (st : SystemState) (old new : SlotRef) :
     linkReach { st with cdt := st.cdt.moveNode old new } (st.cdtMove old new) :=
   linkMoveNode_reach (linkReach.refl _) old new _
-
-theorem cdtRemove_reach (st : SystemState) (n : SlotRef) :
-    linkReach { st with cdt := st.cdt.removeNode n } (st.cdtRemove n) :=
-  linkRemoveNode_reach (linkReach.refl _) n _
 
 /-- Adding `c` under `p` keeps the links agreeing with the tree, when `c` has no
 parent yet and every slot involved lies in a live CNode. -/
@@ -1240,26 +1231,6 @@ theorem cdtMove_agree {st : SystemState} (hInv : st.objects.invExt)
   unfold cdtMove; simp only [modifyCdt_eq]
   rw [hV, hX, hW, hL.parent old]
   exact hL.moveNode_of_wf hWF old new hnew hon
-
-/-- Removing node `n` keeps the links agreeing with the tree, when the tree is
-acyclic. -/
-theorem cdtRemove_agree_of_slotInCNode {st : SystemState} (hInv : st.objects.invExt)
-    (hL : LinksAgree st.slotLinkAt st.cdt) (hM : ∀ r, st.cdt.mentions r → st.slotInCNode r)
-    (hWF : st.cdt.edgeWellFounded) {n : SlotRef} (hn : st.slotInCNode n) :
-    LinksAgree (st.cdtRemove n).slotLinkAt (st.cdtRemove n).cdt := by
-  rw [(cdtRemove_reach st n).cdt]
-  have hW := hL.walk_firstChild n (st.cdt.edges_length_le)
-  have hAll : ∀ r f x, st.slotLinkAt r f = some x → st.slotInCNode x :=
-    fun _ _ x hx => hM x (hL.target_mentions hx)
-  have hSelf := hL.children_not_self_or_prev (hL.parentOf_ne_self_of_wf hWF n)
-  have hX : ({ st with cdt := st.cdt.removeNode n } : SystemState).slotLinkAt = st.slotLinkAt := rfl
-  obtain ⟨-, -, hV⟩ := linkRemoveNode_spec (st := { st with cdt := st.cdt.removeNode n }) hInv
-    st.cdt.edgeBound hn (fun f x h => hAll n f x h) (walk_valid hAll _ n .firstChild)
-    (by rw [hX, hW]; exact CapDerivationTree.childrenOf_nodup hL.childrenUnique n)
-    (by rw [hX, hW]; exact hSelf)
-  unfold cdtRemove; simp only [modifyCdt_eq]
-  rw [hV, hX, hW]
-  exact hL.removeNode n
 
 /-! ### What a paired tree update leaves alone
 
@@ -1479,77 +1450,6 @@ theorem cdtMove_agreeObjects {st : SystemState} (hInv : st.objects.invExt) (old 
     objectsAgreeOffDerivationLinks (st.cdtMove old new) st ∧ (st.cdtMove old new).objects.invExt :=
   ⟨(cdtMove_reach st old new).agree hInv, (cdtMove_reach st old new).invExt hInv⟩
 
-theorem cdtRemove_fields (st : SystemState) (n : SlotRef) :
-    st.cdtRemove n = { st with cdt := st.cdt.removeNode n, objects := (st.cdtRemove n).objects } :=
-  (cdtRemove_reach st n).fields
-
-@[simp] theorem cdtRemove_cdt (st : SystemState) (n : SlotRef) :
-    (st.cdtRemove n).cdt = st.cdt.removeNode n := (cdtRemove_reach st n).cdt
-
-@[simp] theorem cdtRemove_machine (st : SystemState) (n : SlotRef) :
-    (st.cdtRemove n).machine = st.machine := by rw [cdtRemove_fields]
-
-@[simp] theorem cdtRemove_objectIndex (st : SystemState) (n : SlotRef) :
-    (st.cdtRemove n).objectIndex = st.objectIndex := by rw [cdtRemove_fields]
-
-@[simp] theorem cdtRemove_objectIndexSet (st : SystemState) (n : SlotRef) :
-    (st.cdtRemove n).objectIndexSet = st.objectIndexSet := by rw [cdtRemove_fields]
-
-@[simp] theorem cdtRemove_services (st : SystemState) (n : SlotRef) :
-    (st.cdtRemove n).services = st.services := by rw [cdtRemove_fields]
-
-@[simp] theorem cdtRemove_scheduler (st : SystemState) (n : SlotRef) :
-    (st.cdtRemove n).scheduler = st.scheduler := by rw [cdtRemove_fields]
-
-@[simp] theorem cdtRemove_irqHandlers (st : SystemState) (n : SlotRef) :
-    (st.cdtRemove n).irqHandlers = st.irqHandlers := by rw [cdtRemove_fields]
-
-@[simp] theorem cdtRemove_lifecycle (st : SystemState) (n : SlotRef) :
-    (st.cdtRemove n).lifecycle = st.lifecycle := by rw [cdtRemove_fields]
-
-@[simp] theorem cdtRemove_asidTable (st : SystemState) (n : SlotRef) :
-    (st.cdtRemove n).asidTable = st.asidTable := by rw [cdtRemove_fields]
-
-@[simp] theorem cdtRemove_interfaceRegistry (st : SystemState) (n : SlotRef) :
-    (st.cdtRemove n).interfaceRegistry = st.interfaceRegistry := by rw [cdtRemove_fields]
-
-@[simp] theorem cdtRemove_serviceRegistry (st : SystemState) (n : SlotRef) :
-    (st.cdtRemove n).serviceRegistry = st.serviceRegistry := by rw [cdtRemove_fields]
-
-@[simp] theorem cdtRemove_tlb (st : SystemState) (n : SlotRef) :
-    (st.cdtRemove n).tlb = st.tlb := by rw [cdtRemove_fields]
-
-@[simp] theorem cdtRemove_tlbShootdown (st : SystemState) (n : SlotRef) :
-    (st.cdtRemove n).tlbShootdown = st.tlbShootdown := by rw [cdtRemove_fields]
-
-@[simp] theorem cdtRemove_perCoreTlb (st : SystemState) (n : SlotRef) :
-    (st.cdtRemove n).perCoreTlb = st.perCoreTlb := by rw [cdtRemove_fields]
-
-@[simp] theorem cdtRemove_perCoreICache (st : SystemState) (n : SlotRef) :
-    (st.cdtRemove n).perCoreICache = st.perCoreICache := by rw [cdtRemove_fields]
-
-@[simp] theorem cdtRemove_pendingIcacheMaintenance (st : SystemState) (n : SlotRef) :
-    (st.cdtRemove n).pendingIcacheMaintenance = st.pendingIcacheMaintenance := by rw [cdtRemove_fields]
-
-@[simp] theorem cdtRemove_pendingPhysicalWrites (st : SystemState) (n : SlotRef) :
-    (st.cdtRemove n).pendingPhysicalWrites = st.pendingPhysicalWrites := by rw [cdtRemove_fields]
-
-@[simp] theorem cdtRemove_declassificationAuditLog (st : SystemState) (n : SlotRef) :
-    (st.cdtRemove n).declassificationAuditLog = st.declassificationAuditLog := by rw [cdtRemove_fields]
-
-@[simp] theorem cdtRemove_declassificationAuditEpoch (st : SystemState) (n : SlotRef) :
-    (st.cdtRemove n).declassificationAuditEpoch = st.declassificationAuditEpoch := by rw [cdtRemove_fields]
-
-@[simp] theorem cdtRemove_declassificationRefusals (st : SystemState) (n : SlotRef) :
-    (st.cdtRemove n).declassificationRefusals = st.declassificationRefusals := by rw [cdtRemove_fields]
-
-@[simp] theorem cdtRemove_declassificationTaint (st : SystemState) (n : SlotRef) :
-    (st.cdtRemove n).declassificationTaint = st.declassificationTaint := by rw [cdtRemove_fields]
-
-theorem cdtRemove_agreeObjects {st : SystemState} (hInv : st.objects.invExt) (n : SlotRef) :
-    objectsAgreeOffDerivationLinks (st.cdtRemove n) st ∧ (st.cdtRemove n).objects.invExt :=
-  ⟨(cdtRemove_reach st n).agree hInv, (cdtRemove_reach st n).invExt hInv⟩
-
 /-! ### Steps that keep every slot's links
 
 A step that rewrites a CNode's capabilities or geometry but not its link words,
@@ -1710,54 +1610,6 @@ theorem cdtSplice_agree {st : SystemState} (hInv : st.objects.invExt)
   · exact cdtSplice_agree_of_slotInCNode hInv hL hM hWF hn
   · obtain ⟨e1, e2⟩ := cdtSplice_of_not_slotInCNode hInv hM hn
     rw [e1, e2]; exact hL
-
-/-- **Removing a slot outside every CNode from the tree changes nothing**, for
-the reason the splice does (`cdtSplice_of_not_slotInCNode`). -/
-theorem cdtRemove_of_not_slotInCNode {st : SystemState} (hInv : st.objects.invExt)
-    (hM : ∀ r, st.cdt.mentions r → st.slotInCNode r) {n : SlotRef} (hn : ¬ st.slotInCNode n) :
-    (st.cdtRemove n).slotLinkAt = st.slotLinkAt ∧ (st.cdtRemove n).cdt = st.cdt := by
-  have hNM : ¬ st.cdt.mentions n := fun h => hn (hM n h)
-  refine ⟨?_, ?_⟩
-  · let s0 : SystemState := { st with cdt := st.cdt.removeNode n }
-    have hn0 : ¬ s0.slotInCNode n := hn
-    have hI0 : s0.objects.invExt := hInv
-    obtain ⟨zU, -⟩ := slotLinkWords_zero_of_not_slotInCNode hn0 .parent
-    obtain ⟨zF, -⟩ := slotLinkWords_zero_of_not_slotInCNode hn0 .firstChild
-    obtain ⟨zP, -⟩ := slotLinkWords_zero_of_not_slotInCNode hn0 .prev
-    obtain ⟨zN, -⟩ := slotLinkWords_zero_of_not_slotInCNode hn0 .next
-    unfold cdtRemove; simp only [modifyCdt_eq]
-    show (s0.linkRemoveNode n.cnode n.slot _).slotLinkAt = st.slotLinkAt
-    unfold linkRemoveNode linkUnlinkChild
-    simp only [zU, zF, zP, zN, if_true]
-    obtain ⟨e1, h1, i1⟩ := slotLinkAt_writes_of_not hI0 hn0 .parent 0 0
-    obtain ⟨e2, h2, i2⟩ := slotLinkAt_writes_of_not i1 h1 .next 0 0
-    obtain ⟨e3, h3, i3⟩ := slotLinkAt_writes_of_not i2 h2 .prev 0 0
-    have hOrph : ∀ k (t : SystemState) w, linkOrphanChain k t 0 w = t := by
-      intro k t w; cases k <;> rfl
-    rw [hOrph]
-    obtain ⟨e4, -, -⟩ := slotLinkAt_writes_of_not i3 h3 .firstChild 0 0
-    rw [e4, e3, e2, e1]; rfl
-  · rw [(cdtRemove_reach st n).cdt]
-    show st.cdt.removeNode n = st.cdt
-    refine CapDerivationTree.ext ?_ rfl
-    rw [CapDerivationTree.removeNode_edges]
-    rw [List.filter_eq_self.mpr]
-    intro e he
-    have h1 : e.parent ≠ n := fun h => hNM ⟨e, he, .inl h⟩
-    have h2 : e.child ≠ n := fun h => hNM ⟨e, he, .inr h⟩
-    simp [CapDerivationEdge.isParentOf, CapDerivationEdge.isChildOf, h1, h2]
-
-/-- **Removing any slot from an acyclic tree keeps the links agreeing with it.** -/
-theorem cdtRemove_agree {st : SystemState} (hInv : st.objects.invExt)
-    (hL : LinksAgree st.slotLinkAt st.cdt) (hM : ∀ r, st.cdt.mentions r → st.slotInCNode r)
-    (hWF : st.cdt.edgeWellFounded) (n : SlotRef) :
-    LinksAgree (st.cdtRemove n).slotLinkAt (st.cdtRemove n).cdt := by
-  by_cases hn : st.slotInCNode n
-  · exact cdtRemove_agree_of_slotInCNode hInv hL hM hWF hn
-  · obtain ⟨e1, e2⟩ := cdtRemove_of_not_slotInCNode hInv hM hn
-    rw [e1, e2]; exact hL
-
-
 
 /-- **The children the links name** (seL4's mapping-database children read):
 `p`'s first-child link and the next links after it, at most the tree's edge

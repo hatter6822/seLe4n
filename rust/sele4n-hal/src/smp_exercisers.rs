@@ -1536,6 +1536,10 @@ const VSPACE_CAP: u64 = cap_address(VSPACE_SLOT);
 const UNTYPED_CAP: u64 = cap_address(UNTYPED_SLOT);
 #[cfg(feature = "hw_target")]
 const FRAME_CAP: u64 = cap_address(FRAME_SLOT);
+/// The frame capability's copy, in the move slot, while the revoke scenario
+/// maps it.
+#[cfg(feature = "hw_target")]
+const MOVE_CAP: u64 = cap_address(MOVE_SLOT);
 #[cfg(feature = "hw_target")]
 const PAGE_TABLE_CAPS: [u64; 3] = [
     cap_address(PAGE_TABLE_SLOTS[0]),
@@ -1790,6 +1794,10 @@ const PAGE_TABLE_TYPE: u64 = 9;
 const ROOT_ASID: u64 = 1;
 #[cfg(feature = "hw_target")]
 const FRAME_VADDR: u64 = 1 << 39;
+/// The page after it, where the frame's copy is mapped before the revoke that
+/// destroys the copy and so unmaps it.
+#[cfg(feature = "hw_target")]
+const FRAME_COPY_VADDR: u64 = FRAME_VADDR + 0x1000;
 /// Read, write, user and cacheable (`PagePermissions.ofNat`).
 #[cfg(feature = "hw_target")]
 const FRAME_PERMS: u64 = 0b11011;
@@ -1816,7 +1824,9 @@ const PARTNER_PRIORITY: u64 = 255;
 /// - three page tables carved from the untyped and installed in the root
 ///   task's VSpace, one per level of the walk to the frame's address; a frame
 ///   carved, mapped, its instruction cache unified, its mapped capability
-///   copied (the copy records no mapping) and the copy deleted, a reply
+///   copied (the copy records no mapping) and the copy deleted, copied
+///   again, the copy mapped at the next page and the frame's capability
+///   revoked, which destroys the copy and unmaps that page, a reply
 ///   capability minted over the record the copy left (its target shared with
 ///   the frame's capability) and deleted, named as the partner's IPC buffer,
 ///   unmapped and deleted; the tables taken out deepest first and
@@ -2005,6 +2015,24 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 5] = [
             CSPACE_DELETE,
             CNODE_CAP,
             [MOVE_SLOT, 0, 0, 0],
+        ),
+        invocation(
+            "frame-copy-for-revoke",
+            CSPACE_COPY,
+            CNODE_CAP,
+            [FRAME_SLOT, MOVE_SLOT, 0, 0],
+        ),
+        invocation(
+            "vspace-map-copy",
+            VSPACE_MAP,
+            VSPACE_CAP,
+            [ROOT_ASID, FRAME_COPY_VADDR, MOVE_CAP, FRAME_PERMS],
+        ),
+        invocation(
+            "frame-revoke",
+            CSPACE_REVOKE,
+            CNODE_CAP,
+            [FRAME_SLOT, 0, 0, 0],
         ),
         invocation(
             "reply-cap-mint-over-copy",

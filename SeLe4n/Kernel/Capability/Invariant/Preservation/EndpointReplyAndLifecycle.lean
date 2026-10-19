@@ -7,7 +7,7 @@
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
 
-import SeLe4n.Kernel.Capability.Invariant.Preservation.Revoke
+import SeLe4n.Kernel.Capability.Invariant.Preservation.CopyMoveMutate
 
 /-!
 AN4-F.3 (CAP-M03) child module extracted from

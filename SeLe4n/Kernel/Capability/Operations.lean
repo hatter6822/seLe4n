@@ -59,7 +59,8 @@ findings for the capability subsystem that were addressed in Phase AK8-K.
 - **C-L10 (`cspaceDeleteSlotCore` dangling CDT edges):** resolved.  The core
   delete leaves the tree to its caller, and every caller takes the slot out
   of it: the delete splices it out (`spliceDeletedCdtNode`, since `v0.36.101`),
-  revocation removes it (`processRevokeNode`), and a move hands its edges to
+  revocation is a run of those deletes (`cspaceRevokeCdtFinalising`), and a
+  move hands its edges to
   the destination (`CapDerivationTree.moveNode`). -/
 
 namespace SeLe4n.Kernel
@@ -1075,8 +1076,7 @@ theorem hasCdtChildren_eq_tree {st : SystemState}
 /-- Core capability slot deletion: empties the slot, leaving the derivation tree
 to the caller.
 Used by `cspaceDeleteSlot` (which then splices the slot out of the tree) and by
-internal kernel operations (`processRevokeNode`, `cspaceRevokeCdtStrict`,
-`cspaceMove`) that write the tree themselves. -/
+`cspaceMove`, which writes the tree itself. -/
 def cspaceDeleteSlotCore (addr : CSpaceAddr) : Kernel Unit :=
   fun st =>
     match st.getCNode? addr.cnode with
@@ -1307,7 +1307,7 @@ theorem detachRevokedSlots_agree {st : SystemState} (hInv : st.objects.invExt)
 
 /-- V5-G (M-DEF-7): **Revocation routing guide.**
 
-seLe4n provides three revocation entry points for different use cases:
+seLe4n has two revocations:
 
 - **`cspaceRevoke`** (this function): the local same-TARGET sweep.  Removes
   every capability in the source's CNode that names the source slot's target,
@@ -1317,34 +1317,19 @@ seLe4n provides three revocation entry points for different use cases:
   destroys exactly the source's derivations, and a target match reaches an
   independently rooted capability to the same object and the source's own
   parent as well.  It predates the CDT, and since `v0.36.1` no syscall reaches
-  it — `revokeCdtScaffold` no longer opens with it.  What still calls it is the
+  it.  What still calls it is the
   internal proof helper `lifecycleRevokeDeleteRetype` and the non-interference
   operation catalogue, where it is an operation in its own right.
 
-- **`cspaceRevokeCdt`**: revocation of exactly the source slot's CDT
-  descendants, in every CNode including the source's own, and of nothing else.
-  Validates the source slot, walks its descendants and deletes their
-  capabilities, then consumes the derivations still in flight.  This is the
-  **recommended entry point** and the one `seL4_CNode_Revoke` dispatches.
-  Errors from descendant deletion are propagated (strict mode).
-
-- **`cspaceRevokeCdtStrict`**: Structured variant of `cspaceRevokeCdt` that
-  returns a detailed `RevokeCdtStrictReport` including which slots were
-  deleted and which (if any) failed. Use when the caller needs diagnostic
-  information about partial revocation failures.
-
-- **`cspaceRevokeCdtStreaming`**: Fuel-bounded BFS variant providing the same
-  semantics as `cspaceRevokeCdt` with guaranteed O(fuel) termination. Use
-  when deterministic execution time is required.
-
-**API dispatch**: `dispatchWithCap` and `dispatchWithCapChecked` route
-`SyscallId.cspaceRevoke` through `cspaceRevokeCdt` (the CDT-traversing
-variant), which is the correct default for untrusted userspace invocations.
+- **`cspaceRevokeCdtFinalising`** (`Capability/FrameFinalise.lean`): seL4's
+  `cteRevoke`, revocation of exactly the source slot's CDT descendants, in every
+  CNode including the source's own: the source's first child deleted and
+  finalised until it has none.  `SyscallId.cspaceRevoke` dispatches it.
 
 Revoke capabilities with the same target as the source in the containing CNode.
 
 This is the local (single-CNode) revocation variant. For cross-CNode revocation
-using CDT traversal, see `cspaceRevokeCdt` and `cspaceRevokeCdtStrict`.
+along the derivation tree, see `cspaceRevokeCdtFinalising`.
 
 The source slot remains present and sibling slots naming the same target are removed.
 
@@ -1360,14 +1345,9 @@ theory but typically ≤ 1024 in practice.  WS-ZA ZA5.3, which links the tree
 through the slots as seL4's mapping database does, makes each splice
 proportional to the removed node's children.
 
-For CDT-based cross-CNode revocation (`cspaceRevokeCdt`), the traversal visits
-all descendants of the source node in the Capability Derivation Tree. This is
-O(d) where `d` is the total number of CDT descendants, bounded by
-`maxObjects` (65536 for RPi5). Each descendant triggers one `processRevokeNode`
-call (O(1) amortized via RHTable operations). Total worst-case: O(maxObjects)
-per revocation. The streaming BFS variant (`cspaceRevokeCdtStreaming`) uses
-fuel-bounded iteration with fuel = CDT edge count, providing the same
-O(maxObjects) bound with guaranteed termination. -/
+The derivation-tree revocation (`cspaceRevokeCdtFinalising`) deletes one
+descendant per step, each splice removing one edge, so it takes at most the
+tree's edge count of steps. -/
 def cspaceRevoke (addr : CSpaceAddr) : Kernel Unit :=
   fun st =>
     match cspaceLookupSlot addr st with
@@ -1683,7 +1663,7 @@ def mintReplyCap (src dst : CSpaceAddr) : Kernel Unit :=
 
 /-- WS-SM SM6.D (PR #822 review, Phase H): CDT-tracked `mintReplyCap` — derives the reply
 cap (above) then records the mint edge `src → dst` in the CDT, so the minted reply cap is
-revocable through the standard `cspaceRevokeCdt` path (exactly like `cspaceMintWithCdt`).
+revocable through the standard `cspaceRevokeCdtFinalising` path (exactly like `cspaceMintWithCdt`).
 Production dispatch routes through this CDT-tracked form. -/
 def mintReplyCapWithCdt (src dst : CSpaceAddr) : Kernel Unit :=
   fun st =>
@@ -2098,132 +2078,6 @@ def cspaceMovePerformAt (cnode : SeLe4n.ObjId) (srcSlot dstSlot : SeLe4n.Slot)
     (st : SystemState) : SystemState :=
   cspaceMovePerform ⟨cnode, srcSlot⟩ ⟨cnode, dstSlot⟩ st
 
-/-- R2-A: Process a single CDT descendant node during revocation.
-
-Shared transition used by both `cspaceRevokeCdt` (materialized fold) and
-`streamingRevokeBFS` (streaming BFS). Given a descendant slot:
-1. If the delete fails, propagate the error → `.error e`.
-2. If it succeeds, remove the slot from the tree → `.ok`.
-
-Changed in WS-R2/M-06: errors from `cspaceDeleteSlot` are now propagated
-instead of swallowed. CDT-based revocation (`cspaceRevokeCdt`) is the
-canonical revocation entry point — all API dispatch routes through it. -/
-def processRevokeNode (st : SystemState) (node : SlotRef)
-    : Except KernelError SystemState :=
-  match cspaceDeleteSlotCore node st with
-  | .error e => .error e
-  | .ok ((), stDel) => .ok (stDel.cdtRemove node)
-
--- ============================================================================
--- WS-E4/C-04: Cross-CNode CDT revocation
--- ============================================================================
-
-/-- Structured failure context for strict CDT descendant deletion.
-
-`offendingSlot` is the descendant slot whose deletion failed. `error` is the
-concrete deletion error surfaced by `cspaceDeleteSlotCore`. -/
-structure RevokeCdtStrictFailure where
-  offendingSlot : CSpaceAddr
-  error : KernelError
-  deriving Repr, DecidableEq
-
-/-- Return payload for strict CDT revocation.
-
-The strict variant stops at the first descendant deletion failure and returns
-its context in `firstFailure` instead of swallowing the error. -/
-structure RevokeCdtStrictReport where
-  deletedSlots : List CSpaceAddr
-  firstFailure : Option RevokeCdtStrictFailure
-  deriving Repr, DecidableEq
-
-/-- **What a revocation traversal produced.**
-
-`report` is the policy-specific payload the caller sees; `state` is the store
-after the deletions. -/
-structure RevokeTraversalOutcome (ρ : Type) where
-  report : ρ
-  state : SystemState
-
-/-- **CDT revocation, once.**
-
-Every public revocation entry point is this function at a different traversal.
-The shape they share is not a coincidence to be re-typed four times:
-
-1. validate the source slot — a read, so a revocation naming an empty or
-   unresolvable slot is refused exactly as the local sweep refused it, and the
-   step destroys nothing (see *what the prologue must not do* below),
-2. look up the source slot's CDT node — no node means nothing was derived,
-3. walk the subtree (the part that differs: materialized fold, streaming BFS,
-   strict report, validate-then-apply).
-
-A variant *is* its traversal: the prologue is not the variant's to write.
-No derivation is ever in flight between syscalls (WS-ZA ZA4.7: a blocked
-sender keeps capability addresses, not capabilities, and the receive resolves
-and installs them in one step), so the traversal's state is the result.
-
-**What the prologue must not do** (PR #900 review, `v0.36.1`).  Step 1 was the
-local `cspaceRevoke` until `v0.36.1`, and that sweep matches on the **target**:
-it deleted every capability in the source's CNode naming the same object — an
-independently rooted capability outside the source's subtree, and the source's
-own **parent** when the two share a CNode — and it stored the swept CNode without
-touching the CDT maps, so each swept slot's node went on mapping to an empty
-slot.  None of that is revocation: seL4-MCS's `cteRevoke` deletes exactly the
-slots `isMDBParentOf` the source (read at `13.0.0`), and step 3 already reaches
-every derivation in every CNode, the source's own included, because each live
-install path records its edge (`cspaceMintWithCdt`, `cspaceCopy`, `cspaceMove`,
-`mintReplyCapWithCdt`, `ipcTransferSingleCap`).  So the prologue is the source
-slot's *validation* and nothing more: `cspaceLookupSlot` refuses on exactly the
-states the sweep refused on (its CNode arm is unreachable once the lookup
-succeeds) and writes nothing (`cspaceLookupSlot_preserves_state`). -/
-def revokeCdtScaffold {ρ : Type}
-    (traverse : SystemState → SlotRef → List SlotRef →
-      Except KernelError (RevokeTraversalOutcome ρ))
-    (addr : CSpaceAddr) : Kernel ρ :=
-  fun st =>
-    match cspaceLookupSlot addr st with
-    | .error e => .error e
-    | .ok _ =>
-        match traverse st addr (st.linkDescendantsOf addr) with
-        | .error e => .error e
-        | .ok out => .ok (out.report, out.state)
-
-/-- **What a successful scaffold run is made of.**
-
-The source slot resolves, and then the traversal over its descendants succeeds;
-the prologue is a read (`v0.36.1`: it was the local same-target sweep, which
-destroyed capabilities that were not derivations).  A slot outside the tree has
-no descendants, so its traversal walks nothing.
-
-Every preservation argument over a revocation entry point is a case analysis of
-exactly this shape.  Until `v0.35.190` the capability bundle's was the only one
-and it was spelled inline; the IPC bundle needs the identical analysis, so it is
-stated once here, **predicate-free and beside the definition**, rather than
-re-derived once per predicate.  The report is deliberately not mentioned: no
-invariant reads it, and a decomposition that named it would have to be
-instantiated at the variant's report type to be used.
--/
-theorem revokeCdtScaffold_ok_decompose {ρ : Type}
-    (traverse : SystemState → SlotRef → List SlotRef →
-      Except KernelError (RevokeTraversalOutcome ρ))
-    (st st' : SystemState) (addr : CSpaceAddr) (r : ρ)
-    (hStep : revokeCdtScaffold traverse addr st = .ok (r, st')) :
-    (∃ cap, cspaceLookupSlot addr st = .ok (cap, st)) ∧
-      ∃ (out : RevokeTraversalOutcome ρ),
-        traverse st addr (st.linkDescendantsOf addr) = .ok out ∧ st' = out.state := by
-  unfold revokeCdtScaffold at hStep
-  split at hStep
-  · simp at hStep
-  · rename_i res hLookup
-    obtain ⟨cap, stL⟩ := res
-    have hStL : stL = st := cspaceLookupSlot_state_eq st stL addr cap hLookup
-    subst hStL
-    refine ⟨⟨cap, hLookup⟩, ?_⟩
-    split at hStep
-    · simp at hStep
-    · rename_i out hTrav
-      simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-      exact ⟨out, hTrav, hStep.2.symm⟩
-
 -- ============================================================================
 -- WS-BP BP7.1 (`v0.36.7`): frame capabilities own their mappings
 -- ============================================================================
@@ -2233,8 +2087,7 @@ theorem revokeCdtScaffold_ok_decompose {ρ : Type}
 seL4's `finaliseCap` → `unmapPage`.  The capability layer answers two questions
 and leaves the unmapping itself to the architecture layer
 (`Architecture/PageTeardown.lean`), which it does not import: *which page does a
-capability's record name* (here), and *which capabilities did a destruction
-destroy* (`cspaceRevokeCdt`'s report, below).
+capability's record name* (here), read off the slot a delete destroys.
 The composites that unmap are `cspaceDeleteSlotFinalising` and
 `cspaceRevokeCdtFinalising` (`Capability/FrameFinalise.lean`). -/
 
@@ -2252,152 +2105,6 @@ def capabilityMappedPage (st : SystemState) (cap : Capability) : Option MappedPa
 the deletion runs on. -/
 def slotMappedPages (st : SystemState) (addr : CSpaceAddr) : List MappedPage :=
   ((SystemState.lookupSlotCap st addr).bind (capabilityMappedPage st)).toList
-
-/-- Fold body for the materialized traversal: process one CDT descendant node,
-propagating a failure rather than swallowing it, and **report the page the
-destroyed capability records**.
-
-Before a descendant's slot is deleted, the page its capability records is
-appended to the report — read at the state the deletion runs on, from the very
-slot `processRevokeNode` deletes, so the report names exactly the destroyed
-capabilities' mappings and nothing a separate walk could get wrong
-(`revokeCdtFoldBody_records`).  The report is what `cspaceRevokeCdtFinalising`
-unmaps (WS-BP BP7.1, `v0.36.7`); it is the fold's only addition to the
-state-only fold it replaced, which it therefore is on the state component.
-
-Materializing the descendant list and folding this over it is what
-`revokeCdtMaterializedTraversal` below is.
-
-AJ-L10: the descendant read (`SystemState.linkDescendantsOf`, the tree's
-`descendantsOf` read along the slot links) materializes the full list before folding.
-For deep CDT trees this is a performance concern (O(n) allocation), not a
-correctness issue; `revokeCdtStreamingTraversal` is the O(branching-factor)
-alternative. -/
-def revokeCdtFoldBody
-    (acc : Except KernelError (List MappedPage × SystemState)) (node : SlotRef) :
-    Except KernelError (List MappedPage × SystemState) :=
-  match acc with
-  | .error e => .error e
-  | .ok (pages, stAcc) =>
-      let destroyed : List MappedPage := slotMappedPages stAcc node
-      match processRevokeNode stAcc node with
-      | .error e => .error e
-      | .ok stNext => .ok (destroyed ++ pages, stNext)
-
-/-- Error propagation: `revokeCdtFoldBody` propagates errors unchanged. -/
-theorem revokeCdtFoldBody_error (e : KernelError) (node : SlotRef) :
-    revokeCdtFoldBody (.error e) node = .error e := by
-  unfold revokeCdtFoldBody; rfl
-
-/-- Fold error propagation: folding `revokeCdtFoldBody` from an error stays that
-error — the traversal stops at its first failing descendant. -/
-theorem revokeCdtFoldBody_foldl_error
-    (nodes : List SlotRef) (e : KernelError) :
-    nodes.foldl revokeCdtFoldBody (.error e) = .error e := by
-  induction nodes with
-  | nil => rfl
-  | cons node rest ih => simp [List.foldl, revokeCdtFoldBody_error, ih]
-
-/-- **The fold's induction, once, over any state predicate.**
-
-Every preservation argument over a revocation traversal is this induction with a
-different `P`.  It was the capability bundle's alone until `v0.35.190`, spelled
-in that bundle's own preservation module; the IPC bundle needs the identical
-induction, so it is stated here — predicate-free and beside the fold — rather
-than run a second time.
-
-`hNode` is the *only* part that differs between predicates, which is the same
-division `revokeCdtScaffold_ok_decompose` makes one level up. -/
-theorem revokeCdtFold_induct {P : SystemState → Prop}
-    (hNode : ∀ (stA stB : SystemState) (node : SlotRef),
-      P stA → processRevokeNode stA node = .ok stB → P stB)
-    (nodes : List SlotRef) (psInit psFinal : List MappedPage)
-    (stInit stFinal : SystemState) (hP : P stInit)
-    (hFold : nodes.foldl revokeCdtFoldBody (.ok (psInit, stInit)) = .ok (psFinal, stFinal)) :
-    P stFinal := by
-  induction nodes generalizing psInit stInit with
-  | nil => simp only [List.foldl_nil, Except.ok.injEq, Prod.mk.injEq] at hFold
-           exact hFold.2 ▸ hP
-  | cons node rest ih =>
-    simp only [List.foldl_cons] at hFold
-    cases hProc : processRevokeNode stInit node with
-    | error e =>
-      rw [show revokeCdtFoldBody (.ok (psInit, stInit)) node = .error e by
-            unfold revokeCdtFoldBody; simp only [hProc]] at hFold
-      rw [revokeCdtFoldBody_foldl_error] at hFold
-      simp at hFold
-    | ok stMid =>
-      obtain ⟨ps1, h1⟩ : ∃ ps1, revokeCdtFoldBody (.ok (psInit, stInit)) node
-          = .ok (ps1, stMid) := by
-        unfold revokeCdtFoldBody; simp only [hProc]; exact ⟨_, rfl⟩
-      rw [h1] at hFold
-      exact ih ps1 stMid (hNode stInit stMid node hP hProc) hFold
-
-/-- The traversal is that fold, with the descendant list reported as revoked.
-
-`v0.35.190` gave the fold body a name here, beside the traversal, so the fold's
-own lemmas are about a function rather than about an inlined lambda a proof has
-to `change` its way into. -/
-def revokeCdtMaterializedTraversal (stLocal : SystemState) (_rootNode : SlotRef)
-    (descendants : List SlotRef)
-    : Except KernelError (RevokeTraversalOutcome (List MappedPage)) :=
-  match descendants.foldl revokeCdtFoldBody
-      (.ok ([], stLocal) : Except KernelError (List MappedPage × SystemState)) with
-  | .error e => .error e
-  | .ok (pages, stDone) =>
-      -- Reaching `.ok` means every descendant was processed, so the traversal
-      -- revoked the whole list it was handed, and `pages` is what the
-      -- capabilities it destroyed had mapped.
-      .ok { report := pages, state := stDone }
-
-/-- **The traversal's induction, over any state predicate.**
-
-`revokeCdtFold_induct` at the traversal's own interface, so a caller need not
-know the traversal is a fold. -/
-theorem revokeCdtMaterializedTraversal_ok_induct {P : SystemState → Prop}
-    (hNode : ∀ (stA stB : SystemState) (node : SlotRef),
-      P stA → processRevokeNode stA node = .ok stB → P stB)
-    (stLocal : SystemState) (rootNode : SlotRef) (descendants : List SlotRef)
-    (out : RevokeTraversalOutcome (List MappedPage)) (hP : P stLocal)
-    (hTrav : revokeCdtMaterializedTraversal stLocal rootNode descendants = .ok out) :
-    P out.state := by
-  unfold revokeCdtMaterializedTraversal at hTrav
-  split at hTrav
-  · simp at hTrav
-  · rename_i pages stDone hFold
-    simp only [Except.ok.injEq] at hTrav
-    subst hTrav
-    exact revokeCdtFold_induct hNode descendants [] pages stLocal stDone hP hFold
-
-/-- WS-E4/C-04: Revoke all capabilities derived from the source capability
-via CDT traversal, across all CNodes in the system.
-
-Destroys exactly the source slot's CDT descendants, in every CNode (the
-source's own included), and nothing else — seL4's `cteRevoke`:
-1. Validate the source slot (a read; since `v0.36.1` this step is no longer the
-   local same-target sweep, see `revokeCdtScaffold`)
-2. Walk the CDT to find all descendants of the source slot
-3. Delete each descendant's capability from its CNode
-4. Clean up CDT edges for deleted slots
-5. Consume the derivations that have not landed yet
-
-Steps 1, 2 and 5 are `revokeCdtScaffold`'s and are shared with every other
-revocation entry point; steps 3-4 are `revokeCdtMaterializedTraversal`.
-
-**Error handling** (WS-R2/M-06): Descendant deletion errors are now propagated
-to callers. If any descendant's `cspaceDeleteSlot` fails, the fold stops and
-returns the error. For callers requiring structured failure reports,
-use `cspaceRevokeCdtStrict`.
-
-**AN4-I (LOW)**: a prior version of this docstring referenced a
-`cspaceRevokeCdt_lenient` variant that swallowed descendant-deletion
-errors. That variant no longer exists — the lenient behaviour was removed
-as part of WS-R2 / M-06's error-propagation tightening. The reference is
-retained in this note purely so a future reader searching the codebase
-for the old symbol can find the explanation here rather than guess at a
-missing helper. -/
-def cspaceRevokeCdt (addr : CSpaceAddr) : Kernel (List MappedPage) :=
-  revokeCdtScaffold revokeCdtMaterializedTraversal addr
 
 -- ============================================================================
 -- WS-BP BP7.1 (`v0.36.7`): the mapping record's writer
@@ -2460,300 +2167,6 @@ theorem cspaceRecordFrameMapping_ok_decompose (addr : CSpaceAddr) (m : FrameMapp
     | none => rw [hLk] at h; cases h
     | some cap => rw [hLk] at h; exact ⟨cn, cap, rfl, hLk, h⟩
 
-/-- **The fold's report records every page a destroyed capability
-named.**  The report only grows (`ps ⊆ ps'`), and a step that deletes a slot
-whose capability records a page adds that page. -/
-theorem revokeCdtFoldBody_records
-    (ps : List MappedPage) (st : SystemState) (node : SlotRef)
-    (ps' : List MappedPage) (st' : SystemState)
-    (h : revokeCdtFoldBody (.ok (ps, st)) node = .ok (ps', st')) :
-    (∀ p ∈ ps, p ∈ ps') ∧
-    (∀ p ∈ slotMappedPages st node, p ∈ ps') := by
-  unfold revokeCdtFoldBody at h
-  simp only at h
-  cases hP : processRevokeNode st node with
-  | error e => rw [hP] at h; cases h
-  | ok stNext =>
-    rw [hP] at h
-    simp only [Except.ok.injEq, Prod.mk.injEq] at h
-    obtain ⟨hPs, -⟩ := h
-    subst hPs
-    exact ⟨fun p hp => List.mem_append_right _ hp, fun p hp => List.mem_append_left _ hp⟩
-
-/-- One revoked node writes neither the scheduler nor the machine. -/
-theorem processRevokeNode_scheduler_machine (st st' : SystemState) (node : SlotRef)
-    (h : processRevokeNode st node = .ok st') :
-    st'.scheduler = st.scheduler ∧ st'.machine = st.machine := by
-  unfold processRevokeNode at h
-  cases hDel : cspaceDeleteSlotCore node st with
-  | error e => rw [hDel] at h; cases h
-  | ok pr =>
-    obtain ⟨u, stDel⟩ := pr; cases u
-    rw [hDel] at h
-    simp only [Except.ok.injEq] at h
-    subst h
-    simpa using cspaceDeleteSlotCore_scheduler_machine node st stDel hDel
-
-/-- **WS-BP BP7.1 (`v0.36.7`)**: the CDT revocation writes neither the scheduler
-nor the machine — the shared scaffold's decomposition and the traversal's
-induction at that pair. -/
-theorem cspaceRevokeCdt_scheduler_machine (addr : CSpaceAddr) (st st' : SystemState)
-    (pages : List MappedPage) (h : cspaceRevokeCdt addr st = .ok (pages, st')) :
-    st'.scheduler = st.scheduler ∧ st'.machine = st.machine := by
-  obtain ⟨_, out, hTrav, rfl⟩ := revokeCdtScaffold_ok_decompose revokeCdtMaterializedTraversal
-    st st' addr pages h
-  exact revokeCdtMaterializedTraversal_ok_induct
-    (P := fun s => s.scheduler = st.scheduler ∧ s.machine = st.machine)
-    (fun stA stB nd hP hSt => by
-      obtain ⟨h1, h2⟩ := processRevokeNode_scheduler_machine stA stB nd hSt
-      exact ⟨h1.trans hP.1, h2.trans hP.2⟩)
-    st addr _ out ⟨rfl, rfl⟩ hTrav
-
--- ============================================================================
--- M-P04: Streaming CDT revocation (WS-M5)
--- ============================================================================
-
-/-- M-P04: Streaming BFS loop — processes one node per step, discovering
-children before removing the node from the CDT.
-
-Each iteration:
-1. Dequeues the head node from the BFS queue.
-2. Reads the node's children off its links (`SystemState.linkChildrenOf`, before removal).
-3. Delegates to `processRevokeNode` for the actual delete/detach/removeNode.
-4. Appends newly-discovered children to the queue tail.
-
-Fuel = initial edge count, guaranteeing termination since each step
-removes at least one CDT node (shrinking the edge set).
-
-Changed in WS-R2/M-05: fuel exhaustion now returns `.error .resourceExhausted`
-instead of `.ok`, making incomplete revocation visible to callers. -/
-def streamingRevokeBFS
-    (fuel : Nat) (queue : List SlotRef)
-    (st : SystemState) : Except KernelError (Unit × SystemState) :=
-  match fuel, queue with
-  | _, [] => .ok ((), st)
-  | 0, _ :: _ => .error .resourceExhausted  -- WS-R2/M-05: fuel exhausted
-  | fuel + 1, node :: rest =>
-      match processRevokeNode st node with
-      | .error e => .error e
-      | .ok stNext =>
-          let children := st.linkChildrenOf node
-          streamingRevokeBFS fuel (rest ++ children) stNext
-
-/-- M-P04: Interleave BFS discovery with deletion instead of materializing the
-descendant list. Peak memory: O(max branching factor) instead of O(N).
-
-Fuel = the CDT's edge count, which bounds the number of nodes reachable from the
-root; running out is `.error .resourceExhausted` rather than a silent partial
-revocation, so the scaffold discards the state. -/
-def revokeCdtStreamingTraversal (stLocal : SystemState) (rootNode : SlotRef)
-    (_descendants : List SlotRef)
-    : Except KernelError (RevokeTraversalOutcome Unit) :=
-  match streamingRevokeBFS stLocal.cdt.edgeBound
-      (stLocal.linkChildrenOf rootNode) stLocal with
-  | .error e => .error e
-  | .ok ((), stDone) =>
-      -- An empty BFS queue is the only `.ok`, so every node reachable from the
-      -- root was processed: the same set the materialized fold walks.
-      .ok { report := (), state := stDone }
-
-/-- M-P04: Streaming CDT revocation — interleaves BFS discovery with deletion.
-
-Equivalent to `cspaceRevokeCdt` but processes descendants on-the-fly instead
-of materializing the full descendant list upfront. Peak memory: O(max branching
-factor) instead of O(N).
-
-1. Perform local revocation (same CNode siblings) via `cspaceRevoke`.
-2. Look up the source slot's CDT node.
-3. Initialize the BFS queue with the root node's direct children.
-4. Run `streamingRevokeBFS` with fuel = `cdt.edges.length`.
-
-Error handling (WS-R2/M-05, M-06): descendant deletion errors are propagated.
-Fuel exhaustion returns `.error .resourceExhausted`. -/
-def cspaceRevokeCdtStreaming (addr : CSpaceAddr) : Kernel Unit :=
-  revokeCdtScaffold revokeCdtStreamingTraversal addr
-
-/-- **One reporting step, shared by the two reporting variants.**
-
-`cspaceRevokeCdtStrict` and `cspaceRevokeCdtTransactional` carried this fold
-body twice, byte-identical apart from a comment, and the preservation proof
-carried a third copy inline in a `suffices`. Named once, the two variants differ
-only in the validation prologue — which is the whole of what "transactional"
-means.
-
-On a deletion failure the CDT node is deliberately **preserved** (AH3-A/L-04):
-the capability slot still exists, and removing its CDT node would make it
-unreachable by future revocation, creating an orphan. -/
-def revokeCdtReportingStep (acc : RevokeCdtStrictReport × SystemState)
-    (node : SlotRef) : RevokeCdtStrictReport × SystemState :=
-  let (report, stAcc) := acc
-  match report.firstFailure with
-  | some _ => (report, stAcc)
-  | none =>
-      match cspaceDeleteSlotCore node stAcc with
-      | .error err =>
-          ({ report with firstFailure := some { offendingSlot := node, error := err } }, stAcc)
-      | .ok ((), stDel) =>
-          ({ report with deletedSlots := node :: report.deletedSlots },
-           stDel.cdtRemove node)
-
-/-- **The reporting traversal's outcome**, shared by both reporting variants. -/
-def revokeCdtReportingOutcome (stLocal : SystemState) (descendants : List SlotRef)
-    : RevokeTraversalOutcome RevokeCdtStrictReport :=
-  match descendants.foldl revokeCdtReportingStep
-      ({ deletedSlots := [], firstFailure := none }, stLocal) with
-  | (report, stFinal) =>
-      { report := { report with deletedSlots := report.deletedSlots.reverse }
-        state := stFinal }
-
-/-- Best-effort reporting traversal: fold, recording the first failure. -/
-def revokeCdtStrictTraversal (stLocal : SystemState) (_rootNode : SlotRef)
-    (descendants : List SlotRef)
-    : Except KernelError (RevokeTraversalOutcome RevokeCdtStrictReport) :=
-  .ok (revokeCdtReportingOutcome stLocal descendants)
-
-/-- Strict WS-E4/C-04 revocation variant.
-
-Compared to `cspaceRevokeCdt`, this variant is strict over descendant deletion:
-it surfaces the first `cspaceDeleteSlot` failure and records the offending CDT
-node + slot context in the returned report. Traversal halts at the first
-failure; successfully deleted descendants before that point remain recorded in
-`deletedSlots`.
-
-Local (`same-CNode`) revoke failures are still reported via `.error`, matching
-the base operation contract. -/
-def cspaceRevokeCdtStrict (addr : CSpaceAddr) : Kernel RevokeCdtStrictReport :=
-  revokeCdtScaffold revokeCdtStrictTraversal addr
-
-/-- AK8-B (WS-AK / C-M02): Precondition check for transactional CDT revocation.
-
-Verifies that every descendant slot names a CNode present in the object store. This mirrors
-the only runtime-reachable failure path of `cspaceDeleteSlotCore` (which can
-only emit `.objectNotFound` when `addr.cnode` is missing), so a `.ok ()`
-result witnesses that every subsequent deletion in the transactional apply
-phase will succeed. -/
-def validateRevokeCdtDescendants (st : SystemState) (descendants : List SlotRef)
-    : Except KernelError Unit :=
-  descendants.foldlM (init := ()) (fun _ node =>
-    match st.getCNode? node.cnode with
-    | some _ => .ok ()
-    | none => .error .objectNotFound)
-
-/-- AK8-B (WS-AK / C-M02): validate-then-apply reporting traversal.
-
-Identical to `revokeCdtStrictTraversal` behind a precondition check — which is
-the whole of what "transactional" adds. Because validation proved every
-descendant's CNode present, the shared step's failure branch is dead here, so
-`revokeCdtReportingOutcome`'s completion test always reports the full descendant
-list.
-
-The formal "the fold never sets `firstFailure` to `some`" witness is tracked as
-an AN12-B monotonicity lemma (a post-1.0 hardening candidate, registered in the *Registered debt index* (table C.1) in `docs/REGISTERED_DEBT.md`,
-row 31). Until it exists the completion test is what keeps the
-defensive branch honest: were validation ever weakened, a halted fold would
-report `[]` rather than claim a revocation it did not perform. -/
-def revokeCdtTransactionalTraversal (stLocal : SystemState) (_rootNode : SlotRef)
-    (descendants : List SlotRef)
-    : Except KernelError (RevokeTraversalOutcome RevokeCdtStrictReport) :=
-  match validateRevokeCdtDescendants stLocal descendants with
-  | .error err => .error err
-  | .ok _ => .ok (revokeCdtReportingOutcome stLocal descendants)
-
-/-- AK8-B (WS-AK / C-M02): **Transactional** CDT revocation variant.
-
-Unlike `cspaceRevokeCdtStrict` (which uses best-effort partial-progress
-semantics and surfaces failures via `firstFailure` in the return report),
-this variant follows a strict **validate-then-apply** discipline:
-
-1. **Local revoke phase.** Invoke `cspaceRevoke` on `addr`. If this fails,
-   the transaction aborts and the pre-transaction state is preserved
-   (the `Kernel` monad returns `.error` without committing a state update).
-2. **Validation phase.** Walk the descendant list of the source CDT node.
-   For each descendant slot, verify that its CNode is
-   present in `stLocal.objects`. If *any* descendant fails validation,
-   the entire transaction aborts with `.error` — no descendant is
-   deleted, and the caller's `SystemState` is rolled back to the
-   pre-transaction snapshot (since the `Kernel` monad discards the
-   intermediate `stLocal` on `.error`).
-3. **Apply phase.** If all descendants validate, each deletion in
-   `revokeCdtReportingOutcome`'s fold is guaranteed to succeed —
-   `cspaceDeleteSlotCore`'s sole failure path is `.objectNotFound` on the
-   descendant's CNode, which we verified is present. The `firstFailure`
-   field of the returned report is therefore always `none`.
-4. **Consumption phase.** `revokeCdtScaffold` drops the derivations that
-   have not landed yet, the same as every other revocation entry point.
-
-This provides true all-or-nothing semantics for CDT revocation, at the
-cost of a double walk (validation + apply). Callers who can tolerate
-partial progress should continue to use `cspaceRevokeCdtStrict`. -/
-def cspaceRevokeCdtTransactional (addr : CSpaceAddr) : Kernel RevokeCdtStrictReport :=
-  revokeCdtScaffold revokeCdtTransactionalTraversal addr
-
-/-- AK8-B: `validateRevokeCdtDescendants` on an empty descendant list succeeds. -/
-theorem validateRevokeCdtDescendants_empty (st : SystemState) :
-    validateRevokeCdtDescendants st [] = .ok () := rfl
-
-/-- AN4-F.2 (CAP-M02): happy-path characterisation for the transactional
-revoke when the source slot has no descendants. Under that pre-condition the
-Phase-3 fold walks nothing and the function returns an empty report, witnessing
-"no dead-branch fire" at the one case we can discharge substantively without the
-full monotonicity lemma tracked for AN12-B. -/
-theorem cspaceRevokeCdtTransactional_no_failure_no_descendants
-    (addr : CSpaceAddr) (st : SystemState) (cap : Capability)
-    (hLookup : cspaceLookupSlot addr st = .ok (cap, st))
-    (hLinks : LinksAgree st.slotLinkAt st.cdt)
-    (hNoDesc : st.cdt.descendantsOf addr = []) :
-    cspaceRevokeCdtTransactional addr st
-      = .ok ({ deletedSlots := [], firstFailure := none }, st) := by
-  simp [cspaceRevokeCdtTransactional, revokeCdtScaffold, hLookup,
-    SystemState.linkDescendantsOf_eq hLinks, hNoDesc,
-    revokeCdtTransactionalTraversal, validateRevokeCdtDescendants_empty,
-    revokeCdtReportingOutcome]
-
-/-- AK8-B: the transactional variant runs only on a source slot that resolves —
-the scaffold's prologue, shared with every other variant, so the four agree on
-their refusal set and diverge only in how they treat descendant failures.
-
-**Renamed at `v0.36.1`** from `cspaceRevokeCdtTransactional_requires_local_revoke_ok`:
-the prologue it named was the local same-target sweep, which the scaffold no
-longer runs (see `revokeCdtScaffold`, *what the prologue must not do*). -/
-theorem cspaceRevokeCdtTransactional_requires_source_slot
-    (addr : CSpaceAddr) (st : SystemState) (r : RevokeCdtStrictReport) (st' : SystemState)
-    (hOk : cspaceRevokeCdtTransactional addr st = .ok (r, st')) :
-    (cspaceLookupSlot addr st).isOk := by
-  unfold cspaceRevokeCdtTransactional revokeCdtScaffold at hOk
-  cases hLk : cspaceLookupSlot addr st with
-  | error e => simp [hLk] at hOk
-  | ok _ => simp [Except.isOk, Except.toBool]
-
-/-- **Every revocation entry point is the scaffold at a traversal.**
-
-Four `rfl`s, and they are the reason the prologue cannot be forgotten by a
-fifth variant: there is nothing for it to forget, because it is not written at
-the entry point.  A variant that
-did not appear here would be a variant that reimplemented the walk — which is
-what happened, and what these pin against.
-
-Stated as definitional equations rather than as a table of claims: a table
-records what someone remembered, `rfl` records what the definition is. -/
-theorem cspaceRevokeCdt_routes_through_scaffold :
-    cspaceRevokeCdt = revokeCdtScaffold revokeCdtMaterializedTraversal := rfl
-
-/-- Streaming revocation is the scaffold at the BFS traversal. -/
-theorem cspaceRevokeCdtStreaming_routes_through_scaffold :
-    cspaceRevokeCdtStreaming = revokeCdtScaffold revokeCdtStreamingTraversal := rfl
-
-/-- Strict revocation is the scaffold at the reporting traversal. -/
-theorem cspaceRevokeCdtStrict_routes_through_scaffold :
-    cspaceRevokeCdtStrict
-      = revokeCdtScaffold revokeCdtStrictTraversal := rfl
-
-/-- Transactional revocation is the scaffold at the validated reporting
-traversal. -/
-theorem cspaceRevokeCdtTransactional_routes_through_scaffold :
-    cspaceRevokeCdtTransactional
-      = revokeCdtScaffold revokeCdtTransactionalTraversal := rfl
-
 -- ============================================================================
 -- M-D01: IPC capability transfer operations
 -- ============================================================================
@@ -2761,18 +2174,17 @@ theorem cspaceRevokeCdtTransactional_routes_through_scaffold :
 /-- **Can a revocation still reach this slot?** (PR #873 round 18)
 
 The condition `ipcTransferSingleCap` must decline on, defined by what revocation
-*requires* rather than by what the install remembers about it.  Every CDT
-revocation entry point is `revokeCdtScaffold`, which begins with
-`cspaceLookupSlot` — and an empty slot is `.error` there.  So an emptied slot is
-a node no revocation path can enter, and a capability installed beneath it is
-authority nothing can destroy.
+*requires* rather than by what the install remembers about it.  The revocation
+(`cspaceRevokeCdtFinalising`) is admitted only on a source slot that holds a
+capability, so an emptied slot is a node no revocation can enter, and a
+capability installed beneath it is authority nothing can destroy.
 
 Since WS-ZA ZA5.3 part 2 the slot is the tree's node, so the question is the
 store's alone: is the source slot occupied.
 
-`revokeCdtScaffold_ok_implies_slot_occupied` is the tie that keeps this derived: a
-change to what revocation requires breaks that theorem rather than silently
-widening this check. -/
+`cspaceRevokeCdtFinalising_ok_implies_slot_occupied` is the tie that keeps this
+derived: a change to what revocation requires breaks that theorem rather than
+silently widening this check. -/
 def cdtNodeIsRevocable (st : SystemState) (node : SlotRef) : Bool :=
   (SystemState.lookupSlotCap st node).isSome
 
@@ -2794,48 +2206,6 @@ theorem cspaceRevoke_ok_implies_slot_occupied
     | none => simp [hLk, hCn] at h
     | some _ => simp [hLk, hCn] at h
   | some _ => simp
-
-/-- **A successful revocation witnesses an occupied slot — at every entry point.**
-
-`revokeCdtScaffold` opens with `cspaceLookupSlot`, whose `.ok` is exactly
-`lookupSlotCap = some`.  Stated over an arbitrary traversal, so it covers the four
-variants that exist and any that does not yet; it is what makes
-`cdtNodeIsRevocable` revocation's own precondition rather than a second opinion
-about it.  (`cspaceRevoke_ok_implies_slot_occupied` above carried that role while
-the scaffold opened with the local sweep, until `v0.36.1`.) -/
-theorem revokeCdtScaffold_ok_implies_slot_occupied {ρ : Type}
-    (traverse : SystemState → SlotRef → List SlotRef →
-      Except KernelError (RevokeTraversalOutcome ρ))
-    (addr : CSpaceAddr) (st st' : SystemState) (r : ρ)
-    (h : revokeCdtScaffold traverse addr st = .ok (r, st')) :
-    (SystemState.lookupSlotCap st addr).isSome := by
-  obtain ⟨⟨cap, hLk⟩, _⟩ :=
-    revokeCdtScaffold_ok_decompose traverse st st' addr r h
-  rw [(cspaceLookupSlot_ok_iff_lookupSlotCap st addr cap).mp hLk]
-  rfl
-
-/-- **A node this check refuses is a node no revocation can enter.**
-
-The consequence that makes declining the right answer: were the transfer to
-install anyway, the resulting `.ipcTransfer` edge would hang beneath a node whose
-slot cannot be revoked, so nothing could ever destroy the installed capability.
-
-Quantified over **every** revocation entry point — the scaffold at any traversal —
-since `v0.36.1`; it was stated of the local `cspaceRevoke`, which is no longer
-what any of them runs. -/
-theorem cdtNodeIsRevocable_false_revoke_refuses
-    (st : SystemState) (node : SlotRef)
-    (hNot : cdtNodeIsRevocable st node = false) :
-    ∀ {ρ : Type}
-      (traverse : SystemState → SlotRef → List SlotRef →
-        Except KernelError (RevokeTraversalOutcome ρ)) (r : ρ) (st' : SystemState),
-      revokeCdtScaffold traverse node st ≠ .ok (r, st') := by
-  intro ρ traverse r st' hOk
-  have hOcc := revokeCdtScaffold_ok_implies_slot_occupied traverse node st st' r hOk
-  have hTrue : cdtNodeIsRevocable st node = true := by
-    simp [cdtNodeIsRevocable, hOcc]
-  rw [hTrue] at hNot
-  exact Bool.noConfusion hNot
 
 /-- M-D01: Transfer a single capability from the sender's IPC message into
 the receiver's CSpace.

@@ -204,7 +204,10 @@ conjunct, a theorem since the slot array.  At `v0.36.109` each slot owns its
 capability record for the CNode's life, kept when the slot is emptied and
 overwritten by the next capability written there, and a capability's badge is a
 word and a flag, so every capability operation (copy, move, delete, mint,
-revoke, reply-cap delete and mint) allocates nothing.  The
+revoke, reply-cap delete and mint) allocates nothing.  At `v0.36.110` a
+finalising delete runs through `ofChecked`, its teardown's results theorems on
+a well-formed state, and at `v0.36.111` every revoke is the `cteRevoke` loop of
+finalising deletes.  The
 suspend of a thread blocked in IPC or holding a donated context is the one
 syscall arm left on the general path (ZA6.1).  ZA6 covers the other
 entries and makes the rule standing.  Plan:
@@ -1437,15 +1440,16 @@ afterwards: on a well-formed state (`teardownWellFormed`) no recorded page
 survives and no orphaned table stays in its root, as theorems, and a delete
 whose CNode exists runs through `ofChecked`.  New code that consumes a payoff
 carries `teardownWellFormed`; carrying it across every transition is a
-registered debt row.  The revocation reports exactly the pages its
-traversal destroyed — `cspaceRevokeCdt` returns them, its fold reading each page
-from the slot it deletes (`revokeCdtFoldBody_records`) — and the payoffs are
+registered debt row.  Since `v0.36.111` the revocation is seL4's `cteRevoke`
+loop of those finalising deletes (`revokeFirstChildLoop`), so each destroyed
+capability's page goes with its own delete and there is no batch teardown; the
+general revocation (`cspaceRevokeCdt` and its variants) is deleted.  A new
+property of the revoke is proven for one finalising delete and lifted through
+`cspaceRevokeCdtFinalising_closed`; it keeps the capability bundle and, on a
+state the bundle holds in, leaves its source childless
+(`cspaceRevokeCdtFinalising_ok_childless`).  The payoffs are
 `cspaceDeleteSlotFinalising_ok_unmapped` and
-`cspaceRevokeCdtFinalising_ok_unmapped`, both on a well-formed state.  There is **one** revocation traversal:
-a first draft added a reporting one beside the state-only one, the reachability
-census reported the state-only one as executed by nothing, and it was deleted
-rather than pinned.  The bare `cspaceDeleteSlot` / `cspaceRevokeCdt` stay as
-the steps the finalising arms compose.  (4) **A stale record removes nothing**: `.vspaceUnmap`
+`cspaceRevokeCdtFinalising_ok_unmapped`, both on a well-formed state.  (4) **A stale record removes nothing**: `.vspaceUnmap`
 works through a VSpace capability, so a record can outlive its mapping, and each
 teardown step re-checks that the recorded address still maps the frame's own
 page (`mappedPageLive` — seL4's `unmapPage` paddr comparison), so a different
@@ -3092,67 +3096,46 @@ code may assume:
   one.  `SyscallId.cspaceRevoke` (discriminant 35) is the arm.  Seven things new
   code must respect.
 
-  (1) **It dispatches `cspaceRevokeCdt`, and that is its whole security
-  content.**  The local `cspaceRevoke` reaches only the *containing* CNode, so a
-  derived capability copied into any other CSpace survives it; the CDT walk
-  follows the derivation tree across arbitrary CNodes.
-  `tests/SyscallDispatchSuite.lean` SD-059 computes the local-only reading beside
-  the live arm on a state whose derivation lives in a **second** CNode — spelled
-  in the suite and nowhere else — so its assertions are known to discriminate,
-  and a mutation of the arm to the local variant fails exactly the one that names
-  the claim.  **And since `v0.36.1` no entry point opens with that local sweep**
-  (PR #900 review).  It matches on the **target**, so as `revokeCdtScaffold`'s
-  prologue it destroyed an independently rooted capability to the same object
-  and the source's own parent in the same CNode, and left their CDT nodes mapped
-  to emptied slots — which made *their* derivations unrevocable by anyone, since
-  every revocation begins with a lookup of its slot.  The prologue is a read of
-  the source slot now (`cspaceLookupSlot`: the same refusal set, no writes), so
-  every entry point destroys exactly the source's CDT descendants, in every
-  CNode, which is seL4's `cteRevoke` (read at `13.0.0`).  Every live install path
-  records its edge, which is what makes dropping the sweep safe in the direction
-  that matters: SD-059 asserts a same-CNode derivation is still destroyed and an
-  independent sibling is not, and `tests/OperationChainSuite.lean`'s
-  `revokeLeavesIndependentSibling` is PR #873 round 18's scenario inverted, at
-  all four entry points, with the retired sweep computed beside it.  The local
-  `cspaceRevoke` stays an operation — `lifecycleRevokeDeleteRetype` runs it and
-  the non-interference catalogue carries it — and is recorded in the
-  reachability census as reaching no syscall.
+  (1) **It dispatches seL4's `cteRevoke`, and that is its whole security
+  content.**  Since `v0.36.111` (WS-ZA ZA5.3 part 8) the arm runs
+  `cspaceRevokeCdtFinalising`: the source's first derivation child is deleted
+  and finalised until it has none (`revokeFirstChildLoop`), across every CNode
+  the tree reaches, so a derived capability copied into another CSpace does not
+  survive it, and on a state the capability bundle holds in the source ends
+  childless (`cspaceRevokeCdtFinalising_ok_childless`).  The local
+  `cspaceRevoke` reaches only the containing CNode;
+  `tests/SyscallDispatchSuite.lean` SD-059 computes that local-only reading
+  beside the live arm on a state whose derivation lives in a **second** CNode, so
+  its assertions are known to discriminate.  The revoke matches on the source's
+  derivations, never on its target, so an independently rooted capability to the
+  same object survives (`tests/OperationChainSuite.lean`
+  `revokeLeavesIndependentSibling`).  The local `cspaceRevoke` stays an
+  operation (`lifecycleRevokeDeleteRetype` runs it and the non-interference
+  catalogue carries it) and is recorded in the reachability census as reaching
+  no syscall.
 
-  (2) **The source slot survives, and that is what makes the delete's refusal
-  dischargeable.**  Revocation destroys a capability's derivations, not the
-  capability, so `cspaceDeleteSlot`'s `.revocationRequired` is answered by
-  *revoke, then delete* — both halves run in the witness.  The arm takes the
-  delete's one-register ABI (`decodeCSpaceDeleteArgs`), since both name one slot
-  of the invoked CNode, and requires `.write`: `.grant` authorises **creating** a
-  derivation (mint/copy/move), and destroying one is not that authority.
+  (2) **The source slot survives.**  Revocation destroys a capability's
+  derivations, not the capability; a delete never refuses for children (it
+  splices them under its own parent, seL4's `cteDelete`), so *revoke, then
+  delete* is how a holder destroys a capability with everything derived from it.
+  The arm takes the delete's one-register ABI (`decodeCSpaceDeleteArgs`), since
+  both name one slot of the invoked CNode, and requires `.write`: `.grant`
+  authorises **creating** a derivation (mint/copy/move), and destroying one is
+  not that authority.
 
-  (3) **A `donationReadAgreement` no longer demands `pendingMessage`
-  EQUALITY.**  `revokePendingTransfersFrom` — the in-flight sweep the scaffold
-  ends with — is the one transition in the tree that rewrites a
-  `TCB.pendingMessage` to a *different* value while the thread stays blocked, and
-  every bundle transport demanded the field be unchanged.  Equality was strictly
-  more than the bundle reads: only `allPendingMessagesBounded` and
-  `blockedThreadsPendingMessageConsistent` read it, the first needs the payload
-  still bounded and the second needs a blocked sender still to *have* one.  So
-  the relation is `pendingMessageReadAgrees` (presence agrees; boundedness
-  transfers), the sweep's write is a **drop** (`TCB.pendingCapsDropped`: every
-  other field equal, registers kept, capability array shorter), and a drop
-  satisfies both.  A new transition that shortens a parked message reaches for
-  those two; one that rewrites the field arbitrarily still has no transport, and
-  that is correct.
+  (3) **A `donationReadAgreement` does not demand `pendingMessage` EQUALITY.**
+  The relation is `pendingMessageReadAgrees` (presence agrees; boundedness
+  transfers): only `allPendingMessagesBounded` and
+  `blockedThreadsPendingMessageConsistent` read the field.  A new transition
+  that shortens a parked message reaches for those two; one that rewrites the
+  field arbitrarily has no transport, and that is correct.
 
-  (4) **The scaffold's case analysis and the traversal's induction are
-  predicate-free and live beside their definitions.**
-  `revokeCdtScaffold_ok_decompose` says what a successful revocation *consists
-  of* (the source slot resolves, then the traversal and the sweep, or the state
-  unchanged), and `revokeCdtFold_induct` / `revokeCdtMaterializedTraversal_ok_induct`
-  carry any `P` through the fold — so the capability bundle's argument and the
-  IPC bundle's are **one** answer.  Each was the capability bundle's alone,
-  spelled inside its preservation module; a second copy per predicate is the
-  duplication this file spends its length retiring.  `revokeCdtFoldBody` moved to
-  `Capability/Operations.lean` with them and `revokeCdtMaterializedTraversal` is
-  *defined* through it — keeping the fold body in an invariant module is what had
-  forced that traversal's proof to `change` its way into an inlined lambda.
+  (4) **The loop's induction is predicate-free and lives beside its
+  definition.**  A run of the loop is a chain of finalising deletes
+  (`revokeFirstChildLoop_chain`, `FinalisingDeleteChain`), so the capability
+  bundle's argument, the IPC bundle's and the teardown's are one answer: a new
+  property of the revoke is proven for one finalising delete and lifted through
+  `cspaceRevokeCdtFinalising_closed`.
 
   (5) **`.cspaceRevoke` declares NO static lock footprint, and that is a
   decision.**  The CDT walk's CNode set is state-discovered and unbounded while a
@@ -3166,28 +3149,19 @@ code may assume:
   `SyscallId.count`, because demanding an entry for this arm would force a
   footprint to exist in order to satisfy a number.
 
-  (6) **`SyscallId.count` became 36, and the exhaustive tables moved with it**
-  (37 since WS-BP BP7.1 added `.untypedRetype` at `v0.36.5`): the
-  ABI mirrors in `sele4n-types` and the HAL, the return-shape table on both sides
-  of the ABI (`.unit`, with `tests/fixtures/syscall_return_shape.expected`
-  regenerated deliberately), `refusalSeamClass` (`.exempt`),
-  `capFaultReceivePhase?` (`some false` — a send-phase capability fault),
-  `frozenOpCoverage` (`false`: the per-node step ends in `cdt.removeNode`, a key
-  *removal*, and the frozen CDT is four `FrozenMap`s with no `erase` — the same
-  reason `lifecycleRetype` and the two service ops give), the enforcement
-  boundary (`capabilityOnly "cspaceRevokeCdt"` — the composite a capability
+  (6) **The exhaustive tables carry the arm**: the ABI mirrors in
+  `sele4n-types` and the HAL, the return-shape table on both sides of the ABI
+  (`.unit`), `refusalSeamClass` (`.exempt`), `capFaultReceivePhase?`
+  (`some false` — a send-phase capability fault), `frozenOpCoverage` (`false`:
+  the frozen phase has no form of the finalising loop), the enforcement boundary
+  (`capabilityOnly "cspaceRevokeCdtFinalising"` — the composite a capability
   reaches, never the inner local step), and a `sele4n-sys` wrapper
   (`cspace::cspace_revoke`) so the conformance sweep can drive it.
 
-  (7) **What the reachability census still lists is a narrower claim.**  The
-  three *reporting* variants (`cspaceRevokeCdtStrict`, `…Streaming`,
-  `…Transactional`) with their traversals, the streaming BFS and the reporting
-  fold step remain outside the live closure: each is the same scaffold at a
-  different traversal, offered to **in-kernel** callers that want a structured
-  failure report or an `O(branching-factor)` walk, and the syscall dispatches the
-  materialized one because a userspace invocation has no channel to receive a
-  report through.  A variant with no in-kernel caller either gains one or is
-  retired.
+  (7) **One revocation.**  The general revocation and its strict, streaming and
+  transactional variants were deleted at `v0.36.111`; a Tier 3 negative anchor
+  fails if any of their names returns.  An in-kernel caller that wants a
+  revocation runs the same loop.
 - **A capability is installed only at a slot the target CNode can address**
   (WS-RR RR8.16, `v0.35.201`).  `CNode.resolveSlot` extracts a slot by masking
   with `2 ^ radixWidth`, so an index at or above `slotCount` can be **stored**

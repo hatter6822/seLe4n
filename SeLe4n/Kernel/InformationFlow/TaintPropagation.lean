@@ -135,8 +135,8 @@ justified groups:
   (`capabilityBadgeChannel_out_of_scope`) rather than left to a justification
   that does not hold for this arm.
 
-  `cspaceRevoke` is inert on the same scope ground: `cspaceRevokeCdt` walks
-  the CDT across arbitrary CNodes, so the self-loop claim is false of it, but
+  `cspaceRevoke` is inert on the same scope ground: `cspaceRevokeCdtFinalising`
+  walks the CDT across arbitrary CNodes, so the self-loop claim is false of it, but
   it deletes capabilities and writes no content-tracked field (no capability is
   in flight in a parked message since WS-ZA ZA4.7, so revocation has no message
   to rewrite).
@@ -184,7 +184,7 @@ def contentFlowClass : SyscallId → ContentFlowClass
   | .cspaceMint => .inert
   | .cspaceDelete => .inert
   -- Inert on the *scope* ground `.cspaceMint` rests on, not the self-loop
-  -- ground its three siblings above do — `cspaceRevokeCdt` walks the CDT across
+  -- ground its three siblings above do — `cspaceRevokeCdtFinalising` walks the CDT across
   -- arbitrary CNodes.  It deletes capabilities and writes no content-tracked
   -- field.
   | .cspaceRevoke => .inert

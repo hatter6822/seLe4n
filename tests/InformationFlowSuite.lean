@@ -862,13 +862,11 @@ def runInformationFlowChecks : IO Unit := do
   -- path, capability-only) and mintReplyCapWithCdt (WS-SM SM6.D / PR #822
   -- Phase H, capability-only — derives a reply cap from an object cap to a
   -- retyped Reply).
-  -- ...and cspaceRevokeCdt (WS-RR RR8.16 — the CDT-traversing revocation the
-  -- live `.cspaceRevoke` arm calls, capability-only; the local `cspaceRevoke`
-  -- beside it is the single-CNode primitive that composite opens with, and
-  -- naming *that* one would be a boundary entry for an inner step while the
-  -- seam a capability actually reaches is the composite).
-  expect "enforcement boundary: total 53 classified operations"
-    (SeLe4n.Kernel.enforcementBoundary.length == 53)
+  -- WS-RR RR8.16's `cspaceRevokeCdt` entry left at WS-ZA ZA5.3 part 8 with the
+  -- general revocation it named; `.cspaceRevoke`'s transition is the
+  -- finalising loop `cspaceRevokeCdtFinalising`, already on the list.
+  expect "enforcement boundary: total 52 classified operations"
+    (SeLe4n.Kernel.enforcementBoundary.length == 52)
 
   -- Verify enforcement boundary: denied flows produce errors
   let deniedSendResult := SeLe4n.Kernel.endpointSendDualChecked secretSenderCtx ⟨10⟩ ⟨1⟩ (.frame testMsg.badge testMsg.capsGranted) default publicEndpointState
@@ -1451,12 +1449,14 @@ def runInformationFlowChecks : IO Unit := do
   -- right and no information-flow policy is consulted.
   -- WS-ZA ZA4.3: 35 → 36 with `yieldOnCore`, which invokes no capability and
   -- consults no flow policy.
-  expect "enforcement boundary has 36 capability-only"
-    (coCount = 36)
+  -- WS-ZA ZA5.3 part 8: 36 → 35, `cspaceRevokeCdt` removed with the general
+  -- revocation it named.
+  expect "enforcement boundary has 35 capability-only"
+    (coCount = 35)
   expect "enforcement boundary has 4 read-only"
     (roCount = 4)
-  expect "enforcement boundary total is 53"
-    (boundary.length = 53)
+  expect "enforcement boundary total is 52"
+    (boundary.length = 52)
 
   IO.println "enforcement boundary completeness verified"
 
@@ -1556,8 +1556,8 @@ def runInformationFlowChecks : IO Unit := do
   IO.println "default labeling context insecurity verified"
 
   -- V6-L: Extended boundary matches canonical
-  expect "enforcementBoundaryExtended has 53 entries"
-    (SeLe4n.Kernel.enforcementBoundaryExtended.length = 53)
+  expect "enforcementBoundaryExtended has 52 entries"
+    (SeLe4n.Kernel.enforcementBoundaryExtended.length = 52)
   expect "extended boundary matches canonical length"
     (SeLe4n.Kernel.enforcementBoundaryExtended.length = SeLe4n.Kernel.enforcementBoundary.length)
 

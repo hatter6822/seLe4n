@@ -1067,84 +1067,6 @@ theorem cspaceRevoke_preserves_ipcInvariantFull
     hCap hInv
 
 
-/-- **One revoked node preserves the bundle, and the store invariant with it.**
-
-The node's slot deletion is `cspaceDeleteSlotCore`'s; the `cdt` field update that
-follows it is invisible to every conjunct, since none of the twenty reads the derivation tree.
-
-The store invariant rides along because the fold needs it *between* iterations:
-`cspaceDeleteSlotCore` takes `st.objects.invExt` as a hypothesis, so a traversal
-has to carry the one the previous descendant's deletion left. -/
-theorem processRevokeNode_preserves_ipcInvariantFull
-    (st st' : SystemState) (node : SlotRef)
-    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
-    (hStep : processRevokeNode st node = .ok st') :
-    ipcInvariantFull st' ∧ st'.objects.invExt := by
-  unfold processRevokeNode at hStep
-  cases hDel : cspaceDeleteSlotCore node st with
-  | error _ => simp [hDel] at hStep
-  | ok pair =>
-    obtain ⟨⟨⟩, stDel⟩ := pair
-    simp [hDel] at hStep; cases hStep
-    obtain ⟨_, _, _, _, _, hExtDel⟩ := cspaceDeleteSlotCore_shape st stDel node hObjInv hDel
-    exact ⟨ipcInvariantFull_of_linkReach (SystemState.cdtRemove_reach stDel node) hExtDel
-      (ipcInvariantFull_of_objects_scheduler_eq (st := stDel) rfl rfl
-        (cspaceDeleteSlotCore_preserves_ipcInvariantFull st stDel node hObjInv hInv hDel)),
-      (SystemState.cdtRemove_reach stDel node).invExt hExtDel⟩
-
-/-- The materialized traversal preserves the bundle — the shared induction
-(`revokeCdtMaterializedTraversal_ok_induct`) at the pair this bundle carries. -/
-theorem revokeCdtMaterializedTraversal_preserves_ipcInvariantFull
-    (stLocal : SystemState) (rootNode : SlotRef) (descendants : List SlotRef)
-    (out : RevokeTraversalOutcome (List MappedPage))
-    (hObjInv : stLocal.objects.invExt) (hInv : ipcInvariantFull stLocal)
-    (hTrav : revokeCdtMaterializedTraversal stLocal rootNode descendants = .ok out) :
-    ipcInvariantFull out.state ∧ out.state.objects.invExt :=
-  revokeCdtMaterializedTraversal_ok_induct
-    (P := fun s => ipcInvariantFull s ∧ s.objects.invExt)
-    (fun stA stB nd hP hSt => processRevokeNode_preserves_ipcInvariantFull stA stB nd hP.2 hP.1 hSt)
-    stLocal rootNode descendants out ⟨hInv, hObjInv⟩ hTrav
-
-/-- **The scaffold preserves the bundle whenever its traversal does.**
-
-Stated over an arbitrary traversal for the reason the capability bundle's
-counterpart is: a revocation variant *is* its traversal, so this covers the four
-that exist and any that does not exist yet.  The case analysis is
-`revokeCdtScaffold_ok_decompose`'s, beside the definition, so the two bundles
-read one answer about what a successful revocation consists of. -/
-theorem revokeCdtScaffold_preserves_ipcInvariantFull {ρ : Type}
-    (traverse : SystemState → SlotRef → List SlotRef →
-      Except KernelError (RevokeTraversalOutcome ρ))
-    (hTraverse : ∀ (stLocal : SystemState) (rootNode : SlotRef)
-        (descendants : List SlotRef) (out : RevokeTraversalOutcome ρ),
-        ipcInvariantFull stLocal → stLocal.objects.invExt →
-        traverse stLocal rootNode descendants = .ok out →
-        ipcInvariantFull out.state ∧ out.state.objects.invExt)
-    (st st' : SystemState) (addr : CSpaceAddr) (r : ρ)
-    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
-    (hStep : revokeCdtScaffold traverse addr st = .ok (r, st')) :
-    ipcInvariantFull st' ∧ st'.objects.invExt := by
-  -- Since `v0.36.1` the scaffold's first step is a read of the source slot, so
-  -- the walk starts from `st` itself and there is no local-revoke leg to carry.
-  obtain ⟨_, out, hTrav, rfl⟩ :=
-    revokeCdtScaffold_ok_decompose traverse st st' addr r hStep
-  exact hTraverse st addr _ out hInv hObjInv hTrav
-
-/-- `.cspaceRevoke`: `seL4_CNode_Revoke` preserves the whole bundle.
-
-The arm the dispatcher routes — a read of the source slot and the materialized
-descendant walk — with every step's obligation
-discharged by the theorem that owns it. -/
-theorem cspaceRevokeCdt_preserves_ipcInvariantFull
-    (st st' : SystemState) (addr : CSpaceAddr) (pages : List MappedPage)
-    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
-    (hStep : cspaceRevokeCdt addr st = .ok (pages, st')) :
-    ipcInvariantFull st' :=
-  (revokeCdtScaffold_preserves_ipcInvariantFull revokeCdtMaterializedTraversal
-    (fun stL rn ds out h1 h2 h3 =>
-      revokeCdtMaterializedTraversal_preserves_ipcInvariantFull stL rn ds out h2 h1 h3)
-    st st' addr pages hObjInv hInv hStep).1
-
 /-- Inversion of a successful `toNonNull?`: the promoted value is the input. -/
 private theorem toNonNull?_val_eq {cap : Capability} {capNN : NonNullCap}
     (hNN : cap.toNonNull? = some capNN) : capNN.val = cap := by
@@ -1485,18 +1407,6 @@ theorem untypedResetWithShootdown_preserves_ipcInvariantFull
   exact ipcInvariantFull_of_objects_scheduler_eq hObj hSched
     (untypedReset_preserves_ipcInvariantFull ec untypedId st st1 hObjInv hInv hR)
 
-/-- `.cspaceRevoke`'s store invariant, read off the scaffold's own preservation
-theorem — what the finalising revocation's teardown needs. -/
-theorem cspaceRevokeCdt_preserves_objects_invExt
-    (st st' : SystemState) (addr : CSpaceAddr) (pages : List MappedPage)
-    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
-    (hStep : cspaceRevokeCdt addr st = .ok (pages, st')) :
-    st'.objects.invExt :=
-  (revokeCdtScaffold_preserves_ipcInvariantFull revokeCdtMaterializedTraversal
-    (fun stL rn ds out h1 h2 h3 =>
-      revokeCdtMaterializedTraversal_preserves_ipcInvariantFull stL rn ds out h2 h1 h3)
-    st st' addr pages hObjInv hInv hStep).2
-
 -- ============================================================================
 -- WS-BP BP7.1 (`v0.36.7`): frame finalisation preserves `ipcInvariantFull`
 -- ============================================================================
@@ -1577,9 +1487,6 @@ theorem cspaceRevokeCdtFinalising_preserves_ipcInvariantFull
   refine (cspaceRevokeCdtFinalising_closed (fun s => ipcInvariantFull s ∧ s.objects.invExt)
     (fun c s s' hQ hD => ⟨cspaceDeleteSlotFinalising_preserves_ipcInvariantFull ec c s s'
       hQ.2 hQ.1 hD, cspaceDeleteSlotFinalising_preserves_objects_invExt ec c s s' hQ.2 hD⟩)
-    (fun pages st1 hR hF => finaliseDestroyedCapabilities_preserves_ipcInvariantFull ec _ _ st1 st'
-      (cspaceRevokeCdt_preserves_objects_invExt st st1 addr pages hObjInv hInv hR)
-      (cspaceRevokeCdt_preserves_ipcInvariantFull st st1 addr pages hObjInv hInv hR) hF)
     ⟨hInv, hObjInv⟩ hStep).1
 
 /-- **PR #904 review (`v0.36.41`): the mapping-epoch tag preserves the bundle** —

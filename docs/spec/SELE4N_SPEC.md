@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.110` (`lakefile.toml`) |
+| **Package version** | `0.36.111` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 481,613 across 434 Lean files |
-| **Test LoC** | 87,057 across 70 Lean test suites |
-| **Proved declarations** | 17,190 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 480,715 across 434 Lean files |
+| **Test LoC** | 86,628 across 70 Lean test suites |
+| **Proved declarations** | 17,146 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits) |
 | **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2), and **BP4.1/BP4.2 (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type)** at v0.36.2 (§6.2.9), and **BP4.3/BP4.4 (the firmware's device tree reaching Lean, and the entry booting the deployment on the variant it describes)** at v0.36.2 (§6.2.10), and **BP4.5 (the image's loaded bytes cleaned to the Point of Unification before any thread can fetch)** at v0.36.2 (§6.2.11), and **BP4.6 (the verified board's RAM outside the kernel's extent mapped, and the boot map sealed before any secondary is released)** and **BP4.7 (that RAM handed to the root task as untypeds)** at v0.36.2 (§6.2.12), and **BP5.1 (the kernel image, a bare-metal binary entered at `_start` under `link.ld`)** and **BP5.2 (the Lean kernel linked into it, under `--gc-sections` from the archive lane's roots)** and **BP5.3 (the firmware's boot files, `kernel8.img` and `config.txt`, cut from that image and checked against it)** and **BP5.4 (its size and section map published with every CI run)** at v0.36.2 (§6.2.13), and **BP5.5 (the firmware's EL2 entry dropped to EL1, with the PSCI conduit following the entry level)** at v0.36.2 (§6.2.15), and **BP6 (every PE marks itself ready after its own per-PE runtime handshake and before it unmasks IRQs, and the boot halts unless every declared PE serves the kernel)** at v0.36.2 (§6.2.16), and **BP7.10 (the first gigabyte's RAM read off the firmware's account, and the constant boot map shrunk to the kernel's reserved extent)** at v0.36.3 (§6.2.17), and **BP7.1 slices 1–3 (frame capabilities, the untyped carve that mints them, and the untyped reset that returns their memory)** at v0.36.4, v0.36.5 and v0.36.6, slice 4a (child untypeds and subtree resets) at v0.36.8, the in-place VSpace-root refusal at v0.36.9, and slice 4b's VSpace-root carve at v0.36.10, `.tcbSetSpace` (a thread runs in a carved address space) at v0.36.11, intermediate page tables at v0.36.12, and every configured address space owning a table page at v0.36.13, which completes BP7.1 (§8.10.2a); BP7.2's user window and 16-bit hardware ASIDs at v0.36.14 and its physical-write ledger and translation install at v0.36.15; BP7.3–BP7.9 at v0.36.16–v0.36.22 (the whole trap frame saved, per-core restore staging, unblock-frame delivery, the live context restore, the delivered declassified badge, overflow message registers, lazily switched FP/SIMD state); and BP7.11 (the boot starts both initial threads, one per domain) at v0.36.23, which completes BP7; BP8.1's first slice (the image built for QEMU's `virt` — its device map from `src/board.rs`, its link script derived from `link.ld`, an arm64 Image header on `_start` — booted there at EL1 and at EL2 by `scripts/test_qemu.sh`) at v0.36.24, and its second (the Lean `virt` binding `SeLe4n/Platform/QemuVirt/` — its board check the RPi5 bridge's own coverage predicates, the RPi5 deployment's layout on it with every boot gate decided, and its own boot entry `lean_kernel_main_qemu_virt`, held by the boot-entry contract's table to its own approved call) at v0.36.25, and its third (the Lean-linked image booted by `scripts/test_qemu.sh --lean-kernel` on four PEs at EL1 and EL2 to every core's first idle dispatch, on every PR — §6.2.18) at v0.36.26, completing BP8.1, and BP8.2 (the four-PE bring-up gate, executed on every PR — §6.2.18) at v0.36.27. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -88,7 +88,7 @@ security model while introducing improvements that the Lean 4 proof framework en
 | **IPC queuing** | Intrusive linked list | Dual-queue model (`sendQ`/`receiveQ`) with O(1) arbitrary removal; `blockedOnCall` state for call/reply semantics; reply-target scoping for confused-deputy prevention; formal `dualQueueSystemInvariant` with doubly-linked integrity (WS-H5) and back-pointer agreement — `queuePPrev` against `queuePrev`, which is what makes the O(1) removal's own precondition discharged rather than assumed (`dualQueueRemovalGuardHolds`, WS-RR RR8.3).  That pairing is *pointwise*, so it cannot reach a queue's **head**, whose `queuePrev = none` is legitimate; the head's back-pointer is therefore a clause of the **queue's** own boundary (`intrusiveQueueWellFormed`'s P2, `v0.35.106`), preserved through a fifth bundle conjunct that a thread heads at most one endpoint queue (`endpointQueueHeadDisjoint`) — itself a consequence of `queueHeadBlockedConsistent` rather than a new assumption (`queueHeadExclusive`), so a removal's `queuePPrev` hypothesis is now discharged for **any** member of a well-formed queue, head included (`dualQueueRemovalGuardHolds_of_member`).  Both the pairing and the head-disjointness conjunct are **checked at runtime** as well as proved (`queuePPrevAgreesWithPrevChecks`, `endpointQueueHeadDisjointChecks`); the second arrived a cut later than its conjunct, and until `v0.35.108` no check in `stateInvariantChecksFor` was cross-endpoint at all, so a state the bundle refuses — two endpoints sharing one singleton head — passed the whole harness surface; all three removals write one definition of what unlinking does — `queueUnlinkPredecessor` / `queueUnlinkSuccessor` to the neighbours (WS-OD OD3.9) and `queueRemoveBoundary` to the queue's own head and tail (WS-RR RR8.4), the latter reading `q.tail = some tid` rather than inferring tail-ness from the removed thread's `queueNext`, with the two readings' agreement checked by the removal's guard.  The removal's whole store-free precondition is one **model**-level predicate over an `IntrusiveQueue` and a `TCB` (`dualQueueRemovalEnabled`, `Model/Object/Types.lean`), so the frozen execution mirror — which imports no kernel module — refuses exactly what the live removal refuses rather than a subset of it (`v0.35.59`); its *discharges* stay in the kernel layer, where the invariants that entail them are |
 | **Information flow** | Binary high/low partition | Parameterized N-domain labels with per-endpoint flow policies |
 | **Scheduling** | Priority-based round-robin | Priority + EDF scheduling with dequeue-on-dispatch semantics, per-TCB register context with inline context switch, and domain-aware partitioning; the per-core run queue links through TCB fields as seL4's does, with the abstract queue kept as an erased ghost and proven to agree with the links on every reachable state (`runQueueRefined`) |
-| **Revocation** | Silent error swallowing | Strict variant (`cspaceRevokeCdtStrict`) reporting first failure with context; CDT node preserved on slot deletion failure (AH3-A) |
+| **Revocation** | Silent error swallowing | seL4's `cteRevoke` loop (`cspaceRevokeCdtFinalising`, `v0.36.111`): the source's first CDT child is deleted and finalised until it has none, each delete admitted by a check read before its writes, so a revoke never refuses after it has written (§8.10) |
 | **Syscall boundary** *(WS-J1-A/B/C/D completed; WS-V V2 complete)* | C code extracts args from registers | Typed register wrappers (J1-A) + total decode layer with `RegisterDecode.lean`, complete round-trip proof surface for all 3 decode components (`decodeCapPtr_roundtrip`, `decodeSyscallId_roundtrip`, `decodeMsgInfo_roundtrip` with bitwise `Nat.testBit` extensionality, plus composite `decode_components_roundtrip`), determinism proof, and error exclusivity (J1-B) + `syscallEntry` register-sourced entry point with capability-gated dispatch to all 17 kernel operations of the V2 era (13 original + `notificationSignal`/`notificationWait`/`replyRecv` added in V2; the dispatch surface has since grown to all 34 `SyscallId` variants — see §8.10), soundness theorems (J1-C) + invariant preservation and NI coverage for decode/dispatch path with `registerDecodeConsistent` predicate and 2 new `NonInterferenceStep` constructors (J1-D); `MessageInfo` label field bounded to 20 bits (seL4 convention, V2-E/V2-H); cap transfer slot base configurable via `capRecvSlot` (V2-F/V2-G) |
 
 These are not abstract research extensions — they are design decisions that will be
@@ -2399,7 +2399,7 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    pinning `consistency category count` to the syscalls that declare a
    **static** footprint (`declaresStaticLockFootprint`, `v0.35.190`).
    Stated over that classification rather than against `SyscallId.count`
-   because `.cspaceRevoke` declares none: `cspaceRevokeCdt` walks the CDT
+   because `.cspaceRevoke` declares none: `cspaceRevokeCdtFinalising` walks the CDT
    across arbitrary CNodes, a set the state discovers and nothing bounds,
    while a `LockSet` is capped at `maxLockSetSize` — so a static footprint
    naming only the source CNode would be **false** of the transition, and
@@ -4817,8 +4817,7 @@ The phase-by-phase side-effect catalogue is:
    delete committed; target object retains its old variant.
 
 Callers needing strict transactional "all-or-nothing" semantics should
-invoke `cspaceRevokeCdtTransactional` (AK8-B) separately before the
-retype pipeline, or use `lifecycleRetypeWithCleanup`, which wraps the
+use `lifecycleRetypeWithCleanup`, which wraps the
 strict cleanup pipeline and propagates errors before any retype is
 attempted. `.error` from `lifecycleRevokeDeleteRetype` is a best-effort
 cleanup-partially-completed outcome, NOT a rollback.
@@ -5208,10 +5207,10 @@ seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
   with the object and ASID tables' invariants) no recorded page survives, a
   theorem rather than an `.illegalState` check afterwards, and a delete whose
   CNode exists is its writes (`cspaceDeleteFinalisingPerformAt`), run through
-  `RefusalCarrying.ofChecked`.  The revocation reports exactly the pages its traversal
-  destroyed: `cspaceRevokeCdt` returns them, its fold reading each page from
-  the slot it deletes (`revokeCdtFoldBody_records`), so there is one
-  revocation traversal, not a second one beside it.
+  `RefusalCarrying.ofChecked`.  Since `v0.36.111` the revocation is seL4's
+  `cteRevoke`: a loop of those finalising deletes over the source's first
+  child (`revokeFirstChildLoop`), so each destroyed capability's page is
+  removed by its own delete and there is no batch teardown after a traversal.
   Payoffs, on a well-formed state: `cspaceDeleteSlotFinalising_ok_unmapped`,
   `cspaceRevokeCdtFinalising_ok_unmapped`, `finaliseDestroyedCapabilities_ok_tables`.  A stale record — its address
   unmapped through a VSpace capability — removes nothing unless the address
@@ -5896,8 +5895,8 @@ present revoked anything — which the reachability census found and the
 implement-the-improvement rule says to close by wiring the syscall rather than
 documenting its absence.
 
-**What the arm dispatches, and why.**  `cspaceRevokeCdt`, the CDT-traversing
-variant, not the local `cspaceRevoke`.  The local primitive reaches only the
+**What the arm dispatches, and why.**  `cspaceRevokeCdtFinalising`, which
+walks the derivation tree, not the local `cspaceRevoke`.  The local primitive reaches only the
 *containing* CNode, so a derived capability copied into any other CSpace would
 survive a revocation that claimed to destroy it; the CDT walk follows the
 derivation tree across arbitrary CNodes.  No derivation is ever in flight
@@ -5911,18 +5910,28 @@ needs no sweep over parked messages.
 on the capability's **target**: it deleted an independently rooted capability to
 the same object and the source's own parent when they shared the CNode, and it
 left their CDT nodes mapped to the emptied slots, so their own derivations could
-no longer be revoked by anyone.  `revokeCdtScaffold` now opens with a read of the
-source slot (`cspaceLookupSlot`, with the same refusal set and no writes), so the
-revocation destroys exactly the source's CDT descendants, in every CNode
-including its own, which is seL4's `cteRevoke` (read at `13.0.0`).  Every live
+no longer be revoked by anyone.  The revocation now opens with a read of the
+source slot (with the same refusal set and no writes), so it destroys exactly
+the source's CDT descendants, in every CNode including its own, which is seL4's
+`cteRevoke` (read at `13.0.0`).  Every live
 capability-install path records its derivation edge, so nothing derived escapes
 the walk; `tests/SyscallDispatchSuite.lean` SD-059 and
 `tests/OperationChainSuite.lean`'s `revokeLeavesIndependentSibling` are the
-witnesses.  The
-three *reporting* variants (`cspaceRevokeCdtStrict`, `…Streaming`,
-`…Transactional`) are the same scaffold at a different traversal and are
-offered to **in-kernel** callers: a userspace invocation has no channel to
-receive a structured failure report through.
+witnesses.
+
+**How it destroys them: `cteRevoke`'s loop (`v0.36.111`, WS-ZA ZA5.3 part 8).**
+The source slot's capability is checked before any write
+(`cspaceRevokeAdmitted`); then `revokeFirstChildLoop` reads the source's
+first-child link, and while there is one, runs the finalising delete on that
+child (its own admission check, then `cspaceDeleteFinalisingPerformAt`).  Each
+delete splices the child out of the tree, its own children moving up to the
+source, so the loop reaches every descendant; its fuel is the tree's edge bound
+plus one.  Every step is a finalising delete, so each destroyed frame
+capability's mapping goes with it, and the chain theorem
+(`revokeFirstChildLoop_chain`, `FinalisingDeleteChain`) carries every
+invariant a single delete preserves.  The general revocation this replaced (a
+materialized descendant walk with a batch teardown afterwards) and its strict,
+streaming and transactional variants were removed with it.
 
 **ABI.**  The delete's layout — one message register naming the slot
 (`decodeCSpaceDeleteArgs`) — since both name one slot of the invoked CNode.
@@ -5990,8 +5999,8 @@ reaches a fresh node (`cdt_addEdge_after_insert`), and a move renames its node
 onto an empty slot (`moveNode_edgeWellFounded`).  Each of these proves the
 post-state tree complete and acyclic from its pre-state bundle.  A destroyer
 holds the relaxed form (`capabilityInvariantBundleOff`) between emptying a slot
-and taking it out of the tree; the splice, the revoke's node removal, the
-move's rename and the local revoke's detach restore the full form.
+and taking it out of the tree; the splice, the move's rename and the local
+revoke's detach restore the full form.
 
 **The derivation tree links through the slots** (`v0.36.106`, WS-ZA ZA5.3
 part 4), as seL4's mapping database.  The tree is its edge list
@@ -6003,10 +6012,10 @@ bundle conjunct says they agree with the tree (`cdtLinksAgree`,
 `LinksAgree`): a slot's parent link is its tree parent, its first-child link the
 newest of its children, and its sibling links its neighbours among its parent's
 children.  Every tree update is paired with its link writes
-(`SystemState.cdtAddChild`, `cdtSplice`, `cdtMove`, `cdtRemove`), each writing
+(`SystemState.cdtAddChild`, `cdtSplice`, `cdtMove`), each writing
 only the link words of the slots the step touches and proven to keep the
-agreement (`cdtAddChild_agree` and its siblings); a splice or removal of a slot
-outside every CNode is the identity.  The executable reads walk the links:
+agreement (`cdtAddChild_agree` and its siblings); a splice of a slot outside
+every CNode is the identity.  The executable reads walk the links:
 whether a slot has children is one word (`hasCdtChildren`, through
 `SystemState.linkHasChild`), a node's children are its first-child link and the
 next links after it (`linkChildrenOf`), and the revoke's descendants are the
@@ -6022,25 +6031,25 @@ and the one CNode writer that relinks nothing, `.vspaceMap`, holds it for read,
 so it meets every link writer on one key
 (`vspaceMap_capabilityOps_share_serialization`).
 
-**Delete and revoke check, then perform** (`v0.36.107`, WS-ZA ZA5.3 part 4).
-A destroying step names the page tables it may orphan from the capabilities it
-destroys, read before the step (`slotPageTables`, `revokedPageTables`), as seL4's
-`finaliseCap` acts on the capability being destroyed; it never compares the state
-before the step with the state after it.  A delete whose capability finalises
-nothing (`capabilityFinalisesNothing`: no recorded mapping, not a page table) is
-admitted before any write (`cspaceDeleteAdmitted`) and is the plain slot write
-and splice (`cspaceDeletePerform`), proven equal to the finalising delete
-(`cspaceDeleteSlotFinalising_of_admitted`).  A revoke whose subtree holds only
-such capabilities is admitted by a stackless preorder walk over the slot links
-(`cspaceRevokeAdmitted`, `linkSubtreeDeletable`) and runs seL4's `cteRevoke`
-loop, deleting the source's first child until it has none
-(`cspaceRevokePerform`, `revokeFirstChildLoop`); each delete splices the child's
-children under the source, so no descendant list is built.
-`cspaceRevokeCdtFinalising` is that loop when admitted and the general path
-otherwise, and every property the finalising deletes keep it keeps
-(`cspaceRevokeCdtFinalising_closed`).  The dispatcher runs both admitted steps
-through `RefusalCarrying.ofChecked`, so the store is written in place.  A delete
-or revoke that finalises a frame or page table takes the general path.
+**Delete and revoke check, then perform** (`v0.36.107`, WS-ZA ZA5.3 part 4;
+every delete since `v0.36.110`, every revoke since `v0.36.111`).  A destroying
+step names the page tables it may orphan from the capability it destroys, read
+before the step (`slotPageTables`), as seL4's `finaliseCap` acts on the
+capability being destroyed; it never compares the state before the step with the
+state after it.  A delete is admitted when its CNode exists
+(`cspaceDeleteFinalisingAdmitted`); one whose capability finalises nothing
+(`capabilityFinalisesNothing`: no recorded mapping, not a page table) is the
+plain slot write and splice (`cspaceDeletePerform`, proven equal to the
+finalising delete by `cspaceDeleteSlotFinalising_of_admitted`), and any other is
+that write and splice followed by the teardown, which cannot refuse
+(`cspaceDeleteFinalisingPerformAt`).  A revoke is admitted when its source slot
+holds a capability (`cspaceRevokeAdmitted`) and runs seL4's `cteRevoke` loop,
+deleting and finalising the source's first child until it has none
+(`cspaceRevokePerformAt`, `revokeFirstChildLoop`); each delete splices the
+child's children under the source, so no descendant list is built, and every
+property the finalising deletes keep the revoke keeps
+(`cspaceRevokeCdtFinalising_closed`).  The dispatcher runs both through
+`RefusalCarrying.ofChecked`, so the store is written in place.
 
 **The ghost tree** (`v0.36.108`, WS-ZA ZA5.3 part 5).  The derivation tree's
 edge list is `Erased` (`CapDerivationTree.edgesGhost`); its reads (`edges`,
@@ -6083,8 +6092,20 @@ blocked sender reads them back from the TCB, so a badged IPC builds no
 `some badge`.  Copy, move, delete, mint, revoke, both reply-capability
 operations and badged send, call, reply and receive allocate nothing.
 
-**Invariants.**  `cspaceRevokeCdt_preserves_ipcInvariantFull` carries the arm
-in the capability-only dispatch payoff.  Three things that chain records:
+**Invariants.**  `cspaceRevokeCdtFinalising_preserves_ipcInvariantFull` carries
+the arm in the capability-only dispatch payoff, through the loop's closure
+theorem (`cspaceRevokeCdtFinalising_closed`: any property every finalising
+delete preserves, the revoke preserves), and so does
+`cspaceRevokeCdtFinalising_preserves_capabilityInvariantBundle`, from the
+finalising delete's own (`cspaceDeleteSlotFinalising_preserves_capabilityInvariantBundle`:
+the delete keeps the bundle and the teardown writes no CNode, reply object or
+derivation edge).  On a state the bundle holds in the revocation is complete:
+the source has no children afterwards
+(`cspaceRevokeCdtFinalising_ok_childless`), since each first child the loop
+reads is in the tree, so its CNode is live (`cdtCompleteness`) and its delete
+is admitted, and each delete splices one edge out of the tree
+(`spliceNode_edges_length_lt`), so the fuel, one more than the edge bound, is
+never exhausted first.  Three things that chain records:
 
 - `donationReadAgreement` no longer demands `pendingMessage` **equality**.  The
   in-flight sweep is the one transition in the tree that rewrites a
@@ -6095,13 +6116,10 @@ in the capability-only dispatch payoff.  Three things that chain records:
   boundedness transfers) and the sweep's write is a *drop*
   (`TCB.pendingCapsDropped`: every other field equal, registers kept,
   capability array shorter), which both conjuncts survive.
-- The scaffold's case analysis and the traversal's induction are
-  **predicate-free and live beside their definitions**
-  (`revokeCdtScaffold_ok_decompose`, `revokeCdtFold_induct`,
-  `revokeCdtMaterializedTraversal_ok_induct`), so the capability bundle's
-  argument and the IPC bundle's are one answer rather than two;
-  `revokeCdtFoldBody` moved to `Capability/Operations.lean` with them and the
-  materialized traversal is now *defined* through it.
+- The loop's induction is **predicate-free and lives beside its definition**
+  (`revokeFirstChildLoop_chain`, `FinalisingDeleteChain`), so the capability
+  bundle's argument, the IPC bundle's and the teardown's are one answer rather
+  than three: each discharges its property for one finalising delete.
 - The arm declares **no static lock footprint**, and that is a decision: the
   CDT walk's CNode set is state-discovered and unbounded while a `LockSet` is
   capped at `maxLockSetSize`, so a footprint naming only the source CNode would

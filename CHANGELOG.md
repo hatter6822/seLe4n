@@ -1,3 +1,58 @@
+## v0.36.111 — WS-ZA ZA5.3 part 8: every revoke is seL4's cteRevoke loop
+
+`.cspaceRevoke` now deletes and finalises the source's first derivation child
+until it has none, as seL4's `cteRevoke`, so each destroyed frame capability's
+mapping goes with its own delete and nothing is decided after the loop.
+
+- **The loop** (`Capability/FrameFinalise.lean`): `revokeFirstChildLoop` reads
+  the source slot's first-child link and runs the finalising delete on that
+  child (its admission check, then `cspaceDeleteFinalisingPerformAt`), with fuel
+  `edgeBound + 1`.  The revoke is admitted when the source slot holds a
+  capability (`cspaceRevokeAdmitted`) and performed by `cspaceRevokePerformAt`;
+  the dispatcher runs both through `RefusalCarrying.ofChecked`.
+- **Proofs**: a run of the loop is a chain of finalising deletes
+  (`revokeFirstChildLoop_chain`, `FinalisingDeleteChain`), so the revoke keeps
+  whatever one delete keeps (`cspaceRevokeCdtFinalising_closed`, which now takes
+  only that hypothesis), keeps `teardownWellFormed`
+  (`FinalisingDeleteChain.wellFormed`) and leaves no destroyed capability's page
+  live (`cspaceRevokeCdtFinalising_ok_unmapped`, via
+  `FinalisingDeleteChain.unmapped`).  The IPC, run-queue and reschedule
+  consumers read the closure theorem; the refusal tie
+  `cdtNodeIsRevocable_false_revoke_refuses` is restated over the loop.
+- **Retired**: the batch teardown (`cspaceRevokeThenFinalise`,
+  `revokedPageTables`, `linkSubtreeDeletable`) and the general revocation it
+  followed, reached by no syscall once the arm moved: `cspaceRevokeCdt`, its
+  scaffold, materialized traversal and per-node step, the strict, streaming and
+  transactional variants with their reports and BFS, `SystemState.cdtRemove`,
+  the old `Capability/Invariant/Preservation/Revoke.lean` and every proof over
+  them.
+  The enforcement boundary loses its `cspaceRevokeCdt` entry (52 canonical,
+  67 per core).  Suites that ran the variants run the loop: S2-G-04/06 (a
+  five-deep chain), chain15 (fifteen levels across sixteen CNodes), chain17 (a
+  branching tree), chain20 (a linear chain) and chain23 (revokes at the root,
+  a child and mid-tree) assert every descendant gone and the source kept; the
+  strict-report, fuel-exhaustion and equivalence checks went with what they
+  tested.
+- **The capability invariants and completeness** (PR #962 review, in the same
+  PR): `Capability/Invariant/Preservation/Revoke.lean` proves the finalising
+  delete keeps the capability bundle
+  (`cspaceDeleteSlotFinalising_preserves_capabilityInvariantBundle`: the
+  teardown writes no CNode, reply object or derivation edge), so the revocation
+  does (`cspaceRevokeCdtFinalising_preserves_capabilityInvariantBundle`), and
+  that on a state the bundle holds in a successful revocation leaves its source
+  with no children (`cspaceRevokeCdtFinalising_ok_childless`): every first child
+  the loop reads lies in a live CNode, so no delete is refused, and each delete
+  splices one edge out (`spliceNode_edges_length_lt`), so the fuel suffices.
+- **Deviation from the plan**: the loop keeps its stop on an inadmissible child,
+  which the completeness theorem shows no invariant-satisfying state reaches,
+  so the closure theorem the IPC, run-queue and reschedule consumers read needs
+  no capability bundle.  Retiring the stop once those consumers carry the bundle
+  is a new `docs/REGISTERED_DEBT.md` table C row owned by ZA5.4.
+- **Readings** (normal build, new exerciser scenarios): a frame copy for the
+  revoke 0; its map 108 at first call and 107 in steady state (the map row's);
+  the revoke that destroys it 110, all of it the unmap of the live page (the
+  unmap row's).  The plain revoke stays 0.
+
 ## v0.36.110 — WS-ZA ZA5.3 part 7: the teardown decides nothing afterwards
 
 A delete of a frame or page-table capability now runs through the checked

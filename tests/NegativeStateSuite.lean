@@ -265,10 +265,10 @@ private def runBaselineLookupNegativeChecks : IO Unit := do
     .invalidCapability
 
 
-/-- WS-E4/C-02/C-03 cspaceMove + cspaceDeleteSlot CDT cleanup, WS-E4/C-04 strict
-    revokeCdt variant, AK8-B/WS-AK/C-M02 cspaceRevokeCdtTransactional atomicity
-    (3 cases).  Extracted from `runNegativeChecks` (Phase 1; was lines 263-461).
-    Sections combined because both reuse `strictSeed`/`strictRootSlot`. -/
+/-- WS-E4/C-02/C-03 cspaceMove + cspaceDeleteSlot CDT cleanup, and the
+    revocation of two siblings (WS-ZA ZA5.3 part 8; the strict and
+    transactional variants this block exercised were removed with the general
+    revocation).  Extracted from `runNegativeChecks` (Phase 1). -/
 private def runCspaceMutationAndRevokeNegativeChecks : IO Unit := do
   -- WS-E4/C-02/C-03, WS-ZA ZA5.3 part 2: the slot is the derivation node, so a
   -- move carries the source's parent and children to the destination.
@@ -327,69 +327,10 @@ private def runCspaceMutationAndRevokeNegativeChecks : IO Unit := do
     throw <| IO.userError "cspaceDeleteSlot must re-derive the deleted slot's child from its parent"
 
   -- WS-E4/C-04 strict variant: surface first descendant deletion failure with context.
-  let strictRootSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 5 }
-  let strictChildSlotOk : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 6 }
-  let strictChildSlotBad : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨777⟩, slot := SeLe4n.Slot.ofNat 0 }
-  let strictSeed : SystemState :=
-    { baseState with
-      objects := baseState.objects.insert cnodeId (.cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [
-              (strictRootSlot.slot, {
-                target := .object endpointId
-                rights := AccessRightSet.ofList [.read, .write]
-              }),
-              (strictChildSlotOk.slot, {
-                target := .object endpointId
-                rights := AccessRightSet.ofList [.read]
-              })
-            ])))
-      cdt := CapDerivationTree.empty
-    } |>.withDerivationEdges
-      [(strictRootSlot, strictChildSlotBad, .mint), (strictRootSlot, strictChildSlotOk, .copy)]
-
-  -- The seed derives a slot of a CNode that does not exist, which no kernel run
-  -- reaches (a destroyed CNode's slots leave the tree first), so its slot links
-  -- cannot agree with its tree: the run is checked for its report, not for the
-  -- state invariants.
-  let (strictReport, strictState) ← SeLe4n.Testing.expectOkState
-    "cspaceRevokeCdtStrict returns report"
-    (SeLe4n.Kernel.cspaceRevokeCdtStrict strictRootSlot strictSeed) (msgPrefix := "positive check")
-  if strictReport.deletedSlots = [strictChildSlotOk] then
-    IO.println "positive check passed [cspaceRevokeCdtStrict records deleted descendants before failure]"
-  else
-    throw <| IO.userError s!"cspaceRevokeCdtStrict deleted slot trace mismatch: {toString strictReport.deletedSlots}"
-
-  match strictReport.firstFailure with
-  | some failure =>
-      if failure.offendingSlot = strictChildSlotBad ∧
-          failure.error = .objectNotFound then
-        IO.println "positive check passed [cspaceRevokeCdtStrict captures offending slot context]"
-      else
-        throw <| IO.userError s!"cspaceRevokeCdtStrict failure context mismatch: {toString failure}"
-  | none =>
-      throw <| IO.userError "cspaceRevokeCdtStrict must surface first descendant deletion failure"
-
-  if !(linkMentions strictState strictChildSlotOk) then
-    IO.println "positive check passed [cspaceRevokeCdtStrict takes a deleted descendant out of the tree]"
-  else
-    throw <| IO.userError "cspaceRevokeCdtStrict should remove a successfully deleted descendant's edges"
-
-  -- ===========================================================================
-  -- AK8-B (WS-AK / C-M02): cspaceRevokeCdtTransactional atomicity regression
-  -- ===========================================================================
-
-  -- Case 1: Transactional variant FAILS atomically when a descendant's CNode is
-  -- missing. The caller's state is preserved (transaction rolled back).
-  match SeLe4n.Kernel.cspaceRevokeCdtTransactional strictRootSlot strictSeed with
-  | .error .objectNotFound =>
-      IO.println "positive check passed [cspaceRevokeCdtTransactional aborts atomically on missing CNode]"
-  | .error e =>
-      throw <| IO.userError s!"cspaceRevokeCdtTransactional should fail with .objectNotFound, got {repr e}"
-  | .ok _ =>
-      throw <| IO.userError
-        "cspaceRevokeCdtTransactional should fail when descendant CNode is missing"
-
-  -- Case 2: Transactional variant SUCCEEDS when all descendants have valid CNodes
-  -- (construct a clean seed with both descendants pointing at valid CNodes).
+  -- WS-ZA ZA5.3 part 8: `.cspaceRevoke` is seL4's `cteRevoke`, a loop that
+  -- deletes and finalises the source's first child until it has none.  Two
+  -- siblings under one root: both go, the root stays, and the root is left with
+  -- no children.
   let txRootSlot : SeLe4n.Kernel.CSpaceAddr :=
     { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 10 }
   let txChildSlotA : SeLe4n.Kernel.CSpaceAddr :=
@@ -407,23 +348,15 @@ private def runCspaceMutationAndRevokeNegativeChecks : IO Unit := do
         (txChildSlotB.slot, rootCap)]))
       cdt := baseState.cdt
   } |>.withDerivationEdges [(txRootSlot, txChildSlotA, .copy), (txRootSlot, txChildSlotB, .copy)]
-  match SeLe4n.Kernel.cspaceRevokeCdtTransactional txRootSlot txSeed with
-  | .ok (report, _stFinal) =>
-      if report.firstFailure = none then
-        IO.println "positive check passed [cspaceRevokeCdtTransactional succeeds atomically, firstFailure=none]"
-      else
-        throw <| IO.userError
-          s!"cspaceRevokeCdtTransactional success path should have firstFailure=none, got {toString report.firstFailure}"
-  | .error e =>
-      throw <| IO.userError
-        s!"cspaceRevokeCdtTransactional should succeed with valid seed, got {repr e}"
-
-  -- Case 3: validateRevokeCdtDescendants returns .ok on empty input.
-  match SeLe4n.Kernel.validateRevokeCdtDescendants txSeed [] with
-  | .ok _ =>
-      IO.println "positive check passed [validateRevokeCdtDescendants empty list returns .ok]"
-  | .error _ =>
-      throw <| IO.userError "validateRevokeCdtDescendants should succeed on empty descendant list"
+  let (_, revoked) ← expectOkSt "cspaceRevokeCdtFinalising revokes two siblings"
+    (SeLe4n.Kernel.cspaceRevokeCdtFinalising bootCoreId txRootSlot txSeed)
+  if (SystemState.lookupSlotCap revoked txChildSlotA).isNone ∧
+      (SystemState.lookupSlotCap revoked txChildSlotB).isNone ∧
+      (SystemState.lookupSlotCap revoked txRootSlot).isSome ∧
+      revoked.linkChildrenOf txRootSlot = [] then
+    IO.println "positive check passed [revoke deletes every child and keeps the source]"
+  else
+    throw <| IO.userError "revoke should delete both children, keep the source and leave it childless"
 
 /-- F-03 fix chain: dual-queue receive on non-endpoint/missing-object, vspace lookup
     missing asid, vspace map+lookup roundtrip + duplicate conflict, notification
@@ -1683,7 +1616,7 @@ private def runSlotLinkShapeChecks : IO Unit := do
 
 private def runNegativeChecks : IO Unit := do
   runBaselineLookupNegativeChecks                       -- [was 248-262]
-  runCspaceMutationAndRevokeNegativeChecks              -- [was 263-461; sections 2+3 combined for strictSeed/strictRootSlot reuse]
+  runCspaceMutationAndRevokeNegativeChecks
   let stN1 ← runVSpaceAndNotificationF03NegativeChecks  -- [was 463-565; returns stN1 for F-12 double-wait below]
   runBadgeTruncationNegativeChecks                      -- [was 567-607]
   runIpcPayloadBoundsNegativeChecks                     -- [was 608-700]
@@ -3508,77 +3441,30 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
 
 
 -- ============================================================================
--- WS-R2: Revocation error propagation & fuel exhaustion tests
+-- Revocation refusals (WS-R2, restated over the finalising revoke at WS-ZA
+-- ZA5.3 part 8)
 -- ============================================================================
 
-/-- WS-R2/M-05,M-06: Negative tests for revocation error propagation.
-Verifies that:
-- `processRevokeNode` propagates `cspaceDeleteSlot` errors (M-06)
-- `streamingRevokeBFS` returns `.resourceExhausted` on fuel exhaustion (M-05)
-- `cspaceRevokeCdt` propagates descendant delete failures -/
-def runWSR2RevocationChecks : IO Unit := do
-  -- R2-NEG-01: processRevokeNode propagates error when cspaceDeleteSlot fails
-  -- Set up: the revoked slot lives in a non-existent CNode → delete fails
+/-- `.cspaceRevoke`'s check is read before any write: a slot of a CNode that
+does not exist is refused with `.objectNotFound`, an empty slot of a live CNode
+with `.invalidCapability`, each from the state it was refused in.  (WS-R2's
+per-node error propagation and streaming fuel checks went with the general
+revocation they tested; the loop's admission check replaces them.) -/
+def runRevocationRefusalChecks : IO Unit := do
   let r2CnodeId : SeLe4n.ObjId := ⟨10⟩
-  let r2BadCnodeId : SeLe4n.ObjId := ⟨777⟩
-  let r2BadSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := r2BadCnodeId, slot := SeLe4n.Slot.ofNat 0 }
+  let r2BadSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨777⟩, slot := SeLe4n.Slot.ofNat 0 }
+  let r2EmptySlot : SeLe4n.Kernel.CSpaceAddr := { cnode := r2CnodeId, slot := SeLe4n.Slot.ofNat 1 }
   let r2State : SystemState :=
     (BootstrapBuilder.empty
-      |>.withObject r2CnodeId (.cnode (SeLe4n.Model.CNode.ofSlots 0 0 0 0 (SeLe4n.UniqueSlotMap.ofListWF [])))
+      |>.withObject r2CnodeId (.cnode (CNode.ofList 0 0 0 3 []))
       |>.buildChecked)
-  -- processRevokeNode should return error (the slot is in non-existent CNode 777)
-  match SeLe4n.Kernel.processRevokeNode r2State r2BadSlot with
-  | .error e =>
-    if e = .objectNotFound then
-      IO.println "negative check passed [R2-NEG-01: processRevokeNode propagates cspaceDeleteSlot error]"
-    else
-      throw <| IO.userError s!"expected objectNotFound, got {toString e}"
-  | .ok _ =>
-    throw <| IO.userError "processRevokeNode should propagate error, not succeed"
-
-  -- R2-NEG-02: streamingRevokeBFS returns resourceExhausted on fuel exhaustion
-  let r2Node1 : SlotRef := { cnode := r2CnodeId, slot := SeLe4n.Slot.ofNat 0 }
-  let r2Node2 : SlotRef := { cnode := r2CnodeId, slot := SeLe4n.Slot.ofNat 1 }
-  let r2BfsSeed := { r2State with
-    cdt := CapDerivationTree.empty
-  } |>.withDerivationEdges [(r2Node1, r2Node2, .mint)]
-  -- Fuel = 0 with non-empty queue → resourceExhausted
-  match SeLe4n.Kernel.streamingRevokeBFS 0 [r2Node1, r2Node2] r2BfsSeed with
-  | .error e =>
-    if e = .resourceExhausted then
-      IO.println "negative check passed [R2-NEG-02: streamingRevokeBFS fuel exhaustion returns resourceExhausted]"
-    else
-      throw <| IO.userError s!"expected resourceExhausted, got {toString e}"
-  | .ok _ =>
-    throw <| IO.userError "streamingRevokeBFS with fuel=0 should return error, not succeed"
-
-  -- R2-NEG-03: cspaceRevokeCdt propagates descendant delete failures
-  -- Set up: CNode with root cap at slot 5. CDT: root slot → child (bad slot).
-  -- cspaceRevokeCdt should fail because descendant deletion fails.
-  let r2RootSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := r2CnodeId, slot := SeLe4n.Slot.ofNat 5 }
-  let r2ChildBadSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := r2BadCnodeId, slot := SeLe4n.Slot.ofNat 0 }
-  let r2RevokeSeed : SystemState :=
-    { r2State with
-      -- Radix 3: the root cap sits at slot 5, which a radix-0 CNode has no
-      -- entry for (WS-ZA ZA5.3 slot array).
-      objects := r2State.objects.insert r2CnodeId (.cnode (CNode.ofList 0 0 0 3 [
-              (r2RootSlot.slot, {
-                target := .object ⟨40⟩
-                rights := AccessRightSet.ofList [.read, .write]
-              })
-            ]))
-      cdt := CapDerivationTree.empty
-    } |>.withDerivationEdges [(r2RootSlot, r2ChildBadSlot, .mint)]
-  match SeLe4n.Kernel.cspaceRevokeCdt r2RootSlot r2RevokeSeed with
-  | .error e =>
-    if e = .objectNotFound then
-      IO.println "negative check passed [R2-NEG-03: cspaceRevokeCdt propagates descendant delete error]"
-    else
-      throw <| IO.userError s!"expected objectNotFound from cspaceRevokeCdt, got {toString e}"
-  | .ok _ =>
-    throw <| IO.userError "cspaceRevokeCdt should propagate descendant delete error, not succeed"
-
-  IO.println "all WS-R2 revocation error propagation checks passed"
+  expectErr "revoke of a slot in a missing CNode"
+    (SeLe4n.Kernel.cspaceRevokeCdtFinalising bootCoreId r2BadSlot r2State)
+    .objectNotFound
+  expectErr "revoke of an empty slot"
+    (SeLe4n.Kernel.cspaceRevokeCdtFinalising bootCoreId r2EmptySlot r2State)
+    .invalidCapability
+  IO.println "all revocation refusal checks passed"
 
 -- ============================================================================
 -- R4: Lifecycle & Service Coherence negative tests
@@ -3757,15 +3643,13 @@ private def runS2GCapabilityErrorTests : IO Unit := do
       (AccessRightSet.ofList [.read]) (badge := none) baseState)
     .targetSlotOccupied
 
-  -- S2-G-04: cspaceRevokeCdtStrict on node with no descendants (empty revoke)
+  -- S2-G-04: revoking a capability with no derivations deletes nothing.
   let emptyRevokeSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 0 }
-  let (emptyReport, _) ← expectOkSt "cspaceRevokeCdtStrict empty descendants"
-    (SeLe4n.Kernel.cspaceRevokeCdtStrict emptyRevokeSlot baseState)
-  if emptyReport.deletedSlots ≠ [] then
-    throw <| IO.userError "expected empty deletedSlots for node with no descendants"
-  if emptyReport.firstFailure.isSome then
-    throw <| IO.userError "expected no failure for node with no descendants"
-  IO.println "negative check passed [S2-G-04: empty revoke returns clean report]"
+  let (_, emptyRevoked) ← expectOkSt "revoke with no descendants"
+    (SeLe4n.Kernel.cspaceRevokeCdtFinalising bootCoreId emptyRevokeSlot baseState)
+  if (SystemState.lookupSlotCap emptyRevoked emptyRevokeSlot).isNone then
+    throw <| IO.userError "revoke must keep the source capability"
+  IO.println "negative check passed [S2-G-04: revoke with no descendants keeps the source]"
 
   -- S2-G-05: cspaceCopy to full CNode (all slots occupied) → targetSlotOccupied
   -- Build a CNode with radixWidth=2 (four addressable slots), fill slots 0-3.
@@ -3787,30 +3671,31 @@ private def runS2GCapabilityErrorTests : IO Unit := do
     (SeLe4n.Kernel.cspaceCopy fullCopySrc fullCopyDst fullCnodeState)
     .targetSlotOccupied
 
-  -- S2-G-06: cspaceRevokeCdtStrict with deep CDT chain (depth > 4)
-  -- Build a 5-deep CDT chain: root → n1 → n2 → n3 → n4 → n5
+  -- S2-G-06: revoke over a five-deep chain root → n1 → … → n5.  `cteRevoke`
+  -- deletes the root's first child until it has none; each delete splices the
+  -- child's own children up to the root, so the loop reaches every level.
   let deepRootSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 0 }
-  let deepRoot : SlotRef := deepRootSlot
-  let deepN1 : SlotRef := { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 3 }
-  let deepN2 : SlotRef := { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 4 }
-  let deepN3 : SlotRef := { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 5 }
-  let deepN4 : SlotRef := { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 6 }
-  let deepN5 : SlotRef := { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 7 }
+  let deepNodes : List SlotRef :=
+    [3, 4, 5, 6, 7].map fun n => { cnode := cnodeId, slot := SeLe4n.Slot.ofNat n }
+  let deepCap : Capability := {
+    target := .object endpointId,
+    rights := AccessRightSet.ofList [.read, .write],
+  }
   let deepSeed : SystemState :=
     { baseState with
+      objects := baseState.objects.insert cnodeId (.cnode (CNode.ofList 8 0 0 8
+        ((deepRootSlot :: deepNodes).map fun (r : SlotRef) => (r.slot, deepCap))))
       cdt := CapDerivationTree.empty
     } |>.withDerivationEdges
-      [(deepRoot, deepN1, .mint), (deepN1, deepN2, .copy), (deepN2, deepN3, .mint),
-       (deepN3, deepN4, .copy), (deepN4, deepN5, .mint)]
-  -- Deep revoke must handle 5 levels of descendants. Since slots 3-7 don't exist
-  -- in cnodeId (only slot 0 does), deletion of descendants will fail with objectNotFound
-  -- at the slots that have no capability. This exercises deep traversal + error propagation.
-  let (deepReport, _) ← expectOkSt "cspaceRevokeCdtStrict deep chain"
-    (SeLe4n.Kernel.cspaceRevokeCdtStrict deepRootSlot deepSeed)
-  -- Verify the report records some activity (deletedSlots or firstFailure)
-  if deepReport.deletedSlots.length + (if deepReport.firstFailure.isSome then 1 else 0) = 0 then
-    throw <| IO.userError "deep chain revoke produced no report (expected deletions or failure)"
-  IO.println s!"negative check passed [S2-G-06: deep CDT revoke processed {deepReport.deletedSlots.length} deletions]"
+      ((deepRootSlot :: deepNodes).zip deepNodes |>.map fun ((p, c) : SlotRef × SlotRef) => (p, c, DerivationOp.copy))
+  let (_, deepRevoked) ← expectOkSt "revoke over a deep chain"
+    (SeLe4n.Kernel.cspaceRevokeCdtFinalising bootCoreId deepRootSlot deepSeed)
+  if deepNodes.all (fun r => (SystemState.lookupSlotCap deepRevoked r).isNone) ∧
+      (SystemState.lookupSlotCap deepRevoked deepRootSlot).isSome ∧
+      deepRevoked.linkChildrenOf deepRootSlot = [] then
+    IO.println "negative check passed [S2-G-06: revoke deletes all five levels and keeps the root]"
+  else
+    throw <| IO.userError "deep chain revoke should delete every descendant and keep the root"
 
   IO.println "all S2-G capability error-path tests passed"
 
@@ -4599,7 +4484,7 @@ def main : IO Unit := do
   SeLe4n.Testing.runWSM3CapTransferNegativeChecks
   SeLe4n.Testing.runL13CapTransferShortCircuitChecks
   SeLe4n.Testing.runWSM4ResolveEdgeCaseChecks
-  SeLe4n.Testing.runWSR2RevocationChecks
+  SeLe4n.Testing.runRevocationRefusalChecks
   SeLe4n.Testing.runWSR4CoherenceChecks
   SeLe4n.Testing.runS2GCapabilityErrorTests
   SeLe4n.Testing.runS2HLifecycleErrorTests

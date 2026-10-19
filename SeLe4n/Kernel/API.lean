@@ -2533,25 +2533,22 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
             -- transition, the invoking thread's core initiating the shootdown.
             cspaceDeleteSlotFinalising executingCore addr st
     | _ => fun _ => .error .invalidCapability
-  -- **WS-RR RR8.16 (`v0.35.190`)**: `seL4_CNode_Revoke`.  The arm the revocation
-  -- family had never had — `cspaceRevokeCdt`'s own routing guide already named
-  -- `SyscallId.cspaceRevoke` as its caller, of a constructor that did not exist,
-  -- which is the implement-the-improvement rule's canonical case.
+  -- **WS-RR RR8.16 (`v0.35.190`)**: `seL4_CNode_Revoke`, the arm the
+  -- revocation family had never had.
   --
-  -- Three things this arm decides.  It dispatches **`cspaceRevokeCdt`**, the
-  -- CDT-traversing variant, because that is the correct default for an
-  -- untrusted userspace invocation: the local `cspaceRevoke` reaches only the
-  -- containing CNode, so a derived capability copied into any other CSpace would
-  -- survive a revocation that claimed to destroy it — and it matches on the
-  -- **target**, so it also destroys capabilities that are not derivations at
-  -- all.  Since `v0.36.1` (PR #900 review) `cspaceRevokeCdt` no longer opens
-  -- with it: the revocation destroys exactly the source's CDT descendants, in
-  -- every CNode, which is seL4's `cteRevoke` (read at `13.0.0`).  It
-  -- takes the **delete's** ABI (`decodeCSpaceDeleteArgs`, one message register
-  -- naming the slot), since both name one slot of the invoked CNode and a
-  -- second decoder for one operand is a spelling nobody needs.  And the source
-  -- slot **survives**: revocation destroys the derivations of a capability, not
-  -- the capability itself, which is what distinguishes it from the delete.
+  -- Three things this arm decides.  It destroys exactly the source's CDT
+  -- descendants, in every CNode, which is seL4's `cteRevoke` (read at
+  -- `13.0.0`): the local `cspaceRevoke` reaches only the containing CNode, so a
+  -- derived capability copied into any other CSpace would survive it, and it
+  -- matches on the **target**, so it also destroys capabilities that are not
+  -- derivations at all.  Since WS-ZA ZA5.3 part 8 (`v0.36.111`) the revocation is
+  -- `cteRevoke`'s own loop, `cspaceRevokeCdtFinalising`: the source's first child
+  -- deleted and finalised until it has none.  It takes the **delete's** ABI
+  -- (`decodeCSpaceDeleteArgs`, one message register naming the slot), since both
+  -- name one slot of the invoked CNode and a second decoder for one operand is a
+  -- spelling nobody needs.  And the source slot **survives**: revocation destroys
+  -- the derivations of a capability, not the capability itself, which is what
+  -- distinguishes it from the delete.
   | .cspaceRevoke =>
     some <| match cap.target with
     | .object cnodeId =>
@@ -2567,7 +2564,7 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
   -- ABI as `cspaceCopy` (reuses `decodeCSpaceCopyArgs`); the cap names the CNode, and
   -- `mintReplyCapWithCdt` derives `.replyCap (ReplyId.ofObjId target)` at the dst slot
   -- (fail-closed when the src is not an `.object`-to-Reply cap).  CDT-tracked so the
-  -- minted reply cap is revocable through `cspaceRevokeCdt`.
+  -- minted reply cap is revocable through `.cspaceRevoke`.
   | .mintReplyCap =>
     some <| match cap.target with
     | .object cnodeId =>

@@ -318,8 +318,8 @@ def lockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
   -- proof that its footprint contains every write the op performs.
   | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete
   -- **WS-RR RR8.16 (`v0.35.190`)**: `.cspaceRevoke` cannot be declared, and
-  -- that is structural rather than unfinished work.  `cspaceRevokeCdt` walks
-  -- the source slot's CDT descendants across arbitrary CNodes — a set the
+  -- that is structural rather than unfinished work.  `cspaceRevokeCdtFinalising`
+  -- walks the source slot's CDT descendants across arbitrary CNodes — a set the
   -- state discovers and nothing bounds — while a `LockSet` is capped at
   -- `maxLockSetSize`, so a footprint that enumerated them would be *false* on
   -- a deep derivation tree.  The unbounded-walk treatment this tree already
@@ -1174,8 +1174,8 @@ def declaredFootprintSyscall : SyscallId → Bool
   | .notificationSignal | .notificationWait => true
   | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete
   -- **WS-RR RR8.16 (`v0.35.190`)**: `.cspaceRevoke` cannot be declared, and
-  -- that is structural rather than unfinished work.  `cspaceRevokeCdt` walks
-  -- the source slot's CDT descendants across arbitrary CNodes — a set the
+  -- that is structural rather than unfinished work.  `cspaceRevokeCdtFinalising`
+  -- walks the source slot's CDT descendants across arbitrary CNodes — a set the
   -- state discovers and nothing bounds — while a `LockSet` is capped at
   -- `maxLockSetSize`, so a footprint that enumerated them would be *false* on
   -- a deep derivation tree.  The unbounded-walk treatment this tree already
