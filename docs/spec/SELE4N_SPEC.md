@@ -6031,25 +6031,25 @@ and the one CNode writer that relinks nothing, `.vspaceMap`, holds it for read,
 so it meets every link writer on one key
 (`vspaceMap_capabilityOps_share_serialization`).
 
-**Delete and revoke check, then perform** (`v0.36.107`, WS-ZA ZA5.3 part 4).
-A destroying step names the page tables it may orphan from the capabilities it
-destroys, read before the step (`slotPageTables`, `revokedPageTables`), as seL4's
-`finaliseCap` acts on the capability being destroyed; it never compares the state
-before the step with the state after it.  A delete whose capability finalises
-nothing (`capabilityFinalisesNothing`: no recorded mapping, not a page table) is
-admitted before any write (`cspaceDeleteAdmitted`) and is the plain slot write
-and splice (`cspaceDeletePerform`), proven equal to the finalising delete
-(`cspaceDeleteSlotFinalising_of_admitted`).  A revoke whose subtree holds only
-such capabilities is admitted by a stackless preorder walk over the slot links
-(`cspaceRevokeAdmitted`, `linkSubtreeDeletable`) and runs seL4's `cteRevoke`
-loop, deleting the source's first child until it has none
-(`cspaceRevokePerform`, `revokeFirstChildLoop`); each delete splices the child's
-children under the source, so no descendant list is built.
-`cspaceRevokeCdtFinalising` is that loop when admitted and the general path
-otherwise, and every property the finalising deletes keep it keeps
-(`cspaceRevokeCdtFinalising_closed`).  The dispatcher runs both admitted steps
-through `RefusalCarrying.ofChecked`, so the store is written in place.  A delete
-or revoke that finalises a frame or page table takes the general path.
+**Delete and revoke check, then perform** (`v0.36.107`, WS-ZA ZA5.3 part 4;
+every delete since `v0.36.110`, every revoke since `v0.36.111`).  A destroying
+step names the page tables it may orphan from the capability it destroys, read
+before the step (`slotPageTables`), as seL4's `finaliseCap` acts on the
+capability being destroyed; it never compares the state before the step with the
+state after it.  A delete is admitted when its CNode exists
+(`cspaceDeleteFinalisingAdmitted`); one whose capability finalises nothing
+(`capabilityFinalisesNothing`: no recorded mapping, not a page table) is the
+plain slot write and splice (`cspaceDeletePerform`, proven equal to the
+finalising delete by `cspaceDeleteSlotFinalising_of_admitted`), and any other is
+that write and splice followed by the teardown, which cannot refuse
+(`cspaceDeleteFinalisingPerformAt`).  A revoke is admitted when its source slot
+holds a capability (`cspaceRevokeAdmitted`) and runs seL4's `cteRevoke` loop,
+deleting and finalising the source's first child until it has none
+(`cspaceRevokePerformAt`, `revokeFirstChildLoop`); each delete splices the
+child's children under the source, so no descendant list is built, and every
+property the finalising deletes keep the revoke keeps
+(`cspaceRevokeCdtFinalising_closed`).  The dispatcher runs both through
+`RefusalCarrying.ofChecked`, so the store is written in place.
 
 **The ghost tree** (`v0.36.108`, WS-ZA ZA5.3 part 5).  The derivation tree's
 edge list is `Erased` (`CapDerivationTree.edgesGhost`); its reads (`edges`,
