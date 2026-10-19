@@ -670,8 +670,8 @@ the write alone.  An arm whose checks refuse, and every arm not yet split, is
           if args.badge.val = 0 then none else some args.badge
         RefusalCarrying.ofChecked
           (securityFlowsTo (ctx.objectLabelOf src.cnode) (ctx.objectLabelOf dst.cnode) &&
-            cspaceMintAdmitted src dst args.rights badge st)
-          (fun st => cspaceMintPerform src dst args.rights badge st)
+            cspaceMintAdmittedAt cnodeId args.srcSlot args.dstSlot args.rights badge st)
+          (fun st => cspaceMintPerformAt cnodeId args.srcSlot args.dstSlot args.rights badge st)
           (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
     | _ => .error (.invalidCapability, st)
   | .cspaceMove =>
@@ -684,8 +684,8 @@ the write alone.  An arm whose checks refuse, and every arm not yet split, is
         let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
         RefusalCarrying.ofChecked
           (securityFlowsTo (ctx.objectLabelOf src.cnode) (ctx.objectLabelOf dst.cnode) &&
-            cspaceMoveAdmitted src dst st)
-          (fun st => cspaceMovePerform src dst st)
+            cspaceMoveAdmittedAt cnodeId args.srcSlot args.dstSlot st)
+          (fun st => cspaceMovePerformAt cnodeId args.srcSlot args.dstSlot st)
           (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
     | _ => .error (.invalidCapability, st)
   | .cspaceDelete =>
@@ -696,7 +696,7 @@ the write alone.  An arm whose checks refuse, and every arm not yet split, is
       | .ok args =>
         let addr : CSpaceAddr := { cnode := cnodeId, slot := args.targetSlot }
         RefusalCarrying.ofChecked (cspaceDeleteAdmitted addr st)
-          (fun st => cspaceDeletePerform addr st)
+          (fun st => cspaceDeletePerformAt cnodeId args.targetSlot st)
           (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
     | _ => .error (.invalidCapability, st)
   | .cspaceRevoke =>
@@ -707,7 +707,7 @@ the write alone.  An arm whose checks refuse, and every arm not yet split, is
       | .ok args =>
         let addr : CSpaceAddr := { cnode := cnodeId, slot := args.targetSlot }
         RefusalCarrying.ofChecked (cspaceRevokeAdmitted addr st)
-          (fun st => cspaceRevokePerform addr st)
+          (fun st => cspaceRevokePerformAt cnodeId args.targetSlot st)
           (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
     | _ => .error (.invalidCapability, st)
   | .mintReplyCap =>
@@ -718,8 +718,8 @@ the write alone.  An arm whose checks refuse, and every arm not yet split, is
       | .ok args =>
         let src : CSpaceAddr := { cnode := cnodeId, slot := args.srcSlot }
         let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
-        RefusalCarrying.ofChecked (mintReplyCapAdmitted src dst st)
-          (fun st => mintReplyCapPerform src dst st)
+        RefusalCarrying.ofChecked (mintReplyCapAdmittedAt cnodeId args.srcSlot args.dstSlot st)
+          (fun st => mintReplyCapPerformAt cnodeId args.srcSlot args.dstSlot st)
           (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
     | _ => .error (.invalidCapability, st)
   | .cspaceCopy =>
@@ -732,8 +732,8 @@ the write alone.  An arm whose checks refuse, and every arm not yet split, is
         let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
         RefusalCarrying.ofChecked
           (securityFlowsTo (ctx.objectLabelOf src.cnode) (ctx.objectLabelOf dst.cnode) &&
-            cspaceCopyAdmitted src dst st)
-          (fun st => cspaceCopyPerform src dst st)
+            cspaceCopyAdmittedAt cnodeId args.srcSlot args.dstSlot st)
+          (fun st => cspaceCopyPerformAt cnodeId args.srcSlot args.dstSlot st)
           (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
     | _ => .error (.invalidCapability, st)
   | _ =>
@@ -1040,7 +1040,7 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
       cases hD : decodeCSpaceMintArgsBy (msgRegOfFile layout regs) with
       | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD]
       | ok args =>
-        dsimp only
+        dsimp only [cspaceMintAdmittedAt, cspaceMintPerformAt]
         apply RefusalCarrying.ofChecked_eq
         intro hA
         simp only [Bool.and_eq_true] at hA
@@ -1054,7 +1054,7 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
       cases hD : decodeCSpaceMoveArgsBy (msgRegOfFile layout regs) with
       | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD]
       | ok args =>
-        dsimp only
+        dsimp only [cspaceMoveAdmittedAt, cspaceMovePerformAt]
         apply RefusalCarrying.ofChecked_eq
         intro hA
         simp only [Bool.and_eq_true] at hA
@@ -1068,7 +1068,7 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
       cases hD : decodeCSpaceDeleteArgsBy (msgRegOfFile layout regs) with
       | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD]
       | ok args =>
-        dsimp only
+        dsimp only [cspaceDeletePerformAt]
         apply RefusalCarrying.ofChecked_eq
         intro hA
         simp only [dispatchInvocationBy, hD, cspaceDeleteSlotFinalising_of_admitted hA]
@@ -1080,7 +1080,7 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
       cases hD : decodeCSpaceDeleteArgsBy (msgRegOfFile layout regs) with
       | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD]
       | ok args =>
-        dsimp only
+        dsimp only [cspaceRevokePerformAt]
         apply RefusalCarrying.ofChecked_eq
         intro hA
         simp only [dispatchInvocationBy, hD, cspaceRevokeCdtFinalising, hA, ↓reduceIte]
@@ -1092,7 +1092,7 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
       cases hD : decodeCSpaceCopyArgsBy (msgRegOfFile layout regs) with
       | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD]
       | ok args =>
-        dsimp only
+        dsimp only [mintReplyCapAdmittedAt, mintReplyCapPerformAt]
         apply RefusalCarrying.ofChecked_eq
         intro hA
         simp only [dispatchInvocationBy, hD, mintReplyCapWithCdt_of_admitted hA]
@@ -1104,7 +1104,7 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
       cases hD : decodeCSpaceCopyArgsBy (msgRegOfFile layout regs) with
       | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD]
       | ok args =>
-        dsimp only
+        dsimp only [cspaceCopyAdmittedAt, cspaceCopyPerformAt]
         apply RefusalCarrying.ofChecked_eq
         intro hA
         simp only [Bool.and_eq_true] at hA

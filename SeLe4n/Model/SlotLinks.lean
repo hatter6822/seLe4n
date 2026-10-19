@@ -376,13 +376,14 @@ theorem setSlotLinkWords_step {st : SystemState} (hInv : st.objects.invExt) {o :
 
 /-- **Unlink `n` from its siblings**, in words: the state form of
 `LinkView.unlinkChild` (`slotLinkAt_linkUnlinkChild`). -/
-def linkUnlinkChild (st : SystemState) (n : SlotRef) : SystemState :=
-  let pc := st.slotLinkNodeWord n.cnode n.slot .prev
-  let ps := st.slotLinkSlotWord n.cnode n.slot .prev
-  let nc := st.slotLinkNodeWord n.cnode n.slot .next
-  let ns := st.slotLinkSlotWord n.cnode n.slot .next
-  let uc := st.slotLinkNodeWord n.cnode n.slot .parent
-  let us := st.slotLinkSlotWord n.cnode n.slot .parent
+def linkUnlinkChild (st : SystemState) (nCNode : SeLe4n.ObjId) (nSlot : SeLe4n.Slot) :
+    SystemState :=
+  let pc := st.slotLinkNodeWord nCNode nSlot .prev
+  let ps := st.slotLinkSlotWord nCNode nSlot .prev
+  let nc := st.slotLinkNodeWord nCNode nSlot .next
+  let ns := st.slotLinkSlotWord nCNode nSlot .next
+  let uc := st.slotLinkNodeWord nCNode nSlot .parent
+  let us := st.slotLinkSlotWord nCNode nSlot .parent
   let st1 := if pc = 0 then
       (if uc = 0 then st
        else st.setSlotLinkWords (SeLe4n.ObjId.ofNat (uc - 1)) (SeLe4n.Slot.ofNat (us - 1))
@@ -390,16 +391,16 @@ def linkUnlinkChild (st : SystemState) (n : SlotRef) : SystemState :=
     else st.setSlotLinkWords (SeLe4n.ObjId.ofNat (pc - 1)) (SeLe4n.Slot.ofNat (ps - 1)) .next nc ns
   let st2 := if nc = 0 then st1
     else st1.setSlotLinkWords (SeLe4n.ObjId.ofNat (nc - 1)) (SeLe4n.Slot.ofNat (ns - 1)) .prev pc ps
-  ((st2.setSlotLinkWords n.cnode n.slot .parent 0 0).setSlotLinkWords n.cnode n.slot .next 0 0
-    ).setSlotLinkWords n.cnode n.slot .prev 0 0
+  ((st2.setSlotLinkWords nCNode nSlot .parent 0 0).setSlotLinkWords nCNode nSlot .next 0 0
+    ).setSlotLinkWords nCNode nSlot .prev 0 0
 
 /-- **`linkUnlinkChild` acts on the link view as `LinkView.unlinkChild`**, when
 `n` and the slots its links name are slots of live CNodes. -/
 theorem linkUnlinkChild_spec {st : SystemState} (hInv : st.objects.invExt) {n : SlotRef}
     (hn : st.slotInCNode n) (hT : ∀ f x, st.slotLinkAt n f = some x → st.slotInCNode x) :
-    (st.linkUnlinkChild n).objects.invExt ∧
-      (∀ r, (st.linkUnlinkChild n).slotInCNode r ↔ st.slotInCNode r) ∧
-      (st.linkUnlinkChild n).slotLinkAt = st.slotLinkAt.unlinkChild n := by
+    (st.linkUnlinkChild n.cnode n.slot).objects.invExt ∧
+      (∀ r, (st.linkUnlinkChild n.cnode n.slot).slotInCNode r ↔ st.slotInCNode r) ∧
+      (st.linkUnlinkChild n.cnode n.slot).slotLinkAt = st.slotLinkAt.unlinkChild n := by
   have ePr := slotLinkAt_eq_decode st n .prev
   have eNx := slotLinkAt_eq_decode st n .next
   have eUp := slotLinkAt_eq_decode st n .parent
@@ -538,10 +539,11 @@ theorem linkOrphanChain_spec : ∀ (k : Nat) {st : SystemState} (c w : Nat),
 /-- **The link writes of removing `n` from the tree**, in words: unlink `n`,
 orphan its children (at most `k`), clear its first-child link.  The state form
 of `LinkView.removeNodeLinks` over the children walk (`linkRemoveNode_spec`). -/
-def linkRemoveNode (st : SystemState) (n : SlotRef) (k : Nat) : SystemState :=
-  let fc := st.slotLinkNodeWord n.cnode n.slot .firstChild
-  let fs := st.slotLinkSlotWord n.cnode n.slot .firstChild
-  (linkOrphanChain k (st.linkUnlinkChild n) fc fs).setSlotLinkWords n.cnode n.slot .firstChild 0 0
+def linkRemoveNode (st : SystemState) (nCNode : SeLe4n.ObjId) (nSlot : SeLe4n.Slot)
+    (k : Nat) : SystemState :=
+  let fc := st.slotLinkNodeWord nCNode nSlot .firstChild
+  let fs := st.slotLinkSlotWord nCNode nSlot .firstChild
+  (linkOrphanChain k (st.linkUnlinkChild nCNode nSlot) fc fs).setSlotLinkWords nCNode nSlot .firstChild 0 0
 
 theorem linkRemoveNode_spec {st : SystemState} (hInv : st.objects.invExt) {n : SlotRef} (k : Nat)
     (hn : st.slotInCNode n) (hT : ∀ f x, st.slotLinkAt n f = some x → st.slotInCNode x)
@@ -549,13 +551,13 @@ theorem linkRemoveNode_spec {st : SystemState} (hInv : st.objects.invExt) {n : S
     (hNd : (st.slotLinkAt.walk k (st.slotLinkAt n .firstChild)).Nodup)
     (hSelf : ∀ w ∈ st.slotLinkAt.walk k (st.slotLinkAt n .firstChild),
       w ≠ n ∧ st.slotLinkAt n .prev ≠ some w) :
-    (st.linkRemoveNode n k).objects.invExt ∧
-      (∀ r, (st.linkRemoveNode n k).slotInCNode r ↔ st.slotInCNode r) ∧
-      (st.linkRemoveNode n k).slotLinkAt =
+    (st.linkRemoveNode n.cnode n.slot k).objects.invExt ∧
+      (∀ r, (st.linkRemoveNode n.cnode n.slot k).slotInCNode r ↔ st.slotInCNode r) ∧
+      (st.linkRemoveNode n.cnode n.slot k).slotLinkAt =
         st.slotLinkAt.removeNodeLinks n (st.slotLinkAt.walk k (st.slotLinkAt n .firstChild)) := by
   have eF := slotLinkAt_eq_decode st n .firstChild
   obtain ⟨i1, v1, e1⟩ := linkUnlinkChild_spec hInv hn hT
-  have hW : (st.linkUnlinkChild n).slotLinkAt.walk k
+  have hW : (st.linkUnlinkChild n.cnode n.slot).slotLinkAt.walk k
       (decodeLink (st.slotLinkNodeWord n.cnode n.slot .firstChild)
         (st.slotLinkSlotWord n.cnode n.slot .firstChild)) =
       st.slotLinkAt.walk k (st.slotLinkAt n .firstChild) := by
@@ -576,25 +578,26 @@ theorem linkRemoveNode_spec {st : SystemState} (hInv : st.objects.invExt) {n : S
 `k` slots, each as `u`'s new first child, reading each one's next sibling
 before linking it.  The state form of folding `LinkView.addChild u` over the
 walk (`linkReparentChain_spec`). -/
-def linkReparentChain : Nat → SystemState → SlotRef → Nat → Nat → SystemState
-  | 0, st, _, _, _ => st
-  | k + 1, st, u, c, w =>
+def linkReparentChain : Nat → SystemState → SeLe4n.ObjId → SeLe4n.Slot → Nat → Nat →
+    SystemState
+  | 0, st, _, _, _, _ => st
+  | k + 1, st, uo, us, c, w =>
     if c = 0 then st
     else
       let o := SeLe4n.ObjId.ofNat (c - 1)
       let s := SeLe4n.Slot.ofNat (w - 1)
       let nc := st.slotLinkNodeWord o s .next
       let ns := st.slotLinkSlotWord o s .next
-      linkReparentChain k (st.linkAddChild u ⟨o, s⟩) u nc ns
+      linkReparentChain k (st.linkAddChild ⟨uo, us⟩ ⟨o, s⟩) uo us nc ns
 
 theorem linkReparentChain_spec : ∀ (k : Nat) {st : SystemState} (u : SlotRef) (c w : Nat),
     st.objects.invExt → st.slotInCNode u →
     (∀ x, st.slotLinkAt u .firstChild = some x → st.slotInCNode x) →
     (∀ x ∈ st.slotLinkAt.walk k (decodeLink c w), st.slotInCNode x) →
     (st.slotLinkAt.walk k (decodeLink c w)).Nodup →
-    (linkReparentChain k st u c w).objects.invExt ∧
-      (∀ r, (linkReparentChain k st u c w).slotInCNode r ↔ st.slotInCNode r) ∧
-      (linkReparentChain k st u c w).slotLinkAt =
+    (linkReparentChain k st u.cnode u.slot c w).objects.invExt ∧
+      (∀ r, (linkReparentChain k st u.cnode u.slot c w).slotInCNode r ↔ st.slotInCNode r) ∧
+      (linkReparentChain k st u.cnode u.slot c w).slotLinkAt =
         (st.slotLinkAt.walk k (decodeLink c w)).foldl (fun L c => L.addChild u c) st.slotLinkAt
   | 0, st, _, _, _, hInv, _, _, _, _ => ⟨hInv, fun _ => .rfl, rfl⟩
   | k + 1, st, u, c, w, hInv, hu, hF, hV, hNd => by
@@ -646,25 +649,26 @@ theorem walk_valid {st : SystemState}
 /-- **The link writes of splicing `n` out**, in words: with a parent `u`, unlink
 `n`, link its children under `u` in chain order and clear its first-child link;
 without one, remove it (`linkSpliceNode_spec`). -/
-def linkSpliceNode (st : SystemState) (n : SlotRef) (k : Nat) : SystemState :=
-  let uc := st.slotLinkNodeWord n.cnode n.slot .parent
-  let us := st.slotLinkSlotWord n.cnode n.slot .parent
-  if uc = 0 then st.linkRemoveNode n k
+def linkSpliceNode (st : SystemState) (nCNode : SeLe4n.ObjId) (nSlot : SeLe4n.Slot)
+    (k : Nat) : SystemState :=
+  let uc := st.slotLinkNodeWord nCNode nSlot .parent
+  let us := st.slotLinkSlotWord nCNode nSlot .parent
+  if uc = 0 then st.linkRemoveNode nCNode nSlot k
   else
-    let fc := st.slotLinkNodeWord n.cnode n.slot .firstChild
-    let fs := st.slotLinkSlotWord n.cnode n.slot .firstChild
-    (linkReparentChain k (st.linkUnlinkChild n)
-      ⟨SeLe4n.ObjId.ofNat (uc - 1), SeLe4n.Slot.ofNat (us - 1)⟩ fc fs).setSlotLinkWords
-      n.cnode n.slot .firstChild 0 0
+    let fc := st.slotLinkNodeWord nCNode nSlot .firstChild
+    let fs := st.slotLinkSlotWord nCNode nSlot .firstChild
+    (linkReparentChain k (st.linkUnlinkChild nCNode nSlot)
+      (SeLe4n.ObjId.ofNat (uc - 1)) (SeLe4n.Slot.ofNat (us - 1)) fc fs).setSlotLinkWords
+      nCNode nSlot .firstChild 0 0
 
 theorem linkSpliceNode_spec {st : SystemState} (hInv : st.objects.invExt) {n : SlotRef} (k : Nat)
     (hn : st.slotInCNode n) (hAll : ∀ r f x, st.slotLinkAt r f = some x → st.slotInCNode x)
     (hNd : (st.slotLinkAt.walk k (st.slotLinkAt n .firstChild)).Nodup)
     (hSelf : ∀ w ∈ st.slotLinkAt.walk k (st.slotLinkAt n .firstChild),
       w ≠ n ∧ st.slotLinkAt n .prev ≠ some w) :
-    (st.linkSpliceNode n k).objects.invExt ∧
-      (∀ r, (st.linkSpliceNode n k).slotInCNode r ↔ st.slotInCNode r) ∧
-      (st.linkSpliceNode n k).slotLinkAt =
+    (st.linkSpliceNode n.cnode n.slot k).objects.invExt ∧
+      (∀ r, (st.linkSpliceNode n.cnode n.slot k).slotInCNode r ↔ st.slotInCNode r) ∧
+      (st.linkSpliceNode n.cnode n.slot k).slotLinkAt =
         match st.slotLinkAt n .parent with
         | none => st.slotLinkAt.removeNodeLinks n (st.slotLinkAt.walk k (st.slotLinkAt n .firstChild))
         | some u => ((st.slotLinkAt.walk k (st.slotLinkAt n .firstChild)).foldl
@@ -682,8 +686,13 @@ theorem linkSpliceNode_spec {st : SystemState} (hInv : st.objects.invExt) {n : S
     generalize hU : (⟨SeLe4n.ObjId.ofNat (st.slotLinkNodeWord n.cnode n.slot .parent - 1),
       SeLe4n.Slot.ofNat (st.slotLinkSlotWord n.cnode n.slot .parent - 1)⟩ : SlotRef) = u
     have hUp : st.slotLinkAt n .parent = some u := by rw [slotLinkAt_of_ne_zero hu, hU]
+    have hUo : SeLe4n.ObjId.ofNat (st.slotLinkNodeWord n.cnode n.slot .parent - 1) = u.cnode := by
+      rw [← hU]
+    have hUs : SeLe4n.Slot.ofNat (st.slotLinkSlotWord n.cnode n.slot .parent - 1) = u.slot := by
+      rw [← hU]
+    rw [hUo, hUs]
     obtain ⟨i1, v1, e1⟩ := linkUnlinkChild_spec hInv hn (fun f x h => hAll n f x h)
-    have hW : (st.linkUnlinkChild n).slotLinkAt.walk k
+    have hW : (st.linkUnlinkChild n.cnode n.slot).slotLinkAt.walk k
         (decodeLink (st.slotLinkNodeWord n.cnode n.slot .firstChild)
           (st.slotLinkSlotWord n.cnode n.slot .firstChild)) =
         st.slotLinkAt.walk k (st.slotLinkAt n .firstChild) := by
@@ -706,15 +715,16 @@ theorem linkSpliceNode_spec {st : SystemState} (hInv : st.objects.invExt) {n : S
 /-- **The link writes of moving `old` to `new`**, in words: unlink `old`, link
 `new` under `old`'s parent, link `old`'s children under `new` in chain order and
 clear `old`'s first-child link (`linkMoveNode_spec`). -/
-def linkMoveNode (st : SystemState) (old new : SlotRef) (k : Nat) : SystemState :=
-  let uc := st.slotLinkNodeWord old.cnode old.slot .parent
-  let us := st.slotLinkSlotWord old.cnode old.slot .parent
-  let fc := st.slotLinkNodeWord old.cnode old.slot .firstChild
-  let fs := st.slotLinkSlotWord old.cnode old.slot .firstChild
-  let st1 := st.linkUnlinkChild old
+def linkMoveNode (st : SystemState) (oldCNode : SeLe4n.ObjId) (oldSlot : SeLe4n.Slot)
+    (newCNode : SeLe4n.ObjId) (newSlot : SeLe4n.Slot) (k : Nat) : SystemState :=
+  let uc := st.slotLinkNodeWord oldCNode oldSlot .parent
+  let us := st.slotLinkSlotWord oldCNode oldSlot .parent
+  let fc := st.slotLinkNodeWord oldCNode oldSlot .firstChild
+  let fs := st.slotLinkSlotWord oldCNode oldSlot .firstChild
+  let st1 := st.linkUnlinkChild oldCNode oldSlot
   let st2 := if uc = 0 then st1
-    else st1.linkAddChild ⟨SeLe4n.ObjId.ofNat (uc - 1), SeLe4n.Slot.ofNat (us - 1)⟩ new
-  (linkReparentChain k st2 new fc fs).setSlotLinkWords old.cnode old.slot .firstChild 0 0
+    else st1.linkAddChild ⟨SeLe4n.ObjId.ofNat (uc - 1), SeLe4n.Slot.ofNat (us - 1)⟩ ⟨newCNode, newSlot⟩
+  (linkReparentChain k st2 newCNode newSlot fc fs).setSlotLinkWords oldCNode oldSlot .firstChild 0 0
 
 theorem linkMoveNode_spec {st : SystemState} (hInv : st.objects.invExt) {old new : SlotRef}
     (k : Nat) (ho : st.slotInCNode old) (hnw : st.slotInCNode new)
@@ -722,9 +732,9 @@ theorem linkMoveNode_spec {st : SystemState} (hInv : st.objects.invExt) {old new
     (hNd : (st.slotLinkAt.walk k (st.slotLinkAt old .firstChild)).Nodup)
     (hSelf : ∀ w ∈ st.slotLinkAt.walk k (st.slotLinkAt old .firstChild),
       w ≠ old ∧ st.slotLinkAt old .prev ≠ some w ∧ w ≠ new) :
-    (st.linkMoveNode old new k).objects.invExt ∧
-      (∀ r, (st.linkMoveNode old new k).slotInCNode r ↔ st.slotInCNode r) ∧
-      (st.linkMoveNode old new k).slotLinkAt =
+    (st.linkMoveNode old.cnode old.slot new.cnode new.slot k).objects.invExt ∧
+      (∀ r, (st.linkMoveNode old.cnode old.slot new.cnode new.slot k).slotInCNode r ↔ st.slotInCNode r) ∧
+      (st.linkMoveNode old.cnode old.slot new.cnode new.slot k).slotLinkAt =
         ((st.slotLinkAt.walk k (st.slotLinkAt old .firstChild)).foldl (fun (L : LinkView) c => L.addChild new c)
           (match st.slotLinkAt old .parent with
            | some u => (st.slotLinkAt.unlinkChild old).addChild u new
@@ -732,15 +742,15 @@ theorem linkMoveNode_spec {st : SystemState} (hInv : st.objects.invExt) {old new
   have eF := slotLinkAt_eq_decode st old .firstChild
   obtain ⟨i1, v1, e1⟩ := linkUnlinkChild_spec hInv ho (fun f x h => hAll old f x h)
   have hC := walk_valid hAll k old .firstChild
-  have t1 : ∀ r f x, (st.linkUnlinkChild old).slotLinkAt r f = some x →
-      (st.linkUnlinkChild old).slotInCNode x := fun r f x h => by
+  have t1 : ∀ r f x, (st.linkUnlinkChild old.cnode old.slot).slotLinkAt r f = some x →
+      (st.linkUnlinkChild old.cnode old.slot).slotInCNode x := fun r f x h => by
     rw [e1] at h
     obtain ⟨v, g, hv⟩ := LinkView.unlinkChild_target h
     exact (v1 x).mpr (hAll _ _ _ hv)
   -- the second stage: `new` under `old`'s parent
   obtain ⟨st2, hst2, i2, v2, e2, t2⟩ : ∃ st2, st2 = (if st.slotLinkNodeWord old.cnode old.slot .parent = 0
-      then st.linkUnlinkChild old
-      else (st.linkUnlinkChild old).linkAddChild
+      then st.linkUnlinkChild old.cnode old.slot
+      else (st.linkUnlinkChild old.cnode old.slot).linkAddChild
         ⟨SeLe4n.ObjId.ofNat (st.slotLinkNodeWord old.cnode old.slot .parent - 1),
           SeLe4n.Slot.ofNat (st.slotLinkSlotWord old.cnode old.slot .parent - 1)⟩ new) ∧
       st2.objects.invExt ∧ (∀ r, st2.slotInCNode r ↔ st.slotInCNode r) ∧
@@ -1060,7 +1070,7 @@ theorem linkAddChild_reach {st₀ st : SystemState} (h : linkReach st₀ st) (p 
   · exact (h3.step _ _ _ _ _).step _ _ _ _ _
 
 theorem linkUnlinkChild_reach {st₀ st : SystemState} (h : linkReach st₀ st) (n : SlotRef) :
-    linkReach st₀ (st.linkUnlinkChild n) := by
+    linkReach st₀ (st.linkUnlinkChild n.cnode n.slot) := by
   unfold linkUnlinkChild; simp only
   have h1 : linkReach st₀ (if st.slotLinkNodeWord n.cnode n.slot .prev = 0 then
       (if st.slotLinkNodeWord n.cnode n.slot .parent = 0 then st
@@ -1095,7 +1105,7 @@ theorem linkOrphanChain_reach : ∀ (k : Nat) {st₀ st : SystemState} (c w : Na
     · exact linkOrphanChain_reach k _ _ (((h.step _ _ _ _ _).step _ _ _ _ _).step _ _ _ _ _)
 
 theorem linkReparentChain_reach : ∀ (k : Nat) {st₀ st : SystemState} (u : SlotRef) (c w : Nat),
-    linkReach st₀ st → linkReach st₀ (linkReparentChain k st u c w)
+    linkReach st₀ st → linkReach st₀ (linkReparentChain k st u.cnode u.slot c w)
   | 0, _, _, _, _, _, h => h
   | k + 1, _, _, u, c, _, h => by
     unfold linkReparentChain
@@ -1104,18 +1114,18 @@ theorem linkReparentChain_reach : ∀ (k : Nat) {st₀ st : SystemState} (u : Sl
     · exact linkReparentChain_reach k u _ _ (linkAddChild_reach h _ _)
 
 theorem linkRemoveNode_reach {st₀ st : SystemState} (h : linkReach st₀ st) (n : SlotRef) (k : Nat) :
-    linkReach st₀ (st.linkRemoveNode n k) :=
+    linkReach st₀ (st.linkRemoveNode n.cnode n.slot k) :=
   (linkOrphanChain_reach k _ _ (linkUnlinkChild_reach h n)).step _ _ _ _ _
 
 theorem linkSpliceNode_reach {st₀ st : SystemState} (h : linkReach st₀ st) (n : SlotRef) (k : Nat) :
-    linkReach st₀ (st.linkSpliceNode n k) := by
+    linkReach st₀ (st.linkSpliceNode n.cnode n.slot k) := by
   unfold linkSpliceNode; simp only
   split
   · exact linkRemoveNode_reach h n k
-  · exact (linkReparentChain_reach k _ _ _ (linkUnlinkChild_reach h n)).step _ _ _ _ _
+  · exact (linkReparentChain_reach k ⟨_, _⟩ _ _ (linkUnlinkChild_reach h n)).step _ _ _ _ _
 
 theorem linkMoveNode_reach {st₀ st : SystemState} (h : linkReach st₀ st) (old new : SlotRef)
-    (k : Nat) : linkReach st₀ (st.linkMoveNode old new k) := by
+    (k : Nat) : linkReach st₀ (st.linkMoveNode old.cnode old.slot new.cnode new.slot k) := by
   unfold linkMoveNode; simp only
   have h1 := linkUnlinkChild_reach h old
   refine (linkReparentChain_reach k _ _ _ ?_).step _ _ _ _ _
@@ -1138,17 +1148,17 @@ post-state's tree. -/
 /-- **Splice `n` out of the tree**, its children moving to its parent. -/
 @[inline] def cdtSplice (st : SystemState) (n : SlotRef) : SystemState :=
   let k := st.cdt.edgeBound
-  (st.modifyCdt (·.spliceNode n)).linkSpliceNode n k
+  (st.modifyCdt (·.spliceNode n)).linkSpliceNode n.cnode n.slot k
 
 /-- **Move node `old` to slot `new`**. -/
 @[inline] def cdtMove (st : SystemState) (old new : SlotRef) : SystemState :=
   let k := st.cdt.edgeBound
-  (st.modifyCdt (·.moveNode old new)).linkMoveNode old new k
+  (st.modifyCdt (·.moveNode old new)).linkMoveNode old.cnode old.slot new.cnode new.slot k
 
 /-- **Remove node `n` and every edge at it**, its children becoming roots. -/
 @[inline] def cdtRemove (st : SystemState) (n : SlotRef) : SystemState :=
   let k := st.cdt.edgeBound
-  (st.modifyCdt (·.removeNode n)).linkRemoveNode n k
+  (st.modifyCdt (·.removeNode n)).linkRemoveNode n.cnode n.slot k
 
 theorem cdtAddChild_reach (st : SystemState) (p c : SlotRef) (op : DerivationOp) :
     linkReach { st with cdt := st.cdt.addEdge p c op } (st.cdtAddChild p c op) :=
@@ -1663,7 +1673,7 @@ theorem cdtSplice_of_not_slotInCNode {st : SystemState} (hInv : st.objects.invEx
     obtain ⟨zP, -⟩ := slotLinkWords_zero_of_not_slotInCNode hn0 .prev
     obtain ⟨zN, -⟩ := slotLinkWords_zero_of_not_slotInCNode hn0 .next
     unfold cdtSplice; simp only [modifyCdt_eq]
-    show (s0.linkSpliceNode n _).slotLinkAt = st.slotLinkAt
+    show (s0.linkSpliceNode n.cnode n.slot _).slotLinkAt = st.slotLinkAt
     unfold linkSpliceNode linkRemoveNode linkUnlinkChild
     simp only [zU, zF, zP, zN, if_true]
     obtain ⟨e1, h1, i1⟩ := slotLinkAt_writes_of_not hI0 hn0 .parent 0 0
@@ -1716,7 +1726,7 @@ theorem cdtRemove_of_not_slotInCNode {st : SystemState} (hInv : st.objects.invEx
     obtain ⟨zP, -⟩ := slotLinkWords_zero_of_not_slotInCNode hn0 .prev
     obtain ⟨zN, -⟩ := slotLinkWords_zero_of_not_slotInCNode hn0 .next
     unfold cdtRemove; simp only [modifyCdt_eq]
-    show (s0.linkRemoveNode n _).slotLinkAt = st.slotLinkAt
+    show (s0.linkRemoveNode n.cnode n.slot _).slotLinkAt = st.slotLinkAt
     unfold linkRemoveNode linkUnlinkChild
     simp only [zU, zF, zP, zN, if_true]
     obtain ⟨e1, h1, i1⟩ := slotLinkAt_writes_of_not hI0 hn0 .parent 0 0

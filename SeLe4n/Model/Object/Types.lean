@@ -375,7 +375,21 @@ is unchanged for every consumer. -/
 structure SlotRef where
   cnode : SeLe4n.ObjId
   slot : SeLe4n.Slot
-  deriving Repr, DecidableEq
+  deriving Repr
+
+/-- Two slot addresses are equal when their CNode and slot words are.  Inlined
+and field by field, so comparing two addresses builds neither (a derived
+instance compares through an out-of-line function that takes the records). -/
+@[inline] instance : DecidableEq SlotRef := fun a b =>
+  if h1 : a.cnode = b.cnode then
+    if h2 : a.slot = b.slot then isTrue (by cases a; cases b; cases h1; cases h2; rfl)
+    else isFalse fun h => h2 (h ▸ rfl)
+  else isFalse fun h => h1 (h ▸ rfl)
+
+/-- A slot address rebuilt from its two words is the address.  Code that passes
+an address across a call as its CNode and slot words rebuilds it where a theorem
+reads it. -/
+@[simp] theorem SlotRef.mk_cnode_slot (r : SlotRef) : SlotRef.mk r.cnode r.slot = r := rfl
 
 /-- WS-G1: Hash instance for composite HashMap/HashSet keying.
     Combines cnode and slot hashes via `mixHash` for uniform distribution.
@@ -454,6 +468,18 @@ made the mapping: were the record carried, two capabilities would each claim one
 mapping and destroying either would unmap the other's. -/
 @[inline] def withoutMapping (cap : Capability) : Capability :=
   { cap with mapping := none }
+
+/-- `withoutMapping` as compiled: a capability that records no mapping is
+returned as it is, so deriving it builds no record (WS-ZA ZA5.3 part 6). -/
+@[inline] def withoutMappingImpl (cap : Capability) : Capability :=
+  match cap.mapping with
+  | none => cap
+  | some _ => { cap with mapping := none }
+
+@[csimp] theorem withoutMapping_eq_impl : @withoutMapping = @withoutMappingImpl := by
+  funext cap
+  cases cap with
+  | mk t r b m => cases m <;> rfl
 
 /-- AK7-I (F-M07 / MEDIUM): Null capability predicate.
 
