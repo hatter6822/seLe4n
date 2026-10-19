@@ -705,7 +705,7 @@ the write alone.  An arm whose checks refuse, and every arm not yet split, is
       | .ok args =>
         let addr : CSpaceAddr := { cnode := cnodeId, slot := args.targetSlot }
         RefusalCarrying.ofChecked (cspaceRevokeAdmitted addr st)
-          (fun st => cspaceRevokePerformAt cnodeId args.targetSlot st)
+          (fun st => cspaceRevokePerformAt executingCore cnodeId args.targetSlot st)
           (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
     | _ => .error (.invalidCapability, st)
   | .mintReplyCap =>
@@ -1077,10 +1077,9 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
       cases hD : decodeCSpaceDeleteArgsBy (msgRegOfFile layout regs) with
       | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD]
       | ok args =>
-        dsimp only [cspaceRevokePerformAt]
         apply RefusalCarrying.ofChecked_eq
         intro hA
-        simp only [dispatchInvocationBy, hD, cspaceRevokeCdtFinalising, hA, ↓reduceIte]
+        simp only [dispatchInvocationBy, hD, cspaceRevokeCdtFinalising_of_admitted hA]
     all_goals rfl
   case mintReplyCap =>
     cases target

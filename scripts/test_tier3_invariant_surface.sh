@@ -4136,7 +4136,13 @@ run_check "INVARIANT" rg -n -U 'def vspaceMapFromFrameCap[^\n]*(\n([ \t][^\n]*)?
 run_check "INVARIANT" rg -n -U '  \| \.cspaceDelete =>\n    some <\| match cap\.target with(\n([ \t][^\n]*)?){0,10}            cspaceDeleteSlotFinalising executingCore addr st' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U '  \| \.cspaceRevoke =>\n    some <\| match cap\.target with(\n([ \t][^\n]*)?){0,8}            cspaceRevokeCdtFinalising executingCore addr st' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U 'def cspaceDeleteSlotFinalising[^\n]*\n[^\n]*\n  fun st =>\n    cspaceDeleteThenFinalise executingCore \(slotPageTables st addr\)\n      \(slotMappedPages st addr\) addr st' SeLe4n/Kernel/Capability/FrameFinalise.lean
-run_check "INVARIANT" rg -n -U 'def cspaceRevokeCdtFinalising[^\n]*\n[^\n]*\n  fun st =>\n    if cspaceRevokeAdmitted addr st then \.ok \(\(\), cspaceRevokePerform addr st\)\n    else cspaceRevokeThenFinalise executingCore \(revokedPageTables st addr\) addr st' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n -U 'def cspaceRevokeCdtFinalising[^\n]*\n[^\n]*\n  fun st =>\n    match SystemState\.lookupSlotCap st addr with\n    \| some _ => \.ok \(\(\), cspaceRevokePerformAt executingCore addr\.cnode addr\.slot st\)' SeLe4n/Kernel/Capability/FrameFinalise.lean
+# v0.36.111: every revoke is seL4's cteRevoke, a run of finalising deletes; the
+# general revocation's batch teardown is gone.
+run_check "INVARIANT" rg -n -U '      if cspaceDeleteFinalisingAdmitted \{ cnode := cc, slot := cs \} st then\n        revokeFirstChildLoop executingCore cnode slot n\n          \(cspaceDeleteFinalisingPerformAt executingCore cc cs st\)' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n '^theorem revokeFirstChildLoop_chain($|[ ({:\[\]])' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n '^theorem FinalisingDeleteChain\.unmapped($|[ ({:\[\]])' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_negative_check "INVARIANT" rg -n 'cspaceRevokeThenFinalise|revokedPageTables|linkSubtreeDeletable' SeLe4n
 # One revocation: the materialized fold REPORTS the page each destroyed
 # capability recorded, read from the slot it deletes, and there is no second
 # state-only fold beside it (the collecting duplicate was deleted, not pinned).
@@ -4151,7 +4157,7 @@ run_negative_check "INVARIANT" rg -n 'livePagesCleared|finaliseFramePages|!pageT
 run_check "INVARIANT" rg -n '^theorem finaliseDestroyedCapabilities_eq_ok_state($|[ ({:\[\]])' SeLe4n/Kernel/Capability/FrameFinalise.lean
 run_check "INVARIANT" rg -n '^theorem unmapLivePagesState_clears($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PageTeardownClears.lean
 run_check "INVARIANT" rg -n '^theorem pageTablesDetached_of_teardown($|[ ({:\[\]])' SeLe4n/Kernel/Capability/FrameFinalise.lean
-run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdt_preserves_teardownWellFormed($|[ ({:\[\]])' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n '^theorem FinalisingDeleteChain\.wellFormed($|[ ({:\[\]])' SeLe4n/Kernel/Capability/FrameFinalise.lean
 run_check "INVARIANT" rg -n '^  vspaceMappingsWellFormed st$' SeLe4n/Kernel/Architecture/VSpaceInvariant.lean
 run_check "INVARIANT" rg -n '            match cspaceInsertSlot dst capNN\.val\.withoutMapping st. with' SeLe4n/Kernel/Capability/Operations.lean
 run_check "INVARIANT" rg -n '            match cspaceInsertSlot dstAddr cap\.withoutMapping st with' SeLe4n/Kernel/Capability/Operations.lean
@@ -4254,7 +4260,7 @@ run_check "INVARIANT" rg -n -U 'def pageTablesOrphaned [^\n]*(\n([ \t][^\n]*)?)*
 # performed in place, as seL4's first-child loop; since v0.36.110 so is every
 # delete, whatever its capability names.
 run_check "INVARIANT" rg -n -U '        RefusalCarrying\.ofChecked \(cspaceDeleteFinalisingAdmitted addr st\)\n          \(fun st => cspaceDeleteFinalisingPerformAt executingCore cnodeId args\.targetSlot st\)' SeLe4n/Kernel/RefusalCarryingInvocation.lean
-run_check "INVARIANT" rg -n -U '        RefusalCarrying\.ofChecked \(cspaceRevokeAdmitted addr st\)\n          \(fun st => cspaceRevokePerformAt cnodeId args\.targetSlot st\)' SeLe4n/Kernel/RefusalCarryingInvocation.lean
+run_check "INVARIANT" rg -n -U '        RefusalCarrying\.ofChecked \(cspaceRevokeAdmitted addr st\)\n          \(fun st => cspaceRevokePerformAt executingCore cnodeId args\.targetSlot st\)' SeLe4n/Kernel/RefusalCarryingInvocation.lean
 run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlotFinalising_of_admitted($|[ ({:\[\]])' SeLe4n/Kernel/Capability/FrameFinalise.lean
 run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlotFinalising_of_cnode($|[ ({:\[\]])' SeLe4n/Kernel/Capability/FrameFinalise.lean
 run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdtFinalising_closed($|[ ({:\[\]])' SeLe4n/Kernel/Capability/FrameFinalise.lean

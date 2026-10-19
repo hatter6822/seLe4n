@@ -2312,10 +2312,10 @@ private def chain21StreamingRevokeEquivalence : IO Unit := do
   assertInvariants "chain21: materialized revoke invariants" stMaterialized
   assertInvariants "chain21: streaming revoke invariants" stStreaming
 
-/-- WS-ZA ZA5.3 part 4 (the delete/revoke perform step): a revoke whose subtree
-holds only capabilities that finalise nothing takes the plain seL4 `cteRevoke`
-loop (delete the source's first child until none is left), and a delete of such
-a capability takes the plain delete.  Tree: root → A → B and root → C, so the
+/-- WS-ZA ZA5.3 parts 4 and 8 (the delete/revoke perform step): a revoke is
+seL4's `cteRevoke` loop (delete the source's first child until none is left),
+admitted whenever the source holds a capability, and a delete of a capability
+that finalises nothing takes the plain delete.  Tree: root → A → B and root → C, so the
 loop must splice B under the root before deleting it. -/
 private def revokeFinalisingTakesPlainLoop : IO Unit := do
   let rootCNode : SeLe4n.ObjId := ⟨8210⟩
@@ -2343,7 +2343,7 @@ private def revokeFinalisingTakesPlainLoop : IO Unit := do
   let (_, st3) ← expectOkSt "plain revoke: mint root→C"
     (SeLe4n.Kernel.cspaceMintWithCdt rootSlot slotC rights none st2)
 
-  expect "plain revoke: a subtree of endpoint capabilities is admitted"
+  expect "plain revoke: a source holding a capability is admitted"
     (SeLe4n.Kernel.cspaceRevokeAdmitted rootSlot st3)
   let (_, stRevoked) ← expectOkSt "plain revoke: revoke the root"
     (SeLe4n.Kernel.cspaceRevokeCdtFinalising bootCoreId rootSlot st3)

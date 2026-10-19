@@ -232,8 +232,6 @@ theorem cspaceRevokeCdtFinalising_runQueueStage {ec : Concurrency.CoreId} {addr 
     RunQueueStage st st' :=
   cspaceRevokeCdtFinalising_closed (RunQueueStage st)
     (fun _ _ _ hQ hD => hQ.trans (cspaceDeleteSlotFinalising_runQueueStage hD))
-    (fun _ _ hR hF => (cspaceRevokeCdt_runQueueStage hR).trans
-      (finaliseDestroyedCapabilities_runQueueStage hF))
     (RunQueueStage.refl st) h
 
 /-- A store whose slot holds no TCB on either side. -/

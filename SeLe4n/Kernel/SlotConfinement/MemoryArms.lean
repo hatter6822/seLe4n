@@ -421,12 +421,9 @@ theorem cspaceRevokeCdtFinalising_confinedToCores
     observableSlotsConfinedToCores st st' [] := by
   refine observableSlotsConfinedToCores_nil_of_framed
     (cspaceRevokeCdtFinalising_closed (SchedulerMachineFramed st)
-      (fun c s s' hQ hD => ?_) (fun pages st1 hR hF => ?_) ⟨rfl, rfl⟩ hStep)
-  · obtain ⟨hs, hm⟩ := cspaceDeleteSlotFinalising_framed executingCore c s s' hD
-    exact ⟨hs.trans hQ.1, hm.trans hQ.2⟩
-  · obtain ⟨hs1, hm1⟩ := cspaceRevokeCdt_scheduler_machine addr st st1 pages hR
-    obtain ⟨hs2, hm2⟩ := finaliseDestroyedCapabilities_framed executingCore _ _ st1 st' hF
-    exact ⟨hs2.trans hs1, hm2.trans hm1⟩
+      (fun c s s' hQ hD => ?_) ⟨rfl, rfl⟩ hStep)
+  obtain ⟨hs, hm⟩ := cspaceDeleteSlotFinalising_framed executingCore c s s' hD
+  exact ⟨hs.trans hQ.1, hm.trans hQ.2⟩
 
 -- ============================================================================
 -- §5k The live `.lifecycleRetype` arm — a sweep bounded by occupancy

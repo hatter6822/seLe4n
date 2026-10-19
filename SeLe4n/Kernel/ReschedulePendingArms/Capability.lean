@@ -272,9 +272,6 @@ theorem cspaceRevokeCdtFinalising_keyFrame (ec : CoreId) (addr : CSpaceAddr)
     capabilityKeyFrame st st' :=
   cspaceRevokeCdtFinalising_closed (capabilityKeyFrame st)
     (fun c s s' hQ hD => hQ.trans (cspaceDeleteSlotFinalising_keyFrame ec c s s' hQ.2.2 hD))
-    (fun pages st1 hR hF =>
-      have h1 := cspaceRevokeCdt_keyFrame st st1 addr pages hObjInv hR
-      h1.trans (finaliseDestroyedCapabilities_keyFrame ec _ _ st1 st' h1.2.2 hF))
     (capabilityKeyFrame_of_objects_scheduler_eq hObjInv rfl rfl) hStep
 
 /-! ### VSpace and untyped -/

@@ -1577,9 +1577,6 @@ theorem cspaceRevokeCdtFinalising_preserves_ipcInvariantFull
   refine (cspaceRevokeCdtFinalising_closed (fun s => ipcInvariantFull s ∧ s.objects.invExt)
     (fun c s s' hQ hD => ⟨cspaceDeleteSlotFinalising_preserves_ipcInvariantFull ec c s s'
       hQ.2 hQ.1 hD, cspaceDeleteSlotFinalising_preserves_objects_invExt ec c s s' hQ.2 hD⟩)
-    (fun pages st1 hR hF => finaliseDestroyedCapabilities_preserves_ipcInvariantFull ec _ _ st1 st'
-      (cspaceRevokeCdt_preserves_objects_invExt st st1 addr pages hObjInv hInv hR)
-      (cspaceRevokeCdt_preserves_ipcInvariantFull st st1 addr pages hObjInv hInv hR) hF)
     ⟨hInv, hObjInv⟩ hStep).1
 
 /-- **PR #904 review (`v0.36.41`): the mapping-epoch tag preserves the bundle** —
