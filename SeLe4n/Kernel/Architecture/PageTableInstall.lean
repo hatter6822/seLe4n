@@ -97,6 +97,30 @@ def pageTableInstallLive (st : SystemState) (tableId : SeLe4n.ObjId) : Bool :=
     | none => false
   | none => false
 
+/-- WS-ZA ZA5.4: `pageTableInstallLive` with the slot compared field by field
+(`VSpaceRoot.slotHeldIn`), so the slot record is not built
+(`pageTableInstallLive_eq_loop`). -/
+def pageTableInstallLiveLoop (st : SystemState) (tableId : SeLe4n.ObjId) : Bool :=
+  match st.getPageTable? tableId with
+  | some table =>
+    match table.installedIn with
+    | some inst =>
+      match st.getVSpaceRoot? inst.root with
+      | some root => VSpaceRoot.slotHeldIn inst.level inst.index tableId root.tables
+      | none => false
+    | none => false
+  | none => false
+
+@[csimp] theorem pageTableInstallLive_eq_loop :
+    @pageTableInstallLive = @pageTableInstallLiveLoop := by
+  funext st tableId
+  unfold pageTableInstallLive pageTableInstallLiveLoop
+  split
+  · split
+    · cases st.getVSpaceRoot? _ <;> simp [VSpaceRoot.slotHeldIn_eq, PageTableInstall.slotFor]
+    · rfl
+  · rfl
+
 /-- **Does a capability name an installed page table?** -/
 def capabilityNamesInstalledPageTable (st : SystemState) (cap : Capability) : Bool :=
   match cap.target with

@@ -747,7 +747,7 @@ def pageTableUnmapAdmittedAt (st : SystemState) (tableId : SeLe4n.ObjId) : Bool 
      | some inst =>
        match st.getVSpaceRoot? inst.root with
        | some root =>
-         !root.tables.contains (inst.slotFor tableId) ||
+         !VSpaceRoot.slotHeldIn inst.level inst.index tableId root.tables ||
            (!Architecture.pageTableInUse root inst && st.objects.findsInPlace inst.root)
        | none => true
      | none => true)
@@ -783,9 +783,10 @@ theorem pageTableUnmap_of_admitted (tableId : SeLe4n.ObjId) (st : SystemState)
   cases hGR : st.getVSpaceRoot? inst.root with
   | none => simp only [Option.any_none, Bool.false_eq_true, ↓reduceIte]; exact hS1
   | some root =>
-  simp only [hI, hGR] at hA
-  simp only [Option.any_some]
-  by_cases hC : root.tables.contains (inst.slotFor tableId) = true
+  simp only [hI, hGR, VSpaceRoot.slotHeldIn_eq] at hA
+  simp only [Option.any_some, PageTableInstall.slotFor]
+  by_cases hC : root.tables.contains
+      { level := inst.level, index := inst.index, table := tableId } = true
   · simp only [hC, Bool.not_true, Bool.false_or, Bool.and_eq_true, Bool.not_eq_true'] at hA
     obtain ⟨hUse, hInR⟩ := hA
     have hR : st.objects[inst.root]? = some (.vspaceRoot root) :=

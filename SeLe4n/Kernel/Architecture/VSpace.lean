@@ -41,7 +41,7 @@ def asidBoundToRoot (st : SystemState) (asid : SeLe4n.ASID) (rootId : SeLe4n.Obj
     U2-H: Rejects ASIDs ≥ `maxASID` (65536 on ARM64) as a defense-in-depth
     check — invalid ASIDs cannot appear in the ASID table, but the guard makes
     this explicit. -/
-def resolveAsidRoot (st : SystemState) (asid : SeLe4n.ASID) : Option (SeLe4n.ObjId × VSpaceRoot) :=
+@[inline] def resolveAsidRoot (st : SystemState) (asid : SeLe4n.ASID) : Option (SeLe4n.ObjId × VSpaceRoot) :=
   match st.asidTable[asid]? with
   | some oid =>
     match st.getVSpaceRoot? oid with

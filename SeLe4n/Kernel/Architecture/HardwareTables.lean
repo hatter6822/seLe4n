@@ -68,6 +68,24 @@ def tablePageAt? (st : SystemState) (root : VSpaceRoot) (level index : Nat) :
   if level = 0 then root.tableBase
   else (root.slotAt? level index).bind fun s => (st.getPageTable? s.table).map (·.base)
 
+/-- WS-ZA ZA5.4: `tablePageAt?` with the slot found by first-order loops
+(`VSpaceRoot.slotPresentIn`, `slotTableIn`), so no predicate closure or slot
+`some` is built (`tablePageAt?_eq_loops`). -/
+def tablePageAtLoops (st : SystemState) (root : VSpaceRoot) (level index : Nat) :
+    Option SeLe4n.PAddr :=
+  if level = 0 then root.tableBase
+  else if VSpaceRoot.slotPresentIn level index root.tables then
+    (st.getPageTable? (VSpaceRoot.slotTableIn level index root.tables)).map (·.base)
+  else none
+
+@[csimp] theorem tablePageAt?_eq_loops : @tablePageAt? = @tablePageAtLoops := by
+  funext st root level index
+  unfold tablePageAt? tablePageAtLoops VSpaceRoot.slotAt?
+  split
+  · rfl
+  · exact VSpaceRoot.find?_bind_eq_slotTableIn level index root.tables
+      (fun t => (st.getPageTable? t).map (·.base))
+
 /-- A table descriptor naming the table page at `base`. -/
 def tableDescriptorValue (base : SeLe4n.PAddr) : UInt64 :=
   descriptorToUInt64 (.table base)
