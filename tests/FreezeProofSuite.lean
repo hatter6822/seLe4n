@@ -99,10 +99,10 @@ private def fp008_objectTypes : IO Unit := do
   expect "empty objectTypes lookup" (fss.objectTypes.get? ⟨0⟩ == none)
 
 /-- FP-009: CDT — freeze copies the (empty) edge list -/
-private def fp009_cdtEdges : IO Unit := do
+private def fp009_cdtEmpty : IO Unit := do
   let ist := mkEmptyIntermediateState
   let fss := freeze ist
-  expect "cdtEdges empty" fss.cdtEdges.isEmpty
+  expect "cdt edge bound zero" (fss.cdt.edgeBound == 0)
 
 /-- FP-009c: Objects field — freeze preserves lookup with freezeObject transform -/
 private def fp009c_objectsField : IO Unit := do
@@ -207,7 +207,7 @@ private def fp016_deterministic : IO Unit := do
   let fss2 := freeze ist
   expect "same objects size" (fss1.objects.data.size == fss2.objects.data.size)
   expect "same irq size" (fss1.irqHandlers.data.size == fss2.irqHandlers.data.size)
-  expect "same CDT edges" (fss1.cdtEdges == fss2.cdtEdges)
+  expect "same CDT edge bound" (fss1.cdt.edgeBound == fss2.cdt.edgeBound)
   expect "same objectIndex" (fss1.objectIndex == fss2.objectIndex)
 
 /-- FP-017: freezeMap no duplicate keys — distinct entries have distinct keys -/
@@ -255,7 +255,7 @@ private def fp020_fieldParity : IO Unit := do
   expect "objects accessible" (fss.objects.data.size == 0)
   expect "irqHandlers accessible" (fss.irqHandlers.data.size == 0)
   expect "asidTable accessible" (fss.asidTable.data.size == 0)
-  expect "cdtEdges accessible" (fss.cdtEdges.length == 0)
+  expect "cdt accessible" (fss.cdt.edgeBound == 0)
   expect "objectIndex accessible" (fss.objectIndex.length == 0)
   expect "scheduler accessible" ((fss.scheduler.current) == none)
 
@@ -294,7 +294,7 @@ def main : IO Unit := do
   fp006_irqHandlers
   fp007_asidTable
   fp008_objectTypes
-  fp009_cdtEdges
+  fp009_cdtEmpty
   fp009c_objectsField
 
   -- Q6-T3: CNode Radix Equivalence

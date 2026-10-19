@@ -5758,20 +5758,12 @@ theorem storeCNodeWith_objects {st : SystemState} {id : SeLe4n.ObjId} {cn : CNod
   simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hS
   rw [← hS]
 
-/-- WS-ZA ZA5.3: the state with the shared empty tree in its derivation-tree
-field.  A call, so the record update is not merged into the caller's. -/
-@[noinline] def withCdtTaken (st : SystemState) : SystemState :=
-  { st with cdt := CapDerivationTree.empty }
-
-/-- WS-ZA ZA5.3: **the derivation tree rewritten by `f` in its field.**  The tree
-is taken out of the state (`withCdtTaken`) before `f` runs, so on an exclusively
-owned state `f` receives its only reference and writes the tree's tables in
-place; `{ st with cdt := f st.cdt }` keeps the state holding the tree while `f`
-runs, so each table `f` writes is copied (`modifyCdt_eq`). -/
+/-- WS-ZA ZA5.3: **the derivation tree rewritten by `f` in its field.**  Since
+part 5 the tree's edges are a ghost and its one stored part is the edge bound
+(`CapDerivationTree.edgeBound`), so the rewrite is a word store. -/
 @[inline] def modifyCdt (st : SystemState) (f : CapDerivationTree → CapDerivationTree) :
     SystemState :=
-  let t := st.cdt
-  { withCdtTaken st with cdt := f t }
+  { st with cdt := f st.cdt }
 
 theorem modifyCdt_eq (st : SystemState) (f : CapDerivationTree → CapDerivationTree) :
     st.modifyCdt f = { st with cdt := f st.cdt } := rfl

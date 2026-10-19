@@ -75,8 +75,6 @@ theorem cspaceCopy_preserves_capabilityInvariantBundle
     (st st' : SystemState)
     (src dst : CSpaceAddr)
     (hInv : capabilityInvariantBundle st)
-    (hDstCapacity : ∀ cn cap, st.objects[dst.cnode]? = some (.cnode cn) →
-      (cn.insert dst.slot cap).slotCountBounded)
     (hStep : cspaceCopy src dst st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
   unfold cspaceCopy at hStep
@@ -98,24 +96,21 @@ theorem cspaceCopy_preserves_capabilityInvariantBundle
       | ok pair2 =>
           rcases pair2 with ⟨_, st2⟩
           have hBundleSt2 := cspaceInsertSlot_preserves_capabilityInvariantBundle st st2 dst cap.withoutMapping hInv
-            (fun cn hObj => hDstCapacity cn cap.withoutMapping hObj)
             (objects_invExt_of_capabilityInvariantBundle st hInv)
             (replyCapBacked_of_source_slot st src cap hInv hSrc) hInsert
           have hCdt := cdt_addEdge_after_insert st st2 src dst cap.withoutMapping .copy
-            hInv.2.2.1 hInv.2.2.2.1 (objects_invExt_of_capabilityInvariantBundle st hInv)
+            hInv.2.1 hInv.2.2.1 (objects_invExt_of_capabilityInvariantBundle st hInv)
             (by rw [(cspaceLookupSlot_ok_iff_lookupSlotCap st src cap).1 hSrc]; rfl) hInsert
             hInv.linksAgree
           have hIX := objects_invExt_of_capabilityInvariantBundle _ hBundleSt2
-          rcases hBundleSt2 with ⟨_, hBnd2, hComp2, _, hDepth2, hObjInv2, hRCPV2, -⟩
+          rcases hBundleSt2 with ⟨_, hComp2, _, hDepth2, hObjInv2, hRCPV2, -⟩
           simp [hSrc, hToNN, hInsert] at hStep
           cases hStep
           have hObjFinal : ({ st2 with cdt := st2.cdt.addEdge src dst .copy }).objects = st2.objects := rfl
-          -- WS-H4: cspaceSlotCountBounded transfers via objects equality; the
-          -- tree keeps its soundness because the new edge reaches an empty slot.
+          -- The tree keeps its soundness because the new edge reaches an empty slot.
           refine capabilityInvariantBundle_of_linkReach ?_
             (SystemState.cdtAddChild_reach st2 src dst .copy) hIX hCdt.2.2
           exact ⟨cspaceLookupSound_holds _,
-            cspaceSlotCountBounded_of_objects_eq st2 _ hBnd2 hObjFinal,
             hCdt.1, hCdt.2.1,
             cspaceDepthConsistent_of_objects_eq st2 _ hDepth2 hObjFinal,
             hObjFinal ▸ hObjInv2,
@@ -130,8 +125,6 @@ theorem cspaceMove_preserves_capabilityInvariantBundle
     (st st' : SystemState)
     (src dst : CSpaceAddr)
     (hInv : capabilityInvariantBundle st)
-    (hDstCapacity : ∀ cn cap, st.objects[dst.cnode]? = some (.cnode cn) →
-      (cn.insert dst.slot cap).slotCountBounded)
     (hStep : cspaceMove src dst st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
   unfold cspaceMove at hStep
@@ -161,7 +154,6 @@ theorem cspaceMove_preserves_capabilityInvariantBundle
           | ok pair3 =>
               rcases pair3 with ⟨_, st3⟩
               have hBundleSt2 := cspaceInsertSlot_preserves_capabilityInvariantBundle st st2 dst cap hInv
-                (fun cn hObj => hDstCapacity cn cap hObj)
                 (objects_invExt_of_capabilityInvariantBundle st hInv)
                 (replyCapBacked_of_source_slot st src cap hInv hSrc) hInsert
               have hBundleSt3 := cspaceDeleteSlotCore_preserves_capabilityInvariantBundleOff st2 st3 src
@@ -175,7 +167,7 @@ theorem cspaceMove_preserves_capabilityInvariantBundle
                   (storeObject_cdt_eq st st2 _ _ hStoreD)
               have hFresh : ¬ st3.cdt.mentions dst := by
                 rw [hCdt3]
-                exact hInv.2.2.1.not_mentions_of_empty fun cn' h => by
+                exact hInv.2.1.not_mentions_of_empty fun cn' h => by
                   rw [hPreD] at h; cases h; exact hEmptyD
               have hDst2 : ∃ cn, st2.objects[dst.cnode]? = some (.cnode cn) ∧
                   cn.lookup dst.slot ≠ none :=
@@ -183,27 +175,26 @@ theorem cspaceMove_preserves_capabilityInvariantBundle
                     (objects_invExt_of_capabilityInvariantBundle st hInv) hStoreD,
                   by rw [CNode.lookup_insert_eq _ _ _ (CNode.slotsUnique_holds _) hAddrD]; simp⟩
               have hDst3 := cspaceDeleteSlotCore_keeps_other_slot st2 st3 src dst
-                hBundleSt2.2.2.2.2.2.1 (Ne.symm hSelf) hDelete hDst2
-              have hIX := hBundleSt3.2.2.2.2.2.1
+                hBundleSt2.2.2.2.2.1 (Ne.symm hSelf) hDelete hDst2
+              have hIX := hBundleSt3.2.2.2.2.1
               -- The insert and the delete write capabilities in place, so `src`
               -- (occupied before) and `dst` stay slots of their CNodes.
               have hSrcIn : st3.slotInCNode src :=
-                (cspaceDeleteSlotCore_links st2 st3 src hBundleSt2.2.2.2.2.2.1 hDelete).2 src |>.mpr
-                  ((cspaceInsertSlot_links st st2 dst cap hInv.2.2.2.2.2.1 hInsert).2 src |>.mpr
+                (cspaceDeleteSlotCore_links st2 st3 src hBundleSt2.2.2.2.2.1 hDelete).2 src |>.mpr
+                  ((cspaceInsertSlot_links st st2 dst cap hInv.2.2.2.2.1 hInsert).2 src |>.mpr
                     (slotInCNode_of_occupied (slotOccupied_of_lookupSlotCap st src
                       (by rw [(cspaceLookupSlot_ok_iff_lookupSlotCap st src cap).1 hSrc]; rfl))))
               have hLinks3 : cdtLinksAgree (st3.cdtMove src dst) :=
-                SystemState.cdtMove_agree hIX hBundleSt3.2.2.2.2.2.2.2.1
-                  hBundleSt3.2.2.2.2.2.2.2.2 hBundleSt3.2.2.2.1 hSrcIn
+                SystemState.cdtMove_agree hIX hBundleSt3.2.2.2.2.2.2.1
+                  hBundleSt3.2.2.2.2.2.2.2 hBundleSt3.2.2.1 hSrcIn
                   (slotInCNode_of_occupied hDst3) hFresh hSelf
-              rcases hBundleSt3 with ⟨_, hBnd3, hComp3, hAcyc3, hDepth3, hObjInv3, hRCPV3, -⟩
+              rcases hBundleSt3 with ⟨_, hComp3, hAcyc3, hDepth3, hObjInv3, hRCPV3, -⟩
               simp [hSrc, hToNN, hInsert, hDelete] at hStep
               cases hStep
               have hObjEq : ({ st3 with cdt := st3.cdt.moveNode src dst }).objects = st3.objects := rfl
               refine capabilityInvariantBundle_of_linkReach ?_
                 (SystemState.cdtMove_reach st3 src dst) hIX hLinks3
               exact ⟨cspaceLookupSound_holds _,
-                cspaceSlotCountBounded_of_objects_eq st3 _ hBnd3 hObjEq,
                 fun ref hM => by
                   rcases CapDerivationTree.moveNode_mentions st3.cdt src dst hAcyc3 ref hM with
                     rfl | ⟨hNe, hM'⟩
@@ -222,8 +213,6 @@ theorem cspaceMintWithCdt_preserves_capabilityInvariantBundle
     (rights : AccessRightSet)
     (badge : Option SeLe4n.Badge)
     (hInv : capabilityInvariantBundle st)
-    (hDstCapacity : ∀ cn cap, st.objects[dst.cnode]? = some (.cnode cn) →
-      (cn.insert dst.slot cap).slotCountBounded)
     (hStep : cspaceMintWithCdt src dst rights badge st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
   unfold cspaceMintWithCdt at hStep
@@ -232,21 +221,20 @@ theorem cspaceMintWithCdt_preserves_capabilityInvariantBundle
   | ok pair =>
       rcases pair with ⟨_, st1⟩
       have hBundle := cspaceMint_preserves_capabilityInvariantBundle st st1 src dst rights badge hInv
-        hDstCapacity hMint
+        hMint
       obtain ⟨parent, child, hL, hI⟩ := cspaceMint_ok_decompose src dst rights badge st st1 hMint
       have hCdt := cdt_addEdge_after_insert st st1 src dst child .mint
-        hInv.2.2.1 hInv.2.2.2.1 (objects_invExt_of_capabilityInvariantBundle st hInv)
+        hInv.2.1 hInv.2.2.1 (objects_invExt_of_capabilityInvariantBundle st hInv)
         (by rw [(cspaceLookupSlot_ok_iff_lookupSlotCap st src parent).1 hL]; rfl) hI
         hInv.linksAgree
       have hIX := objects_invExt_of_capabilityInvariantBundle _ hBundle
-      rcases hBundle with ⟨_, hBnd1, _, _, hDepth1, hObjInv1, hRCPV1, -⟩
+      rcases hBundle with ⟨_, _, _, hDepth1, hObjInv1, hRCPV1, -⟩
       simp [hMint] at hStep
       cases hStep
       have hObjFinal : ({ st1 with cdt := st1.cdt.addEdge src dst .mint }).objects = st1.objects := rfl
       refine capabilityInvariantBundle_of_linkReach ?_
         (SystemState.cdtAddChild_reach st1 src dst .mint) hIX hCdt.2.2
       exact ⟨cspaceLookupSound_holds _,
-        cspaceSlotCountBounded_of_objects_eq st1 _ hBnd1 hObjFinal,
         hCdt.1, hCdt.2.1,
         cspaceDepthConsistent_of_objects_eq st1 _ hDepth1 hObjFinal,
         hObjFinal ▸ hObjInv1, replyCapPointsToValidReply_of_objects_eq hObjFinal hRCPV1⟩
@@ -260,8 +248,6 @@ stays complete and acyclic because the edge reaches the slot the insert found em
 theorem mintReplyCapWithCdt_preserves_capabilityInvariantBundle
     (st st' : SystemState) (src dst : CSpaceAddr)
     (hInv : capabilityInvariantBundle st)
-    (hDstCapacity : ∀ cn cap, st.objects[dst.cnode]? = some (.cnode cn) →
-      (cn.insert dst.slot cap).slotCountBounded)
     (hStep : mintReplyCapWithCdt src dst st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
   unfold mintReplyCapWithCdt at hStep
@@ -270,21 +256,20 @@ theorem mintReplyCapWithCdt_preserves_capabilityInvariantBundle
   | ok pair =>
       rcases pair with ⟨_, st1⟩
       have hBundle := mintReplyCap_preserves_capabilityInvariantBundle st st1 src dst hInv
-        hDstCapacity hMint
+        hMint
       obtain ⟨parent, child, hL, hI⟩ := mintReplyCap_ok_decompose src dst st st1 hMint
       have hCdt := cdt_addEdge_after_insert st st1 src dst child .mint
-        hInv.2.2.1 hInv.2.2.2.1 (objects_invExt_of_capabilityInvariantBundle st hInv)
+        hInv.2.1 hInv.2.2.1 (objects_invExt_of_capabilityInvariantBundle st hInv)
         (by rw [(cspaceLookupSlot_ok_iff_lookupSlotCap st src parent).1 hL]; rfl) hI
         hInv.linksAgree
       have hIX := objects_invExt_of_capabilityInvariantBundle _ hBundle
-      rcases hBundle with ⟨_, hBnd1, _, _, hDepth1, hObjInv1, hRCPV1, -⟩
+      rcases hBundle with ⟨_, _, _, hDepth1, hObjInv1, hRCPV1, -⟩
       simp [hMint] at hStep
       cases hStep
       have hObjFinal : ({ st1 with cdt := st1.cdt.addEdge src dst .mint }).objects = st1.objects := rfl
       refine capabilityInvariantBundle_of_linkReach ?_
         (SystemState.cdtAddChild_reach st1 src dst .mint) hIX hCdt.2.2
       exact ⟨cspaceLookupSound_holds _,
-        cspaceSlotCountBounded_of_objects_eq st1 _ hBnd1 hObjFinal,
         hCdt.1, hCdt.2.1,
         cspaceDepthConsistent_of_objects_eq st1 _ hDepth1 hObjFinal,
         hObjFinal ▸ hObjInv1, replyCapPointsToValidReply_of_objects_eq hObjFinal hRCPV1⟩
@@ -377,14 +362,12 @@ theorem cspaceMutate_preserves_capabilityInvariantBundle
     (rights : AccessRightSet)
     (badge : Option SeLe4n.Badge)
     (hInv : capabilityInvariantBundle st)
-    (hSlotCapacity : ∀ cn cap, st.objects[addr.cnode]? = some (.cnode cn) →
-      (cn.insert addr.slot cap).slotCountBounded)
     (hStep : cspaceMutate addr rights badge st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
-  rcases hInv with ⟨_hSound, hBounded, hComp, hAcyclic, hDepthPre, hObjInv, hRCPV, hLinks⟩
+  rcases hInv with ⟨_hSound, hComp, hAcyclic, hDepthPre, hObjInv, hRCPV, hLinks⟩
   -- WS-H4: cspaceMutate goes through storeObject(CNode.insert), same as insertSlot
-  have ⟨hBounded', hComp', hAcyclic', hDepth', hObjInv', hLinks'⟩ :
-      cspaceSlotCountBounded st' ∧ cdtCompleteness st' ∧ cdtAcyclicity st' ∧
+  have ⟨hComp', hAcyclic', hDepth', hObjInv', hLinks'⟩ :
+      cdtCompleteness st' ∧ cdtAcyclicity st' ∧
         cspaceDepthConsistent st' ∧ st'.objects.invExt ∧ cdtLinksAgree st' := by
     unfold cspaceMutate SystemState.getCNode? at hStep
     cases hLookup2 : cspaceLookupSlot addr st with
@@ -413,8 +396,6 @@ theorem cspaceMutate_preserves_capabilityInvariantBundle
               obtain ⟨_, hStep⟩ := hStep
               have hRefCdt : st'.cdt = stMid.cdt := by rw [hStep]
               have hRefObj : st'.objects = stMid.objects := by rw [hStep]
-              have hBndMid := cspaceSlotCountBounded_of_storeObject_cnode st stMid addr.cnode _ hBounded hObjInv hStore
-                (hSlotCapacity preCn _ hPre)
               have hCompMid := cdtCompleteness_of_storeObject_cnode_mono st stMid addr.cnode preCn _ hComp
                 hObjInv hPre hStore fun s h => CNode.lookup_insert_ne_none preCn addr.slot s _ h
               have hAcyclicMid := cdtAcyclicity_of_cdt_eq st stMid hAcyclic
@@ -424,8 +405,7 @@ theorem cspaceMutate_preserves_capabilityInvariantBundle
                 { cap with rights := rights, badge := badge.orElse (fun _ => cap.badge) }
                 hDepthPre hObjInv hPre hStore
               have hObjInvMid := storeObject_preserves_objects_invExt st stMid addr.cnode _ hObjInv hStore
-              exact ⟨cspaceSlotCountBounded_of_objects_eq stMid st' hBndMid hRefObj,
-                cdtCompleteness_of_objects_cdt_eq stMid st' hCompMid hRefObj hRefCdt,
+              exact ⟨cdtCompleteness_of_objects_cdt_eq stMid st' hCompMid hRefObj hRefCdt,
                 cdtAcyclicity_of_cdt_eq stMid st' hAcyclicMid hRefCdt,
                 cspaceDepthConsistent_of_objects_eq stMid st' hDepthMid hRefObj,
                 hRefObj ▸ hObjInvMid,
@@ -435,7 +415,7 @@ theorem cspaceMutate_preserves_capabilityInvariantBundle
                     (SystemState.slotLinkAt_storeObject_cnode hObjInv hPre (CNode.insert_links ..) hStore))⟩
       · simp_all
   exact ⟨cspaceLookupSound_holds st',
-    hBounded', hComp', hAcyclic', hDepth', hObjInv',
+    hComp', hAcyclic', hDepth', hObjInv',
     cspaceMutate_preserves_replyCapPointsToValidReply st st' addr rights badge hRCPV hObjInv hStep,
     hLinks'⟩
 
@@ -447,24 +427,18 @@ theorem cspaceMutate_preserves_capabilityInvariantBundle
 bundle.**  `cspaceRecordFrameMapping` is an in-place rewrite of one occupied slot
 — the capability's `mapping` field set, its target, rights and badge kept — so
 it is `cspaceMutate`'s shape with the mutated field changed, and the argument is
-that theorem's.  One thing is stronger: the slot is **occupied** (the
-decomposition returns the capability it rewrites), so overwriting it cannot grow
-the CNode (`CNode.insert_slotCountBounded_of_lookup`), and no slot-capacity
-hypothesis is owed where `cspaceMutate`'s theorem takes one. -/
+that theorem's.  The slot is **occupied** (the decomposition returns the
+capability it rewrites), and that capability's target backs the reply-cap
+conjunct. -/
 theorem cspaceRecordFrameMapping_preserves_capabilityInvariantBundle
     (st st' : SystemState) (addr : CSpaceAddr) (m : FrameMapping)
     (hInv : capabilityInvariantBundle st)
     (hStep : cspaceRecordFrameMapping addr m st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
-  rcases hInv with ⟨_hSound, hBounded, hComp, hAcyclic, hDepthPre, hObjInv, hRCPV, hLinks⟩
+  rcases hInv with ⟨_hSound, hComp, hAcyclic, hDepthPre, hObjInv, hRCPV, hLinks⟩
   obtain ⟨preCn, cap, hCn, hLk, hStore⟩ := cspaceRecordFrameMapping_ok_decompose addr m st st' hStep
   have hPre : st.objects[addr.cnode]? = some (.cnode preCn) :=
     (SystemState.getCNode?_eq_some_iff st addr.cnode preCn).1 hCn
-  have hCapBound : (preCn.insert addr.slot { cap with mapping := some m }).slotCountBounded :=
-    CNode.insert_slotCountBounded_of_lookup preCn addr.slot cap _
-      (hBounded addr.cnode preCn hPre) hLk
-  have hBnd := cspaceSlotCountBounded_of_storeObject_cnode st st' addr.cnode _ hBounded hObjInv
-    hStore hCapBound
   have hCompMid := cdtCompleteness_of_storeObject_cnode_mono st st' addr.cnode preCn _ hComp
                 hObjInv hPre hStore fun s h => CNode.lookup_insert_ne_none preCn addr.slot s _ h
   have hAcyclicMid := cdtAcyclicity_of_cdt_eq st st' hAcyclic
@@ -472,7 +446,7 @@ theorem cspaceRecordFrameMapping_preserves_capabilityInvariantBundle
   have hDepthMid := cspaceDepthConsistent_of_storeObject_insertCNode
     st st' addr.cnode preCn addr.slot { cap with mapping := some m } hDepthPre hObjInv hPre hStore
   have hObjInvMid := storeObject_preserves_objects_invExt st st' addr.cnode _ hObjInv hStore
-  refine ⟨cspaceLookupSound_holds st', hBnd, hCompMid, hAcyclicMid, hDepthMid, hObjInvMid, ?_,
+  refine ⟨cspaceLookupSound_holds st', hCompMid, hAcyclicMid, hDepthMid, hObjInvMid, ?_,
     cdtLinksAgree_of_eq hLinks (storeObject_cdt_eq st st' addr.cnode _ hStore)
       (SystemState.slotLinkAt_storeObject_cnode hObjInv hPre (CNode.insert_links ..) hStore)⟩
   -- The rewritten capability keeps its target, so the reply-cap-bearing slots are

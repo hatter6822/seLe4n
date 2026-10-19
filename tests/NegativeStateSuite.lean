@@ -285,14 +285,14 @@ private def runCspaceMutationAndRevokeNegativeChecks : IO Unit := do
     } |>.withDerivationEdges [(slot0, moveChildSlot, .mint), (moveParentSlot, slot0, .copy)]
   let (_, moveState) ← expectOkSt "cspaceMove moves the source's tree position"
     (SeLe4n.Kernel.cspaceMove slot0 moveDst moveSeed)
-  if moveState.cdt.parentOf moveDst = some moveParentSlot ∧
-      moveState.cdt.childrenOf moveDst = [moveChildSlot] ∧
-      moveState.cdt.parentOf slot0 = none ∧
-      moveState.cdt.childrenOf slot0 = [] then
+  if moveState.slotLinkAt moveDst .parent = some moveParentSlot ∧
+      moveState.linkChildrenOf moveDst = [moveChildSlot] ∧
+      moveState.slotLinkAt slot0 .parent = none ∧
+      moveState.linkChildrenOf slot0 = [] then
     IO.println "positive check passed [cspaceMove carries the source's parent and children to dst]"
   else
     throw <| IO.userError "cspaceMove should move the source slot's edges onto dst"
-  if moveState.cdt.edges.length = moveSeed.cdt.edges.length then
+  if (linkedDerivationEdges moveState).length = (linkedDerivationEdges moveSeed).length then
     IO.println "positive check passed [cspaceMove neither adds nor drops CDT edges]"
   else
     throw <| IO.userError "cspaceMove unexpectedly changed the number of CDT edges"
@@ -304,9 +304,9 @@ private def runCspaceMutationAndRevokeNegativeChecks : IO Unit := do
     } |>.withDerivationEdges [(moveParentSlot, moveDst, .copy)]
   let (_, deletedMoveDst) ← expectOkSt "cspaceDeleteSlot removes a leaf from the tree"
     (SeLe4n.Kernel.cspaceDeleteSlot moveDst leafDeleteSeed)
-  if deletedMoveDst.cdt.parentOf moveDst = none ∧
-      deletedMoveDst.cdt.childrenOf moveParentSlot = [] ∧
-      deletedMoveDst.cdt.edges = [] then
+  if deletedMoveDst.slotLinkAt moveDst .parent = none ∧
+      deletedMoveDst.linkChildrenOf moveParentSlot = [] ∧
+      (linkedDerivationEdges deletedMoveDst).isEmpty then
     IO.println "positive check passed [cspaceDeleteSlot takes the slot's edges out of the tree]"
   else
     throw <| IO.userError "cspaceDeleteSlot must remove the deleted slot's edges"
@@ -322,11 +322,10 @@ private def runCspaceMutationAndRevokeNegativeChecks : IO Unit := do
     } |>.withDerivationEdges [(bearingParent, slot0, .copy), (slot0, childOfBearing, .mint)]
   let (_, splicedSt) ← expectOkSt "cspaceDeleteSlot deletes a slot with CDT children"
     (SeLe4n.Kernel.cspaceDeleteSlot slot0 childBearingSeed)
-  if splicedSt.cdt.parentOf childOfBearing = some bearingParent ∧
-      splicedSt.cdt.childrenOf slot0 = [] ∧
-      splicedSt.cdt.parentOf slot0 = none ∧
-      (splicedSt.cdt.edges.any fun e =>
-        e.parent == bearingParent && e.child == childOfBearing && e.op == .mint) then
+  if splicedSt.slotLinkAt childOfBearing .parent = some bearingParent ∧
+      splicedSt.linkChildrenOf slot0 = [] ∧
+      splicedSt.slotLinkAt slot0 .parent = none ∧
+      (linkedDerivationEdges splicedSt).contains (bearingParent, childOfBearing) then
     IO.println "positive check passed [cspaceDeleteSlot splices a parent slot out of the tree]"
   else
     throw <| IO.userError "cspaceDeleteSlot must re-derive the deleted slot's child from its parent"
@@ -375,7 +374,7 @@ private def runCspaceMutationAndRevokeNegativeChecks : IO Unit := do
   | none =>
       throw <| IO.userError "cspaceRevokeCdtStrict must surface first descendant deletion failure"
 
-  if !(strictState.cdt.edges.any fun e => e.parent == strictChildSlotOk || e.child == strictChildSlotOk) then
+  if !(linkMentions strictState strictChildSlotOk) then
     IO.println "positive check passed [cspaceRevokeCdtStrict takes a deleted descendant out of the tree]"
   else
     throw <| IO.userError "cspaceRevokeCdtStrict should remove a successfully deleted descendant's edges"
@@ -1610,19 +1609,87 @@ private def runSlotLinkAgreementChecks : IO Unit := do
   let ids := wideId :: invariantObjectIds
   let linkCheckFails (st : SystemState) : Bool :=
     (stateInvariantChecksFor ids st).any
-      (fun c => !c.2 && c.1 == "cdt slot links agree with the tree")
-  expectBool "control: a sparse radix-16 CNode's links agree with its tree"
+      (fun c => !c.2 && c.1 == "cdt slot links fit together as a tree")
+  expectBool "control: a sparse radix-16 CNode's links fit together as a tree"
     (linkCheckFails seed) false
   let withLink (st : SystemState) (s : SeLe4n.Slot) (f : LinkField) (c w : Nat) : SystemState :=
     match st.getCNode? wideId with
     | some cn => { st with objects := st.objects.insert wideId (.cnode (cn.setLinkWords s f c w)) }
     | none => st
-  expectBool "a stray parent link at a slot the tree does not name is refused"
+  expectBool "a stray parent link at a slot its parent does not list is refused"
     (linkCheckFails (withLink seed (SeLe4n.Slot.ofNat 65000) .parent (wideId.toNat + 1) 4)) true
-  expectBool "a wrong next link at a slot the tree names is refused"
+  expectBool "a next link its target does not answer is refused"
     (linkCheckFails (withLink seed childSlot.slot .next (wideId.toNat + 1) 4)) true
   expectBool "a slot word alone, with no CNode word, is no link and is not refused"
     (linkCheckFails (withLink seed (SeLe4n.Slot.ofNat 65000) .parent 0 4)) false
+
+/-- PR #958 review: the runtime link check refuses link shapes that agree
+locally but break the tree's other invariants: a pair of empty slots linked as
+parent and child (`cdtCompleteness`), a slot that is its own parent and first
+child (`cdtAcyclicity`), more parent links than the tree's edge bound, which
+fuels the link walks and the revoke loop, a sibling ring whose parent's child
+chain does not reach it, and a self loop in a CNode the object list omits (the
+check reads the whole store).  Each keeps the local agreements and breaks the
+relation its check names; all but the extra edge also add a parent link past the
+edge bound, so the bound check fails with them. -/
+private def runSlotLinkShapeChecks : IO Unit := do
+  let expectBool (label : String) (actual expected : Bool) : IO Unit :=
+    if actual == expected then IO.println s!"positive check passed [{label}]"
+    else throw <| IO.userError s!"{label}: expected {expected}, got {actual}"
+  let cnId : SeLe4n.ObjId := ⟨5160⟩
+  let rootSlot : SlotRef := { cnode := cnId, slot := SeLe4n.Slot.ofNat 3 }
+  let childSlot : SlotRef := { cnode := cnId, slot := SeLe4n.Slot.ofNat 5 }
+  let spareSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 9
+  let cap : Capability :=
+    { target := .object endpointId, rights := AccessRightSet.ofList [.read], badge := none }
+  let seed : SystemState := {
+    baseState with
+      objects := baseState.objects.insert cnId (.cnode (CNode.ofList 8 0 0 8
+        [(rootSlot.slot, cap), (childSlot.slot, cap), (spareSlot, cap)]))
+      cdt := CapDerivationTree.empty
+  } |>.withDerivationEdges [(rootSlot, childSlot, .copy)]
+  let ids := cnId :: invariantObjectIds
+  let failing (st : SystemState) : List String :=
+    ((stateInvariantChecksFor ids st).filter (fun c => !c.2 && c.1.startsWith "cdt ")).map (·.1)
+  let withLink (st : SystemState) (s : SeLe4n.Slot) (f : LinkField) (o : SeLe4n.ObjId)
+      (w : SeLe4n.Slot) : SystemState :=
+    match st.getCNode? cnId with
+    | some cn =>
+      let cn' := cn.setLinkWords s f (o.toNat + 1) (w.toNat + 1)
+      { st with objects := st.objects.insert cnId (.cnode cn') }
+    | none => st
+  expectBool "control: a populated one-edge tree passes every link check"
+    ((failing seed).isEmpty) true
+  expectBool "control: the fixture's edge bound is exactly its parent links"
+    ((linkedDerivationEdges seed).length == seed.cdt.edgeBound) true
+  let emptyA := SeLe4n.Slot.ofNat 100
+  let emptyB := SeLe4n.Slot.ofNat 101
+  let emptyPair := withLink (withLink seed emptyA .parent cnId emptyB) emptyB .firstChild cnId emptyA
+  expectBool "two empty slots linked as parent and child fail the occupancy and bound checks"
+    (failing emptyPair ==
+      ["cdt linked slots hold capabilities", "cdt edge bound covers the slot links"]) true
+  let selfLoop := withLink (withLink seed spareSlot .parent cnId spareSlot) spareSlot .firstChild
+    cnId spareSlot
+  expectBool "a slot that is its own parent and first child fails the cycle and bound checks"
+    (failing selfLoop ==
+      ["cdt slot links form no cycle", "cdt edge bound covers the slot links"]) true
+  let extraEdge :=
+    withLink (withLink (withLink (withLink seed rootSlot.slot .firstChild cnId spareSlot)
+      spareSlot .parent cnId rootSlot.slot) spareSlot .next cnId childSlot.slot)
+      childSlot.slot .prev cnId spareSlot
+  expectBool "a second parent link past the edge bound fails only the bound check"
+    (failing extraEdge == ["cdt edge bound covers the slot links"]) true
+  let ring :=
+    withLink (withLink (withLink seed spareSlot .parent cnId childSlot.slot) spareSlot .next cnId
+      spareSlot) spareSlot .prev cnId spareSlot
+  expectBool "a sibling ring under a parent with no first child fails the child-chain and bound checks"
+    (failing ring ==
+      ["cdt child chains list each parent's children", "cdt edge bound covers the slot links"]) true
+  let unlisted :=
+    ((stateInvariantChecksFor invariantObjectIds selfLoop).filter
+      (fun c => !c.2 && c.1.startsWith "cdt ")).map (·.1)
+  expectBool "a self loop in a CNode the object list omits still fails the cycle and bound checks"
+    (unlisted == ["cdt slot links form no cycle", "cdt edge bound covers the slot links"]) true
 
 private def runNegativeChecks : IO Unit := do
   runBaselineLookupNegativeChecks                       -- [was 248-262]
@@ -1636,6 +1703,7 @@ private def runNegativeChecks : IO Unit := do
   runEndpointQueueHeadDisjointChecks                    -- PR #897 review (v0.35.108)
   runBuilderRunPlacementChecks                          -- PR #932 review
   runSlotLinkAgreementChecks                            -- PR #956 review
+  runSlotLinkShapeChecks                                -- PR #958 review
 
   -- ==========================================================================
   -- WS-D4 F-12: Double-wait prevention in notificationWait (was 1036-1043).
@@ -4215,10 +4283,10 @@ def runAC1CdtTrackingChecks : IO Unit := do
   let dstAddr : SeLe4n.Kernel.CSpaceAddr := { cnode := dstCnodeId, slot := dstSlot }
 
   -- AC1-H-01: cspaceMint succeeds but CDT has no new edges
-  let edgeCountBefore := st1.cdt.edges.length
+  let edgeCountBefore := (linkedDerivationEdges st1).length
   match SeLe4n.Kernel.cspaceMint srcAddr dstAddr allRights none st1 with
   | .ok ((), stMint) =>
-    if stMint.cdt.edges.length != edgeCountBefore then
+    if (linkedDerivationEdges stMint).length != edgeCountBefore then
       throw <| IO.userError "cspaceMint should NOT add CDT edges"
   | .error e =>
     throw <| IO.userError s!"cspaceMint failed unexpectedly: {repr e}"
@@ -4226,7 +4294,7 @@ def runAC1CdtTrackingChecks : IO Unit := do
   -- AC1-H-02: cspaceMintWithCdt succeeds and CDT has a new edge
   match SeLe4n.Kernel.cspaceMintWithCdt srcAddr dstAddr allRights none st1 with
   | .ok ((), stMintCdt) =>
-    if stMintCdt.cdt.edges.length <= edgeCountBefore then
+    if (linkedDerivationEdges stMintCdt).length <= edgeCountBefore then
       throw <| IO.userError "cspaceMintWithCdt should add a CDT edge"
   | .error e =>
     throw <| IO.userError s!"cspaceMintWithCdt failed unexpectedly: {repr e}"
@@ -4492,8 +4560,8 @@ private def runWSRR8CSpaceSlotRangeChecks : IO Unit := do
   -- ...and the retired reading, which once installed there and left a CNode
   -- holding more capabilities than it has slots, now stores nothing: WS-ZA
   -- ZA5.3's slot array has no entry past `2 ^ radixWidth`, so `CNode.insert`
-  -- at slot 9 leaves the CNode as it was and `cspaceSlotCountBounded` holds
-  -- even without the guard.
+  -- at slot 9 leaves the CNode as it was and the slot-count bound
+  -- (`CNode.slotCountBounded_holds`) holds even without the guard.
   match unguardedInsertSlot fullOutOfRangeDst occupied fullState with
   | .error e =>
       throw <| IO.userError

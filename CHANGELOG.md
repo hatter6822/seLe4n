@@ -1,3 +1,40 @@
+## v0.36.108 — WS-ZA ZA5.3 part 5: the derivation tree is a ghost
+
+The capability derivation tree's edge list is ghost state, so at run time the
+tree is one word and executable code reads it only through the slot links.
+
+- **Ghost edges**: `CapDerivationTree` holds `edgesGhost : Erased (List
+  CapDerivationEdge)` and `edgeBound : Nat` with `edges_length_le`.  `edges`,
+  `childrenOf`, `parentOf`, `descendantsOf` and `addEdgeWouldBeSafe` are
+  noncomputable.  Adding an edge or moving a slot raises the bound by one; a
+  splice or removal keeps it.  The bound fuels the link walks, the revoke loops,
+  the streaming revoke and `descendantsOf`.
+- **Frozen state**: `FrozenSystemState.cdt` carries the same tree (was
+  `cdtEdges`); the agreement check compares the bound and the CNode links.
+- **Runtime checks**: `cdtLinksConsistentCheck` checks that the stored slot
+  links fit together as a tree, replacing the two checks that read the edges;
+  the suites read the tree through `slotLinkAt`, `linkChildrenOf`,
+  `linkedDerivationEdges` and `linkMentions`.  Every linked slot holds a
+  capability, every parent chain and child walk ends without repeating a slot,
+  each slot's child count equals the number of slots naming it as parent, and
+  the tree's edge bound covers the linked edges (`linkedDerivationEdges` folds
+  over the object store, so a CNode the object index does not list is still
+  read), and for every slot named as a parent or naming a first child, the
+  chain from its first child lists exactly the slots whose parent link names it.
+  The check reads every CNode in the object store (`linkedSlots`), not the
+  listed objects.  `runSlotLinkShapeChecks` breaks each relation in turn.
+- **Slot-count conjunct retired**: `cspaceSlotCountBounded` was a theorem of
+  every state since part 1's slot array (`CNode.slotCountBounded_holds`).  It
+  leaves `capabilityInvariantBundle` (seven conjuncts) and
+  `capabilityInvariantBundleOff`, with its transfer lemmas, the CNode-level
+  preservation lemmas, the `hSlotCapacity`, `hDstCapacity`, `hSlotCap` and
+  `hNewObjCNodeBounded` hypotheses, and boot's CNode shape conjunct.
+- **Readings** (normal build, cells per call): copy 4 (6 before), mint 7 (9),
+  move 3 (8), delete 2 (5), revoke 3 (6), reply-cap delete 2 (4), reply-cap mint
+  5 (7), each page-table retype 63 (64), frame retype 80 (81), frame delete 29
+  (34), page-table deletes 23 each (27, 26, 25).
+- **Fixture**: the trace runs 40 state invariant checks (37 before).
+
 ## v0.36.107 — WS-ZA ZA5.3 part 4: delete and revoke check, then perform
 
 A delete or revoke that finalises nothing is now decided before any write and

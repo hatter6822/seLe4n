@@ -38,7 +38,7 @@ theorem capabilityInvariantBundle_of_removeNode (st : SystemState) (node : SlotR
     (hInv : capabilityInvariantBundleOff st (· = node)) :
     capabilityBundleOffLinks { st with cdt := st.cdt.removeNode node } :=
   capabilityInvariantBundle_of_off_cdt_update st _ _ hInv
-    (CapDerivationTree.edgeWellFounded_sub _ _ hInv.2.2.2.1
+    (CapDerivationTree.edgeWellFounded_sub _ _ hInv.2.2.1
       (CapDerivationTree.removeNode_edges_sub st.cdt node))
     (fun ref h => CapDerivationTree.removeNode_mentions st.cdt node ref h)
     fun ref hEq => by subst hEq; exact CapDerivationTree.removeNode_not_mentions_self _ _
@@ -49,9 +49,9 @@ theorem capabilityInvariantBundle_of_cdtRemove (st : SystemState) (node : SlotRe
     (hInv : capabilityInvariantBundleOff st (· = node)) :
     capabilityInvariantBundle (st.cdtRemove node) :=
   capabilityInvariantBundle_of_linkReach (capabilityInvariantBundle_of_removeNode st node hInv)
-    (SystemState.cdtRemove_reach st node) hInv.2.2.2.2.2.1
-    (SystemState.cdtRemove_agree hInv.2.2.2.2.2.1 hInv.2.2.2.2.2.2.2.1 hInv.2.2.2.2.2.2.2.2
-      hInv.2.2.2.1 node)
+    (SystemState.cdtRemove_reach st node) hInv.2.2.2.2.1
+    (SystemState.cdtRemove_agree hInv.2.2.2.2.1 hInv.2.2.2.2.2.2.1 hInv.2.2.2.2.2.2.2
+      hInv.2.2.1 node)
 
 /-- R2-A/R2-F: `processRevokeNode` preserves the full capability invariant bundle
 when it succeeds: the slot's delete keeps it (`cspaceDeleteSlotCore`), and

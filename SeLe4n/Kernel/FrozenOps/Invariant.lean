@@ -46,11 +46,11 @@ open SeLe4n.Model
 -- reaches.  Cite `frozenStoreObject_ok`.
 
 /-- Q7-E: `frozenStoreObject` preserves CDT edges. -/
-theorem frozenStoreObject_preserves_cdtEdges
+theorem frozenStoreObject_preserves_cdt
     (id : SeLe4n.ObjId) (obj : FrozenKernelObject)
     (st st' : FrozenSystemState)
     (hOk : frozenStoreObject id obj st = .ok ((), st')) :
-    st'.cdtEdges = st.cdtEdges := by
+    st'.cdt = st.cdt := by
   obtain ⟨_, _, hSt⟩ := frozenStoreObject_ok hOk
   subst hSt; rfl
 

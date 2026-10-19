@@ -484,7 +484,7 @@ theorem childrenOf_nodup {cdt : CapDerivationTree} (hU : cdt.childrenUnique) (p 
 
 theorem parentOf_addEdge (cdt : CapDerivationTree) (p c r : SlotRef) (op : DerivationOp) :
     (cdt.addEdge p c op).parentOf r = if r = c then some p else cdt.parentOf r := by
-  unfold parentOf addEdge
+  unfold parentOf; rw [addEdge_edges]
   by_cases h : r = c
   · subst h; simp [CapDerivationEdge.isChildOf]
   · have h' : ¬ (c = r) := fun e => h e.symm
@@ -492,7 +492,7 @@ theorem parentOf_addEdge (cdt : CapDerivationTree) (p c r : SlotRef) (op : Deriv
 
 theorem childrenOf_addEdge (cdt : CapDerivationTree) (p c q : SlotRef) (op : DerivationOp) :
     (cdt.addEdge p c op).childrenOf q = if q = p then c :: cdt.childrenOf q else cdt.childrenOf q := by
-  unfold childrenOf addEdge
+  unfold childrenOf; rw [addEdge_edges]
   by_cases h : q = p
   · subst h; simp [CapDerivationEdge.isParentOf]
   · have h' : ¬ (p = q) := fun e => h e.symm
@@ -529,7 +529,8 @@ theorem parentOf_eq_some_iff {cdt : CapDerivationTree} (hU : cdt.childrenUnique)
   rw [← mem_childrenOf_iff_parentOf hU, mem_childrenOf]
 
 theorem removeNode_sublist (cdt : CapDerivationTree) (n : SlotRef) :
-    (cdt.removeNode n).edges.Sublist cdt.edges := List.filter_sublist
+    (cdt.removeNode n).edges.Sublist cdt.edges := by
+  rw [removeNode_edges]; exact List.filter_sublist
 
 theorem parentOf_removeNode {cdt : CapDerivationTree} (hU : cdt.childrenUnique) (n r : SlotRef) :
     (cdt.removeNode n).parentOf r =
@@ -539,7 +540,7 @@ theorem parentOf_removeNode {cdt : CapDerivationTree} (hU : cdt.childrenUnique) 
   · next hc =>
     rw [parentOf_eq_none_iff]
     intro e he hec
-    simp only [removeNode, List.mem_filter, CapDerivationEdge.isParentOf,
+    simp only [removeNode_edges, List.mem_filter, CapDerivationEdge.isParentOf,
       CapDerivationEdge.isChildOf, decide_eq_true_eq] at he
     obtain ⟨he, hp, hcn⟩ := he
     rcases hc with rfl | hc
@@ -552,17 +553,18 @@ theorem parentOf_removeNode {cdt : CapDerivationTree} (hU : cdt.childrenUnique) 
     cases hP : cdt.parentOf r with
     | none =>
       rw [parentOf_eq_none_iff] at hP ⊢
-      intro e he; exact hP e (List.mem_filter.mp he).1
+      intro e he; rw [removeNode_edges] at he; exact hP e (List.mem_filter.mp he).1
     | some p =>
       obtain ⟨e, he, hep, hec⟩ := (parentOf_eq_some_iff hU p r).mp hP
       refine (parentOf_eq_some_iff hU' p r).mpr ⟨e, ?_, hep, hec⟩
-      simp only [removeNode, List.mem_filter, CapDerivationEdge.isParentOf,
+      simp only [removeNode_edges, List.mem_filter, CapDerivationEdge.isParentOf,
         CapDerivationEdge.isChildOf, decide_eq_true_eq]
       refine ⟨he, fun h => hc2 (h ▸ hep ▸ hP), fun h => hc1 (hec ▸ h)⟩
 
 theorem childrenOf_removeNode (cdt : CapDerivationTree) (n q : SlotRef) :
     (cdt.removeNode n).childrenOf q = if q = n then [] else SlotList.drop (cdt.childrenOf q) n := by
-  unfold childrenOf removeNode SlotList.drop
+  unfold childrenOf SlotList.drop
+  rw [removeNode_edges]
   rw [List.filter_filter]
   split
   · next hq =>
@@ -595,6 +597,18 @@ structure LinksAgree (L : LinkView) (cdt : CapDerivationTree) : Prop where
   firstChild : ∀ p, L p .firstChild = (cdt.childrenOf p).head?
   next : ∀ r, L r .next = (cdt.parentOf r).bind fun p => SlotList.succIn (cdt.childrenOf p) r
   prev : ∀ r, L r .prev = (cdt.parentOf r).bind fun p => SlotList.predIn (cdt.childrenOf p) r
+
+/-- The agreement reads the tree only through its edges. -/
+theorem LinksAgree.of_edges_eq {L : LinkView} {cdt cdt' : CapDerivationTree}
+    (hE : cdt.edges = cdt'.edges) (h : LinksAgree L cdt) : LinksAgree L cdt' := by
+  have hP : ∀ r, cdt'.parentOf r = cdt.parentOf r := fun r => by
+    unfold CapDerivationTree.parentOf; rw [hE]
+  have hC : ∀ r, cdt'.childrenOf r = cdt.childrenOf r := fun r => by
+    unfold CapDerivationTree.childrenOf; rw [hE]
+  have hU : cdt'.childrenUnique := by
+    have := h.childrenUnique; unfold CapDerivationTree.childrenUnique at this ⊢; rwa [← hE]
+  exact ⟨hU, fun r => by rw [hP, h.parent], fun p => by rw [hC, h.firstChild],
+    fun r => by simp only [hP, hC, h.next], fun r => by simp only [hP, hC, h.prev]⟩
 
 namespace LinkView
 
@@ -725,7 +739,7 @@ theorem addChild (h : LinksAgree L cdt) {p c : SlotRef} (op : DerivationOp)
     rw [(mem_childrenOf_iff_parentOf hU q c).mp hm] at hc; cases hc
   have hcp : c ≠ p := fun e => hpc e.symm
   refine ⟨?_, fun r => ?_, fun q => ?_, fun r => ?_, fun r => ?_⟩
-  · show ((⟨p, c, op⟩ : CapDerivationEdge) :: cdt.edges).map (·.child) |>.Nodup
+  · unfold CapDerivationTree.childrenUnique; rw [CapDerivationTree.addEdge_edges]
     rw [List.map_cons, List.nodup_cons]
     refine ⟨fun hm => ?_, hU⟩
     obtain ⟨e, he, hec⟩ := List.mem_map.mp hm
@@ -1156,7 +1170,7 @@ private theorem spliceNode_byRemoval {L : LinkView} {cdt : CapDerivationTree} (h
           (L.removeNodeLinks n (cdt.childrenOf n))) (cdt.spliceNode n) := by
   have hU := h.childrenUnique
   have hR := h.removeNode n
-  unfold CapDerivationTree.spliceNode
+  refine LinksAgree.of_edges_eq (CapDerivationTree.spliceNode_edges_fold cdt n).symm ?_
   rw [← find_child_parent]
   cases hf : cdt.edges.find? (·.isChildOf n) with
   | none => exact hR
@@ -1185,7 +1199,7 @@ private theorem moveNode_byRemoval {L : LinkView} {cdt : CapDerivationTree} (h :
     have hm := filter_parent_mem he
     refine ⟨?_, fun hc => hnew ⟨e, (List.mem_filter.mp he).1, .inr hc.symm⟩⟩
     rw [parentOf_removeNode hU, if_pos (.inr ((mem_childrenOf_iff_parentOf hU old _).mp hm))]
-  unfold CapDerivationTree.moveNode
+  refine LinksAgree.of_edges_eq (CapDerivationTree.moveNode_edges_fold cdt old new).symm ?_
   rw [← find_child_parent]
   cases hf : cdt.edges.find? (·.isChildOf old) with
   | none => exact foldl_addChild new _ hR hNd hEdge

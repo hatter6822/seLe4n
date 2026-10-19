@@ -90,7 +90,7 @@ def bootstrapState : SystemState :=
     })
     -- **WS-RR RR8.16** (`v0.35.201`): eight addressable slots, because this
     -- fixture holds capabilities at 0, 5 and 6 and the harness installs one at
-    -- 7.  It declared `radixWidth := 0` — one slot — so `cspaceSlotCountBounded`
+    -- 7.  It declared `radixWidth := 0` — one slot — so the slot-count bound
     -- was false of the harness's own root CSpace and every capability but slot
     -- 0's was unreachable by any CPtr.
     |>.withObject ⟨10⟩ (.cnode (SeLe4n.Model.CNode.ofSlots 3 0 0 3 (SeLe4n.UniqueSlotMap.ofListWF

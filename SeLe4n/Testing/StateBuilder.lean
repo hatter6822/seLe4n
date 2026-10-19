@@ -244,7 +244,7 @@ def emptyFrozenSystemState : FrozenSystemState :=
     serviceRegistry := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
     interfaceRegistry := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
     services := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
-    cdtEdges := []
+    cdt := .empty
     scheduler :=
       { byPriority := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
         threadPriority := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
@@ -407,9 +407,21 @@ def withSenderFrame (st : SystemState) (tid : SeLe4n.ThreadId) (msg : IpcMessage
 
 end SeLe4n.Testing
 
+/-- Test fixtures: a slot an edge names holds a capability (`cdtCompleteness`),
+so an empty one is given a read capability to its own CNode first. -/
+def SeLe4n.Model.SystemState.withSlotPopulated (st : SeLe4n.Model.SystemState)
+    (r : SeLe4n.Model.SlotRef) : SeLe4n.Model.SystemState :=
+  match SeLe4n.Model.SystemState.lookupSlotCap st r with
+  | some _ => st
+  | none =>
+    st.storeCNodeWith r.cnode (·.insert r.slot
+      { target := .object r.cnode, rights := SeLe4n.Model.AccessRightSet.ofList [.read] })
+
 /-- Test fixtures: record each `(parent, child, op)` derivation edge through the
-kernel's paired tree-and-link op, so the fixture's slot links agree with its tree. -/
+kernel's paired tree-and-link op, so the fixture's slot links agree with its tree;
+each slot an edge names holds a capability (`withSlotPopulated`). -/
 def SeLe4n.Model.SystemState.withDerivationEdges (st : SeLe4n.Model.SystemState)
     (es : List (SeLe4n.Model.SlotRef × SeLe4n.Model.SlotRef × SeLe4n.Model.DerivationOp)) :
     SeLe4n.Model.SystemState :=
-  es.foldl (fun s e => s.cdtAddChild e.1 e.2.1 e.2.2) st
+  es.foldl (fun s e =>
+    ((s.withSlotPopulated e.1).withSlotPopulated e.2.1).cdtAddChild e.1 e.2.1 e.2.2) st

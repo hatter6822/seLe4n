@@ -21641,12 +21641,11 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointCallOnCore_p
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointCallWithCapsOnCore_preserves_schedulerInvariantBase_smp[^\n]*(\n([ \t][^\n]*)?)*hNotCur : . ep, st\.getEndpoint\? endpointId = some ep" SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointCallCrossCoreDispatch_preserves_schedulerInvariantBase_smp[^\n]*(\n([ \t][^\n]*)?)*hNotCur : . ep, st\.getEndpoint\? endpointId = some ep" SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean'
 # ...and the capability lifts of the two levels that reach `ipcUnwrapCaps` REDUCE
-# to that one step rather than taking its own externalised premises.  Those
-# premises are REFUTED, not merely unproved: `hSlotCap` asks that inserting any
-# capability at any slot of any CNode of any bundle-satisfying state keep
-# `slotCountBounded`, `cspaceSlotCountBounded` is `<=`, and `CNode.insert` at a
-# fresh slot grows the table -- so a lift that took them would be vacuous while
-# its name read as coverage.  A negative refuses the retired pack tree-wide.
+# to that one step rather than taking its own externalised premises: the
+# reply-cap backing premise is quantified over every bundle-satisfying state and
+# every capability, which no caller exhibits for an arbitrary transferred
+# capability, so a lift that took it would be vacuous while its name read as
+# coverage.  A negative refuses the retired pack tree-wide.
 run_check "INVARIANT" rg -n '^def receiveTransferCapsPreservesCapabilityBundle($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean
 run_negative_check "INVARIANT" rg -n 'CapTransferBundlePremises' SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean SeLe4n/Kernel/IPC/Invariant/FaultBundlePreservation.lean
 # The hypothesis is EXHIBITED, which is what stops it being the pack one name

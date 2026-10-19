@@ -548,7 +548,7 @@ def cspaceRevokeAdmitted (addr : CSpaceAddr) (st : SystemState) : Bool :=
     (let fc := st.slotLinkNodeWord addr.cnode addr.slot .firstChild
      fc == 0 ||
        linkSubtreeDeletable st (addr.cnode.toNat + 1) (addr.slot.toNat + 1)
-         (2 * st.cdt.edges.length + 2) fc
+         (2 * st.cdt.edgeBound + 2) fc
          (st.slotLinkSlotWord addr.cnode addr.slot .firstChild) true)
 
 /-- **seL4's `cteRevoke`, on an admitted revocation**: delete the source's first
@@ -572,7 +572,7 @@ def revokeFirstChildLoop (addr : CSpaceAddr) : Nat → SystemState → SystemSta
 /-- WS-ZA ZA5.3: **an admitted revocation's writes**: the first-child loop, with
 fuel for every edge of the tree. -/
 def cspaceRevokePerform (addr : CSpaceAddr) (st : SystemState) : SystemState :=
-  revokeFirstChildLoop addr (st.cdt.edges.length + 1) st
+  revokeFirstChildLoop addr (st.cdt.edgeBound + 1) st
 
 /-- **What the first-child loop is made of: finalising deletes.**  Each step it
 takes is an admitted delete, which is the finalising delete

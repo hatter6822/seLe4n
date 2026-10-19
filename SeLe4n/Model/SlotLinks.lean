@@ -1137,17 +1137,17 @@ post-state's tree. -/
 
 /-- **Splice `n` out of the tree**, its children moving to its parent. -/
 @[inline] def cdtSplice (st : SystemState) (n : SlotRef) : SystemState :=
-  let k := st.cdt.edges.length
+  let k := st.cdt.edgeBound
   (st.modifyCdt (·.spliceNode n)).linkSpliceNode n k
 
 /-- **Move node `old` to slot `new`**. -/
 @[inline] def cdtMove (st : SystemState) (old new : SlotRef) : SystemState :=
-  let k := st.cdt.edges.length
+  let k := st.cdt.edgeBound
   (st.modifyCdt (·.moveNode old new)).linkMoveNode old new k
 
 /-- **Remove node `n` and every edge at it**, its children becoming roots. -/
 @[inline] def cdtRemove (st : SystemState) (n : SlotRef) : SystemState :=
-  let k := st.cdt.edges.length
+  let k := st.cdt.edgeBound
   (st.modifyCdt (·.removeNode n)).linkRemoveNode n k
 
 theorem cdtAddChild_reach (st : SystemState) (p c : SlotRef) (op : DerivationOp) :
@@ -1186,13 +1186,13 @@ theorem cdtSplice_agree_of_slotInCNode {st : SystemState} (hInv : st.objects.inv
     (hWF : st.cdt.edgeWellFounded) {n : SlotRef} (hn : st.slotInCNode n) :
     LinksAgree (st.cdtSplice n).slotLinkAt (st.cdtSplice n).cdt := by
   rw [(cdtSplice_reach st n).cdt]
-  have hW := hL.walk_firstChild n (Nat.le_refl st.cdt.edges.length)
+  have hW := hL.walk_firstChild n (st.cdt.edges_length_le)
   have hAll : ∀ r f x, st.slotLinkAt r f = some x → st.slotInCNode x :=
     fun _ _ x hx => hM x (hL.target_mentions hx)
   have hSelf := hL.children_not_self_or_prev (hL.parentOf_ne_self_of_wf hWF n)
   have hX : ({ st with cdt := st.cdt.spliceNode n } : SystemState).slotLinkAt = st.slotLinkAt := rfl
   obtain ⟨-, -, hV⟩ := linkSpliceNode_spec (st := { st with cdt := st.cdt.spliceNode n }) hInv
-    st.cdt.edges.length hn (by rw [hX]; exact hAll)
+    st.cdt.edgeBound hn (by rw [hX]; exact hAll)
     (by rw [hX, hW]; exact CapDerivationTree.childrenOf_nodup hL.childrenUnique n)
     (by rw [hX, hW]; exact hSelf)
   unfold cdtSplice; simp only [modifyCdt_eq]
@@ -1211,14 +1211,14 @@ theorem cdtMove_agree {st : SystemState} (hInv : st.objects.invExt)
     (hnw : st.slotInCNode new) (hnew : ¬ st.cdt.mentions new) (hon : old ≠ new) :
     LinksAgree (st.cdtMove old new).slotLinkAt (st.cdtMove old new).cdt := by
   rw [(cdtMove_reach st old new).cdt]
-  have hW := hL.walk_firstChild old (Nat.le_refl st.cdt.edges.length)
+  have hW := hL.walk_firstChild old (st.cdt.edges_length_le)
   have hAll : ∀ r f x, st.slotLinkAt r f = some x → st.slotInCNode x :=
     fun _ _ x hx => hM x (hL.target_mentions hx)
   have hSelf := hL.children_not_self_or_prev (hL.parentOf_ne_self_of_wf hWF old)
   have hX : ({ st with cdt := st.cdt.moveNode old new } : SystemState).slotLinkAt =
       st.slotLinkAt := rfl
   obtain ⟨-, -, hV⟩ := linkMoveNode_spec (st := { st with cdt := st.cdt.moveNode old new }) hInv
-    st.cdt.edges.length ho hnw (by rw [hX]; exact hAll)
+    st.cdt.edgeBound ho hnw (by rw [hX]; exact hAll)
     (by rw [hX, hW]; exact CapDerivationTree.childrenOf_nodup hL.childrenUnique old)
     (by
       rw [hX, hW]
@@ -1238,13 +1238,13 @@ theorem cdtRemove_agree_of_slotInCNode {st : SystemState} (hInv : st.objects.inv
     (hWF : st.cdt.edgeWellFounded) {n : SlotRef} (hn : st.slotInCNode n) :
     LinksAgree (st.cdtRemove n).slotLinkAt (st.cdtRemove n).cdt := by
   rw [(cdtRemove_reach st n).cdt]
-  have hW := hL.walk_firstChild n (Nat.le_refl st.cdt.edges.length)
+  have hW := hL.walk_firstChild n (st.cdt.edges_length_le)
   have hAll : ∀ r f x, st.slotLinkAt r f = some x → st.slotInCNode x :=
     fun _ _ x hx => hM x (hL.target_mentions hx)
   have hSelf := hL.children_not_self_or_prev (hL.parentOf_ne_self_of_wf hWF n)
   have hX : ({ st with cdt := st.cdt.removeNode n } : SystemState).slotLinkAt = st.slotLinkAt := rfl
   obtain ⟨-, -, hV⟩ := linkRemoveNode_spec (st := { st with cdt := st.cdt.removeNode n }) hInv
-    st.cdt.edges.length hn (fun f x h => hAll n f x h) (walk_valid hAll _ n .firstChild)
+    st.cdt.edgeBound hn (fun f x h => hAll n f x h) (walk_valid hAll _ n .firstChild)
     (by rw [hX, hW]; exact CapDerivationTree.childrenOf_nodup hL.childrenUnique n)
     (by rw [hX, hW]; exact hSelf)
   unfold cdtRemove; simp only [modifyCdt_eq]
@@ -1680,9 +1680,9 @@ theorem cdtSplice_of_not_slotInCNode {st : SystemState} (hInv : st.objects.invEx
       rw [List.find?_eq_none]
       intro e he hc
       exact hNM ⟨e, he, .inr (by simpa [CapDerivationEdge.isChildOf] using hc)⟩
-    unfold CapDerivationTree.spliceNode CapDerivationTree.removeNode
-    rw [hNone]
-    simp only
+    refine CapDerivationTree.ext ?_ rfl
+    rw [CapDerivationTree.spliceNode_edges_fold, hNone]
+    simp only [CapDerivationTree.removeNode_edges]
     rw [List.filter_eq_self.mpr]
     intro e he
     have h1 : e.parent ≠ n := fun h => hNM ⟨e, he, .inl h⟩
@@ -1729,7 +1729,8 @@ theorem cdtRemove_of_not_slotInCNode {st : SystemState} (hInv : st.objects.invEx
     rw [e4, e3, e2, e1]; rfl
   · rw [(cdtRemove_reach st n).cdt]
     show st.cdt.removeNode n = st.cdt
-    unfold CapDerivationTree.removeNode
+    refine CapDerivationTree.ext ?_ rfl
+    rw [CapDerivationTree.removeNode_edges]
     rw [List.filter_eq_self.mpr]
     intro e he
     have h1 : e.parent ≠ n := fun h => hNM ⟨e, he, .inl h⟩
@@ -1753,11 +1754,11 @@ theorem cdtRemove_agree {st : SystemState} (hInv : st.objects.invExt)
 count of them.  Equal to the tree's `childrenOf` under the links' agreement
 (`linkChildrenOf_eq`). -/
 def linkChildrenOf (st : SystemState) (p : SlotRef) : List SlotRef :=
-  st.slotLinkAt.walk st.cdt.edges.length (st.slotLinkAt p .firstChild)
+  st.slotLinkAt.walk st.cdt.edgeBound (st.slotLinkAt p .firstChild)
 
 theorem linkChildrenOf_eq {st : SystemState} (h : LinksAgree st.slotLinkAt st.cdt)
     (p : SlotRef) : st.linkChildrenOf p = st.cdt.childrenOf p :=
-  h.walk_firstChild p (Nat.le_refl _)
+  h.walk_firstChild p st.cdt.edges_length_le
 
 /-- **Whether the links name a child of `(o, s)`**: its first-child link's CNode
 word is nonzero.  One word read, no decode. -/
@@ -1786,7 +1787,7 @@ breadth-first walk with each node's children read off its links
 (`linkChildrenOf`).  Equal to the tree's under the links' agreement
 (`linkDescendantsOf_eq`). -/
 def linkDescendantsOf (st : SystemState) (root : SlotRef) : List SlotRef :=
-  go st.cdt.edges.length [root] {} []
+  go st.cdt.edgeBound [root] {} []
 where
   go : Nat → List SlotRef → Std.HashSet SlotRef → List SlotRef → List SlotRef
     | 0, _, _, acc => acc
