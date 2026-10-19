@@ -127,6 +127,35 @@ the per-descriptor step the `.tlbShootdownReq` handler retires
 def applyTlbInvalidation (tlb : TlbState) (op : TlbInvalidation) : TlbState :=
   { entries := tlb.entries.filter (fun e => !tlbEntryMatches op e) }
 
+/-- WS-ZA ZA5.4: does `op` cover any entry of `es`?  A first-order loop. -/
+def anyTlbEntryMatches (op : TlbInvalidation) : List TlbEntry → Bool
+  | [] => false
+  | e :: es => tlbEntryMatches op e || anyTlbEntryMatches op es
+
+theorem anyTlbEntryMatches_eq_false (op : TlbInvalidation) (es : List TlbEntry) :
+    anyTlbEntryMatches op es = false ↔ ∀ e ∈ es, tlbEntryMatches op e = false := by
+  induction es with
+  | nil => simp [anyTlbEntryMatches]
+  | cons e es ih => simp [anyTlbEntryMatches, ih]
+
+/-- WS-ZA ZA5.4: one invalidation as it runs — a view the operand does not
+touch is returned as it is rather than rebuilt entry by entry.
+`applyTlbInvalidation_eq_sharing` is the equality. -/
+def applyTlbInvalidationSharing (tlb : TlbState) (op : TlbInvalidation) : TlbState :=
+  if anyTlbEntryMatches op tlb.entries then
+    { entries := tlb.entries.filter (fun e => !tlbEntryMatches op e) }
+  else tlb
+
+@[csimp] theorem applyTlbInvalidation_eq_sharing :
+    @applyTlbInvalidation = @applyTlbInvalidationSharing := by
+  funext tlb op
+  unfold applyTlbInvalidation applyTlbInvalidationSharing
+  split
+  · rfl
+  · rename_i h
+    rw [Bool.not_eq_true, anyTlbEntryMatches_eq_false] at h
+    rw [List.filter_eq_self.2 (fun e he => by simp [h e he])]
+
 /-- **WS-SM SM7.B**: membership after one invalidation — an entry
 survives iff it was present and the operand does not cover it. -/
 theorem mem_applyTlbInvalidation_iff (tlb : TlbState) (op : TlbInvalidation)
@@ -392,6 +421,20 @@ secondary bring-up runs `tlbi vmalle1` before enabling its MMU, so a
 core that was offline during a round onlines with an empty TLB. -/
 def shootdownTargets (initiator : CoreId) : List CoreId :=
   allCores.filter (fun c => c != initiator)
+
+/-- WS-ZA ZA5.4: every core's target list, computed once when the kernel image
+initialises (a closed constant), so a round reads its targets rather than
+filtering `allCores` again. -/
+def shootdownTargetsTable : Vector (List CoreId) numCores :=
+  Vector.ofFn (fun initiator => allCores.filter (fun c => c != initiator))
+
+/-- WS-ZA ZA5.4: the target list read from `shootdownTargetsTable`. -/
+def shootdownTargetsLookup (initiator : CoreId) : List CoreId :=
+  shootdownTargetsTable.get initiator
+
+@[csimp] theorem shootdownTargets_eq_lookup : @shootdownTargets = @shootdownTargetsLookup := by
+  funext initiator
+  simp [shootdownTargets, shootdownTargetsLookup, shootdownTargetsTable, Vector.get]
 
 /-- **WS-SM SM7.B.2**: membership — exactly the non-initiator cores. -/
 theorem mem_shootdownTargets_iff (initiator c : CoreId) :
@@ -1300,6 +1343,25 @@ def postShootdownRoundCoalescing (sd : TlbShootdownState)
     (fun s c => enqueueShootdownOrCoalesce s c
       (roundDescriptor sd initiator op))
     (beginShootdownRoundFor sd initiator targets)
+
+/-- WS-ZA ZA5.4: the round posting as it runs — the round's descriptor and its
+one-element queue are built once, before the round opens, so the posting loop
+holds neither the pre-state nor a fresh descriptor per target, and every
+queue slot is written in place.  `postShootdownRoundCoalescing_eq_once` is the
+equality. -/
+def postShootdownRoundCoalescingOnce (sd : TlbShootdownState)
+    (initiator : CoreId) (targets : List CoreId) (op : TlbInvalidation) :
+    TlbShootdownState :=
+  let d := roundDescriptor sd initiator op
+  let one := [d]
+  targets.foldl (fun s c => enqueueShootdownOrCoalesceSharing s c d one)
+    (beginShootdownRoundFor sd initiator targets)
+
+@[csimp] theorem postShootdownRoundCoalescing_eq_once :
+    @postShootdownRoundCoalescing = @postShootdownRoundCoalescingOnce := by
+  funext sd initiator targets op
+  unfold postShootdownRoundCoalescing postShootdownRoundCoalescingOnce
+  simp only [enqueueShootdownOrCoalesceSharing_eq]
 
 /-- **WS-SM SM7.B.9**: the total caller-facing broadcast — what the
 shootdown-aware kernel operations (`vspaceUnmapPageWithShootdown` and

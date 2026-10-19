@@ -1748,6 +1748,37 @@ def handleTlbShootdownReqOnCorePerCoreInWindow (st : SystemState) (c : CoreId)
     (applyTlbInvalidations (tlbOnCore st c)
       ((drainShootdownsInWindow st.tlbShootdown c lo hi).1.map (·.op)))
 
+/-- WS-ZA ZA5.4: retire the operands of descriptors `ds` on view `t`, read off
+the descriptors directly rather than through a mapped operand list. -/
+def applyDescriptorOps (t : TlbState) : List TlbShootdownDescriptor → TlbState
+  | [] => t
+  | d :: ds => applyDescriptorOps (applyTlbInvalidation t d.op) ds
+
+theorem applyTlbInvalidations_map_op (t : TlbState) (ds : List TlbShootdownDescriptor) :
+    applyTlbInvalidations t (ds.map (·.op)) = applyDescriptorOps t ds := by
+  induction ds generalizing t with
+  | nil => rfl
+  | cons d ds ih => exact ih _
+
+/-- WS-ZA ZA5.4: the window per-core handler as it runs — the queue is drained
+once and every field of the state written once, so the shootdown record, the
+scalar view and the per-core views are all updated in place.
+`handleTlbShootdownReqOnCorePerCoreInWindow_eq_once` is the equality. -/
+def handleTlbShootdownReqOnCorePerCoreInWindowOnce (st : SystemState) (c : CoreId)
+    (lo hi : Nat) : SystemState :=
+  let r := drainShootdownsInWindow st.tlbShootdown c lo hi
+  { st with
+      tlb := applyDescriptorOps st.tlb r.1,
+      tlbShootdown := acknowledgeShootdown r.2 c hi,
+      perCoreTlb := st.perCoreTlb.set c.val (applyDescriptorOps (st.perCoreTlb.get c) r.1) c.isLt }
+
+@[csimp] theorem handleTlbShootdownReqOnCorePerCoreInWindow_eq_once :
+    @handleTlbShootdownReqOnCorePerCoreInWindow = @handleTlbShootdownReqOnCorePerCoreInWindowOnce := by
+  funext st c lo hi
+  simp only [handleTlbShootdownReqOnCorePerCoreInWindow, handleTlbShootdownReqOnCorePerCoreInWindowOnce,
+    handleTlbShootdownReqOnCoreInWindow, tlbShootdownDrainOnCoreInWindow, tlbShootdownAckOnCore,
+    setTlbOnCore, tlbOnCore, applyTlbInvalidations_map_op]
+
 /-- **WS-SM SM7.F.3**: the window per-core handler's `tlb` effect is exactly
 the single-view window handler's — the trace-safety anchor. -/
 @[simp] theorem handleTlbShootdownReqOnCorePerCoreInWindow_tlb_eq

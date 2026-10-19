@@ -1018,6 +1018,43 @@ def enqueueShootdownOrCoalesce (st : TlbShootdownState) (target : CoreId)
   | none =>
     st.setPendingOnCore target [{ op := .vmalle1, initiator := d.initiator, generation := d.generation }]
 
+/-- WS-ZA ZA5.4: the coalescing enqueue as it runs — the capacity test read
+straight off the queue, with no `Option` built between the strict enqueue and
+its fallback.  `enqueueShootdownOrCoalesce_eq_direct` is the equality. -/
+def enqueueShootdownOrCoalesceDirect (st : TlbShootdownState) (target : CoreId)
+    (d : TlbShootdownDescriptor) : TlbShootdownState :=
+  if (st.pendingOnCore target).length < maxPendingPerCore then
+    st.setPendingOnCore target (st.pendingOnCore target ++ [d])
+  else
+    st.setPendingOnCore target [{ op := .vmalle1, initiator := d.initiator, generation := d.generation }]
+
+@[csimp] theorem enqueueShootdownOrCoalesce_eq_direct :
+    @enqueueShootdownOrCoalesce = @enqueueShootdownOrCoalesceDirect := by
+  funext st target d
+  unfold enqueueShootdownOrCoalesce enqueueShootdownOrCoalesceDirect enqueueShootdown
+  by_cases h : (st.pendingOnCore target).length < maxPendingPerCore <;> simp [h]
+
+/-- WS-ZA ZA5.4: one round's coalescing enqueue with the round's one-element
+queue `one = [d]` built once and shared: an empty queue (the steady state,
+since every round's catch-up drains its own descriptors) takes `one` itself,
+so a round posting to every other core builds a single list cell. -/
+def enqueueShootdownOrCoalesceSharing (st : TlbShootdownState) (target : CoreId)
+    (d : TlbShootdownDescriptor) (one : List TlbShootdownDescriptor) : TlbShootdownState :=
+  match st.pendingOnCore target with
+  | [] => st.setPendingOnCore target one
+  | _ :: _ => enqueueShootdownOrCoalesceDirect st target d
+
+theorem enqueueShootdownOrCoalesceSharing_eq (st : TlbShootdownState) (target : CoreId)
+    (d : TlbShootdownDescriptor) :
+    enqueueShootdownOrCoalesceSharing st target d [d] = enqueueShootdownOrCoalesce st target d := by
+  rw [enqueueShootdownOrCoalesce_eq_direct]
+  unfold enqueueShootdownOrCoalesceSharing enqueueShootdownOrCoalesceDirect
+  split
+  · rename_i h
+    rw [h, if_pos (by simp [maxPendingPerCore])]
+    rfl
+  · rfl
+
 /-- **WS-SM SM7.A.6**: below capacity, the coalescing enqueue is
 exactly `enqueueShootdown`. -/
 theorem enqueueShootdownOrCoalesce_eq_enqueue {st st' : TlbShootdownState}
@@ -1318,6 +1355,41 @@ def drainShootdownsInWindow (st : TlbShootdownState) (c : CoreId)
    st.setPendingOnCore c
      ((st.pendingOnCore c).filter
        (fun d => !inRoundWindow lo hi d.generation)))
+
+/-- WS-ZA ZA5.4: does every descriptor of `ds` belong to the window
+`(lo, hi]`?  A first-order loop, so testing builds nothing. -/
+def allInRoundWindow (lo hi : Nat) : List TlbShootdownDescriptor → Bool
+  | [] => true
+  | d :: ds => inRoundWindow lo hi d.generation && allInRoundWindow lo hi ds
+
+theorem allInRoundWindow_eq_true (lo hi : Nat) (ds : List TlbShootdownDescriptor) :
+    allInRoundWindow lo hi ds = true ↔ ∀ d ∈ ds, inRoundWindow lo hi d.generation = true := by
+  induction ds with
+  | nil => simp [allInRoundWindow]
+  | cons d ds ih => simp [allInRoundWindow, ih]
+
+/-- WS-ZA ZA5.4: the window drain as it runs.  When the whole queue is this
+commit's own work — always, under round serialisation — the queue itself is
+the drained list and the slot is emptied, so neither filtered copy is built.
+`drainShootdownsInWindow_eq_whole` is the equality. -/
+@[inline] def drainShootdownsInWindowWhole (st : TlbShootdownState) (c : CoreId)
+    (lo hi : Nat) : List TlbShootdownDescriptor × TlbShootdownState :=
+  let q := st.pendingOnCore c
+  if allInRoundWindow lo hi q then (q, st.setPendingOnCore c [])
+  else
+    (q.filter (fun d => inRoundWindow lo hi d.generation),
+     st.setPendingOnCore c (q.filter (fun d => !inRoundWindow lo hi d.generation)))
+
+@[csimp] theorem drainShootdownsInWindow_eq_whole :
+    @drainShootdownsInWindow = @drainShootdownsInWindowWhole := by
+  funext st c lo hi
+  unfold drainShootdownsInWindow drainShootdownsInWindowWhole
+  dsimp only
+  split
+  · rename_i h
+    rw [allInRoundWindow_eq_true] at h
+    rw [List.filter_eq_self.2 h, List.filter_eq_nil_iff.2 (fun d hd => by simp [h d hd])]
+  · rfl
 
 /-- **WS-SM SM7.F.3**: the window drain returns the in-window prefix-
 preserving sublist of the pending queue. -/
@@ -1834,6 +1906,28 @@ def beginShootdownRoundFor (st : TlbShootdownState) (initiator : CoreId)
       { st with
           roundGeneration := st.roundGeneration + 1 }).setAckedGenOnCore
     initiator (st.roundGeneration + 1)
+
+/-- WS-ZA ZA5.4: the masked round open as it runs — the new generation read
+once, before the state is updated, so nothing holds the pre-state and both
+generation vectors are written in place; the non-targets are marked by one
+walk of `allCores` rather than a filtered copy of it.
+`beginShootdownRoundFor_eq_once` is the equality. -/
+def beginShootdownRoundForOnce (st : TlbShootdownState) (initiator : CoreId)
+    (targets : List CoreId) : TlbShootdownState :=
+  let g := st.roundGeneration + 1
+  (allCores.foldl
+      (fun (s : TlbShootdownState) c => if c ∈ targets then s else s.setAckedGenOnCore c g)
+      { st with roundGeneration := g }).setAckedGenOnCore initiator g
+
+@[csimp] theorem beginShootdownRoundFor_eq_once :
+    @beginShootdownRoundFor = @beginShootdownRoundForOnce := by
+  funext st initiator targets
+  unfold beginShootdownRoundFor beginShootdownRoundForOnce bornAcknowledged
+  rw [List.foldl_filter]
+  congr 1
+  congr 1
+  funext s c
+  by_cases h : c ∈ targets <;> simp [h]
 
 /-- **WS-SM SM7.F.3**: the generation a masked round leaves in each
 core's slot — the new generation for the initiator and every
