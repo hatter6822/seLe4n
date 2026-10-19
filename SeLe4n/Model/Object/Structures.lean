@@ -1210,29 +1210,6 @@ theorem insertFields_eq_insert (node : CNode) (slot : SeLe4n.Slot) (target : Cap
       node.insert slot ⟨target, rights, badgeWord, badged, mapping⟩ :=
   insertCell_eq_insert _ _ _
 
-/-- WS-ZA ZA5.3 part 6: `insert` of the reply capability to `rid` with
-`rights`, out of line, written over the slot's own record and its target cell
-(`Capability.overwriteReply`), so a reply-capability mint builds neither. -/
-def insertReplyCap (node : CNode) (slot : SeLe4n.Slot) (rid : SeLe4n.ReplyId)
-    (rights : AccessRightSet) : CNode :=
-  if h : slot.toNat < node.cells.size then
-    Quot.lift
-      (node.insertCellWith slot { target := .replyCap rid, rights }
-        (fun r => r.overwriteReply rid rights) (fun r => Capability.overwriteReply_eq r rid rights)
-        (fun _ => Capability.ofReply rid rights) rfl h)
-      (fun a b _ => by rw [insertCellWith_eq, insertCellWith_eq]) node.spare
-  else node
-
-theorem insertReplyCap_eq_insert (node : CNode) (slot : SeLe4n.Slot) (rid : SeLe4n.ReplyId)
-    (rights : AccessRightSet) :
-    node.insertReplyCap slot rid rights = node.insert slot { target := .replyCap rid, rights } := by
-  unfold insertReplyCap
-  split
-  · next h =>
-    induction node.spare using Squash.ind with
-    | h a => exact insertCellWith_eq node slot _ _ _ _ _ h a
-  · next h => unfold insert; simp only [h, dite_false]
-
 /-- WS-ZA ZA5.3: a CNode of the given geometry holding `xs`, inserted in order
 (the last capability at a repeated slot wins); a slot at or past
 `2 ^ rw` holds nothing, as `insert` leaves it. -/
@@ -3446,7 +3423,10 @@ def withIdentity (obj : KernelObject) (key : SeLe4n.ObjId) : KernelObject :=
   match obj with
   | .tcb t => .tcb { t with tid := SeLe4n.ThreadId.ofObjId key }
   | .schedContext sc => .schedContext { sc with scId := SeLe4n.SchedContextId.ofObjId key }
-  | .reply r => .reply { r with replyId := SeLe4n.ReplyId.ofObjId key }
+  | .reply r => .reply { r with
+      replyId := SeLe4n.ReplyId.ofObjId key
+      capTarget := .replyCap (SeLe4n.ReplyId.ofObjId key)
+      capTarget_eq := rfl }
   | .endpoint e => .endpoint e
   | .notification n => .notification n
   | .cnode c => .cnode c

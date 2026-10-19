@@ -995,10 +995,12 @@ def schedContextReferencesReservedIdleSlot (sc : SchedContext) : Bool :=
 /-- PR #889 review round 8: a boot **Reply**'s own id, its blocked caller and its
     two reply-stack links — `prev` (a reply object id the round-6 arm did not
     read) and, since WS-OD `v0.35.4`, `next`, which names either the frame above
-    (a reply object id) or the scheduling context this frame heads. -/
+    (a reply object id) or the scheduling context this frame heads.  Its
+    reply-capability target names its own id (`Reply.capTarget_eq`), so the id
+    check covers it. -/
 def replyReferencesReservedIdleSlot (r : Reply) : Bool :=
   match r with
-  | ⟨replyId, callerCode, prev, next⟩ =>
+  | ⟨replyId, callerCode, prev, next, _capTarget, _hCapTarget⟩ =>
     SeLe4n.Kernel.isIdleObjId replyId.toObjId ||
     (SeLe4n.ThreadId.ofOptCode callerCode).any SeLe4n.Kernel.isIdleThreadId ||
     prev.any (fun p => SeLe4n.Kernel.isIdleObjId p.toObjId) ||
@@ -1921,7 +1923,7 @@ def bootSafeSchedContextCheck (sc : SchedContext) : Bool :=
     `PlatformConfig.wellFormed`. -/
 def bootSafeReplyCheck (r : Reply) : Bool :=
   match r with
-  | ⟨_replyId, _caller, _prev, _next⟩ => r.isFree
+  | ⟨_replyId, _caller, _prev, _next, _capTarget, _hCapTarget⟩ => r.isFree
 
 @[simp] theorem bootSafeReplyCheck_def (r : Reply) :
     bootSafeReplyCheck r = (r.caller.isNone && r.prev.isNone && r.next.isNone) := rfl

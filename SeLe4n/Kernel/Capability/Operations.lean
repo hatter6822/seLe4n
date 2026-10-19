@@ -1816,16 +1816,48 @@ def mintReplyCapPerform (src dst : CSpaceAddr) (st : SystemState) : SystemState 
       | _ => st
   | none => st
 
+/-- The target `.replyCap rid`, built (out of line, so no caller's equal
+literal is shared with it and hoisted onto every path). -/
+@[noinline] def replyCapTargetBuilt (rid : SeLe4n.ReplyId) : CapTarget := .replyCap rid
+
+/-- WS-ZA ZA5.3 part 6: **the target `.replyCap rid`, as the reply object `rid`
+holds it** (`Reply.capTarget`, built once with the object), so a reply-capability
+mint shares that target rather than building one, whatever record the
+destination slot keeps.  Equal to `.replyCap rid` in every state
+(`replyCapTargetIn_eq`): a store with no reply object of that id, or one under
+another id, gets the target built. -/
+@[noinline] def replyCapTargetIn (st : SystemState) (rid : SeLe4n.ReplyId) : CapTarget :=
+  match st.getReply? rid with
+  | some r => if r.replyId.val == rid.val then r.capTarget else replyCapTargetBuilt rid
+  | none => replyCapTargetBuilt rid
+
+theorem replyCapTargetIn_eq (st : SystemState) (rid : SeLe4n.ReplyId) :
+    replyCapTargetIn st rid = .replyCap rid := by
+  unfold replyCapTargetIn replyCapTargetBuilt
+  split
+  · next r _ =>
+    split
+    · next h =>
+      have hId : r.replyId = rid := by
+        cases hr : r.replyId; cases rid; simp_all
+      rw [r.capTarget_eq, hId]
+    · rfl
+  · rfl
+
 /-- `mintReplyCapPerform` as compiled: the reply capability's fields are written
-over the destination slot's own record (`CNode.insertFields`; WS-ZA ZA5.3 part 6). -/
+over the destination slot's own record (`CNode.insertFields`), its target the one
+the reply object holds (`replyCapTargetIn`), so the mint builds neither a
+capability nor a target (WS-ZA ZA5.3 part 6).  The target is read before the
+store, so the store is not held across its write. -/
 @[inline] def mintReplyCapPerformImpl (src dst : CSpaceAddr) (st : SystemState) : SystemState :=
   match SystemState.lookupSlotCap st src with
   | some parent =>
       match parent.target with
       | .object target =>
+          let t := replyCapTargetIn st (SeLe4n.ReplyId.ofObjId target)
           (st.storeCNodeWith dst.cnode
-              (·.insertReplyCap dst.slot (SeLe4n.ReplyId.ofObjId target)
-                (AccessRightSet.ofList [.write]))).cdtAddChild
+              (·.insertFields dst.slot t (AccessRightSet.ofList [.write]) SeLe4n.Badge.zero false
+                none)).cdtAddChild
             src dst .mint
       | _ => st
   | none => st
@@ -1833,7 +1865,7 @@ over the destination slot's own record (`CNode.insertFields`; WS-ZA ZA5.3 part 6
 @[csimp] theorem mintReplyCapPerform_eq_impl : @mintReplyCapPerform = @mintReplyCapPerformImpl := by
   funext src dst st
   unfold mintReplyCapPerform mintReplyCapPerformImpl cspaceInstallPerform
-  simp only [CNode.insertReplyCap_eq_insert]; rfl
+  simp only [CNode.insertFields_eq_insert, replyCapTargetIn_eq]; rfl
 
 /-- WS-ZA ZA5.3: an admitted reply-capability mint is its writes. -/
 theorem mintReplyCapWithCdt_of_admitted {src dst : CSpaceAddr} {st : SystemState}
@@ -1871,6 +1903,23 @@ the copy's edge (`cspaceInstallPerform`). -/
   match SystemState.lookupSlotCap st src with
   | some cap => cspaceInstallPerform src dst cap.withoutMapping .copy st
   | none => st
+
+/-- `cspaceCopyPerform` as compiled: the source capability's fields, with no
+mapping record, are written straight over the destination slot's own record
+(`CNode.insertFields`), so copying a mapped capability builds no unmapped
+capability first (WS-ZA ZA5.3 part 6). -/
+@[inline] def cspaceCopyPerformImpl (src dst : CSpaceAddr) (st : SystemState) : SystemState :=
+  match SystemState.lookupSlotCap st src with
+  | some cap =>
+      (st.storeCNodeWith dst.cnode
+          (·.insertFields dst.slot cap.target cap.rights cap.badgeWord cap.badged none)).cdtAddChild
+        src dst .copy
+  | none => st
+
+@[csimp] theorem cspaceCopyPerform_eq_impl : @cspaceCopyPerform = @cspaceCopyPerformImpl := by
+  funext src dst st
+  unfold cspaceCopyPerform cspaceCopyPerformImpl cspaceInstallPerform
+  simp only [CNode.insertFields_eq_insert]; rfl
 
 /-- WS-ZA ZA5.3: an admitted copy is its writes. -/
 theorem cspaceCopy_of_admitted {src dst : CSpaceAddr} {st : SystemState}

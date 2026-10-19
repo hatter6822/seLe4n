@@ -1746,8 +1746,11 @@ const PARTNER_PRIORITY: u64 = 255;
 ///   VSpace set while it is suspended, then resumed and suspended;
 /// - three page tables carved from the untyped and installed in the root
 ///   task's VSpace, one per level of the walk to the frame's address; a frame
-///   carved, mapped, its instruction cache unified, named as the partner's IPC
-///   buffer, unmapped and deleted; the tables taken out deepest first and
+///   carved, mapped, its instruction cache unified, its mapped capability
+///   copied (the copy records no mapping) and the copy deleted, a reply
+///   capability minted over the record the copy left (its target shared with
+///   the frame's capability) and deleted, named as the partner's IPC buffer,
+///   unmapped and deleted; the tables taken out deepest first and
 ///   deleted; and the untyped reset.  While the frame is mapped it is also the
 ///   root task's IPC buffer, and the image's scheduling context is configured
 ///   (its fifth word read from that buffer), bound to the suspended partner
@@ -1921,6 +1924,30 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 5] = [
             VSPACE_UNIFY_INSTRUCTION,
             VSPACE_CAP,
             [ROOT_ASID, FRAME_VADDR, 0, 0],
+        ),
+        invocation(
+            "frame-copy-mapped",
+            CSPACE_COPY,
+            CNODE_CAP,
+            [FRAME_SLOT, MOVE_SLOT, 0, 0],
+        ),
+        invocation(
+            "frame-copy-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [MOVE_SLOT, 0, 0, 0],
+        ),
+        invocation(
+            "reply-cap-mint-over-copy",
+            MINT_REPLY_CAP,
+            CNODE_CAP,
+            [REPLY_OBJECT_SLOT, MOVE_SLOT, 0, 0],
+        ),
+        invocation(
+            "reply-cap-over-copy-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [MOVE_SLOT, 0, 0, 0],
         ),
         invocation(
             "tcb-set-ipc-buffer",

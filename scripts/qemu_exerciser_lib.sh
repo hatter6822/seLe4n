@@ -239,7 +239,11 @@ for driver in drivers:
             # WS-ZA ZA5.3: the capability operations write each slot's own
             # record in place and the derivation links in the slots.
             "cspace-copy", "cspace-move", "cspace-delete", "cspace-mint",
-            "cspace-revoke", "reply-cap-delete", "reply-cap-mint")}
+            "cspace-revoke", "reply-cap-delete", "reply-cap-mint",
+            # a mapped capability copied, and a reply capability minted over
+            # a record whose target another capability shares.
+            "frame-copy-mapped", "frame-copy-delete", "reply-cap-mint-over-copy",
+            "reply-cap-over-copy-delete")}
         # WS-ZA ZA5.1: the memory invocations' readings today, each the
         # operation's own cells (object writes, the store's copy); the rows
         # that bring them to zero lower these pins.

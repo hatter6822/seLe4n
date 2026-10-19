@@ -6063,8 +6063,12 @@ are a `Squash`, so logically a single value: no theorem reads them, and a CNode
 is its other fields (`CNode.ext_of_fields`).  Clearing a slot keeps its
 capability as the slot's record (`SpareCells.keep`); writing a slot takes the
 record out and writes the new capability's fields over it
-(`CNode.insertCellWith`, `Capability.overwrite`, and for a reply capability
-`Capability.overwriteReply`, which rewrites the target cell too).  The insert
+(`CNode.insertCellWith`, `Capability.overwrite`).  A reply capability's
+target is the one its reply object holds (`Reply.capTarget`, equal to
+`.replyCap` of the object's id by `capTarget_eq`), so a reply-capability mint
+shares it (`replyCapTargetIn`) and builds nothing whatever record the slot
+keeps; a copy writes the source's fields with no mapping record straight over
+the destination's record (`cspaceCopyPerformImpl`).  The insert
 and remove the theorems read are unchanged; the compiled forms are
 `@[csimp]` replacements proven equal to them.  A capability's badge is a word
 and a flag (`Capability.badgeWord`, `Capability.badged`), read through the

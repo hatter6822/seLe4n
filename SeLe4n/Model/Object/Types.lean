@@ -3029,33 +3029,6 @@ theorem Capability.overwrite_eq (r : Capability) (target : CapTarget) (rights : 
     r.overwrite target rights badgeWord badged mapping = ⟨target, rights, badgeWord, badged, mapping⟩ := by
   unfold overwrite; split <;> simp_all
 
-/-- WS-ZA ZA5.3 part 6: the reply capability to `rid` with `rights`, written
-over the record `r` (a slot's spare).  `r` is taken apart, so its cell is the
-one the capability is written into, and so is its target's when that is a
-one-field cell (an object or a reply capability's), so the derived target
-`.replyCap rid` allocates nothing.  Each arm builds the capability itself: built
-after the arms join, it would lose the record.  Equal to the capability of those
-fields (`overwriteReply_eq`). -/
-@[noinline] def Capability.overwriteReply (r : Capability) (rid : SeLe4n.ReplyId)
-    (rights : AccessRightSet) : Capability :=
-  match r with
-  | ⟨.object _, rr, _, _, _⟩ =>
-    { target := .replyCap rid, rights := if rr = rights then rr else rights }
-  | ⟨.replyCap _, rr, _, _, _⟩ =>
-    { target := .replyCap rid, rights := if rights = rr then rr else rights }
-  | ⟨.cnodeSlot _ _, _, _, _, _⟩ => { target := .replyCap rid, rights }
-  | ⟨.auditTrail, _, _, _, _⟩ => { target := .replyCap rid, rights }
-
-/-- The reply capability to `rid` with `rights`, built fresh (a slot with no
-record of its own); out of line for the reason `Capability.ofFields` is. -/
-@[noinline] def Capability.ofReply (rid : SeLe4n.ReplyId) (rights : AccessRightSet) : Capability :=
-  { target := .replyCap rid, rights }
-
-theorem Capability.overwriteReply_eq (r : Capability) (rid : SeLe4n.ReplyId)
-    (rights : AccessRightSet) :
-    r.overwriteReply rid rights = { target := .replyCap rid, rights } := by
-  unfold overwriteReply; split <;> (try split) <;> simp_all
-
 /-- WS-ZA ZA5.3 part 6: **the records a CNode's slots keep while empty** (seL4's
 `cte_t`, which a slot owns for the CNode's life).  Entry `i` is the capability
 cell slot `i` last held, kept when the slot is cleared so the next capability
@@ -3130,9 +3103,7 @@ noncomputable def CNode.slots (cn : CNode) : SeLe4n.UniqueSlotMap Capability :=
 
 /-- WS-ZA ZA5.3 part 6: a record of its own for each of a radix-`rw` CNode's
 slots, made with the CNode.  Each record targets an object named by its slot
-number, so the compiler cannot share one record among the slots, and its target
-is a one-field cell that a reply capability written there reuses
-(`Capability.overwriteReply`). -/
+number, so the compiler cannot share one record among the slots. -/
 def spareCellsFor (rw : Nat) : Array (Option Capability) :=
   Array.ofFn (n := 2 ^ rw) fun i =>
     some { target := .object ⟨i.val⟩, rights := AccessRightSet.empty }
