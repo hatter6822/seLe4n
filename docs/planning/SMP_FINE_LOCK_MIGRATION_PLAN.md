@@ -197,8 +197,8 @@ transferred caps.
   minting a distinct node per distinct ref
   (`SeLe4n/Model/State.lean`), so slot 0's node is not the
   real source's node.
-- The live userspace revoke `cspaceRevokeCdt` (the default for untrusted
-  invocations) walks `descendantsOf (lookupCdtNodeOfSlot addr)` — the *real*
+- The userspace revoke of the time, `cspaceRevokeCdt` (the default for untrusted
+  invocations; replaced at v0.36.111 by `cspaceRevokeCdtFinalising`), walked `descendantsOf (lookupCdtNodeOfSlot addr)` — the *real*
   source slot's node (`Operations.lean`); local `cspaceRevoke`
   only clears same-CNode siblings.
 
@@ -212,7 +212,7 @@ false — the model faithfully exhibits the bypass.
 path (`IpcMessage.caps : Array Capability` → `Array TransferCap` carrying
 `(cap, srcRef)`; keep `resolveExtraCaps`'s already-resolved `ref`), record the
 edge from the real source, and prove
-`transferred_child_is_cdt_descendant_of_real_source` so `cspaceRevokeCdt`
+`transferred_child_is_cdt_descendant_of_real_source` so the revoke
 provably reaches it, with a regression test whose load-bearing negative is that
 the pre-fix state does not.
 
@@ -267,8 +267,8 @@ answer.
 
 So revocation carries its own half of the guarantee.
 `revokePendingTransfersFrom` sweeps the parked senders and drops the derivations
-rooted at the revoked node or any of its descendants, and both `cspaceRevokeCdt`
-and `cspaceRevokeCdtStreaming` end with it. The revoke still reports success —
+rooted at the revoked node or any of its descendants, and both revokes of the
+time (`cspaceRevokeCdt`, `cspaceRevokeCdtStreaming`) ended with it. The revoke still reports success —
 refusing would let a parked sender block revocation indefinitely — and there is
 nothing left for a later receive to install.
 `revokePendingTransfersFrom_preserves_capabilityInvariantBundle` discharges all
@@ -328,7 +328,7 @@ PR body per the vulnerability rule.
 - *Step 5 (proof):* `transferred_child_is_cdt_descendant_of_real_source`;
   repair the CDT-frame lemmas the type change touches.
 - *Step 6 (regression):* a suite scenario + Tier-3 anchor showing
-  `cspaceRevokeCdt` on the real source reaches the transferred child (pre-fix
+  the revoke on the real source reaches the transferred child (pre-fix
   state does not — load-bearing negative).
 - *Verify:* `test_full` (theorems), `test_rust` iff a message/ABI shape moves,
   golden fixtures iff a trace line moves.
@@ -692,8 +692,8 @@ Expected assertion movements:
 - **PR 12/13**: new Rust stress cases + a multi-stripe loom pair; seam-flag pins;
   the `UncoveredLockDomain` deletions, under the deletion-last discipline.
 
-End-to-end: PR 2's regression proves `cspaceRevokeCdt` reaches transferred
-children; PR 8 keeps the golden trace byte-identical (bracket is
+End-to-end: PR 2's regression (`chain12b` in `tests/OperationChainSuite.lean`)
+proves the live revoke `cspaceRevokeCdtFinalising` reaches transferred children; PR 8 keeps the golden trace byte-identical (bracket is
 projection-invisible); PR 13 host stress proves the partitioned commit is
 race-free under contention with the seam flag in **both** settings, and BP8
 measures `tCs` on the board — without which no bound in this plan converts to a
@@ -736,8 +736,11 @@ time.
 
 ## 8. Acceptance / closure
 
-- [ ] PR 2: `cspaceRevokeCdt` on a real source reaches IPC-transferred children
-      (regression + provenance theorem); the finding is closed.
+- [x] PR 2: revoking a real source reaches IPC-transferred children
+      (regression + provenance theorem); the finding is closed (v0.33.59, class
+      closed v0.33.88).  The regression now drives the live revoke
+      `cspaceRevokeCdtFinalising` (v0.36.111), seL4's `cteRevoke` loop, which
+      deletes the source's first child until it has none.
 - [ ] PR 4: `UncoveredLockDomain.capTransferReceiverCnode` deleted; every
       `ipcUnwrapCaps` write rides a declared lock.
 - [ ] PR 5: every CDT writer (IPC + the four cspace ops) declares the CDT lock;
