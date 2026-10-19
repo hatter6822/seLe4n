@@ -37,7 +37,7 @@ private def rt001_emptyTree : IO Unit := do
 
 /-- RT-002: Single insert/lookup roundtrip -/
 private def rt002_singleInsertLookup : IO Unit := do
-  let cap : Capability := { target := .object ⟨100⟩, rights := AccessRightSet.ofList [.read], badge := none }
+  let cap : Capability := { target := .object ⟨100⟩, rights := AccessRightSet.ofList [.read] }
   let t := (CNodeRadix.empty 0 0 4).insert (SeLe4n.Slot.ofNat 3) cap  -- radixWidth=4, 16 slots
   expect "insert then lookup" (t.lookup (SeLe4n.Slot.ofNat 3) == some cap)
   expect "size after insert" (t.size == 1)
@@ -45,15 +45,15 @@ private def rt002_singleInsertLookup : IO Unit := do
 
 /-- RT-003: Insert then erase — lookup returns none -/
 private def rt003_insertErase : IO Unit := do
-  let cap : Capability := { target := .object ⟨200⟩, rights := AccessRightSet.ofList [.write], badge := none }
+  let cap : Capability := { target := .object ⟨200⟩, rights := AccessRightSet.ofList [.write] }
   let t := ((CNodeRadix.empty 0 0 3).insert (SeLe4n.Slot.ofNat 2) cap).erase (SeLe4n.Slot.ofNat 2)
   expect "erase then lookup returns none" (t.lookup (SeLe4n.Slot.ofNat 2) == none)
   expect "size after erase" (t.size == 0)
 
 /-- RT-004: Overwrite — insert same slot twice, lookup returns latest -/
 private def rt004_overwrite : IO Unit := do
-  let cap1 : Capability := { target := .object ⟨10⟩, rights := AccessRightSet.ofList [.read], badge := none }
-  let cap2 : Capability := { target := .object ⟨20⟩, rights := AccessRightSet.ofList [.write], badge := none }
+  let cap1 : Capability := { target := .object ⟨10⟩, rights := AccessRightSet.ofList [.read] }
+  let cap2 : Capability := { target := .object ⟨20⟩, rights := AccessRightSet.ofList [.write] }
   let t := ((CNodeRadix.empty 0 0 3).insert (SeLe4n.Slot.ofNat 5) cap1).insert (SeLe4n.Slot.ofNat 5) cap2
   expect "overwrite returns latest" (t.lookup (SeLe4n.Slot.ofNat 5) == some cap2)
   expect "size still 1 after overwrite" (t.size == 1)
@@ -61,7 +61,7 @@ private def rt004_overwrite : IO Unit := do
 /-- RT-005: Multiple distinct slots — insert 4 slots, verify all -/
 private def rt005_multipleSlots : IO Unit := do
   let mkCap (n : Nat) : Capability :=
-    { target := .object ⟨n⟩, rights := AccessRightSet.ofList [.read], badge := none }
+    { target := .object ⟨n⟩, rights := AccessRightSet.ofList [.read] }
   let t := (CNodeRadix.empty 0 0 4)
     |>.insert (SeLe4n.Slot.ofNat 0) (mkCap 0)
     |>.insert (SeLe4n.Slot.ofNat 3) (mkCap 3)
@@ -76,7 +76,7 @@ private def rt005_multipleSlots : IO Unit := do
 
 /-- RT-006: Guard/radix parameter preservation across operations -/
 private def rt006_parameterPreservation : IO Unit := do
-  let cap : Capability := { target := .object ⟨1⟩, rights := AccessRightSet.ofList [.read], badge := none }
+  let cap : Capability := { target := .object ⟨1⟩, rights := AccessRightSet.ofList [.read] }
   let t0 := CNodeRadix.empty 8 42 4  -- guardWidth=8, guardValue=42, radixWidth=4
   let t1 := t0.insert (SeLe4n.Slot.ofNat 5) cap
   let t2 := t1.erase (SeLe4n.Slot.ofNat 5)
@@ -90,7 +90,7 @@ private def rt006_parameterPreservation : IO Unit := do
 /-- RT-007: toList completeness and noDup -/
 private def rt007_toList : IO Unit := do
   let mkCap (n : Nat) : Capability :=
-    { target := .object ⟨n⟩, rights := AccessRightSet.ofList [.read], badge := none }
+    { target := .object ⟨n⟩, rights := AccessRightSet.ofList [.read] }
   let t := (CNodeRadix.empty 0 0 3)
     |>.insert (SeLe4n.Slot.ofNat 1) (mkCap 10)
     |>.insert (SeLe4n.Slot.ofNat 4) (mkCap 40)
@@ -112,7 +112,7 @@ private def rt007_toList : IO Unit := do
 /-- RT-008: Fold — sum all capability target ObjIds -/
 private def rt008_fold : IO Unit := do
   let mkCap (n : Nat) : Capability :=
-    { target := .object ⟨n⟩, rights := AccessRightSet.ofList [.read], badge := none }
+    { target := .object ⟨n⟩, rights := AccessRightSet.ofList [.read] }
   let t := (CNodeRadix.empty 0 0 3)
     |>.insert (SeLe4n.Slot.ofNat 0) (mkCap 10)
     |>.insert (SeLe4n.Slot.ofNat 2) (mkCap 20)
@@ -139,8 +139,8 @@ private def rt009_buildEmpty : IO Unit := do
 
 /-- RT-010: buildCNodeRadix with entries -/
 private def rt010_buildWithEntries : IO Unit := do
-  let cap1 : Capability := { target := .object ⟨100⟩, rights := AccessRightSet.ofList [.read], badge := none }
-  let cap2 : Capability := { target := .object ⟨200⟩, rights := AccessRightSet.ofList [.write], badge := none }
+  let cap1 : Capability := { target := .object ⟨100⟩, rights := AccessRightSet.ofList [.read] }
+  let cap2 : Capability := { target := .object ⟨200⟩, rights := AccessRightSet.ofList [.write] }
   let rt := ((RHTable.empty 16 : RHTable SeLe4n.Slot Capability).insert (SeLe4n.Slot.ofNat 3) cap1).insert (SeLe4n.Slot.ofNat 7) cap2
   let config : CNodeConfig := { guardWidth := 0, guardValue := 0, radixWidth := 4 }
   let radix := buildCNodeRadix rt config
@@ -158,7 +158,7 @@ private def rt011_freezePreservation : IO Unit := do
 
 /-- RT-012: buildCNodeRadix determinism — same input, same output -/
 private def rt012_determinism : IO Unit := do
-  let cap : Capability := { target := .object ⟨50⟩, rights := AccessRightSet.ofList [.read], badge := none }
+  let cap : Capability := { target := .object ⟨50⟩, rights := AccessRightSet.ofList [.read] }
   let rt := (RHTable.empty 16 : RHTable SeLe4n.Slot Capability).insert (SeLe4n.Slot.ofNat 4) cap
   let config : CNodeConfig := { guardWidth := 2, guardValue := 1, radixWidth := 3 }
   let r1 := buildCNodeRadix rt config

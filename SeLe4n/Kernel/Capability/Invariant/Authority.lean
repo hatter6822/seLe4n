@@ -433,7 +433,7 @@ theorem mintDerivedCap_badge_propagated
     · -- candidate.isNull = false: extract equality from `.ok`
       injection hMint with hEq
       subst hEq
-      rfl
+      simp
   · -- rightsSubset = false
     simp at hMint
 

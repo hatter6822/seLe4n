@@ -64,7 +64,7 @@ private def chain1RetypeMintRevoke : IO Unit := do
     (BootstrapBuilder.empty
       |>.withObject targetId (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
       |>.withObject cnodeId (.cnode (SeLe4n.Model.CNode.ofSlots 0 0 0 1 (SeLe4n.UniqueSlotMap.ofListWF [
-            ((SeLe4n.Slot.ofNat 0), { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant, .retype], badge := none })
+            ((SeLe4n.Slot.ofNat 0), { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant, .retype] })
           ])))
       |>.withLifecycleObjectType targetId .notification
       |>.withLifecycleObjectType cnodeId .cnode
@@ -161,7 +161,7 @@ private def chain5CopyMoveDelete : IO Unit := do
     (BootstrapBuilder.empty
       |>.withObject target (.endpoint {})
       |>.withObject cnodeId (.cnode (SeLe4n.Model.CNode.ofSlots 0 0 0 2 (SeLe4n.UniqueSlotMap.ofListWF [
-            ((SeLe4n.Slot.ofNat 0), { target := .object target, rights := AccessRightSet.ofList [.read, .write], badge := none })
+            ((SeLe4n.Slot.ofNat 0), { target := .object target, rights := AccessRightSet.ofList [.read, .write] })
           ])))
       |>.withLifecycleObjectType target .endpoint
       |>.withLifecycleObjectType cnodeId .cnode
@@ -211,7 +211,7 @@ private def chain5bLeafDeleteReclaimsNode : IO Unit := do
     (BootstrapBuilder.empty
       |>.withObject target (.endpoint {})
       |>.withObject cnodeId (.cnode (SeLe4n.Model.CNode.ofSlots 0 0 0 2 (SeLe4n.UniqueSlotMap.ofListWF [
-            ((SeLe4n.Slot.ofNat 0), { target := .object target, rights := AccessRightSet.ofList [.read, .write], badge := none })
+            ((SeLe4n.Slot.ofNat 0), { target := .object target, rights := AccessRightSet.ofList [.read, .write] })
           ])))
       |>.withLifecycleObjectType target .endpoint
       |>.withLifecycleObjectType cnodeId .cnode
@@ -245,7 +245,7 @@ private def chain5cCNodeRetypeReclaimsNodes : IO Unit := do
     (BootstrapBuilder.empty
       |>.withObject target (.endpoint {})
       |>.withObject srcCNode (.cnode (CNode.ofList 0 0 0 2 [
-            ((SeLe4n.Slot.ofNat 0), { target := .object target, rights := AccessRightSet.ofList [.read, .write], badge := none })
+            ((SeLe4n.Slot.ofNat 0), { target := .object target, rights := AccessRightSet.ofList [.read, .write] })
           ]))
       |>.withObject dstCNode (.cnode emptyCNode)
       |>.withLifecycleObjectType target .endpoint
@@ -401,7 +401,7 @@ private def chain9LifecycleCascadingRevokeAndAttenuation : IO Unit := do
     (BootstrapBuilder.empty
       |>.withObject targetId (.endpoint {})
       |>.withObject rootCNode (.cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [
-            ((SeLe4n.Slot.ofNat 0), { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
+            ((SeLe4n.Slot.ofNat 0), { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant] })
           ])))
       |>.withObject childCNode (.cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 SeLe4n.UniqueSlotMap.empty))
       |>.withObject grandCNode (.cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 SeLe4n.UniqueSlotMap.empty))
@@ -468,7 +468,7 @@ private def buildParameterizedTopology
       })
   let cnodeSlots : List (SeLe4n.Slot × Capability) :=
     (List.range threadCount).map fun i =>
-      (SeLe4n.Slot.ofNat i, { target := .object ⟨1000 + i⟩, rights := AccessRightSet.ofList [.read, .write], badge := none })
+      (SeLe4n.Slot.ofNat i, { target := .object ⟨1000 + i⟩, rights := AccessRightSet.ofList [.read, .write] })
   let cnodeObj : KernelObject :=
     .cnode (CNode.ofList radix 0 0 radix cnodeSlots)
   let vspaceRoots : List (SeLe4n.ObjId × KernelObject) :=
@@ -614,8 +614,8 @@ private def chain10RegisterDecodeMultiSyscall : IO Unit := do
       })
       |>.withObject epId (.endpoint {})
       |>.withObject cnodeId (.cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [
-          ((SeLe4n.Slot.ofNat 0), { target := .object epId, rights := AccessRightSet.ofList [.read, .write], badge := none }),
-          ((SeLe4n.Slot.ofNat 1), { target := .object epId, rights := AccessRightSet.ofList [.read], badge := none })
+          ((SeLe4n.Slot.ofNat 0), { target := .object epId, rights := AccessRightSet.ofList [.read, .write] }),
+          ((SeLe4n.Slot.ofNat 1), { target := .object epId, rights := AccessRightSet.ofList [.read] })
         ])))
       |>.withObject ⟨20⟩ (.vspaceRoot { asid := ⟨1⟩, mappings := {} })
       |>.withLifecycleObjectType senderId .tcb
@@ -682,7 +682,7 @@ private def chain11RegisterDecodeIpcTransfer : IO Unit := do
       })
       |>.withObject epId (.endpoint {})
       |>.withObject cnodeId (.cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [
-          (SeLe4n.Slot.ofNat 0, ({ target := .object epId, rights := AccessRightSet.ofList [.read, .write], badge := some badgeVal } : Capability))
+          (SeLe4n.Slot.ofNat 0, ({ target := .object epId, rights := AccessRightSet.ofList [.read, .write], badgeWord := badgeVal, badged := true } : Capability))
         ])))
       |>.withObject ⟨20⟩ (.vspaceRoot { asid := ⟨1⟩, mappings := {} })
       |>.withLifecycleObjectType senderId .tcb
@@ -733,9 +733,9 @@ private def chain12IpcCapTransfer : IO Unit := do
   let receiverCNode : SeLe4n.ObjId := ⟨3221⟩
   let targetObj : SeLe4n.ObjId := ⟨3230⟩
 
-  let cap1 : Capability := { target := .object targetObj, rights := AccessRightSet.ofList [.read], badge := none }
-  let cap2 : Capability := { target := .object targetObj, rights := AccessRightSet.ofList [.read, .write], badge := none }
-  let cap3 : Capability := { target := .object targetObj, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none }
+  let cap1 : Capability := { target := .object targetObj, rights := AccessRightSet.ofList [.read] }
+  let cap2 : Capability := { target := .object targetObj, rights := AccessRightSet.ofList [.read, .write] }
+  let cap3 : Capability := { target := .object targetObj, rights := AccessRightSet.ofList [.read, .write, .grant] }
   let grantRights := AccessRightSet.ofList [.read, .write, .grant]
 
   -- Setup: receiver waiting on endpoint, sender has caps in CNode
@@ -807,9 +807,9 @@ private def ipcCapTransferRevocable : IO Unit := do
   -- The capability that will be transferred, and the one occupying slot 0 —
   -- distinct targets so the assertions below cannot confuse them.
   let payloadCap : Capability :=
-    { target := .object payloadObj, rights := AccessRightSet.ofList [.read], badge := none }
+    { target := .object payloadObj, rights := AccessRightSet.ofList [.read] }
   let unrelatedCap : Capability :=
-    { target := .object unrelatedObj, rights := AccessRightSet.ofList [.read], badge := none }
+    { target := .object unrelatedObj, rights := AccessRightSet.ofList [.read] }
   let grantRights : AccessRightSet := AccessRightSet.ofList [.read, .write, .grant]
   let srcSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 5
 
@@ -972,7 +972,7 @@ private def ipcCapTransferArrivalOrder : IO Unit := do
   let receiverCNode : SeLe4n.ObjId := ⟨3371⟩
   let payloadObj : SeLe4n.ObjId := ⟨3380⟩
   let payloadCap : Capability :=
-    { target := .object payloadObj, rights := AccessRightSet.ofList [.read], badge := none }
+    { target := .object payloadObj, rights := AccessRightSet.ofList [.read] }
   let grantRights : AccessRightSet := AccessRightSet.ofList [.read, .write, .grant]
   let noGrantRights : AccessRightSet := AccessRightSet.ofList [.read, .write]
   let srcSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 5
@@ -1102,7 +1102,7 @@ private def replyRecvCapTransferArrivalOrder : IO Unit := do
   let payloadObj : SeLe4n.ObjId := ⟨3480⟩
   let rid : SeLe4n.ReplyId := ⟨3490⟩
   let payloadCap : Capability :=
-    { target := .object payloadObj, rights := AccessRightSet.ofList [.read], badge := none }
+    { target := .object payloadObj, rights := AccessRightSet.ofList [.read] }
   let grantRights : AccessRightSet := AccessRightSet.ofList [.read, .write, .grant]
   let srcSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 5
   let recvSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 0
@@ -1227,7 +1227,7 @@ private def receiveWithoutSenderInstallsNothing : IO Unit := do
   let receiverCNode : SeLe4n.ObjId := ⟨3571⟩
   let payloadObj : SeLe4n.ObjId := ⟨3580⟩
   let payloadCap : Capability :=
-    { target := .object payloadObj, rights := AccessRightSet.ofList [.read], badge := none }
+    { target := .object payloadObj, rights := AccessRightSet.ofList [.read] }
   let grantRights : AccessRightSet := AccessRightSet.ofList [.read, .write, .grant]
   let srcSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 5
   let recvSlot0 : SeLe4n.Slot := SeLe4n.Slot.ofNat 0
@@ -1407,7 +1407,7 @@ private def revokeWhileParkedTransfersNothing : IO Unit := do
   let receiverCNode : SeLe4n.ObjId := ⟨3771⟩
   let payloadObj : SeLe4n.ObjId := ⟨3780⟩
   let payloadCap : Capability :=
-    { target := .object payloadObj, rights := AccessRightSet.ofList [.read], badge := none }
+    { target := .object payloadObj, rights := AccessRightSet.ofList [.read] }
   let grantRights : AccessRightSet := AccessRightSet.ofList [.read, .write, .grant]
   let parentSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 4
   let srcSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 5
@@ -1497,7 +1497,7 @@ private def revokeLeavesIndependentSibling : IO Unit := do
   let receiverCNode : SeLe4n.ObjId := ⟨3871⟩
   let payloadObj : SeLe4n.ObjId := ⟨3880⟩
   let payloadCap : Capability :=
-    { target := .object payloadObj, rights := AccessRightSet.ofList [.read], badge := none }
+    { target := .object payloadObj, rights := AccessRightSet.ofList [.read] }
   let grantRights : AccessRightSet := AccessRightSet.ofList [.read, .write, .grant]
   -- Two slots in ONE CNode naming the SAME target, each the root of its own CDT
   -- node: independent capabilities, neither derived from the other.
@@ -1609,7 +1609,7 @@ private def endpointGrantDecidesBothOrderings : IO Unit := do
   let receiverCNode : SeLe4n.ObjId := ⟨3821⟩
   let payloadObj : SeLe4n.ObjId := ⟨3830⟩
   let payloadCap : Capability :=
-    { target := .object payloadObj, rights := AccessRightSet.ofList [.read], badge := none }
+    { target := .object payloadObj, rights := AccessRightSet.ofList [.read] }
   let grantRights : AccessRightSet := AccessRightSet.ofList [.read, .write, .grant]
   let noGrantRights : AccessRightSet := AccessRightSet.ofList [.read, .write]
   let srcSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 5
@@ -1703,7 +1703,7 @@ private def chain13IpcCapTransferNoGrant : IO Unit := do
   let receiverCNode : SeLe4n.ObjId := ⟨3321⟩
   let targetObj : SeLe4n.ObjId := ⟨3330⟩
 
-  let cap1 : Capability := { target := .object targetObj, rights := AccessRightSet.ofList [.read], badge := none }
+  let cap1 : Capability := { target := .object targetObj, rights := AccessRightSet.ofList [.read] }
   -- No Grant right on endpoint
   let noGrantRights := AccessRightSet.ofList [.read, .write]
 
@@ -1753,8 +1753,8 @@ private def chain14IpcBadgeAndCapTransfer : IO Unit := do
   let targetObj1 : SeLe4n.ObjId := ⟨3430⟩
   let targetObj2 : SeLe4n.ObjId := ⟨3431⟩
 
-  let cap1 : Capability := { target := .object targetObj1, rights := AccessRightSet.ofList [.read], badge := none }
-  let cap2 : Capability := { target := .object targetObj2, rights := AccessRightSet.ofList [.read, .write], badge := none }
+  let cap1 : Capability := { target := .object targetObj1, rights := AccessRightSet.ofList [.read] }
+  let cap2 : Capability := { target := .object targetObj2, rights := AccessRightSet.ofList [.read, .write] }
   let grantRights := AccessRightSet.ofList [.read, .write, .grant]
 
   let st0 :=
@@ -1835,7 +1835,7 @@ private def chain15StrictRevokeDeepChain : IO Unit := do
   let mut builder := BootstrapBuilder.empty
   builder := builder.withObject targetId (.endpoint {})
   builder := builder.withObject rootCNode (.cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [
-      ((SeLe4n.Slot.ofNat 0), { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
+      ((SeLe4n.Slot.ofNat 0), { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant] })
     ])))
   for cid in childIds do
     builder := builder.withObject cid (.cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 SeLe4n.UniqueSlotMap.empty))
@@ -1906,7 +1906,7 @@ private def chain16StrictRevokePartialFail : IO Unit := do
   let mut builder := BootstrapBuilder.empty
   builder := builder.withObject targetId (.endpoint {})
   builder := builder.withObject rootCNode (.cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [
-      ((SeLe4n.Slot.ofNat 0), { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
+      ((SeLe4n.Slot.ofNat 0), { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant] })
     ])))
   for cid in childIds do
     builder := builder.withObject cid (.cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 SeLe4n.UniqueSlotMap.empty))
@@ -2019,7 +2019,7 @@ private def chain17StrictRevokeOrdering : IO Unit := do
   for cid in [rootCNode, cnodeA, cnodeB, cnodeA1, cnodeB1, cnodeB2] do
     builder := builder.withObject cid (.cnode (CNode.ofList 4 0 0 4
       (if cid = rootCNode then [
-          ((SeLe4n.Slot.ofNat 0), { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
+          ((SeLe4n.Slot.ofNat 0), { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant] })
         ] else [])))
   let st0 := builder.buildChecked
 
@@ -2127,7 +2127,7 @@ private def chain18StreamingRevokeBFS : IO Unit := do
   for cid in [rootCNode, cnodeA, cnodeB, cnodeA1, cnodeB1, cnodeB2] do
     builder := builder.withObject cid (.cnode (CNode.ofList 4 0 0 4
       (if cid = rootCNode then [
-          ((SeLe4n.Slot.ofNat 0), { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
+          ((SeLe4n.Slot.ofNat 0), { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant] })
         ] else [])))
   let st0 := builder.buildChecked
 
@@ -2185,7 +2185,7 @@ private def chain19StreamingRevokeEmpty : IO Unit := do
   let mut builder := BootstrapBuilder.empty
   builder := builder.withObject targetId (.endpoint {})
   builder := builder.withObject rootCNode (.cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [
-      ((SeLe4n.Slot.ofNat 0), { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
+      ((SeLe4n.Slot.ofNat 0), { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant] })
     ])))
   let st0 := builder.buildChecked
 
@@ -2221,7 +2221,7 @@ private def chain20StreamingRevokeDeepChain : IO Unit := do
   for cid in [rootCNode, cnodeA, cnodeB, cnodeC, cnodeD] do
     builder := builder.withObject cid (.cnode (CNode.ofList 4 0 0 4
       (if cid = rootCNode then [
-          ((SeLe4n.Slot.ofNat 0), { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
+          ((SeLe4n.Slot.ofNat 0), { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant] })
         ] else [])))
   let st0 := builder.buildChecked
 
@@ -2275,7 +2275,7 @@ private def chain21StreamingRevokeEquivalence : IO Unit := do
     for cid in [rootCNode, cnodeA, cnodeB] do
       builder := builder.withObject cid (.cnode (CNode.ofList 4 0 0 4
         (if cid = rootCNode then [
-            ((SeLe4n.Slot.ofNat 0), { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
+            ((SeLe4n.Slot.ofNat 0), { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant] })
           ] else [])))
     let st0 := builder.buildChecked
     let (_, st1) ← expectOkSt "chain21: mint root→A"
@@ -2333,7 +2333,7 @@ private def revokeFinalisingTakesPlainLoop : IO Unit := do
   for cid in [rootCNode, cnodeA, cnodeB, cnodeC] do
     builder := builder.withObject cid (.cnode (CNode.ofList 4 0 0 4
       (if cid = rootCNode then [
-          ((SeLe4n.Slot.ofNat 0), { target := .object targetId, rights := rights, badge := none })
+          ((SeLe4n.Slot.ofNat 0), { target := .object targetId, rights := rights })
         ] else [])))
   let st0 := builder.buildChecked
   let (_, st1) ← expectOkSt "plain revoke: mint root→A"
@@ -2434,7 +2434,7 @@ private def chain23CdtDeepCascadeWithMidDelete : IO Unit := do
     (BootstrapBuilder.empty
       |>.withObject targetEp (.endpoint {})
       |>.withObject cnodeRoot (.cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [
-          ((SeLe4n.Slot.ofNat 0), { target := .object targetEp, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
+          ((SeLe4n.Slot.ofNat 0), { target := .object targetEp, rights := AccessRightSet.ofList [.read, .write, .grant] })
         ])))
       |>.withObject cnodeChild (.cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 emptyCNode))
       |>.withObject cnodeGrand (.cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 emptyCNode))
@@ -2684,7 +2684,7 @@ private def buildSyscallState (syscallNum : Nat) (capAddr : Nat)
     })
     |>.withObject targetId (match extraObjects with | (_, obj) :: _ => obj | [] => .endpoint {})
     |>.withObject cnodeId (.cnode (CNode.ofList 4 0 0 4 (
-          (SeLe4n.Slot.ofNat capAddr, ({ target := .object targetId, rights := capRights, badge := none } : Capability))
+          (SeLe4n.Slot.ofNat capAddr, ({ target := .object targetId, rights := capRights } : Capability))
           :: extraSlots.map (fun (n, c) => (SeLe4n.Slot.ofNat n, c)))))
     |>.withObject vsId (.vspaceRoot { asid := ⟨1⟩, mappings := {} })
     |>.withLifecycleObjectType tid.toObjId .tcb
@@ -2708,7 +2708,7 @@ private def chain27SyscallCSpaceOps : IO Unit := do
   let epId : SeLe4n.ObjId := ⟨601⟩
   -- CNode with a cap at slot 0 pointing to endpoint, and empty slots 1-3
   let cnode : SeLe4n.Model.CNode := (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [
-      ((SeLe4n.Slot.ofNat 0), { target := .object epId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
+      ((SeLe4n.Slot.ofNat 0), { target := .object epId, rights := AccessRightSet.ofList [.read, .write, .grant] })
     ]))
   -- === cspaceMint (syscallId=4): x2=srcSlot(0), x3=dstSlot(1), x4=rights(3=read|write), x5=badge(42) ===
   let stMint := buildSyscallState 4 0 cnodeTarget
@@ -2799,7 +2799,7 @@ private def chain28SyscallVSpaceOps : IO Unit := do
   -- map is refused `.policyDenied`, so the request is read (1) | cacheable (16).
   let frameId : SeLe4n.ObjId := ⟨701⟩
   let frameCap : Capability :=
-    { target := .object frameId, rights := AccessRightSet.ofList [.read], badge := none }
+    { target := .object frameId, rights := AccessRightSet.ofList [.read] }
   let stMap := buildSyscallState 9 0 vsId
     (AccessRightSet.ofList [.read, .write])
     [(vsId, .vspaceRoot vsRoot), (frameId, .frame { base := SeLe4n.PAddr.ofNat 0x3000 })]
@@ -2953,7 +2953,7 @@ private def chain31SyscallReply : IO Unit := do
       |>.withObject epId (.endpoint {})
       |>.withObject cnodeId (.cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [
             -- Slot 0: reply cap referencing the Reply object (ReplyId 505)
-            ((SeLe4n.Slot.ofNat 0), { target := .replyCap (SeLe4n.ReplyId.ofNat 505), rights := AccessRightSet.ofList [.read, .write], badge := none })
+            ((SeLe4n.Slot.ofNat 0), { target := .replyCap (SeLe4n.ReplyId.ofNat 505), rights := AccessRightSet.ofList [.read, .write] })
           ])))
       |>.withObject vsId (.vspaceRoot { asid := ⟨1⟩, mappings := {} })
       |>.withLifecycleObjectType tid.toObjId .tcb
@@ -3016,10 +3016,10 @@ private def chain33ServiceLifecycle : IO Unit := do
   }
   let writeRights := AccessRightSet.ofList [.read, .write]
   let readOnlyRights := AccessRightSet.ofList [.read]
-  let epCap1 : Capability := { target := .object epId1, rights := writeRights, badge := none }
-  let epCap2 : Capability := { target := .object epId2, rights := writeRights, badge := none }
-  let noWriteCap : Capability := { target := .object epId1, rights := readOnlyRights, badge := none }
-  let nonEpCap : Capability := { target := .object nonEpId, rights := writeRights, badge := none }
+  let epCap1 : Capability := { target := .object epId1, rights := writeRights }
+  let epCap2 : Capability := { target := .object epId2, rights := writeRights }
+  let noWriteCap : Capability := { target := .object epId1, rights := readOnlyRights }
+  let nonEpCap : Capability := { target := .object nonEpId, rights := writeRights }
   -- Base state with 2 endpoints and 1 notification (non-endpoint target for error tests)
   let st0 :=
     (BootstrapBuilder.empty
@@ -3060,7 +3060,7 @@ private def chain33ServiceLifecycle : IO Unit := do
   expectErr "chain33: registerService duplicate"
     (SeLe4n.Kernel.registerService reg1 st2) .illegalState
   -- 5e: Non-existent endpoint ObjId (capability targets ObjId not in state)
-  let missingEpCap : Capability := { target := .object ⟨999⟩, rights := writeRights, badge := none }
+  let missingEpCap : Capability := { target := .object ⟨999⟩, rights := writeRights }
   let regMissingEp : ServiceRegistration := { sid := ⟨353⟩, iface := iface1, endpointCap := missingEpCap }
   expectErr "chain33: registerService non-existent endpoint"
     (SeLe4n.Kernel.registerService regMissingEp st2) .invalidCapability
@@ -3126,8 +3126,8 @@ private def chain34ResolveExtraCapsSilentDrop : IO Unit := do
   let targetObj : SeLe4n.ObjId := ⟨3401⟩
 
   -- CNode with slots 0 and 1 occupied, slot 2 empty
-  let cap0 : Capability := { target := .object targetObj, rights := AccessRightSet.ofList [.read], badge := none }
-  let cap1 : Capability := { target := .object targetObj, rights := AccessRightSet.ofList [.write], badge := none }
+  let cap0 : Capability := { target := .object targetObj, rights := AccessRightSet.ofList [.read] }
+  let cap1 : Capability := { target := .object targetObj, rights := AccessRightSet.ofList [.write] }
   let st :=
     (BootstrapBuilder.empty
       |>.withObject targetObj (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })

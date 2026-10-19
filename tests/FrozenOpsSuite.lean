@@ -406,7 +406,6 @@ private def fo007_cspaceLookup : IO Unit := do
   let cap : Capability := {
     target := .object ⟨42⟩
     rights := .ofNat 7
-    badge := none
   }
   let radix := (CNodeRadix.empty 0 0 4).insert (SeLe4n.Slot.ofNat 3) cap
   let cn : FrozenCNode := { depth := 1, guardWidth := 0, guardValue := 0, radixWidth := 4, slots := radix }
@@ -461,7 +460,7 @@ private def fo011_serviceLookup : IO Unit := do
     sid := ⟨1⟩
     iface := { ifaceId := ⟨1⟩, methodCount := 1, maxMessageSize := 64,
                maxResponseSize := 64, requiresGrant := false }
-    endpointCap := { target := .object ⟨42⟩, rights := .ofNat 7, badge := none }
+    endpointCap := { target := .object ⟨42⟩, rights := .ofNat 7 }
   }
   let regRt := (RHTable.empty 16 : RHTable ServiceId ServiceRegistration).insert ⟨1⟩ reg
   let fst := { emptyFrozenState with serviceRegistry := freezeMap regRt }
@@ -482,7 +481,7 @@ private def fo012_serviceLookupMissing : IO Unit := do
 
 /-- FO-013: frozenCspaceDelete — erase slot from frozen CNode -/
 private def fo013_cspaceDelete : IO Unit := do
-  let cap : Capability := { target := .object ⟨42⟩, rights := .ofNat 7, badge := none }
+  let cap : Capability := { target := .object ⟨42⟩, rights := .ofNat 7 }
   let radix := (CNodeRadix.empty 0 0 4).insert (SeLe4n.Slot.ofNat 3) cap
   let cn : FrozenCNode := { depth := 1, guardWidth := 0, guardValue := 0, radixWidth := 4, slots := radix }
   let fst := mkFrozenState [(⟨10⟩, .cnode cn)]
@@ -502,7 +501,7 @@ whose capability is gone — the defect the live cut closes.  The control is the
 same capability with no record, which FO-013 already deletes. -/
 private def fo013b_cspaceDeleteRefusesMappedFrameCap : IO Unit := do
   let cap : Capability :=
-    { target := .object ⟨42⟩, rights := .ofNat 7, badge := none,
+    { target := .object ⟨42⟩, rights := .ofNat 7,
       mapping := some { asid := SeLe4n.ASID.ofNat 3, vaddr := SeLe4n.VAddr.ofNat 0x60000 } }
   let radix := (CNodeRadix.empty 0 0 4).insert (SeLe4n.Slot.ofNat 3) cap
   let cn : FrozenCNode := { depth := 1, guardWidth := 0, guardValue := 0, radixWidth := 4, slots := radix }
@@ -525,7 +524,7 @@ decide *last*, so it refuses.  Two controls: the same capability once the root
 no longer holds the table (a stale record, which the live kernel reads as not
 installed), and a capability naming a table installed nowhere — both delete. -/
 private def fo013c_cspaceDeleteRefusesInstalledTableCap : IO Unit := do
-  let cap : Capability := { target := .object ⟨42⟩, rights := .ofNat 3, badge := none }
+  let cap : Capability := { target := .object ⟨42⟩, rights := .ofNat 3 }
   let radix := (CNodeRadix.empty 0 0 4).insert (SeLe4n.Slot.ofNat 3) cap
   let cn : FrozenCNode := { depth := 1, guardWidth := 0, guardValue := 0, radixWidth := 4, slots := radix }
   let inst : PageTableInstall := { root := ⟨20⟩, level := 1, index := 0 }
@@ -695,7 +694,7 @@ private def fo020_frozenCspaceMint : IO Unit := do
   -- `v0.36.38`: the source carries a mapping record, which a new capability
   -- must not inherit — it made no mapping (seL4's `deriveCap`).
   let testCap : Capability :=
-    { target := .object epId, rights := .ofNat 7, badge := none,
+    { target := .object epId, rights := .ofNat 7,
       mapping := some { asid := SeLe4n.ASID.ofNat 1, vaddr := SeLe4n.VAddr.ofNat 0x1000 } }
   match frozenCspaceMint cnodeId (SeLe4n.Slot.ofNat 0) testCap st0 with
   | .ok ((), st1) =>
@@ -1030,7 +1029,7 @@ private def diffAddCSpace (ist : IntermediateState)
 /-- The capability naming `oid`, as an actor's CSpace would hold it. -/
 private def diffObjCap (oid : SeLe4n.ObjId) : Capability :=
   { target := .object oid,
-    rights := AccessRightSet.ofList [.read, .write, .grant], badge := none }
+    rights := AccessRightSet.ofList [.read, .write, .grant] }
 
 /-! The three adders below take the object's *structure* rather than a
 `KernelObject`, so the builder's CNode-slot and VSpace-mapping obligations are

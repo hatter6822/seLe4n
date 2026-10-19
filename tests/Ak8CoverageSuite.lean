@@ -142,8 +142,7 @@ def test_AK8_E_bound_missing_sc_is_objectNotFound : IO Bool := do
 unoccupied index, bounded by `2^radixWidth`. -/
 def test_AK8_F_returns_first_free_slot : IO Bool := do
   let occupied : Capability :=
-    { target := .object (ObjId.ofNat 100), rights := AccessRightSet.empty,
-      badge := none }
+    { target := .object (ObjId.ofNat 100), rights := AccessRightSet.empty, }
   let cn : CNode :=
     CNode.ofList 16 0 0 4 [(SeLe4n.Slot.ofNat 0, occupied)]
   -- limit=10 is intentionally larger than 2^4-0 = 16; the checker should
@@ -360,8 +359,7 @@ the freeze is the CNode's slot array, so there is no phantom-key failure to
 check for. -/
 def test_frozen_cnode_reads_its_slots : IO Bool := do
   let cap : Capability :=
-    { target := .object (ObjId.ofNat 100), rights := AccessRightSet.empty,
-      badge := none }
+    { target := .object (ObjId.ofNat 100), rights := AccessRightSet.empty, }
   let cn : CNode :=
     CNode.ofList 16 0 0 4 [(SeLe4n.Slot.ofNat 0, cap), (SeLe4n.Slot.ofNat 5, cap)]
   -- 2^4 = 16; both keys (0, 5) are within range.
@@ -375,8 +373,7 @@ insert leaves the CNode unchanged: the lookup misses, and the frozen CNode
 holds nothing at slot 0, where slot 8's radix index would land. -/
 def test_phantom_key_insert_is_dropped : IO Bool := do
   let cap : Capability :=
-    { target := .object (ObjId.ofNat 100), rights := AccessRightSet.empty,
-      badge := none }
+    { target := .object (ObjId.ofNat 100), rights := AccessRightSet.empty, }
   -- 2^2 = 4; key 8 is a phantom (out of radix range).
   let cn : CNode := CNode.ofList 16 0 0 2 [(SeLe4n.Slot.ofNat 8, cap)]
   return (cn.lookup (SeLe4n.Slot.ofNat 8)).isNone &&

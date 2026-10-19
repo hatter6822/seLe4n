@@ -893,6 +893,12 @@ instance : Inhabited Badge := ⟨⟨0⟩⟩
 
 namespace Badge
 
+/-- WS-ZA ZA5.3 part 6: the badge a word and a flag stand for, `none` when the
+flag is clear: how a capability (`Capability.badgeWord`, `badged`) and a blocked
+sender (`TCB.ipcBadge`, `ipcBadged`) hold one, so a path that hands the two on
+builds no `Option`. -/
+@[inline] def opt (w : Badge) (b : Bool) : Option Badge := if b then some w else none
+
 /-- The badge's value as a number. -/
 @[inline] def val (badge : Badge) : Nat := badge.word.toNat
 
@@ -912,6 +918,18 @@ theorem valid_of_word (badge : Badge) : badge.valid := by
 
 /-- AN2-A / H-13: Canonical zero badge (valid by construction). -/
 @[inline] def zero : Badge := ⟨0⟩
+
+/-- WS-ZA ZA5.3 part 6: the word of an optional badge (`zero` for none), as a
+capability's `badgeWord` holds it beside its `badged` flag. -/
+@[inline] def ofOption : Option Badge → Badge
+  | some b => b
+  | none => zero
+
+/-- The badge of value 0 is the zero badge. -/
+theorem eq_zero_of_val_eq_zero {b : Badge} (h : b.val = 0) : b = zero := by
+  obtain ⟨w⟩ := b
+  unfold val at h; unfold zero; congr
+  exact UInt64.toNat_inj.mp (by simpa using h)
 
 /-- AN2-A / H-13: `Badge.zero` is always valid. The zero badge is
     the canonical "no-badge" sentinel used by the kernel ABI when

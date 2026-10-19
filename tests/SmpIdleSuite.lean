@@ -659,7 +659,7 @@ private def runBootValidationParityChecks : IO Unit := do
   -- capability predicate itself decides by target.
   let cnodeWith (target : SeLe4n.ObjId) : KernelObject :=
     .cnode (CNode.ofList 4 0 0 4 [ (SeLe4n.Slot.ofNat 0,
-                  { target := .object target, rights := AccessRightSet.ofList [.write], badge := none }) ])
+                  { target := .object target, rights := AccessRightSet.ofList [.write] }) ])
   assertBool "NEGATIVE: a boot CNode holding a capability to an idle TCB references the slot"
     (SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot (cnodeWith idle0Obj) == true)
   assertBool "a boot CNode holding a capability to an ordinary object does not"
@@ -827,7 +827,7 @@ private def runBootValidationParityChecks : IO Unit := do
   -- id and `prev` link, a SchedContext's own id.
   let idleReplyId : SeLe4n.ReplyId := SeLe4n.ReplyId.ofNat idle0Obj.toNat
   let idleCap : Capability :=
-    { target := .object idle0Obj, rights := AccessRightSet.ofList [.write], badge := none }
+    { target := .object idle0Obj, rights := AccessRightSet.ofList [.write] }
   assertBool "NEGATIVE: a boot TCB's reply references and carried capabilities are read"
     (SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot
        (.tcb { tcbWithTid ⟨9⟩ with replyObjectCode := SeLe4n.ReplyId.optCode (some idleReplyId) }) == true &&
@@ -902,11 +902,11 @@ private def runBootValidationParityChecks : IO Unit := do
      SeLe4n.Platform.Boot.embeddedIdentitiesMatchSlots ownIdCfg == true)
   assertBool "capTargetsReservedIdleObject decides by the capability's target"
     (SeLe4n.Kernel.capTargetsReservedIdleObject
-        { target := .object idle0Obj, rights := AccessRightSet.ofList [.write], badge := none } == true &&
+        { target := .object idle0Obj, rights := AccessRightSet.ofList [.write] } == true &&
      SeLe4n.Kernel.capTargetsReservedIdleObject
-        { target := .cnodeSlot idle0Obj (SeLe4n.Slot.ofNat 0), rights := AccessRightSet.ofList [.write], badge := none } == true &&
+        { target := .cnodeSlot idle0Obj (SeLe4n.Slot.ofNat 0), rights := AccessRightSet.ofList [.write] } == true &&
      SeLe4n.Kernel.capTargetsReservedIdleObject
-        { target := .object ⟨9⟩, rights := AccessRightSet.ofList [.write], badge := none } == false)
+        { target := .object ⟨9⟩, rights := AccessRightSet.ofList [.write] } == false)
   -- The same object one slot below the idle range is accepted: the refusal is
   -- the reservation, not the object.
   let neighbour : SeLe4n.Platform.Boot.PlatformConfig :=

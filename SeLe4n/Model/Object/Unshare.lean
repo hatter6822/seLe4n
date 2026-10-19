@@ -53,6 +53,13 @@ def KernelObject.unshare (o : KernelObject) : KernelObject := o
 
 @[simp] theorem KernelObject.unshare_eq (o : KernelObject) : o.unshare = o := rfl
 
+/-- A CNode's spare record, rebuilt when shared so each slot owns its own
+(WS-ZA ZA5.3 part 6). -/
+@[inline] def unshareSpareCell (o : Option Capability) : Option Capability :=
+  match o with
+  | some r => some { r with rights := opaqueId r.rights }
+  | none => none
+
 /-- `KernelObject.unshare` as compiled.  Each record is rebuilt with one field
 passed through `opaqueId`, so a shared record is copied and an exclusive one
 written in place; a thread's register file, a CNode's slot array and a VSpace
@@ -71,7 +78,9 @@ def KernelObject.unshareImpl : KernelObject → KernelObject
         have h : (opaqueId : Option Capability → Option Capability) = id := rfl
         rw [h, Array.map_id]; exact c.slots_agree
       links := c.links.map opaqueId
-      links_size := by rw [Array.size_map]; exact c.links_size }
+      links_size := by rw [Array.size_map]; exact c.links_size
+      spare := Quot.lift (fun a => Squash.mk (a.map unshareSpareCell))
+        (fun _ _ _ => Subsingleton.elim _ _) c.spare }
   | .vspaceRoot v => .vspaceRoot { v with
       asid := opaqueId v.asid
       mappings := v.mappings.unshare
@@ -87,7 +96,12 @@ def KernelObject.unshareImpl : KernelObject → KernelObject
   funext o
   have hId : (opaqueId : Option Capability → Option Capability) = id := rfl
   have hIdN : (opaqueId : Nat → Nat) = id := rfl
-  cases o <;>
+  cases o
+  case cnode c =>
+    simp only [KernelObject.unshare, KernelObject.unshareImpl, hId, hIdN, Array.map_id, opaqueId,
+      KernelObject.cnode.injEq]
+    exact CNode.ext_of_fields rfl rfl rfl rfl rfl rfl rfl
+  all_goals
     simp only [KernelObject.unshare, KernelObject.unshareImpl, hId, hIdN, Array.map_id, opaqueId,
       RHTable.unshare]
 

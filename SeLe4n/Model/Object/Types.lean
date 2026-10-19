@@ -375,7 +375,21 @@ is unchanged for every consumer. -/
 structure SlotRef where
   cnode : SeLe4n.ObjId
   slot : SeLe4n.Slot
-  deriving Repr, DecidableEq
+  deriving Repr
+
+/-- Two slot addresses are equal when their CNode and slot words are.  Inlined
+and field by field, so comparing two addresses builds neither (a derived
+instance compares through an out-of-line function that takes the records). -/
+@[inline] instance : DecidableEq SlotRef := fun a b =>
+  if h1 : a.cnode = b.cnode then
+    if h2 : a.slot = b.slot then isTrue (by cases a; cases b; cases h1; cases h2; rfl)
+    else isFalse fun h => h2 (h ▸ rfl)
+  else isFalse fun h => h1 (h ▸ rfl)
+
+/-- A slot address rebuilt from its two words is the address.  Code that passes
+an address across a call as its CNode and slot words rebuilds it where a theorem
+reads it. -/
+@[simp] theorem SlotRef.mk_cnode_slot (r : SlotRef) : SlotRef.mk r.cnode r.slot = r := rfl
 
 /-- WS-G1: Hash instance for composite HashMap/HashSet keying.
     Combines cnode and slot hashes via `mixHash` for uniform distribution.
@@ -437,11 +451,74 @@ structure MappedPage where
 structure Capability where
   target : CapTarget
   rights : AccessRightSet
-  badge : Option SeLe4n.Badge := none
+  /-- WS-ZA ZA5.3 part 6: the badge's word, meaningful only when `badged`.
+      Held as a plain word with a flag, as a blocked sender's TCB holds its
+      badge (`ipcBadge` / `ipcBadged`): an `Option` field boxed every badge a
+      mint wrote, so a badged mint allocated.  Read through the `badge` view. -/
+  badgeWord : SeLe4n.Badge := SeLe4n.Badge.zero
+  /-- Whether the capability carries a badge (`badgeWord` holds it). -/
+  badged : Bool := false
   mapping : Option FrameMapping := none
   deriving Repr, DecidableEq, Inhabited
 
 namespace Capability
+
+/-- WS-ZA ZA5.3 part 6: **the capability's badge**, the `Option` view of the
+`badged` flag and `badgeWord`. -/
+@[inline] def badge (cap : Capability) : Option SeLe4n.Badge :=
+  if cap.badged then some cap.badgeWord else none
+
+/-- The capability with its badge replaced: the word and flag of `b`. -/
+@[inline] def withBadge (cap : Capability) (b : Option SeLe4n.Badge) : Capability :=
+  { cap with badgeWord := SeLe4n.Badge.ofOption b, badged := b.isSome }
+
+@[simp] theorem withBadge_badge (cap : Capability) (b : Option SeLe4n.Badge) :
+    (cap.withBadge b).badge = b := by
+  cases b <;> rfl
+
+@[simp] theorem withBadge_target (cap : Capability) (b : Option SeLe4n.Badge) :
+    (cap.withBadge b).target = cap.target := rfl
+
+@[simp] theorem withBadge_rights (cap : Capability) (b : Option SeLe4n.Badge) :
+    (cap.withBadge b).rights = cap.rights := rfl
+
+@[simp] theorem withBadge_mapping (cap : Capability) (b : Option SeLe4n.Badge) :
+    (cap.withBadge b).mapping = cap.mapping := rfl
+
+/-- The capability of the given target, rights, badge and mapping. -/
+@[inline] def ofParts (target : CapTarget) (rights : AccessRightSet)
+    (badge : Option SeLe4n.Badge) (mapping : Option FrameMapping := none) : Capability :=
+  { target, rights, badgeWord := SeLe4n.Badge.ofOption badge, badged := badge.isSome, mapping }
+
+@[simp] theorem ofParts_target (t : CapTarget) (r : AccessRightSet) (b : Option SeLe4n.Badge)
+    (m : Option FrameMapping) : (ofParts t r b m).target = t := rfl
+
+@[simp] theorem ofParts_rights (t : CapTarget) (r : AccessRightSet) (b : Option SeLe4n.Badge)
+    (m : Option FrameMapping) : (ofParts t r b m).rights = r := rfl
+
+@[simp] theorem ofParts_badge (t : CapTarget) (r : AccessRightSet) (b : Option SeLe4n.Badge)
+    (m : Option FrameMapping) : (ofParts t r b m).badge = b := by
+  cases b <;> rfl
+
+@[simp] theorem ofParts_mapping (t : CapTarget) (r : AccessRightSet) (b : Option SeLe4n.Badge)
+    (m : Option FrameMapping) : (ofParts t r b m).mapping = m := rfl
+
+/-- Two capabilities are equal exactly when their parts are. -/
+theorem ofParts_inj {t t' : CapTarget} {r r' : AccessRightSet} {b b' : Option SeLe4n.Badge}
+    {m m' : Option FrameMapping} :
+    ofParts t r b m = ofParts t' r' b' m' ↔ t = t' ∧ r = r' ∧ b = b' ∧ m = m' := by
+  constructor
+  · intro h
+    have h1 := congrArg target h; have h2 := congrArg rights h
+    have h3 := congrArg badge h; have h4 := congrArg mapping h
+    simp only [ofParts_target, ofParts_rights, ofParts_badge, ofParts_mapping] at h1 h2 h3 h4
+    exact ⟨h1, h2, h3, h4⟩
+  · rintro ⟨rfl, rfl, rfl, rfl⟩; rfl
+
+/-- A capability of no badge has the `none` badge. -/
+@[simp] theorem badge_of_unbadged (cap : Capability) (h : cap.badged = false) :
+    cap.badge = none := by
+  simp [badge, h]
 
 /-- WS-F5/D2b: Check if a capability has a specific right. O(1) bit test. -/
 def hasRight (cap : Capability) (right : AccessRight) : Bool :=
@@ -454,6 +531,18 @@ made the mapping: were the record carried, two capabilities would each claim one
 mapping and destroying either would unmap the other's. -/
 @[inline] def withoutMapping (cap : Capability) : Capability :=
   { cap with mapping := none }
+
+/-- `withoutMapping` as compiled: a capability that records no mapping is
+returned as it is, so deriving it builds no record (WS-ZA ZA5.3 part 6). -/
+@[inline] def withoutMappingImpl (cap : Capability) : Capability :=
+  match cap.mapping with
+  | none => cap
+  | some _ => { cap with mapping := none }
+
+@[csimp] theorem withoutMapping_eq_impl : @withoutMapping = @withoutMappingImpl := by
+  funext cap
+  cases cap with
+  | mk t r w b m => cases m <;> rfl
 
 /-- AK7-I (F-M07 / MEDIUM): Null capability predicate.
 
@@ -488,7 +577,7 @@ theorem isNotNull_iff (cap : Capability) :
 `ObjId.sentinel`, rights set is empty, badge is `none`. Useful as a
 default/sentinel capability for CSpace slot initialisation. -/
 def null : Capability :=
-  { target := .object ObjId.sentinel, rights := AccessRightSet.empty, badge := none }
+  { target := .object ObjId.sentinel, rights := AccessRightSet.empty }
 
 /-- AK7-I: The canonical null capability satisfies `isNull`. -/
 theorem null_isNull : (Capability.null).isNull = true := by
@@ -503,14 +592,14 @@ between this and `auditTrailManage` is the whole reason the two audit syscalls
 require different rights: a deployment that hands out only this one has a reader
 that provably cannot remove evidence. -/
 def auditTrailRead : Capability :=
-  { target := .auditTrail, rights := AccessRightSet.ofList [.read], badge := none }
+  { target := .auditTrail, rights := AccessRightSet.ofList [.read] }
 
 /-- WS-SM SM9.A.9: **the read-and-drain audit capability**, for the deployment's
 audit monitor.  Draining additionally requires the configured
 `LabelingContext.auditMonitorClearance`, so this right is necessary and not
 sufficient. -/
 def auditTrailManage : Capability :=
-  { target := .auditTrail, rights := AccessRightSet.ofList [.read, .write], badge := none }
+  { target := .auditTrail, rights := AccessRightSet.ofList [.read, .write] }
 
 /-- WS-SM SM9.A.9 (**the separation, as a theorem**): a read-only audit
 capability grants the reader's right and **not** the drain's.
@@ -763,7 +852,7 @@ structure IpcMessage where
 
 namespace IpcMessage
 
-def empty : IpcMessage := { registers := (#[] : Array SeLe4n.RegValue), caps := #[], badge := none }
+def empty : IpcMessage := { registers := (#[] : Array SeLe4n.RegValue), caps := #[] }
 
 /-- WS-H12d/A-09: Predicate asserting that a message's payload respects
 seL4 message-register and extra-capability bounds. -/
@@ -1283,6 +1372,10 @@ structure TCB where
 /-- WS-ZA ZA4.7: the badge a blocked sender sent under. -/
 @[inline] def TCB.ipcBadgeView (t : TCB) : Option SeLe4n.Badge :=
   if t.ipcBadged then some (SeLe4n.Badge.ofWord t.ipcBadge) else none
+
+/-- The view is the badge the word and flag stand for. -/
+theorem TCB.ipcBadgeView_eq_opt (t : TCB) :
+    t.ipcBadgeView = SeLe4n.Badge.opt (SeLe4n.Badge.ofWord t.ipcBadge) t.ipcBadged := rfl
 
 /-- WS-ZA ZA4.7: record what a sender's capability contributed to the message
 it blocks with: its badge and its grant right. -/
@@ -2919,6 +3012,59 @@ theorem slotArrayGet_mapIdx (cells : Array (Option Capability))
 first child, next sibling, previous sibling; a CNode word and a slot word each). -/
 def slotLinkWords : Nat := 8
 
+/-- WS-ZA ZA5.3 part 6: the capability with the given fields, written over the
+record `r` (a slot's spare): out of line, so `r` is the only record the
+compiler can write it into, and its rights read back through `r` so that `r`
+stays live, since an update of every field would drop `r` and build a fresh
+record.  Equal to the capability of those fields (`overwrite_eq`). -/
+@[noinline] def Capability.overwrite (r : Capability) (target : CapTarget) (rights : AccessRightSet)
+    (badgeWord : SeLe4n.Badge) (badged : Bool) (mapping : Option FrameMapping) : Capability :=
+  { target, rights := if r.rights = rights then r.rights else rights, badgeWord, badged, mapping }
+
+/-- WS-ZA ZA5.3 part 6: the capability with the given fields, built fresh (a
+slot with no record of its own).  Out of line, so a caller's literal of the same
+fields is not shared with it and stays unbuilt. -/
+@[noinline] def Capability.ofFields (target : CapTarget) (rights : AccessRightSet)
+    (badgeWord : SeLe4n.Badge) (badged : Bool) (mapping : Option FrameMapping) : Capability :=
+  ⟨target, rights, badgeWord, badged, mapping⟩
+
+theorem Capability.overwrite_eq (r : Capability) (target : CapTarget) (rights : AccessRightSet)
+    (badgeWord : SeLe4n.Badge) (badged : Bool) (mapping : Option FrameMapping) :
+    r.overwrite target rights badgeWord badged mapping = ⟨target, rights, badgeWord, badged, mapping⟩ := by
+  unfold overwrite; split <;> simp_all
+
+/-- WS-ZA ZA5.3 part 6: **the records a CNode's slots keep while empty** (seL4's
+`cte_t`, which a slot owns for the CNode's life).  Entry `i` is the capability
+cell slot `i` last held, kept when the slot is cleared so the next capability
+written there overwrites it in place instead of allocating one.  Logically a
+single value (`Squash`), so no theorem reads it and a CNode with any spares is
+the CNode with any other: only the compiled kernel sees the records. -/
+abbrev SpareCells := Squash (Array (Option Capability))
+
+instance : Repr SpareCells := ⟨fun _ _ => "spare cells"⟩
+
+namespace SpareCells
+
+/-- `sp` with slot `i` keeping the cell `o` (a cleared slot's record); a `none`
+leaves the slot's spare as it was. -/
+@[inline] def keep (sp : SpareCells) (i : Nat) (o : Option Capability) : SpareCells :=
+  Quot.lift (fun a => Squash.mk (match o with
+      | some _ => a.setIfInBounds i o
+      | none => a))
+    (fun _ _ _ => Quot.sound trivial) sp
+
+/-- `sp` with each slot `i` whose cell in `cells` holds a capability `f i`
+rejects keeping that capability as its record (a bulk clear's `keep`). -/
+def keepFiltered (sp : SpareCells) (cells : Array (Option Capability))
+    (f : Nat → Capability → Bool) : SpareCells :=
+  Quot.lift (fun a => Squash.mk (a.mapIdx fun i o =>
+      match cells[i]? with
+      | some (some c) => if f i c then o else some c
+      | _ => o))
+    (fun _ _ _ => Quot.sound trivial) sp
+
+end SpareCells
+
 /-- WS-H13/H-01: Depth-aware CNode with compressed-path guard.
 
 `depth` = maximum remaining CSpace depth in bits from this node to any leaf.
@@ -2960,12 +3106,21 @@ structure CNode where
   records, so a link is written in place and no entry is shared. -/
   links      : Array Nat
   links_size : links.size = slotLinkWords * 2 ^ radixWidth
+  /-- WS-ZA ZA5.3 part 6: the records the slots keep while empty. -/
+  spare      : SpareCells
   deriving Repr
 
 /-- WS-ZA ZA5.3: the slot map the theorems read; ghost state, equal to the slot
 array at every slot (`CNode.slots_agree`). -/
 noncomputable def CNode.slots (cn : CNode) : SeLe4n.UniqueSlotMap Capability :=
   cn.slotsGhost.out
+
+/-- WS-ZA ZA5.3 part 6: a record of its own for each of a radix-`rw` CNode's
+slots, made with the CNode.  Each record targets an object named by its slot
+number, so the compiler cannot share one record among the slots. -/
+def spareCellsFor (rw : Nat) : Array (Option Capability) :=
+  Array.ofFn (n := 2 ^ rw) fun i =>
+    some { target := .object ⟨i.val⟩, rights := AccessRightSet.empty }
 
 /-- WS-ZA ZA5.3: the CNode of the given geometry holding `m`'s capability at
 each slot below `2 ^ rw`; a slot at or past it holds nothing. -/
@@ -2980,6 +3135,7 @@ def CNode.ofSlots (depth guardWidth guardValue radixWidth : Nat)
   cells_size := slotArrayOf_size _ _
   links := Array.replicate (slotLinkWords * 2 ^ radixWidth) 0
   links_size := Array.size_replicate
+  spare := Squash.mk (spareCellsFor radixWidth)
   slots_agree := fun s => by
     rw [SeLe4n.Erased.out_mk, SeLe4n.UniqueSlotMap.get?_filter]
     unfold slotArrayGet

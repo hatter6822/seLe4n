@@ -105,8 +105,9 @@ def frozenObjectAgrees (f : FrozenKernelObject) (l : KernelObject) : Bool :=
     -- The live slot array is not compared: `slots_agree` makes it the slot map's.
     -- The derivation links are compared word for word (PR #956 review): the
     -- frozen CNode carries them, and `frozenStateAgrees` compares the tree's
-    -- edges they index.
-    .cnode (lc@⟨ld, lgw, lgv, lrw, _lslots, _lcells, _, _, llinks, _⟩) =>
+    -- edges they index.  The spare records are not compared: they are no
+    -- slot's capability (`SpareCells`: logically one value).
+    .cnode (lc@⟨ld, lgw, lgv, lrw, _lslots, _lcells, _, _, llinks, _, _lspare⟩) =>
       fd == ld && fgw == lgw && fgv == lgv && frw == lrw
         && frozenCNodeSlotsAgree fc lc && flinks == llinks
   | .vspaceRoot (fv@⟨fasid, _fm, fbase, ftables, _fepochs⟩),

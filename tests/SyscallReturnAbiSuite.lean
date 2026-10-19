@@ -217,12 +217,12 @@ private def replyBadgeVal : Nat := 3
 private def epCap : Capability :=
   { target := .object epId,
     rights := AccessRightSet.ofList [.read, .write, .grant],
-    badge := some (Badge.ofNatMasked epBadgeVal) }
+    badgeWord := (Badge.ofNatMasked epBadgeVal), badged := true }
 
 private def replyCapability : Capability :=
   { target := .replyCap replyRid,
     rights := AccessRightSet.ofList [.read, .write, .grant],
-    badge := some (Badge.ofNatMasked replyBadgeVal) }
+    badgeWord := (Badge.ofNatMasked replyBadgeVal), badged := true }
 
 private def selfTcbCapPtr : Nat := 8
 
@@ -242,7 +242,7 @@ a transfer through it is grant-denied while the message itself delivers. -/
 private def epCapNoGrant : Capability :=
   { target := .object epId,
     rights := AccessRightSet.ofList [.read, .write],
-    badge := some (Badge.ofNatMasked epBadgeVal) }
+    badgeWord := (Badge.ofNatMasked epBadgeVal), badged := true }
 
 /-- The capability the 9h send carries as its ONE extra cap — a read cap on
 the notification object (distinctive and harmless), resolved from the

@@ -4825,7 +4825,7 @@ private def donFixtureTypes : List (SeLe4n.ObjId × KernelObjectType) :=
 /-- The authority a `.lifecycleRetype` presents: a capability on the target with
 the `.retype` right (`lifecycleRetypeAuthority`). -/
 private def retypeCapOn (target : SeLe4n.ObjId) : Capability :=
-  { target := .object target, rights := AccessRightSet.ofList [.retype], badge := none }
+  { target := .object target, rights := AccessRightSet.ofList [.retype] }
 
 /-- The replacement object: an empty endpoint, well-formed in any store. -/
 private def retypeReplacement : KernelObject := .endpoint (Endpoint.ofQueues {} {})

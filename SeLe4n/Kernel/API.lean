@@ -402,8 +402,7 @@ fully-rights-bearing capability to an ordinary object — the shape every thread
 holds to its own TCB — fails the check. -/
 theorem extractAuditAuthority_rejects_non_audit_capability (oid : SeLe4n.ObjId) :
     extractAuditAuthority
-        { target := .object oid, rights := AccessRightSet.ofList AccessRight.all,
-          badge := none } = .error .invalidCapability := rfl
+        { target := .object oid, rights := AccessRightSet.ofList AccessRight.all, } = .error .invalidCapability := rfl
 
 /-- WS-SM SM6.D (faithful seL4-MCS receive linkage): resolve the *server-supplied*
 reply capability the `Recv` syscall names in `RecvArgs.replyCPtr` (msgRegs[0]) to
@@ -7546,8 +7545,7 @@ theorem unconfiguredDeployment_has_no_audit_reader
     (∀ (anyCap : Capability) (st' : SystemState),
       dispatchWithCapChecked ctx decoded tid executingCore gate anyCap st ≠ .ok ((), st')) ∧
     dispatchWithCapChecked ctx decoded tid executingCore gate
-        { target := .object oid, rights := AccessRightSet.ofList AccessRight.all,
-          badge := none } st = .error .invalidCapability ∧
+        { target := .object oid, rights := AccessRightSet.ofList AccessRight.all, } st = .error .invalidCapability ∧
     (∀ (parent : NonNullCap) (rights : AccessRightSet) (badge : Option SeLe4n.Badge)
         (child : Capability),
       mintDerivedCap parent rights badge = .ok child → child.target = .auditTrail →

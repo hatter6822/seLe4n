@@ -2875,8 +2875,7 @@ example (ctx : LabelingContext) (observer : IfObserver) (gctx : GenericLabelingC
 -- exactly the v0.32.97 class.
 example (oid : SeLe4n.ObjId) :
     extractAuditAuthority
-        { target := .object oid, rights := AccessRightSet.ofList AccessRight.all,
-          badge := none } = .error .invalidCapability :=
+        { target := .object oid, rights := AccessRightSet.ofList AccessRight.all, } = .error .invalidCapability :=
   extractAuditAuthority_rejects_non_audit_capability oid
 
 -- SM9.A.10: an idle core cannot read the trail — there is no subject whose
@@ -9544,8 +9543,7 @@ private def runAuditLiveArmChecks : IO Unit := do
   -- object — the shape every thread holds to its own TCB — is REJECTED.
   assertBool "NEGATIVE: an ordinary capability carrying every right is rejected"
     ((match extractAuditAuthority
-        { target := .object lowNotification, rights := AccessRightSet.ofList AccessRight.all,
-          badge := none } with
+        { target := .object lowNotification, rights := AccessRightSet.ofList AccessRight.all, } with
       | .error e => decide (e = KernelError.invalidCapability)
       | .ok _ => false) &&
      (match extractAuditAuthority Capability.auditTrailRead with

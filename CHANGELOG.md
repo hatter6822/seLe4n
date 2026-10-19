@@ -1,3 +1,62 @@
+## v0.36.109 — WS-ZA ZA5.3 part 6: each slot owns its capability record
+
+Every capability operation (copy, move, delete, mint, revoke, reply-cap delete
+and reply-cap mint) now allocates nothing: each CNode slot keeps a capability
+record for the CNode's life, as seL4's `cte_t`, and a capability's badge is a
+word.
+
+- **Slot records**: `CNode.spare : SpareCells`, a `Squash` of one record per
+  slot, made with the CNode (`spareCellsFor`).  Logically one value: no theorem
+  reads it, and `CNode.ext_of_fields` proves CNodes equal from their other
+  fields.  A remove keeps the slot's capability as its record
+  (`SpareCells.keep`, `CNode.removeImpl`), as does a filter that drops slots
+  (`CNode.filterSlots`, `SpareCells.keepFiltered`); an insert takes the record out
+  before matching it and writes the new capability's fields over it
+  (`CNode.insertCellWith`, `Capability.overwrite`).  A slot with no record
+  gets a capability built out of line (`Capability.ofFields`), so a caller's
+  literal is never built.  `CNode.insert` and `CNode.remove` are unchanged; the
+  compiled forms are `@[csimp]` replacements proven equal to them.
+- **Badge as a word**: `Capability` holds `badgeWord : Badge` and
+  `badged : Bool`, as a blocked sender's TCB does, read through the
+  `Capability.badge` view and written by `Capability.withBadge` and
+  `Capability.ofParts` (`ofParts_badge`, `withBadge_badge`).  The mint
+  invocation passes the register's badge word to its check and perform steps
+  (`cspaceMintAdmittedAt`, `cspaceMintPerformAt`, 0 for no badge, as seL4's
+  mint); the check reads no badge, and the perform writes the word and flag
+  (`cspaceMintPerformWords`).  The send, call and reply fast paths pass the
+  invoked capability's word and flag on as they are (`regMessageFrameW`, proven
+  equal to `regMessageFrame` of `Badge.opt` by `regMessageFrameW_eq`); a blocked
+  sender records them in its TCB (`recordSendCapWords`), and a receive from a
+  blocked sender reads them back from the TCB (`TCB.ipcBadgeView_eq_opt`), so
+  a badged IPC builds no `some badge`.
+- **Reply-capability target**: a `Reply` object holds the target every
+  reply capability to it carries (`Reply.capTarget`, with `capTarget_eq`),
+  built with the object and stamped by `withIdentity`.  A reply-capability
+  mint shares it (`replyCapTargetIn`, equal to `.replyCap rid` in every
+  state), so the mint builds no target whatever record the destination slot
+  keeps, including one whose target another capability shares or one left by
+  an audit-trail capability, whose target has no cell.
+- **Copy of a mapped capability**: the copy writes the source's fields with no
+  mapping record straight over the destination's record
+  (`cspaceCopyPerformImpl`), so it builds no unmapped capability first.
+- **In-place writes**: copy and move store the source slot's own capability;
+  `cspaceInsertSlot`, `cspaceDeleteSlotCore` and `cspaceRecordFrameMapping`
+  write their CNode in its store slot (`@[csimp]` via `storeCNodeWith`).
+- **Readings** (normal build, first call and steady state): copy, move,
+  delete, mint, revoke, reply-cap delete and reply-cap mint 0 (4, 3, 2, 7, 3,
+  2, 5 before).  The exerciser pins them at 0, and pins at 0 a copy of the
+  mapped frame capability, the copy's delete, a reply-capability mint over the
+  record the copy left and that capability's delete, and badged IPC through a
+  minted endpoint capability: send to a waiting receiver, send that blocks,
+  receive from that blocked sender, call, and the receives and reply around
+  them (badged send, send-blocks, receive-from-sender and call read 2 each
+  before the fast paths took the badge words).  Each page-table retype reads 65
+  (63) and the frame retype 82 (80): the retype's CNode is shared, so its
+  records are copied with it, which the retype row's in-place write removes.
+  Frame delete 27 (29), page-table deletes 21 each (23).
+- **Fix**: `eq_of_cnodeVisibilityLe_of_slots_eq` concludes through
+  `CNode.ext_of_fields`, so the records do not enter the visibility order.
+
 ## v0.36.108 — WS-ZA ZA5.3 part 5: the derivation tree is a ghost
 
 The capability derivation tree's edge list is ghost state, so at run time the

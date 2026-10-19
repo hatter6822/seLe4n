@@ -439,7 +439,7 @@ is its two writes (`cspaceDeleteSlotFinalising_of_admitted`). -/
 /-- WS-ZA ZA5.3: **an admitted delete's writes**: the slot emptied where its
 CNode stands (`SystemState.storeCNodeWith`), then spliced out of the derivation
 tree (`spliceDeletedCdtNode`). -/
-def cspaceDeletePerform (addr : CSpaceAddr) (st : SystemState) : SystemState :=
+@[inline] def cspaceDeletePerform (addr : CSpaceAddr) (st : SystemState) : SystemState :=
   spliceDeletedCdtNode (st.storeCNodeWith addr.cnode (·.remove addr.slot)) addr
 
 /-- A finalisation of nothing is the identity. -/
@@ -543,7 +543,7 @@ source slot holds a capability, and every slot beneath it in the derivation
 tree is one whose delete is admitted (`linkSubtreeDeletable`), so no capability
 the revocation destroys has anything to finalise.  The walk's fuel covers a
 walk down and back up every edge. -/
-def cspaceRevokeAdmitted (addr : CSpaceAddr) (st : SystemState) : Bool :=
+@[inline] def cspaceRevokeAdmitted (addr : CSpaceAddr) (st : SystemState) : Bool :=
   (SystemState.lookupSlotCap st addr).isSome &&
     (let fc := st.slotLinkNodeWord addr.cnode addr.slot .firstChild
      fc == 0 ||
@@ -557,22 +557,34 @@ deleted child's children become the source's, and the loop reaches every
 descendant without building a list of them.  A child whose delete is not
 admitted ends the loop; `fuel` bounds it by the tree's edges, one of which each
 splice removes. -/
-def revokeFirstChildLoop (addr : CSpaceAddr) : Nat → SystemState → SystemState
+def revokeFirstChildLoop (cnode : SeLe4n.ObjId) (slot : SeLe4n.Slot) :
+    Nat → SystemState → SystemState
   | 0, st => st
   | n + 1, st =>
-    let fc := st.slotLinkNodeWord addr.cnode addr.slot .firstChild
+    let fc := st.slotLinkNodeWord cnode slot .firstChild
     if fc = 0 then st
     else
       let c : CSpaceAddr :=
         { cnode := SeLe4n.ObjId.ofNat (fc - 1),
-          slot := SeLe4n.Slot.ofNat (st.slotLinkSlotWord addr.cnode addr.slot .firstChild - 1) }
-      if cspaceDeleteAdmitted c st then revokeFirstChildLoop addr n (cspaceDeletePerform c st)
+          slot := SeLe4n.Slot.ofNat (st.slotLinkSlotWord cnode slot .firstChild - 1) }
+      if cspaceDeleteAdmitted c st then revokeFirstChildLoop cnode slot n (cspaceDeletePerform c st)
       else st
 
 /-- WS-ZA ZA5.3: **an admitted revocation's writes**: the first-child loop, with
 fuel for every edge of the tree. -/
-def cspaceRevokePerform (addr : CSpaceAddr) (st : SystemState) : SystemState :=
-  revokeFirstChildLoop addr (st.cdt.edgeBound + 1) st
+@[inline] def cspaceRevokePerform (addr : CSpaceAddr) (st : SystemState) : SystemState :=
+  revokeFirstChildLoop addr.cnode addr.slot (st.cdt.edgeBound + 1) st
+
+/-- `cspaceDeletePerform` on slot `slot` of `cnode`: the dispatcher hands the
+step the slot's two words, so no address record is built (WS-ZA ZA5.3 part 6). -/
+def cspaceDeletePerformAt (cnode : SeLe4n.ObjId) (slot : SeLe4n.Slot) (st : SystemState) :
+    SystemState :=
+  cspaceDeletePerform ⟨cnode, slot⟩ st
+
+/-- `cspaceRevokePerform` on slot `slot` of `cnode`, for the same reason. -/
+def cspaceRevokePerformAt (cnode : SeLe4n.ObjId) (slot : SeLe4n.Slot) (st : SystemState) :
+    SystemState :=
+  cspaceRevokePerform ⟨cnode, slot⟩ st
 
 /-- **What the first-child loop is made of: finalising deletes.**  Each step it
 takes is an admitted delete, which is the finalising delete
@@ -582,7 +594,7 @@ theorem revokeFirstChildLoop_closed {ec : Concurrency.CoreId} {addr : CSpaceAddr
     (Q : SystemState → Prop)
     (hStep : ∀ (c : CSpaceAddr) (s s' : SystemState), Q s →
       cspaceDeleteSlotFinalising ec c s = .ok ((), s') → Q s') :
-    ∀ (n : Nat) (st : SystemState), Q st → Q (revokeFirstChildLoop addr n st)
+    ∀ (n : Nat) (st : SystemState), Q st → Q (revokeFirstChildLoop addr.cnode addr.slot n st)
   | 0, _, h => h
   | n + 1, st, h => by
     unfold revokeFirstChildLoop

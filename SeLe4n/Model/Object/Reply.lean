@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Prelude
+import SeLe4n.Model.Object.Types
 
 /-! # Reply object — WS-SM SM6.D
 
@@ -89,6 +90,11 @@ structure Reply where
   callerCode : Nat                          := 0
   prev      : Option SeLe4n.ReplyId        := none
   next      : Option ReplyStackLink         := none
+  /-- WS-ZA ZA5.3 part 6: the target every reply capability to this object
+  carries, built once with the object (`capTarget_eq`), so a reply-capability
+  mint shares it instead of building one (`CapTarget.ofReplyObject`). -/
+  capTarget : SeLe4n.Model.CapTarget       := .replyCap replyId
+  capTarget_eq : capTarget = .replyCap replyId := by rfl
 deriving Repr
 
 namespace Reply
@@ -100,7 +106,8 @@ Written as `callerCode := SeLe4n.ThreadId.optCode c`. -/
   SeLe4n.ThreadId.ofOptCode r.callerCode
 
 @[simp] theorem caller_mk (rid : SeLe4n.ReplyId) (c : Nat) (p : Option SeLe4n.ReplyId)
-    (n : Option ReplyStackLink) : (Reply.mk rid c p n).caller = SeLe4n.ThreadId.ofOptCode c :=
+    (n : Option ReplyStackLink) (t : SeLe4n.Model.CapTarget) (ht : t = .replyCap rid) :
+    (Reply.mk rid c p n t ht).caller = SeLe4n.ThreadId.ofOptCode c :=
   rfl
 
 /-- Default Reply: the given id, no caller, no stack links, lock unheld.  Used by

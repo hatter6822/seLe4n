@@ -4244,8 +4244,8 @@ run_check "INVARIANT" rg -n '^    \| \.ok \(pages, st1\) => finaliseDestroyedCap
 run_check "INVARIANT" rg -n -U 'def pageTablesOrphaned [^\n]*(\n([ \t][^\n]*)?)*          if Architecture\.pageTableInstallLive st id && cnodeSlotsUnreferenced st \[id\] then\n            \(id, inst\) :: acc' SeLe4n/Kernel/Capability/FrameFinalise.lean
 # v0.36.107: a delete or revoke that finalises nothing is decided before any
 # write and performed in place; the revoke is seL4's first-child loop.
-run_check "INVARIANT" rg -n -U '        RefusalCarrying\.ofChecked \(cspaceDeleteAdmitted addr st\)\n          \(fun st => cspaceDeletePerform addr st\)' SeLe4n/Kernel/RefusalCarryingInvocation.lean
-run_check "INVARIANT" rg -n -U '        RefusalCarrying\.ofChecked \(cspaceRevokeAdmitted addr st\)\n          \(fun st => cspaceRevokePerform addr st\)' SeLe4n/Kernel/RefusalCarryingInvocation.lean
+run_check "INVARIANT" rg -n -U '        RefusalCarrying\.ofChecked \(cspaceDeleteAdmitted addr st\)\n          \(fun st => cspaceDeletePerformAt cnodeId args\.targetSlot st\)' SeLe4n/Kernel/RefusalCarryingInvocation.lean
+run_check "INVARIANT" rg -n -U '        RefusalCarrying\.ofChecked \(cspaceRevokeAdmitted addr st\)\n          \(fun st => cspaceRevokePerformAt cnodeId args\.targetSlot st\)' SeLe4n/Kernel/RefusalCarryingInvocation.lean
 run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlotFinalising_of_admitted($|[ ({:\[\]])' SeLe4n/Kernel/Capability/FrameFinalise.lean
 run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdtFinalising_closed($|[ ({:\[\]])' SeLe4n/Kernel/Capability/FrameFinalise.lean
 run_check "INVARIANT" rg -n -U 'def cnodeSlotsUnreferenced [^\n]*(\n([ \t][^\n]*)?)*      \| \.cnode cn => objectNamesListed ids \(\.cnode cn\)\n      \| _ => false\)\)' SeLe4n/Kernel/Architecture/PageTeardown.lean
@@ -21963,7 +21963,7 @@ run_check "INVARIANT" rg -n '^theorem spliceNode \(h : LinksAgree L cdt\) \(n : 
 run_check "INVARIANT" rg -n -U '    cspaceDepthConsistent st ∧ st\.objects\.invExt ∧ replyCapPointsToValidReply st ∧\n    cdtLinksAgree st$' SeLe4n/Kernel/Capability/Invariant/Defs.lean
 run_check "INVARIANT" rg -n '^        match traverse st addr \(st\.linkDescendantsOf addr\) with$' SeLe4n/Kernel/Capability/Operations.lean
 run_check "INVARIANT" rg -n '^theorem linkDescendantsOf_eq($|[ ({:\[\]])' SeLe4n/Model/SlotLinks.lean
-run_check "INVARIANT" rg -n '^def spliceDeletedCdtNode($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^@\[inline\] def spliceDeletedCdtNode($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
 run_check "INVARIANT" rg -n -U '    \| \.ok \(\(\), st.\) => \.ok \(\(\), spliceDeletedCdtNode st. addr\)' SeLe4n/Kernel/Capability/Operations.lean
 run_check "INVARIANT" rg -n -U '  cn\.foldCells st \(fun acc slot _cap =>\n    spliceDeletedCdtNode acc \{ cnode := cnodeId, slot := slot \}' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
 run_check "INVARIANT" rg -n -U '    if CNode\.revokeTargetLocalKeeps sourceSlot target slot cap then acc\n    else spliceDeletedCdtNode acc \{ cnode := cnodeId, slot := slot \}' SeLe4n/Kernel/Capability/Operations.lean

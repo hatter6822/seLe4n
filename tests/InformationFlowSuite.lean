@@ -702,7 +702,7 @@ def runInformationFlowChecks : IO Unit := do
   -- cspaceMintChecked: same-domain mint should be allowed
   let mintState :=
     (BootstrapBuilder.empty
-      |>.withObject ⟨100⟩ (.cnode (SeLe4n.Model.CNode.ofSlots 8 0 0 8 ((SeLe4n.UniqueSlotMap.ofListWF [((SeLe4n.Slot.ofNat 0), { target := .object ⟨200⟩, rights := AccessRightSet.ofList [.read, .write], badge := none })]))))
+      |>.withObject ⟨100⟩ (.cnode (SeLe4n.Model.CNode.ofSlots 8 0 0 8 ((SeLe4n.UniqueSlotMap.ofListWF [((SeLe4n.Slot.ofNat 0), { target := .object ⟨200⟩, rights := AccessRightSet.ofList [.read, .write] })]))))
       |>.withObject ⟨101⟩ (.cnode (SeLe4n.Model.CNode.ofSlots 8 0 0 8 ((SeLe4n.UniqueSlotMap.ofListWF []))))
       |>.buildChecked)
 
@@ -1028,9 +1028,9 @@ def runInformationFlowChecks : IO Unit := do
       |>.withObject ⟨1⟩ (.endpoint {})  -- public target
       |>.withObject ⟨2⟩ (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })  -- secret target
       |>.withObject ⟨50⟩ (.cnode (SeLe4n.Model.CNode.ofSlots 8 0 0 8 ((SeLe4n.UniqueSlotMap.ofListWF
-          [ ((SeLe4n.Slot.ofNat 0), { target := .object ⟨1⟩, rights := AccessRightSet.ofList [.read], badge := none })
-          , ((SeLe4n.Slot.ofNat 1), { target := .object ⟨2⟩, rights := AccessRightSet.ofList [.read, .write], badge := none })
-          , ((SeLe4n.Slot.ofNat 2), { target := .replyCap (SeLe4n.ReplyId.ofNat 1), rights := AccessRightSet.ofList [.read], badge := none })
+          [ ((SeLe4n.Slot.ofNat 0), { target := .object ⟨1⟩, rights := AccessRightSet.ofList [.read] })
+          , ((SeLe4n.Slot.ofNat 1), { target := .object ⟨2⟩, rights := AccessRightSet.ofList [.read, .write] })
+          , ((SeLe4n.Slot.ofNat 2), { target := .replyCap (SeLe4n.ReplyId.ofNat 1), rights := AccessRightSet.ofList [.read] })
           ]))))
       |>.buildChecked)
 
@@ -1084,8 +1084,8 @@ def runInformationFlowChecks : IO Unit := do
       |>.withObject ⟨1⟩ (.endpoint {})  -- public target
       |>.withObject ⟨2⟩ (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })  -- secret target
       |>.withObject ⟨60⟩ (.cnode (SeLe4n.Model.CNode.ofSlots 8 0 0 8 ((SeLe4n.UniqueSlotMap.ofListWF
-          [ ((SeLe4n.Slot.ofNat 0), { target := .cnodeSlot ⟨1⟩ (SeLe4n.Slot.ofNat 0), rights := AccessRightSet.ofList [.read], badge := none })
-          , ((SeLe4n.Slot.ofNat 1), { target := .cnodeSlot ⟨2⟩ (SeLe4n.Slot.ofNat 0), rights := AccessRightSet.ofList [.read], badge := none })
+          [ ((SeLe4n.Slot.ofNat 0), { target := .cnodeSlot ⟨1⟩ (SeLe4n.Slot.ofNat 0), rights := AccessRightSet.ofList [.read] })
+          , ((SeLe4n.Slot.ofNat 1), { target := .cnodeSlot ⟨2⟩ (SeLe4n.Slot.ofNat 0), rights := AccessRightSet.ofList [.read] })
           ]))))
       |>.buildChecked)
 
@@ -1209,8 +1209,7 @@ def runInformationFlowChecks : IO Unit := do
   let copySrcCNode := SeLe4n.Model.CNode.empty
   let copySrcCNodeWithCap := copySrcCNode.insert (SeLe4n.Slot.ofNat 0) {
     target := .object ⟨99⟩
-    rights := AccessRightSet.ofList [.read]
-    badge := none }
+    rights := AccessRightSet.ofList [.read] }
   let copyState :=
     (BootstrapBuilder.empty
       |>.withObject ⟨40⟩ (.cnode copySrcCNodeWithCap)
@@ -1596,7 +1595,7 @@ def runInformationFlowChecks : IO Unit := do
     let nonCNodeRoot : SeLe4n.ObjId := ⟨3540⟩
     let senderCNode : SeLe4n.ObjId := ⟨3520⟩
     let cap1 : Capability :=
-      { target := .object targetObj, rights := AccessRightSet.ofList [.read], badge := none }
+      { target := .object targetObj, rights := AccessRightSet.ofList [.read] }
     let st :=
       (BootstrapBuilder.empty
         |>.withObject targetObj (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
@@ -1683,7 +1682,7 @@ def runInformationFlowChecks : IO Unit := do
       let receiverTid : SeLe4n.ThreadId := ⟨3713⟩
       let callerCNode : SeLe4n.ObjId := ⟨3521⟩
       let cap1 : Capability :=
-        { target := .object ⟨3530⟩, rights := AccessRightSet.ofList [.read], badge := none }
+        { target := .object ⟨3530⟩, rights := AccessRightSet.ofList [.read] }
       let baseSt :=
         (BootstrapBuilder.empty
           |>.withObject epId (.endpoint {})

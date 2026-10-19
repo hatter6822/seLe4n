@@ -224,6 +224,10 @@ for driver in drivers:
             "receive-blocks", "send-to-receiver", "wait-blocks", "signal-to-waiter",
             "receive-for-call", "call", "reply-recv", "call-to-reply-receiver", "reply",
             "send-blocks", "receive-from-sender",
+            # WS-ZA ZA5.3: the same through a badged endpoint capability.
+            "receive-for-badged-send", "badged-send-to-receiver",
+            "badged-send-blocks", "receive-from-badged-sender",
+            "receive-for-badged-call", "badged-call", "reply-to-badged-call",
             # WS-ZA ZA5.2: the thread and notification arms change their
             # objects in place.
             "tcb-set-priority", "tcb-set-mc-priority", "tcb-set-affinity",
@@ -235,23 +239,28 @@ for driver in drivers:
             # fifth word is read through.
             "root-set-ipc-buffer", "sched-context-configure", "sched-context-bind",
             "sched-context-unbind", "sched-context-rebind", "tcb-resume-bound",
-            "tcb-suspend-bound")}
-        # WS-ZA ZA5.1: the capability invocations' readings today, each the
-        # operation's own cells (slot, tree and object writes, the store's
-        # copy); the rows that bring them to zero lower these pins.
+            "tcb-suspend-bound",
+            # WS-ZA ZA5.3: the capability operations write each slot's own
+            # record in place and the derivation links in the slots.
+            "cspace-copy", "cspace-move", "cspace-delete", "cspace-mint",
+            "cspace-revoke", "reply-cap-delete", "reply-cap-mint",
+            # a mapped capability copied, and a reply capability minted over
+            # a record whose target another capability shares.
+            "frame-copy-mapped", "frame-copy-delete", "reply-cap-mint-over-copy",
+            "reply-cap-over-copy-delete")}
+        # WS-ZA ZA5.1: the memory invocations' readings today, each the
+        # operation's own cells (object writes, the store's copy); the rows
+        # that bring them to zero lower these pins.
         pinned.update({
-            "cspace-copy": (4, 4), "cspace-move": (3, 3), "cspace-delete": (2, 2),
-            "cspace-mint": (7, 7), "cspace-revoke": (3, 3),
-            "reply-cap-delete": (2, 2), "reply-cap-mint": (5, 5),
-            "untyped-retype-page-table-1": (63, 63), "page-table-map-1": (47, 47),
-            "untyped-retype-page-table-2": (63, 63), "page-table-map-2": (53, 53),
-            "untyped-retype-page-table-3": (63, 63), "page-table-map-3": (56, 56),
-            "untyped-retype-frame": (80, 80), "vspace-map": (107, 106),
+            "untyped-retype-page-table-1": (65, 65), "page-table-map-1": (47, 47),
+            "untyped-retype-page-table-2": (65, 65), "page-table-map-2": (53, 53),
+            "untyped-retype-page-table-3": (65, 65), "page-table-map-3": (56, 56),
+            "untyped-retype-frame": (82, 82), "vspace-map": (107, 106),
             "vspace-unify-instruction": (10, 10),
-            "vspace-unmap": (119, 119), "frame-delete": (29, 29),
-            "page-table-unmap-3": (42, 42), "page-table-delete-3": (23, 23),
-            "page-table-unmap-2": (41, 41), "page-table-delete-2": (23, 23),
-            "page-table-unmap-1": (38, 38), "page-table-delete-1": (23, 23),
+            "vspace-unmap": (119, 119), "frame-delete": (27, 27),
+            "page-table-unmap-3": (42, 42), "page-table-delete-3": (21, 21),
+            "page-table-unmap-2": (41, 41), "page-table-delete-2": (21, 21),
+            "page-table-unmap-1": (38, 38), "page-table-delete-1": (21, 21),
             "untyped-reset": (153, 153),
         })
         expected = set(pinned)

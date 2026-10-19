@@ -828,6 +828,21 @@ def recordSendCap (st : SystemState) (tid : SeLe4n.ThreadId)
     (badge : Option SeLe4n.Badge) (grant : Bool) : SystemState :=
   st.mapTcbInPlace tid fun tcb => tcb.setSendCap badge grant
 
+/-- `recordSendCap` of the badge a capability's word and flag stand for, written
+from the two (`recordSendCapWords_eq`), so a badged send builds no `Option`
+(WS-ZA ZA5.3 part 6). -/
+@[inline] def recordSendCapWords (st : SystemState) (tid : SeLe4n.ThreadId)
+    (badgeWord : SeLe4n.Badge) (badged : Bool) (grant : Bool) : SystemState :=
+  st.mapTcbInPlace tid fun tcb =>
+    { tcb with ipcBadge := (if badged then badgeWord.word else 0), ipcBadged := badged,
+               ipcCanGrant := grant, ipcFaultSend := false }
+
+theorem recordSendCapWords_eq (st : SystemState) (tid : SeLe4n.ThreadId)
+    (badgeWord : SeLe4n.Badge) (badged : Bool) (grant : Bool) :
+    recordSendCapWords st tid badgeWord badged grant =
+      recordSendCap st tid (SeLe4n.Badge.opt badgeWord badged) grant := by
+  cases badged <;> rfl
+
 /-- The send-cap record changes only fields every reader outside the receive
 skips (`TCB.withoutRunLinks`). -/
 theorem recordSendCap_objectsAgreeOffRunLinks (st : SystemState) (tid : SeLe4n.ThreadId)
