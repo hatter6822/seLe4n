@@ -209,7 +209,7 @@ private theorem asidTableConsistent_of_storeObject_vspaceRoot
       (match st.objects[rootId]? with
        | some (.vspaceRoot oldRoot) => (st.asidTable.erase oldRoot.asid)[a]?
        | _ => st.asidTable[a]?) :=
-    fun a hNe => storeObject_asidTable_vspaceRoot_ne st st' rootId root' a hNe hAsidInv hStore
+    fun a hNe => storeObject_asidTable_vspaceRoot_ne st st' rootId root' a hNe hAsidK hAsidInv hStore
   rcases hConsist with ⟨hSound, hComplete⟩
   constructor
   -- Soundness
@@ -698,9 +698,12 @@ theorem storeObject_shrunkRoot_preserves_vspaceInvariantBundle
     storeObject_objects_eq st st' rootId _ hObjInv hStore
   have hObjNe : ∀ oid, oid ≠ rootId → st'.objects[oid]? = st.objects[oid]? :=
     fun oid h => storeObject_objects_ne st st' rootId oid _ h hObjInv hStore
-  have hAsidTbl : st'.asidTable = (st.asidTable.erase root.asid).insert root'.asid rootId := by
+  have hAsidTbl : st'.asidTable = st.asidTable ∨
+      st'.asidTable = (st.asidTable.erase root.asid).insert root'.asid rootId := by
     unfold storeObject at hStore; cases hStore
-    simp only [hObjRoot]
+    by_cases hK : storeKeepsAsid st rootId (.vspaceRoot root') = true
+    · exact Or.inl (if_pos hK)
+    · simp only [hObjRoot]; exact Or.inr (if_neg hK)
   -- every root after the store is the stored one or a root before it
   have hBack : ∀ (oid : SeLe4n.ObjId) (r : VSpaceRoot), st'.objects[oid]? = some (.vspaceRoot r) →
       (oid = rootId ∧ r = root') ∨ (oid ≠ rootId ∧ st.objects[oid]? = some (.vspaceRoot r)) := by
@@ -751,7 +754,9 @@ theorem storeObject_shrunkRoot_preserves_vspaceInvariantBundle
     rcases hBack oid r h with ⟨rfl, rfl⟩ | ⟨_, h0⟩
     · exact hWF
     · exact hMapWF oid r h0
-  · rw [hAsidTbl]
+  · rcases hAsidTbl with hT | hT
+    · rw [hT]; exact hAsidK
+    rw [hT]
     exact SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExtK _ _ _
       (SeLe4n.Kernel.RobinHood.RHTable.erase_preserves_invExtK _ _ hAsidK)
 

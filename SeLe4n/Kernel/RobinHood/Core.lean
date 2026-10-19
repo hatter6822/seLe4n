@@ -736,6 +736,25 @@ theorem RHTable.contains_of_holds [BEq α] [Hashable α] [LawfulBEq α] [BEq β]
       · simp at h
     · simp at h
 
+/-- WS-ZA ZA5.4: a key that holds a value looks it up. -/
+theorem RHTable.get?_of_holds [BEq α] [Hashable α] [LawfulBEq α] [BEq β] [LawfulBEq β]
+    (t : RHTable α β) (k : α) (v : β) (h : t.holds k v = true) : t.get? k = some v := by
+  unfold RHTable.holds at h
+  split at h
+  · simp at h
+  · dsimp only at h
+    split at h
+    · next hi =>
+      unfold RHTable.get?
+      rw [getLoop_eq_findIdxLoop, Array.getElem?_eq_getElem hi]
+      split at h
+      · next e he =>
+        rw [he]
+        show (some e).map RHEntry.value = some v
+        rw [Option.map_some, eq_of_beq h]
+      · simp at h
+    · simp at h
+
 /-- WS-ZA ZA1.6: **update the value at `k` in place.**  The specification is the
 lookup then the insert; compiled (`modify_eq_impl`), a table below its resize
 threshold takes the entry out of its slot with `Array.modify`, applies `f` and

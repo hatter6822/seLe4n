@@ -390,7 +390,17 @@ theorem storeObject_offSchedulerAgrees_of_agree {s1 s2 r1 r2 : SystemState}
     · simp only [hRel.objectIndexSet]
     · simp only [hRel.lifecycle, KernelObject.objectType]
     · dsimp only
-      rw [hRel.asidTable]
+      -- the store keeps the ASID table alike on both sides: the same root at
+      -- `id` and one ASID table, or a TCB, which never keeps it
+      first
+        | (rw [storeKeepsAsid_congr hRel.asidTable (fun _ =>
+              ⟨hRel.objects.get_of_not_tcb' (fun _ e => KernelObject.noConfusion e),
+               hRel.objects.get_of_not_tcb (fun _ e => KernelObject.noConfusion e)⟩),
+            hRel.asidTable]
+           split
+           · rfl)
+        | (simp only [storeKeepsAsid, Bool.false_eq_true, ↓reduceIte]
+           rw [hRel.asidTable])
       cases e : s1.objects[id]? with
       | none => rw [hRel.objects.get_none_iff.mpr e]
       | some o => cases o with

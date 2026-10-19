@@ -1681,7 +1681,7 @@ theorem declassifyStoreOnCore_state_log_independent
       | false => rw [hFlow, hDecl] at hGate₁; simp at hGate₁
       | true =>
         rw [hFlow, hDecl] at hGate₁
-        simp only [Bool.false_eq_true, if_false, if_true, storeObject,
+        simp only [Bool.false_eq_true, if_false, if_true, storeObject, storeKeepsAsid,
           Except.ok.injEq, Prod.mk.injEq, true_and] at hGate₁ ⊢
         rw [← hGate₁]
   rw [hFrame] at hGate₂

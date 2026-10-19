@@ -905,7 +905,7 @@ theorem vspaceMapPage_entry_consistent_frame
           -- Show ASID table lookup is preserved
           have hAsidPreserved : stMid.asidTable[entry.asid]? = st.asidTable[entry.asid]? := by
             have hMid := storeObject_asidTable_vspaceRoot_ne (recordPhysicalWrites st _) stMid rootId₀
-              root' entry.asid hNeAsid hAsidInv hStep
+              root' entry.asid hNeAsid hAsidK hAsidInv hStep
             simp [hObjRoot] at hMid
             rw [hMid, hRootAsidEq]
             exact st.asidTable.getElem?_erase_ne_K asid entry.asid
@@ -1006,7 +1006,7 @@ theorem vspaceUnmapPage_entry_consistent_frame
         -- Show ASID table lookup is preserved
         have hAsidPreserved : stMid.asidTable[entry.asid]? = st.asidTable[entry.asid]? := by
           have hMid := storeObject_asidTable_vspaceRoot_ne (recordPhysicalWrites st _) stMid rootId₀
-            root' entry.asid hNeAsid hAsidInv hStep
+            root' entry.asid hNeAsid hAsidK hAsidInv hStep
           simp [hObjRoot] at hMid
           rw [hMid, hRootAsidEq]
           exact st.asidTable.getElem?_erase_ne_K asid entry.asid
@@ -1076,7 +1076,7 @@ theorem vspaceUnmapPage_resolveAsidRoot_isSome
       · have hNeAsid : a ≠ root'.asid := fun hh => hAsidEq (hh.trans hRoot'Asid)
         have hAsidPreserved : stMid.asidTable[a]? = st.asidTable[a]? := by
           have hMid := storeObject_asidTable_vspaceRoot_ne (recordPhysicalWrites st _) stMid rootId₀
-            root' a hNeAsid hAsidInv hStep
+            root' a hNeAsid hAsidK hAsidInv hStep
           simp [hObjRoot] at hMid
           rw [hMid, hRootAsidEq]
           exact st.asidTable.getElem?_erase_ne_K asid a
@@ -1155,7 +1155,7 @@ theorem vspaceMapPage_resolveAsidRoot_isSome
         · have hNeAsid : a ≠ root'.asid := fun hh => hAsidEq (hh.trans hRoot'Asid)
           have hAsidPreserved : stMid.asidTable[a]? = st.asidTable[a]? := by
             have hMid := storeObject_asidTable_vspaceRoot_ne (recordPhysicalWrites st _) stMid rootId₀
-              root' a hNeAsid hAsidInv hStep
+              root' a hNeAsid hAsidK hAsidInv hStep
             simp [hObjRoot] at hMid
             rw [hMid, hRootAsidEq]
             exact st.asidTable.getElem?_erase_ne_K asid a
