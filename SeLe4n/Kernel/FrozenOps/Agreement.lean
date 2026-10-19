@@ -179,11 +179,10 @@ def frozenStateAgrees (fs : FrozenSystemState) (ls : SystemState) : Bool :=
     (lorder.map (bootRunQueuePrio ls)
         ++ fs.scheduler.byPriority.indexMap.toList.map Prod.fst).all (fun prio =>
       (fs.scheduler.byPriority.get? prio).getD [] == (lb.get? prio).getD [])
-  -- PR #956 review: the derivation tree's edges, which the frozen CNodes' links
-  -- index; comparing the links without the edges would accept a tree the links
-  -- no longer describe.
+  -- The derivation tree's stored part, its edge bound: its edges are a ghost
+  -- (WS-ZA ZA5.3 part 5), read through the slot links each CNode arm compares.
   objectsAgree && taintAgree && queueAgree
-    && decide (fs.cdtEdges = ls.cdt.edges)
+    && fs.cdt.edgeBound == ls.cdt.edgeBound
     && fs.scheduler.current == ls.scheduler.currentOnCore Concurrency.bootCoreId
     && fs.scheduler.activeDomain == ls.scheduler.activeDomainOnCore Concurrency.bootCoreId
 

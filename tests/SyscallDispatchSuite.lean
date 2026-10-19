@@ -1479,7 +1479,7 @@ private def sd058_mintReplyCapThroughTheSyscallGate : IO Unit := do
       let srcRef : SeLe4n.Model.SlotRef := { cnode := cnId, slot := SeLe4n.Slot.ofNat 1 }
       let dstRef : SeLe4n.Model.SlotRef := { cnode := cnId, slot := SeLe4n.Slot.ofNat 2 }
       expect "sd058_mint_records_a_derivation_edge"
-        ((stMinted.cdt.childrenOf srcRef).contains dstRef)
+        ((stMinted.linkChildrenOf srcRef).contains dstRef)
         "the mint must record `src → dst` in the derivation tree"
       match SeLe4n.Kernel.cspaceRevokeCdt src stMinted with
       | .error e =>

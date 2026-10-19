@@ -2290,7 +2290,7 @@ revocation, so the scaffold discards the state. -/
 def revokeCdtStreamingTraversal (stLocal : SystemState) (rootNode : SlotRef)
     (_descendants : List SlotRef)
     : Except KernelError (RevokeTraversalOutcome Unit) :=
-  match streamingRevokeBFS stLocal.cdt.edges.length
+  match streamingRevokeBFS stLocal.cdt.edgeBound
       (stLocal.linkChildrenOf rootNode) stLocal with
   | .error e => .error e
   | .ok ((), stDone) =>

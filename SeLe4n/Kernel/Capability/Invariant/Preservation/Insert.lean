@@ -369,7 +369,7 @@ theorem cdt_addEdge_after_insert (st st1 : SystemState) (src dst : SlotRef)
     · exact ⟨cs, by rw [storeObject_objects_ne st st1 dst.cnode src.cnode _ hc hObjInv hStore]; exact hCs, hLs⟩
   refine ⟨fun ref hM => ?_, ?_, ?_⟩
   · obtain ⟨e, he, hr⟩ := hM
-    simp only [CapDerivationTree.addEdge, List.mem_cons] at he
+    simp only [CapDerivationTree.addEdge_edges, List.mem_cons] at he
     rcases he with rfl | he
     · rcases hr with h | h <;> simp only at h <;> subst h
       · exact hSrcPost

@@ -268,7 +268,7 @@ structure FrozenCNode where
   slots      : CNodeRadix
   /-- WS-ZA ZA5.3 part 4 (PR #956 review): the slots' derivation links, the
       live CNode's `links` words forwarded verbatim by `freezeCNode`, so the
-      frozen state keeps the tree's executable index beside `cdtEdges`. -/
+      frozen state keeps the tree's executable reading beside `cdt`. -/
   links      : Array Nat := #[]
   deriving Repr
 
@@ -414,8 +414,8 @@ structure FrozenSystemState where
   interfaceRegistry : FrozenMap SeLe4n.InterfaceId InterfaceSpec
   services          : FrozenMap ServiceId ServiceGraphEntry
 
-  -- CDT: the edge list (the slots' derivation links index it)
-  cdtEdges          : List CapDerivationEdge
+  -- CDT: the tree, its edges a ghost (the slots' derivation links read it)
+  cdt               : CapDerivationTree
 
   -- Scheduler
   scheduler         : FrozenSchedulerState
@@ -672,7 +672,7 @@ def freeze (ist : IntermediateState) : FrozenSystemState :=
     serviceRegistry := freezeMap st.serviceRegistry
     interfaceRegistry := freezeMap st.interfaceRegistry
     services := freezeMap st.services
-    cdtEdges := st.cdt.edges
+    cdt := st.cdt
     scheduler := freezeScheduler st
     objectTypes := freezeMap st.lifecycle.objectTypes
     machine := st.machine
@@ -711,9 +711,9 @@ def freeze (ist : IntermediateState) : FrozenSystemState :=
 theorem freeze_preserves_objectIndex (ist : IntermediateState) :
     (freeze ist).objectIndex = ist.state.objectIndex := rfl
 
-/-- Q5-C: `freeze` preserves the CDT edges (proof anchor). -/
-theorem freeze_preserves_cdtEdges (ist : IntermediateState) :
-    (freeze ist).cdtEdges = ist.state.cdt.edges := rfl
+/-- Q5-C: `freeze` preserves the derivation tree (proof anchor). -/
+theorem freeze_preserves_cdt (ist : IntermediateState) :
+    (freeze ist).cdt = ist.state.cdt := rfl
 
 /-- Q5-C: `freeze` preserves the machine state. -/
 theorem freeze_preserves_machine (ist : IntermediateState) :
