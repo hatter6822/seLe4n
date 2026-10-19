@@ -1623,6 +1623,61 @@ private def runSlotLinkAgreementChecks : IO Unit := do
   expectBool "a slot word alone, with no CNode word, is no link and is not refused"
     (linkCheckFails (withLink seed (SeLe4n.Slot.ofNat 65000) .parent 0 4)) false
 
+/-- PR #958 review: the runtime link check refuses link shapes that agree
+locally but break the tree's other invariants: a pair of empty slots linked as
+parent and child (`cdtCompleteness`), a slot that is its own parent and first
+child (`cdtAcyclicity`), and more parent links than the tree's edge bound, which
+fuels the link walks and the revoke loop.  Each keeps the local agreements and
+breaks the relation its check names; the first two also add a parent link past
+the edge bound, so the bound check fails with them. -/
+private def runSlotLinkShapeChecks : IO Unit := do
+  let expectBool (label : String) (actual expected : Bool) : IO Unit :=
+    if actual == expected then IO.println s!"positive check passed [{label}]"
+    else throw <| IO.userError s!"{label}: expected {expected}, got {actual}"
+  let cnId : SeLe4n.ObjId := ⟨5160⟩
+  let rootSlot : SlotRef := { cnode := cnId, slot := SeLe4n.Slot.ofNat 3 }
+  let childSlot : SlotRef := { cnode := cnId, slot := SeLe4n.Slot.ofNat 5 }
+  let spareSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 9
+  let cap : Capability :=
+    { target := .object endpointId, rights := AccessRightSet.ofList [.read], badge := none }
+  let seed : SystemState := {
+    baseState with
+      objects := baseState.objects.insert cnId (.cnode (CNode.ofList 8 0 0 8
+        [(rootSlot.slot, cap), (childSlot.slot, cap), (spareSlot, cap)]))
+      cdt := CapDerivationTree.empty
+  } |>.withDerivationEdges [(rootSlot, childSlot, .copy)]
+  let ids := cnId :: invariantObjectIds
+  let failing (st : SystemState) : List String :=
+    ((stateInvariantChecksFor ids st).filter (fun c => !c.2 && c.1.startsWith "cdt ")).map (·.1)
+  let withLink (st : SystemState) (s : SeLe4n.Slot) (f : LinkField) (o : SeLe4n.ObjId)
+      (w : SeLe4n.Slot) : SystemState :=
+    match st.getCNode? cnId with
+    | some cn =>
+      let cn' := cn.setLinkWords s f (o.toNat + 1) (w.toNat + 1)
+      { st with objects := st.objects.insert cnId (.cnode cn') }
+    | none => st
+  expectBool "control: a populated one-edge tree passes every link check"
+    ((failing seed).isEmpty) true
+  expectBool "control: the fixture's edge bound is exactly its parent links"
+    ((linkedDerivationEdges seed).length == seed.cdt.edgeBound) true
+  let emptyA := SeLe4n.Slot.ofNat 100
+  let emptyB := SeLe4n.Slot.ofNat 101
+  let emptyPair := withLink (withLink seed emptyA .parent cnId emptyB) emptyB .firstChild cnId emptyA
+  expectBool "two empty slots linked as parent and child fail the occupancy and bound checks"
+    (failing emptyPair ==
+      ["cdt linked slots hold capabilities", "cdt edge bound covers the slot links"]) true
+  let selfLoop := withLink (withLink seed spareSlot .parent cnId spareSlot) spareSlot .firstChild
+    cnId spareSlot
+  expectBool "a slot that is its own parent and first child fails the cycle and bound checks"
+    (failing selfLoop ==
+      ["cdt slot links form no cycle", "cdt edge bound covers the slot links"]) true
+  let extraEdge :=
+    withLink (withLink (withLink (withLink seed rootSlot.slot .firstChild cnId spareSlot)
+      spareSlot .parent cnId rootSlot.slot) spareSlot .next cnId childSlot.slot)
+      childSlot.slot .prev cnId spareSlot
+  expectBool "a second parent link past the edge bound fails only the bound check"
+    (failing extraEdge == ["cdt edge bound covers the slot links"]) true
+
 private def runNegativeChecks : IO Unit := do
   runBaselineLookupNegativeChecks                       -- [was 248-262]
   runCspaceMutationAndRevokeNegativeChecks              -- [was 263-461; sections 2+3 combined for strictSeed/strictRootSlot reuse]
@@ -1635,6 +1690,7 @@ private def runNegativeChecks : IO Unit := do
   runEndpointQueueHeadDisjointChecks                    -- PR #897 review (v0.35.108)
   runBuilderRunPlacementChecks                          -- PR #932 review
   runSlotLinkAgreementChecks                            -- PR #956 review
+  runSlotLinkShapeChecks                                -- PR #958 review
 
   -- ==========================================================================
   -- WS-D4 F-12: Double-wait prevention in notificationWait (was 1036-1043).

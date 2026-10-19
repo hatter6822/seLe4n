@@ -556,19 +556,21 @@ private def uniqueWaitersCheck (objectIds : List SeLe4n.ObjId) (st : SystemState
     [("notification waiters globally unique", !hasDuplicates)]
 
 /-- **The derivation edges the slot links name**, as (parent, child) pairs read
-from the stored words: one for each slot of a CNode in the object index whose
+from the stored words: one for each slot of a CNode in the object store whose
 parent link is set.  Since WS-ZA ZA5.3 part 5 the tree's edges are a ghost, so
-tests read the tree through the links that agree with it (`LinksAgree`). -/
+tests read the tree through the links that agree with it (`LinksAgree`).  It
+walks the store itself rather than the object index, so a CNode the index does
+not list still counts. -/
 def linkedDerivationEdges (st : SystemState) : List (SlotRef × SlotRef) :=
-  st.objectIndex.foldr (fun oid acc =>
-    match st.getCNode? oid with
-    | some cn =>
+  st.objects.fold [] fun acc oid obj =>
+    match obj with
+    | .cnode cn =>
         (List.range (cn.links.size / slotLinkWords)).foldr (fun i acc =>
           let r : SlotRef := { cnode := oid, slot := SeLe4n.Slot.ofNat i }
           match st.slotLinkAt r .parent with
           | some p => (p, r) :: acc
           | none => acc) acc
-    | none => acc) []
+    | _ => acc
 
 /-- Whether the slot links place `r` in the derivation tree: it has a parent or
 a child. -/
@@ -582,7 +584,15 @@ that holds a link, the links fit together as a tree's would: a next sibling
 names this slot as its previous one and shares its parent, a previous sibling
 names this slot as its next one, a slot with no previous sibling is its
 parent's first child, a first child names this slot as its parent and has no
-previous sibling, and only a slot with a parent has siblings. -/
+previous sibling, and only a slot with a parent has siblings.  Beyond these
+local agreements: every slot that holds a link, and every slot a link names,
+holds a capability (`cdtCompleteness`); each slot's parent chain reaches a root
+and each child chain ends without repeating a slot, within one step per linked
+slot, and the child chains together list every listed slot whose parent is
+listed exactly once,
+so the links form no cycle (`cdtAcyclicity`); and the tree's edge bound covers
+every parent link in the object store, since the link walks and the revoke loop
+take their fuel from it. -/
 private def cdtLinksConsistentCheck (objectIds : List SeLe4n.ObjId) (st : SystemState) :
     List (String × Bool) :=
   let L := st.slotLinkAt
@@ -608,7 +618,38 @@ private def cdtLinksConsistentCheck (objectIds : List SeLe4n.ObjId) (st : System
       | some c => L c .parent == some r && (L c .prev).isNone
       | none => true) &&
     (up.isSome || ((L r .next).isNone && (L r .prev).isNone))
-  [("cdt slot links fit together as a tree", linked.all consistentAt)]
+  let occupied (r : SlotRef) : Bool := (SystemState.lookupSlotCap st r).isSome
+  let namedOccupied (r : SlotRef) : Bool :=
+    [LinkField.parent, .firstChild, .next, .prev].all fun f =>
+      match L r f with
+      | some x => occupied x
+      | none => true
+  let fuel := linked.length + 1
+  let parentChainEnds (r : SlotRef) : Bool :=
+    (List.range fuel).foldl (fun (cur : Option SlotRef) _ =>
+      cur.bind fun x => L x .parent) (some r) |>.isNone
+  let childWalk (p : SlotRef) : Option (List SlotRef) :=
+    let step := fun (acc : Option SlotRef × List SlotRef) (_ : Nat) =>
+      match acc.1 with
+      | some c => (L c .next, c :: acc.2)
+      | none => acc
+    let (rest, seen) := (List.range fuel).foldl step (L p .firstChild, [])
+    if rest.isNone then some seen.reverse else none
+  let walks := linked.map childWalk
+  let childCount := walks.foldl (fun n w =>
+    n + ((w.map fun l => (l.filter linked.contains).length).getD 0)) 0
+  let parentCount := (linked.filter fun r =>
+    match L r .parent with
+    | some p => linked.contains p
+    | none => false).length
+  [("cdt slot links fit together as a tree", linked.all consistentAt),
+   ("cdt linked slots hold capabilities", linked.all fun r => occupied r && namedOccupied r),
+   ("cdt slot links form no cycle",
+     linked.all parentChainEnds &&
+       walks.all (fun w => match w with | some l => l.Nodup | none => false) &&
+       childCount == parentCount),
+   ("cdt edge bound covers the slot links",
+     (linkedDerivationEdges st).length ≤ st.cdt.edgeBound)]
 
 def stateInvariantChecksFor (objectIds : List SeLe4n.ObjId) (st : SystemState)
     (serviceIds : List ServiceId := []) : List (String × Bool) :=
