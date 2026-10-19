@@ -2010,6 +2010,158 @@ def shootdownPostedOpsFrom (tlb0 : TlbShootdownState) (post : SystemState) :
         inRoundWindow (shootdownRoundWindowFrom tlb0 post).1
           (shootdownRoundWindowFrom tlb0 post).2 d.generation)).map (·.op))).eraseDups
 
+/-- WS-ZA ZA5.4: the changed-target diff against the pre-state's queue vector
+alone, so the commit seams hold the queues, not the whole shootdown record,
+across the transition: the transition then updates that record and its
+acknowledgment vector in place. -/
+def shootdownChangedTargetsOver (pend0 : Vector (List TlbShootdownDescriptor) numCores)
+    (post : SystemState) : List CoreId :=
+  allCores.filter (fun c => post.tlbShootdown.pendingOnCore c != pend0.get c)
+
+theorem shootdownChangedTargetsFrom_eq_over (tlb0 : TlbShootdownState) (post : SystemState) :
+    shootdownChangedTargetsFrom tlb0 post =
+      shootdownChangedTargetsOver tlb0.pendingShootdowns post := rfl
+
+/-- WS-ZA ZA5.4: has exactly every core but `initiator` changed its queue
+among `cs`?  A first-order loop. -/
+def changedExactlyOthers (pend0 : Vector (List TlbShootdownDescriptor) numCores)
+    (post : SystemState) (initiator : CoreId) : List CoreId → Bool
+  | [] => true
+  | c :: cs => ((post.tlbShootdown.pendingOnCore c != pend0.get c) == (c != initiator)) &&
+      changedExactlyOthers pend0 post initiator cs
+
+theorem changedExactlyOthers_eq_true (pend0 : Vector (List TlbShootdownDescriptor) numCores)
+    (post : SystemState) (initiator : CoreId) (cs : List CoreId) :
+    changedExactlyOthers pend0 post initiator cs = true ↔
+      ∀ c ∈ cs, (post.tlbShootdown.pendingOnCore c != pend0.get c) = (c != initiator) := by
+  induction cs with
+  | nil => simp [changedExactlyOthers]
+  | cons c cs ih => simp [changedExactlyOthers, ih]
+
+/-- WS-ZA ZA5.4: the changed targets as the seam computes them.  A commit that
+posted one round from `initiator` changed exactly the other cores' queues, and
+then the diff is `initiator`'s target list, read from `shootdownTargetsTable`
+rather than built; any other diff is filtered as the specification does. -/
+def shootdownChangedTargetsOverFrom (pend0 : Vector (List TlbShootdownDescriptor) numCores)
+    (post : SystemState) (initiator : CoreId) : List CoreId :=
+  if changedExactlyOthers pend0 post initiator allCores then shootdownTargets initiator
+  else shootdownChangedTargetsOver pend0 post
+
+theorem shootdownChangedTargetsOverFrom_eq (pend0 : Vector (List TlbShootdownDescriptor) numCores)
+    (post : SystemState) (initiator : CoreId) :
+    shootdownChangedTargetsOverFrom pend0 post initiator = shootdownChangedTargetsOver pend0 post := by
+  unfold shootdownChangedTargetsOverFrom
+  split
+  · rename_i h
+    rw [changedExactlyOthers_eq_true] at h
+    unfold shootdownTargets shootdownChangedTargetsOver
+    exact (List.filter_congr (fun c hc => h c hc)).symm
+  · rfl
+
+/-- WS-ZA ZA5.4: do all of `ds`'s descriptors in the window `(lo, hi]` carry
+operand `x`?  A first-order loop. -/
+def windowOpsAllEq (x : TlbInvalidation) (lo hi : Nat) : List TlbShootdownDescriptor → Bool
+  | [] => true
+  | d :: ds => (!inRoundWindow lo hi d.generation || d.op == x) && windowOpsAllEq x lo hi ds
+
+theorem windowOpsAllEq_eq_true (x : TlbInvalidation) (lo hi : Nat)
+    (ds : List TlbShootdownDescriptor) :
+    windowOpsAllEq x lo hi ds = true ↔
+      ∀ d ∈ ds, inRoundWindow lo hi d.generation = true → d.op = x := by
+  induction ds with
+  | nil => simp [windowOpsAllEq]
+  | cons d ds ih =>
+    simp only [windowOpsAllEq, Bool.and_eq_true, Bool.or_eq_true, Bool.not_eq_true',
+      beq_iff_eq, ih, List.mem_cons, forall_eq_or_imp]
+    constructor
+    · rintro ⟨h1 | h1, h2⟩
+      · exact ⟨fun h => by simp [h] at h1, h2⟩
+      · exact ⟨fun _ => h1, h2⟩
+    · rintro ⟨h1, h2⟩
+      refine ⟨?_, h2⟩
+      cases h : inRoundWindow lo hi d.generation
+      · exact Or.inl rfl
+      · exact Or.inr (h1 h)
+
+/-- WS-ZA ZA5.4: `windowOpsAllEq` over the queue of every core of `cs`. -/
+def coresWindowOpsAllEq (post : SystemState) (x : TlbInvalidation) (lo hi : Nat) :
+    List CoreId → Bool
+  | [] => true
+  | c :: cs => windowOpsAllEq x lo hi (post.tlbShootdown.pendingOnCore c) &&
+      coresWindowOpsAllEq post x lo hi cs
+
+theorem coresWindowOpsAllEq_eq_true (post : SystemState) (x : TlbInvalidation) (lo hi : Nat)
+    (cs : List CoreId) :
+    coresWindowOpsAllEq post x lo hi cs = true ↔
+      ∀ c ∈ cs, ∀ d ∈ post.tlbShootdown.pendingOnCore c,
+        inRoundWindow lo hi d.generation = true → d.op = x := by
+  induction cs with
+  | nil => simp [coresWindowOpsAllEq]
+  | cons c cs ih => simp [coresWindowOpsAllEq, ih, windowOpsAllEq_eq_true]
+
+/-- WS-ZA ZA5.4: the posted operands of a commit, given its changed targets
+`changed` and the pre-state's generation `lo` — the specification's list. -/
+def shootdownPostedOpsOf (changed : List CoreId) (lo : Nat) (post : SystemState) :
+    List TlbInvalidation :=
+  (changed.flatMap (fun c =>
+    ((post.tlbShootdown.pendingOnCore c).filter (fun d =>
+        inRoundWindow lo post.tlbShootdown.roundGeneration d.generation)).map (·.op))).eraseDups
+
+theorem shootdownPostedOpsFrom_eq_of (tlb0 : TlbShootdownState) (post : SystemState) :
+    shootdownPostedOpsFrom tlb0 post =
+      shootdownPostedOpsOf (shootdownChangedTargetsFrom tlb0 post) tlb0.roundGeneration post := rfl
+
+/-- WS-ZA ZA5.4: the posted operands as the seam computes them.  When every
+descriptor this commit's window left on a changed core carries the operand of
+the first one — one round, one operand — the deduplicated list is that operand
+alone; otherwise the specification's list is built. -/
+def shootdownPostedOpsOfOne (changed : List CoreId) (lo : Nat) (post : SystemState) :
+    List TlbInvalidation :=
+  match changed with
+  | [] => []
+  | c :: _ =>
+    match post.tlbShootdown.pendingOnCore c with
+    | [] => shootdownPostedOpsOf changed lo post
+    | d :: _ =>
+      if inRoundWindow lo post.tlbShootdown.roundGeneration d.generation &&
+          coresWindowOpsAllEq post d.op lo post.tlbShootdown.roundGeneration changed then
+        [d.op]
+      else shootdownPostedOpsOf changed lo post
+
+theorem shootdownPostedOpsOfOne_eq (changed : List CoreId) (lo : Nat) (post : SystemState) :
+    shootdownPostedOpsOfOne changed lo post = shootdownPostedOpsOf changed lo post := by
+  unfold shootdownPostedOpsOfOne
+  split
+  · rfl
+  · rename_i c cs
+    split
+    · rfl
+    · rename_i d ds hq
+      split
+      · rename_i h
+        simp only [Bool.and_eq_true] at h
+        obtain ⟨hd, hall⟩ := h
+        rw [coresWindowOpsAllEq_eq_true] at hall
+        unfold shootdownPostedOpsOf
+        rw [List.flatMap_cons, hq, List.filter_cons_of_pos (p := fun e : TlbShootdownDescriptor =>
+            inRoundWindow lo post.tlbShootdown.roundGeneration e.generation) hd, List.map_cons,
+          List.cons_append,
+          List.eraseDups_cons]
+        congr 1
+        rw [List.filter_eq_nil_iff.2]
+        · rfl
+        · intro b hb
+          simp only [Bool.not_eq_true', beq_eq_false_iff_ne, ne_eq, Decidable.not_not]
+          rcases List.mem_append.1 hb with hb | hb
+          · obtain ⟨e, he, rfl⟩ := List.mem_map.1 hb
+            obtain ⟨he, hw⟩ := List.mem_filter.1 he
+            exact hall c (List.mem_cons_self ..) e (by rw [hq]; exact List.mem_cons_of_mem _ he) hw
+          · obtain ⟨c', hc', hb⟩ := List.mem_flatMap.1 hb
+            obtain ⟨e, he, rfl⟩ := List.mem_map.1 hb
+            obtain ⟨he, hw⟩ := List.mem_filter.1 he
+            exact hall c' (List.mem_cons_of_mem _ hc') e he hw
+      · rfl
+
 /-- **WS-SM SM7.B**: the newly-posted invalidation operands of a
 commit, deduplicated — the runtime seam executes one initiator-local
 broadcast TLBI per distinct operand (plan §3.2 step 3), and publishes
