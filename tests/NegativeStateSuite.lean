@@ -3684,10 +3684,10 @@ private def runS2GCapabilityErrorTests : IO Unit := do
   let deepSeed : SystemState :=
     { baseState with
       objects := baseState.objects.insert cnodeId (.cnode (CNode.ofList 8 0 0 8
-        ((deepRootSlot :: deepNodes).map fun r => (r.slot, deepCap))))
+        ((deepRootSlot :: deepNodes).map fun (r : SlotRef) => (r.slot, deepCap))))
       cdt := CapDerivationTree.empty
     } |>.withDerivationEdges
-      ((deepRootSlot :: deepNodes).zip deepNodes |>.map fun (p, c) => (p, c, .copy))
+      ((deepRootSlot :: deepNodes).zip deepNodes |>.map fun ((p, c) : SlotRef × SlotRef) => (p, c, DerivationOp.copy))
   let (_, deepRevoked) ← expectOkSt "revoke over a deep chain"
     (SeLe4n.Kernel.cspaceRevokeCdtFinalising bootCoreId deepRootSlot deepSeed)
   if deepNodes.all (fun r => (SystemState.lookupSlotCap deepRevoked r).isNone) ∧

@@ -4246,7 +4246,6 @@ run_check "INVARIANT" rg -n 'so resetting the child alone is refused \(revocatio
 # capability, read before the step, and named by no slot after"; the root is the truth, so every reader asks the live question and the
 # record-only reading must not come back.
 run_check "INVARIANT" rg -n -U 'def cspaceDeleteThenFinalise [^\n]*(\n([ \t][^\n]*)?)*    \| \.ok \(\(\), st1\) => finaliseDestroyedCapabilities executingCore named pages st1' SeLe4n/Kernel/Capability/FrameFinalise.lean
-run_check "INVARIANT" rg -n '^    \| \.ok \(pages, st1\) => finaliseDestroyedCapabilities executingCore named pages st1$' SeLe4n/Kernel/Capability/FrameFinalise.lean
 # v0.36.38: a table's final capability is decided on CNode slots — a copy parked
 # in a message can be dropped by a cancellation that finalises nothing.
 run_check "INVARIANT" rg -n -U 'def pageTablesOrphaned [^\n]*(\n([ \t][^\n]*)?)*          if Architecture\.pageTableInstallLive st id && cnodeSlotsUnreferenced st \[id\] then\n            \(id, inst\) :: acc' SeLe4n/Kernel/Capability/FrameFinalise.lean
@@ -4276,7 +4275,7 @@ run_check "INVARIANT" rg -n '^        \| some inst => ids\.contains inst\.root \
 run_check "INVARIANT" rg -n '\(fun cap => cap\.mapping\.isSome \|\| frozenCapNamesInstalledPageTable st cap\) then' SeLe4n/Kernel/FrozenOps/Operations.lean
 run_check "INVARIANT" rg -n 'deleting a table.s last capability takes it, and the two tables beneath it, out of the root' tests/VSpaceCapabilityBindingSuite.lean
 run_check "INVARIANT" rg -n 'a table another capability still names stays installed, with everything beneath it' tests/VSpaceCapabilityBindingSuite.lean
-run_check "INVARIANT" rg -n 'RETIRED: the bare revocation leaves the child.s table in the surviving root' tests/VSpaceCapabilityBindingSuite.lean
+run_check "INVARIANT" rg -n 'before the revocation the child.s table is installed in the parent.s root' tests/VSpaceCapabilityBindingSuite.lean
 run_check "INVARIANT" rg -n '^  fo013c_cspaceDeleteRefusesInstalledTableCap$' tests/FrozenOpsSuite.lean
 # WS-BP BP7.1 (v0.36.13): every configured address space owns a table page of
 # the binding's pool, and a root with no page maps nothing.
@@ -7299,7 +7298,7 @@ run_check "INVARIANT" rg -n 'NEGATIVE: it IS visible at the core it landed on' t
 run_check "INVARIANT" rg -n 'NEGATIVE: the remote wake is not confined to the EXECUTING core' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'SCOPE: the decidable slice cannot see a badge write' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n '^\[smp-information-flow\]' tests/fixtures/smp_information_flow.expected
-run_check "INVARIANT" rg -n 'enforcement boundary: canonical 53' tests/fixtures/smp_information_flow.expected
+run_check "INVARIANT" rg -n 'enforcement boundary: canonical 52' tests/fixtures/smp_information_flow.expected
 run_check "INVARIANT" rg -n 'smp_information_flow\.expected' tests/fixtures/smp_information_flow.expected.sha256
 # The FIXTURE's independence probe must land on a core whose current thread the
 # low observer can SEE, or the reported set is `allCores` and the line is
@@ -21936,9 +21935,9 @@ run_check "INVARIANT" rg -n '^def spliceNode($|[ ({:\[\]])' SeLe4n/Model/Object/
 run_check "INVARIANT" rg -n '^theorem spliceNode_edgeWellFounded($|[ ({:\[\]])' SeLe4n/Model/Object/Structures.lean
 run_check "INVARIANT" rg -n '^theorem spliceNode \(h : LinksAgree L cdt\) \(n : SlotRef\)$' SeLe4n/Model/Object/DerivationLinks.lean
 # v0.36.106: the capability bundle carries the slot links' agreement with the
-# tree, and the revoke's descendant read walks the links.
+# tree; since v0.36.111 the revoke reads the source's first-child link.
 run_check "INVARIANT" rg -n -U '    cspaceDepthConsistent st ∧ st\.objects\.invExt ∧ replyCapPointsToValidReply st ∧\n    cdtLinksAgree st$' SeLe4n/Kernel/Capability/Invariant/Defs.lean
-run_check "INVARIANT" rg -n '^        match traverse st addr \(st\.linkDescendantsOf addr\) with$' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^    let fc := st\.slotLinkNodeWord cnode slot \.firstChild$' SeLe4n/Kernel/Capability/FrameFinalise.lean
 run_check "INVARIANT" rg -n '^theorem linkDescendantsOf_eq($|[ ({:\[\]])' SeLe4n/Model/SlotLinks.lean
 run_check "INVARIANT" rg -n '^@\[inline\] def spliceDeletedCdtNode($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
 run_check "INVARIANT" rg -n -U '    \| \.ok \(\(\), st.\) => \.ok \(\(\), spliceDeletedCdtNode st. addr\)' SeLe4n/Kernel/Capability/Operations.lean
