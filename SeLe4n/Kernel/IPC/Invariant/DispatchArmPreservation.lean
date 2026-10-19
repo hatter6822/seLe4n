@@ -1178,7 +1178,7 @@ theorem cspaceMint_preserves_ipcInvariantFull
           split at hMint
           · split at hMint
             · contradiction
-            · cases hMint; rfl
+            · cases hMint; simp
           · contradiction
         exact cspaceInsertSlot_preserves_ipcInvariantFull stMid st' dst child
           (hMid.symm ▸ hObjInv) (hMid.symm ▸ hInv)

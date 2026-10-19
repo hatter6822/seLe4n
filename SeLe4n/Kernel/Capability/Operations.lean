@@ -931,10 +931,10 @@ the mint result against the null sentinel. -/
 def mintDerivedCap (parent : NonNullCap) (rights : AccessRightSet)
     (badge : Option SeLe4n.Badge := parent.val.badge) : Except KernelError Capability :=
   if rightsSubset rights parent.val.rights then
-    if ({ target := parent.val.target, rights := rights, badge := badge } : Capability).isNull then
+    if ((Capability.ofParts parent.val.target rights badge) : Capability).isNull then
       .error .nullCapability
     else
-      .ok { target := parent.val.target, rights := rights, badge := badge }
+      .ok (Capability.ofParts parent.val.target rights badge)
   else
     .error .invalidCapability
 
@@ -1612,7 +1612,7 @@ def cspaceMutate (addr : CSpaceAddr) (rights : AccessRightSet)
         if cap.isNull then .error .nullCapability
         else if rightsSubset rights cap.rights then
           let mutatedCap : Capability :=
-            { cap with rights := rights, badge := badge.orElse (fun _ => cap.badge) }
+            ({ cap with rights := rights }.withBadge (badge.orElse (fun _ => cap.badge)))
           -- Direct overwrite: bypass H-02 guard since we are replacing in-place.
           -- AN4-I (LOW) cross-reference: the preservation guarantee for this
           -- path is `cspaceMutate_preserves_capabilityInvariantBundle` in
@@ -1676,8 +1676,7 @@ def mintReplyCap (src dst : CSpaceAddr) : Kernel Unit :=
                 -- reply caps the model/conformance suites construct.
                 let child : Capability :=
                   { target := .replyCap rid
-                    rights := AccessRightSet.ofList [.write]
-                    badge := none }
+                    rights := AccessRightSet.ofList [.write] }
                 cspaceInsertSlot dst child st'
             | none => .error .invalidCapability
         | _ => .error .invalidCapability
@@ -1726,7 +1725,7 @@ tables (`modifyCdt`). -/
 writes (`mintDerivedCap`'s). -/
 @[inline] def mintedCap (parent : Capability) (rights : AccessRightSet)
     (badge : Option SeLe4n.Badge) : Capability :=
-  { target := parent.target, rights := rights, badge := badge }
+  (Capability.ofParts parent.target rights badge)
 
 /-- WS-ZA ZA5.3: **`cspaceMintWithCdt`'s checks**, read before any write: the
 source holds a capability that is not null, the rights attenuate it, the minted
@@ -1750,18 +1749,25 @@ def cspaceMintPerform (src dst : CSpaceAddr) (rights : AccessRightSet)
 /-- `cspaceMintPerform` as compiled: the minted capability's fields are written
 straight over the destination slot's own record (`CNode.insertFields`), so the
 mint builds neither a capability nor its cell (WS-ZA ZA5.3 part 6). -/
-@[inline] def cspaceMintPerformImpl (src dst : CSpaceAddr) (rights : AccessRightSet)
-    (badge : Option SeLe4n.Badge) (st : SystemState) : SystemState :=
+@[inline] def cspaceMintPerformWords (src dst : CSpaceAddr) (rights : AccessRightSet)
+    (badgeWord : SeLe4n.Badge) (badged : Bool) (st : SystemState) : SystemState :=
   match SystemState.lookupSlotCap st src with
   | some parent =>
-      (st.storeCNodeWith dst.cnode (·.insertFields dst.slot parent.target rights badge none)).cdtAddChild
+      (st.storeCNodeWith dst.cnode
+          (·.insertFields dst.slot parent.target rights badgeWord badged none)).cdtAddChild
         src dst .mint
   | none => st
 
+/-- `cspaceMintPerform` as compiled: its badge handed on as the word and flag a
+capability holds (`cspaceMintPerformWords`), so no `Option` is passed. -/
+@[inline] def cspaceMintPerformImpl (src dst : CSpaceAddr) (rights : AccessRightSet)
+    (badge : Option SeLe4n.Badge) (st : SystemState) : SystemState :=
+  cspaceMintPerformWords src dst rights (SeLe4n.Badge.ofOption badge) badge.isSome st
+
 @[csimp] theorem cspaceMintPerform_eq_impl : @cspaceMintPerform = @cspaceMintPerformImpl := by
   funext src dst rights badge st
-  unfold cspaceMintPerform cspaceMintPerformImpl cspaceInstallPerform
-  simp only [CNode.insertFields_eq_insert]; rfl
+  unfold cspaceMintPerform cspaceMintPerformImpl cspaceMintPerformWords cspaceInstallPerform
+  simp only [CNode.insertFields_eq_insert]; cases badge <;> rfl
 
 /-- WS-ZA ZA5.3: an admitted mint is its writes. -/
 theorem cspaceMintWithCdt_of_admitted {src dst : CSpaceAddr} {rights : AccessRightSet}
@@ -1786,7 +1792,7 @@ theorem cspaceMintWithCdt_of_admitted {src dst : CSpaceAddr} {rights : AccessRig
 
 /-- WS-ZA ZA5.3: the reply capability a reply-capability mint writes. -/
 @[inline] def mintedReplyCap (rid : SeLe4n.ReplyId) : Capability :=
-  { target := .replyCap rid, rights := AccessRightSet.ofList [.write], badge := none }
+  { target := .replyCap rid, rights := AccessRightSet.ofList [.write] }
 
 /-- WS-ZA ZA5.3: **`mintReplyCapWithCdt`'s checks**: the source names an object
 that is a reply object, and the destination is admitted
@@ -1818,8 +1824,8 @@ over the destination slot's own record (`CNode.insertFields`; WS-ZA ZA5.3 part 6
       match parent.target with
       | .object target =>
           (st.storeCNodeWith dst.cnode
-              (·.insertFields dst.slot (.replyCap (SeLe4n.ReplyId.ofObjId target))
-                (AccessRightSet.ofList [.write]) none none)).cdtAddChild
+              (·.insertReplyCap dst.slot (SeLe4n.ReplyId.ofObjId target)
+                (AccessRightSet.ofList [.write]))).cdtAddChild
             src dst .mint
       | _ => st
   | none => st
@@ -1827,7 +1833,7 @@ over the destination slot's own record (`CNode.insertFields`; WS-ZA ZA5.3 part 6
 @[csimp] theorem mintReplyCapPerform_eq_impl : @mintReplyCapPerform = @mintReplyCapPerformImpl := by
   funext src dst st
   unfold mintReplyCapPerform mintReplyCapPerformImpl cspaceInstallPerform
-  simp only [CNode.insertFields_eq_insert]; rfl
+  simp only [CNode.insertReplyCap_eq_insert]; rfl
 
 /-- WS-ZA ZA5.3: an admitted reply-capability mint is its writes. -/
 theorem mintReplyCapWithCdt_of_admitted {src dst : CSpaceAddr} {st : SystemState}
@@ -1969,15 +1975,49 @@ each step the CNode and the two slot words rather than two slot addresses, so no
 address record is built per invocation (WS-ZA ZA5.3 part 6).  Each is the step on
 the two addresses, by definition. -/
 
-/-- `cspaceMintAdmitted` on slots `srcSlot` and `dstSlot` of `cnode`. -/
+/-- `cspaceMintAdmitted` on slots `srcSlot` and `dstSlot` of `cnode`, with the
+badge as the register carries it: the word, 0 for no badge (seL4's mint). -/
 def cspaceMintAdmittedAt (cnode : SeLe4n.ObjId) (srcSlot dstSlot : SeLe4n.Slot)
-    (rights : AccessRightSet) (badge : Option SeLe4n.Badge) (st : SystemState) : Bool :=
-  cspaceMintAdmitted ⟨cnode, srcSlot⟩ ⟨cnode, dstSlot⟩ rights badge st
+    (rights : AccessRightSet) (badge : SeLe4n.Badge) (st : SystemState) : Bool :=
+  cspaceMintAdmitted ⟨cnode, srcSlot⟩ ⟨cnode, dstSlot⟩ rights
+    (if badge.val = 0 then none else some badge) st
 
-/-- `cspaceMintPerform` on slots `srcSlot` and `dstSlot` of `cnode`. -/
+/-- `cspaceMintAdmittedAt` as compiled: the checks read no badge (whether the
+minted capability is null is a question of its target and rights), so none is
+built (WS-ZA ZA5.3 part 6). -/
+def cspaceMintAdmittedAtImpl (cnode : SeLe4n.ObjId) (srcSlot dstSlot : SeLe4n.Slot)
+    (rights : AccessRightSet) (_badge : SeLe4n.Badge) (st : SystemState) : Bool :=
+  cspaceMintAdmitted ⟨cnode, srcSlot⟩ ⟨cnode, dstSlot⟩ rights none st
+
+@[csimp] theorem cspaceMintAdmittedAt_eq_impl : @cspaceMintAdmittedAt = @cspaceMintAdmittedAtImpl := by
+  funext cnode srcSlot dstSlot rights badge st
+  rfl
+
+/-- `cspaceMintPerform` on slots `srcSlot` and `dstSlot` of `cnode`, with the
+badge as the register carries it (0 for no badge). -/
 def cspaceMintPerformAt (cnode : SeLe4n.ObjId) (srcSlot dstSlot : SeLe4n.Slot)
-    (rights : AccessRightSet) (badge : Option SeLe4n.Badge) (st : SystemState) : SystemState :=
-  cspaceMintPerform ⟨cnode, srcSlot⟩ ⟨cnode, dstSlot⟩ rights badge st
+    (rights : AccessRightSet) (badge : SeLe4n.Badge) (st : SystemState) : SystemState :=
+  cspaceMintPerform ⟨cnode, srcSlot⟩ ⟨cnode, dstSlot⟩ rights
+    (if badge.val = 0 then none else some badge) st
+
+/-- `cspaceMintPerformAt` as compiled: the register's badge word is the minted
+capability's word, its flag whether the word is nonzero, so no `Option` is built
+(WS-ZA ZA5.3 part 6). -/
+def cspaceMintPerformAtImpl (cnode : SeLe4n.ObjId) (srcSlot dstSlot : SeLe4n.Slot)
+    (rights : AccessRightSet) (badge : SeLe4n.Badge) (st : SystemState) : SystemState :=
+  cspaceMintPerformWords ⟨cnode, srcSlot⟩ ⟨cnode, dstSlot⟩ rights badge (badge.word != 0) st
+
+@[csimp] theorem cspaceMintPerformAt_eq_impl : @cspaceMintPerformAt = @cspaceMintPerformAtImpl := by
+  funext cnode srcSlot dstSlot rights badge st
+  unfold cspaceMintPerformAt cspaceMintPerformAtImpl
+  rw [cspaceMintPerform_eq_impl]
+  unfold cspaceMintPerformImpl
+  by_cases h : badge.val = 0
+  · rw [SeLe4n.Badge.eq_zero_of_val_eq_zero h]
+    rfl
+  · have hw : (badge.word != 0) = true :=
+      bne_iff_ne.mpr fun hw => h (by unfold SeLe4n.Badge.val; simp [hw])
+    simp [h, hw, SeLe4n.Badge.ofOption]
 
 /-- `mintReplyCapAdmitted` on slots `srcSlot` and `dstSlot` of `cnode`. -/
 def mintReplyCapAdmittedAt (cnode : SeLe4n.ObjId) (srcSlot dstSlot : SeLe4n.Slot)

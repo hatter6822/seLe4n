@@ -120,8 +120,7 @@ private def fp009c_objectsField : IO Unit := do
 private def fp010_cnodeRadixSingle : IO Unit := do
   let cap : Capability :=
     { target := .object ⟨100⟩
-      rights := AccessRightSet.ofList [.read]
-      badge := none }
+      rights := AccessRightSet.ofList [.read] }
   let cn : CNode :=
     CNode.ofList 16 4 0 4 [(SeLe4n.Slot.ofNat 3, cap)]
   let frozen := freezeObject (.cnode cn)
@@ -137,8 +136,7 @@ private def fp010_cnodeRadixSingle : IO Unit := do
 private def fp011_cnodeRadixMulti : IO Unit := do
   let mkCap (n : Nat) : Capability :=
     { target := .object ⟨n⟩
-      rights := AccessRightSet.ofList [.read]
-      badge := none }
+      rights := AccessRightSet.ofList [.read] }
   let cn : CNode :=
     CNode.ofList 16 0 0 4
       [(SeLe4n.Slot.ofNat 1, mkCap 1), (SeLe4n.Slot.ofNat 2, mkCap 2),
@@ -167,8 +165,7 @@ private def fp012_cnodeRadixEmpty : IO Unit := do
 private def fp013_cnodeRadixStructure : IO Unit := do
   let cap : Capability :=
     { target := .object ⟨42⟩
-      rights := AccessRightSet.ofList [.read, .write]
-      badge := none }
+      rights := AccessRightSet.ofList [.read, .write] }
   let cn : CNode :=
     CNode.ofList 16 2 1 3 [(SeLe4n.Slot.ofNat 4, cap)]
   let frozen := freezeObject (.cnode cn)

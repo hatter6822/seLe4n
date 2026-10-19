@@ -266,14 +266,14 @@ def capability_canonical_null : IO Unit := do
 /-- A non-null cap is not null. -/
 def capability_nonnull_cap : IO Unit := do
   let cap : Capability :=
-    { target := .object ⟨42⟩, rights := AccessRightSet.empty, badge := none }
+    { target := .object ⟨42⟩, rights := AccessRightSet.empty }
   expect "non-sentinel target not null" (cap.isNull = false)
 
 /-- `requireNotNull` rejects null, accepts non-null. -/
 def capability_requireNotNull_roundtrip : IO Unit := do
   expect "null rejected" (Capability.null.requireNotNull = none)
   let cap : Capability :=
-    { target := .object ⟨42⟩, rights := AccessRightSet.empty, badge := none }
+    { target := .object ⟨42⟩, rights := AccessRightSet.empty }
   expect "non-null accepted" (cap.requireNotNull.isSome)
 
 /-- `isNull` returns `false` for `cnodeSlot` and `replyCap`
@@ -282,11 +282,11 @@ the canonical null cap. -/
 def capability_cnodeSlot_not_null : IO Unit := do
   let cap : Capability :=
     { target := .cnodeSlot ⟨0⟩ (SeLe4n.Slot.ofNat 0)
-      rights := AccessRightSet.empty, badge := none }
+      rights := AccessRightSet.empty }
   expect "cnodeSlot not null" (cap.isNull = false)
   let reply : Capability :=
     { target := .replyCap SeLe4n.ReplyId.sentinel
-      rights := AccessRightSet.empty, badge := none }
+      rights := AccessRightSet.empty }
   expect "replyCap not null" (reply.isNull = false)
 
 /-- `isNull` returns `false` when `.object` target has
@@ -295,8 +295,7 @@ zero rights. -/
 def capability_object_with_rights_not_null : IO Unit := do
   let cap : Capability :=
     { target := .object ObjId.sentinel
-      rights := AccessRightSet.singleton .read
-      badge := none }
+      rights := AccessRightSet.singleton .read }
   expect "sentinel obj w/ rights not null" (cap.isNull = false)
 
 -- ============================================================================
@@ -319,13 +318,13 @@ def capability_toNonNull_rejects_null : IO Unit := do
 /-- A non-null cap promotes to `NonNullCap` successfully. -/
 def capability_toNonNull_accepts_nonnull : IO Unit := do
   let cap : Capability :=
-    { target := .object ⟨42⟩, rights := AccessRightSet.empty, badge := none }
+    { target := .object ⟨42⟩, rights := AccessRightSet.empty }
   expect "toNonNull? accepts non-null" (cap.toNonNull?.isSome)
 
 /-- Round-trip — `NonNullCap.val` → `toNonNull?` returns the same cap. -/
 def capability_toNonNull_roundtrip : IO Unit := do
   let cap : Capability :=
-    { target := .object ⟨42⟩, rights := AccessRightSet.empty, badge := none }
+    { target := .object ⟨42⟩, rights := AccessRightSet.empty }
   match cap.toNonNull? with
   | none => throw <| IO.userError "unexpected none"
   | some nn =>
@@ -426,7 +425,7 @@ def uniqueSlotMap_empty_size_zero : IO Unit := do
 /-- WS-RC R4.A: `UniqueSlotMap.insert` then `.get?` round-trips. -/
 def uniqueSlotMap_insert_then_get : IO Unit := do
   let cap : Capability :=
-    { target := .object ⟨1⟩, rights := AccessRightSet.empty, badge := none }
+    { target := .object ⟨1⟩, rights := AccessRightSet.empty }
   let u : SeLe4n.UniqueSlotMap Capability :=
     SeLe4n.UniqueSlotMap.empty.insert (SeLe4n.Slot.ofNat 5) cap
   expect "UniqueSlotMap.insert: get? returns inserted cap"
@@ -437,7 +436,7 @@ def uniqueSlotMap_insert_then_get : IO Unit := do
 /-- WS-RC R4.A: `UniqueSlotMap.erase` removes the slot. -/
 def uniqueSlotMap_erase_removes : IO Unit := do
   let cap : Capability :=
-    { target := .object ⟨1⟩, rights := AccessRightSet.empty, badge := none }
+    { target := .object ⟨1⟩, rights := AccessRightSet.empty }
   let u := (SeLe4n.UniqueSlotMap.empty.insert (SeLe4n.Slot.ofNat 3) cap).erase
     (SeLe4n.Slot.ofNat 3)
   expect "UniqueSlotMap.erase: removed slot returns none"
@@ -447,9 +446,9 @@ def uniqueSlotMap_erase_removes : IO Unit := do
     pairs and exposes every entry via `get?`. -/
 def uniqueSlotMap_ofListWF_roundtrip : IO Unit := do
   let cap1 : Capability :=
-    { target := .object ⟨10⟩, rights := AccessRightSet.empty, badge := none }
+    { target := .object ⟨10⟩, rights := AccessRightSet.empty }
   let cap2 : Capability :=
-    { target := .object ⟨11⟩, rights := AccessRightSet.empty, badge := none }
+    { target := .object ⟨11⟩, rights := AccessRightSet.empty }
   let u : SeLe4n.UniqueSlotMap Capability :=
     SeLe4n.UniqueSlotMap.ofListWF
       [(SeLe4n.Slot.ofNat 0, cap1), (SeLe4n.Slot.ofNat 1, cap2)]
@@ -462,7 +461,7 @@ def uniqueSlotMap_ofListWF_roundtrip : IO Unit := do
     `invExtK` by construction. -/
 def uniqueSlotMap_keys_unique_witness : IO Unit := do
   let cap : Capability :=
-    { target := .object ⟨1⟩, rights := AccessRightSet.empty, badge := none }
+    { target := .object ⟨1⟩, rights := AccessRightSet.empty }
   let u : SeLe4n.UniqueSlotMap Capability :=
     SeLe4n.UniqueSlotMap.empty.insert (SeLe4n.Slot.ofNat 0) cap
   -- The hWF field is propositional; if the structure is inhabited, the
@@ -474,7 +473,7 @@ def uniqueSlotMap_keys_unique_witness : IO Unit := do
     `cspaceSlotUnique` invariant trivially via `.slots.hWF`. -/
 def cnode_slotsUnique_holds_witness : IO Unit := do
   let cap : Capability :=
-    { target := .object ⟨1⟩, rights := AccessRightSet.empty, badge := none }
+    { target := .object ⟨1⟩, rights := AccessRightSet.empty }
   let cn : CNode :=
     CNode.ofList 0 0 0 0 [(SeLe4n.Slot.ofNat 0, cap)]
   let _hUniq : cn.slotsUnique := SeLe4n.Model.CNode.slotsUnique_holds cn
@@ -722,9 +721,9 @@ def mintReplyCap_derives_backed_reply_cap : IO Unit := do
   let mkCn : KernelObject := .cnode
     (SeLe4n.Model.CNode.ofSlots 8 0 0 8 (SeLe4n.UniqueSlotMap.ofListWF
         [ ((SeLe4n.Slot.ofNat 0),
-            { target := .object target, rights := AccessRightSet.ofList [.read, .write], badge := none })
+            { target := .object target, rights := AccessRightSet.ofList [.read, .write] })
         , ((SeLe4n.Slot.ofNat 2),
-            { target := .object plain, rights := AccessRightSet.ofList [.read, .write], badge := none }) ]))
+            { target := .object plain, rights := AccessRightSet.ofList [.read, .write] }) ]))
   let st : SystemState :=
     (SeLe4n.Testing.BootstrapBuilder.empty
       |>.withObject target (.reply { replyId := rid })
@@ -883,9 +882,9 @@ def replyCapPointsToValidReply_distinguishes_backed_and_dangling : IO Unit := do
   let mkCn : KernelObject := .cnode
     (SeLe4n.Model.CNode.ofSlots 8 0 0 8 (SeLe4n.UniqueSlotMap.ofListWF
         [ ((SeLe4n.Slot.ofNat 0),
-            { target := .replyCap liveRid, rights := AccessRightSet.ofList [.read, .write], badge := none })
+            { target := .replyCap liveRid, rights := AccessRightSet.ofList [.read, .write] })
         , ((SeLe4n.Slot.ofNat 1),
-            { target := .replyCap danglingRid, rights := AccessRightSet.ofList [.read, .write], badge := none }) ]))
+            { target := .replyCap danglingRid, rights := AccessRightSet.ofList [.read, .write] }) ]))
   let st : SystemState :=
     (SeLe4n.Testing.BootstrapBuilder.empty
       |>.withObject liveObj (.reply { replyId := liveRid })
@@ -922,7 +921,7 @@ def reply_cap_end_to_end_retype_mint_link : IO Unit := do
   -- cap and the `mintReplyCap` source.
   let authCap : Capability :=
     { target := .object target,
-      rights := AccessRightSet.ofList [.read, .write, .retype], badge := none }
+      rights := AccessRightSet.ofList [.read, .write, .retype] }
   let mkCn : KernelObject := .cnode
     (SeLe4n.Model.CNode.ofSlots 8 0 0 8 (SeLe4n.UniqueSlotMap.ofListWF [ ((SeLe4n.Slot.ofNat 0), authCap) ]))
   let callerTcb : TCB :=
@@ -1395,7 +1394,7 @@ def integration_null_cap_cross_kind_sentinel_rejected : IO Unit := do
 level — requireNotNull is isSome iff isNull is false. -/
 def requireNotNull_complement_on_null_and_nonnull : IO Unit := do
   let cap1 : Capability := Capability.null
-  let cap2 : Capability := { target := .object ⟨42⟩, rights := AccessRightSet.empty, badge := none }
+  let cap2 : Capability := { target := .object ⟨42⟩, rights := AccessRightSet.empty }
   expect "null cap: requireNotNull = none"
     (cap1.requireNotNull.isSome = !cap1.isNull)
   expect "non-null cap: requireNotNull = some"

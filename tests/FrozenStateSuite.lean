@@ -111,8 +111,7 @@ private def fs008_freezeTcb : IO Unit := do
 private def fs009_freezeCNode : IO Unit := do
   let cap : Capability :=
     { target := .object ⟨100⟩
-      rights := AccessRightSet.ofList [.read]
-      badge := none }
+      rights := AccessRightSet.ofList [.read] }
   let cn : CNode :=
     CNode.ofList 16 4 0 4 [(SeLe4n.Slot.ofNat 3, cap)]
   let frozen := freezeObject (.cnode cn)

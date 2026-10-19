@@ -666,12 +666,10 @@ the write alone.  An arm whose checks refuse, and every arm not yet split, is
       | .ok args =>
         let src : CSpaceAddr := { cnode := cnodeId, slot := args.srcSlot }
         let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
-        let badge : Option SeLe4n.Badge :=
-          if args.badge.val = 0 then none else some args.badge
         RefusalCarrying.ofChecked
           (securityFlowsTo (ctx.objectLabelOf src.cnode) (ctx.objectLabelOf dst.cnode) &&
-            cspaceMintAdmittedAt cnodeId args.srcSlot args.dstSlot args.rights badge st)
-          (fun st => cspaceMintPerformAt cnodeId args.srcSlot args.dstSlot args.rights badge st)
+            cspaceMintAdmittedAt cnodeId args.srcSlot args.dstSlot args.rights args.badge st)
+          (fun st => cspaceMintPerformAt cnodeId args.srcSlot args.dstSlot args.rights args.badge st)
           (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
     | _ => .error (.invalidCapability, st)
   | .cspaceMove =>

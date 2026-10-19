@@ -168,7 +168,7 @@ def capTargetsReservedIdleObject (cap : SeLe4n.Model.Capability) : Bool :=
     test of its target. -/
 theorem capTargetsReservedIdleObject_object (oid : SeLe4n.ObjId)
     (rights : SeLe4n.Model.AccessRightSet) (badge : Option SeLe4n.Badge) :
-    capTargetsReservedIdleObject { target := .object oid, rights := rights, badge := badge } =
+    capTargetsReservedIdleObject (SeLe4n.Model.Capability.ofParts (.object oid) rights badge) =
       isIdleObjId oid := rfl
 
 /-- **WS-RR RR5.13**: a slot the recogniser rejects is no core's idle slot. -/

@@ -1103,13 +1103,15 @@ theorem insert_slots_agree (node : CNode) (slot : SeLe4n.Slot) (cap : Capability
       cases slot; cases s; simp_all [SeLe4n.Slot.toNat])
     simp [e, this]
 
-/-- `insertCell` given the spare records `a`: `cap` written over slot `slot`'s
-record, which leaves the spares.  The record is taken out of the spares before
-it is matched, so nothing else holds it and `Capability.overwrite` writes
-`cap`'s fields into it.  Each arm builds the CNode itself, so the CNode is
-written in place too, and builds its capability from `cap`'s fields, so a
-caller passing `cap` as a literal never builds it. -/
-@[inline] def insertCellFrom (node : CNode) (slot : SeLe4n.Slot) (cap : Capability)
+/-- `insert` of `cap` given the spare records `a`, its capability written over
+slot `slot`'s record by `fill`, which leaves the spares.  The record is taken
+out of the spares before it is matched, so nothing else holds it and `fill`
+(out of line) writes `cap`'s fields into it.  Each arm builds the CNode itself,
+so the CNode is written in place too.  With no record, `cap` itself is stored:
+a caller passes it as a literal, so it is built only there. -/
+@[inline] def insertCellWith (node : CNode) (slot : SeLe4n.Slot) (cap : Capability)
+    (fill : Capability → Capability) (hfill : ∀ r, fill r = cap)
+    (build : Unit → Capability) (hbuild : build () = cap)
     (h : slot.toNat < node.cells.size) (a : Array (Option Capability)) : CNode :=
   let i := slot.toNat
   if ha : i < a.size then
@@ -1117,8 +1119,8 @@ caller passing `cap` as a literal never builds it. -/
     let a' := a.set i none ha
     match o with
     | some r =>
-      let cell := Capability.overwrite r cap.target cap.rights cap.badge cap.mapping
-      have hc : cell = cap := by cases cap; exact Capability.overwrite_eq _ _ _ _ _
+      let cell := fill r
+      have hc : cell = cap := hfill r
       { node with
         slotsGhost := node.slotsGhost.map (·.insert slot cap)
         cells := node.cells.set i (some cell) h
@@ -1128,30 +1130,45 @@ caller passing `cap` as a literal never builds it. -/
     | none =>
       { node with
         slotsGhost := node.slotsGhost.map (·.insert slot cap)
-        cells := node.cells.set i (some ⟨cap.target, cap.rights, cap.badge, cap.mapping⟩) h
+        cells := node.cells.set i (some (build ())) h
         cells_size := by rw [Array.size_set]; exact node.cells_size
-        slots_agree := insert_slots_agree node slot cap h
+        slots_agree := by rw [hbuild]; exact insert_slots_agree node slot cap h
         spare := Squash.mk a' }
   else
     { node with
       slotsGhost := node.slotsGhost.map (·.insert slot cap)
-      cells := node.cells.set i (some ⟨cap.target, cap.rights, cap.badge, cap.mapping⟩) h
+      cells := node.cells.set i (some (build ())) h
       cells_size := by rw [Array.size_set]; exact node.cells_size
-      slots_agree := insert_slots_agree node slot cap h
+      slots_agree := by rw [hbuild]; exact insert_slots_agree node slot cap h
       spare := Squash.mk a }
+
+theorem insertCellWith_eq (node : CNode) (slot : SeLe4n.Slot) (cap : Capability)
+    (fill : Capability → Capability) (hfill : ∀ r, fill r = cap)
+    (build : Unit → Capability) (hbuild : build () = cap)
+    (h : slot.toNat < node.cells.size) (a : Array (Option Capability)) :
+    node.insertCellWith slot cap fill hfill build hbuild h a = node.insert slot cap := by
+  unfold insertCellWith insert
+  simp only [h, dite_true]
+  split
+  · split
+    · next r _ => exact ext_of_fields rfl rfl rfl rfl rfl (by simp only [hfill r]) rfl
+    · exact ext_of_fields rfl rfl rfl rfl rfl (by simp only [hbuild]) rfl
+  · exact ext_of_fields rfl rfl rfl rfl rfl (by simp only [hbuild]) rfl
+
+/-- `insertCellWith` writing `cap`'s fields over the record
+(`Capability.overwrite`); the stored capability is `cap`'s fields, so a caller
+passing `cap` as a literal never builds it. -/
+@[inline] def insertCellFrom (node : CNode) (slot : SeLe4n.Slot) (cap : Capability)
+    (h : slot.toNat < node.cells.size) (a : Array (Option Capability)) : CNode :=
+  node.insertCellWith slot ⟨cap.target, cap.rights, cap.badgeWord, cap.badged, cap.mapping⟩
+    (fun r => Capability.overwrite r cap.target cap.rights cap.badgeWord cap.badged cap.mapping)
+    (fun r => Capability.overwrite_eq _ _ _ _ _ _)
+    (fun _ => Capability.ofFields cap.target cap.rights cap.badgeWord cap.badged cap.mapping) rfl h a
 
 theorem insertCellFrom_eq (node : CNode) (slot : SeLe4n.Slot) (cap : Capability)
     (h : slot.toNat < node.cells.size) (a : Array (Option Capability)) :
     node.insertCellFrom slot cap h a = node.insert slot cap := by
-  unfold insertCellFrom insert
-  simp only [h, dite_true]
-  split
-  · split
-    · next r _ =>
-      refine ext_of_fields rfl rfl rfl rfl rfl ?_ rfl
-      cases cap; simp only [Capability.overwrite_eq]
-    · exact ext_of_fields rfl rfl rfl rfl rfl rfl rfl
-  · exact ext_of_fields rfl rfl rfl rfl rfl rfl rfl
+  unfold insertCellFrom; rw [insertCellWith_eq]
 
 /-- WS-ZA ZA5.3 part 6: **`insert` as compiled** — `cap` written over the
 slot's own record (its spare, `insertCellFrom`), so the write reuses the record
@@ -1183,13 +1200,38 @@ def insertImpl (node : CNode) (slot : SeLe4n.Slot) (cap : Capability) : CNode :=
 line: the caller hands over its CNode, so the CNode is written in place, and
 the fields go straight into the slot's own record (mint). -/
 def insertFields (node : CNode) (slot : SeLe4n.Slot) (target : CapTarget) (rights : AccessRightSet)
-    (badge : Option SeLe4n.Badge) (mapping : Option FrameMapping) : CNode :=
-  node.insertCell slot ⟨target, rights, badge, mapping⟩
+    (badgeWord : SeLe4n.Badge) (badged : Bool) (mapping : Option FrameMapping) : CNode :=
+  node.insertCell slot ⟨target, rights, badgeWord, badged, mapping⟩
 
 theorem insertFields_eq_insert (node : CNode) (slot : SeLe4n.Slot) (target : CapTarget)
-    (rights : AccessRightSet) (badge : Option SeLe4n.Badge) (mapping : Option FrameMapping) :
-    node.insertFields slot target rights badge mapping = node.insert slot ⟨target, rights, badge, mapping⟩ :=
+    (rights : AccessRightSet) (badgeWord : SeLe4n.Badge) (badged : Bool)
+    (mapping : Option FrameMapping) :
+    node.insertFields slot target rights badgeWord badged mapping =
+      node.insert slot ⟨target, rights, badgeWord, badged, mapping⟩ :=
   insertCell_eq_insert _ _ _
+
+/-- WS-ZA ZA5.3 part 6: `insert` of the reply capability to `rid` with
+`rights`, out of line, written over the slot's own record and its target cell
+(`Capability.overwriteReply`), so a reply-capability mint builds neither. -/
+def insertReplyCap (node : CNode) (slot : SeLe4n.Slot) (rid : SeLe4n.ReplyId)
+    (rights : AccessRightSet) : CNode :=
+  if h : slot.toNat < node.cells.size then
+    Quot.lift
+      (node.insertCellWith slot { target := .replyCap rid, rights }
+        (fun r => r.overwriteReply rid rights) (fun r => Capability.overwriteReply_eq r rid rights)
+        (fun _ => Capability.ofReply rid rights) rfl h)
+      (fun a b _ => by rw [insertCellWith_eq, insertCellWith_eq]) node.spare
+  else node
+
+theorem insertReplyCap_eq_insert (node : CNode) (slot : SeLe4n.Slot) (rid : SeLe4n.ReplyId)
+    (rights : AccessRightSet) :
+    node.insertReplyCap slot rid rights = node.insert slot { target := .replyCap rid, rights } := by
+  unfold insertReplyCap
+  split
+  · next h =>
+    induction node.spare using Squash.ind with
+    | h a => exact insertCellWith_eq node slot _ _ _ _ _ h a
+  · next h => unfold insert; simp only [h, dite_false]
 
 /-- WS-ZA ZA5.3: a CNode of the given geometry holding `xs`, inserted in order
 (the last capability at a repeated slot wins); a slot at or past

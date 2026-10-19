@@ -1257,10 +1257,8 @@ theorem eq_of_cnodeVisibilityLe_of_slots_eq {cn₁ cn₂ : CNode}
       have hS : cn₁.slotsGhost.out = cn₂.slotsGhost.out := hSlots
       rw [← e₁, ← e₂, hS]
   have hGhost : cn₁.slotsGhost = cn₂.slotsGhost := SeLe4n.Erased.ext hSlots
-  obtain ⟨d₁, gw₁, gv₁, rw₁, s₁, c₁, _, _, l₁, _⟩ := cn₁
-  obtain ⟨d₂, gw₂, gv₂, rw₂, s₂, c₂, _, _, l₂, _⟩ := cn₂
-  obtain ⟨hd, hgw, hgv, hrw, hl, _⟩ := h
-  simp_all
+  -- The spare records are no slot's capability (`SpareCells`: logically one value).
+  exact CNode.ext_of_fields h.depth h.guardWidth h.guardValue h.radixWidth hGhost hCells h.links
 
 /-- SM8.A.5: the visibility order on a **projected kernel object**.
 

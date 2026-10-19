@@ -59,7 +59,6 @@ private def baseState : SystemState :=
         (SeLe4n.Slot.ofNat 0, {
           target := .object endpointId
           rights := AccessRightSet.ofList [.read, .write]
-          badge := none
         })
       ])))
     |>.withObject wrongTypeId (.endpoint {})
@@ -67,7 +66,6 @@ private def baseState : SystemState :=
         (SeLe4n.Slot.ofNat 1, {
           target := .object endpointId
           rights := AccessRightSet.ofList [.read]
-          badge := none
         })
       ])))
     |>.withObject ⟨6⟩ (.tcb {
@@ -221,7 +219,6 @@ private def f2UntypedState : SystemState :=
         (SeLe4n.Slot.ofNat 0, {
           target := .object f2UntypedObjId
           rights := AccessRightSet.ofList [.read, .write, .grant, .retype]
-          badge := none
         })
       ])))
     |>.withLifecycleObjectType f2UntypedObjId .untyped
@@ -243,7 +240,6 @@ private def f2DeviceState : SystemState :=
         (SeLe4n.Slot.ofNat 0, {
           target := .object f2DeviceUntypedId
           rights := AccessRightSet.ofList [.read, .write, .grant, .retype]
-          badge := none
         })
       ])))
     |>.withLifecycleObjectType f2DeviceUntypedId .untyped
@@ -340,12 +336,10 @@ private def runCspaceMutationAndRevokeNegativeChecks : IO Unit := do
               (strictRootSlot.slot, {
                 target := .object endpointId
                 rights := AccessRightSet.ofList [.read, .write]
-                badge := none
               }),
               (strictChildSlotOk.slot, {
                 target := .object endpointId
                 rights := AccessRightSet.ofList [.read]
-                badge := none
               })
             ])))
       cdt := CapDerivationTree.empty
@@ -405,7 +399,6 @@ private def runCspaceMutationAndRevokeNegativeChecks : IO Unit := do
   let rootCap : Capability := {
     target := .object endpointId,
     rights := AccessRightSet.ofList [.read, .write, .grant, .retype],
-    badge := none
   }
   let txSeed : SeLe4n.Model.SystemState := {
     baseState with
@@ -636,8 +629,7 @@ private def runIpcPayloadBoundsNegativeChecks : IO Unit := do
                   TransferCap.fromSlot { target := .object ⟨3⟩, rights := AccessRightSet.ofList [] }
                     { cnode := ⟨3⟩, slot := SeLe4n.Slot.ofNat 3 },
                   TransferCap.fromSlot { target := .object ⟨4⟩, rights := AccessRightSet.ofList [] }
-                    { cnode := ⟨4⟩, slot := SeLe4n.Slot.ofNat 4 }],
-        badge := none } baseState)
+                    { cnode := ⟨4⟩, slot := SeLe4n.Slot.ofNat 4 }], } baseState)
     .ipcMessageTooManyCaps
 
   -- endpointReplyRecv rejects oversized registers
@@ -659,8 +651,7 @@ private def runIpcPayloadBoundsNegativeChecks : IO Unit := do
                   TransferCap.fromSlot { target := .object ⟨3⟩, rights := AccessRightSet.ofList [] }
                     { cnode := ⟨3⟩, slot := SeLe4n.Slot.ofNat 3 },
                   TransferCap.fromSlot { target := .object ⟨4⟩, rights := AccessRightSet.ofList [] }
-                    { cnode := ⟨4⟩, slot := SeLe4n.Slot.ofNat 4 }],
-        badge := none } none baseState)
+                    { cnode := ⟨4⟩, slot := SeLe4n.Slot.ofNat 4 }], } none baseState)
     .ipcMessageTooManyCaps
 
   -- The boundary message (exactly 120 registers, 3 extra caps) decodes.
@@ -1128,7 +1119,6 @@ private def runUntypedF2NegativeChecks : IO Unit := do
           (SeLe4n.Slot.ofNat 0, {
             target := .object f2UntypedObjId
             rights := AccessRightSet.ofList [.read, .write, .grant, .retype]
-            badge := none
           })
         ])))
       |>.withLifecycleObjectType f2UntypedObjId .untyped
@@ -1600,7 +1590,7 @@ private def runSlotLinkAgreementChecks : IO Unit := do
   let rootSlot : SlotRef := { cnode := wideId, slot := SeLe4n.Slot.ofNat 3 }
   let childSlot : SlotRef := { cnode := wideId, slot := SeLe4n.Slot.ofNat 40000 }
   let cap : Capability :=
-    { target := .object endpointId, rights := AccessRightSet.ofList [.read], badge := none }
+    { target := .object endpointId, rights := AccessRightSet.ofList [.read] }
   let seed : SystemState := {
     baseState with
       objects := baseState.objects.insert wideId (.cnode (CNode.ofList 16 0 0 16
@@ -1641,7 +1631,7 @@ private def runSlotLinkShapeChecks : IO Unit := do
   let childSlot : SlotRef := { cnode := cnId, slot := SeLe4n.Slot.ofNat 5 }
   let spareSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 9
   let cap : Capability :=
-    { target := .object endpointId, rights := AccessRightSet.ofList [.read], badge := none }
+    { target := .object endpointId, rights := AccessRightSet.ofList [.read] }
   let seed : SystemState := {
     baseState with
       objects := baseState.objects.insert cnId (.cnode (CNode.ofList 8 0 0 8
@@ -1746,7 +1736,6 @@ private def runH2NegativeChecks : IO Unit := do
           (SeLe4n.Slot.ofNat 0, {
             target := .object f2UntypedObjId
             rights := AccessRightSet.ofList [.read, .write, .grant, .retype]
-            badge := none
           })
         ])))
       |>.withLifecycleObjectType f2UntypedObjId .untyped
@@ -1894,8 +1883,8 @@ private def runWSH7Checks : IO Unit := do
   else
     throw <| IO.userError "VSpaceRoot BEq ignores insertion order: expected true"
 
-  let capA : Capability := { target := .object endpointId, rights := AccessRightSet.ofList [.read], badge := none }
-  let capB : Capability := { target := .object notificationId, rights := AccessRightSet.ofList [.read, .write], badge := none }
+  let capA : Capability := { target := .object endpointId, rights := AccessRightSet.ofList [.read] }
+  let capB : Capability := { target := .object notificationId, rights := AccessRightSet.ofList [.read, .write] }
   let cn1 : CNode :=
     (SeLe4n.Model.CNode.ofSlots 2 0 0 2 (SeLe4n.UniqueSlotMap.ofListWF [(SeLe4n.Slot.ofNat 1, capA), (SeLe4n.Slot.ofNat 2, capB)]))
   let cn2 : CNode :=
@@ -2187,8 +2176,8 @@ private def runWSH15Checks : IO Unit := do
   let cnodeId : SeLe4n.ObjId := ⟨50⟩
   let epId : SeLe4n.ObjId := ⟨40⟩
   let callerId : SeLe4n.ThreadId := ⟨1⟩
-  let writeCap : Capability := { target := .object epId, rights := AccessRightSet.ofList [.write], badge := none }
-  let readOnlyCap : Capability := { target := .object epId, rights := AccessRightSet.ofList [.read], badge := none }
+  let writeCap : Capability := { target := .object epId, rights := AccessRightSet.ofList [.write] }
+  let readOnlyCap : Capability := { target := .object epId, rights := AccessRightSet.ofList [.read] }
   let cn : CNode := (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [
       (SeLe4n.Slot.ofNat 0, writeCap),
       (SeLe4n.Slot.ofNat 1, readOnlyCap)
@@ -2335,12 +2324,10 @@ def runWSH16LifecycleChecks : IO Unit := do
           (SeLe4n.Slot.ofNat 0, {
             target := .object h16TargetId
             rights := AccessRightSet.ofList [.read, .write]
-            badge := none
           }),
           (SeLe4n.Slot.ofNat 1, {
             target := .object h16TargetId
             rights := AccessRightSet.ofList [.read]
-            badge := none
           })
         ]))
       |>.withObject h16TcbId (.tcb {
@@ -2370,7 +2357,6 @@ def runWSH16LifecycleChecks : IO Unit := do
           (SeLe4n.Slot.ofNat 0, {
             target := .object h16TargetId
             rights := AccessRightSet.ofList [.read, .write]
-            badge := none
           })
         ])))
       -- Uses .build intentionally: lifecycleObjectType .tcb mismatches actual .endpoint
@@ -2422,7 +2408,6 @@ def runWSH16LifecycleChecks : IO Unit := do
           (SeLe4n.Slot.ofNat 0, {
             target := .object h16ExhaustedUntypedId
             rights := AccessRightSet.ofList [.read, .write, .grant, .retype]
-            badge := none
           })
         ])))
       |>.withLifecycleObjectType h16ExhaustedUntypedId .untyped
@@ -2459,7 +2444,6 @@ def runWSH16LifecycleChecks : IO Unit := do
           (SeLe4n.Slot.ofNat 0, {
             target := .object h16DeviceUntypedId
             rights := AccessRightSet.ofList [.read, .write, .grant, .retype]
-            badge := none
           })
         ])))
       |>.withLifecycleObjectType h16DeviceUntypedId .untyped
@@ -2503,8 +2487,7 @@ def runAN4A5LifecycleVisibilityChecks : IO Unit := do
       |>.withObject a5CnodeId (.cnode (SeLe4n.Model.CNode.ofSlots 0 0 0 0 (SeLe4n.UniqueSlotMap.ofListWF [
           (SeLe4n.Slot.ofNat 0, {
             target := .object a5RetypeTcbId
-            rights := AccessRightSet.ofList [.read, .write, .retype]
-            badge := none })
+            rights := AccessRightSet.ofList [.read, .write, .retype] })
         ])))
       |>.withLifecycleObjectType a5RetypeTcbId .tcb
       |>.withLifecycleObjectType a5CnodeId .cnode
@@ -2786,7 +2769,6 @@ private def runWSKGLifecycleVSpaceChecks : IO Unit := do
   let authCap : Capability := {
     target := .object ⟨500⟩
     rights := AccessRightSet.ofList [.read, .write]
-    badge := none
   }
   expectErr "K-G-NEG-09 lifecycleRetypeDirect object not found"
     (SeLe4n.Kernel.lifecycleRetypeDirect authCap ⟨500⟩ (.endpoint {}) emptyObjState)
@@ -2801,7 +2783,6 @@ private def runWSKGLifecycleVSpaceChecks : IO Unit := do
   let wrongAuthCap : Capability := {
     target := .object ⟨999⟩  -- targets different object
     rights := AccessRightSet.ofList [.read, .write]
-    badge := none
   }
   expectErr "K-G-NEG-10 lifecycleRetypeDirect wrong authority"
     (SeLe4n.Kernel.lifecycleRetypeDirect wrongAuthCap ⟨300⟩ (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }) retypeState)
@@ -3060,7 +3041,6 @@ def runWSM3CapTransferNegativeChecks : IO Unit := do
   let cap : Capability := {
     target := .object targetObj,
     rights := AccessRightSet.ofList [.read],
-    badge := none
   }
 
   -- CNode with radixWidth=2 → slotCount=4; fill all 4 slots
@@ -3122,7 +3102,6 @@ def runL13CapTransferShortCircuitChecks : IO Unit := do
   let cap : Capability := {
     target := .object targetObj,
     rights := AccessRightSet.ofList [.read],
-    badge := none
   }
 
   -- Receiver root is a TCB, not a CNode → ipcTransferSingleCap will error
@@ -3218,7 +3197,7 @@ private def runWSM4GuardOnlyChecks : IO Unit := do
   let stGuardOnly :=
     (BootstrapBuilder.empty
       |>.withObject guardOnlyRoot (.cnode (SeLe4n.Model.CNode.ofSlots 4 4 0xA 0 (SeLe4n.UniqueSlotMap.ofListWF [
-            (SeLe4n.Slot.ofNat 0, { target := .object guardOnlyTarget, rights := AccessRightSet.ofList [.read], badge := none })
+            (SeLe4n.Slot.ofNat 0, { target := .object guardOnlyTarget, rights := AccessRightSet.ofList [.read] })
           ])))
       |>.withObject guardOnlyTarget (.endpoint {})
       |>.buildChecked)
@@ -3255,7 +3234,7 @@ private def runWSM4SmallBitsChecks : IO Unit := do
   let stLeaf :=
     (BootstrapBuilder.empty
       |>.withObject leafRoot (.cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [
-            (SeLe4n.Slot.ofNat 5, { target := .object leafTarget, rights := AccessRightSet.ofList [.read, .write], badge := none })
+            (SeLe4n.Slot.ofNat 5, { target := .object leafTarget, rights := AccessRightSet.ofList [.read, .write] })
           ])))
       |>.withObject leafTarget (.endpoint {})
       |>.buildChecked)
@@ -3326,13 +3305,13 @@ private def runWSM4GuardMismatchChecks : IO Unit := do
   let stMidGuard :=
     (BootstrapBuilder.empty
       |>.withObject lvl0 (.cnode (SeLe4n.Model.CNode.ofSlots 12 2 3 2 (SeLe4n.UniqueSlotMap.ofListWF [
-            (SeLe4n.Slot.ofNat 0, { target := .object lvl1, rights := AccessRightSet.ofList [.read, .write], badge := none })
+            (SeLe4n.Slot.ofNat 0, { target := .object lvl1, rights := AccessRightSet.ofList [.read, .write] })
           ])))
       |>.withObject lvl1 (.cnode (SeLe4n.Model.CNode.ofSlots 8 2 1 2 (SeLe4n.UniqueSlotMap.ofListWF [
-            (SeLe4n.Slot.ofNat 0, { target := .object lvl2, rights := AccessRightSet.ofList [.read, .write], badge := none })
+            (SeLe4n.Slot.ofNat 0, { target := .object lvl2, rights := AccessRightSet.ofList [.read, .write] })
           ])))
       |>.withObject lvl2 (.cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [
-            (SeLe4n.Slot.ofNat 7, { target := .object lvl2Target, rights := AccessRightSet.ofList [.read], badge := none })
+            (SeLe4n.Slot.ofNat 7, { target := .object lvl2Target, rights := AccessRightSet.ofList [.read] })
           ])))
       |>.withObject lvl2Target (.endpoint {})
       |>.buildChecked)
@@ -3380,11 +3359,11 @@ private def runWSM4MaxDepthLoopChecks : IO Unit := do
     let cnodeId := maxDepthIds[i]!
     let nextId := maxDepthIds[i + 1]!
     builder := builder.withObject cnodeId (.cnode (CNode.ofList (64 - i * 8) 0 0 8 [
-        (SeLe4n.Slot.ofNat 1, { target := .object nextId, rights := AccessRightSet.ofList [.read, .write], badge := none })
+        (SeLe4n.Slot.ofNat 1, { target := .object nextId, rights := AccessRightSet.ofList [.read, .write] })
       ]))
   -- Level 7 (leaf): slot 1 holds the target cap
   builder := builder.withObject maxDepthIds[7]! (.cnode (SeLe4n.Model.CNode.ofSlots 8 0 0 8 (SeLe4n.UniqueSlotMap.ofListWF [
-      (SeLe4n.Slot.ofNat 1, { target := .object maxDepthLeafTarget, rights := AccessRightSet.ofList [.read], badge := none })
+      (SeLe4n.Slot.ofNat 1, { target := .object maxDepthLeafTarget, rights := AccessRightSet.ofList [.read] })
     ])))
   builder := builder.withObject maxDepthLeafTarget (.endpoint {})
   let stMaxDepth := builder.buildChecked
@@ -3430,7 +3409,7 @@ private def runWSM4SlotEdgeChecks : IO Unit := do
   let stEmptyMid :=
     (BootstrapBuilder.empty
       |>.withObject emptyMidRoot (.cnode (SeLe4n.Model.CNode.ofSlots 10 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [
-            (SeLe4n.Slot.ofNat 3, { target := .object emptyMidChild, rights := AccessRightSet.ofList [.read], badge := none })
+            (SeLe4n.Slot.ofNat 3, { target := .object emptyMidChild, rights := AccessRightSet.ofList [.read] })
           ])))
       |>.withObject emptyMidChild (.cnode (SeLe4n.Model.CNode.ofSlots 6 0 0 4 SeLe4n.UniqueSlotMap.empty))  -- all slots empty
       |>.buildChecked)
@@ -3454,7 +3433,7 @@ private def runWSM4SlotEdgeChecks : IO Unit := do
   let stNonCnodeMid :=
     (BootstrapBuilder.empty
       |>.withObject nonCnodeMidRoot (.cnode (SeLe4n.Model.CNode.ofSlots 8 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [
-            (SeLe4n.Slot.ofNat 1, { target := .object nonCnodeMidEp, rights := AccessRightSet.ofList [.read], badge := none })
+            (SeLe4n.Slot.ofNat 1, { target := .object nonCnodeMidEp, rights := AccessRightSet.ofList [.read] })
           ])))
       |>.withObject nonCnodeMidEp (.endpoint {})
       |>.buildChecked)
@@ -3481,7 +3460,7 @@ private def runWSM4WrapperIntegrationChecks : IO Unit := do
   let stLeaf :=
     (BootstrapBuilder.empty
       |>.withObject leafRoot (.cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [
-            (SeLe4n.Slot.ofNat 5, { target := .object leafTarget, rights := AccessRightSet.ofList [.read, .write], badge := none })
+            (SeLe4n.Slot.ofNat 5, { target := .object leafTarget, rights := AccessRightSet.ofList [.read, .write] })
           ])))
       |>.withObject leafTarget (.endpoint {})
       |>.buildChecked)
@@ -3586,7 +3565,6 @@ def runWSR2RevocationChecks : IO Unit := do
               (r2RootSlot.slot, {
                 target := .object ⟨40⟩
                 rights := AccessRightSet.ofList [.read, .write]
-                badge := none
               })
             ]))
       cdt := CapDerivationTree.empty
@@ -3755,7 +3733,6 @@ private def runS2GCapabilityErrorTests : IO Unit := do
       (SeLe4n.Slot.ofNat 0, {
         target := .object endpointId
         rights := AccessRightSet.ofList [.read]
-        badge := none
       })
     ]))
   let readOnlyState : SystemState :=
@@ -3797,10 +3774,10 @@ private def runS2GCapabilityErrorTests : IO Unit := do
   -- three capabilities no CPtr could reach.  At radix 2 it is genuinely full.
   let fullCnodeId : SeLe4n.ObjId := ⟨70⟩
   let fullCnode : KernelObject := .cnode (SeLe4n.Model.CNode.ofSlots 2 0 0 2 (SeLe4n.UniqueSlotMap.ofListWF [
-      (SeLe4n.Slot.ofNat 0, { target := .object endpointId, rights := AccessRightSet.ofList [.read, .write], badge := none }),
-      (SeLe4n.Slot.ofNat 1, { target := .object endpointId, rights := AccessRightSet.ofList [.read], badge := none }),
-      (SeLe4n.Slot.ofNat 2, { target := .object endpointId, rights := AccessRightSet.ofList [.write], badge := none }),
-      (SeLe4n.Slot.ofNat 3, { target := .object endpointId, rights := AccessRightSet.ofList [.read, .write], badge := none })
+      (SeLe4n.Slot.ofNat 0, { target := .object endpointId, rights := AccessRightSet.ofList [.read, .write] }),
+      (SeLe4n.Slot.ofNat 1, { target := .object endpointId, rights := AccessRightSet.ofList [.read] }),
+      (SeLe4n.Slot.ofNat 2, { target := .object endpointId, rights := AccessRightSet.ofList [.write] }),
+      (SeLe4n.Slot.ofNat 3, { target := .object endpointId, rights := AccessRightSet.ofList [.read, .write] })
     ]))
   let fullCnodeState := { baseState with objects := baseState.objects.insert fullCnodeId fullCnode }
   -- Copy from slot0 in cnodeId into slot 0 of full CNode (occupied)
@@ -3892,7 +3869,6 @@ private def runS2HLifecycleErrorTests : IO Unit := do
           (SeLe4n.Slot.ofNat 0, {
             target := .object exhaustedUntypedId
             rights := AccessRightSet.ofList [.read, .write, .grant, .retype]
-            badge := none
           })
         ])))
       |>.withLifecycleObjectType exhaustedUntypedId .untyped
@@ -4265,8 +4241,7 @@ def runAC1CdtTrackingChecks : IO Unit := do
   let allRights := AccessRightSet.ofList [.read, .write, .grant, .grantReply, .retype]
   let cap : Capability := {
     target := .object ⟨300⟩,
-    rights := allRights,
-    badge := none }
+    rights := allRights, }
 
   -- Create CNodes with proper structure
   let srcCnode : CNode := CNode.ofList 0 0 0 4 [(srcSlot, cap)]
@@ -4317,8 +4292,7 @@ private def r1ReplyId     : SeLe4n.ReplyId  := ⟨6731⟩
 
 private def r1Cap : Capability :=
   { target := .object r1TargetObj,
-    rights := AccessRightSet.ofList [.read],
-    badge := none }
+    rights := AccessRightSet.ofList [.read], }
 
 /-- The caller's frame names `r1Cap`'s slot as its one extra capability address
 (WS-ZA ZA4.7), so the call has a capability to transfer. -/
@@ -4517,7 +4491,7 @@ private def runWSRR8CSpaceSlotRangeChecks : IO Unit := do
   -- A four-slot CNode (indices 0..3) holding one capability at slot 0.
   let rangeCnodeId : SeLe4n.ObjId := ⟨71⟩
   let rangeCnode : CNode := (SeLe4n.Model.CNode.ofSlots 2 0 0 2 (SeLe4n.UniqueSlotMap.ofListWF [
-      (SeLe4n.Slot.ofNat 0, ({ target := .object endpointId, rights := AccessRightSet.ofList [.read, .write], badge := none } : Capability))
+      (SeLe4n.Slot.ofNat 0, ({ target := .object endpointId, rights := AccessRightSet.ofList [.read, .write] } : Capability))
     ]))
   let rangeState : SystemState :=
     { baseState with objects := baseState.objects.insert rangeCnodeId (.cnode rangeCnode) }
@@ -4548,7 +4522,7 @@ private def runWSRR8CSpaceSlotRangeChecks : IO Unit := do
   -- A CNode at capacity: four capabilities in four addressable slots.
   let fullCnodeId : SeLe4n.ObjId := ⟨72⟩
   let occupied : Capability :=
-    { target := .object endpointId, rights := AccessRightSet.ofList [.read], badge := none }
+    { target := .object endpointId, rights := AccessRightSet.ofList [.read] }
   let fullCnode : CNode := CNode.ofList 2 0 0 2 [
       (SeLe4n.Slot.ofNat 0, occupied), (SeLe4n.Slot.ofNat 1, occupied),
       (SeLe4n.Slot.ofNat 2, occupied), (SeLe4n.Slot.ofNat 3, occupied) ]

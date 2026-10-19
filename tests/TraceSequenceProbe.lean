@@ -58,7 +58,7 @@ def probeBaseState (threadCount : Nat) : SystemState :=
   -- WS-F7/D2c: CNode with one slot per thread targeting the endpoint
   let cnodeSlots : List (SeLe4n.Slot × Capability) :=
     (List.range threadCount).map fun n =>
-      (SeLe4n.Slot.ofNat n, ({ target := .object probeEndpointId, rights := AccessRightSet.ofList [.read, .write], badge := none } : Capability))
+      (SeLe4n.Slot.ofNat n, ({ target := .object probeEndpointId, rights := AccessRightSet.ofList [.read, .write] } : Capability))
   let cnodeObj : KernelObject := .cnode (CNode.ofList 8 0 0 8 cnodeSlots)
   let allEntries :=
     (probeEndpointId, KernelObject.endpoint {}) ::

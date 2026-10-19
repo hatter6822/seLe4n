@@ -308,7 +308,7 @@ theorem cspaceMutate_preserves_replyCapPointsToValidReply
         | cnode preCn =>
           simp only [hPre] at hStep
           cases hStore : storeObject addr.cnode (.cnode (preCn.insert addr.slot
-            { cap with rights := rights, badge := badge.orElse (fun _ => cap.badge) })) st with
+            ({ cap with rights := rights }.withBadge (badge.orElse (fun _ => cap.badge))))) st with
           | error e => simp_all
           | ok pair =>
             obtain ⟨_, stMid⟩ := pair
@@ -316,7 +316,7 @@ theorem cspaceMutate_preserves_replyCapPointsToValidReply
             obtain ⟨_, hStep⟩ := hStep
             have hRefObj : st'.objects = stMid.objects := by rw [hStep]
             have hMidSelf : stMid.objects[addr.cnode]? = some (.cnode (preCn.insert addr.slot
-                { cap with rights := rights, badge := badge.orElse (fun _ => cap.badge) })) :=
+                ({ cap with rights := rights }.withBadge (badge.orElse (fun _ => cap.badge))))) :=
               storeObject_objects_eq st stMid addr.cnode _ hObjInv hStore
             have hMidNe : ∀ oid, oid ≠ addr.cnode → stMid.objects[oid]? = st.objects[oid]? :=
               fun oid h => storeObject_objects_ne st stMid addr.cnode oid _ h hObjInv hStore
@@ -388,7 +388,7 @@ theorem cspaceMutate_preserves_capabilityInvariantBundle
           | cnode preCn =>
             simp only [hPre] at hStep
             cases hStore : storeObject addr.cnode (.cnode (preCn.insert addr.slot
-              { cap with rights := rights, badge := badge.orElse (fun _ => cap.badge) })) st with
+              ({ cap with rights := rights }.withBadge (badge.orElse (fun _ => cap.badge))))) st with
             | error e => simp_all
             | ok pair =>
               obtain ⟨_, stMid⟩ := pair
@@ -402,7 +402,7 @@ theorem cspaceMutate_preserves_capabilityInvariantBundle
                 (storeObject_cdt_eq st stMid addr.cnode _ hStore)
               have hDepthMid := cspaceDepthConsistent_of_storeObject_insertCNode
                 st stMid addr.cnode preCn addr.slot
-                { cap with rights := rights, badge := badge.orElse (fun _ => cap.badge) }
+                ({ cap with rights := rights }.withBadge (badge.orElse (fun _ => cap.badge)))
                 hDepthPre hObjInv hPre hStore
               have hObjInvMid := storeObject_preserves_objects_invExt st stMid addr.cnode _ hObjInv hStore
               exact ⟨cdtCompleteness_of_objects_cdt_eq stMid st' hCompMid hRefObj hRefCdt,

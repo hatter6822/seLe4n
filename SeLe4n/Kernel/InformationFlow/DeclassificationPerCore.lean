@@ -3339,8 +3339,7 @@ theorem auditRead_gates_are_five (ctx : LabelingContext) (oid : SeLe4n.ObjId)
     (reader : SecurityDomain) (c : CoreId) (count : Nat) (op : AuditReadOp)
     (st : SystemState) (epoch : Nat) :
     extractAuditAuthority
-        { target := .object oid, rights := AccessRightSet.ofList AccessRight.all,
-          badge := none } = .error .invalidCapability ∧
+        { target := .object oid, rights := AccessRightSet.ofList AccessRight.all, } = .error .invalidCapability ∧
     auditReadFromCore (liftLegacyContext ctx) none c op st = .error .illegalAuthority ∧
     auditDrainVisiblePrefix (liftLegacyContext ctx) none c count st = .error .illegalAuthority ∧
     (auditReadWord (liftLegacyContext ctx) none reader

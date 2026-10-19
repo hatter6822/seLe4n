@@ -283,15 +283,14 @@ private def rootCnode : CNode :=
       (SeLe4n.Slot.ofNat 0,
         { target := .object epHandler
           rights := AccessRightSet.ofList [.read, .write, .grant]
-          badge := some (SeLe4n.Badge.ofNat 7) }),
+          badgeWord := (SeLe4n.Badge.ofNat 7), badged := true }),
       (SeLe4n.Slot.ofNat 1,
         { target := .object epHandler
-          rights := AccessRightSet.ofList [.read]
-          badge := none }),
+          rights := AccessRightSet.ofList [.read] }),
       (SeLe4n.Slot.ofNat 2,
         { target := .object epHandler
           rights := AccessRightSet.ofList [.write, .grantReply]
-          badge := some (SeLe4n.Badge.ofNat 9) })
+          badgeWord := (SeLe4n.Badge.ofNat 9), badged := true })
     ]))
 
 private def mkTcb (tid : Nat) (prio : Nat) (aff : Option CoreId)

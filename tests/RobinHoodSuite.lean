@@ -204,8 +204,8 @@ private def rhIntCNode : CNode := CNode.mk' 0 0 0 4
 open CNode in
 /-- RH-INT-001: CNode lookup/insert/remove with RHTable-backed slots -/
 private def rhInt001_cnodeLookupInsertRemove : IO Unit := do
-  let cap1 : Capability := { target := .object ⟨100⟩, rights := AccessRightSet.ofList [.read], badge := none }
-  let cap2 : Capability := { target := .object ⟨200⟩, rights := AccessRightSet.ofList [.write], badge := none }
+  let cap1 : Capability := { target := .object ⟨100⟩, rights := AccessRightSet.ofList [.read] }
+  let cap2 : Capability := { target := .object ⟨200⟩, rights := AccessRightSet.ofList [.write] }
   let cn := rhIntCNode
   -- Insert two capabilities
   let cn := cn.insert (SeLe4n.Slot.ofNat 0) cap1
@@ -223,9 +223,9 @@ open CNode in
 private def rhInt002_revokeTargetLocal : IO Unit := do
   let target := CapTarget.object ⟨50⟩
   let otherTarget := CapTarget.object ⟨99⟩
-  let cap1 : Capability := { target := target, rights := AccessRightSet.ofList [.read, .grant], badge := none }
-  let cap2 : Capability := { target := target, rights := AccessRightSet.ofList [.read], badge := none }
-  let capOther : Capability := { target := otherTarget, rights := AccessRightSet.ofList [.write], badge := none }
+  let cap1 : Capability := { target := target, rights := AccessRightSet.ofList [.read, .grant] }
+  let cap2 : Capability := { target := target, rights := AccessRightSet.ofList [.read] }
+  let capOther : Capability := { target := otherTarget, rights := AccessRightSet.ofList [.write] }
   let cn := ((rhIntCNode.insert (SeLe4n.Slot.ofNat 0) cap1).insert (SeLe4n.Slot.ofNat 1) cap2).insert (SeLe4n.Slot.ofNat 2) capOther
   -- Revoke target from slot 0 (source) — should keep slot 0, remove slot 1, keep slot 2
   let cn' := cn.revokeTargetLocal (SeLe4n.Slot.ofNat 0) target
@@ -236,7 +236,7 @@ private def rhInt002_revokeTargetLocal : IO Unit := do
 open CNode in
 /-- RH-INT-003: CNode.findFirstEmptySlot with RHTable-backed slots -/
 private def rhInt003_findFirstEmptySlot : IO Unit := do
-  let cap : Capability := { target := .object ⟨10⟩, rights := AccessRightSet.ofList [.read], badge := none }
+  let cap : Capability := { target := .object ⟨10⟩, rights := AccessRightSet.ofList [.read] }
   -- CNode with slots 0 and 1 occupied
   let cn := (rhIntCNode.insert (SeLe4n.Slot.ofNat 0) cap).insert (SeLe4n.Slot.ofNat 1) cap
   -- Find first empty starting from slot 0 with limit 4
@@ -252,7 +252,7 @@ private def rhInt003_findFirstEmptySlot : IO Unit := do
 open CNode in
 /-- RH-INT-004: CNode slotCountBounded after insert sequence -/
 private def rhInt004_slotCountBounded : IO Unit := do
-  let cap : Capability := { target := .object ⟨10⟩, rights := AccessRightSet.ofList [.read], badge := none }
+  let cap : Capability := { target := .object ⟨10⟩, rights := AccessRightSet.ofList [.read] }
   let mut cn := rhIntCNode
   -- Insert several capabilities and verify slot count stays bounded
   for i in List.range 8 do
@@ -264,7 +264,7 @@ open CNode in
 /-- RH-INT-005: Multi-level CSpace resolution with RHTable-backed CNodes -/
 private def rhInt005_cspaceResolution : IO Unit := do
   -- Create a CNode with specific guard/radix for resolution testing
-  let cap : Capability := { target := .object ⟨42⟩, rights := AccessRightSet.ofList [.read, .write], badge := none }
+  let cap : Capability := { target := .object ⟨42⟩, rights := AccessRightSet.ofList [.read, .write] }
   let cn := CNode.ofList 4 0 0 2 [((SeLe4n.Slot.ofNat 0), cap), ((SeLe4n.Slot.ofNat 1), cap), ((SeLe4n.Slot.ofNat 3), cap)]
   -- Resolve slot from CPtr
   let result := cn.resolveSlot (SeLe4n.CPtr.ofNat 3) 4
@@ -280,7 +280,7 @@ private def rhInt005_cspaceResolution : IO Unit := do
 open CNode in
 /-- RH-INT-006: CNode BEq comparison with RHTable slots -/
 private def rhInt006_cnodeBEq : IO Unit := do
-  let cap : Capability := { target := .object ⟨10⟩, rights := AccessRightSet.ofList [.read], badge := none }
+  let cap : Capability := { target := .object ⟨10⟩, rights := AccessRightSet.ofList [.read] }
   -- Two CNodes built identically should be BEq-equal
   let cn1 := rhIntCNode.insert (SeLe4n.Slot.ofNat 0) cap
   let cn2 := rhIntCNode.insert (SeLe4n.Slot.ofNat 0) cap

@@ -134,7 +134,7 @@ theorem cspaceMutate_preserves_badgeWellFormed
           simp [hObj] at hStep
           cases hStore : storeObject addr.cnode
               (.cnode (cn.insert addr.slot
-                ⟨pair.1.target, rights, badge.or pair.1.badge, pair.1.mapping⟩)) st with
+                ({ pair.1 with rights := rights }.withBadge (badge.or pair.1.badge)))) st with
           | error e => simp [hStore] at hStep
           | ok storeResult =>
             obtain ⟨_, stMid⟩ := storeResult
