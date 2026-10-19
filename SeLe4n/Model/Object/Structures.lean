@@ -1615,61 +1615,6 @@ theorem resolveSlot_slotAddressable
     · simp only [hGuard, if_neg, not_false_eq_true] at hRes
       exact absurd hRes (by simp)
 
-/-- Empty CNode satisfies slot-count bound (0 ≤ 2^0 = 1). -/
-theorem empty_slotCountBounded : CNode.empty.slotCountBounded := by
-  unfold slotCountBounded empty slotCount
-  rw [slots_ofSlots]
-  have h := RHTable.size_filter_le_size (SeLe4n.UniqueSlotMap.empty : SeLe4n.UniqueSlotMap Capability).table
-    (fun s _ => decide (s.toNat < 2 ^ 0)) (SeLe4n.UniqueSlotMap.empty : SeLe4n.UniqueSlotMap Capability).hWF.1.1
-  have h0 : (SeLe4n.UniqueSlotMap.empty : SeLe4n.UniqueSlotMap Capability).table.size = 0 := by
-    simp [SeLe4n.UniqueSlotMap.empty, RHTable.empty]
-  simp only [SeLe4n.UniqueSlotMap.size, SeLe4n.UniqueSlotMap.filter, CNode.ofSlots_radixWidth]
-  omega
-
-/-- Removing a slot preserves the slot-count bound (size can only decrease).
-
-    WS-RC R4.A: now projects through `.table` for the underlying `RHTable`
-    monotonicity lemma. -/
-
-theorem remove_slotCountBounded
-    (cn : CNode) (slot : SeLe4n.Slot)
-    (hBounded : cn.slotCountBounded) :
-    (cn.remove slot).slotCountBounded := by
-  show (cn.remove slot).slots.table.size ≤ 2 ^ cn.radixWidth
-  rw [slots_remove]
-  have h : (cn.slots.erase slot).table.size ≤ cn.slots.table.size :=
-    RHTable.size_erase_le cn.slots.table slot
-  exact Nat.le_trans h hBounded
-
-/-- **WS-BP BP7.1 (`v0.36.7`): overwriting an occupied slot preserves the
-slot-count bound** — the rewrite replaces an entry rather than adding one
-(`RHTable.size_insert_le_of_get?`).  What an in-place capability rewrite (the
-frame-mapping record `.vspaceMap` writes) owes the CNode's capacity. -/
-theorem insert_slotCountBounded_of_lookup
-    (cn : CNode) (slot : SeLe4n.Slot) (old new : Capability)
-    (hBounded : cn.slotCountBounded) (hLk : cn.lookup slot = some old) :
-    (cn.insert slot new).slotCountBounded := by
-  unfold slotCountBounded slotCount
-  rw [insert_slots_of_addressable cn slot new (slotAddressable_of_lookup cn slot old hLk),
-    insert_radixWidth]
-  exact Nat.le_trans
-    (RHTable.size_insert_le_of_get? cn.slots.table slot new old cn.slots.hWF.1 hLk) hBounded
-
-/-- Revoking target-local preserves the slot-count bound (filter can only decrease size). -/
-
-theorem revokeTargetLocal_slotCountBounded
-    (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget)
-    (hBounded : cn.slotCountBounded)
-    (hUniq : cn.slotsUnique) :
-    (cn.revokeTargetLocal sourceSlot target).slotCountBounded := by
-  -- WS-RC R4.A: cn.slots is `UniqueSlotMap`; `.filter` returns a
-  -- `UniqueSlotMap`. Size is forwarded to the underlying `RHTable`.
-  show (cn.revokeTargetLocal sourceSlot target).slots.table.size ≤ 2 ^ cn.radixWidth
-  rw [revokeTargetLocal, slots_filterSlots]
-  have h := RHTable.size_filter_le_size cn.slots.table
-    (revokeTargetLocalKeeps sourceSlot target) hUniq.1.1
-  exact Nat.le_trans h hBounded
-
 /-- WS-G5: If a slot is present in the RHTable, lookup returns its value.
 With RHTable-backed slots, key uniqueness is maintained by the `noDupKeys`
 component of `invExt` (part of `slotsUnique`). -/

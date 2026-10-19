@@ -115,24 +115,20 @@ theorem cspaceInsertSlot_preserves_capabilityInvariantBundle
     (addr : CSpaceAddr)
     (cap : Capability)
     (hInv : capabilityInvariantBundle st)
-    (hSlotCapacity : ∀ cn, st.objects[addr.cnode]? = some (.cnode cn) →
-      (cn.insert addr.slot cap).slotCountBounded)
     (_hObjInv : st.objects.invExt)
     (hCapBacked : ∀ rid, cap.target = .replyCap rid → st.getReply? rid ≠ none)
     (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
-  rcases hInv with ⟨_hSound, hBounded, hComp, hAcyclic, hDepthPre, hObjInv, hRCPV, hLinks⟩
+  rcases hInv with ⟨_hSound, hComp, hAcyclic, hDepthPre, hObjInv, hRCPV, hLinks⟩
   -- WS-H4: Transfer new components through the storeObject(CNode) step
-  have ⟨hBounded', hComp', hAcyclic', hDepth', hObjInv', hLinks'⟩ :
-      cspaceSlotCountBounded st' ∧ cdtCompleteness st' ∧ cdtAcyclicity st' ∧
+  have ⟨hComp', hAcyclic', hDepth', hObjInv', hLinks'⟩ :
+      cdtCompleteness st' ∧ cdtAcyclicity st' ∧
         cspaceDepthConsistent st' ∧ st'.objects.invExt ∧ cdtLinksAgree st' := by
     obtain ⟨preCn, hCnOpt, _hAddr, _hLookup, hStore⟩ :=
       cspaceInsertSlot_ok_decompose st st' addr cap hStep
     have hPre : st.objects[addr.cnode]? = some (.cnode preCn) :=
       (SystemState.getCNode?_eq_some_iff st addr.cnode preCn).mp hCnOpt
-    exact ⟨cspaceSlotCountBounded_of_storeObject_cnode st st' addr.cnode
-        (preCn.insert addr.slot cap) hBounded hObjInv hStore (hSlotCapacity preCn hPre),
-      cdtCompleteness_of_storeObject_cnode_mono st st' addr.cnode preCn
+    exact ⟨cdtCompleteness_of_storeObject_cnode_mono st st' addr.cnode preCn
         (preCn.insert addr.slot cap) hComp hObjInv hPre hStore
         (fun s h => CNode.lookup_insert_ne_none preCn addr.slot s cap h),
       cdtAcyclicity_of_cdt_eq st st' hAcyclic
@@ -143,7 +139,7 @@ theorem cspaceInsertSlot_preserves_capabilityInvariantBundle
       cdtLinksAgree_of_eq hLinks (storeObject_cdt_eq st st' addr.cnode _ hStore)
         (SystemState.slotLinkAt_storeObject_cnode hObjInv hPre (CNode.insert_links ..) hStore)⟩
   exact ⟨cspaceLookupSound_holds st',
-    hBounded', hComp', hAcyclic', hDepth', hObjInv',
+    hComp', hAcyclic', hDepth', hObjInv',
     cspaceInsertSlot_preserves_replyCapPointsToValidReply st st' addr cap hRCPV hObjInv hCapBacked hStep,
     hLinks'⟩
 
@@ -234,8 +230,6 @@ theorem cspaceMint_preserves_capabilityInvariantBundle
     (rights : AccessRightSet)
     (badge : Option SeLe4n.Badge)
     (hInv : capabilityInvariantBundle st)
-    (hDstCapacity : ∀ cn cap, st.objects[dst.cnode]? = some (.cnode cn) →
-      (cn.insert dst.slot cap).slotCountBounded)
     (hStep : cspaceMint src dst rights badge st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
   unfold cspaceMint at hStep
@@ -262,7 +256,6 @@ theorem cspaceMint_preserves_capabilityInvariantBundle
           have hChildTgt : child.target = parent.target :=
             mintDerivedCap_target_preserved_with_badge_override ⟨parent, hNotNull⟩ child rights badge hMint
           exact cspaceInsertSlot_preserves_capabilityInvariantBundle st st' dst child hInv
-            (fun cn hObj => hDstCapacity cn child hObj)
             (objects_invExt_of_capabilityInvariantBundle st hInv)
             (fun rid h => replyCapBacked_of_source_slot st src parent hInv hSrc rid
               (by rw [← hChildTgt]; exact h))
@@ -277,8 +270,6 @@ preservation; only the slot write matters). -/
 theorem mintReplyCap_preserves_capabilityInvariantBundle
     (st st' : SystemState) (src dst : CSpaceAddr)
     (hInv : capabilityInvariantBundle st)
-    (hDstCapacity : ∀ cn cap, st.objects[dst.cnode]? = some (.cnode cn) →
-      (cn.insert dst.slot cap).slotCountBounded)
     (hStep : mintReplyCap src dst st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
   unfold mintReplyCap at hStep
@@ -298,7 +289,6 @@ theorem mintReplyCap_preserves_capabilityInvariantBundle
                     rights := AccessRightSet.ofList [.write], badge := none } st
                   = .ok ((), st') := by simpa [hSrc, hTgt, hRep] using hStep
               exact cspaceInsertSlot_preserves_capabilityInvariantBundle st st' dst _ hInv
-                (fun cn hObj => hDstCapacity cn _ hObj)
                 (objects_invExt_of_capabilityInvariantBundle st hInv)
                 (fun rid h => by
                   simp only [CapTarget.replyCap.injEq] at h; subst h; rw [hRep]; simp) hInsert

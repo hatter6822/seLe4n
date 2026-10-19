@@ -81,7 +81,7 @@ theorem faultSuspendOnCore_preserves_schedulerInvariantBase_smp (st : SystemStat
 theorem faultSuspendOnCore_preserves_capabilityInvariantBundle (st : SystemState)
     (tid : SeLe4n.ThreadId) (c : CoreId) (h : capabilityInvariantBundle st) :
     capabilityInvariantBundle (faultSuspendOnCore st tid c) := by
-  have hObjInv : st.objects.invExt := h.2.2.2.2.2.1
+  have hObjInv : st.objects.invExt := h.objectsInvExt
   have hCdt := faultSuspendOnCore_cdt_eq st tid c
   exact capabilityInvariantBundle_of_kindPreserving h hCdt
     (faultSuspendOnCore_preserves_objects_invExt st tid c hObjInv)
@@ -105,7 +105,7 @@ theorem faultAbandonOnCore_preserves_schedulerInvariantBase_smp (st : SystemStat
 theorem faultAbandonOnCore_preserves_capabilityInvariantBundle (st : SystemState)
     (tid : SeLe4n.ThreadId) (c : CoreId) (h : capabilityInvariantBundle st) :
     capabilityInvariantBundle (faultAbandonOnCore st tid c) := by
-  have hObjInv : st.objects.invExt := h.2.2.2.2.2.1
+  have hObjInv : st.objects.invExt := h.objectsInvExt
   have hCdt := faultAbandonOnCore_cdt_eq st tid c
   exact capabilityInvariantBundle_of_kindPreserving h hCdt
     (faultAbandonOnCore_preserves_objects_invExt st tid c hObjInv)
@@ -131,7 +131,7 @@ theorem faultReplyApplyOnCore_preserves_capabilityInvariantBundle (st : SystemSt
     (faulted : SeLe4n.ThreadId) (outcome : Architecture.FaultReplyOutcome)
     (h : capabilityInvariantBundle st) :
     capabilityInvariantBundle (faultReplyApplyOnCore st faulted outcome) := by
-  have hObjInv : st.objects.invExt := h.2.2.2.2.2.1
+  have hObjInv : st.objects.invExt := h.objectsInvExt
   unfold faultReplyApplyOnCore
   cases outcome with
   | restart frame =>
@@ -215,7 +215,7 @@ theorem faultDeliverOnCore_preserves_capabilityInvariantBundle (st : SystemState
     (tid : SeLe4n.ThreadId) (f : Fault) (ctx : FaultContext) (executingCore : CoreId)
     (h : capabilityInvariantBundle st) :
     capabilityInvariantBundle (faultDeliverOnCore st tid f ctx executingCore).1 := by
-  have hObjInv : st.objects.invExt := h.2.2.2.2.2.1
+  have hObjInv : st.objects.invExt := h.objectsInvExt
   have hSusp := faultSuspendOnCore_preserves_capabilityInvariantBundle st tid executingCore h
   have hSuspObj := faultSuspendOnCore_preserves_objects_invExt st tid executingCore hObjInv
   have hFail : ∀ tf : ThreadFault,
@@ -313,7 +313,7 @@ theorem faultReplyOnCore_preserves_capabilityInvariantBundle
     (regs : Array SeLe4n.RegValue) (executingCore : CoreId) (st : SystemState)
     (h : capabilityInvariantBundle st) :
     capabilityInvariantBundle (faultReplyOnCore replier faulted mi regs executingCore st).1 := by
-  have hObjInv : st.objects.invExt := h.2.2.2.2.2.1
+  have hObjInv : st.objects.invExt := h.objectsInvExt
   unfold faultReplyOnCore
   cases hT : st.getTcb? faulted with
   | none => exact h

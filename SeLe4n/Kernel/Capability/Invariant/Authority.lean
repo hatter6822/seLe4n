@@ -605,7 +605,6 @@ carries `UniqueSlotMap.hWF` by construction).  Callers that need to
 build a bundle from primitive ingredients use this helper. -/
 theorem capabilityInvariantBundle_of_components
     (st : SystemState)
-    (hBounded : cspaceSlotCountBounded st)
     (hComp : cdtCompleteness st)
     (hAcyclic : cdtAcyclicity st)
     (hDepth : cspaceDepthConsistent st)
@@ -614,7 +613,7 @@ theorem capabilityInvariantBundle_of_components
     (hLinks : cdtLinksAgree st) :
     capabilityInvariantBundle st :=
   ⟨cspaceLookupSound_holds st,
-    hBounded, hComp, hAcyclic, hDepth, hObjInv, hRCPV, hLinks⟩
+    hComp, hAcyclic, hDepth, hObjInv, hRCPV, hLinks⟩
 
 /-! ## WS-RR RR8.16 (`v0.35.197`) — what the capability bundle READS
 
@@ -627,8 +626,8 @@ step owed a fresh forty-line case analysis over predicates it does not touch.
 
 The frame states the read set once, and it is smaller than the bundle's
 quantifiers suggest.  `cspaceLookupSound` is structural
-(`cspaceLookupSound_holds`), so it needs nothing.  Three conjuncts
-(`cspaceSlotCountBounded`, `cspaceDepthConsistent`, and the CNode half of
+(`cspaceLookupSound_holds`), so it needs nothing.  Two conjuncts
+(`cspaceDepthConsistent` and the CNode half of
 `replyCapPointsToValidReply`) read **CNodes** and are transported **backward** —
 a post-state CNode must be a pre-state CNode, which is exactly what a store at a
 TCB key gives.  `cdtCompleteness` reads the CDT and asks that every slot it
@@ -692,10 +691,9 @@ theorem capabilityInvariantBundle_of_frame {st st' : SystemState}
     (hReply : ∀ rid : SeLe4n.ReplyId, st.getReply? rid ≠ none → st'.getReply? rid ≠ none)
     (hObjInv : st'.objects.invExt) :
     capabilityInvariantBundle st' := by
-  obtain ⟨_, hBounded, hComp, hAcyclic, hDepth, _, hRCPV, hLinks⟩ := h
-  refine capabilityInvariantBundle_of_components st' ?_ ?_ ?_ ?_ hObjInv ?_
+  obtain ⟨_, hComp, hAcyclic, hDepth, _, hRCPV, hLinks⟩ := h
+  refine capabilityInvariantBundle_of_components st' ?_ ?_ ?_ hObjInv ?_
     (cdtLinksAgree_of_cnode_iff hLinks hCdt fun oid cn => ⟨hCnode oid cn, hCnodeFwd oid cn⟩)
-  · exact fun oid cn hCn => hBounded oid cn (hCnode oid cn hCn)
   · intro ref hRef
     rw [hCdt] at hRef
     obtain ⟨cn, hCn, hL⟩ := hComp ref hRef
@@ -711,12 +709,6 @@ Every conjunct reads a CNode through its slots and geometry, which the links do
 not touch, or reads the tree.  So a step whose objects agree with the pre-state's
 off the CNodes' derivation links (`objectsAgreeOffDerivationLinks`) keeps each
 conjunct, and keeps the tree-reading ones when it keeps the tree. -/
-
-theorem cspaceSlotCountBounded_of_agree {st st' : SystemState}
-    (hA : SystemState.objectsAgreeOffDerivationLinks st' st) (h : cspaceSlotCountBounded st) :
-    cspaceSlotCountBounded st' := fun oid cn' hO => by
-  obtain ⟨cn, hc, hw⟩ := hA.cnode_back hO
-  exact (CNode.proj_eq_of_withoutLinks_eq (fun c => c.slotCountBounded) hw).mpr (h oid cn hc)
 
 theorem cspaceDepthConsistent_of_agree {st st' : SystemState}
     (hA : SystemState.objectsAgreeOffDerivationLinks st' st) (h : cspaceDepthConsistent st) :
@@ -754,9 +746,9 @@ theorem capabilityInvariantBundle_of_agree {st st' : SystemState}
     (hCdt : st'.cdt = st.cdt) (hObjInv : st'.objects.invExt)
     (hLinks : cdtLinksAgree st') :
     capabilityInvariantBundle st' := by
-  obtain ⟨_, hBounded, hComp, hAcyclic, hDepth, _, hRCPV⟩ := h
+  obtain ⟨_, hComp, hAcyclic, hDepth, _, hRCPV⟩ := h
   refine capabilityInvariantBundle_of_components st'
-    (cspaceSlotCountBounded_of_agree hA hBounded) (cdtCompleteness_of_agree hA hCdt hComp)
+    (cdtCompleteness_of_agree hA hCdt hComp)
     ?_ (cspaceDepthConsistent_of_agree hA hDepth) hObjInv
     (replyCapPointsToValidReply_of_agree hA hRCPV) hLinks
   unfold cdtAcyclicity at hAcyclic ⊢; rw [hCdt]; exact hAcyclic
@@ -780,7 +772,7 @@ theorem capabilityInvariantBundle_of_objects_and_cdt_eq {st st' : SystemState}
     (fun _ _ hCn => by rw [hObjs] at hCn; exact hCn)
     (fun _ _ hCn => by rw [hObjs]; exact hCn)
     (fun _ hR => by unfold SystemState.getReply? at hR ⊢; rw [hObjs]; exact hR)
-    (by rw [hObjs]; exact h.2.2.2.2.2.1)
+    (by rw [hObjs]; exact h.2.2.2.2.1)
 
 /-- WS-RR RR8.16 (`v0.35.197`): the **pointwise** instance, which is the one the
 IPC chains use.  A step whose every write lands on a key that keeps its object
@@ -852,7 +844,7 @@ theorem storeObject_preserves_capabilityInvariantBundle_of_kind
     (hKind : obj.objectType = pre.objectType)
     (hNotCnode : obj.objectType ≠ KernelObjectType.cnode) :
     capabilityInvariantBundle st' := by
-  have hObjInv : st.objects.invExt := h.2.2.2.2.2.1
+  have hObjInv : st.objects.invExt := h.2.2.2.2.1
   exact capabilityInvariantBundle_of_kindPreserving h
     (storeObject_cdt_eq st st' oid obj hStore)
     (storeObject_preserves_objects_invExt st st' oid obj hObjInv hStore)
@@ -886,7 +878,7 @@ theorem propagatePipChainCrossCore_preserves_capabilityInvariantBundle
     (h : capabilityInvariantBundle st) :
     capabilityInvariantBundle
       (SeLe4n.Kernel.PriorityInheritance.propagatePipChainCrossCore st startTid ec fuel).1 := by
-  have hInv : st.objects.invExt := h.2.2.2.2.2.1
+  have hInv : st.objects.invExt := h.2.2.2.2.1
   exact capabilityInvariantBundle_of_kindPreserving h
     (SeLe4n.Kernel.PriorityInheritance.propagatePipChainCrossCore_cdt fuel st startTid ec)
     (SeLe4n.Kernel.PriorityInheritance.propagatePipChainCrossCore_preserves_objects_invExt st
@@ -909,7 +901,7 @@ theorem returnDonatedSchedContext_preserves_capabilityInvariantBundle
     (hStep : SeLe4n.Kernel.returnDonatedSchedContext st serverTid scId originalOwner
       newOwner? = .ok st') :
     capabilityInvariantBundle st' := by
-  have hObjInv : st.objects.invExt := h.2.2.2.2.2.1
+  have hObjInv : st.objects.invExt := h.2.2.2.2.1
   exact capabilityInvariantBundle_of_kindPreserving h
     (SeLe4n.Kernel.returnDonatedSchedContext_cdt_eq hStep)
     (SeLe4n.Kernel.returnDonatedSchedContext_preserves_objects_invExt' st st' serverTid scId

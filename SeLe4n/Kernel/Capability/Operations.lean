@@ -623,10 +623,10 @@ def cspaceInsertSlot (addr : CSpaceAddr) (cap : Capability) : Kernel Unit :=
         -- **WS-RR RR8.16** (`v0.35.201`): the destination index must be one this
         -- CNode can *address*.  `resolveSlot` extracts a slot by masking with
         -- `2 ^ radixWidth`, so an index at or above `slotCount` can be stored
-        -- and can never be reached by any CPtr — and `CNode.insert` at a fresh
-        -- key grows the slot table, so without this check a holder of a copy- or
-        -- mint-bearing capability grows a *fixed-size* kernel object without
-        -- bound and falsifies `cspaceSlotCountBounded`.
+        -- and can never be reached by any CPtr.  Before WS-ZA ZA5.3 made a
+        -- CNode's slots a fixed array, `CNode.insert` at a fresh key grew the
+        -- slot table, so without this check a holder of a copy- or mint-bearing
+        -- capability grew a *fixed-size* kernel object without bound.
         --
         -- The check is here, and only here, because this is the one primitive
         -- all four installs pass through — `cspaceCopy`, `cspaceMint`,

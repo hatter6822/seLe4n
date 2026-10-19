@@ -4491,8 +4491,8 @@ private def runWSRR8CSpaceSlotRangeChecks : IO Unit := do
   -- ...and the retired reading, which once installed there and left a CNode
   -- holding more capabilities than it has slots, now stores nothing: WS-ZA
   -- ZA5.3's slot array has no entry past `2 ^ radixWidth`, so `CNode.insert`
-  -- at slot 9 leaves the CNode as it was and `cspaceSlotCountBounded` holds
-  -- even without the guard.
+  -- at slot 9 leaves the CNode as it was and the slot-count bound
+  -- (`CNode.slotCountBounded_holds`) holds even without the guard.
   match unguardedInsertSlot fullOutOfRangeDst occupied fullState with
   | .error e =>
       throw <| IO.userError

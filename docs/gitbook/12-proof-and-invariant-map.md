@@ -88,8 +88,9 @@ Per-core lifts live in `Scheduler/Invariant/PerCore.lean` and
 
 ```
 capabilityInvariantBundle :=
-  cspaceLookupSound ∧ cspaceSlotCountBounded ∧ cdtCompleteness ∧ cdtAcyclicity
+  cspaceLookupSound ∧ cdtCompleteness ∧ cdtAcyclicity
   ∧ cspaceDepthConsistent ∧ objects.invExt ∧ replyCapPointsToValidReply
+  ∧ cdtLinksAgree
 ```
 
 `cdtAcyclicity` and `cdtCompleteness` are the capability derivation tree's

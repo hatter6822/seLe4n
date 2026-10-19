@@ -190,8 +190,6 @@ theorem ipcTransferSingleCap_preserves_capabilityInvariantBundle
     (receiverRoot : SeLe4n.ObjId) (slotBase : SeLe4n.Slot) (scanLimit : Nat)
     (result : CapTransferResult)
     (hInv : capabilityInvariantBundle st)
-    (hSlotCapacity : ∀ cn, st.objects[receiverRoot]? = some (.cnode cn) →
-      ∀ s, (cn.insert s cap.withoutMapping).slotCountBounded)
     (hCapBacked : ∀ rid, cap.target = .replyCap rid → st.getReply? rid ≠ none)
     (hStep : ipcTransferSingleCap cap srcNode receiverRoot slotBase scanLimit st
              = .ok (result, st')) :
@@ -201,10 +199,6 @@ theorem ipcTransferSingleCap_preserves_capabilityInvariantBundle
   cases hCn : st.getCNode? receiverRoot with
   | none => simp [hCn] at hStep
   | some cn =>
-    -- Bridge to raw lookup form so `hSlotCapacity` (stated against raw
-    -- lookup) can be discharged from the typed-helper hypothesis.
-    have hObj : st.objects[receiverRoot]? = some (.cnode cn) :=
-      (SystemState.getCNode?_eq_some_iff st receiverRoot cn).mp hCn
     simp [hCn] at hStep
     cases hSlot : cn.findFirstEmptySlotChecked slotBase scanLimit with
       | none =>
@@ -223,14 +217,13 @@ theorem ipcTransferSingleCap_preserves_capabilityInvariantBundle
           rcases pair2 with ⟨_, st2⟩
           have hBundleSt2 := cspaceInsertSlot_preserves_capabilityInvariantBundle st st2
             { cnode := receiverRoot, slot := emptySlot } cap.withoutMapping hInv
-            (fun cn' hObj' => hSlotCapacity cn' (by rw [hObj] at hObj'; cases hObj'; exact hObj) emptySlot)
             (objects_invExt_of_capabilityInvariantBundle st hInv) hCapBacked hIns
           have hCdt := cdt_addEdge_after_insert st st2 srcNode
             { cnode := receiverRoot, slot := emptySlot } cap.withoutMapping .ipcTransfer
-            hInv.2.2.1 hInv.2.2.2.1 (objects_invExt_of_capabilityInvariantBundle st hInv)
+            hInv.2.1 hInv.2.2.1 (objects_invExt_of_capabilityInvariantBundle st hInv)
             (by unfold cdtNodeIsRevocable at hSrc; exact hSrc) hIns hInv.linksAgree
           have hIX := objects_invExt_of_capabilityInvariantBundle _ hBundleSt2
-          rcases hBundleSt2 with ⟨_, hBnd2, _, _, hDepth2, hObjInv2, hRCPV2, -⟩
+          rcases hBundleSt2 with ⟨_, _, _, hDepth2, hObjInv2, hRCPV2, -⟩
           simp [hIns] at hStep
           obtain ⟨_, rfl⟩ := hStep
           have hObjFinal : ∀ cdt' : CapDerivationTree,
@@ -238,7 +231,6 @@ theorem ipcTransferSingleCap_preserves_capabilityInvariantBundle
           refine capabilityInvariantBundle_of_linkReach ?_
             (SystemState.cdtAddChild_reach st2 srcNode _ .ipcTransfer) hIX hCdt.2.2
           exact ⟨cspaceLookupSound_holds _,
-            cspaceSlotCountBounded_of_objects_eq st2 _ hBnd2 (hObjFinal _),
             hCdt.1, hCdt.2.1,
             cspaceDepthConsistent_of_objects_eq st2 _ hDepth2 (hObjFinal _),
             (hObjFinal _) ▸ hObjInv2,
@@ -247,17 +239,13 @@ theorem ipcTransferSingleCap_preserves_capabilityInvariantBundle
 /-- V3-E / M3-D3b: `ipcUnwrapCapsLoop` preserves `capabilityInvariantBundle`
 through fuel-indexed induction. Each iteration delegates to
 `ipcTransferSingleCap_preserves_capabilityInvariantBundle`, threading
-`hSlotCap` (slot capacity) through the recursive structure; each step keeps
-the tree sound from its own pre-state. -/
+`hCapBacked` (reply-cap backing) through the recursive structure; each step
+keeps the tree sound from its own pre-state. -/
 theorem ipcUnwrapCapsLoop_preserves_capabilityInvariantBundle
     (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
     (idx : Nat) (nextBase : SeLe4n.Slot) (accResults : Array CapTransferResult)
     (fuel : Nat) (st st' : SystemState) (summary : CapTransferSummary)
     (hInv : capabilityInvariantBundle st)
-    (hSlotCap : ∀ (stI : SystemState) (cap : Capability),
-        capabilityInvariantBundle stI →
-        ∀ cn, stI.objects[receiverRoot]? = some (.cnode cn) →
-          ∀ s, (cn.insert s cap).slotCountBounded)
     (hCapBacked : ∀ (stI : SystemState) (cap : Capability),
         capabilityInvariantBundle stI →
         ∀ rid, cap.target = .replyCap rid → stI.getReply? rid ≠ none)
@@ -290,7 +278,6 @@ theorem ipcUnwrapCapsLoop_preserves_capabilityInvariantBundle
           st stNext tc.cap tc.srcSlot
           receiverRoot nextBase maxExtraCaps result
           hInv
-          (hSlotCap st tc.cap.withoutMapping hInv)
           (hCapBacked st tc.cap hInv)
           hTransfer
         simp [hTransfer] at hStep
@@ -310,10 +297,6 @@ theorem ipcUnwrapCaps_preserves_capabilityInvariantBundle_grant
     (slotBase : SeLe4n.Slot)
     (summary : CapTransferSummary)
     (hInv : capabilityInvariantBundle st)
-    (hSlotCap : ∀ (stI : SystemState) (cap : Capability),
-        capabilityInvariantBundle stI →
-        ∀ cn, stI.objects[receiverRoot]? = some (.cnode cn) →
-          ∀ s, (cn.insert s cap).slotCountBounded)
     (hCapBacked : ∀ (stI : SystemState) (cap : Capability),
         capabilityInvariantBundle stI →
         ∀ rid, cap.target = .replyCap rid → stI.getReply? rid ≠ none)
@@ -324,7 +307,7 @@ theorem ipcUnwrapCaps_preserves_capabilityInvariantBundle_grant
   exact ipcUnwrapCapsLoop_preserves_capabilityInvariantBundle
     msg.caps receiverRoot
     0 slotBase #[] msg.caps.size
-    st st' summary hInv hSlotCap hCapBacked hStep
+    st st' summary hInv hCapBacked hStep
 
 /-- M3-D3 / V3-E: ipcUnwrapCaps preserves capabilityInvariantBundle when the
 endpoint lacks Grant right (grantRight = false). In this case, all caps are
@@ -351,9 +334,9 @@ the IPC rendezvous composition chain.
 
 - **Grant=false**: State unchanged (no transfers), trivially preserved.
 - **Grant=true**: Fuel-indexed induction over `ipcUnwrapCapsLoop`, threading
-  the slot-capacity hypothesis per-iteration.
+  the reply-cap backing hypothesis per-iteration.
 
-The `hSlotCap` hypothesis is vacuous when Grant=false (no
+The `hCapBacked` hypothesis is vacuous when Grant=false (no
 `ipcTransferSingleCap` calls occur). -/
 theorem ipcUnwrapCaps_preserves_capabilityInvariantBundle
     (st st' : SystemState) (msg : IpcMessage)
@@ -362,10 +345,6 @@ theorem ipcUnwrapCaps_preserves_capabilityInvariantBundle
     (endpointGrantRight : Bool)
     (summary : CapTransferSummary)
     (hInv : capabilityInvariantBundle st)
-    (hSlotCap : ∀ (stI : SystemState) (cap : Capability),
-        capabilityInvariantBundle stI →
-        ∀ cn, stI.objects[receiverRoot]? = some (.cnode cn) →
-          ∀ s, (cn.insert s cap).slotCountBounded)
     (hCapBacked : ∀ (stI : SystemState) (cap : Capability),
         capabilityInvariantBundle stI →
         ∀ rid, cap.target = .replyCap rid → stI.getReply? rid ≠ none)
@@ -379,7 +358,7 @@ theorem ipcUnwrapCaps_preserves_capabilityInvariantBundle
   | true =>
     exact ipcUnwrapCaps_preserves_capabilityInvariantBundle_grant
       st st' msg receiverRoot slotBase summary
-      hInv hSlotCap hCapBacked hStep
+      hInv hCapBacked hStep
 
 -- ============================================================================
 -- V3-D (M-PRF-1): CDT Acyclicity Discharge Chain Documentation
@@ -422,7 +401,7 @@ theorem cdtShrinkingOps_preserve_acyclicity
 
 `ipcUnwrapCapsLoop_preserves_capabilityInvariantBundle` composes the per-step
 `ipcTransferSingleCap_preserves_capabilityInvariantBundle` by induction on the
-fuel, threading only the receiver's slot capacity (`hSlotCap`).  The no-Grant
+fuel, threading only the reply-cap backing (`hCapBacked`).  The no-Grant
 case leaves the state unchanged
 (`ipcUnwrapCaps_preserves_capabilityInvariantBundle_noGrant`).
 -/

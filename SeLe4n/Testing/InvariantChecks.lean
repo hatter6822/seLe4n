@@ -259,8 +259,9 @@ private def cspaceSlotCoherencyChecks (objectIds : List SeLe4n.ObjId) (st : Syst
 /-- **WS-RR RR8.16** (`v0.35.201`): every occupied slot of a CNode is addressable
 by that CNode's own radix width.
 
-`cspaceSlotCountBounded` — `cn.slots.size ≤ cn.slotCount` — is a conjunct of
-`capabilityInvariantBundle`, and **nothing here asserted it**: the word
+`cspaceSlotCountBounded` — `cn.slots.size ≤ cn.slotCount` — was a conjunct of
+`capabilityInvariantBundle` (a theorem since WS-ZA ZA5.3's fixed slot array),
+and **nothing here asserted it**: the word
 `slotCountBounded` appeared nowhere under `SeLe4n/Testing/`.  That is how six
 fixture CNodes came to declare `radixWidth := 0` — *one* slot — while holding
 capabilities at indices up to 12, the trace harness's own bootstrap root CSpace

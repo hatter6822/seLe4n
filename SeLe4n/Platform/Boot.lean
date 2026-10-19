@@ -1999,7 +1999,7 @@ private theorem bootSafeObjectCheck_sound_core (obj : KernelObject)
     -- CNodes: structural, and (WS-BP BP3.5) every held capability's badge is
     -- valid and none is a reply capability
     (∀ cn, obj = .cnode cn →
-      cn.slotCountBounded ∧ cn.depth ≤ maxCSpaceDepth ∧
+      cn.depth ≤ maxCSpaceDepth ∧
       (cn.bitsConsumed > 0 → cn.wellFormed) ∧
       (∀ slot cap badge, cn.lookup slot = some cap →
         cap.badge = some badge → badge.valid) ∧
@@ -2063,7 +2063,7 @@ private theorem bootSafeObjectCheck_sound_core (obj : KernelObject)
     exact ⟨fun _ he => by injection he, fun _ he => by injection he,
            fun c hc => by
              injection hc; subst_vars
-             exact ⟨CNode.slotCountBounded_holds _, hDepth, hWf,
+             exact ⟨hDepth, hWf,
                fun _ _ badge hL hB => (bootSafeCnodeCheck_caps hCaps hL).1 badge hB,
                fun _ _ rid hL => (bootSafeCnodeCheck_caps hCaps hL).2.1 rid, hClear⟩,
            fun _ he => by injection he, fun _ he => by injection he,
@@ -2155,7 +2155,7 @@ theorem bootSafeObjectCheck_sound (obj : KernelObject)
       notif.state = .idle ∧ notif.waitHead = none ∧ notif.waitTail = none ∧
       notif.pendingBadge = none) ∧
     (∀ cn, obj = .cnode cn →
-      cn.slotCountBounded ∧ cn.depth ≤ maxCSpaceDepth ∧
+      cn.depth ≤ maxCSpaceDepth ∧
       (cn.bitsConsumed > 0 → cn.wellFormed) ∧
       (∀ slot cap badge, cn.lookup slot = some cap →
         cap.badge = some badge → badge.valid) ∧
@@ -5087,7 +5087,7 @@ def bootSafeObject (obj : KernelObject) : Prop :=
   -- `replyCapPointsToValidReply` conjunct of `capabilityInvariantBundle` vacuously true
   -- for the boot state.
   (∀ cn, obj = .cnode cn →
-    cn.slotCountBounded ∧ cn.depth ≤ maxCSpaceDepth ∧
+    cn.depth ≤ maxCSpaceDepth ∧
     (cn.bitsConsumed > 0 → cn.wellFormed) ∧
     (∀ slot cap badge, cn.lookup slot = some cap →
       cap.badge = some badge → badge.valid) ∧
@@ -5202,7 +5202,7 @@ def bootObjectShape (obj : KernelObject) : Prop :=
     notif.state = .idle ∧ notif.waitHead = none ∧ notif.waitTail = none ∧
       notif.pendingBadge = none) ∧
   (∀ cn, obj = .cnode cn →
-    cn.slotCountBounded ∧ cn.depth ≤ maxCSpaceDepth ∧
+    cn.depth ≤ maxCSpaceDepth ∧
     (cn.bitsConsumed > 0 → cn.wellFormed) ∧
     (∀ slot cap badge, cn.lookup slot = some cap →
       cap.badge = some badge → badge.valid) ∧
@@ -5534,19 +5534,14 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
     exact RHTable_get?_empty 16 (by omega)
   -- 2. capabilityInvariantBundle
   have hCapBundle : capabilityInvariantBundle ist.state := by
-    -- WS-RC R4.A.6: bundle has 6 conjuncts (cspaceSlotUnique dropped).
-    -- The per-CNode `slotsUnique` invariant is carried structurally on every
-    -- `UniqueSlotMap` value; the builder-phase `hSlots` witness is preserved
-    -- by the boot path for backward compatibility but no longer flows through
-    -- this bundle.
-    refine ⟨?_, ?_, ?_, ?_, ?_, hAllTables.1.1, ?_, ?_⟩
+    -- The per-CNode `slotsUnique` and slot-count invariants are carried
+    -- structurally (`UniqueSlotMap`, the fixed slot array), so neither is a
+    -- conjunct of this bundle.
+    refine ⟨?_, ?_, ?_, ?_, hAllTables.1.1, ?_, ?_⟩
     · -- cspaceLookupSound
       intro cnodeId cn slot cap hObj hLookupSlot
       show SystemState.lookupSlotCap _ _ = some cap
       unfold SystemState.lookupSlotCap SystemState.lookupCNode; rw [hObj]; exact hLookupSlot
-    · -- cspaceSlotCountBounded
-      intro cnodeId cn hObj
-      exact ((hBS cnodeId _ hObj).2.2.1 cn rfl).1
     · -- cdtCompleteness: the derivation tree is empty
       intro ref hRef; rw [hCdt] at hRef
       exact absurd hRef (CapDerivationTree.empty_not_mentions ref)
@@ -5556,11 +5551,11 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
     · -- cspaceDepthConsistent
       intro cnodeId cn hObj
       have hCN := (hBS cnodeId _ hObj).2.2.1 cn rfl
-      exact ⟨hCN.2.1, hCN.2.2.1⟩
+      exact ⟨hCN.1, hCN.2.1⟩
     · -- replyCapPointsToValidReply: boot CNodes hold no reply caps (`bootSafeObject`),
       -- so the reply-cap hypothesis is contradicted and the conjunct is vacuous.
       intro oid cn slot cap rid hObj hLookupSlot hTgt
-      exact absurd hTgt (((hBS oid _ hObj).2.2.1 cn rfl).2.2.2.2.1 slot cap rid hLookupSlot)
+      exact absurd hTgt (((hBS oid _ hObj).2.2.1 cn rfl).2.2.2.1 slot cap rid hLookupSlot)
     · -- cdtLinksAgree: the tree is empty and boot CNodes hold no link.
       refine LinksAgree.of_no_edges (by rw [hCdt]; exact CapDerivationTree.empty_edges) fun r f => ?_
       rw [SystemState.slotLinkAt_def]
@@ -5568,7 +5563,7 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
       | none => rfl
       | some o =>
         cases o with
-        | cnode cn => exact CNode.linkAt_of_linksClear ((hBS _ _ hO).2.2.1 cn rfl).2.2.2.2.2 r.slot f
+        | cnode cn => exact CNode.linkAt_of_linksClear ((hBS _ _ hO).2.2.1 cn rfl).2.2.2.2 r.slot f
         | _ => rfl
   -- 5. lifecycleInvariantBundle
   have hLifeBundle : lifecycleInvariantBundle ist.state :=
@@ -5649,7 +5644,7 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
       · -- capabilityBadgesWellFormed
         intro oid cn slot cap badge hObj hSlotLookup hBadge
         have hCN := (hBS oid _ hObj).2.2.1 cn rfl
-        exact hCN.2.2.2.1 slot cap badge hSlotLookup hBadge
+        exact hCN.2.2.1 slot cap badge hSlotLookup hBadge
     · -- blockedThreadsPendingMessageConsistent
       intro tid tcb hObj
       have hTcb := (hBS tid.toObjId _ hObj).2.2.2.1 tcb rfl

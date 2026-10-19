@@ -1076,7 +1076,7 @@ theorem applyReplyDonationOnCore_preserves_capabilityInvariantBundle
     refine capabilityInvariantBundle_of_kindPreserving hRetB ?_ ?_ ?_
     · rw [descheduleAtPlacement_cdt, migrateSchedContextReplenishment_cdt]
     · exact descheduleAtPlacement_preserves_objects_invExt _ _
-        (by rw [migrateSchedContextReplenishment_objects]; exact hRetB.2.2.2.2.2.1)
+        (by rw [migrateSchedContextReplenishment_objects]; exact hRetB.objectsInvExt)
     · exact ((descheduleAtPlacement_objectsAgreeOffRunLinks _ _).trans
         (.of_objects_eq (migrateSchedContextReplenishment_objects _ _ _ _))).kindPreserving
 

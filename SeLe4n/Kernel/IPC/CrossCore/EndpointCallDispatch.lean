@@ -868,15 +868,11 @@ quantified over the two it does not.
 
 **Why a reduction hypothesis and not
 `ipcUnwrapCaps_preserves_capabilityInvariantBundle`'s own premises.**  That
-lemma externalises three conditions, and the first is quantified over *every*
-bundle-satisfying state, *every* CNode at the receiver root and *every* slot:
-`∀ s, (cn.insert s cap).slotCountBounded`.  `cspaceSlotCountBounded` is `≤`, so a
-bundle-satisfying state may hold a CNode at capacity, and `CNode.insert` at a
-fresh slot grows the table — so the premise is **refuted** rather than merely
-unproved, and a lift that took it would be vacuous while its name read as
-coverage.  (That the lemma has had no consumer since it was written is the
-corroborating measurement.)  This hypothesis is instead a statement about the
-*operation*, and it is exhibited: `receiveTransferCapsPreservesCapabilityBundle_of_none`
+lemma externalises its reply-cap backing condition quantified over *every*
+bundle-satisfying state and *every* capability, which no caller can exhibit for
+an arbitrary transferred capability.  (Its slot-capacity premise is gone: WS-ZA
+ZA5.3 made a CNode's slots a fixed array, so the bound is a theorem.)  This
+hypothesis is instead a statement about the *operation*, and it is exhibited: `receiveTransferCapsPreservesCapabilityBundle_of_none`
 discharges it whenever the send asks to transfer nothing (WS-ZA ZA4.7: the
 request is `sendCapRequest`, resolved from the sender's CSpace at the rendezvous,
 so the obligation also covers the CDT nodes that resolution mints).
@@ -1067,7 +1063,7 @@ theorem applyCallDonationOnCore_preserves_capabilityInvariantBundle
     (h : capabilityInvariantBundle st)
     (hStep : applyCallDonationOnCore st callerVtid receiverVtid donorHome doneeHome = .ok st'') :
     capabilityInvariantBundle st'' := by
-  have hObjInv : st.objects.invExt := h.2.2.2.2.2.1
+  have hObjInv : st.objects.invExt := h.objectsInvExt
   have hCdt := applyCallDonationOnCore_cdt_eq st st'' callerVtid receiverVtid donorHome doneeHome
     hStep
   exact capabilityInvariantBundle_of_kindPreserving h hCdt
