@@ -1373,6 +1373,10 @@ structure TCB where
 @[inline] def TCB.ipcBadgeView (t : TCB) : Option SeLe4n.Badge :=
   if t.ipcBadged then some (SeLe4n.Badge.ofWord t.ipcBadge) else none
 
+/-- The view is the badge the word and flag stand for. -/
+theorem TCB.ipcBadgeView_eq_opt (t : TCB) :
+    t.ipcBadgeView = SeLe4n.Badge.opt (SeLe4n.Badge.ofWord t.ipcBadge) t.ipcBadged := rfl
+
 /-- WS-ZA ZA4.7: record what a sender's capability contributed to the message
 it blocks with: its badge and its grant right. -/
 @[inline] def TCB.setSendCap (t : TCB) (badge : Option SeLe4n.Badge) (grant : Bool) : TCB :=
@@ -3047,6 +3051,16 @@ leaves the slot's spare as it was. -/
   Quot.lift (fun a => Squash.mk (match o with
       | some _ => a.setIfInBounds i o
       | none => a))
+    (fun _ _ _ => Quot.sound trivial) sp
+
+/-- `sp` with each slot `i` whose cell in `cells` holds a capability `f i`
+rejects keeping that capability as its record (a bulk clear's `keep`). -/
+def keepFiltered (sp : SpareCells) (cells : Array (Option Capability))
+    (f : Nat → Capability → Bool) : SpareCells :=
+  Quot.lift (fun a => Squash.mk (a.mapIdx fun i o =>
+      match cells[i]? with
+      | some (some c) => if f i c then o else some c
+      | _ => o))
     (fun _ _ _ => Quot.sound trivial) sp
 
 end SpareCells

@@ -1520,6 +1520,16 @@ const PARTNER_TCB_CAP: u64 = cap_address(PARTNER_TCB_SLOT);
 const ENDPOINT_CAP: u64 = cap_address(ENDPOINT_SLOT);
 #[cfg(feature = "hw_target")]
 const REPLY_CAP: u64 = cap_address(REPLY_CAP_SLOT);
+/// A badged copy of the endpoint capability, minted into the mint slot for the
+/// partner scenarios and deleted before the invocation scenarios use the slot.
+#[cfg(feature = "hw_target")]
+const BADGED_ENDPOINT_CAP: u64 = cap_address(MINT_SLOT);
+/// Its badge: a word above `2^63`, so a badge carried as a number would box.
+#[cfg(feature = "hw_target")]
+const ENDPOINT_BADGE: u64 = 0x8000_0000_0000_0007;
+/// Read, write, grant and grant-reply: the endpoint capability's own rights.
+#[cfg(feature = "hw_target")]
+const ENDPOINT_RIGHTS: u64 = 0xf;
 #[cfg(feature = "hw_target")]
 const VSPACE_CAP: u64 = cap_address(VSPACE_SLOT);
 #[cfg(feature = "hw_target")]
@@ -1612,9 +1622,13 @@ const fn partner_step(
 ///   and blocks for the next caller (WS-ZA ZA4.7), a second call that wakes
 ///   the server through that reply object, then the reply, which continues;
 /// - a send that blocks, then a receive that takes the blocked sender's
-///   message and continues (WS-ZA ZA4.7).
+///   message and continues (WS-ZA ZA4.7);
+/// - the send to a waiting receiver, the send that blocks and the call again,
+///   each through the badged endpoint capability (WS-ZA ZA5.3: a capability
+///   holds its badge as a word and a flag, which the send hands on as they
+///   are).
 #[cfg(feature = "hw_target")]
-const PARTNER_SCENARIOS: [&[RoundTrip]; 4] = [
+const PARTNER_SCENARIOS: [&[RoundTrip]; 7] = [
     &[
         partner_step("receive-blocks", RECEIVE, ENDPOINT_CAP, 0, [0, 0], true),
         partner_step("send-to-receiver", SEND, ENDPOINT_CAP, 1, [0x55, 0], false),
@@ -1666,6 +1680,61 @@ const PARTNER_SCENARIOS: [&[RoundTrip]; 4] = [
             ENDPOINT_CAP,
             0,
             [0, 0],
+            false,
+        ),
+    ],
+    &[
+        partner_step(
+            "receive-for-badged-send",
+            RECEIVE,
+            ENDPOINT_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        partner_step(
+            "badged-send-to-receiver",
+            SEND,
+            BADGED_ENDPOINT_CAP,
+            1,
+            [0x55, 0],
+            false,
+        ),
+    ],
+    &[
+        partner_step(
+            "badged-send-blocks",
+            SEND,
+            BADGED_ENDPOINT_CAP,
+            1,
+            [0x88, 0],
+            true,
+        ),
+        partner_step(
+            "receive-from-badged-sender",
+            RECEIVE,
+            ENDPOINT_CAP,
+            0,
+            [0, 0],
+            false,
+        ),
+    ],
+    &[
+        partner_step(
+            "receive-for-badged-call",
+            RECEIVE,
+            ENDPOINT_CAP,
+            1,
+            [REPLY_CAP, 0],
+            true,
+        ),
+        partner_step("badged-call", CALL, BADGED_ENDPOINT_CAP, 1, [0x66, 0], true),
+        partner_step(
+            "reply-to-badged-call",
+            REPLY,
+            REPLY_CAP,
+            1,
+            [0x77, 0],
             false,
         ),
     ],
@@ -2044,10 +2113,11 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 5] = [
 ];
 
 /// The partner scenarios' setup, issued once and not measured: the partner
-/// thread resumed onto core 0's run queue, and the reply capability minted
-/// from the reply object into its free slot.
+/// thread resumed onto core 0's run queue, the reply capability minted from
+/// the reply object into its free slot, and the badged endpoint capability
+/// minted from the endpoint's.
 #[cfg(feature = "hw_target")]
-const PARTNER_SETUP: [RoundTrip; 2] = [
+const PARTNER_SETUP: [RoundTrip; 3] = [
     partner_step(
         "resume-partner",
         TCB_RESUME,
@@ -2063,6 +2133,12 @@ const PARTNER_SETUP: [RoundTrip; 2] = [
         2,
         [REPLY_OBJECT_SLOT, REPLY_CAP_SLOT],
         false,
+    ),
+    invocation(
+        "mint-badged-endpoint",
+        CSPACE_MINT,
+        CNODE_CAP,
+        [ENDPOINT_SLOT, MINT_SLOT, ENDPOINT_RIGHTS, ENDPOINT_BADGE],
     ),
 ];
 /// `ESR_EL1` of an `SVC` from AArch64 (exception class `0x15`).
@@ -2174,6 +2250,19 @@ fn heap_allocations_per_syscall() -> Option<bool> {
         crate::kprintln!(
             "[smp-test] FAIL: heap-allocations-per-syscall: suspend-partner: the partner was not suspended"
         );
+        return Some(false);
+    }
+    // The mint slot is the invocation scenarios' own again.
+    let delete_badged = invocation(
+        "delete-badged-endpoint",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [MINT_SLOT, 0, 0, 0],
+    );
+    if !unmeasured(
+        &delete_badged,
+        "the badged endpoint capability was not deleted",
+    ) {
         return Some(false);
     }
     for scenario in INVOCATION_SCENARIOS.iter() {

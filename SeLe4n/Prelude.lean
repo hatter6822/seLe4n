@@ -893,6 +893,12 @@ instance : Inhabited Badge := ⟨⟨0⟩⟩
 
 namespace Badge
 
+/-- WS-ZA ZA5.3 part 6: the badge a word and a flag stand for, `none` when the
+flag is clear: how a capability (`Capability.badgeWord`, `badged`) and a blocked
+sender (`TCB.ipcBadge`, `ipcBadged`) hold one, so a path that hands the two on
+builds no `Option`. -/
+@[inline] def opt (w : Badge) (b : Bool) : Option Badge := if b then some w else none
+
 /-- The badge's value as a number. -/
 @[inline] def val (badge : Badge) : Nat := badge.word.toNat
 

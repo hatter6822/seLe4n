@@ -1396,7 +1396,8 @@ abbrev revokeTargetLocalKeeps (sourceSlot : SeLe4n.Slot) (target : CapTarget)
   s == sourceSlot || !(c.target == target)
 
 /-- WS-ZA ZA5.3: keep the slots whose capability satisfies `f`, in the map and
-in the slot array alike. -/
+in the slot array alike.  Each slot cleared keeps the capability it held as its
+record (`SpareCells.keepFiltered`), as a single removal does (`removeImpl`). -/
 def filterSlots (node : CNode) (f : SeLe4n.Slot → Capability → Bool) : CNode :=
   { node with
     slotsGhost := node.slotsGhost.map (·.filter f)
@@ -1406,7 +1407,8 @@ def filterSlots (node : CNode) (f : SeLe4n.Slot → Capability → Bool) : CNode
       rw [SeLe4n.Erased.out_map, SeLe4n.UniqueSlotMap.get?_filter, slotArrayGet_mapIdx, node.slots_agree s]
       by_cases h : s.toNat < node.cells.size
       · simp only [h, if_true]; rfl
-      · simp [slotArrayGet, h] }
+      · simp [slotArrayGet, h]
+    spare := node.spare.keepFiltered node.cells (fun i => f (SeLe4n.Slot.ofNat i)) }
 
 /-- WS-ZA ZA5.3 part 4: the CNode with every derivation link cleared.  The
 information-flow projection reads a CNode through this, so the links, like the

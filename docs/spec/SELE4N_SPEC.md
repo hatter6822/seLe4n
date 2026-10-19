@@ -6056,7 +6056,8 @@ a capability record for each of its slots for its whole life, as seL4's
 `cte_t` (`CNode.spare`, made with the CNode by `spareCellsFor`).  The records
 are a `Squash`, so logically a single value: no theorem reads them, and a CNode
 is its other fields (`CNode.ext_of_fields`).  Clearing a slot keeps its
-capability as the slot's record (`SpareCells.keep`); writing a slot takes the
+capability as the slot's record (`SpareCells.keep`), and so does a filter that
+drops slots (`CNode.filterSlots`, through `SpareCells.keepFiltered`); writing a slot takes the
 record out and writes the new capability's fields over it
 (`CNode.insertCellWith`, `Capability.overwrite`).  A reply capability's
 target is the one its reply object holds (`Reply.capTarget`, equal to
@@ -6069,8 +6070,13 @@ and remove the theorems read are unchanged; the compiled forms are
 and a flag (`Capability.badgeWord`, `Capability.badged`), read through the
 `Capability.badge` view and written by `Capability.withBadge` and
 `Capability.ofParts`; the mint invocation hands the register's badge word to
-its perform step, 0 meaning no badge (`cspaceMintPerformAt`).  Copy, move,
-delete, mint, revoke and both reply-capability operations allocate nothing.
+its perform step, 0 meaning no badge (`cspaceMintPerformAt`).  The send, call
+and reply fast paths pass the invoked capability's word and flag on as they
+are (`regMessageFrameW`, equal to `regMessageFrame` of `Badge.opt`), a blocked
+sender records them in its TCB (`recordSendCapWords`), and a receive from a
+blocked sender reads them back from the TCB, so a badged IPC builds no
+`some badge`.  Copy, move, delete, mint, revoke, both reply-capability
+operations and badged send, call, reply and receive allocate nothing.
 
 **Invariants.**  `cspaceRevokeCdt_preserves_ipcInvariantFull` carries the arm
 in the capability-only dispatch payoff.  Three things that chain records:

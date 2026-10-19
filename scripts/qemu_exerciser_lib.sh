@@ -224,6 +224,10 @@ for driver in drivers:
             "receive-blocks", "send-to-receiver", "wait-blocks", "signal-to-waiter",
             "receive-for-call", "call", "reply-recv", "call-to-reply-receiver", "reply",
             "send-blocks", "receive-from-sender",
+            # WS-ZA ZA5.3: the same through a badged endpoint capability.
+            "receive-for-badged-send", "badged-send-to-receiver",
+            "badged-send-blocks", "receive-from-badged-sender",
+            "receive-for-badged-call", "badged-call", "reply-to-badged-call",
             # WS-ZA ZA5.2: the thread and notification arms change their
             # objects in place.
             "tcb-set-priority", "tcb-set-mc-priority", "tcb-set-affinity",
