@@ -332,8 +332,8 @@ private theorem advanceTimerState_preserves_vspaceInvariantBundle
     (ticks : Nat) (st : SystemState)
     (hInv : vspaceInvariantBundle st) :
     vspaceInvariantBundle (advanceTimerState ticks st) := by
-  rcases hInv with ⟨hUniq, hNonOverlap, hConsist, hWx, hBound, hCrossAsid, hCanonical⟩
-  exact ⟨by exact hUniq, by exact hNonOverlap, by exact hConsist, by exact hWx, by exact hBound, by exact hCrossAsid, by exact hCanonical⟩
+  rcases hInv with ⟨hUniq, hNonOverlap, hConsist, hWx, hBound, hCrossAsid, hCanonical, hMapWF⟩
+  exact ⟨by exact hUniq, by exact hNonOverlap, by exact hConsist, by exact hWx, by exact hBound, by exact hCrossAsid, by exact hCanonical, by exact hMapWF⟩
 
 /-- WS-E3/H-07: Register writes preserve VSpace invariant bundle.
 Register-only state changes do not affect the object store or ASID table. -/
@@ -341,8 +341,8 @@ private theorem writeRegisterState_preserves_vspaceInvariantBundle
     (reg : SeLe4n.RegName) (value : UInt64) (st : SystemState)
     (hInv : vspaceInvariantBundle st) :
     vspaceInvariantBundle (writeRegisterState reg value st) := by
-  rcases hInv with ⟨hUniq, hNonOverlap, hConsist, hWx, hBound, hCrossAsid, hCanonical⟩
-  exact ⟨by exact hUniq, by exact hNonOverlap, by exact hConsist, by exact hWx, by exact hBound, by exact hCrossAsid, by exact hCanonical⟩
+  rcases hInv with ⟨hUniq, hNonOverlap, hConsist, hWx, hBound, hCrossAsid, hCanonical, hMapWF⟩
+  exact ⟨by exact hUniq, by exact hNonOverlap, by exact hConsist, by exact hWx, by exact hBound, by exact hCrossAsid, by exact hCanonical, by exact hMapWF⟩
 
 -- ============================================================================
 -- X1-F/G: Context-switch atomic operation preserves proofLayerInvariantBundle
@@ -355,8 +355,8 @@ private theorem contextSwitchState_preserves_vspaceInvariantBundle
     (newTid : SeLe4n.ThreadId) (newRegs : SeLe4n.RegisterFile) (st : SystemState)
     (hInv : vspaceInvariantBundle st) :
     vspaceInvariantBundle (contextSwitchState newTid newRegs st) := by
-  rcases hInv with ⟨hUniq, hNonOverlap, hConsist, hWx, hBound, hCrossAsid, hCanonical⟩
-  exact ⟨hUniq, hNonOverlap, hConsist, hWx, hBound, hCrossAsid, hCanonical⟩
+  rcases hInv with ⟨hUniq, hNonOverlap, hConsist, hWx, hBound, hCrossAsid, hCanonical, hMapWF⟩
+  exact ⟨hUniq, hNonOverlap, hConsist, hWx, hBound, hCrossAsid, hCanonical, hMapWF⟩
 
 /-- X1-G: Context-switch preserves `contextMatchesCurrent` when the loaded
     registers match the new thread's saved context.
@@ -655,8 +655,8 @@ theorem default_system_state_proofLayerInvariantBundle :
       default_lifecycleInvariantBundle
       default_capabilityInvariantBundle
       default_registryInvariant
-  -- 7. vspaceInvariantBundle (7-conjunct: uniqueness ∧ nonOverlap ∧ asidTableConsistent ∧ wxExclusive ∧ boundedAddr ∧ crossAsidIsolation ∧ canonicalAddr)
-  · refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  -- 7. vspaceInvariantBundle (8-conjunct: uniqueness ∧ nonOverlap ∧ asidTableConsistent ∧ wxExclusive ∧ boundedAddr ∧ crossAsidIsolation ∧ canonicalAddr ∧ mappingsWellFormed)
+  · refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     · intro oid₁ oid₂ r₁ r₂ hObj₁; exact default_objects_absurd hObj₁
     · intro oid root hObj; exact default_objects_absurd hObj
     · constructor
@@ -666,6 +666,7 @@ theorem default_system_state_proofLayerInvariantBundle :
     · intro oid root v p perms hObj; exact default_objects_absurd hObj
     · intro oidA oidB rA rB hObjA; exact default_objects_absurd hObjA
     · intro oid root v p perms hObj; exact default_objects_absurd hObj
+    · intro oid root hObj; exact default_objects_absurd hObj
   -- 8. crossSubsystemInvariant (R4-E + T5-J + Z9-D + AF1-B + AM4/AL6-C: 11 predicates)
   · exact default_crossSubsystemInvariant
   -- 9. tlbConsistent (R7-A.2/M-17: empty TLB is trivially consistent)

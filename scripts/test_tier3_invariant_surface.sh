@@ -4144,7 +4144,15 @@ run_check "INVARIANT" rg -n -U 'def revokeCdtFoldBody\n    \(acc : Except Kernel
 run_check "INVARIANT" rg -n -U 'def cspaceRevokeCdt \(addr : CSpaceAddr\) : Kernel \(List MappedPage\) :=\n  revokeCdtScaffold revokeCdtMaterializedTraversal addr' SeLe4n/Kernel/Capability/Operations.lean
 run_check "INVARIANT" rg -n '^theorem revokeCdtFoldBody_records($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
 run_negative_check "INVARIANT" rg -n 'cspaceRevokeCdtCollecting|revokeCdtCollectingFoldBody|revokeCdtCollectingTraversal' SeLe4n tests
-run_check "INVARIANT" rg -n -U 'def finaliseFramePages[^\n]*(\n([ \t][^\n]*)?)*    match unmapLivePages executingCore pages st with(\n([ \t][^\n]*)?)*      if !livePagesCleared st1 pages then \.error \.illegalState' SeLe4n/Kernel/Capability/FrameFinalise.lean
+# v0.36.110: the teardown decides nothing afterwards; its results are theorems
+# on a well-formed state, and the after-checks are gone.
+run_check "INVARIANT" rg -n '^    \| \.ok \(\(\), st1\) => unmapLivePages executingCore \(pages \+\+ orphanedTableMappings st orphans\) st1$' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_negative_check "INVARIANT" rg -n 'livePagesCleared|finaliseFramePages|!pageTablesDetached' SeLe4n
+run_check "INVARIANT" rg -n '^theorem finaliseDestroyedCapabilities_eq_ok_state($|[ ({:\[\]])' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n '^theorem unmapLivePagesState_clears($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PageTeardownClears.lean
+run_check "INVARIANT" rg -n '^theorem pageTablesDetached_of_teardown($|[ ({:\[\]])' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdt_preserves_teardownWellFormed($|[ ({:\[\]])' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n '^  vspaceMappingsWellFormed st$' SeLe4n/Kernel/Architecture/VSpaceInvariant.lean
 run_check "INVARIANT" rg -n '            match cspaceInsertSlot dst capNN\.val\.withoutMapping st. with' SeLe4n/Kernel/Capability/Operations.lean
 run_check "INVARIANT" rg -n '            match cspaceInsertSlot dstAddr cap\.withoutMapping st with' SeLe4n/Kernel/Capability/Operations.lean
 run_check "INVARIANT" rg -n -U '    if cn\.holdsFrameMappingRecord \|\| Architecture\.cnodeHoldsInstalledPageTableCap st cn then\n      \.error \.revocationRequired\n    else\n      \.ok \(detachCNodeSlots st target cn\)' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
@@ -4242,11 +4250,13 @@ run_check "INVARIANT" rg -n '^    \| \.ok \(pages, st1\) => finaliseDestroyedCap
 # v0.36.38: a table's final capability is decided on CNode slots — a copy parked
 # in a message can be dropped by a cancellation that finalises nothing.
 run_check "INVARIANT" rg -n -U 'def pageTablesOrphaned [^\n]*(\n([ \t][^\n]*)?)*          if Architecture\.pageTableInstallLive st id && cnodeSlotsUnreferenced st \[id\] then\n            \(id, inst\) :: acc' SeLe4n/Kernel/Capability/FrameFinalise.lean
-# v0.36.107: a delete or revoke that finalises nothing is decided before any
-# write and performed in place; the revoke is seL4's first-child loop.
-run_check "INVARIANT" rg -n -U '        RefusalCarrying\.ofChecked \(cspaceDeleteAdmitted addr st\)\n          \(fun st => cspaceDeletePerformAt cnodeId args\.targetSlot st\)' SeLe4n/Kernel/RefusalCarryingInvocation.lean
+# v0.36.107: a revoke that finalises nothing is decided before any write and
+# performed in place, as seL4's first-child loop; since v0.36.110 so is every
+# delete, whatever its capability names.
+run_check "INVARIANT" rg -n -U '        RefusalCarrying\.ofChecked \(cspaceDeleteFinalisingAdmitted addr st\)\n          \(fun st => cspaceDeleteFinalisingPerformAt executingCore cnodeId args\.targetSlot st\)' SeLe4n/Kernel/RefusalCarryingInvocation.lean
 run_check "INVARIANT" rg -n -U '        RefusalCarrying\.ofChecked \(cspaceRevokeAdmitted addr st\)\n          \(fun st => cspaceRevokePerformAt cnodeId args\.targetSlot st\)' SeLe4n/Kernel/RefusalCarryingInvocation.lean
 run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlotFinalising_of_admitted($|[ ({:\[\]])' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlotFinalising_of_cnode($|[ ({:\[\]])' SeLe4n/Kernel/Capability/FrameFinalise.lean
 run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdtFinalising_closed($|[ ({:\[\]])' SeLe4n/Kernel/Capability/FrameFinalise.lean
 run_check "INVARIANT" rg -n -U 'def cnodeSlotsUnreferenced [^\n]*(\n([ \t][^\n]*)?)*      \| \.cnode cn => objectNamesListed ids \(\.cnode cn\)\n      \| _ => false\)\)' SeLe4n/Kernel/Architecture/PageTeardown.lean
 run_check "INVARIANT" rg -n 'RETIRED: the all-references reading does not count it orphaned, the live one does' tests/VSpaceCapabilityBindingSuite.lean
@@ -4257,7 +4267,6 @@ run_negative_check "INVARIANT" rg -n '^  \| \.vspace(Map|Unmap) => true' SeLe4n/
 run_check "INVARIANT" rg -n -U '^theorem frozenOpCoverage_count :\n    \(SyscallId\.all\.filter frozenOpCoverage\)\.length = 18 := by' SeLe4n/Kernel/FrozenOps/Operations.lean
 run_check "INVARIANT" rg -n '^theorem frozenOpUncheckedReason_only_when_covered($|[ ({:\[\]])' SeLe4n/Kernel/FrozenOps/Agreement.lean
 run_check "INVARIANT" rg -n 'frozenCspaceMint strips the source.s mapping record' tests/FrozenOpsSuite.lean
-run_check "INVARIANT" rg -n -U 'def finaliseDestroyedCapabilities [^\n]*(\n([ \t][^\n]*)?)*        if !pageTablesDetached st2 orphans then \.error \.illegalState' SeLe4n/Kernel/Capability/FrameFinalise.lean
 run_check "INVARIANT" rg -n '^theorem finaliseDestroyedCapabilities_ok_tables($|[ ({:\[\]])' SeLe4n/Kernel/Capability/FrameFinalise.lean
 run_check "INVARIANT" rg -n '^theorem finaliseDestroyedCapabilities_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
 run_check "INVARIANT" rg -n '^theorem finaliseDestroyedCapabilities_framed($|[ ({:\[\]])' SeLe4n/Kernel/SlotConfinement/MemoryArms.lean
@@ -4277,7 +4286,7 @@ run_check "INVARIANT" rg -n '^    untypedPlacementRespected config && bootRootTa
 run_check "INVARIANT" rg -n '^   \(bootRootTablesPlaced config, bootRootTablesBootError\)\]$' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n -U 'def bootRootTablesPlaced [^\n]*(\n([ \t][^\n]*)?)*  decide \(\(configuredRootTableBases config\)\.filterMap id\)\.Nodup &&' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^theorem bootRootTablesPlaced_withoutExtents($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
-run_check "INVARIANT" rg -n '^    decide \(root\.mappings\.size = 0\) && root\.tables\.isEmpty$' SeLe4n/Platform/RPi5/VSpaceBoot.lean
+run_check "INVARIANT" rg -n -U '^    decide \(root\.mappings\.size = 0\) && root\.tables\.isEmpty &&\n    decide \(4 ≤ root\.mappings\.capacity\)$' SeLe4n/Platform/RPi5/VSpaceBoot.lean
 run_check "INVARIANT" rg -n '^    tableBase := some \(rpi5BootTablePage page\) \}$' SeLe4n/Platform/RPi5/Deployment.lean
 run_check "INVARIANT" rg -n '^BOOT_TABLE_POOL_PAGES = 0x10;$' rust/sele4n-hal/link.ld
 run_check "INVARIANT" rg -n '^    crate::mmu::zero_boot_table_pool\(\);$' rust/sele4n-hal/src/lean_entry.rs

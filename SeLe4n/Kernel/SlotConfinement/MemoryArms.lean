@@ -386,10 +386,9 @@ theorem finaliseDestroyedCapabilities_framed (executingCore : CoreId) (named : L
     (pages : List MappedPage) (st st' : SystemState)
     (h : finaliseDestroyedCapabilities executingCore named pages st = .ok ((), st')) :
     SchedulerMachineFramed st st' := by
-  obtain ⟨st1, hD, hF, -⟩ := finaliseDestroyedCapabilities_ok executingCore named pages st st' h
+  obtain ⟨st1, hD, hF⟩ := finaliseDestroyedCapabilities_ok executingCore named pages st st' h
   obtain ⟨hs1, hm1⟩ := detachPageTables_ok_scheduler_machine _ st st1 hD
-  obtain ⟨hs2, hm2⟩ :=
-    unmapLivePages_framed executingCore _ st1 st' (finaliseFramePages_ok _ _ _ _ hF).1
+  obtain ⟨hs2, hm2⟩ := unmapLivePages_framed executingCore _ st1 st' hF
   exact ⟨hs2.trans hs1, hm2.trans hm1⟩
 
 /-- The finalising delete writes no scheduler and no machine state. -/

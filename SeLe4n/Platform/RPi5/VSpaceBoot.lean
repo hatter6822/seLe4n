@@ -248,6 +248,14 @@ def VSpaceRootVaddrCanonical (root : VSpaceRoot) : Prop :=
   root.mappings.fold true
     (fun acc vaddr _ => acc && VAddr.isCanonical vaddr) = true
 
+/-- WS-ZA ZA5.3: **the mapping table has room**: fewer entries than slots, and
+at least the four slots the table's insert keeps its load-factor bound with
+(`RHTable.invExtK`).  With the table invariant every object entry carries,
+what makes a boot root's table a well-formed one (`vspaceMappingsWellFormed`),
+so the first insert into it keeps it so. -/
+def VSpaceRootTableRoom (root : VSpaceRoot) : Prop :=
+  root.mappings.size < root.mappings.capacity ∧ 4 ≤ root.mappings.capacity
+
 /-- **AN7-D.2.2 / WS-RC R3**: structural well-formedness predicate for a
     VSpaceRoot used at kernel boot.  Five conjuncts:
 
@@ -267,7 +275,8 @@ def VSpaceRootWellFormed (root : VSpaceRoot) : Prop :=
   VSpaceRootWxCompliant root ∧
   root.mappings.size > 0 ∧
   VSpaceRootPaddrBounded root ∧
-  VSpaceRootVaddrCanonical root
+  VSpaceRootVaddrCanonical root ∧
+  VSpaceRootTableRoom root
 
 /-- **AN7-D.2.3**: The canonical RPi5 boot root satisfies per-root W^X.
 
@@ -313,13 +322,16 @@ theorem rpi5BootVSpaceRoot_wellFormed :
     VSpaceRootWellFormed rpi5BootVSpaceRoot := by
   refine ⟨?_, rpi5BootVSpaceRoot_wxCompliant, ?_,
           rpi5BootVSpaceRoot_paddrBounded,
-          rpi5BootVSpaceRoot_vaddrCanonical⟩
+          rpi5BootVSpaceRoot_vaddrCanonical, ?_⟩
   · -- asid = 0 ≤ maxAsidValue
     rw [rpi5BootVSpaceRoot_asid]
     show (0 : Nat) ≤ maxAsidValue
     unfold maxAsidValue; omega
   · -- mappings.size > 0 — six inserts were performed
     show rpi5BootVSpaceRoot.mappings.size > 0
+    decide
+  · -- six entries in sixteen slots
+    unfold VSpaceRootTableRoom
     decide
 
 -- ============================================================================
@@ -394,7 +406,8 @@ def bootSafeVSpaceRootCheck (root : VSpaceRoot) : Bool :=
   (root.mappings.fold true (fun acc _ entry => acc && entry.2.wxCompliant)) &&
   decide (root.mappings.size > 0) &&
   (root.mappings.fold true (fun acc _ entry => acc && decide (entry.1.toNat < bootRootPaddrBound))) &&
-  (root.mappings.fold true (fun acc vaddr _ => acc && VAddr.isCanonical vaddr))
+  (root.mappings.fold true (fun acc vaddr _ => acc && VAddr.isCanonical vaddr)) &&
+  decide (root.mappings.size < root.mappings.capacity) && decide (4 ≤ root.mappings.capacity)
 
 /-- **WS-RC R3**: The Bool-valued check coincides with the Prop-level
     boot-safety predicate.  Both forms unfold to the same five
@@ -402,7 +415,7 @@ def bootSafeVSpaceRootCheck (root : VSpaceRoot) : Bool :=
 theorem bootSafeVSpaceRootCheck_iff (root : VSpaceRoot) :
     bootSafeVSpaceRootCheck root = true ↔ bootSafeVSpaceRoot root := by
   unfold bootSafeVSpaceRootCheck bootSafeVSpaceRoot VSpaceRootWellFormed
-    VSpaceRootWxCompliant VSpaceRootPaddrBounded VSpaceRootVaddrCanonical
+    VSpaceRootWxCompliant VSpaceRootPaddrBounded VSpaceRootVaddrCanonical VSpaceRootTableRoom
   simp only [Bool.and_eq_true, decide_eq_true_eq, and_assoc]
 
 /-- **WS-RC R3**: The canonical RPi5 boot root passes the Bool-valued
@@ -438,7 +451,7 @@ theorem rpi5BootVSpaceRoot_bootSafeCheck :
       placement check its frames need. -/
 def bootSafeUserVSpaceRoot (root : VSpaceRoot) : Prop :=
   0 < root.asid.val ∧ root.asid.val ≤ maxAsidValue ∧ root.mappings.size = 0 ∧
-    root.tables = []
+    root.tables = [] ∧ 4 ≤ root.mappings.capacity
 
 /-- **WS-BP BP3.2**: the Bool form the boot's object sweep evaluates.
 
@@ -450,7 +463,8 @@ def bootSafeUserVSpaceRoot (root : VSpaceRoot) : Prop :=
     is a question about the configuration, not about one root. -/
 def bootSafeUserVSpaceRootCheck (root : VSpaceRoot) : Bool :=
   decide (0 < root.asid.val) && decide (root.asid.val ≤ maxAsidValue) &&
-    decide (root.mappings.size = 0) && root.tables.isEmpty
+    decide (root.mappings.size = 0) && root.tables.isEmpty &&
+    decide (4 ≤ root.mappings.capacity)
 
 /-- **WS-BP BP3.2**: the Bool check decides the predicate. -/
 theorem bootSafeUserVSpaceRootCheck_iff (root : VSpaceRoot) :
@@ -506,9 +520,10 @@ theorem rpi5BootVSpaceRoot_mappings_invExt :
     per-mapping conjuncts are one argument over the boot state, not one per
     kind of root. -/
 def bootVSpaceRootMappingsSafe (root : VSpaceRoot) : Prop :=
-  ∀ (v : VAddr) (p : PAddr) (perms : PagePermissions),
+  (∀ (v : VAddr) (p : PAddr) (perms : PagePermissions),
     root.mappings[v]? = some (p, perms) →
-      perms.wxCompliant = true ∧ p.toNat < 2^52 ∧ v.isCanonical = true
+      perms.wxCompliant = true ∧ p.toNat < 2^52 ∧ v.isCanonical = true) ∧
+  VSpaceRootTableRoom root
 
 /-- **WS-BP BP3.5**: the binding's boot root satisfies the per-mapping facts —
     each of its three mapping checks is a fold, read back per lookup by
@@ -516,7 +531,8 @@ def bootVSpaceRootMappingsSafe (root : VSpaceRoot) : Prop :=
     lies below the LPA bound. -/
 theorem bootSafeVSpaceRoot_mappingsSafe {root : VSpaceRoot}
     (h : bootSafeVSpaceRoot root) : bootVSpaceRootMappingsSafe root := by
-  obtain ⟨_, hWx, _, hPa, hVa⟩ := h
+  obtain ⟨_, hWx, _, hPa, hVa, hRoom⟩ := h
+  refine ⟨?_, hRoom⟩
   intro v p perms hMap
   rw [RHTable_getElem?_eq_get?] at hMap
   have hWx' := RHTable.fold_and_true_of_get? root.mappings
@@ -534,6 +550,7 @@ theorem bootSafeVSpaceRoot_mappingsSafe {root : VSpaceRoot}
 theorem bootSafeUserVSpaceRoot_mappingsSafe {root : VSpaceRoot}
     (h : bootSafeUserVSpaceRoot root) (hExt : root.mappings.invExt) :
     bootVSpaceRootMappingsSafe root := by
+  refine ⟨?_, by rw [h.2.2.1]; exact root.mappings.hCapPos, h.2.2.2.2⟩
   intro v p perms hMap
   rw [RHTable_getElem?_eq_get?,
     RHTable.get?_none_of_size_zero root.mappings hExt h.2.2.1 v] at hMap

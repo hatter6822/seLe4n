@@ -249,11 +249,11 @@ for driver in drivers:
             "untyped-retype-page-table-3": (65, 65), "page-table-map-3": (56, 56),
             "untyped-retype-frame": (82, 82), "vspace-map": (107, 106),
             "vspace-unify-instruction": (10, 10),
-            "vspace-unmap": (119, 119), "frame-delete": (27, 27),
-            "page-table-unmap-3": (42, 42), "page-table-delete-3": (21, 21),
-            "page-table-unmap-2": (41, 41), "page-table-delete-2": (21, 21),
-            "page-table-unmap-1": (38, 38), "page-table-delete-1": (21, 21),
-            "untyped-reset": (153, 153),
+            "vspace-unmap": (119, 119), "frame-delete": (6, 6),
+            "page-table-unmap-3": (42, 42), "page-table-delete-3": (3, 3),
+            "page-table-unmap-2": (41, 41), "page-table-delete-2": (3, 3),
+            "page-table-unmap-1": (38, 38), "page-table-delete-1": (3, 3),
+            "untyped-reset": (151, 151),
         })
         expected = set(pinned)
         observed = set(names) | {m.group(1) for m in returned}
