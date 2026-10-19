@@ -1626,10 +1626,12 @@ private def runSlotLinkAgreementChecks : IO Unit := do
 /-- PR #958 review: the runtime link check refuses link shapes that agree
 locally but break the tree's other invariants: a pair of empty slots linked as
 parent and child (`cdtCompleteness`), a slot that is its own parent and first
-child (`cdtAcyclicity`), and more parent links than the tree's edge bound, which
-fuels the link walks and the revoke loop.  Each keeps the local agreements and
-breaks the relation its check names; the first two also add a parent link past
-the edge bound, so the bound check fails with them. -/
+child (`cdtAcyclicity`), more parent links than the tree's edge bound, which
+fuels the link walks and the revoke loop, a sibling ring whose parent's child
+chain does not reach it, and a self loop in a CNode the object list omits (the
+check reads the whole store).  Each keeps the local agreements and breaks the
+relation its check names; all but the extra edge also add a parent link past the
+edge bound, so the bound check fails with them. -/
 private def runSlotLinkShapeChecks : IO Unit := do
   let expectBool (label : String) (actual expected : Bool) : IO Unit :=
     if actual == expected then IO.println s!"positive check passed [{label}]"
@@ -1677,6 +1679,17 @@ private def runSlotLinkShapeChecks : IO Unit := do
       childSlot.slot .prev cnId spareSlot
   expectBool "a second parent link past the edge bound fails only the bound check"
     (failing extraEdge == ["cdt edge bound covers the slot links"]) true
+  let ring :=
+    withLink (withLink (withLink seed spareSlot .parent cnId childSlot.slot) spareSlot .next cnId
+      spareSlot) spareSlot .prev cnId spareSlot
+  expectBool "a sibling ring under a parent with no first child fails the child-chain and bound checks"
+    (failing ring ==
+      ["cdt child chains list each parent's children", "cdt edge bound covers the slot links"]) true
+  let unlisted :=
+    ((stateInvariantChecksFor invariantObjectIds selfLoop).filter
+      (fun c => !c.2 && c.1.startsWith "cdt ")).map (·.1)
+  expectBool "a self loop in a CNode the object list omits still fails the cycle and bound checks"
+    (unlisted == ["cdt slot links form no cycle", "cdt edge bound covers the slot links"]) true
 
 private def runNegativeChecks : IO Unit := do
   runBaselineLookupNegativeChecks                       -- [was 248-262]
