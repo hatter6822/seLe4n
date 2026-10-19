@@ -1445,7 +1445,9 @@ loop of those finalising deletes (`revokeFirstChildLoop`), so each destroyed
 capability's page goes with its own delete and there is no batch teardown; the
 general revocation (`cspaceRevokeCdt` and its variants) is deleted.  A new
 property of the revoke is proven for one finalising delete and lifted through
-`cspaceRevokeCdtFinalising_closed`.  The payoffs are
+`cspaceRevokeCdtFinalising_closed`; it keeps the capability bundle and, on a
+state the bundle holds in, leaves its source childless
+(`cspaceRevokeCdtFinalising_ok_childless`).  The payoffs are
 `cspaceDeleteSlotFinalising_ok_unmapped` and
 `cspaceRevokeCdtFinalising_ok_unmapped`, both on a well-formed state.  (4) **A stale record removes nothing**: `.vspaceUnmap`
 works through a VSpace capability, so a record can outlive its mapping, and each

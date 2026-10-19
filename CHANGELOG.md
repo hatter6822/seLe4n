@@ -24,7 +24,8 @@ mapping goes with its own delete and nothing is decided after the loop.
   followed, reached by no syscall once the arm moved: `cspaceRevokeCdt`, its
   scaffold, materialized traversal and per-node step, the strict, streaming and
   transactional variants with their reports and BFS, `SystemState.cdtRemove`,
-  `Capability/Invariant/Preservation/Revoke.lean` and every proof over them.
+  the old `Capability/Invariant/Preservation/Revoke.lean` and every proof over
+  them.
   The enforcement boundary loses its `cspaceRevokeCdt` entry (52 canonical,
   67 per core).  Suites that ran the variants run the loop: S2-G-04/06 (a
   five-deep chain), chain15 (fifteen levels across sixteen CNodes), chain17 (a
@@ -32,11 +33,21 @@ mapping goes with its own delete and nothing is decided after the loop.
   a child and mid-tree) assert every descendant gone and the source kept; the
   strict-report, fuel-exhaustion and equivalence checks went with what they
   tested.
+- **The capability invariants and completeness** (PR #962 review, in the same
+  PR): `Capability/Invariant/Preservation/Revoke.lean` proves the finalising
+  delete keeps the capability bundle
+  (`cspaceDeleteSlotFinalising_preserves_capabilityInvariantBundle`: the
+  teardown writes no CNode, reply object or derivation edge), so the revocation
+  does (`cspaceRevokeCdtFinalising_preserves_capabilityInvariantBundle`), and
+  that on a state the bundle holds in a successful revocation leaves its source
+  with no children (`cspaceRevokeCdtFinalising_ok_childless`): every first child
+  the loop reads lies in a live CNode, so no delete is refused, and each delete
+  splices one edge out (`spliceNode_edges_length_lt`), so the fuel suffices.
 - **Deviation from the plan**: the loop keeps its stop on an inadmissible child,
-  which no invariant-satisfying state reaches, so the closure theorem needs no
-  capability bundle.  Proving the loop leaves the source childless, and retiring
-  the stop with it, is a new `docs/REGISTERED_DEBT.md` table C row owned by
-  ZA5.4.
+  which the completeness theorem shows no invariant-satisfying state reaches,
+  so the closure theorem the IPC, run-queue and reschedule consumers read needs
+  no capability bundle.  Retiring the stop once those consumers carry the bundle
+  is a new `docs/REGISTERED_DEBT.md` table C row owned by ZA5.4.
 - **Readings** (normal build, new exerciser scenarios): a frame copy for the
   revoke 0; its map 108 at first call and 107 in steady state (the map row's);
   the revoke that destroys it 110, all of it the unmap of the live page (the

@@ -923,8 +923,10 @@ the deleted child's children become the source's, and the loop reaches every
 descendant without building a list of them; `fuel` bounds it by the tree's
 edges, one of which each splice removes.  Each delete is admitted when its
 CNode exists (`cspaceDeleteFinalisingAdmitted`) and is then its writes
-(`cspaceDeleteFinalisingPerformAt`); a child outside every CNode, which the
-capability invariants rule out (`cdtCompleteness`), ends the loop. -/
+(`cspaceDeleteFinalisingPerformAt`); a child outside every CNode ends the loop,
+which on a state the capability invariants hold in never happens: there the
+loop ends with the source childless (`cspaceRevokeCdtFinalising_ok_childless`).
+Retiring the stop is a `docs/REGISTERED_DEBT.md` table C row (ZA5.4). -/
 def revokeFirstChildLoop (executingCore : Concurrency.CoreId) (cnode : SeLe4n.ObjId)
     (slot : SeLe4n.Slot) : Nat → SystemState → SystemState
   | 0, st => st

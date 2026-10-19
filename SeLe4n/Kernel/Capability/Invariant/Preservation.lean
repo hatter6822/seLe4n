@@ -7,14 +7,14 @@
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
 
-import SeLe4n.Kernel.Capability.Invariant.Preservation.BadgeIpcCapsAndCdtMaps
+import SeLe4n.Kernel.Capability.Invariant.Preservation.Revoke
 
 /-!
 # AN4-F.3 (CAP-M03): `Capability.Invariant.Preservation` hub
 
 This module is a thin re-export hub after the AN4-F.3 split of the former
 monolithic 2464-LOC `Preservation.lean`. All preservation theorems now live
-in five child modules — each owning a semantically coherent slice of the
+in six child modules — each owning a semantically coherent slice of the
 former file — and the original public API is preserved byte-for-byte:
 
 | Child module                              | Subject matter                                                            |
@@ -24,10 +24,11 @@ former file — and the original public API is preserved byte-for-byte:
 | `Preservation.CopyMoveMutate`             | `cspaceCopy` / `cspaceMove` / `cspaceMintWithCdt` / `cspaceMutate`        |
 | `Preservation.EndpointReplyAndLifecycle`  | `endpointReply` + `coreIpcInvariantBundle` + `lifecycleRetypeObject` / `lifecycleRevokeDeleteRetype` preservation cluster |
 | `Preservation.BadgeIpcCapsAndCdtMaps` | Mint/Mutate badge preservation + `ipcTransferSingleCap` / `ipcUnwrapCaps` variants + CDT composition witnesses |
+| `Preservation.Revoke`                     | the finalising delete and `cteRevoke` loop: bundle preservation and the revocation's completeness |
 
 The children form a linear import chain
 (`Insert ← Delete ← CopyMoveMutate ← EndpointReplyAndLifecycle ←
-BadgeIpcCapsAndCdtMaps`). The hub re-exports the tail of that chain so
+BadgeIpcCapsAndCdtMaps ← Revoke`). The hub re-exports the tail of that chain so
 every downstream consumer sees the union of all preservation theorems.
 
 **Migration discipline**: theorem names, statements, proofs, and relative

@@ -9981,6 +9981,10 @@ run_check "INVARIANT" rg -n '^theorem cspaceRevoke_ok_implies_slot_occupied($|[ 
 # v0.36.111: the tie is stated over the revocation `.cspaceRevoke` runs, the
 # finalising `cteRevoke` loop.
 run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdtFinalising_ok_implies_slot_occupied($|[ ({:\[\]])' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlotFinalising_preserves_capabilityInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/Revoke.lean
+run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdtFinalising_preserves_capabilityInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/Revoke.lean
+run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdtFinalising_ok_childless($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/Revoke.lean
+run_check "INVARIANT" rg -n '^theorem revokeFirstChildLoop_childless($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/Revoke.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem cdtNodeIsRevocable_false_revoke_refuses[^\n]*(\n([ \t][^\n]*)?)*cspaceRevokeCdtFinalising ec node st" SeLe4n/Kernel/Capability/FrameFinalise.lean'
 # The mapping-only test must not come back at the install site.
 run_negative_check "INVARIANT" rg -n 'match SystemState.lookupCdtSlotOfNode st srcNode with' SeLe4n/Kernel/Capability/Operations.lean
