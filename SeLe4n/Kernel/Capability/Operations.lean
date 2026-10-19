@@ -1880,6 +1880,53 @@ theorem cspaceMove_of_admitted {src dst : CSpaceAddr} {st : SystemState}
 -- M-P04/M5: Shared per-node revocation step
 -- ============================================================================
 
+/-- `cspaceCopyPerform` as compiled: a source capability that records no
+mapping is its own derivation, so the destination takes the source slot's own
+entry (`CNode.setCell`) and the copy builds neither a capability nor an entry
+(WS-ZA ZA5.3 part 6). -/
+@[inline] def cspaceCopyPerformImpl (src dst : CSpaceAddr) (st : SystemState) : SystemState :=
+  let o := SystemState.lookupSlotCap st src
+  match ho : o with
+  | some cap =>
+    match cap.mapping with
+    | none => (st.storeCNodeWith dst.cnode (·.setCell dst.slot o cap ho)).cdtAddChild src dst .copy
+    | some _ => cspaceInstallPerform src dst cap.withoutMapping .copy st
+  | none => st
+
+@[csimp] theorem cspaceCopyPerform_eq_impl : @cspaceCopyPerform = @cspaceCopyPerformImpl := by
+  funext src dst st
+  unfold cspaceCopyPerform cspaceCopyPerformImpl
+  dsimp only
+  generalize SystemState.lookupSlotCap st src = o
+  cases o with
+  | none => rfl
+  | some cap =>
+    dsimp only
+    cases hm : cap.mapping with
+    | none =>
+      simp only [CNode.setCell_eq_insert, cspaceInstallPerform,
+        Capability.withoutMapping_of_mapping_none hm]
+    | some _ => rfl
+
+/-- `cspaceMovePerform` as compiled: the destination takes the source slot's own
+entry (`CNode.setCell`), so the move builds no entry (WS-ZA ZA5.3 part 6). -/
+@[inline] def cspaceMovePerformImpl (src dst : CSpaceAddr) (st : SystemState) : SystemState :=
+  let o := SystemState.lookupSlotCap st src
+  match ho : o with
+  | some cap =>
+      ((st.storeCNodeWith dst.cnode (·.setCell dst.slot o cap ho)).storeCNodeWith src.cnode
+        (·.remove src.slot)).cdtMove src dst
+  | none => st
+
+@[csimp] theorem cspaceMovePerform_eq_impl : @cspaceMovePerform = @cspaceMovePerformImpl := by
+  funext src dst st
+  unfold cspaceMovePerform cspaceMovePerformImpl
+  dsimp only
+  generalize SystemState.lookupSlotCap st src = o
+  cases o with
+  | none => rfl
+  | some cap => simp only [CNode.setCell_eq_insert]
+
 /-! ### The invoked CNode's slots, as words
 
 A CNode invocation names two slots of the invoked CNode, and the dispatcher hands

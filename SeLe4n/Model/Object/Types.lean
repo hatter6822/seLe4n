@@ -476,6 +476,11 @@ returned as it is, so deriving it builds no record (WS-ZA ZA5.3 part 6). -/
   | none => cap
   | some _ => { cap with mapping := none }
 
+/-- A capability that records no mapping is its own derivation. -/
+theorem withoutMapping_of_mapping_none {cap : Capability} (h : cap.mapping = none) :
+    cap.withoutMapping = cap := by
+  cases cap; simp_all [withoutMapping]
+
 @[csimp] theorem withoutMapping_eq_impl : @withoutMapping = @withoutMappingImpl := by
   funext cap
   cases cap with

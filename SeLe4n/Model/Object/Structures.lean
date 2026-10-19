@@ -1081,6 +1081,30 @@ def insert (node : CNode) (slot : SeLe4n.Slot) (cap : Capability) : CNode :=
           simp [e, this] }
   else node
 
+/-- WS-ZA ZA5.3 part 6: **`insert` of an entry already built** — the slot's
+array entry set to `o`, which holds `cap`.  A copy or a move hands over the
+source slot's own entry, so the write builds no new one (`setCell_eq_insert`). -/
+def setCell (node : CNode) (slot : SeLe4n.Slot) (o : Option Capability) (cap : Capability)
+    (ho : o = some cap) : CNode :=
+  if h : slot.toNat < node.cells.size then
+    { node with
+      slotsGhost := node.slotsGhost.map (·.insert slot cap)
+      cells := node.cells.set slot.toNat o h
+      cells_size := by rw [Array.size_set]; exact node.cells_size
+      slots_agree := fun s => by
+        subst ho
+        rw [SeLe4n.Erased.out_map, SeLe4n.UniqueSlotMap.get?_insert, slotArrayGet_set, node.slots_agree s]
+        by_cases e : slot = s
+        · subst e; simp
+        · have : s.toNat ≠ slot.toNat := fun h' => e (by
+            cases slot; cases s; simp_all [SeLe4n.Slot.toNat])
+          simp [e, this] }
+  else node
+
+theorem setCell_eq_insert (node : CNode) (slot : SeLe4n.Slot) (o : Option Capability)
+    (cap : Capability) (ho : o = some cap) : node.setCell slot o cap ho = node.insert slot cap := by
+  subst ho; rfl
+
 /-- WS-ZA ZA5.3: a CNode of the given geometry holding `xs`, inserted in order
 (the last capability at a repeated slot wins); a slot at or past
 `2 ^ rw` holds nothing, as `insert` leaves it. -/
