@@ -110,8 +110,10 @@ def frozenObjectAgrees (f : FrozenKernelObject) (l : KernelObject) : Bool :=
     .cnode (lc@⟨ld, lgw, lgv, lrw, _lslots, _lcells, _, _, llinks, _, _lspare⟩) =>
       fd == ld && fgw == lgw && fgv == lgv && frw == lrw
         && frozenCNodeSlotsAgree fc lc && flinks == llinks
-  | .vspaceRoot (fv@⟨fasid, _fm, fbase, ftables, _fepochs⟩),
-    .vspaceRoot (lv@⟨lasid, _lm, lbase, ltables, _lepochs⟩) =>
+  -- The spare mapping cells are not compared: they are no mapping
+  -- (`MappingSpare`, `EpochSpare`: each logically one value).
+  | .vspaceRoot (fv@⟨fasid, _fm, fbase, ftables, _fepochs, _fspare⟩),
+    .vspaceRoot (lv@⟨lasid, _lm, lbase, ltables, _lepochs, _lspare, _lespare⟩) =>
       fasid == lasid && fbase == lbase && ftables == ltables
         && frozenVSpaceMappingsAgree fv lv
   | _, _ => false

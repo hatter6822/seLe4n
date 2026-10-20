@@ -255,13 +255,16 @@ for driver in drivers:
         # operation's own cells (object writes, the store's copy); the rows
         # that bring them to zero lower these pins.
         pinned.update({
-            "untyped-retype-page-table-1": (65, 65), "page-table-map-1": (6, 6),
-            "untyped-retype-page-table-2": (65, 65), "page-table-map-2": (6, 6),
-            "untyped-retype-page-table-3": (65, 65), "page-table-map-3": (6, 6),
-            "untyped-retype-frame": (82, 82), "vspace-map": (14, 7),
+            "untyped-retype-page-table-1": (62, 62), "page-table-map-1": (6, 6),
+            "untyped-retype-page-table-2": (62, 62), "page-table-map-2": (6, 6),
+            "untyped-retype-page-table-3": (62, 62), "page-table-map-3": (6, 6),
+            "untyped-retype-frame": (79, 79), "vspace-map": (9, 0),
             "vspace-unify-instruction": (4, 3),
-            "vspace-map-copy": (12, 7), "frame-revoke": (9, 7),
-            "vspace-unmap": (7, 7),
+            "vspace-map-copy": (7, 5), "frame-revoke": (8, 6),
+            "vspace-unmap": (6, 6),
+            # a map at a second address after an unmap: the root's retained
+            # mapping and epoch cells take the new address.
+            "vspace-map-moved": (0, 0), "vspace-unmap-moved": (6, 6),
             "page-table-unmap-3": (5, 5), "page-table-delete-3": (3, 3),
             "page-table-unmap-2": (5, 5), "page-table-delete-2": (3, 3),
             "page-table-unmap-1": (5, 5), "page-table-delete-1": (3, 3),

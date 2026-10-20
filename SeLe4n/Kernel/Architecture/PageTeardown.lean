@@ -318,7 +318,9 @@ def unmapPageStateInPlace (executingCore : Concurrency.CoreId) (asid : SeLe4n.AS
         simp only [SystemState.getVSpaceRoot?, hObj]
       simp only [hGR, Bool.and_eq_true, Option.isSome_iff_exists] at hA'
       obtain ⟨⟨⟨-, e, hE⟩, -⟩, -⟩ := hA'
-      have hU : root.unmapPage vaddr = some { root with mappings := root.mappings.erase vaddr } := by
+      have hU : root.unmapPage vaddr =
+          some { root with mappings := root.mappings.erase vaddr,
+                           mappingEpochs := root.mappingEpochs.erase vaddr } := by
         unfold VSpaceRoot.unmapPage; rw [hE]
       have h1 := vspaceUnmap_eq_unmapPageState ec asid vaddr st rootId root _ hR hU
       rw [vspaceUnmapPageWithShootdownAndIcacheBroadcast_of_admitted ec asid vaddr rootId st hA] at h1
@@ -345,7 +347,8 @@ theorem mappedPageLive_unmapPage {st : SystemState} {p : MappedPage}
       rw [hN] at h
       simp at h
     | some e =>
-      exact ⟨rootId, root, { root with mappings := root.mappings.erase p.vaddr }, rfl,
+      exact ⟨rootId, root, { root with mappings := root.mappings.erase p.vaddr,
+                                       mappingEpochs := root.mappingEpochs.erase p.vaddr }, rfl,
         by simp [VSpaceRoot.unmapPage, hL]⟩
 
 /-- WS-ZA ZA5.3: **the teardown, as a step that cannot fail**: each listed page

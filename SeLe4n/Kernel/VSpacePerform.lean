@@ -43,10 +43,156 @@ open SeLe4n.Kernel.Architecture.SyscallArgDecode
     (perms : PagePermissions) (r : VSpaceRoot) : VSpaceRoot :=
   { r with mappings := r.mappings.insert vaddr (paddr, perms) }
 
+/-- WS-ZA ZA5.4: a fresh mapping cell, built out of line so that no caller's
+equal literal is hoisted out of the branch that reuses a spare. -/
+@[noinline] def mappingCellFresh (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr)
+    (perms : PagePermissions) :
+    Option (RobinHood.RHEntry SeLe4n.VAddr (SeLe4n.PAddr × PagePermissions)) :=
+  some ⟨vaddr, (paddr, perms), 0⟩
+
+/-- WS-ZA ZA5.4: the value pair `(paddr, perms)` written over a spare pair `v`:
+out of line, so `v` is the only cell the compiler can write it into, and its
+address reads back through `v` so that `v` stays live, since an update of every
+field would drop `v` and build a fresh pair (as `tlbEntryOverwrite`).  Equal to
+the pair (`mappingValueOver_eq`). -/
+@[noinline] def mappingValueOver (v : SeLe4n.PAddr × PagePermissions)
+    (paddr : SeLe4n.PAddr) (perms : PagePermissions) : SeLe4n.PAddr × PagePermissions :=
+  (if v.1.val = paddr.val then v.1 else paddr, perms)
+
+theorem mappingValueOver_eq (v : SeLe4n.PAddr × PagePermissions)
+    (paddr : SeLe4n.PAddr) (perms : PagePermissions) :
+    mappingValueOver v paddr perms = (paddr, perms) := by
+  unfold mappingValueOver
+  split
+  · rename_i h
+    cases v with | mk a b => cases a; cases paddr; simp_all
+  · rfl
+
+/-- WS-ZA ZA5.4: the table entry of `vaddr ↦ (paddr, perms)` written over a spare
+entry `e` and its value pair, out of line with its distance read back through
+`e` (as `mappingValueOver`).  Equal to the entry (`mappingEntryOver_eq`). -/
+@[noinline] def mappingEntryOver
+    (e : RobinHood.RHEntry SeLe4n.VAddr (SeLe4n.PAddr × PagePermissions))
+    (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr) (perms : PagePermissions) :
+    RobinHood.RHEntry SeLe4n.VAddr (SeLe4n.PAddr × PagePermissions) :=
+  ⟨vaddr, mappingValueOver e.value paddr perms, if e.dist = 0 then e.dist else 0⟩
+
+theorem mappingEntryOver_eq
+    (e : RobinHood.RHEntry SeLe4n.VAddr (SeLe4n.PAddr × PagePermissions))
+    (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr) (perms : PagePermissions) :
+    mappingEntryOver e vaddr paddr perms = ⟨vaddr, (paddr, perms), 0⟩ := by
+  unfold mappingEntryOver
+  rw [mappingValueOver_eq]
+  split <;> simp_all
+
+/-- WS-ZA ZA5.4: the mapping cell of `vaddr ↦ (paddr, perms)`, written over the
+root's spare `o` (its `some`, its entry and its value pair) when it has one, out
+of line so those are the cells the compiler writes into; with no spare it is
+built (`mappingCellFresh`).  Equal to the fresh cell (`mappingCellOver_eq`). -/
+@[noinline] def mappingCellOver
+    (o : Option (RobinHood.RHEntry SeLe4n.VAddr (SeLe4n.PAddr × PagePermissions)))
+    (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr) (perms : PagePermissions) :
+    Option (RobinHood.RHEntry SeLe4n.VAddr (SeLe4n.PAddr × PagePermissions)) :=
+  match o with
+  | some e => some (mappingEntryOver e vaddr paddr perms)
+  | none => mappingCellFresh vaddr paddr perms
+
+theorem mappingCellOver_eq
+    (o : Option (RobinHood.RHEntry SeLe4n.VAddr (SeLe4n.PAddr × PagePermissions)))
+    (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr) (perms : PagePermissions) :
+    mappingCellOver o vaddr paddr perms = some ⟨vaddr, (paddr, perms), 0⟩ := by
+  unfold mappingCellOver
+  split
+  · rw [mappingEntryOver_eq]
+  · rfl
+
+/-- WS-ZA ZA5.4: `rootWithMapping` as compiled: the root's spare cell is taken
+out of its field before the insert, and the mapping written over it
+(`mappingCellOver`) is the cell the table places (`RHTable.insertCell`), so a
+map after an unmap builds no table entry. -/
+@[inline] def rootWithMappingCells (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr)
+    (perms : PagePermissions) (r : VSpaceRoot) : VSpaceRoot :=
+  let sp := r.mappingSpare
+  let r0 := { r with mappingSpare := Squash.mk none }
+  Quot.lift
+    (fun o => { r0 with mappings := r0.mappings.insertCell (mappingCellOver o vaddr paddr perms) })
+    (fun a b _ => by dsimp only; rw [mappingCellOver_eq, mappingCellOver_eq]) sp
+
+@[csimp] theorem rootWithMapping_eq_cells : @rootWithMapping = @rootWithMappingCells := by
+  funext vaddr paddr perms r
+  unfold rootWithMapping rootWithMappingCells
+  cases r with
+  | mk asid mappings tableBase tables mappingEpochs sp esp =>
+    induction sp using Squash.ind with
+    | h o =>
+      simp only [Squash.mk]
+      rw [mappingCellOver_eq, RobinHood.RHTable.insertCell_eq]
+      simp only [VSpaceRoot.mk.injEq, and_true, true_and]
+      exact Subsingleton.elim _ _
+
 /-- WS-ZA ZA5.4: the root a mapping's epoch tag leaves (`tagFrameMapping`). -/
 @[inline] def rootWithEpoch (vaddr : SeLe4n.VAddr) (epoch : Nat) (r : VSpaceRoot) :
     VSpaceRoot :=
   { r with mappingEpochs := r.mappingEpochs.insert vaddr epoch }
+
+/-- WS-ZA ZA5.4: a fresh epoch cell, built out of line (as `mappingCellFresh`)
+so that its literal is not merged with the arm that reuses a spare. -/
+@[noinline] def epochCellFresh (vaddr : SeLe4n.VAddr) (epoch : Nat) :
+    Option (RobinHood.RHEntry SeLe4n.VAddr Nat) :=
+  some ⟨vaddr, epoch, 0⟩
+
+/-- WS-ZA ZA5.4: the table entry of `vaddr ↦ epoch` written over a spare entry
+`e`, out of line with its distance read back through `e` (as
+`mappingEntryOver`).  Equal to the entry (`epochEntryOver_eq`). -/
+@[noinline] def epochEntryOver (e : RobinHood.RHEntry SeLe4n.VAddr Nat)
+    (vaddr : SeLe4n.VAddr) (epoch : Nat) : RobinHood.RHEntry SeLe4n.VAddr Nat :=
+  ⟨vaddr, epoch, if e.dist = 0 then e.dist else 0⟩
+
+theorem epochEntryOver_eq (e : RobinHood.RHEntry SeLe4n.VAddr Nat)
+    (vaddr : SeLe4n.VAddr) (epoch : Nat) : epochEntryOver e vaddr epoch = ⟨vaddr, epoch, 0⟩ := by
+  unfold epochEntryOver
+  split <;> simp_all
+
+/-- WS-ZA ZA5.4: the epoch cell of `vaddr ↦ epoch`, written over the root's
+spare epoch cell `o` (its `some` and its entry) when it has one, out of line so
+those are the cells the compiler writes into; with no spare it is built
+(`epochCellFresh`).  Equal to the fresh cell (`epochCellOver_eq`). -/
+@[noinline] def epochCellOver (o : Option (RobinHood.RHEntry SeLe4n.VAddr Nat))
+    (vaddr : SeLe4n.VAddr) (epoch : Nat) : Option (RobinHood.RHEntry SeLe4n.VAddr Nat) :=
+  match o with
+  | some e => some (epochEntryOver e vaddr epoch)
+  | none => epochCellFresh vaddr epoch
+
+theorem epochCellOver_eq (o : Option (RobinHood.RHEntry SeLe4n.VAddr Nat))
+    (vaddr : SeLe4n.VAddr) (epoch : Nat) : epochCellOver o vaddr epoch = some ⟨vaddr, epoch, 0⟩ := by
+  unfold epochCellOver
+  split
+  · rw [epochEntryOver_eq]
+  · rfl
+
+/-- WS-ZA ZA5.4: `rootWithEpoch` as compiled: the root's spare epoch cell, which
+the unmap before it left (`rootWithoutEpochCells`), taken out of its field and
+written over (`epochCellOver`) as the cell the table places, so a map after an
+unmap builds no epoch entry, whatever address it maps. -/
+@[inline] def rootWithEpochCells (vaddr : SeLe4n.VAddr) (epoch : Nat) (r : VSpaceRoot) :
+    VSpaceRoot :=
+  let sp := r.epochSpare
+  let r0 := { r with epochSpare := Squash.mk none }
+  Quot.lift
+    (fun o => { r0 with mappingEpochs := r0.mappingEpochs.insertCell (epochCellOver o vaddr epoch) })
+    (fun a b _ => by dsimp only; rw [epochCellOver_eq, epochCellOver_eq]) sp
+
+@[csimp] theorem rootWithEpoch_eq_cells : @rootWithEpoch = @rootWithEpochCells := by
+  funext vaddr epoch r
+  unfold rootWithEpoch rootWithEpochCells
+  cases r with
+  | mk asid mappings tableBase tables mappingEpochs sp esp =>
+    induction esp using Squash.ind with
+    | h o =>
+      simp only [Squash.mk]
+      rw [epochCellOver_eq, RobinHood.RHTable.insertCell_eq]
+      simp only [VSpaceRoot.mk.injEq, and_true, true_and]
+      exact Subsingleton.elim _ _
 
 /-- WS-ZA ZA5.4: the frame a mapping's epoch tag leaves: its counter advanced. -/
 @[inline] def frameWithNextEpoch (f : FrameObject) : FrameObject :=
@@ -102,7 +248,7 @@ address-space step's (`vspaceMapPageCheckedWithFlushFromState`), and the
 in-place conditions (see the module docstring).  `rootId` is the root the
 invoked capability names, which the dispatcher's authorisation check resolved
 for `args.asid`. -/
-def vspaceMapAdmittedAt (st : SystemState) (args : VSpaceMapArgs) (frameCap : Capability)
+@[inline] def vspaceMapAdmittedAt (st : SystemState) (args : VSpaceMapArgs) (frameCap : Capability)
     (frame : FrameObject) (rootId : SeLe4n.ObjId) : Bool :=
   (match frameMappingAdmissible frameCap frame args.perms with
    | .ok () => true

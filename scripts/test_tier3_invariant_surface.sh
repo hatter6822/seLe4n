@@ -4285,7 +4285,7 @@ run_check "INVARIANT" rg -n '^    untypedPlacementRespected config && bootRootTa
 run_check "INVARIANT" rg -n '^   \(bootRootTablesPlaced config, bootRootTablesBootError\)\]$' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n -U 'def bootRootTablesPlaced [^\n]*(\n([ \t][^\n]*)?)*  decide \(\(configuredRootTableBases config\)\.filterMap id\)\.Nodup &&' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^theorem bootRootTablesPlaced_withoutExtents($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
-run_check "INVARIANT" rg -n -U '^    decide \(root\.mappings\.size = 0\) && root\.tables\.isEmpty &&\n    decide \(4 ≤ root\.mappings\.capacity\)$' SeLe4n/Platform/RPi5/VSpaceBoot.lean
+run_check "INVARIANT" rg -n -U '^    decide \(root\.mappings\.size = 0\) && root\.tables\.isEmpty &&\n    decide \(4 ≤ root\.mappings\.capacity\) && root\.mappingEpochs\.vacant$' SeLe4n/Platform/RPi5/VSpaceBoot.lean
 run_check "INVARIANT" rg -n '^    tableBase := some \(rpi5BootTablePage page\) \}$' SeLe4n/Platform/RPi5/Deployment.lean
 run_check "INVARIANT" rg -n '^BOOT_TABLE_POOL_PAGES = 0x10;$' rust/sele4n-hal/link.ld
 run_check "INVARIANT" rg -n '^    crate::mmu::zero_boot_table_pool\(\);$' rust/sele4n-hal/src/lean_entry.rs

@@ -114,6 +114,12 @@ _TABLE_OPS = {
     "modify": "write",
     "modifyImpl": "write",
     "erase": "write",
+    # The cell-placing forms the insert and erase compile to (a given entry
+    # cell placed, an entry erased at a found index).
+    "insertCell": "write",
+    "insertNoResizeCell": "write",
+    "insertAbsentCell": "write",
+    "eraseAt": "write",
     "set": "write",
     "fold": "sweep",
     "toList": "sweep",
@@ -125,6 +131,7 @@ _TABLE_OPS = {
     "ofList": "other",
     "resize": "other",
     "invExtK": "other",
+    "vacant": "other",
     "wellFormed": "other",
     "size": "other",
     # `RHTable`'s remaining structure fields.  Projections, so they yield no

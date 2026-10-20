@@ -105,21 +105,39 @@ def PagePermissions.ofNat? (n : Nat) : Option PagePermissions :=
     if p.wxCompliant then some p else none
   else none
 
+/-- WS-ZA ZA5.4: the permissions of every 5-bit word, in word order — built
+once, when the kernel initialises, so a decode hands out a shared value rather
+than building one. -/
+def PagePermissions.table : Array PagePermissions :=
+  ((List.range 32).map PagePermissions.ofNat).toArray
+
+theorem PagePermissions.table_size : PagePermissions.table.size = 32 := by
+  simp [PagePermissions.table]
+
+theorem PagePermissions.table_get (n : Nat) (h : n < PagePermissions.table.size) :
+    PagePermissions.table[n] = PagePermissions.ofNat n := by
+  simp [PagePermissions.table]
+
 /-- WS-ZA ZA5.4: `ofNat?` as compiled — the range and W^X checks read off the
-word's bits, inlined, so a decoder's `match` meets the `some` and builds only
-the permissions it keeps. -/
+word's bits, inlined, so a decoder's `match` meets the `some`, and the
+permissions are the shared entry of `table`, so none is built. -/
 @[inline] def PagePermissions.ofNatChecked (n : Nat) : Option PagePermissions :=
-  if n < 32 && !(n &&& 2 != 0 && n &&& 4 != 0) then
-    some { read := n &&& 1 != 0, write := n &&& 2 != 0, execute := n &&& 4 != 0,
-           user := n &&& 8 != 0, cacheable := n &&& 16 != 0 }
+  if h : n < 32 && !(n &&& 2 != 0 && n &&& 4 != 0) then
+    some (PagePermissions.table[n]'(by
+      rw [PagePermissions.table_size]
+      simp only [Bool.and_eq_true, decide_eq_true_eq] at h
+      exact h.1))
   else none
 
 @[csimp] theorem PagePermissions.ofNat?_eq_checked :
     @PagePermissions.ofNat? = @PagePermissions.ofNatChecked := by
   funext n
   unfold PagePermissions.ofNat? PagePermissions.ofNatChecked PagePermissions.wxCompliant
-    PagePermissions.ofNat
-  by_cases h : n < 32 <;> simp [h]
+  by_cases h : n < 32
+  · simp only [h, PagePermissions.table_get]
+    unfold PagePermissions.ofNat
+    simp
+  · simp [h]
 
 /-- T6-C/V4-K: `ofNat?` returns `some` for valid, W^X-compliant permission values. -/
 theorem PagePermissions.ofNat?_valid (n : Nat) (h : n < 32)
@@ -208,6 +226,26 @@ def covers (slot : PageTableSlot) (vaddr : SeLe4n.VAddr) : Bool :=
 
 end PageTableSlot
 
+/-- WS-ZA ZA5.4: the cell an unmap took out of a root's mapping table (its
+`some` and its entry, the entry's value pair among them), kept for the root's
+next mapping to be written over, as a hardware page table's freed entry is
+the next one written.  A `Squash`, so logically one value: no theorem reads it,
+and a root with any spare is the root with any other
+(`VSpaceRoot.with_mappingSpare`). -/
+abbrev MappingSpare :=
+  Squash (Option (SeLe4n.Kernel.RobinHood.RHEntry SeLe4n.VAddr (SeLe4n.PAddr × PagePermissions)))
+
+instance : Repr MappingSpare := ⟨fun _ _ => "spare mapping cell"⟩
+
+/-- WS-ZA ZA5.4: the cell an unmap took out of a root's epoch table (its
+`some` and its entry), kept for the root's next mapping's epoch to be written
+over, as `MappingSpare` is for the translation.  Logically one value
+(`VSpaceRoot.with_epochSpare`). -/
+abbrev EpochSpare :=
+  Squash (Option (SeLe4n.Kernel.RobinHood.RHEntry SeLe4n.VAddr Nat))
+
+instance : Repr EpochSpare := ⟨fun _ _ => "spare epoch cell"⟩
+
 /-- WS-G6/F-P05: Minimal VSpace root object: ASID identity plus flat virtual→physical mappings.
 
 This intentionally models only one-level deterministic lookup semantics for WS-B1.
@@ -238,13 +276,34 @@ structure VSpaceRoot where
       frame capability mapped** (`FrameMapping.epoch`), written by `.vspaceMap`
       beside the translation.  What makes a capability's record identify *its*
       mapping rather than any translation of the same frame at the same
-      address: `mappedPageLive` asks the two to agree.  An entry outliving its
-      translation is harmless — every mapping a capability records is made by
-      `.vspaceMap`, which overwrites the entry with a fresh epoch. -/
+      address: `mappedPageLive` asks the two to agree.  An entry lives exactly
+      as long as its translation: `.vspaceMap` writes both, and every unmap
+      (`unmapPage`) erases both, so the table never holds more entries than
+      the root has mappings. -/
   mappingEpochs : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.VAddr Nat := {}
+  /-- WS-ZA ZA5.4: the cell the root's last unmap took out of `mappings`
+      (`MappingSpare`), which its next map writes over. -/
+  mappingSpare : MappingSpare := Squash.mk none
+  /-- WS-ZA ZA5.4: the cell the root's last unmap took out of `mappingEpochs`
+      (`EpochSpare`), which its next map's epoch writes over. -/
+  epochSpare : EpochSpare := Squash.mk none
   deriving Repr
 
 namespace VSpaceRoot
+
+/-- WS-ZA ZA5.4: the spare cell is no part of what a root is. -/
+@[simp] theorem with_mappingSpare (r : VSpaceRoot) (v : MappingSpare) :
+    { r with mappingSpare := v } = r := by
+  cases r
+  simp only [VSpaceRoot.mk.injEq, and_true, true_and]
+  exact Subsingleton.elim _ _
+
+/-- WS-ZA ZA5.4: the spare epoch cell is no part of what a root is. -/
+@[simp] theorem with_epochSpare (r : VSpaceRoot) (v : EpochSpare) :
+    { r with epochSpare := v } = r := by
+  cases r
+  simp only [VSpaceRoot.mk.injEq, true_and]
+  exact Subsingleton.elim _ _
 
 /-- **WS-BP BP7.1 (`v0.36.12`)**: the levels an address space's walk passes
 through below its root — 1, 2 and 3 in a 48-bit, 4 KiB-granule translation. -/
@@ -461,7 +520,8 @@ Returns `none` if no mapping exists for `vaddr`. -/
 def unmapPage (root : VSpaceRoot) (vaddr : SeLe4n.VAddr) : Option VSpaceRoot :=
   match root.mappings[vaddr]? with
   | none => none
-  | some _ => some { root with mappings := root.mappings.erase vaddr }
+  | some _ => some { root with mappings := root.mappings.erase vaddr,
+                               mappingEpochs := root.mappingEpochs.erase vaddr }
 
 /-- WS-G6: No-virtual-overlap property. With HashMap-backed mappings, this is
 trivially true by key uniqueness: each VAddr maps to at most one entry.

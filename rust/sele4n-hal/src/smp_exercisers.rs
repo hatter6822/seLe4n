@@ -2094,6 +2094,22 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 5] = [
             VSPACE_CAP,
             [ROOT_ASID, FRAME_VADDR, 0, 0],
         ),
+        // The frame mapped again at an address the unmap did not free (the
+        // copy's page, which the revoke unmapped), so the map writes over the
+        // translation and epoch cells the unmap took out rather than over an
+        // entry left at its own address; then unmapped again.
+        invocation(
+            "vspace-map-moved",
+            VSPACE_MAP,
+            VSPACE_CAP,
+            [ROOT_ASID, FRAME_COPY_VADDR, FRAME_CAP, FRAME_PERMS],
+        ),
+        invocation(
+            "vspace-unmap-moved",
+            VSPACE_UNMAP,
+            VSPACE_CAP,
+            [ROOT_ASID, FRAME_COPY_VADDR, 0, 0],
+        ),
         invocation(
             "frame-delete",
             CSPACE_DELETE,

@@ -60,10 +60,26 @@ def KernelObject.unshare (o : KernelObject) : KernelObject := o
   | some r => some { r with rights := opaqueId r.rights }
   | none => none
 
+/-- A VSpace root's spare mapping cell, rebuilt when shared so the root owns
+its `some`, its entry and the entry's value pair (WS-ZA ZA5.4). -/
+@[inline] def unshareMappingCell
+    (o : Option (RHEntry SeLe4n.VAddr (SeLe4n.PAddr × PagePermissions))) :
+    Option (RHEntry SeLe4n.VAddr (SeLe4n.PAddr × PagePermissions)) :=
+  match o with
+  | some e => some { e with value := (opaqueId e.value.1, e.value.2) }
+  | none => none
+
+/-- A VSpace root's spare epoch cell, rebuilt when shared (WS-ZA ZA5.4). -/
+@[inline] def unshareEpochCell (o : Option (RHEntry SeLe4n.VAddr Nat)) :
+    Option (RHEntry SeLe4n.VAddr Nat) :=
+  match o with
+  | some e => some { e with dist := opaqueId e.dist }
+  | none => none
+
 /-- `KernelObject.unshare` as compiled.  Each record is rebuilt with one field
 passed through `opaqueId`, so a shared record is copied and an exclusive one
 written in place; a thread's register file, a CNode's slot array and a VSpace
-root's mapping and epoch tables are rebuilt the same way. -/
+root's mapping and epoch tables and their spare cells are rebuilt the same way. -/
 def KernelObject.unshareImpl : KernelObject → KernelObject
   | .tcb t => .tcb { t with
       tid := opaqueId t.tid
@@ -84,7 +100,11 @@ def KernelObject.unshareImpl : KernelObject → KernelObject
   | .vspaceRoot v => .vspaceRoot { v with
       asid := opaqueId v.asid
       mappings := v.mappings.unshare
-      mappingEpochs := v.mappingEpochs.unshare }
+      mappingEpochs := v.mappingEpochs.unshare
+      mappingSpare := Quot.lift (fun a => Squash.mk (unshareMappingCell a))
+        (fun _ _ _ => Subsingleton.elim _ _) v.mappingSpare
+      epochSpare := Quot.lift (fun a => Squash.mk (unshareEpochCell a))
+        (fun _ _ _ => Subsingleton.elim _ _) v.epochSpare }
   | .untyped u => .untyped { u with regionBase := opaqueId u.regionBase }
   | .schedContext sc => .schedContext { sc with scId := opaqueId sc.scId }
   | .reply r => .reply { r with replyId := opaqueId r.replyId }
@@ -101,6 +121,12 @@ def KernelObject.unshareImpl : KernelObject → KernelObject
     simp only [KernelObject.unshare, KernelObject.unshareImpl, hId, hIdN, Array.map_id, opaqueId,
       KernelObject.cnode.injEq]
     exact CNode.ext_of_fields rfl rfl rfl rfl rfl rfl rfl
+  case vspaceRoot v =>
+    simp only [KernelObject.unshare, KernelObject.unshareImpl, opaqueId, RHTable.unshare,
+      KernelObject.vspaceRoot.injEq]
+    cases v
+    simp only [VSpaceRoot.mk.injEq, true_and]
+    exact ⟨Subsingleton.elim _ _, Subsingleton.elim _ _⟩
   all_goals
     simp only [KernelObject.unshare, KernelObject.unshareImpl, hId, hIdN, Array.map_id, opaqueId,
       RHTable.unshare]

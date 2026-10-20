@@ -278,6 +278,14 @@ private def stillMapped (st : SystemState) (asid : SeLe4n.ASID)
   | some (_, root) => (VSpaceRoot.lookup root vaddr).isSome
   | none           => false
 
+/-- Does the address space bound to `asid` still hold a mapping-epoch entry for
+`vaddr`?  An entry lives exactly as long as the translation it stamps. -/
+private def holdsEpoch (st : SystemState) (asid : SeLe4n.ASID)
+    (vaddr : SeLe4n.VAddr) : Bool :=
+  match resolveAsidRoot st asid with
+  | some (_, root) => root.mappingEpochs[vaddr]?.isSome
+  | none           => false
+
 private def isIllegalAuthority (r : Except KernelError (Unit × SystemState)) : Bool :=
   match r with
   | .error .illegalAuthority => true
@@ -1436,6 +1444,8 @@ private def runAuthorizedChecks : IO Unit := do
         true
       assertBool "and the mapping is actually removed"
         (!(stillMapped st' victimAsid victimVaddr))
+      assertBool "and its mapping-epoch entry goes with it"
+        (!(holdsEpoch st' victimAsid victimVaddr))
     -- `.vspaceUnifyInstruction` with the same authority.
     match dispatchSyscallAsCurrent (decode2 .vspaceUnifyInstruction 7 0x40000) attacker Concurrency.bootCoreId st with
     | .error _ => assertBool "authorized `.vspaceUnifyInstruction` succeeds" false
@@ -1450,6 +1460,15 @@ private def runAuthorizedChecks : IO Unit := do
       assertBool "authorized `.vspaceMap` succeeds" true
       assertBool "and the new mapping is installed"
         (stillMapped st' victimAsid freshVaddr)
+      assertBool "and stamps a mapping epoch for it"
+        (holdsEpoch st' victimAsid freshVaddr)
+      -- Map then unmap at a fresh address leaves no entry behind, so the
+      -- epoch table stays bounded by the live mappings.
+      match dispatchSyscallAsCurrent (decode2 .vspaceUnmap 7 0x50000) attacker Concurrency.bootCoreId st' with
+      | .error _ => assertBool "unmapping the fresh address succeeds" false
+      | .ok ((), st'') =>
+        assertBool "unmapping a fresh address erases its mapping-epoch entry"
+          (!(stillMapped st'' victimAsid freshVaddr) && !(holdsEpoch st'' victimAsid freshVaddr))
   -- A caller acting on its OWN address space with its own root capability.
   match scenario ownRootCap with
   | none => assertBool "the own-AS scenario builds" false

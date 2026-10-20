@@ -1,3 +1,74 @@
+## v0.36.117 — WS-ZA ZA5.4 part 7: a steady frame map allocates nothing
+
+A frame map after an unmap writes its mapping over the table entry the unmap
+erased, and the map's decode builds nothing.
+
+- **Decode and admission** (`Model/Object/Structures.lean`,
+  `Architecture/HardwareTables.lean`, `VSpacePerform.lean`): the permission
+  decode hands out the shared entry of a table built at initialisation
+  (`PagePermissions.table`); the map's admission check is inlined, so the
+  decoded arguments are never built; the descriptor word is computed out of
+  line (`mappingDescriptorWord`), so the ledger store is built from it once.
+- **The table places a given cell** (`RobinHood/Core.lean`):
+  `RHTable.insertCell` takes the entry cell the caller supplies and places it,
+  displacing entries in place (`insertCellLoop`, proven equal to the insert's
+  loop; `insertPlacesLoop` decides beforehand whether the size grows), and
+  `RHTable.insertCell_eq` proves it equal to `RHTable.insert`.  The plain
+  insert's absent-key branch runs the same placement.  `RHTable.eraseAt`
+  erases the entry at an index found by `findIdxLoop`
+  (`RHTable.erase_eq_eraseAt`).
+- **The root keeps the erased cell** (`Model/Object/Structures.lean`,
+  `Architecture/VSpaceUnmapPerform.lean`, `VSpacePerform.lean`):
+  `VSpaceRoot.mappingSpare` holds the entry an unmap erased.  It is a `Squash`,
+  so logically one value: no theorem reads it, and every root equals the root
+  with any other spare (`VSpaceRoot.with_mappingSpare`).  The unmap stores the
+  erased entry there (`rootWithoutMappingCells`, `@[csimp]` form of
+  `rootWithoutMapping`); the map writes its mapping over it, the option, the
+  entry and the value pair each in place (`mappingCellOver`,
+  `mappingEntryOver`, `mappingValueOver`), and with no spare builds it out of
+  line (`mappingCellFresh`); `rootWithMappingCells` is the `@[csimp]` form of
+  `rootWithMapping`.
+- **The mapping-epoch table is bounded by the live mappings**
+  (`Model/Object/Structures.lean`, `Architecture/VSpaceUnmapPerform.lean`,
+  `VSpacePerform.lean`, `Architecture/VSpaceInvariant.lean`,
+  `Architecture/PageTeardownClears.lean`, `Platform/RPi5/VSpaceBoot.lean`):
+  `VSpaceRoot.mappingEpochs` gained an entry for every address ever mapped and
+  no unmap or teardown erased it, so a thread holding a root and a frame
+  capability could map and unmap at fresh addresses until the kernel heap was
+  exhausted and every core halted (local denial of service, present on main
+  before this change).  `VSpaceRoot.unmapPage` now erases the address's epoch
+  with its translation; the unmap keeps the erased epoch cell in
+  `VSpaceRoot.epochSpare` (a `Squash`, like `mappingSpare`) and the next map
+  places its epoch in that cell (`rootWithoutEpochCells`, `epochCellOver`,
+  `@[csimp] rootWithEpoch_eq_cells`).  `vspaceMappingsWellFormed` now carries
+  the epoch table's `invExtK` beside the mapping table's, preserved by map,
+  unmap and teardown and established at boot from `RHTable.vacant`
+  (`RHTable.vacant_invExtK`); `vspaceRootsShrink` states that a shrink only
+  removes epochs.  Two exerciser scenarios map and unmap at a second address
+  after the first (`vspace-map-moved`, `vspace-unmap-moved`), and
+  `tests/VSpaceCapabilityBindingSuite.lean` checks that an unmap leaves no
+  epoch entry behind.  The map's check that the capability's own record is not
+  live reads the record's words (`capabilityMappingLiveWords`, `@[csimp]` form
+  of `capabilityMappingLive`), so a stale record builds no page view.  A map at
+  a second address after an unmap reads 0 / 0; the unmap there reads 6, as at
+  the first address.  The copied capability's map reads 5 in steady state
+  (3 before): it maps an address with no unmap before it, so its epoch is now a
+  new entry, where before it overwrote the entry the leak had left behind.
+- **Unsharing copies the retained cells** (`Model/Object/Unshare.lean`): a
+  root entering the store gets its own copy of both retained cells, so a spare
+  is never shared with another root.
+- **Readings** (normal build, first call / steady state): frame map 9 / 0
+  (14 / 7), map of a copied capability 7 / 5 (12 / 7), unmap 6 (7), revoke
+  destroying a mapped frame 8 / 6 (9 / 7), page-table retype 62 (65), frame
+  retype 79 (82).  The exerciser pins the new readings.
+- **Main's CI** (`.github/workflows/nightly_determinism.yml`,
+  `docs/codebase_map.json`): the nightly run gave the changed-file anchor
+  sweep no base revision, so the sweep refused every scheduled run; it now
+  takes the same "Provide a base revision" step as the fast lane (HEAD's
+  parent, since a scheduled event carries no base).  The codebase map's
+  source digest was stale after part 6's census fix, which turned main's
+  Codebase Map Sync red; the map is regenerated.
+
 ## v0.36.116 — WS-ZA ZA5.4 part 6: a core's TLB fill and page drain reuse its entry cells
 
 A TLB fill no longer builds its entry or list cell when the core has a spare,
