@@ -594,7 +594,8 @@ private def runModifiedFieldsChecks : IO Unit := do
              StateField.perCoreTlb ∉ storeObject_modifiedFields ∧
              StateField.perCoreICache ∉ storeObject_modifiedFields ∧
              StateField.pendingIcacheMaintenance ∉ storeObject_modifiedFields ∧
-             StateField.pendingPhysicalWrites ∉ storeObject_modifiedFields ∧
+             StateField.physicalWrites ∉ storeObject_modifiedFields ∧
+             StateField.physicalWritesDrained ∉ storeObject_modifiedFields ∧
              StateField.declassificationAuditLog ∉ storeObject_modifiedFields ∧
              StateField.declassificationAuditEpoch ∉ storeObject_modifiedFields ∧
              StateField.declassificationRefusals ∉ storeObject_modifiedFields ∧

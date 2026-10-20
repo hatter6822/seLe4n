@@ -429,7 +429,7 @@ def faultEntry (coreId esr far : UInt64) : BaseIO Unit := do
         (Concurrency.coreIdOfUInt64? coreId).map
           (fun c => (c, st'.scheduler.currentOnCore c)),
         Concurrency.restoreTargetAt st' coreId,
-        (st'.pendingPhysicalWrites, st'.pendingIcacheMaintenance)),
+        (st'.drainedPhysicalWrites, st'.pendingIcacheMaintenance)),
         Architecture.clearIcacheMaintenance (Architecture.clearPhysicalWrites st')))
     Platform.FFI.completePhysicalWrites r.2.2.2.1
     Concurrency.fireCrossCoreSgis r.1
@@ -459,7 +459,7 @@ def unknownSyscallEntry (coreId esr far : UInt64) : BaseIO Unit := do
         (Concurrency.coreIdOfUInt64? coreId).map
           (fun c => (c, st'.scheduler.currentOnCore c)),
         Concurrency.restoreTargetAt st' coreId,
-        (st'.pendingPhysicalWrites, st'.pendingIcacheMaintenance)),
+        (st'.drainedPhysicalWrites, st'.pendingIcacheMaintenance)),
         Architecture.clearIcacheMaintenance (Architecture.clearPhysicalWrites st')))
     Platform.FFI.completePhysicalWrites r.2.2.2.1
     Concurrency.fireCrossCoreSgis r.1
@@ -620,7 +620,7 @@ theorem faultEntry_def (coreId esr far : UInt64) :
               (Concurrency.coreIdOfUInt64? coreId).map
                 (fun c => (c, st'.scheduler.currentOnCore c)),
               Concurrency.restoreTargetAt st' coreId,
-              (st'.pendingPhysicalWrites, st'.pendingIcacheMaintenance)),
+              (st'.drainedPhysicalWrites, st'.pendingIcacheMaintenance)),
               Architecture.clearIcacheMaintenance (Architecture.clearPhysicalWrites st')))
           Platform.FFI.completePhysicalWrites r.2.2.2.1
           Concurrency.fireCrossCoreSgis r.1
@@ -645,7 +645,7 @@ theorem unknownSyscallEntry_def (coreId esr far : UInt64) :
               (Concurrency.coreIdOfUInt64? coreId).map
                 (fun c => (c, st'.scheduler.currentOnCore c)),
               Concurrency.restoreTargetAt st' coreId,
-              (st'.pendingPhysicalWrites, st'.pendingIcacheMaintenance)),
+              (st'.drainedPhysicalWrites, st'.pendingIcacheMaintenance)),
               Architecture.clearIcacheMaintenance (Architecture.clearPhysicalWrites st')))
           Platform.FFI.completePhysicalWrites r.2.2.2.1
           Concurrency.fireCrossCoreSgis r.1

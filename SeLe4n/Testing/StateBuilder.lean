@@ -32,6 +32,24 @@ structure BootstrapBuilder where
   -- default, so the derivation is total.
   deriving Inhabited
 
+/-- WS-ZA ZA5.4: a ledger entry read back as the write it encodes (the suites'
+addresses all fit a word), or `none` for a tag the HAL does not decode. -/
+def physicalWriteOfWords : UInt64 × UInt64 × UInt64 → Option Kernel.Architecture.PhysicalWrite
+  | (0, a, _) => some (.zeroPage (SeLe4n.PAddr.ofNat a.toNat))
+  | (1, a, v) => some (.storeDescriptor (SeLe4n.PAddr.ofNat a.toNat) v)
+  | (2, a, _) => some (.invalidateAsid (SeLe4n.ASID.ofNat a.toNat))
+  | (3, a, v) => some (.storeUserWord (SeLe4n.PAddr.ofNat a.toNat) v)
+  | (4, a, v) => some (.storeTableDescriptor (SeLe4n.PAddr.ofNat a.toNat) v)
+  | _ => none
+
+/-- The writes a ledger holds, read off its buffer as the HAL reads them. -/
+def ledgerWrites (l : Kernel.Architecture.PhysicalWriteLedger) : List Kernel.Architecture.PhysicalWrite :=
+  (Kernel.Architecture.decodeLedger l.bytes l.count).filterMap physicalWriteOfWords
+
+/-- The writes a state owes, read off its ledger. -/
+def pendingWrites (st : SystemState) : List Kernel.Architecture.PhysicalWrite :=
+  ledgerWrites st.drainedPhysicalWrites
+
 namespace BootstrapBuilder
 
 def empty : BootstrapBuilder := {}
@@ -269,7 +287,7 @@ def emptyFrozenSystemState : FrozenSystemState :=
     perCoreICache :=
       _root_.Vector.replicate SeLe4n.Kernel.Concurrency.numCores ICacheState.empty
     pendingIcacheMaintenance := []
-    pendingPhysicalWrites := [] }
+    physicalWrites := .empty }
 
 /-- A `FrozenSystemState` holding `objs`, with the run queue a live state would
 have: a bucket per distinct TCB priority, holding the threads that are `.ready`.

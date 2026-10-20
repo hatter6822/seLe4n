@@ -1359,9 +1359,21 @@ structure SystemState where
       transition (`Architecture.clearPhysicalWrites`), so every state observed
       at a syscall boundary carries `[]`.  **Information flow**: not part of
       the projection surface — it names memory the kernel owns, and
-      `pendingPhysicalWrites_write_preserves_projection` is the frame. -/
-  pendingPhysicalWrites :
-      List SeLe4n.Kernel.Architecture.PhysicalWrite := []
+      `pendingPhysicalWrites_write_preserves_projection` is the frame.
+
+      **WS-ZA ZA5.4**: held as a word buffer (`PhysicalWriteLedger`), each write
+      three words stored in place; `pendingPhysicalWrites` is its list. -/
+  physicalWrites :
+      SeLe4n.Kernel.Architecture.PhysicalWriteLedger := .empty
+
+  /-- **WS-ZA ZA5.4: the ledger was drained** — its entries were handed to the
+      HAL by the seam that committed them (`Architecture.clearPhysicalWrites`),
+      so it owes nothing and the next recorded write starts it over
+      (`SystemState.recordPhysicalWrite`).  Draining sets this flag rather than
+      emptying the ledger, because the seam hands the ledger itself to the HAL:
+      an emptied copy of it would be a fresh record on every transition that
+      recorded a write. -/
+  physicalWritesDrained : Bool := false
 
   /-- WS-SM SM8.C.8: the **declassification audit trail** — the append-only
       record of every authorized cross-domain downgrade the kernel performed.
@@ -1549,6 +1561,60 @@ structure SystemState where
       dominating-reader-only for the same reason the epoch is. -/
   declassificationTaint : SeLe4n.Kernel.TaintTable := SeLe4n.Kernel.TaintTable.empty
 
+/-- **WS-BP BP7.2: the physical writes a committed transition owes**, in record
+order — the list the ledger's buffer encodes (`SystemState.physicalWrites`). -/
+noncomputable def SystemState.pendingPhysicalWrites (st : SystemState) :
+    List SeLe4n.Kernel.Architecture.PhysicalWrite :=
+  if st.physicalWritesDrained then [] else st.physicalWrites.toList
+
+/-- **WS-ZA ZA5.4: record one physical write** — stored after the writes still
+owed, or as the first of a drained ledger. -/
+def SystemState.recordPhysicalWrite (st : SystemState)
+    (w : SeLe4n.Kernel.Architecture.PhysicalWrite) : SystemState :=
+  { st with
+    physicalWrites := st.physicalWrites.pushAfter st.physicalWritesDrained w
+    physicalWritesDrained := false }
+
+/-- `recordPhysicalWrite` given the write's words, the write itself ghost.  Out
+of line, so a caller computes the words — reading the state — before the state
+is handed over, and the state is then written in its cell: inlined, the reads
+came after the ledger was taken from it and the state was copied. -/
+@[noinline] def SystemState.recordPhysicalWriteWords (st : SystemState)
+    (w : SeLe4n.Erased SeLe4n.Kernel.Architecture.PhysicalWrite) (t a v : UInt64)
+    (h : w.out.words = (t, a, v)) : SystemState :=
+  { st with
+    physicalWrites := st.physicalWrites.pushWords st.physicalWritesDrained w t a v h
+    physicalWritesDrained := false }
+
+/-- `recordPhysicalWrite` as compiled: the words read here, the write never built. -/
+@[inline] def SystemState.recordPhysicalWriteInline (st : SystemState)
+    (w : SeLe4n.Kernel.Architecture.PhysicalWrite) : SystemState :=
+  st.recordPhysicalWriteWords (SeLe4n.Erased.mk w) w.tag w.addr w.value
+    (by rw [SeLe4n.Erased.out_mk]; rfl)
+
+@[csimp] theorem SystemState.recordPhysicalWrite_eq_inline :
+    @SystemState.recordPhysicalWrite = @SystemState.recordPhysicalWriteInline := rfl
+
+@[simp] theorem SystemState.pendingPhysicalWrites_recordPhysicalWrite (st : SystemState)
+    (w : SeLe4n.Kernel.Architecture.PhysicalWrite) :
+    (st.recordPhysicalWrite w).pendingPhysicalWrites = st.pendingPhysicalWrites ++ [w] := by
+  simp only [SystemState.pendingPhysicalWrites, SystemState.recordPhysicalWrite,
+    SeLe4n.Kernel.Architecture.PhysicalWriteLedger.toList_pushAfter]
+  cases st.physicalWritesDrained <;> rfl
+
+/-- **WS-ZA ZA5.4: the ledger a seam hands the HAL** — the state's own when it
+owes writes, else the empty one (a shared constant, so no record is built). -/
+@[inline] def SystemState.drainedPhysicalWrites (st : SystemState) :
+    SeLe4n.Kernel.Architecture.PhysicalWriteLedger :=
+  if st.physicalWritesDrained then .empty else st.physicalWrites
+
+@[simp] theorem SystemState.toList_drainedPhysicalWrites (st : SystemState) :
+    st.drainedPhysicalWrites.toList = st.pendingPhysicalWrites := by
+  unfold SystemState.drainedPhysicalWrites SystemState.pendingPhysicalWrites
+  cases st.physicalWritesDrained
+  · rfl
+  · exact SeLe4n.Kernel.Architecture.PhysicalWriteLedger.toList_empty
+
 /-- Abstract owner identity for a slot in this model: the containing CNode object id. -/
 abbrev CSpaceOwner := SeLe4n.ObjId
 
@@ -1622,7 +1688,8 @@ instance : Inhabited SystemState where
     -- Explicit listing pins `default_pendingIcacheMaintenance`.
     pendingIcacheMaintenance := []
     -- WS-BP BP7.2: no physical write is owed at boot.
-    pendingPhysicalWrites := []
+    physicalWrites := .empty
+    physicalWritesDrained := false
     -- WS-SM SM8.C.8: no declassification has occurred at boot, so the audit
     -- trail is empty.  Explicit listing pins `default_declassificationAuditLog`
     -- and, through it, the boot witness for the 16th bundle conjunct
@@ -1774,7 +1841,8 @@ syscall-boundary property the runtime seam maintains starts here. -/
 
 /-- WS-BP BP7.2: the boot state owes no physical write. -/
 @[simp] theorem default_pendingPhysicalWrites :
-    (default : SystemState).pendingPhysicalWrites = [] := rfl
+    (default : SystemState).pendingPhysicalWrites = [] :=
+  SeLe4n.Kernel.Architecture.PhysicalWriteLedger.toList_empty
 
 /-- The reschedule-SGI accumulator (KSC-1): at boot no scheduling point is
 owed on any core — every flag starts `false`, so the first remote write a

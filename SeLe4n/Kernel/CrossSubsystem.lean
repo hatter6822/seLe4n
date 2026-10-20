@@ -866,7 +866,8 @@ inductive StateField where
   | asidTable | interfaceRegistry | serviceRegistry
   | cdt
   | tlb | tlbShootdown
-  | perCoreTlb | perCoreICache | pendingIcacheMaintenance | pendingPhysicalWrites
+  | perCoreTlb | perCoreICache | pendingIcacheMaintenance | physicalWrites
+  | physicalWritesDrained
   | declassificationAuditLog | declassificationAuditEpoch
   | declassificationRefusals | declassificationTaint
   deriving DecidableEq, Repr
@@ -1313,7 +1314,8 @@ def SystemState.fieldEq : StateField → SystemState → SystemState → Prop
   | .perCoreTlb,                 st, st' => st'.perCoreTlb = st.perCoreTlb
   | .perCoreICache,              st, st' => st'.perCoreICache = st.perCoreICache
   | .pendingIcacheMaintenance,   st, st' => st'.pendingIcacheMaintenance = st.pendingIcacheMaintenance
-  | .pendingPhysicalWrites,      st, st' => st'.pendingPhysicalWrites = st.pendingPhysicalWrites
+  | .physicalWrites,             st, st' => st'.physicalWrites = st.physicalWrites
+  | .physicalWritesDrained,      st, st' => st'.physicalWritesDrained = st.physicalWritesDrained
   | .declassificationAuditLog,   st, st' => st'.declassificationAuditLog = st.declassificationAuditLog
   | .declassificationAuditEpoch, st, st' => st'.declassificationAuditEpoch = st.declassificationAuditEpoch
   | .declassificationRefusals,   st, st' => st'.declassificationRefusals = st.declassificationRefusals
@@ -1339,7 +1341,8 @@ theorem SystemState.eq_of_fieldEq_all (st st' : SystemState)
     h .asidTable, h .interfaceRegistry, h .serviceRegistry,
     h .cdt,
     h .tlb, h .tlbShootdown,
-    h .perCoreTlb, h .perCoreICache, h .pendingIcacheMaintenance, h .pendingPhysicalWrites,
+    h .perCoreTlb, h .perCoreICache, h .pendingIcacheMaintenance, h .physicalWrites,
+    h .physicalWritesDrained,
     h .declassificationAuditLog, h .declassificationAuditEpoch,
     h .declassificationRefusals, h .declassificationTaint⟩
 

@@ -170,19 +170,41 @@ answers cancels against the reader's match (`slotStore?_eq_inline`). -/
 
 @[csimp] theorem slotStore?_eq_inline : @slotStore? = @slotStoreInline := rfl
 
-/-- **Record physical writes**: append `ws` to the ledger, in order. -/
+/-- **Record physical writes**: append `ws` to the writes still owed, in order
+(`SystemState.recordPhysicalWrite`, the first of them starting a drained ledger
+over). -/
 def recordPhysicalWrites (st : SystemState) (ws : List PhysicalWrite) : SystemState :=
-  { st with pendingPhysicalWrites := st.pendingPhysicalWrites ++ ws }
+  { st with
+    physicalWrites := st.physicalWrites.pushAllAfter st.physicalWritesDrained ws
+    physicalWritesDrained := ws.isEmpty && st.physicalWritesDrained }
+
+/-- WS-ZA ZA5.4: `recordPhysicalWrites` as compiled — inline, with the one-write
+case a single `recordPhysicalWrite`, so a caller's `[w]` or `o.toList` meets the
+match and neither the list nor the write is built (`recordPhysicalWrites_eq_inline`). -/
+@[inline] def recordPhysicalWritesInline (st : SystemState) (ws : List PhysicalWrite) :
+    SystemState :=
+  match ws with
+  | [] => st
+  | [w] => st.recordPhysicalWrite w
+  | ws => recordPhysicalWrites st ws
+
+@[csimp] theorem recordPhysicalWrites_eq_inline :
+    @recordPhysicalWrites = @recordPhysicalWritesInline := by
+  funext st ws
+  unfold recordPhysicalWritesInline
+  match ws with
+  | [] => rfl
+  | [_] => rfl
+  | _ :: _ :: _ => rfl
 
 /-- **Drain the ledger** — the syscall seam's clear, in the atomic step that
-commits the transition. -/
+commits the transition: the seam has handed the ledger to the HAL
+(`SystemState.drainedPhysicalWrites`), so the state marks it drained and keeps
+it, buffer and all, for the next transition to start over. -/
 def clearPhysicalWrites (st : SystemState) : SystemState :=
-  { st with pendingPhysicalWrites := [] }
+  { st with physicalWritesDrained := true }
 
 /-- Recording touches only the ledger: every other field frames. -/
-theorem recordPhysicalWrites_eq (st : SystemState) (ws : List PhysicalWrite) :
-    recordPhysicalWrites st ws =
-      { st with pendingPhysicalWrites := st.pendingPhysicalWrites ++ ws } := rfl
 @[simp] theorem recordPhysicalWrites_objects (st : SystemState) (ws : List PhysicalWrite) :
     (recordPhysicalWrites st ws).objects = st.objects := rfl
 @[simp] theorem recordPhysicalWrites_asidTable (st : SystemState) (ws : List PhysicalWrite) :
@@ -203,10 +225,18 @@ theorem recordPhysicalWrites_eq (st : SystemState) (ws : List PhysicalWrite) :
     (ws : List PhysicalWrite) :
     (recordPhysicalWrites st ws).pendingIcacheMaintenance = st.pendingIcacheMaintenance := rfl
 @[simp] theorem recordPhysicalWrites_pending (st : SystemState) (ws : List PhysicalWrite) :
-    (recordPhysicalWrites st ws).pendingPhysicalWrites = st.pendingPhysicalWrites ++ ws := rfl
+    (recordPhysicalWrites st ws).pendingPhysicalWrites = st.pendingPhysicalWrites ++ ws := by
+  cases ws with
+  | nil =>
+    simp only [recordPhysicalWrites, SystemState.pendingPhysicalWrites, List.isEmpty_nil,
+      Bool.true_and, List.append_nil]
+    rfl
+  | cons w rest =>
+    simp only [recordPhysicalWrites, SystemState.pendingPhysicalWrites, List.isEmpty_cons,
+      Bool.false_and, Bool.false_eq_true, ↓reduceIte,
+      PhysicalWriteLedger.toList_pushAllAfter_cons]
 @[simp] theorem recordPhysicalWrites_nil (st : SystemState) :
-    recordPhysicalWrites st [] = st := by
-  simp [recordPhysicalWrites]
+    recordPhysicalWrites st [] = st := rfl
 @[simp] theorem clearPhysicalWrites_pending (st : SystemState) :
     (clearPhysicalWrites st).pendingPhysicalWrites = [] := rfl
 

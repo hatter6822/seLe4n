@@ -1333,7 +1333,7 @@ private def overflowSendRun (rxWrite sync : Bool) :
   let (_, st2) ← SeLe4n.Testing.dispatchFromAbi trustedLabeling core1
     SyscallId.send.toNat.toUInt32 epCapPtr.toUInt64 sevenRegisters 1 2 3 4 0
     0 0 0 0 stS
-  pure (stagedFrame st2 callerTid, st2.pendingPhysicalWrites, addrs)
+  pure (stagedFrame st2 callerTid, SeLe4n.Testing.pendingWrites st2, addrs)
 
 /-- "RAM" at the sender's frame: its three overflow words at their slots. -/
 private def senderRamWordAt (pa : SeLe4n.PAddr) : UInt64 :=
@@ -1364,7 +1364,7 @@ private def blockedSenderReceiveRun (senderToo : Bool) :
     (Kernel.Architecture.IpcBufferRead.encodeWordPairs pairs) pairs.length
   let (_, st2) ← dispatchFromAbiOn SeLe4n.Kernel.Concurrency.bootCoreId
     SyscallId.receive.toNat 0 epCapPtr.toUInt64 0 0 0 stS
-  pure (st2.pendingPhysicalWrites, addrs)
+  pure (SeLe4n.Testing.pendingWrites st2, addrs)
 
 private def runOverflowDeliveryWitnesses : IO Unit := do
   IO.println "-- §12 WS-BP BP7.8: message registers past the fourth, read from and written to IPC buffers"
@@ -1401,11 +1401,11 @@ private def runOverflowDeliveryWitnesses : IO Unit := do
         SyscallId.send.toNat.toUInt32 epCapPtr.toUInt64 sevenRegisters 1 2 3 4 0
         0 0 0 0 (syncSenderOverflow st1 sevenRegisters)
       assertBool "12 SEAM: the step hands the runtime the three user-word stores"
-        (r.2.2.2.2.2.2.1 == [.storeUserWord (SeLe4n.PAddr.ofNat rxBufferPA) 0x55,
+        (SeLe4n.Testing.ledgerWrites r.2.2.2.2.2.2.1 == [.storeUserWord (SeLe4n.PAddr.ofNat rxBufferPA) 0x55,
                              .storeUserWord (SeLe4n.PAddr.ofNat (rxBufferPA + 8)) 0x66,
                              .storeUserWord (SeLe4n.PAddr.ofNat (rxBufferPA + 16)) 0x77])
       assertBool "12 SEAM: ...and the state it commits owes no physical write"
-        stC.pendingPhysicalWrites.isEmpty
+        (SeLe4n.Testing.pendingWrites stC).isEmpty
   -- WS-ZA ZA5.2: the receive that takes a blocked sender reads the sender's
   -- overflow words from RAM at the rendezvous, as the send that meets a waiting
   -- receiver does.
@@ -1487,7 +1487,7 @@ private def runOverflowDeliveryWitnesses : IO Unit := do
     | _ => st0
   let stD := Kernel.Architecture.stageWokenDelivery stW (some callerTid) 0
   assertBool "12: a thirteen-word delivery stores its nine words past the fourth"
-    (stD.pendingPhysicalWrites ==
+    (SeLe4n.Testing.pendingWrites stD ==
       (List.range 9).map (fun i => Kernel.Architecture.PhysicalWrite.storeUserWord
         (SeLe4n.PAddr.ofNat (rxBufferPA + 8 * i)) (104 + i).toUInt64))
   assertBool "12: ...and the handler's frame reports thirteen"

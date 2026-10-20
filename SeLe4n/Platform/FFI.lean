@@ -3484,19 +3484,54 @@ space.
 **WS-BP BP7.8**: every entry whose commit can record a write drains the
 ledger through this one function — the syscall seam and, since a fault
 message carries thirteen words, both fault seams. -/
-def completePhysicalWrites (owed : List Architecture.PhysicalWrite) : BaseIO Unit :=
+def performPhysicalWrites (owed : List Architecture.PhysicalWrite) : BaseIO Unit :=
   owed.forM physicalWriteApply
 
 /-- **WS-BP BP7.2**: a commit that recorded no physical write performs none. -/
-theorem completePhysicalWrites_nil : completePhysicalWrites [] = pure () := rfl
+theorem performPhysicalWrites_nil : performPhysicalWrites [] = pure () := rfl
 
 /-- **WS-BP BP7.2**: the seam performs **every** recorded write, in record
 order — pinned so a refactor that keeps only the last one (the descriptor store
 of a detach, say, and not the zeroing of the pages beneath it) fails here. -/
-theorem completePhysicalWrites_cons (w : Architecture.PhysicalWrite)
+theorem performPhysicalWrites_cons (w : Architecture.PhysicalWrite)
     (rest : List Architecture.PhysicalWrite) :
-    completePhysicalWrites (w :: rest) =
-      (do physicalWriteApply w; completePhysicalWrites rest) := rfl
+    performPhysicalWrites (w :: rest) =
+      (do physicalWriteApply w; performPhysicalWrites rest) := rfl
+
+/-- The `k` ledger entries of `b` from entry `i`, each handed to the HAL. -/
+def applyLedgerFrom (b : ByteArray) : Nat → Nat → BaseIO Unit
+  | _, 0 => pure ()
+  | i, k + 1 => do
+    let e := Architecture.ledgerEntryAt b i
+    ffiApplyPhysicalWrite e.1 e.2.1 e.2.2
+    applyLedgerFrom b (i + 1) k
+
+theorem applyLedgerFrom_eq (b : ByteArray) :
+    ∀ (i k : Nat), applyLedgerFrom b i k =
+      (Architecture.decodeLedgerFrom b i k).forM fun e => ffiApplyPhysicalWrite e.1 e.2.1 e.2.2
+  | _, 0 => rfl
+  | i, k + 1 => by
+    rw [applyLedgerFrom, applyLedgerFrom_eq b (i + 1) k]
+    rfl
+
+/-- **WS-ZA ZA5.4: the seam's writes, read off the ledger's buffer** — each
+entry's three words handed to the HAL in record order, with no list built;
+`performPhysicalWrites` of the ledger's list (`completePhysicalWrites_eq`). -/
+def completePhysicalWrites (owed : Architecture.PhysicalWriteLedger) : BaseIO Unit :=
+  applyLedgerFrom owed.bytes 0 owed.count
+
+theorem completePhysicalWrites_eq (owed : Architecture.PhysicalWriteLedger) :
+    completePhysicalWrites owed = performPhysicalWrites owed.toList := by
+  unfold completePhysicalWrites performPhysicalWrites
+  rw [applyLedgerFrom_eq, ← Architecture.decodeLedger_eq_from, owed.encodes]
+  show _ = owed.ghost.out.forM physicalWriteApply
+  induction owed.ghost.out with
+  | nil => rfl
+  | cons w ws ih =>
+    show (do ffiApplyPhysicalWrite w.words.1 w.words.2.1 w.words.2.2
+             (ws.map Architecture.PhysicalWrite.words).forM _) =
+      (do physicalWriteApply w; ws.forM physicalWriteApply)
+    rw [ih]; rfl
 
 /-- **WS-SM SM7.D.1** (the live instruction-cache maintenance seam): emit the
 instruction-cache maintenance the just-committed transition recorded.

@@ -331,6 +331,35 @@ fn copy_slice_clamps_and_grows_as_upstream() {
     assert_eq!(live(), before);
 }
 
+#[test]
+fn byte_array_push_and_copy_follow_sharing() {
+    let before = live();
+    // SAFETY: owned byte arrays throughout, each released once.
+    unsafe {
+        // An exclusive array with room is written in place.
+        let a = array::alloc_sarray(1, 0, 2);
+        let r = array::byte_array_push(a, 7);
+        assert_eq!(r, a);
+        // At capacity it grows, keeping the bytes.
+        let r = array::byte_array_push(array::byte_array_push(r, 8), 9);
+        assert_eq!(array::sarray_bytes(r), &[7, 8, 9]);
+        // A shared array is copied and the original keeps its bytes.
+        inc(r);
+        let p = array::byte_array_push(r, 10);
+        assert_ne!(p, r);
+        assert_eq!(array::sarray_bytes(r), &[7, 8, 9]);
+        assert_eq!(array::sarray_bytes(p), &[7, 8, 9, 10]);
+        inc(p);
+        let c = array::copy_byte_array(p);
+        assert_ne!(c, p);
+        assert_eq!(array::sarray_bytes(c), array::sarray_bytes(p));
+        dec(c);
+        dec(p);
+        dec(r);
+    }
+    assert_eq!(live(), before);
+}
+
 // --------------------------------------------------------------------------
 // Strings
 // --------------------------------------------------------------------------

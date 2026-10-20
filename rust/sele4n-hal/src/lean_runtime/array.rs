@@ -322,6 +322,48 @@ unsafe fn copy_sarray(a: Obj, cap: usize) -> Obj {
     r
 }
 
+/// `lean_copy_byte_array(a)`: a copy at the same capacity, consuming `a`.
+/// `lean.h`'s in-place byte write calls it when the array is shared, so a
+/// buffer written in place copies only on its first write after sharing.
+///
+/// # Safety
+///
+/// `a` must be a live byte array; consumed.
+pub unsafe fn copy_byte_array(a: Obj) -> Obj {
+    // SAFETY: forwarded from the caller; the capacity is at least the size.
+    unsafe { copy_sarray(a, sarray(a).capacity) }
+}
+
+/// `lean_byte_array_push(a, b)`, consuming `a`: the growth policy of
+/// [`array_push`].
+///
+/// # Safety
+///
+/// `a` must be a live byte array; consumed.
+pub unsafe fn byte_array_push(a: Obj, b: u8) -> Obj {
+    // SAFETY: forwarded from the caller.
+    let (size, cap) = unsafe { (sarray(a).size, sarray(a).capacity) };
+    // SAFETY: forwarded from the caller.
+    let r = unsafe {
+        if is_exclusive(a) {
+            if cap > size {
+                a
+            } else {
+                copy_sarray(a, (cap + 1) * 2)
+            }
+        } else {
+            copy_sarray(a, cap.max(2 * size + 1))
+        }
+    };
+    // SAFETY: `r` is a live, exclusive byte array with capacity above its size.
+    unsafe {
+        let ra = sarray(r);
+        sdata(r).add(ra.size).write(b);
+        ra.size += 1;
+    }
+    r
+}
+
 /// `lean_byte_array_data(a)`: the bytes as an `Array UInt8`, consuming `a`.
 ///
 /// # Safety
@@ -517,6 +559,28 @@ mod exports {
     pub unsafe extern "C" fn lean_byte_array_data(a: Obj) -> Obj {
         // SAFETY: an owned byte array.
         unsafe { byte_array_data(a) }
+    }
+
+    /// `lean_copy_byte_array`.
+    ///
+    /// # Safety
+    ///
+    /// The caller passes an owned byte array.
+    #[no_mangle]
+    pub unsafe extern "C" fn lean_copy_byte_array(a: Obj) -> Obj {
+        // SAFETY: an owned byte array.
+        unsafe { copy_byte_array(a) }
+    }
+
+    /// `lean_byte_array_push`.
+    ///
+    /// # Safety
+    ///
+    /// The caller passes an owned byte array.
+    #[no_mangle]
+    pub unsafe extern "C" fn lean_byte_array_push(a: Obj, b: u8) -> Obj {
+        // SAFETY: an owned byte array.
+        unsafe { byte_array_push(a, b) }
     }
 
     /// `lean_float_array_data`.

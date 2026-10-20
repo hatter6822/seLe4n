@@ -48,7 +48,7 @@ open SeLe4n.Kernel
     (st : SystemState) :
     (Architecture.SyscallOutcome × PerCoreFlags × List SeLe4n.Kernel.Concurrency.CoreId ×
       List Architecture.TlbInvalidation × (Nat × Nat) ×
-      List Architecture.ICacheInvalidation × List Architecture.PhysicalWrite ×
+      List Architecture.ICacheInvalidation × Architecture.PhysicalWriteLedger ×
       Architecture.RestoreTarget × Option SeLe4n.ThreadId) × SystemState :=
   syscallDispatchCrossCoreStep ctx execCore syscallId x0 x1 x2 x3 x4 x5
     ipcBufferAddr elr spsr spEl0 x30 st
@@ -60,7 +60,7 @@ def dispatchCrossCoreBracketedStep (ctx : LabelingContext)
     (trapped : Architecture.InFlightContext) (st : SystemState) :
     (Architecture.SyscallOutcome × PerCoreFlags × List SeLe4n.Kernel.Concurrency.CoreId ×
       List Architecture.TlbInvalidation × (Nat × Nat) ×
-      List Architecture.ICacheInvalidation × List Architecture.PhysicalWrite ×
+      List Architecture.ICacheInvalidation × Architecture.PhysicalWriteLedger ×
       Architecture.RestoreTarget × Option SeLe4n.ThreadId) × SystemState :=
   dispatchCrossCoreStep ctx execCore syscallId
     trapped.x0 trapped.x1 trapped.x2 trapped.x3 trapped.x4 trapped.x5
@@ -73,7 +73,7 @@ def dispatchCrossCoreBracketedStep (ctx : LabelingContext)
     SeLe4n.Kernel.Concurrency.BracketSpec
       (Architecture.SyscallOutcome × PerCoreFlags × List SeLe4n.Kernel.Concurrency.CoreId ×
         List Architecture.TlbInvalidation × (Nat × Nat) ×
-        List Architecture.ICacheInvalidation × List Architecture.PhysicalWrite ×
+        List Architecture.ICacheInvalidation × Architecture.PhysicalWriteLedger ×
         Architecture.RestoreTarget × Option SeLe4n.ThreadId) :=
   { syscallDispatchBracket ctx execCore syscallId trapped with
     step := dispatchCrossCoreBracketedStep ctx execCore syscallId trapped }

@@ -267,7 +267,7 @@ theorem OffSchedulerAgrees.of_runLinkStep {st st' : SystemState}
     OffSchedulerAgrees st st' := by
   have hD' := hD
   unfold SystemState.onlyObjectsSchedulerDiffer at hD'
-  refine ⟨hA, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> rw [hD']
+  refine ⟨hA, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> (rw [hD']; try rfl)
 
 /-- SM6.D: `ensureRunnable` (the single-core boot enqueue) agrees with its
 input off-scheduler — it writes the scheduler and the woken thread's run-queue

@@ -496,7 +496,7 @@ step's own application and the record is never built at runtime. -/
     (syscallId : UInt32) (trapped : Architecture.InFlightContext) :
     BracketSpec (Architecture.SyscallOutcome × PerCoreFlags × List CoreId ×
       List Architecture.TlbInvalidation × (Nat × Nat) ×
-      List Architecture.ICacheInvalidation × List Architecture.PhysicalWrite ×
+      List Architecture.ICacheInvalidation × Architecture.PhysicalWriteLedger ×
       Architecture.RestoreTarget × Option SeLe4n.ThreadId) where
   declared := declaredUnifiedLockSetForAbiEntry ctx execCore syscallId
     trapped.x0 trapped.x1 trapped.x2 trapped.x3 trapped.x4 trapped.x5
@@ -516,7 +516,7 @@ the entry, its definitional marker and the suites call. -/
     (st : SystemState) :
     (Architecture.SyscallOutcome × PerCoreFlags × List CoreId ×
       List Architecture.TlbInvalidation × (Nat × Nat) ×
-      List Architecture.ICacheInvalidation × List Architecture.PhysicalWrite ×
+      List Architecture.ICacheInvalidation × Architecture.PhysicalWriteLedger ×
       Architecture.RestoreTarget × Option SeLe4n.ThreadId) × SystemState :=
   (syscallDispatchBracket ctx execCore syscallId trapped).run st
 
@@ -545,7 +545,7 @@ def syscallDispatchCrossCoreBracketedStepWords (ctx : LabelingContext)
     (UInt64 × UInt64 × UInt64 × UInt64 × UInt64 × UInt64 × UInt64 ×
       PerCoreFlags × List CoreId ×
       List Architecture.TlbInvalidation × (Nat × Nat) ×
-      List Architecture.ICacheInvalidation × List Architecture.PhysicalWrite ×
+      List Architecture.ICacheInvalidation × Architecture.PhysicalWriteLedger ×
       Architecture.RestoreTarget × Nat) × SystemState :=
   let r := syscallDispatchCrossCoreBracketedStep ctx execCore syscallId trapped st
   ((r.1.1.words.1, r.1.1.words.2.1, r.1.1.words.2.2.1, r.1.1.words.2.2.2.1,
@@ -559,7 +559,7 @@ def syscallDispatchCrossCoreBracketedStepWords (ctx : LabelingContext)
     (UInt64 × UInt64 × UInt64 × UInt64 × UInt64 × UInt64 × UInt64 ×
       PerCoreFlags × List CoreId ×
       List Architecture.TlbInvalidation × (Nat × Nat) ×
-      List Architecture.ICacheInvalidation × List Architecture.PhysicalWrite ×
+      List Architecture.ICacheInvalidation × Architecture.PhysicalWriteLedger ×
       Architecture.RestoreTarget × Nat) × SystemState :=
   syscallDispatchCrossCoreStepWords ctx execCore syscallId
     trapped.x0 trapped.x1 trapped.x2 trapped.x3 trapped.x4 trapped.x5
@@ -1111,10 +1111,10 @@ exactly as there (`suspendThreadCrossCoreDrainedStep_idle_refused`). -/
 def suspendThreadCrossCoreDrainedStep (tid : UInt64) (execCore : CoreId)
     (st : SystemState) :
     ((UInt32 × List (CoreId × SgiKind)) ×
-      (List Architecture.PhysicalWrite × List Architecture.ICacheInvalidation))
+      (Architecture.PhysicalWriteLedger × List Architecture.ICacheInvalidation))
       × SystemState :=
   let (out, st') := suspendThreadCrossCoreStep tid execCore st
-  ((out, (st'.pendingPhysicalWrites, st'.pendingIcacheMaintenance)),
+  ((out, (st'.drainedPhysicalWrites, st'.pendingIcacheMaintenance)),
     Architecture.clearIcacheMaintenance (Architecture.clearPhysicalWrites st'))
 
 /-- The drained step refuses an idle thread as the bare step does, and the

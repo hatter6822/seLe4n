@@ -467,11 +467,12 @@ structure FrozenSystemState where
   pendingIcacheMaintenance :
       List SeLe4n.Kernel.Architecture.ICacheInvalidation
   /-- WS-BP BP7.2: the physical-write ledger, transferred from
-      `SystemState.pendingPhysicalWrites` during freeze.  **Required** (no
-      default), so a silent drop is a compile error; always `[]` in practice,
+      `SystemState.drainedPhysicalWrites` during freeze (WS-ZA ZA5.4: the
+      writes still owed, the empty ledger once drained).  **Required** (no
+      default), so a silent drop is a compile error; always empty in practice,
       for the reason `pendingIcacheMaintenance` is. -/
-  pendingPhysicalWrites :
-      List SeLe4n.Kernel.Architecture.PhysicalWrite
+  physicalWrites :
+      SeLe4n.Kernel.Architecture.PhysicalWriteLedger
   /-- WS-SM SM8.C.8: the declassification audit trail, transferred from
       `SystemState.declassificationAuditLog` during freeze.  **Required** (no
       default), for the same reason as the three fields above and with more at
@@ -509,6 +510,11 @@ structure FrozenSystemState where
       system that is not.  Complemented by the
       `freeze_preserves_declassificationTaint := rfl` value-level guard. -/
   declassificationTaint : SeLe4n.Kernel.TaintTable
+
+/-- WS-BP BP7.2: the frozen state's physical-write ledger as its list. -/
+noncomputable def FrozenSystemState.pendingPhysicalWrites (fst : FrozenSystemState) :
+    List SeLe4n.Kernel.Architecture.PhysicalWrite :=
+  fst.physicalWrites.toList
 
 -- ============================================================================
 -- Q5-C: Freeze Functions
@@ -687,8 +693,8 @@ def freeze (ist : IntermediateState) : FrozenSystemState :=
     perCoreICache := st.perCoreICache
     -- WS-SM SM7.D.1: forward the instruction-cache emission ledger unchanged.
     pendingIcacheMaintenance := st.pendingIcacheMaintenance
-    -- WS-BP BP7.2: forward the physical-write ledger unchanged.
-    pendingPhysicalWrites := st.pendingPhysicalWrites
+    -- WS-BP BP7.2: forward the writes the ledger still owes.
+    physicalWrites := st.drainedPhysicalWrites
     -- WS-SM SM8.C.8: forward the declassification audit trail unchanged — a
     -- frozen snapshot records every downgrade the running system recorded.
     declassificationAuditLog := st.declassificationAuditLog
@@ -745,7 +751,8 @@ theorem freeze_preserves_pendingIcacheMaintenance (ist : IntermediateState) :
 
 /-- WS-BP BP7.2: `freeze` preserves the physical-write ledger. -/
 theorem freeze_preserves_pendingPhysicalWrites (ist : IntermediateState) :
-    (freeze ist).pendingPhysicalWrites = ist.state.pendingPhysicalWrites := rfl
+    (freeze ist).pendingPhysicalWrites = ist.state.pendingPhysicalWrites :=
+  SystemState.toList_drainedPhysicalWrites _
 
 /-- WS-SM SM8.C.8: freeze carries the declassification audit trail intact — the
 frozen `declassificationAuditLog` is identical to the pre-freeze
