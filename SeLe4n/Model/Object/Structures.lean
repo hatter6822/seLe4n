@@ -237,6 +237,15 @@ abbrev MappingSpare :=
 
 instance : Repr MappingSpare := ⟨fun _ _ => "spare mapping cell"⟩
 
+/-- WS-ZA ZA5.4: the cell an unmap took out of a root's epoch table (its
+`some` and its entry), kept for the root's next mapping's epoch to be written
+over, as `MappingSpare` is for the translation.  Logically one value
+(`VSpaceRoot.with_epochSpare`). -/
+abbrev EpochSpare :=
+  Squash (Option (SeLe4n.Kernel.RobinHood.RHEntry SeLe4n.VAddr Nat))
+
+instance : Repr EpochSpare := ⟨fun _ _ => "spare epoch cell"⟩
+
 /-- WS-G6/F-P05: Minimal VSpace root object: ASID identity plus flat virtual→physical mappings.
 
 This intentionally models only one-level deterministic lookup semantics for WS-B1.
@@ -267,13 +276,17 @@ structure VSpaceRoot where
       frame capability mapped** (`FrameMapping.epoch`), written by `.vspaceMap`
       beside the translation.  What makes a capability's record identify *its*
       mapping rather than any translation of the same frame at the same
-      address: `mappedPageLive` asks the two to agree.  An entry outliving its
-      translation is harmless — every mapping a capability records is made by
-      `.vspaceMap`, which overwrites the entry with a fresh epoch. -/
+      address: `mappedPageLive` asks the two to agree.  An entry lives exactly
+      as long as its translation: `.vspaceMap` writes both, and every unmap
+      (`unmapPage`) erases both, so the table never holds more entries than
+      the root has mappings. -/
   mappingEpochs : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.VAddr Nat := {}
   /-- WS-ZA ZA5.4: the cell the root's last unmap took out of `mappings`
       (`MappingSpare`), which its next map writes over. -/
   mappingSpare : MappingSpare := Squash.mk none
+  /-- WS-ZA ZA5.4: the cell the root's last unmap took out of `mappingEpochs`
+      (`EpochSpare`), which its next map's epoch writes over. -/
+  epochSpare : EpochSpare := Squash.mk none
   deriving Repr
 
 namespace VSpaceRoot
@@ -283,6 +296,13 @@ namespace VSpaceRoot
     { r with mappingSpare := v } = r := by
   cases r
   simp only [VSpaceRoot.mk.injEq, and_true, true_and]
+  exact Subsingleton.elim _ _
+
+/-- WS-ZA ZA5.4: the spare epoch cell is no part of what a root is. -/
+@[simp] theorem with_epochSpare (r : VSpaceRoot) (v : EpochSpare) :
+    { r with epochSpare := v } = r := by
+  cases r
+  simp only [VSpaceRoot.mk.injEq, true_and]
   exact Subsingleton.elim _ _
 
 /-- **WS-BP BP7.1 (`v0.36.12`)**: the levels an address space's walk passes
@@ -500,7 +520,8 @@ Returns `none` if no mapping exists for `vaddr`. -/
 def unmapPage (root : VSpaceRoot) (vaddr : SeLe4n.VAddr) : Option VSpaceRoot :=
   match root.mappings[vaddr]? with
   | none => none
-  | some _ => some { root with mappings := root.mappings.erase vaddr }
+  | some _ => some { root with mappings := root.mappings.erase vaddr,
+                               mappingEpochs := root.mappingEpochs.erase vaddr }
 
 /-- WS-G6: No-virtual-overlap property. With HashMap-backed mappings, this is
 trivially true by key uniqueness: each VAddr maps to at most one entry.

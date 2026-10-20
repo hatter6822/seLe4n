@@ -86,17 +86,19 @@ theorem teardownWellFormed_of_roots_eq {st st' : SystemState} (hInv : st'.object
   · rw [hA]; exact c3b o r ((hR _ _).1 h)
 
 /-- **Every root after a step was a root before it, with no more**: the same
-ASID, no address mapped to a new entry, the same mapping epochs, and no new
-table slot.  What each of the teardown's writes does to the root it writes. -/
+ASID, no address mapped to a new entry or given a new epoch, and no new table
+slot.  What each of the teardown's writes does to the root it writes. -/
 def vspaceRootsShrink (st st' : SystemState) : Prop :=
   ∀ (oid : SeLe4n.ObjId) (r' : VSpaceRoot), st'.objects[oid]? = some (.vspaceRoot r') →
     ∃ r : VSpaceRoot, st.objects[oid]? = some (.vspaceRoot r) ∧ r'.asid = r.asid ∧
       (∀ (v : SeLe4n.VAddr) (e : SeLe4n.PAddr × PagePermissions),
         r'.mappings[v]? = some e → r.mappings[v]? = some e) ∧
-      r'.mappingEpochs = r.mappingEpochs ∧ (∀ s ∈ r'.tables, s ∈ r.tables)
+      (∀ (v : SeLe4n.VAddr) (n : Nat), r'.mappingEpochs[v]? = some n →
+        r.mappingEpochs[v]? = some n) ∧
+      (∀ s ∈ r'.tables, s ∈ r.tables)
 
 theorem vspaceRootsShrink.refl (st : SystemState) : vspaceRootsShrink st st :=
-  fun _ r' h => ⟨r', h, rfl, fun _ _ hm => hm, rfl, fun _ hs => hs⟩
+  fun _ r' h => ⟨r', h, rfl, fun _ _ hm => hm, fun _ _ he => he, fun _ hs => hs⟩
 
 theorem vspaceRootsShrink.trans {s1 s2 s3 : SystemState}
     (hShrink1 : vspaceRootsShrink s1 s2) (hShrink2 : vspaceRootsShrink s2 s3) :
@@ -104,7 +106,8 @@ theorem vspaceRootsShrink.trans {s1 s2 s3 : SystemState}
   intro oid r3 h3
   obtain ⟨r2, h2, ha2, hm2, he2, ht2⟩ := hShrink2 oid r3 h3
   obtain ⟨r1, h1, ha1, hm1, he1, ht1⟩ := hShrink1 oid r2 h2
-  exact ⟨r1, h1, ha2.trans ha1, fun v e hm => hm1 v e (hm2 v e hm), he2.trans he1,
+  exact ⟨r1, h1, ha2.trans ha1, fun v e hm => hm1 v e (hm2 v e hm),
+    fun v n he => he1 v n (he2 v n he),
     fun s hs => ht1 s (ht2 s hs)⟩
 
 theorem vspaceRootsShrink_of_tables_eq {st st' : SystemState}
@@ -121,7 +124,8 @@ theorem vspaceRootsShrink_of_store {st st' : SystemState} {rootId : SeLe4n.ObjId
     (hAsid : root'.asid = root.asid)
     (hSub : ∀ (v : SeLe4n.VAddr) (e : SeLe4n.PAddr × PagePermissions),
       root'.mappings[v]? = some e → root.mappings[v]? = some e)
-    (hEp : root'.mappingEpochs = root.mappingEpochs)
+    (hEp : ∀ (v : SeLe4n.VAddr) (n : Nat), root'.mappingEpochs[v]? = some n →
+      root.mappingEpochs[v]? = some n)
     (hTab : ∀ s ∈ root'.tables, s ∈ root.tables) :
     vspaceRootsShrink st st' := by
   intro oid r' h
@@ -169,7 +173,12 @@ theorem mappedPageLive_of_shrink {st st' : SystemState} (hW : teardownWellFormed
         rw [hm] at hL
         have : r.lookup p.vaddr = some e := hSub p.vaddr e hm
         rw [this]; exact hL
-    · rw [← hEp]; exact hE
+    · cases hpe : p.epoch with
+      | none => rfl
+      | some e =>
+        rw [hpe] at hE
+        simp only [beq_iff_eq] at hE ⊢
+        exact hEp p.vaddr e hE
 
 /-- **A page not live before a shrinking step is not live after it.** -/
 theorem mappedPageLive_false_of_shrink {st st' : SystemState} (hW : teardownWellFormed st)
@@ -216,17 +225,19 @@ theorem unmapPageState_wellFormed {ec : Concurrency.CoreId} {asid : SeLe4n.ASID}
   have hObjR : sR.objects[rid]? = some (.vspaceRoot r) := hObj
   have hStore : storeObject rid (.vspaceRoot r') sR = .ok ((), sS) :=
     storeObject_eq_storeObjectState _ _ _
-  have hK : r.mappings.invExtK := hW.2.2.2.2.2.2.2.2.2 rid r hObj
+  have hKK := hW.2.2.2.2.2.2.2.2.2 rid r hObj
+  have hK : r.mappings.invExtK := hKK.1
   have hAsid : r'.asid = r.asid := VSpaceRoot.unmapPage_asid_eq r r' vaddr hU
   have hSub := Architecture.VSpaceRoot.unmapPage_mappings_sub r r' vaddr hK hU
-  have hRest : r'.mappingEpochs = r.mappingEpochs ∧ r'.tables = r.tables := by
+  have hEpSub := Architecture.VSpaceRoot.unmapPage_mappingEpochs_sub r r' vaddr hKK.2 hU
+  have hRest : r'.tables = r.tables := by
     unfold VSpaceRoot.unmapPage at hU
     cases hm : r.mappings[vaddr]? with
     | none => rw [hm] at hU; cases hU
-    | some _ => rw [hm] at hU; cases hU; exact ⟨rfl, rfl⟩
+    | some _ => rw [hm] at hU; cases hU; rfl
   obtain ⟨hB, hA⟩ := Architecture.storeObject_shrunkRoot_preserves_vspaceInvariantBundle
     sR sS rid r r' hWR.2.2 hWR.1 hWR.2.1 hObjR hAsid hSub
-    (Architecture.VSpaceRoot.unmapPage_mappings_invExtK r r' vaddr hK hU) hStore
+    (Architecture.VSpaceRoot.unmapPage_tables_invExtK r r' vaddr hKK hU) hStore
   have hWStored : teardownWellFormed sS :=
     ⟨storeObject_preserves_objects_invExt sR sS _ _ hWR.1 hStore, hA, hB⟩
   obtain ⟨hO, hT⟩ := unmapPageState_tables (ec := ec) hR hU
@@ -234,8 +245,8 @@ theorem unmapPageState_wellFormed {ec : Concurrency.CoreId} {asid : SeLe4n.ASID}
     teardownWellFormed_of_tables_eq hO hT hWStored
   have hShrink : vspaceRootsShrink st sS :=
     (vspaceRootsShrink_of_tables_eq (st := st) (st' := sR) rfl).trans
-      (vspaceRootsShrink_of_store hWR.1 hObjR hStore hAsid hSub hRest.1
-        (fun s hs => hRest.2 ▸ hs))
+      (vspaceRootsShrink_of_store hWR.1 hObjR hStore hAsid hSub hEpSub
+        (fun s hs => hRest ▸ hs))
   have hObj' : (unmapPageState ec asid vaddr st).objects[rid]? = some (.vspaceRoot r') := by
     rw [hO]; exact storeObject_objects_eq sR sS rid _ hWR.1 hStore
   refine ⟨hW', hShrink.trans (vspaceRootsShrink_of_tables_eq hO), ?_⟩
@@ -249,7 +260,7 @@ theorem unmapPageState_clears {ec : Concurrency.CoreId} {st : SystemState} {p : 
     (hU : r.unmapPage p.vaddr = some r') :
     mappedPageLive (unmapPageState ec p.asid p.vaddr st) p = false := by
   obtain ⟨-, hObj, -⟩ := Architecture.resolveAsidRoot_some_implies_obj st p.asid rid r hR
-  have hK : r.mappings.invExtK := hW.2.2.2.2.2.2.2.2.2 rid r hObj
+  have hK : r.mappings.invExtK := (hW.2.2.2.2.2.2.2.2.2 rid r hObj).1
   obtain ⟨-, -, hR'⟩ := unmapPageState_wellFormed (ec := ec) hW hR hU
   unfold mappedPageLive
   rw [hR']

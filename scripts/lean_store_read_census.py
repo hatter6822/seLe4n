@@ -131,6 +131,7 @@ _TABLE_OPS = {
     "ofList": "other",
     "resize": "other",
     "invExtK": "other",
+    "vacant": "other",
     "wellFormed": "other",
     "size": "other",
     # `RHTable`'s remaining structure fields.  Projections, so they yield no

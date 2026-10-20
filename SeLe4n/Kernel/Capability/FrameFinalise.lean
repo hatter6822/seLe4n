@@ -109,6 +109,38 @@ def capabilityMappingLive (st : SystemState) (cap : Capability) : Bool :=
   | some p => mappedPageLive st p
   | none => false
 
+/-- WS-ZA ZA5.4: `capabilityMappingLive` as compiled: the record's words and the
+frame's base are matched where they are read (`mappedPageLiveWords`), so no
+`MappedPage` or `Option` is built for a capability whose record has gone stale
+(`capabilityMappingLive_eq_words`). -/
+@[inline] def capabilityMappingLiveWords (st : SystemState) (cap : Capability) : Bool :=
+  if cap.mapped then
+    match cap.target with
+    | .object frameId =>
+      match st.getFrame? frameId with
+      | some f => mappedPageLiveWords st cap.mapAsid cap.mapVaddr f.base cap.mapEpoch
+      | none => false
+    | _ => false
+  else false
+
+@[csimp] theorem capabilityMappingLive_eq_words :
+    @capabilityMappingLive = @capabilityMappingLiveWords := by
+  funext st cap
+  unfold capabilityMappingLive capabilityMappingLiveWords capabilityMappedPage
+  rw [Capability.mapping]
+  by_cases hM : cap.mapped
+  · simp only [hM, if_true]
+    cases cap.target with
+    | object frameId =>
+      cases hF : st.getFrame? frameId with
+      | none => simp [hF]
+      | some f =>
+        simp only [hF, Option.map_some]
+        exact mappedPageLive_eq_words _ _ _ _ _
+    | _ => rfl
+  · simp only [hM]
+    rfl
+
 -- ============================================================================
 -- §2  Page tables: destroying the last capability takes the table out
 -- ============================================================================
@@ -252,7 +284,7 @@ theorem detachPageTablesState_wellFormed :
       have hObjR : sR.objects[o.2.root]? = some (.vspaceRoot root) := hObj
       have hStore : storeObject o.2.root (.vspaceRoot root') sR = .ok ((), sS) :=
         storeObject_eq_storeObjectState _ _ _
-      have hK : root.mappings.invExtK := hW.2.2.2.2.2.2.2.2.2 _ root hObj
+      have hK := hW.2.2.2.2.2.2.2.2.2 _ root hObj
       have hTab : ∀ s ∈ root'.tables, s ∈ root.tables ∧
           s ≠ o.2.slotFor o.1 ∧ o.2.coversSlot s = false := by
         intro s hs
@@ -265,8 +297,8 @@ theorem detachPageTablesState_wellFormed :
         ⟨storeObject_preserves_objects_invExt sR sS _ _ hWR.1 hStore, hA, hB⟩
       have hS1 : vspaceRootsShrink st sS :=
         (vspaceRootsShrink_of_tables_eq (st := st) (st' := sR) rfl).trans
-          (vspaceRootsShrink_of_store hWR.1 hObjR hStore rfl (fun _ _ hm => hm) rfl
-            (fun s hs => (hTab s hs).1))
+          (vspaceRootsShrink_of_store hWR.1 hObjR hStore rfl (fun _ _ hm => hm)
+            (fun _ _ he => he) (fun s hs => (hTab s hs).1))
       have hObjS : sS.objects[o.2.root]? = some (.vspaceRoot root') :=
         storeObject_objects_eq sR sS _ _ hWR.1 hStore
       obtain ⟨hW2, hS2, hD2⟩ := detachPageTablesState_wellFormed rest sS hWStored
@@ -346,7 +378,7 @@ theorem pageTablesDetached_of_teardown (ec : Concurrency.CoreId) (st : SystemSta
     have hObjF := (SystemState.getVSpaceRoot?_eq_some_iff _ _ Rf).mp hG
     obtain ⟨R1, h1, -, -, -, hT1⟩ := hSF _ Rf hObjF
     have hKeep := hD1 o ho R1 h1
-    have hExtF : Rf.mappings.invExt := (hWF.2.2.2.2.2.2.2.2.2 _ Rf hObjF).1
+    have hExtF : Rf.mappings.invExt := (hWF.2.2.2.2.2.2.2.2.2 _ Rf hObjF).1.1
     simp only [Bool.and_eq_true, Bool.not_eq_true']
     refine ⟨?_, ?_⟩
     · cases hc : Rf.tables.contains (o.2.slotFor o.1)
@@ -363,7 +395,7 @@ theorem pageTablesDetached_of_teardown (ec : Concurrency.CoreId) (st : SystemSta
           obtain ⟨v, e, hGet, hIdx⟩ := pageTableInUse_mapping Rf o.2 hExtF hf
           obtain ⟨R0, h0, hA0, hM0, -, -⟩ := (hS1.trans hSF) _ Rf hObjF
           have hGet0 : R0.mappings.get? v = some e := hM0 v e hGet
-          have hK0 : R0.mappings.invExt := (hW.2.2.2.2.2.2.2.2.2 _ R0 h0).1
+          have hK0 : R0.mappings.invExt := (hW.2.2.2.2.2.2.2.2.2 _ R0 h0).1.1
           have hMem : ({ asid := R0.asid, vaddr := v, paddr := e.1 } : MappedPage) ∈
               pages ++ orphanedTableMappings st orphans := by
             refine List.mem_append_right _ ?_
@@ -875,7 +907,7 @@ theorem vspaceRootsShrink_of_roots {st st' : SystemState}
       st'.objects[oid]? = some (KernelObject.vspaceRoot r) →
         st.objects[oid]? = some (KernelObject.vspaceRoot r)) :
     vspaceRootsShrink st st' :=
-  fun oid r' h' => ⟨r', h oid r' h', rfl, fun _ _ hm => hm, rfl, fun _ hs => hs⟩
+  fun oid r' h' => ⟨r', h oid r' h', rfl, fun _ _ hm => hm, fun _ _ he => he, fun _ hs => hs⟩
 
 /-- **The core delete keeps every address-space root**: it writes a CNode where
 a CNode stands. -/

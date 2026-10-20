@@ -93,21 +93,48 @@ theorem storeVSpaceRootWith_recordPhysicalWrites (st : SystemState) (ws : List A
 
 /-- WS-ZA ZA5.4: the root an unmap leaves (`VSpaceRoot.unmapPage`'s erase). -/
 @[inline] def rootWithoutMapping (vaddr : SeLe4n.VAddr) (r : VSpaceRoot) : VSpaceRoot :=
-  { r with mappings := r.mappings.erase vaddr }
+  { r with mappings := r.mappings.erase vaddr, mappingEpochs := r.mappingEpochs.erase vaddr }
+
+open SeLe4n.Kernel.RobinHood in
+/-- WS-ZA ZA5.4: the epoch entry of `vaddr` erased from a root as compiled:
+its slot found as a bare index, and the cell erased from it becomes the root's
+spare epoch cell (`VSpaceRoot.epochSpare`), which the next map's epoch writes
+over (`rootWithEpochCells`). -/
+@[inline] def rootWithoutEpochCells (vaddr : SeLe4n.VAddr) (r : VSpaceRoot) : VSpaceRoot :=
+  let t := r.mappingEpochs
+  let i := findIdxLoop t.capacity (idealIndex vaddr t.capacity t.hCapPos) vaddr 0 t.slots
+    t.capacity t.hSlotsLen t.hCapPos
+  if h : i < t.capacity then
+    let old := t.slots[i]'(by rw [t.hSlotsLen]; exact h)
+    { r with mappingEpochs := t.eraseAt i h, epochSpare := Squash.mk old }
+  else r
 
 open SeLe4n.Kernel.RobinHood in
 /-- WS-ZA ZA5.4: `rootWithoutMapping` as compiled: the mapping's slot is found
 as a bare index, and the cell erased from it (its `some`, its entry and its
 value pair) becomes the root's spare (`VSpaceRoot.mappingSpare`), which the
-next map writes over, so no slot `Option` is built and the cell is not freed. -/
+next map writes over, so no slot `Option` is built and the cell is not freed;
+the epoch entry goes the same way (`rootWithoutEpochCells`). -/
 @[inline] def rootWithoutMappingCells (vaddr : SeLe4n.VAddr) (r : VSpaceRoot) : VSpaceRoot :=
   let t := r.mappings
   let i := findIdxLoop t.capacity (idealIndex vaddr t.capacity t.hCapPos) vaddr 0 t.slots
     t.capacity t.hSlotsLen t.hCapPos
   if h : i < t.capacity then
     let old := t.slots[i]'(by rw [t.hSlotsLen]; exact h)
-    { r with mappings := t.eraseAt i h, mappingSpare := Squash.mk old }
-  else r
+    rootWithoutEpochCells vaddr { r with mappings := t.eraseAt i h, mappingSpare := Squash.mk old }
+  else rootWithoutEpochCells vaddr r
+
+open SeLe4n.Kernel.RobinHood in
+theorem rootWithoutEpochCells_eq (vaddr : SeLe4n.VAddr) (r : VSpaceRoot) :
+    rootWithoutEpochCells vaddr r = { r with mappingEpochs := r.mappingEpochs.erase vaddr } := by
+  unfold rootWithoutEpochCells
+  rw [RHTable.erase_eq_eraseAt]
+  dsimp only
+  split
+  · cases r
+    simp only [VSpaceRoot.mk.injEq, and_true, true_and]
+    exact Subsingleton.elim _ _
+  · rfl
 
 open SeLe4n.Kernel.RobinHood in
 @[csimp] theorem rootWithoutMapping_eq_cells :
@@ -117,10 +144,11 @@ open SeLe4n.Kernel.RobinHood in
   rw [RHTable.erase_eq_eraseAt]
   dsimp only
   split
-  · cases r
+  · rw [rootWithoutEpochCells_eq]
+    cases r
     simp only [VSpaceRoot.mk.injEq, and_true, true_and]
     exact Subsingleton.elim _ _
-  · rfl
+  · rw [rootWithoutEpochCells_eq]
 
 /-- WS-ZA ZA5.4: **an admitted unmap's writes**: the mapping erased in the
 root's slot, its invalid descriptor on the ledger, the executing core's flush,

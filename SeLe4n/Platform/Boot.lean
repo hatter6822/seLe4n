@@ -939,13 +939,14 @@ theorem tcbReferencesReservedIdleSlot_def (tcb : TCB) :
 
 /-- PR #889 review round 8: a **VSpace root** — an ASID, a virtual-to-physical
     map, its table's physical base (WS-BP BP7.1 slice 4b), its tables
-    its mapping epochs (PR #904 review) and its spare mapping cell
-    (`MappingSpare`) — holds no
+    its mapping epochs (PR #904 review) and its spare mapping and epoch
+    cells (`MappingSpare`, `EpochSpare`) — holds no
     object, thread or scheduling-context id.  The answer is by inspection of the
     constructor's fields, and the pattern fails when a field is added. -/
 def vspaceRootReferencesReservedIdleSlot (vsr : VSpaceRoot) : Bool :=
   match vsr with
-  | ⟨_asid, _mappings, _tableBase, _tables, _mappingEpochs, _mappingSpare⟩ => false
+  | ⟨_asid, _mappings, _tableBase, _tables, _mappingEpochs, _mappingSpare,
+      _epochSpare⟩ => false
 
 /-- **WS-BP BP7.1**: a **frame** — a physical address, a memory kind
     and a mapping epoch counter (PR #904 review) —
@@ -5808,8 +5809,9 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
       exact ((hBS oid _ hObj).2.2.2.2.1 root rfl).1 v p perms hMap |>.2.2
     · -- every boot root's table carries the table invariant and has room
       intro oid root hObj
-      obtain ⟨hLt, hCap⟩ := ((hBS oid _ hObj).2.2.2.2.1 root rfl).2
-      exact ⟨ist.hPerObjectMappings oid root hObj, hLt, hCap⟩
+      obtain ⟨hLt, hCap, hVac⟩ := ((hBS oid _ hObj).2.2.2.2.1 root rfl).2
+      exact ⟨⟨ist.hPerObjectMappings oid root hObj, hLt, hCap⟩,
+        SeLe4n.Kernel.RobinHood.RHTable.vacant_invExtK _ hVac⟩
   -- 8. crossSubsystemInvariant (Z9-D + AE5-C + AF1-B + AM4-A + AK8-A: 12 predicates)
   have hCrossBundle : crossSubsystemInvariant ist.state := by
     refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩

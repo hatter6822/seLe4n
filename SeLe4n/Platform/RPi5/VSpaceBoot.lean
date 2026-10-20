@@ -252,9 +252,12 @@ def VSpaceRootVaddrCanonical (root : VSpaceRoot) : Prop :=
 at least the four slots the table's insert keeps its load-factor bound with
 (`RHTable.invExtK`).  With the table invariant every object entry carries,
 what makes a boot root's table a well-formed one (`vspaceMappingsWellFormed`),
-so the first insert into it keeps it so. -/
+so the first insert into it keeps it so.  WS-ZA ZA5.4: and the mapping-epoch
+table is vacant (`RHTable.vacant`): no capability records a mapping at boot,
+and a vacant table is a well-formed one. -/
 def VSpaceRootTableRoom (root : VSpaceRoot) : Prop :=
-  root.mappings.size < root.mappings.capacity ∧ 4 ≤ root.mappings.capacity
+  root.mappings.size < root.mappings.capacity ∧ 4 ≤ root.mappings.capacity ∧
+    root.mappingEpochs.vacant = true
 
 /-- **AN7-D.2.2 / WS-RC R3**: structural well-formedness predicate for a
     VSpaceRoot used at kernel boot.  Five conjuncts:
@@ -330,9 +333,9 @@ theorem rpi5BootVSpaceRoot_wellFormed :
   · -- mappings.size > 0 — six inserts were performed
     show rpi5BootVSpaceRoot.mappings.size > 0
     decide
-  · -- six entries in sixteen slots
+  · -- six entries in sixteen slots, and no epoch recorded
     unfold VSpaceRootTableRoom
-    decide
+    exact ⟨by decide, by decide, RHTable.empty_vacant _ (by decide)⟩
 
 -- ============================================================================
 -- AN7-D.2.4 — `bootSafeVSpaceRoot` + `rpi5BootVSpaceRoot_bootSafe`
@@ -407,7 +410,8 @@ def bootSafeVSpaceRootCheck (root : VSpaceRoot) : Bool :=
   decide (root.mappings.size > 0) &&
   (root.mappings.fold true (fun acc _ entry => acc && decide (entry.1.toNat < bootRootPaddrBound))) &&
   (root.mappings.fold true (fun acc vaddr _ => acc && VAddr.isCanonical vaddr)) &&
-  decide (root.mappings.size < root.mappings.capacity) && decide (4 ≤ root.mappings.capacity)
+  decide (root.mappings.size < root.mappings.capacity) && decide (4 ≤ root.mappings.capacity) &&
+  root.mappingEpochs.vacant
 
 /-- **WS-RC R3**: The Bool-valued check coincides with the Prop-level
     boot-safety predicate.  Both forms unfold to the same five
@@ -451,7 +455,7 @@ theorem rpi5BootVSpaceRoot_bootSafeCheck :
       placement check its frames need. -/
 def bootSafeUserVSpaceRoot (root : VSpaceRoot) : Prop :=
   0 < root.asid.val ∧ root.asid.val ≤ maxAsidValue ∧ root.mappings.size = 0 ∧
-    root.tables = [] ∧ 4 ≤ root.mappings.capacity
+    root.tables = [] ∧ 4 ≤ root.mappings.capacity ∧ root.mappingEpochs.vacant = true
 
 /-- **WS-BP BP3.2**: the Bool form the boot's object sweep evaluates.
 
@@ -464,7 +468,7 @@ def bootSafeUserVSpaceRoot (root : VSpaceRoot) : Prop :=
 def bootSafeUserVSpaceRootCheck (root : VSpaceRoot) : Bool :=
   decide (0 < root.asid.val) && decide (root.asid.val ≤ maxAsidValue) &&
     decide (root.mappings.size = 0) && root.tables.isEmpty &&
-    decide (4 ≤ root.mappings.capacity)
+    decide (4 ≤ root.mappings.capacity) && root.mappingEpochs.vacant
 
 /-- **WS-BP BP3.2**: the Bool check decides the predicate. -/
 theorem bootSafeUserVSpaceRootCheck_iff (root : VSpaceRoot) :

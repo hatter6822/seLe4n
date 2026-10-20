@@ -122,7 +122,7 @@ map after an unmap builds no table entry. -/
   funext vaddr paddr perms r
   unfold rootWithMapping rootWithMappingCells
   cases r with
-  | mk asid mappings tableBase tables mappingEpochs sp =>
+  | mk asid mappings tableBase tables mappingEpochs sp esp =>
     induction sp using Squash.ind with
     | h o =>
       simp only [Squash.mk]
@@ -134,6 +134,65 @@ map after an unmap builds no table entry. -/
 @[inline] def rootWithEpoch (vaddr : SeLe4n.VAddr) (epoch : Nat) (r : VSpaceRoot) :
     VSpaceRoot :=
   { r with mappingEpochs := r.mappingEpochs.insert vaddr epoch }
+
+/-- WS-ZA ZA5.4: a fresh epoch cell, built out of line (as `mappingCellFresh`)
+so that its literal is not merged with the arm that reuses a spare. -/
+@[noinline] def epochCellFresh (vaddr : SeLe4n.VAddr) (epoch : Nat) :
+    Option (RobinHood.RHEntry SeLe4n.VAddr Nat) :=
+  some ⟨vaddr, epoch, 0⟩
+
+/-- WS-ZA ZA5.4: the table entry of `vaddr ↦ epoch` written over a spare entry
+`e`, out of line with its distance read back through `e` (as
+`mappingEntryOver`).  Equal to the entry (`epochEntryOver_eq`). -/
+@[noinline] def epochEntryOver (e : RobinHood.RHEntry SeLe4n.VAddr Nat)
+    (vaddr : SeLe4n.VAddr) (epoch : Nat) : RobinHood.RHEntry SeLe4n.VAddr Nat :=
+  ⟨vaddr, epoch, if e.dist = 0 then e.dist else 0⟩
+
+theorem epochEntryOver_eq (e : RobinHood.RHEntry SeLe4n.VAddr Nat)
+    (vaddr : SeLe4n.VAddr) (epoch : Nat) : epochEntryOver e vaddr epoch = ⟨vaddr, epoch, 0⟩ := by
+  unfold epochEntryOver
+  split <;> simp_all
+
+/-- WS-ZA ZA5.4: the epoch cell of `vaddr ↦ epoch`, written over the root's
+spare epoch cell `o` (its `some` and its entry) when it has one, out of line so
+those are the cells the compiler writes into; with no spare it is built
+(`epochCellFresh`).  Equal to the fresh cell (`epochCellOver_eq`). -/
+@[noinline] def epochCellOver (o : Option (RobinHood.RHEntry SeLe4n.VAddr Nat))
+    (vaddr : SeLe4n.VAddr) (epoch : Nat) : Option (RobinHood.RHEntry SeLe4n.VAddr Nat) :=
+  match o with
+  | some e => some (epochEntryOver e vaddr epoch)
+  | none => epochCellFresh vaddr epoch
+
+theorem epochCellOver_eq (o : Option (RobinHood.RHEntry SeLe4n.VAddr Nat))
+    (vaddr : SeLe4n.VAddr) (epoch : Nat) : epochCellOver o vaddr epoch = some ⟨vaddr, epoch, 0⟩ := by
+  unfold epochCellOver
+  split
+  · rw [epochEntryOver_eq]
+  · rfl
+
+/-- WS-ZA ZA5.4: `rootWithEpoch` as compiled: the root's spare epoch cell, which
+the unmap before it left (`rootWithoutEpochCells`), taken out of its field and
+written over (`epochCellOver`) as the cell the table places, so a map after an
+unmap builds no epoch entry, whatever address it maps. -/
+@[inline] def rootWithEpochCells (vaddr : SeLe4n.VAddr) (epoch : Nat) (r : VSpaceRoot) :
+    VSpaceRoot :=
+  let sp := r.epochSpare
+  let r0 := { r with epochSpare := Squash.mk none }
+  Quot.lift
+    (fun o => { r0 with mappingEpochs := r0.mappingEpochs.insertCell (epochCellOver o vaddr epoch) })
+    (fun a b _ => by dsimp only; rw [epochCellOver_eq, epochCellOver_eq]) sp
+
+@[csimp] theorem rootWithEpoch_eq_cells : @rootWithEpoch = @rootWithEpochCells := by
+  funext vaddr epoch r
+  unfold rootWithEpoch rootWithEpochCells
+  cases r with
+  | mk asid mappings tableBase tables mappingEpochs sp esp =>
+    induction esp using Squash.ind with
+    | h o =>
+      simp only [Squash.mk]
+      rw [epochCellOver_eq, RobinHood.RHTable.insertCell_eq]
+      simp only [VSpaceRoot.mk.injEq, and_true, true_and]
+      exact Subsingleton.elim _ _
 
 /-- WS-ZA ZA5.4: the frame a mapping's epoch tag leaves: its counter advanced. -/
 @[inline] def frameWithNextEpoch (f : FrameObject) : FrameObject :=

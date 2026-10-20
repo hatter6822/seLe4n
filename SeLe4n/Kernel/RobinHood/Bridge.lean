@@ -1159,6 +1159,40 @@ theorem RHTable.empty_invExtK [BEq α] [Hashable α] [LawfulBEq α]
    by simp [RHTable.empty]; omega,
    by simp [RHTable.empty]; exact hCapGe4⟩
 
+/-- WS-ZA ZA5.4: **a table with no occupied slot satisfies `invExtK`** when its
+size is zero and it has room — what a boot check can decide of a table it did
+not build (`RHTable.vacant`). -/
+def RHTable.vacant (t : RHTable α β) : Bool :=
+  t.slots.toList.all (·.isNone) && t.size == 0 && decide (4 ≤ t.capacity)
+
+theorem RHTable.empty_vacant (cap : Nat) (hCapGe4 : 4 ≤ cap) :
+    (RHTable.empty cap hCapGe4 : RHTable α β).vacant = true := by
+  simp only [RHTable.vacant, RHTable.empty, Bool.and_eq_true, beq_self_eq_true, and_true,
+    decide_eq_true_eq]
+  exact ⟨List.all_eq_true.mpr (fun x hx => by simp at hx; simp [hx.2]), hCapGe4⟩
+
+theorem RHTable.vacant_invExtK [BEq α] [Hashable α] [LawfulBEq α] (t : RHTable α β)
+    (h : t.vacant = true) : t.invExtK := by
+  unfold RHTable.vacant at h
+  simp only [Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at h
+  obtain ⟨⟨hVac, hSize⟩, hCap⟩ := h
+  have hNone : ∀ (i : Nat) (hi : i < t.slots.size), t.slots[i] = none := by
+    intro i hi
+    have := List.all_eq_true.mp hVac t.slots[i] (by simp)
+    simpa using this
+  refine ⟨⟨⟨t.hSlotsLen, t.hCapPos, ?_, by omega⟩, ?_, ?_, ?_⟩, by omega, hCap⟩
+  · rw [hSize]; unfold countOccupied
+    refine (List.countP_eq_zero.mpr ?_).symm
+    intro x hx
+    obtain ⟨i, hi, hEq⟩ := List.getElem_of_mem hx
+    rw [← hEq]
+    simp only [Array.getElem_toList]
+    rw [hNone i (by simpa using hi)]
+    simp
+  · intro i hi e hE; rw [hNone] at hE; cases hE
+  · intro i j hi hj ei ej hI; rw [hNone] at hI; cases hI
+  · intro p hp e hE; rw [hNone] at hE; cases hE
+
 -- ============================================================================
 -- V3-B Phase 1: erase_preserves_invExtK
 -- ============================================================================

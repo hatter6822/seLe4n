@@ -160,10 +160,14 @@ def vspaceCrossAsidIsolation (st : SystemState) : Prop :=
 Robin Hood table invariant with room to spare (`RHTable.invExtK`), so a lookup
 after an erase or an insert reads what the step wrote and every other address as
 it was.  What lets the finalising teardown's results be theorems rather than
-checks: an unmap removes exactly its page (`finaliseDestroyedCapabilities`). -/
+checks: an unmap removes exactly its page (`finaliseDestroyedCapabilities`).
+WS-ZA ZA5.4: the mapping-epoch table too, which an unmap now erases from
+(`VSpaceRoot.unmapPage`), so the epochs a teardown reads after an unmap are
+those it left. -/
 def vspaceMappingsWellFormed (st : SystemState) : Prop :=
   ∀ (oid : SeLe4n.ObjId) (root : VSpaceRoot),
-    st.objects[oid]? = some (.vspaceRoot root) → root.mappings.invExtK
+    st.objects[oid]? = some (.vspaceRoot root) →
+      root.mappings.invExtK ∧ root.mappingEpochs.invExtK
 
 /-- WS-B1/WS-G3/WS-H11/WS-F6 architecture/VSpace invariant bundle entrypoint.
 
@@ -317,6 +321,31 @@ private theorem VSpaceRoot.unmapPage_mappings_erase
   cases hOld : root.mappings[vaddr]? with
   | none => simp [hOld] at hUnmap
   | some _ => simp [hOld] at hUnmap; cases hUnmap; rfl
+
+/-- WS-ZA ZA5.4: an unmap erases the address's epoch beside its translation. -/
+theorem VSpaceRoot.unmapPage_mappingEpochs_erase
+    (root root' : VSpaceRoot) (vaddr : SeLe4n.VAddr)
+    (hUnmap : root.unmapPage vaddr = some root') :
+    root'.mappingEpochs = root.mappingEpochs.erase vaddr := by
+  unfold VSpaceRoot.unmapPage at hUnmap
+  cases hOld : root.mappings[vaddr]? with
+  | none => simp [hOld] at hUnmap
+  | some _ => simp [hOld] at hUnmap; cases hUnmap; rfl
+
+/-- A map writes no epoch (`tagFrameMapping` does). -/
+theorem VSpaceRoot.mapPage_mappingEpochs_eq
+    (root root' : VSpaceRoot) (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr)
+    (perms : PagePermissions)
+    (hMap : root.mapPage vaddr paddr perms = some root') :
+    root'.mappingEpochs = root.mappingEpochs := by
+  unfold VSpaceRoot.mapPage at hMap
+  split at hMap
+  · simp at hMap
+  · split at hMap
+    · simp at hMap
+    · cases hOld : root.mappings[vaddr]? with
+      | some _ => simp [hOld] at hMap
+      | none => simp [hOld] at hMap; cases hMap; rfl
 
 /-- Recover a pre-state mapping from a post-erase lookup (for unmap proofs). -/
 private theorem RHTable_lookup_of_erase_lookup
@@ -512,8 +541,9 @@ theorem vspaceMapPage_success_preserves_vspaceInvariantBundle
               have hInsert := VSpaceRoot.mapPage_mappings_insert root root' vaddr paddr perms hMapRoot
               by_cases hEq : oid = rootId
               · subst hEq; rw [hObjEq] at hObjR; cases hObjR
-                rw [hInsert]
-                exact SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExtK _ _ _ (hMapWF _ root hObjRoot)
+                rw [hInsert, VSpaceRoot.mapPage_mappingEpochs_eq root root' vaddr paddr perms hMapRoot]
+                exact ⟨SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExtK _ _ _
+                  (hMapWF _ root hObjRoot).1, (hMapWF _ root hObjRoot).2⟩
               · rw [hObjNe oid hEq] at hObjR
                 exact hMapWF oid r hObjR
       · have hWxF : perms.wxCompliant = false := by
@@ -651,8 +681,10 @@ theorem vspaceUnmapPage_success_preserves_vspaceInvariantBundle
             have hErase := VSpaceRoot.unmapPage_mappings_erase root root' vaddr hUnmapRoot
             by_cases hEq : oid = rootId
             · subst hEq; rw [hObjEq] at hObjR; cases hObjR
-              rw [hErase]
-              exact SeLe4n.Kernel.RobinHood.RHTable.erase_preserves_invExtK _ _ (hMapWF _ root hObjRoot)
+              rw [hErase, VSpaceRoot.unmapPage_mappingEpochs_erase root root' vaddr hUnmapRoot]
+              exact ⟨SeLe4n.Kernel.RobinHood.RHTable.erase_preserves_invExtK _ _
+                (hMapWF _ root hObjRoot).1,
+                SeLe4n.Kernel.RobinHood.RHTable.erase_preserves_invExtK _ _ (hMapWF _ root hObjRoot).2⟩
             · rw [hObjNe oid hEq] at hObjR
               exact hMapWF oid r hObjR
 
@@ -669,6 +701,33 @@ theorem VSpaceRoot.unmapPage_mappings_sub (root root' : VSpaceRoot) (vaddr : SeL
   intro v e hMap
   rw [VSpaceRoot.unmapPage_mappings_erase root root' vaddr hUnmap] at hMap
   exact RHTable_lookup_of_erase_lookup root.mappings vaddr v e.1 e.2 hK hMap
+
+/-- WS-ZA ZA5.4: **an unmap gives no address a new epoch**: the erase removes
+`vaddr`'s and reads every other address as it was. -/
+theorem VSpaceRoot.unmapPage_mappingEpochs_sub (root root' : VSpaceRoot) (vaddr : SeLe4n.VAddr)
+    (hK : root.mappingEpochs.invExtK) (hUnmap : root.unmapPage vaddr = some root') :
+    ∀ (v : SeLe4n.VAddr) (n : Nat),
+      root'.mappingEpochs[v]? = some n → root.mappingEpochs[v]? = some n := by
+  intro v n hE
+  rw [VSpaceRoot.unmapPage_mappingEpochs_erase root root' vaddr hUnmap] at hE
+  by_cases hV : vaddr = v
+  · subst hV
+    simp only [RHTable_getElem?_eq_get?] at hE
+    rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_self _ vaddr hK.1] at hE
+    exact absurd hE (by simp)
+  · have hBeq : ¬((vaddr == v) = true) := by intro h; exact hV (eq_of_beq h)
+    simp only [RHTable_getElem?_eq_get?] at hE ⊢
+    rwa [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne_K _ vaddr v hBeq hK] at hE
+
+/-- WS-ZA ZA5.4: **the root without `vaddr` has well-formed tables.** -/
+theorem VSpaceRoot.unmapPage_tables_invExtK (root root' : VSpaceRoot) (vaddr : SeLe4n.VAddr)
+    (hK : root.mappings.invExtK ∧ root.mappingEpochs.invExtK)
+    (hUnmap : root.unmapPage vaddr = some root') :
+    root'.mappings.invExtK ∧ root'.mappingEpochs.invExtK := by
+  rw [VSpaceRoot.unmapPage_mappings_erase root root' vaddr hUnmap,
+    VSpaceRoot.unmapPage_mappingEpochs_erase root root' vaddr hUnmap]
+  exact ⟨SeLe4n.Kernel.RobinHood.RHTable.erase_preserves_invExtK _ _ hK.1,
+    SeLe4n.Kernel.RobinHood.RHTable.erase_preserves_invExtK _ _ hK.2⟩
 
 /-- **The root without `vaddr` has a well-formed table.** -/
 theorem VSpaceRoot.unmapPage_mappings_invExtK (root root' : VSpaceRoot) (vaddr : SeLe4n.VAddr)
@@ -689,7 +748,7 @@ theorem storeObject_shrunkRoot_preserves_vspaceInvariantBundle
     (hAsid : root'.asid = root.asid)
     (hSub : ∀ (v : SeLe4n.VAddr) (e : SeLe4n.PAddr × PagePermissions),
       root'.mappings[v]? = some e → root.mappings[v]? = some e)
-    (hWF : root'.mappings.invExtK)
+    (hWF : root'.mappings.invExtK ∧ root'.mappingEpochs.invExtK)
     (hStore : storeObject rootId (.vspaceRoot root') st = .ok ((), st')) :
     vspaceInvariantBundle st' ∧ st'.asidTable.invExtK := by
   rcases hInv with ⟨hUniq, hNoOverlap, hConsist, hWxInv, hBoundInv, hCrossAsid, hCanonicalInv,
