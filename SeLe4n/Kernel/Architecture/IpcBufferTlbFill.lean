@@ -170,30 +170,6 @@ writes nothing (`tlbFillIpcBufferOnCore_of_held`). -/
       | none => true
       | some entry => tlbEntriesHold (tlbOnCore st c).entries entry)
 
-/-- WS-ZA ZA5.2: whether `entries` holds the entry a walk of `vaddr` in
-`asid` would cache (`tlbWalkEntry`'s shape, generation 0), compared field by
-field so the entry is never built. -/
-def tlbEntriesHoldWalked : List TlbEntry → SeLe4n.ASID → VAddr → PAddr →
-    PagePermissions → Bool
-  | [], _, _, _, _ => false
-  | x :: xs, asid, vaddr, paddr, perms =>
-    if x.asid = asid ∧ x.vaddr = vaddr ∧ x.paddr = paddr ∧ x.perms = perms ∧
-        x.asidGeneration = 0 then true
-    else tlbEntriesHoldWalked xs asid vaddr paddr perms
-
-theorem tlbEntriesHoldWalked_eq (l : List TlbEntry) (asid : SeLe4n.ASID) (vaddr : VAddr)
-    (paddr : PAddr) (perms : PagePermissions) :
-    tlbEntriesHoldWalked l asid vaddr paddr perms =
-      tlbEntriesHold l { asid := asid, vaddr := vaddr, paddr := paddr, perms := perms } := by
-  induction l with
-  | nil => rfl
-  | cons x xs ih =>
-    unfold tlbEntriesHoldWalked tlbEntriesHold
-    rw [ih]
-    congr 1
-    obtain ⟨a, v, p, m, g⟩ := x
-    simp only [TlbEntry.mk.injEq]
-
 /-- WS-ZA ZA5.2: `ipcBufferFillHeld` for the one overflow slot a
 scheduling-context configure reads, as the entry compiles it: the walk's
 `tlbWalkEntry`, `resolveAsidRoot` and page list are read in place, so the

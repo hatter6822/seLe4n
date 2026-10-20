@@ -1244,6 +1244,17 @@ structure SystemState where
       `projectState` is the correct behaviour. -/
   perCoreTlb : Vector TlbState numCores :=
     Vector.replicate numCores TlbState.empty
+  /-- WS-ZA ZA5.4: **the entry cells each core's TLB view keeps while unused**
+      — the entries an invalidation removed from core `c`'s view, held so that
+      the next fill on that core writes its translation over one of them in
+      place instead of allocating an entry and its list cell (a hardware TLB's
+      fixed set of entries, which an invalidation marks free rather than
+      returns).  Logically a single value per core (`Squash`), so no theorem
+      reads it and a state with any spares is the state with any other
+      (`SystemState.with_perCoreTlbSpare`): only the compiled kernel sees the
+      cells. -/
+  perCoreTlbSpare : Vector (Squash (List TlbEntry)) numCores :=
+    Vector.replicate numCores (Squash.mk [])
   /-- WS-SM SM7.D.1: per-core instruction-cache model — every core's
       independently cached instruction lines.
 
@@ -1680,6 +1691,7 @@ instance : Inhabited SystemState where
     -- invariant so `default_perCoreTlb` discharges via
     -- `PerCoreVector.replicate_get`.
     perCoreTlb := Vector.replicate numCores TlbState.empty
+    perCoreTlbSpare := Vector.replicate numCores (Squash.mk [])
     -- WS-SM SM7.D.1: every core's instruction cache starts cold (no lines
     -- held at boot).  Explicit listing pins the default-state invariant so
     -- `default_perCoreICache` discharges via `PerCoreVector.replicate_get`.
@@ -1823,6 +1835,15 @@ per-core-consistency boot witness and to the Boot general bridge
 theorem default_perCoreTlb (c : CoreId) :
     (default : SystemState).perCoreTlb.get c = TlbState.empty :=
   PerCoreVector.replicate_get _ _ c
+
+/-- WS-ZA ZA5.4: a state's TLB spares are logically one value — replacing them
+leaves the state as it is. -/
+theorem SystemState.with_perCoreTlbSpare (st : SystemState)
+    (v : Vector (Squash (List TlbEntry)) numCores) :
+    { st with perCoreTlbSpare := v } = st := by
+  cases st
+  simp only [SystemState.mk.injEq, and_true, true_and]
+  exact Vector.ext fun _ _ => Subsingleton.elim _ _
 
 /-- WS-SM SM7.D.1: at boot every core's instruction cache is cold — the
 instruction-side twin of `default_perCoreTlb`.  Discharged the same way
