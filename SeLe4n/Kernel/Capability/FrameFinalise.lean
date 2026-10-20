@@ -759,6 +759,67 @@ def cspaceDeletePerformAt (cnode : SeLe4n.ObjId) (slot : SeLe4n.Slot) (st : Syst
     SystemState :=
   cspaceDeletePerform ⟨cnode, slot⟩ st
 
+/-- WS-ZA ZA5.4: **`cspaceDeleteTeardownAt` for a mapped frame's capability**,
+on the record's words: the capability's mapping record and its frame's base are
+read before the delete, then the slot is emptied, then the one page is unmapped
+if it is still live (`mappedPageLiveWords`).  A frame names no page table, so
+the table pass has nothing to do and no list, page record or slot address is
+built.  Any other capability takes `cspaceDeleteTeardownAt`
+(`cspaceDeleteTeardownAt_eq_frame`). -/
+@[noinline] def cspaceDeleteTeardownAtFrame (executingCore : Concurrency.CoreId)
+    (cnode : SeLe4n.ObjId) (slot : SeLe4n.Slot) (st : SystemState) : SystemState :=
+  match SystemState.lookupSlotCap st ⟨cnode, slot⟩ with
+  | some cap =>
+    match cap.mapping, cap.target with
+    | some m, .object frameId =>
+      match st.getFrame? frameId with
+      | some f =>
+        let st1 := cspaceDeletePerformAt cnode slot st
+        if mappedPageLiveWords st1 m.asid m.vaddr f.base m.epoch then
+          unmapPageState executingCore m.asid m.vaddr st1
+        else st1
+      | none => cspaceDeleteTeardownAt executingCore cnode slot st
+    | _, _ => cspaceDeleteTeardownAt executingCore cnode slot st
+  | none => cspaceDeleteTeardownAt executingCore cnode slot st
+
+@[csimp] theorem cspaceDeleteTeardownAt_eq_frame :
+    @cspaceDeleteTeardownAt = @cspaceDeleteTeardownAtFrame := by
+  funext ec cnode slot st
+  unfold cspaceDeleteTeardownAtFrame
+  cases hL : SystemState.lookupSlotCap st ⟨cnode, slot⟩ with
+  | none => rfl
+  | some cap =>
+    dsimp only
+    cases hM : cap.mapping with
+    | none => rfl
+    | some m =>
+      cases hT : cap.target with
+      | cnodeSlot _ _ => rfl
+      | replyCap _ => rfl
+      | auditTrail => rfl
+      | object frameId =>
+        dsimp only
+        cases hF : st.getFrame? frameId with
+        | none => rfl
+        | some f =>
+          dsimp only
+          have hPT : st.getPageTable? frameId = none := by
+            unfold SystemState.getFrame? at hF
+            unfold SystemState.getPageTable?
+            cases hO : st.objects[frameId]? with
+            | none => rfl
+            | some o => rw [hO] at hF; cases o <;> simp_all
+          have hNamed : slotPageTables st ⟨cnode, slot⟩ = [] := by
+            simp [slotPageTables, hL, capabilityPageTable, hT, hPT]
+          have hPages : slotMappedPages st ⟨cnode, slot⟩ =
+              [{ asid := m.asid, vaddr := m.vaddr, paddr := f.base, epoch := some m.epoch }] := by
+            simp [slotMappedPages, hL, capabilityMappedPage, hM, hT, hF]
+          unfold cspaceDeleteTeardownAt finaliseDestroyedCapabilitiesState
+          simp only [hNamed, hPages]
+          simp only [pageTablesOrphaned, List.foldl_nil, orphanedTableMappings, List.flatMap_nil,
+            List.append_nil, detachPageTablesState, unmapLivePagesState, cspaceDeletePerformAt,
+            mappedPageLive_eq_words]
+
 /-- WS-ZA ZA5.3 part 7: **an admitted finalising delete's writes**, on slot
 `slot` of `cnode`: a capability that finalises nothing (`cspaceDeleteAdmitted`)
 is the slot emptied and spliced out (`cspaceDeletePerformAt`) alone; otherwise

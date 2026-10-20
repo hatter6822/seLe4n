@@ -73,6 +73,41 @@ def mappedPageLive (st : SystemState) (p : MappedPage) : Bool :=
       | some e => root.mappingEpochs[p.vaddr]? == some e
   | none => false
 
+/-- WS-ZA ZA5.4: **`mappedPageLive` on a page's words**, for a page a
+capability's record names (`epoch = some e`): the ASID's root, its entry at the
+address and its epoch at the address are matched where they are read, so no
+`MappedPage`, pair or `Option` is built (`mappedPageLive_eq_words`). -/
+@[inline] def mappedPageLiveWords (st : SystemState) (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (paddr : SeLe4n.PAddr) (epoch : Nat) : Bool :=
+  match Architecture.resolveAsidRoot st asid with
+  | some (_, root) =>
+    (match root.mappings.getEntry? vaddr with
+     | some e => e.value.1 == paddr
+     | none => false) &&
+      match root.mappingEpochs.getEntry? vaddr with
+      | some e => e.value == epoch
+      | none => false
+  | none => false
+
+theorem mappedPageLive_eq_words (st : SystemState) (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (paddr : SeLe4n.PAddr) (epoch : Nat) :
+    mappedPageLive st { asid := asid, vaddr := vaddr, paddr := paddr, epoch := some epoch } =
+      mappedPageLiveWords st asid vaddr paddr epoch := by
+  unfold mappedPageLive mappedPageLiveWords
+  cases Architecture.resolveAsidRoot st asid with
+  | none => rfl
+  | some pr =>
+    obtain ⟨_, root⟩ := pr
+    dsimp only
+    have h1 : root.lookup vaddr = (root.mappings.getEntry? vaddr).map (·.value) := by
+      show root.mappings.get? vaddr = _
+      rw [SeLe4n.Kernel.RobinHood.RHTable.get?_eq_getEntry?_map]
+    have h2 : root.mappingEpochs[vaddr]? = (root.mappingEpochs.getEntry? vaddr).map (·.value) := by
+      show root.mappingEpochs.get? vaddr = _
+      rw [SeLe4n.Kernel.RobinHood.RHTable.get?_eq_getEntry?_map]
+    rw [h1, h2]
+    cases root.mappings.getEntry? vaddr <;> cases root.mappingEpochs.getEntry? vaddr <;> rfl
+
 /-- **PR #904 review (`v0.36.41`): give a capability's new mapping its epoch.**
 The frame's current `mapEpoch` is written beside the translation in the address
 space the ASID resolves to (`VSpaceRoot.mappingEpochs`), the frame's counter
