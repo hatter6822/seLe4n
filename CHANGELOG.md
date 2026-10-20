@@ -32,6 +32,13 @@ erased, and the map's decode builds nothing.
   (14 / 7), map of a copied capability 7 / 3 (12 / 7), unmap 6 (7), revoke
   destroying a mapped frame 8 / 6 (9 / 7), page-table retype 62 (65), frame
   retype 79 (82).  The exerciser pins the new readings.
+- **Main's CI** (`.github/workflows/nightly_determinism.yml`,
+  `docs/codebase_map.json`): the nightly run gave the changed-file anchor
+  sweep no base revision, so the sweep refused every scheduled run; it now
+  takes the same "Provide a base revision" step as the fast lane (HEAD's
+  parent, since a scheduled event carries no base).  The codebase map's
+  source digest was stale after part 6's census fix, which turned main's
+  Codebase Map Sync red; the map is regenerated.
 
 ## v0.36.116 — WS-ZA ZA5.4 part 6: a core's TLB fill and page drain reuse its entry cells
 
