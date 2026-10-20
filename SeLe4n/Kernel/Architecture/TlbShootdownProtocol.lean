@@ -2310,8 +2310,10 @@ theorem opsCellOver_eq (spare : List TlbInvalidation) (op : TlbInvalidation) :
 
 /-- WS-ZA ZA5.4: the posted operands as the seam computes them, with the
 state's operand spare taken out of its field only where the one-operand list is
-built, which is then written over the spare's cell (`opsCellOver`); a commit
-that posts nothing, or more than one operand, leaves the spare where it is.
+built from a page operand, which is then written over the spare's cell
+(`opsCellOver`); a commit that posts nothing, more than one operand, or a
+non-page operand (an ASID round) leaves the spare where it is, so the spare
+keeps the page shape the next unmap writes over.
 Equal to the operands and the state itself (`shootdownPostedOpsTaking_eq`). -/
 @[inline] def shootdownPostedOpsTaking (changed : List CoreId) (lo : Nat) (post : SystemState) :
     List TlbInvalidation × SystemState :=
@@ -2324,10 +2326,12 @@ Equal to the operands and the state itself (`shootdownPostedOpsTaking_eq`). -/
       if inRoundWindow lo post.tlbShootdown.roundGeneration d.generation &&
           coresWindowOpsAllEq post d.op lo post.tlbShootdown.roundGeneration changed then
         let op := d.op
-        let sp := post.shootdownOpsSpare
-        let post0 := withoutShootdownOpsSpare post
-        Quot.lift (fun spare => (opsCellOver spare op, post0))
-          (fun x y _ => by dsimp only; rw [opsCellOver_eq, opsCellOver_eq]) sp
+        if op.toOpTag == 1 then
+          let sp := post.shootdownOpsSpare
+          let post0 := withoutShootdownOpsSpare post
+          Quot.lift (fun spare => (opsCellOver spare op, post0))
+            (fun x y _ => by dsimp only; rw [opsCellOver_eq, opsCellOver_eq]) sp
+        else ([op], post)
       else (shootdownPostedOpsOf changed lo post, post)
 
 theorem shootdownPostedOpsTaking_eq (changed : List CoreId) (lo : Nat) (post : SystemState) :
@@ -2338,9 +2342,12 @@ theorem shootdownPostedOpsTaking_eq (changed : List CoreId) (lo : Nat) (post : S
   · split
     · rfl
     · split
-      · induction post.shootdownOpsSpare using Squash.ind with
-        | h l => simp only [Squash.mk, opsCellOver_eq, withoutShootdownOpsSpare,
-            SystemState.with_shootdownOpsSpare]
+      · dsimp only
+        split
+        · induction post.shootdownOpsSpare using Squash.ind with
+          | h l => simp only [Squash.mk, opsCellOver_eq, withoutShootdownOpsSpare,
+              SystemState.with_shootdownOpsSpare]
+        · rfl
       · rfl
 
 /-- **WS-SM SM7.B**: the newly-posted invalidation operands of a

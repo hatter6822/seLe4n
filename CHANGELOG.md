@@ -35,6 +35,14 @@ steady state.
   `withShootdownSparesSeeded`, proven the identity.  A new exerciser scenario
   unmaps before any teardown has run (`vspace-unmap-first`, then
   `vspace-map-again`), so the first unmap after boot is measured.
+- **Only a page round replaces the spares** (`Architecture/PerCoreTlbModel.lean`,
+  `Architecture/TlbShootdownProtocol.lean`): a stash keeps the new list only
+  when its first entry is a page operand (`pageSpareOr`), and the seam takes
+  the operand spare only for a page operand, so an empty drain or an ASID
+  round (whose one-word operand cannot hold a page invalidation) leaves the
+  page-shaped cells for the next unmap.  An ASID round is posted only by an
+  in-place retype of an address space, which needs a retype right over it; no
+  capability in the QEMU image carries one, so the exerciser cannot issue it.
 - **The unmap's root update is out of line**
   (`Architecture/VSpaceUnmapPerform.lean`): `rootWithoutMappingCells` is
   `@[noinline]`, so the root is checked for sole ownership after its object

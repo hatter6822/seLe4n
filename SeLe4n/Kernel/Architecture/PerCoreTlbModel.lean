@@ -2005,22 +2005,34 @@ theorem tlbRetireDescriptorsOnCore_eq (c : CoreId) :
     unfold setTlbOnCore
     simp only [Vector.set_set]
 
+/-- WS-ZA ZA5.4: the spare a stash keeps: the new list when its first entry is
+a page operand, else the spare it already has — an empty list, or a non-page
+round's (an ASID round's one-word operand), cannot hold a page invalidation.
+Out of line, so the stash's record write stays unconditional and in place. -/
+@[noinline] def pageSpareOr {α : Type} (opOf : α → TlbInvalidation) (old : Squash (List α))
+    (xs : List α) : Squash (List α) :=
+  match xs with
+  | x :: _ => if (opOf x).toOpTag == 1 then Squash.mk xs else old
+  | [] => old
+
 /-- WS-ZA ZA5.4: the drained descriptors kept as the state's descriptor spare,
-so the next page round writes over their cells.  The state itself
+so the next page round writes over their cells; only a page round's
+descriptors replace it (`pageSpareOr`).  The state itself
 (`stashShootdownDescriptors_eq`). -/
 @[inline] def stashShootdownDescriptors (st : SystemState)
     (ds : List TlbShootdownDescriptor) : SystemState :=
-  { st with shootdownDescriptorSpare := Squash.mk ds }
+  { st with shootdownDescriptorSpare := pageSpareOr (·.op) st.shootdownDescriptorSpare ds }
 
 theorem stashShootdownDescriptors_eq (st : SystemState) (ds : List TlbShootdownDescriptor) :
     stashShootdownDescriptors st ds = st :=
   SystemState.with_shootdownDescriptorSpare st _
 
 /-- WS-ZA ZA5.4: a round's operand list kept as the state's operand spare, so
-the next commit's seam writes its operand into that cell.  The state itself
+the next commit's seam writes its operand into that cell; only a page
+operand's list replaces it (`pageSpareOr`).  The state itself
 (`stashShootdownOps_eq`). -/
 @[inline] def stashShootdownOps (st : SystemState) (ops : List TlbInvalidation) : SystemState :=
-  { st with shootdownOpsSpare := Squash.mk ops }
+  { st with shootdownOpsSpare := pageSpareOr id st.shootdownOpsSpare ops }
 
 theorem stashShootdownOps_eq (st : SystemState) (ops : List TlbInvalidation) :
     stashShootdownOps st ops = st :=
