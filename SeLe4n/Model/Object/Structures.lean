@@ -105,21 +105,39 @@ def PagePermissions.ofNat? (n : Nat) : Option PagePermissions :=
     if p.wxCompliant then some p else none
   else none
 
+/-- WS-ZA ZA5.4: the permissions of every 5-bit word, in word order — built
+once, when the kernel initialises, so a decode hands out a shared value rather
+than building one. -/
+def PagePermissions.table : Array PagePermissions :=
+  ((List.range 32).map PagePermissions.ofNat).toArray
+
+theorem PagePermissions.table_size : PagePermissions.table.size = 32 := by
+  simp [PagePermissions.table]
+
+theorem PagePermissions.table_get (n : Nat) (h : n < PagePermissions.table.size) :
+    PagePermissions.table[n] = PagePermissions.ofNat n := by
+  simp [PagePermissions.table]
+
 /-- WS-ZA ZA5.4: `ofNat?` as compiled — the range and W^X checks read off the
-word's bits, inlined, so a decoder's `match` meets the `some` and builds only
-the permissions it keeps. -/
+word's bits, inlined, so a decoder's `match` meets the `some`, and the
+permissions are the shared entry of `table`, so none is built. -/
 @[inline] def PagePermissions.ofNatChecked (n : Nat) : Option PagePermissions :=
-  if n < 32 && !(n &&& 2 != 0 && n &&& 4 != 0) then
-    some { read := n &&& 1 != 0, write := n &&& 2 != 0, execute := n &&& 4 != 0,
-           user := n &&& 8 != 0, cacheable := n &&& 16 != 0 }
+  if h : n < 32 && !(n &&& 2 != 0 && n &&& 4 != 0) then
+    some (PagePermissions.table[n]'(by
+      rw [PagePermissions.table_size]
+      simp only [Bool.and_eq_true, decide_eq_true_eq] at h
+      exact h.1))
   else none
 
 @[csimp] theorem PagePermissions.ofNat?_eq_checked :
     @PagePermissions.ofNat? = @PagePermissions.ofNatChecked := by
   funext n
   unfold PagePermissions.ofNat? PagePermissions.ofNatChecked PagePermissions.wxCompliant
-    PagePermissions.ofNat
-  by_cases h : n < 32 <;> simp [h]
+  by_cases h : n < 32
+  · simp only [h, PagePermissions.table_get]
+    unfold PagePermissions.ofNat
+    simp
+  · simp [h]
 
 /-- T6-C/V4-K: `ofNat?` returns `some` for valid, W^X-compliant permission values. -/
 theorem PagePermissions.ofNat?_valid (n : Nat) (h : n < 32)

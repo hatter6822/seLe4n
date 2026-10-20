@@ -133,16 +133,23 @@ def mappingStore? (st : SystemState) (root : VSpaceRoot) (vaddr : SeLe4n.VAddr) 
        | some (paddr, perms) => userPageDescriptorValue paddr perms
        | none => 0)
 
+/-- WS-ZA ZA5.4: the descriptor word `root` holds for `vaddr` — the user-page
+descriptor of its translation, or the invalid descriptor where it has none.  Out
+of line, so its caller receives a word: inlined, each arm of the lookup built
+the store it was passed to. -/
+@[noinline] def mappingDescriptorWord (root : VSpaceRoot) (vaddr : SeLe4n.VAddr) : UInt64 :=
+  match root.lookup vaddr with
+  | some (paddr, perms) => userPageDescriptorValue paddr perms
+  | none => 0
+
 /-- WS-ZA ZA5.4: `mappingStore?` inlined into its readers, so the `Option` it
-answers cancels against the reader's match (`mappingStore?_eq_inline`). -/
+answers cancels against the reader's match, and the store is built from the
+descriptor word once (`mappingStore?_eq_inline`). -/
 @[inline] def mappingStoreInline (st : SystemState) (root : VSpaceRoot) (vaddr : SeLe4n.VAddr) :
     Option PhysicalWrite :=
   if root.tableBase.isNone then none
   else (tablePageAt? st root 3 (PageTableSlot.indexOf 3 vaddr)).map fun l3 =>
-    .storeDescriptor (tableEntryAddress l3 (vaddr.toNat >>> 12))
-      (match root.lookup vaddr with
-       | some (paddr, perms) => userPageDescriptorValue paddr perms
-       | none => 0)
+    .storeDescriptor (tableEntryAddress l3 (vaddr.toNat >>> 12)) (mappingDescriptorWord root vaddr)
 
 @[csimp] theorem mappingStore?_eq_inline : @mappingStore? = @mappingStoreInline := rfl
 

@@ -102,7 +102,7 @@ address-space step's (`vspaceMapPageCheckedWithFlushFromState`), and the
 in-place conditions (see the module docstring).  `rootId` is the root the
 invoked capability names, which the dispatcher's authorisation check resolved
 for `args.asid`. -/
-def vspaceMapAdmittedAt (st : SystemState) (args : VSpaceMapArgs) (frameCap : Capability)
+@[inline] def vspaceMapAdmittedAt (st : SystemState) (args : VSpaceMapArgs) (frameCap : Capability)
     (frame : FrameObject) (rootId : SeLe4n.ObjId) : Bool :=
   (match frameMappingAdmissible frameCap frame args.perms with
    | .ok () => true
