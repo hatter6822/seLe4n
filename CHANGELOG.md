@@ -1,3 +1,28 @@
+## v0.36.116 — WS-ZA ZA5.4 part 6: a core's TLB fill and page drain reuse its entry cells
+
+A TLB fill no longer builds its entry or list cell when the core has a spare,
+and a page invalidation keeps the entries it removes for the next fill.
+
+- **Spare entry cells** (`Model/State.lean`): `SystemState.perCoreTlbSpare`
+  holds, per core, the entries an invalidation removed from that core's view,
+  as a hardware TLB marks an invalidated entry free.  It is a `Squash` per
+  core, so logically one value: no theorem reads it, and a state with any
+  spares is the state with any other (`SystemState.with_perCoreTlbSpare`).
+- **The fill** (`Architecture/PerCoreTlbModel.lean`): `tlbFillOnCore`
+  compiles to `tlbFillOnCoreWords`, which reads the walk in place, searches
+  the view field by field (`tlbEntriesHoldWalked`, moved here from
+  `IpcBufferTlbFill.lean`) and writes the translation over the core's first
+  spare (`tlbPushWalked`, `tlbEntryOverwrite`); with no spare the entry is
+  built out of line (`tlbEntryOfFields`).
+- **The page drain** (`Architecture/PerCoreTlbModel.lean`): a drain that
+  touches the view runs `tlbDrainPage`, which moves each covered entry and its
+  list cell onto the spares and keeps the rest without rebuilding them
+  (`tlbDrainPageLoop`, proven equal to the filter).
+- **Readings** (normal build, first call / steady state): frame map 14 / 8
+  (14 / 10), map of a copied capability 12 / 8 (13 / 10), unmap 7 (8), revoke
+  destroying a mapped frame 9 / 7 (11 / 9); everything else is unchanged.  The
+  exerciser pins the new readings.
+
 ## v0.36.115 — WS-ZA ZA5.4 part 5: a capability's mapping record is words written in its slot
 
 A frame map no longer builds the capability's mapping record, the
