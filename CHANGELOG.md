@@ -1,3 +1,42 @@
+## v0.36.114 — WS-ZA ZA5.4 part 4: the physical-write ledger is a word buffer, and a mapped frame's delete allocates nothing
+
+The physical writes a transition owes the HAL are now three words each in a
+buffer written in place, and a mapped frame's capability teardown reads its
+mapping record without building it.
+
+- **Mapped-frame teardown as words** (`Architecture/PageTeardown.lean`,
+  `Capability/FrameFinalise.lean`): `cspaceDeleteTeardownAtFrame` reads the
+  destroyed capability's mapping record and checks the page is still live
+  through `mappedPageLiveWords`, so no mapping `Option` is built; it replaces
+  `cspaceDeleteTeardownAt` through an `@[csimp]` equality.
+- **The ledger as a word buffer** (`Architecture/PhysicalWrite.lean`,
+  `Architecture/LittleEndianWords.lean`, `Model/State.lean`):
+  `PhysicalWriteLedger` is a byte buffer of tag/address/value entries, its
+  write list ghost state (`Erased`) the buffer is proven to encode
+  (`decodeLedger`).  A write stores its words in place out of line
+  (`pushWords`, `SystemState.recordPhysicalWriteWords`), so the state is
+  handed over and written in its cell.  A seam hands the ledger to the HAL
+  (`SystemState.drainedPhysicalWrites`) and drains it by setting
+  `physicalWritesDrained`, so the ledger it hands over is never rebuilt and
+  the next write starts the buffer over; `pendingPhysicalWrites` is the ghost
+  list, empty once drained.  The HAL walks the buffer by index
+  (`completePhysicalWrites_eq`: the same writes in the same order as
+  `performPhysicalWrites`).  `StateField` gains `physicalWritesDrained`;
+  the frozen state carries the drained ledger.
+- **Little-endian words** (`Architecture/LittleEndianWords.lean`): `le64At`
+  moves here from `IpcBufferRead` beside `setLe64` and its round-trip and
+  disjointness lemmas, proved without `bv_decide` so the image links no Std
+  module initialiser.
+- **Kernel runtime** (`rust/sele4n-hal/src/lean_runtime/array.rs`):
+  `lean_copy_byte_array` and `lean_byte_array_push`, mirroring `lean.h`,
+  with host tests.
+- **Readings** (normal build, first call / steady state): mapped-frame
+  capability delete 0 (5 before), revoke destroying a mapped frame 11 / 9
+  (19 / 17 at `v0.36.113`), frame map 22 / 18 (23 / 19), map of a copied
+  capability 21 / 18 (22 / 19), unmap 8 (9), page-table installs 6 (7); the
+  retypes, removals, deletes and untyped reset are unchanged.  The exerciser
+  pins the new readings and the frame delete at 0.
+
 ## v0.36.113 — WS-ZA ZA5.4 part 3: address-space reads and the shootdown round allocate only their data
 
 The page-table walk, the TLB shootdown round and the teardown's unmap no longer

@@ -210,7 +210,9 @@ a well-formed state, and at `v0.36.111` every revoke is the `cteRevoke` loop of
 finalising deletes.  At `v0.36.112` (ZA5.4 part 2) the frame map and unmap, the
 unify and the page-table install and removal run their checks first and write
 each object in its slot, and at `v0.36.113` (part 3) the walk reads, the
-shootdown round and the teardown's unmap allocate only the operations' own data.  The
+shootdown round and the teardown's unmap allocate only the operations' own data; at
+`v0.36.114` (part 4) the physical-write ledger is a word buffer written in place and
+drained by a flag, and a mapped frame's capability delete allocates nothing.  The
 suspend of a thread blocked in IPC or holding a donated context is the one
 syscall arm left on the general path (ZA6.1).  ZA6 covers the other
 entries and makes the rule standing.  Plan:
