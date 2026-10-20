@@ -1734,7 +1734,7 @@ mint builds neither a capability nor its cell (WS-ZA ZA5.3 part 6). -/
   match SystemState.lookupSlotCap st src with
   | some parent =>
       (st.storeCNodeWith dst.cnode
-          (·.insertFields dst.slot parent.target rights badgeWord badged none)).cdtAddChild
+          (·.insertFields dst.slot parent.target rights badgeWord badged)).cdtAddChild
         src dst .mint
   | none => st
 
@@ -1836,8 +1836,7 @@ store, so the store is not held across its write. -/
       | .object target =>
           let t := replyCapTargetIn st (SeLe4n.ReplyId.ofObjId target)
           (st.storeCNodeWith dst.cnode
-              (·.insertFields dst.slot t (AccessRightSet.ofList [.write]) SeLe4n.Badge.zero false
-                none)).cdtAddChild
+              (·.insertFields dst.slot t (AccessRightSet.ofList [.write]) SeLe4n.Badge.zero false)).cdtAddChild
             src dst .mint
       | _ => st
   | none => st
@@ -1892,7 +1891,7 @@ capability first (WS-ZA ZA5.3 part 6). -/
   match SystemState.lookupSlotCap st src with
   | some cap =>
       (st.storeCNodeWith dst.cnode
-          (·.insertFields dst.slot cap.target cap.rights cap.badgeWord cap.badged none)).cdtAddChild
+          (·.insertFields dst.slot cap.target cap.rights cap.badgeWord cap.badged)).cdtAddChild
         src dst .copy
   | none => st
 
@@ -2121,10 +2120,11 @@ def cspaceRecordFrameMapping (addr : CSpaceAddr) (m : FrameMapping) : Kernel Uni
     | some cn =>
       match cn.lookup addr.slot with
       | none => .error .invalidCapability
-      | some cap => storeObject addr.cnode (.cnode (cn.insert addr.slot { cap with mapping := some m })) st
+      | some _ => storeObject addr.cnode (.cnode (cn.recordMapping addr.slot m)) st
 
 /-- `cspaceRecordFrameMapping` as compiled: the record is written where the
-CNode lies (`storeCNodeWith`; WS-ZA ZA5.3 part 6). -/
+CNode lies (`storeCNodeWith`; WS-ZA ZA5.3 part 6), as words into the slot's own
+capability (`CNode.recordMappingCells`; WS-ZA ZA5.4). -/
 @[inline] def cspaceRecordFrameMappingImpl (addr : CSpaceAddr) (m : FrameMapping) : Kernel Unit :=
   fun st =>
     match st.getCNode? addr.cnode with
@@ -2132,8 +2132,8 @@ CNode lies (`storeCNodeWith`; WS-ZA ZA5.3 part 6). -/
     | some cn =>
       match cn.lookup addr.slot with
       | none => .error .invalidCapability
-      | some cap =>
-          .ok ((), st.storeCNodeWith addr.cnode (·.insert addr.slot { cap with mapping := some m }))
+      | some _ =>
+          .ok ((), st.storeCNodeWith addr.cnode (·.recordMappingCells addr.slot m.asid m.vaddr m.epoch))
 
 @[csimp] theorem cspaceRecordFrameMapping_eq_impl :
     @cspaceRecordFrameMapping = @cspaceRecordFrameMappingImpl := by
@@ -2146,16 +2146,19 @@ CNode lies (`storeCNodeWith`; WS-ZA ZA5.3 part 6). -/
     cases cn.lookup addr.slot with
     | none => rfl
     | some cap =>
+      have hF : (fun c : CNode => c.recordMappingCells addr.slot m.asid m.vaddr m.epoch) =
+          (·.recordMapping addr.slot m) := funext fun c => CNode.recordMappingCells_eq _ _ _ _ _
+      rw [hF]
       exact SystemState.storeObject_cnode_eq_storeCNodeWith
         ((SystemState.getCNode?_eq_some_iff st addr.cnode cn).1 hC)
-        (·.insert addr.slot { cap with mapping := some m })
+        (·.recordMapping addr.slot m)
 
 /-- **What a successful record write is**: the slot held a capability, and the
 CNode was stored back with that capability carrying the record. -/
 theorem cspaceRecordFrameMapping_ok_decompose (addr : CSpaceAddr) (m : FrameMapping)
     (st st' : SystemState) (h : cspaceRecordFrameMapping addr m st = .ok ((), st')) :
     ∃ cn cap, st.getCNode? addr.cnode = some cn ∧ cn.lookup addr.slot = some cap ∧
-      storeObject addr.cnode (.cnode (cn.insert addr.slot { cap with mapping := some m })) st
+      storeObject addr.cnode (.cnode (cn.insert addr.slot (cap.withMapping (some m)))) st
         = .ok ((), st') := by
   unfold cspaceRecordFrameMapping at h
   cases hCn : st.getCNode? addr.cnode with
@@ -2165,7 +2168,10 @@ theorem cspaceRecordFrameMapping_ok_decompose (addr : CSpaceAddr) (m : FrameMapp
     simp only at h
     cases hLk : cn.lookup addr.slot with
     | none => rw [hLk] at h; cases h
-    | some cap => rw [hLk] at h; exact ⟨cn, cap, rfl, hLk, h⟩
+    | some cap =>
+      rw [hLk] at h
+      refine ⟨cn, cap, rfl, hLk, ?_⟩
+      simpa [CNode.recordMapping, hLk] using h
 
 -- ============================================================================
 -- M-D01: IPC capability transfer operations

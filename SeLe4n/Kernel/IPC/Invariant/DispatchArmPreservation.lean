@@ -1546,7 +1546,7 @@ theorem cspaceRecordFrameMapping_preserves_ipcInvariantFull
     intro oid cn' slot cap' badge hCn' hLk' hB
     by_cases hK : oid = addr.cnode
     · rw [hK, hAt] at hCn'
-      obtain rfl : cn.insert addr.slot { cap with mapping := some m } = cn' := by
+      obtain rfl : cn.insert addr.slot (cap.withMapping (some m)) = cn' := by
         simpa only [Option.some.injEq, KernelObject.cnode.injEq] using hCn'
       by_cases hSlot : addr.slot = slot
       · subst hSlot

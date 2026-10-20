@@ -1571,6 +1571,61 @@ theorem drainInitiatorPerCoreView_tlbOnCore_self (st : SystemState) (c : CoreId)
       applyTlbInvalidations (tlbOnCore st c) ops := by
   simp [drainInitiatorPerCoreView]
 
+/-- WS-ZA ZA5.4: **the initiator's drain of one page invalidation** at
+`(asid, vaddr)` — `drainInitiatorPerCoreView` of the encoded operand alone. -/
+def drainInitiatorPageOnCore (st : SystemState) (c : CoreId) (asid : SeLe4n.ASID)
+    (vaddr : SeLe4n.VAddr) : SystemState :=
+  drainInitiatorPerCoreView st c [encodePageInvalidation asid vaddr]
+
+/-- Does the page operand of encoded ASID `a` and address `v` cover `e`? -/
+@[inline] def pageEntryMatches (a : UInt16) (v : UInt64) (e : TlbEntry) : Bool :=
+  a == UInt16.ofNat e.asid.toNat && v == UInt64.ofNat e.vaddr.toNat
+
+/-- Does the page operand of `a` and `v` cover any entry of `es`?  A first-order loop. -/
+def anyPageEntryMatches (a : UInt16) (v : UInt64) : List TlbEntry → Bool
+  | [] => false
+  | e :: es => pageEntryMatches a v e || anyPageEntryMatches a v es
+
+theorem anyPageEntryMatches_eq (a : UInt16) (v : UInt64) :
+    ∀ es, anyPageEntryMatches a v es = anyTlbEntryMatches (.vae1 a v) es
+  | [] => rfl
+  | e :: es => by
+    simp only [anyPageEntryMatches, anyTlbEntryMatches, anyPageEntryMatches_eq a v es]; rfl
+
+/-- WS-ZA ZA5.4: `drainInitiatorPageOnCore` as compiled — the operand's words
+compared with the view's entries, and a view the operand does not touch left
+where it is, so no operand, list or view is built. -/
+@[inline] def drainInitiatorPageOnCoreWords (st : SystemState) (c : CoreId) (asid : SeLe4n.ASID)
+    (vaddr : SeLe4n.VAddr) : SystemState :=
+  if anyPageEntryMatches (UInt16.ofNat asid.toNat) (UInt64.ofNat vaddr.toNat)
+      (tlbOnCore st c).entries then
+    drainInitiatorPerCoreView st c [encodePageInvalidation asid vaddr]
+  else st
+
+@[csimp] theorem drainInitiatorPageOnCore_eq_words :
+    @drainInitiatorPageOnCore = @drainInitiatorPageOnCoreWords := by
+  funext st c asid vaddr
+  unfold drainInitiatorPageOnCore drainInitiatorPageOnCoreWords
+  split
+  · rfl
+  · next h =>
+    rw [anyPageEntryMatches_eq, Bool.not_eq_true, anyTlbEntryMatches_eq_false] at h
+    unfold drainInitiatorPerCoreView
+    have hT : applyTlbInvalidations (tlbOnCore st c) [encodePageInvalidation asid vaddr] =
+        tlbOnCore st c := by
+      show applyTlbInvalidation (tlbOnCore st c) (encodePageInvalidation asid vaddr) = _
+      unfold applyTlbInvalidation
+      rw [List.filter_eq_self.2 (fun e he => by simp [encodePageInvalidation, h e he])]
+    rw [hT]
+    unfold setTlbOnCore tlbOnCore
+    cases st
+    simp only [SystemState.mk.injEq, and_true, true_and]
+    apply Vector.ext
+    intro i hi
+    by_cases e : i = c.val
+    · subst e; simp [SeLe4n.PerCoreVector.get_eq_getElem]
+    · simp [Vector.getElem_set, Ne.symm e]
+
 /-- **WS-SM SM7.C**: the initiator drain leaves every other core's view
 untouched. -/
 theorem drainInitiatorPerCoreView_tlbOnCore_ne (st : SystemState)
