@@ -1003,6 +1003,9 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.Architecture.handleInterruptWith
   , `SeLe4n.Kernel.Architecture.handleTlbShootdownReqOnCore
   , `SeLe4n.Kernel.Architecture.handleTlbShootdownReqOnCorePerCore
+  -- WS-ZA ZA5.4: the compiled forms (`@[csimp]`) of the two non-executed
+  -- transitions beside them, unreachable exactly as those are.
+  , `SeLe4n.Kernel.Architecture.handleTlbShootdownReqOnCorePerCoreOnce
   , `SeLe4n.Kernel.Architecture.icFetchOnCore
   , `SeLe4n.Kernel.Architecture.icInvalidateOnCore
   , `SeLe4n.Kernel.Architecture.interruptDispatchSequence
@@ -1031,6 +1034,7 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.Architecture.tlbShootdownDrainOnCore
   , `SeLe4n.Kernel.Architecture.tlbShootdownLocal
   , `SeLe4n.Kernel.Architecture.tlbShootdownLocalPerCore
+  , `SeLe4n.Kernel.Architecture.tlbShootdownLocalPerCoreRetire
   , `SeLe4n.Kernel.Architecture.vspaceLookup
   , `SeLe4n.Kernel.Architecture.vspaceLookupFull
   , `SeLe4n.Kernel.Architecture.vspaceMapPageChecked
