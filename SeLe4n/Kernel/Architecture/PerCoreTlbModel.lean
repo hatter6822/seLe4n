@@ -1718,6 +1718,49 @@ theorem tlbRetireOnCore_eq (st : SystemState) (c : CoreId) (op : TlbInvalidation
     rw [List.filter_eq_self.2 (fun e he => by simp [h e he])]
     exact (setTlbOnCore_tlbOnCore st c).symm
 
+@[csimp] theorem tlbInvalidateOnCore_eq_retire : @tlbInvalidateOnCore = @tlbRetireOnCore := by
+  funext st c op
+  exact (tlbRetireOnCore_eq st c op).symm
+
+/-- WS-ZA ZA5.4: core `c`'s view with every operand of `ops` retired in turn,
+each in place (`tlbRetireOnCore`), so every entry an operand covers becomes one
+of the core's spares. -/
+def tlbRetireOpsOnCore (st : SystemState) (c : CoreId) :
+    List TlbInvalidation → SystemState
+  | [] => st
+  | op :: ops => tlbRetireOpsOnCore (tlbRetireOnCore st c op) c ops
+
+theorem tlbRetireOpsOnCore_eq (c : CoreId) :
+    ∀ (st : SystemState) (ops : List TlbInvalidation),
+      tlbRetireOpsOnCore st c ops = setTlbOnCore st c (applyTlbInvalidations (tlbOnCore st c) ops)
+  | st, [] => (setTlbOnCore_tlbOnCore st c).symm
+  | st, op :: ops => by
+    unfold tlbRetireOpsOnCore
+    rw [tlbRetireOpsOnCore_eq c _ ops, tlbRetireOnCore_eq, setTlbOnCore_tlbOnCore_self]
+    unfold setTlbOnCore applyTlbInvalidations
+    simp only [Vector.set_set, List.foldl_cons]
+
+/-- WS-ZA ZA5.4: the initiator's drain of a list of operands (an ASID retired by
+a retype, the teardown's page operands) retires each in place, keeping the cells
+it removes as the core's spares. -/
+@[csimp] theorem drainInitiatorPerCoreView_eq_retire :
+    @drainInitiatorPerCoreView = @tlbRetireOpsOnCore := by
+  funext st c ops
+  exact (tlbRetireOpsOnCore_eq c st ops).symm
+
+/-- WS-ZA ZA5.4: the initiator's local step with its own view's operand retired
+in place (`tlbRetireOnCore`). -/
+def tlbShootdownLocalPerCoreRetire (st : SystemState) (initiator : CoreId)
+    (op : TlbInvalidation) : SystemState :=
+  tlbRetireOnCore (tlbShootdownLocal st op) initiator op
+
+@[csimp] theorem tlbShootdownLocalPerCore_eq_retire :
+    @tlbShootdownLocalPerCore = @tlbShootdownLocalPerCoreRetire := by
+  funext st i op
+  unfold tlbShootdownLocalPerCore tlbShootdownLocalPerCoreRetire
+  rw [tlbRetireOnCore_eq]
+  rfl
+
 /-- WS-ZA ZA5.4: `drainInitiatorPageOnCore` as compiled — the operand's words
 compared with the view's entries, a view the operand does not touch left where
 it is, and one it touches drained in place (`tlbDrainPage`): the covered
@@ -1978,6 +2021,23 @@ def handleTlbShootdownReqOnCorePerCoreInWindowOnce (st : SystemState) (c : CoreI
   funext st c lo hi
   simp only [handleTlbShootdownReqOnCorePerCoreInWindow, handleTlbShootdownReqOnCorePerCoreInWindowOnce,
     tlbRetireDescriptorsOnCore_eq, handleTlbShootdownReqOnCoreInWindow, tlbShootdownDrainOnCoreInWindow,
+    tlbShootdownAckOnCore, setTlbOnCore, tlbOnCore, applyTlbInvalidations_map_op]
+
+/-- WS-ZA ZA5.4: the per-core handler as it runs: the queue drained once, the
+shootdown record and scalar view written once, and core `c`'s view retiring
+each drained descriptor in place (`tlbRetireDescriptorsOnCore`). -/
+def handleTlbShootdownReqOnCorePerCoreOnce (st : SystemState) (c : CoreId) : SystemState :=
+  let r := drainShootdowns st.tlbShootdown c
+  tlbRetireDescriptorsOnCore
+    { st with
+        tlb := applyDescriptorOps st.tlb r.1,
+        tlbShootdown := acknowledgeShootdown r.2 c st.tlbShootdown.roundGeneration } c r.1
+
+@[csimp] theorem handleTlbShootdownReqOnCorePerCore_eq_once :
+    @handleTlbShootdownReqOnCorePerCore = @handleTlbShootdownReqOnCorePerCoreOnce := by
+  funext st c
+  simp only [handleTlbShootdownReqOnCorePerCore, handleTlbShootdownReqOnCorePerCoreOnce,
+    tlbRetireDescriptorsOnCore_eq, handleTlbShootdownReqOnCore, tlbShootdownDrainOnCore,
     tlbShootdownAckOnCore, setTlbOnCore, tlbOnCore, applyTlbInvalidations_map_op]
 
 /-- **WS-SM SM7.F.3**: the window per-core handler's `tlb` effect is exactly

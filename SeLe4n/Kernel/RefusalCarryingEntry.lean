@@ -95,7 +95,8 @@ specification's form. -/
         -- in place by `ipcBufferFillHeldOne`) and the
         -- dispatch is handed the entry's own state.  Otherwise the fill is the
         -- one write before the checks, and a refusal hands back the TLB the
-        -- entry held, with its spare cells (`tlbFillIpcBufferOnCore_restore_spare`).
+        -- entry held, its entries back on the spares
+        -- (`tlbUndoFillOnCore_tlbFillIpcBufferOnCore`).
         | .configure capAddr =>
           SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMrK st tid 0
             (fun _ => .error (.invalidMessageInfo, st))
@@ -103,11 +104,11 @@ specification's form. -/
               if SeLe4n.Kernel.Architecture.ipcBufferFillHeldOne st executingCore tid then
                 dispatchConfigureCheckedR capAddr tcb.registerContext w tid executingCore st
               else
-                let tlb := st.perCoreTlb
-                let sp := st.perCoreTlbSpare
+                let n0 := (SeLe4n.Kernel.Architecture.tlbOnCore st executingCore).entries.length
                 match dispatchConfigureCheckedR capAddr tcb.registerContext w tid executingCore
                     (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore st executingCore tid 1) with
-                | .error (e, stF) => .error (e, { stF with perCoreTlb := tlb, perCoreTlbSpare := sp })
+                | .error (e, stF) =>
+                  .error (e, SeLe4n.Kernel.Architecture.tlbUndoFillOnCore stF executingCore n0)
                 | .ok r => .ok r)
         | .viaDecode =>
           RefusalCarrying.ofKernel (syscallEntryChecked ctx SeLe4n.arm64DefaultLayout executingCore 32) st
@@ -269,7 +270,7 @@ theorem syscallEntryCheckedR_eq (ctx : LabelingContext) (executingCore : Concurr
               generalize dispatchSyscallChecked _ _ _ _
                 (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore st executingCore tid 1) = K
               rcases K with e | r
-              · simp only [SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_restore_spare]
+              · simp only [SeLe4n.Kernel.Architecture.tlbUndoFillOnCore_tlbFillIpcBufferOnCore]
               · rfl
         · rfl
       · next o hNot hObj =>
