@@ -604,6 +604,89 @@ def pageTableMapPerformAt (tableId rootId : SeLe4n.ObjId) (vaddr : SeLe4n.VAddr)
   let st2 := st1.storeVSpaceRootWith rootId (·.withTableSlot level index tableId)
   Architecture.recordPhysicalWrites st2 (rootSlotLedger st2 rootId level index)
 
+/-- WS-ZA ZA5.4: a slot record written over a spare one `s`: out of line, with
+its level read back through `s` so that `s` stays live and is the cell written
+(as `mappingValueOver`).  Equal to the slot (`slotOver_eq`). -/
+@[noinline] def slotOver (s : PageTableSlot) (level index : Nat) (table : SeLe4n.ObjId) :
+    PageTableSlot :=
+  ⟨if s.level = level then s.level else level, index, table⟩
+
+theorem slotOver_eq (s : PageTableSlot) (level index : Nat) (table : SeLe4n.ObjId) :
+    slotOver s level index table = ⟨level, index, table⟩ := by
+  unfold slotOver
+  split <;> simp_all
+
+/-- WS-ZA ZA5.4: a fresh slot cell, built out of line so that its literal is not
+merged with the arm that reuses a spare (as `mappingCellFresh`). -/
+@[noinline] def slotCellFresh (level index : Nat) (table : SeLe4n.ObjId) : List PageTableSlot :=
+  [⟨level, index, table⟩]
+
+/-- WS-ZA ZA5.4: the one-slot list a table install appends to its root, written
+over the table's spare cell `c` (its list cell and its slot record) when it has
+one; with none it is built (`slotCellFresh`).  Equal to the fresh cell
+(`slotCellOver_eq`). -/
+@[noinline] def slotCellOver (c : List PageTableSlot) (level index : Nat) (table : SeLe4n.ObjId) :
+    List PageTableSlot :=
+  match c with
+  | s :: _ => slotOver s level index table :: []
+  | [] => slotCellFresh level index table
+
+theorem slotCellOver_eq (c : List PageTableSlot) (level index : Nat) (table : SeLe4n.ObjId) :
+    slotCellOver c level index table = [⟨level, index, table⟩] := by
+  unfold slotCellOver
+  split
+  · rw [slotOver_eq]
+  · rfl
+
+/-- WS-ZA ZA5.4: the table's record once installed, its spare slot cell handed
+to the root (`PageTableObject.with_slotCell`). -/
+@[inline] def tableInstalledHanding (rootId : SeLe4n.ObjId) (level index : Nat)
+    (t : PageTableObject) : PageTableObject :=
+  { t.installedAt rootId level index with slotCell := Squash.mk [] }
+
+/-- WS-ZA ZA5.4: the root once it holds `table` at `(level, index)`, the slot
+written over the table's cell `cell` (`slotCellOver`). -/
+@[inline] def rootWithTableCell (cell : TableSlotCell) (level index : Nat)
+    (table : SeLe4n.ObjId) (r : VSpaceRoot) : VSpaceRoot :=
+  Quot.lift (fun c => { r with tables := r.tables ++ slotCellOver c level index table })
+    (fun a b _ => by dsimp only; rw [slotCellOver_eq, slotCellOver_eq]) cell
+
+/-- WS-ZA ZA5.4: the spare slot cell of the table at `tableId`, read before the
+table's store releases it. -/
+@[inline] def tableSlotCellOf (st : SystemState) (tableId : SeLe4n.ObjId) : TableSlotCell :=
+  match st.getPageTable? tableId with
+  | some t => t.slotCell
+  | none => Squash.mk []
+
+/-- WS-ZA ZA5.4: `pageTableMapPerformAt` as compiled: the table's spare slot
+cell is read, the table's store releases it, and the root's slot is written over
+it, so an install builds no slot (`pageTableMapPerformAt_eq_cells`). -/
+def pageTableMapPerformCells (tableId rootId : SeLe4n.ObjId) (vaddr : SeLe4n.VAddr)
+    (st : SystemState) : SystemState :=
+  let level := pageTableMapLevelAt st rootId vaddr
+  let index := PageTableSlot.indexOf level vaddr
+  let cell := tableSlotCellOf st tableId
+  let st1 := st.storePageTableWith tableId (tableInstalledHanding rootId level index)
+  let st2 := st1.storeVSpaceRootWith rootId (rootWithTableCell cell level index tableId)
+  Architecture.recordPhysicalWrites st2 (rootSlotLedger st2 rootId level index)
+
+@[csimp] theorem pageTableMapPerformAt_eq_cells :
+    @pageTableMapPerformAt = @pageTableMapPerformCells := by
+  funext tableId rootId vaddr st
+  unfold pageTableMapPerformAt pageTableMapPerformCells
+  have hT : ∀ rootId level index,
+      tableInstalledHanding rootId level index = (·.installedAt rootId level index) := by
+    intro rootId level index; funext t
+    simp only [tableInstalledHanding, PageTableObject.with_slotCell]
+  have hR : ∀ (cell : TableSlotCell) level index (table : SeLe4n.ObjId),
+      rootWithTableCell cell level index table = (·.withTableSlot level index table) := by
+    intro cell level index table; funext r
+    induction cell using Squash.ind with
+    | h c =>
+      simp only [rootWithTableCell, Squash.mk, slotCellOver_eq]
+      rfl
+  simp only [hT, hR]
+
 /-- WS-ZA ZA5.4: **the table install's checks**, read before any write:
 `pageTableMap`'s refusals, and the object table finding the table and the root
 where they stand (`RHTable.findsInPlace`). -/
@@ -700,7 +783,7 @@ theorem pageTableMap_of_admitted (tableId rootId : SeLe4n.ObjId) (vaddr : SeLe4n
 
 /-- WS-ZA ZA5.4: the table's record once it is installed nowhere. -/
 @[inline] def tableUninstalled (t : PageTableObject) : PageTableObject :=
-  { t with installedIn := none }
+  t.uninstalled
 
 /-- WS-ZA ZA5.4: the parent entry's store and the ASID invalidate a table's
 removal records (`pageTableUnmap`), read from the root as stored after the
@@ -758,7 +841,7 @@ theorem pageTableUnmap_of_admitted (tableId : SeLe4n.ObjId) (st : SystemState)
   | some table =>
   have hT : st.objects[tableId]? = some (.pageTable table) :=
     (SystemState.getPageTable?_eq_some_iff st tableId table).1 hGT
-  have hS1 : storeObject tableId (.pageTable { table with installedIn := none }) st =
+  have hS1 : storeObject tableId (.pageTable table.uninstalled) st =
       .ok ((), st.storePageTableWith tableId tableUninstalled) :=
     SystemState.storeObject_pageTable_eq_storePageTableWith hT tableUninstalled
   simp only [hGT, Bool.and_eq_true] at hA
@@ -804,5 +887,148 @@ theorem pageTableUnmap_of_admitted (tableId : SeLe4n.ObjId) (st : SystemState)
     rfl
   · simp only [hC, Bool.false_eq_true, ↓reduceIte]
     exact hS1
+
+/-- WS-ZA ZA5.4: whether a root slot is kept by the removal of the table
+`table` from `(level, index)` (`VSpaceRoot.withoutTableSlot`).  Out of line, so
+the walk branches once on its answer: inlined, its two failing tests joined at
+one point, where the kept slot's list cell was built fresh rather than reused. -/
+@[noinline] def keepsTableSlot (level index : Nat) (table : SeLe4n.ObjId) (s : PageTableSlot) :
+    Bool :=
+  !(s.level == level && s.index == index && s.table == table)
+
+/-- WS-ZA ZA5.4: the walk of a root's slots `ts` for the one a table removal
+takes out, the slots before it kept in `acc` (reversed): their cells are
+reused, the removed slot's list cell and record become the root's slot cell in
+transit (`VSpaceRoot.tableSlotSpare`), and the slots after it are filtered as
+the specification does.  The root's other fields are `r0`'s.  Equal to the
+filter (`rootWithoutTableCellLoop_eq`). -/
+def rootWithoutTableCellLoop (level index : Nat) (table : SeLe4n.ObjId) (r0 : VSpaceRoot) :
+    List PageTableSlot → List PageTableSlot → VSpaceRoot
+  | acc, [] => { r0 with tables := acc.reverse }
+  | acc, s :: tl =>
+    if keepsTableSlot level index table s then
+      rootWithoutTableCellLoop level index table r0 (s :: acc) tl
+    else
+      { r0 with
+          tables := List.reverseAux acc (tl.filter (keepsTableSlot level index table))
+          tableSlotSpare := Squash.mk (s :: []) }
+
+theorem rootWithoutTableCellLoop_eq (level index : Nat) (table : SeLe4n.ObjId) (r0 : VSpaceRoot)
+    (acc ts : List PageTableSlot) :
+    rootWithoutTableCellLoop level index table r0 acc ts =
+      { r0 with tables := acc.reverse ++ ts.filter (keepsTableSlot level index table) } := by
+  induction ts generalizing acc with
+  | nil => simp [rootWithoutTableCellLoop]
+  | cons s tl ih =>
+    unfold rootWithoutTableCellLoop
+    split
+    · next h => rw [ih, List.filter_cons_of_pos h]; simp
+    · next h =>
+      rw [List.filter_cons_of_neg h, List.reverseAux_eq]
+      cases r0
+      simp only [VSpaceRoot.mk.injEq, true_and]
+      exact Subsingleton.elim _ _
+
+/-- WS-ZA ZA5.4: the root once the slot `(level, index)` for `table` is removed,
+the removed slot's cell kept in transit (`rootWithoutTableCellLoop`).  Out of
+line, so the root arrives exclusive.  Equal to the removal
+(`rootWithoutTableCell_eq`). -/
+@[noinline] def rootWithoutTableCell (level index : Nat) (table : SeLe4n.ObjId) (r : VSpaceRoot) :
+    VSpaceRoot :=
+  rootWithoutTableCellLoop level index table { r with tables := [] } [] r.tables
+
+theorem rootWithoutTableCell_eq (root : SeLe4n.ObjId) (level index : Nat) (table : SeLe4n.ObjId) :
+    rootWithoutTableCell level index table = (·.withoutTableSlot ⟨root, level, index⟩ table) := by
+  funext r
+  unfold rootWithoutTableCell
+  rw [rootWithoutTableCellLoop_eq]
+  rfl
+
+/-- WS-ZA ZA5.4: **the hand-over of a removed table's slot cell from the root to
+the table** — the identity, since neither field is anything a theorem reads
+(`VSpaceRoot.with_tableSlotSpare`, `PageTableObject.with_slotCell`).  Compiled
+(`handTableSlotCell_eq_impl`), the cell is read from the root, the root's field
+is cleared and the table's is set, each in its object's slot, so the table holds
+the cell alone. -/
+def handTableSlotCell (st : SystemState) (_rootId _tableId : SeLe4n.ObjId) : SystemState := st
+
+/-- WS-ZA ZA5.4: the slot cell a root holds in transit. -/
+@[inline] def rootSlotSpareOf (st : SystemState) (rootId : SeLe4n.ObjId) : TableSlotCell :=
+  match st.getVSpaceRoot? rootId with
+  | some r => r.tableSlotSpare
+  | none => Squash.mk []
+
+/-- WS-ZA ZA5.4: the compiled `handTableSlotCell`. -/
+def handTableSlotCellImpl (st : SystemState) (rootId tableId : SeLe4n.ObjId) : SystemState :=
+  let cell := rootSlotSpareOf st rootId
+  let clear := SystemState.mapVSpaceRootObject (fun r => { r with tableSlotSpare := Squash.mk [] })
+  let st1 := st.modifyObjectInPlace rootId clear
+  let give := SystemState.mapPageTableObject (fun t => { t with slotCell := cell })
+  st1.modifyObjectInPlace tableId give
+
+@[csimp] theorem handTableSlotCell_eq_impl : @handTableSlotCell = @handTableSlotCellImpl := by
+  funext st rootId tableId
+  unfold handTableSlotCell handTableSlotCellImpl
+  dsimp only
+  rw [SystemState.modifyObjectInPlace_of_id _ _ _ (by
+      intro o; cases o <;> simp [SystemState.mapVSpaceRootObject] <;> rfl),
+    SystemState.modifyObjectInPlace_of_id _ _ _ (by
+      intro o; cases o <;> simp [SystemState.mapPageTableObject] <;> rfl)]
+
+/-- WS-ZA ZA5.4: the removal's two ledger records for the slot
+`(rootId, level, index)`, the parent entry's store and the ASID invalidate, each
+recorded on its own and read as words, so neither the list of them nor the slot
+record is built (`recordDetachedSlotAt_eq`). -/
+@[inline] def recordDetachedSlotAt (st : SystemState) (rootId : SeLe4n.ObjId) (level index : Nat) :
+    SystemState :=
+  match st.getVSpaceRoot? rootId with
+  | some r =>
+    Architecture.recordPhysicalWrites
+      (Architecture.recordPhysicalWrites st (Architecture.slotStore? st r level index).toList)
+      [.invalidateAsid r.asid]
+  | none => st
+
+/-- WS-ZA ZA5.4: `pageTableUnmapPerformAt` as compiled: the install read as
+words under its flag, the removed slot's cell handed back to the table
+(`rootWithoutTableCell`, `handTableSlotCell`), and the ledger written record by
+record (`recordDetachedSlotAt`), so a removal builds nothing
+(`pageTableUnmapPerformAt_eq_cells`). -/
+def pageTableUnmapPerformCells (tableId : SeLe4n.ObjId) (st : SystemState) : SystemState :=
+  match st.getPageTable? tableId with
+  | some table =>
+    if table.installed then
+      let rootId := table.installRoot
+      let level := table.installLevel
+      let index := table.installIndex
+      let live := Architecture.pageTableInstallLive st tableId
+      let st1 := st.storePageTableWith tableId tableUninstalled
+      if live then
+        let st2 := st1.storeVSpaceRootWith rootId (rootWithoutTableCell level index tableId)
+        recordDetachedSlotAt (handTableSlotCell st2 rootId tableId) rootId level index
+      else st1
+    else st
+  | none => st
+
+theorem recordDetachedSlotAt_eq (st : SystemState) (rootId : SeLe4n.ObjId) (level index : Nat) :
+    recordDetachedSlotAt st rootId level index =
+      Architecture.recordPhysicalWrites st (detachedSlotLedger st ⟨rootId, level, index⟩) := by
+  unfold recordDetachedSlotAt detachedSlotLedger
+  dsimp only
+  split
+  · rw [Architecture.recordPhysicalWrites_append]
+  · rfl
+
+@[csimp] theorem pageTableUnmapPerformAt_eq_cells :
+    @pageTableUnmapPerformAt = @pageTableUnmapPerformCells := by
+  funext tableId st
+  unfold pageTableUnmapPerformAt pageTableUnmapPerformCells
+  split
+  · next table _ =>
+    unfold PageTableObject.installedIn
+    cases table.installed
+    · rfl
+    · simp only [↓reduceIte, rootWithoutTableCell_eq table.installRoot, handTableSlotCell,
+        recordDetachedSlotAt_eq]
+  · rfl
 
 end SeLe4n.Kernel

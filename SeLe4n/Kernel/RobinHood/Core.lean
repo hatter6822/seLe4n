@@ -1139,6 +1139,44 @@ unchanged kept that record alive across the write). -/
       simp at hGet
       simp only [hGet]
 
+/-- WS-ZA ZA5.4: **an update that changes nothing a theorem reads, written in
+the key's slot when the key is found there and skipped otherwise.**  For an `f`
+that is the identity (`modifyInPlace_of_id`) — a write of a `Squash` field, the
+hand-over of a spare cell from one object to another — skipping the write is
+the same table, so the update never inserts, never resizes and needs no
+invariant; compiled, the slot's `some`, its entry and the value are exclusive
+on an exclusively owned table, as in `modifyImpl`. -/
+@[specialize] def RHTable.modifyInPlace [BEq α] [Hashable α] (t : RHTable α β) (k : α)
+    (f : β → β) : RHTable α β :=
+  let i := findIdxLoop t.capacity (idealIndex k t.capacity t.hCapPos) k 0 t.slots
+    t.capacity t.hSlotsLen t.hCapPos
+  if i < t.capacity then
+    { t with
+        slots     := modifySlotAt t.slots i (RHEntry.mapValue f)
+        hSlotsLen := by rw [modifySlotAt, Array.size_modify]; exact t.hSlotsLen }
+  else t
+
+theorem RHTable.modifyInPlace_of_id [BEq α] [Hashable α] (t : RHTable α β) (k : α)
+    (f : β → β) (hf : ∀ b, f b = b) : t.modifyInPlace k f = t := by
+  unfold RHTable.modifyInPlace
+  dsimp only
+  split
+  · have hs : modifySlotAt t.slots (findIdxLoop t.capacity (idealIndex k t.capacity t.hCapPos) k 0
+        t.slots t.capacity t.hSlotsLen t.hCapPos) (RHEntry.mapValue f) = t.slots := by
+      unfold modifySlotAt
+      apply Array.ext
+      · simp
+      · intro j h1 h2
+        simp only [Array.getElem_modify]
+        split
+        · unfold RHEntry.mapValue
+          split <;> simp_all
+        · rfl
+    cases t
+    simp only [RHTable.mk.injEq] at hs ⊢
+    exact ⟨hs, trivial, trivial⟩
+  · rfl
+
 /-- WS-ZA ZA1.6: `modify` of a present key is the insert of its new value. -/
 theorem RHTable.modify_of_get? [BEq α] [Hashable α] [LawfulBEq α] {t : RHTable α β} {k : α}
     {v : β} (h : t.get? k = some v) (f : β → β) : t.modify k f = t.insert k (f v) := by

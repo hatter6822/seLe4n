@@ -76,6 +76,78 @@ def pageTableInUse (root : VSpaceRoot) (inst : PageTableInstall) : Bool :=
       (fun acc vaddr _ => acc || PageTableSlot.indexOf inst.level vaddr == inst.index) ||
     root.tables.any inst.coversSlot
 
+/-- WS-ZA ZA5.4: whether a mapping in `slots`, from slot `i` on, has its
+level-`level` index equal to `index`, read slot by slot so no predicate closure
+is built. -/
+def mappingsIndexedFrom {β : Type} (slots : Array (Option (RobinHood.RHEntry SeLe4n.VAddr β)))
+    (level index i : Nat) : Bool :=
+  if h : i < slots.size then
+    match slots[i] with
+    | some e => if PageTableSlot.indexOf level e.key == index then true
+      else mappingsIndexedFrom slots level index (i + 1)
+    | none => mappingsIndexedFrom slots level index (i + 1)
+  else false
+  termination_by slots.size - i
+
+theorem mappingsIndexedFrom_eq {β : Type} (slots : Array (Option (RobinHood.RHEntry SeLe4n.VAddr β)))
+    (level index i : Nat) :
+    mappingsIndexedFrom slots level index i =
+      (slots.toList.drop i).any (fun s => s.any (fun e => PageTableSlot.indexOf level e.key == index)) := by
+  unfold mappingsIndexedFrom
+  split
+  · rename_i h
+    rw [List.drop_eq_getElem_cons (by simpa using h), List.any_cons, Array.getElem_toList,
+      ← mappingsIndexedFrom_eq slots level index (i + 1)]
+    split
+    · rename_i e heq
+      simp only [heq, Option.any_some]
+      cases PageTableSlot.indexOf level e.key == index <;> rfl
+    · rename_i heq
+      simp only [heq, Option.any_none, Bool.false_or]
+  · rename_i h
+    rw [List.drop_eq_nil_of_le (by simpa using Nat.le_of_not_lt h)]
+    rfl
+  termination_by slots.size - i
+
+/-- WS-ZA ZA5.4: whether a slot of `ts` lies beneath the install at
+`(level, index)` (`PageTableInstall.coversSlot`), by first-order recursion. -/
+def slotsBeneath (level index : Nat) : List PageTableSlot → Bool
+  | [] => false
+  | s :: ts => if level < s.level && s.index >>> (9 * (s.level - level)) == index then true
+    else slotsBeneath level index ts
+
+theorem slotsBeneath_eq (inst : PageTableInstall) (ts : List PageTableSlot) :
+    slotsBeneath inst.level inst.index ts = ts.any inst.coversSlot := by
+  induction ts with
+  | nil => rfl
+  | cons s ts ih =>
+    simp only [slotsBeneath, List.any_cons, PageTableInstall.coversSlot, ih]
+    split <;> simp_all
+
+/-- WS-ZA ZA5.4: `pageTableInUse` read without closures — the mappings slot by
+slot (`mappingsIndexedFrom`), the tables by recursion (`slotsBeneath`)
+(`pageTableInUse_eq_loops`). -/
+@[inline] def pageTableInUseLoops (root : VSpaceRoot) (inst : PageTableInstall) : Bool :=
+  mappingsIndexedFrom root.mappings.slots inst.level inst.index 0 ||
+    slotsBeneath inst.level inst.index root.tables
+
+theorem rhTable_fold_or {β : Type} (t : RobinHood.RHTable SeLe4n.VAddr β) (P : SeLe4n.VAddr → Bool)
+    (acc : Bool) :
+    t.fold acc (fun acc k _ => acc || P k) =
+      (acc || t.slots.toList.any (fun s => s.any (fun e => P e.key))) := by
+  unfold RobinHood.RHTable.fold
+  rw [← Array.foldl_toList]
+  generalize t.slots.toList = l
+  induction l generalizing acc with
+  | nil => simp
+  | cons s l ih =>
+    cases s <;> simp [List.foldl_cons, List.any_cons, ih, Bool.or_assoc]
+
+@[csimp] theorem pageTableInUse_eq_loops : @pageTableInUse = @pageTableInUseLoops := by
+  funext root inst
+  unfold pageTableInUse pageTableInUseLoops
+  rw [mappingsIndexedFrom_eq, slotsBeneath_eq, rhTable_fold_or, List.drop_zero, Bool.false_or]
+
 /-- The root's slot an install record names, for the table `tableId`. -/
 def _root_.SeLe4n.Model.PageTableInstall.slotFor (inst : PageTableInstall)
     (tableId : SeLe4n.ObjId) : PageTableSlot :=
@@ -168,7 +240,7 @@ def detachWrites (st : SystemState) (root : VSpaceRoot) (inst : PageTableInstall
 /-- The table's record once installed at `(root, level, index)`. -/
 def _root_.SeLe4n.Model.PageTableObject.installedAt (table : PageTableObject) (root : SeLe4n.ObjId)
     (level index : Nat) : PageTableObject :=
-  { table with installedIn := some (PageTableInstall.mk root level index) }
+  { table with installed := true, installRoot := root, installLevel := level, installIndex := index }
 
 /-- The root once it holds `table` at `(level, index)`. -/
 def _root_.SeLe4n.Model.VSpaceRoot.withTableSlot (root : VSpaceRoot) (level index : Nat)
@@ -221,12 +293,12 @@ def pageTableUnmap (tableId : SeLe4n.ObjId) : Kernel Unit :=
         | none =>
           -- The root is gone (retired with the table's own subtree); only the
           -- record is left to clear.
-          storeObject tableId (.pageTable { table with installedIn := none }) st
+          storeObject tableId (.pageTable table.uninstalled) st
         | some root =>
           if root.tables.contains (inst.slotFor tableId) then
             if pageTableInUse root inst then .error .revocationRequired
             else
-              match storeObject tableId (.pageTable { table with installedIn := none }) st with
+              match storeObject tableId (.pageTable table.uninstalled) st with
               | .error e => .error e
               | .ok ((), st1) =>
                 -- WS-BP BP7.2: the parent entry is cleared, and the walk
@@ -239,7 +311,7 @@ def pageTableUnmap (tableId : SeLe4n.ObjId) : Kernel Unit :=
           else
             -- A stale record (`pageTableInstallLive`): the root no longer holds
             -- the table, so only the record is left to clear.
-            storeObject tableId (.pageTable { table with installedIn := none }) st
+            storeObject tableId (.pageTable table.uninstalled) st
 
 /-- A successful install is two stores: the table, recording where it now sits,
 then the root, gaining the slot. -/

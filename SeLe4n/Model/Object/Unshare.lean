@@ -76,10 +76,16 @@ its `some`, its entry and the entry's value pair (WS-ZA ZA5.4). -/
   | some e => some { e with dist := opaqueId e.dist }
   | none => none
 
+/-- A page table's slot cell, rebuilt when shared so the table owns its list
+cell and its slot record (WS-ZA ZA5.4). -/
+@[inline] def unshareTableSlot (s : PageTableSlot) : PageTableSlot :=
+  { s with level := opaqueId s.level }
+
 /-- `KernelObject.unshare` as compiled.  Each record is rebuilt with one field
 passed through `opaqueId`, so a shared record is copied and an exclusive one
 written in place; a thread's register file, a CNode's slot array and a VSpace
-root's mapping and epoch tables and their spare cells are rebuilt the same way. -/
+root's mapping and epoch tables and their spare cells, and a page table's slot
+cell, are rebuilt the same way. -/
 def KernelObject.unshareImpl : KernelObject → KernelObject
   | .tcb t => .tcb { t with
       tid := opaqueId t.tid
@@ -109,7 +115,10 @@ def KernelObject.unshareImpl : KernelObject → KernelObject
   | .schedContext sc => .schedContext { sc with scId := opaqueId sc.scId }
   | .reply r => .reply { r with replyId := opaqueId r.replyId }
   | .frame f => .frame { f with base := opaqueId f.base }
-  | .pageTable p => .pageTable { p with base := opaqueId p.base }
+  | .pageTable p => .pageTable { p with
+      base := opaqueId p.base
+      slotCell := Quot.lift (fun a => Squash.mk (a.map unshareTableSlot))
+        (fun _ _ _ => Subsingleton.elim _ _) p.slotCell }
 
 @[csimp] theorem KernelObject.unshare_eq_impl :
     @KernelObject.unshare = @KernelObject.unshareImpl := by
@@ -125,8 +134,11 @@ def KernelObject.unshareImpl : KernelObject → KernelObject
     simp only [KernelObject.unshare, KernelObject.unshareImpl, opaqueId, RHTable.unshare,
       KernelObject.vspaceRoot.injEq]
     cases v
-    simp only [VSpaceRoot.mk.injEq, true_and]
+    simp only [VSpaceRoot.mk.injEq, true_and, and_true]
     exact ⟨Subsingleton.elim _ _, Subsingleton.elim _ _⟩
+  case pageTable p =>
+    simp only [KernelObject.unshare, KernelObject.unshareImpl, opaqueId,
+      PageTableObject.with_slotCell]
   all_goals
     simp only [KernelObject.unshare, KernelObject.unshareImpl, hId, hIdN, Array.map_id, opaqueId,
       RHTable.unshare]

@@ -113,6 +113,9 @@ _TABLE_OPS = {
     "insertNoResizeImpl": "write",
     "modify": "write",
     "modifyImpl": "write",
+    # The in-place form of `modify` whose update leaves the key's slot as it
+    # finds it when the key is absent.
+    "modifyInPlace": "write",
     "erase": "write",
     # The cell-placing forms the insert and erase compile to (a given entry
     # cell placed, an entry erased at a found index).
@@ -1618,6 +1621,8 @@ WRITE_PRIMITIVE_BODIES = {
         "`storeObject`'s compiled form (`@[csimp]`): the insert, and the index and type rows only when they change",
     ("SeLe4n/Model/State.lean", "modifyObject"):
         "the in-place object update (`RHTable.modify`) the compiled `updateTcb` and in-place stores run through",
+    ("SeLe4n/Model/State.lean", "modifyObjectInPlace"):
+        "the in-place slot write of an update that leaves every object as it is (`RHTable.modifyInPlace`)",
     ("SeLe4n/Model/State.lean", "rewriteObject"):
         "the proof-carrying in-place rewrite: the bare insert under `rewriteAdmissible`",
     ("SeLe4n/Model/Builder.lean", "createObject"):
