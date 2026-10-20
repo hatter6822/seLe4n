@@ -10,7 +10,9 @@ allocate nothing, on the first call as in steady state.
   page table holds its install as `installed`, `installRoot`, `installLevel`
   and `installIndex` (seL4's `capPTIsMapped`, `capPTMappedASID`,
   `capPTMappedAddress`), read through the `installedIn` view; an uninstall
-  clears only the flag (`PageTableObject.uninstalled`).
+  clears the flag and zeroes the slot words with it
+  (`PageTableObject.uninstalled`), so a removed table carries no trace of the
+  slot that named it and two removed tables project alike to a low observer.
 - **Each table carries its own slot cell** (`Model/Object/Structures.lean`,
   `VSpacePerform.lean`): `PageTableObject.slotCell` and
   `VSpaceRoot.tableSlotSpare` are `Squash`es (`TableSlotCell`), logically one

@@ -872,10 +872,11 @@ namespace PageTableObject
 @[inline] def installedIn (p : PageTableObject) : Option PageTableInstall :=
   if p.installed then some ⟨p.installRoot, p.installLevel, p.installIndex⟩ else none
 
-/-- The table's record once it is installed nowhere: the flag cleared, the slot
-fields left as they were (seL4's unmap clears `capPTIsMapped` alone). -/
+/-- The table's record once it is installed nowhere: the flag cleared and the
+slot words zeroed with it, so a removed table carries no trace of the slot that
+named it and every uninstalled table projects the same way. -/
 @[inline] def uninstalled (p : PageTableObject) : PageTableObject :=
-  { p with installed := false }
+  { p with installed := false, installRoot := ⟨0⟩, installLevel := 0, installIndex := 0 }
 
 @[simp] theorem installedIn_uninstalled (p : PageTableObject) :
     p.uninstalled.installedIn = none := rfl

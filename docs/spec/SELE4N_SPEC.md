@@ -5382,7 +5382,9 @@ seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
   nowhere, which `.pageTableMap` installs again.
   The root is the truth and a table's record a pointer (`pageTableInstallLive`):
   a stale record reads as installed nowhere.  The record is plain fields under
-  a flag (`PageTableObject.installed`, seL4's `capPTIsMapped`), and each table
+  a flag (`PageTableObject.installed`, seL4's `capPTIsMapped`), cleared with its slot words
+  on removal (`PageTableObject.uninstalled`) so a removed table projects the
+  same whatever slot named it, and each table
   carries the slot cell it takes in its root's list (`PageTableObject.slotCell`,
   logically one value): an install writes the root's slot over it and a removal
   hands it back (`pageTableMapPerformCells`, `pageTableUnmapPerformCells`, each
