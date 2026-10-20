@@ -2004,40 +2004,65 @@ theorem tlbRetireDescriptorsOnCore_eq (c : CoreId) :
     unfold setTlbOnCore
     simp only [Vector.set_set]
 
+/-- WS-ZA ZA5.4: the drained descriptors kept as the state's descriptor spare,
+so the next page round writes over their cells.  The state itself
+(`stashShootdownDescriptors_eq`). -/
+@[inline] def stashShootdownDescriptors (st : SystemState)
+    (ds : List TlbShootdownDescriptor) : SystemState :=
+  { st with shootdownDescriptorSpare := Squash.mk ds }
+
+theorem stashShootdownDescriptors_eq (st : SystemState) (ds : List TlbShootdownDescriptor) :
+    stashShootdownDescriptors st ds = st :=
+  SystemState.with_shootdownDescriptorSpare st _
+
+/-- WS-ZA ZA5.4: a round's operand list kept as the state's operand spare, so
+the next commit's seam writes its operand into that cell.  The state itself
+(`stashShootdownOps_eq`). -/
+@[inline] def stashShootdownOps (st : SystemState) (ops : List TlbInvalidation) : SystemState :=
+  { st with shootdownOpsSpare := Squash.mk ops }
+
+theorem stashShootdownOps_eq (st : SystemState) (ops : List TlbInvalidation) :
+    stashShootdownOps st ops = st :=
+  SystemState.with_shootdownOpsSpare st _
+
 /-- WS-ZA ZA5.4: the window per-core handler as it runs — the queue is drained
 once and every field of the state written once, so the shootdown record, the
-scalar view and the per-core views are all updated in place.
+scalar view and the per-core views are all updated in place, and the drained
+descriptors become the descriptor spare (`stashShootdownDescriptors`).
 `handleTlbShootdownReqOnCorePerCoreInWindow_eq_once` is the equality. -/
 def handleTlbShootdownReqOnCorePerCoreInWindowOnce (st : SystemState) (c : CoreId)
     (lo hi : Nat) : SystemState :=
   let r := drainShootdownsInWindow st.tlbShootdown c lo hi
   tlbRetireDescriptorsOnCore
-    { st with
-        tlb := applyDescriptorOps st.tlb r.1,
-        tlbShootdown := acknowledgeShootdown r.2 c hi } c r.1
+    (stashShootdownDescriptors
+      { st with
+          tlb := applyDescriptorOps st.tlb r.1,
+          tlbShootdown := acknowledgeShootdown r.2 c hi } r.1) c r.1
 
 @[csimp] theorem handleTlbShootdownReqOnCorePerCoreInWindow_eq_once :
     @handleTlbShootdownReqOnCorePerCoreInWindow = @handleTlbShootdownReqOnCorePerCoreInWindowOnce := by
   funext st c lo hi
   simp only [handleTlbShootdownReqOnCorePerCoreInWindow, handleTlbShootdownReqOnCorePerCoreInWindowOnce,
-    tlbRetireDescriptorsOnCore_eq, handleTlbShootdownReqOnCoreInWindow, tlbShootdownDrainOnCoreInWindow,
+    stashShootdownDescriptors_eq, tlbRetireDescriptorsOnCore_eq, handleTlbShootdownReqOnCoreInWindow, tlbShootdownDrainOnCoreInWindow,
     tlbShootdownAckOnCore, setTlbOnCore, tlbOnCore, applyTlbInvalidations_map_op]
 
 /-- WS-ZA ZA5.4: the per-core handler as it runs: the queue drained once, the
-shootdown record and scalar view written once, and core `c`'s view retiring
-each drained descriptor in place (`tlbRetireDescriptorsOnCore`). -/
+shootdown record and scalar view written once, core `c`'s view retiring
+each drained descriptor in place (`tlbRetireDescriptorsOnCore`), and the drained
+descriptors kept as the descriptor spare. -/
 def handleTlbShootdownReqOnCorePerCoreOnce (st : SystemState) (c : CoreId) : SystemState :=
   let r := drainShootdowns st.tlbShootdown c
   tlbRetireDescriptorsOnCore
-    { st with
-        tlb := applyDescriptorOps st.tlb r.1,
-        tlbShootdown := acknowledgeShootdown r.2 c st.tlbShootdown.roundGeneration } c r.1
+    (stashShootdownDescriptors
+      { st with
+          tlb := applyDescriptorOps st.tlb r.1,
+          tlbShootdown := acknowledgeShootdown r.2 c st.tlbShootdown.roundGeneration } r.1) c r.1
 
 @[csimp] theorem handleTlbShootdownReqOnCorePerCore_eq_once :
     @handleTlbShootdownReqOnCorePerCore = @handleTlbShootdownReqOnCorePerCoreOnce := by
   funext st c
   simp only [handleTlbShootdownReqOnCorePerCore, handleTlbShootdownReqOnCorePerCoreOnce,
-    tlbRetireDescriptorsOnCore_eq, handleTlbShootdownReqOnCore, tlbShootdownDrainOnCore,
+    stashShootdownDescriptors_eq, tlbRetireDescriptorsOnCore_eq, handleTlbShootdownReqOnCore, tlbShootdownDrainOnCore,
     tlbShootdownAckOnCore, setTlbOnCore, tlbOnCore, applyTlbInvalidations_map_op]
 
 /-- **WS-SM SM7.F.3**: the window per-core handler's `tlb` effect is exactly

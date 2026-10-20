@@ -317,13 +317,12 @@ footprint.  (A non-target core's queue is framed by the posting fold,
 so a changed queue implies a target, which implies the lock.) -/
 theorem lockSet_tlbShootdown_covers_commit (vspaceRootLock : Concurrency.LockId)
     (st : SystemState) (initiator : CoreId) (op : TlbInvalidation) :
-    ∀ c ∈ shootdownChangedTargets st
-      (tlbShootdownBroadcastCoalescing st initiator
-        (shootdownTargets initiator) op),
+    ∀ c, (tlbShootdownBroadcastCoalescing st initiator
+        (shootdownTargets initiator) op).tlbShootdown.pendingOnCore c ≠
+          st.tlbShootdown.pendingOnCore c →
       TlbShootdownLockId.queue ⟨c⟩ ∈
         lockSet_tlbShootdown vspaceRootLock initiator := by
   intro c hc
-  rw [mem_shootdownChangedTargets_iff] at hc
   by_cases hci : c = initiator
   · -- the initiator is never a target, and a non-target's queue is
     -- framed by the whole posting pipeline — contradiction with the

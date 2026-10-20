@@ -216,7 +216,10 @@ drained by a flag, and a mapped frame's capability delete allocates nothing; at
 `v0.36.115` (part 5) a capability's mapping record is words written in its slot;
 at `v0.36.116` (part 6) a core's TLB fill and page drain reuse its entry cells;
 at `v0.36.117` (part 7) an address space's mapping table reuses the cell an unmap
-erased, so a steady frame map allocates nothing.  The
+erased, so a steady frame map allocates nothing, and an unmap erases the
+address's epoch with it; at `v0.36.118` (part 8) a page unmap's shootdown round
+writes its descriptor and operand over the cells the last round retired, so an
+unmap allocates nothing.  The
 suspend of a thread blocked in IPC or holding a donated context is the one
 syscall arm left on the general path (ZA6.1).  ZA6 covers the other
 entries and makes the rule standing.  Plan:

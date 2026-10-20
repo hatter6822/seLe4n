@@ -1340,7 +1340,7 @@ theorem SystemState.eq_of_fieldEq_all (st st' : SystemState)
     h .services, h .scheduler, h .irqHandlers, h .lifecycle,
     h .asidTable, h .interfaceRegistry, h .serviceRegistry,
     h .cdt,
-    h .tlb, h .tlbShootdown,
+    h .tlb, h .tlbShootdown, Subsingleton.elim _ _, Subsingleton.elim _ _,
     h .perCoreTlb, Vector.ext fun _ _ => Subsingleton.elim _ _, h .perCoreICache, h .pendingIcacheMaintenance, h .physicalWrites,
     h .physicalWritesDrained,
     h .declassificationAuditLog, h .declassificationAuditEpoch,

@@ -1,3 +1,40 @@
+## v0.36.118 — WS-ZA ZA5.4 part 8: a page unmap allocates nothing
+
+A page unmap's shootdown round writes its descriptor and operand over the cells
+the last round retired, so an unmap allocates nothing, on its first call as in
+steady state.
+
+- **The state keeps the retired round cells** (`Model/State.lean`,
+  `Architecture/PerCoreTlbModel.lean`): `SystemState.shootdownDescriptorSpare`
+  holds the queue, list cell, descriptor and operand the last drain retired,
+  and `SystemState.shootdownOpsSpare` the list cell the last round handed its
+  operands in.  Each is a `Squash`, logically one value read by no theorem
+  (`SystemState.with_shootdownDescriptorSpare`,
+  `SystemState.with_shootdownOpsSpare`); the drain and the catch-up stash them
+  (`stashShootdownDescriptors`, `stashShootdownOps`, each proven the identity).
+- **A page round written in place** (`Architecture/TlbShootdownProtocol.lean`):
+  `tlbShootdownBroadcastPage` posts a page invalidation's round through
+  `pageRoundQueueOver`, `pageDescriptorOver` and `pageInvalidationOver`, which
+  write over the spare queue, descriptor and operand (each proven equal to the
+  fresh value), and is proven equal to the coalescing broadcast
+  (`tlbShootdownBroadcastPage_eq`).  The seam hands its operand over in the
+  spare list cell (`opsCellOver`, `shootdownPostedOpsTaking`), out of line so
+  the state's own cell is updated (`withoutShootdownOpsSpare`).
+- **Targets read from the queues** (`Architecture/TlbShootdownProtocol.lean`,
+  `SyscallDispatchStep.lean`, `SyscallDispatchEntry.lean`): the commit seam
+  keeps only the pre-state's round generation, and its targets are the cores
+  whose queue holds a descriptor in the round window
+  (`shootdownPostedTargetsFrom`, `shootdownPostedTargetsOne`,
+  `mem_shootdownPostedTargets_iff`), so posting writes the queue vector in
+  place rather than beside a copy of the pre-state's.
+- **The unmap's root update is out of line**
+  (`Architecture/VSpaceUnmapPerform.lean`): `rootWithoutMappingCells` is
+  `@[noinline]`, so the root is checked for sole ownership after its object
+  released it and is updated in its cell.
+- **Readings** (normal build, first call / steady state): unmap 0 / 0 (6),
+  at the first address and at a second; revoke destroying a mapped frame 8 / 0
+  (8 / 6).  The exerciser pins the new readings.
+
 ## v0.36.117 — WS-ZA ZA5.4 part 7: a steady frame map allocates nothing
 
 A frame map after an unmap writes its mapping over the table entry the unmap

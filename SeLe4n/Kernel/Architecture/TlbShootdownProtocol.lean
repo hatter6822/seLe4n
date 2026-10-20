@@ -1366,12 +1366,114 @@ def postShootdownRoundCoalescingOnce (sd : TlbShootdownState)
 /-- **WS-SM SM7.B.9**: the total caller-facing broadcast — what the
 shootdown-aware kernel operations (`vspaceUnmapPageWithShootdown` and
 friends) commit.  The runtime seam recovers the emitted SGI set from
-the state diff (`shootdownChangedTargets`), so no SGI list is
+the committed state (`shootdownPostedTargets`), so no SGI list is
 returned here. -/
 def tlbShootdownBroadcastCoalescing (st : SystemState) (initiator : CoreId)
     (targets : List CoreId) (op : TlbInvalidation) : SystemState :=
   { st with tlbShootdown :=
       postShootdownRoundCoalescing st.tlbShootdown initiator targets op }
+
+/-- WS-ZA ZA5.4: a page invalidation's operand written over a spare operand
+`o`, out of line, with its words read back through `o` so the compiler writes
+into `o`'s cell.  Equal to the operand (`pageInvalidationOver_eq`). -/
+@[noinline] def pageInvalidationOver (o : TlbInvalidation) (a : UInt16) (v : UInt64) :
+    TlbInvalidation :=
+  match o with
+  | .vae1 a0 v0 => .vae1 (if a0 = a then a0 else a) (if v0 = v then v0 else v)
+  | _ => .vae1 a v
+
+theorem pageInvalidationOver_eq (o : TlbInvalidation) (a : UInt16) (v : UInt64) :
+    pageInvalidationOver o a v = .vae1 a v := by
+  unfold pageInvalidationOver
+  split
+  · congr 1 <;> split <;> simp_all
+  · rfl
+
+/-- WS-ZA ZA5.4: a page round's descriptor written over a spare descriptor
+`d0`: its operand over `d0`'s (`pageInvalidationOver`) and its initiator read
+back through `d0`.  Equal to the descriptor (`pageDescriptorOver_eq`). -/
+@[noinline] def pageDescriptorOver (d0 : TlbShootdownDescriptor) (a : UInt16) (v : UInt64)
+    (initiator : CoreId) (gen : Nat) : TlbShootdownDescriptor :=
+  { op := pageInvalidationOver d0.op a v,
+    initiator := if d0.initiator = initiator then d0.initiator else initiator,
+    generation := gen }
+
+theorem pageDescriptorOver_eq (d0 : TlbShootdownDescriptor) (a : UInt16) (v : UInt64)
+    (initiator : CoreId) (gen : Nat) :
+    pageDescriptorOver d0 a v initiator gen =
+      { op := .vae1 a v, initiator := initiator, generation := gen } := by
+  unfold pageDescriptorOver
+  rw [pageInvalidationOver_eq]
+  split <;> simp_all
+
+/-- WS-ZA ZA5.4: a page round's one-element queue written over the spare
+queue: its list cell and descriptor reused when the spare has one, built when
+it is empty.  Equal to the queue (`pageRoundQueueOver_eq`). -/
+@[noinline] def pageRoundQueueOver (spare : List TlbShootdownDescriptor) (a : UInt16)
+    (v : UInt64) (initiator : CoreId) (gen : Nat) : List TlbShootdownDescriptor :=
+  match spare with
+  | d0 :: tl =>
+    pageDescriptorOver d0 a v initiator gen :: (match tl with | [] => tl | _ :: _ => [])
+  | [] => [{ op := .vae1 a v, initiator := initiator, generation := gen }]
+
+theorem pageRoundQueueOver_eq (spare : List TlbShootdownDescriptor) (a : UInt16)
+    (v : UInt64) (initiator : CoreId) (gen : Nat) :
+    pageRoundQueueOver spare a v initiator gen =
+      [{ op := .vae1 a v, initiator := initiator, generation := gen }] := by
+  unfold pageRoundQueueOver
+  split
+  · rename_i tl
+    rw [pageDescriptorOver_eq]
+    cases tl <;> rfl
+  · rfl
+
+/-- WS-ZA ZA5.4: a round posted with its descriptor `d` and its one-element
+queue `one` given (`enqueueShootdownOrCoalesceSharing`). -/
+@[inline] def postShootdownRoundWithQueue (sd : TlbShootdownState) (initiator : CoreId)
+    (targets : List CoreId) (d : TlbShootdownDescriptor)
+    (one : List TlbShootdownDescriptor) : TlbShootdownState :=
+  targets.foldl (fun s c => enqueueShootdownOrCoalesceSharing s c d one)
+    (beginShootdownRoundFor sd initiator targets)
+
+/-- WS-ZA ZA5.4: the posting of the round queue `one`, its descriptor read off
+its head; out of line, so the queue is built before the round opens. -/
+@[noinline] def postShootdownRoundQueue (sd : TlbShootdownState) (initiator : CoreId)
+    (targets : List CoreId) (one : List TlbShootdownDescriptor) : TlbShootdownState :=
+  match one with
+  | d :: _ => postShootdownRoundWithQueue sd initiator targets d one
+  | [] => beginShootdownRoundFor sd initiator targets
+
+/-- WS-ZA ZA5.4: a page unmap's round as it runs: the state's descriptor spare
+is taken out of its field and the round's queue written over it
+(`pageRoundQueueOver`), so a round after a drained one builds neither its
+operand, its descriptor nor its list cell.
+`tlbShootdownBroadcastPage_eq` is the equality. -/
+@[inline] def tlbShootdownBroadcastPage (st : SystemState) (initiator : CoreId)
+    (targets : List CoreId) (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) : SystemState :=
+  let sp := st.shootdownDescriptorSpare
+  let st0 := { st with shootdownDescriptorSpare := Squash.mk [] }
+  let a := UInt16.ofNat asid.toNat
+  let v := UInt64.ofNat vaddr.toNat
+  let gen := st0.tlbShootdown.roundGeneration + 1
+  Quot.lift
+    (fun spare =>
+      let one := pageRoundQueueOver spare a v initiator gen
+      { st0 with tlbShootdown := postShootdownRoundQueue st0.tlbShootdown initiator targets one })
+    (fun x y _ => by dsimp only; rw [pageRoundQueueOver_eq, pageRoundQueueOver_eq]) sp
+
+theorem tlbShootdownBroadcastPage_eq (st : SystemState) (initiator : CoreId)
+    (targets : List CoreId) (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) :
+    tlbShootdownBroadcastPage st initiator targets asid vaddr =
+      tlbShootdownBroadcastCoalescing st initiator targets
+        (encodePageInvalidation asid vaddr) := by
+  unfold tlbShootdownBroadcastPage tlbShootdownBroadcastCoalescing
+  rw [postShootdownRoundCoalescing_eq_once]
+  induction st.shootdownDescriptorSpare using Squash.ind with
+  | h l =>
+    simp only [Squash.mk, pageRoundQueueOver_eq]
+    cases st
+    simp only [SystemState.mk.injEq, and_true, true_and]
+    refine ⟨rfl, Subsingleton.elim _ _⟩
 
 /-- **WS-SM SM7.B.9**: whenever the strict broadcast succeeds — always
 from quiescence — the coalescing broadcast commits the same state. -/
@@ -1924,48 +2026,73 @@ theorem asidAllocateWithShootdown_fresh_inert (executingCore : CoreId)
 -- SM7.B — Runtime-seam diff recovery (which cores must a commit poke?)
 -- ============================================================================
 
-/-- The shootdown diff against the pre-state's shootdown record alone.  The
-commit seams capture that record before the transition consumes the pre-state,
-so the pre-state is not kept alive across the transition (KSC-1). -/
-def shootdownChangedTargetsFrom (tlb0 : TlbShootdownState) (post : SystemState) :
-    List CoreId :=
-  allCores.filter (fun c => post.tlbShootdown.pendingOnCore c != tlb0.pendingOnCore c)
+/-- WS-ZA ZA5.4: does a queue hold a descriptor of the round window
+`(lo, hi]`?  A first-order loop. -/
+def holdsWindowWork (lo hi : Nat) : List TlbShootdownDescriptor → Bool
+  | [] => false
+  | d :: ds => inRoundWindow lo hi d.generation || holdsWindowWork lo hi ds
 
-/-- The round window against the pre-state's shootdown record alone.  Inlined,
-so the entry hands the two generations on without building the pair
+theorem holdsWindowWork_eq_true (lo hi : Nat) (q : List TlbShootdownDescriptor) :
+    holdsWindowWork lo hi q = true ↔ ∃ d ∈ q, inRoundWindow lo hi d.generation = true := by
+  induction q with
+  | nil => simp [holdsWindowWork]
+  | cons d ds ih => simp [holdsWindowWork, ih]
+
+/-- The cores a commit owes a shootdown request, against the pre-state's
+generation alone: those whose queue holds a descriptor of a round the commit
+opened.  The commit seams capture the generation, a word, before the transition
+consumes the pre-state, so neither the pre-state nor its queues are kept alive
+across the transition (KSC-1, WS-ZA ZA5.4). -/
+def shootdownPostedTargetsFrom (lo : Nat) (post : SystemState) : List CoreId :=
+  allCores.filter (fun c =>
+    holdsWindowWork lo post.tlbShootdown.roundGeneration (post.tlbShootdown.pendingOnCore c))
+
+/-- The round window against the pre-state's generation alone.  Inlined, so
+the entry hands the two generations on without building the pair
 (WS-ZA ZA3.1). -/
-@[inline] def shootdownRoundWindowFrom (tlb0 : TlbShootdownState) (post : SystemState) : Nat × Nat :=
-  (tlb0.roundGeneration, post.tlbShootdown.roundGeneration)
+@[inline] def shootdownRoundWindowFrom (lo : Nat) (post : SystemState) : Nat × Nat :=
+  (lo, post.tlbShootdown.roundGeneration)
 
-/-- **WS-SM SM7.B**: the cores whose pending-shootdown queue a commit
-changed — the diff the runtime seam fires `.tlbShootdownReq` SGIs at
-(the shootdown analogue of the SM5.F.4 `computeCrossCoreSgis`
-re-derivation: posting is data-driven in the pure model, and the entry
-recovers the target set from the committed `(pre, post)` pair so the
-dispatch signature stays unchanged). -/
-def shootdownChangedTargets (pre post : SystemState) : List CoreId :=
-  shootdownChangedTargetsFrom pre.tlbShootdown post
+/-- **WS-SM SM7.B**: the cores a commit must poke — those holding a
+descriptor of a round the commit opened, which the runtime seam fires
+`.tlbShootdownReq` SGIs at (the shootdown analogue of the SM5.F.4
+`computeCrossCoreSgis` re-derivation: posting is data-driven in the pure
+model, and the entry recovers the target set from the committed
+`(pre, post)` pair so the dispatch signature stays unchanged).  A core whose
+queue only lost descriptors during the commit owes nothing and is not
+poked. -/
+def shootdownPostedTargets (pre post : SystemState) : List CoreId :=
+  shootdownPostedTargetsFrom pre.tlbShootdown.roundGeneration post
 
-/-- **WS-SM SM7.B**: membership — exactly the cores with a changed
-pending queue. -/
-theorem mem_shootdownChangedTargets_iff (pre post : SystemState)
+/-- **WS-SM SM7.B**: membership — exactly the cores holding a descriptor of
+the commit's own round window. -/
+theorem mem_shootdownPostedTargets_iff (pre post : SystemState)
     (c : CoreId) :
-    c ∈ shootdownChangedTargets pre post ↔
-      post.tlbShootdown.pendingOnCore c ≠
-        pre.tlbShootdown.pendingOnCore c := by
-  simp [shootdownChangedTargets, shootdownChangedTargetsFrom, List.mem_filter, allCores]
+    c ∈ shootdownPostedTargets pre post ↔
+      ∃ d ∈ post.tlbShootdown.pendingOnCore c,
+        inRoundWindow pre.tlbShootdown.roundGeneration
+          post.tlbShootdown.roundGeneration d.generation = true := by
+  simp [shootdownPostedTargets, shootdownPostedTargetsFrom, List.mem_filter, allCores,
+    holdsWindowWork_eq_true]
 
-/-- **WS-SM SM7.B**: a commit that leaves the shootdown state alone
-pokes nobody — the non-shootdown-syscall inertness of the runtime
-seam (trace safety: no existing syscall's SGI behaviour changes). -/
-theorem shootdownChangedTargets_nil_of_eq {pre post : SystemState}
+/-- **WS-SM SM7.B**: a commit that opened no round pokes nobody — the
+non-shootdown-syscall inertness of the runtime seam (trace safety: no
+existing syscall's SGI behaviour changes). -/
+theorem shootdownPostedTargets_nil_of_gen_eq {pre post : SystemState}
+    (h : post.tlbShootdown.roundGeneration = pre.tlbShootdown.roundGeneration) :
+    shootdownPostedTargets pre post = [] := by
+  rw [List.eq_nil_iff_forall_not_mem]
+  intro c hc
+  obtain ⟨d, _, hw⟩ := (mem_shootdownPostedTargets_iff pre post c).1 hc
+  rw [h, inRoundWindow_empty] at hw
+  cases hw
+
+/-- **WS-SM SM7.B**: a commit that leaves the shootdown state alone pokes
+nobody. -/
+theorem shootdownPostedTargets_nil_of_eq {pre post : SystemState}
     (h : post.tlbShootdown = pre.tlbShootdown) :
-    shootdownChangedTargets pre post = [] := by
-  unfold shootdownChangedTargets shootdownChangedTargetsFrom
-  rw [List.filter_eq_nil_iff]
-  intro c _
-  rw [h]
-  simp
+    shootdownPostedTargets pre post = [] :=
+  shootdownPostedTargets_nil_of_gen_eq (by rw [h])
 
 /-- **WS-SM SM7.F.3**: the round-generation window a commit opened —
 `(pre.roundGeneration, post.roundGeneration]`.
@@ -1976,10 +2103,10 @@ exactly the generations strictly above the pre-state's counter and at
 most the post-state's.  A commit that opened no round has
 `fst = snd` and an empty window (`inRoundWindow_empty`).  The live seam
 recovers this pair from the same `(pre, post)` diff it already uses for
-`shootdownChangedTargets` / `shootdownPostedOps`, so the dispatch
+`shootdownPostedTargets` / `shootdownPostedOps`, so the dispatch
 signature is unchanged. -/
 def shootdownRoundWindow (pre post : SystemState) : Nat × Nat :=
-  shootdownRoundWindowFrom pre.tlbShootdown post
+  shootdownRoundWindowFrom pre.tlbShootdown.roundGeneration post
 
 /-- **WS-SM SM7.F.3**: the window's lower bound is the pre-state's
 generation counter. -/
@@ -1994,7 +2121,7 @@ generation counter. -/
 /-- **WS-SM SM7.F.3**: a commit that left the shootdown state alone has
 an empty window — no generation is in it, so its catch-up drains
 nothing.  The generation-side companion of
-`shootdownChangedTargets_nil_of_eq`. -/
+`shootdownPostedTargets_nil_of_eq`. -/
 theorem shootdownRoundWindow_empty_of_eq {pre post : SystemState}
     (h : post.tlbShootdown = pre.tlbShootdown) (g : Nat) :
     inRoundWindow (shootdownRoundWindow pre post).1
@@ -2002,59 +2129,41 @@ theorem shootdownRoundWindow_empty_of_eq {pre post : SystemState}
   rw [shootdownRoundWindow_fst, shootdownRoundWindow_snd, h]
   exact inRoundWindow_empty _ g
 
-/-- The posted operands against the pre-state's shootdown record alone. -/
-def shootdownPostedOpsFrom (tlb0 : TlbShootdownState) (post : SystemState) :
-    List TlbInvalidation :=
-  ((shootdownChangedTargetsFrom tlb0 post).flatMap (fun c =>
-    ((post.tlbShootdown.pendingOnCore c).filter (fun d =>
-        inRoundWindow (shootdownRoundWindowFrom tlb0 post).1
-          (shootdownRoundWindowFrom tlb0 post).2 d.generation)).map (·.op))).eraseDups
-
-/-- WS-ZA ZA5.4: the changed-target diff against the pre-state's queue vector
-alone, so the commit seams hold the queues, not the whole shootdown record,
-across the transition: the transition then updates that record and its
-acknowledgment vector in place. -/
-def shootdownChangedTargetsOver (pend0 : Vector (List TlbShootdownDescriptor) numCores)
-    (post : SystemState) : List CoreId :=
-  allCores.filter (fun c => post.tlbShootdown.pendingOnCore c != pend0.get c)
-
-theorem shootdownChangedTargetsFrom_eq_over (tlb0 : TlbShootdownState) (post : SystemState) :
-    shootdownChangedTargetsFrom tlb0 post =
-      shootdownChangedTargetsOver tlb0.pendingShootdowns post := rfl
-
-/-- WS-ZA ZA5.4: has exactly every core but `initiator` changed its queue
-among `cs`?  A first-order loop. -/
-def changedExactlyOthers (pend0 : Vector (List TlbShootdownDescriptor) numCores)
-    (post : SystemState) (initiator : CoreId) : List CoreId → Bool
+/-- WS-ZA ZA5.4: does every core of `cs` hold work of the window `(lo, hi]`
+exactly when it is not `initiator`?  A first-order loop. -/
+def windowWorkExactlyOthers (lo : Nat) (post : SystemState) (initiator : CoreId) :
+    List CoreId → Bool
   | [] => true
-  | c :: cs => ((post.tlbShootdown.pendingOnCore c != pend0.get c) == (c != initiator)) &&
-      changedExactlyOthers pend0 post initiator cs
+  | c :: cs => (holdsWindowWork lo post.tlbShootdown.roundGeneration
+        (post.tlbShootdown.pendingOnCore c) == (c != initiator)) &&
+      windowWorkExactlyOthers lo post initiator cs
 
-theorem changedExactlyOthers_eq_true (pend0 : Vector (List TlbShootdownDescriptor) numCores)
-    (post : SystemState) (initiator : CoreId) (cs : List CoreId) :
-    changedExactlyOthers pend0 post initiator cs = true ↔
-      ∀ c ∈ cs, (post.tlbShootdown.pendingOnCore c != pend0.get c) = (c != initiator) := by
+theorem windowWorkExactlyOthers_eq_true (lo : Nat) (post : SystemState) (initiator : CoreId)
+    (cs : List CoreId) :
+    windowWorkExactlyOthers lo post initiator cs = true ↔
+      ∀ c ∈ cs, holdsWindowWork lo post.tlbShootdown.roundGeneration
+        (post.tlbShootdown.pendingOnCore c) = (c != initiator) := by
   induction cs with
-  | nil => simp [changedExactlyOthers]
-  | cons c cs ih => simp [changedExactlyOthers, ih]
+  | nil => simp [windowWorkExactlyOthers]
+  | cons c cs ih => simp [windowWorkExactlyOthers, ih]
 
-/-- WS-ZA ZA5.4: the changed targets as the seam computes them.  A commit that
-posted one round from `initiator` changed exactly the other cores' queues, and
-then the diff is `initiator`'s target list, read from `shootdownTargetsTable`
-rather than built; any other diff is filtered as the specification does. -/
-def shootdownChangedTargetsOverFrom (pend0 : Vector (List TlbShootdownDescriptor) numCores)
-    (post : SystemState) (initiator : CoreId) : List CoreId :=
-  if changedExactlyOthers pend0 post initiator allCores then shootdownTargets initiator
-  else shootdownChangedTargetsOver pend0 post
+/-- WS-ZA ZA5.4: the posted targets as the seam computes them.  A commit that
+posted one round from `initiator` left work on exactly the other cores, and
+then the targets are `initiator`'s target list, read from
+`shootdownTargetsTable` rather than built; otherwise they are filtered as the
+specification does. -/
+def shootdownPostedTargetsOne (lo : Nat) (post : SystemState) (initiator : CoreId) :
+    List CoreId :=
+  if windowWorkExactlyOthers lo post initiator allCores then shootdownTargets initiator
+  else shootdownPostedTargetsFrom lo post
 
-theorem shootdownChangedTargetsOverFrom_eq (pend0 : Vector (List TlbShootdownDescriptor) numCores)
-    (post : SystemState) (initiator : CoreId) :
-    shootdownChangedTargetsOverFrom pend0 post initiator = shootdownChangedTargetsOver pend0 post := by
-  unfold shootdownChangedTargetsOverFrom
+theorem shootdownPostedTargetsOne_eq (lo : Nat) (post : SystemState) (initiator : CoreId) :
+    shootdownPostedTargetsOne lo post initiator = shootdownPostedTargetsFrom lo post := by
+  unfold shootdownPostedTargetsOne
   split
   · rename_i h
-    rw [changedExactlyOthers_eq_true] at h
-    unfold shootdownTargets shootdownChangedTargetsOver
+    rw [windowWorkExactlyOthers_eq_true] at h
+    unfold shootdownTargets shootdownPostedTargetsFrom
     exact (List.filter_congr (fun c hc => h c hc)).symm
   · rfl
 
@@ -2099,7 +2208,7 @@ theorem coresWindowOpsAllEq_eq_true (post : SystemState) (x : TlbInvalidation) (
   | nil => simp [coresWindowOpsAllEq]
   | cons c cs ih => simp [coresWindowOpsAllEq, ih, windowOpsAllEq_eq_true]
 
-/-- WS-ZA ZA5.4: the posted operands of a commit, given its changed targets
+/-- WS-ZA ZA5.4: the posted operands of a commit, given its posted targets
 `changed` and the pre-state's generation `lo` — the specification's list. -/
 def shootdownPostedOpsOf (changed : List CoreId) (lo : Nat) (post : SystemState) :
     List TlbInvalidation :=
@@ -2107,9 +2216,12 @@ def shootdownPostedOpsOf (changed : List CoreId) (lo : Nat) (post : SystemState)
     ((post.tlbShootdown.pendingOnCore c).filter (fun d =>
         inRoundWindow lo post.tlbShootdown.roundGeneration d.generation)).map (·.op))).eraseDups
 
-theorem shootdownPostedOpsFrom_eq_of (tlb0 : TlbShootdownState) (post : SystemState) :
-    shootdownPostedOpsFrom tlb0 post =
-      shootdownPostedOpsOf (shootdownChangedTargetsFrom tlb0 post) tlb0.roundGeneration post := rfl
+/-- WS-ZA ZA5.4: the state with its operand spare taken out, out of line so the
+state the seam settled is a cell of its own that this writes in place (inlined,
+the compiler builds the settled state's fields straight into a fresh record).
+Equal to the state (`SystemState.with_shootdownOpsSpare`). -/
+@[noinline] def withoutShootdownOpsSpare (st : SystemState) : SystemState :=
+  { st with shootdownOpsSpare := Squash.mk [] }
 
 /-- WS-ZA ZA5.4: the posted operands as the seam computes them.  When every
 descriptor this commit's window left on a changed core carries the operand of
@@ -2162,6 +2274,75 @@ theorem shootdownPostedOpsOfOne_eq (changed : List CoreId) (lo : Nat) (post : Sy
             exact hall c' (List.mem_cons_of_mem _ hc') e he hw
       · rfl
 
+/-- WS-ZA ZA5.4: an operand copied over a spare operand `o`: a page
+invalidation's words written into `o`'s cell (`pageInvalidationOver`), so the
+posted list never shares its operand with the round's descriptor and both
+spares stay exclusive.  Equal to the operand (`invalidationOver_eq`). -/
+@[inline] def invalidationOver (o op : TlbInvalidation) : TlbInvalidation :=
+  match op with
+  | .vae1 a v => pageInvalidationOver o a v
+  | _ => op
+
+theorem invalidationOver_eq (o op : TlbInvalidation) : invalidationOver o op = op := by
+  unfold invalidationOver
+  split
+  · exact pageInvalidationOver_eq o _ _
+  · rfl
+
+/-- WS-ZA ZA5.4: the one-operand list written over a spare list cell: the
+cell and its operand reused when the spare has one, and with none the operand
+copied into a cell of its own, never shared with the descriptor.  Equal to `[op]`
+(`opsCellOver_eq`). -/
+@[noinline] def opsCellOver (spare : List TlbInvalidation) (op : TlbInvalidation) :
+    List TlbInvalidation :=
+  match spare with
+  | o :: tl => invalidationOver o op :: (match tl with | [] => tl | _ :: _ => [])
+  | [] => [invalidationOver .vmalle1 op]
+
+theorem opsCellOver_eq (spare : List TlbInvalidation) (op : TlbInvalidation) :
+    opsCellOver spare op = [op] := by
+  unfold opsCellOver
+  split
+  · rename_i tl
+    rw [invalidationOver_eq]
+    cases tl <;> rfl
+  · rw [invalidationOver_eq]
+
+/-- WS-ZA ZA5.4: the posted operands as the seam computes them, with the
+state's operand spare taken out of its field only where the one-operand list is
+built, which is then written over the spare's cell (`opsCellOver`); a commit
+that posts nothing, or more than one operand, leaves the spare where it is.
+Equal to the operands and the state itself (`shootdownPostedOpsTaking_eq`). -/
+@[inline] def shootdownPostedOpsTaking (changed : List CoreId) (lo : Nat) (post : SystemState) :
+    List TlbInvalidation × SystemState :=
+  match changed with
+  | [] => ([], post)
+  | c :: _ =>
+    match post.tlbShootdown.pendingOnCore c with
+    | [] => (shootdownPostedOpsOf changed lo post, post)
+    | d :: _ =>
+      if inRoundWindow lo post.tlbShootdown.roundGeneration d.generation &&
+          coresWindowOpsAllEq post d.op lo post.tlbShootdown.roundGeneration changed then
+        let op := d.op
+        let sp := post.shootdownOpsSpare
+        let post0 := withoutShootdownOpsSpare post
+        Quot.lift (fun spare => (opsCellOver spare op, post0))
+          (fun x y _ => by dsimp only; rw [opsCellOver_eq, opsCellOver_eq]) sp
+      else (shootdownPostedOpsOf changed lo post, post)
+
+theorem shootdownPostedOpsTaking_eq (changed : List CoreId) (lo : Nat) (post : SystemState) :
+    shootdownPostedOpsTaking changed lo post = (shootdownPostedOpsOfOne changed lo post, post) := by
+  unfold shootdownPostedOpsTaking shootdownPostedOpsOfOne
+  split
+  · rfl
+  · split
+    · rfl
+    · split
+      · induction post.shootdownOpsSpare using Squash.ind with
+        | h l => simp only [Squash.mk, opsCellOver_eq, withoutShootdownOpsSpare,
+            SystemState.with_shootdownOpsSpare]
+      · rfl
+
 /-- **WS-SM SM7.B**: the newly-posted invalidation operands of a
 commit, deduplicated — the runtime seam executes one initiator-local
 broadcast TLBI per distinct operand (plan §3.2 step 3), and publishes
@@ -2176,7 +2357,7 @@ imprecise) over-approximation that no longer matches what the model's
 catch-up retires.  Under round serialisation the filter is the
 identity, so nothing about a single-round commit changes. -/
 def shootdownPostedOps (pre post : SystemState) : List TlbInvalidation :=
-  shootdownPostedOpsFrom pre.tlbShootdown post
+  shootdownPostedOpsOf (shootdownPostedTargets pre post) pre.tlbShootdown.roundGeneration post
 
 /-! ### `List.eraseDups` membership (the seam's dedup loses nothing)
 
@@ -2260,7 +2441,7 @@ commit owes is dropped by the deduplication (safety). -/
 theorem mem_shootdownPostedOps_iff (pre post : SystemState)
     (op : TlbInvalidation) :
     op ∈ shootdownPostedOps pre post ↔
-      ∃ c ∈ shootdownChangedTargets pre post,
+      ∃ c ∈ shootdownPostedTargets pre post,
         ∃ d ∈ post.tlbShootdown.pendingOnCore c,
           inRoundWindow (shootdownRoundWindow pre post).1
               (shootdownRoundWindow pre post).2 d.generation = true ∧
@@ -2742,21 +2923,81 @@ theorem vspaceUnmapPageWithShootdown_remote_retire_removes
 -- SM7.B — Positive diff characterization + coalescing-round capstones
 -- ============================================================================
 
-/-- **WS-SM SM7.B**: positive diff characterization — a coalescing
-posting from quiescence changes *exactly* the target queues, so the
-runtime seam's diff recovery fires SGIs at exactly the round's
-targets (the negative direction is
-`shootdownChangedTargets_nil_of_eq`). -/
-theorem shootdownChangedTargets_coalescing_of_quiescent
+/-- WS-ZA ZA5.4: the coalescing enqueue leaves the generation counter alone. -/
+theorem enqueueShootdownOrCoalesce_roundGeneration (st : TlbShootdownState)
+    (target : CoreId) (d : TlbShootdownDescriptor) :
+    (enqueueShootdownOrCoalesce st target d).roundGeneration = st.roundGeneration := by
+  rw [enqueueShootdownOrCoalesce_eq_direct]
+  unfold enqueueShootdownOrCoalesceDirect
+  split <;> simp
+
+theorem foldl_enqueueShootdownOrCoalesce_roundGeneration (targets : List CoreId) :
+    ∀ (sd : TlbShootdownState) (d : TlbShootdownDescriptor),
+      (targets.foldl (fun s c => enqueueShootdownOrCoalesce s c d) sd).roundGeneration =
+        sd.roundGeneration := by
+  induction targets with
+  | nil => intro sd d; rfl
+  | cons t ts ih =>
+    intro sd d
+    rw [List.foldl_cons, ih, enqueueShootdownOrCoalesce_roundGeneration]
+
+/-- WS-ZA ZA5.4: the coalescing enqueue leaves the target holding a
+descriptor of the request's generation: the request itself, or the full flush
+that replaced the queue, which carries it. -/
+theorem enqueueShootdownOrCoalesce_holds_generation (st : TlbShootdownState)
+    (target : CoreId) (d : TlbShootdownDescriptor) :
+    ∃ d' ∈ (enqueueShootdownOrCoalesce st target d).pendingOnCore target,
+      d'.generation = d.generation := by
+  unfold enqueueShootdownOrCoalesce
+  split
+  next st' heq => exact ⟨d, enqueueShootdown_mem heq, rfl⟩
+  next heq =>
+    exact ⟨{ op := .vmalle1, initiator := d.initiator, generation := d.generation },
+      by simp, rfl⟩
+
+theorem foldl_enqueueShootdownOrCoalesce_holds_generation (targets : List CoreId) :
+    ∀ (sd : TlbShootdownState) (d : TlbShootdownDescriptor),
+      targets.Nodup →
+      ∀ c ∈ targets,
+        ∃ d' ∈ (targets.foldl (fun s c => enqueueShootdownOrCoalesce s c d)
+            sd).pendingOnCore c, d'.generation = d.generation := by
+  induction targets with
+  | nil => intro sd d _ c hc; cases hc
+  | cons t ts ih =>
+    intro sd d hnd c hc
+    rcases List.mem_cons.mp hc with hEq | hMem
+    · subst hEq
+      rw [List.foldl_cons,
+          foldl_enqueueShootdownOrCoalesce_frame_pending ts _ _
+            (List.nodup_cons.mp hnd).1]
+      exact enqueueShootdownOrCoalesce_holds_generation sd c d
+    · rw [List.foldl_cons]
+      exact ih _ _ (List.nodup_cons.mp hnd).2 c hMem
+
+/-- **WS-SM SM7.B**: positive characterization — a coalescing posting from
+quiescence leaves work of its round on *exactly* the target queues, so the
+runtime seam fires SGIs at exactly the round's targets (the negative
+direction is `shootdownPostedTargets_nil_of_eq`). -/
+theorem shootdownPostedTargets_coalescing_of_quiescent
     {st : SystemState} (hq : shootdownQuiescent st.tlbShootdown)
     (initiator : CoreId) (op : TlbInvalidation) :
-    shootdownChangedTargets st
+    shootdownPostedTargets st
       (tlbShootdownBroadcastCoalescing st initiator
         (shootdownTargets initiator) op) = shootdownTargets initiator := by
+  have hgen : (tlbShootdownBroadcastCoalescing st initiator
+      (shootdownTargets initiator) op).tlbShootdown.roundGeneration =
+        st.tlbShootdown.roundGeneration + 1 := by
+    show (postShootdownRoundCoalescing st.tlbShootdown initiator
+      (shootdownTargets initiator) op).roundGeneration = _
+    unfold postShootdownRoundCoalescing
+    rw [foldl_enqueueShootdownOrCoalesce_roundGeneration, beginShootdownRoundFor_gen]
   have hpt : ∀ c ∈ allCores,
-      ((tlbShootdownBroadcastCoalescing st initiator
-          (shootdownTargets initiator) op).tlbShootdown.pendingOnCore c
-        != st.tlbShootdown.pendingOnCore c) = (c != initiator) := by
+      holdsWindowWork st.tlbShootdown.roundGeneration
+        (tlbShootdownBroadcastCoalescing st initiator
+          (shootdownTargets initiator) op).tlbShootdown.roundGeneration
+        ((tlbShootdownBroadcastCoalescing st initiator
+          (shootdownTargets initiator) op).tlbShootdown.pendingOnCore c) =
+        (c != initiator) := by
     intro c _
     by_cases hc : c = initiator
     · subst hc
@@ -2769,25 +3010,28 @@ theorem shootdownChangedTargets_coalescing_of_quiescent
         rw [foldl_enqueueShootdownOrCoalesce_frame_pending _ _ _
               (initiator_not_mem_shootdownTargets c),
             beginShootdownRoundFor_frame_pending]
-      simp [hframe]
+      rw [hframe, hq.1 c]
+      simp [holdsWindowWork]
     · have hmem : c ∈ shootdownTargets initiator :=
         (mem_shootdownTargets_iff initiator c).mpr hc
-      have hcov := postShootdownRoundCoalescing_covered st.tlbShootdown
-        initiator (shootdownTargets_nodup initiator) op c hmem
-      have hne : (tlbShootdownBroadcastCoalescing st initiator
-          (shootdownTargets initiator) op).tlbShootdown.pendingOnCore c ≠
-            st.tlbShootdown.pendingOnCore c := by
-        rw [hq.1 c]
-        rcases hcov with hmem' | ⟨d', hd'mem, _⟩
-        · exact List.ne_nil_of_mem hmem'
-        · exact List.ne_nil_of_mem hd'mem
-      have h1 : ((tlbShootdownBroadcastCoalescing st initiator
-          (shootdownTargets initiator) op).tlbShootdown.pendingOnCore c
-            != st.tlbShootdown.pendingOnCore c) = true := by
-        rw [bne_iff_ne]; exact hne
+      obtain ⟨d', hd', hg⟩ : ∃ d' ∈ (tlbShootdownBroadcastCoalescing st initiator
+          (shootdownTargets initiator) op).tlbShootdown.pendingOnCore c,
+          d'.generation = st.tlbShootdown.roundGeneration + 1 := by
+        show ∃ d' ∈ (postShootdownRoundCoalescing st.tlbShootdown initiator
+          (shootdownTargets initiator) op).pendingOnCore c, _
+        unfold postShootdownRoundCoalescing
+        exact foldl_enqueueShootdownOrCoalesce_holds_generation _ _ _
+          (shootdownTargets_nodup initiator) c hmem
+      have hw : holdsWindowWork st.tlbShootdown.roundGeneration
+          (tlbShootdownBroadcastCoalescing st initiator
+            (shootdownTargets initiator) op).tlbShootdown.roundGeneration
+          ((tlbShootdownBroadcastCoalescing st initiator
+            (shootdownTargets initiator) op).tlbShootdown.pendingOnCore c) = true :=
+        (holdsWindowWork_eq_true _ _ _).2 ⟨d', hd', by
+          rw [hg, hgen, inRoundWindow_iff]; omega⟩
       have h2 : (c != initiator) = true := by
         rw [bne_iff_ne]; exact hc
-      rw [h1, h2]
+      rw [hw, h2]
   exact List.filter_congr hpt
 
 /-- **WS-SM SM7.B** (coalescing-round capstone, quiescence half): the

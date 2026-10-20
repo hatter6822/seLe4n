@@ -26,8 +26,8 @@ import SeLe4n.Kernel.SyscallSchedFootprint
 import SeLe4n.Kernel.SyscallSeamCoverage
 -- WS-SM SM6.E: the per-core suspend behind `suspendThreadCrossCoreEntry`.
 import SeLe4n.Kernel.IPC.CrossCore.Cancellation
--- WS-SM SM7.B: the shootdown round's pure transitions + diff recovery
--- (`shootdownChangedTargets` / `shootdownPostedOps` /
+-- WS-SM SM7.B: the shootdown round's pure transitions + target recovery
+-- (`shootdownPostedTargets` / `shootdownPostedOps` /
 -- `handleTlbShootdownReqOnCore`), the wait budget, and the typed
 -- broadcast-TLBI dispatcher behind `completeShootdownRounds`.
 import SeLe4n.Kernel.Architecture.TlbShootdownProtocol
@@ -214,8 +214,8 @@ def publishShootdownOps (ops : List Architecture.TlbInvalidation)
 round(s) a syscall commit posted — the runtime realisation of plan
 §3.2 steps 1–6 around the already-committed pure posting.
 
-`changed` is the diff-recovered posted-target set
-(`Architecture.shootdownChangedTargets pre post`), `ops` the
+`changed` is the posted-target set, the cores holding work of a round this
+commit opened (`Architecture.shootdownPostedTargets pre post`), `ops` the
 deduplicated posted operands (`Architecture.shootdownPostedOps`), and
 `(lo, hi)` the diff-recovered **round-generation window** this commit
 opened (`Architecture.shootdownRoundWindow pre post`); when no round was
@@ -415,9 +415,13 @@ def completeShootdownRounds (changed : List Concurrency.CoreId)
     -- golden trace stays byte-identical.  The scalar `st.tlb` remains the
     -- pre-SMP single-view (all-cores-conflated) model; `perCoreTlb` is the
     -- per-core refinement.
+    -- WS-ZA ZA5.4: the catch-up keeps the round's operand list as the state's
+    -- operand spare, so the next commit's seam hands its operand over in
+    -- this cell (`Architecture.stashShootdownOps`, the state itself).
     Platform.FFI.modifyGetKernelState (fun st =>
-      ((), Architecture.shootdownCatchUpPerCoreInWindow st execCore collapsed
-        windowFrom windowTo))
+      ((), Architecture.stashShootdownOps
+        (Architecture.shootdownCatchUpPerCoreInWindow st execCore collapsed
+          windowFrom windowTo) ops))
     -- PR #854 review: the release is **after** the catch-up commit, so the
     -- lock brackets every access `shootdownRoundLock_release_acquire` names
     -- as `e_crit` — the operand publication, the posted queues, and the
@@ -451,11 +455,11 @@ def completeShootdownRounds (changed : List Concurrency.CoreId)
 -- same ledger now (a fault message's words past the fourth are user-word stores)
 -- and `FaultEntry` cannot reach this module.
 
-/-- **WS-SM SM7.B** (structural marker): a commit that changed no
-pending-shootdown queue runs no round — no lock traffic, no reset, no
+/-- **WS-SM SM7.B** (structural marker): a commit that posted no
+shootdown round runs no round — no lock traffic, no reset, no
 SGIs, no TLBIs, no wait.  This is the non-shootdown-syscall inertness
 of the runtime bracket at the definition level (the state-diff half is
-`shootdownChangedTargets_nil_of_eq`); the trace fixture's
+`shootdownPostedTargets_nil_of_eq`); the trace fixture's
 byte-identity across the SM7.B landing rests on it. -/
 theorem completeShootdownRounds_nil
     (ops : List Architecture.TlbInvalidation) (windowFrom windowTo : Nat)

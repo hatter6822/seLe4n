@@ -114,8 +114,10 @@ open SeLe4n.Kernel.RobinHood in
 as a bare index, and the cell erased from it (its `some`, its entry and its
 value pair) becomes the root's spare (`VSpaceRoot.mappingSpare`), which the
 next map writes over, so no slot `Option` is built and the cell is not freed;
-the epoch entry goes the same way (`rootWithoutEpochCells`). -/
-@[inline] def rootWithoutMappingCells (vaddr : SeLe4n.VAddr) (r : VSpaceRoot) : VSpaceRoot :=
+the epoch entry goes the same way (`rootWithoutEpochCells`).  Out of line:
+inlined into the object update, the root would be checked for sole ownership
+while its object still held it, and so be rebuilt. -/
+@[noinline] def rootWithoutMappingCells (vaddr : SeLe4n.VAddr) (r : VSpaceRoot) : VSpaceRoot :=
   let t := r.mappings
   let i := findIdxLoop t.capacity (idealIndex vaddr t.capacity t.hCapPos) vaddr 0 t.slots
     t.capacity t.hSlotsLen t.hCapPos
@@ -152,7 +154,8 @@ open SeLe4n.Kernel.RobinHood in
 
 /-- WS-ZA ZA5.4: **an admitted unmap's writes**: the mapping erased in the
 root's slot, its invalid descriptor on the ledger, the executing core's flush,
-the shootdown round, the initiator's drain, and — for an executable mapping —
+the shootdown round (its descriptor written over the last drained one,
+`tlbShootdownBroadcastPage`), the initiator's drain, and — for an executable mapping —
 the instruction-cache broadcast, whose operand is read before the write
 (`vspaceUnmapPageWithShootdownAndIcacheBroadcast`). -/
 def vspaceUnmapPerformAt (ec : Concurrency.CoreId) (asid : SeLe4n.ASID)
@@ -161,8 +164,8 @@ def vspaceUnmapPerformAt (ec : Concurrency.CoreId) (asid : SeLe4n.ASID)
   let st1 := st.storeVSpaceRootWith rootId (rootWithoutMapping vaddr)
   let st1 := Architecture.recordPhysicalWrites st1 (mappedRootLedger st1 rootId vaddr)
   let st2 := { st1 with tlb := adapterFlushTlbByVAddr st1.tlb asid vaddr }
-  let st3 := Architecture.tlbShootdownBroadcastCoalescing st2 ec
-    (Architecture.shootdownTargets ec) (Architecture.encodePageInvalidation asid vaddr)
+  let st3 := Architecture.tlbShootdownBroadcastPage st2 ec
+    (Architecture.shootdownTargets ec) asid vaddr
   let st4 := Architecture.drainInitiatorPageOnCore st3 ec asid vaddr
   match op? with
   | none => st4
@@ -231,6 +234,7 @@ theorem vspaceUnmapPageWithShootdownAndIcacheBroadcast_of_admitted (ec : Concurr
   rw [hStore]
   unfold vspaceUnmapPerformAt
   dsimp only [Architecture.withShootdownRound]
+  simp only [Architecture.tlbShootdownBroadcastPage_eq]
   cases Architecture.unmapIcacheOperand st asid vaddr <;> rfl
 
 end SeLe4n.Kernel
