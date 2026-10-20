@@ -1,3 +1,32 @@
+## v0.36.115 — WS-ZA ZA5.4 part 5: a capability's mapping record is words written in its slot
+
+A frame map no longer builds the capability's mapping record, the
+permissions' `Option`, or the invalidation operand its own core retires.
+
+- **The mapping record as words** (`Model/Object/Types.lean`,
+  `Model/Object/Structures.lean`, `Capability/Operations.lean`,
+  `VSpacePerform.lean`): `Capability` replaces its `mapping : Option
+  FrameMapping` field with `mapAsid`, `mapVaddr`, `mapEpoch` and the `mapped`
+  flag, read through the `mapping` view and set by `withMapping` (built by
+  `ofWords`, cleared by `withoutMapping`), as seL4's frame capability holds its
+  mapped ASID and address.  A map writes the words into the slot's own
+  capability where it stands (`CNode.recordMappingCells`, an `Array.modify`
+  of the slot, proven equal to `CNode.recordMapping`), which
+  `cspaceRecordFrameMapping` now names.  `CNode.insertFields` writes an
+  unmapped capability's fields as a literal, so copy, mint and reply-cap mint
+  build no capability.
+- **Permission decode** (`Model/Object/Structures.lean`):
+  `PagePermissions.ofNat?` compiles to `ofNatChecked`, which reads the range
+  and W^X bits off the word inline, so a decoder's `match` meets the `some`.
+- **The initiator's page drain** (`Architecture/PerCoreTlbModel.lean`):
+  `drainInitiatorPageOnCore` is the drain of one page invalidation, compiled
+  to a comparison of the operand's words with the view's entries
+  (`drainInitiatorPageOnCoreWords`); a view the operand does not touch is left
+  where it is.  The map and unmap use it.
+- **Readings** (normal build, first call / steady state): frame map 14 / 10
+  (22 / 18), map of a copied capability 13 / 10 (21 / 18); everything else is
+  unchanged.  The exerciser pins the new readings.
+
 ## v0.36.114 — WS-ZA ZA5.4 part 4: the physical-write ledger is a word buffer, and a mapped frame's delete allocates nothing
 
 The physical writes a transition owes the HAL are now three words each in a

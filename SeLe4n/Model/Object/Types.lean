@@ -458,10 +458,59 @@ structure Capability where
   badgeWord : SeLe4n.Badge := SeLe4n.Badge.zero
   /-- Whether the capability carries a badge (`badgeWord` holds it). -/
   badged : Bool := false
-  mapping : Option FrameMapping := none
+  /-- WS-ZA ZA5.4: the recorded mapping's ASID, meaningful only when `mapped`.
+      The record is held as words with a flag, as seL4's frame capability holds
+      its mapped ASID and address: an `Option FrameMapping` field built the
+      record and its `some` on every map.  Read through the `mapping` view. -/
+  mapAsid : SeLe4n.ASID := default
+  /-- The recorded mapping's virtual address. -/
+  mapVaddr : SeLe4n.VAddr := default
+  /-- The recorded mapping's epoch (`FrameMapping.epoch`). -/
+  mapEpoch : Nat := 0
+  /-- Whether the capability records a mapping (`mapAsid`, `mapVaddr` and
+      `mapEpoch` hold it). -/
+  mapped : Bool := false
   deriving Repr, DecidableEq, Inhabited
 
 namespace Capability
+
+/-- WS-ZA ZA5.4: **the capability's mapping record**, the `Option` view of the
+`mapped` flag and its words. -/
+@[inline] def mapping (cap : Capability) : Option FrameMapping :=
+  if cap.mapped then some ⟨cap.mapAsid, cap.mapVaddr, cap.mapEpoch⟩ else none
+
+/-- The capability with its mapping record replaced: the words and flag of `m`,
+zero words for `none`. -/
+@[inline] def withMapping (cap : Capability) (m : Option FrameMapping) : Capability :=
+  match m with
+  | some m => { cap with mapAsid := m.asid, mapVaddr := m.vaddr, mapEpoch := m.epoch, mapped := true }
+  | none => { cap with mapAsid := default, mapVaddr := default, mapEpoch := 0, mapped := false }
+
+/-- The capability with mapping record `(asid, vaddr, epoch)`, written over its
+own record. -/
+@[inline] def setMapped (c : Capability) (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (epoch : Nat) : Capability :=
+  { c with mapAsid := asid, mapVaddr := vaddr, mapEpoch := epoch, mapped := true }
+
+theorem setMapped_eq (c : Capability) (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (epoch : Nat) : c.setMapped asid vaddr epoch = c.withMapping (some ⟨asid, vaddr, epoch⟩) := rfl
+
+@[simp] theorem withMapping_mapping (cap : Capability) (m : Option FrameMapping) :
+    (cap.withMapping m).mapping = m := by
+  cases m <;> rfl
+
+@[simp] theorem withMapping_target (cap : Capability) (m : Option FrameMapping) :
+    (cap.withMapping m).target = cap.target := by cases m <;> rfl
+
+@[simp] theorem withMapping_rights (cap : Capability) (m : Option FrameMapping) :
+    (cap.withMapping m).rights = cap.rights := by cases m <;> rfl
+
+@[simp] theorem withMapping_badgeWord (cap : Capability) (m : Option FrameMapping) :
+    (cap.withMapping m).badgeWord = cap.badgeWord := by cases m <;> rfl
+
+@[simp] theorem withMapping_badged (cap : Capability) (m : Option FrameMapping) :
+    (cap.withMapping m).badged = cap.badged := by cases m <;> rfl
+
 
 /-- WS-ZA ZA5.3 part 6: **the capability's badge**, the `Option` view of the
 `badged` flag and `badgeWord`. -/
@@ -485,23 +534,46 @@ namespace Capability
 @[simp] theorem withBadge_mapping (cap : Capability) (b : Option SeLe4n.Badge) :
     (cap.withBadge b).mapping = cap.mapping := rfl
 
+/-- The capability of the given target, rights, badge words and mapping record. -/
+@[inline] def ofWords (target : CapTarget) (rights : AccessRightSet) (badgeWord : SeLe4n.Badge)
+    (badged : Bool) (m : Option FrameMapping) : Capability :=
+  match m with
+  | some m => { target, rights, badgeWord, badged, mapAsid := m.asid, mapVaddr := m.vaddr,
+                mapEpoch := m.epoch, mapped := true }
+  | none => { target, rights, badgeWord, badged }
+
+@[simp] theorem ofWords_target (t : CapTarget) (r : AccessRightSet) (w : SeLe4n.Badge) (b : Bool)
+    (m : Option FrameMapping) : (ofWords t r w b m).target = t := by cases m <;> rfl
+
+@[simp] theorem ofWords_rights (t : CapTarget) (r : AccessRightSet) (w : SeLe4n.Badge) (b : Bool)
+    (m : Option FrameMapping) : (ofWords t r w b m).rights = r := by cases m <;> rfl
+
+@[simp] theorem ofWords_badgeWord (t : CapTarget) (r : AccessRightSet) (w : SeLe4n.Badge) (b : Bool)
+    (m : Option FrameMapping) : (ofWords t r w b m).badgeWord = w := by cases m <;> rfl
+
+@[simp] theorem ofWords_badged (t : CapTarget) (r : AccessRightSet) (w : SeLe4n.Badge) (b : Bool)
+    (m : Option FrameMapping) : (ofWords t r w b m).badged = b := by cases m <;> rfl
+
+@[simp] theorem ofWords_mapping (t : CapTarget) (r : AccessRightSet) (w : SeLe4n.Badge) (b : Bool)
+    (m : Option FrameMapping) : (ofWords t r w b m).mapping = m := by cases m <;> rfl
+
 /-- The capability of the given target, rights, badge and mapping. -/
 @[inline] def ofParts (target : CapTarget) (rights : AccessRightSet)
     (badge : Option SeLe4n.Badge) (mapping : Option FrameMapping := none) : Capability :=
-  { target, rights, badgeWord := SeLe4n.Badge.ofOption badge, badged := badge.isSome, mapping }
+  ofWords target rights (SeLe4n.Badge.ofOption badge) badge.isSome mapping
 
 @[simp] theorem ofParts_target (t : CapTarget) (r : AccessRightSet) (b : Option SeLe4n.Badge)
-    (m : Option FrameMapping) : (ofParts t r b m).target = t := rfl
+    (m : Option FrameMapping) : (ofParts t r b m).target = t := by simp [ofParts]
 
 @[simp] theorem ofParts_rights (t : CapTarget) (r : AccessRightSet) (b : Option SeLe4n.Badge)
-    (m : Option FrameMapping) : (ofParts t r b m).rights = r := rfl
+    (m : Option FrameMapping) : (ofParts t r b m).rights = r := by simp [ofParts]
 
 @[simp] theorem ofParts_badge (t : CapTarget) (r : AccessRightSet) (b : Option SeLe4n.Badge)
     (m : Option FrameMapping) : (ofParts t r b m).badge = b := by
-  cases b <;> rfl
+  cases b <;> cases m <;> rfl
 
 @[simp] theorem ofParts_mapping (t : CapTarget) (r : AccessRightSet) (b : Option SeLe4n.Badge)
-    (m : Option FrameMapping) : (ofParts t r b m).mapping = m := rfl
+    (m : Option FrameMapping) : (ofParts t r b m).mapping = m := by simp [ofParts]
 
 /-- Two capabilities are equal exactly when their parts are. -/
 theorem ofParts_inj {t t' : CapTarget} {r r' : AccessRightSet} {b b' : Option SeLe4n.Badge}
@@ -530,19 +602,24 @@ copy or a transfer is a *new* authority over the frame, not the authority that
 made the mapping: were the record carried, two capabilities would each claim one
 mapping and destroying either would unmap the other's. -/
 @[inline] def withoutMapping (cap : Capability) : Capability :=
-  { cap with mapping := none }
+  cap.withMapping none
 
 /-- `withoutMapping` as compiled: a capability that records no mapping is
 returned as it is, so deriving it builds no record (WS-ZA ZA5.3 part 6). -/
 @[inline] def withoutMappingImpl (cap : Capability) : Capability :=
-  match cap.mapping with
-  | none => cap
-  | some _ => { cap with mapping := none }
+  if cap.mapAsid = default && cap.mapVaddr = default && cap.mapEpoch == 0 && !cap.mapped then cap
+  else cap.withMapping none
 
 @[csimp] theorem withoutMapping_eq_impl : @withoutMapping = @withoutMappingImpl := by
   funext cap
-  cases cap with
-  | mk t r w b m => cases m <;> rfl
+  unfold withoutMappingImpl withoutMapping withMapping
+  by_cases h : (decide (cap.mapAsid = default) && decide (cap.mapVaddr = default) &&
+      cap.mapEpoch == 0 && !cap.mapped) = true
+  · rw [if_pos h]
+    simp only [Bool.and_eq_true, decide_eq_true_eq, beq_iff_eq, Bool.not_eq_true'] at h
+    obtain ⟨⟨⟨h1, h2⟩, h3⟩, h4⟩ := h
+    cases cap; simp_all
+  · rw [if_neg h]
 
 /-- AK7-I (F-M07 / MEDIUM): Null capability predicate.
 
@@ -3018,19 +3095,24 @@ compiler can write it into, and its rights read back through `r` so that `r`
 stays live, since an update of every field would drop `r` and build a fresh
 record.  Equal to the capability of those fields (`overwrite_eq`). -/
 @[noinline] def Capability.overwrite (r : Capability) (target : CapTarget) (rights : AccessRightSet)
-    (badgeWord : SeLe4n.Badge) (badged : Bool) (mapping : Option FrameMapping) : Capability :=
-  { target, rights := if r.rights = rights then r.rights else rights, badgeWord, badged, mapping }
+    (badgeWord : SeLe4n.Badge) (badged : Bool) (mapAsid : SeLe4n.ASID) (mapVaddr : SeLe4n.VAddr)
+    (mapEpoch : Nat) (mapped : Bool) : Capability :=
+  { target, rights := if r.rights = rights then r.rights else rights, badgeWord, badged,
+    mapAsid, mapVaddr, mapEpoch, mapped }
 
 /-- WS-ZA ZA5.3 part 6: the capability with the given fields, built fresh (a
 slot with no record of its own).  Out of line, so a caller's literal of the same
 fields is not shared with it and stays unbuilt. -/
 @[noinline] def Capability.ofFields (target : CapTarget) (rights : AccessRightSet)
-    (badgeWord : SeLe4n.Badge) (badged : Bool) (mapping : Option FrameMapping) : Capability :=
-  ⟨target, rights, badgeWord, badged, mapping⟩
+    (badgeWord : SeLe4n.Badge) (badged : Bool) (mapAsid : SeLe4n.ASID) (mapVaddr : SeLe4n.VAddr)
+    (mapEpoch : Nat) (mapped : Bool) : Capability :=
+  ⟨target, rights, badgeWord, badged, mapAsid, mapVaddr, mapEpoch, mapped⟩
 
 theorem Capability.overwrite_eq (r : Capability) (target : CapTarget) (rights : AccessRightSet)
-    (badgeWord : SeLe4n.Badge) (badged : Bool) (mapping : Option FrameMapping) :
-    r.overwrite target rights badgeWord badged mapping = ⟨target, rights, badgeWord, badged, mapping⟩ := by
+    (badgeWord : SeLe4n.Badge) (badged : Bool) (mapAsid : SeLe4n.ASID) (mapVaddr : SeLe4n.VAddr)
+    (mapEpoch : Nat) (mapped : Bool) :
+    r.overwrite target rights badgeWord badged mapAsid mapVaddr mapEpoch mapped =
+      ⟨target, rights, badgeWord, badged, mapAsid, mapVaddr, mapEpoch, mapped⟩ := by
   unfold overwrite; split <;> simp_all
 
 /-- WS-ZA ZA5.3 part 6: **the records a CNode's slots keep while empty** (seL4's

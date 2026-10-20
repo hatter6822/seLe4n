@@ -444,7 +444,7 @@ theorem cspaceRecordFrameMapping_preserves_capabilityInvariantBundle
   have hAcyclicMid := cdtAcyclicity_of_cdt_eq st st' hAcyclic
     (storeObject_cdt_eq st st' addr.cnode _ hStore)
   have hDepthMid := cspaceDepthConsistent_of_storeObject_insertCNode
-    st st' addr.cnode preCn addr.slot { cap with mapping := some m } hDepthPre hObjInv hPre hStore
+    st st' addr.cnode preCn addr.slot (cap.withMapping (some m)) hDepthPre hObjInv hPre hStore
   have hObjInvMid := storeObject_preserves_objects_invExt st st' addr.cnode _ hObjInv hStore
   refine ⟨cspaceLookupSound_holds st', hCompMid, hAcyclicMid, hDepthMid, hObjInvMid, ?_,
     cdtLinksAgree_of_eq hLinks (storeObject_cdt_eq st st' addr.cnode _ hStore)
@@ -453,7 +453,7 @@ theorem cspaceRecordFrameMapping_preserves_capabilityInvariantBundle
   -- the pre-state's: the rewritten slot inherits its own pre-state backing, and
   -- every other slot frames through the single CNode store.
   have hSelf : st'.objects[addr.cnode]? =
-      some (.cnode (preCn.insert addr.slot { cap with mapping := some m })) :=
+      some (.cnode (preCn.insert addr.slot (cap.withMapping (some m)))) :=
     storeObject_objects_eq st st' addr.cnode _ hObjInv hStore
   have hNe : ∀ oid, oid ≠ addr.cnode → st'.objects[oid]? = st.objects[oid]? :=
     fun oid h => storeObject_objects_ne st st' addr.cnode oid _ h hObjInv hStore

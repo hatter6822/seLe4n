@@ -59,13 +59,14 @@ open SeLe4n.Kernel.Architecture.SyscallArgDecode
   | none => 0
 
 /-- WS-ZA ZA5.4: the capability's mapping record written in its CNode slot —
-`cspaceRecordFrameMappingImpl`'s write, total. -/
+`cspaceRecordFrameMappingImpl`'s write, total: the record's words go into the
+slot's own capability (`CNode.recordMappingCells`). -/
 @[inline] def recordFrameMappingAt (st : SystemState) (cnode : SeLe4n.ObjId)
     (slot : SeLe4n.Slot) (m : FrameMapping) : SystemState :=
   match st.getCNode? cnode with
   | some cn =>
     match cn.lookup slot with
-    | some cap => st.storeCNodeWith cnode (·.insert slot { cap with mapping := some m })
+    | some _ => st.storeCNodeWith cnode (·.recordMappingCells slot m.asid m.vaddr m.epoch)
     | none => st
   | none => st
 
@@ -80,8 +81,7 @@ on an admitted fresh map). -/
   let st1 := Architecture.recordPhysicalWrites st1 (mappedRootLedger st1 rootId vaddr)
   let st2 := { st1 with tlb := adapterFlushTlbByVAddr st1.tlb asid vaddr }
   Architecture.tlbFillOnCore
-    (Architecture.drainInitiatorPerCoreView st2 ec [Architecture.encodePageInvalidation asid vaddr])
-    ec asid vaddr
+    (Architecture.drainInitiatorPageOnCore st2 ec asid vaddr) ec asid vaddr
 
 /-- WS-ZA ZA5.4: **an admitted frame map's writes**, each in its object's slot:
 the address-space step, the epoch tag in the root and the frame, and the record

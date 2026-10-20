@@ -1398,8 +1398,8 @@ private def runFrameFinaliseChecks : IO Unit := do
   -- derivation-parent guard can be what refuses it.  The control is the same
   -- CNode with the record stripped.
   let recCap : Capability :=
-    { frameCapability (SeLe4n.ObjId.ofNat 950) with
-      mapping := some { asid := carveAsid, vaddr := SeLe4n.Testing.fixtureUserVAddr 0x60000 } }
+    (frameCapability (SeLe4n.ObjId.ofNat 950)).withMapping
+      (some { asid := carveAsid, vaddr := SeLe4n.Testing.fixtureUserVAddr 0x60000 })
   let lone (cap : Capability) : CNode :=
     CNode.ofList 4 0 0 4 [(SeLe4n.Slot.ofNat 0, cap)]
   let retypeLone (cap : Capability) : Bool :=
@@ -1418,8 +1418,8 @@ private def runFrameFinaliseChecks : IO Unit := do
   -- The boot admits no configured record: every mapping is one a capability made.
   assertBool "the boot refuses a configured capability that records a mapping"
     (!SeLe4n.Platform.Boot.bootSafeCapCheck
-      { frameCapability (SeLe4n.ObjId.ofNat 950) with
-        mapping := some { asid := carveAsid, vaddr := SeLe4n.Testing.fixtureUserVAddr 0x60000 } })
+      ((frameCapability (SeLe4n.ObjId.ofNat 950)).withMapping
+        (some { asid := carveAsid, vaddr := SeLe4n.Testing.fixtureUserVAddr 0x60000 })))
   assertBool "CONTROL: and admits the same capability with no record"
     (SeLe4n.Platform.Boot.bootSafeCapCheck (frameCapability (SeLe4n.ObjId.ofNat 950)))
 

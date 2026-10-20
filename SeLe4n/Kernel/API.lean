@@ -2528,7 +2528,7 @@ theorem vspaceMapFromFrameCap_ok_inUserWindow (tid : SeLe4n.ThreadId) (executing
 
 /-- **WS-BP BP7.1 (`v0.36.7`): a successful mapping records itself on the
 capability that made it** — the slot the capability was resolved from now holds
-it with `mapping := some ⟨asid, vaddr, epoch⟩`, so destroying it removes the
+it with the mapping record `⟨asid, vaddr, epoch⟩`, so destroying it removes the
 mapping.  The epoch (PR #904 review, `v0.36.41`) is the one the address space's
 entry now carries, which is what makes the record this mapping's alone. -/
 theorem vspaceMapFromFrameCap_ok_records (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (args : VSpaceMapArgs)
@@ -2537,8 +2537,7 @@ theorem vspaceMapFromFrameCap_ok_records (tid : SeLe4n.ThreadId) (executingCore 
     ∃ (frameSlot : CSpaceAddr) (frameCap : Capability) (epoch : Nat),
       SystemState.lookupSlotCap st frameSlot = some frameCap ∧
       SystemState.lookupSlotCap st' frameSlot =
-        some { frameCap with
-          mapping := some { asid := args.asid, vaddr := args.vaddr, epoch := epoch } } := by
+        some (frameCap.withMapping (some { asid := args.asid, vaddr := args.vaddr, epoch := epoch })) := by
   obtain ⟨frameSlot, frameCap, frame, st1, hR, -, -, -, -, hMap, epoch, st2, hT, hRec⟩ :=
     vspaceMapFromFrameCap_ok tid executingCore args st st' h
   obtain ⟨_, _, _, _, _, _, _, _, _, -, hSlotCap⟩ :=

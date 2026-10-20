@@ -108,8 +108,7 @@ def vspaceUnmapPerformAt (ec : Concurrency.CoreId) (asid : SeLe4n.ASID)
   let st2 := { st1 with tlb := adapterFlushTlbByVAddr st1.tlb asid vaddr }
   let st3 := Architecture.tlbShootdownBroadcastCoalescing st2 ec
     (Architecture.shootdownTargets ec) (Architecture.encodePageInvalidation asid vaddr)
-  let st4 := Architecture.drainInitiatorPerCoreView st3 ec
-    [Architecture.encodePageInvalidation asid vaddr]
+  let st4 := Architecture.drainInitiatorPageOnCore st3 ec asid vaddr
   match op? with
   | none => st4
   | some op =>

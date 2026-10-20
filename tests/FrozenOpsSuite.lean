@@ -501,8 +501,8 @@ whose capability is gone — the defect the live cut closes.  The control is the
 same capability with no record, which FO-013 already deletes. -/
 private def fo013b_cspaceDeleteRefusesMappedFrameCap : IO Unit := do
   let cap : Capability :=
-    { target := .object ⟨42⟩, rights := .ofNat 7,
-      mapping := some { asid := SeLe4n.ASID.ofNat 3, vaddr := SeLe4n.VAddr.ofNat 0x60000 } }
+    Capability.withMapping { target := .object ⟨42⟩, rights := .ofNat 7 }
+      (some { asid := SeLe4n.ASID.ofNat 3, vaddr := SeLe4n.VAddr.ofNat 0x60000 })
   let radix := (CNodeRadix.empty 0 0 4).insert (SeLe4n.Slot.ofNat 3) cap
   let cn : FrozenCNode := { depth := 1, guardWidth := 0, guardValue := 0, radixWidth := 4, slots := radix }
   let fst := mkFrozenState [(⟨10⟩, .cnode cn)]
@@ -694,8 +694,8 @@ private def fo020_frozenCspaceMint : IO Unit := do
   -- `v0.36.38`: the source carries a mapping record, which a new capability
   -- must not inherit — it made no mapping (seL4's `deriveCap`).
   let testCap : Capability :=
-    { target := .object epId, rights := .ofNat 7,
-      mapping := some { asid := SeLe4n.ASID.ofNat 1, vaddr := SeLe4n.VAddr.ofNat 0x1000 } }
+    Capability.withMapping { target := .object epId, rights := .ofNat 7 }
+      (some { asid := SeLe4n.ASID.ofNat 1, vaddr := SeLe4n.VAddr.ofNat 0x1000 })
   match frozenCspaceMint cnodeId (SeLe4n.Slot.ofNat 0) testCap st0 with
   | .ok ((), st1) =>
     -- Verify slot 0 now has the cap

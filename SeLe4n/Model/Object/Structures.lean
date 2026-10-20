@@ -105,6 +105,22 @@ def PagePermissions.ofNat? (n : Nat) : Option PagePermissions :=
     if p.wxCompliant then some p else none
   else none
 
+/-- WS-ZA ZA5.4: `ofNat?` as compiled — the range and W^X checks read off the
+word's bits, inlined, so a decoder's `match` meets the `some` and builds only
+the permissions it keeps. -/
+@[inline] def PagePermissions.ofNatChecked (n : Nat) : Option PagePermissions :=
+  if n < 32 && !(n &&& 2 != 0 && n &&& 4 != 0) then
+    some { read := n &&& 1 != 0, write := n &&& 2 != 0, execute := n &&& 4 != 0,
+           user := n &&& 8 != 0, cacheable := n &&& 16 != 0 }
+  else none
+
+@[csimp] theorem PagePermissions.ofNat?_eq_checked :
+    @PagePermissions.ofNat? = @PagePermissions.ofNatChecked := by
+  funext n
+  unfold PagePermissions.ofNat? PagePermissions.ofNatChecked PagePermissions.wxCompliant
+    PagePermissions.ofNat
+  by_cases h : n < 32 <;> simp [h]
+
 /-- T6-C/V4-K: `ofNat?` returns `some` for valid, W^X-compliant permission values. -/
 theorem PagePermissions.ofNat?_valid (n : Nat) (h : n < 32)
     (hWx : (PagePermissions.ofNat n).wxCompliant = true) :
@@ -1254,10 +1270,14 @@ theorem insertCellWith_eq (node : CNode) (slot : SeLe4n.Slot) (cap : Capability)
 passing `cap` as a literal never builds it. -/
 @[inline] def insertCellFrom (node : CNode) (slot : SeLe4n.Slot) (cap : Capability)
     (h : slot.toNat < node.cells.size) (a : Array (Option Capability)) : CNode :=
-  node.insertCellWith slot ⟨cap.target, cap.rights, cap.badgeWord, cap.badged, cap.mapping⟩
-    (fun r => Capability.overwrite r cap.target cap.rights cap.badgeWord cap.badged cap.mapping)
-    (fun r => Capability.overwrite_eq _ _ _ _ _ _)
-    (fun _ => Capability.ofFields cap.target cap.rights cap.badgeWord cap.badged cap.mapping) rfl h a
+  node.insertCellWith slot
+    ⟨cap.target, cap.rights, cap.badgeWord, cap.badged, cap.mapAsid, cap.mapVaddr, cap.mapEpoch,
+      cap.mapped⟩
+    (fun r => Capability.overwrite r cap.target cap.rights cap.badgeWord cap.badged cap.mapAsid
+      cap.mapVaddr cap.mapEpoch cap.mapped)
+    (fun r => Capability.overwrite_eq _ _ _ _ _ _ _ _ _)
+    (fun _ => Capability.ofFields cap.target cap.rights cap.badgeWord cap.badged cap.mapAsid
+      cap.mapVaddr cap.mapEpoch cap.mapped) rfl h a
 
 theorem insertCellFrom_eq (node : CNode) (slot : SeLe4n.Slot) (cap : Capability)
     (h : slot.toNat < node.cells.size) (a : Array (Option Capability)) :
@@ -1290,19 +1310,125 @@ def insertImpl (node : CNode) (slot : SeLe4n.Slot) (cap : Capability) : CNode :=
 @[csimp] theorem insert_eq_impl : @insert = @insertImpl := by
   funext node slot cap; exact (insertCell_eq_insert node slot cap).symm
 
-/-- WS-ZA ZA5.3 part 6: `insert` of the capability with these fields, out of
-line: the caller hands over its CNode, so the CNode is written in place, and
-the fields go straight into the slot's own record (mint). -/
+/-- WS-ZA ZA5.3 part 6: `insert` of the capability with these fields and no
+mapping record, out of line: the caller hands over its CNode, so the CNode is
+written in place, and the fields go straight into the slot's own record (mint,
+copy).  The fields are a literal here, not a match on a record argument, so the
+capability is never built. -/
 def insertFields (node : CNode) (slot : SeLe4n.Slot) (target : CapTarget) (rights : AccessRightSet)
-    (badgeWord : SeLe4n.Badge) (badged : Bool) (mapping : Option FrameMapping) : CNode :=
-  node.insertCell slot ⟨target, rights, badgeWord, badged, mapping⟩
+    (badgeWord : SeLe4n.Badge) (badged : Bool) : CNode :=
+  node.insertCell slot ⟨target, rights, badgeWord, badged, default, default, 0, false⟩
 
 theorem insertFields_eq_insert (node : CNode) (slot : SeLe4n.Slot) (target : CapTarget)
-    (rights : AccessRightSet) (badgeWord : SeLe4n.Badge) (badged : Bool)
-    (mapping : Option FrameMapping) :
-    node.insertFields slot target rights badgeWord badged mapping =
-      node.insert slot ⟨target, rights, badgeWord, badged, mapping⟩ :=
+    (rights : AccessRightSet) (badgeWord : SeLe4n.Badge) (badged : Bool) :
+    node.insertFields slot target rights badgeWord badged =
+      node.insert slot (Capability.ofWords target rights badgeWord badged none) :=
   insertCell_eq_insert _ _ _
+
+/-- A slot array with entry `i` rewritten by `f` (which keeps an empty entry
+empty) answers slot `s` as `f` of its old answer at `i`, and as before elsewhere. -/
+theorem slotArrayGet_modify (cells : Array (Option Capability)) (i : Nat)
+    (f : Option Capability → Option Capability) (hf : f none = none) (s : SeLe4n.Slot) :
+    slotArrayGet (cells.modify i f) s =
+      if s.toNat = i then f (slotArrayGet cells s) else slotArrayGet cells s := by
+  unfold slotArrayGet
+  by_cases hs : s.toNat = i
+  · subst hs; by_cases h : s.toNat < cells.size <;> simp [h, Array.getElem_modify, hf]
+  · by_cases h : s.toNat < cells.size <;> simp [h, hs, Array.getElem_modify, Ne.symm hs]
+
+/-- WS-BP BP7.1: **the CNode with slot `slot`'s capability recording mapping
+`m`** (`cspaceRecordFrameMapping`'s write); a slot holding nothing is left as
+it is. -/
+def recordMapping (node : CNode) (slot : SeLe4n.Slot) (m : FrameMapping) : CNode :=
+  match node.lookup slot with
+  | some cap => node.insert slot (cap.withMapping (some m))
+  | none => node
+
+/-- The slot entry with its capability recording `(asid, vaddr, epoch)`. -/
+@[inline] def cellWithMapping (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) (epoch : Nat) :
+    Option Capability → Option Capability
+  | some c => some (c.setMapped asid vaddr epoch)
+  | none => none
+
+/-- The slot map with slot `slot`'s capability recording `(asid, vaddr, epoch)`. -/
+noncomputable def slotsWithMapping (slot : SeLe4n.Slot) (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (epoch : Nat) (m : SeLe4n.UniqueSlotMap Capability) : SeLe4n.UniqueSlotMap Capability :=
+  match m.get? slot with
+  | some c => m.insert slot (c.setMapped asid vaddr epoch)
+  | none => m
+
+/-- WS-ZA ZA5.4: **`recordMapping` as compiled** — the slot's entry rewritten
+where it stands (`Array.modify`), so a capability the CNode alone holds takes
+the record's words in its own cell and nothing is built. -/
+def recordMappingCells (node : CNode) (slot : SeLe4n.Slot) (asid : SeLe4n.ASID)
+    (vaddr : SeLe4n.VAddr) (epoch : Nat) : CNode :=
+  { node with
+    slotsGhost := node.slotsGhost.map (slotsWithMapping slot asid vaddr epoch)
+    cells := node.cells.modify slot.toNat (cellWithMapping asid vaddr epoch)
+    cells_size := by rw [Array.size_modify]; exact node.cells_size
+    slots_agree := fun s => by
+      rw [SeLe4n.Erased.out_map, slotArrayGet_modify _ _ _ rfl, ← node.slots_agree s]
+      unfold slotsWithMapping
+      have hst : (s.toNat = slot.toNat) ↔ s = slot := ⟨fun h' => by
+          cases slot; cases s; simp_all [SeLe4n.Slot.toNat], fun h' => by rw [h']⟩
+      cases hg : node.slotsGhost.out.get? slot with
+      | none =>
+        by_cases hs : s = slot
+        · subst hs; simp [hg, cellWithMapping]
+        · simp [hs, hst]
+      | some c =>
+        rw [SeLe4n.UniqueSlotMap.get?_insert]
+        by_cases hs : s = slot
+        · subst hs; simp [hg, cellWithMapping]
+        · simp [hs, hst, Ne.symm hs] }
+
+theorem recordMappingCells_eq (node : CNode) (slot : SeLe4n.Slot) (asid : SeLe4n.ASID)
+    (vaddr : SeLe4n.VAddr) (epoch : Nat) :
+    node.recordMappingCells slot asid vaddr epoch = node.recordMapping slot ⟨asid, vaddr, epoch⟩ := by
+  unfold recordMapping
+  have hA := node.slots_agree slot
+  unfold slotArrayGet at hA
+  have hL' : node.lookup slot = node.slotsGhost.out.get? slot := rfl
+  cases hL : node.lookup slot with
+  | none =>
+    dsimp only
+    rw [hL', hA] at hL
+    refine ext_of_fields rfl rfl rfl rfl ?_ ?_ rfl
+    · apply SeLe4n.Erased.ext
+      show (node.slotsGhost.map _).out = _
+      rw [SeLe4n.Erased.out_map]; unfold slotsWithMapping
+      rw [hA, hL]
+    · show node.cells.modify slot.toNat (cellWithMapping asid vaddr epoch) = node.cells
+      apply Array.ext (by simp)
+      intro i h1 h2
+      simp only [Array.getElem_modify]
+      split
+      · next e =>
+        subst e
+        split at hL
+        · next h => simp [hL, cellWithMapping]
+        · omega
+      · rfl
+  | some cap =>
+    unfold insert
+    rw [hL', hA] at hL
+    have hB : slot.toNat < node.cells.size := by
+      split at hL
+      · assumption
+      · exact absurd hL (by simp)
+    simp only [hB, dite_true] at hL ⊢
+    refine ext_of_fields rfl rfl rfl rfl ?_ ?_ rfl
+    · apply SeLe4n.Erased.ext
+      show (node.slotsGhost.map _).out = (node.slotsGhost.map _).out
+      rw [SeLe4n.Erased.out_map, SeLe4n.Erased.out_map]; unfold slotsWithMapping
+      rw [hA]; simp only [hB, dite_true, hL]; rfl
+    · show node.cells.modify slot.toNat (cellWithMapping asid vaddr epoch) = _
+      apply Array.ext (by simp)
+      intro i h1 h2
+      simp only [Array.getElem_modify, Array.getElem_set]
+      split
+      · next e => subst e; simp [hL, cellWithMapping, Capability.setMapped_eq]
+      · next e => simp [Ne.symm e]
 
 /-- WS-ZA ZA5.3: a CNode of the given geometry holding `xs`, inserted in order
 (the last capability at a repeated slot wins); a slot at or past
