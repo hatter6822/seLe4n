@@ -27,13 +27,21 @@ steady state.
   (`shootdownPostedTargetsFrom`, `shootdownPostedTargetsOne`,
   `mem_shootdownPostedTargets_iff`), so posting writes the queue vector in
   place rather than beside a copy of the pre-state's.
+- **Boot prepares the round** (`Architecture/PerCoreTlbModel.lean`,
+  `Platform/FFI.lean`): the state the boot installs has its shootdown record
+  rebuilt with its own cells (`freshShootdownState`; the boot's record was the
+  shared initial constant, so the first round copied it and both vectors) and
+  both spares seeded (`seedShootdownDescriptors`, `seedShootdownOps`), through
+  `withShootdownSparesSeeded`, proven the identity.  A new exerciser scenario
+  unmaps before any teardown has run (`vspace-unmap-first`, then
+  `vspace-map-again`), so the first unmap after boot is measured.
 - **The unmap's root update is out of line**
   (`Architecture/VSpaceUnmapPerform.lean`): `rootWithoutMappingCells` is
   `@[noinline]`, so the root is checked for sole ownership after its object
   released it and is updated in its cell.
 - **Readings** (normal build, first call / steady state): unmap 0 / 0 (6),
-  at the first address and at a second; revoke destroying a mapped frame 8 / 0
-  (8 / 6).  The exerciser pins the new readings.
+  the first after boot included, at the first address and at a second; revoke
+  destroying a mapped frame 0 / 0 (8 / 6).  The exerciser pins the new readings.
 
 ## v0.36.117 — WS-ZA ZA5.4 part 7: a steady frame map allocates nothing
 

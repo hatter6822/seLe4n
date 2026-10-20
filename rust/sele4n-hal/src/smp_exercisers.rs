@@ -1998,6 +1998,21 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 5] = [
             VSPACE_CAP,
             [ROOT_ASID, FRAME_VADDR, FRAME_CAP, FRAME_PERMS],
         ),
+        // The first page unmap after boot, before any teardown has retired a
+        // shootdown round: the round writes over the spares the boot seeded.
+        // Then the frame mapped again over the cells that unmap took out.
+        invocation(
+            "vspace-unmap-first",
+            VSPACE_UNMAP,
+            VSPACE_CAP,
+            [ROOT_ASID, FRAME_VADDR, 0, 0],
+        ),
+        invocation(
+            "vspace-map-again",
+            VSPACE_MAP,
+            VSPACE_CAP,
+            [ROOT_ASID, FRAME_VADDR, FRAME_CAP, FRAME_PERMS],
+        ),
         invocation(
             "vspace-unify-instruction",
             VSPACE_UNIFY_INSTRUCTION,

@@ -9,6 +9,7 @@
 
 import SeLe4n.Kernel.Architecture.TlbModel
 import SeLe4n.Kernel.Architecture.TlbShootdownProtocol
+import SeLe4n.Model.Object.Unshare
 
 /-!
 # WS-SM SM7.C — Per-core TLB model
@@ -2024,6 +2025,50 @@ the next commit's seam writes its operand into that cell.  The state itself
 theorem stashShootdownOps_eq (st : SystemState) (ops : List TlbInvalidation) :
     stashShootdownOps st ops = st :=
   SystemState.with_shootdownOpsSpare st _
+
+/-- WS-ZA ZA5.4: a one-descriptor queue for the descriptor spare, built at boot
+so the first page round finds cells to write over.  Its words read the round
+generation `gen`, so the compiler cannot hoist it into a shared constant whose
+cells would never be the round's own. -/
+@[noinline] def seedShootdownDescriptors (gen : Nat) : List TlbShootdownDescriptor :=
+  [{ op := .vae1 (UInt16.ofNat gen) (UInt64.ofNat gen), initiator := bootCoreId,
+     generation := gen }]
+
+/-- WS-ZA ZA5.4: a one-operand list for the operand spare, built at boot as
+`seedShootdownDescriptors` is. -/
+@[noinline] def seedShootdownOps (gen : Nat) : List TlbInvalidation :=
+  [.vae1 (UInt16.ofNat gen) (UInt64.ofNat gen)]
+
+/-- WS-ZA ZA5.4: the shootdown record rebuilt with its own cells: the boot's
+record is the shared initial constant, so the first round's writes would copy
+its record and both vectors.  Each field passes through `opaqueId`, so the
+compiler builds fresh cells rather than handing back the record. -/
+@[noinline] def freshShootdownState (sd : TlbShootdownState) : TlbShootdownState :=
+  { pendingShootdowns := sd.pendingShootdowns.map opaqueId,
+    shootdownAck := sd.shootdownAck.map opaqueId,
+    roundGeneration := opaqueId sd.roundGeneration }
+
+theorem freshShootdownState_eq (sd : TlbShootdownState) : freshShootdownState sd = sd := by
+  have h1 : (opaqueId : List TlbShootdownDescriptor → List TlbShootdownDescriptor) = id := rfl
+  have h2 : (opaqueId : Nat → Nat) = id := rfl
+  cases sd
+  simp [freshShootdownState, h1, h2, opaqueId]
+
+/-- WS-ZA ZA5.4: **the shootdown state prepared at boot**: the shootdown record
+gets its own cells (`freshShootdownState`) and the spares are seeded, so the
+first page unmap after boot writes its round over these cells as every later
+one writes over the cells the round before it retired.  The state itself
+(`withShootdownSparesSeeded_eq`). -/
+def withShootdownSparesSeeded (st : SystemState) : SystemState :=
+  let st0 := { st with tlbShootdown := freshShootdownState st.tlbShootdown }
+  stashShootdownOps
+    (stashShootdownDescriptors st0 (seedShootdownDescriptors st0.tlbShootdown.roundGeneration))
+    (seedShootdownOps st0.tlbShootdown.roundGeneration)
+
+theorem withShootdownSparesSeeded_eq (st : SystemState) : withShootdownSparesSeeded st = st := by
+  unfold withShootdownSparesSeeded
+  dsimp only
+  rw [stashShootdownOps_eq, stashShootdownDescriptors_eq, freshShootdownState_eq]
 
 /-- WS-ZA ZA5.4: the window per-core handler as it runs — the queue is drained
 once and every field of the state written once, so the shootdown record, the

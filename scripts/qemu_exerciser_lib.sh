@@ -259,8 +259,9 @@ for driver in drivers:
             "untyped-retype-page-table-2": (62, 62), "page-table-map-2": (6, 6),
             "untyped-retype-page-table-3": (62, 62), "page-table-map-3": (6, 6),
             "untyped-retype-frame": (79, 79), "vspace-map": (9, 0),
+            "vspace-unmap-first": (0, 0), "vspace-map-again": (0, 0),
             "vspace-unify-instruction": (4, 3),
-            "vspace-map-copy": (7, 5), "frame-revoke": (8, 0),
+            "vspace-map-copy": (7, 5), "frame-revoke": (0, 0),
             "vspace-unmap": (0, 0),
             # a map at a second address after an unmap: the root's retained
             # mapping and epoch cells take the new address.
