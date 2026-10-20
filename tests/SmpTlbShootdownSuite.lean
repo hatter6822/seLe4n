@@ -351,9 +351,10 @@ open SeLe4n.Kernel.Concurrency
 #check @lockSet_tlbShootdown_length
 
 -- SM7.B — runtime-seam diff recovery + live entry:
-#check @shootdownChangedTargets
-#check @mem_shootdownChangedTargets_iff
-#check @shootdownChangedTargets_nil_of_eq
+#check @shootdownPostedTargets
+#check @mem_shootdownPostedTargets_iff
+#check @shootdownPostedTargets_nil_of_eq
+#check @shootdownPostedTargets_nil_of_gen_eq
 #check @shootdownPostedOps
 #check @SeLe4n.Kernel.shootdownSharingDomain
 #check @SeLe4n.Kernel.acquireShootdownRoundLockServicingSelf
@@ -412,7 +413,7 @@ open SeLe4n.Kernel.Concurrency
 #check @applyTlbInvalidations_of_mem_vmalle1
 #check @coveredQueueRetire_removes
 #check @vspaceUnmapPageWithShootdown_remote_retire_removes
-#check @shootdownChangedTargets_coalescing_of_quiescent
+#check @shootdownPostedTargets_coalescing_of_quiescent
 #check @coalescingRound_restores_quiescent
 #check @coalescingRound_allAcked
 #check @mem_adapterFlushTlbByVAddr_of_mem_applyTlbInvalidation_encodePage
@@ -1640,11 +1641,11 @@ private def runDiffRecoveryChecks : IO Unit := do
   IO.println "-- §4.8 runtime-seam diff recovery + live-entry constants"
   let pre : SeLe4n.Model.SystemState := default
   assertBool "an untouched commit pokes nobody"
-    (shootdownChangedTargets pre pre == [])
+    (shootdownPostedTargets pre pre == [])
   let post := tlbShootdownBroadcastCoalescing pre core0
     (shootdownTargets core0) opUnmapTarget
-  assertBool "a posting commit's changed targets are the round targets"
-    (shootdownChangedTargets pre post == [core1, core2, core3])
+  assertBool "a posting commit's posted targets are the round targets"
+    (shootdownPostedTargets pre post == [core1, core2, core3])
   assertBool "the posted operands dedup to the round's operand"
     (shootdownPostedOps pre post == [opUnmapTarget])
   assertBool "the live entry issues TLBIs in the platform sharing domain"
@@ -1697,10 +1698,16 @@ private def runCompletionCutChecks : IO Unit := do
   -- (b) positive diff characterization + coalescing-round capstones, computed
   let posted := tlbShootdownBroadcastCoalescing quiescent core0
     (shootdownTargets core0) opUnmapTarget
-  assertBool "the coalescing diff is exactly the round's target set"
-    (shootdownChangedTargets quiescent posted == shootdownTargets core0)
+  assertBool "the coalescing round's posted targets are exactly its target set"
+    (shootdownPostedTargets quiescent posted == shootdownTargets core0)
   let final := (shootdownTargets core0).foldl handleTlbShootdownReqOnCore
     (tlbShootdownLocal posted opUnmapTarget)
+  -- A commit that only drains queues opened no round and owes no request,
+  -- although every target's queue changed.
+  assertBool "a draining commit pokes nobody"
+    (shootdownPostedTargets posted final == [] &&
+      (shootdownTargets core0).all fun c =>
+        final.tlbShootdown.pendingOnCore c != posted.tlbShootdown.pendingOnCore c)
   assertBool "the live coalescing round restores quiescence"
     (decide (shootdownQuiescent final.tlbShootdown))
   assertBool "the live coalescing round reaches allAcked"
@@ -2829,8 +2836,8 @@ private def runRoundWindowChecks : IO Unit := do
       -- publishes are exactly this commit's own window's.
       assertBool "the diff-recovered operand list is this commit's own round's"
         (shootdownPostedOps stFilled stOne == [stressOpOf core0])
-      assertBool "the diff-recovered changed-target set is every remote core"
-        (shootdownChangedTargets stFilled stOne == shootdownTargets core0)
+      assertBool "the recovered posted-target set is every remote core"
+        (shootdownPostedTargets stFilled stOne == shootdownTargets core0)
   -- (8) Inertness: a commit that opened no round recovers an empty window and
   -- its catch-up is a no-op on every queue and view.
   match stressFilled? with
@@ -2839,8 +2846,8 @@ private def runRoundWindowChecks : IO Unit := do
     let w := windowOf stFilled stFilled
     assertBool "a no-round commit recovers an empty window"
       (w.1 == w.2)
-    assertBool "a no-round commit changes no target"
-      (shootdownChangedTargets stFilled stFilled == [])
+    assertBool "a no-round commit pokes no target"
+      (shootdownPostedTargets stFilled stFilled == [])
     let inert := shootdownCatchUpPerCoreInWindow stFilled core0 [] w.1 w.2
     assertBool "an empty-window catch-up drains nothing"
       (allCores.all fun c =>
@@ -2961,8 +2968,8 @@ private def runRoundWindowWidthChecks : IO Unit := do
     -- publishes BOTH operands, deduplicated, and nothing else.
     assertBool "the diff-recovered operand list is both rounds' operands"
       (shootdownPostedOps stPre stPost == [op1, op2])
-    assertBool "the diff-recovered changed-target set is every remote core"
-      (shootdownChangedTargets stPre stPost == shootdownTargets core0)
+    assertBool "the recovered posted-target set is every remote core"
+      (shootdownPostedTargets stPre stPost == shootdownTargets core0)
 
 /-- §8.4 (PR #854 review): the model acknowledgment names the round it
 discharged.

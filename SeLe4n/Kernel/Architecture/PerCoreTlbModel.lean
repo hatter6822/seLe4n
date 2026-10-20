@@ -9,6 +9,7 @@
 
 import SeLe4n.Kernel.Architecture.TlbModel
 import SeLe4n.Kernel.Architecture.TlbShootdownProtocol
+import SeLe4n.Model.Object.Unshare
 
 /-!
 # WS-SM SM7.C — Per-core TLB model
@@ -2004,40 +2005,121 @@ theorem tlbRetireDescriptorsOnCore_eq (c : CoreId) :
     unfold setTlbOnCore
     simp only [Vector.set_set]
 
+/-- WS-ZA ZA5.4: the spare a stash keeps: the new list when its first entry is
+a page operand, else the spare it already has — an empty list, or a non-page
+round's (an ASID round's one-word operand), cannot hold a page invalidation.
+Out of line, so the stash's record write stays unconditional and in place. -/
+@[noinline] def pageSpareOr {α : Type} (opOf : α → TlbInvalidation) (old : Squash (List α))
+    (xs : List α) : Squash (List α) :=
+  match xs with
+  | x :: _ => if (opOf x).toOpTag == 1 then Squash.mk xs else old
+  | [] => old
+
+/-- WS-ZA ZA5.4: the drained descriptors kept as the state's descriptor spare,
+so the next page round writes over their cells; only a page round's
+descriptors replace it (`pageSpareOr`).  The state itself
+(`stashShootdownDescriptors_eq`). -/
+@[inline] def stashShootdownDescriptors (st : SystemState)
+    (ds : List TlbShootdownDescriptor) : SystemState :=
+  { st with shootdownDescriptorSpare := pageSpareOr (·.op) st.shootdownDescriptorSpare ds }
+
+theorem stashShootdownDescriptors_eq (st : SystemState) (ds : List TlbShootdownDescriptor) :
+    stashShootdownDescriptors st ds = st :=
+  SystemState.with_shootdownDescriptorSpare st _
+
+/-- WS-ZA ZA5.4: a round's operand list kept as the state's operand spare, so
+the next commit's seam writes its operand into that cell; only a page
+operand's list replaces it (`pageSpareOr`).  The state itself
+(`stashShootdownOps_eq`). -/
+@[inline] def stashShootdownOps (st : SystemState) (ops : List TlbInvalidation) : SystemState :=
+  { st with shootdownOpsSpare := pageSpareOr id st.shootdownOpsSpare ops }
+
+theorem stashShootdownOps_eq (st : SystemState) (ops : List TlbInvalidation) :
+    stashShootdownOps st ops = st :=
+  SystemState.with_shootdownOpsSpare st _
+
+/-- WS-ZA ZA5.4: a one-descriptor queue for the descriptor spare, built at boot
+so the first page round finds cells to write over.  Its words read the round
+generation `gen`, so the compiler cannot hoist it into a shared constant whose
+cells would never be the round's own. -/
+@[noinline] def seedShootdownDescriptors (gen : Nat) : List TlbShootdownDescriptor :=
+  [{ op := .vae1 (UInt16.ofNat gen) (UInt64.ofNat gen), initiator := bootCoreId,
+     generation := gen }]
+
+/-- WS-ZA ZA5.4: a one-operand list for the operand spare, built at boot as
+`seedShootdownDescriptors` is. -/
+@[noinline] def seedShootdownOps (gen : Nat) : List TlbInvalidation :=
+  [.vae1 (UInt16.ofNat gen) (UInt64.ofNat gen)]
+
+/-- WS-ZA ZA5.4: the shootdown record rebuilt with its own cells: the boot's
+record is the shared initial constant, so the first round's writes would copy
+its record and both vectors.  Each field passes through `opaqueId`, so the
+compiler builds fresh cells rather than handing back the record. -/
+@[noinline] def freshShootdownState (sd : TlbShootdownState) : TlbShootdownState :=
+  { pendingShootdowns := sd.pendingShootdowns.map opaqueId,
+    shootdownAck := sd.shootdownAck.map opaqueId,
+    roundGeneration := opaqueId sd.roundGeneration }
+
+theorem freshShootdownState_eq (sd : TlbShootdownState) : freshShootdownState sd = sd := by
+  have h1 : (opaqueId : List TlbShootdownDescriptor → List TlbShootdownDescriptor) = id := rfl
+  have h2 : (opaqueId : Nat → Nat) = id := rfl
+  cases sd
+  simp [freshShootdownState, h1, h2, opaqueId]
+
+/-- WS-ZA ZA5.4: **the shootdown state prepared at boot**: the shootdown record
+gets its own cells (`freshShootdownState`) and the spares are seeded, so the
+first page unmap after boot writes its round over these cells as every later
+one writes over the cells the round before it retired.  The state itself
+(`withShootdownSparesSeeded_eq`). -/
+def withShootdownSparesSeeded (st : SystemState) : SystemState :=
+  let st0 := { st with tlbShootdown := freshShootdownState st.tlbShootdown }
+  stashShootdownOps
+    (stashShootdownDescriptors st0 (seedShootdownDescriptors st0.tlbShootdown.roundGeneration))
+    (seedShootdownOps st0.tlbShootdown.roundGeneration)
+
+theorem withShootdownSparesSeeded_eq (st : SystemState) : withShootdownSparesSeeded st = st := by
+  unfold withShootdownSparesSeeded
+  dsimp only
+  rw [stashShootdownOps_eq, stashShootdownDescriptors_eq, freshShootdownState_eq]
+
 /-- WS-ZA ZA5.4: the window per-core handler as it runs — the queue is drained
 once and every field of the state written once, so the shootdown record, the
-scalar view and the per-core views are all updated in place.
+scalar view and the per-core views are all updated in place, and the drained
+descriptors become the descriptor spare (`stashShootdownDescriptors`).
 `handleTlbShootdownReqOnCorePerCoreInWindow_eq_once` is the equality. -/
 def handleTlbShootdownReqOnCorePerCoreInWindowOnce (st : SystemState) (c : CoreId)
     (lo hi : Nat) : SystemState :=
   let r := drainShootdownsInWindow st.tlbShootdown c lo hi
   tlbRetireDescriptorsOnCore
-    { st with
-        tlb := applyDescriptorOps st.tlb r.1,
-        tlbShootdown := acknowledgeShootdown r.2 c hi } c r.1
+    (stashShootdownDescriptors
+      { st with
+          tlb := applyDescriptorOps st.tlb r.1,
+          tlbShootdown := acknowledgeShootdown r.2 c hi } r.1) c r.1
 
 @[csimp] theorem handleTlbShootdownReqOnCorePerCoreInWindow_eq_once :
     @handleTlbShootdownReqOnCorePerCoreInWindow = @handleTlbShootdownReqOnCorePerCoreInWindowOnce := by
   funext st c lo hi
   simp only [handleTlbShootdownReqOnCorePerCoreInWindow, handleTlbShootdownReqOnCorePerCoreInWindowOnce,
-    tlbRetireDescriptorsOnCore_eq, handleTlbShootdownReqOnCoreInWindow, tlbShootdownDrainOnCoreInWindow,
+    stashShootdownDescriptors_eq, tlbRetireDescriptorsOnCore_eq, handleTlbShootdownReqOnCoreInWindow, tlbShootdownDrainOnCoreInWindow,
     tlbShootdownAckOnCore, setTlbOnCore, tlbOnCore, applyTlbInvalidations_map_op]
 
 /-- WS-ZA ZA5.4: the per-core handler as it runs: the queue drained once, the
-shootdown record and scalar view written once, and core `c`'s view retiring
-each drained descriptor in place (`tlbRetireDescriptorsOnCore`). -/
+shootdown record and scalar view written once, core `c`'s view retiring
+each drained descriptor in place (`tlbRetireDescriptorsOnCore`), and the drained
+descriptors kept as the descriptor spare. -/
 def handleTlbShootdownReqOnCorePerCoreOnce (st : SystemState) (c : CoreId) : SystemState :=
   let r := drainShootdowns st.tlbShootdown c
   tlbRetireDescriptorsOnCore
-    { st with
-        tlb := applyDescriptorOps st.tlb r.1,
-        tlbShootdown := acknowledgeShootdown r.2 c st.tlbShootdown.roundGeneration } c r.1
+    (stashShootdownDescriptors
+      { st with
+          tlb := applyDescriptorOps st.tlb r.1,
+          tlbShootdown := acknowledgeShootdown r.2 c st.tlbShootdown.roundGeneration } r.1) c r.1
 
 @[csimp] theorem handleTlbShootdownReqOnCorePerCore_eq_once :
     @handleTlbShootdownReqOnCorePerCore = @handleTlbShootdownReqOnCorePerCoreOnce := by
   funext st c
   simp only [handleTlbShootdownReqOnCorePerCore, handleTlbShootdownReqOnCorePerCoreOnce,
-    tlbRetireDescriptorsOnCore_eq, handleTlbShootdownReqOnCore, tlbShootdownDrainOnCore,
+    stashShootdownDescriptors_eq, tlbRetireDescriptorsOnCore_eq, handleTlbShootdownReqOnCore, tlbShootdownDrainOnCore,
     tlbShootdownAckOnCore, setTlbOnCore, tlbOnCore, applyTlbInvalidations_map_op]
 
 /-- **WS-SM SM7.F.3**: the window per-core handler's `tlb` effect is exactly

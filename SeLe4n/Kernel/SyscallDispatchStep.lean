@@ -66,7 +66,7 @@ result where it is computed and the nested tuple is never built. -/
   -- bits) and the shootdown record — so `st` is dead once the dispatch starts.
   let caller? := st.scheduler.currentOnCore execCore
   let pending0 := reschedulePendingSnapshot st
-  let tlb0 := st.tlbShootdown
+  let gen0 := st.tlbShootdown.roundGeneration
   match hD : Platform.FFI.syscallDispatchFromAbi ctx execCore syscallId x0 x1 x2 x3 x4 x5
       ipcBufferAddr elr spsr spEl0 x30 st with
   | Except.ok (outcome, st') =>
@@ -82,9 +82,10 @@ result where it is computed and the nested tuple is never built. -/
       -- (`syscallDispatchCrossCoreStep_sgis_cover_diff`: the flags cover the old
       -- whole-index diff, which stays as the specification).
       ((outcome, pending0.raised st''.scheduler.reschedulePending,
-        Architecture.shootdownChangedTargetsFrom tlb0 st'',
-        Architecture.shootdownPostedOpsFrom tlb0 st'',
-        Architecture.shootdownRoundWindowFrom tlb0 st'',
+        Architecture.shootdownPostedTargetsFrom gen0 st'',
+        Architecture.shootdownPostedOpsOf (Architecture.shootdownPostedTargetsFrom gen0 st'')
+          gen0 st'',
+        Architecture.shootdownRoundWindowFrom gen0 st'',
         st''.pendingIcacheMaintenance,
         st''.drainedPhysicalWrites,
         Architecture.restoreTargetOnCore st'' execCore,
@@ -111,9 +112,11 @@ theorem syscallDispatchCrossCoreStep_of_ok {ctx : LabelingContext} {execCore : C
             outcome) execCore) execCore
       ((outcome,
         st.scheduler.reschedulePending.raised st''.scheduler.reschedulePending,
-        Architecture.shootdownChangedTargetsFrom st.tlbShootdown st'',
-        Architecture.shootdownPostedOpsFrom st.tlbShootdown st'',
-        Architecture.shootdownRoundWindowFrom st.tlbShootdown st'',
+        Architecture.shootdownPostedTargetsFrom st.tlbShootdown.roundGeneration st'',
+        Architecture.shootdownPostedOpsOf
+          (Architecture.shootdownPostedTargetsFrom st.tlbShootdown.roundGeneration st'')
+          st.tlbShootdown.roundGeneration st'',
+        Architecture.shootdownRoundWindowFrom st.tlbShootdown.roundGeneration st'',
         st''.pendingIcacheMaintenance,
         st''.drainedPhysicalWrites,
         Architecture.restoreTargetOnCore st'' execCore,
@@ -196,22 +199,27 @@ value-returning syscall builds neither its outcome nor its frame. -/
       Architecture.RestoreTarget × Nat) × SystemState :=
   let callerCode := st.scheduler.currentCode.get execCore
   let pending0 := reschedulePendingSnapshot st
-  -- WS-ZA ZA5.4: the queues and the generation, not the shootdown record, so
-  -- the dispatch updates the record and its acknowledgment vector in place.
+  -- WS-ZA ZA5.4: the generation alone, not the shootdown record or its queues,
+  -- so the dispatch updates the record, its queues and its acknowledgment
+  -- vector in place.
   let gen0 := st.tlbShootdown.roundGeneration
-  let pend0 := st.tlbShootdown.pendingShootdowns
   match Platform.FFI.syscallDispatchFromAbiWords ctx execCore syscallId x0 x1 x2 x3 x4 x5
       ipcBufferAddr elr spsr spEl0 x30 st with
   | ((tag, w0, w1, w2, w3, w4, w5), st') =>
       let stR := Architecture.stageCallerReturnWords callerCode st' execCore tag w0 w1 w2 w3 w4 w5
-      let st'' := PriorityInheritance.settleResidencyOnCore
+      let st1 := PriorityInheritance.settleResidencyOnCore
         (PriorityInheritance.scheduleLocalSuccessorFrom (SeLe4n.ThreadId.ofOptCode callerCode) stR
           execCore) execCore
+      -- The operand list is written over the cell the last round's catch-up
+      -- kept (`shootdownPostedOpsTaking`); every read below is of the state
+      -- that no longer holds it.
+      let rOps := Architecture.shootdownPostedOpsTaking
+        (Architecture.shootdownPostedTargetsOne gen0 st1 execCore) gen0 st1
+      let st'' := rOps.2
       ((tag, w0, w1, w2, w3, w4, w5,
         pending0.raised st''.scheduler.reschedulePending,
-        Architecture.shootdownChangedTargetsOverFrom pend0 st'' execCore,
-        Architecture.shootdownPostedOpsOfOne
-          (Architecture.shootdownChangedTargetsOverFrom pend0 st'' execCore) gen0 st'',
+        Architecture.shootdownPostedTargetsOne gen0 st'' execCore,
+        rOps.1,
         (gen0, st''.tlbShootdown.roundGeneration),
         st''.pendingIcacheMaintenance,
         st''.drainedPhysicalWrites,
@@ -237,8 +245,8 @@ theorem syscallDispatchCrossCoreStepWords_eq (ctx : LabelingContext)
     ipcBufferAddr elr spsr spEl0 x30 st st' outcome h]
   simp only [Architecture.stageCallerReturnFor_eq_words, SchedulerState.currentOnCore,
     syscallDispatchCrossCoreStep, currentAsCode, SeLe4n.ThreadId.optCode_ofOptCode,
-    Architecture.shootdownPostedOpsOfOne_eq, Architecture.shootdownChangedTargetsOverFrom_eq,
-    Architecture.shootdownPostedOpsFrom_eq_of, Architecture.shootdownChangedTargetsFrom_eq_over]
+    Architecture.shootdownPostedOpsTaking_eq, Architecture.shootdownPostedOpsOfOne_eq,
+    Architecture.shootdownPostedTargetsOne_eq]
   rfl
 
 end SeLe4n.Kernel

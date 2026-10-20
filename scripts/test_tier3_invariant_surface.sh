@@ -5232,7 +5232,7 @@ run_check "INVARIANT" rg -n '^theorem withShootdownRound_preserves_pendingBounde
 run_check "INVARIANT" rg -n '^theorem vspaceUnmapPageWithShootdown_preserves_pendingBounded($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
 run_check "INVARIANT" rg -n '^theorem handleTlbShootdownReqOnCore_comm($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
 run_check "INVARIANT" rg -n '^theorem coalescingRound_restores_quiescent($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
-run_check "INVARIANT" rg -n '^theorem shootdownChangedTargets_coalescing_of_quiescent($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
+run_check "INVARIANT" rg -n '^theorem shootdownPostedTargets_coalescing_of_quiescent($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
 run_check "INVARIANT" rg -n '^theorem vspaceUnmapPageWithShootdown_remote_retire_removes($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
 run_check "INVARIANT" rg -n '^def vspaceHasTranslation($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
 run_check "INVARIANT" rg -n '^theorem vspaceMapPageCheckedWithFlushFromState_ok_fresh($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
@@ -5385,7 +5385,7 @@ run_check "INVARIANT" rg -n '^def shootdownCatchUpPerCoreInWindow($|[ ({:\[\]])'
 run_check "INVARIANT" rg -n '^theorem shootdownCatchUpPerCoreInWindow_preserves_foreign($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
 run_check "INVARIANT" rg -n '^theorem shootdownCatchUpPerCoreInWindow_eq_catchUp($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
 run_check "INVARIANT" rg -n 'shootdownCatchUpPerCoreInWindow st execCore collapsed' SeLe4n/Kernel/SyscallDispatchEntry.lean
-run_check "INVARIANT" rg -n 'Architecture\.shootdownRoundWindowFrom tlb0 st' SeLe4n/Kernel/SyscallDispatchStep.lean
+run_check "INVARIANT" rg -n 'Architecture\.shootdownRoundWindowFrom gen0 st' SeLe4n/Kernel/SyscallDispatchStep.lean
 run_check "INVARIANT" rg -n '^private def runRoundGenerationChecks($|[ ({:\[\]])' tests/SmpTlbShootdownSuite.lean
 # The 12th `proofLayerInvariantBundle` conjunct (`pendingBounded`) carried across
 # the transition the live catch-up seam runs.  A window drain deliberately leaves

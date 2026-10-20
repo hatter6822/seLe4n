@@ -1,3 +1,56 @@
+## v0.36.118 — WS-ZA ZA5.4 part 8: a page unmap allocates nothing
+
+A page unmap's shootdown round writes its descriptor and operand over the cells
+the last round retired, so an unmap allocates nothing, on its first call as in
+steady state.
+
+- **The state keeps the retired round cells** (`Model/State.lean`,
+  `Architecture/PerCoreTlbModel.lean`): `SystemState.shootdownDescriptorSpare`
+  holds the queue, list cell, descriptor and operand the last drain retired,
+  and `SystemState.shootdownOpsSpare` the list cell the last round handed its
+  operands in.  Each is a `Squash`, logically one value read by no theorem
+  (`SystemState.with_shootdownDescriptorSpare`,
+  `SystemState.with_shootdownOpsSpare`); the drain and the catch-up stash them
+  (`stashShootdownDescriptors`, `stashShootdownOps`, each proven the identity).
+- **A page round written in place** (`Architecture/TlbShootdownProtocol.lean`):
+  `tlbShootdownBroadcastPage` posts a page invalidation's round through
+  `pageRoundQueueOver`, `pageDescriptorOver` and `pageInvalidationOver`, which
+  write over the spare queue, descriptor and operand (each proven equal to the
+  fresh value), and is proven equal to the coalescing broadcast
+  (`tlbShootdownBroadcastPage_eq`).  The seam hands its operand over in the
+  spare list cell (`opsCellOver`, `shootdownPostedOpsTaking`), out of line so
+  the state's own cell is updated (`withoutShootdownOpsSpare`).
+- **Targets read from the queues** (`Architecture/TlbShootdownProtocol.lean`,
+  `SyscallDispatchStep.lean`, `SyscallDispatchEntry.lean`): the commit seam
+  keeps only the pre-state's round generation, and its targets are the cores
+  whose queue holds a descriptor in the round window
+  (`shootdownPostedTargetsFrom`, `shootdownPostedTargetsOne`,
+  `mem_shootdownPostedTargets_iff`), so posting writes the queue vector in
+  place rather than beside a copy of the pre-state's.
+- **Boot prepares the round** (`Architecture/PerCoreTlbModel.lean`,
+  `Platform/FFI.lean`): the state the boot installs has its shootdown record
+  rebuilt with its own cells (`freshShootdownState`; the boot's record was the
+  shared initial constant, so the first round copied it and both vectors) and
+  both spares seeded (`seedShootdownDescriptors`, `seedShootdownOps`), through
+  `withShootdownSparesSeeded`, proven the identity.  A new exerciser scenario
+  unmaps before any teardown has run (`vspace-unmap-first`, then
+  `vspace-map-again`), so the first unmap after boot is measured.
+- **Only a page round replaces the spares** (`Architecture/PerCoreTlbModel.lean`,
+  `Architecture/TlbShootdownProtocol.lean`): a stash keeps the new list only
+  when its first entry is a page operand (`pageSpareOr`), and the seam takes
+  the operand spare only for a page operand, so an empty drain or an ASID
+  round (whose one-word operand cannot hold a page invalidation) leaves the
+  page-shaped cells for the next unmap.  An ASID round is posted only by an
+  in-place retype of an address space, which needs a retype right over it; no
+  capability in the QEMU image carries one, so the exerciser cannot issue it.
+- **The unmap's root update is out of line**
+  (`Architecture/VSpaceUnmapPerform.lean`): `rootWithoutMappingCells` is
+  `@[noinline]`, so the root is checked for sole ownership after its object
+  released it and is updated in its cell.
+- **Readings** (normal build, first call / steady state): unmap 0 / 0 (6),
+  the first after boot included, at the first address and at a second; revoke
+  destroying a mapped frame 0 / 0 (8 / 6).  The exerciser pins the new readings.
+
 ## v0.36.117 — WS-ZA ZA5.4 part 7: a steady frame map allocates nothing
 
 A frame map after an unmap writes its mapping over the table entry the unmap

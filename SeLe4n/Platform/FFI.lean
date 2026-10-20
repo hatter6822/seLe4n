@@ -1056,9 +1056,11 @@ initialize kernelLabelingContextRef : IO.Ref LabelingContext ←
 Called once by the boot wrapper after `bootFromPlatformChecked`
 returns `.ok`.  Tests call this directly to seed a known initial
 state for negative checks (e.g., empty scheduler, unmapped IPC
-buffer). -/
+buffer).  The state installed carries seeded shootdown spares
+(`Architecture.withShootdownSparesSeeded`, the state itself), so the first page
+unmap after boot allocates nothing. -/
 def initialiseKernelState (st : SystemState) : BaseIO Unit :=
-  kernelStateRef.set st
+  kernelStateRef.set (Architecture.withShootdownSparesSeeded st)
 
 /-- WS-RC R2.A.2: Read the current kernel state.
 

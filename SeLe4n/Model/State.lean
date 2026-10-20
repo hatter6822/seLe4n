@@ -1195,6 +1195,21 @@ structure SystemState where
       projection together with the transitions that consume it. -/
   tlbShootdown : SeLe4n.Kernel.Architecture.TlbShootdownState :=
     SeLe4n.Kernel.Architecture.TlbShootdownState.initial
+  /-- WS-ZA ZA5.4: **the descriptor cells the last shootdown drain retired** —
+      the drained queue, its list cell, its descriptor and the descriptor's
+      operand, held so that the next round a page unmap posts writes its
+      descriptor over them in place (a hardware mailbox reused round after
+      round).  Logically one value (`Squash`), so no theorem reads it
+      (`SystemState.with_shootdownDescriptorSpare`): only the compiled kernel
+      sees the cells. -/
+  shootdownDescriptorSpare : Squash (List SeLe4n.Kernel.Architecture.TlbShootdownDescriptor) :=
+    Squash.mk []
+  /-- WS-ZA ZA5.4: **the list cell the last shootdown round's operands were
+      handed to the round in** — kept by the round's catch-up so that the next
+      commit's seam hands its operand over in that cell.  Logically one value
+      (`SystemState.with_shootdownOpsSpare`), read by no theorem. -/
+  shootdownOpsSpare : Squash (List SeLe4n.Kernel.Architecture.TlbInvalidation) :=
+    Squash.mk []
   /-- WS-SM SM7.C.1: per-core TLB model — every core's independently
       cached address-translation view.
 
@@ -1686,6 +1701,8 @@ instance : Inhabited SystemState where
     -- theorems (SM7.A) can discharge by `rfl` / the initial-state
     -- theorems.
     tlbShootdown := SeLe4n.Kernel.Architecture.TlbShootdownState.initial
+    shootdownDescriptorSpare := Squash.mk []
+    shootdownOpsSpare := Squash.mk []
     -- WS-SM SM7.C.1: every core's TLB view starts empty (no stale
     -- translations at boot).  Explicit listing pins the default-state
     -- invariant so `default_perCoreTlb` discharges via
@@ -1835,6 +1852,24 @@ per-core-consistency boot witness and to the Boot general bridge
 theorem default_perCoreTlb (c : CoreId) :
     (default : SystemState).perCoreTlb.get c = TlbState.empty :=
   PerCoreVector.replicate_get _ _ c
+
+/-- WS-ZA ZA5.4: a state's shootdown descriptor spare is logically one value —
+replacing it leaves the state as it is. -/
+theorem SystemState.with_shootdownDescriptorSpare (st : SystemState)
+    (v : Squash (List SeLe4n.Kernel.Architecture.TlbShootdownDescriptor)) :
+    { st with shootdownDescriptorSpare := v } = st := by
+  cases st
+  simp only [SystemState.mk.injEq, and_true, true_and]
+  exact Subsingleton.elim _ _
+
+/-- WS-ZA ZA5.4: a state's shootdown operand spare is logically one value —
+replacing it leaves the state as it is. -/
+theorem SystemState.with_shootdownOpsSpare (st : SystemState)
+    (v : Squash (List SeLe4n.Kernel.Architecture.TlbInvalidation)) :
+    { st with shootdownOpsSpare := v } = st := by
+  cases st
+  simp only [SystemState.mk.injEq, and_true, true_and]
+  exact Subsingleton.elim _ _
 
 /-- WS-ZA ZA5.4: a state's TLB spares are logically one value — replacing them
 leaves the state as it is. -/
