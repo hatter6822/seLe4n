@@ -170,30 +170,6 @@ writes nothing (`tlbFillIpcBufferOnCore_of_held`). -/
       | none => true
       | some entry => tlbEntriesHold (tlbOnCore st c).entries entry)
 
-/-- WS-ZA ZA5.2: whether `entries` holds the entry a walk of `vaddr` in
-`asid` would cache (`tlbWalkEntry`'s shape, generation 0), compared field by
-field so the entry is never built. -/
-def tlbEntriesHoldWalked : List TlbEntry → SeLe4n.ASID → VAddr → PAddr →
-    PagePermissions → Bool
-  | [], _, _, _, _ => false
-  | x :: xs, asid, vaddr, paddr, perms =>
-    if x.asid = asid ∧ x.vaddr = vaddr ∧ x.paddr = paddr ∧ x.perms = perms ∧
-        x.asidGeneration = 0 then true
-    else tlbEntriesHoldWalked xs asid vaddr paddr perms
-
-theorem tlbEntriesHoldWalked_eq (l : List TlbEntry) (asid : SeLe4n.ASID) (vaddr : VAddr)
-    (paddr : PAddr) (perms : PagePermissions) :
-    tlbEntriesHoldWalked l asid vaddr paddr perms =
-      tlbEntriesHold l { asid := asid, vaddr := vaddr, paddr := paddr, perms := perms } := by
-  induction l with
-  | nil => rfl
-  | cons x xs ih =>
-    unfold tlbEntriesHoldWalked tlbEntriesHold
-    rw [ih]
-    congr 1
-    obtain ⟨a, v, p, m, g⟩ := x
-    simp only [TlbEntry.mk.injEq]
-
 /-- WS-ZA ZA5.2: `ipcBufferFillHeld` for the one overflow slot a
 scheduling-context configure reads, as the entry compiles it: the walk's
 `tlbWalkEntry`, `resolveAsidRoot` and page list are read in place, so the
@@ -572,13 +548,113 @@ theorem tlbFillIpcBufferOnCore_eq_setPerCoreTlb
   | none => exact ⟨st.perCoreTlb, rfl⟩
   | some plan => exact foldl_tlbFillOnCore_eq_setPerCoreTlb c plan.1 plan.2 st
 
-/-- WS-ZA ZA5.2: the fill undone: its state with the TLB it was handed is
-that state. -/
-theorem tlbFillIpcBufferOnCore_restore (st : SystemState) (c : CoreId) (tid : ThreadId)
+/-- WS-ZA ZA5.4: the first `n` entries of the view `es` moved onto the spares
+`spare`, each with its list cell, and the rest left as the view. -/
+def tlbPopToSpareLoop (st : SystemState) (c : CoreId) :
+    Nat → List TlbEntry → List TlbEntry → SystemState
+  | 0, es, spare =>
+    { st with perCoreTlb := st.perCoreTlb.set c.val { entries := es } c.isLt,
+              perCoreTlbSpare := st.perCoreTlbSpare.set c.val (Squash.mk spare) c.isLt }
+  | _ + 1, [], spare =>
+    { st with perCoreTlb := st.perCoreTlb.set c.val { entries := [] } c.isLt,
+              perCoreTlbSpare := st.perCoreTlbSpare.set c.val (Squash.mk spare) c.isLt }
+  | n + 1, e :: es, spare => tlbPopToSpareLoop st c n es (e :: spare)
+
+theorem tlbPopToSpareLoop_eq (st : SystemState) (c : CoreId) :
+    ∀ (n : Nat) (es spare : List TlbEntry),
+      tlbPopToSpareLoop st c n es spare = setTlbOnCore st c { entries := es.drop n }
+  | 0, es, spare => by
+    unfold tlbPopToSpareLoop setTlbOnCore
+    cases st
+    simp only [List.drop_zero, SystemState.mk.injEq, and_true, true_and]
+    exact Vector.ext fun _ _ => Subsingleton.elim _ _
+  | _ + 1, [], spare => by
+    unfold tlbPopToSpareLoop setTlbOnCore
+    cases st
+    simp only [List.drop_nil, SystemState.mk.injEq, and_true, true_and]
+    exact Vector.ext fun _ _ => Subsingleton.elim _ _
+  | n + 1, e :: es, spare => by
+    unfold tlbPopToSpareLoop
+    rw [tlbPopToSpareLoop_eq st c n es (e :: spare), List.drop_succ_cons]
+
+/-- WS-ZA ZA5.4: a fill on core `c` undone, out of line: the view held `n0`
+entries before the fill, which only adds entries at its head, so the entries
+above those `n0` are the fill's and go back onto the spares, cells and all.
+Nothing of the state before the fill is kept alive across it, so the fill
+still owns the spares it writes over. -/
+@[noinline] def tlbUndoFillOnCore (st : SystemState) (c : CoreId) (n0 : Nat) : SystemState :=
+  let es := (tlbOnCore st c).entries
+  let k := es.length - n0
+  let sp := st.perCoreTlbSpare.get c
+  let st0 := setTlbOnCore st c { entries := [] }
+  Quot.lift (fun spare => tlbPopToSpareLoop st0 c k es spare)
+    (fun x y _ => by dsimp only; rw [tlbPopToSpareLoop_eq, tlbPopToSpareLoop_eq]) sp
+
+theorem tlbUndoFillOnCore_eq (st : SystemState) (c : CoreId) (n0 : Nat) :
+    tlbUndoFillOnCore st c n0 =
+      setTlbOnCore st c
+        { entries := (tlbOnCore st c).entries.drop ((tlbOnCore st c).entries.length - n0) } := by
+  unfold tlbUndoFillOnCore
+  induction st.perCoreTlbSpare.get c using Squash.ind with
+  | h l =>
+    show tlbPopToSpareLoop _ c _ _ l = _
+    rw [tlbPopToSpareLoop_eq]
+    unfold setTlbOnCore
+    simp only [Vector.set_set]
+
+/-- A single fill adds entries at the head of core `c`'s view and changes
+nothing else. -/
+private theorem tlbFillOnCore_eq_prefix
+    (st : SystemState) (c : CoreId) (asid : SeLe4n.ASID) (vaddr : VAddr) :
+    ∃ xs, tlbFillOnCore st c asid vaddr =
+      setTlbOnCore st c { entries := xs ++ (tlbOnCore st c).entries } := by
+  unfold tlbFillOnCore
+  cases tlbWalkEntry st asid vaddr with
+  | none => exact ⟨[], (setTlbOnCore_tlbOnCore st c).symm⟩
+  | some entry =>
+    unfold tlbInsertOnCore
+    by_cases h : tlbEntriesHold (tlbOnCore st c).entries entry = true
+    · exact ⟨[], by simp only [h, ↓reduceIte, List.nil_append]; exact (setTlbOnCore_tlbOnCore st c).symm⟩
+    · exact ⟨[entry], by simp only [h, Bool.false_eq_true, ↓reduceIte]; rfl⟩
+
+private theorem foldl_tlbFillOnCore_eq_prefix (c : CoreId) (asid : SeLe4n.ASID) :
+    ∀ (pages : List VAddr) (st : SystemState),
+      ∃ xs, pages.foldl (fun s p => tlbFillOnCore s c asid p) st =
+        setTlbOnCore st c { entries := xs ++ (tlbOnCore st c).entries }
+  | [], st => ⟨[], (setTlbOnCore_tlbOnCore st c).symm⟩
+  | p :: rest, st => by
+    simp only [List.foldl_cons]
+    obtain ⟨xs1, h1⟩ := tlbFillOnCore_eq_prefix st c asid p
+    obtain ⟨xs2, h2⟩ := foldl_tlbFillOnCore_eq_prefix c asid rest (tlbFillOnCore st c asid p)
+    refine ⟨xs2 ++ xs1, ?_⟩
+    rw [h2, h1, setTlbOnCore_tlbOnCore_self]
+    unfold setTlbOnCore
+    simp only [Vector.set_set, List.append_assoc]
+
+/-- WS-ZA ZA5.4: the access-time fill adds entries at the head of core `c`'s
+view and changes nothing else. -/
+theorem tlbFillIpcBufferOnCore_eq_prefix
+    (st : SystemState) (c : CoreId) (tid : ThreadId) (overflowCount : Nat) :
+    ∃ xs, tlbFillIpcBufferOnCore st c tid overflowCount =
+      setTlbOnCore st c { entries := xs ++ (tlbOnCore st c).entries } := by
+  unfold tlbFillIpcBufferOnCore
+  cases ipcBufferWalkPlan st tid overflowCount with
+  | none => exact ⟨[], (setTlbOnCore_tlbOnCore st c).symm⟩
+  | some plan => exact foldl_tlbFillOnCore_eq_prefix c plan.1 plan.2 st
+
+/-- WS-ZA ZA5.4: the fill undone (`tlbUndoFillOnCore`, told how many entries
+the view held before it) is the state the fill was handed: the refused
+configure's rollback. -/
+theorem tlbUndoFillOnCore_tlbFillIpcBufferOnCore (st : SystemState) (c : CoreId) (tid : ThreadId)
     (overflowCount : Nat) :
-    { tlbFillIpcBufferOnCore st c tid overflowCount with perCoreTlb := st.perCoreTlb } = st := by
-  obtain ⟨t, ht⟩ := tlbFillIpcBufferOnCore_eq_setPerCoreTlb st c tid overflowCount
-  rw [ht]
+    tlbUndoFillOnCore (tlbFillIpcBufferOnCore st c tid overflowCount) c
+      (tlbOnCore st c).entries.length = st := by
+  obtain ⟨xs, h⟩ := tlbFillIpcBufferOnCore_eq_prefix st c tid overflowCount
+  rw [h, tlbUndoFillOnCore_eq, setTlbOnCore_tlbOnCore_self]
+  simp only [List.length_append, Nat.add_sub_cancel, List.drop_left]
+  unfold setTlbOnCore
+  rw [Vector.set_set]
+  exact setTlbOnCore_tlbOnCore st c
 
 /-!
 ### Whole-bundle carriage

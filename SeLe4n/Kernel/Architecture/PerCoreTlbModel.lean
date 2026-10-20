@@ -164,6 +164,30 @@ theorem tlbEntriesHold_iff (l : List TlbEntry) (e : TlbEntry) :
     · rw [if_neg h, ih, List.mem_cons]
       exact ⟨Or.inr, fun hm => hm.elim (fun he => absurd he.symm h) id⟩
 
+/-- WS-ZA ZA5.2: whether `entries` holds the entry a walk of `vaddr` in
+`asid` would cache (`tlbWalkEntry`'s shape, generation 0), compared field by
+field so the entry is never built. -/
+def tlbEntriesHoldWalked : List TlbEntry → SeLe4n.ASID → VAddr → PAddr →
+    PagePermissions → Bool
+  | [], _, _, _, _ => false
+  | x :: xs, asid, vaddr, paddr, perms =>
+    if x.asid = asid ∧ x.vaddr = vaddr ∧ x.paddr = paddr ∧ x.perms = perms ∧
+        x.asidGeneration = 0 then true
+    else tlbEntriesHoldWalked xs asid vaddr paddr perms
+
+theorem tlbEntriesHoldWalked_eq (l : List TlbEntry) (asid : SeLe4n.ASID) (vaddr : VAddr)
+    (paddr : PAddr) (perms : PagePermissions) :
+    tlbEntriesHoldWalked l asid vaddr paddr perms =
+      tlbEntriesHold l { asid := asid, vaddr := vaddr, paddr := paddr, perms := perms } := by
+  induction l with
+  | nil => rfl
+  | cons x xs ih =>
+    unfold tlbEntriesHoldWalked tlbEntriesHold
+    rw [ih]
+    congr 1
+    obtain ⟨a, v, p, m, g⟩ := x
+    simp only [TlbEntry.mk.injEq]
+
 /-- **WS-SM SM7.C.2**: the hardware page-table walker's effect — core `c`
 caches a fresh translation `entry` in its own TLB.  Models a TLB fill on
 a walk that resolved `(entry.asid, entry.vaddr)`; the entry is prepended
@@ -1592,14 +1616,161 @@ theorem anyPageEntryMatches_eq (a : UInt16) (v : UInt64) :
   | e :: es => by
     simp only [anyPageEntryMatches, anyTlbEntryMatches, anyPageEntryMatches_eq a v es]; rfl
 
+/-- WS-ZA ZA5.4: the drain of the entries `m` covers over the entries `es` still
+to visit, `kept` holding the entries kept so far (last first) and `spare` the
+core's spare cells: a covered entry moves, with its list cell, onto the spares;
+any other moves onto `kept`.  At the end core `c`'s view is `kept` turned back
+into its order, and its spares are `spare`.  Each step moves a cell it was
+handed, so the drain builds none (`tlbDrainLoop_eq`); specialised at each call,
+so `m` is never built as a closure. -/
+@[specialize] def tlbDrainLoop (st : SystemState) (c : CoreId) (m : TlbEntry → Bool)
+    (kept spare : List TlbEntry) : List TlbEntry → SystemState
+  | [] =>
+    { st with
+      perCoreTlb := st.perCoreTlb.set c.val { entries := kept.reverse } c.isLt
+      perCoreTlbSpare := st.perCoreTlbSpare.set c.val (Squash.mk spare) c.isLt }
+  | e :: es =>
+    if m e then tlbDrainLoop st c m kept (e :: spare) es
+    else tlbDrainLoop st c m (e :: kept) spare es
+
+theorem tlbDrainLoop_eq (st : SystemState) (c : CoreId) (m : TlbEntry → Bool) :
+    ∀ (es kept spare : List TlbEntry),
+      tlbDrainLoop st c m kept spare es =
+        setTlbOnCore st c { entries := kept.reverse ++ es.filter (fun e => !m e) }
+  | [], kept, spare => by
+    unfold tlbDrainLoop setTlbOnCore
+    simp only [List.filter_nil, List.append_nil]
+    cases st
+    simp only [SystemState.mk.injEq, and_true, true_and]
+    exact Vector.ext fun _ _ => Subsingleton.elim _ _
+  | e :: es, kept, spare => by
+    unfold tlbDrainLoop
+    split
+    · next h =>
+      rw [tlbDrainLoop_eq st c m es kept (e :: spare), List.filter_cons]
+      simp [h]
+    · next h =>
+      rw [tlbDrainLoop_eq st c m es (e :: kept) spare, List.filter_cons]
+      simp [h]
+
+/-- WS-ZA ZA5.4: core `c`'s view drained of the entries `m` covers: the view and
+the spares are read before the view's slot is cleared, so the drain
+(`tlbDrainLoop`) owns every cell it moves. -/
+@[inline] def tlbDrainWith (st : SystemState) (c : CoreId) (m : TlbEntry → Bool) :
+    SystemState :=
+  let es := (tlbOnCore st c).entries
+  let sp := st.perCoreTlbSpare.get c
+  let st0 := setTlbOnCore st c { entries := [] }
+  Quot.lift (fun spare => tlbDrainLoop st0 c m [] spare es)
+    (fun x y _ => by dsimp only; rw [tlbDrainLoop_eq, tlbDrainLoop_eq]) sp
+
+theorem tlbDrainWith_eq (st : SystemState) (c : CoreId) (m : TlbEntry → Bool) :
+    tlbDrainWith st c m =
+      setTlbOnCore st c { entries := (tlbOnCore st c).entries.filter (fun e => !m e) } := by
+  unfold tlbDrainWith
+  induction st.perCoreTlbSpare.get c using Squash.ind with
+  | h l =>
+    show tlbDrainLoop _ c m [] l _ = _
+    rw [tlbDrainLoop_eq]
+    unfold setTlbOnCore
+    simp only [List.reverse_nil, List.nil_append, Vector.set_set]
+
+/-- WS-ZA ZA5.4: core `c`'s view drained of page operand `a`, `v`, out of line
+(`tlbDrainWith`). -/
+@[noinline] def tlbDrainPage (st : SystemState) (c : CoreId) (a : UInt16) (v : UInt64) :
+    SystemState :=
+  tlbDrainWith st c (pageEntryMatches a v)
+
+theorem tlbDrainPage_eq (st : SystemState) (c : CoreId) (a : UInt16) (v : UInt64) :
+    tlbDrainPage st c a v =
+      setTlbOnCore st c
+        { entries := (tlbOnCore st c).entries.filter (fun e => !pageEntryMatches a v e) } :=
+  tlbDrainWith_eq st c _
+
+/-- Writing core `c`'s view back as it is leaves the state as it is. -/
+theorem setTlbOnCore_tlbOnCore (st : SystemState) (c : CoreId) :
+    setTlbOnCore st c (tlbOnCore st c) = st := by
+  unfold setTlbOnCore tlbOnCore
+  cases st
+  simp only [SystemState.mk.injEq, and_true, true_and]
+  apply Vector.ext
+  intro i hi
+  by_cases e : i = c.val
+  · subst e; simp [SeLe4n.PerCoreVector.get_eq_getElem]
+  · simp [Vector.getElem_set, Ne.symm e]
+
+/-- WS-ZA ZA5.4: core `c`'s view with invalidation `op` retired, out of line: a
+view `op` does not touch is left where it is, and one it touches is drained in
+place, its covered entries' cells becoming the core's spares (`tlbDrainWith`). -/
+@[noinline] def tlbRetireOnCore (st : SystemState) (c : CoreId) (op : TlbInvalidation) :
+    SystemState :=
+  if anyTlbEntryMatches op (tlbOnCore st c).entries then
+    tlbDrainWith st c (tlbEntryMatches op)
+  else st
+
+theorem tlbRetireOnCore_eq (st : SystemState) (c : CoreId) (op : TlbInvalidation) :
+    tlbRetireOnCore st c op = setTlbOnCore st c (applyTlbInvalidation (tlbOnCore st c) op) := by
+  unfold tlbRetireOnCore applyTlbInvalidation
+  split
+  · exact tlbDrainWith_eq st c _
+  · next h =>
+    rw [Bool.not_eq_true, anyTlbEntryMatches_eq_false] at h
+    rw [List.filter_eq_self.2 (fun e he => by simp [h e he])]
+    exact (setTlbOnCore_tlbOnCore st c).symm
+
+@[csimp] theorem tlbInvalidateOnCore_eq_retire : @tlbInvalidateOnCore = @tlbRetireOnCore := by
+  funext st c op
+  exact (tlbRetireOnCore_eq st c op).symm
+
+/-- WS-ZA ZA5.4: core `c`'s view with every operand of `ops` retired in turn,
+each in place (`tlbRetireOnCore`), so every entry an operand covers becomes one
+of the core's spares. -/
+def tlbRetireOpsOnCore (st : SystemState) (c : CoreId) :
+    List TlbInvalidation → SystemState
+  | [] => st
+  | op :: ops => tlbRetireOpsOnCore (tlbRetireOnCore st c op) c ops
+
+theorem tlbRetireOpsOnCore_eq (c : CoreId) :
+    ∀ (st : SystemState) (ops : List TlbInvalidation),
+      tlbRetireOpsOnCore st c ops = setTlbOnCore st c (applyTlbInvalidations (tlbOnCore st c) ops)
+  | st, [] => (setTlbOnCore_tlbOnCore st c).symm
+  | st, op :: ops => by
+    unfold tlbRetireOpsOnCore
+    rw [tlbRetireOpsOnCore_eq c _ ops, tlbRetireOnCore_eq, setTlbOnCore_tlbOnCore_self]
+    unfold setTlbOnCore applyTlbInvalidations
+    simp only [Vector.set_set, List.foldl_cons]
+
+/-- WS-ZA ZA5.4: the initiator's drain of a list of operands (an ASID retired by
+a retype, the teardown's page operands) retires each in place, keeping the cells
+it removes as the core's spares. -/
+@[csimp] theorem drainInitiatorPerCoreView_eq_retire :
+    @drainInitiatorPerCoreView = @tlbRetireOpsOnCore := by
+  funext st c ops
+  exact (tlbRetireOpsOnCore_eq c st ops).symm
+
+/-- WS-ZA ZA5.4: the initiator's local step with its own view's operand retired
+in place (`tlbRetireOnCore`). -/
+def tlbShootdownLocalPerCoreRetire (st : SystemState) (initiator : CoreId)
+    (op : TlbInvalidation) : SystemState :=
+  tlbRetireOnCore (tlbShootdownLocal st op) initiator op
+
+@[csimp] theorem tlbShootdownLocalPerCore_eq_retire :
+    @tlbShootdownLocalPerCore = @tlbShootdownLocalPerCoreRetire := by
+  funext st i op
+  unfold tlbShootdownLocalPerCore tlbShootdownLocalPerCoreRetire
+  rw [tlbRetireOnCore_eq]
+  rfl
+
 /-- WS-ZA ZA5.4: `drainInitiatorPageOnCore` as compiled — the operand's words
-compared with the view's entries, and a view the operand does not touch left
-where it is, so no operand, list or view is built. -/
+compared with the view's entries, a view the operand does not touch left where
+it is, and one it touches drained in place (`tlbDrainPage`): the covered
+entries' cells become the core's spares, so no operand, list, view or cell is
+built. -/
 @[inline] def drainInitiatorPageOnCoreWords (st : SystemState) (c : CoreId) (asid : SeLe4n.ASID)
     (vaddr : SeLe4n.VAddr) : SystemState :=
   if anyPageEntryMatches (UInt16.ofNat asid.toNat) (UInt64.ofNat vaddr.toNat)
       (tlbOnCore st c).entries then
-    drainInitiatorPerCoreView st c [encodePageInvalidation asid vaddr]
+    tlbDrainPage st c (UInt16.ofNat asid.toNat) (UInt64.ofNat vaddr.toNat)
   else st
 
 @[csimp] theorem drainInitiatorPageOnCore_eq_words :
@@ -1607,7 +1778,7 @@ where it is, so no operand, list or view is built. -/
   funext st c asid vaddr
   unfold drainInitiatorPageOnCore drainInitiatorPageOnCoreWords
   split
-  · rfl
+  · rw [tlbDrainPage_eq]; rfl
   · next h =>
     rw [anyPageEntryMatches_eq, Bool.not_eq_true, anyTlbEntryMatches_eq_false] at h
     unfold drainInitiatorPerCoreView
@@ -1815,6 +1986,24 @@ theorem applyTlbInvalidations_map_op (t : TlbState) (ds : List TlbShootdownDescr
   | nil => rfl
   | cons d ds ih => exact ih _
 
+/-- WS-ZA ZA5.4: core `c`'s view with every descriptor of `ds` retired in turn,
+each in place (`tlbRetireOnCore`). -/
+def tlbRetireDescriptorsOnCore (st : SystemState) (c : CoreId) :
+    List TlbShootdownDescriptor → SystemState
+  | [] => st
+  | d :: ds => tlbRetireDescriptorsOnCore (tlbRetireOnCore st c d.op) c ds
+
+theorem tlbRetireDescriptorsOnCore_eq (c : CoreId) :
+    ∀ (st : SystemState) (ds : List TlbShootdownDescriptor),
+      tlbRetireDescriptorsOnCore st c ds =
+        setTlbOnCore st c (applyDescriptorOps (tlbOnCore st c) ds)
+  | st, [] => (setTlbOnCore_tlbOnCore st c).symm
+  | st, d :: ds => by
+    unfold tlbRetireDescriptorsOnCore applyDescriptorOps
+    rw [tlbRetireDescriptorsOnCore_eq c _ ds, tlbRetireOnCore_eq, setTlbOnCore_tlbOnCore_self]
+    unfold setTlbOnCore
+    simp only [Vector.set_set]
+
 /-- WS-ZA ZA5.4: the window per-core handler as it runs — the queue is drained
 once and every field of the state written once, so the shootdown record, the
 scalar view and the per-core views are all updated in place.
@@ -1822,17 +2011,34 @@ scalar view and the per-core views are all updated in place.
 def handleTlbShootdownReqOnCorePerCoreInWindowOnce (st : SystemState) (c : CoreId)
     (lo hi : Nat) : SystemState :=
   let r := drainShootdownsInWindow st.tlbShootdown c lo hi
-  { st with
-      tlb := applyDescriptorOps st.tlb r.1,
-      tlbShootdown := acknowledgeShootdown r.2 c hi,
-      perCoreTlb := st.perCoreTlb.set c.val (applyDescriptorOps (st.perCoreTlb.get c) r.1) c.isLt }
+  tlbRetireDescriptorsOnCore
+    { st with
+        tlb := applyDescriptorOps st.tlb r.1,
+        tlbShootdown := acknowledgeShootdown r.2 c hi } c r.1
 
 @[csimp] theorem handleTlbShootdownReqOnCorePerCoreInWindow_eq_once :
     @handleTlbShootdownReqOnCorePerCoreInWindow = @handleTlbShootdownReqOnCorePerCoreInWindowOnce := by
   funext st c lo hi
   simp only [handleTlbShootdownReqOnCorePerCoreInWindow, handleTlbShootdownReqOnCorePerCoreInWindowOnce,
-    handleTlbShootdownReqOnCoreInWindow, tlbShootdownDrainOnCoreInWindow, tlbShootdownAckOnCore,
-    setTlbOnCore, tlbOnCore, applyTlbInvalidations_map_op]
+    tlbRetireDescriptorsOnCore_eq, handleTlbShootdownReqOnCoreInWindow, tlbShootdownDrainOnCoreInWindow,
+    tlbShootdownAckOnCore, setTlbOnCore, tlbOnCore, applyTlbInvalidations_map_op]
+
+/-- WS-ZA ZA5.4: the per-core handler as it runs: the queue drained once, the
+shootdown record and scalar view written once, and core `c`'s view retiring
+each drained descriptor in place (`tlbRetireDescriptorsOnCore`). -/
+def handleTlbShootdownReqOnCorePerCoreOnce (st : SystemState) (c : CoreId) : SystemState :=
+  let r := drainShootdowns st.tlbShootdown c
+  tlbRetireDescriptorsOnCore
+    { st with
+        tlb := applyDescriptorOps st.tlb r.1,
+        tlbShootdown := acknowledgeShootdown r.2 c st.tlbShootdown.roundGeneration } c r.1
+
+@[csimp] theorem handleTlbShootdownReqOnCorePerCore_eq_once :
+    @handleTlbShootdownReqOnCorePerCore = @handleTlbShootdownReqOnCorePerCoreOnce := by
+  funext st c
+  simp only [handleTlbShootdownReqOnCorePerCore, handleTlbShootdownReqOnCorePerCoreOnce,
+    tlbRetireDescriptorsOnCore_eq, handleTlbShootdownReqOnCore, tlbShootdownDrainOnCore,
+    tlbShootdownAckOnCore, setTlbOnCore, tlbOnCore, applyTlbInvalidations_map_op]
 
 /-- **WS-SM SM7.F.3**: the window per-core handler's `tlb` effect is exactly
 the single-view window handler's — the trace-safety anchor. -/
@@ -2375,6 +2581,131 @@ def tlbFillOnCore (st : SystemState) (c : CoreId) (asid : SeLe4n.ASID)
   match tlbWalkEntry st asid vaddr with
   | none => st
   | some entry => tlbInsertOnCore st c entry
+
+/-- WS-ZA ZA5.4: the walked entry of a translation written over the cell `r` (a
+core's spare): out of line, so `r` is the only cell the compiler can write it
+into, and its generation reads back through `r` so that `r` stays live, since an
+update of every field would drop `r` and build a fresh cell.  Equal to the walked
+entry of those fields (`tlbEntryOverwrite_eq`). -/
+@[noinline] def tlbEntryOverwrite (r : TlbEntry) (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (paddr : SeLe4n.PAddr) (perms : PagePermissions) : TlbEntry :=
+  { asid, vaddr, paddr, perms,
+    asidGeneration := if r.asidGeneration = 0 then r.asidGeneration else 0 }
+
+theorem tlbEntryOverwrite_eq (r : TlbEntry) (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (paddr : SeLe4n.PAddr) (perms : PagePermissions) :
+    tlbEntryOverwrite r asid vaddr paddr perms =
+      { asid := asid, vaddr := vaddr, paddr := paddr, perms := perms } := by
+  unfold tlbEntryOverwrite; split <;> simp_all
+
+/-- WS-ZA ZA5.4: the walked entry of a translation, built fresh (a core with no
+spare cell).  Out of line, so it is built only here. -/
+@[noinline] def tlbEntryOfFields (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (paddr : SeLe4n.PAddr) (perms : PagePermissions) : TlbEntry :=
+  { asid, vaddr, paddr, perms }
+
+/-- WS-ZA ZA5.4: core `c`'s spare cells replaced by `v`, out of line, so the
+state is written in place by the one update.  The spares are logically one
+value, so this is the state itself (`setTlbSpareOnCore_eq`). -/
+def setTlbSpareOnCore (st : SystemState) (c : CoreId) (v : Squash (List TlbEntry)) :
+    SystemState :=
+  { st with perCoreTlbSpare := st.perCoreTlbSpare.set c.val v c.isLt }
+
+theorem setTlbSpareOnCore_eq (st : SystemState) (c : CoreId) (v : Squash (List TlbEntry)) :
+    setTlbSpareOnCore st c v = st :=
+  SystemState.with_perCoreTlbSpare _ _
+
+/-- WS-ZA ZA5.4: core `c`'s view with the walked entry of a translation on its
+front, given the core's spare cells `spare`, which the caller has taken out of
+their slot so nothing else holds them: the first spare and its list cell become
+the new entry and its cell.  With no spare, the entry is built.  The view is
+read before the state is handed on, and each write is a single-field update out
+of line, so the state is written in place. -/
+@[inline] def tlbPushFrom (st : SystemState) (c : CoreId) (asid : SeLe4n.ASID)
+    (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr) (perms : PagePermissions)
+    (spare : List TlbEntry) : SystemState :=
+  match spare with
+  | r :: rest =>
+    let es := (tlbOnCore st c).entries
+    setTlbOnCore (setTlbSpareOnCore st c (Squash.mk rest)) c
+      { entries := tlbEntryOverwrite r asid vaddr paddr perms :: es }
+  | [] =>
+    setTlbOnCore st c { entries := tlbEntryOfFields asid vaddr paddr perms :: (tlbOnCore st c).entries }
+
+theorem tlbPushFrom_eq (st : SystemState) (c : CoreId) (asid : SeLe4n.ASID)
+    (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr) (perms : PagePermissions)
+    (spare : List TlbEntry) :
+    tlbPushFrom st c asid vaddr paddr perms spare =
+      setTlbOnCore st c
+        { entries := { asid := asid, vaddr := vaddr, paddr := paddr, perms := perms } ::
+            (tlbOnCore st c).entries } := by
+  unfold tlbPushFrom tlbEntryOfFields
+  cases spare with
+  | nil => rfl
+  | cons r rest => simp only [tlbEntryOverwrite_eq, setTlbSpareOnCore_eq]
+
+/-- WS-ZA ZA5.4: core `c`'s view with the walked entry of a translation on its
+front, out of line: the core's spares are read and their slot cleared before
+they are matched, so the entry and its cell are the core's first spare when it
+has one (`tlbPushFrom`). -/
+@[noinline] def tlbPushWalked (st : SystemState) (c : CoreId) (asid : SeLe4n.ASID)
+    (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr) (perms : PagePermissions) : SystemState :=
+  let sp := st.perCoreTlbSpare.get c
+  Quot.lift (tlbPushFrom (setTlbSpareOnCore st c (Squash.mk [])) c asid vaddr paddr perms)
+    (fun a b _ => by rw [tlbPushFrom_eq, tlbPushFrom_eq]) sp
+
+theorem tlbPushWalked_eq (st : SystemState) (c : CoreId) (asid : SeLe4n.ASID)
+    (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr) (perms : PagePermissions) :
+    tlbPushWalked st c asid vaddr paddr perms =
+      setTlbOnCore st c
+        { entries := { asid := asid, vaddr := vaddr, paddr := paddr, perms := perms } ::
+            (tlbOnCore st c).entries } := by
+  unfold tlbPushWalked
+  induction st.perCoreTlbSpare.get c using Squash.ind with
+  | h l =>
+    show tlbPushFrom _ c asid vaddr paddr perms l = _
+    rw [tlbPushFrom_eq, setTlbSpareOnCore_eq]
+
+/-- WS-ZA ZA5.4: **`tlbFillOnCore` as compiled** — the walk's ASID table, root
+and mapping read in place, the view searched field by field
+(`tlbEntriesHoldWalked`), and a new entry written over one of the core's spare
+cells (`tlbPushWalked`), so a fill on a core with a spare allocates nothing. -/
+@[inline] def tlbFillOnCoreWords (st : SystemState) (c : CoreId) (asid : SeLe4n.ASID)
+    (vaddr : SeLe4n.VAddr) : SystemState :=
+  match st.asidTable[asid]? with
+  | none => st
+  | some oid =>
+    match st.getVSpaceRoot? oid with
+    | none => st
+    | some root =>
+      if root.asid = asid then
+        match root.lookup vaddr with
+        | none => st
+        | some q =>
+          if tlbEntriesHoldWalked (tlbOnCore st c).entries asid vaddr q.1 q.2 then st
+          else tlbPushWalked st c asid vaddr q.1 q.2
+      else st
+
+@[csimp] theorem tlbFillOnCore_eq_words : @tlbFillOnCore = @tlbFillOnCoreWords := by
+  funext st c asid vaddr
+  unfold tlbFillOnCore tlbFillOnCoreWords tlbWalkEntry resolveAsidRoot
+  cases hA : st.asidTable[asid]? with
+  | none => rfl
+  | some oid =>
+  dsimp only
+  cases hV : st.getVSpaceRoot? oid with
+  | none => rfl
+  | some root =>
+  dsimp only
+  by_cases hEq : root.asid = asid
+  · simp only [hEq, if_true]
+    cases hL : root.lookup vaddr with
+    | none => rfl
+    | some q =>
+      dsimp only
+      unfold tlbInsertOnCore
+      rw [tlbEntriesHoldWalked_eq, tlbPushWalked_eq]
+  · simp only [hEq, if_false]
 
 /-- **WS-SM SM7.F.1**: a fill frames the page-table subsystem + the shootdown
 state — it only touches `perCoreTlb`. -/
