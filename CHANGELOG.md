@@ -19,7 +19,14 @@ and a page invalidation keeps the entries it removes for the next fill.
 - **The page drain** (`Architecture/PerCoreTlbModel.lean`): a drain that
   touches the view runs `tlbDrainPage`, which moves each covered entry and its
   list cell onto the spares and keeps the rest without rebuilding them
-  (`tlbDrainPageLoop`, proven equal to the filter).
+  (`tlbDrainLoop`, proven equal to the filter).  A remote core's shootdown
+  handler retires each drained descriptor the same way
+  (`tlbRetireDescriptorsOnCore`), so a remote invalidation also keeps the
+  cells it removes.
+- **Refused configure** (`RefusalCarryingEntry.lean`): a refusal after the
+  IPC-buffer fill hands back the spare pool with the TLB the entry held
+  (`tlbFillIpcBufferOnCore_restore_spare`), so a repeated refused request does
+  not use up the spares.
 - **Readings** (normal build, first call / steady state): frame map 14 / 7
   (14 / 10), map of a copied capability 12 / 7 (13 / 10), unmap 7 (8), revoke
   destroying a mapped frame 9 / 7 (11 / 9); everything else is unchanged.  The

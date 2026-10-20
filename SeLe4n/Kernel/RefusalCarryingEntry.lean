@@ -95,7 +95,7 @@ specification's form. -/
         -- in place by `ipcBufferFillHeldOne`) and the
         -- dispatch is handed the entry's own state.  Otherwise the fill is the
         -- one write before the checks, and a refusal hands back the TLB the
-        -- entry held (`tlbFillIpcBufferOnCore_restore`).
+        -- entry held, with its spare cells (`tlbFillIpcBufferOnCore_restore_spare`).
         | .configure capAddr =>
           SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMrK st tid 0
             (fun _ => .error (.invalidMessageInfo, st))
@@ -104,9 +104,10 @@ specification's form. -/
                 dispatchConfigureCheckedR capAddr tcb.registerContext w tid executingCore st
               else
                 let tlb := st.perCoreTlb
+                let sp := st.perCoreTlbSpare
                 match dispatchConfigureCheckedR capAddr tcb.registerContext w tid executingCore
                     (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore st executingCore tid 1) with
-                | .error (e, stF) => .error (e, { stF with perCoreTlb := tlb })
+                | .error (e, stF) => .error (e, { stF with perCoreTlb := tlb, perCoreTlbSpare := sp })
                 | .ok r => .ok r)
         | .viaDecode =>
           RefusalCarrying.ofKernel (syscallEntryChecked ctx SeLe4n.arm64DefaultLayout executingCore 32) st
@@ -268,7 +269,7 @@ theorem syscallEntryCheckedR_eq (ctx : LabelingContext) (executingCore : Concurr
               generalize dispatchSyscallChecked _ _ _ _
                 (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore st executingCore tid 1) = K
               rcases K with e | r
-              · simp only [SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_restore]
+              · simp only [SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_restore_spare]
               · rfl
         · rfl
       · next o hNot hObj =>

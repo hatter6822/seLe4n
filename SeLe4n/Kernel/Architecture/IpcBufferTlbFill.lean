@@ -548,11 +548,12 @@ theorem tlbFillIpcBufferOnCore_eq_setPerCoreTlb
   | none => exact ⟨st.perCoreTlb, rfl⟩
   | some plan => exact foldl_tlbFillOnCore_eq_setPerCoreTlb c plan.1 plan.2 st
 
-/-- WS-ZA ZA5.2: the fill undone: its state with the TLB it was handed is
-that state. -/
-theorem tlbFillIpcBufferOnCore_restore (st : SystemState) (c : CoreId) (tid : ThreadId)
+/-- WS-ZA ZA5.4: the fill undone with the spare cells it was handed: the
+refused configure's rollback, which keeps the entry's spare pool as it was. -/
+theorem tlbFillIpcBufferOnCore_restore_spare (st : SystemState) (c : CoreId) (tid : ThreadId)
     (overflowCount : Nat) :
-    { tlbFillIpcBufferOnCore st c tid overflowCount with perCoreTlb := st.perCoreTlb } = st := by
+    { tlbFillIpcBufferOnCore st c tid overflowCount with
+        perCoreTlb := st.perCoreTlb, perCoreTlbSpare := st.perCoreTlbSpare } = st := by
   obtain ⟨t, ht⟩ := tlbFillIpcBufferOnCore_eq_setPerCoreTlb st c tid overflowCount
   rw [ht]
 
