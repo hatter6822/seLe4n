@@ -9,6 +9,7 @@
 
 import SeLe4n.Model.State
 import SeLe4n.Kernel.Architecture.PageTable
+import SeLe4n.Kernel.Architecture.LittleEndianWords
 
 /-! # AK4-A.1: IPC-buffer overflow read helper
 
@@ -103,13 +104,6 @@ def ipcBufferSlotPage (ipcBuffer : VAddr) (idx : Nat) : VAddr :=
 theorem ipcBufferSlotPage_aligned (ipcBuffer : VAddr) (idx : Nat) :
     (ipcBufferSlotPage ipcBuffer idx).toNat % pageBytes = 0 :=
   VAddr.pageBase_aligned _
-
-/-- The little-endian word at byte `off` of `b` (a byte past the end reads 0). -/
-@[inline] def le64At (b : ByteArray) (off : Nat) : UInt64 :=
-  (b.get! off).toUInt64 ||| ((b.get! (off + 1)).toUInt64 <<< 8) |||
-    ((b.get! (off + 2)).toUInt64 <<< 16) ||| ((b.get! (off + 3)).toUInt64 <<< 24) |||
-    ((b.get! (off + 4)).toUInt64 <<< 32) ||| ((b.get! (off + 5)).toUInt64 <<< 40) |||
-    ((b.get! (off + 6)).toUInt64 <<< 48) ||| ((b.get! (off + 7)).toUInt64 <<< 56)
 
 /-- WS-ZA ZA5.2: the address of an entry's `i`-th word pair
 (`MachineState.entryWordBytes`). -/

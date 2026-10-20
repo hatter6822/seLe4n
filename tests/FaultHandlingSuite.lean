@@ -395,7 +395,7 @@ private def deliveredMessageOf (st : SystemState) (tid : SeLe4n.ThreadId) : Opti
         (MessageInfo.decode fr.x1.toNat).map fun info =>
           let overflow : List UInt64 := (List.range (info.length - 4)).filterMap fun idx =>
             (SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferSlotPAddr? st t idx true).bind
-              fun pa => (st.pendingPhysicalWrites.reverse.findSome? fun w =>
+              fun pa => ((SeLe4n.Testing.pendingWrites st).reverse.findSome? fun w =>
                 match w with
                 | .storeUserWord a v => if a == pa then some v else none
                 | _ => none)

@@ -1290,7 +1290,7 @@ theorem cdtAddChild_fields (st : SystemState) (p c : SlotRef) (op : DerivationOp
     (st.cdtAddChild p c op).pendingIcacheMaintenance = st.pendingIcacheMaintenance := by rw [cdtAddChild_fields]
 
 @[simp] theorem cdtAddChild_pendingPhysicalWrites (st : SystemState) (p c : SlotRef) (op : DerivationOp) :
-    (st.cdtAddChild p c op).pendingPhysicalWrites = st.pendingPhysicalWrites := by rw [cdtAddChild_fields]
+    (st.cdtAddChild p c op).pendingPhysicalWrites = st.pendingPhysicalWrites := by rw [cdtAddChild_fields]; rfl
 
 @[simp] theorem cdtAddChild_declassificationAuditLog (st : SystemState) (p c : SlotRef) (op : DerivationOp) :
     (st.cdtAddChild p c op).declassificationAuditLog = st.declassificationAuditLog := by rw [cdtAddChild_fields]
@@ -1361,7 +1361,7 @@ theorem cdtSplice_fields (st : SystemState) (n : SlotRef) :
     (st.cdtSplice n).pendingIcacheMaintenance = st.pendingIcacheMaintenance := by rw [cdtSplice_fields]
 
 @[simp] theorem cdtSplice_pendingPhysicalWrites (st : SystemState) (n : SlotRef) :
-    (st.cdtSplice n).pendingPhysicalWrites = st.pendingPhysicalWrites := by rw [cdtSplice_fields]
+    (st.cdtSplice n).pendingPhysicalWrites = st.pendingPhysicalWrites := by rw [cdtSplice_fields]; rfl
 
 @[simp] theorem cdtSplice_declassificationAuditLog (st : SystemState) (n : SlotRef) :
     (st.cdtSplice n).declassificationAuditLog = st.declassificationAuditLog := by rw [cdtSplice_fields]
@@ -1432,7 +1432,7 @@ theorem cdtMove_fields (st : SystemState) (old new : SlotRef) :
     (st.cdtMove old new).pendingIcacheMaintenance = st.pendingIcacheMaintenance := by rw [cdtMove_fields]
 
 @[simp] theorem cdtMove_pendingPhysicalWrites (st : SystemState) (old new : SlotRef) :
-    (st.cdtMove old new).pendingPhysicalWrites = st.pendingPhysicalWrites := by rw [cdtMove_fields]
+    (st.cdtMove old new).pendingPhysicalWrites = st.pendingPhysicalWrites := by rw [cdtMove_fields]; rfl
 
 @[simp] theorem cdtMove_declassificationAuditLog (st : SystemState) (old new : SlotRef) :
     (st.cdtMove old new).declassificationAuditLog = st.declassificationAuditLog := by rw [cdtMove_fields]

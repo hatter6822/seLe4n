@@ -379,7 +379,7 @@ example (coreId : UInt64) :
             (((SeLe4n.Kernel.Concurrency.coreIdOfUInt64? coreId).map
               (fun c => (c, st'.scheduler.currentOnCore c)),
               SeLe4n.Kernel.Concurrency.restoreTargetAt st' coreId,
-              (st'.pendingPhysicalWrites, st'.pendingIcacheMaintenance)),
+              (st'.drainedPhysicalWrites, st'.pendingIcacheMaintenance)),
               SeLe4n.Kernel.Architecture.clearIcacheMaintenance
                 (SeLe4n.Kernel.Architecture.clearPhysicalWrites st')))
           SeLe4n.Platform.FFI.completePhysicalWrites record.2.2.1

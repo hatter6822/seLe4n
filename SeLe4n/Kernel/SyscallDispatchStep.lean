@@ -59,7 +59,7 @@ result where it is computed and the nested tuple is never built. -/
     (ipcBufferAddr elr spsr spEl0 x30 : UInt64) (st : SystemState) :
     (Architecture.SyscallOutcome × PerCoreFlags × List CoreId ×
       List Architecture.TlbInvalidation × (Nat × Nat) ×
-      List Architecture.ICacheInvalidation × List Architecture.PhysicalWrite ×
+      List Architecture.ICacheInvalidation × Architecture.PhysicalWriteLedger ×
       Architecture.RestoreTarget × Option SeLe4n.ThreadId) × SystemState :=
   -- KSC-1: everything the commit reads of the pre-state is captured here, before
   -- the dispatch consumes `st` — the caller, the reschedule flags (`numCores`
@@ -86,7 +86,7 @@ result where it is computed and the nested tuple is never built. -/
         Architecture.shootdownPostedOpsFrom tlb0 st'',
         Architecture.shootdownRoundWindowFrom tlb0 st'',
         st''.pendingIcacheMaintenance,
-        st''.pendingPhysicalWrites,
+        st''.drainedPhysicalWrites,
         Architecture.restoreTargetOnCore st'' execCore,
         st''.scheduler.currentOnCore execCore),
        Architecture.clearPhysicalWrites (Architecture.clearIcacheMaintenance st''))
@@ -115,7 +115,7 @@ theorem syscallDispatchCrossCoreStep_of_ok {ctx : LabelingContext} {execCore : C
         Architecture.shootdownPostedOpsFrom st.tlbShootdown st'',
         Architecture.shootdownRoundWindowFrom st.tlbShootdown st'',
         st''.pendingIcacheMaintenance,
-        st''.pendingPhysicalWrites,
+        st''.drainedPhysicalWrites,
         Architecture.restoreTargetOnCore st'' execCore,
         st''.scheduler.currentOnCore execCore),
        Architecture.clearPhysicalWrites (Architecture.clearIcacheMaintenance st'')) := by
@@ -139,7 +139,7 @@ theorem syscallDispatchCrossCoreStep_drains_physicalWrites (ctx : LabelingContex
       (syscallDispatchCrossCoreStep ctx execCore syscallId x0 x1 x2 x3 x4 x5
           ipcBufferAddr elr spsr spEl0 x30 st).2.pendingPhysicalWrites = [] ∧
       (syscallDispatchCrossCoreStep ctx execCore syscallId x0 x1 x2 x3 x4 x5
-          ipcBufferAddr elr spsr spEl0 x30 st).1.2.2.2.2.2.2.1 =
+          ipcBufferAddr elr spsr spEl0 x30 st).1.2.2.2.2.2.2.1.toList =
         (PriorityInheritance.settleResidencyOnCore
           (PriorityInheritance.scheduleLocalSuccessor st
             (Architecture.stageCallerReturn st st' execCore outcome) execCore)
@@ -148,7 +148,7 @@ theorem syscallDispatchCrossCoreStep_drains_physicalWrites (ctx : LabelingContex
     x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st
   refine ⟨outcome, st', h, ?_, ?_⟩ <;> rw [syscallDispatchCrossCoreStep_of_ok h]
   · simp
-  · rfl
+  · exact SystemState.toList_drainedPhysicalWrites _
 
 /-- **WS-ZA ZA3.1 (the target is the committed state's)**: the restore target
 the step reports is the one its committed state names for the executing core.
@@ -173,10 +173,10 @@ theorem syscallDispatchCrossCoreStep_restoreTarget (ctx : LabelingContext)
 crosses the entry's effects where an optional thread would be a cell. -/
 @[inline] def currentAsCode :
     (PerCoreFlags × List CoreId × List Architecture.TlbInvalidation × (Nat × Nat) ×
-      List Architecture.ICacheInvalidation × List Architecture.PhysicalWrite ×
+      List Architecture.ICacheInvalidation × Architecture.PhysicalWriteLedger ×
       Architecture.RestoreTarget × Option SeLe4n.ThreadId) →
     (PerCoreFlags × List CoreId × List Architecture.TlbInvalidation × (Nat × Nat) ×
-      List Architecture.ICacheInvalidation × List Architecture.PhysicalWrite ×
+      List Architecture.ICacheInvalidation × Architecture.PhysicalWriteLedger ×
       Architecture.RestoreTarget × Nat)
   | (a, b, c, d, e, f, g, h) => (a, b, c, d, e, f, g, SeLe4n.ThreadId.optCode h)
 
@@ -192,7 +192,7 @@ value-returning syscall builds neither its outcome nor its frame. -/
     (UInt64 × UInt64 × UInt64 × UInt64 × UInt64 × UInt64 × UInt64 ×
       PerCoreFlags × List CoreId ×
       List Architecture.TlbInvalidation × (Nat × Nat) ×
-      List Architecture.ICacheInvalidation × List Architecture.PhysicalWrite ×
+      List Architecture.ICacheInvalidation × Architecture.PhysicalWriteLedger ×
       Architecture.RestoreTarget × Nat) × SystemState :=
   let callerCode := st.scheduler.currentCode.get execCore
   let pending0 := reschedulePendingSnapshot st
@@ -214,7 +214,7 @@ value-returning syscall builds neither its outcome nor its frame. -/
           (Architecture.shootdownChangedTargetsOverFrom pend0 st'' execCore) gen0 st'',
         (gen0, st''.tlbShootdown.roundGeneration),
         st''.pendingIcacheMaintenance,
-        st''.pendingPhysicalWrites,
+        st''.drainedPhysicalWrites,
         Architecture.restoreTargetOnCore st'' execCore,
         st''.scheduler.currentCode.get execCore),
        Architecture.clearPhysicalWrites (Architecture.clearIcacheMaintenance st''))

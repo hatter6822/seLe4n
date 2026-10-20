@@ -4004,8 +4004,8 @@ publish an address-space layout the projection deliberately withholds; it is
 drained in the atomic step that commits the transition besides. -/
 theorem pendingPhysicalWrites_write_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
-    (m : List SeLe4n.Kernel.Architecture.PhysicalWrite) :
-    projectState ctx observer { st with pendingPhysicalWrites := m } =
+    (m : SeLe4n.Kernel.Architecture.PhysicalWriteLedger) (drained : Bool) :
+    projectState ctx observer { st with physicalWrites := m, physicalWritesDrained := drained } =
       projectState ctx observer st := rfl
 
 /-- The reschedule-SGI accumulator (KSC-1, non-interference): a write to a

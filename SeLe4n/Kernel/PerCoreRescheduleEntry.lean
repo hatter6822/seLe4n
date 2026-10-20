@@ -158,7 +158,7 @@ def perCoreRescheduleEntry (coreId : UInt64) : BaseIO Unit := do
     (((Concurrency.coreIdOfUInt64? coreId).map
       (fun c => (c, st'.scheduler.currentOnCore c)),
       Concurrency.restoreTargetAt st' coreId,
-      (st'.pendingPhysicalWrites, st'.pendingIcacheMaintenance)),
+      (st'.drainedPhysicalWrites, st'.pendingIcacheMaintenance)),
       Architecture.clearIcacheMaintenance (Architecture.clearPhysicalWrites st')))
   Platform.FFI.completePhysicalWrites record.2.2.1
   Platform.FFI.completeIcacheMaintenance record.2.2.2
@@ -191,7 +191,7 @@ theorem perCoreRescheduleEntry_def (coreId : UInt64) :
           (((Concurrency.coreIdOfUInt64? coreId).map
             (fun c => (c, st'.scheduler.currentOnCore c)),
             Concurrency.restoreTargetAt st' coreId,
-            (st'.pendingPhysicalWrites, st'.pendingIcacheMaintenance)),
+            (st'.drainedPhysicalWrites, st'.pendingIcacheMaintenance)),
             Architecture.clearIcacheMaintenance (Architecture.clearPhysicalWrites st')))
         Platform.FFI.completePhysicalWrites record.2.2.1
         Platform.FFI.completeIcacheMaintenance record.2.2.2

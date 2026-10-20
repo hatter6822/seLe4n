@@ -153,7 +153,7 @@ def perCoreTimerTickEntry (coreId : UInt64) : BaseIO Unit := do
       (Concurrency.coreIdOfUInt64? coreId).map
         (fun c => (c, st'.scheduler.currentOnCore c)),
       Concurrency.restoreTargetAt st' coreId,
-      (st'.pendingPhysicalWrites, st'.pendingIcacheMaintenance)),
+      (st'.drainedPhysicalWrites, st'.pendingIcacheMaintenance)),
       Architecture.clearIcacheMaintenance (Architecture.clearPhysicalWrites st')))
   Platform.FFI.completePhysicalWrites r.2.2.2.1
   if r.1.2 then Platform.FFI.ffiTimerAdvanceTickCount
@@ -190,7 +190,7 @@ theorem perCoreTimerTickEntry_def (coreId : UInt64) :
             (Concurrency.coreIdOfUInt64? coreId).map
               (fun c => (c, st'.scheduler.currentOnCore c)),
             Concurrency.restoreTargetAt st' coreId,
-            (st'.pendingPhysicalWrites, st'.pendingIcacheMaintenance)),
+            (st'.drainedPhysicalWrites, st'.pendingIcacheMaintenance)),
             Architecture.clearIcacheMaintenance (Architecture.clearPhysicalWrites st')))
         Platform.FFI.completePhysicalWrites r.2.2.2.1
         if r.1.2 then Platform.FFI.ffiTimerAdvanceTickCount

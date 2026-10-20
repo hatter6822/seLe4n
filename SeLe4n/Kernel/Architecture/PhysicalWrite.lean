@@ -9,6 +9,8 @@
 
 import SeLe4n.Prelude
 import SeLe4n.Kernel.Architecture.CacheInvalidation
+import SeLe4n.Kernel.Architecture.LittleEndianWords
+import SeLe4n.Model.Erased
 
 /-!
 # WS-BP BP7.2 — the physical writes a committed transition owes
@@ -93,7 +95,7 @@ inductive PhysicalWrite where
 namespace PhysicalWrite
 
 /-- The FFI tag (see the module's encoding contract). -/
-def tag : PhysicalWrite → UInt64
+@[inline] def tag : PhysicalWrite → UInt64
   | .zeroPage _ => 0
   | .storeDescriptor _ _ => 1
   | .invalidateAsid _ => 2
@@ -101,7 +103,7 @@ def tag : PhysicalWrite → UInt64
   | .storeTableDescriptor _ _ => 4
 
 /-- The FFI address operand. -/
-def addr : PhysicalWrite → UInt64
+@[inline] def addr : PhysicalWrite → UInt64
   | .zeroPage base => base.toNat.toUInt64
   | .storeDescriptor entry _ => entry.toNat.toUInt64
   | .invalidateAsid asid => asid.toNat.toUInt64
@@ -109,7 +111,7 @@ def addr : PhysicalWrite → UInt64
   | .storeTableDescriptor entry _ => entry.toNat.toUInt64
 
 /-- The FFI value operand. -/
-def value : PhysicalWrite → UInt64
+@[inline] def value : PhysicalWrite → UInt64
   | .zeroPage _ => 0
   | .storeDescriptor _ v => v
   | .invalidateAsid _ => 0
@@ -162,6 +164,270 @@ theorem icacheMaintenance_isSome_iff (w : PhysicalWrite) :
     w.icacheMaintenance.isSome ↔ ∃ base, w = zeroPage base := by
   cases w <;> simp [icacheMaintenance]
 
+/-- The three words the HAL is handed for a write. -/
+@[inline] def words (w : PhysicalWrite) : UInt64 × UInt64 × UInt64 := (w.tag, w.addr, w.value)
+
 end PhysicalWrite
+
+-- ============================================================================
+-- WS-ZA ZA5.4: the ledger as a word buffer
+-- ============================================================================
+
+/-- The bytes one ledger entry takes: its tag, address and value words. -/
+def ledgerEntryBytes : Nat := 24
+
+/-- The entries a ledger is made with room for; a transition that owes more
+grows the buffer (an untyped reset's scrub of a large region). -/
+def ledgerInitialEntries : Nat := 128
+
+/-- The first `n` entries of a ledger buffer, as the HAL reads them. -/
+def decodeLedger (b : ByteArray) : Nat → List (UInt64 × UInt64 × UInt64)
+  | 0 => []
+  | n + 1 => decodeLedger b n ++
+      [(le64At b (ledgerEntryBytes * n), le64At b (ledgerEntryBytes * n + 8),
+        le64At b (ledgerEntryBytes * n + 16))]
+
+/-- Entry `i` of a ledger buffer: its tag, address and value words. -/
+@[inline] def ledgerEntryAt (b : ByteArray) (i : Nat) : UInt64 × UInt64 × UInt64 :=
+  (le64At b (ledgerEntryBytes * i), le64At b (ledgerEntryBytes * i + 8),
+    le64At b (ledgerEntryBytes * i + 16))
+
+/-- The `k` entries of a ledger buffer from entry `i`, in order. -/
+def decodeLedgerFrom (b : ByteArray) : Nat → Nat → List (UInt64 × UInt64 × UInt64)
+  | _, 0 => []
+  | i, k + 1 => ledgerEntryAt b i :: decodeLedgerFrom b (i + 1) k
+
+theorem decodeLedgerFrom_succ (b : ByteArray) :
+    ∀ (i k : Nat), decodeLedgerFrom b i (k + 1) =
+      decodeLedgerFrom b i k ++ [ledgerEntryAt b (i + k)]
+  | _, 0 => rfl
+  | i, k + 1 => by
+    rw [decodeLedgerFrom, decodeLedgerFrom_succ b (i + 1) k, decodeLedgerFrom,
+      show i + 1 + k = i + (k + 1) from by omega]
+    rfl
+
+/-- The ledger's entries read from the first. -/
+theorem decodeLedger_eq_from (b : ByteArray) : ∀ n, decodeLedger b n = decodeLedgerFrom b 0 n
+  | 0 => rfl
+  | n + 1 => by
+    rw [decodeLedger, decodeLedgerFrom_succ, decodeLedger_eq_from b n, Nat.zero_add]
+    rfl
+
+theorem length_decodeLedger (b : ByteArray) : ∀ n, (decodeLedger b n).length = n
+  | 0 => rfl
+  | n + 1 => by rw [decodeLedger, List.length_append, length_decodeLedger b n]; rfl
+
+/-- `b` with `k` zero bytes appended. -/
+def growZeros (b : ByteArray) : Nat → ByteArray
+  | 0 => b
+  | k + 1 => growZeros (b.push 0) k
+
+theorem ByteArray.size_push' (b : ByteArray) (x : UInt8) : (b.push x).size = b.size + 1 := by
+  cases b; simp [ByteArray.push, ByteArray.size]
+
+theorem size_growZeros (b : ByteArray) : ∀ k, (growZeros b k).size = b.size + k
+  | 0 => rfl
+  | k + 1 => by
+    rw [growZeros, size_growZeros _ k, ByteArray.size_push']
+    omega
+
+theorem get!_growZeros (b : ByteArray) : ∀ (k i : Nat), i < b.size →
+    (growZeros b k).get! i = b.get! i
+  | 0, _, _ => rfl
+  | k + 1, i, h => by
+    rw [growZeros, get!_growZeros _ k i (by rw [ByteArray.size_push']; omega)]
+    cases b with
+    | mk d =>
+    simp only [ByteArray.push, ByteArray.get!]
+    have h' : i < d.size := h
+    rw [getElem!_pos (d.push 0) i (by simp; omega), getElem!_pos d i h', Array.getElem_push]
+    simp [h']
+
+/-- A word of `b` below its end reads the same once `b` is grown. -/
+theorem le64At_growZeros (b : ByteArray) (k j : Nat) (h : j + 8 ≤ b.size) :
+    le64At (growZeros b k) j = le64At b j := by
+  simp only [le64At]
+  repeat (rw [get!_growZeros b k _ (by omega)])
+
+/-- Entries below `n` are words below byte `24 n`: a buffer that agrees below
+that byte decodes the same. -/
+theorem decodeLedger_congr (b b' : ByteArray) :
+    ∀ n, (∀ j, j + 8 ≤ ledgerEntryBytes * n → le64At b' j = le64At b j) →
+      decodeLedger b' n = decodeLedger b n
+  | 0, _ => rfl
+  | n + 1, h => by
+    simp only [decodeLedger, ledgerEntryBytes] at h ⊢
+    rw [decodeLedger_congr b b' n (fun j hj => h j (by simp only [ledgerEntryBytes] at hj; omega)),
+      h _ (by omega), h _ (by omega), h _ (by omega)]
+
+/-- **WS-ZA ZA5.4: the physical writes a transition owes, as the HAL reads them**
+— a buffer of `count` three-word entries (`decodeLedger`), the entry for a write
+its `PhysicalWrite.words`.  `ghost` is the list the proofs reason about, and
+`encodes` ties the buffer to it, so the list is never built: a write is three
+words stored where the buffer lies (`push`), and draining the ledger
+(`clear`) keeps the buffer for the next transition. -/
+structure PhysicalWriteLedger where
+  ghost : SeLe4n.Erased (List PhysicalWrite)
+  bytes : ByteArray
+  count : Nat
+  encodes : decodeLedger bytes count = ghost.out.map PhysicalWrite.words
+  room : ledgerEntryBytes * count ≤ bytes.size
+
+namespace PhysicalWriteLedger
+
+/-- The writes the ledger holds, in record order. -/
+noncomputable def toList (l : PhysicalWriteLedger) : List PhysicalWrite := l.ghost.out
+
+/-- An empty ledger with room for `ledgerInitialEntries` writes. -/
+def empty : PhysicalWriteLedger where
+  ghost := SeLe4n.Erased.mk []
+  bytes := growZeros ByteArray.empty (ledgerEntryBytes * ledgerInitialEntries)
+  count := 0
+  encodes := by simp [decodeLedger]
+  room := Nat.zero_le _
+
+instance : Inhabited PhysicalWriteLedger := ⟨empty⟩
+
+@[simp] theorem toList_empty : empty.toList = [] := by simp [toList, empty]
+
+/-- The buffer with room for one more entry. -/
+@[inline] def roomFor (b : ByteArray) (n : Nat) : ByteArray :=
+  if ledgerEntryBytes * n + ledgerEntryBytes ≤ b.size then b
+  else growZeros b (ledgerEntryBytes * n + ledgerEntryBytes - b.size)
+
+theorem size_roomFor (b : ByteArray) (n : Nat) :
+    ledgerEntryBytes * n + ledgerEntryBytes ≤ (roomFor b n).size := by
+  unfold roomFor
+  split
+  · assumption
+  · rw [size_growZeros]; omega
+
+theorem le64At_roomFor (b : ByteArray) (n j : Nat) (h : j + 8 ≤ b.size) :
+    le64At (roomFor b n) j = le64At b j := by
+  unfold roomFor
+  split
+  · rfl
+  · exact le64At_growZeros b _ j h
+
+/-- The entry `n` of `b` written with `t`, `a`, `v`. -/
+@[inline] def writeEntry (b : ByteArray) (n : Nat) (t a v : UInt64) : ByteArray :=
+  setLe64 (setLe64 (setLe64 b (ledgerEntryBytes * n) t) (ledgerEntryBytes * n + 8) a)
+    (ledgerEntryBytes * n + 16) v
+
+theorem decodeLedger_writeEntry (b : ByteArray) (n : Nat) (t a v : UInt64)
+    (hSize : ledgerEntryBytes * n + ledgerEntryBytes ≤ b.size) :
+    decodeLedger (writeEntry b n t a v) (n + 1) = decodeLedger b n ++ [(t, a, v)] := by
+  simp only [ledgerEntryBytes] at hSize
+  simp only [decodeLedger, writeEntry, ledgerEntryBytes]
+  have hLow : decodeLedger (writeEntry b n t a v) n = decodeLedger b n := by
+    apply decodeLedger_congr
+    intro j hj
+    simp only [ledgerEntryBytes] at hj
+    simp only [writeEntry, ledgerEntryBytes]
+    rw [le64At_setLe64_of_disjoint _ _ _ _ (by omega), le64At_setLe64_of_disjoint _ _ _ _ (by omega),
+      le64At_setLe64_of_disjoint _ _ _ _ (by omega)]
+  simp only [writeEntry, ledgerEntryBytes] at hLow
+  rw [hLow]
+  simp only [List.append_cancel_left_eq, List.cons.injEq, and_true, Prod.mk.injEq]
+  refine ⟨?_, ?_, ?_⟩
+  · rw [le64At_setLe64_of_disjoint _ _ _ _ (by omega), le64At_setLe64_of_disjoint _ _ _ _ (by omega),
+      le64At_setLe64_same _ _ _ (by omega)]
+  · rw [le64At_setLe64_of_disjoint _ _ _ _ (by omega),
+      le64At_setLe64_same _ _ _ (by simp only [size_setLe64]; omega)]
+  · rw [le64At_setLe64_same _ _ _ (by simp only [size_setLe64]; omega)]
+
+/-- The entries a write is stored after: none when the ledger was `drained`
+(its entries handed to the HAL, so the write starts it over), else all of them. -/
+@[inline] def baseCount (l : PhysicalWriteLedger) (drained : Bool) : Nat :=
+  if drained then 0 else l.count
+
+/-- The writes a write is recorded after: `baseCount`'s entries. -/
+noncomputable def baseList (l : PhysicalWriteLedger) (drained : Bool) : List PhysicalWrite :=
+  if drained then [] else l.ghost.out
+
+theorem decodeLedger_baseCount (l : PhysicalWriteLedger) (drained : Bool) :
+    decodeLedger l.bytes (l.baseCount drained) = (l.baseList drained).map PhysicalWrite.words := by
+  unfold baseCount baseList
+  split
+  · rfl
+  · exact l.encodes
+
+theorem room_baseCount (l : PhysicalWriteLedger) (drained : Bool) :
+    ledgerEntryBytes * l.baseCount drained ≤ l.bytes.size := by
+  unfold baseCount
+  split
+  · simp
+  · exact l.room
+
+/-- **Record one write, as its words**: `t`, `a`, `v` stored as the entry after
+`baseCount`, in the buffer where it lies when it has room; the write itself is
+ghost.  Out of line, so a caller's `{ st with physicalWrites := … }` hands the
+ledger over and the state is written in its cell rather than copied. -/
+@[noinline] def pushWords (l : PhysicalWriteLedger) (drained : Bool)
+    (w : SeLe4n.Erased PhysicalWrite) (t a v : UInt64) (h : w.out.words = (t, a, v)) :
+    PhysicalWriteLedger where
+  ghost := SeLe4n.Erased.mk (l.baseList drained ++ [w.out])
+  bytes := writeEntry (roomFor l.bytes (l.baseCount drained)) (l.baseCount drained) t a v
+  count := l.baseCount drained + 1
+  encodes := by
+    rw [decodeLedger_writeEntry _ _ _ _ _ (size_roomFor _ _), SeLe4n.Erased.out_mk,
+      List.map_append, ← decodeLedger_baseCount, List.map_singleton, h]
+    congr 1
+    apply decodeLedger_congr
+    intro j hj
+    apply le64At_roomFor
+    have := l.room_baseCount drained
+    omega
+  room := by
+    simp only [writeEntry, size_setLe64]
+    have := size_roomFor l.bytes (l.baseCount drained)
+    simp only [ledgerEntryBytes] at this ⊢
+    omega
+
+/-- **Record one write after `baseCount`'s entries**: its three words, through
+`pushWords`, so the write is never built. -/
+@[inline] def pushAfter (l : PhysicalWriteLedger) (drained : Bool) (w : PhysicalWrite) :
+    PhysicalWriteLedger :=
+  pushWords l drained (SeLe4n.Erased.mk w) w.tag w.addr w.value
+    (by rw [SeLe4n.Erased.out_mk]; rfl)
+
+/-- **Record one write** after every entry. -/
+@[inline] def push (l : PhysicalWriteLedger) (w : PhysicalWrite) : PhysicalWriteLedger :=
+  l.pushAfter false w
+
+@[simp] theorem toList_pushAfter (l : PhysicalWriteLedger) (drained : Bool) (w : PhysicalWrite) :
+    (l.pushAfter drained w).toList = (if drained then [] else l.toList) ++ [w] := by
+  simp only [toList, pushAfter, pushWords, SeLe4n.Erased.out_mk, baseList]
+
+@[simp] theorem toList_push (l : PhysicalWriteLedger) (w : PhysicalWrite) :
+    (l.push w).toList = l.toList ++ [w] := by
+  simp [push]
+
+/-- **Record writes**, in order. -/
+@[inline] def pushAll (l : PhysicalWriteLedger) (ws : List PhysicalWrite) : PhysicalWriteLedger :=
+  ws.foldl push l
+
+@[simp] theorem toList_pushAll (l : PhysicalWriteLedger) (ws : List PhysicalWrite) :
+    (l.pushAll ws).toList = l.toList ++ ws := by
+  induction ws generalizing l with
+  | nil => simp [pushAll]
+  | cons w ws ih =>
+    simp only [pushAll, List.foldl_cons] at ih ⊢
+    rw [ih, toList_push, List.append_assoc, List.singleton_append]
+
+/-- **Record writes after `baseCount`'s entries**, in order: the first through
+`pushAfter`, the rest after it. -/
+@[inline] def pushAllAfter (l : PhysicalWriteLedger) (drained : Bool) :
+    List PhysicalWrite → PhysicalWriteLedger
+  | [] => l
+  | w :: rest => (l.pushAfter drained w).pushAll rest
+
+theorem toList_pushAllAfter_cons (l : PhysicalWriteLedger) (drained : Bool) (w : PhysicalWrite)
+    (rest : List PhysicalWrite) :
+    (l.pushAllAfter drained (w :: rest)).toList =
+      (if drained then [] else l.toList) ++ w :: rest := by
+  simp [pushAllAfter]
+
+end PhysicalWriteLedger
 
 end SeLe4n.Kernel.Architecture

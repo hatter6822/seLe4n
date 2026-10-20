@@ -922,8 +922,9 @@ def carveZeroFrame (st : SystemState) (frame : FrameObject) : SystemState :=
   else { st with
           machine := SeLe4n.zeroMemoryRange st.machine frame.base SeLe4n.pageBytes
           -- WS-BP BP7.2: the same scrub, owed to physical memory.
-          pendingPhysicalWrites := st.pendingPhysicalWrites ++
-            [SeLe4n.Kernel.Architecture.PhysicalWrite.zeroPage frame.base] }
+          physicalWrites := st.physicalWrites.pushAfter st.physicalWritesDrained
+            (SeLe4n.Kernel.Architecture.PhysicalWrite.zeroPage frame.base)
+          physicalWritesDrained := false }
 
 /-- **WS-BP BP7.1 slice 4 (`v0.36.8`): the size bounds of a carved untyped**, as
 a power of two.  The lower bound is one page: every carve's base must stay on a
@@ -1116,15 +1117,17 @@ def CarveRequest.scrub (st : SystemState) (ut : UntypedObject) : CarveRequest �
   | .vspaceRoot _ =>
       { st with
           machine := SeLe4n.zeroMemoryRange st.machine (untypedNextFrame ut).base SeLe4n.pageBytes
-          pendingPhysicalWrites := st.pendingPhysicalWrites ++
-            [SeLe4n.Kernel.Architecture.PhysicalWrite.zeroPage (untypedNextFrame ut).base] }
+          physicalWrites := st.physicalWrites.pushAfter st.physicalWritesDrained
+            (SeLe4n.Kernel.Architecture.PhysicalWrite.zeroPage (untypedNextFrame ut).base)
+          physicalWritesDrained := false }
   -- WS-BP BP7.1 (`v0.36.12`): a table page is zeroed for the root's reason — a
   -- zeroed table holds only invalid descriptors.
   | .pageTable =>
       { st with
           machine := SeLe4n.zeroMemoryRange st.machine (untypedNextFrame ut).base SeLe4n.pageBytes
-          pendingPhysicalWrites := st.pendingPhysicalWrites ++
-            [SeLe4n.Kernel.Architecture.PhysicalWrite.zeroPage (untypedNextFrame ut).base] }
+          physicalWrites := st.physicalWrites.pushAfter st.physicalWritesDrained
+            (SeLe4n.Kernel.Architecture.PhysicalWrite.zeroPage (untypedNextFrame ut).base)
+          physicalWritesDrained := false }
 
 /-- **WS-BP BP7.1 (`v0.36.5`, generalized at slice 4, `v0.36.8`): carve one object
 out of an untyped the caller holds — seL4's `Untyped_Retype`.**
@@ -1368,7 +1371,8 @@ rewritten and the scrub recorded, or the input itself. -/
 theorem carveZeroFrame_eq (st : SystemState) (frame : FrameObject) :
     carveZeroFrame st frame =
       { st with machine := (carveZeroFrame st frame).machine
-                pendingPhysicalWrites := (carveZeroFrame st frame).pendingPhysicalWrites } := by
+                physicalWrites := (carveZeroFrame st frame).physicalWrites
+                physicalWritesDrained := (carveZeroFrame st frame).physicalWritesDrained } := by
   unfold carveZeroFrame; split <;> rfl
 
 /-- **WS-BP BP7.1**: a RAM frame's page is zero after the scrub. -/
@@ -1389,7 +1393,8 @@ theorem carveZeroFrame_pendingPhysicalWrites (st : SystemState) (frame : FrameOb
       st.pendingPhysicalWrites ++
         [SeLe4n.Kernel.Architecture.PhysicalWrite.zeroPage frame.base] := by
   unfold carveZeroFrame
-  simp only [hRam, Bool.false_eq_true, ↓reduceIte]
+  simp only [hRam, Bool.false_eq_true, ↓reduceIte, SystemState.pendingPhysicalWrites,
+    SeLe4n.Kernel.Architecture.PhysicalWriteLedger.toList_pushAfter]
 
 /-- **WS-BP post-landing audit (`v0.36.32`)**: a device frame's scrub records
 nothing — its page is MMIO, where a store is a command — so it owes no

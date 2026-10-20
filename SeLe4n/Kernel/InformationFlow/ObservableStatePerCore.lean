@@ -1053,8 +1053,8 @@ theorem onCore_pendingIcacheMaintenance (ctx : LabelingContext) (L : SecurityLab
 /-- WS-BP BP7.2: the physical-write ledger is invisible on every core. -/
 theorem onCore_pendingPhysicalWrites (ctx : LabelingContext) (L : SecurityLabel)
     (s : SystemState) (c : CoreId)
-    (v : List SeLe4n.Kernel.Architecture.PhysicalWrite) :
-    ObservableState.onCore ctx c L { s with pendingPhysicalWrites := v }
+    (v : SeLe4n.Kernel.Architecture.PhysicalWriteLedger) (drained : Bool) :
+    ObservableState.onCore ctx c L { s with physicalWrites := v, physicalWritesDrained := drained }
       = ObservableState.onCore ctx c L s :=
   onCore_perCore_independence ctx L rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl
 

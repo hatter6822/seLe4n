@@ -1906,7 +1906,7 @@ private def runPageTableChecks : IO Unit := do
 
 /-- The writes a step appended to the ledger. -/
 private def recordedBy (before after : SystemState) : List Architecture.PhysicalWrite :=
-  after.pendingPhysicalWrites.drop before.pendingPhysicalWrites.length
+  (SeLe4n.Testing.pendingWrites after).drop (SeLe4n.Testing.pendingWrites before).length
 
 private def store (entry : Nat) (value : UInt64) : Architecture.PhysicalWrite :=
   .storeDescriptor (SeLe4n.PAddr.ofNat entry) value
@@ -1935,7 +1935,7 @@ private def runPhysicalWriteChecks : IO Unit := do
   let l3 := carveUtBase + 4 * SeLe4n.pageBytes
   let spare := carveUtBase + 5 * SeLe4n.pageBytes
   assertBool "the scenario starts with nothing owed"
-    (st.pendingPhysicalWrites == [])
+    (SeLe4n.Testing.pendingWrites st == [])
   match runAll st
       [decodeCarve slotUtRetype vspaceRootTag 980 slotOwnCnRW 12,
        decodeCarve slotUtRetype frameTag 982 slotOwnCnRW 14,
