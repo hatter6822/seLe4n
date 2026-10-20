@@ -13,13 +13,15 @@ and a page invalidation keeps the entries it removes for the next fill.
   the view field by field (`tlbEntriesHoldWalked`, moved here from
   `IpcBufferTlbFill.lean`) and writes the translation over the core's first
   spare (`tlbPushWalked`, `tlbEntryOverwrite`); with no spare the entry is
-  built out of line (`tlbEntryOfFields`).
+  built out of line (`tlbEntryOfFields`).  Each write is a single-field update
+  out of line (`setTlbOnCore`, `setTlbSpareOnCore`), so the state is written in
+  place.
 - **The page drain** (`Architecture/PerCoreTlbModel.lean`): a drain that
   touches the view runs `tlbDrainPage`, which moves each covered entry and its
   list cell onto the spares and keeps the rest without rebuilding them
   (`tlbDrainPageLoop`, proven equal to the filter).
-- **Readings** (normal build, first call / steady state): frame map 14 / 8
-  (14 / 10), map of a copied capability 12 / 8 (13 / 10), unmap 7 (8), revoke
+- **Readings** (normal build, first call / steady state): frame map 14 / 7
+  (14 / 10), map of a copied capability 12 / 7 (13 / 10), unmap 7 (8), revoke
   destroying a mapped frame 9 / 7 (11 / 9); everything else is unchanged.  The
   exerciser pins the new readings.
 

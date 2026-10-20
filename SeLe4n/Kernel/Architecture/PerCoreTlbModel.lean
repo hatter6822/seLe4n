@@ -2484,24 +2484,33 @@ spare cell).  Out of line, so it is built only here. -/
     (paddr : SeLe4n.PAddr) (perms : PagePermissions) : TlbEntry :=
   { asid, vaddr, paddr, perms }
 
+/-- WS-ZA ZA5.4: core `c`'s spare cells replaced by `v`, out of line, so the
+state is written in place by the one update.  The spares are logically one
+value, so this is the state itself (`setTlbSpareOnCore_eq`). -/
+def setTlbSpareOnCore (st : SystemState) (c : CoreId) (v : Squash (List TlbEntry)) :
+    SystemState :=
+  { st with perCoreTlbSpare := st.perCoreTlbSpare.set c.val v c.isLt }
+
+theorem setTlbSpareOnCore_eq (st : SystemState) (c : CoreId) (v : Squash (List TlbEntry)) :
+    setTlbSpareOnCore st c v = st :=
+  SystemState.with_perCoreTlbSpare _ _
+
 /-- WS-ZA ZA5.4: core `c`'s view with the walked entry of a translation on its
-front, given the core's spare cells `spare`.  The spares are taken out of their
-slot before they are matched, so nothing else holds them: the first spare and
-its list cell become the new entry and its cell.  With no spare, the entry is
-built. -/
+front, given the core's spare cells `spare`, which the caller has taken out of
+their slot so nothing else holds them: the first spare and its list cell become
+the new entry and its cell.  With no spare, the entry is built.  The view is
+read before the state is handed on, and each write is a single-field update out
+of line, so the state is written in place. -/
 @[inline] def tlbPushFrom (st : SystemState) (c : CoreId) (asid : SeLe4n.ASID)
     (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr) (perms : PagePermissions)
     (spare : List TlbEntry) : SystemState :=
-  let st0 := { st with perCoreTlbSpare := st.perCoreTlbSpare.set c.val (Squash.mk []) c.isLt }
   match spare with
   | r :: rest =>
-    { st0 with
-      perCoreTlb := st0.perCoreTlb.set c.val
-        { entries := tlbEntryOverwrite r asid vaddr paddr perms :: (tlbOnCore st0 c).entries }
-        c.isLt
-      perCoreTlbSpare := st0.perCoreTlbSpare.set c.val (Squash.mk rest) c.isLt }
+    let es := (tlbOnCore st c).entries
+    setTlbOnCore (setTlbSpareOnCore st c (Squash.mk rest)) c
+      { entries := tlbEntryOverwrite r asid vaddr paddr perms :: es }
   | [] =>
-    setTlbOnCore st0 c { entries := tlbEntryOfFields asid vaddr paddr perms :: (tlbOnCore st0 c).entries }
+    setTlbOnCore st c { entries := tlbEntryOfFields asid vaddr paddr perms :: (tlbOnCore st c).entries }
 
 theorem tlbPushFrom_eq (st : SystemState) (c : CoreId) (asid : SeLe4n.ASID)
     (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr) (perms : PagePermissions)
@@ -2510,19 +2519,20 @@ theorem tlbPushFrom_eq (st : SystemState) (c : CoreId) (asid : SeLe4n.ASID)
       setTlbOnCore st c
         { entries := { asid := asid, vaddr := vaddr, paddr := paddr, perms := perms } ::
             (tlbOnCore st c).entries } := by
-  unfold tlbPushFrom setTlbOnCore tlbOnCore tlbEntryOfFields
-  cases spare <;>
-    simp only [tlbEntryOverwrite_eq] <;> cases st <;>
-    simp only [SystemState.mk.injEq, and_true, true_and] <;>
-    exact Vector.ext fun _ _ => Subsingleton.elim _ _
+  unfold tlbPushFrom tlbEntryOfFields
+  cases spare with
+  | nil => rfl
+  | cons r rest => simp only [tlbEntryOverwrite_eq, setTlbSpareOnCore_eq]
 
 /-- WS-ZA ZA5.4: core `c`'s view with the walked entry of a translation on its
-front, out of line: the entry and its cell are the core's first spare when it
+front, out of line: the core's spares are read and their slot cleared before
+they are matched, so the entry and its cell are the core's first spare when it
 has one (`tlbPushFrom`). -/
 @[noinline] def tlbPushWalked (st : SystemState) (c : CoreId) (asid : SeLe4n.ASID)
     (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr) (perms : PagePermissions) : SystemState :=
-  Quot.lift (tlbPushFrom st c asid vaddr paddr perms)
-    (fun a b _ => by rw [tlbPushFrom_eq, tlbPushFrom_eq]) (st.perCoreTlbSpare.get c)
+  let sp := st.perCoreTlbSpare.get c
+  Quot.lift (tlbPushFrom (setTlbSpareOnCore st c (Squash.mk [])) c asid vaddr paddr perms)
+    (fun a b _ => by rw [tlbPushFrom_eq, tlbPushFrom_eq]) sp
 
 theorem tlbPushWalked_eq (st : SystemState) (c : CoreId) (asid : SeLe4n.ASID)
     (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr) (perms : PagePermissions) :
@@ -2532,7 +2542,9 @@ theorem tlbPushWalked_eq (st : SystemState) (c : CoreId) (asid : SeLe4n.ASID)
             (tlbOnCore st c).entries } := by
   unfold tlbPushWalked
   induction st.perCoreTlbSpare.get c using Squash.ind with
-  | h l => exact tlbPushFrom_eq st c asid vaddr paddr perms l
+  | h l =>
+    show tlbPushFrom _ c asid vaddr paddr perms l = _
+    rw [tlbPushFrom_eq, setTlbSpareOnCore_eq]
 
 /-- WS-ZA ZA5.4: **`tlbFillOnCore` as compiled** — the walk's ASID table, root
 and mapping read in place, the view searched field by field
