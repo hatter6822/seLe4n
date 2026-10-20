@@ -1,3 +1,49 @@
+## v0.36.113 — WS-ZA ZA5.4 part 3: address-space reads and the shootdown round allocate only their data
+
+The page-table walk, the TLB shootdown round and the teardown's unmap no longer
+build closures, filtered lists or copies of the per-core vectors; what an
+address-space operation allocates now is the data it records.
+
+- **Walk reads as first-order loops** (`Model/Object/Structures.lean`,
+  `Architecture/HardwareTables.lean`): `walkComplete`, `missingLevel?`,
+  `translationReady`, `tablePageAt?`, `pageTableInstallLive`, the descriptor
+  stores and the page descriptor word compile to loops and direct words through
+  `@[csimp]` equalities; `slotHeldIn` decides the page-table removal's slot
+  test; `validateVSpaceMapPermsForMemoryKind` finds the region without a
+  closure.
+- **Shootdown round in place** (`Architecture/TlbShootdown.lean`,
+  `TlbShootdownProtocol.lean`, `PerCoreTlbModel.lean`): the round's descriptor
+  and generation are read once before the state changes, so the posting
+  (`postShootdownRoundCoalescingOnce`), the round open
+  (`beginShootdownRoundForOnce`), the window drain
+  (`drainShootdownsInWindowWhole`) and the per-core catch-up
+  (`handleTlbShootdownReqOnCorePerCoreInWindowOnce`) write the queue and
+  acknowledgment vectors in place.  Each core's target list comes from
+  `shootdownTargetsTable`, built when the image initialises, and an
+  invalidation that covers nothing in a view returns the view
+  (`applyTlbInvalidationSharing`).  All are `@[csimp]` equalities.
+- **Commit seam** (`SyscallDispatchStep.lean`): the step keeps the pre-state's
+  queue vector and generation across the dispatch, not the shootdown record;
+  a commit that posted one round to every other core reports the initiator's
+  target list and its one operand without building either
+  (`shootdownChangedTargetsOverFrom`, `shootdownPostedOpsOfOne`, proven equal
+  to the diff they replace in `syscallDispatchCrossCoreStepWords_eq`).
+- **Capabilities in continuation form**: the frame map resolves its frame
+  through `resolveVSpaceMapFrameK` and the page-table map its root through
+  `resolveCallerCapObjectK`, each proven equal to the resolver it replaces.
+- **Teardown unmap in the root's slot**: the unmap's checks and writes move
+  to `Architecture/VSpaceUnmapPerform.lean`, below the teardown, and
+  `unmapPageState` compiles to `unmapPageStateInPlace`, the unmap's in-slot
+  writes wherever they are admitted.
+- **Readings** (normal build, first call / steady state): frame map 23 / 19
+  (50 / 46 before), map of a copied capability 22 / 19 (50 / 47), unmap 9
+  (86), revoke destroying a mapped frame 19 / 17 (106), unify 4 / 3 (10 / 9),
+  page-table installs 7, 7 and 7 (19, 26, 30), removals 5, 5 and 5 (11, 11, 9),
+  frame delete 5 (6).  The exerciser pins move to them.  What remains is the
+  operations' own data (the mapping-table entry, the TLB fill, the capability's
+  mapping record, the shootdown descriptor and ledger entries) and the
+  teardown's page list.
+
 ## v0.36.112 — WS-ZA ZA5.4 part 2: address-space operations write in place
 
 The frame map and unmap, the instruction-cache unify and the page-table install

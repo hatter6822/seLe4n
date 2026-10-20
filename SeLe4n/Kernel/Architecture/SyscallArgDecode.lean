@@ -362,6 +362,36 @@ def validateVSpaceMapPermsForMemoryKind
     else .ok perms
   | _ => .ok perms
 
+/-- WS-ZA ZA5.4: does the first region of `memoryMap` containing `paddr` hold
+device memory?  A first-order loop. -/
+def firstRegionIsDevice (paddr : PAddr) : List MemoryRegion → Bool
+  | [] => false
+  | r :: rs =>
+    if r.contains paddr then (match r.kind with | .device => true | _ => false)
+    else firstRegionIsDevice paddr rs
+
+/-- WS-ZA ZA5.4: the memory-kind check as it runs — the region found by a
+first-order loop, no predicate closure or region `Option`, and inlined so the
+caller's match on the result cancels (`validateVSpaceMapPermsForMemoryKind_eq_direct`). -/
+@[inline] def validateVSpaceMapPermsForMemoryKindDirect
+    (paddr : PAddr) (perms : PagePermissions) (memoryMap : List MemoryRegion) :
+    Except KernelError PagePermissions :=
+  if firstRegionIsDevice paddr memoryMap && perms.execute then .error .policyDenied
+  else .ok perms
+
+@[csimp] theorem validateVSpaceMapPermsForMemoryKind_eq_direct :
+    @validateVSpaceMapPermsForMemoryKind = @validateVSpaceMapPermsForMemoryKindDirect := by
+  funext paddr perms memoryMap
+  unfold validateVSpaceMapPermsForMemoryKind validateVSpaceMapPermsForMemoryKindDirect
+  induction memoryMap with
+  | nil => simp [firstRegionIsDevice]
+  | cons r rs ih =>
+    by_cases h : r.contains paddr = true
+    · simp only [List.find?_cons, h, Option.map_some, firstRegionIsDevice, ↓reduceIte]
+      cases r.kind <;> cases perms.execute <;> rfl
+    · simp only [List.find?_cons, h, firstRegionIsDevice, Bool.false_eq_true, ↓reduceIte]
+      exact ih
+
 /-- V4-F: Device regions with execute permission are rejected. -/
 theorem validateVSpaceMapPermsForMemoryKind_device_noexec
     (paddr : PAddr) (perms : PagePermissions) (memoryMap : List MemoryRegion)

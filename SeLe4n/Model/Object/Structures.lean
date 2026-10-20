@@ -268,6 +268,100 @@ theorem missingLevel?_none_iff_walkComplete (root : VSpaceRoot) (vaddr : SeLe4n.
     cases h3 : root.slotAt? 3 (PageTableSlot.indexOf 3 vaddr) <;>
     simp [List.find?, List.all, h1, h2, h3]
 
+/-- WS-ZA ZA5.4: **does the walk hold a table at `(level, index)`**, read as a
+first-order loop — `slotAt?`'s `find?` without its predicate closure or its
+`some` (`slotPresentIn_eq`). -/
+def slotPresentIn (level index : Nat) : List PageTableSlot → Bool
+  | [] => false
+  | s :: rest => (s.level == level && s.index == index) || slotPresentIn level index rest
+
+/-- WS-ZA ZA5.4: the table of the first slot at `(level, index)`, read as a
+first-order loop (`find?_bind_eq_slotTableIn`); `⟨0⟩` when there is none, which
+no reader consults (each asks `slotPresentIn` first). -/
+def slotTableIn (level index : Nat) : List PageTableSlot → SeLe4n.ObjId
+  | [] => ⟨0⟩
+  | s :: rest => if s.level == level && s.index == index then s.table else slotTableIn level index rest
+
+theorem slotPresentIn_eq (level index : Nat) (ts : List PageTableSlot) :
+    slotPresentIn level index ts = (ts.find? fun s => s.level == level && s.index == index).isSome := by
+  induction ts with
+  | nil => rfl
+  | cons s rest ih =>
+    simp only [slotPresentIn, List.find?_cons]
+    cases s.level == level && s.index == index <;> simp [ih]
+
+/-- A `find?` of a slot followed by a read of its table is the first-order pair
+of loops. -/
+theorem find?_bind_eq_slotTableIn {β : Type} (level index : Nat) (ts : List PageTableSlot)
+    (g : SeLe4n.ObjId → Option β) :
+    (ts.find? fun s => s.level == level && s.index == index).bind (fun s => g s.table) =
+      if slotPresentIn level index ts then g (slotTableIn level index ts) else none := by
+  induction ts with
+  | nil => rfl
+  | cons s rest ih =>
+    simp only [slotPresentIn, slotTableIn, List.find?_cons]
+    cases h : s.level == level && s.index == index <;> simp [ih]
+
+/-- WS-ZA ZA5.4: **does the walk hold `table` at `(level, index)`**, read as a
+first-order loop — `tables.contains` of that slot without building it
+(`slotHeldIn_eq`). -/
+def slotHeldIn (level index : Nat) (table : SeLe4n.ObjId) : List PageTableSlot → Bool
+  | [] => false
+  | s :: rest =>
+    (s.level == level && s.index == index && s.table == table) || slotHeldIn level index table rest
+
+theorem slotHeldIn_eq (level index : Nat) (table : SeLe4n.ObjId) (ts : List PageTableSlot) :
+    slotHeldIn level index table ts = ts.contains { level := level, index := index, table := table } := by
+  induction ts with
+  | nil => rfl
+  | cons s rest ih =>
+    simp only [slotHeldIn, List.contains_cons, ih]
+    congr 1
+    obtain ⟨l, i, t⟩ := s
+    rw [Bool.eq_iff_iff]
+    simp only [Bool.and_eq_true, beq_iff_eq, PageTableSlot.mk.injEq]
+    constructor
+    · rintro ⟨⟨h1, h2⟩, h3⟩; exact ⟨h1.symm, h2.symm, h3.symm⟩
+    · rintro ⟨h1, h2, h3⟩; exact ⟨⟨h1.symm, h2.symm⟩, h3.symm⟩
+
+/-- WS-ZA ZA5.4: `walkComplete` unrolled over the three levels, each a
+first-order loop (`walkComplete_eq_unrolled`). -/
+def walkCompleteUnrolled (root : VSpaceRoot) (vaddr : SeLe4n.VAddr) : Bool :=
+  slotPresentIn 1 (PageTableSlot.indexOf 1 vaddr) root.tables &&
+  slotPresentIn 2 (PageTableSlot.indexOf 2 vaddr) root.tables &&
+  slotPresentIn 3 (PageTableSlot.indexOf 3 vaddr) root.tables
+
+@[csimp] theorem walkComplete_eq_unrolled : @walkComplete = @walkCompleteUnrolled := by
+  funext root vaddr
+  simp [walkComplete, walkCompleteUnrolled, translationLevels, slotAt?, slotPresentIn_eq,
+    Bool.and_assoc]
+
+/-- WS-ZA ZA5.4: `translationReady` over the unrolled walk, so the map check
+compiled before `walkComplete_eq_unrolled` does not keep the closure form
+(`translationReady_eq_unrolled`). -/
+def translationReadyUnrolled (root : VSpaceRoot) (vaddr : SeLe4n.VAddr) : Bool :=
+  root.tableBase.isSome && walkCompleteUnrolled root vaddr
+
+@[csimp] theorem translationReady_eq_unrolled : @translationReady = @translationReadyUnrolled := by
+  funext root vaddr
+  rw [translationReady, translationReadyUnrolled, walkComplete_eq_unrolled]
+
+/-- WS-ZA ZA5.4: `missingLevel?` unrolled over the three levels; each `some` is a
+constant (`missingLevel?_eq_unrolled`). -/
+def missingLevelUnrolled (root : VSpaceRoot) (vaddr : SeLe4n.VAddr) : Option Nat :=
+  if !slotPresentIn 1 (PageTableSlot.indexOf 1 vaddr) root.tables then some 1
+  else if !slotPresentIn 2 (PageTableSlot.indexOf 2 vaddr) root.tables then some 2
+  else if !slotPresentIn 3 (PageTableSlot.indexOf 3 vaddr) root.tables then some 3
+  else none
+
+@[csimp] theorem missingLevel?_eq_unrolled : @missingLevel? = @missingLevelUnrolled := by
+  funext root vaddr
+  simp only [missingLevel?, missingLevelUnrolled, translationLevels, slotAt?, slotPresentIn_eq]
+  cases h1 : (root.tables.find? fun s => s.level == 1 && s.index == PageTableSlot.indexOf 1 vaddr) <;>
+    cases h2 : (root.tables.find? fun s => s.level == 2 && s.index == PageTableSlot.indexOf 2 vaddr) <;>
+    cases h3 : (root.tables.find? fun s => s.level == 3 && s.index == PageTableSlot.indexOf 3 vaddr) <;>
+    simp [List.find?, h1, h2, h3]
+
 /-- WS-G6/F-P05: O(1) amortized page lookup via `HashMap[vaddr]?`.
 WS-H11: Returns `(PAddr × PagePermissions)` pair. -/
 def lookup (root : VSpaceRoot) (vaddr : SeLe4n.VAddr) : Option (SeLe4n.PAddr × PagePermissions) :=

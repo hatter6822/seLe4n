@@ -196,7 +196,10 @@ value-returning syscall builds neither its outcome nor its frame. -/
       Architecture.RestoreTarget × Nat) × SystemState :=
   let callerCode := st.scheduler.currentCode.get execCore
   let pending0 := reschedulePendingSnapshot st
-  let tlb0 := st.tlbShootdown
+  -- WS-ZA ZA5.4: the queues and the generation, not the shootdown record, so
+  -- the dispatch updates the record and its acknowledgment vector in place.
+  let gen0 := st.tlbShootdown.roundGeneration
+  let pend0 := st.tlbShootdown.pendingShootdowns
   match Platform.FFI.syscallDispatchFromAbiWords ctx execCore syscallId x0 x1 x2 x3 x4 x5
       ipcBufferAddr elr spsr spEl0 x30 st with
   | ((tag, w0, w1, w2, w3, w4, w5), st') =>
@@ -206,9 +209,10 @@ value-returning syscall builds neither its outcome nor its frame. -/
           execCore) execCore
       ((tag, w0, w1, w2, w3, w4, w5,
         pending0.raised st''.scheduler.reschedulePending,
-        Architecture.shootdownChangedTargetsFrom tlb0 st'',
-        Architecture.shootdownPostedOpsFrom tlb0 st'',
-        Architecture.shootdownRoundWindowFrom tlb0 st'',
+        Architecture.shootdownChangedTargetsOverFrom pend0 st'' execCore,
+        Architecture.shootdownPostedOpsOfOne
+          (Architecture.shootdownChangedTargetsOverFrom pend0 st'' execCore) gen0 st'',
+        (gen0, st''.tlbShootdown.roundGeneration),
         st''.pendingIcacheMaintenance,
         st''.pendingPhysicalWrites,
         Architecture.restoreTargetOnCore st'' execCore,
@@ -232,7 +236,9 @@ theorem syscallDispatchCrossCoreStepWords_eq (ctx : LabelingContext)
   rw [Platform.FFI.syscallDispatchFromAbiWords_eq ctx execCore syscallId x0 x1 x2 x3 x4 x5
     ipcBufferAddr elr spsr spEl0 x30 st st' outcome h]
   simp only [Architecture.stageCallerReturnFor_eq_words, SchedulerState.currentOnCore,
-    syscallDispatchCrossCoreStep, currentAsCode, SeLe4n.ThreadId.optCode_ofOptCode]
+    syscallDispatchCrossCoreStep, currentAsCode, SeLe4n.ThreadId.optCode_ofOptCode,
+    Architecture.shootdownPostedOpsOfOne_eq, Architecture.shootdownChangedTargetsOverFrom_eq,
+    Architecture.shootdownPostedOpsFrom_eq_of, Architecture.shootdownChangedTargetsFrom_eq_over]
   rfl
 
 end SeLe4n.Kernel

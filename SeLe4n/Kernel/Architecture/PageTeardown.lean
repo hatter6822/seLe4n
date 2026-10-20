@@ -7,7 +7,7 @@
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
 
-import SeLe4n.Kernel.Architecture.PerCoreCacheModel
+import SeLe4n.Kernel.Architecture.VSpaceUnmapPerform
 
 /-!
 # Page teardown — removing a list of mappings through the verified unmap
@@ -251,6 +251,45 @@ theorem vspaceUnmap_eq_unmapPageState (ec : Concurrency.CoreId) (asid : SeLe4n.A
   rw [hR]
   simp only [hU, storeObject_eq_storeObjectState]
   cases Architecture.unmapIcacheOperand st asid vaddr <;> rfl
+
+/-- WS-ZA ZA5.4: **the teardown's unmap, in place where it is admitted** — the
+unmap's checks (`vspaceUnmapAdmittedAt`) on the root the ASID resolves to, then
+its writes in the root's slot (`vspaceUnmapPerformAt`); any other state runs
+`unmapPageState`.  `unmapPageState_eq_inPlace` is the equality, so a revoke or
+delete that destroys a mapped frame no longer copies the root to erase it. -/
+def unmapPageStateInPlace (executingCore : Concurrency.CoreId) (asid : SeLe4n.ASID)
+    (vaddr : SeLe4n.VAddr) (st : SystemState) : SystemState :=
+  match Architecture.resolveAsidRoot st asid with
+  | none => st
+  | some (rootId, _) =>
+    if vspaceUnmapAdmittedAt st asid vaddr rootId then
+      vspaceUnmapPerformAt executingCore asid vaddr rootId st
+    else unmapPageState executingCore asid vaddr st
+
+@[csimp] theorem unmapPageState_eq_inPlace : @unmapPageState = @unmapPageStateInPlace := by
+  funext ec asid vaddr st
+  unfold unmapPageStateInPlace
+  cases hR : Architecture.resolveAsidRoot st asid with
+  | none => unfold unmapPageState; rw [hR]
+  | some p =>
+    obtain ⟨rootId, root⟩ := p
+    dsimp only
+    split
+    · next hA =>
+      have hA' := hA
+      unfold vspaceUnmapAdmittedAt at hA'
+      obtain ⟨-, hObj, -⟩ := Architecture.resolveAsidRoot_some_implies_obj st asid rootId root hR
+      have hGR : st.getVSpaceRoot? rootId = some root := by
+        simp only [SystemState.getVSpaceRoot?, hObj]
+      simp only [hGR, Bool.and_eq_true, Option.isSome_iff_exists] at hA'
+      obtain ⟨⟨⟨-, e, hE⟩, -⟩, -⟩ := hA'
+      have hU : root.unmapPage vaddr = some { root with mappings := root.mappings.erase vaddr } := by
+        unfold VSpaceRoot.unmapPage; rw [hE]
+      have h1 := vspaceUnmap_eq_unmapPageState ec asid vaddr st rootId root _ hR hU
+      rw [vspaceUnmapPageWithShootdownAndIcacheBroadcast_of_admitted ec asid vaddr rootId st hA] at h1
+      simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at h1
+      exact h1.symm
+    · rfl
 
 /-- **Is the page mapped?**  A live page's ASID resolves and its root maps the
 address, so its unmap succeeds. -/
