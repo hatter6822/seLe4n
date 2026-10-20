@@ -226,6 +226,17 @@ def covers (slot : PageTableSlot) (vaddr : SeLe4n.VAddr) : Bool :=
 
 end PageTableSlot
 
+/-- WS-ZA ZA5.4: the cell an unmap took out of a root's mapping table (its
+`some` and its entry, the entry's value pair among them), kept for the root's
+next mapping to be written over, as a hardware page table's freed entry is
+the next one written.  A `Squash`, so logically one value: no theorem reads it,
+and a root with any spare is the root with any other
+(`VSpaceRoot.with_mappingSpare`). -/
+abbrev MappingSpare :=
+  Squash (Option (SeLe4n.Kernel.RobinHood.RHEntry SeLe4n.VAddr (SeLe4n.PAddr × PagePermissions)))
+
+instance : Repr MappingSpare := ⟨fun _ _ => "spare mapping cell"⟩
+
 /-- WS-G6/F-P05: Minimal VSpace root object: ASID identity plus flat virtual→physical mappings.
 
 This intentionally models only one-level deterministic lookup semantics for WS-B1.
@@ -260,9 +271,19 @@ structure VSpaceRoot where
       translation is harmless — every mapping a capability records is made by
       `.vspaceMap`, which overwrites the entry with a fresh epoch. -/
   mappingEpochs : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.VAddr Nat := {}
+  /-- WS-ZA ZA5.4: the cell the root's last unmap took out of `mappings`
+      (`MappingSpare`), which its next map writes over. -/
+  mappingSpare : MappingSpare := Squash.mk none
   deriving Repr
 
 namespace VSpaceRoot
+
+/-- WS-ZA ZA5.4: the spare cell is no part of what a root is. -/
+@[simp] theorem with_mappingSpare (r : VSpaceRoot) (v : MappingSpare) :
+    { r with mappingSpare := v } = r := by
+  cases r
+  simp only [VSpaceRoot.mk.injEq, and_true, true_and]
+  exact Subsingleton.elim _ _
 
 /-- **WS-BP BP7.1 (`v0.36.12`)**: the levels an address space's walk passes
 through below its root — 1, 2 and 3 in a 48-bit, 4 KiB-granule translation. -/

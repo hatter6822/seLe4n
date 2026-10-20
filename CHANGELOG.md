@@ -1,3 +1,38 @@
+## v0.36.117 — WS-ZA ZA5.4 part 7: a steady frame map allocates nothing
+
+A frame map after an unmap writes its mapping over the table entry the unmap
+erased, and the map's decode builds nothing.
+
+- **Decode and admission** (`Model/Object/Structures.lean`,
+  `Architecture/HardwareTables.lean`, `VSpacePerform.lean`): the permission
+  decode hands out the shared entry of a table built at initialisation
+  (`PagePermissions.table`); the map's admission check is inlined, so the
+  decoded arguments are never built; the descriptor word is computed out of
+  line (`mappingDescriptorWord`), so the ledger store is built from it once.
+- **The table places a given cell** (`RobinHood/Core.lean`):
+  `RHTable.insertCell` takes the entry cell the caller supplies and places it,
+  displacing entries in place (`insertCellLoop`, proven equal to the insert's
+  loop; `insertPlacesLoop` decides beforehand whether the size grows), and
+  `RHTable.insertCell_eq` proves it equal to `RHTable.insert`.  The plain
+  insert's absent-key branch runs the same placement.  `RHTable.eraseAt`
+  erases the entry at an index found by `findIdxLoop`
+  (`RHTable.erase_eq_eraseAt`).
+- **The root keeps the erased cell** (`Model/Object/Structures.lean`,
+  `Architecture/VSpaceUnmapPerform.lean`, `VSpacePerform.lean`):
+  `VSpaceRoot.mappingSpare` holds the entry an unmap erased.  It is a `Squash`,
+  so logically one value: no theorem reads it, and every root equals the root
+  with any other spare (`VSpaceRoot.with_mappingSpare`).  The unmap stores the
+  erased entry there (`rootWithoutMappingCells`, `@[csimp]` form of
+  `rootWithoutMapping`); the map writes its mapping over it, the option, the
+  entry and the value pair each in place (`mappingCellOver`,
+  `mappingEntryOver`, `mappingValueOver`), and with no spare builds it out of
+  line (`mappingCellFresh`); `rootWithMappingCells` is the `@[csimp]` form of
+  `rootWithMapping`.
+- **Readings** (normal build, first call / steady state): frame map 9 / 0
+  (14 / 7), map of a copied capability 7 / 3 (12 / 7), unmap 6 (7), revoke
+  destroying a mapped frame 8 / 6 (9 / 7), page-table retype 62 (65), frame
+  retype 79 (82).  The exerciser pins the new readings.
+
 ## v0.36.116 — WS-ZA ZA5.4 part 6: a core's TLB fill and page drain reuse its entry cells
 
 A TLB fill no longer builds its entry or list cell when the core has a spare,

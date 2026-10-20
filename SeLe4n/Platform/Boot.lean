@@ -939,12 +939,13 @@ theorem tcbReferencesReservedIdleSlot_def (tcb : TCB) :
 
 /-- PR #889 review round 8: a **VSpace root** — an ASID, a virtual-to-physical
     map, its table's physical base (WS-BP BP7.1 slice 4b), its tables
-    and its mapping epochs (PR #904 review) — holds no
+    its mapping epochs (PR #904 review) and its spare mapping cell
+    (`MappingSpare`) — holds no
     object, thread or scheduling-context id.  The answer is by inspection of the
     constructor's fields, and the pattern fails when a field is added. -/
 def vspaceRootReferencesReservedIdleSlot (vsr : VSpaceRoot) : Bool :=
   match vsr with
-  | ⟨_asid, _mappings, _tableBase, _tables, _mappingEpochs⟩ => false
+  | ⟨_asid, _mappings, _tableBase, _tables, _mappingEpochs, _mappingSpare⟩ => false
 
 /-- **WS-BP BP7.1**: a **frame** — a physical address, a memory kind
     and a mapping epoch counter (PR #904 review) —
