@@ -1326,7 +1326,7 @@ theorem untypedRetypeObject_preserves_ipcInvariantFull
     (hStep : untypedRetypeObject src childId dst req st = .ok ((), st')) :
     ipcInvariantFull st' := by
   obtain ⟨_, untypedId, ut, st1, st2, _, _, _, hRt, hIns, rfl⟩ :=
-    untypedRetypeObject_ok_decompose src dst childId req st st' hStep
+    untypedRetypeObject_ok_decompose src dst childId req st st' hObjInv hStep
   have hInv1 := retypeFromUntyped_carve_preserves_ipcInvariantFull st st1 src untypedId
     childId ut req _ hObjInv hInv hRt
   have hObjInv1 : st1.objects.invExt := by

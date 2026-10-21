@@ -260,10 +260,14 @@ for driver in drivers:
         # operation's own cells (object writes, the store's copy); the rows
         # that bring them to zero lower these pins.
         pinned.update({
-            "untyped-retype-page-table-1": (64, 64),
-            "untyped-retype-page-table-2": (64, 64),
-            "untyped-retype-page-table-3": (64, 64),
-            "untyped-retype-frame": (79, 79), "vspace-map": (9, 0),
+            # WS-ZA ZA5.4: a retype reads its new object's own cells in
+            # steady state (a table 13, a frame 11: the object, its store,
+            # index and type entries, the untyped's child record); a first
+            # call also builds the destination slot's capability record.
+            "untyped-retype-page-table-1": (16, 13),
+            "untyped-retype-page-table-2": (14, 13),
+            "untyped-retype-page-table-3": (14, 13),
+            "untyped-retype-frame": (12, 11), "vspace-map": (9, 0),
             "vspace-unmap-first": (0, 0), "vspace-map-again": (0, 0),
             "vspace-unify-instruction": (4, 3),
             "vspace-map-copy": (7, 5), "frame-revoke": (0, 0),

@@ -309,7 +309,7 @@ theorem untypedRetypeObject_keyFrame (src dst : CSpaceAddr) (childId : SeLe4n.Ob
     (hStep : untypedRetypeObject src childId dst req st = .ok ((), st')) :
     capabilityKeyFrame st st' := by
   obtain ⟨_, untypedId, ut, st1, st2, _, _, _, hRt, hIns, rfl⟩ :=
-    untypedRetypeObject_ok_decompose src dst childId req st st' hStep
+    untypedRetypeObject_ok_decompose src dst childId req st st' hObjInv hStep
   have hFresh := retypeFromUntyped_childId_fresh src untypedId childId _ _ st st1 hRt
   obtain ⟨ut₀, ut', cap, stL, stUt, _, hUt, _, _, hLk, _, _, hStUt, hStCh⟩ :=
     retypeFromUntyped_ok_decompose st st1 src untypedId childId _ _ hRt

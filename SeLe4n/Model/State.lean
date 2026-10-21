@@ -2163,6 +2163,48 @@ only, so a caller asks it before building the object. -/
   st.lifecycle.objectTypes.holds id ty &&
   (match st.objects[id]? with | some (.vspaceRoot _) => false | _ => true)
 
+/-- WS-ZA ZA5.4: **the store names a new object**: `id` is in neither the object
+index nor the object table — the store a retype makes for the object it carves. -/
+@[inline] def storeIsFresh (st : SystemState) (id : SeLe4n.ObjId) : Bool :=
+  !st.objectIndexSet.contains id && (st.objects[id]?).isNone
+
+/-- WS-ZA ZA5.4: the object table with `obj` at `id`, out of line, so the state
+is handed over and its table written in place. -/
+@[noinline] def withObjectInserted (st : SystemState) (id : SeLe4n.ObjId) (obj : KernelObject) :
+    SystemState :=
+  { st with objects := st.objects.insert id obj }
+
+/-- WS-ZA ZA5.4: `id` consed onto the object index, out of line. -/
+@[noinline] def withObjectIndexed (st : SystemState) (id : SeLe4n.ObjId) : SystemState :=
+  { st with objectIndex := id :: st.objectIndex }
+
+/-- WS-ZA ZA5.4: `id` added to the index set, out of line. -/
+@[noinline] def withObjectIndexSet (st : SystemState) (id : SeLe4n.ObjId) : SystemState :=
+  { st with objectIndexSet := st.objectIndexSet.insert id }
+
+/-- WS-ZA ZA5.4: `id`'s type recorded, the lifecycle record updated rather than
+rebuilt, so its type table is written in place. -/
+@[noinline] def withObjectType (st : SystemState) (id : SeLe4n.ObjId) (ty : KernelObjectType) :
+    SystemState :=
+  { st with lifecycle := { st.lifecycle with objectTypes := st.lifecycle.objectTypes.insert id ty } }
+
+/-- WS-ZA ZA5.4: `asid` registered to `id`, out of line. -/
+@[noinline] def withAsidRegistered (st : SystemState) (asid : SeLe4n.ASID) (id : SeLe4n.ObjId) :
+    SystemState :=
+  { st with asidTable := st.asidTable.insert asid id }
+
+/-- WS-ZA ZA5.4: **the store of a new object** (`storeIsFresh`) as one write per
+table, each out of line over the state it is handed, so every table is written in
+place and the state record is reused (`storeObject_eq_storeFresh`). -/
+@[inline] def storeFresh (st : SystemState) (id : SeLe4n.ObjId) (obj : KernelObject) :
+    SystemState :=
+  let ty := obj.objectType
+  let st4 := withObjectType (withObjectIndexSet (withObjectIndexed
+    (withObjectInserted st id obj) id) id) id ty
+  match obj with
+  | .vspaceRoot r => withAsidRegistered st4 r.asid id
+  | _ => st4
+
 /-- WS-ZA ZA1.4: the compiled `storeObject`.  When the store changes only
 `objects` (`storeLeavesIndexAndTypes`), only `objects` is written: one record
 update over an exclusively owned state, so the object table is written in place
@@ -2175,6 +2217,7 @@ def storeObjectImpl (id : SeLe4n.ObjId) (obj : KernelObject) : Kernel Unit :=
   fun st =>
     if storeLeavesIndexAndTypes st id obj.objectType then
       .ok ((), { st with objects := st.objects.insert id obj })
+    else if storeIsFresh st id then .ok ((), storeFresh st id obj)
     else
     .ok ((), {
       st with
@@ -2238,6 +2281,15 @@ theorem storeKeepsAsid_congr {s1 s2 : SystemState} {id : SeLe4n.ObjId} {obj : Ke
     have hT := RHTable.insert_eq_self_of_holds _ _ _ hTy
     simp only [hC, ↓reduceIte, hI, hT, ite_self]
   · rw [if_neg h]
+    by_cases hF : storeIsFresh st id = true
+    · rw [if_pos hF]
+      simp only [storeIsFresh, Bool.and_eq_true, Bool.not_eq_true', Option.isNone_iff_eq_none] at hF
+      obtain ⟨hC, hO⟩ := hF
+      have hK : storeKeepsAsid st id obj = false := by
+        unfold storeKeepsAsid; cases obj <;> simp [hO]
+      simp only [hC, hK, hO, Bool.false_eq_true, ↓reduceIte]
+      cases obj <;> rfl
+    · rw [if_neg hF]
 
 /-- WS-ZA ZA1.4: a store that changes only `objects` is that one write. -/
 theorem storeObject_eq_of_leaves {st : SystemState} {id : SeLe4n.ObjId} {obj : KernelObject}
@@ -6137,6 +6189,44 @@ theorem storePageTableWith_objects {st : SystemState} {id : SeLe4n.ObjId} {t : P
   unfold storeObject at hS
   simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hS
   rw [← hS]
+
+/-- WS-ZA ZA5.4: the object update a store of an untyped performs. -/
+@[inline] def mapUntypedObject (f : UntypedObject → UntypedObject) :
+    KernelObject → KernelObject
+  | .untyped u => .untyped (f u)
+  | o => o
+
+/-- WS-ZA ZA5.4: **the store of `f` of the untyped at `id`, written in its
+slot** — `storePageTableWith` for an untyped
+(`storeObject_untyped_eq_storeUntypedWith`).  The identity when `id` holds no
+untyped. -/
+@[specialize] def storeUntypedWith (st : SystemState) (id : SeLe4n.ObjId)
+    (f : UntypedObject → UntypedObject) : SystemState :=
+  match st.objects[id]? with
+  | some (.untyped u) =>
+      if storeLeavesIndexAndTypes st id .untyped then st.modifyObject id (mapUntypedObject f)
+      else
+        match storeObject id (.untyped (f u)) st with
+        | .ok ((), st') => st'
+        | .error _ => st
+  | _ => st
+
+theorem storeObject_untyped_eq_storeUntypedWith {st : SystemState} {id : SeLe4n.ObjId}
+    {u : UntypedObject} (h : st.objects[id]? = some (.untyped u))
+    (f : UntypedObject → UntypedObject) :
+    storeObject id (.untyped (f u)) st = .ok ((), st.storeUntypedWith id f) := by
+  unfold storeUntypedWith
+  rw [h]
+  dsimp only
+  split
+  · next hL =>
+    rw [storeObject_eq_impl]
+    unfold storeObjectImpl modifyObject
+    rw [show (KernelObject.untyped (f u)).objectType = .untyped from rfl, if_pos hL,
+      RHTable.modify_of_get? h]
+    rfl
+  · obtain ⟨st', hS⟩ := storeObject_isOk st id (.untyped (f u))
+    rw [hS]
 
 /-- WS-ZA ZA5.3: **the derivation tree rewritten by `f` in its field.**  Since
 part 5 the tree's edges are a ghost and its one stored part is the edge bound

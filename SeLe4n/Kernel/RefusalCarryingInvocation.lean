@@ -793,6 +793,26 @@ the write alone.  An arm whose checks refuse, and every arm not yet split, is
         (fun st => pageTableUnmapPerformAt objId st)
         (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
     | _ => .error (.invalidCapability, st)
+  | .untypedRetype =>
+    match cap.target with
+    | .object _ =>
+      match decodeUntypedRetypeArgsBy (msgRegOfFile layout regs) with
+      | .error e => .error (e, st)
+      | .ok args =>
+        match carveRequestOf? st args.newType args.sizeBits with
+        | .error e => .error (e, st)
+        | .ok req =>
+          match validateObjIdArg args.childId with
+          | .error e => .error (e, st)
+          | .ok vChild =>
+            resolveUntypedRetypeK tid capAddr args st (fun e => .error (e, st))
+              (fun srcCnode srcSlot dstCnode dstSlot =>
+                RefusalCarrying.ofChecked
+                  (untypedRetypeAdmittedAt st ⟨srcCnode, srcSlot⟩ ⟨dstCnode, dstSlot⟩ vChild.val req)
+                  (fun st => untypedRetypePerformAt ⟨srcCnode, srcSlot⟩ ⟨dstCnode, dstSlot⟩
+                    vChild.val req st)
+                  (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st)
+    | _ => .error (.invalidCapability, st)
   | _ =>
     match dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap st with
     | .error e => .error (e, st)
@@ -1250,6 +1270,37 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
       apply RefusalCarrying.ofChecked_eq
       intro hA
       simp only [dispatchInvocationBy, pageTableUnmap_of_admitted objId st hA]
+    all_goals rfl
+  case untypedRetype =>
+    cases target
+    case object _ =>
+      dsimp only
+      cases hD : decodeUntypedRetypeArgsBy (msgRegOfFile layout regs) with
+      | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, untypedRetypeFromCap, hD]
+      | ok args =>
+        dsimp only
+        cases hQ : carveRequestOf? st args.newType args.sizeBits with
+        | error e =>
+          simp [RefusalCarrying.ofKernel, dispatchInvocationBy, untypedRetypeFromCap, hD, hQ]
+        | ok req =>
+          dsimp only
+          cases hV : validateObjIdArg args.childId with
+          | error e =>
+            simp [RefusalCarrying.ofKernel, dispatchInvocationBy, untypedRetypeFromCap, hD, hQ, hV]
+          | ok vChild =>
+            dsimp only
+            rw [resolveUntypedRetypeK_eq]
+            cases hR : resolveUntypedRetype tid capAddr args st with
+            | error e =>
+              simp [RefusalCarrying.ofKernel, dispatchInvocationBy, untypedRetypeFromCap, hD, hQ,
+                hV, hR]
+            | ok pr =>
+              obtain ⟨src, dst⟩ := pr
+              dsimp only
+              apply RefusalCarrying.ofChecked_eq
+              intro hA
+              simp only [dispatchInvocationBy, untypedRetypeFromCap, hD, hQ, hV, hR,
+                untypedRetypeObject_of_admitted hA]
     all_goals rfl
   all_goals
     dsimp only [RefusalCarrying.ofKernel]
