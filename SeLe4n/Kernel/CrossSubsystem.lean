@@ -556,7 +556,7 @@ and `regionSize` as the pre-existing entry at that key — and whose
 `children` list is a superset of the pre-existing entry's — preserves
 `untypedRegionsDisjoint`. This is the preservation shape for the FIRST
 `storeObject` in `retypeFromUntyped` (the parent-update step): `allocate`
-advances `watermark`, prepends the new child to `children`, and leaves
+prepends the new child to `children`, and leaves
 `regionBase` / `regionSize` unchanged (see
 `UntypedObject.allocate_preserves_region`).
 
@@ -3941,8 +3941,7 @@ invariant to preserve.
     Bounded by `fuel` to guarantee termination; returns the list of
     visited ObjIds in the order `[self, parent, grandparent, …]`. Under
     `maxRetypeDepth` fuel (256), the walker is sufficient for any chain
-    the kernel can produce since the kernel's object count is bounded
-    and each ancestor has strictly smaller watermark than its child. -/
+    the kernel can produce since the kernel's object count is bounded. -/
 def untypedAncestorChain (st : SystemState) (oid : SeLe4n.ObjId) :
     Nat → List SeLe4n.ObjId
   | 0 => []

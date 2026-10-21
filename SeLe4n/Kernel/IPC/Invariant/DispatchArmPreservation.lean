@@ -1191,7 +1191,7 @@ IPC-inert one, of an IPC-inert object that is not a CNode moves nothing any
 conjunct reads.  The read view agrees (`of_fresh_inert_write` /
 `of_single_inert_write`), the scheduler is framed, and the badge clause — the one
 conjunct that reads CNodes — loses at most a CNode and gains none.  The two
-stores an untyped carve performs (the untyped's watermark advance, the fresh
+stores an untyped carve performs on objects (the untyped's child list, the fresh
 frame) are both this shape. -/
 theorem storeObject_inertNonCNode_preserves_ipcInvariantFull
     (st st' : SystemState) (key : SeLe4n.ObjId) (obj : KernelObject)
@@ -1352,7 +1352,7 @@ theorem untypedRetypeObject_preserves_ipcInvariantFull
 /-- **WS-BP BP7.1 slice 3 (`v0.36.6`)**: the untyped reset preserves
 `ipcInvariantFull`.  Every key it writes holds, on each side, nothing or a kind
 the bundle does not read — VSpace roots (the unmap pass), frames (erased) and
-the untyped (its watermark reset) — so the read view agrees
+the untyped (its child list cleared) — so the read view agrees
 (`of_inertOrAbsentWrites`); the scheduler is framed; and no CNode or TCB is
 written, which carries the badge clause and the passive-server clause. -/
 theorem untypedReset_preserves_ipcInvariantFull

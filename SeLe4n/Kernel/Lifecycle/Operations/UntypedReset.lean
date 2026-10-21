@@ -39,14 +39,18 @@ unresettable for good.
 ## What "nothing can reach" means, and why it is decided over the whole store
 
 In seL4 each untyped capability carries its own free index, so "no child
-capability survives" is `ensureNoChildren` on the invoked slot.  This model keeps
-the watermark on the untyped **object**, shared by every capability to it — which
-is what stops two copies of one untyped capability from carving one page twice —
-so the per-slot test is not sufficient here: a sibling copy's children are not
-CDT descendants of the invoked slot.  The question is therefore asked of the
-objects themselves (`carvedSubtreeUnreferenced`): no CNode slot, and no
-capability parked in a blocked sender's message, names any object of the
-subtree.
+capability survives" is `ensureNoChildren` on the invoked slot.  Since WS-ZA
+ZA5.4 part 13 this model does the same: the free index is in the capability, a
+derivation of an untyped capability follows seL4's rule (refused while the
+source has a child; the source set full once it has one), and the reset entry
+(`untypedResetSlot`) refuses an invoked slot with a derivation child and rewinds
+that slot's free index.  The question is asked of the objects as well
+(`carvedSubtreeUnreferenced`): no CNode slot, and no capability parked in a
+blocked sender's message, names any object of the subtree.  The per-slot rule
+holds only from states where at most one capability to an untyped can carve, and
+the boot state is not yet shown to be one (`docs/REGISTERED_DEBT.md`), so the
+store-wide question is what keeps a capability another slot carved through from
+naming reset memory.
 
 A capability is not the only way to reach memory.  A **mapping** is recorded on
 the frame capability that made it (`Capability.mapping`, `v0.36.7`), and
@@ -90,8 +94,9 @@ for the next root carve.
    unreachable but would consume a store slot per carve, and a holder of one
    small untyped could then exhaust the global object store by carving and
    resetting in a loop;
-3. the untyped's watermark and child list cleared (`UntypedObject.reset`, the
-   model's own reset, whose `reset_wellFormed` says the result is well formed).
+3. the untyped's child list cleared (`UntypedObject.reset`, the model's own
+   reset, whose `reset_wellFormed` says the result is well formed); the invoked
+   capability's free index is rewound to zero by the entry (`untypedResetSlot`).
 
 No memory is zeroed here: the carve zeroes every RAM page before any capability
 to it exists (`carveZeroFrame`), so a page is scrubbed exactly when it is handed
@@ -717,8 +722,8 @@ private theorem untypedReset_ok_frames {ec : Concurrency.CoreId}
   obtain ⟨hInv2, -, hS2, hW2, hN2⟩ := retireCarvedObjects_frame ids st1 hInv1 hSz
   exact ⟨hInv1, hW1, hS1, hInv2, hS2, hW2, hN2⟩
 
-/-- **After a reset the untyped holds its memory again**: watermark `0`, no
-children, region, device flag and parent unchanged. -/
+/-- **After a reset the untyped holds its memory again**: no children, region,
+device flag and parent unchanged. -/
 theorem untypedReset_ok_untyped (ec : Concurrency.CoreId) (untypedId : SeLe4n.ObjId)
     (st st' : SystemState) (hObjInv : st.objects.invExt)
     (hStep : untypedReset ec untypedId st = .ok ((), st')) :
@@ -899,8 +904,8 @@ theorem untypedReset_ok_unreferenced (ec : Concurrency.CoreId) (untypedId : SeLe
   simpa using hc
 
 /-- **The object kinds a reset can touch**: an absent key, a VSpace root (the
-unmap pass), a frame or an untyped (the retire), and the untyped (the watermark
-reset).  Every one of them lies outside what the IPC bundle reads, and none is a
+unmap pass), a frame or an untyped (the retire), and the untyped (its child list
+cleared).  Every one of them lies outside what the IPC bundle reads, and none is a
 CNode or a TCB. -/
 def resetTouched : Option KernelObject → Prop
   | none => True
@@ -1051,7 +1056,7 @@ invoked capability's (`Capability.freeIndex`), so the reset rewinds that slot's
 word to 0, as seL4's `resetUntypedCap`.  It first refuses while the slot has a
 derivation child (seL4's `ensureNoChildren` in `decodeUntypedInvocation`): a
 copy of an untyped capability is a child of its source, and the source was set
-full when it was copied (`untypedSourceSetFullAt`), so rewinding a source whose
+full when it was copied (`untypedSourceSetFull`), so rewinding a source whose
 copy survives would leave two capabilities carving one region.  The rewind is
 written before the reset runs; a refused reset drops the whole state, so the
 order is unobservable, and the slot is read on the state the resolution read.

@@ -977,6 +977,19 @@ private def runPerTransitionShapeChecks : IO Unit := do
     (decide ((lockSet_cspaceMint ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)).size = 4))
   assertBool "cspaceMove size = 4"
     (decide ((lockSet_cspaceMove ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)).size = 4))
+  -- WS-ZA ZA5.4 part 13: a copy or mint of a capability naming an untyped sets
+  -- the source capability full, so both write their source CNode.
+  assertBool "cspaceMint and cspaceCopy write their source CNode"
+    (decide ((cnodeLock (ObjId.ofNat 10), AccessMode.write)
+        ∈ (lockSet_cspaceMint ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)).pairs) &&
+     decide ((cnodeLock (ObjId.ofNat 10), AccessMode.write)
+        ∈ (lockSet_cspaceCopy ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)).pairs))
+  -- …and the carve writes the CNode holding its authority capability, whose
+  -- free index advances.
+  assertBool "untypedRetype writes the authority capability's CNode"
+    (decide ((cnodeLock (ObjId.ofNat 11), AccessMode.write)
+        ∈ (lockSet_untypedRetype ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 11) (ObjId.ofNat 30)
+            (ObjId.ofNat 40) (ObjId.ofNat 20) .endpoint).pairs))
   -- …and the member is present in all four, which the size alone would not say.
   assertBool "every capability operation declares the state-level CDT write"
     (decide ((stateLevelLock, AccessMode.write)

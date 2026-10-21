@@ -2767,7 +2767,7 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
   -- the only path by which a frame comes to exist on a live state, and so the
   -- only way memory reaches a thread: the caller presents an untyped
   -- capability, names a fresh object id and an empty slot in a CNode it can
-  -- write, and receives a capability to the page at the untyped's watermark.
+  -- write, and receives a capability to the page at that capability's free index.
   -- `.vspaceMap` maps that page and no other.
   | .untypedRetype =>
     some <| match cap.target with

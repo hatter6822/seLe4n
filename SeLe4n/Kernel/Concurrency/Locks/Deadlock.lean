@@ -1503,9 +1503,9 @@ theorem lockSet_lifecycleRetype_size_le (a : ThreadId) (b c d : ObjId)
   exact Nat.le_trans (size_le_1 _ _) (by size_bound)
 
 /-- **WS-BP BP7.1**: the carve's footprint is within the ceiling. -/
-theorem lockSet_untypedRetype_size_le (a : ThreadId) (b c d e : ObjId)
+theorem lockSet_untypedRetype_size_le (a : ThreadId) (b c d e g : ObjId)
     (f : KernelObjectType) :
-    (lockSet_untypedRetype a b c d e f).size ≤ maxLockSetSize := by
+    (lockSet_untypedRetype a b c d e g f).size ≤ maxLockSetSize := by
   unfold lockSet_untypedRetype maxLockSetSize
   exact Nat.le_trans (lockSetOfList_size_le _) (by size_bound)
 
@@ -1650,13 +1650,11 @@ theorem lockSet_pageTableUnmap_size_le (a : ThreadId) (b c : ObjId) (d : Option 
 -- against the bounded set, which is the check a hand-maintained conjunction of
 -- 31 members cannot perform on itself.
 
-/-- WS-RR RR7.18: `mintReplyCap` is definitionally `cspaceCopy`'s footprint, so
-its bound is that one.  Stated in its own name anyway — the bundle cites bare
-names, and a caller reasoning about the mint arm should not have to know the
-definitional identity to find its bound. -/
+/-- WS-RR RR7.18: `mintReplyCap`'s four members are within the ceiling. -/
 theorem lockSet_mintReplyCap_size_le (a : ThreadId) (b c : ObjId) :
-    (lockSet_mintReplyCap a b c).size ≤ maxLockSetSize :=
-  lockSet_cspaceCopy_size_le a b c
+    (lockSet_mintReplyCap a b c).size ≤ maxLockSetSize := by
+  unfold lockSet_mintReplyCap maxLockSetSize
+  exact Nat.le_trans (lockSetOfList_size_le _) (by size_bound)
 
 /-- WS-RR RR7.18: binding a notification locks four objects — the caller, its
 CSpace root, the notification and the target TCB — with no optionals. -/
@@ -1729,7 +1727,7 @@ theorem lockSetTransitions_within_bound :
     (∀ a b c, (lockSet_cspaceMove a b c).size ≤ maxLockSetSize) ∧
     (∀ a b c d, (lockSet_cspaceDelete a b c d).size ≤ maxLockSetSize) ∧
     (∀ a b c d t, (lockSet_lifecycleRetype a b c d t).size ≤ maxLockSetSize) ∧
-    (∀ a b c d e f, (lockSet_untypedRetype a b c d e f).size ≤ maxLockSetSize) ∧
+    (∀ a b c d e g f, (lockSet_untypedRetype a b c d e g f).size ≤ maxLockSetSize) ∧
     (∀ a b c d e, (lockSet_vspaceMap a b c d e).size ≤ maxLockSetSize) ∧
     (∀ a b c, (lockSet_vspaceUnmap a b c).size ≤ maxLockSetSize) ∧
     (∀ a b c, (lockSet_vspaceUnifyInstruction a b c).size ≤ maxLockSetSize) ∧

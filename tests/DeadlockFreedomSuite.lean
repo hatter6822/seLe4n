@@ -798,15 +798,19 @@ has one) had no bound at all.  The check therefore takes it at `some`, which is
 the case the old statement could not see. -/
 private def runNewlyBoundedFootprintChecks : IO Unit := do
   IO.println "--- §9b WS-RR RR7.18 — the footprints the bundle had missed ---"
-  -- `mintReplyCap` is `cspaceCopy`'s footprint: caller read + two CNode writes
-  -- + the state-level CDT write.
+  -- `mintReplyCap`: caller read, source CNode read, destination CNode write,
+  -- and the state-level CDT write.  Unlike `cspaceCopy` (WS-ZA ZA5.4 part 13,
+  -- which writes the source to set an untyped source full) it only reads the
+  -- source: a Reply is never an untyped.
   let mintSet := lockSet_mintReplyCap (ThreadId.ofNat 1) (SeLe4n.ObjId.ofNat 2)
     (SeLe4n.ObjId.ofNat 3)
   assertBool "lockSet_mintReplyCap size ≤ maxLockSetSize"
     (decide (mintSet.size ≤ maxLockSetSize))
-  assertBool "…and it IS cspaceCopy's footprint, not a second declaration"
-    (decide (mintSet = lockSet_cspaceCopy (ThreadId.ofNat 1) (SeLe4n.ObjId.ofNat 2)
-      (SeLe4n.ObjId.ofNat 3)))
+  assertBool "…and it reads its source where cspaceCopy writes it"
+    (decide ((cnodeLock (SeLe4n.ObjId.ofNat 2), AccessMode.read) ∈ mintSet.pairs) &&
+     decide ((cnodeLock (SeLe4n.ObjId.ofNat 2), AccessMode.write)
+       ∈ (lockSet_cspaceCopy (ThreadId.ofNat 1) (SeLe4n.ObjId.ofNat 2)
+           (SeLe4n.ObjId.ofNat 3)).pairs))
   -- Bind / unbind: four distinct objects, no optionals.
   let bindSet := lockSet_tcbBindNotification (ThreadId.ofNat 1) (SeLe4n.ObjId.ofNat 2)
     (SeLe4n.ObjId.ofNat 3) (ThreadId.ofNat 4) none

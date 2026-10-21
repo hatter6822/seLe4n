@@ -166,15 +166,16 @@ def contentFlowClass : SyscallId → ContentFlowClass
   -- retype's ground.  It re-purposes nothing: the child id must hold no object
   -- (`retypeFromUntyped`'s collision guards), so there is no predecessor whose
   -- provenance a replacement could inherit and nothing to clear.  Its writes are
-  -- the untyped's watermark, the fresh frame, one capability in the destination
-  -- CNode and the CDT — none a content-tracked field — and a RAM frame's page is
+  -- the untyped's child list, the authority capability's free index, the fresh
+  -- frame, one capability in the destination CNode and the CDT — none a
+  -- content-tracked field — and a RAM frame's page is
   -- zeroed, which moves no principal's bytes anywhere.
   | .untypedRetype => .inert
   -- **WS-BP BP7.1 (`v0.36.6`)**: the untyped reset is inert too.  It unmaps
   -- VSpace-root entries (page-table state, not content), erases frames — which
   -- no content-moving arm writes, whose carve is inert, and whose ids therefore
-  -- carry no provenance for a later carve to inherit — and resets the untyped's
-  -- watermark.  No principal's bytes move anywhere: a RAM page it hands back is
+  -- carry no provenance for a later carve to inherit — and clears the untyped's
+  -- child list and rewinds the invoked capability's free index.  No principal's bytes move anywhere: a RAM page it hands back is
   -- zeroed by the carve that next hands it out, before any capability exists.
   | .untypedReset => .inert
   -- CSpace: both slots live in the capability's own CNode (verified at the
