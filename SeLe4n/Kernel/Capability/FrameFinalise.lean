@@ -620,13 +620,15 @@ theorem cspaceDeleteSlotFinalising_ok (ec : Concurrency.CoreId) (addr : CSpaceAd
   | ok pr => obtain ⟨u, st1⟩ := pr; cases u; rw [hD] at h; exact ⟨st1, rfl, h⟩
 
 /-- Two states whose objects agree off the derivation links hold the same
-address-space roots: only CNodes differ. -/
+address-space roots: only CNodes and threads differ, and only in their slot
+link words. -/
 theorem vspaceRoot_iff_of_agree {st st' : SystemState}
     (h : SystemState.objectsAgreeOffDerivationLinks st' st) (oid : SeLe4n.ObjId) (r : VSpaceRoot) :
     st'.objects[oid]? = some (KernelObject.vspaceRoot r) ↔
       st.objects[oid]? = some (KernelObject.vspaceRoot r) := by
-  rcases h oid with hE | ⟨cn, cn', h1, h2, -⟩
+  rcases h oid with hE | ⟨cn, cn', h1, h2, -⟩ | ⟨t, t', h1, h2, -⟩
   · rw [hE]
+  · rw [h1, h2]; simp
   · rw [h1, h2]; simp
 
 /-- **A write of derivation links alone keeps the teardown's state well

@@ -631,6 +631,9 @@ structure donationReadAgreement (st st' : SystemState) : Prop where
   scExists : ∀ (oid : SeLe4n.ObjId) (sc : SchedContext),
     st.objects[oid]? = some (.schedContext sc) →
     ∃ sc', st'.objects[oid]? = some (.schedContext sc')
+  /-- every badged post-state slot capability sat in that slot before (the
+  slot contents `capabilityBadgesWellFormed` reads) -/
+  slotsBack : badgedSlotsBack st st'
 
 namespace donationReadAgreement
 
@@ -640,7 +643,8 @@ theorem refl (st : SystemState) : donationReadAgreement st st :=
    fun _ ty h => ⟨ty, h, rfl, pendingMessageReadAgrees_refl _, rfl, rfl, rfl, rfl, rfl, rfl⟩,
    fun _ _ _ _ _ => Iff.rfl,
    fun _ _ => Iff.rfl,
-   fun _ sc h => ⟨sc, h⟩⟩
+   fun _ sc h => ⟨sc, h⟩,
+   badgedSlotsBack.refl st⟩
 
 /-- Transitivity — chain two donation stores. -/
 theorem trans {st st' st'' : SystemState}
@@ -666,6 +670,7 @@ theorem trans {st st' st'' : SystemState}
     intro oid sc h
     obtain ⟨sc', h'⟩ := h1.scExists oid sc h
     exact h2.scExists oid sc' h'
+  slotsBack := h1.slotsBack.trans h2.slotsBack
 
 end donationReadAgreement
 
@@ -681,7 +686,7 @@ theorem donationReadAgreement_of_schedContextStore
   have hAt := storeObject_objects_eq st st' scKey _ hObjInv hStore
   have hNe : ∀ (oid : SeLe4n.ObjId), oid ≠ scKey → st'.objects[oid]? = st.objects[oid]? :=
     fun oid h => storeObject_objects_ne st st' scKey oid _ h hObjInv hStore
-  refine ⟨?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro oid tx hx
     by_cases hEq : oid = scKey
     · rw [hEq, hAt] at hx; cases hx
@@ -711,6 +716,8 @@ theorem donationReadAgreement_of_schedContextStore
     by_cases hEq : oid = scKey
     · exact ⟨scNew, by rw [hEq, hAt]⟩
     · exact ⟨sc, by rw [hNe oid hEq]; exact h⟩
+  · exact badgedSlotsBack.of_slotCap_back
+      (slotCap_back_of_storeObject hObjInv hPre hStore (funext fun _ => rfl))
 
 /-- WS-RR RR2.5: the general TCB-field-update constructor — a state that rewrites
 one TCB, leaving every field the fifteen binding-free conjuncts read intact and
@@ -731,9 +738,12 @@ theorem donationReadAgreement_of_tcbFieldUpdateAgree
     (hPPrev : newTcb.queuePPrev = oldTcb.queuePPrev)
     (hBudget : newTcb.timeoutBudget = oldTcb.timeoutBudget)
     (hReply : newTcb.replyObject = oldTcb.replyObject)
-    (hStash : newTcb.pendingReceiveReply = oldTcb.pendingReceiveReply) :
+    (hStash : newTcb.pendingReceiveReply = oldTcb.pendingReceiveReply)
+    (hSlots : ∀ (sl : SeLe4n.Slot) (c : Capability) (b : SeLe4n.Badge),
+      newTcb.spaceSlotCap sl = some c → c.badge = some b → oldTcb.spaceSlotCap sl = some c :=
+      by intro _ _ _ h _; exact h) :
     donationReadAgreement st st' := by
-  refine ⟨?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro oid tx hx
     by_cases hEq : oid = key
     · rw [hEq, hAt] at hx
@@ -773,6 +783,11 @@ theorem donationReadAgreement_of_tcbFieldUpdateAgree
     by_cases hEq : oid = key
     · rw [hEq, hPre] at h; cases h
     · exact ⟨sc, by rw [hFrame oid hEq]; exact h⟩
+  · intro oid o' sl c b h hL hB
+    by_cases hEq : oid = key
+    · rw [hEq, hAt] at h; cases h
+      exact ⟨.tcb oldTcb, by rw [hEq]; exact hPre, hSlots sl c b hL hB⟩
+    · rw [hFrame oid hEq] at h; exact ⟨o', h, hL⟩
 
 /-- The equality instance of the constructor above. -/
 theorem donationReadAgreement_of_tcbFieldUpdate
@@ -787,10 +802,13 @@ theorem donationReadAgreement_of_tcbFieldUpdate
     (hPPrev : newTcb.queuePPrev = oldTcb.queuePPrev)
     (hBudget : newTcb.timeoutBudget = oldTcb.timeoutBudget)
     (hReply : newTcb.replyObject = oldTcb.replyObject)
-    (hStash : newTcb.pendingReceiveReply = oldTcb.pendingReceiveReply) :
+    (hStash : newTcb.pendingReceiveReply = oldTcb.pendingReceiveReply)
+    (hSlots : ∀ (sl : SeLe4n.Slot) (c : Capability) (b : SeLe4n.Badge),
+      newTcb.spaceSlotCap sl = some c → c.badge = some b → oldTcb.spaceSlotCap sl = some c :=
+      by intro _ _ _ h _; exact h) :
     donationReadAgreement st st' :=
   donationReadAgreement_of_tcbFieldUpdateAgree st st' key oldTcb newTcb hPre hAt hFrame hIpc
-    (pendingMessageReadAgrees_of_eq hMsg) hNext hPrev hPPrev hBudget hReply hStash
+    (pendingMessageReadAgrees_of_eq hMsg) hNext hPrev hPPrev hBudget hReply hStash hSlots
 
 /-- WS-RR RR2.5: a `storeObject` replacing one TCB with another that differs
 **only** in `schedContextBinding` establishes the read agreement. -/
@@ -827,7 +845,7 @@ theorem donationReadAgreement_of_headClear
     (hObjInv : st.objects.invExt)
     (h : storeDonationHeadClear head? st = .ok st') :
     donationReadAgreement st st' := by
-  refine ⟨?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
   · exact fun oid tx hx =>
       ⟨tx, storeDonationHeadClear_tcb_backward hObjInv h oid tx hx,
         rfl, pendingMessageReadAgrees_refl _, rfl, rfl, rfl, rfl, rfl, rfl⟩
@@ -855,6 +873,10 @@ theorem donationReadAgreement_of_headClear
     · by_cases hEq : oid = rid.toObjId
       · rw [hEq, hRead] at hSc; cases hSc
       · rw [storeObject_objects_ne st st' rid.toObjId oid _ hEq hObjInv hS]; exact hSc
+  · rcases storeDonationHeadClear_cases h with rfl | ⟨rid, r, _, hRead, hS⟩
+    · exact fun _ o _ _ _ h hL _ => ⟨o, h, hL⟩
+    · exact badgedSlotsBack.of_slotCap_back
+        (slotCap_back_of_storeObject hObjInv hRead hS (funext fun _ => rfl))
 
 /-- `v0.35.4`: the pop's second write — re-heading the frame below the popped one
 — establishes the read agreement for the same reason the unlink does: one Reply
@@ -864,7 +886,7 @@ theorem donationReadAgreement_of_reHead
     (hObjInv : st.objects.invExt)
     (h : storeReplyReHead scId head? st = .ok st') :
     donationReadAgreement st st' := by
-  refine ⟨?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
   · exact fun oid tx hx =>
       ⟨tx, storeReplyReHead_tcb_backward hObjInv h oid tx hx,
         rfl, pendingMessageReadAgrees_refl _, rfl, rfl, rfl, rfl, rfl, rfl⟩
@@ -892,6 +914,10 @@ theorem donationReadAgreement_of_reHead
     · by_cases hEq : oid = rid.toObjId
       · rw [hEq, hRead] at hSc; cases hSc
       · rw [storeObject_objects_ne st st' rid.toObjId oid _ hEq hObjInv hS]; exact hSc
+  · rcases storeReplyReHead_cases h with rfl | ⟨rid, r, _, hRead, hS⟩
+    · exact fun _ o _ _ _ h hL _ => ⟨o, h, hL⟩
+    · exact badgedSlotsBack.of_slotCap_back
+        (slotCap_back_of_storeObject hObjInv hRead hS (funext fun _ => rfl))
 
 /-- `v0.35.4`: the whole pop — the unlink and the re-head — establishes the read
 agreement, composed from its two stores.  At `none` it is the identity, which the
@@ -920,7 +946,7 @@ theorem donationReadAgreement_of_replyStackStore
     (hCaller : r'.caller = r.caller) :
     donationReadAgreement st st' := by
   have hRaw := (SystemState.getReply?_eq_some_iff st rid r).mp hPre
-  refine ⟨?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
   · exact fun oid tx hx =>
       ⟨tx, (storeObject_replyAt_objects_tcb_iff st st' rid r _ hPre hObjInv hS oid tx).mp hx,
         rfl, pendingMessageReadAgrees_refl _, rfl, rfl, rfl, rfl, rfl, rfl⟩
@@ -943,6 +969,8 @@ theorem donationReadAgreement_of_replyStackStore
     by_cases hEq : oid = rid.toObjId
     · rw [hEq, hRaw] at hSc; cases hSc
     · rw [storeObject_objects_ne st st' rid.toObjId oid _ hEq hObjInv hS]; exact hSc
+  · exact badgedSlotsBack.of_slotCap_back
+      (slotCap_back_of_storeObject hObjInv hRaw hS (funext fun _ => rfl))
 
 /-- `v0.35.4`: **the donation push's two Reply writes establish the read
 agreement** — the pushed frame's and, when there is one, the old head's, each a
@@ -977,6 +1005,7 @@ theorem donationReadAgreement_of_objects_eq {st s s' : SystemState}
   scExists := fun oid sc hSc => by
     obtain ⟨sc', hSc'⟩ := h.scExists oid sc hSc
     exact ⟨sc', by rw [hObjs]; exact hSc'⟩
+  slotsBack := fun oid o' sl c b h' => h.slotsBack oid o' sl c b (by rw [← hObjs]; exact h')
 
 /-- WS-RR RR2.5: `donateSchedContext` establishes the read agreement — its three
 stores are one SchedContext rebinding and two binding-only TCB updates, and the
@@ -1078,12 +1107,12 @@ theorem ipcInvariantFull_of_donationReadAgreement_of_except
     (hPassiveIdle : passiveServerIdle st') (hBudgetTransfer : donationBudgetTransfer st')
     (hOwnerUnique : donationOwnerUnique st') :
     ipcInvariantFull st' := by
-  obtain ⟨hBwd, hFwd, hNT, hRC, hSC⟩ := hAgree
+  obtain ⟨hBwd, hFwd, hNT, hRC, hSC, hSlots⟩ := hAgree
   -- The core driver reads a strictly narrower agreement than the one above.
   have hCore : ipcInvariantCore st' := by
     refine ipcInvariantCore_of_nonBindingAgreements st st'
       (ipcInvariantCoreNonDonation_of_exceptDonationOwner hInv) hNT hSC
-      (fun s tx h => ?_) (fun s ty h => ?_)
+      (fun s tx h => ?_) (fun s ty h => ?_) hSlots
       hAcyclic hOwnerValid hPassiveIdle hBudgetTransfer
     · obtain ⟨ty, h1, e1, e2, e3, e4, e5, e6, _, _⟩ := hBwd s tx h
       exact ⟨ty, h1, e1, e2, e3, e4, e5, e6⟩
@@ -1211,10 +1240,13 @@ theorem ipcInvariantFull_of_tcbFieldUpdateAgree
     (hReply : newTcb.replyObject = oldTcb.replyObject)
     (hStash : newTcb.pendingReceiveReply = oldTcb.pendingReceiveReply)
     (hBind : newTcb.schedContextBinding = oldTcb.schedContextBinding)
-    (hPassive : passiveServerIdleFrame st st') :
+    (hPassive : passiveServerIdleFrame st st')
+    (hSlots : ∀ (sl : SeLe4n.Slot) (c : Capability) (b : SeLe4n.Badge),
+      newTcb.spaceSlotCap sl = some c → c.badge = some b → oldTcb.spaceSlotCap sl = some c :=
+      by intro _ _ _ h _; exact h) :
     ipcInvariantFull st' := by
   have hAgree := donationReadAgreement_of_tcbFieldUpdateAgree st st' key oldTcb newTcb hPre hAt
-    hFrame hIpc hMsg hNext hPrev hPPrev hBudget hReply hStash
+    hFrame hIpc hMsg hNext hPrev hPPrev hBudget hReply hStash hSlots
   -- Backward transport of a post-state TCB, *with* its binding.
   have hBwd : ∀ (oid : SeLe4n.ObjId) (tx : TCB), st'.objects[oid]? = some (.tcb tx) →
       ∃ ty, st.objects[oid]? = some (.tcb ty) ∧ tx.ipcState = ty.ipcState ∧
@@ -1285,10 +1317,14 @@ theorem ipcInvariantFull_of_tcbFieldUpdate
     (hReply : newTcb.replyObject = oldTcb.replyObject)
     (hStash : newTcb.pendingReceiveReply = oldTcb.pendingReceiveReply)
     (hBind : newTcb.schedContextBinding = oldTcb.schedContextBinding)
-    (hPassive : passiveServerIdleFrame st st') :
+    (hPassive : passiveServerIdleFrame st st')
+    (hSlots : ∀ (sl : SeLe4n.Slot) (c : Capability) (b : SeLe4n.Badge),
+      newTcb.spaceSlotCap sl = some c → c.badge = some b → oldTcb.spaceSlotCap sl = some c :=
+      by intro _ _ _ h _; exact h) :
     ipcInvariantFull st' :=
   ipcInvariantFull_of_tcbFieldUpdateAgree st st' key oldTcb newTcb hInv hPre hAt hFrame hIpc
     (pendingMessageReadAgrees_of_eq hMsg) hNext hPrev hPPrev hBudget hReply hStash hBind hPassive
+    hSlots
 
 /-- WS-ZA ZA4.4: a write of one thread's notification-queue links preserves the
 whole bundle: no conjunct reads those links. -/

@@ -217,7 +217,8 @@ shared singleton head fails it while every queue stays well formed. -/
 def endpointQueueHeadDisjointBool (st : SystemState) : Bool :=
   (endpointQueueHeadDisjointChecks st.objectIndex st).all (·.2)
 
-/-- M-11 CSpace coherency: every CNode slot whose capability targets an object has that
+/-- M-11 CSpace coherency: every capability slot — a CNode's slot or a thread's
+space slot — whose capability targets an object has that
 object present in the object store — and, where the capability names the object's
 *kind*, an object of that kind.
 
@@ -230,31 +231,40 @@ this check states*, and reporting it as backed would be the check agreeing with 
 dangling descent.  No fixture in the tree installs a `.cnodeSlot` capability whose
 target is a non-CNode, so the discriminating case is unexercised; the arm is
 stated this way because it is what the claim means, not because a test drove it. -/
-private def cspaceSlotCoherencyChecks (objectIds : List SeLe4n.ObjId) (st : SystemState) : List (String × Bool) :=
+private def slotTargetBacked (st : SystemState) (cap : Capability) : Bool :=
+  match cap.target with
+  -- Kind-agnostic by intent: the claim is that *some* object backs
+  -- the target, whatever its variant, so `getObject?` is the reader
+  -- that says it.
+  | .object targetId => (st.getObject? targetId).isSome
+  -- A `.cnodeSlot` names the CNode it descends, so the typed read is
+  -- the stronger and the honest one: a capability pointing at a
+  -- non-CNode is not backed for this purpose.
+  | .cnodeSlot cnId _ => (st.getCNode? cnId).isSome
+  -- WS-SM SM6.D: a reply cap must target an actual `.reply` object, not
+  -- merely *some* object sharing that ObjId namespace — `getReply?`
+  -- returns `some` only for a `.reply` at `rid.toObjId`.
+  | .replyCap rid => (st.getReply? rid).isSome
+  -- WS-SM SM9.A.9: an audit-trail capability names no object, so
+  -- there is nothing in the store for it to be backed by.  Vacuously
+  -- coherent — and deliberately not "check the trail exists", since a
+  -- `SystemState` always has one.
+  | .auditTrail => true
+
+/-- One check per occupied capability slot of every listed object: a CNode's
+slots and a thread's two space slots, read as `KernelObject.slotCap` reads them. -/
+private def objectSlotChecks (objectIds : List SeLe4n.ObjId) (st : SystemState)
+    (check : SeLe4n.ObjId → SeLe4n.Slot → Capability → String × Bool) : List (String × Bool) :=
   objectIds.foldr (fun oid acc =>
-    match st.getCNode? oid with
-    | some cn =>
-        cn.foldCells acc (fun inner slot cap =>
-          let ok := match cap.target with
-            -- Kind-agnostic by intent: the claim is that *some* object backs
-            -- the target, whatever its variant, so `getObject?` is the reader
-            -- that says it.
-            | .object targetId => (st.getObject? targetId).isSome
-            -- A `.cnodeSlot` names the CNode it descends, so the typed read is
-            -- the stronger and the honest one: a capability pointing at a
-            -- non-CNode is not backed for this purpose.
-            | .cnodeSlot cnId _ => (st.getCNode? cnId).isSome
-            -- WS-SM SM6.D: a reply cap must target an actual `.reply` object, not
-            -- merely *some* object sharing that ObjId namespace — `getReply?`
-            -- returns `some` only for a `.reply` at `rid.toObjId`.
-            | .replyCap rid => (st.getReply? rid).isSome
-            -- WS-SM SM9.A.9: an audit-trail capability names no object, so
-            -- there is nothing in the store for it to be backed by.  Vacuously
-            -- coherent — and deliberately not "check the trail exists", since a
-            -- `SystemState` always has one.
-            | .auditTrail => true
-          (s!"cspace slot target backed: oid={oid} slot={slot}", ok) :: inner)
+    match st.getObject? oid with
+    | some (.cnode cn) => cn.foldCells acc (fun inner slot cap => check oid slot cap :: inner)
+    | some (.tcb t) => t.spaceSlotCaps.foldr (fun p inner => check oid p.1 p.2 :: inner) acc
     | _ => acc) []
+
+/-- M-11 CSpace coherency over every listed object's slots (`slotTargetBacked`). -/
+private def cspaceSlotCoherencyChecks (objectIds : List SeLe4n.ObjId) (st : SystemState) : List (String × Bool) :=
+  objectSlotChecks objectIds st fun oid slot cap =>
+    (s!"cspace slot target backed: oid={oid} slot={slot}", slotTargetBacked st cap)
 
 /-- **WS-RR RR8.16** (`v0.35.201`): every occupied slot of a CNode is addressable
 by that CNode's own radix width.
@@ -289,15 +299,11 @@ rights that are a subset of the source capability's rights. Since the source is 
 tracked at runtime, we validate that badge-carrying caps have non-empty rights and
 rights belong to the canonical set. This is a conservative structural check. -/
 private def capabilityRightsStructuralChecks (objectIds : List SeLe4n.ObjId) (st : SystemState) : List (String × Bool) :=
-  objectIds.foldr (fun oid acc =>
-    match st.getCNode? oid with
-    | some cn =>
-        cn.foldCells acc (fun inner slot cap =>
-          let ok := match cap.badge with
-            | some _ => cap.rights.bits != 0  -- WS-F5/D2: non-empty rights (bitmask)
-            | none => true
-          (s!"capability badge implies non-empty rights: oid={oid} slot={slot}", ok) :: inner)
-    | _ => acc) []
+  objectSlotChecks objectIds st fun oid slot cap =>
+    let ok := match cap.badge with
+      | some _ => cap.rights.bits != 0  -- WS-F5/D2: non-empty rights (bitmask)
+      | none => true
+    (s!"capability badge implies non-empty rights: oid={oid} slot={slot}", ok)
 
 /-- M-11 Lifecycle metadata consistency: when lifecycle objectType metadata is present
 for a materialized object, it must agree with the actual object type. -/

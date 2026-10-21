@@ -906,8 +906,8 @@ leg is `kindPreservingWrite` and carries the invariant by
 **not** — it writes a CNode, and `kindPreservingWrite` excludes that kind
 outright — so it carries the invariant through the plain frame instead, from
 `receiveTransferCaps_scheduler_eq` and `receiveTransferCaps_getTcb?_eq`, which fixes
-the *whole* TCB projection because cap transfer writes only `receiverRoot` and
-only as a CNode.
+the TCB projection off the threads' slot links because cap transfer writes only
+CNodes and slot links.
 
 `hNotCur` is the bare leg's own precondition, read at the pre-state and about the
 endpoint alone, so the capability transfer is invisible to it. -/
@@ -942,7 +942,7 @@ theorem endpointCallWithCapsOnCore_preserves_schedulerInvariantBase_smp
            exact schedulerInvariantBase_smp_of_frame hBare
              (by rw [receiveTransferCaps_scheduler_eq h])
              (fun tid hSome => by
-               rw [receiveTransferCaps_getTcb?_eq tid hBareInv h]
+               rw [TCB.isSome_of_map_withoutLinks_eq (receiveTransferCaps_getTcb?_eq tid hBareInv h)]
                exact hSome))
 
 /-- **WS-RR RR8.16** (`v0.35.200`): ...and the **capability invariant bundle**,

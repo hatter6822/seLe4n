@@ -1008,15 +1008,63 @@ def notificationBadgesWellFormed (st : SystemState) : Prop :=
     badge.valid
 
 /-- WS-F5/D1d: All badges in capabilities are word-bounded.
-Asserts that every capability's badge (when present) in every CNode
-satisfies `Badge.valid`. -/
+Asserts that every capability's badge (when present) in every capability slot
+— a CNode's slot or a thread's space slot (`KernelObject.slotCap`) — satisfies
+`Badge.valid`. -/
 def capabilityBadgesWellFormed (st : SystemState) : Prop :=
-  ∀ (oid : SeLe4n.ObjId) (cn : CNode) (slot : SeLe4n.Slot) (cap : Capability)
+  ∀ (oid : SeLe4n.ObjId) (o : KernelObject) (slot : SeLe4n.Slot) (cap : Capability)
     (badge : SeLe4n.Badge),
-    st.objects[oid]? = some (.cnode cn) →
-    cn.lookup slot = some cap →
+    st.objects[oid]? = some o →
+    o.slotCap slot = some cap →
     cap.badge = some badge →
     badge.valid
+
+/-- The CNode reading of the badge clause. -/
+theorem capabilityBadgesWellFormed.cnode {st : SystemState} (h : capabilityBadgesWellFormed st)
+    {oid : SeLe4n.ObjId} {cn : CNode} {slot : SeLe4n.Slot} {cap : Capability} {badge : SeLe4n.Badge}
+    (hO : st.objects[oid]? = some (.cnode cn)) (hL : cn.lookup slot = some cap)
+    (hB : cap.badge = some badge) : badge.valid :=
+  h oid _ slot cap badge hO hL hB
+
+/-- **A step whose every object was there before with the same slots keeps
+the badge clause**: the clause reads slot contents alone. -/
+theorem capabilityBadgesWellFormed_of_slotCap_back {st st' : SystemState}
+    (h : capabilityBadgesWellFormed st)
+    (hBack : ∀ (oid : SeLe4n.ObjId) (o' : KernelObject), st'.objects[oid]? = some o' →
+      ∃ o, st.objects[oid]? = some o ∧ o'.slotCap = o.slotCap) :
+    capabilityBadgesWellFormed st' := fun oid o' slot cap badge hO hL hB => by
+  obtain ⟨o, ho, he⟩ := hBack oid o' hO
+  exact h oid o slot cap badge ho (he ▸ hL) hB
+
+/-- **Every badged capability of a post-state slot was in that slot before**:
+the part of the slot contents the badge clause reads.  A step that installs
+only unbadged capabilities (a thread's space-slot caps) satisfies it. -/
+def badgedSlotsBack (st st' : SystemState) : Prop :=
+  ∀ (oid : SeLe4n.ObjId) (o' : KernelObject) (slot : SeLe4n.Slot) (cap : Capability)
+    (badge : SeLe4n.Badge),
+    st'.objects[oid]? = some o' → o'.slotCap slot = some cap → cap.badge = some badge →
+    ∃ o, st.objects[oid]? = some o ∧ o.slotCap slot = some cap
+
+theorem badgedSlotsBack.of_slotCap_back {st st' : SystemState}
+    (hBack : ∀ (oid : SeLe4n.ObjId) (o' : KernelObject), st'.objects[oid]? = some o' →
+      ∃ o, st.objects[oid]? = some o ∧ o'.slotCap = o.slotCap) :
+    badgedSlotsBack st st' := fun oid o' slot cap _ hO hL _ =>
+  (hBack oid o' hO).elim fun o ⟨ho, he⟩ => ⟨o, ho, he ▸ hL⟩
+
+theorem badgedSlotsBack.refl (st : SystemState) : badgedSlotsBack st st :=
+  fun _ o _ _ _ hO hL _ => ⟨o, hO, hL⟩
+
+theorem badgedSlotsBack.trans {st st' st'' : SystemState}
+    (h1 : badgedSlotsBack st st') (h2 : badgedSlotsBack st' st'') :
+    badgedSlotsBack st st'' := fun oid o'' slot cap badge hO hL hB =>
+  (h2 oid o'' slot cap badge hO hL hB).elim fun o' ⟨ho', hL'⟩ =>
+    h1 oid o' slot cap badge ho' hL' hB
+
+theorem capabilityBadgesWellFormed_of_badgedSlotsBack {st st' : SystemState}
+    (h : capabilityBadgesWellFormed st) (hBack : badgedSlotsBack st st') :
+    capabilityBadgesWellFormed st' := fun oid o' slot cap badge hO hL hB =>
+  (hBack oid o' slot cap badge hO hL hB).elim fun o ⟨ho, hL0⟩ =>
+    h oid o slot cap badge ho hL0 hB
 
 /-- A capability read out of a CNode slot carries a valid badge, by the badge
 clause of the pre-state. -/
@@ -1037,7 +1085,7 @@ theorem lookupSlotCap_badge_valid (st : SystemState) (addr : CSpaceAddr)
         | some obj =>
           cases obj <;> rw [hO] at hCn <;> cases hCn
           rfl
-      exact hCapWf addr.cnode cn addr.slot cap b hObj hLk hB
+      exact hCapWf addr.cnode (.cnode cn) addr.slot cap b hObj hLk hB
 
 /-- Every resolved capability's badge is valid: each one is read out of a CNode
 slot of the state it is resolved in. -/
@@ -1922,11 +1970,12 @@ theorem allPendingMessagesBounded_of_objectsAgreeOffRunLinks {st st' : SystemSta
   pendingMessagesSatisfy_of_objectsAgreeOffRunLinks hA h
 
 /-- WS-ZA ZA4.5: badge well-formedness across stores that agree off the
-run-queue links (notifications and CNodes are untouched). -/
+run-queue links (notifications and every object's slots are untouched). -/
 theorem badgeWellFormed_of_objectsAgreeOffRunLinks {s1 s2 : SystemState}
     (hA : s2.objectsAgreeOffRunLinks s1) (h : badgeWellFormed s1) : badgeWellFormed s2 :=
   ⟨fun oid n b hO hb => h.1 oid n b (hA.get_notification_iff.mp hO) hb,
-   fun oid cn slot cap b hO => h.2 oid cn slot cap b (hA.get_cnode_iff.mp hO)⟩
+   capabilityBadgesWellFormed_of_slotCap_back h.2 fun _ _ hO =>
+     let ⟨o, ho, hs, _⟩ := hA.slots_back hO; ⟨o, ho, hs⟩⟩
 
 /-- WS-ZA ZA4.7: the scheduler bundle reads the scheduler and whether the
 current thread's TCB exists. -/
@@ -7961,17 +8010,10 @@ theorem cleanupPreReceiveDonation_preserves_badgeWellFormed
         intro oid ntfn badge hNtfn hBadge
         have hNtfnPre := returnDonatedSchedContext_notification_backward st st' receiver scId originalOwner hObjInv newOwner? hRet oid ntfn hNtfn
         exact hInv.1 oid ntfn badge hNtfnPre hBadge
-      · -- capabilityBadgesWellFormed: CNodes are unchanged
-        intro oid cn slot cap badge hCn hLookup hBadge
-        -- CNodes are neither TCBs nor SchedContexts, so unchanged through storeObject
-        -- We need backward transport for CNode objects — identical pattern to endpoint
-        -- Since returnDonatedSchedContext only stores TCBs and SchedContexts,
-        -- CNode objects are unchanged. Use the notification backward pattern.
-        -- Actually, we can use the general backward fact: any non-TCB non-SchedContext
-        -- object in st' was in st.
-        exact hInv.2 oid cn slot cap badge
-          (returnDonatedSchedContext_cnode_backward st st' receiver scId originalOwner hObjInv newOwner? hRet oid cn hCn)
-          hLookup hBadge
+      · -- capabilityBadgesWellFormed: the step writes TCBs and SchedContexts of
+        -- their own kinds, keeping every slot (`kindPreservingWrite.slotCap_back`)
+        exact capabilityBadgesWellFormed_of_slotCap_back hInv.2 fun _ _ hO =>
+          (returnDonatedSchedContext_kindPreservingWrite hObjInv hRet).slotCap_back hO
 
 /-- AI4-A: cleanupPreReceiveDonation preserves blockedThreadsPendingMessageConsistent.
 The invariant quantifies over TCBs checking ipcState and pendingMessage, both

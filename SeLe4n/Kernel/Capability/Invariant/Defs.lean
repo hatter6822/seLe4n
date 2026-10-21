@@ -24,16 +24,22 @@ open SeLe4n.Kernel.Concurrency (bootCoreId)
 -- `SeLe4n.Model.CNode.cnode_slots_unique`).
 
 /-- Lookup completeness: every capability stored in a CNode's slot HashMap is
-retrievable via `lookupSlotCap`.
+retrievable via `lookupSlotCap`, and every capability stored in any object's
+slot — a CNode's or a thread's space slot — is retrievable via the slot
+reader `SystemState.slotCapAt`.
 
 WS-G5: With HashMap-backed slots, lookup completeness is direct — `CNode.lookup`
 delegates to `HashMap.getElem?`, which is the canonical accessor. The property
 is trivially true by the identity `CNode.lookup slot = cn.slots[slot]?`. -/
 def cspaceLookupSound (st : SystemState) : Prop :=
-  ∀ (cnodeId : SeLe4n.ObjId) (cn : CNode) (slot : SeLe4n.Slot) (cap : Capability),
+  (∀ (cnodeId : SeLe4n.ObjId) (cn : CNode) (slot : SeLe4n.Slot) (cap : Capability),
     st.objects[cnodeId]? = some (KernelObject.cnode cn) →
     cn.lookup slot = some cap →
-    SystemState.lookupSlotCap st { cnode := cnodeId, slot := slot } = some cap
+    SystemState.lookupSlotCap st { cnode := cnodeId, slot := slot } = some cap) ∧
+  (∀ (oid : SeLe4n.ObjId) (o : KernelObject) (slot : SeLe4n.Slot) (cap : Capability),
+    st.objects[oid]? = some o →
+    o.slotCap slot = some cap →
+    st.slotCapAt { cnode := oid, slot := slot } = some cap)
 
 /-- Attenuation rule operation-correctness lemma (proved by `cspaceAttenuationRule_holds`).
 Not a state invariant (no `st` parameter); removed from `capabilityInvariantBundle` in WS-F6/D1. -/
@@ -75,22 +81,26 @@ empties a slot takes it out of the tree in the same step (the splice, the
 revoke's removal, the move's rename). -/
 def cdtCompleteness (st : SystemState) : Prop :=
   ∀ ref : SlotRef, st.cdt.mentions ref →
-    ∃ cn, st.objects[ref.cnode]? = some (.cnode cn) ∧ cn.lookup ref.slot ≠ none
+    ∃ o, st.objects[ref.cnode]? = some o ∧ o.slotCap ref.slot ≠ none
 
-/-- WS-ZA ZA5.3: a slot the tree names lies in a live CNode's slot array, so its
-links have words to live in (`SystemState.slotInCNode`). -/
-theorem slotInCNode_of_occupied {st : SystemState} {ref : SlotRef}
+/-- WS-ZA ZA5.3: a slot the tree names is a slot of a live object (a CNode's
+slot, a thread's space slot), so its links have words to live in
+(`SystemState.slotInObject`). -/
+theorem slotInObject_of_occupied {st : SystemState} {ref : SlotRef}
+    (h : ∃ o, st.objects[ref.cnode]? = some o ∧ o.slotCap ref.slot ≠ none) :
+    st.slotInObject ref := by
+  obtain ⟨o, hO, hL⟩ := h
+  exact ⟨o, hO, KernelObject.hasSlot_of_slotCap hL⟩
+
+/-- A CNode slot that holds a capability is an occupied slot of its object. -/
+theorem slotOccupied_of_cnode {st : SystemState} {ref : SlotRef}
     (h : ∃ cn, st.objects[ref.cnode]? = some (.cnode cn) ∧ cn.lookup ref.slot ≠ none) :
-    st.slotInCNode ref := by
-  obtain ⟨cn, hCn, hL⟩ := h
-  obtain ⟨cap, hCap⟩ := Option.ne_none_iff_exists'.mp hL
-  exact ⟨cn, hCn, cn.slots_get?_bounded ref.slot (by
-    have := hCap; unfold CNode.lookup at this
-    unfold SeLe4n.UniqueSlotMap.get? at this; rw [this]; simp)⟩
+    ∃ o, st.objects[ref.cnode]? = some o ∧ o.slotCap ref.slot ≠ none :=
+  h.elim fun cn hc => ⟨.cnode cn, hc.1, hc.2⟩
 
-theorem cdtCompleteness.slotInCNode {st : SystemState} (h : cdtCompleteness st)
-    {ref : SlotRef} (hM : st.cdt.mentions ref) : st.slotInCNode ref :=
-  slotInCNode_of_occupied (h ref hM)
+theorem cdtCompleteness.slotInObject {st : SystemState} (h : cdtCompleteness st)
+    {ref : SlotRef} (hM : st.cdt.mentions ref) : st.slotInObject ref :=
+  slotInObject_of_occupied (h ref hM)
 
 /-- **WS-ZA ZA5.3: the slot links encode the derivation tree** (`LinksAgree`):
 each slot's parent, first-child, next and previous links are what the tree says
@@ -106,23 +116,29 @@ theorem cdtLinksAgree_of_eq {st st' : SystemState} (h : cdtLinksAgree st)
 /-- A slot the tree names lies in an object that exists. -/
 theorem cdtCompleteness.present {st : SystemState} (h : cdtCompleteness st)
     {ref : SlotRef} (hM : st.cdt.mentions ref) : st.objects[ref.cnode]? ≠ none := by
-  obtain ⟨cn, hCn, -⟩ := h ref hM
-  rw [hCn]; simp
+  obtain ⟨o, hO, -⟩ := h ref hM
+  rw [hO]; simp
 
 /-- An empty slot is outside the tree. -/
 theorem cdtCompleteness.not_mentions_of_empty {st : SystemState} (h : cdtCompleteness st)
-    {ref : SlotRef} (hEmpty : ∀ cn, st.objects[ref.cnode]? = some (.cnode cn) →
-      cn.lookup ref.slot = none) : ¬ st.cdt.mentions ref := by
+    {ref : SlotRef} (hEmpty : ∀ o, st.objects[ref.cnode]? = some o →
+      o.slotCap ref.slot = none) : ¬ st.cdt.mentions ref := by
   intro hM
-  obtain ⟨cn, hCn, hSome⟩ := h ref hM
-  exact hSome (hEmpty cn hCn)
+  obtain ⟨o, hO, hSome⟩ := h ref hM
+  exact hSome (hEmpty o hO)
+
+/-- An empty CNode slot is outside the tree. -/
+theorem cdtCompleteness.not_mentions_of_empty_cnode {st : SystemState} (h : cdtCompleteness st)
+    {ref : SlotRef} {cn : CNode} (hCn : st.objects[ref.cnode]? = some (.cnode cn))
+    (hEmpty : cn.lookup ref.slot = none) : ¬ st.cdt.mentions ref :=
+  h.not_mentions_of_empty fun o hO => by rw [hCn] at hO; cases hO; exact hEmpty
 
 /-- The tree's slots hold capabilities except, possibly, the slots `gone` names:
 the state a destroyer leaves between emptying slots and taking them out of the
 tree. -/
 def cdtCompletenessOff (st : SystemState) (gone : SlotRef → Prop) : Prop :=
   ∀ ref : SlotRef, st.cdt.mentions ref → ¬ gone ref →
-    ∃ cn, st.objects[ref.cnode]? = some (.cnode cn) ∧ cn.lookup ref.slot ≠ none
+    ∃ o, st.objects[ref.cnode]? = some o ∧ o.slotCap ref.slot ≠ none
 
 theorem cdtCompleteness.off {st : SystemState} (h : cdtCompleteness st)
     (gone : SlotRef → Prop) : cdtCompletenessOff st gone :=
@@ -170,12 +186,30 @@ an absent/non-Reply object that the live `.reply` path then rejects (`getReply?`
 7th conjunct of `capabilityInvariantBundle`; preserved by the cap ops via the keystone
 `cspaceInsertSlot_preserves_replyCapPointsToValidReply` (+ delete dual). -/
 def replyCapPointsToValidReply (st : SystemState) : Prop :=
-  ∀ (oid : SeLe4n.ObjId) (cn : CNode) (slot : SeLe4n.Slot)
+  ∀ (oid : SeLe4n.ObjId) (o : KernelObject) (slot : SeLe4n.Slot)
     (cap : Capability) (rid : SeLe4n.ReplyId),
-    st.objects[oid]? = some (.cnode cn) →
-    cn.lookup slot = some cap →
+    st.objects[oid]? = some o →
+    o.slotCap slot = some cap →
     cap.target = .replyCap rid →
     st.getReply? rid ≠ none
+
+/-- The CNode reading of the reply-cap clause. -/
+theorem replyCapPointsToValidReply.cnode {st : SystemState} (h : replyCapPointsToValidReply st)
+    {oid : SeLe4n.ObjId} {cn : CNode} {slot : SeLe4n.Slot} {cap : Capability}
+    {rid : SeLe4n.ReplyId} (hO : st.objects[oid]? = some (.cnode cn))
+    (hL : cn.lookup slot = some cap) (hT : cap.target = .replyCap rid) : st.getReply? rid ≠ none :=
+  h oid _ slot cap rid hO hL hT
+
+/-- **A step whose every object was there before with the same slots, and that
+removes no Reply, keeps every reply cap backed.** -/
+theorem replyCapPointsToValidReply_of_slotCap_back {st st' : SystemState}
+    (h : replyCapPointsToValidReply st)
+    (hBack : ∀ (oid : SeLe4n.ObjId) (o' : KernelObject), st'.objects[oid]? = some o' →
+      ∃ o, st.objects[oid]? = some o ∧ o'.slotCap = o.slotCap)
+    (hReply : ∀ rid : SeLe4n.ReplyId, st.getReply? rid ≠ none → st'.getReply? rid ≠ none) :
+    replyCapPointsToValidReply st' := fun oid o' slot cap rid hO hL hT => by
+  obtain ⟨o, ho, he⟩ := hBack oid o' hO
+  exact hReply rid (h oid o slot cap rid ho (he ▸ hL) hT)
 
 /-- #1: `replyCapPointsToValidReply` reads only the object store (CNode slots +
 `getReply?`), so any transition leaving `st.objects` unchanged frames it. -/
@@ -189,10 +223,10 @@ theorem replyCapPointsToValidReply_of_objects_eq {st st' : SystemState}
 backed — CNodes and Reply objects are not TCBs. -/
 theorem replyCapPointsToValidReply_of_objectsAgreeOffRunLinks {st st' : SystemState}
     (hA : st'.objectsAgreeOffRunLinks st) (h : replyCapPointsToValidReply st) :
-    replyCapPointsToValidReply st' := by
-  intro oid cn slot cap rid hCn hLk hT
-  rw [hA.getReply? rid]
-  exact h oid cn slot cap rid (hA.get_cnode_iff.mp hCn) hLk hT
+    replyCapPointsToValidReply st' :=
+  replyCapPointsToValidReply_of_slotCap_back h
+    (fun _ _ hO => let ⟨o, ho, hc, _⟩ := hA.slots_back hO; ⟨o, ho, hc⟩)
+    (fun rid hR => by rw [hA.getReply? rid]; exact hR)
 
 /-- Composed capability invariant bundle entrypoint.
 
@@ -668,8 +702,9 @@ theorem cdtCompleteness_of_objectsAgreeOffRunLinks {st st' : SystemState}
     (hCdtEq : st'.cdt = st.cdt) : cdtCompleteness st' := by
   intro ref hM
   rw [hCdtEq] at hM
-  obtain ⟨cn, hCn, hL⟩ := hComp ref hM
-  exact ⟨cn, hA.get_cnode_iff.mpr hCn, hL⟩
+  obtain ⟨o, hO, hL⟩ := hComp ref hM
+  obtain ⟨o', hO', hc, _⟩ := hA.slots_fwd hO
+  exact ⟨o', hO', hc ▸ hL⟩
 
 theorem cspaceDepthConsistent_of_objectsAgreeOffRunLinks {st st' : SystemState}
     (hA : st'.objectsAgreeOffRunLinks st) (hDepth : cspaceDepthConsistent st) :
@@ -685,27 +720,28 @@ theorem cdtCompleteness_of_storeObject
     (hObjInv : st.objects.invExt)
     (hStore : storeObject oid obj st = .ok ((), st'))
     (hAt : ∀ ref : SlotRef, st.cdt.mentions ref → ref.cnode = oid →
-      ∃ cn, obj = .cnode cn ∧ cn.lookup ref.slot ≠ none) :
+      obj.slotCap ref.slot ≠ none) :
     cdtCompleteness st' := by
   intro ref hM
   rw [storeObject_cdt_eq st st' oid obj hStore] at hM
   by_cases hEq : ref.cnode = oid
-  · obtain ⟨cn, rfl, hL⟩ := hAt ref hM hEq
-    exact ⟨cn, by rw [hEq, storeObject_objects_eq st st' oid _ hObjInv hStore], hL⟩
+  · exact ⟨obj, by rw [hEq, storeObject_objects_eq st st' oid _ hObjInv hStore], hAt ref hM hEq⟩
   · rw [storeObject_objects_ne st st' oid ref.cnode obj hEq hObjInv hStore]; exact hComp ref hM
 
-/-- A store at a key that holds no CNode keeps the tree's slots: the tree names
-no slot there. -/
-theorem cdtCompleteness_of_storeObject_notCNode
-    (st st' : SystemState) (oid : SeLe4n.ObjId) (obj : KernelObject)
+/-- A store that keeps every occupied slot of the object it replaces occupied
+keeps the tree's slots. -/
+theorem cdtCompleteness_of_storeObject_slots_mono
+    (st st' : SystemState) (oid : SeLe4n.ObjId) (pre obj : KernelObject)
     (hComp : cdtCompleteness st)
     (hObjInv : st.objects.invExt)
+    (hPre : st.objects[oid]? = some pre)
     (hStore : storeObject oid obj st = .ok ((), st'))
-    (hPre : ∀ cn, st.objects[oid]? ≠ some (.cnode cn)) :
+    (hMono : ∀ s, pre.slotCap s ≠ none → obj.slotCap s ≠ none) :
     cdtCompleteness st' :=
   cdtCompleteness_of_storeObject st st' oid obj hComp hObjInv hStore fun ref hM hEq => by
-    obtain ⟨cn, hCn, -⟩ := hComp ref hM
-    exact absurd (hEq ▸ hCn) (hPre cn)
+    obtain ⟨o, hO, hL⟩ := hComp ref hM
+    rw [hEq, hPre] at hO; cases hO
+    exact hMono _ hL
 
 /-- A CNode store that keeps every occupied slot occupied keeps the tree's slots. -/
 theorem cdtCompleteness_of_storeObject_cnode_mono
@@ -716,10 +752,8 @@ theorem cdtCompleteness_of_storeObject_cnode_mono
     (hStore : storeObject oid (.cnode cn') st = .ok ((), st'))
     (hMono : ∀ s, cn.lookup s ≠ none → cn'.lookup s ≠ none) :
     cdtCompleteness st' :=
-  cdtCompleteness_of_storeObject st st' oid _ hComp hObjInv hStore fun ref hM hEq => by
-    obtain ⟨cn₀, hCn, hL⟩ := hComp ref hM
-    rw [hEq, hPre] at hCn; cases hCn
-    exact ⟨cn', rfl, hMono _ hL⟩
+  cdtCompleteness_of_storeObject_slots_mono st st' oid (.cnode cn) (.cnode cn') hComp hObjInv hPre
+    hStore hMono
 
 /-- A CNode store keeps the tree's slots when the new CNode still holds every slot
 the tree names in it. -/
@@ -731,7 +765,7 @@ theorem cdtCompleteness_of_storeObject_cnode
     (hKeep : ∀ s, st.cdt.mentions ⟨oid, s⟩ → cn'.lookup s ≠ none) :
     cdtCompleteness st' :=
   cdtCompleteness_of_storeObject st st' oid _ hComp hObjInv hStore fun ref hM hEq =>
-    ⟨cn', rfl, hKeep ref.slot (by cases ref; cases hEq; exact hM)⟩
+    hKeep ref.slot (by cases ref; cases hEq; exact hM)
 
 /-- A CNode store that empties slots keeps the tree's slots except the emptied
 ones, which `gone` must name. -/
@@ -747,9 +781,9 @@ theorem cdtCompletenessOff_of_storeObject_cnode
   rw [storeObject_cdt_eq st st' oid _ hStore] at hM
   by_cases hEq : c = oid
   · subst hEq
-    obtain ⟨cn₀, hCn, hL⟩ := hComp ⟨c, s⟩ hM
-    simp only [hPre] at hCn; cases hCn
-    exact ⟨cn', storeObject_objects_eq st st' c _ hObjInv hStore,
+    obtain ⟨o₀, hO, hL⟩ := hComp ⟨c, s⟩ hM
+    simp only [hPre] at hO; cases hO
+    exact ⟨.cnode cn', storeObject_objects_eq st st' c _ hObjInv hStore,
       fun hN => hNG (hGone s hL hN)⟩
   · rw [storeObject_objects_ne st st' oid c _ hEq hObjInv hStore]; exact hComp ⟨c, s⟩ hM
 
@@ -939,8 +973,8 @@ theorem cdtPredicates_through_reply_path
       | error e => simp [hS] at hTcb
       | ok pair =>
         simp only [hS] at hTcb; have hEq := Except.ok.inj hTcb; subst hEq
-        exact cdtCompleteness_of_storeObject_notCNode st pair.2 target.toObjId _ hComp hObjInv hS
-          (fun cn h => by rw [lookupTcb_some_objects st target tcb hL] at h; cases h)
+        exact cdtCompleteness_of_storeObject_slots_mono st pair.2 target.toObjId (.tcb tcb) _ hComp
+          hObjInv (lookupTcb_some_objects st target tcb hL) hS (fun _ h => h)
   have hEns := ensureRunnable_onlyObjectsSchedulerDiffer st1 target
   unfold SystemState.onlyObjectsSchedulerDiffer at hEns
   have hEnsNS : (ensureRunnable st1 target).cdt = st1.cdt := by rw [hEns]

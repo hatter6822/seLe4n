@@ -87,14 +87,17 @@ theorem capabilityKeyFrame_of_objects_scheduler_eq {st st' : SystemState}
     (hSched : st'.scheduler = st.scheduler) : capabilityKeyFrame st st' :=
   ⟨keyInputsEq_of_objects_eq hObj, hSched, hObj ▸ hObjInv⟩
 
-/-- Slot-link writes change only CNodes, which feed no key. -/
+/-- Slot-link writes change only CNodes, which feed no key, and threads' slot
+links, which no key reads. -/
 theorem capabilityKeyFrame_of_linkReach {st₀ st : SystemState}
     (hR : SystemState.linkReach st₀ st) (hObjInv : st₀.objects.invExt) :
     capabilityKeyFrame st₀ st := by
   refine ⟨fun oid => ?_, ?_, hR.invExt hObjInv⟩
-  · rcases hR.agree hObjInv oid with e | ⟨_, _, ha, hb, _⟩
+  · rcases hR.agree hObjInv oid with e | ⟨_, _, ha, hb, _⟩ | ⟨t, t', ha, hb, hw⟩
     · rw [e]
     · rw [ha, hb]; rfl
+    · rw [ha, hb]
+      exact TCB.proj_eq_of_withoutLinks_eq (fun x : TCB => keyInputsOf (some (.tcb x))) hw
   · have h := congrArg SystemState.scheduler hR.fields; exact h
 
 /-- A tree write followed by its slot-link writes feeds no key. -/

@@ -1537,32 +1537,19 @@ theorem linkCallerReply_determineTargetCore_eq (st st' : SystemState)
 moves no thread's home core either.
 
 The last step of the live `.receive` arm's receive leg.  `ipcUnwrapCaps` writes
-CNodes and the CDT, and its own TCB frame holds at *every* key in both directions
-(`ipcUnwrapCaps_preserves_tcb_objects` / `_tcb_backward`), so the whole
-`getTcb?` projection is fixed -- a strictly stronger fact than the affinity this
-needs, which is why no per-field argument appears here. -/
+CNodes, the CDT and slot links, and its own TCB frame holds at *every* key in
+both directions (`ipcUnwrapCaps_getTcb?_eq`), so the `getTcb?` projection is
+fixed off the threads' slot links -- a strictly stronger fact than the affinity
+this needs, which is why no per-field argument appears here. -/
 theorem ipcUnwrapCaps_determineTargetCore_eq (caps : Array TransferCap)
     (receiverRoot : SeLe4n.ObjId) (slotBase : SeLe4n.Slot) (grantRight : Bool)
     (st st' : SystemState) (summary : CapTransferSummary) (x : SeLe4n.ThreadId)
     (hObjInv : st.objects.invExt)
     (hStep : ipcUnwrapCaps caps receiverRoot slotBase grantRight st = .ok (summary, st')) :
     determineTargetCore st' x = determineTargetCore st x := by
-  have hEq : st'.getTcb? x = st.getTcb? x := by
-    cases hT' : st'.getTcb? x with
-    | none =>
-        cases hT : st.getTcb? x with
-        | none => rfl
-        | some tcb =>
-            have hFwd := ipcUnwrapCaps_preserves_tcb_objects caps receiverRoot slotBase
-              grantRight st st' summary x.toObjId tcb
-              ((SystemState.getTcb?_eq_some_iff st x tcb).mp hT) hObjInv hStep
-            simp [(SystemState.getTcb?_eq_some_iff st' x tcb).mpr hFwd] at hT'
-    | some tcb' =>
-        have hBwd := ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight
-          st st' summary x.toObjId tcb' hObjInv hStep
-          ((SystemState.getTcb?_eq_some_iff st' x tcb').mp hT')
-        rw [(SystemState.getTcb?_eq_some_iff st x tcb').mpr hBwd]
-  exact determineTargetCore_congr st st' x (by rw [hEq])
+  exact determineTargetCore_congr st st' x
+    (TCB.map_proj_of_map_withoutLinks_eq (·.cpuAffinity)
+      (ipcUnwrapCaps_getTcb?_eq caps receiverRoot slotBase grantRight st st' summary x hObjInv hStep))
 
 -- ============================================================================
 -- §11b  `v0.35.161` (register row 57) — the SchedContext-resolution frames of
@@ -1907,8 +1894,9 @@ theorem ipcUnwrapCaps_getSchedContext?_eq (caps : Array TransferCap)
       · rw [hOrig, hPre]
       · rw [hCn]
   · rcases ipcUnwrapCaps_preserves_objects_ne caps receiverRoot slotBase grantRight st st' summary
-      scId.toObjId hRoot hObjInv hStep with e | ⟨_, _, ha, hb, _⟩
+      scId.toObjId hRoot hObjInv hStep with e | ⟨_, _, ha, hb, _⟩ | ⟨_, _, ha, hb, _⟩
     · rw [e]
+    · rw [ha, hb]
     · rw [ha, hb]
 
 /-- `v0.35.161`: waking an already-`.ready` thread writes only TCB run-queue links,
@@ -2764,14 +2752,14 @@ theorem receiveTransferCaps_sameSchedContextBindings (hI : st.objects.invExt)
 theorem receiveTransferCaps_getTcb?_eq (tid : SeLe4n.ThreadId)
     (hI : st.objects.invExt)
     (h : receiveTransferCaps req root base st = .ok (summary, st'')) :
-    st''.getTcb? tid = st.getTcb? tid := by
+    (st''.getTcb? tid).map TCB.withoutLinks = (st.getTcb? tid).map TCB.withoutLinks := by
   obtain ⟨stR, caps, hO, _, _, hOr⟩ := receiveTransferCaps_frame h
   have hIR : stR.objects.invExt := hO ▸ hI
   have hR : stR.getTcb? tid = st.getTcb? tid := by
     unfold SystemState.getTcb?; rw [hO]
   rcases hOr with rfl | hU
-  · exact hR
-  · exact (ipcUnwrapCaps_getTcb?_eq _ _ _ _ stR _ _ tid hIR hU).trans hR
+  · rw [hR]
+  · rw [← hR]; exact ipcUnwrapCaps_getTcb?_eq _ _ _ _ stR _ _ tid hIR hU
 
 end receiveTransferCapsFrames
 

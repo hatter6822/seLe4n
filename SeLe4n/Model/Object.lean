@@ -10,6 +10,7 @@
 import SeLe4n.Model.Object.Types
 import SeLe4n.Model.Object.Structures
 import SeLe4n.Model.Object.DerivationLinks
+import SeLe4n.Model.ObjectSlots
 
 /-! # Kernel Objects — Re-export Hub
 
@@ -21,4 +22,6 @@ Decomposed into:
   and slot-uniqueness/count-bound proofs, KernelObject sum type).
 - **DerivationLinks**: the derivation links each slot holds and the proofs that
   they encode the derivation tree.
+- **ObjectSlots** (`SeLe4n.Model.ObjectSlots`): the slot readers and writers
+  over every object that holds capability slots, a CNode or a thread.
 -/

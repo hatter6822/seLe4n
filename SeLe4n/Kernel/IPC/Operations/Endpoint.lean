@@ -1292,11 +1292,14 @@ theorem modifyTcb_notification_backward {st st' : SystemState} {tid : SeLe4n.Thr
 /-- **Audit IPC-5**: a TCB field write is a `kindPreservingWrite` — one
 `storeObject` of a `.tcb` at a key the lookup resolved to a TCB. -/
 theorem modifyTcb_kindPreservingWrite {st st' : SystemState} {tid : SeLe4n.ThreadId}
-    {f : TCB → TCB} (hObjInv : st.objects.invExt) (h : modifyTcb st tid f = .ok st') :
+    {f : TCB → TCB} (hObjInv : st.objects.invExt) (h : modifyTcb st tid f = .ok st')
+    (hf : ∀ t, (f t).spaceCells = t.spaceCells ∧ (f t).spaceLinks = t.spaceLinks := by
+      intro _; exact ⟨rfl, rfl⟩) :
     kindPreservingWrite st st' := by
   obtain ⟨tcb, hLk, hS⟩ := modifyTcb_ok_decompose h
   exact storeObject_kindPreservingWrite hObjInv hS
     (lookupTcb_some_objects st tid tcb hLk) rfl (by simp [KernelObject.objectType])
+    (by simp only [KernelObject.tcbSlots, (hf tcb).1, (hf tcb).2])
 
 /-- **Audit IPC-5**: ...and it writes neither CDT table. -/
 theorem modifyTcb_cdt_eq {st st' : SystemState} {tid : SeLe4n.ThreadId}
@@ -1375,11 +1378,13 @@ theorem modifyTcbOpt_notification_backward {st st' : SystemState}
 
 theorem modifyTcbOpt_kindPreservingWrite {st st' : SystemState}
     {t? : Option SeLe4n.ThreadId} {f : TCB → TCB}
-    (hObjInv : st.objects.invExt) (h : modifyTcbOpt st t? f = .ok st') :
+    (hObjInv : st.objects.invExt) (h : modifyTcbOpt st t? f = .ok st')
+    (hf : ∀ t, (f t).spaceCells = t.spaceCells ∧ (f t).spaceLinks = t.spaceLinks := by
+      intro _; exact ⟨rfl, rfl⟩) :
     kindPreservingWrite st st' := by
   rcases modifyTcbOpt_ok_cases h with ⟨_, rfl⟩ | ⟨_, _, h⟩
   · exact kindPreservingWrite.refl _
-  · exact modifyTcb_kindPreservingWrite hObjInv h
+  · exact modifyTcb_kindPreservingWrite hObjInv h hf
 
 theorem modifyTcbOpt_cdt_eq {st st' : SystemState} {t? : Option SeLe4n.ThreadId}
     {f : TCB → TCB} (h : modifyTcbOpt st t? f = .ok st') :

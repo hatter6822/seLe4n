@@ -63,12 +63,15 @@ theorem withCdt_runQueueStage (st : SystemState) (cdt : CapDerivationTree) :
     RunQueueStage st { st with cdt := cdt } :=
   RunQueueStage.of_frame rfl rfl rfl
 
-/-- One slot-link write rewrites a CNode, which holds no run-queue state. -/
+/-- One slot-link write rewrites a CNode, which holds no run-queue state, or a
+thread's slot-link words, which are not run-queue state. -/
 theorem _root_.SeLe4n.Model.SystemState.RunQueueStage.setSlotLinkWords (st : SystemState)
     (o : SeLe4n.ObjId) (s : SeLe4n.Slot) (f : SeLe4n.Model.LinkField) (c w : Nat) :
     RunQueueStage st (st.setSlotLinkWords o s f c w) := by
   cases hcn : st.objects[o]? with
-  | none => exact RunQueueStage.of_eq (by rw [SystemState.setSlotLinkWords_def, hcn])
+  | none =>
+    exact RunQueueStage.of_eq
+      (SystemState.setSlotLinkWords_of_not_slots (fun _ h => by rw [hcn] at h; cases h) s f c w)
   | some ob =>
     cases ob with
     | cnode cn =>
@@ -76,7 +79,14 @@ theorem _root_.SeLe4n.Model.SystemState.RunQueueStage.setSlotLinkWords (st : Sys
       exact RunQueueStage.insert rfl rfl rfl (fun _ => by rw [hcn]; rfl)
         (by rw [hcn]; exact ⟨fun _ hx => by simp [SystemState.objTcb?] at hx,
           fun _ hx _ => by simp [SystemState.objTcb?] at hx⟩)
-    | _ => exact RunQueueStage.of_eq (by rw [SystemState.setSlotLinkWords_def, hcn])
+    | tcb t =>
+      rw [SystemState.setSlotLinkWords_of_tcb hcn]
+      exact RunQueueStage.insert rfl rfl rfl (fun _ => by rw [hcn]; rfl)
+        (by rw [hcn]; exact SystemState.objStateMono_tcb ⟨id, id⟩)
+    | _ =>
+      exact RunQueueStage.of_eq
+        (SystemState.setSlotLinkWords_of_not_slots (fun _ h => by
+          rw [hcn] at h; cases h; rfl) s f c w)
 
 /-- A run of slot-link writes is a run-queue stage. -/
 theorem _root_.SeLe4n.Model.SystemState.RunQueueStage.of_linkReach {st₀ st : SystemState}

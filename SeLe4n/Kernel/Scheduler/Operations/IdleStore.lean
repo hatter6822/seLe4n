@@ -157,18 +157,12 @@ theorem storeIdleThreadOnCore_preserves_allTablesInvExtK (st : SystemState) (c :
     (hAll : st.allTablesInvExtK) : (storeIdleThreadOnCore st c).allTablesInvExtK :=
   SystemState.withObjectStored_preserves_allTablesInvExtK _ _ _ hAll
 
-/-- The store preserves the per-object CNode-slot invariant: the one key it
-stores now holds a TCB, which is not a CNode, and every other key is framed. -/
+/-- The store preserves the per-object slot invariant, which every slot store
+satisfies by construction (`perObjectSlotsInvariant_holds`). -/
 theorem storeIdleThreadOnCore_preserves_perObjectSlotsInvariant (st : SystemState)
-    (c : CoreId) (hInv : st.objects.invExt) (hSlots : perObjectSlotsInvariant st) :
-    perObjectSlotsInvariant (storeIdleThreadOnCore st c) := by
-  intro oid cn hObj
-  by_cases hEq : (idleThreadId c).toObjId = oid
-  · subst hEq
-    rw [storeIdleThreadOnCore_objects_self st c hInv] at hObj
-    cases hObj
-  · rw [storeIdleThreadOnCore_objects_ne st c oid hInv hEq] at hObj
-    exact hSlots oid cn hObj
+    (c : CoreId) (_hInv : st.objects.invExt) (_hSlots : perObjectSlotsInvariant st) :
+    perObjectSlotsInvariant (storeIdleThreadOnCore st c) :=
+  perObjectSlotsInvariant_holds _
 
 /-- The store preserves the per-object VSpace-mapping invariant, for the same
 reason. -/

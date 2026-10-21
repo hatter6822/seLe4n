@@ -3739,9 +3739,8 @@ theorem timeoutStaging_preserves_ipcInvariantFull
     exact h.allPendingMessagesBounded t t0 msg h0 (hM ▸ hMsg)
   · exact ⟨fun oid ntfn badge hLk hP =>
       h.badgeWellFormed.1 oid ntfn badge ((hOtherKind oid _ (fun _ => by simp)).mp hLk) hP,
-     fun oid cn slot cap badge hLk hS hB =>
-      h.badgeWellFormed.2 oid cn slot cap badge
-        ((hOtherKind oid _ (fun _ => by simp)).mp hLk) hS hB⟩
+     capabilityBadgesWellFormed_of_slotCap_back h.badgeWellFormed.2
+       (slotCap_back_of_storeObject hObjInv hRaw hStore rfl)⟩
   · intro t tcbT hT
     obtain ⟨t0, h0, hI, hM, _, _, _⟩ := hBwd t.toObjId tcbT hT
     have := h.blockedThreadsPendingMessageConsistent t t0 h0

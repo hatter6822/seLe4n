@@ -21963,8 +21963,10 @@ run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlot_ok_decompose($|[ ({:\[\]]
 # the tree directly.  ZA5.3 part 4: completeness names the capability, not just
 # the CNode (a slot the tree names holds a capability), so every edge-adding
 # operation proves the tree's soundness from its pre-state and no theorem takes
-# the post-state tree as a hypothesis.
-run_check "INVARIANT" rg -n -U '^def cdtCompleteness \(st : SystemState\) : Prop :=\n  ∀ ref : SlotRef, st\.cdt\.mentions ref →\n    ∃ cn, st\.objects\[ref\.cnode\]\? = some \(\.cnode cn\) ∧ cn\.lookup ref\.slot ≠ none' SeLe4n/Kernel/Capability/Invariant/Defs.lean
+# the post-state tree as a hypothesis.  Untyped-reset Part 12: the slot is
+# read through the object-slot dispatch (`KernelObject.slotCap`), so a slot the
+# tree names may be a CNode's or a thread's space slot.
+run_check "INVARIANT" rg -n -U '^def cdtCompleteness \(st : SystemState\) : Prop :=\n  ∀ ref : SlotRef, st\.cdt\.mentions ref →\n    ∃ o, st\.objects\[ref\.cnode\]\? = some o ∧ o\.slotCap ref\.slot ≠ none' SeLe4n/Kernel/Capability/Invariant/Defs.lean
 run_negative_check "INVARIANT" rg -n 'hCdtPost|hCdtMapsPost|cspaceCopy_preserves_cdtMapsConsistent|cspaceMove_preserves_cdtMapsConsistent' SeLe4n
 run_check "INVARIANT" rg -n '^theorem empty_not_mentions($|[ ({:\[\]])' SeLe4n/Model/Object/Structures.lean
 run_check "INVARIANT" rg -n -U '                \| \.ok \(\(\), st...\) => \.ok \(\(\), st...\.cdtMove src dst\)' SeLe4n/Kernel/Capability/Operations.lean

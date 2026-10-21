@@ -132,7 +132,7 @@ theorem linkAt_of_linksClear {node : CNode} (h : node.linksClear = true)
       simpa using this
   unfold linkAt decodeLink; rw [hz]; rfl
 
-private theorem linkBase_ne {s s' : SeLe4n.Slot} {f f' : LinkField} (h : ¬ (s' = s ∧ f' = f)) :
+theorem linkBase_ne {s s' : SeLe4n.Slot} {f f' : LinkField} (h : ¬ (s' = s ∧ f' = f)) :
     linkBase s f ≠ linkBase s' f' ∧ linkBase s f + 1 ≠ linkBase s' f' ∧
       linkBase s f ≠ linkBase s' f' + 1 ∧ linkBase s f + 1 ≠ linkBase s' f' + 1 := by
   have key : s'.toNat ≠ s.toNat ∨ f' ≠ f := by

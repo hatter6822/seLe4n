@@ -1319,6 +1319,15 @@ theorem timerTickOnCore_runQueueEntryStage {st : SystemState} {c : Concurrency.C
             exact hC2.entry.trans (handleRescheduleSgiOnCore_runQueueEntryStage hH)
         · rw [Except.ok.injEq] at h; subst h; exact hC2.entry
 
+/-- A write off the derivation links moves no thread's run-queue link: it
+rewrites slot links alone, which no run link reads. -/
+theorem runLinkOn_of_agreeOffDerivationLinks {st st' : SystemState}
+    (h : st'.objectsAgreeOffDerivationLinks st) (c : Concurrency.CoreId) (t : SeLe4n.ThreadId) :
+    st'.runLinkOn c t = st.runLinkOn c t := by
+  have e := TCB.map_proj_of_map_withoutLinks_eq (fun x : TCB => x.runLinkOn c) (h.getTcb? t)
+  unfold SystemState.runLinkOn
+  cases h1 : st'.getTcb? t <;> cases h2 : st.getTcb? t <;> simp_all
+
 /-- A fresh replacement names no run queue. -/
 theorem objRunLinkOn_of_retypeReplacementFresh {o : KernelObject} (h : retypeReplacementFresh o)
     (c : Concurrency.CoreId) : SystemState.objRunLinkOn (some o) c = RunQueue.RunQueueLink.none := by
@@ -1366,9 +1375,10 @@ theorem lifecycleRetypeDirectWithCleanup_runQueueEntryStage {st st' : SystemStat
     fun hInv c => by
       have e : SystemState.objRunLinkOn (scrubObjectMemory stClean target currentObj.objectType).objects[target]? c
           = SystemState.objRunLinkOn st.objects[target]? c := by
-        rcases (hFr hInv).2.1 target with e | ⟨_, _, ha, hb, _⟩
+        rcases (hFr hInv).2.1 target with e | ⟨_, _, ha, hb, _⟩ | ⟨_, _, ha, hb, hw⟩
         · rw [e]
         · rw [ha, hb]; rfl
+        · rw [ha, hb]; exact TCB.proj_eq_of_withoutLinks_eq (fun x : TCB => x.runLinkOn c) hw
       rw [objRunLinkOn_of_retypeReplacementFresh hFresh c, e, hObj]
       cases currentObj with
       | tcb t =>
@@ -1402,16 +1412,17 @@ theorem lifecycleRetypeDirectWithCleanup_runQueueEntryStage {st st' : SystemStat
       (fun c h => (hDet.tcbDescheduled x hObj c).2.2 (by
         unfold SchedulerState.currentOnCore at h ⊢; rw [hSS] at h; exact h))
       (fun c => ?_) (hDet.tcbNotIdle x hObj) hNew
-    rw [SystemState.queuedOn_eq_runLinkOn, SystemState.runLinkOn_of_getTcb? ((hFr hInv).2.1.getTcb? _),
+    rw [SystemState.queuedOn_eq_runLinkOn, runLinkOn_of_agreeOffDerivationLinks (hFr hInv).2.1,
       ← SystemState.queuedOn_eq_runLinkOn]
     exact (hDet.tcbDescheduled x hObj c).2.1
   | _ =>
     subst hCur
     refine (SystemState.RunQueueStage.storeObject hStore (hLk hInv) ⟨fun y hy => ?_,
       fun y hy _ => hNew y hy⟩).2.1 none hInv1 hR1 hR' d1
-    rcases (hFr hInv).2.1 target with e | ⟨_, _, ha, hb, _⟩
+    rcases (hFr hInv).2.1 target with e | ⟨_, _, ha, hb, _⟩ | ⟨_, _, ha, hb, _⟩
     · rw [e, hObj] at hy; cases hy
     · rw [hb] at hy; cases hy
+    · rw [ha] at hObj; cases hObj
 
 /-- The shootdown form: the destroy path, then ASID rounds that write neither
 objects nor scheduler. -/

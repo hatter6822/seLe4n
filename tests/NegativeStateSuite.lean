@@ -692,14 +692,14 @@ private def runDualQueueEndpointFifoNegativeChecks : IO Unit := do
         tid := ⟨7⟩
         priority := ⟨10⟩
         domain := ⟨0⟩
-        spaceCells := SeLe4n.Model.TCB.spaceCellsOf cnodeId ⟨20⟩
+        spaceCells := SeLe4n.Model.TCB.spaceCellsOf SeLe4n.ObjId.sentinel SeLe4n.ObjId.sentinel
         ipcBuffer := (SeLe4n.VAddr.ofNat 4096)
       })
       |>.withObject ⟨8⟩ (.tcb {
         tid := ⟨8⟩
         priority := ⟨42⟩
         domain := ⟨0⟩
-        spaceCells := SeLe4n.Model.TCB.spaceCellsOf cnodeId ⟨20⟩
+        spaceCells := SeLe4n.Model.TCB.spaceCellsOf SeLe4n.ObjId.sentinel SeLe4n.ObjId.sentinel
         ipcBuffer := (SeLe4n.VAddr.ofNat 8192)
       })
       |>.withRunnable [⟨8⟩]
@@ -720,7 +720,7 @@ private def runDualQueueEndpointFifoNegativeChecks : IO Unit := do
             tid := ⟨7⟩
             priority := ⟨80⟩
             domain := ⟨1⟩
-            spaceCells := SeLe4n.Model.TCB.spaceCellsOf cnodeId ⟨20⟩
+            spaceCells := SeLe4n.Model.TCB.spaceCellsOf SeLe4n.ObjId.sentinel SeLe4n.ObjId.sentinel
             ipcBuffer := (SeLe4n.VAddr.ofNat 4096)
           }) } : SystemState).runEnqueueOnCore bootCoreId (SeLe4n.ThreadId.ofNat 7) ⟨80⟩
   let crossDomainState : SystemState :=
@@ -749,7 +749,7 @@ private def runDualQueueEndpointFifoNegativeChecks : IO Unit := do
         priority := ⟨20⟩
         deadline := ⟨2⟩
         domain := ⟨1⟩
-        spaceCells := SeLe4n.Model.TCB.spaceCellsOf cnodeId ⟨20⟩
+        spaceCells := SeLe4n.Model.TCB.spaceCellsOf SeLe4n.ObjId.sentinel SeLe4n.ObjId.sentinel
         ipcBuffer := (SeLe4n.VAddr.ofNat 12288)
       })
       |>.withObject ⟨11⟩ (.tcb {
@@ -757,7 +757,7 @@ private def runDualQueueEndpointFifoNegativeChecks : IO Unit := do
         priority := ⟨20⟩
         deadline := ⟨4⟩
         domain := ⟨1⟩
-        spaceCells := SeLe4n.Model.TCB.spaceCellsOf cnodeId ⟨20⟩
+        spaceCells := SeLe4n.Model.TCB.spaceCellsOf SeLe4n.ObjId.sentinel SeLe4n.ObjId.sentinel
         ipcBuffer := (SeLe4n.VAddr.ofNat 16384)
       })
       |>.withObject ⟨12⟩ (.tcb {
@@ -765,7 +765,7 @@ private def runDualQueueEndpointFifoNegativeChecks : IO Unit := do
         priority := ⟨80⟩
         deadline := ⟨1⟩
         domain := ⟨0⟩
-        spaceCells := SeLe4n.Model.TCB.spaceCellsOf cnodeId ⟨20⟩
+        spaceCells := SeLe4n.Model.TCB.spaceCellsOf SeLe4n.ObjId.sentinel SeLe4n.ObjId.sentinel
         ipcBuffer := (SeLe4n.VAddr.ofNat 20480)
       })
       |>.withRunnable [⟨12⟩, ⟨10⟩, ⟨11⟩]
@@ -2864,11 +2864,11 @@ def runWSL4BlockedThreadChecks : IO Unit := do
       |>.withObject ntfnId (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
       |>.withObject ⟨7⟩ (.tcb {
         tid := ⟨7⟩, priority := ⟨10⟩, domain := ⟨0⟩,
-        spaceCells := SeLe4n.Model.TCB.spaceCellsOf ⟨10⟩ ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
+        spaceCells := SeLe4n.Model.TCB.spaceCellsOf SeLe4n.ObjId.sentinel SeLe4n.ObjId.sentinel, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
       })
       |>.withObject ⟨8⟩ (.tcb {
         tid := ⟨8⟩, priority := ⟨20⟩, domain := ⟨0⟩,
-        spaceCells := SeLe4n.Model.TCB.spaceCellsOf ⟨10⟩ ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 8192),
+        spaceCells := SeLe4n.Model.TCB.spaceCellsOf SeLe4n.ObjId.sentinel SeLe4n.ObjId.sentinel, ipcBuffer := (SeLe4n.VAddr.ofNat 8192),
       })
       |>.withRunnable [⟨7⟩, ⟨8⟩]
     ).buildChecked

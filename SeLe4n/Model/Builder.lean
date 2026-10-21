@@ -175,18 +175,7 @@ def createObject (ist : IntermediateState)
            h.2.2.2.2.1, h.2.2.2.2.2.1, h.2.2.2.2.2.2.1,
            ?_⟩
     exact RHSet.insert_preserves_invExtK ist.state.objectIndexSet id h.2.2.2.2.2.2.2
-  hPerObjectSlots := by
-    unfold perObjectSlotsInvariant
-    intro oid cn hObj
-    have hObjK := allTablesInvExtK_objects ist.hAllTables
-    simp only [RHTable_getElem?_eq_get?] at hObj
-    by_cases hEq : id = oid
-    · subst hEq
-      rw [RHTable.getElem?_insert_self ist.state.objects id obj hObjK.1] at hObj
-      cases hObj; exact hSlots cn rfl
-    · have hNe : ¬((id == oid) = true) := by intro heq; exact hEq (eq_of_beq heq)
-      rw [RHTable.getElem?_insert_ne ist.state.objects id oid obj hNe hObjK.1] at hObj
-      exact ist.hPerObjectSlots oid cn (by simp only [RHTable_getElem?_eq_get?]; exact hObj)
+  hPerObjectSlots := perObjectSlotsInvariant_holds _
   hPerObjectMappings := by
     unfold perObjectMappingsInvariant
     intro oid vs hObj
@@ -235,7 +224,7 @@ def insertCap (ist : IntermediateState)
     (fun cn'' hEq => by
       cases hEq
       -- WS-RC R4.A: structural discharge.
-      have _hSU := ist.hPerObjectSlots cnodeId cn hLookup
+      have _hSU := ist.hPerObjectSlots.cnode hLookup
       exact (cn.insert slot cap).slots.hWF)
     (fun vs hEq => by cases hEq)
 
@@ -265,8 +254,7 @@ def markRunnable (ist : IntermediateState) (tid : SeLe4n.ThreadId)
   hAllTables :=
     (SystemState.runEnqueueOnCore_onlyObjectsSchedulerDiffer _ _ _ _).allTablesInvExtK
       (SystemState.runEnqueueOnCore_objects_invExtK _ _ _ _ ist.hAllTables.1) ist.hAllTables
-  hPerObjectSlots := fun id cn h => ist.hPerObjectSlots id cn
-    ((SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ _ _ _).get_cnode_iff.mp h)
+  hPerObjectSlots := perObjectSlotsInvariant_holds _
   hPerObjectMappings := fun id vs h => ist.hPerObjectMappings id vs
     ((SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ _ _ _).get_vspaceRoot_iff.mp h)
   hLifecycleConsistent :=

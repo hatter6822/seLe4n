@@ -289,8 +289,9 @@ theorem endpointCallWithCapsOnCore_preserves_ipcInvariantFull
 -- production asker that could not reach it here.
 
 /-- WS-RR RR2.6: `endpointCallWithCapsOnCore` frames every thread's `ipcState` —
-the capability transfer writes CDT nodes and the receiver's CSpace CNode, never a TCB, so
-the two rendezvous facts §3 establishes survive it. -/
+the capability transfer writes CDT nodes, the receiver's CSpace CNode and slot links, so
+every thread agrees off its slot links and the two rendezvous facts §3 establishes survive
+it. -/
 theorem endpointCallWithCapsOnCore_getTcb?_ipcState_eq
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
     (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
@@ -298,9 +299,9 @@ theorem endpointCallWithCapsOnCore_getTcb?_ipcState_eq
     (t : SeLe4n.ThreadId) (tcb : TCB)
     (hTcb : (endpointCallWithCapsOnCore endpointId caller payload
       receiverSlotBase executingCore st).1.getTcb? t = some tcb) :
-    SystemState.getTcb? (endpointCallOnCore endpointId caller
+    ∃ tcb₀, SystemState.getTcb? (endpointCallOnCore endpointId caller
       payload executingCore st).1
-      t = some tcb := by
+      t = some tcb₀ ∧ tcb.withoutLinks = tcb₀.withoutLinks := by
   have hBareInv := endpointCallOnCore_preserves_objects_invExt endpointId caller
     payload executingCore st hObjInv
   revert hTcb
@@ -310,16 +311,16 @@ theorem endpointCallWithCapsOnCore_getTcb?_ipcState_eq
   | mk stCall res =>
     rw [hCall] at hBareInv
     cases res with
-    | error e => exact id
+    | error e => exact fun h => ⟨tcb, h, rfl⟩
     | ok sgi =>
       simp only
       repeat' split
       all_goals first
-        | exact id
+        | exact fun h => ⟨tcb, h, rfl⟩
         | (rename_i hT
            intro hTcb
-           rw [← receiveTransferCaps_getTcb?_eq t hBareInv hT]
-           exact hTcb)
+           exact TCB.exists_of_map_withoutLinks_eq
+             (receiveTransferCaps_getTcb?_eq t hBareInv hT) hTcb)
 
 
 /-- WS-RR RR2.6: a `endpointCallWithCapsOnCore` that returns `.ok` had a `.ok`
@@ -447,7 +448,8 @@ theorem endpointCallCrossCoreDispatch_preserves_ipcInvariantFull
                   ∃ e rt, tcb.ipcState = .blockedOnReply e rt := by
                 intro tcb hTcb
                 rw [hCallerV] at hTcb
-                exact hCallerBlk tcb (hIpcFrame caller tcb hTcb)
+                obtain ⟨t0, h0, hw⟩ := hIpcFrame caller tcb hTcb
+                exact TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) (hCallerBlk t0 h0)
               -- Donation precondition 2: nothing owns a donation on the receiver.
               have hDon2 : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId),
                   stWc.getTcb? tid = some tcb →
@@ -456,9 +458,10 @@ theorem endpointCallCrossCoreDispatch_preserves_ipcInvariantFull
                 obtain ⟨_, ownerTcb, hOwner, _, ep', rt, hOwnerIpc⟩ :=
                   hWithCaps.donationOwnerValid tid tcb scId receiverV.val
                     ((getTcb?_eq_some_iff stWc tid tcb).mp hTcb) hBind
-                have hReady := hRecvReady ownerTcb
-                  (hIpcFrame receiverTid ownerTcb
-                    (by rw [← hReceiverV]; exact (getTcb?_eq_some_iff stWc _ ownerTcb).mpr hOwner))
+                obtain ⟨t0, h0, hw⟩ := hIpcFrame receiverTid ownerTcb
+                    (by rw [← hReceiverV]; exact (getTcb?_eq_some_iff stWc _ ownerTcb).mpr hOwner)
+                have hReady : ownerTcb.ipcState = .ready :=
+                  TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) (hRecvReady t0 h0)
                 rw [hReady] at hOwnerIpc
                 cases hOwnerIpc
               cases hDon : applyCallDonationOnCore stWc callerV receiverV

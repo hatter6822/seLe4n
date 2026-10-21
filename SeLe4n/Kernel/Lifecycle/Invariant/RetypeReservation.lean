@@ -325,7 +325,12 @@ theorem lifecyclePreRetypeCleanup_preserves_replenishQueueAffinityConsistent_smp
       have hA := (detachCNodeSlots_agree hInv target cn).1
       exact fun c => (replenishQueueAffinityConsistentOnCore_congr
         (by rw [detachCNodeSlots_scheduler_eq]) (fun scId => hA.getSchedContext? scId)
-        (fun tid => by unfold determineTargetCore; rw [hA.getTcb? tid])).mpr (hCons c)
+        (fun tid => by
+          have e := TCB.map_proj_of_map_withoutLinks_eq (·.cpuAffinity) (hA.getTcb? tid)
+          unfold determineTargetCore
+          revert e
+          cases (detachCNodeSlots st target cn).getTcb? tid <;> cases st.getTcb? tid <;>
+            simp_all)).mpr (hCons c)
   | reply r =>
     subst hC
     simp only at h
@@ -599,7 +604,8 @@ theorem lifecyclePreRetypeCleanup_preserves_schedContextBindingConsistent
     · injection h with h
       subst h
       have hA := (detachCNodeSlots_agree hInv target cn).1
-      exact schedContextBindingConsistent_transfer (fun tid => by rw [hA.getTcb? tid])
+      exact schedContextBindingConsistent_transfer
+        (fun tid => TCB.map_proj_of_map_withoutLinks_eq _ (hA.getTcb? tid))
         (fun scId => by rw [hA.getSchedContext? scId]) hCons
   | reply r =>
     subst hC
@@ -900,8 +906,8 @@ theorem lifecyclePreRetypeCleanup_targetUnpaired
     · exact absurd h (by simp)
     · injection h with h; subst h
       have hA := (detachCNodeSlots_agree hInv target cn).1
-      exact ⟨fun t hT => absurd (hA.obj_back hT (fun _ h => KernelObject.noConfusion h))
-          (by rw [hStored]; simp),
+      exact ⟨fun t hT => (hA.tcb_back hT).elim fun t0 h0 =>
+          absurd h0.1 (by rw [hStored]; simp),
         fun s0 hS => absurd (hA.obj_back hS (fun _ h => KernelObject.noConfusion h))
           (by rw [hStored]; simp)⟩
   | reply r =>

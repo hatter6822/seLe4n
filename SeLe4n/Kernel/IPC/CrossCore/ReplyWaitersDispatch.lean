@@ -160,10 +160,14 @@ theorem ipcUnwrapCaps_replyViews_eq (caps : Array TransferCap) (root : SeLe4n.Ob
     (hInv : st.objects.invExt) (h : ipcUnwrapCaps caps root base grant st = .ok (sum, st')) :
     st'.replyViews = st.replyViews :=
   replyViews_eq_of_tcbs
-    (fun k t0 hk => ⟨t0, ipcUnwrapCaps_preserves_tcb_objects caps root base grant st st' sum
-      k t0 hk hInv h, rfl⟩)
-    (fun k t' hk => ⟨t', ipcUnwrapCaps_tcb_backward caps root base grant st st' sum k t'
-      hInv h hk⟩)
+    (fun k t0 hk =>
+      let ⟨t', h', hw⟩ := ipcUnwrapCaps_preserves_tcb_objects caps root base grant st st' sum
+        k t0 hk hInv h
+      ⟨t', h', TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) rfl⟩)
+    (fun k t' hk =>
+      let ⟨t0, h0, _⟩ := ipcUnwrapCaps_tcb_backward caps root base grant st st' sum k t'
+        hInv h hk
+      ⟨t0, h0⟩)
 
 /-- The rendezvous capability lookup reads the sender's CSpace and writes the
 receiver's CNodes alone. -/

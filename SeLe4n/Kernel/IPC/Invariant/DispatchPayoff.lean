@@ -1805,7 +1805,8 @@ private theorem witnessInv1 : ipcInvariantFull witnessSt1 := by
     rw [witnessSt1_lookup, Architecture.default_objects_none]
     simp [show (witnessTid.toObjId == oid) = false from by
       simp [beq_eq_false_iff_ne]; exact fun h => hNe h.symm]
-  · simp [witnessTcbFresh, retypeReplacementFresh]
+  · simp [witnessTcbFresh, retypeReplacementFresh, TCB.spaceSlotCaps, TCB.spaceCellsOf,
+      TCB.spaceCellOf, SeLe4n.ObjId.isReserved, SeLe4n.ObjId.sentinel]
 
 private theorem witnessInv2 : ipcInvariantFull witnessSt2 := by
   refine retypeWrite_preserves_ipcInvariantFull (st := witnessSt1)

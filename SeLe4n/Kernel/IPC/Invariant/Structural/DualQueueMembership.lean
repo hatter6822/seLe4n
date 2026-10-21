@@ -3808,9 +3808,9 @@ theorem storeObject_reply_preserves_ipcInvariantCore
     · intro oid ntfn badge hObj hBadge
       exact hNB oid ntfn badge ((hAgree oid (.notification ntfn)
         (fun rr => by exact KernelObject.noConfusion)).mp hObj) hBadge
-    · intro oid cn slot cap badge hObj hLook hBadge
-      exact hCB oid cn slot cap badge ((hAgree oid (.cnode cn)
-        (fun rr => by exact KernelObject.noConfusion)).mp hObj) hLook hBadge
+    · intro oid o slot cap badge hObj hLook hBadge
+      exact hCB oid o slot cap badge ((hAgree oid o
+        (fun rr e => by subst e; simp [KernelObject.slotCap] at hLook)).mp hObj) hLook hBadge
   -- 5. blockedThreadsPendingMessageConsistent: reads `.tcb` only.
   · intro tid tcb hObj
     exact hInv.blockedThreadsPendingMessageConsistent tid tcb
@@ -4135,6 +4135,7 @@ theorem ipcInvariantCore_of_nonBindingAgreements
         tx.ipcState = ty.ipcState ∧ pendingMessageReadAgrees ty.ipcState tx.pendingMessage ty.pendingMessage ∧
         tx.queueNext = ty.queueNext ∧ tx.queuePrev = ty.queuePrev ∧
         tx.queuePPrev = ty.queuePPrev ∧ tx.timeoutBudget = ty.timeoutBudget)
+    (hSlots : badgedSlotsBack st st')
     (hAcyclic : donationChainAcyclic st') (hOwnerValid : donationOwnerValid st')
     (hPassiveIdle : passiveServerIdle st') (hBudgetTransfer : donationBudgetTransfer st') :
     ipcInvariantCore st' := by
@@ -4195,11 +4196,7 @@ theorem ipcInvariantCore_of_nonBindingAgreements
         (fun tt => by exact KernelObject.noConfusion)
         (fun sc => by exact KernelObject.noConfusion)
         (fun r => by exact KernelObject.noConfusion)).mp hObj) hBadge
-    · intro oid cn slot cap badge hObj hLook hBadge
-      exact hCB oid cn slot cap badge ((hNT oid (.cnode cn)
-        (fun tt => by exact KernelObject.noConfusion)
-        (fun sc => by exact KernelObject.noConfusion)
-        (fun r => by exact KernelObject.noConfusion)).mp hObj) hLook hBadge
+    · exact capabilityBadgesWellFormed_of_badgedSlotsBack hCB hSlots
   -- 5. blockedThreadsPendingMessageConsistent: reads `tcb.ipcState`+`pendingMessage` → (b).
   · intro tid tcb hObj
     obtain ⟨ty, hStObj, hIS, hPM, _⟩ := hFwd tid.toObjId tcb hObj
@@ -4356,6 +4353,8 @@ theorem storeObject_tcb_ipcInvariantCore_of_agreements
         tx.queueNext = ty.queueNext ∧ tx.queuePrev = ty.queuePrev ∧
         tx.queuePPrev = ty.queuePPrev ∧ tx.schedContextBinding = ty.schedContextBinding ∧
         tx.timeoutBudget = ty.timeoutBudget)
+    (hSlots : ∀ (s : SeLe4n.ObjId) (o' : KernelObject), st'.objects[s]? = some o' →
+      ∃ o, st.objects[s]? = some o ∧ o'.slotCap = o.slotCap)
     (hSched : st'.scheduler = st.scheduler) :
     ipcInvariantCore st' := by
   have hFwd' : ∀ (s : SeLe4n.ObjId) (tx : TCB), st'.objects[s]? = some (.tcb tx) →
@@ -4379,7 +4378,7 @@ theorem storeObject_tcb_ipcInvariantCore_of_agreements
     (fun s k hk _ _ => hNT s k hk)
     (fun s sc h => ⟨sc, (hNT s (.schedContext sc)
       (fun tt => by exact KernelObject.noConfusion)).mpr h⟩)
-    hFwd' hBwd' ?_ ?_ ?_ ?_
+    hFwd' hBwd' (badgedSlotsBack.of_slotCap_back hSlots) ?_ ?_ ?_ ?_
   -- 11. donationChainAcyclic: two `.tcb` hyps + `schedContextBinding` → (b).
   · intro tid1 tid2 tcb1 tcb2 scId1 scId2 h1 h2 hB1 hB2
     obtain ⟨ty1, hSt1, _, _, _, _, _, hSCB1, _⟩ := hFwd tid1.toObjId tcb1 h1
@@ -4428,6 +4427,7 @@ theorem storeObject_tcb_replyObject_preserves_ipcInvariantCore
     (tcb_replyObject_store_nonTcb_agree st st' id tcb v hObjInv hPrev hStore)
     (tcb_replyObject_store_tcb_forward st st' id tcb v hObjInv hPrev hStore)
     (tcb_replyObject_store_tcb_backward st st' id tcb v hObjInv hPrev hStore)
+    (slotCap_back_of_storeObject hObjInv hPrev hStore rfl)
     (storeObject_scheduler_eq st st' id (.tcb { tcb with replyObjectCode := SeLe4n.ReplyId.optCode v }) hStore)
 
 open SeLe4n.Model.SystemState in
@@ -4516,6 +4516,7 @@ theorem storeObject_tcb_pendingReceiveReply_preserves_ipcInvariantCore
     (tcb_pendingReceiveReply_store_nonTcb_agree st st' id tcb v hObjInv hPrev hStore)
     (tcb_pendingReceiveReply_store_tcb_forward st st' id tcb v hObjInv hPrev hStore)
     (tcb_pendingReceiveReply_store_tcb_backward st st' id tcb v hObjInv hPrev hStore)
+    (slotCap_back_of_storeObject hObjInv hPrev hStore rfl)
     (storeObject_scheduler_eq st st' id (.tcb { tcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode v }) hStore)
 
 -- ============================================================================
@@ -6879,9 +6880,10 @@ theorem ipcUnwrapCaps_preserves_blockedOnReplyHasReplyObject
              = .ok (summary, st')) :
     blockedOnReplyHasReplyObject st' := by
   intro tid tcb ep rt hTcb hBlk
-  exact hInv tid tcb ep rt
-    (ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight st st' summary
-      tid.toObjId tcb hObjInv hStep hTcb) hBlk
+  obtain ⟨t0, h0, hw⟩ := ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight st st'
+    summary tid.toObjId tcb hObjInv hStep hTcb
+  revert hBlk
+  exact TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) (hInv tid t0 ep rt h0)
 
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D2: `endpointCallWithCaps` **establishes** the third clause — the base
@@ -8994,8 +8996,8 @@ theorem ipcUnwrapCaps_sameSchedContextBindings
     (hObjInv : st.objects.invExt)
     (hStep : ipcUnwrapCaps caps receiverRoot slotBase grantRight st = .ok (summary, st')) :
     sameSchedContextBindings st st' :=
-  fun y tcY hY => ⟨tcY, ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight
-    st st' summary y.toObjId tcY hObjInv hStep hY, rfl⟩
+  fun y tcY hY => ((ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight
+    st st' summary y.toObjId tcY hObjInv hStep hY).elim fun t0 ⟨h0, hw⟩ => ⟨t0, h0, TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) rfl⟩)
 
 open SeLe4n.Model.SystemState in
 /-- **WS-RM (`v0.35.6`)**: the removal's frame — the splice's composed with the
@@ -9020,8 +9022,8 @@ theorem ipcUnwrapCaps_timeoutBudgetFrame
     (hObjInv : st.objects.invExt)
     (hStep : ipcUnwrapCaps caps receiverRoot slotBase grantRight st = .ok (summary, st')) :
     timeoutBudgetFrame st st' :=
-  fun y tcY hY => ⟨tcY, ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight
-    st st' summary y.toObjId tcY hObjInv hStep hY, rfl⟩
+  fun y tcY hY => ((ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight
+    st st' summary y.toObjId tcY hObjInv hStep hY).elim fun t0 ⟨h0, hw⟩ => ⟨t0, h0, TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) rfl⟩)
 
 open SeLe4n.Model.SystemState in
 /-- D6: `ipcUnwrapCaps` frames the SchedContext/owner side forward — it writes only CNode caps
@@ -9037,8 +9039,10 @@ theorem ipcUnwrapCaps_donationOwnerFrame
   ⟨fun scId sc hSc => ipcUnwrapCaps_preserves_schedContext_objects caps receiverRoot
      slotBase grantRight st st' summary scId.toObjId sc hSc hObjInv hStep,
    fun owner ownerTcb hOwner hU hR =>
-     ⟨ownerTcb, ipcUnwrapCaps_preserves_tcb_objects caps receiverRoot slotBase grantRight
-       st st' summary owner.toObjId ownerTcb hOwner hObjInv hStep, hU, hR⟩⟩
+     let ⟨t1, h1, hw⟩ := ipcUnwrapCaps_preserves_tcb_objects caps receiverRoot slotBase grantRight
+       st st' summary owner.toObjId ownerTcb hOwner hObjInv hStep
+     ⟨t1, h1, TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) hU,
+       TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) hR⟩⟩
 
 open SeLe4n.Model.SystemState in
 /-- D6: `ipcUnwrapCaps` frames `passiveServerIdle` — it writes only CNode caps at `receiverRoot`,
@@ -9053,8 +9057,10 @@ theorem ipcUnwrapCaps_passiveServerIdleFrame
     passiveServerIdleFrame st st' :=
   passiveServerIdleFrame_of_backward
     (fun tid tcb' hTcb' =>
-      ⟨tcb', ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight st st'
-        summary tid.toObjId tcb' hObjInv hStep hTcb', rfl, rfl⟩)
+      let ⟨t0, h0, hw⟩ := ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight st st'
+        summary tid.toObjId tcb' hObjInv hStep hTcb'
+      ⟨t0, h0, TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) rfl,
+        TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) rfl⟩)
     (ipcUnwrapCaps_preserves_scheduler caps receiverRoot slotBase grantRight st st' summary hStep)
 
 open SeLe4n.Model.SystemState in
@@ -13125,9 +13131,10 @@ theorem ipcUnwrapCaps_preserves_allPendingMessagesBounded
     (hStep : ipcUnwrapCaps caps receiverRoot slotBase grantRight st = .ok (summary, st')) :
     allPendingMessagesBounded st' := by
   intro tid tcb m hTcb' hPend
-  exact hInv tid tcb m
-    (ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight st st' summary
-      tid.toObjId tcb hObjInv hStep hTcb') hPend
+  obtain ⟨t0, h0, hw⟩ := ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight st st'
+    summary tid.toObjId tcb hObjInv hStep hTcb'
+  revert hPend
+  exact TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) (hInv tid t0 m h0)
 
 /-- IPC de-threading D8: `ipcUnwrapCaps` frames `endpointQueueNoDup`.
 The cap transfer leaves every endpoint and every TCB byte-identical, so both the
@@ -13148,9 +13155,9 @@ theorem ipcUnwrapCaps_preserves_endpointQueueNoDup
   obtain ⟨hNoSelf, hDisjoint⟩ := hInv oid ep hEp
   refine ⟨?_, hDisjoint⟩
   intro tid tcb hTcb'
-  exact hNoSelf tid tcb
-    (ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight st st' summary
-      tid.toObjId tcb hObjInv hStep hTcb')
+  obtain ⟨t0, h0, hw⟩ := ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight st st'
+    summary tid.toObjId tcb hObjInv hStep hTcb'
+  exact TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) (hNoSelf tid t0 h0)
 
 /-- IPC de-threading D8: `ipcUnwrapCaps` frames `ipcStateQueueMembershipConsistent`.
 The subject TCB pulls back to the pre-state (`ipcUnwrapCaps_tcb_backward`); the
@@ -13165,34 +13172,41 @@ theorem ipcUnwrapCaps_preserves_ipcStateQueueMembershipConsistent
     (hStep : ipcUnwrapCaps caps receiverRoot slotBase grantRight st = .ok (summary, st')) :
     ipcStateQueueMembershipConsistent st' := by
   intro tid tcb hTcb'
-  have hTcb : st.objects[tid.toObjId]? = some (.tcb tcb) :=
-    ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight st st' summary
-      tid.toObjId tcb hObjInv hStep hTcb'
-  have hPre := hInv tid tcb hTcb
+  obtain ⟨t0, hTcb, hw⟩ := ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight st st'
+    summary tid.toObjId tcb hObjInv hStep hTcb'
+  have hPre := hInv tid t0 hTcb
+  have hI : tcb.ipcState = t0.ipcState := TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) rfl
+  rw [hI]
   have epFwd : ∀ (eid : SeLe4n.ObjId) (e : Endpoint),
       st.objects[eid]? = some (.endpoint e) → st'.objects[eid]? = some (.endpoint e) :=
     fun eid e h => ipcUnwrapCaps_preserves_ep_objects caps receiverRoot slotBase
       grantRight st st' summary eid e h hObjInv hStep
   have tcbFwd : ∀ (oid : SeLe4n.ObjId) (t : TCB),
-      st.objects[oid]? = some (.tcb t) → st'.objects[oid]? = some (.tcb t) :=
-    fun oid t h => ipcUnwrapCaps_preserves_tcb_objects caps receiverRoot slotBase
-      grantRight st st' summary oid t h hObjInv hStep
-  match hIpc : tcb.ipcState with
+      st.objects[oid]? = some (.tcb t) →
+      ∃ t', st'.objects[oid]? = some (.tcb t') ∧ t'.queueNext = t.queueNext :=
+    fun oid t h =>
+      let ⟨t', h', hw'⟩ := ipcUnwrapCaps_preserves_tcb_objects caps receiverRoot slotBase
+        grantRight st st' summary oid t h hObjInv hStep
+      ⟨t', h', TCB.of_withoutLinks_eq hw' (fun _ => Iff.rfl) rfl⟩
+  match hIpc : t0.ipcState with
   | .blockedOnSend epId =>
     simp only [hIpc] at hPre; obtain ⟨ep, hEp, hReach⟩ := hPre
     exact ⟨ep, epFwd epId ep hEp,
       hReach.elim Or.inl (fun ⟨prev, prevTcb, hPrev, hNext⟩ =>
-        Or.inr ⟨prev, prevTcb, tcbFwd prev.toObjId prevTcb hPrev, hNext⟩)⟩
+        let ⟨t', h', hq⟩ := tcbFwd prev.toObjId prevTcb hPrev
+        Or.inr ⟨prev, t', h', hq.trans hNext⟩)⟩
   | .blockedOnReceive epId =>
     simp only [hIpc] at hPre; obtain ⟨ep, hEp, hReach⟩ := hPre
     exact ⟨ep, epFwd epId ep hEp,
       hReach.elim Or.inl (fun ⟨prev, prevTcb, hPrev, hNext⟩ =>
-        Or.inr ⟨prev, prevTcb, tcbFwd prev.toObjId prevTcb hPrev, hNext⟩)⟩
+        let ⟨t', h', hq⟩ := tcbFwd prev.toObjId prevTcb hPrev
+        Or.inr ⟨prev, t', h', hq.trans hNext⟩)⟩
   | .blockedOnCall epId =>
     simp only [hIpc] at hPre; obtain ⟨ep, hEp, hReach⟩ := hPre
     exact ⟨ep, epFwd epId ep hEp,
       hReach.elim Or.inl (fun ⟨prev, prevTcb, hPrev, hNext⟩ =>
-        Or.inr ⟨prev, prevTcb, tcbFwd prev.toObjId prevTcb hPrev, hNext⟩)⟩
+        let ⟨t', h', hq⟩ := tcbFwd prev.toObjId prevTcb hPrev
+        Or.inr ⟨prev, t', h', hq.trans hNext⟩)⟩
   | .ready => trivial
   | .blockedOnReply _ _ => trivial
   | .blockedOnNotification _ => trivial
@@ -13207,9 +13221,10 @@ theorem ipcUnwrapCaps_preserves_blockedOnReplyHasTarget
     (hStep : ipcUnwrapCaps caps receiverRoot slotBase grantRight st = .ok (summary, st')) :
     blockedOnReplyHasTarget st' := by
   intro tid tcb ep rt hTcb hBlk
-  exact hInv tid tcb ep rt
-    (ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight st st' summary
-      tid.toObjId tcb hObjInv hStep hTcb) hBlk
+  obtain ⟨t0, h0, hw⟩ := ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight st st'
+    summary tid.toObjId tcb hObjInv hStep hTcb
+  revert hBlk
+  exact TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) (hInv tid t0 ep rt h0)
 
 open SeLe4n.Model.SystemState in
 /-- D3: `endpointCallWithCaps` establishes the clause. -/
@@ -16064,24 +16079,28 @@ theorem ipcUnwrapCaps_preserves_pendingReceiveReplyWellFormed
   refine ⟨?_, ?_⟩
   · -- C1
     intro tid tcb rid hTcb hStash
-    have hTcbSt : st.objects[tid.toObjId]? = some (.tcb tcb) :=
-      ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight st st' summary
-        tid.toObjId tcb hObjInv hStep ((getTcb?_eq_some_iff st' tid tcb).mp hTcb)
-    obtain ⟨hBlk, r, hr, hrc⟩ := hInv.1 tid tcb rid ((getTcb?_eq_some_iff st tid tcb).mpr hTcbSt) hStash
-    refine ⟨hBlk, r, ?_, hrc⟩
+    obtain ⟨t0, hTcbSt, hw⟩ := ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight
+      st st' summary tid.toObjId tcb hObjInv hStep ((getTcb?_eq_some_iff st' tid tcb).mp hTcb)
+    have hS0 : t0.pendingReceiveReply = some rid := by
+      rw [← hStash]; exact TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) rfl
+    obtain ⟨hBlk, r, hr, hrc⟩ := hInv.1 tid t0 rid ((getTcb?_eq_some_iff st tid t0).mpr hTcbSt) hS0
+    have hI : tcb.ipcState = t0.ipcState := TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) rfl
+    refine ⟨hI ▸ hBlk, r, ?_, hrc⟩
     rw [getReply?_eq_some_iff]
     exact ipcUnwrapCaps_preserves_reply_objects caps receiverRoot slotBase grantRight
       st st' summary rid.toObjId r ((getReply?_eq_some_iff st rid r).mp hr) hObjInv hStep
   · -- C2 (injectivity)
     intro tid₁ tid₂ tcb₁ tcb₂ rid hTcb₁ hTcb₂ hStash₁ hStash₂
-    have hTcbSt₁ : st.objects[tid₁.toObjId]? = some (.tcb tcb₁) :=
-      ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight st st' summary
-        tid₁.toObjId tcb₁ hObjInv hStep ((getTcb?_eq_some_iff st' tid₁ tcb₁).mp hTcb₁)
-    have hTcbSt₂ : st.objects[tid₂.toObjId]? = some (.tcb tcb₂) :=
-      ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight st st' summary
-        tid₂.toObjId tcb₂ hObjInv hStep ((getTcb?_eq_some_iff st' tid₂ tcb₂).mp hTcb₂)
-    exact hInv.2 tid₁ tid₂ tcb₁ tcb₂ rid ((getTcb?_eq_some_iff st tid₁ tcb₁).mpr hTcbSt₁)
-      ((getTcb?_eq_some_iff st tid₂ tcb₂).mpr hTcbSt₂) hStash₁ hStash₂
+    obtain ⟨u₁, hTcbSt₁, hw₁⟩ := ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight
+      st st' summary tid₁.toObjId tcb₁ hObjInv hStep ((getTcb?_eq_some_iff st' tid₁ tcb₁).mp hTcb₁)
+    obtain ⟨u₂, hTcbSt₂, hw₂⟩ := ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight
+      st st' summary tid₂.toObjId tcb₂ hObjInv hStep ((getTcb?_eq_some_iff st' tid₂ tcb₂).mp hTcb₂)
+    have hS₁ : u₁.pendingReceiveReply = some rid := by
+      rw [← hStash₁]; exact TCB.of_withoutLinks_eq hw₁ (fun _ => Iff.rfl) rfl
+    have hS₂ : u₂.pendingReceiveReply = some rid := by
+      rw [← hStash₂]; exact TCB.of_withoutLinks_eq hw₂ (fun _ => Iff.rfl) rfl
+    exact hInv.2 tid₁ tid₂ u₁ u₂ rid ((getTcb?_eq_some_iff st tid₁ u₁).mpr hTcbSt₁)
+      ((getTcb?_eq_some_iff st tid₂ u₂).mpr hTcbSt₂) hS₁ hS₂
 
 -- WS-SM SM6.D reply-fold (PR #827 review #3):
 -- `endpointReplyRecv_preserves_pendingReceiveReplyWellFormed` moved below the
@@ -17100,8 +17119,8 @@ theorem ipcUnwrapCaps_preserves_queueNextBlockingConsistent
     queueNextBlockingConsistent st' := by
   refine queueNextBlockingConsistent_of_tcb_links_backward st st' ?_ hInv
   intro y tcb' hY
-  exact ⟨tcb', ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight
-    st st' summary y.toObjId tcb' hObjInv hStep hY, rfl, rfl⟩
+  exact ((ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight
+    st st' summary y.toObjId tcb' hObjInv hStep hY).elim fun t0 ⟨h0, hw⟩ => ⟨t0, h0, TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) rfl, TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) rfl⟩)
 
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D4 Slice 2c: `ipcUnwrapCaps` frames `queueNextTargetBlocked` (the cap transfer
@@ -17117,8 +17136,8 @@ theorem ipcUnwrapCaps_preserves_queueNextTargetBlocked
     queueNextTargetBlocked st' := by
   refine queueNextTargetBlocked_of_tcb_links_backward st st' ?_ hInv
   intro y tcb' hY
-  exact ⟨tcb', ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight
-    st st' summary y.toObjId tcb' hObjInv hStep hY, rfl, rfl⟩
+  exact ((ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight
+    st st' summary y.toObjId tcb' hObjInv hStep hY).elim fun t0 ⟨h0, hw⟩ => ⟨t0, h0, TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) rfl, TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) rfl⟩)
 
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D4 Slice 2b: `ipcUnwrapCaps` frames `endpointQueueTailBlockedConsistent` (the
@@ -17135,8 +17154,8 @@ theorem ipcUnwrapCaps_preserves_endpointQueueTailBlockedConsistent
   refine endpointQueueTailBlockedConsistent_of_endpoint_tcb_backward st st'
     (fun eid e hE => ipcUnwrapCaps_endpoint_backward caps receiverRoot slotBase grantRight
       st st' summary eid e hObjInv hStep hE)
-    (fun y tcb' hY => ⟨tcb', ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight
-      st st' summary y.toObjId tcb' hObjInv hStep hY, rfl⟩)
+    (fun y tcb' hY => ((ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight
+      st st' summary y.toObjId tcb' hObjInv hStep hY).elim fun t0 ⟨h0, hw⟩ => ⟨t0, h0, TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) rfl⟩))
     hInv
 
 open SeLe4n.Model.SystemState in
@@ -17154,8 +17173,8 @@ theorem ipcUnwrapCaps_preserves_queueHeadBlockedConsistent
   refine queueHeadBlockedConsistent_of_endpoint_tcb_backward st st'
     (fun eid e hE => ipcUnwrapCaps_endpoint_backward caps receiverRoot slotBase grantRight
       st st' summary eid e hObjInv hStep hE)
-    (fun y tcb' hY => ⟨tcb', ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight
-      st st' summary y.toObjId tcb' hObjInv hStep hY, rfl⟩)
+    (fun y tcb' hY => ((ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight
+      st st' summary y.toObjId tcb' hObjInv hStep hY).elim fun t0 ⟨h0, hw⟩ => ⟨t0, h0, TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) rfl⟩))
     hInv
 
 open SeLe4n.Model.SystemState in

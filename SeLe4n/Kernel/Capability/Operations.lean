@@ -2491,9 +2491,10 @@ theorem ipcTransferSingleCap_preserves_objects_ne
             hObjInv hIns'
           rcases (SystemState.cdtAddChild_agreeObjects hInvMid srcNode
             { cnode := receiverRoot, slot := emptySlot } .ipcTransfer).1 oid with
-            e | ⟨cn1, cn2, ha, hb, hw⟩
+            e | ⟨cn1, cn2, ha, hb, hw⟩ | ⟨t1, t2, ha, hb, hw⟩
           · exact Or.inl (e.trans hObjIns)
-          · exact Or.inr ⟨cn1, cn2, by rw [← hObjIns]; exact ha, hb, hw⟩
+          · exact Or.inr (Or.inl ⟨cn1, cn2, by rw [← hObjIns]; exact ha, hb, hw⟩)
+          · exact Or.inr (Or.inr ⟨t1, t2, by rw [← hObjIns]; exact ha, hb, hw⟩)
 
 theorem ipcTransferSingleCap_preserves_services
     (cap : Capability) (srcNode : SlotRef)
@@ -2584,8 +2585,9 @@ theorem ipcTransferSingleCap_preserves_ntfn_objects
       unfold SystemState.getCNode?; rw [hNtfn]
     simp [hCnNone] at hStep
   · rcases ipcTransferSingleCap_preserves_objects_ne cap srcNode receiverRoot slotBase
-      scanLimit st st' result oid hNe hObjInv hStep with e | ⟨_, _, ha, _, _⟩
+      scanLimit st st' result oid hNe hObjInv hStep with e | ⟨_, _, ha, _, _⟩ | ⟨_, _, ha, _, _⟩
     · rw [e]; exact hNtfn
+    · rw [hNtfn] at ha; cases ha
     · rw [hNtfn] at ha; cases ha
 
 /-- M3-E4 helper: receiverRoot is never a notification after ipcTransferSingleCap.
@@ -2674,11 +2676,14 @@ theorem ipcTransferSingleCap_preserves_ep_objects
       unfold SystemState.getCNode?; rw [hEp]
     simp [hCnNone] at hStep
   · rcases ipcTransferSingleCap_preserves_objects_ne cap srcNode receiverRoot slotBase
-      scanLimit st st' result oid hNe hObjInv hStep with e | ⟨_, _, ha, _, _⟩
+      scanLimit st st' result oid hNe hObjInv hStep with e | ⟨_, _, ha, _, _⟩ | ⟨_, _, ha, _, _⟩
     · rw [e]; exact hEp
     · rw [hEp] at ha; cases ha
+    · rw [hEp] at ha; cases ha
 
-/-- M3-E4 helper: ipcTransferSingleCap preserves all TCB objects.
+/-- M3-E4 helper: ipcTransferSingleCap preserves every TCB object off its space
+slots' derivation links (the transfer's edge can relink a thread slot that
+neighbours the new one in the tree).
 Same reasoning as endpoint preservation: TCBs at receiverRoot cause
 `.error .objectNotFound`, contradicting `.ok` hypothesis. -/
 theorem ipcTransferSingleCap_preserves_tcb_objects
@@ -2690,7 +2695,7 @@ theorem ipcTransferSingleCap_preserves_tcb_objects
     (hObjInv : st.objects.invExt)
     (hStep : ipcTransferSingleCap cap srcNode receiverRoot slotBase scanLimit st
              = .ok (result, st')) :
-    st'.objects[oid]? = some (.tcb tcb) := by
+    ∃ tcb', st'.objects[oid]? = some (.tcb tcb') ∧ tcb'.withoutLinks = tcb.withoutLinks := by
   by_cases hNe : oid = receiverRoot
   · subst hNe
     simp only [ipcTransferSingleCap] at hStep
@@ -2701,10 +2706,8 @@ theorem ipcTransferSingleCap_preserves_tcb_objects
     have hCnNone : st.getCNode? oid = none := by
       unfold SystemState.getCNode?; rw [hTcb]
     simp [hCnNone] at hStep
-  · rcases ipcTransferSingleCap_preserves_objects_ne cap srcNode receiverRoot slotBase
-      scanLimit st st' result oid hNe hObjInv hStep with e | ⟨_, _, ha, _, _⟩
-    · rw [e]; exact hTcb
-    · rw [hTcb] at ha; cases ha
+  · exact (ipcTransferSingleCap_preserves_objects_ne cap srcNode receiverRoot slotBase
+      scanLimit st st' result oid hNe hObjInv hStep).tcb_fwd hTcb
 
 /-- IPC de-threading D6 helper: ipcTransferSingleCap preserves all SchedContext objects.
 Same reasoning as TCB/endpoint preservation: a SchedContext at `receiverRoot` makes
@@ -2727,8 +2730,9 @@ theorem ipcTransferSingleCap_preserves_schedContext_objects
       unfold SystemState.getCNode?; rw [hSc]
     simp [hCnNone] at hStep
   · rcases ipcTransferSingleCap_preserves_objects_ne cap srcNode receiverRoot slotBase
-      scanLimit st st' result oid hNe hObjInv hStep with e | ⟨_, _, ha, _, _⟩
+      scanLimit st st' result oid hNe hObjInv hStep with e | ⟨_, _, ha, _, _⟩ | ⟨_, _, ha, _, _⟩
     · rw [e]; exact hSc
+    · rw [hSc] at ha; cases ha
     · rw [hSc] at ha; cases ha
 
 /-- IPC de-threading D3: ipcTransferSingleCap preserves all `.reply` objects.
@@ -2752,8 +2756,9 @@ theorem ipcTransferSingleCap_preserves_reply_objects
       unfold SystemState.getCNode?; rw [hReply]
     simp [hCnNone] at hStep
   · rcases ipcTransferSingleCap_preserves_objects_ne cap srcNode receiverRoot slotBase
-      scanLimit st st' result oid hNe hObjInv hStep with e | ⟨_, _, ha, _, _⟩
+      scanLimit st st' result oid hNe hObjInv hStep with e | ⟨_, _, ha, _, _⟩ | ⟨_, _, ha, _, _⟩
     · rw [e]; exact hReply
+    · rw [hReply] at ha; cases ha
     · rw [hReply] at ha; cases ha
 
 /-- IPC de-threading D2: a successful `ipcTransferSingleCap` proves its `receiverRoot`

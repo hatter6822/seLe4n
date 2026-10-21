@@ -1841,7 +1841,8 @@ def bootSafeTcbCheck (tcb : TCB) : Bool :=
     decide (tcb.runCoreCode = 0) &&
     tcb.ntfnPrev.isNone && tcb.ntfnNext.isNone &&
     tcb.replyWaiterPrev.isNone && tcb.replyWaiterNext.isNone &&
-    tcb.replyWaitersHead.isNone && decide (tcb.replyWaitersCount = 0)
+    tcb.replyWaitersHead.isNone && decide (tcb.replyWaitersCount = 0) &&
+    tcb.spaceSlotCaps.all (fun p => bootSafeCapCheck p.2) && tcb.spaceLinksClear
 
 @[simp] theorem bootSafeTcbCheck_def (tcb : TCB) :
     bootSafeTcbCheck tcb =
@@ -1855,7 +1856,43 @@ def bootSafeTcbCheck (tcb : TCB) : Bool :=
        decide (tcb.runCoreCode = 0) &&
        tcb.ntfnPrev.isNone && tcb.ntfnNext.isNone &&
        tcb.replyWaiterPrev.isNone && tcb.replyWaiterNext.isNone &&
-       tcb.replyWaitersHead.isNone && decide (tcb.replyWaitersCount = 0)) := rfl
+       tcb.replyWaitersHead.isNone && decide (tcb.replyWaitersCount = 0) &&
+       tcb.spaceSlotCaps.all (fun p => bootSafeCapCheck p.2) && tcb.spaceLinksClear) := rfl
+
+/-- What a boot thread's two space slots hold: every capability carries a valid
+    badge and none is a reply capability, as `bootSafeCnodeCheck` asks of a
+    CNode's slots, and no slot holds a derivation link, the tree being empty at
+    boot. -/
+def bootSpaceSlotsSafe (tcb : TCB) : Prop :=
+  (∀ slot cap badge, tcb.spaceSlotCap slot = some cap → cap.badge = some badge → badge.valid) ∧
+  (∀ slot cap rid, tcb.spaceSlotCap slot = some cap → cap.target ≠ .replyCap rid) ∧
+  tcb.spaceLinksClear = true
+
+/-- The space-slot half of a passed TCB check says `bootSpaceSlotsSafe`. -/
+theorem bootSpaceSlotsSafe_of_check {tcb : TCB}
+    (hCaps : tcb.spaceSlotCaps.all (fun p => bootSafeCapCheck p.2) = true)
+    (hClear : tcb.spaceLinksClear = true) : bootSpaceSlotsSafe tcb := by
+  have hc : ∀ {slot cap}, tcb.spaceSlotCap slot = some cap →
+      ((∀ badge, cap.badge = some badge → badge.valid) ∧ (∀ rid, cap.target ≠ .replyCap rid)) := by
+    intro slot cap hL
+    obtain ⟨_, hm⟩ := TCB.mem_spaceSlotCaps hL
+    have h := (List.all_eq_true.mp hCaps) _ hm
+    simp only at h
+    unfold bootSafeCapCheck at h
+    simp only [Bool.and_eq_true] at h
+    obtain ⟨⟨hBadge, hTarget⟩, _⟩ := h
+    refine ⟨fun badge hB => ?_, fun rid hT => ?_⟩
+    · rw [hB] at hBadge
+      simpa [SeLe4n.Badge.isValid, SeLe4n.Badge.valid] using hBadge
+    · rw [hT] at hTarget
+      cases hTarget
+  exact ⟨fun _ _ badge hL hB => (hc hL).1 badge hB, fun _ _ rid hL => (hc hL).2 rid, hClear⟩
+
+/-- `bootSpaceSlotsSafe` reads a thread's space slots and their links alone. -/
+theorem bootSpaceSlotsSafe_of_space_eq {t t' : TCB} (hCells : t'.spaceCells = t.spaceCells)
+    (hLinks : t'.spaceLinks = t.spaceLinks) (h : bootSpaceSlotsSafe t) : bootSpaceSlotsSafe t' := by
+  unfold bootSpaceSlotsSafe TCB.spaceSlotCap TCB.spaceLinksClear
+  rw [hCells, hLinks]; exact h
 
 /-- A boot **untyped** region is *pristine*: nothing has been carved from it
     and it descends from nothing.  `watermark = 0` and `children = []`,
@@ -2026,7 +2063,8 @@ private theorem bootSafeObjectCheck_sound_core (obj : KernelObject)
       tcb.threadState = .Inactive ∧ tcb.runCoreCode = 0 ∧
       tcb.ntfnPrev = none ∧ tcb.ntfnNext = none ∧
       tcb.replyWaiterPrev = none ∧ tcb.replyWaiterNext = none ∧
-      tcb.replyWaitersHead = none ∧ tcb.replyWaitersCount = 0) ∧
+      tcb.replyWaitersHead = none ∧ tcb.replyWaitersCount = 0 ∧
+      bootSpaceSlotsSafe tcb) ∧
     -- WS-BP BP3.2: a configured VSpaceRoot is a thread's — admitted iff
     -- bootSafeUserVSpaceRoot (a user ASID, no mappings)
     (∀ vs, obj = .vspaceRoot vs →
@@ -2080,11 +2118,11 @@ private theorem bootSafeObjectCheck_sound_core (obj : KernelObject)
   | tcb tcb =>
     simp only [bootSafeObjectCheck, bootSafeTcbCheck_def, Bool.and_eq_true,
       decide_eq_true_eq] at h
-    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h4b⟩, h5⟩, h6⟩, h7⟩, h8⟩, h9⟩, hRun⟩, hNP⟩, hNN⟩,
-      hWP⟩, hWN⟩, hWH⟩, hWC⟩ := h
+    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h4b⟩, h5⟩, h6⟩, h7⟩, h8⟩, h9⟩, hRun⟩, hNP⟩, hNN⟩,
+      hWP⟩, hWN⟩, hWH⟩, hWC⟩, hSC⟩, hSL⟩ := h
     exact ⟨fun _ he => by injection he, fun _ he => by injection he,
            fun _ he => by injection he,
-           fun _ he => by injection he; subst_vars; exact ⟨Option.eq_none_of_isNone h1, h2, Option.eq_none_of_isNone h3, Option.eq_none_of_isNone h4, Option.eq_none_of_isNone h4b, Option.eq_none_of_isNone h5, h6, Option.eq_none_of_isNone h7, Option.eq_none_of_isNone h8, h9, hRun, Option.eq_none_of_isNone hNP, Option.eq_none_of_isNone hNN, Option.eq_none_of_isNone hWP, Option.eq_none_of_isNone hWN, Option.eq_none_of_isNone hWH, hWC⟩,
+           fun _ he => by injection he; subst_vars; exact ⟨Option.eq_none_of_isNone h1, h2, Option.eq_none_of_isNone h3, Option.eq_none_of_isNone h4, Option.eq_none_of_isNone h4b, Option.eq_none_of_isNone h5, h6, Option.eq_none_of_isNone h7, Option.eq_none_of_isNone h8, h9, hRun, Option.eq_none_of_isNone hNP, Option.eq_none_of_isNone hNN, Option.eq_none_of_isNone hWP, Option.eq_none_of_isNone hWN, Option.eq_none_of_isNone hWH, hWC, bootSpaceSlotsSafe_of_check hSC hSL⟩,
            fun _ he => by injection he, fun _ he => by injection he,
            fun _ he => by injection he, fun _ he => by injection he⟩
   | vspaceRoot vsr =>
@@ -2180,7 +2218,8 @@ theorem bootSafeObjectCheck_sound (obj : KernelObject)
       tcb.threadState = .Inactive ∧ tcb.runCoreCode = 0 ∧
       tcb.ntfnPrev = none ∧ tcb.ntfnNext = none ∧
       tcb.replyWaiterPrev = none ∧ tcb.replyWaiterNext = none ∧
-      tcb.replyWaitersHead = none ∧ tcb.replyWaitersCount = 0) ∧
+      tcb.replyWaitersHead = none ∧ tcb.replyWaitersCount = 0 ∧
+      bootSpaceSlotsSafe tcb) ∧
     (∀ vs, obj = .vspaceRoot vs →
       SeLe4n.Platform.RPi5.VSpaceBoot.bootSafeUserVSpaceRoot vs) ∧
     (∀ sc, obj = .schedContext sc →
@@ -5121,7 +5160,9 @@ def bootSafeObject (obj : KernelObject) : Prop :=
     -- on dequeue; the notification-waiter invariant requires it).
     tcb.ntfnPrev = none ∧ tcb.ntfnNext = none ∧
     tcb.replyWaiterPrev = none ∧ tcb.replyWaiterNext = none ∧
-    tcb.replyWaitersHead = none ∧ tcb.replyWaitersCount = 0) ∧
+    tcb.replyWaitersHead = none ∧ tcb.replyWaitersCount = 0 ∧
+    -- and its space slots hold safe capabilities and no link.
+    bootSpaceSlotsSafe tcb) ∧
   -- WS-BP BP3.2: a configured VSpaceRoot is a thread's — admitted iff
   -- bootSafeUserVSpaceRoot (a user ASID, no mappings)
   (∀ vs, obj = .vspaceRoot vs →
@@ -5227,7 +5268,9 @@ def bootObjectShape (obj : KernelObject) : Prop :=
     tcb.pendingReceiveReply = none ∧
     tcb.ntfnPrev = none ∧ tcb.ntfnNext = none ∧
     tcb.replyWaiterPrev = none ∧ tcb.replyWaiterNext = none ∧
-    tcb.replyWaitersHead = none ∧ tcb.replyWaitersCount = 0) ∧
+    tcb.replyWaitersHead = none ∧ tcb.replyWaitersCount = 0 ∧
+    -- and its space slots hold safe capabilities and no link.
+    bootSpaceSlotsSafe tcb) ∧
   (∀ vs, obj = .vspaceRoot vs →
     SeLe4n.Platform.RPi5.VSpaceBoot.bootVSpaceRootMappingsSafe vs) ∧
   (∀ sc, obj = .schedContext sc →
@@ -5269,7 +5312,8 @@ theorem bootSafeVSpaceRoot_bootObjectShape {vs : VSpaceRoot}
 theorem readyIdleThread_bootObjectShape (c : SeLe4n.Kernel.Concurrency.CoreId) :
     bootObjectShape (.tcb (readyIdleThread c)) := by
   refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> intro x hx <;> cases hx
-  exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+  exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl,
+    bootSpaceSlotsSafe_of_check rfl rfl⟩
 
 -- ============================================================================
 -- V4-A4b: Boot-safe object bridge — connect boot state objects to bootSafe
@@ -5546,10 +5590,7 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
     -- structurally (`UniqueSlotMap`, the fixed slot array), so neither is a
     -- conjunct of this bundle.
     refine ⟨?_, ?_, ?_, ?_, hAllTables.1.1, ?_, ?_⟩
-    · -- cspaceLookupSound
-      intro cnodeId cn slot cap hObj hLookupSlot
-      show SystemState.lookupSlotCap _ _ = some cap
-      unfold SystemState.lookupSlotCap SystemState.lookupCNode; rw [hObj]; exact hLookupSlot
+    · exact cspaceLookupSound_holds _
     · -- cdtCompleteness: the derivation tree is empty
       intro ref hRef; rw [hCdt] at hRef
       exact absurd hRef (CapDerivationTree.empty_not_mentions ref)
@@ -5562,8 +5603,13 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
       exact ⟨hCN.1, hCN.2.1⟩
     · -- replyCapPointsToValidReply: boot CNodes hold no reply caps (`bootSafeObject`),
       -- so the reply-cap hypothesis is contradicted and the conjunct is vacuous.
-      intro oid cn slot cap rid hObj hLookupSlot hTgt
-      exact absurd hTgt (((hBS oid _ hObj).2.2.1 cn rfl).2.2.2.1 slot cap rid hLookupSlot)
+      intro oid o slot cap rid hObj hLookupSlot hTgt
+      cases o with
+      | cnode cn => exact absurd hTgt (((hBS oid _ hObj).2.2.1 cn rfl).2.2.2.1 slot cap rid hLookupSlot)
+      | tcb t =>
+        exact absurd hTgt
+          (((hBS oid _ hObj).2.2.2.1 t rfl).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1 slot cap rid hLookupSlot)
+      | _ => simp [KernelObject.slotCap] at hLookupSlot
     · -- cdtLinksAgree: the tree is empty and boot CNodes hold no link.
       refine LinksAgree.of_no_edges (by rw [hCdt]; exact CapDerivationTree.empty_edges) fun r f => ?_
       rw [SystemState.slotLinkAt_def]
@@ -5572,6 +5618,9 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
       | some o =>
         cases o with
         | cnode cn => exact CNode.linkAt_of_linksClear ((hBS _ _ hO).2.2.1 cn rfl).2.2.2.2 r.slot f
+        | tcb t =>
+          exact TCB.spaceLinkAt_of_spaceLinksClear
+            ((hBS _ _ hO).2.2.2.1 t rfl).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2 r.slot f
         | _ => rfl
   -- 5. lifecycleInvariantBundle
   have hLifeBundle : lifecycleInvariantBundle ist.state :=
@@ -5650,9 +5699,13 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
         have hNtfn := (hBS oid _ hObj).2.1 ntfn rfl
         rw [hNtfn.2.2.2] at hBadge; exact absurd hBadge (by simp)
       · -- capabilityBadgesWellFormed
-        intro oid cn slot cap badge hObj hSlotLookup hBadge
-        have hCN := (hBS oid _ hObj).2.2.1 cn rfl
-        exact hCN.2.2.1 slot cap badge hSlotLookup hBadge
+        intro oid o slot cap badge hObj hSlotLookup hBadge
+        cases o with
+        | cnode cn => exact ((hBS oid _ hObj).2.2.1 cn rfl).2.2.1 slot cap badge hSlotLookup hBadge
+        | tcb t =>
+          exact ((hBS oid _ hObj).2.2.2.1 t rfl).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+            slot cap badge hSlotLookup hBadge
+        | _ => simp [KernelObject.slotCap] at hSlotLookup
     · -- blockedThreadsPendingMessageConsistent
       intro tid tcb hObj
       have hTcb := (hBS tid.toObjId _ hObj).2.2.2.1 tcb rfl
@@ -6539,7 +6592,8 @@ theorem bootFromPlatformChecked_ok_tcb_bootSafeFields (config : PlatformConfig)
       tcb.threadState = .Inactive ∧ tcb.runCoreCode = 0 ∧
       tcb.ntfnPrev = none ∧ tcb.ntfnNext = none ∧
       tcb.replyWaiterPrev = none ∧ tcb.replyWaiterNext = none ∧
-      tcb.replyWaitersHead = none ∧ tcb.replyWaitersCount = 0 := by
+      tcb.replyWaitersHead = none ∧ tcb.replyWaitersCount = 0 ∧
+      bootSpaceSlotsSafe tcb := by
   obtain ⟨_, hSafe, hShape⟩ := bootFromPlatformChecked_ok_shape config ist h
   have hPlain : (bootFromPlatform config).state.objects[oid]? = some (KernelObject.tcb tcb) := by
     rcases hShape with ⟨_, rfl⟩ | ⟨entry, _, rfl⟩
