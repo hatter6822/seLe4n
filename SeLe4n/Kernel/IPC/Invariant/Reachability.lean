@@ -34,7 +34,7 @@ This module is where they are established.  Three kinds appear across the
 family, and they are answered differently:
 
 * **State-shaped** — `st.objects.invExt`, `allTimeoutBudgetsNone`,
-  `pendingMessageCapBadgesWellFormed`, `ipcInvariantFull` itself.  Collected
+  `ipcInvariantFull` itself.  Collected
   into `ipcReachable`, one predicate per pack discharge, with
   `ipcReachable_default` (RR3.14) showing the boot state satisfies it, so the
   bundle is inhabited rather than vacuous.  Carrying it *along a trace* —
@@ -75,14 +75,15 @@ open SeLe4n.Model
 /-- WS-RR RR3.13: the state-shaped preconditions of the de-threaded IPC bundle
 family, as one predicate.
 
-`ipcInvariantFull` is the bundle the family preserves; the other four are the
+`ipcInvariantFull` is the bundle the family preserves; the other three are the
 side conditions its members read of their pre-state and nothing establishes for
 them.  `objects.invExt` is the object store's own extended invariant (every
 `storeObject` frame needs it), `allTimeoutBudgetsNone` is what
-`blockedThreadTimeoutConsistent` is established from,
-`pendingMessageCapBadgesWellFormed` is the in-flight badge property the
-capability transfer installs from, and `notificationWaiterConsistent` is the
-notification bundles' companion.
+`blockedThreadTimeoutConsistent` is established from, and
+`notificationWaiterConsistent` is the notification bundles' companion.  There is
+no in-flight badge condition: a message holds no capability, so the capability
+transfer installs only what it resolves from a CNode at the rendezvous, whose
+badges `badgeWellFormed` already bounds.
 
 **WS-OD OD2.6**: `donationChainWellFormed` joins them.  The SchedContext
 donation chain — `SchedContext.scReply` heading a doubly-linked stack of Reply
@@ -112,7 +113,6 @@ def ipcReachable (st : SystemState) : Prop :=
   ipcInvariantFull st ∧
   st.objects.invExt ∧
   allTimeoutBudgetsNone st ∧
-  pendingMessageCapBadgesWellFormed st ∧
   notificationWaiterConsistent st ∧
   donationChainWellFormed st ∧
   st.runQueueRefined ∧
@@ -126,20 +126,18 @@ theorem objects_invExt {st : SystemState} (h : ipcReachable st) :
     st.objects.invExt := h.2.1
 theorem allTimeoutBudgetsNone {st : SystemState} (h : ipcReachable st) :
     _root_.SeLe4n.Kernel.allTimeoutBudgetsNone st := h.2.2.1
-theorem pendingMessageCapBadgesWellFormed {st : SystemState} (h : ipcReachable st) :
-    _root_.SeLe4n.Kernel.pendingMessageCapBadgesWellFormed st := h.2.2.2.1
 theorem notificationWaiterConsistent {st : SystemState} (h : ipcReachable st) :
-    _root_.SeLe4n.Kernel.notificationWaiterConsistent st := h.2.2.2.2.1
+    _root_.SeLe4n.Kernel.notificationWaiterConsistent st := h.2.2.2.1
 /-- WS-OD OD2.6: the SchedContext donation chain is well formed. -/
 theorem donationChainWellFormed {st : SystemState} (h : ipcReachable st) :
-    _root_.SeLe4n.Kernel.donationChainWellFormed st := h.2.2.2.2.2.1
+    _root_.SeLe4n.Kernel.donationChainWellFormed st := h.2.2.2.2.1
 /-- WS-ZA ZA4.5: every core's run queue agrees with the threads' run-queue links. -/
 theorem runQueueRefined {st : SystemState} (h : ipcReachable st) : st.runQueueRefined :=
-  h.2.2.2.2.2.2.1
+  h.2.2.2.2.2.1
 /-- WS-ZA ZA4.6: every server's reply-waiter queue is consistent with its waiters. -/
 theorem replyWaitersConsistent {st : SystemState} (h : ipcReachable st) :
     st.replyWaitersConsistent :=
-  h.2.2.2.2.2.2.2
+  h.2.2.2.2.2.2
 
 end ipcReachable
 
@@ -364,15 +362,12 @@ whole de-threading phase exists to remove, reintroduced one level up.
 Every conjunct is discharged from the empty boot object store, the IPC bundle
 through the architecture layer's `default_ipcInvariantFull`. -/
 theorem ipcReachable_default : ipcReachable (default : SystemState) := by
-  refine ⟨Architecture.default_ipcInvariantFull, ?_, ?_, ?_,
+  refine ⟨Architecture.default_ipcInvariantFull, ?_, ?_,
     default_notificationWaiterConsistent, ?_, SystemState.default_runQueueRefined,
     SystemState.replyWaitersConsistent_of_idle fun k v hv => ?_⟩
   · exact capabilityInvariantBundle.objectsInvExt
       (Architecture.default_system_state_proofLayerInvariantBundle).2.1
   · intro tid tcb hTcb
-    rw [Architecture.default_objects_none] at hTcb
-    cases hTcb
-  · intro tid tcb m hTcb
     rw [Architecture.default_objects_none] at hTcb
     cases hTcb
   · -- WS-OD OD2.6: the empty boot store holds no Reply and no SchedContext, so

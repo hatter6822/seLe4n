@@ -1701,7 +1701,7 @@ run_check "INVARIANT" rg -n '^theorem donationChainWellFormed_of_frame($|[ ({:\[
 # equal to the prose quoting it.  Relation, not presence: the conjunct must be in
 # the DEFINITION, which is what the accessor below reads back.
 run_check "INVARIANT" bash -lc 'rg -U -n "notificationWaiterConsistent st ∧\n  donationChainWellFormed st" SeLe4n/Kernel/IPC/Invariant/Reachability.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "theorem donationChainWellFormed \{st : SystemState\} \(h : ipcReachable st\) :\n    _root_\.SeLe4n\.Kernel\.donationChainWellFormed st := h\.2\.2\.2\.2\.2" SeLe4n/Kernel/IPC/Invariant/Reachability.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem donationChainWellFormed \{st : SystemState\} \(h : ipcReachable st\) :\n    _root_\.SeLe4n\.Kernel\.donationChainWellFormed st := h\.2\.2\.2\.2\.1" SeLe4n/Kernel/IPC/Invariant/Reachability.lean'
 # The inhabitation witnesses are re-discharged rather than left to a default: a
 # pack whose new field nobody can establish is conditional in a different way.
 run_check "INVARIANT" rg -n '^private theorem witnessSt3_no_stack_head' SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean
@@ -4109,7 +4109,7 @@ run_check "INVARIANT" rg -n -U 'def untypedReset \(executingCore[^\n]*(\n([ \t][
 run_check "INVARIANT" rg -n -U 'def unmapLivePages[^\n]*(\n([ \t][^\n]*)?)*      if mappedPageLive st p then\n        match Architecture\.vspaceUnmapPageWithShootdownAndIcacheBroadcast' SeLe4n/Kernel/Architecture/PageTeardown.lean
 run_check "INVARIANT" rg -n -U 'def retireCarvedObject \(st : SystemState\)[^\n]*\n  if \(st\.getFrame\? id\)\.isSome \|\| \(st\.getUntyped\? id\)\.isSome \|\|\n      \(st\.getVSpaceRoot\? id\)\.isSome \|\| \(st\.getPageTable\? id\)\.isSome then' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
 run_check "INVARIANT" rg -n -U 'def retireCarvedObject \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*          \| some root => st\.asidTable\.erase root\.asid' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
-run_check "INVARIANT" rg -n -U 'def objectNamesListed[^\n]*(\n([ \t][^\n]*)?)*  \| \.tcb t =>(\n([ \t][^\n]*)?)*      ids\.contains t\.vspaceRoot \|\|\n      match t\.pendingMessage with' SeLe4n/Kernel/Architecture/PageTeardown.lean
+run_check "INVARIANT" rg -n -U 'def objectNamesListed[^\n]*(\n([ \t][^\n]*)?)*  \| \.tcb t =>(\n([ \t][^\n]*)?)*      ids\.contains t\.vspaceRoot\n  \| _ => false' SeLe4n/Kernel/Architecture/PageTeardown.lean
 run_check "INVARIANT" rg -n '^theorem untypedReset_ok_unmapped($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
 run_check "INVARIANT" rg -n '^theorem untypedReset_ok_unreferenced($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
 run_check "INVARIANT" rg -n '^theorem untypedReset_ok_subtree_absent($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
@@ -4219,7 +4219,6 @@ run_check "INVARIANT" rg -n '^theorem lockSet_tcbSetSpace_size_le($|[ ({:\[\]])'
 run_check "INVARIANT" rg -n '^theorem lockSet_consistent_tcbSetSpace($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n 'runSetSpaceChecks$' tests/VSpaceCapabilityBindingSuite.lean
 run_check "INVARIANT" rg -n 'a reset through a derivation-free SIBLING copy is still refused' tests/VSpaceCapabilityBindingSuite.lean
-run_check "INVARIANT" rg -n 'a capability parked in a blocked sender.s message keeps the reset refused' tests/VSpaceCapabilityBindingSuite.lean
 run_check "INVARIANT" rg -n 'and leaves the mapping of a page OUTSIDE the region alone' tests/VSpaceCapabilityBindingSuite.lean
 # WS-BP BP7.1 (v0.36.12): intermediate page tables.  A table installs at the
 # shallowest missing level, writes BOTH sides of the install, and a carved root
@@ -4246,8 +4245,8 @@ run_check "INVARIANT" rg -n 'so resetting the child alone is refused \(revocatio
 # capability, read before the step, and named by no slot after"; the root is the truth, so every reader asks the live question and the
 # record-only reading must not come back.
 run_check "INVARIANT" rg -n -U 'def cspaceDeleteThenFinalise [^\n]*(\n([ \t][^\n]*)?)*    \| \.ok \(\(\), st1\) => finaliseDestroyedCapabilities executingCore named pages st1' SeLe4n/Kernel/Capability/FrameFinalise.lean
-# v0.36.38: a table's final capability is decided on CNode slots — a copy parked
-# in a message can be dropped by a cancellation that finalises nothing.
+# v0.36.38: a table's final capability is decided on CNode slots, the one place
+# a capability lives.
 run_check "INVARIANT" rg -n -U 'def pageTablesOrphaned [^\n]*(\n([ \t][^\n]*)?)*          if Architecture\.pageTableInstallLive st id && cnodeSlotsUnreferenced st \[id\] then\n            \(id, inst\) :: acc' SeLe4n/Kernel/Capability/FrameFinalise.lean
 # v0.36.107: a revoke that finalises nothing is decided before any write and
 # performed in place, as seL4's first-child loop; since v0.36.110 so is every
@@ -4258,7 +4257,6 @@ run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlotFinalising_of_admitted($|[
 run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlotFinalising_of_cnode($|[ ({:\[\]])' SeLe4n/Kernel/Capability/FrameFinalise.lean
 run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdtFinalising_closed($|[ ({:\[\]])' SeLe4n/Kernel/Capability/FrameFinalise.lean
 run_check "INVARIANT" rg -n -U 'def cnodeSlotsUnreferenced [^\n]*(\n([ \t][^\n]*)?)*      \| \.cnode cn => objectNamesListed ids \(\.cnode cn\)\n      \| _ => false\)\)' SeLe4n/Kernel/Architecture/PageTeardown.lean
-run_check "INVARIANT" rg -n 'RETIRED: the all-references reading does not count it orphaned, the live one does' tests/VSpaceCapabilityBindingSuite.lean
 # v0.36.38: a frozen mint inserts a capability with no mapping record, and the
 # frozen phase claims no coverage of a VSpace write it has only a read for.
 run_check "INVARIANT" rg -n -U 'def frozenCspaceMint [^\n]*(\n([ \t][^\n]*)?)*            let slots. := cn\.slots\.insert slot cap\.withoutMapping' SeLe4n/Kernel/FrozenOps/Operations.lean
@@ -8838,9 +8836,10 @@ run_check "INVARIANT" rg -n '^theorem taintPerKeyStore_blocks_fineLockDiscipline
 # parked sender's message wholesale and installs none of the capabilities it
 # carries, while an immediate rendezvous transferred them — so IPC semantics
 # depended on which side reached the endpoint first.  The authority is the
-# SENDER's, carried on the message (`capsGranted`), because the sender's endpoint
-# capability is gone by the time a receiver dequeues a parked send.
-run_check "INVARIANT" rg -n '  capsGranted : Bool' SeLe4n/Model/Object/Types.lean
+# SENDER's, recorded on its blocked thread state (`ipcCanGrant`, seL4's
+# `blockingIPCCanGrant`) because the sender's endpoint capability is gone by the
+# time a receiver dequeues a parked send, and the receive's request reads it.
+run_check "INVARIANT" rg -n 'if tcb\.ipcFaultSend then none else senderFrameCapRequest st sender tcb tcb\.ipcCanGrant' SeLe4n/Kernel/IPC/DualQueue/SenderMessage.lean
 run_check "INVARIANT" rg -n '^def endpointReceiveDualWithCapsOnCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
 run_check "INVARIANT" rg -n '^theorem endpointReceiveDualWithCapsOnCore_no_caps($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
 run_check "INVARIANT" rg -n 'endpointReceiveDualWithCapsOnCore epId tid replyIdOpt' SeLe4n/Kernel/API.lean
@@ -9023,7 +9022,16 @@ run_check "INVARIANT" rg -n '^theorem taintWriteKeys_disjoint_order_independent(
 # stand-in address was destroyed by a revoke that had nothing to do with it.
 run_check "INVARIANT" rg -n '^structure TransferCap($|[ ({:\[\]])' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n 'srcSlot : SlotRef' SeLe4n/Model/Object/Types.lean
-run_check "INVARIANT" rg -n 'caps : Array TransferCap' SeLe4n/Model/Object/Types.lean
+# …and a message holds no capabilities at all (seL4 \`lookupExtraCaps\`): a
+# sender's extra capabilities are addresses in its frame, resolved at the
+# rendezvous into a transient array, so no field of \`IpcMessage\` may hold one.
+run_check "INVARIANT" rg -n '^def ipcUnwrapCaps$' SeLe4n/Kernel/IPC/Operations/CapTransfer.lean
+run_check "INVARIANT" rg -n -U '^def ipcUnwrapCaps\n    \(caps : Array TransferCap\)' SeLe4n/Kernel/IPC/Operations/CapTransfer.lean
+run_negative_check "INVARIANT" rg -n -U '^structure IpcMessage where(\n([ \t][^\n]*)?)*\n  [a-zA-Z_]+ : [^\n]*(TransferCap|Capability)' SeLe4n/Model/Object/Types.lean
+# …nor the grant decision: that is the sender's thread state (\`ipcCanGrant\`,
+# seL4 \`blockingIPCCanGrant\`) and the send's capability request, so no field
+# of \`IpcMessage\` is a \`Bool\` or names a grant.
+run_negative_check "INVARIANT" rg -n -U '^structure IpcMessage where(\n([ \t][^\n]*)?)*\n  ([a-zA-Z_]*[Gg]rant[a-zA-Z_]* :|[a-zA-Z_]+ : [^\n]*\bBool\b)' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n 'ipcTransferSingleCap tc.cap tc.srcSlot' SeLe4n/Kernel/IPC/Operations/CapTransfer.lean
 # …and a reusable slot ADDRESS must not come back as the carried identity: a
 # parked send outlives the slot, so an address names whatever occupies it later.
@@ -9129,15 +9137,15 @@ run_check "INVARIANT" rg -n 'match receiveTransferCaps req receiverCspaceRoot re
 run_check "INVARIANT" rg -n '^private def revocationEntryPoints($|[ ({:\[\]])' tests/OperationChainSuite.lean
 # And the send-side half of round 6's ordering independence.  The wrappers took
 # the grant authority TWICE -- the `endpointRights` argument for the rendezvous
-# arm, `msg.capsGranted` for the parked one -- and never tied them.  Since WS-ZA
-# ZA4.7 the grant right is one field of the one `SendPayload` the wrapper hands
-# its bare operation, so both arms read the same bit.
+# arm, a grant bit on the message for the parked one -- and never tied them.
+# Since WS-ZA ZA4.7 the grant right is one field of the one `SendPayload` the
+# wrapper hands its bare operation, so both arms read the same bit, and the
+# message carries none.
 run_check "INVARIANT" rg -n 'match endpointSendDual endpointId sender payload st with' SeLe4n/Kernel/IPC/DualQueue/WithCaps.lean
 run_check "INVARIANT" rg -n 'match endpointCall endpointId caller payload st with' SeLe4n/Kernel/IPC/DualQueue/WithCaps.lean
 run_negative_check "INVARIANT" rg -n 'endpointRights' SeLe4n/Kernel/IPC/DualQueue/WithCaps.lean SeLe4n/Kernel/IPC/CrossCore/EndpointSend.lean SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean
-# The regression drives the property from the UNSTAMPED message `chain12c`'s
-# fixture deliberately does not prepare -- `chain12c` sets the field from the same
-# rights it passes, so it cannot see the two inputs disagree.
+# The regression checks the parked sender's recorded grant (`ipcCanGrant`) on a
+# granting and on a denying endpoint, in both arrival orderings.
 run_check "INVARIANT" rg -n 'endpointGrantDecidesBothOrderings' tests/OperationChainSuite.lean
 # WS-RR RR7.9: the CDT node allocator's global counter is COVERED, and these are
 # the pins.  It was the footprint gap the caps path opened -- minting a node
@@ -9728,7 +9736,6 @@ run_check "INVARIANT" rg -n 'differentialComparisonHasBite' tests/FrozenOpsSuite
 # The contract is definitional -- the state is untouched, not merely the caps
 # denied -- so it is `rfl` rather than a scenario.
 run_check "INVARIANT" rg -n '^theorem resolveExtraCaps_ungranted($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem resolveExtraCapsDetailed_ungranted($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 # And each live arm passes the endpoint capability's own bit, which the
 # delegation theorems restate and therefore prove rather than assert (WS-ZA
 # ZA4.7: as the payload's grant right, resolved only on the delivering arm).

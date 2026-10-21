@@ -648,21 +648,18 @@ def capNamesListed (ids : List SeLe4n.ObjId) (cap : Capability) : Bool :=
   | .object id => ids.contains id
   | _ => false
 
-/-- **Does this stored object hold a capability naming an object in the
-subtree?**  The two places a capability lives: a CNode slot, and the message a
-blocked sender has parked (its transfer capabilities install at the receiver
-later, so they are authority in flight).  No other object kind holds a
-`Capability`. -/
+/-- **Does this stored object name an object in the subtree?**  A capability
+lives in one place only, a CNode slot: as in seL4, a blocked sender keeps the
+*addresses* of the capabilities it transfers and the receive looks them up at
+the rendezvous, so no message holds a capability (`IpcMessage` has no field for
+one).  A thread also names its address space directly, by its `vspaceRoot`. -/
 def objectNamesListed (ids : List SeLe4n.ObjId) : KernelObject → Bool
   | .cnode cn => !(cn.allSlots fun _ cap => !capNamesListed ids cap)
   | .tcb t =>
       -- Slice 4b (`v0.36.10`): a thread's address space is named by its TCB's
       -- `vspaceRoot` field, not by a capability, so a carved root a thread
       -- still runs in is reached without one.
-      ids.contains t.vspaceRoot ||
-      match t.pendingMessage with
-      | some msg => msg.caps.any (fun tc => capNamesListed ids tc.cap)
-      | none => false
+      ids.contains t.vspaceRoot
   | _ => false
 
 /-- **The whole-store check: no capability anywhere names an object in the
@@ -674,13 +671,9 @@ def carvedSubtreeUnreferenced (st : SystemState) (ids : List SeLe4n.ObjId) : Boo
 
 /-- **No CNode slot names a listed object** (`v0.36.38`) — the question a
 capability's *finalisation* asks: seL4's `finaliseCap` runs when the last
-capability in a CNode dies, since a capability exists nowhere else there.  A copy
-parked in a blocked sender's message is authority in flight, and it can be
-dropped without passing through any finalising operation (a cancelled send), so
-counting it would let the last CNode capability's deletion skip the detach and
-leave the table installed with no capability anywhere.  Where a parked copy is
-later delivered it names a table that is installed nowhere, which `pageTableMap`
-installs again. -/
+capability in a CNode dies, since a capability exists nowhere else.  Unlike
+`carvedSubtreeUnreferenced` it does not count a thread's `vspaceRoot` field,
+which names an address space without being a capability to it. -/
 def cnodeSlotsUnreferenced (st : SystemState) (ids : List SeLe4n.ObjId) : Bool :=
   st.objects.fold true (fun acc _ o =>
     acc && !(match o with

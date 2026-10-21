@@ -4498,7 +4498,7 @@ private def blockedSenderState : SystemState :=
                       -- it delivers (`blockedThreadsPendingMessageConsistent`), and
                       -- the dequeue refuses a head that does not -- so a fixture
                       -- without this models a state the kernel cannot reach.
-                      pendingMessage := some { registers := #[], caps := #[],
+                      pendingMessage := some { registers := #[],
                                                badge := none } }
                     (.blockedOnSend crossCoreEndpoint)))).insert
           crossCoreEndpoint
@@ -4551,7 +4551,7 @@ private def replyRecvState : SystemState :=
                   replyObjectCode := 0 } (.blockedOnReply crossCoreEndpoint (some remoteHomedThread)))) }
 
 private def replyRecvMsg : IpcMessage :=
-  { registers := #[], caps := #[], badge := none }
+  { registers := #[], badge := none }
 
 /-- The Reply object the `.replyRecv` write-set checks answer through.  It is
 absent from the fixture, so it heads no donation frame and the pop between the
@@ -4887,12 +4887,12 @@ private def runResolvedFlowGateChecks : IO Unit := do
 -- ---------------------------------------------------------------------------
 
 private def vacatingSendMsg : IpcMessage :=
-  { registers := #[], caps := #[], badge := none }
+  { registers := #[], badge := none }
 
 /-- The blocking send: `lowEndpoint` has no receiver, so `lowCurrent` parks on
 its send queue and `removeRunnableOnCore` clears core 0's `current` slot. -/
 private def vacatedPost : SystemState :=
-  (SeLe4n.Kernel.endpointSendDualOnCore lowEndpoint lowCurrent (.frame vacatingSendMsg.badge vacatingSendMsg.capsGranted) c0 niState).1
+  (SeLe4n.Kernel.endpointSendDualOnCore lowEndpoint lowCurrent (.frame vacatingSendMsg.badge false) c0 niState).1
 
 /-- The same state after the entry seam's local reschedule. -/
 private def vacatedRescheduled : SystemState :=
@@ -7704,16 +7704,12 @@ private def ipcReceiverRoot : SeLe4n.ObjId := ⟨1042⟩
 private def ipcReceiver : SeLe4n.ThreadId := ⟨1043⟩
 private def ipcSender : SeLe4n.ThreadId := ⟨1044⟩
 
-/-- One transferred capability, so a message counts as caps-carrying. -/
-private def ipcCapsMessage : IpcMessage :=
-  { registers := #[],
-    caps := #[{ cap := { target := .object lowEndpoint,
-                         rights := AccessRightSet.ofList [.read] },
-                srcSlot := { cnode := ⟨0⟩, slot := SeLe4n.Slot.ofNat 0 } }],
-    capsGranted := true }
-
-/-- The capless shape, for the negatives. -/
-private def ipcCaplessMessage : IpcMessage := { registers := #[] }
+/-- The sender's message: no words.  A send counts as caps-carrying when its
+capability grants (`ipcSendOperands true`) and its frame names a capability
+address (`withSenderFrame … #[0]` below), resolved at the rendezvous; the
+non-granting send (`ipcSendOperands false`) is the capless shape, for the
+negatives. -/
+private def ipcMessage : IpcMessage := { registers := #[] }
 
 private def ipcReceiverTcb : TCB :=
   { mkTcb 1043 40 (some c1) with cspaceRoot := ipcReceiverRoot }
@@ -7730,7 +7726,7 @@ still fired.  Parking it properly is what makes each of them decided by the
 `schedContextBinding` alone, which is what each one claims to be about. -/
 private def ipcSenderTcb : TCB :=
   TCB.setIpcState
-    ((SeLe4n.Testing.tcbWithSenderFrame (mkTcb 1044 40 (some c0)) ipcCapsMessage
+    ((SeLe4n.Testing.tcbWithSenderFrame (mkTcb 1044 40 (some c0)) ipcMessage
         #[SeLe4n.CPtr.ofNat 0]).setSendCap none true)
     (.blockedOnCall lowEndpoint)
 
@@ -7743,7 +7739,7 @@ private def ipcFootprintState : SystemState :=
             ipcSender.toObjId (.tcb ipcSenderTcb)).insert
           lowEndpoint
           (.endpoint (Endpoint.ofQueues { head := some ipcSender, tail := some ipcSender } { head := some ipcReceiver, tail := some ipcReceiver }))) }
-    |> fun st => SeLe4n.Testing.withSenderFrame st lowCurrent ipcCapsMessage
+    |> fun st => SeLe4n.Testing.withSenderFrame st lowCurrent ipcMessage
         #[SeLe4n.CPtr.ofNat 0]
 
 /-- **WS-OD OD3.6** — the SchedContext a rendezvous donates.  Only the sender's
@@ -7788,8 +7784,8 @@ private def ipcInertFootprintState : SystemState :=
 what the capability contributes, the badge and the grant right (WS-ZA ZA4.7).
 The words and capability addresses are in the caller's frame, which
 `ipcFootprintState` stages. -/
-private def ipcSendOperands (msg : IpcMessage) : Concurrency.SyscallLockOperands :=
-  .ofObjectTarget lowCurrent lowEndpoint (some (.frame msg.badge msg.capsGranted))
+private def ipcSendOperands (grant : Bool) : Concurrency.SyscallLockOperands :=
+  .ofObjectTarget lowCurrent lowEndpoint (some (.frame ipcMessage.badge grant))
 
 private def ipcDeclaredMember
     (declared : Option Concurrency.LockSet)
@@ -7809,10 +7805,10 @@ private def runIpcDeclaredFootprintChecks : IO Unit := do
   -- Each arm declares at the operands its live dispatcher supplies.
   assertBool "`.send` declares at (endpoint, message)"
     (decide ((Concurrency.lockSetForSyscall .send
-      (ipcSendOperands ipcCaplessMessage) ipcFootprintState).isSome))
+      (ipcSendOperands false) ipcFootprintState).isSome))
   assertBool "`.call` declares at (endpoint, message)"
     (decide ((Concurrency.lockSetForSyscall .call
-      (ipcSendOperands ipcCaplessMessage) ipcFootprintState).isSome))
+      (ipcSendOperands false) ipcFootprintState).isSome))
   assertBool "`.receive` declares at an endpoint, with no message"
     (decide ((Concurrency.lockSetForSyscall .receive
       (.ofObjectTarget lowCurrent lowEndpoint) ipcFootprintState).isSome))
@@ -7848,18 +7844,18 @@ private def runIpcDeclaredFootprintChecks : IO Unit := do
   -- `none`, whatever operands are handed to them.
   assertBool "NEGATIVE: `.cspaceMint` is undeclared even at full operands"
     (decide ((Concurrency.lockSetForSyscall .cspaceMint
-      (ipcSendOperands ipcCapsMessage) ipcFootprintState) = none))
+      (ipcSendOperands true) ipcFootprintState) = none))
   -- **RR7.11's finding, at runtime.**  A caps-carrying rendezvous writes the
   -- CDT maps through `ipcTransferSingleCap`, and the state-level lock is the
   -- declared subject for `SystemState`-level structure.  The sending arms
   -- declared it since RR7.7; the receiving arms declared it on neither side.
   assertBool "a caps-carrying `.send` declares the state-level write"
     (ipcDeclaredMember (Concurrency.lockSetForSyscall .send
-      (ipcSendOperands ipcCapsMessage) ipcFootprintState)
+      (ipcSendOperands true) ipcFootprintState)
       Concurrency.stateLevelLock .write)
   assertBool "a caps-carrying `.send` declares the receiver's CSpace root"
     (ipcDeclaredMember (Concurrency.lockSetForSyscall .send
-      (ipcSendOperands ipcCapsMessage) ipcFootprintState)
+      (ipcSendOperands true) ipcFootprintState)
       (Concurrency.cnodeLock ipcReceiverRoot) .write)
   assertBool "a caps-installing `.receive` declares the state-level write (RR7.11)"
     (ipcDeclaredMember (Concurrency.lockSetForSyscall .receive
@@ -7914,16 +7910,16 @@ private def runIpcDeclaredFootprintChecks : IO Unit := do
   -- rather than being unconditionally present.
   assertBool "NEGATIVE: a capless `.send` does not declare the state-level write"
     (decide (¬ ipcDeclaredMember (Concurrency.lockSetForSyscall .send
-      (ipcSendOperands ipcCaplessMessage) ipcFootprintState)
+      (ipcSendOperands false) ipcFootprintState)
       Concurrency.stateLevelLock .write))
   -- Coverage: the endpoint queue is the rendezvous' primary write, and every
   -- endpoint-shaped arm declares it.
   assertBool "every endpoint-shaped arm declares the endpoint write"
     (ipcDeclaredMember (Concurrency.lockSetForSyscall .send
-        (ipcSendOperands ipcCaplessMessage) ipcFootprintState)
+        (ipcSendOperands false) ipcFootprintState)
         (Concurrency.endpointLock lowEndpoint) .write &&
      ipcDeclaredMember (Concurrency.lockSetForSyscall .call
-        (ipcSendOperands ipcCaplessMessage) ipcFootprintState)
+        (ipcSendOperands false) ipcFootprintState)
         (Concurrency.endpointLock lowEndpoint) .write &&
      ipcDeclaredMember (Concurrency.lockSetForSyscall .receive
         (.ofObjectTarget lowCurrent lowEndpoint) ipcFootprintState)
@@ -7940,8 +7936,8 @@ private def runIpcDeclaredFootprintChecks : IO Unit := do
   -- Every declared footprint is within the static size bound, which is what
   -- makes it usable by the bounded-wait argument.
   assertBool "every declared IPC footprint is within maxLockSetSize"
-    ([Concurrency.lockSetForSyscall .send (ipcSendOperands ipcCapsMessage) ipcFootprintState,
-      Concurrency.lockSetForSyscall .call (ipcSendOperands ipcCapsMessage) ipcFootprintState,
+    ([Concurrency.lockSetForSyscall .send (ipcSendOperands true) ipcFootprintState,
+      Concurrency.lockSetForSyscall .call (ipcSendOperands true) ipcFootprintState,
       Concurrency.lockSetForSyscall .receive (.ofObjectTarget lowCurrent lowEndpoint)
         ipcFootprintState,
       Concurrency.lockSetForSyscall .reply (.ofReplyTarget lowCurrent ipcReplyId)
@@ -10593,17 +10589,13 @@ private def taintedEndpointTable : SeLe4n.Kernel.TaintTable :=
   SeLe4n.Kernel.TaintTable.empty.joinAt taintedSender.toObjId
     (DeclassificationTaint.singleton 42)
 
-/-- PR #873 round 4: the parked message has to **actually carry a capability**.
-The CSpace sinks are gated on that now — a plain message installs nothing, so
-declaring them for every delivery would write the sender's provenance into a
-CNode no capability reached and, since a root feeds the consuming subject, name
-an unsaturated predecessor for an unrelated later downgrade. -/
-private def transferredCap : Capability :=
-  { target := .object lowNotification, rights := AccessRightSet.ofList [] }
-
+/-- PR #873 round 4: the blocked sender has to **actually ask to transfer a
+capability**, so the negatives below are about a caps-carrying delivery and not
+a plain one.  As on the live send, it asks in its saved frame: one capability
+address counted in its message-info word, under its capability's grant right
+(`TCB.setSendCap`); the receive resolves it at the rendezvous. -/
 private def transferMessage : IpcMessage :=
-  { registers := #[], caps := #[TransferCap.fromSlot transferredCap
-    { cnode := SeLe4n.ObjId.ofNat 0, slot := SeLe4n.Slot.ofNat 0 }], badge := none }
+  { registers := #[], badge := none }
 
 private def taintedEndpointState : SystemState :=
   let base : SystemState :=
@@ -10616,7 +10608,8 @@ private def taintedEndpointState : SystemState :=
   | some stcb =>
       { base with
           objects := base.objects.insert taintedSender.toObjId
-            (.tcb { stcb with pendingMessage := some transferMessage }) }
+            (.tcb ((SeLe4n.Testing.tcbWithSenderFrame stcb transferMessage
+              #[SeLe4n.CPtr.ofNat 0]).setSendCap none true)) }
 
 /-- PR #873 round 4: the BOUND-delivery ordering.  `boundDeliveryTarget?` checks
 only that the waiter list is empty and that the bound TCB is parked on an

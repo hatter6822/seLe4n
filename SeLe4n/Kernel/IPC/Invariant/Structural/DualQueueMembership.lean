@@ -988,8 +988,6 @@ theorem endpointReplyRecv_preserves_endpointQueueNoDup
   unfold endpointReplyRecv at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
-  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hLookup : lookupTcb st replyTarget with
   | none => simp [hLookup] at hStep
   | some tcb =>
@@ -3291,8 +3289,6 @@ theorem endpointReply_preserves_ipcStateQueueConsistent
   unfold endpointReply at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
-  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hLookup : lookupTcb st target with
   | none => simp [hLookup] at hStep
   | some tcb =>
@@ -3594,8 +3590,6 @@ theorem endpointReplyRecv_preserves_ipcStateQueueConsistent
     ipcStateQueueConsistent st' := by
   unfold endpointReplyRecv at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
-  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hLookup : lookupTcb st replyTarget with
   | none => simp [hLookup] at hStep
@@ -6734,8 +6728,6 @@ theorem endpointReply_preserves_blockedOnReplyHasReplyObject
   unfold endpointReply at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
-  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hLookup : lookupTcb st target with
   | none => simp [hLookup] at hStep
   | some tcb =>
@@ -6801,8 +6793,6 @@ theorem endpointReplyRecv_preserves_blockedOnReplyHasReplyObject
     blockedOnReplyHasReplyObject st' := by
   unfold endpointReplyRecv at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
-  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hLookup : lookupTcb st replyTarget with
   | none => simp [hLookup] at hStep
@@ -6880,17 +6870,17 @@ third clause. It never creates a TCB — it writes only `receiverRoot`, and only
 — so every `.tcb` in the post-state maps back to the same `.tcb` in the pre-state
 (`ipcUnwrapCaps_tcb_backward`); the clause then transports unchanged. -/
 theorem ipcUnwrapCaps_preserves_blockedOnReplyHasReplyObject
-    (msg : IpcMessage) (receiverRoot : SeLe4n.ObjId)
+    (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
     (slotBase : SeLe4n.Slot) (grantRight : Bool)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt)
     (hInv : blockedOnReplyHasReplyObject st)
-    (hStep : ipcUnwrapCaps msg receiverRoot slotBase grantRight st
+    (hStep : ipcUnwrapCaps caps receiverRoot slotBase grantRight st
              = .ok (summary, st')) :
     blockedOnReplyHasReplyObject st' := by
   intro tid tcb ep rt hTcb hBlk
   exact hInv tid tcb ep rt
-    (ipcUnwrapCaps_tcb_backward msg receiverRoot slotBase grantRight st st' summary
+    (ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight st st' summary
       tid.toObjId tcb hObjInv hStep hTcb) hBlk
 
 open SeLe4n.Model.SystemState in
@@ -8998,13 +8988,13 @@ theorem consumeCallerReply_sameSchedContextBindings
 every TCB slot byte-identical (`ipcUnwrapCaps_tcb_backward` pulls each post-state TCB back to
 the *same* pre-state TCB). -/
 theorem ipcUnwrapCaps_sameSchedContextBindings
-    (msg : IpcMessage) (receiverRoot : SeLe4n.ObjId)
+    (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
     (slotBase : SeLe4n.Slot) (grantRight : Bool)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt)
-    (hStep : ipcUnwrapCaps msg receiverRoot slotBase grantRight st = .ok (summary, st')) :
+    (hStep : ipcUnwrapCaps caps receiverRoot slotBase grantRight st = .ok (summary, st')) :
     sameSchedContextBindings st st' :=
-  fun y tcY hY => ⟨tcY, ipcUnwrapCaps_tcb_backward msg receiverRoot slotBase grantRight
+  fun y tcY hY => ⟨tcY, ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight
     st st' summary y.toObjId tcY hObjInv hStep hY, rfl⟩
 
 open SeLe4n.Model.SystemState in
@@ -9024,13 +9014,13 @@ open SeLe4n.Model.SystemState in
 /-- D5: `ipcUnwrapCaps` frames `timeoutBudgetFrame` — it writes only CNode caps at `receiverRoot`,
 so every TCB object survives byte-identical (`ipcUnwrapCaps_tcb_backward`). -/
 theorem ipcUnwrapCaps_timeoutBudgetFrame
-    (msg : IpcMessage) (receiverRoot : SeLe4n.ObjId)
+    (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
     (slotBase : SeLe4n.Slot) (grantRight : Bool)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt)
-    (hStep : ipcUnwrapCaps msg receiverRoot slotBase grantRight st = .ok (summary, st')) :
+    (hStep : ipcUnwrapCaps caps receiverRoot slotBase grantRight st = .ok (summary, st')) :
     timeoutBudgetFrame st st' :=
-  fun y tcY hY => ⟨tcY, ipcUnwrapCaps_tcb_backward msg receiverRoot slotBase grantRight
+  fun y tcY hY => ⟨tcY, ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight
     st st' summary y.toObjId tcY hObjInv hStep hY, rfl⟩
 
 open SeLe4n.Model.SystemState in
@@ -9038,16 +9028,16 @@ open SeLe4n.Model.SystemState in
 at `receiverRoot`, so every SchedContext object (`ipcUnwrapCaps_preserves_schedContext_objects`)
 and every TCB object (`ipcUnwrapCaps_preserves_tcb_objects`) survives byte-identical. -/
 theorem ipcUnwrapCaps_donationOwnerFrame
-    (msg : IpcMessage) (receiverRoot : SeLe4n.ObjId)
+    (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
     (slotBase : SeLe4n.Slot) (grantRight : Bool)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt)
-    (hStep : ipcUnwrapCaps msg receiverRoot slotBase grantRight st = .ok (summary, st')) :
+    (hStep : ipcUnwrapCaps caps receiverRoot slotBase grantRight st = .ok (summary, st')) :
     donationOwnerFrame st st' :=
-  ⟨fun scId sc hSc => ipcUnwrapCaps_preserves_schedContext_objects msg receiverRoot
+  ⟨fun scId sc hSc => ipcUnwrapCaps_preserves_schedContext_objects caps receiverRoot
      slotBase grantRight st st' summary scId.toObjId sc hSc hObjInv hStep,
    fun owner ownerTcb hOwner hU hR =>
-     ⟨ownerTcb, ipcUnwrapCaps_preserves_tcb_objects msg receiverRoot slotBase grantRight
+     ⟨ownerTcb, ipcUnwrapCaps_preserves_tcb_objects caps receiverRoot slotBase grantRight
        st st' summary owner.toObjId ownerTcb hOwner hObjInv hStep, hU, hR⟩⟩
 
 open SeLe4n.Model.SystemState in
@@ -9055,17 +9045,17 @@ open SeLe4n.Model.SystemState in
 so every TCB object survives byte-identical (`ipcUnwrapCaps_tcb_backward`) and the scheduler is
 untouched (`ipcUnwrapCaps_preserves_scheduler`). -/
 theorem ipcUnwrapCaps_passiveServerIdleFrame
-    (msg : IpcMessage) (receiverRoot : SeLe4n.ObjId)
+    (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
     (slotBase : SeLe4n.Slot) (grantRight : Bool)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt)
-    (hStep : ipcUnwrapCaps msg receiverRoot slotBase grantRight st = .ok (summary, st')) :
+    (hStep : ipcUnwrapCaps caps receiverRoot slotBase grantRight st = .ok (summary, st')) :
     passiveServerIdleFrame st st' :=
   passiveServerIdleFrame_of_backward
     (fun tid tcb' hTcb' =>
-      ⟨tcb', ipcUnwrapCaps_tcb_backward msg receiverRoot slotBase grantRight st st'
+      ⟨tcb', ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight st st'
         summary tid.toObjId tcb' hObjInv hStep hTcb', rfl, rfl⟩)
-    (ipcUnwrapCaps_preserves_scheduler msg receiverRoot slotBase grantRight st st' summary hStep)
+    (ipcUnwrapCaps_preserves_scheduler caps receiverRoot slotBase grantRight st st' summary hStep)
 
 open SeLe4n.Model.SystemState in
 /-- D3: `cleanupPreReceiveDonation` frames the clause (preserves every `ipcState`). -/
@@ -10126,8 +10116,6 @@ theorem endpointReplyRecv_preserves_donationBudgetTransfer
   unfold endpointReplyRecv at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
-  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hLookup : lookupTcb st replyTarget with
   | none => simp [hLookup] at hStep
   | some tcb =>
@@ -10419,8 +10407,6 @@ theorem endpointReplyRecv_passiveServerIdleFrame
   unfold endpointReplyRecv at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
-  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hLookup : lookupTcb st replyTarget with
   | none => simp [hLookup] at hStep
   | some tcb =>
@@ -10529,8 +10515,6 @@ theorem endpointReplyRecv_timeoutBudgetFrame
     timeoutBudgetFrame st st' := by
   unfold endpointReplyRecv at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
-  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hLookup : lookupTcb st replyTarget with
   | none => simp [hLookup] at hStep
@@ -12799,8 +12783,6 @@ theorem endpointReply_sameSchedContextBindings
   unfold endpointReply at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
-  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hLookup : lookupTcb st target with
   | none => simp [hLookup] at hStep
   | some tcb =>
@@ -12849,8 +12831,6 @@ theorem endpointReply_passiveServerIdleFrame
     passiveServerIdleFrame st st' := by
   unfold endpointReply at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
-  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hLookup : lookupTcb st target with
   | none => simp [hLookup] at hStep
@@ -13006,8 +12986,6 @@ theorem endpointReply_donationOwnerFrameExcept
   unfold endpointReply at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
-  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hLookup : lookupTcb st target with
   | none => simp [hLookup] at hStep
   | some tcb =>
@@ -13078,8 +13056,6 @@ theorem endpointReply_timeoutBudgetFrame
   unfold endpointReply at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
-  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hLookup : lookupTcb st target with
   | none => simp [hLookup] at hStep
   | some tcb =>
@@ -13142,15 +13118,15 @@ The cap transfer writes only a CNode at `receiverRoot`; every TCB (hence every
 `pendingMessage`) is byte-identical, so a post-state bounded message pulls back to
 the same pre-state TCB via `ipcUnwrapCaps_tcb_backward`. -/
 theorem ipcUnwrapCaps_preserves_allPendingMessagesBounded
-    (msg : IpcMessage) (receiverRoot : SeLe4n.ObjId)
+    (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
     (slotBase : SeLe4n.Slot) (grantRight : Bool)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt) (hInv : allPendingMessagesBounded st)
-    (hStep : ipcUnwrapCaps msg receiverRoot slotBase grantRight st = .ok (summary, st')) :
+    (hStep : ipcUnwrapCaps caps receiverRoot slotBase grantRight st = .ok (summary, st')) :
     allPendingMessagesBounded st' := by
   intro tid tcb m hTcb' hPend
   exact hInv tid tcb m
-    (ipcUnwrapCaps_tcb_backward msg receiverRoot slotBase grantRight st st' summary
+    (ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight st st' summary
       tid.toObjId tcb hObjInv hStep hTcb') hPend
 
 /-- IPC de-threading D8: `ipcUnwrapCaps` frames `endpointQueueNoDup`.
@@ -13159,21 +13135,21 @@ no-self-loop clause (pull each post-state TCB back via `ipcUnwrapCaps_tcb_backwa
 and the head-disjointness clause (the endpoint is unchanged via
 `ipcUnwrapCaps_endpoint_backward`) carry from the pre-state. -/
 theorem ipcUnwrapCaps_preserves_endpointQueueNoDup
-    (msg : IpcMessage) (receiverRoot : SeLe4n.ObjId)
+    (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
     (slotBase : SeLe4n.Slot) (grantRight : Bool)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt) (hInv : endpointQueueNoDup st)
-    (hStep : ipcUnwrapCaps msg receiverRoot slotBase grantRight st = .ok (summary, st')) :
+    (hStep : ipcUnwrapCaps caps receiverRoot slotBase grantRight st = .ok (summary, st')) :
     endpointQueueNoDup st' := by
   intro oid ep hEp'
   have hEp : st.objects[oid]? = some (.endpoint ep) :=
-    ipcUnwrapCaps_endpoint_backward msg receiverRoot slotBase grantRight st st' summary
+    ipcUnwrapCaps_endpoint_backward caps receiverRoot slotBase grantRight st st' summary
       oid ep hObjInv hStep hEp'
   obtain ⟨hNoSelf, hDisjoint⟩ := hInv oid ep hEp
   refine ⟨?_, hDisjoint⟩
   intro tid tcb hTcb'
   exact hNoSelf tid tcb
-    (ipcUnwrapCaps_tcb_backward msg receiverRoot slotBase grantRight st st' summary
+    (ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight st st' summary
       tid.toObjId tcb hObjInv hStep hTcb')
 
 /-- IPC de-threading D8: `ipcUnwrapCaps` frames `ipcStateQueueMembershipConsistent`.
@@ -13182,24 +13158,24 @@ witnessing endpoint and any predecessor TCB push forward unchanged
 (`ipcUnwrapCaps_preserves_ep_objects` / `_preserves_tcb_objects`), since the cap
 transfer touches only a CNode at `receiverRoot`. -/
 theorem ipcUnwrapCaps_preserves_ipcStateQueueMembershipConsistent
-    (msg : IpcMessage) (receiverRoot : SeLe4n.ObjId)
+    (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
     (slotBase : SeLe4n.Slot) (grantRight : Bool)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt) (hInv : ipcStateQueueMembershipConsistent st)
-    (hStep : ipcUnwrapCaps msg receiverRoot slotBase grantRight st = .ok (summary, st')) :
+    (hStep : ipcUnwrapCaps caps receiverRoot slotBase grantRight st = .ok (summary, st')) :
     ipcStateQueueMembershipConsistent st' := by
   intro tid tcb hTcb'
   have hTcb : st.objects[tid.toObjId]? = some (.tcb tcb) :=
-    ipcUnwrapCaps_tcb_backward msg receiverRoot slotBase grantRight st st' summary
+    ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight st st' summary
       tid.toObjId tcb hObjInv hStep hTcb'
   have hPre := hInv tid tcb hTcb
   have epFwd : ∀ (eid : SeLe4n.ObjId) (e : Endpoint),
       st.objects[eid]? = some (.endpoint e) → st'.objects[eid]? = some (.endpoint e) :=
-    fun eid e h => ipcUnwrapCaps_preserves_ep_objects msg receiverRoot slotBase
+    fun eid e h => ipcUnwrapCaps_preserves_ep_objects caps receiverRoot slotBase
       grantRight st st' summary eid e h hObjInv hStep
   have tcbFwd : ∀ (oid : SeLe4n.ObjId) (t : TCB),
       st.objects[oid]? = some (.tcb t) → st'.objects[oid]? = some (.tcb t) :=
-    fun oid t h => ipcUnwrapCaps_preserves_tcb_objects msg receiverRoot slotBase
+    fun oid t h => ipcUnwrapCaps_preserves_tcb_objects caps receiverRoot slotBase
       grantRight st st' summary oid t h hObjInv hStep
   match hIpc : tcb.ipcState with
   | .blockedOnSend epId =>
@@ -13224,15 +13200,15 @@ theorem ipcUnwrapCaps_preserves_ipcStateQueueMembershipConsistent
 open SeLe4n.Model.SystemState in
 /-- D3: `ipcUnwrapCaps` frames the clause (it never creates a TCB — `ipcUnwrapCaps_tcb_backward`). -/
 theorem ipcUnwrapCaps_preserves_blockedOnReplyHasTarget
-    (msg : IpcMessage) (receiverRoot : SeLe4n.ObjId)
+    (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
     (slotBase : SeLe4n.Slot) (grantRight : Bool)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt) (hInv : blockedOnReplyHasTarget st)
-    (hStep : ipcUnwrapCaps msg receiverRoot slotBase grantRight st = .ok (summary, st')) :
+    (hStep : ipcUnwrapCaps caps receiverRoot slotBase grantRight st = .ok (summary, st')) :
     blockedOnReplyHasTarget st' := by
   intro tid tcb ep rt hTcb hBlk
   exact hInv tid tcb ep rt
-    (ipcUnwrapCaps_tcb_backward msg receiverRoot slotBase grantRight st st' summary
+    (ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight st st' summary
       tid.toObjId tcb hObjInv hStep hTcb) hBlk
 
 open SeLe4n.Model.SystemState in
@@ -16078,31 +16054,31 @@ object and never any TCB's `pendingReceiveReply`. So C1 (stash ⇒ `.blockedOnRe
 preservation `ipcUnwrapCaps_tcb_backward`, and C1's reply-present half forward through
 `ipcUnwrapCaps_preserves_reply_objects`. -/
 theorem ipcUnwrapCaps_preserves_pendingReceiveReplyWellFormed
-    (msg : IpcMessage) (receiverRoot : SeLe4n.ObjId)
+    (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
     (slotBase : SeLe4n.Slot) (grantRight : Bool)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt) (hInv : pendingReceiveReplyWellFormed st)
-    (hStep : ipcUnwrapCaps msg receiverRoot slotBase grantRight st
+    (hStep : ipcUnwrapCaps caps receiverRoot slotBase grantRight st
              = .ok (summary, st')) :
     pendingReceiveReplyWellFormed st' := by
   refine ⟨?_, ?_⟩
   · -- C1
     intro tid tcb rid hTcb hStash
     have hTcbSt : st.objects[tid.toObjId]? = some (.tcb tcb) :=
-      ipcUnwrapCaps_tcb_backward msg receiverRoot slotBase grantRight st st' summary
+      ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight st st' summary
         tid.toObjId tcb hObjInv hStep ((getTcb?_eq_some_iff st' tid tcb).mp hTcb)
     obtain ⟨hBlk, r, hr, hrc⟩ := hInv.1 tid tcb rid ((getTcb?_eq_some_iff st tid tcb).mpr hTcbSt) hStash
     refine ⟨hBlk, r, ?_, hrc⟩
     rw [getReply?_eq_some_iff]
-    exact ipcUnwrapCaps_preserves_reply_objects msg receiverRoot slotBase grantRight
+    exact ipcUnwrapCaps_preserves_reply_objects caps receiverRoot slotBase grantRight
       st st' summary rid.toObjId r ((getReply?_eq_some_iff st rid r).mp hr) hObjInv hStep
   · -- C2 (injectivity)
     intro tid₁ tid₂ tcb₁ tcb₂ rid hTcb₁ hTcb₂ hStash₁ hStash₂
     have hTcbSt₁ : st.objects[tid₁.toObjId]? = some (.tcb tcb₁) :=
-      ipcUnwrapCaps_tcb_backward msg receiverRoot slotBase grantRight st st' summary
+      ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight st st' summary
         tid₁.toObjId tcb₁ hObjInv hStep ((getTcb?_eq_some_iff st' tid₁ tcb₁).mp hTcb₁)
     have hTcbSt₂ : st.objects[tid₂.toObjId]? = some (.tcb tcb₂) :=
-      ipcUnwrapCaps_tcb_backward msg receiverRoot slotBase grantRight st st' summary
+      ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight st st' summary
         tid₂.toObjId tcb₂ hObjInv hStep ((getTcb?_eq_some_iff st' tid₂ tcb₂).mp hTcb₂)
     exact hInv.2 tid₁ tid₂ tcb₁ tcb₂ rid ((getTcb?_eq_some_iff st tid₁ tcb₁).mpr hTcbSt₁)
       ((getTcb?_eq_some_iff st tid₂ tcb₂).mpr hTcbSt₂) hStash₁ hStash₂
@@ -17115,16 +17091,16 @@ open SeLe4n.Model.SystemState in
 equals its pre-state (the cap-transfer touches only a CNode), so `ipcState` and
 `queueNext` are unchanged (`ipcUnwrapCaps_tcb_backward`). -/
 theorem ipcUnwrapCaps_preserves_queueNextBlockingConsistent
-    (msg : IpcMessage) (receiverRoot : SeLe4n.ObjId)
+    (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
     (slotBase : SeLe4n.Slot) (grantRight : Bool)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt) (hInv : queueNextBlockingConsistent st)
-    (hStep : ipcUnwrapCaps msg receiverRoot slotBase grantRight st
+    (hStep : ipcUnwrapCaps caps receiverRoot slotBase grantRight st
              = .ok (summary, st')) :
     queueNextBlockingConsistent st' := by
   refine queueNextBlockingConsistent_of_tcb_links_backward st st' ?_ hInv
   intro y tcb' hY
-  exact ⟨tcb', ipcUnwrapCaps_tcb_backward msg receiverRoot slotBase grantRight
+  exact ⟨tcb', ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight
     st st' summary y.toObjId tcb' hObjInv hStep hY, rfl, rfl⟩
 
 open SeLe4n.Model.SystemState in
@@ -17132,16 +17108,16 @@ open SeLe4n.Model.SystemState in
 writes only a CNode at `receiverRoot`, so every TCB's `ipcState` **and** `queueNext` are unchanged —
 `ipcUnwrapCaps_tcb_backward`). -/
 theorem ipcUnwrapCaps_preserves_queueNextTargetBlocked
-    (msg : IpcMessage) (receiverRoot : SeLe4n.ObjId)
+    (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
     (slotBase : SeLe4n.Slot) (grantRight : Bool)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt) (hInv : queueNextTargetBlocked st)
-    (hStep : ipcUnwrapCaps msg receiverRoot slotBase grantRight st
+    (hStep : ipcUnwrapCaps caps receiverRoot slotBase grantRight st
              = .ok (summary, st')) :
     queueNextTargetBlocked st' := by
   refine queueNextTargetBlocked_of_tcb_links_backward st st' ?_ hInv
   intro y tcb' hY
-  exact ⟨tcb', ipcUnwrapCaps_tcb_backward msg receiverRoot slotBase grantRight
+  exact ⟨tcb', ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight
     st st' summary y.toObjId tcb' hObjInv hStep hY, rfl, rfl⟩
 
 open SeLe4n.Model.SystemState in
@@ -17149,17 +17125,17 @@ open SeLe4n.Model.SystemState in
 cap transfer writes only a CNode at `receiverRoot`, so every endpoint and every TCB `ipcState` is
 unchanged — `ipcUnwrapCaps_{endpoint,tcb}_backward`). -/
 theorem ipcUnwrapCaps_preserves_endpointQueueTailBlockedConsistent
-    (msg : IpcMessage) (receiverRoot : SeLe4n.ObjId)
+    (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
     (slotBase : SeLe4n.Slot) (grantRight : Bool)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt) (hInv : endpointQueueTailBlockedConsistent st)
-    (hStep : ipcUnwrapCaps msg receiverRoot slotBase grantRight st
+    (hStep : ipcUnwrapCaps caps receiverRoot slotBase grantRight st
              = .ok (summary, st')) :
     endpointQueueTailBlockedConsistent st' := by
   refine endpointQueueTailBlockedConsistent_of_endpoint_tcb_backward st st'
-    (fun eid e hE => ipcUnwrapCaps_endpoint_backward msg receiverRoot slotBase grantRight
+    (fun eid e hE => ipcUnwrapCaps_endpoint_backward caps receiverRoot slotBase grantRight
       st st' summary eid e hObjInv hStep hE)
-    (fun y tcb' hY => ⟨tcb', ipcUnwrapCaps_tcb_backward msg receiverRoot slotBase grantRight
+    (fun y tcb' hY => ⟨tcb', ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight
       st st' summary y.toObjId tcb' hObjInv hStep hY, rfl⟩)
     hInv
 
@@ -17168,17 +17144,17 @@ open SeLe4n.Model.SystemState in
 writes only a CNode at `receiverRoot`, so every endpoint and every TCB `ipcState` is unchanged —
 head dual of `ipcUnwrapCaps_preserves_endpointQueueTailBlockedConsistent`). -/
 theorem ipcUnwrapCaps_preserves_queueHeadBlockedConsistent
-    (msg : IpcMessage) (receiverRoot : SeLe4n.ObjId)
+    (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
     (slotBase : SeLe4n.Slot) (grantRight : Bool)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt) (hInv : queueHeadBlockedConsistent st)
-    (hStep : ipcUnwrapCaps msg receiverRoot slotBase grantRight st
+    (hStep : ipcUnwrapCaps caps receiverRoot slotBase grantRight st
              = .ok (summary, st')) :
     queueHeadBlockedConsistent st' := by
   refine queueHeadBlockedConsistent_of_endpoint_tcb_backward st st'
-    (fun eid e hE => ipcUnwrapCaps_endpoint_backward msg receiverRoot slotBase grantRight
+    (fun eid e hE => ipcUnwrapCaps_endpoint_backward caps receiverRoot slotBase grantRight
       st st' summary eid e hObjInv hStep hE)
-    (fun y tcb' hY => ⟨tcb', ipcUnwrapCaps_tcb_backward msg receiverRoot slotBase grantRight
+    (fun y tcb' hY => ⟨tcb', ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight
       st st' summary y.toObjId tcb' hObjInv hStep hY, rfl⟩)
     hInv
 
@@ -17491,8 +17467,6 @@ theorem endpointReplyRecv_preserves_queueNextBlockingConsistent
   unfold endpointReplyRecv at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
-  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hLookup : lookupTcb st replyTarget with
   | none => simp [hLookup] at hStep
   | some replyTcb =>
@@ -17652,8 +17626,6 @@ theorem endpointReply_preserves_queueNextBlockingConsistent
     queueNextBlockingConsistent st' := by
   unfold endpointReply at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
-  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hLookup : lookupTcb st target with
   | none => simp [hLookup] at hStep
@@ -17886,8 +17858,6 @@ theorem endpointReply_preserves_queueNextTargetBlocked
   unfold endpointReply at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
-  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hLookup : lookupTcb st target with
   | none => simp [hLookup] at hStep
   | some tcb =>
@@ -17940,8 +17910,6 @@ theorem endpointReply_preserves_endpointQueueTailBlockedConsistent
     endpointQueueTailBlockedConsistent st' := by
   unfold endpointReply at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
-  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hLookup : lookupTcb st target with
   | none => simp [hLookup] at hStep
@@ -19370,8 +19338,6 @@ theorem endpointReplyRecv_preserves_queueHeadBlockedConsistent
   unfold endpointReplyRecv at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
-  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hLookup : lookupTcb st replyTarget with
   | none => simp [hLookup] at hStep
   | some replyTcb =>
@@ -19534,8 +19500,6 @@ theorem endpointReplyRecv_preserves_queueNextTargetBlocked
   have hTail := hInvFull.endpointQueueTailBlockedConsistent
   unfold endpointReplyRecv at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
-  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hLookup : lookupTcb st replyTarget with
   | none => simp [hLookup] at hStep
@@ -20541,8 +20505,6 @@ theorem endpointReply_preserves_blockedOnReplyHasTarget
   unfold endpointReply at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
-  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hLookup : lookupTcb st target with
   | none => simp [hLookup] at hStep
   | some tcb =>
@@ -20594,8 +20556,6 @@ theorem endpointReplyRecv_preserves_blockedOnReplyHasTarget
     blockedOnReplyHasTarget st' := by
   unfold endpointReplyRecv at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
-  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hLookup : lookupTcb st replyTarget with
   | none => simp [hLookup] at hStep
@@ -20668,8 +20628,6 @@ theorem endpointReply_preserves_pendingReceiveReplyWellFormed
     pendingReceiveReplyWellFormed st' := by
   unfold endpointReply at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
-  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hLookup : lookupTcb st target with
   | none => simp [hLookup] at hStep
@@ -20842,8 +20800,6 @@ theorem endpointReplyRecv_preserves_pendingReceiveReplyWellFormed
   unfold endpointReplyRecv at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
-  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hLookup : lookupTcb st replyTarget with
   | none => simp [hLookup] at hStep
   | some tcb =>
@@ -20993,8 +20949,6 @@ theorem endpointReplyRecv_preserves_endpointQueueTailBlockedConsistent
   unfold endpointReplyRecv at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
-  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hLookup : lookupTcb st replyTarget with
   | none => simp [hLookup] at hStep
   | some replyTcb =>
@@ -21123,8 +21077,6 @@ theorem endpointReply_preserves_queueHeadBlockedConsistent
   unfold endpointReply at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
-  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hLookup : lookupTcb st target with
   | none => simp [hLookup] at hStep
   | some tcb =>
@@ -21203,8 +21155,6 @@ theorem endpointReplyRecv_preserves_ipcStateQueueMembershipConsistent
   have hQHBC := hInvFull.2.2.2.2.2.2.2.2.1
   unfold endpointReplyRecv at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
-  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hLookup : lookupTcb st replyTarget with
   | none => simp [hLookup] at hStep
@@ -21618,8 +21568,6 @@ theorem endpointReply_preserves_replyCallerLinkageReciprocal
   unfold endpointReply at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
-  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hLookup : lookupTcb st target with
   | none => simp [hLookup] at hStep
   | some tcb =>
@@ -21693,8 +21641,6 @@ theorem endpointReplyRecv_ok_receiver_ne_replyTarget
   unfold endpointReplyRecv at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
-  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hLookup : lookupTcb st replyTarget with
   | none => simp [hLookup] at hStep
   | some tcb =>
@@ -21732,33 +21678,31 @@ theorem endpointReplyRecv_eq_reply_then_receive
   unfold endpointReplyRecv endpointReply
   split
   · rfl
-  · split
-    · rfl
-    · cases lookupTcb st replyTarget with
-      | none => rfl
-      | some tcb =>
+  · cases lookupTcb st replyTarget with
+    | none => rfl
+    | some tcb =>
+      simp only []
+      cases tcb.ipcState with
+      | ready | blockedOnSend _ | blockedOnReceive _ | blockedOnNotification _
+        | blockedOnCall _ => rfl
+      | blockedOnReply epId rt =>
         simp only []
-        cases tcb.ipcState with
-        | ready | blockedOnSend _ | blockedOnReceive _ | blockedOnNotification _
-          | blockedOnCall _ => rfl
-        | blockedOnReply epId rt =>
+        cases rt with
+        | none => rfl
+        | some expected =>
           simp only []
-          cases rt with
-          | none => rfl
-          | some expected =>
-            simp only []
-            split
-            · cases storeTcbIpcStateAndMessage_fromTcb st replyTarget tcb .ready (some msg) with
+          split
+          · cases storeTcbIpcStateAndMessage_fromTcb st replyTarget tcb .ready (some msg) with
+            | error e => rfl
+            | ok st' =>
+              simp only []
+              cases (match tcb.replyObject with
+                | some rid => SystemState.consumeCallerReply replyTarget rid
+                    (ensureRunnable st' replyTarget)
+                | none => .ok ((), ensureRunnable st' replyTarget)) with
               | error e => rfl
-              | ok st' =>
-                simp only []
-                cases (match tcb.replyObject with
-                  | some rid => SystemState.consumeCallerReply replyTarget rid
-                      (ensureRunnable st' replyTarget)
-                  | none => .ok ((), ensureRunnable st' replyTarget)) with
-                | error e => rfl
-                | ok p => rfl
-            · rfl
+              | ok p => rfl
+          · rfl
 
 open SeLe4n.Model.SystemState in
 /-- WS-RR RR3.9: `endpointReply` preserves the object-store invariant. -/
@@ -21769,8 +21713,6 @@ theorem endpointReply_preserves_objects_invExt
     st'.objects.invExt := by
   unfold endpointReply at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
-  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hLookup : lookupTcb st target with
   | none => simp [hLookup] at hStep
@@ -21812,8 +21754,6 @@ theorem endpointReply_ipcState_backward_off_target
     ∃ tPre, st.objects[x.toObjId]? = some (.tcb tPre) ∧ tcbX.ipcState = tPre.ipcState := by
   unfold endpointReply at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
-  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hLookup : lookupTcb st target with
   | none => simp [hLookup] at hStep
@@ -22986,11 +22926,6 @@ theorem endpointReceiveDualWithCaps_preserves_ipcInvariantFull
     -- state whose context heads no stack, which is every state before OD4.1's
     -- push and every depth-1 state after it.
     (hStackValid : cleanupDonationStackValid st receiver)
-    -- WS-RR RR3.11: the pre-state in-flight badge invariant. The caps this wrapper
-    -- installs are the ones in the message the base receive just delivered, so the
-    -- transfer's side condition is discharged by transporting a *pre*-state property
-    -- rather than by threading `badgeWellFormed` on the result.
-    (hPendingCaps : pendingMessageCapBadgesWellFormed st)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     -- IPC de-threading D4 Slice 2b: enqueue freshness (the running receiver is `.ready`, hence not a
     -- queue member, and the old receiveQ tail is not a cross-queue tail) — dischargeable, replacing the

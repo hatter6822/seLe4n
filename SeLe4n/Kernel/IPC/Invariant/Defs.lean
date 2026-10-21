@@ -964,8 +964,7 @@ theorem pendingMessageReadAgrees_trans {s s' : ThreadIpcState} {ma mb mc : Optio
 /-- WS-RR RR3.11: **every in-flight message satisfies `P`** — the shape shared by
 every property of messages parked in a TCB's `pendingMessage`.
 
-`allPendingMessagesBounded` is the `P := IpcMessage.bounded` instance and
-`pendingMessageCapBadgesWellFormed` below is the in-flight badge instance; the
+`allPendingMessagesBounded` is the `P := IpcMessage.bounded` instance; the
 transitions preserve the family once, parametrically, rather than once per
 property.  The transport is genuinely generic: no step of an IPC transition reads
 the *content* of a parked message, it only moves the message from one TCB to
@@ -1087,8 +1086,7 @@ theorem receiveTransferCaps_frame
         ∀ (i : Nat) (c : TransferCap), caps[i]? = some c →
           ∀ b, c.cap.badge = some b → b.valid) ∧
       (st'' = stR ∨
-        ipcUnwrapCaps { IpcMessage.empty with caps := caps, capsGranted := true }
-          root base true stR = .ok (summary, st'')) := by
+        ipcUnwrapCaps caps root base true stR = .ok (summary, st'')) := by
   unfold receiveTransferCaps at h
   cases req with
   | none =>
@@ -1127,36 +1125,6 @@ theorem receiveTransferCaps_preserves_machine
 and capabilities are word-bounded to `machineWordBits` (64 bits). -/
 def badgeWellFormed (st : SystemState) : Prop :=
   notificationBadgesWellFormed st ∧ capabilityBadgesWellFormed st
-
-/-- WS-RR RR3.11: every capability carried by a message has a word-bounded badge —
-the in-flight counterpart of `capabilityBadgesWellFormed`, which says the same of
-the badges at rest in a CNode. -/
-def messageCapBadgesValid (m : IpcMessage) : Prop :=
-  ∀ (i : Nat) (c : TransferCap) (badge : SeLe4n.Badge),
-    m.caps[i]? = some c →
-    c.cap.badge = some badge →
-    badge.valid
-
-/-- WS-RR RR3.11: badges on capabilities **in flight** — carried inside a TCB's
-`pendingMessage` — are word-bounded, exactly as `capabilityBadgesWellFormed`
-requires of the badges at rest in a CNode.
-
-`badgeWellFormed` constrains badges *at rest*; the IPC capability transfer
-installs an in-flight capability into the receiver's CNode verbatim
-(`ipcTransferSingleCap` stores `tc.cap`, it does not re-resolve it), so without
-this the transfer can turn an out-of-range in-flight badge into an out-of-range
-badge at rest.  That is the hole the `*WithCaps` `ipcInvariantFull` bundles were
-covering by threading `badgeWellFormed` on their post-state; stated here as a
-pre-state property, it is dischargeable and the bundles establish the conjunct
-instead. -/
-def pendingMessageCapBadgesWellFormed (st : SystemState) : Prop :=
-  pendingMessagesSatisfy messageCapBadgesValid st
-
-/-- WS-RR RR3.11: the in-flight badge property depends only on the object store. -/
-theorem pendingMessageCapBadgesWellFormed_of_getElem_eq {s1 s2 : SystemState}
-    (hEq : ∀ oid : SeLe4n.ObjId, s2.objects[oid]? = s1.objects[oid]?)
-    (h : pendingMessageCapBadgesWellFormed s1) : pendingMessageCapBadgesWellFormed s2 :=
-  pendingMessagesSatisfy_of_getElem_eq hEq h
 
 /-- V3-G1 (M-PRF-5) / WS-ZA ZA4.7: **a blocked thread holds no delivered
     message.**
@@ -7976,14 +7944,6 @@ theorem cleanupPreReceiveDonation_preserves_allPendingMessagesBounded
     (hObjInv : st.objects.invExt)
     (hInv : allPendingMessagesBounded st) :
     allPendingMessagesBounded (cleanupPreReceiveDonation st receiver) :=
-  cleanupPreReceiveDonation_preserves_pendingMessagesSatisfy st receiver hObjInv hInv
-
-/-- WS-RR RR3.11: cleanupPreReceiveDonation preserves the in-flight badge invariant. -/
-theorem cleanupPreReceiveDonation_preserves_pendingMessageCapBadgesWellFormed
-    (st : SystemState) (receiver : SeLe4n.ThreadId)
-    (hObjInv : st.objects.invExt)
-    (hInv : pendingMessageCapBadgesWellFormed st) :
-    pendingMessageCapBadgesWellFormed (cleanupPreReceiveDonation st receiver) :=
   cleanupPreReceiveDonation_preserves_pendingMessagesSatisfy st receiver hObjInv hInv
 
 /-- AI4-A: cleanupPreReceiveDonation preserves badgeWellFormed.

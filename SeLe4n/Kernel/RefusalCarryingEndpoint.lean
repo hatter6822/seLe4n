@@ -44,7 +44,7 @@ theorem routedSenderFrame (st : SystemState) (tid : SeLe4n.ThreadId)
       ∀ badge grant, (st.getTcb? tid).isSome = true →
         sendPayloadMessage st tid (.frame badge grant) =
           { registers := Architecture.regMessageBody SeLe4n.arm64DefaultLayout rf mi.length,
-            caps := #[], badge := badge, capsGranted := grant } := by
+            badge := badge } := by
   cases hT : st.getTcb? tid with
   | none =>
     refine ⟨fun endpointId _ _ => ?_, fun _ _ h => by cases h⟩
@@ -153,16 +153,16 @@ message of at most four words read in the sender's registers. -/
 theorem sendRendezvous_eq_delivered (st : SystemState) (endpointId : SeLe4n.ObjId)
     (r : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
-    (badgeWord : SeLe4n.Badge) (badged : Bool) (granted : Bool) (core : Concurrency.CoreId)
+    (badgeWord : SeLe4n.Badge) (badged : Bool) (core : Concurrency.CoreId)
     (hNo : st.objects.noResizeDue) (hSz : Architecture.regMessageLength layout len ≤ 4) :
     Architecture.stageWokenDelivery
         (clearWokenReceiverStashPure (some r)
           (wakeThread (storeSendRendezvous st endpointId r next
-            { registers := Architecture.regMessageBody layout rf len, caps := #[],
-              badge := SeLe4n.Badge.opt badgeWord badged, capsGranted := granted }) r core).1)
+            { registers := Architecture.regMessageBody layout rf len,
+              badge := SeLe4n.Badge.opt badgeWord badged }) r core).1)
         (some r) 0 =
       performSendDelivered st endpointId r (ThreadId.optCode next) layout rf len badgeWord badged
-        granted core := by
+        core := by
   have hNo0 := storeSendRendezvousWith_noResizeDue st endpointId r next ipcReadyTcb hNo
   unfold performSendDelivered storeSendRendezvousReady
   rw [Architecture.regMessageFrameW_eq, SeLe4n.ThreadId.ofOptCode_optCode]
@@ -221,7 +221,7 @@ the general arm. -/
                           (ctx.endpointLabelOf epId) &&
                         sendWakesInPlace st epId r rt.queueNext then
                       .ok ((), performSendDelivered st epId r rt.queueNextCode layout rf len
-                        cap.badgeWord cap.badged (cap.rights.mem .grant) executingCore)
+                        cap.badgeWord cap.badged executingCore)
                     else endpointSendCheckedArmGeneralR ctx tid executingCore cap st
                 | none => endpointSendCheckedArmGeneralR ctx tid executingCore cap st
             | none =>
@@ -271,7 +271,7 @@ theorem endpointSendCheckedArmR_eq_general (ctx : LabelingContext)
               (hMsg _ _ hS) (hReq _ _ _) hE hH hT hS hW hFlow]
             simp only []
             rw [← TCB.optCode_queueNext,
-              ← sendRendezvous_eq_delivered _ _ _ _ _ _ _ _ _ _ _ hNo hSz]
+              ← sendRendezvous_eq_delivered _ _ _ _ _ _ _ _ _ _ hNo hSz]
             rfl
           · rfl
         · rfl
@@ -532,7 +532,7 @@ in place on a state nothing else holds (`performCallRendezvous`,
                             callWakesInPlace st epId tid r rt rid then
                           .ok ((), callRendezvousDelivered st epId tid r rt.queueNextCode rid
                             layout rf len
-                            cap.badgeWord cap.badged (cap.rights.mem .grant) executingCore)
+                            cap.badgeWord cap.badged executingCore)
                         else endpointCallCheckedArmGeneralR ctx tid executingCore cap st
                     | none => endpointCallCheckedArmGeneralR ctx tid executingCore cap st
                 | none => endpointCallCheckedArmGeneralR ctx tid executingCore cap st
@@ -572,7 +572,7 @@ theorem endpointCallCheckedArmR_eq_general (ctx : LabelingContext)
                 (hMsg cap.badge (cap.rights.mem .grant) hS) (hReq epId _ _)
                 ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hE) hH
                 ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hRid hW hFlow
-              rw [callRendezvousDelivered_eq _ _ _ _ _ _ _ _ _ _ _ _ _ hW]
+              rw [callRendezvousDelivered_eq _ _ _ _ _ _ _ _ _ _ _ _ hW]
               simp only [endpointCallCheckedArmGeneralR, hTgt, hE, Option.bind_some, hH, hD]
               rfl
             · rfl
@@ -736,7 +736,7 @@ def endpointReplyCheckedArmGeneralR (ctx : LabelingContext) (mi : MessageInfo)
         | some callerTid =>
             if securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf callerTid) then
               match replyTransferOnCoreChecked ctx tid callerTid mi regs
-                  { registers := extractMessageRegisters regs mi, caps := #[],
+                  { registers := extractMessageRegisters regs mi,
                     badge := cap.badge } executingCore st with
               | .ok ((), st') => .ok ((), st')
               | .error e => .error (e, st)
@@ -761,7 +761,7 @@ theorem endpointReplyCheckedArmGeneralR_eq (ctx : LabelingContext)
       simp only []
       split
       · rcases replyTransferOnCoreChecked ctx tid callerTid decoded.msgInfo decoded.msgRegs
-          { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo, caps := #[],
+          { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
             badge := cap.badge } executingCore st with _ | ⟨⟨⟩, st'⟩ <;> rfl
       · rfl
   | _ => rfl
@@ -857,7 +857,7 @@ theorem endpointReplyCheckedArmR_eq_general (ctx : LabelingContext)
                 rw [replyTransferChecked_inPlace ctx st tid c server ct ep rid
                   { length := len, extraCaps := extraCaps, label := label }
                   (Architecture.regMessageRegs layout rf) _ executingCore
-                  (by rw [← Architecture.regMessageBody_size layout rf len] at hSz; exact hSz) rfl
+                  (by rw [← Architecture.regMessageBody_size layout rf len] at hSz; exact hSz)
                   ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hIpc hRO hSRes hW hFlow]
                 rfl
               · rfl

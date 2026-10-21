@@ -567,12 +567,11 @@ in `.receive`; the peer sends body `[7]` plus ONE extra capability
 (`payloadCapPtr`, resolved through the sender's own CSpace) under the
 endpoint cap at `epPtr`.  The woken receiver's staged `x1` must report
 the **installed** count — `0` when the transfer was grant-denied (however
-many caps the delivered message still carries), `1` when it landed in the
-receive slot.  Returns (staged frame, delivered `pendingMessage` cap
-count, receive-slot-0 occupied?). -/
+many addresses the sender's frame names), `1` when it landed in the
+receive slot.  Returns (staged frame, receive-slot-0 occupied?). -/
 private def capsSendScenario (epPtr : Nat) :
     Except KernelError
-      (Kernel.Architecture.SyscallReturnFrame × Nat × Bool) := do
+      (Kernel.Architecture.SyscallReturnFrame × Bool) := do
   let (out1, st1) ← dispatchFromAbiOn SeLe4n.Kernel.Concurrency.bootCoreId
     SyscallId.receive.toNat 0 epCapPtr.toUInt64 0 0 0 twoThreadState
   if out1 != .blocks then throw .illegalState
@@ -582,13 +581,10 @@ private def capsSendScenario (epPtr : Nat) :
   let msgInfoRaw : UInt64 := (1 + (1 <<< 7) : Nat).toUInt64
   let (_, st2) ← dispatchFromAbiOn core1
     SyscallId.send.toNat msgInfoRaw epPtr.toUInt64 7 payloadCapPtr.toUInt64 0 st1
-  let deliveredCaps := match st2.getTcb? callerTid with
-    | some tcb => (tcb.pendingMessage.map (·.caps.size)).getD 0
-    | none => 0
   let slot0Occupied := match st2.objects[callerCn]? with
     | some (.cnode c) => ((c.lookup (SeLe4n.Slot.ofNat 0))).isSome
     | _ => false
-  pure (stagedFrame st2 callerTid, deliveredCaps, slot0Occupied)
+  pure (stagedFrame st2 callerTid, slot0Occupied)
 
 -- ============================================================================
 -- §10  WS-SM SM9.A.10 — the audit reads return their computed word, end to end
@@ -794,9 +790,9 @@ private def returnAbiTraceLines : List String :=
         1 0 0 auditWitnessState)
   -- PR #866 round-2: the transfer-honesty observable — a grant-denied
   -- transfer's staged frame reports extraCaps 0 (x1 = 1, length only),
-  -- however many caps the delivered message still carries.
+  -- however many capability addresses the sender's frame names.
   , (match capsSendScenario epCapNoGrantPtr with
-     | .ok (f, _, _) => s!"[ret-abi] staged grant-denied transfer frame (installed extraCaps 0): {frameCells f}"
+     | .ok (f, _) => s!"[ret-abi] staged grant-denied transfer frame (installed extraCaps 0): {frameCells f}"
      | .error e => s!"[ret-abi] staged grant-denied transfer frame (installed extraCaps 0): dispatch-error {reprStr e}")
   ]
 
@@ -913,18 +909,7 @@ private def runBlockedWaiterStagingWitnesses : IO Unit := do
   -- extraCaps is the INSTALLED count, never the requested one
   match capsSendScenario epCapNoGrantPtr with
   | .error e => assertBool s!"9h dispatches (got .error {reprStr e})" false
-  | .ok (frame, deliveredCaps, slot0) => do
-      -- PR #873 round 14: the message now carries **nothing**, where it used to
-      -- carry the requested cap and have it denied at the unwrap.  Resolution
-      -- mints a persistent CDT node per source slot and marks that slot as
-      -- having a transfer in flight, so resolving for a sender that cannot
-      -- transfer spent the bounded node counter and made `cspaceDeleteSlot`
-      -- answer `.revocationRequired` for a derivation the unwrap was always
-      -- going to deny.  The receiver could never see these caps anyway — the
-      -- frame below reports extraCaps 0 either way — so carrying them bought
-      -- nothing and cost a bounded resource.
-      assertBool "9h control: a grant-denied send resolves NOTHING (caps.size = 0)"
-        (deliveredCaps == 0)
+  | .ok (frame, slot0) => do
       -- The honesty property this section is named for — extraCaps is the
       -- INSTALLED count, never the requested one — is pinned by the 9h+ positive
       -- control below, where a granting endpoint installs one and the frame
@@ -938,7 +923,7 @@ private def runBlockedWaiterStagingWitnesses : IO Unit := do
         (frame.x0 == epBadgeVal.toUInt64 && frame.x2 == 7)
   match capsSendScenario epCapPtr with
   | .error e => assertBool s!"9h+ dispatches (got .error {reprStr e})" false
-  | .ok (frame, _, slot0) => do
+  | .ok (frame, slot0) => do
       assertBool "9h positive control: a granted transfer stages extraCaps = 1 (x1 = 1 + (1<<7))"
         (frame.x1 == (1 + (1 <<< 7) : Nat).toUInt64)
       assertBool "9h positive control: the transferred cap landed in receive slot 0"

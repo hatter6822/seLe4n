@@ -1,3 +1,48 @@
+## v0.36.121 — WS-ZA ZA5.4 part 11: an IPC message holds no capability
+
+The first part of the seL4 untyped reset
+(`docs/planning/UNTYPED_RESET_PLAN.md`, new).  A reset that checks only that
+the untyped's capability has no derivation children is sound only if every
+capability naming an object lives in a slot.  A message could hold resolved
+capabilities, so a thread's parked message was a reference outside any slot
+that the reset's whole-store scan had to search.  No executable path ever put
+one there, because a blocked sender parks addresses and the receive resolves
+them at the rendezvous, as seL4's `lookupExtraCaps`.  The type now says so.
+
+- **`IpcMessage` is registers and a badge** (`Model/Object/Types.lean`): the
+  `caps` array and the `capsGranted` bit are deleted.  Message boundedness
+  constrains the register count only.  The grant right a blocked sender
+  carries stays in its thread state (`ipcCanGrant`).
+- **Capability transfer takes the resolved array**
+  (`IPC/Operations/CapTransfer.lean`, `IPC/DualQueue/WithCaps.lean`):
+  `ipcUnwrapCaps` takes `Array TransferCap`, and `receiveTransferCaps` passes
+  what it resolved; every `ipcUnwrapCaps` theorem is restated over the array.
+- **Dead code deleted**: the reply paths' `.ipcMessageTooManyCaps` refusal
+  (`IPC/DualQueue/Transport.lean`, `IPC/CrossCore/EndpointReply.lean`) and every
+  hypothesis carrying it, the grant parameters of the delivered-message
+  helpers (`DeliveredInPlace.lean`, `RefusalCarryingEndpoint.lean`),
+  `pendingMessageCapBadgesWellFormed` and its preservation lemmas, and the
+  unused `resolveExtraCapsDetailed` / `resolveExtraCapsGated` with their
+  theorems (`API.lean`).  `ipcMessageTooManyCaps` (28) and
+  `partialResolution` (51) stay as reserved ABI codes.  The parked-message arms
+  of the reset's reference scan (`objectNamesListed`) and of the boot's
+  idle-object check (`tcbReferencesReservedIdleSlot`) are gone.
+- **Fault messages**: `faultMessage_transfers_no_authority` states the fault's
+  lack of authority through its request (`sendPayloadCapRequest … = none`, grant
+  false).
+- **Tests**: fixtures that built messages holding capabilities now put the
+  addresses in the sender's frame and go through `resolveExtraCaps`
+  (`MainTraceHarness`, `OperationChainSuite`, `InformationFlowSuite`,
+  `SmpInformationFlowSuite`).  Checks whose only subject was a parked
+  capability are deleted.  The KernelError matrix's caps row is now the
+  over-long reply-receive message, still 48 rows.  `main_trace_smoke.expected`
+  is unchanged.
+- **Tier 3**: anchors pin `ipcUnwrapCaps` over the array and the blocked
+  sender's grant read; negative checks refuse a capability-holding or `Bool`
+  field on `IpcMessage`.
+- **Docs**: `REGISTERED_DEBT.md` row 23 closed (its theorem is deleted), and
+  the partial-resolution policy row now cites `resolveExtraCaps`.
+
 ## v0.36.120 — WS-ZA ZA5.4 part 10: a retype allocates only its new object's cells
 
 An untyped retype checks every refusal before it writes anything and then

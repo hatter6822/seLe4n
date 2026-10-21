@@ -399,7 +399,7 @@ theorem faultReplyOnCore_runQueueEntryStage (replier faulted : SeLe4n.ThreadId) 
   · rename_i stR sgi hR
     rw [hR] at hE
     obtain ⟨s, hOk⟩ := endpointReplyCrossCoreDispatch_ok_reply (by rw [hR])
-    obtain ⟨-, -, tcb', ep, ex, -, hL, hS, -⟩ := endpointReplyOnCore_ok_decompose _ _ _ _ _ hOk
+    obtain ⟨-, tcb', ep, ex, -, hL, hS, -⟩ := endpointReplyOnCore_ok_decompose _ _ _ _ _ hOk
     exact hE.entry.trans (faultReplyApplyOnCore_runQueueEntryStage stR faulted _
       (fun x hx => endpointReplyCrossCoreDispatch_ok_target_ready replier faulted _ c st hInv
         (by rw [hR]) (by rw [hR]; exact hx))
@@ -544,7 +544,7 @@ theorem endpointReplyOnCore_preserves_queueHeadBlockedConsistent (replier target
     (hQ : queueHeadBlockedConsistent st) {sgi? : Option (Concurrency.CoreId × Concurrency.SgiKind)}
     (hOk : (endpointReplyOnCore replier target msg c st).2 = .ok sgi?) :
     queueHeadBlockedConsistent (endpointReplyOnCore replier target msg c st).1 := by
-  obtain ⟨-, -, tcb0, e, ex, -, hL0, hS0, -⟩ := endpointReplyOnCore_ok_decompose _ _ _ _ _ hOk
+  obtain ⟨-, tcb0, e, ex, -, hL0, hS0, -⟩ := endpointReplyOnCore_ok_decompose _ _ _ _ _ hOk
   rcases endpointReplyOnCore_state_eq replier target msg c st with
     hEq | ⟨tcb, st1, server, pre, hL, hStore, hPost, hTail⟩
   · rw [hEq]; exact hQ

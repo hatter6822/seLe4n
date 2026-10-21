@@ -1059,8 +1059,6 @@ theorem endpointReplyRecv_passiveServerIdleFrameOnCore
   unfold endpointReplyRecv at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
-  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hLookup : lookupTcb st replyTarget with
   | none => simp [hLookup] at hStep
   | some tcb =>
@@ -1153,8 +1151,6 @@ theorem endpointReply_passiveServerIdleFrameOnCore
     passiveServerIdleFrameOnCore st st' c := by
   unfold endpointReply at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
-  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hLookup : lookupTcb st target with
   | none => simp [hLookup] at hStep
@@ -1631,20 +1627,20 @@ open SeLe4n.Model.SystemState in
 writes only CNode caps (`ipcUnwrapCaps_tcb_backward`) and never touches the
 scheduler (`ipcUnwrapCaps_preserves_scheduler`). -/
 theorem ipcUnwrapCaps_passiveServerIdleFrameOnCore
-    (msg : IpcMessage) (receiverRoot : SeLe4n.ObjId)
+    (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
     (slotBase : SeLe4n.Slot) (grantRight : Bool)
     (st st' : SystemState) (summary : CapTransferSummary) {c : CoreId}
     (hObjInv : st.objects.invExt)
-    (hStep : ipcUnwrapCaps msg receiverRoot slotBase grantRight st
+    (hStep : ipcUnwrapCaps caps receiverRoot slotBase grantRight st
       = .ok (summary, st')) :
     passiveServerIdleFrameOnCore st st' c :=
   passiveServerIdleFrameOnCore_of_backward
     (fun tid tcb' hTcb' =>
       ⟨tcb', (getTcb?_eq_some_iff st tid tcb').mpr
-        (ipcUnwrapCaps_tcb_backward msg receiverRoot slotBase grantRight st st'
+        (ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight st st'
           summary tid.toObjId tcb' hObjInv hStep
           ((getTcb?_eq_some_iff st' tid tcb').mp hTcb')), rfl, rfl⟩)
-    (ipcUnwrapCaps_preserves_scheduler msg receiverRoot slotBase grantRight
+    (ipcUnwrapCaps_preserves_scheduler caps receiverRoot slotBase grantRight
       st st' summary hStep)
 
 open SeLe4n.Model.SystemState in
@@ -1816,10 +1812,6 @@ theorem endpointReceiveDualWithCaps_preserves_ipcInvariantFull_perCore
     (hObjInv : st.objects.invExt)
     -- **WS-OD OD4.4**: see `endpointReceiveDualWithCaps_preserves_ipcInvariantFull`.
     (hStackValid : cleanupDonationStackValid st receiver)
-    -- WS-RR RR3.11: replaces the threaded `hDualQueue'` / `hBadge'`. The base bundle
-    -- now **establishes** both conjuncts; the in-flight badge invariant it needs
-    -- instead is a property of the *pre*-state.
-    (hPendingCaps : pendingMessageCapBadgesWellFormed st)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hFreshReceiver : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
       st.objects[epId]? = some (.endpoint ep) →
@@ -1845,7 +1837,7 @@ theorem endpointReceiveDualWithCaps_preserves_ipcInvariantFull_perCore
     ipcInvariantFull_perCore st' c :=
   ipcInvariantFull_perCore_of_full
     (endpointReceiveDualWithCaps_preserves_ipcInvariantFull endpointId receiver replyId receiverCspaceRoot receiverSlotBase st st' senderId summary
-      (ipcInvariantFull_of_smp hInv) hObjInv hStackValid hPendingCaps hAllBudgetsNone
+      (ipcInvariantFull_of_smp hInv) hObjInv hStackValid hAllBudgetsNone
       hFreshReceiver hRecvTailFresh hReplyIdValid hReceiverNotRecv
       (fun tcb hRaw => hReceiverReady tcb ((getTcb?_eq_some_iff st receiver tcb).mpr hRaw))
       hStep)

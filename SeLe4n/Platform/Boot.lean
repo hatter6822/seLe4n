@@ -854,8 +854,7 @@ def cnodeReferencesReservedIdleSlot (cn : CNode) : Bool :=
       ids; `queuePrev`, `queueNext` and `queuePPrev`'s `.tcbNext` — thread
       ids (a stale `queuePPrev` also makes `endpointQueueEnqueue` refuse the
       otherwise detached thread with `.illegalState`, so the boot-safety
-      check requires all three links empty); `pendingMessage` — carried
-      capabilities, by their targets; `schedContextBinding`,
+      check requires all three links empty); `schedContextBinding`,
       `timeoutBudget` — SchedContext ids and the donation owner;
       `replyObject`, `pendingReceiveReply` — reply object ids; `ntfnPrevCode`,
       `ntfnNextCode` (WS-ZA ZA4.4) — thread ids, the notification-queue links;
@@ -866,13 +865,14 @@ def cnodeReferencesReservedIdleSlot (cn : CNode) : Bool :=
       `faultHandler` (a CPtr into the thread's own CSpace, not an id),
       `maxControlledPriority`, `pipBoost`, `timedOut`,
       `cpuAffinity` (a core), `pendingFault` (addresses, syndromes and a
-      register window) and the blocked-sender fields `ipcBadge`, `ipcBadged`,
+      register window), `pendingMessage` (registers, a badge and a label:
+      an `IpcMessage` holds no capability) and the blocked-sender fields `ipcBadge`, `ipcBadged`,
       `ipcCanGrant`, `ipcFaultSend` (WS-ZA ZA4.7: a badge word and three
       flags) hold no id. -/
 def tcbReferencesReservedIdleSlot (tcb : TCB) : Bool :=
   match tcb with
   | ⟨tid, _priority, _domain, cspaceRoot, vspaceRoot, _ipcBuffer, _ipcObjectCode, _threadState,
-     _timeSlice, _deadline, queuePrevCode, queuePPrevCode, queueNextCode, pendingMessage, _registerContext,
+     _timeSlice, _deadline, queuePrevCode, queuePPrevCode, queueNextCode, _pendingMessage, _registerContext,
      _faultHandlerSet, _faultHandlerWord, boundNotificationCode, scBindingScCode, scBindingOwnerCode, timeoutBudget,
      _maxControlledPriority, _pipBoost, _timedOut, _cpuAffinity, replyObjectCode,
      pendingReceiveReplyCode, _pendingFault, _fpContext, ntfnPrevCode, ntfnNextCode,
@@ -887,8 +887,6 @@ def tcbReferencesReservedIdleSlot (tcb : TCB) : Bool :=
     (match QueuePPrev.ofOptCode queuePPrevCode with
      | some (.tcbNext prev) => SeLe4n.Kernel.isIdleThreadId prev
      | _ => false) ||
-    pendingMessage.any (fun msg =>
-      msg.caps.any (fun tc => SeLe4n.Kernel.capTargetsReservedIdleObject tc.cap)) ||
     timeoutBudget.any (fun sc => SeLe4n.Kernel.isIdleObjId sc.toObjId) ||
     (match SeLe4n.Kernel.SchedContextBinding.ofCodes scBindingScCode scBindingOwnerCode with
      | .unbound => false
@@ -920,8 +918,6 @@ theorem tcbReferencesReservedIdleSlot_def (tcb : TCB) :
        (match tcb.queuePPrev with
         | some (.tcbNext prev) => SeLe4n.Kernel.isIdleThreadId prev
         | _ => false) ||
-       tcb.pendingMessage.any (fun msg =>
-         msg.caps.any (fun tc => SeLe4n.Kernel.capTargetsReservedIdleObject tc.cap)) ||
        tcb.timeoutBudget.any (fun sc => SeLe4n.Kernel.isIdleObjId sc.toObjId) ||
        (match tcb.schedContextBinding with
         | .unbound => false

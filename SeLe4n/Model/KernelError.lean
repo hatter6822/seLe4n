@@ -80,7 +80,10 @@ inductive KernelError where
   | childIdCollision        -- WS-H2/A-26: childId collides with existing object or untyped child
   | addressOutOfBounds      -- WS-H11/A-05: physical address exceeds machine address width
   | ipcMessageTooLarge      -- WS-H12d/A-09: IPC message registers exceed maxMessageRegisters (120)
-  | ipcMessageTooManyCaps   -- WS-H12d/A-09: IPC message caps exceed maxExtraCaps (3)
+  | ipcMessageTooManyCaps   -- WS-H12d/A-09: reserved syscall-ABI code.  Raised
+                           -- by no path: a message holds no capabilities, and
+                           -- the 2-bit `extraCaps` field cannot exceed
+                           -- maxExtraCaps (3)
   | backingObjectMissing    -- WS-H13/A-29: service backing object not in object store
   | invalidRegister         -- WS-J1-B: register index out of architectural bounds
   | invalidSyscallNumber    -- WS-J1-B: syscall number register value not in modeled set
@@ -114,15 +117,14 @@ inductive KernelError where
                            -- type-level promotion failure path; the type
                            -- system enforces the discipline at call sites
                            -- that demand `NonNullCap` arguments.
-  | partialResolution      -- AN7-E (API-M01): the gated extra-cap resolver
-                           -- (`resolveExtraCapsGated`) met an unresolvable
-                           -- capability address.  seL4-compatible semantics
-                           -- silently drop such entries, and that is what
-                           -- every dispatch arm does; this variant lets a
-                           -- deployment that selects the gated resolver tell
-                           -- a *partial* resolution from a *complete* one.
-                           -- No arm selects it yet — the selection policy is
-                           -- registered debt (REGISTERED_DEBT.md table C).
+  | partialResolution      -- AN7-E (API-M01): an unresolvable extra-capability
+                           -- address, for a deployment that refuses a
+                           -- *partial* resolution rather than silently
+                           -- dropping the entry as seL4 does.  Every dispatch
+                           -- arm drops (`resolveExtraCaps`), so nothing raises
+                           -- it; the code stays allocated in the syscall ABI.
+                           -- The selection policy is registered debt
+                           -- (REGISTERED_DEBT.md table C).
   | missingSchedContext    -- R5.E (DEEP-SCH-04): a bound-budget scheduler
                            -- path lost track of its bound `SchedContext`
                            -- (object not found in `objects` table).  Pre-R5,

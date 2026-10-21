@@ -444,11 +444,11 @@ capabilities **actually installed** in the receiver's CSpace, clamped to
 the protocol bound, `label` `0` (success).
 
 **`installedCaps` is the transfer summary's `installedCount`, never the
-requested `msg.caps.size`** (PR #866 round-2 review): `ipcUnwrapCaps`
+requested count** (PR #866 round-2 review): `ipcUnwrapCaps`
 succeeds with zero installs when the endpoint lacks `Grant` or the
-receiver's CNode has no free slot, and the delivered message's `caps`
-array keeps the *requested* caps either way — so a count read off the
-message tells the receiver capabilities arrived when none did, and it
+receiver's CNode has no free slot, and the sender's frame keeps the
+*requested* addresses either way — so a count read off the request
+tells the receiver capabilities arrived when none did, and it
 would interpret whatever its receive slots already held as freshly
 delivered authority.  The parameter is deliberately **not defaulted**: a
 site that cannot name its installed count has no business synthesizing a
@@ -513,8 +513,8 @@ the backward-compatibility bridge. -/
 
 /-- The honesty bound (PR #866 round-2): the returned `extraCaps` never
 exceeds the installed count — in particular, a path that installed
-nothing reports zero, whatever the delivered message's `caps` array
-still carries. -/
+nothing reports zero, however many capabilities the sender asked to
+transfer. -/
 theorem returnMessageInfo_extraCaps_le_installed
     (msg : IpcMessage) (installedCaps overflow : Nat) :
     (returnMessageInfo msg installedCaps overflow).extraCaps ≤ installedCaps :=
@@ -966,7 +966,7 @@ incidental register content.
 `installedCaps` (PR #866 round-2 review) is the count of capabilities the
 delivering transfer **actually installed** — the arm's transfer-summary
 `installedCount`, or `0` on a path that runs no unwrap.  It is never the
-delivered message's own `caps.size`, which records what the sender
+number of addresses the sender's frame names, which records what the sender
 *requested*.
 
 **WS-BP BP7.8**: the registers past the fourth are written into the

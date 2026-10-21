@@ -388,18 +388,14 @@ theorem extractMessageRegisters_length (msgRegs : Array RegValue)
   simp [Array.size_extract]
   omega
 
-/-- An IpcMessage constructed from extracted registers with empty caps
-    satisfies `IpcMessage.bounded`. -/
+/-- An IpcMessage constructed from extracted registers satisfies
+    `IpcMessage.bounded`. -/
 theorem extractMessageRegisters_ipc_bounded (msgRegs : Array RegValue)
     (info : MessageInfo) (badge : Option SeLe4n.Badge) :
     IpcMessage.bounded {
       registers := extractMessageRegisters msgRegs info,
-      caps := #[],
-      badge := badge } := by
-  unfold IpcMessage.bounded
-  constructor
-  · exact extractMessageRegisters_length msgRegs info
-  · simp [maxExtraCaps, Array.size]
+      badge := badge } :=
+  extractMessageRegisters_length msgRegs info
 
 /-- S4-D: Round-trip — extracting message registers from an array whose size
     matches the message info length recovers the original array, provided the

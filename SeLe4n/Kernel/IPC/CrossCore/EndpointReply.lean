@@ -126,7 +126,6 @@ def endpointReplyOnCore (_replier : SeLe4n.ThreadId) (target : SeLe4n.ThreadId)
     (msg : IpcMessage) (executingCore : CoreId) (st : SystemState) :
     SystemState × Except KernelError (Option (CoreId × SgiKind)) :=
   if msg.registers.size > maxMessageRegisters then (st, .error .ipcMessageTooLarge)
-  else if msg.caps.size > maxExtraCaps then (st, .error .ipcMessageTooManyCaps)
   else
   match lookupTcb st target with
   | none => (st, .error .objectNotFound)
@@ -1757,7 +1756,6 @@ theorem endpointReplyOnCore_reply_eq
     (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
     (st st' : SystemState) (tcb : TCB) (ep : SeLe4n.ObjId) (expected : SeLe4n.ThreadId)
     (hSz1 : ¬ msg.registers.size > maxMessageRegisters)
-    (hSz2 : ¬ msg.caps.size > maxExtraCaps)
     (hLk : lookupTcb st target = some tcb)
     (hIpc : tcb.ipcState = .blockedOnReply ep (some expected))
     (hStore : storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) = .ok st')
@@ -1766,7 +1764,7 @@ theorem endpointReplyOnCore_reply_eq
       = ((wakeThread st' target executingCore).1.unlinkReplyWaiter target expected,
           .ok (wakeThread st' target executingCore).2) := by
   unfold endpointReplyOnCore
-  rw [if_neg hSz1, if_neg hSz2]
+  rw [if_neg hSz1]
   simp only [hLk, hIpc]
   simp only [hStore]
   simp only [hRO]
@@ -1787,7 +1785,6 @@ theorem endpointReplyOnCore_reply_eq_linked
     (st st' : SystemState) (tcb : TCB) (ep : SeLe4n.ObjId) (expected : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId)
     (hSz1 : ¬ msg.registers.size > maxMessageRegisters)
-    (hSz2 : ¬ msg.caps.size > maxExtraCaps)
     (hLk : lookupTcb st target = some tcb)
     (hIpc : tcb.ipcState = .blockedOnReply ep (some expected))
     (hStore : storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) = .ok st')
@@ -1801,7 +1798,7 @@ theorem endpointReplyOnCore_reply_eq_linked
     (wakeThread st' target executingCore).1 target rid
   refine ⟨st'', hCons, ?_⟩
   unfold endpointReplyOnCore
-  rw [if_neg hSz1, if_neg hSz2]
+  rw [if_neg hSz1]
   simp only [hLk, hIpc]
   simp only [hStore]
   simp only [hRO, hCons]
@@ -1815,7 +1812,6 @@ theorem endpointReplyOnCore_reply_snd_eq
     (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
     (st st' : SystemState) (tcb : TCB) (ep : SeLe4n.ObjId) (expected : SeLe4n.ThreadId)
     (hSz1 : ¬ msg.registers.size > maxMessageRegisters)
-    (hSz2 : ¬ msg.caps.size > maxExtraCaps)
     (hLk : lookupTcb st target = some tcb)
     (hIpc : tcb.ipcState = .blockedOnReply ep (some expected))
     (hStore : storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) = .ok st') :
@@ -1824,10 +1820,10 @@ theorem endpointReplyOnCore_reply_snd_eq
   cases hRO : tcb.replyObject with
   | none =>
       rw [endpointReplyOnCore_reply_eq replier target msg executingCore st st' tcb ep expected
-            hSz1 hSz2 hLk hIpc hStore hRO]
+            hSz1 hLk hIpc hStore hRO]
   | some rid =>
       obtain ⟨st'', _, hEq⟩ := endpointReplyOnCore_reply_eq_linked replier target msg
-        executingCore st st' tcb ep expected rid hSz1 hSz2 hLk hIpc hStore hRO
+        executingCore st st' tcb ep expected rid hSz1 hLk hIpc hStore hRO
       rw [hEq]
 
 /-- WS-SM SM6.C.7 (replay barrier): a reply to a caller **not** in `blockedOnReply`
@@ -1839,12 +1835,11 @@ theorem endpointReplyOnCore_not_blocked_eq
     (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
     (st : SystemState) (tcb : TCB)
     (hSz1 : ¬ msg.registers.size > maxMessageRegisters)
-    (hSz2 : ¬ msg.caps.size > maxExtraCaps)
     (hLk : lookupTcb st target = some tcb)
     (hIpc : ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt) :
     endpointReplyOnCore replier target msg executingCore st = (st, .error .replyCapInvalid) := by
   unfold endpointReplyOnCore
-  rw [if_neg hSz1, if_neg hSz2]
+  rw [if_neg hSz1]
   simp only [hLk]
 
 /-- WS-SM SM6.C (PR #822 review 6J-lYm): a reply whose `replier` does **not** match
@@ -1859,7 +1854,6 @@ theorem endpointReplyOnCore_delegated_replier_eq
     (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
     (st st' : SystemState) (tcb : TCB) (ep : SeLe4n.ObjId) (expected : SeLe4n.ThreadId)
     (hSz1 : ¬ msg.registers.size > maxMessageRegisters)
-    (hSz2 : ¬ msg.caps.size > maxExtraCaps)
     (hLk : lookupTcb st target = some tcb)
     (hIpc : tcb.ipcState = .blockedOnReply ep (some expected))
     (_hDelegated : (replier == expected) = false)
@@ -1869,7 +1863,7 @@ theorem endpointReplyOnCore_delegated_replier_eq
       = ((wakeThread st' target executingCore).1.unlinkReplyWaiter target expected,
           .ok (wakeThread st' target executingCore).2) :=
   endpointReplyOnCore_reply_eq replier target msg executingCore st st' tcb ep expected
-    hSz1 hSz2 hLk hIpc hStore hRO
+    hSz1 hLk hIpc hStore hRO
 
 -- ============================================================================
 -- §4  SM6.C.2 — Cross-core caller wake: SGI emission (`endpointReply_remote_wake`)
@@ -1888,7 +1882,6 @@ theorem endpointReplyOnCore_remote_wake
     (st st' : SystemState) (tcb : TCB) (ep : SeLe4n.ObjId) (expected : SeLe4n.ThreadId)
     (targetTcb' : TCB)
     (hSz1 : ¬ msg.registers.size > maxMessageRegisters)
-    (hSz2 : ¬ msg.caps.size > maxExtraCaps)
     (hLk : lookupTcb st target = some tcb)
     (hIpc : tcb.ipcState = .blockedOnReply ep (some expected))
     (hStore : storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) = .ok st')
@@ -1897,7 +1890,7 @@ theorem endpointReplyOnCore_remote_wake
     (endpointReplyOnCore replier target msg executingCore st).2
       = .ok (some (determineTargetCore st' target, SgiKind.reschedule)) := by
   rw [endpointReplyOnCore_reply_snd_eq replier target msg executingCore st st' tcb ep expected
-        hSz1 hSz2 hLk hIpc hStore]
+        hSz1 hLk hIpc hStore]
   rw [wakeThread_emits_sgi_if_remote st' target executingCore targetTcb' hTcb' hRemote]
 
 /-- WS-SM SM6.C.2: dually, a cross-core reply whose caller is *local* (home core =
@@ -1907,14 +1900,13 @@ theorem endpointReplyOnCore_no_sgi_if_local
     (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
     (st st' : SystemState) (tcb : TCB) (ep : SeLe4n.ObjId) (expected : SeLe4n.ThreadId)
     (hSz1 : ¬ msg.registers.size > maxMessageRegisters)
-    (hSz2 : ¬ msg.caps.size > maxExtraCaps)
     (hLk : lookupTcb st target = some tcb)
     (hIpc : tcb.ipcState = .blockedOnReply ep (some expected))
     (hStore : storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) = .ok st')
     (hLocal : determineTargetCore st' target = executingCore) :
     (endpointReplyOnCore replier target msg executingCore st).2 = .ok none := by
   rw [endpointReplyOnCore_reply_snd_eq replier target msg executingCore st st' tcb ep expected
-        hSz1 hSz2 hLk hIpc hStore]
+        hSz1 hLk hIpc hStore]
   rw [wakeThread_no_sgi_if_local st' target executingCore hLocal]
 
 /-- WS-SM SM6.C.2: a failed reply (wrong replier, no recorded target, caller not
@@ -1925,11 +1917,10 @@ theorem endpointReplyOnCore_not_blocked_no_sgi
     (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
     (st : SystemState) (tcb : TCB)
     (hSz1 : ¬ msg.registers.size > maxMessageRegisters)
-    (hSz2 : ¬ msg.caps.size > maxExtraCaps)
     (hLk : lookupTcb st target = some tcb)
     (hIpc : ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt) :
     (endpointReplyOnCore replier target msg executingCore st).2 = .error .replyCapInvalid := by
-  rw [endpointReplyOnCore_not_blocked_eq replier target msg executingCore st tcb hSz1 hSz2 hLk hIpc]
+  rw [endpointReplyOnCore_not_blocked_eq replier target msg executingCore st tcb hSz1 hLk hIpc]
 
 -- ============================================================================
 -- §5  SM6.C.1/.5 — Lock-set correctness (`.reply` / `.replyRecv`)
@@ -2192,7 +2183,6 @@ theorem endpointReplyOnCore_perCore_delivery
     (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
     (st st' : SystemState) (tcb : TCB) (ep : SeLe4n.ObjId) (expected : SeLe4n.ThreadId)
     (hSz1 : ¬ msg.registers.size > maxMessageRegisters)
-    (hSz2 : ¬ msg.caps.size > maxExtraCaps)
     (hLk : lookupTcb st target = some tcb)
     (hIpc : tcb.ipcState = .blockedOnReply ep (some expected))
     (hStore : storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) = .ok st')
@@ -2213,14 +2203,14 @@ theorem endpointReplyOnCore_perCore_delivery
   cases hRO : tcb.replyObject with
   | none =>
       rw [endpointReplyOnCore_reply_eq replier target msg executingCore st st' tcb ep expected
-            hSz1 hSz2 hLk hIpc hStore hRO]
+            hSz1 hLk hIpc hStore hRO]
       obtain ⟨tU, hU, hUE⟩ := SystemState.getTcb?_of_objectsAgreeOffRunLinks
         (SystemState.unlinkReplyWaiter_objectsAgreeOffRunLinks _ target expected) hWake
       exact ⟨tU, hU, (TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState hUE).trans hWIpc,
         (TCB.proj_eq_of_withoutRunLinks_eq TCB.pendingMessage hUE).trans hWMsg⟩
   | some rid =>
       obtain ⟨st'', hCons, hEq⟩ := endpointReplyOnCore_reply_eq_linked replier target msg
-        executingCore st st' tcb ep expected rid hSz1 hSz2 hLk hIpc hStore hRO
+        executingCore st st' tcb ep expected rid hSz1 hLk hIpc hStore hRO
       rw [hEq]
       have hInvW : (wakeThread st' target executingCore).1.objects.invExt :=
         wakeThread_preserves_objects_invExt st' target executingCore hInv'
@@ -2251,7 +2241,6 @@ theorem endpointReplyOnCore_ok_decompose
     (st : SystemState) {sgi? : Option (CoreId × SgiKind)}
     (hOk : (endpointReplyOnCore replier target msg executingCore st).2 = .ok sgi?) :
     ¬ msg.registers.size > maxMessageRegisters ∧
-    ¬ msg.caps.size > maxExtraCaps ∧
     ∃ (tcb : TCB) (ep : SeLe4n.ObjId) (expected : SeLe4n.ThreadId) (st' : SystemState),
       lookupTcb st target = some tcb ∧
       tcb.ipcState = .blockedOnReply ep (some expected) ∧
@@ -2259,10 +2248,8 @@ theorem endpointReplyOnCore_ok_decompose
   unfold endpointReplyOnCore at hOk
   by_cases hSz1 : msg.registers.size > maxMessageRegisters
   · rw [if_pos hSz1] at hOk; exact absurd hOk (by simp)
-  by_cases hSz2 : msg.caps.size > maxExtraCaps
-  · rw [if_neg hSz1, if_pos hSz2] at hOk; exact absurd hOk (by simp)
-  rw [if_neg hSz1, if_neg hSz2] at hOk
-  refine ⟨hSz1, hSz2, ?_⟩
+  rw [if_neg hSz1] at hOk
+  refine ⟨hSz1, ?_⟩
   cases hLk : lookupTcb st target with
   | none => rw [hLk] at hOk; exact absurd hOk (by simp)
   | some tcb =>
@@ -2305,11 +2292,11 @@ theorem endpointReplyOnCore_ok_target_ready
     (hTcb : (endpointReplyOnCore replier target msg executingCore st).1.getTcb? target
         = some t) :
     t.ipcState = .ready := by
-  obtain ⟨hSz1, hSz2, tcb, ep, expected, st', hLk, hIpc, hStore⟩ :=
+  obtain ⟨hSz1, tcb, ep, expected, st', hLk, hIpc, hStore⟩ :=
     endpointReplyOnCore_ok_decompose replier target msg executingCore st hOk
   obtain ⟨t', hT', hReady, _⟩ :=
     endpointReplyOnCore_perCore_delivery replier target msg executingCore st st' tcb ep
-      expected hSz1 hSz2 hLk hIpc hStore hObjInv
+      expected hSz1 hLk hIpc hStore hObjInv
   rw [hTcb] at hT'
   rw [Option.some.injEq] at hT'
   rw [hT']
@@ -3145,22 +3132,21 @@ theorem endpointReplyOnCore_replay_rejected
     (executingCore executingCore2 : CoreId)
     (st st' : SystemState) (tcb : TCB) (ep : SeLe4n.ObjId) (expected : SeLe4n.ThreadId)
     (hSz1 : ¬ msg.registers.size > maxMessageRegisters)
-    (hSz2 : ¬ msg.caps.size > maxExtraCaps)
     (hLk : lookupTcb st target = some tcb)
     (hIpc : tcb.ipcState = .blockedOnReply ep (some expected))
     (hStore : storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) = .ok st')
     (hObjInv : st.objects.invExt)
     (hSz1' : ¬ msg2.registers.size > maxMessageRegisters)
-    (hSz2' : ¬ msg2.caps.size > maxExtraCaps) :
+    :
     (endpointReplyOnCore replier2 target msg2 executingCore2
         (endpointReplyOnCore replier target msg executingCore st).1).2 = .error .replyCapInvalid := by
   obtain ⟨t, hGet, hReady, _⟩ :=
     endpointReplyOnCore_perCore_delivery replier target msg executingCore st st' tcb ep expected
-      hSz1 hSz2 hLk hIpc hStore hObjInv
+      hSz1 hLk hIpc hStore hObjInv
   have hLkPost : lookupTcb (endpointReplyOnCore replier target msg executingCore st).1 target = some t :=
     lookupTcb_some_of_getTcb?_some st _ target tcb t hLk hGet
   rw [endpointReplyOnCore_not_blocked_no_sgi replier2 target msg2 executingCore2
-        (endpointReplyOnCore replier target msg executingCore st).1 t hSz1' hSz2' hLkPost
+        (endpointReplyOnCore replier target msg executingCore st).1 t hSz1' hLkPost
         (by intro ep' rt'; rw [hReady]; exact fun h => ThreadIpcState.noConfusion h)]
 
 -- ============================================================================
@@ -3220,7 +3206,6 @@ theorem endpointReplyOnCore_perCore_consistent
     (st st' : SystemState) (tcb : TCB) (ep : SeLe4n.ObjId) (expected : SeLe4n.ThreadId)
     (c' : CoreId)
     (hSz1 : ¬ msg.registers.size > maxMessageRegisters)
-    (hSz2 : ¬ msg.caps.size > maxExtraCaps)
     (hLk : lookupTcb st target = some tcb)
     (hIpc : tcb.ipcState = .blockedOnReply ep (some expected))
     (hStore : storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) = .ok st')
@@ -3237,12 +3222,12 @@ theorem endpointReplyOnCore_perCore_consistent
   cases hRO : tcb.replyObject with
   | none =>
       rw [endpointReplyOnCore_reply_eq replier target msg executingCore st st' tcb ep expected
-            hSz1 hSz2 hLk hIpc hStore hRO]
+            hSz1 hLk hIpc hStore hRO]
       simp only [SystemState.unlinkReplyWaiter_scheduler]
       exact ⟨by rw [hRQ, hSched], by rw [hCur, hSched]⟩
   | some rid =>
       obtain ⟨st'', hCons, hEq⟩ := endpointReplyOnCore_reply_eq_linked replier target msg
-        executingCore st st' tcb ep expected rid hSz1 hSz2 hLk hIpc hStore hRO
+        executingCore st st' tcb ep expected rid hSz1 hLk hIpc hStore hRO
       -- The folded removal is scheduler-invisible (`removeCallerReplyFrame_scheduler_eq`),
       -- so the other-core frame transports across it unchanged.
       have hSchedC : st''.scheduler = (wakeThread st' target executingCore).1.scheduler :=

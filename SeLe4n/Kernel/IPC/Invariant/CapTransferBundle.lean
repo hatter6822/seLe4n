@@ -72,19 +72,19 @@ open SeLe4n.Model
 `blockedThreadTimeoutConsistent` — every post-state TCB is its pre-state self,
 and a pre-state SchedContext survives the transfer forward. -/
 theorem ipcUnwrapCaps_preserves_blockedThreadTimeoutConsistent
-    (msg : IpcMessage) (receiverRoot : SeLe4n.ObjId)
+    (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
     (slotBase : SeLe4n.Slot) (grantRight : Bool)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt)
     (hInv : blockedThreadTimeoutConsistent st)
-    (hStep : ipcUnwrapCaps msg receiverRoot slotBase grantRight st
+    (hStep : ipcUnwrapCaps caps receiverRoot slotBase grantRight st
              = .ok (summary, st')) :
     blockedThreadTimeoutConsistent st' := by
   intro tid tcb scId hTcb' hBudget
   obtain ⟨⟨sc, hSc⟩, hBlk⟩ := hInv tid tcb scId
-    (ipcUnwrapCaps_tcb_backward msg receiverRoot slotBase grantRight
+    (ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight
       st st' summary tid.toObjId tcb hObjInv hStep hTcb') hBudget
-  exact ⟨⟨sc, ipcUnwrapCaps_preserves_schedContext_objects msg receiverRoot slotBase
+  exact ⟨⟨sc, ipcUnwrapCaps_preserves_schedContext_objects caps receiverRoot slotBase
     grantRight st st' summary scId.toObjId sc hSc hObjInv hStep⟩, hBlk⟩
 
 
@@ -117,64 +117,64 @@ The donation quartet falls out of the two donation frames: the transfer writes n
 TCB, so `sameSchedContextBindings` holds outright, and `donationOwnerFrame`
 carries the SchedContext and owner readings forward. -/
 theorem ipcUnwrapCaps_preserves_ipcInvariantFull
-    (msg : IpcMessage) (receiverRoot : SeLe4n.ObjId)
+    (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
     (slotBase : SeLe4n.Slot) (grantRight : Bool)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hInv : ipcInvariantFull st)
     (hObjInv : st.objects.invExt)
-    (hCaps : ∀ (i : Nat) (c : TransferCap), msg.caps[i]? = some c →
+    (hCaps : ∀ (i : Nat) (c : TransferCap), caps[i]? = some c →
       ∀ b, c.cap.badge = some b → b.valid)
-    (hStep : ipcUnwrapCaps msg receiverRoot slotBase grantRight st
+    (hStep : ipcUnwrapCaps caps receiverRoot slotBase grantRight st
              = .ok (summary, st')) :
     ipcInvariantFull st' := by
   have hDualQueue' : dualQueueSystemInvariant st' :=
-    ipcUnwrapCaps_preserves_dualQueueSystemInvariant msg receiverRoot slotBase
+    ipcUnwrapCaps_preserves_dualQueueSystemInvariant caps receiverRoot slotBase
       grantRight st st' summary hInv.dualQueueSystemInvariant hObjInv hStep
   have hBadge' : badgeWellFormed st' :=
-    ipcUnwrapCaps_preserves_badgeWellFormed msg receiverRoot slotBase grantRight
+    ipcUnwrapCaps_preserves_badgeWellFormed caps receiverRoot slotBase grantRight
       st st' summary hInv.badgeWellFormed hObjInv hCaps hStep
-  have hSame := ipcUnwrapCaps_sameSchedContextBindings msg receiverRoot slotBase
+  have hSame := ipcUnwrapCaps_sameSchedContextBindings caps receiverRoot slotBase
     grantRight st st' summary hObjInv hStep
   have hDOV' := donationOwnerValid_of_frames hSame
-    (ipcUnwrapCaps_donationOwnerFrame msg receiverRoot slotBase grantRight
+    (ipcUnwrapCaps_donationOwnerFrame caps receiverRoot slotBase grantRight
       st st' summary hObjInv hStep)
     hInv.donationOwnerValid
-  exact ⟨ipcUnwrapCaps_preserves_ipcInvariant msg receiverRoot slotBase grantRight
+  exact ⟨ipcUnwrapCaps_preserves_ipcInvariant caps receiverRoot slotBase grantRight
       st st' summary hInv.ipcInvariant hObjInv hStep,
     hDualQueue',
-    ipcUnwrapCaps_preserves_allPendingMessagesBounded msg receiverRoot slotBase
+    ipcUnwrapCaps_preserves_allPendingMessagesBounded caps receiverRoot slotBase
       grantRight st st' summary hObjInv hInv.allPendingMessagesBounded hStep,
     hBadge',
-    ipcUnwrapCaps_preserves_blockedThreadsPendingMessageConsistent msg receiverRoot
+    ipcUnwrapCaps_preserves_blockedThreadsPendingMessageConsistent caps receiverRoot
       slotBase grantRight st st' summary hObjInv hInv.blockedThreadsPendingMessageConsistent hStep,
-    ipcUnwrapCaps_preserves_endpointQueueNoDup msg receiverRoot slotBase grantRight
+    ipcUnwrapCaps_preserves_endpointQueueNoDup caps receiverRoot slotBase grantRight
       st st' summary hObjInv hInv.endpointQueueNoDup hStep,
-    ipcUnwrapCaps_preserves_ipcStateQueueMembershipConsistent msg receiverRoot
+    ipcUnwrapCaps_preserves_ipcStateQueueMembershipConsistent caps receiverRoot
       slotBase grantRight st st' summary hObjInv hInv.ipcStateQueueMembershipConsistent hStep,
-    ipcUnwrapCaps_preserves_queueNextBlockingConsistent msg receiverRoot slotBase
+    ipcUnwrapCaps_preserves_queueNextBlockingConsistent caps receiverRoot slotBase
       grantRight st st' summary hObjInv hInv.queueNextBlockingConsistent hStep,
-    ipcUnwrapCaps_preserves_queueHeadBlockedConsistent msg receiverRoot slotBase
+    ipcUnwrapCaps_preserves_queueHeadBlockedConsistent caps receiverRoot slotBase
       grantRight st st' summary hObjInv hInv.queueHeadBlockedConsistent hStep,
-    ipcUnwrapCaps_preserves_blockedThreadTimeoutConsistent msg receiverRoot slotBase
+    ipcUnwrapCaps_preserves_blockedThreadTimeoutConsistent caps receiverRoot slotBase
       grantRight st st' summary hObjInv hInv.blockedThreadTimeoutConsistent hStep,
     donationOwnerValid_implies_donationChainAcyclic st' hDOV', hDOV',
     passiveServerIdle_of_frame
-      (ipcUnwrapCaps_passiveServerIdleFrame msg receiverRoot slotBase grantRight
+      (ipcUnwrapCaps_passiveServerIdleFrame caps receiverRoot slotBase grantRight
         st st' summary hObjInv hStep)
       hInv.passiveServerIdle,
     donationBudgetTransfer_of_sameSchedContextBindings hSame hInv.donationBudgetTransfer,
-    ipcUnwrapCaps_preserves_blockedOnReplyHasTarget msg receiverRoot slotBase
+    ipcUnwrapCaps_preserves_blockedOnReplyHasTarget caps receiverRoot slotBase
       grantRight st st' summary hObjInv hInv.blockedOnReplyHasTarget hStep,
-    ⟨ipcUnwrapCaps_preserves_replyCallerLinkageReciprocal msg receiverRoot slotBase
+    ⟨ipcUnwrapCaps_preserves_replyCallerLinkageReciprocal caps receiverRoot slotBase
         grantRight st st' summary hObjInv hInv.replyCallerLinkage.1 hStep,
-      ipcUnwrapCaps_preserves_blockedOnReplyHasReplyObject msg receiverRoot slotBase
+      ipcUnwrapCaps_preserves_blockedOnReplyHasReplyObject caps receiverRoot slotBase
         grantRight st st' summary hObjInv hInv.replyCallerLinkage.2 hStep⟩,
-    ipcUnwrapCaps_preserves_pendingReceiveReplyWellFormed msg receiverRoot slotBase
+    ipcUnwrapCaps_preserves_pendingReceiveReplyWellFormed caps receiverRoot slotBase
       grantRight st st' summary hObjInv hInv.pendingReceiveReplyWellFormed hStep,
     donationOwnerUnique_of_sameSchedContextBindings hSame hInv.donationOwnerUnique,
-    ipcUnwrapCaps_preserves_endpointQueueTailBlockedConsistent msg receiverRoot
+    ipcUnwrapCaps_preserves_endpointQueueTailBlockedConsistent caps receiverRoot
       slotBase grantRight st st' summary hObjInv hInv.endpointQueueTailBlockedConsistent hStep,
-    ipcUnwrapCaps_preserves_queueNextTargetBlocked msg receiverRoot slotBase
+    ipcUnwrapCaps_preserves_queueNextTargetBlocked caps receiverRoot slotBase
       grantRight st st' summary hObjInv hInv.queueNextTargetBlocked hStep⟩
 
 end SeLe4n.Kernel

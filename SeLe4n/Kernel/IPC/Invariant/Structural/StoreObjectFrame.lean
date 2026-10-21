@@ -600,8 +600,6 @@ theorem endpointReplyRecv_preserves_dualQueueSystemInvariant
   -- WS-H12d: Eliminate bounds-check if-branches (error cases contradict hStep : ... = .ok ...)
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
-  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hLookup : lookupTcb st replyTarget with
   | none => simp [hLookup] at hStep
   | some tcb =>
@@ -1759,9 +1757,7 @@ theorem endpointReply_preserves_allPendingMessagesBounded
   -- WS-H12d: Extract bounds facts, then eliminate branches
   have hReg : ¬(maxMessageRegisters < msg.registers.size) := by intro h; simp [h] at hStep
   simp only [hReg, ↓reduceIte] at hStep
-  have hCap : ¬(maxExtraCaps < msg.caps.size) := by intro h; simp [h] at hStep
-  simp only [hCap, ↓reduceIte] at hStep
-  have hMsgBounded : msg.bounded := ⟨by omega, by omega⟩
+  have hMsgBounded : msg.bounded := by unfold IpcMessage.bounded; omega
   cases hLookup : lookupTcb st target with
   | none => simp [hLookup] at hStep
   | some tcb =>
@@ -1937,8 +1933,6 @@ theorem endpointReply_preserves_badgeWellFormed
   unfold endpointReply at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
-  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hLookup : lookupTcb st target with
   | none => simp [hLookup] at hStep
   | some tcb =>
@@ -2109,8 +2103,6 @@ theorem endpointReply_preserves_notificationWaiterConsistent
   -- Unfold endpointReply and extract the storeTcbIpcStateAndMessage + ensureRunnable steps
   unfold endpointReply at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
-  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hLookup : lookupTcb st target with
   | none => simp [hLookup] at hStep
@@ -2460,22 +2452,6 @@ theorem endpointReceiveDual_preserves_allPendingMessagesBounded
   endpointReceiveDual_preserves_pendingMessagesSatisfy endpointId receiver senderId replyId
     st st' hInv blockedSenderMessage_bounded hObjInv hStep
 
-/-- WS-RR RR3.11: endpointReceiveDual preserves the in-flight badge invariant — the
-`messageCapBadgesValid` instance.  This is what lets `endpointReceiveDualWithCaps`
-**establish** `badgeWellFormed` instead of assuming it on its own post-state: the
-message whose caps the transfer installs is the one the receive just delivered, and
-the receive only moves messages between TCBs. -/
-theorem endpointReceiveDual_preserves_pendingMessageCapBadgesWellFormed
-    (endpointId : SeLe4n.ObjId) (receiver senderId : SeLe4n.ThreadId)
-    (replyId : Option SeLe4n.ReplyId)
-    (st st' : SystemState)
-    (hInv : pendingMessageCapBadgesWellFormed st)
-    (hObjInv : st.objects.invExt)
-    (hStep : endpointReceiveDual endpointId receiver replyId st = .ok (senderId, st')) :
-    pendingMessageCapBadgesWellFormed st' :=
-  endpointReceiveDual_preserves_pendingMessagesSatisfy endpointId receiver senderId replyId
-    st st' hInv (fun s t u i c _ hc => by simp at hc) hObjInv hStep
-
 /-- U4-K: endpointReceiveDual preserves badgeWellFormed. -/
 theorem endpointReceiveDual_preserves_badgeWellFormed
     (endpointId : SeLe4n.ObjId) (receiver senderId : SeLe4n.ThreadId)
@@ -2778,9 +2754,7 @@ theorem endpointReplyRecv_preserves_allPendingMessagesBounded
   unfold endpointReplyRecv at hStep
   have hReg : ¬(maxMessageRegisters < msg.registers.size) := by intro h; simp [h] at hStep
   simp only [hReg, ↓reduceIte] at hStep
-  have hCap : ¬(maxExtraCaps < msg.caps.size) := by intro h; simp [h] at hStep
-  simp only [hCap, ↓reduceIte] at hStep
-  have hMsgBounded : msg.bounded := ⟨by omega, by omega⟩
+  have hMsgBounded : msg.bounded := by unfold IpcMessage.bounded; omega
   cases hLookup : lookupTcb st replyTarget with
   | none => simp [hLookup] at hStep
   | some tcb =>
@@ -2848,8 +2822,6 @@ theorem endpointReplyRecv_preserves_badgeWellFormed
   unfold endpointReplyRecv at hStep
   have hReg : ¬(maxMessageRegisters < msg.registers.size) := by intro h; simp [h] at hStep
   simp only [hReg, ↓reduceIte] at hStep
-  have hCap : ¬(maxExtraCaps < msg.caps.size) := by intro h; simp [h] at hStep
-  simp only [hCap, ↓reduceIte] at hStep
   cases hLookup : lookupTcb st replyTarget with
   | none => simp [hLookup] at hStep
   | some tcb =>

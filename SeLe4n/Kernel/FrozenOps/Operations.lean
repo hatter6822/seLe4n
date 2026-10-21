@@ -567,18 +567,17 @@ def frozenBlockedSenderMessage (st : FrozenSystemState) (sender : SeLe4n.ThreadI
 
 /-- WS-ZA ZA4.7: **the message a frozen send delivers** to a waiting receiver --
 the live `sendPayloadMessage` over the frozen decode of the sender's frame: a
-fault's message, or the frame under the capability's badge and grant right.  A
+fault's message, or the frame under the capability's badge.  A
 sender that does not exist has no frame, so its decode is a refusal.  The
-blocked-sender read above makes the same read under the recorded badge and
-grant, so the two frozen arrival orders deliver one message, with no
+blocked-sender read above makes the same read under the recorded badge, so the two frozen arrival orders deliver one message, with no
 capabilities on either. -/
 def frozenSendPayloadMessage (st : FrozenSystemState) (sender : SeLe4n.ThreadId) :
     SendPayload → IpcMessage
-  | .frame b g =>
+  | .frame b _ =>
       senderFrameMessage
         (match frozenLookupTcb st sender with
          | some tcb => frozenSenderDecode st sender tcb
-         | none => .error .objectNotFound) b g
+         | none => .error .objectNotFound) b
   | .fault f ctx b => faultMessage f ctx b
 
 /-- Q7-C2/V5-O: Pop head from a frozen intrusive queue.

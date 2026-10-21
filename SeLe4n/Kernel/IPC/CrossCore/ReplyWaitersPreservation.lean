@@ -261,8 +261,6 @@ theorem endpointReplyOnCore_preserves_replyWaitersConsistent (replier target : S
   · exact hC
   split
   · exact hC
-  split
-  · exact hC
   · rename_i tcb hL
     have hO := lookupTcb_some_objects st target tcb hL
     split

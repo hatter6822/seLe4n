@@ -190,14 +190,13 @@ theorem endpointReplyWithDonation_refuses_delegated_replier
     (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (st : SystemState)
     (tcb : TCB) (ep : SeLe4n.ObjId) (expected : SeLe4n.ThreadId)
     (hRegs : msg.registers.size ≤ maxMessageRegisters)
-    (hCaps : msg.caps.size ≤ maxExtraCaps)
     (hTcb : lookupTcb st target = some tcb)
     (hIpc : tcb.ipcState = .blockedOnReply ep (some expected))
     (hDelegated : (replier == expected) = false) :
     endpointReplyWithDonation replier target msg st = .error .replyCapInvalid := by
   have hReply : endpointReply replier target msg st = .error .replyCapInvalid := by
     unfold endpointReply
-    simp only [Nat.not_lt.mpr hRegs, Nat.not_lt.mpr hCaps, if_false, hTcb, hIpc,
+    simp only [Nat.not_lt.mpr hRegs, if_false, hTcb, hIpc,
       hDelegated, Bool.false_eq_true, if_false]
   simp only [endpointReplyWithDonation, hReply]
 

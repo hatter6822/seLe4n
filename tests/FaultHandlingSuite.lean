@@ -401,7 +401,6 @@ private def deliveredMessageOf (st : SystemState) (tid : SeLe4n.ThreadId) : Opti
                 | _ => none)
           { registers := ((#[fr.x2, fr.x3, fr.x4, fr.x5] ++ overflow.toArray).map
               (fun w => (⟨w.toNat⟩ : SeLe4n.RegValue))).extract 0 info.length
-            caps := #[]
             badge := if fr.x0 == 0 then none else some (SeLe4n.Badge.ofWord fr.x0)
             label := info.label }
       else none
@@ -634,15 +633,13 @@ private def runDeliveryChecks : IO Unit := do
       assertBool "the handler is woken with the fault message"
         ((deliveredMessageOf d.afterFault handler).isSome)
       -- The delivered message is the encoded fault, register for register,
-      -- with the handler capability's badge and the fault's `seL4_Fault_tag`.
-      -- Compared field-wise rather than whole: the Call chain re-stamps
-      -- `capsGranted` from the *endpoint capability's* rights (a fault handler
-      -- capability carries `.grant`, so the bit arrives set), which authorises
-      -- nothing on a message with no capabilities — see
-      -- `faultMessage_grant_is_inert`, and the `caps.isEmpty` assertion below.
+      -- with the handler capability's badge and the fault's `seL4_Fault_tag`:
+      -- the whole message, since nothing on the Call chain rewrites it.
       let expectedMsg := faultMessage theFault
         (faultContextOfThread d.afterRecv faulter dataAbortCtx.elr dataAbortCtx.spsr)
         (some (SeLe4n.Badge.ofNat 7))
+      assertBool "the delivered message is the fault message the encoder wrote"
+        (deliveredMessageOf d.afterFault handler == some expectedMsg)
       assertBool "the delivered message's registers are the encoded fault"
         ((deliveredMessageOf d.afterFault handler).map (·.registers) ==
           some expectedMsg.registers)
@@ -657,10 +654,6 @@ private def runDeliveryChecks : IO Unit := do
          | some m => decodeFault
              { length := faultMessageLength theFault, extraCaps := 0, label := m.label }
              m.registers == some theFault
-         | none => false)
-      assertBool "the message carries no capabilities across the boundary"
-        (match deliveredMessageOf d.afterFault handler with
-         | some m => m.caps.isEmpty
          | none => false)
       assertBool "core 1 dispatches the handler after the SGI"
         (d.afterSgi.scheduler.currentOnCore c1 == some handler)

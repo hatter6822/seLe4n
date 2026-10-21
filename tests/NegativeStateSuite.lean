@@ -547,45 +547,15 @@ private def runIpcPayloadBoundsNegativeChecks : IO Unit := do
   expectErr "endpointReply rejects oversized registers"
     (SeLe4n.Kernel.endpointReply (SeLe4n.ThreadId.ofNat 1)
       (SeLe4n.ThreadId.ofNat 2)
-      { registers := Array.mk (List.replicate 121 ⟨0⟩), caps := #[], badge := none } baseState)
+      { registers := Array.mk (List.replicate 121 ⟨0⟩), badge := none } baseState)
     .ipcMessageTooLarge
-
-  -- endpointReply rejects oversized caps
-  expectErr "endpointReply rejects oversized caps"
-    (SeLe4n.Kernel.endpointReply (SeLe4n.ThreadId.ofNat 1)
-      (SeLe4n.ThreadId.ofNat 2)
-      { registers := #[],
-        caps := #[TransferCap.fromSlot { target := .object ⟨1⟩, rights := AccessRightSet.ofList [] }
-                    { cnode := ⟨1⟩, slot := SeLe4n.Slot.ofNat 1 },
-                  TransferCap.fromSlot { target := .object ⟨2⟩, rights := AccessRightSet.ofList [] }
-                    { cnode := ⟨2⟩, slot := SeLe4n.Slot.ofNat 2 },
-                  TransferCap.fromSlot { target := .object ⟨3⟩, rights := AccessRightSet.ofList [] }
-                    { cnode := ⟨3⟩, slot := SeLe4n.Slot.ofNat 3 },
-                  TransferCap.fromSlot { target := .object ⟨4⟩, rights := AccessRightSet.ofList [] }
-                    { cnode := ⟨4⟩, slot := SeLe4n.Slot.ofNat 4 }], } baseState)
-    .ipcMessageTooManyCaps
 
   -- endpointReplyRecv rejects oversized registers
   expectErr "endpointReplyRecv rejects oversized registers"
     (SeLe4n.Kernel.endpointReplyRecv endpointId (SeLe4n.ThreadId.ofNat 1)
       (SeLe4n.ThreadId.ofNat 2)
-      { registers := Array.mk (List.replicate 121 ⟨0⟩), caps := #[], badge := none } none baseState)
+      { registers := Array.mk (List.replicate 121 ⟨0⟩), badge := none } none baseState)
     .ipcMessageTooLarge
-
-  -- endpointReplyRecv rejects oversized caps
-  expectErr "endpointReplyRecv rejects oversized caps"
-    (SeLe4n.Kernel.endpointReplyRecv endpointId (SeLe4n.ThreadId.ofNat 1)
-      (SeLe4n.ThreadId.ofNat 2)
-      { registers := #[],
-        caps := #[TransferCap.fromSlot { target := .object ⟨1⟩, rights := AccessRightSet.ofList [] }
-                    { cnode := ⟨1⟩, slot := SeLe4n.Slot.ofNat 1 },
-                  TransferCap.fromSlot { target := .object ⟨2⟩, rights := AccessRightSet.ofList [] }
-                    { cnode := ⟨2⟩, slot := SeLe4n.Slot.ofNat 2 },
-                  TransferCap.fromSlot { target := .object ⟨3⟩, rights := AccessRightSet.ofList [] }
-                    { cnode := ⟨3⟩, slot := SeLe4n.Slot.ofNat 3 },
-                  TransferCap.fromSlot { target := .object ⟨4⟩, rights := AccessRightSet.ofList [] }
-                    { cnode := ⟨4⟩, slot := SeLe4n.Slot.ofNat 4 }], } none baseState)
-    .ipcMessageTooManyCaps
 
   -- The boundary message (exactly 120 registers, 3 extra caps) decodes.
   if (MessageInfo.decode (MessageInfo.mk maxMessageRegisters maxExtraCaps 0).encode).isSome then
@@ -2164,11 +2134,11 @@ private def runWSH15Checks : IO Unit := do
       throw <| IO.userError s!"H15 syscallLookupCap: expected success, got {toString err}"
 
   -- H15-NEG-05: S2-J: Replaced deprecated apiEndpointSend with syscallInvoke path
-  let msg : IpcMessage := { registers := #[⟨42⟩], caps := #[], badge := none }
+  let msg : IpcMessage := { registers := #[⟨42⟩], badge := none }
   expectErr "H15 syscall endpoint send insufficient rights"
     (SeLe4n.Kernel.syscallInvoke { wrongRightGate with requiredRight := .write } (fun cap =>
       if cap.target ≠ .object epId then fun _ => .error .invalidCapability
-      else SeLe4n.Kernel.endpointSendDual epId wrongRightGate.callerId (.frame msg.badge msg.capsGranted)) st)
+      else SeLe4n.Kernel.endpointSendDual epId wrongRightGate.callerId (.frame msg.badge false)) st)
     .illegalAuthority
 
   -- H15-NEG-06: syscallLookupCap with zero depth → illegalState

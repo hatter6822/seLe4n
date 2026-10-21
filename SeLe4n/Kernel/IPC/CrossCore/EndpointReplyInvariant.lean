@@ -80,8 +80,6 @@ theorem endpointReplyOnCore_state_eq
   · exact Or.inl rfl
   split
   · exact Or.inl rfl
-  split
-  · exact Or.inl rfl
   · next tcb hLk =>
     split
     · next ep replyTarget =>
@@ -252,71 +250,68 @@ theorem endpointReplyOnCore_post_agrees
   split
   · exact Or.inl rfl
   next hSize =>
-    split
-    · exact Or.inl rfl
-    next hCaps =>
-      cases hLk : lookupTcb st target with
-      | none => left; rfl
-      | some tcb =>
+    cases hLk : lookupTcb st target with
+    | none => left; rfl
+    | some tcb =>
+      simp only
+      cases hIpc : tcb.ipcState with
+      | ready => left; rfl
+      | blockedOnSend _ => left; rfl
+      | blockedOnReceive _ => left; rfl
+      | blockedOnCall _ => left; rfl
+      | blockedOnNotification _ => left; rfl
+      | blockedOnReply epId rt =>
         simp only
-        cases hIpc : tcb.ipcState with
-        | ready => left; rfl
-        | blockedOnSend _ => left; rfl
-        | blockedOnReceive _ => left; rfl
-        | blockedOnCall _ => left; rfl
-        | blockedOnNotification _ => left; rfl
-        | blockedOnReply epId rt =>
+        cases rt with
+        | none => left; rfl
+        | some expected =>
           simp only
-          cases rt with
-          | none => left; rfl
-          | some expected =>
+          cases hStore : storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) with
+          | error e => left; rfl
+          | ok st' =>
             simp only
-            cases hStore : storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) with
-            | error e => left; rfl
-            | ok st' =>
+            have hStore' : storeTcbIpcStateAndMessage st target .ready (some msg) = .ok st' := by
+              rw [← storeTcbIpcStateAndMessage_fromTcb_eq hLk]; exact hStore
+            have hObjInv1 := storeTcbIpcStateAndMessage_preserves_objects_invExt st st' target
+              .ready (some msg) hObjInv hStore'
+            obtain ⟨tr, hTrGet, hTrReady⟩ :=
+              storeTcbIpcStateAndMessage_getTcb?_ipcState st st' target .ready (some msg)
+                hObjInv hStore'
+            have hRel0 : OffSchedulerAgrees (ensureRunnable st' target)
+                (wakeThread st' target executingCore).1 :=
+              (ensureRunnable_offSchedulerAgrees st' target).symm.trans
+                (wakeThread_offSchedulerAgrees_of_ready st' target executingCore tr
+                  hTrGet hTrReady hObjInv1)
+            cases hRO : tcb.replyObject with
+            | none =>
+              right
+              refine ⟨expected, ensureRunnable st' target, ?_,
+                hRel0.trans (unlinkReplyWaiter_offSchedulerAgrees _ target expected)⟩
+              unfold endpointReply
+              simp only [if_neg hSize, hLk, hIpc,
+                if_pos (beq_self_eq_true expected), hStore, hRO]
+            | some rid =>
               simp only
-              have hStore' : storeTcbIpcStateAndMessage st target .ready (some msg) = .ok st' := by
-                rw [← storeTcbIpcStateAndMessage_fromTcb_eq hLk]; exact hStore
-              have hObjInv1 := storeTcbIpcStateAndMessage_preserves_objects_invExt st st' target
-                .ready (some msg) hObjInv hStore'
-              obtain ⟨tr, hTrGet, hTrReady⟩ :=
-                storeTcbIpcStateAndMessage_getTcb?_ipcState st st' target .ready (some msg)
-                  hObjInv hStore'
-              have hRel0 : OffSchedulerAgrees (ensureRunnable st' target)
-                  (wakeThread st' target executingCore).1 :=
-                (ensureRunnable_offSchedulerAgrees st' target).symm.trans
-                  (wakeThread_offSchedulerAgrees_of_ready st' target executingCore tr
-                    hTrGet hTrReady hObjInv1)
-              cases hRO : tcb.replyObject with
-              | none =>
+              cases hConsOC : removeCallerReplyFrame target rid
+                  (wakeThread st' target executingCore).1 with
+              | error e => left; rfl
+              | ok pr =>
+                obtain ⟨⟨⟩, stOC⟩ := pr
                 right
-                refine ⟨expected, ensureRunnable st' target, ?_,
-                  hRel0.trans (unlinkReplyWaiter_offSchedulerAgrees _ target expected)⟩
-                unfold endpointReply
-                simp only [if_neg hSize, if_neg hCaps, hLk, hIpc,
-                  if_pos (beq_self_eq_true expected), hStore, hRO]
-              | some rid =>
-                simp only
-                cases hConsOC : removeCallerReplyFrame target rid
-                    (wakeThread st' target executingCore).1 with
-                | error e => left; rfl
-                | ok pr =>
-                  obtain ⟨⟨⟩, stOC⟩ := pr
-                  right
-                  have hInvEns : (ensureRunnable st' target).objects.invExt := by
-                    exact ensureRunnable_objects_invExt _ _ hObjInv1
-                  have hInvWake : (wakeThread st' target executingCore).1.objects.invExt :=
-                    wakeThread_preserves_objects_invExt st' target executingCore hObjInv1
-                  obtain ⟨r1, hCons1⟩ :=
-                    removeCallerReplyFrame_isOk (ensureRunnable st' target) target rid
-                  refine ⟨expected, r1, ?_, ?_⟩
-                  · unfold endpointReply
-                    simp only [if_neg hSize, if_neg hCaps, hLk, hIpc,
-                      if_pos (beq_self_eq_true expected), hStore, hRO]
-                    exact hCons1
-                  · exact (removeCallerReplyFrame_offSchedulerAgrees target rid hRel0
-                      hInvEns hInvWake hCons1 hConsOC).trans
-                      (unlinkReplyWaiter_offSchedulerAgrees _ target expected)
+                have hInvEns : (ensureRunnable st' target).objects.invExt := by
+                  exact ensureRunnable_objects_invExt _ _ hObjInv1
+                have hInvWake : (wakeThread st' target executingCore).1.objects.invExt :=
+                  wakeThread_preserves_objects_invExt st' target executingCore hObjInv1
+                obtain ⟨r1, hCons1⟩ :=
+                  removeCallerReplyFrame_isOk (ensureRunnable st' target) target rid
+                refine ⟨expected, r1, ?_, ?_⟩
+                · unfold endpointReply
+                  simp only [if_neg hSize, hLk, hIpc,
+                    if_pos (beq_self_eq_true expected), hStore, hRO]
+                  exact hCons1
+                · exact (removeCallerReplyFrame_offSchedulerAgrees target rid hRel0
+                    hInvEns hInvWake hCons1 hConsOC).trans
+                    (unlinkReplyWaiter_offSchedulerAgrees _ target expected)
 
 -- ============================================================================
 -- §6  SM6.D: whole-bundle + per-core bundle preservation (cross-core reply)
@@ -1215,8 +1210,6 @@ theorem endpointReplyOnCore_reuse_freshens
   unfold endpointReplyOnCore at hStep
   split at hStep
   · simp at hStep
-  split at hStep
-  · simp at hStep
   cases hLk : lookupTcb st target with
   | none => simp only [hLk] at hStep; simp at hStep
   | some tcb =>
@@ -1286,8 +1279,8 @@ theorem endpointReplyOnCore_reuse_freshens
 -- audit builds the WithCaps composition here, mirroring the `.send` side's
 -- RR2.14 exactly: the bare bundle, then `ipcUnwrapCaps`' on the installing arm,
 -- with the transfer's two *input* conditions (a CNode at the destination root,
--- valid badges on the parked message's capabilities) rather than any post-state
--- conjunct.
+-- valid badges on the capabilities resolved from the sender's CSpace) rather than
+-- any post-state conjunct.
 
 open SeLe4n.Model.SystemState in
 -- WS-SM SM6.C, relocated at **WS-RR RR8.12**:

@@ -719,41 +719,39 @@ theorem endpointReplyOnCore_confinedToCores (replier target : SeLe4n.ThreadId)
   unfold endpointReplyOnCore
   split
   · exact observableSlotsConfinedToCores_of_eq _ rfl
-  · split
-    · exact observableSlotsConfinedToCores_of_eq _ rfl
-    · cases hLk : lookupTcb st target with
-      | none => simp only []; exact observableSlotsConfinedToCores_of_eq _ rfl
-      | some tcb =>
-        simp only []
+  · cases hLk : lookupTcb st target with
+    | none => simp only []; exact observableSlotsConfinedToCores_of_eq _ rfl
+    | some tcb =>
+      simp only []
+      split
+      · next epId replyTarget hIpc =>
         split
-        · next epId replyTarget hIpc =>
+        · exact observableSlotsConfinedToCores_of_eq _ rfl
+        · next expected hSome =>
           split
           · exact observableSlotsConfinedToCores_of_eq _ rfl
-          · next expected hSome =>
+          · next st1 hStore =>
+            have hOld : st.getTcb? target = some tcb :=
+              (SystemState.getTcb?_eq_some_iff st target tcb).mpr
+                (lookupTcb_some_objects st target tcb hLk)
+            have hT1 : determineTargetCore st1 target = determineTargetCore st target :=
+              storeTcbIpcStateAndMessage_fromTcb_determineTargetCore_eq st st1 target tcb
+                .ready (some msg) target hOld hObjInv hStore
+            have hPre := observableSlotsConfinedToCores_trans
+              (storeTcbIpcStateAndMessage_fromTcb_confinedToCores st st1 target tcb
+                .ready (some msg) hStore)
+              (wakeThread_confinedToCores st1 target executingCore)
+            rw [hT1] at hPre
             split
-            · exact observableSlotsConfinedToCores_of_eq _ rfl
-            · next st1 hStore =>
-              have hOld : st.getTcb? target = some tcb :=
-                (SystemState.getTcb?_eq_some_iff st target tcb).mpr
-                  (lookupTcb_some_objects st target tcb hLk)
-              have hT1 : determineTargetCore st1 target = determineTargetCore st target :=
-                storeTcbIpcStateAndMessage_fromTcb_determineTargetCore_eq st st1 target tcb
-                  .ready (some msg) target hOld hObjInv hStore
-              have hPre := observableSlotsConfinedToCores_trans
-                (storeTcbIpcStateAndMessage_fromTcb_confinedToCores st st1 target tcb
-                  .ready (some msg) hStore)
-                (wakeThread_confinedToCores st1 target executingCore)
-              rw [hT1] at hPre
+            · exact observableSlotsConfinedToCores_then_unlinkReplyWaiter _ _ hPre
+            · next rid hReply =>
               split
-              · exact observableSlotsConfinedToCores_then_unlinkReplyWaiter _ _ hPre
-              · next rid hReply =>
-                split
-                · next unit st2 hConsume =>
-                  exact observableSlotsConfinedToCores_then_unlinkReplyWaiter _ _
-                    (observableSlotsConfinedToCores_trans hPre
-                      (removeCallerReplyFrame_confinedToCores _ st2 target rid hConsume))
-                · exact observableSlotsConfinedToCores_of_eq _ rfl
-        · exact observableSlotsConfinedToCores_of_eq _ rfl
+              · next unit st2 hConsume =>
+                exact observableSlotsConfinedToCores_then_unlinkReplyWaiter _ _
+                  (observableSlotsConfinedToCores_trans hPre
+                    (removeCallerReplyFrame_confinedToCores _ st2 target rid hConsume))
+              · exact observableSlotsConfinedToCores_of_eq _ rfl
+      · exact observableSlotsConfinedToCores_of_eq _ rfl
 
 -- ============================================================================
 -- §4a SM6.C — the receive leg

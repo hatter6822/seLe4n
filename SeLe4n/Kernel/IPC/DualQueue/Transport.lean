@@ -2752,7 +2752,6 @@ def endpointReply (replier : SeLe4n.ThreadId) (target : SeLe4n.ThreadId)
   fun st =>
     -- WS-H12d/A-09: Enforce message payload bounds at send boundary
     if msg.registers.size > maxMessageRegisters then .error .ipcMessageTooLarge
-    else if msg.caps.size > maxExtraCaps then .error .ipcMessageTooManyCaps
     else
     match lookupTcb st target with
     | none => .error .objectNotFound
@@ -2815,7 +2814,6 @@ def endpointReplyRecv
   fun st =>
     -- WS-H12d/A-09: Enforce message payload bounds at send boundary
     if msg.registers.size > maxMessageRegisters then .error .ipcMessageTooLarge
-    else if msg.caps.size > maxExtraCaps then .error .ipcMessageTooManyCaps
     else
     match lookupTcb st replyTarget with
     | none => .error .objectNotFound

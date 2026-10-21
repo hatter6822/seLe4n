@@ -857,7 +857,7 @@ theorem untypedReset_ok_retired_pages_unmapped (ec : Concurrency.CoreId)
   rw [hIn] at hOff; cases hOff
 
 /-- **After a reset no capability names an object of the subtree** — in no CNode
-slot and in no message a blocked sender has parked.  The reset decided this of
+slot, the one place a capability lives.  The reset decided this of
 its pre-state and writes neither CNodes nor TCBs, so the committed state
 inherits it: once an id is reused by the next carve, no capability left over
 from the retired object can name the new one. -/
@@ -867,10 +867,7 @@ theorem untypedReset_ok_unreferenced (ec : Concurrency.CoreId) (untypedId : SeLe
     ∃ ut ids, st.getUntyped? untypedId = some ut ∧ untypedCarvedSubtree st ut = some ids ∧
       (∀ (oid : SeLe4n.ObjId) (cn : CNode) (slot : SeLe4n.Slot) (cap : Capability),
         st'.objects[oid]? = some (.cnode cn) → cn.lookup slot = some cap →
-        capNamesListed ids cap = false) ∧
-      (∀ (oid : SeLe4n.ObjId) (t : TCB) (msg : IpcMessage),
-        st'.objects[oid]? = some (.tcb t) → t.pendingMessage = some msg →
-        msg.caps.any (fun tc => capNamesListed ids tc.cap) = false) := by
+        capNamesListed ids cap = false) := by
   obtain ⟨ut, ids, st1, hUt, hWalk, -, -, -, hRef, -, hM, -, -, hSz, -, hSt⟩ :=
     untypedReset_ok_decompose ec untypedId st st' hStep
   obtain ⟨-, hW1, -, hInv2, -, hW2, -⟩ :=
@@ -892,19 +889,14 @@ theorem untypedReset_ok_unreferenced (ec : Concurrency.CoreId) (untypedId : SeLe
     have := SeLe4n.Kernel.RobinHood.RHTable.fold_and_true_of_get? st.objects
       (fun _ o => !objectNamesListed ids o) hRef h
     simpa using this
-  refine ⟨ut, ids, hUt, hWalk, ?_, ?_⟩
-  · intro oid cn slot cap hCn hLk
-    have hPre := hBack oid (.cnode cn) (fun _ h => by cases h) (fun _ h => by cases h) hCn
-    have hN := hClean oid _ hPre
-    simp only [objectNamesListed, Bool.not_eq_false'] at hN
-    have hc := SeLe4n.Kernel.RobinHood.RHTable.fold_and_true_of_get? cn.slots.table
-      (fun _ cap => !capNamesListed ids cap) hN hLk
-    simpa using hc
-  · intro oid t msg hT hMsg
-    have hPre := hBack oid (.tcb t) (fun _ h => by cases h) (fun _ h => by cases h) hT
-    have hN := hClean oid _ hPre
-    simp only [objectNamesListed, hMsg, Bool.or_eq_false_iff] at hN
-    simpa using hN.2
+  refine ⟨ut, ids, hUt, hWalk, ?_⟩
+  intro oid cn slot cap hCn hLk
+  have hPre := hBack oid (.cnode cn) (fun _ h => by cases h) (fun _ h => by cases h) hCn
+  have hN := hClean oid _ hPre
+  simp only [objectNamesListed, Bool.not_eq_false'] at hN
+  have hc := SeLe4n.Kernel.RobinHood.RHTable.fold_and_true_of_get? cn.slots.table
+    (fun _ cap => !capNamesListed ids cap) hN hLk
+  simpa using hc
 
 /-- **The object kinds a reset can touch**: an absent key, a VSpace root (the
 unmap pass), a frame or an untyped (the retire), and the untyped (the watermark

@@ -534,7 +534,7 @@ theorem replyRecvOnCore_blocks_inPlace (st : SystemState) (epId : SeLe4n.ObjId)
     (tid c : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (msg : IpcMessage)
     (root : SeLe4n.ObjId) (slot : SeLe4n.Slot) (core : CoreId)
     (ct : TCB) (ep0 : SeLe4n.ObjId) (rt : TCB) (ep : Endpoint) (rp : Reply)
-    (hSz : ¬ msg.registers.size > maxMessageRegisters) (hCaps : msg.caps = #[])
+    (hSz : ¬ msg.registers.size > maxMessageRegisters)
     (hT : st.objects[c.toObjId]? = some (.tcb ct))
     (hIpc : ct.ipcState = .blockedOnReply ep0 (some tid))
     (hRO : ct.replyObject = some rid)
@@ -555,7 +555,7 @@ theorem replyRecvOnCore_blocks_inPlace (st : SystemState) (epId : SeLe4n.ObjId)
     simp only [replyWakesInPlace, Bool.and_eq_true] at hG
     exact hG.1.1.1.1.2
   obtain ⟨hEq, hHead⟩ := replyOnCore_inPlace st tid c tid ct ep0 rid msg core hSz
-    (by rw [hCaps]; decide) hT hIpc hRO hG
+    hT hIpc hRO hG
   obtain ⟨hE1, ⟨rt1, hR1, hA1⟩, hG1⟩ := storeReplyRendezvous_receiveGuard st c tid rid msg ct rp
     epId ep rt hNo hT hIpc hFC hRp hNe hE hR hA hEnq hFree hStash
   have hTc : st.getTcb? c = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
@@ -778,7 +778,7 @@ theorem replyRecvOnCore_blocks_delivered (st : SystemState) (epId : SeLe4n.ObjId
     (tid c : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (msg : IpcMessage)
     (root : SeLe4n.ObjId) (slot : SeLe4n.Slot) (core : CoreId)
     (ct : TCB) (ep0 : SeLe4n.ObjId) (rt : TCB) (ep : Endpoint) (rp : Reply)
-    (hSz : ¬ msg.registers.size > maxMessageRegisters) (hCaps : msg.caps = #[])
+    (hSz : ¬ msg.registers.size > maxMessageRegisters)
     (hSz4 : msg.registers.size ≤ 4)
     (hT : st.objects[c.toObjId]? = some (.tcb ct))
     (hIpc : ct.ipcState = .blockedOnReply ep0 (some tid))
@@ -805,7 +805,7 @@ theorem replyRecvOnCore_blocks_delivered (st : SystemState) (epId : SeLe4n.ObjId
     simp only [replyWakesInPlace, Bool.and_eq_true] at hG
     exact hG.1.1.1.1.2
   have hCT : c.toObjId ≠ tid.toObjId := fun e => hNe (SeLe4n.ThreadId.toObjId_injective _ _ e).symm
-  rw [replyRecvOnCore_blocks_inPlace st epId tid c rid msg root slot core ct ep0 rt ep rp hSz hCaps
+  rw [replyRecvOnCore_blocks_inPlace st epId tid c rid msg root slot core ct ep0 rt ep rp hSz
     hT hIpc hRO hG hNe hE hS hR hA hEnq hRp hFree hStash]
   simp only [CapTransferSummary.installedCount_empty]
   rw [replyRecvBlock_staged _ _ _ _ _ _ _ _ hNo hNe hSz4]
@@ -830,7 +830,7 @@ built only on this path. -/
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
     (badge : Option SeLe4n.Badge) : SystemState :=
   X.mapTcbInPlace c (holdMessage
-    { registers := Architecture.regReplyRecvBody layout rf len, caps := #[], badge := badge })
+    { registers := Architecture.regReplyRecvBody layout rf len, badge := badge })
 
 /-- **The blocking reply-receive, delivered from the registers**: the reply's
 writes, the server's block and priority walk, then the reply's frame written

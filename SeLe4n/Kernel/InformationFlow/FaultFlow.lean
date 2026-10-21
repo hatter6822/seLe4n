@@ -79,36 +79,21 @@ theorem faultMessage_of_thread_congr (st₁ st₂ : SystemState) (tid : SeLe4n.T
       = faultMessage f (faultContextOfThread st₂ tid faultIP spsr) badge := by
   rw [faultContextOfThread_congr st₁ st₂ tid faultIP spsr hAgree]
 
-/-- WS-RR RR4.20 (**no authority crosses**): a fault message transfers no
-capabilities and grants none, so the *authority* half of an information flow
-is empty on this path whatever the data half does.
+/-- WS-RR RR4.20 (**no authority crosses**): a fault delivery asks to transfer
+no capabilities, so the *authority* half of an information flow is empty on
+this path whatever the data half does.
 
 This is what makes the gate above a statement about a data flow alone, and it
-is not an accident of the current encoder: `faultMessage` fixes `caps := #[]`
-and `capsGranted := false` structurally. -/
-theorem faultMessage_transfers_no_authority (f : Fault) (fctx : FaultContext)
+is not an accident of the current encoder: a message has no capability or
+grant field, the capabilities a send transfers are its request
+(`sendPayloadCapRequest`), and the request of a fault payload is `none` and its
+grant right `false`, whatever rights the handler capability holds. -/
+theorem faultMessage_transfers_no_authority (st : SystemState)
+    (sender : SeLe4n.ThreadId) (tcb : TCB) (f : Fault) (fctx : FaultContext)
     (badge : Option SeLe4n.Badge) :
-    (faultMessage f fctx badge).caps = #[] ∧
-    (faultMessage f fctx badge).capsGranted = false :=
+    sendPayloadCapRequest st sender tcb (.fault f fctx badge) = none ∧
+    (SendPayload.fault f fctx badge).grant = false :=
   ⟨rfl, rfl⟩
-
-/-- WS-RR RR4.20: **and the grant bit the Call chain stamps on is inert.**
-
-`endpointCallWithCapsOnCore` overwrites a message's `capsGranted` from the
-*endpoint capability's* rights, so a fault delivered through a handler
-capability — which must carry `.grant`, or the handler could not reply
-(`faultHandlerRights`) — arrives with the bit **set**, not with the `false`
-the encoder wrote.
-
-That is not a leak, and this is why: `capsGranted` authorises the installation
-of the capabilities the message carries, and a fault message carries none.
-Stated over an arbitrary grant bit rather than over the delivered value, so
-the guarantee does not depend on which rights a particular deployment's
-handler capability happens to hold. -/
-theorem faultMessage_grant_is_inert (f : Fault) (fctx : FaultContext)
-    (badge : Option SeLe4n.Badge) (granted : Bool) :
-    ({ faultMessage f fctx badge with capsGranted := granted } : IpcMessage).caps = #[] :=
-  rfl
 
 -- ============================================================================
 -- §3  RR4.20 — a high fault is invisible to a low observer

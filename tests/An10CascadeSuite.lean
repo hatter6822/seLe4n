@@ -479,7 +479,7 @@ def an10_e_clearPendingStateValid_reduces : IO Bool := do
   -- Seed state with a TCB carrying a non-empty pendingMessage so the
   -- function's mutation is observable.
   let tcb : TCB := { mkTcb 5 with
-    pendingMessage := some { registers := #[(⟨42⟩ : SeLe4n.RegValue)], caps := #[], badge := default } }
+    pendingMessage := some { registers := #[(⟨42⟩ : SeLe4n.RegValue)], badge := default } }
   let st : SystemState := { (default : SystemState) with
     objects := (default : SystemState).objects.insert tid.toObjId (.tcb tcb) }
   let viaWrapper : SystemState := SeLe4n.Kernel.Lifecycle.Suspend.clearPendingStateValid st vtid

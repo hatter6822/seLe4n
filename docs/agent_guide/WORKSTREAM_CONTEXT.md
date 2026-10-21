@@ -222,7 +222,9 @@ writes its descriptor and operand over the cells the last round retired, so an
 unmap allocates nothing; at `v0.36.119` (part 9) a page table carries the slot
 cell it takes in its root, so a page-table map, unmap and the delete of an
 uninstalled table's capability allocate nothing; at `v0.36.120` (part 10) a
-retype checks before it writes and allocates only its new object's cells.  The
+retype checks before it writes and allocates only its new object's cells; at
+`v0.36.121` (part 11) an IPC message holds no capability, the first of the seL4
+untyped reset's parts ([`UNTYPED_RESET_PLAN.md`](../planning/UNTYPED_RESET_PLAN.md)).  The
 suspend of a thread blocked in IPC or holding a donated context is the one
 syscall arm left on the general path (ZA6.1).  ZA6 covers the other
 entries and makes the rule standing.  Plan:

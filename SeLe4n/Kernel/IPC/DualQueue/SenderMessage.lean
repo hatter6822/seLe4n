@@ -41,24 +41,21 @@ as the message label, the handler capability's badge (seL4 passes
 serving several faulting threads through badged capabilities can tell them
 apart), and **no capabilities**.
 
-`capsGranted := false` is not merely the default: a fault message must never
-transfer authority.  It is a diagnostic report the kernel writes about a
-thread, so granting through it would let the *kernel* hand a handler
-capabilities the faulting thread never offered — and it is what makes the
-RR4.20 non-interference argument about a data flow alone. -/
+A fault never transfers authority: its send carries no capability request
+(`sendPayloadCapRequest` of `.fault` is `none`).  It is a diagnostic report the
+kernel writes about a thread, so granting through it would let the *kernel*
+hand a handler capabilities the faulting thread never offered — and it is what
+makes the RR4.20 non-interference argument about a data flow alone. -/
 def faultMessage (f : Fault) (ctx : FaultContext) (badge : Option SeLe4n.Badge) :
     IpcMessage :=
   { registers   := (Architecture.encodeFault f ctx).2
-    caps        := #[]
     badge       := badge
-    capsGranted := false
     label       := (Architecture.encodeFault f ctx).1.label }
 
 /-- WS-RR RR4.6: the message satisfies the model's payload bound predicate. -/
 theorem faultMessage_bounded (f : Fault) (ctx : FaultContext)
-    (badge : Option SeLe4n.Badge) : (faultMessage f ctx badge).bounded := by
-  refine ⟨Architecture.encodeFault_within_budget f ctx, ?_⟩
-  simp [faultMessage, maxExtraCaps]
+    (badge : Option SeLe4n.Badge) : (faultMessage f ctx badge).bounded :=
+  Architecture.encodeFault_within_budget f ctx
 
 /-- M-D01: Resolve extra capability addresses from the sender's CSpace
 into actual capabilities for IPC message transfer.
@@ -121,19 +118,20 @@ def blockedSenderDecode (st : SystemState) (sender : SeLe4n.ThreadId) (tcb : TCB
 
 /-- WS-ZA ZA4.7: **the message a sender's frame holds**, given the decode of
 its saved registers and what its capability contributes: the body cut to the
-declared length (`extractMessageRegisters`), the capability's badge and grant
-right, and no capabilities (the transfer resolves those separately).  A frame
+declared length (`extractMessageRegisters`) and the capability's badge, with
+no capabilities (the transfer resolves those, under the grant right, from
+`senderFrameCapRequest`).  A frame
 that does not decode delivers no words.  The send that meets a waiting receiver
 and the receive that takes a blocked sender both read the message here, so the
 two arrival orders deliver the same words. -/
 @[inline] def senderFrameMessage (decode : Except KernelError SyscallDecodeResult)
-    (badge : Option SeLe4n.Badge) (grant : Bool) : IpcMessage :=
+    (badge : Option SeLe4n.Badge) : IpcMessage :=
   match decode with
-  | .error _ => { IpcMessage.empty with badge := badge, capsGranted := grant }
+  | .error _ => { IpcMessage.empty with badge := badge }
   | .ok decoded =>
       { registers := Architecture.RegisterDecode.extractMessageRegisters decoded.msgRegs
           decoded.msgInfo,
-        caps := #[], badge := badge, capsGranted := grant }
+        badge := badge }
 
 /-- WS-ZA ZA4.7: **the message a blocked sender holds**, given the decode of
 its saved frame.
@@ -142,7 +140,7 @@ its saved frame.
   its message is `faultMessage` of it under the handler capability's badge.
 * Any other sender's message is its saved frame decoded as the entry decodes
   it: the body cut to the declared length (`extractMessageRegisters`), the
-  badge its capability carried and its grant right.  A frame that no longer
+  badge its capability carried.  A frame that no longer
   decodes (its registers were rewritten while it waited) delivers no words.
 
 The extra capabilities are not part of this read: the receive that takes the
@@ -157,7 +155,7 @@ definition. -/
     match tcb.pendingFault with
     | some tf => faultMessage tf.fault tf.context tcb.ipcBadgeView
     | none => { IpcMessage.empty with badge := tcb.ipcBadgeView }
-  else senderFrameMessage decode tcb.ipcBadgeView tcb.ipcCanGrant
+  else senderFrameMessage decode tcb.ipcBadgeView
 
 /-- WS-ZA ZA4.7: **the message a blocked sender holds**, read at the
 rendezvous from where seL4 keeps it (`blockedSenderMessageOf` of the live
@@ -196,27 +194,17 @@ def blockedSenderCapRequest (st : SystemState) (sender : SeLe4n.ThreadId) (tcb :
     Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat) :=
   if tcb.ipcFaultSend then none else senderFrameCapRequest st sender tcb tcb.ipcCanGrant
 
-/-- WS-ZA ZA4.7: a blocked sender's message carries no capabilities -- the
-receive resolves them separately (`blockedSenderCapRequest`). -/
-@[simp] theorem blockedSenderMessage_caps (st : SystemState) (sender : SeLe4n.ThreadId)
-    (tcb : TCB) : (blockedSenderMessage st sender tcb).caps = #[] := by
-  unfold blockedSenderMessage blockedSenderMessageOf senderFrameMessage
-  split
-  · split <;> rfl
-  · split <;> rfl
-
 /-- WS-ZA ZA4.7: and it is within the payload bound: a fault encodes inside the
 budget, and a decoded body is cut to at most `maxMessageRegisters` words. -/
 theorem blockedSenderMessage_bounded (st : SystemState) (sender : SeLe4n.ThreadId)
     (tcb : TCB) : (blockedSenderMessage st sender tcb).bounded := by
-  refine ⟨?_, by simp [maxExtraCaps]⟩
   unfold blockedSenderMessage blockedSenderMessageOf senderFrameMessage
   split
   · split
     · exact Architecture.encodeFault_within_budget _ _
-    · simp [IpcMessage.empty]
+    · simp [IpcMessage.empty, IpcMessage.bounded]
   · split
-    · simp [IpcMessage.empty]
+    · simp [IpcMessage.empty, IpcMessage.bounded]
     · exact Architecture.RegisterDecode.extractMessageRegisters_length _ _
 
 
@@ -228,7 +216,8 @@ and IPC buffer, and whichever arm delivers them reads them there
 blocks until a receive takes it deliver the same words.
 
 * `frame badge grant` -- an ordinary send: the message is the sender's frame
-  (`senderFrameMessage`) under its capability's badge and grant right.
+  (`senderFrameMessage`) under its capability's badge; the grant right decides
+  only the capability request (`sendPayloadCapRequest`).
 * `fault f ctx badge` -- the one message the kernel writes: a fault, delivered
   under the handler capability's badge (`faultMessage`). -/
 inductive SendPayload where
@@ -256,11 +245,11 @@ def senderFrameDecode (st : SystemState) (sender : SeLe4n.ThreadId) :
 
 /-- WS-ZA ZA4.7: **the message a send delivers** to a waiting receiver: the
 fault message for a fault, otherwise the sender's frame under its capability's
-badge and grant right -- the same read the receive that takes a blocked sender
+badge -- the same read the receive that takes a blocked sender
 makes (`sendPayloadMessage_frame_eq_blockedSenderMessage`). -/
 @[inline] def sendPayloadMessage (st : SystemState) (sender : SeLe4n.ThreadId) :
     SendPayload → IpcMessage
-  | .frame b g => senderFrameMessage (senderFrameDecode st sender) b g
+  | .frame b _ => senderFrameMessage (senderFrameDecode st sender) b
   | .fault f ctx b => faultMessage f ctx b
 
 /-- WS-ZA ZA4.7: **the capabilities a send transfers** to a waiting receiver:
@@ -282,24 +271,14 @@ theorem sendPayloadMessage_frame_eq_blockedSenderMessage (st : SystemState)
       sendPayloadMessage st sender (.frame badge grant) := by
   simp [blockedSenderMessageOf, sendPayloadMessage, senderFrameDecode, hT]
 
-/-- WS-ZA ZA4.7: a delivered message carries no capabilities. -/
-@[simp] theorem sendPayloadMessage_caps (st : SystemState) (sender : SeLe4n.ThreadId)
-    (p : SendPayload) : (sendPayloadMessage st sender p).caps = #[] := by
-  cases p with
-  | frame b g =>
-    simp only [sendPayloadMessage, senderFrameMessage]
-    split <;> rfl
-  | fault f ctx b => rfl
-
 /-- WS-ZA ZA4.7: and it is within the payload bound. -/
 theorem sendPayloadMessage_bounded (st : SystemState) (sender : SeLe4n.ThreadId)
     (p : SendPayload) : (sendPayloadMessage st sender p).bounded := by
   cases p with
   | frame b g =>
-    refine ⟨?_, by simp [maxExtraCaps]⟩
     simp only [sendPayloadMessage, senderFrameMessage]
     split
-    · simp [IpcMessage.empty]
+    · simp [IpcMessage.empty, IpcMessage.bounded]
     · exact Architecture.RegisterDecode.extractMessageRegisters_length _ _
   | fault f ctx b => exact faultMessage_bounded f ctx b
 
