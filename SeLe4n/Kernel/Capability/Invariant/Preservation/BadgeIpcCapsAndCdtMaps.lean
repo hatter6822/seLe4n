@@ -194,47 +194,33 @@ theorem ipcTransferSingleCap_preserves_capabilityInvariantBundle
     (hStep : ipcTransferSingleCap cap srcNode receiverRoot slotBase scanLimit st
              = .ok (result, st')) :
     capabilityInvariantBundle st' := by
-  -- AN10-B: post-migration `ipcTransferSingleCap` reads via `getCNode?`.
-  simp only [ipcTransferSingleCap] at hStep
-  cases hCn : st.getCNode? receiverRoot with
-  | none => simp [hCn] at hStep
-  | some cn =>
-    simp [hCn] at hStep
-    cases hSlot : cn.findFirstEmptySlotChecked slotBase scanLimit with
-      | none =>
-        simp [hSlot] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInv
-      | some emptySlot =>
-        simp [hSlot] at hStep
-        -- A source destroyed since resolution declines the install and leaves
-        -- the state untouched, so the claim holds there unchanged.
-        cases hSrc : cdtNodeIsRevocable st srcNode with
-        | false => simp [hSrc] at hStep; obtain ⟨_, rfl⟩ := hStep; first | rfl | assumption
-        | true =>
-        simp only [hSrc] at hStep
-        cases hIns : cspaceInsertSlot { cnode := receiverRoot, slot := emptySlot } cap.withoutMapping st with
-        | error e => simp [hIns] at hStep
-        | ok pair2 =>
-          rcases pair2 with ⟨_, st2⟩
-          have hBundleSt2 := cspaceInsertSlot_preserves_capabilityInvariantBundle st st2
-            { cnode := receiverRoot, slot := emptySlot } cap.withoutMapping hInv
-            (objects_invExt_of_capabilityInvariantBundle st hInv) hCapBacked hIns
-          have hCdt := cdt_addEdge_after_insert st st2 srcNode
-            { cnode := receiverRoot, slot := emptySlot } cap.withoutMapping .ipcTransfer
-            hInv.2.1 hInv.2.2.1 (objects_invExt_of_capabilityInvariantBundle st hInv)
-            (by unfold cdtNodeIsRevocable at hSrc; exact hSrc) hIns hInv.linksAgree
-          have hIX := objects_invExt_of_capabilityInvariantBundle _ hBundleSt2
-          rcases hBundleSt2 with ⟨_, _, _, hDepth2, hObjInv2, hRCPV2, -⟩
-          simp [hIns] at hStep
-          obtain ⟨_, rfl⟩ := hStep
-          have hObjFinal : ∀ cdt' : CapDerivationTree,
-              ({ st2 with cdt := cdt' } : SystemState).objects = st2.objects := fun _ => rfl
-          refine capabilityInvariantBundle_of_linkReach ?_
-            (SystemState.cdtAddChild_reach st2 srcNode _ .ipcTransfer) hIX hCdt.2.2
-          exact ⟨cspaceLookupSound_holds _,
-            hCdt.1, hCdt.2.1,
-            cspaceDepthConsistent_of_objects_eq st2 _ hDepth2 (hObjFinal _),
-            (hObjFinal _) ▸ hObjInv2,
-            replyCapPointsToValidReply_of_objects_eq (hObjFinal _) hRCPV2⟩
+  obtain ⟨_, -, ⟨rfl, -⟩ | ⟨emptySlot, st2, -, hSrc, -, hIns, -, rfl⟩⟩ :=
+    ipcTransferSingleCap_ok_cases hStep
+  · exact hInv
+  · have hObjInv := objects_invExt_of_capabilityInvariantBundle st hInv
+    have hBundleSt2 := cspaceInsertSlot_preserves_capabilityInvariantBundle st st2
+      { cnode := receiverRoot, slot := emptySlot } cap.withoutMapping hInv hObjInv hCapBacked hIns
+    have hCdt := cdt_addEdge_after_insert st st2 srcNode
+      { cnode := receiverRoot, slot := emptySlot } cap.withoutMapping .ipcTransfer
+      hInv.2.1 hInv.2.2.1 hObjInv
+      (by unfold cdtNodeIsRevocable at hSrc; exact hSrc) hIns hInv.linksAgree
+    have hIX := objects_invExt_of_capabilityInvariantBundle _ hBundleSt2
+    rcases hBundleSt2 with ⟨_, _, _, hDepth2, hObjInv2, hRCPV2, -⟩
+    have hObjFinal : ∀ cdt' : CapDerivationTree,
+        ({ st2 with cdt := cdt' } : SystemState).objects = st2.objects := fun _ => rfl
+    have hMid := capabilityInvariantBundle_of_linkReach ?_
+      (SystemState.cdtAddChild_reach st2 srcNode _ .ipcTransfer) hIX hCdt.2.2
+    · -- `cdtNodeIsRevocable`: the source holds a capability, and still does after
+      -- the install and the edge, so setting it full keeps the bundle.
+      obtain ⟨c, hLc⟩ := Option.isSome_iff_exists.mp
+        (by unfold cdtNodeIsRevocable at hSrc; exact hSrc)
+      obtain ⟨cnS, hOS, hLS⟩ := cspaceInsertSlot_cdtAddChild_src .ipcTransfer hObjInv hLc hIns
+      exact untypedSourceSetFull_preserves_capabilityInvariantBundle _ srcNode cnS cap hMid hOS hLS
+    · exact ⟨cspaceLookupSound_holds _,
+        hCdt.1, hCdt.2.1,
+        cspaceDepthConsistent_of_objects_eq st2 _ hDepth2 (hObjFinal _),
+        (hObjFinal _) ▸ hObjInv2,
+        replyCapPointsToValidReply_of_objects_eq (hObjFinal _) hRCPV2⟩
 
 /-- V3-E / M3-D3b: `ipcUnwrapCapsLoop` preserves `capabilityInvariantBundle`
 through fuel-indexed induction. Each iteration delegates to

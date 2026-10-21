@@ -139,15 +139,14 @@ theorem setCapFreeIndex_preserves_capabilityInvariantBundle
     (Capability.withFreeIndex_target _ _) hS
 
 /-- WS-ZA ZA5.4: **setting a derivation's untyped source full preserves the
-capability bundle**, given the source still holds the capability the derivation
-read. -/
+capability bundle**, given the source still holds a capability. -/
 theorem untypedSourceSetFull_preserves_capabilityInvariantBundle
-    (st : SystemState) (src : CSpaceAddr) (cn : CNode) (cap : Capability)
+    (st : SystemState) (src : CSpaceAddr) (cn : CNode) (cap : Capability) {c : Capability}
     (hInv : capabilityInvariantBundle st)
-    (hPre : st.objects[src.cnode]? = some (.cnode cn)) (hLk : cn.lookup src.slot = some cap) :
+    (hPre : st.objects[src.cnode]? = some (.cnode cn)) (hLk : cn.lookup src.slot = some c) :
     capabilityInvariantBundle (untypedSourceSetFull st src cap) :=
   untypedSourceSetFull_of (P := capabilityInvariantBundle) hInv
-    fun idx => setCapFreeIndex_preserves_capabilityInvariantBundle st src cn cap idx hInv hPre hLk
+    fun idx => setCapFreeIndex_preserves_capabilityInvariantBundle st src cn c idx hInv hPre hLk
 
 /-- WS-E4/C-02: cspaceCopy preserves capabilityInvariantBundle.
 Copy composes cspaceLookupSlot + cspaceInsertSlot, both of which preserve the bundle,

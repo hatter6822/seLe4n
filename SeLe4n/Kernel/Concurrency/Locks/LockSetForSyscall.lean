@@ -1120,7 +1120,7 @@ theorem lockSetForSyscall_send_object_writes_declared
     (hObjInv : st'.objects.invExt)
     (hStep : endpointSendDualWithCaps endpointId ops.caller payload
         receiverSlotBase st = .ok (summary, st''))
-    (hChanged : ¬ SystemState.objectAgreesOffDerivationLinksAt st'' st' oid) :
+    (hChanged : ¬ SystemState.objectAgreesOffDerivationMetadataAt st'' st' oid) :
     (cnodeLock oid, AccessMode.write) ∈ S.pairs := by
   rw [lockSetForSyscall_send_eq ops st caller endpointId payload hTcb hEp hMsg] at hDecl
   cases hDecl
@@ -1144,7 +1144,7 @@ theorem lockSetForSyscall_call_object_writes_declared
     (hObjInv : st'.objects.invExt)
     (hStep : endpointCallWithCaps endpointId ops.caller payload
         receiverSlotBase st = .ok (summary, st''))
-    (hChanged : ¬ SystemState.objectAgreesOffDerivationLinksAt st'' st' oid) :
+    (hChanged : ¬ SystemState.objectAgreesOffDerivationMetadataAt st'' st' oid) :
     (cnodeLock oid, AccessMode.write) ∈ S.pairs := by
   rw [lockSetForSyscall_call_eq ops st caller endpointId payload hTcb hEp hMsg] at hDecl
   cases hDecl

@@ -1562,14 +1562,14 @@ theorem untypedResetRewound_preserves_ipcInvariantFull
   untypedResetWithShootdown_preserves_ipcInvariantFull ec untypedId _ st' h1.2 h1.1 hStep
 
 /-- WS-ZA ZA5.4: **setting a derivation's untyped source full preserves the
-bundle**, given the source still holds the capability the derivation read. -/
+bundle**, given the source still holds a capability. -/
 theorem untypedSourceSetFull_preserves_ipcInvariantFull
-    (st : SystemState) (src : CSpaceAddr) (cn : CNode) (cap : Capability)
+    (st : SystemState) (src : CSpaceAddr) (cn : CNode) (cap : Capability) {c : Capability}
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
-    (hPre : st.objects[src.cnode]? = some (.cnode cn)) (hLk : cn.lookup src.slot = some cap) :
+    (hPre : st.objects[src.cnode]? = some (.cnode cn)) (hLk : cn.lookup src.slot = some c) :
     ipcInvariantFull (untypedSourceSetFull st src cap) :=
   untypedSourceSetFull_of (P := ipcInvariantFull) hInv
-    fun idx => (setCapFreeIndex_preserves_ipcInvariantFull src cn cap idx st hObjInv hInv hPre hLk).1
+    fun idx => (setCapFreeIndex_preserves_ipcInvariantFull src cn c idx st hObjInv hInv hPre hLk).1
 
 /-- `.cspaceMint`: the CDT-tracked form the dispatch routes through — the mint,
 its edge, and the source set full when it names an untyped. -/

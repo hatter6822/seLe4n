@@ -1151,6 +1151,15 @@ theorem setCapFreeIndex_machine (st : SystemState) (addr : CSpaceAddr) (idx : Na
     | _ => unfold setCapFreeIndex SystemState.storeCNodeWith; rw [hO]
   | none => unfold setCapFreeIndex SystemState.storeCNodeWith; rw [hO]
 
+theorem setCapFreeIndex_services (st : SystemState) (addr : CSpaceAddr) (idx : Nat) :
+    (setCapFreeIndex st addr idx).services = st.services := by
+  cases hO : st.objects[addr.cnode]? with
+  | some o =>
+    cases o with
+    | cnode cn => exact storeObject_preserves_services _ _ _ _ (setCapFreeIndex_eq_storeObject hO)
+    | _ => unfold setCapFreeIndex SystemState.storeCNodeWith; rw [hO]
+  | none => unfold setCapFreeIndex SystemState.storeCNodeWith; rw [hO]
+
 /-- What a free-index write leaves in the slot's CNode. -/
 theorem setCapFreeIndex_objects_self {st : SystemState} {addr : CSpaceAddr} {idx : Nat}
     {cn : CNode} (hInv : st.objects.invExt) (h : st.objects[addr.cnode]? = some (.cnode cn)) :
@@ -1171,6 +1180,32 @@ theorem CNode.lookup_setFreeIndex_ne (cn : CNode) {slot s : SeLe4n.Slot} (idx : 
   cases cn.lookup slot with
   | none => rfl
   | some cap => exact CNode.lookup_insert_ne _ _ _ _ hNe (CNode.slotsUnique_holds _)
+
+/-- A free-index write leaves its own slot holding the capability it held, with
+the new index. -/
+theorem CNode.lookup_setFreeIndex_self (cn : CNode) (slot : SeLe4n.Slot) (idx : Nat) :
+    (cn.setFreeIndex slot idx).lookup slot = (cn.lookup slot).map (·.withFreeIndex idx) := by
+  cases h : cn.lookup slot with
+  | none => unfold CNode.setFreeIndex; rw [h]; exact h
+  | some cap =>
+    rw [CNode.setFreeIndex_of_lookup h, CNode.lookup_insert_eq _ _ _ (CNode.slotsUnique_holds _)
+      (CNode.slotAddressable_of_lookup _ _ _ h)]
+    rfl
+
+/-- Every capability a free-index write leaves is one the CNode held, with a
+free index possibly rewritten: authority, badge and mapping are the ones it
+had. -/
+theorem CNode.lookup_setFreeIndex_back {cn : CNode} {slot s : SeLe4n.Slot} {idx : Nat}
+    {cap : Capability} (h : (cn.setFreeIndex slot idx).lookup s = some cap) :
+    ∃ c, cn.lookup s = some c ∧ (cap = c ∨ cap = c.withFreeIndex idx) := by
+  by_cases hEq : slot = s
+  · subst hEq
+    rw [CNode.lookup_setFreeIndex_self] at h
+    cases hc : cn.lookup slot with
+    | none => rw [hc] at h; cases h
+    | some c => rw [hc] at h; cases h; exact ⟨c, rfl, .inr rfl⟩
+  · rw [CNode.lookup_setFreeIndex_ne _ _ hEq] at h
+    exact ⟨cap, h, .inl rfl⟩
 
 /-- A free-index write leaves the CNode's geometry. -/
 @[simp] theorem CNode.setFreeIndex_radixWidth (cn : CNode) (slot : SeLe4n.Slot) (idx : Nat) :
@@ -1249,6 +1284,12 @@ theorem untypedSourceSetFull_machine (st : SystemState) (src : CSpaceAddr) (cap 
   untypedSourceSetFull_of (P := fun s => s.machine = st.machine) rfl
     fun idx => setCapFreeIndex_machine st src idx
 
+/-- Setting the source full leaves the services. -/
+theorem untypedSourceSetFull_services (st : SystemState) (src : CSpaceAddr) (cap : Capability) :
+    (untypedSourceSetFull st src cap).services = st.services :=
+  untypedSourceSetFull_of (P := fun s => s.services = st.services) rfl
+    fun idx => setCapFreeIndex_services st src idx
+
 /-- A free-index write keeps the object table's extension invariant, so setting
 the source full does. -/
 theorem untypedSourceSetFull_preserves_objects_invExt {st : SystemState} {src : CSpaceAddr}
@@ -1256,6 +1297,29 @@ theorem untypedSourceSetFull_preserves_objects_invExt {st : SystemState} {src : 
     (untypedSourceSetFull st src cap).objects.invExt :=
   untypedSourceSetFull_of (P := fun s => s.objects.invExt) hInv
     fun _ => setCapFreeIndex_preserves_objects_invExt hInv
+
+/-- A free-index write rewrites derivation metadata only. -/
+theorem setCapFreeIndex_agreesOffDerivationMetadata {st : SystemState} {addr : CSpaceAddr}
+    {idx : Nat} (hInv : st.objects.invExt) (oid : SeLe4n.ObjId) :
+    SystemState.objectAgreesOffDerivationMetadataAt (setCapFreeIndex st addr idx) st oid := by
+  by_cases hEq : oid = addr.cnode
+  · subst hEq
+    cases hO : st.objects[addr.cnode]? with
+    | some o =>
+      cases o with
+      | cnode cn =>
+        exact .inr (.inl ⟨cn, _, hO, setCapFreeIndex_objects_self hInv hO,
+          .freeIndex cn addr.slot idx⟩)
+      | _ => exact .of_eq (by unfold setCapFreeIndex SystemState.storeCNodeWith; simp only [hO])
+    | none => exact .of_eq (by unfold setCapFreeIndex SystemState.storeCNodeWith; simp only [hO])
+  · exact .of_eq (setCapFreeIndex_objects_ne hInv hEq)
+
+/-- Setting the source full rewrites derivation metadata only. -/
+theorem untypedSourceSetFull_agreesOffDerivationMetadata {st : SystemState} {src : CSpaceAddr}
+    {cap : Capability} (hInv : st.objects.invExt) (oid : SeLe4n.ObjId) :
+    SystemState.objectAgreesOffDerivationMetadataAt (untypedSourceSetFull st src cap) st oid :=
+  untypedSourceSetFull_of (P := fun s => SystemState.objectAgreesOffDerivationMetadataAt s st oid)
+    (.of_eq rfl) fun _ => setCapFreeIndex_agreesOffDerivationMetadata hInv oid
 
 /-- An install at `dst` leaves every other slot's capability: the capability a
 derivation read from `src` is still there afterwards (an install refuses an
@@ -2667,6 +2731,11 @@ Semantics (matching seL4's IPC cap unwrap):
 3. If found, insert the capability (with sender's original rights).
 4. Record a CDT derivation edge of type `.ipcTransfer` from the sender's
    source slot to the newly occupied receiver slot.
+5. A capability naming an untyped follows seL4's derivation rule: it is not
+   transferred while its source slot has a derivation child (the transfer
+   stops with `.revocationRequired`), and once transferred the sender's
+   capability is set full (`untypedSourceSetFull`), so the receiver's copy is
+   the one that can carve.
 
 The sender's capability is NOT removed from the sender's CSpace — IPC
 transfer is a copy, not a move (matching seL4 semantics where the sender
@@ -2728,6 +2797,13 @@ def ipcTransferSingleCap
             match cdtNodeIsRevocable st srcNode with
             | false => .ok (.sourceRevoked, st)
             | true =>
+            -- WS-ZA ZA5.4 part 13: seL4's derivation rule for an untyped
+            -- capability.  `deriveCap` refuses one whose source slot has a
+            -- derivation child (`ensureNoChildren`), and seL4's transfer loop
+            -- stops at a refused derivation; the error is that stop
+            -- (`ipcUnwrapCapsLoop` keeps the capabilities already installed and
+            -- transfers none after this one).
+            if untypedDeriveRefused st srcNode cap then .error .revocationRequired else
             let dstAddr : CSpaceAddr := { cnode := receiverCspaceRoot, slot := emptySlot }
             -- WS-BP BP7.1 (`v0.36.7`): the transferred capability is a
             -- derivation (the sender keeps its own), so it arrives with no
@@ -2737,9 +2813,87 @@ def ipcTransferSingleCap
             match cspaceInsertSlot dstAddr cap.withoutMapping st with
             | .error e => .error e
             | .ok ((), st') =>
+                -- `cteInsert`'s `setUntypedCapAsFull`: the receiver's copy took
+                -- the sender's free index, so the sender's capability is set
+                -- full and only the copy can carve.
                 .ok (.installed receiverCspaceRoot emptySlot,
-                     st'.cdtAddChild srcNode dstAddr .ipcTransfer)
+                     untypedSourceSetFull (st'.cdtAddChild srcNode dstAddr .ipcTransfer)
+                       srcNode cap)
     | none => .error .objectNotFound
+
+/-- WS-ZA ZA5.4 part 13: **what a transfer that returns did** — on a CNode
+receiver root, either nothing (no free slot, or the source slot gone), or the
+install of a derivation the rule admits, its edge, and the source set full. -/
+theorem ipcTransferSingleCap_ok_cases {cap : Capability} {srcNode : SlotRef}
+    {receiverRoot : SeLe4n.ObjId} {slotBase : SeLe4n.Slot} {scanLimit : Nat}
+    {st st' : SystemState} {result : CapTransferResult}
+    (hStep : ipcTransferSingleCap cap srcNode receiverRoot slotBase scanLimit st
+             = .ok (result, st')) :
+    ∃ cn, st.getCNode? receiverRoot = some cn ∧
+      ((st' = st ∧ (result = .noSlot ∨ result = .sourceRevoked)) ∨
+       ∃ emptySlot st2, cn.findFirstEmptySlotChecked slotBase scanLimit = some emptySlot ∧
+         cdtNodeIsRevocable st srcNode = true ∧ untypedDeriveRefused st srcNode cap = false ∧
+         cspaceInsertSlot { cnode := receiverRoot, slot := emptySlot } cap.withoutMapping st
+           = .ok ((), st2) ∧
+         result = .installed receiverRoot emptySlot ∧
+         st' = untypedSourceSetFull
+           (st2.cdtAddChild srcNode { cnode := receiverRoot, slot := emptySlot } .ipcTransfer)
+           srcNode cap) := by
+  unfold ipcTransferSingleCap at hStep
+  cases hCn : st.getCNode? receiverRoot with
+  | none => simp [hCn] at hStep
+  | some cn =>
+    refine ⟨cn, rfl, ?_⟩
+    simp only [hCn] at hStep
+    cases hSlot : cn.findFirstEmptySlotChecked slotBase scanLimit with
+    | none =>
+      simp only [hSlot, Except.ok.injEq, Prod.mk.injEq] at hStep
+      exact .inl ⟨hStep.2.symm, .inl hStep.1.symm⟩
+    | some emptySlot =>
+      simp only [hSlot] at hStep
+      cases hSrc : cdtNodeIsRevocable st srcNode with
+      | false =>
+        simp only [hSrc, Except.ok.injEq, Prod.mk.injEq] at hStep
+        exact .inl ⟨hStep.2.symm, .inr hStep.1.symm⟩
+      | true =>
+        simp only [hSrc] at hStep
+        cases hU : untypedDeriveRefused st srcNode cap with
+        | true => simp [hU] at hStep
+        | false =>
+          simp only [hU, Bool.false_eq_true, ↓reduceIte] at hStep
+          cases hIns : cspaceInsertSlot { cnode := receiverRoot, slot := emptySlot }
+              cap.withoutMapping st with
+          | error e => simp [hIns] at hStep
+          | ok pair =>
+            obtain ⟨⟨⟩, st2⟩ := pair
+            simp only [hIns, Except.ok.injEq, Prod.mk.injEq] at hStep
+            exact .inr ⟨emptySlot, st2, rfl, rfl, rfl, hIns, hStep.1.symm, hStep.2.symm⟩
+
+/-- M3-E4 helper: ipcTransferSingleCap keeps receiverRoot as a CNode.
+The function only succeeds when receiverRoot is a CNode.  On `.noSlot` and
+`.sourceRevoked` the state is unchanged; on `.installed`, `cspaceInsertSlot`
+stores an updated CNode back, the edge rewrites links only, and setting an
+untyped source full rewrites a free index only. -/
+theorem ipcTransferSingleCap_receiverRoot_stays_cnode
+    (cap : Capability) (srcNode : SlotRef)
+    (receiverRoot : SeLe4n.ObjId) (slotBase : SeLe4n.Slot)
+    (scanLimit : Nat) (st st' : SystemState)
+    (result : CapTransferResult) (hObjInv : st.objects.invExt)
+    (hStep : ipcTransferSingleCap cap srcNode receiverRoot slotBase scanLimit st
+             = .ok (result, st')) :
+    ∃ cn', st'.objects[receiverRoot]? = some (.cnode cn') := by
+  obtain ⟨cn, hCn, ⟨h, -⟩ | ⟨emptySlot, st2, -, -, -, hIns, -, rfl⟩⟩ :=
+    ipcTransferSingleCap_ok_cases hStep
+  · rw [h]; exact ⟨cn, (SystemState.getCNode?_eq_some_iff st receiverRoot cn).mp hCn⟩
+  · obtain ⟨_, _, _, _, hStore⟩ := cspaceInsertSlot_ok_decompose st st2 _ _ hIns
+    have hInvMid := cspaceInsertSlot_preserves_objects_invExt st st2 _ _ hObjInv hIns
+    have hAdd := SystemState.cdtAddChild_agreeObjects hInvMid srcNode
+      { cnode := receiverRoot, slot := emptySlot } .ipcTransfer
+    obtain ⟨c2, hC2, -⟩ := hAdd.1.cnode_fwd (storeObject_objects_eq _ _ _ _ hObjInv hStore)
+    obtain ⟨c3, hC3, -⟩ :=
+      (untypedSourceSetFull_agreesOffDerivationMetadata (src := srcNode) (cap := cap) hAdd.2
+        receiverRoot).cnode_fwd hC2
+    exact ⟨c3, hC3⟩
 
 /-- **No capability is ever installed beneath a source no revocation can reach.**
 
@@ -2764,19 +2918,10 @@ theorem ipcTransferSingleCap_installed_implies_revocable_source
     (hStep : ipcTransferSingleCap cap srcNode receiverCspaceRoot slotBase scanLimit st
              = .ok (.installed cnode slot, st')) :
     cdtNodeIsRevocable st srcNode = true := by
-  simp only [ipcTransferSingleCap] at hStep
-  cases hSrc : cdtNodeIsRevocable st srcNode with
-  | false =>
-    -- The declining branch answers `.sourceRevoked`, never `.installed`.
-    exfalso
-    cases hCn : st.getCNode? receiverCspaceRoot with
-    | none => simp [hCn] at hStep
-    | some cn =>
-      simp only [hCn] at hStep
-      cases hSlot : cn.findFirstEmptySlotChecked slotBase scanLimit with
-      | none => simp [hSlot] at hStep
-      | some _ => simp [hSlot, hSrc] at hStep
-  | true => rfl
+  obtain ⟨_, -, ⟨-, h | h⟩ | ⟨_, _, -, hSrc, -⟩⟩ := ipcTransferSingleCap_ok_cases hStep
+  · cases h
+  · cases h
+  · exact hSrc
 
 /-- The declining branch is a no-op: a transfer that finds its source gone
 leaves the state exactly as it was, so nothing is half-installed. -/
@@ -2787,22 +2932,9 @@ theorem ipcTransferSingleCap_sourceRevoked_preserves_state
     (hStep : ipcTransferSingleCap cap srcNode receiverCspaceRoot slotBase scanLimit st
              = .ok (.sourceRevoked, st')) :
     st' = st := by
-  simp only [ipcTransferSingleCap] at hStep
-  cases hCn : st.getCNode? receiverCspaceRoot with
-  | none => simp [hCn] at hStep
-  | some cn =>
-    simp only [hCn] at hStep
-    cases hSlot : cn.findFirstEmptySlotChecked slotBase scanLimit with
-    | none => simp [hSlot] at hStep
-    | some emptySlot =>
-      simp only [hSlot] at hStep
-      cases hSrc : cdtNodeIsRevocable st srcNode with
-      | false => simp [hSrc] at hStep; exact hStep.symm
-      | true =>
-        simp only [hSrc] at hStep
-        cases hIns : cspaceInsertSlot { cnode := receiverCspaceRoot, slot := emptySlot } cap.withoutMapping st with
-        | error e => simp [hIns] at hStep
-        | ok pair => simp [hIns] at hStep
+  obtain ⟨_, -, ⟨h, -⟩ | ⟨_, _, -, -, -, -, h, -⟩⟩ := ipcTransferSingleCap_ok_cases hStep
+  · exact h
+  · cases h
 
 theorem ipcTransferSingleCap_preserves_scheduler
     (cap : Capability) (srcNode : SlotRef)
@@ -2812,29 +2944,10 @@ theorem ipcTransferSingleCap_preserves_scheduler
     (hStep : ipcTransferSingleCap cap srcNode receiverRoot slotBase scanLimit st
              = .ok (result, st')) :
     st'.scheduler = st.scheduler := by
-  -- AN10-B: post-migration `ipcTransferSingleCap` reads via `getCNode?`.
-  simp only [ipcTransferSingleCap] at hStep
-  cases hCn : st.getCNode? receiverRoot with
-  | none => simp [hCn] at hStep
-  | some cn =>
-    simp [hCn] at hStep
-    cases hSlot : cn.findFirstEmptySlotChecked slotBase scanLimit with
-    | none => simp [hSlot] at hStep; obtain ⟨_, rfl⟩ := hStep; rfl
-    | some emptySlot =>
-        simp [hSlot] at hStep
-        -- A source destroyed since resolution declines the install and leaves
-        -- the state untouched, so this frame holds there by reflexivity.
-        cases hSrc : cdtNodeIsRevocable st srcNode with
-        | false => simp [hSrc] at hStep; obtain ⟨_, rfl⟩ := hStep; first | rfl | assumption
-        | true =>
-        simp only [hSrc] at hStep
-        cases hIns : cspaceInsertSlot { cnode := receiverRoot, slot := emptySlot } cap.withoutMapping st with
-        | error e => simp [hIns] at hStep
-        | ok pair =>
-          simp [hIns] at hStep
-          obtain ⟨_, rfl⟩ := hStep
-          have h1 := cspaceInsertSlot_preserves_scheduler st pair.2 _ cap.withoutMapping (by rw [show pair = (pair.1, pair.2) from by simp]; exact hIns)
-          simp_all
+  obtain ⟨_, -, ⟨rfl, -⟩ | ⟨_, _, -, -, -, hIns, -, rfl⟩⟩ := ipcTransferSingleCap_ok_cases hStep
+  · rfl
+  · rw [untypedSourceSetFull_scheduler, SystemState.cdtAddChild_scheduler]
+    exact cspaceInsertSlot_preserves_scheduler _ _ _ _ hIns
 
 /-- WS-SM SM8.B.2: capability transfer never touches the machine, and therefore
 never touches any core's banked `RegisterFile` (SM5.I banks every core's
@@ -2850,31 +2963,14 @@ theorem ipcTransferSingleCap_preserves_machine
     (hStep : ipcTransferSingleCap cap srcNode receiverRoot slotBase scanLimit st
              = .ok (result, st')) :
     st'.machine = st.machine := by
-  simp only [ipcTransferSingleCap] at hStep
-  cases hCn : st.getCNode? receiverRoot with
-  | none => simp [hCn] at hStep
-  | some cn =>
-    simp [hCn] at hStep
-    cases hSlot : cn.findFirstEmptySlotChecked slotBase scanLimit with
-    | none => simp [hSlot] at hStep; obtain ⟨_, rfl⟩ := hStep; rfl
-    | some emptySlot =>
-        simp [hSlot] at hStep
-        -- A source destroyed since resolution declines the install and leaves
-        -- the state untouched, so this frame holds there by reflexivity.
-        cases hSrc : cdtNodeIsRevocable st srcNode with
-        | false => simp [hSrc] at hStep; obtain ⟨_, rfl⟩ := hStep; first | rfl | assumption
-        | true =>
-        simp only [hSrc] at hStep
-        cases hIns : cspaceInsertSlot { cnode := receiverRoot, slot := emptySlot } cap.withoutMapping st with
-        | error e => simp [hIns] at hStep
-        | ok pair =>
-          simp [hIns] at hStep
-          obtain ⟨_, rfl⟩ := hStep
-          have h1 := cspaceInsertSlot_preserves_machine st pair.2 _ cap.withoutMapping
-            (by rw [show pair = (pair.1, pair.2) from by simp]; exact hIns)
-          simp_all
+  obtain ⟨_, -, ⟨rfl, -⟩ | ⟨_, _, -, -, -, hIns, -, rfl⟩⟩ := ipcTransferSingleCap_ok_cases hStep
+  · rfl
+  · rw [untypedSourceSetFull_machine, SystemState.cdtAddChild_machine]
+    exact cspaceInsertSlot_preserves_machine _ _ _ _ hIns
 
-/-- ipcTransferSingleCap preserves objects at keys other than the receiver root CNode. -/
+/-- ipcTransferSingleCap preserves objects at keys other than the receiver root
+CNode, up to derivation metadata: the edge relinks slots, and since WS-ZA ZA5.4
+part 13 the source of an untyped capability's derivation is set full. -/
 theorem ipcTransferSingleCap_preserves_objects_ne
     (cap : Capability) (srcNode : SlotRef)
     (receiverRoot : SeLe4n.ObjId) (slotBase : SeLe4n.Slot)
@@ -2884,41 +2980,17 @@ theorem ipcTransferSingleCap_preserves_objects_ne
     (hObjInv : st.objects.invExt)
     (hStep : ipcTransferSingleCap cap srcNode receiverRoot slotBase scanLimit st
              = .ok (result, st')) :
-    SystemState.objectAgreesOffDerivationLinksAt st' st oid := by
-  -- AN10-B: post-migration `ipcTransferSingleCap` reads via `getCNode?`.
-  simp only [ipcTransferSingleCap] at hStep
-  cases hCn : st.getCNode? receiverRoot with
-  | none => simp [hCn] at hStep
-  | some cn =>
-    simp [hCn] at hStep
-    cases hSlot : cn.findFirstEmptySlotChecked slotBase scanLimit with
-    | none => simp [hSlot] at hStep; obtain ⟨_, rfl⟩ := hStep; exact Or.inl rfl
-    | some emptySlot =>
-        simp [hSlot] at hStep
-        -- A source destroyed since resolution declines the install and leaves
-        -- the state untouched, so this frame holds there by reflexivity.
-        cases hSrc : cdtNodeIsRevocable st srcNode with
-        | false => simp [hSrc] at hStep; obtain ⟨_, rfl⟩ := hStep; exact Or.inl rfl
-        | true =>
-        simp only [hSrc] at hStep
-        cases hIns : cspaceInsertSlot { cnode := receiverRoot, slot := emptySlot } cap.withoutMapping st with
-        | error e => simp [hIns] at hStep
-        | ok pair =>
-          simp [hIns] at hStep
-          obtain ⟨_, rfl⟩ := hStep
-          have hIns' : cspaceInsertSlot { cnode := receiverRoot, slot := emptySlot }
-              cap.withoutMapping st = .ok ((), pair.2) := by
-            rw [show pair = (pair.1, pair.2) from by simp] at hIns; exact hIns
-          have hObjIns := cspaceInsertSlot_preserves_objects_ne st pair.2 _ cap.withoutMapping oid
-            hNe hObjInv hIns'
-          have hInvMid := cspaceInsertSlot_preserves_objects_invExt st pair.2 _ cap.withoutMapping
-            hObjInv hIns'
-          rcases (SystemState.cdtAddChild_agreeObjects hInvMid srcNode
-            { cnode := receiverRoot, slot := emptySlot } .ipcTransfer).1 oid with
-            e | ⟨cn1, cn2, ha, hb, hw⟩ | ⟨t1, t2, ha, hb, hw⟩
-          · exact Or.inl (e.trans hObjIns)
-          · exact Or.inr (Or.inl ⟨cn1, cn2, by rw [← hObjIns]; exact ha, hb, hw⟩)
-          · exact Or.inr (Or.inr ⟨t1, t2, by rw [← hObjIns]; exact ha, hb, hw⟩)
+    SystemState.objectAgreesOffDerivationMetadataAt st' st oid := by
+  obtain ⟨_, -, ⟨rfl, -⟩ | ⟨emptySlot, _, -, -, -, hIns, -, rfl⟩⟩ :=
+    ipcTransferSingleCap_ok_cases hStep
+  · exact .of_eq rfl
+  · have hInvMid := cspaceInsertSlot_preserves_objects_invExt st _ _ cap.withoutMapping hObjInv hIns
+    have hObjIns := cspaceInsertSlot_preserves_objects_ne st _ _ cap.withoutMapping oid hNe hObjInv hIns
+    have hAdd := SystemState.cdtAddChild_agreeObjects hInvMid srcNode
+      { cnode := receiverRoot, slot := emptySlot } .ipcTransfer
+    exact (untypedSourceSetFull_agreesOffDerivationMetadata hAdd.2 oid).trans
+      ((SystemState.objectAgreesOffDerivationMetadataAt.of_links (hAdd.1 oid)).trans
+        (.of_eq hObjIns))
 
 theorem ipcTransferSingleCap_preserves_services
     (cap : Capability) (srcNode : SlotRef)
@@ -2928,29 +3000,10 @@ theorem ipcTransferSingleCap_preserves_services
     (hStep : ipcTransferSingleCap cap srcNode receiverRoot slotBase scanLimit st
              = .ok (result, st')) :
     st'.services = st.services := by
-  -- AN10-B: post-migration `ipcTransferSingleCap` reads via `getCNode?`.
-  simp only [ipcTransferSingleCap] at hStep
-  cases hCn : st.getCNode? receiverRoot with
-  | none => simp [hCn] at hStep
-  | some cn =>
-    simp [hCn] at hStep
-    cases hSlot : cn.findFirstEmptySlotChecked slotBase scanLimit with
-    | none => simp [hSlot] at hStep; obtain ⟨_, rfl⟩ := hStep; rfl
-    | some emptySlot =>
-        simp [hSlot] at hStep
-        -- A source destroyed since resolution declines the install and leaves
-        -- the state untouched, so this frame holds there by reflexivity.
-        cases hSrc : cdtNodeIsRevocable st srcNode with
-        | false => simp [hSrc] at hStep; obtain ⟨_, rfl⟩ := hStep; first | rfl | assumption
-        | true =>
-        simp only [hSrc] at hStep
-        cases hIns : cspaceInsertSlot { cnode := receiverRoot, slot := emptySlot } cap.withoutMapping st with
-        | error e => simp [hIns] at hStep
-        | ok pair =>
-          simp [hIns] at hStep
-          obtain ⟨_, rfl⟩ := hStep
-          have h1 := cspaceInsertSlot_preserves_services st pair.2 _ cap.withoutMapping (by rw [show pair = (pair.1, pair.2) from by simp]; exact hIns)
-          simp_all
+  obtain ⟨_, -, ⟨rfl, -⟩ | ⟨_, _, -, -, -, hIns, -, rfl⟩⟩ := ipcTransferSingleCap_ok_cases hStep
+  · rfl
+  · rw [untypedSourceSetFull_services, SystemState.cdtAddChild_services]
+    exact cspaceInsertSlot_preserves_services _ _ _ _ hIns
 
 /-- ipcTransferSingleCap preserves `objects.invExt`. -/
 theorem ipcTransferSingleCap_preserves_objects_invExt
@@ -2962,30 +3015,10 @@ theorem ipcTransferSingleCap_preserves_objects_invExt
     (hStep : ipcTransferSingleCap cap srcNode receiverRoot slotBase scanLimit st
              = .ok (result, st')) :
     st'.objects.invExt := by
-  -- AN10-B: post-migration `ipcTransferSingleCap` reads via `getCNode?`.
-  simp only [ipcTransferSingleCap] at hStep
-  cases hCn : st.getCNode? receiverRoot with
-  | none => simp [hCn] at hStep
-  | some cn =>
-    simp [hCn] at hStep
-    cases hSlot : cn.findFirstEmptySlotChecked slotBase scanLimit with
-    | none => simp [hSlot] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hObjInv
-    | some emptySlot =>
-        simp [hSlot] at hStep
-        -- A source destroyed since resolution declines the install and leaves
-        -- the state untouched, so this frame holds there by reflexivity.
-        cases hSrc : cdtNodeIsRevocable st srcNode with
-        | false => simp [hSrc] at hStep; obtain ⟨_, rfl⟩ := hStep; first | rfl | assumption
-        | true =>
-        simp only [hSrc] at hStep
-        cases hIns : cspaceInsertSlot { cnode := receiverRoot, slot := emptySlot } cap.withoutMapping st with
-        | error e => simp [hIns] at hStep
-        | ok pair =>
-          simp [hIns] at hStep
-          obtain ⟨_, rfl⟩ := hStep
-          have hInvMid := cspaceInsertSlot_preserves_objects_invExt st pair.2 _ cap.withoutMapping hObjInv
-            (by rw [show pair = (pair.1, pair.2) from by simp]; exact hIns)
-          exact (SystemState.cdtAddChild_agreeObjects hInvMid _ _ _).2
+  obtain ⟨_, -, ⟨rfl, -⟩ | ⟨_, _, -, -, -, hIns, -, rfl⟩⟩ := ipcTransferSingleCap_ok_cases hStep
+  · exact hObjInv
+  · exact untypedSourceSetFull_preserves_objects_invExt (SystemState.cdtAddChild_agreeObjects
+      (cspaceInsertSlot_preserves_objects_invExt st _ _ _ hObjInv hIns) _ _ _).2
 
 /-- M3-E4 helper: ipcTransferSingleCap preserves all notification objects.
 When `oid = receiverRoot` and the object is a notification, the function
@@ -3027,56 +3060,9 @@ theorem ipcTransferSingleCap_receiverRoot_not_ntfn
     (hStep : ipcTransferSingleCap cap srcNode receiverRoot slotBase scanLimit st
              = .ok (result, st')) :
     ∀ ntfn, st'.objects[receiverRoot]? ≠ some (.notification ntfn) := by
-  -- AN10-B: post-migration `ipcTransferSingleCap` reads via `getCNode?`;
-  -- case-split on the typed helper.
-  simp only [ipcTransferSingleCap] at hStep
-  cases hCn : st.getCNode? receiverRoot with
-  | none => simp [hCn] at hStep
-  | some cn =>
-    -- Bridge to the raw lookup form so the existing post-condition holds.
-    have hObj : st.objects[receiverRoot]? = some (.cnode cn) :=
-      (SystemState.getCNode?_eq_some_iff st receiverRoot cn).mp hCn
-    simp [hCn] at hStep
-    cases hSlot : cn.findFirstEmptySlotChecked slotBase scanLimit with
-    | none =>
-      simp [hSlot] at hStep; obtain ⟨_, rfl⟩ := hStep
-      intro ntfn h; rw [hObj] at h; exact absurd h (by simp)
-    | some emptySlot =>
-        simp [hSlot] at hStep
-        -- A source destroyed since resolution declines the install and leaves
-        -- the state untouched, so this frame holds there by reflexivity.
-        cases hSrc : cdtNodeIsRevocable st srcNode with
-        | false =>
-          simp [hSrc] at hStep; obtain ⟨_, rfl⟩ := hStep
-          intro ntfn h; rw [hObj] at h; exact absurd h (by simp)
-        | true =>
-        simp only [hSrc] at hStep
-        cases hIns : cspaceInsertSlot { cnode := receiverRoot, slot := emptySlot } cap.withoutMapping st with
-        | error e => simp [hIns] at hStep
-        | ok pair =>
-          simp [hIns] at hStep; obtain ⟨_, rfl⟩ := hStep
-          -- After cspaceInsertSlot: pair.2.objects[receiverRoot]? = some (.cnode cn')
-          -- After { ... with cdt := cdt' }: objects preserved
-          -- So final objects[receiverRoot]? = pair.2.objects[receiverRoot]?
-          -- Need: pair.2.objects[receiverRoot]? = some (.cnode _)
-          -- cspaceInsertSlot stores via storeObject receiverRoot (.cnode cn')
-          intro ntfn h
-          -- h is about the final state after the tree update
-          -- Simplify: final objects = pair.2.objects (the tree update preserves objects)
-          -- Now h : pair.2.objects[receiverRoot]? = some (.notification ntfn)
-          -- But cspaceInsertSlot stored a CNode at receiverRoot via storeObject,
-          -- so pair.2.objects[receiverRoot]? should be some (.cnode cn')
-          -- Let's unfold cspaceInsertSlot SystemState.getCNode? at hIns to extract storeObject
-          obtain ⟨cn', _, _, _, hStore⟩ :=
-            cspaceInsertSlot_ok_decompose st pair.2
-              { cnode := receiverRoot, slot := emptySlot } cap.withoutMapping hIns
-          have hStoreObj := storeObject_objects_eq' st receiverRoot _ pair hObjInv hStore
-          have hInvMid := cspaceInsertSlot_preserves_objects_invExt st pair.2 _ cap.withoutMapping
-            hObjInv (by rw [show pair = (pair.1, pair.2) from by simp] at hIns; exact hIns)
-          obtain ⟨_, hC, _⟩ := (SystemState.cdtAddChild_agreeObjects hInvMid srcNode
-            { cnode := receiverRoot, slot := emptySlot } .ipcTransfer).1.cnode_fwd hStoreObj
-          rw [hC] at h
-          exact absurd h (by simp)
+  obtain ⟨c3, hC3⟩ := ipcTransferSingleCap_receiverRoot_stays_cnode cap srcNode receiverRoot
+    slotBase scanLimit st st' result hObjInv hStep
+  intro ntfn h; rw [hC3] at h; cases h
 
 /-- M3-E4 helper: ipcTransferSingleCap preserves all endpoint objects.
 When `oid = receiverRoot` and the object is an endpoint, the function
@@ -3199,55 +3185,5 @@ theorem ipcTransferSingleCap_ok_implies_cnode_at_root
   cases hGet : st.getCNode? receiverRoot with
   | none => simp [hGet] at hStep
   | some cn => exact ⟨cn, (SystemState.getCNode?_eq_some_iff st receiverRoot cn).mp hGet⟩
-
-/-- M3-E4 helper: ipcTransferSingleCap keeps receiverRoot as a CNode.
-The function only succeeds when receiverRoot is a CNode. On noSlot the state is
-unchanged. On installed, cspaceInsertSlot stores an updated CNode back via
-storeObject, and the CDT edge leaves objects untouched. -/
-theorem ipcTransferSingleCap_receiverRoot_stays_cnode
-    (cap : Capability) (srcNode : SlotRef)
-    (receiverRoot : SeLe4n.ObjId) (slotBase : SeLe4n.Slot)
-    (scanLimit : Nat) (st st' : SystemState)
-    (result : CapTransferResult) (cn : CNode)
-    (hCn : st.objects[receiverRoot]? = some (.cnode cn))
-    (hObjInv : st.objects.invExt)
-    (hStep : ipcTransferSingleCap cap srcNode receiverRoot slotBase scanLimit st
-             = .ok (result, st')) :
-    ∃ cn', st'.objects[receiverRoot]? = some (.cnode cn') := by
-  -- AN10-B: bridge raw-lookup hypothesis to typed-helper form so the
-  -- `simp` matches what `ipcTransferSingleCap` reads post-migration.
-  have hCnTyped : st.getCNode? receiverRoot = some cn :=
-    (SystemState.getCNode?_eq_some_iff st receiverRoot cn).mpr hCn
-  simp only [ipcTransferSingleCap] at hStep
-  simp [hCnTyped] at hStep
-  cases hSlot : cn.findFirstEmptySlotChecked slotBase scanLimit with
-  | none =>
-    simp [hSlot] at hStep; obtain ⟨_, rfl⟩ := hStep
-    exact ⟨cn, hCn⟩
-  | some emptySlot =>
-    simp [hSlot] at hStep
-    -- A source destroyed since resolution declines the install and leaves
-    -- the state untouched, so this frame holds there by reflexivity.
-    cases hSrc : cdtNodeIsRevocable st srcNode with
-    | false => simp [hSrc] at hStep; obtain ⟨_, rfl⟩ := hStep; exact ⟨cn, hCn⟩
-    | true =>
-    simp only [hSrc] at hStep
-    cases hIns : cspaceInsertSlot { cnode := receiverRoot, slot := emptySlot } cap.withoutMapping st with
-    | error e => simp [hIns] at hStep
-    | ok pair =>
-      simp [hIns] at hStep; obtain ⟨_, rfl⟩ := hStep
-      -- pair.2.objects[receiverRoot]? is a CNode from cspaceInsertSlot
-      obtain ⟨cn', hCn', _, _, hStore⟩ :=
-        cspaceInsertSlot_ok_decompose st pair.2
-          { cnode := receiverRoot, slot := emptySlot } cap.withoutMapping hIns
-      have hCnEq : cn' = cn := by
-        simp only [hCnTyped] at hCn'; exact (Option.some.inj hCn').symm
-      subst hCnEq
-      have hStoreObj := storeObject_objects_eq' st receiverRoot _ pair hObjInv hStore
-      have hInvMid := cspaceInsertSlot_preserves_objects_invExt st pair.2 _ cap.withoutMapping
-        hObjInv (by rw [show pair = (pair.1, pair.2) from by simp] at hIns; exact hIns)
-      obtain ⟨c2, hC, _⟩ := (SystemState.cdtAddChild_agreeObjects hInvMid srcNode
-        { cnode := receiverRoot, slot := emptySlot } .ipcTransfer).1.cnode_fwd hStoreObj
-      exact ⟨c2, hC⟩
 
 end SeLe4n.Kernel

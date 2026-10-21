@@ -189,6 +189,119 @@ theorem tcb_back (h : objectAgreesOffDerivationLinksAt st' st oid) {t' : TCB}
 
 end objectAgreesOffDerivationLinksAt
 
+/-- WS-ZA ZA5.4 part 13: **`cn'` is `cn` with only derivation metadata
+rewritten** — its link words, and the free index of a capability naming an
+untyped.  seL4 keeps both in the slot's entry beside the capability's authority
+(the `mdb` words, and the untyped capability's free index that `cteInsert`'s
+`setUntypedCapAsFull` writes in the source slot of a derivation), and both are
+written only under the derivation tree's lock.  The closure of the two writes,
+so a run of derivations is one variant. -/
+inductive _root_.SeLe4n.Model.CNode.derivationVariant : CNode → CNode → Prop
+  /-- Only link words differ. -/
+  | links {cn cn' : CNode} (h : cn'.withoutLinks = cn.withoutLinks) :
+      CNode.derivationVariant cn' cn
+  /-- One slot's free index is rewritten. -/
+  | freeIndex (cn : CNode) (slot : SeLe4n.Slot) (idx : Nat) :
+      CNode.derivationVariant (cn.setFreeIndex slot idx) cn
+  /-- Two variants in a row. -/
+  | trans {a b c : CNode} (h₂ : CNode.derivationVariant c b) (h₁ : CNode.derivationVariant b a) :
+      CNode.derivationVariant c a
+
+theorem _root_.SeLe4n.Model.CNode.derivationVariant.refl (cn : CNode) :
+    CNode.derivationVariant cn cn := .links rfl
+
+/-- **`st'` holds `st`'s object at `oid` up to derivation metadata**: up to
+derivation links (`objectAgreesOffDerivationLinksAt`), or a CNode that differs
+from `st`'s only in its derivation metadata (`CNode.derivationVariant`).  The
+frame of a step that derives a capability from a slot it does not otherwise
+write — an IPC transfer, which sets an untyped source full. -/
+def objectAgreesOffDerivationMetadataAt (st' st : SystemState) (oid : SeLe4n.ObjId) : Prop :=
+  st'.objects[oid]? = st.objects[oid]? ∨
+    (∃ cn cn' : CNode, st.objects[oid]? = some (.cnode cn) ∧
+      st'.objects[oid]? = some (.cnode cn') ∧ cn'.derivationVariant cn) ∨
+    (∃ t t' : TCB, st.objects[oid]? = some (.tcb t) ∧
+      st'.objects[oid]? = some (.tcb t') ∧ t'.withoutLinks = t.withoutLinks)
+
+namespace objectAgreesOffDerivationMetadataAt
+
+variable {st st' : SystemState} {oid : SeLe4n.ObjId}
+
+theorem of_eq (h : st'.objects[oid]? = st.objects[oid]?) :
+    objectAgreesOffDerivationMetadataAt st' st oid := .inl h
+
+/-- Agreement off the links is agreement off the metadata. -/
+theorem of_links (h : objectAgreesOffDerivationLinksAt st' st oid) :
+    objectAgreesOffDerivationMetadataAt st' st oid := by
+  rcases h with e | ⟨cn, cn', ha, hb, hw⟩ | ht
+  · exact .inl e
+  · exact .inr (.inl ⟨cn, cn', ha, hb, .links hw⟩)
+  · exact .inr (.inr ht)
+
+theorem trans {st₁ st₂ st₃ : SystemState} (h₂ : objectAgreesOffDerivationMetadataAt st₃ st₂ oid)
+    (h₁ : objectAgreesOffDerivationMetadataAt st₂ st₁ oid) :
+    objectAgreesOffDerivationMetadataAt st₃ st₁ oid := by
+  rcases h₂ with e₂ | ⟨b, c, hb, hc, hbc⟩ | ⟨b, c, hb, hc, hbc⟩
+  · rcases h₁ with e₁ | ⟨a, b', ha, hb', hab⟩ | ⟨a, b', ha, hb', hab⟩
+    · exact .inl (e₂.trans e₁)
+    · exact .inr (.inl ⟨a, b', ha, e₂.trans hb', hab⟩)
+    · exact .inr (.inr ⟨a, b', ha, e₂.trans hb', hab⟩)
+  · rcases h₁ with e₁ | ⟨a, b', ha, hb', hab⟩ | ⟨a, b', ha, hb', hab⟩
+    · exact .inr (.inl ⟨b, c, e₁ ▸ hb, hc, hbc⟩)
+    · rw [hb'] at hb; cases hb
+      exact .inr (.inl ⟨a, c, ha, hc, hbc.trans hab⟩)
+    · rw [hb'] at hb; cases hb
+  · rcases h₁ with e₁ | ⟨a, b', ha, hb', hab⟩ | ⟨a, b', ha, hb', hab⟩
+    · exact .inr (.inr ⟨b, c, e₁ ▸ hb, hc, hbc⟩)
+    · rw [hb'] at hb; cases hb
+    · rw [hb'] at hb; cases hb
+      exact .inr (.inr ⟨a, c, ha, hc, hbc.trans hab⟩)
+
+/-- An object holding no slot read in the later state was there before. -/
+theorem obj_back (h : objectAgreesOffDerivationMetadataAt st' st oid) {o : KernelObject}
+    (h' : st'.objects[oid]? = some o) (hn : ∀ cn, o ≠ .cnode cn)
+    (ht : ∀ t, o ≠ .tcb t := by intro _ e; cases e) :
+    st.objects[oid]? = some o := by
+  rcases h with e | ⟨_, _, _, hb, _⟩ | ⟨_, _, _, hb, _⟩
+  · rw [← e]; exact h'
+  · rw [hb] at h'; cases h'; exact absurd rfl (hn _)
+  · rw [hb] at h'; cases h'; exact absurd rfl (ht _)
+
+/-- An object holding no slot is still there afterwards. -/
+theorem obj_fwd (h : objectAgreesOffDerivationMetadataAt st' st oid) {o : KernelObject}
+    (h' : st.objects[oid]? = some o) (hn : ∀ cn, o ≠ .cnode cn)
+    (ht : ∀ t, o ≠ .tcb t := by intro _ e; cases e) :
+    st'.objects[oid]? = some o := by
+  rcases h with e | ⟨_, _, ha, _, _⟩ | ⟨_, _, ha, _, _⟩
+  · rw [e]; exact h'
+  · rw [ha] at h'; cases h'; exact absurd rfl (hn _)
+  · rw [ha] at h'; cases h'; exact absurd rfl (ht _)
+
+theorem cnode_fwd (h : objectAgreesOffDerivationMetadataAt st' st oid) {cn : CNode}
+    (hc : st.objects[oid]? = some (.cnode cn)) :
+    ∃ cn', st'.objects[oid]? = some (.cnode cn') ∧ cn'.derivationVariant cn := by
+  rcases h with e | ⟨cn0, cn', ha, hb, hw⟩ | ⟨_, _, ha, _, _⟩
+  · exact ⟨cn, e.trans hc, .refl cn⟩
+  · rw [ha] at hc; cases hc; exact ⟨cn', hb, hw⟩
+  · rw [ha] at hc; cases hc
+
+theorem tcb_fwd (h : objectAgreesOffDerivationMetadataAt st' st oid) {t : TCB}
+    (hc : st.objects[oid]? = some (.tcb t)) :
+    ∃ t', st'.objects[oid]? = some (.tcb t') ∧ t'.withoutLinks = t.withoutLinks := by
+  rcases h with e | ⟨_, _, ha, _, _⟩ | ⟨t0, t', ha, hb, hw⟩
+  · exact ⟨t, e.trans hc, rfl⟩
+  · rw [ha] at hc; cases hc
+  · rw [ha] at hc; cases hc; exact ⟨t', hb, hw⟩
+
+theorem tcb_back (h : objectAgreesOffDerivationMetadataAt st' st oid) {t' : TCB}
+    (h' : st'.objects[oid]? = some (.tcb t')) :
+    ∃ t, st.objects[oid]? = some (.tcb t) ∧ t'.withoutLinks = t.withoutLinks := by
+  rcases h with e | ⟨_, _, _, hb, _⟩ | ⟨t, t'', ha, hb, hw⟩
+  · exact ⟨t', e ▸ h', rfl⟩
+  · rw [hb] at h'; cases h'
+  · rw [hb] at h'; cases h'; exact ⟨t, ha, hw⟩
+
+end objectAgreesOffDerivationMetadataAt
+
 namespace linksOnlyWrite
 
 theorem refl (st : SystemState) : linksOnlyWrite st st :=

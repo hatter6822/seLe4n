@@ -122,11 +122,13 @@ def ipcUnwrapCapsLoop
         match ipcTransferSingleCap tc.cap tc.srcSlot
             receiverCspaceRoot nextBase maxExtraCaps st with
         | .error _e =>
-            -- Fatal error: receiver CSpace root is not a CNode (or insert
-            -- failed on a slot that findFirstEmptySlot said was empty, which
-            -- is unreachable in the single-threaded model).  The error
-            -- condition persists because state is unmodified, so all
-            -- remaining caps would also fail.  Short-circuit: pad the
+            -- The transfer stops: the receiver CSpace root is not a CNode
+            -- (or insert failed on a slot that findFirstEmptySlot said was
+            -- empty, which is unreachable in the single-threaded model), or —
+            -- WS-ZA ZA5.4 part 13 — this capability names an untyped whose
+            -- source slot has a derivation child, which seL4's `deriveCap`
+            -- refuses and at which seL4's transfer loop stops.  The
+            -- capabilities already installed stay.  Short-circuit: pad the
             -- results with `.noSlot` for every remaining cap and return
             -- immediately with the original state.  This avoids slot gaps
             -- in the receiver's CNode (no `nextBase` advancement on error)
@@ -155,8 +157,10 @@ seL4 semantics:
   insertion to avoid overwriting.
 - Failures on individual caps (`.noSlot`) do NOT abort the remaining
   transfers — each cap is independently processed.
-- Fatal errors (receiver CSpace root not a CNode) short-circuit the loop:
-  remaining caps are filled with `.noSlot` and state is returned unchanged.
+- A transfer that stops (receiver CSpace root not a CNode, or an untyped
+  capability whose source slot has a derivation child, seL4's refused
+  `deriveCap`) short-circuits the loop: the capabilities already installed
+  stay, the rest are filled with `.noSlot`, and nothing more is written.
 - The sender retains all transferred capabilities (IPC transfer is copy). -/
 def ipcUnwrapCaps
     (caps : Array TransferCap)
@@ -391,7 +395,7 @@ theorem ipcUnwrapCapsLoop_preserves_objects_ne
     (hObjInv : st.objects.invExt)
     (hStep : ipcUnwrapCapsLoop caps receiverRoot idx nextBase accResults fuel st
              = .ok (summary, st')) :
-    SystemState.objectAgreesOffDerivationLinksAt st' st oid := by
+    SystemState.objectAgreesOffDerivationMetadataAt st' st oid := by
   induction fuel generalizing idx nextBase accResults st with
   | zero =>
     simp [ipcUnwrapCapsLoop] at hStep
@@ -474,7 +478,8 @@ theorem ipcUnwrapCaps_preserves_objects_invExt
   · simp at hStep; obtain ⟨_, rfl⟩ := hStep; exact hObjInv
   · exact ipcUnwrapCapsLoop_preserves_objects_invExt _ _ _ _ _ _ _ _ _ hObjInv hStep
 
-/-- ipcUnwrapCaps preserves objects at keys other than the receiver root CNode. -/
+/-- ipcUnwrapCaps preserves objects at keys other than the receiver root CNode,
+up to derivation metadata (`ipcTransferSingleCap_preserves_objects_ne`). -/
 theorem ipcUnwrapCaps_preserves_objects_ne
     (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
     (slotBase : SeLe4n.Slot) (grantRight : Bool)
@@ -483,7 +488,7 @@ theorem ipcUnwrapCaps_preserves_objects_ne
     (hObjInv : st.objects.invExt)
     (hStep : ipcUnwrapCaps caps receiverRoot slotBase grantRight st
              = .ok (summary, st')) :
-    SystemState.objectAgreesOffDerivationLinksAt st' st oid := by
+    SystemState.objectAgreesOffDerivationMetadataAt st' st oid := by
   unfold ipcUnwrapCaps at hStep
   split at hStep
   · simp at hStep; obtain ⟨_, rfl⟩ := hStep; exact Or.inl rfl
@@ -838,7 +843,7 @@ theorem ipcUnwrapCapsLoop_objects_at_root_orig_or_cnode
         have hObjInvNext := ipcTransferSingleCap_preserves_objects_invExt tc.cap _ receiverRoot nextBase
           maxExtraCaps st stNext result hObjInv hTransfer
         obtain ⟨cnNext, hCnNext⟩ := ipcTransferSingleCap_receiverRoot_stays_cnode tc.cap _ receiverRoot
-          nextBase maxExtraCaps st stNext result cn hCn hObjInv hTransfer
+          nextBase maxExtraCaps st stNext result hObjInv hTransfer
         simp [hTransfer] at hStep
         have key : st'.objects[receiverRoot]? = stNext.objects[receiverRoot]? ∨
             ∃ cn', st'.objects[receiverRoot]? = some (.cnode cn') := by
@@ -885,7 +890,7 @@ theorem ipcUnwrapCapsLoop_preserves_cnode_at_root
         have hObjInvNext := ipcTransferSingleCap_preserves_objects_invExt tc.cap _ receiverRoot nextBase
           maxExtraCaps st stNext result hObjInv hTransfer
         have ⟨cn', hCn'⟩ := ipcTransferSingleCap_receiverRoot_stays_cnode tc.cap tc.srcSlot
-          receiverRoot nextBase maxExtraCaps st stNext result cn hCn hObjInv hTransfer
+          receiverRoot nextBase maxExtraCaps st stNext result hObjInv hTransfer
         cases result with
         | installed c s => exact ih _ _ _ _ _ hCn' hObjInvNext hStep
         | noSlot => exact ih _ _ _ _ _ hCn' hObjInvNext hStep
