@@ -1,3 +1,60 @@
+## v0.36.120 — WS-ZA ZA5.4 part 10: a retype allocates only its new object's cells
+
+An untyped retype checks every refusal before it writes anything and then
+writes in place, so it allocates exactly the cells of the object it creates:
+13 for a page table and 11 for a frame in steady state (were 64 and 79), and
+two or three more on the first call into a slot, which builds that slot's
+capability record once.  This is the pin the ZA4.12 rule names ("a syscall
+allocates nothing beyond the objects it creates"); seL4 likewise charges the
+new object to its untyped.
+
+- **Destination checked first** (`Lifecycle/Operations/ScrubAndUntyped.lean`,
+  `Capability/Operations.lean`): `untypedRetypeObject` asks the destination
+  slot's refusals (`cspaceDstRefusal`, equal to `cspaceDstAdmitted` by
+  `cspaceDstRefusal_eq_ok_iff`) of the state it was handed, before the carve,
+  as seL4's `decodeUntypedInvocation` checks the destination slots before
+  `invokeUntyped`.  A request refused both for its slot and for its untyped now
+  reports the slot.  The capability is then written into its slot
+  (`storeCNodeWith`) rather than through `cspaceInsertSlot`, whose checks have
+  already passed; `untypedRetypeObject_ok_writes` reads the steps back with no
+  invariant.
+- **Check and perform split** (`Lifecycle/Operations/RetypePerform.lean`,
+  `RefusalCarryingInvocation.lean`, `API.lean`): the dispatcher's retype arm
+  resolves the source and destination in continuation form
+  (`resolveUntypedRetypeK`, proven equal to the resolver it replaces), then runs
+  `RefusalCarrying.ofChecked` over `untypedRetypeAdmittedAt` and
+  `untypedRetypePerformAt`, whose compiled form `untypedRetypePerformWords`
+  takes the slot addresses as words.  The admission reads the request's type
+  without building the object (`CarveRequest.objectType`).
+- **A new key is stored one table at a time** (`Model/State.lean`):
+  `storeObjectImpl` and the compiled `storedState` recognise a key no table
+  holds (`storeIsFresh`) and write each table out of line over the state it is
+  handed (`storeFresh`: `withObjectInserted`, `withObjectIndexed`,
+  `withObjectIndexSet`, `withObjectType`, `withAsidRegistered`), so the state
+  and lifecycle records are reused; `storeObject_eq_impl` covers the branch.
+- **The capability is written over the slot's record**
+  (`Model/Object/Types.lean`, `Model/Object/Structures.lean`):
+  `CNode.insertObjectCap` writes an object capability's fields over the slot's
+  spare record (`Capability.overwriteObject`, with its target and rights kept
+  when they already match), and builds a record only when the slot has none
+  (`Capability.ofObject`).  It is proven equal to `CNode.insert`
+  (`insertObjectCap_eq_insert`), with the capability as fields
+  (`CarveRequest.rights`, `CarveRequest.capability_eq`).  An unaddressable slot
+  returns the node through an out-of-line identity (`CNode.unchanged`), so the
+  compiler cannot fold the branch back into the original object and copy it.
+- **The authority check compares words** (`Lifecycle/Operations/Cleanup.lean`):
+  `lifecycleRetypeAuthorityImpl` (`@[csimp]`) compares the target's object word,
+  building no `CapTarget`.
+- **Pins** (`scripts/qemu_exerciser_lib.sh`): page-table retypes 16, 14, 14 on
+  the first call and 13 in steady state; frame retype 12 then 11.  Untyped reset
+  stays at 151 until the seL4 reset (free pointer in the capability, reset
+  refused while the capability has children, an object retired when its last
+  capability is finalised) lands in a later part.
+- **Census** (`scripts/lean_store_read_census.py`): `storeIsFresh` and
+  `storeUntypedWith` are registered as compiled store forms and
+  `withObjectInserted` as a write primitive; the compiled `storedState` writes
+  through `withObjectInserted`.
+
 ## v0.36.119 — WS-ZA ZA5.4 part 9: page-table map, unmap and delete allocate nothing
 
 A page table carries the slot cell it takes in its root's table list, so an
