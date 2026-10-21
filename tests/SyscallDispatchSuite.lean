@@ -1866,7 +1866,7 @@ private def sd062_retype_checks_authority_before_target : IO Unit := do
      ("endpoint", epObj, 4)]
   let builder : SeLe4n.Testing.BootstrapBuilder := {
     objects := [
-      (caller.toObjId, .tcb { (mkTcb 1) with cspaceRoot := cnId }),
+      (caller.toObjId, .tcb ((mkTcb 1).withCSpaceRoot cnId)),
       (other.toObjId, .tcb { (mkTcb 2 .Running) with domain := ⟨1⟩ }),
       (idle.toObjId, .tcb { (mkTcb 3) with domain := ⟨1⟩ }),
       (untypedU, SeLe4n.Kernel.objectOfKernelType .untyped 4096),
