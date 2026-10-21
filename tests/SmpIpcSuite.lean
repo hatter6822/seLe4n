@@ -4810,7 +4810,7 @@ private def schedContextBindingConsistentB (st : SystemState) : Bool :=
     | _ => true
 
 /-- `st` with the lifecycle object-type metadata the retype guard reads
-(`lifecycleRetypeDirect` refuses a target whose recorded type disagrees with the
+(`lifecycleRetypeDirectCommit` refuses a target whose recorded type disagrees with the
 store), which the fixture builder does not record. -/
 private def withRetypeTypes (st : SystemState)
     (typed : List (SeLe4n.ObjId × KernelObjectType)) : SystemState :=

@@ -5239,7 +5239,7 @@ theorem schedContextUnbind_preserves_projection
       `ctx.memoryOwnership = none` via `projectMemory_const_when_ownership_none`
       at `Projection.lean:402`. For deployments with memory ownership,
       requires a per-address non-observability witness.
-    - **Retype** (`lifecycleRetypeDirect`): single `storeObject` at the
+    - **Retype** (`lifecycleRetypeDirectCommit`): single `storeObject` at the
       non-observable target ⇒ `storeObject_preserves_projection`.
     Typical discharge: ≈60 LOC (longer than other arms due to multi-phase
     cleanup). -/

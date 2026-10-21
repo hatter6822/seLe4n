@@ -2655,17 +2655,24 @@ private def runWSKGLifecycleVSpaceChecks : IO Unit := do
     (SeLe4n.Kernel.objectOfTypeTag 99 0)
     .invalidTypeTag
 
-  -- K-G-NEG-09: lifecycleRetypeDirect with non-existent target → objectNotFound
+  -- K-G-NEG-09: the in-place retype of a non-existent target the cap NAMES with
+  -- `.retype` → objectNotFound.  (Before authority came first this fixture's cap
+  -- carried no `.retype` and still drew `objectNotFound` — the oracle; a cap
+  -- without `.retype` now draws `illegalAuthority`, asserted beside it.)
   let emptyObjState : SystemState := BootstrapBuilder.empty.buildChecked
   let authCap : Capability := {
     target := .object ⟨500⟩
-    rights := AccessRightSet.ofList [.read, .write]
+    rights := AccessRightSet.ofList [.read, .write, .retype]
   }
-  expectErr "K-G-NEG-09 lifecycleRetypeDirect object not found"
-    (SeLe4n.Kernel.lifecycleRetypeDirect authCap ⟨500⟩ (.endpoint {}) emptyObjState)
+  expectErr "K-G-NEG-09 lifecycleRetypeDirectWithCleanup object not found"
+    (SeLe4n.Kernel.lifecycleRetypeDirectWithCleanup authCap ⟨500⟩ (.endpoint {}) emptyObjState)
     .objectNotFound
+  let noRetypeCap : Capability := { authCap with rights := AccessRightSet.ofList [.read, .write] }
+  expectErr "K-G-NEG-09 lifecycleRetypeDirectWithCleanup no retype right"
+    (SeLe4n.Kernel.lifecycleRetypeDirectWithCleanup noRetypeCap ⟨500⟩ (.endpoint {}) emptyObjState)
+    .illegalAuthority
 
-  -- K-G-NEG-10: lifecycleRetypeDirect with wrong authority — cap targets different object
+  -- K-G-NEG-10: the in-place retype with wrong authority — cap targets different object
   let retypeState : SystemState :=
     (BootstrapBuilder.empty
       |>.withObject ⟨300⟩ (.endpoint {})
@@ -2675,8 +2682,8 @@ private def runWSKGLifecycleVSpaceChecks : IO Unit := do
     target := .object ⟨999⟩  -- targets different object
     rights := AccessRightSet.ofList [.read, .write]
   }
-  expectErr "K-G-NEG-10 lifecycleRetypeDirect wrong authority"
-    (SeLe4n.Kernel.lifecycleRetypeDirect wrongAuthCap ⟨300⟩ (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }) retypeState)
+  expectErr "K-G-NEG-10 lifecycleRetypeDirectWithCleanup wrong authority"
+    (SeLe4n.Kernel.lifecycleRetypeDirectWithCleanup wrongAuthCap ⟨300⟩ (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }) retypeState)
     .illegalAuthority
 
   -- K-G-NEG-11: decodeVSpaceMapArgs with insufficient msgRegs (< 4) → invalidMessageInfo

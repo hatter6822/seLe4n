@@ -1372,7 +1372,7 @@ the syscall gate.**
 
 The reply-objects plan's #2.d acceptance chain (`reply_cap_end_to_end_retype_mint_link`,
 `tests/ModelIntegritySuite.lean`) provisions a reply capability by calling
-`lifecycleRetypeDirect`, `mintReplyCap` and `linkCallerReply` *directly*.  It
+`lifecycleRetypeDirectCommit`, `mintReplyCap` and `linkCallerReply` *directly*.  It
 therefore exercises the operations and never the gate in front of them: the
 rights requirement (`syscallRequiredRight .mintReplyCap = .grant`), the CSpace
 resolution of the primary capability, the `.object`-target check on it, and the
@@ -1825,6 +1825,100 @@ private def sd061_retype_never_mints_or_destroys_memory_authority : IO Unit := d
      | .error .revocationRequired => kindAt st frObj == some .frame
      | _ => false)
     "retyping a frame away must be refused (revocationRequired) with the frame intact"
+
+/-- SD-062: **the in-place retype checks authority before it reads its target.**
+
+The target id arrives in a message register, so a caller holding a `.retype`
+capability to one object (here an untyped `U`) can name any id at all.  Before
+authority came first, the wrapper ran admissibility, the per-kind cleanup and the
+scrub on that id before asking whether the capability named it, so each refusal
+answered a question about an object the caller had no capability to:
+`objectNotFound` (no such id), `revocationRequired` (a frame, a mapped page),
+`revocationRequired` again for a thread running on another core, in another
+domain, where the same thread idle cleaned up without complaint — so the run
+state of a thread the caller cannot name was observable — and `illegalAuthority`
+only for a plain object that cleaned up without complaint.
+
+Through both dispatchers: with the capability on `U`, every one of those targets
+draws `illegalAuthority` — the one answer, independent of the target's state —
+and, being an `.error`, commits no state.  CONTROL per target: a `.retype`
+capability that DOES name it draws the target-dependent answer — `objectNotFound`,
+`revocationRequired` for the frame and the running thread, success for an idle
+thread and the endpoint — so the fixture distinguishes the states and the uniform
+refusal is the gate's doing, not the fixture's. -/
+private def sd062_retype_checks_authority_before_target : IO Unit := do
+  let caller : SeLe4n.ThreadId := ⟨1⟩
+  let other  : SeLe4n.ThreadId := ⟨2⟩
+  let idle   : SeLe4n.ThreadId := ⟨3⟩
+  let cnId   : SeLe4n.ObjId := ⟨50⟩
+  let untypedU : SeLe4n.ObjId := ⟨90⟩
+  let missing  : SeLe4n.ObjId := ⟨999⟩
+  let frObj    : SeLe4n.ObjId := ⟨81⟩
+  let epObj    : SeLe4n.ObjId := ⟨80⟩
+  let otherCore : SeLe4n.Kernel.Concurrency.CoreId := ⟨1, by decide⟩
+  let retypeCapOn (o : SeLe4n.ObjId) : Capability :=
+    { target := .object o, rights := AccessRightSet.ofList [.retype] }
+  -- Slot 0: the caller's one capability for the probes, on `U`.  Slots 1-4: the
+  -- CONTROL capabilities, each naming its probe target.
+  let targets : List (String × SeLe4n.ObjId × Nat) :=
+    [("nonexistent", missing, 1), ("frame", frObj, 2),
+     ("running_tcb", other.toObjId, 3), ("idle_tcb", idle.toObjId, 5),
+     ("endpoint", epObj, 4)]
+  let builder : SeLe4n.Testing.BootstrapBuilder := {
+    objects := [
+      (caller.toObjId, .tcb ((mkTcb 1).withCSpaceRoot cnId)),
+      (other.toObjId, .tcb { (mkTcb 2 .Running) with domain := ⟨1⟩ }),
+      (idle.toObjId, .tcb { (mkTcb 3) with domain := ⟨1⟩ }),
+      (untypedU, SeLe4n.Kernel.objectOfKernelType .untyped 4096),
+      (epObj, .endpoint {}),
+      (frObj, .frame { base := SeLe4n.PAddr.ofNat 0x20000 }),
+      (cnId, .cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF
+            ((SeLe4n.Slot.ofNat 0, retypeCapOn untypedU) ::
+              targets.map fun (_, o, slot) => (SeLe4n.Slot.ofNat slot, retypeCapOn o))))) ]
+    lifecycleObjectTypes := [
+      (caller.toObjId, .tcb), (other.toObjId, .tcb), (idle.toObjId, .tcb),
+      (untypedU, .untyped),
+      (epObj, .endpoint), (frObj, .frame), (cnId, .cnode) ] }
+  -- `other` runs on another core: the run state the old order leaked.
+  let st : SystemState :=
+    SeLe4n.Testing.withCurrentOnCore builder.buildChecked otherCore other
+  -- Retype to a notification (tag 2): an admissible replacement, so admissibility
+  -- is not what answers.
+  let retype (slot : Nat) (target : SeLe4n.ObjId) : SyscallDecodeResult :=
+    { capAddr := SeLe4n.CPtr.ofNat slot,
+      msgInfo := { length := 3, extraCaps := 0, label := 0 },
+      syscallId := .lifecycleRetype,
+      msgRegs := #[SeLe4n.RegValue.ofNat target.toNat, SeLe4n.RegValue.ofNat 2,
+                   SeLe4n.RegValue.ofNat 0],
+      inlineCount := 3, overflowCount := 0 }
+  let isIllegalAuthority : Except KernelError (Unit × SystemState) → Bool
+    | .error .illegalAuthority => true
+    | _ => false
+  for (name, target, slot) in targets do
+    -- NEGATIVE: the capability on `U` names none of them.
+    expect s!"sd062_{name}_unnamed_target_illegalAuthority"
+      (isIllegalAuthority (dispatchSyscallAsCurrent (retype 0 target) caller bootCoreId st))
+      s!"a retype of the {name} through a cap on U must be illegalAuthority"
+    expect s!"sd062_{name}_unnamed_target_illegalAuthority_checked"
+      (isIllegalAuthority (dispatchSyscallCheckedAsCurrent SeLe4n.Kernel.defaultLabelingContext
+        (retype 0 target) caller bootCoreId st))
+      s!"the checked dispatch must give the {name} the same illegalAuthority"
+    -- CONTROL: a capability naming the target reaches the target-dependent answer.
+    expect s!"sd062_{name}_named_target_control"
+      (!isIllegalAuthority (dispatchSyscallAsCurrent (retype slot target) caller bootCoreId st))
+      s!"a retype of the {name} through a cap naming it must not be refused for authority"
+  -- CONTROL detail: the named answers are the target-dependent ones the old order
+  -- returned to ANY `.retype` holder -- existence, kind, and (running against idle,
+  -- the same kind in the same domain) another domain's run state.
+  let answer (slot : Nat) (target : SeLe4n.ObjId) : Option KernelError :=
+    match dispatchSyscallAsCurrent (retype slot target) caller bootCoreId st with
+    | .ok _ => none
+    | .error e => some e
+  let named := targets.map fun (_, o, slot) => answer slot o
+  expect "sd062_named_answers_distinguish_states"
+    (named == [some .objectNotFound, some .revocationRequired, some .revocationRequired,
+      none, none])
+    s!"the named-target answers must be the target-dependent ones: {repr named}"
 
 /-- SD-051: faithful seL4-MCS receive linkage, folded into `endpointReceiveDual`
     itself (#7.2; formerly the separate `linkReceivedCaller` `.receive`-arm step).
@@ -2288,4 +2382,6 @@ def main : IO Unit := do
   sd060_schedContextBind_requires_tcb_capability
   IO.println "--- WS-BP BP7.1: an in-place retype never mints or destroys memory authority ---"
   sd061_retype_never_mints_or_destroys_memory_authority
+  IO.println "--- the in-place retype checks authority before it reads its target ---"
+  sd062_retype_checks_authority_before_target
   IO.println "=== All WS-RC R2.C SyscallDispatch tests passed ==="

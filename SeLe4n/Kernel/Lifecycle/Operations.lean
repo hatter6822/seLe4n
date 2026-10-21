@@ -25,7 +25,7 @@ four child modules:
 | `Operations.Cleanup`                         | `lifecycleRetypeAuthority`, `removeThreadFromQueue`, `spliceOutMidQueueNode`, `removeFromAll{Endpoint,Notification}Queues`, `cleanupDonatedSchedContext`, `cleanupTcbReferences` |
 | `Operations.CleanupPreservation`             | Cleanup-primitive preservation theorems, `detachCNodeSlots`, `lifecyclePreRetypeCleanup`, `lifecycleCleanupPipeline` (AN4-G.2), `Internal.lifecycleRetypeObject` (AN4-A), `lifecycleRevokeDeleteRetype` |
 | `Operations.ScrubAndUntyped`                 | `scrubObjectMemory` + frame theorems, `retypeFromUntyped` def + capacity / freshness / atomicity / error-path theorems |
-| `Operations.RetypeWrappers`                  | Production entry points: `lifecycleRetypeWithCleanup`, WS-K-D dispatch helpers, `lifecycleRetypeDirect*` variants |
+| `Operations.RetypeWrappers`                  | Production entry points: `lifecycleRetypeWithCleanup`, WS-K-D dispatch helpers, `lifecycleRetypeDirectCommit` + `lifecycleRetypeDirectWithCleanup*` variants |
 
 The children form a linear import chain
 (`Cleanup ← CleanupPreservation ← ScrubAndUntyped ← RetypeWrappers`). The

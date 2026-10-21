@@ -4427,31 +4427,23 @@ private theorem retypeTargetDetached_of_agreeOffDerivationLinks
   · intro tid tcb rid hT; obtain ⟨tcb, hT, hw⟩ := hObjs.tcb_back hT
     refine TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) ?_; intro hP; exact hDet.notStashed tid tcb rid hT hP
 
-/-- The pre-resolved-authority retype base: guards then one pristine write. -/
-theorem lifecycleRetypeDirect_preserves_ipcInvariantFull
-    (st st' : SystemState) (authCap : Capability) (target : SeLe4n.ObjId)
+/-- The in-place retype's commit step: guards then one pristine write. -/
+theorem lifecycleRetypeDirectCommit_preserves_ipcInvariantFull
+    (st st' : SystemState) (target : SeLe4n.ObjId)
     (newObj : KernelObject)
     (hObjInv : st.objects.invExt)
     (hFresh : retypeReplacementFresh newObj)
     (hDet : retypeTargetDetached st target)
     (hInv : ipcInvariantFull st)
-    (hStep : lifecycleRetypeDirect authCap target newObj st = .ok ((), st')) :
+    (hStep : lifecycleRetypeDirectCommit target newObj st = .ok ((), st')) :
     ipcInvariantFull st' := by
-  unfold lifecycleRetypeDirect SystemState.getObject? at hStep
-  cases hObj : st.objects[target]? with
-  | none => simp [hObj] at hStep
-  | some currentObj =>
-      simp only [hObj] at hStep
-      split at hStep
-      · split at hStep
-        · exact retypeWrite_preserves_ipcInvariantFull
-            (storeObject_objects_eq st st' target newObj hObjInv hStep)
-            (fun oid hNeO =>
-              storeObject_objects_ne st st' target oid newObj hNeO hObjInv hStep)
-            (storeObject_scheduler_eq st st' target newObj hStep)
-            hFresh hDet hInv
-        · contradiction
-      · contradiction
+  have hStore := lifecycleRetypeDirectCommit_ok_as_storeObject st st' target newObj hStep
+  exact retypeWrite_preserves_ipcInvariantFull
+    (storeObject_objects_eq st st' target newObj hObjInv hStore)
+    (fun oid hNeO =>
+      storeObject_objects_ne st st' target oid newObj hNeO hObjInv hStore)
+    (storeObject_scheduler_eq st st' target newObj hStore)
+    hFresh hDet hInv
 
 /-- **`.lifecycleRetype`'s cleanup composite**: well-formedness guard,
 per-kind cleanup, memory scrub, then the pristine write. -/
@@ -4464,13 +4456,15 @@ theorem lifecycleRetypeDirectWithCleanup_preserves_ipcInvariantFull
     (hInv : ipcInvariantFull st)
     (hStep : lifecycleRetypeDirectWithCleanup authCap target newObj st = .ok ((), st')) :
     ipcInvariantFull st' := by
+  have hAuthOk := lifecycleRetypeDirectWithCleanup_ok_authorized hStep
   unfold lifecycleRetypeDirectWithCleanup SystemState.getObject? at hStep
+  simp only [hAuthOk, Bool.not_true, Bool.false_eq_true, ↓reduceIte] at hStep
   split at hStep
   · contradiction
   · cases hObj : st.objects[target]? with
     | none =>
         simp only [hObj] at hStep
-        exact lifecycleRetypeDirect_preserves_ipcInvariantFull st st' authCap target newObj
+        exact lifecycleRetypeDirectCommit_preserves_ipcInvariantFull st st' target newObj
           hObjInv hFresh hDet hInv hStep
     | some currentObj =>
         simp only [hObj] at hStep
@@ -4491,7 +4485,7 @@ theorem lifecycleRetypeDirectWithCleanup_preserves_ipcInvariantFull
                 = st.scheduler :=
               (scrubObjectMemory_scheduler_eq stClean target currentObj.objectType).trans
                 ((congrArg SystemState.scheduler hR.fields).trans hMS)
-            exact lifecycleRetypeDirect_preserves_ipcInvariantFull _ st' authCap target newObj
+            exact lifecycleRetypeDirectCommit_preserves_ipcInvariantFull _ st' target newObj
               (by rw [scrubObjectMemory_objects_eq]; exact hR.invExt hInvM)
               hFresh
               (retypeTargetDetached_of_agreeOffDerivationLinks hAg hSS

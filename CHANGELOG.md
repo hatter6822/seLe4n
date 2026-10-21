@@ -1,3 +1,69 @@
+## v0.36.123 — Retype checks authority before reading its target
+
+The in-place retype (`.lifecycleRetype`) now asks authority first, in seL4's
+decode order.  The arm decodes its target object id from a message register,
+and `lifecycleRetypeDirectWithCleanup` ran admissibility, the per-kind
+cleanup and the scrub on that id before asking whether the capability named
+it.  The authority check sat last, inside `lifecycleRetypeDirect`.
+
+### Security
+
+- **Low: an error-code oracle over arbitrary object ids**, found during the
+  WS-ZA ZA5.4 review.  Any holder of a `.retype` capability could name any
+  object and read back the refusal.  `objectNotFound` meant no such object.
+  `revocationRequired` meant a frame, page table, untyped, VSpace root,
+  in-use reply, or a thread running on some core (possibly in another
+  domain), where the same thread idle drew `illegalAuthority`.
+  `illegalAuthority` meant a plain object.  Nothing was written, but existence, kind and other domains'
+  run state leaked.  `checkedDispatch_lifecycleRetype_eq_unchecked` applies
+  no information-flow gate to the arm, so the checked dispatch leaked the
+  same way.
+
+### Changes
+
+- **Authority first** (`Lifecycle/Operations/RetypeWrappers.lean`):
+  `lifecycleRetypeDirectWithCleanup` checks `lifecycleRetypeAuthority` as
+  its first step, before anything reads the state.  Every check still comes
+  before every write.
+- **One answer**: `lifecycleRetypeDirect` is retired.  The commit step that
+  replaces it, `lifecycleRetypeDirectCommit`, takes no capability.  It checks
+  existence and type agreement, then stores.  The authority question is
+  asked once.
+- **Non-interference for the refusals**:
+  `lifecycleRetypeDirectWithCleanup_unauthorized` proves that a capability
+  not naming the target with `.retype` gets `.error .illegalAuthority` on
+  every state.  The same result is lifted to the live seam
+  (`lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_unauthorized`)
+  and to both dispatchers (`dispatchWithCap_lifecycleRetype_unauthorized`,
+  `dispatchWithCapChecked_lifecycleRetype_unauthorized`).
+  `lifecycleRetypeDirectWithCleanup_ok_authorized` proves that a success
+  implies the check passed.
+- **Theorems restated on the commit step**: `…_ok_as_storeObject`,
+  `…_scheduler_machine_eq` and `…_preserves_ipcInvariantFull`.  The wrapper
+  proofs (`…_ok_decompose`, `…_tlbShootdown_eq`, `…_refuses_vspaceRoot`,
+  `…_confinedToCores`, `…_replenishQueueOnCore_ne`,
+  `…_preserves_ipcInvariantFull`) now take the authority branch first.
+  `lifecycleRetypeDirect_tlbShootdown_eq` is deleted: the wrapper's frame
+  now goes through `…_ok_decompose`.
+- **Tests**: SD-062 (`tests/SyscallDispatchSuite.lean`) holds a `.retype`
+  capability on an untyped and names five other targets: a nonexistent id,
+  a frame, a TCB running on another core in another domain, the same kind of
+  TCB idle, and a plain endpoint.  Through both dispatchers every one returns
+  `illegalAuthority` and commits no state.  A control capability that does
+  name each target gets the target-dependent answer (`objectNotFound`,
+  `revocationRequired` twice, success twice), which is what the old order
+  returned to any `.retype` holder.  K-G-NEG-09 used a capability without
+  `.retype` and expected `objectNotFound` for a missing target, which is
+  the oracle itself.  It now gives the capability `.retype` (still
+  `objectNotFound`) and adds the no-`.retype` case (`illegalAuthority`).
+  The KSD-004 trace step and the model-integrity reply chain switch to the
+  wrapper and the commit step.
+- **Registered debt**: the CSpaceAddr-authority family
+  (`lifecycleRetypeWithCleanup`) keeps the old order.  No syscall reaches
+  it.  It is now a row in `docs/REGISTERED_DEBT.md` §C.
+- **Docs**: spec §8.6.1 (refusal order), a `CLAIM_EVIDENCE_INDEX.md` row,
+  GitBook chapters 03 and 04, and Tier 3 anchors (mutation-tested).
+
 ## v0.36.122 — WS-ZA ZA5.4 part 12: a thread's spaces are capability slots
 
 The second part of the seL4 untyped reset

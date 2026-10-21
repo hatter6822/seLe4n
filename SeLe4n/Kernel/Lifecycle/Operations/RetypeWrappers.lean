@@ -24,9 +24,9 @@ import SeLe4n.Kernel.Architecture.PerCoreCacheModel
 AN4-G.5 (LIF-M05) child module extracted from
 `SeLe4n.Kernel.Lifecycle.Operations`. Contains the production retype-path
 wrappers: `lifecycleRetypeWithCleanup` (composing cleanup + scrub +
-retype), the `WS-K-D` syscall dispatch helpers, `lifecycleRetypeDirect`
-(pre-resolved authority variant), and `lifecycleRetypeDirectWithCleanup`
-(pre-resolved + safe path). These are the entry points the API dispatcher
+retype), the `WS-K-D` syscall dispatch helpers, `lifecycleRetypeDirectCommit`
+(the in-place retype's commit step), and `lifecycleRetypeDirectWithCleanup`
+(pre-resolved authority, checked first, + safe path). These are the entry points the API dispatcher
 invokes; they sit above the primitives extracted into the sibling
 `Cleanup`, `CleanupPreservation`, and `ScrubAndUntyped` children.
 All declarations retain their original names, order, and proofs.
@@ -340,90 +340,68 @@ def objectOfKernelType (objType : KernelObjectType) (sizeHint : Nat) : KernelObj
   | .pageTable => .pageTable { base := SeLe4n.PAddr.ofNat 0 }
 
 -- ============================================================================
--- WS-K-D: lifecycleRetypeDirect — pre-resolved authority variant
+-- WS-K-D: lifecycleRetypeDirectCommit — the in-place retype's commit step
 -- ============================================================================
 
-/-- **Internal building block — callers should use `lifecycleRetypeDirectWithCleanup` instead.**
+/-- **Internal building block — callers use `lifecycleRetypeDirectWithCleanup`.**
 
-WS-K-D: Retype with a pre-resolved authority capability.
-Companion to `lifecycleRetypeObject` for the register-sourced dispatch
-path where the authority cap has already been resolved by `syscallInvoke`.
+The commit step of the in-place retype: the target must exist
+(`objectNotFound` otherwise), its lifecycle metadata must agree with the
+object-store type (`illegalState` otherwise), and the replacement is then
+written atomically by `storeObject`.
 
-T5-B (M-NEW-4): Marked as internal. This function takes a pre-resolved
-`Capability` and bypasses cleanup and memory scrubbing. External callers
-must use `lifecycleRetypeDirectWithCleanup` (for pre-resolved caps) or
-`lifecycleRetypeWithCleanup` (for CSpaceAddr) for the H-05 and S6-C
-guarantees. U-H04: API dispatch now routes through the safe wrapper.
-
-V5-B (M-DEF-2): **Internal only — do not call from new code.**
-See `lifecycleRetypeObject` for the full rationale.
-
-Deterministic branch contract:
-1. Target object must exist (`objectNotFound` otherwise).
-2. Lifecycle metadata must agree with object-store type (`illegalState`).
-3. Authority cap must satisfy `lifecycleRetypeAuthority` — targets the
-   object with `.retype` right (`illegalAuthority` otherwise).
-4. Object store is updated atomically on success via `storeObject`. -/
-def lifecycleRetypeDirect
-    (authCap : Capability) (target : SeLe4n.ObjId)
-    (newObj : KernelObject) : Kernel Unit :=
+It takes **no capability**, and that is the point of it.  Authority is the
+wrapper's first question (`lifecycleRetypeDirectWithCleanup`), asked once and
+before anything reads the target, so this step is reached only for a target the
+caller's capability already names.  `lifecycleRetypeDirect` — which asked the
+authority question here, after the existence and type checks — is retired: its
+order answered `objectNotFound` / `illegalState` to a caller holding no
+authority over the target, and kept a second copy of a question the wrapper
+must ask first. -/
+def lifecycleRetypeDirectCommit
+    (target : SeLe4n.ObjId) (newObj : KernelObject) : Kernel Unit :=
   fun st =>
     match st.getObject? target with
     | none => .error .objectNotFound
     | some currentObj =>
         if st.lifecycle.objectTypes[target]? = some currentObj.objectType then
-          if lifecycleRetypeAuthority authCap target then
-            storeObject target newObj st
-          else
-            .error .illegalAuthority
+          storeObject target newObj st
         else
           .error .illegalState
 
-/-- **`v0.35.185` (register row 63): the direct retype IS a `storeObject`, under
+/-- **`v0.35.185` (register row 63): the commit step IS a `storeObject`, under
 two guards that commit nothing.**
 
-`lifecycleRetypeObject_ok_as_storeObject`'s sibling for the pre-resolved variant
-— the same decomposition, at a `Capability` rather than a `CSpaceAddr`, so a
-consumer reasoning about what the retype writes has one step to reason about.
-
-Stated because the retype composite's invariant theorems need exactly this: every
-object-level fact about the destroy path's last step is a fact about
+`lifecycleRetypeObject_ok_as_storeObject`'s sibling for the in-place retype, so
+a consumer reasoning about what the retype writes has one step to reason about.
+Every object-level fact about the destroy path's last step is a fact about
 `storeObject`. -/
-theorem lifecycleRetypeDirect_ok_as_storeObject
-    (st st' : SystemState) (authCap : Capability) (target : SeLe4n.ObjId)
-    (newObj : KernelObject)
-    (h : lifecycleRetypeDirect authCap target newObj st = .ok ((), st')) :
+theorem lifecycleRetypeDirectCommit_ok_as_storeObject
+    (st st' : SystemState) (target : SeLe4n.ObjId) (newObj : KernelObject)
+    (h : lifecycleRetypeDirectCommit target newObj st = .ok ((), st')) :
     storeObject target newObj st = .ok ((), st') := by
-  unfold lifecycleRetypeDirect SystemState.getObject? at h
+  unfold lifecycleRetypeDirectCommit SystemState.getObject? at h
   split at h
   · exact absurd h (by simp)
   · split at h
-    · split at h
-      · exact h
-      · exact absurd h (by simp)
+    · exact h
     · exact absurd h (by simp)
 
-/-- **WS-RR RR8.12 Cut C6g**: the direct retype is scheduler- and machine-silent —
+/-- **WS-RR RR8.12 Cut C6g**: the commit step is scheduler- and machine-silent —
 it is a `storeObject` under two guards, and the guards commit nothing.
 
 Declared here, beside the step, rather than as the `private` copy that lived in the
 staged non-interference module: a production consumer (the retype footprint's
 replenish exactness frame) needs it, and a private theorem in a staged module is
 one no production asker can reach. -/
-theorem lifecycleRetypeDirect_scheduler_machine_eq
-    (authCap : Capability) (target : SeLe4n.ObjId) (newObj : KernelObject)
+theorem lifecycleRetypeDirectCommit_scheduler_machine_eq
+    (target : SeLe4n.ObjId) (newObj : KernelObject)
     (st st' : SystemState)
-    (h : lifecycleRetypeDirect authCap target newObj st = .ok ((), st')) :
-    st'.scheduler = st.scheduler ∧ st'.machine = st.machine := by
-  unfold lifecycleRetypeDirect SystemState.getObject? at h
-  split at h
-  · exact absurd h (by simp)
-  · split at h
-    · split at h
-      · exact ⟨storeObject_scheduler_eq st st' target newObj h,
-              storeObject_machine_eq st st' target newObj h⟩
-      · exact absurd h (by simp)
-    · exact absurd h (by simp)
+    (h : lifecycleRetypeDirectCommit target newObj st = .ok ((), st')) :
+    st'.scheduler = st.scheduler ∧ st'.machine = st.machine :=
+  have hStore := lifecycleRetypeDirectCommit_ok_as_storeObject st st' target newObj h
+  ⟨storeObject_scheduler_eq st st' target newObj hStore,
+   storeObject_machine_eq st st' target newObj hStore⟩
 
 -- ============================================================================
 -- U-H04: lifecycleRetypeDirectWithCleanup — pre-resolved authority + safe path
@@ -431,20 +409,31 @@ theorem lifecycleRetypeDirect_scheduler_machine_eq
 
 /-- U-H04: Safe lifecycle retype with pre-resolved authority capability.
 
-Combines `lifecycleRetypeDirect`'s pre-resolved cap dispatch with the
-cleanup and memory scrubbing guarantees of `lifecycleRetypeWithCleanup`.
-This is the correct entry point for API dispatch, which resolves the
-authority cap before entering the retype arm.
+The cleanup and memory-scrubbing guarantees of `lifecycleRetypeWithCleanup`
+over a capability the API dispatch has already resolved.  This is the entry
+point for API dispatch.
 
-Phases:
-1. Well-formedness validation (T5-D defense-in-depth)
-2. `lifecyclePreRetypeCleanup` — TCB scheduler dequeue + CNode CDT detach
-3. `scrubObjectMemory` — zero backing memory (S6-C security guarantee)
-4. `lifecycleRetypeDirect` — replace object in store with authority check -/
+Phases, in order — **authority first, as seL4 decodes an invocation**:
+1. `lifecycleRetypeAuthority` — the capability names `.object target` and
+   carries `.retype` (`illegalAuthority` otherwise).  Asked before anything
+   reads `target`, so a refusal for a target the capability does not name is
+   `illegalAuthority` whatever the state holds there
+   (`lifecycleRetypeDirectWithCleanup_unauthorized`): the target id arrives in a
+   message register, and any later order made every other refusal of this
+   wrapper an oracle on the existence, kind and run state of an object the
+   caller has no capability to.
+2. Replacement admissibility (T5-D defense-in-depth)
+3. `lifecyclePreRetypeCleanup` — TCB scheduler dequeue + CNode CDT detach
+4. `scrubObjectMemory` — zero backing memory (S6-C security guarantee)
+5. `lifecycleRetypeDirectCommit` — existence and type agreement, then the
+   store.  Every check precedes every write. -/
 def lifecycleRetypeDirectWithCleanup
     (authCap : Capability) (target : SeLe4n.ObjId)
     (newObj : KernelObject) : Kernel Unit :=
   fun st =>
+    if !lifecycleRetypeAuthority authCap target then
+      .error .illegalAuthority
+    else
     -- T5-D: Validate the replacement before proceeding -- well-formedness,
     -- (`v0.35.187`) that its own embedded identity is the slot it will occupy,
     -- and (WS-BP BP7.1) that it is not memory authority minted from nothing.
@@ -452,14 +441,43 @@ def lifecycleRetypeDirectWithCleanup
       .error .illegalState
     else
       match st.getObject? target with
-      | none => lifecycleRetypeDirect authCap target newObj st
+      | none => lifecycleRetypeDirectCommit target newObj st
       | some currentObj =>
           -- AJ1-A (M-14): Propagate cleanup errors instead of silently ignoring
           match lifecyclePreRetypeCleanup st target currentObj newObj with
           | .error e => .error e
           | .ok stClean =>
             let stScrubbed := scrubObjectMemory stClean target currentObj.objectType
-            lifecycleRetypeDirect authCap target newObj stScrubbed
+            lifecycleRetypeDirectCommit target newObj stScrubbed
+
+/-- **The in-place retype checks authority before it reads its target.**
+
+Whenever the capability does not name `.object target` with `.retype`, the
+wrapper refuses with `illegalAuthority` — on **every** state, so the refusal
+carries no information about what the state holds at `target` (whether it
+exists, its kind, a TCB's run state, a reply's use).  This is the
+non-interference statement for the refusal half of the retype arm: two states
+that differ anywhere give the same answer. -/
+theorem lifecycleRetypeDirectWithCleanup_unauthorized
+    {authCap : Capability} {target : SeLe4n.ObjId} (newObj : KernelObject)
+    (hAuth : lifecycleRetypeAuthority authCap target = false) (st : SystemState) :
+    lifecycleRetypeDirectWithCleanup authCap target newObj st =
+      .error .illegalAuthority := by
+  simp [lifecycleRetypeDirectWithCleanup, hAuth]
+
+/-- **A successful in-place retype was authorized.**  The converse direction of
+`lifecycleRetypeDirectWithCleanup_unauthorized`: `.ok` entails the authority
+check passed, so the commit step's missing capability argument loses nothing. -/
+theorem lifecycleRetypeDirectWithCleanup_ok_authorized
+    {st st' : SystemState} {authCap : Capability} {target : SeLe4n.ObjId}
+    {newObj : KernelObject}
+    (h : lifecycleRetypeDirectWithCleanup authCap target newObj st = .ok ((), st')) :
+    lifecycleRetypeAuthority authCap target = true := by
+  cases hAuth : lifecycleRetypeAuthority authCap target with
+  | true => rfl
+  | false =>
+      rw [lifecycleRetypeDirectWithCleanup_unauthorized newObj hAuth st] at h
+      cases h
 
 /-- **`v0.35.185` (register row 63): what a successful cleanup-composed retype
 did**, in one place.
@@ -471,7 +489,7 @@ obligations), the target held some object the cleanup ran on, and the whole of
 the commit is one `storeObject` on the scrubbed post-cleanup state.
 
 The `none` arm of the wrapper's own `getObject?` match is unreachable on `.ok`,
-because `lifecycleRetypeDirect` re-asks the same question and answers
+because `lifecycleRetypeDirectCommit` re-asks the same question and answers
 `.objectNotFound` — so the existential is total on the success path rather than
 a case the caller must still split.
 
@@ -492,16 +510,18 @@ theorem lifecycleRetypeDirectWithCleanup_ok_decompose
         lifecyclePreRetypeCleanup st target currentObj newObj = .ok stClean ∧
         storeObject target newObj
             (scrubObjectMemory stClean target currentObj.objectType) = .ok ((), st') := by
+  have hAuth := lifecycleRetypeDirectWithCleanup_ok_authorized h
   unfold lifecycleRetypeDirectWithCleanup SystemState.getObject? at h
+  simp only [hAuth, Bool.not_true, Bool.false_eq_true, ↓reduceIte] at h
   split at h
   · exact absurd h (by simp)
   · rename_i hWF
     refine ⟨by simpa using hWF, ?_⟩
     cases hCur : st.objects[target]? with
     | none =>
-      -- Unreachable: the direct retype re-asks and answers `.objectNotFound`.
+      -- Unreachable: the commit step re-asks and answers `.objectNotFound`.
       rw [hCur] at h
-      unfold lifecycleRetypeDirect SystemState.getObject? at h
+      unfold lifecycleRetypeDirectCommit SystemState.getObject? at h
       rw [hCur] at h
       exact absurd h (by simp)
     | some currentObj =>
@@ -513,7 +533,7 @@ theorem lifecycleRetypeDirectWithCleanup_ok_decompose
         rw [hClean] at h
         simp only [] at h
         exact ⟨currentObj, stClean, rfl, hClean,
-          lifecycleRetypeDirect_ok_as_storeObject _ st' authCap target newObj h⟩
+          lifecycleRetypeDirectCommit_ok_as_storeObject _ st' target newObj h⟩
 
 -- ============================================================================
 -- WS-SM SM7.B.11 / SM7.F.4(b)(iii): the ASID set a retype owes the TLB
@@ -1041,27 +1061,6 @@ theorem lifecycleRetypeDirectWithCleanupShootdown_vspace_posts
         (retypeShootdownAsidList st target newObj) root.asid
         (retypeShootdownAsidList_mem_destroyed hOld) stBase.tlbShootdown
 
-/-- WS-SM SM7.B: `lifecycleRetypeDirect` frames the TLB-shootdown state
-— the replace bottoms out in `storeObject` (`pendingBounded`
-bundle-carriage link). -/
-theorem lifecycleRetypeDirect_tlbShootdown_eq
-    (authCap : Capability) (target : SeLe4n.ObjId) (newObj : KernelObject)
-    (st st' : SystemState)
-    (h : lifecycleRetypeDirect authCap target newObj st = .ok ((), st')) :
-    st'.tlbShootdown = st.tlbShootdown := by
-  unfold lifecycleRetypeDirect SystemState.getObject? at h
-  revert h
-  cases hObj : st.objects[target]? with
-  | none => intro h; cases h
-  | some currentObj =>
-      simp only []
-      split
-      · split
-        · intro h
-          exact SeLe4n.Model.storeObject_tlbShootdown_eq st target newObj _ h
-        · intro h; cases h
-      · intro h; cases h
-
 /-- WS-SM SM7.B: the cleanup-composed retype frames the TLB-shootdown
 state — the cleanup pipeline
 (`lifecyclePreRetypeCleanup_tlbShootdown_eq`), the scrub, and the
@@ -1072,27 +1071,12 @@ theorem lifecycleRetypeDirectWithCleanup_tlbShootdown_eq
     (h : lifecycleRetypeDirectWithCleanup authCap target newObj st
       = .ok ((), st')) :
     st'.tlbShootdown = st.tlbShootdown := by
-  unfold lifecycleRetypeDirectWithCleanup SystemState.getObject? at h
-  revert h
-  split
-  · intro h; cases h
-  · cases hObj : st.objects[target]? with
-    | none =>
-        intro h
-        exact lifecycleRetypeDirect_tlbShootdown_eq authCap target newObj st st' h
-    | some currentObj =>
-        simp only []
-        cases hClean : lifecyclePreRetypeCleanup st target currentObj newObj with
-        | error e => intro h; cases h
-        | ok stClean =>
-            simp only []
-            intro h
-            have hRetype := lifecycleRetypeDirect_tlbShootdown_eq authCap target
-              newObj (scrubObjectMemory stClean target currentObj.objectType) st' h
-            rw [hRetype,
-                scrubObjectMemory_tlbShootdown_eq stClean target currentObj.objectType]
-            exact lifecyclePreRetypeCleanup_tlbShootdown_eq st stClean target
-              currentObj newObj hClean
+  obtain ⟨_, currentObj, stClean, _, hClean, hStore⟩ :=
+    lifecycleRetypeDirectWithCleanup_ok_decompose h
+  rw [SeLe4n.Model.storeObject_tlbShootdown_eq _ target newObj _ hStore,
+      scrubObjectMemory_tlbShootdown_eq stClean target currentObj.objectType]
+  exact lifecyclePreRetypeCleanup_tlbShootdown_eq st stClean target
+    currentObj newObj hClean
 
 /-- WS-SM SM7.B: the CSpaceAddr retype wrapper frames the TLB-shootdown
 state — cleanup, scrub, and the authority-resolving replace all leave
@@ -1551,11 +1535,14 @@ theorem lifecycleRetypeDirectWithCleanup_refuses_vspaceRoot
     (hVsp : st.objects[target]? = some (.vspaceRoot root)) (r : Unit × SystemState) :
     lifecycleRetypeDirectWithCleanup authCap target newObj st ≠ .ok r := by
   intro hStep
-  unfold lifecycleRetypeDirectWithCleanup SystemState.getObject? at hStep
-  split at hStep
-  · cases hStep
-  · simp only [hVsp, lifecyclePreRetypeCleanup_vspaceRoot_refused] at hStep
-    cases hStep
+  obtain ⟨u, st'⟩ := r
+  cases u
+  obtain ⟨_, currentObj, stClean, hCur, hClean, _⟩ :=
+    lifecycleRetypeDirectWithCleanup_ok_decompose hStep
+  rw [hVsp] at hCur
+  cases hCur
+  rw [lifecyclePreRetypeCleanup_vspaceRoot_refused] at hClean
+  cases hClean
 
 /-- **`v0.36.35`** (CSpaceAddr): a retype of a stored VSpace root never succeeds. -/
 theorem lifecycleRetypeWithCleanup_refuses_vspaceRoot
@@ -1797,6 +1784,27 @@ theorem lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_error_iff
       lifecycleRetypeDirectWithCleanupShootdownPerCore executingCore authCap
         target newObj st = .error e :=
   Architecture.withIcacheBroadcast_error_iff _ _ st e
+
+/-- **The live `.lifecycleRetype` seam refuses an unnamed target with
+`illegalAuthority`, on every state.**  `lifecycleRetypeDirectWithCleanup_unauthorized`
+lifted through the TLB-shootdown, per-core drain and instruction-cache layers,
+each of which is error-transparent: whatever the state holds at `target`, a
+capability that does not name it with `.retype` draws the one answer. -/
+theorem lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_unauthorized
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    {authCap : Capability} {target : SeLe4n.ObjId} (newObj : KernelObject)
+    (hAuth : lifecycleRetypeAuthority authCap target = false) (st : SystemState) :
+    lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache executingCore authCap
+        target newObj st = .error .illegalAuthority := by
+  have hBase := lifecycleRetypeDirectWithCleanup_unauthorized newObj hAuth st
+  have hSh : lifecycleRetypeDirectWithCleanupShootdown executingCore authCap target
+      newObj st = .error .illegalAuthority := by
+    simp only [lifecycleRetypeDirectWithCleanupShootdown, hBase]
+  have hPc : lifecycleRetypeDirectWithCleanupShootdownPerCore executingCore authCap
+      target newObj st = .error .illegalAuthority := by
+    simp only [lifecycleRetypeDirectWithCleanupShootdownPerCore, hSh]
+  exact (lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_error_iff executingCore
+    authCap target newObj st .illegalAuthority).mpr hPc
 
 /-- **WS-SM SM7.D.1**: the CSpaceAddr seam is error-transparent. -/
 theorem lifecycleRetypeWithCleanupShootdownPerCoreIcache_error_iff

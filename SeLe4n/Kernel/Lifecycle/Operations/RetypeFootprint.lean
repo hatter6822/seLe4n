@@ -454,7 +454,7 @@ FOOTPRINT's own segment.
 
 Mirrors `lifecycleRetypeDirectWithCleanup_confinedToCores` clause for clause: the
 well-formedness reject commits nothing, the absent-target arm is
-`lifecycleRetypeDirect` (a store, so scheduler-silent), and the present arm is the
+`lifecycleRetypeDirectCommit` (a store, so scheduler-silent), and the present arm is the
 cleanup — the one step that moves a replenishment — then the scrub and the store,
 both scheduler-silent. -/
 theorem lifecycleRetypeDirectWithCleanup_replenishQueueOnCore_ne (authCap : Capability)
@@ -462,7 +462,9 @@ theorem lifecycleRetypeDirectWithCleanup_replenishQueueOnCore_ne (authCap : Capa
     (hne : c ∉ lifecycleRetypeReplenishCores st target)
     (h : lifecycleRetypeDirectWithCleanup authCap target newObj st = .ok ((), st')) :
     st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
+  have hAuthOk := lifecycleRetypeDirectWithCleanup_ok_authorized h
   unfold lifecycleRetypeDirectWithCleanup at h
+  simp only [hAuthOk, Bool.not_true, Bool.false_eq_true, ↓reduceIte] at h
   unfold lifecycleRetypeReplenishCores at hne
   split at h
   · exact absurd h (by simp)
@@ -470,7 +472,7 @@ theorem lifecycleRetypeDirectWithCleanup_replenishQueueOnCore_ne (authCap : Capa
     | none =>
       rw [hObj] at h
       simp only [] at h
-      rw [(lifecycleRetypeDirect_scheduler_machine_eq authCap target newObj st st' h).1]
+      rw [(lifecycleRetypeDirectCommit_scheduler_machine_eq target newObj st st' h).1]
     | some currentObj =>
       rw [hObj] at h hne
       simp only [] at h
@@ -479,7 +481,7 @@ theorem lifecycleRetypeDirectWithCleanup_replenishQueueOnCore_ne (authCap : Capa
       | ok stClean =>
         rw [hClean] at h
         simp only [] at h
-        rw [(lifecycleRetypeDirect_scheduler_machine_eq authCap target newObj
+        rw [(lifecycleRetypeDirectCommit_scheduler_machine_eq target newObj
           (scrubObjectMemory stClean target currentObj.objectType) st' h).1,
           scrubObjectMemory_scheduler_eq stClean target currentObj.objectType]
         exact lifecyclePreRetypeCleanup_replenishQueueOnCore_ne st stClean target currentObj
