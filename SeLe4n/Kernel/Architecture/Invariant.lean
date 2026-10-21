@@ -459,7 +459,7 @@ private theorem default_capabilityInvariantBundle :
     capabilityInvariantBundle (default : SystemState) :=
   -- WS-SM SM6.D / PR #822 Phase H (#1.a): the `replyCapPointsToValidReply` conjunct is
   -- vacuous on the empty default state (no CNode objects to hold a reply cap).
-  ⟨by intro oid cn s c hObj; exact default_objects_absurd hObj,
+  ⟨SeLe4n.Kernel.cspaceLookupSound_holds _,
    by intro ref h; exact absurd h (CapDerivationTree.empty_not_mentions ref),
    by exact CapDerivationTree.empty_edgeWellFounded,
    by intro cnodeId cn hObj; exact default_objects_absurd hObj,

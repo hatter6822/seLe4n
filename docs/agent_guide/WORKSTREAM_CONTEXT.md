@@ -224,7 +224,11 @@ cell it takes in its root, so a page-table map, unmap and the delete of an
 uninstalled table's capability allocate nothing; at `v0.36.120` (part 10) a
 retype checks before it writes and allocates only its new object's cells; at
 `v0.36.121` (part 11) an IPC message holds no capability, the first of the seL4
-untyped reset's parts ([`UNTYPED_RESET_PLAN.md`](../planning/UNTYPED_RESET_PLAN.md)).  The
+untyped reset's parts ([`UNTYPED_RESET_PLAN.md`](../planning/UNTYPED_RESET_PLAN.md));
+at `v0.36.122` (part 12) a thread's CSpace and VSpace roots are two capability
+slots in the TCB, derivation nodes reached by delete, revoke and teardown, and
+setting a thread's spaces copies the capabilities in with their derivation
+edges.  The
 suspend of a thread blocked in IPC or holding a donated context is the one
 syscall arm left on the general path (ZA6.1).  ZA6 covers the other
 entries and makes the rule standing.  Plan:
@@ -1609,19 +1613,32 @@ respect.  (1) **The CSpace root needs `.grant` and `.write`**
 capability it holds and the right to change them, which is the authority
 `.cspaceMint` gates on — a read-only or grant-less capability is refused.  The
 VSpace root needs `.write`, as `.vspaceMap` does.  (2) **Suspended means the
-state says so, not the flag alone**: `setThreadSpace` refuses unless the stored
+state says so, not the flag alone**: `copyThreadSpaces` refuses unless the stored
 flag is `.Inactive` *and* `inferThreadState` classifies the thread so (placed on
 no core, blocked on nothing), so a stale flag cannot admit a running thread —
 §5j's decisive case is the running owner, whose stored flag is the default
-`.Inactive`.  (3) **The write is one in-place TCB rewrite** under the lookup's
-own witness, reaching `ipcInvariantFull` through the one-field transport
-`setThreadFaultHandlerOp` uses.  (4) **It declares a static footprint**
+`.Inactive`.  (3) **The roots are slots, and the write is seL4's copy**
+(`v0.36.122`, ZA5.4 part 12): a TCB holds its roots as two capability slots
+(`TCB.spaceCells` / `spaceLinks`, seL4's `tcbCTable` / `tcbVTable`), derivation
+nodes read through the object-slot dispatch (`Model/ObjectSlots.lean`), and
+`cspaceRoot` / `vspaceRoot` are reads of them.  Each slot is set by deleting its
+old content and inserting a copy of the source slot's capability, rights masked
+by the root's, with the derivation edge from the source (`threadSlotCopied`), so
+a revoke of the source empties the thread's slot.  New code that writes a
+thread's roots goes through the slot copy or the slot delete, never a field
+write, and new code that walks slots walks a thread's two as well
+(`KernelObject.slotCap`).  A user CNode invocation reaches a CNode's slots only
+(`cnodeInvoked`, `.objectNotFound` otherwise), as seL4 decodes a CNode
+invocation only on a CNode capability; the internal destroyers reach thread
+slots.  (4) **It declares a static footprint**
 (`lockSet_tcbSetSpace`: the caller and its CNode root read, the target written,
-the two new roots read), and `resolveCallerCapObject` is the caller-CSpace
+the two new roots read), and `resolveCallerCapSlot` (`resolveCallerCapObject`'s
+caller-CSpace resolution, the slot returned beside the capability) is the
 resolution the arm's two operands share — a new arm resolving a capability
-operand reaches for it rather than spelling the gate again.  The payoff §5j
-measures: the reset refuses while a thread runs in a carved root, and succeeds
-once the thread is moved back.
+operand reaches for one of the two rather than spelling the gate again.  The payoff §5j
+measures: revoking a set-space source empties the thread's slot, and revoking
+the untyped reaches the thread's copy of the carved root's capability, after
+which the reset retires the root.
 
 **Intermediate page tables** (`v0.36.12`).  A page table (`KernelObject.pageTable`,
 retype tag **9**, `LockKind.page` beside frames) is carved like a frame — one
@@ -1646,8 +1663,9 @@ reads `getPageObject?` (a frame or a table); a new page-backed kind joins it the
 (`finaliseDestroyedCapabilities`, seL4's `finaliseCap` → `unmapPageTable`), with
 every mapping and every table beneath it, so revoking memory authority revokes the
 translations built on it: the finalising delete and revocation find the tables
-some CNode slot named before and none names after (`pageTablesOrphaned` over
-`cnodeSlotsUnreferenced`, `v0.36.38` — a copy parked in a blocked sender's message
+some slot named before and none names after (`pageTablesOrphaned` over
+`carvedSubtreeUnreferenced`, every slot of every object since `v0.36.122`, CNode
+slots only from `v0.36.38` — a copy parked in a blocked sender's message
 is dropped by a cancellation that finalises nothing, so it must not keep a table
 installed), and the retype of a CNode holding such a capability is refused.  **The root is the truth
 and a table's `installedIn` a pointer** (`pageTableInstallLive`): the detach

@@ -13,33 +13,24 @@ namespace SeLe4n.Kernel
 
 open SeLe4n.Model
 
-/-- Core delete authority reduction (no CDT guard). -/
+/-- Core delete authority reduction (no CDT guard): the emptied slot holds
+nothing, read through the object-slot dispatch and as a CNode slot. -/
 private theorem cspaceDeleteSlotCore_authority_reduction
     (st st' : SystemState)
     (addr : CSpaceAddr)
     (hObjInv : st.objects.invExt)
     (hStep : cspaceDeleteSlotCore addr st = .ok ((), st')) :
-    SystemState.lookupSlotCap st' addr = none := by
-  rcases addr with ⟨cnodeId, slot⟩
-  simp only [cspaceDeleteSlotCore, SystemState.getCNode?] at hStep
-  cases hObj : st.objects[cnodeId]? with
-  | none => simp [hObj] at hStep
-  | some obj =>
-      cases obj with
-      | tcb tcb => simp [hObj] at hStep
-      | endpoint ep => simp [hObj] at hStep
-      | notification ntfn => simp [hObj] at hStep
-      | vspaceRoot root => simp [hObj] at hStep
-      | untyped _ => simp [hObj] at hStep
-      | schedContext _ | reply _ | frame _ | pageTable _ => simp [hObj] at hStep
-      | cnode cn =>
-          have hUniq := SeLe4n.Model.CNode.slotsUnique_holds cn
-          simp [hObj] at hStep
-          cases hStep
-          simp only [SystemState.lookupSlotCap, SystemState.lookupCNode,
-            RHTable_getElem?_eq_get?]
-          rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
-          simp [CNode.lookup_remove_eq_none cn slot hUniq]
+    st'.slotCapAt addr = none ∧ SystemState.lookupSlotCap st' addr = none := by
+  obtain ⟨o, hO, hH, hS⟩ := cspaceDeleteSlotCore_ok hStep
+  have hPost := storeObject_objects_eq st st' addr.cnode _ hObjInv hS
+  refine ⟨?_, ?_⟩
+  · rw [SystemState.slotCapAt_of_object hPost, KernelObject.slotCap_removeSlotCap_self]
+  · cases o with
+    | cnode cn =>
+      simp only [SystemState.lookupSlotCap, SystemState.lookupCNode, hPost, KernelObject.removeSlotCap]
+      exact CNode.lookup_remove_eq_none cn addr.slot (SeLe4n.Model.CNode.slotsUnique_holds cn)
+    | tcb t => simp [SystemState.lookupSlotCap, SystemState.lookupCNode, hPost, KernelObject.removeSlotCap]
+    | _ => simp [KernelObject.holdsSlots] at hH
 
 /-- Delete transition authority reduction clause (guarded wrapper). -/
 private theorem cspaceDeleteSlot_authority_reduction
@@ -47,9 +38,10 @@ private theorem cspaceDeleteSlot_authority_reduction
     (addr : CSpaceAddr)
     (hObjInv : st.objects.invExt)
     (hStep : cspaceDeleteSlot addr st = .ok ((), st')) :
-    SystemState.lookupSlotCap st' addr = none := by
+    st'.slotCapAt addr = none ∧ SystemState.lookupSlotCap st' addr = none := by
   obtain ⟨stC, hC, rfl⟩ := cspaceDeleteSlot_ok_decompose addr st st' hStep
-  rw [(spliceDeletedCdtNode_agree (cspaceDeleteSlotCore_invExt st stC addr hObjInv hC) addr).1.lookupSlotCap]
+  have hA := (spliceDeletedCdtNode_agree (cspaceDeleteSlotCore_invExt st stC addr hObjInv hC) addr).1
+  rw [hA.slotCapAt, hA.lookupSlotCap]
   exact cspaceDeleteSlotCore_authority_reduction st stC addr hObjInv hC
 
 /-- Revoke transition authority reduction clause: no sibling slot in the same CNode may retain
@@ -186,36 +178,25 @@ theorem cspaceDeleteSlotCore_lookup_eq_none
     (addr : CSpaceAddr)
     (hObjInv : st.objects.invExt)
     (hStep : cspaceDeleteSlotCore addr st = .ok ((), st')) :
-    cspaceLookupSlot addr st' = .error .invalidCapability := by
-  rcases addr with ⟨cnodeId, slot⟩
-  simp only [cspaceDeleteSlotCore, SystemState.getCNode?] at hStep
-  cases hObj : st.objects[cnodeId]? with
-  | none => simp [hObj] at hStep
-  | some obj =>
-      cases obj with
-      | tcb tcb => simp [hObj] at hStep
-      | endpoint ep => simp [hObj] at hStep
-      | notification ntfn => simp [hObj] at hStep
-      | vspaceRoot root => simp [hObj] at hStep
-      | untyped _ => simp [hObj] at hStep
-      | schedContext _ | reply _ | frame _ | pageTable _ => simp [hObj] at hStep
-      | cnode cn =>
-          have hUniq := SeLe4n.Model.CNode.slotsUnique_holds cn
-          simp [hObj] at hStep
-          cases hStep
-          -- AN10-residual (R1): include `getCNode?` so the inner match
-          -- (now over `getCNode?` instead of raw `objects[]?`) unfolds.
-          simp only [cspaceLookupSlot, SystemState.lookupSlotCap, SystemState.lookupCNode,
-            SystemState.getCNode?, RHTable_getElem?_eq_get?]
-          rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
-          simp [CNode.lookup_remove_eq_none cn slot hUniq]
+    cspaceLookupSlot addr st' =
+      .error (if (st.getCNode? addr.cnode).isSome then .invalidCapability else .objectNotFound) := by
+  obtain ⟨o, hO, hH, hS⟩ := cspaceDeleteSlotCore_ok hStep
+  have hPost := storeObject_objects_eq st st' addr.cnode _ hObjInv hS
+  have hNone := (cspaceDeleteSlotCore_authority_reduction st st' addr hObjInv hStep).2
+  unfold cspaceLookupSlot
+  rw [hNone]
+  cases o with
+  | cnode cn => simp [SystemState.getCNode?, hPost, hO, KernelObject.removeSlotCap]
+  | tcb t => simp [SystemState.getCNode?, hPost, hO, KernelObject.removeSlotCap]
+  | _ => simp [KernelObject.holdsSlots] at hH
 
 theorem cspaceDeleteSlot_lookup_eq_none
     (st st' : SystemState)
     (addr : CSpaceAddr)
     (hObjInv : st.objects.invExt)
     (hStep : cspaceDeleteSlot addr st = .ok ((), st')) :
-    cspaceLookupSlot addr st' = .error .invalidCapability := by
+    cspaceLookupSlot addr st' =
+      .error (if (st.getCNode? addr.cnode).isSome then .invalidCapability else .objectNotFound) := by
   obtain ⟨stC, hC, rfl⟩ := cspaceDeleteSlot_ok_decompose addr st st' hStep
   have h := cspaceDeleteSlotCore_lookup_eq_none st stC addr hObjInv hC
   rw [cspaceLookupSlot_of_agree
@@ -571,7 +552,8 @@ preconditions are needed; this theorem replaces the historical bridge
 `cspaceLookupSound`, deleted along with the rest of the
 `cspaceSlotUnique` retirement in Phase A2 of the close-out. -/
 theorem cspaceLookupSound_holds (st : SystemState) : cspaceLookupSound st := by
-  intro cnodeId cn slot cap hObj hLookup
+  refine ⟨fun cnodeId cn slot cap hObj hLookup => ?_,
+    fun oid o slot cap hObj hCap => by rw [SystemState.slotCapAt_of_object hObj]; exact hCap⟩
   simp [SystemState.lookupSlotCap, SystemState.lookupCNode, hObj, CNode.lookup]
   exact hLookup
 
@@ -639,32 +621,16 @@ So a step frames the bundle when it (a) keeps the CDT, (b) introduces
 no CNode that was not one, (c) keeps every CNode it had, and (d) removes no
 Reply.  Each
 is a fact the step's own object frame already states. -/
-/-- A step that keeps the tree and every CNode, key by key, keeps the links. -/
+/-- A step that keeps the tree, every CNode and every thread's slots, key by
+key, keeps the links. -/
 theorem cdtLinksAgree_of_cnode_iff {st st' : SystemState} (h : cdtLinksAgree st)
     (hCdt : st'.cdt = st.cdt)
     (hCn : ∀ (oid : SeLe4n.ObjId) (cn : CNode),
-      st'.objects[oid]? = some (.cnode cn) ↔ st.objects[oid]? = some (.cnode cn)) :
-    cdtLinksAgree st' := by
-  refine cdtLinksAgree_of_eq h hCdt (SystemState.slotLinkAt_eq_of_getCNode fun oid => ?_)
-  unfold SystemState.getCNode?
-  cases h' : st'.objects[oid]? with
-  | some o' =>
-      cases o' with
-      | cnode cn => rw [(hCn oid cn).mp h']
-      | _ =>
-          cases h0 : st.objects[oid]? with
-          | some o =>
-              cases o with
-              | cnode cn => rw [(hCn oid cn).mpr h0] at h'; cases h'
-              | _ => rfl
-          | none => rfl
-  | none =>
-      cases h0 : st.objects[oid]? with
-      | some o =>
-          cases o with
-          | cnode cn => rw [(hCn oid cn).mpr h0] at h'; cases h'
-          | _ => rfl
-      | none => rfl
+      st'.objects[oid]? = some (.cnode cn) ↔ st.objects[oid]? = some (.cnode cn))
+    (hTcb : ∀ oid : SeLe4n.ObjId,
+      (st'.objects[oid]?).bind KernelObject.tcbSlots = (st.objects[oid]?).bind KernelObject.tcbSlots) :
+    cdtLinksAgree st' :=
+  cdtLinksAgree_of_eq h hCdt (SystemState.slotLinkAt_eq_of_slots hCn hTcb)
 
 /-- **A step that keeps the tree keeps the links when the slots the tree names
 keep theirs and every other slot reads no link**: the tree's other slots held
@@ -688,26 +654,35 @@ theorem capabilityInvariantBundle_of_frame {st st' : SystemState}
       st'.objects[oid]? = some (.cnode cn) → st.objects[oid]? = some (.cnode cn))
     (hCnodeFwd : ∀ (oid : SeLe4n.ObjId) (cn : CNode),
       st.objects[oid]? = some (.cnode cn) → st'.objects[oid]? = some (.cnode cn))
+    (hTcb : ∀ oid : SeLe4n.ObjId,
+      (st'.objects[oid]?).bind KernelObject.tcbSlots = (st.objects[oid]?).bind KernelObject.tcbSlots)
     (hReply : ∀ rid : SeLe4n.ReplyId, st.getReply? rid ≠ none → st'.getReply? rid ≠ none)
     (hObjInv : st'.objects.invExt) :
     capabilityInvariantBundle st' := by
   obtain ⟨_, hComp, hAcyclic, hDepth, _, hRCPV, hLinks⟩ := h
+  have hCn : ∀ (oid : SeLe4n.ObjId) (cn : CNode),
+      st'.objects[oid]? = some (.cnode cn) ↔ st.objects[oid]? = some (.cnode cn) :=
+    fun oid cn => ⟨hCnode oid cn, hCnodeFwd oid cn⟩
   refine capabilityInvariantBundle_of_components st' ?_ ?_ ?_ hObjInv ?_
-    (cdtLinksAgree_of_cnode_iff hLinks hCdt fun oid cn => ⟨hCnode oid cn, hCnodeFwd oid cn⟩)
+    (cdtLinksAgree_of_cnode_iff hLinks hCdt hCn hTcb)
   · intro ref hRef
     rw [hCdt] at hRef
-    obtain ⟨cn, hCn, hL⟩ := hComp ref hRef
-    exact ⟨cn, hCnodeFwd _ cn hCn, hL⟩
+    obtain ⟨o, hO, hL⟩ := hComp ref hRef
+    obtain ⟨o', hO', hE⟩ := SystemState.slotCap_fwd_of_slots (hCn ref.cnode) (hTcb ref.cnode) hO hL
+    exact ⟨o', hO', by rw [hE]; exact hL⟩
   · unfold cdtAcyclicity at hAcyclic ⊢; rw [hCdt]; exact hAcyclic
   · exact fun oid cn hCn => hDepth oid cn (hCnode oid cn hCn)
-  · exact fun oid cn slot cap rid hCn hLook hTgt =>
-      hReply rid (hRCPV oid cn slot cap rid (hCnode oid cn hCn) hLook hTgt)
+  · intro oid o' slot cap rid hO' hLook hTgt
+    obtain ⟨o, hO, hE⟩ := SystemState.slotCap_back_of_slots (hCn oid) (hTcb oid) hO'
+      (by rw [hLook]; exact Option.some_ne_none _)
+    exact hReply rid (hRCPV oid o slot cap rid hO (by rw [hE]; exact hLook) hTgt)
 
 /-! ### WS-ZA ZA5.3: the bundle reads no derivation link
 
-Every conjunct reads a CNode through its slots and geometry, which the links do
-not touch, or reads the tree.  So a step whose objects agree with the pre-state's
-off the CNodes' derivation links (`objectsAgreeOffDerivationLinks`) keeps each
+Every conjunct reads an object's slots (a CNode's or a thread's) or a CNode's
+geometry, which the links do not touch, or reads the tree.  So a step whose
+objects agree with the pre-state's off the slots' derivation links
+(`objectsAgreeOffDerivationLinks`) keeps each
 conjunct, and keeps the tree-reading ones when it keeps the tree. -/
 
 theorem cspaceDepthConsistent_of_agree {st st' : SystemState}
@@ -721,9 +696,9 @@ theorem cdtCompletenessOff_of_agree {st st' : SystemState} {gone : SlotRef → P
     (hA : SystemState.objectsAgreeOffDerivationLinks st' st) (hCdt : st'.cdt = st.cdt)
     (h : cdtCompletenessOff st gone) : cdtCompletenessOff st' gone := fun ref hM hG => by
   rw [hCdt] at hM
-  obtain ⟨cn, hc, hl⟩ := h ref hM hG
-  obtain ⟨cn', hc', hw⟩ := hA.cnode_fwd hc
-  exact ⟨cn', hc', by rw [CNode.proj_eq_of_withoutLinks_eq (·.lookup ref.slot) hw]; exact hl⟩
+  obtain ⟨o, hc, hl⟩ := h ref hM hG
+  obtain ⟨o', hc', hS, -⟩ := hA.obj_slots_fwd hc
+  exact ⟨o', hc', by rw [hS]; exact hl⟩
 
 theorem cdtCompleteness_of_agree {st st' : SystemState}
     (hA : SystemState.objectsAgreeOffDerivationLinks st' st) (hCdt : st'.cdt = st.cdt)
@@ -732,11 +707,10 @@ theorem cdtCompleteness_of_agree {st st' : SystemState}
 
 theorem replyCapPointsToValidReply_of_agree {st st' : SystemState}
     (hA : SystemState.objectsAgreeOffDerivationLinks st' st) (h : replyCapPointsToValidReply st) :
-    replyCapPointsToValidReply st' := fun oid cn' slot cap rid hO hL hT => by
-  obtain ⟨cn, hc, hw⟩ := hA.cnode_back hO
+    replyCapPointsToValidReply st' := fun oid o' slot cap rid hO hL hT => by
+  obtain ⟨o, hc, hS, -⟩ := hA.obj_slots_back hO
   rw [hA.getReply? rid]
-  exact h oid cn slot cap rid hc
-    (by rw [← CNode.proj_eq_of_withoutLinks_eq (·.lookup slot) hw]; exact hL) hT
+  exact h oid o slot cap rid hc (by rw [← hS]; exact hL) hT
 
 /-- A step that keeps the tree and changes objects only in their CNodes' links
 keeps every conjunct but the links' own agreement, which the caller supplies. -/
@@ -771,6 +745,7 @@ theorem capabilityInvariantBundle_of_objects_and_cdt_eq {st st' : SystemState}
   capabilityInvariantBundle_of_frame h hCdt
     (fun _ _ hCn => by rw [hObjs] at hCn; exact hCn)
     (fun _ _ hCn => by rw [hObjs]; exact hCn)
+    (fun _ => by rw [hObjs])
     (fun _ hR => by unfold SystemState.getReply? at hR ⊢; rw [hObjs]; exact hR)
     (by rw [hObjs]; exact h.2.2.2.2.1)
 
@@ -797,18 +772,19 @@ theorem capabilityInvariantBundle_of_kindPreserving {st st' : SystemState}
     (hObjInv : st'.objects.invExt)
     (hAt : kindPreservingWrite st st') :
     capabilityInvariantBundle st' := by
-  refine capabilityInvariantBundle_of_frame h hCdt ?_ ?_ ?_ hObjInv
+  refine capabilityInvariantBundle_of_frame h hCdt ?_ ?_ ?_ ?_ hObjInv
   · intro oid cn hCn
-    rcases hAt oid with hEq | ⟨_, post, _, hPost, _, hNe⟩
+    rcases hAt oid with hEq | ⟨_, post, _, hPost, _, hNe, _⟩
     · rw [← hEq]; exact hCn
     · rw [hPost] at hCn
       cases hCn
       exact absurd rfl hNe
   · intro oid cn hCn
-    rcases hAt oid with hEq | ⟨pre, post, hPre, _, hType, hNe⟩
+    rcases hAt oid with hEq | ⟨pre, post, hPre, _, hType, hNe, _⟩
     · rw [hEq]; exact hCn
     · rw [hCn] at hPre; cases hPre
       exact absurd hType hNe
+  · exact hAt.tcbSlots
   · intro rid hR
     unfold SystemState.getReply? at hR ⊢
     rcases hAt rid.toObjId with hEq | ⟨pre, post, hPre, hPost, hType, _⟩
@@ -842,13 +818,14 @@ theorem storeObject_preserves_capabilityInvariantBundle_of_kind
     (hStore : storeObject oid obj st = .ok ((), st'))
     (hPre : st.objects[oid]? = some pre)
     (hKind : obj.objectType = pre.objectType)
-    (hNotCnode : obj.objectType ≠ KernelObjectType.cnode) :
+    (hNotCnode : obj.objectType ≠ KernelObjectType.cnode)
+    (hSlots : obj.tcbSlots = pre.tcbSlots) :
     capabilityInvariantBundle st' := by
   have hObjInv : st.objects.invExt := h.2.2.2.2.1
   exact capabilityInvariantBundle_of_kindPreserving h
     (storeObject_cdt_eq st st' oid obj hStore)
     (storeObject_preserves_objects_invExt st st' oid obj hObjInv hStore)
-    (storeObject_kindPreservingWrite hObjInv hStore hPre hKind hNotCnode)
+    (storeObject_kindPreservingWrite hObjInv hStore hPre hKind hNotCnode hSlots)
 
 /-- WS-RR RR8.16 (`v0.35.199`): the walk's own `kindPreservingWrite`, so a chain
 that ends in it is a `.trans` rather than a second pointwise argument. -/
@@ -859,9 +836,10 @@ theorem propagatePipChainCrossCore_kindPreservingWrite (st : SystemState)
       (SeLe4n.Kernel.PriorityInheritance.propagatePipChainCrossCore st startTid ec fuel).1 := by
   intro oid
   rcases SeLe4n.Kernel.PriorityInheritance.propagatePipChainCrossCore_objects_pointwise fuel st
-      startTid ec hInv oid with hEq | ⟨pre, post, hPre, hPost⟩
+      startTid ec hInv oid with hEq | ⟨pre, post, hPre, hPost, hC, hL⟩
   · exact Or.inl hEq
-  · exact Or.inr ⟨.tcb pre, .tcb post, hPre, hPost, rfl, by simp [KernelObject.objectType]⟩
+  · exact Or.inr ⟨.tcb pre, .tcb post, hPre, hPost, rfl, by simp [KernelObject.objectType],
+      by simp [KernelObject.tcbSlots, hC, hL]⟩
 
 /-- WS-RR RR8.16 (`v0.35.197`): **the priority-inheritance chain walk preserves the
 capability invariant bundle** — the first instance of the frame above, and one of

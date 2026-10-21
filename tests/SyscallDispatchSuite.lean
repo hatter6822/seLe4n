@@ -67,7 +67,7 @@ private def expect (name : String) (cond : Bool) (reason : String) : IO Unit :=
 private def mkTcb (tid : Nat) (state : ThreadState := .Ready)
     (prio : Nat := 10) : TCB :=
   { tid := ⟨tid⟩, priority := ⟨prio⟩, domain := ⟨0⟩,
-    cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 0),
+    spaceCells := SeLe4n.Model.TCB.spaceCellsOf ⟨0⟩ ⟨0⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 0),
     threadState := state }
 
 private def mkState (objs : List (ObjId × KernelObject))
@@ -611,7 +611,7 @@ The boot wrapper now refuses a boot whose witnesses are not installed threads
 idle threads — is the negative, not the fixture. -/
 private def witnessTcb (id : Nat) : TCB :=
   { tid := ⟨id⟩, priority := ⟨10⟩, domain := ⟨0⟩,
-    cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 0),
+    spaceCells := SeLe4n.Model.TCB.spaceCellsOf ⟨0⟩ ⟨0⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 0),
     threadState := .Inactive }
 
 private def witnessEntry (id : Nat) : SeLe4n.Platform.Boot.ObjectEntry :=
@@ -877,8 +877,8 @@ private def sd050_bindNotification_requires_ntfn_cap : IO Unit := do
   let ntfnCapRO : Capability := { target := .object ntfnId, rights := AccessRightSet.ofList [.read] }
   let mkSt (slots : List (SeLe4n.Slot × Capability)) : SystemState :=
     mkState [
-      (caller.toObjId, .tcb { (mkTcb 1) with cspaceRoot := cnId }),
-      (tgtTcb, .tcb { (mkTcb 70) with cspaceRoot := cnId }),
+      (caller.toObjId, .tcb ((mkTcb 1).withCSpaceRoot cnId)),
+      (tgtTcb, .tcb ((mkTcb 70).withCSpaceRoot cnId)),
       (ntfnId, .notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }),
       (cnId, .cnode (CNode.ofList 4 0 0 4 slots))
     ]
@@ -921,8 +921,8 @@ private def dispatcherRefusesCallerNotCurrentOnCore : IO Unit := do
   let ntfnCap : Capability := { target := .object ntfnId, rights := AccessRightSet.ofList [.write] }
   let base : SystemState :=
     mkState [
-      (caller.toObjId, .tcb { (mkTcb 1) with cspaceRoot := cnId }),
-      (other.toObjId, .tcb { (mkTcb 70) with cspaceRoot := cnId }),
+      (caller.toObjId, .tcb ((mkTcb 1).withCSpaceRoot cnId)),
+      (other.toObjId, .tcb ((mkTcb 70).withCSpaceRoot cnId)),
       (ntfnId, .notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }),
       (cnId, .cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF
             [(SeLe4n.Slot.ofNat 0, tcbCap), (SeLe4n.Slot.ofNat 1, ntfnCap)])))
@@ -980,8 +980,8 @@ private def sd054_idleTargetCapabilityUnresolvable : IO Unit := do
   let tcbCap  : Capability := { target := .object tgtTcb, rights := AccessRightSet.ofList [.write] }
   let st : SystemState :=
     mkState [
-      (caller.toObjId, .tcb { (mkTcb 1) with cspaceRoot := cnId }),
-      (tgtTcb, .tcb { (mkTcb 70) with cspaceRoot := cnId }),
+      (caller.toObjId, .tcb ((mkTcb 1).withCSpaceRoot cnId)),
+      (tgtTcb, .tcb ((mkTcb 70).withCSpaceRoot cnId)),
       (cnId, .cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF
             [(SeLe4n.Slot.ofNat 0, idleCap), (SeLe4n.Slot.ofNat 1, tcbCap)])))
     ]
@@ -1427,7 +1427,7 @@ private def sd058_mintReplyCapThroughTheSyscallGate : IO Unit := do
     { target := .object ntfnObj, rights := AccessRightSet.ofList [.read, .write] }
   let mkSt (primary : Capability) : SystemState :=
     mkState [
-      (caller.toObjId, .tcb { (mkTcb 1) with cspaceRoot := cnId }),
+      (caller.toObjId, .tcb ((mkTcb 1).withCSpaceRoot cnId)),
       (replyObj, .reply { replyId := rid }),
       (ntfnObj, .notification
         { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }),
@@ -1558,7 +1558,7 @@ private def sd059_cspaceRevokeThroughTheSyscallGate : IO Unit := do
     { target := .object cnB, rights := AccessRightSet.ofList [.read, .write, .grant] }
   let mkSt (primary : Capability) : SystemState :=
     mkState [
-      (caller.toObjId, .tcb { (mkTcb 1) with cspaceRoot := cnA }),
+      (caller.toObjId, .tcb ((mkTcb 1).withCSpaceRoot cnA)),
       (ntfnObj, .notification
         { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }),
       (cnA, .cnode (CNode.ofList 4 0 0 4 [ (SeLe4n.Slot.ofNat 0, primary)
@@ -1706,8 +1706,8 @@ private def sd060_schedContextBind_requires_tcb_capability : IO Unit := do
   let cnCap    : Capability := { target := .object cnId, rights := AccessRightSet.ofList [.write] }
   let st : SystemState :=
     mkState [
-      (caller.toObjId, .tcb { (mkTcb 1) with cspaceRoot := cnId }),
-      (tgtTcb, .tcb { (mkTcb 70) with cspaceRoot := cnId }),
+      (caller.toObjId, .tcb ((mkTcb 1).withCSpaceRoot cnId)),
+      (tgtTcb, .tcb ((mkTcb 70).withCSpaceRoot cnId)),
       (scObj, .schedContext { SeLe4n.Kernel.SchedContext.empty scId with priority := ⟨20⟩ }),
       (cnId, .cnode (CNode.ofList 4 0 0 4 [(SeLe4n.Slot.ofNat 0, scCap), (SeLe4n.Slot.ofNat 1, tcbCap),
              (SeLe4n.Slot.ofNat 2, tcbCapRO), (SeLe4n.Slot.ofNat 3, cnCap)]))
@@ -1786,7 +1786,7 @@ private def sd061_retype_never_mints_or_destroys_memory_authority : IO Unit := d
   -- each object's kind there (`mkState` records none).
   let builder : SeLe4n.Testing.BootstrapBuilder := {
     objects := [
-      (caller.toObjId, .tcb { (mkTcb 1) with cspaceRoot := cnId }),
+      (caller.toObjId, .tcb ((mkTcb 1).withCSpaceRoot cnId)),
       (epObj, .endpoint {}),
       (frObj, .frame { base := SeLe4n.PAddr.ofNat 0x20000 }),
       (cnId, .cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF

@@ -3098,8 +3098,7 @@ private def probeLabelingWithMemory : LabelingContext :=
         domainLabelOf := fun d => if d = highDomain then highLabel else lowLabel } }
 
 private def mkTcb (tid : Nat) (prio : Nat) (aff : Option CoreId) : TCB :=
-  { tid := ⟨tid⟩, priority := ⟨prio⟩, domain := ⟨0⟩, cspaceRoot := cnRoot,
-    vspaceRoot := vsRoot, ipcBuffer := SeLe4n.VAddr.ofNat 4096,
+  { tid := ⟨tid⟩, priority := ⟨prio⟩, domain := ⟨0⟩, spaceCells := SeLe4n.Model.TCB.spaceCellsOf cnRoot vsRoot, ipcBuffer := SeLe4n.VAddr.ofNat 4096,
     cpuAffinity := aff }
 
 private def mkServiceEntry (sid : ServiceId) (backing : SeLe4n.ObjId) : ServiceGraphEntry :=
@@ -3245,7 +3244,7 @@ private def runFixtureChecks : IO Unit := do
   -- something every TCB satisfies.  A TCB naming an absent root is rejected.
   assertBool "a TCB naming an absent root is NOT well-formed"
     (decide (¬ (KernelObject.tcb
-      { (mkTcb 1010 40 none) with cspaceRoot := ⟨1019⟩ }).wellFormed probeState.objects))
+      ((mkTcb 1010 40 none).withCSpaceRoot ⟨1019⟩)).wellFormed probeState.objects))
   assertBool "core 0 runs the low thread, core 1 runs the high thread"
     (decide (probeState.scheduler.currentOnCore c0 = some lowCurrent ∧
              probeState.scheduler.currentOnCore c1 = some highCurrent))
@@ -5786,10 +5785,7 @@ private def declassChainStage (tid : SeLe4n.ThreadId)
           objects :=
             (st.objects.insert declassChainCNode (.cnode declassChainCNodeValue)).insert
               tid.toObjId
-              (.tcb { tcb with
-                  cspaceRoot := declassChainCNode
-                  registerContext :=
-                    SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun r =>
+              (.tcb { (tcb.withCSpaceRoot declassChainCNode) with registerContext := SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun r =>
                         if r == 0 then capPtr.toUInt64
                         else if r == 1 then msgInfo.toUInt64
                         else if r == 2 then m0.toUInt64
@@ -7401,10 +7397,7 @@ a read capability to the **high** endpoint and registers encoding `.receive`
 sender and blocks it — so the object store, the endpoint queue and core 1's
 scheduler slots all move, and every one of those movements is high. -/
 private def hiCallerTcb : TCB :=
-  { mkTcb 1011 50 (some c1) with
-      cspaceRoot := probeCNode
-      registerContext :=
-        SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun r => if r == 0 then 2 else if r == 7 then 1 else 0) }
+  { ((mkTcb 1011 50 (some c1)).withCSpaceRoot probeCNode) with registerContext := SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun r => if r == 0 then 2 else if r == 7 then 1 else 0) }
 
 private def successEntryState : SystemState :=
   { niState with
@@ -7642,7 +7635,7 @@ send={(SeLe4n.Kernel.Concurrency.lockSetForSyscall .send
 /-- §7.9 fixture: a victim whose CSpace root differs from the caller's, so the
 footprint's CNode member can be attributed to one of them. -/
 private def distinctRootVictim : TCB :=
-  { (mkTcb 1011 50 (some c1)) with cspaceRoot := probeCNode }
+  ((mkTcb 1011 50 (some c1)).withCSpaceRoot probeCNode)
 
 -- ---------------------------------------------------------------------------
 -- §7.9 fixture: an entry whose registers really decode to `.tcbSuspend`.
@@ -7668,10 +7661,7 @@ private def suspendCNodeValue : CNode :=
   (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [(suspendSlot, suspendSlotCap)]))
 
 private def suspendCallerTcb : TCB :=
-  { mkTcb 1011 50 (some c1) with
-      cspaceRoot := suspendCNode
-      registerContext :=
-        SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun r => if r == 0 then 1 else if r == 7 then 20 else 0) }
+  { ((mkTcb 1011 50 (some c1)).withCSpaceRoot suspendCNode) with registerContext := SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun r => if r == 0 then 1 else if r == 7 then 20 else 0) }
 
 private def suspendEntryState : SystemState :=
   { niState with
@@ -7712,7 +7702,7 @@ negatives. -/
 private def ipcMessage : IpcMessage := { registers := #[] }
 
 private def ipcReceiverTcb : TCB :=
-  { mkTcb 1043 40 (some c1) with cspaceRoot := ipcReceiverRoot }
+  ((mkTcb 1043 40 (some c1)).withCSpaceRoot ipcReceiverRoot)
 
 /-- A sender parked with a caps-bearing message — `receiveInstallsCaps`'s
 condition: the grant right in its TCB and one capability address in its saved
@@ -10247,7 +10237,7 @@ private def declassSeamState : SystemState :=
       objects := (declassSignalState.objects.insert declassCapCNode
                     (.cnode declassCapCNodeValue)).insert
                   highCurrent.toObjId
-                    (.tcb { mkTcb 1011 50 (some c1) with cspaceRoot := declassCapCNode }) }
+                    (.tcb ((mkTcb 1011 50 (some c1)).withCSpaceRoot declassCapCNode)) }
 
 /-- The seam run on a hop-2 refusal: syscall 33, reason 56, `x0 = 2` (the slot
 the capability sits in). -/

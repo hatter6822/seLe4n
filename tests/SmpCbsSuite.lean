@@ -347,8 +347,7 @@ private def sc0 : SchedContext :=
 
 /-- `tid0`'s TCB, bound to `sc0` and pinned (`cpuAffinity`) to core 1. -/
 private def tcb0 : TCB :=
-  { tid := tid0, priority := ⟨5⟩, domain := ⟨0⟩, cspaceRoot := ObjId.ofNat 0,
-    vspaceRoot := ObjId.ofNat 0, ipcBuffer := SeLe4n.VAddr.ofNat 0,
+  { tid := tid0, priority := ⟨5⟩, domain := ⟨0⟩, spaceCells := SeLe4n.Model.TCB.spaceCellsOf (ObjId.ofNat 0) (ObjId.ofNat 0), ipcBuffer := SeLe4n.VAddr.ofNat 0,
     scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scId0), scBindingOwnerCode := 0, cpuAffinity := some core1 }
 
 /-- A CBS state: `sc0` + `tcb0` in the object store; core 1's replenish queue holds
@@ -872,8 +871,7 @@ private def scLifecycle : SchedContext :=
 
 /-- `tidLifecycle`'s TCB: unbound, same domain as `scLifecycle`, pinned to core 1. -/
 private def tcbLifecycle : TCB :=
-  { tid := tidLifecycle, priority := ⟨3⟩, domain := ⟨0⟩, cspaceRoot := ObjId.ofNat 0,
-    vspaceRoot := ObjId.ofNat 0, ipcBuffer := SeLe4n.VAddr.ofNat 0,
+  { tid := tidLifecycle, priority := ⟨3⟩, domain := ⟨0⟩, spaceCells := SeLe4n.Model.TCB.spaceCellsOf (ObjId.ofNat 0) (ObjId.ofNat 0), ipcBuffer := SeLe4n.VAddr.ofNat 0,
     scBindingScCode := 0, scBindingOwnerCode := 0, cpuAffinity := some core1 }
 
 /-- The §3 CBS fixture plus the unbound pair: core 1's queue holds the *bound*
@@ -999,8 +997,7 @@ state.  A fixture holding only `tcb0` can exhibit the `some` arm and never the
 private def tidUnbound : SeLe4n.ThreadId := ThreadId.ofNat 130
 
 private def tcbUnbound : TCB :=
-  { tid := tidUnbound, priority := ⟨5⟩, domain := ⟨0⟩, cspaceRoot := ObjId.ofNat 0,
-    vspaceRoot := ObjId.ofNat 0, ipcBuffer := SeLe4n.VAddr.ofNat 0,
+  { tid := tidUnbound, priority := ⟨5⟩, domain := ⟨0⟩, spaceCells := SeLe4n.Model.TCB.spaceCellsOf (ObjId.ofNat 0) (ObjId.ofNat 0), ipcBuffer := SeLe4n.VAddr.ofNat 0,
     scBindingScCode := 0, scBindingOwnerCode := 0, cpuAffinity := some core1 }
 
 private def stAffinityFp : SystemState :=

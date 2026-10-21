@@ -129,8 +129,8 @@ theorem endpointQueueEnqueue_ipcStateFrame
     endpointQueueEnqueue_tcb_ipcState_backward endpointId isReceiveQ enqueueTid st st'
       anyTid tcb' hObjInv hStep hTcb'
 
-/-- WS-RR RR8.16: the capability transfer writes only the receiver's CSpace, and a
-post-state TCB is its pre-state self. -/
+/-- WS-RR RR8.16: the capability transfer writes only the receiver's CSpace and
+slot links, and a post-state TCB is its pre-state self off those links. -/
 theorem ipcUnwrapCaps_ipcStateFrame
     (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
     (slotBase : SeLe4n.Slot) (grantRight : Bool)
@@ -139,8 +139,9 @@ theorem ipcUnwrapCaps_ipcStateFrame
     (hStep : ipcUnwrapCaps caps receiverRoot slotBase grantRight st = .ok (summary, st')) :
     ipcStateFrame st st' :=
   fun t tcb' hTcb' =>
-    ⟨tcb', ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight st st' summary
-      t.toObjId tcb' hObjInv hStep hTcb', rfl⟩
+    let ⟨t0, h0, hw⟩ := ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight st st'
+      summary t.toObjId tcb' hObjInv hStep hTcb'
+    ⟨t0, h0, TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) rfl⟩
 
 /-- WS-ZA ZA4.7: and so does the rendezvous transfer, which resolves the
 sender's capabilities (CDT nodes only) before it installs them. -/

@@ -13,8 +13,8 @@ members = [
 ]
 
 [workspace.package]
-# Version tracks the Lean lakefile.toml version (currently 0.36.121)
-version = "0.36.121"
+# Version tracks the Lean lakefile.toml version (currently 0.36.122)
+version = "0.36.122"
 edition = "2021"
 license = "GPL-3.0-or-later"
 repository = "https://github.com/hatter6822/seLe4n"

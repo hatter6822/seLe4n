@@ -29,14 +29,20 @@ namespace SeLe4n.Kernel
 
 open SeLe4n.Model
 
-/-- WS-ZA ZA4.4: badges live in notifications and CNodes, which a rewrite of
-notification-queue links leaves alone. -/
+/-- WS-ZA ZA4.4: badges live in notifications and object slots, which a rewrite
+of notification-queue links leaves alone. -/
 theorem badgeWellFormed_of_ntfnLinksRewritten {st s : SystemState}
     (hD : ntfnLinksRewritten st s) (h : badgeWellFormed st) : badgeWellFormed s :=
   ⟨fun oid ntfn b hN hB =>
     h.1 oid ntfn b ((hD.obj_iff _ _ (fun _ e => by cases e)).mp hN) hB,
-   fun oid cn slot cap b hC hL hB =>
-    h.2 oid cn slot cap b ((hD.obj_iff _ _ (fun _ e => by cases e)).mp hC) hL hB⟩
+   capabilityBadgesWellFormed_of_slotCap_back h.2 fun oid o' hO => by
+    cases o' with
+    | tcb t' =>
+      obtain ⟨t, ht, he⟩ := hD.field_bwd (fun t => (t.spaceCells, t.spaceLinks))
+        (fun _ _ _ => rfl) hO
+      exact ⟨.tcb t, ht, (KernelObject.slots_eq_of_tcbSlots (o := .tcb t) (o' := .tcb t') rfl
+        (by simp [KernelObject.objectType]) (congrArg some he)).1⟩
+    | _ => exact ⟨_, (hD.obj_iff _ _ (fun _ e => by cases e)).mp hO, rfl⟩⟩
 
 /-- WS-ZA ZA4.4: a rewrite of notification-queue links keeps every TCB's IPC
 state and pending message. -/
@@ -84,22 +90,24 @@ theorem storeObject_nonNotification_preserves_notificationBadgesWellFormed
     | _ => cases this
   · exact hInv oid ntfn b ((storeObject_objects_ne st st' targetId oid obj hEq hObjInv hStore).symm.trans hObj) hPending
 
-/-- WS-F5/D1d: Storing a non-CNode object preserves `capabilityBadgesWellFormed`. -/
-theorem storeObject_nonCNode_preserves_capabilityBadgesWellFormed
+/-- WS-F5/D1d: Storing an object every capability of whose slots the key already
+held preserves `capabilityBadgesWellFormed`: an object holding no slot (neither a
+CNode nor a thread), or a thread whose space slots the store keeps. -/
+theorem storeObject_preserves_capabilityBadgesWellFormed
     (st st' : SystemState) (targetId : SeLe4n.ObjId) (obj : KernelObject)
     (hInv : capabilityBadgesWellFormed st)
     (hObjInv : st.objects.invExt)
     (hStore : storeObject targetId obj st = .ok ((), st'))
-    (hNotCNode : ∀ cn, obj ≠ .cnode cn) :
+    (hSlots : ∀ s cap, obj.slotCap s = some cap →
+      ∃ o, st.objects[targetId]? = some o ∧ o.slotCap s = some cap) :
     capabilityBadgesWellFormed st' := by
-  intro oid cn slot cap badge hObj hLookup hBadge
+  intro oid o slot cap badge hObj hLookup hBadge
   by_cases hEq : oid = targetId
   · subst hEq; rw [storeObject_objects_eq st st' oid obj hObjInv hStore] at hObj
-    have := Option.some.inj hObj
-    cases obj with
-    | cnode c => exact absurd rfl (hNotCNode c)
-    | _ => cases this
-  · exact hInv oid cn slot cap badge ((storeObject_objects_ne st st' targetId oid obj hEq hObjInv hStore).symm.trans hObj) hLookup hBadge
+    cases hObj
+    obtain ⟨o0, h0, hc⟩ := hSlots slot cap hLookup
+    exact hInv oid o0 slot cap badge h0 hc hBadge
+  · exact hInv oid o slot cap badge ((storeObject_objects_ne st st' targetId oid obj hEq hObjInv hStore).symm.trans hObj) hLookup hBadge
 
 /-- WS-F5/D1d: `ensureRunnable` preserves `badgeWellFormed`.
 It writes only the scheduler and run-queue links; badges live in notifications
@@ -109,7 +117,8 @@ theorem ensureRunnable_preserves_badgeWellFormed
     badgeWellFormed (ensureRunnable st tid) :=
   have h := ensureRunnable_objectsAgreeOffRunLinks st tid
   ⟨fun oid ntfn badge hN => hInv.1 oid ntfn badge (h.get_notification_iff.mp hN),
-   fun oid cn slot cap badge hC => hInv.2 oid cn slot cap badge (h.get_cnode_iff.mp hC)⟩
+   capabilityBadgesWellFormed_of_slotCap_back hInv.2 fun _ _ hO =>
+     let ⟨o, ho, hs, _⟩ := h.slots_back hO; ⟨o, ho, hs⟩⟩
 
 /-- WS-F5/D1d: `removeRunnable` preserves `badgeWellFormed`.
 It writes only the scheduler and run-queue links; badges live in notifications
@@ -119,23 +128,28 @@ theorem removeRunnable_preserves_badgeWellFormed
     badgeWellFormed (removeRunnable st tid) :=
   have h := removeRunnable_objectsAgreeOffRunLinks st tid
   ⟨fun oid ntfn badge hN => hInv.1 oid ntfn badge (h.get_notification_iff.mp hN),
-   fun oid cn slot cap badge hC => hInv.2 oid cn slot cap badge (h.get_cnode_iff.mp hC)⟩
+   capabilityBadgesWellFormed_of_slotCap_back hInv.2 fun _ _ hO =>
+     let ⟨o, ho, hs, _⟩ := h.slots_back hO; ⟨o, ho, hs⟩⟩
 
 /-- **Audit IPC-5 (`v0.36.49`)**: any TCB field write preserves
-`badgeWellFormed` — it stores a `.tcb`, which is neither a notification nor a
-CNode.  The five writer lemmas below are instances. -/
+`badgeWellFormed` that keeps the thread's space slots — it stores a `.tcb`,
+which is not a notification, holding the slots it held.  The five writer lemmas
+below are instances. -/
 theorem modifyTcb_preserves_badgeWellFormed
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (f : TCB → TCB)
     (hInv : badgeWellFormed st)
     (hObjInv : st.objects.invExt)
-    (hStep : modifyTcb st tid f = .ok st') :
+    (hStep : modifyTcb st tid f = .ok st')
+    (hf : ∀ t, (f t).spaceCells = t.spaceCells := by intro _; rfl) :
     badgeWellFormed st' := by
   obtain ⟨hNtfn, hCap⟩ := hInv
-  obtain ⟨_, _, hStore⟩ := modifyTcb_ok_decompose hStep
+  obtain ⟨tcb, hLk, hStore⟩ := modifyTcb_ok_decompose hStep
   exact ⟨storeObject_nonNotification_preserves_notificationBadgesWellFormed
            st st' tid.toObjId _ hNtfn hObjInv hStore (fun ntfn h => by cases h),
-         storeObject_nonCNode_preserves_capabilityBadgesWellFormed
-           st st' tid.toObjId _ hCap hObjInv hStore (fun cn h => by cases h)⟩
+         storeObject_preserves_capabilityBadgesWellFormed
+           st st' tid.toObjId _ hCap hObjInv hStore fun s cap h =>
+             ⟨.tcb tcb, lookupTcb_some_objects st tid tcb hLk, by
+               simpa only [KernelObject.slotCap, TCB.spaceSlotCap, hf tcb] using h⟩⟩
 
 /-- WS-F5/D1d: `storeTcbIpcState` preserves `badgeWellFormed`.
 Stores a `.tcb` object (not notification, not CNode). -/
@@ -203,8 +217,8 @@ theorem storeObject_endpoint_preserves_badgeWellFormed
   obtain ⟨hNtfn, hCap⟩ := hInv
   exact ⟨storeObject_nonNotification_preserves_notificationBadgesWellFormed
            st st' oid _ hNtfn hObjInv hStore (fun ntfn h => by cases h),
-         storeObject_nonCNode_preserves_capabilityBadgesWellFormed
-           st st' oid _ hCap hObjInv hStore (fun cn h => by cases h)⟩
+         storeObject_preserves_capabilityBadgesWellFormed
+           st st' oid _ hCap hObjInv hStore (fun _ _ h => by simp [KernelObject.slotCap] at h)⟩
 
 /-- WS-F5/D1d: `notificationSignal` preserves `badgeWellFormed`.
 Wake path: stores `hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero`. Merge path: stores `Badge.bor` or
@@ -243,8 +257,8 @@ theorem notificationSignal_preserves_badgeWellFormed
                       exact storeTcbIpcStateAndMessage_preserves_badgeWellFormed pair1.2 st2 waiter .ready _
                         ⟨storeObject_notification_preserves_notificationBadgesWellFormed
                           st pair1.2 notificationId _ hNtfn hObjInv hStore1 (fun b hb => by cases hb),
-                         storeObject_nonCNode_preserves_capabilityBadgesWellFormed
-                          st pair1.2 notificationId _ hCap hObjInv hStore1 (fun cn h => by cases h)⟩
+                         storeObject_preserves_capabilityBadgesWellFormed
+                          st pair1.2 notificationId _ hCap hObjInv hStore1 (fun _ _ h => by simp [KernelObject.slotCap] at h)⟩
                         hObjInv1 hStoreTcb
       | none =>
         simp only [hWaiters] at hStep
@@ -255,8 +269,8 @@ theorem notificationSignal_preserves_badgeWellFormed
                    cases hPending : ntfnSrc.pendingBadge with
                    | some existing => exact SeLe4n.Badge.bor_valid existing badge
                    | none => exact SeLe4n.Badge.ofNatMasked_valid badge.toNat),
-               storeObject_nonCNode_preserves_capabilityBadgesWellFormed
-                 st st' notificationId _ hCap hObjInv hStep (fun cn h => by cases h)⟩
+               storeObject_preserves_capabilityBadgesWellFormed
+                 st st' notificationId _ hCap hObjInv hStep (fun _ _ h => by simp [KernelObject.slotCap] at h)⟩
     | _ => simp [hObjSrc] at hStep
 
 /-- WS-F5/D1d: `notificationWait` preserves `badgeWellFormed`.
@@ -290,8 +304,8 @@ theorem notificationWaitPark_preserves_badgeWellFormed
                                   exact storeTcbIpcState_preserves_badgeWellFormed pair1.2 st2 waiter .ready
                                     ⟨storeObject_notification_preserves_notificationBadgesWellFormed
                                       st pair1.2 notificationId _ hNtfn hObjInv hStore1 (fun b hb => by cases hb),
-                                     storeObject_nonCNode_preserves_capabilityBadgesWellFormed
-                                      st pair1.2 notificationId _ hCap hObjInv hStore1 (fun cn h => by cases h)⟩
+                                     storeObject_preserves_capabilityBadgesWellFormed
+                                      st pair1.2 notificationId _ hCap hObjInv hStore1 (fun _ _ h => by simp [KernelObject.slotCap] at h)⟩
                                     hObjInv1 hStoreTcb
       | none =>
         simp only [hPending] at hStep; revert hStep
@@ -319,8 +333,8 @@ theorem notificationWaitPark_preserves_badgeWellFormed
                   ⟨storeObject_notification_preserves_notificationBadgesWellFormed
                     st pair1.2 notificationId _ hNtfn hObjInv hStore1
                     (fun b hb => by cases hb),
-                   storeObject_nonCNode_preserves_capabilityBadgesWellFormed
-                    st pair1.2 notificationId _ hCap hObjInv hStore1 (fun cn h => by cases h)⟩
+                   storeObject_preserves_capabilityBadgesWellFormed
+                    st pair1.2 notificationId _ hCap hObjInv hStore1 (fun _ _ h => by simp [KernelObject.slotCap] at h)⟩
                   hObjInv1 hStoreTcb
     | _ => simp [hObjSrc] at hStep
 

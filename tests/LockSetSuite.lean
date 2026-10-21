@@ -1535,7 +1535,7 @@ private def runQueueOwnerFootprintChecks : IO Unit := do
   -- The resolver: a blocked thread has an owner, a ready one does not.
   let baseTcb : TCB :=
     { tid := ThreadId.ofNat 3, priority := ⟨10⟩, domain := ⟨0⟩,
-      cspaceRoot := ObjId.ofNat 0, vspaceRoot := ObjId.ofNat 0,
+      spaceCells := SeLe4n.Model.TCB.spaceCellsOf (ObjId.ofNat 0) (ObjId.ofNat 0),
       ipcBuffer := SeLe4n.VAddr.ofNat 0 }
   let blockedTcb : TCB := (baseTcb.setIpcState (.blockedOnSend (ObjId.ofNat 20)))
   let readyTcb : TCB := (baseTcb.setIpcState .ready)

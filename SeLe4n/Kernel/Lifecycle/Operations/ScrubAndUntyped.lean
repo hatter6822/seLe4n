@@ -1550,7 +1550,7 @@ theorem untypedRetypeObject_ok_carved
       st.objects[untypedId]? = some (.untyped ut) ∧
       retypeFromUntyped src untypedId childId (req.object untypedId ut) req.size st
         = .ok ((), st1) ∧
-      ((∀ cn, req.object untypedId ut ≠ .cnode cn) →
+      ((∀ cn, req.object untypedId ut ≠ .cnode cn) → (∀ t, req.object untypedId ut ≠ .tcb t) →
         st'.objects[childId]? = some (req.object untypedId ut)) ∧
       ∃ cn cn' : CNode, st'.objects[dst.cnode]? = some (.cnode cn') ∧
         cn'.withoutLinks = (cn.insert dst.slot (req.capability childId)).withoutLinks := by
@@ -1579,7 +1579,7 @@ theorem untypedRetypeObject_ok_carved
   have hR := (SystemState.cdtAddChild_agreeObjects
     (cspaceInsertSlot_preserves_objects_invExt _ _ _ _ hInvZ hIns) src dst .retype).1
   obtain ⟨cn', hC, hw⟩ := hR.cnode_fwd hCnPost
-  exact ⟨untypedId, ut, st1, hObj, hRt, fun hn => hR.obj_fwd hAt2 hn, cn, cn', hC, hw⟩
+  exact ⟨untypedId, ut, st1, hObj, hRt, fun hn ht => hR.obj_fwd hAt2 hn ht, cn, cn', hC, hw⟩
 
 /-- **WS-BP BP7.1: a frame carve's payoff** — the frame is the page at the
 untyped's watermark, inside the untyped, on a page boundary and of its memory
@@ -1603,7 +1603,8 @@ theorem untypedRetypeObject_ok_frame
   obtain ⟨hLo, hHi, hWf, hDev⟩ := untypedNextFrame_of_retype_ok st st1 src untypedId childId
     ut hObj hRt
   refine ⟨untypedId, ut, hObj, ?_, hLo, hHi, hWf, hDev, hCn⟩
-  simp only [SystemState.getFrame?, hAt (by intro _ h; simp [CarveRequest.object] at h),
+  simp only [SystemState.getFrame?, hAt (by intro _ h; simp [CarveRequest.object] at h)
+      (by intro _ h; simp [CarveRequest.object] at h),
     CarveRequest.object]
 
 /-- **WS-BP BP7.1 slice 4 (`v0.36.8`): a child-untyped carve's payoff** — the
@@ -1630,7 +1631,8 @@ theorem untypedRetypeObject_ok_untyped
     untypedRetypeObject_ok_carved src dst childId (.untyped b) st st' hObjInv hStep
   obtain ⟨hLo, hHi, hAl, hDev, hPar, -, -⟩ :=
     untypedNextChild_of_retype_ok st st1 src untypedId childId ut b hObj hRt
-  exact ⟨untypedId, ut, hObj, hAt (by intro _ h; simp [CarveRequest.object] at h),
+  exact ⟨untypedId, ut, hObj, hAt (by intro _ h; simp [CarveRequest.object] at h)
+      (by intro _ h; simp [CarveRequest.object] at h),
     hLo, hHi, hAl, hDev, hPar, hCn⟩
 
 /-- **WS-BP BP7.1 slice 4b (`v0.36.10`): a VSpace-root carve's payoff** — the
@@ -1665,7 +1667,8 @@ theorem untypedRetypeObject_ok_vspaceRoot
     untypedRetypeObject_ok_carved src dst childId (.vspaceRoot asid) st st' hObjInv hStep
   obtain ⟨hTb, hLo, hHi, hAl, hDev⟩ :=
     untypedNextVSpaceRoot_of_retype_ok st st1 src untypedId childId ut asid hObj hRt
-  exact ⟨untypedId, ut, hObj, hAt (by intro _ h; simp [CarveRequest.object] at h),
+  exact ⟨untypedId, ut, hObj, hAt (by intro _ h; simp [CarveRequest.object] at h)
+      (by intro _ h; simp [CarveRequest.object] at h),
     hNz, hLt, hFree, hTb, hLo, hHi, hAl, hDev, hCn⟩
 
 

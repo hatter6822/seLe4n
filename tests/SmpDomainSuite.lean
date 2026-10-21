@@ -261,7 +261,7 @@ example (st : SystemState) (c : CoreId) (st' : SystemState)
 /-- Minimal test TCB at `tid`, priority `prio`, scheduling domain `dom`. -/
 private def mkTcb (tid : Nat) (prio : Nat) (dom : Nat) : TCB :=
   { tid := ThreadId.ofNat tid, priority := ⟨prio⟩, domain := ⟨dom⟩,
-    cspaceRoot := ObjId.ofNat 0, vspaceRoot := ObjId.ofNat 0,
+    spaceCells := SeLe4n.Model.TCB.spaceCellsOf (ObjId.ofNat 0) (ObjId.ofNat 0),
     ipcBuffer := SeLe4n.VAddr.ofNat 0 }
 
 private def tidA : SeLe4n.ThreadId := ThreadId.ofNat 100

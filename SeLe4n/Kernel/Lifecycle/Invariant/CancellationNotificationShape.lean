@@ -513,10 +513,21 @@ theorem purgedAndRestored_badgeWellFormed
     obtain ⟨n0, h0, hEq⟩ :=
       purgedAndRestored_notification_badge st v frame tcbV hInv hLookup oid ntfn hN
     exact h.1 oid n0 badge h0 (by rw [← hEq]; exact hB)
-  · intro oid cn slot cap badge hC hL hB
-    exact h.2 oid cn slot cap badge
-      ((purgedAndRestored_nonNotification st v frame tcbV hInv hLookup
-        oid (.cnode cn) (by simp) (by simp)).mp hC) hL hB
+  · intro oid o slot cap badge hC hL hB
+    cases o with
+    | tcb tA =>
+      rcases purgedAndRestored_tcb_pullback st v frame tcbV hInv hLookup oid tA hC with
+        ⟨_, t0, h0, np, nn, rfl⟩ | ⟨rfl, t1, ⟨np, nn, rfl⟩, rfl⟩
+      · exact h.2 oid (.tcb t0) slot cap badge h0 hL hB
+      · refine h.2 v.toObjId (.tcb tcbV) slot cap badge (lookupTcb_some_objects st v tcbV hLookup) ?_ hB
+        have hCells : (restoredTcb { tcbV with ntfnPrevCode := np, ntfnNextCode := nn } frame).spaceCells
+            = tcbV.spaceCells := by unfold restoredTcb; cases frame <;> rfl
+        simpa [KernelObject.slotCap, TCB.spaceSlotCap, hCells] using hL
+    | notification _ => simp [KernelObject.slotCap] at hL
+    | _ =>
+      exact h.2 oid _ slot cap badge
+        ((purgedAndRestored_nonNotification st v frame tcbV hInv hLookup
+          oid _ (by simp) (by simp)).mp hC) hL hB
 
 theorem purgedAndRestored_allPendingMessagesBounded
     (st : SystemState) (v : SeLe4n.ThreadId)

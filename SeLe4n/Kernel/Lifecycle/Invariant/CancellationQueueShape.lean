@@ -1612,10 +1612,22 @@ theorem sweptAndRestored_badgeWellFormed
     exact h.1 oid ntfn badge
       ((sweptAndRestored_nonTcbNonEndpoint st v frame tcbV hInv hLink hAcyc hLookup
         oid (.notification ntfn) (by simp) (by simp)).mp hN) hB
-  · intro oid cn slot cap badge hC hL hB
-    exact h.2 oid cn slot cap badge
-      ((sweptAndRestored_nonTcbNonEndpoint st v frame tcbV hInv hLink hAcyc hLookup
-        oid (.cnode cn) (by simp) (by simp)).mp hC) hL hB
+  · intro oid o slot cap badge hC hL hB
+    cases o with
+    | tcb tA =>
+      obtain ⟨t0, h0, hcase⟩ :=
+        sweptAndRestored_tcb_pullback st v frame tcbV hInv hLink hAcyc hLookup oid tA hC
+      have hCells : tA.spaceCells = t0.spaceCells := by
+        rcases hcase with ⟨_, qp, qpp, qn, np, nn, rfl⟩ | ⟨_, rfl⟩
+        · rfl
+        · unfold restoredTcb; cases frame <;> rfl
+      refine h.2 oid (.tcb t0) slot cap badge h0 ?_ hB
+      simpa [KernelObject.slotCap, TCB.spaceSlotCap, hCells] using hL
+    | endpoint _ => simp [KernelObject.slotCap] at hL
+    | _ =>
+      exact h.2 oid _ slot cap badge
+        ((sweptAndRestored_nonTcbNonEndpoint st v frame tcbV hInv hLink hAcyc hLookup
+          oid _ (by simp) (by simp)).mp hC) hL hB
 
 /-- **WS-RR RR7.22 (residual)**: no message is written, so every bound carries
 back to the thread the pullback names. -/

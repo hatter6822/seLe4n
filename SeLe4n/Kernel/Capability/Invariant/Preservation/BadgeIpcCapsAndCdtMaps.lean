@@ -99,7 +99,7 @@ theorem cspaceMint_preserves_badgeWellFormed
               cases hLk; rw [hChildBadge] at hBdg
               exact hBadgeValid badge' hBdg
             · rw [CNode.lookup_insert_ne cn dst.slot slot' child hSlotEq hUniq] at hLk
-              exact hCap dst.cnode cn slot' cap' badge' hObj hLk hBdg)⟩
+              exact hCap dst.cnode (.cnode cn) slot' cap' badge' hObj hLk hBdg)⟩
 
 /-- WS-F5/D1d: `cspaceMutate` preserves `badgeWellFormed` when the mutated
 badge (if any) is valid. -/
@@ -167,10 +167,10 @@ theorem cspaceMutate_preserves_badgeWellFormed
                         hLookup'
                       unfold SystemState.lookupSlotCap SystemState.lookupCNode at hSlotCap
                       simp only [hObj] at hSlotCap
-                      exact hCap addr.cnode cn addr.slot pair.1 badge' hObj hSlotCap hBdg
+                      exact hCap addr.cnode (.cnode cn) addr.slot pair.1 badge' hObj hSlotCap hBdg
                   · -- Other slot: unchanged
                     rw [CNode.lookup_insert_ne cn addr.slot slot' _ hSlotEq hUniq] at hLk
-                    exact hCap addr.cnode cn slot' cap' badge' hObj hLk hBdg)
+                    exact hCap addr.cnode (.cnode cn) slot' cap' badge' hObj hLk hBdg)
         | _ => simp [hObj] at hStep
     · simp at hStep
 

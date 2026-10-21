@@ -704,34 +704,32 @@ theorem ipcUnwrapCapsLoop_preserves_tcb_objects
     (hObjInv : st.objects.invExt)
     (hStep : ipcUnwrapCapsLoop caps receiverRoot idx nextBase accResults fuel st
              = .ok (summary, st')) :
-    st'.objects[oid]? = some (.tcb tcb) := by
-  induction fuel generalizing idx nextBase accResults st with
+    ∃ tcb', st'.objects[oid]? = some (.tcb tcb') ∧ tcb'.withoutLinks = tcb.withoutLinks := by
+  induction fuel generalizing idx nextBase accResults st tcb with
   | zero =>
     simp [ipcUnwrapCapsLoop] at hStep
-    obtain ⟨_, rfl⟩ := hStep; exact hTcb
+    obtain ⟨_, rfl⟩ := hStep; exact ⟨tcb, hTcb, rfl⟩
   | succ n ih =>
     simp only [ipcUnwrapCapsLoop] at hStep
     cases hCap : caps[idx]? with
-    | none => simp [hCap] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hTcb
+    | none => simp [hCap] at hStep; obtain ⟨_, rfl⟩ := hStep; exact ⟨tcb, hTcb, rfl⟩
     | some tc =>
       simp [hCap] at hStep
       cases hTransfer : ipcTransferSingleCap tc.cap tc.srcSlot
           receiverRoot nextBase maxExtraCaps st with
       | error e =>
         simp [hTransfer] at hStep
-        obtain ⟨_, rfl⟩ := hStep; exact hTcb
+        obtain ⟨_, rfl⟩ := hStep; exact ⟨tcb, hTcb, rfl⟩
       | ok pair =>
         rcases pair with ⟨result, stNext⟩
         have hObjInvNext := ipcTransferSingleCap_preserves_objects_invExt tc.cap _ receiverRoot nextBase
           maxExtraCaps st stNext result hObjInv hTransfer
-        have hTcbNext := ipcTransferSingleCap_preserves_tcb_objects tc.cap _ receiverRoot nextBase
-          maxExtraCaps st stNext result oid tcb hTcb hObjInv hTransfer
+        obtain ⟨t1, hT1, hw1⟩ := ipcTransferSingleCap_preserves_tcb_objects tc.cap _ receiverRoot
+          nextBase maxExtraCaps st stNext result oid tcb hTcb hObjInv hTransfer
         simp [hTransfer] at hStep
-        cases result with
-        | installed c s => exact ih _ _ _ _ hTcbNext hObjInvNext hStep
-        | noSlot => exact ih _ _ _ _ hTcbNext hObjInvNext hStep
-        | grantDenied => exact ih _ _ _ _ hTcbNext hObjInvNext hStep
-        | sourceRevoked => exact ih _ _ _ _ hTcbNext hObjInvNext hStep
+        cases result <;>
+          (obtain ⟨t2, hT2, hw2⟩ := ih _ _ _ _ _ hT1 hObjInvNext hStep
+           exact ⟨t2, hT2, hw2.trans hw1⟩)
 
 /-- IPC de-threading D6 helper: each step of `ipcUnwrapCapsLoop` preserves a SchedContext at
 `oid` — mirror of `ipcUnwrapCapsLoop_preserves_tcb_objects`. -/
@@ -789,7 +787,8 @@ theorem ipcUnwrapCaps_preserves_schedContext_objects
   · simp at hStep; obtain ⟨_, rfl⟩ := hStep; exact hSc
   · exact ipcUnwrapCapsLoop_preserves_schedContext_objects _ _ _ _ _ _ _ _ _ _ _ hSc hObjInv hStep
 
-/-- ipcUnwrapCaps preserves all TCB objects. -/
+/-- ipcUnwrapCaps preserves every TCB object off its space slots' derivation
+links. -/
 theorem ipcUnwrapCaps_preserves_tcb_objects
     (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
     (slotBase : SeLe4n.Slot) (grantRight : Bool)
@@ -799,10 +798,10 @@ theorem ipcUnwrapCaps_preserves_tcb_objects
     (hObjInv : st.objects.invExt)
     (hStep : ipcUnwrapCaps caps receiverRoot slotBase grantRight st
              = .ok (summary, st')) :
-    st'.objects[oid]? = some (.tcb tcb) := by
+    ∃ tcb', st'.objects[oid]? = some (.tcb tcb') ∧ tcb'.withoutLinks = tcb.withoutLinks := by
   unfold ipcUnwrapCaps at hStep
   split at hStep
-  · simp at hStep; obtain ⟨_, rfl⟩ := hStep; exact hTcb
+  · simp at hStep; obtain ⟨_, rfl⟩ := hStep; exact ⟨tcb, hTcb, rfl⟩
   · exact ipcUnwrapCapsLoop_preserves_tcb_objects _ _ _ _ _ _ _ _ _ _ _ hTcb hObjInv hStep
 
 /-- IPC de-threading D2: each step of `ipcUnwrapCapsLoop` leaves `receiverRoot` **either
@@ -927,7 +926,8 @@ theorem ipcUnwrapCaps_objects_at_root_orig_or_cnode
   · exact ipcUnwrapCapsLoop_objects_at_root_orig_or_cnode _ _ _ _ _ _ _ _ _ hObjInv hStep
 
 /-- IPC de-threading D2: `ipcUnwrapCaps` preserves TCB objects **backward** — a `.tcb` in
-the post-state was a `.tcb` (same fields) in the pre-state.  Cap transfer never creates a
+the post-state was a `.tcb` in the pre-state, with the same fields off its space
+slots' derivation links (`TCB.withoutLinks`).  Cap transfer never creates a
 TCB: it writes only `receiverRoot`, and only as a CNode
 (`ipcUnwrapCaps_objects_at_root_orig_or_cnode`), so a post-state TCB at `receiverRoot`
 means that slot was unchanged; every other slot is framed by
@@ -941,16 +941,15 @@ theorem ipcUnwrapCaps_tcb_backward
     (hStep : ipcUnwrapCaps caps receiverRoot slotBase grantRight st
              = .ok (summary, st'))
     (hTcb' : st'.objects[oid]? = some (.tcb tcb)) :
-    st.objects[oid]? = some (.tcb tcb) := by
+    ∃ tcb₀, st.objects[oid]? = some (.tcb tcb₀) ∧ tcb.withoutLinks = tcb₀.withoutLinks := by
   by_cases hNe : oid = receiverRoot
   · rw [hNe] at hTcb' ⊢
     rcases ipcUnwrapCaps_objects_at_root_orig_or_cnode caps receiverRoot slotBase
       grantRight st st' summary hObjInv hStep with h | h
-    · rw [h] at hTcb'; exact hTcb'
+    · rw [h] at hTcb'; exact ⟨tcb, hTcb', rfl⟩
     · obtain ⟨cn', hCn'⟩ := h; rw [hCn'] at hTcb'; exact absurd hTcb' (by simp)
   · exact (ipcUnwrapCaps_preserves_objects_ne caps receiverRoot slotBase grantRight
-        st st' summary oid hNe hObjInv hStep).obj_back hTcb'
-      (fun _ h => KernelObject.noConfusion h)
+        st st' summary oid hNe hObjInv hStep).tcb_back hTcb'
 
 /-- IPC de-threading D4 Slice 2b: `ipcUnwrapCaps` backward-preserves endpoints (mirror of
 `ipcUnwrapCaps_tcb_backward`): a post-state endpoint pulls back to the same pre-state endpoint,
@@ -993,7 +992,7 @@ theorem ipcUnwrapCaps_receiverRoot_not_ntfn
   · exact ipcUnwrapCapsLoop_receiverRoot_not_ntfn _ _ _ _ _ _ _ _ _ hNotNtfn hObjInv hStep
 
 /-- **WS-RR RR8.12 (PR #897 Codex review)**: `ipcUnwrapCaps` fixes the whole
-`getTcb?` projection -- forward by `ipcUnwrapCaps_preserves_tcb_objects`, back by
+`getTcb?` projection off the space slots' derivation links -- forward by `ipcUnwrapCaps_preserves_tcb_objects`, back by
 `ipcUnwrapCaps_tcb_backward`, so the two directions join into an equality.
 
 Cap transfer writes only `receiverRoot`, and only as a CNode, so no TCB is
@@ -1011,36 +1010,32 @@ theorem ipcUnwrapCaps_getTcb?_eq (caps : Array TransferCap) (receiverRoot : SeLe
     (summary : CapTransferSummary) (x : SeLe4n.ThreadId)
     (hObjInv : st.objects.invExt)
     (hStep : ipcUnwrapCaps caps receiverRoot slotBase grantRight st = .ok (summary, st')) :
-    st'.getTcb? x = st.getTcb? x := by
+    (st'.getTcb? x).map TCB.withoutLinks = (st.getTcb? x).map TCB.withoutLinks := by
+  have hFwd : ∀ t, st.objects[x.toObjId]? = some (.tcb t) →
+      ∃ t', st'.objects[x.toObjId]? = some (.tcb t') ∧ t'.withoutLinks = t.withoutLinks :=
+    fun t hT => ipcUnwrapCaps_preserves_tcb_objects caps receiverRoot slotBase grantRight st st'
+      summary x.toObjId t hT hObjInv hStep
   simp only [SystemState.getTcb?]
-  cases hT : st.objects[x.toObjId]? with
-  | none =>
-      cases hT' : st'.objects[x.toObjId]? with
+  cases hT' : st'.objects[x.toObjId]? with
+  | some obj' =>
+    cases obj' with
+    | tcb tcb' =>
+      obtain ⟨t0, h0, hw⟩ := ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight
+        st st' summary x.toObjId tcb' hObjInv hStep hT'
+      rw [h0]; simp only [Option.map_some, hw]
+    | _ =>
+      cases hT : st.objects[x.toObjId]? with
       | none => rfl
       | some obj =>
-          cases obj with
-          | tcb tcb =>
-              rw [ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight st st' summary
-                x.toObjId tcb hObjInv hStep hT'] at hT
-              exact absurd hT (by simp)
-          | cnode _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _
-          | reply _ | frame _ | pageTable _ => rfl
-  | some obj =>
+        cases obj with
+        | tcb t => obtain ⟨t', h', _⟩ := hFwd t hT; rw [h'] at hT'; cases hT'
+        | _ => rfl
+  | none =>
+    cases hT : st.objects[x.toObjId]? with
+    | none => rfl
+    | some obj =>
       cases obj with
-      | tcb tcb =>
-          rw [ipcUnwrapCaps_preserves_tcb_objects caps receiverRoot slotBase grantRight st st'
-            summary x.toObjId tcb hT hObjInv hStep]
-      | cnode _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _
-      | reply _ | frame _ | pageTable _ =>
-          cases hT' : st'.objects[x.toObjId]? with
-          | none => rfl
-          | some obj' =>
-              cases obj' with
-              | tcb tcb' =>
-                  rw [ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight st st'
-                    summary x.toObjId tcb' hObjInv hStep hT'] at hT
-                  exact absurd hT (by simp)
-              | cnode _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
-              | schedContext _ | reply _ | frame _ | pageTable _ => rfl
+      | tcb t => obtain ⟨t', h', _⟩ := hFwd t hT; rw [h'] at hT'; cases hT'
+      | _ => rfl
 
 end SeLe4n.Kernel

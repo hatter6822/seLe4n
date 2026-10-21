@@ -31,7 +31,7 @@ private def expect (label : String) (cond : Bool) : IO Unit := do
 private def mkTcb (tid : Nat) (vsRoot : Nat := 100)
     (buf : Nat := 0) (state : ThreadState := .Ready) : TCB :=
   { tid := ⟨tid⟩, priority := ⟨10⟩, domain := ⟨0⟩,
-    cspaceRoot := ⟨0⟩, vspaceRoot := ⟨vsRoot⟩, ipcBuffer := (SeLe4n.VAddr.ofNat buf),
+    spaceCells := SeLe4n.Model.TCB.spaceCellsOf ⟨0⟩ ⟨vsRoot⟩, ipcBuffer := (SeLe4n.VAddr.ofNat buf),
     threadState := state }
 
 /-- Helper: create writable page permissions. -/

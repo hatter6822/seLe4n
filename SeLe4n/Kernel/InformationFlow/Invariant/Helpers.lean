@@ -1177,9 +1177,9 @@ theorem cspaceMint_preserves_lowEquivalent
 -- Non-interference theorem #4: cspaceRevoke (WS-D2, F-05, TPI-D02)
 -- ============================================================================
 
-/-- A step that rewrites only derivation state (the tree and the CNode slots'
-link words) is invisible to every observer: the projection reads no tree and
-clears every projected CNode's links. -/
+/-- A step that rewrites only derivation state (the tree and the slots' link
+words) is invisible to every observer: the projection reads no tree and clears
+every projected CNode's and thread's links. -/
 theorem projectState_of_agreeOffDerivationLinks (ctx : LabelingContext)
     (observer : IfObserver) {st st' : SystemState}
     (h : SystemState.objectsAgreeOffDerivationLinks st' st)
@@ -1188,12 +1188,20 @@ theorem projectState_of_agreeOffDerivationLinks (ctx : LabelingContext)
   have hO : projectObjects ctx observer st' = projectObjects ctx observer st := by
     funext oid
     unfold projectObjects SystemState.getObject?
-    rcases h oid with e | ⟨cn, cn', ha, hb, hw⟩
+    rcases h oid with e | ⟨cn, cn', ha, hb, hw⟩ | ⟨t, t', ha, hb, hw⟩
     · rw [e]
     · have hp : projectKernelObject ctx observer (.cnode cn') =
           projectKernelObject ctx observer (.cnode cn) :=
         CNode.proj_eq_of_withoutLinks_eq
           (fun c => projectKernelObject ctx observer (.cnode c)) hw
+      rw [ha, hb]
+      simp only [Option.map_some, hp]
+    · -- The projection clears a thread's space-slot links as `withoutLinks` does.
+      have hp : projectKernelObject ctx observer (.tcb t') =
+          projectKernelObject ctx observer (.tcb t) :=
+        (show projectKernelObject ctx observer (.tcb t') =
+            projectKernelObject ctx observer (.tcb t'.withoutLinks) from rfl).trans
+          (hw ▸ rfl)
       rw [ha, hb]
       simp only [Option.map_some, hp]
   rw [hF]

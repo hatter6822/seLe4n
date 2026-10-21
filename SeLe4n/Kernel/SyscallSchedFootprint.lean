@@ -227,9 +227,9 @@ a page of machine memory — no scheduler field at all.  `.untypedReset` (`v0.36
 writes VSpace roots, TLB, shootdown and instruction-cache state, erased frames
 and the untyped — the `.vspaceUnmap` arm's writes, per mapping, and no run-queue
 or replenish-queue slot on any core (`untypedReset_ok_frame`: the scheduler is
-unchanged).  `.tcbSetSpace` (`v0.36.11`) rewrites one suspended TCB's two root
-fields and nothing else (`setThreadSpace_ok`: the post-state is the pre-state
-with one object-table insert). -/
+unchanged).  `.tcbSetSpace` (`v0.36.11`) rewrites one suspended TCB's two space
+slots and the derivation links (`copyThreadSpaces_ok`: two slot copies, each a
+delete, a thread rewrite and link writes) — no scheduler field. -/
 def declaredSchedFootprintSyscall : SyscallId → Bool
   | .tcbSuspend | .tcbResume
   | .tcbSetPriority | .tcbSetMCPriority | .tcbSetAffinity

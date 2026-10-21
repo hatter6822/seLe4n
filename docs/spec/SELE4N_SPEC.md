@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.121` (`lakefile.toml`) |
+| **Package version** | `0.36.122` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 485,938 across 438 Lean files |
-| **Test LoC** | 86,527 across 70 Lean test suites |
-| **Proved declarations** | 17,352 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 488,253 across 440 Lean files |
+| **Test LoC** | 86,539 across 70 Lean test suites |
+| **Proved declarations** | 17,517 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits) |
 | **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2), and **BP4.1/BP4.2 (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type)** at v0.36.2 (§6.2.9), and **BP4.3/BP4.4 (the firmware's device tree reaching Lean, and the entry booting the deployment on the variant it describes)** at v0.36.2 (§6.2.10), and **BP4.5 (the image's loaded bytes cleaned to the Point of Unification before any thread can fetch)** at v0.36.2 (§6.2.11), and **BP4.6 (the verified board's RAM outside the kernel's extent mapped, and the boot map sealed before any secondary is released)** and **BP4.7 (that RAM handed to the root task as untypeds)** at v0.36.2 (§6.2.12), and **BP5.1 (the kernel image, a bare-metal binary entered at `_start` under `link.ld`)** and **BP5.2 (the Lean kernel linked into it, under `--gc-sections` from the archive lane's roots)** and **BP5.3 (the firmware's boot files, `kernel8.img` and `config.txt`, cut from that image and checked against it)** and **BP5.4 (its size and section map published with every CI run)** at v0.36.2 (§6.2.13), and **BP5.5 (the firmware's EL2 entry dropped to EL1, with the PSCI conduit following the entry level)** at v0.36.2 (§6.2.15), and **BP6 (every PE marks itself ready after its own per-PE runtime handshake and before it unmasks IRQs, and the boot halts unless every declared PE serves the kernel)** at v0.36.2 (§6.2.16), and **BP7.10 (the first gigabyte's RAM read off the firmware's account, and the constant boot map shrunk to the kernel's reserved extent)** at v0.36.3 (§6.2.17), and **BP7.1 slices 1–3 (frame capabilities, the untyped carve that mints them, and the untyped reset that returns their memory)** at v0.36.4, v0.36.5 and v0.36.6, slice 4a (child untypeds and subtree resets) at v0.36.8, the in-place VSpace-root refusal at v0.36.9, and slice 4b's VSpace-root carve at v0.36.10, `.tcbSetSpace` (a thread runs in a carved address space) at v0.36.11, intermediate page tables at v0.36.12, and every configured address space owning a table page at v0.36.13, which completes BP7.1 (§8.10.2a); BP7.2's user window and 16-bit hardware ASIDs at v0.36.14 and its physical-write ledger and translation install at v0.36.15; BP7.3–BP7.9 at v0.36.16–v0.36.22 (the whole trap frame saved, per-core restore staging, unblock-frame delivery, the live context restore, the delivered declassified badge, overflow message registers, lazily switched FP/SIMD state); and BP7.11 (the boot starts both initial threads, one per domain) at v0.36.23, which completes BP7; BP8.1's first slice (the image built for QEMU's `virt` — its device map from `src/board.rs`, its link script derived from `link.ld`, an arm64 Image header on `_start` — booted there at EL1 and at EL2 by `scripts/test_qemu.sh`) at v0.36.24, and its second (the Lean `virt` binding `SeLe4n/Platform/QemuVirt/` — its board check the RPi5 bridge's own coverage predicates, the RPi5 deployment's layout on it with every boot gate decided, and its own boot entry `lean_kernel_main_qemu_virt`, held by the boot-entry contract's table to its own approved call) at v0.36.25, and its third (the Lean-linked image booted by `scripts/test_qemu.sh --lean-kernel` on four PEs at EL1 and EL2 to every core's first idle dispatch, on every PR — §6.2.18) at v0.36.26, completing BP8.1, and BP8.2 (the four-PE bring-up gate, executed on every PR — §6.2.18) at v0.36.27. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -5340,7 +5340,7 @@ seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
   the carve re-checks before writing anything (`CarveRequest.admissible`) —
   with a read/write capability (`vspaceRootCapability`).  A boot-configured
   root has `tableBase = none`.  The reset retires carved roots: it refuses while
-  any thread's `vspaceRoot` names one, removes every mapping a carved root holds
+  any thread's VSpace root slot holds a capability naming one, removes every mapping a carved root holds
   through the verified unmap and checks it empty, erases its ASID-table entry,
   and decides no entry names a retired object.  Payoffs:
   `untypedRetypeObject_ok_vspaceRoot`, `untypedNextVSpaceRoot_of_retype_ok`,
@@ -5348,18 +5348,37 @@ seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
   page (intermediate page tables landed at `v0.36.12`, below).  Witness: §5i.
 - **A thread runs in a carved address space** (`v0.36.11`, `.tcbSetSpace`,
   syscall 38, `.write` on the target TCB — seL4's `TCB_SetSpace`).
-  `setThreadSpace` rewrites a suspended thread's `cspaceRoot` and `vspaceRoot`
-  and nothing else.  MR0/MR1 are capability addresses in the **caller's**
-  CSpace, resolved by `resolveSetSpace` over the shared
-  `resolveCallerCapObject`: the CSpace root needs `.grant` and `.write` (a
-  CSpace root hands the thread every capability the CNode holds), the VSpace
-  root `.write`; each is re-checked against the store for its kind.  Suspended
-  means the stored flag is `.Inactive` **and** `inferThreadState` classifies the
-  thread so — a stale flag cannot admit a running thread
-  (`setThreadSpace_refuses_active`).  Payoffs: `setThreadSpace_ok_tcb`,
-  `resolveSetSpace_ok_authorised`, `setThreadSpace_preserves_ipcInvariantFull`;
-  footprint `lockSet_tcbSetSpace`.  Witness: §5j, which also measures the
-  reset refusing while a thread runs in a carved root.
+  **A thread's roots are capability slots** (`v0.36.122`, WS-ZA ZA5.4 part 12):
+  a TCB holds its CSpace and VSpace roots as two slots of its own
+  (`TCB.spaceCells`, with their derivation-link words `TCB.spaceLinks`), seL4's
+  `tcbCTable` and `tcbVTable`.  They are derivation nodes like a CNode's slots,
+  read and written through the object-slot dispatch (`KernelObject.slotCap`,
+  `Model/ObjectSlots.lean`), and `TCB.cspaceRoot` / `TCB.vspaceRoot` are reads
+  of them (the sentinel when a slot is empty).  So the delete, the revocation
+  walk and the retype cleanup (`detachTcbSlots`) reach a thread's slots.
+  `copyThreadSpaces` sets the two slots of a suspended thread and nothing else,
+  each as seL4's `invokeTCB_ThreadControl` does (`threadSlotCopied`): the slot's
+  old content is deleted through the slot delete (its capability cleared, its
+  node spliced out of the tree), then the capability the source slot holds is
+  inserted with rights = the source's rights ∩ the root's rights
+  (`TCB.cspaceRootRights`, `TCB.vspaceRootRights`) and no badge, with the
+  derivation edge from the source slot (`.copy`).  Revoking the source, or any
+  ancestor of it, therefore empties the thread's slot.  MR0/MR1 are capability
+  addresses in the **caller's** CSpace, resolved to their slots by
+  `resolveSetSpace` over the shared `resolveCallerCapSlot`: the CSpace root
+  needs `.grant` and `.write` (a CSpace root hands the thread every capability
+  the CNode holds), the VSpace root `.write`; each source is re-checked against
+  the store for its kind (`cspaceRootSourceAdmitted`,
+  `vspaceRootSourceAdmitted`), and every check precedes every write.  Suspended
+  means the stored flag is `.Inactive` **and** `inferThreadState` classifies
+  the thread so — a stale flag cannot admit a running thread
+  (`copyThreadSpaces_refuses_active`).  Payoffs: `copyThreadSpaces_ok_tcb`,
+  `resolveSetSpace_ok_authorised`, `copyThreadSpaces_preserves_ipcInvariantFull`,
+  `copyThreadSpaces_preserves_capabilityInvariantBundle` (completeness,
+  acyclicity and `cdtLinksAgree`), `copyThreadSpaces_preserves_projection`;
+  footprint `lockSet_tcbSetSpace`.  Witness: §5j, which also revokes a
+  set-space source and sees the thread's slot emptied, and revokes the untyped
+  and sees the carved root's copy go with it.
 - **Intermediate page tables** (`v0.36.12`, `.pageTableMap` syscall 39 and
   `.pageTableUnmap` syscall 40, `.write` on the page-table capability — seL4's
   `seL4_ARM_PageTable_Map` / `_Unmap`; `Architecture/PageTableInstall.lean`).  A
@@ -5384,7 +5403,8 @@ seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
   `pageTablesOrphaned`, `detachPageTables`; payoff
   `finaliseDestroyedCapabilities_ok_tables`), seL4's `finaliseCap` →
   `unmapPageTable`; a CNode holding such a capability is not retyped in place.
-  "Last" is decided on CNode slots (`cnodeSlotsUnreferenced`, `v0.36.38`): a
+  "Last" is decided on every slot of every object, a CNode's or a thread's
+  (`carvedSubtreeUnreferenced`, `v0.36.122`; CNode slots only from `v0.36.38`): a
   copy parked in a blocked sender's message can be dropped by a cancellation
   that finalises nothing, so counting it would leave a table installed with no
   capability anywhere; a parked copy delivered later names a table installed
@@ -5679,6 +5699,20 @@ in seL4 guards against multi-hop traversals that could bypass CNode access
 control; in seLe4n's flat model, this guard is redundant.
 
 **Source annotation**: U-M25 (Operations.lean).
+
+### 8.10.3a A CNode invocation needs a CNode (`v0.36.122`, WS-ZA ZA5.4 part 12)
+
+Every user CNode invocation — delete, revoke, copy, mint, move and
+mint-reply-cap, on its source and its destination — refuses with
+`.objectNotFound` unless the invoked capability names a CNode
+(`cnodeInvoked`, `Capability/Operations.lean`), on the spec, API and
+refusal-carrying arms alike.  This is seL4's rule: `decodeCNodeInvocation` is
+reached only through a `cap_cnode_cap`.  It matters because a thread's roots
+are slots that the internal delete reaches: without the guard, `CNode_Delete`
+on a capability to a thread would empty the thread's root slots.  The internal
+destroyers (the revocation walk, the retype cleanup) still reach thread slots.
+Witness: `tests/NegativeStateSuite.lean`'s thread-slot invocation refusal
+checks (both space slots, both calls, the roots kept).
 
 ### 8.10.4 IPC Extra Capability Resolution — Silent-Drop Semantics (AI6 / M-02)
 

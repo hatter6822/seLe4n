@@ -466,16 +466,12 @@ theorem startInitialThreadOnCore_runQueueRefined (st : SystemState)
   enqueueRunnableOnCore_runQueueRefined _ tid
     (SystemState.updateTcb_preserves_objects_invExt st tid _ hInv)
     (SystemState.updateTcb_runQueueRefined hInv (fun _ _ => rfl) hR)
-/-- **WS-BP BP7.11**: the start preserves the per-object CNode-slot invariant —
-it writes a TCB, and every CNode it holds is the pre-state's. -/
+/-- **WS-BP BP7.11**: the start preserves the per-object slot invariant, which
+every state holds (`perObjectSlotsInvariant_holds`). -/
 theorem startInitialThreadOnCore_preserves_perObjectSlotsInvariant (st : SystemState)
-    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) (h : perObjectSlotsInvariant st) :
-    perObjectSlotsInvariant (startInitialThreadOnCore st tid) := by
-  intro oid cn hObj
-  rcases startInitialThreadOnCore_objects_cases st tid hInv oid _ hObj with
-    hB | ⟨_, _, _, hT, _⟩
-  · exact h oid cn hB
-  · cases hT
+    (tid : SeLe4n.ThreadId) (_hInv : st.objects.invExt) (_h : perObjectSlotsInvariant st) :
+    perObjectSlotsInvariant (startInitialThreadOnCore st tid) :=
+  perObjectSlotsInvariant_holds _
 
 /-- **WS-BP BP7.11**: the start preserves the per-object VSpace-mapping
 invariant, for the same reason. -/

@@ -1608,18 +1608,8 @@ theorem cspaceDeleteSlotCore_preservesFieldsOutside
     (addr : CSpaceAddr) (st st' : SystemState)
     (hStep : cspaceDeleteSlotCore addr st = .ok ((), st')) :
     preservesFieldsOutside capabilityOp_modifiedFields st st' := by
-  unfold cspaceDeleteSlotCore SystemState.getCNode? at hStep
-  dsimp only at hStep
-  split at hStep
-  · split at hStep
-    · cases hStep
-    · rename_i u st₁ hStore
-      cases u
-      simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-      obtain ⟨-, hEq⟩ := hStep
-      subst hEq
-      exact storeObject_preservesFieldsOutside_capability _ _ _ _ hStore
-  · cases hStep
+  obtain ⟨o, -, -, hStore⟩ := cspaceDeleteSlotCore_ok hStep
+  exact storeObject_preservesFieldsOutside_capability _ _ _ _ hStore
 
 theorem cspaceDeleteSlot_preservesFieldsOutside
     (addr : CSpaceAddr) (st st' : SystemState)

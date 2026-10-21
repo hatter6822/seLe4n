@@ -256,7 +256,10 @@ theorem storeObject_tcbFieldUpdate_preserves_ipcInvariantFull
     (hBudget : tcb'.timeoutBudget = tcb.timeoutBudget)
     (hReply : tcb'.replyObject = tcb.replyObject)
     (hStash : tcb'.pendingReceiveReply = tcb.pendingReceiveReply)
-    (hBind : tcb'.schedContextBinding = tcb.schedContextBinding) :
+    (hBind : tcb'.schedContextBinding = tcb.schedContextBinding)
+    (hSlots : ∀ (sl : SeLe4n.Slot) (c : Capability) (b : SeLe4n.Badge),
+      tcb'.spaceSlotCap sl = some c → c.badge = some b → tcb.spaceSlotCap sl = some c :=
+      by intro _ _ _ h _; exact h) :
     ipcInvariantFull st' := by
   have hAt : st'.objects[tid.toObjId]? = some (.tcb tcb') :=
     storeObject_objects_eq st st' tid.toObjId (.tcb tcb') hObjInv hStore
@@ -267,7 +270,7 @@ theorem storeObject_tcbFieldUpdate_preserves_ipcInvariantFull
   exact ipcInvariantFull_of_tcbFieldUpdate st st' tid.toObjId tcb tcb'
     hInv hPre hAt hFrame hIpc hMsg hNext hPrev hPPrev hBudget hReply hStash hBind
     (passiveServerIdleFrame_of_tcbFieldUpdate tid.toObjId tcb tcb'
-      hPre hAt hFrame hIpc hBind hSched)
+      hPre hAt hFrame hIpc hBind hSched) hSlots
 
 /-- `.tcbSetIPCBuffer`: rewrites one TCB's `ipcBuffer` — a field no conjunct
 reads — so the whole bundle transports. -/
@@ -333,7 +336,7 @@ theorem storeObject_notificationContentUpdate_preserves_ipcInvariantFull
     intro oid cn slot cap badge hCn hLk hB
     by_cases hK : oid = nid
     · rw [hK, hAt] at hCn
-      exact absurd (Option.some.inj hCn) (fun hx => KernelObject.noConfusion hx)
+      cases Option.some.inj hCn; simp [KernelObject.slotCap] at hLk
     · rw [hNe _ hK] at hCn
       exact hInv.badgeWellFormed.2 oid cn slot cap badge hCn hLk hB
   exact ipcInvariantFull_of_readViewAgreement hView hPsi hCap hInv
@@ -448,7 +451,10 @@ theorem insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull
     (hBudget : tcb'.timeoutBudget = tcb.timeoutBudget)
     (hReply : tcb'.replyObject = tcb.replyObject)
     (hStash : tcb'.pendingReceiveReply = tcb.pendingReceiveReply)
-    (hBind : tcb'.schedContextBinding = tcb.schedContextBinding) :
+    (hBind : tcb'.schedContextBinding = tcb.schedContextBinding)
+    (hSlots : ∀ (sl : SeLe4n.Slot) (c : Capability) (b : SeLe4n.Badge),
+      tcb'.spaceSlotCap sl = some c → c.badge = some b → tcb.spaceSlotCap sl = some c :=
+      by intro _ _ _ h _; exact h) :
     ipcInvariantFull { st with objects := st.objects.insert tid.toObjId (.tcb tcb') } := by
   have hAt := insertObjects_getElem_self st tid.toObjId (.tcb tcb') hObjInv
   have hFrame : ∀ oid : SeLe4n.ObjId, oid ≠ tid.toObjId →
@@ -458,7 +464,7 @@ theorem insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull
   exact ipcInvariantFull_of_tcbFieldUpdate st _ tid.toObjId tcb tcb'
     hInv hPre hAt hFrame hIpc hMsg hNext hPrev hPPrev hBudget hReply hStash hBind
     (passiveServerIdleFrame_of_tcbFieldUpdate tid.toObjId tcb tcb' hPre hAt hFrame
-      hIpc hBind rfl)
+      hIpc hBind rfl) hSlots
 
 /-- Raw-insert form of the SchedContext-content bundle lever. -/
 theorem insertObjects_schedContextContentUpdate_preserves_ipcInvariantFull
@@ -493,7 +499,7 @@ theorem insertObjects_schedContextContentUpdate_preserves_ipcInvariantFull
     intro oid cn slot cap badge hCn hLk hB
     by_cases hK : oid = scId.toObjId
     · rw [hK, hAt] at hCn
-      exact absurd (Option.some.inj hCn) (fun hx => KernelObject.noConfusion hx)
+      cases Option.some.inj hCn; simp [KernelObject.slotCap] at hLk
     · rw [hNe _ hK] at hCn
       exact hInv.badgeWellFormed.2 oid cn slot cap badge hCn hLk hB
   exact ipcInvariantFull_of_readViewAgreement hView hPsi hCap hInv
@@ -849,9 +855,9 @@ theorem cspaceInsertSlot_preserves_ipcInvariantFull
       hInv.passiveServerIdle)
     hBadge.2 hInv
 
-/-- Success shape of `cspaceDeleteSlotCore`: the target CNode existed, the
-post-state holds it with the slot removed, off-key objects, the scheduler and the
-store invariant are untouched.
+/-- Success shape of `cspaceDeleteSlotCore`: the object at the address held
+slots, the post-state holds it with the slot emptied, off-key objects, the
+scheduler and the store invariant are untouched.
 
 The store invariant is a conjunct rather than a separate lemma because the
 revocation fold (`v0.35.190`) needs it *between* iterations: each
@@ -861,44 +867,36 @@ theorem cspaceDeleteSlotCore_shape
     (st st' : SystemState) (addr : CSpaceAddr)
     (hObjInv : st.objects.invExt)
     (hStep : cspaceDeleteSlotCore addr st = .ok ((), st')) :
-    ∃ cn : CNode, st.objects[addr.cnode]? = some (.cnode cn) ∧
-      st'.objects[addr.cnode]? = some (.cnode (cn.remove addr.slot)) ∧
+    ∃ o : KernelObject, st.objects[addr.cnode]? = some o ∧ o.holdsSlots = true ∧
+      st'.objects[addr.cnode]? = some (o.removeSlotCap addr.slot) ∧
       (∀ oid : SeLe4n.ObjId, oid ≠ addr.cnode → st'.objects[oid]? = st.objects[oid]?) ∧
       st'.scheduler = st.scheduler ∧ st'.objects.invExt := by
-  unfold cspaceDeleteSlotCore SystemState.getCNode? at hStep
-  cases hObj : st.objects[addr.cnode]? with
-  | none => simp [hObj] at hStep
-  | some obj =>
-    cases obj with
-    | cnode cn =>
-      simp only [hObj] at hStep
-      split at hStep
-      · contradiction
-      · rename_i st1 hStore
-        simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
-        subst hStep
-        refine ⟨cn, rfl, ?_, ?_, ?_, ?_⟩
-        · exact storeObject_objects_eq st st1 addr.cnode
-            (.cnode (cn.remove addr.slot)) hObjInv hStore
-        · intro oid hNe
-          exact storeObject_objects_ne st st1 addr.cnode oid
-            (.cnode (cn.remove addr.slot)) hNe hObjInv hStore
-        · exact storeObject_scheduler_eq st st1 addr.cnode
-            (.cnode (cn.remove addr.slot)) hStore
-        · exact storeObject_preserves_objects_invExt st st1 addr.cnode
-            (.cnode (cn.remove addr.slot)) hObjInv hStore
-    | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
-    | schedContext _ | reply _ | frame _ | pageTable _ => simp [hObj] at hStep
+  obtain ⟨o, hO, hH, hS⟩ := cspaceDeleteSlotCore_ok hStep
+  exact ⟨o, hO, hH, storeObject_objects_eq st st' _ _ hObjInv hS,
+    fun oid hNe => storeObject_objects_ne st st' _ oid _ hNe hObjInv hS,
+    storeObject_scheduler_eq st st' _ _ hS,
+    storeObject_preserves_objects_invExt st st' _ _ hObjInv hS⟩
 
 /-- `cspaceDeleteSlotCore` preserves the whole bundle: removal shrinks the
-CNode's lookups, so the badge clause carries from the pre-state. -/
+slots' contents, so the badge clause carries from the pre-state; a thread's
+emptied space slot moves no field the bundle reads. -/
 theorem cspaceDeleteSlotCore_preserves_ipcInvariantFull
     (st st' : SystemState) (addr : CSpaceAddr)
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
     (hStep : cspaceDeleteSlotCore addr st = .ok ((), st')) :
     ipcInvariantFull st' := by
-  obtain ⟨cn, hPre, hAt, hNe, hSched, _⟩ :=
-    cspaceDeleteSlotCore_shape st st' addr hObjInv hStep
+  rcases cspaceDeleteSlotCore_ok_cases hStep with ⟨cn, hPre, hS⟩ | ⟨t, hPre, hS⟩
+  case inr =>
+    -- A thread's space slot emptied: no field the bundle reads moves, and the
+    -- emptied thread holds no capability it did not.
+    exact storeObject_tcbFieldUpdate_preserves_ipcInvariantFull st st'
+      (SeLe4n.ThreadId.ofObjId addr.cnode) t (t.removeSpaceCap addr.slot) hObjInv hInv hPre hS
+      rfl rfl rfl rfl rfl rfl rfl rfl rfl
+      (fun _ _ _ h _ => TCB.spaceSlotCap_removeSpaceCap_back h)
+  have hAt := storeObject_objects_eq st st' _ _ hObjInv hS
+  have hNe : ∀ oid : SeLe4n.ObjId, oid ≠ addr.cnode → st'.objects[oid]? = st.objects[oid]? :=
+    fun oid h => storeObject_objects_ne st st' _ oid _ h hObjInv hS
+  have hSched := storeObject_scheduler_eq st st' _ _ hS
   have hView := ipcReadViewAgreement.of_single_inert_write hNe
     (by rw [hPre]; trivial) (by rw [hAt]; trivial)
   have hBack : ∀ (tid : SeLe4n.ThreadId) (tcb' : TCB),
@@ -915,15 +913,15 @@ theorem cspaceDeleteSlotCore_preserves_ipcInvariantFull
     intro oid cn' slot cap badge hCn hLk hB
     by_cases hK : oid = addr.cnode
     · rw [hK, hAt] at hCn
-      obtain rfl : cn.remove addr.slot = cn' := by
-        simpa only [Option.some.injEq, KernelObject.cnode.injEq] using hCn
+      obtain rfl : KernelObject.cnode (cn.remove addr.slot) = cn' := Option.some.inj hCn
+      simp only [KernelObject.slotCap] at hLk
       by_cases hSlot : addr.slot = slot
       · rw [← hSlot, CNode.lookup_remove_eq_none cn addr.slot
           (CNode.slotsUnique_holds cn)] at hLk
         cases hLk
       · rw [CNode.lookup_remove_ne cn addr.slot slot hSlot
           (CNode.slotsUnique_holds cn)] at hLk
-        exact hInv.badgeWellFormed.2 addr.cnode cn slot cap badge (hK ▸ hPre) hLk hB
+        exact hInv.badgeWellFormed.2 addr.cnode (.cnode cn) slot cap badge (hK ▸ hPre) hLk hB
     · rw [hNe _ hK] at hCn
       exact hInv.badgeWellFormed.2 oid cn' slot cap badge hCn hLk hB
   exact ipcInvariantFull_of_readViewAgreement hView
@@ -933,26 +931,24 @@ theorem cspaceDeleteSlotCore_preserves_ipcInvariantFull
 
 /-- **A step that rewrites only derivation state keeps the IPC bundle.**  The
 bundle reads no derivation tree and no link word: every object it reads through
-the store is a non-CNode, which the step leaves as it was, and its one CNode
-clause (`capabilityBadgesWellFormed`) reads slot contents, which the step keeps. -/
+the store is a non-CNode, which the step leaves as it was up to a thread's
+space-slot links, and its slot clause (`capabilityBadgesWellFormed`) reads slot
+contents, which the step keeps. -/
 theorem ipcInvariantFull_of_agreeOffDerivationLinks {st st' : SystemState}
     (h : SystemState.objectsAgreeOffDerivationLinks st' st)
     (hSched : st'.scheduler = st.scheduler)
     (hInv : ipcInvariantFull st) : ipcInvariantFull st' := by
-  have hView : ipcReadViewAgreement st st' := ipcReadViewAgreement.of_inertWrites fun oid => by
-    rcases h oid with e | ⟨cn, cn', ha, hb, _⟩
-    · exact .inl e
-    · exact .inr ⟨by rw [ha]; trivial, by rw [hb]; trivial⟩
+  have hView : ipcReadViewAgreement st st' := ipcReadViewAgreement.of_objectsAgreeOffDerivationLinks h
   have hBack : ∀ (tid : SeLe4n.ThreadId) (tcb' : TCB),
       st'.objects[tid.toObjId]? = some (.tcb tcb') →
       ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) ∧
         tcb.ipcState = tcb'.ipcState ∧ tcb.schedContextBinding = tcb'.schedContextBinding :=
-    fun _ tcb' hT => ⟨tcb', h.obj_back hT (fun _ hx => KernelObject.noConfusion hx), rfl, rfl⟩
-  have hCap : capabilityBadgesWellFormed st' := by
-    intro oid cn' slot cap badge hCn hLk hB
-    obtain ⟨cn, hc, hw⟩ := h.cnode_back hCn
-    exact hInv.badgeWellFormed.2 oid cn slot cap badge hc
-      (by rw [← CNode.proj_eq_of_withoutLinks_eq (·.lookup slot) hw]; exact hLk) hB
+    fun _ tcb' hT => (h.tcb_back hT).elim fun t ht =>
+      ⟨t, ht.1, TCB.of_withoutLinks_eq ht.2 (fun _ => Iff.rfl) rfl,
+        TCB.of_withoutLinks_eq ht.2 (fun _ => Iff.rfl) rfl⟩
+  have hCap : capabilityBadgesWellFormed st' :=
+    capabilityBadgesWellFormed_of_slotCap_back hInv.badgeWellFormed.2
+      fun _ _ hO => (h.obj_slots_back hO).elim fun o ho => ⟨o, ho.1, ho.2.1⟩
   exact ipcInvariantFull_of_readViewAgreement hView
     (passiveServerIdle_of_frame (passiveServerIdleFrame_of_backward hBack hSched)
       hInv.passiveServerIdle)
@@ -1054,9 +1050,9 @@ theorem cspaceRevoke_preserves_ipcInvariantFull
     intro oid cn' slot cap badge hCn hLk hB
     by_cases hK : oid = addr.cnode
     · rw [hK, hAt] at hCn
-      obtain rfl : cn.revokeTargetLocal addr.slot parent.target = cn' := by
-        simpa only [Option.some.injEq, KernelObject.cnode.injEq] using hCn
-      exact hInv.badgeWellFormed.2 addr.cnode cn slot cap badge (hK ▸ hPre)
+      obtain rfl : KernelObject.cnode (cn.revokeTargetLocal addr.slot parent.target) = cn' := Option.some.inj hCn
+      simp only [KernelObject.slotCap] at hLk
+      exact hInv.badgeWellFormed.2 addr.cnode (.cnode cn) slot cap badge (hK ▸ hPre)
         (CNode.lookup_revokeTargetLocal_sub cn addr.slot parent.target slot cap
           (CNode.slotsUnique_holds cn) hLk) hB
     · rw [hNe _ hK] at hCn
@@ -1274,7 +1270,10 @@ theorem storeObject_inertNonCNode_preserves_ipcInvariantFull
     intro oid cn slot cap badge hCn hLk hB
     by_cases hK : oid = key
     · rw [hK, hAt] at hCn
-      exact absurd (Option.some.inj hCn) (hNotCn cn)
+      cases Option.some.inj hCn
+      rw [(KernelObject.slotCap_linkAt_of_not_slots hNotCn
+        (by cases obj <;> simp_all [KernelObject.tcbSlots])).1] at hLk
+      cases hLk
     · rw [hNe _ hK] at hCn
       exact hInv.badgeWellFormed.2 oid cn slot cap badge hCn hLk hB
   exact ipcInvariantFull_of_readViewAgreement hView
@@ -1385,9 +1384,12 @@ theorem untypedReset_preserves_ipcInvariantFull
         tcb.ipcState = tcb'.ipcState ∧ tcb.schedContextBinding = tcb'.schedContextBinding :=
     fun tid tcb' h => ⟨tcb', hBackObj _ _ (by simp [resetTouched]) h, rfl, rfl⟩
   have hCap : capabilityBadgesWellFormed st' := by
-    intro oid cn slot cap badge hCn hLk hB
-    exact hInv.badgeWellFormed.2 oid cn slot cap badge
-      (hBackObj _ _ (by simp [resetTouched]) hCn) hLk hB
+    intro oid o slot cap badge hCn hLk hB
+    cases o with
+    | cnode _ | tcb _ =>
+      exact hInv.badgeWellFormed.2 oid _ slot cap badge
+        (hBackObj _ _ (by simp [resetTouched]) hCn) hLk hB
+    | _ => simp [KernelObject.slotCap] at hLk
   exact ipcInvariantFull_of_readViewAgreement hView
     (passiveServerIdle_of_frame (passiveServerIdleFrame_of_backward hBack hSched)
       hInv.passiveServerIdle)
@@ -1436,9 +1438,12 @@ theorem ipcInvariantFull_of_vspaceRootOnlyWrite {st st' : SystemState}
         tcb.ipcState = tcb'.ipcState ∧ tcb.schedContextBinding = tcb'.schedContextBinding :=
     fun tid tcb' h => ⟨tcb', hBackObj _ _ (fun _ hx => KernelObject.noConfusion hx) h, rfl, rfl⟩
   have hCap : capabilityBadgesWellFormed st' := by
-    intro oid cn slot cap badge hCn hLk hB
-    exact hInv.badgeWellFormed.2 oid cn slot cap badge
-      (hBackObj _ _ (fun _ hx => KernelObject.noConfusion hx) hCn) hLk hB
+    intro oid o slot cap badge hCn hLk hB
+    cases o with
+    | cnode _ | tcb _ =>
+      exact hInv.badgeWellFormed.2 oid _ slot cap badge
+        (hBackObj _ _ (fun _ hx => KernelObject.noConfusion hx) hCn) hLk hB
+    | _ => simp [KernelObject.slotCap] at hLk
   exact ipcInvariantFull_of_readViewAgreement hView
     (passiveServerIdle_of_frame (passiveServerIdleFrame_of_backward hBack hSched)
       hInv.passiveServerIdle)
@@ -1546,17 +1551,17 @@ theorem cspaceRecordFrameMapping_preserves_ipcInvariantFull
     intro oid cn' slot cap' badge hCn' hLk' hB
     by_cases hK : oid = addr.cnode
     · rw [hK, hAt] at hCn'
-      obtain rfl : cn.insert addr.slot (cap.withMapping (some m)) = cn' := by
-        simpa only [Option.some.injEq, KernelObject.cnode.injEq] using hCn'
+      obtain rfl : KernelObject.cnode (cn.insert addr.slot (cap.withMapping (some m))) = cn' := Option.some.inj hCn'
+      simp only [KernelObject.slotCap] at hLk'
       by_cases hSlot : addr.slot = slot
       · subst hSlot
         rw [CNode.lookup_insert_eq cn addr.slot _ (CNode.slotsUnique_holds cn)
           (CNode.slotAddressable_of_lookup_insert _ _ _ _ _ hLk')] at hLk'
         cases hLk'
-        exact hInv.badgeWellFormed.2 addr.cnode cn addr.slot cap badge (hK ▸ hPre) hLk hB
+        exact hInv.badgeWellFormed.2 addr.cnode (.cnode cn) addr.slot cap badge (hK ▸ hPre) hLk hB
       · rw [CNode.lookup_insert_ne cn addr.slot slot _ hSlot
           (CNode.slotsUnique_holds cn)] at hLk'
-        exact hInv.badgeWellFormed.2 addr.cnode cn slot cap' badge (hK ▸ hPre) hLk' hB
+        exact hInv.badgeWellFormed.2 addr.cnode (.cnode cn) slot cap' badge (hK ▸ hPre) hLk' hB
     · rw [hNe _ hK] at hCn'
       exact hInv.badgeWellFormed.2 oid cn' slot cap' badge hCn' hLk' hB
   exact ⟨ipcInvariantFull_of_readViewAgreement hView
@@ -1610,7 +1615,7 @@ theorem storeObject_schedContextContentUpdate_preserves_ipcInvariantFull
     intro o cn slot cap badge hCn hLk hB
     by_cases hK : o = oid
     · rw [hK, hAt] at hCn
-      exact absurd (Option.some.inj hCn) (fun hx => KernelObject.noConfusion hx)
+      cases Option.some.inj hCn; simp [KernelObject.slotCap] at hLk
     · rw [hNe _ hK] at hCn
       exact hInv.badgeWellFormed.2 o cn slot cap badge hCn hLk hB
   exact ipcInvariantFull_of_readViewAgreement hView
@@ -1861,7 +1866,10 @@ theorem ipcInvariantFull_of_schedBindingRewrite
           tcb2.schedContextBinding.scId? ≠ some scId)) ∨
       (tcb'.schedContextBinding = .unbound ∧
         sc.boundThread = some tid ∧ sc'.boundThread = none))
-    (hPassive : passiveServerIdleFrame st st') :
+    (hPassive : passiveServerIdleFrame st st')
+    (hSlots : ∀ (sl : SeLe4n.Slot) (c : Capability) (b : SeLe4n.Badge),
+      tcb'.spaceSlotCap sl = some c → c.badge = some b → tcb.spaceSlotCap sl = some c :=
+      by intro _ _ _ h _; exact h) :
     ipcInvariantFull st' := by
   have hNeIds : tid.toObjId ≠ scId.toObjId := by
     intro h
@@ -1921,7 +1929,7 @@ theorem ipcInvariantFull_of_schedBindingRewrite
       · intro hx; exact absurd (Option.some.inj hx) (fun h => KernelObject.noConfusion h)
     · rw [hFrame oid hT hS]
   have hAgree : donationReadAgreement st st' := by
-    refine ⟨?_, ?_, ?_, replyCallerAgree_of_objectAgree (fun rid r => ?_), ?_⟩
+    refine ⟨?_, ?_, ?_, replyCallerAgree_of_objectAgree (fun rid r => ?_), ?_, ?_⟩
     · intro oid tx hx
       obtain ⟨ty, hy, h1, h2, h3, h4, h5, h6, h7, h8, _⟩ := hBwd oid tx hx
       exact ⟨ty, hy, h1, pendingMessageReadAgrees_of_eq h2, h3, h4, h5, h6, h7, h8⟩
@@ -1964,6 +1972,14 @@ theorem ipcInvariantFull_of_schedBindingRewrite
       by_cases hS : oid = scId.toObjId
       · exact ⟨sc', by rw [hS]; exact hAtS⟩
       · exact ⟨x, (hScNe oid x hS).mpr hx⟩
+    · intro oid o' sl c b hO hL hB
+      by_cases hT : oid = tid.toObjId
+      · rw [hT, hAtT] at hO; cases hO
+        exact ⟨.tcb tcb, by rw [hT]; exact hPreT, hSlots sl c b hL hB⟩
+      · by_cases hS : oid = scId.toObjId
+        · rw [hS, hAtS] at hO; cases hO
+          exact ⟨.schedContext sc, by rw [hS]; exact hPreS, hL⟩
+        · exact ⟨o', by rw [← hFrame oid hT hS]; exact hO, hL⟩
   refine ipcInvariantFull_of_donationReadAgreement st st' hInv hAgree ?_ ?_ ?_ ?_ ?_
   · -- donationChainAcyclic
     intro t1 t2 tcb1 tcb2 s1 s2 h1 h2 hB1 hB2
@@ -2599,7 +2615,7 @@ private theorem insertObjects_schedContextClear_preserves_ipcInvariantFull
     · rw [hNe oid h]
   have hAgree : donationReadAgreement st
       { st with objects := st.objects.insert scObj (.schedContext sc') } := by
-    refine ⟨?_, ?_, ?_, replyCallerAgree_of_objectAgree (fun rid r => ?_), ?_⟩
+    refine ⟨?_, ?_, ?_, replyCallerAgree_of_objectAgree (fun rid r => ?_), ?_, ?_⟩
     · intro oid tx hx
       exact ⟨tx, (hTcbEq oid tx).mp hx, rfl, pendingMessageReadAgrees_refl _, rfl, rfl, rfl, rfl, rfl, rfl⟩
     · intro oid ty hy
@@ -2621,6 +2637,11 @@ private theorem insertObjects_schedContextClear_preserves_ipcInvariantFull
       by_cases h : oid = scObj
       · exact ⟨sc', by rw [h]; exact hAt⟩
       · exact ⟨x, by rw [hNe oid h]; exact hx⟩
+    · intro oid o' _ _ _ hO hL _
+      by_cases h : oid = scObj
+      · rw [h, hAt] at hO; cases hO
+        exact ⟨.schedContext sc, by rw [h]; exact hPre, hL⟩
+      · exact ⟨o', by rw [← hNe oid h]; exact hO, hL⟩
   refine ipcInvariantFull_of_donationReadAgreement st _ hInv hAgree ?_ ?_ ?_ ?_ ?_
   · intro t1 t2 tcb1 tcb2 s1 s2 h1 h2 hB1 hB2
     exact hInv.donationChainAcyclic t1 t2 tcb1 tcb2 s1 s2
@@ -2939,7 +2960,7 @@ private theorem vspaceRootWrite_preserves_ipcInvariantFull
     intro oid cn slot cap badge hCn hLk hB
     by_cases hK : oid = key
     · rw [hK, hAt] at hCn
-      exact absurd (Option.some.inj hCn) (fun hx => KernelObject.noConfusion hx)
+      cases Option.some.inj hCn; simp [KernelObject.slotCap] at hLk
     · rw [hNe _ hK] at hCn
       exact hInv.badgeWellFormed.2 oid cn slot cap badge hCn hLk hB
   exact ipcInvariantFull_of_readViewAgreement hView
@@ -3201,12 +3222,16 @@ lesson of WS-OD OD1.1 and OD3.9 — each found a removal writing one of them
 alone.
 
 **WS-ZA ZA4.5**: `runCoreCode = 0` — a fresh thread's run-queue fields name no
-core, so storing it keeps every run queue in agreement with the threads' links. -/
+core, so storing it keeps every run queue in agreement with the threads' links.
+
+A fresh thread's two space slots hold no capability (`spaceSlotCaps = []`), as a
+fresh CNode's slots hold none: the badge clause reads both. -/
 def retypeReplacementFresh : KernelObject → Prop
   | .tcb t => t.ipcState = .ready ∧ t.pendingMessage = none ∧ t.queueNext = none ∧
       t.queuePrev = none ∧ t.queuePPrev = none ∧
       t.schedContextBinding = .unbound ∧ t.replyObject = none ∧
-      t.pendingReceiveReply = none ∧ t.timeoutBudget = none ∧ t.runCoreCode = 0
+      t.pendingReceiveReply = none ∧ t.timeoutBudget = none ∧ t.runCoreCode = 0 ∧
+      t.spaceSlotCaps = []
   | .endpoint ep => ep.sendQ.head = none ∧ ep.sendQ.tail = none ∧
       ep.receiveQ.head = none ∧ ep.receiveQ.tail = none
   | .notification n => n.state = .idle ∧ n.waitHead = none ∧ n.pendingBadge = none
@@ -3224,7 +3249,8 @@ theorem objectOfKernelType_replacementFresh (k : KernelObjectType) (n : Nat) :
     retypeReplacementFresh (objectOfKernelType k n) := by
   cases k <;>
     simp [objectOfKernelType, retypeReplacementFresh, CNode.lookup, CNode.slots_ofSlots,
-      UniqueSlotMap.get?_filter, UniqueSlotMap.get?_empty, Reply.empty]
+      UniqueSlotMap.get?_filter, UniqueSlotMap.get?_empty, Reply.empty, TCB.spaceSlotCaps,
+      TCB.spaceCellsOf, TCB.spaceCellOf, SeLe4n.ObjId.isReserved, SeLe4n.ObjId.sentinel]
 
 /-- **`v0.35.187`**: and stamping the target's identity into it leaves it
 pristine — `KernelObject.withIdentity` writes the *identity* field and nothing
@@ -3390,14 +3416,21 @@ private theorem retypeWrite_capabilityBadgesWellFormed
     (hFresh : retypeReplacementFresh newObj)
     (hInv : capabilityBadgesWellFormed st) :
     capabilityBadgesWellFormed st' := by
-  intro oid cn slot cap badge hObj hLk hB
+  intro oid o slot cap badge hObj hLk hB
   by_cases hK : oid = target
   · rw [hK] at hObj
-    obtain rfl : newObj = .cnode cn := retypeWrite_at_target hAt hObj
-    rw [hFresh slot] at hLk
-    cases hLk
+    obtain rfl : newObj = o := retypeWrite_at_target hAt hObj
+    cases newObj with
+    | cnode cn =>
+      rw [show (KernelObject.cnode cn).slotCap slot = cn.lookup slot from rfl, hFresh slot] at hLk
+      cases hLk
+    | tcb t =>
+      obtain ⟨_, hm⟩ := TCB.mem_spaceSlotCaps hLk
+      rw [hFresh.2.2.2.2.2.2.2.2.2.2] at hm
+      cases hm
+    | _ => simp [KernelObject.slotCap] at hLk
   · rw [hNe _ hK] at hObj
-    exact hInv oid cn slot cap badge hObj hLk hB
+    exact hInv oid o slot cap badge hObj hLk hB
 
 private theorem retypeWrite_ipcInvariant
     {st st' : SystemState} {target : SeLe4n.ObjId} {newObj : KernelObject}
@@ -4288,7 +4321,8 @@ theorem lifecyclePreRetypeCleanup_detached_frame
       split at hStep
       · contradiction
       · cases hStep
-        exact ⟨_, rfl, rfl, rfl, .refl _⟩
+        obtain ⟨cdt, hReach⟩ := detachTcbSlots_shape st target
+        exact ⟨{ st with cdt := cdt }, rfl, rfl, rfl, hReach⟩
   | endpoint ep =>
       simp only [] at hStep
       cases hStep
@@ -4339,39 +4373,59 @@ private theorem retypeTargetDetached_of_agreeOffDerivationLinks
     (hDet : retypeTargetDetached st target) : retypeTargetDetached st2 target := by
   constructor
   · intro sc hS; exact hDet.notSc sc (hObjs.obj_back hS (fun _ h => KernelObject.noConfusion h))
-  · intro t hT; replace hT := hObjs.obj_back hT (fun _ h => KernelObject.noConfusion h); exact hDet.notOwner t hT
-  · intro t hT; replace hT := hObjs.obj_back hT (fun _ h => KernelObject.noConfusion h); exact hDet.tcbNoNext t hT
-  · intro t hT; replace hT := hObjs.obj_back hT (fun _ h => KernelObject.noConfusion h); exact hDet.tcbNoPrev t hT
-  · intro t hT; replace hT := hObjs.obj_back hT (fun _ h => KernelObject.noConfusion h); exact hDet.tcbSelfId t hT
-  · intro t hT; replace hT := hObjs.obj_back hT (fun _ h => KernelObject.noConfusion h); exact hDet.tcbAllowedState t hT
-  · intro t hT; replace hT := hObjs.obj_back hT (fun _ h => KernelObject.noConfusion h); exact hDet.tcbNotDonated t hT
-  · intro t hT; replace hT := hObjs.obj_back hT (fun _ h => KernelObject.noConfusion h); exact hDet.tcbNotBound t hT
-  · intro t hT; replace hT := hObjs.obj_back hT (fun _ h => KernelObject.noConfusion h); exact hDet.tcbNotWaiter t hT
+  · intro t hT; obtain ⟨t, hT, hw⟩ := hObjs.tcb_back hT
+    refine TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) ?_; exact hDet.notOwner t hT
+  · intro t hT; obtain ⟨t, hT, hw⟩ := hObjs.tcb_back hT
+    refine TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) ?_; exact hDet.tcbNoNext t hT
+  · intro t hT; obtain ⟨t, hT, hw⟩ := hObjs.tcb_back hT
+    refine TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) ?_; exact hDet.tcbNoPrev t hT
+  · intro t hT; obtain ⟨t, hT, hw⟩ := hObjs.tcb_back hT
+    refine TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) ?_; exact hDet.tcbSelfId t hT
+  · intro t hT; obtain ⟨t, hT, hw⟩ := hObjs.tcb_back hT
+    refine TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) ?_; exact hDet.tcbAllowedState t hT
+  · intro t hT; obtain ⟨t, hT, hw⟩ := hObjs.tcb_back hT
+    refine TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) ?_; exact hDet.tcbNotDonated t hT
+  · intro t hT; obtain ⟨t, hT, hw⟩ := hObjs.tcb_back hT
+    refine TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) ?_; exact hDet.tcbNotBound t hT
+  · intro t hT; obtain ⟨t, hT, hw⟩ := hObjs.tcb_back hT
+    refine TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) ?_; exact hDet.tcbNotWaiter t hT
   -- **WS-HP HP10.5**: the origin clause travels on `objects` alone, like its
   -- neighbours above.
-  · intro t hT oid sc hS; replace hT := hObjs.obj_back hT (fun _ h => KernelObject.noConfusion h); replace hS := hObjs.obj_back hS (fun _ h => KernelObject.noConfusion h)
+  · intro t hT; obtain ⟨t, hT, hw⟩ := hObjs.tcb_back hT
+    refine TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) ?_; intro oid sc hS; replace hS := hObjs.obj_back hS (fun _ h => KernelObject.noConfusion h)
     exact hDet.tcbNotDonationOrigin t hT oid sc hS
-  · intro t hT c; replace hT := hObjs.obj_back hT (fun _ h => KernelObject.noConfusion h)
-    rw [hSched, (show SystemState.RunCoresAgree st2 st from fun y => by rw [hObjs.getTcb? y]).queuedOn]
+  · intro t hT; obtain ⟨t, hT, hw⟩ := hObjs.tcb_back hT
+    refine TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) ?_; intro c
+    rw [hSched, (show SystemState.RunCoresAgree st2 st from fun y =>
+      TCB.map_proj_of_map_withoutLinks_eq _ (hObjs.getTcb? y)).queuedOn]
     exact hDet.tcbDescheduled t hT c
-  · intro t hT; replace hT := hObjs.obj_back hT (fun _ h => KernelObject.noConfusion h); exact hDet.tcbNotIdle t hT
+  · intro t hT; obtain ⟨t, hT, hw⟩ := hObjs.tcb_back hT
+    refine TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) ?_; exact hDet.tcbNotIdle t hT
   -- WS-BP BP7.9: the FP-owner clause travels on the owner table alone.
-  · intro t hT c; replace hT := hObjs.obj_back hT (fun _ h => KernelObject.noConfusion h)
+  · intro t hT; obtain ⟨t, hT, hw⟩ := hObjs.tcb_back hT
+    refine TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) ?_; intro c
     show st2.machine.fpOwner.get c ≠ some t.tid
     rw [hFpOwner]; exact hDet.tcbFpReleased t hT c
   -- PR #904 review (`v0.36.41`): and the residency clause on its own table.
-  · intro t hT c; replace hT := hObjs.obj_back hT (fun _ h => KernelObject.noConfusion h)
+  · intro t hT; obtain ⟨t, hT, hw⟩ := hObjs.tcb_back hT
+    refine TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) ?_; intro c
     have h := hDet.tcbResidencyReleased t hT c
     simp only [MachineState.resident, MachineState.residentOnCore] at h ⊢
     rwa [hResident]
-  · intro tid tcb hT; replace hT := hObjs.obj_back hT (fun _ h => KernelObject.noConfusion h); exact hDet.blockedRefsAvoid tid tcb hT
-  · intro a tcbA b hA hN; replace hA := hObjs.obj_back hA (fun _ h => KernelObject.noConfusion h); exact hDet.notQueueLinked a tcbA b hA hN
-  · intro b tcbB a hB hP; replace hB := hObjs.obj_back hB (fun _ h => KernelObject.noConfusion h); exact hDet.notPrevLinked b tcbB a hB hP
+  · intro tid tcb hT; obtain ⟨tcb, hT, hw⟩ := hObjs.tcb_back hT
+    refine TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) ?_; exact hDet.blockedRefsAvoid tid tcb hT
+  · intro a tcbA b hA; obtain ⟨tcbA, hA, hw⟩ := hObjs.tcb_back hA
+    refine TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) ?_; intro hN; exact hDet.notQueueLinked a tcbA b hA hN
+  · intro b tcbB a hB; obtain ⟨tcbB, hB, hw⟩ := hObjs.tcb_back hB
+    refine TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) ?_; intro hP; exact hDet.notPrevLinked b tcbB a hB hP
   · intro epId ep hd hEp hH; replace hEp := hObjs.obj_back hEp (fun _ h => KernelObject.noConfusion h); exact hDet.notHead epId ep hd hEp hH
   · intro epId ep tl hEp hT; replace hEp := hObjs.obj_back hEp (fun _ h => KernelObject.noConfusion h); exact hDet.notTail epId ep tl hEp hT
-  · intro tid tcb hT; replace hT := hObjs.obj_back hT (fun _ h => KernelObject.noConfusion h); exact hDet.noSelfLoops tid tcb hT
-  · intro tid tcb rid hT hRO; replace hT := hObjs.obj_back hT (fun _ h => KernelObject.noConfusion h); exact hDet.notReplyLinked tid tcb rid hT hRO
-  · intro tid tcb rid hT hP; replace hT := hObjs.obj_back hT (fun _ h => KernelObject.noConfusion h); exact hDet.notStashed tid tcb rid hT hP
+  · intro tid tcb hT; obtain ⟨tcb, hT, hw⟩ := hObjs.tcb_back hT
+    refine TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) ?_; exact hDet.noSelfLoops tid tcb hT
+  · intro tid tcb rid hT; obtain ⟨tcb, hT, hw⟩ := hObjs.tcb_back hT
+    refine TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) ?_; intro hRO; exact hDet.notReplyLinked tid tcb rid hT hRO
+  · intro tid tcb rid hT; obtain ⟨tcb, hT, hw⟩ := hObjs.tcb_back hT
+    refine TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) ?_; intro hP; exact hDet.notStashed tid tcb rid hT hP
 
 /-- The pre-resolved-authority retype base: guards then one pristine write. -/
 theorem lifecycleRetypeDirect_preserves_ipcInvariantFull
@@ -4941,19 +4995,43 @@ theorem pageTableUnmap_preserves_ipcInvariantFull (tableId : SeLe4n.ObjId)
             hObjInv hInv (Or.inr (by rw [hT']; trivial)) (by trivial)
             (fun _ h => KernelObject.noConfusion h) hStep
 
-/-- **WS-BP BP7.1 (`v0.36.11`)**: a space change preserves the IPC bundle.  It
-rewrites one TCB's `cspaceRoot` and `vspaceRoot`, neither of which any conjunct
-reads, so it is the one-field TCB rewrite `setThreadFaultHandlerOp` is. -/
-theorem setThreadSpace_preserves_ipcInvariantFull
-    (st st' : SystemState) (vtid : SeLe4n.ValidThreadId) (cn vr : SeLe4n.ObjId)
+/-- **A thread slot's copy preserves the IPC bundle**: the delete touches no IPC
+state (`cspaceDeleteSlot_preserves_ipcInvariantFull`), the insert rewrites one
+thread's space slot with an unbadged capability, which no conjunct reads, and
+the edge writes links alone. -/
+theorem threadSlotCopied_preserves_ipcInvariantFull {st : SystemState} {tid : SeLe4n.ThreadId}
+    {t : TCB} (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hT : st.getTcb? tid = some t) (slot : SeLe4n.Slot) (srcCNode : SeLe4n.ObjId)
+    (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) :
+    ipcInvariantFull (threadSlotCopied st tid slot srcCNode srcSlot rights) := by
+  have hD := cspaceDeleteSlot_preserves_ipcInvariantFull st _ _ hObjInv hInv
+    (copyIntoThreadSlot_delete hT slot)
+  obtain ⟨⟨t', hT', -⟩, hI⟩ := threadSlotDeleted_tcb hObjInv hT slot
+  rcases threadSlotCopied_cases st tid slot srcCNode srcSlot rights with ⟨-, e⟩ | ⟨cap, -, e⟩
+  · rw [e]; exact hD
+  · rw [e]
+    refine cdtRecord_bundle_frame _ _ _ _ (SystemState.updateTcb_preserves_objects_invExt _ _ _ hI) ?_
+    rw [SystemState.updateTcb_eq_of_some hT']
+    exact insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull _ tid t' _ hI hD
+      ((SystemState.getTcb?_eq_some_iff _ tid t').mp hT') rfl rfl rfl rfl rfl rfl rfl rfl rfl
+      (fun _ c _ h hB => by
+        rcases TCB.spaceSlotCap_insertSpaceCap_back h with rfl | h'
+        · simp at hB
+        · exact h')
+
+/-- **WS-BP BP7.1 (`v0.36.11`)**: a space change preserves the IPC bundle — each
+slot copy does (`threadSlotCopied_preserves_ipcInvariantFull`). -/
+theorem copyThreadSpaces_preserves_ipcInvariantFull
+    (st st' : SystemState) (vtid : SeLe4n.ValidThreadId) (cnSrc vrSrc : CSpaceAddr)
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
-    (hStep : setThreadSpace st vtid cn vr = .ok st') :
+    (hStep : copyThreadSpaces st vtid cnSrc vrSrc = .ok st') :
     ipcInvariantFull st' := by
-  obtain ⟨tcb, hT, -, -, -, -, rfl⟩ := setThreadSpace_ok st st' vtid cn vr hStep
-  exact insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull st vtid.val tcb
-    { tcb with cspaceRoot := cn, vspaceRoot := vr } hObjInv hInv
-    ((SystemState.getTcb?_eq_some_iff st vtid.val tcb).mp hT)
-    rfl rfl rfl rfl rfl rfl rfl rfl rfl
+  obtain ⟨tcb, hT, -, -, -, -, rfl⟩ := copyThreadSpaces_ok hStep
+  obtain ⟨hT1, hI1⟩ := threadSlotCopied_tcb hObjInv hT TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot
+    TCB.cspaceRootRights
+  obtain ⟨t1, hT1'⟩ := Option.isSome_iff_exists.mp hT1
+  exact threadSlotCopied_preserves_ipcInvariantFull hI1
+    (threadSlotCopied_preserves_ipcInvariantFull hObjInv hInv hT _ _ _ _) hT1' _ _ _ _
 
 /-- Review round (PR #887): and the object-store invariant. -/
 theorem setThreadFaultHandlerOp_preserves_objects_invExt

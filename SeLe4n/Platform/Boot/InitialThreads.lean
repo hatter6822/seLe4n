@@ -255,7 +255,7 @@ theorem startInitialThread_preserves_bootStartShape (ist : IntermediateState)
         simp only [TCB.replyWaiterNext, c2]; exact t13
       have r3 : t'.replyWaitersHead = none := by
         simp only [TCB.replyWaitersHead, c3]; exact t14
-      have r4 : t'.replyWaitersCount = 0 := c4.trans t15
+      have r4 : t'.replyWaitersCount = 0 := c4.trans t15.1
       rcases he with he | he | he <;>
       exact ⟨(TCB.proj_eq_of_withoutRunLinks_eq TCB.pendingMessage he).trans t1,
         (TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState he).trans (by first | exact t2 | rfl),
@@ -267,7 +267,9 @@ theorem startInitialThread_preserves_bootStartShape (ist : IntermediateState)
         (TCB.proj_eq_of_withoutRunLinks_eq TCB.replyObject he).trans t8,
         (TCB.proj_eq_of_withoutRunLinks_eq TCB.pendingReceiveReply he).trans t9,
         (TCB.proj_eq_of_withoutRunLinks_eq TCB.ntfnPrev he).trans t10,
-        (TCB.proj_eq_of_withoutRunLinks_eq TCB.ntfnNext he).trans t11, r1, r2, r3, r4⟩
+        (TCB.proj_eq_of_withoutRunLinks_eq TCB.ntfnNext he).trans t11, r1, r2, r3, r4,
+        bootSpaceSlotsSafe_of_space_eq (TCB.proj_eq_of_withoutRunLinks_eq TCB.spaceCells he)
+          (TCB.proj_eq_of_withoutRunLinks_eq TCB.spaceLinks he) t15.2⟩
   · show bootQuiescentFields (startInitialThreadOnCore ist.state tid)
     rw [hFrame]; exact hFields
   · show Architecture.asidTableConsistent (startInitialThreadOnCore ist.state tid)

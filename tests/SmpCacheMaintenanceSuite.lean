@@ -538,7 +538,7 @@ private def cacheState (slots : List (SeLe4n.Slot × Capability)) : SystemState 
         (CNode.ofList 4 0 0 4 slots))
     |>.withObject udCaller.toObjId (.tcb
         { tid := udCaller, priority := ⟨40⟩, domain := ⟨0⟩,
-          cspaceRoot := udCn, vspaceRoot := udVsp,
+          spaceCells := SeLe4n.Model.TCB.spaceCellsOf udCn udVsp,
           ipcBuffer := SeLe4n.VAddr.ofNat 4096 })
     |>.withRunnable [udCaller]
     |>.build)

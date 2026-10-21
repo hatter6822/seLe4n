@@ -103,7 +103,7 @@ private def fs008_freezeTcb : IO Unit := do
   let tid : ThreadId := ⟨1⟩
   let tcb : TCB :=
     { tid := tid, priority := ⟨10⟩, domain := ⟨0⟩
-      cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 0) }
+      spaceCells := SeLe4n.Model.TCB.spaceCellsOf ⟨0⟩ ⟨0⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 0) }
   let frozen := freezeObject (.tcb tcb)
   expect "frozen TCB has correct type" (frozen.objectType == .tcb)
 

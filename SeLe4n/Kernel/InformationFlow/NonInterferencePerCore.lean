@@ -1360,22 +1360,8 @@ theorem cspaceInsertSlot_confinedToCore (st st' : SystemState) (dst : CSpaceAddr
 theorem cspaceDeleteSlotCore_confinedToCore (st st' : SystemState) (addr : CSpaceAddr)
     (c₀ : CoreId) (hStep : cspaceDeleteSlotCore addr st = .ok ((), st')) :
     observableSlotsConfinedToCore st st' c₀ := by
-  unfold cspaceDeleteSlotCore SystemState.getCNode? at hStep
-  cases hObj : st.objects[addr.cnode]? with
-  | none => simp [hObj] at hStep
-  | some obj =>
-    cases obj with
-    | cnode cn =>
-      simp only [hObj] at hStep
-      cases hStore : storeObject addr.cnode (.cnode (cn.remove addr.slot)) st with
-      | error e => simp [hStore] at hStep
-      | ok pair =>
-        simp only [hStore, Except.ok.injEq, Prod.mk.injEq] at hStep
-        obtain ⟨_, hEq⟩ := hStep
-        subst hEq
-        exact storeObject_confinedToCore st pair.2 addr.cnode _ c₀ hStore
-    | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ =>
-      simp [hObj] at hStep
+  obtain ⟨o, -, -, hStore⟩ := cspaceDeleteSlotCore_ok hStep
+  exact storeObject_confinedToCore st st' addr.cnode _ c₀ hStore
 
 /-- SM8.B.3: `cspaceDeleteSlot` writes only the object store and the CDT. -/
 theorem cspaceDeleteSlot_confinedToCore (st st' : SystemState) (addr : CSpaceAddr) (c₀ : CoreId)

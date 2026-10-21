@@ -103,7 +103,7 @@ theorem cspaceDeleteSlotFinalising_preserves_capabilityInvariantBundle
     simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hF
     subst hF
     exact finaliseDestroyedCapabilitiesState_cdt ec _ _ st1
-  refine capabilityInvariantBundle_of_frame h1 hCdt ?_ ?_ ?_ hI'
+  refine capabilityInvariantBundle_of_frame h1 hCdt ?_ ?_ ?_ ?_ hI'
   · intro oid cn hC
     rcases hW oid with e | ⟨-, ⟨r, hr⟩⟩
     · rwa [← e]
@@ -112,6 +112,10 @@ theorem cspaceDeleteSlotFinalising_preserves_capabilityInvariantBundle
     rcases hW oid with e | ⟨⟨r, hr⟩, -⟩
     · rwa [e]
     · rw [hr] at hC; cases hC
+  · intro oid
+    rcases hW oid with e | ⟨⟨r, hr⟩, ⟨r', hr'⟩⟩
+    · rw [e]
+    · rw [hr, hr']; rfl
   · intro rid hR
     unfold SystemState.getReply? at hR ⊢
     rcases hW rid.toObjId with e | ⟨⟨r, hr⟩, -⟩
@@ -206,14 +210,16 @@ theorem slotLinkAt_eq_decodeLink (st : SystemState) (o : SeLe4n.ObjId) (s : SeLe
     (f : LinkField) :
     st.slotLinkAt ⟨o, s⟩ f = decodeLink (st.slotLinkNodeWord o s f) (st.slotLinkSlotWord o s f) := by
   unfold SystemState.slotLinkAt SystemState.slotLinkNodeWord SystemState.slotLinkSlotWord
-  cases st.getCNode? o with
+    SystemState.getObject?
+  cases st.objects[o]? with
   | none => simp [decodeLink]
-  | some cn => rfl
+  | some ob => exact KernelObject.linkAt_eq_decode ob s f
 
 /-- **On a state the bundle holds in, the loop empties the source of children**
 when its fuel exceeds the tree's edges.  The source's first-child link is the
 head of its children (`cdtLinksAgree`); a child is in the tree, so its CNode is
-live (`cdtCompleteness`) and its delete is admitted, never the loop's stop;
+a slot of a live object (`cdtCompleteness`) and its delete is admitted, never
+the loop's stop;
 each delete keeps the bundle and splices one edge out
 (`spliceNode_edges_length_lt`), so the fuel never runs out first. -/
 theorem revokeFirstChildLoop_childless (ec : Concurrency.CoreId) (cnode : SeLe4n.ObjId)
@@ -239,14 +245,15 @@ theorem revokeFirstChildLoop_childless (ec : Concurrency.CoreId) (cnode : SeLe4n
         unfold CapDerivationTree.childrenOf at hMem
         obtain ⟨e, he, hc⟩ := List.mem_map.1 hMem
         exact ⟨e, (List.mem_filter.1 he).1, .inr hc⟩
-      obtain ⟨cn, hCn, -⟩ := hInv.2.1 _ hMent
+      obtain ⟨o, hO, hL⟩ := hInv.2.1 _ hMent
       have hAdm : cspaceDeleteFinalisingAdmitted
           ⟨SeLe4n.ObjId.ofNat (st.slotLinkNodeWord cnode slot .firstChild - 1),
             SeLe4n.Slot.ofNat (st.slotLinkSlotWord cnode slot .firstChild - 1)⟩ st = true := by
-        unfold cspaceDeleteFinalisingAdmitted
-        rw [(SystemState.getCNode?_eq_some_iff st _ cn).2 hCn]
+        unfold cspaceDeleteFinalisingAdmitted SystemState.getObject?
+        rw [hO]
+        exact KernelObject.hasSlot_holdsSlots (KernelObject.hasSlot_of_slotCap hL)
       rw [if_pos hAdm]
-      have hD := cspaceDeleteSlotFinalising_of_cnode (ec := ec) hAdm
+      have hD := cspaceDeleteSlotFinalising_of_slotHolder (ec := ec) hAdm
       have hInv2 := cspaceDeleteSlotFinalising_preserves_capabilityInvariantBundle ec _ st _ hInv hD
       have hLt := spliceNode_edges_length_lt hInv.2.2.1 hMem
       rw [← cspaceDeleteSlotFinalising_ok_cdt hD] at hLt

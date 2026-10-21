@@ -53,6 +53,7 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
         match decodeCSpaceMintArgsBy (msgRegOfFile layout regs) with
         | .error e => .error e
         | .ok args =>
+            if !cnodeInvoked cnodeId st then .error .objectNotFound else
             let src : CSpaceAddr := { cnode := cnodeId, slot := args.srcSlot }
             let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
             let badge : Option SeLe4n.Badge :=
@@ -65,6 +66,7 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
         match decodeCSpaceCopyArgsBy (msgRegOfFile layout regs) with
         | .error e => .error e
         | .ok args =>
+            if !cnodeInvoked cnodeId st then .error .objectNotFound else
             let src : CSpaceAddr := { cnode := cnodeId, slot := args.srcSlot }
             let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
             cspaceCopyChecked ctx src dst st
@@ -75,6 +77,7 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
         match decodeCSpaceMoveArgsBy (msgRegOfFile layout regs) with
         | .error e => .error e
         | .ok args =>
+            if !cnodeInvoked cnodeId st then .error .objectNotFound else
             let src : CSpaceAddr := { cnode := cnodeId, slot := args.srcSlot }
             let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
             cspaceMoveChecked ctx src dst st
@@ -85,6 +88,7 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
         match decodeCSpaceDeleteArgsBy (msgRegOfFile layout regs) with
         | .error e => .error e
         | .ok args =>
+            if !cnodeInvoked cnodeId st then .error .objectNotFound else
             let addr : CSpaceAddr := { cnode := cnodeId, slot := args.targetSlot }
             cspaceDeleteSlotFinalising executingCore addr st
     | _ => .error .invalidCapability
@@ -94,6 +98,7 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
         match decodeCSpaceDeleteArgsBy (msgRegOfFile layout regs) with
         | .error e => .error e
         | .ok args =>
+            if !cnodeInvoked cnodeId st then .error .objectNotFound else
             let addr : CSpaceAddr := { cnode := cnodeId, slot := args.targetSlot }
             cspaceRevokeCdtFinalising executingCore addr st
     | _ => .error .invalidCapability
@@ -103,6 +108,7 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
         match decodeCSpaceCopyArgsBy (msgRegOfFile layout regs) with
         | .error e => .error e
         | .ok args =>
+            if !cnodeInvoked cnodeId st then .error .objectNotFound else
             let src : CSpaceAddr := { cnode := cnodeId, slot := args.srcSlot }
             let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
             mintReplyCapWithCdt src dst st
@@ -336,8 +342,8 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
         | .ok vtid =>
             match resolveSetSpace tid args st with
             | .error e => .error e
-            | .ok (cnId, vrId) =>
-                match setThreadSpace st vtid cnId vrId with
+            | .ok (cnSrc, vrSrc) =>
+                match copyThreadSpaces st vtid cnSrc vrSrc with
                 | .ok st' => .ok ((), st')
                 | .error e => .error e
     | _ => .error .invalidCapability
@@ -562,10 +568,10 @@ the write alone.  An arm whose checks refuse, and every arm not yet split, is
         match validateThreadIdArg (ThreadId.ofNat objId.toNat) with
         | .error e => .error (e, st)
         | .ok vtid =>
-          resolveSetSpaceK tid args st (fun e => .error (e, st)) (fun cnId vrId =>
-            RefusalCarrying.ofChecked (setThreadSpaceAdmitted st vtid cnId vrId)
-              (fun st => st.updateTcb vtid.val
-                (fun t => { t with cspaceRoot := cnId, vspaceRoot := vrId }))
+          resolveSetSpaceK tid args st (fun e => .error (e, st)) (fun cnC cnS vrC vrS =>
+            RefusalCarrying.ofChecked
+              (copyThreadSpacesAdmitted st vtid { cnode := cnC, slot := cnS } { cnode := vrC, slot := vrS })
+              (fun st => copyThreadSpacesPerform st vtid.val cnC cnS vrC vrS)
               (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st)
     | _ => .error (.invalidCapability, st)
   | .schedContextBind =>
@@ -694,7 +700,7 @@ the write alone.  An arm whose checks refuse, and every arm not yet split, is
       | .error e => .error (e, st)
       | .ok args =>
         let addr : CSpaceAddr := { cnode := cnodeId, slot := args.targetSlot }
-        RefusalCarrying.ofChecked (cspaceDeleteFinalisingAdmitted addr st)
+        RefusalCarrying.ofChecked (cnodeInvoked addr.cnode st)
           (fun st => cspaceDeleteFinalisingPerformAt executingCore cnodeId args.targetSlot st)
           (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
     | _ => .error (.invalidCapability, st)
@@ -961,11 +967,11 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
           cases hR : resolveSetSpace tid args st with
           | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hT, hR]
           | ok ids =>
-            obtain ⟨cnId, vrId⟩ := ids
+            obtain ⟨cnSrc, vrSrc⟩ := ids
             try dsimp only
             apply RefusalCarrying.ofChecked_eq
             intro hA
-            simp only [dispatchInvocationBy, hD, hT, hR, setThreadSpace_of_admitted _ _ _ _ hA]
+            simp only [dispatchInvocationBy, hD, hT, hR, copyThreadSpaces_of_admitted hA]
     all_goals rfl
   case schedContextBind =>
     cases target
@@ -1122,6 +1128,7 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
         intro hA
         simp only [Bool.and_eq_true] at hA
         simp only [dispatchInvocationBy, hD, cspaceMintChecked, hA.1, ↓reduceIte,
+          cnodeInvoked_of_mintAdmitted hA.2, Bool.not_true, Bool.false_eq_true,
           cspaceMintWithCdt_of_admitted hA.2]
     all_goals rfl
   case cspaceMove =>
@@ -1136,6 +1143,7 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
         intro hA
         simp only [Bool.and_eq_true] at hA
         simp only [dispatchInvocationBy, hD, cspaceMoveChecked, hA.1, ↓reduceIte,
+          cnodeInvoked_of_moveAdmitted hA.2, Bool.not_true, Bool.false_eq_true,
           cspaceMove_of_admitted hA.2]
     all_goals rfl
   case cspaceDelete =>
@@ -1147,7 +1155,10 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
       | ok args =>
         apply RefusalCarrying.ofChecked_eq
         intro hA
-        simp only [dispatchInvocationBy, hD, cspaceDeleteSlotFinalising_of_cnode hA]
+        have hF : cspaceDeleteFinalisingAdmitted { cnode := cnodeId, slot := args.targetSlot } st =
+            true := cspaceDeleteFinalisingAdmitted_of_cnodeInvoked hA
+        simp only [dispatchInvocationBy, hD, hA, Bool.not_true, Bool.false_eq_true, ↓reduceIte,
+          cspaceDeleteSlotFinalising_of_slotHolder hF]
     all_goals rfl
   case cspaceRevoke =>
     cases target
@@ -1158,7 +1169,8 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
       | ok args =>
         apply RefusalCarrying.ofChecked_eq
         intro hA
-        simp only [dispatchInvocationBy, hD, cspaceRevokeCdtFinalising_of_admitted hA]
+        simp only [dispatchInvocationBy, hD, cnodeInvoked_of_lookupSlotCap hA, Bool.not_true,
+          Bool.false_eq_true, ↓reduceIte, cspaceRevokeCdtFinalising_of_admitted hA]
     all_goals rfl
   case mintReplyCap =>
     cases target
@@ -1170,7 +1182,8 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
         dsimp only [mintReplyCapAdmittedAt, mintReplyCapPerformAt]
         apply RefusalCarrying.ofChecked_eq
         intro hA
-        simp only [dispatchInvocationBy, hD, mintReplyCapWithCdt_of_admitted hA]
+        simp only [dispatchInvocationBy, hD, cnodeInvoked_of_mintReplyCapAdmitted hA,
+          Bool.not_true, Bool.false_eq_true, ↓reduceIte, mintReplyCapWithCdt_of_admitted hA]
     all_goals rfl
   case cspaceCopy =>
     cases target
@@ -1184,6 +1197,7 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
         intro hA
         simp only [Bool.and_eq_true] at hA
         simp only [dispatchInvocationBy, hD, cspaceCopyChecked, hA.1, ↓reduceIte,
+          cnodeInvoked_of_copyAdmitted hA.2, Bool.not_true, Bool.false_eq_true,
           cspaceCopy_of_admitted hA.2]
     all_goals rfl
   case vspaceMap =>

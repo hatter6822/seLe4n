@@ -69,7 +69,8 @@ open SeLe4n.Model
 -- `Structural` import unchanged.
 
 /-- WS-RR RR2.14: the capability transfer preserves
-`blockedThreadTimeoutConsistent` — every post-state TCB is its pre-state self,
+`blockedThreadTimeoutConsistent` — every post-state TCB is its pre-state self
+off its slot links,
 and a pre-state SchedContext survives the transfer forward. -/
 theorem ipcUnwrapCaps_preserves_blockedThreadTimeoutConsistent
     (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
@@ -81,11 +82,13 @@ theorem ipcUnwrapCaps_preserves_blockedThreadTimeoutConsistent
              = .ok (summary, st')) :
     blockedThreadTimeoutConsistent st' := by
   intro tid tcb scId hTcb' hBudget
-  obtain ⟨⟨sc, hSc⟩, hBlk⟩ := hInv tid tcb scId
-    (ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight
-      st st' summary tid.toObjId tcb hObjInv hStep hTcb') hBudget
+  obtain ⟨t0, h0, hw⟩ := ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight
+    st st' summary tid.toObjId tcb hObjInv hStep hTcb'
+  obtain ⟨⟨sc, hSc⟩, hBlk⟩ := hInv tid t0 scId h0
+    (TCB.of_withoutLinks_eq hw.symm (fun _ => Iff.rfl) hBudget)
   exact ⟨⟨sc, ipcUnwrapCaps_preserves_schedContext_objects caps receiverRoot slotBase
-    grantRight st st' summary scId.toObjId sc hSc hObjInv hStep⟩, hBlk⟩
+    grantRight st st' summary scId.toObjId sc hSc hObjInv hStep⟩,
+    TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) hBlk⟩
 
 
 /-- **WS-RR RR2.14 / RR2.6: the capability transfer preserves `ipcInvariantFull`.**

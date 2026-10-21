@@ -2872,7 +2872,8 @@ def kindPreservingWrite (st st' : SystemState) : Prop :=
   ∀ oid : SeLe4n.ObjId, st'.objects[oid]? = st.objects[oid]? ∨
     ∃ pre post : KernelObject,
       st.objects[oid]? = some pre ∧ st'.objects[oid]? = some post ∧
-      post.objectType = pre.objectType ∧ post.objectType ≠ KernelObjectType.cnode
+      post.objectType = pre.objectType ∧ post.objectType ≠ KernelObjectType.cnode ∧
+      post.tcbSlots = pre.tcbSlots
 
 namespace kindPreservingWrite
 
@@ -2882,15 +2883,41 @@ theorem trans {st st' st'' : SystemState}
     (h₁ : kindPreservingWrite st st') (h₂ : kindPreservingWrite st' st'') :
     kindPreservingWrite st st'' := by
   intro oid
-  rcases h₁ oid with e₁ | ⟨p₁, q₁, hp₁, hq₁, ht₁, hn₁⟩
-  · rcases h₂ oid with e₂ | ⟨p₂, q₂, hp₂, hq₂, ht₂, hn₂⟩
+  rcases h₁ oid with e₁ | ⟨p₁, q₁, hp₁, hq₁, ht₁, hn₁, hs₁⟩
+  · rcases h₂ oid with e₂ | ⟨p₂, q₂, hp₂, hq₂, ht₂, hn₂, hs₂⟩
     · exact Or.inl (e₂.trans e₁)
-    · exact Or.inr ⟨p₂, q₂, e₁ ▸ hp₂, hq₂, ht₂, hn₂⟩
-  · rcases h₂ oid with e₂ | ⟨p₂, q₂, hp₂, hq₂, ht₂, hn₂⟩
-    · exact Or.inr ⟨p₁, q₁, hp₁, e₂.trans hq₁, ht₁, hn₁⟩
+    · exact Or.inr ⟨p₂, q₂, e₁ ▸ hp₂, hq₂, ht₂, hn₂, hs₂⟩
+  · rcases h₂ oid with e₂ | ⟨p₂, q₂, hp₂, hq₂, ht₂, hn₂, hs₂⟩
+    · exact Or.inr ⟨p₁, q₁, hp₁, e₂.trans hq₁, ht₁, hn₁, hs₁⟩
     · rw [hq₁] at hp₂
       cases hp₂
-      exact Or.inr ⟨p₁, q₂, hp₁, hq₂, ht₂.trans ht₁, hn₂⟩
+      exact Or.inr ⟨p₁, q₂, hp₁, hq₂, ht₂.trans ht₁, hn₂, hs₂.trans hs₁⟩
+
+/-- A kind-preserving write keeps every thread's slots, key by key. -/
+theorem tcbSlots {st st' : SystemState} (h : kindPreservingWrite st st') (oid : SeLe4n.ObjId) :
+    (st'.objects[oid]?).bind KernelObject.tcbSlots = (st.objects[oid]?).bind KernelObject.tcbSlots := by
+  rcases h oid with e | ⟨_, _, hp, hq, _, _, hs⟩
+  · rw [e]
+  · rw [hp, hq]; exact hs
+
+/-- A kind-preserving write keeps every slot, key by key: a post-state object
+holds the slots of the pre-state object at its key. -/
+theorem slotCap_back {st st' : SystemState} (h : kindPreservingWrite st st') {oid : SeLe4n.ObjId}
+    {o' : KernelObject} (hO : st'.objects[oid]? = some o') :
+    ∃ o, st.objects[oid]? = some o ∧ o'.slotCap = o.slotCap := by
+  rcases h oid with e | ⟨pre, post, hp, hq, ht, hn, hs⟩
+  · exact ⟨o', e ▸ hO, rfl⟩
+  · rw [hq] at hO; cases hO
+    exact ⟨pre, hp, (KernelObject.slots_eq_of_tcbSlots ht hn hs).1⟩
+
+/-- ...and forward. -/
+theorem slotCap_fwd {st st' : SystemState} (h : kindPreservingWrite st st') {oid : SeLe4n.ObjId}
+    {o : KernelObject} (hO : st.objects[oid]? = some o) :
+    ∃ o', st'.objects[oid]? = some o' ∧ o'.slotCap = o.slotCap := by
+  rcases h oid with e | ⟨pre, post, hp, hq, ht, hn, hs⟩
+  · exact ⟨o, e.trans hO, rfl⟩
+  · rw [hp] at hO; cases hO
+    exact ⟨post, hq, (KernelObject.slots_eq_of_tcbSlots ht hn hs).1⟩
 
 /-- WS-RR RR8.16 (`v0.35.199`): the degenerate instance — a step that writes no
 object at all. -/
@@ -2908,13 +2935,14 @@ theorem storeObject_kindPreservingWrite
     (hStore : storeObject oid obj st = .ok ((), st'))
     (hPre : st.objects[oid]? = some pre)
     (hKind : obj.objectType = pre.objectType)
-    (hNotCnode : obj.objectType ≠ KernelObjectType.cnode) :
+    (hNotCnode : obj.objectType ≠ KernelObjectType.cnode)
+    (hSlots : obj.tcbSlots = pre.tcbSlots := by rfl) :
     kindPreservingWrite st st' := by
   intro k
   by_cases hEq : k = oid
   · subst hEq
     exact Or.inr ⟨pre, obj, hPre,
-      storeObject_objects_eq st st' k obj hObjInv hStore, hKind, hNotCnode⟩
+      storeObject_objects_eq st st' k obj hObjInv hStore, hKind, hNotCnode, hSlots⟩
   · exact Or.inl (storeObject_objects_ne st st' oid k obj hEq hObjInv hStore)
 
 -- ============================================================================
@@ -5257,11 +5285,13 @@ def ownerOfSlot (ref : SlotRef) : CSpaceOwner :=
 def ownsSlot (st : SystemState) (owner : CSpaceOwner) (ref : SlotRef) : Prop :=
   owner = ownerOfSlot ref ∧ ∃ cap, lookupSlotCap st ref = some cap
 
-/-- Enumerate all concrete capability entries held by one modeled owner CNode.
+/-- Enumerate all concrete capability entries held by one modeled owner: a
+CNode's occupied slots, or a thread's occupied space slots
+(`KernelObject.slotCaps`).
 WS-G5: Projects HashMap-backed slots to `List` for enumeration compatibility. -/
 noncomputable def ownedSlots (st : SystemState) (owner : CSpaceOwner) : List (SeLe4n.Slot × Capability) :=
-  match lookupCNode st owner with
-  | some cn => cn.slots.toList
+  match st.getObject? owner with
+  | some o => o.slotCaps
   | none => []
 
 /-- Lifecycle metadata view of object identity typing. -/
@@ -5302,12 +5332,17 @@ theorem ownsSlot_iff
       owner = ref.cnode ∧ ∃ cap, lookupSlotCap st ref = some cap := by
   simp [ownsSlot, ownerOfSlot]
 
-theorem ownedSlots_eq_nil_of_lookupCNode_eq_none
+theorem ownedSlots_eq_nil_of_not_holdsSlots
     (st : SystemState)
     (owner : CSpaceOwner)
-    (hNone : lookupCNode st owner = none) :
+    (hNone : ∀ o, st.objects[owner]? = some o → o.holdsSlots = false) :
     ownedSlots st owner = [] := by
-  simp [ownedSlots, hNone]
+  unfold ownedSlots getObject?
+  cases h : st.objects[owner]? with
+  | none => rfl
+  | some o =>
+    have := hNone o h
+    cases o <;> first | rfl | simp [KernelObject.holdsSlots] at this
 
 end SystemState
 
@@ -5708,7 +5743,8 @@ than one.
 Stated here so register row 85's frame question has one answer per store
 primitive, beside the primitive. -/
 theorem rewriteObject_kindPreservingWrite (st : SystemState) (id : SeLe4n.ObjId)
-    (new : KernelObject) (h : st.rewriteAdmissible id new) (hInv : st.objects.invExt) :
+    (new : KernelObject) (h : st.rewriteAdmissible id new) (hInv : st.objects.invExt)
+    (hSlots : ∀ old, st.objects[id]? = some old → new.tcbSlots = old.tcbSlots) :
     kindPreservingWrite st (st.rewriteObject id new h) := by
   intro k
   by_cases hEq : id = k
@@ -5716,11 +5752,21 @@ theorem rewriteObject_kindPreservingWrite (st : SystemState) (id : SeLe4n.ObjId)
     have hAdm := h
     obtain ⟨pre, hPre, hKind, hNeutral⟩ := hAdm
     refine Or.inr ⟨pre, new, hPre, rewriteObject_objects_self st id new h hInv,
-      hKind.symm, ?_⟩
+      hKind.symm, ?_, hSlots pre hPre⟩
     intro hCn
     rw [hCn] at hNeutral
     exact absurd hNeutral (by simp [KernelObjectType.rewriteNeutral])
   · exact Or.inl (rewriteObject_objects_ne st id k new h hEq hInv)
+
+/-- A rewrite of a thread that keeps its two space slots and their links is a
+`kindPreservingWrite`. -/
+theorem rewriteObject_tcb_kindPreservingWrite {st : SystemState} {tid : SeLe4n.ThreadId}
+    {t : TCB} (h : st.getTcb? tid = some t) (t' : TCB) (hInv : st.objects.invExt)
+    (hS : t'.spaceCells = t.spaceCells ∧ t'.spaceLinks = t.spaceLinks) :
+    kindPreservingWrite st (st.rewriteObject tid.toObjId (.tcb t') (rewriteAdmissible_tcb h t')) :=
+  rewriteObject_kindPreservingWrite _ _ _ _ hInv fun old hOld => by
+    rw [(getTcb?_eq_some_iff st tid t).mp h] at hOld; cases hOld
+    simp only [KernelObject.tcbSlots, hS.1, hS.2]
 
 -- The bookkeeping, unconditionally.
 
@@ -6015,6 +6061,36 @@ theorem storeCNodeWith_objects {st : SystemState} {id : SeLe4n.ObjId} {cn : CNod
   unfold storeObject at hS
   simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hS
   rw [← hS]
+
+/-- **The store of `f` of the TCB at `id`, written in its slot**: the TCB form
+of `storeCNodeWith` (`storeObject_tcb_eq_storeTcbWith`).  The identity when `id`
+holds no TCB. -/
+@[specialize] def storeTcbWith (st : SystemState) (id : SeLe4n.ObjId) (f : TCB → TCB) :
+    SystemState :=
+  match st.objects[id]? with
+  | some (.tcb t) =>
+      if storeLeavesIndexAndTypes st id .tcb then st.modifyObject id (mapTcbObject f)
+      else
+        match storeObject id (.tcb (f t)) st with
+        | .ok ((), st') => st'
+        | .error _ => st
+  | _ => st
+
+theorem storeObject_tcb_eq_storeTcbWith {st : SystemState} {id : SeLe4n.ObjId} {t : TCB}
+    (h : st.objects[id]? = some (.tcb t)) (f : TCB → TCB) :
+    storeObject id (.tcb (f t)) st = .ok ((), st.storeTcbWith id f) := by
+  unfold storeTcbWith
+  rw [h]
+  dsimp only
+  split
+  · next hL =>
+    rw [storeObject_eq_impl]
+    unfold storeObjectImpl modifyObject
+    rw [show (KernelObject.tcb (f t)).objectType = .tcb from rfl, if_pos hL,
+      RHTable.modify_of_get? h]
+    rfl
+  · obtain ⟨st', hS⟩ := storeObject_isOk st id (.tcb (f t))
+    rw [hS]
 
 /-- WS-ZA ZA5.4: the object update a VSpace root update performs. -/
 @[inline] def mapVSpaceRootObject (f : VSpaceRoot → VSpaceRoot) : KernelObject → KernelObject
@@ -6312,11 +6388,16 @@ register-context writers, the fault record, the restart frame, the `.Inactive`
 store — is `updateTcb`, so each reaches both invariant bundles through this
 lemma rather than re-deriving the rewrite's admissibility at its own site. -/
 theorem updateTcb_kindPreservingWrite (st : SystemState) (tid : SeLe4n.ThreadId)
-    (f : TCB → TCB) (hInv : st.objects.invExt) :
+    (f : TCB → TCB) (hInv : st.objects.invExt)
+    (hf : ∀ t, (f t).spaceCells = t.spaceCells ∧ (f t).spaceLinks = t.spaceLinks := by
+      intro _; exact ⟨rfl, rfl⟩) :
     kindPreservingWrite st (st.updateTcb tid f) := by
   unfold updateTcb
   split
-  · exact rewriteObject_kindPreservingWrite _ _ _ _ hInv
+  · next t h _ =>
+    refine rewriteObject_kindPreservingWrite _ _ _ _ hInv fun old hOld => ?_
+    rw [(getTcb?_eq_some_iff st tid t).mp h] at hOld; cases hOld
+    simp only [KernelObject.tcbSlots, (hf t).1, (hf t).2]
   · exact kindPreservingWrite.refl st
 
 theorem updateTcb_preserves_objects_invExt (st : SystemState) (tid : SeLe4n.ThreadId)

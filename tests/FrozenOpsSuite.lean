@@ -49,7 +49,7 @@ private def emptyFrozenState : FrozenSystemState :=
 /-- Helper: construct a test TCB. -/
 private def mkTcb (tid : Nat) (prio : Nat := 0) (dom : Nat := 0) : TCB :=
   { tid := ⟨tid⟩, priority := ⟨prio⟩, domain := ⟨dom⟩,
-    cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 0) }
+    spaceCells := SeLe4n.Model.TCB.spaceCellsOf ⟨0⟩ ⟨0⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 0) }
 
 /-- Helper: construct a FrozenSystemState with given objects. -/
 private def mkFrozenState (objs : List (ObjId × FrozenKernelObject))
@@ -996,8 +996,7 @@ actually called; `fo033` pins exactly that. -/
 threads.  Small enough to read, and containing every kind the recorded
 divergences touched. -/
 private def diffTcb (n : Nat) : TCB :=
-  { tid := ⟨n⟩, priority := ⟨0⟩, domain := ⟨0⟩, cspaceRoot := ⟨64⟩,
-    vspaceRoot := ⟨0⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 0) }
+  { tid := ⟨n⟩, priority := ⟨0⟩, domain := ⟨0⟩, spaceCells := SeLe4n.Model.TCB.spaceCellsOf ⟨64⟩ ⟨0⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 0) }
 
 private def diffEpId    : SeLe4n.ObjId := ⟨60⟩
 private def diffNotifId : SeLe4n.ObjId := ⟨61⟩

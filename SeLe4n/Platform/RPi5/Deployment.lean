@@ -166,8 +166,7 @@ def rpi5InitialThread (id cspace vspace : SeLe4n.ObjId) : TCB :=
   { tid := ⟨id.val⟩
     priority := rpi5InitialThreadPriority
     domain := ⟨0⟩
-    cspaceRoot := cspace
-    vspaceRoot := vspace
+    spaceCells := SeLe4n.Model.TCB.spaceCellsOf cspace vspace
     ipcBuffer := SeLe4n.VAddr.ofNat 0 }
 
 /-- **WS-BP BP7.11**: the core the untrusted domain's thread runs on — core 1,

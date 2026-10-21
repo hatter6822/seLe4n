@@ -271,9 +271,10 @@ def enforcementBoundary : List EnforcementClass :=
   -- **WS-BP BP7.1 (`v0.36.11`)**: `seL4_TCB_SetSpace`'s roots.  Capability-only:
   -- the authority is the TCB capability's write right plus the caller's own
   -- capabilities to the two roots (`resolveSetSpace`: `.grant`+`.write` on the
-  -- CNode, `.write` on the VSpace root), and the write touches one TCB's two
-  -- root fields of a suspended thread — no data crosses a label boundary.
-  , .capabilityOnly "setThreadSpace"
+  -- CNode, `.write` on the VSpace root), and the write touches one suspended
+  -- TCB's two space slots and the derivation links of those slots, their
+  -- sources and neighbours — no data crosses a label boundary.
+  , .capabilityOnly "copyThreadSpaces"
   -- **WS-BP BP7.1 (`v0.36.12`)**: intermediate page tables.  Capability-only:
   -- the authority is the table capability's write right plus, for the install,
   -- the caller's own `.write` capability to the address space — and what moves
@@ -419,7 +420,7 @@ def syscallIdToEnforcementName : SyscallId → String
   | .tcbSetIPCBuffer => "setIPCBuffer"
   | .tcbSetAffinity => "setThreadCpuAffinity"
   | .tcbSetFaultHandler => "setThreadFaultHandlerOp"
-  | .tcbSetSpace => "setThreadSpace"
+  | .tcbSetSpace => "copyThreadSpaces"
   | .pageTableMap => "pageTableMap"
   | .pageTableUnmap => "pageTableUnmap"
   | .yield => "yieldOnCore"

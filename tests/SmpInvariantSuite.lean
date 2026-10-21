@@ -298,7 +298,7 @@ private def tidA : SeLe4n.ThreadId := ThreadId.ofNat 100
 
 private def mkTcb (tid prio : Nat) : TCB :=
   { tid := ThreadId.ofNat tid, priority := ⟨prio⟩, domain := ⟨0⟩,
-    cspaceRoot := ObjId.ofNat 0, vspaceRoot := ObjId.ofNat 0,
+    spaceCells := SeLe4n.Model.TCB.spaceCellsOf (ObjId.ofNat 0) (ObjId.ofNat 0),
     ipcBuffer := SeLe4n.VAddr.ofNat 0 }
 
 /-- Empty boot state. -/

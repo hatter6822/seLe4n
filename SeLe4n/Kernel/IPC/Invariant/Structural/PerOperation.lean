@@ -89,16 +89,14 @@ theorem badgeWellFormed_of_objects_eq
    fun oid cn slot cap badge hLk hS hB => hInv.2 oid cn slot cap badge (by rw [hObj] at hLk; exact hLk) hS hB⟩
 
 /-- `badgeWellFormed` reads no derivation link, so it carries across a step that
-rewrites objects only in their CNodes' links. -/
+rewrites objects only in their slots' links. -/
 theorem badgeWellFormed_of_agreeOffDerivationLinks {st st' : SystemState}
     (h : SystemState.objectsAgreeOffDerivationLinks st' st) (hInv : badgeWellFormed st) :
     badgeWellFormed st' :=
   ⟨fun oid ntfn badge hLk hP =>
       hInv.1 oid ntfn badge (h.obj_back hLk (fun _ e => KernelObject.noConfusion e)) hP,
-   fun oid cn slot cap badge hLk hS hB => by
-      obtain ⟨cn0, hc, hw⟩ := h.cnode_back hLk
-      exact hInv.2 oid cn0 slot cap badge hc
-        (by rw [← CNode.proj_eq_of_withoutLinks_eq (·.lookup slot) hw]; exact hS) hB⟩
+   capabilityBadgesWellFormed_of_slotCap_back hInv.2 fun _ _ hO =>
+      let ⟨o, ho, hs, _⟩ := h.obj_slots_back hO; ⟨o, ho, hs⟩⟩
 
 -- ============================================================================
 -- IPC de-threading D8: cap-transfer `badgeWellFormed` frame.
@@ -137,7 +135,7 @@ theorem cspaceInsertSlot_preserves_badgeWellFormed
             (CNode.slotAddressable_of_lookup_insert _ _ _ _ _ hLk)] at hLk
           cases hLk; exact hCapValid badge' hBdg
         · rw [CNode.lookup_insert_ne cn addr.slot slot' cap hSlotEq hUniq] at hLk
-          exact hCap addr.cnode cn slot' cap' badge' hObj hLk hBdg)
+          exact hCap addr.cnode (.cnode cn) slot' cap' badge' hObj hLk hBdg)
 
 /-- IPC de-threading D8: `ipcTransferSingleCap` preserves `badgeWellFormed` when the
 transferred cap has a valid badge. The CDT-edge step (`addEdge`) leaves objects
@@ -275,14 +273,23 @@ theorem ipcUnwrapCaps_preserves_dualQueueSystemInvariant
   -- Helper: transfer TCB preservation from st to st' for any oid
   have tcbTransfer : ∀ (oid : SeLe4n.ObjId) (tcb : TCB),
       st.objects[oid]? = some (KernelObject.tcb tcb) →
-      st'.objects[oid]? = some (KernelObject.tcb tcb) :=
+      ∃ tcb', st'.objects[oid]? = some (KernelObject.tcb tcb') ∧
+        tcb'.withoutLinks = tcb.withoutLinks :=
     fun oid tcb h => ipcUnwrapCaps_preserves_tcb_objects caps receiverRoot slotBase
       grantRight st st' summary oid tcb h hObjInv hStep
+  -- Helper: pull a post-state TCB back, off its slot links
+  have tcbBack : ∀ (oid : SeLe4n.ObjId) (tcb' : TCB),
+      st'.objects[oid]? = some (KernelObject.tcb tcb') →
+      ∃ tcb, st.objects[oid]? = some (KernelObject.tcb tcb) ∧
+        tcb'.withoutLinks = tcb.withoutLinks :=
+    fun oid tcb' h => ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase
+      grantRight st st' summary oid tcb' hObjInv hStep h
   -- Helper: transfer object identity from st' to st for non-receiverRoot
   have objBack : ∀ oid, oid ≠ receiverRoot → ∀ {o : KernelObject},
-      st'.objects[oid]? = some o → (∀ cn, o ≠ .cnode cn) → st.objects[oid]? = some o :=
-    fun oid hNe => (ipcUnwrapCaps_preserves_objects_ne caps receiverRoot slotBase
-      grantRight st st' summary oid hNe hObjInv hStep).obj_back
+      st'.objects[oid]? = some o → (∀ cn, o ≠ .cnode cn) → (∀ t, o ≠ .tcb t) →
+      st.objects[oid]? = some o :=
+    fun oid hNe {_} h' hn ht => (ipcUnwrapCaps_preserves_objects_ne caps receiverRoot slotBase
+      grantRight st st' summary oid hNe hObjInv hStep).obj_back h' hn ht
   have hLinkFwd := hLink.1
   have hLinkBwd := hLink.2
   refine ⟨?_, ?_, ?_, ?_, ?_⟩
@@ -293,6 +300,7 @@ theorem ipcUnwrapCaps_preserves_dualQueueSystemInvariant
       by_cases hNe : epId = receiverRoot
       · subst hNe; simp [hCn'] at hEpSt'
       · exact objBack epId hNe hEpSt' (fun _ e => KernelObject.noConfusion e)
+          (fun _ e => KernelObject.noConfusion e)
     -- dualQueueEndpointWellFormed in st, reduced via hEpPre
     have hWf := hEpWf epId ep hEpPre
     unfold dualQueueEndpointWellFormed at hWf ⊢
@@ -302,62 +310,60 @@ theorem ipcUnwrapCaps_preserves_dualQueueSystemInvariant
     obtain ⟨⟨hS1, hS2, hS3⟩, ⟨hR1, hR2, hR3⟩⟩ := hWf
     exact ⟨⟨hS1, fun hd hHead => by
         obtain ⟨tcb, hTcb, hPrev, hPPh⟩ := hS2 hd hHead
-        exact ⟨tcb, tcbTransfer _ _ hTcb, hPrev, hPPh⟩,
+        obtain ⟨t', h', hw⟩ := tcbTransfer _ _ hTcb
+        exact ⟨t', h', TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) hPrev,
+          TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) hPPh⟩,
       fun tl hTail => by
         obtain ⟨tcb, hTcb, hNext⟩ := hS3 tl hTail
-        exact ⟨tcb, tcbTransfer _ _ hTcb, hNext⟩⟩,
+        obtain ⟨t', h', hw⟩ := tcbTransfer _ _ hTcb
+        exact ⟨t', h', TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) hNext⟩⟩,
     ⟨hR1, fun hd hHead => by
         obtain ⟨tcb, hTcb, hPrev, hPPh⟩ := hR2 hd hHead
-        exact ⟨tcb, tcbTransfer _ _ hTcb, hPrev, hPPh⟩,
+        obtain ⟨t', h', hw⟩ := tcbTransfer _ _ hTcb
+        exact ⟨t', h', TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) hPrev,
+          TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) hPPh⟩,
       fun tl hTail => by
         obtain ⟨tcb, hTcb, hNext⟩ := hR3 tl hTail
-        exact ⟨tcb, tcbTransfer _ _ hTcb, hNext⟩⟩⟩
+        obtain ⟨t', h', hw⟩ := tcbTransfer _ _ hTcb
+        exact ⟨t', h', TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) hNext⟩⟩⟩
   -- Part 2: TCB queue link integrity (forward + backward)
   · constructor
     · intro a tcbA hTcbA' b hNext
-      have hTcbAPre : st.objects[a.toObjId]? = some (.tcb tcbA) := by
-        by_cases hNe : a.toObjId = receiverRoot
-        · subst hNe; simp [hCn'] at hTcbA'
-        · exact objBack _ hNe hTcbA' (fun _ e => KernelObject.noConfusion e)
-      obtain ⟨tcbB, hTcbB, hPrev⟩ := hLinkFwd a tcbA hTcbAPre b hNext
-      exact ⟨tcbB, tcbTransfer _ _ hTcbB, hPrev⟩
+      obtain ⟨t0, hTcbAPre, hw0⟩ := tcbBack _ _ hTcbA'
+      obtain ⟨tcbB, hTcbB, hPrev⟩ := hLinkFwd a t0 hTcbAPre b
+        (TCB.of_withoutLinks_eq hw0.symm (fun _ => Iff.rfl) hNext)
+      obtain ⟨t', h', hw⟩ := tcbTransfer _ _ hTcbB
+      exact ⟨t', h', TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) hPrev⟩
     · intro b tcbB hTcbB' a hPrev
-      have hTcbBPre : st.objects[b.toObjId]? = some (.tcb tcbB) := by
-        by_cases hNe : b.toObjId = receiverRoot
-        · subst hNe; simp [hCn'] at hTcbB'
-        · exact objBack _ hNe hTcbB' (fun _ e => KernelObject.noConfusion e)
-      obtain ⟨tcbA, hTcbA, hNext⟩ := hLinkBwd b tcbB hTcbBPre a hPrev
-      exact ⟨tcbA, tcbTransfer _ _ hTcbA, hNext⟩
-  -- Part 3: TCB queue chain acyclicity (only CNode at receiverRoot changes, not TCBs)
+      obtain ⟨t0, hTcbBPre, hw0⟩ := tcbBack _ _ hTcbB'
+      obtain ⟨tcbA, hTcbA, hNext⟩ := hLinkBwd b t0 hTcbBPre a
+        (TCB.of_withoutLinks_eq hw0.symm (fun _ => Iff.rfl) hPrev)
+      obtain ⟨t', h', hw⟩ := tcbTransfer _ _ hTcbA
+      exact ⟨t', h', TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) hNext⟩
+  -- Part 3: TCB queue chain acyclicity (no thread's queue link changes)
   · have hTransfer : ∀ a b, QueueNextPath st' a b → QueueNextPath st a b := by
       intro a b hp
       induction hp with
       | single x y tcbX hObj hNext =>
-        have hObjPre : st.objects[x.toObjId]? = some (.tcb tcbX) := by
-          by_cases hNe : x.toObjId = receiverRoot
-          · subst hNe; simp [hCn'] at hObj
-          · exact objBack _ hNe hObj (fun _ e => KernelObject.noConfusion e)
-        exact .single x y tcbX hObjPre hNext
+        obtain ⟨t0, hObjPre, hw⟩ := tcbBack _ _ hObj
+        exact .single x y t0 hObjPre (TCB.of_withoutLinks_eq hw.symm (fun _ => Iff.rfl) hNext)
       | cons x y z tcbX hObj hNext _ ih =>
-        have hObjPre : st.objects[x.toObjId]? = some (.tcb tcbX) := by
-          by_cases hNe : x.toObjId = receiverRoot
-          · subst hNe; simp [hCn'] at hObj
-          · exact objBack _ hNe hObj (fun _ e => KernelObject.noConfusion e)
-        exact .cons x y z tcbX hObjPre hNext ih
+        obtain ⟨t0, hObjPre, hw⟩ := tcbBack _ _ hObj
+        exact .cons x y z t0 hObjPre (TCB.of_withoutLinks_eq hw.symm (fun _ => Iff.rfl) hNext) ih
     intro t hp; exact hAcyclic t (hTransfer t t hp)
   -- Part 4 (**WS-RR RR8.3**): the pairing.  The transfer writes the receiver's
-  -- CSpace root and no TCB, so every post-state TCB is a pre-state TCB.
+  -- CSpace root and slot links, so every post-state TCB is a pre-state TCB off its
+  -- links.
   · intro tid tcb hTcb
-    refine hPP tid tcb ?_
-    by_cases hNe : tid.toObjId = receiverRoot
-    · subst hNe; simp [hCn'] at hTcb
-    · exact objBack _ hNe hTcb (fun _ e => KernelObject.noConfusion e)
+    obtain ⟨t0, h0, hw⟩ := tcbBack _ _ hTcb
+    exact TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) (hPP tid t0 h0)
   -- Part 5 (**PR #897 review**): the fifth conjunct.  The transfer writes the
   -- receiver's CSpace root, so no endpoint object moves.
   · refine endpointQueueHeadDisjoint_of_endpointBackward (fun epId ep hEp => ?_) hHD
     by_cases hNe : epId = receiverRoot
     · subst hNe; simp [hCn'] at hEp
     · exact objBack _ hNe hEp (fun _ e => KernelObject.noConfusion e)
+        (fun _ e => KernelObject.noConfusion e)
 
 /-- WS-RR RR2.14: a Reply object present after a capability transfer was present
 before it. The transfer writes the receiver's CSpace root and nothing else
@@ -385,8 +391,9 @@ theorem ipcUnwrapCaps_reply_backward
       (fun _ e => KernelObject.noConfusion e)
 
 /-- WS-RR RR2.14: the capability transfer preserves
-`blockedThreadsPendingMessageConsistent` — it writes no TCB, so every post-state
-TCB is its pre-state self (`ipcUnwrapCaps_tcb_backward`). -/
+`blockedThreadsPendingMessageConsistent` — it writes no thread field but slot
+links, so every post-state TCB is its pre-state self off them
+(`ipcUnwrapCaps_tcb_backward`). -/
 theorem ipcUnwrapCaps_preserves_blockedThreadsPendingMessageConsistent
     (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
     (slotBase : SeLe4n.Slot) (grantRight : Bool)
@@ -397,8 +404,9 @@ theorem ipcUnwrapCaps_preserves_blockedThreadsPendingMessageConsistent
              = .ok (summary, st')) :
     blockedThreadsPendingMessageConsistent st' := by
   intro tid tcb hTcb'
-  exact hInv tid tcb (ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight
-    st st' summary tid.toObjId tcb hObjInv hStep hTcb')
+  obtain ⟨t0, h0, hw⟩ := ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight
+    st st' summary tid.toObjId tcb hObjInv hStep hTcb'
+  exact TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) (hInv tid t0 h0)
 
 /-- WS-RR RR2.14: the capability transfer preserves the **reciprocal** half of
 `replyCallerLinkage`. Neither direction can break: a post-state TCB is its
@@ -415,17 +423,20 @@ theorem ipcUnwrapCaps_preserves_replyCallerLinkageReciprocal
     replyCallerLinkageReciprocal st' := by
   refine ⟨?_, ?_⟩
   · intro tid tcb rid hTcb' hRO
-    obtain ⟨r, hr, hrc⟩ := hInv.1 tid tcb rid
-      (ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight
-        st st' summary tid.toObjId tcb hObjInv hStep hTcb') hRO
+    obtain ⟨t0, h0, hw⟩ := ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight
+      st st' summary tid.toObjId tcb hObjInv hStep hTcb'
+    obtain ⟨r, hr, hrc⟩ := hInv.1 tid t0 rid h0
+      (TCB.of_withoutLinks_eq hw.symm (fun _ => Iff.rfl) hRO)
     exact ⟨r, ipcUnwrapCaps_preserves_reply_objects caps receiverRoot slotBase
       grantRight st st' summary rid.toObjId r hr hObjInv hStep, hrc⟩
   · intro rid r tid hr' hrc
     obtain ⟨tcb, hTcb, hRO, hBlk⟩ := hInv.2 rid r tid
       (ipcUnwrapCaps_reply_backward caps receiverRoot slotBase grantRight
         st st' summary rid.toObjId r hObjInv hStep hr') hrc
-    exact ⟨tcb, ipcUnwrapCaps_preserves_tcb_objects caps receiverRoot slotBase
-      grantRight st st' summary tid.toObjId tcb hTcb hObjInv hStep, hRO, hBlk⟩
+    obtain ⟨t', h', hw⟩ := ipcUnwrapCaps_preserves_tcb_objects caps receiverRoot slotBase
+      grantRight st st' summary tid.toObjId tcb hTcb hObjInv hStep
+    exact ⟨t', h', TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) hRO,
+      TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) hBlk⟩
 
 /-- M3-E4: endpointSendDualWithCaps preserves dualQueueSystemInvariant.
 Composes endpointSendDual base preservation with ipcUnwrapCaps preservation.
