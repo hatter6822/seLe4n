@@ -104,9 +104,9 @@
 [STD-011] domain switch active domain: 1
 [STD-012] domain switch time remaining: 5
 [UMT-002] retype-from-untyped success object kind: some (SeLe4n.Model.KernelObjectType.endpoint)
-[UMT-003] untyped watermark after retype: 64
+[UMT-003] untyped free index after retype: 64
 [UMT-004] untyped children count: 1
-[UMT-007] untyped watermark after second retype: 1088
+[UMT-007] untyped free index after second retype: 1088
 [UMT-009] retype-from-untyped type-mismatch branch: SeLe4n.Model.KernelError.untypedTypeMismatch
 [UMT-011] retype-from-untyped region-exhausted branch: SeLe4n.Model.KernelError.untypedRegionExhausted
 [UMT-013] retype-from-untyped not-found branch: SeLe4n.Model.KernelError.objectNotFound
