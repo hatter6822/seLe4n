@@ -2165,8 +2165,10 @@ each slot's capability over the record the slot already holds. -/
 capability written over the record slot `i` already holds
 (`Capability.overwriteObject`): the record is taken out of the vector before it
 is matched, so nothing else holds it and it is written in place, as a CNode's
-insert writes its slot's spare (`CNode.insertCellWith`). -/
-@[inline] def TCB.overwriteSpaceCell (cells : Vector (Option Capability) 2) (i : Nat) (h : i < 2)
+insert writes its slot's spare (`CNode.insertCellWith`).  Out of line, so the
+thread record it is written into is rebuilt with no join point between its
+match and its rebuild, and so in place. -/
+@[noinline] def TCB.overwriteSpaceCell (cells : Vector (Option Capability) 2) (i : Nat) (h : i < 2)
     (id : SeLe4n.ObjId) (rights : AccessRightSet) : Vector (Option Capability) 2 :=
   if id.isReserved then cells.set i none h
   else

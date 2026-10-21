@@ -47,6 +47,15 @@ namespace SeLe4n.Kernel
 
 open SeLe4n.Model
 
+/-- **The thread's two space slots written** (`TCB.withSpaceCaps`) in its store
+slot.  One call, out of line, so the update is compiled into it
+(`updateTcbImpl` specialised) and no closure carries the two roots to the
+write: on an exclusively owned state the write allocates nothing.  Reducible,
+so it reads as the `updateTcb` it is. -/
+@[reducible, noinline] def writeThreadSpaces (st : SystemState) (tid : SeLe4n.ThreadId)
+    (cspaceRoot vspaceRoot : SeLe4n.ObjId) : SystemState :=
+  st.updateTcb tid (fun t => t.withSpaceCaps cspaceRoot vspaceRoot)
+
 /-- **WS-BP BP7.1 (`v0.36.11`): set a suspended thread's CSpace and VSpace roots**
 — seL4's `TCB_SetSpace`.  Refused, committing nothing, when the thread is not a
 stored TCB (`.objectNotFound`), is not suspended (`.illegalState`), or either
@@ -77,8 +86,7 @@ def setThreadSpaceImpl (st : SystemState) (vtid : SeLe4n.ValidThreadId)
       .error .illegalState
     else if (st.getCNode? cspaceRoot).isNone then .error .invalidCapability
     else if (st.getVSpaceRoot? vspaceRoot).isNone then .error .invalidCapability
-    else .ok (st.updateTcb vtid.val
-      (fun t => (t.withSpaceCaps cspaceRoot vspaceRoot)))
+    else .ok (writeThreadSpaces st vtid.val cspaceRoot vspaceRoot)
 
 @[csimp] theorem setThreadSpace_eq_impl : @setThreadSpace = @setThreadSpaceImpl := by
   funext st vtid cspaceRoot vspaceRoot
