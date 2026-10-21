@@ -1534,12 +1534,14 @@ sentinel when the slot is empty (an unconfigured thread). -/
 /-- The rights of the capability a CSpace root slot holds when written from a
 root's id: read, write and grant, the rights `resolveSetSpace` asks of the
 capability it installs (`.grant` and `.write`) together with reading the
-CNode's slots. -/
-@[inline] def TCB.cspaceRootRights : AccessRightSet := AccessRightSet.ofList [.read, .write, .grant]
+CNode's slots.  Not inlined: a constant, built once, so a write of the slot
+builds no rights list. -/
+def TCB.cspaceRootRights : AccessRightSet := AccessRightSet.ofList [.read, .write, .grant]
 
 /-- The rights of the capability a VSpace root slot holds when written from a
-root's id: read and write, `resolveSetSpace` asking `.write` of it. -/
-@[inline] def TCB.vspaceRootRights : AccessRightSet := AccessRightSet.ofList [.read, .write]
+root's id: read and write, `resolveSetSpace` asking `.write` of it.  A constant,
+as `cspaceRootRights` is. -/
+def TCB.vspaceRootRights : AccessRightSet := AccessRightSet.ofList [.read, .write]
 
 /-- The object a space slot's capability names; the sentinel when the slot is
 empty or its capability names no object. -/
