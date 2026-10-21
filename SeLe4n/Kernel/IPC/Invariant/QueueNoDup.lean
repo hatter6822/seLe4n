@@ -514,47 +514,45 @@ theorem endpointReply_preserves_endpointQueueNoDup
   -- Message bounds checks come first in endpointReply
   split at hStep
   · simp at hStep
-  · split at hStep
-    · simp at hStep
-    · cases hLookup : lookupTcb st target with
-      | none => simp [hLookup] at hStep
-      | some tcb =>
-        simp only [hLookup] at hStep
-        cases hIpc : tcb.ipcState with
-        | blockedOnReply epId replyTarget =>
-          simp only [hIpc] at hStep
-          -- AK1-B (I-H02): Fail-closed on replyTarget = none
-          cases replyTarget with
-          | none => simp at hStep
-          | some expected =>
-            simp only at hStep
-            split at hStep
-            · -- authorized path
-              cases hMsg : storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) with
-              | error e => simp [hMsg] at hStep
-              | ok st1 =>
-                simp only [hMsg] at hStep
-                have hMid : endpointQueueNoDup (ensureRunnable st1 target) :=
-                  ensureRunnable_preserves_endpointQueueNoDup _ _ <|
-                    storeTcbIpcStateAndMessage_fromTcb_preserves_endpointQueueNoDup
-                      st st1 target tcb .ready (some msg) hInv hObjInv hLookup hMsg
-                -- PR #827 #3 fold: peel the atomic consume (no-op when unlinked).
-                have hObjInvMid : (ensureRunnable st1 target).objects.invExt := by
-                  apply ensureRunnable_objects_invExt
-                  have hMsg' := hMsg
-                  rw [storeTcbIpcStateAndMessage_fromTcb_eq hLookup] at hMsg'
-                  exact storeTcbIpcStateAndMessage_preserves_objects_invExt
-                    st st1 target .ready (some msg) hObjInv hMsg'
-                cases hRO : tcb.replyObject with
-                | none =>
-                  simp only [hRO, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
-                  rw [← hStep]; exact hMid
-                | some rid =>
-                  simp only [hRO] at hStep
-                  exact removeCallerReplyFrame_preserves_endpointQueueNoDup _ _ target rid
-                    hObjInvMid hMid hStep
-            · simp at hStep
-        | _ => simp [hIpc] at hStep
+  · cases hLookup : lookupTcb st target with
+    | none => simp [hLookup] at hStep
+    | some tcb =>
+      simp only [hLookup] at hStep
+      cases hIpc : tcb.ipcState with
+      | blockedOnReply epId replyTarget =>
+        simp only [hIpc] at hStep
+        -- AK1-B (I-H02): Fail-closed on replyTarget = none
+        cases replyTarget with
+        | none => simp at hStep
+        | some expected =>
+          simp only at hStep
+          split at hStep
+          · -- authorized path
+            cases hMsg : storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) with
+            | error e => simp [hMsg] at hStep
+            | ok st1 =>
+              simp only [hMsg] at hStep
+              have hMid : endpointQueueNoDup (ensureRunnable st1 target) :=
+                ensureRunnable_preserves_endpointQueueNoDup _ _ <|
+                  storeTcbIpcStateAndMessage_fromTcb_preserves_endpointQueueNoDup
+                    st st1 target tcb .ready (some msg) hInv hObjInv hLookup hMsg
+              -- PR #827 #3 fold: peel the atomic consume (no-op when unlinked).
+              have hObjInvMid : (ensureRunnable st1 target).objects.invExt := by
+                apply ensureRunnable_objects_invExt
+                have hMsg' := hMsg
+                rw [storeTcbIpcStateAndMessage_fromTcb_eq hLookup] at hMsg'
+                exact storeTcbIpcStateAndMessage_preserves_objects_invExt
+                  st st1 target .ready (some msg) hObjInv hMsg'
+              cases hRO : tcb.replyObject with
+              | none =>
+                simp only [hRO, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+                rw [← hStep]; exact hMid
+              | some rid =>
+                simp only [hRO] at hStep
+                exact removeCallerReplyFrame_preserves_endpointQueueNoDup _ _ target rid
+                  hObjInvMid hMid hStep
+          · simp at hStep
+      | _ => simp [hIpc] at hStep
 
 -- ============================================================================
 -- Section 4: Queue operation proofs

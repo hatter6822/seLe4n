@@ -237,7 +237,7 @@ on this path, never shared with the frame's reads. -/
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
     (badge : Option SeLe4n.Badge) (granted : Bool) : SystemState :=
   X.mapTcbInPlace r (holdMessage
-    { registers := Architecture.regMessageBody layout rf len, caps := #[], badge := badge,
+    { registers := Architecture.regMessageBody layout rf len, badge := badge,
       capsGranted := granted })
 
 /-- **The call rendezvous, delivered**: the receiver woken without the message,
@@ -264,7 +264,7 @@ theorem stageWokenDelivery_performCallRendezvous (st : SystemState) (endpointId 
     (hSz : Architecture.regMessageLength layout len ≤ 4) :
     Architecture.stageWokenDelivery
         (performCallRendezvous st endpointId caller r next rid
-          { registers := Architecture.regMessageBody layout rf len, caps := #[],
+          { registers := Architecture.regMessageBody layout rf len,
             badge := SeLe4n.Badge.opt badgeWord badged, capsGranted := granted } core)
         (some r) 0 =
       performCallDelivered st endpointId caller r (ThreadId.optCode next) rid layout rf len
@@ -360,7 +360,7 @@ theorem storeReplyRendezvousReady_preserves_donationChainWellFormed (st : System
     (hChain : donationChainWellFormed st) :
     donationChainWellFormed (storeReplyRendezvousReady st c server rid) := by
   have h := storeReplyRendezvous_preserves_donationChainWellFormed st c server ct ep rid
-    { registers := #[] } core (by simp) (by simp) hT hIpc hRO hG hObjInv hChain
+    { registers := #[] } core (by simp) hT hIpc hRO hG hObjInv hChain
   rw [storeReplyRendezvous_eq_hold _ _ _ _ _ hNo] at h
   exact donationChainWellFormed_of_frame (donationChainFrame_of_mapTcbInPlace_rev _ _ _) h
 
@@ -386,7 +386,7 @@ theorem performReplyRendezvous_eq_delivered (st : SystemState) (c server : SeLe4
     (core : Concurrency.CoreId) (hNo : st.objects.noResizeDue)
     (hSz : Architecture.regMessageLength layout len ≤ 4) :
     performReplyRendezvous st c server rid
-        { registers := Architecture.regMessageBody layout rf len, caps := #[],
+        { registers := Architecture.regMessageBody layout rf len,
           badge := SeLe4n.Badge.opt badgeWord badged }
         core =
       performReplyDelivered st c server rid layout rf len badgeWord badged core := by
@@ -420,7 +420,7 @@ on this path and never hoisted ahead of the length test (WS-ZA ZA4.7). -/
     (core : Concurrency.CoreId) : SystemState :=
   Architecture.stageWokenDelivery
     (performCallRendezvous st endpointId caller r (ThreadId.ofOptCode nextCode) rid
-      { registers := Architecture.regMessageBody layout rf len, caps := #[], badge := badge,
+      { registers := Architecture.regMessageBody layout rf len, badge := badge,
         capsGranted := granted } core)
     (some r) 0
 
@@ -448,7 +448,7 @@ theorem callRendezvousDelivered_eq (st : SystemState) (endpointId : SeLe4n.ObjId
         badged granted core =
       Architecture.stageWokenDelivery
         (performCallRendezvous st endpointId caller r rt.queueNext rid
-          { registers := Architecture.regMessageBody layout rf len, caps := #[],
+          { registers := Architecture.regMessageBody layout rf len,
             badge := SeLe4n.Badge.opt badgeWord badged, capsGranted := granted } core)
         (some r) 0 := by
   unfold callRendezvousDelivered
@@ -474,7 +474,7 @@ delivered straight into the caller's registers (`performReplyDelivered`). -/
   if Architecture.regMessageLength layout len ≤ 4 then
     performReplyDelivered st c server rid layout rf len badgeWord badged core
   else performReplyRendezvous st c server rid
-    { registers := Architecture.regMessageBody layout rf len, caps := #[],
+    { registers := Architecture.regMessageBody layout rf len,
       badge := SeLe4n.Badge.opt badgeWord badged } core
 
 theorem replyRendezvousDelivered_eq (st : SystemState) (c server : SeLe4n.ThreadId) (ct : TCB)
@@ -484,7 +484,7 @@ theorem replyRendezvousDelivered_eq (st : SystemState) (c server : SeLe4n.Thread
     (core : Concurrency.CoreId) (hG : replyWakesInPlace st c ct rid = true) :
     replyRendezvousDelivered st c server rid layout rf len badgeWord badged core =
       performReplyRendezvous st c server rid
-        { registers := Architecture.regMessageBody layout rf len, caps := #[],
+        { registers := Architecture.regMessageBody layout rf len,
           badge := SeLe4n.Badge.opt badgeWord badged }
         core := by
   unfold replyRendezvousDelivered

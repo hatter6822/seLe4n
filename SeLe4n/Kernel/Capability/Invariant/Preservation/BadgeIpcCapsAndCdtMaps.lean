@@ -292,7 +292,7 @@ when the endpoint has Grant right (grantRight = true). Delegates to
 `ipcUnwrapCapsLoop_preserves_capabilityInvariantBundle` after unfolding
 the entry point. -/
 theorem ipcUnwrapCaps_preserves_capabilityInvariantBundle_grant
-    (st st' : SystemState) (msg : IpcMessage)
+    (st st' : SystemState) (caps : Array TransferCap)
     (receiverRoot : SeLe4n.ObjId)
     (slotBase : SeLe4n.Slot)
     (summary : CapTransferSummary)
@@ -300,13 +300,13 @@ theorem ipcUnwrapCaps_preserves_capabilityInvariantBundle_grant
     (hCapBacked : ∀ (stI : SystemState) (cap : Capability),
         capabilityInvariantBundle stI →
         ∀ rid, cap.target = .replyCap rid → stI.getReply? rid ≠ none)
-    (hStep : ipcUnwrapCaps msg receiverRoot slotBase true st
+    (hStep : ipcUnwrapCaps caps receiverRoot slotBase true st
              = .ok (summary, st')) :
     capabilityInvariantBundle st' := by
   simp [ipcUnwrapCaps] at hStep
   exact ipcUnwrapCapsLoop_preserves_capabilityInvariantBundle
-    msg.caps receiverRoot
-    0 slotBase #[] msg.caps.size
+    caps receiverRoot
+    0 slotBase #[] caps.size
     st st' summary hInv hCapBacked hStep
 
 /-- M3-D3 / V3-E: ipcUnwrapCaps preserves capabilityInvariantBundle when the
@@ -316,12 +316,12 @@ See also: `ipcUnwrapCaps_preserves_capabilityInvariantBundle_grant` for the
 Grant=true case, and `ipcUnwrapCaps_preserves_capabilityInvariantBundle` for
 the unified theorem. -/
 theorem ipcUnwrapCaps_preserves_capabilityInvariantBundle_noGrant
-    (st st' : SystemState) (msg : IpcMessage)
+    (st st' : SystemState) (caps : Array TransferCap)
     (receiverRoot : SeLe4n.ObjId)
     (slotBase : SeLe4n.Slot)
     (summary : CapTransferSummary)
     (hInv : capabilityInvariantBundle st)
-    (hStep : ipcUnwrapCaps msg receiverRoot slotBase false st
+    (hStep : ipcUnwrapCaps caps receiverRoot slotBase false st
              = .ok (summary, st')) :
     capabilityInvariantBundle st' := by
   simp [ipcUnwrapCaps] at hStep
@@ -339,7 +339,7 @@ the IPC rendezvous composition chain.
 The `hCapBacked` hypothesis is vacuous when Grant=false (no
 `ipcTransferSingleCap` calls occur). -/
 theorem ipcUnwrapCaps_preserves_capabilityInvariantBundle
-    (st st' : SystemState) (msg : IpcMessage)
+    (st st' : SystemState) (caps : Array TransferCap)
     (receiverRoot : SeLe4n.ObjId)
     (slotBase : SeLe4n.Slot)
     (endpointGrantRight : Bool)
@@ -348,16 +348,16 @@ theorem ipcUnwrapCaps_preserves_capabilityInvariantBundle
     (hCapBacked : ∀ (stI : SystemState) (cap : Capability),
         capabilityInvariantBundle stI →
         ∀ rid, cap.target = .replyCap rid → stI.getReply? rid ≠ none)
-    (hStep : ipcUnwrapCaps msg receiverRoot slotBase
+    (hStep : ipcUnwrapCaps caps receiverRoot slotBase
              endpointGrantRight st = .ok (summary, st')) :
     capabilityInvariantBundle st' := by
   cases endpointGrantRight with
   | false =>
     exact ipcUnwrapCaps_preserves_capabilityInvariantBundle_noGrant
-      st st' msg receiverRoot slotBase summary hInv hStep
+      st st' caps receiverRoot slotBase summary hInv hStep
   | true =>
     exact ipcUnwrapCaps_preserves_capabilityInvariantBundle_grant
-      st st' msg receiverRoot slotBase summary
+      st st' caps receiverRoot slotBase summary
       hInv hCapBacked hStep
 
 -- ============================================================================

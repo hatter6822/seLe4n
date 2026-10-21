@@ -846,18 +846,6 @@ private def runResetChecks : IO Unit := do
         (mappedPaddr stRev carveAsid (SeLe4n.Testing.fixtureUserVAddr 0x60000) == none)
       assertBool "and it leaves the mapping of a page no destroyed capability recorded alone"
         (mappedPaddr stRev carveAsid (SeLe4n.Testing.fixtureUserVAddr 0x70000) == some carveDevBase)
-      let inFlight : TCB :=
-        { tid := ⟨990⟩, priority := ⟨10⟩, domain := ⟨0⟩, cspaceRoot := carveCn,
-          vspaceRoot := carveVsp, ipcBuffer := SeLe4n.VAddr.ofNat 8192,
-          pendingMessage := some
-            { registers := #[],
-              caps := #[TransferCap.fromSlot (frameCapability (SeLe4n.ObjId.ofNat 950))
-                { cnode := carveCn, slot := SeLe4n.Slot.ofNat 0 }] } }
-      match storeObject (SeLe4n.ObjId.ofNat 990) (.tcb inFlight) stRev with
-      | .error _ => assertBool "the in-flight fixture stores" false
-      | .ok ((), stFly) =>
-        assertBool "a capability parked in a blocked sender's message keeps the reset refused"
-          (isErr .revocationRequired (dispatchSyscallAsCurrent (decodeReset slotUtRetype) carveOwner Concurrency.bootCoreId stFly))
       -- A thread wrote through its mapping before the revocation: the next
       -- owner of the page must not see it.
       let stDirty := { stRev with
@@ -1683,14 +1671,6 @@ private def withStraySlot (st : SystemState) (rootId tableId : Nat) : SystemStat
 private def slotsOf (st : SystemState) (oid : Nat) : Option (List (Nat × Nat)) :=
   (rootAt st oid).map (fun r => r.tables.map (fun s => (s.level, s.table.toNat)))
 
-/-- The retired orphan test (`v0.36.8`–`v0.36.37`): a table counted as referenced
-while ANY capability named it, a copy parked in a blocked sender's message
-included.  Kept here, and nowhere else, so the witness can show the difference. -/
-private def retiredAllReferencesOrphaned (pre st : SystemState) (oid : Nat) : Bool :=
-  let id := SeLe4n.ObjId.ofNat oid
-  Architecture.pageTableInstallLive st id && !carvedSubtreeUnreferenced pre [id] &&
-    carvedSubtreeUnreferenced st [id]
-
 private def runPageTableChecks : IO Unit := do
   IO.println "-- §5k intermediate page tables: `.pageTableMap` / `.pageTableUnmap` (WS-BP BP7.1)"
   let st := tableScenario
@@ -1820,31 +1800,6 @@ private def runPageTableChecks : IO Unit := do
              | .ok ((), r) => slotsOf r 980 == some [(1, 984)] &&
                  (installOf r 984).map (·.level) == some 1
              | .error _ => false)
-          -- `v0.36.38`: a copy parked in a blocked sender's message does not keep
-          -- the table installed — a cancelled send drops it without finalising
-          -- anything, which would leave the table installed with no capability
-          -- anywhere.  The detach is decided on CNode slots.
-          let parked : TCB :=
-            { tid := ⟨990⟩, priority := ⟨10⟩, domain := ⟨0⟩, cspaceRoot := carveCn,
-              vspaceRoot := carveVsp, ipcBuffer := SeLe4n.VAddr.ofNat 8192,
-              pendingMessage := some
-                { registers := #[],
-                  caps := #[TransferCap.fromSlot (pageTableCapability (SeLe4n.ObjId.ofNat 983))
-                    { cnode := carveCn, slot := SeLe4n.Slot.ofNat 0 }] } }
-          match storeObject (SeLe4n.ObjId.ofNat 990) (.tcb parked) st3 with
-          | .error _ => assertBool "the parked-copy fixture stores" false
-          | .ok ((), stPark) =>
-            match dispatchSyscallAsCurrent (decodeDelete 15) carveOwner Concurrency.bootCoreId stPark with
-            | .error e => assertBool s!"deleting the table's last CNode capability succeeds (got {repr e})" false
-            | .ok ((), sPark) => do
-              assertBool "a copy parked in a message does not keep the table installed"
-                (slotsOf sPark 980 == some [] &&
-                 !Architecture.pageTableInstallLive sPark (SeLe4n.ObjId.ofNat 983))
-              assertBool "RETIRED: the all-references reading does not count it orphaned, the live one does"
-                (match cspaceDeleteSlot at15 stPark with
-                 | .ok ((), r) => !retiredAllReferencesOrphaned stPark r 983 &&
-                     (pageTablesOrphaned (slotPageTables stPark at15) r).any (·.1 == SeLe4n.ObjId.ofNat 983)
-                 | .error _ => false)
           assertBool "a CNode holding an installed table's capability is not retyped in place"
             (match st3.objects[carveCn]? with
              | some (.cnode cn) => Architecture.cnodeHoldsInstalledPageTableCap st3 cn

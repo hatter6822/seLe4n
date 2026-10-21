@@ -1541,11 +1541,11 @@ CNodes and the CDT, and its own TCB frame holds at *every* key in both direction
 (`ipcUnwrapCaps_preserves_tcb_objects` / `_tcb_backward`), so the whole
 `getTcb?` projection is fixed -- a strictly stronger fact than the affinity this
 needs, which is why no per-field argument appears here. -/
-theorem ipcUnwrapCaps_determineTargetCore_eq (msg : IpcMessage)
+theorem ipcUnwrapCaps_determineTargetCore_eq (caps : Array TransferCap)
     (receiverRoot : SeLe4n.ObjId) (slotBase : SeLe4n.Slot) (grantRight : Bool)
     (st st' : SystemState) (summary : CapTransferSummary) (x : SeLe4n.ThreadId)
     (hObjInv : st.objects.invExt)
-    (hStep : ipcUnwrapCaps msg receiverRoot slotBase grantRight st = .ok (summary, st')) :
+    (hStep : ipcUnwrapCaps caps receiverRoot slotBase grantRight st = .ok (summary, st')) :
     determineTargetCore st' x = determineTargetCore st x := by
   have hEq : st'.getTcb? x = st.getTcb? x := by
     cases hT' : st'.getTcb? x with
@@ -1553,12 +1553,12 @@ theorem ipcUnwrapCaps_determineTargetCore_eq (msg : IpcMessage)
         cases hT : st.getTcb? x with
         | none => rfl
         | some tcb =>
-            have hFwd := ipcUnwrapCaps_preserves_tcb_objects msg receiverRoot slotBase
+            have hFwd := ipcUnwrapCaps_preserves_tcb_objects caps receiverRoot slotBase
               grantRight st st' summary x.toObjId tcb
               ((SystemState.getTcb?_eq_some_iff st x tcb).mp hT) hObjInv hStep
             simp [(SystemState.getTcb?_eq_some_iff st' x tcb).mpr hFwd] at hT'
     | some tcb' =>
-        have hBwd := ipcUnwrapCaps_tcb_backward msg receiverRoot slotBase grantRight
+        have hBwd := ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight
           st st' summary x.toObjId tcb' hObjInv hStep
           ((SystemState.getTcb?_eq_some_iff st' x tcb').mp hT')
         rw [(SystemState.getTcb?_eq_some_iff st x tcb').mpr hBwd]
@@ -1880,11 +1880,11 @@ and the CDT, and no SchedContext.  At the receiver's root a SchedContext already
 is carried forward (`ipcUnwrapCaps_preserves_schedContext_objects`) and anything else
 either survives or becomes a CNode (`ipcUnwrapCaps_objects_at_root_orig_or_cnode`);
 every other key keeps its object, a CNode's derivation links aside. -/
-theorem ipcUnwrapCaps_getSchedContext?_eq (msg : IpcMessage)
+theorem ipcUnwrapCaps_getSchedContext?_eq (caps : Array TransferCap)
     (receiverRoot : SeLe4n.ObjId) (slotBase : SeLe4n.Slot) (grantRight : Bool)
     (st st' : SystemState) (summary : CapTransferSummary) (scId : SeLe4n.SchedContextId)
     (hObjInv : st.objects.invExt)
-    (hStep : ipcUnwrapCaps msg receiverRoot slotBase grantRight st = .ok (summary, st')) :
+    (hStep : ipcUnwrapCaps caps receiverRoot slotBase grantRight st = .ok (summary, st')) :
     st'.getSchedContext? scId = st.getSchedContext? scId := by
   unfold SystemState.getSchedContext?
   by_cases hRoot : scId.toObjId = receiverRoot
@@ -1892,21 +1892,21 @@ theorem ipcUnwrapCaps_getSchedContext?_eq (msg : IpcMessage)
     | some obj =>
       cases obj with
       | schedContext sc =>
-        rw [ipcUnwrapCaps_preserves_schedContext_objects msg receiverRoot slotBase grantRight
+        rw [ipcUnwrapCaps_preserves_schedContext_objects caps receiverRoot slotBase grantRight
           st st' summary scId.toObjId sc hPre hObjInv hStep]
       | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | reply _ | endpoint _ | frame _ | pageTable _ =>
         rw [hRoot] at hPre ⊢
-        rcases ipcUnwrapCaps_objects_at_root_orig_or_cnode msg receiverRoot slotBase grantRight
+        rcases ipcUnwrapCaps_objects_at_root_orig_or_cnode caps receiverRoot slotBase grantRight
           st st' summary hObjInv hStep with hOrig | ⟨cn', hCn⟩
         · rw [hOrig, hPre]
         · rw [hCn]
     | none =>
       rw [hRoot] at hPre ⊢
-      rcases ipcUnwrapCaps_objects_at_root_orig_or_cnode msg receiverRoot slotBase grantRight
+      rcases ipcUnwrapCaps_objects_at_root_orig_or_cnode caps receiverRoot slotBase grantRight
         st st' summary hObjInv hStep with hOrig | ⟨cn', hCn⟩
       · rw [hOrig, hPre]
       · rw [hCn]
-  · rcases ipcUnwrapCaps_preserves_objects_ne msg receiverRoot slotBase grantRight st st' summary
+  · rcases ipcUnwrapCaps_preserves_objects_ne caps receiverRoot slotBase grantRight st st' summary
       scId.toObjId hRoot hObjInv hStep with e | ⟨_, _, ha, hb, _⟩
     · rw [e]
     · rw [ha, hb]

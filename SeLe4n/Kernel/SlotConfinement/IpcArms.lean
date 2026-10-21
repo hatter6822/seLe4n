@@ -39,16 +39,16 @@ open SeLe4n.Kernel.PriorityInheritance
 /-- SM8.B.2: IPC capability transfer is per-core silent. It rewrites the
 receiver's CNode and the CDT, never a run queue and never a register bank, so it
 contributes nothing to the cross-core `.call`'s write set. -/
-theorem ipcUnwrapCaps_confinedToCores (msg : IpcMessage)
+theorem ipcUnwrapCaps_confinedToCores (caps : Array TransferCap)
     (receiverRoot : SeLe4n.ObjId) (slotBase : SeLe4n.Slot) (grantRight : Bool)
     (st st' : SystemState) (summary : CapTransferSummary)
-    (hStep : ipcUnwrapCaps msg receiverRoot slotBase grantRight st
+    (hStep : ipcUnwrapCaps caps receiverRoot slotBase grantRight st
              = .ok (summary, st')) :
     observableSlotsConfinedToCores st st' [] :=
   observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
-    (ipcUnwrapCaps_preserves_scheduler msg receiverRoot slotBase grantRight
+    (ipcUnwrapCaps_preserves_scheduler caps receiverRoot slotBase grantRight
       st st' summary hStep)
-    (ipcUnwrapCaps_preserves_machine msg receiverRoot slotBase grantRight
+    (ipcUnwrapCaps_preserves_machine caps receiverRoot slotBase grantRight
       st st' summary hStep)
 
 -- **WS-RR RR8.12 Cut C3a (`v0.35.163`)**: `endpointCallWithCapsOnCore_scheduler_eq`

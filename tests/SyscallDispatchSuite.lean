@@ -1902,7 +1902,7 @@ private def sd052_endpointReplyRecvOnCore : IO Unit := do
       |>.withRunnable [server]
       |>.build)
   let msg : IpcMessage :=
-    { registers := #[SeLe4n.RegValue.ofNat 99], caps := #[], badge := Badge.ofNatMasked 0 }
+    { registers := #[SeLe4n.RegValue.ofNat 99], badge := Badge.ofNatMasked 0 }
   match SeLe4n.Kernel.endpointReplyRecvOnCore epId server rid clientA msg (SeLe4n.ObjId.ofNat 0)
       (SeLe4n.Slot.ofNat 0) bootCoreId st with
   | .ok (_, st') =>
@@ -1976,7 +1976,7 @@ private def sd052b_replyRecv_donation_switch : IO Unit := do
   | (_, .error _) => failLine "sd052b" "clientB Call should enqueue (blockedOnCall)"
   | (st1, .ok _) =>
       let msg : IpcMessage :=
-        { registers := #[SeLe4n.RegValue.ofNat 99], caps := #[], badge := Badge.ofNatMasked 0 }
+        { registers := #[SeLe4n.RegValue.ofNat 99], badge := Badge.ofNatMasked 0 }
       match SeLe4n.Kernel.endpointReplyRecvOnCore epId server rid clientA msg (SeLe4n.ObjId.ofNat 0)
           (SeLe4n.Slot.ofNat 0) bootCoreId st1 with
       | .error _ => failLine "sd052b" "endpointReplyRecvOnCore should succeed"
@@ -2032,7 +2032,7 @@ private def sd052c_replyRecv_delegated_returns_recorded_server_donation : IO Uni
       |>.withRunnable [server, delegate]
       |>.build)
   let msg : IpcMessage :=
-    { registers := #[SeLe4n.RegValue.ofNat 99], caps := #[], badge := Badge.ofNatMasked 0 }
+    { registers := #[SeLe4n.RegValue.ofNat 99], badge := Badge.ofNatMasked 0 }
   -- **WS-HP HP4**: the same pre-state check as sd052b.  It matters more here: the
   -- whole point of this case is that the donation is the RECORDED SERVER's and not
   -- the delegate's, and the head-driven trigger reaches the server through the

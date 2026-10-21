@@ -401,7 +401,6 @@ private def deliveredMessageOf (st : SystemState) (tid : SeLe4n.ThreadId) : Opti
                 | _ => none)
           { registers := ((#[fr.x2, fr.x3, fr.x4, fr.x5] ++ overflow.toArray).map
               (fun w => (⟨w.toNat⟩ : SeLe4n.RegValue))).extract 0 info.length
-            caps := #[]
             badge := if fr.x0 == 0 then none else some (SeLe4n.Badge.ofWord fr.x0)
             label := info.label }
       else none
@@ -657,10 +656,6 @@ private def runDeliveryChecks : IO Unit := do
          | some m => decodeFault
              { length := faultMessageLength theFault, extraCaps := 0, label := m.label }
              m.registers == some theFault
-         | none => false)
-      assertBool "the message carries no capabilities across the boundary"
-        (match deliveredMessageOf d.afterFault handler with
-         | some m => m.caps.isEmpty
          | none => false)
       assertBool "core 1 dispatches the handler after the SGI"
         (d.afterSgi.scheduler.currentOnCore c1 == some handler)

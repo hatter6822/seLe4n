@@ -54,7 +54,6 @@ theorem endpointReplyOnCore_reply_path_NI
     (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
     (st st' : SystemState) (tcb : TCB) (ep : SeLe4n.ObjId) (expected : SeLe4n.ThreadId)
     (hSz1 : ¬ msg.registers.size > maxMessageRegisters)
-    (hSz2 : ¬ msg.caps.size > maxExtraCaps)
     (hLk : lookupTcb st target = some tcb)
     (hIpc : tcb.ipcState = .blockedOnReply ep (some expected))
     (hStore : storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) = .ok st')
@@ -82,11 +81,11 @@ theorem endpointReplyOnCore_reply_path_NI
   cases hRO : tcb.replyObject with
   | none =>
     rw [endpointReplyOnCore_reply_eq replier target msg executingCore st st' tcb ep expected
-          hSz1 hSz2 hLk hIpc hStore hRO]
+          hSz1 hLk hIpc hStore hRO]
     exact (unlinkReplyWaiter_preserves_projection ctx observer _ target expected).trans hChain
   | some rid =>
     obtain ⟨stC, hCons, hEq⟩ := endpointReplyOnCore_reply_eq_linked replier target msg
-      executingCore st st' tcb ep expected rid hSz1 hSz2 hLk hIpc hStore hRO
+      executingCore st st' tcb ep expected rid hSz1 hLk hIpc hStore hRO
     rw [hEq]
     show projectState ctx observer (stC.unlinkReplyWaiter target expected) = projectState ctx observer st
     rw [unlinkReplyWaiter_preserves_projection ctx observer _ target expected]
@@ -126,7 +125,6 @@ theorem endpointReplyOnCore_reply_path_NI_smp
     (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
     (st st' : SystemState) (tcb : TCB) (ep : SeLe4n.ObjId) (expected : SeLe4n.ThreadId)
     (hSz1 : ¬ msg.registers.size > maxMessageRegisters)
-    (hSz2 : ¬ msg.caps.size > maxExtraCaps)
     (hLk : lookupTcb st target = some tcb)
     (hIpc : tcb.ipcState = .blockedOnReply ep (some expected))
     (hStore : storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) = .ok st')
@@ -158,11 +156,11 @@ theorem endpointReplyOnCore_reply_path_NI_smp
   cases hRO : tcb.replyObject with
   | none =>
     rw [endpointReplyOnCore_reply_eq replier target msg executingCore st st' tcb ep expected
-          hSz1 hSz2 hLk hIpc hStore hRO]
+          hSz1 hLk hIpc hStore hRO]
     exact (unlinkReplyWaiter_preserves_projectionOnCore ctx observer _ target expected c).trans hChain
   | some rid =>
     obtain ⟨stC, hCons, hEq⟩ := endpointReplyOnCore_reply_eq_linked replier target msg
-      executingCore st st' tcb ep expected rid hSz1 hSz2 hLk hIpc hStore hRO
+      executingCore st st' tcb ep expected rid hSz1 hLk hIpc hStore hRO
     rw [hEq]
     show projectStateOnCore ctx observer (stC.unlinkReplyWaiter target expected) c = projectStateOnCore ctx observer st c
     rw [unlinkReplyWaiter_preserves_projectionOnCore ctx observer _ target expected c]

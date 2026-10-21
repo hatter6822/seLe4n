@@ -99,7 +99,7 @@ FO-004b.) -/
 private def fo004_endpointReply : IO Unit := do
   let callerTcb : TCB := ((mkTcb 2).setIpcState (.blockedOnReply ⟨10⟩ (some ⟨3⟩)))
   let fst := mkFrozenState [(⟨2⟩, .tcb callerTcb)]
-  let msg : IpcMessage := { registers := #[], caps := #[], badge := Badge.ofNatMasked 0 }
+  let msg : IpcMessage := { registers := #[], badge := Badge.ofNatMasked 0 }
   match frozenEndpointReply ⟨3⟩ ⟨2⟩ (⟨505⟩ : SeLe4n.ReplyId) msg fst with
   | .ok _ => throw <| IO.userError "reply to a caller with no Reply object must be rejected"
   | .error e => expect "no-reply-object frozen reply → replyCapInvalid" (e == .replyCapInvalid)
@@ -117,7 +117,7 @@ private def fo004b_endpointReplyConsumesLink : IO Unit := do
   -- that composed it, so an unresolvable one is refused (SM9.D audit).
   let fst := mkFrozenState
     [(⟨2⟩, .tcb callerTcb), (⟨3⟩, .tcb (mkTcb 3)), (rid.toObjId, .reply replyObj)]
-  let msg : IpcMessage := { registers := #[], caps := #[], badge := Badge.ofNatMasked 0 }
+  let msg : IpcMessage := { registers := #[], badge := Badge.ofNatMasked 0 }
   match frozenEndpointReply ⟨3⟩ ⟨2⟩ rid msg fst with
   | .ok ((), fst') =>
       match frozenLookupTcb fst' ⟨2⟩ with
@@ -156,7 +156,7 @@ private def fo004c_replyToStackHeadPopsDonation : IO Unit := do
   let fst := mkFrozenState
     [(⟨2⟩, .tcb callerTcb), (⟨3⟩, .tcb serverTcb), (⟨9⟩, .tcb (mkTcb 9)),
      (scId.toObjId, .schedContext sc), (rid.toObjId, .reply replyObj)]
-  let msg : IpcMessage := { registers := #[], caps := #[], badge := Badge.ofNatMasked 0 }
+  let msg : IpcMessage := { registers := #[], badge := Badge.ofNatMasked 0 }
   match frozenEndpointReplyWithDonationReturn ⟨3⟩ ⟨2⟩ rid msg fst with
   | .error _ => throw <| IO.userError "reply+donation-return should succeed"
   | .ok ((), fst') =>
@@ -213,7 +213,7 @@ private def fo004e_replyDeschedulesTheServer : IO Unit := do
   | .error _ => throw <| IO.userError "could not queue the server"
   | .ok st =>
       expect "the server starts runnable" (queued st ⟨3⟩)
-      let msg : IpcMessage := { registers := #[], caps := #[], badge := Badge.ofNatMasked 0 }
+      let msg : IpcMessage := { registers := #[], badge := Badge.ofNatMasked 0 }
       match frozenEndpointReplyWithDonationReturn ⟨3⟩ ⟨2⟩ rid msg st with
       | .error _ => throw <| IO.userError "reply+donation-return should succeed"
       | .ok ((), st') =>
@@ -262,7 +262,7 @@ private def fo004f_replyRevertsPriorityInheritance : IO Unit := do
   | .error _ => throw <| IO.userError "could not queue the server"
   | .ok st =>
       expect "the server starts bucketed at the INHERITED priority" (inBucket st 200 ⟨3⟩)
-      let msg : IpcMessage := { registers := #[], caps := #[], badge := Badge.ofNatMasked 0 }
+      let msg : IpcMessage := { registers := #[], badge := Badge.ofNatMasked 0 }
       match frozenEndpointReplyWithDonationReturn ⟨3⟩ ⟨2⟩ rid msg st with
       | .error _ => throw <| IO.userError "reply should succeed"
       | .ok ((), st') =>
@@ -299,7 +299,7 @@ private def fo004g_replyNeedsARecordedServer : IO Unit := do
       [(⟨2⟩, .tcb (TCB.setIpcState { mkTcb 2 with
                     replyObjectCode := SeLe4n.ReplyId.optCode (some rid) } (.blockedOnReply ⟨10⟩ server?))),
        (⟨3⟩, .tcb (mkTcb 3)), (rid.toObjId, .reply replyObj)]
-  let msg : IpcMessage := { registers := #[], caps := #[], badge := Badge.ofNatMasked 0 }
+  let msg : IpcMessage := { registers := #[], badge := Badge.ofNatMasked 0 }
   match frozenEndpointReply ⟨3⟩ ⟨2⟩ rid msg (mkState none) with
   | .ok _ => throw <| IO.userError "a reply with no recorded server must be refused"
   | .error e => expect "refused as an invalid reply capability" (e == .replyCapInvalid)
@@ -328,7 +328,7 @@ private def fo004d_replyOffStackNeedsNoPop : IO Unit := do
   let replyObj : SeLe4n.Kernel.Reply := { replyId := rid, callerCode := SeLe4n.ThreadId.optCode (some ⟨2⟩) }
   let fst := mkFrozenState
     [(⟨2⟩, .tcb callerTcb), (⟨3⟩, .tcb (mkTcb 3)), (rid.toObjId, .reply replyObj)]
-  let msg : IpcMessage := { registers := #[], caps := #[], badge := Badge.ofNatMasked 0 }
+  let msg : IpcMessage := { registers := #[], badge := Badge.ofNatMasked 0 }
   match frozenEndpointReply ⟨3⟩ ⟨2⟩ rid msg fst,
         frozenEndpointReplyWithDonationReturn ⟨3⟩ ⟨2⟩ rid msg fst with
   | .ok ((), a), .ok ((), b) =>
@@ -357,7 +357,7 @@ private def fo005_replyDelegatedReplier : IO Unit := do
   -- reply's provenance read the empty default rather than the composer's.
   let fst := mkFrozenState
     [(⟨2⟩, .tcb callerTcb), (⟨99⟩, .tcb (mkTcb 99)), (rid.toObjId, .reply replyObj)]
-  let msg : IpcMessage := { registers := #[], caps := #[], badge := Badge.ofNatMasked 0 }
+  let msg : IpcMessage := { registers := #[], badge := Badge.ofNatMasked 0 }
   -- replier ⟨99⟩ ≠ the recorded server ⟨3⟩, but presents the linked Reply cap (rid).
   match frozenEndpointReply ⟨99⟩ ⟨2⟩ rid msg fst with
   | .ok ((), fst') =>
@@ -377,7 +377,7 @@ private def fo005b_replyWrongPresentedCap : IO Unit := do
     (TCB.setIpcState { mkTcb 2 with replyObjectCode := SeLe4n.ReplyId.optCode (some rid) } (.blockedOnReply ⟨10⟩ (some ⟨3⟩)))
   let replyObj : SeLe4n.Kernel.Reply := { replyId := rid, callerCode := SeLe4n.ThreadId.optCode (some ⟨2⟩) }
   let fst := mkFrozenState [(⟨2⟩, .tcb callerTcb), (rid.toObjId, .reply replyObj)]
-  let msg : IpcMessage := { registers := #[], caps := #[], badge := Badge.ofNatMasked 0 }
+  let msg : IpcMessage := { registers := #[], badge := Badge.ofNatMasked 0 }
   -- replier presents ⟨999⟩, NOT the caller's forward link rid (⟨505⟩) → rejected.
   match frozenEndpointReply ⟨99⟩ ⟨2⟩ (⟨999⟩ : SeLe4n.ReplyId) msg fst with
   | .ok _ => throw <| IO.userError "a replier presenting a non-matching reply cap must be rejected"
@@ -591,7 +591,7 @@ private def fo016_sendEnqueuesSender : IO Unit := do
   let senderTcb := mkTcb 3
   let ep : Endpoint := (Endpoint.ofQueues {} {})
   let fst := mkFrozenState [(⟨3⟩, .tcb senderTcb), (⟨10⟩, .endpoint ep)]
-  let msg : IpcMessage := { registers := #[⟨42⟩], caps := #[], badge := Badge.ofNatMasked 0 }
+  let msg : IpcMessage := { registers := #[⟨42⟩], badge := Badge.ofNatMasked 0 }
   match frozenEndpointSend ⟨10⟩ ⟨3⟩ (.frame msg.badge msg.capsGranted) fst with
   | .ok ((), fst') =>
       -- Verify sender TCB is now blockedOnSend
@@ -633,7 +633,7 @@ private def fo018_callEnqueuesCaller : IO Unit := do
   let callerTcb := mkTcb 5
   let ep : Endpoint := (Endpoint.ofQueues {} {})
   let fst := mkFrozenState [(⟨5⟩, .tcb callerTcb), (⟨10⟩, .endpoint ep)]
-  let msg : IpcMessage := { registers := #[⟨99⟩], caps := #[], badge := Badge.ofNatMasked 0 }
+  let msg : IpcMessage := { registers := #[⟨99⟩], badge := Badge.ofNatMasked 0 }
   match frozenEndpointCall ⟨10⟩ ⟨5⟩ (.frame msg.badge msg.capsGranted) fst with
   | .ok ((), fst') =>
       -- Verify caller TCB is now blockedOnCall
@@ -723,7 +723,7 @@ private def fo021_popThenPushRegression : IO Unit := do
     (⟨4⟩, .tcb receiverTcb),
     (⟨10⟩, .endpoint ep)
   ]
-  let msg1 : IpcMessage := { registers := #[⟨42⟩], caps := #[], badge := Badge.ofNatMasked 0 }
+  let msg1 : IpcMessage := { registers := #[⟨42⟩], badge := Badge.ofNatMasked 0 }
   -- Round 1: sender sends (no receiver waiting → enqueued in sendQ)
   match frozenEndpointSend ⟨10⟩ ⟨3⟩ (.frame msg1.badge msg1.capsGranted) fst with
   | .error e => throw <| IO.userError s!"round1 send failed: {reprStr e}"
@@ -740,7 +740,7 @@ private def fo021_popThenPushRegression : IO Unit := do
       expect "sender queueNext cleared" (tcb.queueNext == none)
       expect "sender queuePPrev cleared" (tcb.queuePPrev == none)
   -- Round 2: sender sends again (re-enqueue — must not fail with illegalState)
-  let msg2 : IpcMessage := { registers := #[⟨99⟩], caps := #[], badge := Badge.ofNatMasked 0 }
+  let msg2 : IpcMessage := { registers := #[⟨99⟩], badge := Badge.ofNatMasked 0 }
   match frozenEndpointSend ⟨10⟩ ⟨3⟩ (.frame msg2.badge msg2.capsGranted) fst2 with
   | .error e => throw <| IO.userError s!"round2 re-send failed (U-H01 regression): {reprStr e}"
   | .ok ((), fst3) =>
@@ -779,7 +779,7 @@ private def frozenProvenanceFollowsContent : IO Unit := do
     (!((tagged.declassificationTaint ⟨4⟩).contains 77))
   -- A parked send followed by a receive moves the message; the provenance must
   -- move with it.
-  let msg : IpcMessage := { registers := #[⟨7⟩], caps := #[], badge := Badge.ofNatMasked 0 }
+  let msg : IpcMessage := { registers := #[⟨7⟩], badge := Badge.ofNatMasked 0 }
   match frozenEndpointSend ⟨10⟩ ⟨3⟩ (.frame msg.badge msg.capsGranted) tagged with
   | .error e => throw <| IO.userError s!"FO-022 send failed: {reprStr e}"
   | .ok ((), fstSend) =>
@@ -844,7 +844,7 @@ private def frozenDeliveryIsHonest : IO Unit := do
     (TCB.setIpcState { mkTcb 2 with replyObjectCode := SeLe4n.ReplyId.optCode (some rid) } (.blockedOnReply ⟨10⟩ (some ⟨3⟩)))
   let replyObj : SeLe4n.Kernel.Reply := { replyId := rid, callerCode := SeLe4n.ThreadId.optCode (some ⟨2⟩) }
   let fstRep := mkFrozenState [(⟨2⟩, .tcb callerTcb), (rid.toObjId, .reply replyObj)]
-  let msg : IpcMessage := { registers := #[], caps := #[], badge := Badge.ofNatMasked 0 }
+  let msg : IpcMessage := { registers := #[], badge := Badge.ofNatMasked 0 }
   expect "FO-023: an unresolvable reply source is refused, not defaulted"
     (match frozenEndpointReply ⟨99⟩ ⟨2⟩ rid msg fstRep with
      | .ok _ => false
@@ -872,7 +872,7 @@ private def frozenDeliveryIsHonest : IO Unit := do
   let epEmpty : Endpoint := (Endpoint.ofQueues {} {})
   let fstNoRecv := mkFrozenState [(⟨10⟩, .endpoint epEmpty)]
   let sendMsg : IpcMessage :=
-    { registers := #[], caps := #[], badge := Badge.ofNatMasked 0 }
+    { registers := #[], badge := Badge.ofNatMasked 0 }
   expect "FO-023: an absent sender is refused with no receiver waiting"
     (match frozenEndpointSend ⟨10⟩ ⟨77⟩ (.frame sendMsg.badge sendMsg.capsGranted) fstNoRecv with
      | .ok _ => false
@@ -900,7 +900,7 @@ So the receive that dequeues it delivers what the frame holds, and a frame
 rewritten while the sender waits is what arrives. -/
 private def frozenParkedSenderMessageFromFrame : IO Unit := do
   let epParked : Endpoint := (Endpoint.ofQueues { head := some ⟨3⟩, tail := some ⟨3⟩ } {})
-  let msg : IpcMessage := { registers := #[⟨42⟩, ⟨43⟩], caps := #[], badge := none }
+  let msg : IpcMessage := { registers := #[⟨42⟩, ⟨43⟩], badge := none }
   let parked (m : IpcMessage) : TCB :=
     TCB.setIpcState (SeLe4n.Testing.tcbWithSenderFrame (mkTcb 3) m) (.blockedOnSend ⟨10⟩)
   let delivered (m : IpcMessage) : Option (List Nat) :=
@@ -1241,7 +1241,7 @@ private def differentialNotificationWaitAgrees : IO Unit := do
 /-- FO-028: the send, against `endpointSendDual`, with no receiver waiting — the
 parking branch, whose frozen mirror grew the message-presence guard. -/
 private def differentialEndpointSendAgrees : IO Unit := do
-  let msg : IpcMessage := { registers := #[⟨5⟩], caps := #[], badge := none }
+  let msg : IpcMessage := { registers := #[⟨5⟩], badge := none }
   let ist := diffAddTcb (diffAddTcb
     (diffAddEndpoint (diffAddCSpace mkEmptyIntermediateState [(SeLe4n.Slot.ofNat 0, diffObjCap diffEpId)]) diffEpId {}) (diffTcb 62)) (diffTcb 63)
   -- Control: the send really parks on both sides.
@@ -1276,7 +1276,7 @@ before the mirror fix the frozen side parked the waiter still holding the
 message, a live/frozen divergence on the mirror's own content channel
 (PR #886 review). -/
 private def differentialNotificationWaitParksAgrees : IO Unit := do
-  let held : IpcMessage := { registers := #[⟨11⟩], caps := #[], badge := none }
+  let held : IpcMessage := { registers := #[⟨11⟩], badge := none }
   let ntfn : Notification :=
     { state := .idle, 
       hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }
@@ -1341,7 +1341,7 @@ private def differentialNotificationWaitConsumesBoundAgrees : IO Unit := do
 /-- FO-029: the receive, against `endpointReceiveDual`, dequeuing a parked
 sender whose message is in its saved frame (WS-ZA ZA4.7). -/
 private def differentialEndpointReceiveAgrees : IO Unit := do
-  let msg : IpcMessage := { registers := #[⟨7⟩], caps := #[], badge := none }
+  let msg : IpcMessage := { registers := #[⟨7⟩], badge := none }
   let ep : Endpoint := (Endpoint.ofQueues { head := some diffA, tail := some diffA } {})
   let parked : TCB := (TCB.setIpcState (SeLe4n.Testing.tcbWithSenderFrame { diffTcb 62 with queuePPrevCode := 1 } msg) (.blockedOnSend diffEpId))
   let ist := diffAddTcb (diffAddTcb
@@ -1360,7 +1360,7 @@ private def differentialEndpointReceiveAgrees : IO Unit := do
 /-- FO-030: the call, against `endpointCall`, with no receiver — the parking
 branch again, on the arm that also stages a reply. -/
 private def differentialEndpointCallAgrees : IO Unit := do
-  let msg : IpcMessage := { registers := #[⟨11⟩], caps := #[], badge := none }
+  let msg : IpcMessage := { registers := #[⟨11⟩], badge := none }
   let ist := diffAddTcb (diffAddTcb
     (diffAddEndpoint (diffAddCSpace mkEmptyIntermediateState [(SeLe4n.Slot.ofNat 0, diffObjCap diffEpId)]) diffEpId {}) (diffTcb 62)) (diffTcb 63)
   -- Control: the call really parks on both sides.
@@ -1382,7 +1382,7 @@ that one keeps the `replier == expected` gate the cross-core spelling dropped, s
 naming it made this claim false on a delegated reply-cap holder, which the frozen
 leg accepts.  The delegated half below is the shape that separates them. -/
 private def differentialEndpointReplyAgrees : IO Unit := do
-  let msg : IpcMessage := { registers := #[⟨13⟩], caps := #[], badge := none }
+  let msg : IpcMessage := { registers := #[⟨13⟩], badge := none }
   -- The reply's authority is the presented reply capability, so the fixture has
   -- to carry the whole link: the target parked in `.blockedOnReply` with its
   -- forward `replyObject`, and a Reply object naming it back.  Without those
@@ -1459,7 +1459,7 @@ not merely named — the Lean pair
 `endpointReplyCrossCoreDispatch_independent_of_replier` /
 `endpointReplyWithDonation_refuses_delegated_replier` is the general form. -/
 private def differentialEndpointReplyOperationAgrees : IO Unit := do
-  let msg : IpcMessage := { registers := #[⟨13⟩], caps := #[], badge := none }
+  let msg : IpcMessage := { registers := #[⟨13⟩], badge := none }
   let rid : SeLe4n.ReplyId := ⟨505⟩
   let caller : TCB := (TCB.setIpcState { diffTcb 62 with
     replyObjectCode := SeLe4n.ReplyId.optCode (some rid) } (.blockedOnReply diffEpId (some diffB)))
@@ -1555,7 +1555,7 @@ name both facts, so the choice of trigger is measured rather than described —
 and that is also the mutation that decides it, since it keeps every token of the
 donation and changes only which artefact records the stack. -/
 private def differentialEndpointReplyDonationAgrees : IO Unit := do
-  let msg : IpcMessage := { registers := #[⟨17⟩], caps := #[], badge := none }
+  let msg : IpcMessage := { registers := #[⟨17⟩], badge := none }
   let rid : SeLe4n.ReplyId := ⟨506⟩
   -- The answered caller: blocked on its reply, holding the frame, and `.unbound`
   -- because it donated its context away at the `Call`.
@@ -1724,7 +1724,7 @@ it the cut frame keeps a `prev` nothing names back), and it would become
 *observable* the moment `consumed` changed, so the half below drives
 `frozenSpliceReplyFrameOut` directly with no consume after it. -/
 private def differentialEndpointReplyMiddleFrameSplices : IO Unit := do
-  let msg : IpcMessage := { registers := #[⟨17⟩], caps := #[], badge := none }
+  let msg : IpcMessage := { registers := #[⟨17⟩], badge := none }
   let bottomRid : SeLe4n.ReplyId := ⟨507⟩
   let midRid    : SeLe4n.ReplyId := ⟨508⟩
   let topRid    : SeLe4n.ReplyId := ⟨509⟩
@@ -1877,7 +1877,7 @@ fires exactly there (`donationOriginRecipient?` answers only at
 the client's frame has been removed. -/
 private def differentialEndpointReplyRedirectsToOrigin : IO Unit := do
   let rid : SeLe4n.ReplyId := SeLe4n.ReplyId.ofNat 71
-  let msg : IpcMessage := { registers := #[], caps := #[], badge := Badge.ofNatMasked 0 }
+  let msg : IpcMessage := { registers := #[], badge := Badge.ofNatMasked 0 }
   -- The answered caller: reply-blocked on the recorded server, holding nothing.
   let caller : TCB := (TCB.setIpcState { diffTcb 62 with
     replyObjectCode := SeLe4n.ReplyId.optCode (some rid),
@@ -2040,7 +2040,7 @@ was checked.
 The control asserts both sides succeed, so the agreement is about a completed
 rendezvous rather than a shared refusal. -/
 private def differentialReceiveFromBlockedCallerAgrees : IO Unit := do
-  let msg : IpcMessage := { registers := #[⟨21⟩], caps := #[], badge := none }
+  let msg : IpcMessage := { registers := #[⟨21⟩], badge := none }
   let rid : SeLe4n.ReplyId := ⟨506⟩
   let ep : Endpoint := (Endpoint.ofQueues { head := some diffA, tail := some diffA } {})
   let parkedCaller : TCB := (TCB.setIpcState (SeLe4n.Testing.tcbWithSenderFrame { diffTcb 62 with queuePPrevCode := 1 } msg) (.blockedOnCall diffEpId))
@@ -2369,7 +2369,7 @@ the state is reachable through the tree's own construction path, and the live an
 frozen views are that state and its own `freeze` rather than two stores assembled
 side by side, whose schedulers would not even correspond. -/
 private def differentialQueueNeighbourResolutionAgrees : IO Unit := do
-  let msg : IpcMessage := { registers := #[⟨41⟩], caps := #[], badge := none }
+  let msg : IpcMessage := { registers := #[⟨41⟩], badge := none }
   let sentinelTid : SeLe4n.ThreadId := SeLe4n.ThreadId.sentinel
   let epId : SeLe4n.ObjId := ⟨70⟩
   let mover : SeLe4n.ThreadId := ⟨71⟩
@@ -2975,7 +2975,7 @@ The control is the same send from a sender that **does** exist: without it the
 refusal below would pass against a fixture where nothing could ever be
 delivered. -/
 private def differentialSendFromAbsentSenderAgrees : IO Unit := do
-  let msg : IpcMessage := { registers := #[⟨31⟩], caps := #[], badge := none }
+  let msg : IpcMessage := { registers := #[⟨31⟩], badge := none }
   let ghost : SeLe4n.ThreadId := ⟨9997⟩
   let ep : Endpoint := (Endpoint.ofQueues {} { head := some diffA, tail := some diffA })
   let parkedReceiver : TCB := (TCB.setIpcState { diffTcb 62 with queuePPrevCode := 1 } (.blockedOnReceive diffEpId))
@@ -3013,7 +3013,7 @@ The run-queue halves ride along with bite of their own: the live delivery ends
 in `ensureRunnable receiver` and the frozen one in `frozenEnsureRunnable`, and
 `frozenStateAgrees` compares the buckets in both directions. -/
 private def differentialSendRendezvousDeliversAgrees : IO Unit := do
-  let msg : IpcMessage := { registers := #[⟨37⟩], caps := #[], badge := none }
+  let msg : IpcMessage := { registers := #[⟨37⟩], badge := none }
   let rid : SeLe4n.ReplyId := ⟨507⟩
   let ep : Endpoint := (Endpoint.ofQueues {} { head := some diffA, tail := some diffA })
   -- The server parked on a server-first `Recv`, reply object stashed: the state

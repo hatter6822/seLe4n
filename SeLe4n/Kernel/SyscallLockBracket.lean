@@ -478,7 +478,7 @@ def abiEntryLockOperands (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
                    { registers :=
                        Architecture.RegisterDecode.extractMessageRegisters decoded.msgRegs
                          decoded.msgInfo,
-                     caps := #[], badge := cap.badge },
+                     badge := cap.badge },
                  replyMessageInfo := some decoded.msgInfo,
                  replyRegisters := some decoded.msgRegs }
       -- **Cut C4b**: `.replyRecv` carries the reply *payload* — MR1.. , the
@@ -493,7 +493,7 @@ def abiEntryLockOperands (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
                 Architecture.RegisterDecode.extractMessageRegisters decoded.msgRegs decoded.msgInfo
               some { caller := tid, targetObject := some epId, targetReply := some rid,
                      message := some
-                       { registers := full.extract 1 full.size, caps := #[],
+                       { registers := full.extract 1 full.size,
                          badge := replyBadge },
                      receiverSlotBase := some decoded.capRecvSlot }
       -- **Cut C4b**: the eight arms the OBJECT domain declares nothing for and

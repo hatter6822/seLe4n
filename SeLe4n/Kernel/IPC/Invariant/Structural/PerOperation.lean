@@ -224,12 +224,12 @@ theorem ipcUnwrapCapsLoop_preserves_badgeWellFormed
 /-- IPC de-threading D8: `ipcUnwrapCaps` preserves `badgeWellFormed` when every message
 cap carries a valid badge. Grant-denied path leaves state unchanged. -/
 theorem ipcUnwrapCaps_preserves_badgeWellFormed
-    (msg : IpcMessage) (receiverRoot : SeLe4n.ObjId)
+    (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
     (slotBase : SeLe4n.Slot) (grantRight : Bool)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hInv : badgeWellFormed st) (hObjInv : st.objects.invExt)
-    (hCaps : ∀ (i : Nat) (c : TransferCap), msg.caps[i]? = some c → ∀ b, c.cap.badge = some b → b.valid)
-    (hStep : ipcUnwrapCaps msg receiverRoot slotBase grantRight st = .ok (summary, st')) :
+    (hCaps : ∀ (i : Nat) (c : TransferCap), caps[i]? = some c → ∀ b, c.cap.badge = some b → b.valid)
+    (hStep : ipcUnwrapCaps caps receiverRoot slotBase grantRight st = .ok (summary, st')) :
     badgeWellFormed st' := by
   unfold ipcUnwrapCaps at hStep
   split at hStep
@@ -245,12 +245,12 @@ ipcUnwrapCaps only modifies CNode objects and CDT — endpoint objects, TCB obje
 (queue links), and scheduler state are all preserved. The CNode precondition is
 established by `lookupCspaceRoot` which verifies receiverRoot is a CNode. -/
 theorem ipcUnwrapCaps_preserves_dualQueueSystemInvariant
-    (msg : IpcMessage) (receiverRoot : SeLe4n.ObjId)
+    (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
     (slotBase : SeLe4n.Slot) (grantRight : Bool)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hInv : dualQueueSystemInvariant st)
     (hObjInv : st.objects.invExt)
-    (hStep : ipcUnwrapCaps msg receiverRoot slotBase grantRight st
+    (hStep : ipcUnwrapCaps caps receiverRoot slotBase grantRight st
              = .ok (summary, st')) :
     dualQueueSystemInvariant st' := by
   -- WS-RR RR3.11: the CNode at the receiver root is no longer a hypothesis. When
@@ -262,26 +262,26 @@ theorem ipcUnwrapCaps_preserves_dualQueueSystemInvariant
   -- the `ipcInvariantFull` bundles above them, were vacuous on their own success path.
   cases hCnOpt : st.getCNode? receiverRoot with
   | none =>
-    rw [ipcUnwrapCaps_state_eq_of_root_not_cnode msg receiverRoot slotBase grantRight
+    rw [ipcUnwrapCaps_state_eq_of_root_not_cnode caps receiverRoot slotBase grantRight
       st st' summary hCnOpt hStep]
     exact hInv
   | some cn =>
   have hCn : st.objects[receiverRoot]? = some (.cnode cn) :=
     (SystemState.getCNode?_eq_some_iff st receiverRoot cn).mp hCnOpt
   -- receiverRoot stays CNode throughout the operation
-  have ⟨cn', hCn'⟩ := ipcUnwrapCaps_preserves_cnode_at_root msg receiverRoot
+  have ⟨cn', hCn'⟩ := ipcUnwrapCaps_preserves_cnode_at_root caps receiverRoot
     slotBase grantRight st st' summary cn hCn hObjInv hStep
   obtain ⟨hEpWf, hLink, hAcyclic, hPP, hHD⟩ := hInv
   -- Helper: transfer TCB preservation from st to st' for any oid
   have tcbTransfer : ∀ (oid : SeLe4n.ObjId) (tcb : TCB),
       st.objects[oid]? = some (KernelObject.tcb tcb) →
       st'.objects[oid]? = some (KernelObject.tcb tcb) :=
-    fun oid tcb h => ipcUnwrapCaps_preserves_tcb_objects msg receiverRoot slotBase
+    fun oid tcb h => ipcUnwrapCaps_preserves_tcb_objects caps receiverRoot slotBase
       grantRight st st' summary oid tcb h hObjInv hStep
   -- Helper: transfer object identity from st' to st for non-receiverRoot
   have objBack : ∀ oid, oid ≠ receiverRoot → ∀ {o : KernelObject},
       st'.objects[oid]? = some o → (∀ cn, o ≠ .cnode cn) → st.objects[oid]? = some o :=
-    fun oid hNe => (ipcUnwrapCaps_preserves_objects_ne msg receiverRoot slotBase
+    fun oid hNe => (ipcUnwrapCaps_preserves_objects_ne caps receiverRoot slotBase
       grantRight st st' summary oid hNe hObjInv hStep).obj_back
   have hLinkFwd := hLink.1
   have hLinkBwd := hLink.2
@@ -365,22 +365,22 @@ before it. The transfer writes the receiver's CSpace root and nothing else
 write, so a post-state Reply is at a different key and reads through. The
 missing sibling of `ipcUnwrapCaps_tcb_backward` / `_endpoint_backward`. -/
 theorem ipcUnwrapCaps_reply_backward
-    (msg : IpcMessage) (receiverRoot : SeLe4n.ObjId)
+    (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
     (slotBase : SeLe4n.Slot) (grantRight : Bool)
     (st st' : SystemState) (summary : CapTransferSummary)
     (oid : SeLe4n.ObjId) (r : Reply)
     (hObjInv : st.objects.invExt)
-    (hStep : ipcUnwrapCaps msg receiverRoot slotBase grantRight st
+    (hStep : ipcUnwrapCaps caps receiverRoot slotBase grantRight st
              = .ok (summary, st'))
     (hReply' : st'.objects[oid]? = some (.reply r)) :
     st.objects[oid]? = some (.reply r) := by
   by_cases hNe : oid = receiverRoot
   · rw [hNe] at hReply' ⊢
-    rcases ipcUnwrapCaps_objects_at_root_orig_or_cnode msg receiverRoot slotBase
+    rcases ipcUnwrapCaps_objects_at_root_orig_or_cnode caps receiverRoot slotBase
       grantRight st st' summary hObjInv hStep with h | ⟨cn, h⟩
     · rw [← h]; exact hReply'
     · rw [h] at hReply'; cases hReply'
-  · exact (ipcUnwrapCaps_preserves_objects_ne msg receiverRoot slotBase grantRight
+  · exact (ipcUnwrapCaps_preserves_objects_ne caps receiverRoot slotBase grantRight
       st st' summary oid hNe hObjInv hStep).obj_back hReply'
       (fun _ e => KernelObject.noConfusion e)
 
@@ -388,16 +388,16 @@ theorem ipcUnwrapCaps_reply_backward
 `blockedThreadsPendingMessageConsistent` — it writes no TCB, so every post-state
 TCB is its pre-state self (`ipcUnwrapCaps_tcb_backward`). -/
 theorem ipcUnwrapCaps_preserves_blockedThreadsPendingMessageConsistent
-    (msg : IpcMessage) (receiverRoot : SeLe4n.ObjId)
+    (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
     (slotBase : SeLe4n.Slot) (grantRight : Bool)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt)
     (hInv : blockedThreadsPendingMessageConsistent st)
-    (hStep : ipcUnwrapCaps msg receiverRoot slotBase grantRight st
+    (hStep : ipcUnwrapCaps caps receiverRoot slotBase grantRight st
              = .ok (summary, st')) :
     blockedThreadsPendingMessageConsistent st' := by
   intro tid tcb hTcb'
-  exact hInv tid tcb (ipcUnwrapCaps_tcb_backward msg receiverRoot slotBase grantRight
+  exact hInv tid tcb (ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight
     st st' summary tid.toObjId tcb hObjInv hStep hTcb')
 
 /-- WS-RR RR2.14: the capability transfer preserves the **reciprocal** half of
@@ -405,26 +405,26 @@ theorem ipcUnwrapCaps_preserves_blockedThreadsPendingMessageConsistent
 pre-state self, a pre-state Reply survives forward, and a post-state Reply was
 one before (`ipcUnwrapCaps_reply_backward`). -/
 theorem ipcUnwrapCaps_preserves_replyCallerLinkageReciprocal
-    (msg : IpcMessage) (receiverRoot : SeLe4n.ObjId)
+    (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
     (slotBase : SeLe4n.Slot) (grantRight : Bool)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt)
     (hInv : replyCallerLinkageReciprocal st)
-    (hStep : ipcUnwrapCaps msg receiverRoot slotBase grantRight st
+    (hStep : ipcUnwrapCaps caps receiverRoot slotBase grantRight st
              = .ok (summary, st')) :
     replyCallerLinkageReciprocal st' := by
   refine ⟨?_, ?_⟩
   · intro tid tcb rid hTcb' hRO
     obtain ⟨r, hr, hrc⟩ := hInv.1 tid tcb rid
-      (ipcUnwrapCaps_tcb_backward msg receiverRoot slotBase grantRight
+      (ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight
         st st' summary tid.toObjId tcb hObjInv hStep hTcb') hRO
-    exact ⟨r, ipcUnwrapCaps_preserves_reply_objects msg receiverRoot slotBase
+    exact ⟨r, ipcUnwrapCaps_preserves_reply_objects caps receiverRoot slotBase
       grantRight st st' summary rid.toObjId r hr hObjInv hStep, hrc⟩
   · intro rid r tid hr' hrc
     obtain ⟨tcb, hTcb, hRO, hBlk⟩ := hInv.2 rid r tid
-      (ipcUnwrapCaps_reply_backward msg receiverRoot slotBase grantRight
+      (ipcUnwrapCaps_reply_backward caps receiverRoot slotBase grantRight
         st st' summary rid.toObjId r hObjInv hStep hr') hrc
-    exact ⟨tcb, ipcUnwrapCaps_preserves_tcb_objects msg receiverRoot slotBase
+    exact ⟨tcb, ipcUnwrapCaps_preserves_tcb_objects caps receiverRoot slotBase
       grantRight st st' summary tid.toObjId tcb hTcb hObjInv hStep, hRO, hBlk⟩
 
 /-- M3-E4: endpointSendDualWithCaps preserves dualQueueSystemInvariant.
@@ -2566,8 +2566,6 @@ theorem endpointReply_preserves_blockedThreadsPendingMessageConsistent
   -- Eliminate bounds-check if-branches (error cases contradict hStep : ... = .ok ...)
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
-  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
   -- lookupTcb
   cases hLk : lookupTcb st target with
   | none => simp [hLk] at hStep
@@ -2642,76 +2640,74 @@ theorem endpointReplyRecv_preserves_blockedThreadsPendingMessageConsistent
   -- Eliminate message bounds checks
   split at hStep
   · simp at hStep
-  · split at hStep
-    · simp at hStep
-    · cases hLookup : lookupTcb st replyTarget with
-      | none => simp [hLookup] at hStep
-      | some tcb =>
-        simp only [hLookup] at hStep
-        rw [storeTcbIpcStateAndMessage_fromTcb_eq hLookup] at hStep
-        cases hIpc : tcb.ipcState with
-        | ready | blockedOnSend _ | blockedOnReceive _ | blockedOnNotification _
-          | blockedOnCall _ => simp [hIpc] at hStep
-        | blockedOnReply _ expectedReplier =>
-          simp only [hIpc] at hStep
-          -- Use suffices to factor out authorization check handling
-          -- (PR #827 #3 fold: the receive leg's input is the post-consume state).
-          -- PR #873 round 11: the receive leg's preservation is unconditional now
-          -- that its block clears `pendingMessage`, so this no longer has to
-          -- transport a receiver-holds-nothing fact through the reply phase.
-          suffices ∀ st3, st3.objects.invExt → blockedThreadsPendingMessageConsistent st3 →
-              (∀ stR, endpointReceiveDual endpointId receiver replyId st3 = .ok stR →
-                blockedThreadsPendingMessageConsistent stR.2) by
-            -- AK1-B (I-H02): Fail-closed on expectedReplier = none
-            cases expectedReplier with
-            | none => simp at hStep
-            | some expected =>
-              simp only at hStep
-              split at hStep
-              · revert hStep
-                cases hStore : storeTcbIpcStateAndMessage st replyTarget .ready (some msg) with
-                | error e => simp
-                | ok st1 =>
+  · cases hLookup : lookupTcb st replyTarget with
+    | none => simp [hLookup] at hStep
+    | some tcb =>
+      simp only [hLookup] at hStep
+      rw [storeTcbIpcStateAndMessage_fromTcb_eq hLookup] at hStep
+      cases hIpc : tcb.ipcState with
+      | ready | blockedOnSend _ | blockedOnReceive _ | blockedOnNotification _
+        | blockedOnCall _ => simp [hIpc] at hStep
+      | blockedOnReply _ expectedReplier =>
+        simp only [hIpc] at hStep
+        -- Use suffices to factor out authorization check handling
+        -- (PR #827 #3 fold: the receive leg's input is the post-consume state).
+        -- PR #873 round 11: the receive leg's preservation is unconditional now
+        -- that its block clears `pendingMessage`, so this no longer has to
+        -- transport a receiver-holds-nothing fact through the reply phase.
+        suffices ∀ st3, st3.objects.invExt → blockedThreadsPendingMessageConsistent st3 →
+            (∀ stR, endpointReceiveDual endpointId receiver replyId st3 = .ok stR →
+              blockedThreadsPendingMessageConsistent stR.2) by
+          -- AK1-B (I-H02): Fail-closed on expectedReplier = none
+          cases expectedReplier with
+          | none => simp at hStep
+          | some expected =>
+            simp only at hStep
+            split at hStep
+            · revert hStep
+              cases hStore : storeTcbIpcStateAndMessage st replyTarget .ready (some msg) with
+              | error e => simp
+              | ok st1 =>
+                simp only []
+                have hObjInv1 := storeTcbIpcStateAndMessage_preserves_objects_invExt
+                  st st1 replyTarget _ _ hObjInv hStore
+                have hInv1 := storeTcbIpcStateAndMessage_preserves_blockedThreadsPendingMessageConsistent
+                  st st1 replyTarget .ready (some msg) hObjInv hStore hInv trivial
+                have hInvEns := ensureRunnable_preserves_blockedThreadsPendingMessageConsistent
+                  st1 replyTarget hInv1
+                have hObjInvEns : (ensureRunnable st1 replyTarget).objects.invExt := by
+                  exact ensureRunnable_objects_invExt _ _ (by assumption)
+                -- PR #827 #3 fold: peel the atomic consume (no-op when unlinked).
+                cases hRO : tcb.replyObject with
+                | none =>
                   simp only []
-                  have hObjInv1 := storeTcbIpcStateAndMessage_preserves_objects_invExt
-                    st st1 replyTarget _ _ hObjInv hStore
-                  have hInv1 := storeTcbIpcStateAndMessage_preserves_blockedThreadsPendingMessageConsistent
-                    st st1 replyTarget .ready (some msg) hObjInv hStore hInv trivial
-                  have hInvEns := ensureRunnable_preserves_blockedThreadsPendingMessageConsistent
-                    st1 replyTarget hInv1
-                  have hObjInvEns : (ensureRunnable st1 replyTarget).objects.invExt := by
-                    exact ensureRunnable_objects_invExt _ _ (by assumption)
-                  -- PR #827 #3 fold: peel the atomic consume (no-op when unlinked).
-                  cases hRO : tcb.replyObject with
-                  | none =>
-                    simp only []
-                    cases hRecv : endpointReceiveDual endpointId receiver replyId (ensureRunnable st1 replyTarget) with
+                  cases hRecv : endpointReceiveDual endpointId receiver replyId (ensureRunnable st1 replyTarget) with
+                  | error e => simp
+                  | ok result =>
+                    simp only [Except.ok.injEq, Prod.mk.injEq]
+                    intro ⟨_, hEq⟩; subst hEq
+                    exact this _ hObjInvEns hInvEns result hRecv
+                | some rid =>
+                  cases hCons : removeCallerReplyFrame replyTarget rid (ensureRunnable st1 replyTarget) with
+                  | error e => simp [hCons]
+                  | ok p3 =>
+                    obtain ⟨⟨⟩, st3⟩ := p3
+                    simp only [hCons]
+                    have hObjInv3 := removeCallerReplyFrame_preserves_objects_invExt _ _ replyTarget rid hObjInvEns hCons
+                    have hInv3 := removeCallerReplyFrame_preserves_blockedThreadsPendingMessageConsistent _ _ replyTarget rid hObjInvEns hInvEns hCons
+                    have hFwd := removeCallerReplyFrame_tcb_forward _ _ replyTarget rid hObjInvEns hCons
+                    cases hRecv : endpointReceiveDual endpointId receiver replyId st3 with
                     | error e => simp
                     | ok result =>
                       simp only [Except.ok.injEq, Prod.mk.injEq]
                       intro ⟨_, hEq⟩; subst hEq
-                      exact this _ hObjInvEns hInvEns result hRecv
-                  | some rid =>
-                    cases hCons : removeCallerReplyFrame replyTarget rid (ensureRunnable st1 replyTarget) with
-                    | error e => simp [hCons]
-                    | ok p3 =>
-                      obtain ⟨⟨⟩, st3⟩ := p3
-                      simp only [hCons]
-                      have hObjInv3 := removeCallerReplyFrame_preserves_objects_invExt _ _ replyTarget rid hObjInvEns hCons
-                      have hInv3 := removeCallerReplyFrame_preserves_blockedThreadsPendingMessageConsistent _ _ replyTarget rid hObjInvEns hInvEns hCons
-                      have hFwd := removeCallerReplyFrame_tcb_forward _ _ replyTarget rid hObjInvEns hCons
-                      cases hRecv : endpointReceiveDual endpointId receiver replyId st3 with
-                      | error e => simp
-                      | ok result =>
-                        simp only [Except.ok.injEq, Prod.mk.injEq]
-                        intro ⟨_, hEq⟩; subst hEq
-                        exact this st3 hObjInv3 hInv3 result hRecv
-              · simp_all
-          -- Prove the core invariant preservation
-          intro st3 hObjInv3 hInv3 stR hRecv
-          exact endpointReceiveDual_preserves_blockedThreadsPendingMessageConsistent
-            _ stR.2 endpointId receiver stR.1 replyId hObjInv3 hInv3
-            (by have : stR = (stR.1, stR.2) := Prod.ext rfl rfl; rw [this] at hRecv; exact hRecv)
+                      exact this st3 hObjInv3 hInv3 result hRecv
+            · simp_all
+        -- Prove the core invariant preservation
+        intro st3 hObjInv3 hInv3 stR hRecv
+        exact endpointReceiveDual_preserves_blockedThreadsPendingMessageConsistent
+          _ stR.2 endpointId receiver stR.1 replyId hObjInv3 hInv3
+          (by have : stR = (stR.1, stR.2) := Prod.ext rfl rfl; rw [this] at hRecv; exact hRecv)
 
 
 end SeLe4n.Kernel

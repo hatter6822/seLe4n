@@ -132,14 +132,14 @@ theorem endpointQueueEnqueue_ipcStateFrame
 /-- WS-RR RR8.16: the capability transfer writes only the receiver's CSpace, and a
 post-state TCB is its pre-state self. -/
 theorem ipcUnwrapCaps_ipcStateFrame
-    (msg : IpcMessage) (receiverRoot : SeLe4n.ObjId)
+    (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
     (slotBase : SeLe4n.Slot) (grantRight : Bool)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt)
-    (hStep : ipcUnwrapCaps msg receiverRoot slotBase grantRight st = .ok (summary, st')) :
+    (hStep : ipcUnwrapCaps caps receiverRoot slotBase grantRight st = .ok (summary, st')) :
     ipcStateFrame st st' :=
   fun t tcb' hTcb' =>
-    ⟨tcb', ipcUnwrapCaps_tcb_backward msg receiverRoot slotBase grantRight st st' summary
+    ⟨tcb', ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight st st' summary
       t.toObjId tcb' hObjInv hStep hTcb', rfl⟩
 
 /-- WS-ZA ZA4.7: and so does the rendezvous transfer, which resolves the

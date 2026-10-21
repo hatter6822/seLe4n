@@ -108,8 +108,7 @@ def receiveTransferCaps (req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)
         let caps := resolveExtraCaps root addrs depth true st
         if caps.isEmpty then .ok ({ results := #[] }, st)
         else
-          ipcUnwrapCaps { IpcMessage.empty with caps := caps, capsGranted := true }
-            receiverCspaceRoot receiverSlotBase true st
+          ipcUnwrapCaps caps receiverCspaceRoot receiverSlotBase true st
 
 /-- M-D01: Extended send with capability transfer.
 

@@ -125,8 +125,6 @@ theorem endpointReply_preserves_schedulerInvariantBundle
   -- WS-H12d: Eliminate bounds-check if-branches (error cases contradict hStep : ... = .ok ...)
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
-  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hLookup : lookupTcb st target with
   | none => simp [hLookup] at hStep
   | some tcb =>
@@ -215,8 +213,6 @@ theorem endpointReply_preserves_ipcInvariant
   unfold endpointReply at hStep
   -- WS-H12d: Eliminate bounds-check if-branches (error cases contradict hStep : ... = .ok ...)
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
-  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hLookup : lookupTcb st target with
   | none => simp [hLookup] at hStep
@@ -538,9 +534,7 @@ theorem endpointReply_message_bounded
   unfold endpointReply at hStep
   by_cases hR : maxMessageRegisters < msg.registers.size
   · simp [hR] at hStep
-  · by_cases hC : maxExtraCaps < msg.caps.size
-    · simp [hR, hC] at hStep
-    · exact ⟨Nat.not_lt.mp hR, Nat.not_lt.mp hC⟩
+  · exact Nat.not_lt.mp hR
 
 /-- WS-H12d/A-09: If `endpointReplyRecv` succeeds, the reply message satisfies payload bounds. -/
 theorem endpointReplyRecv_message_bounded
@@ -552,9 +546,7 @@ theorem endpointReplyRecv_message_bounded
   unfold endpointReplyRecv at hStep
   by_cases hR : maxMessageRegisters < msg.registers.size
   · simp [hR] at hStep
-  · by_cases hC : maxExtraCaps < msg.caps.size
-    · simp [hR, hC] at hStep
-    · exact ⟨Nat.not_lt.mp hR, Nat.not_lt.mp hC⟩
+  · exact Nat.not_lt.mp hR
 
 /-- WS-F1/TPI-D08: endpointSendDual preserves schedulerInvariantBundle. -/
 theorem endpointSendDual_preserves_schedulerInvariantBundle
@@ -2032,12 +2024,12 @@ case-split on what was at receiverRoot in st: if it was a notification, it's
 preserved by `preserves_ntfn_objects`; otherwise, `receiverRoot_not_ntfn`
 shows no notification can appear. No precondition needed. -/
 theorem ipcUnwrapCaps_preserves_ipcInvariant
-    (msg : IpcMessage) (receiverRoot : SeLe4n.ObjId)
+    (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
     (slotBase : SeLe4n.Slot) (grantRight : Bool)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hInv : ipcInvariant st)
     (hObjInv : st.objects.invExt)
-    (hStep : ipcUnwrapCaps msg receiverRoot slotBase grantRight st
+    (hStep : ipcUnwrapCaps caps receiverRoot slotBase grantRight st
              = .ok (summary, st')) :
     ipcInvariant st' := by
   intro oid ntfn hObj
@@ -2048,12 +2040,12 @@ theorem ipcUnwrapCaps_preserves_ipcInvariant
     | none =>
       have hNotNtfn : ∀ ntfn, st.objects[receiverRoot]? ≠ some (.notification ntfn) := by
         simp [hR]
-      exact absurd hObj (ipcUnwrapCaps_receiverRoot_not_ntfn msg receiverRoot
+      exact absurd hObj (ipcUnwrapCaps_receiverRoot_not_ntfn caps receiverRoot
         slotBase grantRight st st' summary hNotNtfn hObjInv hStep ntfn)
     | some obj =>
       cases obj with
       | notification ntfn' =>
-        have hPreserved := ipcUnwrapCaps_preserves_ntfn_objects msg receiverRoot
+        have hPreserved := ipcUnwrapCaps_preserves_ntfn_objects caps receiverRoot
           slotBase grantRight st st' summary receiverRoot ntfn' hR hObjInv hStep
         have hEq : KernelObject.notification ntfn' = KernelObject.notification ntfn :=
           Option.some.inj (hPreserved.symm.trans hObj)
@@ -2061,9 +2053,9 @@ theorem ipcUnwrapCaps_preserves_ipcInvariant
       | cnode _ | tcb _ | endpoint _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ =>
         have hNotNtfn : ∀ ntfn, st.objects[receiverRoot]? ≠ some (.notification ntfn) := by
           simp [hR]
-        exact absurd hObj (ipcUnwrapCaps_receiverRoot_not_ntfn msg receiverRoot
+        exact absurd hObj (ipcUnwrapCaps_receiverRoot_not_ntfn caps receiverRoot
           slotBase grantRight st st' summary hNotNtfn hObjInv hStep ntfn)
-  · exact hInv oid ntfn ((ipcUnwrapCaps_preserves_objects_ne msg receiverRoot slotBase
+  · exact hInv oid ntfn ((ipcUnwrapCaps_preserves_objects_ne caps receiverRoot slotBase
       grantRight st st' summary oid hNe hObjInv hStep).obj_back hObj
       (fun _ h => KernelObject.noConfusion h))
 

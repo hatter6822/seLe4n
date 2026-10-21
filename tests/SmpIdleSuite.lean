@@ -823,21 +823,15 @@ private def runBootValidationParityChecks : IO Unit := do
   | .ok _ =>
       assertBool "NEGATIVE: a TCB whose queuePPrev names an idle thread must be refused" false
   -- Round 8 sweep (the arity pin): the fields the hand-written arms had never
-  -- read — a TCB's reply references and carried capabilities, a Reply's own
-  -- id and `prev` link, a SchedContext's own id.
+  -- read — a TCB's reply references, a Reply's own id and `prev` link, a
+  -- SchedContext's own id.  (A TCB's `pendingMessage` names no object: a
+  -- message holds no capabilities.)
   let idleReplyId : SeLe4n.ReplyId := SeLe4n.ReplyId.ofNat idle0Obj.toNat
-  let idleCap : Capability :=
-    { target := .object idle0Obj, rights := AccessRightSet.ofList [.write] }
-  assertBool "NEGATIVE: a boot TCB's reply references and carried capabilities are read"
+  assertBool "NEGATIVE: a boot TCB's reply references are read"
     (SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot
        (.tcb { tcbWithTid ⟨9⟩ with replyObjectCode := SeLe4n.ReplyId.optCode (some idleReplyId) }) == true &&
      SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot
-       (.tcb { tcbWithTid ⟨9⟩ with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode (some idleReplyId) }) == true &&
-     SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot
-       (.tcb { tcbWithTid ⟨9⟩ with
-                pendingMessage := some { registers := #[],
-                                         caps := #[{ cap := idleCap,
-                                                     srcSlot := { cnode := ⟨0⟩, slot := SeLe4n.Slot.ofNat 0 } }] } }) == true)
+       (.tcb { tcbWithTid ⟨9⟩ with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode (some idleReplyId) }) == true)
   assertBool "NEGATIVE: a boot Reply's own id and its prev link are read"
     (SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot
        (.reply { replyId := idleReplyId }) == true &&

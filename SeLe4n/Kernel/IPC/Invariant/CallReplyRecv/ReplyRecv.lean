@@ -108,8 +108,6 @@ theorem endpointReplyRecv_preserves_ipcInvariant
   -- WS-H12d: Eliminate bounds-check if-branches (error cases contradict hStep : ... = .ok ...)
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
-  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hLookup : lookupTcb st replyTarget with
   | none => simp [hLookup] at hStep
   | some tcb =>
@@ -185,8 +183,6 @@ theorem endpointReplyRecv_preserves_schedulerInvariantBundle
   unfold endpointReplyRecv at hStep
   -- WS-H12d: Eliminate bounds-check if-branches (error cases contradict hStep : ... = .ok ...)
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
-  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hLookup : lookupTcb st replyTarget with
   | none => simp [hLookup] at hStep
@@ -326,8 +322,6 @@ theorem endpointReplyRecv_preserves_ipcSchedulerContractPredicates
   unfold endpointReplyRecv at hStep
   -- WS-H12d: Eliminate bounds-check if-branches (error cases contradict hStep : ... = .ok ...)
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
-  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hLookup : lookupTcb st replyTarget with
   | none => simp [hLookup] at hStep
@@ -471,8 +465,6 @@ theorem endpointReply_preserves_ipcSchedulerContractPredicates
   unfold endpointReply at hStep
   -- WS-H12d: Eliminate bounds-check if-branches (error cases contradict hStep : ... = .ok ...)
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
-  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hLookup : lookupTcb st target with
   | none => simp [hLookup] at hStep

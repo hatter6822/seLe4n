@@ -289,7 +289,7 @@ theorem notificationSignalBoundOnCore_preserves_ipcInvariantFull
           storeTcbReceiveComplete_closes_exceptMembership p.2 st2 t _ hObj1
             (fun m hm => by
               cases hm
-              unfold IpcMessage.bounded IpcMessage.empty maxMessageRegisters maxExtraCaps
+              unfold IpcMessage.bounded IpcMessage.empty maxMessageRegisters
               simp [Array.size])
             hAllNone1 hNotReply1 hNotHead1 hNotTail1 hNoIncoming1
             ⟨hIpc1, hDual1, hBounded1, hBadge1, hPend1, hNoDup1, hMem1, hQNB1, hQHB1,

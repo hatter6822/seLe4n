@@ -2081,8 +2081,6 @@ theorem endpointReply_preserves_projection
   -- WS-H12d: Eliminate bounds-check if-branches (error cases contradict hStep : ... = .ok ...)
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
-  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hLookup : lookupTcb st target with
   | none => simp [hLookup] at hStep
   | some tcb =>
@@ -2418,8 +2416,6 @@ theorem endpointReplyRecv_preserves_projection
   unfold endpointReplyRecv at hStep
   -- Eliminate bounds-check error branches
   simp only [show ¬(replyMsg.registers.size > maxMessageRegisters) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
-  simp only [show ¬(replyMsg.caps.size > maxExtraCaps) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hLookup : lookupTcb st replyTarget with
   | none => simp [hLookup] at hStep

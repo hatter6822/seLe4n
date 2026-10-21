@@ -269,28 +269,29 @@ private def row_ipcMessageTooLarge : KernelErrorRejection :=
     runScenario   := fun _ =>
       let oversized : IpcMessage :=
         { registers := Array.replicate (maxMessageRegisters + 1) (rv 0)
-          caps := #[]
           badge := none }
       runUnit (endpointReply (ThreadId.ofNat 1) (ThreadId.ofNat 2)
         oversized (default : SystemState)) }
 
-/-- Row: `endpointReply` rejects a reply exceeding maxExtraCaps with
-`.ipcMessageTooManyCaps`. -/
-private def row_ipcMessageTooManyCaps : KernelErrorRejection :=
-  { syscall       := "endpointReply"
-    expectedError := .ipcMessageTooManyCaps
-    scenarioTag   := "AN11A.2.ipcMessageTooManyCaps.over_max"
-    scenarioDesc  := "endpointReply rejects message whose extra-cap" ++
-                     " count exceeds maxExtraCaps (3)"
+/-- Row: `endpointReplyRecv` rejects a reply exceeding maxMessageRegisters
+with `.ipcMessageTooLarge`, before it looks at the endpoint or the caller.
+
+(This row replaced one for `.ipcMessageTooManyCaps`: a message holds no
+capabilities — a sender's extra capabilities are addresses in its frame,
+looked up at the rendezvous — so no reply path can carry too many, and that
+code is now raised nowhere.  It stays allocated in the syscall ABI.) -/
+private def row_ipcMessageTooLarge_replyRecv : KernelErrorRejection :=
+  { syscall       := "endpointReplyRecv"
+    expectedError := .ipcMessageTooLarge
+    scenarioTag   := "AN11A.2.ipcMessageTooLarge.replyRecv_over_max"
+    scenarioDesc  := "endpointReplyRecv rejects a reply whose register" ++
+                     " count exceeds maxMessageRegisters (120)"
     runScenario   := fun _ =>
       let oversized : IpcMessage :=
-        { registers := #[]
-          caps := Array.replicate (maxExtraCaps + 1)
-                    (TransferCap.fromSlot Capability.null
-                      { cnode := SeLe4n.ObjId.ofNat 0, slot := SeLe4n.Slot.ofNat 0 })
+        { registers := Array.replicate (maxMessageRegisters + 1) (rv 0)
           badge := none }
-      runUnit (endpointReply (ThreadId.ofNat 1) (ThreadId.ofNat 2)
-        oversized (default : SystemState)) }
+      runUnit (endpointReplyRecv (SeLe4n.ObjId.ofNat 3) (ThreadId.ofNat 1)
+        (ThreadId.ofNat 2) oversized none (default : SystemState)) }
 
 /-- Row: `syscallEntry` rejects empty current-thread slot with
 `.illegalState`.  The default state has no scheduler `current`. -/
@@ -1029,7 +1030,7 @@ def errorMatrix : List KernelErrorRejection :=
     row_invalidCapPtr,
     row_invalidRegister,
     row_ipcMessageTooLarge,
-    row_ipcMessageTooManyCaps,
+    row_ipcMessageTooLarge_replyRecv,
     row_illegalState_no_current,
     row_policyDenied_insecure_default,
     row_nullCapability_mint,

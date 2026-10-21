@@ -953,8 +953,8 @@ no side condition at all (`endpointCallOnCore_preserves_capabilityInvariantBundl
 `ipcUnwrapCaps` is the one IPC step that writes a CNode *and* mints CDT
 derivations, so the whole leg's bundle **reduces** to that step's — which is why
 this theorem takes the reduction hypothesis and §11's reply-side twin takes
-nothing.  Where the message carries no capabilities the step is not reached at
-all, and `…_of_no_caps` below is unconditional. -/
+nothing.  Where the send asks to transfer no capabilities the step is not
+reached at all, and `…_of_no_caps` below is unconditional. -/
 theorem endpointCallWithCapsOnCore_preserves_capabilityInvariantBundle
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
     (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)

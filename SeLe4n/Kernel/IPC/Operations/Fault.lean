@@ -71,8 +71,8 @@ if (cap_get_capType(handlerCap) == cap_endpoint_cap &&
 * **grant or grant-reply** is seL4's authority to hand the handler the reply
   capability the faulting thread will block on.  In this model the reply
   link is *structural* — the Call chain records `reply.caller` and the
-  faulting thread's `replyObject` unconditionally, and a fault message
-  carries no capabilities for `.grant` to authorise
+  faulting thread's `replyObject` unconditionally, and a fault delivery
+  transfers no capabilities for `.grant` to authorise
   (`faultMessage_grant_is_inert`) — so the disjunct is a **policy** gate
   rather than a mechanism prerequisite: it is what keeps a capability minted
   as send-only (a client's handle on a server endpoint, say) from being
@@ -331,27 +331,21 @@ theorem faultMessage_label_ne_null (f : Fault) (ctx : FaultContext)
     (faultMessage f ctx badge).label ≠ Architecture.FaultLabel.nullFault :=
   Architecture.faultLabel_ne_null f
 
-/-- WS-RR RR4.4: a fault message carries no capabilities. -/
-@[simp] theorem faultMessage_caps (f : Fault) (ctx : FaultContext)
-    (badge : Option SeLe4n.Badge) : (faultMessage f ctx badge).caps = #[] := rfl
-
-/-- WS-RR RR4.4: and grants none. -/
+/-- WS-RR RR4.4: a fault message grants nothing. -/
 @[simp] theorem faultMessage_capsGranted (f : Fault) (ctx : FaultContext)
     (badge : Option SeLe4n.Badge) :
     (faultMessage f ctx badge).capsGranted = false := rfl
 
-/-- WS-RR RR4.6 (**the prefilters never fire**): a fault message is inside
-both bounds `endpointCall` checks before it looks at the endpoint.
+/-- WS-RR RR4.6 (**the prefilter never fires**): a fault message is inside
+the register bound `endpointCall` checks before it looks at the endpoint.
 
 This is what makes the delivery's failure surface depend on the *endpoint
 state* alone — a fault can never be dropped because the kernel built a message
 its own transport rejects. -/
 theorem faultMessage_within_prefilters (f : Fault) (ctx : FaultContext)
     (badge : Option SeLe4n.Badge) :
-    ¬ ((faultMessage f ctx badge).registers.size > maxMessageRegisters) ∧
-    ¬ ((faultMessage f ctx badge).caps.size > maxExtraCaps) := by
-  refine ⟨Nat.not_lt.mpr ?_, by simp⟩
-  exact Architecture.encodeFault_within_budget f ctx
+    ¬ ((faultMessage f ctx badge).registers.size > maxMessageRegisters) :=
+  Nat.not_lt.mpr (Architecture.encodeFault_within_budget f ctx)
 
 /-- WS-RR RR4.5: the handler can recover the fault from the message it
 received — the round trip, lifted to the delivered envelope.  Without it the

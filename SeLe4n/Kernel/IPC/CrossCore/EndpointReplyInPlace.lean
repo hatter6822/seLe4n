@@ -82,7 +82,7 @@ consumed reply object heads no context there. -/
 theorem replyOnCore_inPlace (st : SystemState) (replier c server : SeLe4n.ThreadId)
     (ct : TCB) (ep : SeLe4n.ObjId) (rid : SeLe4n.ReplyId) (msg : IpcMessage)
     (core : Concurrency.CoreId)
-    (hSz : ¬ msg.registers.size > maxMessageRegisters) (hCp : ¬ msg.caps.size > maxExtraCaps)
+    (hSz : ¬ msg.registers.size > maxMessageRegisters)
     (hT : st.objects[c.toObjId]? = some (.tcb ct))
     (hIpc : ct.ipcState = .blockedOnReply ep (some server))
     (hRO : ct.replyObject = some rid)
@@ -172,7 +172,7 @@ theorem replyOnCore_inPlace (st : SystemState) (replier c server : SeLe4n.Thread
     (updateTcb_get?_ne_of_findsInPlace _ hT3c hFC3 hNeCQ).trans hO3q
   refine ⟨?_, ?_⟩
   · unfold endpointReplyOnCore
-    rw [if_neg hSz, if_neg hCp, hLook]
+    rw [if_neg hSz, hLook]
     dsimp only
     rw [hIpc]
     dsimp only
@@ -198,7 +198,7 @@ theorem replyTransferChecked_inPlace (ctx : LabelingContext) (st : SystemState)
     (replier c server : SeLe4n.ThreadId) (ct : TCB) (ep : SeLe4n.ObjId) (rid : SeLe4n.ReplyId)
     (mi : MessageInfo) (regs : Array SeLe4n.RegValue) (msg : IpcMessage)
     (core : Concurrency.CoreId)
-    (hSz : ¬ msg.registers.size > maxMessageRegisters) (hCaps : msg.caps = #[])
+    (hSz : ¬ msg.registers.size > maxMessageRegisters)
     (hT : st.objects[c.toObjId]? = some (.tcb ct))
     (hIpc : ct.ipcState = .blockedOnReply ep (some server))
     (hRO : ct.replyObject = some rid)
@@ -214,7 +214,7 @@ theorem replyTransferChecked_inPlace (ctx : LabelingContext) (st : SystemState)
   have hPF : ct.pendingFault = none := hG'.1.2
   have hTc : st.getTcb? c = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
   obtain ⟨hEq, hHead⟩ := replyOnCore_inPlace st replier c server ct ep rid msg core hSz
-    (by rw [hCaps]; decide) hT hIpc hRO hG
+    hT hIpc hRO hG
   obtain ⟨cv, hcv⟩ := Option.isSome_iff_exists.mp ((SeLe4n.ThreadId.toValid?_isSome_iff c).mpr hCRes)
   obtain ⟨sv, hsv⟩ := Option.isSome_iff_exists.mp
     ((SeLe4n.ThreadId.toValid?_isSome_iff server).mpr hSRes)
@@ -241,14 +241,14 @@ and the in-place store is that state (`replyOnCore_inPlace`). -/
 theorem storeReplyRendezvous_preserves_donationChainWellFormed (st : SystemState)
     (c server : SeLe4n.ThreadId) (ct : TCB) (ep : SeLe4n.ObjId) (rid : SeLe4n.ReplyId)
     (msg : IpcMessage) (core : Concurrency.CoreId)
-    (hSz : ¬ msg.registers.size > maxMessageRegisters) (hCp : ¬ msg.caps.size > maxExtraCaps)
+    (hSz : ¬ msg.registers.size > maxMessageRegisters)
     (hT : st.objects[c.toObjId]? = some (.tcb ct))
     (hIpc : ct.ipcState = .blockedOnReply ep (some server))
     (hRO : ct.replyObject = some rid)
     (hG : replyWakesInPlace st c ct rid = true)
     (hObjInv : st.objects.invExt) (hChain : donationChainWellFormed st) :
     donationChainWellFormed (storeReplyRendezvous st c server rid msg) := by
-  have hEq := (replyOnCore_inPlace st server c server ct ep rid msg core hSz hCp hT hIpc hRO hG).1
+  have hEq := (replyOnCore_inPlace st server c server ct ep rid msg core hSz hT hIpc hRO hG).1
   rcases endpointReplyOnCore_donationChain_cases server c msg core st hObjInv hChain with
     h | ⟨tcb, rid', r, scId, hLk, hRo', hR, hNext, _, _⟩
   · rw [hEq] at h; exact h

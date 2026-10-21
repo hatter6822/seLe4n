@@ -413,7 +413,7 @@ theorem cspaceDeleteSlotFinalising_confinedToCores
     (cspaceDeleteSlotFinalising_framed executingCore addr st st' hStep)
 
 /-- WS-BP BP7.1 (`v0.36.7`): **the live `.cspaceRevoke` arm writes no core.**  The
-revocation writes CNodes, the CDT and parked messages in TCB records; the
+revocation writes CNodes and the CDT; the
 teardown is the `.vspaceUnmap` arm's own transition. -/
 theorem cspaceRevokeCdtFinalising_confinedToCores
     (executingCore : CoreId) (addr : CSpaceAddr) (st st' : SystemState)

@@ -413,9 +413,9 @@ def endpointReplyRecvOnCore (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (rid :
                 -- `.call`'s frame, delivered entirely through this path) and
                 -- the receive leg's completed plain sender (unit frame).  Both
                 -- stagers are guard-inert when their target was not woken.
-                -- Installed count 0 *for `prevCaller`*: the reply message is
-                -- built `caps := #[]` by both `.reply`-shaped arms and the
-                -- reply path runs no unwrap (PR #866 round-2).  The receive
+                -- Installed count 0 *for `prevCaller`*: a message holds no
+                -- capabilities and the reply path runs no unwrap
+                -- (PR #866 round-2).  The receive
                 -- leg's own count is the returned `summary`, staged by the arm.
                 -- **WS-OD OD3.14: the receive leg's priority hand-off.**  The
                 -- return donation's walk starts at `recordedServer`, which is the

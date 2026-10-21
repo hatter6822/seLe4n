@@ -343,28 +343,28 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
     (∀ (s : SeLe4n.ThreadId) (sTcb : TCB) (sc : SeLe4n.SchedContextId),
       (endpointReplyOnCore tid callerTid
           { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
-            caps := #[], badge := cap.badge }
+            badge := cap.badge }
           executingCore st).1.objects[s.toObjId]? = some (.tcb sTcb) →
       sTcb.schedContextBinding = .donated sc callerTid →
       ∃ hid : SeLe4n.ReplyId, answeredReplyObject? st callerTid = some hid ∧
         replyFrameHeadHolder? (endpointReplyOnCore tid callerTid
             { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
-              caps := #[], badge := cap.badge }
+              badge := cap.badge }
             executingCore st).1 hid = some (sc, s)) ∧
     (∀ hid : SeLe4n.ReplyId, answeredReplyObject? st callerTid = some hid →
       replyFrameHeadHolderDonation (endpointReplyOnCore tid callerTid
           { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
-            caps := #[], badge := cap.badge }
+            badge := cap.badge }
           executingCore st).1 hid callerTid) ∧
     (∀ (hid : SeLe4n.ReplyId) (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId),
       answeredReplyObject? st callerTid = some hid →
       replyFrameHeadHolder? (endpointReplyOnCore tid callerTid
           { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
-            caps := #[], badge := cap.badge }
+            badge := cap.badge }
           executingCore st).1 hid = some (scId, holder) →
       ∀ tcb, (endpointReplyOnCore tid callerTid
           { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
-            caps := #[], badge := cap.badge }
+            badge := cap.badge }
           executingCore st).1.getTcb? holder = some tcb →
         passiveServerIdleAllowed tcb.ipcState) ∧
     -- **WS-OD OD4.4**: the arm's donation return resolves its new owner off the
@@ -373,7 +373,7 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
     (∀ scId serverTid originalOwner,
       replyStackOuterCallerValid (endpointReplyOnCore tid callerTid
           { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
-            caps := #[], badge := cap.badge } executingCore st).1
+            badge := cap.badge } executingCore st).1
         scId serverTid originalOwner) ∧
     -- **`v0.35.157`**: the origin redirect's coherence obligation -- the
     -- binding → head fact at the resolved origin, gated on the trigger, the
@@ -381,11 +381,11 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
     (∀ hid : SeLe4n.ReplyId, answeredReplyObject? st callerTid = some hid →
       redirectedOriginFrameCoherent (endpointReplyOnCore tid callerTid
           { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
-            caps := #[], badge := cap.badge } executingCore st).1
+            badge := cap.badge } executingCore st).1
         hid callerTid) ∧
     (∀ st1 res, endpointReplyCrossCoreDispatch tid callerTid
         { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
-          caps := #[], badge := cap.badge } executingCore st
+          badge := cap.badge } executingCore st
         = (st1, res) →
       st1.objects.invExt)
   signalNoBoundTarget : ∀ notifId, decoded.syscallId = .notificationSignal →
@@ -397,7 +397,7 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
       ((endpointReplyOnCore tid prevCaller
           { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract
               1 (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size,
-            caps := #[], badge := replyBadge }
+            badge := replyBadge }
           executingCore st).1).objects[s.toObjId]?
         = some (.tcb sTcb) →
       sTcb.schedContextBinding ≠ .donated sc0 prevCaller) ∧
@@ -411,32 +411,32 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
     replyFrameHeadHolderDonation (endpointReplyOnCore tid prevCaller
         { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract
             1 (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size,
-          caps := #[], badge := replyBadge }
+          badge := replyBadge }
         executingCore st).1 rid prevCaller ∧
     (∀ scId holder,
       replyFrameHeadHolder? (endpointReplyOnCore tid prevCaller
         { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract
             1 (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size,
-          caps := #[], badge := replyBadge }
+          badge := replyBadge }
         executingCore st).1 rid = some (scId, holder) →
       ∀ tcb, (endpointReplyOnCore tid prevCaller
         { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract
             1 (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size,
-          caps := #[], badge := replyBadge }
+          badge := replyBadge }
         executingCore st).1.getTcb? holder = some tcb →
         passiveServerIdleAllowed tcb.ipcState) ∧
     (∀ scId serverTid originalOwner,
       replyStackOuterCallerValid (endpointReplyOnCore tid prevCaller
         { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract
             1 (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size,
-          caps := #[], badge := replyBadge }
+          badge := replyBadge }
         executingCore st).1 scId serverTid originalOwner) ∧
     -- **`v0.35.157`**: the origin redirect's coherence obligation, as in
     -- `replyStage`, at the state the pop between the legs runs on.
     redirectedOriginFrameCoherent (endpointReplyOnCore tid prevCaller
         { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract
             1 (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size,
-          caps := #[], badge := replyBadge }
+          badge := replyBadge }
         executingCore st).1 rid prevCaller ∧
     -- **WS-OD OD4.4**: the receive leg's pre-receive cleanup pops whatever
     -- donation the receiver abandoned; the pop resolves its new owner off that
@@ -446,27 +446,27 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
       (endpointReplyOnCore tid prevCaller
         { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract
             1 (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size,
-          caps := #[], badge := replyBadge }
+          badge := replyBadge }
         executingCore st).1) tid ∧
     (∃ tcb : TCB,
       (replyRecvPostPopState rid prevCaller
         (endpointReplyOnCore tid prevCaller
           { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract
               1 (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size,
-            caps := #[], badge := replyBadge }
+            badge := replyBadge }
           executingCore st).1).getTcb? tid = some tcb ∧
       tcb.ipcState = .ready) ∧
     allTimeoutBudgetsNone (replyRecvPostPopState rid prevCaller
       (endpointReplyOnCore tid prevCaller
         { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract
             1 (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size,
-          caps := #[], badge := replyBadge }
+          badge := replyBadge }
         executingCore st).1) ∧
     replyIdEstablishFresh (replyRecvPostPopState rid prevCaller
       (endpointReplyOnCore tid prevCaller
         { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract
             1 (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size,
-          caps := #[], badge := replyBadge }
+          badge := replyBadge }
         executingCore st).1) rid ∧
     (∀ (nextThread : SeLe4n.ThreadId) (summary2 : CapTransferSummary)
         (sgi2 : Option (CoreId × Concurrency.SgiKind)) (st2 : SystemState),
@@ -476,7 +476,7 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
             (endpointReplyOnCore tid prevCaller
               { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract
                   1 (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size,
-                caps := #[], badge := replyBadge }
+                badge := replyBadge }
               executingCore st).1)
         = (st2, .ok (nextThread, summary2, sgi2)) →
       st2.objects.invExt ∧
@@ -489,7 +489,7 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
             (endpointReplyOnCore tid prevCaller
               { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract
                   1 (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size,
-                caps := #[], badge := replyBadge }
+                badge := replyBadge }
               executingCore st).1 = some (scId, holder) →
         ∀ tcb, st2.getTcb? holder = some tcb →
           passiveServerIdleAllowed tcb.ipcState) ∧
@@ -501,7 +501,7 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
             (endpointReplyOnCore tid prevCaller
               { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract
                   1 (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size,
-                caps := #[], badge := replyBadge }
+                badge := replyBadge }
               executingCore st).1)
           st2 = .ok ((), st3) →
         st3.objects.invExt))
@@ -842,11 +842,11 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
                       decoded.msgRegs _ _ st hF] at hStep
                     have hReplyInv := endpointReplyCrossCoreDispatch_establishes_ipcInvariantFull
                       tid callerTid
-                      { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo, caps := #[], badge := cap.badge }
+                      { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo, badge := cap.badge }
                       executingCore st hInv hObjInv
                       hDon hHolderDon hBudgets hHolderIdle hReplyStack hOriginCoh
                     cases hReply : endpointReplyCrossCoreDispatch tid callerTid
-                        { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo, caps := #[], badge := cap.badge }
+                        { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo, badge := cap.badge }
                         executingCore st with
                     | mk st1 res1 =>
                         rw [hReply] at hStep hReplyInv
@@ -1022,7 +1022,7 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
                   hCleanupStack1, hReady1, hBudgets1, hRidFresh1, hRetStage⟩ :=
                 hPack.replyRecvStage rid prevCaller replyBadge epId hSy hTgt hRR
               cases hBody : endpointReplyRecvOnCore epId tid rid prevCaller
-                  { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract 1 (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size, caps := #[], badge := replyBadge }
+                  { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract 1 (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size, badge := replyBadge }
                   gate.cspaceRoot decoded.capRecvSlot executingCore st with
               | error e => simp only [hBody] at hStep; cases hStep
               | ok pairB =>
@@ -1918,20 +1918,13 @@ private theorem witnessSt3_tcb_idle (k : SeLe4n.ObjId) (t : TCB)
   rw [witnessSt3_getTcb_unique _ t h]; rfl
 
 private theorem witnessReachable3 : ipcReachable witnessSt3 := by
-  refine ⟨witnessInv3, witnessObjInv3, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨witnessInv3, witnessObjInv3, ?_, ?_, ?_, ?_, ?_⟩
   · intro tid tcb hLk
     rw [witnessSt3_lookup] at hLk
     split at hLk
     · cases hLk
     · split at hLk
       · cases hLk; rfl
-      · cases hLk
-  · intro tid tcb msg hLk hMsg
-    rw [witnessSt3_lookup] at hLk
-    split at hLk
-    · cases hLk
-    · split at hLk
-      · cases hLk; cases hMsg
       · cases hLk
   · refine ⟨fun oid ntfn hLk => ?_, fun tid tcb oid hLk hBl => ?_,
       fun tid tcb oid hLk hBl => ?_, fun oid ntfn h tcb hLk _ _ => ?_,
@@ -2765,17 +2758,12 @@ private theorem witnessInv4 : ipcInvariantFull witnessSt4 := by
 
 set_option maxHeartbeats 1000000 in
 private theorem witnessReachable4 : ipcReachable witnessSt4 := by
-  refine ⟨witnessInv4, witnessObjInv4, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨witnessInv4, witnessObjInv4, ?_, ?_, ?_, ?_, ?_⟩
   · intro tid tcb hLk
     rw [witnessSt4_lookup] at hLk
     split at hLk
     · cases hLk
     · exact witnessReachable3.allTimeoutBudgetsNone _ _ hLk
-  · intro tid tcb msg hLk hMsg
-    rw [witnessSt4_lookup] at hLk
-    split at hLk
-    · cases hLk
-    · exact witnessReachable3.pendingMessageCapBadgesWellFormed _ _ _ hLk hMsg
   · refine ⟨fun oid ntfn hLk => ?_, fun tid tcb oid hLk hBl => ?_,
       fun tid tcb oid hLk hBl => ?_, fun oid ntfn h tcb hLk _ _ => ?_,
       fun tid tcb hLk hNB => ?_⟩

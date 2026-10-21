@@ -80,7 +80,10 @@ inductive KernelError where
   | childIdCollision        -- WS-H2/A-26: childId collides with existing object or untyped child
   | addressOutOfBounds      -- WS-H11/A-05: physical address exceeds machine address width
   | ipcMessageTooLarge      -- WS-H12d/A-09: IPC message registers exceed maxMessageRegisters (120)
-  | ipcMessageTooManyCaps   -- WS-H12d/A-09: IPC message caps exceed maxExtraCaps (3)
+  | ipcMessageTooManyCaps   -- WS-H12d/A-09: reserved syscall-ABI code.  Raised
+                           -- by no path: a message holds no capabilities, and
+                           -- the 2-bit `extraCaps` field cannot exceed
+                           -- maxExtraCaps (3)
   | backingObjectMissing    -- WS-H13/A-29: service backing object not in object store
   | invalidRegister         -- WS-J1-B: register index out of architectural bounds
   | invalidSyscallNumber    -- WS-J1-B: syscall number register value not in modeled set

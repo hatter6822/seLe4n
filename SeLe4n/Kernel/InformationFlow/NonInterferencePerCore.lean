@@ -1250,8 +1250,6 @@ theorem endpointReply_confinedToBootCore (st st' : SystemState)
   unfold endpointReply at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
-  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hTcb : lookupTcb st target with
   | none => simp [hTcb] at hStep
   | some tcb =>
@@ -1289,8 +1287,6 @@ theorem endpointReplyRecv_confinedToBootCore (st st' : SystemState)
     observableSlotsConfinedToCore st st' bootCoreId := by
   unfold endpointReplyRecv at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
-  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hTcb : lookupTcb st replyTarget with
   | none => simp [hTcb] at hStep

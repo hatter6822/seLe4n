@@ -516,11 +516,9 @@ private def runRendezvousChecks : IO Unit := do
 #check @endpointSendDualWithCaps_preserves_ipcInvariantFull_perCore
 #check @endpointReceiveDualWithCaps_preserves_ipcInvariantFull_perCore
 #check @endpointCallWithCaps_preserves_ipcInvariantFull_perCore
--- WS-RR RR3.11 — the in-flight badge surface the WithCaps bundles now establish from:
-#check @messageCapBadgesValid
-#check @pendingMessageCapBadgesWellFormed
+-- WS-RR RR3.11 — the badge surface the WithCaps bundles establish (a message holds
+-- no capability, so the transfer installs only what it resolves from a CNode):
 #check @pendingMessagesSatisfy
-#check @endpointReceiveDual_preserves_pendingMessageCapBadgesWellFormed
 #check @endpointSendDualWithCaps_preserves_badgeWellFormed
 #check @endpointReceiveDualWithCaps_preserves_badgeWellFormed
 #check @endpointCallWithCaps_preserves_badgeWellFormed
@@ -529,8 +527,6 @@ private def runRendezvousChecks : IO Unit := do
 -- complete alongside the boundedness instances even where no composite consumes
 -- them yet; the dispatch payoffs below are the designated consumers):
 #check @allPendingMessagesBounded_iff_pendingMessagesSatisfy
-#check @pendingMessageCapBadgesWellFormed_of_getElem_eq
-#check @cleanupPreReceiveDonation_preserves_pendingMessageCapBadgesWellFormed
 -- WS-RR RR3.12 — the relaxed donation-owner family mirrors the unrelaxed one:
 #check @donationOwnerValidExcept_of_objects_eq
 -- WS-RR RR3.15–RR3.21 — the per-arm dispatch bundle layer (production,

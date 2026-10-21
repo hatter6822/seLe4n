@@ -49,16 +49,14 @@ RR4.20 non-interference argument about a data flow alone. -/
 def faultMessage (f : Fault) (ctx : FaultContext) (badge : Option SeLe4n.Badge) :
     IpcMessage :=
   { registers   := (Architecture.encodeFault f ctx).2
-    caps        := #[]
     badge       := badge
     capsGranted := false
     label       := (Architecture.encodeFault f ctx).1.label }
 
 /-- WS-RR RR4.6: the message satisfies the model's payload bound predicate. -/
 theorem faultMessage_bounded (f : Fault) (ctx : FaultContext)
-    (badge : Option SeLe4n.Badge) : (faultMessage f ctx badge).bounded := by
-  refine ⟨Architecture.encodeFault_within_budget f ctx, ?_⟩
-  simp [faultMessage, maxExtraCaps]
+    (badge : Option SeLe4n.Badge) : (faultMessage f ctx badge).bounded :=
+  Architecture.encodeFault_within_budget f ctx
 
 /-- M-D01: Resolve extra capability addresses from the sender's CSpace
 into actual capabilities for IPC message transfer.
@@ -133,7 +131,7 @@ two arrival orders deliver the same words. -/
   | .ok decoded =>
       { registers := Architecture.RegisterDecode.extractMessageRegisters decoded.msgRegs
           decoded.msgInfo,
-        caps := #[], badge := badge, capsGranted := grant }
+        badge := badge, capsGranted := grant }
 
 /-- WS-ZA ZA4.7: **the message a blocked sender holds**, given the decode of
 its saved frame.
@@ -196,27 +194,17 @@ def blockedSenderCapRequest (st : SystemState) (sender : SeLe4n.ThreadId) (tcb :
     Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat) :=
   if tcb.ipcFaultSend then none else senderFrameCapRequest st sender tcb tcb.ipcCanGrant
 
-/-- WS-ZA ZA4.7: a blocked sender's message carries no capabilities -- the
-receive resolves them separately (`blockedSenderCapRequest`). -/
-@[simp] theorem blockedSenderMessage_caps (st : SystemState) (sender : SeLe4n.ThreadId)
-    (tcb : TCB) : (blockedSenderMessage st sender tcb).caps = #[] := by
-  unfold blockedSenderMessage blockedSenderMessageOf senderFrameMessage
-  split
-  · split <;> rfl
-  · split <;> rfl
-
 /-- WS-ZA ZA4.7: and it is within the payload bound: a fault encodes inside the
 budget, and a decoded body is cut to at most `maxMessageRegisters` words. -/
 theorem blockedSenderMessage_bounded (st : SystemState) (sender : SeLe4n.ThreadId)
     (tcb : TCB) : (blockedSenderMessage st sender tcb).bounded := by
-  refine ⟨?_, by simp [maxExtraCaps]⟩
   unfold blockedSenderMessage blockedSenderMessageOf senderFrameMessage
   split
   · split
     · exact Architecture.encodeFault_within_budget _ _
-    · simp [IpcMessage.empty]
+    · simp [IpcMessage.empty, IpcMessage.bounded]
   · split
-    · simp [IpcMessage.empty]
+    · simp [IpcMessage.empty, IpcMessage.bounded]
     · exact Architecture.RegisterDecode.extractMessageRegisters_length _ _
 
 
@@ -282,24 +270,14 @@ theorem sendPayloadMessage_frame_eq_blockedSenderMessage (st : SystemState)
       sendPayloadMessage st sender (.frame badge grant) := by
   simp [blockedSenderMessageOf, sendPayloadMessage, senderFrameDecode, hT]
 
-/-- WS-ZA ZA4.7: a delivered message carries no capabilities. -/
-@[simp] theorem sendPayloadMessage_caps (st : SystemState) (sender : SeLe4n.ThreadId)
-    (p : SendPayload) : (sendPayloadMessage st sender p).caps = #[] := by
-  cases p with
-  | frame b g =>
-    simp only [sendPayloadMessage, senderFrameMessage]
-    split <;> rfl
-  | fault f ctx b => rfl
-
 /-- WS-ZA ZA4.7: and it is within the payload bound. -/
 theorem sendPayloadMessage_bounded (st : SystemState) (sender : SeLe4n.ThreadId)
     (p : SendPayload) : (sendPayloadMessage st sender p).bounded := by
   cases p with
   | frame b g =>
-    refine ⟨?_, by simp [maxExtraCaps]⟩
     simp only [sendPayloadMessage, senderFrameMessage]
     split
-    · simp [IpcMessage.empty]
+    · simp [IpcMessage.empty, IpcMessage.bounded]
     · exact Architecture.RegisterDecode.extractMessageRegisters_length _ _
   | fault f ctx b => exact faultMessage_bounded f ctx b
 

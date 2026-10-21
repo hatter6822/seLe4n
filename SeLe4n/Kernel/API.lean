@@ -3956,7 +3956,7 @@ def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
             -- the fault handler's reply would wake the faulted thread `.ready`
             -- with its saved PC still addressing the instruction that faulted.
             replyTransferOnCore tid callerTid decoded.msgInfo decoded.msgRegs
-              { registers := body, caps := #[], badge := cap.badge } executingCore st
+              { registers := body, badge := cap.badge } executingCore st
     | _ => fun _ => .error .invalidCapability
   -- WS-K-C: CSpace operations — cap targets a CNode, message registers
   -- carry slot indices, rights, and badge. Decoded via SyscallArgDecode.
@@ -4110,7 +4110,7 @@ def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
             -- endpoint receive cap's, matching the `.reply` arm.
             let full := extractMessageRegisters decoded.msgRegs decoded.msgInfo
             let body := full.extract 1 full.size
-            let msg : IpcMessage := { registers := body, caps := #[], badge := replyBadge }
+            let msg : IpcMessage := { registers := body, badge := replyBadge }
             -- WS-RA RA.B.6: the receive leg may have consumed a queued sender
             -- into the caller's `pendingMessage`; stage it as the return frame.
             -- A caller that blocked on the receive leg stages nothing (the
@@ -4413,7 +4413,7 @@ def dispatchWithCapChecked (ctx : LabelingContext)
               -- the unchecked one exactly when that gate admits
               -- (`replyTransferOnCoreChecked_eq_unchecked_of_flow_allowed`).
               replyTransferOnCoreChecked ctx tid callerTid decoded.msgInfo decoded.msgRegs
-                { registers := body, caps := #[], badge := cap.badge } executingCore st
+                { registers := body, badge := cap.badge } executingCore st
             else .error .replyCapInvalid
     | _ => fun _ => .error .invalidCapability
   -- T6-I: CSpace mint — checked for source→destination CNode flow
@@ -4555,7 +4555,7 @@ def dispatchWithCapChecked (ctx : LabelingContext)
               -- endpoint receive cap's.
               let full := extractMessageRegisters decoded.msgRegs decoded.msgInfo
               let body := full.extract 1 full.size
-              let msg : IpcMessage := { registers := body, caps := #[], badge := replyBadge }
+              let msg : IpcMessage := { registers := body, badge := replyBadge }
               if securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf prevCaller) then
                 -- WS-RA RA.B.6: stage the receive leg's delivery (the checked
                 -- twin of the unchecked arm's staging; the receive leg's own
@@ -6023,7 +6023,7 @@ theorem dispatchWithCap_reply_populates_msg
             -- pre-RR4 body verbatim — cross-core reply plus the RA.B.5b
             -- delivered-message staging (`replyTransferOnCore_of_no_fault`).
             replyTransferOnCore tid callerTid decoded.msgInfo decoded.msgRegs
-              { registers := body, caps := #[], badge := cap.badge } executingCore st := by
+              { registers := body, badge := cap.badge } executingCore st := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget]
 
 -- ============================================================================
@@ -6228,7 +6228,7 @@ theorem dispatchArm_replyRecv_matches_returnShape
     (hBody : endpointReplyRecvOnCore epId tid rid prevCaller
         { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract 1
             (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size,
-          caps := #[], badge := replyBadge }
+          badge := replyBadge }
         gate.cspaceRoot decoded.capRecvSlot
         executingCore st = .ok (summary, stB))
     (hTcb : stB.getTcb? tid = some tcb)
@@ -6272,7 +6272,7 @@ theorem dispatchArm_call_frame_delivered_by_reply
     (hNoFault : threadHasPendingFault st callerTid = false)
     (hDispatch : endpointReplyCrossCoreDispatch tid callerTid
         { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
-          caps := #[], badge := cap.badge }
+          badge := cap.badge }
         executingCore st = (st1, .ok sgi))
     (hTcb : st1.getTcb? callerTid = some tcb)
     (hReady : tcb.ipcState = .ready)

@@ -4498,7 +4498,7 @@ private def blockedSenderState : SystemState :=
                       -- it delivers (`blockedThreadsPendingMessageConsistent`), and
                       -- the dequeue refuses a head that does not -- so a fixture
                       -- without this models a state the kernel cannot reach.
-                      pendingMessage := some { registers := #[], caps := #[],
+                      pendingMessage := some { registers := #[],
                                                badge := none } }
                     (.blockedOnSend crossCoreEndpoint)))).insert
           crossCoreEndpoint
@@ -4551,7 +4551,7 @@ private def replyRecvState : SystemState :=
                   replyObjectCode := 0 } (.blockedOnReply crossCoreEndpoint (some remoteHomedThread)))) }
 
 private def replyRecvMsg : IpcMessage :=
-  { registers := #[], caps := #[], badge := none }
+  { registers := #[], badge := none }
 
 /-- The Reply object the `.replyRecv` write-set checks answer through.  It is
 absent from the fixture, so it heads no donation frame and the pop between the
@@ -4887,7 +4887,7 @@ private def runResolvedFlowGateChecks : IO Unit := do
 -- ---------------------------------------------------------------------------
 
 private def vacatingSendMsg : IpcMessage :=
-  { registers := #[], caps := #[], badge := none }
+  { registers := #[], badge := none }
 
 /-- The blocking send: `lowEndpoint` has no receiver, so `lowCurrent` parks on
 its send queue and `removeRunnableOnCore` clears core 0's `current` slot. -/
@@ -7704,13 +7704,11 @@ private def ipcReceiverRoot : SeLe4n.ObjId := ⟨1042⟩
 private def ipcReceiver : SeLe4n.ThreadId := ⟨1043⟩
 private def ipcSender : SeLe4n.ThreadId := ⟨1044⟩
 
-/-- One transferred capability, so a message counts as caps-carrying. -/
+/-- A granting send's message, so a send counts as caps-carrying: the grant
+right here, and the capability itself as an address in the sender's frame
+(`withSenderFrame … #[0]` below), resolved at the rendezvous. -/
 private def ipcCapsMessage : IpcMessage :=
-  { registers := #[],
-    caps := #[{ cap := { target := .object lowEndpoint,
-                         rights := AccessRightSet.ofList [.read] },
-                srcSlot := { cnode := ⟨0⟩, slot := SeLe4n.Slot.ofNat 0 } }],
-    capsGranted := true }
+  { registers := #[], capsGranted := true }
 
 /-- The capless shape, for the negatives. -/
 private def ipcCaplessMessage : IpcMessage := { registers := #[] }
@@ -10593,17 +10591,13 @@ private def taintedEndpointTable : SeLe4n.Kernel.TaintTable :=
   SeLe4n.Kernel.TaintTable.empty.joinAt taintedSender.toObjId
     (DeclassificationTaint.singleton 42)
 
-/-- PR #873 round 4: the parked message has to **actually carry a capability**.
-The CSpace sinks are gated on that now — a plain message installs nothing, so
-declaring them for every delivery would write the sender's provenance into a
-CNode no capability reached and, since a root feeds the consuming subject, name
-an unsaturated predecessor for an unrelated later downgrade. -/
-private def transferredCap : Capability :=
-  { target := .object lowNotification, rights := AccessRightSet.ofList [] }
-
+/-- PR #873 round 4: the blocked sender has to **actually ask to transfer a
+capability**, so the negatives below are about a caps-carrying delivery and not
+a plain one.  As on the live send, it asks in its saved frame: one capability
+address counted in its message-info word, under its capability's grant right
+(`TCB.setSendCap`); the receive resolves it at the rendezvous. -/
 private def transferMessage : IpcMessage :=
-  { registers := #[], caps := #[TransferCap.fromSlot transferredCap
-    { cnode := SeLe4n.ObjId.ofNat 0, slot := SeLe4n.Slot.ofNat 0 }], badge := none }
+  { registers := #[], badge := none }
 
 private def taintedEndpointState : SystemState :=
   let base : SystemState :=
@@ -10616,7 +10610,8 @@ private def taintedEndpointState : SystemState :=
   | some stcb =>
       { base with
           objects := base.objects.insert taintedSender.toObjId
-            (.tcb { stcb with pendingMessage := some transferMessage }) }
+            (.tcb ((SeLe4n.Testing.tcbWithSenderFrame stcb transferMessage
+              #[SeLe4n.CPtr.ofNat 0]).setSendCap none true)) }
 
 /-- PR #873 round 4: the BOUND-delivery ordering.  `boundDeliveryTarget?` checks
 only that the waiter list is empty and that the bound TCB is parked on an

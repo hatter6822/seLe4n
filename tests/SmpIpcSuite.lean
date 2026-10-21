@@ -58,7 +58,7 @@ pipelines** threaded through the evolving state:
   returns the SC to the client (`applyReplyDonationOnCore`);
 * **§3.10** **capability transfer** across cores: a Call carrying a capability
   installs it into the receiver's CSpace via `ipcUnwrapCaps` (grant-right
-  gated — denied without `.grant`), plus the `ipcMessageTooManyCaps` bound;
+  gated — denied without `.grant`), plus the message-info extra-caps bound;
 * **§3.11** **info-flow-checked** cross-core dispatch: `…CrossCoreDispatchChecked`
   runs the transition when the flow is permitted and fails closed with
   `.flowDenied` (state unchanged) when it is not — for both the call
@@ -246,15 +246,15 @@ private def replyB2 : SeLe4n.ReplyId := ⟨833⟩
 
 -- Distinct pinned payloads (payload isolation is asserted on the exact values).
 private def callMsgA : IpcMessage :=
-  { registers := #[SeLe4n.RegValue.ofNat 11, SeLe4n.RegValue.ofNat 12], caps := #[], badge := none }
+  { registers := #[SeLe4n.RegValue.ofNat 11, SeLe4n.RegValue.ofNat 12], badge := none }
 private def callMsgC : IpcMessage :=
-  { registers := #[SeLe4n.RegValue.ofNat 21], caps := #[], badge := none }
+  { registers := #[SeLe4n.RegValue.ofNat 21], badge := none }
 private def replyMsgB : IpcMessage :=
-  { registers := #[SeLe4n.RegValue.ofNat 42], caps := #[], badge := none }
+  { registers := #[SeLe4n.RegValue.ofNat 42], badge := none }
 private def replyMsgD : IpcMessage :=
-  { registers := #[SeLe4n.RegValue.ofNat 84], caps := #[], badge := none }
+  { registers := #[SeLe4n.RegValue.ofNat 84], badge := none }
 private def sendMsgE : IpcMessage :=
-  { registers := #[SeLe4n.RegValue.ofNat 5], caps := #[], badge := none }
+  { registers := #[SeLe4n.RegValue.ofNat 5], badge := none }
 
 private def mkTcb (tid : Nat) (prio : Nat) (aff : Option CoreId) : TCB :=
   { tid := ⟨tid⟩, priority := ⟨prio⟩, domain := ⟨0⟩, cspaceRoot := cnRoot,

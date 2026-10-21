@@ -155,14 +155,14 @@ theorem faultAbandonOnCore_replyViews_eq (st : SystemState) (t : SeLe4n.ThreadId
   rw [h, removeRunnableOnCore_replyViews_eq]
 
 /-- The capability unwrap writes CNodes alone. -/
-theorem ipcUnwrapCaps_replyViews_eq (msg : IpcMessage) (root : SeLe4n.ObjId)
+theorem ipcUnwrapCaps_replyViews_eq (caps : Array TransferCap) (root : SeLe4n.ObjId)
     (base : SeLe4n.Slot) (grant : Bool) {st st' : SystemState} {sum : CapTransferSummary}
-    (hInv : st.objects.invExt) (h : ipcUnwrapCaps msg root base grant st = .ok (sum, st')) :
+    (hInv : st.objects.invExt) (h : ipcUnwrapCaps caps root base grant st = .ok (sum, st')) :
     st'.replyViews = st.replyViews :=
   replyViews_eq_of_tcbs
-    (fun k t0 hk => ⟨t0, ipcUnwrapCaps_preserves_tcb_objects msg root base grant st st' sum
+    (fun k t0 hk => ⟨t0, ipcUnwrapCaps_preserves_tcb_objects caps root base grant st st' sum
       k t0 hk hInv h, rfl⟩)
-    (fun k t' hk => ⟨t', ipcUnwrapCaps_tcb_backward msg root base grant st st' sum k t'
+    (fun k t' hk => ⟨t', ipcUnwrapCaps_tcb_backward caps root base grant st st' sum k t'
       hInv h hk⟩)
 
 /-- The rendezvous capability lookup reads the sender's CSpace and writes the

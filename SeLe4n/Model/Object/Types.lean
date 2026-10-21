@@ -845,7 +845,8 @@ structure TransferCap where
 
       A slot address is exact here because the resolution and the install run
       in one step: since WS-ZA ZA4.7 a blocked sender keeps capability
-      addresses, not resolved capabilities (`blockedSenderMessage_caps`), so no
+      addresses, not resolved capabilities (`IpcMessage` has no capability
+      field), so no
       thread can delete the source slot and install something else there
       between the two.  Since WS-ZA ZA5.3 part 2 the slot is the tree's node,
       as seL4's `cte_t` is its own mapping-database node. -/
@@ -863,17 +864,21 @@ def TransferCap.fromSlot (cap : Capability) (src : SlotRef) : TransferCap :=
 
 /-- WS-E4/M-02: Structured IPC message payload for endpoint transfers.
 
-Models seL4 message registers plus optional capability transfer and sender badge.
-WS-H12d/A-09: Registers and caps are bounded `Array` types matching seL4's
-`seL4_MsgMaxLength` (120) and `seL4_MsgMaxExtraCaps` (3). Bounds are enforced
-at IPC send boundaries. -/
+Models seL4 message registers plus the sender badge and grant right.
+WS-H12d/A-09: Registers are a bounded `Array` matching seL4's
+`seL4_MsgMaxLength` (120); the bound is enforced at IPC send boundaries.
+
+**A message holds no capabilities.**  As in seL4, the extra capabilities a
+sender names are looked up in its CSpace at the rendezvous (`lookupExtraCaps`,
+here `resolveExtraCaps`) and installed in the same step from a transient array
+(`ipcUnwrapCaps`), so no resolved capability can be parked in a thread's
+`pendingMessage`: the type has nowhere to put one. -/
 structure IpcMessage where
   /-- S4-D: Changed from `Array Nat` to `Array RegValue` for type consistency
       with the machine register model. All register values in IPC messages
       are now typed, matching the `RegValue` wrapper used throughout the
       register decode and context-switch infrastructure. -/
   registers : Array SeLe4n.RegValue
-  caps : Array TransferCap := #[]
   badge : Option SeLe4n.Badge := none
   /-- **May the capabilities this message carries be installed at the receiver?**
 
@@ -929,28 +934,26 @@ structure IpcMessage where
 
 namespace IpcMessage
 
-def empty : IpcMessage := { registers := (#[] : Array SeLe4n.RegValue), caps := #[] }
+def empty : IpcMessage := { registers := (#[] : Array SeLe4n.RegValue) }
 
 /-- WS-H12d/A-09: Predicate asserting that a message's payload respects
-seL4 message-register and extra-capability bounds. -/
+seL4 message-register bound. -/
 def bounded (msg : IpcMessage) : Prop :=
-  msg.registers.size ≤ maxMessageRegisters ∧
-  msg.caps.size ≤ maxExtraCaps
+  msg.registers.size ≤ maxMessageRegisters
 
 /-- WS-H12d/A-09: Decidable bounds check for runtime enforcement at IPC
 send boundaries. Returns `true` iff the message satisfies payload bounds. -/
 def checkBounds (msg : IpcMessage) : Bool :=
-  msg.registers.size ≤ maxMessageRegisters &&
-  msg.caps.size ≤ maxExtraCaps
+  msg.registers.size ≤ maxMessageRegisters
 
 theorem empty_bounded : IpcMessage.empty.bounded := by
-  unfold bounded empty maxMessageRegisters maxExtraCaps
+  unfold bounded empty maxMessageRegisters
   simp [Array.size]
 
 theorem checkBounds_iff_bounded (msg : IpcMessage) :
     msg.checkBounds = true ↔ msg.bounded := by
-  unfold checkBounds bounded maxMessageRegisters maxExtraCaps
-  simp [Bool.and_eq_true]
+  unfold checkBounds bounded maxMessageRegisters
+  simp
 
 end IpcMessage
 
@@ -975,7 +978,7 @@ inductive CapTransferResult where
   deriving Repr, DecidableEq
 
 /-- M-D01: Aggregated results of unwrapping all extra capabilities in an
-IPC message. One entry per cap in the original `msg.caps` array. -/
+IPC message. One entry per cap in the array resolved at the rendezvous. -/
 structure CapTransferSummary where
   results : Array CapTransferResult := #[]
   deriving Repr, DecidableEq
@@ -987,7 +990,7 @@ CSpace — the `.installed` entries only.  `.noSlot` and `.grantDenied`
 entries record caps the transfer did *not* deliver, so they must not be
 counted toward anything the receiver is told arrived (PR #866 round-2
 review: the return frame's `extraCaps` reads this, never the requested
-`msg.caps.size`). -/
+count). -/
 def installedCount (s : CapTransferSummary) : Nat :=
   s.results.foldl
     (fun n r => match r with

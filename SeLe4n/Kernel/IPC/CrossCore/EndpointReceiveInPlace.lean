@@ -124,7 +124,7 @@ theorem blockedSender_of_routedSend (st : SystemState) (s : SeLe4n.ThreadId) (sT
       blockedSenderMessage st s sTcb =
         { registers := Architecture.regMessageBody SeLe4n.arm64DefaultLayout
             sTcb.registerContext mi.length,
-          caps := #[], badge := sTcb.ipcBadgeView, capsGranted := sTcb.ipcCanGrant } := by
+          badge := sTcb.ipcBadgeView, capsGranted := sTcb.ipcCanGrant } := by
   obtain ⟨d, hDec, _, _, _, hMi, hX, _, hRegs⟩ :=
     Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedSend st s _ _ 32 capAddr mi h
   refine ⟨?_, ?_⟩
@@ -156,7 +156,7 @@ theorem sendFrame_of_routed (st : SystemState) (s : SeLe4n.ThreadId) (tcb : TCB)
     sendPayloadMessage st s (.frame badge grant) =
         { registers := Architecture.regMessageBody SeLe4n.arm64DefaultLayout
             tcb.registerContext mi.length,
-          caps := #[], badge := badge, capsGranted := grant } ∧
+          badge := badge, capsGranted := grant } ∧
       sendCapRequest st endpointId s (.frame badge grant) = none := by
   obtain ⟨d, hDec, hMi, hX, hRegs⟩ : ∃ d, blockedSenderDecode st s tcb = .ok d ∧
       d.msgInfo = mi ∧ mi.extraCaps = 0 ∧

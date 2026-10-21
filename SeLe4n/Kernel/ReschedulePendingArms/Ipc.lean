@@ -275,10 +275,10 @@ theorem endpointSendDualOnCore_stepCovers (e : CoreId) {endpointId : SeLe4n.ObjI
   · split <;> exact ⟨stepCovers_refl e st, hInv⟩
 
 /-- Installing transferred capabilities writes CNodes and the CDT only. -/
-theorem ipcUnwrapCaps_keyFrame {msg : IpcMessage} {receiverRoot : SeLe4n.ObjId}
+theorem ipcUnwrapCaps_keyFrame {caps : Array TransferCap} {receiverRoot : SeLe4n.ObjId}
     {slotBase : SeLe4n.Slot} {grantRight : Bool} {st st' : SystemState}
     {summary : CapTransferSummary} (hInv : st.objects.invExt)
-    (h : ipcUnwrapCaps msg receiverRoot slotBase grantRight st = .ok (summary, st')) :
+    (h : ipcUnwrapCaps caps receiverRoot slotBase grantRight st = .ok (summary, st')) :
     capabilityKeyFrame st st' :=
   ⟨keyInputsEq_of_lookups_eq
       (fun t => ipcUnwrapCaps_getTcb?_eq _ _ _ _ _ _ _ t hInv h)
@@ -861,8 +861,6 @@ theorem endpointReplyOnCore_stepCovers (e : CoreId) {replier target : SeLe4n.Thr
       (endpointReplyOnCore replier target msg executingCore st).1.objects.invExt := by
   have hRefl : stepCovers e st st ∧ st.objects.invExt := ⟨stepCovers_refl e st, hInv⟩
   unfold endpointReplyOnCore
-  split
-  · exact hRefl
   split
   · exact hRefl
   split

@@ -151,7 +151,6 @@ example (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : C
     (st st' : SystemState) (tcb : TCB) (ep : SeLe4n.ObjId) (expected : SeLe4n.ThreadId)
     (targetTcb' : TCB)
     (hSz1 : ¬ msg.registers.size > maxMessageRegisters)
-    (hSz2 : ¬ msg.caps.size > maxExtraCaps)
     (hLk : lookupTcb st target = some tcb)
     (hIpc : tcb.ipcState = .blockedOnReply ep (some expected))
     (hStore : storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) = .ok st')
@@ -160,7 +159,7 @@ example (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : C
     (endpointReplyOnCore replier target msg executingCore st).2
       = .ok (some (determineTargetCore st' target, SgiKind.reschedule)) :=
   endpointReplyOnCore_remote_wake replier target msg executingCore st st' tcb ep expected
-    targetTcb' hSz1 hSz2 hLk hIpc hStore hTcb' hRemote
+    targetTcb' hSz1 hLk hIpc hStore hTcb' hRemote
 
 /-- SM6.C (WS-LS LS2.1: over the pair): the reply is a single 2PL-atomic step
 under its lock-set — the ghost bracket's value is the bare transition's. -/
@@ -178,7 +177,6 @@ example (ctx : LabelingContext) (observer : IfObserver)
     (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
     (st st' : SystemState) (tcb : TCB) (ep : SeLe4n.ObjId) (expected : SeLe4n.ThreadId)
     (hSz1 : ¬ msg.registers.size > maxMessageRegisters)
-    (hSz2 : ¬ msg.caps.size > maxExtraCaps)
     (hLk : lookupTcb st target = some tcb)
     (hIpc : tcb.ipcState = .blockedOnReply ep (some expected))
     (hStore : storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) = .ok st')
@@ -189,7 +187,7 @@ example (ctx : LabelingContext) (observer : IfObserver)
     (hTargetObjHigh : objectObservable ctx observer target.toObjId = false) :
     lowEquivalent_smp ctx observer (endpointReplyOnCore replier target msg executingCore st).1 st :=
   endpointReplyOnCore_reply_path_NI_smp ctx observer replier target msg executingCore st st' tcb ep
-    expected hSz1 hSz2 hLk hIpc hStore hObjInv hObjSetInv hIdxComplete hTargetHigh hTargetObjHigh
+    expected hSz1 hLk hIpc hStore hObjInv hObjSetInv hIdxComplete hTargetHigh hTargetObjHigh
 
 -- ============================================================================
 -- §3  Runtime assertions (Tier-2): the SM6.C cross-core reply scenarios
@@ -262,9 +260,9 @@ private def orphanHolderTid : SeLe4n.ThreadId := ⟨605⟩
 private def replyId709 : SeLe4n.ReplyId := ⟨709⟩
 private def replyMsg : IpcMessage :=
   { registers := #[SeLe4n.RegValue.ofNat 100, SeLe4n.RegValue.ofNat 200, SeLe4n.RegValue.ofNat 300],
-    caps := #[], badge := none }
+    badge := none }
 private def replyMsg2 : IpcMessage :=
-  { registers := #[SeLe4n.RegValue.ofNat 999], caps := #[], badge := none }
+  { registers := #[SeLe4n.RegValue.ofNat 999], badge := none }
 
 private def mkTcb (tid : Nat) (prio : Nat) (aff : Option CoreId) (ipc : ThreadIpcState) : TCB :=
   (TCB.setIpcState

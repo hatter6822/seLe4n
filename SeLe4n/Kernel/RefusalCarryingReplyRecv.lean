@@ -91,7 +91,7 @@ def endpointReplyRecvCheckedArmGeneralR (ctx : LabelingContext) (mi : MessageInf
         | .ok (rid, prevCaller, replyBadge) =>
             let full := extractMessageRegisters regs mi
             let msg : IpcMessage :=
-              { registers := full.extract 1 full.size, caps := #[], badge := replyBadge }
+              { registers := full.extract 1 full.size, badge := replyBadge }
             if securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf prevCaller) then
               match endpointReplyRecvOnCore epId tid rid prevCaller msg (callerCspaceRoot st tid)
                   (SeLe4n.Slot.ofNat 0) executingCore st with
@@ -304,7 +304,7 @@ here. -/
     (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=
   fun st =>
     match endpointReplyRecvOnCore epId tid rid c
-        { registers := Architecture.regReplyRecvBody layout rf len, caps := #[], badge := badge }
+        { registers := Architecture.regReplyRecvBody layout rf len, badge := badge }
         (callerCspaceRoot st tid) (SeLe4n.Slot.ofNat 0) executingCore st with
     | .ok (summary, st') =>
         .ok ((), Architecture.stageDeliveredMessage st' tid summary.installedCount)
@@ -402,17 +402,17 @@ theorem endpointReplyRecvCheckedArmR_eq_general (ctx : LabelingContext)
               have hSz4 : (Architecture.regReplyRecvBody layout rf len).size ≤ 4 := by
                 rw [Architecture.regReplyRecvBody_size]; exact hSz
               have h := replyRecvOnCore_blocks_delivered st epId tid c rid
-                { registers := Architecture.regReplyRecvBody layout rf len, caps := #[],
+                { registers := Architecture.regReplyRecvBody layout rf len,
                   badge := badge } (callerCspaceRoot st tid) (SeLe4n.Slot.ofNat 0) executingCore
-                ct ep0 rt ep rp (by simp only; unfold maxMessageRegisters; omega) rfl hSz4 hT hIpc
+                ct ep0 rt ep rp (by simp only; unfold maxMessageRegisters; omega) hSz4 hT hIpc
                 hRO hW hNe hE hS hR hA hEnq hRp hFree hStash
               rw [Architecture.returnFrameOfMessage_regReplyRecvBody,
                 replyRecvOnCore_blocks_inPlace st epId tid c rid _ _ _ _ ct ep0 rt ep rp
-                  (by simp only; unfold maxMessageRegisters; omega) rfl hT hIpc hRO hW hNe hE hS hR
+                  (by simp only; unfold maxMessageRegisters; omega) hT hIpc hRO hW hNe hE hS hR
                   hA hEnq hRp hFree hStash] at h
               simp only [CapTransferSummary.installedCount_empty] at h
               rw [hTail, replyRecvOnCore_blocks_inPlace st epId tid c rid _ _ _ _ ct ep0 rt ep rp
-                  ?_ rfl hT hIpc hRO hW hNe hE hS hR hA hEnq hRp hFree hStash]
+                  ?_ hT hIpc hRO hW hNe hE hS hR hA hEnq hRp hFree hStash]
               · simp only [CapTransferSummary.installedCount_empty]
                 have h2 := congrArg Prod.snd (Except.ok.inj h)
                 dsimp only at h2
