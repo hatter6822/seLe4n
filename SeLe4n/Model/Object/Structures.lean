@@ -1391,12 +1391,12 @@ passing `cap` as a literal never builds it. -/
     (h : slot.toNat < node.cells.size) (a : Array (Option Capability)) : CNode :=
   node.insertCellWith slot
     ⟨cap.target, cap.rights, cap.badgeWord, cap.badged, cap.mapAsid, cap.mapVaddr, cap.mapEpoch,
-      cap.mapped⟩
+      cap.mapped, cap.freeIndex⟩
     (fun r => Capability.overwrite r cap.target cap.rights cap.badgeWord cap.badged cap.mapAsid
-      cap.mapVaddr cap.mapEpoch cap.mapped)
-    (fun r => Capability.overwrite_eq _ _ _ _ _ _ _ _ _)
+      cap.mapVaddr cap.mapEpoch cap.mapped cap.freeIndex)
+    (fun r => Capability.overwrite_eq _ _ _ _ _ _ _ _ _ _)
     (fun _ => Capability.ofFields cap.target cap.rights cap.badgeWord cap.badged cap.mapAsid
-      cap.mapVaddr cap.mapEpoch cap.mapped) rfl h a
+      cap.mapVaddr cap.mapEpoch cap.mapped cap.freeIndex) rfl h a
 
 theorem insertCellFrom_eq (node : CNode) (slot : SeLe4n.Slot) (cap : Capability)
     (h : slot.toNat < node.cells.size) (a : Array (Option Capability)) :
@@ -1435,7 +1435,7 @@ slot kept one. -/
     (rights : AccessRightSet) : CNode :=
   if h : slot.toNat < node.cells.size then
     Quot.lift (fun a => node.insertCellWith slot
-        ⟨.object id, rights, SeLe4n.Badge.zero, false, default, default, 0, false⟩
+        ⟨.object id, rights, SeLe4n.Badge.zero, false, default, default, 0, false, 0⟩
         (fun r => r.overwriteObject id rights) (fun r => Capability.overwriteObject_eq r id rights)
         (fun _ => Capability.ofObject id rights) rfl h a)
       (fun a b _ => by dsimp only; rw [insertCellWith_eq, insertCellWith_eq]) node.spare
@@ -1444,7 +1444,7 @@ slot kept one. -/
 theorem insertObjectCap_eq_insert (node : CNode) (slot : SeLe4n.Slot) (id : SeLe4n.ObjId)
     (rights : AccessRightSet) :
     node.insertObjectCap slot id rights =
-      node.insert slot ⟨.object id, rights, SeLe4n.Badge.zero, false, default, default, 0, false⟩ := by
+      node.insert slot ⟨.object id, rights, SeLe4n.Badge.zero, false, default, default, 0, false, 0⟩ := by
   unfold insertObjectCap
   split
   · next h =>
@@ -1465,13 +1465,13 @@ written in place, and the fields go straight into the slot's own record (mint,
 copy).  The fields are a literal here, not a match on a record argument, so the
 capability is never built. -/
 def insertFields (node : CNode) (slot : SeLe4n.Slot) (target : CapTarget) (rights : AccessRightSet)
-    (badgeWord : SeLe4n.Badge) (badged : Bool) : CNode :=
-  node.insertCell slot ⟨target, rights, badgeWord, badged, default, default, 0, false⟩
+    (badgeWord : SeLe4n.Badge) (badged : Bool) (freeIndex : Nat) : CNode :=
+  node.insertCell slot ⟨target, rights, badgeWord, badged, default, default, 0, false, freeIndex⟩
 
 theorem insertFields_eq_insert (node : CNode) (slot : SeLe4n.Slot) (target : CapTarget)
-    (rights : AccessRightSet) (badgeWord : SeLe4n.Badge) (badged : Bool) :
-    node.insertFields slot target rights badgeWord badged =
-      node.insert slot (Capability.ofWords target rights badgeWord badged none) :=
+    (rights : AccessRightSet) (badgeWord : SeLe4n.Badge) (badged : Bool) (freeIndex : Nat) :
+    node.insertFields slot target rights badgeWord badged freeIndex =
+      node.insert slot ((Capability.ofWords target rights badgeWord badged none).withFreeIndex freeIndex) :=
   insertCell_eq_insert _ _ _
 
 /-- A slot array with entry `i` rewritten by `f` (which keeps an empty entry
@@ -1577,6 +1577,98 @@ theorem recordMappingCells_eq (node : CNode) (slot : SeLe4n.Slot) (asid : SeLe4n
       simp only [Array.getElem_modify, Array.getElem_set]
       split
       · next e => subst e; simp [hL, cellWithMapping, Capability.setMapped_eq]
+      · next e => simp [Ne.symm e]
+
+/-- WS-ZA ZA5.4 part 13: **the CNode with slot `slot`'s capability holding free
+index `idx`** — the write a carve makes to the capability it was invoked
+through, and the write that sets a derivation's untyped source full; a slot
+holding nothing is left as it is. -/
+def setFreeIndex (node : CNode) (slot : SeLe4n.Slot) (idx : Nat) : CNode :=
+  match node.lookup slot with
+  | some cap => node.insert slot (cap.withFreeIndex idx)
+  | none => node
+
+/-- The slot entry with its capability holding free index `idx`. -/
+@[inline] def cellWithFreeIndex (idx : Nat) : Option Capability → Option Capability
+  | some c => some (c.withFreeIndex idx)
+  | none => none
+
+/-- The slot map with slot `slot`'s capability holding free index `idx`. -/
+noncomputable def slotsWithFreeIndex (slot : SeLe4n.Slot) (idx : Nat)
+    (m : SeLe4n.UniqueSlotMap Capability) : SeLe4n.UniqueSlotMap Capability :=
+  match m.get? slot with
+  | some c => m.insert slot (c.withFreeIndex idx)
+  | none => m
+
+/-- WS-ZA ZA5.4 part 13: **`setFreeIndex` as compiled** — the slot's entry
+rewritten where it stands (`Array.modify`), so a capability the CNode alone
+holds takes the word in its own cell and nothing is built. -/
+def setFreeIndexCells (node : CNode) (slot : SeLe4n.Slot) (idx : Nat) : CNode :=
+  { node with
+    slotsGhost := node.slotsGhost.map (slotsWithFreeIndex slot idx)
+    cells := node.cells.modify slot.toNat (cellWithFreeIndex idx)
+    cells_size := by rw [Array.size_modify]; exact node.cells_size
+    slots_agree := fun s => by
+      rw [SeLe4n.Erased.out_map, slotArrayGet_modify _ _ _ rfl, ← node.slots_agree s]
+      unfold slotsWithFreeIndex
+      have hst : (s.toNat = slot.toNat) ↔ s = slot := ⟨fun h' => by
+          cases slot; cases s; simp_all [SeLe4n.Slot.toNat], fun h' => by rw [h']⟩
+      cases hg : node.slotsGhost.out.get? slot with
+      | none =>
+        by_cases hs : s = slot
+        · subst hs; simp [hg, cellWithFreeIndex]
+        · simp [hs, hst]
+      | some c =>
+        rw [SeLe4n.UniqueSlotMap.get?_insert]
+        by_cases hs : s = slot
+        · subst hs; simp [hg, cellWithFreeIndex]
+        · simp [hs, hst, Ne.symm hs] }
+
+theorem setFreeIndexCells_eq (node : CNode) (slot : SeLe4n.Slot) (idx : Nat) :
+    node.setFreeIndexCells slot idx = node.setFreeIndex slot idx := by
+  unfold setFreeIndex
+  have hA := node.slots_agree slot
+  unfold slotArrayGet at hA
+  have hL' : node.lookup slot = node.slotsGhost.out.get? slot := rfl
+  cases hL : node.lookup slot with
+  | none =>
+    dsimp only
+    rw [hL', hA] at hL
+    refine ext_of_fields rfl rfl rfl rfl ?_ ?_ rfl
+    · apply SeLe4n.Erased.ext
+      show (node.slotsGhost.map _).out = _
+      rw [SeLe4n.Erased.out_map]; unfold slotsWithFreeIndex
+      rw [hA, hL]
+    · show node.cells.modify slot.toNat (cellWithFreeIndex idx) = node.cells
+      apply Array.ext (by simp)
+      intro i h1 h2
+      simp only [Array.getElem_modify]
+      split
+      · next e =>
+        subst e
+        split at hL
+        · next h => simp [hL, cellWithFreeIndex]
+        · omega
+      · rfl
+  | some cap =>
+    unfold insert
+    rw [hL', hA] at hL
+    have hB : slot.toNat < node.cells.size := by
+      split at hL
+      · assumption
+      · exact absurd hL (by simp)
+    simp only [hB, dite_true] at hL ⊢
+    refine ext_of_fields rfl rfl rfl rfl ?_ ?_ rfl
+    · apply SeLe4n.Erased.ext
+      show (node.slotsGhost.map _).out = (node.slotsGhost.map _).out
+      rw [SeLe4n.Erased.out_map, SeLe4n.Erased.out_map]; unfold slotsWithFreeIndex
+      rw [hA]; simp only [hB, dite_true, hL]
+    · show node.cells.modify slot.toNat (cellWithFreeIndex idx) = _
+      apply Array.ext (by simp)
+      intro i h1 h2
+      simp only [Array.getElem_modify, Array.getElem_set]
+      split
+      · next e => subst e; simp [hL, cellWithFreeIndex]
       · next e => simp [Ne.symm e]
 
 /-- WS-ZA ZA5.3: a CNode of the given geometry holding `xs`, inserted in order

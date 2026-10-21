@@ -261,7 +261,7 @@ target, its rights masked by the slot's own (`rights`), with no badge and no
 mapping record.  A derivation of `cap`, as seL4's `deriveCap` is: it never
 carries a right `cap` lacks. -/
 @[inline] def spaceCopyOf (cap : Capability) (rights : AccessRightSet) : Capability :=
-  ⟨cap.target, cap.rights.inter rights, SeLe4n.Badge.zero, false, default, default, 0, false⟩
+  ⟨cap.target, cap.rights.inter rights, SeLe4n.Badge.zero, false, default, default, 0, false, 0⟩
 
 @[simp] theorem spaceCopyOf_target (cap : Capability) (rights : AccessRightSet) :
     (spaceCopyOf cap rights).target = cap.target := rfl
