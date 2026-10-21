@@ -974,7 +974,7 @@ def pageTableReferencesReservedIdleSlot (p : PageTableObject) : Bool :=
     both. -/
 def untypedReferencesReservedIdleSlot (ut : UntypedObject) : Bool :=
   match ut with
-  | ⟨_regionBase, _regionSize, _watermark, children, _isDevice, parent⟩ =>
+  | ⟨_regionBase, _regionSize, children, _isDevice, parent⟩ =>
     children.any (fun child => SeLe4n.Kernel.isIdleObjId child.objId) ||
     parent.any SeLe4n.Kernel.isIdleObjId
 
@@ -1741,7 +1741,13 @@ def bootSafeCapCheck (cap : Capability) : Bool :=
   -- admits no frame and no user mapping), so destroying the capability would
   -- tear down whatever a later thread maps at that address, and the CNode's
   -- retype would be refused for a mapping that does not exist.
-  cap.mapping.isNone
+  cap.mapping.isNone &&
+  -- **WS-ZA ZA5.4 part 13**: and its free index is `0`.  The index is the
+  -- capability's (seL4's `capFreeIndex`), and every boot untyped is pristine
+  -- (`bootSafeUntypedCheck`), so a boot capability to one starts at its
+  -- region's base; an index the deployment chose would place the first carve
+  -- wherever it said.
+  cap.freeIndex == 0
 
 /-- A boot **CNode** is structurally well-formed, and every capability it holds
     passes `bootSafeCapCheck`.  The structural conditions are over derived
@@ -1776,13 +1782,13 @@ theorem bootSafeCnodeCheck_caps {cn : CNode}
     {slot : SeLe4n.Slot} {cap : Capability} (hLookup : cn.lookup slot = some cap) :
     (∀ badge, cap.badge = some badge → badge.valid) ∧
     (∀ rid, cap.target ≠ .replyCap rid) ∧
-    cap.mapping = none := by
+    cap.mapping = none ∧ cap.freeIndex = 0 := by
   have hc := SeLe4n.Kernel.RobinHood.RHTable.fold_and_true_of_get? cn.slots.table
     (fun _ cap => bootSafeCapCheck cap) hFold hLookup
   unfold bootSafeCapCheck at hc
-  simp only [Bool.and_eq_true] at hc
-  obtain ⟨⟨hBadge, hTarget⟩, hMap⟩ := hc
-  refine ⟨fun badge hB => ?_, fun rid hT => ?_, Option.isNone_iff_eq_none.mp hMap⟩
+  simp only [Bool.and_eq_true, beq_iff_eq] at hc
+  obtain ⟨⟨⟨hBadge, hTarget⟩, hMap⟩, hIdx⟩ := hc
+  refine ⟨fun badge hB => ?_, fun rid hT => ?_, Option.isNone_iff_eq_none.mp hMap, hIdx⟩
   · rw [hB] at hBadge
     simpa [SeLe4n.Badge.isValid, SeLe4n.Badge.valid] using hBadge
   · rw [hT] at hTarget
@@ -1880,7 +1886,7 @@ theorem bootSpaceSlotsSafe_of_check {tcb : TCB}
     simp only at h
     unfold bootSafeCapCheck at h
     simp only [Bool.and_eq_true] at h
-    obtain ⟨⟨hBadge, hTarget⟩, _⟩ := h
+    obtain ⟨⟨⟨hBadge, hTarget⟩, _⟩, _⟩ := h
     refine ⟨fun badge hB => ?_, fun rid hT => ?_⟩
     · rw [hB] at hBadge
       simpa [SeLe4n.Badge.isValid, SeLe4n.Badge.valid] using hBadge
@@ -1895,9 +1901,10 @@ theorem bootSpaceSlotsSafe_of_space_eq {t t' : TCB} (hCells : t'.spaceCells = t.
   rw [hCells, hLinks]; exact h
 
 /-- A boot **untyped** region is *pristine*: nothing has been carved from it
-    and it descends from nothing.  `watermark = 0` and `children = []`,
-    because a watermark with no children misreports the region's free space
-    and a child names an object the boot never carved; `parent = none`,
+    and it descends from nothing.  `children = []`, because a child names an
+    object the boot never carved (WS-ZA ZA5.4 part 13: the free index is the
+    capability's, and a boot capability's is `0`, `bootSafeCapCheck`);
+    `parent = none`,
     because a boot untyped is top-level by definition — `parent` is what
     `untypedAncestorRegionsDisjoint` walks, and a config-supplied ancestor is
     a chain the boot did not build.  Its region and device flag are the
@@ -1907,16 +1914,15 @@ theorem bootSpaceSlotsSafe_of_space_eq {t t' : TCB} (hCells : t'.spaceCells = t.
     field is classified here rather than inheriting an accept.
 
     Until the `v0.36.2` audit this arm was `true` — the one boot object whose
-    record the check read no field of — while `UntypedObject`'s own documented
-    invariant `watermark ≤ regionSize` was established nowhere at boot. -/
+    record the check read no field of. -/
 def bootSafeUntypedCheck (ut : UntypedObject) : Bool :=
   match ut with
-  | ⟨_regionBase, _regionSize, _watermark, _children, _isDevice, _parent⟩ =>
-    ut.watermark == 0 && ut.children.isEmpty && ut.parent.isNone
+  | ⟨_regionBase, _regionSize, _children, _isDevice, _parent⟩ =>
+    ut.children.isEmpty && ut.parent.isNone
 
 @[simp] theorem bootSafeUntypedCheck_def (ut : UntypedObject) :
     bootSafeUntypedCheck ut =
-      (ut.watermark == 0 && ut.children.isEmpty && ut.parent.isNone) := rfl
+      (ut.children.isEmpty && ut.parent.isNone) := rfl
 
 /-- A boot **SchedContext** has a well-formed CBS budget, no bound thread and
     (WS-OD OD2.1) an empty reply stack.  `scId` is pinned to the slot by
@@ -2082,7 +2088,7 @@ private theorem bootSafeObjectCheck_sound_core (obj : KernelObject)
     -- The `v0.36.2` audit: a boot untyped is pristine — nothing carved, no
     -- ancestry.
     (∀ ut, obj = .untyped ut →
-      ut.watermark = 0 ∧ ut.children = [] ∧ ut.parent = none) := by
+      ut.children = [] ∧ ut.parent = none) := by
   -- Discharge each constructor case. Non-matching constructors produce absurd
   -- injection hypotheses, discharged by `intro _ h; cases h`.
   cases obj with
@@ -2137,15 +2143,15 @@ private theorem bootSafeObjectCheck_sound_core (obj : KernelObject)
            fun _ he => by injection he⟩
   | untyped ut =>
     -- The `v0.36.2` audit: the check's `.untyped` arm reads the carve state;
-    -- thread its three conjuncts to the `.untyped` conclusion clause.
+    -- thread its two conjuncts to the `.untyped` conclusion clause.
     simp only [bootSafeObjectCheck, bootSafeUntypedCheck_def, Bool.and_eq_true,
       beq_iff_eq] at h
-    obtain ⟨⟨hWatermark, hChildren⟩, hParent⟩ := h
+    obtain ⟨hChildren, hParent⟩ := h
     exact ⟨fun _ he => by injection he, fun _ he => by injection he,
            fun _ he => by injection he, fun _ he => by injection he,
            fun _ he => by injection he, fun _ he => by injection he,
            fun _ he => by injection he,
-           fun _ he => by injection he; subst_vars; exact ⟨hWatermark, List.isEmpty_iff.mp hChildren, Option.eq_none_of_isNone hParent⟩⟩
+           fun _ he => by injection he; subst_vars; exact ⟨List.isEmpty_iff.mp hChildren, Option.eq_none_of_isNone hParent⟩⟩
   | reply r =>
     -- WS-SM SM6.D / PR #822: the check's `.reply` arm verifies the three
     -- inert-Reply fields; thread them to the `.reply` conclusion clause.
@@ -2228,7 +2234,7 @@ theorem bootSafeObjectCheck_sound (obj : KernelObject)
     (∀ r, obj = .reply r →
       r.caller = none ∧ r.prev = none ∧ r.next = none) ∧
     (∀ ut, obj = .untyped ut →
-      ut.watermark = 0 ∧ ut.children = [] ∧ ut.parent = none) ∧
+      ut.children = [] ∧ ut.parent = none) ∧
     (∀ f, obj ≠ .frame f) ∧ (∀ p, obj ≠ .pageTable p) := by
   obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8⟩ := bootSafeObjectCheck_sound_core obj h
   exact ⟨h1, h2, h3, h4, h5, h6, h7, h8, bootSafeObjectCheck_not_frame obj h,
@@ -5189,12 +5195,12 @@ def bootSafeObject (obj : KernelObject) : Prop :=
   -- The `v0.36.2` audit: a boot untyped is pristine — nothing carved from it
   -- and no ancestry.  The one boot object this predicate had no clause for,
   -- while `bootSafeUntypedCheck` accepted every record: a configuration could
-  -- ship `watermark = regionSize` (nothing retypeable) or `children` naming
-  -- objects that do not exist, and no theorem was false because none read
+  -- ship `children` naming objects that do not exist, and no theorem was
+  -- false because none read
   -- these fields.  Stated at the end so every positional projection into
   -- this conjunction is unchanged.
   (∀ ut, obj = .untyped ut →
-    ut.watermark = 0 ∧ ut.children = [] ∧ ut.parent = none) ∧
+    ut.children = [] ∧ ut.parent = none) ∧
   -- **WS-BP BP7.1**: and no boot object is a frame.  A frame is authority over
   -- the page at its `base`; the executable check refuses every configured one
   -- (`bootSafeObjectCheck`'s `.frame` arm), and this is that refusal's Prop
