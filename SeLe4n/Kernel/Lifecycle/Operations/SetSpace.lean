@@ -16,7 +16,7 @@ import SeLe4n.Kernel.Capability.Operations
 A thread holds its CSpace and VSpace roots as capabilities in two slots of its
 own (`TCB.spaceCells`, seL4's `tcbCTable` and `tcbVTable`), and those slots are
 derivation nodes like a CNode's.  `copyThreadSpaces` sets them as seL4's
-`invokeTCB_ThreadControl` does, slot by slot (`copyIntoThreadSlot`):
+`invokeTCB_ThreadControl` does, slot by slot (`threadSlotCopied`):
 
 1. the slot's old content is **deleted** through the same delete a CNode slot
    takes (`cspaceDeleteSlot`): the capability goes and the slot's node is spliced
