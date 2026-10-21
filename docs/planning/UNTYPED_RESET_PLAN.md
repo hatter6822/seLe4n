@@ -1,4 +1,4 @@
-# Untyped reset as seL4's (WS-ZA ZA5.4, parts 11–16)
+# Untyped reset as seL4's (WS-ZA ZA5.4, parts 11–19)
 
 Decided by Adam on the ZA5.4 thread (card, 2026-10-21): the untyped reset reaches
 zero allocations the way seL4 does it, not by rewriting today's whole-store reset
@@ -57,20 +57,48 @@ row's status and readings.
   derivation nodes, and `copyThreadSpaces` copies the given capabilities into
   them with their derivation edges; `setThreadSpace` is deleted.
 
+- Same-object capabilities are not kept together in the tree.  A delete re-adds
+  the deleted slot's children at the front of its parent's child list
+  (`spliceEdges`, `linkSpliceNode`, `CDT/SlotLinks.lean:801`), and a move re-adds the
+  moved node at the front (`moveEdges`, `linkMoveNode`, `:867`); seL4 keeps the
+  list position.  A slot with no parent has no sibling links (`LinksAgree`,
+  `Model/Object/DerivationLinks.lean:594`), and deleting it orphans its children.
+  Boot puts two capabilities to one object in two unlinked slots (the root CNode
+  slot and the root thread's CSpace slot, likewise the VSpace;
+  `Platform/RPi5/Deployment.lean:257-293`).  So "neither parent nor child names
+  the object" is not finality: after a delete, two copies of one object can be
+  siblings.
+- Kernel objects (TCBs, CNodes, endpoints, notifications, replies, scheduling
+  contexts) are made only by retyping an existing object in place
+  (`lifecycleRetypeDirectWithCleanup`, `Lifecycle/Operations/RetypeWrappers.lean`),
+  which needs the retype right on that object.  Boot grants that right only on
+  untypeds, so no kernel object can be made at runtime, and the in-place path
+  has no check that nothing still names its target.  Its error-code oracle
+  (cleanup before the authority check) is fixed at `v0.36.123`.
+
 ## 3. Design
 
-- **D1 Finality is read from the tree, as seL4 reads its MDB.**  Copies, mints
-  and transfers derive from an existing capability, a delete splices its children
-  into its parent, and a move keeps the slot's place.  So the capabilities that
-  name one object form a connected subtree of the derivation tree.  One
-  invariant states this (`sameObjectConnected`).  A capability is then final when
-  neither its parent nor any of its children names its object; for every carved
-  kind, the second half is one first-child read.  No reference count is kept.
-- **D2 Retire on final delete.**  A delete or revoke that destroys a final
-  capability to a carved object retires the object (`retireCarvedObject`, its
-  existing guard and theorems), after the unmap and detach the teardown already
-  does.  Objects not of a carved kind keep today's behaviour.  Their finalisation
-  is registered debt owned by ZA6.
+- **D1 Finality is read from the tree in seL4's MDB order** (decided by Adam,
+  2026-10-21: "tree in seL4 order").  The tree's preorder is made equal to seL4's
+  MDB list: an insert puts the new child first under its source (as today, which
+  is right after the source in preorder), a delete puts its children where it
+  was among its siblings, and a move keeps the slot's place.  Slots with no
+  parent form one sibling chain, so every slot has its `prev` and `next` words.
+  Boot derives its duplicate capabilities from the root CNode's slots, as seL4's
+  `create_initial_thread` does.  The invariant (`sameObjectContiguous`) is
+  seL4's `mdb_chunked`: the slots naming one object are one contiguous preorder
+  run.  A capability is final when its preorder neighbours do not name its
+  object (seL4's `isFinalCapability`), read from its parent, first-child,
+  `prev` and `next` words.  No reference count and no new word is kept.
+- **D2 Retire on final delete, for every kind.**  A delete or revoke that
+  destroys a final capability finalises its object as seL4's `finaliseCap` does,
+  then retires it (`retireCarvedObject`).  For memory kinds that is the unmap and
+  detach the teardown already does.  For kernel kinds it is seL4's: an endpoint
+  cancels all its IPC, a notification unbinds and cancels its waiters, a thread
+  is suspended and unbound and its two space slots deleted, a reply is cancelled,
+  a scheduling context unbound, and a CNode's slots deleted by seL4's zombie
+  loop.  Once every kind is carved (D6), an object no capability names is
+  memory the untyped can reuse, so nothing may outlive its last capability.
 - **D3 The free index moves into the capability.**  `Capability` gains a
   `freeIndex` word, meaningful only for an untyped target, and
   `UntypedObject.watermark` is deleted.  The carve reads and advances the invoked
@@ -87,6 +115,13 @@ row's status and readings.
   seL4's `lookupExtraCaps` does, never resolved capabilities.  The part that
   closes this deletes the TCB-field and parked-message arms of
   `objectNamesListed`.
+- **D6 Every object kind is carved from an untyped** (decided by Adam,
+  2026-10-21: "carve every kind").  `CarveRequest` covers every kernel object
+  kind, sized and aligned as seL4's `Untyped_Retype`, and a carved TCB starts
+  with empty space slots.  The in-place retype (`lifecycleRetypeDirectWithCleanup`
+  and its wrappers, the CSpace-address family `lifecycleRetypeWithCleanup` and
+  `Internal.lifecycleRetypeObject`, their theorems and the `.lifecycleRetype`
+  syscall arm) is deleted.
 - **D4 Reset is `ensureNoChildren` and a rewind.**  Syscall 37 is dispatched on
   the invoked slot.  It refuses while that slot has a derivation child, and
   otherwise writes 0 to its free index: O(1), with no scan and no erase.  Like
@@ -101,10 +136,13 @@ row's status and readings.
 |---|---|
 | 11 | **No message holds a capability.**  `IpcMessage` loses its capability array and grant bit; capability transfer takes the array resolved at the rendezvous (`ipcUnwrapCaps`), the reply paths' dead extra-capability refusal and the unused gated resolvers are deleted, and the reset's reference scan loses its parked-message arm.  Landed at `v0.36.121`, structurally rather than as an invariant |
 | 12 | **A thread's spaces are slots** (D5; consumes 11).  A TCB holds two capability slots, its CSpace and VSpace roots, as seL4's `tcbCTable` and `tcbVTable`.  They are derivation nodes: `SlotRef` names a TCB slot as it names a CNode slot, over the same cell and link words.  `setThreadSpace` copies the given capabilities into them, recording the derivation edges.  `TCB.cspaceRoot` and `TCB.vspaceRoot` become reads of those slots, proven equal, and a thread's teardown deletes them.  The binding, context-switch and IPC-buffer theorems are restated.  Landed at `v0.36.122`, in the steps below; the copy masks the source's rights by the root's, and every user CNode invocation now refuses unless it invokes a CNode (`cnodeInvoked`), as seL4's `decodeCNodeInvocation`, so `CNode_Delete` on a thread capability cannot empty the thread's root slots |
-| 13 | **Finality** (consumes 12). `sameObjectConnected` is stated and proven preserved by every slot write (copy, mint, move, transfer, delete, revoke, carve); boot establishes it.  `capIsFinal` reads the parent and first-child words and is proven equal to "no other slot names the object" under the invariant |
-| 14 | **Retire on final delete** (consumes 13).  The delete and revoke teardowns retire a carved object whose final capability they destroy (D2), and the delete theorems are restated.  Exerciser: `frame-delete` and `page-table-delete-*` stay at 0 |
-| 15 | **Free index in the capability** (consumes 14).  D3, with the untyped invariants restated over capabilities and the boot's untyped capabilities given their indices.  Retype pins unchanged |
-| 16 | **The seL4 reset** (consumes 15).  D4: the reset and its theorems restated (the untyped's capability holds index 0; nothing carved remains below its index), and the deleted code removed.  Exerciser: `untyped-reset` reads 0 at first call and steady state |
+| 13 | **Free index in the capability** (D3; consumes 12).  The untyped invariants are restated over capabilities, and the boot's untyped capabilities are given their indices; copying an untyped capability with children is refused, and otherwise the source is set full.  Retype pins unchanged |
+| 14 | **Every kind is carved** (D6; consumes 13).  The carve makes every kernel kind at the invoked capability's free index; the in-place retype, its syscall arm and its theorems are deleted.  Exerciser: a scenario per new carved kind, pinned at the object's own cells |
+| 15 | **The tree in seL4 order** (D1's structure; consumes 14).  Delete and move keep the slot's position, roots form a sibling chain, and boot derives its duplicate capabilities from the root CNode's slots.  `LinksAgree` and the splice and move theorems are restated.  Every pin unchanged |
+| 16 | **Finality** (D1's invariant; consumes 15).  `sameObjectContiguous` is proven preserved by every slot write (copy, mint, move, transfer, set-space, delete, revoke, carve) and established by boot.  `capIsFinal` reads the four link words and is proven equal to "no other slot names the object" under it |
+| 17 | **Retire memory kinds on final delete** (D2; consumes 16).  The delete and revoke teardowns retire a frame, page table, address-space root or untyped whose final capability they destroy.  Exerciser: `frame-delete` and `page-table-delete-*` stay at 0 |
+| 18 | **Finalise kernel kinds on final delete** (D2; consumes 17).  seL4's `finaliseCap` for every kernel kind, then the retire; a CNode by the zombie loop.  The delete theorems are restated |
+| 19 | **The seL4 reset** (D4; consumes 18).  The reset and its theorems are restated (the untyped's capability holds index 0, and nothing carved remains below its index), and the deleted code is removed.  Exerciser: `untyped-reset` reads 0 at first call and steady state |
 
 ### Part 12 in steps (each compiles; proofs land with or before the code they cover)
 
