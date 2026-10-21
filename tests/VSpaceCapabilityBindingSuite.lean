@@ -1514,6 +1514,12 @@ private def flagOnlySuspended (st : SystemState) (tid : SeLe4n.ThreadId) : Bool 
 private def rootsOf (st : SystemState) (tid : SeLe4n.ThreadId) : Option (SeLe4n.ObjId × SeLe4n.ObjId) :=
   (st.getTcb? tid).map (fun t => (t.cspaceRoot, t.vspaceRoot))
 
+/-- The thread is stored and its space slot `slot` holds no capability. -/
+private def spaceSlotEmpty (st : SystemState) (tid : SeLe4n.ThreadId) (slot : SeLe4n.Slot) : Bool :=
+  match st.getTcb? tid with
+  | some t => (t.spaceSlotCap slot).isNone
+  | none => false
+
 private def runSetSpaceChecks : IO Unit := do
   IO.println "-- §5j `.tcbSetSpace` puts a suspended thread in a carved address space (WS-BP BP7.1)"
   let st := spaceScenario
@@ -1554,20 +1560,34 @@ private def runSetSpaceChecks : IO Unit := do
           == (st1.getTcb? spaceWorker).map (fun t => (t.priority, t.ipcState, t.threadState)))
       assertBool "the owner is untouched"
         (rootsOf st2 carveOwner == rootsOf st1 carveOwner)
+      -- The worker's slots hold copies derived from the caller's capabilities
+      -- (seL4's `cteInsert` in `invokeTCB_ThreadControl`): revoking the
+      -- source capability deletes the copy, as it deletes any descendant.
+      match dispatchSyscallAsCurrent (decodeRevoke 12) carveOwner Concurrency.bootCoreId st2 with
+      | .error e => assertBool s!"revoking the VSpace root's source capability succeeds (got {repr e})" false
+      | .ok ((), stSrc) => do
+        assertBool "revoking the VSpace root's source capability empties the worker's VSpace slot"
+          (spaceSlotEmpty stSrc spaceWorker TCB.vspaceRootSlot)
+        assertBool "and leaves its CSpace slot, copied from a capability the revoke does not reach"
+          ((stSrc.getTcb? spaceWorker).map (·.cspaceRoot) == some carveCn)
+        assertBool "and leaves the source capability itself"
+          (stSrc.lookupSlotCap { cnode := carveCn, slot := SeLe4n.Slot.ofNat 12 }).isSome
       match dispatchSyscallAsCurrent (decodeRevoke slotUtRetype) carveOwner Concurrency.bootCoreId st2 with
       | .error e => assertBool s!"revoking the untyped capability succeeds (got {repr e})" false
       | .ok ((), stRev) => do
-        assertBool "the reset refuses while the worker runs in the carved root (revocationRequired)"
-          (isErr .revocationRequired (dispatchSyscallAsCurrent (decodeReset slotUtRetype) carveOwner Concurrency.bootCoreId stRev))
+        -- The copy in the worker's VSpace slot derives from the carved root's
+        -- capability, which derives from the untyped: the revoke reaches it.
+        assertBool "revoking the untyped capability empties the worker's VSpace slot too"
+          (spaceSlotEmpty stRev spaceWorker TCB.vspaceRootSlot)
+        assertBool "CONTROL: with no thread in it, the reset retires the carved root"
+          (match dispatchSyscallAsCurrent (decodeReset slotUtRetype) carveOwner Concurrency.bootCoreId stRev with
+           | .ok ((), s) => (s.objects[root]?).isNone
+           | .error _ => false)
         match dispatchSyscallAsCurrent (decodeSetSpace slotWorkerTcb slotOwnCnGrant slotOwnVsp) carveOwner Concurrency.bootCoreId stRev with
         | .error e => assertBool s!"moving the worker back to the boot root succeeds (got {repr e})" false
-        | .ok ((), stBack) => do
+        | .ok ((), stBack) =>
           assertBool "the worker names the boot root again"
             (rootsOf stBack spaceWorker == some (carveCn, carveVsp))
-          assertBool "CONTROL: with no thread in it, the reset retires the carved root"
-            (match dispatchSyscallAsCurrent (decodeReset slotUtRetype) carveOwner Concurrency.bootCoreId stBack with
-             | .ok ((), s) => (s.objects[root]?).isNone
-             | .error _ => false)
 
 -- ============================================================================
 -- §5k  WS-BP BP7.1 (`v0.36.12`) — intermediate page tables
