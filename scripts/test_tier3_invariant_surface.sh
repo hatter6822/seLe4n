@@ -681,7 +681,7 @@ run_check "TRACE" rg -n 'retype-from-untyped type-mismatch' tests/fixtures/main_
 run_check "TRACE" rg -n 'retype-from-untyped region-exhausted' tests/fixtures/main_trace_smoke.expected
 run_check "TRACE" rg -n 'retype-from-untyped device-restriction' tests/fixtures/main_trace_smoke.expected
 run_check "TRACE" rg -n 'retype-from-untyped alloc-size-too-small' tests/fixtures/main_trace_smoke.expected
-run_check "INVARIANT" rg -n 'untypedWatermarkChecks' SeLe4n/Testing/InvariantChecks.lean
+run_check "INVARIANT" rg -n 'untypedFreeIndexChecks' SeLe4n/Testing/InvariantChecks.lean
 run_check "INVARIANT" rg -n 'F2.*retype' tests/NegativeStateSuite.lean
 
 # WS-F3 information-flow completeness anchors must remain present.

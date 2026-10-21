@@ -313,28 +313,27 @@ theorem untypedRetypeObject_keyFrame (src dst : CSpaceAddr) (childId : SeLe4n.Ob
     (req : CarveRequest) (st st' : SystemState) (hObjInv : st.objects.invExt)
     (hStep : untypedRetypeObject src childId dst req st = .ok ((), st')) :
     capabilityKeyFrame st st' := by
-  obtain ⟨_, untypedId, ut, st1, st2, _, _, _, hRt, hIns, rfl⟩ :=
+  obtain ⟨utCap, untypedId, ut, st1, st2, _, _, _, hRt, hIns, rfl⟩ :=
     untypedRetypeObject_ok_decompose src dst childId req st st' hObjInv hStep
   have hFresh := retypeFromUntyped_childId_fresh src untypedId childId _ _ st st1 hRt
-  obtain ⟨ut₀, ut', cap, stL, stUt, _, hUt, _, _, hLk, _, _, hStUt, hStCh⟩ :=
-    retypeFromUntyped_ok_decompose st st1 src untypedId childId _ _ hRt
-  have hStL : stL = st := cspaceLookupSlot_ok_state_eq st src cap stL hLk
-  subst hStL
+  obtain ⟨ut₀, ut', cap, stUt, _, stCh, cn, hUt, _, _, _, _, _, _, _, _, _, hStUt, hStCh, hOCh,
+    hStIdx⟩ := retypeFromUntyped_ok_stores st st1 src untypedId childId _ _ hObjInv hRt
   have k1 := storeObject_inert_keyFrame hObjInv hStUt (by rw [hUt]; rfl) rfl
   have hNe : childId ≠ untypedId := by
     intro h; rw [h, hUt] at hFresh; simp at hFresh
   have hChildNone : stUt.objects[childId]? = none := by
     rw [storeObject_objects_ne _ _ _ _ _ hNe hObjInv hStUt]
-    cases h : stL.objects[childId]? with
+    cases h : st.objects[childId]? with
     | none => rfl
     | some _ => rw [h] at hFresh; simp at hFresh
   have k2 := k1.trans (storeObject_inert_keyFrame k1.2.2 hStCh (by rw [hChildNone]; rfl)
     (by cases req <;> rfl))
-  have kZ : capabilityKeyFrame st1 (req.scrub st1 ut) :=
-    capabilityKeyFrame_of_objects_scheduler_eq k2.2.2 (CarveRequest.scrub_objects _ _ _)
-      (CarveRequest.scrub_scheduler _ _ _)
+  have k3 := k2.trans (storeObject_inert_keyFrame k2.2.2 hStIdx (by rw [hOCh]; rfl) rfl)
+  have kZ : capabilityKeyFrame st1 (req.scrub st1 ut utCap.freeIndex) :=
+    capabilityKeyFrame_of_objects_scheduler_eq k3.2.2 (CarveRequest.scrub_objects _ _ _ _)
+      (CarveRequest.scrub_scheduler _ _ _ _)
   have kI := cspaceInsertSlot_keyFrame _ st2 dst _ kZ.2.2 hIns
-  exact ((k2.trans kZ).trans kI).trans (cdtRecord_keyFrame st2 src dst .retype kI.2.2)
+  exact ((k3.trans kZ).trans kI).trans (cdtRecord_keyFrame st2 src dst .retype kI.2.2)
 
 theorem untypedResetWithShootdown_keyFrame (ec : CoreId) (untypedId : SeLe4n.ObjId)
     (st st' : SystemState) (hObjInv : st.objects.invExt)
