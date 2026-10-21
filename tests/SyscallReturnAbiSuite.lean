@@ -181,7 +181,7 @@ private def witnessState : SystemState :=
           hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCBCode := 0 })
     |>.withObject callerTid.toObjId (.tcb
         { tid := callerTid, priority := ⟨40⟩, domain := ⟨0⟩,
-          cspaceRoot := callerCn, vspaceRoot := callerVsp,
+          spaceCells := SeLe4n.Model.TCB.spaceCellsOf callerCn callerVsp,
           ipcBuffer := SeLe4n.VAddr.ofNat 4096,
           threadState := .Running })
     |>.withRunnable [callerTid]
@@ -281,12 +281,12 @@ private def twoThreadState : SystemState :=
     |>.withObject epId (.endpoint {})
     |>.withObject callerTid.toObjId (.tcb
         { tid := callerTid, priority := ⟨40⟩, domain := ⟨0⟩,
-          cspaceRoot := callerCn, vspaceRoot := callerVsp,
+          spaceCells := SeLe4n.Model.TCB.spaceCellsOf callerCn callerVsp,
           ipcBuffer := SeLe4n.VAddr.ofNat 4096,
           threadState := .Running })
     |>.withObject peerTid.toObjId (.tcb
         { tid := peerTid, priority := ⟨40⟩, domain := ⟨0⟩,
-          cspaceRoot := callerCn, vspaceRoot := callerVsp,
+          spaceCells := SeLe4n.Model.TCB.spaceCellsOf callerCn callerVsp,
           ipcBuffer := SeLe4n.VAddr.ofNat 8192,
           threadState := .Running })
     |>.withRunnable [callerTid]
@@ -310,13 +310,13 @@ private def replyPendingState : SystemState :=
     |>.withObject callerTid.toObjId (.tcb
         (TCB.setIpcState
         { tid := callerTid, priority := ⟨40⟩, domain := ⟨0⟩,
-          cspaceRoot := callerCn, vspaceRoot := callerVsp,
+          spaceCells := SeLe4n.Model.TCB.spaceCellsOf callerCn callerVsp,
           ipcBuffer := SeLe4n.VAddr.ofNat 4096,
           threadState := .BlockedReply,
           replyObjectCode := SeLe4n.ReplyId.optCode (some replyRid) } (.blockedOnReply epId (some peerTid))))
     |>.withObject peerTid.toObjId (.tcb
         { tid := peerTid, priority := ⟨40⟩, domain := ⟨0⟩,
-          cspaceRoot := callerCn, vspaceRoot := callerVsp,
+          spaceCells := SeLe4n.Model.TCB.spaceCellsOf callerCn callerVsp,
           ipcBuffer := SeLe4n.VAddr.ofNat 8192,
           threadState := .Running })
     |>.withObject replyRid.toObjId (.reply
@@ -670,7 +670,7 @@ private def auditWitnessState : SystemState :=
             hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCBCode := 0 })
       |>.withObject callerTid.toObjId (.tcb
           { tid := callerTid, priority := ⟨40⟩, domain := ⟨0⟩,
-            cspaceRoot := callerCn, vspaceRoot := callerVsp,
+            spaceCells := SeLe4n.Model.TCB.spaceCellsOf callerCn callerVsp,
             ipcBuffer := SeLe4n.VAddr.ofNat 4096,
             threadState := .Running })
       |>.withRunnable [callerTid]

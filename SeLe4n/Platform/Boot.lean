@@ -850,7 +850,8 @@ def cnodeReferencesReservedIdleSlot (cn : CNode) : Bool :=
     author says where the new field stands.  What each field holds:
 
     * `tid` (round 7) — the TCB's own identity, which `cleanupTcbReferences`
-      reads back; `cspaceRoot`, `vspaceRoot`, `boundNotification` — object
+      reads back; `spaceCells` (the objects its CSpace and VSpace root
+      slots name, `cspaceRoot` and `vspaceRoot`), `boundNotification` — object
       ids; `queuePrev`, `queueNext` and `queuePPrev`'s `.tcbNext` — thread
       ids (a stale `queuePPrev` also makes `endpointQueueEnqueue` refuse the
       otherwise detached thread with `.illegalState`, so the boot-safety
@@ -868,10 +869,13 @@ def cnodeReferencesReservedIdleSlot (cn : CNode) : Bool :=
       register window), `pendingMessage` (registers, a badge and a label:
       an `IpcMessage` holds no capability) and the blocked-sender fields `ipcBadge`, `ipcBadged`,
       `ipcCanGrant`, `ipcFaultSend` (WS-ZA ZA4.7: a badge word and three
-      flags) hold no id. -/
+      flags) hold no id.
+    * `spaceLinks` — the space slots' derivation links, which name slots, not
+      objects a capability reaches through, and which a boot thread leaves
+      clear. -/
 def tcbReferencesReservedIdleSlot (tcb : TCB) : Bool :=
   match tcb with
-  | ⟨tid, _priority, _domain, cspaceRoot, vspaceRoot, _ipcBuffer, _ipcObjectCode, _threadState,
+  | ⟨tid, _priority, _domain, spaceCells, _spaceLinks, _ipcBuffer, _ipcObjectCode, _threadState,
      _timeSlice, _deadline, queuePrevCode, queuePPrevCode, queueNextCode, _pendingMessage, _registerContext,
      _faultHandlerSet, _faultHandlerWord, boundNotificationCode, scBindingScCode, scBindingOwnerCode, timeoutBudget,
      _maxControlledPriority, _pipBoost, _timedOut, _cpuAffinity, replyObjectCode,
@@ -880,7 +884,8 @@ def tcbReferencesReservedIdleSlot (tcb : TCB) : Bool :=
      replyWaiterPrevCode, replyWaiterNextCode, replyWaitersHeadCode, _replyWaitersCount, _ipcStateCode,
      _ipcBadge, _ipcBadged, _ipcCanGrant, _ipcFaultSend⟩ =>
     SeLe4n.Kernel.isIdleThreadId tid ||
-    SeLe4n.Kernel.isIdleObjId cspaceRoot || SeLe4n.Kernel.isIdleObjId vspaceRoot ||
+    SeLe4n.Kernel.isIdleObjId (TCB.spaceCellObject spaceCells[0]) ||
+    SeLe4n.Kernel.isIdleObjId (TCB.spaceCellObject spaceCells[1]) ||
     (SeLe4n.ObjId.ofOptCode boundNotificationCode).any SeLe4n.Kernel.isIdleObjId ||
     (SeLe4n.ThreadId.ofOptCode queueNextCode).any SeLe4n.Kernel.isIdleThreadId ||
     (SeLe4n.ThreadId.ofOptCode queuePrevCode).any SeLe4n.Kernel.isIdleThreadId ||
@@ -1818,7 +1823,7 @@ theorem bootSafeCnodeCheck_caps {cn : CNode}
     on a send or call, and the send or fault that blocks it writes them all. -/
 def bootSafeTcbCheck (tcb : TCB) : Bool :=
   match tcb with
-  | ⟨_tid, _priority, _domain, _cspaceRoot, _vspaceRoot, _ipcBuffer, _ipcObjectCode, _threadState,
+  | ⟨_tid, _priority, _domain, _spaceCells, _spaceLinks, _ipcBuffer, _ipcObjectCode, _threadState,
      _timeSlice, _deadline, _queuePrev, _queuePPrev, _queueNext, _pendingMessage,
      _registerContext, _faultHandlerSet, _faultHandlerWord, _boundNotification, _scBindingScCode, _scBindingOwnerCode, _timeoutBudget,
      _maxControlledPriority, _pipBoost, _timedOut, _cpuAffinity, _replyObject,
@@ -4008,7 +4013,7 @@ def undeclaredAffinityBootError : String :=
     rather than silently ignored (the round-8 arity discipline). -/
 def tcbAffinityDeclared (cores : List SeLe4n.Kernel.Concurrency.CoreId) (tcb : TCB) : Bool :=
   match tcb with
-  | ⟨_tid, _priority, _domain, _cspaceRoot, _vspaceRoot, _ipcBuffer, _ipcObjectCode, _threadState,
+  | ⟨_tid, _priority, _domain, _spaceCells, _spaceLinks, _ipcBuffer, _ipcObjectCode, _threadState,
      _timeSlice, _deadline, _queuePrev, _queuePPrev, _queueNext, _pendingMessage,
      _registerContext, _faultHandlerSet, _faultHandlerWord, _boundNotification, _scBindingScCode, _scBindingOwnerCode, _timeoutBudget,
      _maxControlledPriority, _pipBoost, _timedOut, _cpuAffinity, _replyObject,

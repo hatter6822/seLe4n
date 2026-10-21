@@ -120,8 +120,7 @@ private def mkTcb (tid : Nat) : TCB :=
   { tid := ThreadId.ofNat tid
     priority := ⟨10⟩
     domain := ⟨0⟩
-    cspaceRoot := ObjId.ofNat 0
-    vspaceRoot := ObjId.ofNat 0
+    spaceCells := SeLe4n.Model.TCB.spaceCellsOf (ObjId.ofNat 0) (ObjId.ofNat 0)
     ipcBuffer := SeLe4n.VAddr.ofNat 0 }
 
 /-- An empty CNode with depth/radix sized for ABI-decoded slot indices.  The
@@ -866,7 +865,7 @@ private def row_translationFault_ipcBuffer_no_write : KernelErrorRejection :=
         { asid := SeLe4n.ASID.ofNat 1
           mappings := (SeLe4n.Kernel.RobinHood.RHTable.empty 16).insert vaddr
                         (SeLe4n.PAddr.ofNat 0x1000, perms) }
-      let tcb : TCB := { mkTcb 800 with vspaceRoot := vsRootId }
+      let tcb : TCB := ((mkTcb 800).withVSpaceRoot vsRootId)
       let st : SystemState := { (default : SystemState) with
         objects := ((default : SystemState).objects.insert tid.toObjId
           (.tcb tcb)).insert vsRootId (.vspaceRoot vsRoot) }

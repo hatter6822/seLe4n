@@ -225,7 +225,7 @@ private def scenario (cap : Capability) : Option SystemState :=
                (SeLe4n.Slot.ofNat slotNotFrame, frameCapTo attacker.toObjId [.read])]))
       |>.withObject attacker.toObjId (.tcb
           { tid := attacker, priority := ⟨40⟩, domain := ⟨0⟩,
-            cspaceRoot := attackerCn, vspaceRoot := attackerVsp,
+            spaceCells := SeLe4n.Model.TCB.spaceCellsOf attackerCn attackerVsp,
             ipcBuffer := SeLe4n.VAddr.ofNat 4096 })
       |>.withRunnable [attacker]
       |>.build)
@@ -606,7 +606,7 @@ private def carveScenario : SystemState :=
                (SeLe4n.Slot.ofNat slotOwnCnGrant, frameCapTo carveCn [.read, .write, .grant])])))
       |>.withObject carveOwner.toObjId (.tcb
           { tid := carveOwner, priority := ⟨40⟩, domain := ⟨0⟩,
-            cspaceRoot := carveCn, vspaceRoot := carveVsp,
+            spaceCells := SeLe4n.Model.TCB.spaceCellsOf carveCn carveVsp,
             ipcBuffer := SeLe4n.VAddr.ofNat 4096 })
       |>.withRunnable [carveOwner]
       |>.build)
@@ -1241,7 +1241,7 @@ private def runCarvedRootChecks : IO Unit := do
         match stRev.getTcb? carveOwner with
         | some t =>
           match storeObject carveOwner.toObjId
-              (.tcb { t with vspaceRoot := SeLe4n.ObjId.ofNat 980 }) stRev with
+              (.tcb (t.withVSpaceRoot (SeLe4n.ObjId.ofNat 980))) stRev with
           | .ok ((), s) => s
           | .error _ => stRev
         | none => stRev
@@ -1480,7 +1480,7 @@ private def spaceScenario : SystemState :=
   let st := carveScenario
   let worker : TCB :=
     { tid := spaceWorker, priority := ⟨10⟩, domain := ⟨0⟩,
-      cspaceRoot := carveCn, vspaceRoot := carveVsp,
+      spaceCells := SeLe4n.Model.TCB.spaceCellsOf carveCn carveVsp,
       ipcBuffer := SeLe4n.VAddr.ofNat 4096 }
   let st1 := match storeObject spaceWorker.toObjId (.tcb worker) st with
     | .ok ((), s) => s

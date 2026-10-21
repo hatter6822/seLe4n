@@ -165,8 +165,7 @@ private def minimalTcb (tid : ThreadId) : TCB :=
   { tid := tid
     priority := ⟨0⟩
     domain := ⟨0⟩
-    cspaceRoot := ⟨0⟩
-    vspaceRoot := ⟨0⟩
+    spaceCells := SeLe4n.Model.TCB.spaceCellsOf ⟨0⟩ ⟨0⟩
     ipcBuffer := (SeLe4n.VAddr.ofNat 0) }
 
 private def mkNotifObjectEntry (oid : ObjId) : ObjectEntry :=

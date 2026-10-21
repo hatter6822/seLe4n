@@ -259,8 +259,8 @@ def objectOfTypeTag (typeTag : Nat) (sizeHint : Nat)
       tid := SeLe4n.ThreadId.sentinel       -- AJ4-D: reserved sentinel (H-06)
       priority := SeLe4n.Priority.ofNat 0
       domain := SeLe4n.DomainId.ofNat 0
-      cspaceRoot := SeLe4n.ObjId.sentinel    -- AJ4-D: reserved sentinel (H-06)
-      vspaceRoot := SeLe4n.ObjId.sentinel    -- AJ4-D: reserved sentinel (H-06)
+      -- AJ4-D: reserved sentinel roots (H-06): both space slots empty.
+      spaceCells := SeLe4n.Model.TCB.spaceCellsOf SeLe4n.ObjId.sentinel SeLe4n.ObjId.sentinel
       ipcBuffer := SeLe4n.VAddr.ofNat 0
     })
   | 1 => .ok (.endpoint (Endpoint.ofQueues {} {}))
@@ -311,8 +311,8 @@ def objectOfKernelType (objType : KernelObjectType) (sizeHint : Nat) : KernelObj
       tid := SeLe4n.ThreadId.sentinel       -- AJ4-D: reserved sentinel (H-06)
       priority := SeLe4n.Priority.ofNat 0
       domain := SeLe4n.DomainId.ofNat 0
-      cspaceRoot := SeLe4n.ObjId.sentinel    -- AJ4-D: reserved sentinel (H-06)
-      vspaceRoot := SeLe4n.ObjId.sentinel    -- AJ4-D: reserved sentinel (H-06)
+      -- AJ4-D: reserved sentinel roots (H-06): both space slots empty.
+      spaceCells := SeLe4n.Model.TCB.spaceCellsOf SeLe4n.ObjId.sentinel SeLe4n.ObjId.sentinel
       ipcBuffer := SeLe4n.VAddr.ofNat 0
     }
   | .endpoint => .endpoint (Endpoint.ofQueues {} {})

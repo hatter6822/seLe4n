@@ -77,7 +77,7 @@ private def expect (label : String) (cond : Bool) : IO Unit :=
 /-- Helper: construct a minimal test TCB. -/
 private def mkTcb (tid : Nat) (prio : Nat := 0) (dom : Nat := 0) : TCB :=
   { tid := ⟨tid⟩, priority := ⟨prio⟩, domain := ⟨dom⟩,
-    cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 0) }
+    spaceCells := SeLe4n.Model.TCB.spaceCellsOf ⟨0⟩ ⟨0⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 0) }
 
 /-- Helper: construct an empty FrozenSystemState. -/
 private def emptyFrozenState : FrozenSystemState :=
@@ -590,7 +590,7 @@ private def tph015f_objIdCollisionRejected : IO Unit := do
   -- non-sentinel collision.
   let tcb : KernelObject := KernelObject.tcb
     { tid := ⟨1⟩, priority := ⟨0⟩, domain := ⟨0⟩,
-      cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩,
+      spaceCells := SeLe4n.Model.TCB.spaceCellsOf ⟨0⟩ ⟨0⟩,
       ipcBuffer := (SeLe4n.VAddr.ofNat 0) }
   let entry : ObjectEntry := {
     id := SeLe4n.Platform.RPi5.rpi5BootVSpaceRootObjId

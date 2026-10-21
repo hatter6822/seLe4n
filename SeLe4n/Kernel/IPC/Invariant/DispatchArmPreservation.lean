@@ -4951,7 +4951,7 @@ theorem setThreadSpace_preserves_ipcInvariantFull
     ipcInvariantFull st' := by
   obtain ⟨tcb, hT, -, -, -, -, rfl⟩ := setThreadSpace_ok st st' vtid cn vr hStep
   exact insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull st vtid.val tcb
-    { tcb with cspaceRoot := cn, vspaceRoot := vr } hObjInv hInv
+    (tcb.withSpaceCaps cn vr) hObjInv hInv
     ((SystemState.getTcb?_eq_some_iff st vtid.val tcb).mp hT)
     rfl rfl rfl rfl rfl rfl rfl rfl rfl
 

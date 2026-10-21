@@ -492,7 +492,7 @@ private def runNonVacuousChecks : IO Unit := do
   -- the kernel's own enqueue (`runEnqueueOnCore`).
   let tcb : TCB :=
     { tid := tid, priority := ⟨50⟩, domain := ⟨0⟩,
-      cspaceRoot := SeLe4n.ObjId.ofNat 0, vspaceRoot := SeLe4n.ObjId.ofNat 0,
+      spaceCells := SeLe4n.Model.TCB.spaceCellsOf (SeLe4n.ObjId.ofNat 0) (SeLe4n.ObjId.ofNat 0),
       ipcBuffer := SeLe4n.VAddr.ofNat 0 }
   let stRQ : SystemState :=
     ((SeLe4n.Testing.BootstrapBuilder.empty.withObject tid.toObjId (.tcb tcb)).build

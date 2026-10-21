@@ -72,32 +72,28 @@ private def baseState : SystemState :=
       tid := ⟨6⟩
       priority := ⟨43⟩
       domain := ⟨0⟩
-      cspaceRoot := cnodeId
-      vspaceRoot := ⟨20⟩
+      spaceCells := SeLe4n.Model.TCB.spaceCellsOf cnodeId ⟨20⟩
       ipcBuffer := (SeLe4n.VAddr.ofNat 2048)
     })
     |>.withObject ⟨7⟩ (.tcb {
       tid := ⟨7⟩
       priority := ⟨42⟩
       domain := ⟨0⟩
-      cspaceRoot := cnodeId
-      vspaceRoot := ⟨20⟩
+      spaceCells := SeLe4n.Model.TCB.spaceCellsOf cnodeId ⟨20⟩
       ipcBuffer := (SeLe4n.VAddr.ofNat 4096)
     })
     |>.withObject ⟨8⟩ (.tcb {
       tid := ⟨8⟩
       priority := ⟨41⟩
       domain := ⟨0⟩
-      cspaceRoot := cnodeId
-      vspaceRoot := ⟨20⟩
+      spaceCells := SeLe4n.Model.TCB.spaceCellsOf cnodeId ⟨20⟩
       ipcBuffer := (SeLe4n.VAddr.ofNat 8192)
     })
     |>.withObject ⟨9⟩ (.tcb {
       tid := ⟨9⟩
       priority := ⟨40⟩
       domain := ⟨0⟩
-      cspaceRoot := cnodeId
-      vspaceRoot := ⟨20⟩
+      spaceCells := SeLe4n.Model.TCB.spaceCellsOf cnodeId ⟨20⟩
       ipcBuffer := (SeLe4n.VAddr.ofNat 12288)
     })
     |>.withObject notificationId (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
@@ -696,16 +692,14 @@ private def runDualQueueEndpointFifoNegativeChecks : IO Unit := do
         tid := ⟨7⟩
         priority := ⟨10⟩
         domain := ⟨0⟩
-        cspaceRoot := cnodeId
-        vspaceRoot := ⟨20⟩
+        spaceCells := SeLe4n.Model.TCB.spaceCellsOf cnodeId ⟨20⟩
         ipcBuffer := (SeLe4n.VAddr.ofNat 4096)
       })
       |>.withObject ⟨8⟩ (.tcb {
         tid := ⟨8⟩
         priority := ⟨42⟩
         domain := ⟨0⟩
-        cspaceRoot := cnodeId
-        vspaceRoot := ⟨20⟩
+        spaceCells := SeLe4n.Model.TCB.spaceCellsOf cnodeId ⟨20⟩
         ipcBuffer := (SeLe4n.VAddr.ofNat 8192)
       })
       |>.withRunnable [⟨8⟩]
@@ -726,8 +720,7 @@ private def runDualQueueEndpointFifoNegativeChecks : IO Unit := do
             tid := ⟨7⟩
             priority := ⟨80⟩
             domain := ⟨1⟩
-            cspaceRoot := cnodeId
-            vspaceRoot := ⟨20⟩
+            spaceCells := SeLe4n.Model.TCB.spaceCellsOf cnodeId ⟨20⟩
             ipcBuffer := (SeLe4n.VAddr.ofNat 4096)
           }) } : SystemState).runEnqueueOnCore bootCoreId (SeLe4n.ThreadId.ofNat 7) ⟨80⟩
   let crossDomainState : SystemState :=
@@ -756,8 +749,7 @@ private def runDualQueueEndpointFifoNegativeChecks : IO Unit := do
         priority := ⟨20⟩
         deadline := ⟨2⟩
         domain := ⟨1⟩
-        cspaceRoot := cnodeId
-        vspaceRoot := ⟨20⟩
+        spaceCells := SeLe4n.Model.TCB.spaceCellsOf cnodeId ⟨20⟩
         ipcBuffer := (SeLe4n.VAddr.ofNat 12288)
       })
       |>.withObject ⟨11⟩ (.tcb {
@@ -765,8 +757,7 @@ private def runDualQueueEndpointFifoNegativeChecks : IO Unit := do
         priority := ⟨20⟩
         deadline := ⟨4⟩
         domain := ⟨1⟩
-        cspaceRoot := cnodeId
-        vspaceRoot := ⟨20⟩
+        spaceCells := SeLe4n.Model.TCB.spaceCellsOf cnodeId ⟨20⟩
         ipcBuffer := (SeLe4n.VAddr.ofNat 16384)
       })
       |>.withObject ⟨12⟩ (.tcb {
@@ -774,8 +765,7 @@ private def runDualQueueEndpointFifoNegativeChecks : IO Unit := do
         priority := ⟨80⟩
         deadline := ⟨1⟩
         domain := ⟨0⟩
-        cspaceRoot := cnodeId
-        vspaceRoot := ⟨20⟩
+        spaceCells := SeLe4n.Model.TCB.spaceCellsOf cnodeId ⟨20⟩
         ipcBuffer := (SeLe4n.VAddr.ofNat 20480)
       })
       |>.withRunnable [⟨12⟩, ⟨10⟩, ⟨11⟩]
@@ -1468,7 +1458,7 @@ private def runBuilderRunPlacementChecks : IO Unit := do
     else throw <| IO.userError s!"{label}: expected {expected}, got {actual}"
   let tid := SeLe4n.ThreadId.ofNat 31
   let tcbWith (code : Nat) : TCB :=
-    { tid := tid, priority := ⟨10⟩, domain := ⟨0⟩, cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩,
+    { tid := tid, priority := ⟨10⟩, domain := ⟨0⟩, spaceCells := SeLe4n.Model.TCB.spaceCellsOf ⟨0⟩ ⟨0⟩,
       ipcBuffer := (SeLe4n.VAddr.ofNat 0), runCoreCode := code }
   let fixture (code : Nat) : BootstrapBuilder :=
     BootstrapBuilder.empty
@@ -2053,7 +2043,7 @@ private def runWSH13Checks : IO Unit := do
     (BootstrapBuilder.empty
       |>.withObject ⟨1⟩ (.tcb {
         tid := ⟨1⟩, priority := ⟨100⟩, domain := ⟨0⟩,
-        cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096)
+        spaceCells := SeLe4n.Model.TCB.spaceCellsOf ⟨10⟩ ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096)
         })
       |>.withService svcA {
         identity := { sid := svcA, backingObject := ⟨1⟩, owner := ⟨10⟩ }
@@ -2237,8 +2227,7 @@ def runWSH16LifecycleChecks : IO Unit := do
         tid := ⟨152⟩
         priority := ⟨10⟩
         domain := ⟨0⟩
-        cspaceRoot := h16CnodeId
-        vspaceRoot := ⟨20⟩
+        spaceCells := SeLe4n.Model.TCB.spaceCellsOf h16CnodeId ⟨20⟩
         ipcBuffer := (SeLe4n.VAddr.ofNat 4096)
       })
       |>.withLifecycleObjectType h16TargetId .endpoint
@@ -2382,8 +2371,7 @@ def runAN4A5LifecycleVisibilityChecks : IO Unit := do
   let a5NewObj : KernelObject := .endpoint {}
   let a5Tcb : TCB :=
     { tid := ⟨170⟩, priority := ⟨10⟩, domain := ⟨0⟩
-    , cspaceRoot := a5CnodeId, vspaceRoot := ⟨20⟩
-    , ipcBuffer := (SeLe4n.VAddr.ofNat 4096) }
+    , spaceCells := SeLe4n.Model.TCB.spaceCellsOf a5CnodeId ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096) }
   let a5State : SystemState :=
     (BootstrapBuilder.empty
       |>.withObject a5RetypeTcbId (.tcb a5Tcb)
@@ -2733,7 +2721,7 @@ private def runWSKGServiceIpcChecks : IO Unit := do
     (BootstrapBuilder.empty
       |>.withObject svcBackingId (.tcb {
         tid := ⟨801⟩, priority := ⟨10⟩, domain := ⟨0⟩,
-        cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096)
+        spaceCells := SeLe4n.Model.TCB.spaceCellsOf ⟨10⟩ ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096)
         })
       |>.withService svcPolicyId {
         identity := { sid := svcPolicyId, backingObject := svcBackingId, owner := ⟨10⟩ }
@@ -2876,11 +2864,11 @@ def runWSL4BlockedThreadChecks : IO Unit := do
       |>.withObject ntfnId (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
       |>.withObject ⟨7⟩ (.tcb {
         tid := ⟨7⟩, priority := ⟨10⟩, domain := ⟨0⟩,
-        cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
+        spaceCells := SeLe4n.Model.TCB.spaceCellsOf ⟨10⟩ ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
       })
       |>.withObject ⟨8⟩ (.tcb {
         tid := ⟨8⟩, priority := ⟨20⟩, domain := ⟨0⟩,
-        cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 8192),
+        spaceCells := SeLe4n.Model.TCB.spaceCellsOf ⟨10⟩ ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 8192),
       })
       |>.withRunnable [⟨7⟩, ⟨8⟩]
     ).buildChecked
@@ -3012,8 +3000,7 @@ def runL13CapTransferShortCircuitChecks : IO Unit := do
     tid := ⟨5050⟩,
     priority := ⟨100⟩,
     domain := ⟨0⟩,
-    cspaceRoot := senderRoot,
-    vspaceRoot := senderRoot,
+    spaceCells := SeLe4n.Model.TCB.spaceCellsOf senderRoot senderRoot,
     ipcBuffer := (SeLe4n.VAddr.ofNat 0),
     timeSlice := 5,
     scBindingScCode := 0, scBindingOwnerCode := 0
@@ -3474,7 +3461,7 @@ private def runWSR4CoherenceChecks : IO Unit := do
     let r4State2 := (BootstrapBuilder.empty
         |>.withObject tcbId (.tcb {
           tid := ⟨1⟩, priority := ⟨0⟩, domain := ⟨0⟩,
-          cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 0) })
+          spaceCells := SeLe4n.Model.TCB.spaceCellsOf ⟨0⟩ ⟨0⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 0) })
         |>.withLifecycleObjectType tcbId .tcb
         |>.buildChecked)
     match SeLe4n.Kernel.registerInterface iface r4State2 with
@@ -3685,7 +3672,7 @@ private def runS2HLifecycleErrorTests : IO Unit := do
   expectErr "retypeFromUntyped allocSize too small"
     (SeLe4n.Kernel.retypeFromUntyped f2UntypedAuthSlot f2UntypedObjId ⟨90⟩
       (.tcb { tid := ⟨90⟩, priority := ⟨10⟩, domain := ⟨0⟩,
-              cspaceRoot := cnodeId, vspaceRoot := ⟨20⟩,
+              spaceCells := SeLe4n.Model.TCB.spaceCellsOf cnodeId ⟨20⟩,
               ipcBuffer := (SeLe4n.VAddr.ofNat 0) }) 0 f2UntypedState)
     .untypedAllocSizeTooSmall
 
@@ -3694,7 +3681,7 @@ private def runS2HLifecycleErrorTests : IO Unit := do
   expectErr "retypeFromUntyped device untyped TCB rejection"
     (SeLe4n.Kernel.retypeFromUntyped f2UntypedAuthSlot f2DeviceUntypedId ⟨91⟩
       (.tcb { tid := ⟨91⟩, priority := ⟨10⟩, domain := ⟨0⟩,
-              cspaceRoot := cnodeId, vspaceRoot := ⟨20⟩,
+              spaceCells := SeLe4n.Model.TCB.spaceCellsOf cnodeId ⟨20⟩,
               ipcBuffer := (SeLe4n.VAddr.ofNat 0) }) 64 f2DeviceState)
     .untypedDeviceRestriction
 
@@ -3889,7 +3876,7 @@ private def runX2RuntimeInvariantTests : IO Unit := do
   let x2Tid : SeLe4n.ThreadId := ⟨5⟩
   let x2Tcb : TCB := {
     tid := x2Tid, priority := ⟨100⟩, domain := ⟨0⟩,
-    cspaceRoot := SeLe4n.ObjId.ofNat 0, vspaceRoot := SeLe4n.ObjId.ofNat 0,
+    spaceCells := SeLe4n.Model.TCB.spaceCellsOf (SeLe4n.ObjId.ofNat 0) (SeLe4n.ObjId.ofNat 0),
     ipcBuffer := SeLe4n.VAddr.ofNat 0, timeSlice := 9,
     scBindingScCode := 0, scBindingOwnerCode := 0 }
   let x2Base : SystemState :=
@@ -4003,7 +3990,7 @@ def runZ8SchedContextNegativeChecks : IO Unit := do
   -- Z8-L-06: Bind when TCB is already bound to another SC
   let tcbAlreadyBound : TCB := {
     tid := tid, priority := ⟨50⟩, domain := ⟨0⟩,
-    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
+    spaceCells := SeLe4n.Model.TCB.spaceCellsOf ⟨10⟩ ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
     scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound ⟨8888⟩), scBindingOwnerCode := 0 }
   let stTcbBound := { stWithSc with
     objects := stWithSc.objects.insert tid.toObjId (.tcb tcbAlreadyBound) }
@@ -4036,7 +4023,7 @@ def runAC1BudgetFailClosedChecks : IO Unit := do
   -- AC1-G-01: Unbound thread always has sufficient budget
   let tcbUnbound : TCB := {
     tid := tid, priority := ⟨50⟩, domain := ⟨0⟩,
-    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
+    spaceCells := SeLe4n.Model.TCB.spaceCellsOf ⟨10⟩ ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
     scBindingScCode := 0, scBindingOwnerCode := 0 }
   if SeLe4n.Kernel.hasSufficientBudget st0 tcbUnbound != true then
     throw <| IO.userError "unbound thread should have sufficient budget"
@@ -4044,7 +4031,7 @@ def runAC1BudgetFailClosedChecks : IO Unit := do
   -- AC1-G-02: Bound thread with non-existent SchedContext → false (fail-closed)
   let tcbBoundMissing : TCB := {
     tid := tid, priority := ⟨50⟩, domain := ⟨0⟩,
-    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
+    spaceCells := SeLe4n.Model.TCB.spaceCellsOf ⟨10⟩ ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
     scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound ⟨7777⟩), scBindingOwnerCode := 0 }
   if SeLe4n.Kernel.hasSufficientBudget st0 tcbBoundMissing != false then
     throw <| IO.userError "missing SchedContext should fail-closed (return false)"
@@ -4052,7 +4039,7 @@ def runAC1BudgetFailClosedChecks : IO Unit := do
   -- AC1-G-03: Donated binding with non-existent SchedContext → false
   let tcbDonatedMissing : TCB := {
     tid := tid, priority := ⟨50⟩, domain := ⟨0⟩,
-    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
+    spaceCells := SeLe4n.Model.TCB.spaceCellsOf ⟨10⟩ ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
     scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated ⟨8888⟩ ⟨9999⟩), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated ⟨8888⟩ ⟨9999⟩) }
   if SeLe4n.Kernel.hasSufficientBudget st0 tcbDonatedMissing != false then
     throw <| IO.userError "donated missing SchedContext should fail-closed"
@@ -4065,7 +4052,7 @@ def runAC1BudgetFailClosedChecks : IO Unit := do
     objects := st0.objects.insert scId (.schedContext scWithBudget) }
   let tcbBound : TCB := {
     tid := tid, priority := ⟨50⟩, domain := ⟨0⟩,
-    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
+    spaceCells := SeLe4n.Model.TCB.spaceCellsOf ⟨10⟩ ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
     scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound ⟨6001⟩), scBindingOwnerCode := 0 }
   if SeLe4n.Kernel.hasSufficientBudget stWithSc tcbBound != true then
     throw <| IO.userError "bound with positive budget should be true"
@@ -4167,11 +4154,11 @@ private def r1BaseState : SystemState :=
         (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [])))
     |>.withObject r1CallerTid.toObjId (.tcb
         { tid := r1CallerTid, priority := ⟨1⟩, domain := ⟨0⟩,
-          cspaceRoot := r1CallerCNode, vspaceRoot := ⟨0⟩,
+          spaceCells := SeLe4n.Model.TCB.spaceCellsOf r1CallerCNode ⟨0⟩,
           ipcBuffer := (SeLe4n.VAddr.ofNat 0) })
     |>.withObject r1ReceiverTid.toObjId (.tcb
         { tid := r1ReceiverTid, priority := ⟨1⟩, domain := ⟨0⟩,
-          cspaceRoot := r1ReceiverCNode, vspaceRoot := ⟨0⟩,
+          spaceCells := SeLe4n.Model.TCB.spaceCellsOf r1ReceiverCNode ⟨0⟩,
           ipcBuffer := (SeLe4n.VAddr.ofNat 0) })
     |>.withObject r1ReplyId.toObjId (.reply { replyId := r1ReplyId })
     |>.withRunnable [r1CallerTid, r1ReceiverTid]
@@ -4272,7 +4259,7 @@ private def r5eOrphanedBoundState : SystemState :=
   (BootstrapBuilder.empty
     |>.withObject r5eOrphanedTid.toObjId (.tcb
         { tid := r5eOrphanedTid, priority := ⟨1⟩, domain := ⟨0⟩,
-          cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩,
+          spaceCells := SeLe4n.Model.TCB.spaceCellsOf ⟨0⟩ ⟨0⟩,
           ipcBuffer := (SeLe4n.VAddr.ofNat 0),
           scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound r5eOrphanedScId), scBindingOwnerCode := 0,
           timeSlice := 1 })

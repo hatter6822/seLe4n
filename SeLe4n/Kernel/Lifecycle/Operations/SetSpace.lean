@@ -62,7 +62,7 @@ def setThreadSpace (st : SystemState) (vtid : SeLe4n.ValidThreadId)
     else if (st.getCNode? cspaceRoot).isNone then .error .invalidCapability
     else if (st.getVSpaceRoot? vspaceRoot).isNone then .error .invalidCapability
     else .ok (st.rewriteObject vtid.val.toObjId
-      (.tcb { tcb with cspaceRoot := cspaceRoot, vspaceRoot := vspaceRoot })
+      (.tcb (tcb.withSpaceCaps cspaceRoot vspaceRoot))
       (SystemState.rewriteAdmissible_tcb hTcb _))
 
 /-- WS-ZA ZA5.2: the compiled `setThreadSpace` — the two roots written into
@@ -78,7 +78,7 @@ def setThreadSpaceImpl (st : SystemState) (vtid : SeLe4n.ValidThreadId)
     else if (st.getCNode? cspaceRoot).isNone then .error .invalidCapability
     else if (st.getVSpaceRoot? vspaceRoot).isNone then .error .invalidCapability
     else .ok (st.updateTcb vtid.val
-      (fun t => { t with cspaceRoot := cspaceRoot, vspaceRoot := vspaceRoot }))
+      (fun t => (t.withSpaceCaps cspaceRoot vspaceRoot)))
 
 @[csimp] theorem setThreadSpace_eq_impl : @setThreadSpace = @setThreadSpaceImpl := by
   funext st vtid cspaceRoot vspaceRoot
@@ -94,7 +94,7 @@ def setThreadSpaceImpl (st : SystemState) (vtid : SeLe4n.ValidThreadId)
     split <;> try rfl
     split <;> try rfl
     rw [SystemState.rewriteObject_tcb_eq_updateTcb hT
-      (fun t => { t with cspaceRoot := cspaceRoot, vspaceRoot := vspaceRoot })]
+      (fun t => (t.withSpaceCaps cspaceRoot vspaceRoot))]
 
 /-- WS-ZA ZA5.2: `setThreadSpace`'s checks, read before anything is written:
 the thread is a suspended TCB and both roots name objects of their kind.  When
@@ -112,7 +112,7 @@ theorem setThreadSpace_of_admitted (st : SystemState) (vtid : SeLe4n.ValidThread
     (h : setThreadSpaceAdmitted st vtid cspaceRoot vspaceRoot = true) :
     setThreadSpace st vtid cspaceRoot vspaceRoot =
       .ok (st.updateTcb vtid.val
-        (fun t => { t with cspaceRoot := cspaceRoot, vspaceRoot := vspaceRoot })) := by
+        (fun t => (t.withSpaceCaps cspaceRoot vspaceRoot))) := by
   rw [setThreadSpace_eq_impl]
   unfold setThreadSpaceAdmitted at h
   cases hT : st.getTcb? vtid.val with
@@ -136,7 +136,7 @@ theorem setThreadSpace_ok (st st' : SystemState) (vtid : SeLe4n.ValidThreadId)
     ∃ tcb, st.getTcb? vtid.val = some tcb ∧ tcb.threadState = .Inactive ∧
       inferThreadState st vtid.val tcb = .Inactive ∧ (st.getCNode? cspaceRoot).isSome ∧ (st.getVSpaceRoot? vspaceRoot).isSome ∧
       st' = { st with objects := (st.objects.insert vtid.val.toObjId
-        (.tcb { tcb with cspaceRoot := cspaceRoot, vspaceRoot := vspaceRoot })) } := by
+        (.tcb (tcb.withSpaceCaps cspaceRoot vspaceRoot))) } := by
   cases hT : st.getTcb? vtid.val with
   | none => simp [setThreadSpace, SystemState.getTcbWitnessed?_eq_none hT] at h
   | some tcb =>
@@ -170,7 +170,7 @@ theorem setThreadSpace_ok_tcb (st st' : SystemState) (vtid : SeLe4n.ValidThreadI
     ∃ tcb, st.getTcb? vtid.val = some tcb ∧ (st.getCNode? cspaceRoot).isSome ∧
       (st.getVSpaceRoot? vspaceRoot).isSome ∧
       st'.objects[vtid.val.toObjId]? =
-        some (.tcb { tcb with cspaceRoot := cspaceRoot, vspaceRoot := vspaceRoot }) := by
+        some (.tcb (tcb.withSpaceCaps cspaceRoot vspaceRoot)) := by
   obtain ⟨tcb, hT, -, -, hC, hR, rfl⟩ := setThreadSpace_ok st st' vtid cspaceRoot vspaceRoot h
   exact ⟨tcb, hT, hC, hR, SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self _ _ _ hInv⟩
 

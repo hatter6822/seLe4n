@@ -333,7 +333,7 @@ would have built a state the kernel's own dispatch premise refuses.  The `.Inact
 kept as the deliberate negative in §3.12. -/
 private def mkUserTcb (tid : Nat) (prio : Nat) (dom : Nat) : TCB :=
   { tid := ThreadId.ofNat tid, priority := ⟨prio⟩, domain := ⟨dom⟩,
-    cspaceRoot := ObjId.ofNat 0, vspaceRoot := ObjId.ofNat 0,
+    spaceCells := SeLe4n.Model.TCB.spaceCellsOf (ObjId.ofNat 0) (ObjId.ofNat 0),
     ipcBuffer := SeLe4n.VAddr.ofNat 0, threadState := .Ready }
 
 /-- Core 1 — a non-boot core, used for the cross-core locality scenarios. -/
@@ -638,7 +638,7 @@ private def runBootValidationParityChecks : IO Unit := do
     { irqTable := [],
       initialObjects := [ { id := ⟨5⟩,
                             obj := .tcb { tid := ⟨5⟩, priority := ⟨10⟩, domain := ⟨0⟩,
-                                          cspaceRoot := root, vspaceRoot := ⟨0⟩,
+                                          spaceCells := SeLe4n.Model.TCB.spaceCellsOf root ⟨0⟩,
                                           ipcBuffer := SeLe4n.VAddr.ofNat 0,
                                           threadState := .Inactive },
                             hSlots := fun _ h => KernelObject.noConfusion h,
@@ -716,7 +716,7 @@ private def runBootValidationParityChecks : IO Unit := do
   -- real idle thread); stored under any id but its own thread id it is refused
   -- for the identity relation itself; stored under its own id it is accepted.
   let tcbWithTid (t : SeLe4n.ThreadId) : TCB :=
-    { tid := t, priority := ⟨10⟩, domain := ⟨0⟩, cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩,
+    { tid := t, priority := ⟨10⟩, domain := ⟨0⟩, spaceCells := SeLe4n.Model.TCB.spaceCellsOf ⟨0⟩ ⟨0⟩,
       ipcBuffer := SeLe4n.VAddr.ofNat 0, threadState := .Inactive }
   let entryAt (id : Nat) (tcb : TCB) : SeLe4n.Platform.Boot.ObjectEntry :=
     { id := ⟨id⟩, obj := .tcb tcb,

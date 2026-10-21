@@ -862,7 +862,7 @@ private def runPipChainFootprintChecks : IO Unit := do
     objects := st.objects.insert high.toObjId
       (.tcb (SeLe4n.Model.TCB.setIpcState
             { tid := high, priority := ⟨10⟩, domain := ⟨0⟩,
-              cspaceRoot := SeLe4n.ObjId.ofNat 0, vspaceRoot := SeLe4n.ObjId.ofNat 0,
+              spaceCells := SeLe4n.Model.TCB.spaceCellsOf (SeLe4n.ObjId.ofNat 0) (SeLe4n.ObjId.ofNat 0),
               ipcBuffer := SeLe4n.VAddr.ofNat 0
               } (.blockedOnReply (SeLe4n.ObjId.ofNat 0) (some low)))) }
   let descending := SeLe4n.Kernel.PriorityInheritance.pipChainVisited stChain high 4

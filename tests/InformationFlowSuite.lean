@@ -380,8 +380,7 @@ def test_projectKernelObject_strips_tcb_signals : IO Bool := do
     { tid := SeLe4n.ThreadId.ofNat 1
       priority := ⟨5⟩
       domain := ⟨0⟩
-      cspaceRoot := SeLe4n.ObjId.ofNat 0
-      vspaceRoot := SeLe4n.ObjId.ofNat 0
+      spaceCells := SeLe4n.Model.TCB.spaceCellsOf (SeLe4n.ObjId.ofNat 0) (SeLe4n.ObjId.ofNat 0)
       ipcBuffer := (SeLe4n.VAddr.ofNat 0)
       pendingMessage := some testMsg
       timedOut := true }
@@ -1634,11 +1633,11 @@ def runInformationFlowChecks : IO Unit := do
             (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [((SeLe4n.Slot.ofNat 0), cap1)])))
         |>.withObject senderTid.toObjId (.tcb
             { tid := senderTid, priority := ⟨1⟩, domain := ⟨0⟩,
-              cspaceRoot := senderCNode, vspaceRoot := ⟨0⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 0)
+              spaceCells := SeLe4n.Model.TCB.spaceCellsOf senderCNode ⟨0⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 0)
               })
         |>.withObject receiverTid.toObjId (.tcb
             { tid := receiverTid, priority := ⟨1⟩, domain := ⟨0⟩,
-              cspaceRoot := ⟨3799⟩, vspaceRoot := ⟨0⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 0)
+              spaceCells := SeLe4n.Model.TCB.spaceCellsOf ⟨3799⟩ ⟨0⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 0)
               })
         |>.withRunnable [senderTid, receiverTid]
         |>.buildChecked)
@@ -1696,11 +1695,11 @@ def runInformationFlowChecks : IO Unit := do
               (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [((SeLe4n.Slot.ofNat 0), cap1)])))
           |>.withObject callerTid.toObjId (.tcb
               { tid := callerTid, priority := ⟨1⟩, domain := ⟨0⟩,
-                cspaceRoot := callerCNode, vspaceRoot := ⟨0⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 0)
+                spaceCells := SeLe4n.Model.TCB.spaceCellsOf callerCNode ⟨0⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 0)
                 })
           |>.withObject receiverTid.toObjId (.tcb
               { tid := receiverTid, priority := ⟨1⟩, domain := ⟨0⟩,
-                cspaceRoot := ⟨3799⟩, vspaceRoot := ⟨0⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 0)
+                spaceCells := SeLe4n.Model.TCB.spaceCellsOf ⟨3799⟩ ⟨0⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 0)
                 })
           |>.withRunnable [callerTid, receiverTid]
           |>.buildChecked)
@@ -1743,8 +1742,7 @@ def runInformationFlowChecks : IO Unit := do
       { tid := SeLe4n.ThreadId.ofNat 1,
         priority := ⟨5⟩,
         domain := ⟨0⟩,
-        cspaceRoot := SeLe4n.ObjId.ofNat 0,
-        vspaceRoot := SeLe4n.ObjId.ofNat 0,
+        spaceCells := SeLe4n.Model.TCB.spaceCellsOf (SeLe4n.ObjId.ofNat 0) (SeLe4n.ObjId.ofNat 0),
         ipcBuffer := (SeLe4n.VAddr.ofNat 0),
         pendingMessage := some testMsg,
         timedOut := true }

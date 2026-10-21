@@ -565,7 +565,7 @@ the write alone.  An arm whose checks refuse, and every arm not yet split, is
           resolveSetSpaceK tid args st (fun e => .error (e, st)) (fun cnId vrId =>
             RefusalCarrying.ofChecked (setThreadSpaceAdmitted st vtid cnId vrId)
               (fun st => st.updateTcb vtid.val
-                (fun t => { t with cspaceRoot := cnId, vspaceRoot := vrId }))
+                (fun t => (t.withSpaceCaps cnId vrId)))
               (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st)
     | _ => .error (.invalidCapability, st)
   | .schedContextBind =>

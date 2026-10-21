@@ -118,7 +118,7 @@ private def vSrv : SeLe4n.ValidThreadId := ⟨ThreadId.ofNat 200, by decide⟩
 private def mkReadyTcb (tidN : Nat) (prio : Nat) (aff : Option CoreId)
     (state : ThreadState) (mcp : Nat := 0xFF) : TCB :=
   { tid := ThreadId.ofNat tidN, priority := ⟨prio⟩, domain := ⟨0⟩,
-    cspaceRoot := ObjId.ofNat 0, vspaceRoot := ObjId.ofNat 0,
+    spaceCells := SeLe4n.Model.TCB.spaceCellsOf (ObjId.ofNat 0) (ObjId.ofNat 0),
     ipcBuffer := SeLe4n.VAddr.ofNat 0, threadState := state,
     cpuAffinity := aff, maxControlledPriority := ⟨mcp⟩ }
 
@@ -126,7 +126,7 @@ private def mkReadyTcb (tidN : Nat) (prio : Nat) (aff : Option CoreId)
 private def mkWaiterTcb (tidN : Nat) (prio : Nat) (server : Nat) : TCB :=
   (TCB.setIpcState
   { tid := ThreadId.ofNat tidN, priority := ⟨prio⟩, domain := ⟨0⟩,
-    cspaceRoot := ObjId.ofNat 0, vspaceRoot := ObjId.ofNat 0,
+    spaceCells := SeLe4n.Model.TCB.spaceCellsOf (ObjId.ofNat 0) (ObjId.ofNat 0),
     ipcBuffer := SeLe4n.VAddr.ofNat 0, threadState := .BlockedReply
     } (.blockedOnReply (ObjId.ofNat 50) (some (ThreadId.ofNat server))))
 

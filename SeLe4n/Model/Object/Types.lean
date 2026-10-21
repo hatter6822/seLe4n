@@ -1157,12 +1157,101 @@ are each a heap cell, the code is a scalar. -/
 
 end QueuePPrev
 
+/-- WS-ZA ZA5.3 part 4: the words of derivation links one slot holds (parent,
+first child, next sibling, previous sibling; a CNode word and a slot word each). -/
+def slotLinkWords : Nat := 8
+
+/-- WS-ZA ZA5.3 part 6: the capability with the given fields, written over the
+record `r` (a slot's spare): out of line, so `r` is the only record the
+compiler can write it into, and its rights read back through `r` so that `r`
+stays live, since an update of every field would drop `r` and build a fresh
+record.  Equal to the capability of those fields (`overwrite_eq`). -/
+@[noinline] def Capability.overwrite (r : Capability) (target : CapTarget) (rights : AccessRightSet)
+    (badgeWord : SeLe4n.Badge) (badged : Bool) (mapAsid : SeLe4n.ASID) (mapVaddr : SeLe4n.VAddr)
+    (mapEpoch : Nat) (mapped : Bool) : Capability :=
+  { target, rights := if r.rights = rights then r.rights else rights, badgeWord, badged,
+    mapAsid, mapVaddr, mapEpoch, mapped }
+
+/-- WS-ZA ZA5.4: the target naming object `id`, built fresh, out of line. -/
+@[noinline] def CapTarget.ofObject (id : SeLe4n.ObjId) : CapTarget := .object id
+
+/-- WS-ZA ZA5.4: the target naming object `id`, written over `t` when `t` already
+names an object.  Out of line, with a distinct second arm, so the first arm
+keeps its reuse of `t`'s cell. -/
+@[noinline] def CapTarget.objectOver (t : CapTarget) (id : SeLe4n.ObjId) : CapTarget :=
+  match t with
+  | .object _ => .object id
+  | _ => CapTarget.ofObject id
+
+/-- WS-ZA ZA5.4: `rights`, kept as the record's own `rr` when equal.  Out of line,
+so the capability built from it has no join point before it. -/
+@[noinline] def AccessRightSet.keepOr (rr rights : AccessRightSet) : AccessRightSet :=
+  if rr = rights then rr else rights
+
+/-- WS-ZA ZA5.4: the capability naming object `id` with `rights` and nothing
+else, written over the record `r` (a slot's spare), its target cell written over
+too when it already names an object (`CapTarget.objectOver`): the record is
+matched apart and rebuilt with no join point between, so it is written in place,
+and its target, then owned alone, is too.  Equal to that capability
+(`overwriteObject_eq`). -/
+@[noinline] def Capability.overwriteObject (r : Capability) (id : SeLe4n.ObjId)
+    (rights : AccessRightSet) : Capability :=
+  match r with
+  | ⟨t, rr, _, _, _, _, _, _⟩ =>
+    ⟨t.objectOver id, rr.keepOr rights, SeLe4n.Badge.zero, false, default, default, 0, false⟩
+
+/-- WS-ZA ZA5.4: the capability naming object `id` with `rights` alone, built
+fresh out of line, so its target is built only on the path that builds it. -/
+@[noinline] def Capability.ofObject (id : SeLe4n.ObjId) (rights : AccessRightSet) : Capability :=
+  ⟨.object id, rights, SeLe4n.Badge.zero, false, default, default, 0, false⟩
+
+theorem CapTarget.objectOver_eq (t : CapTarget) (id : SeLe4n.ObjId) :
+    t.objectOver id = .object id := by
+  cases t <;> rfl
+
+theorem AccessRightSet.keepOr_eq (rr rights : AccessRightSet) : rr.keepOr rights = rights := by
+  unfold keepOr; split <;> simp_all
+
+theorem Capability.overwriteObject_eq (r : Capability) (id : SeLe4n.ObjId)
+    (rights : AccessRightSet) :
+    r.overwriteObject id rights =
+      ⟨.object id, rights, SeLe4n.Badge.zero, false, default, default, 0, false⟩ := by
+  obtain ⟨t, rr, _, _, _, _, _, _⟩ := r
+  unfold overwriteObject
+  dsimp only
+  rw [CapTarget.objectOver_eq, AccessRightSet.keepOr_eq]
+
+/-- WS-ZA ZA5.3 part 6: the capability with the given fields, built fresh (a
+slot with no record of its own).  Out of line, so a caller's literal of the same
+fields is not shared with it and stays unbuilt. -/
+@[noinline] def Capability.ofFields (target : CapTarget) (rights : AccessRightSet)
+    (badgeWord : SeLe4n.Badge) (badged : Bool) (mapAsid : SeLe4n.ASID) (mapVaddr : SeLe4n.VAddr)
+    (mapEpoch : Nat) (mapped : Bool) : Capability :=
+  ⟨target, rights, badgeWord, badged, mapAsid, mapVaddr, mapEpoch, mapped⟩
+
+theorem Capability.overwrite_eq (r : Capability) (target : CapTarget) (rights : AccessRightSet)
+    (badgeWord : SeLe4n.Badge) (badged : Bool) (mapAsid : SeLe4n.ASID) (mapVaddr : SeLe4n.VAddr)
+    (mapEpoch : Nat) (mapped : Bool) :
+    r.overwrite target rights badgeWord badged mapAsid mapVaddr mapEpoch mapped =
+      ⟨target, rights, badgeWord, badged, mapAsid, mapVaddr, mapEpoch, mapped⟩ := by
+  unfold overwrite; split <;> simp_all
+
 structure TCB where
   tid : SeLe4n.ThreadId
   priority : SeLe4n.Priority
   domain : SeLe4n.DomainId
-  cspaceRoot : SeLe4n.ObjId
-  vspaceRoot : SeLe4n.ObjId
+  /-- The thread's two capability slots, seL4's `tcbCTable` and `tcbVTable`:
+      slot 0 holds the capability to its CSpace root, slot 1 the capability to
+      its VSpace root (`TCB.cspaceRootSlot`, `TCB.vspaceRootSlot`), read through
+      `TCB.cspaceRoot` and `TCB.vspaceRoot`.  The same cell type as a CNode's
+      slot array (`CNode.cells`); an empty slot reads as the sentinel root.  A
+      fixed-size vector, so a write replaces one entry in place. -/
+  spaceCells : Vector (Option Capability) 2 := #v[none, none]
+  /-- The derivation links of the two slots, `slotLinkWords` words per slot in
+      the layout of a CNode's `links` (parent, first child, next and previous
+      sibling, each an object word and a slot word, a word of 0 meaning no
+      link). -/
+  spaceLinks : Vector Nat (slotLinkWords * 2) := Vector.replicate _ 0
   ipcBuffer : SeLe4n.VAddr
   /-- WS-ZA ZA4.7: the object word of the thread's IPC state, read with
       `ipcStateCode` through `TCB.ipcState` and written with it through
@@ -1429,6 +1518,73 @@ structure TCB where
   ipcFaultSend : Bool := false
   deriving Repr
 
+/-! ### A thread's space slots (seL4's `tcbCTable` and `tcbVTable`)
+
+A thread holds its CSpace and VSpace roots as capabilities in two slots of its
+own (`TCB.spaceCells`), slot 0 the CSpace root and slot 1 the VSpace root.  The
+roots are reads of those slots: the object the capability names, or the
+sentinel when the slot is empty (an unconfigured thread). -/
+
+/-- The slot index of a thread's CSpace root capability. -/
+@[inline] def TCB.cspaceRootSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 0
+
+/-- The slot index of a thread's VSpace root capability. -/
+@[inline] def TCB.vspaceRootSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 1
+
+/-- The rights of the capability a CSpace root slot holds when written from a
+root's id: read, write and grant, the rights `resolveSetSpace` asks of the
+capability it installs (`.grant` and `.write`) together with reading the
+CNode's slots. -/
+@[inline] def TCB.cspaceRootRights : AccessRightSet := AccessRightSet.ofList [.read, .write, .grant]
+
+/-- The rights of the capability a VSpace root slot holds when written from a
+root's id: read and write, `resolveSetSpace` asking `.write` of it. -/
+@[inline] def TCB.vspaceRootRights : AccessRightSet := AccessRightSet.ofList [.read, .write]
+
+/-- The object a space slot's capability names; the sentinel when the slot is
+empty or its capability names no object. -/
+@[inline] def TCB.spaceCellObject (o : Option Capability) : SeLe4n.ObjId :=
+  match o with
+  | some c =>
+    match c.target with
+    | .object id => id
+    | _ => SeLe4n.ObjId.sentinel
+  | none => SeLe4n.ObjId.sentinel
+
+/-- The space slot naming object `id` with `rights`: empty for the sentinel (a
+thread with no root), else the capability to `id` with those rights alone. -/
+@[inline] def TCB.spaceCellOf (id : SeLe4n.ObjId) (rights : AccessRightSet) : Option Capability :=
+  if id.isReserved then none
+  else some ⟨.object id, rights, SeLe4n.Badge.zero, false, default, default, 0, false⟩
+
+@[simp] theorem TCB.spaceCellObject_spaceCellOf (id : SeLe4n.ObjId) (rights : AccessRightSet) :
+    TCB.spaceCellObject (TCB.spaceCellOf id rights) = id := by
+  unfold TCB.spaceCellObject TCB.spaceCellOf
+  by_cases h : id.isReserved
+  · simp only [h, if_true]
+    cases id with
+    | mk v => simp only [SeLe4n.ObjId.isReserved, decide_eq_true_eq] at h; subst h; rfl
+  · simp only [h, Bool.false_eq_true, if_false]
+
+/-- The two space slots of a thread whose CSpace root is `c` and VSpace root
+`v`, each the capability the root implies (`spaceCellOf`). -/
+@[inline] def TCB.spaceCellsOf (c v : SeLe4n.ObjId) : Vector (Option Capability) 2 :=
+  #v[TCB.spaceCellOf c TCB.cspaceRootRights, TCB.spaceCellOf v TCB.vspaceRootRights]
+
+/-- **The thread's CSpace root**: the object its CSpace root slot names. -/
+@[reducible, inline] def TCB.cspaceRoot (t : TCB) : SeLe4n.ObjId :=
+  TCB.spaceCellObject t.spaceCells[0]
+
+/-- **The thread's VSpace root**: the object its VSpace root slot names. -/
+@[reducible, inline] def TCB.vspaceRoot (t : TCB) : SeLe4n.ObjId :=
+  TCB.spaceCellObject t.spaceCells[1]
+
+@[simp] theorem TCB.spaceCellsOf_get_zero (c v : SeLe4n.ObjId) :
+    (TCB.spaceCellsOf c v)[0] = TCB.spaceCellOf c TCB.cspaceRootRights := rfl
+
+@[simp] theorem TCB.spaceCellsOf_get_one (c v : SeLe4n.ObjId) :
+    (TCB.spaceCellsOf c v)[1] = TCB.spaceCellOf v TCB.vspaceRootRights := rfl
+
 /-- WS-ZA ZA4.7: the badge a blocked sender sent under. -/
 @[inline] def TCB.ipcBadgeView (t : TCB) : Option SeLe4n.Badge :=
   if t.ipcBadged then some (SeLe4n.Badge.ofWord t.ipcBadge) else none
@@ -1557,6 +1713,12 @@ every other field is the record's. -/
 @[simp] theorem TCB.setIpcState_vspaceRoot (t : TCB) (s : ThreadIpcState) :
     (t.setIpcState s).vspaceRoot = t.vspaceRoot := rfl
 
+@[simp] theorem TCB.setIpcState_spaceCells (t : TCB) (s : ThreadIpcState) :
+    (t.setIpcState s).spaceCells = t.spaceCells := rfl
+
+@[simp] theorem TCB.setIpcState_spaceLinks (t : TCB) (s : ThreadIpcState) :
+    (t.setIpcState s).spaceLinks = t.spaceLinks := rfl
+
 @[simp] theorem TCB.setIpcState_ipcBuffer (t : TCB) (s : ThreadIpcState) :
     (t.setIpcState s).ipcBuffer = t.ipcBuffer := rfl
 
@@ -1663,6 +1825,14 @@ stand for, so a record update writing a binding's codes reads back that binding
 @[simp] theorem TCB.schedContextBinding_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46) :
     (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46).schedContextBinding =
       SeLe4n.Kernel.SchedContextBinding.ofCodes f19 f20 := rfl
+
+/-- The roots of a constructed TCB are the objects its two space slots name, so a
+record update leaving the slots alone reads the old roots. -/
+@[simp] theorem TCB.cspaceRoot_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46).cspaceRoot = TCB.spaceCellObject f4[0] := rfl
+
+@[simp] theorem TCB.vspaceRoot_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46).vspaceRoot = TCB.spaceCellObject f4[1] := rfl
 
 @[simp] theorem TCB.ipcState_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46) :
     (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46).ipcState = ThreadIpcState.ofCodes f7 f42 := rfl
@@ -1981,13 +2151,278 @@ def queueSpliceNeighbors? (removed : TCB) :
     Option SeLe4n.ThreadId × Option SeLe4n.ThreadId :=
   (removed.queuePrev, removed.queueNext)
 
+/-- **Write both space slots**: the CSpace root slot holds the capability root
+`c` implies and the VSpace root slot the one `v` implies (`spaceCellOf`), and
+every other field is the record's.  Reducible, so `rfl` reads every other field
+of the result as the record's.  Compiled as `withSpaceCapsImpl`, which writes
+each slot's capability over the record the slot already holds. -/
+@[reducible] def TCB.withSpaceCaps (t : TCB) (c v : SeLe4n.ObjId) : TCB :=
+  { t with spaceCells := TCB.spaceCellsOf c v }
+
+/-- `cells` with slot `i` holding the slot naming `id` with `rights`, the
+capability written over the record slot `i` already holds
+(`Capability.overwriteObject`): the record is taken out of the vector before it
+is matched, so nothing else holds it and it is written in place, as a CNode's
+insert writes its slot's spare (`CNode.insertCellWith`). -/
+@[inline] def TCB.overwriteSpaceCell (cells : Vector (Option Capability) 2) (i : Nat) (h : i < 2)
+    (id : SeLe4n.ObjId) (rights : AccessRightSet) : Vector (Option Capability) 2 :=
+  if id.isReserved then cells.set i none h
+  else
+    let o := cells[i]
+    let cells' := cells.set i none h
+    match o with
+    | some r => cells'.set i (some (r.overwriteObject id rights)) h
+    | none => cells'.set i (some (Capability.ofObject id rights)) h
+
+theorem TCB.overwriteSpaceCell_eq (cells : Vector (Option Capability) 2) (i : Nat) (h : i < 2)
+    (id : SeLe4n.ObjId) (rights : AccessRightSet) :
+    TCB.overwriteSpaceCell cells i h id rights = cells.set i (TCB.spaceCellOf id rights) h := by
+  unfold TCB.overwriteSpaceCell TCB.spaceCellOf
+  by_cases hr : id.isReserved
+  · simp only [hr, if_true]
+  · simp only [hr, Bool.false_eq_true, if_false]
+    split <;> simp only [Vector.set_set, Capability.overwriteObject_eq, Capability.ofObject]
+
+/-- `withSpaceCaps` as compiled: each slot's capability written over the record
+it holds (`overwriteSpaceCell`), so a thread whose slots hold capabilities has
+its roots set with nothing allocated. -/
+@[inline] def TCB.withSpaceCapsImpl (t : TCB) (c v : SeLe4n.ObjId) : TCB :=
+  let cells := TCB.overwriteSpaceCell t.spaceCells 0 (by decide) c TCB.cspaceRootRights
+  { t with spaceCells := TCB.overwriteSpaceCell cells 1 (by decide) v TCB.vspaceRootRights }
+
+@[csimp] theorem TCB.withSpaceCaps_eq_impl : @TCB.withSpaceCaps = @TCB.withSpaceCapsImpl := by
+  funext t c v
+  simp only [TCB.withSpaceCaps, TCB.withSpaceCapsImpl, TCB.overwriteSpaceCell_eq]
+  congr 1
+  apply Vector.ext
+  intro i hi
+  match i, hi with
+  | 0, _ => simp [TCB.spaceCellsOf]
+  | 1, _ => simp [TCB.spaceCellsOf]
+
+/-- The record with only its CSpace root slot written (`spaceCellOf c`). -/
+@[reducible] def TCB.withCSpaceRoot (t : TCB) (c : SeLe4n.ObjId) : TCB :=
+  { t with spaceCells := t.spaceCells.set 0 (TCB.spaceCellOf c TCB.cspaceRootRights) }
+
+/-- The record with only its VSpace root slot written (`spaceCellOf v`). -/
+@[reducible] def TCB.withVSpaceRoot (t : TCB) (v : SeLe4n.ObjId) : TCB :=
+  { t with spaceCells := t.spaceCells.set 1 (TCB.spaceCellOf v TCB.vspaceRootRights) }
+
+/-! Reading a record after its space slots are written: the roots are the ones
+written, and every other field is the record's. -/
+
+@[simp] theorem TCB.withSpaceCaps_spaceCells (t : TCB) (c v : SeLe4n.ObjId) :
+    (t.withSpaceCaps c v).spaceCells = TCB.spaceCellsOf c v := rfl
+
+@[simp] theorem TCB.withSpaceCaps_cspaceRoot (t : TCB) (c v : SeLe4n.ObjId) :
+    (t.withSpaceCaps c v).cspaceRoot = c := TCB.spaceCellObject_spaceCellOf c _
+
+@[simp] theorem TCB.withSpaceCaps_vspaceRoot (t : TCB) (c v : SeLe4n.ObjId) :
+    (t.withSpaceCaps c v).vspaceRoot = v := TCB.spaceCellObject_spaceCellOf v _
+
+@[simp] theorem TCB.withCSpaceRoot_cspaceRoot (t : TCB) (c : SeLe4n.ObjId) :
+    (t.withCSpaceRoot c).cspaceRoot = c := by
+  simp only [TCB.cspaceRoot, Vector.getElem_set_self, TCB.spaceCellObject_spaceCellOf]
+
+@[simp] theorem TCB.withCSpaceRoot_vspaceRoot (t : TCB) (c : SeLe4n.ObjId) :
+    (t.withCSpaceRoot c).vspaceRoot = t.vspaceRoot := by
+  simp only [TCB.vspaceRoot, Vector.getElem_set_ne _ _ (by decide : (0 : Nat) ≠ 1)]
+
+@[simp] theorem TCB.withVSpaceRoot_vspaceRoot (t : TCB) (v : SeLe4n.ObjId) :
+    (t.withVSpaceRoot v).vspaceRoot = v := by
+  simp only [TCB.vspaceRoot, Vector.getElem_set_self, TCB.spaceCellObject_spaceCellOf]
+
+@[simp] theorem TCB.withVSpaceRoot_cspaceRoot (t : TCB) (v : SeLe4n.ObjId) :
+    (t.withVSpaceRoot v).cspaceRoot = t.cspaceRoot := by
+  simp only [TCB.cspaceRoot, Vector.getElem_set_ne _ _ (by decide : (1 : Nat) ≠ 0)]
+
+@[simp] theorem TCB.withSpaceCaps_tid (t : TCB) (c v : SeLe4n.ObjId) :
+    (t.withSpaceCaps c v).tid = t.tid := rfl
+
+@[simp] theorem TCB.withSpaceCaps_priority (t : TCB) (c v : SeLe4n.ObjId) :
+    (t.withSpaceCaps c v).priority = t.priority := rfl
+
+@[simp] theorem TCB.withSpaceCaps_domain (t : TCB) (c v : SeLe4n.ObjId) :
+    (t.withSpaceCaps c v).domain = t.domain := rfl
+
+@[simp] theorem TCB.withSpaceCaps_spaceLinks (t : TCB) (c v : SeLe4n.ObjId) :
+    (t.withSpaceCaps c v).spaceLinks = t.spaceLinks := rfl
+
+@[simp] theorem TCB.withSpaceCaps_ipcBuffer (t : TCB) (c v : SeLe4n.ObjId) :
+    (t.withSpaceCaps c v).ipcBuffer = t.ipcBuffer := rfl
+
+@[simp] theorem TCB.withSpaceCaps_ipcObjectCode (t : TCB) (c v : SeLe4n.ObjId) :
+    (t.withSpaceCaps c v).ipcObjectCode = t.ipcObjectCode := rfl
+
+@[simp] theorem TCB.withSpaceCaps_threadState (t : TCB) (c v : SeLe4n.ObjId) :
+    (t.withSpaceCaps c v).threadState = t.threadState := rfl
+
+@[simp] theorem TCB.withSpaceCaps_timeSlice (t : TCB) (c v : SeLe4n.ObjId) :
+    (t.withSpaceCaps c v).timeSlice = t.timeSlice := rfl
+
+@[simp] theorem TCB.withSpaceCaps_deadline (t : TCB) (c v : SeLe4n.ObjId) :
+    (t.withSpaceCaps c v).deadline = t.deadline := rfl
+
+@[simp] theorem TCB.withSpaceCaps_queuePrevCode (t : TCB) (c v : SeLe4n.ObjId) :
+    (t.withSpaceCaps c v).queuePrevCode = t.queuePrevCode := rfl
+
+@[simp] theorem TCB.withSpaceCaps_queuePPrevCode (t : TCB) (c v : SeLe4n.ObjId) :
+    (t.withSpaceCaps c v).queuePPrevCode = t.queuePPrevCode := rfl
+
+@[simp] theorem TCB.withSpaceCaps_queueNextCode (t : TCB) (c v : SeLe4n.ObjId) :
+    (t.withSpaceCaps c v).queueNextCode = t.queueNextCode := rfl
+
+@[simp] theorem TCB.withSpaceCaps_pendingMessage (t : TCB) (c v : SeLe4n.ObjId) :
+    (t.withSpaceCaps c v).pendingMessage = t.pendingMessage := rfl
+
+@[simp] theorem TCB.withSpaceCaps_registerContext (t : TCB) (c v : SeLe4n.ObjId) :
+    (t.withSpaceCaps c v).registerContext = t.registerContext := rfl
+
+@[simp] theorem TCB.withSpaceCaps_faultHandlerSet (t : TCB) (c v : SeLe4n.ObjId) :
+    (t.withSpaceCaps c v).faultHandlerSet = t.faultHandlerSet := rfl
+
+@[simp] theorem TCB.withSpaceCaps_faultHandlerWord (t : TCB) (c v : SeLe4n.ObjId) :
+    (t.withSpaceCaps c v).faultHandlerWord = t.faultHandlerWord := rfl
+
+@[simp] theorem TCB.withSpaceCaps_boundNotificationCode (t : TCB) (c v : SeLe4n.ObjId) :
+    (t.withSpaceCaps c v).boundNotificationCode = t.boundNotificationCode := rfl
+
+@[simp] theorem TCB.withSpaceCaps_scBindingScCode (t : TCB) (c v : SeLe4n.ObjId) :
+    (t.withSpaceCaps c v).scBindingScCode = t.scBindingScCode := rfl
+
+@[simp] theorem TCB.withSpaceCaps_scBindingOwnerCode (t : TCB) (c v : SeLe4n.ObjId) :
+    (t.withSpaceCaps c v).scBindingOwnerCode = t.scBindingOwnerCode := rfl
+
+@[simp] theorem TCB.withSpaceCaps_timeoutBudget (t : TCB) (c v : SeLe4n.ObjId) :
+    (t.withSpaceCaps c v).timeoutBudget = t.timeoutBudget := rfl
+
+@[simp] theorem TCB.withSpaceCaps_maxControlledPriority (t : TCB) (c v : SeLe4n.ObjId) :
+    (t.withSpaceCaps c v).maxControlledPriority = t.maxControlledPriority := rfl
+
+@[simp] theorem TCB.withSpaceCaps_pipBoostCode (t : TCB) (c v : SeLe4n.ObjId) :
+    (t.withSpaceCaps c v).pipBoostCode = t.pipBoostCode := rfl
+
+@[simp] theorem TCB.withSpaceCaps_timedOut (t : TCB) (c v : SeLe4n.ObjId) :
+    (t.withSpaceCaps c v).timedOut = t.timedOut := rfl
+
+@[simp] theorem TCB.withSpaceCaps_cpuAffinity (t : TCB) (c v : SeLe4n.ObjId) :
+    (t.withSpaceCaps c v).cpuAffinity = t.cpuAffinity := rfl
+
+@[simp] theorem TCB.withSpaceCaps_replyObjectCode (t : TCB) (c v : SeLe4n.ObjId) :
+    (t.withSpaceCaps c v).replyObjectCode = t.replyObjectCode := rfl
+
+@[simp] theorem TCB.withSpaceCaps_pendingReceiveReplyCode (t : TCB) (c v : SeLe4n.ObjId) :
+    (t.withSpaceCaps c v).pendingReceiveReplyCode = t.pendingReceiveReplyCode := rfl
+
+@[simp] theorem TCB.withSpaceCaps_pendingFault (t : TCB) (c v : SeLe4n.ObjId) :
+    (t.withSpaceCaps c v).pendingFault = t.pendingFault := rfl
+
+@[simp] theorem TCB.withSpaceCaps_fpContext (t : TCB) (c v : SeLe4n.ObjId) :
+    (t.withSpaceCaps c v).fpContext = t.fpContext := rfl
+
+@[simp] theorem TCB.withSpaceCaps_ntfnPrevCode (t : TCB) (c v : SeLe4n.ObjId) :
+    (t.withSpaceCaps c v).ntfnPrevCode = t.ntfnPrevCode := rfl
+
+@[simp] theorem TCB.withSpaceCaps_ntfnNextCode (t : TCB) (c v : SeLe4n.ObjId) :
+    (t.withSpaceCaps c v).ntfnNextCode = t.ntfnNextCode := rfl
+
+@[simp] theorem TCB.withSpaceCaps_runCoreCode (t : TCB) (c v : SeLe4n.ObjId) :
+    (t.withSpaceCaps c v).runCoreCode = t.runCoreCode := rfl
+
+@[simp] theorem TCB.withSpaceCaps_runPrio (t : TCB) (c v : SeLe4n.ObjId) :
+    (t.withSpaceCaps c v).runPrio = t.runPrio := rfl
+
+@[simp] theorem TCB.withSpaceCaps_runPrevCode (t : TCB) (c v : SeLe4n.ObjId) :
+    (t.withSpaceCaps c v).runPrevCode = t.runPrevCode := rfl
+
+@[simp] theorem TCB.withSpaceCaps_runNextCode (t : TCB) (c v : SeLe4n.ObjId) :
+    (t.withSpaceCaps c v).runNextCode = t.runNextCode := rfl
+
+@[simp] theorem TCB.withSpaceCaps_runBucketPrevCode (t : TCB) (c v : SeLe4n.ObjId) :
+    (t.withSpaceCaps c v).runBucketPrevCode = t.runBucketPrevCode := rfl
+
+@[simp] theorem TCB.withSpaceCaps_runBucketNextCode (t : TCB) (c v : SeLe4n.ObjId) :
+    (t.withSpaceCaps c v).runBucketNextCode = t.runBucketNextCode := rfl
+
+@[simp] theorem TCB.withSpaceCaps_replyWaiterPrevCode (t : TCB) (c v : SeLe4n.ObjId) :
+    (t.withSpaceCaps c v).replyWaiterPrevCode = t.replyWaiterPrevCode := rfl
+
+@[simp] theorem TCB.withSpaceCaps_replyWaiterNextCode (t : TCB) (c v : SeLe4n.ObjId) :
+    (t.withSpaceCaps c v).replyWaiterNextCode = t.replyWaiterNextCode := rfl
+
+@[simp] theorem TCB.withSpaceCaps_replyWaitersHeadCode (t : TCB) (c v : SeLe4n.ObjId) :
+    (t.withSpaceCaps c v).replyWaitersHeadCode = t.replyWaitersHeadCode := rfl
+
+@[simp] theorem TCB.withSpaceCaps_replyWaitersCount (t : TCB) (c v : SeLe4n.ObjId) :
+    (t.withSpaceCaps c v).replyWaitersCount = t.replyWaitersCount := rfl
+
+@[simp] theorem TCB.withSpaceCaps_ipcStateCode (t : TCB) (c v : SeLe4n.ObjId) :
+    (t.withSpaceCaps c v).ipcStateCode = t.ipcStateCode := rfl
+
+@[simp] theorem TCB.withSpaceCaps_ipcBadge (t : TCB) (c v : SeLe4n.ObjId) :
+    (t.withSpaceCaps c v).ipcBadge = t.ipcBadge := rfl
+
+@[simp] theorem TCB.withSpaceCaps_ipcBadged (t : TCB) (c v : SeLe4n.ObjId) :
+    (t.withSpaceCaps c v).ipcBadged = t.ipcBadged := rfl
+
+@[simp] theorem TCB.withSpaceCaps_ipcCanGrant (t : TCB) (c v : SeLe4n.ObjId) :
+    (t.withSpaceCaps c v).ipcCanGrant = t.ipcCanGrant := rfl
+
+@[simp] theorem TCB.withSpaceCaps_ipcFaultSend (t : TCB) (c v : SeLe4n.ObjId) :
+    (t.withSpaceCaps c v).ipcFaultSend = t.ipcFaultSend := rfl
+
+@[simp] theorem TCB.withSpaceCaps_ipcState (t : TCB) (c v : SeLe4n.ObjId) :
+    (t.withSpaceCaps c v).ipcState = t.ipcState := rfl
+
+@[simp] theorem TCB.withSpaceCaps_boundNotification (t : TCB) (c v : SeLe4n.ObjId) :
+    (t.withSpaceCaps c v).boundNotification = t.boundNotification := rfl
+
+@[simp] theorem TCB.withSpaceCaps_schedContextBinding (t : TCB) (c v : SeLe4n.ObjId) :
+    (t.withSpaceCaps c v).schedContextBinding = t.schedContextBinding := rfl
+
+@[simp] theorem TCB.withSpaceCaps_pendingReceiveReply (t : TCB) (c v : SeLe4n.ObjId) :
+    (t.withSpaceCaps c v).pendingReceiveReply = t.pendingReceiveReply := rfl
+
+@[simp] theorem TCB.withSpaceCaps_pipBoost (t : TCB) (c v : SeLe4n.ObjId) :
+    (t.withSpaceCaps c v).pipBoost = t.pipBoost := rfl
+
+@[simp] theorem TCB.withSpaceCaps_replyObject (t : TCB) (c v : SeLe4n.ObjId) :
+    (t.withSpaceCaps c v).replyObject = t.replyObject := rfl
+
+@[simp] theorem TCB.withSpaceCaps_faultHandler (t : TCB) (c v : SeLe4n.ObjId) :
+    (t.withSpaceCaps c v).faultHandler = t.faultHandler := rfl
+
+@[simp] theorem TCB.withSpaceCaps_queuePrev (t : TCB) (c v : SeLe4n.ObjId) :
+    (t.withSpaceCaps c v).queuePrev = t.queuePrev := rfl
+
+@[simp] theorem TCB.withSpaceCaps_queuePPrev (t : TCB) (c v : SeLe4n.ObjId) :
+    (t.withSpaceCaps c v).queuePPrev = t.queuePPrev := rfl
+
+@[simp] theorem TCB.withSpaceCaps_queueNext (t : TCB) (c v : SeLe4n.ObjId) :
+    (t.withSpaceCaps c v).queueNext = t.queueNext := rfl
+
+@[simp] theorem TCB.withSpaceCaps_ntfnPrev (t : TCB) (c v : SeLe4n.ObjId) :
+    (t.withSpaceCaps c v).ntfnPrev = t.ntfnPrev := rfl
+
+@[simp] theorem TCB.withSpaceCaps_ntfnNext (t : TCB) (c v : SeLe4n.ObjId) :
+    (t.withSpaceCaps c v).ntfnNext = t.ntfnNext := rfl
+
+@[simp] theorem TCB.withSpaceCaps_replyWaiterPrev (t : TCB) (c v : SeLe4n.ObjId) :
+    (t.withSpaceCaps c v).replyWaiterPrev = t.replyWaiterPrev := rfl
+
+@[simp] theorem TCB.withSpaceCaps_replyWaiterNext (t : TCB) (c v : SeLe4n.ObjId) :
+    (t.withSpaceCaps c v).replyWaiterNext = t.replyWaiterNext := rfl
+
+@[simp] theorem TCB.withSpaceCaps_replyWaitersHead (t : TCB) (c v : SeLe4n.ObjId) :
+    (t.withSpaceCaps c v).replyWaitersHead = t.replyWaitersHead := rfl
+
 /-- WS-H12c: Manual `BEq` for `TCB`: field-wise comparison, the saved
 `registerContext` by `RegisterFile`'s decidable equality.  Proofs that need
 propositional equality of TCBs use `TCB.ext`. -/
 instance : BEq TCB where
   beq a b :=
     a.tid == b.tid && a.priority == b.priority && a.domain == b.domain &&
-    a.cspaceRoot == b.cspaceRoot && a.vspaceRoot == b.vspaceRoot &&
+    a.spaceCells == b.spaceCells && a.spaceLinks == b.spaceLinks &&
     a.ipcBuffer == b.ipcBuffer && a.ipcState == b.ipcState &&
     a.threadState == b.threadState &&
     a.timeSlice == b.timeSlice && a.deadline == b.deadline &&
@@ -2182,7 +2617,7 @@ equality of TCBs. `TCB.ext` requires each structural field to match,
 `registerContext` included.  Companion to `RegisterFile.ext` (Machine.lean). -/
 theorem TCB.ext {a b : TCB}
     (hTid : a.tid = b.tid) (hPrio : a.priority = b.priority) (hDom : a.domain = b.domain)
-    (hCsp : a.cspaceRoot = b.cspaceRoot) (hVsp : a.vspaceRoot = b.vspaceRoot)
+    (hCells : a.spaceCells = b.spaceCells) (hLinks : a.spaceLinks = b.spaceLinks)
     (hBuf : a.ipcBuffer = b.ipcBuffer) (hIpc : a.ipcState = b.ipcState)
     (hTs : a.threadState = b.threadState)
     (hSlice : a.timeSlice = b.timeSlice) (hDeadline : a.deadline = b.deadline)
@@ -2256,7 +2691,7 @@ theorem TCB.ext {a b : TCB}
   clear hReply hPendReply hPip hBn
   cases a; cases b
   simp at *
-  exact ⟨hTid, hPrio, hDom, hCsp, hVsp, hBuf, hIpcO, hTs, hSlice, hDeadline,
+  exact ⟨hTid, hPrio, hDom, hCells, hLinks, hBuf, hIpcO, hTs, hSlice, hDeadline,
          hQPrevC, hQPPrevC, hQNextC, hPend, hRC, hFhS, hFhW, hBnC, hScC, hScO, hTb, hMcp, hPipC, hTo,
          hCpuAff, hReplyC, hPendReplyC, hPendFault, hFp, hNPrevC, hNNextC,
          hRCore, hRPrio, hRPrev, hRNext, hRBPrev, hRBNext, hWPrev, hWNext, hWHead, hWCount,
@@ -3067,85 +3502,6 @@ theorem slotArrayGet_mapIdx (cells : Array (Option Capability))
       if s.toNat < cells.size then g s.toNat (slotArrayGet cells s) else none := by
   unfold slotArrayGet
   by_cases h : s.toNat < cells.size <;> simp [h]
-
-/-- WS-ZA ZA5.3 part 4: the words of derivation links one slot holds (parent,
-first child, next sibling, previous sibling; a CNode word and a slot word each). -/
-def slotLinkWords : Nat := 8
-
-/-- WS-ZA ZA5.3 part 6: the capability with the given fields, written over the
-record `r` (a slot's spare): out of line, so `r` is the only record the
-compiler can write it into, and its rights read back through `r` so that `r`
-stays live, since an update of every field would drop `r` and build a fresh
-record.  Equal to the capability of those fields (`overwrite_eq`). -/
-@[noinline] def Capability.overwrite (r : Capability) (target : CapTarget) (rights : AccessRightSet)
-    (badgeWord : SeLe4n.Badge) (badged : Bool) (mapAsid : SeLe4n.ASID) (mapVaddr : SeLe4n.VAddr)
-    (mapEpoch : Nat) (mapped : Bool) : Capability :=
-  { target, rights := if r.rights = rights then r.rights else rights, badgeWord, badged,
-    mapAsid, mapVaddr, mapEpoch, mapped }
-
-/-- WS-ZA ZA5.4: the target naming object `id`, built fresh, out of line. -/
-@[noinline] def CapTarget.ofObject (id : SeLe4n.ObjId) : CapTarget := .object id
-
-/-- WS-ZA ZA5.4: the target naming object `id`, written over `t` when `t` already
-names an object.  Out of line, with a distinct second arm, so the first arm
-keeps its reuse of `t`'s cell. -/
-@[noinline] def CapTarget.objectOver (t : CapTarget) (id : SeLe4n.ObjId) : CapTarget :=
-  match t with
-  | .object _ => .object id
-  | _ => CapTarget.ofObject id
-
-/-- WS-ZA ZA5.4: `rights`, kept as the record's own `rr` when equal.  Out of line,
-so the capability built from it has no join point before it. -/
-@[noinline] def AccessRightSet.keepOr (rr rights : AccessRightSet) : AccessRightSet :=
-  if rr = rights then rr else rights
-
-/-- WS-ZA ZA5.4: the capability naming object `id` with `rights` and nothing
-else, written over the record `r` (a slot's spare), its target cell written over
-too when it already names an object (`CapTarget.objectOver`): the record is
-matched apart and rebuilt with no join point between, so it is written in place,
-and its target, then owned alone, is too.  Equal to that capability
-(`overwriteObject_eq`). -/
-@[noinline] def Capability.overwriteObject (r : Capability) (id : SeLe4n.ObjId)
-    (rights : AccessRightSet) : Capability :=
-  match r with
-  | ⟨t, rr, _, _, _, _, _, _⟩ =>
-    ⟨t.objectOver id, rr.keepOr rights, SeLe4n.Badge.zero, false, default, default, 0, false⟩
-
-/-- WS-ZA ZA5.4: the capability naming object `id` with `rights` alone, built
-fresh out of line, so its target is built only on the path that builds it. -/
-@[noinline] def Capability.ofObject (id : SeLe4n.ObjId) (rights : AccessRightSet) : Capability :=
-  ⟨.object id, rights, SeLe4n.Badge.zero, false, default, default, 0, false⟩
-
-theorem CapTarget.objectOver_eq (t : CapTarget) (id : SeLe4n.ObjId) :
-    t.objectOver id = .object id := by
-  cases t <;> rfl
-
-theorem AccessRightSet.keepOr_eq (rr rights : AccessRightSet) : rr.keepOr rights = rights := by
-  unfold keepOr; split <;> simp_all
-
-theorem Capability.overwriteObject_eq (r : Capability) (id : SeLe4n.ObjId)
-    (rights : AccessRightSet) :
-    r.overwriteObject id rights =
-      ⟨.object id, rights, SeLe4n.Badge.zero, false, default, default, 0, false⟩ := by
-  obtain ⟨t, rr, _, _, _, _, _, _⟩ := r
-  unfold overwriteObject
-  dsimp only
-  rw [CapTarget.objectOver_eq, AccessRightSet.keepOr_eq]
-
-/-- WS-ZA ZA5.3 part 6: the capability with the given fields, built fresh (a
-slot with no record of its own).  Out of line, so a caller's literal of the same
-fields is not shared with it and stays unbuilt. -/
-@[noinline] def Capability.ofFields (target : CapTarget) (rights : AccessRightSet)
-    (badgeWord : SeLe4n.Badge) (badged : Bool) (mapAsid : SeLe4n.ASID) (mapVaddr : SeLe4n.VAddr)
-    (mapEpoch : Nat) (mapped : Bool) : Capability :=
-  ⟨target, rights, badgeWord, badged, mapAsid, mapVaddr, mapEpoch, mapped⟩
-
-theorem Capability.overwrite_eq (r : Capability) (target : CapTarget) (rights : AccessRightSet)
-    (badgeWord : SeLe4n.Badge) (badged : Bool) (mapAsid : SeLe4n.ASID) (mapVaddr : SeLe4n.VAddr)
-    (mapEpoch : Nat) (mapped : Bool) :
-    r.overwrite target rights badgeWord badged mapAsid mapVaddr mapEpoch mapped =
-      ⟨target, rights, badgeWord, badged, mapAsid, mapVaddr, mapEpoch, mapped⟩ := by
-  unfold overwrite; split <;> simp_all
 
 /-- WS-ZA ZA5.3 part 6: **the records a CNode's slots keep while empty** (seL4's
 `cte_t`, which a slot owns for the CNode's life).  Entry `i` is the capability

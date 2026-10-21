@@ -1675,8 +1675,7 @@ private def witnessTid : SeLe4n.ThreadId := ⟨1⟩
 private def witnessScId : SeLe4n.SchedContextId := ⟨2⟩
 
 private def witnessTcbFresh : TCB :=
-  { tid := witnessTid, priority := ⟨0⟩, domain := ⟨0⟩, cspaceRoot := ⟨0⟩,
-    vspaceRoot := ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0 }
+  { tid := witnessTid, priority := ⟨0⟩, domain := ⟨0⟩, spaceCells := SeLe4n.Model.TCB.spaceCellsOf ⟨0⟩ ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0 }
 
 private def witnessTcbBound : TCB :=
   { witnessTcbFresh with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound witnessScId), scBindingOwnerCode := 0 }
