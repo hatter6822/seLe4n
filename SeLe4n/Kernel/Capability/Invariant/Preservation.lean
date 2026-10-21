@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Kernel.Capability.Invariant.Preservation.Revoke
+import SeLe4n.Kernel.Capability.Invariant.Preservation.ThreadSpaceCopy
 
 /-!
 # AN4-F.3 (CAP-M03): `Capability.Invariant.Preservation` hub
@@ -25,11 +26,13 @@ former file — and the original public API is preserved byte-for-byte:
 | `Preservation.EndpointReplyAndLifecycle`  | `endpointReply` + `coreIpcInvariantBundle` + `lifecycleRetypeObject` / `lifecycleRevokeDeleteRetype` preservation cluster |
 | `Preservation.BadgeIpcCapsAndCdtMaps` | Mint/Mutate badge preservation + `ipcTransferSingleCap` / `ipcUnwrapCaps` variants + CDT composition witnesses |
 | `Preservation.Revoke`                     | the finalising delete and `cteRevoke` loop: bundle preservation and the revocation's completeness |
+| `Preservation.ThreadSpaceCopy`            | setting a thread's space (`copyThreadSpaces`): each space slot's delete, copy and derivation edge |
 
 The children form a linear import chain
 (`Insert ← Delete ← CopyMoveMutate ← EndpointReplyAndLifecycle ←
-BadgeIpcCapsAndCdtMaps ← Revoke`). The hub re-exports the tail of that chain so
-every downstream consumer sees the union of all preservation theorems.
+BadgeIpcCapsAndCdtMaps ← Revoke`), with `ThreadSpaceCopy` on `Revoke`. The hub
+re-exports the tail of that chain and `ThreadSpaceCopy`, so every downstream
+consumer sees the union of all preservation theorems.
 
 **Migration discipline**: theorem names, statements, proofs, and relative
 ordering are unchanged across the split. Private helpers were promoted to

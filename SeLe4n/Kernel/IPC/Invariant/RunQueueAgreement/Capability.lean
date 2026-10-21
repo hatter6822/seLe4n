@@ -353,12 +353,34 @@ theorem setThreadFaultHandlerOp_runQueueStage {st st' : SystemState}
           exact insertTcb_runQueueStage ((SystemState.getTcb?_eq_some_iff st vtid.val tcb).mp hT)
             (fun _ => rfl)
 
-theorem setThreadSpace_runQueueStage {st st' : SystemState} {vtid : SeLe4n.ValidThreadId}
-    {cn vr : SeLe4n.ObjId} (h : setThreadSpace st vtid cn vr = .ok st') :
+/-- A thread slot's copy: the delete, then a thread record rewritten in its
+space slot alone, then link writes. -/
+theorem threadSlotCopied_runQueueStage {st : SystemState} {tid : SeLe4n.ThreadId} {t : TCB}
+    (hT : st.getTcb? tid = some t) (slot : SeLe4n.Slot) (srcCNode : SeLe4n.ObjId)
+    (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) :
+    RunQueueStage st (threadSlotCopied st tid slot srcCNode srcSlot rights) := by
+  have hD := cspaceDeleteSlot_runQueueStage (copyIntoThreadSlot_delete hT slot)
+  rcases threadSlotCopied_cases st tid slot srcCNode srcSlot rights with ⟨-, e⟩ | ⟨cap, -, e⟩
+  · rw [e]; exact hD
+  · rw [e]
+    refine hD.trans (RunQueueStage.trans ?_ (cdtRecord_runQueueStage _ _ _ _))
+    cases hU : (spliceDeletedCdtNode (threadSlotCleared tid.toObjId slot st)
+        { cnode := tid.toObjId, slot := slot }).getTcb? tid with
+    | none => rw [SystemState.updateTcb_eq_self_of_none hU]; exact RunQueueStage.refl _
+    | some u =>
+      rw [SystemState.updateTcb_eq_of_some hU]
+      exact insertTcb_runQueueStage ((SystemState.getTcb?_eq_some_iff _ _ _).mp hU) (fun _ => rfl)
+
+theorem copyThreadSpaces_runQueueStage {st st' : SystemState} {vtid : SeLe4n.ValidThreadId}
+    {cnSrc vrSrc : CSpaceAddr} (h : copyThreadSpaces st vtid cnSrc vrSrc = .ok st') :
     RunQueueStage st st' := by
-  obtain ⟨tcb, hT, -, -, -, -, rfl⟩ := setThreadSpace_ok st st' vtid cn vr h
-  exact insertTcb_runQueueStage ((SystemState.getTcb?_eq_some_iff st vtid.val tcb).mp hT)
-    (fun _ => rfl)
+  refine RunQueueStage.of_inv fun hInv => ?_
+  obtain ⟨tcb, hT, -, -, -, -, rfl⟩ := copyThreadSpaces_ok h
+  obtain ⟨hT1, -⟩ := threadSlotCopied_tcb hInv hT TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot
+    TCB.cspaceRootRights
+  obtain ⟨t1, hT1'⟩ := Option.isSome_iff_exists.mp hT1
+  exact (threadSlotCopied_runQueueStage hT _ _ _ _).trans
+    (threadSlotCopied_runQueueStage hT1' _ _ _ _)
 
 theorem bindNotification_runQueueStage {st st' : SystemState} {nid : SeLe4n.ObjId}
     {tcbId : SeLe4n.ThreadId} (h : bindNotification nid tcbId st = .ok ((), st')) :

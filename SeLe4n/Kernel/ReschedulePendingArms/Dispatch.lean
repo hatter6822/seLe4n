@@ -275,7 +275,7 @@ theorem dispatchCapabilityOnly_stepCovers {decoded : SyscallDecodeResult} {cap :
         | exact (setThreadCpuAffinityOnCore_stepCovers _ _ _ _ _ _ hInv hU)
         | exact (setIPCBufferOp_keyFrame _ _ _ _ hInv hU).stepCoversInv
         | exact (setThreadFaultHandlerOp_keyFrame _ _ _ _ hInv hU).stepCoversInv
-        | exact (setThreadSpace_keyFrame _ _ _ _ _ hInv hU).stepCoversInv)
+        | exact (copyThreadSpaces_keyFrame _ _ _ _ _ hInv hU).stepCoversInv)
   all_goals
     obtain ⟨_, _, _, _, _, _, _, _, _, hU⟩ := untypedRetypeFromCap_ok _ _ _ _ _ h
     exact (untypedRetypeObject_keyFrame _ _ _ _ _ _ hInv hU).stepCoversInv

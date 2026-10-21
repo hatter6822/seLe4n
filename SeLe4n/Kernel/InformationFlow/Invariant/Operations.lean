@@ -5482,3 +5482,40 @@ theorem setThreadFaultHandlerOp_preserves_projection
           exact objects_insert_preserves_projection_high ctx observer st
             vTargetTid.val.toObjId (.tcb { tcb with faultHandlerSet := true, faultHandlerWord := cptr })
             hTargetObjHigh hObjInv
+
+/-- **A thread space slot's copy is invisible to an observer the thread is
+hidden from**: the slot's delete is the slot delete at that thread
+(`cspaceDeleteSlot_preserves_projection`), the fill writes only the thread, and
+the derivation edge writes only the tree and links (`projectState_cdtAddChild`). -/
+theorem threadSlotCopied_preserves_projection (ctx : LabelingContext) (observer : IfObserver)
+    {st : SystemState} {tid : SeLe4n.ThreadId} {t : TCB}
+    (hHigh : objectObservable ctx observer tid.toObjId = false)
+    (hObjInv : st.objects.invExt) (hT : st.getTcb? tid = some t) (slot : SeLe4n.Slot)
+    (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) :
+    projectState ctx observer (threadSlotCopied st tid slot srcCNode srcSlot rights) =
+      projectState ctx observer st := by
+  have hD := cspaceDeleteSlot_preserves_projection ctx observer
+    { cnode := tid.toObjId, slot := slot } st _ hHigh hObjInv (copyIntoThreadSlot_delete hT slot)
+  obtain ⟨⟨t', hT', -⟩, hI⟩ := threadSlotDeleted_tcb hObjInv hT slot
+  rcases threadSlotCopied_cases st tid slot srcCNode srcSlot rights with ⟨-, e⟩ | ⟨cap, -, e⟩
+  · rw [e]; exact hD
+  · rw [e, projectState_cdtAddChild ctx observer _ _ _ _
+      (SystemState.updateTcb_preserves_objects_invExt _ tid _ hI),
+      SystemState.updateTcb_eq_of_some hT',
+      objects_insert_preserves_projection_high ctx observer _ _ _ hHigh hI]
+    exact hD
+
+/-- **Setting a hidden thread's space is invisible**: each of its two slot copies
+is (`threadSlotCopied_preserves_projection`). -/
+theorem copyThreadSpaces_preserves_projection (ctx : LabelingContext) (observer : IfObserver)
+    {st st' : SystemState} {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr}
+    (hHigh : objectObservable ctx observer vtid.val.toObjId = false)
+    (hObjInv : st.objects.invExt)
+    (hStep : copyThreadSpaces st vtid cnSrc vrSrc = .ok st') :
+    projectState ctx observer st' = projectState ctx observer st := by
+  obtain ⟨tcb, hT, -, -, -, -, rfl⟩ := copyThreadSpaces_ok hStep
+  obtain ⟨hT1, hI1⟩ := threadSlotCopied_tcb hObjInv hT TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot
+    TCB.cspaceRootRights
+  obtain ⟨t1, hT1'⟩ := Option.isSome_iff_exists.mp hT1
+  exact (threadSlotCopied_preserves_projection ctx observer hHigh hI1 hT1' _ _ _ _).trans
+    (threadSlotCopied_preserves_projection ctx observer hHigh hObjInv hT _ _ _ _)

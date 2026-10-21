@@ -371,8 +371,9 @@ abbrev enforcementBoundaryExtended : List EnforcementClass := enforcementBoundar
     and `cspaceRevokeCdtFinalising`, capability-only — the live `.cspaceDelete`
     and `.cspaceRevoke` arms' transitions, each removing the mappings the frame
     capabilities it destroys recorded.  WS-BP BP7.1 (`v0.36.11`) added
-    `setThreadSpace`, capability-only — the live `.tcbSetSpace` arm's
-    transition, rewriting a suspended thread's two root fields.  WS-BP BP7.1
+    the live `.tcbSetSpace` arm's transition, capability-only — now
+    `copyThreadSpaces`, copying two capabilities into a suspended thread's
+    space slots with their derivation edges.  WS-BP BP7.1
     (`v0.36.12`) added `pageTableMap` and `pageTableUnmap`, capability-only —
     the live `.pageTableMap` / `.pageTableUnmap` arms' transitions.  WS-ZA
     ZA4.3 added `yieldOnCore`, the yield's transition, which invokes no

@@ -2153,57 +2153,6 @@ def queueSpliceNeighbors? (removed : TCB) :
     Option SeLe4n.ThreadId × Option SeLe4n.ThreadId :=
   (removed.queuePrev, removed.queueNext)
 
-/-- **Write both space slots**: the CSpace root slot holds the capability root
-`c` implies and the VSpace root slot the one `v` implies (`spaceCellOf`), and
-every other field is the record's.  Reducible, so `rfl` reads every other field
-of the result as the record's.  Compiled as `withSpaceCapsImpl`, which writes
-each slot's capability over the record the slot already holds. -/
-@[reducible] def TCB.withSpaceCaps (t : TCB) (c v : SeLe4n.ObjId) : TCB :=
-  { t with spaceCells := TCB.spaceCellsOf c v }
-
-/-- `cells` with slot `i` holding the slot naming `id` with `rights`, the
-capability written over the record slot `i` already holds
-(`Capability.overwriteObject`): the record is taken out of the vector before it
-is matched, so nothing else holds it and it is written in place, as a CNode's
-insert writes its slot's spare (`CNode.insertCellWith`).  Out of line, so the
-thread record it is written into is rebuilt with no join point between its
-match and its rebuild, and so in place. -/
-@[noinline] def TCB.overwriteSpaceCell (cells : Vector (Option Capability) 2) (i : Nat) (h : i < 2)
-    (id : SeLe4n.ObjId) (rights : AccessRightSet) : Vector (Option Capability) 2 :=
-  if id.isReserved then cells.set i none h
-  else
-    let o := cells[i]
-    let cells' := cells.set i none h
-    match o with
-    | some r => cells'.set i (some (r.overwriteObject id rights)) h
-    | none => cells'.set i (some (Capability.ofObject id rights)) h
-
-theorem TCB.overwriteSpaceCell_eq (cells : Vector (Option Capability) 2) (i : Nat) (h : i < 2)
-    (id : SeLe4n.ObjId) (rights : AccessRightSet) :
-    TCB.overwriteSpaceCell cells i h id rights = cells.set i (TCB.spaceCellOf id rights) h := by
-  unfold TCB.overwriteSpaceCell TCB.spaceCellOf
-  by_cases hr : id.isReserved
-  · simp only [hr, if_true]
-  · simp only [hr, Bool.false_eq_true, if_false]
-    split <;> simp only [Vector.set_set, Capability.overwriteObject_eq, Capability.ofObject]
-
-/-- `withSpaceCaps` as compiled: each slot's capability written over the record
-it holds (`overwriteSpaceCell`), so a thread whose slots hold capabilities has
-its roots set with nothing allocated. -/
-@[inline] def TCB.withSpaceCapsImpl (t : TCB) (c v : SeLe4n.ObjId) : TCB :=
-  let cells := TCB.overwriteSpaceCell t.spaceCells 0 (by decide) c TCB.cspaceRootRights
-  { t with spaceCells := TCB.overwriteSpaceCell cells 1 (by decide) v TCB.vspaceRootRights }
-
-@[csimp] theorem TCB.withSpaceCaps_eq_impl : @TCB.withSpaceCaps = @TCB.withSpaceCapsImpl := by
-  funext t c v
-  simp only [TCB.withSpaceCaps, TCB.withSpaceCapsImpl, TCB.overwriteSpaceCell_eq]
-  congr 1
-  apply Vector.ext
-  intro i hi
-  match i, hi with
-  | 0, _ => simp [TCB.spaceCellsOf]
-  | 1, _ => simp [TCB.spaceCellsOf]
-
 /-- The record with only its CSpace root slot written (`spaceCellOf c`). -/
 @[reducible] def TCB.withCSpaceRoot (t : TCB) (c : SeLe4n.ObjId) : TCB :=
   { t with spaceCells := t.spaceCells.set 0 (TCB.spaceCellOf c TCB.cspaceRootRights) }
@@ -2212,17 +2161,8 @@ its roots set with nothing allocated. -/
 @[reducible] def TCB.withVSpaceRoot (t : TCB) (v : SeLe4n.ObjId) : TCB :=
   { t with spaceCells := t.spaceCells.set 1 (TCB.spaceCellOf v TCB.vspaceRootRights) }
 
-/-! Reading a record after its space slots are written: the roots are the ones
-written, and every other field is the record's. -/
-
-@[simp] theorem TCB.withSpaceCaps_spaceCells (t : TCB) (c v : SeLe4n.ObjId) :
-    (t.withSpaceCaps c v).spaceCells = TCB.spaceCellsOf c v := rfl
-
-@[simp] theorem TCB.withSpaceCaps_cspaceRoot (t : TCB) (c v : SeLe4n.ObjId) :
-    (t.withSpaceCaps c v).cspaceRoot = c := TCB.spaceCellObject_spaceCellOf c _
-
-@[simp] theorem TCB.withSpaceCaps_vspaceRoot (t : TCB) (c v : SeLe4n.ObjId) :
-    (t.withSpaceCaps c v).vspaceRoot = v := TCB.spaceCellObject_spaceCellOf v _
+/-! Reading a record after one of its space slots is written: that root is the
+one written, and the other root is the record's. -/
 
 @[simp] theorem TCB.withCSpaceRoot_cspaceRoot (t : TCB) (c : SeLe4n.ObjId) :
     (t.withCSpaceRoot c).cspaceRoot = c := by
@@ -2239,186 +2179,6 @@ written, and every other field is the record's. -/
 @[simp] theorem TCB.withVSpaceRoot_cspaceRoot (t : TCB) (v : SeLe4n.ObjId) :
     (t.withVSpaceRoot v).cspaceRoot = t.cspaceRoot := by
   simp only [TCB.cspaceRoot, Vector.getElem_set_ne _ _ (by decide : (1 : Nat) ≠ 0)]
-
-@[simp] theorem TCB.withSpaceCaps_tid (t : TCB) (c v : SeLe4n.ObjId) :
-    (t.withSpaceCaps c v).tid = t.tid := rfl
-
-@[simp] theorem TCB.withSpaceCaps_priority (t : TCB) (c v : SeLe4n.ObjId) :
-    (t.withSpaceCaps c v).priority = t.priority := rfl
-
-@[simp] theorem TCB.withSpaceCaps_domain (t : TCB) (c v : SeLe4n.ObjId) :
-    (t.withSpaceCaps c v).domain = t.domain := rfl
-
-@[simp] theorem TCB.withSpaceCaps_spaceLinks (t : TCB) (c v : SeLe4n.ObjId) :
-    (t.withSpaceCaps c v).spaceLinks = t.spaceLinks := rfl
-
-@[simp] theorem TCB.withSpaceCaps_ipcBuffer (t : TCB) (c v : SeLe4n.ObjId) :
-    (t.withSpaceCaps c v).ipcBuffer = t.ipcBuffer := rfl
-
-@[simp] theorem TCB.withSpaceCaps_ipcObjectCode (t : TCB) (c v : SeLe4n.ObjId) :
-    (t.withSpaceCaps c v).ipcObjectCode = t.ipcObjectCode := rfl
-
-@[simp] theorem TCB.withSpaceCaps_threadState (t : TCB) (c v : SeLe4n.ObjId) :
-    (t.withSpaceCaps c v).threadState = t.threadState := rfl
-
-@[simp] theorem TCB.withSpaceCaps_timeSlice (t : TCB) (c v : SeLe4n.ObjId) :
-    (t.withSpaceCaps c v).timeSlice = t.timeSlice := rfl
-
-@[simp] theorem TCB.withSpaceCaps_deadline (t : TCB) (c v : SeLe4n.ObjId) :
-    (t.withSpaceCaps c v).deadline = t.deadline := rfl
-
-@[simp] theorem TCB.withSpaceCaps_queuePrevCode (t : TCB) (c v : SeLe4n.ObjId) :
-    (t.withSpaceCaps c v).queuePrevCode = t.queuePrevCode := rfl
-
-@[simp] theorem TCB.withSpaceCaps_queuePPrevCode (t : TCB) (c v : SeLe4n.ObjId) :
-    (t.withSpaceCaps c v).queuePPrevCode = t.queuePPrevCode := rfl
-
-@[simp] theorem TCB.withSpaceCaps_queueNextCode (t : TCB) (c v : SeLe4n.ObjId) :
-    (t.withSpaceCaps c v).queueNextCode = t.queueNextCode := rfl
-
-@[simp] theorem TCB.withSpaceCaps_pendingMessage (t : TCB) (c v : SeLe4n.ObjId) :
-    (t.withSpaceCaps c v).pendingMessage = t.pendingMessage := rfl
-
-@[simp] theorem TCB.withSpaceCaps_registerContext (t : TCB) (c v : SeLe4n.ObjId) :
-    (t.withSpaceCaps c v).registerContext = t.registerContext := rfl
-
-@[simp] theorem TCB.withSpaceCaps_faultHandlerSet (t : TCB) (c v : SeLe4n.ObjId) :
-    (t.withSpaceCaps c v).faultHandlerSet = t.faultHandlerSet := rfl
-
-@[simp] theorem TCB.withSpaceCaps_faultHandlerWord (t : TCB) (c v : SeLe4n.ObjId) :
-    (t.withSpaceCaps c v).faultHandlerWord = t.faultHandlerWord := rfl
-
-@[simp] theorem TCB.withSpaceCaps_boundNotificationCode (t : TCB) (c v : SeLe4n.ObjId) :
-    (t.withSpaceCaps c v).boundNotificationCode = t.boundNotificationCode := rfl
-
-@[simp] theorem TCB.withSpaceCaps_scBindingScCode (t : TCB) (c v : SeLe4n.ObjId) :
-    (t.withSpaceCaps c v).scBindingScCode = t.scBindingScCode := rfl
-
-@[simp] theorem TCB.withSpaceCaps_scBindingOwnerCode (t : TCB) (c v : SeLe4n.ObjId) :
-    (t.withSpaceCaps c v).scBindingOwnerCode = t.scBindingOwnerCode := rfl
-
-@[simp] theorem TCB.withSpaceCaps_timeoutBudget (t : TCB) (c v : SeLe4n.ObjId) :
-    (t.withSpaceCaps c v).timeoutBudget = t.timeoutBudget := rfl
-
-@[simp] theorem TCB.withSpaceCaps_maxControlledPriority (t : TCB) (c v : SeLe4n.ObjId) :
-    (t.withSpaceCaps c v).maxControlledPriority = t.maxControlledPriority := rfl
-
-@[simp] theorem TCB.withSpaceCaps_pipBoostCode (t : TCB) (c v : SeLe4n.ObjId) :
-    (t.withSpaceCaps c v).pipBoostCode = t.pipBoostCode := rfl
-
-@[simp] theorem TCB.withSpaceCaps_timedOut (t : TCB) (c v : SeLe4n.ObjId) :
-    (t.withSpaceCaps c v).timedOut = t.timedOut := rfl
-
-@[simp] theorem TCB.withSpaceCaps_cpuAffinity (t : TCB) (c v : SeLe4n.ObjId) :
-    (t.withSpaceCaps c v).cpuAffinity = t.cpuAffinity := rfl
-
-@[simp] theorem TCB.withSpaceCaps_replyObjectCode (t : TCB) (c v : SeLe4n.ObjId) :
-    (t.withSpaceCaps c v).replyObjectCode = t.replyObjectCode := rfl
-
-@[simp] theorem TCB.withSpaceCaps_pendingReceiveReplyCode (t : TCB) (c v : SeLe4n.ObjId) :
-    (t.withSpaceCaps c v).pendingReceiveReplyCode = t.pendingReceiveReplyCode := rfl
-
-@[simp] theorem TCB.withSpaceCaps_pendingFault (t : TCB) (c v : SeLe4n.ObjId) :
-    (t.withSpaceCaps c v).pendingFault = t.pendingFault := rfl
-
-@[simp] theorem TCB.withSpaceCaps_fpContext (t : TCB) (c v : SeLe4n.ObjId) :
-    (t.withSpaceCaps c v).fpContext = t.fpContext := rfl
-
-@[simp] theorem TCB.withSpaceCaps_ntfnPrevCode (t : TCB) (c v : SeLe4n.ObjId) :
-    (t.withSpaceCaps c v).ntfnPrevCode = t.ntfnPrevCode := rfl
-
-@[simp] theorem TCB.withSpaceCaps_ntfnNextCode (t : TCB) (c v : SeLe4n.ObjId) :
-    (t.withSpaceCaps c v).ntfnNextCode = t.ntfnNextCode := rfl
-
-@[simp] theorem TCB.withSpaceCaps_runCoreCode (t : TCB) (c v : SeLe4n.ObjId) :
-    (t.withSpaceCaps c v).runCoreCode = t.runCoreCode := rfl
-
-@[simp] theorem TCB.withSpaceCaps_runPrio (t : TCB) (c v : SeLe4n.ObjId) :
-    (t.withSpaceCaps c v).runPrio = t.runPrio := rfl
-
-@[simp] theorem TCB.withSpaceCaps_runPrevCode (t : TCB) (c v : SeLe4n.ObjId) :
-    (t.withSpaceCaps c v).runPrevCode = t.runPrevCode := rfl
-
-@[simp] theorem TCB.withSpaceCaps_runNextCode (t : TCB) (c v : SeLe4n.ObjId) :
-    (t.withSpaceCaps c v).runNextCode = t.runNextCode := rfl
-
-@[simp] theorem TCB.withSpaceCaps_runBucketPrevCode (t : TCB) (c v : SeLe4n.ObjId) :
-    (t.withSpaceCaps c v).runBucketPrevCode = t.runBucketPrevCode := rfl
-
-@[simp] theorem TCB.withSpaceCaps_runBucketNextCode (t : TCB) (c v : SeLe4n.ObjId) :
-    (t.withSpaceCaps c v).runBucketNextCode = t.runBucketNextCode := rfl
-
-@[simp] theorem TCB.withSpaceCaps_replyWaiterPrevCode (t : TCB) (c v : SeLe4n.ObjId) :
-    (t.withSpaceCaps c v).replyWaiterPrevCode = t.replyWaiterPrevCode := rfl
-
-@[simp] theorem TCB.withSpaceCaps_replyWaiterNextCode (t : TCB) (c v : SeLe4n.ObjId) :
-    (t.withSpaceCaps c v).replyWaiterNextCode = t.replyWaiterNextCode := rfl
-
-@[simp] theorem TCB.withSpaceCaps_replyWaitersHeadCode (t : TCB) (c v : SeLe4n.ObjId) :
-    (t.withSpaceCaps c v).replyWaitersHeadCode = t.replyWaitersHeadCode := rfl
-
-@[simp] theorem TCB.withSpaceCaps_replyWaitersCount (t : TCB) (c v : SeLe4n.ObjId) :
-    (t.withSpaceCaps c v).replyWaitersCount = t.replyWaitersCount := rfl
-
-@[simp] theorem TCB.withSpaceCaps_ipcStateCode (t : TCB) (c v : SeLe4n.ObjId) :
-    (t.withSpaceCaps c v).ipcStateCode = t.ipcStateCode := rfl
-
-@[simp] theorem TCB.withSpaceCaps_ipcBadge (t : TCB) (c v : SeLe4n.ObjId) :
-    (t.withSpaceCaps c v).ipcBadge = t.ipcBadge := rfl
-
-@[simp] theorem TCB.withSpaceCaps_ipcBadged (t : TCB) (c v : SeLe4n.ObjId) :
-    (t.withSpaceCaps c v).ipcBadged = t.ipcBadged := rfl
-
-@[simp] theorem TCB.withSpaceCaps_ipcCanGrant (t : TCB) (c v : SeLe4n.ObjId) :
-    (t.withSpaceCaps c v).ipcCanGrant = t.ipcCanGrant := rfl
-
-@[simp] theorem TCB.withSpaceCaps_ipcFaultSend (t : TCB) (c v : SeLe4n.ObjId) :
-    (t.withSpaceCaps c v).ipcFaultSend = t.ipcFaultSend := rfl
-
-@[simp] theorem TCB.withSpaceCaps_ipcState (t : TCB) (c v : SeLe4n.ObjId) :
-    (t.withSpaceCaps c v).ipcState = t.ipcState := rfl
-
-@[simp] theorem TCB.withSpaceCaps_boundNotification (t : TCB) (c v : SeLe4n.ObjId) :
-    (t.withSpaceCaps c v).boundNotification = t.boundNotification := rfl
-
-@[simp] theorem TCB.withSpaceCaps_schedContextBinding (t : TCB) (c v : SeLe4n.ObjId) :
-    (t.withSpaceCaps c v).schedContextBinding = t.schedContextBinding := rfl
-
-@[simp] theorem TCB.withSpaceCaps_pendingReceiveReply (t : TCB) (c v : SeLe4n.ObjId) :
-    (t.withSpaceCaps c v).pendingReceiveReply = t.pendingReceiveReply := rfl
-
-@[simp] theorem TCB.withSpaceCaps_pipBoost (t : TCB) (c v : SeLe4n.ObjId) :
-    (t.withSpaceCaps c v).pipBoost = t.pipBoost := rfl
-
-@[simp] theorem TCB.withSpaceCaps_replyObject (t : TCB) (c v : SeLe4n.ObjId) :
-    (t.withSpaceCaps c v).replyObject = t.replyObject := rfl
-
-@[simp] theorem TCB.withSpaceCaps_faultHandler (t : TCB) (c v : SeLe4n.ObjId) :
-    (t.withSpaceCaps c v).faultHandler = t.faultHandler := rfl
-
-@[simp] theorem TCB.withSpaceCaps_queuePrev (t : TCB) (c v : SeLe4n.ObjId) :
-    (t.withSpaceCaps c v).queuePrev = t.queuePrev := rfl
-
-@[simp] theorem TCB.withSpaceCaps_queuePPrev (t : TCB) (c v : SeLe4n.ObjId) :
-    (t.withSpaceCaps c v).queuePPrev = t.queuePPrev := rfl
-
-@[simp] theorem TCB.withSpaceCaps_queueNext (t : TCB) (c v : SeLe4n.ObjId) :
-    (t.withSpaceCaps c v).queueNext = t.queueNext := rfl
-
-@[simp] theorem TCB.withSpaceCaps_ntfnPrev (t : TCB) (c v : SeLe4n.ObjId) :
-    (t.withSpaceCaps c v).ntfnPrev = t.ntfnPrev := rfl
-
-@[simp] theorem TCB.withSpaceCaps_ntfnNext (t : TCB) (c v : SeLe4n.ObjId) :
-    (t.withSpaceCaps c v).ntfnNext = t.ntfnNext := rfl
-
-@[simp] theorem TCB.withSpaceCaps_replyWaiterPrev (t : TCB) (c v : SeLe4n.ObjId) :
-    (t.withSpaceCaps c v).replyWaiterPrev = t.replyWaiterPrev := rfl
-
-@[simp] theorem TCB.withSpaceCaps_replyWaiterNext (t : TCB) (c v : SeLe4n.ObjId) :
-    (t.withSpaceCaps c v).replyWaiterNext = t.replyWaiterNext := rfl
-
-@[simp] theorem TCB.withSpaceCaps_replyWaitersHead (t : TCB) (c v : SeLe4n.ObjId) :
-    (t.withSpaceCaps c v).replyWaitersHead = t.replyWaitersHead := rfl
 
 /-- WS-H12c: Manual `BEq` for `TCB`: field-wise comparison, the saved
 `registerContext` by `RegisterFile`'s decidable equality.  Proofs that need
@@ -4092,7 +3852,7 @@ inductive SyscallId where
                            -- resetUntypedCap), through
                            -- `untypedReset`
   | tcbSetSpace            -- WS-BP BP7.1 (`v0.36.11`): set a suspended thread's CSpace and
-                           -- VSpace roots (seL4_TCB_SetSpace), through `setThreadSpace`
+                           -- VSpace roots (seL4_TCB_SetSpace), through `copyThreadSpaces`
   | pageTableMap           -- WS-BP BP7.1 (`v0.36.12`): install an intermediate page table
                            -- (seL4_ARM_PageTable_Map), through `pageTableMap`
   | pageTableUnmap         -- WS-BP BP7.1 (`v0.36.12`): take one out

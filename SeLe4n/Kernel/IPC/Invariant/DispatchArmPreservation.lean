@@ -4995,20 +4995,43 @@ theorem pageTableUnmap_preserves_ipcInvariantFull (tableId : SeLe4n.ObjId)
             hObjInv hInv (Or.inr (by rw [hT']; trivial)) (by trivial)
             (fun _ h => KernelObject.noConfusion h) hStep
 
-/-- **WS-BP BP7.1 (`v0.36.11`)**: a space change preserves the IPC bundle.  It
-rewrites one TCB's `cspaceRoot` and `vspaceRoot`, neither of which any conjunct
-reads, so it is the one-field TCB rewrite `setThreadFaultHandlerOp` is. -/
-theorem setThreadSpace_preserves_ipcInvariantFull
-    (st st' : SystemState) (vtid : SeLe4n.ValidThreadId) (cn vr : SeLe4n.ObjId)
+/-- **A thread slot's copy preserves the IPC bundle**: the delete touches no IPC
+state (`cspaceDeleteSlot_preserves_ipcInvariantFull`), the insert rewrites one
+thread's space slot with an unbadged capability, which no conjunct reads, and
+the edge writes links alone. -/
+theorem threadSlotCopied_preserves_ipcInvariantFull {st : SystemState} {tid : SeLe4n.ThreadId}
+    {t : TCB} (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hT : st.getTcb? tid = some t) (slot : SeLe4n.Slot) (srcCNode : SeLe4n.ObjId)
+    (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) :
+    ipcInvariantFull (threadSlotCopied st tid slot srcCNode srcSlot rights) := by
+  have hD := cspaceDeleteSlot_preserves_ipcInvariantFull st _ _ hObjInv hInv
+    (copyIntoThreadSlot_delete hT slot)
+  obtain ⟨⟨t', hT', -⟩, hI⟩ := threadSlotDeleted_tcb hObjInv hT slot
+  rcases threadSlotCopied_cases st tid slot srcCNode srcSlot rights with ⟨-, e⟩ | ⟨cap, -, e⟩
+  · rw [e]; exact hD
+  · rw [e]
+    refine cdtRecord_bundle_frame _ _ _ _ (SystemState.updateTcb_preserves_objects_invExt _ _ _ hI) ?_
+    rw [SystemState.updateTcb_eq_of_some hT']
+    exact insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull _ tid t' _ hI hD
+      ((SystemState.getTcb?_eq_some_iff _ tid t').mp hT') rfl rfl rfl rfl rfl rfl rfl rfl rfl
+      (fun _ c _ h hB => by
+        rcases TCB.spaceSlotCap_insertSpaceCap_back h with rfl | h'
+        · simp at hB
+        · exact h')
+
+/-- **WS-BP BP7.1 (`v0.36.11`)**: a space change preserves the IPC bundle — each
+slot copy does (`threadSlotCopied_preserves_ipcInvariantFull`). -/
+theorem copyThreadSpaces_preserves_ipcInvariantFull
+    (st st' : SystemState) (vtid : SeLe4n.ValidThreadId) (cnSrc vrSrc : CSpaceAddr)
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
-    (hStep : setThreadSpace st vtid cn vr = .ok st') :
+    (hStep : copyThreadSpaces st vtid cnSrc vrSrc = .ok st') :
     ipcInvariantFull st' := by
-  obtain ⟨tcb, hT, -, -, -, -, rfl⟩ := setThreadSpace_ok st st' vtid cn vr hStep
-  exact insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull st vtid.val tcb
-    (tcb.withSpaceCaps cn vr) hObjInv hInv
-    ((SystemState.getTcb?_eq_some_iff st vtid.val tcb).mp hT)
-    rfl rfl rfl rfl rfl rfl rfl rfl rfl
-    (fun _ _ _ h hB => by rw [TCB.withSpaceCaps_spaceSlotCap_badge h] at hB; cases hB)
+  obtain ⟨tcb, hT, -, -, -, -, rfl⟩ := copyThreadSpaces_ok hStep
+  obtain ⟨hT1, hI1⟩ := threadSlotCopied_tcb hObjInv hT TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot
+    TCB.cspaceRootRights
+  obtain ⟨t1, hT1'⟩ := Option.isSome_iff_exists.mp hT1
+  exact threadSlotCopied_preserves_ipcInvariantFull hI1
+    (threadSlotCopied_preserves_ipcInvariantFull hObjInv hInv hT _ _ _ _) hT1' _ _ _ _
 
 /-- Review round (PR #887): and the object-store invariant. -/
 theorem setThreadFaultHandlerOp_preserves_objects_invExt

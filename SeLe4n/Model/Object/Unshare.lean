@@ -60,28 +60,18 @@ def KernelObject.unshare (o : KernelObject) : KernelObject := o
   | some r => some { r with rights := opaqueId r.rights }
   | none => none
 
-/-- A capability's target, rebuilt when it names an object, so a record written
-over in place (`Capability.overwriteObject`) owns the target it writes over. -/
-@[inline] def unshareCapTarget (t : CapTarget) : CapTarget :=
-  match t with
-  | .object id => .object (opaqueId id)
-  | t => t
-
-theorem unshareCapTarget_eq (t : CapTarget) : unshareCapTarget t = t := by
-  cases t <;> rfl
-
-/-- A thread's space slot, rebuilt when shared so the thread owns its `some`, its
-capability record and the record's target (`TCB.overwriteSpaceCell` writes all
-three in place). -/
+/-- A thread's space slot, rebuilt when shared so the thread owns its `some` and
+its capability record (`spaceCellOver`, setting the thread's space, writes both
+in place). -/
 @[inline] def unshareSpaceCell (o : Option Capability) : Option Capability :=
   match o with
-  | some r => some { r with target := unshareCapTarget r.target, rights := opaqueId r.rights }
+  | some r => some { r with rights := opaqueId r.rights }
   | none => none
 
 theorem unshareSpaceCell_eq (o : Option Capability) : unshareSpaceCell o = o := by
   cases o with
   | none => rfl
-  | some r => simp only [unshareSpaceCell, unshareCapTarget_eq, opaqueId]
+  | some r => simp only [unshareSpaceCell, opaqueId]
 
 /-- A VSpace root's spare mapping cell, rebuilt when shared so the root owns
 its `some`, its entry and the entry's value pair (WS-ZA ZA5.4). -/

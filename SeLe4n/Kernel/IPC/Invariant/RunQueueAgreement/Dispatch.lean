@@ -585,13 +585,13 @@ theorem dispatchCapabilityOnly_runQueueEntryStage
               | ok p =>
                   obtain ⟨cn, vr⟩ := p
                   simp only [hR] at hStep
-                  cases hSet : setThreadSpace st vtid cn vr with
+                  cases hSet : copyThreadSpaces st vtid cn vr with
                   | error e => simp only [hSet] at hStep; cases hStep
                   | ok stU =>
                       simp only [hSet] at hStep
                       cases hStep
                       refine RunQueueStage.entry ?_
-                      exact setThreadSpace_runQueueStage hSet
+                      exact copyThreadSpaces_runQueueStage hSet
     all_goals try cases hStep
   case pageTableMap =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep

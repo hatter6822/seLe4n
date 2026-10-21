@@ -1702,32 +1702,105 @@ theorem resolveCallerCapObject_ok (callerTid : SeLe4n.ThreadId) (addr : SeLe4n.C
           exact ⟨callerTcb, rootCn, ref, rfl, hRoot, hRes, hSlot, hRight, hT⟩
         | _ => rw [hT] at h; cases h
 
-/-- **WS-BP BP7.1 (`v0.36.11`): the two roots a `.tcbSetSpace` names, resolved
-through the caller's own CSpace** — seL4's `TCB_SetSpace` operands.
+/-- **The slot a capability address names in the caller's own CSpace**, with the
+capability it holds and the object that capability names: `resolveCallerCapObject`'s
+resolution and refusals, the slot returned beside the capability, for an arm
+that derives from the slot (`.tcbSetSpace`). -/
+def resolveCallerCapSlot (callerTid : SeLe4n.ThreadId) (addr : SeLe4n.CPtr)
+    (right : AccessRight) (st : SystemState) :
+    Except KernelError (CSpaceAddr × Capability × SeLe4n.ObjId) :=
+  match st.getTcb? callerTid with
+  | none => .error .objectNotFound
+  | some callerTcb =>
+    match st.getCNode? callerTcb.cspaceRoot with
+    | none => .error .invalidCapability
+    | some rootCn =>
+      match resolveCapAddress callerTcb.cspaceRoot addr rootCn.depth st with
+      | .error e => .error e
+      | .ok ref =>
+        match SystemState.lookupSlotCap st ref with
+        | none => .error .invalidCapability
+        | some cap =>
+          if SeLe4n.Kernel.capTargetsReservedIdleObject cap then .error .invalidCapability
+          else if cap.hasRight right then
+            match cap.target with
+            | .object oid => .ok (ref, cap, oid)
+            | _ => .error .invalidCapability
+          else .error .illegalAuthority
 
-MR0 is a capability to the new **CSpace root**, and the caller must hold it with
-`.grant` **and** `.write`: making a CNode a thread's CSpace root hands that thread
-every capability the CNode holds and the ability to write the CNode's slots, so
-it is authority to pass capabilities on — the right `.cspaceMint` and
-`.cspaceCopy` gate on — and to change what the CNode holds.  MR1 is a capability
-to the new **VSpace root**, held with `.write`, the right `.vspaceMap` gates a
-change to an address space on.  Each must name an object of its kind; the
-operation checks the kinds again against the store, so a resolver and an
-operation that disagreed about them would refuse rather than install. -/
+/-- What `resolveCallerCapSlot` answers is a slot of the caller's CSpace holding
+a capability with the right asked for, naming the object returned. -/
+theorem resolveCallerCapSlot_ok (callerTid : SeLe4n.ThreadId) (addr : SeLe4n.CPtr)
+    (right : AccessRight) (st : SystemState) (ref : CSpaceAddr) (cap : Capability)
+    (oid : SeLe4n.ObjId) (h : resolveCallerCapSlot callerTid addr right st = .ok (ref, cap, oid)) :
+    ∃ (callerTcb : TCB) (rootCn : CNode),
+      st.getTcb? callerTid = some callerTcb ∧
+      st.getCNode? callerTcb.cspaceRoot = some rootCn ∧
+      resolveCapAddress callerTcb.cspaceRoot addr rootCn.depth st = .ok ref ∧
+      SystemState.lookupSlotCap st ref = some cap ∧
+      cap.hasRight right = true ∧ cap.target = .object oid := by
+  unfold resolveCallerCapSlot at h
+  cases hCaller : st.getTcb? callerTid with
+  | none => rw [hCaller] at h; cases h
+  | some callerTcb =>
+    rw [hCaller] at h
+    simp only at h
+    cases hRoot : st.getCNode? callerTcb.cspaceRoot with
+    | none => rw [hRoot] at h; cases h
+    | some rootCn =>
+      rw [hRoot] at h
+      simp only at h
+      cases hRes : resolveCapAddress callerTcb.cspaceRoot addr rootCn.depth st with
+      | error e => rw [hRes] at h; cases h
+      | ok ref' =>
+        rw [hRes] at h
+        simp only at h
+        cases hL : SystemState.lookupSlotCap st ref' with
+        | none => rw [hL] at h; cases h
+        | some cap' =>
+          rw [hL] at h
+          simp only at h
+          split at h
+          · cases h
+          · split at h
+            · rename_i hR
+              cases hT : cap'.target with
+              | object o =>
+                rw [hT] at h
+                simp only [Except.ok.injEq, Prod.mk.injEq] at h
+                obtain ⟨rfl, rfl, rfl⟩ := h
+                exact ⟨callerTcb, rootCn, rfl, hRoot, hRes, hL, hR, hT⟩
+              | _ => rw [hT] at h; cases h
+            · cases h
+
+/-- **WS-BP BP7.1 (`v0.36.11`): the two slots a `.tcbSetSpace` copies from,
+resolved through the caller's own CSpace** — seL4's `TCB_SetSpace` operands.
+
+MR0 addresses a capability to the new **CSpace root**, and the caller must hold
+it with `.grant` **and** `.write`: making a CNode a thread's CSpace root hands
+that thread every capability the CNode holds and the ability to write the CNode's
+slots, so it is authority to pass capabilities on — the right `.cspaceMint` and
+`.cspaceCopy` gate on — and to change what the CNode holds.  MR1 addresses a
+capability to the new **VSpace root**, held with `.write`, the right
+`.vspaceMap` gates a change to an address space on.  Each must name an object of
+its kind; the operation checks the kinds again against the store, so a resolver
+and an operation that disagreed about them would refuse rather than install.
+The slots are returned, not the objects: the operation copies each slot's
+capability into the thread's slot, derived from it. -/
 def resolveSetSpace (callerTid : SeLe4n.ThreadId)
     (args : SeLe4n.Kernel.Architecture.SyscallArgDecode.SetSpaceArgs) (st : SystemState) :
-    Except KernelError (SeLe4n.ObjId × SeLe4n.ObjId) :=
-  match resolveCallerCapObject callerTid args.cspaceRoot .grant st with
+    Except KernelError (CSpaceAddr × CSpaceAddr) :=
+  match resolveCallerCapSlot callerTid args.cspaceRoot .grant st with
   | .error e => .error e
-  | .ok (cnCap, cnId) =>
+  | .ok (cnSrc, cnCap, cnId) =>
     if !cnCap.hasRight .write then .error .illegalAuthority
     else if (st.getCNode? cnId).isNone then .error .invalidCapability
     else
-      match resolveCallerCapObject callerTid args.vspaceRoot .write st with
+      match resolveCallerCapSlot callerTid args.vspaceRoot .write st with
       | .error e => .error e
-      | .ok (_, vrId) =>
+      | .ok (vrSrc, _, vrId) =>
         if (st.getVSpaceRoot? vrId).isNone then .error .invalidCapability
-        else .ok (cnId, vrId)
+        else .ok (cnSrc, vrSrc)
 
 /-- WS-ZA ZA5.2: `resolveCallerCapObject` in continuation form: the slot is
 resolved through `resolveCapAddressKUnrolled`, so no gate, slot reference,
@@ -1786,43 +1859,105 @@ theorem resolveCallerCapObjectK_eq {α : Type} (callerTid : SeLe4n.ThreadId)
               cases cap.target <;> rfl
             · simp only [hIdle, hR, Bool.false_eq_true, ↓reduceIte]
 
+/-- `resolveCallerCapSlot` in continuation form: the slot is resolved through
+`resolveCapAddressKUnrolled` and handed on as its CNode's and slot's words, so no
+gate, slot reference or result triple is built (`resolveCallerCapSlotK_eq`). -/
+@[inline] def resolveCallerCapSlotK {α : Type} (callerTid : SeLe4n.ThreadId)
+    (addr : SeLe4n.CPtr) (right : AccessRight) (st : SystemState)
+    (onErr : KernelError → α)
+    (onOk : SeLe4n.ObjId → SeLe4n.Slot → Capability → SeLe4n.ObjId → α) : α :=
+  match st.getTcb? callerTid with
+  | none => onErr .objectNotFound
+  | some callerTcb =>
+    match st.getCNode? callerTcb.cspaceRoot with
+    | none => onErr .invalidCapability
+    | some rootCn =>
+      resolveCapAddressKUnrolled callerTcb.cspaceRoot addr rootCn.depth st onErr
+        (fun cnode slot =>
+          match SystemState.lookupSlotCap st { cnode := cnode, slot := slot } with
+          | none => onErr .invalidCapability
+          | some cap =>
+            if SeLe4n.Kernel.capTargetsReservedIdleObject cap then onErr .invalidCapability
+            else if cap.hasRight right then
+              match cap.target with
+              | .object oid => onOk cnode slot cap oid
+              | _ => onErr .invalidCapability
+            else onErr .illegalAuthority)
+
+theorem resolveCallerCapSlotK_eq {α : Type} (callerTid : SeLe4n.ThreadId)
+    (addr : SeLe4n.CPtr) (right : AccessRight) (st : SystemState)
+    (onErr : KernelError → α)
+    (onOk : SeLe4n.ObjId → SeLe4n.Slot → Capability → SeLe4n.ObjId → α) :
+    resolveCallerCapSlotK callerTid addr right st onErr onOk =
+      match resolveCallerCapSlot callerTid addr right st with
+      | .error e => onErr e
+      | .ok (ref, cap, oid) => onOk ref.cnode ref.slot cap oid := by
+  unfold resolveCallerCapSlotK resolveCallerCapSlot
+  cases st.getTcb? callerTid with
+  | none => rfl
+  | some callerTcb =>
+    simp only []
+    cases st.getCNode? callerTcb.cspaceRoot with
+    | none => rfl
+    | some rootCn =>
+      simp only []
+      rw [resolveCapAddressKUnrolled_eq, resolveCapAddressK_eq]
+      cases resolveCapAddress callerTcb.cspaceRoot addr rootCn.depth st with
+      | error e => rfl
+      | ok ref =>
+        obtain ⟨cnode, slot⟩ := ref
+        simp only []
+        cases SystemState.lookupSlotCap st { cnode := cnode, slot := slot } with
+        | none => rfl
+        | some cap =>
+          simp only []
+          by_cases hIdle : SeLe4n.Kernel.capTargetsReservedIdleObject cap = true
+          · simp only [hIdle, ↓reduceIte]
+          · by_cases hR : cap.hasRight right = true
+            · simp only [hIdle, hR, Bool.false_eq_true, ↓reduceIte]
+              cases cap.target <;> rfl
+            · simp only [hIdle, hR, Bool.false_eq_true, ↓reduceIte]
+
 /-- WS-ZA ZA5.2: `resolveSetSpace` in continuation form, through
-`resolveCallerCapObjectK` (`resolveSetSpaceK_eq`). -/
+`resolveCallerCapSlotK`, the two source slots handed on as words
+(`resolveSetSpaceK_eq`). -/
 @[inline] def resolveSetSpaceK {α : Type} (callerTid : SeLe4n.ThreadId)
     (args : SeLe4n.Kernel.Architecture.SyscallArgDecode.SetSpaceArgs) (st : SystemState)
-    (onErr : KernelError → α) (onOk : SeLe4n.ObjId → SeLe4n.ObjId → α) : α :=
-  resolveCallerCapObjectK callerTid args.cspaceRoot .grant st onErr (fun cnCap cnId =>
+    (onErr : KernelError → α)
+    (onOk : SeLe4n.ObjId → SeLe4n.Slot → SeLe4n.ObjId → SeLe4n.Slot → α) : α :=
+  resolveCallerCapSlotK callerTid args.cspaceRoot .grant st onErr (fun cnC cnS cnCap cnId =>
     if !cnCap.hasRight .write then onErr .illegalAuthority
     else if (st.getCNode? cnId).isNone then onErr .invalidCapability
     else
-      resolveCallerCapObjectK callerTid args.vspaceRoot .write st onErr (fun _ vrId =>
+      resolveCallerCapSlotK callerTid args.vspaceRoot .write st onErr (fun vrC vrS _ vrId =>
         if (st.getVSpaceRoot? vrId).isNone then onErr .invalidCapability
-        else onOk cnId vrId))
+        else onOk cnC cnS vrC vrS))
 
 theorem resolveSetSpaceK_eq {α : Type} (callerTid : SeLe4n.ThreadId)
     (args : SeLe4n.Kernel.Architecture.SyscallArgDecode.SetSpaceArgs) (st : SystemState)
-    (onErr : KernelError → α) (onOk : SeLe4n.ObjId → SeLe4n.ObjId → α) :
+    (onErr : KernelError → α)
+    (onOk : SeLe4n.ObjId → SeLe4n.Slot → SeLe4n.ObjId → SeLe4n.Slot → α) :
     resolveSetSpaceK callerTid args st onErr onOk =
       match resolveSetSpace callerTid args st with
       | .error e => onErr e
-      | .ok (cnId, vrId) => onOk cnId vrId := by
+      | .ok (cnSrc, vrSrc) => onOk cnSrc.cnode cnSrc.slot vrSrc.cnode vrSrc.slot := by
   unfold resolveSetSpaceK resolveSetSpace
-  rw [resolveCallerCapObjectK_eq]
-  cases resolveCallerCapObject callerTid args.cspaceRoot .grant st with
+  rw [resolveCallerCapSlotK_eq]
+  cases resolveCallerCapSlot callerTid args.cspaceRoot .grant st with
   | error e => rfl
   | ok p =>
-    obtain ⟨cnCap, cnId⟩ := p
+    obtain ⟨cnSrc, cnCap, cnId⟩ := p
     simp only []
     by_cases hW : cnCap.hasRight .write = true
     · simp only [hW, Bool.not_true, Bool.false_eq_true, ↓reduceIte]
       by_cases hC : (st.getCNode? cnId).isNone = true
       · simp only [hC, ↓reduceIte]
       · simp only [hC, Bool.false_eq_true, ↓reduceIte]
-        rw [resolveCallerCapObjectK_eq]
-        cases resolveCallerCapObject callerTid args.vspaceRoot .write st with
+        rw [resolveCallerCapSlotK_eq]
+        cases resolveCallerCapSlot callerTid args.vspaceRoot .write st with
         | error e => rfl
         | ok q =>
-          obtain ⟨_, vrId⟩ := q
+          obtain ⟨vrSrc, _, vrId⟩ := q
           simp only []
           by_cases hV : (st.getVSpaceRoot? vrId).isNone = true
           · simp only [hV, ↓reduceIte]
@@ -1896,49 +2031,49 @@ theorem resolveVSpaceMapFrameK_eq {α : Type} (callerTid : SeLe4n.ThreadId)
               | _ => rfl
             · simp only [hIdle, hR, Bool.false_eq_true, ↓reduceIte]
 
-/-- **The authority fact the `.tcbSetSpace` arm rests on**: the CSpace root it
-installs is a CNode the caller holds a capability to with `.grant` and `.write`,
-and the VSpace root one it holds a capability to with `.write`. -/
+/-- **The authority fact the `.tcbSetSpace` arm rests on**: the CSpace root's
+source is a slot of the caller's CSpace holding a capability with `.grant` and
+`.write` to a CNode, and the VSpace root's a slot holding a capability with
+`.write` to a VSpace root. -/
 theorem resolveSetSpace_ok_authorised (callerTid : SeLe4n.ThreadId)
     (args : SeLe4n.Kernel.Architecture.SyscallArgDecode.SetSpaceArgs) (st : SystemState)
-    (cnId vrId : SeLe4n.ObjId) (h : resolveSetSpace callerTid args st = .ok (cnId, vrId)) :
-    (∃ cnCap, resolveCallerCapObject callerTid args.cspaceRoot .grant st = .ok (cnCap, cnId) ∧
-        cnCap.hasRight .grant = true ∧ cnCap.hasRight .write = true) ∧
-      (st.getCNode? cnId).isSome ∧
-      (∃ vrCap, resolveCallerCapObject callerTid args.vspaceRoot .write st = .ok (vrCap, vrId) ∧
-        vrCap.hasRight .write = true) ∧
-      (st.getVSpaceRoot? vrId).isSome := by
+    (cnSrc vrSrc : CSpaceAddr) (h : resolveSetSpace callerTid args st = .ok (cnSrc, vrSrc)) :
+    (∃ cnCap cnId, resolveCallerCapSlot callerTid args.cspaceRoot .grant st = .ok (cnSrc, cnCap, cnId) ∧
+        SystemState.lookupSlotCap st cnSrc = some cnCap ∧ cnCap.target = .object cnId ∧
+        cnCap.hasRight .grant = true ∧ cnCap.hasRight .write = true ∧ (st.getCNode? cnId).isSome) ∧
+      (∃ vrCap vrId, resolveCallerCapSlot callerTid args.vspaceRoot .write st = .ok (vrSrc, vrCap, vrId) ∧
+        SystemState.lookupSlotCap st vrSrc = some vrCap ∧ vrCap.target = .object vrId ∧
+        vrCap.hasRight .write = true ∧ (st.getVSpaceRoot? vrId).isSome) := by
   unfold resolveSetSpace at h
-  cases hC : resolveCallerCapObject callerTid args.cspaceRoot .grant st with
+  cases hC : resolveCallerCapSlot callerTid args.cspaceRoot .grant st with
   | error e => rw [hC] at h; cases h
   | ok p =>
-    obtain ⟨cnCap, cn⟩ := p
+    obtain ⟨cn, cnCap, cnId⟩ := p
     rw [hC] at h
     simp only at h
     by_cases hW : cnCap.hasRight .write = true
     · have hB : (!cnCap.hasRight .write) = false := by simp [hW]
       rw [hB] at h
-      cases hCn : st.getCNode? cn with
+      cases hCn : st.getCNode? cnId with
       | none => simp [hCn] at h
       | some _ =>
         simp only [hCn, Option.isNone_some, Bool.false_eq_true, ↓reduceIte] at h
-        cases hV : resolveCallerCapObject callerTid args.vspaceRoot .write st with
+        cases hV : resolveCallerCapSlot callerTid args.vspaceRoot .write st with
         | error e => rw [hV] at h; cases h
         | ok q =>
-          obtain ⟨vrCap, vr⟩ := q
+          obtain ⟨vr, vrCap, vrId⟩ := q
           rw [hV] at h
           simp only at h
-          cases hVr : st.getVSpaceRoot? vr with
+          cases hVr : st.getVSpaceRoot? vrId with
           | none => simp [hVr] at h
           | some _ =>
             simp only [hVr, Option.isNone_some, Bool.false_eq_true, ↓reduceIte,
               Except.ok.injEq, Prod.mk.injEq] at h
             obtain ⟨rfl, rfl⟩ := h
-            obtain ⟨_, _, _, _, _, _, _, hG, -⟩ :=
-              resolveCallerCapObject_ok callerTid _ _ st cnCap cn hC
-            obtain ⟨_, _, _, _, _, _, _, hVW, -⟩ :=
-              resolveCallerCapObject_ok callerTid _ _ st vrCap vr hV
-            exact ⟨⟨cnCap, rfl, hG, hW⟩, by simp [hCn], ⟨vrCap, rfl, hVW⟩, by simp [hVr]⟩
+            obtain ⟨_, _, _, _, _, hLc, hG, hTc⟩ := resolveCallerCapSlot_ok callerTid _ _ st _ _ _ hC
+            obtain ⟨_, _, _, _, _, hLv, hVW, hTv⟩ := resolveCallerCapSlot_ok callerTid _ _ st _ _ _ hV
+            exact ⟨⟨cnCap, cnId, rfl, hLc, hTc, hG, hW, by simp [hCn]⟩,
+              ⟨vrCap, vrId, rfl, hLv, hTv, hVW, by simp [hVr]⟩⟩
     · have hB : (!cnCap.hasRight .write) = true := by simpa using hW
       rw [hB] at h; cases h
 
@@ -3094,8 +3229,8 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
         | .ok vtid =>
             match resolveSetSpace tid args st with
             | .error e => .error e
-            | .ok (cnId, vrId) =>
-                match setThreadSpace st vtid cnId vrId with
+            | .ok (cnSrc, vrSrc) =>
+                match copyThreadSpaces st vtid cnSrc vrSrc with
                 | .ok st' => .ok ((), st')
                 | .error e => .error e
     | _ => fun _ => .error .invalidCapability
@@ -3609,12 +3744,12 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
               | ok p =>
                   obtain ⟨cn, vr⟩ := p
                   simp only [hR] at hStep
-                  cases hSet : setThreadSpace st vtid cn vr with
+                  cases hSet : copyThreadSpaces st vtid cn vr with
                   | error e => simp only [hSet] at hStep; cases hStep
                   | ok stU =>
                       simp only [hSet] at hStep
                       cases hStep
-                      exact setThreadSpace_preserves_ipcInvariantFull st st' vtid cn vr
+                      exact copyThreadSpaces_preserves_ipcInvariantFull st st' vtid cn vr
                         hObjInv hInv hSet
     all_goals try cases hStep
   case pageTableMap =>
