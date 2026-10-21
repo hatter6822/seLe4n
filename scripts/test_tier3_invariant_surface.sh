@@ -9731,7 +9731,6 @@ run_check "INVARIANT" rg -n 'differentialComparisonHasBite' tests/FrozenOpsSuite
 # The contract is definitional -- the state is untouched, not merely the caps
 # denied -- so it is `rfl` rather than a scenario.
 run_check "INVARIANT" rg -n '^theorem resolveExtraCaps_ungranted($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem resolveExtraCapsDetailed_ungranted($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 # And each live arm passes the endpoint capability's own bit, which the
 # delegation theorems restate and therefore prove rather than assert (WS-ZA
 # ZA4.7: as the payload's grant right, resolved only on the delivering arm).

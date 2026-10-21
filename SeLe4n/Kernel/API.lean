@@ -1165,68 +1165,8 @@ theorem syscallChecksTargetFirst_iff (id : SyscallId) :
     syscallChecksTargetFirst id = true ↔ id = .auditRead ∨ id = .auditDrain := by
   cases id <;> simp [syscallChecksTargetFirst]
 
-/-- AN7-E (API-M01): Debug-noisy variant of `resolveExtraCaps` that surfaces
-    partial resolution explicitly.  Returns the resolved array paired with a
-    flag `partial := true` iff at least one input address failed to resolve.
-    The two possible failure modes are conflated in the single flag per
-    seL4 convention (the caller cannot distinguish them structurally from
-    the silent-drop variant either).
-
-    Callers that want to reject partial resolutions should do:
-    ```
-    match resolveExtraCapsDetailed cspaceRoot addrs depth granted st with
-    | (caps, false) => -- complete: all addresses resolved
-    | (_,    true)  => .error .partialResolution
-    ```
-
-    The default ABI path uses `resolveExtraCaps` (silent drop) to stay
-    byte-compatible with the seL4 reference kernel.  **No deployment can
-    select the noisy behaviour yet**: the selection is a deployment policy
-    the dispatch arms must read, registered in `docs/REGISTERED_DEBT.md`
-    table C ("the partial-resolution policy").  Until it lands, this
-    resolver and `resolveExtraCapsGated` have no production caller. -/
-private def resolveExtraCapsDetailed (cspaceRoot : SeLe4n.ObjId)
-    (capAddrs : Array SeLe4n.CPtr) (depth : Nat) (granted : Bool)
-    (st : SystemState) : Array TransferCap × Bool :=
-  -- PR #873 round 14: the same gate, for the same reason.  `isPartial` stays
-  -- `false`: a sender without Grant did not fail to resolve anything, it had
-  -- nothing to resolve, and reporting a partial resolution would tell a caller
-  -- its capabilities were dropped when they were never eligible.
-  if !granted then (#[], false) else
-  capAddrs.foldl (fun acc addr =>
-    match resolveCapAddress cspaceRoot addr depth st with
-    | .error _ => (acc.1, true)   -- partial: lookup failed
-    | .ok ref =>
-        match SystemState.lookupSlotCap st ref with
-        | none => (acc.1, true)   -- partial: slot empty
-        | some cap => (acc.1.push (TransferCap.fromSlot cap ref), acc.2))
-    (#[], false)
-
-/- **Retired at `v0.36.2` (WS-BP BP1.1 preparation): the
-`sele4n.debug.noisyResolution` option.**  It was a `register_option` that no
-code read, so it selected nothing while its docstring said it flipped
-production callers; and `register_option` is an `initialize`, which put Lean's
-option registry — elaborator machinery — into the kernel's production closure,
-the closure BP1 compiles into a freestanding image.  The policy it described
-is registered debt (`docs/REGISTERED_DEBT.md` table C, "the
-partial-resolution policy"): a deployment constant the dispatch arms read. -/
-
-/-- AN7-E (API-M01) soundness (empty-input): on an empty capability-address
-    array, the detailed variant returns an empty resolved-caps list and a
-    `partial := false` flag — matching the silent-drop variant's empty
-    output.  This is the base case that anchors the swap-invariance
-    property between the two variants; the fully-general form (equal caps
-    for all inputs) requires a fold-level induction that is tractable but
-    beyond the AN7-E landing scope and recorded as a post-1.0 hardening
-    candidate; registered in `docs/REGISTERED_DEBT.md` (Registered debt index, C.1). -/
-theorem resolveExtraCapsDetailed_empty
-    (cspaceRoot : SeLe4n.ObjId) (depth : Nat) (granted : Bool) (st : SystemState) :
-    resolveExtraCapsDetailed cspaceRoot #[] depth granted st = (#[], false) := by
-  cases granted <;> rfl
-
-/-- AN7-E (API-M01): the silent-drop variant on the empty input is also
-    empty.  Paired with `resolveExtraCapsDetailed_empty`, this confirms
-    that in the base case both variants agree (vacuously). -/
+/-- AN7-E (API-M01): the resolver on an empty address array resolves
+    nothing, granted or not. -/
 theorem resolveExtraCaps_empty
     (cspaceRoot : SeLe4n.ObjId) (depth : Nat) (granted : Bool) (st : SystemState) :
     resolveExtraCaps cspaceRoot #[] depth granted st = #[] := by
@@ -1240,35 +1180,6 @@ theorem resolveExtraCaps_ungranted
     (cspaceRoot : SeLe4n.ObjId) (capAddrs : Array SeLe4n.CPtr) (depth : Nat)
     (st : SystemState) :
     resolveExtraCaps cspaceRoot capAddrs depth false st = #[] := rfl
-
-/-- The same for the detailed resolver, including that it reports **complete**
-rather than partial: nothing failed to resolve, there was nothing eligible. -/
-theorem resolveExtraCapsDetailed_ungranted
-    (cspaceRoot : SeLe4n.ObjId) (capAddrs : Array SeLe4n.CPtr) (depth : Nat)
-    (st : SystemState) :
-    resolveExtraCapsDetailed cspaceRoot capAddrs depth false st = (#[], false) := rfl
-
-/-- AN7-E (API-M01): Gated resolver for production dispatch arms that
-    want to surface partial resolution explicitly.  Returns
-    `.error KernelError.partialResolution` when any input address fails
-    to resolve; otherwise returns the resolved capability array.  Callers
-    that enable the gated path opt in consciously by using this wrapper
-    instead of `resolveExtraCaps`; no dispatch arm does yet (see
-    `resolveExtraCapsDetailed`). -/
-private def resolveExtraCapsGated (cspaceRoot : SeLe4n.ObjId)
-    (capAddrs : Array SeLe4n.CPtr) (depth : Nat) (granted : Bool)
-    (st : SystemState) : Except KernelError (Array TransferCap) :=
-  let (caps, isPartial) := resolveExtraCapsDetailed cspaceRoot capAddrs depth granted st
-  if isPartial then .error .partialResolution else .ok caps
-
-/-- AN7-E (API-M01): The gated resolver returns `.ok #[]` on empty input
-    (no addresses to resolve → no partial condition possible).  Base case
-    of the gated-resolver contract. -/
-theorem resolveExtraCapsGated_empty
-    (cspaceRoot : SeLe4n.ObjId) (depth : Nat) (granted : Bool) (st : SystemState) :
-    resolveExtraCapsGated cspaceRoot #[] depth granted st = .ok #[] := by
-  unfold resolveExtraCapsGated
-  simp [resolveExtraCapsDetailed_empty]
 
 /-- WS-AL AL7-A (cascades AK7-E): lift a raw `ThreadId` to `ValidThreadId`
 at the dispatch boundary. Returns `.error .invalidArgument` if the id
