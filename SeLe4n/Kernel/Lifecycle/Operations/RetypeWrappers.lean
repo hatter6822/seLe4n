@@ -279,7 +279,6 @@ def objectOfTypeTag (typeTag : Nat) (sizeHint : Nat)
   | 5 => .ok (.untyped {
       regionBase := SeLe4n.PAddr.ofNat 0,
       regionSize := sizeHint,
-      watermark := 0,
       children := [],
       isDevice := false
     })
@@ -327,7 +326,6 @@ def objectOfKernelType (objType : KernelObjectType) (sizeHint : Nat) : KernelObj
   | .untyped => .untyped {
       regionBase := SeLe4n.PAddr.ofNat 0,
       regionSize := sizeHint,
-      watermark := 0,
       children := [],
       isDevice := false
     }
