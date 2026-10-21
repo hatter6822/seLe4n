@@ -3100,6 +3100,55 @@ record.  Equal to the capability of those fields (`overwrite_eq`). -/
   { target, rights := if r.rights = rights then r.rights else rights, badgeWord, badged,
     mapAsid, mapVaddr, mapEpoch, mapped }
 
+/-- WS-ZA ZA5.4: the target naming object `id`, built fresh, out of line. -/
+@[noinline] def CapTarget.ofObject (id : SeLe4n.ObjId) : CapTarget := .object id
+
+/-- WS-ZA ZA5.4: the target naming object `id`, written over `t` when `t` already
+names an object.  Out of line, with a distinct second arm, so the first arm
+keeps its reuse of `t`'s cell. -/
+@[noinline] def CapTarget.objectOver (t : CapTarget) (id : SeLe4n.ObjId) : CapTarget :=
+  match t with
+  | .object _ => .object id
+  | _ => CapTarget.ofObject id
+
+/-- WS-ZA ZA5.4: `rights`, kept as the record's own `rr` when equal.  Out of line,
+so the capability built from it has no join point before it. -/
+@[noinline] def AccessRightSet.keepOr (rr rights : AccessRightSet) : AccessRightSet :=
+  if rr = rights then rr else rights
+
+/-- WS-ZA ZA5.4: the capability naming object `id` with `rights` and nothing
+else, written over the record `r` (a slot's spare), its target cell written over
+too when it already names an object (`CapTarget.objectOver`): the record is
+matched apart and rebuilt with no join point between, so it is written in place,
+and its target, then owned alone, is too.  Equal to that capability
+(`overwriteObject_eq`). -/
+@[noinline] def Capability.overwriteObject (r : Capability) (id : SeLe4n.ObjId)
+    (rights : AccessRightSet) : Capability :=
+  match r with
+  | ⟨t, rr, _, _, _, _, _, _⟩ =>
+    ⟨t.objectOver id, rr.keepOr rights, SeLe4n.Badge.zero, false, default, default, 0, false⟩
+
+/-- WS-ZA ZA5.4: the capability naming object `id` with `rights` alone, built
+fresh out of line, so its target is built only on the path that builds it. -/
+@[noinline] def Capability.ofObject (id : SeLe4n.ObjId) (rights : AccessRightSet) : Capability :=
+  ⟨.object id, rights, SeLe4n.Badge.zero, false, default, default, 0, false⟩
+
+theorem CapTarget.objectOver_eq (t : CapTarget) (id : SeLe4n.ObjId) :
+    t.objectOver id = .object id := by
+  cases t <;> rfl
+
+theorem AccessRightSet.keepOr_eq (rr rights : AccessRightSet) : rr.keepOr rights = rights := by
+  unfold keepOr; split <;> simp_all
+
+theorem Capability.overwriteObject_eq (r : Capability) (id : SeLe4n.ObjId)
+    (rights : AccessRightSet) :
+    r.overwriteObject id rights =
+      ⟨.object id, rights, SeLe4n.Badge.zero, false, default, default, 0, false⟩ := by
+  obtain ⟨t, rr, _, _, _, _, _, _⟩ := r
+  unfold overwriteObject
+  dsimp only
+  rw [CapTarget.objectOver_eq, AccessRightSet.keepOr_eq]
+
 /-- WS-ZA ZA5.3 part 6: the capability with the given fields, built fresh (a
 slot with no record of its own).  Out of line, so a caller's literal of the same
 fields is not shared with it and stays unbuilt. -/

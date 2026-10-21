@@ -9,6 +9,7 @@
 
 import SeLe4n.Kernel.Lifecycle.Operations.RetypeWrappers
 import SeLe4n.Kernel.Lifecycle.Operations.UntypedReset
+import SeLe4n.Kernel.Lifecycle.Operations.RetypePerform
 import SeLe4n.Kernel.Lifecycle.Operations.SetSpace
 
 /-!

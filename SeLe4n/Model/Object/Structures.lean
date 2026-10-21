@@ -1422,6 +1422,36 @@ theorem insertCell_eq_insert (node : CNode) (slot : SeLe4n.Slot) (cap : Capabili
     | h a => exact insertCellFrom_eq node slot cap h a
   · next h => unfold insert; simp only [h, dite_false]
 
+/-- WS-ZA ZA5.4: the CNode as it is, out of line: a write's no-op branch that
+returns its CNode through this is not folded back into the stored object, which
+would keep that object alive across the write and copy the CNode. -/
+@[noinline] def unchanged (node : CNode) : CNode := node
+
+/-- WS-ZA ZA5.4: `insert` of the capability naming object `id` with `rights`
+alone (the capability a carve hands back), written over the slot's own record
+and its target (`Capability.overwriteObject`), so neither is allocated when the
+slot kept one. -/
+@[inline] def insertObjectCap (node : CNode) (slot : SeLe4n.Slot) (id : SeLe4n.ObjId)
+    (rights : AccessRightSet) : CNode :=
+  if h : slot.toNat < node.cells.size then
+    Quot.lift (fun a => node.insertCellWith slot
+        ⟨.object id, rights, SeLe4n.Badge.zero, false, default, default, 0, false⟩
+        (fun r => r.overwriteObject id rights) (fun r => Capability.overwriteObject_eq r id rights)
+        (fun _ => Capability.ofObject id rights) rfl h a)
+      (fun a b _ => by dsimp only; rw [insertCellWith_eq, insertCellWith_eq]) node.spare
+  else node.unchanged
+
+theorem insertObjectCap_eq_insert (node : CNode) (slot : SeLe4n.Slot) (id : SeLe4n.ObjId)
+    (rights : AccessRightSet) :
+    node.insertObjectCap slot id rights =
+      node.insert slot ⟨.object id, rights, SeLe4n.Badge.zero, false, default, default, 0, false⟩ := by
+  unfold insertObjectCap
+  split
+  · next h =>
+    induction node.spare using Squash.ind with
+    | h a => exact insertCellWith_eq _ _ _ _ _ _ _ h a
+  · next h => unfold insert unchanged; simp only [h, dite_false]
+
 /-- `insert` as compiled (`insertCell`, out of line). -/
 def insertImpl (node : CNode) (slot : SeLe4n.Slot) (cap : Capability) : CNode :=
   node.insertCell slot cap

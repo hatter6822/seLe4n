@@ -1679,6 +1679,27 @@ addressable, empty slot of a CNode (`cspaceInsertSlot`'s refusals). -/
   | some cn => cn.slotAddressable dst.slot && (cn.lookup dst.slot).isNone
   | none => false
 
+/-- WS-ZA ZA5.4: **`cspaceInsertSlot`'s refusals of `dst`**, with its error
+codes, for an operation that asks them before its other writes (the retype). -/
+def cspaceDstRefusal (dst : CSpaceAddr) (st : SystemState) : Except KernelError Unit :=
+  match st.getCNode? dst.cnode with
+  | some cn =>
+      if !cn.slotAddressable dst.slot then .error .invalidArgument
+      else
+        match cn.lookup dst.slot with
+        | some _ => .error .targetSlotOccupied
+        | none => .ok ()
+  | none => .error .objectNotFound
+
+theorem cspaceDstRefusal_eq_ok_iff (dst : CSpaceAddr) (st : SystemState) :
+    cspaceDstRefusal dst st = .ok () ↔ cspaceDstAdmitted dst st = true := by
+  unfold cspaceDstRefusal cspaceDstAdmitted
+  cases st.getCNode? dst.cnode with
+  | none => simp
+  | some cn =>
+    cases hA : cn.slotAddressable dst.slot <;> cases hL : cn.lookup dst.slot <;>
+      simp [hA, hL]
+
 /-- WS-ZA ZA5.3: an admitted destination's insert is the capability written into
 its slot in place. -/
 theorem cspaceInsertSlot_of_admitted {dst : CSpaceAddr} {st : SystemState}

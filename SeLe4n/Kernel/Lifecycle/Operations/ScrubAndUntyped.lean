@@ -899,8 +899,9 @@ carrying the untyped's own device flag.  One definition, read by the carve that
 creates the frame and by every statement about which memory it names, so the
 two cannot describe different pages.  seL4's `Untyped_Retype` places a frame at
 the untyped's free pointer the same way; a device untyped yields a device frame,
-which is how a driver is handed MMIO. -/
-def untypedNextFrame (ut : UntypedObject) : FrameObject :=
+which is how a driver is handed MMIO.  Inlined, so a caller that reads only the
+page's base or kind builds no frame record (WS-ZA ZA5.4). -/
+@[inline] def untypedNextFrame (ut : UntypedObject) : FrameObject :=
   { base := SeLe4n.PAddr.ofNat (ut.regionBase.toNat + ut.watermark)
     isDevice := ut.isDevice }
 
@@ -1083,6 +1084,14 @@ def CarveRequest.admissible (st : SystemState) : CarveRequest → Bool
         (st.asidTable[asid]?).isNone
   | .pageTable => true
 
+/-- The type of the object a request carves, read without building it
+(`CarveRequest.object_objectType`).  WS-ZA ZA5.4. -/
+def CarveRequest.objectType : CarveRequest → KernelObjectType
+  | .frame => .frame
+  | .untyped _ => .untyped
+  | .vspaceRoot _ => .vspaceRoot
+  | .pageTable => .pageTable
+
 /-- The object a request carves out of `ut` (stored at `untypedId`). -/
 def CarveRequest.object (untypedId : SeLe4n.ObjId) (ut : UntypedObject) :
     CarveRequest → KernelObject
@@ -1090,6 +1099,10 @@ def CarveRequest.object (untypedId : SeLe4n.ObjId) (ut : UntypedObject) :
   | .untyped b => .untyped (untypedNextChild ut untypedId b)
   | .vspaceRoot asid => .vspaceRoot (untypedNextVSpaceRoot ut asid)
   | .pageTable => .pageTable (untypedNextPageTable ut)
+
+theorem CarveRequest.object_objectType (untypedId : SeLe4n.ObjId) (ut : UntypedObject)
+    (req : CarveRequest) : (req.object untypedId ut).objectType = req.objectType := by
+  cases req <;> rfl
 
 /-- The bytes a request takes from the parent's region. -/
 def CarveRequest.size : CarveRequest → Nat
@@ -1104,6 +1117,18 @@ def CarveRequest.capability (childId : SeLe4n.ObjId) : CarveRequest → Capabili
   | .untyped _ => untypedCapability childId
   | .vspaceRoot _ => vspaceRootCapability childId
   | .pageTable => pageTableCapability childId
+
+/-- The rights of the capability a request hands back (`CarveRequest.capability_eq`),
+so the capability is written into its slot as fields.  WS-ZA ZA5.4. -/
+def CarveRequest.rights : CarveRequest → AccessRightSet
+  | .frame => AccessRightSet.ofList [.read, .write, .grant]
+  | .untyped _ => AccessRightSet.ofList [.read, .write, .retype]
+  | .vspaceRoot _ => AccessRightSet.ofList [.read, .write]
+  | .pageTable => AccessRightSet.ofList [.read, .write]
+
+theorem CarveRequest.capability_eq (childId : SeLe4n.ObjId) (req : CarveRequest) :
+    req.capability childId = { target := .object childId, rights := req.rights } := by
+  cases req <;> rfl
 
 /-- The memory write a request performs.  A RAM frame's page is zeroed before
 any capability to it exists (`carveZeroFrame`).  A child untyped writes nothing:
@@ -1151,9 +1176,12 @@ Four steps, and every refusal commits nothing:
    records for the child.
 2. **The scrub** (`req.scrub`): a RAM frame's page is zeroed; a child untyped is
    not written.
-3. **The capability**: `req.capability childId` is installed at `dst` through
-   `cspaceInsertSlot`, the one install primitive, so the destination must be an
-   empty slot its CNode can address.
+3. **The capability**: `req.capability childId` is written into `dst`, which
+   must be an empty slot its CNode can address — `cspaceInsertSlot`'s refusals
+   (`cspaceDstRefusal`), asked of the state the retype was handed, before the
+   carve writes anything, as seL4's `decodeUntypedInvocation` checks the
+   destination slots before `invokeUntyped` (WS-ZA ZA5.4: every check precedes
+   every write, so the writes are made in place).
 4. **The derivation**: the new capability is recorded as a CDT child of the
    untyped capability (`DerivationOp.retype`), so revoking the untyped
    capability reaches it — the edge every other install path records.
@@ -1177,13 +1205,14 @@ def untypedRetypeObject (src : CSpaceAddr) (childId : SeLe4n.ObjId)
         match st.getUntyped? untypedId with
         | none => .error .untypedTypeMismatch
         | some ut =>
-          match retypeFromUntyped src untypedId childId (req.object untypedId ut) req.size st with
+          match cspaceDstRefusal dst st with
           | .error e => .error e
-          | .ok ((), st1) =>
-            match cspaceInsertSlot dst (req.capability childId) (req.scrub st1 ut) with
+          | .ok () =>
+            match retypeFromUntyped src untypedId childId (req.object untypedId ut) req.size st with
             | .error e => .error e
-            | .ok ((), st2) =>
-              .ok ((), st2.cdtAddChild src dst .retype)
+            | .ok ((), st1) =>
+              .ok ((), ((req.scrub st1 ut).storeCNodeWith dst.cnode
+                (·.insert dst.slot (req.capability childId))).cdtAddChild src dst .retype)
       | _ => .error .invalidCapability
 
 
@@ -1207,24 +1236,35 @@ theorem retypeFromUntyped_ok_pageAligned
   · rfl
 
 
-/-- **WS-BP BP7.1: what a successful carve consists of** — the four steps of
-`untypedRetypeObject`, read back.  The capability lookup returns the state it
-was given, so every later step runs from `st` itself.  One owner for the case
-analysis, so the invariant proofs that consume a carve read these equations
-rather than re-running the operation's `match`. -/
-theorem untypedRetypeObject_ok_decompose
+/-- **WS-BP BP7.1 slice 4**: a request's scrub moves no object... -/
+@[simp] theorem CarveRequest.scrub_objects (st : SystemState) (ut : UntypedObject)
+    (req : CarveRequest) : (req.scrub st ut).objects = st.objects := by
+  cases req <;> simp only [CarveRequest.scrub, carveZeroFrame] <;> (try split) <;> rfl
+
+/-- ...and no scheduler state. -/
+@[simp] theorem CarveRequest.scrub_scheduler (st : SystemState) (ut : UntypedObject)
+    (req : CarveRequest) : (req.scrub st ut).scheduler = st.scheduler := by
+  cases req <;> simp only [CarveRequest.scrub, carveZeroFrame] <;> (try split) <;> rfl
+
+/-- **WS-ZA ZA5.4: what a successful carve writes** — `untypedRetypeObject`
+read back on the state it was handed: the destination admitted there, the
+carve, and the capability written into the destination slot over the scrubbed
+state (`storeCNodeWith`), then its derivation edge.  Needs no invariant, so the
+in-place form is proven equal to it unconditionally. -/
+theorem untypedRetypeObject_ok_writes
     (src dst : CSpaceAddr) (childId : SeLe4n.ObjId) (req : CarveRequest)
     (st st' : SystemState)
     (hStep : untypedRetypeObject src childId dst req st = .ok ((), st')) :
     ∃ (utCap : Capability) (untypedId : SeLe4n.ObjId) (ut : UntypedObject)
-      (st1 st2 : SystemState),
+      (st1 : SystemState),
       cspaceLookupSlot src st = .ok (utCap, st) ∧
       utCap.target = .object untypedId ∧
       st.getUntyped? untypedId = some ut ∧
+      cspaceDstAdmitted dst st = true ∧
       retypeFromUntyped src untypedId childId (req.object untypedId ut) req.size st
         = .ok ((), st1) ∧
-      cspaceInsertSlot dst (req.capability childId) (req.scrub st1 ut) = .ok ((), st2) ∧
-      st' = st2.cdtAddChild src dst .retype := by
+      st' = ((req.scrub st1 ut).storeCNodeWith dst.cnode
+        (·.insert dst.slot (req.capability childId))).cdtAddChild src dst .retype := by
   unfold untypedRetypeObject at hStep
   cases hAdm : req.admissible st
   · simp only [hAdm, Bool.not_false, ↓reduceIte] at hStep; cases hStep
@@ -1246,23 +1286,72 @@ theorem untypedRetypeObject_ok_decompose
       | some ut =>
         rw [hUt] at hStep
         simp only at hStep
-        cases hRt : retypeFromUntyped src untypedId childId (req.object untypedId ut)
-            req.size stL with
-        | error e => rw [hRt] at hStep; cases hStep
-        | ok p1 =>
-          obtain ⟨_, st1⟩ := p1
-          rw [hRt] at hStep
+        cases hD : cspaceDstRefusal dst stL with
+        | error e => rw [hD] at hStep; cases hStep
+        | ok u =>
+          cases u
+          rw [hD] at hStep
           simp only at hStep
-          cases hIns : cspaceInsertSlot dst (req.capability childId) (req.scrub st1 ut) with
-          | error e => rw [hIns] at hStep; cases hStep
-          | ok p2 =>
-            obtain ⟨_, st2⟩ := p2
-            rw [hIns] at hStep
+          cases hRt : retypeFromUntyped src untypedId childId (req.object untypedId ut)
+              req.size stL with
+          | error e => rw [hRt] at hStep; cases hStep
+          | ok p1 =>
+            obtain ⟨_, st1⟩ := p1
+            rw [hRt] at hStep
             simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
-            exact ⟨utCap, untypedId, ut, st1, st2, by first | exact hLk | rfl,
+            exact ⟨utCap, untypedId, ut, st1, by first | exact hLk | rfl,
               by first | exact hTgt | rfl, by first | exact hUt | rfl,
-              by first | exact hRt | rfl, by first | exact hIns | rfl, hStep.symm⟩
+              (cspaceDstRefusal_eq_ok_iff dst stL).mp hD,
+              by first | exact hRt | rfl, hStep.symm⟩
     | _ => rw [hTgt] at hStep; cases hStep
+
+/-- **WS-BP BP7.1: what a successful carve consists of** — the four steps of
+`untypedRetypeObject`, read back.  The capability lookup returns the state it
+was given, so every later step runs from `st` itself.  One owner for the case
+analysis, so the invariant proofs that consume a carve read these equations
+rather than re-running the operation's `match`.  The destination checked
+before the carve is still admitted after it — the carve writes the untyped and
+a fresh id, neither of them a CNode — so the write is `cspaceInsertSlot`'s. -/
+theorem untypedRetypeObject_ok_decompose
+    (src dst : CSpaceAddr) (childId : SeLe4n.ObjId) (req : CarveRequest)
+    (st st' : SystemState) (hObjInv : st.objects.invExt)
+    (hStep : untypedRetypeObject src childId dst req st = .ok ((), st')) :
+    ∃ (utCap : Capability) (untypedId : SeLe4n.ObjId) (ut : UntypedObject)
+      (st1 st2 : SystemState),
+      cspaceLookupSlot src st = .ok (utCap, st) ∧
+      utCap.target = .object untypedId ∧
+      st.getUntyped? untypedId = some ut ∧
+      retypeFromUntyped src untypedId childId (req.object untypedId ut) req.size st
+        = .ok ((), st1) ∧
+      cspaceInsertSlot dst (req.capability childId) (req.scrub st1 ut) = .ok ((), st2) ∧
+      st' = st2.cdtAddChild src dst .retype := by
+  obtain ⟨utCap, untypedId, ut, st1, hLk, hTgt, hUt, hD, hRt, rfl⟩ :=
+    untypedRetypeObject_ok_writes src dst childId req st st' hStep
+  have hFresh := retypeFromUntyped_childId_fresh src untypedId childId _ _ st st1 hRt
+  obtain ⟨_, _, _, stL, stUt, _, _, _, _, hLkR, _, _, hStUt, hStCh⟩ :=
+    retypeFromUntyped_ok_decompose st st1 src untypedId childId _ _ hRt
+  rw [cspaceLookupSlot_ok_state_eq st src _ stL hLkR] at hStUt
+  have hObjU : st.objects[untypedId]? = some (.untyped ut) :=
+    (SystemState.getUntyped?_eq_some_iff st untypedId ut).mp hUt
+  have hInvUt := storeObject_preserves_objects_invExt _ _ _ _ hObjInv hStUt
+  have hD' : cspaceDstAdmitted dst (req.scrub st1 ut) = true := by
+    unfold cspaceDstAdmitted at hD ⊢
+    cases hC : st.getCNode? dst.cnode with
+    | none => rw [hC] at hD; cases hD
+    | some cn =>
+      have hObjC : st.objects[dst.cnode]? = some (.cnode cn) :=
+        (SystemState.getCNode?_eq_some_iff st dst.cnode cn).mp hC
+      have hNeU : dst.cnode ≠ untypedId := by
+        intro h; rw [h, hObjU] at hObjC; cases hObjC
+      have hNeC : dst.cnode ≠ childId := by
+        intro h; rw [h] at hObjC; rw [hObjC] at hFresh; cases hFresh
+      have hC1 : (req.scrub st1 ut).getCNode? dst.cnode = some cn := by
+        rw [SystemState.getCNode?_eq_some_iff, CarveRequest.scrub_objects,
+          storeObject_objects_ne _ _ _ _ _ hNeC hInvUt hStCh,
+          storeObject_objects_ne _ _ _ _ _ hNeU hObjInv hStUt, hObjC]
+      rw [hC] at hD; rw [hC1]; exact hD
+  exact ⟨utCap, untypedId, ut, st1, _, hLk, hTgt, hUt, hRt,
+    cspaceInsertSlot_of_admitted hD' _, rfl⟩
 
 /-- **WS-BP BP7.1 slice 4b: a successful carve met its request's own
 precondition** — for a VSpace root, its ASID was non-zero, in range and free. -/
@@ -1408,16 +1497,6 @@ theorem carveZeroFrame_device (st : SystemState) (frame : FrameObject)
   unfold carveZeroFrame
   simp only [hDev, ↓reduceIte]
 
-/-- **WS-BP BP7.1 slice 4**: a request's scrub moves no object... -/
-@[simp] theorem CarveRequest.scrub_objects (st : SystemState) (ut : UntypedObject)
-    (req : CarveRequest) : (req.scrub st ut).objects = st.objects := by
-  cases req <;> simp [CarveRequest.scrub]
-
-/-- ...and no scheduler state. -/
-@[simp] theorem CarveRequest.scrub_scheduler (st : SystemState) (ut : UntypedObject)
-    (req : CarveRequest) : (req.scrub st ut).scheduler = st.scheduler := by
-  cases req <;> simp [CarveRequest.scrub]
-
 /-- **WS-BP BP7.1 slice 4: the carved child untyped's region is inside its
 parent, on a page boundary, of its parent's memory kind, with its parent stamped
 and nothing carved from it.**  The child-untyped counterpart of
@@ -1476,7 +1555,7 @@ theorem untypedRetypeObject_ok_carved
       ∃ cn cn' : CNode, st'.objects[dst.cnode]? = some (.cnode cn') ∧
         cn'.withoutLinks = (cn.insert dst.slot (req.capability childId)).withoutLinks := by
   obtain ⟨_, untypedId, ut, st1, st2, _, _, hUt, hRt, hIns, rfl⟩ :=
-    untypedRetypeObject_ok_decompose src dst childId req st st' hStep
+    untypedRetypeObject_ok_decompose src dst childId req st st' hObjInv hStep
   have hObj : st.objects[untypedId]? = some (.untyped ut) :=
     (SystemState.getUntyped?_eq_some_iff st untypedId ut).mp hUt
   obtain ⟨_, ut', _, stL, stUt, _, _, _, _, hLkR, _, _, hStUt, hStCh⟩ :=

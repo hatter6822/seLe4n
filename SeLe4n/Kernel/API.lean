@@ -2072,6 +2072,64 @@ def resolveUntypedRetype (callerTid : SeLe4n.ThreadId) (srcAddr : SeLe4n.CPtr)
             | some _ => .ok (src, { cnode := cnodeId, slot := args.dstSlot })
           | _ => .error .invalidCapability
 
+/-- WS-ZA ZA5.4: `resolveUntypedRetype` in continuation form: the source slot
+through `resolveCapAddressKUnrolled` and the destination CNode through
+`resolveCallerCapObjectK`, each handed on as words, so no slot reference, pair or
+result cell is built (`resolveUntypedRetypeK_eq`). -/
+@[inline] def resolveUntypedRetypeK {α : Type} (callerTid : SeLe4n.ThreadId)
+    (srcAddr : SeLe4n.CPtr) (args : UntypedRetypeArgs) (st : SystemState)
+    (onErr : KernelError → α)
+    (onOk : SeLe4n.ObjId → SeLe4n.Slot → SeLe4n.ObjId → SeLe4n.Slot → α) : α :=
+  match st.getTcb? callerTid with
+  | none => onErr .objectNotFound
+  | some callerTcb =>
+    match st.getCNode? callerTcb.cspaceRoot with
+    | none => onErr .invalidCapability
+    | some rootCn =>
+      resolveCapAddressKUnrolled callerTcb.cspaceRoot srcAddr rootCn.depth st onErr
+        (fun srcCnode srcSlot =>
+          resolveCallerCapObjectK callerTid args.dstCNode .write st onErr (fun _ cnodeId =>
+            match st.getCNode? cnodeId with
+            | none => onErr .invalidCapability
+            | some _ => onOk srcCnode srcSlot cnodeId args.dstSlot))
+
+theorem resolveUntypedRetypeK_eq {α : Type} (callerTid : SeLe4n.ThreadId)
+    (srcAddr : SeLe4n.CPtr) (args : UntypedRetypeArgs) (st : SystemState)
+    (onErr : KernelError → α)
+    (onOk : SeLe4n.ObjId → SeLe4n.Slot → SeLe4n.ObjId → SeLe4n.Slot → α) :
+    resolveUntypedRetypeK callerTid srcAddr args st onErr onOk =
+      match resolveUntypedRetype callerTid srcAddr args st with
+      | .error e => onErr e
+      | .ok (src, dst) => onOk src.cnode src.slot dst.cnode dst.slot := by
+  unfold resolveUntypedRetypeK resolveUntypedRetype
+  cases hT : st.getTcb? callerTid with
+  | none => rfl
+  | some callerTcb =>
+    simp only []
+    cases hC : st.getCNode? callerTcb.cspaceRoot with
+    | none => rfl
+    | some rootCn =>
+      simp only []
+      rw [resolveCapAddressKUnrolled_eq, resolveCapAddressK_eq]
+      cases resolveCapAddress callerTcb.cspaceRoot srcAddr rootCn.depth st with
+      | error e => rfl
+      | ok src =>
+        simp only []
+        rw [resolveCallerCapObjectK_eq]
+        unfold resolveCallerCapObject
+        simp only [hT, hC]
+        generalize syscallLookupCap { callerId := callerTid, cspaceRoot := callerTcb.cspaceRoot, capAddr := args.dstCNode, capDepth := rootCn.depth, requiredRight := .write } st = r
+        cases r with
+        | error e => rfl
+        | ok p =>
+          obtain ⟨dstCap, _⟩ := p
+          simp only []
+          cases dstCap.target with
+          | object cnodeId =>
+            simp only []
+            cases st.getCNode? cnodeId <;> rfl
+          | _ => rfl
+
 /-- **WS-BP BP7.1 slice 4 (`v0.36.8`): the carve a decoded `.untypedRetype`
 requests.**  A frame, whose size is fixed, so its `sizeBits` must be `0` — the
 value a frame's MR0 carried before the field existed; or a child untyped of

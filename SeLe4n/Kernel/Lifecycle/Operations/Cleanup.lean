@@ -51,6 +51,24 @@ callers with `.retype` but not `.write` were incorrectly rejected. -/
 def lifecycleRetypeAuthority (cap : Capability) (target : SeLe4n.ObjId) : Bool :=
   decide (cap.target = .object target) && Capability.hasRight cap .retype
 
+/-- WS-ZA ZA5.4: `lifecycleRetypeAuthority` as compiled: the target is matched
+and its id compared as a word, so no `.object target` is built for the
+comparison. -/
+def lifecycleRetypeAuthorityImpl (cap : Capability) (target : SeLe4n.ObjId) : Bool :=
+  (match cap.target with
+   | .object o => o.toNat == target.toNat
+   | _ => false) && Capability.hasRight cap .retype
+
+@[csimp] theorem lifecycleRetypeAuthority_eq_impl :
+    @lifecycleRetypeAuthority = @lifecycleRetypeAuthorityImpl := by
+  funext cap target
+  unfold lifecycleRetypeAuthority lifecycleRetypeAuthorityImpl
+  cases cap.target with
+  | object o =>
+    cases o; cases target
+    simp only [CapTarget.object.injEq, SeLe4n.ObjId.mk.injEq, SeLe4n.ObjId.toNat]; rfl
+  | _ => simp
+
 /-- **WS-SM SM8.B (PR #861 review round 39): is this thread the current thread
 of some core?**
 
