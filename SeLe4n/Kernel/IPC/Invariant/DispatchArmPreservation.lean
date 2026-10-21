@@ -1111,52 +1111,6 @@ private theorem cdtRecord_bundle_frame (stM : SystemState) (src dst : CSpaceAddr
   ipcInvariantFull_of_linkReach (SystemState.cdtAddChild_reach stM src dst kind) hObjInvM
     (ipcInvariantFull_of_objects_scheduler_eq (st := stM) rfl rfl hInvM)
 
-/-- `.cspaceMint`: the CDT-tracked form the dispatch routes through. -/
-theorem cspaceMintWithCdt_preserves_ipcInvariantFull
-    (st st' : SystemState) (src dst : CSpaceAddr) (rights : AccessRightSet)
-    (badge : Option SeLe4n.Badge)
-    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
-    (hBadgeValid : ∀ b, badge = some b → b.valid)
-    (hStep : cspaceMintWithCdt src dst rights badge st = .ok ((), st')) :
-    ipcInvariantFull st' := by
-  unfold cspaceMintWithCdt at hStep
-  split at hStep
-  · contradiction
-  · rename_i stM hMint
-    cases hStep
-    obtain ⟨_, _, _, hInsM⟩ := cspaceMint_ok_decompose src dst rights badge st stM hMint
-    exact cdtRecord_bundle_frame stM src dst DerivationOp.mint
-      (cspaceInsertSlot_preserves_objects_invExt st stM dst _ hObjInv hInsM)
-      (cspaceMint_preserves_ipcInvariantFull st stM src dst rights badge
-        hObjInv hInv hBadgeValid hMint)
-
-/-- `.cspaceCopy`: the copied capability's badge is valid because it was
-already at rest in the source slot of a state satisfying the badge clause. -/
-theorem cspaceCopy_preserves_ipcInvariantFull
-    (st st' : SystemState) (src dst : CSpaceAddr)
-    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
-    (hStep : cspaceCopy src dst st = .ok ((), st')) :
-    ipcInvariantFull st' := by
-  unfold cspaceCopy at hStep
-  split at hStep
-  · contradiction
-  · rename_i cap stMid hLk
-    have hMid : stMid = st := cspaceLookupSlot_state_eq st stMid src cap hLk
-    split at hStep
-    · contradiction
-    · rename_i capNN hNN
-      split at hStep
-      · contradiction
-      · rename_i st2 hIns
-        cases hStep
-        have hBadgeSrc := lookupSlotCap_badge_valid st src cap hInv.badgeWellFormed.2
-          ((cspaceLookupSlot_ok_iff_lookupSlotCap st src cap).mp (hMid ▸ hLk))
-        exact cdtRecord_bundle_frame st2 src dst DerivationOp.copy
-          (cspaceInsertSlot_preserves_objects_invExt stMid st2 dst _ (hMid.symm ▸ hObjInv) hIns)
-          (cspaceInsertSlot_preserves_ipcInvariantFull stMid st2 dst capNN.val.withoutMapping
-            (hMid.symm ▸ hObjInv) (hMid.symm ▸ hInv)
-            (fun b hb => hBadgeSrc b (toNonNull?_val_eq hNN ▸ hb)) hIns)
-
 /-- `.cspaceMove`: insert at the destination, delete at the source, repoint
 the CDT — every object write is a CNode. -/
 theorem cspaceMove_preserves_ipcInvariantFull
@@ -1606,6 +1560,53 @@ theorem untypedResetRewound_preserves_ipcInvariantFull
     ipcInvariantFull st' :=
   let h1 := setCapFreeIndex_preserves_ipcInvariantFull src cn cap 0 st hObjInv hInv hPre hLk
   untypedResetWithShootdown_preserves_ipcInvariantFull ec untypedId _ st' h1.2 h1.1 hStep
+
+/-- WS-ZA ZA5.4: **setting a derivation's untyped source full preserves the
+bundle**, given the source still holds the capability the derivation read. -/
+theorem untypedSourceSetFull_preserves_ipcInvariantFull
+    (st : SystemState) (src : CSpaceAddr) (cn : CNode) (cap : Capability)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hPre : st.objects[src.cnode]? = some (.cnode cn)) (hLk : cn.lookup src.slot = some cap) :
+    ipcInvariantFull (untypedSourceSetFull st src cap) :=
+  untypedSourceSetFull_of (P := ipcInvariantFull) hInv
+    fun idx => (setCapFreeIndex_preserves_ipcInvariantFull src cn cap idx st hObjInv hInv hPre hLk).1
+
+/-- `.cspaceMint`: the CDT-tracked form the dispatch routes through — the mint,
+its edge, and the source set full when it names an untyped. -/
+theorem cspaceMintWithCdt_preserves_ipcInvariantFull
+    (st st' : SystemState) (src dst : CSpaceAddr) (rights : AccessRightSet)
+    (badge : Option SeLe4n.Badge)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hBadgeValid : ∀ b, badge = some b → b.valid)
+    (hStep : cspaceMintWithCdt src dst rights badge st = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  obtain ⟨_, stM, hMint, hLP, -, rfl⟩ := cspaceMintWithCdt_ok_decompose hStep
+  obtain ⟨_, _, _, hInsM⟩ := cspaceMint_ok_decompose src dst rights badge st stM hMint
+  have hInvM := cspaceInsertSlot_preserves_objects_invExt st stM dst _ hObjInv hInsM
+  have hMid := cdtRecord_bundle_frame stM src dst DerivationOp.mint hInvM
+    (cspaceMint_preserves_ipcInvariantFull st stM src dst rights badge
+      hObjInv hInv hBadgeValid hMint)
+  obtain ⟨cnS, hOS, hLS⟩ := cspaceInsertSlot_cdtAddChild_src .mint hObjInv hLP hInsM
+  exact untypedSourceSetFull_preserves_ipcInvariantFull _ src cnS _
+    (SystemState.cdtAddChild_agreeObjects hInvM src dst .mint).2 hMid hOS hLS
+
+/-- `.cspaceCopy`: the copied capability's badge is valid because it was
+already at rest in the source slot of a state satisfying the badge clause; the
+source is then set full when it names an untyped. -/
+theorem cspaceCopy_preserves_ipcInvariantFull
+    (st st' : SystemState) (src dst : CSpaceAddr)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hStep : cspaceCopy src dst st = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  obtain ⟨cap, st2, hL, -, hIns, -, rfl⟩ := cspaceCopy_ok_decompose hStep
+  have hBadgeSrc := lookupSlotCap_badge_valid st src cap hInv.badgeWellFormed.2 hL
+  have hInv2 := cspaceInsertSlot_preserves_objects_invExt st st2 dst _ hObjInv hIns
+  have hMid := cdtRecord_bundle_frame st2 src dst DerivationOp.copy hInv2
+    (cspaceInsertSlot_preserves_ipcInvariantFull st st2 dst cap.withoutMapping hObjInv hInv
+      (fun b hb => hBadgeSrc b hb) hIns)
+  obtain ⟨cnS, hOS, hLS⟩ := cspaceInsertSlot_cdtAddChild_src .copy hObjInv hL hIns
+  exact untypedSourceSetFull_preserves_ipcInvariantFull _ src cnS cap
+    (SystemState.cdtAddChild_agreeObjects hInv2 src dst .copy).2 hMid hOS hLS
 
 -- ============================================================================
 -- §10  Sched-context arm (`.schedContextConfigure`)

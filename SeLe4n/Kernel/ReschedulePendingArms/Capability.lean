@@ -152,35 +152,46 @@ theorem cspaceMint_keyFrame (st st' : SystemState) (src dst : CSpaceAddr)
       · contradiction
       · exact cspaceInsertSlot_keyFrame _ st' dst _ hObjInv hStep
 
+/-- WS-ZA ZA5.4: a free-index write stores a CNode, which feeds no key, or
+writes nothing. -/
+theorem setCapFreeIndex_keyFrame (st : SystemState) (addr : CSpaceAddr) (idx : Nat)
+    (hObjInv : st.objects.invExt) : capabilityKeyFrame st (setCapFreeIndex st addr idx) := by
+  cases hO : st.objects[addr.cnode]? with
+  | some o =>
+    cases o with
+    | cnode cn =>
+      have hS := setCapFreeIndex_eq_storeObject (idx := idx) hO
+      exact ⟨keyInputsEq_storeObject hObjInv hS (by rw [hO]; rfl),
+        storeObject_scheduler_eq _ _ _ _ hS, storeObject_preserves_objects_invExt _ _ _ _ hObjInv hS⟩
+    | _ =>
+      unfold setCapFreeIndex SystemState.storeCNodeWith; rw [hO]
+      exact capabilityKeyFrame_of_objects_scheduler_eq hObjInv rfl rfl
+  | none =>
+    unfold setCapFreeIndex SystemState.storeCNodeWith; rw [hO]
+    exact capabilityKeyFrame_of_objects_scheduler_eq hObjInv rfl rfl
+
+theorem untypedSourceSetFull_keyFrame (st : SystemState) (src : CSpaceAddr) (cap : Capability)
+    (hObjInv : st.objects.invExt) : capabilityKeyFrame st (untypedSourceSetFull st src cap) :=
+  untypedSourceSetFull_of (P := capabilityKeyFrame st)
+    (capabilityKeyFrame_of_objects_scheduler_eq hObjInv rfl rfl)
+    fun idx => setCapFreeIndex_keyFrame st src idx hObjInv
+
 theorem cspaceMintWithCdt_keyFrame (st st' : SystemState) (src dst : CSpaceAddr)
     (rights : AccessRightSet) (badge : Option SeLe4n.Badge) (hObjInv : st.objects.invExt)
     (hStep : cspaceMintWithCdt src dst rights badge st = .ok ((), st')) :
     capabilityKeyFrame st st' := by
-  unfold cspaceMintWithCdt at hStep
-  split at hStep
-  · contradiction
-  · rename_i stM hMint
-    cases hStep
-    have hM := cspaceMint_keyFrame st stM src dst rights badge hObjInv hMint
-    exact hM.trans (cdtRecord_keyFrame stM src dst .mint hM.2.2)
+  obtain ⟨_, stM, hMint, -, -, rfl⟩ := cspaceMintWithCdt_ok_decompose hStep
+  have hM := cspaceMint_keyFrame st stM src dst rights badge hObjInv hMint
+  have hC := hM.trans (cdtRecord_keyFrame stM src dst .mint hM.2.2)
+  exact hC.trans (untypedSourceSetFull_keyFrame _ src _ hC.2.2)
 
 theorem cspaceCopy_keyFrame (st st' : SystemState) (src dst : CSpaceAddr)
     (hObjInv : st.objects.invExt) (hStep : cspaceCopy src dst st = .ok ((), st')) :
     capabilityKeyFrame st st' := by
-  unfold cspaceCopy at hStep
-  split at hStep
-  · contradiction
-  · rename_i cap stMid hLk
-    have hMid : stMid = st := cspaceLookupSlot_state_eq st stMid src cap hLk
-    subst hMid
-    split at hStep
-    · contradiction
-    · split at hStep
-      · contradiction
-      · rename_i st2 hIns
-        cases hStep
-        have hI := cspaceInsertSlot_keyFrame _ st2 dst _ hObjInv hIns
-        exact hI.trans (cdtRecord_keyFrame st2 src dst .copy hI.2.2)
+  obtain ⟨_, st2, -, -, hIns, -, rfl⟩ := cspaceCopy_ok_decompose hStep
+  have hI := cspaceInsertSlot_keyFrame _ st2 dst _ hObjInv hIns
+  have hC := hI.trans (cdtRecord_keyFrame st2 src dst .copy hI.2.2)
+  exact hC.trans (untypedSourceSetFull_keyFrame _ src _ hC.2.2)
 
 theorem cspaceMove_keyFrame (st st' : SystemState) (src dst : CSpaceAddr)
     (hObjInv : st.objects.invExt) (hStep : cspaceMove src dst st = .ok ((), st')) :

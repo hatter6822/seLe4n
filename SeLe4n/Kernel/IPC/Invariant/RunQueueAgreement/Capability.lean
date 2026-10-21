@@ -134,30 +134,36 @@ theorem cspaceMint_runQueueStage {st st' : SystemState} {src dst : CSpaceAddr}
 macro_rules | `(tactic| run_queue_stage_step) => `(tactic|
   refine RunQueueStage.trans ?_ (cspaceMint_runQueueStage (by with_reducible assumption)))
 
+/-- WS-ZA ZA5.4: a free-index write stores a CNode over a CNode, or writes
+nothing. -/
+theorem setCapFreeIndex_runQueueStage (st : SystemState) (addr : CSpaceAddr) (idx : Nat) :
+    RunQueueStage st (setCapFreeIndex st addr idx) := by
+  cases hO : st.objects[addr.cnode]? with
+  | some o =>
+    cases o with
+    | cnode cn =>
+      exact RunQueueStage.storeObject_nonTcb (setCapFreeIndex_eq_storeObject hO) hO
+        (fun _ h => KernelObject.noConfusion h) (fun _ h => KernelObject.noConfusion h)
+    | _ => unfold setCapFreeIndex SystemState.storeCNodeWith; rw [hO]; exact RunQueueStage.refl _
+  | none => unfold setCapFreeIndex SystemState.storeCNodeWith; rw [hO]; exact RunQueueStage.refl _
+
+theorem untypedSourceSetFull_runQueueStage (st : SystemState) (src : CSpaceAddr)
+    (cap : Capability) : RunQueueStage st (untypedSourceSetFull st src cap) :=
+  untypedSourceSetFull_of (P := RunQueueStage st) (RunQueueStage.refl _)
+    fun idx => setCapFreeIndex_runQueueStage st src idx
+
 theorem cspaceMintWithCdt_runQueueStage {st st' : SystemState} {src dst : CSpaceAddr}
     {rights : AccessRightSet} {badge : Option SeLe4n.Badge}
     (h : cspaceMintWithCdt src dst rights badge st = .ok ((), st')) : RunQueueStage st st' := by
-  unfold cspaceMintWithCdt at h
-  split at h
-  · contradiction
-  · rename_i stM hMint
-    cases h
-    exact (cspaceMint_runQueueStage hMint).trans (cdtRecord_runQueueStage stM src dst .mint)
+  obtain ⟨_, stM, hMint, -, -, rfl⟩ := cspaceMintWithCdt_ok_decompose h
+  exact ((cspaceMint_runQueueStage hMint).trans (cdtRecord_runQueueStage stM src dst .mint)).trans
+    (untypedSourceSetFull_runQueueStage _ _ _)
 
 theorem cspaceCopy_runQueueStage {st st' : SystemState} {src dst : CSpaceAddr}
     (h : cspaceCopy src dst st = .ok ((), st')) : RunQueueStage st st' := by
-  unfold cspaceCopy at h
-  split at h
-  · contradiction
-  · rename_i cap stMid hLk
-    split at h
-    · contradiction
-    · split at h
-      · contradiction
-      · rename_i st2 hIns
-        cases h
-        exact ((cspaceLookupSlot_runQueueStage hLk).trans
-          (cspaceInsertSlot_runQueueStage hIns)).trans (cdtRecord_runQueueStage st2 src dst .copy)
+  obtain ⟨_, st2, -, -, hIns, -, rfl⟩ := cspaceCopy_ok_decompose h
+  exact ((cspaceInsertSlot_runQueueStage hIns).trans (cdtRecord_runQueueStage st2 src dst .copy)).trans
+    (untypedSourceSetFull_runQueueStage _ _ _)
 
 theorem cspaceDeleteSlotCore_runQueueStage {st st' : SystemState} {addr : CSpaceAddr}
     (h : cspaceDeleteSlotCore addr st = .ok ((), st')) : RunQueueStage st st' := by
