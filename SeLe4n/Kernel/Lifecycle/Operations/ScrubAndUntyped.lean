@@ -842,6 +842,71 @@ theorem lifecycleRevokeDeleteRetype_ok_implies_staged_steps
                         · simpa [lifecycleRevokeDeleteRetype, hAlias, hRevoke, hDelete, hLookup] using hStep
 
 
+/-- WS-ZA ZA5.4 part 13: **a successful `retypeFromUntyped` as three stores**
+from the state it was handed — the untyped's record, the child, and the
+authority's CNode with the capability holding its advanced free index — for the
+proofs that carry an invariant store by store.  The authority's CNode is the one
+the lookup read, untouched by the first two stores (an untyped and a fresh id
+are not it). -/
+theorem retypeFromUntyped_ok_stores
+    (st st' : SystemState)
+    (authority : CSpaceAddr)
+    (untypedId childId : SeLe4n.ObjId)
+    (newObj : KernelObject)
+    (allocSize : Nat)
+    (hObjInv : st.objects.invExt)
+    (hStep : retypeFromUntyped authority untypedId childId newObj allocSize st = .ok ((), st')) :
+    ∃ ut ut' cap stUt offset stCh cn,
+      st.objects[untypedId]? = some (.untyped ut) ∧
+      (ut.isDevice = false ∨ newObj.objectType.deviceBackable = true) ∧
+      ¬(allocSize < objectTypeAllocSize newObj.objectType) ∧
+      cspaceLookupSlot authority st = .ok (cap, st) ∧
+      lifecycleRetypeAuthority cap untypedId = true ∧
+      ut.allocate cap.freeIndex childId allocSize = some (ut', offset) ∧
+      st.objects[authority.cnode]? = some (.cnode cn) ∧
+      cn.lookup authority.slot = some cap ∧
+      authority.cnode ≠ untypedId ∧ authority.cnode ≠ childId ∧
+      storeObject untypedId (.untyped ut') st = .ok ((), stUt) ∧
+      storeObject childId newObj stUt = .ok ((), stCh) ∧
+      stCh.objects[authority.cnode]? = some (.cnode cn) ∧
+      storeObject authority.cnode
+        (.cnode (cn.insert authority.slot (cap.withFreeIndex (cap.freeIndex + allocSize)))) stCh
+        = .ok ((), st') := by
+  have hFresh := retypeFromUntyped_childId_fresh authority untypedId childId newObj allocSize
+    st st' hStep
+  obtain ⟨ut, ut', cap, stL, stUt, offset, stCh, hObj, hDev, hSz, hLk, hAuth, hAlloc, hU, hC,
+    rfl⟩ := retypeFromUntyped_ok_decompose st st' authority untypedId childId newObj allocSize hStep
+  have hStL : stL = st := cspaceLookupSlot_ok_state_eq st authority cap stL hLk
+  subst hStL
+  have hL : SystemState.lookupSlotCap stL authority = some cap := by
+    unfold cspaceLookupSlot at hLk
+    cases hq : SystemState.lookupSlotCap stL authority with
+    | none => rw [hq] at hLk; exfalso; revert hLk; dsimp only; split <;> simp
+    | some c =>
+      rw [hq] at hLk
+      simp only [Except.ok.injEq, Prod.mk.injEq] at hLk
+      rw [hLk.1]
+  unfold SystemState.lookupSlotCap SystemState.lookupCNode at hL
+  cases hO : stL.objects[authority.cnode]? with
+  | none => rw [hO] at hL; cases hL
+  | some o =>
+    rw [hO] at hL
+    cases o with
+    | cnode cn =>
+      have hNeU : authority.cnode ≠ untypedId := by
+        intro h; rw [h, hObj] at hO; cases hO
+      have hNeC : authority.cnode ≠ childId := by
+        intro h; rw [← h, hO] at hFresh; cases hFresh
+      have hInvU := storeObject_preserves_objects_invExt _ _ _ _ hObjInv hU
+      have hOCh : stCh.objects[authority.cnode]? = some (.cnode cn) := by
+        rw [storeObject_objects_ne _ _ _ _ _ hNeC hInvU hC,
+          storeObject_objects_ne _ _ _ _ _ hNeU hObjInv hU, hO]
+      refine ⟨ut, ut', cap, stUt, offset, stCh, cn, hObj, hDev, hSz, hLk, hAuth, hAlloc, rfl, hL,
+        hNeU, hNeC, hU, hC, hOCh, ?_⟩
+      rw [← CNode.setFreeIndex_of_lookup hL]
+      exact setCapFreeIndex_eq_storeObject hOCh
+    | _ => cases hL
+
 -- ============================================================================
 -- WS-BP BP7.1 (`v0.36.5`): the untyped carve that mints frames
 -- ============================================================================

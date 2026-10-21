@@ -1892,20 +1892,17 @@ theorem retypeFromUntyped_preserves_untypedRegionsDisjoint_nonUntypedChild
       = .ok ((), st')) :
     Kernel.untypedRegionsDisjoint st' := by
   -- Step 1: Decompose the successful retype into its constituent operations.
-  obtain ⟨ut, ut', cap, stLookup, stUt, offset, hLookupObj, _hDevOk, _hAlloc,
-      hCspaceOk, _hAuth, hAllocate, hStoreParent, hStoreChild⟩ :=
-    Kernel.retypeFromUntyped_ok_decompose st st' authority untypedId childId
-      newObj allocSize hStep
-  -- Step 2: cspaceLookupSlot preserves state, so stLookup = st.
-  have hStLookupEq : stLookup = st :=
-    Kernel.cspaceLookupSlot_preserves_state st stLookup authority cap hCspaceOk
-  rw [hStLookupEq] at hStoreParent
+  -- (the lookup returns the state it was handed, so the stores start at `st`)
+  obtain ⟨ut, ut', cap, stUt, offset, stCh, _cn, hLookupObj, _hDevOk, _hAlloc,
+      _hCspaceOk, _hAuth, hAllocate, _, _, _, _, hStoreParent, hStoreChild, _, hStoreIdx⟩ :=
+    Kernel.retypeFromUntyped_ok_stores st st' authority untypedId childId
+      newObj allocSize hObjInv hStep
   -- Step 3: Region preservation facts from allocate.
   obtain ⟨hBaseEq, hSizeEq⟩ := SeLe4n.Model.UntypedObject.allocate_preserves_region
-    ut ut' childId allocSize offset hAllocate
+    ut ut' _ childId allocSize offset hAllocate
   -- Step 4: Children-list extension from allocate.
   have hChildrenExt := SeLe4n.Model.UntypedObject.allocate_children_extends
-    ut ut' childId allocSize offset hAllocate
+    ut ut' _ childId allocSize offset hAllocate
   -- Step 5: Parent-store preserves the invariant via the sameRegion helper.
   have hStUtObjInv : st.objects.invExt := hObjInv
   have hDisjAfterParent : Kernel.untypedRegionsDisjoint stUt :=
@@ -1918,8 +1915,12 @@ theorem retypeFromUntyped_preserves_untypedRegionsDisjoint_nonUntypedChild
     SeLe4n.Model.storeObject_preserves_objects_invExt st stUt untypedId
       (.untyped ut') hStUtObjInv hStoreParent
   -- Step 7: Child-store preserves the invariant via the non-untyped helper.
+  have hDisjAfterChild := Kernel.storeObject_non_untyped_preserves_untypedRegionsDisjoint
+    stUt stCh childId newObj hNotUntypedChild hDisjAfterParent hObjInvUt hStoreChild
+  -- Step 8: the authority's free-index write stores a CNode, not an untyped.
   exact Kernel.storeObject_non_untyped_preserves_untypedRegionsDisjoint
-    stUt st' childId newObj hNotUntypedChild hDisjAfterParent hObjInvUt hStoreChild
+    stCh st' authority.cnode _ (fun _ h => by cases h) hDisjAfterChild
+    (SeLe4n.Model.storeObject_preserves_objects_invExt _ _ _ _ hObjInvUt hStoreChild) hStoreIdx
 
 /-- AK8-A (WS-AK / C-M01): Convenience corollary — `retypeFromUntyped`
 preserves `untypedRegionsDisjoint` when the API-dispatch-layer
@@ -2039,22 +2040,21 @@ theorem retypeFromUntyped_via_objectOfKernelType_untyped_child_has_zero_regionBa
     ∃ ut, st'.objects[childId]? = some (.untyped ut) ∧
           ut.regionBase = SeLe4n.PAddr.ofNat 0 := by
   -- Decompose the successful retype into its `storeObject`-on-child tail.
-  obtain ⟨_ut, _ut', _cap, _stLookup, stUt, _offset,
-          _hUt, _hDev, _hAlloc, hLookupSlot, _hAuth, _hAlloc', hStoreUt, hStoreChild⟩ :=
-    Kernel.retypeFromUntyped_ok_decompose st st' authority untypedId childId
-      (Kernel.objectOfKernelType .untyped sizeHint) allocSize hStep
-  -- `cspaceLookupSlot` is a pure lookup — the intermediate state equals `st`
-  -- so `_stLookup.objects.invExt` follows from `st.objects.invExt`.
-  have hLookupEq := Kernel.cspaceLookupSlot_preserves_state st _stLookup
-    authority _cap hLookupSlot
-  rw [hLookupEq] at hStoreUt
+  obtain ⟨_ut, _ut', _cap, stUt, _offset, stCh, _cn,
+          _hUt, _hDev, _hAlloc, _hLookupSlot, _hAuth, _hAlloc', _, _, _, hNeC, hStoreUt,
+          hStoreChild, _, hStoreIdx⟩ :=
+    Kernel.retypeFromUntyped_ok_stores st st' authority untypedId childId
+      (Kernel.objectOfKernelType .untyped sizeHint) allocSize hObjInv hStep
   -- The intermediate `storeObject` on the parent preserves `objects.invExt`.
   have hObjInvUt : stUt.objects.invExt :=
     storeObject_preserves_objects_invExt st stUt untypedId
       (.untyped _ut') hObjInv hStoreUt
-  -- Lookup the child: storeObject writes `.untyped ut` where ut.regionBase = 0.
-  have hLookup := storeObject_objects_eq stUt st' childId
+  have hObjInvCh := storeObject_preserves_objects_invExt _ _ _ _ hObjInvUt hStoreChild
+  -- Lookup the child: storeObject writes `.untyped ut` where ut.regionBase = 0,
+  -- and the authority's free-index write is to another object.
+  have hLookup := storeObject_objects_eq stUt stCh childId
     (Kernel.objectOfKernelType .untyped sizeHint) hObjInvUt hStoreChild
+  rw [← storeObject_objects_ne _ _ _ _ _ (Ne.symm hNeC) hObjInvCh hStoreIdx] at hLookup
   -- The structural helper unwraps `objectOfKernelType .untyped sizeHint`.
   obtain ⟨ut, hOfKind, hBase⟩ :=
     objectOfKernelType_untyped_hardcodes_zero_regionBase sizeHint

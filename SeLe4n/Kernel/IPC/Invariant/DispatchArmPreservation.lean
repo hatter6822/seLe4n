@@ -1281,24 +1281,75 @@ theorem storeObject_inertNonCNode_preserves_ipcInvariantFull
       hInv.passiveServerIdle)
     hCap hInv
 
-/-- **WS-BP BP7.1**: a carve out of an untyped preserves the bundle: the watermark
-advance rewrites an untyped in place, and the fresh object — a frame or a child
+/-- **A capability rewritten in its slot, its badge kept, preserves the bundle**:
+one CNode is stored back with one occupied slot's capability replaced by one
+with the same badge — the only thing the bundle reads of a capability.  The
+shape of the mapping record `.vspaceMap` writes and of a free-index write
+(WS-ZA ZA5.4 part 13). -/
+theorem storeObject_capRewrite_preserves_ipcInvariantFull
+    (addr : CSpaceAddr) (cn : CNode) (cap cap' : Capability) (st st' : SystemState)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hPre : st.objects[addr.cnode]? = some (.cnode cn)) (hLk : cn.lookup addr.slot = some cap)
+    (hBadge : cap'.badge = cap.badge)
+    (hStore : storeObject addr.cnode (.cnode (cn.insert addr.slot cap')) st = .ok ((), st')) :
+    ipcInvariantFull st' ∧ st'.objects.invExt := by
+  have hAt := storeObject_objects_eq st st' addr.cnode _ hObjInv hStore
+  have hNe : ∀ oid : SeLe4n.ObjId, oid ≠ addr.cnode → st'.objects[oid]? = st.objects[oid]? :=
+    fun oid h => storeObject_objects_ne st st' addr.cnode oid _ h hObjInv hStore
+  have hSched := storeObject_scheduler_eq st st' addr.cnode _ hStore
+  have hView := ipcReadViewAgreement.of_single_inert_write hNe
+    (by rw [hPre]; trivial) (by rw [hAt]; trivial)
+  have hBack : ∀ (tid : SeLe4n.ThreadId) (tcb' : TCB),
+      st'.objects[tid.toObjId]? = some (.tcb tcb') →
+      ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) ∧
+        tcb.ipcState = tcb'.ipcState ∧ tcb.schedContextBinding = tcb'.schedContextBinding := by
+    intro tid tcb' h
+    by_cases hK : tid.toObjId = addr.cnode
+    · rw [hK, hAt] at h
+      exact absurd (Option.some.inj h) (fun hx => KernelObject.noConfusion hx)
+    · rw [hNe _ hK] at h
+      exact ⟨tcb', h, rfl, rfl⟩
+  have hCap : capabilityBadgesWellFormed st' := by
+    intro oid cn' slot cap'' badge hCn' hLk' hB
+    by_cases hK : oid = addr.cnode
+    · rw [hK, hAt] at hCn'
+      obtain rfl : KernelObject.cnode (cn.insert addr.slot cap') = cn' := Option.some.inj hCn'
+      simp only [KernelObject.slotCap] at hLk'
+      by_cases hSlot : addr.slot = slot
+      · subst hSlot
+        rw [CNode.lookup_insert_eq cn addr.slot _ (CNode.slotsUnique_holds cn)
+          (CNode.slotAddressable_of_lookup_insert _ _ _ _ _ hLk')] at hLk'
+        cases hLk'
+        exact hInv.badgeWellFormed.2 addr.cnode (.cnode cn) addr.slot cap badge (hK ▸ hPre) hLk
+          (hBadge ▸ hB)
+      · rw [CNode.lookup_insert_ne cn addr.slot slot _ hSlot
+          (CNode.slotsUnique_holds cn)] at hLk'
+        exact hInv.badgeWellFormed.2 addr.cnode (.cnode cn) slot cap'' badge (hK ▸ hPre) hLk' hB
+    · rw [hNe _ hK] at hCn'
+      exact hInv.badgeWellFormed.2 oid cn' slot cap'' badge hCn' hLk' hB
+  exact ⟨ipcInvariantFull_of_readViewAgreement hView
+    (passiveServerIdle_of_frame (passiveServerIdleFrame_of_backward hBack hSched)
+      hInv.passiveServerIdle)
+    hCap hInv,
+    storeObject_preserves_objects_invExt st st' addr.cnode _ hObjInv hStore⟩
+
+/-- **WS-BP BP7.1**: a carve out of an untyped preserves the bundle: the child's
+record rewrites an untyped in place, the fresh object — a frame or a child
 untyped (`CarveRequest.object`), both kinds the bundle does not read — lands at
-a key that held nothing (`retypeFromUntyped`'s collision guard). -/
+a key that held nothing (`retypeFromUntyped`'s collision guard), and the
+authority's free index is rewritten in its slot, its badge kept. -/
 theorem retypeFromUntyped_carve_preserves_ipcInvariantFull
     (st st' : SystemState) (authority : CSpaceAddr)
-    (untypedId childId : SeLe4n.ObjId) (ut₀ : UntypedObject) (req : CarveRequest)
+    (untypedId childId : SeLe4n.ObjId) (ut₀ : UntypedObject) (idx : Nat) (req : CarveRequest)
     (allocSize : Nat)
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
-    (hStep : retypeFromUntyped authority untypedId childId (req.object untypedId ut₀)
+    (hStep : retypeFromUntyped authority untypedId childId (req.object untypedId ut₀ idx)
       allocSize st = .ok ((), st')) :
-    ipcInvariantFull st' := by
+    ipcInvariantFull st' ∧ st'.objects.invExt := by
   have hFresh := retypeFromUntyped_childId_fresh authority untypedId childId
     _ _ st st' hStep
-  obtain ⟨ut, ut', cap, stL, stUt, _, hUt, _, _, hLk, _, _, hStUt, hStCh⟩ :=
-    retypeFromUntyped_ok_decompose st st' authority untypedId childId _ _ hStep
-  have hStL : stL = st := cspaceLookupSlot_ok_state_eq st authority cap stL hLk
-  rw [hStL] at hStUt
+  obtain ⟨ut, ut', cap, stUt, _, stCh, cn, hUt, _, _, _, _, _, _, hLkA, _, _, hStUt, hStCh, hOCh,
+    hStIdx⟩ := retypeFromUntyped_ok_stores st st' authority untypedId childId _ _ hObjInv hStep
   have hNe : childId ≠ untypedId := by
     intro h; rw [h, hUt] at hFresh; simp at hFresh
   have hInvUt := storeObject_inertNonCNode_preserves_ipcInvariantFull st stUt untypedId
@@ -1310,9 +1361,12 @@ theorem retypeFromUntyped_carve_preserves_ipcInvariantFull
     cases h : st.objects[childId]? with
     | none => rfl
     | some _ => rw [h] at hFresh; simp at hFresh
-  exact storeObject_inertNonCNode_preserves_ipcInvariantFull stUt st' childId _
+  have hInvCh := storeObject_inertNonCNode_preserves_ipcInvariantFull stUt stCh childId _
     hObjInvUt hInvUt (Or.inl hChildNone) (by cases req <;> trivial)
     (fun _ h => by cases req <;> exact KernelObject.noConfusion h) hStCh
+  exact storeObject_capRewrite_preserves_ipcInvariantFull authority cn cap _ stCh st'
+    (storeObject_preserves_objects_invExt _ _ _ _ hObjInvUt hStCh) hInvCh hOCh hLkA
+    (Capability.withFreeIndex_badge _ _) hStIdx
 
 /-- **WS-BP BP7.1 (`v0.36.5`, generalized at slice 4)**: the untyped carve
 preserves `ipcInvariantFull` — two inert stores, a scrub of machine memory the
@@ -1324,20 +1378,14 @@ theorem untypedRetypeObject_preserves_ipcInvariantFull
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
     (hStep : untypedRetypeObject src childId dst req st = .ok ((), st')) :
     ipcInvariantFull st' := by
-  obtain ⟨_, untypedId, ut, st1, st2, _, _, _, hRt, hIns, rfl⟩ :=
+  obtain ⟨utCap, untypedId, ut, st1, st2, _, _, _, hRt, hIns, rfl⟩ :=
     untypedRetypeObject_ok_decompose src dst childId req st st' hObjInv hStep
-  have hInv1 := retypeFromUntyped_carve_preserves_ipcInvariantFull st st1 src untypedId
-    childId ut req _ hObjInv hInv hRt
-  have hObjInv1 : st1.objects.invExt := by
-    obtain ⟨_, _, _, stL, stUt, _, _, _, _, hLk, _, _, hStUt, hStCh⟩ :=
-      retypeFromUntyped_ok_decompose st st1 src untypedId childId _ _ hRt
-    rw [cspaceLookupSlot_ok_state_eq st src _ stL hLk] at hStUt
-    exact storeObject_preserves_objects_invExt _ _ _ _
-      (storeObject_preserves_objects_invExt _ _ _ _ hObjInv hStUt) hStCh
-  have hInvZ : ipcInvariantFull (req.scrub st1 ut) :=
-    ipcInvariantFull_of_objects_scheduler_eq (CarveRequest.scrub_objects _ _ _)
-      (CarveRequest.scrub_scheduler _ _ _) hInv1
-  have hObjInvZ : (req.scrub st1 ut).objects.invExt := by
+  obtain ⟨hInv1, hObjInv1⟩ := retypeFromUntyped_carve_preserves_ipcInvariantFull st st1 src
+    untypedId childId ut _ req _ hObjInv hInv hRt
+  have hInvZ : ipcInvariantFull (req.scrub st1 ut utCap.freeIndex) :=
+    ipcInvariantFull_of_objects_scheduler_eq (CarveRequest.scrub_objects _ _ _ _)
+      (CarveRequest.scrub_scheduler _ _ _ _) hInv1
+  have hObjInvZ : (req.scrub st1 ut utCap.freeIndex).objects.invExt := by
     rw [CarveRequest.scrub_objects]; exact hObjInv1
   exact cdtRecord_bundle_frame st2 src dst DerivationOp.retype
     (cspaceInsertSlot_preserves_objects_invExt _ st2 dst _ hObjInvZ hIns)
@@ -1529,46 +1577,22 @@ theorem cspaceRecordFrameMapping_preserves_ipcInvariantFull
     (hStep : cspaceRecordFrameMapping addr m st = .ok ((), st')) :
     ipcInvariantFull st' ∧ st'.objects.invExt := by
   obtain ⟨cn, cap, hCn, hLk, hStore⟩ := cspaceRecordFrameMapping_ok_decompose addr m st st' hStep
-  have hPre : st.objects[addr.cnode]? = some (.cnode cn) :=
-    (SystemState.getCNode?_eq_some_iff st addr.cnode cn).mp hCn
-  have hAt := storeObject_objects_eq st st' addr.cnode _ hObjInv hStore
-  have hNe : ∀ oid : SeLe4n.ObjId, oid ≠ addr.cnode → st'.objects[oid]? = st.objects[oid]? :=
-    fun oid h => storeObject_objects_ne st st' addr.cnode oid _ h hObjInv hStore
-  have hSched := storeObject_scheduler_eq st st' addr.cnode _ hStore
-  have hView := ipcReadViewAgreement.of_single_inert_write hNe
-    (by rw [hPre]; trivial) (by rw [hAt]; trivial)
-  have hBack : ∀ (tid : SeLe4n.ThreadId) (tcb' : TCB),
-      st'.objects[tid.toObjId]? = some (.tcb tcb') →
-      ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) ∧
-        tcb.ipcState = tcb'.ipcState ∧ tcb.schedContextBinding = tcb'.schedContextBinding := by
-    intro tid tcb' h
-    by_cases hK : tid.toObjId = addr.cnode
-    · rw [hK, hAt] at h
-      exact absurd (Option.some.inj h) (fun hx => KernelObject.noConfusion hx)
-    · rw [hNe _ hK] at h
-      exact ⟨tcb', h, rfl, rfl⟩
-  have hCap : capabilityBadgesWellFormed st' := by
-    intro oid cn' slot cap' badge hCn' hLk' hB
-    by_cases hK : oid = addr.cnode
-    · rw [hK, hAt] at hCn'
-      obtain rfl : KernelObject.cnode (cn.insert addr.slot (cap.withMapping (some m))) = cn' := Option.some.inj hCn'
-      simp only [KernelObject.slotCap] at hLk'
-      by_cases hSlot : addr.slot = slot
-      · subst hSlot
-        rw [CNode.lookup_insert_eq cn addr.slot _ (CNode.slotsUnique_holds cn)
-          (CNode.slotAddressable_of_lookup_insert _ _ _ _ _ hLk')] at hLk'
-        cases hLk'
-        exact hInv.badgeWellFormed.2 addr.cnode (.cnode cn) addr.slot cap badge (hK ▸ hPre) hLk hB
-      · rw [CNode.lookup_insert_ne cn addr.slot slot _ hSlot
-          (CNode.slotsUnique_holds cn)] at hLk'
-        exact hInv.badgeWellFormed.2 addr.cnode (.cnode cn) slot cap' badge (hK ▸ hPre) hLk' hB
-    · rw [hNe _ hK] at hCn'
-      exact hInv.badgeWellFormed.2 oid cn' slot cap' badge hCn' hLk' hB
-  exact ⟨ipcInvariantFull_of_readViewAgreement hView
-    (passiveServerIdle_of_frame (passiveServerIdleFrame_of_backward hBack hSched)
-      hInv.passiveServerIdle)
-    hCap hInv,
-    storeObject_preserves_objects_invExt st st' addr.cnode _ hObjInv hStore⟩
+  exact storeObject_capRewrite_preserves_ipcInvariantFull addr cn cap _ st st' hObjInv hInv
+    ((SystemState.getCNode?_eq_some_iff st addr.cnode cn).mp hCn) hLk
+    (by simp only [Capability.badge, Capability.withMapping_badgeWord,
+      Capability.withMapping_badged]) hStore
+
+/-- **A free-index write preserves the bundle** (WS-ZA ZA5.4 part 13): the
+capability rewritten keeps its badge. -/
+theorem setCapFreeIndex_preserves_ipcInvariantFull
+    (addr : CSpaceAddr) (cn : CNode) (cap : Capability) (idx : Nat) (st : SystemState)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hPre : st.objects[addr.cnode]? = some (.cnode cn)) (hLk : cn.lookup addr.slot = some cap) :
+    ipcInvariantFull (setCapFreeIndex st addr idx) ∧ (setCapFreeIndex st addr idx).objects.invExt := by
+  have hS := setCapFreeIndex_eq_storeObject (idx := idx) hPre
+  rw [CNode.setFreeIndex_of_lookup hLk] at hS
+  exact storeObject_capRewrite_preserves_ipcInvariantFull addr cn cap _ st _ hObjInv hInv hPre hLk
+    (Capability.withFreeIndex_badge _ _) hS
 
 -- ============================================================================
 -- §10  Sched-context arm (`.schedContextConfigure`)
