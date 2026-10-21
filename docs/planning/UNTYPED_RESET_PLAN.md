@@ -98,3 +98,15 @@ row's status and readings.
 | 14 | **Retire on final delete** (consumes 13).  The delete and revoke teardowns retire a carved object whose final capability they destroy (D2), and the delete theorems are restated.  Exerciser: `frame-delete` and `page-table-delete-*` stay at 0 |
 | 15 | **Free index in the capability** (consumes 14).  D3, with the untyped invariants restated over capabilities and the boot's untyped capabilities given their indices.  Retype pins unchanged |
 | 16 | **The seL4 reset** (consumes 15).  D4: the reset and its theorems restated (the untyped's capability holds index 0; nothing carved remains below its index), and the deleted code removed.  Exerciser: `untyped-reset` reads 0 at first call and steady state |
+
+### Part 12 in steps (each compiles; proofs land with or before the code they cover)
+
+The TCB holds its slots in fixed-size fields (`spaceCells`, two cells; `spaceLinks`, their link words, the same layout as `CNode.cells` and its links).  Slot readers and writers dispatch on the object kind, the `.cnode` arm being today's function, so every CNode theorem is reused.  This adds no store lookup on the context switch or the IPC-buffer fill.  A companion CNode per TCB was rejected: it needs a second object per retype and a second erase, it adds a lookup to every root read, and seL4's TCB slots are inside the TCB.
+
+1. **12.1 Roots are slot reads.**  `TCB.cspaceRoot` / `vspaceRoot` become definitions reading cells 0 and 1, with a setter `TCB.withSpaceCaps` and its simp lemmas; boot and `objectOfKernelType .tcb` fill the cells.  Behaviour is unchanged.
+2. **12.2 Object-slot dispatch.**  The slot-link readers and writers, `linksOnlyWrite`, `objectsAgreeOffDerivationLinks`, `cdtCompleteness`, `cspaceLookupSound`, `replyCapPointsToValidReply` and `capabilityBadgesWellFormed` read slots through the dispatch; the information-flow projection of a TCB hides its link words; the runtime slot checks cover TCB slots.  No TCB slot is in the tree yet.
+3. **12.3 Delete, revoke and finality reach TCB slots** (`cspaceDeleteSlotCore`, the finalising delete, `revokeFirstChildLoop`, `cnodeSlotsUnreferenced`, `objectNamesListed`'s TCB arm), with the delete and revoke preservation restated.
+4. **12.4 Teardown.**  A thread's cleanup splices its two slots out (`detachTcbSlots`), as a CNode's cleanup splices its slots.
+5. **12.5 The copying set-space, proven.**  As seL4: the old slot content is deleted, then the copy is inserted with the edge from its source slot; the capability, link and information-flow bundles are proven.
+6. **12.6 Live.**  The set-space resolver returns the source slots and the dispatcher runs 12.5; the old `setThreadSpace` is deleted.
+
