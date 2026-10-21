@@ -354,6 +354,18 @@ theorem untypedResetWithShootdown_keyFrame (ec : CoreId) (untypedId : SeLe4n.Obj
     · rw [hT _ t1, hT _ t2]
   exact k1.trans (capabilityKeyFrame_of_objects_scheduler_eq hExt hObj hSched)
 
+/-- WS-ZA ZA5.4: the `.untypedReset` arm — the invoked slot's free-index rewind
+(a CNode store, which feeds no key) and then the reset. -/
+theorem untypedResetFromCap_keyFrame (tid : SeLe4n.ThreadId) (ec : CoreId)
+    (srcAddr : SeLe4n.CPtr) (untypedId : SeLe4n.ObjId)
+    (st st' : SystemState) (hObjInv : st.objects.invExt)
+    (hStep : untypedResetFromCap tid ec srcAddr untypedId st = .ok ((), st')) :
+    capabilityKeyFrame st st' := by
+  obtain ⟨src, _, cn, hO, -, -, hS⟩ := untypedResetFromCap_ok _ _ _ _ st st' hStep
+  have k1 := storeObject_inert_keyFrame hObjInv (setCapFreeIndex_eq_storeObject (idx := 0) hO)
+    (by rw [hO]; rfl) rfl
+  exact k1.trans (untypedResetWithShootdown_keyFrame ec untypedId _ st' k1.2.2 hS)
+
 /-! ### One-field TCB rewrites and registry writes -/
 
 /-- A store of a TCB over a TCB with the same four key fields. -/

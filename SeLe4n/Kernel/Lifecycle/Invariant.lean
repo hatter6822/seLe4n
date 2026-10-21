@@ -178,18 +178,6 @@ theorem default_systemState_untypedMemoryInvariant :
   · intro oid _ hObj; rw [hNone] at hObj; cases hObj
   · intro oid _ hObj; rw [hNone] at hObj; cases hObj
 
-/-- A slot lookup that finds a capability found it in a CNode's slot. -/
-theorem lookupSlotCap_cnode {st : SystemState} {addr : CSpaceAddr} {cap : Capability}
-    (h : SystemState.lookupSlotCap st addr = some cap) :
-    ∃ cn, st.objects[addr.cnode]? = some (.cnode cn) ∧ cn.lookup addr.slot = some cap := by
-  unfold SystemState.lookupSlotCap SystemState.lookupCNode at h
-  cases hO : st.objects[addr.cnode]? with
-  | none => simp [hO] at h
-  | some o =>
-    cases o <;> simp only [hO] at h
-    case cnode cn => exact ⟨cn, rfl, h⟩
-    all_goals cases h
-
 /-- A successful `cspaceLookupSlot` is a slot lookup that found the capability. -/
 theorem cspaceLookupSlot_ok_lookupSlotCap {st st' : SystemState} {addr : CSpaceAddr}
     {cap : Capability} (h : cspaceLookupSlot addr st = .ok (cap, st')) :
@@ -304,7 +292,7 @@ theorem retypeFromUntyped_preserves_untypedMemoryInvariant
   have hObjInvUt := storeObject_preserves_objects_invExt _ _ _ _ hObjInv hStoreUt
   have hObjInvCh := storeObject_preserves_objects_invExt _ _ _ _ hObjInvUt hStoreChild
   -- The authority slot and its capability.
-  obtain ⟨cnA, hObjA, hLkA⟩ := lookupSlotCap_cnode (cspaceLookupSlot_ok_lookupSlotCap hLookup)
+  obtain ⟨cnA, hObjA, hLkA⟩ := SystemState.lookupSlotCap_cnode (cspaceLookupSlot_ok_lookupSlotCap hLookup)
   have hSlotA : st.slotCapAt authority = some cap := by
     rw [SystemState.slotCapAt_of_object hObjA]; exact hLkA
   have hTgt : cap.target = .object untypedId := by

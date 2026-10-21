@@ -1046,4 +1046,34 @@ theorem untypedResetWithShootdown_ok_tlbShootdown (ec : Concurrency.CoreId)
   obtain ⟨st1, hR, rfl⟩ := untypedResetWithShootdown_ok ec untypedId st st' hStep
   exact ⟨st1, hR, retypeAsidRoundFold_tlbShootdown _ _ _⟩
 
+/-- WS-ZA ZA5.4: **the reset invoked through a slot.**  The free index is the
+invoked capability's (`Capability.freeIndex`), so the reset rewinds that slot's
+word to 0, as seL4's `resetUntypedCap`.  It first refuses while the slot has a
+derivation child (seL4's `ensureNoChildren` in `decodeUntypedInvocation`): a
+copy of an untyped capability is a child of its source, and the source was set
+full when it was copied (`untypedSourceSetFullAt`), so rewinding a source whose
+copy survives would leave two capabilities carving one region.  The rewind is
+written before the reset runs; a refused reset drops the whole state, so the
+order is unobservable, and the slot is read on the state the resolution read.
+The slot is passed as its two words. -/
+def untypedResetSlot (executingCore : Concurrency.CoreId) (srcCnode : SeLe4n.ObjId)
+    (srcSlot : SeLe4n.Slot) (untypedId : SeLe4n.ObjId) : Kernel Unit :=
+  fun st =>
+    if hasCdtChildren st { cnode := srcCnode, slot := srcSlot } then .error .revocationRequired
+    else untypedResetWithShootdown executingCore untypedId
+      (setCapFreeIndex st { cnode := srcCnode, slot := srcSlot } 0)
+
+/-- **What the slot reset did**: the slot has no derivation child, and the reset
+ran on the state with the slot's free index rewound. -/
+theorem untypedResetSlot_ok (ec : Concurrency.CoreId) (srcCnode : SeLe4n.ObjId)
+    (srcSlot : SeLe4n.Slot) (untypedId : SeLe4n.ObjId) (st st' : SystemState)
+    (hStep : untypedResetSlot ec srcCnode srcSlot untypedId st = .ok ((), st')) :
+    hasCdtChildren st { cnode := srcCnode, slot := srcSlot } = false ∧
+      untypedResetWithShootdown ec untypedId
+        (setCapFreeIndex st { cnode := srcCnode, slot := srcSlot } 0) = .ok ((), st') := by
+  unfold untypedResetSlot at hStep
+  split at hStep
+  · cases hStep
+  · next h => exact ⟨by simpa using h, hStep⟩
+
 end SeLe4n.Kernel

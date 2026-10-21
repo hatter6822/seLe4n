@@ -236,8 +236,10 @@ def enforcementBoundary : List EnforcementClass :=
   -- whose capabilities are already gone, and frames no capability names.
   -- Since `v0.36.37` the arm's composite is `untypedResetWithShootdown`: the reset
   -- then one acknowledged `.aside1` round per retired ASID, which moves no
-  -- authority either.
-  , .capabilityOnly "untypedResetWithShootdown"
+  -- authority either.  Since WS-ZA ZA5.4 the arm calls `untypedResetFromCap`,
+  -- which resolves the invoked slot, refuses while it has a derivation child,
+  -- and rewinds that slot's free index: a word of the caller's own capability.
+  , .capabilityOnly "untypedResetFromCap"
   -- Read-only: no state mutation
   , .readOnly "chooseThread"
   , .readOnly "lookupObject"
@@ -401,7 +403,7 @@ def syscallIdToEnforcementName : SyscallId → String
   | .cspaceRevoke => "cspaceRevokeCdtFinalising"
   | .lifecycleRetype => "lifecycleRetypeObject"
   | .untypedRetype => "untypedRetypeFromCap"
-  | .untypedReset => "untypedResetWithShootdown"
+  | .untypedReset => "untypedResetFromCap"
   | .vspaceMap => "vspaceMapPageCheckedWithShootdownFromState"
   | .vspaceUnmap => "vspaceUnmapPageWithShootdown"
   | .serviceRegister => "registerServiceChecked"

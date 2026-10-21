@@ -361,22 +361,28 @@ theorem untypedReset_confinedToCores
   exact ⟨(storeObject_scheduler_eq _ _ _ _ hSt).trans (hs2.trans hs1),
     (storeObject_machine_eq _ _ _ _ hSt).trans (hm2.trans hm1)⟩
 
-/-- **`v0.36.37`: the live `.untypedReset` arm writes no core.**  The arm is the
-reset followed by the `.aside1` round fold, which writes neither the scheduler
-nor the machine (`untypedResetWithShootdown_ok_frame`). -/
-theorem untypedResetWithShootdown_confinedToCores
-    (executingCore : CoreId) (untypedId : SeLe4n.ObjId) (st st' : SystemState)
-    (hStep : untypedResetWithShootdown executingCore untypedId st = .ok ((), st')) :
+/-- **The live `.untypedReset` arm writes no core** (`v0.36.37`, WS-ZA ZA5.4).
+The arm rewinds the invoked slot's free index (one CNode store), runs the reset,
+and posts the `.aside1` round fold, which writes neither the scheduler nor the
+machine (`untypedResetWithShootdown_ok_frame`). -/
+theorem untypedResetRewound_confinedToCores
+    (executingCore : CoreId) (src : CSpaceAddr) (cn : CNode) (untypedId : SeLe4n.ObjId)
+    (st st' : SystemState) (hO : st.objects[src.cnode]? = some (.cnode cn))
+    (hStep : untypedResetWithShootdown executingCore untypedId (setCapFreeIndex st src 0) =
+      .ok ((), st')) :
     observableSlotsConfinedToCores st st' [] := by
   apply observableSlotsConfinedToCores_nil_of_framed
+  have hS := setCapFreeIndex_eq_storeObject (idx := 0) hO
   obtain ⟨st1, hR, -, hs, hm, -⟩ :=
-    untypedResetWithShootdown_ok_frame executingCore untypedId st st' hStep
+    untypedResetWithShootdown_ok_frame executingCore untypedId _ st' hStep
   obtain ⟨_, ids, st2, -, -, -, -, -, -, -, hUnmap, -, -, -, -, hSt⟩ :=
-    untypedReset_ok_decompose executingCore untypedId st st1 hR
-  obtain ⟨hs1, hm1⟩ := unmapLivePages_framed executingCore _ st st2 hUnmap
+    untypedReset_ok_decompose executingCore untypedId _ st1 hR
+  obtain ⟨hs1, hm1⟩ := unmapLivePages_framed executingCore _ _ st2 hUnmap
   obtain ⟨hs2, hm2⟩ := retireCarvedObjects_framed ids st2
-  exact ⟨hs.trans ((storeObject_scheduler_eq _ _ _ _ hSt).trans (hs2.trans hs1)),
-    hm.trans ((storeObject_machine_eq _ _ _ _ hSt).trans (hm2.trans hm1))⟩
+  exact ⟨hs.trans ((storeObject_scheduler_eq _ _ _ _ hSt).trans (hs2.trans
+      (hs1.trans (storeObject_scheduler_eq _ _ _ _ hS)))),
+    hm.trans ((storeObject_machine_eq _ _ _ _ hSt).trans (hm2.trans
+      (hm1.trans (storeObject_machine_eq _ _ _ _ hS))))⟩
 
 /-- WS-BP BP7.1 (`v0.36.12`): the finalisation a destroying capability
 operation owes — the page-table detach, stores to VSpace roots, and the page

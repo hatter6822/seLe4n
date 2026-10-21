@@ -1594,6 +1594,19 @@ theorem setCapFreeIndex_preserves_ipcInvariantFull
   exact storeObject_capRewrite_preserves_ipcInvariantFull addr cn cap _ st _ hObjInv hInv hPre hLk
     (Capability.withFreeIndex_badge _ _) hS
 
+/-- WS-ZA ZA5.4: **the `.untypedReset` arm preserves `ipcInvariantFull`.**  The
+arm rewinds the invoked slot's free index (a capability rewrite that keeps the
+badge) and then runs the reset with its `.aside1` rounds. -/
+theorem untypedResetRewound_preserves_ipcInvariantFull
+    (ec : Concurrency.CoreId) (src : CSpaceAddr) (cn : CNode) (cap : Capability)
+    (untypedId : SeLe4n.ObjId) (st st' : SystemState)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hPre : st.objects[src.cnode]? = some (.cnode cn)) (hLk : cn.lookup src.slot = some cap)
+    (hStep : untypedResetWithShootdown ec untypedId (setCapFreeIndex st src 0) = .ok ((), st')) :
+    ipcInvariantFull st' :=
+  let h1 := setCapFreeIndex_preserves_ipcInvariantFull src cn cap 0 st hObjInv hInv hPre hLk
+  untypedResetWithShootdown_preserves_ipcInvariantFull ec untypedId _ st' h1.2 h1.1 hStep
+
 -- ============================================================================
 -- §10  Sched-context arm (`.schedContextConfigure`)
 -- ============================================================================

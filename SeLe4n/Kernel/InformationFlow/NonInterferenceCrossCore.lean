@@ -362,16 +362,18 @@ theorem untypedReset_crossCoreNonInterference
   crossCoreNonInterference_ofCores ctx observer (by simp)
     (untypedReset_confinedToCores executingCore untypedId st st' hStep) hShared
 
-/-- **`v0.36.37`: the live `.untypedReset` arm, cross-core** — invisible on every
-core, with its acknowledged ASID rounds. -/
-theorem untypedResetWithShootdown_crossCoreNonInterference
-    (ctx : LabelingContext) (observer : IfObserver) (executingCore : CoreId)
+/-- **The live `.untypedReset` arm, cross-core** (`v0.36.37`, WS-ZA ZA5.4) —
+invisible on every core, with its slot rewind and its acknowledged ASID rounds. -/
+theorem untypedResetFromCap_crossCoreNonInterference
+    (ctx : LabelingContext) (observer : IfObserver) (tid : SeLe4n.ThreadId)
+    (executingCore : CoreId) (srcAddr : SeLe4n.CPtr)
     (untypedId : SeLe4n.ObjId) (st st' : SystemState) (c : CoreId)
-    (hStep : untypedResetWithShootdown executingCore untypedId st = .ok ((), st'))
+    (hStep : untypedResetFromCap tid executingCore srcAddr untypedId st = .ok ((), st'))
     (hShared : sharedViewUnchanged ctx observer st st') :
-    projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
-  crossCoreNonInterference_ofCores ctx observer (by simp)
-    (untypedResetWithShootdown_confinedToCores executingCore untypedId st st' hStep) hShared
+    projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c := by
+  obtain ⟨src, _, cn, hO, -, -, hS⟩ := untypedResetFromCap_ok _ _ _ _ st st' hStep
+  exact crossCoreNonInterference_ofCores ctx observer (by simp)
+    (untypedResetRewound_confinedToCores executingCore src cn untypedId st st' hO hS) hShared
 
 /-- WS-BP BP7.1 (`v0.36.7`) (**the live `.cspaceDelete` arm, cross-core**): a
 finalising delete is invisible on **every** core. -/
@@ -1207,7 +1209,8 @@ inductive CrossCoreTransition where
   executing core to initiate its unmaps' shootdown rounds, and writes no core:
   its unmap pass is the `.vspaceUnmap` arm's own transition, the retire and the
   rewind write the object table alone, and (`v0.36.37`) its acknowledged `.aside1`
-  rounds write the TLB state alone (`untypedResetWithShootdown`). -/
+  rounds write the TLB state alone (`untypedResetWithShootdown`); since WS-ZA
+  ZA5.4 it first rewinds the invoked slot's free index (`untypedResetFromCap`). -/
   | untypedResetDispatch
   /-- WS-BP BP7.1 (`v0.36.7`) — the **live** `.cspaceDelete` arm.  Takes an
   executing core since the delete finalises a frame capability — its recorded
@@ -1323,7 +1326,7 @@ def crossCoreNiTheorem : CrossCoreTransition → String
       niName! vspaceMapFromFrameCap_crossCoreNonInterference
   | .vspaceUnmapDispatch =>
       niName! vspaceUnmapPageWithShootdownAndIcacheBroadcast_crossCoreNonInterference
-  | .untypedResetDispatch => niName! untypedResetWithShootdown_crossCoreNonInterference
+  | .untypedResetDispatch => niName! untypedResetFromCap_crossCoreNonInterference
   | .cspaceDeleteDispatch => niName! cspaceDeleteSlotFinalising_crossCoreNonInterference
   | .cspaceRevokeDispatch => niName! cspaceRevokeCdtFinalising_crossCoreNonInterference
   | .lifecycleRetypeDispatch =>

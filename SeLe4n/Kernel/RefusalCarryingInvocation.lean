@@ -120,7 +120,7 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
   | .untypedReset =>
     match cap.target with
     | .object untypedId =>
-        untypedResetWithShootdown executingCore untypedId st
+        untypedResetFromCap tid executingCore capAddr untypedId st
     | _ => .error .invalidCapability
   | .vspaceMap =>
     match cap.target with
