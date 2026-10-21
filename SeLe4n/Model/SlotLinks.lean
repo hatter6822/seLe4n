@@ -236,8 +236,9 @@ def slotInObject (st : SystemState) (r : SlotRef) : Prop :=
   ∃ o, st.objects[r.cnode]? = some o ∧ o.hasSlot r.slot
 
 /-- **The capability slot `r` holds**, read through the object holding it
-(`KernelObject.slotCap`): a CNode's slot or a thread's space slot. -/
-def slotCapAt (st : SystemState) (r : SlotRef) : Option Capability :=
+(`KernelObject.slotCap`): a CNode's slot or a thread's space slot.  Inlined,
+as `lookupSlotCap` is, so a caller that matches the result builds no `some`. -/
+@[inline] def slotCapAt (st : SystemState) (r : SlotRef) : Option Capability :=
   match st.getObject? r.cnode with
   | some o => o.slotCap r.slot
   | none => none
