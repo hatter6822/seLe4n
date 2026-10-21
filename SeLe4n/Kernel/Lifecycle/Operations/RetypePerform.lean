@@ -25,16 +25,15 @@ namespace SeLe4n.Kernel
 open SeLe4n.Model
 
 /-- WS-ZA ZA5.4: **the untyped once `size` bytes are carved from it for
-`childId`** — `UntypedObject.allocate`'s record, total. -/
-@[inline] def _root_.SeLe4n.Model.UntypedObject.allocated (ut : UntypedObject)
+`childId` at free index `idx`** — `UntypedObject.allocate`'s record, total. -/
+@[inline] def _root_.SeLe4n.Model.UntypedObject.allocated (ut : UntypedObject) (idx : Nat)
     (childId : SeLe4n.ObjId) (size : Nat) : UntypedObject :=
   { ut with
-      watermark := ut.watermark + size
-      children := { objId := childId, offset := ut.watermark, size := size } :: ut.children }
+      children := { objId := childId, offset := idx, size := size } :: ut.children }
 
-theorem _root_.SeLe4n.Model.UntypedObject.allocate_eq_allocated (ut : UntypedObject)
-    (childId : SeLe4n.ObjId) (size : Nat) (h : ut.canAllocate size = true) :
-    ut.allocate childId size = some (ut.allocated childId size, ut.watermark) := by
+theorem _root_.SeLe4n.Model.UntypedObject.allocate_eq_allocated (ut : UntypedObject) (idx : Nat)
+    (childId : SeLe4n.ObjId) (size : Nat) (h : ut.canAllocate idx size = true) :
+    ut.allocate idx childId size = some (ut.allocated idx childId size, idx) := by
   unfold UntypedObject.allocate UntypedObject.allocated
   rw [if_pos h]
 
@@ -85,20 +84,10 @@ theorem childrenNameNone_eq (childId : SeLe4n.ObjId) (cs : List UntypedChild) :
     · simp [h]
     · simp [h, ih]
 
-/-- WS-ZA ZA5.4: whether the base after a carve of `size` bytes is on a page
-boundary (`allocationBasePageAligned` of the advanced untyped), read as words. -/
-@[inline] def allocationBasePageAlignedAfter (ut : UntypedObject) (size : Nat) : Bool :=
-  (ut.regionBase.toNat + (ut.watermark + size)) % 4096 == 0
-
-theorem allocationBasePageAligned_allocated (ut : UntypedObject) (childId : SeLe4n.ObjId)
-    (size : Nat) :
-    allocationBasePageAligned (ut.allocated childId size) =
-      allocationBasePageAlignedAfter ut size := rfl
-
 /-- WS-ZA ZA5.4: **`retypeFromUntyped`'s refusals** for an untyped `ut` at
 `untypedId`, the authority capability `authCap` already read, read before any
-write.  The new object enters as its type `ty` alone, so the check builds no
-object. -/
+write; the carve is at `authCap`'s free index.  The new object enters as its
+type `ty` alone, so the check builds no object. -/
 def retypeFromUntypedAdmitted (st : SystemState) (authCap : Capability)
     (untypedId childId : SeLe4n.ObjId) (ty : KernelObjectType) (size : Nat)
     (ut : UntypedObject) : Bool :=
@@ -109,17 +98,21 @@ def retypeFromUntypedAdmitted (st : SystemState) (authCap : Capability)
   !(ut.isDevice && !ty.deviceBackable) &&
   objectIdInAddressSpace st.machine childId &&
   !decide (size < objectTypeAllocSize ty) &&
-  !(requiresPageAlignment ty && !allocationBasePageAligned ut) &&
+  !(requiresPageAlignment ty && !allocationBasePageAligned ut authCap.freeIndex) &&
   lifecycleRetypeAuthority authCap untypedId &&
-  ut.canAllocate size &&
-  !(requiresPageAlignment ty && !allocationBasePageAlignedAfter ut size)
+  ut.canAllocate authCap.freeIndex size &&
+  !(requiresPageAlignment ty && !allocationBasePageAligned ut (authCap.freeIndex + size))
 
-/-- WS-ZA ZA5.4: **`retypeFromUntyped`'s writes**: the untyped's watermark
-advanced and its child recorded, then the new object stored at its id. -/
-@[inline] def retypeFromUntypedWrites (untypedId childId : SeLe4n.ObjId)
+/-- WS-ZA ZA5.4: **`retypeFromUntyped`'s writes**: the child recorded in the
+untyped at free index `idx`, the new object stored at its id, and the authority
+capability's free index advanced past it in its slot. -/
+@[inline] def retypeFromUntypedWrites (authority : CSpaceAddr) (idx : Nat)
+    (untypedId childId : SeLe4n.ObjId)
     (newObj : KernelObject) (size : Nat) (ut : UntypedObject) (st : SystemState) :
     SystemState :=
-  storedState childId newObj (storedState untypedId (.untyped (ut.allocated childId size)) st)
+  setCapFreeIndex
+    (storedState childId newObj (storedState untypedId (.untyped (ut.allocated idx childId size)) st))
+    authority (idx + size)
 
 /-- WS-ZA ZA5.4: **an admitted `retypeFromUntyped` is its writes.** -/
 theorem retypeFromUntyped_of_admitted {st : SystemState} {authority : CSpaceAddr}
@@ -129,9 +122,10 @@ theorem retypeFromUntyped_of_admitted {st : SystemState} {authority : CSpaceAddr
     (hUt : st.getObject? untypedId = some (.untyped ut))
     (hA : retypeFromUntypedAdmitted st authCap untypedId childId newObj.objectType size ut = true) :
     retypeFromUntyped authority untypedId childId newObj size st =
-      .ok ((), retypeFromUntypedWrites untypedId childId newObj size ut st) := by
+      .ok ((), retypeFromUntypedWrites authority authCap.freeIndex untypedId childId newObj size ut
+        st) := by
   unfold retypeFromUntypedAdmitted at hA
-  rw [childrenNameNone_eq, ← allocationBasePageAligned_allocated ut childId] at hA
+  rw [childrenNameNone_eq] at hA
   simp only [Bool.and_eq_true, Bool.not_eq_true', decide_eq_false_iff_not] at hA
   obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hCap, hSelf⟩, hFresh⟩, hKids⟩, hDev⟩, hAddr⟩, hSize⟩, hAl⟩, hAuth⟩,
     hCan⟩, hAl'⟩ := hA
@@ -139,7 +133,7 @@ theorem retypeFromUntyped_of_admitted {st : SystemState} {authority : CSpaceAddr
     unfold cspaceLookupSlot; rw [hLk]
   unfold retypeFromUntyped
   simp only [hUt, hCap, hSelf, hFresh, hKids, hDev, hAddr, hSize, hAl, hLkS, hAuth,
-    UntypedObject.allocate_eq_allocated ut childId size hCan, hAl', ↓reduceIte,
+    UntypedObject.allocate_eq_allocated ut authCap.freeIndex childId size hCan, hAl', ↓reduceIte,
     Bool.false_eq_true, storeObject_eq_storedState]
   rfl
 
@@ -171,8 +165,9 @@ def untypedRetypePerformAt (src dst : CSpaceAddr) (childId : SeLe4n.ObjId)
     | .object untypedId =>
       match st.getUntyped? untypedId with
       | some ut =>
-        let st1 := retypeFromUntypedWrites untypedId childId (req.object untypedId ut) req.size ut st
-        ((req.scrub st1 ut).storeCNodeWith dst.cnode
+        let st1 := retypeFromUntypedWrites src utCap.freeIndex untypedId childId
+          (req.object untypedId ut utCap.freeIndex) req.size ut st
+        ((req.scrub st1 ut utCap.freeIndex).storeCNodeWith dst.cnode
           (·.insert dst.slot (req.capability childId))).cdtAddChild src dst .retype
       | none => st
     | _ => st
@@ -213,7 +208,7 @@ theorem untypedRetypeObject_of_admitted {src dst : CSpaceAddr} {childId : SeLe4n
         dsimp only
         rw [(cspaceDstRefusal_eq_ok_iff dst st).mpr hD]
         dsimp only
-        rw [← CarveRequest.object_objectType untypedId ut] at hR
+        rw [← CarveRequest.object_objectType untypedId ut utCap.freeIndex] at hR
         rw [retypeFromUntyped_of_admitted hL hUt hR]
     | _ => rw [hT] at hRest; cases hRest
 
@@ -242,15 +237,18 @@ kind read as words, so the scrub builds no frame record. -/
             (SeLe4n.Kernel.Architecture.PhysicalWrite.zeroPage base)
           physicalWritesDrained := false }
 
-theorem CarveRequest.scrub_eq_scrubAt (st : SystemState) (ut : UntypedObject) (req : CarveRequest) :
-    req.scrub st ut = req.scrubAt st (untypedNextFrame ut).base ut.isDevice := by
+theorem CarveRequest.scrub_eq_scrubAt (st : SystemState) (ut : UntypedObject) (idx : Nat)
+    (req : CarveRequest) :
+    req.scrub st ut idx = req.scrubAt st (untypedNextFrame ut idx).base ut.isDevice := by
   cases req <;> rfl
 
 /-- WS-ZA ZA5.4: `untypedRetypePerformAt` as compiled.  Everything the carve
-reads of the untyped — the new object, the page's base and kind — is read
-before the untyped is written, so the untyped is advanced in its slot
-(`storeUntypedWith`); the scrub reads words (`CarveRequest.scrubAt`), and the
-capability goes into its slot's own record (`CNode.insertObjectCap`). -/
+reads of the untyped and of the invoked capability — the free index, the new
+object, the page's base and kind — is read before either is written, so the
+untyped records its child in its slot (`storeUntypedWith`) and the capability
+takes its advanced index in its own cell (`CNode.setFreeIndexCells`); the scrub
+reads words (`CarveRequest.scrubAt`), and the new capability goes into its
+slot's own record (`CNode.insertObjectCap`). -/
 def untypedRetypePerformWords (srcCnode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot)
     (dstCnode : SeLe4n.ObjId) (dstSlot : SeLe4n.Slot) (childId : SeLe4n.ObjId)
     (req : CarveRequest) (st : SystemState) : SystemState :=
@@ -260,13 +258,15 @@ def untypedRetypePerformWords (srcCnode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot)
     | .object untypedId =>
       match st.getUntyped? untypedId with
       | some ut =>
-        let newObj := req.object untypedId ut
-        let base := (untypedNextFrame ut).base
+        let idx := utCap.freeIndex
+        let newObj := req.object untypedId ut idx
+        let base := (untypedNextFrame ut idx).base
         let isDevice := ut.isDevice
         let size := req.size
-        let st1 := st.storeUntypedWith untypedId (·.allocated childId size)
+        let st1 := st.storeUntypedWith untypedId (·.allocated idx childId size)
         let st2 := storedState childId newObj st1
-        ((req.scrubAt st2 base isDevice).storeCNodeWith dstCnode
+        let st3 := st2.storeCNodeWith srcCnode (·.setFreeIndexCells srcSlot (idx + size))
+        ((req.scrubAt st3 base isDevice).storeCNodeWith dstCnode
           (·.insertObjectCap dstSlot childId req.rights)).cdtAddChild
             ⟨srcCnode, srcSlot⟩ ⟨dstCnode, dstSlot⟩ .retype
       | none => st
@@ -300,7 +300,9 @@ specialised to its function (no closure is built for it). -/
         unfold retypeFromUntypedWrites
         rw [CarveRequest.scrub_eq_scrubAt]
         have hS := SystemState.storeObject_untyped_eq_storeUntypedWith hObj
-          (·.allocated childId req.size)
+          (·.allocated utCap.freeIndex childId req.size)
+        rw [setCapFreeIndex_eq_impl]
+        unfold setCapFreeIndexImpl
         have hF : ∀ cn : CNode, cn.insertObjectCap ds childId req.rights =
             cn.insert ds (req.capability childId) := by
           intro cn; rw [CNode.insertObjectCap_eq_insert, CarveRequest.capability_eq]

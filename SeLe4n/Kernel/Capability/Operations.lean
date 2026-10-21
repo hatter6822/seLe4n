@@ -2295,86 +2295,111 @@ theorem cspaceRecordFrameMapping_ok_decompose (addr : CSpaceAddr) (m : FrameMapp
 write a carve makes to the untyped capability it was invoked through (the index
 advanced past the carved object), a reset makes to it (the index rewound), and a
 derivation makes to its untyped source (the index set full, seL4's
-`setUntypedCapAsFull`).  The slot must hold a capability; every other field of
-it is kept. -/
-def cspaceSetFreeIndex (addr : CSpaceAddr) (idx : Nat) : Kernel Unit :=
-  fun st =>
-    match st.getCNode? addr.cnode with
-    | none => .error .objectNotFound
-    | some cn =>
-      match cn.lookup addr.slot with
-      | none => .error .invalidCapability
-      | some _ => storeObject addr.cnode (.cnode (cn.setFreeIndex addr.slot idx)) st
+`setUntypedCapAsFull`).  Every other field of the capability is kept; a slot
+holding nothing, or an address naming no CNode, is left as it is
+(`CNode.setFreeIndex`, `storeCNodeWith`), so the write is total and every
+operation that makes it has already read the capability it rewrites. -/
+@[inline] def setCapFreeIndex (st : SystemState) (addr : CSpaceAddr) (idx : Nat) :
+    SystemState :=
+  st.storeCNodeWith addr.cnode (·.setFreeIndex addr.slot idx)
 
-/-- `cspaceSetFreeIndex` as compiled: the word is written where the CNode lies
-(`storeCNodeWith`), into the slot's own capability (`CNode.setFreeIndexCells`). -/
-@[inline] def cspaceSetFreeIndexImpl (addr : CSpaceAddr) (idx : Nat) : Kernel Unit :=
-  fun st =>
-    match st.getCNode? addr.cnode with
-    | none => .error .objectNotFound
-    | some cn =>
-      match cn.lookup addr.slot with
-      | none => .error .invalidCapability
-      | some _ => .ok ((), st.storeCNodeWith addr.cnode (·.setFreeIndexCells addr.slot idx))
+/-- `setCapFreeIndex` as compiled: the word is written into the slot's own
+capability (`CNode.setFreeIndexCells`), so nothing is built. -/
+@[inline] def setCapFreeIndexImpl (st : SystemState) (addr : CSpaceAddr) (idx : Nat) :
+    SystemState :=
+  st.storeCNodeWith addr.cnode (·.setFreeIndexCells addr.slot idx)
 
-@[csimp] theorem cspaceSetFreeIndex_eq_impl :
-    @cspaceSetFreeIndex = @cspaceSetFreeIndexImpl := by
-  funext addr idx st
-  unfold cspaceSetFreeIndex cspaceSetFreeIndexImpl
-  cases hC : st.getCNode? addr.cnode with
-  | none => rfl
-  | some cn =>
-    dsimp only
-    cases cn.lookup addr.slot with
-    | none => rfl
-    | some cap =>
-      have hF : (fun c : CNode => c.setFreeIndexCells addr.slot idx) =
-          (·.setFreeIndex addr.slot idx) := funext fun c => CNode.setFreeIndexCells_eq _ _ _
-      rw [hF]
-      exact SystemState.storeObject_cnode_eq_storeCNodeWith
-        ((SystemState.getCNode?_eq_some_iff st addr.cnode cn).1 hC)
-        (·.setFreeIndex addr.slot idx)
+@[csimp] theorem setCapFreeIndex_eq_impl : @setCapFreeIndex = @setCapFreeIndexImpl := by
+  funext st addr idx
+  unfold setCapFreeIndex setCapFreeIndexImpl
+  have hF : (fun c : CNode => c.setFreeIndexCells addr.slot idx) =
+      (·.setFreeIndex addr.slot idx) := funext fun c => CNode.setFreeIndexCells_eq _ _ _
+  rw [hF]
 
-/-- **What a successful free-index write is**: the slot held a capability, and
-the CNode was stored back with that capability holding the index. -/
-theorem cspaceSetFreeIndex_ok_decompose (addr : CSpaceAddr) (idx : Nat)
-    (st st' : SystemState) (h : cspaceSetFreeIndex addr idx st = .ok ((), st')) :
-    ∃ cn cap, st.getCNode? addr.cnode = some cn ∧ cn.lookup addr.slot = some cap ∧
-      storeObject addr.cnode (.cnode (cn.insert addr.slot (cap.withFreeIndex idx))) st
-        = .ok ((), st') := by
-  unfold cspaceSetFreeIndex at h
-  cases hCn : st.getCNode? addr.cnode with
-  | none => rw [hCn] at h; cases h
-  | some cn =>
-    rw [hCn] at h
-    simp only at h
-    cases hLk : cn.lookup addr.slot with
-    | none => rw [hLk] at h; cases h
-    | some cap =>
-      rw [hLk] at h
-      refine ⟨cn, cap, rfl, hLk, ?_⟩
-      simpa [CNode.setFreeIndex, hLk] using h
+/-- A free-index write on a CNode is the CNode's store. -/
+theorem setCapFreeIndex_eq_storeObject {st : SystemState} {addr : CSpaceAddr} {idx : Nat}
+    {cn : CNode} (h : st.objects[addr.cnode]? = some (.cnode cn)) :
+    storeObject addr.cnode (.cnode (cn.setFreeIndex addr.slot idx)) st =
+      .ok ((), setCapFreeIndex st addr idx) :=
+  SystemState.storeObject_cnode_eq_storeCNodeWith h (·.setFreeIndex addr.slot idx)
 
-/-- **A free-index write at an occupied slot succeeds**, and is the CNode stored
-back in place. -/
-theorem cspaceSetFreeIndex_of_lookup {addr : CSpaceAddr} {idx : Nat} {st : SystemState}
-    {cap : Capability} (h : SystemState.lookupSlotCap st addr = some cap) :
-    cspaceSetFreeIndex addr idx st =
-      .ok ((), st.storeCNodeWith addr.cnode (·.setFreeIndex addr.slot idx)) := by
-  unfold SystemState.lookupSlotCap SystemState.lookupCNode at h
-  unfold cspaceSetFreeIndex
+/-- A free-index write leaves every other object as it was. -/
+theorem setCapFreeIndex_objects_ne {st : SystemState} {addr : CSpaceAddr} {idx : Nat}
+    (hInv : st.objects.invExt) {oid : SeLe4n.ObjId} (hNe : oid ≠ addr.cnode) :
+    (setCapFreeIndex st addr idx).objects[oid]? = st.objects[oid]? := by
   cases hO : st.objects[addr.cnode]? with
-  | none => rw [hO] at h; cases h
   | some o =>
-    rw [hO] at h
+    cases o with
+    | cnode cn => exact storeObject_objects_ne _ _ _ _ _ hNe hInv (setCapFreeIndex_eq_storeObject hO)
+    | _ => unfold setCapFreeIndex SystemState.storeCNodeWith; rw [hO]
+  | none => unfold setCapFreeIndex SystemState.storeCNodeWith; rw [hO]
+
+/-- A free-index write keeps the object table's invariant. -/
+theorem setCapFreeIndex_preserves_objects_invExt {st : SystemState} {addr : CSpaceAddr}
+    {idx : Nat} (hInv : st.objects.invExt) : (setCapFreeIndex st addr idx).objects.invExt := by
+  cases hO : st.objects[addr.cnode]? with
+  | some o =>
     cases o with
     | cnode cn =>
-      have hC : st.getCNode? addr.cnode = some cn :=
-        (SystemState.getCNode?_eq_some_iff st addr.cnode cn).2 hO
-      simp only at h
-      rw [hC]; simp only [h]
-      exact SystemState.storeObject_cnode_eq_storeCNodeWith hO (·.setFreeIndex addr.slot idx)
-    | _ => simp at h
+      exact storeObject_preserves_objects_invExt _ _ _ _ hInv (setCapFreeIndex_eq_storeObject hO)
+    | _ => unfold setCapFreeIndex SystemState.storeCNodeWith; rw [hO]; exact hInv
+  | none => unfold setCapFreeIndex SystemState.storeCNodeWith; rw [hO]; exact hInv
+
+/-- What a free-index write leaves in the slot's CNode. -/
+theorem setCapFreeIndex_objects_self {st : SystemState} {addr : CSpaceAddr} {idx : Nat}
+    {cn : CNode} (hInv : st.objects.invExt) (h : st.objects[addr.cnode]? = some (.cnode cn)) :
+    (setCapFreeIndex st addr idx).objects[addr.cnode]? =
+      some (.cnode (cn.setFreeIndex addr.slot idx)) :=
+  storeObject_objects_eq _ _ _ _ hInv (setCapFreeIndex_eq_storeObject h)
+
+/-- The capability a free-index write leaves in its slot. -/
+theorem CNode.setFreeIndex_of_lookup {cn : CNode} {slot : SeLe4n.Slot} {cap : Capability}
+    (h : cn.lookup slot = some cap) (idx : Nat) :
+    cn.setFreeIndex slot idx = cn.insert slot (cap.withFreeIndex idx) := by
+  unfold CNode.setFreeIndex; rw [h]
+
+/-- A free-index write rewrites no slot but its own. -/
+theorem CNode.lookup_setFreeIndex_ne (cn : CNode) {slot s : SeLe4n.Slot} (idx : Nat)
+    (hNe : slot ≠ s) : (cn.setFreeIndex slot idx).lookup s = cn.lookup s := by
+  unfold CNode.setFreeIndex
+  cases cn.lookup slot with
+  | none => rfl
+  | some cap => exact CNode.lookup_insert_ne _ _ _ _ hNe (CNode.slotsUnique_holds _)
+
+/-- A free-index write leaves the CNode's geometry. -/
+@[simp] theorem CNode.setFreeIndex_radixWidth (cn : CNode) (slot : SeLe4n.Slot) (idx : Nat) :
+    (cn.setFreeIndex slot idx).radixWidth = cn.radixWidth := by
+  unfold CNode.setFreeIndex; cases cn.lookup slot <;> simp
+
+/-- A free-index write keeps an empty slot empty. -/
+theorem CNode.lookup_setFreeIndex_none (cn : CNode) (slot s : SeLe4n.Slot) (idx : Nat)
+    (h : cn.lookup s = none) : (cn.setFreeIndex slot idx).lookup s = none := by
+  by_cases hEq : slot = s
+  · subst hEq; unfold CNode.setFreeIndex; rw [h]; exact h
+  · rw [CNode.lookup_setFreeIndex_ne _ _ hEq]; exact h
+
+/-- A free-index write keeps an admitted destination admitted: it rewrites one
+slot's capability, and an admitted destination is empty. -/
+theorem setCapFreeIndex_preserves_dstAdmitted {st : SystemState} {addr dst : CSpaceAddr}
+    {idx : Nat} (hInv : st.objects.invExt) (hD : cspaceDstAdmitted dst st = true) :
+    cspaceDstAdmitted dst (setCapFreeIndex st addr idx) = true := by
+  unfold cspaceDstAdmitted at hD ⊢
+  cases hC : st.getCNode? dst.cnode with
+  | none => rw [hC] at hD; cases hD
+  | some cnD =>
+    rw [hC] at hD
+    have hObjD := (SystemState.getCNode?_eq_some_iff st dst.cnode cnD).1 hC
+    by_cases hEq : dst.cnode = addr.cnode
+    · have hO : st.objects[addr.cnode]? = some (.cnode cnD) := hEq ▸ hObjD
+      have hO' := setCapFreeIndex_objects_self (idx := idx) hInv hO
+      rw [← hEq] at hO'
+      rw [(SystemState.getCNode?_eq_some_iff _ dst.cnode _).2 hO']
+      simp only [Bool.and_eq_true, Option.isNone_iff_eq_none] at hD ⊢
+      refine ⟨by simpa [CNode.slotAddressable, CNode.slotCount] using hD.1, ?_⟩
+      exact CNode.lookup_setFreeIndex_none _ _ _ _ hD.2
+    · rw [(SystemState.getCNode?_eq_some_iff _ dst.cnode cnD).2
+        ((setCapFreeIndex_objects_ne hInv hEq).trans hObjD)]
+      exact hD
 
 -- ============================================================================
 -- M-D01: IPC capability transfer operations
