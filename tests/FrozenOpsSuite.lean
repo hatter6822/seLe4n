@@ -528,7 +528,9 @@ private def fo013c_cspaceDeleteRefusesInstalledTableCap : IO Unit := do
   let radix := (CNodeRadix.empty 0 0 4).insert (SeLe4n.Slot.ofNat 3) cap
   let cn : FrozenCNode := { depth := 1, guardWidth := 0, guardValue := 0, radixWidth := 4, slots := radix }
   let inst : PageTableInstall := { root := ⟨20⟩, level := 1, index := 0 }
-  let table : PageTableObject := { base := SeLe4n.PAddr.ofNat 0x5000, installedIn := some inst }
+  let table : PageTableObject :=
+    { base := SeLe4n.PAddr.ofNat 0x5000, installed := true, installRoot := inst.root,
+      installLevel := inst.level, installIndex := inst.index }
   let emptyMappings : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.VAddr (SeLe4n.PAddr × PagePermissions) :=
     SeLe4n.Kernel.RobinHood.RHTable.empty 16
   let holding : FrozenVSpaceRoot :=
@@ -546,7 +548,7 @@ private def fo013c_cspaceDeleteRefusesInstalledTableCap : IO Unit := do
   | .error _ => throw <| IO.userError "the stale-record delete should succeed"
   -- CONTROL: a table installed nowhere.
   let fstFree := mkFrozenState
-    [(⟨10⟩, .cnode cn), (⟨42⟩, .pageTable { table with installedIn := none })]
+    [(⟨10⟩, .cnode cn), (⟨42⟩, .pageTable table.uninstalled)]
   match frozenCspaceDelete ⟨10⟩ (SeLe4n.Slot.ofNat 3) fstFree with
   | .ok _ => expect "CONTROL: an uninstalled table → the delete succeeds" true
   | .error _ => throw <| IO.userError "the uninstalled-table delete should succeed"

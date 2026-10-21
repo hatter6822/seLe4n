@@ -246,6 +246,18 @@ abbrev EpochSpare :=
 
 instance : Repr EpochSpare := ⟨fun _ _ => "spare epoch cell"⟩
 
+/-- WS-ZA ZA5.4: the cell a page table's slot takes in the address space that
+holds it — the list cell of `VSpaceRoot.tables` and its slot record — kept by
+the table while it is installed nowhere (`PageTableObject.slotCell`), so an
+install writes the slot over it, as a hardware table's parent entry is memory
+already there; a removal hands it back.  A `Squash`, so logically one value: no
+theorem reads it (`PageTableObject.with_slotCell`, `VSpaceRoot.with_tableSlotSpare`). -/
+abbrev TableSlotCell := Squash (List PageTableSlot)
+
+instance : Repr TableSlotCell := ⟨fun _ _ => "spare table slot cell"⟩
+
+instance : DecidableEq TableSlotCell := fun a b => isTrue (Subsingleton.elim a b)
+
 /-- WS-G6/F-P05: Minimal VSpace root object: ASID identity plus flat virtual→physical mappings.
 
 This intentionally models only one-level deterministic lookup semantics for WS-B1.
@@ -287,6 +299,9 @@ structure VSpaceRoot where
   /-- WS-ZA ZA5.4: the cell the root's last unmap took out of `mappingEpochs`
       (`EpochSpare`), which its next map's epoch writes over. -/
   epochSpare : EpochSpare := Squash.mk none
+  /-- WS-ZA ZA5.4: the slot cell a table removal has just taken out of
+      `tables`, on its way back to the table (`TableSlotCell`). -/
+  tableSlotSpare : TableSlotCell := Squash.mk []
   deriving Repr
 
 namespace VSpaceRoot
@@ -301,6 +316,13 @@ namespace VSpaceRoot
 /-- WS-ZA ZA5.4: the spare epoch cell is no part of what a root is. -/
 @[simp] theorem with_epochSpare (r : VSpaceRoot) (v : EpochSpare) :
     { r with epochSpare := v } = r := by
+  cases r
+  simp only [VSpaceRoot.mk.injEq, and_true, true_and]
+  exact Subsingleton.elim _ _
+
+/-- WS-ZA ZA5.4: the slot cell in transit is no part of what a root is. -/
+@[simp] theorem with_tableSlotSpare (r : VSpaceRoot) (v : TableSlotCell) :
+    { r with tableSlotSpare := v } = r := by
   cases r
   simp only [VSpaceRoot.mk.injEq, true_and]
   exact Subsingleton.elim _ _
@@ -822,14 +844,51 @@ exists, that holds one level of an address space's translation.  It is a
 distinct kind from a frame because what it holds is **the kernel's**: a page a
 thread could map and write would let it write its own translation, so
 `.vspaceMap` maps frames only, and a table reaches an address space only through
-`.pageTableMap`.  `installedIn` records the one slot that names it, `none` while
-it is installed nowhere. -/
+`.pageTableMap`.  `installedIn` reads the one slot that names it, `none` while
+it is installed nowhere.
+
+WS-ZA ZA5.4: the slot is held as plain fields under a flag, as seL4's page-table
+capability holds `capPTIsMapped`, `capPTMappedASID` and `capPTMappedAddress`:
+an install writes the fields and a removal clears the flag, leaving the fields
+as they were, so neither builds a record. -/
 structure PageTableObject where
   base : SeLe4n.PAddr
-  installedIn : Option PageTableInstall := none
+  /-- Whether the table is installed; the three fields below name the slot
+      only while it is. -/
+  installed : Bool := false
+  installRoot : SeLe4n.ObjId := ⟨0⟩
+  installLevel : Nat := 0
+  installIndex : Nat := 0
+  /-- WS-ZA ZA5.4: the cell the table's slot takes in the root that holds it,
+      kept here while it is installed nowhere (`TableSlotCell`).  A new
+      table's cell is part of the table's own memory: a retype carves it with
+      the object (`KernelObject.unshare` gives each its own). -/
+  slotCell : TableSlotCell := Squash.mk [⟨0, 0, ⟨0⟩⟩]
   deriving Repr, DecidableEq
 
 namespace PageTableObject
+
+/-- The slot that names the table, `none` while it is installed nowhere. -/
+@[inline] def installedIn (p : PageTableObject) : Option PageTableInstall :=
+  if p.installed then some ⟨p.installRoot, p.installLevel, p.installIndex⟩ else none
+
+/-- The table's record once it is installed nowhere: the flag cleared and the
+slot words zeroed with it, so a removed table carries no trace of the slot that
+named it and every uninstalled table projects the same way. -/
+@[inline] def uninstalled (p : PageTableObject) : PageTableObject :=
+  { p with installed := false, installRoot := ⟨0⟩, installLevel := 0, installIndex := 0 }
+
+@[simp] theorem installedIn_uninstalled (p : PageTableObject) :
+    p.uninstalled.installedIn = none := rfl
+
+/-- WS-ZA ZA5.4: the spare slot cell is no part of what a table is. -/
+@[simp] theorem with_slotCell (p : PageTableObject) (v : TableSlotCell) :
+    { p with slotCell := v } = p := by
+  cases p
+  simp only [PageTableObject.mk.injEq, true_and]
+  exact Subsingleton.elim _ _
+
+@[simp] theorem base_uninstalled (p : PageTableObject) : p.uninstalled.base = p.base := rfl
 
 /-- A table's page is page-aligned — the only shape a table descriptor can name,
 and the one every carve produces. -/

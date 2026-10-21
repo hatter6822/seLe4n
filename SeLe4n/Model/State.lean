@@ -5871,6 +5871,20 @@ it. -/
     (f : KernelObject → KernelObject) : SystemState :=
   { st with objects := st.objects.modify id f }
 
+/-- WS-ZA ZA5.4: **the object at `id` rewritten in its slot by an update that
+leaves every object as it is** (one that moves a `Squash` field, logically one
+value, between objects): the key's slot is written in place when it is found,
+and the state is unchanged (`modifyObjectInPlace_of_id`). -/
+@[specialize] def modifyObjectInPlace (st : SystemState) (id : SeLe4n.ObjId)
+    (f : KernelObject → KernelObject) : SystemState :=
+  { st with objects := st.objects.modifyInPlace id f }
+
+theorem modifyObjectInPlace_of_id (st : SystemState) (id : SeLe4n.ObjId)
+    (f : KernelObject → KernelObject) (hf : ∀ o, f o = o) :
+    st.modifyObjectInPlace id f = st := by
+  unfold modifyObjectInPlace
+  rw [SeLe4n.Kernel.RobinHood.RHTable.modifyInPlace_of_id _ _ _ hf]
+
 /-- WS-ZA ZA1.6: the object update a TCB update performs. -/
 @[inline] def mapTcbObject (f : TCB → TCB) : KernelObject → KernelObject
   | .tcb t => .tcb (f t)

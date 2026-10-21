@@ -219,7 +219,9 @@ at `v0.36.117` (part 7) an address space's mapping table reuses the cell an unma
 erased, so a steady frame map allocates nothing, and an unmap erases the
 address's epoch with it; at `v0.36.118` (part 8) a page unmap's shootdown round
 writes its descriptor and operand over the cells the last round retired, so an
-unmap allocates nothing.  The
+unmap allocates nothing; at `v0.36.119` (part 9) a page table carries the slot
+cell it takes in its root, so a page-table map, unmap and the delete of an
+uninstalled table's capability allocate nothing.  The
 suspend of a thread blocked in IPC or holding a donated context is the one
 syscall arm left on the general path (ZA6.1).  ZA6 covers the other
 entries and makes the rule standing.  Plan:

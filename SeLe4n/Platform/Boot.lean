@@ -939,14 +939,15 @@ theorem tcbReferencesReservedIdleSlot_def (tcb : TCB) :
 
 /-- PR #889 review round 8: a **VSpace root** — an ASID, a virtual-to-physical
     map, its table's physical base (WS-BP BP7.1 slice 4b), its tables
-    its mapping epochs (PR #904 review) and its spare mapping and epoch
-    cells (`MappingSpare`, `EpochSpare`) — holds no
+    its mapping epochs (PR #904 review), its spare mapping and epoch
+    cells (`MappingSpare`, `EpochSpare`) and its slot cell in transit
+    (`TableSlotCell`) — holds no
     object, thread or scheduling-context id.  The answer is by inspection of the
     constructor's fields, and the pattern fails when a field is added. -/
 def vspaceRootReferencesReservedIdleSlot (vsr : VSpaceRoot) : Bool :=
   match vsr with
   | ⟨_asid, _mappings, _tableBase, _tables, _mappingEpochs, _mappingSpare,
-      _epochSpare⟩ => false
+      _epochSpare, _tableSlotSpare⟩ => false
 
 /-- **WS-BP BP7.1**: a **frame** — a physical address, a memory kind
     and a mapping epoch counter (PR #904 review) —
@@ -962,8 +963,8 @@ def frameReferencesReservedIdleSlot (f : FrameObject) : Bool :=
     (`bootSafeObjectCheck`), so this arm only has to say where the id sits. -/
 def pageTableReferencesReservedIdleSlot (p : PageTableObject) : Bool :=
   match p with
-  | ⟨_base, installedIn⟩ =>
-    installedIn.any (fun i => SeLe4n.Kernel.isIdleObjId i.root)
+  | ⟨_base, installed, installRoot, _level, _index, _slotCell⟩ =>
+    installed && SeLe4n.Kernel.isIdleObjId installRoot
 
 /-- PR #889 review round 8 (the round-6 check, pinned by arity): a boot
     **untyped** whose allocation record names an idle slot as a child, or whose

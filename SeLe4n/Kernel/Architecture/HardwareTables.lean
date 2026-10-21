@@ -90,6 +90,13 @@ def tablePageAt? (st : SystemState) (root : VSpaceRoot) (level index : Nat) :
 def tableDescriptorValue (base : SeLe4n.PAddr) : UInt64 :=
   descriptorToUInt64 (.table base)
 
+/-- WS-ZA ZA5.4: `tableDescriptorValue` as its word, so the descriptor is not
+built to be encoded (`tableDescriptorValue_eq_word`). -/
+@[inline] def tableDescriptorWord (base : SeLe4n.PAddr) : UInt64 :=
+  (base.toNat.toUInt64 &&& tableAddrMask) ||| 0b11
+
+@[csimp] theorem tableDescriptorValue_eq_word : @tableDescriptorValue = @tableDescriptorWord := rfl
+
 /-- The hardware attributes of a thread's page (see the module docstring). -/
 @[inline] def userPageAttributes (perms : PagePermissions) : PageAttributes :=
   { attrIndex  := if perms.cacheable then ⟨0, by omega⟩ else ⟨1, by omega⟩
@@ -165,15 +172,20 @@ def slotStore? (st : SystemState) (root : VSpaceRoot) (level index : Nat) :
        | some base => tableDescriptorValue base
        | none => 0)
 
+/-- WS-ZA ZA5.4: the descriptor word a slot's store writes, out of line: inlined,
+its two arms joined and the write carrying it was built at the join. -/
+@[noinline] def slotDescriptorWord (st : SystemState) (root : VSpaceRoot) (level index : Nat) :
+    UInt64 :=
+  match tablePageAt? st root level index with
+  | some base => tableDescriptorValue base
+  | none => 0
+
 /-- WS-ZA ZA5.4: `slotStore?` inlined into its readers, so the `Option` it
 answers cancels against the reader's match (`slotStore?_eq_inline`). -/
 @[inline] def slotStoreInline (st : SystemState) (root : VSpaceRoot) (level index : Nat) :
     Option PhysicalWrite :=
   (tablePageAt? st root (level - 1) (index >>> 9)).map fun parent =>
-    .storeTableDescriptor (tableEntryAddress parent index)
-      (match tablePageAt? st root level index with
-       | some base => tableDescriptorValue base
-       | none => 0)
+    .storeTableDescriptor (tableEntryAddress parent index) (slotDescriptorWord st root level index)
 
 @[csimp] theorem slotStore?_eq_inline : @slotStore? = @slotStoreInline := rfl
 
@@ -244,6 +256,19 @@ def clearPhysicalWrites (st : SystemState) : SystemState :=
       PhysicalWriteLedger.toList_pushAllAfter_cons]
 @[simp] theorem recordPhysicalWrites_nil (st : SystemState) :
     recordPhysicalWrites st [] = st := rfl
+
+/-- Recording two lists of writes is recording them one after the other. -/
+theorem recordPhysicalWrites_append (st : SystemState) (a b : List PhysicalWrite) :
+    recordPhysicalWrites st (a ++ b) = recordPhysicalWrites (recordPhysicalWrites st a) b := by
+  cases a with
+  | nil => rfl
+  | cons w rest =>
+    cases b with
+    | nil => simp
+    | cons w' rest' =>
+      simp only [recordPhysicalWrites, List.cons_append, List.isEmpty_cons, Bool.false_and,
+        PhysicalWriteLedger.pushAllAfter, PhysicalWriteLedger.pushAll, List.foldl_append,
+        List.foldl_cons, PhysicalWriteLedger.push]
 @[simp] theorem clearPhysicalWrites_pending (st : SystemState) :
     (clearPhysicalWrites st).pendingPhysicalWrites = [] := rfl
 

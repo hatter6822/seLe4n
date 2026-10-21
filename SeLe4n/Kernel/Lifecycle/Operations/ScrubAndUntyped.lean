@@ -991,9 +991,13 @@ inductive CarveRequest where
 
 /-- **WS-BP BP7.1 (`v0.36.12`): the page table a carve makes** — installed
 nowhere, on the page at the untyped's watermark, the same page
-`untypedNextFrame` names. -/
+`untypedNextFrame` names.  WS-ZA ZA5.4: with its own slot cell
+(`PageTableObject.slotCell`), built from the page's address so that it is the
+table's own and not the default's shared constant: the cell is part of the
+table's memory, carved with it, and its first install writes over it. -/
 def untypedNextPageTable (ut : UntypedObject) : PageTableObject :=
-  { base := (untypedNextFrame ut).base }
+  { base := (untypedNextFrame ut).base
+    slotCell := Squash.mk [⟨0, 0, SeLe4n.ObjId.ofNat (untypedNextFrame ut).base.toNat⟩] }
 
 /-- **WS-BP BP7.1 (`v0.36.12`): the capability a carve hands back for a page
 table.**  Read and write — `.pageTableMap` and `.pageTableUnmap` ask `.write`.

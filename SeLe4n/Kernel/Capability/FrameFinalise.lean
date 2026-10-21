@@ -814,7 +814,7 @@ built.  Any other capability takes `cspaceDeleteTeardownAt`
     | _, _ => cspaceDeleteTeardownAt executingCore cnode slot st
   | none => cspaceDeleteTeardownAt executingCore cnode slot st
 
-@[csimp] theorem cspaceDeleteTeardownAt_eq_frame :
+theorem cspaceDeleteTeardownAt_eq_frame :
     @cspaceDeleteTeardownAt = @cspaceDeleteTeardownAtFrame := by
   funext ec cnode slot st
   unfold cspaceDeleteTeardownAtFrame
@@ -851,6 +851,77 @@ built.  Any other capability takes `cspaceDeleteTeardownAt`
           simp only [pageTablesOrphaned, List.foldl_nil, orphanedTableMappings, List.flatMap_nil,
             List.append_nil, detachPageTablesState, unmapLivePagesState, cspaceDeletePerformAt,
             mappedPageLive_eq_words]
+
+/-- WS-ZA ZA5.4: **`cspaceDeleteTeardownAt` for a page table's capability**, on
+the slot's words: the capability names the table and records no page, so the
+slot is emptied and the table is taken out of its root only if it is still
+installed there after the delete (`pageTablesOrphaned`); a table installed
+nowhere leaves nothing to finalise, and no list or slot address is built.  Any
+other capability takes `cspaceDeleteTeardownAtFrame`
+(`cspaceDeleteTeardownAt_eq_table`). -/
+@[noinline] def cspaceDeleteTeardownAtTable (executingCore : Concurrency.CoreId)
+    (cnode : SeLe4n.ObjId) (slot : SeLe4n.Slot) (st : SystemState) : SystemState :=
+  match SystemState.lookupSlotCap st ⟨cnode, slot⟩ with
+  | some cap =>
+    match cap.target with
+    | .object tableId =>
+      match st.getPageTable? tableId with
+      | some _ =>
+        let st1 := cspaceDeletePerformAt cnode slot st
+        if Architecture.pageTableInstallLive st1 tableId then
+          finaliseDestroyedCapabilitiesState executingCore [tableId] [] st1
+        else st1
+      | none => cspaceDeleteTeardownAtFrame executingCore cnode slot st
+    | _ => cspaceDeleteTeardownAtFrame executingCore cnode slot st
+  | none => cspaceDeleteTeardownAtFrame executingCore cnode slot st
+
+@[csimp] theorem cspaceDeleteTeardownAt_eq_table :
+    @cspaceDeleteTeardownAt = @cspaceDeleteTeardownAtTable := by
+  funext ec cnode slot st
+  unfold cspaceDeleteTeardownAtTable
+  rw [← cspaceDeleteTeardownAt_eq_frame]
+  cases hL : SystemState.lookupSlotCap st ⟨cnode, slot⟩ with
+  | none => rfl
+  | some cap =>
+    dsimp only
+    cases hT : cap.target with
+    | cnodeSlot _ _ => rfl
+    | replyCap _ => rfl
+    | auditTrail => rfl
+    | object tableId =>
+      dsimp only
+      cases hPT : st.getPageTable? tableId with
+      | none => rfl
+      | some p =>
+        dsimp only
+        have hF : st.getFrame? tableId = none := by
+          unfold SystemState.getPageTable? at hPT
+          unfold SystemState.getFrame?
+          cases hO : st.objects[tableId]? with
+          | none => rfl
+          | some o => rw [hO] at hPT; cases o <;> simp_all
+        have hNamed : slotPageTables st ⟨cnode, slot⟩ = [tableId] := by
+          simp [slotPageTables, hL, capabilityPageTable, hT, hPT]
+        have hPages : slotMappedPages st ⟨cnode, slot⟩ = [] := by
+          cases hM : cap.mapping <;> simp [slotMappedPages, hL, capabilityMappedPage, hM, hT, hF]
+        unfold cspaceDeleteTeardownAt
+        dsimp only
+        rw [hNamed, hPages]
+        simp only [cspaceDeletePerformAt]
+        split
+        · rfl
+        · next hLive =>
+          unfold finaliseDestroyedCapabilitiesState
+          have hO : pageTablesOrphaned [tableId] (cspaceDeletePerform ⟨cnode, slot⟩ st) = [] := by
+            simp only [pageTablesOrphaned, List.foldl_cons, List.foldl_nil, List.any_nil,
+              Bool.false_eq_true, ↓reduceIte]
+            split
+            · split
+              · simp [hLive]
+              · rfl
+            · rfl
+          simp only [hO, orphanedTableMappings, List.flatMap_nil, List.append_nil,
+            detachPageTablesState, unmapLivePagesState]
 
 /-- WS-ZA ZA5.3 part 7: **an admitted finalising delete's writes**, on slot
 `slot` of `cnode`: a capability that finalises nothing (`cspaceDeleteAdmitted`)

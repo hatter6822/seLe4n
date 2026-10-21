@@ -1,3 +1,53 @@
+## v0.36.119 — WS-ZA ZA5.4 part 9: page-table map, unmap and delete allocate nothing
+
+A page table carries the slot cell it takes in its root's table list, so an
+install writes the root's slot over that cell and a removal hands it back; a
+page-table map, unmap and the delete of an uninstalled table's capability
+allocate nothing, on the first call as in steady state.
+
+- **The install slot is plain fields under a flag**
+  (`Model/Object/Structures.lean`, `Architecture/PageTableInstall.lean`): a
+  page table holds its install as `installed`, `installRoot`, `installLevel`
+  and `installIndex` (seL4's `capPTIsMapped`, `capPTMappedASID`,
+  `capPTMappedAddress`), read through the `installedIn` view; an uninstall
+  clears the flag and zeroes the slot words with it
+  (`PageTableObject.uninstalled`), so a removed table carries no trace of the
+  slot that named it and two removed tables project alike to a low observer.
+- **Each table carries its own slot cell** (`Model/Object/Structures.lean`,
+  `VSpacePerform.lean`): `PageTableObject.slotCell` and
+  `VSpaceRoot.tableSlotSpare` are `Squash`es (`TableSlotCell`), logically one
+  value and read by no theorem.  A map reads the table's cell, the table's store
+  releases it and the root's slot is written over it (`slotCellOver`,
+  `rootWithTableCell`, `pageTableMapPerformCells`, `@[csimp]`).  An unmap walks
+  the root's list keeping each kept cell (`rootWithoutTableCellLoop`, proven
+  equal to the filter), parks the removed cell in the root, and moves it back to
+  the table (`handTableSlotCell`, written through `RHTable.modifyInPlace`, which
+  writes the key's slot in place and is the table itself under an identity
+  update, `RHTable.modifyInPlace_of_id`); `pageTableUnmapPerformCells` is
+  `@[csimp]`.
+- **The carve gives each table its own cell**
+  (`Lifecycle/Operations/ScrubAndUntyped.lean`): `untypedNextPageTable` builds
+  the cell from the carved base, so it is never the shared default constant
+  (which no reuse could write over).
+- **Reads without closures or records** (`Architecture/HardwareTables.lean`,
+  `Architecture/PageTableInstall.lean`): the table descriptor word is computed
+  from its fields (`tableDescriptorWord`, `slotDescriptorWord`), the in-use
+  check is a pair of loops over the mapping and table lists
+  (`pageTableInUseLoops`, `pageTableInUse_eq_loops`), and the removal's
+  physical write is recorded entry by entry (`recordDetachedSlotAt`,
+  `recordPhysicalWrites_append`).
+- **Delete of an uninstalled table's capability** (`Capability/FrameFinalise.lean`):
+  `cspaceDeleteTeardownAtTable` empties the slot on its words and finalises the
+  table only when its install is live (`cspaceDeleteTeardownAt_eq_table`,
+  `@[csimp]`).
+- **Readings** (normal build, first call / steady state): page-table map
+  0 / 0 (6), unmap 0 / 0 (5), delete of the unmapped table's capability 0 / 0
+  (3); a page-table retype 64 (62), the two new cells being the table's own slot
+  cell, counted as the object's memory.  The exerciser pins the new readings.
+  Not yet measured: deleting an installed table's last capability, and a table
+  whose root is destroyed while it is installed (its cell goes with the root's
+  list, so its next install builds one); both are later ZA5.4 parts.
+
 ## v0.36.118 — WS-ZA ZA5.4 part 8: a page unmap allocates nothing
 
 A page unmap's shootdown round writes its descriptor and operand over the cells
