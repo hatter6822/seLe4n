@@ -708,7 +708,7 @@ def replyStash_validated_against_preBlock_state : IO Unit := do
 
 /-- WS-SM SM6.D (PR #822 review, Phase H): `mintReplyCap` is the production path that
 derives `.replyCap` authority from an `.object` cap targeting a retyped Reply object.
-`lifecycleRetypeDirect` retypes in place (the holder keeps an `.object target` cap), so
+The in-place retype (`lifecycleRetypeDirectWithCleanup`) keeps the holder's `.object target` cap, so
 without this a retyped Reply is unusable by the receive-with-reply ABI.  This test mints
 a reply cap from an object-to-Reply cap and confirms it targets the Reply
 (`.replyCap (ReplyId.ofObjId target)`) and resolves (`getReply?`), and that minting from
@@ -935,7 +935,12 @@ def reply_cap_end_to_end_retype_mint_link : IO Unit := do
       |>.withObject cnId mkCn
       |>.build)
   -- 1. Retype the Untyped in place to a fresh Reply object.
-  match SeLe4n.Kernel.lifecycleRetypeDirect authCap target (SeLe4n.Kernel.objectOfKernelType .reply 0) st0 with
+  -- The in-place retype asks authority first; the cap names the target with `.retype`, so the
+  -- commit step below is the one the wrapper reaches.  (The wrapper itself refuses an Untyped
+  -- target with `.revocationRequired`, so the chain drives its commit step directly.)
+  expect "the slot-0 cap authorizes the in-place retype"
+    (SeLe4n.Kernel.lifecycleRetypeAuthority authCap target)
+  match SeLe4n.Kernel.lifecycleRetypeDirectCommit target (SeLe4n.Kernel.objectOfKernelType .reply 0) st0 with
   | .error _ => throw <| IO.userError "retype Untyped → Reply should succeed"
   | .ok ((), st1) =>
       expect "after retype, the Reply resolves via getReply?" ((st1.getReply? rid).isSome)

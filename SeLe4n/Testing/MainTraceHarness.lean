@@ -1659,8 +1659,8 @@ private def runSyscallDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState) :
         target := .object (ObjId.ofNat retypeArgs.targetObj.toNat)
         rights := AccessRightSet.ofList [.read, .write, .retype]
       }
-      match SeLe4n.Kernel.lifecycleRetypeDirect retypeCap ksdRetypeTargetId newObj stRetype with
-      | .error e => IO.println s!"[KSD-004] lifecycleRetypeDirect error: {reprStr e}"
+      match SeLe4n.Kernel.lifecycleRetypeDirectWithCleanup retypeCap ksdRetypeTargetId newObj stRetype with
+      | .error e => IO.println s!"[KSD-004] lifecycleRetypeDirectWithCleanup error: {reprStr e}"
       | .ok (_, stRetyped) =>
         let objKind := stRetyped.getObjectType? ksdRetypeTargetId
         IO.println s!"[KSD-004] lifecycle retype via decoded regs new type: {reprStr objKind}"

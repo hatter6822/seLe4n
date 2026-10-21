@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.121` (`lakefile.toml`) |
+| **Package version** | `0.36.123` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 485,938 across 438 Lean files |
 | **Test LoC** | 86,527 across 70 Lean test suites |
@@ -4821,6 +4821,39 @@ use `lifecycleRetypeWithCleanup`, which wraps the
 strict cleanup pipeline and propagates errors before any retype is
 attempted. `.error` from `lifecycleRevokeDeleteRetype` is a best-effort
 cleanup-partially-completed outcome, NOT a rollback.
+
+### 8.6.1 In-Place Retype Refusal Order (`v0.36.123`)
+
+The `.lifecycleRetype` arm decodes its target object id from a message
+register, so a caller can name any id.  `lifecycleRetypeDirectWithCleanup`
+therefore refuses in seL4's decode order — **authority before anything reads
+the target**:
+
+1. `lifecycleRetypeAuthority` — the resolved capability names `.object target`
+   and carries `.retype`; otherwise `.illegalAuthority`.
+2. `retypeReplacementAdmissible` — the replacement is well-formed, carries its
+   slot's identity and is not memory-backed; otherwise `.illegalState`.
+3. `lifecyclePreRetypeCleanup` — per-kind refusals (`.revocationRequired` for
+   frames, page tables, untypeds, VSpace roots, in-use replies and threads
+   running or holding FP state on some core), then the cleanup itself.
+4. `scrubObjectMemory`, then `lifecycleRetypeDirectCommit` — the target must
+   exist (`.objectNotFound`) with agreeing lifecycle metadata (`.illegalState`),
+   and the replacement is stored.  Every check precedes every write.
+
+Because step 1 reads only the capability and the decoded id, a refusal for a
+target the capability does not name is `.illegalAuthority` on every state: it
+reveals nothing about whether the target exists, its kind, or the run state of
+a thread in another domain.  Before `v0.36.123` the authority check ran last
+(inside the retired `lifecycleRetypeDirect`), so the other refusals formed an
+error-code oracle over arbitrary object ids for any holder of a `.retype`
+capability.  Theorems: `lifecycleRetypeDirectWithCleanup_unauthorized`,
+`lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_unauthorized`,
+`dispatchWithCap_lifecycleRetype_unauthorized` and
+`dispatchWithCapChecked_lifecycleRetype_unauthorized`; a success entails the
+check passed (`lifecycleRetypeDirectWithCleanup_ok_authorized`).  Witness:
+`tests/SyscallDispatchSuite.lean` SD-062.  The CSpaceAddr-authority family
+(`lifecycleRetypeWithCleanup`, which no syscall reaches) still resolves its
+authority after the existence and type checks; see `docs/REGISTERED_DEBT.md`.
 
 ### 8.7 TLB Flush Requirements for Production Paths
 All production VSpace operations must use TLB-flushing variants to ensure

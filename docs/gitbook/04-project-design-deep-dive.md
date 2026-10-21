@@ -314,8 +314,9 @@ theorems proved. **Layer 4 (completed, K-D v0.16.3):** Lifecycle and VSpace
 syscall dispatch — all 3 remaining `.illegalState` stubs replaced with full
 dispatch logic. `objectOfTypeTag` maps raw type tags to default `KernelObject`
 constructors (dedicated `invalidTypeTag` error variant for unrecognized tags);
-`lifecycleRetypeDirect` accepts pre-resolved capabilities (avoiding
-double lookup); `PagePermissions.ofNat`/`toNat` provides bitfield codec with
+`lifecycleRetypeDirectWithCleanup` accepts pre-resolved capabilities (avoiding
+double lookup) and, since `v0.36.123`, checks their authority before it reads
+the target (spec §8.6.1); `PagePermissions.ofNat`/`toNat` provides bitfield codec with
 round-trip proof. 3 delegation theorems proved (`lifecycleRetype`, `vspaceMap`,
 `vspaceUnmap`). All 13 syscalls now fully dispatch through `dispatchWithCap`.
 **(R7-E/L-10, v0.18.6):** `LifecycleRetypeArgs.newType` upgraded from raw `Nat`

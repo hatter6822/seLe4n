@@ -574,7 +574,7 @@ theorem lifecyclePreRetypeCleanup_confinedToCores
 
 -- **WS-RR RR8.12 Cut C6g (`v0.35.180`)**: `lifecycleRetypeDirect_framed` is
 -- deleted.  It was a `private` copy of what is now the production
--- `lifecycleRetypeDirect_scheduler_machine_eq` (`Lifecycle/Operations/RetypeWrappers.lean`,
+-- `lifecycleRetypeDirectCommit_scheduler_machine_eq` (`Lifecycle/Operations/RetypeWrappers.lean`,
 -- beside the step) — the same body, in a staged module, where no production asker
 -- could reach it.  Every use below reads the public one.
 
@@ -588,7 +588,9 @@ theorem lifecycleRetypeDirectWithCleanup_confinedToCores
     (st st' : SystemState) (hInv : st.objects.invExt)
     (h : lifecycleRetypeDirectWithCleanup authCap target newObj st = .ok ((), st')) :
     observableSlotsConfinedToCores st st' (lifecycleRetypeWriteSet st target) := by
+  have hAuthOk := lifecycleRetypeDirectWithCleanup_ok_authorized h
   unfold lifecycleRetypeDirectWithCleanup SystemState.getObject? at h
+  simp only [hAuthOk, Bool.not_true, Bool.false_eq_true, ↓reduceIte] at h
   simp only [lifecycleRetypeWriteSet, SystemState.getObject?_eq_getElem]
   split at h
   · exact absurd h (by simp)
@@ -597,7 +599,7 @@ theorem lifecycleRetypeDirectWithCleanup_confinedToCores
     · -- absent target: the direct store errors or replaces, either way scheduler-silent
       next hNone =>
         rw [hNone]
-        obtain ⟨hs, hm⟩ := lifecycleRetypeDirect_scheduler_machine_eq authCap target newObj st st' h
+        obtain ⟨hs, hm⟩ := lifecycleRetypeDirectCommit_scheduler_machine_eq target newObj st st' h
         exact observableSlotsConfinedToCores_nil_of_scheduler_machine_eq hs hm
     · next currentObj hSome =>
       rw [hSome]
@@ -606,7 +608,7 @@ theorem lifecycleRetypeDirectWithCleanup_confinedToCores
       · next stClean hClean =>
         have hCleanConf :=
           lifecyclePreRetypeCleanup_confinedToCores st stClean target currentObj newObj hInv hClean
-        obtain ⟨hs, hm⟩ := lifecycleRetypeDirect_scheduler_machine_eq authCap target newObj _ st' h
+        obtain ⟨hs, hm⟩ := lifecycleRetypeDirectCommit_scheduler_machine_eq target newObj _ st' h
         -- the scrub writes `machine.memory`, so the suffix frame here is the
         -- register-bank one rather than whole-machine equality
         refine observableSlotsConfinedToCores_of_framed_suffix_regs

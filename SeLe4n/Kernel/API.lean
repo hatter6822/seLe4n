@@ -5620,6 +5620,53 @@ theorem dispatchWithCap_lifecycleRetype_delegates
         ((objectOfKernelType args.newType args.size).withIdentity args.targetObj) st := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode]
 
+/-- **The `.lifecycleRetype` arm answers an unauthorized target with
+`illegalAuthority` alone — a non-interference statement for its refusals.**
+
+`args.targetObj` is decoded from a message register, so it can name any object.
+Whenever the resolved capability does not name it with `.retype`
+(`lifecycleRetypeAuthority`), the arm refuses with `illegalAuthority` on
+**every** state: the answer does not depend on whether `args.targetObj` exists,
+on its kind, on a thread's run state or on anything else the state holds.  The
+retype asks authority before admissibility, cleanup or scrub read the target,
+which is seL4's decode order; the checked dispatch shares the arm
+(`checkedDispatch_lifecycleRetype_eq_unchecked`), so the statement holds there
+too (`dispatchWithCapChecked_lifecycleRetype_unauthorized`). -/
+theorem dispatchWithCap_lifecycleRetype_unauthorized
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
+    (cap : Capability) (objId : SeLe4n.ObjId)
+    (args : Architecture.SyscallArgDecode.LifecycleRetypeArgs)
+    (hSyscall : decoded.syscallId = .lifecycleRetype)
+    (hTarget : cap.target = .object objId)
+    (hDecode : decodeLifecycleRetypeArgs decoded = .ok args)
+    (hAuth : lifecycleRetypeAuthority cap args.targetObj = false)
+    (st : SystemState) :
+    dispatchWithCap decoded tid executingCore gate cap st = .error .illegalAuthority := by
+  rw [dispatchWithCap_lifecycleRetype_delegates decoded tid executingCore gate cap objId args
+    hSyscall hTarget hDecode]
+  exact lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_unauthorized executingCore _
+    hAuth st
+
+/-- The checked dispatch's `.lifecycleRetype` arm refuses an unauthorized target
+with `illegalAuthority` on every state — the arm is shared with the unchecked
+dispatch (`checkedDispatch_lifecycleRetype_eq_unchecked`). -/
+theorem dispatchWithCapChecked_lifecycleRetype_unauthorized
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) (gate : SyscallGate)
+    (cap : Capability) (objId : SeLe4n.ObjId)
+    (args : Architecture.SyscallArgDecode.LifecycleRetypeArgs)
+    (hSyscall : decoded.syscallId = .lifecycleRetype)
+    (hTarget : cap.target = .object objId)
+    (hDecode : decodeLifecycleRetypeArgs decoded = .ok args)
+    (hAuth : lifecycleRetypeAuthority cap args.targetObj = false)
+    (st : SystemState) :
+    dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
+      .error .illegalAuthority := by
+  rw [checkedDispatch_lifecycleRetype_eq_unchecked ctx decoded tid executingCore gate cap
+    hSyscall]
+  exact dispatchWithCap_lifecycleRetype_unauthorized decoded tid executingCore gate cap objId
+    args hSyscall hTarget hDecode hAuth st
+
 /-- WS-K-D/S6-A/T6-C/X2-E / WS-SM SM7.B.9 / WS-SM SM7.F.4(a)+(b)(ii) / WS-BP
 BP7.1: When vspaceMap dispatch passes its address-space check it is exactly
 `vspaceMapFromFrameCap` — resolve the frame MR2's capability names, admit the
