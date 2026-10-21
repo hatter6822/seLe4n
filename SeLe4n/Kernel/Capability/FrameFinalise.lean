@@ -54,10 +54,8 @@ and in its root rather than on a capability, so what a destroying step owes it i
 decided over the store: a table a destroyed capability named (read off the
 capability before the step, `slotPageTables`, as seL4's `finaliseCap` acts on the
 capability it destroys) that no slot names after it (`pageTablesOrphaned`, over
-`cnodeSlotsUnreferenced` since
-`v0.36.38` — a copy parked in a message can be dropped by a cancellation that
-finalises nothing, so it does not keep a table installed) has lost its **final**
-capability, and
+`carvedSubtreeUnreferenced`: every slot of every object, a CNode's or a
+thread's) has lost its **final** capability, and
 seL4's `finaliseCap` → `unmapPageTable` takes it out of its address space.
 `finaliseDestroyedCapabilities` is the composite both destroying arms run: it
 detaches each orphaned table and every table beneath it from its root
@@ -79,7 +77,7 @@ admitted by `cspaceDeleteAdmitted` and is the plain store write and splice
 decides its result afterwards, so nothing can refuse a finalising delete once
 its CNode exists (`cspaceDeleteFinalisingAdmitted`): a delete of a frame or
 page-table capability is its writes too (`cspaceDeleteFinalisingPerformAt`,
-`cspaceDeleteSlotFinalising_of_cnode`) and runs through `ofChecked` like any
+`cspaceDeleteSlotFinalising_of_slotHolder`) and runs through `ofChecked` like any
 other.
 
 **Every revoke (WS-ZA ZA5.3 part 8).**  A revocation is seL4's `cteRevoke`
@@ -155,7 +153,7 @@ frame's base are matched where they are read (`mappedPageLiveWords`), so no
 a destroying step empties the slot: the candidate for its page-table teardown,
 as seL4's `finaliseCap` acts on the capability being destroyed. -/
 @[inline] def slotPageTables (st : SystemState) (addr : CSpaceAddr) : List SeLe4n.ObjId :=
-  ((SystemState.lookupSlotCap st addr).bind (capabilityPageTable st)).toList
+  ((st.slotCapAt addr).bind (capabilityPageTable st)).toList
 
 /-- **The page tables a destroying step orphaned**, each with the install its
 root holds: a table a destroyed capability named (`named`, read before the step
@@ -175,7 +173,7 @@ def pageTablesOrphaned (named : List SeLe4n.ObjId) (st : SystemState) :
       | some p =>
         match p.installedIn with
         | some inst =>
-          if Architecture.pageTableInstallLive st id && cnodeSlotsUnreferenced st [id] then
+          if Architecture.pageTableInstallLive st id && carvedSubtreeUnreferenced st [id] then
             (id, inst) :: acc
           else acc
         | none => acc
@@ -644,29 +642,21 @@ CNode where a CNode stands, never an address-space root or the ASID table. -/
 theorem cspaceDeleteSlotCore_preserves_teardownWellFormed {addr : CSpaceAddr}
     {st st' : SystemState} (hW : teardownWellFormed st)
     (hC : cspaceDeleteSlotCore addr st = .ok ((), st')) : teardownWellFormed st' := by
-  unfold cspaceDeleteSlotCore at hC
-  cases hG : st.getCNode? addr.cnode with
-  | none => rw [hG] at hC; cases hC
-  | some cn =>
-    rw [hG] at hC
-    simp only at hC
-    have hO : st.objects[addr.cnode]? = some (.cnode cn) :=
-      (SystemState.getCNode?_eq_some_iff st addr.cnode cn).1 hG
-    cases hS : storeObject addr.cnode (.cnode (cn.remove addr.slot)) st with
-    | error e => rw [hS] at hC; cases hC
-    | ok pr =>
-      obtain ⟨⟨⟩, st1⟩ := pr
-      rw [hS] at hC
-      simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hC
-      subst hC
-      refine teardownWellFormed_of_roots_eq
-        (storeObject_preserves_objects_invExt st _ _ _ hW.1 hS) ?_ (fun oid r => ?_) hW
-      · rw [storeObject_asidTable_non_vspaceRoot st _ _ _ (fun r h => by cases h) hS, hO]
-      · by_cases hK : oid = addr.cnode
-        · subst hK
-          rw [storeObject_objects_eq st _ _ _ hW.1 hS, hO]
-          simp
-        · rw [storeObject_objects_ne st _ _ oid _ hK hW.1 hS]
+  obtain ⟨o, hO, hH, hS⟩ := cspaceDeleteSlotCore_ok hC
+  have hNR : ∀ r, o.removeSlotCap addr.slot ≠ .vspaceRoot r := by
+    intro r h; cases o <;> simp_all [KernelObject.holdsSlots, KernelObject.removeSlotCap]
+  have hNR0 : ∀ r, o ≠ .vspaceRoot r := by
+    intro r h; subst h; simp [KernelObject.holdsSlots] at hH
+  refine teardownWellFormed_of_roots_eq
+    (storeObject_preserves_objects_invExt st _ _ _ hW.1 hS) ?_ (fun oid r => ?_) hW
+  · rw [storeObject_asidTable_non_vspaceRoot st _ _ _ hNR hS, hO]
+    cases o <;> simp_all [KernelObject.holdsSlots]
+  · by_cases hK : oid = addr.cnode
+    · subst hK
+      rw [storeObject_objects_eq st _ _ _ hW.1 hS, hO]
+      simp only [Option.some.injEq]
+      exact ⟨fun h => absurd h (hNR r), fun h => absurd h (hNR0 r)⟩
+    · rw [storeObject_objects_ne st _ _ oid _ hK hW.1 hS]
 
 /-- **The delete keeps the teardown's state well formed.** -/
 theorem cspaceDeleteSlot_preserves_teardownWellFormed {addr : CSpaceAddr} {st st' : SystemState}
@@ -683,7 +673,7 @@ that frame's page is not mapped at the recorded address in the post-state. -/
 theorem cspaceDeleteSlotFinalising_ok_unmapped (ec : Concurrency.CoreId) (addr : CSpaceAddr)
     (st st' : SystemState) (hW : teardownWellFormed st)
     (h : cspaceDeleteSlotFinalising ec addr st = .ok ((), st'))
-    (cap : Capability) (hCap : SystemState.lookupSlotCap st addr = some cap)
+    (cap : Capability) (hCap : st.slotCapAt addr = some cap)
     (p : MappedPage) (hP : capabilityMappedPage st cap = some p) :
     mappedPageLive st' p = false := by
   obtain ⟨_, hD, hF⟩ := cspaceDeleteSlotFinalising_ok ec addr st st' h
@@ -708,22 +698,52 @@ and names no page table, so destroying it leaves every address space as it is
      | .object id => (st.getPageTable? id).isNone
      | _ => true)
 
-/-- WS-ZA ZA5.3: **`.cspaceDelete`'s checks**, read before any write: the slot's
-CNode exists, and its capability, if any, finalises nothing.  An admitted delete
-is its two writes (`cspaceDeleteSlotFinalising_of_admitted`). -/
+/-- WS-ZA ZA5.3: **a finalising delete's checks**, read before any write: the
+address names an object that holds slots (a CNode, a thread), and the slot's
+capability, if any, finalises nothing.  An admitted delete is its two writes
+(`cspaceDeleteSlotFinalising_of_admitted`). -/
 @[inline] def cspaceDeleteAdmitted (addr : CSpaceAddr) (st : SystemState) : Bool :=
+  match st.getObject? addr.cnode with
+  | some o =>
+    o.holdsSlots &&
+      (match o.slotCap addr.slot with
+       | some cap => capabilityFinalisesNothing st cap
+       | none => true)
+  | none => false
+
+/-- The thread arm of the compiled `cspaceDeleteAdmitted`, out of line. -/
+@[noinline] def threadSlotDeleteAdmitted (addr : CSpaceAddr) (st : SystemState) : Bool :=
+  match st.getObject? addr.cnode with
+  | some (.tcb t) =>
+    match t.spaceSlotCap addr.slot with
+    | some cap => capabilityFinalisesNothing st cap
+    | none => true
+  | _ => false
+
+/-- `cspaceDeleteAdmitted` as compiled: the CNode arm inline, as before a
+thread's slots joined it. -/
+@[inline] def cspaceDeleteAdmittedImpl (addr : CSpaceAddr) (st : SystemState) : Bool :=
   match st.getCNode? addr.cnode with
   | some cn =>
     match cn.lookup addr.slot with
     | some cap => capabilityFinalisesNothing st cap
     | none => true
-  | none => false
+  | none => threadSlotDeleteAdmitted addr st
+
+@[csimp] theorem cspaceDeleteAdmitted_eq_impl : @cspaceDeleteAdmitted = @cspaceDeleteAdmittedImpl := by
+  funext addr st
+  unfold cspaceDeleteAdmitted cspaceDeleteAdmittedImpl threadSlotDeleteAdmitted
+  cases hO : st.objects[addr.cnode]? with
+  | none => simp [SystemState.getObject?, SystemState.getCNode?, hO]
+  | some o =>
+    cases o <;> simp [SystemState.getObject?, SystemState.getCNode?, hO, KernelObject.holdsSlots,
+      KernelObject.slotCap]
 
 /-- WS-ZA ZA5.3: **an admitted delete's writes**: the slot emptied where its
-CNode stands (`SystemState.storeCNodeWith`), then spliced out of the derivation
-tree (`spliceDeletedCdtNode`). -/
+object stands (`slotCleared`), then spliced out of the derivation tree
+(`spliceDeletedCdtNode`). -/
 @[inline] def cspaceDeletePerform (addr : CSpaceAddr) (st : SystemState) : SystemState :=
-  spliceDeletedCdtNode (st.storeCNodeWith addr.cnode (·.remove addr.slot)) addr
+  spliceDeletedCdtNode (slotCleared addr st) addr
 
 /-- A finalisation of nothing is the identity. -/
 theorem finaliseDestroyedCapabilities_nil (ec : Concurrency.CoreId) (st : SystemState) :
@@ -735,46 +755,50 @@ theorem finaliseDestroyedCapabilities_nil (ec : Concurrency.CoreId) (st : System
 theorem cspaceDeleteSlotFinalising_of_admitted {ec : Concurrency.CoreId} {addr : CSpaceAddr}
     {st : SystemState} (h : cspaceDeleteAdmitted addr st = true) :
     cspaceDeleteSlotFinalising ec addr st = .ok ((), cspaceDeletePerform addr st) := by
-  unfold cspaceDeleteAdmitted SystemState.getCNode? at h
+  unfold cspaceDeleteAdmitted SystemState.getObject? at h
   cases hO : st.objects[addr.cnode]? with
   | none => rw [hO] at h; cases h
   | some o =>
     rw [hO] at h
-    cases o
-    case cnode cn =>
-      simp only at h
-      have hLk : SystemState.lookupSlotCap st addr = cn.lookup addr.slot := by
-        simp [SystemState.lookupSlotCap, SystemState.lookupCNode, hO]
-      have hNamed : slotPageTables st addr = [] ∧ slotMappedPages st addr = [] := by
-        cases hC : cn.lookup addr.slot with
-        | none => simp [slotPageTables, slotMappedPages, hLk, hC]
-        | some cap =>
-          rw [hC] at h
-          simp only [capabilityFinalisesNothing, Bool.and_eq_true, Option.isNone_iff_eq_none] at h
-          obtain ⟨hM, hT⟩ := h
-          refine ⟨?_, ?_⟩
-          · cases hTg : cap.target <;> simp_all [slotPageTables, capabilityPageTable]
-          · simp [slotMappedPages, hLk, hC, capabilityMappedPage, hM]
-      unfold cspaceDeleteSlotFinalising cspaceDeleteThenFinalise
-      rw [hNamed.1, hNamed.2]
-      have hDel : cspaceDeleteSlot addr st = .ok ((), cspaceDeletePerform addr st) := by
-        unfold cspaceDeleteSlot cspaceDeleteSlotCore cspaceDeletePerform
-        have hG : st.getCNode? addr.cnode = some cn := by
-          simp [SystemState.getCNode?, hO]
-        rw [hG]
-        simp only
-        rw [SystemState.storeObject_cnode_eq_storeCNodeWith hO (·.remove addr.slot)]
-      simp only [hDel, finaliseDestroyedCapabilities_nil]
-    all_goals simp at h
+    simp only [Bool.and_eq_true] at h
+    obtain ⟨hH, h⟩ := h
+    have hLk : st.slotCapAt addr = o.slotCap addr.slot := SystemState.slotCapAt_of_object hO
+    have hNamed : slotPageTables st addr = [] ∧ slotMappedPages st addr = [] := by
+      cases hC : o.slotCap addr.slot with
+      | none => simp [slotPageTables, slotMappedPages, hLk, hC]
+      | some cap =>
+        rw [hC] at h
+        simp only [capabilityFinalisesNothing, Bool.and_eq_true, Option.isNone_iff_eq_none] at h
+        obtain ⟨hM, hT⟩ := h
+        refine ⟨?_, ?_⟩
+        · cases hTg : cap.target <;> simp_all [slotPageTables, capabilityPageTable]
+        · simp [slotMappedPages, hLk, hC, capabilityMappedPage, hM]
+    unfold cspaceDeleteSlotFinalising cspaceDeleteThenFinalise
+    rw [hNamed.1, hNamed.2]
+    have hDel : cspaceDeleteSlot addr st = .ok ((), cspaceDeletePerform addr st) := by
+      unfold cspaceDeleteSlot cspaceDeletePerform
+      rw [cspaceDeleteSlotCore_eq_slotCleared hO hH]
+    simp only [hDel, finaliseDestroyedCapabilities_nil]
 
-/-- WS-ZA ZA5.3 part 7: **`.cspaceDelete`'s one check**, read before any write:
-the slot's CNode exists.  Nothing else can refuse a finalising delete: the
-delete itself refuses only for a missing CNode, and the teardown never
-refuses (`finaliseDestroyedCapabilities_eq_ok_state`). -/
+/-- WS-ZA ZA5.3 part 7: **a finalising delete's one check**, read before any
+write: the address names an object that holds slots, a CNode or a thread.
+Nothing else can refuse a finalising delete: the delete itself refuses only for
+such a missing object, and the teardown never refuses
+(`finaliseDestroyedCapabilities_eq_ok_state`).  The revocation loop asks it of
+each child; a user's delete asks the CNode-only `cnodeInvoked` first. -/
 @[inline] def cspaceDeleteFinalisingAdmitted (addr : CSpaceAddr) (st : SystemState) : Bool :=
-  match st.getCNode? addr.cnode with
-  | some _ => true
+  match st.getObject? addr.cnode with
+  | some o => o.holdsSlots
   | none => false
+
+/-- A CNode invocation's object holds slots, so its delete is admitted. -/
+theorem cspaceDeleteFinalisingAdmitted_of_cnodeInvoked {addr : CSpaceAddr} {st : SystemState}
+    (h : cnodeInvoked addr.cnode st = true) : cspaceDeleteFinalisingAdmitted addr st = true := by
+  unfold cnodeInvoked SystemState.getCNode? at h
+  unfold cspaceDeleteFinalisingAdmitted SystemState.getObject?
+  cases hO : st.objects[addr.cnode]? with
+  | none => rw [hO] at h; cases h
+  | some o => rw [hO] at h; cases o <;> simp_all [KernelObject.holdsSlots]
 
 /-- **A delete that finalises something**: what the capability in slot `slot`
 of `cnode` names and records is read first, then the slot is emptied and
@@ -802,7 +826,7 @@ built.  Any other capability takes `cspaceDeleteTeardownAt`
 (`cspaceDeleteTeardownAt_eq_frame`). -/
 @[noinline] def cspaceDeleteTeardownAtFrame (executingCore : Concurrency.CoreId)
     (cnode : SeLe4n.ObjId) (slot : SeLe4n.Slot) (st : SystemState) : SystemState :=
-  match SystemState.lookupSlotCap st ⟨cnode, slot⟩ with
+  match st.slotCapAt ⟨cnode, slot⟩ with
   | some cap =>
     match cap.mapping, cap.target with
     | some m, .object frameId =>
@@ -820,7 +844,7 @@ theorem cspaceDeleteTeardownAt_eq_frame :
     @cspaceDeleteTeardownAt = @cspaceDeleteTeardownAtFrame := by
   funext ec cnode slot st
   unfold cspaceDeleteTeardownAtFrame
-  cases hL : SystemState.lookupSlotCap st ⟨cnode, slot⟩ with
+  cases hL : st.slotCapAt ⟨cnode, slot⟩ with
   | none => rfl
   | some cap =>
     dsimp only
@@ -863,7 +887,7 @@ other capability takes `cspaceDeleteTeardownAtFrame`
 (`cspaceDeleteTeardownAt_eq_table`). -/
 @[noinline] def cspaceDeleteTeardownAtTable (executingCore : Concurrency.CoreId)
     (cnode : SeLe4n.ObjId) (slot : SeLe4n.Slot) (st : SystemState) : SystemState :=
-  match SystemState.lookupSlotCap st ⟨cnode, slot⟩ with
+  match st.slotCapAt ⟨cnode, slot⟩ with
   | some cap =>
     match cap.target with
     | .object tableId =>
@@ -882,7 +906,7 @@ other capability takes `cspaceDeleteTeardownAtFrame`
   funext ec cnode slot st
   unfold cspaceDeleteTeardownAtTable
   rw [← cspaceDeleteTeardownAt_eq_frame]
-  cases hL : SystemState.lookupSlotCap st ⟨cnode, slot⟩ with
+  cases hL : st.slotCapAt ⟨cnode, slot⟩ with
   | none => rfl
   | some cap =>
     dsimp only
@@ -937,28 +961,22 @@ delete's branch is the dispatcher's own check and a call of
   else cspaceDeleteTeardownAt executingCore cnode slot st
 
 
-/-- The delete, when its slot's CNode exists, is the slot emptied and spliced
-out. -/
-theorem cspaceDeleteSlot_of_cnode {addr : CSpaceAddr} {st : SystemState}
+/-- The delete, when its address names an object that holds slots, is the slot
+emptied and spliced out. -/
+theorem cspaceDeleteSlot_of_slotHolder {addr : CSpaceAddr} {st : SystemState}
     (h : cspaceDeleteFinalisingAdmitted addr st = true) :
     cspaceDeleteSlot addr st = .ok ((), cspaceDeletePerform addr st) := by
-  unfold cspaceDeleteFinalisingAdmitted at h
-  cases hG : st.getCNode? addr.cnode with
-  | none => rw [hG] at h; cases h
-  | some cn =>
-    have hO : st.objects[addr.cnode]? = some (.cnode cn) := by
-      unfold SystemState.getCNode? at hG
-      cases hO : st.objects[addr.cnode]? with
-      | none => rw [hO] at hG; cases hG
-      | some o => rw [hO] at hG; cases o <;> simp_all
-    unfold cspaceDeleteSlot cspaceDeleteSlotCore cspaceDeletePerform
-    rw [hG]
-    simp only
-    rw [SystemState.storeObject_cnode_eq_storeCNodeWith hO (·.remove addr.slot)]
+  unfold cspaceDeleteFinalisingAdmitted SystemState.getObject? at h
+  cases hO : st.objects[addr.cnode]? with
+  | none => rw [hO] at h; cases h
+  | some o =>
+    rw [hO] at h
+    unfold cspaceDeleteSlot cspaceDeletePerform
+    rw [cspaceDeleteSlotCore_eq_slotCleared hO h]
 
 /-- WS-ZA ZA5.3 part 7: **an admitted finalising delete is its writes**, whatever
 its capability names. -/
-theorem cspaceDeleteSlotFinalising_of_cnode {ec : Concurrency.CoreId} {cnode : SeLe4n.ObjId}
+theorem cspaceDeleteSlotFinalising_of_slotHolder {ec : Concurrency.CoreId} {cnode : SeLe4n.ObjId}
     {slot : SeLe4n.Slot} {st : SystemState}
     (h : cspaceDeleteFinalisingAdmitted ⟨cnode, slot⟩ st = true) :
     cspaceDeleteSlotFinalising ec ⟨cnode, slot⟩ st =
@@ -967,7 +985,7 @@ theorem cspaceDeleteSlotFinalising_of_cnode {ec : Concurrency.CoreId} {cnode : S
   split
   · next hA => exact cspaceDeleteSlotFinalising_of_admitted hA
   · unfold cspaceDeleteSlotFinalising cspaceDeleteThenFinalise cspaceDeleteTeardownAt
-    rw [cspaceDeleteSlot_of_cnode h]
+    rw [cspaceDeleteSlot_of_slotHolder h]
     exact finaliseDestroyedCapabilities_eq_ok_state ec _ _ _
 
 -- ============================================================================
@@ -987,27 +1005,13 @@ a CNode stands. -/
 theorem cspaceDeleteSlotCore_shrinks {addr : CSpaceAddr} {st st' : SystemState}
     (hObjInv : st.objects.invExt) (hC : cspaceDeleteSlotCore addr st = .ok ((), st')) :
     vspaceRootsShrink st st' := by
-  unfold cspaceDeleteSlotCore at hC
-  cases hG : st.getCNode? addr.cnode with
-  | none => rw [hG] at hC; cases hC
-  | some cn =>
-    rw [hG] at hC
-    simp only at hC
-    have hO : st.objects[addr.cnode]? = some (.cnode cn) :=
-      (SystemState.getCNode?_eq_some_iff st addr.cnode cn).1 hG
-    cases hS : storeObject addr.cnode (.cnode (cn.remove addr.slot)) st with
-    | error e => rw [hS] at hC; cases hC
-    | ok pr =>
-      obtain ⟨⟨⟩, st1⟩ := pr
-      rw [hS] at hC
-      simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hC
-      subst hC
-      refine vspaceRootsShrink_of_roots (fun oid r hR => ?_)
-      by_cases hK : oid = addr.cnode
-      · subst hK
-        rw [storeObject_objects_eq st _ _ _ hObjInv hS] at hR
-        cases hR
-      · rwa [storeObject_objects_ne st _ _ oid _ hK hObjInv hS] at hR
+  obtain ⟨o, hO, hH, hS⟩ := cspaceDeleteSlotCore_ok hC
+  refine vspaceRootsShrink_of_roots (fun oid r hR => ?_)
+  by_cases hK : oid = addr.cnode
+  · subst hK
+    rw [storeObject_objects_eq st _ _ _ hObjInv hS] at hR
+    cases o <;> simp_all [KernelObject.holdsSlots, KernelObject.removeSlotCap]
+  · rwa [storeObject_objects_ne st _ _ oid _ hK hObjInv hS] at hR
 
 /-- **The delete keeps every address-space root**: the core delete, then a write
 of derivation links. -/
@@ -1076,7 +1080,7 @@ theorem FinalisingDeleteChain.unmapped {ec : Concurrency.CoreId} {s s2 st' : Sys
     {c : CSpaceAddr} (hW : teardownWellFormed s)
     (hD : cspaceDeleteSlotFinalising ec c s = .ok ((), s2))
     (hRest : FinalisingDeleteChain ec s2 st')
-    (cap : Capability) (hCap : SystemState.lookupSlotCap s c = some cap)
+    (cap : Capability) (hCap : s.slotCapAt c = some cap)
     (p : MappedPage) (hP : capabilityMappedPage s cap = some p) :
     mappedPageLive st' p = false := by
   have hW2 := cspaceDeleteSlotFinalising_preserves_teardownWellFormed ec hW hD
@@ -1120,7 +1124,7 @@ theorem revokeFirstChildLoop_chain (ec : Concurrency.CoreId) (cnode : SeLe4n.Obj
     · exact .refl st
     · split
       · next hA =>
-        exact .step _ (cspaceDeleteSlotFinalising_of_cnode hA)
+        exact .step _ (cspaceDeleteSlotFinalising_of_slotHolder hA)
           (revokeFirstChildLoop_chain ec cnode slot n _)
       · exact .refl st
 
@@ -1220,7 +1224,7 @@ theorem cspaceRevokeCdtFinalising_ok_unmapped (ec : Concurrency.CoreId) (addr : 
     teardownWellFormed st' ∧
       ∀ (s s2 : SystemState) (c : CSpaceAddr), FinalisingDeleteChain ec st s →
         cspaceDeleteSlotFinalising ec c s = .ok ((), s2) → FinalisingDeleteChain ec s2 st' →
-        ∀ (cap : Capability), SystemState.lookupSlotCap s c = some cap →
+        ∀ (cap : Capability), s.slotCapAt c = some cap →
         ∀ (p : MappedPage), capabilityMappedPage s cap = some p → mappedPageLive st' p = false :=
   ⟨((cspaceRevokeCdtFinalising_chain ec addr st st' h).wellFormed hW).1,
    fun _ _ _ hPre hD hRest cap hCap p hP =>

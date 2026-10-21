@@ -1893,6 +1893,53 @@ theorem detachCNodeSlots_lifecycle_eq
     (detachCNodeSlots st cnodeId cn).lifecycle = st.lifecycle := by
   obtain ⟨_, h⟩ := detachCNodeSlots_shape st cnodeId cn; rw [h.fields]
 
+/-- **Splice both of a thread's space slots out of the derivation tree**
+(`spliceDeletedCdtNode`, the delete's own tree step), as `detachCNodeSlots`
+does a CNode's: run on a thread being replaced, so no edge outlives its CSpace
+and VSpace root slots (seL4's `tcbCTable` and `tcbVTable`) and each slot's
+children are derived from its parent instead. -/
+def detachTcbSlots (st : SystemState) (tcbId : SeLe4n.ObjId) : SystemState :=
+  spliceDeletedCdtNode
+    (spliceDeletedCdtNode st { cnode := tcbId, slot := TCB.cspaceRootSlot })
+    { cnode := tcbId, slot := TCB.vspaceRootSlot }
+
+/-- **`detachTcbSlots` writes the tree and link words alone**: every other
+field is the pre-state's. -/
+theorem detachTcbSlots_shape (st : SystemState) (tcbId : SeLe4n.ObjId) :
+    ∃ cdt, SystemState.linkReach { st with cdt := cdt } (detachTcbSlots st tcbId) := by
+  unfold detachTcbSlots
+  exact ⟨_, ((spliceDeletedCdtNode_reach st _).with_cdt _).trans
+    (spliceDeletedCdtNode_reach _ _)⟩
+
+/-- `detachTcbSlots` keeps every object up to derivation links, and the store
+invariant. -/
+theorem detachTcbSlots_agree {st : SystemState} (hInv : st.objects.invExt)
+    (tcbId : SeLe4n.ObjId) :
+    SystemState.objectsAgreeOffDerivationLinks (detachTcbSlots st tcbId) st ∧
+      (detachTcbSlots st tcbId).objects.invExt := by
+  obtain ⟨_, h⟩ := detachTcbSlots_shape st tcbId
+  exact ⟨h.agree hInv, h.invExt hInv⟩
+
+/-- `detachTcbSlots` preserves lifecycle metadata. -/
+theorem detachTcbSlots_lifecycle_eq (st : SystemState) (tcbId : SeLe4n.ObjId) :
+    (detachTcbSlots st tcbId).lifecycle = st.lifecycle := by
+  obtain ⟨_, h⟩ := detachTcbSlots_shape st tcbId; rw [h.fields]
+
+/-- `detachTcbSlots` preserves the scheduler. -/
+theorem detachTcbSlots_scheduler_eq (st : SystemState) (tcbId : SeLe4n.ObjId) :
+    (detachTcbSlots st tcbId).scheduler = st.scheduler := by
+  obtain ⟨_, h⟩ := detachTcbSlots_shape st tcbId; rw [h.fields]
+
+/-- `detachTcbSlots` preserves the machine. -/
+theorem detachTcbSlots_machine_eq (st : SystemState) (tcbId : SeLe4n.ObjId) :
+    (detachTcbSlots st tcbId).machine = st.machine := by
+  obtain ⟨_, h⟩ := detachTcbSlots_shape st tcbId; rw [h.fields]
+
+/-- `detachTcbSlots` preserves the TLB-shootdown state. -/
+theorem detachTcbSlots_tlbShootdown_eq (st : SystemState) (tcbId : SeLe4n.ObjId) :
+    (detachTcbSlots st tcbId).tlbShootdown = st.tlbShootdown := by
+  obtain ⟨_, h⟩ := detachTcbSlots_shape st tcbId; rw [h.fields]
+
 -- WS-SM SM6.D (PR #827 review #6): `replyIsStashed` (the server-first stash query —
 -- "does any blocked receiver reserve `rid`?") moved down to
 -- `SeLe4n.Model.SystemState` (a Model-level object-store fold), so the
@@ -1904,7 +1951,8 @@ theorem detachCNodeSlots_lifecycle_eq
     CDT detach, and service registration cleanup.
     - If the current object is a TCB: refuse a running thread, end its
       reservation the way the suspend's G3 does (`cancelDonationArmOnCore`,
-      since `v0.35.164`), then clean up scheduler + IPC references.
+      since `v0.35.164`), then clean up scheduler + IPC references and splice
+      its two space slots out of the derivation tree (`detachTcbSlots`).
     - If the current object is an endpoint: revoke service registrations
       backed by this endpoint to preserve `registryEndpointValid`.
     - If the current object is a CNode: refuse when a slot still records a
@@ -1957,8 +2005,10 @@ def lifecyclePreRetypeCleanup (st : SystemState) (target : SeLe4n.ObjId)
     | _ => .ok st) with
   | .error e => .error e
   | .ok st =>
+  -- A thread's two space slots leave the derivation tree as a deleted slot
+  -- does (`detachTcbSlots`), as a CNode's slots do below.
   let st := match currentObj with
-    | .tcb tcb => cleanupTcbReferences st tcb.tid
+    | .tcb tcb => detachTcbSlots (cleanupTcbReferences st tcb.tid) target
     | _ => st
   -- R4-B.2 (M-13): Clean up service registrations for endpoints being retyped
   let st := match currentObj with
@@ -2333,7 +2383,7 @@ theorem lifecyclePreRetypeCleanup_flat_subset
         | true => rw [if_pos hr] at hOk; exact absurd hOk (by simp)
       rw [if_neg (by simp only [hRO]; exact Bool.false_ne_true)] at hOk
       injection hOk with hOk; subst hOk
-      rw [cleanupTcbReferences_scheduler_eq_removeRunnableFromAllCores] at h
+      rw [detachTcbSlots_scheduler_eq, cleanupTcbReferences_scheduler_eq_removeRunnableFromAllCores] at h
       -- Take the sweep off first (it handles its own per-core guard), then
       -- collapse the run-queue-preserving prefix.
       have hSub := removeRunnableFromAllCores_toList_subset _ tcb.tid x bootCoreId h
@@ -2415,8 +2465,8 @@ theorem lifecyclePreRetypeCleanup_tlbShootdown_eq
         | false => rfl
         | true => rw [if_pos hr] at hOk; exact absurd hOk (by simp)
       rw [if_neg (by simp only [hRO]; exact Bool.false_ne_true)] at hOk
-      injection hOk with hOk; subst hOk
-      rw [cleanupTcbReferences_tlbShootdown_eq]
+      rw [← Except.ok.inj hOk, detachTcbSlots_tlbShootdown_eq,
+        cleanupTcbReferences_tlbShootdown_eq]
       exact hArmShoot
   | cnode cn =>
     simp only [lifecyclePreRetypeCleanup] at hOk

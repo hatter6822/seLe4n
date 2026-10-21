@@ -867,6 +867,8 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
           | error e => simp only [hDec] at hStep; cases hStep
           | ok args =>
               simp only [hDec] at hStep
+              split at hStep
+              · cases hStep
               refine cspaceMintWithCdt_preserves_ipcInvariantFull st st' _ _ args.rights _
                 hObjInv hInv ?_ hStep
               intro b hb
@@ -882,6 +884,8 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
           | error e => simp only [hDec] at hStep; cases hStep
           | ok args =>
               simp only [hDec] at hStep
+              split at hStep
+              · cases hStep
               exact cspaceCopy_preserves_ipcInvariantFull st st' _ _ hObjInv hInv hStep
         all_goals try cases hStep
       case cspaceMove =>
@@ -891,6 +895,8 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
           | error e => simp only [hDec] at hStep; cases hStep
           | ok args =>
               simp only [hDec] at hStep
+              split at hStep
+              · cases hStep
               exact cspaceMove_preserves_ipcInvariantFull st st' _ _ hObjInv hInv hStep
         all_goals try cases hStep
       case serviceRegister =>
@@ -1278,12 +1284,15 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
           | error e => simp only [hDec] at hStep; cases hStep
           | ok args =>
               simp only [hDec] at hStep
+              split at hStep
+              · cases hStep
+              rename_i hG
               unfold cspaceMintChecked at hStep
               simp only [] at hStep
               split at hStep
               · have hU : dispatchWithCap decoded tid executingCore gate cap st = .ok ((), st') := by
                   unfold dispatchWithCap
-                  simp only [hCapOnly0, hSy, hTgt, hDec]
+                  simp only [hCapOnly0, hSy, hTgt, hDec, if_neg hG]
                   exact hStep
                 exact dispatchWithCap_preserves_ipcInvariantFull decoded tid executingCore gate cap
                   st st' hQ.base hD hNotIdle hU
@@ -1296,12 +1305,15 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
           | error e => simp only [hDec] at hStep; cases hStep
           | ok args =>
               simp only [hDec] at hStep
+              split at hStep
+              · cases hStep
+              rename_i hG
               unfold cspaceCopyChecked at hStep
               simp only [] at hStep
               split at hStep
               · have hU : dispatchWithCap decoded tid executingCore gate cap st = .ok ((), st') := by
                   unfold dispatchWithCap
-                  simp only [hCapOnly0, hSy, hTgt, hDec]
+                  simp only [hCapOnly0, hSy, hTgt, hDec, if_neg hG]
                   exact hStep
                 exact dispatchWithCap_preserves_ipcInvariantFull decoded tid executingCore gate cap
                   st st' hQ.base hD hNotIdle hU
@@ -1314,12 +1326,15 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
           | error e => simp only [hDec] at hStep; cases hStep
           | ok args =>
               simp only [hDec] at hStep
+              split at hStep
+              · cases hStep
+              rename_i hG
               unfold cspaceMoveChecked at hStep
               simp only [] at hStep
               split at hStep
               · have hU : dispatchWithCap decoded tid executingCore gate cap st = .ok ((), st') := by
                   unfold dispatchWithCap
-                  simp only [hCapOnly0, hSy, hTgt, hDec]
+                  simp only [hCapOnly0, hSy, hTgt, hDec, if_neg hG]
                   exact hStep
                 exact dispatchWithCap_preserves_ipcInvariantFull decoded tid executingCore gate cap
                   st st' hQ.base hD hNotIdle hU

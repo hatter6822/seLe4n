@@ -155,50 +155,26 @@ theorem cspaceDeleteSlotCore_preserves_replyCapPointsToValidReply
     (hObjInv : st.objects.invExt)
     (hStep : cspaceDeleteSlotCore addr st = .ok ((), st')) :
     replyCapPointsToValidReply st' := by
-  unfold cspaceDeleteSlotCore SystemState.getCNode? at hStep
-  cases hPre : st.objects[addr.cnode]? with
-  | none => simp [hPre] at hStep
-  | some preObj =>
-    cases preObj with
-    | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ =>
-        simp [hPre] at hStep
-    | cnode cn =>
-      simp only [hPre] at hStep
-      cases hStore : storeObject addr.cnode (.cnode (cn.remove addr.slot)) st with
-      | error e => simp [hStore] at hStep
-      | ok pair =>
-        obtain ⟨_, st1⟩ := pair
-        simp only [hStore] at hStep
-        have hEq : st' = st1 := by
-          simp only [Except.ok.injEq, Prod.mk.injEq] at hStep; exact hStep.2.symm
-        rw [hEq]
-        have hMidSelf : st1.objects[addr.cnode]? = some (.cnode (cn.remove addr.slot)) :=
-          storeObject_objects_eq st st1 addr.cnode _ hObjInv hStore
-        have hMidNe : ∀ oid, oid ≠ addr.cnode → st1.objects[oid]? = st.objects[oid]? :=
-          fun oid h => storeObject_objects_ne st st1 addr.cnode oid _ h hObjInv hStore
-        have hGetReply : ∀ rid : SeLe4n.ReplyId,
-            st1.getReply? rid = st.getReply? rid := by
-          intro rid
-          simp only [SystemState.getReply?]
-          by_cases hc : rid.toObjId = addr.cnode
-          · rw [hc, hMidSelf, hPre]
-          · rw [hMidNe rid.toObjId hc]
-        intro oid cn' slot cap' rid hObj hLook hTgt
-        rw [hGetReply]
-        by_cases hc : oid = addr.cnode
-        · subst hc
-          rw [hMidSelf] at hObj
-          simp only [Option.some.injEq] at hObj
-          subst hObj
-          simp only [KernelObject.slotCap] at hLook
-          by_cases hs : slot = addr.slot
-          · rw [hs, CNode.lookup_remove_eq_none cn addr.slot (CNode.slotsUnique_holds cn)] at hLook
-            exact absurd hLook (by simp)
-          · rw [CNode.lookup_remove_ne cn addr.slot slot (Ne.symm hs)
-              (CNode.slotsUnique_holds cn)] at hLook
-            exact hRCPV addr.cnode (.cnode cn) slot cap' rid hPre hLook hTgt
-        · rw [hMidNe oid hc] at hObj
-          exact hRCPV oid cn' slot cap' rid hObj hLook hTgt
+  obtain ⟨o, hPre, hH, hStore⟩ := cspaceDeleteSlotCore_ok hStep
+  have hMidSelf := storeObject_objects_eq st st' addr.cnode _ hObjInv hStore
+  have hMidNe : ∀ oid, oid ≠ addr.cnode → st'.objects[oid]? = st.objects[oid]? :=
+    fun oid h => storeObject_objects_ne st st' addr.cnode oid _ h hObjInv hStore
+  have hGetReply : ∀ rid : SeLe4n.ReplyId, st'.getReply? rid = st.getReply? rid := by
+    intro rid
+    simp only [SystemState.getReply?]
+    by_cases hc : rid.toObjId = addr.cnode
+    · rw [hc, hMidSelf, hPre]
+      cases o <;> simp_all [KernelObject.holdsSlots, KernelObject.removeSlotCap]
+    · rw [hMidNe rid.toObjId hc]
+  intro oid o' slot cap' rid hObj hLook hTgt
+  rw [hGetReply]
+  by_cases hc : oid = addr.cnode
+  · subst hc
+    rw [hMidSelf] at hObj
+    cases hObj
+    exact hRCPV _ o slot cap' rid hPre (KernelObject.slotCap_removeSlotCap_back hLook) hTgt
+  · rw [hMidNe oid hc] at hObj
+    exact hRCPV oid o' slot cap' rid hObj hLook hTgt
 
 /-- WS-SM SM6.D / PR #822 Phase H (#1.a): a capability resolved from a CSpace slot in a state
 satisfying `capabilityInvariantBundle` is reply-backed — if its target is a reply cap, the

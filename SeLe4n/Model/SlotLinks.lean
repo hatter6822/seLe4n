@@ -1075,6 +1075,14 @@ theorem none_iff {oid : SeLe4n.ObjId} : st'.objects[oid]? = none ↔ st.objects[
   · rw [ha, hb]; simp
   · rw [ha, hb]; simp
 
+/-- The object-slot read never reads links. -/
+theorem slotCapAt (r : SlotRef) : st'.slotCapAt r = st.slotCapAt r := by
+  unfold SystemState.slotCapAt SystemState.getObject?
+  rcases h r.cnode with e | ⟨cn, cn', ha, hb, hw⟩ | ⟨t, t', ha, hb, hw⟩
+  · rw [e]
+  · rw [ha, hb]; exact CNode.proj_eq_of_withoutLinks_eq (·.lookup r.slot) hw
+  · rw [ha, hb]; exact TCB.proj_eq_of_withoutLinks_eq (fun x : TCB => x.spaceSlotCap r.slot) hw
+
 /-- Slot lookups never read links. -/
 theorem lookupSlotCap (r : SlotRef) : st'.lookupSlotCap r = st.lookupSlotCap r := by
   unfold SystemState.lookupSlotCap SystemState.lookupCNode
@@ -1676,6 +1684,20 @@ theorem slotLinkAt_storeObject_cnode {st st' : SystemState} {oid : SeLe4n.ObjId}
     (hLinks : cn'.links = cn.links) (hStore : storeObject oid (.cnode cn') st = .ok ((), st')) :
     st'.slotLinkAt = st.slotLinkAt :=
   slotLinkAt_storeObject_of_links (o' := .cnode cn') hObjInv hPre hLinks hStore
+
+/-- Storing over an object an object with the same slots keeps every slot a
+slot of a live object, or not. -/
+theorem slotInObject_storeObject_of_hasSlot {st st' : SystemState} {oid : SeLe4n.ObjId}
+    {o o' : KernelObject} (hObjInv : st.objects.invExt) (hPre : st.objects[oid]? = some o)
+    (hS : ∀ s, o'.hasSlot s ↔ o.hasSlot s) (hStore : storeObject oid o' st = .ok ((), st'))
+    (r : SlotRef) : st'.slotInObject r ↔ st.slotInObject r := by
+  unfold slotInObject
+  by_cases h : r.cnode = oid
+  · rw [h, storeObject_objects_eq st st' oid _ hObjInv hStore, hPre]
+    constructor
+    · rintro ⟨_, he, hs⟩; cases he; exact ⟨_, rfl, (hS _).1 hs⟩
+    · rintro ⟨_, he, hs⟩; cases he; exact ⟨_, rfl, (hS _).2 hs⟩
+  · rw [storeObject_objects_ne st st' oid r.cnode _ h hObjInv hStore]
 
 /-- Storing over a CNode a CNode of the same radix keeps every slot a slot of a
 live object, or not. -/

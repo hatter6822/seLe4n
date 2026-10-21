@@ -68,10 +68,12 @@ theorem cspaceDeleteSlotCore_keyInputsEq (st st' : SystemState) (addr : CSpaceAd
     (hObjInv : st.objects.invExt)
     (hStep : cspaceDeleteSlotCore addr st = .ok ((), st')) :
     keyInputsEq st st' ∧ st'.scheduler = st.scheduler ∧ st'.objects.invExt := by
-  obtain ⟨cn, hPre, hAt, hNe, hSched, hExt⟩ :=
-    cspaceDeleteSlotCore_shape st st' addr hObjInv hStep
-  exact ⟨keyInputsEq_of_single_inert_write hNe (by rw [hPre]; rfl) (by rw [hAt]; rfl),
-    hSched, hExt⟩
+  obtain ⟨o, hO, hH, hS⟩ := cspaceDeleteSlotCore_ok hStep
+  refine ⟨keyInputsEq_storeObject hObjInv hS ?_, storeObject_scheduler_eq st st' _ _ hS,
+    storeObject_preserves_objects_invExt st st' _ _ hObjInv hS⟩
+  rw [hO]
+  cases o <;> simp_all [keyInputsOf, KernelObject.removeSlotCap, TCB.removeSpaceCap,
+    KernelObject.holdsSlots]
 
 /-- What every capability arm establishes: no key input, no scheduler field and
 no store invariant moved. -/

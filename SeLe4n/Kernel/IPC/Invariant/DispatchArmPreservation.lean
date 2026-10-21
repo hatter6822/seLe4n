@@ -855,9 +855,9 @@ theorem cspaceInsertSlot_preserves_ipcInvariantFull
       hInv.passiveServerIdle)
     hBadge.2 hInv
 
-/-- Success shape of `cspaceDeleteSlotCore`: the target CNode existed, the
-post-state holds it with the slot removed, off-key objects, the scheduler and the
-store invariant are untouched.
+/-- Success shape of `cspaceDeleteSlotCore`: the object at the address held
+slots, the post-state holds it with the slot emptied, off-key objects, the
+scheduler and the store invariant are untouched.
 
 The store invariant is a conjunct rather than a separate lemma because the
 revocation fold (`v0.35.190`) needs it *between* iterations: each
@@ -867,44 +867,36 @@ theorem cspaceDeleteSlotCore_shape
     (st st' : SystemState) (addr : CSpaceAddr)
     (hObjInv : st.objects.invExt)
     (hStep : cspaceDeleteSlotCore addr st = .ok ((), st')) :
-    ∃ cn : CNode, st.objects[addr.cnode]? = some (.cnode cn) ∧
-      st'.objects[addr.cnode]? = some (.cnode (cn.remove addr.slot)) ∧
+    ∃ o : KernelObject, st.objects[addr.cnode]? = some o ∧ o.holdsSlots = true ∧
+      st'.objects[addr.cnode]? = some (o.removeSlotCap addr.slot) ∧
       (∀ oid : SeLe4n.ObjId, oid ≠ addr.cnode → st'.objects[oid]? = st.objects[oid]?) ∧
       st'.scheduler = st.scheduler ∧ st'.objects.invExt := by
-  unfold cspaceDeleteSlotCore SystemState.getCNode? at hStep
-  cases hObj : st.objects[addr.cnode]? with
-  | none => simp [hObj] at hStep
-  | some obj =>
-    cases obj with
-    | cnode cn =>
-      simp only [hObj] at hStep
-      split at hStep
-      · contradiction
-      · rename_i st1 hStore
-        simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
-        subst hStep
-        refine ⟨cn, rfl, ?_, ?_, ?_, ?_⟩
-        · exact storeObject_objects_eq st st1 addr.cnode
-            (.cnode (cn.remove addr.slot)) hObjInv hStore
-        · intro oid hNe
-          exact storeObject_objects_ne st st1 addr.cnode oid
-            (.cnode (cn.remove addr.slot)) hNe hObjInv hStore
-        · exact storeObject_scheduler_eq st st1 addr.cnode
-            (.cnode (cn.remove addr.slot)) hStore
-        · exact storeObject_preserves_objects_invExt st st1 addr.cnode
-            (.cnode (cn.remove addr.slot)) hObjInv hStore
-    | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
-    | schedContext _ | reply _ | frame _ | pageTable _ => simp [hObj] at hStep
+  obtain ⟨o, hO, hH, hS⟩ := cspaceDeleteSlotCore_ok hStep
+  exact ⟨o, hO, hH, storeObject_objects_eq st st' _ _ hObjInv hS,
+    fun oid hNe => storeObject_objects_ne st st' _ oid _ hNe hObjInv hS,
+    storeObject_scheduler_eq st st' _ _ hS,
+    storeObject_preserves_objects_invExt st st' _ _ hObjInv hS⟩
 
 /-- `cspaceDeleteSlotCore` preserves the whole bundle: removal shrinks the
-CNode's lookups, so the badge clause carries from the pre-state. -/
+slots' contents, so the badge clause carries from the pre-state; a thread's
+emptied space slot moves no field the bundle reads. -/
 theorem cspaceDeleteSlotCore_preserves_ipcInvariantFull
     (st st' : SystemState) (addr : CSpaceAddr)
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
     (hStep : cspaceDeleteSlotCore addr st = .ok ((), st')) :
     ipcInvariantFull st' := by
-  obtain ⟨cn, hPre, hAt, hNe, hSched, _⟩ :=
-    cspaceDeleteSlotCore_shape st st' addr hObjInv hStep
+  rcases cspaceDeleteSlotCore_ok_cases hStep with ⟨cn, hPre, hS⟩ | ⟨t, hPre, hS⟩
+  case inr =>
+    -- A thread's space slot emptied: no field the bundle reads moves, and the
+    -- emptied thread holds no capability it did not.
+    exact storeObject_tcbFieldUpdate_preserves_ipcInvariantFull st st'
+      (SeLe4n.ThreadId.ofObjId addr.cnode) t (t.removeSpaceCap addr.slot) hObjInv hInv hPre hS
+      rfl rfl rfl rfl rfl rfl rfl rfl rfl
+      (fun _ _ _ h _ => TCB.spaceSlotCap_removeSpaceCap_back h)
+  have hAt := storeObject_objects_eq st st' _ _ hObjInv hS
+  have hNe : ∀ oid : SeLe4n.ObjId, oid ≠ addr.cnode → st'.objects[oid]? = st.objects[oid]? :=
+    fun oid h => storeObject_objects_ne st st' _ oid _ h hObjInv hS
+  have hSched := storeObject_scheduler_eq st st' _ _ hS
   have hView := ipcReadViewAgreement.of_single_inert_write hNe
     (by rw [hPre]; trivial) (by rw [hAt]; trivial)
   have hBack : ∀ (tid : SeLe4n.ThreadId) (tcb' : TCB),
@@ -4329,7 +4321,8 @@ theorem lifecyclePreRetypeCleanup_detached_frame
       split at hStep
       · contradiction
       · cases hStep
-        exact ⟨_, rfl, rfl, rfl, .refl _⟩
+        obtain ⟨cdt, hReach⟩ := detachTcbSlots_shape st target
+        exact ⟨{ st with cdt := cdt }, rfl, rfl, rfl, hReach⟩
   | endpoint ep =>
       simp only [] at hStep
       cases hStep

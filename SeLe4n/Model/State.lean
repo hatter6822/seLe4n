@@ -6062,6 +6062,36 @@ theorem storeCNodeWith_objects {st : SystemState} {id : SeLe4n.ObjId} {cn : CNod
   simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hS
   rw [← hS]
 
+/-- **The store of `f` of the TCB at `id`, written in its slot**: the TCB form
+of `storeCNodeWith` (`storeObject_tcb_eq_storeTcbWith`).  The identity when `id`
+holds no TCB. -/
+@[specialize] def storeTcbWith (st : SystemState) (id : SeLe4n.ObjId) (f : TCB → TCB) :
+    SystemState :=
+  match st.objects[id]? with
+  | some (.tcb t) =>
+      if storeLeavesIndexAndTypes st id .tcb then st.modifyObject id (mapTcbObject f)
+      else
+        match storeObject id (.tcb (f t)) st with
+        | .ok ((), st') => st'
+        | .error _ => st
+  | _ => st
+
+theorem storeObject_tcb_eq_storeTcbWith {st : SystemState} {id : SeLe4n.ObjId} {t : TCB}
+    (h : st.objects[id]? = some (.tcb t)) (f : TCB → TCB) :
+    storeObject id (.tcb (f t)) st = .ok ((), st.storeTcbWith id f) := by
+  unfold storeTcbWith
+  rw [h]
+  dsimp only
+  split
+  · next hL =>
+    rw [storeObject_eq_impl]
+    unfold storeObjectImpl modifyObject
+    rw [show (KernelObject.tcb (f t)).objectType = .tcb from rfl, if_pos hL,
+      RHTable.modify_of_get? h]
+    rfl
+  · obtain ⟨st', hS⟩ := storeObject_isOk st id (.tcb (f t))
+    rw [hS]
+
 /-- WS-ZA ZA5.4: the object update a VSpace root update performs. -/
 @[inline] def mapVSpaceRootObject (f : VSpaceRoot → VSpaceRoot) : KernelObject → KernelObject
   | .vspaceRoot r => .vspaceRoot (f r)

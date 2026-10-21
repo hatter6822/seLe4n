@@ -1104,7 +1104,7 @@ theorem vspaceLookup_preserves_lowEquivalent
 -- WS-H9: CSpace NI proofs (Part C)
 -- ============================================================================
 
-/-- Core: cspaceDeleteSlotCore at a non-observable CNode preserves projection. -/
+/-- Core: cspaceDeleteSlotCore at a non-observable object preserves projection. -/
 theorem cspaceDeleteSlotCore_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (addr : CSpaceAddr) (st st' : SystemState)
@@ -1112,19 +1112,8 @@ theorem cspaceDeleteSlotCore_preserves_projection
     (hObjInv : st.objects.invExt)
     (hStep : cspaceDeleteSlotCore addr st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
-  unfold cspaceDeleteSlotCore SystemState.getCNode? at hStep
-  cases hObj : st.objects[addr.cnode]? with
-  | none => simp [hObj] at hStep
-  | some obj =>
-    cases obj with
-    | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ => simp [hObj] at hStep
-    | cnode cn =>
-      simp only [hObj] at hStep
-      cases hStore : storeObject addr.cnode (.cnode (cn.remove addr.slot)) st with
-      | error e => simp [hStore] at hStep
-      | ok pair₁ =>
-        simp only [hStore] at hStep; cases hStep
-        exact storeObject_preserves_projection ctx observer st pair₁.2 addr.cnode _ hAddrHigh hObjInv hStore
+  obtain ⟨o, -, -, hStore⟩ := cspaceDeleteSlotCore_ok hStep
+  exact storeObject_preserves_projection ctx observer st st' addr.cnode _ hAddrHigh hObjInv hStore
 
 /-- WS-H9: cspaceDeleteSlot at a non-observable CNode preserves projection (guarded wrapper). -/
 theorem cspaceDeleteSlot_preserves_projection

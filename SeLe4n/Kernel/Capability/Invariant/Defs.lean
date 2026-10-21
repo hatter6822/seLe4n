@@ -58,7 +58,7 @@ Direct mint/derive attenuation remains the dedicated `cspaceAttenuationRule` bun
 def lifecycleAuthorityMonotonicity (st : SystemState) : Prop :=
   (∀ addr st',
       cspaceDeleteSlot addr st = .ok ((), st') →
-      SystemState.lookupSlotCap st' addr = none) ∧
+      st'.slotCapAt addr = none ∧ SystemState.lookupSlotCap st' addr = none) ∧
   (∀ addr st' parent,
       cspaceRevoke addr st = .ok ((), st') →
       cspaceLookupSlot addr st = .ok (parent, st) →

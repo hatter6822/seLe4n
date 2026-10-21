@@ -2561,6 +2561,7 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
         fun st => match decodeCSpaceDeleteArgs decoded with
         | .error e => .error e
         | .ok args =>
+            if !cnodeInvoked cnodeId st then .error .objectNotFound else
             let addr : CSpaceAddr := { cnode := cnodeId, slot := args.targetSlot }
             -- WS-BP BP7.1 (`v0.36.7`): the finalising delete — seL4's
             -- `cteDelete` → `finaliseCap`: a frame capability's recorded
@@ -2590,6 +2591,7 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
         fun st => match decodeCSpaceDeleteArgs decoded with
         | .error e => .error e
         | .ok args =>
+            if !cnodeInvoked cnodeId st then .error .objectNotFound else
             let addr : CSpaceAddr := { cnode := cnodeId, slot := args.targetSlot }
             -- WS-BP BP7.1 (`v0.36.7`): the finalising revocation — every
             -- mapping a destroyed frame capability recorded is removed with it.
@@ -2606,6 +2608,7 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
         fun st => match decodeCSpaceCopyArgs decoded with
         | .error e => .error e
         | .ok args =>
+            if !cnodeInvoked cnodeId st then .error .objectNotFound else
             let src : CSpaceAddr := { cnode := cnodeId, slot := args.srcSlot }
             let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
             mintReplyCapWithCdt src dst st
@@ -3197,6 +3200,8 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
       | error e => simp only [hDec] at hStep; cases hStep
       | ok args =>
           simp only [hDec] at hStep
+          split at hStep
+          · cases hStep
           exact cspaceDeleteSlotFinalising_preserves_ipcInvariantFull _ _ st st' hObjInv hInv hStep
     all_goals try cases hStep
   case cspaceRevoke =>
@@ -3207,6 +3212,8 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
       | error e => simp only [hDec] at hStep; cases hStep
       | ok args =>
           simp only [hDec] at hStep
+          split at hStep
+          · cases hStep
           exact cspaceRevokeCdtFinalising_preserves_ipcInvariantFull _ _ st st' hObjInv hInv hStep
     all_goals try cases hStep
   case mintReplyCap =>
@@ -3217,6 +3224,8 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
       | error e => simp only [hDec] at hStep; cases hStep
       | ok args =>
           simp only [hDec] at hStep
+          split at hStep
+          · cases hStep
           exact mintReplyCapWithCdt_preserves_ipcInvariantFull st st' _ _ hObjInv hInv hStep
     all_goals try cases hStep
   case untypedRetype =>
@@ -3887,6 +3896,7 @@ def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
         fun st => match decodeCSpaceMintArgs decoded with
         | .error e => .error e
         | .ok args =>
+            if !cnodeInvoked cnodeId st then .error .objectNotFound else
             let src : CSpaceAddr := { cnode := cnodeId, slot := args.srcSlot }
             let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
             let badge : Option SeLe4n.Badge :=
@@ -3899,6 +3909,7 @@ def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
         fun st => match decodeCSpaceCopyArgs decoded with
         | .error e => .error e
         | .ok args =>
+            if !cnodeInvoked cnodeId st then .error .objectNotFound else
             let src : CSpaceAddr := { cnode := cnodeId, slot := args.srcSlot }
             let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
             cspaceCopy src dst st
@@ -3909,6 +3920,7 @@ def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
         fun st => match decodeCSpaceMoveArgs decoded with
         | .error e => .error e
         | .ok args =>
+            if !cnodeInvoked cnodeId st then .error .objectNotFound else
             let src : CSpaceAddr := { cnode := cnodeId, slot := args.srcSlot }
             let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
             cspaceMove src dst st
@@ -4339,6 +4351,7 @@ def dispatchWithCapChecked (ctx : LabelingContext)
         fun st => match decodeCSpaceMintArgs decoded with
         | .error e => .error e
         | .ok args =>
+            if !cnodeInvoked cnodeId st then .error .objectNotFound else
             let src : CSpaceAddr := { cnode := cnodeId, slot := args.srcSlot }
             let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
             let badge : Option SeLe4n.Badge :=
@@ -4352,6 +4365,7 @@ def dispatchWithCapChecked (ctx : LabelingContext)
         fun st => match decodeCSpaceCopyArgs decoded with
         | .error e => .error e
         | .ok args =>
+            if !cnodeInvoked cnodeId st then .error .objectNotFound else
             let src : CSpaceAddr := { cnode := cnodeId, slot := args.srcSlot }
             let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
             cspaceCopyChecked ctx src dst st
@@ -4363,6 +4377,7 @@ def dispatchWithCapChecked (ctx : LabelingContext)
         fun st => match decodeCSpaceMoveArgs decoded with
         | .error e => .error e
         | .ok args =>
+            if !cnodeInvoked cnodeId st then .error .objectNotFound else
             let src : CSpaceAddr := { cnode := cnodeId, slot := args.srcSlot }
             let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
             cspaceMoveChecked ctx src dst st
@@ -5511,7 +5526,8 @@ theorem syscallRequiredRight_total (sid : SyscallId) :
 
 /-- WS-K-C: When cspaceMint dispatch succeeds, the kernel-level `cspaceMintWithCdt`
 is invoked with the decoded source slot, destination slot, rights, and badge
-from message registers. CDT-tracked (C-01). -/
+from message registers. CDT-tracked (C-01).  The arm first refuses with
+`.objectNotFound` unless the invoked object is a CNode (`cnodeInvoked`). -/
 theorem dispatchWithCap_cspaceMint_delegates
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
     (cap : Capability) (cnodeId : SeLe4n.ObjId)
@@ -5524,11 +5540,13 @@ theorem dispatchWithCap_cspaceMint_delegates
       let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
       let badge : Option SeLe4n.Badge :=
         if args.badge.val = 0 then none else some args.badge
-      cspaceMintWithCdt src dst args.rights badge := by
+      fun st => if !cnodeInvoked cnodeId st then .error .objectNotFound else
+        cspaceMintWithCdt src dst args.rights badge st := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode]
 
 /-- WS-K-C: When cspaceCopy dispatch succeeds, the kernel-level `cspaceCopy`
-is invoked with the decoded source and destination slots. -/
+is invoked with the decoded source and destination slots, once the invoked
+object is a CNode (`cnodeInvoked`; `.objectNotFound` otherwise). -/
 theorem dispatchWithCap_cspaceCopy_delegates
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
     (cap : Capability) (cnodeId : SeLe4n.ObjId)
@@ -5539,11 +5557,13 @@ theorem dispatchWithCap_cspaceCopy_delegates
     dispatchWithCap decoded tid executingCore gate cap =
       let src : CSpaceAddr := { cnode := cnodeId, slot := args.srcSlot }
       let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
-      cspaceCopy src dst := by
+      fun st => if !cnodeInvoked cnodeId st then .error .objectNotFound else
+        cspaceCopy src dst st := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode]
 
 /-- WS-K-C: When cspaceMove dispatch succeeds, the kernel-level `cspaceMove`
-is invoked with the decoded source and destination slots. -/
+is invoked with the decoded source and destination slots, once the invoked
+object is a CNode (`cnodeInvoked`; `.objectNotFound` otherwise). -/
 theorem dispatchWithCap_cspaceMove_delegates
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
     (cap : Capability) (cnodeId : SeLe4n.ObjId)
@@ -5554,13 +5574,17 @@ theorem dispatchWithCap_cspaceMove_delegates
     dispatchWithCap decoded tid executingCore gate cap =
       let src : CSpaceAddr := { cnode := cnodeId, slot := args.srcSlot }
       let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
-      cspaceMove src dst := by
+      fun st => if !cnodeInvoked cnodeId st then .error .objectNotFound else
+        cspaceMove src dst st := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode]
 
 /-- WS-K-C / WS-BP BP7.1 (`v0.36.7`): When cspaceDelete dispatch succeeds, the
 **finalising** delete runs on the decoded target slot, with the invoking thread's
 core as the initiator of the teardown's shootdown rounds: the capability is
-deleted and the mapping it recorded, if it records one, is removed. -/
+deleted and the mapping it recorded, if it records one, is removed.  The arm
+first refuses with `.objectNotFound` unless the invoked object is a CNode
+(`cnodeInvoked`): a thread's root slots are reachable only by its own TCB
+invocations and the kernel's internal teardown. -/
 theorem dispatchWithCap_cspaceDelete_delegates
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
     (cap : Capability) (cnodeId : SeLe4n.ObjId)
@@ -5569,14 +5593,16 @@ theorem dispatchWithCap_cspaceDelete_delegates
     (hTarget : cap.target = .object cnodeId)
     (hDecode : decodeCSpaceDeleteArgs decoded = .ok args) :
     dispatchWithCap decoded tid executingCore gate cap st =
-      cspaceDeleteSlotFinalising executingCore
-        { cnode := cnodeId, slot := args.targetSlot } st := by
+      if !cnodeInvoked cnodeId st then .error .objectNotFound else
+        cspaceDeleteSlotFinalising executingCore
+          { cnode := cnodeId, slot := args.targetSlot } st := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode]
 
 /-- WS-BP BP7.1 (`v0.36.7`): When cspaceRevoke dispatch succeeds, the
 **finalising** CDT revocation runs on the decoded source slot: every derivation
 of the capability is destroyed, and every mapping a destroyed frame capability
-recorded is removed. -/
+recorded is removed.  The arm first refuses with `.objectNotFound` unless the
+invoked object is a CNode (`cnodeInvoked`). -/
 theorem dispatchWithCap_cspaceRevoke_delegates
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
     (cap : Capability) (cnodeId : SeLe4n.ObjId)
@@ -5585,8 +5611,9 @@ theorem dispatchWithCap_cspaceRevoke_delegates
     (hTarget : cap.target = .object cnodeId)
     (hDecode : decodeCSpaceDeleteArgs decoded = .ok args) :
     dispatchWithCap decoded tid executingCore gate cap st =
-      cspaceRevokeCdtFinalising executingCore
-        { cnode := cnodeId, slot := args.targetSlot } st := by
+      if !cnodeInvoked cnodeId st then .error .objectNotFound else
+        cspaceRevokeCdtFinalising executingCore
+          { cnode := cnodeId, slot := args.targetSlot } st := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode]
 
 -- ============================================================================
@@ -8062,8 +8089,9 @@ def syscallDelegates : SyscallId → Prop
         cap.target = .object cnodeId →
         decodeCSpaceDeleteArgs decoded = .ok args →
         dispatchWithCap decoded tid executingCore gate cap st =
-          cspaceDeleteSlotFinalising executingCore
-            { cnode := cnodeId, slot := args.targetSlot } st
+          if !cnodeInvoked cnodeId st then .error .objectNotFound else
+            cspaceDeleteSlotFinalising executingCore
+              { cnode := cnodeId, slot := args.targetSlot } st
   | .cspaceRevoke =>
       ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
         (cap : Capability) (cnodeId : SeLe4n.ObjId)
@@ -8072,8 +8100,9 @@ def syscallDelegates : SyscallId → Prop
         cap.target = .object cnodeId →
         decodeCSpaceDeleteArgs decoded = .ok args →
         dispatchWithCap decoded tid executingCore gate cap st =
-          cspaceRevokeCdtFinalising executingCore
-            { cnode := cnodeId, slot := args.targetSlot } st
+          if !cnodeInvoked cnodeId st then .error .objectNotFound else
+            cspaceRevokeCdtFinalising executingCore
+              { cnode := cnodeId, slot := args.targetSlot } st
   -- WS-ZA ZA4.3: the capability-free yield.  Both dispatchers run it from the
   -- guard ahead of the caller's CSpace lookup, so the obligation is stated
   -- over the dispatchers themselves: once the caller is current on the

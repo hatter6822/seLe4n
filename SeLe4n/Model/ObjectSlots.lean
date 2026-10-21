@@ -206,6 +206,34 @@ theorem withSpaceCaps_spaceSlotCap_badge {t : TCB} {c v : SeLe4n.ObjId} {s : SeL
     exact hc _ hlt h
   · cases h
 
+/-- **Emptying a space slot** empties that slot and leaves the other. -/
+theorem spaceSlotCap_removeSpaceCap (t : TCB) (s s' : SeLe4n.Slot) :
+    (t.removeSpaceCap s).spaceSlotCap s' = if s' = s then none else t.spaceSlotCap s' := by
+  unfold spaceSlotCap removeSpaceCap
+  by_cases he : s' = s
+  · subst he
+    simp only [if_true]
+    split
+    · next hs => simp
+    · rfl
+  · simp only [he, if_false]
+    split
+    · next hs =>
+      have hn : s.toNat ≠ s'.toNat := fun h => he (SeLe4n.Slot.ext h.symm)
+      simp [hn]
+    · rfl
+
+@[simp] theorem removeSpaceCap_spaceLinks (t : TCB) (s : SeLe4n.Slot) :
+    (t.removeSpaceCap s).spaceLinks = t.spaceLinks := rfl
+
+/-- A thread whose slot `s` is emptied holds no capability its record did not. -/
+theorem spaceSlotCap_removeSpaceCap_back {t : TCB} {s s' : SeLe4n.Slot} {cap : Capability}
+    (h : (t.removeSpaceCap s).spaceSlotCap s' = some cap) : t.spaceSlotCap s' = some cap := by
+  rw [spaceSlotCap_removeSpaceCap] at h
+  split at h
+  · cases h
+  · exact h
+
 end TCB
 
 namespace KernelObject
@@ -533,6 +561,59 @@ theorem optSlots_eq_of_cnode_iff {a a' : Option KernelObject}
       (fun cn => by simpa using hC cn) hS
     exact ⟨fun s => by show o'.slotCap s = o.slotCap s; rw [h.1],
       fun s f => by show o'.linkAt s f = o.linkAt s f; rw [h.2]⟩
+
+/-- **Emptying slot `s` of an object** empties that slot and leaves every other
+slot's capability. -/
+theorem slotCap_removeSlotCap (o : KernelObject) (s s' : SeLe4n.Slot) :
+    (o.removeSlotCap s).slotCap s' = if s' = s then none else o.slotCap s' := by
+  cases o with
+  | cnode cn =>
+    show (cn.remove s).lookup s' = if s' = s then none else cn.lookup s'
+    by_cases he : s' = s
+    · subst he
+      rw [if_pos rfl]
+      exact CNode.lookup_remove_eq_none cn s' (CNode.slotsUnique_holds cn)
+    · rw [if_neg he]
+      exact CNode.lookup_remove_ne cn s s' (Ne.symm he) (CNode.slotsUnique_holds cn)
+  | tcb t => exact t.spaceSlotCap_removeSpaceCap s s'
+  | _ => split <;> rfl
+
+/-- An object with a slot emptied holds no capability it did not hold. -/
+theorem slotCap_removeSlotCap_back {o : KernelObject} {s s' : SeLe4n.Slot} {cap : Capability}
+    (h : (o.removeSlotCap s).slotCap s' = some cap) : o.slotCap s' = some cap := by
+  rw [slotCap_removeSlotCap] at h
+  split at h
+  · cases h
+  · exact h
+
+@[simp] theorem slotCap_removeSlotCap_self (o : KernelObject) (s : SeLe4n.Slot) :
+    (o.removeSlotCap s).slotCap s = none := by
+  rw [slotCap_removeSlotCap, if_pos rfl]
+
+theorem slotCap_removeSlotCap_ne (o : KernelObject) {s s' : SeLe4n.Slot} (h : s' ≠ s) :
+    (o.removeSlotCap s).slotCap s' = o.slotCap s' := by
+  rw [slotCap_removeSlotCap, if_neg h]
+
+/-- Emptying a slot writes no link word. -/
+@[simp] theorem linkWords_removeSlotCap (o : KernelObject) (s : SeLe4n.Slot) :
+    (o.removeSlotCap s).linkWords = o.linkWords := by
+  cases o <;> rfl
+
+theorem linkAt_removeSlotCap (o : KernelObject) (s : SeLe4n.Slot) :
+    (o.removeSlotCap s).linkAt = o.linkAt :=
+  linkAt_eq_of_linkWords_eq (linkWords_removeSlotCap o s)
+
+@[simp] theorem hasSlot_removeSlotCap (o : KernelObject) (s s' : SeLe4n.Slot) :
+    (o.removeSlotCap s).hasSlot s' ↔ o.hasSlot s' := by
+  cases o <;> exact Iff.rfl
+
+@[simp] theorem holdsSlots_removeSlotCap (o : KernelObject) (s : SeLe4n.Slot) :
+    (o.removeSlotCap s).holdsSlots = o.holdsSlots := by
+  cases o <;> rfl
+
+@[simp] theorem objectType_removeSlotCap (o : KernelObject) (s : SeLe4n.Slot) :
+    (o.removeSlotCap s).objectType = o.objectType := by
+  cases o <;> rfl
 
 end KernelObject
 

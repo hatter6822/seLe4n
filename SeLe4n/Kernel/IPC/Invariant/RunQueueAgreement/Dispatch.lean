@@ -191,6 +191,8 @@ theorem dispatchCapabilityOnly_runQueueEntryStage
       | error e => simp only [hDec] at hStep; cases hStep
       | ok args =>
           simp only [hDec] at hStep
+          split at hStep
+          · cases hStep
           refine RunQueueStage.entry ?_
           exact cspaceDeleteSlotFinalising_runQueueStage hStep
     all_goals try cases hStep
@@ -202,6 +204,8 @@ theorem dispatchCapabilityOnly_runQueueEntryStage
       | error e => simp only [hDec] at hStep; cases hStep
       | ok args =>
           simp only [hDec] at hStep
+          split at hStep
+          · cases hStep
           refine RunQueueStage.entry ?_
           exact cspaceRevokeCdtFinalising_runQueueStage hStep
     all_goals try cases hStep
@@ -213,6 +217,8 @@ theorem dispatchCapabilityOnly_runQueueEntryStage
       | error e => simp only [hDec] at hStep; cases hStep
       | ok args =>
           simp only [hDec] at hStep
+          split at hStep
+          · cases hStep
           refine RunQueueStage.entry ?_
           exact mintReplyCapWithCdt_runQueueStage hStep
     all_goals try cases hStep

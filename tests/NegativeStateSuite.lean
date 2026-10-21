@@ -3423,6 +3423,62 @@ def runRevocationRefusalChecks : IO Unit := do
     .invalidCapability
   IO.println "all revocation refusal checks passed"
 
+/-- A CNode invocation reaches a CNode's slots only, as seL4 decodes a CNode
+invocation only on a CNode capability: `CNode_Delete` and `CNode_Revoke` on a
+capability to a thread are refused with `.objectNotFound` (`cnodeInvoked`), for
+each of the thread's two space slots, and the state the refusal leaves still
+holds both roots.  The internal finalising delete, which the revocation loop
+runs, does reach the slot: the refusal is the invocation's guard, not a slot
+the kernel cannot empty. -/
+def runThreadSlotInvocationRefusalChecks : IO Unit := do
+  let cnId : SeLe4n.ObjId := ⟨10⟩
+  let vsId : SeLe4n.ObjId := ⟨20⟩
+  let tId : SeLe4n.ObjId := ⟨6⟩
+  let cells := SeLe4n.Model.TCB.spaceCellsOf cnId vsId
+  let st : SystemState :=
+    (BootstrapBuilder.empty
+      |>.withObject cnId (.cnode (CNode.ofList 0 0 0 3 []))
+      |>.withObject vsId (.vspaceRoot { asid := asidPrimary, mappings := {} })
+      |>.withObject tId (.tcb {
+          tid := ⟨6⟩
+          priority := ⟨40⟩
+          domain := ⟨0⟩
+          spaceCells := cells
+          ipcBuffer := (SeLe4n.VAddr.ofNat 4096)
+        })
+      |>.buildChecked)
+  let threadCap : Capability :=
+    { target := .object tId, rights := AccessRightSet.ofList [.read, .write, .grant] }
+  let gate : SeLe4n.Kernel.SyscallGate :=
+    { callerId := ⟨6⟩, cspaceRoot := cnId, capAddr := SeLe4n.CPtr.ofNat 0, capDepth := 2,
+      requiredRight := .write }
+  for (sid, name) in [(SyscallId.cspaceDelete, "CNode_Delete"), (SyscallId.cspaceRevoke, "CNode_Revoke")] do
+    for slot in [0, 1] do
+      let decoded : SyscallDecodeResult :=
+        { capAddr := SeLe4n.CPtr.ofNat 0, msgInfo := { length := 1, extraCaps := 0, label := 0 },
+          syscallId := sid, msgRegs := #[SeLe4n.RegValue.ofNat slot] }
+      expectErr s!"{name} on a thread capability, space slot {slot}"
+        (SeLe4n.Kernel.dispatchWithCap decoded ⟨6⟩ bootCoreId gate threadCap st)
+        .objectNotFound
+  -- A refusal commits nothing: the state it leaves is `st`, whose thread still
+  -- holds both roots.
+  let rootsKept (s : SystemState) : Bool :=
+    match s.getTcb? ⟨6⟩ with
+    | some t => t.spaceCells == cells && t.cspaceRoot == cnId && t.vspaceRoot == vsId
+    | none => false
+  unless rootsKept st do
+    throw <| IO.userError "a refused CNode invocation must leave the thread's two root slots"
+  -- The internal delete reaches the thread's slot.
+  match SeLe4n.Kernel.cspaceDeleteSlotFinalising bootCoreId
+      { cnode := tId, slot := SeLe4n.Slot.ofNat 1 } st with
+  | .ok ((), st1) =>
+    unless (st1.slotCapAt { cnode := tId, slot := SeLe4n.Slot.ofNat 1 }).isNone &&
+        (st1.slotCapAt { cnode := tId, slot := SeLe4n.Slot.ofNat 0 }).isSome do
+      throw <| IO.userError "the internal delete must empty the thread's VSpace root slot alone"
+  | .error e =>
+    throw <| IO.userError s!"the internal delete of a thread's space slot must succeed, got {repr e}"
+  IO.println "all thread-slot CNode-invocation refusal checks passed"
+
 -- ============================================================================
 -- R4: Lifecycle & Service Coherence negative tests
 -- ============================================================================
@@ -4442,6 +4498,7 @@ def main : IO Unit := do
   SeLe4n.Testing.runL13CapTransferShortCircuitChecks
   SeLe4n.Testing.runWSM4ResolveEdgeCaseChecks
   SeLe4n.Testing.runRevocationRefusalChecks
+  SeLe4n.Testing.runThreadSlotInvocationRefusalChecks
   SeLe4n.Testing.runWSR4CoherenceChecks
   SeLe4n.Testing.runS2GCapabilityErrorTests
   SeLe4n.Testing.runS2HLifecycleErrorTests

@@ -13,33 +13,24 @@ namespace SeLe4n.Kernel
 
 open SeLe4n.Model
 
-/-- Core delete authority reduction (no CDT guard). -/
+/-- Core delete authority reduction (no CDT guard): the emptied slot holds
+nothing, read through the object-slot dispatch and as a CNode slot. -/
 private theorem cspaceDeleteSlotCore_authority_reduction
     (st st' : SystemState)
     (addr : CSpaceAddr)
     (hObjInv : st.objects.invExt)
     (hStep : cspaceDeleteSlotCore addr st = .ok ((), st')) :
-    SystemState.lookupSlotCap st' addr = none := by
-  rcases addr with ⟨cnodeId, slot⟩
-  simp only [cspaceDeleteSlotCore, SystemState.getCNode?] at hStep
-  cases hObj : st.objects[cnodeId]? with
-  | none => simp [hObj] at hStep
-  | some obj =>
-      cases obj with
-      | tcb tcb => simp [hObj] at hStep
-      | endpoint ep => simp [hObj] at hStep
-      | notification ntfn => simp [hObj] at hStep
-      | vspaceRoot root => simp [hObj] at hStep
-      | untyped _ => simp [hObj] at hStep
-      | schedContext _ | reply _ | frame _ | pageTable _ => simp [hObj] at hStep
-      | cnode cn =>
-          have hUniq := SeLe4n.Model.CNode.slotsUnique_holds cn
-          simp [hObj] at hStep
-          cases hStep
-          simp only [SystemState.lookupSlotCap, SystemState.lookupCNode,
-            RHTable_getElem?_eq_get?]
-          rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
-          simp [CNode.lookup_remove_eq_none cn slot hUniq]
+    st'.slotCapAt addr = none ∧ SystemState.lookupSlotCap st' addr = none := by
+  obtain ⟨o, hO, hH, hS⟩ := cspaceDeleteSlotCore_ok hStep
+  have hPost := storeObject_objects_eq st st' addr.cnode _ hObjInv hS
+  refine ⟨?_, ?_⟩
+  · rw [SystemState.slotCapAt_of_object hPost, KernelObject.slotCap_removeSlotCap_self]
+  · cases o with
+    | cnode cn =>
+      simp only [SystemState.lookupSlotCap, SystemState.lookupCNode, hPost, KernelObject.removeSlotCap]
+      exact CNode.lookup_remove_eq_none cn addr.slot (SeLe4n.Model.CNode.slotsUnique_holds cn)
+    | tcb t => simp [SystemState.lookupSlotCap, SystemState.lookupCNode, hPost, KernelObject.removeSlotCap]
+    | _ => simp [KernelObject.holdsSlots] at hH
 
 /-- Delete transition authority reduction clause (guarded wrapper). -/
 private theorem cspaceDeleteSlot_authority_reduction
@@ -47,9 +38,10 @@ private theorem cspaceDeleteSlot_authority_reduction
     (addr : CSpaceAddr)
     (hObjInv : st.objects.invExt)
     (hStep : cspaceDeleteSlot addr st = .ok ((), st')) :
-    SystemState.lookupSlotCap st' addr = none := by
+    st'.slotCapAt addr = none ∧ SystemState.lookupSlotCap st' addr = none := by
   obtain ⟨stC, hC, rfl⟩ := cspaceDeleteSlot_ok_decompose addr st st' hStep
-  rw [(spliceDeletedCdtNode_agree (cspaceDeleteSlotCore_invExt st stC addr hObjInv hC) addr).1.lookupSlotCap]
+  have hA := (spliceDeletedCdtNode_agree (cspaceDeleteSlotCore_invExt st stC addr hObjInv hC) addr).1
+  rw [hA.slotCapAt, hA.lookupSlotCap]
   exact cspaceDeleteSlotCore_authority_reduction st stC addr hObjInv hC
 
 /-- Revoke transition authority reduction clause: no sibling slot in the same CNode may retain
@@ -186,36 +178,25 @@ theorem cspaceDeleteSlotCore_lookup_eq_none
     (addr : CSpaceAddr)
     (hObjInv : st.objects.invExt)
     (hStep : cspaceDeleteSlotCore addr st = .ok ((), st')) :
-    cspaceLookupSlot addr st' = .error .invalidCapability := by
-  rcases addr with ⟨cnodeId, slot⟩
-  simp only [cspaceDeleteSlotCore, SystemState.getCNode?] at hStep
-  cases hObj : st.objects[cnodeId]? with
-  | none => simp [hObj] at hStep
-  | some obj =>
-      cases obj with
-      | tcb tcb => simp [hObj] at hStep
-      | endpoint ep => simp [hObj] at hStep
-      | notification ntfn => simp [hObj] at hStep
-      | vspaceRoot root => simp [hObj] at hStep
-      | untyped _ => simp [hObj] at hStep
-      | schedContext _ | reply _ | frame _ | pageTable _ => simp [hObj] at hStep
-      | cnode cn =>
-          have hUniq := SeLe4n.Model.CNode.slotsUnique_holds cn
-          simp [hObj] at hStep
-          cases hStep
-          -- AN10-residual (R1): include `getCNode?` so the inner match
-          -- (now over `getCNode?` instead of raw `objects[]?`) unfolds.
-          simp only [cspaceLookupSlot, SystemState.lookupSlotCap, SystemState.lookupCNode,
-            SystemState.getCNode?, RHTable_getElem?_eq_get?]
-          rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
-          simp [CNode.lookup_remove_eq_none cn slot hUniq]
+    cspaceLookupSlot addr st' =
+      .error (if (st.getCNode? addr.cnode).isSome then .invalidCapability else .objectNotFound) := by
+  obtain ⟨o, hO, hH, hS⟩ := cspaceDeleteSlotCore_ok hStep
+  have hPost := storeObject_objects_eq st st' addr.cnode _ hObjInv hS
+  have hNone := (cspaceDeleteSlotCore_authority_reduction st st' addr hObjInv hStep).2
+  unfold cspaceLookupSlot
+  rw [hNone]
+  cases o with
+  | cnode cn => simp [SystemState.getCNode?, hPost, hO, KernelObject.removeSlotCap]
+  | tcb t => simp [SystemState.getCNode?, hPost, hO, KernelObject.removeSlotCap]
+  | _ => simp [KernelObject.holdsSlots] at hH
 
 theorem cspaceDeleteSlot_lookup_eq_none
     (st st' : SystemState)
     (addr : CSpaceAddr)
     (hObjInv : st.objects.invExt)
     (hStep : cspaceDeleteSlot addr st = .ok ((), st')) :
-    cspaceLookupSlot addr st' = .error .invalidCapability := by
+    cspaceLookupSlot addr st' =
+      .error (if (st.getCNode? addr.cnode).isSome then .invalidCapability else .objectNotFound) := by
   obtain ⟨stC, hC, rfl⟩ := cspaceDeleteSlot_ok_decompose addr st st' hStep
   have h := cspaceDeleteSlotCore_lookup_eq_none st stC addr hObjInv hC
   rw [cspaceLookupSlot_of_agree

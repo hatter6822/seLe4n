@@ -161,7 +161,10 @@ theorem cspaceCopy_runQueueStage {st st' : SystemState} {src dst : CSpaceAddr}
 
 theorem cspaceDeleteSlotCore_runQueueStage {st st' : SystemState} {addr : CSpaceAddr}
     (h : cspaceDeleteSlotCore addr st = .ok ((), st')) : RunQueueStage st st' := by
-  unfold cspaceDeleteSlotCore at h; run_queue_stage_at h
+  rcases cspaceDeleteSlotCore_ok_cases h with ⟨cn, hPre, hS⟩ | ⟨t, hPre, hS⟩
+  · exact RunQueueStage.storeObject_nonTcb hS hPre (fun _ e => by cases e) (fun _ e => by cases e)
+  · exact storeObject_tcbOver_runQueueStage (tid := SeLe4n.ThreadId.ofObjId addr.cnode) (old := t)
+      ((SystemState.getTcb?_eq_some_iff st _ t).mpr hPre) hS (fun _ => rfl)
 
 macro_rules | `(tactic| run_queue_stage_step) => `(tactic|
   refine RunQueueStage.trans ?_ (cspaceDeleteSlotCore_runQueueStage (by with_reducible assumption)))

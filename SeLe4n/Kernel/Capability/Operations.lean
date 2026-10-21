@@ -1073,38 +1073,110 @@ theorem hasCdtChildren_eq_tree {st : SystemState}
     hasCdtChildren st addr = !(st.cdt.childrenOf addr).isEmpty :=
   SystemState.linkHasChild_eq h addr
 
-/-- Core capability slot deletion: empties the slot, leaving the derivation tree
-to the caller.
+/-- Core capability slot deletion: empties the slot of the object that holds it,
+a CNode's slot or a thread's space slot (`KernelObject.removeSlotCap`), leaving
+the derivation tree to the caller.  Refused when the address names no object
+that holds slots.
 Used by `cspaceDeleteSlot` (which then splices the slot out of the tree) and by
 `cspaceMove`, which writes the tree itself. -/
 def cspaceDeleteSlotCore (addr : CSpaceAddr) : Kernel Unit :=
   fun st =>
-    match st.getCNode? addr.cnode with
-    | some cn =>
-        let cn' := cn.remove addr.slot
-        match storeObject addr.cnode (.cnode cn') st with
-        | .error e => .error e
-        | .ok (_, st') => .ok ((), st')
+    match st.getObject? addr.cnode with
+    | some o =>
+        if o.holdsSlots then storeObject addr.cnode (o.removeSlotCap addr.slot) st
+        else .error .objectNotFound
     | none => .error .objectNotFound
 
-/-- `cspaceDeleteSlotCore` as compiled: the slot is cleared where the CNode lies
-(`storeCNodeWith`), so a CNode nothing else holds is changed in place rather
-than copied (WS-ZA ZA5.3 part 6). -/
+/-- A thread's space slot emptied where the thread lies (`storeTcbWith`). -/
+@[noinline] def threadSlotCleared (addr : CSpaceAddr) (st : SystemState) : SystemState :=
+  st.storeTcbWith addr.cnode (·.removeSpaceCap addr.slot)
+
+/-- **The slot emptied where its object lies**: a CNode's slot through
+`storeCNodeWith`, so a CNode nothing else holds is changed in place rather than
+copied (WS-ZA ZA5.3 part 6); a thread's space slot out of line
+(`threadSlotCleared`).  The state a successful core delete commits
+(`cspaceDeleteSlotCore_eq_slotCleared`). -/
+@[inline] def slotCleared (addr : CSpaceAddr) (st : SystemState) : SystemState :=
+  match st.getCNode? addr.cnode with
+  | some _ => st.storeCNodeWith addr.cnode (·.remove addr.slot)
+  | none => threadSlotCleared addr st
+
+/-- The thread arm of the compiled core delete, out of line. -/
+@[noinline] def cspaceDeleteThreadSlotCore (addr : CSpaceAddr) : Kernel Unit :=
+  fun st =>
+    match st.getObject? addr.cnode with
+    | some (.tcb _) => .ok ((), threadSlotCleared addr st)
+    | _ => .error .objectNotFound
+
+/-- `cspaceDeleteSlotCore` as compiled: the slot is cleared where its object lies
+(`slotCleared`), the CNode arm inline. -/
 @[inline] def cspaceDeleteSlotCoreImpl (addr : CSpaceAddr) : Kernel Unit :=
   fun st =>
     match st.getCNode? addr.cnode with
     | some _ => .ok ((), st.storeCNodeWith addr.cnode (·.remove addr.slot))
-    | none => .error .objectNotFound
+    | none => cspaceDeleteThreadSlotCore addr st
+
+/-- **A core delete of a slot-holding object is the slot cleared in place.** -/
+theorem cspaceDeleteSlotCore_eq_slotCleared {addr : CSpaceAddr} {st : SystemState}
+    {o : KernelObject} (hO : st.objects[addr.cnode]? = some o) (hH : o.holdsSlots = true) :
+    cspaceDeleteSlotCore addr st = .ok ((), slotCleared addr st) := by
+  unfold cspaceDeleteSlotCore slotCleared SystemState.getObject?
+  rw [hO]
+  simp only [hH, if_true]
+  cases o with
+  | cnode cn =>
+    rw [show st.getCNode? addr.cnode = some cn by simp [SystemState.getCNode?, hO]]
+    exact SystemState.storeObject_cnode_eq_storeCNodeWith hO (·.remove addr.slot)
+  | tcb t =>
+    rw [show st.getCNode? addr.cnode = none by simp [SystemState.getCNode?, hO]]
+    exact SystemState.storeObject_tcb_eq_storeTcbWith hO (·.removeSpaceCap addr.slot)
+  | _ => simp [KernelObject.holdsSlots] at hH
 
 @[csimp] theorem cspaceDeleteSlotCore_eq_impl : @cspaceDeleteSlotCore = @cspaceDeleteSlotCoreImpl := by
   funext addr st
-  unfold cspaceDeleteSlotCore cspaceDeleteSlotCoreImpl
-  cases hC : st.getCNode? addr.cnode with
-  | none => rfl
-  | some cn =>
-    dsimp only
-    rw [SystemState.storeObject_cnode_eq_storeCNodeWith
-      ((SystemState.getCNode?_eq_some_iff st addr.cnode cn).1 hC) (·.remove addr.slot)]
+  cases hO : st.objects[addr.cnode]? with
+  | none =>
+    unfold cspaceDeleteSlotCore cspaceDeleteSlotCoreImpl cspaceDeleteThreadSlotCore
+    simp [SystemState.getObject?, SystemState.getCNode?, hO]
+  | some o =>
+    cases hH : o.holdsSlots with
+    | true =>
+      rw [cspaceDeleteSlotCore_eq_slotCleared hO hH]
+      unfold cspaceDeleteSlotCoreImpl slotCleared cspaceDeleteThreadSlotCore
+      cases o <;> simp_all [SystemState.getObject?, SystemState.getCNode?, KernelObject.holdsSlots]
+    | false =>
+      unfold cspaceDeleteSlotCore cspaceDeleteSlotCoreImpl cspaceDeleteThreadSlotCore
+      cases o <;> simp_all [SystemState.getObject?, SystemState.getCNode?, KernelObject.holdsSlots]
+
+/-- **What a successful core delete is**: the object at the address holds slots,
+and the delete is the store of it with the slot emptied. -/
+theorem cspaceDeleteSlotCore_ok {addr : CSpaceAddr} {st st' : SystemState}
+    (h : cspaceDeleteSlotCore addr st = .ok ((), st')) :
+    ∃ o, st.objects[addr.cnode]? = some o ∧ o.holdsSlots = true ∧
+      storeObject addr.cnode (o.removeSlotCap addr.slot) st = .ok ((), st') := by
+  unfold cspaceDeleteSlotCore SystemState.getObject? at h
+  cases hO : st.objects[addr.cnode]? with
+  | none => rw [hO] at h; cases h
+  | some o =>
+    rw [hO] at h
+    simp only at h
+    split at h
+    · next hH => exact ⟨o, rfl, hH, h⟩
+    · cases h
+
+/-- **A successful core delete, by kind**: a CNode's slot or a thread's space
+slot emptied. -/
+theorem cspaceDeleteSlotCore_ok_cases {addr : CSpaceAddr} {st st' : SystemState}
+    (h : cspaceDeleteSlotCore addr st = .ok ((), st')) :
+    (∃ cn, st.objects[addr.cnode]? = some (.cnode cn) ∧
+      storeObject addr.cnode (.cnode (cn.remove addr.slot)) st = .ok ((), st')) ∨
+    (∃ t, st.objects[addr.cnode]? = some (.tcb t) ∧
+      storeObject addr.cnode (.tcb (t.removeSpaceCap addr.slot)) st = .ok ((), st')) := by
+  obtain ⟨o, hO, hH, hS⟩ := cspaceDeleteSlotCore_ok h
+  cases o with
+  | cnode cn => exact .inl ⟨cn, hO, hS⟩
+  | tcb t => exact .inr ⟨t, hO, hS⟩
+  | _ => simp [KernelObject.holdsSlots] at hH
 
 /-- **A destroyed slot leaves the derivation tree** (`CapDerivationTree.spliceNode`):
 its edges go and its children are derived from its parent instead, as seL4's
@@ -1138,58 +1210,22 @@ never the scheduler or the machine. -/
 theorem cspaceDeleteSlotCore_scheduler_machine (addr : CSpaceAddr) (st st' : SystemState)
     (h : cspaceDeleteSlotCore addr st = .ok ((), st')) :
     st'.scheduler = st.scheduler ∧ st'.machine = st.machine := by
-  unfold cspaceDeleteSlotCore at h
-  cases hCn : st.getCNode? addr.cnode with
-  | none => rw [hCn] at h; cases h
-  | some cn =>
-    rw [hCn] at h
-    simp only at h
-    cases hS : storeObject addr.cnode (.cnode (cn.remove addr.slot)) st with
-    | error e => rw [hS] at h; cases h
-    | ok pr =>
-      obtain ⟨u, st1⟩ := pr; cases u
-      rw [hS] at h
-      simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at h
-      subst h
-      exact ⟨storeObject_scheduler_eq _ _ _ _ hS, storeObject_machine_eq _ _ _ _ hS⟩
+  obtain ⟨o, -, -, hS⟩ := cspaceDeleteSlotCore_ok h
+  exact ⟨storeObject_scheduler_eq _ _ _ _ hS, storeObject_machine_eq _ _ _ _ hS⟩
 
 /-- The core delete leaves the tree as it was; the wrapper splices the slot out. -/
 theorem cspaceDeleteSlotCore_cdt_eq (st st' : SystemState) (addr : CSpaceAddr)
     (h : cspaceDeleteSlotCore addr st = .ok ((), st')) :
     st'.cdt = st.cdt := by
-  unfold cspaceDeleteSlotCore at h
-  cases hCn : st.getCNode? addr.cnode with
-  | none => rw [hCn] at h; cases h
-  | some cn =>
-    rw [hCn] at h
-    simp only at h
-    cases hS : storeObject addr.cnode (.cnode (cn.remove addr.slot)) st with
-    | error e => rw [hS] at h; cases h
-    | ok pr =>
-      obtain ⟨u, st1⟩ := pr; cases u
-      rw [hS] at h
-      simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at h
-      subst h
-      exact storeObject_cdt_eq _ _ _ _ hS
+  obtain ⟨o, -, -, hS⟩ := cspaceDeleteSlotCore_ok h
+  exact storeObject_cdt_eq _ _ _ _ hS
 
 /-- The core delete keeps the object table well formed. -/
 theorem cspaceDeleteSlotCore_invExt (st st' : SystemState) (addr : CSpaceAddr)
     (hObjInv : st.objects.invExt) (h : cspaceDeleteSlotCore addr st = .ok ((), st')) :
     st'.objects.invExt := by
-  unfold cspaceDeleteSlotCore at h
-  cases hCn : st.getCNode? addr.cnode with
-  | none => rw [hCn] at h; cases h
-  | some cn =>
-    rw [hCn] at h
-    simp only at h
-    cases hS : storeObject addr.cnode (.cnode (cn.remove addr.slot)) st with
-    | error e => rw [hS] at h; cases h
-    | ok pr =>
-      obtain ⟨u, st1⟩ := pr; cases u
-      rw [hS] at h
-      simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at h
-      subst h
-      exact storeObject_preserves_objects_invExt _ _ _ _ hObjInv hS
+  obtain ⟨o, -, -, hS⟩ := cspaceDeleteSlotCore_ok h
+  exact storeObject_preserves_objects_invExt _ _ _ _ hObjInv hS
 
 /-- The splice writes the tree, then link words alone. -/
 theorem spliceDeletedCdtNode_reach (st : SystemState) (ref : SlotRef) :
@@ -1679,6 +1715,33 @@ addressable, empty slot of a CNode (`cspaceInsertSlot`'s refusals). -/
   | some cn => cn.slotAddressable dst.slot && (cn.lookup dst.slot).isNone
   | none => false
 
+/-- **A CNode invocation's object is a CNode** — the one guard every user CNode
+invocation (mint, copy, move, delete, revoke, reply-capability mint) asks before
+it acts, refusing `.objectNotFound` otherwise.  seL4 reaches
+`decodeCNodeInvocation` only through a `cap_cnode_cap`, so no CNode invocation
+can name a thread's space slots; the destroyers that do reach them (the
+revocation loop's deletes, a thread's teardown) are internal. -/
+@[inline] def cnodeInvoked (cnodeId : SeLe4n.ObjId) (st : SystemState) : Bool :=
+  (st.getCNode? cnodeId).isSome
+
+/-- An admitted destination is a slot of a CNode. -/
+theorem cnodeInvoked_of_dstAdmitted {dst : CSpaceAddr} {st : SystemState}
+    (h : cspaceDstAdmitted dst st = true) : cnodeInvoked dst.cnode st = true := by
+  unfold cspaceDstAdmitted at h
+  unfold cnodeInvoked
+  cases hC : st.getCNode? dst.cnode with
+  | none => rw [hC] at h; cases h
+  | some _ => rfl
+
+/-- A slot a CNode-slot lookup finds is a slot of a CNode. -/
+theorem cnodeInvoked_of_lookupSlotCap {addr : CSpaceAddr} {st : SystemState}
+    (h : (SystemState.lookupSlotCap st addr).isSome = true) : cnodeInvoked addr.cnode st = true := by
+  unfold SystemState.lookupSlotCap SystemState.lookupCNode at h
+  unfold cnodeInvoked SystemState.getCNode?
+  cases hO : st.objects[addr.cnode]? with
+  | none => rw [hO] at h; cases h
+  | some o => rw [hO] at h; cases o <;> simp_all
+
 /-- WS-ZA ZA5.4: **`cspaceInsertSlot`'s refusals of `dst`**, with its error
 codes, for an operation that asks them before its other writes (the retype). -/
 def cspaceDstRefusal (dst : CSpaceAddr) (st : SystemState) : Except KernelError Unit :=
@@ -2008,10 +2071,9 @@ theorem cspaceMove_of_admitted {src dst : CSpaceAddr} {st : SystemState}
         exact hSrc
     obtain ⟨cn2, hS2⟩ := hS1
     have hG2 := (SystemState.getCNode?_eq_some_iff _ src.cnode cn2).mpr hS2
-    unfold cspaceDeleteSlotCore
+    rw [cspaceDeleteSlotCore_eq_slotCleared hS2 rfl]
+    unfold slotCleared
     rw [hG2]
-    dsimp only
-    rw [SystemState.storeObject_cnode_eq_storeCNodeWith hS2 (·.remove src.slot)]
 
 -- ============================================================================
 -- M-P04/M5: Shared per-node revocation step
@@ -2098,6 +2160,31 @@ def cspaceMovePerformAt (cnode : SeLe4n.ObjId) (srcSlot dstSlot : SeLe4n.Slot)
     (st : SystemState) : SystemState :=
   cspaceMovePerform ⟨cnode, srcSlot⟩ ⟨cnode, dstSlot⟩ st
 
+/-! Each install's checks admit only a destination in a CNode, so an admitted
+install's CNode invocation passes the CNode guard (`cnodeInvoked`). -/
+
+theorem cnodeInvoked_of_mintAdmitted {src dst : CSpaceAddr} {rights : AccessRightSet}
+    {badge : Option SeLe4n.Badge} {st : SystemState}
+    (h : cspaceMintAdmitted src dst rights badge st = true) : cnodeInvoked dst.cnode st = true := by
+  unfold cspaceMintAdmitted at h
+  exact cnodeInvoked_of_dstAdmitted (Bool.and_eq_true _ _ ▸ h).2
+
+theorem cnodeInvoked_of_copyAdmitted {src dst : CSpaceAddr} {st : SystemState}
+    (h : cspaceCopyAdmitted src dst st = true) : cnodeInvoked dst.cnode st = true := by
+  unfold cspaceCopyAdmitted at h
+  exact cnodeInvoked_of_dstAdmitted (Bool.and_eq_true _ _ ▸ h).2
+
+theorem cnodeInvoked_of_moveAdmitted {src dst : CSpaceAddr} {st : SystemState}
+    (h : cspaceMoveAdmitted src dst st = true) : cnodeInvoked dst.cnode st = true := by
+  unfold cspaceMoveAdmitted at h
+  simp only [Bool.and_eq_true] at h
+  exact cnodeInvoked_of_dstAdmitted h.1.2
+
+theorem cnodeInvoked_of_mintReplyCapAdmitted {src dst : CSpaceAddr} {st : SystemState}
+    (h : mintReplyCapAdmitted src dst st = true) : cnodeInvoked dst.cnode st = true := by
+  unfold mintReplyCapAdmitted at h
+  exact cnodeInvoked_of_dstAdmitted (Bool.and_eq_true _ _ ▸ h).2
+
 -- ============================================================================
 -- WS-BP BP7.1 (`v0.36.7`): frame capabilities own their mappings
 -- ============================================================================
@@ -2124,7 +2211,7 @@ def capabilityMappedPage (st : SystemState) (cap : Capability) : Option MappedPa
 /-- **The pages a slot's capability records** — at most one — read off the state
 the deletion runs on. -/
 def slotMappedPages (st : SystemState) (addr : CSpaceAddr) : List MappedPage :=
-  ((SystemState.lookupSlotCap st addr).bind (capabilityMappedPage st)).toList
+  ((st.slotCapAt addr).bind (capabilityMappedPage st)).toList
 
 -- ============================================================================
 -- WS-BP BP7.1 (`v0.36.7`): the mapping record's writer
