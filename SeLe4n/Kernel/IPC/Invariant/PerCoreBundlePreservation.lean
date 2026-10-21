@@ -1636,10 +1636,12 @@ theorem ipcUnwrapCaps_passiveServerIdleFrameOnCore
     passiveServerIdleFrameOnCore st st' c :=
   passiveServerIdleFrameOnCore_of_backward
     (fun tid tcb' hTcb' =>
-      ⟨tcb', (getTcb?_eq_some_iff st tid tcb').mpr
-        (ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight st st'
+      let ⟨t0, h0, hw⟩ := ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight st st'
           summary tid.toObjId tcb' hObjInv hStep
-          ((getTcb?_eq_some_iff st' tid tcb').mp hTcb')), rfl, rfl⟩)
+          ((getTcb?_eq_some_iff st' tid tcb').mp hTcb')
+      ⟨t0, (getTcb?_eq_some_iff st tid t0).mpr h0,
+        TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) rfl,
+        TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) rfl⟩)
     (ipcUnwrapCaps_preserves_scheduler caps receiverRoot slotBase grantRight
       st st' summary hStep)
 

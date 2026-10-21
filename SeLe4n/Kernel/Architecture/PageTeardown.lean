@@ -648,18 +648,20 @@ def capNamesListed (ids : List SeLe4n.ObjId) (cap : Capability) : Bool :=
   | .object id => ids.contains id
   | _ => false
 
+/-- **Does this slot's capability, if any, name an object in the subtree?** -/
+@[inline] def cellNamesListed (ids : List SeLe4n.ObjId) : Option Capability → Bool
+  | some cap => capNamesListed ids cap
+  | none => false
+
 /-- **Does this stored object name an object in the subtree?**  A capability
-lives in one place only, a CNode slot: as in seL4, a blocked sender keeps the
+lives in slots only, a CNode's or a thread's two space slots (seL4's
+`tcbCTable` and `tcbVTable`): as in seL4, a blocked sender keeps the
 *addresses* of the capabilities it transfers and the receive looks them up at
 the rendezvous, so no message holds a capability (`IpcMessage` has no field for
-one).  A thread also names its address space directly, by its `vspaceRoot`. -/
+one), and a thread's address space is the capability in its VSpace root slot. -/
 def objectNamesListed (ids : List SeLe4n.ObjId) : KernelObject → Bool
   | .cnode cn => !(cn.allSlots fun _ cap => !capNamesListed ids cap)
-  | .tcb t =>
-      -- Slice 4b (`v0.36.10`): a thread's address space is named by its TCB's
-      -- `vspaceRoot` field, not by a capability, so a carved root a thread
-      -- still runs in is reached without one.
-      ids.contains t.vspaceRoot
+  | .tcb t => cellNamesListed ids t.spaceCells[0] || cellNamesListed ids t.spaceCells[1]
   | _ => false
 
 /-- **The whole-store check: no capability anywhere names an object in the
@@ -668,16 +670,5 @@ payoff (`untypedReset_ok_unreferenced`) a statement about every key the table
 resolves rather than about the keys an index happens to list. -/
 def carvedSubtreeUnreferenced (st : SystemState) (ids : List SeLe4n.ObjId) : Bool :=
   st.objects.fold true (fun acc _ o => acc && !objectNamesListed ids o)
-
-/-- **No CNode slot names a listed object** (`v0.36.38`) — the question a
-capability's *finalisation* asks: seL4's `finaliseCap` runs when the last
-capability in a CNode dies, since a capability exists nowhere else.  Unlike
-`carvedSubtreeUnreferenced` it does not count a thread's `vspaceRoot` field,
-which names an address space without being a capability to it. -/
-def cnodeSlotsUnreferenced (st : SystemState) (ids : List SeLe4n.ObjId) : Bool :=
-  st.objects.fold true (fun acc _ o =>
-    acc && !(match o with
-      | .cnode cn => objectNamesListed ids (.cnode cn)
-      | _ => false))
 
 end SeLe4n.Kernel

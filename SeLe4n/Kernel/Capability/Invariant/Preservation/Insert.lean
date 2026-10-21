@@ -90,8 +90,9 @@ theorem cspaceInsertSlot_preserves_replyCapPointsToValidReply
   by_cases hc : oid = addr.cnode
   · subst hc
     rw [hSelf] at hObj
-    simp only [Option.some.injEq, KernelObject.cnode.injEq] at hObj
+    simp only [Option.some.injEq] at hObj
     subst hObj
+    simp only [KernelObject.slotCap] at hLook
     by_cases hs : slot = addr.slot
     · rw [hs] at hLook
       rw [CNode.lookup_insert_eq preCn addr.slot cap (CNode.slotsUnique_holds preCn)
@@ -101,7 +102,7 @@ theorem cspaceInsertSlot_preserves_replyCapPointsToValidReply
       exact hCapBacked rid hTgt
     · rw [CNode.lookup_insert_ne preCn addr.slot slot cap (Ne.symm hs)
         (CNode.slotsUnique_holds preCn)] at hLook
-      exact hRCPV addr.cnode preCn slot cap' rid hPre hLook hTgt
+      exact hRCPV addr.cnode (.cnode preCn) slot cap' rid hPre hLook hTgt
   · rw [hNe oid hc] at hObj
     exact hRCPV oid cn slot cap' rid hObj hLook hTgt
 
@@ -154,49 +155,26 @@ theorem cspaceDeleteSlotCore_preserves_replyCapPointsToValidReply
     (hObjInv : st.objects.invExt)
     (hStep : cspaceDeleteSlotCore addr st = .ok ((), st')) :
     replyCapPointsToValidReply st' := by
-  unfold cspaceDeleteSlotCore SystemState.getCNode? at hStep
-  cases hPre : st.objects[addr.cnode]? with
-  | none => simp [hPre] at hStep
-  | some preObj =>
-    cases preObj with
-    | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ =>
-        simp [hPre] at hStep
-    | cnode cn =>
-      simp only [hPre] at hStep
-      cases hStore : storeObject addr.cnode (.cnode (cn.remove addr.slot)) st with
-      | error e => simp [hStore] at hStep
-      | ok pair =>
-        obtain ⟨_, st1⟩ := pair
-        simp only [hStore] at hStep
-        have hEq : st' = st1 := by
-          simp only [Except.ok.injEq, Prod.mk.injEq] at hStep; exact hStep.2.symm
-        rw [hEq]
-        have hMidSelf : st1.objects[addr.cnode]? = some (.cnode (cn.remove addr.slot)) :=
-          storeObject_objects_eq st st1 addr.cnode _ hObjInv hStore
-        have hMidNe : ∀ oid, oid ≠ addr.cnode → st1.objects[oid]? = st.objects[oid]? :=
-          fun oid h => storeObject_objects_ne st st1 addr.cnode oid _ h hObjInv hStore
-        have hGetReply : ∀ rid : SeLe4n.ReplyId,
-            st1.getReply? rid = st.getReply? rid := by
-          intro rid
-          simp only [SystemState.getReply?]
-          by_cases hc : rid.toObjId = addr.cnode
-          · rw [hc, hMidSelf, hPre]
-          · rw [hMidNe rid.toObjId hc]
-        intro oid cn' slot cap' rid hObj hLook hTgt
-        rw [hGetReply]
-        by_cases hc : oid = addr.cnode
-        · subst hc
-          rw [hMidSelf] at hObj
-          simp only [Option.some.injEq, KernelObject.cnode.injEq] at hObj
-          subst hObj
-          by_cases hs : slot = addr.slot
-          · rw [hs, CNode.lookup_remove_eq_none cn addr.slot (CNode.slotsUnique_holds cn)] at hLook
-            exact absurd hLook (by simp)
-          · rw [CNode.lookup_remove_ne cn addr.slot slot (Ne.symm hs)
-              (CNode.slotsUnique_holds cn)] at hLook
-            exact hRCPV addr.cnode cn slot cap' rid hPre hLook hTgt
-        · rw [hMidNe oid hc] at hObj
-          exact hRCPV oid cn' slot cap' rid hObj hLook hTgt
+  obtain ⟨o, hPre, hH, hStore⟩ := cspaceDeleteSlotCore_ok hStep
+  have hMidSelf := storeObject_objects_eq st st' addr.cnode _ hObjInv hStore
+  have hMidNe : ∀ oid, oid ≠ addr.cnode → st'.objects[oid]? = st.objects[oid]? :=
+    fun oid h => storeObject_objects_ne st st' addr.cnode oid _ h hObjInv hStore
+  have hGetReply : ∀ rid : SeLe4n.ReplyId, st'.getReply? rid = st.getReply? rid := by
+    intro rid
+    simp only [SystemState.getReply?]
+    by_cases hc : rid.toObjId = addr.cnode
+    · rw [hc, hMidSelf, hPre]
+      cases o <;> simp_all [KernelObject.holdsSlots, KernelObject.removeSlotCap]
+    · rw [hMidNe rid.toObjId hc]
+  intro oid o' slot cap' rid hObj hLook hTgt
+  rw [hGetReply]
+  by_cases hc : oid = addr.cnode
+  · subst hc
+    rw [hMidSelf] at hObj
+    cases hObj
+    exact hRCPV _ o slot cap' rid hPre (KernelObject.slotCap_removeSlotCap_back hLook) hTgt
+  · rw [hMidNe oid hc] at hObj
+    exact hRCPV oid o' slot cap' rid hObj hLook hTgt
 
 /-- WS-SM SM6.D / PR #822 Phase H (#1.a): a capability resolved from a CSpace slot in a state
 satisfying `capabilityInvariantBundle` is reply-backed — if its target is a reply cap, the
@@ -222,7 +200,7 @@ theorem replyCapBacked_of_source_slot
       have hObjCN : st.objects[src.cnode]? = some (.cnode cn) :=
         (SystemState.lookupCNode_eq_some_iff st src.cnode cn).1 hCN
       exact replyCapPointsToValidReply_of_capabilityInvariantBundle st hInv
-        src.cnode cn src.slot parent rid hObjCN hCap hTgt
+        src.cnode (.cnode cn) src.slot parent rid hObjCN hCap hTgt
 
 theorem cspaceMint_preserves_capabilityInvariantBundle
     (st st' : SystemState)
@@ -315,11 +293,11 @@ theorem slotOccupied_of_lookupSlotCap (st : SystemState) (ref : SlotRef)
 inside or outside its CNode. -/
 theorem cspaceInsertSlot_links (st st' : SystemState) (addr : SlotRef) (cap : Capability)
     (hObjInv : st.objects.invExt) (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
-    st'.slotLinkAt = st.slotLinkAt ∧ ∀ r, st'.slotInCNode r ↔ st.slotInCNode r := by
+    st'.slotLinkAt = st.slotLinkAt ∧ ∀ r, st'.slotInObject r ↔ st.slotInObject r := by
   obtain ⟨cn, hGet, -, -, hStore⟩ := cspaceInsertSlot_ok_decompose st st' addr cap hStep
   have hPre := (SystemState.getCNode?_eq_some_iff st addr.cnode cn).mp hGet
   exact ⟨SystemState.slotLinkAt_storeObject_cnode hObjInv hPre (CNode.insert_links ..) hStore,
-    SystemState.slotInCNode_storeObject_cnode hObjInv hPre (CNode.insert_radixWidth ..) hStore⟩
+    SystemState.slotInObject_storeObject_cnode hObjInv hPre (CNode.insert_radixWidth ..) hStore⟩
 
 /-- **Installing a derived capability into an empty slot and recording its
 derivation keeps the tree complete and acyclic, and the paired link writes keep the links
@@ -352,11 +330,11 @@ theorem cdt_addEdge_after_insert (st st1 : SystemState) (src dst : SlotRef)
   obtain ⟨cs, hCs, hLs⟩ := slotOccupied_of_lookupSlotCap st src hSrc
   have hNe : src ≠ dst := by
     rintro rfl; rw [hPre] at hCs; cases hCs; exact hLs hEmpty
-  have hSrcPost : ∃ cn, st1.objects[src.cnode]? = some (.cnode cn) ∧ cn.lookup src.slot ≠ none := by
+  have hSrcPost : ∃ o, st1.objects[src.cnode]? = some o ∧ o.slotCap src.slot ≠ none := by
     by_cases hc : src.cnode = dst.cnode
     · rw [hc, hPre] at hCs; cases hCs
-      exact ⟨_, by rw [hc]; exact hDstPost, CNode.lookup_insert_ne_none _ _ _ _ hLs⟩
-    · exact ⟨cs, by rw [storeObject_objects_ne st st1 dst.cnode src.cnode _ hc hObjInv hStore]; exact hCs, hLs⟩
+      exact ⟨.cnode _, by rw [hc]; exact hDstPost, CNode.lookup_insert_ne_none _ _ _ _ hLs⟩
+    · exact ⟨.cnode cs, by rw [storeObject_objects_ne st st1 dst.cnode src.cnode _ hc hObjInv hStore]; exact hCs, hLs⟩
   refine ⟨fun ref hM => ?_, ?_, ?_⟩
   · obtain ⟨e, he, hr⟩ := hM
     simp only [CapDerivationTree.addEdge_edges, List.mem_cons] at he
@@ -374,8 +352,8 @@ theorem cdt_addEdge_after_insert (st st1 : SystemState) (src dst : SlotRef)
       (SystemState.slotLinkAt_storeObject_cnode hObjInv hPre (CNode.insert_links ..) hStore)
     exact SystemState.cdtAddChild_agree
       (storeObject_preserves_objects_invExt st st1 dst.cnode _ hObjInv hStore) hL1
-      (fun _ hM => hComp1.slotInCNode hM) op (slotInCNode_of_occupied hSrcPost)
-      (slotInCNode_of_occupied ⟨_, hDstPost, hDstOcc⟩)
+      (fun _ hM => hComp1.slotInObject hM) op (slotInObject_of_occupied hSrcPost)
+      (slotInObject_of_occupied ⟨_, hDstPost, hDstOcc⟩)
       (CapDerivationTree.parentOf_of_not_mentions (by rw [hCdt]; exact hDstFresh)) hNe
 
 end SeLe4n.Kernel

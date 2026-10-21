@@ -61,7 +61,8 @@ theorem storeTcbIpcStateAndMessage_preserves_replyCapPointsToValidReply
   rw [hGR]
   by_cases hEq : oid = target.toObjId
   · subst hEq
-    rw [hTcb1] at hObj1; exact absurd hObj1 (by simp)
+    obtain ⟨o, ho, hS⟩ := (storeTcbIpcStateAndMessage_kindPreservingWrite hObjInv hTcb).slotCap_back hObj1
+    exact hRCPV _ o slot cap rid ho (hS ▸ hLook) hTgt
   · rw [storeTcbIpcStateAndMessage_preserves_objects_ne st st1 target ipc msg oid hEq hObjInv hTcb] at hObj1
     exact hRCPV oid cn slot cap rid hObj1 hLook hTgt
 
@@ -84,52 +85,19 @@ theorem capabilityInvariantBundle_of_storeTcbAndEnsureRunnable
     (hTcb : storeTcbIpcStateAndMessage st target ipc msg = .ok st1)
     (hLookup : lookupTcb st target = some tcb) :
     capabilityInvariantBundle (ensureRunnable st1 target) := by
-  have hTargetTcb : ∃ tcb', st.objects[target.toObjId]? = some (.tcb tcb') := by
-    unfold lookupTcb SystemState.getTcb? at hLookup; cases hObj : st.objects[target.toObjId]? with
-    | none => simp [hObj] at hLookup
-    | some obj => cases obj with
-      | tcb t => exact ⟨t, rfl⟩
-      | _ => simp [hObj] at hLookup
-  have hCnodeBackward : ∀ (cnodeId : SeLe4n.ObjId) (cn : CNode),
-      st1.objects[cnodeId]? = some (.cnode cn) → st.objects[cnodeId]? = some (.cnode cn) := by
-    intro cnodeId cn hCn1
-    by_cases hEq : cnodeId = target.toObjId
-    · subst hEq
-      have hTcbPost := storeTcbIpcStateAndMessage_tcb_exists_at_target st st1 target ipc msg hObjInv hTcb hTargetTcb
-      rcases hTcbPost with ⟨tcb', hTcb'⟩
-      rw [hTcb'] at hCn1; cases hCn1
-    · rw [storeTcbIpcStateAndMessage_preserves_objects_ne st st1 target ipc msg cnodeId hEq hObjInv hTcb] at hCn1; exact hCn1
-  have ⟨hCompE, hAcyclicE⟩ :=
-    cdtPredicates_through_reply_path st st1 target ipc msg hComp hAcyclic hObjInv hTcb
-  have hDepth1 : cspaceDepthConsistent st1 := by
-    intro cnodeId cn hCn1; exact hDepthPre cnodeId cn (hCnodeBackward cnodeId cn hCn1)
-  have hDepthE := cspaceDepthConsistent_of_objectsAgreeOffRunLinks
-    (ensureRunnable_objectsAgreeOffRunLinks st1 target) hDepth1
   have hObjInv1 := storeTcbIpcStateAndMessage_preserves_objects_invExt st st1 target ipc msg hObjInv hTcb
-  have hObjInvE : (ensureRunnable st1 target).objects.invExt :=
-    (ensureRunnable_objects_invExt st1 target) hObjInv1
-  -- WS-RC R4.A.6: cspaceSlotUnique conjunct removed from bundle; the
-  -- predicate is structurally trivial.
-  have hCnodeFwd : ∀ (cnodeId : SeLe4n.ObjId) (cn : CNode),
-      st.objects[cnodeId]? = some (.cnode cn) → st1.objects[cnodeId]? = some (.cnode cn) := by
-    intro cnodeId cn hCn
-    by_cases hEq : cnodeId = target.toObjId
-    · subst hEq; obtain ⟨_, hT⟩ := hTargetTcb; rw [hT] at hCn; cases hCn
-    · rw [storeTcbIpcStateAndMessage_preserves_objects_ne st st1 target ipc msg cnodeId hEq hObjInv hTcb]
-      exact hCn
   have hEns := ensureRunnable_onlyObjectsSchedulerDiffer st1 target
   unfold SystemState.onlyObjectsSchedulerDiffer at hEns
-  have hEnsNS : (ensureRunnable st1 target).cdt = st1.cdt := by rw [hEns]
   have hEnsCdt : (ensureRunnable st1 target).cdt = st.cdt :=
-    hEnsNS.trans (storeTcbIpcStateAndMessage_cdt_eq hTcb)
-  exact ⟨cspaceLookupSound_holds _,
-    hCompE, hAcyclicE, hDepthE, hObjInvE,
-    replyCapPointsToValidReply_of_objectsAgreeOffRunLinks (ensureRunnable_objectsAgreeOffRunLinks st1 target)
-      (storeTcbIpcStateAndMessage_preserves_replyCapPointsToValidReply
-        st st1 target ipc msg tcb hRCPV hObjInv hTcb hLookup),
-    cdtLinksAgree_of_cnode_iff hLinks hEnsCdt fun oid cn =>
-      (ensureRunnable_objectsAgreeOffRunLinks st1 target).get_cnode_iff.trans
-        ⟨hCnodeBackward oid cn, hCnodeFwd oid cn⟩⟩
+    (show (ensureRunnable st1 target).cdt = st1.cdt by rw [hEns]).trans
+      (storeTcbIpcStateAndMessage_cdt_eq hTcb)
+  -- The store rewrites the target's TCB off its slots and the wake rewrites run
+  -- links: both are kind- and slot-preserving writes.
+  exact capabilityInvariantBundle_of_kindPreserving
+    ⟨cspaceLookupSound_holds _, hComp, hAcyclic, hDepthPre, hObjInv, hRCPV, hLinks⟩ hEnsCdt
+    ((ensureRunnable_objects_invExt st1 target) hObjInv1)
+    ((storeTcbIpcStateAndMessage_kindPreservingWrite hObjInv hTcb).trans
+      (ensureRunnable_objectsAgreeOffRunLinks st1 target).kindPreserving)
 
 /-- PR #827 #3 fold: `consumeCallerReply` preserves `capabilityInvariantBundle` —
 neither leg touches a CNode, the CDT, or the CDT node→slot mapping;
@@ -140,38 +108,11 @@ theorem consumeCallerReply_preserves_capabilityInvariantBundle
     (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
     (hInv : capabilityInvariantBundle st)
     (hStep : SystemState.consumeCallerReply caller rid st = .ok ((), st')) :
-    capabilityInvariantBundle st' := by
-  rcases hInv with ⟨_hSound, hComp, hAcyclic, hDepthPre, hObjInv, hRCPV, hLinks⟩
-  have hNT := SystemState.consumeCallerReply_nonTcbNonReply_agree st st' caller rid hObjInv hStep
-  have hCnodeBwd : ∀ (cnodeId : SeLe4n.ObjId) (cn : CNode),
-      st'.objects[cnodeId]? = some (.cnode cn) → st.objects[cnodeId]? = some (.cnode cn) :=
-    fun cnodeId cn hCn => (hNT cnodeId (.cnode cn)
-      (fun tt => by exact KernelObject.noConfusion)
-      (fun rr => by exact KernelObject.noConfusion)).mp hCn
-  refine ⟨cspaceLookupSound_holds _, ?_, ?_, ?_, ?_, ?_, ?_⟩
-  · intro ref hRef
-    rw [SystemState.consumeCallerReply_cdt_eq st st' caller rid hStep] at hRef
-    obtain ⟨cn, hCn, hL⟩ := hComp ref hRef
-    exact ⟨cn, (hNT ref.cnode (.cnode cn) (fun tt => by exact KernelObject.noConfusion)
-      (fun rr => by exact KernelObject.noConfusion)).mpr hCn, hL⟩
-  · unfold cdtAcyclicity
-    rw [SystemState.consumeCallerReply_cdt_eq st st' caller rid hStep]
-    exact hAcyclic
-  · intro cnodeId cn hCn
-    exact hDepthPre cnodeId cn (hCnodeBwd cnodeId cn hCn)
-  · exact SystemState.consumeCallerReply_preserves_objects_invExt st st' caller rid hObjInv hStep
-  · intro oid cn slot cap rid' hObj hLook hTgt
-    have hPre := hRCPV oid cn slot cap rid' (hCnodeBwd oid cn hObj) hLook hTgt
-    cases hGet : st.getReply? rid' with
-    | none => exact absurd hGet hPre
-    | some r' =>
-      obtain ⟨r'', hGet''⟩ :=
-        SystemState.consumeCallerReply_getReply?_isSome st st' caller rid hObjInv hStep rid' r' hGet
-      rw [hGet'']
-      exact Option.some_ne_none _
-  · exact cdtLinksAgree_of_cnode_iff hLinks (SystemState.consumeCallerReply_cdt_eq st st' caller rid hStep)
-      fun oid cn => hNT oid (.cnode cn) (fun tt => by exact KernelObject.noConfusion)
-        (fun rr => by exact KernelObject.noConfusion)
+    capabilityInvariantBundle st' :=
+  capabilityInvariantBundle_of_kindPreserving hInv
+    (SystemState.consumeCallerReply_cdt_eq st st' caller rid hStep)
+    (SystemState.consumeCallerReply_preserves_objects_invExt st st' caller rid hInv.2.2.2.2.1 hStep)
+    (SystemState.consumeCallerReply_kindPreservingWrite st st' caller rid hInv.2.2.2.2.1 hStep)
 
 /-- **WS-RM (`v0.35.6`)**: the *removal* preserves the bundle.  It is
 `consumeCallerReply` run at the state the splice left, and the splice writes only
@@ -188,36 +129,9 @@ theorem removeCallerReplyFrame_preserves_capabilityInvariantBundle
   have hObjInv : st.objects.invExt := hInv.2.2.2.2.1
   refine consumeCallerReply_preserves_capabilityInvariantBundle
     (spliceReplyFrameOutOrSelf st rid) st' caller rid ?_ hStep
-  rcases hInv with ⟨_hSound, hComp, hAcyclic, hDepthPre, _hObjInv, hRCPV, hLinks⟩
-  have hCnodeBwd : ∀ (cnodeId : SeLe4n.ObjId) (cn : CNode),
-      (spliceReplyFrameOutOrSelf st rid).objects[cnodeId]? = some (.cnode cn) →
-      st.objects[cnodeId]? = some (.cnode cn) :=
-    fun cnodeId cn hCn => (spliceReplyFrameOutOrSelf_non_reply_agree st rid hObjInv cnodeId
-      (.cnode cn) (fun rr => by exact KernelObject.noConfusion)).mp hCn
-  refine ⟨cspaceLookupSound_holds _, ?_, ?_, ?_, ?_, ?_, ?_⟩
-  · intro ref hRef
-    rw [spliceReplyFrameOutOrSelf_cdt_eq st rid] at hRef
-    obtain ⟨cn, hCn, hL⟩ := hComp ref hRef
-    exact ⟨cn, (spliceReplyFrameOutOrSelf_non_reply_agree st rid hObjInv ref.cnode
-      (.cnode cn) (fun rr => by exact KernelObject.noConfusion)).mpr hCn, hL⟩
-  · unfold cdtAcyclicity
-    rw [spliceReplyFrameOutOrSelf_cdt_eq st rid]
-    exact hAcyclic
-  · intro cnodeId cn hCn
-    exact hDepthPre cnodeId cn (hCnodeBwd cnodeId cn hCn)
-  · exact spliceReplyFrameOutOrSelf_preserves_objects_invExt st rid hObjInv
-  · intro oid cn slot cap rid' hObj hLook hTgt
-    have hPre := hRCPV oid cn slot cap rid' (hCnodeBwd oid cn hObj) hLook hTgt
-    cases hGet : st.getReply? rid' with
-    | none => exact absurd hGet hPre
-    | some r' =>
-      obtain ⟨r'', hGet'', _⟩ := spliceReplyFrameOutOrSelf_reply_rewrite st rid hObjInv
-        rid'.toObjId r' ((SystemState.getReply?_eq_some_iff st rid' r').mp hGet)
-      rw [(SystemState.getReply?_eq_some_iff _ rid' r'').mpr hGet'']
-      exact Option.some_ne_none _
-  · exact cdtLinksAgree_of_cnode_iff hLinks (spliceReplyFrameOutOrSelf_cdt_eq st rid)
-      fun oid cn => spliceReplyFrameOutOrSelf_non_reply_agree st rid hObjInv oid
-        (.cnode cn) (fun rr => by exact KernelObject.noConfusion)
+  exact capabilityInvariantBundle_of_kindPreserving hInv (spliceReplyFrameOutOrSelf_cdt_eq st rid)
+    (spliceReplyFrameOutOrSelf_preserves_objects_invExt st rid hObjInv)
+    (spliceReplyFrameOutOrSelf_kindPreservingWrite st rid hObjInv)
 
 /-- WS-F1/WS-E4/M-12/WS-H1: endpointReply preserves capabilityInvariantBundle.
 Reply stores a TCB with message (not a CNode), so CSpace invariants are preserved.
@@ -495,7 +409,7 @@ theorem lifecycleRetypeObject_preserves_capabilityInvariantBundle
       cn.depth ≤ maxCSpaceDepth ∧ (cn.bitsConsumed > 0 → cn.wellFormed))
     (hReplyBacked' : replyCapPointsToValidReply st')
     (hTargetOffTree : ∀ ref : SlotRef, st.cdt.mentions ref → ref.cnode ≠ target)
-    (hNewObjCNodeLinks : ∀ cn, newObj = .cnode cn → ∀ s f, cn.linkAt s f = none)
+    (hNewObjLinks : ∀ s f, newObj.linkAt s f = none)
     (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
   rcases hInv with ⟨_hSound, hComp, hAcyclic, hDepthPre, hObjInv, _hRCPV, hLinks⟩
@@ -514,9 +428,7 @@ theorem lifecycleRetypeObject_preserves_capabilityInvariantBundle
     by_cases hr : r.cnode = target
     · simp only [SystemState.slotLinkAt_def]
       rw [hr, lifecycle_storeObject_objects_eq st st' target newObj hObjInv hStore]
-      cases newObj with
-      | cnode cn => exact hNewObjCNodeLinks cn rfl r.slot f
-      | _ => rfl
+      exact hNewObjLinks r.slot f
     · rw [hAt r hr]; exact hLinks.none_of_not_mentions hm f
   -- WS-H4: lifecycleRetypeObject delegates to storeObject, which preserves CDT fields
   have ⟨hComp', hAcyclic', hDepth', hObjInv'⟩ :
@@ -1208,7 +1120,7 @@ theorem lifecycleRetypeObject_preserves_coreIpcInvariantBundle
         st.getTcb? tid = some tcb → tcb.pendingReceiveReply = some rid → rid.toObjId ≠ target)
     (hReplyBacked' : replyCapPointsToValidReply st')
     (hTargetOffTree : ∀ ref : SlotRef, st.cdt.mentions ref → ref.cnode ≠ target)
-    (hNewObjCNodeLinks : ∀ cn, newObj = .cnode cn → ∀ s f, cn.linkAt s f = none)
+    (hNewObjLinks : ∀ s f, newObj.linkAt s f = none)
     (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
     coreIpcInvariantBundle st' := by
   rcases hInv with ⟨hSched, hCap, hIpcFull⟩
@@ -1225,7 +1137,7 @@ theorem lifecycleRetypeObject_preserves_coreIpcInvariantBundle
       hCurrentValid hStep
   · exact lifecycleRetypeObject_preserves_capabilityInvariantBundle st st' authority target newObj hCap
       hNewObjCNodeUniq hNewObjCNodeDepth hReplyBacked' hTargetOffTree
-      hNewObjCNodeLinks hStep
+      hNewObjLinks hStep
   · exact ⟨lifecycleRetypeObject_preserves_ipcInvariant st st' authority target newObj hIpcFull.1 hNewObjNotificationInv (objects_invExt_of_capabilityInvariantBundle st hCap) hStep,
            hDualQueue', hBounded', hBadge',
            -- WS-RR RR3.6: `blockedThreadsPendingMessageConsistent` **established** from the
@@ -1339,14 +1251,14 @@ theorem lifecycleRetypeObject_preserves_lifecycleCompositionInvariantBundle
     (hReplyBacked' : replyCapPointsToValidReply st')
     (hObjTypesInv : st.lifecycle.objectTypes.invExt)
     (hTargetOffTree : ∀ ref : SlotRef, st.cdt.mentions ref → ref.cnode ≠ target)
-    (hNewObjCNodeLinks : ∀ cn, newObj = .cnode cn → ∀ s f, cn.linkAt s f = none)
+    (hNewObjLinks : ∀ s f, newObj.linkAt s f = none)
     (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
     lifecycleCompositionInvariantBundle st' := by
   rcases hInv with ⟨hM35, hLifecycle⟩
   rcases hM35 with ⟨hM3, _hCoherence, _hCtx, _hDeq⟩
   have hM3' : coreIpcInvariantBundle st' :=
     lifecycleRetypeObject_preserves_coreIpcInvariantBundle st st' authority target newObj hM3
-      hNewObjNotificationInv hNewObjCNodeUniq hNewObjCNodeDepth hCurrentValid hDualQueue' hBounded' hBadge' hNewObjPending hNewObjNoReplyObject hNewObjReplyUnlinked hTargetUnlinked hTargetReplyUnlinked hNoDup' hQMC' hNewObjNoNext hTargetNotQueueLinked hNewObjNotEndpoint hTargetNotHead hTargetNotTail hAllBudgetsNone hNewObjUnbound hNewObjAllowed hNewObjNoBudget hTargetNotSc hTargetNotOwner hNewObjTarget hNewObjThird hNewObjNoStash hTargetNotStashedReply hReplyBacked' hTargetOffTree hNewObjCNodeLinks hStep
+      hNewObjNotificationInv hNewObjCNodeUniq hNewObjCNodeDepth hCurrentValid hDualQueue' hBounded' hBadge' hNewObjPending hNewObjNoReplyObject hNewObjReplyUnlinked hTargetUnlinked hTargetReplyUnlinked hNoDup' hQMC' hNewObjNoNext hTargetNotQueueLinked hNewObjNotEndpoint hTargetNotHead hTargetNotTail hAllBudgetsNone hNewObjUnbound hNewObjAllowed hNewObjNoBudget hTargetNotSc hTargetNotOwner hNewObjTarget hNewObjThird hNewObjNoStash hTargetNotStashedReply hReplyBacked' hTargetOffTree hNewObjLinks hStep
   have hLifecycle' : lifecycleInvariantBundle st' :=
     SeLe4n.Kernel.lifecycleRetypeObject_preserves_lifecycleInvariantBundle st st' authority target
       newObj hLifecycle (objects_invExt_of_capabilityInvariantBundle st hM3.2.1) hObjTypesInv hStep
@@ -1364,7 +1276,7 @@ theorem lifecycleRevokeDeleteRetype_preserves_capabilityInvariantBundle
       cn.depth ≤ maxCSpaceDepth ∧ (cn.bitsConsumed > 0 → cn.wellFormed))
     (hReplyBacked' : replyCapPointsToValidReply st')
     (hTargetOffTree : ∀ ref : SlotRef, st.cdt.mentions ref → ref.cnode ≠ target)
-    (hNewObjCNodeLinks : ∀ cn, newObj = .cnode cn → ∀ s f, cn.linkAt s f = none)
+    (hNewObjLinks : ∀ s f, newObj.linkAt s f = none)
     (hStep : lifecycleRevokeDeleteRetype authority cleanup target newObj st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
   rcases lifecycleRevokeDeleteRetype_ok_implies_staged_steps st st' authority cleanup target newObj hStep with
@@ -1378,7 +1290,7 @@ theorem lifecycleRevokeDeleteRetype_preserves_capabilityInvariantBundle
     hDeleted hNewObjCNodeUniq hNewObjCNodeDepth hReplyBacked'
     (fun ref hM => hTargetOffTree ref (cspaceRevoke_mentions_sub cleanup st stRevoked hRevoke ref
       (cspaceDeleteSlot_mentions_sub cleanup stRevoked stDeleted hDelete ref hM)))
-    hNewObjCNodeLinks hRetype
+    hNewObjLinks hRetype
 
 theorem lifecycleRevokeDeleteRetype_error_preserves_lifecycleCompositionInvariantBundle
     (st : SystemState)

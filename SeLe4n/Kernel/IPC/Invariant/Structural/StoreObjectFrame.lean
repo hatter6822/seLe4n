@@ -41,6 +41,20 @@ namespace SeLe4n.Kernel
 open SeLe4n.Model
 open SeLe4n.Kernel.Concurrency (bootCoreId)
 
+/-- A store over an object of one with the same slots keeps every key's slots. -/
+theorem slotCap_back_of_storeObject {st st' : SystemState} {k : SeLe4n.ObjId}
+    {obj old : KernelObject} (hObjInv : st.objects.invExt) (hPre : st.objects[k]? = some old)
+    (hStore : storeObject k obj st = .ok ((), st')) (hEq : obj.slotCap = old.slotCap) :
+    ∀ (oid : SeLe4n.ObjId) (o' : KernelObject), st'.objects[oid]? = some o' →
+      ∃ o, st.objects[oid]? = some o ∧ o'.slotCap = o.slotCap := by
+  intro oid o' h
+  by_cases hk : oid = k
+  · subst hk
+    rw [storeObject_objects_eq st st' oid obj hObjInv hStore] at h
+    cases h; exact ⟨old, hPre, hEq⟩
+  · rw [storeObject_objects_ne st st' k oid obj hk hObjInv hStore] at h
+    exact ⟨o', h, rfl⟩
+
 
 -- ============================================================================
 -- WS-SM SM6.D (#7.1 reply-objects fold): frame lemmas for the atomic reply-link
@@ -124,8 +138,9 @@ private theorem linkCallerReply_preserves_badgeWellFormed
         split at hLink
         · exact ⟨storeObject_nonNotification_preserves_notificationBadgesWellFormed
                    st st1 rid.toObjId _ hNtfn hObjInv hLink (fun ntfn h => by cases h),
-                 storeObject_nonCNode_preserves_capabilityBadgesWellFormed
-                   st st1 rid.toObjId _ hCap hObjInv hLink (fun cn h => by cases h)⟩
+                 storeObject_preserves_capabilityBadgesWellFormed
+                   st st1 rid.toObjId _ hCap hObjInv hLink
+                   (fun _ _ h => by simp [KernelObject.slotCap] at h)⟩
         · simp at hLink
     have hObjInv1 := SystemState.linkReply_preserves_objects_invExt st st1 rid caller hObjInv hLink
     cases hT : st1.getTcb? caller with
@@ -136,8 +151,9 @@ private theorem linkCallerReply_preserves_badgeWellFormed
       · obtain ⟨hNtfn, hCap⟩ := hInv1
         exact ⟨storeObject_nonNotification_preserves_notificationBadgesWellFormed
                  st1 st' caller.toObjId _ hNtfn hObjInv1 hStep (fun ntfn h => by cases h),
-               storeObject_nonCNode_preserves_capabilityBadgesWellFormed
-                 st1 st' caller.toObjId _ hCap hObjInv1 hStep (fun cn h => by cases h)⟩
+               storeObject_preserves_capabilityBadgesWellFormed
+                 st1 st' caller.toObjId _ hCap hObjInv1 hStep
+                 (fun _ _ h => ⟨_, (SystemState.getTcb?_eq_some_iff _ _ _).mp hT, h⟩)⟩
       · simp at hStep
 
 /-- WS-SM SM6.D (#7.1 fold): `linkCallerReply` preserves `allPendingMessagesBounded`.
@@ -266,8 +282,9 @@ theorem linkServerStashedReply_preserves_badgeWellFormed
         obtain ⟨hNtfn, hCap⟩ := hInv1
         exact ⟨storeObject_nonNotification_preserves_notificationBadgesWellFormed
                  st1 st' server.toObjId _ hNtfn hObjInv1 hStep (fun ntfn h => by cases h),
-               storeObject_nonCNode_preserves_capabilityBadgesWellFormed
-                 st1 st' server.toObjId _ hCap hObjInv1 hStep (fun cn h => by cases h)⟩
+               storeObject_preserves_capabilityBadgesWellFormed
+                 st1 st' server.toObjId _ hCap hObjInv1 hStep
+                 (fun _ _ h => ⟨_, (SystemState.getTcb?_eq_some_iff _ _ _).mp hT, h⟩)⟩
 
 /-- WS-SM SM6.D (#7.3 fold): `linkServerStashedReply` preserves
 `allPendingMessagesBounded`.  The `linkCallerReply` leg leaves every TCB's
@@ -1689,7 +1706,8 @@ theorem consumeCallerReply_preserves_allPendingMessagesBounded
 
 open SeLe4n.Model.SystemState in
 /-- PR #827 #3 fold: `consumeCallerReply` preserves `badgeWellFormed` — both
-clauses read `.notification` / `.cnode` objects only. -/
+clauses read `.notification` objects and object slots, which its kind-preserving
+writes keep. -/
 theorem consumeCallerReply_preserves_badgeWellFormed
     (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
     (hObjInv : st.objects.invExt) (hInv : badgeWellFormed st)
@@ -1702,10 +1720,8 @@ theorem consumeCallerReply_preserves_badgeWellFormed
     exact hNB oid ntfn badge ((hNT oid (.notification ntfn)
       (fun tt => by exact KernelObject.noConfusion)
       (fun rr => by exact KernelObject.noConfusion)).mp hObj) hBadge
-  · intro oid cn slot cap badge hObj hLook hBadge
-    exact hCB oid cn slot cap badge ((hNT oid (.cnode cn)
-      (fun tt => by exact KernelObject.noConfusion)
-      (fun rr => by exact KernelObject.noConfusion)).mp hObj) hLook hBadge
+  · exact capabilityBadgesWellFormed_of_slotCap_back hCB fun _ _ hO =>
+      (SystemState.consumeCallerReply_kindPreservingWrite st st' caller rid hObjInv hStep).slotCap_back hO
 
 open SeLe4n.Model.SystemState in
 /-- **WS-RM (`v0.35.6`)**: and the removal preserves the three above.  Each reads
@@ -1734,10 +1750,8 @@ theorem removeCallerReplyFrame_preserves_badgeWellFormed
     exact hNB oid ntfn badge ((hNT oid (.notification ntfn)
       (fun tt => by exact KernelObject.noConfusion)
       (fun rr => by exact KernelObject.noConfusion)).mp hObj) hBadge
-  · intro oid cn slot cap badge hObj hLook hBadge
-    exact hCB oid cn slot cap badge ((hNT oid (.cnode cn)
-      (fun tt => by exact KernelObject.noConfusion)
-      (fun rr => by exact KernelObject.noConfusion)).mp hObj) hLook hBadge
+  · exact capabilityBadgesWellFormed_of_slotCap_back hCB fun _ _ hO =>
+      (removeCallerReplyFrame_kindPreservingWrite st st' caller rid hObjInv hStep).slotCap_back hO
 
 
 
@@ -2582,8 +2596,9 @@ theorem endpointReceiveDual_preserves_badgeWellFormed
                   exact removeRunnable_preserves_badgeWellFormed stStashed receiver
                     ⟨storeObject_nonNotification_preserves_notificationBadgesWellFormed
                        st2 stStashed receiver.toObjId _ hNtfn hObjInv2 hStash (fun ntfn h => by cases h),
-                     storeObject_nonCNode_preserves_capabilityBadgesWellFormed
-                       st2 stStashed receiver.toObjId _ hCap hObjInv2 hStash (fun cn h => by cases h)⟩
+                     storeObject_preserves_capabilityBadgesWellFormed
+                       st2 stStashed receiver.toObjId _ hCap hObjInv2 hStash
+                       (fun _ _ h => ⟨_, (SystemState.getTcb?_eq_some_iff _ _ _).mp hGetR, h⟩)⟩
 
 /-- U4-K: endpointCall preserves allPendingMessagesBounded.
 Path A: PopHead + storeTcbIpcStateAndMessage(receiver, msg) + ensureRunnable +

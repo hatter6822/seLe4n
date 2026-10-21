@@ -50,7 +50,7 @@ namespace SeLe4n.Testing.An10Cascade
 /-- Helper: construct a minimal test TCB. -/
 private def mkTcb (tid : Nat) (prio : Nat := 10) : TCB :=
   { tid := ThreadId.ofNat tid, priority := ⟨prio⟩, domain := ⟨0⟩,
-    cspaceRoot := ObjId.ofNat 0, vspaceRoot := ObjId.ofNat 0,
+    spaceCells := SeLe4n.Model.TCB.spaceCellsOf (ObjId.ofNat 0) (ObjId.ofNat 0),
     ipcBuffer := SeLe4n.VAddr.ofNat 0 }
 
 /-- Helper: construct a minimal test Endpoint. -/
@@ -312,7 +312,7 @@ def an10_d_lookupCspaceRoot_populated : IO Bool := do
   let tid : ThreadId := ThreadId.ofNat 50
   let cspaceRoot : ObjId := ObjId.ofNat 999
   let tcb : TCB :=
-    { mkTcb 50 with cspaceRoot := cspaceRoot }
+    ((mkTcb 50).withCSpaceRoot cspaceRoot)
   let st : SystemState := { (default : SystemState) with
     objects := (default : SystemState).objects.insert tid.toObjId (.tcb tcb) }
   return lookupCspaceRoot st tid == some cspaceRoot

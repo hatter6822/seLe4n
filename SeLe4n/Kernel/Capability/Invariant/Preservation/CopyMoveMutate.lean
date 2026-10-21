@@ -179,15 +179,15 @@ theorem cspaceMove_preserves_capabilityInvariantBundle
               have hIX := hBundleSt3.2.2.2.2.1
               -- The insert and the delete write capabilities in place, so `src`
               -- (occupied before) and `dst` stay slots of their CNodes.
-              have hSrcIn : st3.slotInCNode src :=
+              have hSrcIn : st3.slotInObject src :=
                 (cspaceDeleteSlotCore_links st2 st3 src hBundleSt2.2.2.2.2.1 hDelete).2 src |>.mpr
                   ((cspaceInsertSlot_links st st2 dst cap hInv.2.2.2.2.1 hInsert).2 src |>.mpr
-                    (slotInCNode_of_occupied (slotOccupied_of_lookupSlotCap st src
-                      (by rw [(cspaceLookupSlot_ok_iff_lookupSlotCap st src cap).1 hSrc]; rfl))))
+                    (slotInObject_of_occupied (slotOccupied_of_cnode (slotOccupied_of_lookupSlotCap st src
+                      (by rw [(cspaceLookupSlot_ok_iff_lookupSlotCap st src cap).1 hSrc]; rfl)))))
               have hLinks3 : cdtLinksAgree (st3.cdtMove src dst) :=
                 SystemState.cdtMove_agree hIX hBundleSt3.2.2.2.2.2.2.1
                   hBundleSt3.2.2.2.2.2.2.2 hBundleSt3.2.2.1 hSrcIn
-                  (slotInCNode_of_occupied hDst3) hFresh hSelf
+                  (slotInObject_of_occupied (slotOccupied_of_cnode hDst3)) hFresh hSelf
               rcases hBundleSt3 with ⟨_, hComp3, hAcyc3, hDepth3, hObjInv3, hRCPV3, -⟩
               simp [hSrc, hToNN, hInsert, hDelete] at hStep
               cases hStep
@@ -198,7 +198,7 @@ theorem cspaceMove_preserves_capabilityInvariantBundle
                 fun ref hM => by
                   rcases CapDerivationTree.moveNode_mentions st3.cdt src dst hAcyc3 ref hM with
                     rfl | ⟨hNe, hM'⟩
-                  · exact hDst3
+                  · exact slotOccupied_of_cnode hDst3
                   · exact hComp3 ref hM' hNe,
                 CapDerivationTree.moveNode_edgeWellFounded st3.cdt src dst hAcyc3 hFresh,
                 cspaceDepthConsistent_of_objects_eq st3 _ hDepth3 hObjEq,
@@ -336,8 +336,9 @@ theorem cspaceMutate_preserves_replyCapPointsToValidReply
             by_cases hc : oid = addr.cnode
             · subst hc
               rw [hRefObj, hMidSelf] at hObj
-              simp only [Option.some.injEq, KernelObject.cnode.injEq] at hObj
+              simp only [Option.some.injEq] at hObj
               subst hObj
+              simp only [KernelObject.slotCap] at hLook
               by_cases hs : slot = addr.slot
               · rw [hs] at hLook
                 rw [CNode.lookup_insert_eq preCn addr.slot _ (CNode.slotsUnique_holds preCn)
@@ -346,9 +347,9 @@ theorem cspaceMutate_preserves_replyCapPointsToValidReply
                 subst hLook
                 -- `{ cap with rights, badge }.target = cap.target` definitionally, so the
                 -- mutated reply cap's backing is the pre-state slot's backing.
-                exact hRCPV addr.cnode preCn addr.slot cap rid hPre hPreLook hTgt
+                exact hRCPV addr.cnode (.cnode preCn) addr.slot cap rid hPre hPreLook hTgt
               · rw [CNode.lookup_insert_ne preCn addr.slot slot _ (Ne.symm hs) (CNode.slotsUnique_holds preCn)] at hLook
-                exact hRCPV addr.cnode preCn slot cap' rid hPre hLook hTgt
+                exact hRCPV addr.cnode (.cnode preCn) slot cap' rid hPre hLook hTgt
             · rw [hRefObj, hMidNe oid hc] at hObj
               exact hRCPV oid cn slot cap' rid hObj hLook hTgt
     · simp_all
@@ -410,8 +411,7 @@ theorem cspaceMutate_preserves_capabilityInvariantBundle
                 cspaceDepthConsistent_of_objects_eq stMid st' hDepthMid hRefObj,
                 hRefObj ▸ hObjInvMid,
                 cdtLinksAgree_of_eq hLinks (hRefCdt.trans (storeObject_cdt_eq st stMid addr.cnode _ hStore))
-                  ((SystemState.slotLinkAt_eq_of_getCNode fun o => by
-                      unfold SystemState.getCNode?; rw [hRefObj]).trans
+                  ((SystemState.slotLinkAt_eq_of_objects fun o => by rw [hRefObj]).trans
                     (SystemState.slotLinkAt_storeObject_cnode hObjInv hPre (CNode.insert_links ..) hStore))⟩
       · simp_all
   exact ⟨cspaceLookupSound_holds st',
@@ -468,18 +468,19 @@ theorem cspaceRecordFrameMapping_preserves_capabilityInvariantBundle
   by_cases hc : oid = addr.cnode
   · subst hc
     rw [hSelf] at hObj
-    simp only [Option.some.injEq, KernelObject.cnode.injEq] at hObj
+    simp only [Option.some.injEq] at hObj
     subst hObj
+    simp only [KernelObject.slotCap] at hLook
     by_cases hs : slot = addr.slot
     · rw [hs] at hLook
       rw [CNode.lookup_insert_eq preCn addr.slot _ (CNode.slotsUnique_holds preCn)
         (CNode.slotAddressable_of_lookup_insert _ _ _ _ _ hLook)] at hLook
       simp only [Option.some.injEq] at hLook
       subst hLook
-      exact hRCPV addr.cnode preCn addr.slot cap rid hPre hLk hTgt
+      exact hRCPV addr.cnode (.cnode preCn) addr.slot cap rid hPre hLk hTgt
     · rw [CNode.lookup_insert_ne preCn addr.slot slot _ (Ne.symm hs)
         (CNode.slotsUnique_holds preCn)] at hLook
-      exact hRCPV addr.cnode preCn slot cap' rid hPre hLook hTgt
+      exact hRCPV addr.cnode (.cnode preCn) slot cap' rid hPre hLook hTgt
   · rw [hNe oid hc] at hObj
     exact hRCPV oid cn slot cap' rid hObj hLook hTgt
 

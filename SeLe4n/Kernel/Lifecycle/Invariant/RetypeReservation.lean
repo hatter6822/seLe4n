@@ -300,10 +300,21 @@ theorem lifecyclePreRetypeCleanup_preserves_replenishQueueAffinityConsistent_smp
         · exact hRun
       split at h
       · exact absurd h (by simp)
-      · injection h with h
-        subst h
-        exact cleanupTcbReferences_after_donationArm_preserves_replenishQueueAffinityConsistent_smp
+      · obtain rfl := Except.ok.inj h
+        -- The slot detach then writes link words alone (`detachTcbSlots_agree`).
+        have hS := cleanupTcbReferences_after_donationArm_preserves_replenishQueueAffinityConsistent_smp
           st stArm tcb.tid tcb (hTcb tcb rfl) hInv hCons hArm
+        have hA := (detachTcbSlots_agree (cleanupTcbReferences_preserves_objects_invExt _ tcb.tid
+            (cancelDonationArmOnCore_preserves_objects_invExt st stArm tcb.tid tcb hInv hArm)) target).1
+        exact fun c => (replenishQueueAffinityConsistentOnCore_congr
+          (by rw [detachTcbSlots_scheduler_eq]) (fun scId => hA.getSchedContext? scId)
+          (fun tid => by
+            have e := TCB.map_proj_of_map_withoutLinks_eq (·.cpuAffinity) (hA.getTcb? tid)
+            unfold determineTargetCore
+            revert e
+            cases (detachTcbSlots (cleanupTcbReferences stArm tcb.tid) target).getTcb? tid <;>
+              cases (cleanupTcbReferences stArm tcb.tid).getTcb? tid <;>
+              simp_all)).mpr (hS c)
   | endpoint ep =>
     -- The service-registry revoke writes no object and no scheduler state.
     subst hC
@@ -325,7 +336,12 @@ theorem lifecyclePreRetypeCleanup_preserves_replenishQueueAffinityConsistent_smp
       have hA := (detachCNodeSlots_agree hInv target cn).1
       exact fun c => (replenishQueueAffinityConsistentOnCore_congr
         (by rw [detachCNodeSlots_scheduler_eq]) (fun scId => hA.getSchedContext? scId)
-        (fun tid => by unfold determineTargetCore; rw [hA.getTcb? tid])).mpr (hCons c)
+        (fun tid => by
+          have e := TCB.map_proj_of_map_withoutLinks_eq (·.cpuAffinity) (hA.getTcb? tid)
+          unfold determineTargetCore
+          revert e
+          cases (detachCNodeSlots st target cn).getTcb? tid <;> cases st.getTcb? tid <;>
+            simp_all)).mpr (hCons c)
   | reply r =>
     subst hC
     simp only at h
@@ -578,10 +594,16 @@ theorem lifecyclePreRetypeCleanup_preserves_schedContextBindingConsistent
         · exact hRun
       split at h
       · exact absurd h (by simp)
-      · injection h with h
-        subst h
-        exact cleanupTcbReferences_after_donationArm_preserves_schedContextBindingConsistent
+      · obtain rfl := Except.ok.inj h
+        -- The slot detach then writes link words alone (`detachTcbSlots_agree`).
+        have hS := cleanupTcbReferences_after_donationArm_preserves_schedContextBindingConsistent
           st stArm tcb.tid tcb (hTcb tcb rfl) hInv hCons hArm
+        have hA := (detachTcbSlots_agree (cleanupTcbReferences_preserves_objects_invExt _ tcb.tid
+          (cancelDonationArmOnCore_preserves_objects_invExt st stArm tcb.tid tcb hInv hArm))
+          target).1
+        exact schedContextBindingConsistent_transfer
+          (fun tid => TCB.map_proj_of_map_withoutLinks_eq _ (hA.getTcb? tid))
+          (fun scId => by rw [hA.getSchedContext? scId]) hS
   | endpoint ep =>
     -- The service-registry revoke writes no object.
     subst hC
@@ -599,7 +621,8 @@ theorem lifecyclePreRetypeCleanup_preserves_schedContextBindingConsistent
     · injection h with h
       subst h
       have hA := (detachCNodeSlots_agree hInv target cn).1
-      exact schedContextBindingConsistent_transfer (fun tid => by rw [hA.getTcb? tid])
+      exact schedContextBindingConsistent_transfer
+        (fun tid => TCB.map_proj_of_map_withoutLinks_eq _ (hA.getTcb? tid))
         (fun scId => by rw [hA.getSchedContext? scId]) hCons
   | reply r =>
     subst hC
@@ -780,10 +803,9 @@ theorem lifecyclePreRetypeCleanup_preserves_objects_invExt
         · exact hRun
       split at h
       · exact absurd h (by simp)
-      · injection h with h
-        subst h
-        exact cleanupTcbReferences_preserves_objects_invExt _ tcb.tid
-          (cancelDonationArmOnCore_preserves_objects_invExt st stArm tcb.tid tcb hInv hArm)
+      · obtain rfl := Except.ok.inj h
+        exact (detachTcbSlots_agree (cleanupTcbReferences_preserves_objects_invExt _ tcb.tid
+            (cancelDonationArmOnCore_preserves_objects_invExt st stArm tcb.tid tcb hInv hArm)) target).2
   | endpoint ep =>
     subst hC; simp only at h; injection h with h; subst h
     rw [cleanupEndpointServiceRegistrations_objects_eq]; exact hInv
@@ -810,6 +832,19 @@ theorem lifecyclePreRetypeCleanup_preserves_objects_invExt
     subst hC; simp at h
   | _ =>
     subst hC; simp only at h; injection h with h; subst h; exact hInv
+
+/-- An unpaired target stays unpaired across a run of derivation-link writes:
+a TCB's binding and a context's bound thread are not link words. -/
+private theorem retypeTargetUnpaired_of_agree {st st' : SystemState} {target : SeLe4n.ObjId}
+    (hA : SystemState.objectsAgreeOffDerivationLinks st' st)
+    (h : retypeTargetUnpaired st target) : retypeTargetUnpaired st' target :=
+  ⟨fun t hT => by
+    obtain ⟨t0, h0, e⟩ := hA.tcb_back hT
+    have hB : t.schedContextBinding = t0.schedContextBinding := Option.some.inj
+      (TCB.map_proj_of_map_withoutLinks_eq TCB.schedContextBinding
+        (o := some t0) (o' := some t) (by simp [e]))
+    rw [hB]; exact h.1 t0 h0,
+   fun sc hS => h.2 sc (hA.obj_back hS (fun _ e => KernelObject.noConfusion e))⟩
 
 /-- **`v0.35.185` (register row 63): the cleanup leaves the target unpaired.**
 
@@ -858,10 +893,12 @@ theorem lifecyclePreRetypeCleanup_targetUnpaired
         · exact hRun
       split at h
       · exact absurd h (by simp)
-      · injection h with h
-        subst h
+      · obtain rfl := Except.ok.inj h
         have hArmInv : stArm.objects.invExt :=
           cancelDonationArmOnCore_preserves_objects_invExt st stArm tcb.tid tcb hInv hArm
+        -- The slot detach writes link words alone, so the sweep's reading stands.
+        refine retypeTargetUnpaired_of_agree (detachTcbSlots_agree
+          (cleanupTcbReferences_preserves_objects_invExt _ tcb.tid hArmInv) target).1 ?_
         have hFrame := cleanupTcbReferences_binding_frame stArm tcb.tid hArmInv tcb.tid
         have hArmSome := cancelDonationArmOnCore_target_isSome st stArm tcb.tid tcb
           (hTcb tcb rfl) hInv hArm
@@ -900,8 +937,8 @@ theorem lifecyclePreRetypeCleanup_targetUnpaired
     · exact absurd h (by simp)
     · injection h with h; subst h
       have hA := (detachCNodeSlots_agree hInv target cn).1
-      exact ⟨fun t hT => absurd (hA.obj_back hT (fun _ h => KernelObject.noConfusion h))
-          (by rw [hStored]; simp),
+      exact ⟨fun t hT => (hA.tcb_back hT).elim fun t0 h0 =>
+          absurd h0.1 (by rw [hStored]; simp),
         fun s0 hS => absurd (hA.obj_back hS (fun _ h => KernelObject.noConfusion h))
           (by rw [hStored]; simp)⟩
   | reply r =>

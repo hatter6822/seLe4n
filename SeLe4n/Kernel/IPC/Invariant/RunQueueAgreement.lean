@@ -720,8 +720,8 @@ theorem endpointCallOnCore_runQueueEntryStage (endpointId : SeLe4n.ObjId)
 -- Capability transfer and donation
 -- ============================================================================
 
-/-- The cap transfer writes CNodes and the derivation tree: every thread's TCB
-reads as it did. -/
+/-- The cap transfer writes CNodes, the derivation tree and slot links: every
+thread's TCB reads as it did off its slot links. -/
 theorem ipcUnwrapCaps_runQueueStage {caps : Array TransferCap} {root : SeLe4n.ObjId}
     {base : SeLe4n.Slot} {grant : Bool} {st st' : SystemState} {summary : CapTransferSummary}
     (h : ipcUnwrapCaps caps root base grant st = .ok (summary, st')) : RunQueueStage st st' :=
@@ -729,9 +729,11 @@ theorem ipcUnwrapCaps_runQueueStage {caps : Array TransferCap} {root : SeLe4n.Ob
   RunQueueStage.of_placement
     (fun hInv => ipcUnwrapCaps_preserves_objects_invExt caps root base grant st st' summary hInv h)
     (by rw [hS]) (by rw [hS])
-    (fun hInv x => by rw [ipcUnwrapCaps_getTcb?_eq caps root base grant st st' summary x hInv h])
-    (fun hInv => SystemState.StateMono.of_getTcb fun x =>
-      ipcUnwrapCaps_getTcb?_eq caps root base grant st st' summary x hInv h)
+    (fun hInv x => TCB.map_proj_of_map_withoutLinks_eq TCB.placement
+      (ipcUnwrapCaps_getTcb?_eq caps root base grant st st' summary x hInv h))
+    (fun hInv => SystemState.StateMono.of_stateFields fun x =>
+      TCB.map_proj_of_map_withoutLinks_eq (fun t => (t.ipcState, t.threadState))
+        (ipcUnwrapCaps_getTcb?_eq caps root base grant st st' summary x hInv h))
 
 /-- WS-ZA ZA4.7: the rendezvous capability lookup: CDT writes, then the
 receiver-side unwrap. -/

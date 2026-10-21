@@ -517,7 +517,7 @@ theorem lifecyclePreRetypeCleanup_confinedToCores
         | false => rfl
         | true => rw [if_pos hr] at hOk; exact absurd hOk (by simp)
       rw [if_neg (by simp only [hRO]; exact Bool.false_ne_true)] at hOk
-      injection hOk with hOk; subst hOk
+      obtain rfl := Except.ok.inj hOk
       simp only [lifecycleRetypeWriteSetOf]
       -- The arm writes no observable slot; the sweep's write set at the arm's
       -- post-state is the entry state's, because the arm keeps every run queue
@@ -529,8 +529,13 @@ theorem lifecyclePreRetypeCleanup_confinedToCores
       have hTrans := observableSlotsConfinedToCores_trans
         (cancelDonationArmOnCore_confinedToCores st stArm tcb.tid tcb hArm)
         (cleanupTcbReferences_confinedToCores stArm tcb.tid)
-      rw [List.nil_append, hOcc] at hTrans
-      exact hTrans
+      -- The slot detach writes link words alone: no scheduler, no machine.
+      have hTrans' := observableSlotsConfinedToCores_trans hTrans
+        (observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
+          (detachTcbSlots_scheduler_eq (cleanupTcbReferences stArm tcb.tid) target)
+          (detachTcbSlots_machine_eq (cleanupTcbReferences stArm tcb.tid) target))
+      rw [List.nil_append, List.append_nil, hOcc] at hTrans'
+      exact hTrans'
   | cnode cn =>
     simp only [lifecyclePreRetypeCleanup, lifecycleRetypeWriteSetOf] at hOk ⊢
     have hDetach : observableSlotsConfinedToCores st (detachCNodeSlots st target cn) [] :=

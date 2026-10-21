@@ -257,8 +257,7 @@ private def sendMsgE : IpcMessage :=
   { registers := #[SeLe4n.RegValue.ofNat 5], badge := none }
 
 private def mkTcb (tid : Nat) (prio : Nat) (aff : Option CoreId) : TCB :=
-  { tid := ⟨tid⟩, priority := ⟨prio⟩, domain := ⟨0⟩, cspaceRoot := cnRoot,
-    vspaceRoot := vsRoot, ipcBuffer := SeLe4n.VAddr.ofNat 4096,
+  { tid := ⟨tid⟩, priority := ⟨prio⟩, domain := ⟨0⟩, spaceCells := SeLe4n.Model.TCB.spaceCellsOf cnRoot vsRoot, ipcBuffer := SeLe4n.VAddr.ofNat 4096,
     cpuAffinity := aff }
 
 /-- The 4-thread / 4-core IPC workload: two client/server pairs, one per core
@@ -1242,8 +1241,8 @@ private def stCapBase : SystemState :=
         (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [(payloadSrcSlot, payloadCap)])))
     |>.withObject capServerCn (.cnode
         (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [])))
-    |>.withObject capCaller.toObjId (.tcb { mkTcb 852 40 none with cspaceRoot := capCallerCn })
-    |>.withObject capServer.toObjId (.tcb { mkTcb 853 50 (some c1) with cspaceRoot := capServerCn })
+    |>.withObject capCaller.toObjId (.tcb ((mkTcb 852 40 none).withCSpaceRoot capCallerCn))
+    |>.withObject capServer.toObjId (.tcb ((mkTcb 853 50 (some c1)).withCSpaceRoot capServerCn))
     |>.withObject capReply.toObjId (.reply { replyId := capReply })
     |>.withRunnable [capCaller]
     |>.build)
@@ -1447,8 +1446,8 @@ private def stApi (slots : List (SeLe4n.Slot × Capability)) : SystemState :=
     |>.withObject apiEp (.endpoint {})
     |>.withObject apiCn (.cnode
         (CNode.ofList 4 0 0 4 slots))
-    |>.withObject apiCaller.toObjId (.tcb { mkTcb 862 40 none with cspaceRoot := apiCn })
-    |>.withObject apiServer.toObjId (.tcb { mkTcb 863 50 (some c1) with cspaceRoot := apiCn })
+    |>.withObject apiCaller.toObjId (.tcb ((mkTcb 862 40 none).withCSpaceRoot apiCn))
+    |>.withObject apiServer.toObjId (.tcb ((mkTcb 863 50 (some c1)).withCSpaceRoot apiCn))
     |>.withObject apiReply.toObjId (.reply { replyId := apiReply })
     |>.withRunnable [apiCaller]
     |>.build)

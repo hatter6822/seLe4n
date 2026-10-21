@@ -33,11 +33,22 @@ namespace SeLe4n.Model
 
 open SeLe4n.Kernel.RobinHood
 
-/-- Q3-A: Per-object CNode slot invariant: every CNode in the object store
-satisfies `slotsUnique`. -/
+/-- Q3-A: Per-object slot invariant: every object in the object store that
+holds capability slots — a CNode, a thread — has a well-formed slot store
+(`KernelObject.slotsUnique`). -/
 def perObjectSlotsInvariant (st : SystemState) : Prop :=
-  ∀ (id : SeLe4n.ObjId) (cn : CNode),
-    st.objects[id]? = some (KernelObject.cnode cn) → cn.slotsUnique
+  ∀ (id : SeLe4n.ObjId) (o : KernelObject),
+    st.objects[id]? = some o → o.slotsUnique
+
+/-- Every state satisfies the per-object slot invariant: each slot store is
+well formed by construction. -/
+theorem perObjectSlotsInvariant_holds (st : SystemState) : perObjectSlotsInvariant st :=
+  fun _ o _ => o.slotsUnique_holds
+
+/-- The CNode reading of the per-object slot invariant. -/
+theorem perObjectSlotsInvariant.cnode {st : SystemState} (h : perObjectSlotsInvariant st)
+    {id : SeLe4n.ObjId} {cn : CNode} (hc : st.objects[id]? = some (.cnode cn)) : cn.slotsUnique :=
+  h id _ hc
 
 /-- Q3-A: Per-object VSpaceRoot mapping invariant: every VSpaceRoot in the
 object store has `mappings.invExt`. -/

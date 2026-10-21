@@ -280,9 +280,10 @@ theorem ipcUnwrapCaps_keyFrame {caps : Array TransferCap} {receiverRoot : SeLe4n
     {summary : CapTransferSummary} (hInv : st.objects.invExt)
     (h : ipcUnwrapCaps caps receiverRoot slotBase grantRight st = .ok (summary, st')) :
     capabilityKeyFrame st st' :=
-  ⟨keyInputsEq_of_lookups_eq
-      (fun t => ipcUnwrapCaps_getTcb?_eq _ _ _ _ _ _ _ t hInv h)
-      (fun s => ipcUnwrapCaps_getSchedContext?_eq _ _ _ _ _ _ _ s hInv h),
+  ⟨keyInputsEq_of_lookups
+      (fun t => TCB.map_proj_of_map_withoutLinks_eq tcbKeyCore
+        (ipcUnwrapCaps_getTcb?_eq _ _ _ _ _ _ _ t hInv h))
+      (fun s => by rw [ipcUnwrapCaps_getSchedContext?_eq _ _ _ _ _ _ _ s hInv h]),
     ipcUnwrapCaps_preserves_scheduler _ _ _ _ _ _ _ h,
     ipcUnwrapCaps_preserves_objects_invExt _ _ _ _ _ _ _ hInv h⟩
 

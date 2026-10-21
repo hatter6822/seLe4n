@@ -182,8 +182,7 @@ private def badge1 : SeLe4n.Badge := SeLe4n.Badge.ofNatMasked 3
 private def badge2 : SeLe4n.Badge := SeLe4n.Badge.ofNatMasked 5
 
 private def mkTcb (tid : Nat) (prio : Nat) (aff : Option CoreId) : TCB :=
-  { tid := ⟨tid⟩, priority := ⟨prio⟩, domain := ⟨0⟩, cspaceRoot := cnRoot,
-    vspaceRoot := vsRoot, ipcBuffer := SeLe4n.VAddr.ofNat 4096,
+  { tid := ⟨tid⟩, priority := ⟨prio⟩, domain := ⟨0⟩, spaceCells := SeLe4n.Model.TCB.spaceCellsOf cnRoot vsRoot, ipcBuffer := SeLe4n.VAddr.ofNat 4096,
     cpuAffinity := aff }
 
 /-- The 4-core notification workload: an idle notification + an endpoint (for the

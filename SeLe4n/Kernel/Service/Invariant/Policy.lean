@@ -151,12 +151,8 @@ theorem storeServiceState_preserves_capabilityInvariantBundle
     (entry : ServiceGraphEntry)
     (hInv : capabilityInvariantBundle st) :
     capabilityInvariantBundle (storeServiceState sid entry st) := by
-  rcases hInv with ⟨hSound, hBounded, hComp, hAcyclic, hDepth⟩
-  refine ⟨?_, hBounded, hComp, hAcyclic, hDepth⟩
-  · intro cnodeId cn slot cap hCn hMem
-    have hSlot := hSound cnodeId cn slot cap hCn hMem
-    simp only [SystemState.lookupSlotCap, storeServiceState] at hSlot ⊢
-    exact hSlot
+  rcases hInv with ⟨-, hBounded, hComp, hAcyclic, hDepth⟩
+  exact ⟨cspaceLookupSound_holds _, hBounded, hComp, hAcyclic, hDepth⟩
 
 -- ============================================================================
 -- S3-I/U-M25: Compile-time bridge signature witness

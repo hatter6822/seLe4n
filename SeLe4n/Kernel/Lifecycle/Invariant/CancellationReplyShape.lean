@@ -2317,10 +2317,21 @@ theorem restoreToReadyStaging_badgeWellFormed (st : SystemState) (v : SeLe4n.Thr
     exact h.1 oid ntfn badge
       ((restoreToReadyStaging_nonTcb st v frame tcbV hInv hLookup oid (.notification ntfn)
         (by simp)).mp hN) hB
-  · intro oid cn slot cap badge hC hL hB
-    exact h.2 oid cn slot cap badge
-      ((restoreToReadyStaging_nonTcb st v frame tcbV hInv hLookup oid (.cnode cn)
-        (by simp)).mp hC) hL hB
+  · intro oid o slot cap badge hC hL hB
+    cases o with
+    | tcb tA =>
+      rcases restoreToReadyStaging_tcb_pullback st v frame tcbV hInv hLookup oid tA hC with
+        ⟨_, h0⟩ | ⟨hk, rfl⟩
+      · exact h.2 oid (.tcb tA) slot cap badge h0 hL hB
+      · refine h.2 oid (.tcb tcbV) slot cap badge
+          (by rw [hk]; exact lookupTcb_some_objects st v tcbV hLookup) ?_ hB
+        have hCells : (restoredTcb tcbV frame).spaceCells = tcbV.spaceCells := by
+          unfold restoredTcb; cases frame <;> rfl
+        simpa [KernelObject.slotCap, TCB.spaceSlotCap, hCells] using hL
+    | _ =>
+      exact h.2 oid _ slot cap badge
+        ((restoreToReadyStaging_nonTcb st v frame tcbV hInv hLookup oid _
+          (by simp)).mp hC) hL hB
 
 theorem restoreToReadyStaging_blockedThreadsPendingMessageConsistent (st : SystemState)
     (v : SeLe4n.ThreadId) (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)

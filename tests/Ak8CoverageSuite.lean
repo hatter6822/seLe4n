@@ -70,8 +70,7 @@ def test_AK8_E_unbound_returns_tcb_priority : IO Bool := do
     { tid := ThreadId.ofNat 1
       priority := ⟨42⟩
       domain := ⟨0⟩
-      cspaceRoot := ObjId.ofNat 0
-      vspaceRoot := ObjId.ofNat 0
+      spaceCells := SeLe4n.Model.TCB.spaceCellsOf (ObjId.ofNat 0) (ObjId.ofNat 0)
       ipcBuffer := SeLe4n.VAddr.ofNat 0
       scBindingScCode := 0, scBindingOwnerCode := 0 }
   match SeLe4n.Kernel.SchedContext.PriorityManagement.getCurrentPriorityChecked
@@ -105,8 +104,7 @@ def test_checkedPriority_bound_reads_thread_field : IO Bool := do
     { tid := ThreadId.ofNat 2
       priority := ⟨5⟩
       domain := ⟨0⟩
-      cspaceRoot := ObjId.ofNat 0
-      vspaceRoot := ObjId.ofNat 0
+      spaceCells := SeLe4n.Model.TCB.spaceCellsOf (ObjId.ofNat 0) (ObjId.ofNat 0)
       ipcBuffer := SeLe4n.VAddr.ofNat 0
       scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scId), scBindingOwnerCode := 0 }
   let st : SystemState := { (default : SystemState) with
@@ -125,8 +123,7 @@ def test_AK8_E_bound_missing_sc_is_objectNotFound : IO Bool := do
     { tid := ThreadId.ofNat 3
       priority := ⟨5⟩
       domain := ⟨0⟩
-      cspaceRoot := ObjId.ofNat 0
-      vspaceRoot := ObjId.ofNat 0
+      spaceCells := SeLe4n.Model.TCB.spaceCellsOf (ObjId.ofNat 0) (ObjId.ofNat 0)
       ipcBuffer := SeLe4n.VAddr.ofNat 0
       scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scId), scBindingOwnerCode := 0 }
   match SeLe4n.Kernel.SchedContext.PriorityManagement.getCurrentPriorityChecked
@@ -229,8 +226,7 @@ def test_AK8_G_storeTcbChecked_same_kind_ok : IO Bool := do
     { tid := tid
       priority := ⟨5⟩
       domain := ⟨0⟩
-      cspaceRoot := ObjId.ofNat 0
-      vspaceRoot := ObjId.ofNat 0
+      spaceCells := SeLe4n.Model.TCB.spaceCellsOf (ObjId.ofNat 0) (ObjId.ofNat 0)
       ipcBuffer := SeLe4n.VAddr.ofNat 0 }
   let st := mkFrozenStateWith [(tid.toObjId, (.tcb tcb))]
   match SeLe4n.Kernel.FrozenOps.frozenStoreTcbChecked tid tcb st with
@@ -247,8 +243,7 @@ def test_AK8_G_storeTcbChecked_cross_variant_rejected : IO Bool := do
     { tid := tid
       priority := ⟨5⟩
       domain := ⟨0⟩
-      cspaceRoot := ObjId.ofNat 0
-      vspaceRoot := ObjId.ofNat 0
+      spaceCells := SeLe4n.Model.TCB.spaceCellsOf (ObjId.ofNat 0) (ObjId.ofNat 0)
       ipcBuffer := SeLe4n.VAddr.ofNat 0 }
   match SeLe4n.Kernel.FrozenOps.frozenStoreTcbChecked tid tcb st with
   | .ok _ => return false
@@ -273,8 +268,7 @@ def test_AK8_G_storeNotificationChecked_cross_variant_rejected : IO Bool := do
     { tid := ThreadId.ofNat 53
       priority := ⟨5⟩
       domain := ⟨0⟩
-      cspaceRoot := ObjId.ofNat 0
-      vspaceRoot := ObjId.ofNat 0
+      spaceCells := SeLe4n.Model.TCB.spaceCellsOf (ObjId.ofNat 0) (ObjId.ofNat 0)
       ipcBuffer := SeLe4n.VAddr.ofNat 0 }
   let st := mkFrozenStateWith [(id, (.tcb tcb))]
   let n : Notification := { state := .idle }
@@ -334,8 +328,7 @@ def test_AK8_H_unbind_happy_path : IO Bool := do
     { tid := tid
       priority := ⟨5⟩
       domain := ⟨0⟩
-      cspaceRoot := ObjId.ofNat 0
-      vspaceRoot := ObjId.ofNat 0
+      spaceCells := SeLe4n.Model.TCB.spaceCellsOf (ObjId.ofNat 0) (ObjId.ofNat 0)
       ipcBuffer := SeLe4n.VAddr.ofNat 0
       scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound (SchedContextId.ofObjId scId)), scBindingOwnerCode := 0 }
   let st1 := mkFrozenStateWith

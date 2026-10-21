@@ -295,8 +295,8 @@ private def rootCnode : CNode :=
 
 private def mkTcb (tid : Nat) (prio : Nat) (aff : Option CoreId)
     (fh : Option SeLe4n.CPtr) : TCB :=
-  { tid := ⟨tid⟩, priority := ⟨prio⟩, domain := ⟨0⟩, cspaceRoot := cnRoot,
-    vspaceRoot := vsRoot, ipcBuffer := SeLe4n.VAddr.ofNat 4096,
+  { tid := ⟨tid⟩, priority := ⟨prio⟩, domain := ⟨0⟩,
+    spaceCells := SeLe4n.Model.TCB.spaceCellsOf cnRoot vsRoot, ipcBuffer := SeLe4n.VAddr.ofNat 4096,
     threadState := .Ready, cpuAffinity := aff, faultHandlerSet := fh.isSome, faultHandlerWord := fh.getD (SeLe4n.CPtr.ofNat 0),
     registerContext :=
       SeLe4n.RegisterFile.withGprs 0 0x7000 (fun r => if r = 30 then 0xF00D else (r * 100).toUInt64) }

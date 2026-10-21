@@ -308,7 +308,7 @@ private def cli : SeLe4n.ThreadId := ThreadId.ofNat 201
 /-- A server TCB bound to `aff`, priority `prio`, IPC-ready, no PIP boost. -/
 private def mkServerTcb (tidN : Nat) (prio : Nat) (aff : CoreId) : TCB :=
   { tid := ThreadId.ofNat tidN, priority := ⟨prio⟩, domain := ⟨0⟩,
-    cspaceRoot := ObjId.ofNat 0, vspaceRoot := ObjId.ofNat 0,
+    spaceCells := SeLe4n.Model.TCB.spaceCellsOf (ObjId.ofNat 0) (ObjId.ofNat 0),
     ipcBuffer := SeLe4n.VAddr.ofNat 0, cpuAffinity := some aff }
 
 /-- A waiter TCB (unbound, so it homes to the boot core) blocked on reply to
@@ -316,7 +316,7 @@ private def mkServerTcb (tidN : Nat) (prio : Nat) (aff : CoreId) : TCB :=
 private def mkWaiterTcb (tidN : Nat) (prio : Nat) (server : Nat) : TCB :=
   (TCB.setIpcState
   { tid := ThreadId.ofNat tidN, priority := ⟨prio⟩, domain := ⟨0⟩,
-    cspaceRoot := ObjId.ofNat 0, vspaceRoot := ObjId.ofNat 0,
+    spaceCells := SeLe4n.Model.TCB.spaceCellsOf (ObjId.ofNat 0) (ObjId.ofNat 0),
     ipcBuffer := SeLe4n.VAddr.ofNat 0
     } (.blockedOnReply (ObjId.ofNat 50) (some (ThreadId.ofNat server))))
 

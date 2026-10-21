@@ -239,8 +239,7 @@ private def recvRemoteTid : SeLe4n.ThreadId := ⟨403⟩
 private def replyId : SeLe4n.ReplyId := ⟨420⟩
 
 private def mkTcb (tid : Nat) (prio : Nat) (aff : Option CoreId) : TCB :=
-  { tid := ⟨tid⟩, priority := ⟨prio⟩, domain := ⟨0⟩, cspaceRoot := cnRoot,
-    vspaceRoot := ⟨310⟩, ipcBuffer := SeLe4n.VAddr.ofNat 4096,
+  { tid := ⟨tid⟩, priority := ⟨prio⟩, domain := ⟨0⟩, spaceCells := SeLe4n.Model.TCB.spaceCellsOf cnRoot ⟨310⟩, ipcBuffer := SeLe4n.VAddr.ofNat 4096,
     cpuAffinity := aff }
 
 /-- Endpoint + unbound caller + unbound (local) receiver + core1-bound (remote)
@@ -1130,10 +1129,7 @@ private def bracketCNodeValue : CNode :=
 /-- A caller whose registers really decode to `.tcbSuspend` (`x7 = 20`) on the
 capability at slot 1 (`x0 = 1`). -/
 private def bracketCaller : TCB :=
-  { mkTcb 401 40 none with
-      cspaceRoot := bracketCNode
-      registerContext :=
-        SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun r => if r == 0 then 1 else if r == 7 then 20 else 0) }
+  { ((mkTcb 401 40 none).withCSpaceRoot bracketCNode) with registerContext := SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun r => if r == 0 then 1 else if r == 7 then 20 else 0) }
 
 private def bracketState : SystemState :=
   let base :=
@@ -1214,7 +1210,7 @@ private def runDelegatedReplyRecvFootprintChecks : IO Unit := do
     SeLe4n.Model.KernelObject.tcb
       (TCB.setIpcState
       { tid := t, priority := ⟨10⟩, domain := ⟨0⟩,
-        cspaceRoot := SeLe4n.ObjId.ofNat 0, vspaceRoot := SeLe4n.ObjId.ofNat 0,
+        spaceCells := SeLe4n.Model.TCB.spaceCellsOf (SeLe4n.ObjId.ofNat 0) (SeLe4n.ObjId.ofNat 0),
         ipcBuffer := SeLe4n.VAddr.ofNat 0 } ipc)
   -- The reply object answers `prevCaller`; `prevCaller` records `replier` as the
   -- server it is blocked on.  That is the ordinary, non-delegated shape.

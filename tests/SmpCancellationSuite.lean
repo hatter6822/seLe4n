@@ -789,8 +789,7 @@ private def nextTid : SeLe4n.ThreadId := ⟨714⟩
 private def runnerTid : SeLe4n.ThreadId := ⟨715⟩
 
 private def mkTcb (tid : Nat) (prio : Nat) (aff : Option CoreId) : TCB :=
-  { tid := ⟨tid⟩, priority := ⟨prio⟩, domain := ⟨0⟩, cspaceRoot := cnRoot,
-    vspaceRoot := ⟨310⟩, ipcBuffer := SeLe4n.VAddr.ofNat 4096,
+  { tid := ⟨tid⟩, priority := ⟨prio⟩, domain := ⟨0⟩, spaceCells := SeLe4n.Model.TCB.spaceCellsOf cnRoot ⟨310⟩, ipcBuffer := SeLe4n.VAddr.ofNat 4096,
     cpuAffinity := aff }
 
 /-- The victim's TCB as stored in `st` (`default` when absent — assertions on

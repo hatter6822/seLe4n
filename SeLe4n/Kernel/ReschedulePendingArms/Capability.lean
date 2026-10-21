@@ -68,10 +68,12 @@ theorem cspaceDeleteSlotCore_keyInputsEq (st st' : SystemState) (addr : CSpaceAd
     (hObjInv : st.objects.invExt)
     (hStep : cspaceDeleteSlotCore addr st = .ok ((), st')) :
     keyInputsEq st st' ∧ st'.scheduler = st.scheduler ∧ st'.objects.invExt := by
-  obtain ⟨cn, hPre, hAt, hNe, hSched, hExt⟩ :=
-    cspaceDeleteSlotCore_shape st st' addr hObjInv hStep
-  exact ⟨keyInputsEq_of_single_inert_write hNe (by rw [hPre]; rfl) (by rw [hAt]; rfl),
-    hSched, hExt⟩
+  obtain ⟨o, hO, hH, hS⟩ := cspaceDeleteSlotCore_ok hStep
+  refine ⟨keyInputsEq_storeObject hObjInv hS ?_, storeObject_scheduler_eq st st' _ _ hS,
+    storeObject_preserves_objects_invExt st st' _ _ hObjInv hS⟩
+  rw [hO]
+  cases o <;> simp_all [keyInputsOf, KernelObject.removeSlotCap, TCB.removeSpaceCap,
+    KernelObject.holdsSlots]
 
 /-- What every capability arm establishes: no key input, no scheduler field and
 no store invariant moved. -/
@@ -87,14 +89,17 @@ theorem capabilityKeyFrame_of_objects_scheduler_eq {st st' : SystemState}
     (hSched : st'.scheduler = st.scheduler) : capabilityKeyFrame st st' :=
   ⟨keyInputsEq_of_objects_eq hObj, hSched, hObj ▸ hObjInv⟩
 
-/-- Slot-link writes change only CNodes, which feed no key. -/
+/-- Slot-link writes change only CNodes, which feed no key, and threads' slot
+links, which no key reads. -/
 theorem capabilityKeyFrame_of_linkReach {st₀ st : SystemState}
     (hR : SystemState.linkReach st₀ st) (hObjInv : st₀.objects.invExt) :
     capabilityKeyFrame st₀ st := by
   refine ⟨fun oid => ?_, ?_, hR.invExt hObjInv⟩
-  · rcases hR.agree hObjInv oid with e | ⟨_, _, ha, hb, _⟩
+  · rcases hR.agree hObjInv oid with e | ⟨_, _, ha, hb, _⟩ | ⟨t, t', ha, hb, hw⟩
     · rw [e]
     · rw [ha, hb]; rfl
+    · rw [ha, hb]
+      exact TCB.proj_eq_of_withoutLinks_eq (fun x : TCB => keyInputsOf (some (.tcb x))) hw
   · have h := congrArg SystemState.scheduler hR.fields; exact h
 
 /-- A tree write followed by its slot-link writes feeds no key. -/
@@ -428,12 +433,36 @@ theorem setThreadFaultHandlerOp_keyFrame (st st' : SystemState) (vtid : SeLe4n.V
           exact insertObjects_tcbKeyKeeping_keyFrame hObjInv
             ((SystemState.getTcb?_eq_some_iff st vtid.val tcb).mp hT) rfl
 
-theorem setThreadSpace_keyFrame (st st' : SystemState) (vtid : SeLe4n.ValidThreadId)
-    (cn vr : SeLe4n.ObjId) (hObjInv : st.objects.invExt)
-    (hStep : setThreadSpace st vtid cn vr = .ok st') : capabilityKeyFrame st st' := by
-  obtain ⟨tcb, hT, -, -, -, -, rfl⟩ := setThreadSpace_ok st st' vtid cn vr hStep
-  exact insertObjects_tcbKeyKeeping_keyFrame hObjInv
-    ((SystemState.getTcb?_eq_some_iff st vtid.val tcb).mp hT) rfl
+theorem threadSlotCopied_keyFrame {st : SystemState} {tid : SeLe4n.ThreadId} {t : TCB}
+    (hObjInv : st.objects.invExt) (hT : st.getTcb? tid = some t) (slot : SeLe4n.Slot)
+    (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) :
+    capabilityKeyFrame st (threadSlotCopied st tid slot srcCNode srcSlot rights) := by
+  have hD : capabilityKeyFrame st _ :=
+    cspaceDeleteSlot_keyInputsEq st _ _ hObjInv (copyIntoThreadSlot_delete hT slot)
+  obtain ⟨⟨t', hT', -⟩, hI⟩ := threadSlotDeleted_tcb hObjInv hT slot
+  rcases threadSlotCopied_cases st tid slot srcCNode srcSlot rights with ⟨-, e⟩ | ⟨cap, -, e⟩
+  · rw [e]; exact hD
+  · rw [e]
+    have hU : capabilityKeyFrame
+        (spliceDeletedCdtNode (threadSlotCleared tid.toObjId slot st)
+          { cnode := tid.toObjId, slot := slot })
+        (SystemState.updateTcb (spliceDeletedCdtNode (threadSlotCleared tid.toObjId slot st)
+          { cnode := tid.toObjId, slot := slot }) tid
+          (·.insertSpaceCap slot (TCB.spaceCopyOf cap rights))) := by
+      rw [SystemState.updateTcb_eq_of_some hT']
+      exact insertObjects_tcbKeyKeeping_keyFrame hI
+        ((SystemState.getTcb?_eq_some_iff _ tid t').mp hT') rfl
+    exact (hD.trans hU).trans (cdtRecord_keyFrame _ _ _ _ hU.2.2)
+
+theorem copyThreadSpaces_keyFrame (st st' : SystemState) (vtid : SeLe4n.ValidThreadId)
+    (cnSrc vrSrc : CSpaceAddr) (hObjInv : st.objects.invExt)
+    (hStep : copyThreadSpaces st vtid cnSrc vrSrc = .ok st') : capabilityKeyFrame st st' := by
+  obtain ⟨tcb, hT, -, -, -, -, rfl⟩ := copyThreadSpaces_ok hStep
+  obtain ⟨hT1, hI1⟩ := threadSlotCopied_tcb hObjInv hT TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot
+    TCB.cspaceRootRights
+  obtain ⟨t1, hT1'⟩ := Option.isSome_iff_exists.mp hT1
+  exact (threadSlotCopied_keyFrame hObjInv hT _ _ _ _).trans
+    (threadSlotCopied_keyFrame hI1 hT1' _ _ _ _)
 
 theorem bindNotification_keyFrame (st st' : SystemState) (nid : SeLe4n.ObjId)
     (tcbId : SeLe4n.ThreadId) (hObjInv : st.objects.invExt)

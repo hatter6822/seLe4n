@@ -36,7 +36,7 @@ private def mkTcb (tid : Nat) (prio : Nat := 10) (mcp : Nat := 0xFF)
     (binding : SchedContextBinding := .unbound)
     (state : ThreadState := .Ready) : TCB :=
   { tid := ⟨tid⟩, priority := ⟨prio⟩, domain := ⟨0⟩,
-    cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 0),
+    spaceCells := SeLe4n.Model.TCB.spaceCellsOf ⟨0⟩ ⟨0⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 0),
     threadState := state, maxControlledPriority := ⟨mcp⟩,
     scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (binding), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (binding) }
 

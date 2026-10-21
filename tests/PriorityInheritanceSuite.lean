@@ -32,7 +32,7 @@ private def mkTcb (tid : Nat) (prio : Nat := 10)
     (pipBoost : Option SeLe4n.Priority := none) : TCB :=
   TCB.setIpcState
     { tid := ⟨tid⟩, priority := ⟨prio⟩, domain := ⟨0⟩,
-      cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 0),
+      spaceCells := SeLe4n.Model.TCB.spaceCellsOf ⟨0⟩ ⟨0⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 0),
       threadState := state,
       pipBoostCode := SeLe4n.Priority.optCode pipBoost } ipcState
 

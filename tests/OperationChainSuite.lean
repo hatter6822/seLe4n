@@ -94,9 +94,9 @@ private def chain2SendSendReceiveFifo : IO Unit := do
   let st0 :=
     (BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
-      |>.withObject tid1.toObjId (.tcb { tid := tid1, priority := ⟨40⟩, domain := ⟨0⟩, cspaceRoot := ⟨300⟩, vspaceRoot := ⟨310⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096) })
-      |>.withObject tid2.toObjId (.tcb { tid := tid2, priority := ⟨39⟩, domain := ⟨0⟩, cspaceRoot := ⟨300⟩, vspaceRoot := ⟨310⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 8192) })
-      |>.withObject tid3.toObjId (.tcb { tid := tid3, priority := ⟨38⟩, domain := ⟨0⟩, cspaceRoot := ⟨300⟩, vspaceRoot := ⟨310⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 12288) })
+      |>.withObject tid1.toObjId (.tcb { tid := tid1, priority := ⟨40⟩, domain := ⟨0⟩, spaceCells := SeLe4n.Model.TCB.spaceCellsOf SeLe4n.ObjId.sentinel SeLe4n.ObjId.sentinel, ipcBuffer := (SeLe4n.VAddr.ofNat 4096) })
+      |>.withObject tid2.toObjId (.tcb { tid := tid2, priority := ⟨39⟩, domain := ⟨0⟩, spaceCells := SeLe4n.Model.TCB.spaceCellsOf SeLe4n.ObjId.sentinel SeLe4n.ObjId.sentinel, ipcBuffer := (SeLe4n.VAddr.ofNat 8192) })
+      |>.withObject tid3.toObjId (.tcb { tid := tid3, priority := ⟨38⟩, domain := ⟨0⟩, spaceCells := SeLe4n.Model.TCB.spaceCellsOf SeLe4n.ObjId.sentinel SeLe4n.ObjId.sentinel, ipcBuffer := (SeLe4n.VAddr.ofNat 12288) })
       |>.withRunnable [tid1, tid2, tid3]
       |>.buildChecked)
   let msg1 : IpcMessage := .empty
@@ -276,8 +276,7 @@ private def chain6NotificationBadgeAccumulation : IO Unit := do
           tid := waiter
           priority := ⟨20⟩
           domain := ⟨0⟩
-          cspaceRoot := ⟨300⟩
-          vspaceRoot := ⟨310⟩
+          spaceCells := SeLe4n.Model.TCB.spaceCellsOf SeLe4n.ObjId.sentinel SeLe4n.ObjId.sentinel
           ipcBuffer := (SeLe4n.VAddr.ofNat 4096)
         })
       |>.withRunnable [waiter]
@@ -350,10 +349,10 @@ private def chain8IpcInterleavedSendOrdering : IO Unit := do
   let st0 :=
     (BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
-      |>.withObject tidA.toObjId (.tcb { tid := tidA, priority := ⟨40⟩, domain := ⟨0⟩, cspaceRoot := ⟨300⟩, vspaceRoot := ⟨310⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096) })
-      |>.withObject tidB.toObjId (.tcb { tid := tidB, priority := ⟨39⟩, domain := ⟨0⟩, cspaceRoot := ⟨300⟩, vspaceRoot := ⟨310⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 8192) })
-      |>.withObject tidC.toObjId (.tcb { tid := tidC, priority := ⟨38⟩, domain := ⟨0⟩, cspaceRoot := ⟨300⟩, vspaceRoot := ⟨310⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 12288) })
-      |>.withObject tidD.toObjId (.tcb { tid := tidD, priority := ⟨37⟩, domain := ⟨0⟩, cspaceRoot := ⟨300⟩, vspaceRoot := ⟨310⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 16384) })
+      |>.withObject tidA.toObjId (.tcb { tid := tidA, priority := ⟨40⟩, domain := ⟨0⟩, spaceCells := SeLe4n.Model.TCB.spaceCellsOf SeLe4n.ObjId.sentinel SeLe4n.ObjId.sentinel, ipcBuffer := (SeLe4n.VAddr.ofNat 4096) })
+      |>.withObject tidB.toObjId (.tcb { tid := tidB, priority := ⟨39⟩, domain := ⟨0⟩, spaceCells := SeLe4n.Model.TCB.spaceCellsOf SeLe4n.ObjId.sentinel SeLe4n.ObjId.sentinel, ipcBuffer := (SeLe4n.VAddr.ofNat 8192) })
+      |>.withObject tidC.toObjId (.tcb { tid := tidC, priority := ⟨38⟩, domain := ⟨0⟩, spaceCells := SeLe4n.Model.TCB.spaceCellsOf SeLe4n.ObjId.sentinel SeLe4n.ObjId.sentinel, ipcBuffer := (SeLe4n.VAddr.ofNat 12288) })
+      |>.withObject tidD.toObjId (.tcb { tid := tidD, priority := ⟨37⟩, domain := ⟨0⟩, spaceCells := SeLe4n.Model.TCB.spaceCellsOf SeLe4n.ObjId.sentinel SeLe4n.ObjId.sentinel, ipcBuffer := (SeLe4n.VAddr.ofNat 16384) })
       |>.withRunnable [tidA, tidB, tidC, tidD]
       |>.buildChecked)
 
@@ -462,8 +461,7 @@ private def buildParameterizedTopology
         tid := ⟨1000 + i⟩
         priority := ⟨basePriority + i⟩
         domain := ⟨0⟩
-        cspaceRoot := ⟨2000⟩
-        vspaceRoot := ⟨3000⟩
+        spaceCells := SeLe4n.Model.TCB.spaceCellsOf ⟨2000⟩ ⟨3000⟩
         ipcBuffer := (SeLe4n.VAddr.ofNat (4096 + i * 4096))
       })
   let cnodeSlots : List (SeLe4n.Slot × Capability) :=
@@ -504,10 +502,10 @@ private def schedulerStressChecks : IO Unit := do
     (BootstrapBuilder.empty
       |>.withObject ⟨260⟩ (.cnode (SeLe4n.Model.CNode.ofSlots 1 0 0 1 SeLe4n.UniqueSlotMap.empty))
       |>.withObject ⟨3000⟩ (.vspaceRoot { asid := ⟨1⟩, mappings := {} })
-      |>.withObject ⟨2600⟩ (.tcb { tid := ⟨2600⟩, priority := ⟨100⟩, domain := ⟨0⟩, cspaceRoot := ⟨260⟩, vspaceRoot := ⟨3000⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096) })
-      |>.withObject ⟨2601⟩ (.tcb { tid := ⟨2601⟩, priority := ⟨100⟩, domain := ⟨0⟩, cspaceRoot := ⟨260⟩, vspaceRoot := ⟨3000⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 8192) })
-      |>.withObject ⟨2602⟩ (.tcb { tid := ⟨2602⟩, priority := ⟨100⟩, domain := ⟨0⟩, cspaceRoot := ⟨260⟩, vspaceRoot := ⟨3000⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 12288) })
-      |>.withObject ⟨2603⟩ (.tcb { tid := ⟨2603⟩, priority := ⟨100⟩, domain := ⟨0⟩, cspaceRoot := ⟨260⟩, vspaceRoot := ⟨3000⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 16384) })
+      |>.withObject ⟨2600⟩ (.tcb { tid := ⟨2600⟩, priority := ⟨100⟩, domain := ⟨0⟩, spaceCells := SeLe4n.Model.TCB.spaceCellsOf ⟨260⟩ ⟨3000⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096) })
+      |>.withObject ⟨2601⟩ (.tcb { tid := ⟨2601⟩, priority := ⟨100⟩, domain := ⟨0⟩, spaceCells := SeLe4n.Model.TCB.spaceCellsOf ⟨260⟩ ⟨3000⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 8192) })
+      |>.withObject ⟨2602⟩ (.tcb { tid := ⟨2602⟩, priority := ⟨100⟩, domain := ⟨0⟩, spaceCells := SeLe4n.Model.TCB.spaceCellsOf ⟨260⟩ ⟨3000⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 12288) })
+      |>.withObject ⟨2603⟩ (.tcb { tid := ⟨2603⟩, priority := ⟨100⟩, domain := ⟨0⟩, spaceCells := SeLe4n.Model.TCB.spaceCellsOf ⟨260⟩ ⟨3000⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 16384) })
       |>.withRunnable [⟨2600⟩, ⟨2601⟩, ⟨2602⟩, ⟨2603⟩]
       |>.buildChecked)
   let (_, stFirst) ← expectOkSt "scheduler same-priority baseline" (bootSchedule samePrioState)
@@ -531,8 +529,7 @@ private def schedulerStressChecks : IO Unit := do
         tid := tid
         priority := ⟨50 + i⟩
         domain := dom
-        cspaceRoot := ⟨4000⟩
-        vspaceRoot := vroot
+        spaceCells := SeLe4n.Model.TCB.spaceCellsOf ⟨4000⟩ vroot
         ipcBuffer := (SeLe4n.VAddr.ofNat (4096 + i * 4096))
       })
   let runnableDomainThreads : List SeLe4n.ThreadId :=
@@ -593,8 +590,7 @@ private def chain10RegisterDecodeMultiSyscall : IO Unit := do
         tid := ⟨300⟩
         priority := ⟨50⟩
         domain := ⟨0⟩
-        cspaceRoot := cnodeId
-        vspaceRoot := ⟨20⟩
+        spaceCells := SeLe4n.Model.TCB.spaceCellsOf cnodeId ⟨20⟩
         ipcBuffer := (SeLe4n.VAddr.ofNat 4096)
         -- x0=0 (capPtr for slot 0), x1=0 (msgInfo), x7=0 (send)
         registerContext := SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun _ => 0)  -- send syscall, capAddr=0
@@ -603,8 +599,7 @@ private def chain10RegisterDecodeMultiSyscall : IO Unit := do
         tid := ⟨301⟩
         priority := ⟨40⟩
         domain := ⟨0⟩
-        cspaceRoot := cnodeId
-        vspaceRoot := ⟨20⟩
+        spaceCells := SeLe4n.Model.TCB.spaceCellsOf cnodeId ⟨20⟩
         ipcBuffer := (SeLe4n.VAddr.ofNat 8192)
         -- x0=1 (capPtr for slot 1), x1=0 (msgInfo), x7=1 (receive)
         registerContext := SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun r =>
@@ -674,8 +669,7 @@ private def chain11RegisterDecodeIpcTransfer : IO Unit := do
         tid := ⟨400⟩
         priority := ⟨50⟩
         domain := ⟨0⟩
-        cspaceRoot := cnodeId
-        vspaceRoot := ⟨20⟩
+        spaceCells := SeLe4n.Model.TCB.spaceCellsOf cnodeId ⟨20⟩
         ipcBuffer := (SeLe4n.VAddr.ofNat 4096)
         -- x0=0 (capPtr), x1=0 (msgInfo), x7=0 (send)
         registerContext := SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun _ => 0)
@@ -749,8 +743,8 @@ private def chain12IpcCapTransfer : IO Unit := do
             ((SeLe4n.Slot.ofNat 2), cap3)
           ]))
       |>.withObject receiverCNode (.cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 SeLe4n.UniqueSlotMap.empty))
-      |>.withObject sender.toObjId (.tcb { tid := sender, priority := ⟨40⟩, domain := ⟨0⟩, cspaceRoot := senderCNode, vspaceRoot := ⟨3240⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096) })
-      |>.withObject receiver.toObjId (.tcb { tid := receiver, priority := ⟨39⟩, domain := ⟨0⟩, cspaceRoot := receiverCNode, vspaceRoot := ⟨3241⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 8192) })
+      |>.withObject sender.toObjId (.tcb { tid := sender, priority := ⟨40⟩, domain := ⟨0⟩, spaceCells := SeLe4n.Model.TCB.spaceCellsOf senderCNode SeLe4n.ObjId.sentinel, ipcBuffer := (SeLe4n.VAddr.ofNat 4096) })
+      |>.withObject receiver.toObjId (.tcb { tid := receiver, priority := ⟨39⟩, domain := ⟨0⟩, spaceCells := SeLe4n.Model.TCB.spaceCellsOf receiverCNode SeLe4n.ObjId.sentinel, ipcBuffer := (SeLe4n.VAddr.ofNat 8192) })
       |>.withRunnable [sender, receiver]
       |>.buildChecked)
 
@@ -823,8 +817,8 @@ private def ipcCapTransferRevocable : IO Unit := do
             (srcSlot, payloadCap)
           ])))
       |>.withObject receiverCNode (.cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 SeLe4n.UniqueSlotMap.empty))
-      |>.withObject sender.toObjId (.tcb { tid := sender, priority := ⟨40⟩, domain := ⟨0⟩, cspaceRoot := senderCNode, vspaceRoot := ⟨3290⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096) })
-      |>.withObject receiver.toObjId (.tcb { tid := receiver, priority := ⟨39⟩, domain := ⟨0⟩, cspaceRoot := receiverCNode, vspaceRoot := ⟨3291⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 8192) })
+      |>.withObject sender.toObjId (.tcb { tid := sender, priority := ⟨40⟩, domain := ⟨0⟩, spaceCells := SeLe4n.Model.TCB.spaceCellsOf senderCNode SeLe4n.ObjId.sentinel, ipcBuffer := (SeLe4n.VAddr.ofNat 4096) })
+      |>.withObject receiver.toObjId (.tcb { tid := receiver, priority := ⟨39⟩, domain := ⟨0⟩, spaceCells := SeLe4n.Model.TCB.spaceCellsOf receiverCNode SeLe4n.ObjId.sentinel, ipcBuffer := (SeLe4n.VAddr.ofNat 8192) })
       |>.withRunnable [sender, receiver]
       |>.buildChecked)
 
@@ -989,8 +983,8 @@ private def ipcCapTransferArrivalOrder : IO Unit := do
       |>.withObject payloadObj (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
       |>.withObject senderCNode (.cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [(srcSlot, payloadCap)])))
       |>.withObject receiverCNode (.cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 SeLe4n.UniqueSlotMap.empty))
-      |>.withObject sender.toObjId (.tcb { tid := sender, priority := ⟨40⟩, domain := ⟨0⟩, cspaceRoot := senderCNode, vspaceRoot := ⟨3390⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096) })
-      |>.withObject receiver.toObjId (.tcb { tid := receiver, priority := ⟨39⟩, domain := ⟨0⟩, cspaceRoot := receiverCNode, vspaceRoot := ⟨3391⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 8192) })
+      |>.withObject sender.toObjId (.tcb { tid := sender, priority := ⟨40⟩, domain := ⟨0⟩, spaceCells := SeLe4n.Model.TCB.spaceCellsOf senderCNode SeLe4n.ObjId.sentinel, ipcBuffer := (SeLe4n.VAddr.ofNat 4096) })
+      |>.withObject receiver.toObjId (.tcb { tid := receiver, priority := ⟨39⟩, domain := ⟨0⟩, spaceCells := SeLe4n.Model.TCB.spaceCellsOf receiverCNode SeLe4n.ObjId.sentinel, ipcBuffer := (SeLe4n.VAddr.ofNat 8192) })
       |>.withRunnable [sender, receiver]
       |>.buildChecked)
 
@@ -1117,9 +1111,9 @@ private def replyRecvCapTransferArrivalOrder : IO Unit := do
       |>.withObject payloadObj (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
       |>.withObject senderCNode (.cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [(srcSlot, payloadCap)])))
       |>.withObject serverCNode (.cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 SeLe4n.UniqueSlotMap.empty))
-      |>.withObject server.toObjId (.tcb { tid := server, priority := ⟨40⟩, domain := ⟨0⟩, cspaceRoot := serverCNode, vspaceRoot := ⟨3491⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096) })
-      |>.withObject prevCaller.toObjId (.tcb (TCB.setIpcState { tid := prevCaller, priority := ⟨39⟩, domain := ⟨0⟩, cspaceRoot := senderCNode, vspaceRoot := ⟨3492⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 8192), replyObjectCode := SeLe4n.ReplyId.optCode (some rid) } (.blockedOnReply epId (some server))))
-      |>.withObject nextSender.toObjId (.tcb { tid := nextSender, priority := ⟨38⟩, domain := ⟨0⟩, cspaceRoot := senderCNode, vspaceRoot := ⟨3493⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 12288) })
+      |>.withObject server.toObjId (.tcb { tid := server, priority := ⟨40⟩, domain := ⟨0⟩, spaceCells := SeLe4n.Model.TCB.spaceCellsOf serverCNode SeLe4n.ObjId.sentinel, ipcBuffer := (SeLe4n.VAddr.ofNat 4096) })
+      |>.withObject prevCaller.toObjId (.tcb (TCB.setIpcState { tid := prevCaller, priority := ⟨39⟩, domain := ⟨0⟩, spaceCells := SeLe4n.Model.TCB.spaceCellsOf senderCNode SeLe4n.ObjId.sentinel, ipcBuffer := (SeLe4n.VAddr.ofNat 8192), replyObjectCode := SeLe4n.ReplyId.optCode (some rid) } (.blockedOnReply epId (some server))))
+      |>.withObject nextSender.toObjId (.tcb { tid := nextSender, priority := ⟨38⟩, domain := ⟨0⟩, spaceCells := SeLe4n.Model.TCB.spaceCellsOf senderCNode SeLe4n.ObjId.sentinel, ipcBuffer := (SeLe4n.VAddr.ofNat 12288) })
       |>.withObject rid.toObjId (.reply { replyId := rid, callerCode := SeLe4n.ThreadId.optCode (some prevCaller) })
       |>.withRunnable [server, nextSender]
       |>.buildChecked)
@@ -1240,8 +1234,8 @@ private def receiveWithoutSenderInstallsNothing : IO Unit := do
       |>.withObject payloadObj (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
       |>.withObject senderCNode (.cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [(srcSlot, payloadCap)])))
       |>.withObject receiverCNode (.cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 SeLe4n.UniqueSlotMap.empty))
-      |>.withObject sender.toObjId (.tcb { tid := sender, priority := ⟨40⟩, domain := ⟨0⟩, cspaceRoot := senderCNode, vspaceRoot := ⟨3590⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096) })
-      |>.withObject receiver.toObjId (.tcb { tid := receiver, priority := ⟨39⟩, domain := ⟨0⟩, cspaceRoot := receiverCNode, vspaceRoot := ⟨3591⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 8192) })
+      |>.withObject sender.toObjId (.tcb { tid := sender, priority := ⟨40⟩, domain := ⟨0⟩, spaceCells := SeLe4n.Model.TCB.spaceCellsOf senderCNode SeLe4n.ObjId.sentinel, ipcBuffer := (SeLe4n.VAddr.ofNat 4096) })
+      |>.withObject receiver.toObjId (.tcb { tid := receiver, priority := ⟨39⟩, domain := ⟨0⟩, spaceCells := SeLe4n.Model.TCB.spaceCellsOf receiverCNode SeLe4n.ObjId.sentinel, ipcBuffer := (SeLe4n.VAddr.ofNat 8192) })
       |>.withRunnable [sender, receiver]
       |>.buildChecked)
 
@@ -1304,8 +1298,8 @@ private def receiveTakesParkedSenderRegisters : IO Unit := do
       |>.withObject epId (.endpoint {})
       |>.withObject senderCNode (.cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 SeLe4n.UniqueSlotMap.empty))
       |>.withObject receiverCNode (.cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 SeLe4n.UniqueSlotMap.empty))
-      |>.withObject sender.toObjId (.tcb { tid := sender, priority := ⟨40⟩, domain := ⟨0⟩, cspaceRoot := senderCNode, vspaceRoot := ⟨3690⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096) })
-      |>.withObject receiver.toObjId (.tcb { tid := receiver, priority := ⟨39⟩, domain := ⟨0⟩, cspaceRoot := receiverCNode, vspaceRoot := ⟨3691⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 8192) })
+      |>.withObject sender.toObjId (.tcb { tid := sender, priority := ⟨40⟩, domain := ⟨0⟩, spaceCells := SeLe4n.Model.TCB.spaceCellsOf senderCNode SeLe4n.ObjId.sentinel, ipcBuffer := (SeLe4n.VAddr.ofNat 4096) })
+      |>.withObject receiver.toObjId (.tcb { tid := receiver, priority := ⟨39⟩, domain := ⟨0⟩, spaceCells := SeLe4n.Model.TCB.spaceCellsOf receiverCNode SeLe4n.ObjId.sentinel, ipcBuffer := (SeLe4n.VAddr.ofNat 8192) })
       |>.withRunnable [sender, receiver]
       |>.buildChecked)
 
@@ -1395,8 +1389,8 @@ private def revokeWhileParkedTransfersNothing : IO Unit := do
       |>.withObject payloadObj (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
       |>.withObject senderCNode (.cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [(parentSlot, payloadCap)])))
       |>.withObject receiverCNode (.cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 SeLe4n.UniqueSlotMap.empty))
-      |>.withObject sender.toObjId (.tcb { tid := sender, priority := ⟨40⟩, domain := ⟨0⟩, cspaceRoot := senderCNode, vspaceRoot := ⟨3790⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096) })
-      |>.withObject receiver.toObjId (.tcb { tid := receiver, priority := ⟨39⟩, domain := ⟨0⟩, cspaceRoot := receiverCNode, vspaceRoot := ⟨3791⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 8192) })
+      |>.withObject sender.toObjId (.tcb { tid := sender, priority := ⟨40⟩, domain := ⟨0⟩, spaceCells := SeLe4n.Model.TCB.spaceCellsOf senderCNode SeLe4n.ObjId.sentinel, ipcBuffer := (SeLe4n.VAddr.ofNat 4096) })
+      |>.withObject receiver.toObjId (.tcb { tid := receiver, priority := ⟨39⟩, domain := ⟨0⟩, spaceCells := SeLe4n.Model.TCB.spaceCellsOf receiverCNode SeLe4n.ObjId.sentinel, ipcBuffer := (SeLe4n.VAddr.ofNat 8192) })
       |>.withRunnable [sender, receiver]
       |>.buildChecked)
 
@@ -1484,8 +1478,8 @@ private def revokeLeavesIndependentSibling : IO Unit := do
       |>.withObject payloadObj (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
       |>.withObject senderCNode (.cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [(revokedSlot, payloadCap), (siblingSlot, payloadCap)])))
       |>.withObject receiverCNode (.cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 SeLe4n.UniqueSlotMap.empty))
-      |>.withObject sender.toObjId (.tcb { tid := sender, priority := ⟨40⟩, domain := ⟨0⟩, cspaceRoot := senderCNode, vspaceRoot := ⟨3890⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096) })
-      |>.withObject receiver.toObjId (.tcb { tid := receiver, priority := ⟨39⟩, domain := ⟨0⟩, cspaceRoot := receiverCNode, vspaceRoot := ⟨3891⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 8192) })
+      |>.withObject sender.toObjId (.tcb { tid := sender, priority := ⟨40⟩, domain := ⟨0⟩, spaceCells := SeLe4n.Model.TCB.spaceCellsOf senderCNode SeLe4n.ObjId.sentinel, ipcBuffer := (SeLe4n.VAddr.ofNat 4096) })
+      |>.withObject receiver.toObjId (.tcb { tid := receiver, priority := ⟨39⟩, domain := ⟨0⟩, spaceCells := SeLe4n.Model.TCB.spaceCellsOf receiverCNode SeLe4n.ObjId.sentinel, ipcBuffer := (SeLe4n.VAddr.ofNat 8192) })
       |>.withRunnable [sender, receiver]
       |>.buildChecked)
 
@@ -1586,8 +1580,8 @@ private def endpointGrantDecidesBothOrderings : IO Unit := do
       |>.withObject payloadObj (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
       |>.withObject senderCNode (.cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [(srcSlot, payloadCap)])))
       |>.withObject receiverCNode (.cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 SeLe4n.UniqueSlotMap.empty))
-      |>.withObject sender.toObjId (.tcb { tid := sender, priority := ⟨40⟩, domain := ⟨0⟩, cspaceRoot := senderCNode, vspaceRoot := ⟨3840⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096) })
-      |>.withObject receiver.toObjId (.tcb { tid := receiver, priority := ⟨39⟩, domain := ⟨0⟩, cspaceRoot := receiverCNode, vspaceRoot := ⟨3841⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 8192) })
+      |>.withObject sender.toObjId (.tcb { tid := sender, priority := ⟨40⟩, domain := ⟨0⟩, spaceCells := SeLe4n.Model.TCB.spaceCellsOf senderCNode SeLe4n.ObjId.sentinel, ipcBuffer := (SeLe4n.VAddr.ofNat 4096) })
+      |>.withObject receiver.toObjId (.tcb { tid := receiver, priority := ⟨39⟩, domain := ⟨0⟩, spaceCells := SeLe4n.Model.TCB.spaceCellsOf receiverCNode SeLe4n.ObjId.sentinel, ipcBuffer := (SeLe4n.VAddr.ofNat 8192) })
       |>.withRunnable [sender, receiver]
       |>.buildChecked)
 
@@ -1673,8 +1667,8 @@ private def chain13IpcCapTransferNoGrant : IO Unit := do
       |>.withObject targetObj (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
       |>.withObject senderCNode (.cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF [((SeLe4n.Slot.ofNat 0), cap1)])))
       |>.withObject receiverCNode (.cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 SeLe4n.UniqueSlotMap.empty))
-      |>.withObject sender.toObjId (.tcb { tid := sender, priority := ⟨40⟩, domain := ⟨0⟩, cspaceRoot := senderCNode, vspaceRoot := ⟨3340⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096) })
-      |>.withObject receiver.toObjId (.tcb { tid := receiver, priority := ⟨39⟩, domain := ⟨0⟩, cspaceRoot := receiverCNode, vspaceRoot := ⟨3341⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 8192) })
+      |>.withObject sender.toObjId (.tcb { tid := sender, priority := ⟨40⟩, domain := ⟨0⟩, spaceCells := SeLe4n.Model.TCB.spaceCellsOf senderCNode SeLe4n.ObjId.sentinel, ipcBuffer := (SeLe4n.VAddr.ofNat 4096) })
+      |>.withObject receiver.toObjId (.tcb { tid := receiver, priority := ⟨39⟩, domain := ⟨0⟩, spaceCells := SeLe4n.Model.TCB.spaceCellsOf receiverCNode SeLe4n.ObjId.sentinel, ipcBuffer := (SeLe4n.VAddr.ofNat 8192) })
       |>.withRunnable [sender, receiver]
       |>.buildChecked)
 
@@ -1727,8 +1721,8 @@ private def chain14IpcBadgeAndCapTransfer : IO Unit := do
             ((SeLe4n.Slot.ofNat 1), cap2)
           ])))
       |>.withObject receiverCNode (.cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 SeLe4n.UniqueSlotMap.empty))
-      |>.withObject sender.toObjId (.tcb { tid := sender, priority := ⟨40⟩, domain := ⟨0⟩, cspaceRoot := senderCNode, vspaceRoot := ⟨3440⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096) })
-      |>.withObject receiver.toObjId (.tcb { tid := receiver, priority := ⟨39⟩, domain := ⟨0⟩, cspaceRoot := receiverCNode, vspaceRoot := ⟨3441⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 8192) })
+      |>.withObject sender.toObjId (.tcb { tid := sender, priority := ⟨40⟩, domain := ⟨0⟩, spaceCells := SeLe4n.Model.TCB.spaceCellsOf senderCNode SeLe4n.ObjId.sentinel, ipcBuffer := (SeLe4n.VAddr.ofNat 4096) })
+      |>.withObject receiver.toObjId (.tcb { tid := receiver, priority := ⟨39⟩, domain := ⟨0⟩, spaceCells := SeLe4n.Model.TCB.spaceCellsOf receiverCNode SeLe4n.ObjId.sentinel, ipcBuffer := (SeLe4n.VAddr.ofNat 8192) })
       |>.withRunnable [sender, receiver]
       |>.buildChecked)
 
@@ -2067,8 +2061,7 @@ private def chain22NotificationBadgeDelivery : IO Unit := do
           tid := waiter
           priority := ⟨20⟩
           domain := ⟨0⟩
-          cspaceRoot := ⟨350⟩
-          vspaceRoot := ⟨360⟩
+          spaceCells := SeLe4n.Model.TCB.spaceCellsOf SeLe4n.ObjId.sentinel SeLe4n.ObjId.sentinel
           ipcBuffer := (SeLe4n.VAddr.ofNat 4096)
         })
       |>.withRunnable [waiter]
@@ -2216,7 +2209,7 @@ private def chain24HandleYieldEmptyQueue : IO Unit := do
     (BootstrapBuilder.empty
       |>.withObject tid.toObjId (.tcb {
         tid := tid, priority := prio, domain := ⟨0⟩,
-        cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096)
+        spaceCells := SeLe4n.Model.TCB.spaceCellsOf ⟨10⟩ ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096)
         })
       |>.withObject ⟨10⟩ (.cnode CNode.empty)
       |>.withObject ⟨20⟩ (.vspaceRoot { asid := ⟨1⟩, mappings := {} })
@@ -2361,7 +2354,7 @@ private def buildSyscallState (syscallNum : Nat) (capAddr : Nat)
   let mut builder := BootstrapBuilder.empty
     |>.withObject tid.toObjId (.tcb {
         tid := tid, priority := ⟨50⟩, domain := ⟨0⟩,
-        cspaceRoot := cnodeId, vspaceRoot := vsId,
+        spaceCells := SeLe4n.Model.TCB.spaceCellsOf cnodeId vsId,
         ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
         registerContext := SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun i => (regFile ⟨i⟩).val.toUInt64)
     })
@@ -2617,13 +2610,13 @@ private def chain31SyscallReply : IO Unit := do
     (BootstrapBuilder.empty
       |>.withObject tid.toObjId (.tcb {
           tid := tid, priority := ⟨50⟩, domain := ⟨0⟩,
-          cspaceRoot := cnodeId, vspaceRoot := vsId,
+          spaceCells := SeLe4n.Model.TCB.spaceCellsOf cnodeId vsId,
           ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
           registerContext := SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun i => (regFile ⟨i⟩).val.toUInt64)
       })
       |>.withObject senderId (.tcb (TCB.setIpcState {
           tid := ⟨503⟩, priority := ⟨40⟩, domain := ⟨0⟩,
-          cspaceRoot := cnodeId, vspaceRoot := vsId,
+          spaceCells := SeLe4n.Model.TCB.spaceCellsOf cnodeId vsId,
           ipcBuffer := (SeLe4n.VAddr.ofNat 8192),
           replyObjectCode := SeLe4n.ReplyId.optCode (some (SeLe4n.ReplyId.ofNat 505)),
           registerContext := SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun _ => 0)

@@ -77,6 +77,25 @@ theorem TCB.eq_withRunLinks_of_withoutRunLinks_eq {t t' : TCB}
   simp only [TCB.withoutRunLinks, TCB.mk.injEq] at e ⊢
   simp only [e, and_self]
 
+/-- Two TCBs that agree off the run-queue links and the space-slot links: the
+first is the second with those fields rewritten. -/
+theorem TCB.eq_withRunAndSpaceLinks_of_eq {t t' : TCB}
+    (e : t'.withoutRunLinks.withoutLinks = t.withoutRunLinks.withoutLinks) :
+    t' = { t with runCoreCode := t'.runCoreCode, runPrio := t'.runPrio,
+                  runPrevCode := t'.runPrevCode, runNextCode := t'.runNextCode,
+                  runBucketPrevCode := t'.runBucketPrevCode,
+                  runBucketNextCode := t'.runBucketNextCode,
+                  replyWaiterPrevCode := t'.replyWaiterPrevCode,
+                  replyWaiterNextCode := t'.replyWaiterNextCode,
+                  replyWaitersHeadCode := t'.replyWaitersHeadCode,
+                  replyWaitersCount := t'.replyWaitersCount,
+                  ipcBadge := t'.ipcBadge, ipcBadged := t'.ipcBadged,
+                  ipcCanGrant := t'.ipcCanGrant, ipcFaultSend := t'.ipcFaultSend,
+                  spaceLinks := t'.spaceLinks } := by
+  cases t; cases t'
+  simp only [TCB.withoutRunLinks, TCB.withoutLinks, TCB.mk.injEq] at e ⊢
+  simp only [e, and_self]
+
 /-- Two TCBs that agree off the run-queue links agree on anything that reads
 past those links.  Elaborated from `h`, not the expected type, so a field
 equality whose right side is defeq to the projection still checks. -/
@@ -164,6 +183,23 @@ theorem KernelObject.map_withoutRunLinks_of_not_tcb {a b : Option KernelObject} 
     (hb : b = some o) (hNot : ∀ t, o ≠ .tcb t) : a = some o := by
   obtain ⟨o', ha, ho⟩ := KernelObject.map_withoutRunLinks_eq_some h.symm hb
   rw [ha, KernelObject.withoutRunLinks_eq_of_not_tcb ho.symm hNot]
+
+
+/-- **Two objects that agree off the run-queue links hold the same capability
+slots**: the run-queue fields are no slot and no link word. -/
+theorem KernelObject.slots_eq_of_withoutRunLinks_eq {o o' : KernelObject}
+    (h : o'.withoutRunLinks = o.withoutRunLinks) :
+    o'.slotCap = o.slotCap ∧ o'.linkWords = o.linkWords ∧ (∀ s, o'.hasSlot s ↔ o.hasSlot s) := by
+  rcases KernelObject.withoutRunLinks_eq_cases h with e | ⟨t, t', rfl, rfl⟩
+  · subst e; exact ⟨rfl, rfl, fun _ => .rfl⟩
+  · have hT := KernelObject.tcb.inj h
+    have hc : t'.spaceCells = t.spaceCells := TCB.proj_eq_of_withoutRunLinks_eq (·.spaceCells) hT
+    have hl : t'.spaceLinks = t.spaceLinks := TCB.proj_eq_of_withoutRunLinks_eq (·.spaceLinks) hT
+    refine ⟨funext fun s => ?_, ?_, fun _ => .rfl⟩
+    · show t'.spaceSlotCap s = t.spaceSlotCap s
+      unfold TCB.spaceSlotCap; rw [hc]
+    · show t'.spaceLinks.toArray = t.spaceLinks.toArray
+      rw [hl]
 
 end SeLe4n.Model
 
@@ -310,6 +346,29 @@ theorem get_pageTable_iff {x : SeLe4n.ObjId} {pt : PageTableObject} :
   ⟨h.get_of_not_tcb' (fun _ e => KernelObject.noConfusion e),
    h.get_of_not_tcb (fun _ e => KernelObject.noConfusion e)⟩
 
+/-- An object of `st'` was in `st`, holding the same capability slots. -/
+theorem slots_back {x : SeLe4n.ObjId} {o' : KernelObject} (hx : st'.objects[x]? = some o') :
+    ∃ o, st.objects[x]? = some o ∧ o'.slotCap = o.slotCap ∧ o'.linkWords = o.linkWords ∧
+      (∀ s, o'.hasSlot s ↔ o.hasSlot s) := by
+  obtain ⟨o, ho, he⟩ := KernelObject.map_withoutRunLinks_eq_some (h x) hx
+  exact ⟨o, ho, KernelObject.slots_eq_of_withoutRunLinks_eq he⟩
+
+/-- An object of `st` is in `st'`, holding the same capability slots. -/
+theorem slots_fwd {x : SeLe4n.ObjId} {o : KernelObject} (hx : st.objects[x]? = some o) :
+    ∃ o', st'.objects[x]? = some o' ∧ o'.slotCap = o.slotCap ∧ o'.linkWords = o.linkWords ∧
+      (∀ s, o'.hasSlot s ↔ o.hasSlot s) := by
+  obtain ⟨o', ho', he⟩ := KernelObject.map_withoutRunLinks_eq_some (h x).symm hx
+  exact ⟨o', ho', KernelObject.slots_eq_of_withoutRunLinks_eq he.symm⟩
+
+/-- At every key the two stores hold the same link words. -/
+theorem linkWords (x : SeLe4n.ObjId) :
+    (st'.objects[x]?).map KernelObject.linkWords = (st.objects[x]?).map KernelObject.linkWords := by
+  cases hx : st.objects[x]? with
+  | none => rw [h.get_none_iff.mpr hx]
+  | some o =>
+    obtain ⟨o', ho', -, hw, -⟩ := h.slots_fwd hx
+    rw [ho']; simp only [Option.map_some, hw]
+
 /-- A TCB of `st'` is a TCB of `st` with its run-queue fields rewritten — the
 form a proof can `subst`, so every non-run field it reads off the post-state TCB
 is, by definition, the pre-state TCB's. -/
@@ -401,8 +460,11 @@ theorem kindPreserving : SeLe4n.Model.kindPreservingWrite st st' := by
   | none => exact Or.inl (h.get_none_iff.mpr e)
   | some o => cases o with
     | tcb t =>
-      obtain ⟨t', h', _⟩ := h.get_tcb e
-      exact Or.inr ⟨_, _, rfl, h', rfl, by simp [KernelObject.objectType]⟩
+      obtain ⟨t', h', ht⟩ := h.get_tcb e
+      exact Or.inr ⟨_, _, rfl, h', rfl, by simp [KernelObject.objectType], by
+        simp only [KernelObject.tcbSlots,
+          TCB.proj_eq_of_withoutRunLinks_eq (·.spaceCells) ht,
+          TCB.proj_eq_of_withoutRunLinks_eq (·.spaceLinks) ht]⟩
     | _ => exact Or.inl (h.get_of_not_tcb (fun _ e => KernelObject.noConfusion e) e)
 
 end objectsAgreeOffRunLinks
@@ -1101,15 +1163,19 @@ namespace SeLe4n.Model.SystemState
 /-- `run_links_back e at t h`: with `e` a relation whose namespace offers
 `get_tcb_back` (`objectsAgreeOffRunLinks st' st`, or the IPC read view) and
 `h : st'.objects[x]? = some (.tcb t)`, replace `t` by the pre-state TCB (with
-its run-queue fields rewritten, so every other field reads the pre-state's)
+its run-queue fields — and, for the IPC read view, its space-slot links —
+rewritten, so every other field reads the pre-state's)
 and `h` by the pre-state read `st.objects[x]? = some (.tcb t)`. -/
 syntax (name := runLinksBack) "run_links_back " term " at " Lean.Parser.Tactic.rcasesPatLo ident : tactic
 
 set_option hygiene false in
 macro_rules
   | `(tactic| run_links_back $e at $t $h) =>
-    `(tactic| (obtain ⟨$t, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hPreRunLinks, rfl⟩ :=
-                  ($e).get_tcb_back $h
+    `(tactic| (first
+                | obtain ⟨$t, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hPreRunLinks, rfl⟩ :=
+                    ($e).get_tcb_back $h
+                | obtain ⟨$t, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hPreRunLinks, rfl⟩ :=
+                    ($e).get_tcb_back $h
                clear $h
                have $h := hPreRunLinks
                clear hPreRunLinks))
@@ -1120,8 +1186,11 @@ syntax (name := runLinksFwd) "run_links_fwd " term " at " Lean.Parser.Tactic.rca
 set_option hygiene false in
 macro_rules
   | `(tactic| run_links_fwd $e at $t $h) =>
-    `(tactic| (obtain ⟨$t, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hPostRunLinks, rfl⟩ :=
-                  ($e).get_tcb_fwd $h
+    `(tactic| (first
+                | obtain ⟨$t, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hPostRunLinks, rfl⟩ :=
+                    ($e).get_tcb_fwd $h
+                | obtain ⟨$t, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hPostRunLinks, rfl⟩ :=
+                    ($e).get_tcb_fwd $h
                clear $h
                have $h := hPostRunLinks
                clear hPostRunLinks))

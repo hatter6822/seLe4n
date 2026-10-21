@@ -4605,11 +4605,15 @@ def lockSet_tcbSetFaultHandler (callerTid : ThreadId)
 
 /-- **WS-BP BP7.1 (`v0.36.11`): `lockSet` for `tcbSetSpace`.**
 
-`setThreadSpace` writes the target TCB's two root fields (covered by
+`copyThreadSpaces` writes the target TCB's two space slots (covered by
 `tcbLock targetTcbTid .write`) after `resolveSetSpace` has read, through the
-**caller's** CSpace root, the two capabilities MR0 and MR1 name, and after the
-operation has read the CNode and the VSpace root they name to check each is an
-object of its kind.  Those two kind checks are the fourth and fifth locks, in
+**caller's** CSpace root, the two slots MR0 and MR1 name, and after the
+operation has read the CNode and the VSpace root their capabilities name to
+check each is an object of its kind.  Each slot's delete splices it out of the
+derivation tree and its copy adds the edge from its source, so the operation
+writes the tree and the derivation links of the slots around it, as
+`cspaceCopy` and `cspaceDelete` do: WS-RR RR7.9's `stateLevelLock` write is
+the fourth member.  Those two kind checks are the fourth and fifth locks, in
 read mode: without them a concurrent retype of either object races the check,
 and a thread could be left naming a root that was never coherently validated —
 the reason `lockSet_tcbSetFaultHandler` locks its endpoint.  The caller
@@ -4628,7 +4632,8 @@ def lockSet_tcbSetSpace (callerTid : ThreadId)
         (lockSetOfList
           [(tcbLock callerTid, .read),
            (cnodeLock cnodeRootObjId, .read),
-           (tcbLock targetTcbTid, .write)])
+           (tcbLock targetTcbTid, .write),
+           (stateLevelLock, .write)])
         (newCnodeObjId.map (fun cn => (cnodeLock cn, .read))))
       (newVSpaceRootObjId.map (fun vsr => (vspaceRootLock vsr, .read))))
     (queueOwnerMember queueOwner)
@@ -5111,10 +5116,11 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
   -- and (review round 3) the endpoint the CPtr names, for the kind check.
   | .tcbSetFaultHandler =>
       [.tcb, .cnode, .endpoint, .notification]
-  -- **WS-BP BP7.1 (`v0.36.11`)**: `setThreadSpace` writes the target TCB and
-  -- reads the new CSpace root (a CNode) and the new VSpace root.
+  -- **WS-BP BP7.1 (`v0.36.11`)**: `copyThreadSpaces` writes the target TCB,
+  -- reads the new CSpace root (a CNode) and the new VSpace root, and writes the
+  -- derivation tree and links (`.objStore`, as `.cspaceCopy`).
   | .tcbSetSpace =>
-      [.tcb, .cnode, .vspaceRoot, .endpoint, .notification]
+      [.tcb, .cnode, .vspaceRoot, .endpoint, .notification, .objStore]
   -- **WS-BP BP7.1 (`v0.36.12`)**: the page-table operations write the table
   -- (a `page` lock) and the address space it installs in.
   | .pageTableMap | .pageTableUnmap =>
@@ -7155,7 +7161,7 @@ theorem lockSet_consistent_tcbSetFaultHandler (callerTid : ThreadId)
           | some ep => simp at hpp; rw [← hpp]; simp; decide))
     (queueOwnerMember_kind queueOwner _ (by decide) (by decide))
 
-/-- WS-BP BP7.1 (`v0.36.11`), for `.tcbSetSpace`: the base three locks plus the
+/-- WS-BP BP7.1 (`v0.36.11`), for `.tcbSetSpace`: the base four locks plus the
 optional reads of the new CSpace root and the new VSpace root. -/
 theorem lockSet_consistent_tcbSetSpace (callerTid : ThreadId)
     (cnRoot : ObjId) (targetTcb : ThreadId) (newCnode newVSpaceRoot : Option ObjId)
@@ -7166,6 +7172,8 @@ theorem lockSet_consistent_tcbSetSpace (callerTid : ThreadId)
     (lockSet_consistent_extendOpt _ _ _
       (lockSet_consistent_base_plus_opt _ _ _
         (by intro p hMem
+            rcases List.mem_cons.mp hMem with h | hMem
+            · rw [h]; simp; decide
             rcases List.mem_cons.mp hMem with h | hMem
             · rw [h]; simp; decide
             rcases List.mem_cons.mp hMem with h | hMem

@@ -831,13 +831,17 @@ CNodes are deliberately absent — `capabilityBadgesWellFormed` is the one claus
 that reads them, and the transitions this frame serves (capability writes,
 page-table writes, untyped scrubs) exist precisely to rewrite them. -/
 structure ipcReadViewAgreement (s1 s2 : SystemState) : Prop where
-  /-- The TCB clauses are agreement **off the run-queue links** (WS-ZA ZA4.5):
-  no conjunct reads the six run-queue fields, which are the scheduler's, so a
-  run-queue write on either side stays inside the frame. -/
+  /-- The TCB clauses are agreement **off the run-queue links** (WS-ZA ZA4.5)
+  **and the space-slot links**: no conjunct reads the six run-queue fields,
+  which are the scheduler's, nor a thread's derivation-link words, which are
+  the tree's, so a run-queue or link write on either side stays inside the
+  frame. -/
   tcb : ∀ (oid : SeLe4n.ObjId) (t : TCB), s2.objects[oid]? = some (.tcb t) →
-    ∃ t₀ : TCB, s1.objects[oid]? = some (.tcb t₀) ∧ t.withoutRunLinks = t₀.withoutRunLinks
+    ∃ t₀ : TCB, s1.objects[oid]? = some (.tcb t₀) ∧
+      t.withoutRunLinks.withoutLinks = t₀.withoutRunLinks.withoutLinks
   tcbFwd : ∀ (oid : SeLe4n.ObjId) (t₀ : TCB), s1.objects[oid]? = some (.tcb t₀) →
-    ∃ t : TCB, s2.objects[oid]? = some (.tcb t) ∧ t.withoutRunLinks = t₀.withoutRunLinks
+    ∃ t : TCB, s2.objects[oid]? = some (.tcb t) ∧
+      t.withoutRunLinks.withoutLinks = t₀.withoutRunLinks.withoutLinks
   endpoint : ∀ (oid : SeLe4n.ObjId) (ep : Endpoint),
     s2.objects[oid]? = some (.endpoint ep) ↔ s1.objects[oid]? = some (.endpoint ep)
   /-- The notification clause is *content* agreement, not value agreement:
@@ -867,11 +871,24 @@ namespace ipcReadViewAgreement
 read-view agreement — the relation a run-queue write induces. -/
 theorem of_objectsAgreeOffRunLinks {s1 s2 : SystemState}
     (h : s2.objectsAgreeOffRunLinks s1) : ipcReadViewAgreement s1 s2 :=
-  ⟨fun _ _ hx => h.get_tcb' hx, fun _ _ hx => h.get_tcb hx,
+  ⟨fun _ _ hx => (h.get_tcb' hx).elim fun t ht => ⟨t, ht.1, congrArg TCB.withoutLinks ht.2⟩,
+   fun _ _ hx => (h.get_tcb hx).elim fun t ht => ⟨t, ht.1, congrArg TCB.withoutLinks ht.2⟩,
    fun _ _ => h.get_endpoint_iff,
    fun _ ntfn hObj => ⟨ntfn, h.get_notification_iff.mp hObj, rfl, rfl, rfl⟩,
    fun _ _ => h.get_reply_iff,
    fun _ sc hSc => ⟨sc, h.get_schedContext_iff.mpr hSc, rfl⟩⟩
+
+/-- Object stores that agree off the derivation links are read-view agreement:
+a CNode is outside the view, and a thread differs only in its space-slot links. -/
+theorem of_objectsAgreeOffDerivationLinks {s1 s2 : SystemState}
+    (h : s2.objectsAgreeOffDerivationLinks s1) : ipcReadViewAgreement s1 s2 :=
+  ⟨fun _ _ hx => (h.tcb_back hx).elim fun t ht => ⟨t, ht.1, congrArg TCB.withoutRunLinks ht.2⟩,
+   fun _ _ hx => (h.tcb_fwd hx).elim fun t ht => ⟨t, ht.1, congrArg TCB.withoutRunLinks ht.2⟩,
+   fun _ _ => h.obj_iff (fun _ e => KernelObject.noConfusion e),
+   fun _ ntfn hObj =>
+     ⟨ntfn, h.obj_back hObj (fun _ e => KernelObject.noConfusion e), rfl, rfl, rfl⟩,
+   fun _ _ => h.obj_iff (fun _ e => KernelObject.noConfusion e),
+   fun _ sc hSc => ⟨sc, h.obj_fwd hSc (fun _ e => KernelObject.noConfusion e), rfl⟩⟩
 
 /-- Full pointwise lookup agreement is read-view agreement. -/
 theorem of_getElem_eq {s1 s2 : SystemState}
@@ -1091,28 +1108,32 @@ theorem trans {s1 s2 s3 : SystemState}
 form `run_links_back` substitutes. -/
 theorem get_tcb_back {s1 s2 : SystemState} (hView : ipcReadViewAgreement s1 s2)
     {x : SeLe4n.ObjId} {t' : TCB} (hx : s2.objects[x]? = some (.tcb t')) :
-    ∃ t : TCB, ∃ (rc : Nat) (rp : SeLe4n.Priority) (rpv rnx rbpv rbnx rwp rwn rwh rwc : Nat) (ib : UInt64) (ibd icg ifs : Bool),
+    ∃ t : TCB, ∃ (rc : Nat) (rp : SeLe4n.Priority) (rpv rnx rbpv rbnx rwp rwn rwh rwc : Nat) (ib : UInt64) (ibd icg ifs : Bool)
+      (sl : Vector Nat (slotLinkWords * 2)),
       s1.objects[x]? = some (.tcb t) ∧
       t' = { t with runCoreCode := rc, runPrio := rp, runPrevCode := rpv, runNextCode := rnx,
                     runBucketPrevCode := rbpv, runBucketNextCode := rbnx,
                     replyWaiterPrevCode := rwp, replyWaiterNextCode := rwn,
                     replyWaitersHeadCode := rwh, replyWaitersCount := rwc,
-                    ipcBadge := ib, ipcBadged := ibd, ipcCanGrant := icg, ipcFaultSend := ifs } := by
+                    ipcBadge := ib, ipcBadged := ibd, ipcCanGrant := icg, ipcFaultSend := ifs,
+                    spaceLinks := sl } := by
   obtain ⟨t, ht, e⟩ := hView.tcb x t' hx
-  exact ⟨t, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ht, TCB.eq_withRunLinks_of_withoutRunLinks_eq e⟩
+  exact ⟨t, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ht, TCB.eq_withRunAndSpaceLinks_of_eq e⟩
 
 /-- The same, from `s1` to `s2` — the form `run_links_fwd` substitutes. -/
 theorem get_tcb_fwd {s1 s2 : SystemState} (hView : ipcReadViewAgreement s1 s2)
     {x : SeLe4n.ObjId} {t : TCB} (hx : s1.objects[x]? = some (.tcb t)) :
-    ∃ t' : TCB, ∃ (rc : Nat) (rp : SeLe4n.Priority) (rpv rnx rbpv rbnx rwp rwn rwh rwc : Nat) (ib : UInt64) (ibd icg ifs : Bool),
+    ∃ t' : TCB, ∃ (rc : Nat) (rp : SeLe4n.Priority) (rpv rnx rbpv rbnx rwp rwn rwh rwc : Nat) (ib : UInt64) (ibd icg ifs : Bool)
+      (sl : Vector Nat (slotLinkWords * 2)),
       s2.objects[x]? = some (.tcb t') ∧
       t = { t' with runCoreCode := rc, runPrio := rp, runPrevCode := rpv, runNextCode := rnx,
                     runBucketPrevCode := rbpv, runBucketNextCode := rbnx,
                     replyWaiterPrevCode := rwp, replyWaiterNextCode := rwn,
                     replyWaitersHeadCode := rwh, replyWaitersCount := rwc,
-                    ipcBadge := ib, ipcBadged := ibd, ipcCanGrant := icg, ipcFaultSend := ifs } := by
+                    ipcBadge := ib, ipcBadged := ibd, ipcCanGrant := icg, ipcFaultSend := ifs,
+                    spaceLinks := sl } := by
   obtain ⟨t', ht, e⟩ := hView.tcbFwd x t hx
-  exact ⟨t', _, _, _, _, _, _, _, _, _, _, _, _, _, _, ht, TCB.eq_withRunLinks_of_withoutRunLinks_eq e.symm⟩
+  exact ⟨t', _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ht, TCB.eq_withRunAndSpaceLinks_of_eq e.symm⟩
 
 /-- The typed-getter form of the reply clause. -/
 theorem getReply?_iff {s1 s2 : SystemState} (hView : ipcReadViewAgreement s1 s2)
@@ -1477,12 +1498,13 @@ theorem ipcInvariantFull_of_readViewAgreement {s1 s2 : SystemState}
      h.endpointQueueTailBlockedConsistent,
    queueNextTargetBlocked_of_readViewAgreement hView h.queueNextTargetBlocked⟩
 
-/-- WS-ZA ZA4.5: CNodes read the same in stores that agree off the run-queue
-links, so the capability half of `badgeWellFormed` carries across them. -/
+/-- WS-ZA ZA4.5: object slots read the same in stores that agree off the
+run-queue links, so the capability half of `badgeWellFormed` carries across them. -/
 theorem capabilityBadgesWellFormed_of_objectsAgreeOffRunLinks {s1 s2 : SystemState}
     (hA : s2.objectsAgreeOffRunLinks s1) (h : capabilityBadgesWellFormed s1) :
     capabilityBadgesWellFormed s2 :=
-  fun oid cn slot cap badge hObj => h oid cn slot cap badge (hA.get_cnode_iff.mp hObj)
+  capabilityBadgesWellFormed_of_slotCap_back h fun _ _ hO =>
+    let ⟨o, ho, hs, _⟩ := hA.slots_back hO; ⟨o, ho, hs⟩
 
 
 /-- WS-SM SM6.D, restated for WS-ZA ZA4.5: **the whole-bundle transport** —

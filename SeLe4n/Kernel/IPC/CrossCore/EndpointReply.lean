@@ -4638,15 +4638,20 @@ theorem receiveRendezvousDonatedSc?_isSome_iff_donatingSender (st : SystemState)
 only through `lookupTcb`, so a step that fixes the `getTcb?` projection fixes the
 guard.  The congruence the `ipcUnwrapCaps` tail of the `.receive` arm needs. -/
 private theorem rendezvousDequeuedCall_congr_getTcb? (st' st : SystemState)
-    (tid : SeLe4n.ThreadId) (h : st'.getTcb? tid = st.getTcb? tid) :
+    (tid : SeLe4n.ThreadId)
+    (h : (st'.getTcb? tid).map TCB.withoutLinks = (st.getTcb? tid).map TCB.withoutLinks) :
     rendezvousDequeuedCall st' tid = rendezvousDequeuedCall st tid := by
-  have hL : lookupTcb st' tid = lookupTcb st tid := by
+  have hL : (lookupTcb st' tid).map TCB.withoutLinks = (lookupTcb st tid).map TCB.withoutLinks := by
     unfold lookupTcb
     split
     · rfl
     · exact h
+  have hI := TCB.map_proj_of_map_withoutLinks_eq (·.ipcState) hL
   unfold rendezvousDequeuedCall
-  rw [hL]
+  cases h1 : lookupTcb st' tid <;> cases h2 : lookupTcb st tid <;>
+    simp only [h1, h2, Option.map_some, Option.map_none, Option.some.injEq,
+      reduceCtorEq] at hI ⊢
+  rw [hI]
 
 /-- **WS-RR RR8.12 (PR #897 Codex review)**: a `.ready` thread is not a dequeued
 `Call`.  The `lookupTcb`/`getTcb?` bridge the walk below needs: a reserved id

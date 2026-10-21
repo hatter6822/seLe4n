@@ -615,8 +615,7 @@ def reply_inUse_retype_rejected : IO Unit := do
   -- (a woken `.ready` server no longer reserves it — see `replyIsStashed`).
   let stashTcb : TCB :=
     (TCB.setIpcState
-    { tid := ⟨600⟩, priority := ⟨0⟩, domain := ⟨0⟩, cspaceRoot := ⟨0⟩,
-      vspaceRoot := ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0,
+    { tid := ⟨600⟩, priority := ⟨0⟩, domain := ⟨0⟩, spaceCells := SeLe4n.Model.TCB.spaceCellsOf ⟨0⟩ ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0,
       pendingReceiveReplyCode := SeLe4n.ReplyId.optCode (some ⟨505⟩) } (.blockedOnReceive ⟨700⟩))
   let stStashed : SystemState :=
     (SeLe4n.Testing.BootstrapBuilder.empty |>.withObject ⟨600⟩ (.tcb stashTcb) |>.build)
@@ -628,8 +627,7 @@ def reply_inUse_retype_rejected : IO Unit := do
   -- reserve the Reply, and retyping that free Reply must SUCCEED.  Guards the
   -- "ready server keeps the Reply permanently in use" regression.
   let wokenStashTcb : TCB :=
-    { tid := ⟨603⟩, priority := ⟨0⟩, domain := ⟨0⟩, cspaceRoot := ⟨0⟩,
-      vspaceRoot := ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0,
+    { tid := ⟨603⟩, priority := ⟨0⟩, domain := ⟨0⟩, spaceCells := SeLe4n.Model.TCB.spaceCellsOf ⟨0⟩ ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0,
       pendingReceiveReplyCode := SeLe4n.ReplyId.optCode (some ⟨505⟩) }
   let stWokenStash : SystemState :=
     (SeLe4n.Testing.BootstrapBuilder.empty |>.withObject ⟨603⟩ (.tcb wokenStashTcb) |>.build)
@@ -639,15 +637,13 @@ def reply_inUse_retype_rejected : IO Unit := do
   -- PR #822 review: retyping a caller TCB that still holds a reply link
   -- (`replyObject = some rid`) is rejected — else the Reply's `caller` dangles.
   let linkedTcb : TCB :=
-    { tid := ⟨601⟩, priority := ⟨0⟩, domain := ⟨0⟩, cspaceRoot := ⟨0⟩,
-      vspaceRoot := ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0,
+    { tid := ⟨601⟩, priority := ⟨0⟩, domain := ⟨0⟩, spaceCells := SeLe4n.Model.TCB.spaceCellsOf ⟨0⟩ ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0,
       replyObjectCode := SeLe4n.ReplyId.optCode (some ⟨505⟩) }
   match SeLe4n.Kernel.lifecyclePreRetypeCleanup st ⟨601⟩ (.tcb linkedTcb) newObj with
   | .error e => expect "linked caller TCB retype → revocationRequired" (e == .revocationRequired)
   | .ok _ => throw <| IO.userError "retyping a TCB with an outstanding reply link must be rejected"
   let freeTcb : TCB :=
-    { tid := ⟨602⟩, priority := ⟨0⟩, domain := ⟨0⟩, cspaceRoot := ⟨0⟩,
-      vspaceRoot := ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0 }
+    { tid := ⟨602⟩, priority := ⟨0⟩, domain := ⟨0⟩, spaceCells := SeLe4n.Model.TCB.spaceCellsOf ⟨0⟩ ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0 }
   match SeLe4n.Kernel.lifecyclePreRetypeCleanup st ⟨602⟩ (.tcb freeTcb) newObj with
   | .ok _ => expect "free TCB retype allowed" true
   | .error _ => throw <| IO.userError "retyping a TCB with no reply link must succeed"
@@ -665,8 +661,7 @@ def pendingReceiveReply_stash_injective : IO Unit := do
   let otherRid    : SeLe4n.ReplyId := ⟨506⟩
   let serverTcb : TCB :=
     (TCB.setIpcState
-    { tid := ⟨600⟩, priority := ⟨0⟩, domain := ⟨0⟩, cspaceRoot := ⟨0⟩,
-      vspaceRoot := ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0,
+    { tid := ⟨600⟩, priority := ⟨0⟩, domain := ⟨0⟩, spaceCells := SeLe4n.Model.TCB.spaceCellsOf ⟨0⟩ ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0,
       pendingReceiveReplyCode := SeLe4n.ReplyId.optCode (some reservedRid) } (.blockedOnReceive ⟨700⟩))
   let st : SystemState :=
     (SeLe4n.Testing.BootstrapBuilder.empty |>.withObject ⟨600⟩ (.tcb serverTcb) |>.build)
@@ -691,8 +686,7 @@ def replyStash_validated_against_preBlock_state : IO Unit := do
   -- A *ready* receiver with a stale stash: its leftover `pendingReceiveReply` does NOT
   -- reserve `rid`, so input-state validation correctly admits a re-stash of the same reply.
   let readyTcb : TCB :=
-    { tid := ⟨603⟩, priority := ⟨0⟩, domain := ⟨0⟩, cspaceRoot := ⟨0⟩,
-      vspaceRoot := ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0,
+    { tid := ⟨603⟩, priority := ⟨0⟩, domain := ⟨0⟩, spaceCells := SeLe4n.Model.TCB.spaceCellsOf ⟨0⟩ ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0,
       pendingReceiveReplyCode := SeLe4n.ReplyId.optCode (some rid) }
   let stReady : SystemState :=
     (SeLe4n.Testing.BootstrapBuilder.empty |>.withObject ⟨603⟩ (.tcb readyTcb) |>.build)
@@ -761,8 +755,7 @@ def replyCallerLinkage_holds_at_call_rendezvous_boundary : IO Unit := do
   let epId   : SeLe4n.ObjId := ⟨10⟩
   let rid    : SeLe4n.ReplyId := ⟨707⟩
   let mkReadyTcb (n : Nat) : TCB :=
-    { tid := ⟨n⟩, priority := ⟨0⟩, domain := ⟨0⟩, cspaceRoot := ⟨0⟩,
-      vspaceRoot := ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0 }
+    { tid := ⟨n⟩, priority := ⟨0⟩, domain := ⟨0⟩, spaceCells := SeLe4n.Model.TCB.spaceCellsOf ⟨0⟩ ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0 }
   let st0 : SystemState :=
     (SeLe4n.Testing.BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
@@ -803,8 +796,7 @@ def direct_reply_consumes_caller_link_single_use : IO Unit := do
   let epId   : SeLe4n.ObjId := ⟨10⟩
   let rid    : SeLe4n.ReplyId := ⟨707⟩
   let mkReadyTcb (n : Nat) : TCB :=
-    { tid := ⟨n⟩, priority := ⟨0⟩, domain := ⟨0⟩, cspaceRoot := ⟨0⟩,
-      vspaceRoot := ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0 }
+    { tid := ⟨n⟩, priority := ⟨0⟩, domain := ⟨0⟩, spaceCells := SeLe4n.Model.TCB.spaceCellsOf ⟨0⟩ ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0 }
   let st0 : SystemState :=
     (SeLe4n.Testing.BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
@@ -845,8 +837,7 @@ def call_without_reply_object_fails_closed_no_unanswerable_block : IO Unit := do
   let caller : SeLe4n.ThreadId := ⟨2⟩
   let epId   : SeLe4n.ObjId := ⟨10⟩
   let mkReadyTcb (n : Nat) : TCB :=
-    { tid := ⟨n⟩, priority := ⟨0⟩, domain := ⟨0⟩, cspaceRoot := ⟨0⟩,
-      vspaceRoot := ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0 }
+    { tid := ⟨n⟩, priority := ⟨0⟩, domain := ⟨0⟩, spaceCells := SeLe4n.Model.TCB.spaceCellsOf ⟨0⟩ ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0 }
   let st0 : SystemState :=
     (SeLe4n.Testing.BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
@@ -925,8 +916,7 @@ def reply_cap_end_to_end_retype_mint_link : IO Unit := do
   let mkCn : KernelObject := .cnode
     (SeLe4n.Model.CNode.ofSlots 8 0 0 8 (SeLe4n.UniqueSlotMap.ofListWF [ ((SeLe4n.Slot.ofNat 0), authCap) ]))
   let callerTcb : TCB :=
-    { tid := caller, priority := ⟨0⟩, domain := ⟨0⟩, cspaceRoot := ⟨0⟩,
-      vspaceRoot := ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0 }
+    { tid := caller, priority := ⟨0⟩, domain := ⟨0⟩, spaceCells := SeLe4n.Model.TCB.spaceCellsOf ⟨0⟩ ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0 }
   let st0 : SystemState :=
     (SeLe4n.Testing.BootstrapBuilder.empty
       |>.withObject target (SeLe4n.Kernel.objectOfKernelType .untyped 0)
@@ -978,8 +968,7 @@ private def minimalTcb (tid : ThreadId) : TCB :=
   { tid := tid
     priority := ⟨0⟩
     domain := ⟨0⟩
-    cspaceRoot := ⟨0⟩
-    vspaceRoot := ⟨0⟩
+    spaceCells := SeLe4n.Model.TCB.spaceCellsOf ⟨0⟩ ⟨0⟩
     ipcBuffer := (SeLe4n.VAddr.ofNat 0) }
 
 /-- Minimal SchedContext fixture for typed-helper tests. -/

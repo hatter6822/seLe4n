@@ -60,6 +60,19 @@ def KernelObject.unshare (o : KernelObject) : KernelObject := o
   | some r => some { r with rights := opaqueId r.rights }
   | none => none
 
+/-- A thread's space slot, rebuilt when shared so the thread owns its `some` and
+its capability record (`spaceCellOver`, setting the thread's space, writes both
+in place). -/
+@[inline] def unshareSpaceCell (o : Option Capability) : Option Capability :=
+  match o with
+  | some r => some { r with rights := opaqueId r.rights }
+  | none => none
+
+theorem unshareSpaceCell_eq (o : Option Capability) : unshareSpaceCell o = o := by
+  cases o with
+  | none => rfl
+  | some r => simp only [unshareSpaceCell, opaqueId]
+
 /-- A VSpace root's spare mapping cell, rebuilt when shared so the root owns
 its `some`, its entry and the entry's value pair (WS-ZA ZA5.4). -/
 @[inline] def unshareMappingCell
@@ -89,6 +102,8 @@ cell, are rebuilt the same way. -/
 def KernelObject.unshareImpl : KernelObject → KernelObject
   | .tcb t => .tcb { t with
       tid := opaqueId t.tid
+      spaceCells := t.spaceCells.map unshareSpaceCell
+      spaceLinks := t.spaceLinks.map opaqueId
       registerContext := { t.registerContext with x0 := opaqueId t.registerContext.x0 } }
   | .endpoint e => .endpoint { e with sendHeadCode := opaqueId e.sendHeadCode }
   | .notification n => .notification { n with state := opaqueId n.state }
@@ -139,6 +154,9 @@ def KernelObject.unshareImpl : KernelObject → KernelObject
   case pageTable p =>
     simp only [KernelObject.unshare, KernelObject.unshareImpl, opaqueId,
       PageTableObject.with_slotCell]
+  case tcb t =>
+    have hS : unshareSpaceCell = id := funext unshareSpaceCell_eq
+    simp only [KernelObject.unshare, KernelObject.unshareImpl, hS, hIdN, Vector.map_id, opaqueId]
   all_goals
     simp only [KernelObject.unshare, KernelObject.unshareImpl, hId, hIdN, Array.map_id, opaqueId,
       RHTable.unshare]

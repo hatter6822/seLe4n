@@ -77,7 +77,7 @@ private def tD : SeLe4n.ThreadId := ThreadId.ofNat 103
 /-- A user TCB at `tid`, priority `prio`, domain `dom`, bound to core `aff`. -/
 private def mkTcb (tid prio dom : Nat) (aff : CoreId) : TCB :=
   { tid := ThreadId.ofNat tid, priority := ⟨prio⟩, domain := ⟨dom⟩,
-    cspaceRoot := ObjId.ofNat 0, vspaceRoot := ObjId.ofNat 0,
+    spaceCells := SeLe4n.Model.TCB.spaceCellsOf (ObjId.ofNat 0) (ObjId.ofNat 0),
     ipcBuffer := SeLe4n.VAddr.ofNat 0, cpuAffinity := some aff }
 
 /-- The 4-core / 4-thread workload: all four threads in the object store (domain 0),

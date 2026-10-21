@@ -315,7 +315,11 @@ def projectKernelObject (ctx : LabelingContext) (observer : IfObserver) (obj : K
                        -- `blockingIPCBadge`/`blockingIPCCanGrant`/`blockingIPCIsCall`);
                        -- erased as `pendingMessage`, the field they replace, is.
                        ipcBadge := 0, ipcBadged := false, ipcCanGrant := false,
-                       ipcFaultSend := false }
+                       ipcFaultSend := false,
+                       -- The derivation links of the thread's two space slots
+                       -- are cleared, as a CNode's are: the tree they encode is
+                       -- not projected.  The space capabilities stay visible.
+                       spaceLinks := Vector.replicate _ 0 }
   | .schedContext sc =>
       -- AI4-A: Strip boundThread — internal scheduling plumbing binding a
       -- SchedContext to its owning thread. Donation chain changes modify only
