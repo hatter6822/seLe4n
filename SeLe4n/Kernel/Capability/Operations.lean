@@ -1087,9 +1087,12 @@ def cspaceDeleteSlotCore (addr : CSpaceAddr) : Kernel Unit :=
         else .error .objectNotFound
     | none => .error .objectNotFound
 
-/-- A thread's space slot emptied where the thread lies (`storeTcbWith`). -/
-@[noinline] def threadSlotCleared (addr : CSpaceAddr) (st : SystemState) : SystemState :=
-  st.storeTcbWith addr.cnode (·.removeSpaceCap addr.slot)
+/-- A thread's space slot emptied where the thread lies (`storeTcbWith`).  It
+takes the address's two words, so an inline caller handed them builds no
+address record. -/
+@[noinline] def threadSlotCleared (tcbId : SeLe4n.ObjId) (slot : SeLe4n.Slot)
+    (st : SystemState) : SystemState :=
+  st.storeTcbWith tcbId (·.removeSpaceCap slot)
 
 /-- **The slot emptied where its object lies**: a CNode's slot through
 `storeCNodeWith`, so a CNode nothing else holds is changed in place rather than
@@ -1099,13 +1102,15 @@ copied (WS-ZA ZA5.3 part 6); a thread's space slot out of line
 @[inline] def slotCleared (addr : CSpaceAddr) (st : SystemState) : SystemState :=
   match st.getCNode? addr.cnode with
   | some _ => st.storeCNodeWith addr.cnode (·.remove addr.slot)
-  | none => threadSlotCleared addr st
+  | none => threadSlotCleared addr.cnode addr.slot st
 
-/-- The thread arm of the compiled core delete, out of line. -/
-@[noinline] def cspaceDeleteThreadSlotCore (addr : CSpaceAddr) : Kernel Unit :=
+/-- The thread arm of the compiled core delete, out of line, on the address's
+two words. -/
+@[noinline] def cspaceDeleteThreadSlotCore (tcbId : SeLe4n.ObjId) (slot : SeLe4n.Slot) :
+    Kernel Unit :=
   fun st =>
-    match st.getObject? addr.cnode with
-    | some (.tcb _) => .ok ((), threadSlotCleared addr st)
+    match st.getObject? tcbId with
+    | some (.tcb _) => .ok ((), threadSlotCleared tcbId slot st)
     | _ => .error .objectNotFound
 
 /-- `cspaceDeleteSlotCore` as compiled: the slot is cleared where its object lies
@@ -1114,7 +1119,7 @@ copied (WS-ZA ZA5.3 part 6); a thread's space slot out of line
   fun st =>
     match st.getCNode? addr.cnode with
     | some _ => .ok ((), st.storeCNodeWith addr.cnode (·.remove addr.slot))
-    | none => cspaceDeleteThreadSlotCore addr st
+    | none => cspaceDeleteThreadSlotCore addr.cnode addr.slot st
 
 /-- **A core delete of a slot-holding object is the slot cleared in place.** -/
 theorem cspaceDeleteSlotCore_eq_slotCleared {addr : CSpaceAddr} {st : SystemState}

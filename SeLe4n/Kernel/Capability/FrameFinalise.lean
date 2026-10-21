@@ -711,11 +711,13 @@ capability, if any, finalises nothing.  An admitted delete is its two writes
        | none => true)
   | none => false
 
-/-- The thread arm of the compiled `cspaceDeleteAdmitted`, out of line. -/
-@[noinline] def threadSlotDeleteAdmitted (addr : CSpaceAddr) (st : SystemState) : Bool :=
-  match st.getObject? addr.cnode with
+/-- The thread arm of the compiled `cspaceDeleteAdmitted`, out of line, on the
+address's two words. -/
+@[noinline] def threadSlotDeleteAdmitted (tcbId : SeLe4n.ObjId) (slot : SeLe4n.Slot)
+    (st : SystemState) : Bool :=
+  match st.getObject? tcbId with
   | some (.tcb t) =>
-    match t.spaceSlotCap addr.slot with
+    match t.spaceSlotCap slot with
     | some cap => capabilityFinalisesNothing st cap
     | none => true
   | _ => false
@@ -728,7 +730,7 @@ thread's slots joined it. -/
     match cn.lookup addr.slot with
     | some cap => capabilityFinalisesNothing st cap
     | none => true
-  | none => threadSlotDeleteAdmitted addr st
+  | none => threadSlotDeleteAdmitted addr.cnode addr.slot st
 
 @[csimp] theorem cspaceDeleteAdmitted_eq_impl : @cspaceDeleteAdmitted = @cspaceDeleteAdmittedImpl := by
   funext addr st
