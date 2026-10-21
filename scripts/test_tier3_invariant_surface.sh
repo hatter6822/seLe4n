@@ -12442,7 +12442,12 @@ import SeLe4n.Kernel.SchedContext.ReplenishQueue
 #check @SeLe4n.Model.PagePermissions.ofNat
 #check @SeLe4n.Model.PagePermissions.toNat
 #check @SeLe4n.Model.PagePermissions.ofNat_toNat_roundtrip
-#check @SeLe4n.Kernel.lifecycleRetypeDirect
+#check @SeLe4n.Kernel.lifecycleRetypeDirectCommit
+#check @SeLe4n.Kernel.lifecycleRetypeDirectWithCleanup_unauthorized
+#check @SeLe4n.Kernel.lifecycleRetypeDirectWithCleanup_ok_authorized
+#check @SeLe4n.Kernel.lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_unauthorized
+#check @SeLe4n.Kernel.dispatchWithCap_lifecycleRetype_unauthorized
+#check @SeLe4n.Kernel.dispatchWithCapChecked_lifecycleRetype_unauthorized
 #check @SeLe4n.Kernel.dispatchWithCap_lifecycleRetype_delegates
 #check @SeLe4n.Kernel.dispatchWithCap_vspaceMap_delegates
 #check @SeLe4n.Kernel.dispatchWithCap_vspaceUnmap_delegates
@@ -21097,7 +21102,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lifecycleRetypeDirectWithClea
 # The two frames the drain half needs, in PRODUCTION beside the wrapper they frame
 # rather than private to the staged non-interference module that first needed them.
 run_check "INVARIANT" rg -n '^@\[simp\] theorem retypeInitiatorDrain_scheduler' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRetypeDirect_scheduler_machine_eq($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
+run_check "INVARIANT" rg -n '^theorem lifecycleRetypeDirectCommit_scheduler_machine_eq($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
 run_negative_check "INVARIANT" rg -n 'private theorem lifecycleRetypeDirect_framed' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 # The frame MEASURED over every core on the arm the syscall runs, with the retired
 # reading FAILING the same measurement — every mutation of the production footprint
@@ -21105,6 +21110,35 @@ run_negative_check "INVARIANT" rg -n 'private theorem lifecycleRetypeDirect_fram
 # differential inside it.
 run_check "INVARIANT" rg -n 'C6g: EVERY core outside the declared replenish segment keeps its replenish queue' tests/SmpIpcSuite.lean
 run_check "INVARIANT" rg -n 'C6g NEGATIVE: the retired reading FAILS the same replenish measurement' tests/SmpIpcSuite.lean
+
+# ============================================================================
+# `v0.36.123`: the in-place retype checks AUTHORITY before it reads its target.
+# ============================================================================
+#
+# `.lifecycleRetype` decodes its target id from a message register.  Asked after
+# admissibility, cleanup, scrub and the existence/type checks, authority let every
+# other refusal answer for an object the caller holds no capability to -- an
+# error-code oracle on existence, kind and other domains' run state.
+# RELATION: authority is the wrapper's FIRST question -- the first thing under
+# `fun st =>`, so nothing that reads `st` precedes it.  Mutation: move the check
+# below the admissibility guard.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def lifecycleRetypeDirectWithCleanup\n[^\n]*\n[^\n]*\n *fun st =>\n *if !lifecycleRetypeAuthority authCap target then\n *\.error \.illegalAuthority" SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean'
+# One answer: the commit step takes no capability and asks no authority question,
+# so the check cannot be asked twice.  Mutation: re-add an authority guard there.
+run_check "INVARIANT" rg -n '^def lifecycleRetypeDirectCommit$' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def lifecycleRetypeDirectCommit[^\n]*(\n([ \t][^\n]*)?)*(lifecycleRetypeAuthority|Capability)" SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean'
+# NEGATIVE: the retired authority-last step does not come back.
+run_negative_check "INVARIANT" rg -n '^def lifecycleRetypeDirect( |$)' SeLe4n/
+# The non-interference statement, at the wrapper, the live seam and both dispatchers:
+# the refusal holds for EVERY state.  Mutation: add a hypothesis on `st`.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lifecycleRetypeDirectWithCleanup_unauthorized\n[^\n]*\n *\(hAuth : lifecycleRetypeAuthority authCap target = false\) \(st : SystemState\) :\n *lifecycleRetypeDirectWithCleanup authCap target newObj st =\n *\.error \.illegalAuthority" SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean'
+run_check "INVARIANT" rg -n '^theorem lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_unauthorized$' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem dispatchWithCap_lifecycleRetype_unauthorized[^\n]*(\n([ \t][^\n]*)?)*\(st : SystemState\) :\n *dispatchWithCap decoded tid executingCore gate cap st = \.error \.illegalAuthority" SeLe4n/Kernel/API.lean'
+run_check "INVARIANT" rg -n '^theorem dispatchWithCapChecked_lifecycleRetype_unauthorized$' SeLe4n/Kernel/API.lean
+# The witness: every unnamed target draws `illegalAuthority` through both
+# dispatchers, with a CONTROL per target, and the suite runs it.
+run_check "INVARIANT" rg -n '^private def sd062_retype_checks_authority_before_target : IO Unit := do$' tests/SyscallDispatchSuite.lean
+run_check "INVARIANT" rg -n '^  sd062_retype_checks_authority_before_target$' tests/SyscallDispatchSuite.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "private def liveRetypeArm[^\n]*(\n([ \t][^\n]*)?)*lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache" tests/SmpIpcSuite.lean'
 
 # ============================================================================

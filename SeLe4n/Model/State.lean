@@ -2118,7 +2118,7 @@ policy at the allocation boundary.
 
 **U2-L callsite audit** (v0.21.1):
 - **Allocation-guarded** (capacity checked by `retypeFromUntyped`):
-  `lifecycleRetypeObject`, `lifecycleRetypeWithCleanup`, `lifecycleRetypeDirect`,
+  `lifecycleRetypeObject`, `lifecycleRetypeWithCleanup`,
   `lifecycleRetypeDirectWithCleanup` — all go through retype authority + untyped
   capacity validation before reaching `storeObject`.
 - **In-place mutation** (no new ObjId, just updating an existing object):
