@@ -678,8 +678,8 @@ def runInformationFlowChecks : IO Unit := do
   -- Same-domain send should be allowed (same result as unchecked)
   let testMsg : IpcMessage := { registers := #[], badge := none }
   -- AH1-E: Updated to pass cap transfer params (default values — no caps in testMsg)
-  let checkedResult := SeLe4n.Kernel.endpointSendDualChecked publicCtx ⟨10⟩ ⟨1⟩ (.frame testMsg.badge testMsg.capsGranted) default publicEndpointState
-  let uncheckedResult := SeLe4n.Kernel.endpointSendDual ⟨10⟩ ⟨1⟩ (.frame testMsg.badge testMsg.capsGranted) publicEndpointState
+  let checkedResult := SeLe4n.Kernel.endpointSendDualChecked publicCtx ⟨10⟩ ⟨1⟩ (.frame testMsg.badge false) default publicEndpointState
+  let uncheckedResult := SeLe4n.Kernel.endpointSendDual ⟨10⟩ ⟨1⟩ (.frame testMsg.badge false) publicEndpointState
   expect "same-domain endpointSendDualChecked equals unchecked send"
     (match checkedResult, uncheckedResult with
       | .ok (_, s₁), .ok ((), s₂) => s₁.objects[(⟨10⟩ : SeLe4n.ObjId)]? == s₂.objects[(⟨10⟩ : SeLe4n.ObjId)]?
@@ -693,7 +693,7 @@ def runInformationFlowChecks : IO Unit := do
       endpointLabelOf := fun _ => publicLabel
       serviceLabelOf := fun _ => publicLabel }
 
-  let deniedResult := SeLe4n.Kernel.endpointSendDualChecked secretSenderCtx ⟨10⟩ ⟨1⟩ (.frame testMsg.badge testMsg.capsGranted) default publicEndpointState
+  let deniedResult := SeLe4n.Kernel.endpointSendDualChecked secretSenderCtx ⟨10⟩ ⟨1⟩ (.frame testMsg.badge false) default publicEndpointState
   expect "secret-to-public endpointSendDualChecked returns flowDenied"
     (match deniedResult with
       | .error .flowDenied => true
@@ -869,15 +869,15 @@ def runInformationFlowChecks : IO Unit := do
     (SeLe4n.Kernel.enforcementBoundary.length == 52)
 
   -- Verify enforcement boundary: denied flows produce errors
-  let deniedSendResult := SeLe4n.Kernel.endpointSendDualChecked secretSenderCtx ⟨10⟩ ⟨1⟩ (.frame testMsg.badge testMsg.capsGranted) default publicEndpointState
+  let deniedSendResult := SeLe4n.Kernel.endpointSendDualChecked secretSenderCtx ⟨10⟩ ⟨1⟩ (.frame testMsg.badge false) default publicEndpointState
   expect "enforcement boundary blocks cross-domain endpointSendDual"
     (match deniedSendResult with
       | .error .flowDenied => true
       | _ => false)
 
   -- Verify that same-domain operations pass through unchecked
-  let allowedSendResult := SeLe4n.Kernel.endpointSendDualChecked publicCtx ⟨10⟩ ⟨1⟩ (.frame testMsg.badge testMsg.capsGranted) default publicEndpointState
-  let uncheckedSendResult := SeLe4n.Kernel.endpointSendDual ⟨10⟩ ⟨1⟩ (.frame testMsg.badge testMsg.capsGranted) publicEndpointState
+  let allowedSendResult := SeLe4n.Kernel.endpointSendDualChecked publicCtx ⟨10⟩ ⟨1⟩ (.frame testMsg.badge false) default publicEndpointState
+  let uncheckedSendResult := SeLe4n.Kernel.endpointSendDual ⟨10⟩ ⟨1⟩ (.frame testMsg.badge false) publicEndpointState
   expect "same-domain endpointSendDualChecked matches unchecked"
     (match allowedSendResult, uncheckedSendResult with
       | .ok (_, s₁), .ok ((), s₂) => s₁.objects[(⟨10⟩ : SeLe4n.ObjId)]? == s₂.objects[(⟨10⟩ : SeLe4n.ObjId)]?
@@ -891,7 +891,7 @@ def runInformationFlowChecks : IO Unit := do
   -- denying with a different discriminant, fails here rather than only in a
   -- proof a reader has to go find.
   let deniedCall :=
-    SeLe4n.Kernel.endpointCallChecked secretSenderCtx ⟨10⟩ ⟨1⟩ (.frame testMsg.badge testMsg.capsGranted) default
+    SeLe4n.Kernel.endpointCallChecked secretSenderCtx ⟨10⟩ ⟨1⟩ (.frame testMsg.badge false) default
       publicEndpointState
   expect "SM8.C: endpointCallChecked denies a cross-domain call"
     (match deniedCall with | .error .flowDenied => true | _ => false)

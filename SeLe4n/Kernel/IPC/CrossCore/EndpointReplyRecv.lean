@@ -349,8 +349,10 @@ the one arm that is a receive without being spelled `.receive`.  A server loop
 written the seL4-MCS way (`Recv` once, then `ReplyRecv` forever) would have
 received capabilities on its first request and silently none afterwards.
 
-The authority is the sender's, carried on the message (`IpcMessage.capsGranted`),
-so both orderings ask the same question.  The summary is **returned** rather than
+The authority is the sender's, recorded on its blocked thread state
+(`TCB.ipcCanGrant`, seL4's `blockingIPCCanGrant`) and read by the request the
+receive resolves (`blockedSenderCapRequest`), so both orderings ask the same
+question.  The summary is **returned** rather than
 staged here, because the arm owns the return frame — `.replyRecv`'s `extraCaps`
 is now the honest installed count instead of a hardcoded zero. -/
 def endpointReplyRecvOnCore (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)

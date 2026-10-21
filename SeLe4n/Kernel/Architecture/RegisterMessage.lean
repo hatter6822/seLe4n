@@ -137,10 +137,9 @@ theorem regMessageFrameW_eq (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n
   simp only [regMessageFrameW, regMessageFrame, badgeWordOrZero_opt]
 
 theorem returnFrameOfMessage_regMessageBody (layout : SeLe4n.SyscallRegisterLayout)
-    (rf : SeLe4n.RegisterFile) (len : Nat) (badge : Option SeLe4n.Badge) (g : Bool) :
+    (rf : SeLe4n.RegisterFile) (len : Nat) (badge : Option SeLe4n.Badge) :
     returnFrameOfMessage
-        { registers := regMessageBody layout rf len, badge := badge,
-          capsGranted := g } 0 0 =
+        { registers := regMessageBody layout rf len, badge := badge } 0 0 =
       regMessageFrame layout rf len badge := by
   simp only [returnFrameOfMessage, returnMessageInfo, regMessageFrame, badgeWordOrZero,
     regMessageInfoWord, regMessageBody_size,

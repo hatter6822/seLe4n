@@ -3746,9 +3746,11 @@ def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
           -- installs nothing, while an immediate rendezvous transferred the
           -- capabilities through `endpointSendDualWithCapsOnCore` — so whether a
           -- capability arrived depended on which side reached the endpoint
-          -- first.  The authority is the sender's, carried on the message it
-          -- sent (`IpcMessage.capsGranted`), which is what makes the two
-          -- orderings agree rather than merely both do something.
+          -- first.  The authority is the sender's, recorded on its blocked
+          -- thread state (`TCB.ipcCanGrant`, seL4's `blockingIPCCanGrant`) and
+          -- read by the request the receive resolves (`blockedSenderCapRequest`),
+          -- which is what makes the two orderings agree rather than merely both
+          -- do something.
           match endpointReceiveDualWithCapsOnCore epId tid replyIdOpt gate.cspaceRoot
               decoded.capRecvSlot executingCore st with
           | (st', .ok (dequeued, summary, _sgi)) =>

@@ -1291,7 +1291,7 @@ def signature_end(text: str, start: int) -> int:
     """Offset of the `:=` that closes a declaration's signature.
 
     At bracket depth zero, so a `:=` inside a structure-instance binder
-    (`{ msg with capsGranted := true }`) -- which several cross-core bundles
+    (`{ msg with badge := none }`) -- which several cross-core bundles
     carry in their conclusion -- does not truncate the signature.
     """
     depth = 0
@@ -5062,7 +5062,7 @@ end σ""",
         "theorem endpointCallWithCaps_preserves_ipcInvariantFull\n"
         "    (st : SystemState) (msg : IpcMessage)\n"
         "    (hInv : ipcInvariantFull st) :\n"
-        "    ipcInvariantFull (endpointCall { msg with capsGranted := true } st).1 := by\n"
+        "    ipcInvariantFull (endpointCall { msg with badge := none } st).1 := by\n"
         "  exact sample st msg hInv\n"
     )
     cases.append(

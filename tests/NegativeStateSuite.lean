@@ -2138,7 +2138,7 @@ private def runWSH15Checks : IO Unit := do
   expectErr "H15 syscall endpoint send insufficient rights"
     (SeLe4n.Kernel.syscallInvoke { wrongRightGate with requiredRight := .write } (fun cap =>
       if cap.target ≠ .object epId then fun _ => .error .invalidCapability
-      else SeLe4n.Kernel.endpointSendDual epId wrongRightGate.callerId (.frame msg.badge msg.capsGranted)) st)
+      else SeLe4n.Kernel.endpointSendDual epId wrongRightGate.callerId (.frame msg.badge false)) st)
     .illegalAuthority
 
   -- H15-NEG-06: syscallLookupCap with zero depth → illegalState

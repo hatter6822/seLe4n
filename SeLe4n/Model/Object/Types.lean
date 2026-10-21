@@ -880,26 +880,6 @@ structure IpcMessage where
       register decode and context-switch infrastructure. -/
   registers : Array SeLe4n.RegValue
   badge : Option SeLe4n.Badge := none
-  /-- **May the capabilities this message carries be installed at the receiver?**
-
-      The sender's endpoint capability had the `Grant` right when the message was
-      sent.  It has to be recorded *on the message* because the two rendezvous
-      orderings ask the question at different times: on an immediate rendezvous
-      the sender's capability is still in hand, but when the send parks, that
-      capability is gone by the time a receiver dequeues the message — and the
-      receiver's own endpoint capability is a different principal's authority,
-      not a substitute for it.
-
-      seL4 records exactly this bit, as `blockingIPCCanGrant` on the blocked
-      sender's thread state.  Carrying it on the message is the same fact stored
-      where this model already keeps the parked payload
-      (`TCB.pendingMessage`), and it is what makes capability transfer
-      independent of arrival order
-      (`endpointReceive_installs_queued_caps_like_rendezvous`).
-
-      Defaults to `false`: a message built without an explicit grant decision
-      transfers nothing, which is the fail-closed direction. -/
-  capsGranted : Bool := false
   /-- **The `seL4_MessageInfo_t` label this message is delivered under.**
 
       It exists because a fault message is a `seL4_Fault_tag` plus words: a VM

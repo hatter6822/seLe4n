@@ -101,8 +101,8 @@ private def chain2SendSendReceiveFifo : IO Unit := do
       |>.buildChecked)
   let msg1 : IpcMessage := .empty
   let msg2 : IpcMessage := .empty
-  let (_, st1) ← expectOkSt "chain2: send msg1" (SeLe4n.Kernel.endpointSendDual epId tid1 (.frame msg1.badge msg1.capsGranted) st0)
-  let (_, st2) ← expectOkSt "chain2: send msg2" (SeLe4n.Kernel.endpointSendDual epId tid2 (.frame msg2.badge msg2.capsGranted) st1)
+  let (_, st1) ← expectOkSt "chain2: send msg1" (SeLe4n.Kernel.endpointSendDual epId tid1 (.frame msg1.badge false) st0)
+  let (_, st2) ← expectOkSt "chain2: send msg2" (SeLe4n.Kernel.endpointSendDual epId tid2 (.frame msg2.badge false) st1)
   let (sender, st3) ← expectOkSt "chain2: receive" (SeLe4n.Kernel.endpointReceiveDual epId tid3 none st2)
   expect "chain2: FIFO sender order" (sender = tid1)
   assertInvariants "chain2: send→send→receive" st3
@@ -995,11 +995,12 @@ private def ipcCapTransferArrivalOrder : IO Unit := do
       |>.buildChecked)
 
   let stBase := st0
-  -- The message a granting sender builds: the live arms record the grant right
-  -- on it (`capsGranted`), which is the authority the queued ordering reads back
-  -- once the sender's endpoint capability is gone.
+  -- The message the sender's frame holds; the grant right is the payload's, and
+  -- a parked send records it on the sender's thread state (`ipcCanGrant`), which
+  -- is the authority the queued ordering reads back once the sender's endpoint
+  -- capability is gone.
   let msg : IpcMessage :=
-    { registers := #[], badge := none, capsGranted := grantRights.mem .grant }
+    { registers := #[], badge := none }
 
   let receiverSlotFilled (st : SystemState) : Bool :=
     match st.objects[receiverCNode]? with
@@ -1035,17 +1036,17 @@ private def ipcCapTransferArrivalOrder : IO Unit := do
 
   -- NEGATIVE, load-bearing: it is the SENDER's grant that decides, in BOTH
   -- orderings.  A sender without it transfers nothing whichever side arrives
-  -- first — and the queued ordering can only know that because the message
-  -- carries the bit, the sender's endpoint capability being long gone by then.
-  let msgNoGrant : IpcMessage := { msg with capsGranted := noGrantRights.mem .grant }
+  -- first — and the queued ordering can only know that because the parked
+  -- sender's thread state records the bit, its endpoint capability being long
+  -- gone by then.
   let (_, stC1) ← expectOkSt "chain12c: C — receiver blocks first (no grant)"
     (SeLe4n.Kernel.endpointReceiveDual epId receiver none stBase)
   let (summaryC, stC2) ← expectOkSt "chain12c: C — non-granting sender rendezvouses"
-    (SeLe4n.Kernel.endpointSendDualWithCaps epId sender (.frame msgNoGrant.badge (noGrantRights.mem .grant))
-      recvSlot (SeLe4n.Testing.withSenderFrame stC1 sender msgNoGrant #[SeLe4n.CPtr.ofNat 5]))
+    (SeLe4n.Kernel.endpointSendDualWithCaps epId sender (.frame msg.badge (noGrantRights.mem .grant))
+      recvSlot (SeLe4n.Testing.withSenderFrame stC1 sender msg #[SeLe4n.CPtr.ofNat 5]))
   let (_, stD1) ← expectOkSt "chain12c: D — non-granting sender parks"
-    (SeLe4n.Kernel.endpointSendDualWithCaps epId sender (.frame msgNoGrant.badge (noGrantRights.mem .grant))
-      recvSlot (SeLe4n.Testing.withSenderFrame stBase sender msgNoGrant #[SeLe4n.CPtr.ofNat 5]))
+    (SeLe4n.Kernel.endpointSendDualWithCaps epId sender (.frame msg.badge (noGrantRights.mem .grant))
+      recvSlot (SeLe4n.Testing.withSenderFrame stBase sender msg #[SeLe4n.CPtr.ofNat 5]))
   let ((_, summaryD), stD2) ← expectOkSt "chain12c: D — receiver dequeues the parked sender"
     (SeLe4n.Kernel.endpointReceiveDualWithCaps epId receiver none receiverCNode
       recvSlot stD1)
@@ -1125,7 +1126,7 @@ private def replyRecvCapTransferArrivalOrder : IO Unit := do
 
   let stBase := st0
   let requestMsg : IpcMessage :=
-    { registers := #[], badge := none, capsGranted := grantRights.mem .grant }
+    { registers := #[], badge := none }
   let replyMsg : IpcMessage :=
     { registers := #[SeLe4n.RegValue.ofNat 7], badge := none }
 
@@ -1178,11 +1179,10 @@ private def replyRecvCapTransferArrivalOrder : IO Unit := do
   -- NEGATIVE, load-bearing: the SENDER's grant decides here too.  Without it the
   -- queued ordering installs nothing, so the positive above is measuring the
   -- transfer rather than the mere presence of a slot.
-  let requestNoGrant : IpcMessage := { requestMsg with capsGranted := false }
   let (stC1, _) :=
     SeLe4n.Kernel.endpointSendDualWithCapsOnCore epId nextSender
-      (.frame requestNoGrant.badge ((AccessRightSet.ofList [.read, .write]).mem .grant)) recvSlot bootCoreId
-      (SeLe4n.Testing.withSenderFrame stBase nextSender requestNoGrant #[SeLe4n.CPtr.ofNat 5])
+      (.frame requestMsg.badge ((AccessRightSet.ofList [.read, .write]).mem .grant)) recvSlot bootCoreId
+      (SeLe4n.Testing.withSenderFrame stBase nextSender requestMsg #[SeLe4n.CPtr.ofNat 5])
   let (summaryC, stC2) ← expectOkSt "chain12d: C — .replyRecv collects a non-granting request"
     (SeLe4n.Kernel.endpointReplyRecvOnCore epId server rid prevCaller replyMsg serverCNode recvSlot
       bootCoreId stC1)
@@ -1247,7 +1247,7 @@ private def receiveWithoutSenderInstallsNothing : IO Unit := do
 
   let stBase := st0
   let msg : IpcMessage :=
-    { registers := #[], badge := none, capsGranted := grantRights.mem .grant }
+    { registers := #[], badge := none }
 
   let slotFilled (st : SystemState) (s : SeLe4n.Slot) : Bool :=
     match st.objects[receiverCNode]? with
@@ -1310,8 +1310,7 @@ private def receiveTakesParkedSenderRegisters : IO Unit := do
       |>.buildChecked)
 
   let msg : IpcMessage :=
-    { registers := #[⟨7⟩, ⟨9⟩], badge := some (SeLe4n.Badge.ofNatMasked 5),
-      capsGranted := false }
+    { registers := #[⟨7⟩, ⟨9⟩], badge := some (SeLe4n.Badge.ofNatMasked 5) }
 
   -- No receiver is waiting, so the sender blocks `.blockedOnSend`.
   let (stParked, _) :=
@@ -1495,7 +1494,7 @@ private def revokeLeavesIndependentSibling : IO Unit := do
   let siblingNode : SeLe4n.Model.SlotRef := siblingAddr
   let stBase := st0
   let msg : IpcMessage :=
-    { registers := #[], badge := none, capsGranted := true }
+    { registers := #[], badge := none }
 
   let (stParked, _) :=
     SeLe4n.Kernel.endpointSendDualWithCapsOnCore epId sender (.frame msg.badge (grantRights.mem .grant))
@@ -1557,21 +1556,16 @@ private def revokeLeavesIndependentSibling : IO Unit := do
       assertInvariants "independent-sibling: the emptied source declined the install" stAfter
 
 /-- SCN-IPC-CAP-TRANSFER-GRANT-STAMPED (PR #873 round 13): the endpoint's grant
-right decides, whatever the message arrived carrying.
+right decides, in both arrival orderings.
 
-`chain12c` proves the two arrival orderings agree -- but it hands the wrapper a
-message whose `capsGranted` the *fixture* already set from the same rights, so it
-cannot see the two inputs disagree.  They could: the rendezvous arm read the
-`endpointRights` argument, the parked arm left the field alone for the later
-receive to read, and a caller that passed granting rights on a message at the
-field's `false` default transferred on rendezvous and nothing after parking --
-capability delivery decided by which side reached the endpoint first, which is
-the order-dependence round 6 removed from the receive side.
-
-So this drives the same property from the *unstamped* message the fixture
-deliberately does not prepare.  The wrapper derives the bit from the one input
-that carries the authority, which is what makes the two orderings the same
-transfer rather than two that happen to agree when the caller sets both. -/
+The wrappers once took the grant authority twice -- an `endpointRights`
+argument for the rendezvous arm and a grant bit on the message for the parked
+one -- so a caller could make them disagree, and capability delivery was
+decided by which side reached the endpoint first.  The message now carries no
+grant bit: the payload's grant right is the one input, and a parked send records
+it on the sender's thread state (`ipcCanGrant`, seL4's `blockingIPCCanGrant`)
+for the receive to read.  This checks that record on both the granting and the
+denying endpoint. -/
 private def endpointGrantDecidesBothOrderings : IO Unit := do
   let epId : SeLe4n.ObjId := ⟨3800⟩
   let sender : SeLe4n.ThreadId := ⟨3810⟩
@@ -1598,12 +1592,8 @@ private def endpointGrantDecidesBothOrderings : IO Unit := do
       |>.buildChecked)
 
   let stBase := st0
-  -- The message as a caller who did NOT pre-stamp the bit builds it: the field
-  -- keeps its default while the endpoint capability grants.
   let msg : IpcMessage :=
     { registers := #[], badge := none }
-  expect "chain12h: the message arrives with the grant bit at its default"
-    (!msg.capsGranted)
 
   let receiverSlotFilled (st : SystemState) : Bool :=
     match st.objects[receiverCNode]? with

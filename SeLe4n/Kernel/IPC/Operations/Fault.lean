@@ -73,7 +73,7 @@ if (cap_get_capType(handlerCap) == cap_endpoint_cap &&
   link is *structural* — the Call chain records `reply.caller` and the
   faulting thread's `replyObject` unconditionally, and a fault delivery
   transfers no capabilities for `.grant` to authorise
-  (`faultMessage_grant_is_inert`) — so the disjunct is a **policy** gate
+  (`faultMessage_transfers_no_authority`) — so the disjunct is a **policy** gate
   rather than a mechanism prerequisite: it is what keeps a capability minted
   as send-only (a client's handle on a server endpoint, say) from being
   configured as a fault handler and made to receive reply authority it was
@@ -330,11 +330,6 @@ theorem faultMessage_label_ne_null (f : Fault) (ctx : FaultContext)
     (badge : Option SeLe4n.Badge) :
     (faultMessage f ctx badge).label ≠ Architecture.FaultLabel.nullFault :=
   Architecture.faultLabel_ne_null f
-
-/-- WS-RR RR4.4: a fault message grants nothing. -/
-@[simp] theorem faultMessage_capsGranted (f : Fault) (ctx : FaultContext)
-    (badge : Option SeLe4n.Badge) :
-    (faultMessage f ctx badge).capsGranted = false := rfl
 
 /-- WS-RR RR4.6 (**the prefilter never fires**): a fault message is inside
 the register bound `endpointCall` checks before it looks at the endpoint.

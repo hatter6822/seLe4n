@@ -8836,9 +8836,10 @@ run_check "INVARIANT" rg -n '^theorem taintPerKeyStore_blocks_fineLockDiscipline
 # parked sender's message wholesale and installs none of the capabilities it
 # carries, while an immediate rendezvous transferred them — so IPC semantics
 # depended on which side reached the endpoint first.  The authority is the
-# SENDER's, carried on the message (`capsGranted`), because the sender's endpoint
-# capability is gone by the time a receiver dequeues a parked send.
-run_check "INVARIANT" rg -n '  capsGranted : Bool' SeLe4n/Model/Object/Types.lean
+# SENDER's, recorded on its blocked thread state (`ipcCanGrant`, seL4's
+# `blockingIPCCanGrant`) because the sender's endpoint capability is gone by the
+# time a receiver dequeues a parked send, and the receive's request reads it.
+run_check "INVARIANT" rg -n 'if tcb\.ipcFaultSend then none else senderFrameCapRequest st sender tcb tcb\.ipcCanGrant' SeLe4n/Kernel/IPC/DualQueue/SenderMessage.lean
 run_check "INVARIANT" rg -n '^def endpointReceiveDualWithCapsOnCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
 run_check "INVARIANT" rg -n '^theorem endpointReceiveDualWithCapsOnCore_no_caps($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
 run_check "INVARIANT" rg -n 'endpointReceiveDualWithCapsOnCore epId tid replyIdOpt' SeLe4n/Kernel/API.lean
@@ -9027,6 +9028,10 @@ run_check "INVARIANT" rg -n 'srcSlot : SlotRef' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n '^def ipcUnwrapCaps$' SeLe4n/Kernel/IPC/Operations/CapTransfer.lean
 run_check "INVARIANT" rg -n -U '^def ipcUnwrapCaps\n    \(caps : Array TransferCap\)' SeLe4n/Kernel/IPC/Operations/CapTransfer.lean
 run_negative_check "INVARIANT" rg -n -U '^structure IpcMessage where(\n([ \t][^\n]*)?)*\n  [a-zA-Z_]+ : [^\n]*(TransferCap|Capability)' SeLe4n/Model/Object/Types.lean
+# …nor the grant decision: that is the sender's thread state (\`ipcCanGrant\`,
+# seL4 \`blockingIPCCanGrant\`) and the send's capability request, so no field
+# of \`IpcMessage\` is a \`Bool\` or names a grant.
+run_negative_check "INVARIANT" rg -n -U '^structure IpcMessage where(\n([ \t][^\n]*)?)*\n  ([a-zA-Z_]*[Gg]rant[a-zA-Z_]* :|[a-zA-Z_]+ : [^\n]*\bBool\b)' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n 'ipcTransferSingleCap tc.cap tc.srcSlot' SeLe4n/Kernel/IPC/Operations/CapTransfer.lean
 # …and a reusable slot ADDRESS must not come back as the carried identity: a
 # parked send outlives the slot, so an address names whatever occupies it later.
@@ -9132,15 +9137,15 @@ run_check "INVARIANT" rg -n 'match receiveTransferCaps req receiverCspaceRoot re
 run_check "INVARIANT" rg -n '^private def revocationEntryPoints($|[ ({:\[\]])' tests/OperationChainSuite.lean
 # And the send-side half of round 6's ordering independence.  The wrappers took
 # the grant authority TWICE -- the `endpointRights` argument for the rendezvous
-# arm, `msg.capsGranted` for the parked one -- and never tied them.  Since WS-ZA
-# ZA4.7 the grant right is one field of the one `SendPayload` the wrapper hands
-# its bare operation, so both arms read the same bit.
+# arm, a grant bit on the message for the parked one -- and never tied them.
+# Since WS-ZA ZA4.7 the grant right is one field of the one `SendPayload` the
+# wrapper hands its bare operation, so both arms read the same bit, and the
+# message carries none.
 run_check "INVARIANT" rg -n 'match endpointSendDual endpointId sender payload st with' SeLe4n/Kernel/IPC/DualQueue/WithCaps.lean
 run_check "INVARIANT" rg -n 'match endpointCall endpointId caller payload st with' SeLe4n/Kernel/IPC/DualQueue/WithCaps.lean
 run_negative_check "INVARIANT" rg -n 'endpointRights' SeLe4n/Kernel/IPC/DualQueue/WithCaps.lean SeLe4n/Kernel/IPC/CrossCore/EndpointSend.lean SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean
-# The regression drives the property from the UNSTAMPED message `chain12c`'s
-# fixture deliberately does not prepare -- `chain12c` sets the field from the same
-# rights it passes, so it cannot see the two inputs disagree.
+# The regression checks the parked sender's recorded grant (`ipcCanGrant`) on a
+# granting and on a denying endpoint, in both arrival orderings.
 run_check "INVARIANT" rg -n 'endpointGrantDecidesBothOrderings' tests/OperationChainSuite.lean
 # WS-RR RR7.9: the CDT node allocator's global counter is COVERED, and these are
 # the pins.  It was the footprint gap the caps path opened -- minting a node

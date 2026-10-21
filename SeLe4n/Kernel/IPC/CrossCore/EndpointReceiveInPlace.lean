@@ -114,7 +114,7 @@ theorem receiveTake_inPlace (st : SystemState) (endpointId : SeLe4n.ObjId) (ep :
 
 /-- **What a sender blocked by a routed capability-free send holds**: it asks
 to transfer no capability, and its message is the inline words of its saved
-frame under the badge and grant right its capability carried. -/
+frame under the badge its capability carried. -/
 theorem blockedSender_of_routedSend (st : SystemState) (s : SeLe4n.ThreadId) (sTcb : TCB)
     (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
     (h : Architecture.RegisterDecode.registerRoutedSyscall SeLe4n.arm64DefaultLayout
@@ -124,7 +124,7 @@ theorem blockedSender_of_routedSend (st : SystemState) (s : SeLe4n.ThreadId) (sT
       blockedSenderMessage st s sTcb =
         { registers := Architecture.regMessageBody SeLe4n.arm64DefaultLayout
             sTcb.registerContext mi.length,
-          badge := sTcb.ipcBadgeView, capsGranted := sTcb.ipcCanGrant } := by
+          badge := sTcb.ipcBadgeView } := by
   obtain ⟨d, hDec, _, _, _, hMi, hX, _, hRegs⟩ :=
     Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedSend st s _ _ 32 capAddr mi h
   refine ⟨?_, ?_⟩
@@ -142,7 +142,7 @@ theorem blockedSender_of_routedSend (st : SystemState) (s : SeLe4n.ThreadId) (sT
 
 /-- WS-ZA ZA4.7: **what a thread whose saved frame routes as a capability-free
 send or call sends**: the message a send of its frame delivers is the inline
-words of that frame under the capability's badge and grant right, and it asks
+words of that frame under the capability's badge, and it asks
 to transfer no capability -- so the send's register fast path, which writes
 those words straight into the receiver's saved registers, delivers exactly what
 the specification's send does. -/
@@ -156,7 +156,7 @@ theorem sendFrame_of_routed (st : SystemState) (s : SeLe4n.ThreadId) (tcb : TCB)
     sendPayloadMessage st s (.frame badge grant) =
         { registers := Architecture.regMessageBody SeLe4n.arm64DefaultLayout
             tcb.registerContext mi.length,
-          badge := badge, capsGranted := grant } ∧
+          badge := badge } ∧
       sendCapRequest st endpointId s (.frame badge grant) = none := by
   obtain ⟨d, hDec, hMi, hX, hRegs⟩ : ∃ d, blockedSenderDecode st s tcb = .ok d ∧
       d.msgInfo = mi ∧ mi.extraCaps = 0 ∧
