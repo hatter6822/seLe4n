@@ -433,12 +433,32 @@ theorem setThreadFaultHandlerOp_keyFrame (st st' : SystemState) (vtid : SeLe4n.V
           exact insertObjects_tcbKeyKeeping_keyFrame hObjInv
             ((SystemState.getTcb?_eq_some_iff st vtid.val tcb).mp hT) rfl
 
-theorem setThreadSpace_keyFrame (st st' : SystemState) (vtid : SeLe4n.ValidThreadId)
-    (cn vr : SeLe4n.ObjId) (hObjInv : st.objects.invExt)
-    (hStep : setThreadSpace st vtid cn vr = .ok st') : capabilityKeyFrame st st' := by
-  obtain ⟨tcb, hT, -, -, -, -, rfl⟩ := setThreadSpace_ok st st' vtid cn vr hStep
-  exact insertObjects_tcbKeyKeeping_keyFrame hObjInv
-    ((SystemState.getTcb?_eq_some_iff st vtid.val tcb).mp hT) rfl
+theorem threadSlotCopied_keyFrame {st : SystemState} {tid : SeLe4n.ThreadId} {t : TCB}
+    (hObjInv : st.objects.invExt) (hT : st.getTcb? tid = some t) (slot : SeLe4n.Slot)
+    (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) :
+    capabilityKeyFrame st (threadSlotCopied st tid slot srcCNode srcSlot rights) := by
+  have hD : capabilityKeyFrame st _ :=
+    cspaceDeleteSlot_keyInputsEq st _ _ hObjInv (copyIntoThreadSlot_delete hT slot)
+  obtain ⟨⟨t', hT', -⟩, hI⟩ := threadSlotDeleted_tcb hObjInv hT slot
+  rcases threadSlotCopied_cases st tid slot srcCNode srcSlot rights with ⟨-, e⟩ | ⟨cap, -, e⟩
+  · rw [e]; exact hD
+  · rw [e]
+    have hU : capabilityKeyFrame _ (SystemState.updateTcb _ tid
+        (·.insertSpaceCap slot (TCB.spaceCopyOf cap rights))) := by
+      rw [SystemState.updateTcb_eq_of_some hT']
+      exact insertObjects_tcbKeyKeeping_keyFrame hI
+        ((SystemState.getTcb?_eq_some_iff _ tid t').mp hT') rfl
+    exact (hD.trans hU).trans (cdtRecord_keyFrame _ _ _ _ hU.2.2)
+
+theorem copyThreadSpaces_keyFrame (st st' : SystemState) (vtid : SeLe4n.ValidThreadId)
+    (cnSrc vrSrc : CSpaceAddr) (hObjInv : st.objects.invExt)
+    (hStep : copyThreadSpaces st vtid cnSrc vrSrc = .ok st') : capabilityKeyFrame st st' := by
+  obtain ⟨tcb, hT, -, -, -, -, rfl⟩ := copyThreadSpaces_ok hStep
+  obtain ⟨hT1, hI1⟩ := threadSlotCopied_tcb hObjInv hT TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot
+    TCB.cspaceRootRights
+  obtain ⟨t1, hT1'⟩ := Option.isSome_iff_exists.mp hT1
+  exact (threadSlotCopied_keyFrame hObjInv hT _ _ _ _).trans
+    (threadSlotCopied_keyFrame hI1 hT1' _ _ _ _)
 
 theorem bindNotification_keyFrame (st st' : SystemState) (nid : SeLe4n.ObjId)
     (tcbId : SeLe4n.ThreadId) (hObjInv : st.objects.invExt)

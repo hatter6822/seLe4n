@@ -4092,7 +4092,7 @@ inductive SyscallId where
                            -- resetUntypedCap), through
                            -- `untypedReset`
   | tcbSetSpace            -- WS-BP BP7.1 (`v0.36.11`): set a suspended thread's CSpace and
-                           -- VSpace roots (seL4_TCB_SetSpace), through `setThreadSpace`
+                           -- VSpace roots (seL4_TCB_SetSpace), through `copyThreadSpaces`
   | pageTableMap           -- WS-BP BP7.1 (`v0.36.12`): install an intermediate page table
                            -- (seL4_ARM_PageTable_Map), through `pageTableMap`
   | pageTableUnmap         -- WS-BP BP7.1 (`v0.36.12`): take one out

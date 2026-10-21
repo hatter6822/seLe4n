@@ -173,7 +173,7 @@ the PR #887 review round's fault-handler configuration `setThreadFaultHandlerOp`
 plus WS-BP
 BP7.1's untyped carve `untypedRetypeFromCap`, its reset `untypedResetWithShootdown`, and the
 two finalising destroyers `cspaceDeleteSlotFinalising` /
-`cspaceRevokeCdtFinalising`, its space change `setThreadSpace`, and the two
+`cspaceRevokeCdtFinalising`, its space change `copyThreadSpaces`, and the two
 page-table operations `pageTableMap` / `pageTableUnmap`, plus WS-ZA ZA4.3's
 yield `yieldOnCore`) and the fifteen cross-core
 wrappers.  Re-anchored at the

@@ -234,6 +234,65 @@ theorem spaceSlotCap_removeSpaceCap_back {t : TCB} {s s' : SeLe4n.Slot} {cap : C
   · cases h
   · exact h
 
+/-- **Filling a space slot** fills that slot, one of the thread's two, and
+leaves the other. -/
+theorem spaceSlotCap_insertSpaceCap (t : TCB) {s : SeLe4n.Slot} (hs : s.toNat < 2)
+    (cap : Capability) (s' : SeLe4n.Slot) :
+    (t.insertSpaceCap s cap).spaceSlotCap s' = if s' = s then some cap else t.spaceSlotCap s' := by
+  unfold spaceSlotCap insertSpaceCap
+  by_cases he : s' = s
+  · subst he
+    simp [hs]
+  · simp only [he, if_false]
+    split
+    · next hs' =>
+      have hn : s.toNat ≠ s'.toNat := fun h => he (SeLe4n.Slot.ext h.symm)
+      simp [hn]
+    · rfl
+
+/-- A filled slot's thread holds the capability put in, or one its record held. -/
+theorem spaceSlotCap_insertSpaceCap_back {t : TCB} {s s' : SeLe4n.Slot} {cap c : Capability}
+    (h : (t.insertSpaceCap s cap).spaceSlotCap s' = some c) :
+    c = cap ∨ t.spaceSlotCap s' = some c := by
+  by_cases hs : s.toNat < 2
+  · rw [spaceSlotCap_insertSpaceCap t hs] at h
+    split at h
+    · cases h; exact .inl rfl
+    · exact .inr h
+  · right
+    unfold spaceSlotCap insertSpaceCap at *
+    have : t.spaceCells.setIfInBounds s.toNat (some cap) = t.spaceCells := by
+      apply Vector.ext; intro i hi
+      simp only [Vector.getElem_setIfInBounds]
+      split <;> first | omega | rfl
+    simp only [this] at h
+    exact h
+
+@[simp] theorem insertSpaceCap_spaceLinks (t : TCB) (s : SeLe4n.Slot) (cap : Capability) :
+    (t.insertSpaceCap s cap).spaceLinks = t.spaceLinks := rfl
+
+/-- A filled slot holds every capability its record held, and the one put in. -/
+theorem spaceSlotCap_insertSpaceCap_mono (t : TCB) {s : SeLe4n.Slot} (hs : s.toNat < 2)
+    (cap : Capability) (s' : SeLe4n.Slot) (h : t.spaceSlotCap s' ≠ none) :
+    (t.insertSpaceCap s cap).spaceSlotCap s' ≠ none := by
+  rw [spaceSlotCap_insertSpaceCap t hs]
+  split
+  · simp
+  · exact h
+
+/-- **The capability a thread's space slot holds when set from `cap`**: `cap`'s
+target, its rights masked by the slot's own (`rights`), with no badge and no
+mapping record.  A derivation of `cap`, as seL4's `deriveCap` is: it never
+carries a right `cap` lacks. -/
+@[inline] def spaceCopyOf (cap : Capability) (rights : AccessRightSet) : Capability :=
+  ⟨cap.target, cap.rights.inter rights, SeLe4n.Badge.zero, false, default, default, 0, false⟩
+
+@[simp] theorem spaceCopyOf_target (cap : Capability) (rights : AccessRightSet) :
+    (spaceCopyOf cap rights).target = cap.target := rfl
+
+@[simp] theorem spaceCopyOf_badge (cap : Capability) (rights : AccessRightSet) :
+    (spaceCopyOf cap rights).badge = none := rfl
+
 end TCB
 
 namespace KernelObject
