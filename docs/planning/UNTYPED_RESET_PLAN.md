@@ -45,10 +45,17 @@ row's status and readings.
   the rendezvous (`senderFrameMessage` sets `caps := #[]`,
   `IPC/DualQueue/SenderMessage.lean:136`).  The reply paths' `caps.size >
   maxExtraCaps` checks are therefore dead.
+  Fixed by part 11 (`v0.36.121`: `IpcMessage` has no capability field, the dead
+  checks and the parked-message arm are deleted) and part 12 (`v0.36.122`: a
+  thread's address space is a capability in a TCB slot, which
+  `objectNamesListed` reads).
 - `setThreadSpace` (`Lifecycle/Operations/SetSpace.lean`) receives the space
   capabilities, checks them and discards them.  It records no derivation edge, so
   revoking the VSpace capability a thread was given does not reach the thread.
   Derivation nodes are CNode slots only (`SlotRef`, `Model/Object/Types.lean:375`).
+  Fixed by part 12 (`v0.36.122`): the roots are two capability slots in the TCB,
+  derivation nodes, and `copyThreadSpaces` copies the given capabilities into
+  them with their derivation edges; `setThreadSpace` is deleted.
 
 ## 3. Design
 
@@ -93,7 +100,7 @@ row's status and readings.
 | Part | Work |
 |---|---|
 | 11 | **No message holds a capability.**  `IpcMessage` loses its capability array and grant bit; capability transfer takes the array resolved at the rendezvous (`ipcUnwrapCaps`), the reply paths' dead extra-capability refusal and the unused gated resolvers are deleted, and the reset's reference scan loses its parked-message arm.  Landed at `v0.36.121`, structurally rather than as an invariant |
-| 12 | **A thread's spaces are slots** (D5; consumes 11).  A TCB holds two capability slots, its CSpace and VSpace roots, as seL4's `tcbCTable` and `tcbVTable`.  They are derivation nodes: `SlotRef` names a TCB slot as it names a CNode slot, over the same cell and link words.  `setThreadSpace` copies the given capabilities into them, recording the derivation edges.  `TCB.cspaceRoot` and `TCB.vspaceRoot` become reads of those slots, proven equal, and a thread's teardown deletes them.  The binding, context-switch and IPC-buffer theorems are restated |
+| 12 | **A thread's spaces are slots** (D5; consumes 11).  A TCB holds two capability slots, its CSpace and VSpace roots, as seL4's `tcbCTable` and `tcbVTable`.  They are derivation nodes: `SlotRef` names a TCB slot as it names a CNode slot, over the same cell and link words.  `setThreadSpace` copies the given capabilities into them, recording the derivation edges.  `TCB.cspaceRoot` and `TCB.vspaceRoot` become reads of those slots, proven equal, and a thread's teardown deletes them.  The binding, context-switch and IPC-buffer theorems are restated.  Landed at `v0.36.122`, in the steps below; the copy masks the source's rights by the root's, and every user CNode invocation now refuses unless it invokes a CNode (`cnodeInvoked`), as seL4's `decodeCNodeInvocation`, so `CNode_Delete` on a thread capability cannot empty the thread's root slots |
 | 13 | **Finality** (consumes 12). `sameObjectConnected` is stated and proven preserved by every slot write (copy, mint, move, transfer, delete, revoke, carve); boot establishes it.  `capIsFinal` reads the parent and first-child words and is proven equal to "no other slot names the object" under the invariant |
 | 14 | **Retire on final delete** (consumes 13).  The delete and revoke teardowns retire a carved object whose final capability they destroy (D2), and the delete theorems are restated.  Exerciser: `frame-delete` and `page-table-delete-*` stay at 0 |
 | 15 | **Free index in the capability** (consumes 14).  D3, with the untyped invariants restated over capabilities and the boot's untyped capabilities given their indices.  Retype pins unchanged |

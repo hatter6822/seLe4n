@@ -1,3 +1,92 @@
+## v0.36.122 — WS-ZA ZA5.4 part 12: a thread's spaces are capability slots
+
+The second part of the seL4 untyped reset
+(`docs/planning/UNTYPED_RESET_PLAN.md`, steps 12.1–12.6).  A thread named its
+address space by object id, a reference outside any slot that the reset's
+whole-store scan had to search, and setting a thread's spaces checked the
+capabilities it was given and then discarded them, so revoking the VSpace
+capability a thread was given did not reach the thread.  A TCB now holds its
+CSpace and VSpace roots as two capability slots, as seL4's `tcbCTable` and
+`tcbVTable`, and those slots are derivation nodes.
+
+- **Thread roots are slot reads** (`Model/Object/Types.lean`): `TCB.cspaceRoot`
+  and `TCB.vspaceRoot` are replaced by `spaceCells` (two slot cells) and
+  `spaceLinks` (their derivation-link words, in the CNode link layout).
+  `TCB.cspaceRoot` / `TCB.vspaceRoot` are reducible reads of cell 0 or 1, the
+  sentinel when the cell is empty, so every theorem stated over the roots holds
+  by unfolding.  Boot and the TCB retype fill the cells.
+- **Object-slot dispatch** (`Model/ObjectSlots.lean`, new):
+  `KernelObject.slotCap` / `linkAt` / `hasSlot` read a CNode's slots or a
+  thread's two space slots, and the slot-link readers and writers,
+  `linksOnlyWrite`, `objectsAgreeOffDerivationLinks`, `cdtCompleteness`,
+  `cspaceLookupSound`, `replyCapPointsToValidReply`,
+  `capabilityBadgesWellFormed`, `perObjectSlots` and `ownedSlots` go through it.
+  `slotInCNode` is renamed `slotInObject`.  The information-flow projection reads
+  a thread without its link words (`TCB.withoutLinks`).  The boot TCB check also
+  asks that the space slots hold valid, non-reply capabilities and no links
+  (`bootSpaceSlotsSafe`).  `donationReadAgreement.slotsBack` states only what
+  the badge clause reads and is renamed `badgedSlotsBack`.
+- **Delete, revoke and teardown reach thread slots**: `cspaceDeleteSlotCore`,
+  the finalising-delete admission and `revokeFirstChildLoop` read and clear the
+  slot through the dispatch (`storeTcbWith` beside `storeCNodeWith`, one lookup
+  per in-place store), and the `.tcb` arm of the pre-retype cleanup splices the
+  thread's two slots out of the derivation tree (`detachTcbSlots`), with its
+  frames and the retype-reservation, footprint, slot-confinement and dispatch-arm
+  proofs carried through it.  `objectNamesListed` reads a thread's space cells;
+  `pageTablesOrphaned` asks the whole-store `carvedSubtreeUnreferenced`.
+  `cnodeSlotsUnreferenced`, `cdtNamesCNodeSlots` and its two lemmas are deleted.
+- **A CNode invocation needs a CNode** (`Capability/Operations.lean`,
+  `cnodeInvoked`): every user CNode arm (delete, revoke, copy, mint, move,
+  mint-reply-cap; source and destination) refuses with `.objectNotFound` unless
+  the invoked object is a CNode, as seL4 reaches `decodeCNodeInvocation` only
+  through a `cap_cnode_cap`.  Found during this work, before anything shipped:
+  once the delete was dispatched over every slot holder, `CNode_Delete` on a
+  thread capability would have emptied the thread's root slots.  The internal
+  destroyers (revocation, retype cleanup) still reach thread slots.
+- **Setting a thread's spaces copies the capabilities in**
+  (`Lifecycle/Operations/SetSpace.lean`), as seL4's `invokeTCB_ThreadControl`:
+  for each slot, the old content is deleted through the slot delete (cleared,
+  then spliced out of the tree), then the capability the source slot holds is
+  inserted with rights = source ∩ root rights and no badge, and the derivation
+  edge source → thread slot is added (`threadSlotCopied`, compiled to write the
+  copy over the slot's cell; `copyThreadSpaces`, every check before any write).
+  `resolveSetSpace` returns the two source slots (`resolveCallerCapSlot`).
+  Proven: `ipcInvariantFull`, the run-queue stage, the capability bundle
+  (`copyThreadSpaces_preserves_capabilityInvariantBundle`, new
+  `Capability/Invariant/Preservation/ThreadSpaceCopy.lean`: completeness,
+  acyclicity, `cdtLinksAgree`), the projection at a hidden thread
+  (`copyThreadSpaces_preserves_projection`) and the payoff
+  `copyThreadSpaces_ok_tcb`.
+- **Behaviour change**: a thread's root capability carries the source
+  capability's rights masked by the root's rights, where it was a constant;
+  revoking a set-space source, or any ancestor of it, empties the thread's slot.
+- **Deleted**: `setThreadSpace` and its theorems, `TCB.withSpaceCaps` and its
+  simp lemmas, `withSpaceCapsImpl`, `overwriteSpaceCell(_eq)`, their csimp,
+  `withSpaceCaps_spaceSlotCap_badge`, `spaceCellOf_badge`, `unshareCapTarget`;
+  two store-reader baseline rows swept.
+- **Tests**: a negative check pins `CNode_Delete` and `CNode_Revoke` on a thread
+  capability refusing with `.objectNotFound` for both space slots, the roots
+  kept.  `VSpaceCapabilityBindingSuite` §5j revokes the set-space VSpace source
+  and sees the worker's VSpace slot empty, its CSpace slot and the source kept;
+  revoking the untyped now reaches the worker's copy through the carved root's
+  capability, so the reset retires the root directly on the revoked state (the
+  old "refuses while the worker runs in the carved root" case no longer arises;
+  the capability-less case stays covered by the carved-root section).  Every TCB
+  fixture is rewritten to `spaceCells`; fixtures whose roots named absent
+  objects use the sentinel root.
+- **Fixture**: `[PIP-005]` counts 44 post-dispatch checks (was 40).  Boot now
+  fills the dispatched thread's two space cells, and the two per-slot checks
+  cover them, two slots each.  No other `main_trace_smoke.expected` line
+  changes.
+- **Tier 3**: anchors pin `copyThreadSpaces`'s check-before-write order,
+  `threadSlotCopied`'s delete-then-copy-with-edge, the `cnodeInvoked` guard on
+  the spec, API and refusal-carrying delete and revoke arms, `objectNamesListed`'s
+  space-cell arm, `pageTablesOrphaned` over `carvedSubtreeUnreferenced`, and the
+  new theorems; the `setThreadSpace` and `cnodeSlotsUnreferenced` anchors are
+  retired.
+- **Readings**: every heap-allocations-per-syscall exerciser pin is unchanged;
+  `tcb-set-space` reads 0.  `untyped-reset` still reads 151 (part 16 closes it).
+
 ## v0.36.121 — WS-ZA ZA5.4 part 11: an IPC message holds no capability
 
 The first part of the seL4 untyped reset
