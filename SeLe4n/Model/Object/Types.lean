@@ -470,6 +470,15 @@ structure Capability where
   /-- Whether the capability records a mapping (`mapAsid`, `mapVaddr` and
       `mapEpoch` hold it). -/
   mapped : Bool := false
+  /-- WS-ZA ZA5.4 part 13: **the free index** of the untyped this capability
+      names — the byte offset in its region where the next carve through this
+      capability starts — meaningful only for an untyped target, as seL4's
+      `capFreeIndex`.  The carve reads it and advances it in this capability's
+      own slot (`retypeFromUntyped`); a copy, mint or transfer of an untyped
+      capability hands the source's index to the new capability and sets the
+      source's to full (`untypedSourceSetFull`, seL4's `setUntypedCapAsFull`),
+      so only the newest one carves.  A plain word, never an `Option`. -/
+  freeIndex : Nat := 0
   deriving Repr, DecidableEq, Inhabited
 
 namespace Capability
@@ -511,6 +520,32 @@ theorem setMapped_eq (c : Capability) (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr
 @[simp] theorem withMapping_badged (cap : Capability) (m : Option FrameMapping) :
     (cap.withMapping m).badged = cap.badged := by cases m <;> rfl
 
+@[simp] theorem withMapping_freeIndex (cap : Capability) (m : Option FrameMapping) :
+    (cap.withMapping m).freeIndex = cap.freeIndex := by cases m <;> rfl
+
+/-- WS-ZA ZA5.4 part 13: **the capability with free index `idx`**, every other
+field kept — seL4's `cap_untyped_cap_set_capFreeIndex`. -/
+@[inline] def withFreeIndex (cap : Capability) (idx : Nat) : Capability :=
+  { cap with freeIndex := idx }
+
+@[simp] theorem withFreeIndex_freeIndex (cap : Capability) (idx : Nat) :
+    (cap.withFreeIndex idx).freeIndex = idx := rfl
+
+@[simp] theorem withFreeIndex_target (cap : Capability) (idx : Nat) :
+    (cap.withFreeIndex idx).target = cap.target := rfl
+
+@[simp] theorem withFreeIndex_rights (cap : Capability) (idx : Nat) :
+    (cap.withFreeIndex idx).rights = cap.rights := rfl
+
+@[simp] theorem withFreeIndex_badgeWord (cap : Capability) (idx : Nat) :
+    (cap.withFreeIndex idx).badgeWord = cap.badgeWord := rfl
+
+@[simp] theorem withFreeIndex_badged (cap : Capability) (idx : Nat) :
+    (cap.withFreeIndex idx).badged = cap.badged := rfl
+
+@[simp] theorem withFreeIndex_mapped (cap : Capability) (idx : Nat) :
+    (cap.withFreeIndex idx).mapped = cap.mapped := rfl
+
 
 /-- WS-ZA ZA5.3 part 6: **the capability's badge**, the `Option` view of the
 `badged` flag and `badgeWord`. -/
@@ -533,6 +568,15 @@ theorem setMapped_eq (c : Capability) (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr
 
 @[simp] theorem withBadge_mapping (cap : Capability) (b : Option SeLe4n.Badge) :
     (cap.withBadge b).mapping = cap.mapping := rfl
+
+@[simp] theorem withBadge_freeIndex (cap : Capability) (b : Option SeLe4n.Badge) :
+    (cap.withBadge b).freeIndex = cap.freeIndex := rfl
+
+@[simp] theorem withFreeIndex_mapping (cap : Capability) (idx : Nat) :
+    (cap.withFreeIndex idx).mapping = cap.mapping := rfl
+
+@[simp] theorem withFreeIndex_badge (cap : Capability) (idx : Nat) :
+    (cap.withFreeIndex idx).badge = cap.badge := rfl
 
 /-- The capability of the given target, rights, badge words and mapping record. -/
 @[inline] def ofWords (target : CapTarget) (rights : AccessRightSet) (badgeWord : SeLe4n.Badge)
@@ -557,6 +601,9 @@ theorem setMapped_eq (c : Capability) (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr
 @[simp] theorem ofWords_mapping (t : CapTarget) (r : AccessRightSet) (w : SeLe4n.Badge) (b : Bool)
     (m : Option FrameMapping) : (ofWords t r w b m).mapping = m := by cases m <;> rfl
 
+@[simp] theorem ofWords_freeIndex (t : CapTarget) (r : AccessRightSet) (w : SeLe4n.Badge) (b : Bool)
+    (m : Option FrameMapping) : (ofWords t r w b m).freeIndex = 0 := by cases m <;> rfl
+
 /-- The capability of the given target, rights, badge and mapping. -/
 @[inline] def ofParts (target : CapTarget) (rights : AccessRightSet)
     (badge : Option SeLe4n.Badge) (mapping : Option FrameMapping := none) : Capability :=
@@ -574,6 +621,9 @@ theorem setMapped_eq (c : Capability) (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr
 
 @[simp] theorem ofParts_mapping (t : CapTarget) (r : AccessRightSet) (b : Option SeLe4n.Badge)
     (m : Option FrameMapping) : (ofParts t r b m).mapping = m := by simp [ofParts]
+
+@[simp] theorem ofParts_freeIndex (t : CapTarget) (r : AccessRightSet) (b : Option SeLe4n.Badge)
+    (m : Option FrameMapping) : (ofParts t r b m).freeIndex = 0 := by simp [ofParts]
 
 /-- Two capabilities are equal exactly when their parts are. -/
 theorem ofParts_inj {t t' : CapTarget} {r r' : AccessRightSet} {b b' : Option SeLe4n.Badge}
@@ -1168,9 +1218,9 @@ stays live, since an update of every field would drop `r` and build a fresh
 record.  Equal to the capability of those fields (`overwrite_eq`). -/
 @[noinline] def Capability.overwrite (r : Capability) (target : CapTarget) (rights : AccessRightSet)
     (badgeWord : SeLe4n.Badge) (badged : Bool) (mapAsid : SeLe4n.ASID) (mapVaddr : SeLe4n.VAddr)
-    (mapEpoch : Nat) (mapped : Bool) : Capability :=
+    (mapEpoch : Nat) (mapped : Bool) (freeIndex : Nat) : Capability :=
   { target, rights := if r.rights = rights then r.rights else rights, badgeWord, badged,
-    mapAsid, mapVaddr, mapEpoch, mapped }
+    mapAsid, mapVaddr, mapEpoch, mapped, freeIndex }
 
 /-- WS-ZA ZA5.4: the target naming object `id`, built fresh, out of line. -/
 @[noinline] def CapTarget.ofObject (id : SeLe4n.ObjId) : CapTarget := .object id
@@ -1197,13 +1247,13 @@ and its target, then owned alone, is too.  Equal to that capability
 @[noinline] def Capability.overwriteObject (r : Capability) (id : SeLe4n.ObjId)
     (rights : AccessRightSet) : Capability :=
   match r with
-  | ⟨t, rr, _, _, _, _, _, _⟩ =>
-    ⟨t.objectOver id, rr.keepOr rights, SeLe4n.Badge.zero, false, default, default, 0, false⟩
+  | ⟨t, rr, _, _, _, _, _, _, _⟩ =>
+    ⟨t.objectOver id, rr.keepOr rights, SeLe4n.Badge.zero, false, default, default, 0, false, 0⟩
 
 /-- WS-ZA ZA5.4: the capability naming object `id` with `rights` alone, built
 fresh out of line, so its target is built only on the path that builds it. -/
 @[noinline] def Capability.ofObject (id : SeLe4n.ObjId) (rights : AccessRightSet) : Capability :=
-  ⟨.object id, rights, SeLe4n.Badge.zero, false, default, default, 0, false⟩
+  ⟨.object id, rights, SeLe4n.Badge.zero, false, default, default, 0, false, 0⟩
 
 theorem CapTarget.objectOver_eq (t : CapTarget) (id : SeLe4n.ObjId) :
     t.objectOver id = .object id := by
@@ -1215,8 +1265,8 @@ theorem AccessRightSet.keepOr_eq (rr rights : AccessRightSet) : rr.keepOr rights
 theorem Capability.overwriteObject_eq (r : Capability) (id : SeLe4n.ObjId)
     (rights : AccessRightSet) :
     r.overwriteObject id rights =
-      ⟨.object id, rights, SeLe4n.Badge.zero, false, default, default, 0, false⟩ := by
-  obtain ⟨t, rr, _, _, _, _, _, _⟩ := r
+      ⟨.object id, rights, SeLe4n.Badge.zero, false, default, default, 0, false, 0⟩ := by
+  obtain ⟨t, rr, _, _, _, _, _, _, _⟩ := r
   unfold overwriteObject
   dsimp only
   rw [CapTarget.objectOver_eq, AccessRightSet.keepOr_eq]
@@ -1226,14 +1276,14 @@ slot with no record of its own).  Out of line, so a caller's literal of the same
 fields is not shared with it and stays unbuilt. -/
 @[noinline] def Capability.ofFields (target : CapTarget) (rights : AccessRightSet)
     (badgeWord : SeLe4n.Badge) (badged : Bool) (mapAsid : SeLe4n.ASID) (mapVaddr : SeLe4n.VAddr)
-    (mapEpoch : Nat) (mapped : Bool) : Capability :=
-  ⟨target, rights, badgeWord, badged, mapAsid, mapVaddr, mapEpoch, mapped⟩
+    (mapEpoch : Nat) (mapped : Bool) (freeIndex : Nat) : Capability :=
+  ⟨target, rights, badgeWord, badged, mapAsid, mapVaddr, mapEpoch, mapped, freeIndex⟩
 
 theorem Capability.overwrite_eq (r : Capability) (target : CapTarget) (rights : AccessRightSet)
     (badgeWord : SeLe4n.Badge) (badged : Bool) (mapAsid : SeLe4n.ASID) (mapVaddr : SeLe4n.VAddr)
-    (mapEpoch : Nat) (mapped : Bool) :
-    r.overwrite target rights badgeWord badged mapAsid mapVaddr mapEpoch mapped =
-      ⟨target, rights, badgeWord, badged, mapAsid, mapVaddr, mapEpoch, mapped⟩ := by
+    (mapEpoch : Nat) (mapped : Bool) (freeIndex : Nat) :
+    r.overwrite target rights badgeWord badged mapAsid mapVaddr mapEpoch mapped freeIndex =
+      ⟨target, rights, badgeWord, badged, mapAsid, mapVaddr, mapEpoch, mapped, freeIndex⟩ := by
   unfold overwrite; split <;> simp_all
 
 structure TCB where
@@ -1557,7 +1607,7 @@ empty or its capability names no object. -/
 thread with no root), else the capability to `id` with those rights alone. -/
 @[inline] def TCB.spaceCellOf (id : SeLe4n.ObjId) (rights : AccessRightSet) : Option Capability :=
   if id.isReserved then none
-  else some ⟨.object id, rights, SeLe4n.Badge.zero, false, default, default, 0, false⟩
+  else some ⟨.object id, rights, SeLe4n.Badge.zero, false, default, default, 0, false, 0⟩
 
 @[simp] theorem TCB.spaceCellObject_spaceCellOf (id : SeLe4n.ObjId) (rights : AccessRightSet) :
     TCB.spaceCellObject (TCB.spaceCellOf id rights) = id := by
@@ -3407,20 +3457,23 @@ structure UntypedChild where
 /-- WS-F2: Untyped memory object — the foundational seL4 memory safety mechanism.
 
 Models a contiguous region of physical memory `[regionBase, regionBase + regionSize)`
-from which typed kernel objects are carved via `retypeFromUntyped`. The `watermark`
-tracks the next free byte offset within the region (monotonically increasing).
+from which typed kernel objects are carved via `retypeFromUntyped`.
 
-seL4 reference: `Untyped_D` in the abstract spec — tracks device/non-device flag,
-region bounds, and a free-area pointer. Our model uses an explicit child list for
-non-overlap proofs rather than relying on CSpace derivation tree ancestry. -/
+**WS-ZA ZA5.4 part 13: the free index is not the object's.**  As in seL4, where
+the free pointer is the capability's `capFreeIndex`, the offset of the next carve
+is each untyped capability's own word (`Capability.freeIndex`): a carve starts at
+the invoked capability's index and advances it in that capability's slot.  The
+object keeps what every capability to it shares — its region, its memory kind,
+its ancestry, and the record of what was carved from it.
+
+seL4 reference: `Untyped_D` in the abstract spec — tracks device/non-device flag
+and region bounds.  Our model keeps an explicit child list for non-overlap proofs
+rather than relying on CSpace derivation tree ancestry. -/
 structure UntypedObject where
   /-- Base physical address of the untyped region. -/
   regionBase : SeLe4n.PAddr
   /-- Total size of the region in bytes. -/
   regionSize : Nat
-  /-- Next free byte offset within the region. Monotonically increasing.
-      Invariant: `watermark ≤ regionSize`. -/
-  watermark : Nat := 0
   /-- List of typed objects carved from this region. Each child records
       its ObjId, offset within the region, and size. -/
   children : List UntypedChild := []
@@ -3448,66 +3501,64 @@ structure UntypedObject where
 
 namespace UntypedObject
 
-/-- Remaining free space in the untyped region. -/
-def freeSpace (ut : UntypedObject) : Nat :=
-  ut.regionSize - ut.watermark
+/-- Check whether an allocation of `size` bytes at free index `idx` fits within
+the region. -/
+def canAllocate (ut : UntypedObject) (idx size : Nat) : Bool :=
+  size > 0 && idx + size ≤ ut.regionSize
 
-/-- Check whether an allocation of `size` bytes fits within the remaining region. -/
-def canAllocate (ut : UntypedObject) (size : Nat) : Bool :=
-  size > 0 && ut.watermark + size ≤ ut.regionSize
-
-/-- Allocate `size` bytes from the region, returning the updated untyped and
-    the byte offset of the new allocation.
+/-- Allocate `size` bytes from the region at free index `idx` (the invoking
+    capability's `Capability.freeIndex`), returning the updated untyped and the
+    byte offset of the new allocation, which is `idx`.
 
     S4-H: New children are prepended to the `children` list, creating
     reverse-chronological order (most recent allocation first). Proofs that
     traverse children must account for this ordering — in particular,
     `List.mem` witnesses are preserved across allocations since prepending
     does not remove existing elements. -/
-def allocate (ut : UntypedObject) (childId : SeLe4n.ObjId) (size : Nat) :
+def allocate (ut : UntypedObject) (idx : Nat) (childId : SeLe4n.ObjId) (size : Nat) :
     Option (UntypedObject × Nat) :=
-  if ut.canAllocate size then
-    let offset := ut.watermark
+  if ut.canAllocate idx size then
     some ({ ut with
-      watermark := ut.watermark + size
-      children := { objId := childId, offset := offset, size := size } :: ut.children
-    }, offset)
+      children := { objId := childId, offset := idx, size := size } :: ut.children
+    }, idx)
   else
     none
 
 /-- AK7-K (F-L14 / LOW): Allocation with an explicit positive-size
-precondition. `allocateChecked size h` rejects zero-size child
+precondition. `allocateChecked idx size h` rejects zero-size child
 allocations statically via the `h : size > 0` witness, in addition to
-the `canAllocate` watermark check performed by `allocate`.
+the `canAllocate` region check performed by `allocate`.
 
 A zero-size child is not ill-formed in the abstract model (the
-watermark is unchanged, the child list gains an empty-extent entry),
+free index is unchanged, the child list gains an empty-extent entry),
 but it indicates a caller bug — no production syscall path allocates a
 zero-size object. The checked variant surfaces this at the type level,
 matching the F-L14 guard recommendation without breaking existing
 callers. -/
-def allocateChecked (ut : UntypedObject) (childId : SeLe4n.ObjId) (size : Nat)
+def allocateChecked (ut : UntypedObject) (idx : Nat) (childId : SeLe4n.ObjId) (size : Nat)
     (_hPos : size > 0) : Option (UntypedObject × Nat) :=
-  ut.allocate childId size
+  ut.allocate idx childId size
 
 /-- AK7-K (F-L14): `allocateChecked` agrees with `allocate` on positive
 sizes — it simply adds the positive-size proof obligation at the type
 level without changing the body. -/
-theorem allocateChecked_eq_allocate (ut : UntypedObject) (childId : SeLe4n.ObjId)
+theorem allocateChecked_eq_allocate (ut : UntypedObject) (idx : Nat) (childId : SeLe4n.ObjId)
     (size : Nat) (hPos : size > 0) :
-    ut.allocateChecked childId size hPos = ut.allocate childId size := rfl
+    ut.allocateChecked idx childId size hPos = ut.allocate idx childId size := rfl
 
-/-- Reset the untyped to its initial state (revoke all children). -/
+/-- Reset the untyped to its initial state (revoke all children).  The free
+index is rewound on the capability the reset is invoked through. -/
 def reset (ut : UntypedObject) : UntypedObject :=
-  { ut with watermark := 0, children := [] }
+  { ut with children := [] }
 
-/-- Watermark is within region bounds. -/
-def watermarkValid (ut : UntypedObject) : Prop :=
-  ut.watermark ≤ ut.regionSize
+/-- WS-ZA ZA5.4 part 13: a free index is within the region's bounds. -/
+def freeIndexValid (ut : UntypedObject) (idx : Nat) : Prop :=
+  idx ≤ ut.regionSize
 
-/-- All children fit within the watermark (and thus within the region). -/
-def childrenWithinWatermark (ut : UntypedObject) : Prop :=
-  ∀ c ∈ ut.children, c.offset + c.size ≤ ut.watermark
+/-- WS-ZA ZA5.4 part 13: every child lies below free index `idx` — what a
+capability's index promises: nothing carved lies at or after it. -/
+def childrenBelow (ut : UntypedObject) (idx : Nat) : Prop :=
+  ∀ c ∈ ut.children, c.offset + c.size ≤ idx
 
 /-- No two children overlap in the allocated region. -/
 def childrenNonOverlap (ut : UntypedObject) : Prop :=
@@ -3519,111 +3570,82 @@ def childrenUniqueIds (ut : UntypedObject) : Prop :=
   ∀ c₁ c₂, c₁ ∈ ut.children → c₂ ∈ ut.children →
     c₁.objId = c₂.objId → c₁ = c₂
 
-/-- Combined well-formedness predicate for the untyped object. -/
+/-- Combined well-formedness predicate for the untyped object: its children lie
+inside the region, apart, with distinct identities.  What a capability's free
+index adds is the capability's own (`freeIndexValid`, `childrenBelow`). -/
 def wellFormed (ut : UntypedObject) : Prop :=
-  ut.watermarkValid ∧ ut.childrenWithinWatermark ∧
-  ut.childrenNonOverlap ∧ ut.childrenUniqueIds
+  ut.childrenBelow ut.regionSize ∧ ut.childrenNonOverlap ∧ ut.childrenUniqueIds
 
-theorem empty_watermarkValid (base : SeLe4n.PAddr) (size : Nat) :
-    ({ regionBase := base, regionSize := size, watermark := 0,
-                       children := [], isDevice := false, parent := none } : UntypedObject).watermarkValid := by
-  simp [watermarkValid]
-
-theorem empty_childrenWithinWatermark (base : SeLe4n.PAddr) (size : Nat) :
-    ({ regionBase := base, regionSize := size, watermark := 0,
-                       children := [], isDevice := false, parent := none } : UntypedObject).childrenWithinWatermark := by
+theorem empty_childrenBelow (base : SeLe4n.PAddr) (size idx : Nat) :
+    ({ regionBase := base, regionSize := size,
+                       children := [], isDevice := false, parent := none } : UntypedObject).childrenBelow idx := by
   intro c hMem
   simp at hMem
 
 theorem empty_childrenNonOverlap (base : SeLe4n.PAddr) (size : Nat) :
-    ({ regionBase := base, regionSize := size, watermark := 0,
+    ({ regionBase := base, regionSize := size,
                        children := [], isDevice := false, parent := none } : UntypedObject).childrenNonOverlap := by
   intro c₁ c₂ hMem₁
   simp at hMem₁
 
 theorem empty_childrenUniqueIds (base : SeLe4n.PAddr) (size : Nat) :
-    ({ regionBase := base, regionSize := size, watermark := 0,
+    ({ regionBase := base, regionSize := size,
                        children := [], isDevice := false, parent := none } : UntypedObject).childrenUniqueIds := by
   intro c₁ c₂ hMem₁
   simp at hMem₁
 
 theorem empty_wellFormed (base : SeLe4n.PAddr) (size : Nat) :
-    ({ regionBase := base, regionSize := size, watermark := 0,
+    ({ regionBase := base, regionSize := size,
                        children := [], isDevice := false, parent := none } : UntypedObject).wellFormed :=
-  ⟨empty_watermarkValid base size, empty_childrenWithinWatermark base size,
+  ⟨empty_childrenBelow base size size,
    empty_childrenNonOverlap base size, empty_childrenUniqueIds base size⟩
 
-/-! ### AN2-F.3 / FND-M03 — `UntypedObjectValid` subtype (marker)
-
-    A proof-carrying refinement of `UntypedObject` whose well-formedness
-    has been discharged at construction time. Defined below, outside the
-    `UntypedObject` namespace, so it is reachable from callers via
-    `SeLe4n.Model.UntypedObjectValid` (or just `UntypedObjectValid` with
-    `open SeLe4n.Model`). -/
-
 /-- `canAllocate` being true implies the allocation fits within region bounds. -/
-theorem canAllocate_implies_fits (ut : UntypedObject) (size : Nat)
-    (hCan : ut.canAllocate size = true) :
-    ut.watermark + size ≤ ut.regionSize := by
+theorem canAllocate_implies_fits (ut : UntypedObject) (idx size : Nat)
+    (hCan : ut.canAllocate idx size = true) :
+    idx + size ≤ ut.regionSize := by
   simp [canAllocate] at hCan
   exact hCan.2
 
 /-- Decomposition lemma: a successful `allocate` produces a specific updated state. -/
-theorem allocate_some_iff (ut : UntypedObject) (childId : SeLe4n.ObjId) (size : Nat)
+theorem allocate_some_iff (ut : UntypedObject) (idx : Nat) (childId : SeLe4n.ObjId) (size : Nat)
     (result : UntypedObject × Nat) :
-    ut.allocate childId size = some result ↔
-      ut.canAllocate size = true ∧
+    ut.allocate idx childId size = some result ↔
+      ut.canAllocate idx size = true ∧
       result = ({ ut with
-        watermark := ut.watermark + size
-        children := { objId := childId, offset := ut.watermark, size := size } :: ut.children
-      }, ut.watermark) := by
+        children := { objId := childId, offset := idx, size := size } :: ut.children
+      }, idx) := by
   constructor
   · intro h
     unfold allocate at h
-    by_cases hCan : ut.canAllocate size
+    by_cases hCan : ut.canAllocate idx size
     · simp [hCan] at h; exact ⟨hCan, h.symm⟩
     · simp [hCan] at h
   · intro ⟨hCan, hEq⟩
     unfold allocate
     simp [hCan, hEq]
 
-/-- After a successful `allocate`, the watermark advances by exactly `size`. -/
-theorem allocate_watermark_advance (ut ut' : UntypedObject) (childId : SeLe4n.ObjId)
-    (size offset : Nat) (hAlloc : ut.allocate childId size = some (ut', offset)) :
-    ut'.watermark = ut.watermark + size := by
-  rw [allocate_some_iff] at hAlloc
-  rcases hAlloc with ⟨_, hEq⟩
-  have hU := (Prod.mk.inj hEq).1
-  subst hU; rfl
-
-/-- After a successful `allocate`, the returned offset equals the pre-allocation watermark. -/
-theorem allocate_offset_eq_watermark (ut ut' : UntypedObject) (childId : SeLe4n.ObjId)
-    (size offset : Nat) (hAlloc : ut.allocate childId size = some (ut', offset)) :
-    offset = ut.watermark := by
+/-- After a successful `allocate`, the returned offset is the free index it was
+handed. -/
+theorem allocate_offset_eq (ut ut' : UntypedObject) (idx : Nat) (childId : SeLe4n.ObjId)
+    (size offset : Nat) (hAlloc : ut.allocate idx childId size = some (ut', offset)) :
+    offset = idx := by
   rw [allocate_some_iff] at hAlloc
   exact (Prod.mk.inj hAlloc.2).2
 
-/-- Watermark monotonicity: a successful allocation never decreases the watermark. -/
-theorem allocate_watermark_monotone (ut ut' : UntypedObject) (childId : SeLe4n.ObjId)
-    (size offset : Nat) (hAlloc : ut.allocate childId size = some (ut', offset)) :
-    ut.watermark ≤ ut'.watermark := by
-  have hAdv := allocate_watermark_advance ut ut' childId size offset hAlloc
-  omega
-
-/-- A successful allocation preserves watermark validity when the pre-state is valid. -/
-theorem allocate_preserves_watermarkValid (ut ut' : UntypedObject) (childId : SeLe4n.ObjId)
-    (size offset : Nat) (_hWF : ut.watermarkValid)
-    (hAlloc : ut.allocate childId size = some (ut', offset)) :
-    ut'.watermarkValid := by
+/-- A successful allocation leaves the advanced free index `idx + size` valid. -/
+theorem allocate_freeIndexValid (ut ut' : UntypedObject) (idx : Nat) (childId : SeLe4n.ObjId)
+    (size offset : Nat) (hAlloc : ut.allocate idx childId size = some (ut', offset)) :
+    ut'.freeIndexValid (idx + size) := by
   rw [allocate_some_iff] at hAlloc
   rcases hAlloc with ⟨hCan, hEq⟩
-  have hFits := canAllocate_implies_fits ut size hCan
+  have hFits := canAllocate_implies_fits ut idx size hCan
   have hU := (Prod.mk.inj hEq).1
-  subst hU; simp [watermarkValid]; omega
+  subst hU; simp [freeIndexValid]; omega
 
 /-- `allocate` does not change the region base or size. -/
-theorem allocate_preserves_region (ut ut' : UntypedObject) (childId : SeLe4n.ObjId)
-    (size offset : Nat) (hAlloc : ut.allocate childId size = some (ut', offset)) :
+theorem allocate_preserves_region (ut ut' : UntypedObject) (idx : Nat) (childId : SeLe4n.ObjId)
+    (size offset : Nat) (hAlloc : ut.allocate idx childId size = some (ut', offset)) :
     ut'.regionBase = ut.regionBase ∧ ut'.regionSize = ut.regionSize := by
   rw [allocate_some_iff] at hAlloc
   rcases hAlloc with ⟨_, hEq⟩
@@ -3634,9 +3656,9 @@ theorem allocate_preserves_region (ut ut' : UntypedObject) (childId : SeLe4n.Obj
 existing entry in `ut.children` is still present in `ut'.children`. Used
 by the cross-untyped disjointness preservation proof to transport
 child-exclusion hypotheses across the allocation step. -/
-theorem allocate_children_extends (ut ut' : UntypedObject)
+theorem allocate_children_extends (ut ut' : UntypedObject) (idx : Nat)
     (childId : SeLe4n.ObjId) (size offset : Nat)
-    (hAlloc : ut.allocate childId size = some (ut', offset)) :
+    (hAlloc : ut.allocate idx childId size = some (ut', offset)) :
     ∀ c, c ∈ ut.children → c ∈ ut'.children := by
   rw [allocate_some_iff] at hAlloc
   rcases hAlloc with ⟨_, hEq⟩
@@ -3645,13 +3667,11 @@ theorem allocate_children_extends (ut ut' : UntypedObject)
 
 /-- AK8-A (WS-AK / C-M01): `allocate` places the new child at the head of
 the children list, with exact bookkeeping for `objId`, `offset`, and
-`size`. This is the key structural fact used by the retype preservation
-proof to show that the parent's post-state children list contains the
-new child (so the parent-child pair is excluded from disjointness). -/
-theorem allocate_children_new (ut ut' : UntypedObject)
+`size`. -/
+theorem allocate_children_new (ut ut' : UntypedObject) (idx : Nat)
     (childId : SeLe4n.ObjId) (size offset : Nat)
-    (hAlloc : ut.allocate childId size = some (ut', offset)) :
-    { objId := childId, offset := ut.watermark, size := size : UntypedChild }
+    (hAlloc : ut.allocate idx childId size = some (ut', offset)) :
+    { objId := childId, offset := idx, size := size : UntypedChild }
       ∈ ut'.children := by
   rw [allocate_some_iff] at hAlloc
   rcases hAlloc with ⟨_, hEq⟩
@@ -3659,14 +3679,12 @@ theorem allocate_children_new (ut ut' : UntypedObject)
   exact List.mem_cons_self ..
 
 /-- AK8-A (WS-AK / C-M01): `allocate`'s post-state `children` list equals
-the new child prepended onto the pre-state list. Combined with
-`allocate_children_extends`, this exhaustively characterizes the change
-to `children`. -/
-theorem allocate_children_eq (ut ut' : UntypedObject)
+the new child prepended onto the pre-state list. -/
+theorem allocate_children_eq (ut ut' : UntypedObject) (idx : Nat)
     (childId : SeLe4n.ObjId) (size offset : Nat)
-    (hAlloc : ut.allocate childId size = some (ut', offset)) :
+    (hAlloc : ut.allocate idx childId size = some (ut', offset)) :
     ut'.children =
-      { objId := childId, offset := ut.watermark, size := size }
+      { objId := childId, offset := idx, size := size }
         :: ut.children := by
   rw [allocate_some_iff] at hAlloc
   rcases hAlloc with ⟨_, hEq⟩
@@ -3676,24 +3694,25 @@ theorem allocate_children_eq (ut ut' : UntypedObject)
 requested size fits within the parent's region — the new child's
 `[parent.regionBase + offset, parent.regionBase + offset + size)` range
 lies entirely inside `[parent.regionBase, parent.regionBase + parent.regionSize)`. -/
-theorem allocate_child_fits_parent (ut ut' : UntypedObject)
+theorem allocate_child_fits_parent (ut ut' : UntypedObject) (idx : Nat)
     (childId : SeLe4n.ObjId) (size offset : Nat)
-    (hAlloc : ut.allocate childId size = some (ut', offset)) :
+    (hAlloc : ut.allocate idx childId size = some (ut', offset)) :
     offset + size ≤ ut.regionSize := by
   rw [allocate_some_iff] at hAlloc
   rcases hAlloc with ⟨hCan, hEq⟩
-  have hOffsetEq : offset = ut.watermark := (Prod.mk.inj hEq).2
-  have hFits := canAllocate_implies_fits ut size hCan
+  have hOffsetEq : offset = idx := (Prod.mk.inj hEq).2
+  have hFits := canAllocate_implies_fits ut idx size hCan
   omega
 
-/-- WS-F2: A successful allocation preserves childrenWithinWatermark.
-Existing children are within the old watermark (≤ new watermark), and the new
-child occupies [old_watermark, old_watermark + size] = [old_watermark, new_watermark]. -/
-theorem allocate_preserves_childrenWithinWatermark (ut ut' : UntypedObject)
+/-- WS-F2, restated over the capability's free index at WS-ZA ZA5.4 part 13:
+a successful allocation at `idx` keeps every child below the advanced index.
+Existing children are below `idx` (so below `idx + size`), and the new child
+occupies `[idx, idx + size)`. -/
+theorem allocate_preserves_childrenBelow (ut ut' : UntypedObject) (idx : Nat)
     (childId : SeLe4n.ObjId) (size offset : Nat)
-    (hBounds : ut.childrenWithinWatermark)
-    (hAlloc : ut.allocate childId size = some (ut', offset)) :
-    ut'.childrenWithinWatermark := by
+    (hBounds : ut.childrenBelow idx)
+    (hAlloc : ut.allocate idx childId size = some (ut', offset)) :
+    ut'.childrenBelow (idx + size) := by
   rw [allocate_some_iff] at hAlloc
   rcases hAlloc with ⟨_hCan, hEq⟩
   have hU := (Prod.mk.inj hEq).1; subst hU
@@ -3703,15 +3722,32 @@ theorem allocate_preserves_childrenWithinWatermark (ut ut' : UntypedObject)
   · dsimp; omega
   · have := hBounds c hOld; omega
 
+/-- WS-ZA ZA5.4 part 13: a successful allocation keeps every child below any
+free index at or past the region's end — the index of a capability set full. -/
+theorem allocate_preserves_childrenBelow_full (ut ut' : UntypedObject) (idx : Nat)
+    (childId : SeLe4n.ObjId) (size offset bound : Nat)
+    (hBounds : ut.childrenBelow bound) (hFull : ut.regionSize ≤ bound)
+    (hAlloc : ut.allocate idx childId size = some (ut', offset)) :
+    ut'.childrenBelow bound := by
+  rw [allocate_some_iff] at hAlloc
+  rcases hAlloc with ⟨hCan, hEq⟩
+  have hFits := canAllocate_implies_fits ut idx size hCan
+  have hU := (Prod.mk.inj hEq).1; subst hU
+  intro c hMem
+  simp at hMem
+  rcases hMem with rfl | hOld
+  · dsimp; omega
+  · exact hBounds c hOld
+
 /-- WS-F2: A successful allocation preserves childrenNonOverlap, given that
-existing children are within the watermark. Since the new child starts at the
-old watermark and all existing children end at or before the old watermark,
-no overlap is possible. -/
-theorem allocate_preserves_childrenNonOverlap (ut ut' : UntypedObject)
+existing children lie below the free index it was handed.  Since the new child
+starts at that index and every existing child ends at or before it, no overlap
+is possible. -/
+theorem allocate_preserves_childrenNonOverlap (ut ut' : UntypedObject) (idx : Nat)
     (childId : SeLe4n.ObjId) (size offset : Nat)
     (hNonOverlap : ut.childrenNonOverlap)
-    (hBounds : ut.childrenWithinWatermark)
-    (hAlloc : ut.allocate childId size = some (ut', offset)) :
+    (hBounds : ut.childrenBelow idx)
+    (hAlloc : ut.allocate idx childId size = some (ut', offset)) :
     ut'.childrenNonOverlap := by
   rw [allocate_some_iff] at hAlloc
   rcases hAlloc with ⟨_hCan, hEq⟩
@@ -3720,20 +3756,20 @@ theorem allocate_preserves_childrenNonOverlap (ut ut' : UntypedObject)
   simp at hMem₁ hMem₂
   rcases hMem₁ with rfl | hOld₁ <;> rcases hMem₂ with rfl | hOld₂
   · exact absurd rfl hNe
-  · -- new child vs old child: old child ends ≤ watermark = new child offset
+  · -- new child vs old child: old child ends ≤ idx = new child offset
     right; have := hBounds c₂ hOld₂; dsimp; omega
-  · -- old child vs new child: old child ends ≤ watermark = new child offset
+  · -- old child vs new child: old child ends ≤ idx = new child offset
     left; have := hBounds c₁ hOld₁; dsimp; omega
   · -- two old children: by pre-condition
     exact hNonOverlap c₁ c₂ hOld₁ hOld₂ hNe
 
 /-- WS-F2: A successful allocation preserves childrenUniqueIds, given that
 the new child's ID does not collide with any existing child. -/
-theorem allocate_preserves_childrenUniqueIds (ut ut' : UntypedObject)
+theorem allocate_preserves_childrenUniqueIds (ut ut' : UntypedObject) (idx : Nat)
     (childId : SeLe4n.ObjId) (size offset : Nat)
     (hUnique : ut.childrenUniqueIds)
     (hFresh : ∀ c ∈ ut.children, c.objId ≠ childId)
-    (hAlloc : ut.allocate childId size = some (ut', offset)) :
+    (hAlloc : ut.allocate idx childId size = some (ut', offset)) :
     ut'.childrenUniqueIds := by
   rw [allocate_some_iff] at hAlloc
   rcases hAlloc with ⟨_hCan, hEq⟩
@@ -3747,14 +3783,13 @@ theorem allocate_preserves_childrenUniqueIds (ut ut' : UntypedObject)
   · dsimp at hIdEq; exact absurd hIdEq (hFresh c₁ hOld₁)
   · exact hUnique c₁ c₂ hOld₁ hOld₂ hIdEq
 
-/-- `reset` restores watermark validity. -/
-theorem reset_watermarkValid (ut : UntypedObject) : ut.reset.watermarkValid := by
-  simp [reset, watermarkValid]
+/-- `reset` leaves no child below which a free index must lie. -/
+theorem reset_childrenBelow (ut : UntypedObject) (idx : Nat) : ut.reset.childrenBelow idx := by
+  intro c hMem; simp [reset] at hMem
 
 /-- `reset` restores full well-formedness. -/
 theorem reset_wellFormed (ut : UntypedObject) : ut.reset.wellFormed := by
-  refine ⟨reset_watermarkValid ut, ?_, ?_, ?_⟩
-  · intro c hMem; simp [reset] at hMem
+  refine ⟨reset_childrenBelow ut _, ?_, ?_⟩
   · intro c₁ c₂ hMem₁; simp [reset] at hMem₁
   · intro c₁ c₂ hMem₁; simp [reset] at hMem₁
 
@@ -3789,7 +3824,7 @@ namespace UntypedObjectValid
 /-- AN2-F.3: Canonical empty constructor — a fresh untyped region at `base`
     with `size` capacity, zero children, is well-formed by `empty_wellFormed`. -/
 @[inline] def empty (base : SeLe4n.PAddr) (size : Nat) : UntypedObjectValid :=
-  ⟨({ regionBase := base, regionSize := size, watermark := 0,
+  ⟨({ regionBase := base, regionSize := size,
       children := [], isDevice := false, parent := none } : UntypedObject),
    UntypedObject.empty_wellFormed base size⟩
 

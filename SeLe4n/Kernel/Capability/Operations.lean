@@ -935,7 +935,7 @@ def mintDerivedCap (parent : NonNullCap) (rights : AccessRightSet)
     if ((Capability.ofParts parent.val.target rights badge) : Capability).isNull then
       .error .nullCapability
     else
-      .ok (Capability.ofParts parent.val.target rights badge)
+      .ok ((Capability.ofParts parent.val.target rights badge).withFreeIndex parent.val.freeIndex)
   else
     .error .invalidCapability
 
@@ -1794,7 +1794,7 @@ tables (`modifyCdt`). -/
 writes (`mintDerivedCap`'s). -/
 @[inline] def mintedCap (parent : Capability) (rights : AccessRightSet)
     (badge : Option SeLe4n.Badge) : Capability :=
-  (Capability.ofParts parent.target rights badge)
+  (Capability.ofParts parent.target rights badge).withFreeIndex parent.freeIndex
 
 /-- WS-ZA ZA5.3: **`cspaceMintWithCdt`'s checks**, read before any write: the
 source holds a capability that is not null, the rights attenuate it, the minted
@@ -1823,7 +1823,7 @@ mint builds neither a capability nor its cell (WS-ZA ZA5.3 part 6). -/
   match SystemState.lookupSlotCap st src with
   | some parent =>
       (st.storeCNodeWith dst.cnode
-          (·.insertFields dst.slot parent.target rights badgeWord badged)).cdtAddChild
+          (·.insertFields dst.slot parent.target rights badgeWord badged parent.freeIndex)).cdtAddChild
         src dst .mint
   | none => st
 
@@ -1854,8 +1854,9 @@ theorem cspaceMintWithCdt_of_admitted {src dst : CSpaceAddr} {rights : AccessRig
     have hNN : parent.toNonNull? = some ⟨parent, hN⟩ := by
       unfold Capability.toNonNull?; rw [dif_pos hN]
     have hM : mintDerivedCap ⟨parent, hN⟩ rights badge = .ok (mintedCap parent rights badge) := by
-      unfold mintDerivedCap mintedCap at *
-      simp only [hR, ↓reduceIte, hC, Bool.false_eq_true]
+      have hC' : (Capability.ofParts parent.target rights badge).isNull = false := hC
+      unfold mintDerivedCap mintedCap
+      simp only [hR, ↓reduceIte, hC', Bool.false_eq_true]
     simp only [hNN, hM, cspaceInsertSlot_of_admitted hD]
     rfl
 
@@ -1925,7 +1926,7 @@ store, so the store is not held across its write. -/
       | .object target =>
           let t := replyCapTargetIn st (SeLe4n.ReplyId.ofObjId target)
           (st.storeCNodeWith dst.cnode
-              (·.insertFields dst.slot t (AccessRightSet.ofList [.write]) SeLe4n.Badge.zero false)).cdtAddChild
+              (·.insertFields dst.slot t (AccessRightSet.ofList [.write]) SeLe4n.Badge.zero false 0)).cdtAddChild
             src dst .mint
       | _ => st
   | none => st
@@ -1980,7 +1981,7 @@ capability first (WS-ZA ZA5.3 part 6). -/
   match SystemState.lookupSlotCap st src with
   | some cap =>
       (st.storeCNodeWith dst.cnode
-          (·.insertFields dst.slot cap.target cap.rights cap.badgeWord cap.badged)).cdtAddChild
+          (·.insertFields dst.slot cap.target cap.rights cap.badgeWord cap.badged cap.freeIndex)).cdtAddChild
         src dst .copy
   | none => st
 
@@ -2285,6 +2286,95 @@ theorem cspaceRecordFrameMapping_ok_decompose (addr : CSpaceAddr) (m : FrameMapp
       rw [hLk] at h
       refine ⟨cn, cap, rfl, hLk, ?_⟩
       simpa [CNode.recordMapping, hLk] using h
+
+-- ============================================================================
+-- WS-ZA ZA5.4 part 13: the free index's writer
+-- ============================================================================
+
+/-- **Write free index `idx` into the capability in `addr`**, in place — the
+write a carve makes to the untyped capability it was invoked through (the index
+advanced past the carved object), a reset makes to it (the index rewound), and a
+derivation makes to its untyped source (the index set full, seL4's
+`setUntypedCapAsFull`).  The slot must hold a capability; every other field of
+it is kept. -/
+def cspaceSetFreeIndex (addr : CSpaceAddr) (idx : Nat) : Kernel Unit :=
+  fun st =>
+    match st.getCNode? addr.cnode with
+    | none => .error .objectNotFound
+    | some cn =>
+      match cn.lookup addr.slot with
+      | none => .error .invalidCapability
+      | some _ => storeObject addr.cnode (.cnode (cn.setFreeIndex addr.slot idx)) st
+
+/-- `cspaceSetFreeIndex` as compiled: the word is written where the CNode lies
+(`storeCNodeWith`), into the slot's own capability (`CNode.setFreeIndexCells`). -/
+@[inline] def cspaceSetFreeIndexImpl (addr : CSpaceAddr) (idx : Nat) : Kernel Unit :=
+  fun st =>
+    match st.getCNode? addr.cnode with
+    | none => .error .objectNotFound
+    | some cn =>
+      match cn.lookup addr.slot with
+      | none => .error .invalidCapability
+      | some _ => .ok ((), st.storeCNodeWith addr.cnode (·.setFreeIndexCells addr.slot idx))
+
+@[csimp] theorem cspaceSetFreeIndex_eq_impl :
+    @cspaceSetFreeIndex = @cspaceSetFreeIndexImpl := by
+  funext addr idx st
+  unfold cspaceSetFreeIndex cspaceSetFreeIndexImpl
+  cases hC : st.getCNode? addr.cnode with
+  | none => rfl
+  | some cn =>
+    dsimp only
+    cases cn.lookup addr.slot with
+    | none => rfl
+    | some cap =>
+      have hF : (fun c : CNode => c.setFreeIndexCells addr.slot idx) =
+          (·.setFreeIndex addr.slot idx) := funext fun c => CNode.setFreeIndexCells_eq _ _ _
+      rw [hF]
+      exact SystemState.storeObject_cnode_eq_storeCNodeWith
+        ((SystemState.getCNode?_eq_some_iff st addr.cnode cn).1 hC)
+        (·.setFreeIndex addr.slot idx)
+
+/-- **What a successful free-index write is**: the slot held a capability, and
+the CNode was stored back with that capability holding the index. -/
+theorem cspaceSetFreeIndex_ok_decompose (addr : CSpaceAddr) (idx : Nat)
+    (st st' : SystemState) (h : cspaceSetFreeIndex addr idx st = .ok ((), st')) :
+    ∃ cn cap, st.getCNode? addr.cnode = some cn ∧ cn.lookup addr.slot = some cap ∧
+      storeObject addr.cnode (.cnode (cn.insert addr.slot (cap.withFreeIndex idx))) st
+        = .ok ((), st') := by
+  unfold cspaceSetFreeIndex at h
+  cases hCn : st.getCNode? addr.cnode with
+  | none => rw [hCn] at h; cases h
+  | some cn =>
+    rw [hCn] at h
+    simp only at h
+    cases hLk : cn.lookup addr.slot with
+    | none => rw [hLk] at h; cases h
+    | some cap =>
+      rw [hLk] at h
+      refine ⟨cn, cap, rfl, hLk, ?_⟩
+      simpa [CNode.setFreeIndex, hLk] using h
+
+/-- **A free-index write at an occupied slot succeeds**, and is the CNode stored
+back in place. -/
+theorem cspaceSetFreeIndex_of_lookup {addr : CSpaceAddr} {idx : Nat} {st : SystemState}
+    {cap : Capability} (h : SystemState.lookupSlotCap st addr = some cap) :
+    cspaceSetFreeIndex addr idx st =
+      .ok ((), st.storeCNodeWith addr.cnode (·.setFreeIndex addr.slot idx)) := by
+  unfold SystemState.lookupSlotCap SystemState.lookupCNode at h
+  unfold cspaceSetFreeIndex
+  cases hO : st.objects[addr.cnode]? with
+  | none => rw [hO] at h; cases h
+  | some o =>
+    rw [hO] at h
+    cases o with
+    | cnode cn =>
+      have hC : st.getCNode? addr.cnode = some cn :=
+        (SystemState.getCNode?_eq_some_iff st addr.cnode cn).2 hO
+      simp only at h
+      rw [hC]; simp only [h]
+      exact SystemState.storeObject_cnode_eq_storeCNodeWith hO (·.setFreeIndex addr.slot idx)
+    | _ => simp at h
 
 -- ============================================================================
 -- M-D01: IPC capability transfer operations
