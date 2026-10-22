@@ -309,11 +309,15 @@ def qemuVirtDeploymentIdleState : IntermediateState :=
         qemuVirtBootVSpaceRootEntry.id qemuVirtBootVSpaceRootEntry.root
         qemuVirtBootVSpaceRootEntry.hMappings))
 
-/-- The state the `virt` boot installs: the idle stage with both initial
-    threads started. -/
-def qemuVirtDeploymentBootState : IntermediateState :=
+/-- The started stage: the idle stage with both initial threads started. -/
+def qemuVirtDeploymentStartedState : IntermediateState :=
   (PlatformBinding.initialThreads (platform := QemuVirtPlatform)).foldl startInitialThread
     qemuVirtDeploymentIdleState
+
+/-- The state the `virt` boot installs: the started stage with its capabilities
+    linked into the derivation tree. -/
+def qemuVirtDeploymentBootState : IntermediateState :=
+  linkBootCapabilities qemuVirtBoundPlatformConfig qemuVirtDeploymentStartedState
 
 theorem qemuVirtBoundPlatformConfig_idleBoot :
     bootFromPlatformCheckedWithIdleThreadsFor
@@ -369,7 +373,7 @@ private theorem qemuVirtDeployment_initialThreads_startable :
 
 private theorem qemuVirtDeployment_startInitialThreads :
     startInitialThreads (PlatformBinding.initialThreads (platform := QemuVirtPlatform))
-        qemuVirtDeploymentIdleState = .ok qemuVirtDeploymentBootState :=
+        qemuVirtDeploymentIdleState = .ok qemuVirtDeploymentStartedState :=
   startInitialThreads_eq_foldl _ _ (by rw [qemuVirt_initialThreads]; decide)
     qemuVirtDeployment_initialThreads_startable
 
@@ -381,13 +385,15 @@ theorem qemuVirtBoundPlatformConfig_boot :
         qemuVirtBoundPlatformConfig =
       .ok qemuVirtDeploymentBootState := by
   rw [bootFromPlatformCheckedStartedFor_of_idle _ _ _ qemuVirtBoundPlatformConfig_idleBoot]
-  exact qemuVirtDeployment_startInitialThreads
+  exact congrArg (Except.map (linkBootCapabilities qemuVirtBoundPlatformConfig))
+    qemuVirtDeployment_startInitialThreads
 
 /-- Both witnesses are installed on the state the boot installs, so its last
     refusal is unreachable. -/
 theorem qemuVirtDeploymentBootState_witnessesInstalled :
     declaredWitnessesInstalled qemuVirtDeploymentBootState.state
       (PlatformBinding.labeling (platform := QemuVirtPlatform)) = true := by
+  rw [qemuVirtDeploymentBootState, linkBootCapabilities_declaredWitnessesInstalled]
   refine startInitialThreads_preserves_declaredWitnessesInstalled _ _ _
     qemuVirtDeployment_startInitialThreads _ ?_
   unfold declaredWitnessesInstalled
@@ -457,6 +463,7 @@ theorem qemuVirtPlatformConfigFromDtb_deployment_ok (blob : ByteArray) (config :
 theorem qemuVirtDeploymentBootState_untypedInstalled :
     qemuVirtDeploymentBootState.state.objects[qemuVirtRootTaskUntypedId]? =
       some (.untyped qemuVirtRootTaskUntyped) :=
+  ((linkBootCapabilities_agree _ _).obj_iff (fun _ e => by cases e)).mpr <|
   startInitialThreads_objects_of_nonTcb _ _ _
     qemuVirtDeployment_startInitialThreads _ _ (fun _ h => by cases h)
     (bootFromPlatformCheckedWithIdleThreadsFor_ok_objects_of_mem _ _ _

@@ -1179,6 +1179,57 @@ theorem parentOf_appendRoot (cdt : CapDerivationTree) (r x : SlotRef) :
 theorem childrenOf_appendRoot (cdt : CapDerivationTree) (r x : SlotRef) :
     (cdt.appendRoot r).childrenOf x = cdt.childrenOf x := rfl
 
+/-- An added edge names its two endpoints and nothing else new. -/
+theorem mentions_addEdge (cdt : CapDerivationTree) (p c : SlotRef) (op : DerivationOp)
+    (x : SlotRef) : (cdt.addEdge p c op).mentions x ↔ cdt.mentions x ∨ x = p ∨ x = c := by
+  unfold mentions
+  simp only [addEdge_edges, addEdge_rootChains, List.mem_cons]
+  constructor
+  · rintro (⟨e, rfl | he, h⟩ | hr)
+    · rcases h with h | h
+      · exact .inr (.inl h.symm)
+      · exact .inr (.inr h.symm)
+    · exact .inl (.inl ⟨e, he, h⟩)
+    · exact .inl (.inr hr)
+  · rintro ((⟨e, he, h⟩ | hr) | rfl | rfl)
+    · exact .inl ⟨e, .inr he, h⟩
+    · exact .inr hr
+    · exact .inl ⟨_, .inl rfl, .inl rfl⟩
+    · exact .inl ⟨_, .inl rfl, .inr rfl⟩
+
+/-- An appended root ends the first chain. -/
+theorem firstChain_appendRoot (cdt : CapDerivationTree) (r : SlotRef) :
+    (cdt.appendRoot r).firstChain = cdt.firstChain ++ [r] := by
+  unfold firstChain; rw [appendRoot_rootChains_eq]; rfl
+
+theorem firstChain_addEdge (cdt : CapDerivationTree) (p c : SlotRef) (op : DerivationOp) :
+    (cdt.addEdge p c op).firstChain = cdt.firstChain := by
+  unfold firstChain; rw [addEdge_rootChains]
+
+/-- An appended root is the one slot newly named. -/
+theorem mentions_appendRoot (cdt : CapDerivationTree) (r x : SlotRef) :
+    (cdt.appendRoot r).mentions x ↔ cdt.mentions x ∨ x = r := by
+  unfold mentions
+  rw [rootChains_flatten_eq (cdt.appendRoot r), rootChains_flatten_eq cdt, firstChain_appendRoot,
+    appendRoot_rootChains_eq, appendRoot_edges]
+  simp only [List.tail_cons, List.mem_append, List.mem_singleton]
+  constructor
+  · rintro (h | (h | h) | h)
+    · exact .inl (.inl h)
+    · exact .inl (.inr (.inl h))
+    · exact .inr h
+    · exact .inl (.inr (.inr h))
+  · rintro ((h | h | h) | h)
+    · exact .inl h
+    · exact .inr (.inl (.inl h))
+    · exact .inr (.inr h)
+    · exact .inr (.inl (.inr h))
+
+/-- An appended root adds no edge, so no cycle. -/
+theorem appendRoot_edgeWellFounded {cdt : CapDerivationTree} (h : cdt.edgeWellFounded)
+    (r : SlotRef) : (cdt.appendRoot r).edgeWellFounded :=
+  edgeWellFounded_sub cdt _ h (by simp)
+
 end CapDerivationTree
 
 namespace LinksAgree

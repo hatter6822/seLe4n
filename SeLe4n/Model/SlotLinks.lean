@@ -1440,6 +1440,53 @@ theorem linkReach.agree {st₀ st : SystemState} (h : linkReach st₀ st)
     (hInv : st₀.objects.invExt) : objectsAgreeOffDerivationLinks st st₀ :=
   (h.linksOnly hInv).2
 
+/-- A link write keeps the object store's `invExtK`: it inserts at a key the
+store holds, or writes nothing. -/
+theorem setSlotLinkWords_invExtK {st : SystemState} (hK : st.objects.invExtK)
+    (o : SeLe4n.ObjId) (s : SeLe4n.Slot) (f : LinkField) (c w : Nat) :
+    (st.setSlotLinkWords o s f c w).objects.invExtK := by
+  cases h : st.objects[o]? with
+  | none =>
+      have e : st.setSlotLinkWords o s f c w = st := by
+        unfold setSlotLinkWords getObject?; rw [h]
+      rw [e]; exact hK
+  | some ob =>
+      rcases setSlotLinkWords_of_object h s f c w with e | ⟨-, e⟩
+      · rw [e]; exact RHTable.insert_preserves_invExtK _ _ _ hK
+      · rw [e]; exact hK
+
+theorem linkReach.invExtK {st₀ st : SystemState} (h : linkReach st₀ st)
+    (hInv : st₀.objects.invExt) (hK : st₀.objects.invExtK) : st.objects.invExtK :=
+  (h.closed (P := fun s => s.objects.invExtK)
+    (fun _ o sl f c w _ hs => setSlotLinkWords_invExtK hs o sl f c w) hInv hK).1
+
+/-- Link writes keep every table's `invExtK`: they write the object store alone. -/
+theorem linkReach.allTablesInvExtK {st₀ st : SystemState} (h : linkReach st₀ st)
+    (hAll : st₀.allTablesInvExtK) : st.allTablesInvExtK := by
+  have hK := h.invExtK hAll.1.1 hAll.1
+  rw [h.fields]
+  exact ⟨hK, hAll.2⟩
+
+/-- Link writes keep every object's kind at every key. -/
+theorem objectsAgreeOffDerivationLinks.objectType {st st' : SystemState}
+    (h : objectsAgreeOffDerivationLinks st' st) (oid : SeLe4n.ObjId) :
+    (st'.objects[oid]?).map KernelObject.objectType =
+      (st.objects[oid]?).map KernelObject.objectType := by
+  have e := (h oid).map_withoutLinks
+  have hk : ∀ o : KernelObject, o.withoutLinks.objectType = o.objectType := by
+    intro o; cases o <;> rfl
+  have := congrArg (Option.map KernelObject.objectType) e
+  simpa only [Option.map_map, Function.comp_def, hk] using this
+
+/-- Link writes keep the lifecycle's record of every object's kind. -/
+theorem linkReach.objectTypeMetadataConsistent {st₀ st : SystemState} (h : linkReach st₀ st)
+    (hInv : st₀.objects.invExt) (hC : st₀.objectTypeMetadataConsistent) :
+    st.objectTypeMetadataConsistent := by
+  intro oid
+  rw [(h.agree hInv).objectType oid, ← hC oid]
+  unfold lookupObjectTypeMeta
+  rw [h.fields]
+
 theorem linkAddChild_reach {st₀ st : SystemState} (h : linkReach st₀ st) (p c : SlotRef) :
     linkReach st₀ (st.linkAddChild p c) := by
   have h3 := ((h.step c.cnode c.slot .parent (p.cnode.toNat + 1) (p.slot.toNat + 1)).step

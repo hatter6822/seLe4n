@@ -1368,8 +1368,8 @@ theorem bootAndInitialisePlatform_checked_declaredCoreCount (platform : Type)
         (PlatformBinding.declaredCores (platform := platform))
         (bindPlatformConfig platform config) = .ok ist) :
     ist.state.machine.declaredCoreCount = PlatformBinding.coreCount (platform := platform) := by
-  obtain ⟨base, hBase, hStart⟩ := bootFromPlatformCheckedStartedFor_ok _ _ ist h
-  rw [startInitialThreads_machine _ _ _ hStart,
+  obtain ⟨base, started, hBase, hStart, rfl⟩ := bootFromPlatformCheckedStartedFor_ok _ _ ist h
+  rw [linkBootCapabilities_machine, startInitialThreads_machine _ _ _ hStart,
     bootFromPlatformCheckedWithIdleThreadsFor_declaredCoreCount _ _ _ hBase]
   exact bindPlatformConfig_declaredCoreCount platform config
 
