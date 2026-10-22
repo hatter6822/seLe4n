@@ -585,19 +585,10 @@
   "SeLe4n/Kernel/Architecture/Invariant.lean": 6
  },
  "h16AuthSlot": {
-  "tests/NegativeStateSuite.lean": 8
- },
- "h16BadAuthSlot": {
-  "tests/NegativeStateSuite.lean": 2
- },
- "h16BadCleanupSlot": {
-  "tests/NegativeStateSuite.lean": 2
- },
- "h16CleanupSlot": {
   "tests/NegativeStateSuite.lean": 2
  },
  "h16CnodeId": {
-  "tests/NegativeStateSuite.lean": 9
+  "tests/NegativeStateSuite.lean": 5
  },
  "h16DeviceAuthSlot": {
   "tests/NegativeStateSuite.lean": 2
@@ -623,17 +614,11 @@
  "h16ExhaustedUntypedId": {
   "tests/NegativeStateSuite.lean": 5
  },
- "h16MismatchState": {
-  "tests/NegativeStateSuite.lean": 2
- },
- "h16ReadOnlySlot": {
-  "tests/NegativeStateSuite.lean": 2
- },
  "h16State": {
-  "tests/NegativeStateSuite.lean": 8
+  "tests/NegativeStateSuite.lean": 2
  },
  "h16TargetId": {
-  "tests/NegativeStateSuite.lean": 14
+  "tests/NegativeStateSuite.lean": 10
  },
  "h16TcbId": {
   "tests/NegativeStateSuite.lean": 3
@@ -703,9 +688,6 @@
   "tests/NegativeStateSuite.lean": 2
  },
  "runAC1CdtTrackingChecks": {
-  "tests/NegativeStateSuite.lean": 2
- },
- "runAN4A5LifecycleVisibilityChecks": {
   "tests/NegativeStateSuite.lean": 2
  },
  "runAk4aTests": {
