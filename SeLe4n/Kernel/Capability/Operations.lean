@@ -1062,10 +1062,13 @@ def cspaceMint
 /-- U-H03: Check whether a CSpace slot has CDT children (derived capabilities).
 Returns `true` if the slot has any children in the tree, read off its first-child
 link (`SystemState.linkHasChild`, equal to the tree's read under the links'
-agreement: `hasCdtChildren_eq_tree`).  No operation refuses on it: a delete
-splices the slot's node out and its children are re-derived from its parent
-(`spliceDeletedCdtNode`). -/
-def hasCdtChildren (st : SystemState) (addr : CSpaceAddr) : Bool :=
+agreement: `hasCdtChildren_eq_tree`).  It is seL4's `ensureNoChildren`: since
+WS-ZA ZA5.4 part 13 a derivation of an untyped capability
+(`untypedDeriveRefused`) and the reset (`untypedResetSlot`) refuse on it.  A
+delete does not: it splices the slot's node out and its children are re-derived
+from its parent (`spliceDeletedCdtNode`).  Inlined, so a caller that names the
+slot by its two words builds no slot reference. -/
+@[inline] def hasCdtChildren (st : SystemState) (addr : CSpaceAddr) : Bool :=
   st.linkHasChild addr
 
 theorem hasCdtChildren_eq_tree {st : SystemState}

@@ -4239,6 +4239,13 @@ run_check "INVARIANT" rg -n '^  ipcUntypedGrantFollowsDerivationRule$' tests/Ope
 run_check "INVARIANT" rg -n -U 'def lockSet_cspaceCopy[^\n]*(\n([ \t][^\n]*)?)*     \(cnodeLock srcCnodeObjId, \.write\),' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n -U 'def lockSet_cspaceMint [^\n]*(\n([ \t][^\n]*)?)*     \(cnodeLock srcCnodeObjId, \.write\),' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n -U 'def lockSet_untypedRetype[^\n]*(\n([ \t][^\n]*)?)*     \(cnodeLock authCnodeObjId, \.write\),' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+# The derivation rule allocates nothing: the children check is inlined, so a
+# caller naming the slot by its words builds no slot reference, and a boot
+# CNode's slot records are its own, so the first carve writes the invoked
+# capability's free index in place.
+run_check "INVARIANT" rg -n '^@\[inline\] def hasCdtChildren \(st : SystemState\) \(addr : CSpaceAddr\) : Bool :=$' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^      cells := c\.cells\.map unshareSlotCell$' SeLe4n/Model/Object/Unshare.lean
+run_negative_check "INVARIANT" rg -n 'cells := c\.cells\.map opaqueId' SeLe4n/Model/Object/Unshare.lean
 run_check "INVARIANT" rg -n 'and leaves the mapping of a page OUTSIDE the region alone' tests/VSpaceCapabilityBindingSuite.lean
 # WS-BP BP7.1 (v0.36.12): intermediate page tables.  A table installs at the
 # shallowest missing level, writes BOTH sides of the install, and a carved root

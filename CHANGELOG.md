@@ -55,6 +55,13 @@ seL4 untyped reset ([`UNTYPED_RESET_PLAN.md`](docs/planning/UNTYPED_RESET_PLAN.m
   write mode.  `lockSet_untypedRetype` gains the authority capability's CNode
   in write mode (seven members).  `lockSet_mintReplyCap` keeps its source in
   read mode, as its own list.
+- **No new allocation on the derivation paths.**  `hasCdtChildren` is
+  `@[inline]`, so a copy's or mint's admission check and the reset's
+  `ensureNoChildren` build no slot reference.  The boot's
+  `KernelObject.unshare` now rebuilds a CNode's slot records as well as its
+  slot array (`unshareSlotCell`).  A boot capability's record is otherwise
+  the boot image's constant, and the first carve writes the invoked
+  capability's free index into it in place.
 - **Deleted**: `untypedWatermarkInvariant`, `watermarkValid`,
   `childrenWithinWatermark`, `freeSpace`, `untypedWatermarkChecks`,
   `allocate_watermark_advance`, `allocate_watermark_monotone`,
