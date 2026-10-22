@@ -322,8 +322,8 @@ run_check "INVARIANT" rg -n '^def cspaceInsertSlot($|[ ({:\[\]])' SeLe4n/Kernel/
 run_check "INVARIANT" rg -n '^def cspaceMint($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
 run_check "INVARIANT" rg -n '^def cspaceDeleteSlot($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
 run_check "INVARIANT" rg -n '^def cspaceRevoke($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
-run_check "INVARIANT" rg -n '^theorem cspaceInsertSlot_preserves_capabilityInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/Insert.lean
-run_check "INVARIANT" rg -n '^theorem cspaceMint_preserves_capabilityInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/Insert.lean
+run_check "INVARIANT" rg -n '^theorem cspaceInsertSlot_preserves_capabilityBundleOffCoverage($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/Insert.lean
+run_check "INVARIANT" rg -n '^theorem cspaceMint_preserves_capabilityBundleOffCoverage($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/Insert.lean
 run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlot_preserves_capabilityInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/Delete.lean
 run_check "INVARIANT" rg -n '^theorem cspaceRevoke_preserves_capabilityInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/Delete.lean
 
@@ -3901,15 +3901,12 @@ run_check "INVARIANT" rg -n '^theorem rpi5PlatformConfigFromDtb_ok_eq_fromDevice
 run_negative_check "INVARIANT" rg -n '\b(rpi5PlatformConfig|rpi5BoundPlatformConfig|rpi5DeploymentBootState)\b' SeLe4n/ tests/
 run_check "INVARIANT" rg -n '^import SeLe4n\.Platform\.RPi5\.Deployment$' SeLe4n.lean
 # WS-BP BP3.5: the production boot state's proof-layer bundle.  One argument
-# over a boot-shaped state, and both boots its instances — the unchecked one
-# refines into it rather than carrying a second copy.
+# over a boot-shaped state; since WS-ZA ZA5.4 its one instance is the linked
+# boot, since a boot that links no capability leaves them outside the tree.
 run_check "INVARIANT" rg -n '^theorem proofLayerInvariantBundle_of_bootShape($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^def bootObjectShape($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^def bootQuiescentFields($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
-run_check "INVARIANT" rg -n '^  refine proofLayerInvariantBundle_of_bootShape \(bootFromPlatform config\)$' SeLe4n/Platform/Boot.lean
-run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedWithIdleThreadsFor_proofLayerInvariantBundle($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^  refine proofLayerInvariantBundle_of_bootShape ist hShape hFields hTree hAsid hUntyped hSched hCur$' SeLe4n/Platform/Boot.lean
-run_check "INVARIANT" rg -n '^theorem bootToRuntime_invariantBridge_checked($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^theorem bootFromPlatformChecked_ok_asidTableConsistent($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^theorem rpi5DeploymentBootStateAt_invariantBridge($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Deployment.lean
 run_check "INVARIANT" rg -n '^  bootToRuntime_invariantBridge_started _ PlatformBinding\.declaredCores_nodup _ _$' SeLe4n/Platform/RPi5/Deployment.lean
@@ -7782,8 +7779,6 @@ run_check "INVARIANT" rg -n '^theorem startInitialThreadOnCore_preserves_threadS
 run_check "INVARIANT" rg -n '^theorem startInitialThreadOnCore_preserves_runQueueBootSound($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/InitialThreadStart.lean
 run_check "INVARIANT" rg -n '^theorem initialThreadStartable_of_start_ne($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/InitialThreadStart.lean
 run_check "INVARIANT" rg -n '^  initialThreads : List SeLe4n\.ThreadId := \[\]$' SeLe4n/Platform/Boot.lean
-run_check "INVARIANT" rg -n '^theorem proofLayerInvariantBundle_of_bootStartShape($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
-run_check "INVARIANT" rg -U -n '^    Architecture\.proofLayerInvariantBundle ist\.state :=\n  proofLayerInvariantBundle_of_bootStartShape ist\n    \(bootFromPlatformCheckedWithIdleThreadsFor_bootStartShape cores hNodup config ist h\)$' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -U -n '^    Except String IntermediateState :=\n  \(bootFromPlatformCheckedWithIdleThreadsFor cores config\)\.bind fun base =>\n    \(startInitialThreads config\.initialThreads base\)\.map \(linkBootCapabilities config\)$' SeLe4n/Platform/Boot/InitialThreads.lean
 run_check "INVARIANT" rg -U -n '^      if initialThreadStartable ist\.state tid then\n        startInitialThreads rest \(startInitialThread ist tid\)\n      else\n        \.error unstartableInitialThreadBootError$' SeLe4n/Platform/Boot/InitialThreads.lean
 run_check "INVARIANT" rg -n '^  state := startInitialThreadOnCore ist\.state tid$' SeLe4n/Platform/Boot/InitialThreads.lean
@@ -12251,7 +12246,7 @@ import SeLe4n.Kernel.SchedContext.ReplenishQueue
 
 #check @SeLe4n.Kernel.schedule_preserves_schedulerInvariantBundle
 #check @SeLe4n.Kernel.timerTick_preserves_schedulerInvariantBundle
-#check @SeLe4n.Kernel.cspaceMint_preserves_capabilityInvariantBundle
+#check @SeLe4n.Kernel.cspaceMint_preserves_capabilityBundleOffCoverage
 #check @SeLe4n.Kernel.cspaceRevoke_preserves_capabilityInvariantBundle
 #check @SeLe4n.Kernel.endpointSendDual_preserves_ipcInvariant
 #check @SeLe4n.Kernel.serviceRegisterDependency_preserves_serviceGraphInvariant
@@ -21824,7 +21819,7 @@ run_check "INVARIANT" rg -n '^theorem spliceNode_edgeWellFounded($|[ ({:\[\]])' 
 run_check "INVARIANT" rg -n '^theorem spliceNode \(h : LinksAgree L cdt\) \(n : SlotRef\)$' SeLe4n/Model/Object/DerivationLinks.lean
 # v0.36.106: the capability bundle carries the slot links' agreement with the
 # tree; since v0.36.111 the revoke reads the source's first-child link.
-run_check "INVARIANT" rg -n -U '    cspaceDepthConsistent st ∧ st\.objects\.invExt ∧ replyCapPointsToValidReply st ∧\n    cdtLinksAgree st$' SeLe4n/Kernel/Capability/Invariant/Defs.lean
+run_check "INVARIANT" rg -n -U '    cspaceDepthConsistent st ∧ st\.objects\.invExt ∧ replyCapPointsToValidReply st ∧\n    cdtLinksAgree st ∧ SystemState\.CapTreeShape st$' SeLe4n/Kernel/Capability/Invariant/Defs.lean
 run_check "INVARIANT" rg -n '^    let fc := st\.slotLinkNodeWord cnode slot \.firstChild$' SeLe4n/Kernel/Capability/FrameFinalise.lean
 run_check "INVARIANT" rg -n '^theorem linkDescendantsOf_eq($|[ ({:\[\]])' SeLe4n/Model/SlotLinks.lean
 run_check "INVARIANT" rg -n '^@\[inline\] def spliceDeletedCdtNode($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
@@ -21865,7 +21860,7 @@ run_check "INVARIANT" rg -n -U '^@\[inline\] def cdtAppendRoot \(st : SystemStat
 run_check "INVARIANT" rg -n '^theorem cdtSplice_agree \{st : SystemState\}' SeLe4n/Model/SlotLinks.lean
 run_check "INVARIANT" rg -n '^theorem cdtMove_agree \{st : SystemState\}' SeLe4n/Model/SlotLinks.lean
 run_check "INVARIANT" rg -n '^theorem cdtAppendRoot_agree \{st : SystemState\}' SeLe4n/Model/SlotLinks.lean
-run_check "INVARIANT" rg -n -U '^def bootDerivationTreeSound \(st : SystemState\) : Prop :=\n  cdtCompleteness st ∧ cdtAcyclicity st ∧ cdtLinksAgree st ∧ ∃ P, st\.cdt\.TreeOrder P$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n -U '^def bootDerivationTreeSound \(st : SystemState\) : Prop :=\n  cdtCompleteness st ∧ cdtAcyclicity st ∧ cdtLinksAgree st ∧ st\.CapTreeShape$' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^def bootLinkedShape($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^theorem proofLayerInvariantBundle_of_bootLinkedShape($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n -U '        match a\.roots\.find\? \(fun q => decide \(q\.2 = cap\.target\)\) with\n        \| some q => \{ a with st := a\.st\.cdtAddChild q\.1 r \.copy, done := r :: a\.done \}\n        \| none =>\n            \{ st := a\.st\.cdtAppendRoot a\.last r, last := some r, done := r :: a\.done,' SeLe4n/Platform/Boot/CapabilityLinks.lean
@@ -21873,6 +21868,14 @@ run_check "INVARIANT" rg -n -U '^def bootCapabilitySlots \(objs : List ObjectEnt
 run_check "INVARIANT" rg -n '^theorem BootLinks\.Sound\.step($|[ ({:\[\]])' SeLe4n/Platform/Boot/CapabilityLinks.lean
 run_check "INVARIANT" rg -n '^theorem linkBootCapabilities_bootLinkedShape($|[ ({:\[\]])' SeLe4n/Platform/Boot/CapabilityLinks.lean
 run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedStartedFor_bootLinkedShape($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean
+# WS-ZA ZA5.4 part 16: every capability-holding slot is in the tree.  The
+# bundle carries the shape, the linked boot establishes it from the listing of
+# every boot slot, and the unlinked and unchecked boots' bundle claims are gone.
+run_check "INVARIANT" rg -n '^abbrev CapTreeShape \(st : SystemState\) : Prop := TreeShapeOver st\.cdt st\.slotCapAt$' SeLe4n/Model/SlotTreeShape.lean
+run_check "INVARIANT" rg -n '^theorem BootLinks\.Sound\.foldl_done($|[ ({:\[\]])' SeLe4n/Platform/Boot/CapabilityLinks.lean
+run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedWithIdleThreadsFor_bootSlotsListed($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean
+run_check "INVARIANT" rg -n '^theorem startInitialThreads_bootSlotsListed($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean
+run_negative_check "INVARIANT" rg -n '\b(bootFromPlatformUnchecked|proofLayerInvariantBundle_of_bootStartShape|bootFromPlatform_proofLayerInvariantBundle_general|bootFromPlatformCheckedWithIdleThreadsFor_proofLayerInvariantBundle|bootToRuntime_invariantBridge_checked)\b' SeLe4n/ tests/
 run_check "INVARIANT" rg -n '^  linkBootCapabilities qemuVirtBoundPlatformConfig qemuVirtDeploymentStartedState$' SeLe4n/Platform/QemuVirt/Deployment.lean
 run_check "INVARIANT" rg -n '^  linkBootCapabilities \(rpi5BoundPlatformConfigAt v\) \(rpi5DeploymentStartedStateAt v\)$' SeLe4n/Platform/RPi5/Deployment.lean
 finalize_report

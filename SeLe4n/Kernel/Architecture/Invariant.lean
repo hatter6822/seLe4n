@@ -469,7 +469,14 @@ private theorem default_capabilityInvariantBundle :
      rw [SystemState.slotLinkAt_def]
      cases h : (default : SystemState).objects[r.cnode]? with
      | none => rfl
-     | some o => exact default_objects_absurd h⟩
+     | some o => exact default_objects_absurd h,
+   ⟨fun r hr => absurd (by
+       rw [SystemState.slotCapAt_eq_bind]
+       cases h : (default : SystemState).objects[r.cnode]? with
+       | none => rfl
+       | some o => exact default_objects_absurd h) hr,
+    ⟨[], CapDerivationTree.TreeOrder.empty_tree CapDerivationTree.empty_edges
+      CapDerivationTree.empty_rootChains⟩⟩⟩
 
 -- WS-H12e: Default-state proofs for new invariant components
 

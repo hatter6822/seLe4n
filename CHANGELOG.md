@@ -1,3 +1,96 @@
+## v0.36.127 — WS-ZA ZA5.4 part 16: every capability-holding slot is in the derivation tree
+
+Every slot that holds a capability is now in the capability derivation tree,
+as every non-null capability is in seL4's mapping database, and the tree's
+preorder is part of the capability bundle.  Boot establishes both and every
+slot write keeps them.  The unchecked boot, which left its capabilities
+outside the tree, is retired.  Part 16 of the seL4 untyped reset
+([`UNTYPED_RESET_PLAN.md`](docs/planning/UNTYPED_RESET_PLAN.md)), whose
+schedule is renumbered (below).
+
+### Changes
+
+- **The tree's shape over the slots** (new module `Model/SlotTreeShape.lean`).
+  `CapTreeShape st` holds when every slot holding a capability is in the tree
+  (`slotsInTree`) and the tree has a preorder (`TreeOrder`).  It is stated
+  over the tree and the slot reader (`TreeShapeOver`), so a step that writes
+  neither keeps it by definition.  The lemmas that keep it:
+  - `of_frame`: the tree and every slot are unchanged (`SlotTreeFrame`);
+  - `rewrite`: an occupied slot is rewritten in place;
+  - `addChild`: an insert records its edge;
+  - `splice`: a delete splices its slot out;
+  - `move`: a move renames its slot.
+- **The capability bundle's 8th conjunct** is `CapTreeShape`
+  (`capabilityInvariantBundle`, projection `treeShape`).  Every slot write's
+  theorem is restated to keep it: copy, move, mint with derivation, reply
+  mint, mutate, rewrite, delete, revoke, IPC transfer and set-space, plus the
+  frame, link-write and kind-preserving bundle lemmas.  An insert on its own
+  keeps the bundle without coverage (`capabilityBundleOffCoverage`):
+  `cspaceInsertSlot_preserves_capabilityBundleOffCoverage`,
+  `cspaceMint_preserves_capabilityBundleOffCoverage` and
+  `mintReplyCap_preserves_capabilityBundleOffCoverage`.  The step that
+  records the edge restores coverage (`treeShape_addEdge_after_insert`).
+- **Boot establishes it.**  `bootDerivationTreeSound` now ends in
+  `CapTreeShape`.
+  - The linking links every listed slot that holds a capability
+    (`BootLinks.Sound.foldl_done`, `bootSlotsListed`).
+  - Every slot holding a capability in the started boot's state is a boot
+    capability slot.  Each such object is a configured one
+    (`bootFromPlatformCheckedWithIdleThreadsFor_ok_capObject_of_config`);
+    idle TCBs and the boot VSpace root hold no capability.  The starts write
+    no slot (`startInitialThreads_bootSlotsListed`).
+  - `linkBootCapabilities_bootLinkedShape` takes the listing as a hypothesis.
+- **Retired.**  The bundle theorems of boots that link no capability are false
+  once the bundle requires every capability in the tree, and are deleted:
+  - `bootFromPlatform_proofLayerInvariantBundle_general`,
+    `bootToRuntime_invariantBridge_general`;
+  - `bootFromPlatformCheckedWithIdleThreadsFor_proofLayerInvariantBundle`,
+    its all-cores form, `bootToRuntime_invariantBridge_checked`;
+  - `proofLayerInvariantBundle_of_bootStartShape`, `bootStartShape.linked`.
+
+  Also deleted: the deprecated `bootFromPlatformUnchecked` alias and
+  `SeLe4n/Testing/Deprecated.lean`, plus the orphaned
+  `bootFromPlatform_asidTable_eq`.  `bootFromPlatform` remains as the checked
+  boot's object-fold stage only.  The production boot's bridge is
+  `bootToRuntime_invariantBridge_started`, as before.
+- **Test states name their sources.**  `withDerivationEdges` first makes each
+  source a root (`cdtAppendRoot`) when no earlier edge named it.  One
+  negative-state fixture records its edges parent first.  The operation-chain
+  boot test (chain26) runs the checked boot.
+- `CNode.mem_occupiedSlots_of_lookup`: an occupied slot is listed.
+
+### Plan
+
+`UNTYPED_RESET_PLAN.md` is renumbered; rows 17 to 19 had not started.
+- 16 is this part.
+- 17 (new): the carve keeps the capability bundle.
+- 18 (new): the invariants finality reads.  Every capability names a live
+  object, and the checked boot will refuse a configured capability naming
+  nothing it installs.  The untyped chain and full facts, the below-parent
+  fact, and seL4's descendants fact.
+- 19: finality (`sameObjectContiguous`, word-only `capIsFinal`), the old 16.
+- 20, 21 and 22: the old 17, 18 and 19.
+
+D1 records that "the same object" is seL4's `sameObjectAs`, by object id,
+untyped included.  The registered-debt rows, the spec, the workstream context,
+three source comments and the comment above the `untyped-reset` pin cite the
+new numbers; no pin value changed.
+
+### Validation
+
+- `./scripts/test_full.sh --continue` passes, and so does
+  `./scripts/test_lean_aarch64_archive.sh`.
+- Every QEMU heap pin is unchanged
+  (`./scripts/test_qemu_heap_allocations_per_syscall.sh --lean-kernel`).
+
+### Registered debt
+
+- Closed: "Every slot holding a capability is in the derivation tree, and
+  `TreeOrder` is a bundle conjunct" (registered `v0.36.126`).
+- New row, closed by part 17: "The carve has no capability-bundle
+  preservation theorem".  `retypeFromUntyped` and `untypedRetypeObject` are
+  to be proven to keep all eight conjuncts of `capabilityInvariantBundle`.
+
 ## v0.36.126 — WS-ZA ZA5.4 part 15: the derivation tree in seL4 order
 
 The capability derivation tree's preorder is now seL4's mapping-database

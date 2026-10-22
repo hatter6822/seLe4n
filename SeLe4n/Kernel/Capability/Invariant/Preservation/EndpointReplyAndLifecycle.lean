@@ -81,7 +81,7 @@ theorem capabilityInvariantBundle_of_storeTcbAndEnsureRunnable
     (hDepthPre : cspaceDepthConsistent st)
     (hObjInv : st.objects.invExt)
     (hRCPV : replyCapPointsToValidReply st)
-    (hLinks : cdtLinksAgree st)
+    (hLinks : cdtLinksAgree st) (hShape : SystemState.CapTreeShape st)
     (hTcb : storeTcbIpcStateAndMessage st target ipc msg = .ok st1)
     (hLookup : lookupTcb st target = some tcb) :
     capabilityInvariantBundle (ensureRunnable st1 target) := by
@@ -94,7 +94,7 @@ theorem capabilityInvariantBundle_of_storeTcbAndEnsureRunnable
   -- The store rewrites the target's TCB off its slots and the wake rewrites run
   -- links: both are kind- and slot-preserving writes.
   exact capabilityInvariantBundle_of_kindPreserving
-    ⟨cspaceLookupSound_holds _, hComp, hAcyclic, hDepthPre, hObjInv, hRCPV, hLinks⟩ hEnsCdt
+    ⟨cspaceLookupSound_holds _, hComp, hAcyclic, hDepthPre, hObjInv, hRCPV, hLinks, hShape⟩ hEnsCdt
     ((ensureRunnable_objects_invExt st1 target) hObjInv1)
     ((storeTcbIpcStateAndMessage_kindPreservingWrite hObjInv hTcb).trans
       (ensureRunnable_objectsAgreeOffRunLinks st1 target).kindPreserving)
@@ -144,7 +144,7 @@ theorem endpointReply_preserves_capabilityInvariantBundle
     (hInv : capabilityInvariantBundle st)
     (hStep : endpointReply replier target msg st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
-  rcases hInv with ⟨_hSound, hComp, hAcyclic, hDepthPre, hObjInv, hRCPV, hLinks⟩
+  rcases hInv with ⟨_hSound, hComp, hAcyclic, hDepthPre, hObjInv, hRCPV, hLinks, hShape⟩
   unfold endpointReply at hStep
   -- WS-H12d: Eliminate bounds-check if-branches (error cases contradict hStep : ... = .ok ...)
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
@@ -191,7 +191,7 @@ theorem endpointReply_preserves_capabilityInvariantBundle
           intro st1 hTcb
           exact capabilityInvariantBundle_of_storeTcbAndEnsureRunnable
             st st1 target .ready (some msg) tcb
-            hComp hAcyclic hDepthPre hObjInv hRCPV hLinks hTcb hLookup
+            hComp hAcyclic hDepthPre hObjInv hRCPV hLinks hShape hTcb hLookup
 
 /-- M3 composed bundle entrypoint: M1 scheduler + M2 capability + M3 IPC.
 

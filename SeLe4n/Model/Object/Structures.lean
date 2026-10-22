@@ -1288,6 +1288,18 @@ call it. -/
 def occupiedSlots (node : CNode) : List (SeLe4n.Slot × Capability) :=
   (node.foldCells [] fun acc s c => (s, c) :: acc).reverse
 
+/-- WS-ZA ZA5.4: an occupied slot is listed, with its capability. -/
+theorem mem_occupiedSlots_of_lookup {node : CNode} {s : SeLe4n.Slot} {c : Capability}
+    (h : node.lookup s = some c) : (s, c) ∈ node.occupiedSlots := by
+  unfold occupiedSlots
+  rw [List.mem_reverse]
+  refine (foldCells_preserves_visited node [] (fun acc s c => (s, c) :: acc) (fun _ => True)
+    (fun s acc => ∀ c, node.lookup s = some c → (s, c) ∈ acc) trivial
+    (fun _ _ _ _ _ => trivial)
+    (fun acc s c hs _ c' hc' => by
+      rw [hs] at hc'; cases hc'; exact List.mem_cons_self ..)
+    (fun _ _ _ _ _ _ hR c' hc' => List.mem_cons_of_mem _ (hR c' hc'))).2 s c h c h
+
 /-- WS-G5/F-P03: O(1) amortized slot insert via `RHTable.insert`.
 RHTable key uniqueness (noDupKeys invariant) ensures the old entry for `slot` is replaced.
 
@@ -2045,6 +2057,23 @@ theorem lookup_revokeTargetLocal_sub
   simp only [revokeTargetLocal, lookup, slots_filterSlots, SeLe4n.UniqueSlotMap.get?,
     SeLe4n.UniqueSlotMap.filter] at hLookup ⊢
   exact RHTable.filter_get_subset node.slots.table _ slot cap hUniq.1 hLookup
+
+/-- ...a slot the revoke does not keep is emptied... -/
+theorem lookup_revokeTargetLocal_of_not_keeps
+    (node : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget)
+    (slot : SeLe4n.Slot) (cap : Capability) (hUniq : node.slotsUnique)
+    (hLookup : node.lookup slot = some cap)
+    (hKeeps : revokeTargetLocalKeeps sourceSlot target slot cap = false) :
+    (node.revokeTargetLocal sourceSlot target).lookup slot = none := by
+  cases h : (node.revokeTargetLocal sourceSlot target).lookup slot with
+  | none => rfl
+  | some v =>
+    have h1 := lookup_revokeTargetLocal_sub node sourceSlot target slot v hUniq h
+    rw [hLookup] at h1; cases h1
+    simp only [revokeTargetLocal, lookup, slots_filterSlots, SeLe4n.UniqueSlotMap.get?,
+      SeLe4n.UniqueSlotMap.filter] at h
+    have h2 := (RHTable.filter_getElem?_iff _ _ _ _ hUniq.1).mp h
+    rw [hKeeps] at h2; cases h2.2
 
 /-- ...and a slot the revoke keeps keeps its capability. -/
 theorem lookup_revokeTargetLocal_of_keeps

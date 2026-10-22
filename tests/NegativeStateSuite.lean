@@ -272,7 +272,7 @@ private def runCspaceMutationAndRevokeNegativeChecks : IO Unit := do
   let moveSeed : SystemState :=
     { baseState with
       cdt := CapDerivationTree.empty
-    } |>.withDerivationEdges [(slot0, moveChildSlot, .mint), (moveParentSlot, slot0, .copy)]
+    } |>.withDerivationEdges [(moveParentSlot, slot0, .copy), (slot0, moveChildSlot, .mint)]
   let (_, moveState) ← expectOkSt "cspaceMove moves the source's tree position"
     (SeLe4n.Kernel.cspaceMove slot0 moveDst moveSeed)
   if moveState.slotLinkAt moveDst .parent = some moveParentSlot ∧
