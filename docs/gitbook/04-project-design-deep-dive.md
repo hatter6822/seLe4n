@@ -155,8 +155,9 @@ As in seL4, where each `cte_t` is its own mapping-database node, a derivation
 edge joins two slots (since `v0.36.103`, WS-ZA ZA5.3 part 2):
 
 - **Derivation edges** connect `SlotRef`s; there is no separate node identifier, counter or slot-to-node table.
-- **`cspaceMove`** carries the source slot's parent and children to the destination (`CapDerivationTree.moveNode`).
-- **A delete** splices the slot out, re-deriving its children from its parent (`spliceNode`).
+- **`cspaceMove`** carries the source slot's parent, children and place among its siblings to the destination (`CapDerivationTree.moveNode`).
+- **A delete** splices the slot out, its children taking its place among its siblings (`spliceNode`).
+- **The slots with no parent form one sibling chain**, so the tree's preorder is seL4's mapping-database list (`CapDerivationTree.TreeOrder`, since `v0.36.126`, ZA5.4 part 15), and the boot links its capabilities into it, a thread's space slots derived from the CNode slot naming the same object (`linkBootCapabilities`).
 - **Each slot holds its derivation links** (parent, first child, previous and next sibling) as words in its CNode, as seL4's mapping database (since `v0.36.106`, ZA5.3 part 4); the capability bundle proves they agree with the tree (`cdtLinksAgree`).
 - **Children and descendants are read along the links** (`linkChildrenOf`, `linkDescendantsOf`, a breadth-first walk with `HashSet` visited tracking), each proven equal to the tree's read.
 

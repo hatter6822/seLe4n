@@ -1,3 +1,82 @@
+## v0.36.126 — WS-ZA ZA5.4 part 15: the derivation tree in seL4 order
+
+The capability derivation tree's preorder is now seL4's mapping-database
+list.  The slots with no parent form one sibling chain, a delete puts its
+children where it was among its siblings, a move keeps the slot's place, and
+the started boot links its capabilities into the tree, deriving each thread's
+CSpace and VSpace slots from the CNode slot that names the same object, as
+seL4's `create_initial_thread` does.  Part 15 of the seL4 untyped reset
+([`UNTYPED_RESET_PLAN.md`](docs/planning/UNTYPED_RESET_PLAN.md)).
+
+### Changes
+
+- **Root chains** (`CapDerivationTree.rootChains`, ghost): the parentless slots
+  are chained.  A parentless slot no chain lists is a root on its own.
+  `appendRoot` and its link writer `cdtAppendRoot` (`linkAppendRoot`) add a
+  root after the chain's last slot.  `mentions` now also covers a chain's
+  slots.  `LinksAgree` reads a root's sibling links off its chain and
+  requires the chains to be duplicate-free and parentless.
+- **The splice keeps the deleted slot's place** (`spliceNode`, `replaceSlot`).
+  The link writer `linkSpliceNode` (`linkSpliceRun`) re-parents the children
+  in one walk along their sibling links and joins the run to the deleted
+  slot's neighbours.  It walks with fuel one past the edge bound.  The
+  restated theorems are `LinksAgree.spliceNode`, `spliceNode_links`,
+  `linkSpliceNode_spec`, `cdtSplice_agree` and `spliceNode_edges_length_lt`.
+- **The move renames in place** (`moveNode`, `renameSlot`).  The link writer
+  `linkMoveNode` (`linkSetParentRun`) copies the four links to the
+  destination and re-points the neighbours, the parent's first-child link and
+  each child's parent link.  The restated theorems are `LinksAgree.moveNode`,
+  `moveNode_links`, `linkMoveNode_spec` and `cdtMove_agree`.
+- **The preorder** (`CapDerivationTree.TreeOrder`, new module
+  `Model/Object/DerivationOrder.lean`) is the forest's preorder from the root
+  chain (`ForestOrder`).  It is duplicate-free, lists every slot the tree
+  names, sits over at most one chain, and is unique (`TreeOrder.unique`).
+  Each tree write maps it:
+  - an insert puts the child right after its source (`TreeOrder.addEdge`,
+    `insertAfter`), for a source the tree names;
+  - a delete removes the slot (`TreeOrder.spliceNode`);
+  - a move renames it (`TreeOrder.moveNode`);
+  - a root append adds it at the end (`TreeOrder.appendRoot`).
+- **Boot links its capabilities** (new module
+  `Platform/Boot/CapabilityLinks.lean`).  `bootFromPlatformCheckedStartedFor`
+  ends with `linkBootCapabilities`.  It walks every configured CNode's
+  occupied slots, then every configured thread's two space slots
+  (`bootCapabilitySlots`).  The first slot naming a target joins the root
+  chain, and a later slot naming the same target becomes a copy child of that
+  root (`bootLinkSlot`).  `BootLinks.Sound` is what each step keeps.
+  `linkBootCapabilities_bootLinkedShape` takes a boot-shaped state to one of
+  linked boot shape (`bootLinkedShape`):
+  - the objects agree with the unlinked ones off their links
+    (`bootObjectShapeOffLinks`);
+  - the tree is complete and acyclic, its links spell it, and it has a
+    preorder (`bootDerivationTreeSound`).
+
+  The boot bundle (`proofLayerInvariantBundle_of_bootShape`) now takes the
+  tree's soundness as a hypothesis.  `proofLayerInvariantBundle_of_bootLinkedShape`
+  gives the started boot's bundle.  The QEMU `virt` and RPi5 deployment states
+  are the linked started states, and the started-stage theorems
+  (`_ok`, `_of_idle`, `_of_nil`, `_started`, `_allCores_threadStateConsistent`,
+  `_allCores_currentDequeuedUnique`) are restated across the linking.
+- **Runtime checks**: `cdtLinksConsistentCheck` reads every slot of the store,
+  thread space slots included (`objectLinkSlots`).  It accepts root chains and
+  checks that the parentless slots' chains together list every linked root.
+  The trace fixture's post-dispatch check count goes from 44 to 45 for the
+  new root-chain check (`[PIP-005]` line of
+  `tests/fixtures/main_trace_smoke.expected`; checksum refreshed).
+
+### Validation
+
+- `./scripts/test_full.sh --continue` passes, and so does
+  `./scripts/test_lean_aarch64_archive.sh`.
+- Every QEMU heap pin is unchanged
+  (`./scripts/test_qemu_heap_allocations_per_syscall.sh --lean-kernel`).
+
+### Registered debt
+
+- New row: a capability can still sit outside the tree (the unchecked boot,
+  and an insert under a source the tree does not name), so the root chain and
+  the preorder are not yet kernel invariants.  Part 16 closes it.
+
 ## v0.36.125 — WS-ZA ZA5.4 part 14: every object kind is carved from an untyped
 
 Every kernel object now comes from an untyped, as in seL4: the carve makes a
