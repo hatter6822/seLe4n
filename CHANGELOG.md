@@ -91,10 +91,15 @@ seL4 untyped reset ([`UNTYPED_RESET_PLAN.md`](docs/planning/UNTYPED_RESET_PLAN.m
   - The trace fixture reads the free index from the authority capability
     (UMT-003, UMT-007); the values are unchanged.
 - **Exerciser**: every pin unchanged.  Page-table retype is 16 / 14 / 14 at
-  first call and 13 in steady state; frame retype is 12 / 11; `untyped-reset`
-  is 151; `cspace-copy` and `cspace-mint` are 0.
-- **Registered debt**: boot is not yet proven to establish
-  `untypedMemoryInvariant`.  It is now a row in `docs/REGISTERED_DEBT.md` §C,
+  first call and 13 in steady state; frame retype is 12 / 11; `cspace-copy`
+  and `cspace-mint` are 0.  `untyped-reset` is 161 (151 before; Adam chose
+  the re-pin, 2026-10-22): the rewind of the invoked slot's index is written
+  while the dispatch still holds the pre-state, because the whole-store reset
+  refuses after it writes, so the state, object table, CNode and capability
+  are copied (10 cells).  Part 19's reset, every refusal before any write,
+  reads 0.
+- **Registered debt**: the rewind's 10 cells, closing in part 19.  Boot is
+  not yet proven to establish `untypedMemoryInvariant`.  It is now a row in `docs/REGISTERED_DEBT.md` §C,
   closing in part 19.
 - **Docs**: spec §8.10.2a, `CLAIM_EVIDENCE_INDEX.md` (a new row; the reset row
   restated), `WORKSTREAM_CONTEXT.md`, the plan rows in `UNTYPED_RESET_PLAN.md`
