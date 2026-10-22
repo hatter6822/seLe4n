@@ -1014,10 +1014,16 @@ private def runUntypedF2NegativeChecks : IO Unit := do
       |>.withLifecycleObjectType f2UntypedObjId .untyped
       |>.withLifecycleObjectType f2UntypedAuthCnode .cnode
       |>.buildChecked)
-  expectErr "misaligned base for VSpace root"
-    (SeLe4n.Kernel.retypeFromUntyped f2UntypedAuthSlot f2UntypedObjId f2UntypedChildId
-      (.vspaceRoot { asid := ⟨0⟩, mappings := SeLe4n.Kernel.RobinHood.RHTable.empty 16 }) 4096 f2MisalignedState)
-    .allocationMisaligned
+  -- WS-ZA ZA5.4 part 14: as seL4's `alignUp(freeRef, objectSize)`, a
+  -- misaligned base is rounded up to the next page, not refused: the root's page
+  -- is `[0x11000, 0x12000)`, so the capability's index lands at `0x2000 - 1`.
+  expectCond "S5-G" "a misaligned base for a VSpace root is rounded up to the next page"
+    (match SeLe4n.Kernel.retypeFromUntyped f2UntypedAuthSlot f2UntypedObjId f2UntypedChildId
+      (.vspaceRoot { asid := ⟨0⟩, mappings := SeLe4n.Kernel.RobinHood.RHTable.empty 16 }) 4096
+        f2MisalignedState with
+     | .ok ((), st') =>
+       (SystemState.lookupSlotCap st' f2UntypedAuthSlot).map (·.freeIndex) == some (0x1FFF)
+     | .error _ => false)
 
   IO.println "untyped memory negative checks passed (incl. S5-G alignment)"
 
@@ -2281,22 +2287,49 @@ def runWSH16LifecycleChecks : IO Unit := do
      | .error _ => true
      | .ok _ => false)
 
-  -- H16-NEG-06: a kernel object is carved on a multiple of its own size; a
-  -- capability whose free index is not one refuses it (allocationMisaligned).
+  -- H16-NEG-06: a carve is made on its own boundary, the capability's free index
+  -- rounded up to it (seL4's `alignUp(freeRef, objectSize)`), never refused.
+  -- From an index of 16 (an endpoint's worth): a TCB lands at 2048, an endpoint
+  -- at 4096, a frame at the next page (8192), and a TCB after the frame on its
+  -- own 2048-byte boundary (12288).
   let misalignedCarveState : SystemState :=
     (BootstrapBuilder.empty
       |>.withObject carveRefusalUtId (.untyped
-          { regionBase := SeLe4n.PAddr.ofNat 0x40000, regionSize := 0x2000 })
-      |>.withObject carveRefusalCnId (.cnode (CNode.ofList 0 0 0 2 [
+          { regionBase := SeLe4n.PAddr.ofNat 0x40000, regionSize := 0x4000 })
+      |>.withObject carveRefusalCnId (.cnode (CNode.ofList 0 0 0 3 [
           (SeLe4n.Slot.ofNat 0, { target := .object carveRefusalUtId, rights := AccessRightSet.ofList [.read, .write, .retype],
                                   freeIndex := 16 })
         ]))
       |>.withLifecycleObjectType carveRefusalUtId .untyped
       |>.withLifecycleObjectType carveRefusalCnId .cnode
       |>.buildChecked)
-  expectErr "H16 carve of a TCB at a misaligned free index"
-    (SeLe4n.Kernel.untypedRetypeObject (carveRefusalSlot 0) ⟨155⟩ (carveRefusalSlot 3) (.tcb ⟨0⟩ bootCoreId) misalignedCarveState)
-    .allocationMisaligned
+  let carveAt (req : SeLe4n.Kernel.CarveRequest) (child dstSlot : Nat) (s : SystemState) :
+      Option SystemState :=
+    match SeLe4n.Kernel.untypedRetypeObject (carveRefusalSlot 0) ⟨child⟩ (carveRefusalSlot dstSlot)
+        req s with
+    | .ok ((), s') => some s'
+    | .error _ => none
+  let indexOf (s : SystemState) : Option Nat :=
+    (SystemState.lookupSlotCap s (carveRefusalSlot 0)).map (·.freeIndex)
+  let alignedRun : Option (SystemState × SystemState × SystemState × SystemState) := do
+    let s1 ← carveAt (.tcb ⟨0⟩ bootCoreId) 155 1 misalignedCarveState
+    let s2 ← carveAt .endpoint 156 2 s1
+    let s3 ← carveAt .frame 157 3 s2
+    let s4 ← carveAt (.tcb ⟨0⟩ bootCoreId) 158 4 s3
+    pure (s1, s2, s3, s4)
+  match alignedRun with
+  | none => expectCond "H16-NEG-06" "the aligned carve sequence succeeds" false
+  | some (s1, s2, s3, s4) =>
+    expectCond "H16-NEG-06" "a TCB at free index 16 is carved at 2048, the index past it 4096"
+      (indexOf s1 == some 4096)
+    expectCond "H16-NEG-06" "an endpoint after it needs no rounding (index 4112)"
+      (indexOf s2 == some 4112)
+    expectCond "H16-NEG-06" "a frame after the endpoint is carved on the next page (0x42000)"
+      (indexOf s3 == some 12288 &&
+        (s3.getFrame? ⟨157⟩).map (·.base.toNat) == some 0x42000)
+    expectCond "H16-NEG-06" "a TCB after the frame lands on its own boundary (12288, index 14336)"
+      (indexOf s4 == some 14336 &&
+        (0x40000 + 12288) % 2048 == 0)
 
   -- H16-NEG-07: retypeFromUntyped with exhausted untyped (the authority capability's free index at the region boundary) → regionExhausted
   let h16ExhaustedUntypedId : SeLe4n.ObjId := ⟨160⟩

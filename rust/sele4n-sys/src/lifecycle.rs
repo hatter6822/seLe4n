@@ -32,8 +32,8 @@ use sele4n_types::{CPtr, KernelResult, ObjId, Slot, SyscallId};
 /// [`TypeTag::PageTable`]: one zeroed table page.  The other kernel objects —
 /// [`TypeTag::Tcb`], [`TypeTag::Endpoint`], [`TypeTag::Notification`],
 /// [`TypeTag::CNode`], [`TypeTag::Reply`] and [`TypeTag::SchedContext`] — are
-/// carved at seL4's object sizes, aligned to them (`AllocationMisaligned`
-/// otherwise), from RAM only (`UntypedDeviceRestriction` from a device
+/// carved at seL4's object sizes, each on a boundary of its own size (the
+/// free index is rounded up to it, as seL4's `alignUp`), from RAM only (`UntypedDeviceRestriction` from a device
 /// untyped), and handed back with every right but retype.  Every other
 /// combination is `InvalidArgument`.
 ///

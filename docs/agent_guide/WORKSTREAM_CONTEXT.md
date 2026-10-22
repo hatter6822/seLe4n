@@ -231,7 +231,8 @@ setting a thread's spaces copies the capabilities in with their derivation
 edges; at `v0.36.124` (part 13) an untyped capability holds its own free index,
 and copy, mint and IPC transfer derive it by seL4's rule (refused with
 children, source set full otherwise); at `v0.36.125` (part 14) every object
-kind is carved from an untyped at seL4's size and alignment, and the in-place
+kind is carved from an untyped at seL4's size, the free index rounded up to the
+object's boundary as seL4's `alignUp(freeRef, objectSize)`, and the in-place
 retype, its syscall arm (number 8, kept reserved) and its theorems are deleted.
 The destroy cleanup it ran stays, with no live caller, for parts 18 and 19
 (`docs/REGISTERED_DEBT.md`).  The

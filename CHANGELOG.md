@@ -2,7 +2,8 @@
 
 Every kernel object now comes from an untyped, as in seL4: the carve makes a
 TCB, endpoint, notification, CNode, reply or SchedContext at seL4's size,
-aligned to that size, at the invoked capability's free index.  The in-place
+at the invoked capability's free index rounded up to that size, as seL4's
+`alignUp(freeRef, objectSize)`.  The in-place
 retype is deleted, with its syscall arm and its theorems; syscall number 8
 stays reserved.  Part 14 of the seL4 untyped reset
 ([`UNTYPED_RESET_PLAN.md`](docs/planning/UNTYPED_RESET_PLAN.md)).
@@ -13,12 +14,22 @@ stays reserved.  Part 14 of the seL4 untyped reset
   `retypeFromUntyped`, `untypedRetypeObject`).  Sizes follow seL4's
   `getObjectSize`: endpoint 2^4, reply 2^5, notification 2^6, TCB 2^11, a
   CNode 2^(radix + 5) with radix in [1, 42], a SchedContext 2^b with b ≥ 7.
-  A kernel object is placed at its own size's alignment; a base that is not
-  aligned is refused with `allocationMisaligned`, where seL4 rounds the free
-  index up.  A device untyped still backs only untypeds and frames.  The
+  A device untyped still backs only untypeds and frames.  The
   carved capability carries every right except retype.  Each carved object
   carries its child id as its own identity, and a carved TCB is unqueued and
   a carved SchedContext and reply are bound to nothing.
+- **The free index is rounded up, never refused** (`alignedCarveIndex`,
+  `carveAlignment`, `alignUpNat`): as seL4's `decodeUntypedInvocation`, the
+  carve rounds the capability's free index up to the object's boundary — a
+  page for a frame, page table, address-space root or child untyped, the
+  object's own size for a kernel object — checks the capacity there, and
+  advances the free index past it.  `retypeFromUntyped` no longer returns
+  `allocationMisaligned` (the error code 37 stays in the table, returned by
+  nothing).  `retypeFromUntyped_ok_aligned`, `_ok_pageAligned`,
+  `_ok_sizeAligned`, `_ok_decompose`, `_ok_stores`,
+  `_error_regionExhausted` and the per-kind payoff theorems are restated at
+  the rounded index; `carveBaseAligned_alignedCarveIndex`,
+  `le_alignedCarveIndex` and `UntypedObject.childrenBelow_mono` are new.
 - **Authority comes first** (`untypedRetypeObject_unauthorized`): a
   capability without the retype right is refused before the child id or the
   destination is read, so the refusal answers nothing about them.  This
@@ -37,15 +48,20 @@ stays reserved.  Part 14 of the seL4 untyped reset
   `_reply`, `_cnode` and `_sched_context` are added; `SyscallId::RETIRED` is
   `[8]` and the conformance sweeps skip it.
 - **Tests**: the retype tests are retargeted to the carve or to the kept
-  cleanup; the main trace, syscall-return-shape, information-flow and taint
+  cleanup; a misaligned VSpace-root base is rounded to the next page, and a
+  TCB, an endpoint, a frame and a TCB carved in turn each land on their own
+  boundary (`NegativeStateSuite`, S5-G and H16-NEG-06); the main trace, syscall-return-shape, information-flow and taint
   fixtures are regenerated from their producers.
-- **Exerciser**: no new scenario yet (see the plan row); every existing pin
-  unchanged.
+- **Exerciser**: every pin unchanged.  The per-kind scenarios move to part
+  18 (finalise kernel kinds on final delete), since a carve repeats only after
+  its object is finalised: they carve then delete each kernel kind, pinned at
+  the object's own cells, and the reset then reads its pin.  A reschedule in
+  the plan, not debt; the boot configuration is unchanged.
 - **Registered debt**: the §C authority-order row, the scrub-extent row and the table rows 25 and 26 closed; new
   rows for the destroy cleanup with no live caller and for a destroyed
   object's provenance not being cleared (both closing in part 18).
-- **Docs**: spec §8.6 and §8.6.1, `CLAIM_EVIDENCE_INDEX.md`,
-  `WORKSTREAM_CONTEXT.md`, the plan row, GitBook chapters 03, 04 and 15.
+- **Docs**: spec §8.4, §8.6 and §8.6.1, `CLAIM_EVIDENCE_INDEX.md`,
+  `WORKSTREAM_CONTEXT.md`, the plan rows 14 and 18, GitBook chapters 03, 04 and 15.
 
 ## v0.36.124 — WS-ZA ZA5.4 part 13: the free index is in the capability
 

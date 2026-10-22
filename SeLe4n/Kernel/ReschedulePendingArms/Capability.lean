@@ -346,7 +346,7 @@ theorem untypedRetypeObject_keyFrameOffChild (src dst : CSpaceAddr) (childId : S
     | some _ => rw [h] at hFresh; simp at hFresh
   have hInvCh : stCh.objects.invExt := storeObject_preserves_objects_invExt _ _ _ _ k1.2.2 hStCh
   have k3 := storeObject_inert_keyFrame hInvCh hStIdx (by rw [hOCh]; rfl) rfl
-  have kZ : capabilityKeyFrame st1 (req.scrub st1 ut utCap.freeIndex) :=
+  have kZ : capabilityKeyFrame st1 (req.scrub st1 ut (req.carveIndex ut utCap.freeIndex)) :=
     capabilityKeyFrame_of_objects_scheduler_eq k3.2.2 (CarveRequest.scrub_objects _ _ _ _)
       (CarveRequest.scrub_scheduler _ _ _ _)
   have kI := cspaceInsertSlot_keyFrame _ st2 dst _ kZ.2.2 hIns

@@ -4653,25 +4653,34 @@ hardware requires word-aligned access for register-width loads/stores:
   semantics hold for the abstract model; hardware binding adds the alignment
   constraint as an additional platform-level precondition.
 
-### 8.4 Page-Alignment Requirement for VSpace-Bound Retype
+### 8.4 Carve Alignment
 
-`retypeFromUntyped` enforces page-aligned allocation bases (4 KiB) for object
-types that require it. This applies to VSpace roots and CNodes, which must be
-page-aligned for correct hardware page-table walks and CNode radix indexing.
+`retypeFromUntyped` places every carve on its own boundary by rounding the
+free index up to it, as seL4's `decodeUntypedInvocation` does with
+`alignUp(freeRef, objectSize)`; a misaligned free index is skipped over, never
+refused (`v0.36.125`).
 
-- **`requiresPageAlignment`** -- predicate identifying `KernelObjectType` values
-  that require page-aligned allocation (VSpace roots, CNodes).
-- **`allocationBasePageAligned`** -- checks 4 KiB alignment of the allocation base
-  (`base % 4096 == 0`).
-- **`allocationMisaligned`** -- `KernelError` variant returned when the alignment
-  check fails.
-- **Lifecycle invariant preservation**: all existing lifecycle preservation proofs
-  are updated to account for the new error branch. Error returns preserve the
-  unchanged state trivially.
+- **`requiresPageAlignment`** -- the kinds carved on a 4 KiB page: VSpace
+  roots, frames, page tables and child untypeds.
+- **`requiresSizeAlignment`** -- the kernel kinds, carved on a multiple of
+  their own allocation size.
+- **`allocationBasePageAligned`** / **`carveBaseAligned`** -- whether a base is
+  on the carve's boundary (`base % 4096 = 0`, or `base % size = 0`).
+- **`alignedCarveIndex`** -- the free index rounded up to the boundary
+  (`alignUpNat (regionBase + freeIndex) (carveAlignment ty size) - regionBase`);
+  the capacity check is made at it and the free index advances past it.
+- **Theorems**: `carveBaseAligned_alignedCarveIndex` (the rounded index is on
+  the boundary), `le_alignedCarveIndex` (it never moves backwards),
+  `retypeFromUntyped_ok_aligned`, `retypeFromUntyped_ok_pageAligned` and
+  `retypeFromUntyped_ok_sizeAligned` (every carve that succeeds is on its
+  boundary).
+- **`allocationMisaligned`** -- the `KernelError` variant (ABI code 37) is
+  kept in the error table; no carve returns it.
 
-This enforcement closes the gap between the abstract model (which previously
-accepted any allocation base) and hardware requirements for ARM64 page-table
-structures. See `SeLe4n/Kernel/Lifecycle/Operations.lean` (S5-G/S5-H).
+Witnesses: `tests/NegativeStateSuite.lean` S5-G (a misaligned VSpace-root base
+is rounded to the next page) and H16-NEG-06 (a TCB, an endpoint, a frame and a
+second TCB each land on their own boundary). See
+`SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean`.
 
 ### 8.5 IPC Timeout Semantics
 seLe4n implements budget-driven timeout for IPC blocking operations (Z6),
@@ -4758,9 +4767,8 @@ sizes: `.frame`, `.pageTable`, `.vspaceRoot`, `.tcb`, `.endpoint`,
 `[minUntypedSizeBits, maxUntypedSizeBits] = [12, 47]`; `.cnode` at a radix in
 `[minCNodeRadixBits, maxCNodeRadixBits] = [1, 42]` (`2 ^ (radix + 5)` bytes,
 seL4's `seL4_SlotBits`); `.schedContext` at `[minSchedContextSizeBits = 7,
-47]`.  A kernel object is placed at the free index aligned to its own size and
-refused (`.allocationMisaligned`) rather than aligned up — a divergence from
-seL4's `retypeFromUntyped`, which rounds the watermark up — and a device untyped
+47]`.  A kernel object is placed at the free index rounded up to a multiple of
+its own size, as seL4's `alignUp(freeRef, objectSize)` (§8.4), and a device untyped
 backs untypeds and frames only (`deviceBackable`).  The object is built by
 `CarveRequest.object`: a TCB in the carving core's domain with that core as its
 affinity, no roots and priority 0 (`carvedTcb`, seL4's `createObject`), an
@@ -4774,7 +4782,9 @@ carries every right but `.retype` (`CarveRequest.capability_eq`).  Theorems:
 `retypeFromUntyped_carve_preserves_untypedRegionsDisjoint`.  Witnesses:
 `tests/SyscallDispatchSuite.lean` SD-061 (`sd061_every_kind_is_carved`),
 `tests/ModelIntegritySuite.lean`, `tests/OperationChainSuite.lean`
-(`chain29SyscallCarve`), and one QEMU exerciser scenario per kind.
+(`chain29SyscallCarve`).  The QEMU exerciser scenarios for the kernel kinds
+come with finalising them on final delete (a carve repeats only after its object
+is finalised); the untyped-reset plan schedules them there.
 
 ### 8.6.1 Carve Refusal Order (`v0.36.125`)
 

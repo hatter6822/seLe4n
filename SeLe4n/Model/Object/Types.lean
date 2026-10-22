@@ -3704,6 +3704,13 @@ theorem allocate_child_fits_parent (ut ut' : UntypedObject) (idx : Nat)
   have hFits := canAllocate_implies_fits ut idx size hCan
   omega
 
+/-- WS-ZA ZA5.4 part 14: children below an index are below every later one —
+what lets a carve at the index rounded up (`alignedCarveIndex`) reuse the
+bound its capability's own index carries. -/
+theorem childrenBelow_mono (ut : UntypedObject) {idx idx' : Nat}
+    (h : ut.childrenBelow idx) (hLe : idx ≤ idx') : ut.childrenBelow idx' :=
+  fun c hc => Nat.le_trans (h c hc) hLe
+
 /-- WS-F2, restated over the capability's free index at WS-ZA ZA5.4 part 13:
 a successful allocation at `idx` keeps every child below the advanced index.
 Existing children are below `idx` (so below `idx + size`), and the new child

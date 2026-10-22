@@ -76,9 +76,9 @@ objects — a thread, an endpoint, a notification, a reply, a CNode and a
 scheduling context.  A CNode is aligned to its size and not to a page, as in
 seL4, so a CNode of one radix bit is 64 bytes on a 64-byte boundary.
 
-The carve is at the invoked capability's free index, as for every kind, so a
-base that is not a multiple of the object's size is refused
-(`allocationMisaligned`) where seL4 would skip up to the next multiple. -/
+The carve is at the invoked capability's free index rounded up to that
+multiple (`alignedCarveIndex`), as seL4's `alignUp(freeRef, objectSize)`: a
+misaligned free index is skipped over, never refused. -/
 def requiresSizeAlignment : KernelObjectType → Bool
   | .tcb => true
   | .endpoint => true
@@ -108,6 +108,71 @@ def carveBaseAligned (ty : KernelObjectType) (size : Nat) (ut : UntypedObject) (
   if requiresPageAlignment ty then allocationBasePageAligned ut idx
   else if requiresSizeAlignment ty then (ut.regionBase.toNat + idx) % size == 0
   else true
+
+/-- WS-ZA ZA5.4 part 14: **the boundary a carve of `size` bytes of kind `ty`
+starts on** — a page for the page kinds, the object's own size for the kernel
+kinds, and any byte otherwise.  The one owner of the alignment unit:
+`carveBaseAligned` asks whether a base is on it and `alignedCarveIndex` rounds
+up to it. -/
+def carveAlignment (ty : KernelObjectType) (size : Nat) : Nat :=
+  if requiresPageAlignment ty then 4096
+  else if requiresSizeAlignment ty then size
+  else 1
+
+/-- `n` rounded up to a multiple of `a` (`n` itself when `a` is `0`). -/
+def alignUpNat (n a : Nat) : Nat :=
+  if a = 0 then n else (n + a - 1) / a * a
+
+theorem le_alignUpNat (n a : Nat) : n ≤ alignUpNat n a := by
+  unfold alignUpNat
+  split
+  · exact Nat.le_refl n
+  · rename_i ha
+    have hpos : 0 < a := Nat.pos_of_ne_zero ha
+    have h := Nat.lt_div_mul_add (a := n + a - 1) hpos
+    omega
+
+theorem alignUpNat_mod (n a : Nat) (ha : a ≠ 0) : alignUpNat n a % a = 0 := by
+  simp [alignUpNat, ha, Nat.mul_mod_left]
+
+/-- WS-ZA ZA5.4 part 14: **the free index a carve is made at** — the invoked
+capability's index `idx`, rounded up so the base `regionBase + idx` is on the
+carve's boundary (`carveAlignment`), as seL4's `decodeUntypedInvocation` hands
+`invokeUntyped_Retype` the `alignUp(freeRef, objectSize)` base.  The bytes
+skipped are left free and are never handed out by this capability, as in seL4. -/
+def alignedCarveIndex (ty : KernelObjectType) (size : Nat) (ut : UntypedObject) (idx : Nat) :
+    Nat :=
+  alignUpNat (ut.regionBase.toNat + idx) (carveAlignment ty size) - ut.regionBase.toNat
+
+theorem le_alignedCarveIndex (ty : KernelObjectType) (size : Nat) (ut : UntypedObject)
+    (idx : Nat) : idx ≤ alignedCarveIndex ty size ut idx := by
+  have := le_alignUpNat (ut.regionBase.toNat + idx) (carveAlignment ty size)
+  unfold alignedCarveIndex; omega
+
+/-- **The rounded index is aligned**, for every kind and every capability index —
+which is why the carve asks no alignment question of the caller. -/
+theorem carveBaseAligned_alignedCarveIndex (ty : KernelObjectType) (size : Nat)
+    (ut : UntypedObject) (idx : Nat) (hSize : requiresSizeAlignment ty = true → size ≠ 0) :
+    carveBaseAligned ty size ut (alignedCarveIndex ty size ut idx) = true := by
+  have hle := le_alignUpNat (ut.regionBase.toNat + idx) (carveAlignment ty size)
+  have hEq : ut.regionBase.toNat + alignedCarveIndex ty size ut idx =
+      alignUpNat (ut.regionBase.toNat + idx) (carveAlignment ty size) := by
+    unfold alignedCarveIndex; omega
+  unfold carveBaseAligned allocationBasePageAligned
+  rw [hEq]
+  by_cases hP : requiresPageAlignment ty = true
+  · have h := alignUpNat_mod (ut.regionBase.toNat + idx) (carveAlignment ty size)
+      (by simp [carveAlignment, hP])
+    have hc : carveAlignment ty size = 4096 := by simp [carveAlignment, hP]
+    simp only [carveAlignment, hP, ↓reduceIte] at h
+    simp [hP, hc, h]
+  · by_cases hS : requiresSizeAlignment ty = true
+    · have h := alignUpNat_mod (ut.regionBase.toNat + idx) (carveAlignment ty size)
+        (by simp [carveAlignment, hP, hS, hSize hS])
+      have hc : carveAlignment ty size = size := by simp [carveAlignment, hP, hS]
+      simp only [carveAlignment, hP, hS, Bool.false_eq_true, ↓reduceIte] at h
+      simp [hP, hS, hc, h]
+    · simp [hP, hS]
 
 /-- A page kind's carve base is aligned exactly when it is on a page. -/
 theorem carveBaseAligned_of_page {ty : KernelObjectType} (h : requiresPageAlignment ty = true)
@@ -165,21 +230,18 @@ Deterministic branch contract:
 5. The authority slot must hold a capability (`cspaceLookupSlot`); its free
    index (`Capability.freeIndex`, seL4's `capFreeIndex`) is where the carve is
    made.
-6. S5-G: For the kinds `requiresPageAlignment` names — VSpace roots,
-   frames, page tables and child untypeds — the allocation base address
-   (`regionBase + freeIndex`) must be page-aligned (4KB boundary); for the
-   kernel kinds (`requiresSizeAlignment`) it must be a multiple of the
-   allocation's own size, as seL4 places every object (`carveBaseAligned`).
-   Returns `allocationMisaligned` if violated.
+6. The carve is made at the free index rounded up to the carve's boundary
+   (`alignedCarveIndex`): a page for the kinds `requiresPageAlignment` names —
+   VSpace roots, frames, page tables and child untypeds — and the allocation's
+   own size for the kernel kinds (`requiresSizeAlignment`), as seL4's
+   `decodeUntypedInvocation` rounds with `alignUp(freeRef, objectSize)`.  A
+   misaligned index is skipped over, never refused (WS-ZA ZA5.4 part 14; it
+   was `allocationMisaligned` before).
 7. Authority capability must target the untyped object and include the `retype`
    right (`lifecycleRetypeAuthority`; `illegalAuthority` otherwise).
-8. The requested allocation size must fit between the free index and the end of
-   the region (`untypedRegionExhausted` otherwise).
-9. U-H02: Post-allocation alignment re-verification — after advancing the index,
-   the new base must still be page-aligned for VSpace-bound objects
-   (`allocationMisaligned` otherwise). This prevents non-page-aligned allocations
-   from shifting subsequent allocations to unaligned bases.
-10. On success: the new child is recorded in the untyped, the new typed object is
+8. The requested allocation size must fit between the rounded free index and
+   the end of the region (`untypedRegionExhausted` otherwise).
+9. On success: the new child is recorded in the untyped, the new typed object is
    stored at `childId` via `storeObject`, and the authority capability's free
    index is advanced past the child in its slot (`setCapFreeIndex`), as seL4's
    `invokeUntyped_Retype` writes `capFreeIndex`. -/
@@ -227,26 +289,16 @@ def retypeFromUntyped
           | .ok (authCap, st') =>
             -- WS-ZA ZA5.4 part 13: the carve is at the invoked capability's free
             -- index (seL4's `capFreeIndex`), not at a word of the object.
-            let idx := authCap.freeIndex
-            -- S5-G: Page-alignment check for VSpace-bound objects; WS-ZA
-            -- ZA5.4 part 14: a kernel object on a multiple of its own size.
-            if !carveBaseAligned newObj.objectType allocSize ut idx then
-              .error .allocationMisaligned
-            else if lifecycleRetypeAuthority authCap untypedId then
+            -- WS-ZA ZA5.4 part 14: rounded up to the carve's boundary, as
+            -- seL4's `alignUp(freeRef, objectSize)` — a page for the page
+            -- kinds, the object's own size for a kernel object.
+            let idx := alignedCarveIndex newObj.objectType allocSize ut authCap.freeIndex
+            if lifecycleRetypeAuthority authCap untypedId then
                 -- WS-H2/A-28: Both objects are computed before any state mutation.
                 -- `ut'` and `newObj` are fully determined at this point.
                 match ut.allocate idx childId allocSize with
                 | none => .error .untypedRegionExhausted
                 | some (ut', _offset) =>
-                    -- U-H02: Post-allocation alignment re-verification.
-                    -- After advancing the index by `allocSize`, the new base
-                    -- (`regionBase + idx + allocSize`) must remain page-aligned if the
-                    -- object type requires it. Non-page-aligned allocations would
-                    -- shift subsequent allocations to unaligned bases, violating S5-G.
-                    if requiresPageAlignment newObj.objectType &&
-                        !allocationBasePageAligned ut (idx + allocSize) then
-                      .error .allocationMisaligned
-                    else
                     -- Atomic store: the child recorded in the untyped, the child
                     -- created, and the invoked capability's free index advanced.
                     -- AN6-C.2 (H-09): Per-caller contract — callers allocating a
@@ -334,11 +386,9 @@ theorem retypeFromUntyped_childId_fresh
       simp at hOk
 
 /-- WS-F2: Decomposition of a successful `retypeFromUntyped` into constituent steps.
-S5-G: The alignment check is an additional error guard (returns `allocationMisaligned`
-for VSpace/CNode objects on unaligned bases); it does not affect the decomposition
-since success implies the guard passed.  WS-ZA ZA5.4 part 13: the carve is at the
-authority capability's free index, and its last step advances that index in the
-authority's slot. -/
+WS-ZA ZA5.4 part 13: the carve is at the authority capability's free index, and
+its last step advances that index in the authority's slot; part 14: that index
+rounded up to the carve's boundary (`alignedCarveIndex`). -/
 theorem retypeFromUntyped_ok_decompose
     (st st' : SystemState)
     (authority : CSpaceAddr)
@@ -352,10 +402,12 @@ theorem retypeFromUntyped_ok_decompose
       ¬(allocSize < objectTypeAllocSize newObj.objectType) ∧
       cspaceLookupSlot authority st = .ok (cap, stLookup) ∧
       lifecycleRetypeAuthority cap untypedId = true ∧
-      ut.allocate cap.freeIndex childId allocSize = some (ut', offset) ∧
+      ut.allocate (alignedCarveIndex newObj.objectType allocSize ut cap.freeIndex) childId allocSize =
+        some (ut', offset) ∧
       storeObject untypedId (.untyped ut') stLookup = .ok ((), stUt) ∧
       storeObject childId newObj stUt = .ok ((), stCh) ∧
-      st' = setCapFreeIndex stCh authority (cap.freeIndex + allocSize) := by
+      st' = setCapFreeIndex stCh authority
+        (alignedCarveIndex newObj.objectType allocSize ut cap.freeIndex + allocSize) := by
   unfold retypeFromUntyped SystemState.getObject? at hStep
   cases hObj : st.objects[untypedId]? with
   | none => simp [hObj] at hStep
@@ -385,16 +437,13 @@ theorem retypeFromUntyped_ok_decompose
         obtain ⟨cap, stLookup⟩ := pair
         simp only [hLookup] at hStep
         split at hStep
-        · cases hStep
-        split at hStep
         · next hAuth =>
-          cases hAlloc : ut.allocate cap.freeIndex childId allocSize with
+          cases hAlloc : ut.allocate (alignedCarveIndex newObj.objectType allocSize ut cap.freeIndex)
+              childId allocSize with
           | none => simp only [hAlloc] at hStep; cases hStep
           | some r =>
             obtain ⟨ut', offset⟩ := r
             simp only [hAlloc] at hStep
-            split at hStep
-            · cases hStep
             cases hU : storeObject untypedId (.untyped ut') stLookup with
             | error e => simp only [hU] at hStep; cases hStep
             | ok p2 =>
@@ -496,8 +545,8 @@ theorem retypeFromUntyped_error_allocSizeTooSmall
       · simp [hDevBool, hMB, hExt, hSmall]
       · simp [hDevBool, hExt, hSmall]
 
-/-- WS-F2: `retypeFromUntyped` returns `untypedRegionExhausted` when allocation cannot fit.
-S5-G: Alignment check must pass (or type doesn't require it) for this error to be reached. -/
+/-- WS-F2: `retypeFromUntyped` returns `untypedRegionExhausted` when allocation cannot fit
+at the free index rounded up to the carve's boundary (WS-ZA ZA5.4 part 14). -/
 theorem retypeFromUntyped_error_regionExhausted
     (st : SystemState) (authority : CSpaceAddr)
     (untypedId childId : SeLe4n.ObjId) (newObj : KernelObject)
@@ -511,9 +560,9 @@ theorem retypeFromUntyped_error_regionExhausted
     (hExt : objectIdInAddressSpace st.machine childId = true)
     (hAllocSzOk : ¬(allocSize < objectTypeAllocSize newObj.objectType))
     (hLookup : cspaceLookupSlot authority st = .ok (cap, st))
-    (hAlignOk : carveBaseAligned newObj.objectType allocSize ut cap.freeIndex = true)
     (hAuth : lifecycleRetypeAuthority cap untypedId = true)
-    (hNoFit : ut.allocate cap.freeIndex childId allocSize = none) :
+    (hNoFit : ut.allocate (alignedCarveIndex newObj.objectType allocSize ut cap.freeIndex)
+      childId allocSize = none) :
     retypeFromUntyped authority untypedId childId newObj allocSize st =
       .error .untypedRegionExhausted := by
   unfold retypeFromUntyped SystemState.getObject?
@@ -522,13 +571,13 @@ theorem retypeFromUntyped_error_regionExhausted
   cases hNotDev with
   | inl hFalse =>
       simp only [hFalse, Bool.false_and, Bool.false_eq_true, ↓reduceIte, hExt, Bool.not_true,
-        hAllocSzOk, hAlignOk, ↓reduceIte, hLookup, hAuth, hNoFit]
+        hAllocSzOk, ↓reduceIte, hLookup, hAuth, hNoFit]
   | inr hMB =>
       by_cases hDevBool : ut.isDevice
       · simp only [hDevBool, hMB, Bool.not_true, Bool.true_and, Bool.false_eq_true, ↓reduceIte,
-          hExt, hAllocSzOk, hAlignOk, ↓reduceIte, hLookup, hAuth, hNoFit]
+          hExt, hAllocSzOk, ↓reduceIte, hLookup, hAuth, hNoFit]
       · simp only [hDevBool, Bool.false_and, Bool.false_eq_true, ↓reduceIte,
-          hExt, Bool.not_true, hAllocSzOk, hAlignOk, ↓reduceIte, hLookup, hAuth, hNoFit]
+          hExt, Bool.not_true, hAllocSzOk, ↓reduceIte, hLookup, hAuth, hNoFit]
 
 /- Local lifecycle transition helper lemmas (M4-A step 4).
 These theorems keep preservation scripts focused on invariant obligations rather than
@@ -575,7 +624,8 @@ theorem retypeFromUntyped_ok_stores
       ¬(allocSize < objectTypeAllocSize newObj.objectType) ∧
       cspaceLookupSlot authority st = .ok (cap, st) ∧
       lifecycleRetypeAuthority cap untypedId = true ∧
-      ut.allocate cap.freeIndex childId allocSize = some (ut', offset) ∧
+      ut.allocate (alignedCarveIndex newObj.objectType allocSize ut cap.freeIndex) childId allocSize =
+        some (ut', offset) ∧
       st.objects[authority.cnode]? = some (.cnode cn) ∧
       cn.lookup authority.slot = some cap ∧
       authority.cnode ≠ untypedId ∧ authority.cnode ≠ childId ∧
@@ -583,7 +633,8 @@ theorem retypeFromUntyped_ok_stores
       storeObject childId newObj stUt = .ok ((), stCh) ∧
       stCh.objects[authority.cnode]? = some (.cnode cn) ∧
       storeObject authority.cnode
-        (.cnode (cn.insert authority.slot (cap.withFreeIndex (cap.freeIndex + allocSize)))) stCh
+        (.cnode (cn.insert authority.slot (cap.withFreeIndex
+          (alignedCarveIndex newObj.objectType allocSize ut cap.freeIndex + allocSize)))) stCh
         = .ok ((), st') := by
   have hFresh := retypeFromUntyped_childId_fresh authority untypedId childId newObj allocSize
     st st' hStep
@@ -1014,6 +1065,13 @@ def CarveRequest.scrub (st : SystemState) (ut : UntypedObject) (idx : Nat) :
             (SeLe4n.Kernel.Architecture.PhysicalWrite.zeroPage (untypedNextFrame ut idx).base)
           physicalWritesDrained := false }
 
+/-- WS-ZA ZA5.4 part 14: **the free index a request is carved at**: the
+capability's index `idx` rounded up to the request's boundary
+(`alignedCarveIndex` at the request's kind and size).  The object is built at
+it, the scrub zeroes from it, and `retypeFromUntyped` records the child at it. -/
+def CarveRequest.carveIndex (req : CarveRequest) (ut : UntypedObject) (idx : Nat) : Nat :=
+  alignedCarveIndex req.objectType req.size ut idx
+
 /-- **WS-BP BP7.1 (`v0.36.5`, generalized at slice 4, `v0.36.8`): carve one object
 out of an untyped the caller holds — seL4's `Untyped_Retype`.**
 
@@ -1068,19 +1126,23 @@ def untypedRetypeObject (src : CSpaceAddr) (childId : SeLe4n.ObjId)
           match cspaceDstRefusal dst st with
           | .error e => .error e
           | .ok () =>
-            match retypeFromUntyped src untypedId childId (req.object untypedId childId ut utCap.freeIndex)
-                req.size st with
+            match retypeFromUntyped src untypedId childId
+                (req.object untypedId childId ut (req.carveIndex ut utCap.freeIndex)) req.size st with
             | .error e => .error e
             | .ok ((), st1) =>
-              .ok ((), ((req.scrub st1 ut utCap.freeIndex).storeCNodeWith dst.cnode
+              .ok ((), ((req.scrub st1 ut (req.carveIndex ut utCap.freeIndex)).storeCNodeWith dst.cnode
                 (·.insert dst.slot (req.capability childId))).cdtAddChild src dst .retype)
       | _ => .error .invalidCapability
 
 
-/-- **WS-BP BP7.1**: a successful carve of a page-aligned kind found the
-authority capability's free index on a page boundary — the primitive's S5-G
-guard, read back.  It is what makes the base of a carved frame a page a
-descriptor can name. -/
+theorem objectTypeAllocSize_pos (ty : KernelObjectType) : 0 < objectTypeAllocSize ty := by
+  cases ty <;> simp [objectTypeAllocSize, SeLe4n.pageBytes]
+
+/-- **WS-BP BP7.1; WS-ZA ZA5.4 part 14**: a successful carve is made on its
+boundary — a page for the page kinds, a multiple of its own size for a kernel
+object — at the authority capability's free index rounded up
+(`alignedCarveIndex`), as seL4's `alignUp(freeRef, objectSize)`.  It is what
+makes the base of a carved frame a page a descriptor can name. -/
 theorem retypeFromUntyped_ok_aligned
     (st st' : SystemState) (authority : CSpaceAddr)
     (untypedId childId : SeLe4n.ObjId) (newObj : KernelObject) (allocSize : Nat)
@@ -1088,14 +1150,12 @@ theorem retypeFromUntyped_ok_aligned
     (hObj : st.objects[untypedId]? = some (.untyped ut))
     (hLk : cspaceLookupSlot authority st = .ok (cap, st))
     (hStep : retypeFromUntyped authority untypedId childId newObj allocSize st = .ok ((), st')) :
-    carveBaseAligned newObj.objectType allocSize ut cap.freeIndex = true := by
-  cases hA : carveBaseAligned newObj.objectType allocSize ut cap.freeIndex
-  · exfalso
-    unfold retypeFromUntyped SystemState.getObject? at hStep
-    simp only [hObj, hLk, hA, Bool.not_false, ↓reduceIte] at hStep
-    repeat (split at hStep <;> (try cases hStep))
-    all_goals cases hStep
-  · rfl
+    carveBaseAligned newObj.objectType allocSize ut
+      (alignedCarveIndex newObj.objectType allocSize ut cap.freeIndex) = true := by
+  obtain ⟨_, _, _, _, _, _, _, _, _, hSz, _⟩ :=
+    retypeFromUntyped_ok_decompose st st' authority untypedId childId newObj allocSize hStep
+  have hPos := objectTypeAllocSize_pos newObj.objectType
+  exact carveBaseAligned_alignedCarveIndex _ _ _ _ (fun _ => by omega)
 
 theorem retypeFromUntyped_ok_pageAligned
     (st st' : SystemState) (authority : CSpaceAddr)
@@ -1105,13 +1165,15 @@ theorem retypeFromUntyped_ok_pageAligned
     (hLk : cspaceLookupSlot authority st = .ok (cap, st))
     (hReq : requiresPageAlignment newObj.objectType = true)
     (hStep : retypeFromUntyped authority untypedId childId newObj allocSize st = .ok ((), st')) :
-    allocationBasePageAligned ut cap.freeIndex = true := by
+    allocationBasePageAligned ut
+      (alignedCarveIndex newObj.objectType allocSize ut cap.freeIndex) = true := by
   rw [← carveBaseAligned_of_page hReq allocSize]
   exact retypeFromUntyped_ok_aligned st st' authority untypedId childId newObj allocSize ut cap
     hObj hLk hStep
 
-/-- **WS-ZA ZA5.4 part 14**: a successful carve of a kernel kind found its base on
-a multiple of the carve's size — seL4's placement of every object. -/
+/-- **WS-ZA ZA5.4 part 14**: a successful carve of a kernel kind is based on a
+multiple of the carve's size — seL4's placement of every object — at the
+capability's index rounded up, never below it. -/
 theorem retypeFromUntyped_ok_sizeAligned
     (st st' : SystemState) (authority : CSpaceAddr)
     (untypedId childId : SeLe4n.ObjId) (newObj : KernelObject) (allocSize : Nat)
@@ -1120,12 +1182,14 @@ theorem retypeFromUntyped_ok_sizeAligned
     (hLk : cspaceLookupSlot authority st = .ok (cap, st))
     (hReq : requiresSizeAlignment newObj.objectType = true)
     (hStep : retypeFromUntyped authority untypedId childId newObj allocSize st = .ok ((), st')) :
-    (ut.regionBase.toNat + cap.freeIndex) % allocSize = 0 := by
+    (ut.regionBase.toNat + alignedCarveIndex newObj.objectType allocSize ut cap.freeIndex)
+        % allocSize = 0 ∧
+      cap.freeIndex ≤ alignedCarveIndex newObj.objectType allocSize ut cap.freeIndex := by
   have h := retypeFromUntyped_ok_aligned st st' authority untypedId childId newObj allocSize ut cap
     hObj hLk hStep
   have hNp : requiresPageAlignment newObj.objectType = false := by
     revert hReq; cases newObj.objectType <;> simp [requiresSizeAlignment, requiresPageAlignment]
-  simpa [carveBaseAligned, hNp, hReq] using h
+  exact ⟨by simpa [carveBaseAligned, hNp, hReq] using h, le_alignedCarveIndex _ _ _ _⟩
 
 
 /-- **WS-BP BP7.1 slice 4**: a request's scrub moves no object... -/
@@ -1153,9 +1217,9 @@ theorem untypedRetypeObject_ok_writes
       utCap.target = .object untypedId ∧
       st.getUntyped? untypedId = some ut ∧
       cspaceDstAdmitted dst st = true ∧
-      retypeFromUntyped src untypedId childId (req.object untypedId childId ut utCap.freeIndex) req.size st
+      retypeFromUntyped src untypedId childId (req.object untypedId childId ut (req.carveIndex ut utCap.freeIndex)) req.size st
         = .ok ((), st1) ∧
-      st' = ((req.scrub st1 ut utCap.freeIndex).storeCNodeWith dst.cnode
+      st' = ((req.scrub st1 ut (req.carveIndex ut utCap.freeIndex)).storeCNodeWith dst.cnode
         (·.insert dst.slot (req.capability childId))).cdtAddChild src dst .retype := by
   unfold untypedRetypeObject at hStep
   cases hAdm : req.admissible st
@@ -1188,7 +1252,7 @@ theorem untypedRetypeObject_ok_writes
           rw [hD] at hStep
           simp only at hStep
           cases hRt : retypeFromUntyped src untypedId childId
-              (req.object untypedId childId ut utCap.freeIndex) req.size stL with
+              (req.object untypedId childId ut (req.carveIndex ut utCap.freeIndex)) req.size stL with
           | error e => rw [hRt] at hStep; cases hStep
           | ok p1 =>
             obtain ⟨_, st1⟩ := p1
@@ -1216,9 +1280,9 @@ theorem untypedRetypeObject_ok_decompose
       cspaceLookupSlot src st = .ok (utCap, st) ∧
       utCap.target = .object untypedId ∧
       st.getUntyped? untypedId = some ut ∧
-      retypeFromUntyped src untypedId childId (req.object untypedId childId ut utCap.freeIndex) req.size st
+      retypeFromUntyped src untypedId childId (req.object untypedId childId ut (req.carveIndex ut utCap.freeIndex)) req.size st
         = .ok ((), st1) ∧
-      cspaceInsertSlot dst (req.capability childId) (req.scrub st1 ut utCap.freeIndex)
+      cspaceInsertSlot dst (req.capability childId) (req.scrub st1 ut (req.carveIndex ut utCap.freeIndex))
         = .ok ((), st2) ∧
       st' = st2.cdtAddChild src dst .retype := by
   obtain ⟨utCap, untypedId, ut, st1, hLk, hTgt, hUt, hD, hRt, rfl⟩ :=
@@ -1249,8 +1313,8 @@ theorem untypedRetypeObject_ok_decompose
       rw [hC] at hD; rw [hC1]; exact hD
   have hD1 : cspaceDstAdmitted dst st1 = true := by
     rw [hIdx]; exact setCapFreeIndex_preserves_dstAdmitted hInvCh hDCh
-  have hD' : cspaceDstAdmitted dst (req.scrub st1 ut utCap.freeIndex) = true := by
-    have hG : (req.scrub st1 ut utCap.freeIndex).getCNode? dst.cnode = st1.getCNode? dst.cnode := by
+  have hD' : cspaceDstAdmitted dst (req.scrub st1 ut (req.carveIndex ut utCap.freeIndex)) = true := by
+    have hG : (req.scrub st1 ut (req.carveIndex ut utCap.freeIndex)).getCNode? dst.cnode = st1.getCNode? dst.cnode := by
       unfold SystemState.getCNode?; rw [CarveRequest.scrub_objects]
     unfold cspaceDstAdmitted at hD1 ⊢; rw [hG]; exact hD1
   exact ⟨utCap, untypedId, ut, st1, _, hLk, hTgt, hUt, hRt,
@@ -1306,12 +1370,12 @@ theorem untypedNextFrame_of_retype_ok
     (hObj : st.objects[untypedId]? = some (.untyped ut))
     (hLk : cspaceLookupSlot authority st = .ok (cap, st))
     (hStep : retypeFromUntyped authority untypedId childId
-      (.frame (untypedNextFrame ut cap.freeIndex)) SeLe4n.pageBytes st = .ok ((), st')) :
-    ut.regionBase.toNat ≤ (untypedNextFrame ut cap.freeIndex).base.toNat ∧
-    (untypedNextFrame ut cap.freeIndex).base.toNat + SeLe4n.pageBytes ≤
+      (.frame (untypedNextFrame ut (alignedCarveIndex .frame SeLe4n.pageBytes ut cap.freeIndex))) SeLe4n.pageBytes st = .ok ((), st')) :
+    ut.regionBase.toNat ≤ (untypedNextFrame ut (alignedCarveIndex .frame SeLe4n.pageBytes ut cap.freeIndex)).base.toNat ∧
+    (untypedNextFrame ut (alignedCarveIndex .frame SeLe4n.pageBytes ut cap.freeIndex)).base.toNat + SeLe4n.pageBytes ≤
       ut.regionBase.toNat + ut.regionSize ∧
-    (untypedNextFrame ut cap.freeIndex).wellFormed ∧
-    (untypedNextFrame ut cap.freeIndex).isDevice = ut.isDevice := by
+    (untypedNextFrame ut (alignedCarveIndex .frame SeLe4n.pageBytes ut cap.freeIndex)).wellFormed ∧
+    (untypedNextFrame ut (alignedCarveIndex .frame SeLe4n.pageBytes ut cap.freeIndex)).isDevice = ut.isDevice := by
   obtain ⟨ut₀, ut', cap₀, _, _, offset, _, hObj₀, _, _, hLk₀, _, hAlloc, _, _, _⟩ :=
     retypeFromUntyped_ok_decompose st st' authority untypedId childId _ _ hStep
   rw [hObj] at hObj₀
@@ -1322,15 +1386,16 @@ theorem untypedNextFrame_of_retype_ok
   subst hEqC
   have hAligned := retypeFromUntyped_ok_pageAligned st st' authority untypedId childId
     _ _ ut₀ cap₀ hObj hLk rfl hStep
-  have hCan := ((UntypedObject.allocate_some_iff ut₀ cap₀.freeIndex childId _ _).mp hAlloc).1
+  have hCan := ((UntypedObject.allocate_some_iff ut₀ _ childId _ _).mp hAlloc).1
+  simp only [KernelObject.objectType] at hCan hAligned
   simp only [UntypedObject.canAllocate, Bool.and_eq_true, decide_eq_true_eq] at hCan
   simp only [allocationBasePageAligned, beq_iff_eq] at hAligned
   refine ⟨?_, ?_, ?_, rfl⟩
-  · show ut₀.regionBase.toNat ≤ ut₀.regionBase.toNat + cap₀.freeIndex
+  · show ut₀.regionBase.toNat ≤ ut₀.regionBase.toNat + (alignedCarveIndex .frame SeLe4n.pageBytes ut₀ cap₀.freeIndex)
     omega
-  · show ut₀.regionBase.toNat + cap₀.freeIndex + SeLe4n.pageBytes ≤ _
+  · show ut₀.regionBase.toNat + (alignedCarveIndex .frame SeLe4n.pageBytes ut₀ cap₀.freeIndex) + SeLe4n.pageBytes ≤ _
     omega
-  · show (ut₀.regionBase.toNat + cap₀.freeIndex) % SeLe4n.pageBytes = 0
+  · show (ut₀.regionBase.toNat + (alignedCarveIndex .frame SeLe4n.pageBytes ut₀ cap₀.freeIndex)) % SeLe4n.pageBytes = 0
     simpa [SeLe4n.pageBytes] using hAligned
 
 
@@ -1346,14 +1411,14 @@ theorem untypedNextVSpaceRoot_of_retype_ok
     (hObj : st.objects[untypedId]? = some (.untyped ut))
     (hLk : cspaceLookupSlot authority st = .ok (cap, st))
     (hStep : retypeFromUntyped authority untypedId childId
-      (.vspaceRoot (untypedNextVSpaceRoot ut cap.freeIndex asid)) SeLe4n.pageBytes st
+      (.vspaceRoot (untypedNextVSpaceRoot ut (alignedCarveIndex .vspaceRoot SeLe4n.pageBytes ut cap.freeIndex) asid)) SeLe4n.pageBytes st
         = .ok ((), st')) :
-    (untypedNextVSpaceRoot ut cap.freeIndex asid).tableBase =
-      some (untypedNextFrame ut cap.freeIndex).base ∧
-    ut.regionBase.toNat ≤ (untypedNextFrame ut cap.freeIndex).base.toNat ∧
-    (untypedNextFrame ut cap.freeIndex).base.toNat + SeLe4n.pageBytes ≤
+    (untypedNextVSpaceRoot ut (alignedCarveIndex .vspaceRoot SeLe4n.pageBytes ut cap.freeIndex) asid).tableBase =
+      some (untypedNextFrame ut (alignedCarveIndex .vspaceRoot SeLe4n.pageBytes ut cap.freeIndex)).base ∧
+    ut.regionBase.toNat ≤ (untypedNextFrame ut (alignedCarveIndex .vspaceRoot SeLe4n.pageBytes ut cap.freeIndex)).base.toNat ∧
+    (untypedNextFrame ut (alignedCarveIndex .vspaceRoot SeLe4n.pageBytes ut cap.freeIndex)).base.toNat + SeLe4n.pageBytes ≤
       ut.regionBase.toNat + ut.regionSize ∧
-    (untypedNextFrame ut cap.freeIndex).base.toNat % SeLe4n.pageBytes = 0 ∧
+    (untypedNextFrame ut (alignedCarveIndex .vspaceRoot SeLe4n.pageBytes ut cap.freeIndex)).base.toNat % SeLe4n.pageBytes = 0 ∧
     ut.isDevice = false := by
   obtain ⟨ut₀, ut', cap₀, _, _, offset, _, hObj₀, hDev, _, hLk₀, _, hAlloc, _, _, _⟩ :=
     retypeFromUntyped_ok_decompose st st' authority untypedId childId _ _ hStep
@@ -1365,15 +1430,16 @@ theorem untypedNextVSpaceRoot_of_retype_ok
   subst hEqC
   have hAligned := retypeFromUntyped_ok_pageAligned st st' authority untypedId childId
     _ _ ut₀ cap₀ hObj hLk rfl hStep
-  have hCan := ((UntypedObject.allocate_some_iff ut₀ cap₀.freeIndex childId _ _).mp hAlloc).1
+  have hCan := ((UntypedObject.allocate_some_iff ut₀ _ childId _ _).mp hAlloc).1
+  simp only [KernelObject.objectType] at hCan hAligned
   simp only [UntypedObject.canAllocate, Bool.and_eq_true, decide_eq_true_eq] at hCan
   simp only [allocationBasePageAligned, beq_iff_eq] at hAligned
   refine ⟨rfl, ?_, ?_, ?_, ?_⟩
-  · show ut₀.regionBase.toNat ≤ ut₀.regionBase.toNat + cap₀.freeIndex
+  · show ut₀.regionBase.toNat ≤ ut₀.regionBase.toNat + (alignedCarveIndex .vspaceRoot SeLe4n.pageBytes ut₀ cap₀.freeIndex)
     omega
-  · show ut₀.regionBase.toNat + cap₀.freeIndex + SeLe4n.pageBytes ≤ _
+  · show ut₀.regionBase.toNat + (alignedCarveIndex .vspaceRoot SeLe4n.pageBytes ut₀ cap₀.freeIndex) + SeLe4n.pageBytes ≤ _
     omega
-  · show (ut₀.regionBase.toNat + cap₀.freeIndex) % SeLe4n.pageBytes = 0
+  · show (ut₀.regionBase.toNat + (alignedCarveIndex .vspaceRoot SeLe4n.pageBytes ut₀ cap₀.freeIndex)) % SeLe4n.pageBytes = 0
     simpa [SeLe4n.pageBytes] using hAligned
   · rcases hDev with h | h
     · exact h
@@ -1439,15 +1505,15 @@ theorem untypedNextChild_of_retype_ok
     (hObj : st.objects[untypedId]? = some (.untyped ut))
     (hLk : cspaceLookupSlot authority st = .ok (cap, st))
     (hStep : retypeFromUntyped authority untypedId childId
-      (.untyped (untypedNextChild ut cap.freeIndex untypedId b)) (2 ^ b) st = .ok ((), st')) :
-    ut.regionBase.toNat ≤ (untypedNextChild ut cap.freeIndex untypedId b).regionBase.toNat ∧
-    (untypedNextChild ut cap.freeIndex untypedId b).regionBase.toNat +
-        (untypedNextChild ut cap.freeIndex untypedId b).regionSize ≤
+      (.untyped (untypedNextChild ut (alignedCarveIndex .untyped (2 ^ b) ut cap.freeIndex) untypedId b)) (2 ^ b) st = .ok ((), st')) :
+    ut.regionBase.toNat ≤ (untypedNextChild ut (alignedCarveIndex .untyped (2 ^ b) ut cap.freeIndex) untypedId b).regionBase.toNat ∧
+    (untypedNextChild ut (alignedCarveIndex .untyped (2 ^ b) ut cap.freeIndex) untypedId b).regionBase.toNat +
+        (untypedNextChild ut (alignedCarveIndex .untyped (2 ^ b) ut cap.freeIndex) untypedId b).regionSize ≤
       ut.regionBase.toNat + ut.regionSize ∧
-    (untypedNextChild ut cap.freeIndex untypedId b).regionBase.toNat % SeLe4n.pageBytes = 0 ∧
-    (untypedNextChild ut cap.freeIndex untypedId b).isDevice = ut.isDevice ∧
-    (untypedNextChild ut cap.freeIndex untypedId b).parent = some untypedId ∧
-    (untypedNextChild ut cap.freeIndex untypedId b).children = [] := by
+    (untypedNextChild ut (alignedCarveIndex .untyped (2 ^ b) ut cap.freeIndex) untypedId b).regionBase.toNat % SeLe4n.pageBytes = 0 ∧
+    (untypedNextChild ut (alignedCarveIndex .untyped (2 ^ b) ut cap.freeIndex) untypedId b).isDevice = ut.isDevice ∧
+    (untypedNextChild ut (alignedCarveIndex .untyped (2 ^ b) ut cap.freeIndex) untypedId b).parent = some untypedId ∧
+    (untypedNextChild ut (alignedCarveIndex .untyped (2 ^ b) ut cap.freeIndex) untypedId b).children = [] := by
   obtain ⟨ut₀, ut', cap₀, _, _, offset, _, hObj₀, _, _, hLk₀, _, hAlloc, _, _, _⟩ :=
     retypeFromUntyped_ok_decompose st st' authority untypedId childId _ _ hStep
   rw [hObj] at hObj₀
@@ -1458,15 +1524,16 @@ theorem untypedNextChild_of_retype_ok
   subst hEqC
   have hAligned := retypeFromUntyped_ok_pageAligned st st' authority untypedId childId
     _ _ ut₀ cap₀ hObj hLk rfl hStep
-  have hCan := ((UntypedObject.allocate_some_iff ut₀ cap₀.freeIndex childId _ _).mp hAlloc).1
+  have hCan := ((UntypedObject.allocate_some_iff ut₀ _ childId _ _).mp hAlloc).1
+  simp only [KernelObject.objectType] at hCan hAligned
   simp only [UntypedObject.canAllocate, Bool.and_eq_true, decide_eq_true_eq] at hCan
   simp only [allocationBasePageAligned, beq_iff_eq] at hAligned
   refine ⟨?_, ?_, ?_, rfl, rfl, rfl⟩
-  · show ut₀.regionBase.toNat ≤ ut₀.regionBase.toNat + cap₀.freeIndex
+  · show ut₀.regionBase.toNat ≤ ut₀.regionBase.toNat + (alignedCarveIndex .untyped (2 ^ b) ut₀ cap₀.freeIndex)
     omega
-  · show ut₀.regionBase.toNat + cap₀.freeIndex + 2 ^ b ≤ _
+  · show ut₀.regionBase.toNat + (alignedCarveIndex .untyped (2 ^ b) ut₀ cap₀.freeIndex) + 2 ^ b ≤ _
     omega
-  · show (ut₀.regionBase.toNat + cap₀.freeIndex) % SeLe4n.pageBytes = 0
+  · show (ut₀.regionBase.toNat + (alignedCarveIndex .untyped (2 ^ b) ut₀ cap₀.freeIndex)) % SeLe4n.pageBytes = 0
     simpa [SeLe4n.pageBytes] using hAligned
 
 /-- **WS-BP BP7.1: the carve's payoff** — after a successful carve the store holds
@@ -1483,13 +1550,13 @@ theorem untypedRetypeObject_ok_carved
     ∃ (untypedId : SeLe4n.ObjId) (ut : UntypedObject) (utCap : Capability) (st1 : SystemState),
       st.objects[untypedId]? = some (.untyped ut) ∧
       cspaceLookupSlot src st = .ok (utCap, st) ∧
-      retypeFromUntyped src untypedId childId (req.object untypedId childId ut utCap.freeIndex) req.size st
+      retypeFromUntyped src untypedId childId (req.object untypedId childId ut (req.carveIndex ut utCap.freeIndex)) req.size st
         = .ok ((), st1) ∧
-      ((∀ cn, req.object untypedId childId ut utCap.freeIndex ≠ .cnode cn) →
-        (∀ t, req.object untypedId childId ut utCap.freeIndex ≠ .tcb t) →
-        st'.objects[childId]? = some (req.object untypedId childId ut utCap.freeIndex)) ∧
+      ((∀ cn, req.object untypedId childId ut (req.carveIndex ut utCap.freeIndex) ≠ .cnode cn) →
+        (∀ t, req.object untypedId childId ut (req.carveIndex ut utCap.freeIndex) ≠ .tcb t) →
+        st'.objects[childId]? = some (req.object untypedId childId ut (req.carveIndex ut utCap.freeIndex))) ∧
       (st'.objects[childId]?).map KernelObject.withoutLinks =
-        some (req.object untypedId childId ut utCap.freeIndex).withoutLinks ∧
+        some (req.object untypedId childId ut (req.carveIndex ut utCap.freeIndex)).withoutLinks ∧
       ∃ cn cn' : CNode, st'.objects[dst.cnode]? = some (.cnode cn') ∧
         cn'.withoutLinks = (cn.insert dst.slot (req.capability childId)).withoutLinks := by
   obtain ⟨_, _, _, _, _, _, _, hD, _, _⟩ :=
@@ -1506,7 +1573,7 @@ theorem untypedRetypeObject_ok_carved
   have hInvCh := storeObject_preserves_objects_invExt _ _ _ _ hInvUt hStCh
   have hInv1 : st1.objects.invExt := by
     rw [hIdx]; exact setCapFreeIndex_preserves_objects_invExt hInvCh
-  have hAtCh : stCh.objects[childId]? = some (req.object untypedId childId ut utCap.freeIndex) :=
+  have hAtCh : stCh.objects[childId]? = some (req.object untypedId childId ut (req.carveIndex ut utCap.freeIndex)) :=
     storeObject_objects_eq _ _ _ _ hInvUt hStCh
   have hNeSrc : childId ≠ src.cnode := by
     intro h
@@ -1524,9 +1591,9 @@ theorem untypedRetypeObject_ok_carved
     cases hq : st.objects[childId]? with
     | none => rw [hq] at hC; cases hC
     | some _ => rw [hq] at hFr; cases hFr
-  have hAt1 : st1.objects[childId]? = some (req.object untypedId childId ut utCap.freeIndex) := by
+  have hAt1 : st1.objects[childId]? = some (req.object untypedId childId ut (req.carveIndex ut utCap.freeIndex)) := by
     rw [hIdx, setCapFreeIndex_objects_ne hInvCh hNeSrc]; exact hAtCh
-  have hInvZ : (req.scrub st1 ut utCap.freeIndex).objects.invExt := by
+  have hInvZ : (req.scrub st1 ut (req.carveIndex ut utCap.freeIndex)).objects.invExt := by
     rw [CarveRequest.scrub_objects]; exact hInv1
   obtain ⟨cn, hCnPre, hCnPost⟩ := cspaceInsertSlot_objects_eq _ _ _ _ hInvZ hIns
   -- The destination CNode existed before the carve, and the child id held
@@ -1539,20 +1606,20 @@ theorem untypedRetypeObject_ok_carved
     cases hq : st.objects[childId]? with
     | none => rw [hq] at hD; cases hD
     | some _ => rw [hq] at hFr; cases hFr
-  have hAt2 : st2.objects[childId]? = some (req.object untypedId childId ut utCap.freeIndex) := by
+  have hAt2 : st2.objects[childId]? = some (req.object untypedId childId ut (req.carveIndex ut utCap.freeIndex)) := by
     rw [cspaceInsertSlot_preserves_objects_ne _ _ _ _ _ hNe hInvZ hIns,
       CarveRequest.scrub_objects]; exact hAt1
   have hR := (SystemState.cdtAddChild_agreeObjects
     (cspaceInsertSlot_preserves_objects_invExt _ _ _ _ hInvZ hIns) src dst .retype).1
   obtain ⟨cn', hC, hw⟩ := hR.cnode_fwd hCnPost
   have hW : ((st2.cdtAddChild src dst .retype).objects[childId]?).map KernelObject.withoutLinks =
-      some (req.object untypedId childId ut utCap.freeIndex).withoutLinks := by
+      some (req.object untypedId childId ut (req.carveIndex ut utCap.freeIndex)).withoutLinks := by
     rw [(hR childId).map_withoutLinks, hAt2]; rfl
   exact ⟨untypedId, ut, utCap, st1, hObj, hLk, hRt, fun hn ht => hR.obj_fwd hAt2 hn ht, hW, cn, cn',
     hC, hw⟩
 
 /-- **WS-BP BP7.1: a frame carve's payoff** — the frame is the page at the
-invoked capability's free index, inside the untyped, on a page boundary and of its memory
+invoked capability's free index rounded up to a page, inside the untyped, on a page boundary and of its memory
 kind, and the destination holds the frame capability. -/
 theorem untypedRetypeObject_ok_frame
     (src dst : CSpaceAddr) (childId : SeLe4n.ObjId) (st st' : SystemState)
@@ -1572,10 +1639,12 @@ theorem untypedRetypeObject_ok_frame
     untypedRetypeObject_ok_carved src dst childId .frame st st' hObjInv hStep
   obtain ⟨hLo, hHi, hWf, hDev⟩ := untypedNextFrame_of_retype_ok st st1 src untypedId childId
     ut utCap hObj hLk hRt
-  refine ⟨untypedId, ut, utCap.freeIndex, hObj, ?_, hLo, hHi, hWf, hDev, hCn⟩
+  refine ⟨untypedId, ut, alignedCarveIndex .frame SeLe4n.pageBytes ut utCap.freeIndex, hObj, ?_, hLo,
+    hHi, hWf, hDev, hCn⟩
   simp only [SystemState.getFrame?, hAt (by intro _ h; simp [CarveRequest.object] at h)
       (by intro _ h; simp [CarveRequest.object] at h),
     CarveRequest.object]
+  rfl
 
 /-- **WS-BP BP7.1 slice 4 (`v0.36.8`): a child-untyped carve's payoff** — the
 store holds, at the child id, an untyped whose region lies inside its parent's
@@ -1601,7 +1670,7 @@ theorem untypedRetypeObject_ok_untyped
     untypedRetypeObject_ok_carved src dst childId (.untyped b) st st' hObjInv hStep
   obtain ⟨hLo, hHi, hAl, hDev, hPar, -⟩ :=
     untypedNextChild_of_retype_ok st st1 src untypedId childId ut utCap b hObj hLk hRt
-  exact ⟨untypedId, ut, utCap.freeIndex, hObj, hAt (by intro _ h; simp [CarveRequest.object] at h)
+  exact ⟨untypedId, ut, alignedCarveIndex .untyped (2 ^ b) ut utCap.freeIndex, hObj, hAt (by intro _ h; simp [CarveRequest.object] at h)
       (by intro _ h; simp [CarveRequest.object] at h),
     hLo, hHi, hAl, hDev, hPar, hCn⟩
 
@@ -1637,7 +1706,7 @@ theorem untypedRetypeObject_ok_vspaceRoot
     untypedRetypeObject_ok_carved src dst childId (.vspaceRoot asid) st st' hObjInv hStep
   obtain ⟨hTb, hLo, hHi, hAl, hDev⟩ :=
     untypedNextVSpaceRoot_of_retype_ok st st1 src untypedId childId ut utCap asid hObj hLk hRt
-  exact ⟨untypedId, ut, utCap.freeIndex, hObj, hAt (by intro _ h; simp [CarveRequest.object] at h)
+  exact ⟨untypedId, ut, alignedCarveIndex .vspaceRoot SeLe4n.pageBytes ut utCap.freeIndex, hObj, hAt (by intro _ h; simp [CarveRequest.object] at h)
       (by intro _ h; simp [CarveRequest.object] at h),
     hNz, hLt, hFree, hTb, hLo, hHi, hAl, hDev, hCn⟩
 
