@@ -207,7 +207,6 @@ private def f2UntypedState : SystemState :=
     |>.withObject f2UntypedObjId (.untyped {
       regionBase := (SeLe4n.PAddr.ofNat 0x10000)
       regionSize := 256
-      watermark := 0
       children := []
       isDevice := false
     })
@@ -228,7 +227,6 @@ private def f2DeviceState : SystemState :=
     |>.withObject f2DeviceUntypedId (.untyped {
       regionBase := (SeLe4n.PAddr.ofNat 0x20000)
       regionSize := 4096
-      watermark := 0
       children := []
       isDevice := true
     })
@@ -1004,7 +1002,6 @@ private def runUntypedF2NegativeChecks : IO Unit := do
       |>.withObject f2UntypedObjId (.untyped {
         regionBase := (SeLe4n.PAddr.ofNat 0x10001)  -- deliberately misaligned (not 4KB-aligned)
         regionSize := 8192
-        watermark := 0
         children := []
         isDevice := false
       })
@@ -1621,7 +1618,6 @@ private def runH2NegativeChecks : IO Unit := do
       |>.withObject f2UntypedObjId (.untyped {
         regionBase := (SeLe4n.PAddr.ofNat 0x10000)
         regionSize := 256
-        watermark := 64
         children := [{ objId := ⟨60⟩, offset := 0, size := 64 }]
         isDevice := false
       })
@@ -1629,6 +1625,7 @@ private def runH2NegativeChecks : IO Unit := do
           (SeLe4n.Slot.ofNat 0, {
             target := .object f2UntypedObjId
             rights := AccessRightSet.ofList [.read, .write, .grant, .retype]
+            freeIndex := 64
           })
         ])))
       |>.withLifecycleObjectType f2UntypedObjId .untyped
@@ -2283,7 +2280,7 @@ def runWSH16LifecycleChecks : IO Unit := do
     (SeLe4n.Kernel.lifecycleRevokeDeleteRetype h16AuthSlot h16BadCleanupSlot h16TargetId (.endpoint {}) h16State)
     .objectNotFound
 
-  -- H16-NEG-07: retypeFromUntyped with exhausted untyped (watermark at region boundary) → regionExhausted
+  -- H16-NEG-07: retypeFromUntyped with exhausted untyped (the authority capability's free index at the region boundary) → regionExhausted
   let h16ExhaustedUntypedId : SeLe4n.ObjId := ⟨160⟩
   let h16ExhaustedCnodeId : SeLe4n.ObjId := ⟨161⟩
   let h16ExhaustedAuthSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := h16ExhaustedCnodeId, slot := SeLe4n.Slot.ofNat 0 }
@@ -2292,7 +2289,6 @@ def runWSH16LifecycleChecks : IO Unit := do
       |>.withObject h16ExhaustedUntypedId (.untyped {
         regionBase := (SeLe4n.PAddr.ofNat 0x10000)
         regionSize := 64
-        watermark := 64   -- fully exhausted
         children := []
         isDevice := false
       })
@@ -2300,6 +2296,7 @@ def runWSH16LifecycleChecks : IO Unit := do
           (SeLe4n.Slot.ofNat 0, {
             target := .object h16ExhaustedUntypedId
             rights := AccessRightSet.ofList [.read, .write, .grant, .retype]
+            freeIndex := 64   -- the capability's free index is at the region's end: exhausted
           })
         ])))
       |>.withLifecycleObjectType h16ExhaustedUntypedId .untyped
@@ -2328,7 +2325,6 @@ def runWSH16LifecycleChecks : IO Unit := do
       |>.withObject h16DeviceUntypedId (.untyped {
         regionBase := (SeLe4n.PAddr.ofNat 0x20000)
         regionSize := 8192
-        watermark := 0
         children := []
         isDevice := true     -- device untyped
       })
@@ -3756,7 +3752,7 @@ private def runS2HLifecycleErrorTests : IO Unit := do
     .untypedTypeMismatch
 
   -- S2-H-04: retypeFromUntyped with insufficient untyped capacity (region exhausted)
-  -- Create an untyped with watermark at the end of its region
+  -- Create an untyped whose authority capability's free index is at the end of its region
   let exhaustedUntypedId : SeLe4n.ObjId := ⟨85⟩
   let exhaustedAuthCnode : SeLe4n.ObjId := ⟨86⟩
   let exhaustedAuthSlot : SeLe4n.Kernel.CSpaceAddr :=
@@ -3766,7 +3762,6 @@ private def runS2HLifecycleErrorTests : IO Unit := do
       |>.withObject exhaustedUntypedId (.untyped {
         regionBase := (SeLe4n.PAddr.ofNat 0x10000)
         regionSize := 128
-        watermark := 128   -- watermark == regionSize → no space left
         children := []
         isDevice := false
       })
@@ -3774,6 +3769,7 @@ private def runS2HLifecycleErrorTests : IO Unit := do
           (SeLe4n.Slot.ofNat 0, {
             target := .object exhaustedUntypedId
             rights := AccessRightSet.ofList [.read, .write, .grant, .retype]
+            freeIndex := 128   -- free index == regionSize → no space left
           })
         ])))
       |>.withLifecycleObjectType exhaustedUntypedId .untyped

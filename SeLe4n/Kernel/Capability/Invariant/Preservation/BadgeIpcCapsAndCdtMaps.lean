@@ -181,6 +181,10 @@ The proof decomposes into the `.noSlot` case (state unchanged, trivial) and
 the `.installed` case, which chains:
 1. `cspaceInsertSlot_preserves_capabilityInvariantBundle` — slot insertion
 2. `addEdge` with `.ipcTransfer` — CDT edge addition (objects unchanged)
+3. `untypedSourceSetFull_preserves_capabilityInvariantBundle` — an untyped
+   source capability's free index is set to its region size (seL4's rule:
+   a derived untyped capability leaves its source full); for any other
+   capability this step is the identity
 
 The tree stays complete and acyclic as for `cspaceCopy`: the source still holds
 its capability (`cdtNodeIsRevocable`) and the edge reaches the slot the insert

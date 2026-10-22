@@ -1423,19 +1423,53 @@ def bootRootTablesBootError : String :=
     "two roots share a page, or a pool page lies outside the kernel's reserved extent " ++
     "(WS-BP BP7.1)"
 
+/-- WS-ZA ZA5.4 part 13: the capabilities a boot object holds — a CNode's slot
+    cells and a thread's two space slots.  No other object holds one. -/
+def bootEntryCapabilities (e : ObjectEntry) : List Capability :=
+  match e.obj with
+  | .cnode cn => cn.cells.toList.filterMap id
+  | .tcb t => t.spaceCells.toList.filterMap id
+  | _ => []
+
+/-- **WS-ZA ZA5.4 part 13**: the ninth `wellFormed` conjunct — **each boot
+    untyped is named by at most one capability.**
+
+    Since part 13 the free index is in the capability (seL4's `freeIndex`), and
+    an untyped's memory is carved without overlap only while at most one
+    capability to it can carve: a derivation sets its source full (seL4's
+    `setUntypedCapAsFull`), so no transition makes a second carver — but the
+    boot installs the configuration's capabilities as given, and two of them
+    naming one untyped would be two carvers, each starting at its own index
+    over the same memory.  seL4's boot hands the root task exactly one
+    capability per untyped; this refuses a configuration that does otherwise.
+    Not attacker-reachable — the configuration is the integrator's. -/
+def untypedCapabilitiesUnique (config : PlatformConfig) : Bool :=
+  let caps := config.initialObjects.flatMap bootEntryCapabilities
+  config.initialObjects.all fun e =>
+    match e.obj with
+    | .untyped _ => decide ((caps.filter fun c => decide (c.target = .object e.id)).length ≤ 1)
+    | _ => true
+
+/-- The ninth conjunct's diagnostic. -/
+def untypedCapabilityDuplicateBootError : String :=
+  "boot: two capabilities name one boot untyped, so two could carve its memory " ++
+    "(WS-ZA ZA5.4 part 13)"
+
 /-- U6-E/F: A well-formed PlatformConfig has unique IRQs, unique object IDs,
     (WS-RR RR5.13, PR #889 review) keeps the per-core idle slots free,
     (PR #889 review rounds 7 and 8) stores every TCB, SchedContext and Reply
     under its own id, (round 18) leaves object-index room for the boot
     root and the per-core idle threads, (round 23) declares between one and
     `numCores` PEs, (WS-BP BP3.2) places every boot untyped over memory it
-    may describe, and (WS-BP BP7.1) gives every configured address space a
-    table page of its own. -/
+    may describe, (WS-BP BP7.1) gives every configured address space a
+    table page of its own, and (WS-ZA ZA5.4 part 13) names each boot untyped
+    by at most one capability. -/
 def PlatformConfig.wellFormed (config : PlatformConfig) : Bool :=
   irqsUnique config.irqTable && objectIdsUnique config.initialObjects &&
     idleSlotsReserved config && embeddedIdentitiesMatchSlots config &&
     objectBudgetRespected config && declaredCoreCountInRange config &&
-    untypedPlacementRespected config && bootRootTablesPlaced config
+    untypedPlacementRespected config && bootRootTablesPlaced config &&
+    untypedCapabilitiesUnique config
 
 /-- **PR #889 review round 23**: a well-formed config declares at least one PE
     and no more than the model has.  Zero is what this refuses: the derivation
@@ -1449,6 +1483,12 @@ theorem PlatformConfig.wellFormed_declaredCoreCountInRange (config : PlatformCon
     a table page of its own. -/
 theorem PlatformConfig.wellFormed_bootRootTablesPlaced (config : PlatformConfig)
     (h : config.wellFormed = true) : bootRootTablesPlaced config = true := by
+  simp_all only [PlatformConfig.wellFormed, Bool.and_eq_true]
+
+/-- **WS-ZA ZA5.4 part 13**: a well-formed config names each boot untyped by
+    at most one capability. -/
+theorem PlatformConfig.wellFormed_untypedCapabilitiesUnique (config : PlatformConfig)
+    (h : config.wellFormed = true) : untypedCapabilitiesUnique config = true := by
   simp_all only [PlatformConfig.wellFormed, Bool.and_eq_true]
 
 /-- **WS-BP BP3.2**: a well-formed config places every boot untyped over
@@ -1489,7 +1529,8 @@ def wellFormedConjuncts (config : PlatformConfig) : List (Bool × String) :=
    (objectBudgetRespected config, objectBudgetBootError),
    (declaredCoreCountInRange config, declaredCoreCountBootError),
    (untypedPlacementRespected config, untypedPlacementBootError),
-   (bootRootTablesPlaced config, bootRootTablesBootError)]
+   (bootRootTablesPlaced config, bootRootTablesBootError),
+   (untypedCapabilitiesUnique config, untypedCapabilityDuplicateBootError)]
 
 /-- The first conjunct `config` fails, reported in its own words. -/
 def wellFormedDiagnostic (config : PlatformConfig) : String :=
@@ -4219,6 +4260,23 @@ theorem bootRootTablesPlaced_withoutExtents (c : PlatformConfig) :
   rw [configuredRootTableBases_withoutExtents]
   rfl
 
+theorem bootEntryCapabilities_withoutUntypedExtent (e : ObjectEntry) :
+    bootEntryCapabilities e.withoutUntypedExtent = bootEntryCapabilities e := by
+  unfold bootEntryCapabilities
+  simp only [ObjectEntry.withoutUntypedExtent_obj]
+  cases e.obj <;> rfl
+
+theorem untypedCapabilitiesUnique_withoutExtents (c : PlatformConfig) :
+    untypedCapabilitiesUnique c.withoutExtents = untypedCapabilitiesUnique c := by
+  unfold untypedCapabilitiesUnique PlatformConfig.withoutExtents
+  simp only
+  rw [List.flatMap_map]
+  simp only [bootEntryCapabilities_withoutUntypedExtent]
+  rw [all_withoutUntypedExtent]
+  intro e
+  simp only [ObjectEntry.withoutUntypedExtent_id, ObjectEntry.withoutUntypedExtent_obj]
+  cases e.obj <;> rfl
+
 theorem declaredCoreCountInRange_withoutExtents (c : PlatformConfig) :
     declaredCoreCountInRange c.withoutExtents = declaredCoreCountInRange c := rfl
 
@@ -4306,10 +4364,13 @@ theorem PlatformConfig.wellFormed_of_withoutExtents (c c' : PlatformConfig)
   rw [hEq, embeddedIdentitiesMatchSlots_withoutExtents] at h4
   rw [hEq, objectBudgetRespected_withoutExtents] at h5
   rw [hEq, declaredCoreCountInRange_withoutExtents] at h6
+  have h8 := untypedCapabilitiesUnique_withoutExtents c
+  rw [hEq, untypedCapabilitiesUnique_withoutExtents] at h8
   unfold PlatformConfig.wellFormed at hWf ⊢
   simp only [Bool.and_eq_true] at hWf ⊢
-  obtain ⟨⟨⟨⟨⟨⟨⟨w1, w2⟩, w3⟩, w4⟩, w5⟩, w6⟩, _⟩, w7⟩ := hWf
-  exact ⟨⟨⟨⟨⟨⟨⟨h1 ▸ w1, h2 ▸ w2⟩, h3 ▸ w3⟩, h4 ▸ w4⟩, h5 ▸ w5⟩, h6 ▸ w6⟩, hPlace⟩, h7 ▸ w7⟩
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨w1, w2⟩, w3⟩, w4⟩, w5⟩, w6⟩, _⟩, w7⟩, w8⟩ := hWf
+  exact ⟨⟨⟨⟨⟨⟨⟨⟨h1 ▸ w1, h2 ▸ w2⟩, h3 ▸ w3⟩, h4 ▸ w4⟩, h5 ▸ w5⟩, h6 ▸ w6⟩, hPlace⟩, h7 ▸ w7⟩,
+    h8 ▸ w8⟩
 
 /-- PR #889 review round 3: the idle store over a **declared** core list — the
     cores a platform binding says exist (`PlatformBinding.declaredCores`), rather than

@@ -1438,14 +1438,12 @@ def ak8a_02_disjoint_untypeds_satisfy_predicate : IO Unit := do
   let ut1 : UntypedObject := {
     regionBase := SeLe4n.PAddr.ofNat 0x1000
     regionSize := 0x1000
-    watermark := 0
     children := []
     isDevice := false
   }
   let ut2 : UntypedObject := {
     regionBase := SeLe4n.PAddr.ofNat 0x4000
     regionSize := 0x2000
-    watermark := 0
     children := []
     isDevice := false
   }
@@ -1461,14 +1459,12 @@ def ak8a_03_overlapping_untypeds_violate_predicate : IO Unit := do
   let ut1 : UntypedObject := {
     regionBase := SeLe4n.PAddr.ofNat 0x1000
     regionSize := 0x3000   -- ends at 0x4000
-    watermark := 0
     children := []
     isDevice := false
   }
   let ut2 : UntypedObject := {
     regionBase := SeLe4n.PAddr.ofNat 0x2000   -- starts inside ut1
     regionSize := 0x2000
-    watermark := 0
     children := []
     isDevice := false
   }
@@ -1485,14 +1481,12 @@ def ak8a_04_parent_child_containment_allowed : IO Unit := do
   let parent : UntypedObject := {
     regionBase := SeLe4n.PAddr.ofNat 0x1000
     regionSize := 0x4000
-    watermark := 0x1000
     children := [{ objId := childId, offset := 0, size := 0x1000 }]
     isDevice := false
   }
   let child : UntypedObject := {
     regionBase := SeLe4n.PAddr.ofNat 0x1000   -- parent.regionBase + offset(=0)
     regionSize := 0x1000
-    watermark := 0
     children := []
     isDevice := false
   }
@@ -1514,12 +1508,11 @@ def ak8a_05_allocate_children_extends : IO Unit := do
   let utPre : UntypedObject := {
     regionBase := SeLe4n.PAddr.ofNat 0x1000
     regionSize := 0x2000
-    watermark := 0x100
     children := [existingChild]
     isDevice := false
   }
   -- Allocate a second child
-  match utPre.allocate ⟨20⟩ 0x100 with
+  match utPre.allocate 0x100 ⟨20⟩ 0x100 with
   | some (utPost, _) =>
     let extended := utPost.children.any (fun c => c.objId == existingChild.objId)
     expect "pre-state child preserved across allocate" extended
@@ -1533,11 +1526,10 @@ def ak8a_06_allocate_preserves_region : IO Unit := do
   let utPre : UntypedObject := {
     regionBase := SeLe4n.PAddr.ofNat 0x1000
     regionSize := 0x2000
-    watermark := 0
     children := []
     isDevice := false
   }
-  match utPre.allocate ⟨10⟩ 0x100 with
+  match utPre.allocate 0 ⟨10⟩ 0x100 with
   | some (utPost, _) =>
     expect "regionBase preserved" (utPost.regionBase == utPre.regionBase)
     expect "regionSize preserved" (utPost.regionSize == utPre.regionSize)
@@ -1565,7 +1557,6 @@ def an2f3_01_empty_wellFormed : IO Unit := do
   -- The underlying UntypedObject has the expected structure
   expect "UntypedObjectValid.empty regionBase matches" (uv.toUntyped.regionBase == base)
   expect "UntypedObjectValid.empty regionSize matches" (uv.toUntyped.regionSize == size)
-  expect "UntypedObjectValid.empty watermark is zero" (uv.toUntyped.watermark == 0)
   expect "UntypedObjectValid.empty no children" (uv.toUntyped.children.isEmpty)
 
 /-- AN2-F.3: The `CoeHead UntypedObjectValid UntypedObject` instance

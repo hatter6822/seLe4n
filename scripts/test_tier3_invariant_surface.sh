@@ -562,7 +562,7 @@ run_check "INVARIANT" rg -n '^theorem endpointReplyRecv_preserves_ipcSchedulerCo
 
 # WS-F2 untyped memory invariant preservation anchors.
 run_check "INVARIANT" rg -n '^theorem retypeFromUntyped_preserves_untypedMemoryInvariant($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem allocate_preserves_childrenWithinWatermark($|[ ({:\[\]])' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^theorem allocate_preserves_childrenBelow($|[ ({:\[\]])' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n '^theorem allocate_preserves_childrenNonOverlap($|[ ({:\[\]])' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n '^theorem allocate_preserves_childrenUniqueIds($|[ ({:\[\]])' SeLe4n/Model/Object/Types.lean
 
@@ -3973,10 +3973,10 @@ run_negative_check "INVARIANT" rg -n 'bootSafeObjectCheck_sound_structural' SeLe
 # The v0.36.2 audit: a boot untyped is pristine — the check reads its carve
 # state, the Prop has the clause, and the soundness bridge concludes it.  The
 # negative refuses the `=> true` arm coming back inside the declaration.
-run_check "INVARIANT" rg -n '^    ut\.watermark == 0 && ut\.children\.isEmpty && ut\.parent\.isNone$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^    ut\.children\.isEmpty && ut\.parent\.isNone$' SeLe4n/Platform/Boot.lean
 run_negative_check "INVARIANT" rg -n -U 'def bootSafeUntypedCheck[^\n]*(\n([ \t][^\n]*)?)*=> true' SeLe4n/Platform/Boot.lean
-run_check "INVARIANT" rg -n -U 'def bootSafeObject \(obj : KernelObject\) : Prop :=[^\n]*(\n([ \t][^\n]*)?)*  \(∀ ut, obj = \.untyped ut →\n    ut\.watermark = 0 ∧ ut\.children = \[\] ∧ ut\.parent = none\)' SeLe4n/Platform/Boot.lean
-run_check "INVARIANT" rg -n -U 'theorem bootSafeObjectCheck_sound \(obj : KernelObject\)[^\n]*(\n([ \t][^\n]*)?)*    \(∀ ut, obj = \.untyped ut →\n      ut\.watermark = 0 ∧ ut\.children = \[\] ∧ ut\.parent = none\) ∧\n    \(∀ f, obj ≠ \.frame f\) ∧ \(∀ p, obj ≠ \.pageTable p\) := by' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n -U 'def bootSafeObject \(obj : KernelObject\) : Prop :=[^\n]*(\n([ \t][^\n]*)?)*  \(∀ ut, obj = \.untyped ut →\n    ut\.children = \[\] ∧ ut\.parent = none\)' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n -U 'theorem bootSafeObjectCheck_sound \(obj : KernelObject\)[^\n]*(\n([ \t][^\n]*)?)*    \(∀ ut, obj = \.untyped ut →\n      ut\.children = \[\] ∧ ut\.parent = none\) ∧\n    \(∀ f, obj ≠ \.frame f\) ∧ \(∀ p, obj ≠ \.pageTable p\) := by' SeLe4n/Platform/Boot.lean
 # WS-BP BP7.1: a boot configuration may not carry a frame — a frame is memory
 # authority, and no boot check places one.  The check refuses it, the Prop
 # states it, and the soundness bridge concludes it; the negative refuses the
@@ -4053,7 +4053,7 @@ run_check "INVARIANT" rg -n '^theorem untypedNextChild_of_retype_ok($|[ ({:\[\]]
 run_check "INVARIANT" rg -n '^theorem untypedRetypeObject_ok_untyped($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n -U '    \.error \.revocationRequired\n  \| \.untyped _ =>(\n([ \t][^\n]*)?)*    \.error \.revocationRequired\n  \| _ => \.ok st' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
 run_negative_check "INVARIANT" rg -n '\buntypedRetypeFrame\b|\bretireFrames?\b|\bframeRetireWrite\b|\buntypedChildrenUnreferenced\b|\bcapNamesCarvedChild\b|\buntypedChildrenRetirable\b|\buntypedReset_ok_children_absent\b' SeLe4n tests
-run_check "INVARIANT" rg -n -U 'def untypedNextFrame \(ut : UntypedObject\) : FrameObject :=\n  \{ base := SeLe4n\.PAddr\.ofNat \(ut\.regionBase\.toNat \+ ut\.watermark\)\n    isDevice := ut\.isDevice \}' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n -U 'def untypedNextFrame \(ut : UntypedObject\) \(idx : Nat\) : FrameObject :=\n  \{ base := SeLe4n\.PAddr\.ofNat \(ut\.regionBase\.toNat \+ idx\)\n    isDevice := ut\.isDevice \}' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n -U 'def carveZeroFrame[^\n]*(\n([ \t][^\n]*)?)*  if frame\.isDevice then st\n  else \{ st with\n          machine := SeLe4n\.zeroMemoryRange st\.machine frame\.base SeLe4n\.pageBytes\n([ \t]*\n)*          physicalWrites := st\.physicalWrites\.pushAfter st\.physicalWritesDrained\n            \(SeLe4n\.Kernel\.Architecture\.PhysicalWrite\.zeroPage frame\.base\)\n          physicalWritesDrained := false \}' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n '^        else if ut\.isDevice && !newObj\.objectType\.deviceBackable then$' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 # v0.36.9: a VSpace root is memory-backed (the in-place retype refuses to create
