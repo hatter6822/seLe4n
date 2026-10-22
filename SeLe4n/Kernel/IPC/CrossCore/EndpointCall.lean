@@ -920,12 +920,19 @@ the same pre-state; since WS-ZA ZA4.7 the capability lookup before the unwrap
 writes no object, `receiveTransferCaps_frame`), and the resolver's output is declared
 (`lockSet_endpointSendOnCore_covers_capsDestination`).
 
-"Changes" is read off derivation links (`objectAgreesOffDerivationLinksAt`):
-the CDT's links live in the slots (WS-ZA ZA5.3), so recording the new child
-also writes link words in the parent's slot and its old first child's, in
-whatever CNodes those sit.  Those words are the derivation tree, and the tree
-is declared under the state-level lock (`lockSet_endpointSendOnCore_covers_cdt`),
-as it was when it was one map in `SystemState`.
+"Changes" is read off derivation metadata
+(`objectAgreesOffDerivationMetadataAt`): the CDT's links live in the slots
+(WS-ZA ZA5.3), so recording the new child also writes link words in the
+parent's slot and its old first child's, in whatever CNodes those sit.  Those
+words are the derivation tree, and the tree is declared under the state-level
+lock (`lockSet_endpointSendOnCore_covers_cdt`), as it was when it was one map in
+`SystemState`.  Since WS-ZA ZA5.4 part 13 the derivation of an untyped
+capability also sets the sender's source capability full (seL4's
+`setUntypedCapAsFull`): the free index is derivation metadata beside the link
+words in the source slot, as in seL4's slot entry, and every operation that
+reads or writes a free index holds that same lock in write mode (a carve, a
+reset, a copy, a mint, a move, a delete, a caps-carrying transfer), so the
+state-level member declares it too.
 
 Stated contrapositively — *changed implies declared* — because that is the
 shape a 2PL consumer needs: it asks of an object it is about to write whether
@@ -941,7 +948,7 @@ theorem endpointSendDualWithCaps_object_writes_declared
     (hObjInv : st'.objects.invExt)
     (hStep : endpointSendDualWithCaps endpointId sender payload receiverSlotBase st
       = .ok (summary, st''))
-    (hChanged : ¬ SystemState.objectAgreesOffDerivationLinksAt st'' st' oid) :
+    (hChanged : ¬ SystemState.objectAgreesOffDerivationMetadataAt st'' st' oid) :
     (cnodeLock oid, AccessMode.write)
       ∈ (lockSet_endpointSendOnCore st endpointId sender cnodeRootObjId payload).pairs := by
   rw [endpointSendDualWithCaps_reduces_to_unwrap endpointId sender payload
@@ -972,7 +979,7 @@ theorem endpointCallWithCaps_object_writes_declared
     (hObjInv : st'.objects.invExt)
     (hStep : endpointCallWithCaps endpointId caller payload receiverSlotBase st
       = .ok (summary, st''))
-    (hChanged : ¬ SystemState.objectAgreesOffDerivationLinksAt st'' st' oid) :
+    (hChanged : ¬ SystemState.objectAgreesOffDerivationMetadataAt st'' st' oid) :
     (cnodeLock oid, AccessMode.write)
       ∈ (lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId payload).pairs := by
   rw [endpointCallWithCaps_reduces_to_unwrap endpointId caller payload

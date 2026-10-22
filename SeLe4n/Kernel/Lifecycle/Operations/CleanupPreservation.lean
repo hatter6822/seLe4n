@@ -2131,7 +2131,7 @@ def lifecyclePreRetypeCleanup (st : SystemState) (target : SeLe4n.ObjId)
     -- kernel no longer accounts for — a mapping outliving the authority that
     -- created it.  Nor would an unmap here be the right repair: turning a page
     -- of an untyped's memory into a kernel object in place would leave that
-    -- memory counted by the untyped's watermark and named by nothing.  Memory
+    -- memory counted as carved by the untyped's capability and named by nothing.  Memory
     -- goes back where it came from, as in seL4: a frame is destroyed by the
     -- **untyped reset** (`untypedReset`, `v0.36.6`), which removes every mapping
     -- of the region, erases the frames and returns the pages to the untyped

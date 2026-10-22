@@ -5306,6 +5306,18 @@ theorem lookupSlotCap_eq_of_objects_eq
     lookupSlotCap st₁ ref = lookupSlotCap st₂ ref := by
   simp [lookupSlotCap, lookupCNode, hObj]
 
+/-- A slot lookup that finds a capability found it in a CNode's slot. -/
+theorem lookupSlotCap_cnode {st : SystemState} {addr : SlotRef} {cap : Capability}
+    (h : lookupSlotCap st addr = some cap) :
+    ∃ cn, st.objects[addr.cnode]? = some (.cnode cn) ∧ cn.lookup addr.slot = some cap := by
+  unfold lookupSlotCap lookupCNode at h
+  cases hO : st.objects[addr.cnode]? with
+  | none => simp [hO] at h
+  | some o =>
+    cases o <;> simp only [hO] at h
+    case cnode cn => exact ⟨cn, rfl, h⟩
+    all_goals cases h
+
 /-- Object-type lifecycle metadata is exact for every object-store id.
 
 This is the whole of the M4-A metadata-consistency surface.  `v0.35.78`

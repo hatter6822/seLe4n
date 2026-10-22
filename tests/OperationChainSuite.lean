@@ -943,6 +943,66 @@ private def ipcCapTransferRevocable : IO Unit := do
     ((linkedDerivationEdges stOrphanRun).length == (linkedDerivationEdges stOrphaned).length)
   assertInvariants "chain12b: declining an orphaning transfer keeps the state well-formed" stOrphanRun
 
+/-- WS-ZA ZA5.4 part 13: **an IPC grant of an untyped capability follows
+seL4's derivation rule.**  A childless source's carving right moves to the
+receiver — the receiver's copy takes the sender's free index and the sender's
+capability is set full (`setUntypedCapAsFull`); a source with a derivation child
+is not transferred (`ensureNoChildren` in `deriveCap`), and the transfer stops
+there as seL4's loop does: a capability before it stays installed, none after
+it is transferred. -/
+private def ipcUntypedGrantFollowsDerivationRule : IO Unit := do
+  let untypedId : SeLe4n.ObjId := ⟨3390⟩
+  let payloadObj : SeLe4n.ObjId := ⟨3391⟩
+  let senderCNode : SeLe4n.ObjId := ⟨3392⟩
+  let receiverCNode : SeLe4n.ObjId := ⟨3393⟩
+  let utSlot : SlotRef := { cnode := senderCNode, slot := SeLe4n.Slot.ofNat 5 }
+  let ntfnSlot : SlotRef := { cnode := senderCNode, slot := SeLe4n.Slot.ofNat 7 }
+  let utCap : Capability :=
+    { target := .object untypedId, rights := AccessRightSet.ofList [.read, .write, .retype],
+      freeIndex := 0x1000 }
+  let ntfnCap : Capability :=
+    { target := .object payloadObj, rights := AccessRightSet.ofList [.read] }
+  let st0 :=
+    (BootstrapBuilder.empty
+      |>.withObject untypedId (.untyped
+          { regionBase := SeLe4n.PAddr.ofNat 0x400000, regionSize := 0x4000 })
+      |>.withObject payloadObj (.notification
+          { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
+      |>.withObject senderCNode (.cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4
+          (SeLe4n.UniqueSlotMap.ofListWF [(utSlot.slot, utCap), (ntfnSlot.slot, ntfnCap)])))
+      |>.withObject receiverCNode (.cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4
+          SeLe4n.UniqueSlotMap.empty))
+      |>.build)
+  let freeIndexAt (st : SystemState) (r : SlotRef) : Option Nat :=
+    (SystemState.lookupSlotCap st r).map (·.freeIndex)
+  let recvSlot (n : Nat) : SlotRef := { cnode := receiverCNode, slot := SeLe4n.Slot.ofNat n }
+  -- A childless source: the carving right moves to the receiver.
+  let (summary, st1) ← expectOkSt "untyped grant: transfer a childless untyped capability"
+    (SeLe4n.Kernel.ipcUnwrapCaps #[TransferCap.fromSlot utCap utSlot] receiverCNode
+      (SeLe4n.Slot.ofNat 0) true st0)
+  expect "untyped grant: the childless untyped capability is installed"
+    (summary.results == #[.installed receiverCNode (SeLe4n.Slot.ofNat 0)])
+  expect "untyped grant: the receiver's copy takes the sender's free index"
+    ((SystemState.lookupSlotCap st1 (recvSlot 0)).map (fun c => (c.target, c.freeIndex))
+      == some (.object untypedId, 0x1000))
+  expect "untyped grant: the sender's capability is set full"
+    (freeIndexAt st0 utSlot == some 0x1000 && freeIndexAt st1 utSlot == some 0x4000)
+  -- A source with a derivation child: give slot 5 a child by copying it.
+  let (_, stChild) ← expectOkSt "untyped grant: copy the untyped capability (the source gains a child)"
+    (SeLe4n.Kernel.cspaceCopy utSlot { cnode := senderCNode, slot := SeLe4n.Slot.ofNat 6 } st0)
+  let (summary2, st2) ← expectOkSt "untyped grant: transfer a capability, the untyped one, and another"
+    (SeLe4n.Kernel.ipcUnwrapCaps
+      #[TransferCap.fromSlot ntfnCap ntfnSlot, TransferCap.fromSlot utCap utSlot,
+        TransferCap.fromSlot ntfnCap ntfnSlot]
+      receiverCNode (SeLe4n.Slot.ofNat 0) true stChild)
+  expect "untyped grant: NEGATIVE — an untyped capability whose source has a child is not transferred, and the transfer stops"
+    (summary2.results == #[.installed receiverCNode (SeLe4n.Slot.ofNat 0), .noSlot, .noSlot])
+  expect "untyped grant: the capability before the refusal stays; nothing after it arrives"
+    ((SystemState.lookupSlotCap st2 (recvSlot 0)).map (·.target) == some (.object payloadObj) &&
+     (SystemState.lookupSlotCap st2 (recvSlot 1)).isNone)
+  expect "untyped grant: the refused transfer leaves the sender's capability as it was"
+    (SystemState.lookupSlotCap st2 utSlot == SystemState.lookupSlotCap stChild utSlot)
+
 /-- SCN-IPC-CAP-TRANSFER-ARRIVAL-ORDER (PR #873 round 6): **a capability
 transfer must not depend on which side reached the endpoint first.**
 
@@ -2870,6 +2930,7 @@ private def runOperationChainSuite : IO Unit := do
   chain12IpcCapTransfer
   ipcCapTransferRevocable
   ipcCapTransferArrivalOrder
+  ipcUntypedGrantFollowsDerivationRule
   replyRecvCapTransferArrivalOrder
   receiveWithoutSenderInstallsNothing
   receiveTakesParkedSenderRegisters

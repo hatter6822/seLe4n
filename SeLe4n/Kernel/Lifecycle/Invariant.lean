@@ -108,22 +108,40 @@ theorem lifecycleRetypeObject_preserves_lifecycleInvariantBundle
     hObjTypesInv hStore
 
 -- ============================================================================
--- WS-F2: Untyped Memory Model Invariants
+-- WS-F2 / WS-ZA ZA5.4 part 13: Untyped Memory Model Invariants
 -- ============================================================================
 
-/-- WS-F2: Untyped watermark invariant — for every untyped object in the store,
-its watermark does not exceed its region size. -/
-def untypedWatermarkInvariant (st : SystemState) : Prop :=
-  ∀ (oid : SeLe4n.ObjId) (ut : UntypedObject),
+/-- WS-ZA ZA5.4 part 13: **free-index invariant** — every capability naming an
+untyped holds a free index within the untyped's region.  The index is the
+capability's (`Capability.freeIndex`, seL4's `capFreeIndex`), so the invariant
+is stated over the slots that hold capabilities (`SystemState.slotCapAt`), as
+seL4's `untyped_inc` is. -/
+def untypedFreeIndexInvariant (st : SystemState) : Prop :=
+  ∀ (r : SlotRef) (cap : Capability) (oid : SeLe4n.ObjId) (ut : UntypedObject),
+    st.slotCapAt r = some cap → cap.target = .object oid →
     st.objects[oid]? = some (KernelObject.untyped ut) →
-    ut.watermarkValid
+    ut.freeIndexValid cap.freeIndex
 
-/-- WS-F2: Untyped children-within-watermark invariant — all child allocations
-fit within the watermark (and thus within the region). -/
+/-- WS-F2 / WS-ZA ZA5.4 part 13: **children-bounds invariant** — every child
+carved from an untyped lies below the free index of every capability naming
+it, so a carve at a capability's index lands on memory nothing carved holds. -/
 def untypedChildrenBoundsInvariant (st : SystemState) : Prop :=
-  ∀ (oid : SeLe4n.ObjId) (ut : UntypedObject),
+  ∀ (r : SlotRef) (cap : Capability) (oid : SeLe4n.ObjId) (ut : UntypedObject),
+    st.slotCapAt r = some cap → cap.target = .object oid →
     st.objects[oid]? = some (KernelObject.untyped ut) →
-    ut.childrenWithinWatermark
+    ut.childrenBelow cap.freeIndex
+
+/-- WS-ZA ZA5.4 part 13: **sole-carver invariant** — of two slots naming one
+untyped, one holds a full capability (its index at the region's end), so at most
+one capability can carve from an untyped.  It is what a derivation keeps by
+setting its untyped source full (seL4's `setUntypedCapAsFull`), and what makes
+a carve through one capability unable to overlap a carve through another. -/
+def untypedSoleCarverInvariant (st : SystemState) : Prop :=
+  ∀ (r₁ r₂ : SlotRef) (cap₁ cap₂ : Capability) (oid : SeLe4n.ObjId) (ut : UntypedObject),
+    r₁ ≠ r₂ → st.slotCapAt r₁ = some cap₁ → st.slotCapAt r₂ = some cap₂ →
+    cap₁.target = .object oid → cap₂.target = .object oid →
+    st.objects[oid]? = some (KernelObject.untyped ut) →
+    cap₁.freeIndex = ut.regionSize ∨ cap₂.freeIndex = ut.regionSize
 
 /-- WS-F2: Untyped children non-overlap invariant — no two child allocations
 within the same untyped region overlap in their address ranges. -/
@@ -141,8 +159,9 @@ def untypedChildrenUniqueIdsInvariant (st : SystemState) : Prop :=
 
 /-- WS-F2: Combined untyped memory well-formedness invariant. -/
 def untypedMemoryInvariant (st : SystemState) : Prop :=
-  untypedWatermarkInvariant st ∧
+  untypedFreeIndexInvariant st ∧
   untypedChildrenBoundsInvariant st ∧
+  untypedSoleCarverInvariant st ∧
   untypedChildrenNonOverlapInvariant st ∧
   untypedChildrenUniqueIdsInvariant st
 
@@ -150,29 +169,50 @@ def untypedMemoryInvariant (st : SystemState) : Prop :=
 because no untyped objects exist. -/
 theorem default_systemState_untypedMemoryInvariant :
     untypedMemoryInvariant (default : SystemState) := by
-  refine ⟨?_, ?_, ?_, ?_⟩ <;> (intro oid ut hObj; have h : (default : SystemState).objects[oid]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hObj; exact absurd hObj (by simp))
+  have hNone : ∀ oid : SeLe4n.ObjId, (default : SystemState).objects[oid]? = none :=
+    fun _ => RHTable_get?_empty 16 (by omega)
+  refine ⟨?_, ?_, ?_, ?_, ?_⟩
+  · intro _ _ oid _ _ _ hObj; rw [hNone] at hObj; cases hObj
+  · intro _ _ oid _ _ _ hObj; rw [hNone] at hObj; cases hObj
+  · intro _ _ _ _ oid _ _ _ _ _ _ hObj; rw [hNone] at hObj; cases hObj
+  · intro oid _ hObj; rw [hNone] at hObj; cases hObj
+  · intro oid _ hObj; rw [hNone] at hObj; cases hObj
 
-/-- WS-F2: `storeObject` at a non-untyped slot preserves watermark invariant
-for all existing untyped objects at other ObjIds. -/
-theorem storeObject_preserves_untypedWatermarkInvariant_ne
-    (st st' : SystemState)
-    (oid : SeLe4n.ObjId)
-    (obj : KernelObject)
-    (hInv : untypedWatermarkInvariant st)
-    (hObjInv : st.objects.invExt)
-    (hStep : storeObject oid obj st = .ok ((), st'))
-    (uid : SeLe4n.ObjId)
-    (hNe : uid ≠ oid)
-    (ut : UntypedObject)
-    (hUt : st'.objects[uid]? = some (.untyped ut)) :
-    ut.watermarkValid := by
-  have hPrev : st'.objects[uid]? = st.objects[uid]? :=
-    storeObject_objects_ne st st' oid uid obj hNe hObjInv hStep
-  rw [hPrev] at hUt
-  exact hInv uid ut hUt
+/-- A successful `cspaceLookupSlot` is a slot lookup that found the capability. -/
+theorem cspaceLookupSlot_ok_lookupSlotCap {st st' : SystemState} {addr : CSpaceAddr}
+    {cap : Capability} (h : cspaceLookupSlot addr st = .ok (cap, st')) :
+    SystemState.lookupSlotCap st addr = some cap := by
+  unfold cspaceLookupSlot at h
+  cases hq : SystemState.lookupSlotCap st addr with
+  | none => rw [hq] at h; exfalso; revert h; dsimp only; split <;> simp
+  | some c =>
+    rw [hq] at h
+    simp only [Except.ok.injEq, Prod.mk.injEq] at h
+    rw [h.1]
+
+/-- A free-index write preserves the object-type metadata. -/
+theorem setCapFreeIndex_preserves_objectTypeMetadataConsistent {st : SystemState}
+    {addr : CSpaceAddr} {idx : Nat} (h : SystemState.objectTypeMetadataConsistent st)
+    (hInv : st.objects.invExt) (hT : st.lifecycle.objectTypes.invExt) :
+    SystemState.objectTypeMetadataConsistent (setCapFreeIndex st addr idx) := by
+  cases hO : st.objects[addr.cnode]? with
+  | some o =>
+    cases o with
+    | cnode cn =>
+      exact storeObject_preserves_objectTypeMetadataConsistent _ _ _ _ h hInv hT
+        (setCapFreeIndex_eq_storeObject hO)
+    | _ => unfold setCapFreeIndex SystemState.storeCNodeWith; rw [hO]; exact h
+  | none => unfold setCapFreeIndex SystemState.storeCNodeWith; rw [hO]; exact h
+
+/-- A store keeps the object-type table's invariant. -/
+theorem storeObject_preserves_objectTypes_invExt {st st' : SystemState} {id : SeLe4n.ObjId}
+    {obj : KernelObject} (hT : st.lifecycle.objectTypes.invExt)
+    (h : storeObject id obj st = .ok ((), st')) : st'.lifecycle.objectTypes.invExt := by
+  unfold storeObject at h; cases h
+  exact RHTable_insert_preserves_invExt st.lifecycle.objectTypes _ _ hT
 
 /-- WS-F2: `retypeFromUntyped` preserves lifecycle metadata consistency.
-Both `storeObject` calls maintain metadata. -/
+Both `storeObject` calls and the free-index write maintain metadata. -/
 theorem retypeFromUntyped_preserves_objectTypeMetadataConsistent
     (st st' : SystemState)
     (authority : CSpaceAddr)
@@ -185,19 +225,20 @@ theorem retypeFromUntyped_preserves_objectTypeMetadataConsistent
     (hStep : retypeFromUntyped authority untypedId childId newObj allocSize st = .ok ((), st')) :
     SystemState.objectTypeMetadataConsistent st' := by
   rcases retypeFromUntyped_ok_decompose st st' authority untypedId childId newObj allocSize hStep with
-    ⟨_ut, ut', _cap, stLookup, stUt, _offset, _hObj, _hNotDev, _hAllocSz,
-     hLookup, _hAuth, _hAlloc, hStoreUt, hStoreChild⟩
+    ⟨_ut, ut', _cap, stLookup, stUt, _offset, stCh, _hObj, _hNotDev, _hAllocSz,
+     hLookup, _hAuth, _hAlloc, hStoreUt, hStoreChild, rfl⟩
   have hLookupSt : stLookup = st :=
     cspaceLookupSlot_ok_state_eq st authority _ stLookup hLookup
   rw [hLookupSt] at hStoreUt
   have hObjInvUt := storeObject_preserves_objects_invExt st stUt untypedId (.untyped ut') hObjInv hStoreUt
-  have hObjTypesInvUt : stUt.lifecycle.objectTypes.invExt := by
-    have hStoreUt' := hStoreUt
-    unfold storeObject at hStoreUt'; cases hStoreUt'
-    exact RHTable_insert_preserves_invExt st.lifecycle.objectTypes _ _ hObjTypesInv
+  have hObjTypesInvUt := storeObject_preserves_objectTypes_invExt hObjTypesInv hStoreUt
   have hMetaUt : SystemState.objectTypeMetadataConsistent stUt :=
     storeObject_preserves_objectTypeMetadataConsistent st stUt untypedId (.untyped ut') hMeta hObjInv hObjTypesInv hStoreUt
-  exact storeObject_preserves_objectTypeMetadataConsistent stUt st' childId newObj hMetaUt hObjInvUt hObjTypesInvUt hStoreChild
+  have hMetaCh := storeObject_preserves_objectTypeMetadataConsistent stUt stCh childId newObj
+    hMetaUt hObjInvUt hObjTypesInvUt hStoreChild
+  exact setCapFreeIndex_preserves_objectTypeMetadataConsistent hMetaCh
+    (storeObject_preserves_objects_invExt _ _ _ _ hObjInvUt hStoreChild)
+    (storeObject_preserves_objectTypes_invExt hObjTypesInvUt hStoreChild)
 
 /-- WS-F2: `retypeFromUntyped` preserves the full lifecycle invariant bundle. -/
 theorem retypeFromUntyped_preserves_lifecycleInvariantBundle
@@ -214,11 +255,15 @@ theorem retypeFromUntyped_preserves_lifecycleInvariantBundle
   retypeFromUntyped_preserves_objectTypeMetadataConsistent
     st st' authority untypedId childId newObj allocSize hInv hObjInv hObjTypesInv hStep
 
-/-- WS-F2: `retypeFromUntyped` preserves the untyped memory invariant.
-The source untyped's allocate operation preserves watermark validity,
-children-within-watermark, non-overlap, and unique IDs (given freshness of
-childId). Non-target untypeds are unchanged through both storeObject calls.
-If `newObj` is itself an untyped, it must be well-formed. -/
+/-- WS-F2 / WS-ZA ZA5.4 part 13: `retypeFromUntyped` preserves the untyped
+memory invariant.  The carve is at the authority capability's free index, below
+which every child lies (`untypedChildrenBoundsInvariant`), so the new child
+overlaps none; the authority's index is advanced past it; and every other
+capability naming the untyped is full (`untypedSoleCarverInvariant`, since the
+authority's index is below the region's end), so the new child lies below its
+index too.  The new object holds no capability (`hNewSlots`) and no capability
+names its id yet (`hChildUnnamed`), so it is named by no capability after the
+carve; if it is itself an untyped, it must be well-formed. -/
 theorem retypeFromUntyped_preserves_untypedMemoryInvariant
     (st st' : SystemState)
     (authority : CSpaceAddr)
@@ -226,77 +271,184 @@ theorem retypeFromUntyped_preserves_untypedMemoryInvariant
     (newObj : KernelObject)
     (allocSize : Nat)
     (hInv : untypedMemoryInvariant st)
-    (_hNe : childId ≠ untypedId)
+    (hNe : childId ≠ untypedId)
     (hNewObjWF : ∀ ut_new, newObj = .untyped ut_new → ut_new.wellFormed)
+    (hNewSlots : ∀ s, newObj.slotCap s = none)
+    (hChildUnnamed : ∀ r cap, st.slotCapAt r = some cap → cap.target ≠ .object childId)
     (hFresh : ∀ ut, st.objects[untypedId]? = some (.untyped ut) →
         ∀ c ∈ ut.children, c.objId ≠ childId)
     (hObjInv : st.objects.invExt)
     (hStep : retypeFromUntyped authority untypedId childId newObj allocSize st = .ok ((), st')) :
     untypedMemoryInvariant st' := by
-  rcases hInv with ⟨hWM, hCB, hNO, hUI⟩
+  rcases hInv with ⟨hFI, hCB, hSC, hNO, hUI⟩
+  have hFreshId := retypeFromUntyped_childId_fresh authority untypedId childId newObj allocSize
+    st st' hStep
   rcases retypeFromUntyped_ok_decompose st st' authority untypedId childId newObj allocSize hStep with
-    ⟨ut, ut', _cap, stLookup, stUt, offset, hObj, _hNotDev, _hAllocSz,
-     hLookup, _hAuth, hAlloc, hStoreUt, hStoreChild⟩
+    ⟨ut, ut', cap, stLookup, stUt, offset, stCh, hObj, _hNotDev, _hAllocSz,
+     hLookup, hAuth, hAlloc, hStoreUt, hStoreChild, rfl⟩
   have hLookupSt : stLookup = st :=
     cspaceLookupSlot_ok_state_eq st authority _ stLookup hLookup
-  rw [hLookupSt] at hStoreUt
-  have hObjInvUt := storeObject_preserves_objects_invExt st stUt untypedId (.untyped ut') hObjInv hStoreUt
-  -- Source untyped properties for ut
-  have hUtWM : ut.watermarkValid := hWM untypedId ut hObj
-  have hUtCB : ut.childrenWithinWatermark := hCB untypedId ut hObj
-  have hUtNO : ut.childrenNonOverlap := hNO untypedId ut hObj
-  have hUtUI : ut.childrenUniqueIds := hUI untypedId ut hObj
-  -- After allocate, ut' is well-formed
-  have hUt'WM := UntypedObject.allocate_preserves_watermarkValid ut ut' childId allocSize offset hUtWM hAlloc
-  have hUt'CB := UntypedObject.allocate_preserves_childrenWithinWatermark ut ut' childId allocSize offset hUtCB hAlloc
-  have hUt'NO := UntypedObject.allocate_preserves_childrenNonOverlap ut ut' childId allocSize offset hUtNO hUtCB hAlloc
-  have hUt'UI := UntypedObject.allocate_preserves_childrenUniqueIds ut ut' childId allocSize offset hUtUI (hFresh ut hObj) hAlloc
-  -- Helper: resolve post-state object at any oid through the two storeObject calls
-  have resolve : ∀ oid utPost,
-      st'.objects[oid]? = some (.untyped utPost) →
-      (oid = childId ∧ newObj = .untyped utPost) ∨
-      (oid ≠ childId ∧ oid = untypedId ∧ ut' = utPost) ∨
-      (oid ≠ childId ∧ oid ≠ untypedId ∧ st.objects[oid]? = some (.untyped utPost)) := by
-    intro oid utPost hObjPost
-    by_cases hEqChild : oid = childId
-    · left; constructor; exact hEqChild
-      rw [hEqChild] at hObjPost
-      have := storeObject_objects_eq stUt st' childId newObj hObjInvUt hStoreChild
-      rw [this] at hObjPost; cases hObjPost; rfl
+  rw [hLookupSt] at hStoreUt hLookup
+  have hObjInvUt := storeObject_preserves_objects_invExt _ _ _ _ hObjInv hStoreUt
+  have hObjInvCh := storeObject_preserves_objects_invExt _ _ _ _ hObjInvUt hStoreChild
+  -- The authority slot and its capability.
+  obtain ⟨cnA, hObjA, hLkA⟩ := SystemState.lookupSlotCap_cnode (cspaceLookupSlot_ok_lookupSlotCap hLookup)
+  have hSlotA : st.slotCapAt authority = some cap := by
+    rw [SystemState.slotCapAt_of_object hObjA]; exact hLkA
+  have hTgt : cap.target = .object untypedId := by
+    unfold lifecycleRetypeAuthority at hAuth
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at hAuth
+    exact hAuth.1
+  have hCan := ((UntypedObject.allocate_some_iff ut cap.freeIndex childId allocSize _).mp hAlloc).1
+  simp only [UntypedObject.canAllocate, Bool.and_eq_true, decide_eq_true_eq] at hCan
+  have hIdxNe : cap.freeIndex ≠ ut.regionSize := by omega
+  have hRegion := UntypedObject.allocate_preserves_region ut ut' cap.freeIndex childId allocSize
+    offset hAlloc
+  have hNeAU : authority.cnode ≠ untypedId := by
+    intro h; rw [h, hObj] at hObjA; cases hObjA
+  have hNeAC : authority.cnode ≠ childId := by
+    intro h; rw [← h, hObjA] at hFreshId; cases hFreshId
+  have hObjACh : stCh.objects[authority.cnode]? = some (.cnode cnA) := by
+    rw [storeObject_objects_ne _ _ _ _ _ hNeAC hObjInvUt hStoreChild,
+      storeObject_objects_ne _ _ _ _ _ hNeAU hObjInv hStoreUt, hObjA]
+  -- Where an untyped of the post-state came from.
+  have resolve : ∀ oid u,
+      (setCapFreeIndex stCh authority (cap.freeIndex + allocSize)).objects[oid]? =
+        some (.untyped u) →
+      (oid = childId ∧ newObj = .untyped u) ∨ (oid = untypedId ∧ u = ut') ∨
+      (oid ≠ childId ∧ oid ≠ untypedId ∧ st.objects[oid]? = some (.untyped u)) := by
+    intro oid u hPost
+    by_cases hA : oid = authority.cnode
+    · rw [hA, setCapFreeIndex_objects_self hObjInvCh hObjACh] at hPost; cases hPost
+    rw [setCapFreeIndex_objects_ne hObjInvCh hA] at hPost
+    by_cases hC : oid = childId
+    · left; rw [hC, storeObject_objects_eq _ _ _ _ hObjInvUt hStoreChild] at hPost
+      cases hPost; exact ⟨hC, rfl⟩
+    rw [storeObject_objects_ne _ _ _ _ _ hC hObjInvUt hStoreChild] at hPost
+    by_cases hU : oid = untypedId
+    · right; left; rw [hU, storeObject_objects_eq _ _ _ _ hObjInv hStoreUt] at hPost
+      cases hPost; exact ⟨hU, rfl⟩
+    right; right
+    exact ⟨hC, hU, by rwa [storeObject_objects_ne _ _ _ _ _ hU hObjInv hStoreUt] at hPost⟩
+  -- Where a capability of the post-state came from.
+  have slots : ∀ r c,
+      (setCapFreeIndex stCh authority (cap.freeIndex + allocSize)).slotCapAt r = some c →
+      (r = authority ∧ c = cap.withFreeIndex (cap.freeIndex + allocSize)) ∨
+      (r ≠ authority ∧ st.slotCapAt r = some c) := by
+    intro r c hR
+    by_cases hA : r.cnode = authority.cnode
+    · have hO' := setCapFreeIndex_objects_self (idx := cap.freeIndex + allocSize) hObjInvCh hObjACh
+      rw [← hA] at hO'
+      rw [SystemState.slotCapAt_of_object hO'] at hR
+      simp only [KernelObject.slotCap] at hR
+      by_cases hS : r.slot = authority.slot
+      · left
+        have hr : r = authority := by
+          rw [← SlotRef.mk_cnode_slot r, ← SlotRef.mk_cnode_slot authority, hA, hS]
+        rw [hS, CNode.setFreeIndex_of_lookup hLkA,
+          CNode.lookup_insert_eq _ _ _ (CNode.slotsUnique_holds _)
+            (CNode.slotAddressable_of_lookup _ _ _ hLkA)] at hR
+        cases hR; exact ⟨hr, rfl⟩
+      · right
+        rw [CNode.lookup_setFreeIndex_ne _ _ (Ne.symm hS)] at hR
+        refine ⟨fun h => hS (h ▸ rfl), ?_⟩
+        rw [SystemState.slotCapAt_of_object (hA ▸ hObjA)]; exact hR
     · right
-      rw [storeObject_objects_ne stUt st' childId oid newObj hEqChild hObjInvUt hStoreChild] at hObjPost
-      by_cases hEqUt : oid = untypedId
-      · left; refine ⟨hEqChild, hEqUt, ?_⟩
-        rw [hEqUt] at hObjPost
-        have := storeObject_objects_eq st stUt untypedId (.untyped ut') hObjInv hStoreUt
-        rw [this] at hObjPost; cases hObjPost; rfl
-      · right; exact ⟨hEqChild, hEqUt,
-          (storeObject_objects_ne st stUt untypedId oid (.untyped ut') hEqUt hObjInv hStoreUt) ▸ hObjPost⟩
-  refine ⟨?_, ?_, ?_, ?_⟩
-  · -- untypedWatermarkInvariant
-    intro oid utPost hObjPost
-    rcases resolve oid utPost hObjPost with ⟨_, hNewEq⟩ | ⟨_, _, hUtEq⟩ | ⟨_, _, hPre⟩
-    · exact (hNewObjWF utPost hNewEq).1
-    · exact hUtEq ▸ hUt'WM
-    · exact hWM oid utPost hPre
+      refine ⟨fun h => hA (h ▸ rfl), ?_⟩
+      unfold SystemState.slotCapAt SystemState.getObject? at hR ⊢
+      rw [setCapFreeIndex_objects_ne hObjInvCh hA] at hR
+      by_cases hC : r.cnode = childId
+      · rw [hC, storeObject_objects_eq _ _ _ _ hObjInvUt hStoreChild] at hR
+        simp [hNewSlots] at hR
+      rw [storeObject_objects_ne _ _ _ _ _ hC hObjInvUt hStoreChild] at hR
+      by_cases hU : r.cnode = untypedId
+      · rw [hU, storeObject_objects_eq _ _ _ _ hObjInv hStoreUt] at hR
+        simp [KernelObject.slotCap] at hR
+      rw [storeObject_objects_ne _ _ _ _ _ hU hObjInv hStoreUt] at hR
+      exact hR
+  -- The advanced capability names the untyped.
+  have hTgtA : ∀ oid, (cap.withFreeIndex (cap.freeIndex + allocSize)).target = .object oid →
+      oid = untypedId := by
+    intro oid h; rw [Capability.withFreeIndex_target, hTgt] at h; cases h; rfl
+  -- No capability of the post-state names the child.
+  have hNotChild : ∀ r c, (setCapFreeIndex stCh authority (cap.freeIndex + allocSize)).slotCapAt r
+      = some c → c.target ≠ .object childId := by
+    intro r c hR hT
+    rcases slots r c hR with ⟨_, rfl⟩ | ⟨_, hPre⟩
+    · exact hNe (hTgtA _ hT)
+    · exact hChildUnnamed r c hPre hT
+  refine ⟨?_, ?_, ?_, ?_, ?_⟩
+  · -- untypedFreeIndexInvariant
+    intro r c oid u hR hT hO
+    rcases resolve oid u hO with ⟨hC, _⟩ | ⟨hU, hUe⟩ | ⟨_, hU, hPre⟩
+    · exact absurd (hC ▸ hT) (hNotChild r c hR)
+    · rw [hUe]; unfold UntypedObject.freeIndexValid; rw [hRegion.2]
+      rcases slots r c hR with ⟨_, rfl⟩ | ⟨_, hPre'⟩
+      · simp only [Capability.withFreeIndex_freeIndex]; exact hCan.2
+      · exact hFI r c untypedId ut hPre' (hU ▸ hT) hObj
+    · rcases slots r c hR with ⟨_, rfl⟩ | ⟨_, hPre'⟩
+      · exact absurd (hTgtA _ hT) hU
+      · exact hFI r c oid u hPre' hT hPre
   · -- untypedChildrenBoundsInvariant
-    intro oid utPost hObjPost
-    rcases resolve oid utPost hObjPost with ⟨_, hNewEq⟩ | ⟨_, _, hUtEq⟩ | ⟨_, _, hPre⟩
-    · exact (hNewObjWF utPost hNewEq).2.1
-    · exact hUtEq ▸ hUt'CB
-    · exact hCB oid utPost hPre
+    intro r c oid u hR hT hO
+    rcases resolve oid u hO with ⟨hC, _⟩ | ⟨hU, hUe⟩ | ⟨_, hU, hPre⟩
+    · exact absurd (hC ▸ hT) (hNotChild r c hR)
+    · rw [hUe]
+      rcases slots r c hR with ⟨_, rfl⟩ | ⟨hNeA, hPre'⟩
+      · simp only [Capability.withFreeIndex_freeIndex]
+        exact UntypedObject.allocate_preserves_childrenBelow ut ut' _ childId allocSize offset
+          (hCB authority cap untypedId ut hSlotA hTgt hObj) hAlloc
+      · have hT' : c.target = .object untypedId := hU ▸ hT
+        have hFull : c.freeIndex = ut.regionSize := by
+          rcases hSC authority r cap c untypedId ut (Ne.symm hNeA) hSlotA hPre' hTgt hT' hObj
+            with h | h
+          · exact absurd h hIdxNe
+          · exact h
+        exact UntypedObject.allocate_preserves_childrenBelow_full ut ut' _ childId allocSize offset
+          c.freeIndex (hCB r c untypedId ut hPre' hT' hObj) (by omega) hAlloc
+    · rcases slots r c hR with ⟨_, rfl⟩ | ⟨_, hPre'⟩
+      · exact absurd (hTgtA _ hT) hU
+      · exact hCB r c oid u hPre' hT hPre
+  · -- untypedSoleCarverInvariant
+    intro r₁ r₂ c₁ c₂ oid u hNe12 h1 h2 t1 t2 hO
+    rcases resolve oid u hO with ⟨hC, _⟩ | ⟨hU, hUe⟩ | ⟨_, hU, hPre⟩
+    · exact absurd (hC ▸ t1) (hNotChild r₁ c₁ h1)
+    · rw [hUe, hRegion.2]
+      have t1' : c₁.target = .object untypedId := hU ▸ t1
+      have t2' : c₂.target = .object untypedId := hU ▸ t2
+      rcases slots r₁ c₁ h1 with ⟨hr₁, rfl⟩ | ⟨hNe₁, hP₁⟩ <;>
+        rcases slots r₂ c₂ h2 with ⟨hr₂, rfl⟩ | ⟨hNe₂, hP₂⟩
+      · exact absurd (hr₁.trans hr₂.symm) hNe12
+      · rcases hSC authority r₂ cap c₂ untypedId ut (Ne.symm hNe₂) hSlotA hP₂ hTgt t2' hObj
+          with h | h
+        · exact absurd h hIdxNe
+        · exact Or.inr h
+      · rcases hSC authority r₁ cap c₁ untypedId ut (Ne.symm hNe₁) hSlotA hP₁ hTgt t1' hObj
+          with h | h
+        · exact absurd h hIdxNe
+        · exact Or.inl h
+      · exact hSC r₁ r₂ c₁ c₂ untypedId ut hNe12 hP₁ hP₂ t1' t2' hObj
+    · rcases slots r₁ c₁ h1 with ⟨_, rfl⟩ | ⟨_, hP₁⟩
+      · exact absurd (hTgtA _ t1) hU
+      rcases slots r₂ c₂ h2 with ⟨_, rfl⟩ | ⟨_, hP₂⟩
+      · exact absurd (hTgtA _ t2) hU
+      exact hSC r₁ r₂ c₁ c₂ oid u hNe12 hP₁ hP₂ t1 t2 hPre
   · -- untypedChildrenNonOverlapInvariant
-    intro oid utPost hObjPost
-    rcases resolve oid utPost hObjPost with ⟨_, hNewEq⟩ | ⟨_, _, hUtEq⟩ | ⟨_, _, hPre⟩
-    · exact (hNewObjWF utPost hNewEq).2.2.1
-    · exact hUtEq ▸ hUt'NO
-    · exact hNO oid utPost hPre
+    intro oid u hO
+    rcases resolve oid u hO with ⟨_, hNewEq⟩ | ⟨_, hUe⟩ | ⟨_, _, hPre⟩
+    · exact (hNewObjWF u hNewEq).2.1
+    · rw [hUe]
+      exact UntypedObject.allocate_preserves_childrenNonOverlap ut ut' _ childId allocSize offset
+        (hNO untypedId ut hObj) (hCB authority cap untypedId ut hSlotA hTgt hObj) hAlloc
+    · exact hNO oid u hPre
   · -- untypedChildrenUniqueIdsInvariant
-    intro oid utPost hObjPost
-    rcases resolve oid utPost hObjPost with ⟨_, hNewEq⟩ | ⟨_, _, hUtEq⟩ | ⟨_, _, hPre⟩
-    · exact (hNewObjWF utPost hNewEq).2.2.2
-    · exact hUtEq ▸ hUt'UI
-    · exact hUI oid utPost hPre
+    intro oid u hO
+    rcases resolve oid u hO with ⟨_, hNewEq⟩ | ⟨_, hUe⟩ | ⟨_, _, hPre⟩
+    · exact (hNewObjWF u hNewEq).2.2
+    · rw [hUe]
+      exact UntypedObject.allocate_preserves_childrenUniqueIds ut ut' _ childId allocSize offset
+        (hUI untypedId ut hObj) (hFresh ut hObj) hAlloc
+    · exact hUI oid u hPre
 
 /-- WS-H2/B-5: If `retypeFromUntyped` succeeds, then `childId ≠ untypedId`.
 The self-overwrite guard (H-06) returns `childIdSelfOverwrite` when
@@ -372,7 +524,7 @@ manual `hNe` and `hFresh` proof obligations. Both conditions are derived
 from the success of `retypeFromUntyped` via the H-06 self-overwrite guard
 and A-27 child-collision guard respectively. Callers need only supply the
 invariant precondition, the new-object well-formedness hypothesis, and the
-success hypothesis. -/
+success hypothesis (and the two facts about the new object's capabilities). -/
 theorem retypeFromUntyped_preserves_untypedMemoryInvariant_auto
     (st st' : SystemState)
     (authority : CSpaceAddr)
@@ -381,13 +533,15 @@ theorem retypeFromUntyped_preserves_untypedMemoryInvariant_auto
     (allocSize : Nat)
     (hInv : untypedMemoryInvariant st)
     (hNewObjWF : ∀ ut_new, newObj = .untyped ut_new → ut_new.wellFormed)
+    (hNewSlots : ∀ s, newObj.slotCap s = none)
+    (hChildUnnamed : ∀ r cap, st.slotCapAt r = some cap → cap.target ≠ .object childId)
     (hObjInv : st.objects.invExt)
     (hStep : retypeFromUntyped authority untypedId childId newObj allocSize st = .ok ((), st')) :
     untypedMemoryInvariant st' :=
   retypeFromUntyped_preserves_untypedMemoryInvariant
     st st' authority untypedId childId newObj allocSize hInv
     (retypeFromUntyped_ok_childId_ne st st' authority untypedId childId newObj allocSize hStep)
-    hNewObjWF
+    hNewObjWF hNewSlots hChildUnnamed
     (retypeFromUntyped_ok_childId_fresh st st' authority untypedId childId newObj allocSize hStep)
     hObjInv
     hStep

@@ -987,6 +987,45 @@ private def runBootTablePoolChecks : IO Unit := do
   assertBool "the refused config is refused by the checked boot"
     ((SeLe4n.Platform.Boot.bootFromPlatformChecked (withRoots mc (some (page 0)) none)).isOk == false)
 
+/-- **WS-ZA ZA5.4 part 13**: each boot untyped is named by at most one
+capability.  The free index is in the capability, so two capabilities to one
+untyped would be two carvers over the same memory; the boot refuses the
+configuration, naming its own conjunct, and the control — one capability — is
+accepted, so the refusal is about the duplicate and not about configuring a
+capability to an untyped at all. -/
+private def runBootUntypedCapabilityChecks : IO Unit := do
+  IO.println "--- WS-ZA ZA5.4 part 13: one capability per boot untyped ---"
+  let mc : SeLe4n.MachineConfig :=
+    { SeLe4n.defaultMachineConfig with
+      memoryMap := [{ base := SeLe4n.PAddr.ofNat 0x1000_0000, size := 0x10_0000, kind := .ram }]
+      kernelReserved := [] }
+  let utId : SeLe4n.ObjId := ⟨110⟩
+  let utCap : Capability :=
+    { target := .object utId, rights := AccessRightSet.ofList [.read, .write, .retype] }
+  let utEntry : SeLe4n.Platform.Boot.ObjectEntry :=
+    { id := utId
+      obj := .untyped { regionBase := SeLe4n.PAddr.ofNat 0x1000_0000, regionSize := 0x1000 }
+      hSlots := fun _ h => nomatch h
+      hMappings := fun _ h => nomatch h }
+  let cnEntry (slots : List (SeLe4n.Slot × Capability)) : SeLe4n.Platform.Boot.ObjectEntry :=
+    { id := ⟨111⟩
+      obj := .cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF slots))
+      hSlots := fun _ h => by cases h; exact SeLe4n.Model.CNode.slotsUnique_holds _
+      hMappings := fun _ h => nomatch h }
+  let withSlots (slots : List (SeLe4n.Slot × Capability)) : SeLe4n.Platform.Boot.PlatformConfig :=
+    { irqTable := [], machineConfig := mc, initialObjects := [utEntry, cnEntry slots] }
+  let one := withSlots [(SeLe4n.Slot.ofNat 0, utCap)]
+  let two := withSlots [(SeLe4n.Slot.ofNat 0, utCap), (SeLe4n.Slot.ofNat 1, utCap)]
+  assertBool "CONTROL: one capability to a boot untyped is well-formed"
+    (one.wellFormed == true)
+  assertBool "NEGATIVE: two capabilities to one boot untyped are refused"
+    (two.wellFormed == false && SeLe4n.Platform.Boot.untypedCapabilitiesUnique two == false)
+  assertBool "...and the refusal names the duplicate, not another conjunct"
+    (SeLe4n.Platform.Boot.wellFormedDiagnostic two ==
+      SeLe4n.Platform.Boot.untypedCapabilityDuplicateBootError)
+  assertBool "the duplicate config is refused by the checked boot"
+    ((SeLe4n.Platform.Boot.bootFromPlatformChecked two).isOk == false)
+
 /-- PR #889 review round 18: a successful boot must leave the object index
     inside `maxObjects`.  Nothing bounded the count before: the checked boot
     did not, and the idle fold adds one entry per core on top of it, so a
@@ -1123,6 +1162,7 @@ def runSmpIdleChecks : IO Unit := do
   runObjectBudgetChecks
   runDeclaredCoreCountChecks
   runBootTablePoolChecks
+  runBootUntypedCapabilityChecks
   runInactiveFlagChecks
   IO.println "===================================="
   IO.println "All SM5.E per-core idle thread checks PASS."

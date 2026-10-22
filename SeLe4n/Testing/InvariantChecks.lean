@@ -358,17 +358,39 @@ private def asidTableConsistencyChecks (objectIds : List SeLe4n.ObjId) (st : Sys
     | none => none
   completenessChecks ++ soundnessChecks
 
-/-- WS-F2: Untyped watermark validity: watermark ≤ regionSize for every untyped object.
-Also checks children-within-watermark bounds. -/
-private def untypedWatermarkChecks (objectIds : List SeLe4n.ObjId) (st : SystemState) : List (String × Bool) :=
-  objectIds.foldr (fun oid acc =>
-    -- AK7-F.reader.hygiene: AL2-A typed helper adoption.
+/-- WS-F2, WS-ZA ZA5.4: untyped free-index validity, read from the capabilities
+(seL4's `untyped_inc`): every CNode slot naming an untyped carries a free index
+within the region with the untyped's children below it, and at most one of the
+capabilities naming an untyped is not full (the sole carver). -/
+private def untypedFreeIndexChecks (objectIds : List SeLe4n.ObjId) (st : SystemState) :
+    List (String × Bool) :=
+  let untypedCaps : List (SeLe4n.ObjId × UntypedObject × Nat) :=
+    objectIds.foldr (fun cnId acc =>
+      match st.getCNode? cnId with
+      | some cn =>
+          cn.cells.toList.foldr (fun cell acc' =>
+            match cell with
+            | some cap =>
+                match cap.target with
+                | .object oid =>
+                    match st.getUntyped? oid with
+                    | some ut => (oid, ut, cap.freeIndex) :: acc'
+                    | none => acc'
+                | _ => acc'
+            | none => acc') acc
+      | none => acc) []
+  let perCap := untypedCaps.foldr (fun (oid, ut, idx) acc =>
+    (s!"untyped free index valid: oid={oid}", decide (idx ≤ ut.regionSize)) ::
+    (s!"untyped children below free index: oid={oid}",
+      ut.children.all fun c => c.offset + c.size ≤ idx) :: acc) []
+  let soleCarver := objectIds.foldr (fun oid acc =>
     match st.getUntyped? oid with
     | some ut =>
-        (s!"untyped watermark valid: oid={oid}", ut.watermark ≤ ut.regionSize) ::
-        (s!"untyped children within watermark: oid={oid}",
-          ut.children.all fun c => c.offset + c.size ≤ ut.watermark) :: acc
+        (s!"untyped sole carver: oid={oid}",
+          decide ((untypedCaps.filter fun (o, _, idx) => o == oid && idx != ut.regionSize).length ≤ 1))
+          :: acc
     | none => acc) []
+  perCap ++ soleCarver
 
 /-- WS-G7, WS-ZA ZA4.4: is `t` a TCB blocked on notification `oid`? -/
 private def blockedOnNotificationB (st : SystemState) (oid : SeLe4n.ObjId)
@@ -706,7 +728,7 @@ def stateInvariantChecksFor (objectIds : List SeLe4n.ObjId) (st : SystemState)
     ++ serviceGraphAcyclicityChecks serviceIds st fuel
     ++ vspaceAsidUniquenessChecks objectIds st
     ++ asidTableConsistencyChecks objectIds st
-    ++ untypedWatermarkChecks objectIds st
+    ++ untypedFreeIndexChecks objectIds st
     ++ notificationWaiterConsistentChecks objectIds st
     ++ replyWaitersConsistentChecks objectIds st
     ++ cdtLinksConsistentCheck st

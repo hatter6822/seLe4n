@@ -152,35 +152,46 @@ theorem cspaceMint_keyFrame (st st' : SystemState) (src dst : CSpaceAddr)
       · contradiction
       · exact cspaceInsertSlot_keyFrame _ st' dst _ hObjInv hStep
 
+/-- WS-ZA ZA5.4: a free-index write stores a CNode, which feeds no key, or
+writes nothing. -/
+theorem setCapFreeIndex_keyFrame (st : SystemState) (addr : CSpaceAddr) (idx : Nat)
+    (hObjInv : st.objects.invExt) : capabilityKeyFrame st (setCapFreeIndex st addr idx) := by
+  cases hO : st.objects[addr.cnode]? with
+  | some o =>
+    cases o with
+    | cnode cn =>
+      have hS := setCapFreeIndex_eq_storeObject (idx := idx) hO
+      exact ⟨keyInputsEq_storeObject hObjInv hS (by rw [hO]; rfl),
+        storeObject_scheduler_eq _ _ _ _ hS, storeObject_preserves_objects_invExt _ _ _ _ hObjInv hS⟩
+    | _ =>
+      unfold setCapFreeIndex SystemState.storeCNodeWith; rw [hO]
+      exact capabilityKeyFrame_of_objects_scheduler_eq hObjInv rfl rfl
+  | none =>
+    unfold setCapFreeIndex SystemState.storeCNodeWith; rw [hO]
+    exact capabilityKeyFrame_of_objects_scheduler_eq hObjInv rfl rfl
+
+theorem untypedSourceSetFull_keyFrame (st : SystemState) (src : CSpaceAddr) (cap : Capability)
+    (hObjInv : st.objects.invExt) : capabilityKeyFrame st (untypedSourceSetFull st src cap) :=
+  untypedSourceSetFull_of (P := capabilityKeyFrame st)
+    (capabilityKeyFrame_of_objects_scheduler_eq hObjInv rfl rfl)
+    fun idx => setCapFreeIndex_keyFrame st src idx hObjInv
+
 theorem cspaceMintWithCdt_keyFrame (st st' : SystemState) (src dst : CSpaceAddr)
     (rights : AccessRightSet) (badge : Option SeLe4n.Badge) (hObjInv : st.objects.invExt)
     (hStep : cspaceMintWithCdt src dst rights badge st = .ok ((), st')) :
     capabilityKeyFrame st st' := by
-  unfold cspaceMintWithCdt at hStep
-  split at hStep
-  · contradiction
-  · rename_i stM hMint
-    cases hStep
-    have hM := cspaceMint_keyFrame st stM src dst rights badge hObjInv hMint
-    exact hM.trans (cdtRecord_keyFrame stM src dst .mint hM.2.2)
+  obtain ⟨_, stM, hMint, -, -, rfl⟩ := cspaceMintWithCdt_ok_decompose hStep
+  have hM := cspaceMint_keyFrame st stM src dst rights badge hObjInv hMint
+  have hC := hM.trans (cdtRecord_keyFrame stM src dst .mint hM.2.2)
+  exact hC.trans (untypedSourceSetFull_keyFrame _ src _ hC.2.2)
 
 theorem cspaceCopy_keyFrame (st st' : SystemState) (src dst : CSpaceAddr)
     (hObjInv : st.objects.invExt) (hStep : cspaceCopy src dst st = .ok ((), st')) :
     capabilityKeyFrame st st' := by
-  unfold cspaceCopy at hStep
-  split at hStep
-  · contradiction
-  · rename_i cap stMid hLk
-    have hMid : stMid = st := cspaceLookupSlot_state_eq st stMid src cap hLk
-    subst hMid
-    split at hStep
-    · contradiction
-    · split at hStep
-      · contradiction
-      · rename_i st2 hIns
-        cases hStep
-        have hI := cspaceInsertSlot_keyFrame _ st2 dst _ hObjInv hIns
-        exact hI.trans (cdtRecord_keyFrame st2 src dst .copy hI.2.2)
+  obtain ⟨_, st2, -, -, hIns, -, rfl⟩ := cspaceCopy_ok_decompose hStep
+  have hI := cspaceInsertSlot_keyFrame _ st2 dst _ hObjInv hIns
+  have hC := hI.trans (cdtRecord_keyFrame st2 src dst .copy hI.2.2)
+  exact hC.trans (untypedSourceSetFull_keyFrame _ src _ hC.2.2)
 
 theorem cspaceMove_keyFrame (st st' : SystemState) (src dst : CSpaceAddr)
     (hObjInv : st.objects.invExt) (hStep : cspaceMove src dst st = .ok ((), st')) :
@@ -313,28 +324,27 @@ theorem untypedRetypeObject_keyFrame (src dst : CSpaceAddr) (childId : SeLe4n.Ob
     (req : CarveRequest) (st st' : SystemState) (hObjInv : st.objects.invExt)
     (hStep : untypedRetypeObject src childId dst req st = .ok ((), st')) :
     capabilityKeyFrame st st' := by
-  obtain ⟨_, untypedId, ut, st1, st2, _, _, _, hRt, hIns, rfl⟩ :=
+  obtain ⟨utCap, untypedId, ut, st1, st2, _, _, _, hRt, hIns, rfl⟩ :=
     untypedRetypeObject_ok_decompose src dst childId req st st' hObjInv hStep
   have hFresh := retypeFromUntyped_childId_fresh src untypedId childId _ _ st st1 hRt
-  obtain ⟨ut₀, ut', cap, stL, stUt, _, hUt, _, _, hLk, _, _, hStUt, hStCh⟩ :=
-    retypeFromUntyped_ok_decompose st st1 src untypedId childId _ _ hRt
-  have hStL : stL = st := cspaceLookupSlot_ok_state_eq st src cap stL hLk
-  subst hStL
+  obtain ⟨ut₀, ut', cap, stUt, _, stCh, cn, hUt, _, _, _, _, _, _, _, _, _, hStUt, hStCh, hOCh,
+    hStIdx⟩ := retypeFromUntyped_ok_stores st st1 src untypedId childId _ _ hObjInv hRt
   have k1 := storeObject_inert_keyFrame hObjInv hStUt (by rw [hUt]; rfl) rfl
   have hNe : childId ≠ untypedId := by
     intro h; rw [h, hUt] at hFresh; simp at hFresh
   have hChildNone : stUt.objects[childId]? = none := by
     rw [storeObject_objects_ne _ _ _ _ _ hNe hObjInv hStUt]
-    cases h : stL.objects[childId]? with
+    cases h : st.objects[childId]? with
     | none => rfl
     | some _ => rw [h] at hFresh; simp at hFresh
   have k2 := k1.trans (storeObject_inert_keyFrame k1.2.2 hStCh (by rw [hChildNone]; rfl)
     (by cases req <;> rfl))
-  have kZ : capabilityKeyFrame st1 (req.scrub st1 ut) :=
-    capabilityKeyFrame_of_objects_scheduler_eq k2.2.2 (CarveRequest.scrub_objects _ _ _)
-      (CarveRequest.scrub_scheduler _ _ _)
+  have k3 := k2.trans (storeObject_inert_keyFrame k2.2.2 hStIdx (by rw [hOCh]; rfl) rfl)
+  have kZ : capabilityKeyFrame st1 (req.scrub st1 ut utCap.freeIndex) :=
+    capabilityKeyFrame_of_objects_scheduler_eq k3.2.2 (CarveRequest.scrub_objects _ _ _ _)
+      (CarveRequest.scrub_scheduler _ _ _ _)
   have kI := cspaceInsertSlot_keyFrame _ st2 dst _ kZ.2.2 hIns
-  exact ((k2.trans kZ).trans kI).trans (cdtRecord_keyFrame st2 src dst .retype kI.2.2)
+  exact ((k3.trans kZ).trans kI).trans (cdtRecord_keyFrame st2 src dst .retype kI.2.2)
 
 theorem untypedResetWithShootdown_keyFrame (ec : CoreId) (untypedId : SeLe4n.ObjId)
     (st st' : SystemState) (hObjInv : st.objects.invExt)
@@ -354,6 +364,18 @@ theorem untypedResetWithShootdown_keyFrame (ec : CoreId) (untypedId : SeLe4n.Obj
     · rw [e]
     · rw [hT _ t1, hT _ t2]
   exact k1.trans (capabilityKeyFrame_of_objects_scheduler_eq hExt hObj hSched)
+
+/-- WS-ZA ZA5.4: the `.untypedReset` arm — the invoked slot's free-index rewind
+(a CNode store, which feeds no key) and then the reset. -/
+theorem untypedResetFromCap_keyFrame (tid : SeLe4n.ThreadId) (ec : CoreId)
+    (srcAddr : SeLe4n.CPtr) (untypedId : SeLe4n.ObjId)
+    (st st' : SystemState) (hObjInv : st.objects.invExt)
+    (hStep : untypedResetFromCap tid ec srcAddr untypedId st = .ok ((), st')) :
+    capabilityKeyFrame st st' := by
+  obtain ⟨src, _, cn, hO, -, -, hS⟩ := untypedResetFromCap_ok _ _ _ _ st st' hStep
+  have k1 := storeObject_inert_keyFrame hObjInv (setCapFreeIndex_eq_storeObject (idx := 0) hO)
+    (by rw [hO]; rfl) rfl
+  exact k1.trans (untypedResetWithShootdown_keyFrame ec untypedId _ st' k1.2.2 hS)
 
 /-! ### One-field TCB rewrites and registry writes -/
 

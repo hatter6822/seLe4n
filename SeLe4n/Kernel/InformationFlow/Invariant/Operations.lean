@@ -189,6 +189,34 @@ with CDT-specific frame lemmas.
 -/
 
 -- ============================================================================
+-- WS-ZA ZA5.4: the free-index write at a non-observable CNode
+-- ============================================================================
+
+/-- A free-index write at a non-observable CNode is invisible: it is one store
+of that CNode, or no write at all. -/
+theorem setCapFreeIndex_preserves_projection (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (addr : CSpaceAddr) (idx : Nat)
+    (hHigh : objectObservable ctx observer addr.cnode = false) (hObjInv : st.objects.invExt) :
+    projectState ctx observer (setCapFreeIndex st addr idx) = projectState ctx observer st := by
+  cases hO : st.objects[addr.cnode]? with
+  | some o =>
+    cases o with
+    | cnode cn =>
+      exact storeObject_preserves_projection ctx observer st _ addr.cnode _ hHigh hObjInv
+        (setCapFreeIndex_eq_storeObject hO)
+    | _ => unfold setCapFreeIndex SystemState.storeCNodeWith; rw [hO]
+  | none => unfold setCapFreeIndex SystemState.storeCNodeWith; rw [hO]
+
+/-- Setting a derivation's untyped source full at a non-observable CNode is
+invisible. -/
+theorem untypedSourceSetFull_preserves_projection (ctx : LabelingContext)
+    (observer : IfObserver) (st : SystemState) (src : CSpaceAddr) (cap : Capability)
+    (hHigh : objectObservable ctx observer src.cnode = false) (hObjInv : st.objects.invExt) :
+    projectState ctx observer (untypedSourceSetFull st src cap) = projectState ctx observer st :=
+  untypedSourceSetFull_of (P := fun s => projectState ctx observer s = projectState ctx observer st)
+    rfl fun idx => setCapFreeIndex_preserves_projection ctx observer st src idx hHigh hObjInv
+
+-- ============================================================================
 -- WS-F3/F-20: Enforcement-NI bridge theorems
 -- ============================================================================
 
@@ -214,37 +242,27 @@ theorem cspaceMintChecked_NI
     | true => rfl
   rw [cspaceMintChecked_eq_cspaceMintWithCdt_when_allowed ctx src dst rights badge s₁ hFlow₁] at hStep₁
   rw [cspaceMintChecked_eq_cspaceMintWithCdt_when_allowed ctx src dst rights badge s₂ hFlow₁] at hStep₂
-  -- Unfold cspaceMintWithCdt to extract the underlying cspaceMint step
-  unfold cspaceMintWithCdt at hStep₁ hStep₂
-  -- Split on the cspaceMint result for s₁
-  cases hMint₁ : cspaceMint src dst rights badge s₁ with
-  | error e => simp [hMint₁] at hStep₁
-  | ok pair₁ =>
-    simp only [hMint₁, Except.ok.injEq, Prod.mk.injEq] at hStep₁
-    obtain ⟨_, rfl⟩ := hStep₁
-    -- Split on the cspaceMint result for s₂
-    cases hMint₂ : cspaceMint src dst rights badge s₂ with
-    | error e => simp [hMint₂] at hStep₂
-    | ok pair₂ =>
-      simp only [hMint₂, Except.ok.injEq, Prod.mk.injEq] at hStep₂
-      obtain ⟨_, rfl⟩ := hStep₂
-      -- cspaceMint results preserve lowEquivalent
-      have hMintLow := cspaceMint_preserves_lowEquivalent ctx observer src dst rights badge
-        s₁ s₂ pair₁.2 pair₂.2 hLow hSrcHigh hDstHigh hObjInv₁ hObjInv₂
-        hMint₁ hMint₂
-      -- The CDT edge only modifies the CDT, which `projectState` does not read.
-      unfold lowEquivalent at hMintLow ⊢
-      have hInvOf : ∀ s s' : SystemState, s.objects.invExt →
-          cspaceMint src dst rights badge s = .ok ((), s') → s'.objects.invExt := by
-        intro s s' hI h
-        obtain ⟨_, _, _, hIns⟩ := cspaceMint_ok_decompose src dst rights badge s s' h
-        exact cspaceInsertSlot_preserves_objects_invExt s s' dst _ hI hIns
-      calc projectState ctx observer _
-          = projectState ctx observer pair₁.2 :=
-            projectState_cdtAddChild ctx observer _ _ _ _ (hInvOf _ _ hObjInv₁ hMint₁)
-        _ = projectState ctx observer pair₂.2 := hMintLow
-        _ = projectState ctx observer _ :=
-            (projectState_cdtAddChild ctx observer _ _ _ _ (hInvOf _ _ hObjInv₂ hMint₂)).symm
+  -- WS-ZA ZA5.4: the mint, its edge, and the source set full when it names an
+  -- untyped — each at a non-observable CNode or the tree alone.
+  obtain ⟨parent₁, m₁, hMint₁, hL₁, -, rfl⟩ := cspaceMintWithCdt_ok_decompose hStep₁
+  obtain ⟨parent₂, m₂, hMint₂, hL₂, -, rfl⟩ := cspaceMintWithCdt_ok_decompose hStep₂
+  have hMintLow := cspaceMint_preserves_lowEquivalent ctx observer src dst rights badge
+    s₁ s₂ m₁ m₂ hLow hSrcHigh hDstHigh hObjInv₁ hObjInv₂ hMint₁ hMint₂
+  have hInvOf : ∀ s s' : SystemState, s.objects.invExt →
+      cspaceMint src dst rights badge s = .ok ((), s') → s'.objects.invExt := by
+    intro s s' hI h
+    obtain ⟨_, _, _, hIns⟩ := cspaceMint_ok_decompose src dst rights badge s s' h
+    exact cspaceInsertSlot_preserves_objects_invExt s s' dst _ hI hIns
+  have hTail : ∀ (s : SystemState) (p : Capability), s.objects.invExt →
+      projectState ctx observer (untypedSourceSetFull (s.cdtAddChild src dst .mint) src p) =
+        projectState ctx observer s := by
+    intro s p hI
+    rw [untypedSourceSetFull_preserves_projection ctx observer _ src p hSrcHigh
+      ((SystemState.cdtAddChild_agreeObjects hI src dst .mint).2),
+      projectState_cdtAddChild ctx observer _ _ _ _ hI]
+  unfold lowEquivalent at hMintLow ⊢
+  rw [hTail _ _ (hInvOf _ _ hObjInv₁ hMint₁), hTail _ _ (hInvOf _ _ hObjInv₂ hMint₂)]
+  exact hMintLow
 
 -- ============================================================================
 -- WS-H8/H-07: Enforcement-NI bridge theorems for new wrappers
@@ -1219,36 +1237,18 @@ cspaceCopy = cspaceLookupSlot (read-only) + cspaceInsertSlot (at non-obs dst)
 theorem cspaceCopy_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (src dst : CSpaceAddr) (st st' : SystemState)
-    (_hSrcHigh : objectObservable ctx observer src.cnode = false)
+    (hSrcHigh : objectObservable ctx observer src.cnode = false)
     (hDstHigh : objectObservable ctx observer dst.cnode = false)
     (hObjInv : st.objects.invExt)
     (hStep : cspaceCopy src dst st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
-  unfold cspaceCopy at hStep
-  cases hLookup : cspaceLookupSlot src st with
-  | error e => simp [hLookup] at hStep
-  | ok pair =>
-    rcases pair with ⟨cap, stL⟩
-    have hStEq := cspaceLookupSlot_preserves_state st stL src cap hLookup
-    simp only [hLookup] at hStep
-    rw [hStEq] at hStep
-    -- AL1b (AK7-I.cascade): promote cap via toNonNull? under success path.
-    have hNotNull : cap.isNull = false := by
-      by_cases h : cap.isNull
-      · exfalso; simp [Capability.toNonNull?, h] at hStep
-      · exact Bool.not_eq_true _ |>.mp h
-    have hToNN : cap.toNonNull? = some ⟨cap, hNotNull⟩ :=
-      Capability.toNonNull?_of_not_null hNotNull
-    simp only [hToNN] at hStep
-    cases hInsert : cspaceInsertSlot dst cap.withoutMapping st with
-    | error e => simp [hInsert] at hStep
-    | ok pair₂ =>
-      rcases pair₂ with ⟨_, stIns⟩
-      simp only [hInsert, Except.ok.injEq, Prod.mk.injEq] at hStep
-      have hEq := hStep.2.symm; subst hEq
-      rw [projectState_cdtAddChild ctx observer _ _ _ _
-            (cspaceInsertSlot_preserves_objects_invExt st stIns dst _ hObjInv hInsert),
-          cspaceInsertSlot_preserves_projection ctx observer dst cap.withoutMapping st stIns hDstHigh hObjInv hInsert]
+  obtain ⟨cap, stIns, -, -, hInsert, -, rfl⟩ := cspaceCopy_ok_decompose hStep
+  have hInvIns := cspaceInsertSlot_preserves_objects_invExt st stIns dst _ hObjInv hInsert
+  rw [untypedSourceSetFull_preserves_projection ctx observer _ src cap hSrcHigh
+      ((SystemState.cdtAddChild_agreeObjects hInvIns src dst .copy).2),
+    projectState_cdtAddChild ctx observer _ _ _ _ hInvIns,
+    cspaceInsertSlot_preserves_projection ctx observer dst cap.withoutMapping st stIns hDstHigh
+      hObjInv hInsert]
 
 /-- WS-H9: cspaceCopy preserves low-equivalence. -/
 private theorem cspaceCopy_preserves_lowEquivalent
@@ -2886,10 +2886,11 @@ theorem timerTick_preserves_lowEquivalent
 -- ============================================================================
 
 /-- WS-K-F5: `retypeFromUntyped` at non-observable targets preserves
-low-equivalence. The operation decomposes (via `retypeFromUntyped_ok_decompose`)
-into a read-only `cspaceLookupSlot` followed by two `storeObject` calls —
-one for the untyped watermark advance and one for the new child. Both targets
-are non-observable, so each store preserves low-equivalence. -/
+low-equivalence. The operation decomposes (via `retypeFromUntyped_ok_stores`)
+into a read-only `cspaceLookupSlot` followed by three stores — the child's
+record in the untyped, the new child, and (WS-ZA ZA5.4 part 13) the authority
+capability's advanced free index in its CNode. All three targets are
+non-observable, so each store preserves low-equivalence. -/
 theorem retypeFromUntyped_preserves_lowEquivalent
     (ctx : LabelingContext) (observer : IfObserver)
     (authority : CSpaceAddr)
@@ -2899,20 +2900,19 @@ theorem retypeFromUntyped_preserves_lowEquivalent
     (hLow : lowEquivalent ctx observer s₁ s₂)
     (hUntypedHigh : objectObservable ctx observer untypedId = false)
     (hChildHigh : objectObservable ctx observer childId = false)
+    (hAuthorityHigh : objectObservable ctx observer authority.cnode = false)
     (hObjInv₁ : s₁.objects.invExt)
     (hObjInv₂ : s₂.objects.invExt)
     (hStep₁ : retypeFromUntyped authority untypedId childId newObj allocSize s₁ = .ok ((), s₁'))
     (hStep₂ : retypeFromUntyped authority untypedId childId newObj allocSize s₂ = .ok ((), s₂')) :
     lowEquivalent ctx observer s₁' s₂' := by
   -- Decompose each step into constituent storeObject calls
-  rcases retypeFromUntyped_ok_decompose s₁ s₁' authority untypedId childId newObj allocSize hStep₁ with
-    ⟨ut₁, ut₁', cap₁, stL₁, stUt₁, _, _, _, _, hLookup₁, _, _, hStoreUt₁, hStoreChild₁⟩
-  rcases retypeFromUntyped_ok_decompose s₂ s₂' authority untypedId childId newObj allocSize hStep₂ with
-    ⟨ut₂, ut₂', cap₂, stL₂, stUt₂, _, _, _, _, hLookup₂, _, _, hStoreUt₂, hStoreChild₂⟩
-  -- Lookup is read-only: stL₁ = s₁, stL₂ = s₂
-  have hEqL₁ := cspaceLookupSlot_ok_state_eq s₁ authority cap₁ stL₁ hLookup₁
-  have hEqL₂ := cspaceLookupSlot_ok_state_eq s₂ authority cap₂ stL₂ hLookup₂
-  rw [hEqL₁] at hStoreUt₁; rw [hEqL₂] at hStoreUt₂
+  obtain ⟨ut₁, ut₁', _, stUt₁, _, stCh₁, _, _, _, _, _, _, _, _, _, _, _, hStoreUt₁,
+    hStoreChild₁, _, hStoreIdx₁⟩ :=
+    retypeFromUntyped_ok_stores s₁ s₁' authority untypedId childId newObj allocSize hObjInv₁ hStep₁
+  obtain ⟨ut₂, ut₂', _, stUt₂, _, stCh₂, _, _, _, _, _, _, _, _, _, _, _, hStoreUt₂,
+    hStoreChild₂, _, hStoreIdx₂⟩ :=
+    retypeFromUntyped_ok_stores s₂ s₂' authority untypedId childId newObj allocSize hObjInv₂ hStep₂
   -- First storeObject (untyped update) at non-observable untypedId
   have hMid := storeObject_at_unobservable_preserves_lowEquivalent
     ctx observer untypedId (.untyped ut₁') (.untyped ut₂') s₁ s₂ stUt₁ stUt₂
@@ -2921,9 +2921,15 @@ theorem retypeFromUntyped_preserves_lowEquivalent
   have hObjInvUt₁ := storeObject_preserves_objects_invExt s₁ stUt₁ untypedId _ hObjInv₁ hStoreUt₁
   have hObjInvUt₂ := storeObject_preserves_objects_invExt s₂ stUt₂ untypedId _ hObjInv₂ hStoreUt₂
   -- Second storeObject (child creation) at non-observable childId
-  exact storeObject_at_unobservable_preserves_lowEquivalent
-    ctx observer childId newObj newObj stUt₁ stUt₂ s₁' s₂'
+  have hMid2 := storeObject_at_unobservable_preserves_lowEquivalent
+    ctx observer childId newObj newObj stUt₁ stUt₂ stCh₁ stCh₂
     hMid hChildHigh hObjInvUt₁ hObjInvUt₂ hStoreChild₁ hStoreChild₂
+  -- Third store (the authority's free index) at the non-observable authority CNode
+  exact storeObject_at_unobservable_preserves_lowEquivalent
+    ctx observer authority.cnode _ _ stCh₁ stCh₂ s₁' s₂'
+    hMid2 hAuthorityHigh
+    (storeObject_preserves_objects_invExt _ _ _ _ hObjInvUt₁ hStoreChild₁)
+    (storeObject_preserves_objects_invExt _ _ _ _ hObjInvUt₂ hStoreChild₂) hStoreIdx₁ hStoreIdx₂
 
 -- ============================================================================
 -- lifecycleRevokeDeleteRetype NI proofs

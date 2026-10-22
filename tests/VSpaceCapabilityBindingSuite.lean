@@ -59,15 +59,19 @@ because the defect lived in dispatch and only dispatch can witness it.
   without holding it is too.
 * §5d — **WS-BP BP7.1 (`v0.36.5`): memory reaches a thread only by a carve.**
   `.untypedRetype` mints a frame out of an untyped the caller holds, at the
-  untyped's watermark, zeroed if it is RAM; `.vspaceMap` then maps exactly that
-  page.  Every refusal the carve owns is exercised.
+  free index of the capability it was invoked through (WS-ZA ZA5.4 part 13:
+  seL4's `freeIndex`, which the carve advances in that capability), zeroed if it
+  is RAM; `.vspaceMap` then maps exactly that page.  Every refusal the carve
+  owns is exercised, and so is seL4's derivation rule for an untyped
+  capability: a copy of one with children is refused, and after a copy of a
+  childless one the source is full and only the copy carves.
 * §5e — **WS-BP BP7.1 (`v0.36.6`): memory returns to its untyped.**
   `.untypedReset` refuses while any capability names a carved frame — including
-  one reached only through a **sibling copy** of the untyped capability, which a
-  per-slot "no derivations" test would miss — and after `.cspaceRevoke` it
-  removes every mapping of the region (an unrelated mapping survives), retires
-  the frames and resets the watermark, so the next carve reuses both the page,
-  zeroed again, and the child id.
+  through a **duplicate** of the untyped capability with no derivation of its
+  own, which a per-slot "no derivations" test would miss — and after
+  `.cspaceRevoke` it removes every mapping of the region (an unrelated mapping
+  survives), retires the frames and rewinds the invoked capability's free index,
+  so the next carve reuses both the page, zeroed again, and the child id.
 * §5f — **WS-BP BP7.1 (`v0.36.7`): a frame capability owns the mapping it
   made.**  `.vspaceMap` records the mapping on the capability; a copy carries
   none; a capability whose mapping is live cannot map again; deleting a frame
@@ -80,7 +84,7 @@ because the defect lived in dispatch and only dispatch can witness it.
   revocation now removes the mapping the reset used to be the first to remove.
 * §5g — **WS-BP BP7.1 slice 4 (`v0.36.8`): an untyped carves child untypeds,
   and a reset returns the whole subtree.**  `.untypedRetype` at the untyped tag
-  carves a child untyped of `2^sizeBits` bytes at the parent's watermark, with
+  carves a child untyped of `2^sizeBits` bytes at the parent capability's free index, with
   its parent stamped and its memory left unwritten; the child carves a frame,
   zeroed, which maps.  The in-place retype refuses to destroy the child.  After
   one revocation of the parent capability — which destroys the child's
@@ -628,9 +632,11 @@ private def frameTag : Nat := 8
 private def frameAt (st : SystemState) (oid : Nat) : Option FrameObject :=
   st.getFrame? (SeLe4n.ObjId.ofNat oid)
 
-/-- The untyped's watermark. -/
-private def watermarkOf (st : SystemState) (oid : SeLe4n.ObjId) : Option Nat :=
-  (st.getUntyped? oid).map (·.watermark)
+/-- The free index of the capability in the owner's root at `slot` (WS-ZA ZA5.4
+part 13: the carve position is the capability's, not the untyped's). -/
+private def freeIndexAt (st : SystemState) (slot : Nat) : Option Nat :=
+  (SystemState.lookupSlotCap st { cnode := carveCn, slot := SeLe4n.Slot.ofNat slot }).map
+    (·.freeIndex)
 
 /-- Four-register `.vspaceMap` decode invoked on the owner's VSpace root. -/
 private def decodeOwnMap (vaddr frameSlot perms : Nat) : SyscallDecodeResult :=
@@ -659,10 +665,11 @@ private def runCarveChecks : IO Unit := do
       carveOwner Concurrency.bootCoreId st with
   | .error e => assertBool s!"the carve succeeds (got {repr e})" false
   | .ok ((), st1) => do
-    assertBool "the carve stores a frame at the child id, at the untyped's watermark"
+    assertBool "the carve stores a frame at the child id, at the capability's free index"
       (frameAt st1 950 == some { base := SeLe4n.PAddr.ofNat carveUtBase })
-    assertBool "the untyped's watermark advances by exactly one page"
-      (watermarkOf st1 carveUt == some SeLe4n.pageBytes)
+    assertBool "the free index advances by exactly one page, in the invoked capability"
+      (freeIndexAt st slotUtRetype == some 0 &&
+       freeIndexAt st1 slotUtRetype == some SeLe4n.pageBytes)
     assertBool "the carved RAM page is zeroed before any capability to it exists"
       (SeLe4n.readMem st1.machine (SeLe4n.PAddr.ofNat carveUtBase) == 0)
     -- WS-ZA: the scrub of a page holding a non-zero byte writes the model's
@@ -791,6 +798,33 @@ private def runAll (st : SystemState) :
     | .error e => .error e
     | .ok ((), st') => runAll st' ds
 
+/-- WS-ZA ZA5.4 part 13, seL4's derivation rule on a childless untyped
+capability. -/
+private def runUntypedCopyChecks : IO Unit := do
+  IO.println "-- §5d `.cspaceCopy` of a childless untyped capability sets the source full (WS-ZA ZA5.4)"
+  let st := carveScenario
+  let isErr (e : KernelError) (r : Except KernelError (Unit × SystemState)) : Bool :=
+    match r with | .error e' => e' == e | .ok _ => false
+  -- WS-ZA ZA5.4 part 13, seL4's derivation rule on a CHILDLESS untyped
+  -- capability: the copy takes the source's free index and the source is set
+  -- full (`setUntypedCapAsFull`), so the copy carves and the source cannot.
+  match dispatchSyscallAsCurrent (decodeCopy slotUtRetype 10) carveOwner Concurrency.bootCoreId st with
+  | .error e => assertBool s!"a copy of a childless untyped capability succeeds (got {repr e})" false
+  | .ok ((), stCopy) => do
+    assertBool "after the copy the source is full and the copy holds the source's index"
+      (freeIndexAt stCopy slotUtRetype == some 0x3000 && freeIndexAt stCopy 10 == some 0)
+    assertBool "a carve through the full source is refused (untypedRegionExhausted)"
+      (isErr .untypedRegionExhausted
+        (dispatchSyscallAsCurrent (decodeCarve slotUtRetype frameTag 953 slotOwnCnRW 11)
+          carveOwner Concurrency.bootCoreId stCopy))
+    match dispatchSyscallAsCurrent (decodeCarve 10 frameTag 953 slotOwnCnRW 11)
+        carveOwner Concurrency.bootCoreId stCopy with
+    | .error e => assertBool s!"the copy carves (got {repr e})" false
+    | .ok ((), stCarved) =>
+      assertBool "the copy carves the region's first page and its free index advances"
+        (frameAt stCarved 953 == some { base := SeLe4n.PAddr.ofNat carveUtBase } &&
+         freeIndexAt stCarved 10 == some SeLe4n.pageBytes)
+
 private def runResetChecks : IO Unit := do
   IO.println "-- §5e `.untypedReset` hands an untyped's memory back (WS-BP BP7.1)"
   let isErr (e : KernelError) (r : Except KernelError (Unit × SystemState)) : Bool :=
@@ -816,15 +850,26 @@ private def runResetChecks : IO Unit := do
       (isErr .illegalAuthority (dispatchSyscallAsCurrent (decodeReset slotUtNoRetype) carveOwner Concurrency.bootCoreId st))
     assertBool "a `.retype` capability to a non-untyped is refused (untypedTypeMismatch)"
       (isErr .untypedTypeMismatch (dispatchSyscallAsCurrent (decodeReset slotVspRetype) carveOwner Concurrency.bootCoreId st))
-    -- THE SIBLING COPY.  Copy the untyped capability to slot 10: the copy is a
-    -- CDT child of slot 0 and has no derivations of its own, so a per-slot
+    -- WS-ZA ZA5.4 part 13, seL4's derivation rule: slot 0 has carved, so the
+    -- frames in slots 8 and 9 are its derivation children, and a copy of it is
+    -- refused (`ensureNoChildren` in `deriveCap`).
+    assertBool "a copy of an untyped capability with children is refused (revocationRequired)"
+      (isErr .revocationRequired (dispatchSyscallAsCurrent (decodeCopy slotUtRetype 10) carveOwner Concurrency.bootCoreId st))
+    -- THE DUPLICATE.  No derivation makes a second capability that can carve,
+    -- but a capability placed in slot 10 as the boot would place a configured
+    -- one (the boot refuses two capabilities to one untyped,
+    -- `untypedCapabilitiesUnique`) has no derivations of its own, so a per-slot
     -- "no children" test on it would pass — while the frames carved through
     -- slot 0 are still named by slots 8 and 9.  The reset asks the objects.
-    match dispatchSyscallAsCurrent (decodeCopy slotUtRetype 10) carveOwner Concurrency.bootCoreId st with
-    | .error e => assertBool s!"copying the untyped capability succeeds (got {repr e})" false
-    | .ok ((), stCopy) =>
-      assertBool "a reset through a derivation-free SIBLING copy is still refused"
-        (isErr .revocationRequired (dispatchSyscallAsCurrent (decodeReset 10) carveOwner Concurrency.bootCoreId stCopy))
+    match SystemState.lookupSlotCap st { cnode := carveCn, slot := SeLe4n.Slot.ofNat slotUtRetype } with
+    | none => assertBool "the untyped capability is in slot 0" false
+    | some utCap =>
+      match SeLe4n.Kernel.cspaceInsertSlot { cnode := carveCn, slot := SeLe4n.Slot.ofNat 10 }
+          (utCap.withFreeIndex 0) st with
+      | .error e => assertBool s!"placing the duplicate succeeds (got {repr e})" false
+      | .ok ((), stDup) =>
+        assertBool "a reset through a derivation-free DUPLICATE is still refused"
+          (isErr .revocationRequired (dispatchSyscallAsCurrent (decodeReset 10) carveOwner Concurrency.bootCoreId stDup))
     -- An in-flight capability counts: a blocked sender parking a transfer
     -- capability to a carved frame keeps the reset refused even with every
     -- slot cleared.
@@ -864,9 +909,9 @@ private def runResetChecks : IO Unit := do
           -- mapped once, at 0x70000, so its mapping epoch has advanced to 1
           (frameAt stReset 952 == some { base := SeLe4n.PAddr.ofNat carveDevBase, isDevice := true,
                                          mapEpoch := 1 })
-        assertBool "the untyped's watermark and child list are cleared"
-          ((stReset.getUntyped? carveUt).map (fun u => (u.watermark, u.children.length))
-            == some (0, 0))
+        assertBool "the invoked capability's free index is rewound and the child list cleared"
+          (freeIndexAt stReset slotUtRetype == some 0 &&
+           (stReset.getUntyped? carveUt).map (·.children.length) == some 0)
         -- The memory and the id are both reusable, and the page is scrubbed
         -- again before any capability to it exists.
         match dispatchSyscallAsCurrent (decodeCarve slotUtRetype frameTag 950 slotOwnCnRW slotCarved)
@@ -882,12 +927,12 @@ private def runResetChecks : IO Unit := do
         | .error e => assertBool s!"a second reset of an empty untyped succeeds (got {repr e})" false
         | .ok ((), stTwice) =>
           assertBool "a second reset leaves the untyped empty"
-            ((stTwice.getUntyped? carveUt).map (·.watermark) == some 0)
+            (freeIndexAt stTwice slotUtRetype == some 0 &&
+             (stTwice.getUntyped? carveUt).map (·.children.length) == some 0)
   -- A child that is not a frame cannot be retired: an untyped whose child list
   -- names a kernel object keeps its memory.
   let utWithObjChild : UntypedObject :=
     { regionBase := SeLe4n.PAddr.ofNat carveUtBase, regionSize := 0x3000,
-      watermark := SeLe4n.pageBytes,
       children := [{ objId := carveVsp, offset := 0, size := SeLe4n.pageBytes }] }
   match storeObject carveUt (.untyped utWithObjChild) carveScenario with
   | .error _ => assertBool "the non-frame-child fixture stores" false
@@ -943,11 +988,12 @@ private def runChildUntypedChecks : IO Unit := do
   | .ok ((), st1) => do
     assertBool "the child untyped is the parent's first page, parent stamped, nothing carved"
       ((st1.getUntyped? (SeLe4n.ObjId.ofNat 970)).map
-          (fun u => (u.regionBase.toNat, u.regionSize, u.parent, u.watermark,
+          (fun u => (u.regionBase.toNat, u.regionSize, u.parent,
                      u.children.length, u.isDevice))
-        == some (carveUtBase, SeLe4n.pageBytes, some carveUt, 0, 0, false))
-    assertBool "the parent's watermark advances by the child's size"
-      (watermarkOf st1 carveUt == some SeLe4n.pageBytes)
+        == some (carveUtBase, SeLe4n.pageBytes, some carveUt, 0, false) &&
+       freeIndexAt st1 12 == some 0)
+    assertBool "the parent capability's free index advances by the child's size"
+      (freeIndexAt st1 slotUtRetype == some SeLe4n.pageBytes)
     assertBool "carving an untyped writes none of its memory (the frame carve zeroes a page)"
       (SeLe4n.readMem st1.machine (SeLe4n.PAddr.ofNat carveUtBase) == 0xAB)
     assertBool "the destination holds a read/write/retype capability to the child"
@@ -998,8 +1044,8 @@ private def runChildUntypedChecks : IO Unit := do
           assertBool "and the grandchild's page is mapped nowhere"
             (mappedPaddr stReset carveAsid (SeLe4n.Testing.fixtureUserVAddr 0x60000) == none)
           assertBool "and the parent is empty again"
-            ((stReset.getUntyped? carveUt).map (fun u => (u.watermark, u.children.length))
-              == some (0, 0))
+            (freeIndexAt stReset slotUtRetype == some 0 &&
+             (stReset.getUntyped? carveUt).map (·.children.length) == some 0)
           -- Both ids and the memory are reusable: carve a larger child in the same place.
           match dispatchSyscallAsCurrent
               (decodeCarve slotUtRetype (untypedTagOfSize 13) 971 slotOwnCnRW 12)
@@ -2042,6 +2088,7 @@ def runVSpaceCapabilityBindingChecks : IO Unit := do
   runAlignmentChecks
   runFrameCapabilityChecks
   runCarveChecks
+  runUntypedCopyChecks
   runResetChecks
   runChildUntypedChecks
   runInPlaceVSpaceRootChecks

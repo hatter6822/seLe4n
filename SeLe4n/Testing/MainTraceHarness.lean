@@ -122,7 +122,6 @@ def bootstrapState : SystemState :=
     |>.withObject demoUntyped (.untyped {
       regionBase := (SeLe4n.PAddr.ofNat 0x100000)
       regionSize := 16384
-      watermark := 0
       children := []
       isDevice := false
     })
@@ -1031,7 +1030,8 @@ private def runIpcMessageBoundsTrace (counter : IO.Ref Nat) (st1 : SystemState) 
 -- WS-F2: Untyped memory model trace scenarios
 -- ============================================================================
 
-/-- WS-F2 test: retypeFromUntyped success, watermark advance, region-exhausted error,
+/-- WS-F2 test: retypeFromUntyped success, free-index advance in the authority
+capability (WS-ZA ZA5.4), region-exhausted error,
 type-mismatch error, device restriction error. -/
 private def runUntypedMemoryTrace (counter : IO.Ref Nat) (st1 : SystemState) : IO Unit := do
   -- F2-01: Successful retype from untyped — carve a new endpoint from the untyped region
@@ -1042,12 +1042,12 @@ private def runUntypedMemoryTrace (counter : IO.Ref Nat) (st1 : SystemState) : I
   | .error err => IO.println s!"[UMT-001] retype-from-untyped success path error: {reprStr err}"
   | .ok (_, stRetyped) =>
       IO.println s!"[UMT-002] retype-from-untyped success object kind: {reprStr <| stRetyped.getObjectType? childEp}"
-      -- Check watermark advanced
-      match stRetyped.getUntyped? demoUntyped with
-      | some ut =>
-          IO.println s!"[UMT-003] untyped watermark after retype: {ut.watermark}"
+      -- Check the authority capability's free index advanced
+      match stRetyped.getUntyped? demoUntyped, stRetyped.lookupSlotCap untypedAuthSlot with
+      | some ut, some cap =>
+          IO.println s!"[UMT-003] untyped free index after retype: {cap.freeIndex}"
           IO.println s!"[UMT-004] untyped children count: {ut.children.length}"
-      | none => IO.println "[UMT-005] untyped object missing after retype"
+      | _, _ => IO.println "[UMT-005] untyped object missing after retype"
       -- F2-02: Retype a second object (TCB) from the same untyped
       let childTcb : SeLe4n.ObjId := ⟨51⟩
       let newTcb : KernelObject := .tcb {
@@ -1058,9 +1058,9 @@ private def runUntypedMemoryTrace (counter : IO.Ref Nat) (st1 : SystemState) : I
       match SeLe4n.Kernel.retypeFromUntyped untypedAuthSlot demoUntyped childTcb newTcb tcbAllocSize stRetyped with
       | .error err => IO.println s!"[UMT-006] retype-from-untyped second alloc error: {reprStr err}"
       | .ok (_, stRetyped2) =>
-          match stRetyped2.getUntyped? demoUntyped with
-          | some ut2 =>
-              IO.println s!"[UMT-007] untyped watermark after second retype: {ut2.watermark}"
+          match stRetyped2.lookupSlotCap untypedAuthSlot with
+          | some cap2 =>
+              IO.println s!"[UMT-007] untyped free index after second retype: {cap2.freeIndex}"
           | none => IO.println "[UMT-008] untyped object missing after second retype"
   -- T7-B: Post-mutation invariant check after double retype from untyped
   let newEpUT : KernelObject := .endpoint {}
@@ -1096,7 +1096,7 @@ private def runUntypedMemoryTrace (counter : IO.Ref Nat) (st1 : SystemState) : I
   let stDevice : SystemState :=
     st1.withObjectStored deviceUntypedId (.untyped {
           regionBase := (SeLe4n.PAddr.ofNat 0x200000), regionSize := 8192,
-          watermark := 0, children := [], isDevice := true })
+          children := [], isDevice := true })
         -- WS-RR RR8.16 (`v0.35.201`): eight addressable slots — this variant
         -- holds capabilities at 0, 5, 6 and 7.
         |>.withObjectStored ⟨10⟩ (.cnode (SeLe4n.Model.CNode.ofSlots 3 0 0 3 (SeLe4n.UniqueSlotMap.ofListWF [

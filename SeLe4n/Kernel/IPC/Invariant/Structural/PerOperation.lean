@@ -98,6 +98,35 @@ theorem badgeWellFormed_of_agreeOffDerivationLinks {st st' : SystemState}
    capabilityBadgesWellFormed_of_slotCap_back hInv.2 fun _ _ hO =>
       let ⟨o, ho, hs, _⟩ := h.obj_slots_back hO; ⟨o, ho, hs⟩⟩
 
+/-- WS-ZA ZA5.4 part 13: a free-index write rewrites no badge, so
+`badgeWellFormed` carries across it. -/
+theorem setCapFreeIndex_preserves_badgeWellFormed {st : SystemState} {addr : CSpaceAddr}
+    {idx : Nat} (hInv : badgeWellFormed st) (hObjInv : st.objects.invExt) :
+    badgeWellFormed (setCapFreeIndex st addr idx) := by
+  cases hO : st.objects[addr.cnode]? with
+  | some o =>
+    cases o with
+    | cnode cn =>
+      have hStore := setCapFreeIndex_eq_storeObject (idx := idx) hO
+      refine ⟨storeObject_cnode_preserves_notificationBadgesWellFormed st _ addr.cnode _
+          hInv.1 hObjInv hStore,
+        storeObject_cnode_preserves_capabilityBadgesWellFormed st _ addr.cnode _
+          hInv.2 hObjInv hStore ?_⟩
+      intro slot cap badge hL hB
+      obtain ⟨c, hc, rfl | rfl⟩ := CNode.lookup_setFreeIndex_back hL
+      · exact hInv.2 addr.cnode (.cnode cn) slot _ badge hO hc hB
+      · exact hInv.2 addr.cnode (.cnode cn) slot c badge hO hc
+          (by rw [← Capability.withFreeIndex_badge c idx]; exact hB)
+    | _ => unfold setCapFreeIndex SystemState.storeCNodeWith; simp only [hO]; exact hInv
+  | none => unfold setCapFreeIndex SystemState.storeCNodeWith; simp only [hO]; exact hInv
+
+/-- Setting a derivation's untyped source full rewrites no badge. -/
+theorem untypedSourceSetFull_preserves_badgeWellFormed {st : SystemState} {src : CSpaceAddr}
+    {cap : Capability} (hInv : badgeWellFormed st) (hObjInv : st.objects.invExt) :
+    badgeWellFormed (untypedSourceSetFull st src cap) :=
+  untypedSourceSetFull_of (P := badgeWellFormed) hInv
+    fun _ => setCapFreeIndex_preserves_badgeWellFormed hInv hObjInv
+
 -- ============================================================================
 -- IPC de-threading D8: cap-transfer `badgeWellFormed` frame.
 -- `ipcUnwrapCaps` inserts the message caps into the receiver's CSpace, so it is
@@ -150,34 +179,17 @@ theorem ipcTransferSingleCap_preserves_badgeWellFormed
     (hStep : ipcTransferSingleCap cap srcNode receiverRoot slotBase scanLimit st
              = .ok (result, st')) :
     badgeWellFormed st' := by
-  simp only [ipcTransferSingleCap] at hStep
-  cases hCn : st.getCNode? receiverRoot with
-  | none => simp [hCn] at hStep
-  | some cn =>
-    simp [hCn] at hStep
-    cases hSlot : cn.findFirstEmptySlotChecked slotBase scanLimit with
-    | none => simp [hSlot] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInv
-    | some emptySlot =>
-        simp [hSlot] at hStep
-        -- A source destroyed since resolution declines the install and leaves
-        -- the state untouched, so the claim holds there unchanged.
-        cases hSrc : cdtNodeIsRevocable st srcNode with
-        | false => simp [hSrc] at hStep; obtain ⟨_, rfl⟩ := hStep; first | rfl | assumption
-        | true =>
-        simp only [hSrc] at hStep
-        cases hIns : cspaceInsertSlot { cnode := receiverRoot, slot := emptySlot } cap.withoutMapping st with
-        | error e => simp [hIns] at hStep
-        | ok pair =>
-          simp [hIns] at hStep
-          obtain ⟨_, rfl⟩ := hStep
-          have hBadgeMid := cspaceInsertSlot_preserves_badgeWellFormed st pair.2
-            { cnode := receiverRoot, slot := emptySlot } cap.withoutMapping hInv hObjInv hCapValid
-            (by rw [show pair = (pair.1, pair.2) from by simp]; exact hIns)
-          exact badgeWellFormed_of_agreeOffDerivationLinks
-            (SystemState.cdtAddChild_agreeObjects (cspaceInsertSlot_preserves_objects_invExt st
-              pair.2 _ cap.withoutMapping hObjInv
-              (by rw [show pair = (pair.1, pair.2) from by simp] at hIns; exact hIns)) _ _ _).1
-            hBadgeMid
+  obtain ⟨_, -, ⟨rfl, -⟩ | ⟨emptySlot, st2, -, -, -, hIns, -, rfl⟩⟩ :=
+    ipcTransferSingleCap_ok_cases hStep
+  · exact hInv
+  · have hInvMid := cspaceInsertSlot_preserves_objects_invExt st st2 _ cap.withoutMapping hObjInv hIns
+    have hAdd := SystemState.cdtAddChild_agreeObjects hInvMid srcNode
+      { cnode := receiverRoot, slot := emptySlot } .ipcTransfer
+    exact untypedSourceSetFull_preserves_badgeWellFormed
+      (badgeWellFormed_of_agreeOffDerivationLinks hAdd.1
+        (cspaceInsertSlot_preserves_badgeWellFormed st st2
+          { cnode := receiverRoot, slot := emptySlot } cap.withoutMapping hInv hObjInv hCapValid hIns))
+      hAdd.2
 
 /-- IPC de-threading D8: `ipcUnwrapCapsLoop` preserves `badgeWellFormed` when every
 cap in `caps` carries a valid badge (each transferred cap feeds the single-cap

@@ -1377,27 +1377,14 @@ theorem cspaceDeleteSlot_confinedToCore (st st' : SystemState) (addr : CSpaceAdd
 theorem cspaceCopy_confinedToCore (st st' : SystemState) (src dst : CSpaceAddr) (c₀ : CoreId)
     (hStep : SeLe4n.Kernel.cspaceCopy src dst st = .ok ((), st')) :
     observableSlotsConfinedToCore st st' c₀ := by
-  unfold SeLe4n.Kernel.cspaceCopy at hStep
-  cases hL : cspaceLookupSlot src st with
-  | error e => simp [hL] at hStep
-  | ok pair =>
-    obtain ⟨cap, stL⟩ := pair
-    have hEqL : stL = st := cspaceLookupSlot_preserves_state st stL src cap hL
-    subst stL
-    simp only [hL] at hStep
-    cases hNN : cap.toNonNull? with
-    | none => simp [hNN] at hStep
-    | some capNN =>
-      simp only [hNN] at hStep
-      cases hIns : cspaceInsertSlot dst capNN.val.withoutMapping st with
-      | error e => simp [hIns] at hStep
-      | ok pairI =>
-        simp only [hIns, Except.ok.injEq, Prod.mk.injEq] at hStep
-        obtain ⟨_, hEq⟩ := hStep
-        subst hEq
-        refine observableSlotsConfinedToCore_trans
-          (cspaceInsertSlot_confinedToCore st pairI.2 dst capNN.val.withoutMapping c₀ hIns) ?_
-        exact cdtAddChild_confinedToCore _ _ _ _ c₀
+  obtain ⟨cap, st2, -, -, hIns, -, rfl⟩ := SeLe4n.Kernel.cspaceCopy_ok_decompose hStep
+  refine observableSlotsConfinedToCore_trans
+    (cspaceInsertSlot_confinedToCore st st2 dst cap.withoutMapping c₀ hIns) ?_
+  refine observableSlotsConfinedToCore_trans (cdtAddChild_confinedToCore st2 src dst .copy c₀) ?_
+  -- WS-ZA ZA5.4: setting the untyped source full writes one CNode.
+  exact observableSlotsConfinedToCore_of_scheduler_machine_eq c₀
+    (SeLe4n.Kernel.untypedSourceSetFull_scheduler _ _ _)
+    (SeLe4n.Kernel.untypedSourceSetFull_machine _ _ _)
 
 /-- SM8.B.3: `cspaceMove` writes only the object store and the CDT. -/
 theorem cspaceMove_confinedToCore (st st' : SystemState) (src dst : CSpaceAddr) (c₀ : CoreId)

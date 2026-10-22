@@ -556,7 +556,7 @@ and `regionSize` as the pre-existing entry at that key — and whose
 `children` list is a superset of the pre-existing entry's — preserves
 `untypedRegionsDisjoint`. This is the preservation shape for the FIRST
 `storeObject` in `retypeFromUntyped` (the parent-update step): `allocate`
-advances `watermark`, prepends the new child to `children`, and leaves
+prepends the new child to `children`, and leaves
 `regionBase` / `regionSize` unchanged (see
 `UntypedObject.allocate_preserves_region`).
 
@@ -1640,45 +1640,53 @@ theorem cspaceMint_preservesFieldsOutside
       · cases hStep
       · exact cspaceInsertSlot_preservesFieldsOutside _ _ _ _ hStep
 
+/-- WS-ZA ZA5.4: a free-index write is one CNode store, inside the capability
+write set. -/
+theorem setCapFreeIndex_preservesFieldsOutside (st : SystemState) (addr : CSpaceAddr)
+    (idx : Nat) :
+    preservesFieldsOutside capabilityOp_modifiedFields st (setCapFreeIndex st addr idx) := by
+  cases hO : st.objects[addr.cnode]? with
+  | some o =>
+    cases o with
+    | cnode cn =>
+      exact storeObject_preservesFieldsOutside_capability _ _ _ _ (setCapFreeIndex_eq_storeObject hO)
+    | _ =>
+      unfold setCapFreeIndex SystemState.storeCNodeWith; rw [hO]
+      exact preservesFieldsOutside_refl _ _
+  | none =>
+    unfold setCapFreeIndex SystemState.storeCNodeWith; rw [hO]
+    exact preservesFieldsOutside_refl _ _
+
+/-- WS-ZA ZA5.4: setting a derivation's untyped source full stays inside the
+capability write set. -/
+theorem untypedSourceSetFull_preservesFieldsOutside (st : SystemState) (src : CSpaceAddr)
+    (cap : Capability) :
+    preservesFieldsOutside capabilityOp_modifiedFields st (untypedSourceSetFull st src cap) :=
+  untypedSourceSetFull_of (P := preservesFieldsOutside capabilityOp_modifiedFields st)
+    (preservesFieldsOutside_refl _ _) fun idx => setCapFreeIndex_preservesFieldsOutside st src idx
+
 theorem cspaceMintWithCdt_preservesFieldsOutside
     (src dst : CSpaceAddr) (rights : AccessRightSet) (badge : Option SeLe4n.Badge)
     (st st' : SystemState)
     (hStep : cspaceMintWithCdt src dst rights badge st = .ok ((), st')) :
     preservesFieldsOutside capabilityOp_modifiedFields st st' := by
-  unfold cspaceMintWithCdt at hStep
-  split at hStep
-  · cases hStep
-  · rename_i st₁ hMint
-    simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-    obtain ⟨-, hEq⟩ := hStep
-    subst hEq
-    exact preservesFieldsOutside_trans (cspaceMint_preservesFieldsOutside _ _ _ _ _ _ hMint)
+  obtain ⟨_, st₁, hMint, -, -, rfl⟩ := cspaceMintWithCdt_ok_decompose hStep
+  exact preservesFieldsOutside_trans (cspaceMint_preservesFieldsOutside _ _ _ _ _ _ hMint)
+    (preservesFieldsOutside_trans
       (preservesFieldsOutside_trans (withCdt_preservesFieldsOutside _ _)
         (linkReach_preservesFieldsOutside (SystemState.cdtAddChild_reach _ _ _ _)))
+      (untypedSourceSetFull_preservesFieldsOutside _ _ _))
 
 theorem cspaceCopy_preservesFieldsOutside
     (src dst : CSpaceAddr) (st st' : SystemState)
     (hStep : cspaceCopy src dst st = .ok ((), st')) :
     preservesFieldsOutside capabilityOp_modifiedFields st st' := by
-  unfold cspaceCopy at hStep
-  cases hLk : cspaceLookupSlot src st with
-  | error e => simp [hLk] at hStep
-  | ok p =>
-    obtain ⟨cap, st₁⟩ := p
-    simp only [hLk] at hStep
-    have hEq := cspaceLookupSlot_state_eq st st₁ src cap hLk
-    subst hEq
-    split at hStep
-    · cases hStep
-    · split at hStep
-      · cases hStep
-      · rename_i st₂ hIns
-        simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-        obtain ⟨-, hEq⟩ := hStep
-        subst hEq
-        exact preservesFieldsOutside_trans (cspaceInsertSlot_preservesFieldsOutside _ _ _ _ hIns)
-          (preservesFieldsOutside_trans (withCdt_preservesFieldsOutside _ _)
-            (linkReach_preservesFieldsOutside (SystemState.cdtAddChild_reach _ _ _ _)))
+  obtain ⟨_, st₂, -, -, hIns, -, rfl⟩ := cspaceCopy_ok_decompose hStep
+  exact preservesFieldsOutside_trans (cspaceInsertSlot_preservesFieldsOutside _ _ _ _ hIns)
+    (preservesFieldsOutside_trans
+      (preservesFieldsOutside_trans (withCdt_preservesFieldsOutside _ _)
+        (linkReach_preservesFieldsOutside (SystemState.cdtAddChild_reach _ _ _ _)))
+      (untypedSourceSetFull_preservesFieldsOutside _ _ _))
 
 theorem cspaceMove_preservesFieldsOutside
     (src dst : CSpaceAddr) (st st' : SystemState)
@@ -3933,8 +3941,7 @@ invariant to preserve.
     Bounded by `fuel` to guarantee termination; returns the list of
     visited ObjIds in the order `[self, parent, grandparent, …]`. Under
     `maxRetypeDepth` fuel (256), the walker is sufficient for any chain
-    the kernel can produce since the kernel's object count is bounded
-    and each ancestor has strictly smaller watermark than its child. -/
+    the kernel can produce since the kernel's object count is bounded. -/
 def untypedAncestorChain (st : SystemState) (oid : SeLe4n.ObjId) :
     Nat → List SeLe4n.ObjId
   | 0 => []

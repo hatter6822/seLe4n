@@ -172,12 +172,12 @@ nothing else holds is rewritten rather than built. -/
 @[inline] def spaceCellOver (old : Option Capability) (target : CapTarget)
     (rights : AccessRightSet) : Option Capability :=
   match old with
-  | some r => some (r.overwrite target rights SeLe4n.Badge.zero false default default 0 false)
-  | none => some (Capability.ofFields target rights SeLe4n.Badge.zero false default default 0 false)
+  | some r => some (r.overwrite target rights SeLe4n.Badge.zero false default default 0 false 0)
+  | none => some (Capability.ofFields target rights SeLe4n.Badge.zero false default default 0 false 0)
 
 theorem spaceCellOver_eq (old : Option Capability) (target : CapTarget) (rights : AccessRightSet) :
     spaceCellOver old target rights =
-      some ⟨target, rights, SeLe4n.Badge.zero, false, default, default, 0, false⟩ := by
+      some ⟨target, rights, SeLe4n.Badge.zero, false, default, default, 0, false, 0⟩ := by
   unfold spaceCellOver
   cases old <;> simp only [Capability.overwrite_eq, Capability.ofFields]
 

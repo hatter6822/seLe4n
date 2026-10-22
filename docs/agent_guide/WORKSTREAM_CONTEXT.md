@@ -228,7 +228,9 @@ untyped reset's parts ([`UNTYPED_RESET_PLAN.md`](../planning/UNTYPED_RESET_PLAN.
 at `v0.36.122` (part 12) a thread's CSpace and VSpace roots are two capability
 slots in the TCB, derivation nodes reached by delete, revoke and teardown, and
 setting a thread's spaces copies the capabilities in with their derivation
-edges.  The
+edges; at `v0.36.124` (part 13) an untyped capability holds its own free index,
+and copy, mint and IPC transfer derive it by seL4's rule (refused with
+children, source set full otherwise).  The
 suspend of a thread blocked in IPC or holding a donated context is the one
 syscall arm left on the general path (ZA6.1).  ZA6 covers the other
 entries and makes the rule standing.  Plan:
@@ -1385,13 +1387,16 @@ carve, scrub, map the carved page, and every refusal the carve owns.
 `SyscallId.untypedReset` (discriminant **37**, count 38) is seL4's
 `resetUntypedCap`, invoked on an untyped capability carrying `.retype`, with no
 message registers.  Six things new code must respect.  (1) **"No child survives"
-is decided over the whole store, not the invoked slot.**  seL4 keeps a free index
-per capability, so `ensureNoChildren` on the invoked slot is enough there; this
-model keeps the watermark on the untyped *object*, shared by every copy of its
-capability, so a derivation-free sibling copy would pass a per-slot test while
-frames carved through the original are still named.  `carvedSubtreeUnreferenced`
-(`untypedChildrenUnreferenced` until slice 4a) folds over the object table and
-asks every CNode slot and every blocked sender's parked message, and
+is decided over the whole store as well as the invoked slot.**  Since
+`v0.36.124` (ZA5.4 part 13) the free index is the capability's, as seL4's
+`capFreeIndex`: a derivation of an untyped capability is refused while its
+source has a child and sets the source full otherwise, and the reset refuses an
+invoked slot with a derivation child and rewinds that slot's index.  The
+per-slot rule needs at most one carving capability per untyped
+(`untypedSoleCarverInvariant`), which boot is not yet proven to establish, so
+`carvedSubtreeUnreferenced`
+(`untypedChildrenUnreferenced` until slice 4a) still folds over the object table
+and asks every CNode slot and every thread's two space slots, and
 `carvedSubtreeRetirable` requires every carved object to be a frame or, since
 slice 4a, an untyped — a kernel object has no operation here that returns its
 memory; both refuse `.revocationRequired`.  (2) **The reset finalises the frames.**  A mapping

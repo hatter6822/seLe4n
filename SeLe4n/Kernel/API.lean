@@ -2243,6 +2243,39 @@ theorem untypedRetypeFromCap_ok (tid : SeLe4n.ThreadId) (srcAddr : SeLe4n.CPtr)
             by first | exact hQ | rfl,
             by first | exact hV | rfl, by first | exact hR | rfl, h⟩
 
+/-- WS-ZA ZA5.4: **`.untypedReset` on the invoked slot.**  The free index is in
+the invoked capability, so the arm resolves the capability address to its slot
+again (the dispatcher's lookup returns the capability, not where it sits), with
+the right the dispatcher demanded, and resets through that slot
+(`untypedResetSlot`).  The resolution reads the state the dispatcher's lookup
+read, so it finds the same slot and capability. -/
+def untypedResetFromCap (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
+    (srcAddr : SeLe4n.CPtr) (untypedId : SeLe4n.ObjId) : Kernel Unit :=
+  fun st =>
+    resolveCallerCapSlotK tid srcAddr .retype st (fun e => .error e)
+      (fun srcCnode srcSlot _ _ => untypedResetSlot executingCore srcCnode srcSlot untypedId st)
+
+/-- **What a successful `.untypedReset` consists of**: the resolved slot holding
+the invoked capability, and the slot reset. -/
+theorem untypedResetFromCap_ok (tid : SeLe4n.ThreadId) (ec : Concurrency.CoreId)
+    (srcAddr : SeLe4n.CPtr) (untypedId : SeLe4n.ObjId) (st st' : SystemState)
+    (h : untypedResetFromCap tid ec srcAddr untypedId st = .ok ((), st')) :
+    ∃ (src : CSpaceAddr) (cap : Capability) (cn : CNode),
+      st.objects[src.cnode]? = some (.cnode cn) ∧ cn.lookup src.slot = some cap ∧
+      hasCdtChildren st src = false ∧
+      untypedResetWithShootdown ec untypedId (setCapFreeIndex st src 0) = .ok ((), st') := by
+  unfold untypedResetFromCap at h
+  rw [resolveCallerCapSlotK_eq] at h
+  cases hR : resolveCallerCapSlot tid srcAddr .retype st with
+  | error e => rw [hR] at h; cases h
+  | ok r =>
+    obtain ⟨src, cap, oid⟩ := r
+    rw [hR] at h
+    obtain ⟨-, -, -, -, -, hLk, -, -⟩ := resolveCallerCapSlot_ok tid srcAddr .retype st src cap oid hR
+    obtain ⟨cn, hO, hL⟩ := SystemState.lookupSlotCap_cnode hLk
+    obtain ⟨hC, hS⟩ := untypedResetSlot_ok ec src.cnode src.slot untypedId st st' h
+    exact ⟨src, cap, cn, hO, hL, hC, hS⟩
+
 /-- **WS-BP BP7.1 (the authority fact)**: a frame the resolver answers is one the
 caller holds a **readable capability** to, found at MR2's address in the caller's
 own CSpace, and it is a frame the store holds at the capability's target.  The
@@ -2734,7 +2767,7 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
   -- the only path by which a frame comes to exist on a live state, and so the
   -- only way memory reaches a thread: the caller presents an untyped
   -- capability, names a fresh object id and an empty slot in a CNode it can
-  -- write, and receives a capability to the page at the untyped's watermark.
+  -- write, and receives a capability to the page at that capability's free index.
   -- `.vspaceMap` maps that page and no other.
   | .untypedRetype =>
     some <| match cap.target with
@@ -2747,11 +2780,13 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
   -- carved frames are retired.  Since `v0.36.37` every retired root's ASID then
   -- gets an acknowledged `.aside1` round (`untypedResetWithShootdown`), which is
   -- what makes every PE leave that address space before the page can be recarved.
-  -- Takes no message registers: the capability is the whole operand.
+  -- Takes no message registers: the capability is the whole operand.  Since
+  -- WS-ZA ZA5.4 the free index is the invoked capability's, so the arm resets
+  -- through the invoked slot (`untypedResetFromCap`): refused while that slot
+  -- has a derivation child, and otherwise its free index is rewound to 0.
   | .untypedReset =>
     some <| match cap.target with
-    | .object untypedId => fun st =>
-        untypedResetWithShootdown executingCore untypedId st
+    | .object untypedId => untypedResetFromCap tid executingCore decoded.capAddr untypedId
     | _ => fun _ => .error .invalidCapability
   | .vspaceMap =>
     some <| match cap.target with
@@ -3315,7 +3350,9 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
   case untypedReset =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object _ =>
-      exact untypedResetWithShootdown_preserves_ipcInvariantFull _ _ st st' hObjInv hInv hStep
+      obtain ⟨src, cap', cn, hO, hL, -, hS⟩ := untypedResetFromCap_ok _ _ _ _ st st' hStep
+      exact untypedResetRewound_preserves_ipcInvariantFull _ src cn cap' _ st st' hObjInv hInv
+        hO hL hS
     all_goals try cases hStep
   case lifecycleRetype =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -5871,14 +5908,16 @@ theorem dispatchWithCap_vspaceUnmap_delegates
 the untyped the capability names — the
 same core the `.vspaceUnmap` arm initiates its shootdown rounds on, so the
 reset's unmaps and an ordinary unmap cannot disagree about who drives the round.
-The arm decodes no message register: the capability is the whole operand. -/
+The arm decodes no message register: the capability is the whole operand.
+Since WS-ZA ZA5.4 the reset runs through the invoked slot
+(`untypedResetFromCap`), which rewinds that slot's free index. -/
 theorem dispatchWithCap_untypedReset_delegates
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
     (cap : Capability) (untypedId : SeLe4n.ObjId) (st : SystemState)
     (hSyscall : decoded.syscallId = .untypedReset)
     (hTarget : cap.target = .object untypedId) :
     dispatchWithCap decoded tid executingCore gate cap st =
-      untypedResetWithShootdown executingCore untypedId st := by
+      untypedResetFromCap tid executingCore decoded.capAddr untypedId st := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget]
 
 -- ============================================================================
@@ -8202,7 +8241,7 @@ def syscallDelegates : SyscallId → Prop
         decoded.syscallId = .untypedReset →
         cap.target = .object untypedId →
         dispatchWithCap decoded tid executingCore gate cap st =
-          untypedResetWithShootdown executingCore untypedId st
+          untypedResetFromCap tid executingCore decoded.capAddr untypedId st
   -- WS-BP BP7.1 (`v0.36.7`): the two destroying arms.  Each names the finalising
   -- composite — the delete or the revocation, then the removal of every mapping a
   -- destroyed frame capability recorded — at the invoking thread's core.

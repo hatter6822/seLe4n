@@ -1818,19 +1818,18 @@ def bootRefusesConfiguredFrames : IO Unit := do
         | _ => true)
 
 /-- **The `v0.36.2` audit**: a boot untyped is *pristine* — nothing carved
-(`watermark = 0`, `children = []`) and no ancestry (`parent = none`).
-`bootSafeUntypedCheck` accepted every record, so a configuration could ship a
-watermark at the region's end (nothing retypeable) or children naming objects
+(`children = []`) and no ancestry (`parent = none`).  `bootSafeUntypedCheck`
+accepted every record, so a configuration could ship children naming objects
 the boot never created; the check, the `bootSafeObject` clause and the
-soundness bridge now carry the three conditions.  Each negative moves exactly
-one field off the pristine control. -/
+soundness bridge carry the conditions.  (Since WS-ZA ZA5.4 part 13 the free
+index is in the capability, not the untyped, so the record has no carve
+position of its own to check.)  Each negative moves exactly one field off the
+pristine control. -/
 def bootUntypedMustBePristine : IO Unit := do
   let pristine : UntypedObject :=
     { regionBase := PAddr.ofNat 0x10000000, regionSize := 0x1000 }
   expect "audit a pristine boot untyped is admitted"
     (bootSafeObjectCheck (.untyped pristine))
-  expect "NEGATIVE audit a boot untyped with a nonzero watermark is refused"
-    (!bootSafeObjectCheck (.untyped { pristine with watermark := 1 }))
   expect "NEGATIVE audit a boot untyped with a child is refused"
     (!bootSafeObjectCheck (.untyped
       { pristine with children := [{ objId := ObjId.ofNat 60, offset := 0, size := 0x100 }] }))

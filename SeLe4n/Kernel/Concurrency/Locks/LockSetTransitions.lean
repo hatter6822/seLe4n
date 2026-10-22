@@ -1341,7 +1341,9 @@ def lockSet_notificationWait (callerTid : ThreadId)
 /-- WS-SM SM3.B.3: `lockSet` for `cspaceMint`.
 
 Caller TCB (read — non-mutating; cap pointers are derived from
-state); source CNode (read — original cap is unchanged); target
+state); source CNode (write — WS-ZA ZA5.4 part 13: minting from a capability
+naming an untyped sets the source capability full, seL4's
+`setUntypedCapAsFull`, so the source slot's capability is rewritten); target
 CNode (write — minted cap is stored).
 
 **WS-RR RR7.9 — the CDT maps.**  All four capability operations write
@@ -1358,30 +1360,37 @@ def lockSet_cspaceMint (callerTid : ThreadId)
     (srcCnodeObjId dstCnodeObjId : ObjId) : LockSet :=
   lockSetOfList
     [(tcbLock callerTid, .read),
-     (cnodeLock srcCnodeObjId, .read),
+     (cnodeLock srcCnodeObjId, .write),
      (cnodeLock dstCnodeObjId, .write),
      (stateLevelLock, .write)]
 
 /-- WS-SM SM3.B.3: `lockSet` for `cspaceCopy`.  Same shape as `mint`,
 including WS-RR RR7.9's state-level member — it mints the same two CDT nodes
-and adds the same edge. -/
+and adds the same edge — and WS-ZA ZA5.4 part 13's source write: copying a
+capability naming an untyped sets the source capability full. -/
 def lockSet_cspaceCopy (callerTid : ThreadId)
     (srcCnodeObjId dstCnodeObjId : ObjId) : LockSet :=
   lockSetOfList
     [(tcbLock callerTid, .read),
-     (cnodeLock srcCnodeObjId, .read),
+     (cnodeLock srcCnodeObjId, .write),
      (cnodeLock dstCnodeObjId, .write),
      (stateLevelLock, .write)]
 
 /-- WS-SM SM6.D / PR #822 Phase H: `lockSet` for `mintReplyCap`.
 
 Derives a `.replyCap` from the `.object`-to-Reply cap at the source slot and installs it
-at the destination slot — same CNode footprint as `cspaceCopy` (source CNode read,
-destination CNode write, caller TCB read).  It does **not** write the Reply object itself
+at the destination slot: caller TCB read, source CNode **read**, destination CNode
+write, and the CDT through `stateLevelLock`.  Its source names a Reply, never an
+untyped, so unlike `cspaceCopy` (WS-ZA ZA5.4 part 13) nothing sets the source
+full and the source CNode is only read.  It does **not** write the Reply object itself
 (only the dst CNode slot), so no `.reply` lock is in the footprint. -/
 def lockSet_mintReplyCap (callerTid : ThreadId)
     (srcCnodeObjId dstCnodeObjId : ObjId) : LockSet :=
-  lockSet_cspaceCopy callerTid srcCnodeObjId dstCnodeObjId
+  lockSetOfList
+    [(tcbLock callerTid, .read),
+     (cnodeLock srcCnodeObjId, .read),
+     (cnodeLock dstCnodeObjId, .write),
+     (stateLevelLock, .write)]
 
 /-- WS-SM SM3.B.3: `lockSet` for `cspaceMove`.
 
@@ -1432,9 +1441,8 @@ def lockSet_cspaceDelete (callerTid : ThreadId)
 
 /-- WS-SM SM3.B.3: `lockSet` for `lifecycleRetype`.
 
-Caller TCB (read), untyped source (write — watermark advance,
-child list append), destination CNode (write — caps installed for
-the new objects).
+Caller TCB (read), untyped source (write — child list append),
+destination CNode (write — caps installed for the new objects).
 
 **And the re-purposed target's own lock** (PR #873 round 7).  SM9.D.12 made
 `.lifecycleRetype` the one arm that *clears* provenance: the plan's `cleared`
@@ -1468,7 +1476,11 @@ def lockSet_lifecycleRetype (callerTid : ThreadId)
 that carves an object.
 
 Caller TCB (read) and CSpace root (read) for the two capability resolutions; the
-untyped (write — its watermark advances and its child list grows); the **new
+CNode holding the authority capability (write — WS-ZA ZA5.4 part 13: the free
+index advances in that capability, seL4's `freeIndex` in the untyped
+capability; it is the CNode the resolution ends in, which on a multi-level
+CSpace is not the root, and on a single-level one `insertOrMerge` lubs it with
+the root's read member); the untyped (write — its child list grows); the **new
 object's key** (write — the object store gains it, and naming the key is what
 serialises two carves racing for one child id), under the kind it will hold
 (`carvedObjectLock`: a frame's `page` lock, since slice 4 a child untyped's
@@ -1478,11 +1490,12 @@ extends, unconditional because a successful carve always writes both.  Every
 member is named by the operands, so unlike the in-place retype there is no
 state-resolved optional member. -/
 def lockSet_untypedRetype (callerTid : ThreadId)
-    (cnodeRootObjId untypedObjId childObjId dstCnodeObjId : ObjId)
+    (cnodeRootObjId authCnodeObjId untypedObjId childObjId dstCnodeObjId : ObjId)
     (childKind : KernelObjectType) : LockSet :=
   lockSetOfList
     [(tcbLock callerTid, .read),
      (cnodeLock cnodeRootObjId, .read),
+     (cnodeLock authCnodeObjId, .write),
      (untypedLock untypedObjId, .write),
      (carvedObjectLock childKind childObjId, .write),
      (cnodeLock dstCnodeObjId, .write),
@@ -1885,8 +1898,7 @@ theorem lockSet_cspaceMint_stateLevel_write_mem (callerTid : ThreadId)
   simp only [List.foldl]
   exact LockSet.mem_insertOrMerge_write_self _ _
 
-/-- **WS-RR RR7.9**: `cspaceCopy`'s — and so `mintReplyCap`'s, which is defined
-as it. -/
+/-- **WS-RR RR7.9**: `cspaceCopy`'s. -/
 theorem lockSet_cspaceCopy_stateLevel_write_mem (callerTid : ThreadId)
     (srcCnodeObjId dstCnodeObjId : ObjId) :
     (stateLevelLock, AccessMode.write)
@@ -2004,13 +2016,14 @@ theorem vspaceMap_capabilityOps_share_serialization (callerA callerB : ThreadId)
    lockSet_cspaceMove_stateLevel_write_mem callerB src dst,
    lockSet_cspaceDelete_stateLevel_write_mem callerB src dst none⟩
 
-/-- **WS-RR RR7.9**: `mintReplyCap` inherits the member, by definition rather
-than by repetition. -/
+/-- **WS-RR RR7.9**: `mintReplyCap`'s. -/
 theorem lockSet_mintReplyCap_stateLevel_write_mem (callerTid : ThreadId)
     (srcCnodeObjId dstCnodeObjId : ObjId) :
     (stateLevelLock, AccessMode.write)
-      ∈ (lockSet_mintReplyCap callerTid srcCnodeObjId dstCnodeObjId).pairs :=
-  lockSet_cspaceCopy_stateLevel_write_mem callerTid srcCnodeObjId dstCnodeObjId
+      ∈ (lockSet_mintReplyCap callerTid srcCnodeObjId dstCnodeObjId).pairs := by
+  unfold lockSet_mintReplyCap lockSetOfList
+  simp only [List.foldl]
+  exact LockSet.mem_insertOrMerge_write_self _ _
 
 /-- **WS-RR RR7.9**: the four operations' footprints are pairwise
 **non-disjoint** — every pair shares the state-level lock, whatever CNodes they
@@ -4967,12 +4980,15 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
       [.tcb, .cnode, .objStore, .vspaceRoot]
   -- **WS-BP BP7.1 (`v0.36.5`)**: the carve reads the caller and its CSpace
   -- root, writes the untyped, the new object's key (a frame's `page`, a child
-  -- untyped, or since slice 4b a VSpace root), the destination CNode, and the
-  -- CDT / object index through `stateLevelLock`.
+  -- untyped, or since slice 4b a VSpace root), the destination CNode, the CNode
+  -- holding its authority capability (WS-ZA ZA5.4 part 13: the free index
+  -- advances there), and the CDT / object index through `stateLevelLock`.
   | .untypedRetype =>
       [.tcb, .cnode, .untyped, .page, .vspaceRoot, .objStore]
   -- **WS-BP BP7.1 (`v0.36.6`)**: the reset reads the caller and its CSpace root,
-  -- writes the untyped, retires frames (their `page` locks), rewrites every VSpace
+  -- writes the CNode holding the invoked capability (WS-ZA ZA5.4 part 13: its
+  -- free index rewinds to zero), writes the untyped, retires frames (their
+  -- `page` locks), rewrites every VSpace
   -- root that maps a page of the region, and writes the object index through
   -- `stateLevelLock`.  It declares **no** static footprint, for `.cspaceRevoke`'s
   -- reason: the VSpace roots it must write are the ones the state says map the
@@ -6646,12 +6662,14 @@ theorem lockSet_consistent_lifecycleRetype (callerTid : ThreadId)
 
 /-- **WS-BP BP7.1** — WS-SM SM3.B.4 for `.untypedRetype`. -/
 theorem lockSet_consistent_untypedRetype (callerTid : ThreadId)
-    (cnRoot untypedId childId dstCn : ObjId) (childKind : KernelObjectType) :
-    ∀ p ∈ (lockSet_untypedRetype callerTid cnRoot untypedId childId dstCn
+    (cnRoot authCn untypedId childId dstCn : ObjId) (childKind : KernelObjectType) :
+    ∀ p ∈ (lockSet_untypedRetype callerTid cnRoot authCn untypedId childId dstCn
       childKind).pairs,
       p.fst.kind ∈ permittedKinds .untypedRetype :=
   lockSet_consistent_of_extended_base _ _
     (by intro p hMem
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem

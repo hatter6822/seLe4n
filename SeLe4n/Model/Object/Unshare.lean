@@ -60,6 +60,21 @@ def KernelObject.unshare (o : KernelObject) : KernelObject := o
   | some r => some { r with rights := opaqueId r.rights }
   | none => none
 
+/-- A CNode's slot cell, rebuilt when shared so the CNode owns its `some` and its
+capability record: since WS-ZA ZA5.4 part 13 a carve writes the invoked untyped
+capability's free index into that record in place (`CNode.setFreeIndexCells`),
+and a boot capability's record is otherwise the boot image's constant, so the
+first carve would copy both. -/
+@[inline] def unshareSlotCell (o : Option Capability) : Option Capability :=
+  match o with
+  | some r => some { r with rights := opaqueId r.rights }
+  | none => none
+
+theorem unshareSlotCell_eq (o : Option Capability) : unshareSlotCell o = o := by
+  cases o with
+  | none => rfl
+  | some r => simp only [unshareSlotCell, opaqueId]
+
 /-- A thread's space slot, rebuilt when shared so the thread owns its `some` and
 its capability record (`spaceCellOver`, setting the thread's space, writes both
 in place). -/
@@ -96,8 +111,9 @@ cell and its slot record (WS-ZA ZA5.4). -/
 
 /-- `KernelObject.unshare` as compiled.  Each record is rebuilt with one field
 passed through `opaqueId`, so a shared record is copied and an exclusive one
-written in place; a thread's register file, a CNode's slot array and a VSpace
-root's mapping and epoch tables and their spare cells, and a page table's slot
+written in place; a thread's register file, a CNode's slot array and its slot
+records, a VSpace root's mapping and epoch tables and their spare cells, and a
+page table's slot
 cell, are rebuilt the same way. -/
 def KernelObject.unshareImpl : KernelObject → KernelObject
   | .tcb t => .tcb { t with
@@ -109,10 +125,10 @@ def KernelObject.unshareImpl : KernelObject → KernelObject
   | .notification n => .notification { n with state := opaqueId n.state }
   | .cnode c => .cnode { c with
       depth := opaqueId c.depth
-      cells := c.cells.map opaqueId
+      cells := c.cells.map unshareSlotCell
       cells_size := by rw [Array.size_map]; exact c.cells_size
       slots_agree := by
-        have h : (opaqueId : Option Capability → Option Capability) = id := rfl
+        have h : unshareSlotCell = id := funext unshareSlotCell_eq
         rw [h, Array.map_id]; exact c.slots_agree
       links := c.links.map opaqueId
       links_size := by rw [Array.size_map]; exact c.links_size
@@ -142,7 +158,8 @@ def KernelObject.unshareImpl : KernelObject → KernelObject
   have hIdN : (opaqueId : Nat → Nat) = id := rfl
   cases o
   case cnode c =>
-    simp only [KernelObject.unshare, KernelObject.unshareImpl, hId, hIdN, Array.map_id, opaqueId,
+    have hC : unshareSlotCell = id := funext unshareSlotCell_eq
+    simp only [KernelObject.unshare, KernelObject.unshareImpl, hC, hId, hIdN, Array.map_id, opaqueId,
       KernelObject.cnode.injEq]
     exact CNode.ext_of_fields rfl rfl rfl rfl rfl rfl rfl
   case vspaceRoot v =>

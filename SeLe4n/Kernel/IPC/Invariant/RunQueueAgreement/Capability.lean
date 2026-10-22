@@ -134,30 +134,36 @@ theorem cspaceMint_runQueueStage {st st' : SystemState} {src dst : CSpaceAddr}
 macro_rules | `(tactic| run_queue_stage_step) => `(tactic|
   refine RunQueueStage.trans ?_ (cspaceMint_runQueueStage (by with_reducible assumption)))
 
+/-- WS-ZA ZA5.4: a free-index write stores a CNode over a CNode, or writes
+nothing. -/
+theorem setCapFreeIndex_runQueueStage (st : SystemState) (addr : CSpaceAddr) (idx : Nat) :
+    RunQueueStage st (setCapFreeIndex st addr idx) := by
+  cases hO : st.objects[addr.cnode]? with
+  | some o =>
+    cases o with
+    | cnode cn =>
+      exact RunQueueStage.storeObject_nonTcb (setCapFreeIndex_eq_storeObject hO) hO
+        (fun _ h => KernelObject.noConfusion h) (fun _ h => KernelObject.noConfusion h)
+    | _ => unfold setCapFreeIndex SystemState.storeCNodeWith; rw [hO]; exact RunQueueStage.refl _
+  | none => unfold setCapFreeIndex SystemState.storeCNodeWith; rw [hO]; exact RunQueueStage.refl _
+
+theorem untypedSourceSetFull_runQueueStage (st : SystemState) (src : CSpaceAddr)
+    (cap : Capability) : RunQueueStage st (untypedSourceSetFull st src cap) :=
+  untypedSourceSetFull_of (P := RunQueueStage st) (RunQueueStage.refl _)
+    fun idx => setCapFreeIndex_runQueueStage st src idx
+
 theorem cspaceMintWithCdt_runQueueStage {st st' : SystemState} {src dst : CSpaceAddr}
     {rights : AccessRightSet} {badge : Option SeLe4n.Badge}
     (h : cspaceMintWithCdt src dst rights badge st = .ok ((), st')) : RunQueueStage st st' := by
-  unfold cspaceMintWithCdt at h
-  split at h
-  · contradiction
-  · rename_i stM hMint
-    cases h
-    exact (cspaceMint_runQueueStage hMint).trans (cdtRecord_runQueueStage stM src dst .mint)
+  obtain ⟨_, stM, hMint, -, -, rfl⟩ := cspaceMintWithCdt_ok_decompose h
+  exact ((cspaceMint_runQueueStage hMint).trans (cdtRecord_runQueueStage stM src dst .mint)).trans
+    (untypedSourceSetFull_runQueueStage _ _ _)
 
 theorem cspaceCopy_runQueueStage {st st' : SystemState} {src dst : CSpaceAddr}
     (h : cspaceCopy src dst st = .ok ((), st')) : RunQueueStage st st' := by
-  unfold cspaceCopy at h
-  split at h
-  · contradiction
-  · rename_i cap stMid hLk
-    split at h
-    · contradiction
-    · split at h
-      · contradiction
-      · rename_i st2 hIns
-        cases h
-        exact ((cspaceLookupSlot_runQueueStage hLk).trans
-          (cspaceInsertSlot_runQueueStage hIns)).trans (cdtRecord_runQueueStage st2 src dst .copy)
+  obtain ⟨_, st2, -, -, hIns, -, rfl⟩ := cspaceCopy_ok_decompose h
+  exact ((cspaceInsertSlot_runQueueStage hIns).trans (cdtRecord_runQueueStage st2 src dst .copy)).trans
+    (untypedSourceSetFull_runQueueStage _ _ _)
 
 theorem cspaceDeleteSlotCore_runQueueStage {st st' : SystemState} {addr : CSpaceAddr}
     (h : cspaceDeleteSlotCore addr st = .ok ((), st')) : RunQueueStage st st' := by
@@ -509,32 +515,31 @@ theorem untypedRetypeObject_runQueueStage {src dst : CSpaceAddr} {childId : SeLe
     {req : CarveRequest} {st st' : SystemState}
     (h : untypedRetypeObject src childId dst req st = .ok ((), st')) : RunQueueStage st st' := by
   refine RunQueueStage.of_inv fun hInv => ?_
-  obtain ⟨_, untypedId, ut, st1, st2, _, _, _, hRt, hIns, rfl⟩ :=
+  obtain ⟨utCap, untypedId, ut, st1, st2, _, _, _, hRt, hIns, rfl⟩ :=
     untypedRetypeObject_ok_decompose src dst childId req st st' hInv h
   have hFresh := retypeFromUntyped_childId_fresh src untypedId childId _ _ st st1 hRt
-  obtain ⟨ut₀, ut', cap, stL, stUt, _, hUt, _, _, hLk, _, _, hStUt, hStCh⟩ :=
-    retypeFromUntyped_ok_decompose st st1 src untypedId childId _ _ hRt
-  have hStL : stL = st := cspaceLookupSlot_ok_state_eq st src cap stL hLk
-  subst hStL
+  obtain ⟨ut₀, ut', cap, stUt, _, stCh, cn, hUt, _, _, _, _, _, _, _, _, _, hStUt, hStCh, hOCh,
+    hStIdx⟩ := retypeFromUntyped_ok_stores st st1 src untypedId childId _ _ hInv hRt
   have hNe : childId ≠ untypedId := by
     intro h; rw [h, hUt] at hFresh; simp at hFresh
   have hChildNone : stUt.objects[childId]? = none := by
     rw [storeObject_objects_ne _ _ _ _ _ hNe hInv hStUt]
-    cases h : stL.objects[childId]? with
+    cases h : st.objects[childId]? with
     | none => rfl
     | some _ => rw [h] at hFresh; simp at hFresh
   have k1 := storeObject_inert_runQueueStage hStUt hUt (fun _ h => KernelObject.noConfusion h) (fun _ h => KernelObject.noConfusion h)
-  have k2 : RunQueueStage stUt st1 :=
+  have k2 : RunQueueStage stUt stCh :=
     RunQueueStage.storeObject hStCh (fun c => by rw [hChildNone]; cases req <;> rfl)
       (by
         rw [hChildNone]
         cases req <;> first
           | exact SystemState.objStateMono_nonTcb rfl rfl
           | exact ⟨fun _ h => by cases h, fun _ h _ => by cases h; exact .inl rfl⟩)
-  have kZ : RunQueueStage st1 (req.scrub st1 ut) :=
-    RunQueueStage.of_frame (CarveRequest.scrub_objects _ _ _)
+  have k3 := storeObject_inert_runQueueStage hStIdx hOCh (fun _ h => KernelObject.noConfusion h) (fun _ h => KernelObject.noConfusion h)
+  have kZ : RunQueueStage st1 (req.scrub st1 ut utCap.freeIndex) :=
+    RunQueueStage.of_frame (CarveRequest.scrub_objects _ _ _ _)
       (by rw [CarveRequest.scrub_scheduler]) (by rw [CarveRequest.scrub_scheduler]) (by rw [CarveRequest.scrub_scheduler])
-  exact (((k1.trans k2).trans kZ).trans (cspaceInsertSlot_runQueueStage hIns)).trans
+  exact ((((k1.trans k2).trans k3).trans kZ).trans (cspaceInsertSlot_runQueueStage hIns)).trans
     (cdtRecord_runQueueStage _ _ _ _)
 
 end SeLe4n.Kernel
