@@ -230,7 +230,11 @@ slots in the TCB, derivation nodes reached by delete, revoke and teardown, and
 setting a thread's spaces copies the capabilities in with their derivation
 edges; at `v0.36.124` (part 13) an untyped capability holds its own free index,
 and copy, mint and IPC transfer derive it by seL4's rule (refused with
-children, source set full otherwise).  The
+children, source set full otherwise); at `v0.36.125` (part 14) every object
+kind is carved from an untyped at seL4's size and alignment, and the in-place
+retype, its syscall arm (number 8, kept reserved) and its theorems are deleted.
+The destroy cleanup it ran stays, with no live caller, for parts 18 and 19
+(`docs/REGISTERED_DEBT.md`).  The
 suspend of a thread blocked in IPC or holding a donated context is the one
 syscall arm left on the general path (ZA6.1).  ZA6 covers the other
 entries and makes the rule standing.  Plan:
@@ -1329,9 +1333,9 @@ cacheable or not at all (`.policyDenied`; `frameMappingAdmissible_cacheable_iff_
 the kernel writes RAM through its cacheable identity map, so an uncached user
 alias is a mismatched-attribute alias (ARM ARM B2.8) through which the carve's
 zeroes can arrive late and the previous owner's bytes early.  (3) **Nothing mints
-memory authority except an untyped**: an in-place retype refuses a
-memory-backed replacement (`KernelObjectType.memoryBacked`,
-`retypeReplacementAdmissible`'s third conjunct, `.illegalState`), the boot
+memory authority except an untyped**: every object is carved from one (the
+in-place retype, which refused a memory-backed replacement with
+`.illegalState`, was deleted at `v0.36.125`), the boot
 refuses a configured frame (`bootSafeObjectCheck`'s `.frame` arm,
 `bootSafeObject`'s last conjunct), and the pre-retype cleanup refuses to destroy
 one in place (`.revocationRequired`) — permanently since slice 3, which returns
