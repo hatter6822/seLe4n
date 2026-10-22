@@ -5096,7 +5096,7 @@ private def runCarveIdentityChecks : IO Unit := do
      | .reply r => r.replyId.toObjId == donEp | _ => false)
   assertBool "(b) every carved kind passes the shared identity predicate"
     ([CarveRequest.tcb ⟨0⟩ c1, .schedContext 7, .reply, .endpoint, .notification,
-      .cnode 2].all (fun req => (carvedAtDonEp req).embeddedIdentityMatches donEp))
+      .cnode 2 (by decide)].all (fun req => (carvedAtDonEp req).embeddedIdentityMatches donEp))
   assertBool "(c) a carved SchedContext is bound to nothing"
     (match carvedAtDonEp (.schedContext 7) with
      | .schedContext sc => sc.boundThread.isNone | _ => false)
