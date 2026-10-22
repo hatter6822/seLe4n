@@ -414,6 +414,124 @@ theorem predIn_eq_none_iff {l : List SlotRef} {n : SlotRef} (h : n ∈ l) :
         rw [← predAux_irrel (prev := some a) ‹_›]
         exact predAux_some_ne_none hl
 
+
+/-- The element after `r` in `x ++ y`: after its first place in `x` when it is
+in `x` (the head of `y` when that place is `x`'s last), else after it in `y`. -/
+theorem succIn_append : ∀ (x y : List SlotRef) (r : SlotRef),
+    succIn (x ++ y) r = if r ∈ x then (succIn x r).or y.head? else succIn y r
+  | [], y, r => by simp
+  | a :: x, y, r => by
+    rw [List.cons_append, succIn_cons, succIn_cons]
+    by_cases ha : a = r
+    · subst ha; simp [List.head?_append]
+    · rw [if_neg ha, if_neg ha, succIn_append x y r]
+      have : (r ∈ a :: x) ↔ r ∈ x := by simp [Ne.symm ha]
+      simp only [this]
+
+/-- The element before `r` in `x ++ y`, given the one before the list. -/
+theorem predAux_append : ∀ (p : Option SlotRef) (x y : List SlotRef) (r : SlotRef),
+    predAux p (x ++ y) r = if r ∈ x then predAux p x r else predAux (x.getLast?.or p) y r
+  | p, [], y, r => by simp
+  | p, a :: x, y, r => by
+    rw [List.cons_append]; simp only [predAux]
+    by_cases ha : a = r
+    · subst ha; simp
+    · rw [if_neg ha, if_neg ha, predAux_append (some a) x y r]
+      have : (r ∈ a :: x) ↔ r ∈ x := by simp [Ne.symm ha]
+      simp only [this]
+      congr 1
+      rw [List.getLast?_cons]
+      cases x.getLast? <;> rfl
+
+theorem predIn_append (x y : List SlotRef) (r : SlotRef) :
+    predIn (x ++ y) r = if r ∈ x then predIn x r else predAux x.getLast? y r := by
+  unfold predIn; rw [predAux_append]; simp
+
+/-- Past a list whose head is not `r`, the element before `r` is its own. -/
+theorem predAux_of_head_ne {l : List SlotRef} {r : SlotRef} (p : Option SlotRef)
+    (h : l.head? ≠ some r) : predAux p l r = predIn l r :=
+  predAux_irrel h
+
+theorem predAux_of_head {l : List SlotRef} {r : SlotRef} (p : Option SlotRef)
+    (h : l.head? = some r) : predAux p l r = p := by
+  cases l with
+  | nil => cases h
+  | cons a l => simp at h; subst h; simp [predAux]
+
+/-- The neighbours of `n` in `a ++ n :: b`, when `n` is not in `a`. -/
+theorem succIn_mid {a b : List SlotRef} {n : SlotRef} (h : n ∉ a) :
+    succIn (a ++ n :: b) n = b.head? := by
+  rw [succIn_append, if_neg h, succIn_cons, if_pos rfl]
+
+theorem predIn_mid {a b : List SlotRef} {n : SlotRef} (h : n ∉ a) :
+    predIn (a ++ n :: b) n = a.getLast? := by
+  rw [predIn_append, if_neg h]; simp [predAux]
+
+/-- A member has no successor only at the end. -/
+theorem succIn_eq_none_iff : ∀ {l : List SlotRef} {r : SlotRef}, l.Nodup → r ∈ l →
+    (succIn l r = none ↔ l.getLast? = some r)
+  | [], _, _, h => absurd h List.not_mem_nil
+  | a :: l, r, hnd, h => by
+    have ⟨haL, hnd'⟩ := List.nodup_cons.mp hnd
+    rw [succIn_cons, List.getLast?_cons]
+    by_cases ha : a = r
+    · subst ha
+      rw [if_pos rfl]
+      cases l with
+      | nil => simp
+      | cons b l =>
+        simp only [List.head?_cons, reduceCtorEq, false_iff]
+        intro e
+        obtain ⟨z, hz⟩ : ∃ z, (b :: l).getLast? = some z := ⟨_, List.getLast?_cons⟩
+        rw [hz] at e; simp only [Option.getD_some, Option.some.injEq] at e; subst e
+        exact haL (List.mem_of_getLast? hz)
+    · rw [if_neg ha]
+      have hl : r ∈ l := (List.mem_cons.mp h).resolve_left (Ne.symm ha)
+      rw [succIn_eq_none_iff hnd' hl]
+      cases hL : l.getLast? with
+      | none => rw [List.getLast?_eq_none_iff] at hL; subst hL; cases hl
+      | some z => simp
+
+/-- Renaming the members of a list, injectively at `r`, renames `r`'s successor. -/
+theorem succIn_map (f : SlotRef → SlotRef) : ∀ {l : List SlotRef} {r : SlotRef},
+    (∀ x ∈ l, f x = f r → x = r) → succIn (l.map f) (f r) = (succIn l r).map f
+  | [], _, _ => rfl
+  | a :: l, r, h => by
+    rw [List.map_cons, succIn_cons, succIn_cons]
+    by_cases ha : a = r
+    · subst ha; simp [List.head?_map]
+    · have hf : f a ≠ f r := fun e => ha (h a (List.mem_cons_self ..) e)
+      rw [if_neg hf, if_neg ha]
+      exact succIn_map f (fun x hx => h x (List.mem_cons_of_mem _ hx))
+
+theorem predAux_map (f : SlotRef → SlotRef) : ∀ {l : List SlotRef} {p : Option SlotRef} {r : SlotRef},
+    (∀ x ∈ l, f x = f r → x = r) → predAux (p.map f) (l.map f) (f r) = (predAux p l r).map f
+  | [], _, _, _ => rfl
+  | a :: l, p, r, h => by
+    rw [List.map_cons]; simp only [predAux]
+    by_cases ha : a = r
+    · subst ha; simp
+    · have hf : f a ≠ f r := fun e => ha (h a (List.mem_cons_self ..) e)
+      rw [if_neg hf, if_neg ha]
+      exact predAux_map f (p := some a) (fun x hx => h x (List.mem_cons_of_mem _ hx))
+
+theorem predIn_map (f : SlotRef → SlotRef) {l : List SlotRef} {r : SlotRef}
+    (h : ∀ x ∈ l, f x = f r → x = r) : predIn (l.map f) (f r) = (predIn l r).map f :=
+  predAux_map f (p := none) h
+
+/-- In a duplicate-free list nothing follows or precedes itself. -/
+theorem succIn_ne_self : ∀ {l : List SlotRef} {r : SlotRef}, l.Nodup → succIn l r ≠ some r
+  | [], _, _ => by simp [succIn]
+  | a :: l, r, hnd => by
+    have ⟨haL, hnd'⟩ := List.nodup_cons.mp hnd
+    rw [succIn_cons]
+    split
+    · next ha => subst ha; exact fun e => haL (List.mem_of_mem_head? e)
+    · exact succIn_ne_self hnd'
+
+theorem predIn_ne_self {l : List SlotRef} {r : SlotRef} (hnd : l.Nodup) : predIn l r ≠ some r :=
+  fun e => succIn_ne_self hnd ((succIn_eq_iff_predIn hnd).mpr e)
+
 end SlotList
 namespace CapDerivationTree
 
@@ -500,19 +618,19 @@ theorem childrenOf_addEdge (cdt : CapDerivationTree) (p c q : SlotRef) (op : Der
 
 theorem parentOf_of_not_mentions {cdt : CapDerivationTree} {c : SlotRef} (h : ¬ cdt.mentions c) :
     cdt.parentOf c = none :=
-  (parentOf_eq_none_iff cdt c).mpr fun e he hc => h ⟨e, he, .inr hc⟩
+  (parentOf_eq_none_iff cdt c).mpr fun e he hc => h (.inl ⟨e, he, .inr hc⟩)
 
 theorem childrenOf_of_not_mentions {cdt : CapDerivationTree} {c : SlotRef} (h : ¬ cdt.mentions c) :
     cdt.childrenOf c = [] := by
   rcases hL : cdt.childrenOf c with _ | ⟨x, l⟩
   · rfl
   · obtain ⟨e, he, hp, -⟩ := childrenOf_to_edge cdt c x (hL ▸ List.mem_cons_self ..)
-    exact absurd ⟨e, he, .inl hp⟩ h
+    exact absurd (.inl ⟨e, he, .inl hp⟩) h
 
 theorem not_mem_childrenOf_of_not_mentions {cdt : CapDerivationTree} {c : SlotRef}
     (h : ¬ cdt.mentions c) (q : SlotRef) : c ∉ cdt.childrenOf q := fun hm => by
   obtain ⟨e, he, -, hc⟩ := childrenOf_to_edge cdt q c hm
-  exact h ⟨e, he, .inr hc⟩
+  exact h (.inl ⟨e, he, .inr hc⟩)
 
 end CapDerivationTree
 
@@ -528,87 +646,163 @@ theorem parentOf_eq_some_iff {cdt : CapDerivationTree} (hU : cdt.childrenUnique)
     cdt.parentOf r = some p ↔ ∃ e ∈ cdt.edges, e.parent = p ∧ e.child = r := by
   rw [← mem_childrenOf_iff_parentOf hU, mem_childrenOf]
 
-theorem removeNode_sublist (cdt : CapDerivationTree) (n : SlotRef) :
-    (cdt.removeNode n).edges.Sublist cdt.edges := by
-  rw [removeNode_edges]; exact List.filter_sublist
+end CapDerivationTree
 
-theorem parentOf_removeNode {cdt : CapDerivationTree} (hU : cdt.childrenUnique) (n r : SlotRef) :
-    (cdt.removeNode n).parentOf r =
-      if r = n ∨ cdt.parentOf r = some n then none else cdt.parentOf r := by
-  have hU' := childrenUnique_sublist hU (removeNode_sublist cdt n)
-  split
-  · next hc =>
-    rw [parentOf_eq_none_iff]
-    intro e he hec
-    simp only [removeNode_edges, List.mem_filter, CapDerivationEdge.isParentOf,
-      CapDerivationEdge.isChildOf, decide_eq_true_eq] at he
-    obtain ⟨he, hp, hcn⟩ := he
-    rcases hc with rfl | hc
-    · exact hcn hec
-    · have := (parentOf_eq_some_iff hU _ _).mpr ⟨e, he, rfl, hec⟩
-      rw [hc] at this; exact hp (Option.some.inj this).symm
-  · next hc =>
-    have hc1 : r ≠ n := fun h => hc (.inl h)
-    have hc2 : cdt.parentOf r ≠ some n := fun h => hc (.inr h)
-    cases hP : cdt.parentOf r with
-    | none =>
-      rw [parentOf_eq_none_iff] at hP ⊢
-      intro e he; rw [removeNode_edges] at he; exact hP e (List.mem_filter.mp he).1
-    | some p =>
-      obtain ⟨e, he, hep, hec⟩ := (parentOf_eq_some_iff hU p r).mp hP
-      refine (parentOf_eq_some_iff hU' p r).mpr ⟨e, ?_, hep, hec⟩
-      simp only [removeNode_edges, List.mem_filter, CapDerivationEdge.isParentOf,
-        CapDerivationEdge.isChildOf, decide_eq_true_eq]
-      refine ⟨he, fun h => hc2 (h ▸ hep ▸ hP), fun h => hc1 (hec ▸ h)⟩
 
-theorem childrenOf_removeNode (cdt : CapDerivationTree) (n q : SlotRef) :
-    (cdt.removeNode n).childrenOf q = if q = n then [] else SlotList.drop (cdt.childrenOf q) n := by
-  unfold childrenOf SlotList.drop
-  rw [removeNode_edges]
-  rw [List.filter_filter]
-  split
-  · next hq =>
-    subst hq
-    rw [List.filter_eq_nil_iff.mpr]
-    · rfl
-    · intro e _; simp [CapDerivationEdge.isParentOf, CapDerivationEdge.isChildOf]
-      intro h; exact absurd h
-  · next hq =>
-    rw [List.filter_map]
-    congr 1
-    rw [List.filter_filter]
-    apply List.filter_congr
-    intro e _
-    simp only [CapDerivationEdge.isParentOf, CapDerivationEdge.isChildOf, Function.comp]
-    by_cases hp : e.parent = q
-    · simp [hp, hq]
-    · simp [hp]
+/-! ### Sibling chains
+
+A slot with a parent has its parent's children for siblings; a slot with no
+parent has the root chain that lists it, or itself alone when no chain does. -/
+
+namespace SlotList
+
+/-- The chain of `cs` that holds `r`, or `[r]` when none does. -/
+def chainOf (cs : List (List SlotRef)) (r : SlotRef) : List SlotRef :=
+  (cs.find? fun c => decide (r ∈ c)).getD [r]
+
+/-- Two chains of a duplicate-free family that share a member are one chain. -/
+theorem chain_eq_of_mem : ∀ {cs : List (List SlotRef)}, cs.flatten.Nodup →
+    ∀ {C D : List SlotRef} {x : SlotRef}, C ∈ cs → D ∈ cs → x ∈ C → x ∈ D → C = D
+  | [], _, _, _, _, hC, _, _, _ => absurd hC List.not_mem_nil
+  | F :: cs, hnd, C, D, x, hC, hD, hxC, hxD => by
+    rw [List.flatten_cons, List.nodup_append] at hnd
+    obtain ⟨-, hnd', hdis⟩ := hnd
+    rcases List.mem_cons.mp hC with hCF | hC' <;> rcases List.mem_cons.mp hD with hDF | hD'
+    · rw [hCF, hDF]
+    · rw [hCF] at hxC; exact absurd rfl (hdis x hxC x (List.mem_flatten.mpr ⟨D, hD', hxD⟩))
+    · rw [hDF] at hxD; exact absurd rfl (hdis x hxD x (List.mem_flatten.mpr ⟨C, hC', hxC⟩))
+    · exact chain_eq_of_mem hnd' hC' hD' hxC hxD
+
+theorem chainOf_of_mem {cs : List (List SlotRef)} (hnd : cs.flatten.Nodup) {C : List SlotRef}
+    {r : SlotRef} (hC : C ∈ cs) (hr : r ∈ C) : chainOf cs r = C := by
+  unfold chainOf
+  cases hF : cs.find? (fun c => decide (r ∈ c)) with
+  | none =>
+    rw [List.find?_eq_none] at hF
+    exact absurd (decide_eq_true hr) (hF C hC)
+  | some D =>
+    have hD := List.mem_of_find?_eq_some hF
+    have hrD : r ∈ D := by have := List.find?_some hF; simpa using this
+    exact chain_eq_of_mem hnd hD hC hrD hr
+
+theorem chainOf_of_not_mem {cs : List (List SlotRef)} {r : SlotRef} (h : r ∉ cs.flatten) :
+    chainOf cs r = [r] := by
+  unfold chainOf
+  rw [show cs.find? (fun c => decide (r ∈ c)) = none from List.find?_eq_none.mpr fun C hC hr =>
+    h (List.mem_flatten.mpr ⟨C, hC, of_decide_eq_true hr⟩)]
+  rfl
+
+theorem chainOf_cases (cs : List (List SlotRef)) (r : SlotRef) :
+    (∃ C ∈ cs, r ∈ C ∧ chainOf cs r = C) ∨ (r ∉ cs.flatten ∧ chainOf cs r = [r]) := by
+  unfold chainOf
+  cases hF : cs.find? (fun c => decide (r ∈ c)) with
+  | none =>
+    refine .inr ⟨fun hm => ?_, rfl⟩
+    obtain ⟨C, hC, hr⟩ := List.mem_flatten.mp hm
+    exact absurd (decide_eq_true hr) (List.find?_eq_none.mp hF C hC)
+  | some D =>
+    exact .inl ⟨D, List.mem_of_find?_eq_some hF, by have := List.find?_some hF; simpa using this, rfl⟩
+
+theorem mem_chainOf_self (cs : List (List SlotRef)) (r : SlotRef) : r ∈ chainOf cs r := by
+  rcases chainOf_cases cs r with ⟨C, -, hr, e⟩ | ⟨-, e⟩ <;> rw [e]
+  · exact hr
+  · exact List.mem_singleton_self r
+
+theorem chainOf_nodup {cs : List (List SlotRef)} (hnd : cs.flatten.Nodup) (r : SlotRef) :
+    (chainOf cs r).Nodup := by
+  rcases chainOf_cases cs r with ⟨C, hC, -, e⟩ | ⟨-, e⟩ <;> rw [e]
+  · exact hnd.sublist (List.sublist_flatten_of_mem hC)
+  · simp
+
+theorem mem_chainOf {cs : List (List SlotRef)} {r x : SlotRef} (h : x ∈ chainOf cs r) :
+    x ∈ cs.flatten ∨ x = r := by
+  rcases chainOf_cases cs r with ⟨C, hC, -, e⟩ | ⟨-, e⟩ <;> rw [e] at h
+  · exact .inl (List.mem_flatten.mpr ⟨C, hC, h⟩)
+  · exact .inr (List.mem_singleton.mp h)
+
+theorem chainOf_eq_of_mem {cs : List (List SlotRef)} (hnd : cs.flatten.Nodup) {r x : SlotRef}
+    (h : x ∈ chainOf cs r) : chainOf cs x = chainOf cs r := by
+  rcases chainOf_cases cs r with ⟨C, hC, -, e⟩ | ⟨-, e⟩ <;> rw [e] at h ⊢
+  · exact chainOf_of_mem hnd hC h
+  · rw [List.mem_singleton.mp h]; exact e
+
+end SlotList
+
+namespace CapDerivationTree
+
+/-- **The root chain holding `r`**: the chain of `rootChains` that lists it, or
+`[r]` when none does. -/
+noncomputable def rootChain (cdt : CapDerivationTree) (r : SlotRef) : List SlotRef :=
+  SlotList.chainOf cdt.rootChains r
+
+/-- **The siblings of `r`, `r` among them**, in link order: its parent's
+children, or its root chain when it has no parent. -/
+noncomputable def siblingsOf (cdt : CapDerivationTree) (r : SlotRef) : List SlotRef :=
+  match cdt.parentOf r with
+  | some p => cdt.childrenOf p
+  | none => cdt.rootChain r
+
+theorem siblingsOf_of_parent {cdt : CapDerivationTree} {r p : SlotRef}
+    (h : cdt.parentOf r = some p) : cdt.siblingsOf r = cdt.childrenOf p := by
+  unfold siblingsOf; rw [h]
+
+theorem siblingsOf_of_root {cdt : CapDerivationTree} {r : SlotRef}
+    (h : cdt.parentOf r = none) : cdt.siblingsOf r = cdt.rootChain r := by
+  unfold siblingsOf; rw [h]
+
+/-- No slot of a root chain has a parent. -/
+def rootsParentless (cdt : CapDerivationTree) : Prop :=
+  ∀ r ∈ cdt.rootChains.flatten, cdt.parentOf r = none
+
+theorem mem_siblingsOf_self {cdt : CapDerivationTree} (hU : cdt.childrenUnique) (r : SlotRef) :
+    r ∈ cdt.siblingsOf r := by
+  unfold siblingsOf
+  cases hP : cdt.parentOf r with
+  | some p => exact (mem_childrenOf_iff_parentOf hU p r).mpr hP
+  | none => exact SlotList.mem_chainOf_self _ r
+
+theorem siblingsOf_nodup {cdt : CapDerivationTree} (hU : cdt.childrenUnique)
+    (hnd : cdt.rootChains.flatten.Nodup) (r : SlotRef) : (cdt.siblingsOf r).Nodup := by
+  unfold siblingsOf
+  cases cdt.parentOf r with
+  | some p => exact childrenOf_nodup hU p
+  | none => exact SlotList.chainOf_nodup hnd r
+
+/-- A sibling's siblings are one's own. -/
+theorem siblingsOf_eq_of_mem {cdt : CapDerivationTree} (hU : cdt.childrenUnique)
+    (hnd : cdt.rootChains.flatten.Nodup) (hR : cdt.rootsParentless) {r x : SlotRef}
+    (h : x ∈ cdt.siblingsOf r) : cdt.siblingsOf x = cdt.siblingsOf r := by
+  unfold siblingsOf at h ⊢
+  cases hP : cdt.parentOf r with
+  | some p =>
+    rw [hP] at h
+    rw [(mem_childrenOf_iff_parentOf hU p x).mp h]
+  | none =>
+    rw [hP] at h
+    have hx : cdt.parentOf x = none := by
+      rcases SlotList.mem_chainOf h with hm | rfl
+      · exact hR x hm
+      · exact hP
+    rw [hx]; exact SlotList.chainOf_eq_of_mem hnd h
 
 end CapDerivationTree
 
-/-- **The links encode the tree.**  Each slot's parent link is its parent in the
-tree, its first-child link the newest of its children, and its next and previous
-links its neighbours among its parent's children (newest first); a slot that is
-no one's child has neither, and no slot is the child of two edges.  A slot the
-tree does not name therefore holds no link at all. -/
+
+/-- **The links encode the tree, in seL4's order.**  Each slot's parent link is
+its parent in the tree, its first-child link the newest of its children, and its
+next and previous links its neighbours among its siblings (`siblingsOf`): its
+parent's children, newest first, or, for a slot with no parent, its root chain.
+No slot is the child of two edges, the root chains list each slot at most once,
+and none of them has a parent.  A slot the tree does not name therefore holds no
+link at all. -/
 structure LinksAgree (L : LinkView) (cdt : CapDerivationTree) : Prop where
   childrenUnique : cdt.childrenUnique
+  rootsNodup : cdt.rootChains.flatten.Nodup
+  rootsParentless : cdt.rootsParentless
   parent : ∀ r, L r .parent = cdt.parentOf r
   firstChild : ∀ p, L p .firstChild = (cdt.childrenOf p).head?
-  next : ∀ r, L r .next = (cdt.parentOf r).bind fun p => SlotList.succIn (cdt.childrenOf p) r
-  prev : ∀ r, L r .prev = (cdt.parentOf r).bind fun p => SlotList.predIn (cdt.childrenOf p) r
-
-/-- The agreement reads the tree only through its edges. -/
-theorem LinksAgree.of_edges_eq {L : LinkView} {cdt cdt' : CapDerivationTree}
-    (hE : cdt.edges = cdt'.edges) (h : LinksAgree L cdt) : LinksAgree L cdt' := by
-  have hP : ∀ r, cdt'.parentOf r = cdt.parentOf r := fun r => by
-    unfold CapDerivationTree.parentOf; rw [hE]
-  have hC : ∀ r, cdt'.childrenOf r = cdt.childrenOf r := fun r => by
-    unfold CapDerivationTree.childrenOf; rw [hE]
-  have hU : cdt'.childrenUnique := by
-    have := h.childrenUnique; unfold CapDerivationTree.childrenUnique at this ⊢; rwa [← hE]
-  exact ⟨hU, fun r => by rw [hP, h.parent], fun p => by rw [hC, h.firstChild],
-    fun r => by simp only [hP, hC, h.next], fun r => by simp only [hP, hC, h.prev]⟩
+  next : ∀ r, L r .next = SlotList.succIn (cdt.siblingsOf r) r
+  prev : ∀ r, L r .prev = SlotList.predIn (cdt.siblingsOf r) r
 
 namespace LinkView
 
@@ -665,20 +859,152 @@ theorem walk_of_succ {L : LinkView} :
 
 end LinkView
 
-/-- **The children walk reads the tree's children**, with any fuel at least
-their number (the tree's edge count is one). -/
-theorem LinksAgree.walk_children {L : LinkView} {cdt : CapDerivationTree} (h : LinksAgree L cdt)
-    (p : SlotRef) {n : Nat} (hn : (cdt.childrenOf p).length ≤ n) :
-    L.walk n (L p .firstChild) = cdt.childrenOf p := by
-  rw [h.firstChild]
-  refine LinkView.walk_of_succ (CapDerivationTree.childrenOf_nodup h.childrenUnique p)
-    (fun w hw => ?_) hn
-  rw [h.next, (CapDerivationTree.mem_childrenOf_iff_parentOf h.childrenUnique p w).mp hw]
-  rfl
-
 theorem CapDerivationTree.childrenOf_length_le (cdt : CapDerivationTree) (p : SlotRef) :
     (cdt.childrenOf p).length ≤ cdt.edges.length := by
   unfold childrenOf; rw [List.length_map]; exact List.length_filter_le _ _
+
+namespace LinksAgree
+
+open CapDerivationTree
+
+variable {L : LinkView} {cdt : CapDerivationTree}
+
+theorem siblingsOf_nodup (h : LinksAgree L cdt) (r : SlotRef) : (cdt.siblingsOf r).Nodup :=
+  CapDerivationTree.siblingsOf_nodup h.childrenUnique h.rootsNodup r
+
+theorem mem_siblingsOf_self (h : LinksAgree L cdt) (r : SlotRef) : r ∈ cdt.siblingsOf r :=
+  CapDerivationTree.mem_siblingsOf_self h.childrenUnique r
+
+theorem siblingsOf_eq_of_mem (h : LinksAgree L cdt) {r x : SlotRef} (hx : x ∈ cdt.siblingsOf r) :
+    cdt.siblingsOf x = cdt.siblingsOf r :=
+  CapDerivationTree.siblingsOf_eq_of_mem h.childrenUnique h.rootsNodup h.rootsParentless hx
+
+/-- A child's siblings are its parent's children. -/
+theorem siblingsOf_of_mem_children (h : LinksAgree L cdt) {p r : SlotRef}
+    (hr : r ∈ cdt.childrenOf p) : cdt.siblingsOf r = cdt.childrenOf p :=
+  siblingsOf_of_parent ((mem_childrenOf_iff_parentOf h.childrenUnique p r).mp hr)
+
+/-- **`x` follows `r` exactly when `r` precedes `x`.** -/
+theorem next_eq_some_iff (h : LinksAgree L cdt) (r x : SlotRef) :
+    L r .next = some x ↔ L x .prev = some r := by
+  rw [h.next, h.prev]
+  constructor
+  · intro e
+    rw [h.siblingsOf_eq_of_mem (SlotList.succIn_mem e)]
+    exact (SlotList.succIn_eq_iff_predIn (h.siblingsOf_nodup r)).mp e
+  · intro e
+    rw [h.siblingsOf_eq_of_mem (SlotList.predIn_mem e)]
+    exact (SlotList.succIn_eq_iff_predIn (h.siblingsOf_nodup x)).mpr e
+
+/-- **`x` is `p`'s first child** exactly when `p` is its parent and nothing precedes it. -/
+theorem firstChild_eq_some_iff (h : LinksAgree L cdt) (p x : SlotRef) :
+    L p .firstChild = some x ↔ L x .parent = some p ∧ L x .prev = none := by
+  rw [h.firstChild, h.parent, h.prev]
+  constructor
+  · intro e
+    have hx := List.mem_of_mem_head? e
+    refine ⟨(mem_childrenOf_iff_parentOf h.childrenUnique p x).mp hx, ?_⟩
+    rw [h.siblingsOf_of_mem_children hx]
+    exact (SlotList.predIn_eq_none_iff hx).mpr e
+  · rintro ⟨e1, e2⟩
+    have hx := (mem_childrenOf_iff_parentOf h.childrenUnique p x).mpr e1
+    rw [h.siblingsOf_of_mem_children hx] at e2
+    exact (SlotList.predIn_eq_none_iff hx).mp e2
+
+theorem parent_eq_some_iff (h : LinksAgree L cdt) (r p : SlotRef) :
+    L r .parent = some p ↔ r ∈ cdt.childrenOf p := by
+  rw [h.parent, mem_childrenOf_iff_parentOf h.childrenUnique]
+
+/-- **The children walk reads the tree's children**, with any fuel at least
+their number (the tree's edge count is one). -/
+theorem walk_children (h : LinksAgree L cdt) (p : SlotRef) {n : Nat}
+    (hn : (cdt.childrenOf p).length ≤ n) : L.walk n (L p .firstChild) = cdt.childrenOf p := by
+  rw [h.firstChild]
+  refine LinkView.walk_of_succ (childrenOf_nodup h.childrenUnique p) (fun w hw => ?_) hn
+  rw [h.next, h.siblingsOf_of_mem_children hw]
+
+/-- The walk from a slot's first child, with fuel the tree's edge count, reads its children. -/
+theorem walk_firstChild (h : LinksAgree L cdt) (n : SlotRef) {k : Nat}
+    (hk : cdt.edges.length ≤ k) : L.walk k (L n .firstChild) = cdt.childrenOf n :=
+  h.walk_children n (Nat.le_trans (cdt.childrenOf_length_le n) hk)
+
+/-- A slot outside the tree has itself alone for siblings. -/
+theorem siblingsOf_of_not_mentions {r : SlotRef} (hn : ¬ cdt.mentions r) :
+    cdt.siblingsOf r = [r] := by
+  rw [siblingsOf_of_root (parentOf_of_not_mentions hn)]
+  exact SlotList.chainOf_of_not_mem (not_root_of_not_mentions hn)
+
+/-- **A slot the tree does not name holds no link.** -/
+theorem none_of_not_mentions (h : LinksAgree L cdt) {r : SlotRef} (hn : ¬ cdt.mentions r)
+    (f : LinkField) : L r f = none := by
+  cases f
+  · rw [h.parent r, parentOf_of_not_mentions hn]
+  · rw [h.firstChild r, childrenOf_of_not_mentions hn]; rfl
+  · rw [h.next r, siblingsOf_of_not_mentions hn]; simp [SlotList.succIn]
+  · rw [h.prev r, siblingsOf_of_not_mentions hn]; simp [SlotList.predIn, SlotList.predAux]
+
+/-- A slot's sibling other than itself is a slot the tree names. -/
+theorem mentions_of_sibling {r x : SlotRef} (hx : x ∈ cdt.siblingsOf r) (hxr : x ≠ r) :
+    cdt.mentions x := by
+  unfold siblingsOf at hx
+  cases hP : cdt.parentOf r with
+  | some p =>
+    rw [hP] at hx
+    obtain ⟨e, he, -, hc⟩ := (mem_childrenOf cdt p x).mp hx
+    exact .inl ⟨e, he, .inr hc⟩
+  | none =>
+    rw [hP] at hx
+    rcases SlotList.mem_chainOf hx with hm | e
+    · exact .inr hm
+    · exact absurd e hxr
+
+/-- A slot's successor or predecessor is not itself. -/
+theorem next_ne_self (h : LinksAgree L cdt) (r : SlotRef) : L r .next ≠ some r := by
+  rw [h.next]; exact SlotList.succIn_ne_self (h.siblingsOf_nodup r)
+
+theorem prev_ne_self (h : LinksAgree L cdt) (r : SlotRef) : L r .prev ≠ some r := by
+  rw [h.prev]; exact SlotList.predIn_ne_self (h.siblingsOf_nodup r)
+
+/-- **Every link names a slot the tree names.** -/
+theorem target_mentions (h : LinksAgree L cdt) {r : SlotRef} {f : LinkField} {x : SlotRef}
+    (hx : L r f = some x) : cdt.mentions x := by
+  cases f
+  · rw [h.parent r] at hx
+    obtain ⟨e, he, hp, -⟩ := (parentOf_eq_some_iff h.childrenUnique x r).mp hx
+    exact .inl ⟨e, he, .inl hp⟩
+  · rw [h.firstChild r] at hx
+    obtain ⟨e, he, -, hc⟩ := (mem_childrenOf cdt r x).mp (List.mem_of_mem_head? hx)
+    exact .inl ⟨e, he, .inr hc⟩
+  · have hne : x ≠ r := fun e => h.next_ne_self r (e ▸ hx)
+    rw [h.next r] at hx
+    exact mentions_of_sibling (SlotList.succIn_mem hx) hne
+  · have hne : x ≠ r := fun e => h.prev_ne_self r (e ▸ hx)
+    rw [h.prev r] at hx
+    exact mentions_of_sibling (SlotList.predIn_mem hx) hne
+
+/-- **An empty tree agrees with links that are all empty**: the state the
+default state starts from. -/
+theorem of_empty {L' : LinkView} {t : CapDerivationTree} (hE : t.edges = [])
+    (hR : t.rootChains = []) (hL : ∀ r f, L' r f = none) : LinksAgree L' t := by
+  have hn : ∀ r, ¬ t.mentions r := by
+    rintro r (⟨e, he, -⟩ | hr)
+    · rw [hE] at he; cases he
+    · rw [hR] at hr; cases hr
+  refine ⟨by unfold CapDerivationTree.childrenUnique; rw [hE]; exact List.nodup_nil,
+    (by rw [hR]; exact List.nodup_nil), (fun r hr => by rw [hR] at hr; cases hr),
+    fun r => ?_, fun p => ?_, fun r => ?_, fun r => ?_⟩
+  · rw [hL, parentOf_of_not_mentions (hn r)]
+  · rw [hL, childrenOf_of_not_mentions (hn p)]; rfl
+  · rw [hL, siblingsOf_of_not_mentions (hn r)]; simp [SlotList.succIn]
+  · rw [hL, siblingsOf_of_not_mentions (hn r)]; simp [SlotList.predIn, SlotList.predAux]
+
+/-- An acyclic tree has no node that is its own parent. -/
+theorem parentOf_ne_self_of_wf (h : LinksAgree L cdt) (hWF : cdt.edgeWellFounded) (n : SlotRef) :
+    cdt.parentOf n ≠ some n := fun hp => by
+  obtain ⟨e, he, hpe, hce⟩ := (parentOf_eq_some_iff h.childrenUnique n n).mp hp
+  exact edgeWellFounded_no_self_edge hWF he (hpe.trans hce.symm)
+
+end LinksAgree
 
 namespace LinkView
 
@@ -721,29 +1047,48 @@ theorem addChild_prev (L : LinkView) (p c r : SlotRef) :
 
 end LinkView
 
-
 namespace LinksAgree
 
 open CapDerivationTree LinkView
 
 variable {L : LinkView} {cdt : CapDerivationTree}
 
-/-- **Adding an edge to a slot with no parent**, with `addChild`'s link writes,
-keeps the links agreeing.  `c` may have children of its own (a splice re-adds a
-subtree); it must only be no one's child yet, and not `p`. -/
+/-- **Adding an edge to a slot outside the tree**, with `addChild`'s link
+writes, keeps the links agreeing: the new slot becomes its source's first
+child, which is right after the source in the tree's preorder. -/
 theorem addChild (h : LinksAgree L cdt) {p c : SlotRef} (op : DerivationOp)
-    (hc : cdt.parentOf c = none) (hpc : p ≠ c) :
+    (hc : ¬ cdt.mentions c) (hpc : p ≠ c) :
     LinksAgree (L.addChild p c) (cdt.addEdge p c op) := by
   have hU := h.childrenUnique
-  have hNotChild : ∀ q, c ∉ cdt.childrenOf q := fun q hm => by
-    rw [(mem_childrenOf_iff_parentOf hU q c).mp hm] at hc; cases hc
+  have hcN : cdt.parentOf c = none := parentOf_of_not_mentions hc
+  have hNotChild : ∀ q, c ∉ cdt.childrenOf q := not_mem_childrenOf_of_not_mentions hc
+  have hcR : c ∉ cdt.rootChains.flatten := not_root_of_not_mentions hc
   have hcp : c ≠ p := fun e => hpc e.symm
-  refine ⟨?_, fun r => ?_, fun q => ?_, fun r => ?_, fun r => ?_⟩
-  · unfold CapDerivationTree.childrenUnique; rw [CapDerivationTree.addEdge_edges]
+  have hU' : (cdt.addEdge p c op).childrenUnique := by
+    unfold CapDerivationTree.childrenUnique; rw [CapDerivationTree.addEdge_edges]
     rw [List.map_cons, List.nodup_cons]
     refine ⟨fun hm => ?_, hU⟩
     obtain ⟨e, he, hec⟩ := List.mem_map.mp hm
     exact hNotChild e.parent ((mem_childrenOf cdt _ _).mpr ⟨e, he, rfl, hec⟩)
+  -- the siblings after the add
+  have hRC : ∀ r, (cdt.addEdge p c op).rootChain r = cdt.rootChain r := fun r => rfl
+  have hSibC : (cdt.addEdge p c op).siblingsOf c = c :: cdt.childrenOf p := by
+    rw [siblingsOf_of_parent (by rw [parentOf_addEdge, if_pos rfl]), childrenOf_addEdge, if_pos rfl]
+  have hSib : ∀ r, r ≠ c → (cdt.addEdge p c op).siblingsOf r =
+      if cdt.parentOf r = some p then c :: cdt.childrenOf p else cdt.siblingsOf r := by
+    intro r hr
+    unfold siblingsOf
+    rw [parentOf_addEdge, if_neg hr]
+    cases hP : cdt.parentOf r with
+    | none => simp [hRC]
+    | some q =>
+      simp only [childrenOf_addEdge, Option.some.injEq]
+      by_cases hq : q = p
+      · simp [hq]
+      · simp [hq]
+  refine ⟨hU', h.rootsNodup, fun r hr => ?_, fun r => ?_, fun q => ?_, fun r => ?_, fun r => ?_⟩
+  · have hrc : r ≠ c := fun e => hcR (e ▸ hr)
+    rw [parentOf_addEdge, if_neg hrc]; exact h.rootsParentless r hr
   · rw [addChild_parent, parentOf_addEdge]
     split
     · rfl
@@ -752,42 +1097,218 @@ theorem addChild (h : LinksAgree L cdt) {p c : SlotRef} (op : DerivationOp)
     by_cases hq : q = p
     · simp [hq]
     · simp only [if_neg hq]; exact h.firstChild q
-  · rw [addChild_next, parentOf_addEdge]
+  · rw [addChild_next]
     by_cases hr : r = c
     · subst hr
-      simp only [if_true, Option.bind_some, childrenOf_addEdge, SlotList.succIn_cons]
+      rw [if_pos rfl, hSibC, SlotList.succIn_cons, if_pos rfl]
       exact h.firstChild p
-    · simp only [if_neg hr]
-      rw [h.next r]
-      cases hP : cdt.parentOf r with
-      | none => rfl
-      | some q =>
-        simp only [Option.bind_some, childrenOf_addEdge]
-        split
-        · rw [SlotList.succIn_cons, if_neg (Ne.symm hr)]
-        · rfl
-  · rw [addChild_prev, parentOf_addEdge, h.firstChild p]
+    · rw [if_neg hr, hSib r hr, h.next r]
+      split
+      · next hP => rw [SlotList.succIn_cons, if_neg (Ne.symm hr), siblingsOf_of_parent hP]
+      · rfl
+  · rw [addChild_prev, h.firstChild p]
     by_cases hr : r = c
     · subst hr
       have : (cdt.childrenOf p).head? ≠ some r := fun e => hNotChild p (List.mem_of_mem_head? e)
-      simp only [if_neg this, if_true, Option.bind_some, childrenOf_addEdge, SlotList.predIn_cons]
-    · simp only [if_neg hr]
+      rw [if_neg this, if_pos rfl, hSibC, SlotList.predIn_cons, if_pos rfl]
+    · rw [if_neg hr, hSib r hr]
       by_cases hhd : (cdt.childrenOf p).head? = some r
       · rw [if_pos hhd]
         have hmem := List.mem_of_mem_head? hhd
-        rw [(mem_childrenOf_iff_parentOf hU p r).mp hmem]
-        simp only [Option.bind_some, childrenOf_addEdge, if_true, SlotList.predIn_cons,
+        rw [if_pos ((mem_childrenOf_iff_parentOf hU p r).mp hmem), SlotList.predIn_cons,
           if_neg (Ne.symm hr), if_pos hhd]
       · rw [if_neg hhd, h.prev r]
-        cases hP : cdt.parentOf r with
-        | none => rfl
-        | some q =>
-          simp only [Option.bind_some, childrenOf_addEdge]
-          split
-          · next hq =>
-            subst hq
-            rw [SlotList.predIn_cons, if_neg (Ne.symm hr), if_neg hhd]
-          · rfl
+        split
+        · next hP =>
+          rw [SlotList.predIn_cons, if_neg (Ne.symm hr), if_neg hhd, siblingsOf_of_parent hP]
+        · rfl
+
+end LinksAgree
+
+namespace LinkView
+
+/-- **Link `r` after `t` in a root chain** (`t` the chain's last slot, if any),
+as `appendRoot r` lays it: `r` takes `t` as previous and `t` takes `r` as next. -/
+def appendRoot (L : LinkView) (t : Option SlotRef) (r : SlotRef) : LinkView :=
+  match t with
+  | some x => (L.set r .prev (some x)).set x .next (some r)
+  | none => L
+
+theorem appendRoot_apply (L : LinkView) (t : Option SlotRef) (r x : SlotRef) (f : LinkField) :
+    L.appendRoot t r x f =
+      if f = .prev ∧ x = r ∧ t.isSome then t
+      else if f = .next ∧ some x = t then some r else L x f := by
+  unfold appendRoot
+  cases t with
+  | none => simp
+  | some y =>
+    simp only [set]
+    by_cases h1 : x = y <;> by_cases h2 : x = r <;> cases f <;> simp [h1, h2]
+
+end LinkView
+
+
+namespace CapDerivationTree
+
+/-- The first root chain (empty when there is none) — where `appendRoot` lays its slot. -/
+noncomputable def firstChain (cdt : CapDerivationTree) : List SlotRef :=
+  cdt.rootChains.head?.getD []
+
+theorem appendRoot_rootChains_eq (cdt : CapDerivationTree) (r : SlotRef) :
+    (cdt.appendRoot r).rootChains = (cdt.firstChain ++ [r]) :: cdt.rootChains.tail := by
+  rw [appendRoot_rootChains]; unfold firstChain
+  cases cdt.rootChains <;> rfl
+
+theorem rootChains_flatten_eq (cdt : CapDerivationTree) :
+    cdt.rootChains.flatten = cdt.firstChain ++ cdt.rootChains.tail.flatten := by
+  unfold firstChain; cases cdt.rootChains <;> simp
+
+theorem rootChain_of_mem_firstChain {cdt : CapDerivationTree} (hnd : cdt.rootChains.flatten.Nodup)
+    {x : SlotRef} (hx : x ∈ cdt.firstChain) : cdt.rootChain x = cdt.firstChain := by
+  unfold firstChain at hx ⊢; unfold rootChain
+  cases hCs : cdt.rootChains with
+  | nil => rw [hCs] at hx; cases hx
+  | cons D T =>
+    rw [hCs] at hx hnd
+    simp only [List.head?_cons, Option.getD_some] at hx ⊢
+    exact SlotList.chainOf_of_mem hnd (List.mem_cons_self ..) hx
+
+theorem parentOf_appendRoot (cdt : CapDerivationTree) (r x : SlotRef) :
+    (cdt.appendRoot r).parentOf x = cdt.parentOf x := rfl
+
+theorem childrenOf_appendRoot (cdt : CapDerivationTree) (r x : SlotRef) :
+    (cdt.appendRoot r).childrenOf x = cdt.childrenOf x := rfl
+
+end CapDerivationTree
+
+namespace LinksAgree
+
+open CapDerivationTree LinkView
+
+variable {L : LinkView} {cdt : CapDerivationTree}
+
+/-- **Appending a slot outside the tree to the first root chain**, linked after
+the chain's last slot `t`, keeps the links agreeing: how boot lays its
+capabilities in one chain. -/
+theorem appendRoot (h : LinksAgree L cdt) {r : SlotRef} (hr : ¬ cdt.mentions r)
+    {t : Option SlotRef} (ht : t = cdt.firstChain.getLast?) :
+    LinksAgree (L.appendRoot t r) (cdt.appendRoot r) := by
+  have hrR : r ∉ cdt.rootChains.flatten := not_root_of_not_mentions hr
+  have hFl := cdt.rootChains_flatten_eq
+  have hND := h.rootsNodup
+  rw [hFl] at hND hrR
+  have hrD : r ∉ cdt.firstChain := fun hm => hrR (List.mem_append_left _ hm)
+  have hC := appendRoot_rootChains_eq cdt r
+  have hND' : (cdt.appendRoot r).rootChains.flatten.Nodup := by
+    rw [hC, List.flatten_cons, List.append_assoc]
+    refine (List.Perm.nodup_iff ?_).mpr (List.nodup_cons.mpr ⟨hrR, hND⟩)
+    refine (List.perm_middle (l₁ := cdt.firstChain) (a := r)).trans ?_
+    simp
+  have hDmem : cdt.firstChain ++ [r] ∈ (cdt.appendRoot r).rootChains := by
+    rw [hC]; exact List.mem_cons_self ..
+  -- the root chain of a parentless slot, after the append
+  have hRC : ∀ x, (cdt.appendRoot r).rootChain x =
+      if x = r ∨ x ∈ cdt.firstChain then cdt.firstChain ++ [r] else cdt.rootChain x := by
+    intro x
+    unfold rootChain
+    split
+    · next hx =>
+      refine SlotList.chainOf_of_mem hND' hDmem ?_
+      rcases hx with rfl | hx
+      · exact List.mem_append_right _ (List.mem_singleton_self _)
+      · exact List.mem_append_left _ hx
+    · next hx =>
+      have hxr : x ≠ r := fun e => hx (.inl e)
+      have hxD : x ∉ cdt.firstChain := fun e => hx (.inr e)
+      rcases SlotList.chainOf_cases cdt.rootChains x with ⟨E, hE, hxE, e⟩ | ⟨hxn, e⟩
+      · rw [e]
+        have hEt : E ∈ cdt.rootChains.tail := by
+          unfold firstChain at hxD
+          cases hCs : cdt.rootChains with
+          | nil => rw [hCs] at hE; cases hE
+          | cons D T =>
+            rw [hCs] at hE hxD
+            rcases List.mem_cons.mp hE with rfl | hE
+            · exact absurd hxE hxD
+            · exact hE
+        exact SlotList.chainOf_of_mem hND' (by rw [hC]; exact List.mem_cons_of_mem _ hEt) hxE
+      · rw [e]
+        refine SlotList.chainOf_of_not_mem fun hm => ?_
+        rw [hC, List.flatten_cons] at hm
+        rcases List.mem_append.mp hm with hm | hm
+        · rcases List.mem_append.mp hm with hm | hm
+          · exact hxD hm
+          · exact hxr (List.mem_singleton.mp hm)
+        · rw [hFl] at hxn; exact hxn (List.mem_append_right _ hm)
+  have hSib : ∀ x, (cdt.appendRoot r).siblingsOf x =
+      if cdt.parentOf x = none ∧ (x = r ∨ x ∈ cdt.firstChain) then cdt.firstChain ++ [r]
+      else cdt.siblingsOf x := by
+    intro x
+    unfold siblingsOf
+    rw [parentOf_appendRoot]
+    cases hP : cdt.parentOf x with
+    | some p => simp [childrenOf_appendRoot]
+    | none => simp only [true_and]; rw [hRC]
+  have hrN : cdt.parentOf r = none := parentOf_of_not_mentions hr
+  have hDpl : ∀ x ∈ cdt.firstChain, cdt.parentOf x = none := fun x hx =>
+    h.rootsParentless x (by rw [hFl]; exact List.mem_append_left _ hx)
+  have hDnd : (cdt.firstChain ++ [r]).Nodup := by
+    rw [hC, List.flatten_cons] at hND'; exact hND'.sublist (List.sublist_append_left ..)
+  have hDnd0 : cdt.firstChain.Nodup := hDnd.sublist (List.sublist_append_left ..)
+  have htD : ∀ x, t = some x → x ∈ cdt.firstChain := fun x e => by
+    rw [ht] at e; exact List.mem_of_getLast? e
+  refine ⟨h.childrenUnique, hND', fun x hx => ?_, fun x => ?_, fun p => ?_, fun x => ?_, fun x => ?_⟩
+  · rw [parentOf_appendRoot]
+    rw [hC, List.flatten_cons] at hx
+    rcases List.mem_append.mp hx with hx | hx
+    · rcases List.mem_append.mp hx with hx | hx
+      · exact hDpl x hx
+      · rw [List.mem_singleton.mp hx]; exact hrN
+    · exact h.rootsParentless x (by rw [hFl]; exact List.mem_append_right _ hx)
+  · rw [appendRoot_apply, parentOf_appendRoot]; simp only [reduceCtorEq, false_and, if_false]
+    exact h.parent x
+  · rw [appendRoot_apply, childrenOf_appendRoot]; simp only [reduceCtorEq, false_and, if_false]
+    exact h.firstChild p
+  · rw [appendRoot_apply, hSib]
+    simp only [reduceCtorEq, false_and, if_false, true_and]
+    by_cases hx : cdt.parentOf x = none ∧ (x = r ∨ x ∈ cdt.firstChain)
+    · rw [if_pos hx]
+      rcases hx.2 with rfl | hxD
+      · have : ¬ some x = t := fun e => hrD (htD x e.symm)
+        rw [if_neg this, h.none_of_not_mentions hr, SlotList.succIn_append, if_neg hrD]
+        simp [SlotList.succIn]
+      · rw [SlotList.succIn_append, if_pos hxD]
+        by_cases htx : t = some x
+        · rw [if_pos htx.symm, (SlotList.succIn_eq_none_iff hDnd0 hxD).mpr (ht ▸ htx)]; rfl
+        · rw [if_neg (fun e => htx e.symm), h.next, siblingsOf_of_root hx.1]
+          have hRx : cdt.rootChain x = cdt.firstChain := rootChain_of_mem_firstChain h.rootsNodup hxD
+          rw [hRx]
+          have hne : SlotList.succIn cdt.firstChain x ≠ none := fun e =>
+            htx (by rw [ht]; exact ((SlotList.succIn_eq_none_iff hDnd0 hxD).mp e))
+          cases hS : SlotList.succIn cdt.firstChain x with
+          | none => exact absurd hS hne
+          | some y => rfl
+    · rw [if_neg hx]
+      have htx : ¬ some x = t := fun e => hx ⟨hDpl x (htD x e.symm), .inr (htD x e.symm)⟩
+      rw [if_neg htx]; exact h.next x
+  · rw [appendRoot_apply, hSib]
+    simp only [true_and]
+    by_cases hx : cdt.parentOf x = none ∧ (x = r ∨ x ∈ cdt.firstChain)
+    · rw [if_pos hx]
+      rcases hx.2 with rfl | hxD
+      · rw [SlotList.predIn_append, if_neg hrD, SlotList.predAux_of_head _ rfl, ← ht]
+        cases t with
+        | none => simp only [Option.isSome_none, and_false, if_false, reduceCtorEq]
+                  exact h.none_of_not_mentions hr .prev
+        | some y => simp
+      · have hxr : x ≠ r := fun e => hrD (e ▸ hxD)
+        simp only [hxr, false_and, if_false, reduceCtorEq]
+        rw [SlotList.predIn_append, if_pos hxD, h.prev, siblingsOf_of_root hx.1]
+        rw [rootChain_of_mem_firstChain h.rootsNodup hxD]
+    · rw [if_neg hx]
+      have hxr : x ≠ r := fun e => hx ⟨e ▸ hrN, .inl e⟩
+      simp only [hxr, false_and, if_false, reduceCtorEq]
+      exact h.prev x
 
 end LinksAgree
 
@@ -809,15 +1330,6 @@ def unlinkChild (L : LinkView) (n : SlotRef) : LinkView :=
     | some y => L1.set y .prev pr
     | none => L1
   ((L2.set n .parent none).set n .next none).set n .prev none
-
-/-- **Clear a slot's parent and sibling links**: an orphaned child of a removed node. -/
-def orphan (L : LinkView) (c : SlotRef) : LinkView :=
-  ((L.set c .parent none).set c .next none).set c .prev none
-
-/-- **The link writes of `removeNode n`**, given `n`'s children `l`: unlink `n`,
-orphan each child, and clear `n`'s first-child link. -/
-def removeNodeLinks (L : LinkView) (n : SlotRef) (l : List SlotRef) : LinkView :=
-  (l.foldl orphan (L.unlinkChild n)).set n .firstChild none
 
 theorem unlinkChild_parent (L : LinkView) (n r : SlotRef) :
     L.unlinkChild n r .parent = if r = n then none else L r .parent := by
@@ -865,265 +1377,509 @@ theorem unlinkChild_target {L : LinkView} {n r : SlotRef} {f : LinkField} {x : S
     · cases h
     · split at h <;> exact ⟨_, _, h⟩
 
-theorem foldl_orphan (l : List SlotRef) :
-    ∀ (L : LinkView) (r : SlotRef) (f : LinkField),
-      l.foldl orphan L r f = if f ≠ .firstChild ∧ r ∈ l then none else L r f := by
-  induction l with
-  | nil => intro L r f; simp
-  | cons c l ih =>
-    intro L r f
-    rw [List.foldl_cons, ih]
-    by_cases hr : r ∈ l
-    · cases f <;> simp [hr, orphan, set]
-    · by_cases hc : r = c
-      · subst hc; cases f <;> simp [orphan, set, hr]
-      · cases f <;> simp [orphan, set, hr, hc]
+/-- **Clear all four links of `n`.** -/
+def clearLinks (L : LinkView) (n : SlotRef) : LinkView :=
+  (((L.set n .parent none).set n .firstChild none).set n .next none).set n .prev none
 
-theorem orphan_apply (L : LinkView) (c r : SlotRef) (f : LinkField) :
-    L.orphan c r f = if r = c ∧ f ≠ .firstChild then none else L r f := by
-  unfold orphan; cases f <;> by_cases h : r = c <;> simp [set, h]
-
-/-- Linking `c` overwrites every link orphaning it cleared. -/
-theorem orphan_addChild (L : LinkView) (u c : SlotRef) :
-    (L.orphan c).addChild u c = L.addChild u c := by
-  funext r f
-  have hu : (L.orphan c) u .firstChild = L u .firstChild := by rw [orphan_apply]; simp
-  cases f
-  · rw [addChild_parent, addChild_parent, orphan_apply]; by_cases hr : r = c <;> simp [hr]
-  · rw [addChild_firstChild, addChild_firstChild, orphan_apply]; simp
-  · rw [addChild_next, addChild_next, hu, orphan_apply]; by_cases hr : r = c <;> simp [hr]
-  · rw [addChild_prev, addChild_prev, hu, orphan_apply]; by_cases hr : r = c <;> simp [hr]
-
-/-- Orphaning a slot other than `c` and `u`'s first child commutes with linking `c` under `u`. -/
-theorem orphan_addChild_comm (L : LinkView) {u c x : SlotRef} (hxc : x ≠ c)
-    (hxf : L u .firstChild ≠ some x) :
-    (L.orphan x).addChild u c = (L.addChild u c).orphan x := by
-  funext r f
-  have hu : (L.orphan x) u .firstChild = L u .firstChild := by rw [orphan_apply]; simp
-  cases f
-  · rw [addChild_parent, orphan_apply, orphan_apply, addChild_parent]
-    by_cases hr : r = c
-    · have : r ≠ x := fun e => hxc (e ▸ hr ▸ rfl)
-      simp [hr, hxc.symm]
-    · simp [hr]
-  · rw [addChild_firstChild, orphan_apply, orphan_apply, addChild_firstChild]; simp
-  · rw [addChild_next, hu, orphan_apply, orphan_apply, addChild_next]
-    by_cases hr : r = c
-    · simp [hr, Ne.symm hxc]
-    · simp [hr]
-  · rw [addChild_prev, hu, orphan_apply, orphan_apply, addChild_prev]
-    by_cases hrx : r = x
-    · subst hrx; simp [hxf, hxc]
-    · simp [hrx]
-
-theorem foldl_orphan_addChild_comm {u c : SlotRef} :
-    ∀ (l : List SlotRef) (M : LinkView), c ∉ l → (∀ x ∈ l, M u .firstChild ≠ some x) →
-      l.foldl orphan (M.addChild u c) = (l.foldl orphan M).addChild u c
-  | [], _, _, _ => rfl
-  | x :: l, M, hc, hx => by
-    simp only [List.foldl_cons]
-    have hxc : x ≠ c := fun e => hc (e ▸ List.mem_cons_self ..)
-    rw [← orphan_addChild_comm M hxc (hx x (List.mem_cons_self ..))]
-    refine foldl_orphan_addChild_comm l _ (fun h => hc (List.mem_cons_of_mem _ h)) (fun y hy => ?_)
-    rw [orphan_apply]; simp only [ne_eq, not_true_eq_false, and_false, if_false]
-    exact hx y (List.mem_cons_of_mem _ hy)
-
-/-- **Linking each slot of `l` under `u` overwrites orphaning them first**, when
-`l` has no duplicates and none is `u`'s first child to start with. -/
-theorem foldl_addChild_foldl_orphan {u : SlotRef} :
-    ∀ (l : List SlotRef) (M : LinkView), l.Nodup → (∀ x ∈ l, M u .firstChild ≠ some x) →
-      l.foldl (fun L c => L.addChild u c) (l.foldl orphan M) =
-        l.foldl (fun L c => L.addChild u c) M
-  | [], _, _, _ => rfl
-  | c :: l, M, hnd, hx => by
-    have ⟨hcL, hnd'⟩ := List.nodup_cons.mp hnd
-    simp only [List.foldl_cons]
-    have hM : (M.orphan c) u .firstChild = M u .firstChild := by
-      rw [orphan_apply]; simp
-    rw [← foldl_orphan_addChild_comm l (M.orphan c) hcL (fun y hy => hM ▸ hx y (List.mem_cons_of_mem _ hy)),
-      orphan_addChild]
-    refine foldl_addChild_foldl_orphan l _ hnd' (fun y hy => ?_)
-    rw [addChild_firstChild, if_pos rfl]
-    exact fun e => hcL (Option.some.inj e ▸ hy)
-
-/-- Setting another slot's first-child link commutes with linking under `u`. -/
-theorem set_firstChild_addChild_comm (L : LinkView) {n u : SlotRef} (h : n ≠ u) (c : SlotRef)
-    (v : Option SlotRef) :
-    (L.set n .firstChild v).addChild u c = (L.addChild u c).set n .firstChild v := by
-  funext r f
-  have hu : (L.set n .firstChild v) u .firstChild = L u .firstChild := L.set_ne_slot _ _ _ h.symm
-  cases f
-  · rw [addChild_parent, set_ne_field _ _ _ _ (by decide), set_ne_field _ _ _ _ (by decide),
-      addChild_parent]
-  · rw [addChild_firstChild]
-    by_cases hr : r = u
-    · subst hr; rw [if_pos rfl, set_ne_slot _ _ _ _ h.symm, addChild_firstChild, if_pos rfl]
-    · rw [if_neg hr]
-      by_cases hn : r = n
-      · subst hn; simp
-      · rw [set_ne_slot _ _ _ _ hn, set_ne_slot _ _ _ _ hn, addChild_firstChild, if_neg hr]
-  · rw [addChild_next, hu, set_ne_field _ _ _ _ (by decide), set_ne_field _ _ _ _ (by decide),
-      addChild_next]
-  · rw [addChild_prev, hu, set_ne_field _ _ _ _ (by decide), set_ne_field _ _ _ _ (by decide),
-      addChild_prev]
-
-theorem set_firstChild_foldl_addChild_comm {n u : SlotRef} (h : n ≠ u) (v : Option SlotRef) :
-    ∀ (l : List SlotRef) (M : LinkView),
-      l.foldl (fun L c => L.addChild u c) (M.set n .firstChild v) =
-        (l.foldl (fun L c => L.addChild u c) M).set n .firstChild v
-  | [], _ => rfl
-  | c :: l, M => by
-    simp only [List.foldl_cons]
-    rw [set_firstChild_addChild_comm M h c v]
-    exact set_firstChild_foldl_addChild_comm h v l _
+theorem clearLinks_apply (L : LinkView) (n r : SlotRef) (f : LinkField) :
+    L.clearLinks n r f = if r = n then none else L r f := by
+  unfold clearLinks
+  by_cases h : r = n
+  · subst h; cases f <;> simp [set]
+  · simp [set, h]
 
 end LinkView
 
-namespace LinksAgree
 
-open CapDerivationTree LinkView
+/-! ### The tree after a splice
 
-variable {L : LinkView} {cdt : CapDerivationTree}
+`spliceNode n` puts `n`'s children in `n`'s place among its siblings, so each
+slot's siblings after it are its siblings before it, with `n` replaced by its
+children wherever `n` was. -/
 
-/-- **Removing a node**, with `removeNodeLinks`' writes over its children,
-keeps the links agreeing. -/
-theorem removeNode (h : LinksAgree L cdt) (n : SlotRef) :
-    LinksAgree (L.removeNodeLinks n (cdt.childrenOf n)) (cdt.removeNode n) := by
-  have hU := h.childrenUnique
-  have hMem : ∀ p r, r ∈ cdt.childrenOf p ↔ cdt.parentOf r = some p := fun p r =>
-    mem_childrenOf_iff_parentOf hU p r
-  have hNd : ∀ p, (cdt.childrenOf p).Nodup := childrenOf_nodup hU
-  refine ⟨childrenUnique_sublist hU (removeNode_sublist cdt n), fun r => ?_, fun q => ?_,
-    fun r => ?_, fun r => ?_⟩
-  · simp only [removeNodeLinks]
-    rw [set_ne_field _ _ _ _ (by decide), foldl_orphan, unlinkChild_parent,
-      parentOf_removeNode hU]
-    by_cases h1 : r = n
-    · simp [h1]
-    · by_cases h2 : cdt.parentOf r = some n
-      · simp [h1, h2, (hMem n r).mpr h2]
-      · have : r ∉ cdt.childrenOf n := fun e => h2 ((hMem n r).mp e)
-        simp [h1, h2, this, h.parent r]
-  · simp only [removeNodeLinks]
-    rw [childrenOf_removeNode]
+namespace CapDerivationTree
+
+/-- The children of `q` an edge list names, in order. -/
+def kidsIn (es : List CapDerivationEdge) (q : SlotRef) : List SlotRef :=
+  (es.filter (·.isParentOf q)).map (·.child)
+
+theorem childrenOf_eq_kidsIn (cdt : CapDerivationTree) (q : SlotRef) :
+    cdt.childrenOf q = kidsIn cdt.edges q := rfl
+
+theorem kidsIn_append (l₁ l₂ : List CapDerivationEdge) (q : SlotRef) :
+    kidsIn (l₁ ++ l₂) q = kidsIn l₁ q ++ kidsIn l₂ q := by
+  simp [kidsIn, List.filter_append]
+
+theorem kidsIn_cons (e : CapDerivationEdge) (l : List CapDerivationEdge) (q : SlotRef) :
+    kidsIn (e :: l) q = if e.parent = q then e.child :: kidsIn l q else kidsIn l q := by
+  unfold kidsIn
+  by_cases h : e.parent = q
+  · simp [CapDerivationEdge.isParentOf, h]
+  · simp [CapDerivationEdge.isParentOf, h]
+
+theorem kidsIn_withoutNodeEdges_self (l : List CapDerivationEdge) (n : SlotRef) :
+    kidsIn (withoutNodeEdges l n) n = [] := by
+  unfold kidsIn withoutNodeEdges
+  rw [List.filter_filter, List.filter_eq_nil_iff.mpr]
+  · rfl
+  · intro e _
+    simp [CapDerivationEdge.isParentOf, CapDerivationEdge.isChildOf]
+    intro h; exact absurd h
+
+theorem kidsIn_withoutNodeEdges {l : List CapDerivationEdge} {n q : SlotRef} (hq : q ≠ n)
+    (hl : ∀ e ∈ l, e.child ≠ n) : kidsIn (withoutNodeEdges l n) q = kidsIn l q := by
+  unfold kidsIn withoutNodeEdges
+  rw [List.filter_filter]
+  congr 1
+  apply List.filter_congr
+  intro e he
+  have hc := hl e he
+  by_cases hp : e.parent = q
+  · have : e.parent ≠ n := fun h => hq (hp ▸ h)
+    simp [CapDerivationEdge.isParentOf, CapDerivationEdge.isChildOf, hp, hq, hc]
+  · simp [CapDerivationEdge.isParentOf, hp]
+
+theorem kidsIn_reparentEdges (u : SlotRef) (l : List CapDerivationEdge) (q : SlotRef) :
+    kidsIn (reparentEdges u l) q = if u = q then l.map (·.child) else [] := by
+  unfold kidsIn reparentEdges
+  by_cases h : u = q
+  · subst h
+    simp only [CapDerivationEdge.isParentOf, List.filter_map, Function.comp_def, decide_true,
+      if_true, List.map_map]
+    rw [List.filter_eq_self.mpr (fun _ _ => rfl)]
+  · rw [if_neg h, List.filter_eq_nil_iff.mpr]
+    · rfl
+    · intro e he
+      simp only [List.mem_map] at he
+      obtain ⟨e', -, rfl⟩ := he
+      simp [CapDerivationEdge.isParentOf, h]
+
+theorem mem_kidsIn {l : List CapDerivationEdge} {q x : SlotRef} :
+    x ∈ kidsIn l q ↔ ∃ e ∈ l, e.parent = q ∧ e.child = x := by
+  simp only [kidsIn, List.mem_map, List.mem_filter, CapDerivationEdge.isParentOf,
+    decide_eq_true_eq, and_assoc]
+
+/-- The tree's first parent edge of `n`, when it has one: the edges split
+around it, none before it naming `n` as child. -/
+theorem find_parent_split {cdt : CapDerivationTree} {n : SlotRef} {up : CapDerivationEdge}
+    (hF : cdt.edges.find? (·.isChildOf n) = some up) :
+    up.child = n ∧ ∃ pre post, cdt.edges = pre ++ up :: post ∧ ∀ e ∈ pre, e.child ≠ n := by
+  obtain ⟨hu, pre, post, he, hpre⟩ := List.find?_eq_some_iff_append.mp hF
+  refine ⟨by simpa [CapDerivationEdge.isChildOf] using hu, pre, post, he, fun e he' => ?_⟩
+  have := hpre e he'
+  simpa [CapDerivationEdge.isChildOf] using this
+
+/-- Under unique children, nothing after a slot's parent edge names it as child. -/
+theorem post_child_ne {cdt : CapDerivationTree} (hU : cdt.childrenUnique) {n : SlotRef}
+    {pre post : List CapDerivationEdge} {up : CapDerivationEdge} (he : cdt.edges = pre ++ up :: post)
+    (hu : up.child = n) : ∀ e ∈ post, e.child ≠ n := by
+  intro e he' hc
+  unfold childrenUnique at hU
+  rw [he, List.map_append, List.map_cons, List.nodup_append] at hU
+  have := (List.nodup_cons.mp hU.2.1).1
+  exact this (List.mem_map.mpr ⟨e, he', hc.trans hu.symm⟩)
+
+theorem parentOf_eq_of_find {cdt : CapDerivationTree} {n : SlotRef} {up : CapDerivationEdge}
+    (hF : cdt.edges.find? (·.isChildOf n) = some up) : cdt.parentOf n = some up.parent := by
+  unfold parentOf; rw [hF]; rfl
+
+theorem not_mem_childrenOf_self {cdt : CapDerivationTree} (hU : cdt.childrenUnique) {n : SlotRef}
+    (hs : cdt.parentOf n ≠ some n) : n ∉ cdt.childrenOf n := fun h =>
+  hs ((mem_childrenOf_iff_parentOf hU n n).mp h)
+
+/-- **The children after a splice**: none for `n`; for every other slot, its
+children with `n` replaced in place by `n`'s children. -/
+theorem childrenOf_spliceNode {cdt : CapDerivationTree} (hU : cdt.childrenUnique) {n : SlotRef}
+    (hs : cdt.parentOf n ≠ some n) (q : SlotRef) :
+    (cdt.spliceNode n).childrenOf q =
+      if q = n then [] else replaceSlot n (cdt.childrenOf n) (cdt.childrenOf q) := by
+  rw [childrenOf_eq_kidsIn, spliceNode_edges_eq]
+  unfold spliceEdges
+  cases hF : cdt.edges.find? (·.isChildOf n) with
+  | none =>
+    have hno : ∀ e ∈ cdt.edges, e.child ≠ n := fun e he hc => by
+      have := List.find?_eq_none.mp hF e he
+      simp [CapDerivationEdge.isChildOf, hc] at this
+    rw [spliceEdgesFrom_of_no_parent _ _ _ hno]
+    split
+    · next hq => subst hq; exact kidsIn_withoutNodeEdges_self _ _
+    · next hq =>
+      rw [kidsIn_withoutNodeEdges hq hno, replaceSlot_of_not_mem]
+      · rfl
+      · intro hm
+        obtain ⟨e, he, -, hc⟩ := mem_kidsIn.mp hm
+        exact hno e he hc
+  | some up =>
+    obtain ⟨hu, pre, post, he, hpre⟩ := find_parent_split hF
+    have hpost := post_child_ne hU he hu
+    have hP := parentOf_eq_of_find hF
+    have hun : up.parent ≠ n := fun e => hs (by rw [hP, e])
+    have hpreN : n ∉ kidsIn pre q := fun hm => by
+      obtain ⟨e, he', -, hc⟩ := mem_kidsIn.mp hm; exact hpre e he' hc
+    have hpn : n ∉ kidsIn post q := fun hm => by
+      obtain ⟨e, he', -, hc⟩ := mem_kidsIn.mp hm; exact hpost e he' hc
+    rw [he, spliceEdgesFrom_split _ _ pre up post hpre hu, kidsIn_append, kidsIn_append,
+      kidsIn_reparentEdges, ← he]
     by_cases hq : q = n
-    · subst hq; simp
-    · rw [set_ne_slot _ _ _ _ hq, foldl_orphan, if_neg (by simp), unlinkChild_firstChild,
-        if_neg hq, SlotList.head_drop (hNd q), h.prev n, h.parent n, h.next n, h.firstChild q]
-      cases hP : cdt.parentOf n with
-      | none =>
-        have hh : (cdt.childrenOf q).head? ≠ some n := fun e => by
-          have := (hMem q n).mp (List.mem_of_mem_head? e); rw [hP] at this; cases this
-        simp [hh]
-      | some p =>
-        by_cases hpq : p = q
-        · subst hpq
-          have hm : n ∈ cdt.childrenOf p := (hMem p n).mpr hP
-          by_cases hh : (cdt.childrenOf p).head? = some n
-          · simp [hh, (SlotList.predIn_eq_none_iff hm).mpr hh]
-          · have : SlotList.predIn (cdt.childrenOf p) n ≠ none := fun e =>
-              hh ((SlotList.predIn_eq_none_iff hm).mp e)
-            simp [hh, this]
-        · have hh : (cdt.childrenOf q).head? ≠ some n := fun e => by
-            have := (hMem q n).mp (List.mem_of_mem_head? e); rw [hP] at this
-            exact hpq (Option.some.inj this)
-          simp [hh, hpq]
-  · simp only [removeNodeLinks]
-    rw [set_ne_field _ _ _ _ (by decide), foldl_orphan, unlinkChild_next, parentOf_removeNode hU]
-    by_cases h1 : r = n
-    · simp [h1]
-    · by_cases h2 : r ∈ cdt.childrenOf n
-      · simp [h2, (hMem n r).mp h2]
-      · have h2' : cdt.parentOf r ≠ some n := fun e => h2 ((hMem n r).mpr e)
-        simp only [h1, h2, h2', and_false, or_self, if_false]
-        rw [h.prev n, h.next n, h.next r]
-        cases hR : cdt.parentOf r with
-        | none =>
-          have : ¬ ((cdt.parentOf n).bind fun p => SlotList.predIn (cdt.childrenOf p) n) = some r := by
-            cases cdt.parentOf n with
-            | none => simp
-            | some p =>
-              intro e
-              have := (hMem p r).mp (SlotList.predIn_mem e); rw [hR] at this; cases this
-          simp [this]
-        | some p =>
-          have hpn : p ≠ n := fun e => h2' (e ▸ hR)
-          simp only [Option.bind_some, childrenOf_removeNode, if_neg hpn]
-          rw [SlotList.succIn_drop (hNd p) h1]
-          by_cases hs : SlotList.succIn (cdt.childrenOf p) r = some n
-          · have hP : cdt.parentOf n = some p := (hMem p n).mp (SlotList.succIn_mem hs)
-            rw [hP]; simp only [Option.bind_some]
-            rw [if_pos ((SlotList.succIn_eq_iff_predIn (hNd p)).mp hs), if_pos hs]
-          · rw [if_neg hs]
-            have : ¬ ((cdt.parentOf n).bind fun p => SlotList.predIn (cdt.childrenOf p) n) = some r := by
-              cases cdt.parentOf n with
-              | none => simp
-              | some p' =>
-                intro e
-                simp only [Option.bind_some] at e
-                have := (hMem p' r).mp (SlotList.predIn_mem e); rw [hR] at this
-                obtain rfl := Option.some.inj this
-                exact hs ((SlotList.succIn_eq_iff_predIn (hNd p)).mpr e)
-            rw [if_neg this]
-  · simp only [removeNodeLinks]
-    rw [set_ne_field _ _ _ _ (by decide), foldl_orphan, unlinkChild_prev, parentOf_removeNode hU]
-    by_cases h1 : r = n
-    · simp [h1]
-    · by_cases h2 : r ∈ cdt.childrenOf n
-      · simp [h2, (hMem n r).mp h2]
-      · have h2' : cdt.parentOf r ≠ some n := fun e => h2 ((hMem n r).mpr e)
-        simp only [h1, h2, h2', and_false, or_self, if_false]
-        rw [h.prev n, h.next n, h.prev r]
-        cases hR : cdt.parentOf r with
-        | none =>
-          have : ¬ ((cdt.parentOf n).bind fun p => SlotList.succIn (cdt.childrenOf p) n) = some r := by
-            cases cdt.parentOf n with
-            | none => simp
-            | some p =>
-              intro e
-              have := (hMem p r).mp (SlotList.succIn_mem e); rw [hR] at this; cases this
-          simp [this]
-        | some p =>
-          have hpn : p ≠ n := fun e => h2' (e ▸ hR)
-          simp only [Option.bind_some, childrenOf_removeNode, if_neg hpn]
-          rw [SlotList.predIn_drop (hNd p) h1]
-          by_cases hs : SlotList.predIn (cdt.childrenOf p) r = some n
-          · have hP : cdt.parentOf n = some p := (hMem p n).mp (SlotList.predIn_mem hs)
-            rw [hP]; simp only [Option.bind_some]
-            rw [if_pos ((SlotList.succIn_eq_iff_predIn (hNd p)).mpr hs), if_pos hs]
-          · rw [if_neg hs]
-            have : ¬ ((cdt.parentOf n).bind fun p => SlotList.succIn (cdt.childrenOf p) n) = some r := by
-              cases cdt.parentOf n with
-              | none => simp
-              | some p' =>
-                intro e
-                simp only [Option.bind_some] at e
-                have := (hMem p' r).mp (SlotList.succIn_mem e); rw [hR] at this
-                obtain rfl := Option.some.inj this
-                exact hs ((SlotList.succIn_eq_iff_predIn (hNd p)).mp e)
-            rw [if_neg this]
+    · rw [hq, if_pos rfl, kidsIn_withoutNodeEdges_self, kidsIn_withoutNodeEdges_self, if_neg hun]; rfl
+    · rw [if_neg hq, kidsIn_withoutNodeEdges hq hpre, kidsIn_withoutNodeEdges hq hpost,
+        childrenOf_eq_kidsIn cdt q, he, kidsIn_append, kidsIn_cons, replaceSlot_append,
+        replaceSlot_of_not_mem hpreN, ← he]
+      by_cases hq' : up.parent = q
+      · rw [if_pos hq', if_pos hq', hu, replaceSlot_cons_self, replaceSlot_of_not_mem hpn]
+        simp [childrenOf, kidsIn, List.append_assoc]
+      · rw [if_neg hq', if_neg hq', replaceSlot_of_not_mem hpn]; simp
 
-end LinksAgree
+
+/-- A run of edges none of which names `n` as child, with `n`'s child edges
+taken out, then put back, is the run up to order. -/
+private theorem withoutNode_perm {l : List CapDerivationEdge} {n : SlotRef}
+    (hl : ∀ e ∈ l, e.child ≠ n) :
+    ((withoutNodeEdges l n).map (·.child) ++ (l.filter (·.isParentOf n)).map (·.child)).Perm
+      (l.map (·.child)) := by
+  have e : withoutNodeEdges l n = l.filter (fun e => !e.isParentOf n) := by
+    unfold withoutNodeEdges
+    apply List.filter_congr
+    intro x hx
+    have : x.isChildOf n = false := by simp [CapDerivationEdge.isChildOf, hl x hx]
+    simp [this]
+  rw [e, ← List.map_append]
+  exact (List.perm_append_comm.trans (List.filter_append_perm _ l)).map _
+
+theorem reparentEdges_map_child (u : SlotRef) (l : List CapDerivationEdge) :
+    (reparentEdges u l).map (·.child) = l.map (·.child) := by
+  simp [reparentEdges, Function.comp_def]
+
+/-- **The splice keeps children unique.** -/
+theorem childrenUnique_spliceNode {cdt : CapDerivationTree} (hU : cdt.childrenUnique)
+    {n : SlotRef} (hs : cdt.parentOf n ≠ some n) : (cdt.spliceNode n).childrenUnique := by
+  unfold childrenUnique; rw [spliceNode_edges_eq]
+  unfold spliceEdges
+  cases hF : cdt.edges.find? (·.isChildOf n) with
+  | none =>
+    have hno : ∀ e ∈ cdt.edges, e.child ≠ n := fun e he hc => by
+      have := List.find?_eq_none.mp hF e he
+      simp [CapDerivationEdge.isChildOf, hc] at this
+    rw [spliceEdgesFrom_of_no_parent _ _ _ hno]
+    exact hU.sublist (List.filter_sublist.map _)
+  | some up =>
+    obtain ⟨hu, pre, post, he, hpre⟩ := find_parent_split hF
+    have hpost := post_child_ne hU he hu
+    have hun : up.parent ≠ n := fun e => hs (by rw [parentOf_eq_of_find hF, e])
+    have hK : cdt.edges.filter (·.isParentOf n) =
+        pre.filter (·.isParentOf n) ++ post.filter (·.isParentOf n) := by
+      rw [he, List.filter_append, List.filter_cons]
+      have : up.isParentOf n = false := by simp [CapDerivationEdge.isParentOf, hun]
+      simp [this]
+    rw [he, spliceEdgesFrom_split _ _ pre up post hpre hu, ← he, hK]
+    unfold childrenUnique at hU
+    rw [he, List.map_append, List.map_cons, hu] at hU
+    have hU2 := (List.perm_middle.nodup_iff.mp hU)
+    have hU3 := (List.nodup_cons.mp hU2).2
+    refine (List.Perm.nodup_iff ?_).mpr hU3
+    simp only [List.map_append, reparentEdges_map_child]
+    have h1 := withoutNode_perm hpre
+    have h2 := withoutNode_perm hpost
+    have : ((withoutNodeEdges pre n).map (·.child) ++ ((pre.filter (·.isParentOf n)).map (·.child) ++
+        (post.filter (·.isParentOf n)).map (·.child)) ++ (withoutNodeEdges post n).map (·.child)) =
+        ((withoutNodeEdges pre n).map (·.child) ++ (pre.filter (·.isParentOf n)).map (·.child)) ++
+        ((post.filter (·.isParentOf n)).map (·.child) ++ (withoutNodeEdges post n).map (·.child)) := by
+      simp [List.append_assoc]
+    rw [this]
+    exact h1.append (List.perm_append_comm.trans h2)
+
+/-- **The parent after a splice**: none for `n`; `n`'s parent for its children;
+every other slot's own. -/
+theorem parentOf_spliceNode {cdt : CapDerivationTree} (hU : cdt.childrenUnique) {n : SlotRef}
+    (hs : cdt.parentOf n ≠ some n) (r : SlotRef) :
+    (cdt.spliceNode n).parentOf r =
+      if r = n then none else if r ∈ cdt.childrenOf n then cdt.parentOf n else cdt.parentOf r := by
+  have hU' := childrenUnique_spliceNode hU hs
+  have hnK := not_mem_childrenOf_self hU hs
+  apply Option.ext
+  intro p
+  rw [← mem_childrenOf_iff_parentOf hU', childrenOf_spliceNode hU hs]
+  by_cases hpn : p = n
+  · rw [hpn, if_pos rfl]
+    simp only [List.not_mem_nil, false_iff]
+    intro e
+    split at e
+    · cases e
+    · split at e
+      · exact hs e
+      · next hr => exact hr ((mem_childrenOf_iff_parentOf hU _ _).mpr e)
+  · rw [if_neg hpn, mem_replaceSlot]
+    by_cases hrn : r = n
+    · subst hrn
+      simp only [if_true, ne_eq, not_true_eq_false, and_false, false_or, reduceCtorEq, iff_false,
+        not_and]
+      intro _ h; exact hnK h
+    · rw [if_neg hrn]
+      by_cases hrK : r ∈ cdt.childrenOf n
+      · rw [if_pos hrK, mem_childrenOf_iff_parentOf hU, mem_childrenOf_iff_parentOf hU,
+          (mem_childrenOf_iff_parentOf hU _ _).mp hrK]
+        constructor
+        · rintro (⟨h, -⟩ | ⟨h, -⟩)
+          · exact absurd (Option.some.inj h) (Ne.symm hpn)
+          · exact h
+        · intro h; exact .inr ⟨h, hrK⟩
+      · rw [if_neg hrK, mem_childrenOf_iff_parentOf hU]
+        constructor
+        · rintro (⟨h, -⟩ | ⟨-, h⟩)
+          · exact h
+          · exact absurd h hrK
+        · intro h; exact .inl ⟨h, hrn⟩
+
+/-- Whether `n` has a parent edge is whether it has a parent. -/
+theorem hasParentEdge_eq_true_iff (cdt : CapDerivationTree) (n : SlotRef) :
+    hasParentEdge cdt.edges n = true ↔ cdt.parentOf n ≠ none := by
+  rw [ne_eq, parentOf_eq_none_iff, ← hasParentEdge_eq_false_iff]
+  cases hasParentEdge cdt.edges n <;> simp
+
+/-- **The root chains after a splice**: unchanged when `n` has a parent; the
+chains `spliceRootChains` lays when it has none. -/
+theorem spliceNode_rootChains_of_parent {cdt : CapDerivationTree} (hR : cdt.rootsParentless)
+    {n : SlotRef} (hp : cdt.parentOf n ≠ none) :
+    (cdt.spliceNode n).rootChains = cdt.rootChains := by
+  rw [spliceNode_rootChains, if_pos ((hasParentEdge_eq_true_iff cdt n).mpr hp)]
+  conv => rhs; rw [← List.map_id cdt.rootChains]
+  apply List.map_congr_left
+  intro c hc
+  exact replaceSlot_of_not_mem fun hn => hp (hR n (List.mem_flatten.mpr ⟨c, hc, hn⟩))
+
+theorem spliceNode_rootChains_of_root {cdt : CapDerivationTree} {n : SlotRef}
+    (hp : cdt.parentOf n = none) :
+    (cdt.spliceNode n).rootChains = spliceRootChains cdt.rootChains n (cdt.childrenOf n) := by
+  rw [spliceNode_rootChains, if_neg]
+  rw [hasParentEdge_eq_true_iff]; exact fun h => h hp
+
+theorem flatten_map_replaceSlot (n : SlotRef) (m : List SlotRef) :
+    ∀ cs : List (List SlotRef), (cs.map (replaceSlot n m)).flatten = replaceSlot n m cs.flatten
+  | [] => rfl
+  | c :: cs => by
+    rw [List.map_cons, List.flatten_cons, List.flatten_cons, replaceSlot_append,
+      flatten_map_replaceSlot n m cs]
+
+/-- Replacing a member of a duplicate-free list by a duplicate-free run that
+shares nothing with it keeps it duplicate-free, and splits it around the run. -/
+theorem replaceSlot_split {l : List SlotRef} {n : SlotRef} (hnd : l.Nodup) (hn : n ∈ l) :
+    ∃ a b, l = a ++ n :: b ∧ n ∉ a ∧ n ∉ b ∧ ∀ m, replaceSlot n m l = a ++ m ++ b := by
+  obtain ⟨a, b, rfl⟩ := List.append_of_mem hn
+  have hnd' := List.perm_middle.nodup_iff.mp hnd
+  have hna : n ∉ a := fun h => (List.nodup_cons.mp hnd').1 (List.mem_append_left _ h)
+  have hnb : n ∉ b := fun h => (List.nodup_cons.mp hnd').1 (List.mem_append_right _ h)
+  refine ⟨a, b, rfl, hna, hnb, fun m => ?_⟩
+  rw [replaceSlot_append, replaceSlot_cons_self, replaceSlot_of_not_mem hna,
+    replaceSlot_of_not_mem hnb, List.append_assoc]
+
+theorem replaceSlot_nodup {l m : List SlotRef} {n : SlotRef} (hnd : l.Nodup) (hm : m.Nodup)
+    (hdis : ∀ x ∈ m, x ∉ l) : (replaceSlot n m l).Nodup := by
+  by_cases hn : n ∈ l
+  · obtain ⟨a, b, rfl, -, -, e⟩ := replaceSlot_split hnd hn
+    rw [e]
+    have hab := (List.nodup_cons.mp (List.perm_middle.nodup_iff.mp hnd)).2
+    have hp : (a ++ m ++ b).Perm (m ++ (a ++ b)) := by
+      have := (List.perm_append_comm (l₁ := a) (l₂ := m)).append_right b
+      simpa [List.append_assoc] using this
+    refine hp.nodup_iff.mpr (List.nodup_append.mpr ⟨hm, hab, fun x hx y hy e => ?_⟩)
+    subst e
+    exact hdis x hx (by
+      rcases List.mem_append.mp hy with hy | hy
+      · exact List.mem_append_left _ hy
+      · exact List.mem_append_right _ (List.mem_cons_of_mem _ hy))
+  · rw [replaceSlot_of_not_mem hn]; exact hnd
+
+
+/-- `n`'s siblings with `n` replaced, in place, by its children: the siblings of
+each of them after the splice. -/
+noncomputable def spliceSiblings (cdt : CapDerivationTree) (n : SlotRef) : List SlotRef :=
+  replaceSlot n (cdt.childrenOf n) (cdt.siblingsOf n)
+
+/-- A child of `n` is in no root chain. -/
+theorem child_not_root {cdt : CapDerivationTree} (hU : cdt.childrenUnique) (hR : cdt.rootsParentless)
+    {n x : SlotRef} (hx : x ∈ cdt.childrenOf n) : x ∉ cdt.rootChains.flatten := fun hm => by
+  have := hR x hm
+  rw [(mem_childrenOf_iff_parentOf hU n x).mp hx] at this; cases this
+
+theorem rootsNodup_spliceNode {cdt : CapDerivationTree} (hU : cdt.childrenUnique)
+    (hnd : cdt.rootChains.flatten.Nodup) (hR : cdt.rootsParentless) (n : SlotRef) :
+    (cdt.spliceNode n).rootChains.flatten.Nodup := by
+  have hKd : ∀ x ∈ cdt.childrenOf n, x ∉ cdt.rootChains.flatten := fun x hx =>
+    child_not_root hU hR hx
+  by_cases hp : cdt.parentOf n = none
+  · rw [spliceNode_rootChains_of_root hp]
+    unfold spliceRootChains
+    split
+    · rw [flatten_map_replaceSlot]
+      exact replaceSlot_nodup hnd (childrenOf_nodup hU n) hKd
+    · split
+      · exact hnd
+      · rw [List.flatten_append, List.flatten_singleton]
+        exact List.nodup_append.mpr ⟨hnd, childrenOf_nodup hU n,
+          fun a ha b hb e => hKd b hb (e ▸ ha)⟩
+  · rw [spliceNode_rootChains_of_parent hR hp]; exact hnd
+
+theorem rootsParentless_spliceNode {cdt : CapDerivationTree} (hU : cdt.childrenUnique)
+    (hR : cdt.rootsParentless) {n : SlotRef} (hs : cdt.parentOf n ≠ some n) :
+    (cdt.spliceNode n).rootsParentless := by
+  intro x hx
+  rw [parentOf_spliceNode hU hs]
+  split
+  · rfl
+  · next hxn =>
+    by_cases hp : cdt.parentOf n = none
+    · rw [spliceNode_rootChains_of_root hp] at hx
+      rcases mem_flatten_spliceRootChains hx with ⟨hx, -⟩ | hx
+      · rw [if_neg (child_not_root hU hR · hx)]; exact hR x hx
+      · rw [if_pos hx]; exact hp
+    · rw [spliceNode_rootChains_of_parent hR hp] at hx
+      rw [if_neg (child_not_root hU hR · hx)]; exact hR x hx
+
+/-- After the splice `n` is no one's sibling. -/
+theorem siblingsOf_spliceNode_self {cdt : CapDerivationTree} (hU : cdt.childrenUnique)
+    (hR : cdt.rootsParentless) {n : SlotRef} (hs : cdt.parentOf n ≠ some n) :
+    (cdt.spliceNode n).siblingsOf n = [n] := by
+  rw [siblingsOf_of_root (by rw [parentOf_spliceNode hU hs, if_pos rfl])]
+  unfold rootChain
+  refine SlotList.chainOf_of_not_mem fun hm => ?_
+  by_cases hp : cdt.parentOf n = none
+  · rw [spliceNode_rootChains_of_root hp] at hm
+    rcases mem_flatten_spliceRootChains hm with ⟨-, h⟩ | h
+    · exact h rfl
+    · exact not_mem_childrenOf_self hU hs h
+  · rw [spliceNode_rootChains_of_parent hR hp] at hm
+    exact hp (hR n hm)
+
+/-- **The siblings after a splice**: `n`'s siblings, with `n` replaced in place
+by its children, for each of them; every other slot's own. -/
+theorem siblingsOf_spliceNode {cdt : CapDerivationTree} (hU : cdt.childrenUnique)
+    (hnd : cdt.rootChains.flatten.Nodup) (hR : cdt.rootsParentless) {n : SlotRef}
+    (hs : cdt.parentOf n ≠ some n) {r : SlotRef} (hr : r ≠ n) :
+    (cdt.spliceNode n).siblingsOf r =
+      if r ∈ cdt.spliceSiblings n then cdt.spliceSiblings n else cdt.siblingsOf r := by
+  have hU' := childrenUnique_spliceNode hU hs
+  have hnd' := rootsNodup_spliceNode hU hnd hR n
+  have hP' : (cdt.spliceNode n).parentOf r =
+      if r ∈ cdt.childrenOf n then cdt.parentOf n else cdt.parentOf r := by
+    rw [parentOf_spliceNode hU hs, if_neg hr]
+  have hChq : ∀ q, q ≠ n → cdt.parentOf n ≠ some q →
+      (cdt.spliceNode n).childrenOf q = cdt.childrenOf q := fun q hq hnq => by
+    rw [childrenOf_spliceNode hU hs, if_neg hq, replaceSlot_of_not_mem]
+    exact fun hm => hnq ((mem_childrenOf_iff_parentOf hU q n).mp hm)
+  have hnS : n ∈ cdt.siblingsOf n := mem_siblingsOf_self hU n
+  have hKS : ∀ x ∈ cdt.childrenOf n, x ∈ cdt.spliceSiblings n := fun x hx =>
+    mem_replaceSlot.mpr (.inr ⟨hnS, hx⟩)
+  -- the parent case of `r` outside the spliced run
+  have hOut : r ∉ cdt.spliceSiblings n → ∀ q, cdt.parentOf r = some q →
+      (cdt.spliceNode n).siblingsOf r = cdt.siblingsOf r := by
+    intro hrS q hq
+    have hrK : r ∉ cdt.childrenOf n := fun h => hrS (hKS r h)
+    have hqn : q ≠ n := fun e => hrK ((mem_childrenOf_iff_parentOf hU n r).mpr (e ▸ hq))
+    have hnq : cdt.parentOf n ≠ some q := fun e => by
+      apply hrS
+      refine mem_replaceSlot.mpr (.inl ⟨?_, hr⟩)
+      rw [siblingsOf_of_parent e]; exact (mem_childrenOf_iff_parentOf hU q r).mpr hq
+    rw [siblingsOf_of_parent (by rw [hP', if_neg hrK]; exact hq), siblingsOf_of_parent hq,
+      hChq q hqn hnq]
+  cases hp : cdt.parentOf n with
+  | some u =>
+    have hun : u ≠ n := fun e => hs (e ▸ hp)
+    have hS' : cdt.spliceSiblings n = (cdt.spliceNode n).childrenOf u := by
+      unfold spliceSiblings
+      rw [siblingsOf_of_parent hp, childrenOf_spliceNode hU hs, if_neg hun]
+    by_cases hrS : r ∈ cdt.spliceSiblings n
+    · rw [if_pos hrS, hS']
+      rw [hS'] at hrS
+      exact siblingsOf_of_parent ((mem_childrenOf_iff_parentOf hU' u r).mp hrS)
+    · rw [if_neg hrS]
+      cases hq : cdt.parentOf r with
+      | some q => exact hOut hrS q hq
+      | none =>
+        have hrK : r ∉ cdt.childrenOf n := fun h => hrS (hKS r h)
+        rw [siblingsOf_of_root (by rw [hP', if_neg hrK]; exact hq), siblingsOf_of_root hq]
+        unfold rootChain
+        rw [spliceNode_rootChains_of_parent hR (by rw [hp]; exact Option.some_ne_none u)]
+  | none =>
+    have hC := spliceNode_rootChains_of_root (cdt := cdt) hp
+    have hSn : cdt.siblingsOf n = cdt.rootChain n := siblingsOf_of_root hp
+    -- the spliced run is a chain after the splice
+    have hMem : r ∈ cdt.spliceSiblings n → cdt.spliceSiblings n ∈ (cdt.spliceNode n).rootChains := by
+      intro hrS
+      rw [hC]; unfold spliceRootChains
+      split
+      · next hnC =>
+        rcases SlotList.chainOf_cases cdt.rootChains n with ⟨D, hD, -, e⟩ | ⟨h, -⟩
+        · refine List.mem_map.mpr ⟨D, hD, ?_⟩
+          unfold spliceSiblings; rw [hSn]; unfold rootChain; rw [e]
+        · exact absurd hnC h
+      · next hnC =>
+        have hS : cdt.spliceSiblings n = cdt.childrenOf n := by
+          unfold spliceSiblings; rw [hSn]; unfold rootChain
+          rw [SlotList.chainOf_of_not_mem hnC]; simp [replaceSlot]
+        split
+        · next hK => rw [hS, hK] at hrS; cases hrS
+        · rw [hS]; exact List.mem_append_right _ (List.mem_singleton_self _)
+    by_cases hrS : r ∈ cdt.spliceSiblings n
+    · rw [if_pos hrS]
+      have hpr : (cdt.spliceNode n).parentOf r = none := by
+        rw [hP']
+        split
+        · exact hp
+        · next hrK =>
+          rcases mem_replaceSlot.mp hrS with ⟨hrS', -⟩ | ⟨-, hrK'⟩
+          · rw [hSn] at hrS'
+            rcases SlotList.mem_chainOf hrS' with hm | e
+            · exact hR r hm
+            · exact absurd e hr
+          · exact absurd hrK' hrK
+      rw [siblingsOf_of_root hpr]
+      exact SlotList.chainOf_of_mem hnd' (hMem hrS) hrS
+    · rw [if_neg hrS]
+      cases hq : cdt.parentOf r with
+      | some q => exact hOut hrS q hq
+      | none =>
+        have hrK : r ∉ cdt.childrenOf n := fun h => hrS (hKS r h)
+        rw [siblingsOf_of_root (by rw [hP', if_neg hrK]; exact hq), siblingsOf_of_root hq]
+        unfold rootChain
+        rcases SlotList.chainOf_cases cdt.rootChains r with ⟨E, hE, hrE, e⟩ | ⟨hrn, e⟩
+        · rw [e]
+          refine SlotList.chainOf_of_mem hnd' ?_ hrE
+          rw [hC]; unfold spliceRootChains
+          split
+          · refine List.mem_map.mpr ⟨E, hE, replaceSlot_of_not_mem fun hnE => hrS ?_⟩
+            refine mem_replaceSlot.mpr (.inl ⟨?_, hr⟩)
+            rw [hSn]; unfold rootChain; rw [SlotList.chainOf_of_mem hnd hE hnE]; exact hrE
+          · split
+            · exact hE
+            · exact List.mem_append_left _ hE
+        · rw [e]
+          refine SlotList.chainOf_of_not_mem fun hm => ?_
+          rw [hC] at hm
+          rcases mem_flatten_spliceRootChains hm with ⟨hm, -⟩ | hm
+          · exact hrn hm
+          · exact hrK hm
+
+
+end CapDerivationTree
 
 namespace LinkView
 
-/-- **The link writes of `spliceNode n`**, given `n`'s parent `up` and children
-`l`: with a parent `u`, unlink `n`, link each child under `u` in chain order and
-clear `n`'s first-child link; without one, remove `n`. -/
-def spliceLinks (L : LinkView) (n : SlotRef) (up : Option SlotRef) (l : List SlotRef) : LinkView :=
-  match up with
-  | none => L.removeNodeLinks n l
-  | some u => (l.foldl (fun L c => L.addChild u c) (L.unlinkChild n)).set n .firstChild none
-
-/-- **The link writes of `moveNode old new`**, given `old`'s parent `up` and
-children `l`: unlink `old`, link `new` under `up`, link each child under `new`
-in chain order and clear `old`'s first-child link. -/
-def moveLinks (L : LinkView) (old new : SlotRef) (up : Option SlotRef) (l : List SlotRef) :
-    LinkView :=
-  (l.foldl (fun (L : LinkView) c => L.addChild new c)
-    (match up with
-     | some u => (L.unlinkChild old).addChild u new
-     | none => L.unlinkChild old)).set old .firstChild none
+/-- **The links after splicing `n` out**, slot by slot, given `n`'s children
+`K`: `n` holds none; each of `K` has `n`'s parent; `K` sits between `n`'s
+previous and next siblings (`n`'s parent's first child, when `n` was it); every
+other link is as it was. -/
+def spliceView (L : LinkView) (n : SlotRef) (K : List SlotRef) : LinkView := fun r f =>
+  if r = n then none
+  else match f with
+    | .parent => if r ∈ K then L n .parent else L r .parent
+    | .firstChild =>
+      if L n .prev = none ∧ L n .parent = some r then K.head?.or (L n .next) else L r .firstChild
+    | .next =>
+      if K.getLast? = some r then L n .next
+      else if L n .prev = some r then K.head?.or (L n .next) else L r .next
+    | .prev =>
+      if K.head? = some r then L n .prev
+      else if L n .next = some r then K.getLast?.or (L n .prev) else L r .prev
 
 end LinkView
 
@@ -1131,235 +1887,153 @@ namespace LinksAgree
 
 open CapDerivationTree LinkView
 
-/-- **Adding a run of edges under one parent**, with one `addChild` each, keeps
-the links agreeing when the children are distinct, parentless and not `p`. -/
-theorem foldl_addChild (p : SlotRef) :
-    ∀ (es : List CapDerivationEdge) {L : LinkView} {cdt : CapDerivationTree},
-      LinksAgree L cdt → (es.map (·.child)).Nodup →
-      (∀ e ∈ es, cdt.parentOf e.child = none ∧ p ≠ e.child) →
-      LinksAgree ((es.map (·.child)).foldl (fun L c => L.addChild p c) L)
-        (es.foldl (fun acc e => acc.addEdge p e.child e.op) cdt)
-  | [], _, _, h, _, _ => h
-  | e :: es, L, cdt, h, hnd, hc => by
-    have ⟨heL, hnd'⟩ := List.nodup_cons.mp hnd
-    have ⟨h1, h2⟩ := hc e (List.mem_cons_self ..)
-    simp only [List.map_cons, List.foldl_cons]
-    refine foldl_addChild p es (h.addChild e.op h1 h2) hnd' (fun e' he' => ?_)
-    have hne : e'.child ≠ e.child := fun hq => heL (by
-      have := List.mem_map_of_mem (f := (·.child)) he'; simp only at this; rw [hq] at this; exact this)
-    rw [parentOf_addEdge, if_neg hne]
-    exact hc e' (List.mem_cons_of_mem _ he')
-
-private theorem filter_parent_children (cdt : CapDerivationTree) (n : SlotRef) :
-    (cdt.edges.filter (·.isParentOf n)).map (·.child) = cdt.childrenOf n := rfl
-
-private theorem find_child_parent (cdt : CapDerivationTree) (n : SlotRef) :
-    (cdt.edges.find? (·.isChildOf n)).map (·.parent) = cdt.parentOf n := rfl
-
-/-- Each edge from `n` names one of `n`'s children. -/
-private theorem filter_parent_mem {cdt : CapDerivationTree} {n : SlotRef} {e : CapDerivationEdge}
-    (he : e ∈ cdt.edges.filter (·.isParentOf n)) : e.child ∈ cdt.childrenOf n :=
-  List.mem_map_of_mem he
-
-/-- Splicing as removal followed by re-linking the children under the parent. -/
-private theorem spliceNode_byRemoval {L : LinkView} {cdt : CapDerivationTree} (h : LinksAgree L cdt)
-    (n : SlotRef) (hcyc : ∀ c ∈ cdt.childrenOf n, cdt.parentOf n ≠ some c) :
-    LinksAgree (match cdt.parentOf n with
-      | none => L.removeNodeLinks n (cdt.childrenOf n)
-      | some u => (cdt.childrenOf n).foldl (fun L c => L.addChild u c)
-          (L.removeNodeLinks n (cdt.childrenOf n))) (cdt.spliceNode n) := by
-  have hU := h.childrenUnique
-  have hR := h.removeNode n
-  refine LinksAgree.of_edges_eq (CapDerivationTree.spliceNode_edges_fold cdt n).symm ?_
-  rw [← find_child_parent]
-  cases hf : cdt.edges.find? (·.isChildOf n) with
-  | none => exact hR
-  | some up =>
-    simp only [Option.map_some]
-    have := foldl_addChild up.parent (cdt.edges.filter (·.isParentOf n)) hR
-      (by rw [filter_parent_children]; exact childrenOf_nodup hU n) (fun e he => ?_)
-    · exact this
-    have hm := filter_parent_mem he
-    refine ⟨?_, fun hpc => hcyc _ hm ?_⟩
-    · rw [parentOf_removeNode hU, if_pos (.inr ((mem_childrenOf_iff_parentOf hU n _).mp hm))]
-    · rw [← find_child_parent, hf, ← hpc]; rfl
-
-/-- Moving as removal followed by re-linking. -/
-private theorem moveNode_byRemoval {L : LinkView} {cdt : CapDerivationTree} (h : LinksAgree L cdt)
-    (old new : SlotRef) (hnew : ¬ cdt.mentions new) :
-    LinksAgree ((cdt.childrenOf old).foldl (fun L c => L.addChild new c)
-      (match cdt.parentOf old with
-       | some u => (L.removeNodeLinks old (cdt.childrenOf old)).addChild u new
-       | none => L.removeNodeLinks old (cdt.childrenOf old))) (cdt.moveNode old new) := by
-  have hU := h.childrenUnique
-  have hR := h.removeNode old
-  have hNd := childrenOf_nodup hU old
-  have hEdge : ∀ e ∈ cdt.edges.filter (·.isParentOf old),
-      (cdt.removeNode old).parentOf e.child = none ∧ new ≠ e.child := fun e he => by
-    have hm := filter_parent_mem he
-    refine ⟨?_, fun hc => hnew ⟨e, (List.mem_filter.mp he).1, .inr hc.symm⟩⟩
-    rw [parentOf_removeNode hU, if_pos (.inr ((mem_childrenOf_iff_parentOf hU old _).mp hm))]
-  refine LinksAgree.of_edges_eq (CapDerivationTree.moveNode_edges_fold cdt old new).symm ?_
-  rw [← find_child_parent]
-  cases hf : cdt.edges.find? (·.isChildOf old) with
-  | none => exact foldl_addChild new _ hR hNd hEdge
-  | some up =>
-    have hup := List.mem_of_find?_eq_some hf
-    have hNew : (cdt.removeNode old).parentOf new = none := by
-      rw [parentOf_removeNode hU, parentOf_of_not_mentions hnew]; split <;> rfl
-    have hpn : up.parent ≠ new := fun e => hnew ⟨up, hup, .inl e⟩
-    refine foldl_addChild new _ (hR.addChild up.op hNew hpn) hNd (fun e he => ?_)
-    have ⟨h1, h2⟩ := hEdge e he
-    exact ⟨by rw [parentOf_addEdge, if_neg (Ne.symm h2)]; exact h1, h2⟩
-
 variable {L : LinkView} {cdt : CapDerivationTree}
 
-/-- A slot with no self edge is not among its own children, and its previous
-sibling is not one of them either. -/
-theorem children_not_self_or_prev (h : LinksAgree L cdt) {n : SlotRef}
-    (hs : cdt.parentOf n ≠ some n) :
-    ∀ w ∈ cdt.childrenOf n, w ≠ n ∧ L n .prev ≠ some w := by
-  have hU := h.childrenUnique
-  intro w hw
-  have hpw := (mem_childrenOf_iff_parentOf hU n w).mp hw
-  refine ⟨fun e => hs (e ▸ hpw), fun e => ?_⟩
-  rw [h.prev n] at e
-  cases hP : cdt.parentOf n with
-  | none => rw [hP] at e; cases e
-  | some p =>
-    rw [hP] at e
-    have := (mem_childrenOf_iff_parentOf hU p w).mp (SlotList.predIn_mem e)
-    rw [hpw] at this
-    exact hs (Option.some.inj this ▸ hP)
+/-- `n`'s children are not its siblings. -/
+theorem children_not_siblings (h : LinksAgree L cdt) {n : SlotRef}
+    (hs : cdt.parentOf n ≠ some n) {x : SlotRef} (hx : x ∈ cdt.childrenOf n) :
+    x ∉ cdt.siblingsOf n := fun hS => by
+  have e1 := h.siblingsOf_of_mem_children hx
+  have e2 := h.siblingsOf_eq_of_mem hS
+  rw [e1] at e2
+  exact not_mem_childrenOf_self h.childrenUnique hs (e2 ▸ h.mem_siblingsOf_self n)
 
-/-- After unlinking `n`, its parent's first child is no child of `n`. -/
-theorem unlink_parent_firstChild_ne (h : LinksAgree L cdt) {n u : SlotRef}
-    (hu : cdt.parentOf n = some u) (hs : u ≠ n) :
-    ∀ x ∈ cdt.childrenOf n, (L.unlinkChild n) u .firstChild ≠ some x := by
-  have hU := h.childrenUnique
-  intro x hx e
-  have hxn := (mem_childrenOf_iff_parentOf hU n x).mp hx
-  have hxu : x ∈ cdt.childrenOf u := by
-    rw [unlinkChild_firstChild] at e
-    split at e
-    · rw [h.next n, hu] at e; exact SlotList.succIn_mem e
-    · rw [h.firstChild u] at e; exact List.mem_of_mem_head? e
-  rw [(mem_childrenOf_iff_parentOf hU u x).mp hxu] at hxn
-  exact hs (Option.some.inj hxn)
-
-/-- The walk from a slot's first child, with fuel the tree's edge count, reads its children. -/
-theorem walk_firstChild (h : LinksAgree L cdt) (n : SlotRef) {k : Nat}
-    (hk : cdt.edges.length ≤ k) : L.walk k (L n .firstChild) = cdt.childrenOf n :=
-  h.walk_children n (Nat.le_trans (cdt.childrenOf_length_le n) hk)
-
-/-- **Splicing a node out** keeps the links agreeing, when the tree has no edge
-from `n` to itself or between `n` and a child of it in reverse (it is acyclic). -/
+/-- **Splicing a node out** keeps the links agreeing: its children take its
+place among its siblings, in their order, and its parent's first child is the
+first of them when it was the first. -/
 theorem spliceNode (h : LinksAgree L cdt) (n : SlotRef)
-    (hcyc : ∀ c ∈ cdt.childrenOf n, cdt.parentOf n ≠ some c) (hs : cdt.parentOf n ≠ some n) :
-    LinksAgree (L.spliceLinks n (cdt.parentOf n) (cdt.childrenOf n)) (cdt.spliceNode n) := by
-  have hB := spliceNode_byRemoval h n hcyc
-  cases hu : cdt.parentOf n with
-  | none => rw [hu] at hB; exact hB
-  | some u =>
-    rw [hu] at hB
-    have hun : u ≠ n := fun e => hs (e ▸ hu)
-    simp only [spliceLinks]
-    have e : (cdt.childrenOf n).foldl (fun L c => L.addChild u c)
-        (L.removeNodeLinks n (cdt.childrenOf n)) =
-        ((cdt.childrenOf n).foldl (fun L c => L.addChild u c) (L.unlinkChild n)).set n
-          .firstChild none := by
-      unfold removeNodeLinks
-      rw [set_firstChild_foldl_addChild_comm (Ne.symm hun),
-        foldl_addChild_foldl_orphan _ _ (childrenOf_nodup h.childrenUnique n)
-          (h.unlink_parent_firstChild_ne hu hun)]
-    rw [← e]; exact hB
-
-/-- **Moving a node to a slot outside the tree** keeps the links agreeing. -/
-theorem moveNode (h : LinksAgree L cdt) (old new : SlotRef) (hnew : ¬ cdt.mentions new)
-    (hon : old ≠ new) (hs : cdt.parentOf old ≠ some old) :
-    LinksAgree (L.moveLinks old new (cdt.parentOf old) (cdt.childrenOf old))
-      (cdt.moveNode old new) := by
+    (hs : cdt.parentOf n ≠ some n) :
+    LinksAgree (L.spliceView n (cdt.childrenOf n)) (cdt.spliceNode n) := by
   have hU := h.childrenUnique
-  have hB := moveNode_byRemoval h old new hnew
-  have hNd := childrenOf_nodup hU old
-  have hNewL : new ∉ cdt.childrenOf old := not_mem_childrenOf_of_not_mentions hnew old
-  have hNewF : L new .firstChild = none := by
-    rw [h.firstChild new, childrenOf_of_not_mentions hnew]; rfl
-  have hNewP : cdt.parentOf old ≠ some new := fun e =>
-    hnew ⟨_, ((parentOf_eq_some_iff hU new old).mp e).choose_spec.1,
-      .inl ((parentOf_eq_some_iff hU new old).mp e).choose_spec.2.1⟩
-  have hL1new : (L.unlinkChild old) new .firstChild = none := by
-    rw [unlinkChild_firstChild, h.parent old, if_neg (fun hc => hNewP hc.2), hNewF]
-  unfold moveLinks
-  cases hu : cdt.parentOf old with
-  | none =>
-    rw [hu] at hB
-    simp only at hB ⊢
-    unfold removeNodeLinks at hB
-    rw [set_firstChild_foldl_addChild_comm hon,
-      foldl_addChild_foldl_orphan _ _ hNd (fun x _ => by rw [hL1new]; exact fun e => by cases e)] at hB
-    exact hB
-  | some u =>
-    rw [hu] at hB
-    simp only at hB ⊢
-    have hun : u ≠ old := fun e => hs (e ▸ hu)
-    have hnu : new ≠ u := fun e => hnew ⟨_, ((parentOf_eq_some_iff hU u old).mp hu).choose_spec.1,
-      .inl (e ▸ ((parentOf_eq_some_iff hU u old).mp hu).choose_spec.2.1)⟩
-    unfold removeNodeLinks at hB
-    rw [set_firstChild_addChild_comm _ (Ne.symm hun), set_firstChild_foldl_addChild_comm hon,
-      ← foldl_orphan_addChild_comm _ _ hNewL (h.unlink_parent_firstChild_ne hu (hun)),
-      foldl_addChild_foldl_orphan _ _ hNd (fun x _ => by
-        rw [addChild_firstChild, if_neg hnu, hL1new]; exact fun e => by cases e)] at hB
-    exact hB
-
-/-- **A tree with no edge agrees with links that are all empty**: the state a
-boot or the default state starts from. -/
-theorem of_no_edges {L' : LinkView} {t : CapDerivationTree} (hE : t.edges = [])
-    (hL : ∀ r f, L' r f = none) : LinksAgree L' t := by
-  have hn : ∀ r, ¬ t.mentions r := by
-    rintro r ⟨e, he, -⟩; rw [hE] at he; cases he
-  refine ⟨by unfold CapDerivationTree.childrenUnique; rw [hE]; exact List.nodup_nil,
-    fun r => ?_, fun p => ?_, fun r => ?_, fun r => ?_⟩
-  · rw [hL, CapDerivationTree.parentOf_of_not_mentions (hn r)]
-  · rw [hL, CapDerivationTree.childrenOf_of_not_mentions (hn p)]; rfl
-  · rw [hL, CapDerivationTree.parentOf_of_not_mentions (hn r)]; rfl
-  · rw [hL, CapDerivationTree.parentOf_of_not_mentions (hn r)]; rfl
-
-/-- **A slot the tree does not name holds no link.** -/
-theorem none_of_not_mentions (h : LinksAgree L cdt) {r : SlotRef} (hn : ¬ cdt.mentions r)
-    (f : LinkField) : L r f = none := by
-  have hp := CapDerivationTree.parentOf_of_not_mentions hn
-  cases f
-  · rw [h.parent r, hp]
-  · rw [h.firstChild r, CapDerivationTree.childrenOf_of_not_mentions hn]; rfl
-  · rw [h.next r, hp]; rfl
-  · rw [h.prev r, hp]; rfl
-
-/-- **Every link names a slot the tree names.** -/
-theorem target_mentions (h : LinksAgree L cdt) {r : SlotRef} {f : LinkField} {x : SlotRef}
-    (hx : L r f = some x) : cdt.mentions x := by
-  have child : ∀ p, x ∈ cdt.childrenOf p → cdt.mentions x := fun p hm => by
-    obtain ⟨e, he, -, hc⟩ := (mem_childrenOf cdt p x).mp hm
-    exact ⟨e, he, .inr hc⟩
-  cases f
-  · rw [h.parent r] at hx
-    obtain ⟨e, he, hp, -⟩ := (parentOf_eq_some_iff h.childrenUnique x r).mp hx
-    exact ⟨e, he, .inl hp⟩
-  · rw [h.firstChild r] at hx; exact child r (List.mem_of_mem_head? hx)
-  · rw [h.next r] at hx
-    cases hP : cdt.parentOf r with
-    | none => rw [hP] at hx; cases hx
-    | some p => rw [hP] at hx; exact child p (SlotList.succIn_mem hx)
-  · rw [h.prev r] at hx
-    cases hP : cdt.parentOf r with
-    | none => rw [hP] at hx; cases hx
-    | some p => rw [hP] at hx; exact child p (SlotList.predIn_mem hx)
-
-/-- An acyclic tree has no node that is its own parent. -/
-theorem parentOf_ne_self_of_wf (h : LinksAgree L cdt) (hWF : cdt.edgeWellFounded) (n : SlotRef) :
-    cdt.parentOf n ≠ some n := fun hp => by
-  obtain ⟨e, he, hpe, hce⟩ := (parentOf_eq_some_iff h.childrenUnique n n).mp hp
-  exact CapDerivationTree.edgeWellFounded_no_self_edge hWF he (hpe.trans hce.symm)
+  have hnd := h.rootsNodup
+  have hR := h.rootsParentless
+  have hSnd := h.siblingsOf_nodup n
+  obtain ⟨a, b, hSab, hna, hnb, hrep⟩ :=
+    replaceSlot_split hSnd (h.mem_siblingsOf_self n)
+  have hS' : cdt.spliceSiblings n = a ++ cdt.childrenOf n ++ b := hrep _
+  have hpr : L n .prev = a.getLast? := by rw [h.prev, hSab, SlotList.predIn_mid hna]
+  have hnx : L n .next = b.head? := by rw [h.next, hSab, SlotList.succIn_mid hna]
+  have hab : ∀ x ∈ a, x ∉ b := fun x hxa hxb => by
+    rw [hSab] at hSnd
+    exact (List.nodup_append.mp hSnd).2.2 x hxa x (List.mem_cons_of_mem _ hxb) rfl
+  have hKS : ∀ x ∈ cdt.childrenOf n, x ∉ a ∧ x ∉ b := fun x hx => by
+    have := h.children_not_siblings hs hx
+    rw [hSab] at this
+    exact ⟨fun h' => this (List.mem_append_left _ h'),
+      fun h' => this (List.mem_append_right _ (List.mem_cons_of_mem _ h'))⟩
+  have hKnd := childrenOf_nodup hU n
+  have hand : a.Nodup := by
+    rw [hSab] at hSnd; exact hSnd.sublist (List.sublist_append_left ..)
+  have hsibA : ∀ x ∈ a, cdt.siblingsOf x = a ++ n :: b := fun x hx => by
+    rw [← hSab]; exact h.siblingsOf_eq_of_mem (by rw [hSab]; exact List.mem_append_left _ hx)
+  have hsibB : ∀ x ∈ b, cdt.siblingsOf x = a ++ n :: b := fun x hx => by
+    rw [← hSab]
+    exact h.siblingsOf_eq_of_mem (by rw [hSab]; exact List.mem_append_right _ (List.mem_cons_of_mem _ hx))
+  have hsibK : ∀ x ∈ cdt.childrenOf n, cdt.siblingsOf x = cdt.childrenOf n := fun x hx =>
+    h.siblingsOf_of_mem_children hx
+  have hprA : ∀ x, a.getLast? = some x → x ∈ a := fun x e => List.mem_of_getLast? e
+  have hdK : ∀ x, (cdt.childrenOf n).head? = some x → x ∈ cdt.childrenOf n :=
+    fun x e => List.mem_of_mem_head? e
+  have hrep' : ∀ m, replaceSlot n m (a ++ n :: b) = a ++ m ++ b := fun m => by
+    rw [← hSab]; exact hrep m
+  have hnxB : ∀ x, b.head? = some x → x ∈ b := fun x e => List.mem_of_mem_head? e
+  refine ⟨childrenUnique_spliceNode hU hs, rootsNodup_spliceNode hU hnd hR n,
+    rootsParentless_spliceNode hU hR hs, fun r => ?_, fun p => ?_, fun r => ?_, fun r => ?_⟩
+  · -- parent
+    show (if r = n then none else if r ∈ cdt.childrenOf n then L n .parent else L r .parent) = _
+    rw [parentOf_spliceNode hU hs, h.parent, h.parent]
+  · -- first child
+    show (if p = n then none else if L n .prev = none ∧ L n .parent = some p then
+      (cdt.childrenOf n).head?.or (L n .next) else L p .firstChild) = _
+    rw [childrenOf_spliceNode hU hs]
+    by_cases hpn : p = n
+    · rw [if_pos hpn, if_pos hpn]; rfl
+    · rw [if_neg hpn, if_neg hpn, h.parent, hpr, hnx, h.firstChild]
+      by_cases hup : cdt.parentOf n = some p
+      · have hSp : cdt.childrenOf p = a ++ n :: b := by rw [← siblingsOf_of_parent hup, hSab]
+        rw [hSp, hrep']
+        by_cases ha : a = []
+        · subst ha; simp [List.head?_append, hup]
+        · have : a.getLast? ≠ none := fun e => ha (List.getLast?_eq_none_iff.mp e)
+          simp only [this, false_and, if_false, List.head?_append, List.append_assoc]
+          cases a with
+          | nil => exact absurd rfl ha
+          | cons x a => rfl
+      · simp only [hup, and_false, if_false]
+        rw [replaceSlot_of_not_mem fun hm => hup ((mem_childrenOf_iff_parentOf hU p n).mp hm)]
+  · -- next
+    show (if r = n then none else if (cdt.childrenOf n).getLast? = some r then L n .next
+      else if L n .prev = some r then (cdt.childrenOf n).head?.or (L n .next) else L r .next) = _
+    by_cases hrn : r = n
+    · rw [if_pos hrn, hrn, siblingsOf_spliceNode_self hU hR hs]; simp [SlotList.succIn]
+    · rw [if_neg hrn, siblingsOf_spliceNode hU hnd hR hs hrn, hS', hpr, hnx]
+      by_cases hrS : r ∈ a ++ cdt.childrenOf n ++ b
+      · rw [if_pos hrS, List.append_assoc, SlotList.succIn_append]
+        rcases List.mem_append.mp hrS with hr' | hrb
+        · rcases List.mem_append.mp hr' with hra | hrK
+          · have hrK : r ∉ cdt.childrenOf n := fun hk => (hKS r hk).1 hra
+            rw [if_neg (fun e => hrK (List.mem_of_getLast? e)), if_pos hra]
+            by_cases hl : a.getLast? = some r
+            · rw [if_pos hl, (SlotList.succIn_eq_none_iff hand hra).mpr hl, List.head?_append]; rfl
+            · rw [if_neg hl, h.next, hsibA r hra, SlotList.succIn_append, if_pos hra]
+              cases hsa : SlotList.succIn a r with
+              | none => exact absurd ((SlotList.succIn_eq_none_iff hand hra).mp hsa) hl
+              | some y => rfl
+          · have hra := (hKS r hrK).1
+            rw [if_neg hra, SlotList.succIn_append, if_pos hrK]
+            by_cases hl : (cdt.childrenOf n).getLast? = some r
+            · rw [if_pos hl, (SlotList.succIn_eq_none_iff hKnd hrK).mpr hl]; rfl
+            · rw [if_neg hl, if_neg (fun e => hra (hprA r e)), h.next, hsibK r hrK]
+              cases hsa : SlotList.succIn (cdt.childrenOf n) r with
+              | none => exact absurd ((SlotList.succIn_eq_none_iff hKnd hrK).mp hsa) hl
+              | some y => rfl
+        · have hra : r ∉ a := fun e => hab r e hrb
+          have hrK : r ∉ cdt.childrenOf n := fun hk => (hKS r hk).2 hrb
+          rw [if_neg hra, SlotList.succIn_append, if_neg hrK,
+            if_neg (fun e => hrK (List.mem_of_getLast? e)), if_neg (fun e => hra (hprA r e)),
+            h.next, hsibB r hrb, SlotList.succIn_append, if_neg hra, SlotList.succIn_cons,
+            if_neg (Ne.symm hrn)]
+      · rw [if_neg hrS]
+        have hrK : r ∉ cdt.childrenOf n := fun hk =>
+          hrS (List.mem_append_left _ (List.mem_append_right _ hk))
+        rw [if_neg (fun e => hrK (List.mem_of_getLast? e)),
+          if_neg (fun e => hrS (List.mem_append_left _ (List.mem_append_left _ (hprA r e)))),
+          h.next]
+  · -- prev
+    show (if r = n then none else if (cdt.childrenOf n).head? = some r then L n .prev
+      else if L n .next = some r then (cdt.childrenOf n).getLast?.or (L n .prev) else L r .prev) = _
+    by_cases hrn : r = n
+    · rw [if_pos hrn, hrn, siblingsOf_spliceNode_self hU hR hs]; simp [SlotList.predIn, SlotList.predAux]
+    · rw [if_neg hrn, siblingsOf_spliceNode hU hnd hR hs hrn, hS', hpr, hnx]
+      by_cases hrS : r ∈ a ++ cdt.childrenOf n ++ b
+      · rw [if_pos hrS, List.append_assoc, SlotList.predIn_append]
+        rcases List.mem_append.mp hrS with hr' | hrb
+        · rcases List.mem_append.mp hr' with hra | hrK
+          · have hrK : r ∉ cdt.childrenOf n := fun hk => (hKS r hk).1 hra
+            rw [if_pos hra, if_neg (fun e => hrK (hdK r e)),
+              if_neg (fun e => hab r hra (hnxB r e)), h.prev, hsibA r hra,
+              SlotList.predIn_append, if_pos hra]
+          · have hra := (hKS r hrK).1
+            have hrb := (hKS r hrK).2
+            rw [if_neg hra, SlotList.predAux_append, if_pos hrK]
+            by_cases hl : (cdt.childrenOf n).head? = some r
+            · rw [if_pos hl, SlotList.predAux_of_head _ hl]
+            · rw [if_neg hl, if_neg (fun e => hrb (hnxB r e)), SlotList.predAux_of_head_ne _ hl,
+                h.prev, hsibK r hrK]
+        · have hra : r ∉ a := fun e => hab r e hrb
+          have hrK : r ∉ cdt.childrenOf n := fun hk => (hKS r hk).2 hrb
+          rw [if_neg hra, SlotList.predAux_append, if_neg hrK,
+            if_neg (fun e => hrK (hdK r e)), h.prev, hsibB r hrb,
+            SlotList.predIn_append, if_neg hra]
+          simp only [SlotList.predAux, if_neg (Ne.symm hrn)]
+          by_cases hl : b.head? = some r
+          · rw [if_pos hl, SlotList.predAux_of_head _ hl]
+          · rw [if_neg hl, SlotList.predAux_of_head_ne _ hl, SlotList.predAux_of_head_ne _ hl]
+      · rw [if_neg hrS]
+        have hrK : r ∉ cdt.childrenOf n := fun hk =>
+          hrS (List.mem_append_left _ (List.mem_append_right _ hk))
+        rw [if_neg (fun e => hrK (hdK r e)),
+          if_neg (fun e => hrS (List.mem_append_right _ (hnxB r e))), h.prev]
 
 /-- An acyclic tree has no node whose parent is a child of it. -/
 theorem parent_not_child_of_wf (h : LinksAgree L cdt) (hWF : cdt.edgeWellFounded) (n : SlotRef) :
@@ -1373,14 +2047,577 @@ theorem parent_not_child_of_wf (h : LinksAgree L cdt) (hWF : cdt.edgeWellFounded
 
 /-- **Splicing a node out of an acyclic tree** keeps the links agreeing. -/
 theorem spliceNode_of_wf (h : LinksAgree L cdt) (hWF : cdt.edgeWellFounded) (n : SlotRef) :
-    LinksAgree (L.spliceLinks n (cdt.parentOf n) (cdt.childrenOf n)) (cdt.spliceNode n) :=
-  h.spliceNode n (h.parent_not_child_of_wf hWF n) (h.parentOf_ne_self_of_wf hWF n)
-
-/-- **Moving a node of an acyclic tree to a slot outside it** keeps the links agreeing. -/
-theorem moveNode_of_wf (h : LinksAgree L cdt) (hWF : cdt.edgeWellFounded) (old new : SlotRef)
-    (hnew : ¬ cdt.mentions new) (hon : old ≠ new) :
-    LinksAgree (L.moveLinks old new (cdt.parentOf old) (cdt.childrenOf old)) (cdt.moveNode old new) :=
-  h.moveNode old new hnew hon (h.parentOf_ne_self_of_wf hWF old)
+    LinksAgree (L.spliceView n (cdt.childrenOf n)) (cdt.spliceNode n) :=
+  h.spliceNode n (h.parentOf_ne_self_of_wf hWF n)
 
 end LinksAgree
+
+
+namespace LinkView
+
+/-- **Re-parent a run of children and close it onto `nx`**: each of `K` takes
+`up` as parent, and the last of them takes `nx` as next, `nx` taking it as
+previous.  The link writes of a splice's child run, in run order. -/
+def spliceRun (up nx : Option SlotRef) : List SlotRef → LinkView → LinkView
+  | [], L => L
+  | [x], L =>
+    let L1 := (L.set x .parent up).set x .next nx
+    match nx with
+    | some y => L1.set y .prev (some x)
+    | none => L1
+  | x :: y :: rest, L => spliceRun up nx (y :: rest) (L.set x .parent up)
+
+theorem spliceRun_parent (up nx : Option SlotRef) :
+    ∀ (K : List SlotRef) (L : LinkView) (r : SlotRef),
+      spliceRun up nx K L r .parent = if r ∈ K then up else L r .parent
+  | [], _, _ => by simp [spliceRun]
+  | [x], L, r => by
+    unfold spliceRun
+    cases nx <;> by_cases h : r = x <;> simp [set, h]
+  | x :: y :: rest, L, r => by
+    unfold spliceRun
+    rw [spliceRun_parent up nx (y :: rest)]
+    by_cases h : r = x
+    · subst h; simp [set]
+    · simp [set, h]
+
+theorem spliceRun_firstChild (up nx : Option SlotRef) :
+    ∀ (K : List SlotRef) (L : LinkView) (r : SlotRef),
+      spliceRun up nx K L r .firstChild = L r .firstChild
+  | [], _, _ => rfl
+  | [x], L, r => by unfold spliceRun; cases nx <;> simp [set]
+  | x :: y :: rest, L, r => by
+    unfold spliceRun; rw [spliceRun_firstChild up nx (y :: rest)]; simp [set]
+
+theorem spliceRun_next (up nx : Option SlotRef) :
+    ∀ (K : List SlotRef) (L : LinkView) (r : SlotRef),
+      spliceRun up nx K L r .next = if K.getLast? = some r then nx else L r .next
+  | [], _, _ => by simp [spliceRun]
+  | [x], L, r => by
+    unfold spliceRun
+    by_cases h : r = x
+    · subst h; cases nx <;> simp [set]
+    · have h' : x ≠ r := Ne.symm h
+      cases nx <;> simp [set, h, h']
+  | x :: y :: rest, L, r => by
+    unfold spliceRun
+    rw [spliceRun_next up nx (y :: rest)]
+    have : (x :: y :: rest).getLast? = (y :: rest).getLast? := by
+      simp [List.getLast?_cons]
+    rw [this]; simp [set]
+
+theorem spliceRun_prev (up nx : Option SlotRef) :
+    ∀ (K : List SlotRef) (L : LinkView) (r : SlotRef),
+      spliceRun up nx K L r .prev = if nx = some r ∧ K ≠ [] then K.getLast? else L r .prev
+  | [], _, _ => by simp [spliceRun]
+  | [x], L, r => by
+    unfold spliceRun
+    cases nx with
+    | none => simp [set]
+    | some y =>
+      by_cases h : r = y
+      · subst h; simp
+      · have h' : y ≠ r := Ne.symm h
+        simp [set, h, h']
+  | x :: y :: rest, L, r => by
+    unfold spliceRun
+    rw [spliceRun_prev up nx (y :: rest)]
+    have : (x :: y :: rest).getLast? = (y :: rest).getLast? := by
+      simp [List.getLast?_cons]
+    rw [this]; simp [set]
+
+/-- **The link writes of `spliceNode n`**, given `n`'s children `K`: with none,
+unlink `n`; else the first of `K` takes `n`'s previous sibling as previous, that
+sibling (or, when `n` was first, `n`'s parent) takes it as next (first child),
+the run is re-parented and closed onto `n`'s next sibling, and `n`'s links are
+cleared. -/
+def spliceLinks (L : LinkView) (n : SlotRef) (K : List SlotRef) : LinkView :=
+  match K with
+  | [] => L.unlinkChild n
+  | c :: _ =>
+    let L1 := L.set c .prev (L n .prev)
+    let L2 := match L n .prev with
+      | some p => L1.set p .next (some c)
+      | none => match L n .parent with
+        | some u => L1.set u .firstChild (some c)
+        | none => L1
+    (L2.spliceRun (L n .parent) (L n .next) K).clearLinks n
+
+end LinkView
+
+namespace LinksAgree
+
+open CapDerivationTree LinkView
+
+variable {L : LinkView} {cdt : CapDerivationTree}
+
+/-- **The splice's link writes give the spliced links.** -/
+theorem spliceLinks_eq (h : LinksAgree L cdt) {n : SlotRef} (hs : cdt.parentOf n ≠ some n) :
+    L.spliceLinks n (cdt.childrenOf n) = L.spliceView n (cdt.childrenOf n) := by
+  have hup : L n .parent ≠ some n := by rw [h.parent]; exact hs
+  have hnxK : ∀ x, L n .next = some x → x ∉ cdt.childrenOf n := fun x e hx => by
+    rw [h.next] at e
+    exact h.children_not_siblings hs hx (SlotList.succIn_mem e)
+  funext r f
+  cases hK : cdt.childrenOf n with
+  | nil =>
+    have hfc : L n .firstChild = none := by rw [h.firstChild, hK]; rfl
+    show L.unlinkChild n r f = (if r = n then none else _)
+    cases f
+    · rw [unlinkChild_parent]; simp
+    · rw [unlinkChild_firstChild]
+      by_cases hrn : r = n
+      · subst hrn; simp only [if_true]
+        rw [if_neg (fun hc => hup hc.2)]; exact hfc
+      · simp [hrn]
+    · rw [unlinkChild_next]; simp
+    · rw [unlinkChild_prev]; simp
+  | cons c K' =>
+    show ((match L n .prev with
+      | some p => (L.set c .prev (L n .prev)).set p .next (some c)
+      | none => match L n .parent with
+        | some u => (L.set c .prev (L n .prev)).set u .firstChild (some c)
+        | none => L.set c .prev (L n .prev)).spliceRun (L n .parent) (L n .next) (c :: K')).clearLinks
+          n r f = (if r = n then none else _)
+    rw [clearLinks_apply]
+    by_cases hrn : r = n
+    · rw [if_pos hrn, if_pos hrn]
+    · rw [if_neg hrn, if_neg hrn]
+      have hcK : c ∈ cdt.childrenOf n := by rw [hK]; exact List.mem_cons_self ..
+      cases f
+      · rw [spliceRun_parent]
+        split
+        · rfl
+        · cases L n .prev <;> cases L n .parent <;> simp [LinkView.set]
+      · rw [spliceRun_firstChild]
+        cases hp : L n .prev with
+        | some p => simp [LinkView.set]
+        | none =>
+          cases hu : L n .parent with
+          | none => simp [LinkView.set]
+          | some u =>
+            by_cases hru : r = u
+            · subst hru; simp [LinkView.set]
+            · have h' : u ≠ r := Ne.symm hru
+              simp [LinkView.set, hru, h']
+      · rw [spliceRun_next]
+        split
+        · rfl
+        · cases hp : L n .prev with
+          | none => cases L n .parent <;> simp [LinkView.set]
+          | some p =>
+            by_cases hrp : r = p
+            · subst hrp; simp [LinkView.set]
+            · have h' : p ≠ r := Ne.symm hrp
+              simp [LinkView.set, hrp, h']
+      · rw [spliceRun_prev]
+        have hne : (c :: K') ≠ [] := List.cons_ne_nil _ _
+        by_cases hrc : r = c
+        · subst hrc
+          have : L n .next ≠ some r := fun e => hnxK r e hcK
+          simp only [List.head?_cons, if_true, this, false_and, if_false]
+          cases L n .prev <;> cases L n .parent <;> simp [LinkView.set]
+        · have : (c :: K').head? ≠ some r := by simp [Ne.symm hrc]
+          rw [if_neg this]
+          by_cases hnx : L n .next = some r
+          · rw [if_pos ⟨hnx, hne⟩, if_pos hnx]
+            cases hl : (c :: K').getLast? with
+            | none => simp at hl
+            | some z => rfl
+          · rw [if_neg (fun hc => hnx hc.1), if_neg hnx]
+            cases L n .prev <;> cases L n .parent <;> simp [LinkView.set, hrc]
+
+/-- **Splicing a node out**, with its link writes, keeps the links agreeing. -/
+theorem spliceNode_links (h : LinksAgree L cdt) (n : SlotRef) (hs : cdt.parentOf n ≠ some n) :
+    LinksAgree (L.spliceLinks n (cdt.childrenOf n)) (cdt.spliceNode n) := by
+  rw [h.spliceLinks_eq hs]; exact h.spliceNode n hs
+
+end LinksAgree
+
+
+/-! ### The tree after a move
+
+`moveNode old new` renames `old` to `new` everywhere, so `new` has `old`'s
+parent, children and siblings, each renamed, and `old` is outside the tree. -/
+
+namespace CapDerivationTree
+
+section rename
+
+variable {old new : SlotRef}
+
+theorem renameSlot_ne_old (hon : old ≠ new) (x : SlotRef) : renameSlot old new x ≠ old := by
+  unfold renameSlot; split
+  · exact Ne.symm hon
+  · assumption
+
+theorem renameSlot_back_ne_new (hon : old ≠ new) (x : SlotRef) : renameSlot new old x ≠ new := by
+  unfold renameSlot; split
+  · exact hon
+  · assumption
+
+theorem renameSlot_forth {r : SlotRef} (h : r ≠ old) :
+    renameSlot old new (renameSlot new old r) = r := by
+  unfold renameSlot
+  by_cases hn : r = new
+  · subst hn; simp
+  · simp [hn, h]
+
+theorem renameSlot_inj {x y : SlotRef} (hx : x ≠ new) (hy : y ≠ new)
+    (h : renameSlot old new x = renameSlot old new y) : x = y := by
+  rw [← renameSlot_back (old := old) hx, ← renameSlot_back (old := old) hy, h]
+
+/-- `ρ x = r` exactly when `x = σ r`, for `x ≠ new` and `r ≠ old`. -/
+theorem renameSlot_eq_iff {x r : SlotRef} (hx : x ≠ new) (hr : r ≠ old) :
+    renameSlot old new x = r ↔ x = renameSlot new old r := by
+  constructor
+  · rintro rfl; exact (renameSlot_back hx).symm
+  · rintro rfl; exact renameSlot_forth hr
+
+end rename
+
+theorem find?_congr {α : Type} {p q : α → Bool} :
+    ∀ {l : List α}, (∀ x ∈ l, p x = q x) → l.find? p = l.find? q
+  | [], _ => rfl
+  | a :: l, h => by
+    rw [List.find?_cons, List.find?_cons, h a (List.mem_cons_self ..),
+      find?_congr (fun x hx => h x (List.mem_cons_of_mem _ hx))]
+
+theorem nodup_map_of_inj {α β : Type} {f : α → β} :
+    ∀ {l : List α}, (∀ x ∈ l, ∀ y ∈ l, f x = f y → x = y) → l.Nodup → (l.map f).Nodup
+  | [], _, _ => List.nodup_nil
+  | a :: l, h, hnd => by
+    have ⟨haL, hnd'⟩ := List.nodup_cons.mp hnd
+    rw [List.map_cons, List.nodup_cons]
+    refine ⟨fun hm => ?_, nodup_map_of_inj
+      (fun x hx y hy => h x (List.mem_cons_of_mem _ hx) y (List.mem_cons_of_mem _ hy)) hnd'⟩
+    obtain ⟨b, hb, e⟩ := List.mem_map.mp hm
+    exact haL (h b (List.mem_cons_of_mem _ hb) a (List.mem_cons_self ..) e ▸ hb)
+
+section move
+
+variable {cdt : CapDerivationTree} {old new : SlotRef}
+
+/-- **The children after a move**: none for `old`; for every other slot, the
+children of its name before the move (`new`'s are `old`'s), renamed. -/
+theorem childrenOf_moveNode (hnew : ¬ cdt.mentions new) (hon : old ≠ new) (q : SlotRef) :
+    (cdt.moveNode old new).childrenOf q =
+      if q = old then [] else (cdt.childrenOf (renameSlot new old q)).map (renameSlot old new) := by
+  rw [childrenOf_eq_kidsIn, moveNode_edges_eq]
+  unfold kidsIn moveEdges
+  rw [List.filter_map, List.map_map]
+  split
+  · next hq =>
+    subst hq
+    rw [List.filter_eq_nil_iff.mpr]
+    · rfl
+    · intro e _
+      simp [renameEdge, CapDerivationEdge.isParentOf, renameSlot_ne_old hon]
+  · next hq =>
+    rw [childrenOf_eq_kidsIn]; unfold kidsIn
+    rw [List.map_map]
+    have : List.filter ((fun x => x.isParentOf q) ∘ renameEdge old new) cdt.edges =
+        List.filter (fun x => x.isParentOf (renameSlot new old q)) cdt.edges := by
+      apply List.filter_congr
+      intro e he
+      have hp := (not_edge_of_not_mentions hnew e he).1
+      simp only [Function.comp_def, renameEdge, CapDerivationEdge.isParentOf]
+      exact decide_eq_decide.mpr (renameSlot_eq_iff hp hq)
+    rw [this]; rfl
+
+/-- **The parent after a move**: none for `old`; for every other slot, the
+parent of its name before the move, renamed. -/
+theorem parentOf_moveNode (hnew : ¬ cdt.mentions new) (hon : old ≠ new) (r : SlotRef) :
+    (cdt.moveNode old new).parentOf r =
+      if r = old then none else (cdt.parentOf (renameSlot new old r)).map (renameSlot old new) := by
+  unfold parentOf
+  rw [moveNode_edges_eq]; unfold moveEdges
+  rw [List.find?_map, Option.map_map]
+  split
+  · next hr =>
+    subst hr
+    rw [show List.find? _ cdt.edges = none from List.find?_eq_none.mpr fun e _ => by
+      simp [renameEdge, CapDerivationEdge.isChildOf, renameSlot_ne_old hon]]
+    rfl
+  · next hr =>
+    rw [Option.map_map]
+    rw [find?_congr (q := (·.isChildOf (renameSlot new old r))) fun e he => by
+      have hc := (not_edge_of_not_mentions hnew e he).2
+      simp only [Function.comp_def, renameEdge, CapDerivationEdge.isChildOf]
+      exact decide_eq_decide.mpr (renameSlot_eq_iff hc hr)]
+    rfl
+
+theorem childrenUnique_moveNode (hU : cdt.childrenUnique) (hnew : ¬ cdt.mentions new) :
+    (cdt.moveNode old new).childrenUnique := by
+  unfold childrenUnique; rw [moveNode_edges_eq]; unfold moveEdges
+  rw [List.map_map]
+  have : (cdt.edges.map ((·.child) ∘ renameEdge old new)) =
+      (cdt.edges.map (·.child)).map (renameSlot old new) := by
+    rw [List.map_map]; rfl
+  rw [this]
+  refine nodup_map_of_inj (fun x hx y hy e => ?_) hU
+  obtain ⟨ex, hex, rfl⟩ := List.mem_map.mp hx
+  obtain ⟨ey, hey, rfl⟩ := List.mem_map.mp hy
+  exact renameSlot_inj (not_edge_of_not_mentions hnew ex hex).2
+    (not_edge_of_not_mentions hnew ey hey).2 e
+
+theorem moveNode_rootChains_flatten (cdt : CapDerivationTree) (old new : SlotRef) :
+    (cdt.moveNode old new).rootChains.flatten = cdt.rootChains.flatten.map (renameSlot old new) := by
+  rw [moveNode_rootChains, List.map_flatten]
+
+theorem rootsNodup_moveNode (hnd : cdt.rootChains.flatten.Nodup) (hnew : ¬ cdt.mentions new) :
+    (cdt.moveNode old new).rootChains.flatten.Nodup := by
+  have hR' : ∀ y ∈ cdt.rootChains.flatten, y ≠ new := fun y hy e => hnew (.inr (e ▸ hy))
+  rw [moveNode_rootChains_flatten]
+  refine nodup_map_of_inj (fun x hx y hy e => ?_) hnd
+  exact renameSlot_inj (hR' x hx) (hR' y hy) e
+
+theorem rootsParentless_moveNode (hR : cdt.rootsParentless) (hnew : ¬ cdt.mentions new)
+    (hon : old ≠ new) : (cdt.moveNode old new).rootsParentless := by
+  have hR' : ∀ y ∈ cdt.rootChains.flatten, y ≠ new := fun y hy e => hnew (.inr (e ▸ hy))
+  intro x hx
+  rw [moveNode_rootChains_flatten] at hx
+  obtain ⟨y, hy, rfl⟩ := List.mem_map.mp hx
+  rw [parentOf_moveNode hnew hon, if_neg (renameSlot_ne_old hon y),
+    renameSlot_back (hR' y hy), hR y hy]
+  rfl
+
+/-- **The siblings after a move**: `old` alone for `old`; for every other slot,
+the siblings of its name before the move, renamed. -/
+theorem siblingsOf_moveNode (hU : cdt.childrenUnique) (hnd : cdt.rootChains.flatten.Nodup)
+    (hnew : ¬ cdt.mentions new) (hon : old ≠ new) (r : SlotRef) :
+    (cdt.moveNode old new).siblingsOf r =
+      if r = old then [old] else (cdt.siblingsOf (renameSlot new old r)).map (renameSlot old new) := by
+  have hnd' := rootsNodup_moveNode (old := old) hnd hnew
+  have hFl := moveNode_rootChains_flatten cdt old new
+  have hR' : ∀ y ∈ cdt.rootChains.flatten, y ≠ new := fun y hy e => hnew (.inr (e ▸ hy))
+  split
+  · next hr =>
+    subst hr
+    rw [siblingsOf_of_root (by rw [parentOf_moveNode hnew hon, if_pos rfl])]
+    unfold rootChain
+    refine SlotList.chainOf_of_not_mem fun hm => ?_
+    rw [hFl] at hm
+    obtain ⟨y, -, e⟩ := List.mem_map.mp hm
+    exact renameSlot_ne_old hon y e
+  · next hr =>
+    unfold siblingsOf
+    rw [parentOf_moveNode hnew hon, if_neg hr]
+    cases hP : cdt.parentOf (renameSlot new old r) with
+    | some p =>
+      simp only [Option.map_some]
+      have hpn : p ≠ new := fun e => by
+        obtain ⟨e', he', hp', -⟩ := (parentOf_eq_some_iff hU p _).mp hP
+        exact hnew (.inl ⟨e', he', .inl (hp'.trans e)⟩)
+      rw [childrenOf_moveNode hnew hon, if_neg (renameSlot_ne_old hon p), renameSlot_back hpn]
+    | none =>
+      simp only [Option.map_none]
+      unfold rootChain
+      rcases SlotList.chainOf_cases cdt.rootChains (renameSlot new old r) with
+        ⟨D, hD, hsD, e⟩ | ⟨hn, e⟩
+      · rw [e]
+        refine SlotList.chainOf_of_mem hnd' (by rw [moveNode_rootChains]; exact List.mem_map_of_mem hD) ?_
+        exact List.mem_map.mpr ⟨_, hsD, renameSlot_forth hr⟩
+      · rw [e, List.map_singleton, renameSlot_forth hr]
+        refine SlotList.chainOf_of_not_mem fun hm => ?_
+        rw [hFl] at hm
+        obtain ⟨y, hy, rfl⟩ := List.mem_map.mp hm
+        rw [renameSlot_back (hR' y hy)] at hn
+        exact hn hy
+
+end move
+
+end CapDerivationTree
+
+namespace LinkView
+
+/-- **The links after moving `old` to `new`**, slot by slot: `old` holds none;
+every other slot holds the links of its name before the move (`new`'s are
+`old`'s), each naming `new` where it named `old`. -/
+def renameView (L : LinkView) (old new : SlotRef) : LinkView := fun r f =>
+  if r = old then none
+  else (L (CapDerivationTree.renameSlot new old r) f).map (CapDerivationTree.renameSlot old new)
+
+end LinkView
+
+namespace LinksAgree
+
+open CapDerivationTree LinkView
+
+variable {L : LinkView} {cdt : CapDerivationTree}
+
+/-- **Moving a node to a slot outside the tree** keeps the links agreeing: the
+moved slot takes the old one's place, its neighbours and children naming it. -/
+theorem moveNode (h : LinksAgree L cdt) (old new : SlotRef) (hnew : ¬ cdt.mentions new)
+    (hon : old ≠ new) : LinksAgree (L.renameView old new) (cdt.moveNode old new) := by
+  have hU := h.childrenUnique
+  have hnd := h.rootsNodup
+  -- renaming is injective on a slot's siblings, for every name but `old`
+  have hInj : ∀ r, ∀ x ∈ cdt.siblingsOf (renameSlot new old r),
+      renameSlot old new x = renameSlot old new (renameSlot new old r) → x = renameSlot new old r := by
+    intro r x hx e
+    have hs : renameSlot new old r ≠ new := renameSlot_back_ne_new hon r
+    have hxn : x ≠ new := fun hxe => by
+      by_cases hxs : x = renameSlot new old r
+      · exact hs (hxs ▸ hxe)
+      · exact hnew (hxe ▸ mentions_of_sibling hx hxs)
+    exact renameSlot_inj hxn hs e
+  refine ⟨childrenUnique_moveNode hU hnew, rootsNodup_moveNode hnd hnew,
+    rootsParentless_moveNode h.rootsParentless hnew hon, fun r => ?_, fun p => ?_, fun r => ?_,
+    fun r => ?_⟩
+  · show (if r = old then none else _) = _
+    rw [parentOf_moveNode hnew hon, h.parent]
+  · show (if p = old then none else _) = _
+    rw [childrenOf_moveNode hnew hon]
+    split
+    · rfl
+    · rw [h.firstChild, List.head?_map]
+  · show (if r = old then none else _) = _
+    rw [siblingsOf_moveNode hU hnd hnew hon]
+    split
+    · next hr => subst hr; simp [SlotList.succIn]
+    · next hr =>
+      rw [h.next]
+      have e := (SlotList.succIn_map _ (hInj r)).symm
+      rwa [renameSlot_forth hr] at e
+  · show (if r = old then none else _) = _
+    rw [siblingsOf_moveNode hU hnd hnew hon]
+    split
+    · next hr => subst hr; simp [SlotList.predIn, SlotList.predAux]
+    · next hr =>
+      rw [h.prev]
+      have e := (SlotList.predIn_map _ (hInj r)).symm
+      rwa [renameSlot_forth hr] at e
+
+/-- **Moving a node of an acyclic tree to a slot outside it** keeps the links agreeing. -/
+theorem moveNode_of_wf (h : LinksAgree L cdt) (old new : SlotRef) (hnew : ¬ cdt.mentions new)
+    (hon : old ≠ new) : LinksAgree (L.renameView old new) (cdt.moveNode old new) :=
+  h.moveNode old new hnew hon
+
+end LinksAgree
+
+
+namespace LinkView
+
+/-- **The link writes of `moveNode old new`**, given `old`'s children `K`: `new`
+takes `old`'s four links; `old`'s previous sibling (or, when `old` was first,
+its parent) and next sibling name `new` instead; each child takes `new` as
+parent; `old`'s links are cleared. -/
+def moveLinks (L : LinkView) (old new : SlotRef) (K : List SlotRef) : LinkView :=
+  let up := L old .parent
+  let pr := L old .prev
+  let nx := L old .next
+  let L1 := (((L.set new .parent up).set new .firstChild (L old .firstChild)).set new .next nx).set
+    new .prev pr
+  let L2 := match pr with
+    | some p => L1.set p .next (some new)
+    | none => match up with
+      | some u => L1.set u .firstChild (some new)
+      | none => L1
+  let L3 := match nx with
+    | some x => L2.set x .prev (some new)
+    | none => L2
+  (K.foldl (fun L x => L.set x .parent (some new)) L3).clearLinks old
+
+theorem foldl_set_parent (v : Option SlotRef) :
+    ∀ (K : List SlotRef) (L : LinkView) (r : SlotRef) (f : LinkField),
+      K.foldl (fun L x => L.set x .parent v) L r f = if f = .parent ∧ r ∈ K then v else L r f
+  | [], _, _, _ => by simp
+  | x :: K, L, r, f => by
+    rw [List.foldl_cons, foldl_set_parent v K]
+    by_cases hf : f = .parent
+    · subst hf
+      by_cases hr : r = x
+      · subst hr; simp [set]
+      · simp [set, hr]
+    · simp [set, hf]
+
+theorem moveLinks_apply (L : LinkView) (old new : SlotRef) (K : List SlotRef)
+    (hN : ∀ f, L old f ≠ some new) (r : SlotRef) (f : LinkField) :
+    L.moveLinks old new K r f =
+      if r = old then none
+      else if f = .parent ∧ r ∈ K then some new
+      else if r = new then L old f
+      else if f = .next ∧ L old .prev = some r then some new
+      else if f = .firstChild ∧ L old .prev = none ∧ L old .parent = some r then some new
+      else if f = .prev ∧ L old .next = some r then some new
+      else L r f := by
+  unfold moveLinks
+  simp only [clearLinks_apply, foldl_set_parent]
+  by_cases hro : r = old
+  · simp [hro]
+  rw [if_neg hro, if_neg hro]
+  by_cases hk : f = .parent ∧ r ∈ K
+  · rw [if_pos hk, if_pos hk]
+  rw [if_neg hk, if_neg hk]
+  have hP := hN .prev
+  have hX := hN .next
+  have hU := hN .parent
+  cases hp : L old .prev <;> cases hx : L old .next <;> cases hu : L old .parent <;>
+    by_cases hrn : r = new <;> cases f <;> simp_all [set] <;> grind
+
+end LinkView
+
+namespace LinksAgree
+
+open CapDerivationTree LinkView
+
+variable {L : LinkView} {cdt : CapDerivationTree}
+
+theorem map_renameSlot (old new : SlotRef) (v : Option SlotRef) :
+    v.map (renameSlot old new) = if v = some old then some new else v := by
+  cases v with
+  | none => rfl
+  | some y =>
+    unfold renameSlot
+    by_cases h : y = old
+    · subst h; simp
+    · simp [h]
+
+/-- **The move's link writes give the moved links.** -/
+theorem moveLinks_eq (h : LinksAgree L cdt) {old new : SlotRef} (hnew : ¬ cdt.mentions new)
+    (hon : old ≠ new) (hs : cdt.parentOf old ≠ some old) :
+    L.moveLinks old new (cdt.childrenOf old) = L.renameView old new := by
+  have hU := h.childrenUnique
+  have hNoNew : ∀ r f, L r f ≠ some new := fun r f e => hnew (h.target_mentions e)
+  have hnK : new ∉ cdt.childrenOf old := not_mem_childrenOf_of_not_mentions hnew old
+  have hOld : ∀ f, L old f ≠ some old := by
+    intro f
+    cases f
+    · rw [h.parent]; exact hs
+    · rw [h.firstChild]; intro e
+      exact not_mem_childrenOf_self hU hs (List.mem_of_mem_head? e)
+    · exact h.next_ne_self old
+    · exact h.prev_ne_self old
+  funext r f
+  rw [moveLinks_apply _ _ _ _ (fun f e => hNoNew old f e)]
+  unfold renameView
+  by_cases hro : r = old
+  · simp [hro]
+  rw [if_neg hro, if_neg hro]
+  by_cases hrn : r = new
+  · subst hrn
+    have hσ : renameSlot r old r = old := by simp [renameSlot]
+    rw [hσ, map_renameSlot, if_neg (hOld f), if_neg (fun hc => hnK hc.2), if_pos rfl]
+  · have hσ : renameSlot new old r = r := by simp [renameSlot, hrn]
+    rw [hσ, map_renameSlot, if_neg hrn]
+    cases f
+    · simp only [true_and, reduceCtorEq, false_and, if_false]
+      simp only [h.parent_eq_some_iff]
+    · simp only [true_and, reduceCtorEq, false_and, if_false]
+      simp only [h.firstChild_eq_some_iff r old, and_comm]
+    · simp only [true_and, reduceCtorEq, false_and, if_false]
+      simp only [h.next_eq_some_iff r old]
+    · simp only [true_and, reduceCtorEq, false_and, if_false]
+      simp only [← h.next_eq_some_iff old r]
+
+/-- **Moving a node to a slot outside the tree**, with its link writes, keeps
+the links agreeing. -/
+theorem moveNode_links (h : LinksAgree L cdt) (old new : SlotRef) (hnew : ¬ cdt.mentions new)
+    (hon : old ≠ new) (hs : cdt.parentOf old ≠ some old) :
+    LinksAgree (L.moveLinks old new (cdt.childrenOf old)) (cdt.moveNode old new) := by
+  rw [h.moveLinks_eq hnew hon hs]; exact h.moveNode old new hnew hon
+
+end LinksAgree
+
 end SeLe4n.Model

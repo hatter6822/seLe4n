@@ -2945,7 +2945,7 @@ private theorem filter_not_and_length_add {α : Type} (p q : α → Bool) :
   | [] => by simp
   | x :: xs => by
     have ih := filter_not_and_length_add p q xs
-    cases hp : p x <;> cases hq : q x <;> simp [List.filter_cons, hp, hq] <;> omega
+    cases hp : p x <;> cases hq : q x <;> simp [hp, hq] <;> omega
 
 /-- The edges without `node`'s, plus the edges out of `node`, number at most
 the edges. -/
@@ -3015,13 +3015,13 @@ theorem spliceEdgesFrom_length_add (node : SlotRef) (kids : List CapDerivationEd
     unfold spliceEdgesFrom
     by_cases hc : e.child = node
     · rw [if_pos hc, List.length_append, reparentEdges_length]
-      cases hp : e.isParentOf node <;> simp [List.filter_cons, hp] <;> omega
+      cases hp : e.isParentOf node <;> simp [hp] <;> omega
     · rw [if_neg hc]
       by_cases hp : e.parent = node
       · have hp' : e.isParentOf node = true := by simp [CapDerivationEdge.isParentOf, hp]
-        rw [if_pos hp]; simp [List.filter_cons, hp']; omega
+        rw [if_pos hp]; simp [hp']; omega
       · have hp' : e.isParentOf node = false := by simp [CapDerivationEdge.isParentOf, hp]
-        rw [if_neg hp]; simp [List.filter_cons, hp']; omega
+        rw [if_neg hp]; simp [hp']; omega
 
 theorem spliceEdges_length_le (es : List CapDerivationEdge) (node : SlotRef) :
     (spliceEdges es node).length ≤ es.length := by
@@ -3041,9 +3041,9 @@ theorem spliceEdgesFrom_of_no_parent (node : SlotRef) (kids : List CapDerivation
     have hc' : e.isChildOf node = false := by simp [CapDerivationEdge.isChildOf, hc]
     by_cases hp : e.parent = node
     · have hp' : e.isParentOf node = true := by simp [CapDerivationEdge.isParentOf, hp]
-      rw [if_pos hp, ih]; simp [withoutNodeEdges, List.filter_cons, hp']
+      rw [if_pos hp, ih]; simp [withoutNodeEdges, hp']
     · have hp' : e.isParentOf node = false := by simp [CapDerivationEdge.isParentOf, hp]
-      rw [if_neg hp, ih]; simp [withoutNodeEdges, List.filter_cons, hp', hc']
+      rw [if_neg hp, ih]; simp [withoutNodeEdges, hp', hc']
 
 /-- **The splice at `node`'s first parent edge**: the edges before it clear of
 `node`, `kids` re-made from its parent, the edges after it clear of `node`. -/
@@ -3063,9 +3063,9 @@ theorem spliceEdgesFrom_split (node : SlotRef) (kids : List CapDerivationEdge) :
     have hc' : e.isChildOf node = false := by simp [CapDerivationEdge.isChildOf, hc]
     by_cases hp : e.parent = node
     · have hp' : e.isParentOf node = true := by simp [CapDerivationEdge.isParentOf, hp]
-      rw [if_pos hp, ih]; simp [withoutNodeEdges, List.filter_cons, hp']
+      rw [if_pos hp, ih]; simp [withoutNodeEdges, hp']
     · have hp' : e.isParentOf node = false := by simp [CapDerivationEdge.isParentOf, hp]
-      rw [if_neg hp, ih]; simp [withoutNodeEdges, List.filter_cons, hp', hc']
+      rw [if_neg hp, ih]; simp [withoutNodeEdges, hp', hc']
 
 /-- Every edge a splice of a run makes is an edge of the run clear of `node`,
 or one of `kids` re-made from the parent of an edge of the run into `node`. -/
