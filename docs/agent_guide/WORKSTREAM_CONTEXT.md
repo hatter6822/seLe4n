@@ -247,7 +247,11 @@ capability is in the tree and the tree has a preorder, so an insert's source
 always is in the tree.  A new slot write must keep it (`CapTreeShape.addChild`,
 `splice`, `move`, `rewrite`, `of_frame`), and a hand-built state that records
 edges names its sources (`withDerivationEdges`).  The unchecked boot is
-retired: `bootFromPlatform` is the checked boot's fold stage only.  The
+retired: `bootFromPlatform` is the checked boot's fold stage only.  Since
+part 17 (`v0.36.128`) the carve keeps the capability bundle
+(`untypedRetypeObject_preserves_capabilityInvariantBundle`): a new carvable
+kind must hold no capability and no link when carved, and a carved CNode stays
+within the depth bound (`CarveRequest.depthBounded`).  The
 suspend of a thread blocked in IPC or holding a donated context is the one
 syscall arm left on the general path (ZA6.1).  ZA6 covers the other
 entries and makes the rule standing.  Plan:
