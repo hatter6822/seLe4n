@@ -465,7 +465,7 @@ private theorem default_capabilityInvariantBundle :
    by intro cnodeId cn hObj; exact default_objects_absurd hObj,
    by exact RHTable_empty_invExt 16 (by omega),
    by intro oid cn slot cap rid hObj hLook hTgt; exact default_objects_absurd hObj,
-   LinksAgree.of_no_edges CapDerivationTree.empty_edges fun r f => by
+   LinksAgree.of_empty CapDerivationTree.empty_edges CapDerivationTree.empty_rootChains fun r f => by
      rw [SystemState.slotLinkAt_def]
      cases h : (default : SystemState).objects[r.cnode]? with
      | none => rfl

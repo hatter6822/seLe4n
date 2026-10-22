@@ -3906,9 +3906,9 @@ run_check "INVARIANT" rg -n '^import SeLe4n\.Platform\.RPi5\.Deployment$' SeLe4n
 run_check "INVARIANT" rg -n '^theorem proofLayerInvariantBundle_of_bootShape($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^def bootObjectShape($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^def bootQuiescentFields($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
-run_check "INVARIANT" rg -n '^  refine proofLayerInvariantBundle_of_bootShape \(bootFromPlatform config\) \?_$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^  refine proofLayerInvariantBundle_of_bootShape \(bootFromPlatform config\)$' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedWithIdleThreadsFor_proofLayerInvariantBundle($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
-run_check "INVARIANT" rg -n '^  refine proofLayerInvariantBundle_of_bootShape ist hShape hFields hAsid hUntyped hSched hCur \?_ \?_$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^  refine proofLayerInvariantBundle_of_bootShape ist hShape hFields hTree hAsid hUntyped hSched hCur$' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^theorem bootToRuntime_invariantBridge_checked($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^theorem bootFromPlatformChecked_ok_asidTableConsistent($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^theorem rpi5DeploymentBootStateAt_invariantBridge($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Deployment.lean
@@ -7784,7 +7784,7 @@ run_check "INVARIANT" rg -n '^theorem initialThreadStartable_of_start_ne($|[ ({:
 run_check "INVARIANT" rg -n '^  initialThreads : List SeLe4n\.ThreadId := \[\]$' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^theorem proofLayerInvariantBundle_of_bootStartShape($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -U -n '^    Architecture\.proofLayerInvariantBundle ist\.state :=\n  proofLayerInvariantBundle_of_bootStartShape ist\n    \(bootFromPlatformCheckedWithIdleThreadsFor_bootStartShape cores hNodup config ist h\)$' SeLe4n/Platform/Boot.lean
-run_check "INVARIANT" rg -U -n '^    Except String IntermediateState :=\n  \(bootFromPlatformCheckedWithIdleThreadsFor cores config\)\.bind\n    \(startInitialThreads config\.initialThreads\)$' SeLe4n/Platform/Boot/InitialThreads.lean
+run_check "INVARIANT" rg -U -n '^    Except String IntermediateState :=\n  \(bootFromPlatformCheckedWithIdleThreadsFor cores config\)\.bind fun base =>\n    \(startInitialThreads config\.initialThreads base\)\.map \(linkBootCapabilities config\)$' SeLe4n/Platform/Boot/InitialThreads.lean
 run_check "INVARIANT" rg -U -n '^      if initialThreadStartable ist\.state tid then\n        startInitialThreads rest \(startInitialThread ist tid\)\n      else\n        \.error unstartableInitialThreadBootError$' SeLe4n/Platform/Boot/InitialThreads.lean
 run_check "INVARIANT" rg -n '^  state := startInitialThreadOnCore ist\.state tid$' SeLe4n/Platform/Boot/InitialThreads.lean
 run_check "INVARIANT" rg -n '^theorem startInitialThread_preserves_bootStartShape($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean
@@ -21847,4 +21847,32 @@ run_negative_check "INVARIANT" rg -n 'hCdtPost|hCdtMapsPost|cspaceCopy_preserves
 run_check "INVARIANT" rg -n '^theorem empty_not_mentions($|[ ({:\[\]])' SeLe4n/Model/Object/Structures.lean
 run_check "INVARIANT" rg -n -U '                \| \.ok \(\(\), st...\) => \.ok \(\(\), st...\.cdtMove src dst\)' SeLe4n/Kernel/Capability/Operations.lean
 run_negative_check "INVARIANT" rg -n 'CdtNodeId|cdtNodeSlot|cdtSlotNode|cdtNextNode|ensureCdtNodeForSlot|attachSlotToCdtNode|detachSlotFromCdt|lookupCdtNodeOfSlot' SeLe4n
+# WS-ZA ZA5.4 part 15: the tree in seL4's MDB order.  A delete splices the
+# slot's children into its place among its siblings and a move keeps the slot's
+# place; the slots with no parent form one sibling chain; the tree's preorder
+# (`TreeOrder`) is kept by every tree write; and the boot links its capabilities,
+# a thread's space slots derived from the CNode slots naming the same target.
+run_check "INVARIANT" rg -n '^theorem spliceNode_links \(h : LinksAgree L cdt\) \(n : SlotRef\) \(hs : cdt\.parentOf n ≠ some n\) :$' SeLe4n/Model/Object/DerivationLinks.lean
+run_check "INVARIANT" rg -n '^theorem moveNode_links \(h : LinksAgree L cdt\) \(old new : SlotRef\)' SeLe4n/Model/Object/DerivationLinks.lean
+run_check "INVARIANT" rg -n '^theorem appendRoot \(h : LinksAgree L cdt\) \{r : SlotRef\} \(hr : ¬ cdt\.mentions r\)' SeLe4n/Model/Object/DerivationLinks.lean
+run_check "INVARIANT" rg -n -U '^structure TreeOrder \(cdt : CapDerivationTree\) \(P : List SlotRef\) : Prop where\n  forest : ForestOrder cdt\.childrenOf cdt\.rootChains\.flatten P\n  nodup : P\.Nodup\n  complete : ∀ x, cdt\.mentions x → x ∈ P\n  oneChain : cdt\.rootChains\.length ≤ 1$' SeLe4n/Model/Object/DerivationOrder.lean
+run_check "INVARIANT" rg -n '^theorem spliceNode \(h : TreeOrder cdt P\)' SeLe4n/Model/Object/DerivationOrder.lean
+run_check "INVARIANT" rg -n '^theorem moveNode \(h : TreeOrder cdt P\)' SeLe4n/Model/Object/DerivationOrder.lean
+run_check "INVARIANT" rg -n '^theorem addEdge \(h : TreeOrder cdt P\)' SeLe4n/Model/Object/DerivationOrder.lean
+run_check "INVARIANT" rg -n '^theorem appendRoot \(h : TreeOrder cdt P\)' SeLe4n/Model/Object/DerivationOrder.lean
+run_check "INVARIANT" rg -n -U '^@\[inline\] def cdtSplice \(st : SystemState\) \(n : SlotRef\) : SystemState :=\n  let k := st\.cdt\.edgeBound \+ 1\n  \(st\.modifyCdt \(·\.spliceNode n\)\)\.linkSpliceNode n\.cnode n\.slot k$' SeLe4n/Model/SlotLinks.lean
+run_check "INVARIANT" rg -n -U '^@\[inline\] def cdtAppendRoot \(st : SystemState\) \(t : Option SlotRef\) \(r : SlotRef\) : SystemState :=\n  \(st\.modifyCdt \(·\.appendRoot r\)\)\.linkAppendRoot t r$' SeLe4n/Model/SlotLinks.lean
+run_check "INVARIANT" rg -n '^theorem cdtSplice_agree \{st : SystemState\}' SeLe4n/Model/SlotLinks.lean
+run_check "INVARIANT" rg -n '^theorem cdtMove_agree \{st : SystemState\}' SeLe4n/Model/SlotLinks.lean
+run_check "INVARIANT" rg -n '^theorem cdtAppendRoot_agree \{st : SystemState\}' SeLe4n/Model/SlotLinks.lean
+run_check "INVARIANT" rg -n -U '^def bootDerivationTreeSound \(st : SystemState\) : Prop :=\n  cdtCompleteness st ∧ cdtAcyclicity st ∧ cdtLinksAgree st ∧ ∃ P, st\.cdt\.TreeOrder P$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^def bootLinkedShape($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem proofLayerInvariantBundle_of_bootLinkedShape($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n -U '        match a\.roots\.find\? \(fun q => decide \(q\.2 = cap\.target\)\) with\n        \| some q => \{ a with st := a\.st\.cdtAddChild q\.1 r \.copy, done := r :: a\.done \}\n        \| none =>\n            \{ st := a\.st\.cdtAppendRoot a\.last r, last := some r, done := r :: a\.done,' SeLe4n/Platform/Boot/CapabilityLinks.lean
+run_check "INVARIANT" rg -n -U '^def bootCapabilitySlots \(objs : List ObjectEntry\) : List SlotRef :=\n  objs\.flatMap \(fun e => match e\.obj with\n    \| \.cnode cn => cn\.occupiedSlots\.map fun p => ⟨e\.id, p\.1⟩\n    \| _ => \[\]\) \+\+\n  objs\.flatMap \(fun e => match e\.obj with\n    \| \.tcb _ => \[⟨e\.id, SeLe4n\.Slot\.ofNat 0⟩, ⟨e\.id, SeLe4n\.Slot\.ofNat 1⟩\]' SeLe4n/Platform/Boot/CapabilityLinks.lean
+run_check "INVARIANT" rg -n '^theorem BootLinks\.Sound\.step($|[ ({:\[\]])' SeLe4n/Platform/Boot/CapabilityLinks.lean
+run_check "INVARIANT" rg -n '^theorem linkBootCapabilities_bootLinkedShape($|[ ({:\[\]])' SeLe4n/Platform/Boot/CapabilityLinks.lean
+run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedStartedFor_bootLinkedShape($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean
+run_check "INVARIANT" rg -n '^  linkBootCapabilities qemuVirtBoundPlatformConfig qemuVirtDeploymentStartedState$' SeLe4n/Platform/QemuVirt/Deployment.lean
+run_check "INVARIANT" rg -n '^  linkBootCapabilities \(rpi5BoundPlatformConfigAt v\) \(rpi5DeploymentStartedStateAt v\)$' SeLe4n/Platform/RPi5/Deployment.lean
 finalize_report

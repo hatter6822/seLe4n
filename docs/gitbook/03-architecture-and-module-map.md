@@ -231,6 +231,11 @@ inventory was written:
     mapping store with O(1) lookup/map/unmap and W^X enforcement (WS-G6/WS-H11),
     `CdtNodeId` typed wrapper with full instance suite (WS-J1-F),
     `KernelObject` discriminated union.
+  - `Object/DerivationLinks.lean` — the slot links' agreement with the
+    derivation tree (`LinksAgree`), root chains included, and the link views
+    of each tree write; `Object/DerivationOrder.lean` — the tree's preorder
+    (`TreeOrder`), seL4's mapping-database list, kept by every tree write
+    (ZA5.4 part 15).
 
 - `SeLe4n/Model/State.lean`
   - `SystemState` (machine + object store + scheduler + IRQ handlers),
@@ -533,6 +538,11 @@ determinism. See `Service/Operations.lean` for the full design rationale.
     sequence from platform configuration to `IntermediateState`. Master validity
     theorem `bootFromPlatform_valid`, determinism proof `bootFromPlatform_deterministic`,
     empty-config identity `bootFromPlatform_empty`. (WS-Q3-C)
+- `SeLe4n/Platform/Boot/CapabilityLinks.lean`
+  - `linkBootCapabilities`, the started boot's last stage: links every
+    configured capability into the derivation tree, a thread's space slots
+    derived from the CNode slot naming the same object, and proves the linked
+    state's shape (`linkBootCapabilities_bootLinkedShape`). (ZA5.4 part 15)
 - `SeLe4n/Platform/Sim/{RuntimeContract,BootContract,Contract}.lean`
   - Simulation platform binding (`SimPlatform`) with permissive/restrictive
     runtime contracts, trivially-true boot and interrupt contracts, and an

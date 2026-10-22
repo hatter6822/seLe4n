@@ -2390,7 +2390,7 @@ the acyclicity invariant: no slot can be both ancestor and descendant of itself.
 **T2-B (H-2): Access-controlled construction.** Direct construction of
 `CapDerivationTree` values is restricted to the `CapDerivationTree` namespace:
 external code starts from `CapDerivationTree.empty` and changes the tree only
-through its operations (`addEdge`, `removeNode`, `spliceNode`, `moveNode`).
+through its operations (`addEdge`, `appendRoot`, `spliceNode`, `moveNode`).
 
 **WS-ZA ZA5.3 part 4: the edge list is the tree.**  Its parent and child reads
 (`parentOf`, `childrenOf`) are read off the edges; the kernel's executable
@@ -2401,6 +2401,11 @@ structure CapDerivationTree where
   /-- The edges, as ghost state (`edges`): proofs read them, and the compiled
   kernel stores none of them. -/
   edgesGhost : SeLe4n.Erased (List CapDerivationEdge)
+  /-- The sibling chains of the slots with no parent, each in order (ghost): a
+  slot with no parent edge is linked to its neighbours in its chain, as seL4's
+  mapping database links every capability.  A parentless slot no chain lists
+  is a chain of its own.  Boot lays its capabilities in one chain. -/
+  rootChainsGhost : SeLe4n.Erased (List (List SlotRef))
   /-- A bound on the number of edges, kept as a word: the fuel of the link
   walks that read the tree (`SystemState.linkChildrenOf`, the revoke loop).
   Each added edge raises it by one and no other change lowers it. -/
@@ -2418,26 +2423,40 @@ noncomputable def edges (cdt : CapDerivationTree) : List CapDerivationEdge :=
 theorem edges_length_le (cdt : CapDerivationTree) : cdt.edges.length ≤ cdt.edgeBound :=
   cdt.edges_le
 
-/-- Two trees with the same edges and the same bound are equal. -/
-theorem ext {a b : CapDerivationTree} (hE : a.edges = b.edges) (hB : a.edgeBound = b.edgeBound) :
-    a = b := by
+/-- **The root chains** (WS-ZA ZA5.4 part 15: a ghost): the sibling chains of
+the slots with no parent, in order.  Only proofs read them; the kernel reads
+the chains through the `next` and `prev` links that agree with them. -/
+noncomputable def rootChains (cdt : CapDerivationTree) : List (List SlotRef) :=
+  cdt.rootChainsGhost.out
+
+/-- Two trees with the same edges, root chains and bound are equal. -/
+theorem ext {a b : CapDerivationTree} (hE : a.edges = b.edges) (hR : a.rootChains = b.rootChains)
+    (hB : a.edgeBound = b.edgeBound) : a = b := by
   cases a; cases b
   simp only at hB; subst hB
   have : _ = _ := SeLe4n.Erased.ext hE
+  subst this
+  have : _ = _ := SeLe4n.Erased.ext hR
   subst this; rfl
 
 /-- T2-C (H-2): The canonical empty CDT with no edges. -/
 def empty : CapDerivationTree :=
-  CapDerivationTree.mk (SeLe4n.Erased.mk []) 0 (by simp)
+  CapDerivationTree.mk (SeLe4n.Erased.mk []) (SeLe4n.Erased.mk []) 0 (by simp)
 
 @[simp] theorem empty_edges : CapDerivationTree.empty.edges = [] := by
   simp [empty, edges]
 
+@[simp] theorem empty_rootChains : CapDerivationTree.empty.rootChains = [] := by
+  simp [empty, rootChains]
+
 /-- Add a derivation edge from parent to child.  The new edge is first, so the
-new child is the parent's first child (`childrenOf`). -/
+new child is the parent's first child (`childrenOf`), which is right after the
+parent in the tree's preorder, where seL4's `cteInsert` puts a derived
+capability in the mapping database. -/
 def addEdge (cdt : CapDerivationTree) (parent child : SlotRef)
     (op : DerivationOp) : CapDerivationTree :=
-  CapDerivationTree.mk (cdt.edgesGhost.map ({ parent, child, op } :: ·)) (cdt.edgeBound + 1)
+  CapDerivationTree.mk (cdt.edgesGhost.map ({ parent, child, op } :: ·)) cdt.rootChainsGhost
+    (cdt.edgeBound + 1)
     (by simpa [SeLe4n.Erased.out_map] using cdt.edges_le)
 
 @[simp] theorem addEdge_edges (cdt : CapDerivationTree) (parent child : SlotRef)
@@ -2445,13 +2464,54 @@ def addEdge (cdt : CapDerivationTree) (parent child : SlotRef)
     (cdt.addEdge parent child op).edges = { parent, child, op } :: cdt.edges := by
   unfold edges addEdge; exact SeLe4n.Erased.out_map _ _
 
+@[simp] theorem addEdge_rootChains (cdt : CapDerivationTree) (parent child : SlotRef)
+    (op : DerivationOp) : (cdt.addEdge parent child op).rootChains = cdt.rootChains := rfl
+
 @[simp] theorem addEdge_edgeBound (cdt : CapDerivationTree) (parent child : SlotRef)
     (op : DerivationOp) : (cdt.addEdge parent child op).edgeBound = cdt.edgeBound + 1 := rfl
 
-/-- **A slot the tree names**: an endpoint of one of its edges.  A slot the tree
-does not name is outside it: no parent, no children. -/
+/-- **Append a root** `r` to the end of the first root chain (a new chain when
+there is none): how boot lays its capabilities in one chain, each linked after
+the one before (`LinkView.appendRoot`). -/
+def appendRoot (cdt : CapDerivationTree) (r : SlotRef) : CapDerivationTree :=
+  CapDerivationTree.mk cdt.edgesGhost
+    (cdt.rootChainsGhost.map fun cs => match cs with
+      | [] => [[r]]
+      | c :: rest => (c ++ [r]) :: rest)
+    cdt.edgeBound cdt.edges_le
+
+@[simp] theorem appendRoot_edges (cdt : CapDerivationTree) (r : SlotRef) :
+    (cdt.appendRoot r).edges = cdt.edges := rfl
+
+@[simp] theorem appendRoot_edgeBound (cdt : CapDerivationTree) (r : SlotRef) :
+    (cdt.appendRoot r).edgeBound = cdt.edgeBound := rfl
+
+theorem appendRoot_rootChains (cdt : CapDerivationTree) (r : SlotRef) :
+    (cdt.appendRoot r).rootChains = match cdt.rootChains with
+      | [] => [[r]]
+      | c :: rest => (c ++ [r]) :: rest := by
+  unfold rootChains appendRoot; exact SeLe4n.Erased.out_map _ _
+
+/-- **A slot the tree names**: an endpoint of one of its edges, or a member of a
+root chain.  A slot the tree does not name is outside it: no parent, no
+children, no sibling. -/
 def mentions (cdt : CapDerivationTree) (ref : SlotRef) : Prop :=
-  ∃ e ∈ cdt.edges, e.parent = ref ∨ e.child = ref
+  (∃ e ∈ cdt.edges, e.parent = ref ∨ e.child = ref) ∨ ref ∈ cdt.rootChains.flatten
+
+/-- An endpoint of an edge is a slot the tree names. -/
+theorem mentions_of_edge {cdt : CapDerivationTree} {e : CapDerivationEdge} (he : e ∈ cdt.edges)
+    {ref : SlotRef} (h : e.parent = ref ∨ e.child = ref) : cdt.mentions ref :=
+  .inl ⟨e, he, h⟩
+
+/-- A slot the tree does not name is in no edge. -/
+theorem not_edge_of_not_mentions {cdt : CapDerivationTree} {ref : SlotRef}
+    (h : ¬ cdt.mentions ref) : ∀ e ∈ cdt.edges, e.parent ≠ ref ∧ e.child ≠ ref :=
+  fun e he => ⟨fun hp => h (.inl ⟨e, he, .inl hp⟩), fun hc => h (.inl ⟨e, he, .inr hc⟩)⟩
+
+/-- ...and in no root chain. -/
+theorem not_root_of_not_mentions {cdt : CapDerivationTree} {ref : SlotRef}
+    (h : ¬ cdt.mentions ref) : ref ∉ cdt.rootChains.flatten :=
+  fun hr => h (.inr hr)
 
 /-- The direct children of `node`, newest first (the order `addEdge` puts them
 in, and the order the links' sibling chain holds them in). -/
@@ -2462,23 +2522,6 @@ noncomputable def childrenOf (cdt : CapDerivationTree) (node : SlotRef) : List S
 each slot at most one parent edge (`childrenUnique`), so this is its parent. -/
 noncomputable def parentOf (cdt : CapDerivationTree) (node : SlotRef) : Option SlotRef :=
   (cdt.edges.find? (·.isChildOf node)).map (·.parent)
-
-/-- Remove all edges where the given node appears as parent or child. -/
-def removeNode (cdt : CapDerivationTree) (node : SlotRef)
-    : CapDerivationTree :=
-  CapDerivationTree.mk
-    (cdt.edgesGhost.map (·.filter (fun e => ¬e.isParentOf node ∧ ¬e.isChildOf node)))
-    cdt.edgeBound
-    (by simpa [SeLe4n.Erased.out_map] using
-      Nat.le_trans (List.length_filter_le _ _) cdt.edges_le)
-
-@[simp] theorem removeNode_edges (cdt : CapDerivationTree) (node : SlotRef) :
-    (cdt.removeNode node).edges =
-      cdt.edges.filter (fun e => ¬e.isParentOf node ∧ ¬e.isChildOf node) := by
-  unfold edges removeNode; exact SeLe4n.Erased.out_map _ _
-
-@[simp] theorem removeNode_edgeBound (cdt : CapDerivationTree) (node : SlotRef) :
-    (cdt.removeNode node).edgeBound = cdt.edgeBound := rfl
 
 /-- Collect all descendants of a slot via bounded BFS traversal.
 Uses fuel = edges.length to ensure termination and completeness
@@ -2522,8 +2565,9 @@ theorem empty_acyclic : CapDerivationTree.empty.acyclic := by
 
 /-- The empty tree names no slot. -/
 theorem empty_not_mentions (ref : SlotRef) : ¬ CapDerivationTree.empty.mentions ref := by
-  rintro ⟨e, hMem, _⟩
-  simp [CapDerivationTree.empty_edges] at hMem
+  rintro (⟨e, hMem, _⟩ | hR)
+  · simp [CapDerivationTree.empty_edges] at hMem
+  · simp [CapDerivationTree.empty_rootChains] at hR
 
 -- ============================================================================
 -- WS-H4: Edge-well-founded acyclicity (simpler formulation for subset proofs)
@@ -2561,13 +2605,6 @@ theorem edgeWellFounded_sub
   exact hWF node ⟨path, hLen, hHead, hLast, fun i hi => by
     rcases hEdges i hi with ⟨e, hMem, hp, hc⟩
     exact ⟨e, hSub e hMem, hp, hc⟩⟩
-
-/-- Removing a node preserves a subset of edges. -/
-theorem removeNode_edges_sub (cdt : CapDerivationTree) (node : SlotRef) :
-    ∀ e ∈ (cdt.removeNode node).edges, e ∈ cdt.edges := by
-  intro e hMem
-  simp [removeNode_edges] at hMem
-  exact hMem.1
 
 /-- WS-H4/M-G03: Adding an edge preserves edge-well-foundedness when the child
 node does not appear in any existing edge (as either parent or child). The parent
@@ -2892,49 +2929,23 @@ theorem edgeWellFounded_of_edges_transGen (cdt cdt' : CapDerivationTree)
   exact hWF node (steps_of_transGen hOld)
 
 
-/-- The edge list with `node`'s edges taken away (`removeNode`'s edges). -/
+/-- The edge list with `node`'s edges taken away. -/
 def withoutNodeEdges (es : List CapDerivationEdge) (node : SlotRef) : List CapDerivationEdge :=
   es.filter (fun e => !e.isParentOf node && !e.isChildOf node)
 
-/-- Re-make each of `l`'s edges with parent `p`, onto `acc`, newest first. -/
-def reparentEdges (p : SlotRef) (l acc : List CapDerivationEdge) : List CapDerivationEdge :=
-  l.foldl (fun acc e => { parent := p, child := e.child, op := e.op } :: acc) acc
+/-- `l`'s edges re-made with parent `p`, in order, each by its operation. -/
+def reparentEdges (p : SlotRef) (l : List CapDerivationEdge) : List CapDerivationEdge :=
+  l.map fun e => { parent := p, child := e.child, op := e.op }
 
-theorem reparentEdges_cons (p : SlotRef) (x : CapDerivationEdge) (xs acc : List CapDerivationEdge) :
-    reparentEdges p (x :: xs) acc =
-      reparentEdges p xs ({ parent := p, child := x.child, op := x.op } :: acc) := rfl
-
-theorem reparentEdges_length (p : SlotRef) :
-    ∀ (l acc : List CapDerivationEdge), (reparentEdges p l acc).length = acc.length + l.length
-  | [], acc => by simp [reparentEdges]
-  | x :: xs, acc => by
-    rw [reparentEdges_cons, reparentEdges_length p xs]
-    simp; omega
-
-theorem mem_reparentEdges (p : SlotRef) :
-    ∀ (l acc : List CapDerivationEdge) (e' : CapDerivationEdge),
-      e' ∈ reparentEdges p l acc ↔
-        e' ∈ acc ∨ ∃ e ∈ l, e' = { parent := p, child := e.child, op := e.op }
-  | [], acc, e' => by simp [reparentEdges]
-  | x :: xs, acc, e' => by
-    rw [reparentEdges_cons, mem_reparentEdges p xs]
-    simp only [List.mem_cons, or_and_right, exists_or, exists_eq_left]
-    constructor
-    · rintro ((h | h) | h)
-      · exact .inr (.inl h)
-      · exact .inl h
-      · exact .inr (.inr h)
-    · rintro (h | h | h)
-      · exact .inl (.inr h)
-      · exact .inl (.inl h)
-      · exact .inr h
+theorem reparentEdges_length (p : SlotRef) (l : List CapDerivationEdge) :
+    (reparentEdges p l).length = l.length := List.length_map ..
 
 private theorem filter_not_and_length_add {α : Type} (p q : α → Bool) :
     ∀ (l : List α), (l.filter (fun e => !p e && !q e)).length + (l.filter p).length ≤ l.length
   | [] => by simp
   | x :: xs => by
     have ih := filter_not_and_length_add p q xs
-    cases hp : p x <;> cases hq : q x <;> simp [List.filter_cons, hp, hq] <;> omega
+    cases hp : p x <;> cases hq : q x <;> simp [hp, hq] <;> omega
 
 /-- The edges without `node`'s, plus the edges out of `node`, number at most
 the edges. -/
@@ -2942,48 +2953,212 @@ theorem withoutNodeEdges_length_add (es : List CapDerivationEdge) (node : SlotRe
     (withoutNodeEdges es node).length + (es.filter (·.isParentOf node)).length ≤ es.length :=
   filter_not_and_length_add _ _ es
 
-/-- **The splice's edges** (`spliceNode`): `node`'s edges go, and each child of
-`node` is re-derived from `node`'s parent, if it has one. -/
+/-- `l` with each `n` replaced, in place, by the list `m`. -/
+def replaceSlot (n : SlotRef) (m : List SlotRef) (l : List SlotRef) : List SlotRef :=
+  l.flatMap fun x => if x = n then m else [x]
+
+theorem replaceSlot_of_not_mem {n : SlotRef} {m : List SlotRef} :
+    ∀ {l : List SlotRef}, n ∉ l → replaceSlot n m l = l
+  | [], _ => rfl
+  | a :: l, h => by
+    have ha : a ≠ n := fun e => h (e ▸ List.mem_cons_self ..)
+    simp only [replaceSlot, List.flatMap_cons, if_neg ha, List.singleton_append]
+    exact congrArg (a :: ·) (replaceSlot_of_not_mem (fun hm => h (List.mem_cons_of_mem _ hm)))
+
+theorem replaceSlot_append (n : SlotRef) (m l₁ l₂ : List SlotRef) :
+    replaceSlot n m (l₁ ++ l₂) = replaceSlot n m l₁ ++ replaceSlot n m l₂ := by
+  simp [replaceSlot, List.flatMap_append]
+
+theorem replaceSlot_cons_self (n : SlotRef) (m l : List SlotRef) :
+    replaceSlot n m (n :: l) = m ++ replaceSlot n m l := by
+  simp [replaceSlot]
+
+theorem mem_replaceSlot {n x : SlotRef} {m l : List SlotRef} :
+    x ∈ replaceSlot n m l ↔ (x ∈ l ∧ x ≠ n) ∨ (n ∈ l ∧ x ∈ m) := by
+  simp only [replaceSlot, List.mem_flatMap]
+  constructor
+  · rintro ⟨y, hy, hx⟩
+    split at hx
+    · next h => subst h; exact .inr ⟨hy, hx⟩
+    · next h => simp at hx; subst hx; exact .inl ⟨hy, h⟩
+  · rintro (⟨hx, hn⟩ | ⟨hn, hx⟩)
+    · exact ⟨x, hx, by simp [hn]⟩
+    · exact ⟨n, hn, by simp [hx]⟩
+
+/-- **The splice of `node` from a run `l` of the edges**, whose child edges of
+`node` are `kids`: up to `node`'s first parent edge, the edges clear of `node`;
+in that edge's place, `kids` re-made from its parent, in order; after it, the
+edges clear of `node`. -/
+def spliceEdgesFrom (node : SlotRef) (kids : List CapDerivationEdge) :
+    List CapDerivationEdge → List CapDerivationEdge
+  | [] => []
+  | e :: es =>
+    if e.child = node then reparentEdges e.parent kids ++ withoutNodeEdges es node
+    else if e.parent = node then spliceEdgesFrom node kids es
+    else e :: spliceEdgesFrom node kids es
+
+/-- **The splice's edges** (`spliceNode`): `node`'s edges go, and `node`'s
+children are re-derived from `node`'s parent in `node`'s place among its
+siblings, in their order, as seL4's `cteDelete` leaves the capabilities derived
+from a deleted one where they were in the mapping database. -/
 def spliceEdges (es : List CapDerivationEdge) (node : SlotRef) : List CapDerivationEdge :=
-  match es.find? (fun e => e.isChildOf node) with
-  | none => withoutNodeEdges es node
-  | some up => reparentEdges up.parent (es.filter (·.isParentOf node)) (withoutNodeEdges es node)
+  spliceEdgesFrom node (es.filter (·.isParentOf node)) es
+
+theorem spliceEdgesFrom_length_add (node : SlotRef) (kids : List CapDerivationEdge) :
+    ∀ l : List CapDerivationEdge,
+      (spliceEdgesFrom node kids l).length + (l.filter (·.isParentOf node)).length ≤
+        l.length + kids.length
+  | [] => by simp [spliceEdgesFrom]
+  | e :: es => by
+    have ih := spliceEdgesFrom_length_add node kids es
+    have hw := withoutNodeEdges_length_add es node
+    unfold spliceEdgesFrom
+    by_cases hc : e.child = node
+    · rw [if_pos hc, List.length_append, reparentEdges_length]
+      cases hp : e.isParentOf node <;> simp [hp] <;> omega
+    · rw [if_neg hc]
+      by_cases hp : e.parent = node
+      · have hp' : e.isParentOf node = true := by simp [CapDerivationEdge.isParentOf, hp]
+        rw [if_pos hp]; simp [hp']; omega
+      · have hp' : e.isParentOf node = false := by simp [CapDerivationEdge.isParentOf, hp]
+        rw [if_neg hp]; simp [hp']; omega
 
 theorem spliceEdges_length_le (es : List CapDerivationEdge) (node : SlotRef) :
     (spliceEdges es node).length ≤ es.length := by
-  have h := withoutNodeEdges_length_add es node
-  unfold spliceEdges
-  split
-  · omega
-  · rw [reparentEdges_length]; exact h
+  have := spliceEdgesFrom_length_add node (es.filter (·.isParentOf node)) es
+  unfold spliceEdges; omega
 
-/-- **The move's edges** (`moveNode`): `old`'s parent edge and child edges are
-re-made at `new`, and `old`'s edges go. -/
-def moveEdges (es : List CapDerivationEdge) (old new : SlotRef) : List CapDerivationEdge :=
-  let base := withoutNodeEdges es old
-  let withParent := match es.find? (fun e => e.isChildOf old) with
-    | some up => { parent := up.parent, child := new, op := up.op } :: base
-    | none => base
-  reparentEdges new (es.filter (·.isParentOf old)) withParent
+/-- A run with no parent edge of `node` loses `node`'s edges and nothing else. -/
+theorem spliceEdgesFrom_of_no_parent (node : SlotRef) (kids : List CapDerivationEdge) :
+    ∀ l : List CapDerivationEdge, (∀ e ∈ l, e.child ≠ node) →
+      spliceEdgesFrom node kids l = withoutNodeEdges l node
+  | [], _ => rfl
+  | e :: es, h => by
+    have hc := h e (List.mem_cons_self ..)
+    have ih := spliceEdgesFrom_of_no_parent node kids es (fun x hx => h x (List.mem_cons_of_mem _ hx))
+    unfold spliceEdgesFrom withoutNodeEdges
+    rw [if_neg hc]
+    have hc' : e.isChildOf node = false := by simp [CapDerivationEdge.isChildOf, hc]
+    by_cases hp : e.parent = node
+    · have hp' : e.isParentOf node = true := by simp [CapDerivationEdge.isParentOf, hp]
+      rw [if_pos hp, ih]; simp [withoutNodeEdges, hp']
+    · have hp' : e.isParentOf node = false := by simp [CapDerivationEdge.isParentOf, hp]
+      rw [if_neg hp, ih]; simp [withoutNodeEdges, hp', hc']
 
-theorem moveEdges_length_le (es : List CapDerivationEdge) (old new : SlotRef) :
-    (moveEdges es old new).length ≤ es.length + 1 := by
-  have h := withoutNodeEdges_length_add es old
-  unfold moveEdges
-  simp only [reparentEdges_length]
-  split <;> simp <;> omega
+/-- **The splice at `node`'s first parent edge**: the edges before it clear of
+`node`, `kids` re-made from its parent, the edges after it clear of `node`. -/
+theorem spliceEdgesFrom_split (node : SlotRef) (kids : List CapDerivationEdge) :
+    ∀ (pre : List CapDerivationEdge) (up : CapDerivationEdge) (post : List CapDerivationEdge),
+      (∀ e ∈ pre, e.child ≠ node) → up.child = node →
+      spliceEdgesFrom node kids (pre ++ up :: post) =
+        withoutNodeEdges pre node ++ reparentEdges up.parent kids ++ withoutNodeEdges post node
+  | [], up, post, _, hu => by simp [spliceEdgesFrom, hu, withoutNodeEdges]
+  | e :: pre, up, post, h, hu => by
+    have hc := h e (List.mem_cons_self ..)
+    have ih := spliceEdgesFrom_split node kids pre up post
+      (fun x hx => h x (List.mem_cons_of_mem _ hx)) hu
+    rw [List.cons_append]
+    unfold spliceEdgesFrom
+    rw [if_neg hc]
+    have hc' : e.isChildOf node = false := by simp [CapDerivationEdge.isChildOf, hc]
+    by_cases hp : e.parent = node
+    · have hp' : e.isParentOf node = true := by simp [CapDerivationEdge.isParentOf, hp]
+      rw [if_pos hp, ih]; simp [withoutNodeEdges, hp']
+    · have hp' : e.isParentOf node = false := by simp [CapDerivationEdge.isParentOf, hp]
+      rw [if_neg hp, ih]; simp [withoutNodeEdges, hp', hc']
 
-/-- **Splice `node` out of the tree**, as seL4's `cteDelete` unlinks a capability
-from the mapping database: `node`'s edges go, and each child it had is derived
-from `node`'s own parent instead, by the operation it was derived by.  A root
-node's children become roots.  Deleting a slot therefore never depends on
-whether it has derived capabilities, and revoking an ancestor still reaches
-every capability derived through the deleted one.
+/-- Every edge a splice of a run makes is an edge of the run clear of `node`,
+or one of `kids` re-made from the parent of an edge of the run into `node`. -/
+theorem mem_spliceEdgesFrom (node : SlotRef) (kids : List CapDerivationEdge) :
+    ∀ (l : List CapDerivationEdge) (e' : CapDerivationEdge), e' ∈ spliceEdgesFrom node kids l →
+      (e' ∈ l ∧ e'.parent ≠ node ∧ e'.child ≠ node) ∨
+      ∃ up ∈ l, up.child = node ∧ ∃ k ∈ kids, e' = { parent := up.parent, child := k.child, op := k.op }
+  | [], _, h => by cases h
+  | e :: es, e', h => by
+    unfold spliceEdgesFrom at h
+    by_cases hc : e.child = node
+    · rw [if_pos hc] at h
+      rcases List.mem_append.mp h with h | h
+      · obtain ⟨k, hk, rfl⟩ := List.mem_map.mp h
+        exact .inr ⟨e, List.mem_cons_self .., hc, k, hk, rfl⟩
+      · simp only [withoutNodeEdges, List.mem_filter, Bool.and_eq_true, Bool.not_eq_true',
+          CapDerivationEdge.isParentOf, CapDerivationEdge.isChildOf, decide_eq_false_iff_not] at h
+        exact .inl ⟨List.mem_cons_of_mem _ h.1, h.2.1, h.2.2⟩
+    · rw [if_neg hc] at h
+      have lift : e' ∈ spliceEdgesFrom node kids es →
+          (e' ∈ e :: es ∧ e'.parent ≠ node ∧ e'.child ≠ node) ∨
+          ∃ up ∈ e :: es, up.child = node ∧ ∃ k ∈ kids,
+            e' = { parent := up.parent, child := k.child, op := k.op } := fun h' => by
+        rcases mem_spliceEdgesFrom node kids es e' h' with ⟨a, b, c⟩ | ⟨up, hup, r⟩
+        · exact .inl ⟨List.mem_cons_of_mem _ a, b, c⟩
+        · exact .inr ⟨up, List.mem_cons_of_mem _ hup, r⟩
+      by_cases hp : e.parent = node
+      · rw [if_pos hp] at h; exact lift h
+      · rw [if_neg hp] at h
+        rcases List.mem_cons.mp h with rfl | h
+        · exact .inl ⟨List.mem_cons_self .., hp, hc⟩
+        · exact lift h
 
-Each child's one parent edge is `node`'s (`childrenUnique`), which `removeNode`
-takes away, so each re-made edge is again the child's only parent edge. -/
+/-- The root chains after splicing a slot `node` with no parent edge, whose
+children are `kids`: `kids` take `node`'s place in its chain, in their order; a
+`node` no chain lists was a chain of its own, which `kids` now are. -/
+def spliceRootChains (cs : List (List SlotRef)) (node : SlotRef) (kids : List SlotRef) :
+    List (List SlotRef) :=
+  if node ∈ cs.flatten then cs.map (replaceSlot node kids)
+  else if kids = [] then cs else cs ++ [kids]
+
+/-- Splicing a slot out of root chains leaves their slots but it, and its
+children when it was a root. -/
+theorem mem_flatten_spliceRootChains {cs : List (List SlotRef)} {node : SlotRef}
+    {kids : List SlotRef} {x : SlotRef} (h : x ∈ (spliceRootChains cs node kids).flatten) :
+    (x ∈ cs.flatten ∧ x ≠ node) ∨ x ∈ kids := by
+  unfold spliceRootChains at h
+  split at h
+  · simp only [List.mem_flatten, List.mem_map] at h
+    obtain ⟨c', ⟨c, hc, rfl⟩, hx⟩ := h
+    rcases mem_replaceSlot.mp hx with ⟨hx, hn⟩ | ⟨_, hx⟩
+    · exact .inl ⟨List.mem_flatten.mpr ⟨c, hc, hx⟩, hn⟩
+    · exact .inr hx
+  · next hn =>
+    have ne : x ∈ cs.flatten → x ≠ node := fun hx e => hn (e ▸ hx)
+    split at h
+    · exact .inl ⟨h, ne h⟩
+    · rw [List.flatten_append] at h
+      rcases List.mem_append.mp h with h | h
+      · exact .inl ⟨h, ne h⟩
+      · exact .inr (by simpa using h)
+
+/-- The root chains with `node` dropped from each. -/
+theorem mem_flatten_map_replaceSlot_nil {cs : List (List SlotRef)} {node x : SlotRef}
+    (h : x ∈ (cs.map (replaceSlot node [])).flatten) : x ∈ cs.flatten ∧ x ≠ node := by
+  simp only [List.mem_flatten, List.mem_map] at h
+  obtain ⟨c', ⟨c, hc, rfl⟩, hx⟩ := h
+  rcases mem_replaceSlot.mp hx with ⟨hx, hn⟩ | ⟨_, hx⟩
+  · exact ⟨List.mem_flatten.mpr ⟨c, hc, hx⟩, hn⟩
+  · cases hx
+
+/-- Whether `node` has a parent edge, as the splice decides it. -/
+def hasParentEdge (es : List CapDerivationEdge) (node : SlotRef) : Bool :=
+  es.any (·.isChildOf node)
+
+theorem hasParentEdge_eq_false_iff (es : List CapDerivationEdge) (node : SlotRef) :
+    hasParentEdge es node = false ↔ ∀ e ∈ es, e.child ≠ node := by
+  simp [hasParentEdge, CapDerivationEdge.isChildOf]
+
+/-- **Splice `node` out of the tree**, as seL4's `cteDelete` unlinks a
+capability from the mapping database: `node`'s edges go, and each child it had
+is derived from `node`'s own parent instead, by the operation it was derived by,
+in `node`'s place among that parent's children and in the order they had.  A
+root's children take its place in its root chain.  So the tree's preorder after
+the splice is the preorder before it with `node` taken out, as seL4's list is.
+Deleting a slot therefore never depends on whether it has derived capabilities,
+and revoking an ancestor still reaches every capability derived through the
+deleted one. -/
 def spliceNode (cdt : CapDerivationTree) (node : SlotRef) : CapDerivationTree :=
-  CapDerivationTree.mk (cdt.edgesGhost.map (spliceEdges · node)) cdt.edgeBound
+  CapDerivationTree.mk (cdt.edgesGhost.map (spliceEdges · node))
+    (SeLe4n.Erased.mk (if hasParentEdge cdt.edges node then cdt.rootChains.map (replaceSlot node [])
+      else spliceRootChains cdt.rootChains node (cdt.childrenOf node)))
+    cdt.edgeBound
     (by simpa [SeLe4n.Erased.out_map] using
       Nat.le_trans (spliceEdges_length_le _ node) cdt.edges_le)
 
@@ -2991,116 +3166,97 @@ def spliceNode (cdt : CapDerivationTree) (node : SlotRef) : CapDerivationTree :=
     (cdt.spliceNode node).edges = spliceEdges cdt.edges node := by
   unfold edges spliceNode; exact SeLe4n.Erased.out_map _ _
 
-/-- **Move node `old` to slot `new`**, as seL4's `cteMove` rewrites the moved
-slot's mapping-database neighbours to name its new address: `old`'s parent edge
-and child edges are re-made at `new`, each by the operation it was made by, and
-`old` leaves the tree.  A slot outside the tree moves no edge.
+theorem spliceNode_rootChains (cdt : CapDerivationTree) (node : SlotRef) :
+    (cdt.spliceNode node).rootChains =
+      if hasParentEdge cdt.edges node then cdt.rootChains.map (replaceSlot node [])
+      else spliceRootChains cdt.rootChains node (cdt.childrenOf node) := by
+  unfold rootChains spliceNode; exact SeLe4n.Erased.out_mk _
 
-`new` is the move's destination, an empty slot, and an empty slot is in no edge:
-every delete splices its slot out of the tree (`spliceNode`). -/
+@[simp] theorem spliceNode_edgeBound (cdt : CapDerivationTree) (node : SlotRef) :
+    (cdt.spliceNode node).edgeBound = cdt.edgeBound := rfl
+
+/-- `old` renamed `new`. -/
+@[inline] def renameSlot (old new r : SlotRef) : SlotRef := if r = old then new else r
+
+/-- An edge with `old` renamed `new` at both ends. -/
+def renameEdge (old new : SlotRef) (e : CapDerivationEdge) : CapDerivationEdge :=
+  { parent := renameSlot old new e.parent, child := renameSlot old new e.child, op := e.op }
+
+/-- **The move's edges** (`moveNode`): every edge with `old` renamed `new`, in
+place. -/
+def moveEdges (es : List CapDerivationEdge) (old new : SlotRef) : List CapDerivationEdge :=
+  es.map (renameEdge old new)
+
+/-- **Move node `old` to slot `new`**, as seL4's `cteMove` rewrites the moved
+slot's mapping-database neighbours to name its new address: `old` is renamed
+`new` in every edge and root chain, so `new` keeps `old`'s place among its
+siblings and the tree's preorder is the old one with `old` renamed.  A slot
+outside the tree moves nothing.
+
+`new` is the move's destination, an empty slot, and an empty slot is outside the
+tree: every delete splices its slot out of it (`spliceNode`). -/
 def moveNode (cdt : CapDerivationTree) (old new : SlotRef) : CapDerivationTree :=
-  CapDerivationTree.mk (cdt.edgesGhost.map (moveEdges · old new)) (cdt.edgeBound + 1)
-    (by simpa [SeLe4n.Erased.out_map] using
-      Nat.le_trans (moveEdges_length_le _ old new) (Nat.succ_le_succ cdt.edges_le))
+  CapDerivationTree.mk (cdt.edgesGhost.map (moveEdges · old new))
+    (cdt.rootChainsGhost.map (·.map (·.map (renameSlot old new)))) cdt.edgeBound
+    (by simpa [SeLe4n.Erased.out_map, moveEdges] using cdt.edges_le)
 
 @[simp] theorem moveNode_edges_eq (cdt : CapDerivationTree) (old new : SlotRef) :
     (cdt.moveNode old new).edges = moveEdges cdt.edges old new := by
   unfold edges moveNode; exact SeLe4n.Erased.out_map _ _
 
-/-- A fold of `addEdge` re-making `l`'s edges with parent `p` has the
-`reparentEdges` edge list. -/
-theorem foldl_addEdge_edges_eq (p : SlotRef) :
-    ∀ (l : List CapDerivationEdge) (acc : CapDerivationTree),
-      (l.foldl (fun acc e => acc.addEdge p e.child e.op) acc).edges =
-        reparentEdges p l acc.edges
-  | [], _ => rfl
-  | x :: xs, acc => by
-    rw [List.foldl_cons, foldl_addEdge_edges_eq p xs, addEdge_edges, reparentEdges_cons]
+theorem moveNode_rootChains (cdt : CapDerivationTree) (old new : SlotRef) :
+    (cdt.moveNode old new).rootChains = cdt.rootChains.map (·.map (renameSlot old new)) := by
+  unfold rootChains moveNode; exact SeLe4n.Erased.out_map _ _
 
-/-- **The splice's edges, as the fold that defined it** before the tree became
-a ghost: `node`'s edges go, then each child is re-added under `node`'s parent. -/
-theorem spliceNode_edges_fold (cdt : CapDerivationTree) (node : SlotRef) :
-    (cdt.spliceNode node).edges =
-      (match cdt.edges.find? (fun (e : CapDerivationEdge) => e.isChildOf node) with
-        | none => cdt.removeNode node
-        | some up =>
-          (cdt.edges.filter (fun (e : CapDerivationEdge) => e.isParentOf node)).foldl
-            (fun (acc : CapDerivationTree) (e : CapDerivationEdge) => acc.addEdge up.parent e.child e.op) (cdt.removeNode node)).edges := by
-  have hW : (cdt.removeNode node).edges = withoutNodeEdges cdt.edges node := by
-    rw [removeNode_edges]; simp [withoutNodeEdges]
-  rw [spliceNode_edges_eq]; unfold spliceEdges
-  split
-  · exact hW.symm
-  · rw [foldl_addEdge_edges_eq, hW]
+@[simp] theorem moveNode_edgeBound (cdt : CapDerivationTree) (old new : SlotRef) :
+    (cdt.moveNode old new).edgeBound = cdt.edgeBound := rfl
 
-/-- **The move's edges, as the fold that defined it.** -/
-theorem moveNode_edges_fold (cdt : CapDerivationTree) (old new : SlotRef) :
-    (cdt.moveNode old new).edges =
-      ((cdt.edges.filter (fun (e : CapDerivationEdge) => e.isParentOf old)).foldl
-        (fun (acc : CapDerivationTree) (e : CapDerivationEdge) => acc.addEdge new e.child e.op)
-        (match cdt.edges.find? (fun (e : CapDerivationEdge) => e.isChildOf old) with
-          | some up => (cdt.removeNode old).addEdge up.parent new up.op
-          | none => cdt.removeNode old)).edges := by
-  have hW : (cdt.removeNode old).edges = withoutNodeEdges cdt.edges old := by
-    rw [removeNode_edges]; simp [withoutNodeEdges]
-  rw [moveNode_edges_eq, foldl_addEdge_edges_eq]; unfold moveEdges
-  split <;> simp only [addEdge_edges, hW]
-
-/-- Every edge after a splice is an old edge or joins `node`'s parent to one of
-`node`'s children. -/
+/-- Every edge after a splice is an old edge clear of `node`, or joins `node`'s
+parent to one of `node`'s children. -/
 theorem spliceNode_edges (cdt : CapDerivationTree) (node : SlotRef) :
-    ∀ e' ∈ (cdt.spliceNode node).edges, e' ∈ (cdt.removeNode node).edges ∨
+    ∀ e' ∈ (cdt.spliceNode node).edges,
+      (e' ∈ cdt.edges ∧ e'.parent ≠ node ∧ e'.child ≠ node) ∨
       ∃ up ∈ cdt.edges, ∃ e ∈ cdt.edges, up.child = node ∧ e.parent = node ∧
         e'.parent = up.parent ∧ e'.child = e.child := by
   intro e' h
   rw [spliceNode_edges_eq] at h
-  rw [removeNode_edges]
-  unfold spliceEdges at h
-  split at h
-  · exact .inl (by simpa [withoutNodeEdges] using h)
-  · rename_i up hUp
-    have hUpMem := List.mem_of_find?_eq_some hUp
-    have hUpChild : up.child = node := by
-      simpa [CapDerivationEdge.isChildOf] using List.find?_some hUp
-    rcases (mem_reparentEdges _ _ _ e').1 h with h' | ⟨e, he, rfl⟩
-    · exact .inl (by simpa [withoutNodeEdges] using h')
-    · simp only [List.mem_filter, CapDerivationEdge.isParentOf, decide_eq_true_eq] at he
-      exact .inr ⟨up, hUpMem, e, he.1, hUpChild, he.2, rfl, rfl⟩
+  rcases mem_spliceEdgesFrom node _ cdt.edges e' h with h | ⟨up, hup, huc, k, hk, rfl⟩
+  · exact .inl h
+  · simp only [List.mem_filter, CapDerivationEdge.isParentOf, decide_eq_true_eq] at hk
+    exact .inr ⟨up, hup, k, hk.1, huc, hk.2, rfl, rfl⟩
 
 /-- A splice keeps the tree acyclic: each new edge shortcuts an old two-edge path. -/
 theorem spliceNode_edgeWellFounded (cdt : CapDerivationTree) (node : SlotRef)
     (hWF : cdt.edgeWellFounded) : (cdt.spliceNode node).edgeWellFounded :=
   edgeWellFounded_of_edges_transGen cdt _ hWF fun e' he' => by
-    rcases spliceNode_edges cdt node e' he' with h | ⟨up, hUp, e, he, hUc, hEp, hP, hC⟩
-    · exact .single ⟨e', removeNode_edges_sub cdt node e' h, rfl, rfl⟩
+    rcases spliceNode_edges cdt node e' he' with ⟨h, -, -⟩ | ⟨up, hUp, e, he, hUc, hEp, hP, hC⟩
+    · exact .single ⟨e', h, rfl, rfl⟩
     · exact .tail (.single ⟨up, hUp, hP.symm, hUc⟩) ⟨e, he, hEp, hC.symm⟩
 
+/-- The root chains after a splice hold only slots the tree named. -/
+private theorem spliceNode_rootChains_mem (cdt : CapDerivationTree) (node : SlotRef) {x : SlotRef}
+    (h : x ∈ (cdt.spliceNode node).rootChains.flatten) :
+    (x ∈ cdt.rootChains.flatten ∧ x ≠ node) ∨ x ∈ cdt.childrenOf node := by
+  rw [spliceNode_rootChains] at h
+  split at h
+  · exact .inl (mem_flatten_map_replaceSlot_nil h)
+  · exact mem_flatten_spliceRootChains h
 
-/-- A removal names no slot the tree did not name. -/
-theorem removeNode_mentions (cdt : CapDerivationTree) (node ref : SlotRef)
-    (h : (cdt.removeNode node).mentions ref) : cdt.mentions ref :=
-  let ⟨e, he, hr⟩ := h
-  ⟨e, removeNode_edges_sub cdt node e he, hr⟩
-
-/-- Nor does a splice: each edge it makes joins two slots the tree named. -/
+/-- Nor does a splice name a slot the tree did not: each edge it makes joins two
+slots the tree named, and its root chains hold old roots and `node`'s children. -/
 theorem spliceNode_mentions (cdt : CapDerivationTree) (node ref : SlotRef)
     (h : (cdt.spliceNode node).mentions ref) : cdt.mentions ref := by
-  obtain ⟨e', he', hr⟩ := h
-  rcases spliceNode_edges cdt node e' he' with h | ⟨up, hUp, e, he, _, _, hP, hC⟩
-  · exact ⟨e', removeNode_edges_sub cdt node e' h, hr⟩
-  · rcases hr with hr | hr
-    · exact ⟨up, hUp, .inl (hP ▸ hr)⟩
-    · exact ⟨e, he, .inr (hC ▸ hr)⟩
-
-/-- A removal takes its node out of the tree. -/
-theorem removeNode_not_mentions_self (cdt : CapDerivationTree) (node : SlotRef) :
-    ¬ (cdt.removeNode node).mentions node := by
-  rintro ⟨e, he, hr⟩
-  simp only [removeNode_edges, List.mem_filter, CapDerivationEdge.isParentOf,
-    CapDerivationEdge.isChildOf, decide_eq_true_eq] at he
-  rcases hr with hr | hr
-  · exact he.2.1 hr
-  · exact he.2.2 hr
+  rcases h with ⟨e', he', hr⟩ | hR
+  · rcases spliceNode_edges cdt node e' he' with ⟨h, -, -⟩ | ⟨up, hUp, e, he, _, _, hP, hC⟩
+    · exact .inl ⟨e', h, hr⟩
+    · rcases hr with hr | hr
+      · exact .inl ⟨up, hUp, .inl (hP ▸ hr)⟩
+      · exact .inl ⟨e, he, .inr (hC ▸ hr)⟩
+  · rcases spliceNode_rootChains_mem cdt node hR with ⟨h, -⟩ | h
+    · exact .inr h
+    · simp only [childrenOf, List.mem_map, List.mem_filter] at h
+      obtain ⟨e, ⟨he, -⟩, hc⟩ := h
+      exact .inl ⟨e, he, .inr hc⟩
 
 /-- An acyclic tree has no edge from a node to itself. -/
 theorem edgeWellFounded_no_self_edge {cdt : CapDerivationTree} (hWF : cdt.edgeWellFounded)
@@ -3114,15 +3270,23 @@ theorem edgeWellFounded_no_self_edge {cdt : CapDerivationTree} (hWF : cdt.edgeWe
 
 /-- A splice of an acyclic tree takes its node out of the tree: the edges it
 makes join the node's parent to the node's children, neither of which is the
-node. -/
+node, and its root chains drop the node. -/
 theorem spliceNode_not_mentions_self (cdt : CapDerivationTree) (node : SlotRef)
     (hWF : cdt.edgeWellFounded) : ¬ (cdt.spliceNode node).mentions node := by
-  rintro ⟨e', he', hr⟩
-  rcases spliceNode_edges cdt node e' he' with h | ⟨up, hUp, e, he, hUc, hEp, hP, hC⟩
-  · exact removeNode_not_mentions_self cdt node ⟨e', h, hr⟩
-  · rcases hr with hr | hr
-    · exact edgeWellFounded_no_self_edge hWF hUp (by rw [hUc, ← hr, hP])
-    · exact edgeWellFounded_no_self_edge hWF he (by rw [hEp, ← hr, hC])
+  rintro (⟨e', he', hr⟩ | hR)
+  · rcases spliceNode_edges cdt node e' he' with ⟨-, h1, h2⟩ | ⟨up, hUp, e, he, hUc, hEp, hP, hC⟩
+    · rcases hr with hr | hr
+      · exact h1 hr
+      · exact h2 hr
+    · rcases hr with hr | hr
+      · exact edgeWellFounded_no_self_edge hWF hUp (by rw [hUc, ← hr, hP])
+      · exact edgeWellFounded_no_self_edge hWF he (by rw [hEp, ← hr, hC])
+  · rcases spliceNode_rootChains_mem cdt node hR with ⟨-, h⟩ | h
+    · exact h rfl
+    · simp only [childrenOf, List.mem_map, List.mem_filter, CapDerivationEdge.isParentOf,
+        decide_eq_true_eq] at h
+      obtain ⟨e, ⟨he, hp⟩, hc⟩ := h
+      exact edgeWellFounded_no_self_edge hWF he (hp.trans hc.symm)
 
 /-- A tree each of whose edges maps, under `f`, onto an edge of a well-founded
 tree is well-founded: a cycle would map onto a cycle. -/
@@ -3139,67 +3303,54 @@ theorem edgeWellFounded_of_map (cdt cdt' : CapDerivationTree) (f : SlotRef → S
     obtain ⟨e, he, hp', hc'⟩ := hMap e' he'
     exact ⟨e, he, by rw [hp', hp, List.getElem_map], by rw [hc', hc, List.getElem_map]⟩
 
-/-- Every edge of the moved tree is an old edge clear of `old`, the edge from
-`old`'s parent to `new`, or an edge from `new` to one of `old`'s children. -/
-theorem moveNode_edges (cdt : CapDerivationTree) (old new : SlotRef) :
-    ∀ e' ∈ (cdt.moveNode old new).edges,
-      e' ∈ (cdt.removeNode old).edges ∨
-      (∃ up ∈ cdt.edges, up.child = old ∧ e'.parent = up.parent ∧ e'.child = new) ∨
-      (e'.parent = new ∧ ∃ e ∈ cdt.edges, e.parent = old ∧ e'.child = e.child) := by
-  intro e' he'
-  rw [moveNode_edges_eq] at he'
-  rw [removeNode_edges]
-  unfold moveEdges at he'
-  rcases (mem_reparentEdges _ _ _ e').1 he' with h | ⟨e, he, rfl⟩
-  · split at h
-    · rename_i up hUp
-      simp only [List.mem_cons] at h
-      rcases h with rfl | h
-      · have hC := List.find?_some hUp
-        exact .inr (.inl ⟨up, List.mem_of_find?_eq_some hUp,
-          by simpa [CapDerivationEdge.isChildOf] using hC, rfl, rfl⟩)
-      · exact .inl (by simpa [withoutNodeEdges] using h)
-    · exact .inl (by simpa [withoutNodeEdges] using h)
-  · simp only [List.mem_filter] at he
-    exact .inr (.inr ⟨rfl, e, he.1, by simpa [CapDerivationEdge.isParentOf] using he.2, rfl⟩)
+/-- Renaming then renaming back is the identity on a slot other than `new`. -/
+theorem renameSlot_back {old new r : SlotRef} (h : r ≠ new) :
+    renameSlot new old (renameSlot old new r) = r := by
+  unfold renameSlot
+  by_cases ho : r = old
+  · subst ho; simp
+  · simp [ho, h]
 
 /-- **Moving a node to a fresh slot keeps the tree acyclic**: the moved tree is
 the old one with `old` renamed `new`. -/
 theorem moveNode_edgeWellFounded (cdt : CapDerivationTree) (old new : SlotRef)
     (hWF : cdt.edgeWellFounded) (hFresh : ¬ cdt.mentions new) :
     (cdt.moveNode old new).edgeWellFounded :=
-  edgeWellFounded_of_map cdt _ (fun x => if x = new then old else x) hWF fun e' he' => by
-    rcases moveNode_edges cdt old new e' he' with h | ⟨up, hUp, hc, hp, hcn⟩ | ⟨hp, e, he, hpo, hc⟩
-    · have h0 := removeNode_edges_sub cdt old e' h
-      refine ⟨e', h0, ?_, ?_⟩ <;> dsimp only
-      · rw [if_neg fun hEq => hFresh ⟨e', h0, .inl hEq⟩]
-      · rw [if_neg fun hEq => hFresh ⟨e', h0, .inr hEq⟩]
-    · refine ⟨up, hUp, ?_, ?_⟩ <;> dsimp only
-      · rw [hp, if_neg fun hEq => hFresh ⟨up, hUp, .inl hEq⟩]
-      · rw [hcn, if_pos rfl, hc]
-    · refine ⟨e, he, ?_, ?_⟩ <;> dsimp only
-      · rw [hp, if_pos rfl, hpo]
-      · rw [hc, if_neg fun hEq => hFresh ⟨e, he, .inr hEq⟩]
+  edgeWellFounded_of_map cdt _ (renameSlot new old) hWF fun e' he' => by
+    rw [moveNode_edges_eq] at he'
+    obtain ⟨e, he, rfl⟩ := List.mem_map.mp he'
+    have ⟨hp, hc⟩ := not_edge_of_not_mentions hFresh e he
+    exact ⟨e, he, (renameSlot_back hp).symm, (renameSlot_back hc).symm⟩
 
 /-- The moved tree names `new` and, other than `old`, only slots the old tree
 named. -/
-theorem moveNode_mentions (cdt : CapDerivationTree) (old new : SlotRef)
-    (hWF : cdt.edgeWellFounded) (ref : SlotRef) (h : (cdt.moveNode old new).mentions ref) :
-    ref = new ∨ (ref ≠ old ∧ cdt.mentions ref) := by
-  obtain ⟨e', he', hr⟩ := h
-  rcases moveNode_edges cdt old new e' he' with h | ⟨up, hUp, hc, hp, hcn⟩ | ⟨hp, e, he, hpo, hc⟩
-  · refine .inr ⟨?_, ⟨e', removeNode_edges_sub cdt old e' h, hr⟩⟩
-    rintro rfl; exact removeNode_not_mentions_self cdt ref ⟨e', h, hr⟩
-  · rcases hr with hr | hr
-    · rw [hp] at hr; subst hr
-      exact .inr ⟨fun hEq => edgeWellFounded_no_self_edge hWF hUp (hEq.trans hc.symm),
-        ⟨up, hUp, .inl rfl⟩⟩
-    · exact .inl (hr ▸ hcn)
-  · rcases hr with hr | hr
-    · exact .inl (hr ▸ hp)
-    · rw [hc] at hr; subst hr
-      exact .inr ⟨fun hEq => edgeWellFounded_no_self_edge hWF he (hpo.trans hEq.symm),
-        ⟨e, he, .inr rfl⟩⟩
+theorem moveNode_mentions (cdt : CapDerivationTree) (old new : SlotRef) (ref : SlotRef)
+    (h : (cdt.moveNode old new).mentions ref) : ref = new ∨ (ref ≠ old ∧ cdt.mentions ref) := by
+  have key : ∀ x, renameSlot old new x = ref → (x = old → ref = new) ∧
+      (x ≠ old → ref = x) := fun x hx => by
+    unfold renameSlot at hx
+    by_cases hxo : x = old
+    · rw [if_pos hxo] at hx; exact ⟨fun _ => hx.symm, fun h => absurd hxo h⟩
+    · rw [if_neg hxo] at hx; exact ⟨fun h => absurd h hxo, fun _ => hx.symm⟩
+  have conclude : ∀ x, renameSlot old new x = ref → cdt.mentions x →
+      ref = new ∨ (ref ≠ old ∧ cdt.mentions ref) := fun x hx hm => by
+    by_cases hxo : x = old
+    · exact .inl ((key x hx).1 hxo)
+    · have := (key x hx).2 hxo; subst this
+      by_cases hn : ref = new
+      · exact .inl hn
+      · exact .inr ⟨hxo, hm⟩
+  rcases h with ⟨e', he', hr⟩ | hR
+  · rw [moveNode_edges_eq] at he'
+    obtain ⟨e, he, rfl⟩ := List.mem_map.mp he'
+    rcases hr with hr | hr
+    · exact conclude e.parent hr (.inl ⟨e, he, .inl rfl⟩)
+    · exact conclude e.child hr (.inl ⟨e, he, .inr rfl⟩)
+  · rw [moveNode_rootChains] at hR
+    obtain ⟨c', hc', hx'⟩ := List.mem_flatten.mp hR
+    obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hc'
+    obtain ⟨x, hx, hxr⟩ := List.mem_map.mp hx'
+    exact conclude x hxr (.inr (List.mem_flatten.mpr ⟨c, hc, hx⟩))
 
 -- ============================================================================
 -- Y1-E: HashSet/List sync lemma for descendantsOf proofs

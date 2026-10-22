@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Platform.Boot
+import SeLe4n.Platform.Boot.CapabilityLinks
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement
 
 /-!
@@ -93,12 +94,14 @@ def startInitialThreads : List SeLe4n.ThreadId → IntermediateState →
         .error unstartableInitialThreadBootError
 
 /-- **WS-BP BP7.11**: the boot's started stage over a declared core list — the
-idle-storing boot, then the configuration's named threads started. -/
+idle-storing boot, then the configuration's named threads started, then
+(WS-ZA ZA5.4) the configuration's capabilities linked into the derivation tree
+(`linkBootCapabilities`). -/
 def bootFromPlatformCheckedStartedFor
     (cores : List SeLe4n.Kernel.Concurrency.CoreId) (config : PlatformConfig) :
     Except String IntermediateState :=
-  (bootFromPlatformCheckedWithIdleThreadsFor cores config).bind
-    (startInitialThreads config.initialThreads)
+  (bootFromPlatformCheckedWithIdleThreadsFor cores config).bind fun base =>
+    (startInitialThreads config.initialThreads base).map (linkBootCapabilities config)
 
 -- ============================================================================
 -- §2  The stage's shape
@@ -120,14 +123,13 @@ theorem startInitialThreads_induct (P : IntermediateState → Prop)
     · exact ih _ _ h (hStep ist tid (by assumption) hP)
     · cases h
 
-/-- **WS-BP BP7.11**: with no named thread the stage is the idle boot — every
-theorem about the idle boot is a theorem about the started boot of a
-configuration that names none. -/
+/-- **WS-BP BP7.11**: with no named thread the stage is the idle boot with its
+capabilities linked. -/
 theorem bootFromPlatformCheckedStartedFor_of_nil
     (cores : List SeLe4n.Kernel.Concurrency.CoreId) (config : PlatformConfig)
     (h : config.initialThreads = []) :
     bootFromPlatformCheckedStartedFor cores config =
-      bootFromPlatformCheckedWithIdleThreadsFor cores config := by
+      (bootFromPlatformCheckedWithIdleThreadsFor cores config).map (linkBootCapabilities config) := by
   unfold bootFromPlatformCheckedStartedFor
   rw [h]
   cases bootFromPlatformCheckedWithIdleThreadsFor cores config <;> rfl
@@ -141,31 +143,40 @@ theorem bootFromPlatformCheckedStartedFor_rejects_invalid
   rw [bootFromPlatformCheckedWithIdleThreadsFor_rejects_invalid cores config e h]
   rfl
 
-/-- **WS-BP BP7.11**: after a successful idle boot, the stage is the starts —
-stated over variables, so a concrete configuration rewrites with it instead of
-unfolding the bind against its own boot state. -/
+/-- **WS-BP BP7.11**: after a successful idle boot, the stage is the starts and
+the linking — stated over variables, so a concrete configuration rewrites with
+it instead of unfolding the bind against its own boot state. -/
 theorem bootFromPlatformCheckedStartedFor_of_idle
     (cores : List SeLe4n.Kernel.Concurrency.CoreId) (config : PlatformConfig)
     (base : IntermediateState)
     (h : bootFromPlatformCheckedWithIdleThreadsFor cores config = .ok base) :
     bootFromPlatformCheckedStartedFor cores config =
-      startInitialThreads config.initialThreads base := by
+      (startInitialThreads config.initialThreads base).map (linkBootCapabilities config) := by
   unfold bootFromPlatformCheckedStartedFor
   rw [h]
   rfl
 
 /-- **WS-BP BP7.11**: a successful stage is a successful idle boot followed by a
-successful start of every named thread. -/
+successful start of every named thread, its capabilities then linked. -/
 theorem bootFromPlatformCheckedStartedFor_ok
     (cores : List SeLe4n.Kernel.Concurrency.CoreId) (config : PlatformConfig)
     (ist : IntermediateState)
     (h : bootFromPlatformCheckedStartedFor cores config = .ok ist) :
-    ∃ base, bootFromPlatformCheckedWithIdleThreadsFor cores config = .ok base ∧
-      startInitialThreads config.initialThreads base = .ok ist := by
+    ∃ base started, bootFromPlatformCheckedWithIdleThreadsFor cores config = .ok base ∧
+      startInitialThreads config.initialThreads base = .ok started ∧
+      ist = linkBootCapabilities config started := by
   unfold bootFromPlatformCheckedStartedFor at h
   cases hB : bootFromPlatformCheckedWithIdleThreadsFor cores config with
   | error e => rw [hB] at h; cases h
-  | ok base => rw [hB] at h; exact ⟨base, rfl, h⟩
+  | ok base =>
+    rw [hB] at h
+    change Except.map _ (startInitialThreads config.initialThreads base) = _ at h
+    cases hS : startInitialThreads config.initialThreads base with
+    | error e => rw [hS] at h; cases h
+    | ok started =>
+      rw [hS] at h
+      cases h
+      exact ⟨base, started, rfl, hS, rfl⟩
 
 -- ============================================================================
 -- §3  The bundle
@@ -238,8 +249,13 @@ theorem startInitialThread_preserves_bootStartShape (ist : IntermediateState)
     rcases startInitialThreadOnCore_objects_cases ist.state tid hInv oid obj hObj with
       hB | ⟨t, t', hT, rfl, he⟩
     · exact hShape oid obj hB
-    · obtain ⟨h1, h2, h3, h4, h5, h6, h7⟩ := hShape oid _ hT
-      refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> intro x hx <;> cases hx
+    · obtain ⟨⟨h1, h2, h3, h4, h5, h6, h7⟩, -, hC⟩ := hShape oid _ hT
+      refine ⟨⟨fun _ e => (by cases e), fun _ e => (by cases e), fun _ e => (by cases e),
+        fun x hx => ?_, fun _ e => (by cases e), fun _ e => (by cases e), fun _ e => (by cases e)⟩,
+        fun _ e => (by cases e), fun x hx => ?_⟩ <;> cases hx
+      rotate_left
+      · rcases he with he | he | he <;>
+        exact (TCB.proj_eq_of_withoutRunLinks_eq TCB.spaceLinksClear he).trans (hC t rfl)
       obtain ⟨t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15⟩ := h4 t rfl
       -- The start writes the thread's state, its IPC state (to `.ready`) and
       -- its run-queue links; every shape field reads past all three, and the
@@ -268,8 +284,8 @@ theorem startInitialThread_preserves_bootStartShape (ist : IntermediateState)
         (TCB.proj_eq_of_withoutRunLinks_eq TCB.pendingReceiveReply he).trans t9,
         (TCB.proj_eq_of_withoutRunLinks_eq TCB.ntfnPrev he).trans t10,
         (TCB.proj_eq_of_withoutRunLinks_eq TCB.ntfnNext he).trans t11, r1, r2, r3, r4,
-        bootSpaceSlotsSafe_of_space_eq (TCB.proj_eq_of_withoutRunLinks_eq TCB.spaceCells he)
-          (TCB.proj_eq_of_withoutRunLinks_eq TCB.spaceLinks he) t15.2⟩
+        bootSpaceSlotCapsSafe_of_cells_eq (TCB.proj_eq_of_withoutRunLinks_eq TCB.spaceCells he)
+          t15.2⟩
   · show bootQuiescentFields (startInitialThreadOnCore ist.state tid)
     rw [hFrame]; exact hFields
   · show Architecture.asidTableConsistent (startInitialThreadOnCore ist.state tid)
@@ -299,28 +315,32 @@ theorem startInitialThread_preserves_bootStartShape (ist : IntermediateState)
     rw [hrq', hSch]
   · exact startInitialThreadOnCore_preserves_runQueueBootSound hStart hInv hRun bootCoreId hQueue
 
-/-- **WS-BP BP7.11**: the started stage leaves a state of boot shape. -/
-theorem bootFromPlatformCheckedStartedFor_bootStartShape
+/-- **WS-BP BP7.11**: the started stage leaves a state of linked boot shape:
+the starts keep the boot shape, and the linking takes it to the linked one
+(`linkBootCapabilities_bootLinkedShape`). -/
+theorem bootFromPlatformCheckedStartedFor_bootLinkedShape
     (cores : List SeLe4n.Kernel.Concurrency.CoreId) (hNodup : cores.Nodup)
     (config : PlatformConfig) (ist : IntermediateState)
     (h : bootFromPlatformCheckedStartedFor cores config = .ok ist) :
-    bootStartShape ist := by
-  obtain ⟨base, hBase, hStart⟩ := bootFromPlatformCheckedStartedFor_ok cores config ist h
-  exact startInitialThreads_induct bootStartShape
-    (fun ist tid hs hP => startInitialThread_preserves_bootStartShape ist tid hs hP)
-    _ _ _ hStart
-    (bootFromPlatformCheckedWithIdleThreadsFor_bootStartShape cores hNodup config base hBase)
+    bootLinkedShape ist := by
+  obtain ⟨base, started, hBase, hStart, rfl⟩ := bootFromPlatformCheckedStartedFor_ok cores config ist h
+  exact linkBootCapabilities_bootLinkedShape config started
+    (startInitialThreads_induct bootStartShape
+      (fun ist tid hs hP => startInitialThread_preserves_bootStartShape ist tid hs hP)
+      _ _ _ hStart
+      (bootFromPlatformCheckedWithIdleThreadsFor_bootStartShape cores hNodup config base hBase))
 
 /-- **WS-BP BP7.11**: **the state the started boot installs satisfies the
 proof-layer invariant bundle** — the idle boot's argument, applied to the state
-after the starts, because the starts keep what it reads. -/
+after the starts and the linking, because the starts keep what it reads and the
+linking leaves a sound tree. -/
 theorem bootFromPlatformCheckedStartedFor_proofLayerInvariantBundle
     (cores : List SeLe4n.Kernel.Concurrency.CoreId) (hNodup : cores.Nodup)
     (config : PlatformConfig) (ist : IntermediateState)
     (h : bootFromPlatformCheckedStartedFor cores config = .ok ist) :
     Architecture.proofLayerInvariantBundle ist.state :=
-  proofLayerInvariantBundle_of_bootStartShape ist
-    (bootFromPlatformCheckedStartedFor_bootStartShape cores hNodup config ist h)
+  proofLayerInvariantBundle_of_bootLinkedShape ist
+    (bootFromPlatformCheckedStartedFor_bootLinkedShape cores hNodup config ist h)
 
 /-- **WS-BP BP7.11**: the end-to-end bridge for the started boot — the bundle of
 the state it installs, and the frozen bundle of its freeze. -/
@@ -343,7 +363,7 @@ theorem bootFromPlatformCheckedStartedFor_currentOnCore
     (c : SeLe4n.Kernel.Concurrency.CoreId) :
     ist.state.scheduler.currentOnCore c = none := by
   obtain ⟨_, _, _, _, ⟨rq, re, rp, hSch⟩, _⟩ :=
-    bootFromPlatformCheckedStartedFor_bootStartShape cores hNodup config ist h
+    bootFromPlatformCheckedStartedFor_bootLinkedShape cores hNodup config ist h
   rw [hSch]
   exact (default_state_perCoreInitialized c).1
 
@@ -382,10 +402,11 @@ theorem bootFromPlatformCheckedStartedFor_started
     (ist : IntermediateState)
     (h : bootFromPlatformCheckedStartedFor cores config = .ok ist) :
     ∀ tid ∈ config.initialThreads, threadStarted ist.state tid := by
-  obtain ⟨base, hBase, hStart⟩ := bootFromPlatformCheckedStartedFor_ok cores config ist h
+  obtain ⟨base, started, hBase, hStart, rfl⟩ := bootFromPlatformCheckedStartedFor_ok cores config ist h
   obtain ⟨_, _, _, _, _, hRun, _⟩ := bootFromPlatformCheckedWithIdleThreadsFor_bootStartShape cores
     (bootFromPlatformCheckedWithIdleThreadsFor_ok_nodup cores config base hBase) config base hBase
-  exact startInitialThreads_ok_started _ _ _ hRun hStart
+  exact fun tid hT => threadStarted_of_agree (linkBootCapabilities_agree config started)
+    (startInitialThreads_ok_started _ _ _ hRun hStart tid hT)
 
 /-- **WS-BP BP7.11**: **the started boot keeps the full thread-state
 classification** — the idle boot's (`bootFromPlatformCheckedWithIdleThreads_threadStateConsistent`)
@@ -395,10 +416,12 @@ theorem bootFromPlatformCheckedStartedFor_allCores_threadStateConsistent
     (config : PlatformConfig) (ist : IntermediateState)
     (h : bootFromPlatformCheckedStartedFor SeLe4n.Kernel.Concurrency.allCores config = .ok ist) :
     threadStateConsistent ist.state := by
-  obtain ⟨base, hBase, hStart⟩ := bootFromPlatformCheckedStartedFor_ok _ config ist h
+  obtain ⟨base, started, hBase, hStart, rfl⟩ := bootFromPlatformCheckedStartedFor_ok _ config ist h
   obtain ⟨_, _, _, _, _, hRun, _⟩ := bootFromPlatformCheckedWithIdleThreadsFor_bootStartShape _
     SeLe4n.Kernel.Concurrency.allCores_nodup config base hBase
   rw [bootFromPlatformCheckedWithIdleThreadsFor_allCores] at hBase
+  refine threadStateConsistent_of_agree (linkBootCapabilities_agree config started)
+    (linkBootCapabilities_scheduler config started) ?_
   exact (startInitialThreads_induct (fun i => i.state.runQueueRefined ∧ threadStateConsistent i.state)
     (fun i t hs hP => ⟨startInitialThreadOnCore_runQueueRefined _ _ i.hAllTables.1.1 hP.1,
       startInitialThreadOnCore_preserves_threadStateConsistent hs i.hAllTables.1.1 hP.1 hP.2⟩)
@@ -441,10 +464,17 @@ theorem bootFromPlatformCheckedStartedFor_allCores_currentDequeuedUnique
     (config : PlatformConfig) (ist : IntermediateState)
     (h : bootFromPlatformCheckedStartedFor SeLe4n.Kernel.Concurrency.allCores config = .ok ist) :
     ist.state.runQueueRefined ∧ ist.state.currentDequeuedUnique := by
-  obtain ⟨base, hBase, hStart⟩ := bootFromPlatformCheckedStartedFor_ok _ config ist h
+  obtain ⟨base, started, hBase, hStart, rfl⟩ := bootFromPlatformCheckedStartedFor_ok _ config ist h
   obtain ⟨_, _, _, _, _, hRun, _⟩ := bootFromPlatformCheckedWithIdleThreadsFor_bootStartShape _
     SeLe4n.Kernel.Concurrency.allCores_nodup config base hBase
   rw [bootFromPlatformCheckedWithIdleThreadsFor_allCores] at hBase
+  have hA := linkBootCapabilities_agree config started
+  have hSch := linkBootCapabilities_scheduler config started
+  suffices hP : started.state.runQueueRefined ∧ started.state.currentDequeuedUnique from
+    ⟨SystemState.runQueueRefined_of_frame (runLinkOn_of_agree hA) (by rw [hSch])
+      (by rw [hSch]) hP.1,
+     SystemState.currentDequeuedUniqueExcept_of_eq (by rw [hSch]) (runLinkOn_of_agree hA)
+      (stateMono_of_agree hA) hP.2⟩
   exact startInitialThreads_induct
     (fun i => i.state.runQueueRefined ∧ i.state.currentDequeuedUnique)
     (fun i t hs hP => by

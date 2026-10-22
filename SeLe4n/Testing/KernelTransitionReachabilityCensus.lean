@@ -1240,8 +1240,10 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Platform.RPi5.mmioWrite64
   , `SeLe4n.Platform.RPi5.rpi5DeploymentBootStateAt
   , `SeLe4n.Platform.RPi5.rpi5DeploymentIdleStateAt
+  , `SeLe4n.Platform.RPi5.rpi5DeploymentStartedStateAt
   , `SeLe4n.Platform.QemuVirt.qemuVirtDeploymentBootState
   , `SeLe4n.Platform.QemuVirt.qemuVirtDeploymentIdleState
+  , `SeLe4n.Platform.QemuVirt.qemuVirtDeploymentStartedState
   , `SeLe4n.Testing.KernelTransitionReachabilityCensus._cstage1.censusWitnessMintedTransformer
   ]
 

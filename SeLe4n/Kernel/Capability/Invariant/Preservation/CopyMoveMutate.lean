@@ -263,7 +263,7 @@ theorem cspaceMove_preserves_capabilityInvariantBundle
                 (SystemState.cdtMove_reach st3 src dst) hIX hLinks3
               exact ⟨cspaceLookupSound_holds _,
                 fun ref hM => by
-                  rcases CapDerivationTree.moveNode_mentions st3.cdt src dst hAcyc3 ref hM with
+                  rcases CapDerivationTree.moveNode_mentions st3.cdt src dst ref hM with
                     rfl | ⟨hNe, hM'⟩
                   · exact slotOccupied_of_cnode hDst3
                   · exact hComp3 ref hM' hNe,

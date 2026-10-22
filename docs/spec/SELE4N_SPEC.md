@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.125` (`lakefile.toml`) |
+| **Package version** | `0.36.126` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 484,292 across 440 Lean files |
+| **Production LoC** | 486,990 across 442 Lean files |
 | **Test LoC** | 86,123 across 70 Lean test suites |
-| **Proved declarations** | 17,449 theorem/lemma declarations (zero sorry/axiom) |
+| **Proved declarations** | 17,603 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits) |
 | **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2), and **BP4.1/BP4.2 (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type)** at v0.36.2 (§6.2.9), and **BP4.3/BP4.4 (the firmware's device tree reaching Lean, and the entry booting the deployment on the variant it describes)** at v0.36.2 (§6.2.10), and **BP4.5 (the image's loaded bytes cleaned to the Point of Unification before any thread can fetch)** at v0.36.2 (§6.2.11), and **BP4.6 (the verified board's RAM outside the kernel's extent mapped, and the boot map sealed before any secondary is released)** and **BP4.7 (that RAM handed to the root task as untypeds)** at v0.36.2 (§6.2.12), and **BP5.1 (the kernel image, a bare-metal binary entered at `_start` under `link.ld`)** and **BP5.2 (the Lean kernel linked into it, under `--gc-sections` from the archive lane's roots)** and **BP5.3 (the firmware's boot files, `kernel8.img` and `config.txt`, cut from that image and checked against it)** and **BP5.4 (its size and section map published with every CI run)** at v0.36.2 (§6.2.13), and **BP5.5 (the firmware's EL2 entry dropped to EL1, with the PSCI conduit following the entry level)** at v0.36.2 (§6.2.15), and **BP6 (every PE marks itself ready after its own per-PE runtime handshake and before it unmasks IRQs, and the boot halts unless every declared PE serves the kernel)** at v0.36.2 (§6.2.16), and **BP7.10 (the first gigabyte's RAM read off the firmware's account, and the constant boot map shrunk to the kernel's reserved extent)** at v0.36.3 (§6.2.17), and **BP7.1 slices 1–3 (frame capabilities, the untyped carve that mints them, and the untyped reset that returns their memory)** at v0.36.4, v0.36.5 and v0.36.6, slice 4a (child untypeds and subtree resets) at v0.36.8, the in-place VSpace-root refusal at v0.36.9, and slice 4b's VSpace-root carve at v0.36.10, `.tcbSetSpace` (a thread runs in a carved address space) at v0.36.11, intermediate page tables at v0.36.12, and every configured address space owning a table page at v0.36.13, which completes BP7.1 (§8.10.2a); BP7.2's user window and 16-bit hardware ASIDs at v0.36.14 and its physical-write ledger and translation install at v0.36.15; BP7.3–BP7.9 at v0.36.16–v0.36.22 (the whole trap frame saved, per-core restore staging, unblock-frame delivery, the live context restore, the delivered declassified badge, overflow message registers, lazily switched FP/SIMD state); and BP7.11 (the boot starts both initial threads, one per domain) at v0.36.23, which completes BP7; BP8.1's first slice (the image built for QEMU's `virt` — its device map from `src/board.rs`, its link script derived from `link.ld`, an arm64 Image header on `_start` — booted there at EL1 and at EL2 by `scripts/test_qemu.sh`) at v0.36.24, and its second (the Lean `virt` binding `SeLe4n/Platform/QemuVirt/` — its board check the RPi5 bridge's own coverage predicates, the RPi5 deployment's layout on it with every boot gate decided, and its own boot entry `lean_kernel_main_qemu_virt`, held by the boot-entry contract's table to its own approved call) at v0.36.25, and its third (the Lean-linked image booted by `scripts/test_qemu.sh --lean-kernel` on four PEs at EL1 and EL2 to every core's first idle dispatch, on every PR — §6.2.18) at v0.36.26, completing BP8.1, and BP8.2 (the four-PE bring-up gate, executed on every PR — §6.2.18) at v0.36.27. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -6107,7 +6107,9 @@ the slot has derived capabilities.  The deleted slot's node leaves the tree with
 its edges, and each child it had is derived from the node's own parent instead,
 by the operation it was derived by (`CapDerivationTree.spliceNode`,
 `spliceDeletedCdtNode`), as seL4's `cteDelete` unlinks a capability from the
-mapping database; a root's children become roots.  Revoking an ancestor
+mapping database: the children take the deleted slot's place among its
+siblings, in order, and a root's children take its place in the root chain
+(since `v0.36.126`, below).  Revoking an ancestor
 therefore still reaches every capability derived through the deleted one, and
 the delete's outcome is the core delete's alone
 (`cspaceDeleteSlot_isOk_iff_core`): refusing while children existed let a
@@ -6224,6 +6226,45 @@ partner).  The capability bundle has seven conjuncts: the slot-count bound is a
 theorem of every CNode since part 1 (`CNode.slotCountBounded_holds`), so it
 left the bundle with every preservation hypothesis that carried it, and boot's
 CNode shape no longer checks it.
+
+**The tree in seL4's MDB order** (`v0.36.126`, WS-ZA ZA5.4 part 15).  The
+tree's preorder is seL4's mapping-database list.  The slots with no parent
+form one sibling chain (`CapDerivationTree.rootChains`, ghost), so every slot
+in the tree has its previous and next links; a parentless slot no chain lists
+is a root alone.  An insert puts the new child first under its source, which
+is right after the source in preorder (`addEdge`); a delete puts its children
+where it was among its siblings (`spliceNode`, the link writer
+`linkSpliceNode` walking the children once to re-parent them and closing the
+run onto the deleted slot's neighbours); a move keeps the slot's place
+(`moveNode`, `linkMoveNode`); and appending a root links it after the chain's
+last slot (`appendRoot`, `cdtAppendRoot`).  `LinksAgree` reads a root's
+sibling links off its chain, and each writer is proven to keep it
+(`LinksAgree.spliceNode_links`, `moveNode_links`, `appendRoot`, `addChild`;
+the state-level `cdtSplice_agree`, `cdtMove_agree`, `cdtAppendRoot_agree`,
+`cdtAddChild_agree`).  The preorder is a relation
+(`CapDerivationTree.TreeOrder`: the forest's preorder from the root chain,
+duplicate-free, listing every slot the tree names, over at most one chain),
+unique when it exists, and each tree write maps it: an insert after its
+source (`TreeOrder.addEdge`, for a source the tree names), a delete by
+removing the slot (`TreeOrder.spliceNode`), a move by renaming it
+(`TreeOrder.moveNode`), a root append at the end (`TreeOrder.appendRoot`).
+
+**Boot links its capabilities** (`v0.36.126`).  As seL4's
+`create_initial_thread` derives the initial thread's capabilities from the root
+CNode's, the started boot ends by linking the configuration's capabilities
+into the tree (`linkBootCapabilities`, the last stage of
+`bootFromPlatformCheckedStartedFor`).  It walks every configured CNode's
+occupied slots and then every configured thread's CSpace and VSpace slots
+(`bootCapabilitySlots`); the first slot naming a target is appended to the root
+chain, and each later slot naming it becomes a copy child of that root
+(`bootLinkSlot`), so a thread's space capability is derived from the CNode slot
+naming the same object, and the slots naming one target are one contiguous
+preorder run.  `BootLinks.Sound` is what each step keeps, and
+`linkBootCapabilities_bootLinkedShape` turns a boot-shaped state into one of
+linked boot shape (`bootLinkedShape`): the objects agree with the pre-link ones
+off their links (`bootObjectShapeOffLinks`), and the tree is complete, acyclic,
+spelled by the links and has a preorder (`bootDerivationTreeSound`).  The
+unchecked `bootFromPlatform` and the idle stage keep an empty tree.
 
 **Each slot owns its record** (`v0.36.109`, WS-ZA ZA5.3 part 6).  A CNode keeps
 a capability record for each of its slots for its whole life, as seL4's
@@ -8819,9 +8860,12 @@ bundle of the state the checked, idle-enqueued boot installs, for every
 configuration the checked boot accepts and every duplicate-free core list, and
 `bootToRuntime_invariantBridge_checked` adds its freeze.  Both boots are
 instances of one argument, `proofLayerInvariantBundle_of_bootShape`, over a
-*boot-shaped* state: every object satisfies `bootObjectShape` (a boot-safe
-configured object, the binding's VSpace root read per mapping, or an enqueued
-idle TCB), the quiescent fields are their defaults (`bootQuiescentFields`),
+*boot-shaped* state: every object satisfies `bootObjectShapeOffLinks` (a
+boot-safe configured object, the binding's VSpace root read per mapping, or an
+enqueued idle TCB, read off its derivation links), the quiescent fields are
+their defaults (`bootQuiescentFieldsOffCdt`), the derivation tree is sound
+(`bootDerivationTreeSound`: empty before `v0.36.126`'s linking stage, the
+linked tree after it),
 the ASID table is consistent with the roots — each install registers its
 root's ASID at a key nothing else holds, which `wellFormed`,
 `bootVSpaceRootObjIdDistinct` and `bootVSpaceAsidsDistinct` decide — and the

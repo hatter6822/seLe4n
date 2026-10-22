@@ -1909,12 +1909,15 @@ def bootSafeTcbCheck (tcb : TCB) : Bool :=
 
 /-- What a boot thread's two space slots hold: every capability carries a valid
     badge and none is a reply capability, as `bootSafeCnodeCheck` asks of a
-    CNode's slots, and no slot holds a derivation link, the tree being empty at
-    boot. -/
-def bootSpaceSlotsSafe (tcb : TCB) : Prop :=
+    CNode's slots. -/
+def bootSpaceSlotCapsSafe (tcb : TCB) : Prop :=
   (∀ slot cap badge, tcb.spaceSlotCap slot = some cap → cap.badge = some badge → badge.valid) ∧
-  (∀ slot cap rid, tcb.spaceSlotCap slot = some cap → cap.target ≠ .replyCap rid) ∧
-  tcb.spaceLinksClear = true
+  (∀ slot cap rid, tcb.spaceSlotCap slot = some cap → cap.target ≠ .replyCap rid)
+
+/-- ...and no slot holds a derivation link, the tree being empty when the
+    configured objects are installed (`linkBootCapabilities` links them last). -/
+def bootSpaceSlotsSafe (tcb : TCB) : Prop :=
+  bootSpaceSlotCapsSafe tcb ∧ tcb.spaceLinksClear = true
 
 /-- The space-slot half of a passed TCB check says `bootSpaceSlotsSafe`. -/
 theorem bootSpaceSlotsSafe_of_check {tcb : TCB}
@@ -1934,13 +1937,13 @@ theorem bootSpaceSlotsSafe_of_check {tcb : TCB}
       simpa [SeLe4n.Badge.isValid, SeLe4n.Badge.valid] using hBadge
     · rw [hT] at hTarget
       cases hTarget
-  exact ⟨fun _ _ badge hL hB => (hc hL).1 badge hB, fun _ _ rid hL => (hc hL).2 rid, hClear⟩
+  exact ⟨⟨fun _ _ badge hL hB => (hc hL).1 badge hB, fun _ _ rid hL => (hc hL).2 rid⟩, hClear⟩
 
-/-- `bootSpaceSlotsSafe` reads a thread's space slots and their links alone. -/
-theorem bootSpaceSlotsSafe_of_space_eq {t t' : TCB} (hCells : t'.spaceCells = t.spaceCells)
-    (hLinks : t'.spaceLinks = t.spaceLinks) (h : bootSpaceSlotsSafe t) : bootSpaceSlotsSafe t' := by
-  unfold bootSpaceSlotsSafe TCB.spaceSlotCap TCB.spaceLinksClear
-  rw [hCells, hLinks]; exact h
+/-- `bootSpaceSlotCapsSafe` reads a thread's space slots alone. -/
+theorem bootSpaceSlotCapsSafe_of_cells_eq {t t' : TCB} (hCells : t'.spaceCells = t.spaceCells)
+    (h : bootSpaceSlotCapsSafe t) : bootSpaceSlotCapsSafe t' := by
+  unfold bootSpaceSlotCapsSafe TCB.spaceSlotCap
+  rw [hCells]; exact h
 
 /-- A boot **untyped** region is *pristine*: nothing has been carved from it
     and it descends from nothing.  `children = []`, because a child names an
@@ -5295,6 +5298,76 @@ theorem not_bootSafeObject_rpi5BootVSpaceRoot :
 -- WS-BP BP3.5: the shape of every object a boot installs
 -- ============================================================================
 
+/-- What the proof-layer bundle reads of a boot CNode: bounded depth,
+    well-formed bit allocation, valid badges and no reply capability. -/
+def bootCNodeShape (cn : CNode) : Prop :=
+  cn.depth ≤ maxCSpaceDepth ∧
+  (cn.bitsConsumed > 0 → cn.wellFormed) ∧
+  (∀ slot cap badge, cn.lookup slot = some cap →
+    cap.badge = some badge → badge.valid) ∧
+  (∀ slot cap rid, cn.lookup slot = some cap →
+    cap.target ≠ .replyCap rid)
+
+/-- What the proof-layer bundle reads of a boot thread: the clean-state fields
+    and safe space-slot capabilities. -/
+def bootTcbShape (tcb : TCB) : Prop :=
+  tcb.pendingMessage = none ∧ tcb.ipcState = .ready ∧
+  tcb.queueNext = none ∧ tcb.queuePrev = none ∧ tcb.queuePPrev = none ∧
+  tcb.timeoutBudget = none ∧
+  tcb.schedContextBinding = .unbound ∧
+  tcb.replyObject = none ∧
+  tcb.pendingReceiveReply = none ∧
+  tcb.ntfnPrev = none ∧ tcb.ntfnNext = none ∧
+  tcb.replyWaiterPrev = none ∧ tcb.replyWaiterNext = none ∧
+  tcb.replyWaitersHead = none ∧ tcb.replyWaitersCount = 0 ∧
+  bootSpaceSlotCapsSafe tcb
+
+/-- **The boot shape off the derivation links**: what the proof-layer bundle
+    reads of an object, none of it a link word — so it holds of the linked boot
+    state as of the state before the links (`bootObjectShapeOffLinks_of_withoutLinks`). -/
+def bootObjectShapeOffLinks (obj : KernelObject) : Prop :=
+  (∀ ep, obj = .endpoint ep →
+    ep.sendQ.head = none ∧ ep.sendQ.tail = none ∧
+    ep.receiveQ.head = none ∧ ep.receiveQ.tail = none) ∧
+  (∀ notif, obj = .notification notif →
+    notif.state = .idle ∧ notif.waitHead = none ∧ notif.waitTail = none ∧
+      notif.pendingBadge = none) ∧
+  (∀ cn, obj = .cnode cn → bootCNodeShape cn) ∧
+  (∀ tcb, obj = .tcb tcb → bootTcbShape tcb) ∧
+  (∀ vs, obj = .vspaceRoot vs →
+    SeLe4n.Platform.RPi5.VSpaceBoot.bootVSpaceRootMappingsSafe vs) ∧
+  (∀ sc, obj = .schedContext sc →
+    schedContextWellFormed sc ∧ sc.boundThread = none ∧ sc.scReply = none ∧
+      sc.donationOrigin = none) ∧
+  (∀ r, obj = .reply r →
+    r.caller = none ∧ r.prev = none ∧ r.next = none)
+
+/-- The shape reads no derivation link: two objects that agree off their links
+    have it together. -/
+theorem bootObjectShapeOffLinks_of_withoutLinks {o o' : KernelObject}
+    (hw : o'.withoutLinks = o.withoutLinks) (h : bootObjectShapeOffLinks o) :
+    bootObjectShapeOffLinks o' := by
+  cases o <;> cases o' <;> simp only [KernelObject.withoutLinks, KernelObject.cnode.injEq,
+    KernelObject.tcb.injEq, reduceCtorEq] at hw
+  all_goals first
+    | (cases hw; exact h)
+    | (rename_i cn cn'
+       refine ⟨fun _ e => (by cases e), fun _ e => (by cases e), fun x e => ?_, fun _ e => (by cases e),
+         fun _ e => (by cases e), fun _ e => (by cases e), fun _ e => (by cases e)⟩
+       cases e
+       exact (CNode.proj_eq_of_withoutLinks_eq bootCNodeShape hw).mpr (h.2.2.1 cn rfl))
+    | (rename_i t t'
+       refine ⟨fun _ e => (by cases e), fun _ e => (by cases e), fun _ e => (by cases e), fun x e => ?_,
+         fun _ e => (by cases e), fun _ e => (by cases e), fun _ e => (by cases e)⟩
+       cases e
+       exact (TCB.proj_eq_of_withoutLinks_eq bootTcbShape hw).mpr (h.2.2.2.1 t rfl))
+
+/-- No derivation link in the object: what a configured object holds when the
+    boot installs it, before `linkBootCapabilities` links its capabilities. -/
+def bootObjectLinksClear (obj : KernelObject) : Prop :=
+  (∀ cn, obj = .cnode cn → cn.linksClear = true) ∧
+  (∀ tcb, obj = .tcb tcb → tcb.spaceLinksClear = true)
+
 /-- **WS-BP BP3.5**: what the proof-layer invariant bundle reads of an object
     in a freshly booted state.  `bootSafeObject` with two arms widened to admit
     the two kinds of object the *checked* boot installs beyond the
@@ -5309,43 +5382,11 @@ theorem not_bootSafeObject_rpi5BootVSpaceRoot :
       per-mapping facts the bundle reads (`bootVSpaceRootMappingsSafe`); the
       ASID facts are the table's, stated separately.
 
-    The arms sit at `bootSafeObject`'s positions, so a projection written
-    against one reads the same field of the other. -/
+    The bundle reads only the half off the derivation links
+    (`bootObjectShapeOffLinks`); the other half (`bootObjectLinksClear`) is
+    what lets the boot start the tree empty. -/
 def bootObjectShape (obj : KernelObject) : Prop :=
-  (∀ ep, obj = .endpoint ep →
-    ep.sendQ.head = none ∧ ep.sendQ.tail = none ∧
-    ep.receiveQ.head = none ∧ ep.receiveQ.tail = none) ∧
-  (∀ notif, obj = .notification notif →
-    notif.state = .idle ∧ notif.waitHead = none ∧ notif.waitTail = none ∧
-      notif.pendingBadge = none) ∧
-  (∀ cn, obj = .cnode cn →
-    cn.depth ≤ maxCSpaceDepth ∧
-    (cn.bitsConsumed > 0 → cn.wellFormed) ∧
-    (∀ slot cap badge, cn.lookup slot = some cap →
-      cap.badge = some badge → badge.valid) ∧
-    (∀ slot cap rid, cn.lookup slot = some cap →
-      cap.target ≠ .replyCap rid) ∧
-    -- WS-ZA ZA5.3: and no derivation link, the tree being empty at boot.
-    cn.linksClear = true) ∧
-  (∀ tcb, obj = .tcb tcb →
-    tcb.pendingMessage = none ∧ tcb.ipcState = .ready ∧
-    tcb.queueNext = none ∧ tcb.queuePrev = none ∧ tcb.queuePPrev = none ∧
-    tcb.timeoutBudget = none ∧
-    tcb.schedContextBinding = .unbound ∧
-    tcb.replyObject = none ∧
-    tcb.pendingReceiveReply = none ∧
-    tcb.ntfnPrev = none ∧ tcb.ntfnNext = none ∧
-    tcb.replyWaiterPrev = none ∧ tcb.replyWaiterNext = none ∧
-    tcb.replyWaitersHead = none ∧ tcb.replyWaitersCount = 0 ∧
-    -- and its space slots hold safe capabilities and no link.
-    bootSpaceSlotsSafe tcb) ∧
-  (∀ vs, obj = .vspaceRoot vs →
-    SeLe4n.Platform.RPi5.VSpaceBoot.bootVSpaceRootMappingsSafe vs) ∧
-  (∀ sc, obj = .schedContext sc →
-    schedContextWellFormed sc ∧ sc.boundThread = none ∧ sc.scReply = none ∧
-      sc.donationOrigin = none) ∧
-  (∀ r, obj = .reply r →
-    r.caller = none ∧ r.prev = none ∧ r.next = none)
+  bootObjectShapeOffLinks obj ∧ bootObjectLinksClear obj
 
 /-- **WS-BP BP3.5**: a boot-safe configured object has the boot shape.  A
     configured VSpace root is a thread's, which maps nothing; reading that per
@@ -5354,16 +5395,20 @@ def bootObjectShape (obj : KernelObject) : Prop :=
 theorem bootSafeObject_bootObjectShape {obj : KernelObject} (h : bootSafeObject obj)
     (hMappings : ∀ vs, obj = .vspaceRoot vs → vs.mappings.invExt) :
     bootObjectShape obj :=
-  ⟨h.1, h.2.1, h.2.2.1,
-   fun tcb hEq =>
-     let t := h.2.2.2.1 tcb hEq
-     ⟨t.1, t.2.1, t.2.2.1, t.2.2.2.1, t.2.2.2.2.1, t.2.2.2.2.2.1, t.2.2.2.2.2.2.1,
-      t.2.2.2.2.2.2.2.1, t.2.2.2.2.2.2.2.2.1, t.2.2.2.2.2.2.2.2.2.2.2.1,
-      t.2.2.2.2.2.2.2.2.2.2.2.2⟩,
-   fun vs hEq =>
-     SeLe4n.Platform.RPi5.VSpaceBoot.bootSafeUserVSpaceRoot_mappingsSafe
-       (h.2.2.2.2.1 vs hEq) (hMappings vs hEq),
-   h.2.2.2.2.2.1, h.2.2.2.2.2.2.1⟩
+  ⟨⟨h.1, h.2.1,
+    fun cn hEq => let c := h.2.2.1 cn hEq; ⟨c.1, c.2.1, c.2.2.1, c.2.2.2.1⟩,
+    fun tcb hEq =>
+      let t := h.2.2.2.1 tcb hEq
+      let r := t.2.2.2.2.2.2.2.2.2.2.2.2
+      ⟨t.1, t.2.1, t.2.2.1, t.2.2.2.1, t.2.2.2.2.1, t.2.2.2.2.2.1, t.2.2.2.2.2.2.1,
+       t.2.2.2.2.2.2.2.1, t.2.2.2.2.2.2.2.2.1, t.2.2.2.2.2.2.2.2.2.2.2.1,
+       r.1, r.2.1, r.2.2.1, r.2.2.2.1, r.2.2.2.2.1, r.2.2.2.2.2.1⟩,
+    fun vs hEq =>
+      SeLe4n.Platform.RPi5.VSpaceBoot.bootSafeUserVSpaceRoot_mappingsSafe
+        (h.2.2.2.2.1 vs hEq) (hMappings vs hEq),
+    h.2.2.2.2.2.1, h.2.2.2.2.2.2.1⟩,
+   fun cn hEq => (h.2.2.1 cn hEq).2.2.2.2,
+   fun tcb hEq => (h.2.2.2.1 tcb hEq).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2⟩
 
 /-- **WS-BP BP3.5**: the binding's boot root has the boot shape — every arm
     but the VSpace one is vacuous, and that one is its checks read per
@@ -5371,7 +5416,7 @@ theorem bootSafeObject_bootObjectShape {obj : KernelObject} (h : bootSafeObject 
 theorem bootSafeVSpaceRoot_bootObjectShape {vs : VSpaceRoot}
     (h : SeLe4n.Platform.RPi5.VSpaceBoot.bootSafeVSpaceRoot vs) :
     bootObjectShape (.vspaceRoot vs) := by
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> intro x hx <;> cases hx
+  refine ⟨⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩, ?_, ?_⟩ <;> intro x hx <;> cases hx
   exact SeLe4n.Platform.RPi5.VSpaceBoot.bootSafeVSpaceRoot_mappingsSafe h
 
 /-- **WS-BP BP3.5**: the stored idle TCB has the boot shape — it is
@@ -5379,9 +5424,10 @@ theorem bootSafeVSpaceRoot_bootObjectShape {vs : VSpaceRoot}
     every clean-state field the TCB arm reads is a default. -/
 theorem readyIdleThread_bootObjectShape (c : SeLe4n.Kernel.Concurrency.CoreId) :
     bootObjectShape (.tcb (readyIdleThread c)) := by
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> intro x hx <;> cases hx
-  exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl,
-    bootSpaceSlotsSafe_of_check rfl rfl⟩
+  refine ⟨⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩, ?_, ?_⟩ <;> intro x hx <;> cases hx
+  · exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl,
+      (bootSpaceSlotsSafe_of_check rfl rfl).1⟩
+  · rfl
 
 -- ============================================================================
 -- V4-A4b: Boot-safe object bridge — connect boot state objects to bootSafe
@@ -5593,13 +5639,12 @@ scheduler supplies its own run-queue facts.  The unchecked boot and the
 production boot are its two instances.
 -/
 
-/-- **WS-BP BP3.5**: the fields a freshly booted state leaves at their defaults
-    — the capability derivation tree, the service registries, every TLB and
-    instruction-cache view, the shootdown state and the audit trail.  Boot
-    writes none of them: it installs objects, registers ASIDs and stores the
-    idle threads, and each of those is framed here. -/
-def bootQuiescentFields (st : SystemState) : Prop :=
-  st.cdt = (default : SystemState).cdt ∧
+/-- **WS-BP BP3.5**: the fields a booted state leaves at their defaults — the
+    service registries, every TLB and instruction-cache view, the shootdown
+    state and the audit trail.  Boot writes none of them: it installs objects,
+    registers ASIDs, stores the idle threads, starts the initial threads and
+    links the capabilities, and each of those is framed here. -/
+def bootQuiescentFieldsOffCdt (st : SystemState) : Prop :=
   st.services = (default : SystemState).services ∧
   st.serviceRegistry = (default : SystemState).serviceRegistry ∧
   st.tlb = (default : SystemState).tlb ∧
@@ -5607,6 +5652,42 @@ def bootQuiescentFields (st : SystemState) : Prop :=
   st.perCoreTlb = (default : SystemState).perCoreTlb ∧
   st.perCoreICache = (default : SystemState).perCoreICache ∧
   st.declassificationAuditLog = (default : SystemState).declassificationAuditLog
+
+/-- ...and, until `linkBootCapabilities` links the capabilities, the
+    capability derivation tree. -/
+def bootQuiescentFields (st : SystemState) : Prop :=
+  st.cdt = (default : SystemState).cdt ∧ bootQuiescentFieldsOffCdt st
+
+/-- **WS-ZA ZA5.4**: what the proof-layer bundle reads of a booted state's
+    derivation tree — every slot it names holds a capability, it is acyclic,
+    the slots' links spell it — and the preorder its finality reads. -/
+def bootDerivationTreeSound (st : SystemState) : Prop :=
+  cdtCompleteness st ∧ cdtAcyclicity st ∧ cdtLinksAgree st ∧ ∃ P, st.cdt.TreeOrder P
+
+/-- The empty tree, over objects that hold no link, is sound. -/
+theorem bootDerivationTreeSound_of_empty {st : SystemState}
+    (hCdt : st.cdt = (default : SystemState).cdt)
+    (hClear : ∀ (oid : SeLe4n.ObjId) (obj : KernelObject),
+      st.objects[oid]? = some obj → bootObjectLinksClear obj) :
+    bootDerivationTreeSound st := by
+  refine ⟨fun ref hRef => ?_, ?_, ?_, [], ?_⟩
+  · rw [hCdt] at hRef
+    exact absurd hRef (CapDerivationTree.empty_not_mentions ref)
+  · show st.cdt.edgeWellFounded
+    rw [hCdt]; exact CapDerivationTree.empty_edgeWellFounded
+  · refine LinksAgree.of_empty (by rw [hCdt]; exact CapDerivationTree.empty_edges)
+      (by rw [hCdt]; exact CapDerivationTree.empty_rootChains) fun r f => ?_
+    rw [SystemState.slotLinkAt_def]
+    cases hO : st.objects[r.cnode]? with
+    | none => rfl
+    | some o =>
+      cases o with
+      | cnode cn => exact CNode.linkAt_of_linksClear ((hClear _ _ hO).1 cn rfl) r.slot f
+      | tcb t => exact TCB.spaceLinkAt_of_spaceLinksClear ((hClear _ _ hO).2 t rfl) r.slot f
+      | _ => rfl
+  · rw [hCdt]
+    exact CapDerivationTree.TreeOrder.empty_tree CapDerivationTree.empty_edges
+      CapDerivationTree.empty_rootChains
 
 /-- **WS-BP BP3.5**: **the proof-layer invariant bundle of any boot-shaped
     state** — one argument for every boot this tree has, stated over what a
@@ -5632,8 +5713,9 @@ def bootQuiescentFields (st : SystemState) : Prop :=
     question. -/
 theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
     (hShape : ∀ (oid : SeLe4n.ObjId) (obj : KernelObject),
-      ist.state.objects[oid]? = some obj → bootObjectShape obj)
-    (hFields : bootQuiescentFields ist.state)
+      ist.state.objects[oid]? = some obj → bootObjectShapeOffLinks obj)
+    (hFields : bootQuiescentFieldsOffCdt ist.state)
+    (hTree : bootDerivationTreeSound ist.state)
     (hAsidTable : Architecture.asidTableConsistent ist.state)
     (hUntyped : Kernel.untypedRegionsDisjoint ist.state)
     (hSched : schedulerInvariantBundleFull ist.state)
@@ -5642,8 +5724,8 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
     (hEffective : effectiveParamsMatchRunQueue ist.state)
     (hRun : ist.state.runQueueRefined) :
     Architecture.proofLayerInvariantBundle ist.state := by
-  obtain ⟨hCdt, hSvc, hSvcR, hTlb, hShoot, hPerCoreTlb, hPerCoreICache,
-    hAudit⟩ := hFields
+  obtain ⟨hSvc, hSvcR, hTlb, hShoot, hPerCoreTlb, hPerCoreICache, hAudit⟩ := hFields
+  obtain ⟨hComp, hAcyc, hLinks, -⟩ := hTree
   have hAllTables := ist.hAllTables
   have hBS := hShape
   have h1 := hSched
@@ -5659,12 +5741,8 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
     -- conjunct of this bundle.
     refine ⟨?_, ?_, ?_, ?_, hAllTables.1.1, ?_, ?_⟩
     · exact cspaceLookupSound_holds _
-    · -- cdtCompleteness: the derivation tree is empty
-      intro ref hRef; rw [hCdt] at hRef
-      exact absurd hRef (CapDerivationTree.empty_not_mentions ref)
-    · -- cdtAcyclicity: CDT is default (empty)
-      show ist.state.cdt.edgeWellFounded
-      rw [hCdt]; exact CapDerivationTree.empty_edgeWellFounded
+    · exact hComp
+    · exact hAcyc
     · -- cspaceDepthConsistent
       intro cnodeId cn hObj
       have hCN := (hBS cnodeId _ hObj).2.2.1 cn rfl
@@ -5673,23 +5751,12 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
       -- so the reply-cap hypothesis is contradicted and the conjunct is vacuous.
       intro oid o slot cap rid hObj hLookupSlot hTgt
       cases o with
-      | cnode cn => exact absurd hTgt (((hBS oid _ hObj).2.2.1 cn rfl).2.2.2.1 slot cap rid hLookupSlot)
+      | cnode cn => exact absurd hTgt (((hBS oid _ hObj).2.2.1 cn rfl).2.2.2 slot cap rid hLookupSlot)
       | tcb t =>
         exact absurd hTgt
-          (((hBS oid _ hObj).2.2.2.1 t rfl).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1 slot cap rid hLookupSlot)
+          (((hBS oid _ hObj).2.2.2.1 t rfl).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2 slot cap rid hLookupSlot)
       | _ => simp [KernelObject.slotCap] at hLookupSlot
-    · -- cdtLinksAgree: the tree is empty and boot CNodes hold no link.
-      refine LinksAgree.of_no_edges (by rw [hCdt]; exact CapDerivationTree.empty_edges) fun r f => ?_
-      rw [SystemState.slotLinkAt_def]
-      cases hO : ist.state.objects[r.cnode]? with
-      | none => rfl
-      | some o =>
-        cases o with
-        | cnode cn => exact CNode.linkAt_of_linksClear ((hBS _ _ hO).2.2.1 cn rfl).2.2.2.2 r.slot f
-        | tcb t =>
-          exact TCB.spaceLinkAt_of_spaceLinksClear
-            ((hBS _ _ hO).2.2.2.1 t rfl).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2 r.slot f
-        | _ => rfl
+    · exact hLinks
   -- 5. lifecycleInvariantBundle
   have hLifeBundle : lifecycleInvariantBundle ist.state :=
     ist.hLifecycleConsistent
@@ -6236,19 +6303,23 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
       have hEmpty : (default : SystemState).objects[oid]? = none := by
         simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
       rw [hEmpty] at hBase; exact absurd hBase (by simp)
-  refine proofLayerInvariantBundle_of_bootShape (bootFromPlatform config) ?_
-    ⟨bootFromPlatform_cdt_eq config,
-     bootFromPlatform_services_eq config, bootFromPlatform_serviceRegistry_eq config,
-     bootFromPlatform_tlb_eq config, bootFromPlatform_tlbShootdown_eq config,
-     bootFromPlatform_perCoreTlb_eq config, bootFromPlatform_perCoreICache_eq config,
-     bootFromPlatform_declassificationAuditLog_eq config⟩
-    ?_ (bootFromPlatform_untypedRegionsDisjoint config hUntypedDisj) h1 hCur ?_ ?_ ?_
-  · -- Every object is a boot-safe configured object.
+  -- Every object is a boot-safe configured object.
+  have hShape : ∀ (oid : SeLe4n.ObjId) (obj : KernelObject),
+      (bootFromPlatform config).state.objects[oid]? = some obj → bootObjectShape obj := by
     intro oid obj hObj
     refine bootSafeObject_bootObjectShape (bootFromPlatform_objects_bootSafe config hSafe oid obj hObj) ?_
     intro vs hEq
     subst hEq
     exact (bootFromPlatform config).hPerObjectMappings oid vs hObj
+  refine proofLayerInvariantBundle_of_bootShape (bootFromPlatform config)
+    (fun oid obj hObj => (hShape oid obj hObj).1)
+    ⟨bootFromPlatform_services_eq config, bootFromPlatform_serviceRegistry_eq config,
+     bootFromPlatform_tlb_eq config, bootFromPlatform_tlbShootdown_eq config,
+     bootFromPlatform_perCoreTlb_eq config, bootFromPlatform_perCoreICache_eq config,
+     bootFromPlatform_declassificationAuditLog_eq config⟩
+    (bootDerivationTreeSound_of_empty (bootFromPlatform_cdt_eq config)
+      (fun oid obj hObj => (hShape oid obj hObj).2))
+    ?_ (bootFromPlatform_untypedRegionsDisjoint config hUntypedDisj) h1 hCur ?_ ?_ ?_
   · -- No root, and an empty table: consistent vacuously in both directions.
     have hAsid := bootFromPlatform_asidTable_eq config
       (fun e hMem vs => hNoVSpaceInInitial e hMem vs)
@@ -7705,13 +7776,39 @@ def bootStartShape (ist : IntermediateState) : Prop :=
   ist.state.runQueueRefined ∧
   Kernel.runQueueBootSound ist.state bootCoreId
 
-/-- **WS-BP BP7.11**: **the proof-layer bundle of any state of boot shape.**
-    The scheduler half of `proofLayerInvariantBundle_of_bootShape`'s hypotheses
-    is discharged from the boot core's queue facts and the default scheduler;
-    the rest is passed through. -/
-theorem proofLayerInvariantBundle_of_bootStartShape (ist : IntermediateState)
-    (h : bootStartShape ist) : Architecture.proofLayerInvariantBundle ist.state := by
-  obtain ⟨hShape, hFields, hAsid, hUntyped, ⟨rq, re, rp, hSch⟩, hRun, hNodup, hQueue⟩ := h
+/-- **WS-ZA ZA5.4**: **what the linked boot leaves** — `bootStartShape` with
+    the objects read off their derivation links and the empty tree replaced by
+    a sound one (`bootDerivationTreeSound`): the shape `linkBootCapabilities`
+    takes a boot-shaped state to. -/
+def bootLinkedShape (ist : IntermediateState) : Prop :=
+  (∀ (oid : SeLe4n.ObjId) (obj : KernelObject),
+    ist.state.objects[oid]? = some obj → bootObjectShapeOffLinks obj) ∧
+  bootQuiescentFieldsOffCdt ist.state ∧
+  Architecture.asidTableConsistent ist.state ∧
+  Kernel.untypedRegionsDisjoint ist.state ∧
+  (∃ rq re rp, ist.state.scheduler =
+    { (default : SystemState).scheduler with
+      runQueue := rq, runQueueEnds := re, reschedulePending := rp }) ∧
+  ist.state.runQueueRefined ∧
+  Kernel.runQueueBootSound ist.state bootCoreId ∧
+  bootDerivationTreeSound ist.state
+
+/-- A state of boot shape, its tree empty and its objects holding no link, is a
+    linked boot's state with nothing linked. -/
+theorem bootStartShape.linked {ist : IntermediateState} (h : bootStartShape ist) :
+    bootLinkedShape ist :=
+  let ⟨hShape, ⟨hCdt, hFields⟩, hAsid, hUntyped, hSch, hRun, hQueue⟩ := h
+  ⟨fun oid obj hO => (hShape oid obj hO).1, hFields, hAsid, hUntyped, hSch, hRun, hQueue,
+    bootDerivationTreeSound_of_empty hCdt fun oid obj hO => (hShape oid obj hO).2⟩
+
+/-- **WS-BP BP7.11**: **the proof-layer bundle of any state of linked boot
+    shape.**  The scheduler half of `proofLayerInvariantBundle_of_bootShape`'s
+    hypotheses is discharged from the boot core's queue facts and the default
+    scheduler; the rest is passed through. -/
+theorem proofLayerInvariantBundle_of_bootLinkedShape (ist : IntermediateState)
+    (h : bootLinkedShape ist) : Architecture.proofLayerInvariantBundle ist.state := by
+  obtain ⟨hShape, hFields, hAsid, hUntyped, ⟨rq, re, rp, hSch⟩, hRun, ⟨hNodup, hQueue⟩,
+    hTree⟩ := h
   have hCur : ist.state.scheduler.currentOnCore bootCoreId = none := by
     rw [hSch]; exact (default_state_perCoreInitialized bootCoreId).1
   have hRunnableTcb : ∀ tid, tid ∈ ist.state.scheduler.runnable →
@@ -7748,14 +7845,20 @@ theorem proofLayerInvariantBundle_of_bootStartShape (ist : IntermediateState)
       have hDS : ist.state.scheduler.domainSchedule = [] := by rw [hSch]; rfl
       rw [hDS] at hMem
       simp at hMem
-  refine proofLayerInvariantBundle_of_bootShape ist hShape hFields hAsid hUntyped hSched hCur ?_ ?_
-    hRun
+  refine proofLayerInvariantBundle_of_bootShape ist hShape hFields hTree hAsid hUntyped hSched hCur
+    ?_ ?_ hRun
   · simp only [replenishQueueValid, hSch]
     exact ⟨empty_sorted, empty_sizeConsistent⟩
   · intro tid hMem
     obtain ⟨t, hObj, _, _, hPrio⟩ := hQueue tid hMem
     simp only [hObj]
     exact hPrio
+
+/-- **WS-BP BP7.11**: the proof-layer bundle of any state of boot shape — the
+    linked boot's argument, with nothing linked. -/
+theorem proofLayerInvariantBundle_of_bootStartShape (ist : IntermediateState)
+    (h : bootStartShape ist) : Architecture.proofLayerInvariantBundle ist.state :=
+  proofLayerInvariantBundle_of_bootLinkedShape ist h.linked
 
 /-- **WS-BP BP7.11**: the checked, idle-storing boot leaves a state of boot
     shape — for any configuration the checked boot accepts and any

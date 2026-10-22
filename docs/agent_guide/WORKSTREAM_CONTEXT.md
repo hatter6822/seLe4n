@@ -235,7 +235,15 @@ kind is carved from an untyped at seL4's size, the free index rounded up to the
 object's boundary as seL4's `alignUp(freeRef, objectSize)`, and the in-place
 retype, its syscall arm (number 8, kept reserved) and its theorems are deleted.
 The destroy cleanup it ran stays, with no live caller, for parts 18 and 19
-(`docs/REGISTERED_DEBT.md`).  The
+(`docs/REGISTERED_DEBT.md`).  At `v0.36.126` (part 15) the tree is in seL4's MDB
+order: the parentless slots form one ghost root chain, a delete puts its
+children in its place and a move keeps the slot's place, the preorder
+(`CapDerivationTree.TreeOrder`) is kept by every tree write, and the started
+boot links its capabilities (`linkBootCapabilities`), a thread's space slots
+derived from the CNode slot naming the same object.  New tree code must
+keep `LinksAgree` with root chains (`cdtAppendRoot` for a new root); part 16
+proves every capability-holding slot is in the tree, so an insert's source
+always is (`docs/REGISTERED_DEBT.md`).  The
 suspend of a thread blocked in IPC or holding a donated context is the one
 syscall arm left on the general path (ZA6.1).  ZA6 covers the other
 entries and makes the rule standing.  Plan:
