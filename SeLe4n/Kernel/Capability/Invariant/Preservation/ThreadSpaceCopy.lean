@@ -113,20 +113,21 @@ theorem threadSlotFilled_preserves_capabilityInvariantBundle
   · refine ⟨cspaceLookupSound_holds _, fun ref hM => ?_, ?_,
       cspaceDepthConsistent_of_objects_eq st1 _ hDepth1 rfl, hObjInv1,
       replyCapPointsToValidReply_of_objects_eq rfl hRCPV1⟩
-    · obtain ⟨e, he, hr⟩ := hM
-      simp only [CapDerivationTree.addEdge_edges, List.mem_cons] at he
-      rcases he with rfl | he
-      · rcases hr with h | h <;> simp only at h <;> subst h
-        · exact hSrcPost
-        · exact hDstOcc
-      · exact hComp1 ref ⟨e, he, hr⟩
+    · rcases hM with ⟨e, he, hr⟩ | hr
+      · simp only [CapDerivationTree.addEdge_edges, List.mem_cons] at he
+        rcases he with rfl | he
+        · rcases hr with h | h <;> simp only at h <;> subst h
+          · exact hSrcPost
+          · exact hDstOcc
+        · exact hComp1 ref (.inl ⟨e, he, hr⟩)
+      · exact hComp1 ref (.inr hr)
     · exact CapDerivationTree.addEdge_preserves_edgeWellFounded_fresh st1.cdt src _ .copy hNeSD
-        hAcyc1 fun e he => ⟨fun h => hDstFresh ⟨e, hCdt1 ▸ he, Or.inl h⟩,
-          fun h => hDstFresh ⟨e, hCdt1 ▸ he, Or.inr h⟩⟩
+        hAcyc1 fun e he => ⟨fun h => hDstFresh (.inl ⟨e, hCdt1 ▸ he, Or.inl h⟩),
+          fun h => hDstFresh (.inl ⟨e, hCdt1 ▸ he, Or.inr h⟩)⟩
   · exact SystemState.cdtAddChild_agree hObjInv1 hLinks1
       (fun _ hM => slotInObject_of_occupied (hComp1 _ hM)) .copy
       (slotInObject_of_occupied hSrcPost) (slotInObject_of_occupied hDstOcc)
-      (CapDerivationTree.parentOf_of_not_mentions (by rw [hCdt1]; exact hDstFresh)) hNeSD
+      (by rw [hCdt1]; exact hDstFresh) hNeSD
 
 /-- **A thread space slot's copy keeps the capability bundle**: its delete is the
 slot delete (`copyIntoThreadSlot_delete`), which keeps the bundle and leaves the

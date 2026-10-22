@@ -5679,7 +5679,8 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
           (((hBS oid _ hObj).2.2.2.1 t rfl).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1 slot cap rid hLookupSlot)
       | _ => simp [KernelObject.slotCap] at hLookupSlot
     · -- cdtLinksAgree: the tree is empty and boot CNodes hold no link.
-      refine LinksAgree.of_no_edges (by rw [hCdt]; exact CapDerivationTree.empty_edges) fun r f => ?_
+      refine LinksAgree.of_empty (by rw [hCdt]; exact CapDerivationTree.empty_edges)
+        (by rw [hCdt]; exact CapDerivationTree.empty_rootChains) fun r f => ?_
       rw [SystemState.slotLinkAt_def]
       cases hO : ist.state.objects[r.cnode]? with
       | none => rfl

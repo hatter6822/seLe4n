@@ -335,17 +335,18 @@ theorem cdt_addEdge_after_insert (st st1 : SystemState) (src dst : SlotRef)
       exact ⟨.cnode _, by rw [hc]; exact hDstPost, CNode.lookup_insert_ne_none _ _ _ _ hLs⟩
     · exact ⟨.cnode cs, by rw [storeObject_objects_ne st st1 dst.cnode src.cnode _ hc hObjInv hStore]; exact hCs, hLs⟩
   refine ⟨fun ref hM => ?_, ?_, ?_⟩
-  · obtain ⟨e, he, hr⟩ := hM
-    simp only [CapDerivationTree.addEdge_edges, List.mem_cons] at he
-    rcases he with rfl | he
-    · rcases hr with h | h <;> simp only at h <;> subst h
-      · exact hSrcPost
-      · exact ⟨_, hDstPost, hDstOcc⟩
-    · exact hComp1 ref ⟨e, he, hr⟩
+  · rcases hM with ⟨e, he, hr⟩ | hr
+    · simp only [CapDerivationTree.addEdge_edges, List.mem_cons] at he
+      rcases he with rfl | he
+      · rcases hr with h | h <;> simp only at h <;> subst h
+        · exact hSrcPost
+        · exact ⟨_, hDstPost, hDstOcc⟩
+      · exact hComp1 ref (.inl ⟨e, he, hr⟩)
+    · exact hComp1 ref (.inr hr)
   · exact CapDerivationTree.addEdge_preserves_edgeWellFounded_fresh st1.cdt src dst op hNe
       (by unfold cdtAcyclicity at hAcyc; rw [hCdt]; exact hAcyc)
-      fun e he => ⟨fun h => hDstFresh ⟨e, hCdt ▸ he, Or.inl h⟩,
-        fun h => hDstFresh ⟨e, hCdt ▸ he, Or.inr h⟩⟩
+      fun e he => ⟨fun h => hDstFresh (.inl ⟨e, hCdt ▸ he, Or.inl h⟩),
+        fun h => hDstFresh (.inl ⟨e, hCdt ▸ he, Or.inr h⟩)⟩
   · -- The insert keeps every link; the new edge's child was outside the tree.
     have hL1 : cdtLinksAgree st1 := cdtLinksAgree_of_eq hLinks hCdt
       (SystemState.slotLinkAt_storeObject_cnode hObjInv hPre (CNode.insert_links ..) hStore)
@@ -353,6 +354,6 @@ theorem cdt_addEdge_after_insert (st st1 : SystemState) (src dst : SlotRef)
       (storeObject_preserves_objects_invExt st st1 dst.cnode _ hObjInv hStore) hL1
       (fun _ hM => hComp1.slotInObject hM) op (slotInObject_of_occupied hSrcPost)
       (slotInObject_of_occupied ⟨_, hDstPost, hDstOcc⟩)
-      (CapDerivationTree.parentOf_of_not_mentions (by rw [hCdt]; exact hDstFresh)) hNe
+      (by rw [hCdt]; exact hDstFresh) hNe
 
 end SeLe4n.Kernel

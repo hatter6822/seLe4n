@@ -144,19 +144,6 @@ private theorem filter_neither_length_add_le {α : Type} (p q : α → Bool) :
     have ih := filter_neither_length_add_le p q xs
     cases hp : p x <;> cases hq : q x <;> simp [List.filter_cons, hp, hq] <;> omega
 
-/-- An element `q` keeps and `p` drops is in neither filter, so the two
-together are shorter than the list. -/
-private theorem filter_neither_length_add_lt {α : Type} (p q : α → Bool) :
-    ∀ (l : List α) (x : α), x ∈ l → q x = true → p x = false →
-      (l.filter (fun e => !p e && !q e)).length + (l.filter p).length < l.length
-  | [], _, hx, _, _ => by cases hx
-  | y :: ys, x, hx, hq, hp => by
-    rcases List.mem_cons.1 hx with rfl | hx
-    · have := filter_neither_length_add_le p q ys
-      simp [List.filter_cons, hp, hq]; omega
-    · have ih := filter_neither_length_add_lt p q ys x hx hq hp
-      cases hpy : p y <;> cases hqy : q y <;> simp [List.filter_cons, hpy, hqy] <;> omega
-
 /-- **A splice of a node with a parent edge takes an edge out**: the node's
 edges go and only its child edges are re-made, so its parent edge is the one
 lost.  (A parent edge from the node to itself would be re-made too; an acyclic
@@ -164,13 +151,18 @@ tree has none.) -/
 theorem spliceEdges_length_lt_of_parent {es : List CapDerivationEdge} {node : SlotRef}
     {up : CapDerivationEdge} (hF : es.find? (fun e => e.isChildOf node) = some up)
     (hNe : up.parent ≠ node) : (CapDerivationTree.spliceEdges es node).length < es.length := by
+  obtain ⟨hu, pre, post, he, hpre⟩ := List.find?_eq_some_iff_append.mp hF
+  have huc : up.child = node := by simpa [CapDerivationEdge.isChildOf] using hu
+  have hpre' : ∀ e ∈ pre, e.child ≠ node := fun e he' => by
+    have := hpre e he'
+    simpa [CapDerivationEdge.isChildOf] using this
+  have hup : up.isParentOf node = false := by simp [CapDerivationEdge.isParentOf, hNe]
   unfold CapDerivationTree.spliceEdges
-  rw [hF, CapDerivationTree.reparentEdges_length]
-  have hq : up.isChildOf node = true := List.find?_some (p := fun (e : CapDerivationEdge) => e.isChildOf node) hF
-  have hp : up.isParentOf node = false := by
-    simp [CapDerivationEdge.isParentOf, hNe]
-  have := filter_neither_length_add_lt (·.isParentOf node) (·.isChildOf node) es up
-    (List.mem_of_find?_eq_some hF) hq hp
+  rw [he, CapDerivationTree.spliceEdgesFrom_split node _ pre up post hpre' huc]
+  simp only [List.length_append, CapDerivationTree.reparentEdges_length, List.filter_append,
+    List.filter_cons, hup, Bool.false_eq_true, if_false, List.length_cons]
+  have h1 := filter_neither_length_add_le (·.isParentOf node) (·.isChildOf node) pre
+  have h2 := filter_neither_length_add_le (·.isParentOf node) (·.isChildOf node) post
   unfold CapDerivationTree.withoutNodeEdges
   omega
 
@@ -244,7 +236,7 @@ theorem revokeFirstChildLoop_childless (ec : Concurrency.CoreId) (cnode : SeLe4n
           SeLe4n.Slot.ofNat (st.slotLinkSlotWord cnode slot .firstChild - 1)⟩ := by
         unfold CapDerivationTree.childrenOf at hMem
         obtain ⟨e, he, hc⟩ := List.mem_map.1 hMem
-        exact ⟨e, (List.mem_filter.1 he).1, .inr hc⟩
+        exact .inl ⟨e, (List.mem_filter.1 he).1, .inr hc⟩
       obtain ⟨o, hO, hL⟩ := hInv.2.1 _ hMent
       have hAdm : cspaceDeleteFinalisingAdmitted
           ⟨SeLe4n.ObjId.ofNat (st.slotLinkNodeWord cnode slot .firstChild - 1),
