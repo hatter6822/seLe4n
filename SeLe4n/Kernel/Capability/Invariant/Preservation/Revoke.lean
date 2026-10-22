@@ -221,7 +221,7 @@ theorem revokeFirstChildLoop_childless (ec : Concurrency.CoreId) (cnode : SeLe4n
       (revokeFirstChildLoop ec cnode slot n st).cdt.childrenOf ⟨cnode, slot⟩ = []
   | 0, _, _, hn => absurd hn (Nat.not_lt_zero _)
   | n + 1, st, hInv, hn => by
-    have hHead := hInv.2.2.2.2.2.2.firstChild ⟨cnode, slot⟩
+    have hHead := hInv.linksAgree.firstChild ⟨cnode, slot⟩
     rw [slotLinkAt_eq_decodeLink] at hHead
     unfold revokeFirstChildLoop
     dsimp only

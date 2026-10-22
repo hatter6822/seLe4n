@@ -151,8 +151,7 @@ theorem storeServiceState_preserves_capabilityInvariantBundle
     (entry : ServiceGraphEntry)
     (hInv : capabilityInvariantBundle st) :
     capabilityInvariantBundle (storeServiceState sid entry st) := by
-  rcases hInv with ⟨-, hBounded, hComp, hAcyclic, hDepth⟩
-  exact ⟨cspaceLookupSound_holds _, hBounded, hComp, hAcyclic, hDepth⟩
+  exact capabilityInvariantBundle_of_objects_and_cdt_eq hInv rfl rfl
 
 -- ============================================================================
 -- S3-I/U-M25: Compile-time bridge signature witness

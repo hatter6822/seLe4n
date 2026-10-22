@@ -178,7 +178,7 @@ theorem cspaceMutate_preserves_badgeWellFormed
 
 The proof decomposes into the `.noSlot` case (state unchanged, trivial) and
 the `.installed` case, which chains:
-1. `cspaceInsertSlot_preserves_capabilityInvariantBundle` — slot insertion
+1. `cspaceInsertSlot_preserves_capabilityBundleOffCoverage` — slot insertion
 2. `addEdge` with `.ipcTransfer` — CDT edge addition (objects unchanged)
 3. `untypedSourceSetFull_preserves_capabilityInvariantBundle` — an untyped
    source capability's free index is set to its region size (seL4's rule:
@@ -201,18 +201,22 @@ theorem ipcTransferSingleCap_preserves_capabilityInvariantBundle
     ipcTransferSingleCap_ok_cases hStep
   · exact hInv
   · have hObjInv := objects_invExt_of_capabilityInvariantBundle st hInv
-    have hBundleSt2 := cspaceInsertSlot_preserves_capabilityInvariantBundle st st2
-      { cnode := receiverRoot, slot := emptySlot } cap.withoutMapping hInv hObjInv hCapBacked hIns
+    have hBundleSt2 := cspaceInsertSlot_preserves_capabilityBundleOffCoverage st st2
+      { cnode := receiverRoot, slot := emptySlot } cap.withoutMapping hInv.offCoverage hCapBacked hIns
     have hCdt := cdt_addEdge_after_insert st st2 srcNode
       { cnode := receiverRoot, slot := emptySlot } cap.withoutMapping .ipcTransfer
       hInv.2.1 hInv.2.2.1 hObjInv
       (by unfold cdtNodeIsRevocable at hSrc; exact hSrc) hIns hInv.linksAgree
-    have hIX := objects_invExt_of_capabilityInvariantBundle _ hBundleSt2
-    rcases hBundleSt2 with ⟨_, _, _, hDepth2, hObjInv2, hRCPV2, -⟩
+    have hShape := treeShape_addEdge_after_insert st st2 srcNode
+      { cnode := receiverRoot, slot := emptySlot } cap.withoutMapping .ipcTransfer
+      hInv.treeShape hInv.2.1 hObjInv
+      (by unfold cdtNodeIsRevocable at hSrc; exact hSrc) hIns
+    rcases hBundleSt2 with ⟨⟨_, _, _, hDepth2, hObjInv2, hRCPV2⟩, -, -⟩
+    have hIX := hObjInv2
     have hObjFinal : ∀ cdt' : CapDerivationTree,
         ({ st2 with cdt := cdt' } : SystemState).objects = st2.objects := fun _ => rfl
     have hMid := capabilityInvariantBundle_of_linkReach ?_
-      (SystemState.cdtAddChild_reach st2 srcNode _ .ipcTransfer) hIX hCdt.2.2
+      (SystemState.cdtAddChild_reach st2 srcNode _ .ipcTransfer) hIX hCdt.2.2 hShape
     · -- `cdtNodeIsRevocable`: the source holds a capability, and still does after
       -- the install and the edge, so setting it full keeps the bundle.
       obtain ⟨c, hLc⟩ := Option.isSome_iff_exists.mp

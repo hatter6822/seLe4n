@@ -1224,7 +1224,6 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Model.storeServiceState
   , `SeLe4n.Platform.Boot.applyMachineConfigChecked
   , `SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads
-  , `SeLe4n.Platform.Boot.bootFromPlatformUnchecked
   , `SeLe4n.Platform.Boot.bootFromPlatformWithIdleThreads
   , `SeLe4n.Platform.Boot.bootFromPlatformWithInterrupts
   , `SeLe4n.Platform.Boot.bootFromPlatformWithWarnings

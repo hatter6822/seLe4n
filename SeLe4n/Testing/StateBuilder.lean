@@ -436,10 +436,20 @@ def SeLe4n.Model.SystemState.withSlotPopulated (st : SeLe4n.Model.SystemState)
       { target := .object r.cnode, rights := SeLe4n.Model.AccessRightSet.ofList [.read] })
 
 /-- Test fixtures: record each `(parent, child, op)` derivation edge through the
-kernel's paired tree-and-link op, so the fixture's slot links agree with its tree;
-each slot an edge names holds a capability (`withSlotPopulated`). -/
+kernel's paired tree-and-link ops, so the fixture's slot links agree with its
+tree; each slot an edge names holds a capability (`withSlotPopulated`).  The
+tree names every source, as it names every capability-holding slot: a source no
+earlier edge named goes to the end of the root chain first (`cdtAppendRoot`).
+The fixture's tree starts empty, and an edge's child is a slot no earlier edge
+named. -/
 def SeLe4n.Model.SystemState.withDerivationEdges (st : SeLe4n.Model.SystemState)
     (es : List (SeLe4n.Model.SlotRef × SeLe4n.Model.SlotRef × SeLe4n.Model.DerivationOp)) :
     SeLe4n.Model.SystemState :=
-  es.foldl (fun s e =>
-    ((s.withSlotPopulated e.1).withSlotPopulated e.2.1).cdtAddChild e.1 e.2.1 e.2.2) st
+  (es.foldl (fun (acc : SeLe4n.Model.SystemState × Option SeLe4n.Model.SlotRef ×
+      List SeLe4n.Model.SlotRef) e =>
+    let (s, last, named) := acc
+    let (s, last, named) :=
+      if named.contains e.1 then (s, last, named)
+      else ((s.withSlotPopulated e.1).cdtAppendRoot last e.1, some e.1, e.1 :: named)
+    ((s.withSlotPopulated e.2.1).cdtAddChild e.1 e.2.1 e.2.2, last, e.2.1 :: named))
+    (st, none, [])).1

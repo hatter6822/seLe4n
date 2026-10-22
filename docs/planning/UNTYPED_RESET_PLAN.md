@@ -92,6 +92,10 @@ row's status and readings.
   run.  A capability is final when its preorder neighbours do not name its
   object (seL4's `isFinalCapability`), read from its parent, first-child,
   `prev` and `next` words.  No reference count and no new word is kept.
+  "Names the same object" is seL4's `sameObjectAs`, by object id, untyped
+  included: `.object o` names `o`, `.replyCap r` names `r.toObjId`,
+  `.cnodeSlot cn _` names `cn`, and `.auditTrail` names nothing, so it is never
+  the same object as another capability and is always final.
 - **D2 Retire on final delete, for every kind.**  A delete or revoke that
   destroys a final capability finalises its object as seL4's `finaliseCap` does,
   then retires it (`retireCarvedObject`).  For memory kinds that is the unmap and

@@ -241,9 +241,13 @@ children in its place and a move keeps the slot's place, the preorder
 (`CapDerivationTree.TreeOrder`) is kept by every tree write, and the started
 boot links its capabilities (`linkBootCapabilities`), a thread's space slots
 derived from the CNode slot naming the same object.  New tree code must
-keep `LinksAgree` with root chains (`cdtAppendRoot` for a new root); part 16
-proves every capability-holding slot is in the tree, so an insert's source
-always is (`docs/REGISTERED_DEBT.md`).  The
+keep `LinksAgree` with root chains (`cdtAppendRoot` for a new root).  Since
+part 16 the capability bundle carries `CapTreeShape`: every slot holding a
+capability is in the tree and the tree has a preorder, so an insert's source
+always is in the tree.  A new slot write must keep it (`CapTreeShape.addChild`,
+`splice`, `move`, `rewrite`, `of_frame`), and a hand-built state that records
+edges names its sources (`withDerivationEdges`).  The unchecked boot is
+retired: `bootFromPlatform` is the checked boot's fold stage only.  The
 suspend of a thread blocked in IPC or holding a donated context is the one
 syscall arm left on the general path (ZA6.1).  ZA6 covers the other
 entries and makes the rule standing.  Plan:
@@ -834,11 +838,12 @@ off the configuration rather than evaluated out of the boot. `BaseIO` has no
 
 (6) **The state the hardware boot installs satisfies the proof-layer bundle,
 and there is one argument for it** (BP3.5).
-`bootFromPlatformCheckedWithIdleThreadsFor_proofLayerInvariantBundle` covers the
-checked, idle-enqueued boot of every configuration the checked boot accepts,
-`bootToRuntime_invariantBridge_checked` adds the freeze, and
-`rpi5DeploymentBootStateAt_invariantBridge` is the deployment's instance. Both
-boots, checked and unchecked, are instances of
+`bootFromPlatformCheckedStartedFor_proofLayerInvariantBundle` covers the
+started, linked boot of every configuration the checked boot accepts,
+`bootToRuntime_invariantBridge_started` adds the freeze, and
+`rpi5DeploymentBootStateAt_invariantBridge` is the deployment's instance (since
+part 16 of WS-ZA ZA5.4 only the linked boot carries the bundle, which requires
+every capability in the tree). It is the instance of
 `proofLayerInvariantBundle_of_bootShape`: every object is `bootObjectShape`,
 the quiescent fields are defaults, the ASID table is consistent, and the
 scheduler supplies its run-queue facts. A new boot install step must keep all
@@ -1982,8 +1987,9 @@ one list; a direct-entry caller names its own through
 `PlatformConfig.initialThreads` (default `[]`, where the stage is the idle boot,
 `bootFromPlatformCheckedStartedFor_of_nil`).  (4) **One bundle argument for
 every boot**: `bootStartShape` names what the proof-layer bundle reads of a boot
-state, `proofLayerInvariantBundle_of_bootStartShape` is the argument, and a new
-boot stage proves that it keeps the shape (`startInitialThread_preserves_bootStartShape`)
+state before linking, `linkBootCapabilities_bootLinkedShape` takes it to the
+linked shape the argument (`proofLayerInvariantBundle_of_bootLinkedShape`)
+reads, and a new boot stage proves that it keeps the shape (`startInitialThread_preserves_bootStartShape`)
 rather than re-running the argument.  (5) **Concrete boot states are proved by
 rewriting, never by unfolding a bind against them**: the deployment's proofs go
 through `bootFromPlatformCheckedStartedFor_of_idle`, stated over variables,

@@ -501,7 +501,7 @@ hardware boot installs this deployment and never halts on it.
 **The bundle (BP3.5):** the state this boot installs satisfies the proof-layer
 invariant bundle, and its freeze the frozen one —
 `rpi5DeploymentBootStateAt_invariantBridge`, an instance of
-`bootToRuntime_invariantBridge_checked`, which covers every configuration the
+`bootToRuntime_invariantBridge_started`, which covers every configuration the
 checked boot accepts.  §8.14.2 has the argument and the CNode-check gap it
 closed.
 
@@ -8853,19 +8853,24 @@ anchors + 5 runtime witnesses in `tests/LivenessSuite.lean`.
 `bootToRuntime_invariantBridge_empty` (Boot.lean) proves that the full
 `proofLayerInvariantBundle` (16 conjuncts) holds after booting with an empty
 `PlatformConfig`. For non-empty configs (real hardware with IRQ tables,
-pre-allocated objects) the unchecked boot's bundle is conditional (below), and
-**the production boot's is unconditional since WS-BP BP3.5**:
-`bootFromPlatformCheckedWithIdleThreadsFor_proofLayerInvariantBundle` proves the
-bundle of the state the checked, idle-enqueued boot installs, for every
-configuration the checked boot accepts and every duplicate-free core list, and
-`bootToRuntime_invariantBridge_checked` adds its freeze.  Both boots are
-instances of one argument, `proofLayerInvariantBundle_of_bootShape`, over a
+pre-allocated objects) **the production boot's bundle is unconditional**:
+`bootFromPlatformCheckedStartedFor_proofLayerInvariantBundle` proves the
+bundle of the state the started boot installs (checked, idle threads stored,
+initial threads started, capabilities linked), for every configuration the
+checked boot accepts and every duplicate-free core list, and
+`bootToRuntime_invariantBridge_started` adds its freeze.  Since WS-ZA ZA5.4
+part 16 the bundle requires every capability-holding slot to be in the
+derivation tree (`CapTreeShape`), so only the linked boot carries it: the
+idle-boot and unchecked-boot bundle theorems are retired, and the unchecked
+boot with them (`bootFromPlatform` is the checked boot's fold stage).  The
+linked boot is the instance of one argument, `proofLayerInvariantBundle_of_bootShape`, over a
 *boot-shaped* state: every object satisfies `bootObjectShapeOffLinks` (a
 boot-safe configured object, the binding's VSpace root read per mapping, or an
 enqueued idle TCB, read off its derivation links), the quiescent fields are
 their defaults (`bootQuiescentFieldsOffCdt`), the derivation tree is sound
-(`bootDerivationTreeSound`: empty before `v0.36.126`'s linking stage, the
-linked tree after it),
+(`bootDerivationTreeSound`: the linked tree, every capability-holding slot in
+it — the linking walks every configured slot, and every slot holding a
+capability is one, `bootFromPlatformCheckedWithIdleThreadsFor_bootSlotsListed`),
 the ASID table is consistent with the roots — each install registers its
 root's ASID at a key nothing else holds, which `wellFormed`,
 `bootVSpaceRootObjIdDistinct` and `bootVSpaceAsidsDistinct` decide — and the
@@ -8893,12 +8898,7 @@ SchedContext well-formedness. The soundness bridge theorem
 `bootSafeObjectCheck_sound` proves the Bool check implies **every** conjunct
 of `bootSafeObject`; it was `bootSafeObjectCheck_sound_structural` and
 partial until BP3.5, which found the CNode arm skipping the two clauses about
-slot contents while the invariant bundle read both. The full
-`bootFromPlatform_proofLayerInvariantBundle_general` theorem composes
-`bootSafe` with boot preservation to discharge the complete 16-conjunct
-invariant bundle (with the WS-RC R3 precondition that no VSpaceRoots are
-present in `initialObjects` — the canonical boot VSpace is installed
-via the dedicated `bootVSpaceRoot` field, not the standard fold).
+slot contents while the invariant bundle read both.
 
 **WS-RC R3 (DEEP-BOOT-01) — Boot VSpaceRoot threading.**  Pre-R3 the
 `.vspaceRoot _ => false` arm of `bootSafeObjectCheck` rendered the
