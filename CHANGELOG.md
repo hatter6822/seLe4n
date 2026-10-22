@@ -4,7 +4,8 @@ The untyped carve is now proven to keep all eight conjuncts of
 `capabilityInvariantBundle`, so every tree-changing operation proves the
 tree's completeness from its pre-state.  Part 17 of the seL4 untyped reset
 ([`UNTYPED_RESET_PLAN.md`](docs/planning/UNTYPED_RESET_PLAN.md)).  No
-executable code changed.
+behaviour changed: the one change to code is an erased proof field on the
+CNode carve request.
 
 ### Changes
 
@@ -25,12 +26,17 @@ executable code changed.
     (`retypeFromUntyped_lookupSlotCap_authority`).
   - Every carved object holds no capability (`CarveRequest.object_slotCap`)
     and no link (`CarveRequest.object_linkAt`).
-- **The depth bound is the request's.**  `untypedRetypeObject` takes any
-  `CarveRequest`, and a CNode of radix above `maxCSpaceDepth` would break the
-  depth conjunct.  The theorem takes `CarveRequest.depthBounded`; the decode,
-  the only maker of a request, gives it (`carveRequestOf?_depthBounded`,
-  radix at most 42).  So the `.untypedRetype` arm keeps the bundle
-  (`untypedRetypeFromCap_preserves_capabilityInvariantBundle`, `API.lean`).
+- **A CNode request carries its depth bound.**  A CNode of radix above
+  `maxCSpaceDepth` would break the depth conjunct, and the bound was a
+  convention of the decode.  It is now part of the request:
+  `CarveRequest.cnode radixBits bounded` takes the proof
+  `radixBits ≤ maxCSpaceDepth`, erased at run time, so the constructor still
+  holds the radix alone.  The decode builds it from its radix check
+  (`maxCNodeRadixBits_le_maxCSpaceDepth`, radix at most 42), and
+  `carveRequestOf?_ok` states the CNode case with the proof.  The carve
+  theorems take no depth hypothesis, and the `.untypedRetype` arm keeps the
+  bundle (`untypedRetypeFromCap_preserves_capabilityInvariantBundle`,
+  `API.lean`).
   No kernel-wide composition of the capability bundle took the carve as a
   hypothesis, so no hypothesis is removed.
 - Tier 3 anchors pin the new theorems and their compositions.

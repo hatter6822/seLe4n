@@ -51,7 +51,7 @@ enforcement, and scheduling.
 |-----------|-------|
 | **Package version** | `0.36.128` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 487,551 across 443 Lean files |
+| **Production LoC** | 487,534 across 443 Lean files |
 | **Test LoC** | 86,124 across 70 Lean test suites |
 | **Proved declarations** | 17,635 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
@@ -4805,10 +4805,12 @@ link or tree node moves (`storeObject_absent_preserves_capabilityInvariantBundle
 (`retypeFromUntyped_preserves_capabilityInvariantBundle`).  The install of the
 new capability into the empty destination and its edge under the invoked slot
 (`cdtAddChild src dst .retype`) are a copy's.  A carved CNode resolves its radix
-bits and no more than `maxCSpaceDepth`: the bound is the request's
-(`CarveRequest.depthBounded`), and the decode gives it
-(`carveRequestOf?_depthBounded`, radix at most 42), so the `.untypedRetype` arm
-keeps the bundle (`untypedRetypeFromCap_preserves_capabilityInvariantBundle`).
+bits and no more than `maxCSpaceDepth`: a CNode request carries that bound as
+an erased proof field (`CarveRequest.cnode radixBits bounded`), which the
+decode builds from its radix check (`maxCNodeRadixBits_le_maxCSpaceDepth`,
+radix at most 42), so no request can name a deeper CNode and the theorem takes
+no hypothesis.  The `.untypedRetype` arm keeps the bundle
+(`untypedRetypeFromCap_preserves_capabilityInvariantBundle`).
 
 ### 8.6.1 Carve Refusal Order (`v0.36.125`)
 
