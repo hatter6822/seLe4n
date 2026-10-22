@@ -87,6 +87,9 @@ new numbers; no pin value changed.
 
 - Closed: "Every slot holding a capability is in the derivation tree, and
   `TreeOrder` is a bundle conjunct" (registered `v0.36.126`).
+- New row, closed by part 17: "The carve has no capability-bundle
+  preservation theorem".  `retypeFromUntyped` and `untypedRetypeObject` are
+  to be proven to keep all eight conjuncts of `capabilityInvariantBundle`.
 
 ## v0.36.126 — WS-ZA ZA5.4 part 15: the derivation tree in seL4 order
 
