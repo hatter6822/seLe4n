@@ -234,7 +234,7 @@ children, source set full otherwise); at `v0.36.125` (part 14) every object
 kind is carved from an untyped at seL4's size, the free index rounded up to the
 object's boundary as seL4's `alignUp(freeRef, objectSize)`, and the in-place
 retype, its syscall arm (number 8, kept reserved) and its theorems are deleted.
-The destroy cleanup it ran stays, with no live caller, for parts 18 and 19
+The destroy cleanup it ran stays, with no live caller, for parts 21 and 22
 (`docs/REGISTERED_DEBT.md`).  At `v0.36.126` (part 15) the tree is in seL4's MDB
 order: the parentless slots form one ghost root chain, a delete puts its
 children in its place and a move keeps the slot's place, the preorder
