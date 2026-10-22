@@ -241,7 +241,7 @@ kind read as words, so the scrub builds no frame record. -/
           physicalWrites := st.physicalWrites.pushAfter st.physicalWritesDrained
             (SeLe4n.Kernel.Architecture.PhysicalWrite.zeroPage base)
           physicalWritesDrained := false }
-  | .tcb _ _ | .endpoint | .notification | .cnode _ | .reply | .schedContext _ => st
+  | .tcb _ _ | .endpoint | .notification | .cnode _ _ | .reply | .schedContext _ => st
 
 theorem CarveRequest.scrub_eq_scrubAt (st : SystemState) (ut : UntypedObject) (idx : Nat)
     (req : CarveRequest) :

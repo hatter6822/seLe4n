@@ -18,7 +18,7 @@ for an untyped, so no slot and no CNode changes), the carved object at an id
 that held nothing, and the invoked capability's free index (an in-place rewrite
 of an occupied slot that keeps its target).  The carved object holds no
 capability and no derivation link, and a carved CNode resolves at most
-`maxCSpaceDepth` bits, so storing it moves no slot, no link and no tree node
+`maxCSpaceDepth` bits (its request carries the bound), so storing it moves no slot, no link and no tree node
 (`storeObject_absent_preserves_capabilityInvariantBundle`).
 
 `untypedRetypeObject` adds a scrub of machine memory, which the bundle does not
@@ -132,14 +132,6 @@ theorem retypeFromUntyped_lookupSlotCap_authority
     (CNode.lookup_insert_ne_none cn authority.slot authority.slot _ (by rw [hLkA]; simp))
   rw [(cspaceLookupSound_holds st').1 _ _ _ _ hO hc]; rfl
 
-/-- **The depth bound a carve request owes the capability bundle**: a carved
-CNode resolves its radix bits and no more than `maxCSpaceDepth`.  The syscall
-arm's decode is the only maker of a request (`carveRequestOf?`), and it bounds
-the radix (`carveRequestOf?_depthBounded`). -/
-def CarveRequest.depthBounded : CarveRequest → Prop
-  | .cnode r => r ≤ maxCSpaceDepth
-  | _ => True
-
 /-- A request's scrub writes no derivation tree. -/
 theorem CarveRequest.scrub_cdt (st : SystemState) (ut : UntypedObject) (idx : Nat)
     (req : CarveRequest) : (req.scrub st ut idx).cdt = st.cdt := by
@@ -167,23 +159,23 @@ theorem CarveRequest.object_linkAt (untypedId childId : SeLe4n.ObjId) (ut : Unty
     (idx : Nat) (req : CarveRequest) (s : SeLe4n.Slot) (f : LinkField) :
     (req.object untypedId childId ut idx).linkAt s f = none := by
   cases req
-  case cnode r =>
+  case cnode r _ =>
     exact CNode.linkAt_of_linksClear (by simp [CNode.linksClear, carvedCNode, CNode.ofSlots]) s f
   case tcb dom core =>
     exact TCB.spaceLinkAt_of_spaceLinksClear (by simp [TCB.spaceLinksClear, carvedTcb]) s f
   all_goals rfl
 
-/-- A carved CNode of a bounded request is within the depth bound: it has no
-guard and resolves exactly its radix bits. -/
+/-- A carved CNode is within the depth bound: it has no guard and resolves
+exactly its radix bits, which its request bounds (`CarveRequest.cnode`). -/
 theorem CarveRequest.object_depthConsistent (untypedId childId : SeLe4n.ObjId)
-    (ut : UntypedObject) (idx : Nat) (req : CarveRequest) (hReq : req.depthBounded) :
+    (ut : UntypedObject) (idx : Nat) (req : CarveRequest) :
     ∀ cn, req.object untypedId childId ut idx = .cnode cn →
       cn.depth ≤ maxCSpaceDepth ∧ (cn.bitsConsumed > 0 → cn.wellFormed) := by
   intro cn hO
   cases req <;> simp only [CarveRequest.object, KernelObject.cnode.injEq, reduceCtorEq] at hO
-  case cnode r =>
+  case cnode r hr =>
     subst hO
-    refine ⟨hReq, fun hPos => ?_⟩
+    refine ⟨hr, fun hPos => ?_⟩
     simp only [CNode.bitsConsumed, carvedCNode, CNode.ofSlots_guardWidth] at hPos ⊢
     exact ⟨by simp [CNode.bitsConsumed], by simpa [CNode.bitsConsumed]
       using hPos, by simp [CNode.guardBounded]⟩
@@ -198,14 +190,14 @@ the new child lands right after it in the preorder; the destination was empty, s
 the tree did not name it and the edge closes no cycle. -/
 theorem untypedRetypeObject_preserves_capabilityInvariantBundle
     (src dst : CSpaceAddr) (childId : SeLe4n.ObjId) (req : CarveRequest)
-    (st st' : SystemState) (hInv : capabilityInvariantBundle st) (hReq : req.depthBounded)
+    (st st' : SystemState) (hInv : capabilityInvariantBundle st)
     (hStep : untypedRetypeObject src childId dst req st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
   obtain ⟨utCap, untypedId, ut, st1, st2, _, _, _, hRt, hIns, rfl⟩ :=
     untypedRetypeObject_ok_decompose src dst childId req st st' hInv.2.2.2.2.1 hStep
   have hInv1 := retypeFromUntyped_preserves_capabilityInvariantBundle st st1 src untypedId
     childId _ _ hInv (CarveRequest.object_slotCap _ _ _ _ req)
-    (CarveRequest.object_linkAt _ _ _ _ req) (CarveRequest.object_depthConsistent _ _ _ _ req hReq)
+    (CarveRequest.object_linkAt _ _ _ _ req) (CarveRequest.object_depthConsistent _ _ _ _ req)
     hRt
   have hSrc1 := retypeFromUntyped_lookupSlotCap_authority st st1 src untypedId childId _ _
     hInv.2.2.2.2.1 hRt
