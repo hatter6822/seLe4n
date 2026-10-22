@@ -131,6 +131,64 @@ theorem schedKeyView_eq_of_slotUnread {pre post : SystemState} {X : SeLe4n.ObjId
     rw [effectiveSchedParams_congr_binding hT (fun sc hsc =>
       getSchedContext?_deadline_of_keyInputsOf (hFrame _ (hNo a hp sc hsc)))]
 
+/-- One slot's key inputs fix whether the thread living there is queued on a core. -/
+theorem queuedOn_of_keyInputsOf {pre post : SystemState} {t : SeLe4n.ThreadId}
+    (hk : keyInputsOf post.objects[t.toObjId]? = keyInputsOf pre.objects[t.toObjId]?)
+    (c : CoreId) : post.queuedOn c t = pre.queuedOn c t := by
+  unfold SystemState.queuedOn SystemState.getTcb?
+  revert hk
+  generalize post.objects[t.toObjId]? = a
+  generalize pre.objects[t.toObjId]? = b
+  intro hk
+  cases a with
+  | none => cases b with
+    | none => rfl
+    | some o => cases o <;> simp_all [keyInputsOf]
+  | some o => cases b with
+    | none => cases o <;> simp_all [keyInputsOf]
+    | some o' => cases o <;> cases o' <;> simp_all [keyInputsOf]
+
+/-- **A step that fills one empty slot with an object queued nowhere covers**:
+no thread placed before it lives at the slot (each has a TCB) or reads its
+deadline there (the binding reciprocity names a scheduling context stored
+elsewhere), so every key a remote decision read is unchanged, and the new
+object joins no run queue. -/
+theorem stepCovers_of_freshSlot (e : CoreId) {pre post : SystemState} {X : SeLe4n.ObjId}
+    (hFrame : ∀ oid, oid ≠ X → keyInputsOf post.objects[oid]? = keyInputsOf pre.objects[oid]?)
+    (hAbs : pre.objects[X]? = none)
+    (hUnq : ∀ c (t : SeLe4n.ThreadId), t.toObjId = X → post.queuedOn c t = false)
+    (hSched : post.scheduler = pre.scheduler)
+    (hBi : schedContextBindingBidirectional pre) (hPlaced : placedThreadsHaveTcbs pre) :
+    stepCovers e pre post := by
+  have hKeyNe : ∀ t, t.toObjId ≠ X → schedKeyView post t = schedKeyView pre t := by
+    intro t ht
+    refine schedKeyView_eq_of_slotUnread hFrame ht ?_
+    intro tcb hT sc hsc hEq
+    obtain ⟨sco, hSo, _⟩ := hBi t tcb sc ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hsc
+    rw [hEq, hAbs] at hSo; cases hSo
+  refine ⟨fun c _ => Or.inr ⟨fun t ht => ?_, by rw [hSched], fun t ht => ?_⟩,
+    fun c _ hc => by rw [hSched]; exact hc⟩
+  · have hne : t.toObjId ≠ X := fun hEq => by rw [hUnq c t hEq] at ht; cases ht
+    exact ⟨(queuedOn_of_keyInputsOf (hFrame _ hne) c) ▸ ht, (hKeyNe t hne).symm⟩
+  · rw [hSched] at ht
+    refine schedKeyNotWeakened_of_eq (hKeyNe t (fun hEq => ?_)).symm
+    obtain ⟨tcb, hT⟩ := Option.isSome_iff_exists.mp (hPlaced c t (Or.inr ht))
+    have hTo := (SystemState.getTcb?_eq_some_iff _ _ _).mp hT
+    rw [hEq, hAbs] at hTo; cases hTo
+
+/-- **The carve covers** (WS-ZA ZA5.4 part 14), for every kind it makes: the
+child's slot was empty and the object stored there is queued nowhere — a carved
+TCB is inactive with empty links — and no other key input moved. -/
+theorem untypedRetypeObject_stepCovers (e : CoreId) {src dst : CSpaceAddr}
+    {childId : SeLe4n.ObjId} {req : CarveRequest} {st st' : SystemState}
+    (hInv : st.objects.invExt) (hBi : schedContextBindingBidirectional st)
+    (hPlaced : placedThreadsHaveTcbs st)
+    (h : untypedRetypeObject src childId dst req st = .ok ((), st')) :
+    stepCovers e st st' ∧ st'.objects.invExt := by
+  obtain ⟨hFrame, hAbs, hUnq, hSched, hInv'⟩ :=
+    untypedRetypeObject_keyFrameOffChild src dst childId req st st' hInv h
+  exact ⟨stepCovers_of_freshSlot e hFrame hAbs hUnq hSched hBi hPlaced, hInv'⟩
+
 /-- **The retype covers**, under the detachment pack the dispatch's invariant
 payoff already consumes: the cleanup is the identity on the object store and the
 scheduler, so the retype is one store at a slot no placed thread lives at or
@@ -277,8 +335,8 @@ theorem dispatchCapabilityOnly_stepCovers {decoded : SyscallDecodeResult} {cap :
         | exact (setThreadFaultHandlerOp_keyFrame _ _ _ _ hInv hU).stepCoversInv
         | exact (copyThreadSpaces_keyFrame _ _ _ _ _ hInv hU).stepCoversInv)
   all_goals
-    obtain ⟨_, _, _, _, _, _, _, _, _, hU⟩ := untypedRetypeFromCap_ok _ _ _ _ _ h
-    exact (untypedRetypeObject_keyFrame _ _ _ _ _ _ hInv hU).stepCoversInv
+    obtain ⟨_, _, _, _, _, _, _, _, _, hU⟩ := untypedRetypeFromCap_ok _ _ _ _ _ _ h
+    exact untypedRetypeObject_stepCovers ec hInv hBi hPlaced hU
 
 /-! ### The checked dispatcher -/
 

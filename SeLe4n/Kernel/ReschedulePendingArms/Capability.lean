@@ -320,10 +320,18 @@ theorem vspaceMapFromFrameCap_keyFrame (tid : SeLe4n.ThreadId) (ec : CoreId)
   have k2 := tagFrameMapping_keyFrame _ _ _ st1 st2 epoch k1.2.2 hT
   exact (k1.trans k2).trans (cspaceRecordFrameMapping_keyFrame _ _ st2 st' k2.2.2 hRec)
 
-theorem untypedRetypeObject_keyFrame (src dst : CSpaceAddr) (childId : SeLe4n.ObjId)
+/-- **The carve's key frame** (WS-ZA ZA5.4 part 14): the carve moves no key input
+off the child's slot, which was empty before it; whatever it stores there — a
+fresh TCB or scheduling context carries key inputs of its own — is queued on no
+core; and it leaves the scheduler and the store invariant alone.  The dispatch
+turns this into the coverage (`untypedRetypeObject_stepCovers`). -/
+theorem untypedRetypeObject_keyFrameOffChild (src dst : CSpaceAddr) (childId : SeLe4n.ObjId)
     (req : CarveRequest) (st st' : SystemState) (hObjInv : st.objects.invExt)
     (hStep : untypedRetypeObject src childId dst req st = .ok ((), st')) :
-    capabilityKeyFrame st st' := by
+    (∀ oid, oid ≠ childId → keyInputsOf st'.objects[oid]? = keyInputsOf st.objects[oid]?) ∧
+    st.objects[childId]? = none ∧
+    (∀ c (t : SeLe4n.ThreadId), t.toObjId = childId → st'.queuedOn c t = false) ∧
+    st'.scheduler = st.scheduler ∧ st'.objects.invExt := by
   obtain ⟨utCap, untypedId, ut, st1, st2, _, _, _, hRt, hIns, rfl⟩ :=
     untypedRetypeObject_ok_decompose src dst childId req st st' hObjInv hStep
   have hFresh := retypeFromUntyped_childId_fresh src untypedId childId _ _ st st1 hRt
@@ -332,19 +340,24 @@ theorem untypedRetypeObject_keyFrame (src dst : CSpaceAddr) (childId : SeLe4n.Ob
   have k1 := storeObject_inert_keyFrame hObjInv hStUt (by rw [hUt]; rfl) rfl
   have hNe : childId ≠ untypedId := by
     intro h; rw [h, hUt] at hFresh; simp at hFresh
-  have hChildNone : stUt.objects[childId]? = none := by
-    rw [storeObject_objects_ne _ _ _ _ _ hNe hObjInv hStUt]
+  have hAbs : st.objects[childId]? = none := by
     cases h : st.objects[childId]? with
     | none => rfl
     | some _ => rw [h] at hFresh; simp at hFresh
-  have k2 := k1.trans (storeObject_inert_keyFrame k1.2.2 hStCh (by rw [hChildNone]; rfl)
-    (by cases req <;> rfl))
-  have k3 := k2.trans (storeObject_inert_keyFrame k2.2.2 hStIdx (by rw [hOCh]; rfl) rfl)
+  have hInvCh : stCh.objects.invExt := storeObject_preserves_objects_invExt _ _ _ _ k1.2.2 hStCh
+  have k3 := storeObject_inert_keyFrame hInvCh hStIdx (by rw [hOCh]; rfl) rfl
   have kZ : capabilityKeyFrame st1 (req.scrub st1 ut utCap.freeIndex) :=
     capabilityKeyFrame_of_objects_scheduler_eq k3.2.2 (CarveRequest.scrub_objects _ _ _ _)
       (CarveRequest.scrub_scheduler _ _ _ _)
   have kI := cspaceInsertSlot_keyFrame _ st2 dst _ kZ.2.2 hIns
-  exact ((k3.trans kZ).trans kI).trans (cdtRecord_keyFrame st2 src dst .retype kI.2.2)
+  have kR := ((k3.trans kZ).trans kI).trans (cdtRecord_keyFrame st2 src dst .retype kI.2.2)
+  refine ⟨fun oid hne => ?_, hAbs, fun c t ht => ?_, ?_, kR.2.2⟩
+  · rw [kR.1 oid, storeObject_objects_ne _ _ _ _ _ hne k1.2.2 hStCh]; exact k1.1 oid
+  · rw [kR.1.runCoresAgree.queuedOn c t]
+    unfold SystemState.queuedOn SystemState.getTcb?
+    rw [ht, storeObject_objects_eq _ _ _ _ k1.2.2 hStCh]
+    cases req <;> simp [CarveRequest.object, carvedTcb]
+  · rw [kR.2.1, storeObject_scheduler_eq _ _ _ _ hStCh, k1.2.1]
 
 theorem untypedResetWithShootdown_keyFrame (ec : CoreId) (untypedId : SeLe4n.ObjId)
     (st st' : SystemState) (hObjInv : st.objects.invExt)

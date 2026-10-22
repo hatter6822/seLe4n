@@ -98,7 +98,7 @@ def retypeFromUntypedAdmitted (st : SystemState) (authCap : Capability)
   !(ut.isDevice && !ty.deviceBackable) &&
   objectIdInAddressSpace st.machine childId &&
   !decide (size < objectTypeAllocSize ty) &&
-  !(requiresPageAlignment ty && !allocationBasePageAligned ut authCap.freeIndex) &&
+  carveBaseAligned ty size ut authCap.freeIndex &&
   lifecycleRetypeAuthority authCap untypedId &&
   ut.canAllocate authCap.freeIndex size &&
   !(requiresPageAlignment ty && !allocationBasePageAligned ut (authCap.freeIndex + size))
@@ -166,7 +166,7 @@ def untypedRetypePerformAt (src dst : CSpaceAddr) (childId : SeLe4n.ObjId)
       match st.getUntyped? untypedId with
       | some ut =>
         let st1 := retypeFromUntypedWrites src utCap.freeIndex untypedId childId
-          (req.object untypedId ut utCap.freeIndex) req.size ut st
+          (req.object untypedId childId ut utCap.freeIndex) req.size ut st
         ((req.scrub st1 ut utCap.freeIndex).storeCNodeWith dst.cnode
           (·.insert dst.slot (req.capability childId))).cdtAddChild src dst .retype
       | none => st
@@ -208,7 +208,7 @@ theorem untypedRetypeObject_of_admitted {src dst : CSpaceAddr} {childId : SeLe4n
         dsimp only
         rw [(cspaceDstRefusal_eq_ok_iff dst st).mpr hD]
         dsimp only
-        rw [← CarveRequest.object_objectType untypedId ut utCap.freeIndex] at hR
+        rw [← CarveRequest.object_objectType untypedId childId ut utCap.freeIndex] at hR
         rw [retypeFromUntyped_of_admitted hL hUt hR]
     | _ => rw [hT] at hRest; cases hRest
 
@@ -236,6 +236,7 @@ kind read as words, so the scrub builds no frame record. -/
           physicalWrites := st.physicalWrites.pushAfter st.physicalWritesDrained
             (SeLe4n.Kernel.Architecture.PhysicalWrite.zeroPage base)
           physicalWritesDrained := false }
+  | .tcb _ _ | .endpoint | .notification | .cnode _ | .reply | .schedContext _ => st
 
 theorem CarveRequest.scrub_eq_scrubAt (st : SystemState) (ut : UntypedObject) (idx : Nat)
     (req : CarveRequest) :
@@ -259,7 +260,7 @@ def untypedRetypePerformWords (srcCnode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot)
       match st.getUntyped? untypedId with
       | some ut =>
         let idx := utCap.freeIndex
-        let newObj := req.object untypedId ut idx
+        let newObj := req.object untypedId childId ut idx
         let base := (untypedNextFrame ut idx).base
         let isDevice := ut.isDevice
         let size := req.size

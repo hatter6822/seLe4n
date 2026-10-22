@@ -1483,12 +1483,13 @@ theorem lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_runQueueEntryStag
       (RunQueueStage.of_frame hObjs (by rw [hSched]) (by rw [hSched])).entry
 
 /-- The live `.untypedRetype` arm: the carve. -/
-theorem untypedRetypeFromCap_runQueueStage {tid : SeLe4n.ThreadId} {srcAddr : SeLe4n.CPtr}
+theorem untypedRetypeFromCap_runQueueStage {tid : SeLe4n.ThreadId}
+    {ec : Concurrency.CoreId} {srcAddr : SeLe4n.CPtr}
     {args? : Except KernelError SeLe4n.Kernel.Architecture.SyscallArgDecode.UntypedRetypeArgs}
-    {st st' : SystemState} (h : untypedRetypeFromCap tid srcAddr args? st = .ok ((), st')) :
+    {st st' : SystemState} (h : untypedRetypeFromCap tid ec srcAddr args? st = .ok ((), st')) :
     RunQueueStage st st' := by
   obtain ⟨_, _, _, _, _, _, _, _, _, hCarve⟩ :=
-    untypedRetypeFromCap_ok tid srcAddr args? st st' h
+    untypedRetypeFromCap_ok tid ec srcAddr args? st st' h
   exact untypedRetypeObject_runQueueStage hCarve
 
 /-- The per-core context unbind: the unbind, then the preemption seam. -/

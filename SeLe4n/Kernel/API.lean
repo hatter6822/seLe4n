@@ -2119,18 +2119,21 @@ theorem resolveUntypedRetypeK_eq {α : Type} (callerTid : SeLe4n.ThreadId)
                 | _ => rfl
               · simp only [hIdle, hR, Bool.false_eq_true, ↓reduceIte]
 
-/-- **WS-BP BP7.1 slice 4 (`v0.36.8`): the carve a decoded `.untypedRetype`
-requests.**  A frame, whose size is fixed, so its `sizeBits` must be `0` — the
-value a frame's MR0 carried before the field existed; or a child untyped of
-`2 ^ sizeBits` bytes with `sizeBits` in `[minUntypedSizeBits,
-maxUntypedSizeBits]`; or (slice 4b, `v0.36.10`) a VSpace root, one page, so
-its `sizeBits` must be `0`, registered under the least free ASID (`freshAsid?`;
-`.resourceExhausted` when every ASID is taken).  Anything else is
-`.invalidArgument`: every other kind is created by the in-place retype
-(`.lifecycleRetype`), and the carve exists for memory a thread is handed *as
-memory* — a translation table included. -/
-def carveRequestOf? (st : SystemState) (newType : KernelObjectType) (sizeBits : Nat) :
-    Except KernelError CarveRequest :=
+/-- **WS-BP BP7.1 slice 4 (`v0.36.8`), every kind since WS-ZA ZA5.4 part 14: the
+carve a decoded `.untypedRetype` requests.**  A kind of fixed size — a frame, a
+page table, a VSpace root, a thread, an endpoint, a notification or a reply —
+takes `sizeBits = 0`, the value a frame's MR0 carried before the field existed;
+a child untyped takes `sizeBits` in `[minUntypedSizeBits, maxUntypedSizeBits]`,
+a CNode its radix in `[minCNodeRadixBits, maxCNodeRadixBits]` and a scheduling
+context its size in `[minSchedContextSizeBits, maxUntypedSizeBits]`, the bounds
+seL4's `decodeUntypedInvocation` puts on `userObjSize`.  The arm supplies what
+the creating core decides: a VSpace root's ASID, the least free one
+(`freshAsid?`; `.resourceExhausted` when every ASID is taken), and a thread's
+domain and affinity, the core's current domain and the core itself, as seL4's
+`createObject` takes `ksCurDomain` and `getCurrentCPUIndex`.  Anything else is
+`.invalidArgument`. -/
+def carveRequestOf? (st : SystemState) (executingCore : Concurrency.CoreId)
+    (newType : KernelObjectType) (sizeBits : Nat) : Except KernelError CarveRequest :=
   match newType with
   | .frame => if sizeBits = 0 then .ok .frame else .error .invalidArgument
   -- WS-BP BP7.1 (`v0.36.12`): a page table is one page, like a frame.
@@ -2145,22 +2148,47 @@ def carveRequestOf? (st : SystemState) (newType : KernelObjectType) (sizeBits : 
         | some asid => .ok (.vspaceRoot asid)
         | none => .error .resourceExhausted
       else .error .invalidArgument
-  | _ => .error .invalidArgument
+  | .tcb =>
+      if sizeBits = 0 then
+        .ok (.tcb (st.scheduler.activeDomainOnCore executingCore) executingCore)
+      else .error .invalidArgument
+  | .endpoint => if sizeBits = 0 then .ok .endpoint else .error .invalidArgument
+  | .notification => if sizeBits = 0 then .ok .notification else .error .invalidArgument
+  | .reply => if sizeBits = 0 then .ok .reply else .error .invalidArgument
+  | .cnode =>
+      if minCNodeRadixBits ≤ sizeBits ∧ sizeBits ≤ maxCNodeRadixBits then
+        .ok (.cnode sizeBits)
+      else .error .invalidArgument
+  | .schedContext =>
+      if minSchedContextSizeBits ≤ sizeBits ∧ sizeBits ≤ maxUntypedSizeBits then
+        .ok (.schedContext sizeBits)
+      else .error .invalidArgument
 
-/-- **WS-BP BP7.1**: a request the decode accepts is a frame or an untyped whose
-size lies in the carve's bounds, (slice 4b) a VSpace root under an ASID
-`freshAsid?` answered, or (`v0.36.12`) a page table — the only requests the arm
-ever hands the carve. -/
-theorem carveRequestOf?_ok (st : SystemState) (newType : KernelObjectType) (sizeBits : Nat)
-    (req : CarveRequest) (h : carveRequestOf? st newType sizeBits = .ok req) :
+/-- **WS-BP BP7.1**: the requests the decode accepts — each kind at the size
+bounds the decode states, a VSpace root under an ASID `freshAsid?` answered and
+(WS-ZA ZA5.4 part 14) a thread in the creating core's domain with that core as
+its affinity.  These are the only requests the arm ever hands the carve. -/
+theorem carveRequestOf?_ok (st : SystemState) (executingCore : Concurrency.CoreId)
+    (newType : KernelObjectType) (sizeBits : Nat)
+    (req : CarveRequest) (h : carveRequestOf? st executingCore newType sizeBits = .ok req) :
     (newType = .frame ∧ sizeBits = 0 ∧ req = .frame) ∨
     (newType = .untyped ∧ minUntypedSizeBits ≤ sizeBits ∧ sizeBits ≤ maxUntypedSizeBits ∧
       req = .untyped sizeBits) ∨
     (newType = .vspaceRoot ∧ sizeBits = 0 ∧
       ∃ asid, freshAsid? st = some asid ∧ req = .vspaceRoot asid) ∨
-    (newType = .pageTable ∧ sizeBits = 0 ∧ req = .pageTable) := by
-  cases newType <;> simp only [carveRequestOf?] at h <;> try cases h
-  · by_cases hB : sizeBits = 0
+    (newType = .pageTable ∧ sizeBits = 0 ∧ req = .pageTable) ∨
+    (newType = .tcb ∧ sizeBits = 0 ∧
+      req = .tcb (st.scheduler.activeDomainOnCore executingCore) executingCore) ∨
+    (newType = .endpoint ∧ sizeBits = 0 ∧ req = .endpoint) ∨
+    (newType = .notification ∧ sizeBits = 0 ∧ req = .notification) ∨
+    (newType = .reply ∧ sizeBits = 0 ∧ req = .reply) ∨
+    (newType = .cnode ∧ minCNodeRadixBits ≤ sizeBits ∧ sizeBits ≤ maxCNodeRadixBits ∧
+      req = .cnode sizeBits) ∨
+    (newType = .schedContext ∧ minSchedContextSizeBits ≤ sizeBits ∧
+      sizeBits ≤ maxUntypedSizeBits ∧ req = .schedContext sizeBits) := by
+  cases newType <;> simp only [carveRequestOf?] at h
+  case vspaceRoot =>
+    by_cases hB : sizeBits = 0
     · simp only [hB, ↓reduceIte] at h
       cases hF : freshAsid? st with
       | none => rw [hF] at h; cases h
@@ -2168,33 +2196,38 @@ theorem carveRequestOf?_ok (st : SystemState) (newType : KernelObjectType) (size
         rw [hF] at h; cases h
         exact Or.inr (Or.inr (Or.inl ⟨rfl, hB, asid, rfl, rfl⟩))
     · simp [hB] at h
-  · split at h
-    · rename_i hB; cases h; exact Or.inr (Or.inl ⟨rfl, hB.1, hB.2, rfl⟩)
-    · cases h
-  · split at h
-    · cases h; exact Or.inl ⟨rfl, by assumption, rfl⟩
-    · cases h
-  · split at h
-    · cases h; exact Or.inr (Or.inr (Or.inr ⟨rfl, by assumption, rfl⟩))
-    · cases h
+  all_goals (split at h <;> (try cases h))
+  all_goals first
+    | (left; exact ⟨rfl, by assumption, rfl⟩)
+    | (right; left; exact ⟨rfl, (by assumption : _ ∧ _).1, (by assumption : _ ∧ _).2, rfl⟩)
+    | (right; right; right; left; exact ⟨rfl, by assumption, rfl⟩)
+    | (right; right; right; right; left; exact ⟨rfl, by assumption, rfl⟩)
+    | (right; right; right; right; right; left; exact ⟨rfl, by assumption, rfl⟩)
+    | (right; right; right; right; right; right; left; exact ⟨rfl, by assumption, rfl⟩)
+    | (right; right; right; right; right; right; right; left; exact ⟨rfl, by assumption, rfl⟩)
+    | (right; right; right; right; right; right; right; right; left;
+        exact ⟨rfl, (by assumption : _ ∧ _).1, (by assumption : _ ∧ _).2, rfl⟩)
+    | (right; right; right; right; right; right; right; right; right;
+        exact ⟨rfl, (by assumption : _ ∧ _).1, (by assumption : _ ∧ _).2, rfl⟩)
 
 /-- **WS-BP BP7.1 (`v0.36.5`, child untypeds at slice 4, `v0.36.8`): the live
-`.untypedRetype` arm's transition** — seL4's `seL4_Untyped_Retype` at the memory
-types: a frame, a child untyped, a VSpace root and a page table.
+`.untypedRetype` arm's transition** — seL4's `seL4_Untyped_Retype`, at every
+object kind since WS-ZA ZA5.4 part 14.
 
 The arm's decode of the message registers (`args?`), then the carve request
-(`carveRequestOf?`: a frame, a child untyped of a bounded size, a VSpace root
-under a fresh ASID, or a page table — anything else `.invalidArgument`).  The
+(`carveRequestOf?`: each kind at its size bounds, a VSpace root under a fresh
+ASID and a thread in the creating core's domain — anything else
+`.invalidArgument`).  The
 child id is a raw operand, so it passes `validateObjIdArg` — no reserved idle object and not
 the sentinel — before anything is resolved.  Then the two slots, then
 `untypedRetypeObject`, whose own guards decide everything else. -/
-def untypedRetypeFromCap (tid : SeLe4n.ThreadId) (srcAddr : SeLe4n.CPtr)
-    (args? : Except KernelError UntypedRetypeArgs) : Kernel Unit :=
+def untypedRetypeFromCap (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
+    (srcAddr : SeLe4n.CPtr) (args? : Except KernelError UntypedRetypeArgs) : Kernel Unit :=
   fun st =>
     match args? with
     | .error e => .error e
     | .ok args =>
-      match carveRequestOf? st args.newType args.sizeBits with
+      match carveRequestOf? st executingCore args.newType args.sizeBits with
       | .error e => .error e
       | .ok req =>
         match validateObjIdArg args.childId with
@@ -2208,13 +2241,14 @@ def untypedRetypeFromCap (tid : SeLe4n.ThreadId) (srcAddr : SeLe4n.CPtr)
 decode, the carve request, the validated child id, the resolved slots, and the
 carve.  The case analysis has one owner, so the invariant and non-interference
 proofs read these equations. -/
-theorem untypedRetypeFromCap_ok (tid : SeLe4n.ThreadId) (srcAddr : SeLe4n.CPtr)
+theorem untypedRetypeFromCap_ok (tid : SeLe4n.ThreadId) (ec : Concurrency.CoreId)
+    (srcAddr : SeLe4n.CPtr)
     (args? : Except KernelError UntypedRetypeArgs) (st st' : SystemState)
-    (h : untypedRetypeFromCap tid srcAddr args? st = .ok ((), st')) :
+    (h : untypedRetypeFromCap tid ec srcAddr args? st = .ok ((), st')) :
     ∃ (args : UntypedRetypeArgs) (req : CarveRequest) (vChild : SeLe4n.ValidObjId)
       (src dst : CSpaceAddr),
       args? = .ok args ∧
-      carveRequestOf? st args.newType args.sizeBits = .ok req ∧
+      carveRequestOf? st ec args.newType args.sizeBits = .ok req ∧
       validateObjIdArg args.childId = .ok vChild ∧
       resolveUntypedRetype tid srcAddr args st = .ok (src, dst) ∧
       untypedRetypeObject src vChild.val dst req st = .ok ((), st') := by
@@ -2224,7 +2258,7 @@ theorem untypedRetypeFromCap_ok (tid : SeLe4n.ThreadId) (srcAddr : SeLe4n.CPtr)
   | ok args =>
     rw [hD] at h
     simp only at h
-    cases hQ : carveRequestOf? st args.newType args.sizeBits with
+    cases hQ : carveRequestOf? st ec args.newType args.sizeBits with
     | error e => rw [hQ] at h; cases h
     | ok req =>
       rw [hQ] at h
@@ -2771,7 +2805,8 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
   -- `.vspaceMap` maps that page and no other.
   | .untypedRetype =>
     some <| match cap.target with
-    | .object _ => untypedRetypeFromCap tid decoded.capAddr (decodeUntypedRetypeArgs decoded)
+    | .object _ =>
+        untypedRetypeFromCap tid executingCore decoded.capAddr (decodeUntypedRetypeArgs decoded)
     | _ => fun _ => .error .invalidCapability
   -- **WS-BP BP7.1 (`v0.36.6`)**: seL4's `resetUntypedCap` — the untyped's memory
   -- returns to it once no capability names any carved child.  Every mapping of
@@ -3344,7 +3379,7 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
   case untypedRetype =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object _ =>
-      obtain ⟨_, _, _, _, _, _, _, _, _, hCarve⟩ := untypedRetypeFromCap_ok tid _ _ st st' hStep
+      obtain ⟨_, _, _, _, _, _, _, _, _, hCarve⟩ := untypedRetypeFromCap_ok tid _ _ _ st st' hStep
       exact untypedRetypeObject_preserves_ipcInvariantFull _ _ _ _ st st' hObjInv hInv hCarve
     all_goals try cases hStep
   case untypedReset =>

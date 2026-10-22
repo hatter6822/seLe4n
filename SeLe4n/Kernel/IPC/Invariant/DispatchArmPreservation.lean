@@ -1287,68 +1287,6 @@ theorem storeObject_capRewrite_preserves_ipcInvariantFull
     hCap hInv,
     storeObject_preserves_objects_invExt st st' addr.cnode _ hObjInv hStore⟩
 
-/-- **WS-BP BP7.1**: a carve out of an untyped preserves the bundle: the child's
-record rewrites an untyped in place, the fresh object — a frame or a child
-untyped (`CarveRequest.object`), both kinds the bundle does not read — lands at
-a key that held nothing (`retypeFromUntyped`'s collision guard), and the
-authority's free index is rewritten in its slot, its badge kept. -/
-theorem retypeFromUntyped_carve_preserves_ipcInvariantFull
-    (st st' : SystemState) (authority : CSpaceAddr)
-    (untypedId childId : SeLe4n.ObjId) (ut₀ : UntypedObject) (idx : Nat) (req : CarveRequest)
-    (allocSize : Nat)
-    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
-    (hStep : retypeFromUntyped authority untypedId childId (req.object untypedId ut₀ idx)
-      allocSize st = .ok ((), st')) :
-    ipcInvariantFull st' ∧ st'.objects.invExt := by
-  have hFresh := retypeFromUntyped_childId_fresh authority untypedId childId
-    _ _ st st' hStep
-  obtain ⟨ut, ut', cap, stUt, _, stCh, cn, hUt, _, _, _, _, _, _, hLkA, _, _, hStUt, hStCh, hOCh,
-    hStIdx⟩ := retypeFromUntyped_ok_stores st st' authority untypedId childId _ _ hObjInv hStep
-  have hNe : childId ≠ untypedId := by
-    intro h; rw [h, hUt] at hFresh; simp at hFresh
-  have hInvUt := storeObject_inertNonCNode_preserves_ipcInvariantFull st stUt untypedId
-    (.untyped ut') hObjInv hInv (Or.inr (by rw [hUt]; trivial)) trivial
-    (fun _ h => KernelObject.noConfusion h) hStUt
-  have hObjInvUt := storeObject_preserves_objects_invExt _ _ _ _ hObjInv hStUt
-  have hChildNone : stUt.objects[childId]? = none := by
-    rw [storeObject_objects_ne _ _ _ _ _ hNe hObjInv hStUt]
-    cases h : st.objects[childId]? with
-    | none => rfl
-    | some _ => rw [h] at hFresh; simp at hFresh
-  have hInvCh := storeObject_inertNonCNode_preserves_ipcInvariantFull stUt stCh childId _
-    hObjInvUt hInvUt (Or.inl hChildNone) (by cases req <;> trivial)
-    (fun _ h => by cases req <;> exact KernelObject.noConfusion h) hStCh
-  exact storeObject_capRewrite_preserves_ipcInvariantFull authority cn cap _ stCh st'
-    (storeObject_preserves_objects_invExt _ _ _ _ hObjInvUt hStCh) hInvCh hOCh hLkA
-    (Capability.withFreeIndex_badge _ _) hStIdx
-
-/-- **WS-BP BP7.1 (`v0.36.5`, generalized at slice 4)**: the untyped carve
-preserves `ipcInvariantFull` — two inert stores, a scrub of machine memory the
-bundle does not read (or none, for a child untyped), a capability install
-carrying no badge, and the CDT edge. -/
-theorem untypedRetypeObject_preserves_ipcInvariantFull
-    (src dst : CSpaceAddr) (childId : SeLe4n.ObjId) (req : CarveRequest)
-    (st st' : SystemState)
-    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
-    (hStep : untypedRetypeObject src childId dst req st = .ok ((), st')) :
-    ipcInvariantFull st' := by
-  obtain ⟨utCap, untypedId, ut, st1, st2, _, _, _, hRt, hIns, rfl⟩ :=
-    untypedRetypeObject_ok_decompose src dst childId req st st' hObjInv hStep
-  obtain ⟨hInv1, hObjInv1⟩ := retypeFromUntyped_carve_preserves_ipcInvariantFull st st1 src
-    untypedId childId ut _ req _ hObjInv hInv hRt
-  have hInvZ : ipcInvariantFull (req.scrub st1 ut utCap.freeIndex) :=
-    ipcInvariantFull_of_objects_scheduler_eq (CarveRequest.scrub_objects _ _ _ _)
-      (CarveRequest.scrub_scheduler _ _ _ _) hInv1
-  have hObjInvZ : (req.scrub st1 ut utCap.freeIndex).objects.invExt := by
-    rw [CarveRequest.scrub_objects]; exact hObjInv1
-  exact cdtRecord_bundle_frame st2 src dst DerivationOp.retype
-    (cspaceInsertSlot_preserves_objects_invExt _ st2 dst _ hObjInvZ hIns)
-    (cspaceInsertSlot_preserves_ipcInvariantFull _ st2 dst _ hObjInvZ hInvZ
-      (fun b hb => by
-        cases req <;> simp [CarveRequest.capability, frameCapability, untypedCapability,
-          vspaceRootCapability, pageTableCapability] at hb)
-      hIns)
-
 /-- **WS-BP BP7.1 slice 3 (`v0.36.6`)**: the untyped reset preserves
 `ipcInvariantFull`.  Every key it writes holds, on each side, nothing or a kind
 the bundle does not read — VSpace roots (the unmap pass), frames (erased) and
@@ -4147,6 +4085,141 @@ theorem retypeWrite_preserves_ipcInvariantFull
    retypeWrite_endpointQueueTailBlockedConsistent hAt hNe hFresh hDet
      hInv.endpointQueueTailBlockedConsistent,
    retypeWrite_queueNextTargetBlocked hAt hNe hFresh hDet hInv.queueNextTargetBlocked⟩
+
+/-- **WS-ZA ZA5.4 part 14: a key that holds no object is detached from
+everything the bundle reads.**  Every reference the bundle constrains names a
+live object — a blocked thread its endpoint (`ipcStateQueueMembershipConsistent`),
+a queue link and a queue boundary their threads (`tcbQueueLinkIntegrity`,
+`intrusiveQueueWellFormed`), a reply link and a stash their replies
+(`replyCallerLinkageReciprocal`, `pendingReceiveReplyWellFormed`) — so none names
+an empty key, and the pack's clauses about the object at the key are vacuous.
+This is what lets a carve store a fresh object of any kind at its child id. -/
+theorem retypeTargetDetached_of_absent {st : SystemState} {target : SeLe4n.ObjId}
+    (hAbs : st.objects[target]? = none) (hInv : ipcInvariantFull st) :
+    retypeTargetDetached st target := by
+  have hNo : ∀ o : KernelObject, st.objects[target]? ≠ some o := fun o h => by
+    rw [hAbs] at h; cases h
+  have hNe : ∀ (oid : SeLe4n.ObjId) (o : KernelObject), st.objects[oid]? = some o →
+      oid ≠ target := fun oid o h hEq => hNo o (hEq ▸ h)
+  refine ⟨fun sc => hNo _, fun t h => absurd h (hNo _), fun t h => absurd h (hNo _),
+    fun t h => absurd h (hNo _), fun t h => absurd h (hNo _), fun t h => absurd h (hNo _),
+    fun t h => absurd h (hNo _), fun t h => absurd h (hNo _), fun t h => absurd h (hNo _),
+    fun t h => absurd h (hNo _), fun t h => absurd h (hNo _), fun t h => absurd h (hNo _),
+    fun t h => absurd h (hNo _), fun t h => absurd h (hNo _), ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · intro tid tcb hT
+    have hM := hInv.ipcStateQueueMembershipConsistent tid tcb hT
+    refine ⟨fun hS => ?_, fun hR => ?_, fun hC => ?_⟩
+    · rw [hS] at hM; obtain ⟨ep, hEp, -⟩ := hM; exact hNo _ hEp
+    · rw [hR] at hM; obtain ⟨ep, hEp, -⟩ := hM; exact hNo _ hEp
+    · rw [hC] at hM; obtain ⟨ep, hEp, -⟩ := hM; exact hNo _ hEp
+  · intro a tcbA b hA hN
+    obtain ⟨tcbB, hB, -⟩ := hInv.dualQueueSystemInvariant.linkIntegrity.1 a tcbA hA b hN
+    exact hNe _ _ hB
+  · intro b tcbB a hB hP
+    obtain ⟨tcbA, hA, -⟩ := hInv.dualQueueSystemInvariant.linkIntegrity.2 b tcbB hB a hP
+    exact hNe _ _ hA
+  · intro epId ep hd hEp hH
+    have hW := hInv.dualQueueSystemInvariant.endpointsWellFormed epId ep hEp
+    unfold dualQueueEndpointWellFormed at hW
+    rw [hEp] at hW
+    rcases hH with hH | hH
+    · obtain ⟨tcb, hT, -⟩ := hW.1.2.1 hd hH; exact hNe _ _ hT
+    · obtain ⟨tcb, hT, -⟩ := hW.2.2.1 hd hH; exact hNe _ _ hT
+  · intro epId ep tl hEp hTl
+    have hW := hInv.dualQueueSystemInvariant.endpointsWellFormed epId ep hEp
+    unfold dualQueueEndpointWellFormed at hW
+    rw [hEp] at hW
+    rcases hTl with hTl | hTl
+    · obtain ⟨tcb, hT, -⟩ := hW.1.2.2 tl hTl; exact hNe _ _ hT
+    · obtain ⟨tcb, hT, -⟩ := hW.2.2.2 tl hTl; exact hNe _ _ hT
+  · intro tid tcb hT
+    exact tcbQueueChainAcyclic_no_self_loop hInv.dualQueueSystemInvariant.chainAcyclic tid tcb hT
+  · intro tid tcb rid hT hRO
+    obtain ⟨r, hR, -⟩ := hInv.replyCallerLinkage.1.1 tid tcb rid hT hRO
+    exact hNe _ _ hR
+  · intro tid tcb rid hT hP
+    obtain ⟨-, r, hR, -⟩ := hInv.pendingReceiveReplyWellFormed.1 tid tcb rid
+      ((SystemState.getTcb?_eq_some_iff st tid tcb).mpr hT) hP
+    exact hNe _ _ ((SystemState.getReply?_eq_some_iff st rid r).mp hR)
+
+/-- **WS-ZA ZA5.4 part 14: every object a carve makes is pristine** — a thread
+unblocked, unqueued, unbound and with empty space slots, an endpoint with both
+queues empty, a notification idle with no waiter and no badge, a reply with no
+caller and a CNode with no capability (`retypeReplacementFresh`). -/
+theorem CarveRequest.object_replacementFresh (untypedId childId : SeLe4n.ObjId)
+    (ut : UntypedObject) (idx : Nat) (req : CarveRequest) :
+    retypeReplacementFresh (req.object untypedId childId ut idx) := by
+  cases req <;>
+    simp [CarveRequest.object, retypeReplacementFresh, carvedTcb, carvedCNode, CNode.lookup,
+      CNode.slots_ofSlots, UniqueSlotMap.get?_filter, UniqueSlotMap.get?_empty, Reply.empty,
+      TCB.spaceSlotCaps, Endpoint.ofQueues]
+
+/-- **WS-BP BP7.1, every kind since WS-ZA ZA5.4 part 14**: a carve out of an
+untyped preserves the bundle: the child's record rewrites an untyped in place,
+the fresh object — pristine whatever its kind (`CarveRequest.object_replacementFresh`)
+— lands at a key that held nothing (`retypeFromUntyped`'s collision guard), so
+nothing the bundle reads names it (`retypeTargetDetached_of_absent`), and the
+authority's free index is rewritten in its slot, its badge kept. -/
+theorem retypeFromUntyped_carve_preserves_ipcInvariantFull
+    (st st' : SystemState) (authority : CSpaceAddr)
+    (untypedId childId : SeLe4n.ObjId) (ut₀ : UntypedObject) (idx : Nat) (req : CarveRequest)
+    (allocSize : Nat)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hStep : retypeFromUntyped authority untypedId childId (req.object untypedId childId ut₀ idx)
+      allocSize st = .ok ((), st')) :
+    ipcInvariantFull st' ∧ st'.objects.invExt := by
+  have hFresh := retypeFromUntyped_childId_fresh authority untypedId childId
+    _ _ st st' hStep
+  obtain ⟨ut, ut', cap, stUt, _, stCh, cn, hUt, _, _, _, _, _, _, hLkA, _, _, hStUt, hStCh, hOCh,
+    hStIdx⟩ := retypeFromUntyped_ok_stores st st' authority untypedId childId _ _ hObjInv hStep
+  have hNe : childId ≠ untypedId := by
+    intro h; rw [h, hUt] at hFresh; simp at hFresh
+  have hInvUt := storeObject_inertNonCNode_preserves_ipcInvariantFull st stUt untypedId
+    (.untyped ut') hObjInv hInv (Or.inr (by rw [hUt]; trivial)) trivial
+    (fun _ h => KernelObject.noConfusion h) hStUt
+  have hObjInvUt := storeObject_preserves_objects_invExt _ _ _ _ hObjInv hStUt
+  have hChildNone : stUt.objects[childId]? = none := by
+    rw [storeObject_objects_ne _ _ _ _ _ hNe hObjInv hStUt]
+    cases h : st.objects[childId]? with
+    | none => rfl
+    | some _ => rw [h] at hFresh; simp at hFresh
+  have hInvCh : ipcInvariantFull stCh :=
+    retypeWrite_preserves_ipcInvariantFull
+      (storeObject_objects_eq _ _ _ _ hObjInvUt hStCh)
+      (fun oid h => storeObject_objects_ne _ _ _ _ _ h hObjInvUt hStCh)
+      (storeObject_scheduler_eq _ _ _ _ hStCh)
+      (CarveRequest.object_replacementFresh untypedId childId ut₀ idx req)
+      (retypeTargetDetached_of_absent hChildNone hInvUt) hInvUt
+  exact storeObject_capRewrite_preserves_ipcInvariantFull authority cn cap _ stCh st'
+    (storeObject_preserves_objects_invExt _ _ _ _ hObjInvUt hStCh) hInvCh hOCh hLkA
+    (Capability.withFreeIndex_badge _ _) hStIdx
+
+/-- **WS-BP BP7.1 (`v0.36.5`, generalized at slice 4 and to every kind at
+WS-ZA ZA5.4 part 14)**: the untyped carve preserves `ipcInvariantFull` — the
+carve above, a scrub of machine memory the bundle does not read (or none), a
+capability install carrying no badge, and the CDT edge. -/
+theorem untypedRetypeObject_preserves_ipcInvariantFull
+    (src dst : CSpaceAddr) (childId : SeLe4n.ObjId) (req : CarveRequest)
+    (st st' : SystemState)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hStep : untypedRetypeObject src childId dst req st = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  obtain ⟨utCap, untypedId, ut, st1, st2, _, _, _, hRt, hIns, rfl⟩ :=
+    untypedRetypeObject_ok_decompose src dst childId req st st' hObjInv hStep
+  obtain ⟨hInv1, hObjInv1⟩ := retypeFromUntyped_carve_preserves_ipcInvariantFull st st1 src
+    untypedId childId ut _ req _ hObjInv hInv hRt
+  have hInvZ : ipcInvariantFull (req.scrub st1 ut utCap.freeIndex) :=
+    ipcInvariantFull_of_objects_scheduler_eq (CarveRequest.scrub_objects _ _ _ _)
+      (CarveRequest.scrub_scheduler _ _ _ _) hInv1
+  have hObjInvZ : (req.scrub st1 ut utCap.freeIndex).objects.invExt := by
+    rw [CarveRequest.scrub_objects]; exact hObjInv1
+  exact cdtRecord_bundle_frame st2 src dst DerivationOp.retype
+    (cspaceInsertSlot_preserves_objects_invExt _ st2 dst _ hObjInvZ hIns)
+    (cspaceInsertSlot_preserves_ipcInvariantFull _ st2 dst _ hObjInvZ hInvZ
+      (fun b hb => by
+        cases req <;> simp [CarveRequest.capability, frameCapability, untypedCapability,
+          vspaceRootCapability, pageTableCapability, kernelObjectCapability] at hb)
+      hIns)
 
 /-- A fully descheduled thread occupies no core, so the destroy sweep's
 per-core step is the literal identity. -/

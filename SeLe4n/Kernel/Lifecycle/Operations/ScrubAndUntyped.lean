@@ -34,19 +34,26 @@ open Internal
 -- WS-F2: Untyped Memory Model — retypeFromUntyped
 -- ============================================================================
 
-/-- WS-F2: Abstract allocation size for a kernel object type.
-Used by `retypeFromUntyped` to determine how many bytes to carve from the
-untyped region. These are abstract sizes for the formal model; a production
-kernel would use architecture-specific values. -/
+/-- WS-F2: The smallest allocation a kernel object type can be carved in — the
+floor `retypeFromUntyped` holds every carve to (`untypedAllocSizeTooSmall`).
+
+WS-ZA ZA5.4 part 14: the kernel kinds are seL4's AArch64 MCS object sizes
+(`getObjectSize`, `libsel4/sel4_arch_include/aarch64/sel4/sel4_arch/constants.h`):
+a thread `2 ^ seL4_TCBBits` (11), an endpoint `2 ^ seL4_EndpointBits` (4), a
+notification `2 ^ seL4_NotificationBits` (6 under MCS), a reply
+`2 ^ seL4_ReplyBits` (5), and for the two kinds whose size the caller names, the
+least it may name: a CNode of one radix bit (`2 ^ (1 + seL4_SlotBits)`) and a
+scheduling context of `2 ^ seL4_MinSchedContextBits` (7).  A carve's own size is
+`CarveRequest.size`, which is never below these. -/
 def objectTypeAllocSize : KernelObjectType → Nat
-  | .tcb => 1024
-  | .endpoint => 64
-  | .notification => 64
-  | .cnode => 4096
+  | .tcb => 2 ^ 11
+  | .endpoint => 2 ^ 4
+  | .notification => 2 ^ 6
+  | .cnode => 2 ^ (1 + 5)
   | .vspaceRoot => 4096
   | .untyped => 4096
-  | .schedContext => 256
-  | .reply => 64
+  | .schedContext => 2 ^ 7
+  | .reply => 2 ^ 5
   -- WS-BP BP7.1: a frame is one page of the memory it is carved from.
   | .frame => SeLe4n.pageBytes
   -- WS-BP BP7.1 (`v0.36.12`): so is a page table.
@@ -59,7 +66,6 @@ a 4KB page boundary. This matches seL4's alignment
 requirement for page-table objects (seL4_PageTableObject, seL4_VSpaceObject). -/
 def requiresPageAlignment : KernelObjectType → Bool
   | .vspaceRoot => true
-  | .cnode => true
   -- WS-BP BP7.1: a frame is mapped by address, and a mapping names a page.
   | .frame => true
   -- WS-BP BP7.1 (`v0.36.12`): a table descriptor names a page.
@@ -70,12 +76,51 @@ def requiresPageAlignment : KernelObjectType → Bool
   | .untyped => true
   | _ => false
 
+/-- WS-ZA ZA5.4 part 14: **the kinds aligned to their own size**, as seL4's
+`Untyped_Retype` places every object at a multiple of its size
+(`alignUp(freeRef, objectSize)` in `decodeUntypedInvocation`): the kernel
+objects — a thread, an endpoint, a notification, a reply, a CNode and a
+scheduling context.  A CNode is aligned to its size and not to a page, as in
+seL4, so a CNode of one radix bit is 64 bytes on a 64-byte boundary.
+
+The carve is at the invoked capability's free index, as for every kind, so a
+base that is not a multiple of the object's size is refused
+(`allocationMisaligned`) where seL4 would skip up to the next multiple. -/
+def requiresSizeAlignment : KernelObjectType → Bool
+  | .tcb => true
+  | .endpoint => true
+  | .notification => true
+  | .cnode => true
+  | .schedContext => true
+  | .reply => true
+  | .vspaceRoot => false
+  | .untyped => false
+  | .frame => false
+  | .pageTable => false
+
 /-- S5-G: Check whether the untyped allocation base at free index `idx`
 (`regionBase + idx`) is page-aligned. Returns `true` when alignment is satisfied.
 The index is the invoked capability's (`Capability.freeIndex`, seL4's
 `capFreeIndex`), not the object's. -/
 def allocationBasePageAligned (ut : UntypedObject) (idx : Nat) : Bool :=
   (ut.regionBase.toNat + idx) % 4096 == 0
+
+/-- WS-ZA ZA5.4 part 14: **is the base at free index `idx` aligned as a carve of
+`size` bytes of kind `ty` must be?**  On a page for the page kinds
+(`requiresPageAlignment`), on a multiple of its own size for the kernel kinds
+(`requiresSizeAlignment`), and anywhere otherwise.  The one alignment question
+the carve asks before it writes. -/
+def carveBaseAligned (ty : KernelObjectType) (size : Nat) (ut : UntypedObject) (idx : Nat) :
+    Bool :=
+  if requiresPageAlignment ty then allocationBasePageAligned ut idx
+  else if requiresSizeAlignment ty then (ut.regionBase.toNat + idx) % size == 0
+  else true
+
+/-- A page kind's carve base is aligned exactly when it is on a page. -/
+theorem carveBaseAligned_of_page {ty : KernelObjectType} (h : requiresPageAlignment ty = true)
+    (size : Nat) (ut : UntypedObject) (idx : Nat) :
+    carveBaseAligned ty size ut idx = allocationBasePageAligned ut idx := by
+  simp [carveBaseAligned, h]
 
 -- ============================================================================
 -- S6-C: Memory scrubbing on object deletion/retype
@@ -229,11 +274,12 @@ Deterministic branch contract:
 5. The authority slot must hold a capability (`cspaceLookupSlot`); its free
    index (`Capability.freeIndex`, seL4's `capFreeIndex`) is where the carve is
    made.
-6. S5-G: For the kinds `requiresPageAlignment` names — VSpace roots, CNodes,
+6. S5-G: For the kinds `requiresPageAlignment` names — VSpace roots,
    frames, page tables and child untypeds — the allocation base address
-   (`regionBase + freeIndex`) must be page-aligned (4KB boundary).
-   Returns `allocationMisaligned` if violated. This matches seL4's requirement
-   that page-table backing memory be page-aligned.
+   (`regionBase + freeIndex`) must be page-aligned (4KB boundary); for the
+   kernel kinds (`requiresSizeAlignment`) it must be a multiple of the
+   allocation's own size, as seL4 places every object (`carveBaseAligned`).
+   Returns `allocationMisaligned` if violated.
 7. Authority capability must target the untyped object and include the `retype`
    right (`lifecycleRetypeAuthority`; `illegalAuthority` otherwise).
 8. The requested allocation size must fit between the free index and the end of
@@ -291,8 +337,9 @@ def retypeFromUntyped
             -- WS-ZA ZA5.4 part 13: the carve is at the invoked capability's free
             -- index (seL4's `capFreeIndex`), not at a word of the object.
             let idx := authCap.freeIndex
-            -- S5-G: Page-alignment check for VSpace-bound objects
-            if requiresPageAlignment newObj.objectType && !allocationBasePageAligned ut idx then
+            -- S5-G: Page-alignment check for VSpace-bound objects; WS-ZA
+            -- ZA5.4 part 14: a kernel object on a multiple of its own size.
+            if !carveBaseAligned newObj.objectType allocSize ut idx then
               .error .allocationMisaligned
             else if lifecycleRetypeAuthority authCap untypedId then
                 -- WS-H2/A-28: Both objects are computed before any state mutation.
@@ -573,8 +620,7 @@ theorem retypeFromUntyped_error_regionExhausted
     (hExt : objectIdInAddressSpace st.machine childId = true)
     (hAllocSzOk : ¬(allocSize < objectTypeAllocSize newObj.objectType))
     (hLookup : cspaceLookupSlot authority st = .ok (cap, st))
-    (hAlignOk : (requiresPageAlignment newObj.objectType &&
-      !allocationBasePageAligned ut cap.freeIndex) = false)
+    (hAlignOk : carveBaseAligned newObj.objectType allocSize ut cap.freeIndex = true)
     (hAuth : lifecycleRetypeAuthority cap untypedId = true)
     (hNoFit : ut.allocate cap.freeIndex childId allocSize = none) :
     retypeFromUntyped authority untypedId childId newObj allocSize st =
@@ -987,15 +1033,70 @@ def untypedCapability (untypedId : SeLe4n.ObjId) : Capability :=
   { target := .object untypedId
     rights := AccessRightSet.ofList [.read, .write, .retype] }
 
-/-- **WS-BP BP7.1 slice 4 (`v0.36.8`): what a carve can make.**
+/-- **WS-ZA ZA5.4 part 14: the capability a carve hands back for a kernel
+object** — seL4's `seL4_AllRights` (read, write, grant and grant-reply), the
+rights `createNewObjects` gives every capability it makes.  `.retype` is not a
+right in seL4 and here authorises only an invocation of an untyped, so a kernel
+object's capability does not carry it. -/
+def kernelObjectRights : AccessRightSet := AccessRightSet.ofList [.read, .write, .grant, .grantReply]
+
+/-- The capability a carve hands back for a kernel object it made: the object,
+with `kernelObjectRights`. -/
+def kernelObjectCapability (childId : SeLe4n.ObjId) : Capability :=
+  { target := .object childId, rights := kernelObjectRights }
+
+/-- seL4's AArch64 CNode slot size, `seL4_SlotBits`: a CNode of `r` radix bits is
+`2 ^ (r + cnodeSlotBits)` bytes. -/
+def cnodeSlotBits : Nat := 5
+
+/-- The CNode radix a carve accepts: at least one bit (seL4 refuses a
+zero-size CNode), and small enough that the CNode is no larger than the largest
+untyped (`maxUntypedSizeBits`). -/
+def minCNodeRadixBits : Nat := 1
+def maxCNodeRadixBits : Nat := maxUntypedSizeBits - cnodeSlotBits
+
+/-- The scheduling-context sizes a carve accepts, as powers of two: from seL4's
+`seL4_MinSchedContextBits` (7) to the largest untyped. -/
+def minSchedContextSizeBits : Nat := 7
+
+/-- **WS-ZA ZA5.4 part 14: the thread a carve makes** — seL4's `createObject`
+for `seL4_TCBObject`: inactive, at priority 0 with maximum controlled priority 0,
+in the creating core's current domain (`ksCurDomain`) and with the creating
+core as its affinity (`getCurrentCPUIndex`), no fault handler, no bound
+notification, no scheduling context, and both space slots empty
+(`tcbCTable` and `tcbVTable` hold null capabilities).  Its identity is the id it
+is stored at. -/
+def carvedTcb (childId : SeLe4n.ObjId) (domain : SeLe4n.DomainId)
+    (core : SeLe4n.Kernel.Concurrency.CoreId) : TCB :=
+  { tid := SeLe4n.ThreadId.ofObjId childId
+    priority := SeLe4n.Priority.ofNat 0
+    maxControlledPriority := SeLe4n.Priority.ofNat 0
+    domain := domain
+    cpuAffinity := some core
+    ipcBuffer := SeLe4n.VAddr.ofNat 0 }
+
+/-- **WS-ZA ZA5.4 part 14: the CNode a carve makes** — `2 ^ radixBits` empty
+slots, no guard, resolving exactly its radix bits: the CNode seL4's
+`createObject` makes for `seL4_CapTableObject`, whose capability carries guard
+size 0. -/
+def carvedCNode (radixBits : Nat) : CNode :=
+  CNode.ofSlots radixBits 0 0 radixBits SeLe4n.UniqueSlotMap.empty
+
+/-- **WS-BP BP7.1 slice 4 (`v0.36.8`), every kind since WS-ZA ZA5.4 part 14:
+what a carve can make.**
 
 The four kinds an untyped's memory backs *as memory*: a frame (one page a thread
 maps), a child untyped (a sub-region it carves from in turn), and — since slice 4b
 (`v0.36.10`) and `v0.36.12` — a VSpace root and an intermediate page table, each
-one page of translation table.  Kernel objects keep the in-place retype.  A request is built only by the syscall arm's decode
-(`carveRequestOf?`), which bounds a child untyped's size; every other guard —
-authority, capacity, fresh id, device rule, alignment, region — is the carve
-primitive's. -/
+one page of translation table.  Since part 14 also every kernel object, as
+seL4's `Untyped_Retype` makes them (decided by Adam, 2026-10-21: "carve every
+kind"): a thread, an endpoint, a notification, a CNode of a chosen radix, a
+reply and a scheduling context of a chosen size, each of seL4's size
+(`CarveRequest.size`) and on a multiple of it (`requiresSizeAlignment`).  A
+request is built only by the syscall arm's decode (`carveRequestOf?`), which
+bounds the sizes the caller names and supplies what the creating core decides;
+every other guard — authority, capacity, fresh id, device rule, alignment,
+region — is the carve primitive's. -/
 inductive CarveRequest where
   | frame
   | untyped (sizeBits : Nat)
@@ -1007,6 +1108,20 @@ inductive CarveRequest where
   /-- **WS-BP BP7.1 (`v0.36.12`)**: an intermediate translation table — one page,
       installed into an address space by `.pageTableMap`. -/
   | pageTable
+  /-- **WS-ZA ZA5.4 part 14**: a thread (`carvedTcb`), in the domain of the
+      core that carves it and with that core as its affinity. -/
+  | tcb (domain : SeLe4n.DomainId) (core : SeLe4n.Kernel.Concurrency.CoreId)
+  /-- An endpoint with both queues empty. -/
+  | endpoint
+  /-- A notification, idle, with no waiter and no pending badge. -/
+  | notification
+  /-- A CNode of `2 ^ radixBits` empty slots (`carvedCNode`). -/
+  | cnode (radixBits : Nat)
+  /-- A reply with no caller and no stack link. -/
+  | reply
+  /-- A scheduling context of `2 ^ sizeBits` bytes, with no budget and no
+      bound thread. -/
+  | schedContext (sizeBits : Nat)
   deriving Repr, DecidableEq
 
 /-- **WS-BP BP7.1 (`v0.36.12`): the page table a carve makes** — installed
@@ -1102,6 +1217,12 @@ def CarveRequest.admissible (st : SystemState) : CarveRequest → Bool
       asid.toNat != 0 && decide (asid.toNat < st.machine.maxASID) &&
         (st.asidTable[asid]?).isNone
   | .pageTable => true
+  | .tcb _ _ => true
+  | .endpoint => true
+  | .notification => true
+  | .cnode _ => true
+  | .reply => true
+  | .schedContext _ => true
 
 /-- The type of the object a request carves, read without building it
 (`CarveRequest.object_objectType`).  WS-ZA ZA5.4. -/
@@ -1110,34 +1231,49 @@ def CarveRequest.objectType : CarveRequest → KernelObjectType
   | .untyped _ => .untyped
   | .vspaceRoot _ => .vspaceRoot
   | .pageTable => .pageTable
+  | .tcb _ _ => .tcb
+  | .endpoint => .endpoint
+  | .notification => .notification
+  | .cnode _ => .cnode
+  | .reply => .reply
+  | .schedContext _ => .schedContext
 
 /-- The object a request carves out of `ut` (stored at `untypedId`) at free
-index `idx`. -/
-def CarveRequest.object (untypedId : SeLe4n.ObjId) (ut : UntypedObject) (idx : Nat) :
+index `idx`, to be stored at `childId`.  A kernel object carries the id it is
+stored at as its own identity (`KernelObject.identityMatches`). -/
+def CarveRequest.object (untypedId childId : SeLe4n.ObjId) (ut : UntypedObject) (idx : Nat) :
     CarveRequest → KernelObject
   | .frame => .frame (untypedNextFrame ut idx)
   | .untyped b => .untyped (untypedNextChild ut idx untypedId b)
   | .vspaceRoot asid => .vspaceRoot (untypedNextVSpaceRoot ut idx asid)
   | .pageTable => .pageTable (untypedNextPageTable ut idx)
+  | .tcb dom core => .tcb (carvedTcb childId dom core)
+  | .endpoint => .endpoint (Endpoint.ofQueues {} {})
+  | .notification => .notification ({ state := .idle } : Notification)
+  | .cnode r => .cnode (carvedCNode r)
+  | .reply => .reply (SeLe4n.Kernel.Reply.empty (SeLe4n.ReplyId.ofObjId childId))
+  | .schedContext _ =>
+      .schedContext (SeLe4n.Kernel.SchedContext.empty (SeLe4n.SchedContextId.ofObjId childId))
 
-theorem CarveRequest.object_objectType (untypedId : SeLe4n.ObjId) (ut : UntypedObject)
+theorem CarveRequest.object_objectType (untypedId childId : SeLe4n.ObjId) (ut : UntypedObject)
     (idx : Nat) (req : CarveRequest) :
-    (req.object untypedId ut idx).objectType = req.objectType := by
+    (req.object untypedId childId ut idx).objectType = req.objectType := by
   cases req <;> rfl
 
-/-- The bytes a request takes from the parent's region. -/
+/-- The bytes a request takes from the parent's region: a page for the page
+kinds, `2 ^ b` for a child untyped, and seL4's `getObjectSize` for a kernel
+object (`objectTypeAllocSize` for the fixed-size ones). -/
 def CarveRequest.size : CarveRequest → Nat
   | .frame => SeLe4n.pageBytes
   | .untyped b => 2 ^ b
   | .vspaceRoot _ => SeLe4n.pageBytes
   | .pageTable => SeLe4n.pageBytes
-
-/-- The capability a request hands back for the carved object. -/
-def CarveRequest.capability (childId : SeLe4n.ObjId) : CarveRequest → Capability
-  | .frame => frameCapability childId
-  | .untyped _ => untypedCapability childId
-  | .vspaceRoot _ => vspaceRootCapability childId
-  | .pageTable => pageTableCapability childId
+  | .tcb _ _ => objectTypeAllocSize .tcb
+  | .endpoint => objectTypeAllocSize .endpoint
+  | .notification => objectTypeAllocSize .notification
+  | .cnode r => 2 ^ (r + cnodeSlotBits)
+  | .reply => objectTypeAllocSize .reply
+  | .schedContext b => 2 ^ b
 
 /-- The rights of the capability a request hands back (`CarveRequest.capability_eq`),
 so the capability is written into its slot as fields.  WS-ZA ZA5.4. -/
@@ -1146,6 +1282,27 @@ def CarveRequest.rights : CarveRequest → AccessRightSet
   | .untyped _ => AccessRightSet.ofList [.read, .write, .retype]
   | .vspaceRoot _ => AccessRightSet.ofList [.read, .write]
   | .pageTable => AccessRightSet.ofList [.read, .write]
+  | .tcb _ _ => kernelObjectRights
+  | .endpoint => kernelObjectRights
+  | .notification => kernelObjectRights
+  | .cnode _ => kernelObjectRights
+  | .reply => kernelObjectRights
+  | .schedContext _ => kernelObjectRights
+
+/-- The capability a request hands back for the carved object: the memory
+kinds' own (`frameCapability`, `untypedCapability`, `vspaceRootCapability`,
+`pageTableCapability`) and, for a kernel object, `kernelObjectRights` to it. -/
+def CarveRequest.capability (childId : SeLe4n.ObjId) : CarveRequest → Capability
+  | .frame => frameCapability childId
+  | .untyped _ => untypedCapability childId
+  | .vspaceRoot _ => vspaceRootCapability childId
+  | .pageTable => pageTableCapability childId
+  | .tcb _ _ => kernelObjectCapability childId
+  | .endpoint => kernelObjectCapability childId
+  | .notification => kernelObjectCapability childId
+  | .cnode _ => kernelObjectCapability childId
+  | .reply => kernelObjectCapability childId
+  | .schedContext _ => kernelObjectCapability childId
 
 theorem CarveRequest.capability_eq (childId : SeLe4n.ObjId) (req : CarveRequest) :
     req.capability childId = { target := .object childId, rights := req.rights } := by
@@ -1165,6 +1322,11 @@ def CarveRequest.scrub (st : SystemState) (ut : UntypedObject) (idx : Nat) :
     CarveRequest → SystemState
   | .frame => carveZeroFrame st (untypedNextFrame ut idx)
   | .untyped _ => st
+  -- WS-ZA ZA5.4 part 14: a kernel object is the store's record, never mapped:
+  -- no capability names its memory as memory, so nothing a thread can read
+  -- is written.  Its memory returns through the reset, and a frame carved
+  -- from it later zeroes its own page.
+  | .tcb _ _ | .endpoint | .notification | .cnode _ | .reply | .schedContext _ => st
   | .vspaceRoot _ =>
       { st with
           machine := SeLe4n.zeroMemoryRange st.machine (untypedNextFrame ut idx).base SeLe4n.pageBytes
@@ -1188,7 +1350,7 @@ the object id the carved object takes, `dst` the empty slot its capability goes
 to, and `req` what is carved — a frame, or a child untyped of `2 ^ b` bytes.
 Four steps, and every refusal commits nothing:
 
-1. **The carve** is `retypeFromUntyped` at `req.object untypedId ut idx` and
+1. **The carve** is `retypeFromUntyped` at `req.object untypedId childId ut idx` and
    `req.size` bytes, where `idx` is the invoked capability's free index — so the
    authority check (`lifecycleRetypeAuthority`: the capability names this untyped
    and carries `.retype`), the capacity, fresh-id and self-overwrite guards, the
@@ -1231,7 +1393,7 @@ def untypedRetypeObject (src : CSpaceAddr) (childId : SeLe4n.ObjId)
           match cspaceDstRefusal dst st with
           | .error e => .error e
           | .ok () =>
-            match retypeFromUntyped src untypedId childId (req.object untypedId ut utCap.freeIndex)
+            match retypeFromUntyped src untypedId childId (req.object untypedId childId ut utCap.freeIndex)
                 req.size st with
             | .error e => .error e
             | .ok ((), st1) =>
@@ -1244,6 +1406,22 @@ def untypedRetypeObject (src : CSpaceAddr) (childId : SeLe4n.ObjId)
 authority capability's free index on a page boundary — the primitive's S5-G
 guard, read back.  It is what makes the base of a carved frame a page a
 descriptor can name. -/
+theorem retypeFromUntyped_ok_aligned
+    (st st' : SystemState) (authority : CSpaceAddr)
+    (untypedId childId : SeLe4n.ObjId) (newObj : KernelObject) (allocSize : Nat)
+    (ut : UntypedObject) (cap : Capability)
+    (hObj : st.objects[untypedId]? = some (.untyped ut))
+    (hLk : cspaceLookupSlot authority st = .ok (cap, st))
+    (hStep : retypeFromUntyped authority untypedId childId newObj allocSize st = .ok ((), st')) :
+    carveBaseAligned newObj.objectType allocSize ut cap.freeIndex = true := by
+  cases hA : carveBaseAligned newObj.objectType allocSize ut cap.freeIndex
+  · exfalso
+    unfold retypeFromUntyped SystemState.getObject? at hStep
+    simp only [hObj, hLk, hA, Bool.not_false, ↓reduceIte] at hStep
+    repeat (split at hStep <;> (try cases hStep))
+    all_goals cases hStep
+  · rfl
+
 theorem retypeFromUntyped_ok_pageAligned
     (st st' : SystemState) (authority : CSpaceAddr)
     (untypedId childId : SeLe4n.ObjId) (newObj : KernelObject) (allocSize : Nat)
@@ -1253,13 +1431,26 @@ theorem retypeFromUntyped_ok_pageAligned
     (hReq : requiresPageAlignment newObj.objectType = true)
     (hStep : retypeFromUntyped authority untypedId childId newObj allocSize st = .ok ((), st')) :
     allocationBasePageAligned ut cap.freeIndex = true := by
-  cases hA : allocationBasePageAligned ut cap.freeIndex
-  · exfalso
-    unfold retypeFromUntyped SystemState.getObject? at hStep
-    simp only [hObj, hLk, hReq, hA, Bool.not_false, Bool.and_true, ↓reduceIte] at hStep
-    repeat (split at hStep <;> (try cases hStep))
-    all_goals cases hStep
-  · rfl
+  rw [← carveBaseAligned_of_page hReq allocSize]
+  exact retypeFromUntyped_ok_aligned st st' authority untypedId childId newObj allocSize ut cap
+    hObj hLk hStep
+
+/-- **WS-ZA ZA5.4 part 14**: a successful carve of a kernel kind found its base on
+a multiple of the carve's size — seL4's placement of every object. -/
+theorem retypeFromUntyped_ok_sizeAligned
+    (st st' : SystemState) (authority : CSpaceAddr)
+    (untypedId childId : SeLe4n.ObjId) (newObj : KernelObject) (allocSize : Nat)
+    (ut : UntypedObject) (cap : Capability)
+    (hObj : st.objects[untypedId]? = some (.untyped ut))
+    (hLk : cspaceLookupSlot authority st = .ok (cap, st))
+    (hReq : requiresSizeAlignment newObj.objectType = true)
+    (hStep : retypeFromUntyped authority untypedId childId newObj allocSize st = .ok ((), st')) :
+    (ut.regionBase.toNat + cap.freeIndex) % allocSize = 0 := by
+  have h := retypeFromUntyped_ok_aligned st st' authority untypedId childId newObj allocSize ut cap
+    hObj hLk hStep
+  have hNp : requiresPageAlignment newObj.objectType = false := by
+    revert hReq; cases newObj.objectType <;> simp [requiresSizeAlignment, requiresPageAlignment]
+  simpa [carveBaseAligned, hNp, hReq] using h
 
 
 /-- **WS-BP BP7.1 slice 4**: a request's scrub moves no object... -/
@@ -1287,7 +1478,7 @@ theorem untypedRetypeObject_ok_writes
       utCap.target = .object untypedId ∧
       st.getUntyped? untypedId = some ut ∧
       cspaceDstAdmitted dst st = true ∧
-      retypeFromUntyped src untypedId childId (req.object untypedId ut utCap.freeIndex) req.size st
+      retypeFromUntyped src untypedId childId (req.object untypedId childId ut utCap.freeIndex) req.size st
         = .ok ((), st1) ∧
       st' = ((req.scrub st1 ut utCap.freeIndex).storeCNodeWith dst.cnode
         (·.insert dst.slot (req.capability childId))).cdtAddChild src dst .retype := by
@@ -1319,7 +1510,7 @@ theorem untypedRetypeObject_ok_writes
           rw [hD] at hStep
           simp only at hStep
           cases hRt : retypeFromUntyped src untypedId childId
-              (req.object untypedId ut utCap.freeIndex) req.size stL with
+              (req.object untypedId childId ut utCap.freeIndex) req.size stL with
           | error e => rw [hRt] at hStep; cases hStep
           | ok p1 =>
             obtain ⟨_, st1⟩ := p1
@@ -1347,7 +1538,7 @@ theorem untypedRetypeObject_ok_decompose
       cspaceLookupSlot src st = .ok (utCap, st) ∧
       utCap.target = .object untypedId ∧
       st.getUntyped? untypedId = some ut ∧
-      retypeFromUntyped src untypedId childId (req.object untypedId ut utCap.freeIndex) req.size st
+      retypeFromUntyped src untypedId childId (req.object untypedId childId ut utCap.freeIndex) req.size st
         = .ok ((), st1) ∧
       cspaceInsertSlot dst (req.capability childId) (req.scrub st1 ut utCap.freeIndex)
         = .ok ((), st2) ∧
@@ -1597,13 +1788,17 @@ theorem untypedRetypeObject_ok_carved
     ∃ (untypedId : SeLe4n.ObjId) (ut : UntypedObject) (utCap : Capability) (st1 : SystemState),
       st.objects[untypedId]? = some (.untyped ut) ∧
       cspaceLookupSlot src st = .ok (utCap, st) ∧
-      retypeFromUntyped src untypedId childId (req.object untypedId ut utCap.freeIndex) req.size st
+      retypeFromUntyped src untypedId childId (req.object untypedId childId ut utCap.freeIndex) req.size st
         = .ok ((), st1) ∧
-      ((∀ cn, req.object untypedId ut utCap.freeIndex ≠ .cnode cn) →
-        (∀ t, req.object untypedId ut utCap.freeIndex ≠ .tcb t) →
-        st'.objects[childId]? = some (req.object untypedId ut utCap.freeIndex)) ∧
+      ((∀ cn, req.object untypedId childId ut utCap.freeIndex ≠ .cnode cn) →
+        (∀ t, req.object untypedId childId ut utCap.freeIndex ≠ .tcb t) →
+        st'.objects[childId]? = some (req.object untypedId childId ut utCap.freeIndex)) ∧
+      (st'.objects[childId]?).map KernelObject.withoutLinks =
+        some (req.object untypedId childId ut utCap.freeIndex).withoutLinks ∧
       ∃ cn cn' : CNode, st'.objects[dst.cnode]? = some (.cnode cn') ∧
         cn'.withoutLinks = (cn.insert dst.slot (req.capability childId)).withoutLinks := by
+  obtain ⟨_, _, _, _, _, _, _, hD, _, _⟩ :=
+    untypedRetypeObject_ok_writes src dst childId req st st' hStep
   obtain ⟨utCap, untypedId, ut, st1, st2, hLk, _, hUt, hRt, hIns, rfl⟩ :=
     untypedRetypeObject_ok_decompose src dst childId req st st' hObjInv hStep
   have hObj : st.objects[untypedId]? = some (.untyped ut) :=
@@ -1616,7 +1811,7 @@ theorem untypedRetypeObject_ok_carved
   have hInvCh := storeObject_preserves_objects_invExt _ _ _ _ hInvUt hStCh
   have hInv1 : st1.objects.invExt := by
     rw [hIdx]; exact setCapFreeIndex_preserves_objects_invExt hInvCh
-  have hAtCh : stCh.objects[childId]? = some (req.object untypedId ut utCap.freeIndex) :=
+  have hAtCh : stCh.objects[childId]? = some (req.object untypedId childId ut utCap.freeIndex) :=
     storeObject_objects_eq _ _ _ _ hInvUt hStCh
   have hNeSrc : childId ≠ src.cnode := by
     intro h
@@ -1634,22 +1829,31 @@ theorem untypedRetypeObject_ok_carved
     cases hq : st.objects[childId]? with
     | none => rw [hq] at hC; cases hC
     | some _ => rw [hq] at hFr; cases hFr
-  have hAt1 : st1.objects[childId]? = some (req.object untypedId ut utCap.freeIndex) := by
+  have hAt1 : st1.objects[childId]? = some (req.object untypedId childId ut utCap.freeIndex) := by
     rw [hIdx, setCapFreeIndex_objects_ne hInvCh hNeSrc]; exact hAtCh
   have hInvZ : (req.scrub st1 ut utCap.freeIndex).objects.invExt := by
     rw [CarveRequest.scrub_objects]; exact hInv1
   obtain ⟨cn, hCnPre, hCnPost⟩ := cspaceInsertSlot_objects_eq _ _ _ _ hInvZ hIns
+  -- The destination CNode existed before the carve, and the child id held
+  -- nothing (`retypeFromUntyped`'s collision guard): they are two keys.
   have hNe : childId ≠ dst.cnode := by
     intro h
-    rw [CarveRequest.scrub_objects, ← h, hAt1] at hCnPre
-    cases req <;> cases hCnPre
-  have hAt2 : st2.objects[childId]? = some (req.object untypedId ut utCap.freeIndex) := by
+    have hFr := retypeFromUntyped_childId_fresh src untypedId childId _ _ st st1 hRt
+    unfold cspaceDstAdmitted SystemState.getCNode? at hD
+    rw [← h] at hD
+    cases hq : st.objects[childId]? with
+    | none => rw [hq] at hD; cases hD
+    | some _ => rw [hq] at hFr; cases hFr
+  have hAt2 : st2.objects[childId]? = some (req.object untypedId childId ut utCap.freeIndex) := by
     rw [cspaceInsertSlot_preserves_objects_ne _ _ _ _ _ hNe hInvZ hIns,
       CarveRequest.scrub_objects]; exact hAt1
   have hR := (SystemState.cdtAddChild_agreeObjects
     (cspaceInsertSlot_preserves_objects_invExt _ _ _ _ hInvZ hIns) src dst .retype).1
   obtain ⟨cn', hC, hw⟩ := hR.cnode_fwd hCnPost
-  exact ⟨untypedId, ut, utCap, st1, hObj, hLk, hRt, fun hn ht => hR.obj_fwd hAt2 hn ht, cn, cn',
+  have hW : ((st2.cdtAddChild src dst .retype).objects[childId]?).map KernelObject.withoutLinks =
+      some (req.object untypedId childId ut utCap.freeIndex).withoutLinks := by
+    rw [(hR childId).map_withoutLinks, hAt2]; rfl
+  exact ⟨untypedId, ut, utCap, st1, hObj, hLk, hRt, fun hn ht => hR.obj_fwd hAt2 hn ht, hW, cn, cn',
     hC, hw⟩
 
 /-- **WS-BP BP7.1: a frame carve's payoff** — the frame is the page at the
@@ -1669,7 +1873,7 @@ theorem untypedRetypeObject_ok_frame
       (untypedNextFrame ut idx).isDevice = ut.isDevice ∧
       ∃ cn cn' : CNode, st'.objects[dst.cnode]? = some (.cnode cn') ∧
         cn'.withoutLinks = (cn.insert dst.slot (frameCapability childId)).withoutLinks := by
-  obtain ⟨untypedId, ut, utCap, st1, hObj, hLk, hRt, hAt, hCn⟩ :=
+  obtain ⟨untypedId, ut, utCap, st1, hObj, hLk, hRt, hAt, -, hCn⟩ :=
     untypedRetypeObject_ok_carved src dst childId .frame st st' hObjInv hStep
   obtain ⟨hLo, hHi, hWf, hDev⟩ := untypedNextFrame_of_retype_ok st st1 src untypedId childId
     ut utCap hObj hLk hRt
@@ -1698,7 +1902,7 @@ theorem untypedRetypeObject_ok_untyped
       (untypedNextChild ut idx untypedId b).parent = some untypedId ∧
       ∃ cn cn' : CNode, st'.objects[dst.cnode]? = some (.cnode cn') ∧
         cn'.withoutLinks = (cn.insert dst.slot (untypedCapability childId)).withoutLinks := by
-  obtain ⟨untypedId, ut, utCap, st1, hObj, hLk, hRt, hAt, hCn⟩ :=
+  obtain ⟨untypedId, ut, utCap, st1, hObj, hLk, hRt, hAt, -, hCn⟩ :=
     untypedRetypeObject_ok_carved src dst childId (.untyped b) st st' hObjInv hStep
   obtain ⟨hLo, hHi, hAl, hDev, hPar, -⟩ :=
     untypedNextChild_of_retype_ok st st1 src untypedId childId ut utCap b hObj hLk hRt
@@ -1734,13 +1938,167 @@ theorem untypedRetypeObject_ok_vspaceRoot
   simp only [CarveRequest.admissible, Bool.and_eq_true, bne_iff_ne, ne_eq,
     decide_eq_true_eq, Option.isNone_iff_eq_none] at hAdm
   obtain ⟨⟨hNz, hLt⟩, hFree⟩ := hAdm
-  obtain ⟨untypedId, ut, utCap, st1, hObj, hLk, hRt, hAt, hCn⟩ :=
+  obtain ⟨untypedId, ut, utCap, st1, hObj, hLk, hRt, hAt, -, hCn⟩ :=
     untypedRetypeObject_ok_carved src dst childId (.vspaceRoot asid) st st' hObjInv hStep
   obtain ⟨hTb, hLo, hHi, hAl, hDev⟩ :=
     untypedNextVSpaceRoot_of_retype_ok st st1 src untypedId childId ut utCap asid hObj hLk hRt
   exact ⟨untypedId, ut, utCap.freeIndex, hObj, hAt (by intro _ h; simp [CarveRequest.object] at h)
       (by intro _ h; simp [CarveRequest.object] at h),
     hNz, hLt, hFree, hTb, hLo, hHi, hAl, hDev, hCn⟩
+
+/-! ### WS-ZA ZA5.4 part 14: the kernel objects a carve makes
+
+Each payoff names the object the store holds at the child id after a successful
+carve — the object seL4's `createObject` makes for that type — and the
+capability, with every right, that the destination slot now holds. -/
+
+/-- A carve's slot write, for a kernel-object request: the destination CNode
+holds the all-rights capability to the child. -/
+theorem untypedRetypeObject_ok_kernelCapability
+    (src dst : CSpaceAddr) (childId : SeLe4n.ObjId) (req : CarveRequest)
+    (st st' : SystemState) (hObjInv : st.objects.invExt)
+    (hStep : untypedRetypeObject src childId dst req st = .ok ((), st'))
+    (hKernel : req.capability childId = kernelObjectCapability childId) :
+    ∃ cn cn' : CNode, st'.objects[dst.cnode]? = some (.cnode cn') ∧
+      cn'.withoutLinks = (cn.insert dst.slot (kernelObjectCapability childId)).withoutLinks := by
+  obtain ⟨_, _, _, _, _, _, _, _, _, hCn⟩ :=
+    untypedRetypeObject_ok_carved src dst childId req st st' hObjInv hStep
+  rw [hKernel] at hCn; exact hCn
+
+/-- **A carved TCB** is the thread seL4's `createObject` makes for
+`seL4_TCBObject`: inactive, not blocked in IPC, at priority and maximum
+controlled priority `0`, in the domain and on the core the request names, bound
+to no scheduling context or notification, queued on no run queue and with both
+space slots empty.  Its space-slot links are the only part the derivation edge's
+write may touch, so the payoff reads the thread through them. -/
+theorem untypedRetypeObject_ok_tcb
+    (src dst : CSpaceAddr) (childId : SeLe4n.ObjId) (dom : SeLe4n.DomainId)
+    (core : SeLe4n.Kernel.Concurrency.CoreId) (st st' : SystemState)
+    (hObjInv : st.objects.invExt)
+    (hStep : untypedRetypeObject src childId dst (.tcb dom core) st = .ok ((), st')) :
+    ∃ tcb : TCB, st'.objects[childId]? = some (.tcb tcb) ∧
+      tcb.withoutLinks = (carvedTcb childId dom core).withoutLinks ∧
+      tcb.tid = SeLe4n.ThreadId.ofObjId childId ∧
+      tcb.threadState = .Inactive ∧ tcb.ipcState = .ready ∧
+      tcb.priority = SeLe4n.Priority.ofNat 0 ∧
+      tcb.maxControlledPriority = SeLe4n.Priority.ofNat 0 ∧
+      tcb.domain = dom ∧ tcb.cpuAffinity = some core ∧
+      tcb.schedContextBinding = .unbound ∧ tcb.boundNotification = none ∧
+      tcb.runCoreCode = 0 ∧ tcb.pendingMessage = none ∧
+      tcb.spaceCells = #v[none, none] := by
+  obtain ⟨_, _, _, _, _, _, _, _, hW, -⟩ :=
+    untypedRetypeObject_ok_carved src dst childId (.tcb dom core) st st' hObjInv hStep
+  cases hO : st'.objects[childId]? with
+  | none => rw [hO] at hW; cases hW
+  | some o =>
+    rw [hO] at hW
+    cases o <;> simp [CarveRequest.object, KernelObject.withoutLinks] at hW
+    rename_i tcb
+    refine ⟨tcb, rfl, hW, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    · exact TCB.proj_eq_of_withoutLinks_eq (fun x : TCB => x.tid) hW
+    · exact TCB.proj_eq_of_withoutLinks_eq (fun x : TCB => x.threadState) hW
+    · exact TCB.proj_eq_of_withoutLinks_eq (fun x : TCB => x.ipcState) hW
+    · exact TCB.proj_eq_of_withoutLinks_eq (fun x : TCB => x.priority) hW
+    · exact TCB.proj_eq_of_withoutLinks_eq (fun x : TCB => x.maxControlledPriority) hW
+    · exact TCB.proj_eq_of_withoutLinks_eq (fun x : TCB => x.domain) hW
+    · exact TCB.proj_eq_of_withoutLinks_eq (fun x : TCB => x.cpuAffinity) hW
+    · exact TCB.proj_eq_of_withoutLinks_eq (fun x : TCB => x.schedContextBinding) hW
+    · exact TCB.proj_eq_of_withoutLinks_eq (fun x : TCB => x.boundNotification) hW
+    · exact TCB.proj_eq_of_withoutLinks_eq (fun x : TCB => x.runCoreCode) hW
+    · exact TCB.proj_eq_of_withoutLinks_eq (fun x : TCB => x.pendingMessage) hW
+    · exact TCB.proj_eq_of_withoutLinks_eq (fun x : TCB => x.spaceCells) hW
+
+/-- A carved thread is queued on no core. -/
+theorem untypedRetypeObject_ok_tcb_notQueued
+    (src dst : CSpaceAddr) (childId : SeLe4n.ObjId) (dom : SeLe4n.DomainId)
+    (core : SeLe4n.Kernel.Concurrency.CoreId) (st st' : SystemState)
+    (hObjInv : st.objects.invExt)
+    (hStep : untypedRetypeObject src childId dst (.tcb dom core) st = .ok ((), st'))
+    (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    st'.queuedOn c (SeLe4n.ThreadId.ofObjId childId) = false := by
+  obtain ⟨tcb, hO, -, -, -, -, -, -, -, -, -, -, hRc, -⟩ :=
+    untypedRetypeObject_ok_tcb src dst childId dom core st st' hObjInv hStep
+  unfold SystemState.queuedOn SystemState.getTcb?
+  rw [SeLe4n.ThreadId.toObjId_ofObjId, hO]
+  simp [hRc]
+
+/-- **A carved endpoint** is idle: both its queues are empty. -/
+theorem untypedRetypeObject_ok_endpoint
+    (src dst : CSpaceAddr) (childId : SeLe4n.ObjId) (st st' : SystemState)
+    (hObjInv : st.objects.invExt)
+    (hStep : untypedRetypeObject src childId dst .endpoint st = .ok ((), st')) :
+    st'.objects[childId]? = some (.endpoint (Endpoint.ofQueues {} {})) ∧
+      (Endpoint.ofQueues {} {}).sendQ = {} ∧ (Endpoint.ofQueues {} {}).receiveQ = {} := by
+  obtain ⟨_, _, _, _, _, _, _, hAt, -, -⟩ :=
+    untypedRetypeObject_ok_carved src dst childId .endpoint st st' hObjInv hStep
+  exact ⟨hAt (by intro _ h; simp [CarveRequest.object] at h)
+    (by intro _ h; simp [CarveRequest.object] at h), rfl, rfl⟩
+
+/-- **A carved notification** is idle: no thread waits on it and no badge is
+pending. -/
+theorem untypedRetypeObject_ok_notification
+    (src dst : CSpaceAddr) (childId : SeLe4n.ObjId) (st st' : SystemState)
+    (hObjInv : st.objects.invExt)
+    (hStep : untypedRetypeObject src childId dst .notification st = .ok ((), st')) :
+    st'.objects[childId]? = some (.notification { state := .idle }) := by
+  obtain ⟨_, _, _, _, _, _, _, hAt, -, -⟩ :=
+    untypedRetypeObject_ok_carved src dst childId .notification st st' hObjInv hStep
+  exact hAt (by intro _ h; simp [CarveRequest.object] at h)
+    (by intro _ h; simp [CarveRequest.object] at h)
+
+/-- **A carved CNode** has `2 ^ radixBits` slots, every one empty, and no guard. -/
+theorem untypedRetypeObject_ok_cnode
+    (src dst : CSpaceAddr) (childId : SeLe4n.ObjId) (r : Nat) (st st' : SystemState)
+    (hObjInv : st.objects.invExt)
+    (hStep : untypedRetypeObject src childId dst (.cnode r) st = .ok ((), st')) :
+    ∃ cn : CNode, st'.objects[childId]? = some (.cnode cn) ∧
+      cn.withoutLinks = (carvedCNode r).withoutLinks ∧
+      cn.radixWidth = (carvedCNode r).radixWidth ∧ cn.guardWidth = (carvedCNode r).guardWidth ∧
+      ∀ s, cn.lookup s = (carvedCNode r).lookup s := by
+  obtain ⟨_, _, _, _, _, _, _, _, hW, -⟩ :=
+    untypedRetypeObject_ok_carved src dst childId (.cnode r) st st' hObjInv hStep
+  cases hO : st'.objects[childId]? with
+  | none => rw [hO] at hW; cases hW
+  | some o =>
+    rw [hO] at hW
+    cases o <;> simp [CarveRequest.object, KernelObject.withoutLinks] at hW
+    rename_i cn
+    exact ⟨cn, rfl, hW, CNode.proj_eq_of_withoutLinks_eq CNode.radixWidth hW,
+      CNode.proj_eq_of_withoutLinks_eq CNode.guardWidth hW,
+      fun s => CNode.proj_eq_of_withoutLinks_eq (fun c => c.lookup s) hW⟩
+
+/-- **A carved reply** answers no caller and is linked to no other reply. -/
+theorem untypedRetypeObject_ok_reply
+    (src dst : CSpaceAddr) (childId : SeLe4n.ObjId) (st st' : SystemState)
+    (hObjInv : st.objects.invExt)
+    (hStep : untypedRetypeObject src childId dst .reply st = .ok ((), st')) :
+    st'.objects[childId]? =
+        some (.reply (SeLe4n.Kernel.Reply.empty (SeLe4n.ReplyId.ofObjId childId))) ∧
+      (SeLe4n.Kernel.Reply.empty (SeLe4n.ReplyId.ofObjId childId)).caller = none ∧
+      (SeLe4n.Kernel.Reply.empty (SeLe4n.ReplyId.ofObjId childId)).prev = none ∧
+      (SeLe4n.Kernel.Reply.empty (SeLe4n.ReplyId.ofObjId childId)).next = none := by
+  obtain ⟨_, _, _, _, _, _, _, hAt, -, -⟩ :=
+    untypedRetypeObject_ok_carved src dst childId .reply st st' hObjInv hStep
+  exact ⟨hAt (by intro _ h; simp [CarveRequest.object] at h)
+    (by intro _ h; simp [CarveRequest.object] at h), rfl, rfl, rfl⟩
+
+/-- **A carved scheduling context** is bound to no thread and has a zero budget:
+seL4's `createObject` leaves a scheduling context unconfigured until
+`seL4_SchedControl_Configure`. -/
+theorem untypedRetypeObject_ok_schedContext
+    (src dst : CSpaceAddr) (childId : SeLe4n.ObjId) (b : Nat) (st st' : SystemState)
+    (hObjInv : st.objects.invExt)
+    (hStep : untypedRetypeObject src childId dst (.schedContext b) st = .ok ((), st')) :
+    st'.objects[childId]? = some (.schedContext
+        (SeLe4n.Kernel.SchedContext.empty (SeLe4n.SchedContextId.ofObjId childId))) ∧
+      (SeLe4n.Kernel.SchedContext.empty (SeLe4n.SchedContextId.ofObjId childId)).boundThread
+        = none ∧
+      (SeLe4n.Kernel.SchedContext.empty (SeLe4n.SchedContextId.ofObjId childId)).budget
+        = SeLe4n.Kernel.Budget.zero := by
+  obtain ⟨_, _, _, _, _, _, _, hAt, -, -⟩ :=
+    untypedRetypeObject_ok_carved src dst childId (.schedContext b) st st' hObjInv hStep
+  exact ⟨hAt (by intro _ h; simp [CarveRequest.object] at h)
+    (by intro _ h; simp [CarveRequest.object] at h), rfl, rfl⟩
 
 
 

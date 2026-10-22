@@ -4012,10 +4012,10 @@ run_check "INVARIANT" rg -n 'TPH-015q checked boot refuses a configured CNode ho
 # `.untypedRetype` arm runs `untypedRetypeFromCap`; the carve is
 # `retypeFromUntyped` at the untyped's own next page (never a register value),
 # a RAM page is zeroed before the capability exists, the new capability is a
-# CDT child of the untyped's, only `.frame` is carved, and a device untyped
-# backs exactly the memory-backed kinds.
-run_check "INVARIANT" rg -n '^    \| \.object _ => untypedRetypeFromCap tid decoded\.capAddr \(decodeUntypedRetypeArgs decoded\)$' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n -U 'def untypedRetypeFromCap[^\n]*(\n([ \t][^\n]*)?)*      match carveRequestOf\? st args\.newType args\.sizeBits with' SeLe4n/Kernel/API.lean
+# CDT child of the untyped's, and a device untyped backs exactly the
+# memory-backed kinds.
+run_check "INVARIANT" rg -n -U '^    \| \.object _ =>\n        untypedRetypeFromCap tid executingCore decoded\.capAddr \(decodeUntypedRetypeArgs decoded\)$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'def untypedRetypeFromCap[^\n]*(\n([ \t][^\n]*)?)*      match carveRequestOf\? st executingCore args\.newType args\.sizeBits with' SeLe4n/Kernel/API.lean
 # WS-BP BP7.1 slice 4b (v0.36.10): a VSpace root is carved, one page, under an
 # ASID the arm picks (never 0) and the carve itself checks is free before
 # anything is written; its table base is the page it owns.
@@ -4038,12 +4038,23 @@ run_check "INVARIANT" rg -n 'the first root is registered under the least free A
 run_check "INVARIANT" rg -n '^  runCarvedRootChecks$' tests/VSpaceCapabilityBindingSuite.lean
 run_check "INVARIANT" rg -n '^pub fn untyped_retype_vspace_root\($' rust/sele4n-sys/src/lifecycle.rs
 run_check "INVARIANT" rg -n -U 'def carveRequestOf\?[^\n]*(\n([ \t][^\n]*)?)*  \| \.frame => if sizeBits = 0 then \.ok \.frame else \.error \.invalidArgument\n[^\n]*\n  \| \.pageTable => if sizeBits = 0 then \.ok \.pageTable else \.error \.invalidArgument\n  \| \.untyped =>\n      if minUntypedSizeBits ≤ sizeBits ∧ sizeBits ≤ maxUntypedSizeBits then' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n -U 'def carveRequestOf\?[^\n]*(\n([ \t][^\n]*)?)*  \| _ => \.error \.invalidArgument' SeLe4n/Kernel/API.lean
+# WS-ZA ZA5.4 part 14: every kernel object kind is carved.  A thread is made
+# in the creating core's domain with that core as its affinity (seL4's
+# `createObject` reads `ksCurDomain` and the current CPU); a CNode's radix and a
+# scheduling context's size are bounded as `Untyped_Retype` bounds them.
+run_check "INVARIANT" rg -n -U 'def carveRequestOf\?[^\n]*(\n([ \t][^\n]*)?)*  \| \.tcb =>\n      if sizeBits = 0 then\n        \.ok \(\.tcb \(st\.scheduler\.activeDomainOnCore executingCore\) executingCore\)' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'def carveRequestOf\?[^\n]*(\n([ \t][^\n]*)?)*  \| \.cnode =>\n      if minCNodeRadixBits ≤ sizeBits ∧ sizeBits ≤ maxCNodeRadixBits then' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'def CarveRequest\.object[^\n]*(\n([ \t][^\n]*)?)*  \| \.tcb dom core => \.tcb \(carvedTcb childId dom core\)\n  \| \.endpoint => \.endpoint \(Endpoint\.ofQueues \{\} \{\}\)' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n -U 'def retypeFromUntyped[^\n]*(\n([ \t][^\n]*)?)*            if !carveBaseAligned newObj\.objectType allocSize ut idx then\n              \.error \.allocationMisaligned' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n '^theorem untypedRetypeObject_ok_tcb($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n '^theorem untypedRetypeObject_ok_endpoint($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n '^theorem untypedRetypeObject_ok_cnode($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n '^theorem untypedRetypeObject_stepCovers($|[ ({:\[\]])' SeLe4n/Kernel/ReschedulePendingArms/Dispatch.lean
 run_check "INVARIANT" rg -n -U 'def untypedRetypeFromCap[^\n]*(\n([ \t][^\n]*)?)*          \| \.ok \(src, dst\) => untypedRetypeObject src vChild\.val dst req st' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U 'def untypedRetypeFromCap[^\n]*(\n([ \t][^\n]*)?)*        match validateObjIdArg args\.childId with' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U 'def resolveUntypedRetype[^\n]*(\n([ \t][^\n]*)?)*          capAddr       := args\.dstCNode\n          capDepth      := rootCn\.depth\n          requiredRight := \.write' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U 'def resolveUntypedRetype[^\n]*(\n([ \t][^\n]*)?)*      match resolveCapAddress callerTcb\.cspaceRoot srcAddr rootCn\.depth st with' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n -U 'def untypedRetypeObject[^\n]*(\n([ \t][^\n]*)?)*          match retypeFromUntyped src untypedId childId \(req\.object untypedId ut utCap\.freeIndex\)\n                req\.size st with' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n -U 'def untypedRetypeObject[^\n]*(\n([ \t][^\n]*)?)*          match retypeFromUntyped src untypedId childId \(req\.object untypedId childId ut utCap\.freeIndex\)\n                req\.size st with' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n -U 'def untypedRetypeObject[^\n]*(\n([ \t][^\n]*)?)*          match cspaceDstRefusal dst st with(\n([ \t][^\n]*)?)*            match retypeFromUntyped src untypedId childId' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n -U 'def untypedRetypeObject[^\n]*(\n([ \t][^\n]*)?)*              \.ok \(\(\), \(\(req\.scrub st1 ut utCap\.freeIndex\)\.storeCNodeWith dst\.cnode\n                \(·\.insert dst\.slot \(req\.capability childId\)\)\)\.cdtAddChild src dst \.retype\)' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n -U 'def CarveRequest\.scrub[^\n]*\n    CarveRequest → SystemState\n  \| \.frame => carveZeroFrame st \(untypedNextFrame ut idx\)\n  \| \.untyped _ => st' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
