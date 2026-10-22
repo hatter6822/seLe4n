@@ -43,7 +43,7 @@ Structure:
 * **§3 Runtime assertions** — `lake exe smp_cache_maintenance_suite`
   computes the actual per-core cache evolutions on concrete scenarios,
   including real page-table-backed states driven through the **live**
-  `.vspaceUnmap` and `.lifecycleRetype` dispatch arms.
+  `.vspaceUnmap` dispatch arm, and the untyped carve's frame scrub.
 -/
 
 namespace SeLe4n.Testing.SmpCacheMaintenance
@@ -272,25 +272,13 @@ open SeLe4n.Kernel.Concurrency
 #check @vspaceUnmapPageWithShootdownAndIcacheBroadcast_preserves_tlbInvalidationConsistent_perCore
 #check @vspaceUnmapPageWithShootdownAndIcacheBroadcast_preserves_perCore_memory_invariants
 
--- SM7.D.1 live wiring (the `.lifecycleRetype` seam, both authority forms):
+-- The kind-agnostic type read, and the carve's scrub (WS-ZA ZA5.4 part 14: the
+-- in-place retype and its instruction-cache seam are retired):
 #check @SeLe4n.Model.SystemState.getObjectType?
 #check @SeLe4n.Model.SystemState.getObjectType?_eq_some_of_getElem
 #check @SeLe4n.Model.SystemState.getObjectType?_eq_none_of_getElem
-#check @SeLe4n.Kernel.retypeIcacheOp
-#check @SeLe4n.Kernel.retypeIcacheOperand
-#check @SeLe4n.Kernel.retypeIcacheOperand_eq
-#check @SeLe4n.Kernel.retypeIcacheOp_isDomainWide
-#check @SeLe4n.Kernel.retypeIcacheOp_cleans_scrub_extent
-#check @SeLe4n.Kernel.retypeIcacheOp_discharges_scrub_obligation
-#check @SeLe4n.Kernel.lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache
-#check @SeLe4n.Kernel.lifecycleRetypeWithCleanupShootdownPerCoreIcache
-#check @SeLe4n.Kernel.lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_error_iff
-#check @SeLe4n.Kernel.lifecycleRetypeWithCleanupShootdownPerCoreIcache_error_iff
-#check @SeLe4n.Kernel.lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_ok
-#check @SeLe4n.Kernel.lifecycleRetypeWithCleanupShootdownPerCoreIcache_ok
-#check @SeLe4n.Kernel.lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_preserves_icacheCoherent_perCore
-#check @SeLe4n.Kernel.lifecycleRetypeWithCleanupShootdownPerCoreIcache_preserves_icacheCoherent_perCore
-#check @SeLe4n.Kernel.lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_refuses_vspaceRoot
+#check @SeLe4n.Kernel.carveZeroFrame_discharges_carveScrub_obligation
+#check @SeLe4n.Kernel.Architecture.zeroPage_discharges_obligation
 
 -- SM7.D carriage: freeze, congruence, boot, information flow, FFI seam:
 #check @SeLe4n.Model.FrozenSystemState.perCoreICache
@@ -631,53 +619,50 @@ private def runLiveUnmapChecks : IO Unit := do
           (allCores.all fun c => (icacheOnCore stROPost c).lines.contains lineExec)
 
 -- ----------------------------------------------------------------------------
--- §3.8  SM7.D.1 live wiring — the `.lifecycleRetype` production seam
+-- §3.8  WS-ZA ZA5.4 part 14 — the carve's scrub carries its own clean
 -- ----------------------------------------------------------------------------
 
-/-- An endpoint beside the scenario's root, the in-place retype's target. -/
-private def retypeEp : SeLe4n.ObjId := ⟨886⟩
+/-- An untyped, a CNode holding a `.retype` capability to it, and nothing else:
+the carve scenario. -/
+private def carveUt : SeLe4n.ObjId := ⟨886⟩
+private def carveCn : SeLe4n.ObjId := ⟨887⟩
 
-private def runLiveRetypeChecks : IO Unit := do
-  IO.println "-- §3.8 SM7.D.1 live `.lifecycleRetype` instruction-cache seam"
-  match vspaceMapPageWithFlush asid5 vaddrPage paddrPage permsExec (cacheState []) with
-  | .error _ => assertBool "the scenario maps the executable page" false
-  | .ok ((), stMapped) => do
-    let stAll : SystemState :=
-      allCores.foldl (fun st c => icFetchOnCore st c lineExec) stMapped
-    -- `v0.36.35`: a VSpace root is never destroyed in place — the seam
-    -- refuses it before any maintenance, leaving every core's cache as it was.
-    let vspCap : Capability :=
-      { target := .object udVsp,
-        rights := AccessRightSet.ofList [.read, .write, .grant, .retype] }
-    assertBool "the live retype seam refuses a live VSpace root (revocationRequired)"
-      (match SeLe4n.Kernel.lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache
-          core0 vspCap udVsp (.endpoint {}) stAll with
-       | .error .revocationRequired => true
-       | _ => false)
-    -- An endpoint beside it is retyped in place, and the seam drops every
-    -- core's instruction cache (IC IALLUIS) whatever the target was.
-    match storeObject retypeEp (.endpoint {}) stAll with
-    | .error _ => assertBool "the scenario stores an endpoint" false
-    | .ok ((), stEp) =>
-    let epCap : Capability :=
-      { target := .object retypeEp,
-        rights := AccessRightSet.ofList [.read, .write, .grant, .retype] }
-    match SeLe4n.Kernel.lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache
-        core0 epCap retypeEp
-        (.notification { state := .idle, 
-                         hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })  -- WS-BP BP7.1: an in-place retype never mints `.untyped`
-        stEp with
-    | .error e => assertBool s!"the live retype seam commits (got {repr e})" false
-    | .ok ((), stPost) => do
-      -- The retype re-purposes the target's backing memory: every core's
-      -- instruction cache is dropped (IC IALLUIS), so the post-state is
-      -- unconditionally coherent — no page-table side conditions needed.
-      assertBool "after the live retype EVERY core's instruction cache is cold"
-        (allCores.all fun c => (icacheOnCore stPost c).lines.isEmpty)
-      assertBool "the post-state satisfies the 14th conjunct unconditionally"
-        (icacheCoherentCheck_perCore stPost)
-      assertBool "an endpoint retype retires no ASID, so it posts no TLB round"
-        (shootdownQuiescent stPost.tlbShootdown)
+private def carveScenario : SystemState :=
+  (SeLe4n.Testing.BootstrapBuilder.empty
+    |>.withObject carveUt (.untyped
+        { regionBase := SeLe4n.PAddr.ofNat 0x200000, regionSize := 0x2000 })
+    |>.withObject carveCn (.cnode (SeLe4n.Model.CNode.ofList 0 0 0 2 [
+        (SeLe4n.Slot.ofNat 0, { target := .object carveUt,
+                                rights := AccessRightSet.ofList [.read, .write, .retype] }) ]))
+    |>.build)
+
+private def runLiveCarveChecks : IO Unit := do
+  IO.println "-- §3.8 the carve's frame scrub carries its clean-to-PoU"
+  let st := carveScenario
+  let src : SeLe4n.Kernel.CSpaceAddr := { cnode := carveCn, slot := SeLe4n.Slot.ofNat 0 }
+  let dst : SeLe4n.Kernel.CSpaceAddr := { cnode := carveCn, slot := SeLe4n.Slot.ofNat 1 }
+  match SeLe4n.Kernel.untypedRetypeObject src ⟨888⟩ dst .frame st with
+  | .error e => assertBool s!"the frame carve commits (got {repr e})" false
+  | .ok ((), stPost) =>
+    -- The carve zeroes the page and records one physical write, whose own
+    -- maintenance cleans exactly that page to the PoU and drops every core's
+    -- instruction lines.
+    assertBool "a frame carve records exactly one physical write: the page's zeroing"
+      (SeLe4n.Testing.pendingWrites stPost ==
+        SeLe4n.Testing.pendingWrites st ++
+          [Architecture.PhysicalWrite.zeroPage (SeLe4n.PAddr.ofNat 0x200000)])
+    assertBool "the zeroing's maintenance discharges the page's clean-to-PoU"
+      (match (Architecture.PhysicalWrite.zeroPage (SeLe4n.PAddr.ofNat 0x200000)).icacheMaintenance with
+       | some op => dischargesPoUClean op (SeLe4n.PAddr.ofNat 0x200000) SeLe4n.pageBytes
+       | none => false)
+  -- A kernel object is not memory a thread can execute: its carve scrubs no
+  -- page and records no maintenance.
+  match SeLe4n.Kernel.untypedRetypeObject src ⟨889⟩ dst .endpoint st with
+  | .error e => assertBool s!"the endpoint carve commits (got {repr e})" false
+  | .ok ((), stPost) =>
+    assertBool "an endpoint carve records no physical write and no instruction-cache work"
+      (SeLe4n.Testing.pendingWrites stPost == SeLe4n.Testing.pendingWrites st &&
+       stPost.pendingIcacheMaintenance == st.pendingIcacheMaintenance)
 
 -- ----------------------------------------------------------------------------
 -- §3.9  SM7.D — runtime seam + FFI encoding conformance
@@ -785,31 +770,6 @@ private def runLedgerChecks : IO Unit := do
           (stROPost.pendingIcacheMaintenance == [])
         assertBool "the non-executable unmap still posts its TLB shootdown round"
           (!(shootdownQuiescent stROPost.tlbShootdown))
-    -- Retype records its clean-then-invalidate operand even though its own
-    -- shootdown round may be absent — the residual the shootdown-diff key
-    -- could not see.  (`v0.36.35`: the target is an endpoint beside the root;
-    -- a live VSpace root is never destroyed in place.)
-    let stAll : SystemState :=
-      allCores.foldl (fun st c => icFetchOnCore st c lineExec) stMapped
-    match storeObject retypeEp (.endpoint {}) stAll with
-    | .error _ => assertBool "the scenario stores an endpoint" false
-    | .ok ((), stEp) =>
-    let authCap : Capability :=
-      { target := .object retypeEp,
-        rights := AccessRightSet.ofList [.read, .write, .grant, .retype] }
-    match SeLe4n.Kernel.lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache
-        core0 authCap retypeEp
-        (.endpoint {})  -- WS-BP BP7.1: an in-place retype never mints `.untyped`
-        stEp with
-    | .error e => assertBool s!"the retype seam commits (got {repr e})" false
-    | .ok ((), stPost) =>
-      -- The target is an `.endpoint`, whose `objectTypeAllocSize` is 64, so
-      -- the scrub zeroes [retypeEp × 64, +64) and the operand cleans exactly
-      -- that before the domain-wide invalidate.
-      assertBool "a retype records the clean-then-invalidate range operand"
-        (stPost.pendingIcacheMaintenance ==
-          [ICacheInvalidation.cleanRangeIallu
-            (SeLe4n.PAddr.ofNat (retypeEp.toNat * 64)) 64])
 
 -- ----------------------------------------------------------------------------
 -- §3.11  SM7.D.2 — the data-side dual: the clean-to-PoU obligation tripwire.
@@ -817,17 +777,15 @@ private def runLedgerChecks : IO Unit := do
 
 private def runCodeWriteObligationChecks : IO Unit := do
   IO.println "-- §3.11 SM7.D.2 kernel code-write clean-to-PoU obligation"
-  assertBool "all three kernel code-write sites are enumerated"
-    (kernelCodeWriteSites.length == 3)
+  assertBool "both kernel code-write sites are enumerated"
+    (kernelCodeWriteSites.length == 2)
   assertBool "every constructor is listed (the tripwire)"
-    ([KernelCodeWriteSite.retypeScrub, .bootImageLoad, .carveScrub].all fun st =>
+    ([KernelCodeWriteSite.bootImageLoad, .carveScrub].all fun st =>
       kernelCodeWriteSites.contains st)
   assertBool "the canonical D→I sequence covers the barriers the obligation names"
     (armv8DCacheToICacheSequence.covers CacheBarrierKind.dsb_ish &&
      armv8DCacheToICacheSequence.covers CacheBarrierKind.isb)
   -- The emission partition: every site emits (BP4.5; the carve since v0.36.32).
-  assertBool "the re-type site's clean-to-PoU is EMITTED by a live transition"
-    (kernelCodeWriteEmitted .retypeScrub)
   assertBool "the boot-image site's clean-to-PoU is EMITTED by the boot seam (BP4.5)"
     (kernelCodeWriteEmitted .bootImageLoad)
   assertBool "the carve site's clean-to-PoU is EMITTED on its zeroing (v0.36.32)"
@@ -870,7 +828,7 @@ private def runUnifyInstructionChecks : IO Unit := do
   -- needs is that 29 is inside the modeled set — which a literal cannot say and
   -- which is why the label above it had already drifted to "30".
   assertBool "…and 29 is inside the modeled set, so the discriminant is in range"
-    (SyscallId.vspaceUnifyInstruction.toNat < SyscallId.count)
+    (SyscallId.vspaceUnifyInstruction.toNat < SyscallId.encodingBound)
   assertBool "unify requires the write right"
     (syscallRequiredRight .vspaceUnifyInstruction == .write)
   -- The operand encodes to FFI tag 2 (the full D→I sequence), distinct from a
@@ -1015,56 +973,22 @@ private def runMappingAlignmentChecks : IO Unit := do
         ((Architecture.ICacheInvalidation.unifyPage alignedPa).toPaddr % 4096 == 0 &&
          stMapped.perCoreICache.size == numCores)
 
-private def runRetypeCleanToPoUChecks : IO Unit := do
-  IO.println "-- §3.13 SM7.D re-type clean-to-PoU (scrubbed-extent coverage)"
-  -- The operand is derived from the pre-state object, so it matches the extent
-  -- `scrubObjectMemory` will zero — for every object type the model allocates.
-  let sizes : List (KernelObjectType × Nat) :=
-    [(.tcb, 1024), (.endpoint, 64), (.notification, 64), (.cnode, 4096),
-     (.vspaceRoot, 4096), (.untyped, 4096), (.schedContext, 256), (.reply, 64)]
-  assertBool "the allocation sizes the scrub uses are the ones under test"
-    (sizes.all fun (t, n) => objectTypeAllocSize t == n)
-  match vspaceMapPageWithFlush asid5 vaddrPage paddrPage permsExec (cacheState []) with
-  | .error _ => assertBool "the scenario maps the executable page" false
-  | .ok ((), stMapped) => do
-    -- The live seam's operand names the target's own extent — read from
-    -- `scrubExtent`, the scrub's *own* definition of the range, rather than
-    -- recomputed here.  That single source is what makes the clean and the
-    -- zeroing incapable of drifting apart.
-    let extent := SeLe4n.Kernel.scrubExtent udVsp KernelObjectType.vspaceRoot
-    assertBool "the re-type operand cleans exactly the scrubbed extent"
-      (SeLe4n.Kernel.retypeIcacheOp udVsp stMapped ==
-        ICacheInvalidation.cleanRangeIallu extent.fst extent.snd)
-    -- The correspondence, exercised rather than asserted: dirty all of memory,
-    -- run the real scrub, and confirm the bytes it zeroed are inside the range
-    -- the operand cleans.  This is the check that fails if the two ever drift.
-    let stDirty : SystemState :=
-      { stMapped with machine := { stMapped.machine with memory := fun _ => 7 } }
-    let stScrubbed :=
-      SeLe4n.Kernel.scrubObjectMemory stDirty udVsp KernelObjectType.vspaceRoot
-    let probes : List Nat :=
-      [extent.fst.toNat, extent.fst.toNat + 1, extent.fst.toNat + extent.snd - 1]
-    assertBool "every byte the scrub zeroes lies inside the cleaned range"
-      (probes.all fun a =>
-        stScrubbed.machine.memory (SeLe4n.PAddr.ofNat a) == 0 &&
-        byteRangeContains extent.fst extent.snd (SeLe4n.PAddr.ofNat a) 1)
-    assertBool "the byte just past the scrubbed extent is untouched (bound exact)"
-      (stScrubbed.machine.memory
-        (SeLe4n.PAddr.ofNat (extent.fst.toNat + extent.snd)) == 7)
-    -- ... and it discharges the `.retypeScrub` clean-to-PoU obligation over
-    -- that very range, which `.iallu` provably would not.
-    let base := extent.fst
-    let size := extent.snd
-    assertBool "the emitted operand discharges the scrub's clean-to-PoU obligation"
-      (dischargesPoUClean (SeLe4n.Kernel.retypeIcacheOp udVsp stMapped) base size)
+private def runScrubCleanToPoUChecks : IO Unit := do
+  IO.println "-- §3.13 SM7.D the scrub's clean-to-PoU (zeroed-page coverage)"
+  -- The carve's zeroing names its page, and its operand cleans exactly that
+  -- page before the domain-wide invalidate (WS-ZA ZA5.4 part 14: the in-place
+  -- retype's per-object extent is retired with it).
+  let base := SeLe4n.PAddr.ofNat 0x200000
+  let size := SeLe4n.pageBytes
+  match (Architecture.PhysicalWrite.zeroPage base).icacheMaintenance with
+  | none => assertBool "a page's zeroing owes its clean-to-PoU" false
+  | some op => do
+    assertBool "the zeroing's operand discharges the page's clean-to-PoU obligation"
+      (dischargesPoUClean op base size)
     assertBool "the PRE-FIX operand `iallu` does NOT discharge it (the defect)"
       (!(dischargesPoUClean ICacheInvalidation.iallu base size))
     assertBool "discharging the obligation forces a domain-wide invalidate"
-      ((SeLe4n.Kernel.retypeIcacheOp udVsp stMapped).isDomainWide)
-    -- An empty slot has nothing to scrub, so no clean is owed; the bare
-    -- domain-wide invalidate remains.
-    assertBool "an absent target owes no clean (bare domain-wide invalidate)"
-      (SeLe4n.Kernel.retypeIcacheOp ⟨9999⟩ stMapped == ICacheInvalidation.iallu)
+      (op.isDomainWide)
     -- Coverage algebra, on the concrete operands: a wider clean subsumes a
     -- narrower one, `iallu` subsumes neither, and page-granular cleans cannot
     -- stand in for the domain-wide invalidate.
@@ -1094,35 +1018,6 @@ private def runRetypeCleanToPoUChecks : IO Unit := do
     assertBool "every non-range operand encodes a zero length"
       ([ICacheInvalidation.iallu, .ivauPage paddrPage, .unifyPage paddrPage].all
         fun op => op.toSize == 0)
-    -- Live, end to end: the retype leaves every core's I-cache cold AND the
-    -- ledger owing the clean.  (`v0.36.35`: the target is an endpoint beside
-    -- the root; a live VSpace root is never destroyed in place.)
-    let authCap : Capability :=
-      { target := .object retypeEp,
-        rights := AccessRightSet.ofList [.read, .write, .grant, .retype] }
-    match vspaceMapPageWithFlush asid5 vaddrPage paddrPage permsExec
-        (cacheState [(SeLe4n.Slot.ofNat 0, authCap)]) with
-    | .error _ => assertBool "the CSpaceAddr scenario maps the page" false
-    | .ok ((), stWithCap) => do
-    match storeObject retypeEp (.endpoint {}) stWithCap with
-    | .error _ => assertBool "the CSpaceAddr scenario stores an endpoint" false
-    | .ok ((), stEp) => do
-    let stAll : SystemState :=
-      allCores.foldl (fun st c => icFetchOnCore st c lineExec) stEp
-    match SeLe4n.Kernel.lifecycleRetypeWithCleanupShootdownPerCoreIcache
-        core0 { cnode := udCn, slot := SeLe4n.Slot.ofNat 0 } retypeEp
-        (.endpoint {})  -- WS-BP BP7.1: an in-place retype never mints `.untyped`
-        stAll with
-    | .error e => assertBool s!"the CSpaceAddr retype seam commits (got {repr e})" false
-    | .ok ((), stPost) => do
-      assertBool "the CSpaceAddr seam records the same range operand"
-        (stPost.pendingIcacheMaintenance ==
-          [ICacheInvalidation.cleanRangeIallu
-            (SeLe4n.PAddr.ofNat (retypeEp.toNat * 64)) 64])
-      assertBool "and still leaves every core's instruction cache cold"
-        (allCores.all fun c => (icacheOnCore stPost c).lines.isEmpty)
-      assertBool "the post-state satisfies the 14th conjunct"
-        (icacheCoherentCheck_perCore stPost)
 
 -- ----------------------------------------------------------------------------
 -- §3.15  Cross-cluster mock — the instruction-cache half of the portability
@@ -1195,12 +1090,12 @@ def runSmpCacheMaintenanceChecks : IO Unit := do
   runDmaScopeChecks
   runInvariantChecks
   runLiveUnmapChecks
-  runLiveRetypeChecks
+  runLiveCarveChecks
   runSeamConformanceChecks
   runLedgerChecks
   runCodeWriteObligationChecks
   runUnifyInstructionChecks
-  runRetypeCleanToPoUChecks
+  runScrubCleanToPoUChecks
   runMappingAlignmentChecks
   runCrossClusterReachChecks
   IO.println "===================================================="

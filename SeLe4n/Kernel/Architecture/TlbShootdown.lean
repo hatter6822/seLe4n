@@ -1311,8 +1311,8 @@ A commit allocates a *contiguous* block of generations: `lo` is the
 behind, so the rounds it opened are exactly `lo < g ≤ hi`.  A commit
 that opened no round has `lo = hi`, and the window is empty
 (`inRoundWindow_empty`).  Most maintenance-bearing syscalls open one
-round; the retype-with-shootdown wrappers open up to two (the destroyed
-and the installed ASID — `retypeShootdownAsidList`), which is why the
+round; the page teardown the untyped reset and the finalising destroyers
+share (`unmapLivePages`) opens one per mapping it removes, which is why the
 diff recovery is a window rather than a single generation. -/
 def inRoundWindow (lo hi g : Nat) : Bool := decide (lo < g ∧ g ≤ hi)
 

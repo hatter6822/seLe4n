@@ -18,8 +18,8 @@ class does not admit.
 
 Three properties, and each one has caught a different mistake in review:
 
-* **(A) No unclassified content movement.**  An arm classified `.inert` (or
-  `.clearsProvenance`) must not reach a constant that writes a content channel.
+* **(A) No unclassified content movement.**  An arm classified `.inert` must
+  not reach a constant that writes a content channel.
   A missed site here is a detector that misses real laundering — the unsafe
   direction.
 * **(B) No vacuous classification.**  An arm classified `.movesContent` must
@@ -161,7 +161,7 @@ DECLARED_TAINT_CONSUMERS = {
     # `dispatchSyscall`'s own docstring points integrators at
     # `dispatchSyscallChecked` for production user-space entry, and an integrator
     # who called it directly never reached a seam sitting one layer up — content
-    # moved with no provenance, and a retype kept the destroyed object's tags.
+    # moved with no provenance.
     # Both dispatchers now apply the plan and both entries inherit it, which is
     # why the entries no longer appear here: they name the dispatcher, not the
     # API.
@@ -1091,6 +1091,11 @@ def classification() -> dict[str, str]:
         body = body[: nxt.start()]
     out = {}
     for arm, cls in re.findall(r"\|\s*\.([A-Za-z][A-Za-z0-9']*)\s*=>\s*\.([A-Za-z]+)", body):
+        # A class this gate does not know is refused rather than given a
+        # default reading: (A) and (B) each decide one class.
+        if cls not in ("inert", "movesContent"):
+            raise RuntimeError(f"`contentFlowClass` arm `.{arm}` has class `.{cls}`, "
+                               f"which this gate does not classify")
         out[arm] = cls
     if not out:
         raise RuntimeError("`contentFlowClass` parsed to no arms")
@@ -1494,7 +1499,7 @@ def main() -> int:
         arm = arm_of(key)
         if arm in CONTENT_WRITE_EXEMPT:
             continue
-        if cls[arm] in ("inert", "clearsProvenance") and hits.get(key, 0) > 0:
+        if cls[arm] == "inert" and hits.get(key, 0) > 0:
             failures.append(
                 f"  `.{arm}` (in `{dispatcher_of(key)}`) is classified "
                 f"`.{cls[arm]}` but reaches "

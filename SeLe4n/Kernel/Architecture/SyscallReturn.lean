@@ -40,10 +40,10 @@ Plan: WS-RA RA.A.1-RA.A.8.
 
 namespace SeLe4n.Model.KernelError
 
-/-- The canonical numeric discriminant of each `KernelError` — the 55-arm
-table that previously lived only in `Platform.FFI.KernelError.toUInt32`
-(which becomes this function's `UInt32` instance, so the table exists
-exactly once).  Mirrors `rust/sele4n-types/src/error.rs` exactly;
+/-- The canonical numeric discriminant of each `KernelError` — the table
+that previously lived only in `Platform.FFI.KernelError.toUInt32` (which
+becomes this function's `UInt32` instance, so the table exists exactly once).
+Discriminant `37` is retired (`retiredDiscriminants`) and no variant has it.  Mirrors `rust/sele4n-types/src/error.rs` exactly;
 `tests/SyscallDispatchSuite.lean` round-trips the pairing. -/
 def toDiscriminant : KernelError → Nat
   | .invalidCapability             => 0
@@ -83,7 +83,7 @@ def toDiscriminant : KernelError → Nat
   | .resourceExhausted             => 34
   | .invalidCapPtr                 => 35
   | .objectStoreCapacityExceeded   => 36
-  | .allocationMisaligned          => 37
+  -- 37: retired (`retiredDiscriminants`).
   | .revocationRequired            => 38
   | .invalidArgument               => 39
   | .mmioUnaligned                 => 40
@@ -149,7 +149,7 @@ def ofDiscriminant? : Nat → Option KernelError
   | 34 => some .resourceExhausted
   | 35 => some .invalidCapPtr
   | 36 => some .objectStoreCapacityExceeded
-  | 37 => some .allocationMisaligned
+  -- 37: retired (`retiredDiscriminants`), decodes to `none`.
   | 38 => some .revocationRequired
   | 39 => some .invalidArgument
   | 40 => some .mmioUnaligned
@@ -174,13 +174,15 @@ def ofDiscriminant? : Nat → Option KernelError
 
 /-- The discriminant map is a section of its inverse: every `KernelError`
 survives the numeric round trip.  With `toDiscriminant_lt` this pins the
-map as a bijection onto `0..kernelErrorCount - 1`. -/
+map as a bijection onto the discriminants below `kernelErrorEncodingBound`
+that are not retired. -/
 theorem ofDiscriminant?_toDiscriminant (e : KernelError) :
     ofDiscriminant? (toDiscriminant e) = some e := by
   cases e <;> rfl
 
-/-- **The size of the `KernelError` enumeration**, named once so no caller has
-to write the literal.
+/-- **One past the largest `KernelError` discriminant**, named once so no
+caller has to write the literal: every value below it is a variant's or a
+retired one (`retiredDiscriminants`).
 
 Lean gives an `inductive` no constructor list to measure, so the figure is a
 literal — but it is a literal with a *machine-checked meaning*: `_lt` below
@@ -190,33 +192,57 @@ the **least** strict upper bound and cannot drift up either.  Before it existed
 the number was written out at nine sites across Lean, the suites and three Rust
 crates, and WS-RR RR7.14 found one of them stated as prose in a trace line that
 kept saying `57` while the check beside it had moved to `58`. -/
-def kernelErrorCount : Nat := 58
+def kernelErrorEncodingBound : Nat := 58
+
+/-- **Retired discriminants**, reserved and never reassigned: `37`, the
+`allocationMisaligned` the carve returned before it rounded the free index up
+to the object's boundary (WS-ZA ZA5.4 part 14).  No variant has one, and
+`ofDiscriminant?` decodes one to `none`. -/
+def retiredDiscriminants : List Nat := [37]
 
 /-- Every discriminant is inside the table. -/
-theorem toDiscriminant_lt (e : KernelError) : toDiscriminant e < kernelErrorCount := by
+theorem toDiscriminant_lt (e : KernelError) : toDiscriminant e < kernelErrorEncodingBound := by
   cases e <;> decide
 
 /-- …and the bound is **tight**: the last in-range value is inhabited, so
-`kernelErrorCount` is the least strict upper bound rather than merely one.
+`kernelErrorEncodingBound` is the least strict upper bound rather than merely one.
 Without this half the constant could be raised silently and every consumer
 would still pass while covering a range with a hole at the top. -/
-theorem kernelErrorCount_tight :
-    (ofDiscriminant? (kernelErrorCount - 1)).isSome
-      ∧ ofDiscriminant? kernelErrorCount = none := by
+theorem kernelErrorEncodingBound_tight :
+    (ofDiscriminant? (kernelErrorEncodingBound - 1)).isSome
+      ∧ ofDiscriminant? kernelErrorEncodingBound = none := by
   constructor
   · rfl
   · rfl
 
 /-- The other direction of the round trip, over the whole in-range domain:
-below `kernelErrorCount` the inverse hits and maps back to the same
-discriminant; `kernelErrorCount` itself (the first out-of-range value) is
-rejected. -/
+below `kernelErrorEncodingBound` every discriminant that is not retired hits
+and maps back to itself; `kernelErrorEncodingBound` itself (the first
+out-of-range value) is rejected. -/
 theorem toDiscriminant_ofDiscriminant? :
-    (∀ n, n < kernelErrorCount → ((ofDiscriminant? n).map toDiscriminant) = some n) ∧
-      ofDiscriminant? kernelErrorCount = none := by
+    (∀ n, n < kernelErrorEncodingBound → retiredDiscriminants.contains n = false →
+        ((ofDiscriminant? n).map toDiscriminant) = some n) ∧
+      ofDiscriminant? kernelErrorEncodingBound = none := by
   constructor
   · decide
   · rfl
+
+/-- Every number decodes to an error exactly when it is below
+`kernelErrorEncodingBound` and not retired. -/
+theorem ofDiscriminant?_isSome_iff (n : Nat) :
+    (ofDiscriminant? n).isSome =
+      (decide (n < kernelErrorEncodingBound) && !retiredDiscriminants.contains n) := by
+  match n with
+  | 0  | 1  | 2  | 3  | 4  | 5  | 6  | 7  | 8  | 9
+  | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19
+  | 20 | 21 | 22 | 23 | 24 | 25 | 26 | 27 | 28 | 29
+  | 30 | 31 | 32 | 33 | 34 | 35 | 36 | 37 | 38 | 39
+  | 40 | 41 | 42 | 43 | 44 | 45 | 46 | 47 | 48 | 49
+  | 50 | 51 | 52 | 53 | 54 | 55 | 56 | 57 => rfl
+  | n + 58 => simp [ofDiscriminant?, kernelErrorEncodingBound, retiredDiscriminants]
+
+/-- The retired `allocationMisaligned` discriminant names no error. -/
+theorem ofDiscriminant?_retired : ofDiscriminant? 37 = none := rfl
 
 end SeLe4n.Model.KernelError
 
@@ -284,7 +310,6 @@ def syscallReturnShape : SyscallId → ReturnShape
   -- **WS-BP BP7.1 (`v0.36.6`)**: a reset returns nothing — what it produced is
   -- the untyped's memory, which the next carve hands out.
   | .untypedReset          => .unit
-  | .lifecycleRetype       => .unit
   | .vspaceMap             => .unit
   | .vspaceUnmap           => .unit
   | .serviceRegister       => .unit
@@ -1370,20 +1395,21 @@ theorem errorLabel_roundtrip (e : KernelError) :
   exact KernelError.ofDiscriminant?_toDiscriminant e
 
 /-- The decode side over the whole status range: the base plus
-`0..kernelErrorCount - 1` hits the errors and re-encodes to itself, the base
-plus `kernelErrorCount` (the first
-discriminant no error has) is rejected, and the label just *below* the base
+each discriminant below `kernelErrorEncodingBound` that is not retired hits
+an error and re-encodes to itself, the base plus `kernelErrorEncodingBound`
+(the first discriminant past the table) is rejected, and the label just *below* the base
 is not an error at all — so the range boundary is pinned from both sides on
 the inhabited label space. -/
 theorem errorLabel_zero_iff_success :
     ofErrorLabel? 0 = none ∧
-      (∀ n, n < KernelError.kernelErrorCount →
+      (∀ n, n < KernelError.kernelErrorEncodingBound →
+        KernelError.retiredDiscriminants.contains n = false →
         ((ofErrorLabel? (errorLabelBase + n)).map errorLabel) = some (errorLabelBase + n)) ∧
-      ofErrorLabel? (errorLabelBase + KernelError.kernelErrorCount) = none ∧
+      ofErrorLabel? (errorLabelBase + KernelError.kernelErrorEncodingBound) = none ∧
       ofErrorLabel? (errorLabelBase - 1) = none := by
   refine ⟨ofErrorLabel?_zero, ?_, ?_, ?_⟩
-  · intro n hn
-    have hRt := KernelError.toDiscriminant_ofDiscriminant?.1 n hn
+  · intro n hn hNr
+    have hRt := KernelError.toDiscriminant_ofDiscriminant?.1 n hn hNr
     unfold ofErrorLabel? errorLabel
     rw [if_pos (Nat.le_add_right _ _), Nat.add_sub_cancel_left]
     cases hE : KernelError.ofDiscriminant? n with
@@ -1400,11 +1426,11 @@ theorem errorLabel_zero_iff_success :
 
 /-- RA.A.6 — every status label fits the 20-bit `MessageInfo` label field:
 the range is sized so `errorLabelBase + 255 = maxLabel`, and every
-discriminant is below `KernelError.kernelErrorCount`. -/
+discriminant is below `KernelError.kernelErrorEncodingBound`. -/
 theorem kernelErrorFitsLabel (e : KernelError) :
     errorLabel e ≤ MessageInfo.maxLabel := by
   have h := KernelError.toDiscriminant_lt e
-  rw [show KernelError.kernelErrorCount = 58 from rfl] at h
+  rw [show KernelError.kernelErrorEncodingBound = 58 from rfl] at h
   unfold errorLabel
   rw [errorLabelBase_eq, show MessageInfo.maxLabel = 0xFFFFF by decide]
   omega
@@ -1434,7 +1460,7 @@ def errorFrame (e : KernelError) : SyscallReturnFrame :=
 /-- An error frame's `x1` decodes back to the `MessageInfo` that names the
 error — the encode side is inside the decoder's fail-closed bounds.  Every
 `errorLabel` is a concrete literal per variant, so the whole statement is
-decided by evaluation, `KernelError.kernelErrorCount` cases at a time. -/
+decided by evaluation, `KernelError.kernelErrorEncodingBound` cases at a time. -/
 theorem errorFrame_x1_decodes (e : KernelError) :
     MessageInfo.decode (errorFrame e).x1.toNat =
       some { length := 0, extraCaps := 0, label := errorLabel e } := by

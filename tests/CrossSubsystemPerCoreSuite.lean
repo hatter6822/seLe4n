@@ -571,8 +571,6 @@ private def runModifiedFieldsChecks : IO Unit := do
   -- lists each carry what their operations write beyond the store: the
   -- audit-round correction (v0.34.109) — `storeObject`'s set alone was FALSE of
   -- both, and the theorems at the widened lists are what say so.
-  assertBool "retype write-set IS storeObject's"
-    (decide (lifecycleRetypeObject_modifiedFields = storeObject_modifiedFields))
   assertBool "IPC write-set is storeObject's plus scheduler"
     (decide (ipcEndpointOp_modifiedFields =
                storeObject_modifiedFields ++ [.scheduler]))
@@ -628,13 +626,12 @@ private def runModifiedFieldsChecks : IO Unit := do
 
 /-- Elaboration pins for the write-set surface: the completeness theorem that
 holds `StateField` to `SystemState`, and one honesty theorem per declared list —
-six lists, six theorems, the dual-queue and capability composites included. -/
+five lists, five theorems, the dual-queue and capability composites included. -/
 private def writeSetSurfaceElaborates : Bool :=
   have _ := @SystemState.eq_of_fieldEq_all
   have _ := @storeObject_preservesFieldsOutside
   have _ := @revokeService_preservesFieldsOutside
   have _ := @serviceRegisterDependency_preservesFieldsOutside
-  have _ := @lifecycleRetypeObject_preservesFieldsOutside
   have _ := @cspaceMintWithCdt_preservesFieldsOutside
   have _ := @cspaceCopy_preservesFieldsOutside
   have _ := @cspaceMove_preservesFieldsOutside

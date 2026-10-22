@@ -9,7 +9,7 @@
 
 import SeLe4n.Kernel.SlotConfinement.Legs
 import SeLe4n.Kernel.Lifecycle.ResumeFootprint
-import SeLe4n.Kernel.Lifecycle.Operations.RetypeFootprint
+import SeLe4n.Kernel.Lifecycle.Operations.CleanupFootprint
 import SeLe4n.Kernel.IPC.CrossCore.SuspendFootprint
 
 /-!
@@ -1069,7 +1069,7 @@ theorem priorityRescheduleOnCore_confinedToCores (st st' : SystemState)
     | exact absurd h (by simp)
 
 -- WS-RR RR8.12 Cut C3b-iii (`v0.35.169`): `threadOccupiedCores` moved to the
--- production `SeLe4n/Kernel/Lifecycle/Operations/RetypeFootprint.lean` (via
+-- production `SeLe4n/Kernel/Lifecycle/Operations/CleanupFootprint.lean` (via
 -- `SyscallSchedFootprint.lean` until WS-LS LS2.5) with the retype write
 -- set that reads it.  Its lemma family stays here: those are about the destroy
 -- sweep's confinement, which is this module's question.

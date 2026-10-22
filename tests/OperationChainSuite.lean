@@ -55,36 +55,37 @@ private def cdtNodeOf (st : SystemState) (ref : SeLe4n.Model.SlotRef) :
 private def assertInvariants (label : String) (st : SystemState) : IO Unit :=
   assertStateInvariantsFor label st.objectIndex st
 
-private def chain1RetypeMintRevoke : IO Unit := do
+private def chain1CarveMintRevoke : IO Unit := do
+  let utId : SeLe4n.ObjId := ⟨202⟩
   let targetId : SeLe4n.ObjId := ⟨200⟩
   let cnodeId : SeLe4n.ObjId := ⟨201⟩
-  let authSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := (SeLe4n.Slot.ofNat 0) }
+  let utSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := (SeLe4n.Slot.ofNat 0) }
   let dstSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := (SeLe4n.Slot.ofNat 1) }
+  let authSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := (SeLe4n.Slot.ofNat 2) }
   let st0 :=
     (BootstrapBuilder.empty
-      |>.withObject targetId (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
-      |>.withObject cnodeId (.cnode (SeLe4n.Model.CNode.ofSlots 0 0 0 1 (SeLe4n.UniqueSlotMap.ofListWF [
-            ((SeLe4n.Slot.ofNat 0), { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant, .retype] })
+      |>.withObject utId (.untyped
+          { regionBase := SeLe4n.PAddr.ofNat 0x100000, regionSize := 0x1000 })
+      |>.withObject cnodeId (.cnode (SeLe4n.Model.CNode.ofSlots 0 0 0 2 (SeLe4n.UniqueSlotMap.ofListWF [
+            ((SeLe4n.Slot.ofNat 0), { target := .object utId, rights := AccessRightSet.ofList [.read, .write, .retype] })
           ])))
-      |>.withLifecycleObjectType targetId .notification
+      |>.withLifecycleObjectType utId .untyped
       |>.withLifecycleObjectType cnodeId .cnode
       |>.buildChecked)
-
-  let (_, st1) ← expectOkSt "chain1: lifecycleRetypeObject"
-    (SeLe4n.Kernel.Internal.lifecycleRetypeObject authSlot targetId (.endpoint {}) st0)
-  -- W5-E: Verify post-state mutation — target retyped to endpoint
+  -- WS-ZA ZA5.4 part 14: the endpoint is carved from the untyped into slot 2.
+  let (_, st1) ← expectOkSt "chain1: untypedRetypeObject"
+    (SeLe4n.Kernel.untypedRetypeObject utSlot targetId authSlot .endpoint st0)
   match st1.objects[targetId]? with
-  | some (.endpoint _) => expect "chain1: target retyped to endpoint" true
-  | _ => throw <| IO.userError "chain1: target not retyped to endpoint"
+  | some (.endpoint _) => expect "chain1: an endpoint is carved at the child id" true
+  | _ => throw <| IO.userError "chain1: no endpoint at the child id after the carve"
   let (_, st2) ← expectOkSt "chain1: cspaceMint"
     (SeLe4n.Kernel.cspaceMint authSlot dstSlot (AccessRightSet.ofList [.read]) none st1)
-  -- W5-E: Verify post-state mutation — minted cap in destination slot
   match st2.objects[cnodeId]? with
   | some (.cnode cn) => expect "chain1: mint dest slot populated" ((cn.lookup (((SeLe4n.Slot.ofNat 1) : SeLe4n.Slot))).isSome)
   | _ => throw <| IO.userError "chain1: CNode not found after mint"
   let (_, st3) ← expectOkSt "chain1: cspaceRevokeCdtFinalising"
     (SeLe4n.Kernel.cspaceRevokeCdtFinalising bootCoreId dstSlot st2)
-  assertInvariants "chain1: retype→mint→revoke" st3
+  assertInvariants "chain1: carve→mint→revoke" st3
 
 private def chain2SendSendReceiveFifo : IO Unit := do
   let epId : SeLe4n.ObjId := ⟨210⟩
@@ -1511,7 +1512,7 @@ So this drives the revocation on that state and asserts what revocation
 must leave alone: the revoked slot itself, the independent sibling, the sibling's
 node (still revocable), and a parked transfer from the sibling, which lands.  The
 retired reading is computed beside it — the local `cspaceRevoke`, still an
-operation (`lifecycleRevokeDeleteRetype` runs it) — so every assertion is known to
+operation (the non-interference catalogue runs it) — so every assertion is known to
 discriminate: it sweeps the sibling and strands the node.  And PR #873 round
 18's hole (this scenario was `revokeSweptSiblingBlocksPendingTransfer` until
 `v0.36.1`) stays closed on that retired state: a sender parked against a slot that was emptied transfers
@@ -2587,27 +2588,38 @@ private def chain28SyscallVSpaceOps : IO Unit := do
   | .ok _ =>
     throw <| IO.userError "chain28: cross-address-space unmap was ALLOWED (capability binding regressed)"
 
-/-- T7-C: Lifecycle retype via syscallEntry (syscallId=8). -/
-private def chain29SyscallLifecycleRetype : IO Unit := do
-  let targetId : SeLe4n.ObjId := ⟨800⟩
-  -- Retype target endpoint to notification: x2=targetObj(800), x3=type(2=notification), x4=size(0)
-  let st0 := buildSyscallState 8 0 targetId
-    (AccessRightSet.ofList [.read, .write])
-    [(targetId, .endpoint {})]
-    [(2, 800), (3, 2), (4, 0)]  -- targetObj=800, newType=notification(2), size=0
-    [(targetId, .endpoint)]
+/-- WS-ZA ZA5.4 part 14: a carve via `syscallEntry` (syscall 36), and the retired
+number 8 refused at decode.  x2 = type word (notification, 2), x3 = child id,
+x4 = the destination CNode's capability address (slot 1, the caller's root,
+writable), x5 = destination slot. -/
+private def chain29SyscallCarve : IO Unit := do
+  let utId : SeLe4n.ObjId := ⟨800⟩
+  let child : SeLe4n.ObjId := ⟨801⟩
+  let rootCap : Capability :=
+    { target := .object ⟨501⟩, rights := AccessRightSet.ofList [.read, .write] }
+  let st0 := buildSyscallState 36 0 utId
+    (AccessRightSet.ofList [.read, .write, .retype])
+    [(utId, .untyped { regionBase := SeLe4n.PAddr.ofNat 0x100000, regionSize := 0x1000 })]
+    [(2, 2), (3, 801), (4, 1), (5, 2)]
+    [(utId, .untyped)]
+    [(1, rootCap)]
   match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 st0 with
   | .ok (_, stAfter) =>
-    match stAfter.objects[targetId]? with
+    match stAfter.objects[child]? with
     | some (.notification _) =>
-      IO.println "operation-chain check passed [chain29: lifecycleRetype dispatch]"
-    | some other =>
-      IO.println s!"operation-chain check passed [chain29: lifecycleRetype dispatched (object type: {other.objectType})]"
-    | none => throw <| IO.userError "chain29: target object not found after retype"
+      IO.println "operation-chain check passed [chain29: untypedRetype dispatch carved a notification]"
+    | _ => throw <| IO.userError "chain29: no notification at the child id after the carve"
   | .error err =>
-    -- lifecycleRetype may fail due to authority checks — that's fine,
-    -- the key is that dispatch reached the correct handler
-    IO.println s!"operation-chain check passed [chain29: lifecycleRetype dispatch reached ({toString err})]"
+    throw <| IO.userError s!"chain29: untypedRetype dispatch failed ({toString err})"
+  let stRetired := buildSyscallState 8 0 utId
+    (AccessRightSet.ofList [.read, .write, .retype])
+    [(utId, .untyped { regionBase := SeLe4n.PAddr.ofNat 0x100000, regionSize := 0x1000 })]
+    [(2, 2), (3, 801), (4, 1), (5, 2)]
+    [(utId, .untyped)]
+    [(1, rootCap)]
+  match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 stRetired with
+  | .error _ => IO.println "operation-chain check passed [chain29: retired syscall 8 refused]"
+  | .ok _ => throw <| IO.userError "chain29: the retired syscall number 8 dispatched"
 
 /-- T7-C: Service syscall dispatch — serviceRegister, serviceQuery, serviceRevoke. -/
 private def chain30SyscallServiceOps : IO Unit := do
@@ -2913,7 +2925,7 @@ private def chain34ResolveExtraCapsSilentDrop : IO Unit := do
   IO.println "operation-chain check passed [chain34 resolveExtraCaps silent-drop: true]"
 
 private def runOperationChainSuite : IO Unit := do
-  chain1RetypeMintRevoke
+  chain1CarveMintRevoke
   chain2SendSendReceiveFifo
   chain3MapLookupUnmapLookup
   chain4ServiceRegistryDependencyGraph
@@ -2951,7 +2963,7 @@ private def runOperationChainSuite : IO Unit := do
   chain26BootSequence
   chain27SyscallCSpaceOps
   chain28SyscallVSpaceOps
-  chain29SyscallLifecycleRetype
+  chain29SyscallCarve
   chain30SyscallServiceOps
   chain31SyscallReply
   chain32SyscallCall

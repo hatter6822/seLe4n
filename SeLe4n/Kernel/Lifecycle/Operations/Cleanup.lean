@@ -42,11 +42,11 @@ namespace SeLe4n.Kernel
 
 open SeLe4n.Model
 
-/-- Lifecycle authority required to retype an object identity in this slice.
+/-- Lifecycle authority required to carve from an untyped: the capability must
+target the untyped directly and include `retype` rights.
 
-U-H14: The authority capability must target the object directly and include
-`retype` rights. This matches the API dispatch mapping (`.lifecycleRetype => .retype`
-in `requiredRight`). Previously checked `.write`, creating a mismatch where
+U-H14: this matches the API dispatch mapping (`.untypedRetype => .retype` in
+`syscallRequiredRight`). Previously checked `.write`, creating a mismatch where
 callers with `.retype` but not `.write` were incorrectly rejected. -/
 def lifecycleRetypeAuthority (cap : Capability) (target : SeLe4n.ObjId) : Bool :=
   decide (cap.target = .object target) && Capability.hasRight cap .retype

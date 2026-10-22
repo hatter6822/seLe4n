@@ -1264,16 +1264,16 @@ private def runSyscallSchedResolverScenarios : IO Unit := do
         decide (schedLockSetForSyscall sid
           { caller := tid0, targetThread := some tid0, targetObject := some scId0.toObjId,
             affinity := some (some core2) } bootCoreId st = none))
-  -- (v) ...and the sixteen the inventory names are exactly the ones the `match`
+  -- (v) ...and the fifteen the inventory names here are exactly the ones the `match`
   -- can answer: a declared arm listed here that had become unconditionally
   -- `none` is what the per-arm `_isSome_iff` family refuses, and this is the
   -- runtime reading of the same fact for the arms this fixture can supply.
-  assertBool "the inventory names sixteen arms"
+  assertBool "the inventory names fifteen of these arms"
     (decide (([SyscallId.tcbSuspend, .tcbResume, .tcbSetPriority, .tcbSetMCPriority,
       .tcbSetAffinity, .schedContextConfigure, .schedContextBind, .schedContextUnbind,
-      .lifecycleRetype, .notificationSignal, .notificationWait,
+      .notificationSignal, .notificationWait,
       .send, .receive, .call, .reply, .replyRecv].filter
-        (fun sid => declaredSchedFootprintSyscall sid)).length = 16))
+        (fun sid => declaredSchedFootprintSyscall sid)).length = 15))
 
 def main : IO Unit := do
   IO.println "=== WS-SM SM5.H — Per-core CBS suite ==="

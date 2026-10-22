@@ -300,7 +300,7 @@ decode read, the IPC-buffer fill writes one core's TLB, and the dispatch is a
 stage. -/
 theorem syscallEntryChecked_runQueueEntryStage {ctx : LabelingContext}
     {layout : SeLe4n.SyscallRegisterLayout} {e : CoreId} {regCount : Nat}
-    {st st' : SystemState} (hDet : entryRetypeDetached e layout regCount st)
+    {st st' : SystemState}
     (E : EntryPremises st)
     (hNI : ∀ tid, st.scheduler.currentOnCore e = some tid → isIdleThreadId tid = false)
     (h : syscallEntryChecked ctx layout e regCount st = .ok ((), st')) :
@@ -324,7 +324,6 @@ theorem syscallEntryChecked_runQueueEntryStage {ctx : LabelingContext}
   have hF := RunQueueStage.of_frame (st := st) (st' := { st with perCoreTlb := t }) rfl rfl rfl
   exact hF.entry.trans
     (dispatchSyscallChecked_runQueueEntryStage ctx decoded tid e _ st'
-      (retypeDetachedFor_perCoreTlb (hDet tid regs s decoded hCur hLk hDec))
       ((E.of_ipcFrame hF (IpcFrame.of_frame rfl fun _ => rfl)).arm hCur (hNI tid hCur)) h)
 
 /-- **The ABI dispatch keeps the agreement**: the argument spill, then the
@@ -332,9 +331,6 @@ checked entry, a capability-fault delivery, or a refusal record. -/
 theorem syscallDispatchFromAbi_runQueueEntryStage {ctx : LabelingContext} {e : CoreId}
     {syscallId : UInt32} {x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64}
     {st st' : SystemState} {outcome : Architecture.SyscallOutcome}
-    (hDet : ∀ tid, st.scheduler.currentOnCore e = some tid →
-      entryRetypeDetached e SeLe4n.arm64DefaultLayout 32
-        (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5))
     (E : EntryPremises st)
     (h : Platform.FFI.syscallDispatchFromAbi ctx e syscallId x0 x1 x2 x3 x4 x5
       ipcBufferAddr elr spsr spEl0 x30 st = .ok (outcome, st')) :
@@ -379,7 +375,7 @@ theorem syscallDispatchFromAbi_runQueueEntryStage {ctx : LabelingContext} {e : C
         (by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq]))).entry
   · rename_i hE
     cases h
-    exact hW.entry.trans (syscallEntryChecked_runQueueEntryStage (hDet tid hCur) E1
+    exact hW.entry.trans (syscallEntryChecked_runQueueEntryStage E1
       (fun t ht => by rw [hCur1] at ht; cases ht; exact hNI) hE)
 
 /-- The caller's return staging writes its TCB's return frame and, when it is
@@ -407,16 +403,13 @@ ledger drains. -/
 theorem syscallDispatchCrossCoreStep_runQueueEntryStage {ctx : LabelingContext} {e : CoreId}
     {syscallId : UInt32} {x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64}
     {st : SystemState}
-    (hDet : ∀ tid, st.scheduler.currentOnCore e = some tid →
-      entryRetypeDetached e SeLe4n.arm64DefaultLayout 32
-        (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5))
     (E : EntryPremises st) :
     SystemState.RunQueueEntryStage st (syscallDispatchCrossCoreStep ctx e syscallId x0 x1 x2 x3 x4 x5
       ipcBufferAddr elr spsr spEl0 x30 st).2 := by
   obtain ⟨outcome, st', hD⟩ := Platform.FFI.syscallDispatchFromAbi_total ctx e syscallId
     x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st
   rw [syscallDispatchCrossCoreStep_of_ok hD]
-  exact (syscallDispatchFromAbi_runQueueEntryStage hDet E hD).trans
+  exact (syscallDispatchFromAbi_runQueueEntryStage E hD).trans
     ((((stageCallerReturnFor_runQueueStage _ _ e outcome).entry.trans
     (scheduleLocalSuccessorFrom_runQueueEntryStage _ _ e)).trans
     (settleResidencyOnCore_runQueueEntryStage _ e)).trans (clearLedgers_runQueueStage' _).entry)
@@ -428,13 +421,6 @@ theorem syscallDispatchEntryState_runQueueEntryStage (ctx : LabelingContext) (e 
     (syscallId : UInt32) (trapped : Architecture.InFlightContext)
     (frame : Option Architecture.InFlightContext) (bytes : ByteArray) (n : Nat)
     (st : SystemState)
-    (hDet : ∀ tid, (Architecture.IpcBufferRead.syncUserWords
-        (Architecture.saveCapturedSyscallFrame st e frame) bytes n).scheduler.currentOnCore e
-          = some tid →
-      entryRetypeDetached e SeLe4n.arm64DefaultLayout 32
-        (Platform.FFI.writeFfiRegistersToTcb (Architecture.IpcBufferRead.syncUserWords
-          (Architecture.saveCapturedSyscallFrame st e frame) bytes n) tid syscallId
-          trapped.x0 trapped.x1 trapped.x2 trapped.x3 trapped.x4 trapped.x5))
     (E : EntryPremises st) :
     SystemState.RunQueueEntryStage st (Architecture.IpcBufferRead.clearUserWords
       (syscallDispatchCrossCoreBracketedStepWords ctx e syscallId trapped
@@ -455,7 +441,7 @@ theorem syscallDispatchEntryState_runQueueEntryStage (ctx : LabelingContext) (e 
     (by rw [Architecture.IpcBufferRead.syncUserWords_scheduler])
     (by rw [Architecture.IpcBufferRead.syncUserWords_scheduler])
     (by rw [Architecture.IpcBufferRead.syncUserWords_scheduler])
-  (hS.entry.trans (syscallDispatchCrossCoreStep_runQueueEntryStage hDet (E.of_ipcFrame hS hF))).trans
+  (hS.entry.trans (syscallDispatchCrossCoreStep_runQueueEntryStage (E.of_ipcFrame hS hF))).trans
     hC.entry
 
 /-! ### The suspend, timer, reschedule, fault and FP/SIMD entries -/

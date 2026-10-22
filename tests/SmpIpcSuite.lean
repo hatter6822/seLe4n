@@ -4760,12 +4760,13 @@ private def runCallReplyFootprintChecks : IO Unit := do
           replenishCountFor stOutE c fpClient2Sc == replenishCountFor stL c fpClient2Sc))
 
 -- ============================================================================
--- §3.31 the retype's TCB cleanup ends the thread's reservation the way the
---        suspend's G3 does (register row 62, `v0.35.164`)
+-- §3.31 the destroy cleanup's TCB arm ends the thread's reservation the way
+--        the suspend's G3 does (register row 62, `v0.35.164`)
 -- ============================================================================
 
-/-! `lifecyclePreRetypeCleanup`'s TCB arm — the destroy path every `.lifecycleRetype`
-runs — used to run the bare `cleanupDonatedSchedContext` on a `.donated` holder
+/-! `lifecyclePreRetypeCleanup`'s TCB arm — the destroy cleanup, kept for the
+finalising delete (seL4's `finaliseCap`) now that the in-place retype that ran it
+is retired (WS-ZA ZA5.4 part 14) — used to run the bare `cleanupDonatedSchedContext` on a `.donated` holder
 (a return that migrates no replenishment: register row 57's class, on the destroy
 path) and, on a `.bound` thread, to remove only the `scThreadIndex` entry, leaving
 the SchedContext bound to a destroyed thread with its replenishment queued on that
@@ -4775,13 +4776,13 @@ second — and no theorem claimed either across the retype, which is how both we
 silent rather than wrong.  Since `v0.35.164` the arm is `cancelDonationArmOnCore`,
 the suspend pipeline's G3 match named: seL4's `finaliseCap` → `unbindFromSc`.
 
-Both halves compute the RETIRED reading beside the live retype on the same state
+Both halves compute the RETIRED reading beside the kept cleanup on the same state
 (`retiredRetypeTcbCleanup`: the bare pop, the index-only removal, then the same
 sweep and the same store), so every assertion is known to discriminate; the
 CONTROL is an `.unbound` target, where the arm is the identity and the two readings
-agree.  The live half drives `lifecycleRetypeDirectWithCleanup` — the wrapper the
-`.lifecycleRetype` arm reaches — with a `.retype` capability on the target, so the
-post-states are the kernel's own. -/
+agree.  The kept half runs `lifecyclePreRetypeCleanup` itself and then stores the
+replacement over the destroyed object (`destroyAfterCleanup`), so the post-states
+are the cleanup's own. -/
 
 /-- The decidable reading of `schedContextBindingConsistent`, both directions,
 over the object index: every `.bound scId` TCB has a SchedContext naming it back,
@@ -4809,23 +4810,6 @@ private def schedContextBindingConsistentB (st : SystemState) : Bool :=
         | none => true
     | _ => true
 
-/-- `st` with the lifecycle object-type metadata the retype guard reads
-(`lifecycleRetypeDirectCommit` refuses a target whose recorded type disagrees with the
-store), which the fixture builder does not record. -/
-private def withRetypeTypes (st : SystemState)
-    (typed : List (SeLe4n.ObjId × KernelObjectType)) : SystemState :=
-  { st with lifecycle := { objectTypes := RobinHood.RHTable.ofList typed } }
-
-/-- The object types of the donation fixture's five objects. -/
-private def donFixtureTypes : List (SeLe4n.ObjId × KernelObjectType) :=
-  [(donServer.toObjId, .tcb), (donClient.toObjId, .tcb), (scClient.toObjId, .schedContext),
-   (donEp, .endpoint), (donReply.toObjId, .reply)]
-
-/-- The authority a `.lifecycleRetype` presents: a capability on the target with
-the `.retype` right (`lifecycleRetypeAuthority`). -/
-private def retypeCapOn (target : SeLe4n.ObjId) : Capability :=
-  { target := .object target, rights := AccessRightSet.ofList [.retype] }
-
 /-- The replacement object: an empty endpoint, well-formed in any store. -/
 private def retypeReplacement : KernelObject := .endpoint (Endpoint.ofQueues {} {})
 
@@ -4844,10 +4828,19 @@ private def retiredRetypeTcbCleanup (st : SystemState) (tcb : TCB) : Option Syst
         | _ => st1
       some ((cleanupTcbReferences st2 tcb.tid).withObjectStored tcb.tid.toObjId retypeReplacement)
 
-/-- The LIVE retype of a TCB through the wrapper the `.lifecycleRetype` arm reaches. -/
+/-- The kept destroy cleanup on `target`, then the replacement stored over the
+destroyed object — the cleanup's own post-state, read with the object gone. -/
+private def destroyAfterCleanup (st : SystemState) (target : SeLe4n.ObjId) :
+    Option SystemState :=
+  match st.getObject? target with
+  | none => none
+  | some obj =>
+      (okExcept (lifecyclePreRetypeCleanup st target obj retypeReplacement)).map
+        (·.withObjectStored target retypeReplacement)
+
+/-- The kept destroy cleanup of a TCB. -/
 private def liveRetypeTcb (st : SystemState) (tid : SeLe4n.ThreadId) : Option SystemState :=
-  (okExcept (lifecycleRetypeDirectWithCleanup (retypeCapOn tid.toObjId) tid.toObjId
-    retypeReplacement st)).map Prod.snd
+  destroyAfterCleanup st tid.toObjId
 
 private def boundThreadOf (st : SystemState) (scId : SeLe4n.SchedContextId) :
     Option SeLe4n.ThreadId :=
@@ -4856,13 +4849,13 @@ private def boundThreadOf (st : SystemState) (scId : SeLe4n.SchedContextId) :
   | none => none
 
 private def runRetypeReservationChecks : IO Unit := do
-  IO.println "--- §3.31 register row 62: the retype's TCB cleanup ends the thread's reservation ---"
+  IO.println "--- §3.31 register row 62: the destroy cleanup's TCB arm ends the thread's reservation ---"
   -- (a) DONATED: the server holds the client's context on loan, homed on core 1
   --     with the replenishment there (§3.28's three-operation prefix).
   match preReturnHandoffState stPreReturnBase with
   | none => assertBool "row 62 setup: call, rendezvous and hand-off succeed" false
   | some stDon0 =>
-    let stDon := withRetypeTypes stDon0 donFixtureTypes
+    let stDon := stDon0
     match stDon.getTcb? donServer with
     | none => assertBool "row 62 setup: the server resolves" false
     | some serverTcb =>
@@ -4883,16 +4876,16 @@ private def runRetypeReservationChecks : IO Unit := do
             && replenishCountFor stOld c1 scClient == 1 && replenishCountFor stOld c0 scClient == 0)
         assertBool "(a) NEGATIVE (the defect): the retired retype FALSIFIES the affinity invariant"
           (!replenishAffinityConsistentB stOld)
-      -- REFUSAL: the client waits on the holder for its reply, so the live retype
+      -- REFUSAL: the client waits on the holder for its reply, so the cleanup
       -- refuses (`revocationRequired`): destroying a thread with reply waiters would
-      -- leave them naming a server whose id a later retype reuses.
-      assertBool "(a) the live retype of a holder with a reply waiter is refused"
+      -- leave them naming a server whose id a later carve reuses.
+      assertBool "(a) the destroy cleanup of a holder with a reply waiter is refused"
         (liveRetypeTcb stDon donServer).isNone
       -- WS-ZA ZA4.6 regression: the refusal is `revocationRequired`, and it is the
       -- reply-waiter clause that refuses (the server holds no reply object, above).
       assertBool "(a) REGRESSION: the refusal is revocationRequired, from the reply-waiter queue"
-        ((match lifecycleRetypeDirectWithCleanup (retypeCapOn donServer.toObjId)
-              donServer.toObjId retypeReplacement stDon with
+        ((match lifecyclePreRetypeCleanup stDon donServer.toObjId (.tcb serverTcb)
+              retypeReplacement with
           | .error .revocationRequired => true
           | _ => false)
           && serverTcb.replyWaitersHeadCode != 0)
@@ -4914,7 +4907,7 @@ private def runRetypeReservationChecks : IO Unit := do
           (schedContextBindingConsistentB stNew)
   -- (b) BOUND: the client owns its context, pinned to core 1 with its replenishment
   --     there (`stPreReturnSameCore`), and is retyped.
-  let stBound := withRetypeTypes stPreReturnSameCore donFixtureTypes
+  let stBound := stPreReturnSameCore
   match stBound.getTcb? donClient with
   | none => assertBool "(b) setup: the client resolves" false
   | some clientTcb =>
@@ -4955,7 +4948,7 @@ private def runRetypeReservationChecks : IO Unit := do
         (replenishAffinityConsistentB stNew)
   -- (c) CONTROL: an `.unbound` target — the arm is the identity, so the live retype
   --     and the retired reading agree on every replenish queue and both invariants hold.
-  let stCtl := withRetypeTypes stDonBase donFixtureTypes
+  let stCtl := stDonBase
   match stCtl.getTcb? donServer with
   | none => assertBool "(c) setup: the server resolves" false
   | some serverTcb =>
@@ -4970,7 +4963,7 @@ private def runRetypeReservationChecks : IO Unit := do
     | _, _ => assertBool "(c) CONTROL: both retypes of an unbound target succeed" false
 
 -- ============================================================================
--- §3.32 the retype's SchedContext arm releases the binding the context holds
+-- §3.32 the destroy cleanup's SchedContext arm releases the binding the context holds
 --        (register row 63, `v0.35.165`)
 -- ============================================================================
 
@@ -4982,28 +4975,23 @@ home core under an id the slot's next occupant inherits.  seL4's `finaliseCap`
 runs `schedContext_unbindAllTCBs` on a scheduling-context capability; since
 `v0.35.165` `releaseSchedContextBinding` is that, per core.
 
-The RETIRED reading is computed beside the live retype on the same state — the
-stack-head guard alone, then the same scrub and the same store — so every
+The RETIRED reading is computed beside the kept cleanup on the same state — the
+stack-head guard alone, then the same store — so every
 assertion is known to discriminate.  The CONTROL is a context bound to nothing,
 where the release is the identity and the two readings agree. -/
 
-/-- The LIVE retype of any object through the wrapper the `.lifecycleRetype` arm
-reaches. -/
+/-- The kept destroy cleanup of any object. -/
 private def liveRetypeObj (st : SystemState) (target : SeLe4n.ObjId) : Option SystemState :=
-  (okExcept (lifecycleRetypeDirectWithCleanup (retypeCapOn target) target
-    retypeReplacement st)).map Prod.snd
+  destroyAfterCleanup st target
 
 /-- The RETIRED reading of the pipeline's SchedContext arm: the stack-head guard
 and nothing else — the cleanup handed the state back unchanged — then the same
-scrub and the same store the live pipeline performs.  Spelled here and nowhere
-else. -/
+store.  Spelled here and nowhere else. -/
 private def retiredRetypeSchedContextCleanup (st : SystemState) (target : SeLe4n.ObjId) :
     Option SystemState :=
   match st.getObject? target with
   | none => none
-  | some obj =>
-      some ((scrubObjectMemory st target obj.objectType).withObjectStored target
-        retypeReplacement)
+  | some _ => some (st.withObjectStored target retypeReplacement)
 
 /-- The fixture's client context with its binding cleared — the CONTROL's state,
 where the release is the identity. -/
@@ -5014,8 +5002,8 @@ private def withUnboundSchedContext (st : SystemState) : Option SystemState :=
       some (st.withObjectStored scClient.toObjId (.schedContext { sc with boundThreadCode := 0 }))
 
 private def runRetypeSchedContextChecks : IO Unit := do
-  IO.println "--- §3.32 register row 63: the retype's SchedContext arm releases the binding ---"
-  let stSc := withRetypeTypes stPreReturnSameCore donFixtureTypes
+  IO.println "--- §3.32 register row 63: the destroy cleanup's SchedContext arm releases the binding ---"
+  let stSc := stPreReturnSameCore
   match stSc.getSchedContext? scClient, stSc.getTcb? donClient with
   | some sc, some clientTcb =>
     assertBool "(a) setup: the context is bound to the client, which is bound to it"
@@ -5074,310 +5062,52 @@ private def runRetypeSchedContextChecks : IO Unit := do
   | _, _ => assertBool "(a) setup: the context and the client resolve" false
 
 -- ============================================================================
--- §3.33 the `.lifecycleRetype` arm's resolved scheduler-domain footprint
---       (WS-RR RR8.12 Cut C3b-iii, `v0.35.169`)
+-- §3.33 a carved object carries the id it is stored at, bound to nothing
+--       (WS-ZA ZA5.4 part 14; register row 63's identity and binding guards)
 -- ============================================================================
 
-/-! The destroy path's replenish writes are the cleanup's two reservation arms —
-`cancelDonationArmOnCore` on a TCB target (`v0.35.164`) and
-`releaseSchedContextBinding` on a SchedContext target (`v0.35.165`) — and SM8.B's
-`lifecycleRetypeWriteSet` is **silent** about them: `observableSlotsConfinedToCores`
-covers six per-core slots and the replenish queue is not one of them.
+/-! The in-place retype took a caller-supplied replacement and had to refuse one
+whose embedded identity disagreed with its slot (`v0.35.187`) or whose
+SchedContext claimed a thread that did not name it back (`v0.35.184`).  The carve
+takes no replacement: `CarveRequest.object` builds the child from the request
+and the child id, so both refusals are facts of the builder, measured here for
+the three kinds that carry their own id.  The CONTROL is a hand-built
+SchedContext at the sentinel id, which the shared predicate refuses — so the
+positives are about the builder rather than about the predicate. -/
 
-So a footprint built from that write set alone would be **false** of the
-operation, and that is the retired reading computed beside the live footprint
-here: on both target shapes it declares no replenish lock while the live arm
-moves a replenishment.  The CONTROL is an endpoint target, where the two agree
-because the destroy path has no scheduling effect at all. -/
+/-- The untyped the identity measurements carve from: one page, no children. -/
+private def identityCarveUntyped : UntypedObject :=
+  { regionBase := SeLe4n.PAddr.ofNat 0x100000, regionSize := 0x1000 }
 
-/-- The RETIRED reading: SM8.B's write set as a whole footprint, with no
-replenish segment.  Spelled here and nowhere else. -/
-private def runOnlyRetypeFootprint (st : SystemState) (target : SeLe4n.ObjId) :
-    List (LockKey × Concurrency.AccessMode) :=
-  schedFootprintOfCores (lifecycleRetypeWriteSet st target) []
+/-- The object a request carves at `donEp`. -/
+private def carvedAtDonEp (req : CarveRequest) : KernelObject :=
+  req.object (SeLe4n.ObjId.ofNat 900) donEp identityCarveUntyped 0
 
-/-- **WS-RR RR8.12 Cut C6g**: the arm the syscall dispatches, rather than the
-retype core the segment assertions above drive.
-
-The coverage claim's unit is this program — the retype with its cleanup, the
-`.aside1` shootdown round, the initiator's own TLB drain and the domain-wide
-`IC IALLUIS` — because those two cached-structure layers each write kernel state,
-and a claim taken at the core would be a claim about a program the arm does not
-run.  Both are scheduler-silent by theorem; this is that measured. -/
-private def liveRetypeArm (st : SystemState) (target : SeLe4n.ObjId) :
-    Option SystemState :=
-  (okExcept (lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache c0
-    (retypeCapOn target) target retypeReplacement st)).map Prod.snd
-
-private def runRetypeFootprintChecks : IO Unit := do
-  IO.println "--- §3.33 Cut C3b-iii: the .lifecycleRetype arm's scheduler footprint ---"
-  -- (a) a BOUND TCB target: the arm purges on the thread's home core.
-  let stBound := withRetypeTypes stPreReturnSameCore donFixtureTypes
-  let fpTcb := schedLockSet_lifecycleRetypeOnCore stBound donClient.toObjId
-  assertBool "(a) setup: the client owns its context and is homed on core 1"
-    (decide (determineTargetCore stBound donClient = c1)
-      && replenishCountFor stBound c1 scClient == 1)
-  assertBool "(a) the footprint declares the home core's replenish write lock"
-    (hasReplenishWrite fpTcb c1)
-  assertBool "(a) NEGATIVE: the run-only reading declares none, on any core"
-    (allCores.all (fun c => !hasReplenishWrite (runOnlyRetypeFootprint stBound
-      donClient.toObjId) c))
-  match liveRetypeTcb stBound donClient with
-  | none => assertBool "(a) the live retype of the bound owner succeeds" false
-  | some stNew =>
-    assertBool "(a) ...and the live retype really does write that queue"
-      (replenishCountFor stNew c1 scClient == 0)
-    assertBool "(a) ...and no other core's"
-      (allCores.all (fun c => c == c1 ||
-        replenishEntriesOn stNew c == replenishEntriesOn stBound c))
-  -- (b) a SCHEDCONTEXT target bound to a resolving thread: the release purges on
-  --     that thread's home core.
-  let stSc := withRetypeTypes stPreReturnSameCore donFixtureTypes
-  let fpSc := schedLockSet_lifecycleRetypeOnCore stSc scClient.toObjId
-  assertBool "(b) the footprint declares the bound thread's home core's replenish write lock"
-    (hasReplenishWrite fpSc c1)
-  assertBool "(b) NEGATIVE: the run-only reading declares none there either"
-    (allCores.all (fun c => !hasReplenishWrite (runOnlyRetypeFootprint stSc
-      scClient.toObjId) c))
-  match liveRetypeObj stSc scClient.toObjId with
-  | none => assertBool "(b) the live retype of the bound context succeeds" false
-  | some stNew =>
-    assertBool "(b) ...and the live retype really does purge that queue"
-      (replenishCountFor stNew c1 scClient == 0)
-  -- (c) the CONTROL: an endpoint target has no scheduling effect at all, so the
-  --     two readings agree and both are the object-store lock alone.
-  let fpEp := schedLockSet_lifecycleRetypeOnCore stSc donEp
-  assertBool "(c) CONTROL: an endpoint target's footprint is the object-store write lock alone"
-    (decide (fpEp = [(LockKey.objStore, Concurrency.AccessMode.write)]))
-  assertBool "(c) CONTROL: ...which is exactly what the run-only reading gives too"
-    (decide (fpEp = runOnlyRetypeFootprint stSc donEp))
-  -- (d) WS-RR RR8.12 Cut C6g: COVERAGE, on the arm the syscall dispatches.  The
-  --     segment assertions above say the footprint names the cores the arm moves;
-  --     this is the other direction, which they cannot see — that the arm moves
-  --     NOTHING outside them.  `schedLockSet_lifecycleRetypeOnCore_coversWrites`
-  --     is the theorem, over the icache-layered program rather than the retype
-  --     core, so the two cached-structure layers are inside the measurement.
-  --
-  --     Every mutation of the production footprint here fails to ELABORATE
-  --     rather than failing this suite — `schedLockSet_lifecycleRetypeOnCore`'s
-  --     own membership theorems unfold it — which is §3.23's situation for the
-  --     splice's store shape.  So what makes these assertions discriminate is a
-  --     differential WITHIN the suite: the same measurement is taken over
-  --     `runOnlyRetypeFootprint`, and it must FAIL there.
-  match liveRetypeArm stBound donClient.toObjId with
-  | none => assertBool "(d) C6g: the live `.lifecycleRetype` arm succeeds on a bound owner" false
-  | some stArm =>
-    let retired := runOnlyRetypeFootprint stBound donClient.toObjId
-    assertBool "(d) C6g: EVERY core outside the declared replenish segment keeps its replenish queue"
-      (allCores.all (fun d =>
-        hasReplenishWrite fpTcb d || replenishEntriesOn stArm d == replenishEntriesOn stBound d))
-    assertBool "(d) C6g: EVERY core outside the declared run segment keeps its run queue"
-      (allCores.all (fun d =>
-        hasRunQueueWrite fpTcb d ||
-          (stArm.runQueueWalk d)
-            == (stBound.runQueueWalk d)))
-    assertBool "(d) C6g NEGATIVE: the retired reading FAILS the same replenish measurement"
-      (!allCores.all (fun d =>
-        hasReplenishWrite retired d || replenishEntriesOn stArm d == replenishEntriesOn stBound d))
-    assertBool "(d) C6g: ...and both segments are strict subsets here, so neither claim is vacuous"
-      (allCores.any (fun d => !hasReplenishWrite fpTcb d)
-        && allCores.any (fun d => !hasRunQueueWrite fpTcb d))
-    assertBool "(d) C6g: ...and the domain-wide instruction-cache layer really did run"
-      (stArm.pendingIcacheMaintenance.length > stBound.pendingIcacheMaintenance.length)
-
--- ============================================================================
--- §3.34 the retype refuses a replacement SchedContext that claims a thread
---       (register row 63, `v0.35.184`)
--- ============================================================================
-
-/-! `lifecycleRetypeDirectWithCleanup` validates the replacement with
-`newObj.wellFormed` and nothing else, and that predicate's `.schedContext` arm was
-`True` — so the model admitted a retype installing a scheduling context claiming a
-thread which does not name it back, which is exactly the state
-`schedContextBindingConsistent` forbids.  It is the class WS-SM SM6.D closed
-for `Reply` one field over, on the same guard and for the same stated reason.
-
-The live dispatch never built such a replacement (`objectOfKernelType` installs
-`SchedContext.empty`, whose `boundThread` is at its `none` default), so this is the
-*model's* admissible space rather than a reachable defect — and a guard that refuses
-nothing the kernel does is exactly the one worth having, because the next replacement
-builder need not be that one. -/
-
-/-- The pristine replacement `objectOfKernelType .schedContext` builds, at the key
-the retype targets. -/
-private def freshScReplacement : KernelObject :=
-  .schedContext (SchedContext.empty (SchedContextId.ofObjId donEp))
-
-/-- The same replacement CLAIMING `donServer`, which is `.unbound` and names no
-context — one field apart from the pristine one, so an assertion that separates
-them is about `boundThread` and nothing else. -/
-private def boundScReplacement : KernelObject :=
-  .schedContext { SchedContext.empty (SchedContextId.ofObjId donEp) with
-    boundThreadCode := SeLe4n.ThreadId.optCode (some donServer) }
-
-/-- The LIVE retype into a caller-supplied replacement. -/
-private def liveRetypeInto (st : SystemState) (target : SeLe4n.ObjId)
-    (newObj : KernelObject) : Option SystemState :=
-  (okExcept (lifecycleRetypeDirectWithCleanup (retypeCapOn target) target newObj st)).map
-    Prod.snd
-
-/-- The RETIRED guard: `wellFormed`'s `.schedContext` arm as `True`, so the
-replacement is stored whatever it claims — the cleanup, the scrub and the store the
-live pipeline performs, with the validation dropped.  Spelled here and nowhere
-else. -/
-private def retiredWellFormedRetype (st : SystemState) (target : SeLe4n.ObjId)
-    (newObj : KernelObject) : Option SystemState :=
-  match st.getObject? target with
-  | none => none
-  | some obj =>
-      match lifecyclePreRetypeCleanup st target obj newObj with
-      | .error _ => none
-      | .ok stClean =>
-          some ((scrubObjectMemory stClean target obj.objectType).withObjectStored target newObj)
-
-private def runRetypeReplacementGuardChecks : IO Unit := do
-  IO.println "--- §3.34 register row 63: the retype refuses a replacement SchedContext that claims a thread ---"
-  let stEp := withRetypeTypes stPreReturnSameCore donFixtureTypes
-  assertBool "(a) setup: the target holds an endpoint whose recorded type matches"
-    ((match stEp.getObject? donEp with | some (.endpoint _) => true | _ => false)
-      && stEp.lifecycle.objectTypes[donEp]? == some KernelObjectType.endpoint)
-  assertBool "(a) setup: the thread the bad replacement claims is `.unbound`"
-    (match stEp.getTcb? donServer with
-     | some t => t.schedContextBinding == SchedContextBinding.unbound | none => false)
-  assertBool "(a) setup: the binding invariant holds before the retype"
-    (schedContextBindingConsistentB stEp)
-  -- (b) PAYOFF: the pristine replacement is accepted and Z4-O survives.
-  match liveRetypeInto stEp donEp freshScReplacement with
-  | none => assertBool "(b) PAYOFF: the pristine SchedContext replacement is accepted" false
-  | some stFresh =>
-    assertBool "(b) PAYOFF: the slot holds the fresh context, bound to nobody"
-      (match stFresh.getObject? donEp with
-       | some (.schedContext sc) => sc.boundThread.isNone | _ => false)
-    assertBool "(b) PAYOFF: the binding invariant holds after it"
-      (schedContextBindingConsistentB stFresh)
-  -- (c) PAYOFF: the claiming replacement is REFUSED, and nothing is committed.
-  assertBool "(c) PAYOFF: the claiming replacement is refused"
-    (liveRetypeInto stEp donEp boundScReplacement).isNone
-  assertBool "(c) PAYOFF: ...with `.illegalState`, which is the `wellFormed` guard's own arm"
-    (match lifecycleRetypeDirectWithCleanup (retypeCapOn donEp) donEp boundScReplacement stEp with
-     | .error e => e == KernelError.illegalState | .ok _ => false)
-  -- (d) NEGATIVE: the retired guard stores it, and the result FALSIFIES Z4-O.
-  match retiredWellFormedRetype stEp donEp boundScReplacement with
-  | none => assertBool "(d) NEGATIVE setup: the retired guard stores the claiming replacement" false
-  | some stBad =>
-    assertBool "(d) NEGATIVE: the retired guard leaves a context claiming an `.unbound` thread..."
-      (match stBad.getObject? donEp with
-       | some (.schedContext sc) => sc.boundThread == some donServer | _ => false)
-    assertBool "(d) NEGATIVE (the defect): ...so the binding invariant is FALSIFIED"
-      (!schedContextBindingConsistentB stBad)
-  -- (e) CONTROL: the retired guard stores the PRISTINE replacement too, and there
-  -- Z4-O survives — so (d) is about `boundThread` rather than about the retype.
-  match retiredWellFormedRetype stEp donEp freshScReplacement with
-  | none => assertBool "(e) CONTROL setup: the retired guard stores the pristine replacement" false
-  | some stCtl =>
-    assertBool "(e) CONTROL: on the pristine replacement the retired guard breaks nothing"
-      (schedContextBindingConsistentB stCtl)
-    assertBool "(e) CONTROL: ...and the two replacements differ in `boundThread` alone"
-      (match freshScReplacement, boundScReplacement with
-       | .schedContext a, .schedContext b =>
-           a.boundThread.isNone && b.boundThread == some donServer
-             && { a with boundThreadCode := SeLe4n.ThreadId.optCode (some donServer) } == b
-       | _, _ => false)
-
-/-! ### §3.35 (`v0.35.187`) — a retyped object carries the slot's identity
-
-A TCB, a SchedContext and a Reply each carry their own id in a field while the
-object store is keyed by `ObjId`, so the two can disagree.
-`PlatformConfig.wellFormed`'s `embeddedIdentitiesMatchSlots` has refused that at
-**boot** since PR #889 review round 8; nothing refused it at the **runtime**, and
-`objectOfKernelType` — the one builder the live retype installs through — stamps
-the reserved **sentinel** into all three.  So a successful retype broke at the
-runtime exactly the agreement the boot enforces.
-
-The fixtures are the live builder's own output, unstamped and stamped, so the
-measurement is of the kernel's replacement rather than of a hand-built one. -/
-
-/-- The live builder's SchedContext replacement, **unstamped** — it carries
-`SchedContextId.sentinel`, which is not the slot the retype targets. -/
-private def unstampedScReplacement : KernelObject :=
-  SeLe4n.Kernel.objectOfKernelType .schedContext 0
-
-/-- The same replacement with the slot's identity stamped in — the live dispatch's
-own `withIdentity`, so this is what the kernel now builds. -/
-private def stampedScReplacement : KernelObject :=
-  (SeLe4n.Kernel.objectOfKernelType .schedContext 0).withIdentity donEp
-
-/-- And the Reply pair, because the field differs and the guard must see both. -/
-private def unstampedReplyReplacement : KernelObject :=
-  SeLe4n.Kernel.objectOfKernelType .reply 0
-
-private def stampedReplyReplacement : KernelObject :=
-  (SeLe4n.Kernel.objectOfKernelType .reply 0).withIdentity donEp
-
-/-- An endpoint carries no identity of its own, so it is admissible unstamped —
-the control that keeps the refusals below about the identity field rather than
-about the retype. -/
-private def endpointReplacement : KernelObject :=
-  SeLe4n.Kernel.objectOfKernelType .endpoint 0
-
-private def runRetypeIdentityStampChecks : IO Unit := do
-  IO.println "--- §3.35 (`v0.35.187`): a retyped object carries the slot's identity ---"
-  let stEp := withRetypeTypes stPreReturnSameCore donFixtureTypes
-  -- (a) setup, MEASURED: the live builder stamps the reserved sentinel, and the
-  -- slot the retype targets is not it.
-  assertBool "(a) setup: the live builder's SchedContext carries the SENTINEL id"
-    (match unstampedScReplacement with
-     | .schedContext sc => sc.scId == SchedContextId.sentinel | _ => false)
-  assertBool "(a) setup: ...and the live builder's Reply does too"
-    (match unstampedReplyReplacement with
-     | .reply r => r.replyId == ReplyId.sentinel | _ => false)
-  assertBool "(a) setup: the target slot is not the sentinel"
-    (donEp != SeLe4n.ObjId.sentinel)
-  -- (b) NEGATIVE (the defect): the unstamped replacement is REFUSED, and with the
-  -- guard's own error, so nothing is committed.
-  assertBool "(b) NEGATIVE: the unstamped SchedContext replacement is refused"
-    (liveRetypeInto stEp donEp unstampedScReplacement).isNone
-  assertBool "(b) NEGATIVE: ...with `.illegalState`, the admissibility guard's own arm"
-    (match lifecycleRetypeDirectWithCleanup (retypeCapOn donEp) donEp
-        unstampedScReplacement stEp with
-     | .error e => e == KernelError.illegalState | .ok _ => false)
-  assertBool "(b) NEGATIVE: ...and so is the unstamped Reply replacement"
-    (liveRetypeInto stEp donEp unstampedReplyReplacement).isNone
-  -- (c) PAYOFF: the stamped replacement is accepted, and the stored object's own
-  -- id IS the slot — the runtime counterpart of the boot's check.
-  match liveRetypeInto stEp donEp stampedScReplacement with
-  | none => assertBool "(c) PAYOFF: the stamped SchedContext replacement is accepted" false
-  | some stOk =>
-    assertBool "(c) PAYOFF: the slot holds a context whose own `scId` IS the slot"
-      (match stOk.getObject? donEp with
-       | some (.schedContext sc) => sc.scId.toObjId == donEp | _ => false)
-  match liveRetypeInto stEp donEp stampedReplyReplacement with
-  | none => assertBool "(c) PAYOFF: the stamped Reply replacement is accepted" false
-  | some stOk =>
-    assertBool "(c) PAYOFF: the slot holds a reply whose own `replyId` IS the slot"
-      (match stOk.getObject? donEp with
-       | some (.reply r) => r.replyId.toObjId == donEp | _ => false)
-  -- (d) CONTROL: a kind that carries no identity is accepted UNSTAMPED, so (b) is
-  -- about the identity field rather than about the retype refusing replacements.
-  assertBool "(d) CONTROL: an unstamped endpoint replacement is accepted"
-    (liveRetypeInto stEp donEp endpointReplacement).isSome
-  -- (e) CONTROL: the stamped and unstamped replacements differ in the identity
-  -- field ALONE, asserted rather than left to the reader.
-  assertBool "(e) CONTROL: the two SchedContext replacements differ in `scId` alone"
-    (match unstampedScReplacement, stampedScReplacement with
-     | .schedContext a, .schedContext b =>
-         a.scId == SchedContextId.sentinel && b.scId == SchedContextId.ofObjId donEp
-           && { a with scId := SchedContextId.ofObjId donEp } == b
-     | _, _ => false)
-  -- (f) the boot's question and the runtime's are ONE question: the shared
-  -- predicate answers `false` for the unstamped replacement at this slot and
-  -- `true` for the stamped one.
-  assertBool "(f) the shared predicate refuses the unstamped replacement at this slot"
-    (!unstampedScReplacement.embeddedIdentityMatches donEp)
-  assertBool "(f) ...and accepts the stamped one"
-    (stampedScReplacement.embeddedIdentityMatches donEp)
-  assertBool "(f) ...and is vacuously true for a kind that carries no identity"
-    (endpointReplacement.embeddedIdentityMatches donEp)
+private def runCarveIdentityChecks : IO Unit := do
+  IO.println "--- §3.33 a carved object carries the id it is stored at, bound to nothing ---"
+  assertBool "(a) a carved TCB's own tid IS the slot"
+    (match carvedAtDonEp (.tcb ⟨0⟩ c1) with
+     | .tcb t => t.tid.toObjId == donEp | _ => false)
+  assertBool "(a) a carved SchedContext's own scId IS the slot"
+    (match carvedAtDonEp (.schedContext 7) with
+     | .schedContext sc => sc.scId.toObjId == donEp | _ => false)
+  assertBool "(a) a carved Reply's own replyId IS the slot"
+    (match carvedAtDonEp .reply with
+     | .reply r => r.replyId.toObjId == donEp | _ => false)
+  assertBool "(b) every carved kind passes the shared identity predicate"
+    ([CarveRequest.tcb ⟨0⟩ c1, .schedContext 7, .reply, .endpoint, .notification,
+      .cnode 2].all (fun req => (carvedAtDonEp req).embeddedIdentityMatches donEp))
+  assertBool "(c) a carved SchedContext is bound to nothing"
+    (match carvedAtDonEp (.schedContext 7) with
+     | .schedContext sc => sc.boundThread.isNone | _ => false)
+  assertBool "(c) ...and a carved TCB holds no reservation"
+    (match carvedAtDonEp (.tcb ⟨0⟩ c1) with
+     | .tcb t => t.schedContextBinding == SchedContextBinding.unbound | _ => false)
+  -- CONTROL: the predicate does refuse a disagreeing identity, so (a)-(b) are
+  -- about the builder.
+  assertBool "(d) CONTROL: a SchedContext at the sentinel id fails the predicate at the slot"
+    (donEp != SeLe4n.ObjId.sentinel
+      && !(KernelObject.schedContext (SchedContext.empty SchedContextId.sentinel)).embeddedIdentityMatches donEp)
 
 
 
@@ -5529,9 +5259,7 @@ def runSmpIpcChecks : IO Unit := do
   runCallReplyFootprintChecks
   runRetypeReservationChecks
   runRetypeSchedContextChecks
-  runRetypeFootprintChecks
-  runRetypeReplacementGuardChecks
-  runRetypeIdentityStampChecks
+  runCarveIdentityChecks
   runObjectDomainDonationMemberChecks
   runTraceFixtureCheck
   IO.println "===================================="

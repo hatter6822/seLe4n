@@ -18,7 +18,7 @@ import SeLe4n.Kernel.Architecture.BarrierComposition
 > transitively staged (pulled in only by `Platform.Staged`) until SM7.D.2 made
 > its `armv8DCacheToICacheSequence` the object the kernel's clean-to-Point-of-
 > Unification obligation is stated against: every kernel site that *writes*
-> memory a subject may later execute (`scrubObjectMemory` during a re-type, the
+> memory a subject may later execute (the carve's frame scrub, the
 > boot image load) owes that barrier sequence before the memory can be fetched
 > as instructions.  See `PerCoreCacheModel.lean`'s
 > `kernelCodeWriteSites_owe_pou_clean`.

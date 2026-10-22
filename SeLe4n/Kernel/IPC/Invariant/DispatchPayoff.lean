@@ -2011,7 +2011,7 @@ private theorem witnessSt3_noStacks :
 
 private theorem witnessCapOnly :
     capabilityDispatchQuiescence witnessDecoded witnessCap witnessSt3 := by
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_,
+  refine ⟨?_, ?_, ?_, ?_, ?_,
     replyStackOuterCallerValid_of_no_stacks witnessSt3 witnessSt3_noStacks⟩
   · intro t tcb scId hLk hScId
     rw [witnessSt3_lookup] at hLk
@@ -2036,10 +2036,6 @@ private theorem witnessCapOnly :
       · cases hLk
         simp [witnessTcbBound, witnessTcbFresh] at hUnbound
       · cases hLk
-  · intro args _ hDec
-    simp only [decodeLifecycleRetypeArgs, witnessDecoded, requireMsgReg, bind,
-      Except.bind] at hDec
-    cases hDec
   · intro _ vThreadId _ _ s sTcb sc0 hLk
     rw [witnessSt3_lookup] at hLk
     split at hLk
@@ -2117,9 +2113,6 @@ Coverage, and the one boundary:
   `unbindBoundThreadPassive` firing its shape premises against the present
   object holding a TCB where a SchedContext is demanded, and
   `targetThreadQuiescent` proven of the *present* witness thread;
-* `…_inhabited_retype` -- `retypeDetached` proven of the decoded target, and
-  `boundThreadNotDonationOwner` firing through the bind decoder's read of
-  the same registers;
 * `…_inhabited_send` / `…_inhabited_receive` / `…_inhabited_call` -- each
   stage transition *evaluated* on the witness state (the refusal path), so
   the `objects.invExt` conclusions are discharged by computation; the
@@ -2180,11 +2173,7 @@ private theorem witnessCapOnlySignal :
     capabilityDispatchQuiescence witnessDecodedSignal witnessCapTcbObject
       witnessSt3 := by
   refine ⟨witnessCapOnly.bindingBidirectional, witnessCapOnly.queuedThreadsIdle,
-    ?_, ?_, ?_, ?_, witnessCapOnly.replyStacksSettleOnWaitingDonors⟩
-  · intro args _ hDec
-    simp only [decodeLifecycleRetypeArgs, witnessDecodedSignal, requireMsgReg,
-      bind, Except.bind] at hDec
-    cases hDec
+    ?_, ?_, ?_, witnessCapOnly.replyStacksSettleOnWaitingDonors⟩
   · intro _ _ hSy _
     simp [witnessDecodedSignal] at hSy
   · intro scObj _ hTgt vScId hVal scX t tcbX hScLk
@@ -2236,19 +2225,6 @@ theorem syscallDispatchQuiescence_inhabited_signal :
     simp [witnessDecodedSignal] at hSy
   · intro rid r callerTid hSy hTgt hR hCaller
     simp [witnessDecodedSignal] at hSy
-
-/-- A `.lifecycleRetype` decode whose registers decode: target `⟨9⟩`
-(referenced by nothing), type tag 5 (`.untyped`), size 0.  The bind decoder
-reads the same register file, so `boundThreadNotDonationOwner` fires through
-it in the same instance. -/
-private def witnessDecodedRetype : SyscallDecodeResult :=
-  { capAddr := SeLe4n.CPtr.ofNat 0, msgInfo := default,
-    syscallId := .lifecycleRetype, msgRegs := #[⟨9⟩, ⟨5⟩, ⟨0⟩] }
-
-private def witnessGateRetype : SyscallGate :=
-  { callerId := witnessTid, cspaceRoot := SeLe4n.ObjId.ofNat 0,
-    capAddr := SeLe4n.CPtr.ofNat 0, capDepth := 0,
-    requiredRight := syscallRequiredRight .lifecycleRetype }
 
 /-- Every stored TCB is the witness thread's: the store's one TCB slot,
 characterised for the detachedness fields that quantify over the store. -/
@@ -2341,60 +2317,6 @@ private theorem witnessSt3_detached_of (target : SeLe4n.ObjId)
     obtain ⟨-, rfl⟩ := witnessSt3_tcb_lookup _ _ hLk
     simp [witnessTcbBound, witnessTcbFresh] at hStash
 
-/-- The capability-only pack against the retype decode: `retypeDetached` is
-proven of the decoded target rather than discharged by a failing decoder,
-and the bind-decoder field fires (same registers) with its donation
-conclusion read off the stored binding. -/
-private theorem witnessCapOnlyRetype :
-    capabilityDispatchQuiescence witnessDecodedRetype witnessCap witnessSt3 := by
-  refine ⟨witnessCapOnly.bindingBidirectional, witnessCapOnly.queuedThreadsIdle,
-    ?_, ?_, ?_, ?_, witnessCapOnly.replyStacksSettleOnWaitingDonors⟩
-  · intro args _ hDec
-    simp only [decodeLifecycleRetypeArgs, witnessDecodedRetype, requireMsgReg,
-      bind, Except.bind, pure, Except.pure, KernelObjectType.ofNat?] at hDec
-    cases hDec
-    exact witnessSt3_detached_of _ (by decide) (by decide)
-  · intro _ vThreadId _ _ s sTcb sc0 hLk
-    rw [witnessSt3_lookup] at hLk
-    split at hLk
-    · cases hLk
-    · split at hLk
-      · cases hLk
-        simp [witnessTcbBound, witnessTcbFresh]
-      · cases hLk
-  · intro scObj _ hTgt
-    simp [witnessCap] at hTgt
-  · intro objId _ hTgt
-    simp [witnessCap] at hTgt
-
-/-- **The retype detachment is exercised**: the registers decode, the target
-is named, and detachedness is proven of the witness state -- with the bind
-decoder's donation field firing through the same register file. -/
-theorem syscallDispatchQuiescence_inhabited_retype :
-    syscallDispatchQuiescence witnessDecodedRetype witnessTid Concurrency.bootCoreId witnessGateRetype
-      witnessCap witnessSt3 := by
-  refine ⟨witnessReachable3, witnessCapOnlyRetype,
-    ⟨witnessTcbBound, witnessSt3_getTcb, rfl, by simp [witnessTcbBound, witnessTcbFresh]⟩,
-    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
-  · intro args hSy hDec
-    simp [witnessDecodedRetype] at hSy
-  · intro epId hSy
-    simp [witnessDecodedRetype] at hSy
-  · intro epId hSy
-    simp [witnessDecodedRetype] at hSy
-  · intro epId hSy
-    simp [witnessDecodedRetype] at hSy
-  · intro epId replyIdOpt hSy
-    simp [witnessDecodedRetype] at hSy
-  · intro rid r callerTid hSy
-    simp [witnessDecodedRetype] at hSy
-  · intro notifId hSy
-    simp [witnessDecodedRetype] at hSy
-  · intro rid prevCaller replyBadge epId hSy
-    simp [witnessDecodedRetype] at hSy
-  · intro rid r callerTid hSy hTgt hR hCaller
-    simp [witnessDecodedRetype] at hSy
-
 /-- An object capability naming slot `⟨7⟩` -- no endpoint lives there, so the
 stage transitions evaluate down their refusal paths and their `invExt`
 conclusions are discharged by computation on the witness state. -/
@@ -2422,11 +2344,7 @@ private theorem witnessCapOnlyEndpointOf (decoded : SyscallDecodeResult)
     (hRegs : decoded.msgRegs = #[]) :
     capabilityDispatchQuiescence decoded witnessCapEndpoint witnessSt3 := by
   refine ⟨witnessCapOnly.bindingBidirectional, witnessCapOnly.queuedThreadsIdle,
-    ?_, ?_, ?_, ?_, witnessCapOnly.replyStacksSettleOnWaitingDonors⟩
-  · intro args _ hDec
-    simp only [decodeLifecycleRetypeArgs, hRegs, requireMsgReg, bind,
-      Except.bind] at hDec
-    cases hDec
+    ?_, ?_, ?_, witnessCapOnly.replyStacksSettleOnWaitingDonors⟩
   · intro _ _ _ hRes
     simp only [resolveSchedContextBindThread, decodeSchedContextBindArgs, hRegs,
       requireMsgReg, bind, Except.bind] at hRes
@@ -2608,11 +2526,7 @@ private def witnessGateMint : SyscallGate :=
 private theorem witnessCapOnlyMint :
     capabilityDispatchQuiescence witnessDecodedMint witnessCap witnessSt3 := by
   refine ⟨witnessCapOnly.bindingBidirectional, witnessCapOnly.queuedThreadsIdle,
-    ?_, ?_, ?_, ?_, witnessCapOnly.replyStacksSettleOnWaitingDonors⟩
-  · intro args _ hDec
-    simp only [decodeLifecycleRetypeArgs, witnessDecodedMint, requireMsgReg,
-      bind, Except.bind, pure, Except.pure, KernelObjectType.ofNat?] at hDec
-    cases hDec
+    ?_, ?_, ?_, witnessCapOnly.replyStacksSettleOnWaitingDonors⟩
   · intro _ _ hSy _
     simp [witnessDecodedMint] at hSy
   · intro scObj _ hTgt
@@ -2668,11 +2582,7 @@ private theorem witnessCapOnlyDeclassifySignal :
     capabilityDispatchQuiescence witnessDecodedDeclassifySignal
       witnessCapTcbObject witnessSt3 := by
   refine ⟨witnessCapOnly.bindingBidirectional, witnessCapOnly.queuedThreadsIdle,
-    ?_, ?_, ?_, ?_, witnessCapOnly.replyStacksSettleOnWaitingDonors⟩
-  · intro args _ hDec
-    simp only [decodeLifecycleRetypeArgs, witnessDecodedDeclassifySignal,
-      requireMsgReg, bind, Except.bind] at hDec
-    cases hDec
+    ?_, ?_, ?_, witnessCapOnly.replyStacksSettleOnWaitingDonors⟩
   · intro _ _ hSy _
     simp [witnessDecodedDeclassifySignal] at hSy
   · intro scObj _ hTgt vScId hVal scX t tcbX hScLk
@@ -2894,7 +2804,7 @@ private theorem witnessSt4_noStacks :
 private theorem witnessCapOnlyReply :
     capabilityDispatchQuiescence witnessDecodedReply witnessCapReply
       witnessSt4 := by
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_,
+  refine ⟨?_, ?_, ?_, ?_, ?_,
     replyStackOuterCallerValid_of_no_stacks witnessSt4 witnessSt4_noStacks⟩
   · intro t tcb scId hLk hScId
     rw [witnessSt4_lookup] at hLk
@@ -2918,10 +2828,6 @@ private theorem witnessCapOnlyReply :
     split at hLk
     · cases hLk
     · exact witnessCapOnly.queuedThreadsIdle c t tcb hLk hUnbound hCur
-  · intro args _ hDec
-    simp only [decodeLifecycleRetypeArgs, witnessDecodedReply, requireMsgReg,
-      bind, Except.bind] at hDec
-    cases hDec
   · intro _ _ hSy _
     simp [witnessDecodedReply] at hSy
   · intro scObj _ hTgt
@@ -2985,11 +2891,7 @@ private def witnessGateBind : SyscallGate :=
 private theorem witnessCapOnlyBind :
     capabilityDispatchQuiescence witnessDecodedBind witnessCap witnessSt3 := by
   refine ⟨witnessCapOnly.bindingBidirectional, witnessCapOnly.queuedThreadsIdle,
-    ?_, ?_, ?_, ?_, witnessCapOnly.replyStacksSettleOnWaitingDonors⟩
-  · intro args _ hDec
-    simp only [decodeLifecycleRetypeArgs, witnessDecodedBind, requireMsgReg,
-      bind, Except.bind] at hDec
-    cases hDec
+    ?_, ?_, ?_, witnessCapOnly.replyStacksSettleOnWaitingDonors⟩
   · intro _ vThreadId _ _ s sTcb sc0 hLk
     rw [witnessSt3_lookup] at hLk
     split at hLk
@@ -3047,11 +2949,7 @@ private theorem witnessCapOnlyUnbind :
     capabilityDispatchQuiescence witnessDecodedUnbind witnessCapTcbObject
       witnessSt3 := by
   refine ⟨witnessCapOnly.bindingBidirectional, witnessCapOnly.queuedThreadsIdle,
-    ?_, ?_, ?_, ?_, witnessCapOnly.replyStacksSettleOnWaitingDonors⟩
-  · intro args _ hDec
-    simp only [decodeLifecycleRetypeArgs, witnessDecodedUnbind, requireMsgReg,
-      bind, Except.bind] at hDec
-    cases hDec
+    ?_, ?_, ?_, witnessCapOnly.replyStacksSettleOnWaitingDonors⟩
   · intro _ _ hSy _
     simp [witnessDecodedUnbind] at hSy
   · intro scObj _ hTgt vScId hVal scX t tcbX hScLk
@@ -3111,11 +3009,7 @@ private theorem witnessCapOnlySuspend :
     capabilityDispatchQuiescence witnessDecodedSuspend witnessCapTcbObject
       witnessSt3 := by
   refine ⟨witnessCapOnly.bindingBidirectional, witnessCapOnly.queuedThreadsIdle,
-    ?_, ?_, ?_, ?_, witnessCapOnly.replyStacksSettleOnWaitingDonors⟩
-  · intro args _ hDec
-    simp only [decodeLifecycleRetypeArgs, witnessDecodedSuspend, requireMsgReg,
-      bind, Except.bind] at hDec
-    cases hDec
+    ?_, ?_, ?_, witnessCapOnly.replyStacksSettleOnWaitingDonors⟩
   · intro _ _ hSy _
     simp [witnessDecodedSuspend] at hSy
   · intro scObj hSy hTgt

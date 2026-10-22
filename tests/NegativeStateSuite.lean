@@ -1014,10 +1014,16 @@ private def runUntypedF2NegativeChecks : IO Unit := do
       |>.withLifecycleObjectType f2UntypedObjId .untyped
       |>.withLifecycleObjectType f2UntypedAuthCnode .cnode
       |>.buildChecked)
-  expectErr "misaligned base for VSpace root"
-    (SeLe4n.Kernel.retypeFromUntyped f2UntypedAuthSlot f2UntypedObjId f2UntypedChildId
-      (.vspaceRoot { asid := ⟨0⟩, mappings := SeLe4n.Kernel.RobinHood.RHTable.empty 16 }) 4096 f2MisalignedState)
-    .allocationMisaligned
+  -- WS-ZA ZA5.4 part 14: as seL4's `alignUp(freeRef, objectSize)`, a
+  -- misaligned base is rounded up to the next page, not refused: the root's page
+  -- is `[0x11000, 0x12000)`, so the capability's index lands at `0x2000 - 1`.
+  expectCond "S5-G" "a misaligned base for a VSpace root is rounded up to the next page"
+    (match SeLe4n.Kernel.retypeFromUntyped f2UntypedAuthSlot f2UntypedObjId f2UntypedChildId
+      (.vspaceRoot { asid := ⟨0⟩, mappings := SeLe4n.Kernel.RobinHood.RHTable.empty 16 }) 4096
+        f2MisalignedState with
+     | .ok ((), st') =>
+       (SystemState.lookupSlotCap st' f2UntypedAuthSlot).map (·.freeIndex) == some (0x1FFF)
+     | .error _ => false)
 
   IO.println "untyped memory negative checks passed (incl. S5-G alignment)"
 
@@ -2192,9 +2198,8 @@ def runWSH15PlatformChecks : IO Unit := do
 
   IO.println "all WS-H15 platform contract checks passed"
 
-/-- WS-H16/M-18: Lifecycle operations negative tests.
-Covers error branches in `lifecycleRetypeObject` and `lifecycleRevokeDeleteRetype`
-that were previously untested. -/
+/-- WS-H16/M-18: Lifecycle operations negative tests — the error branches of
+the untyped carve (`untypedRetypeObject`, `retypeFromUntyped`). -/
 def runWSH16LifecycleChecks : IO Unit := do
   IO.println "=== WS-H16/M-18 lifecycle negative checks ==="
 
@@ -2203,7 +2208,6 @@ def runWSH16LifecycleChecks : IO Unit := do
   let h16CnodeId : SeLe4n.ObjId := ⟨151⟩
   let h16TcbId : SeLe4n.ObjId := ⟨152⟩
   let h16AuthSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := h16CnodeId, slot := SeLe4n.Slot.ofNat 0 }
-  let h16CleanupSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := h16CnodeId, slot := SeLe4n.Slot.ofNat 1 }
 
   let h16State : SystemState :=
     (BootstrapBuilder.empty
@@ -2232,53 +2236,125 @@ def runWSH16LifecycleChecks : IO Unit := do
       |>.withLifecycleObjectType h16TcbId .tcb
       |>.buildChecked)
 
-  -- H16-NEG-01: lifecycleRetypeObject with non-existent target → objectNotFound
-  expectErr "H16 lifecycleRetypeObject non-existent target"
-    (SeLe4n.Kernel.Internal.lifecycleRetypeObject h16AuthSlot ⟨999⟩ (.endpoint {}) h16State)
-    .objectNotFound
-
-  -- H16-NEG-02: lifecycleRetypeObject with metadata mismatch → illegalState
-  -- Target exists as endpoint but we tell lifecycle it's a TCB
-  let h16MismatchState : SystemState :=
+  -- H16-NEG-01..06 (WS-ZA ZA5.4 part 14): the carve's refusals.  The in-place
+  -- retype these checks exercised is retired; every object is carved, so the
+  -- negatives are the carve's.  Fixture: an untyped at `0x40000` with a
+  -- `.retype` capability (slot 0), the same untyped without `.retype` (slot 1),
+  -- a capability to the endpoint (slot 2) and empty slots 3.
+  let carveRefusalUtId : SeLe4n.ObjId := ⟨153⟩
+  let carveRefusalCnId : SeLe4n.ObjId := ⟨154⟩
+  let carveRefusalSlot (n : Nat) : SeLe4n.Kernel.CSpaceAddr := { cnode := carveRefusalCnId, slot := SeLe4n.Slot.ofNat n }
+  let carveRefusalState : SystemState :=
     (BootstrapBuilder.empty
       |>.withObject h16TargetId (.endpoint {})
-      |>.withObject h16CnodeId (.cnode (SeLe4n.Model.CNode.ofSlots 0 0 0 0 (SeLe4n.UniqueSlotMap.ofListWF [
-          (SeLe4n.Slot.ofNat 0, {
-            target := .object h16TargetId
-            rights := AccessRightSet.ofList [.read, .write]
-          })
-        ])))
-      -- Uses .build intentionally: lifecycleObjectType .tcb mismatches actual .endpoint
-      -- (check 2b would reject). Tests kernel handling of metadata mismatch.
-      |>.withLifecycleObjectType h16TargetId .tcb  -- mismatch: object is endpoint but metadata says tcb
-      |>.withLifecycleObjectType h16CnodeId .cnode
-      |>.build)
-  expectErr "H16 lifecycleRetypeObject metadata mismatch"
-    (SeLe4n.Kernel.Internal.lifecycleRetypeObject h16AuthSlot h16TargetId (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }) h16MismatchState)
-    .illegalState
+      |>.withObject carveRefusalUtId (.untyped
+          { regionBase := SeLe4n.PAddr.ofNat 0x40000, regionSize := 0x2000 })
+      |>.withObject carveRefusalCnId (.cnode (CNode.ofList 0 0 0 2 [
+          (SeLe4n.Slot.ofNat 0, { target := .object carveRefusalUtId, rights := AccessRightSet.ofList [.read, .write, .retype] }),
+          (SeLe4n.Slot.ofNat 1, { target := .object carveRefusalUtId, rights := AccessRightSet.ofList [.read, .write] }),
+          (SeLe4n.Slot.ofNat 2, { target := .object h16TargetId, rights := AccessRightSet.ofList [.read, .write, .retype] })
+        ]))
+      |>.withLifecycleObjectType h16TargetId .endpoint
+      |>.withLifecycleObjectType carveRefusalUtId .untyped
+      |>.withLifecycleObjectType carveRefusalCnId .cnode
+      |>.buildChecked)
 
-  -- H16-NEG-03: lifecycleRetypeObject with insufficient authority (read-only cap) → illegalAuthority
-  let h16ReadOnlySlot : SeLe4n.Kernel.CSpaceAddr := { cnode := h16CnodeId, slot := SeLe4n.Slot.ofNat 1 }
-  expectErr "H16 lifecycleRetypeObject insufficient authority"
-    (SeLe4n.Kernel.Internal.lifecycleRetypeObject h16ReadOnlySlot h16TargetId (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }) h16State)
+  -- H16-NEG-01: a carve at an occupied child id → childIdCollision
+  expectErr "H16 carve at an occupied child id"
+    (SeLe4n.Kernel.untypedRetypeObject (carveRefusalSlot 0) h16TargetId (carveRefusalSlot 3) .notification carveRefusalState)
+    .childIdCollision
+
+  -- H16-NEG-02: a carve through a capability to a non-untyped → untypedTypeMismatch
+  expectErr "H16 carve through a capability to an endpoint"
+    (SeLe4n.Kernel.untypedRetypeObject (carveRefusalSlot 2) ⟨155⟩ (carveRefusalSlot 3) .notification carveRefusalState)
+    .untypedTypeMismatch
+
+  -- H16-NEG-03: a carve through an untyped capability without `.retype` → illegalAuthority
+  expectErr "H16 carve without the retype right"
+    (SeLe4n.Kernel.untypedRetypeObject (carveRefusalSlot 1) ⟨155⟩ (carveRefusalSlot 3) .notification carveRefusalState)
     .illegalAuthority
 
-  -- H16-NEG-04: lifecycleRetypeObject with bad authority CNode → objectNotFound
-  let h16BadAuthSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨999⟩, slot := SeLe4n.Slot.ofNat 0 }
-  expectErr "H16 lifecycleRetypeObject bad authority CNode"
-    (SeLe4n.Kernel.Internal.lifecycleRetypeObject h16BadAuthSlot h16TargetId (.endpoint {}) h16State)
+  -- H16-NEG-04: a carve whose authority CNode does not exist → objectNotFound
+  expectErr "H16 carve with a missing authority CNode"
+    (SeLe4n.Kernel.untypedRetypeObject { cnode := ⟨999⟩, slot := SeLe4n.Slot.ofNat 0 } ⟨155⟩
+      (carveRefusalSlot 3) .notification carveRefusalState)
     .objectNotFound
 
-  -- H16-NEG-05: lifecycleRevokeDeleteRetype with authority = cleanup → illegalState
-  expectErr "H16 lifecycleRevokeDeleteRetype authority equals cleanup"
-    (SeLe4n.Kernel.lifecycleRevokeDeleteRetype h16AuthSlot h16AuthSlot h16TargetId (.endpoint {}) h16State)
-    .illegalState
+  -- H16-NEG-05: a carve into an occupied destination slot is refused, and
+  -- carves nothing.
+  expectCond "H16-NEG-05" "carve into an occupied destination slot refused"
+    (match SeLe4n.Kernel.untypedRetypeObject (carveRefusalSlot 0) ⟨155⟩ (carveRefusalSlot 2) .notification carveRefusalState with
+     | .error _ => true
+     | .ok _ => false)
 
-  -- H16-NEG-06: lifecycleRevokeDeleteRetype with non-existent cleanup CNode → objectNotFound
-  let h16BadCleanupSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨999⟩, slot := SeLe4n.Slot.ofNat 0 }
-  expectErr "H16 lifecycleRevokeDeleteRetype bad cleanup CNode"
-    (SeLe4n.Kernel.lifecycleRevokeDeleteRetype h16AuthSlot h16BadCleanupSlot h16TargetId (.endpoint {}) h16State)
-    .objectNotFound
+  -- H16-NEG-06: a carve is made on its own boundary, the capability's free index
+  -- rounded up to it (seL4's `alignUp(freeRef, objectSize)`), never refused.
+  -- From an index of 16 (an endpoint's worth): a TCB lands at 2048, an endpoint
+  -- at 4096, a frame at the next page (8192), and a TCB after the frame on its
+  -- own 2048-byte boundary (12288).
+  let misalignedCarveState : SystemState :=
+    (BootstrapBuilder.empty
+      |>.withObject carveRefusalUtId (.untyped
+          { regionBase := SeLe4n.PAddr.ofNat 0x40000, regionSize := 0x4000 })
+      |>.withObject carveRefusalCnId (.cnode (CNode.ofList 0 0 0 3 [
+          (SeLe4n.Slot.ofNat 0, { target := .object carveRefusalUtId, rights := AccessRightSet.ofList [.read, .write, .retype],
+                                  freeIndex := 16 })
+        ]))
+      |>.withLifecycleObjectType carveRefusalUtId .untyped
+      |>.withLifecycleObjectType carveRefusalCnId .cnode
+      |>.buildChecked)
+  let carveAt (req : SeLe4n.Kernel.CarveRequest) (child dstSlot : Nat) (s : SystemState) :
+      Option SystemState :=
+    match SeLe4n.Kernel.untypedRetypeObject (carveRefusalSlot 0) ⟨child⟩ (carveRefusalSlot dstSlot)
+        req s with
+    | .ok ((), s') => some s'
+    | .error _ => none
+  let indexOf (s : SystemState) : Option Nat :=
+    (SystemState.lookupSlotCap s (carveRefusalSlot 0)).map (·.freeIndex)
+  let alignedRun : Option (SystemState × SystemState × SystemState × SystemState) := do
+    let s1 ← carveAt (.tcb ⟨0⟩ bootCoreId) 155 1 misalignedCarveState
+    let s2 ← carveAt .endpoint 156 2 s1
+    let s3 ← carveAt .frame 157 3 s2
+    let s4 ← carveAt (.tcb ⟨0⟩ bootCoreId) 158 4 s3
+    pure (s1, s2, s3, s4)
+  match alignedRun with
+  | none => expectCond "H16-NEG-06" "the aligned carve sequence succeeds" false
+  | some (s1, s2, s3, s4) =>
+    expectCond "H16-NEG-06" "a TCB at free index 16 is carved at 2048, the index past it 4096"
+      (indexOf s1 == some 4096)
+    expectCond "H16-NEG-06" "an endpoint after it needs no rounding (index 4112)"
+      (indexOf s2 == some 4112)
+    expectCond "H16-NEG-06" "a frame after the endpoint is carved on the next page (0x42000)"
+      (indexOf s3 == some 12288 &&
+        (s3.getFrame? ⟨157⟩).map (·.base.toNat) == some 0x42000)
+    expectCond "H16-NEG-06" "a TCB after the frame lands on its own boundary (12288, index 14336)"
+      (indexOf s4 == some 14336 &&
+        (0x40000 + 12288) % 2048 == 0)
+  -- A child untyped is aligned to its own size, as seL4's `alignUp(freeRef, 2^b)`:
+  -- after an endpoint (index 16), a 2^14-byte child lands at 16384 (0x44000),
+  -- not at the next page (4096), and the index past it is 32768.
+  let childBase (s : SystemState) : Option Nat :=
+    match (s.objects[(⟨166⟩ : SeLe4n.ObjId)]? : Option KernelObject) with
+    | some (.untyped u) => some u.regionBase.toNat
+    | _ => none
+  let smallFirstState : SystemState :=
+    (BootstrapBuilder.empty
+      |>.withObject carveRefusalUtId (.untyped
+          { regionBase := SeLe4n.PAddr.ofNat 0x40000, regionSize := 0x10000 })
+      |>.withObject carveRefusalCnId (.cnode (CNode.ofList 0 0 0 3 [
+          (SeLe4n.Slot.ofNat 0, { target := .object carveRefusalUtId, rights := AccessRightSet.ofList [.read, .write, .retype] })
+        ]))
+      |>.withLifecycleObjectType carveRefusalUtId .untyped
+      |>.withLifecycleObjectType carveRefusalCnId .cnode
+      |>.buildChecked)
+  match (do
+      let s1 ← carveAt .endpoint 165 1 smallFirstState
+      let s2 ← carveAt (.untyped 14) 166 2 s1
+      pure (s1, s2) : Option (SystemState × SystemState)) with
+  | none => expectCond "H16-NEG-06" "an endpoint then a child untyped are carved" false
+  | some (s1, s2) =>
+    expectCond "H16-NEG-06" "a 2^14-byte child untyped after an endpoint lands on its own size (0x44000, index 32768)"
+      (indexOf s1 == some 16 && childBase s2 == some 0x44000 && indexOf s2 == some 32768)
 
   -- H16-NEG-07: retypeFromUntyped with exhausted untyped (the authority capability's free index at the region boundary) → regionExhausted
   let h16ExhaustedUntypedId : SeLe4n.ObjId := ⟨160⟩
@@ -2342,61 +2418,7 @@ def runWSH16LifecycleChecks : IO Unit := do
       (.endpoint {}) 1024 h16DeviceState)
     .untypedDeviceRestriction
 
-  -- H16-NEG-10: lifecycleRevokeDeleteRetype with non-existent target → objectNotFound
-  -- Plan REQ: "lifecycleRevokeDeleteRetype with non-existent object → expect error"
-  -- cleanup resolves correctly, but the final retype target doesn't exist.
-  expectErr "H16 lifecycleRevokeDeleteRetype non-existent target"
-    (SeLe4n.Kernel.lifecycleRevokeDeleteRetype h16AuthSlot h16CleanupSlot ⟨999⟩ (.endpoint {}) h16State)
-    .objectNotFound
-
   IO.println "all WS-H16/M-18 lifecycle negative checks passed"
-
-/-- AN4-A.5 (H-02): Regression test demonstrating the cleanup-bypass semantic
-difference between `Internal.lifecycleRetypeObject` and
-`lifecycleRetypeWithCleanup`. Build a state where a TCB sits in the run queue;
-both paths successfully retype the object store, but only the safe wrapper
-scrubs the dangling reference out of the scheduler run queue. This is the
-exact semantic gap that motivates keeping the internal primitive behind the
-`Internal` namespace (AN4-A visibility hardening). -/
-def runAN4A5LifecycleVisibilityChecks : IO Unit := do
-  IO.println "=== AN4-A.5 lifecycle visibility regression checks ==="
-  let a5RetypeTcbId : SeLe4n.ObjId := ⟨170⟩
-  let a5CnodeId : SeLe4n.ObjId := ⟨171⟩
-  let a5AuthSlot : SeLe4n.Kernel.CSpaceAddr :=
-    { cnode := a5CnodeId, slot := SeLe4n.Slot.ofNat 0 }
-  let a5NewObj : KernelObject := .endpoint {}
-  let a5Tcb : TCB :=
-    { tid := ⟨170⟩, priority := ⟨10⟩, domain := ⟨0⟩
-    , spaceCells := SeLe4n.Model.TCB.spaceCellsOf a5CnodeId ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096) }
-  let a5State : SystemState :=
-    (BootstrapBuilder.empty
-      |>.withObject a5RetypeTcbId (.tcb a5Tcb)
-      |>.withObject a5CnodeId (.cnode (SeLe4n.Model.CNode.ofSlots 0 0 0 0 (SeLe4n.UniqueSlotMap.ofListWF [
-          (SeLe4n.Slot.ofNat 0, {
-            target := .object a5RetypeTcbId
-            rights := AccessRightSet.ofList [.read, .write, .retype] })
-        ])))
-      |>.withLifecycleObjectType a5RetypeTcbId .tcb
-      |>.withLifecycleObjectType a5CnodeId .cnode
-      |>.withRunnable [a5Tcb.tid]
-      |>.buildChecked)
-
-  -- AN4-A.5-01: `Internal.lifecycleRetypeObject` succeeds on the store but
-  -- leaves the run-queue ThreadId behind — the classic cleanup-bypass bug.
-  let (_, stInternal) ← expectOkState "AN4-A.5-01 Internal.lifecycleRetypeObject ok"
-    (SeLe4n.Kernel.Internal.lifecycleRetypeObject a5AuthSlot a5RetypeTcbId a5NewObj a5State)
-  expectCond "AN4-A.5-01" "Internal.lifecycleRetypeObject leaves dangling run-queue entry"
-    ((stInternal.runQueueWalk bootCoreId).contains a5Tcb.tid)
-
-  -- AN4-A.5-02: `lifecycleRetypeWithCleanup` runs the cleanup phase first, so
-  -- the run-queue reference is purged. This is the exact difference the
-  -- AN4-A visibility hardening is defending.
-  let (_, stWrapped) ← expectOkState "AN4-A.5-02 lifecycleRetypeWithCleanup ok"
-    (SeLe4n.Kernel.lifecycleRetypeWithCleanup a5AuthSlot a5RetypeTcbId a5NewObj a5State)
-  expectCond "AN4-A.5-02" "lifecycleRetypeWithCleanup scrubs run-queue reference"
-    (!(stWrapped.runQueueWalk bootCoreId).contains a5Tcb.tid)
-
-  IO.println "all AN4-A.5 lifecycle visibility regression checks passed"
 
 -- ============================================================================
 -- WS-J1-E: Register decode negative tests
@@ -2635,52 +2657,50 @@ private def runWSKGCSpaceChecks : IO Unit := do
 private def runWSKGLifecycleVSpaceChecks : IO Unit := do
   -- ---- K-G2: Lifecycle/VSpace negative tests ----
 
-  -- K-G-NEG-07: decodeLifecycleRetypeArgs with insufficient msgRegs (< 3) → invalidMessageInfo
-  let twoRegDecode : SyscallDecodeResult := {
+  -- K-G-NEG-07: decodeUntypedRetypeArgs with insufficient msgRegs (< 4) → invalidMessageInfo
+  let threeRegCarve : SyscallDecodeResult := {
     capAddr := SeLe4n.CPtr.ofNat 0
     msgInfo := { length := 0, extraCaps := 0, label := 0 }
-    syscallId := .lifecycleRetype
-    msgRegs := #[⟨1⟩, ⟨2⟩]  -- only 2, need 3
+    syscallId := .untypedRetype
+    msgRegs := #[⟨1⟩, ⟨2⟩, ⟨3⟩]  -- only 3, need 4
   }
-  expectErr "K-G-NEG-07 lifecycleRetype decode insufficient msgRegs"
-    (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeLifecycleRetypeArgs twoRegDecode)
+  expectErr "K-G-NEG-07 untypedRetype decode insufficient msgRegs"
+    (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeUntypedRetypeArgs threeRegCarve)
     .invalidMessageInfo
 
-  -- K-G-NEG-08: objectOfTypeTag with invalid type tag (99) → invalidTypeTag
-  expectErr "K-G-NEG-08 objectOfTypeTag invalid tag"
-    (SeLe4n.Kernel.objectOfTypeTag 99 0)
+  -- K-G-NEG-08: decodeUntypedRetypeArgs with invalid type tag (99) → invalidTypeTag
+  expectErr "K-G-NEG-08 untypedRetype decode invalid tag"
+    (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeUntypedRetypeArgs
+      { threeRegCarve with msgRegs := #[⟨99⟩, ⟨2⟩, ⟨3⟩, ⟨4⟩] })
     .invalidTypeTag
 
-  -- K-G-NEG-09: the in-place retype of a non-existent target the cap NAMES with
-  -- `.retype` → objectNotFound.  (Before authority came first this fixture's cap
-  -- carried no `.retype` and still drew `objectNotFound` — the oracle; a cap
-  -- without `.retype` now draws `illegalAuthority`, asserted beside it.)
-  let emptyObjState : SystemState := BootstrapBuilder.empty.buildChecked
-  let authCap : Capability := {
-    target := .object ⟨500⟩
-    rights := AccessRightSet.ofList [.read, .write, .retype]
-  }
-  expectErr "K-G-NEG-09 lifecycleRetypeDirectWithCleanup object not found"
-    (SeLe4n.Kernel.lifecycleRetypeDirectWithCleanup authCap ⟨500⟩ (.endpoint {}) emptyObjState)
-    .objectNotFound
-  let noRetypeCap : Capability := { authCap with rights := AccessRightSet.ofList [.read, .write] }
-  expectErr "K-G-NEG-09 lifecycleRetypeDirectWithCleanup no retype right"
-    (SeLe4n.Kernel.lifecycleRetypeDirectWithCleanup noRetypeCap ⟨500⟩ (.endpoint {}) emptyObjState)
+  -- K-G-NEG-09 (WS-ZA ZA5.4 part 14, retargeted from the in-place retype): a
+  -- carve through a capability whose object does not exist.  With `.retype` it
+  -- draws untypedTypeMismatch; without `.retype` it draws illegalAuthority, so
+  -- the authority is asked before the object is read.
+  let carveCn : SeLe4n.ObjId := ⟨501⟩
+  let carveState : SystemState :=
+    (BootstrapBuilder.empty
+      |>.withObject carveCn (.cnode (CNode.ofList 0 0 0 2 [
+          (SeLe4n.Slot.ofNat 0, { target := .object ⟨500⟩, rights := AccessRightSet.ofList [.read, .write, .retype] }),
+          (SeLe4n.Slot.ofNat 1, { target := .object ⟨500⟩, rights := AccessRightSet.ofList [.read, .write] }),
+          (SeLe4n.Slot.ofNat 2, { target := .replyCap ⟨502⟩, rights := AccessRightSet.ofList [.read, .write, .retype] })
+        ]))
+      |>.withLifecycleObjectType carveCn .cnode
+      |>.buildChecked)
+  let carveAt (n : Nat) : SeLe4n.Kernel.CSpaceAddr := { cnode := carveCn, slot := SeLe4n.Slot.ofNat n }
+  expectErr "K-G-NEG-09 carve through a capability to no object"
+    (SeLe4n.Kernel.untypedRetypeObject (carveAt 0) ⟨510⟩ (carveAt 3) .endpoint carveState)
+    .untypedTypeMismatch
+  expectErr "K-G-NEG-09 carve without the retype right"
+    (SeLe4n.Kernel.untypedRetypeObject (carveAt 1) ⟨510⟩ (carveAt 3) .endpoint carveState)
     .illegalAuthority
 
-  -- K-G-NEG-10: the in-place retype with wrong authority — cap targets different object
-  let retypeState : SystemState :=
-    (BootstrapBuilder.empty
-      |>.withObject ⟨300⟩ (.endpoint {})
-      |>.withLifecycleObjectType ⟨300⟩ .endpoint
-      |>.buildChecked)
-  let wrongAuthCap : Capability := {
-    target := .object ⟨999⟩  -- targets different object
-    rights := AccessRightSet.ofList [.read, .write]
-  }
-  expectErr "K-G-NEG-10 lifecycleRetypeDirectWithCleanup wrong authority"
-    (SeLe4n.Kernel.lifecycleRetypeDirectWithCleanup wrongAuthCap ⟨300⟩ (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }) retypeState)
-    .illegalAuthority
+  -- K-G-NEG-10: a carve through a capability that names no object (a reply
+  -- capability) → invalidCapability.
+  expectErr "K-G-NEG-10 carve through a non-object capability"
+    (SeLe4n.Kernel.untypedRetypeObject (carveAt 2) ⟨510⟩ (carveAt 3) .endpoint carveState)
+    .invalidCapability
 
   -- K-G-NEG-11: decodeVSpaceMapArgs with insufficient msgRegs (< 4) → invalidMessageInfo
   let threeRegDecode : SyscallDecodeResult := {
@@ -2755,12 +2775,19 @@ private def runWSKGServiceIpcChecks : IO Unit := do
     throw <| IO.userError s!"K-G-NEG-17: expected size 4 (capped by msgRegs), got {cappedExtract.size}"
   IO.println "negative check passed [K-G-NEG-17 extractMessageRegisters oversized length capped]"
 
-  -- K-G-NEG-18: objectOfTypeTag success for all 8 valid tags (WS-SM SM6.D: +6 SchedContext, +7 Reply)
-  for tag in [0, 1, 2, 3, 4, 5, 6, 7] do
-    match SeLe4n.Kernel.objectOfTypeTag tag 64 with
-    | .ok _ => pure ()
-    | .error e => throw <| IO.userError s!"K-G-NEG-18: objectOfTypeTag tag {tag} failed: {toString e}"
-  IO.println "negative check passed [K-G-NEG-18 objectOfTypeTag all 8 valid tags succeed]"
+  -- K-G-NEG-18 (WS-ZA ZA5.4 part 14): a carve request is formed for every
+  -- object kind at its seL4 size (sizeBits 0 for the fixed-size kinds, a radix
+  -- for a CNode, a size for a scheduling context and a child untyped).
+  let reqState : SystemState := BootstrapBuilder.empty.buildChecked
+  for (ty, bits) in [(KernelObjectType.tcb, 0), (.endpoint, 0), (.notification, 0), (.cnode, 1),
+      (.vspaceRoot, 0), (.untyped, 12), (.schedContext, 7), (.reply, 0), (.frame, 0),
+      (.pageTable, 0)] do
+    match SeLe4n.Kernel.carveRequestOf? reqState bootCoreId ty bits with
+    | .ok req =>
+        unless req.objectType == ty do
+          throw <| IO.userError s!"K-G-NEG-18: carve request for {repr ty} names another kind"
+    | .error e => throw <| IO.userError s!"K-G-NEG-18: carve request for {repr ty} failed: {toString e}"
+  IO.println "negative check passed [K-G-NEG-18 a carve request forms for every kind]"
 
   IO.println "service/IPC boundary tests passed"
 
@@ -2796,10 +2823,10 @@ private def runWSKGDeterminismChecks : IO Unit := do
     let del2 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceDeleteArgs d1
     unless del1 == del2 do
       throw <| IO.userError "K-G-DET-01: decodeCSpaceDeleteArgs not deterministic"
-    let lr1 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeLifecycleRetypeArgs d1
-    let lr2 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeLifecycleRetypeArgs d1
+    let lr1 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeUntypedRetypeArgs d1
+    let lr2 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeUntypedRetypeArgs d1
     unless lr1 == lr2 do
-      throw <| IO.userError "K-G-DET-01: decodeLifecycleRetypeArgs not deterministic"
+      throw <| IO.userError "K-G-DET-01: decodeUntypedRetypeArgs not deterministic"
     let vm1 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceMapArgs d1 65536
     let vm2 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceMapArgs d1 65536
     unless vm1 == vm2 do
@@ -2821,13 +2848,18 @@ private def runWSKGDeterminismChecks : IO Unit := do
     throw <| IO.userError "K-G-DET-02: extractMessageRegisters not deterministic"
   IO.println "determinism check passed [K-G-DET-02 extractMessageRegisters deterministic]"
 
-  -- K-G-DET-03: objectOfTypeTag determinism across all valid tags
-  for tag in [0, 1, 2, 3, 4, 5, 6, 7] do
-    let o1 := SeLe4n.Kernel.objectOfTypeTag tag 64
-    let o2 := SeLe4n.Kernel.objectOfTypeTag tag 64
+  -- K-G-DET-03: the carve's type-word decode is deterministic across every tag
+  for tag in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9] do
+    let carveDecoded : SyscallDecodeResult := {
+      capAddr := SeLe4n.CPtr.ofNat 0
+      msgInfo := { length := 4, extraCaps := 0, label := 0 }
+      syscallId := .untypedRetype
+      msgRegs := #[⟨tag + 256⟩, ⟨600⟩, ⟨1⟩, ⟨2⟩] }
+    let o1 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeUntypedRetypeArgs carveDecoded
+    let o2 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeUntypedRetypeArgs carveDecoded
     unless o1 == o2 do
-      throw <| IO.userError s!"K-G-DET-03: objectOfTypeTag tag {tag} not deterministic"
-  IO.println "determinism check passed [K-G-DET-03 objectOfTypeTag deterministic]"
+      throw <| IO.userError s!"K-G-DET-03: carve type word tag {tag} not deterministic"
+  IO.println "determinism check passed [K-G-DET-03 carve type-word decode deterministic]"
 
 
 /-- WS-K-G: Negative-state, determinism, and boundary tests for all new decode,
@@ -4493,7 +4525,6 @@ def main : IO Unit := do
   SeLe4n.Testing.runWSH15Checks
   SeLe4n.Testing.runWSH15PlatformChecks
   SeLe4n.Testing.runWSH16LifecycleChecks
-  SeLe4n.Testing.runAN4A5LifecycleVisibilityChecks
   SeLe4n.Testing.runWSJ1DecodeChecks
   SeLe4n.Testing.runWSKGChecks
   SeLe4n.Testing.runWSL4BlockedThreadChecks

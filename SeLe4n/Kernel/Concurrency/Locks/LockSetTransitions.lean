@@ -207,7 +207,7 @@ one level up.
   donate.
 * **`lockSet_cspaceMint/Copy/Move/Delete`**: capability ops
   don't touch SCs.
-* **`lockSet_lifecycleRetype`**: retype creates new objects
+* **`lockSet_untypedRetype`**: the carve creates new objects
   (born unbound), no donation.
 * **`lockSet_vspaceMap/Unmap`**: VSpace ops don't touch SCs.
 * **`lockSet_serviceRegister/Revoke/Query`**: service-level
@@ -387,12 +387,24 @@ a child untyped's `untyped` lock, a frame's `page` lock, and since slice 4b
 object's key, so its footprint names that key under the kind the key will hold,
 which is what serialises it against every later operation on the object.  Keyed
 on the carved **kind** rather than a flag, so a kind the carve gains names its
-own lock rather than falling into another's. -/
+own lock rather than falling into another's.
+
+**WS-ZA ZA5.4 part 14**: every kernel kind is carved now, so the match is
+exhaustive — a carved thread is written under its `tcb` lock, an endpoint under
+its `endpoint` lock, and so on; until this cut the kernel kinds fell to the
+wildcard's `page` lock, which no later operation on them takes.  A frame and a
+page table keep the `page` lock their own operations take. -/
 @[inline] def carvedObjectLock (childKind : KernelObjectType) (oid : ObjId) : LockKey :=
   match childKind with
   | .untyped => untypedLock oid
   | .vspaceRoot => vspaceRootLock oid
-  | _ => pageLock oid
+  | .tcb => tcbLock (ThreadId.ofObjId oid)
+  | .endpoint => endpointLock oid
+  | .notification => notificationLock oid
+  | .cnode => cnodeLock oid
+  | .reply => replyLock (ReplyId.ofObjId oid)
+  | .schedContext => schedContextLock (SchedContextId.ofObjId oid)
+  | .frame | .pageTable => pageLock oid
 
 /-- WS-SM SM3.A.10 / PR #870 round 7: **the SystemState-level lock**, as a
 declarable footprint member.
@@ -1416,9 +1428,8 @@ the same global structure the three creating operations allocate in.
 mapping record names.  The live arm is `cspaceDeleteSlotFinalising`, which
 removes that mapping before it returns (seL4's `finaliseCap` → `unmapPage`), so
 it writes the root the record's ASID resolves to.  A capability carries at most
-one record, so this is one optional member, resolved from the state as
-`lockSet_lifecycleRetype`'s target lock is; `none` — a capability with no live
-record — is definitionally the pre-BP7.1 footprint.
+one record, so this is one optional member, resolved from the state; `none` —
+a capability with no live record — is definitionally the pre-BP7.1 footprint.
 
 **`v0.36.12`**: a page-table capability's root goes in the same member.  When the
 delete destroys a table's last capability, the finalisation takes the table out
@@ -1437,40 +1448,7 @@ def lockSet_cspaceDelete (callerTid : ThreadId)
        (stateLevelLock, .write)])
     (unmappedRootObjId.map (fun o => (vspaceRootLock o, AccessMode.write)))
 
-/-! ## Lifecycle syscalls (1 transition: lifecycleRetype) -/
-
-/-- WS-SM SM3.B.3: `lockSet` for `lifecycleRetype`.
-
-Caller TCB (read), untyped source (write — child list append),
-destination CNode (write — caps installed for the new objects).
-
-**And the re-purposed target's own lock** (PR #873 round 7).  SM9.D.12 made
-`.lifecycleRetype` the one arm that *clears* provenance: the plan's `cleared`
-list is `[args.targetObj]`, so the commit writes the taint table at that key.
-The target is named by the decoded arguments and its type is whatever the state
-says — it can be a TCB or a notification concurrently receiving tagged content —
-so without this member a retype and a delivery had provably disjoint footprints
-while both updating the same taint key, and either the propagation or the clear
-could be lost.  A lost clear is the sharper half: the replacement object would
-keep a destroyed object's predecessor and a downgrade behind it would report a
-chain that ended when the object did.
-
-Supplied by the caller rather than derived here, for the reason
-`lockSet_declassify` supplies its target lock: a `LockKey` is `⟨kind, objId⟩` and
-the kind is a property of the state.  `none` is the unresolved shape and is
-definitionally the identity, so every pin taken before this member existed
-survives by `rfl`. -/
-def lockSet_lifecycleRetype (callerTid : ThreadId)
-    (cnodeRootObjId : ObjId) (untypedObjId : ObjId)
-    (dstCnodeObjId : ObjId) (targetLock : Option LockKey := none) : LockSet :=
-  lockSetExtendOpt
-    (lockSetOfList
-      [(tcbLock callerTid, .read),
-       (cnodeLock cnodeRootObjId, .read),
-       (untypedLock untypedObjId, .write),
-       (cnodeLock dstCnodeObjId, .write),
-       (stateLevelLock, .write)])
-    (targetLock.map (fun l => (l, AccessMode.write)))
+/-! ## Lifecycle syscalls -/
 
 /-- **WS-BP BP7.1 (`v0.36.5`)**: `lockSet` for `untypedRetype` — the carve
 that carves an object.
@@ -1813,29 +1791,6 @@ theorem lockSet_declassify_originationKeys_write_mem
   · unfold lockSet_declassify lockSetExtendOpt
     simp only [Option.map]
     exact LockSet.mem_insertOrMerge_write_self _ _
-
-/-- **WS-SM SM9.D (PR #873 round 7): the retype's cleared key rides its own lock
-too.**
-
-The sibling of `lockSet_declassify_originationKeys_write_mem`, and the finding it
-answers is the same one class over: SM9.D.12 makes `.lifecycleRetype` the arm
-that *clears* provenance, and the clear keys on `args.targetObj` — a taint write
-like any other, serialised by the key's own object lock.  The declared footprint
-named the caller, the caller's root, the untyped source and the destination
-CNode, none of which is that key, so a retype and a delivery into the very object
-being re-purposed had provably disjoint footprints while updating the same entry.
-
-Stated at `some`, because `none` is the unresolved footprint that names no
-target and therefore clears nothing. -/
-theorem lockSet_lifecycleRetype_clearedKey_write_mem
-    (callerTid : ThreadId) (cnodeRootObjId untypedObjId dstCnodeObjId : ObjId)
-    (targetLock : LockKey) :
-    (targetLock, AccessMode.write)
-      ∈ (lockSet_lifecycleRetype callerTid cnodeRootObjId untypedObjId dstCnodeObjId
-          (some targetLock)).pairs := by
-  unfold lockSet_lifecycleRetype lockSetExtendOpt
-  simp only [Option.map]
-  exact LockSet.mem_insertOrMerge_write_self _ _
 
 /-- WS-SM SM9.D.17 (audit): the **signalling** declassification writes its
 signaller's TCB too.
@@ -4282,10 +4237,9 @@ all: two concurrent `serviceRegister`s had provably disjoint sets while
 read-modify-writing the same map, and so did a `serviceRevoke` racing a retype
 that swept the registry through `cleanupEndpointServiceRegistrations`.
 
-Four writers, and the fourth is the one prose kept forgetting: the **retype**
-sweeps the registry when the object it re-purposes is an endpoint, and detaches
-the CDT slot mapping when it is a CNode.  Both are state-level maps; neither is
-reachable from a per-object footprint.
+The in-place retype was a fourth writer — it swept the registry when the object
+it re-purposed was an endpoint — and left with WS-ZA ZA5.4 part 14; the destroy
+path's finalisation will be the next, and must extend this theorem.
 
 The query is the reader — `lookupServiceByCap` folds over the whole map — so it
 takes the member in **read** mode, exactly as `lockSet_auditRead` does for the
@@ -4298,29 +4252,21 @@ footprint. -/
 theorem serviceRegistry_footprints_share_serialization :
     ∀ (callerA : ThreadId) (rootA epA : ObjId)
       (callerB : ThreadId) (rootB : ObjId)
-      (callerC : ThreadId) (rootC : ObjId)
-      (callerD : ThreadId) (rootD untypedD dstD : ObjId) (targetD : Option LockKey),
+      (callerC : ThreadId) (rootC : ObjId),
       (stateLevelLock, AccessMode.write)
         ∈ (lockSet_serviceRegister callerA rootA epA).pairs ∧
       (stateLevelLock, AccessMode.write)
         ∈ (lockSet_serviceRevoke callerB rootB).pairs ∧
       (stateLevelLock, AccessMode.read)
-        ∈ (lockSet_serviceQuery callerC rootC).pairs ∧
-      (stateLevelLock, AccessMode.write)
-        ∈ (lockSet_lifecycleRetype callerD rootD untypedD dstD targetD).pairs := by
-  intro callerA rootA epA callerB rootB callerC rootC callerD rootD untypedD dstD targetD
-  refine ⟨?_, ?_, ?_, ?_⟩
+        ∈ (lockSet_serviceQuery callerC rootC).pairs := by
+  intro callerA rootA epA callerB rootB callerC rootC
+  refine ⟨?_, ?_, ?_⟩
   · unfold lockSet_serviceRegister lockSetOfList; simp only [List.foldl]
     exact LockSet.mem_insertOrMerge_write_self _ _
   · unfold lockSet_serviceRevoke lockSetOfList; simp only [List.foldl]
     exact LockSet.mem_insertOrMerge_write_self _ _
   · unfold lockSet_serviceQuery lockSetOfList; simp only [List.foldl]
     exact List.mem_cons_self ..
-  · refine mem_write_lockSetExtendOpt _ _ _ ?_
-    show (stateLevelLock, AccessMode.write) ∈ (lockSetOfList _).pairs
-    unfold lockSetOfList
-    simp only [List.foldl]
-    exact LockSet.mem_insertOrMerge_write_self _ _
 
 /-! ## SchedContext syscalls (3 transitions) -/
 
@@ -4983,8 +4929,10 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
   -- untyped, or since slice 4b a VSpace root), the destination CNode, the CNode
   -- holding its authority capability (WS-ZA ZA5.4 part 13: the free index
   -- advances there), and the CDT / object index through `stateLevelLock`.
+  -- WS-ZA ZA5.4 part 14: and every kernel kind, since each is carved now.
   | .untypedRetype =>
-      [.tcb, .cnode, .untyped, .page, .vspaceRoot, .objStore]
+      [.tcb, .cnode, .untyped, .page, .vspaceRoot, .objStore,
+       .endpoint, .notification, .reply, .schedContext]
   -- **WS-BP BP7.1 (`v0.36.6`)**: the reset reads the caller and its CSpace root,
   -- writes the CNode holding the invoked capability (WS-ZA ZA5.4 part 13: its
   -- free index rewinds to zero), writes the untyped, retires frames (their
@@ -4997,17 +4945,6 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
   -- contain.
   | .untypedReset =>
       [.tcb, .cnode, .untyped, .page, .vspaceRoot, .objStore]
-  -- Lifecycle.  **Every kind, for the reason `.declassify` admits every kind**
-  -- (PR #873 round 7): SM9.D.12 makes the retype the arm that *clears*
-  -- provenance at `args.targetObj`, so `lockSet_lifecycleRetype` carries that
-  -- target's own lock — and the decoded target's type is whatever the state
-  -- says, since a retype re-purposes an object of any kind.  The fixed part
-  -- stays pinned by `lockSet_lifecycleRetype_nonTarget_kinds`, and the by-kind
-  -- ladder is unaffected (acquisition order is `LockKind.level`, a total order
-  -- over all ten kinds, so a wider admission cannot introduce a cycle).
-  | .lifecycleRetype =>
-      [.tcb, .cnode, .untyped,
-       .objStore, .endpoint, .notification, .reply, .schedContext, .vspaceRoot, .page]
   -- VSpace syscalls
   -- `.vspaceUnifyInstruction` (SM7.D) shares the footprint but takes the
   -- VSpaceRoot in read mode: it modifies no page table, only cache state.
@@ -5180,7 +5117,7 @@ def declaresStaticLockFootprint : SyscallId → Bool
   | .send | .receive | .call | .reply | .replyRecv
   | .notificationSignal | .notificationWait
   | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .mintReplyCap
-  | .lifecycleRetype | .untypedRetype
+  | .untypedRetype
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction
   | .serviceRegister | .serviceRevoke | .serviceQuery
   | .schedContextConfigure | .schedContextBind | .schedContextUnbind
@@ -5209,15 +5146,6 @@ whatever the state says and nothing narrows it — any *object* kind
 theorem permittedKinds_declassify_admits_every_kind (k : LockKind)
     (hObj : k.isObjectKind = true) :
     k ∈ permittedKinds .declassify := by
-  cases k <;> first | decide | exact absurd hObj (by decide)
-
-/-- WS-SM SM3.B.4 (PR #873 round 7): **and the retype's inventory admits any
-re-purposed target**, for the same reason one theorem up — the arm reads
-`args.targetObj` from the decoded arguments and re-purposes an object whose kind
-the state, not the syscall, decides. -/
-theorem permittedKinds_lifecycleRetype_admits_every_kind (k : LockKind)
-    (hObj : k.isObjectKind = true) :
-    k ∈ permittedKinds .lifecycleRetype := by
   cases k <;> first | decide | exact absurd hObj (by decide)
 
 /-- WS-SM SM3.B.4 helper: `Decidable` `kind ∈ permittedKinds τ`. -/
@@ -6628,38 +6556,6 @@ theorem lockSet_consistent_cspaceDelete (callerTid : ThreadId)
             cases hpp
             simp [vspaceRootLock]; decide)
 
-/-- WS-SM SM3.B.4 for `.lifecycleRetype`.
-
-PR #873 round 7: stated over **every** `targetLock`, not only the default `none`
-— the same widening `lockSet_consistent_declassify` took one round earlier, and
-for the same reason: the resolved footprint a fine-lock consumer acquires carries
-the re-purposed target, whose kind the state decides. -/
-theorem lockSet_consistent_lifecycleRetype (callerTid : ThreadId)
-    (cnRoot untypedId dstCn : ObjId) (targetLock : Option LockKey := none)
-    -- **WS-LS LS1.2**: the re-purposed target is an object, so its key has an
-    -- object kind; the two scheduler-queue kinds are on the ladder but name no
-    -- object.  Discharged by `cases` at the default `none`.
-    (hTarget : ∀ k, targetLock = some k → k.kind.isObjectKind = true := by
-      intro k h; cases h) :
-    ∀ p ∈ (lockSet_lifecycleRetype callerTid cnRoot untypedId dstCn targetLock).pairs,
-      p.fst.kind ∈ permittedKinds .lifecycleRetype :=
-  lockSet_consistent_base_plus_opt _ _ _
-    (by intro p hMem
-        rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp; decide
-        rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp; decide
-        rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp; decide
-        rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp; decide
-        rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp; decide
-        exact absurd hMem (by intro h; cases h))
-    (by intro pp hpp
-        obtain ⟨k, hk, rfl⟩ := Option.map_eq_some_iff.mp hpp
-        exact permittedKinds_lifecycleRetype_admits_every_kind k.kind (hTarget k hk))
-
 /-- **WS-BP BP7.1** — WS-SM SM3.B.4 for `.untypedRetype`. -/
 theorem lockSet_consistent_untypedRetype (callerTid : ThreadId)
     (cnRoot authCn untypedId childId dstCn : ObjId) (childKind : KernelObjectType) :
@@ -6678,44 +6574,12 @@ theorem lockSet_consistent_untypedRetype (callerTid : ThreadId)
         · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; cases childKind <;>
-            simp [carvedObjectLock, pageLock, untypedLock, vspaceRootLock] <;> decide
+            simp [carvedObjectLock, pageLock, untypedLock, vspaceRootLock, tcbLock,
+              endpointLock, notificationLock, cnodeLock, replyLock, schedContextLock] <;> decide
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp [stateLevelLock]; decide
-        exact absurd hMem (by intro h; cases h))
-
-/-- WS-SM SM3.B.4 (PR #873 round 7): **and the members the retype itself takes
-are still exactly five.**
-
-The tightness that admitting every target kind would otherwise give up, stated at
-`none` — the shape with no resolved target — so drift in the *fixed* part (caller
-TCB, caller CSpace root, untyped source, destination CNode, and the state-level
-lock) is still a failure even though the theorem above would keep holding of it.
-
-**WS-RR RR7.23 widened the fixed part by one kind, not by convenience.**
-`lifecyclePreRetypeCleanup` writes two `SystemState`-level maps — the service
-registry when the retyped object is an endpoint
-(`cleanupEndpointServiceRegistrations`), and the CDT slot mapping when it is a
-CNode — and neither is a per-object field any kind but `.objStore` can name.
-Before this member the retype's footprint was provably disjoint from a
-concurrent `serviceRegister`'s while both read-modify-wrote `serviceRegistry`. -/
-theorem lockSet_lifecycleRetype_nonTarget_kinds (callerTid : ThreadId)
-    (cnRoot untypedId dstCn : ObjId) :
-    ∀ p ∈ (lockSet_lifecycleRetype callerTid cnRoot untypedId dstCn none).pairs,
-      p.fst.kind ∈ [LockKind.tcb, LockKind.cnode, LockKind.untyped, LockKind.objStore] :=
-  lockSet_consistent_of_extended_base _ _
-    (by intro p hMem
-        rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp [tcbLock]
-        rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp [cnodeLock]
-        rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp [untypedLock]
-        rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp [cnodeLock]
-        rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp [stateLevelLock]
         exact absurd hMem (by intro h; cases h))
 
 /-- WS-SM SM3.B.4 for `.vspaceMap`. -/
@@ -6822,8 +6686,8 @@ theorem lockSet_consistent_serviceQuery (callerTid : ThreadId)
 /-- WS-SM SM3.B.4 for `.declassify` (SM8.C.9). -/
 theorem lockSet_consistent_declassify (callerTid : ThreadId)
     (cnRoot : ObjId) (targetLock : Option LockKey := none)
-    -- **WS-LS LS1.2**: the declassified target is an object (see
-    -- `lockSet_consistent_lifecycleRetype`).
+    -- **WS-LS LS1.2**: the declassified target is an object; the two
+    -- scheduler-queue kinds are on the ladder but name no object.
     (hTarget : ∀ k, targetLock = some k → k.kind.isObjectKind = true := by
       intro k h; cases h) :
     ∀ p ∈ (lockSet_declassify callerTid cnRoot targetLock).pairs,

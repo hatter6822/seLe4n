@@ -810,7 +810,7 @@ def auditBasisChunkCount (n : Nat) : Nat := (n + 3) / 4
 the reader is told exists.
 
 Relates the packer to the extractor rather than restating either — the failure
-mode `retypeIcacheOp_cleans_scrub_extent` hit at v0.32.101 and the splice arm hit
+mode a cache operand's extent theorem hit at v0.32.101 and the splice arm hit
 again at v0.33.16.  Move either function and this stops elaborating. -/
 theorem auditReadBasis_reconstructs_designation (bs : List UInt8) (j : Nat) :
     auditBasisByteOfChunk (auditBasisChunkValue bs (j / 4)) (j % 4) =
@@ -1320,7 +1320,7 @@ second one. -/
 theorem refusalTagSlots_bounds_reason (e : KernelError) :
     e.toDiscriminant < refusalTagSlots := by
   have h := KernelError.toDiscriminant_lt e
-  rw [show KernelError.kernelErrorCount = 58 from rfl] at h
+  rw [show KernelError.kernelErrorEncodingBound = 58 from rfl] at h
   unfold refusalTagSlots
   omega
 

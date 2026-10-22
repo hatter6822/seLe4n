@@ -532,11 +532,14 @@ theorem untypedRetypeObject_runQueueStage {src dst : CSpaceAddr} {childId : SeLe
     RunQueueStage.storeObject hStCh (fun c => by rw [hChildNone]; cases req <;> rfl)
       (by
         rw [hChildNone]
-        cases req <;> first
-          | exact SystemState.objStateMono_nonTcb rfl rfl
-          | exact ⟨fun _ h => by cases h, fun _ h _ => by cases h; exact .inl rfl⟩)
+        cases req with
+        | tcb dom core =>
+          refine ⟨fun _ h => ?_, fun _ h _ => ?_⟩
+          · cases h
+          · cases h; exact .inl rfl
+        | _ => exact SystemState.objStateMono_nonTcb rfl rfl)
   have k3 := storeObject_inert_runQueueStage hStIdx hOCh (fun _ h => KernelObject.noConfusion h) (fun _ h => KernelObject.noConfusion h)
-  have kZ : RunQueueStage st1 (req.scrub st1 ut utCap.freeIndex) :=
+  have kZ : RunQueueStage st1 (req.scrub st1 ut (req.carveIndex ut utCap.freeIndex)) :=
     RunQueueStage.of_frame (CarveRequest.scrub_objects _ _ _ _)
       (by rw [CarveRequest.scrub_scheduler]) (by rw [CarveRequest.scrub_scheduler]) (by rw [CarveRequest.scrub_scheduler])
   exact ((((k1.trans k2).trans k3).trans kZ).trans (cspaceInsertSlot_runQueueStage hIns)).trans

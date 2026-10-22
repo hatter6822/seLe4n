@@ -22,7 +22,6 @@ through retype and scrub.
 
 **Substantive preservation theorems** (high assurance — prove invariant preservation
 over *changed* state after a *successful* operation):
-- `lifecycleRetypeObject_preserves_lifecycleInvariantBundle`
 - `retypeFromUntyped_preserves_lifecycleInvariantBundle`
 - `retypeFromUntyped_preserves_untypedMemoryInvariant`
 
@@ -56,9 +55,6 @@ preservation theorems in this module.
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model
--- AN4-A allowlist: proof-chain reference to `lifecycleRetypeObject` from
--- `SeLe4n.Kernel.Internal`. Enforced by `scripts/test_tier0_hygiene.sh`.
-open Internal
 
 /-- M4-A step-3 identity invariant: lifecycle object-type metadata exactly tracks
 object-store identity typing for each object id. -/
@@ -91,21 +87,6 @@ def lifecycleInvariantBundle (st : SystemState) : Prop :=
 -- predicate has been removed, the implication's target has disappeared and the
 -- theorem is no longer needed. Proof-chain consumers now reason directly from
 -- `lifecycleIdentityTypeExact`.
-
-theorem lifecycleRetypeObject_preserves_lifecycleInvariantBundle
-    (st st' : SystemState)
-    (authority : CSpaceAddr)
-    (target : SeLe4n.ObjId)
-    (newObj : KernelObject)
-    (hInv : lifecycleInvariantBundle st)
-    (hObjInv : st.objects.invExt)
-    (hObjTypesInv : st.lifecycle.objectTypes.invExt)
-    (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
-    lifecycleInvariantBundle st' := by
-  rcases lifecycleRetypeObject_ok_as_storeObject st st' authority target newObj hStep with
-    ⟨_, _, _, _, _, _, hStore⟩
-  exact storeObject_preserves_objectTypeMetadataConsistent st st' target newObj hInv hObjInv
-    hObjTypesInv hStore
 
 -- ============================================================================
 -- WS-F2 / WS-ZA ZA5.4 part 13: Untyped Memory Model Invariants
@@ -299,10 +280,16 @@ theorem retypeFromUntyped_preserves_untypedMemoryInvariant
     unfold lifecycleRetypeAuthority at hAuth
     simp only [Bool.and_eq_true, decide_eq_true_eq] at hAuth
     exact hAuth.1
-  have hCan := ((UntypedObject.allocate_some_iff ut cap.freeIndex childId allocSize _).mp hAlloc).1
+  -- WS-ZA ZA5.4 part 14: the carve is at the capability's index rounded up.
+  have hLeIdx := le_alignedCarveIndex newObj.objectType allocSize ut cap.freeIndex
+  generalize hIdxDef : alignedCarveIndex newObj.objectType allocSize ut cap.freeIndex = idx
+    at hAlloc hLeIdx ⊢
+  have hCan := ((UntypedObject.allocate_some_iff ut idx childId allocSize _).mp hAlloc).1
   simp only [UntypedObject.canAllocate, Bool.and_eq_true, decide_eq_true_eq] at hCan
   have hIdxNe : cap.freeIndex ≠ ut.regionSize := by omega
-  have hRegion := UntypedObject.allocate_preserves_region ut ut' cap.freeIndex childId allocSize
+  have hCBA : ut.childrenBelow idx :=
+    UntypedObject.childrenBelow_mono ut (hCB authority cap untypedId ut hSlotA hTgt hObj) hLeIdx
+  have hRegion := UntypedObject.allocate_preserves_region ut ut' idx childId allocSize
     offset hAlloc
   have hNeAU : authority.cnode ≠ untypedId := by
     intro h; rw [h, hObj] at hObjA; cases hObjA
@@ -313,7 +300,7 @@ theorem retypeFromUntyped_preserves_untypedMemoryInvariant
       storeObject_objects_ne _ _ _ _ _ hNeAU hObjInv hStoreUt, hObjA]
   -- Where an untyped of the post-state came from.
   have resolve : ∀ oid u,
-      (setCapFreeIndex stCh authority (cap.freeIndex + allocSize)).objects[oid]? =
+      (setCapFreeIndex stCh authority (idx + allocSize)).objects[oid]? =
         some (.untyped u) →
       (oid = childId ∧ newObj = .untyped u) ∨ (oid = untypedId ∧ u = ut') ∨
       (oid ≠ childId ∧ oid ≠ untypedId ∧ st.objects[oid]? = some (.untyped u)) := by
@@ -332,12 +319,12 @@ theorem retypeFromUntyped_preserves_untypedMemoryInvariant
     exact ⟨hC, hU, by rwa [storeObject_objects_ne _ _ _ _ _ hU hObjInv hStoreUt] at hPost⟩
   -- Where a capability of the post-state came from.
   have slots : ∀ r c,
-      (setCapFreeIndex stCh authority (cap.freeIndex + allocSize)).slotCapAt r = some c →
-      (r = authority ∧ c = cap.withFreeIndex (cap.freeIndex + allocSize)) ∨
+      (setCapFreeIndex stCh authority (idx + allocSize)).slotCapAt r = some c →
+      (r = authority ∧ c = cap.withFreeIndex (idx + allocSize)) ∨
       (r ≠ authority ∧ st.slotCapAt r = some c) := by
     intro r c hR
     by_cases hA : r.cnode = authority.cnode
-    · have hO' := setCapFreeIndex_objects_self (idx := cap.freeIndex + allocSize) hObjInvCh hObjACh
+    · have hO' := setCapFreeIndex_objects_self (idx := idx + allocSize) hObjInvCh hObjACh
       rw [← hA] at hO'
       rw [SystemState.slotCapAt_of_object hO'] at hR
       simp only [KernelObject.slotCap] at hR
@@ -367,11 +354,11 @@ theorem retypeFromUntyped_preserves_untypedMemoryInvariant
       rw [storeObject_objects_ne _ _ _ _ _ hU hObjInv hStoreUt] at hR
       exact hR
   -- The advanced capability names the untyped.
-  have hTgtA : ∀ oid, (cap.withFreeIndex (cap.freeIndex + allocSize)).target = .object oid →
+  have hTgtA : ∀ oid, (cap.withFreeIndex (idx + allocSize)).target = .object oid →
       oid = untypedId := by
     intro oid h; rw [Capability.withFreeIndex_target, hTgt] at h; cases h; rfl
   -- No capability of the post-state names the child.
-  have hNotChild : ∀ r c, (setCapFreeIndex stCh authority (cap.freeIndex + allocSize)).slotCapAt r
+  have hNotChild : ∀ r c, (setCapFreeIndex stCh authority (idx + allocSize)).slotCapAt r
       = some c → c.target ≠ .object childId := by
     intro r c hR hT
     rcases slots r c hR with ⟨_, rfl⟩ | ⟨_, hPre⟩
@@ -397,7 +384,7 @@ theorem retypeFromUntyped_preserves_untypedMemoryInvariant
       rcases slots r c hR with ⟨_, rfl⟩ | ⟨hNeA, hPre'⟩
       · simp only [Capability.withFreeIndex_freeIndex]
         exact UntypedObject.allocate_preserves_childrenBelow ut ut' _ childId allocSize offset
-          (hCB authority cap untypedId ut hSlotA hTgt hObj) hAlloc
+          hCBA hAlloc
       · have hT' : c.target = .object untypedId := hU ▸ hT
         have hFull : c.freeIndex = ut.regionSize := by
           rcases hSC authority r cap c untypedId ut (Ne.symm hNeA) hSlotA hPre' hTgt hT' hObj
@@ -439,7 +426,7 @@ theorem retypeFromUntyped_preserves_untypedMemoryInvariant
     · exact (hNewObjWF u hNewEq).2.1
     · rw [hUe]
       exact UntypedObject.allocate_preserves_childrenNonOverlap ut ut' _ childId allocSize offset
-        (hNO untypedId ut hObj) (hCB authority cap untypedId ut hSlotA hTgt hObj) hAlloc
+        (hNO untypedId ut hObj) hCBA hAlloc
     · exact hNO oid u hPre
   · -- untypedChildrenUniqueIdsInvariant
     intro oid u hO
@@ -549,26 +536,5 @@ theorem retypeFromUntyped_preserves_untypedMemoryInvariant_auto
 -- ============================================================================
 -- S6-D: Memory scrubbing preserves lifecycle invariants
 -- ============================================================================
-
-/-- S6-D: `scrubObjectMemory` preserves the lifecycle invariant bundle.
-
-    Memory scrubbing only modifies `machine.memory` — it does not touch the
-    object store, lifecycle metadata, capabilities, or slots. The lifecycle
-    invariant (`lifecycleIdentityTypeExact`) operates on the `objects` and
-    `lifecycle` fields, so it is trivially preserved. -/
-theorem scrubObjectMemory_preserves_lifecycleInvariantBundle
-    (st : SystemState) (objectId : SeLe4n.ObjId) (objType : KernelObjectType)
-    (hInv : lifecycleInvariantBundle st) :
-    lifecycleInvariantBundle (scrubObjectMemory st objectId objType) := by
-  -- scrubObjectMemory only changes machine.memory; all fields that lifecycle
-  -- invariants reference (objects, lifecycle, cdt) are definitionally equal
-  have : (scrubObjectMemory st objectId objType).objects = st.objects :=
-    scrubObjectMemory_objects_eq st objectId objType
-  have : (scrubObjectMemory st objectId objType).lifecycle = st.lifecycle :=
-    scrubObjectMemory_lifecycle_eq st objectId objType
-  -- The invariant bundle only mentions objects/lifecycle/cdt fields which are
-  -- unchanged by scrubObjectMemory. The scrubbed state's objects/lifecycle/cdt
-  -- are definitionally equal to the original, so the invariant transfers directly.
-  exact hInv
 
 end SeLe4n.Kernel

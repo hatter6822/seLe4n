@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! Lifecycle operations — retype with type tag validation.
+//! Lifecycle operations — carving objects out of an untyped, and resetting it.
 //!
-//! Lean: `SeLe4n/Kernel/API.lean` — `apiLifecycleRetype`, and the
-//! `.untypedRetype` arm (`untypedRetypeFromCap`), and the `.untypedReset` arm
-//! (`untypedReset`).
+//! Lean: `SeLe4n/Kernel/API.lean` — the `.untypedRetype` arm
+//! (`untypedRetypeFromCap`) and the `.untypedReset` arm (`untypedReset`).
+//! WS-ZA ZA5.4 part 14 retired the in-place `lifecycle_retype` (syscall 8):
+//! every object is carved from an untyped.
 
-use sele4n_abi::args::{LifecycleRetypeArgs, TypeTag, UntypedRetypeArgs};
+use sele4n_abi::args::{TypeTag, UntypedRetypeArgs};
 use sele4n_abi::{invoke_syscall, MessageInfo, SyscallRequest, SyscallResponse};
 use sele4n_types::{CPtr, KernelResult, ObjId, Slot, SyscallId};
 
@@ -19,20 +20,24 @@ use sele4n_types::{CPtr, KernelResult, ObjId, Slot, SyscallId};
 /// `dst_slot` of the CNode `dst_cnode` names in the caller's CSpace; that
 /// capability must carry `Write` and the slot must be empty and addressable.
 ///
-/// Two kinds are carved.  [`TypeTag::Frame`] with `size_bits = 0`: one page (a
-/// device untyped yields a device frame), zeroed if it is RAM, handed back with
-/// read, write and grant — the object [`crate::vspace::vspace_map`] maps, and
-/// the only way a thread comes to hold mappable memory.  [`TypeTag::Untyped`]
-/// with `size_bits` in [`MIN_UNTYPED_SIZE_BITS`, `MAX_UNTYPED_SIZE_BITS`]: a
-/// child untyped of `2^size_bits` bytes of the parent's memory kind, handed
-/// back with read, write and retype, from which the holder carves in turn.
-/// [`TypeTag::VSpaceRoot`] with `size_bits = 0` (slice 4b): an address space —
-/// one zeroed RAM page holding its top-level translation table, registered
-/// under an ASID the kernel picks and checks is free (`ResourceExhausted` when
-/// every ASID is taken), handed back with read and write; a device untyped
-/// cannot back one (`UntypedDeviceRestriction`).  Every other combination is
-/// `InvalidArgument`.
+/// Every kind is carved (WS-ZA ZA5.4 part 14), with seL4's sizes; the
+/// accepted `size_bits` per kind are on [`UntypedRetypeArgs`].
+/// [`TypeTag::Frame`]: one page (a device untyped yields a device frame),
+/// zeroed if it is RAM, handed back with read, write and grant — the object
+/// [`crate::vspace::vspace_map`] maps.  [`TypeTag::Untyped`]: a child untyped
+/// of `2^size_bits` bytes, `size_bits` in [`MIN_UNTYPED_SIZE_BITS`,
+/// `MAX_UNTYPED_SIZE_BITS`], handed back with read, write and retype.
+/// [`TypeTag::VSpaceRoot`]: an address space on one zeroed RAM page under an
+/// ASID the kernel picks (`ResourceExhausted` when every ASID is taken).
+/// [`TypeTag::PageTable`]: one zeroed table page.  The other kernel objects —
+/// [`TypeTag::Tcb`], [`TypeTag::Endpoint`], [`TypeTag::Notification`],
+/// [`TypeTag::CNode`], [`TypeTag::Reply`] and [`TypeTag::SchedContext`] — are
+/// carved at seL4's object sizes, each on a boundary of its own size (the
+/// free index is rounded up to it, as seL4's `alignUp`), from RAM only (`UntypedDeviceRestriction` from a device
+/// untyped), and handed back with every right but retype.  Every other
+/// combination is `InvalidArgument`.
 ///
+/// [`UntypedRetypeArgs`]: sele4n_abi::args::UntypedRetypeArgs
 /// [`MIN_UNTYPED_SIZE_BITS`]: sele4n_abi::args::MIN_UNTYPED_SIZE_BITS
 /// [`MAX_UNTYPED_SIZE_BITS`]: sele4n_abi::args::MAX_UNTYPED_SIZE_BITS
 #[inline]
@@ -132,6 +137,113 @@ pub fn untyped_retype_page_table(
     )
 }
 
+/// Convenience: carve a thread out of `untyped_cap` (WS-ZA ZA5.4 part 14) —
+/// in the carving core's domain, with that core as its affinity, no roots and
+/// priority 0, as seL4's `createObject` makes one.
+pub fn untyped_retype_tcb(
+    untyped_cap: CPtr,
+    child_id: ObjId,
+    dst_cnode: CPtr,
+    dst_slot: Slot,
+) -> KernelResult<SyscallResponse> {
+    untyped_retype(untyped_cap, TypeTag::Tcb, 0, child_id, dst_cnode, dst_slot)
+}
+
+/// Convenience: carve an endpoint, both queues empty, out of `untyped_cap`.
+pub fn untyped_retype_endpoint(
+    untyped_cap: CPtr,
+    child_id: ObjId,
+    dst_cnode: CPtr,
+    dst_slot: Slot,
+) -> KernelResult<SyscallResponse> {
+    untyped_retype(
+        untyped_cap,
+        TypeTag::Endpoint,
+        0,
+        child_id,
+        dst_cnode,
+        dst_slot,
+    )
+}
+
+/// Convenience: carve an idle notification out of `untyped_cap`.
+pub fn untyped_retype_notification(
+    untyped_cap: CPtr,
+    child_id: ObjId,
+    dst_cnode: CPtr,
+    dst_slot: Slot,
+) -> KernelResult<SyscallResponse> {
+    untyped_retype(
+        untyped_cap,
+        TypeTag::Notification,
+        0,
+        child_id,
+        dst_cnode,
+        dst_slot,
+    )
+}
+
+/// Convenience: carve a CNode of `2^radix_bits` empty slots out of
+/// `untyped_cap`, `radix_bits` in [`MIN_CNODE_RADIX_BITS`, `MAX_CNODE_RADIX_BITS`].
+///
+/// [`MIN_CNODE_RADIX_BITS`]: sele4n_abi::args::MIN_CNODE_RADIX_BITS
+/// [`MAX_CNODE_RADIX_BITS`]: sele4n_abi::args::MAX_CNODE_RADIX_BITS
+pub fn untyped_retype_cnode(
+    untyped_cap: CPtr,
+    radix_bits: u64,
+    child_id: ObjId,
+    dst_cnode: CPtr,
+    dst_slot: Slot,
+) -> KernelResult<SyscallResponse> {
+    untyped_retype(
+        untyped_cap,
+        TypeTag::CNode,
+        radix_bits,
+        child_id,
+        dst_cnode,
+        dst_slot,
+    )
+}
+
+/// Convenience: carve a reply object, with no caller, out of `untyped_cap`.
+pub fn untyped_retype_reply(
+    untyped_cap: CPtr,
+    child_id: ObjId,
+    dst_cnode: CPtr,
+    dst_slot: Slot,
+) -> KernelResult<SyscallResponse> {
+    untyped_retype(
+        untyped_cap,
+        TypeTag::Reply,
+        0,
+        child_id,
+        dst_cnode,
+        dst_slot,
+    )
+}
+
+/// Convenience: carve a scheduling context of `2^size_bits` bytes, with no
+/// budget and no bound thread, out of `untyped_cap`; `size_bits` is at least
+/// [`MIN_SCHED_CONTEXT_SIZE_BITS`].
+///
+/// [`MIN_SCHED_CONTEXT_SIZE_BITS`]: sele4n_abi::args::MIN_SCHED_CONTEXT_SIZE_BITS
+pub fn untyped_retype_sched_context(
+    untyped_cap: CPtr,
+    size_bits: u64,
+    child_id: ObjId,
+    dst_cnode: CPtr,
+    dst_slot: Slot,
+) -> KernelResult<SyscallResponse> {
+    untyped_retype(
+        untyped_cap,
+        TypeTag::SchedContext,
+        size_bits,
+        child_id,
+        dst_cnode,
+        dst_slot,
+    )
+}
+
 /// Hand an untyped's memory back to it — seL4's `resetUntypedCap`.
 ///
 /// Lean: the `.untypedReset` arm (API.lean, `untypedReset`), WS-BP BP7.1.
@@ -150,61 +262,4 @@ pub fn untyped_reset(untyped_cap: CPtr) -> KernelResult<SyscallResponse> {
         msg_regs: [0; 4],
         syscall_id: SyscallId::UntypedReset,
     })
-}
-
-/// Retype an untyped memory object into a specific kernel object type.
-///
-/// Lean: `apiLifecycleRetype` (API.lean) — requires `.retype` right.
-///
-/// The `type_tag` specifies the target object type (0=TCB, 1=Endpoint,
-/// 2=Notification, 3=CNode, 4=VSpaceRoot, 5=Untyped). The `size` is a
-/// hint for variable-size objects (e.g., CNode radix width).
-#[inline]
-pub fn lifecycle_retype(
-    untyped_cap: CPtr,
-    target_obj: ObjId,
-    type_tag: TypeTag,
-    size: u64,
-) -> KernelResult<SyscallResponse> {
-    let args = LifecycleRetypeArgs {
-        target_obj,
-        new_type: type_tag,
-        size,
-    };
-    let encoded = args.encode();
-    invoke_syscall(SyscallRequest {
-        cap_addr: untyped_cap,
-        msg_info: MessageInfo::new_const(3, 0, 0),
-        msg_regs: [encoded[0], encoded[1], encoded[2], 0],
-        syscall_id: SyscallId::LifecycleRetype,
-    })
-}
-
-/// Convenience: retype to create a TCB.
-pub fn retype_tcb(untyped_cap: CPtr, target: ObjId) -> KernelResult<SyscallResponse> {
-    lifecycle_retype(untyped_cap, target, TypeTag::Tcb, 0)
-}
-
-/// Convenience: retype to create an Endpoint.
-pub fn retype_endpoint(untyped_cap: CPtr, target: ObjId) -> KernelResult<SyscallResponse> {
-    lifecycle_retype(untyped_cap, target, TypeTag::Endpoint, 0)
-}
-
-/// Convenience: retype to create a Notification.
-pub fn retype_notification(untyped_cap: CPtr, target: ObjId) -> KernelResult<SyscallResponse> {
-    lifecycle_retype(untyped_cap, target, TypeTag::Notification, 0)
-}
-
-/// Convenience: retype to create a CNode with the given radix width.
-pub fn retype_cnode(
-    untyped_cap: CPtr,
-    target: ObjId,
-    radix_bits: u64,
-) -> KernelResult<SyscallResponse> {
-    lifecycle_retype(untyped_cap, target, TypeTag::CNode, radix_bits)
-}
-
-/// Convenience: retype to create a VSpaceRoot.
-pub fn retype_vspace_root(untyped_cap: CPtr, target: ObjId) -> KernelResult<SyscallResponse> {
-    lifecycle_retype(untyped_cap, target, TypeTag::VSpaceRoot, 0)
 }

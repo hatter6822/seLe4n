@@ -2284,7 +2284,7 @@ instance : BEq TCB where
 /-- AJ4-D (L-09): Detect sentinel-initialized (unconfigured) TCBs.
     Returns `true` if the TCB's identity or address-space references use
     reserved sentinel values (ID 0), indicating the TCB was freshly created
-    by `objectOfTypeTag`/`objectOfKernelType` and has not been configured
+    by a builder and has not been configured
     via `threadConfigureOp`. Unconfigured TCBs must NOT be scheduled. -/
 @[inline] def TCB.isUnconfigured (tcb : TCB) : Bool :=
   tcb.tid.isReserved || tcb.cspaceRoot.isReserved || tcb.vspaceRoot.isReserved
@@ -3704,6 +3704,13 @@ theorem allocate_child_fits_parent (ut ut' : UntypedObject) (idx : Nat)
   have hFits := canAllocate_implies_fits ut idx size hCan
   omega
 
+/-- WS-ZA ZA5.4 part 14: children below an index are below every later one —
+what lets a carve at the index rounded up (`alignedCarveIndex`) reuse the
+bound its capability's own index carries. -/
+theorem childrenBelow_mono (ut : UntypedObject) {idx idx' : Nat}
+    (h : ut.childrenBelow idx) (hLe : idx ≤ idx') : ut.childrenBelow idx' :=
+  fun c hc => Nat.le_trans (h c hc) hLe
+
 /-- WS-F2, restated over the capability's free index at WS-ZA ZA5.4 part 13:
 a successful allocation at `idx` keeps every child below the advanced index.
 Existing children are below `idx` (so below `idx + size`), and the new child
@@ -3848,7 +3855,9 @@ inductive SyscallId where
   | cspaceCopy
   | cspaceMove
   | cspaceDelete
-  | lifecycleRetype
+  -- 8: retired — the in-place `lifecycleRetype` (WS-ZA ZA5.4 part 14).  Every
+  -- object is carved from an untyped by `.untypedRetype`, as in seL4; the
+  -- number stays reserved (`retiredNumbers`) and is never reassigned.
   | vspaceMap
   | vspaceUnmap
   | serviceRegister      -- WS-Q1-D: capability-mediated service registration
@@ -3910,7 +3919,6 @@ namespace SyscallId
   | .cspaceCopy      => 5
   | .cspaceMove      => 6
   | .cspaceDelete    => 7
-  | .lifecycleRetype => 8
   | .vspaceMap       => 9
   | .vspaceUnmap     => 10
   | .serviceRegister    => 11
@@ -3945,8 +3953,16 @@ namespace SyscallId
   | .pageTableUnmap        => 40
   | .yield                 => 41
 
-/-- Total number of modeled syscalls. -/
-def count : Nat := 42
+/-- Total number of modeled syscalls (variants). -/
+def count : Nat := 41
+
+/-- One past the largest syscall number: every number below it is a variant's
+    or a retired one. -/
+def encodingBound : Nat := 42
+
+/-- Retired syscall numbers, reserved and never reassigned: `8`, the in-place
+    lifecycle retype (WS-ZA ZA5.4 part 14). -/
+def retiredNumbers : List Nat := [8]
 
 /-- Decode a natural number to a syscall identifier.
     Returns `none` for values outside the modeled set. -/
@@ -3959,7 +3975,6 @@ def count : Nat := 42
   | 5  => some .cspaceCopy
   | 6  => some .cspaceMove
   | 7  => some .cspaceDelete
-  | 8  => some .lifecycleRetype
   | 9  => some .vspaceMap
   | 10 => some .vspaceUnmap
   | 11 => some .serviceRegister
@@ -4005,7 +4020,6 @@ instance : ToString SyscallId where
     | .cspaceCopy      => "cspaceCopy"
     | .cspaceMove      => "cspaceMove"
     | .cspaceDelete    => "cspaceDelete"
-    | .lifecycleRetype => "lifecycleRetype"
     | .vspaceMap       => "vspaceMap"
     | .vspaceUnmap     => "vspaceUnmap"
     | .serviceRegister    => "serviceRegister"
@@ -4047,7 +4061,7 @@ instance : ToString SyscallId where
 def all : List SyscallId :=
   [ .send, .receive, .call, .reply
   , .cspaceMint, .cspaceCopy, .cspaceMove, .cspaceDelete
-  , .lifecycleRetype, .vspaceMap, .vspaceUnmap
+  , .vspaceMap, .vspaceUnmap
   , .serviceRegister, .serviceRevoke, .serviceQuery
   , .notificationSignal, .notificationWait, .replyRecv
   , .schedContextConfigure, .schedContextBind, .schedContextUnbind
@@ -4090,7 +4104,7 @@ theorem toNat_ofNat {n : Nat} {s : SyscallId} (h : SyscallId.ofNat? n = some s) 
   | 20 | 21 | 22 | 23 | 24 | 25
   | 26 | 27 | 28 | 29 | 30
   | 31 | 32 | 33 | 34 | 35 | 36 | 37 | 38 | 39 | 40 | 41 =>
-    intro s h; simp [ofNat?] at h; subst h; rfl
+    intro s h; simp [ofNat?] at h <;> (subst h; rfl)
   | n + 42 => intro s h; simp [ofNat?] at h
 
 /-- Injectivity: the toNat encoding is injective. -/
@@ -4100,6 +4114,22 @@ theorem toNat_injective {a b : SyscallId} (h : a.toNat = b.toNat) : a = b := by
   rw [h] at ha
   rw [ha] at hb
   exact Option.some.inj hb
+
+/-- Every number below `encodingBound` decodes to a syscall exactly when it is
+    not retired, and none at or past it does. -/
+theorem ofNat?_isSome_iff (n : Nat) :
+    (ofNat? n).isSome = (decide (n < encodingBound) && !retiredNumbers.contains n) := by
+  match n with
+  | 0  | 1  | 2  | 3  | 4  | 5  | 6
+  | 7  | 8  | 9  | 10 | 11 | 12 | 13
+  | 14 | 15 | 16 | 17 | 18 | 19
+  | 20 | 21 | 22 | 23 | 24 | 25
+  | 26 | 27 | 28 | 29 | 30
+  | 31 | 32 | 33 | 34 | 35 | 36 | 37 | 38 | 39 | 40 | 41 => rfl
+  | n + 42 => simp [ofNat?, encodingBound, retiredNumbers]
+
+/-- The retired in-place retype's number names no syscall. -/
+theorem ofNat?_retired : ofNat? 8 = none := rfl
 
 end SyscallId
 

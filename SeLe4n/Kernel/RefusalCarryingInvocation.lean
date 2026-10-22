@@ -115,7 +115,7 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
     | _ => .error .invalidCapability
   | .untypedRetype =>
     match cap.target with
-    | .object _ => untypedRetypeFromCap tid capAddr (decodeUntypedRetypeArgsBy (msgRegOfFile layout regs)) st
+    | .object _ => untypedRetypeFromCap tid executingCore capAddr (decodeUntypedRetypeArgsBy (msgRegOfFile layout regs)) st
     | _ => .error .invalidCapability
   | .untypedReset =>
     match cap.target with
@@ -805,7 +805,7 @@ the write alone.  An arm whose checks refuse, and every arm not yet split, is
       match decodeUntypedRetypeArgsBy (msgRegOfFile layout regs) with
       | .error e => .error (e, st)
       | .ok args =>
-        match carveRequestOf? st args.newType args.sizeBits with
+        match carveRequestOf? st executingCore args.newType args.sizeBits with
         | .error e => .error (e, st)
         | .ok req =>
           match validateObjIdArg args.childId with
@@ -1293,7 +1293,7 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
       | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, untypedRetypeFromCap, hD]
       | ok args =>
         dsimp only
-        cases hQ : carveRequestOf? st args.newType args.sizeBits with
+        cases hQ : carveRequestOf? st executingCore args.newType args.sizeBits with
         | error e =>
           simp [RefusalCarrying.ofKernel, dispatchInvocationBy, untypedRetypeFromCap, hD, hQ]
         | ok req =>

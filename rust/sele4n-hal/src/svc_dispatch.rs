@@ -60,8 +60,9 @@ use crate::trap::TrapFrame;
 /// in *shape* from a kernel rejection and collides with nothing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DispatchError {
-    /// Caller passed a syscall id outside the valid `0..SyscallId::COUNT`
-    /// range.  Surfaced to userspace as `KernelError::InvalidSyscallNumber`
+    /// Caller passed a syscall id that names no syscall: one at or past
+    /// `SyscallId::ENCODING_BOUND`, or a retired number
+    /// (`SyscallId::RETIRED`).  Surfaced to userspace as `KernelError::InvalidSyscallNumber`
     /// on the `x1` label.
     InvalidSyscallId,
     /// Caller passed an argument count below the syscall's minimum
@@ -99,7 +100,7 @@ pub enum SyscallId {
     CSpaceCopy = 5,
     CSpaceMove = 6,
     CSpaceDelete = 7,
-    LifecycleRetype = 8,
+    // 8: retired (the in-place lifecycle retype, WS-ZA ZA5.4 part 14).
     VSpaceMap = 9,
     VSpaceUnmap = 10,
     ServiceRegister = 11,
@@ -174,10 +175,17 @@ pub enum SyscallId {
 
 impl SyscallId {
     /// Total number of modelled syscalls (must match `sele4n-types`).
-    pub const COUNT: u32 = 42;
+    pub const COUNT: u32 = 41;
+
+    /// One past the largest syscall number (must match `sele4n-types`).
+    pub const ENCODING_BOUND: u32 = 42;
+
+    /// Retired syscall numbers, reserved and never reassigned (must match
+    /// `sele4n-types`): `8`, the in-place lifecycle retype.
+    pub const RETIRED: [u32; 1] = [8];
 
     /// AN9-F.1.b: decode a raw `u32` syscall id, rejecting values
-    /// outside the valid `0..COUNT` range with `None`.
+    /// at or past `ENCODING_BOUND` and the retired numbers with `None`.
     pub const fn from_u32(v: u32) -> Option<Self> {
         match v {
             0 => Some(Self::Send),
@@ -188,7 +196,6 @@ impl SyscallId {
             5 => Some(Self::CSpaceCopy),
             6 => Some(Self::CSpaceMove),
             7 => Some(Self::CSpaceDelete),
-            8 => Some(Self::LifecycleRetype),
             9 => Some(Self::VSpaceMap),
             10 => Some(Self::VSpaceUnmap),
             11 => Some(Self::ServiceRegister),
@@ -246,13 +253,12 @@ impl SyscallId {
             // WS-RA RA.D.1: reconciled with the Lean decoders, which are
             // the authority — `decodeCSpaceMintArgs` reads exactly FOUR
             // registers (srcSlot, dstSlot, rights, badge), `decodeCSpaceCopyArgs`
-            // (shared by move) exactly TWO, and `decodeLifecycleRetypeArgs`
-            // exactly THREE.  The previous minimums (5 / 4 / 4 / 4) exceeded
+            // (shared by move) exactly TWO.  The previous minimums exceeded
             // what the wrappers send (`cspace_mint` length 4, `cspace_copy` /
-            // `cspace_move` 2, `lifecycle_retype` 3), so this gate rejected
-            // every one of those calls with `InvalidArgument` before the
-            // kernel — four wrappers unreachable on hardware, the same
-            // off-by-N class the `TcbSetPriority` note below records.
+            // `cspace_move` 2), so this gate rejected every one of those calls
+            // with `InvalidArgument` before the kernel — wrappers unreachable
+            // on hardware, the same off-by-N class the `TcbSetPriority` note
+            // below records.
             Self::CSpaceMint => 4,
             Self::CSpaceCopy => 2,
             Self::CSpaceMove => 2,
@@ -273,7 +279,6 @@ impl SyscallId {
             Self::PageTableUnmap => 0,
             // WS-ZA ZA4.3: yield takes no operand at all.
             Self::Yield => 0,
-            Self::LifecycleRetype => 3,
             Self::VSpaceMap => 4,
             Self::VSpaceUnmap => 2,
             Self::ServiceRegister => 4,
@@ -876,11 +881,18 @@ mod tests {
     fn syscall_id_discriminants_match_lean_abi() {
         // Round-trip every variant.  If a new syscall lands in Lean,
         // this test must be extended in lockstep.
-        for i in 0..SyscallId::COUNT {
+        let mut variants = 0;
+        for i in 0..SyscallId::ENCODING_BOUND {
+            if SyscallId::RETIRED.contains(&i) {
+                assert!(SyscallId::from_u32(i).is_none(), "retired id {} decodes", i);
+                continue;
+            }
             let sid = SyscallId::from_u32(i).unwrap();
             assert_eq!(sid.to_u32(), i, "round-trip failed at id {}", i);
+            variants += 1;
         }
-        assert!(SyscallId::from_u32(SyscallId::COUNT).is_none());
+        assert_eq!(variants, SyscallId::COUNT);
+        assert!(SyscallId::from_u32(SyscallId::ENCODING_BOUND).is_none());
         assert!(SyscallId::from_u32(255).is_none());
     }
 
@@ -894,17 +906,31 @@ mod tests {
     /// could not detect a missing variant.
     #[test]
     fn syscall_id_mirror_matches_sele4n_types() {
-        // Counts agree.
+        // Counts, bounds and retired numbers agree.
         assert_eq!(
             SyscallId::COUNT as usize,
             sele4n_types::SyscallId::COUNT,
             "HAL SyscallId::COUNT drifted from sele4n-types"
         );
+        assert_eq!(
+            u64::from(SyscallId::ENCODING_BOUND),
+            sele4n_types::SyscallId::ENCODING_BOUND
+        );
+        assert_eq!(
+            SyscallId::RETIRED.map(u64::from),
+            sele4n_types::SyscallId::RETIRED
+        );
         // Every canonical discriminant decodes to a HAL variant with the same
-        // raw u32, and vice-versa (the boundary is exactly [0, COUNT)).
-        for i in 0..sele4n_types::SyscallId::COUNT as u32 {
-            let canonical = sele4n_types::SyscallId::from_u64(u64::from(i))
-                .expect("canonical syscall id must decode");
+        // raw u32, and vice-versa (the boundary is exactly [0, ENCODING_BOUND)
+        // less the retired numbers, which neither decodes).
+        for i in 0..SyscallId::ENCODING_BOUND {
+            let Some(canonical) = sele4n_types::SyscallId::from_u64(u64::from(i)) else {
+                assert!(
+                    SyscallId::from_u32(i).is_none(),
+                    "HAL decodes id {i} the canonical set lacks"
+                );
+                continue;
+            };
             assert_eq!(
                 canonical.to_u64(),
                 u64::from(i),
@@ -919,7 +945,7 @@ mod tests {
             );
         }
         // The first out-of-range id is rejected by BOTH.
-        let oob = sele4n_types::SyscallId::COUNT as u32;
+        let oob = SyscallId::ENCODING_BOUND;
         assert!(SyscallId::from_u32(oob).is_none());
         assert!(sele4n_types::SyscallId::from_u64(u64::from(oob)).is_none());
     }
@@ -1048,7 +1074,8 @@ mod tests {
             frame[..6].copy_from_slice(&regs);
             assert_eq!(
                 sele4n_abi::decode_response(frame),
-                Err(sele4n_types::KernelError::from_u32(disc).expect("0..=56 are all valid"))
+                Err(sele4n_types::KernelError::from_u32(disc)
+                    .unwrap_or(sele4n_types::KernelError::UnknownKernelError))
             );
         }
         // The four fault tags a handler receives are deliveries, not status:
@@ -1132,7 +1159,6 @@ mod tests {
         assert_eq!(SyscallId::CSpaceMint.min_inline_args(), 4);
         assert_eq!(SyscallId::CSpaceCopy.min_inline_args(), 2);
         assert_eq!(SyscallId::CSpaceMove.min_inline_args(), 2);
-        assert_eq!(SyscallId::LifecycleRetype.min_inline_args(), 3);
         assert_eq!(SyscallId::ServiceRegister.min_inline_args(), 4);
         // PR #866 round-3 review: suspend / resume / unbind read NO message
         // registers (`decodeSuspendArgs` / `decodeResumeArgs` /

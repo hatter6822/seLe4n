@@ -304,7 +304,7 @@ inventory was written:
   - `Invariant/Preservation/Insert.lean` — `cspaceLookupSlot` / `cspaceInsertSlot` / `cspaceMint` base preservation.
   - `Invariant/Preservation/Delete.lean` — `cspaceDeleteSlotCore` / `cspaceDeleteSlot` / `cspaceRevoke` base preservation.
   - `Invariant/Preservation/CopyMoveMutate.lean` — `cspaceCopy` / `cspaceMove` / `cspaceMintWithCdt` / `cspaceMutate` preservation.
-  - `Invariant/Preservation/EndpointReplyAndLifecycle.lean` — `endpointReply` + `coreIpcInvariantBundle` + `lifecycleRetypeObject` / `lifecycleRevokeDeleteRetype` preservation cluster.
+  - `Invariant/Preservation/EndpointReplyAndLifecycle.lean` — `endpointReply` + `coreIpcInvariantBundle` preservation cluster (the in-place retype's left with it at `v0.36.125`).
   - `Invariant/Preservation/BadgeIpcCapsAndCdtMaps.lean` — Mint / Mutate badge preservation + `ipcTransferSingleCap` / `ipcUnwrapCaps` variants + CDT composition witnesses.
 - **WS-N modules** (v0.17.0–v0.17.5, **PORTFOLIO COMPLETE**):
   - `SeLe4n/Kernel/RobinHood/Core.lean` — Robin Hood hash table types (`RHEntry`, `RHTable`), fuel-bounded operations (`insert`, `get?`, `erase`, `fold`, `resize`), `GetElem?`/`Membership` instances. 379 LoC. **N1 COMPLETED** (v0.17.1).
@@ -413,10 +413,9 @@ equivalence theorems (M-01), error asymmetry documentation (L-18).
 
 - `SeLe4n/Kernel/Lifecycle/Operations.lean` — thin re-export hub after AN4-G.5 split (~54 LOC).
   - `Operations/Cleanup.lean` — cleanup primitives (`lifecycleRetypeAuthority`, `removeThreadFromQueue`, `spliceOutMidQueueNode`, `removeFromAll{Endpoint,Notification}Queues`, `cleanupDonatedSchedContext`, `cleanupTcbReferences`, and since `v0.35.164` the per-core donation-cancellation arms `cancelBoundDonationOnCore` / `cancelDonatedDonationOnCore` with their dispatcher `cancelDonationArmOnCore`, run by the destroy path and pinned to the suspend's G3).
-  - `Operations/CleanupPreservation.lean` — cleanup preservation theorems, `detachCNodeSlots`, `lifecyclePreRetypeCleanup`, AN4-G.2 `lifecycleCleanupPipeline` wrapper, `Internal.lifecycleRetypeObject` (AN4-A), `lifecycleRevokeDeleteRetype`.
-  - `Operations/ScrubAndUntyped.lean` — `scrubObjectMemory` + frame theorems, `retypeFromUntyped` + capacity / freshness / AN4-G.4 atomicity / error-path theorems.
-  - `Operations/RetypeWrappers.lean` — production entry points: `lifecycleRetypeWithCleanup`, WS-K-D dispatch helpers, `lifecycleRetypeDirectCommit` and the `lifecycleRetypeDirectWithCleanup*` variants (authority checked first).
-  - AN4-A (H-02): the internal retype primitive `Internal.lifecycleRetypeObject` lives in `CleanupPreservation`; production dispatch MUST call `lifecycleRetypeWithCleanup` / `lifecycleRetypeDirectWithCleanup`. Enforcement via `scripts/check_lifecycle_internal_allowlist.sh` wired into Tier 0 hygiene.
+  - `Operations/CleanupPreservation.lean` — cleanup preservation theorems, `detachCNodeSlots`, `lifecyclePreRetypeCleanup` (the destroy cleanup, kept with no live caller since `v0.36.125`), AN4-G.2 `lifecycleCleanupPipeline` wrapper.
+  - `Operations/ScrubAndUntyped.lean` — `CarveRequest` (every object kind, at seL4's size and alignment), `retypeFromUntyped`, `untypedRetypeObject` + capacity / freshness / alignment / per-kind / authority-first theorems.
+  - `Operations/RetypeWrappers.lean` — the ASID shootdown round fold and the carve-scrub cache-maintenance discharge (the in-place retype's production wrappers were deleted at `v0.36.125`).
 - `SeLe4n/Kernel/Lifecycle/Suspend.lean` — D1: `suspendThread`/`resumeThread` with run-queue cleanup and state transitions.
 - `SeLe4n/Kernel/Lifecycle/Invariant.lean`
   - step-3 lifecycle invariant components and bundle layering,
@@ -507,7 +506,7 @@ determinism. See `Service/Operations.lean` for the full design rationale.
 - `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` *(WS-K-B v0.16.1; extended WS-K-F v0.16.5)*
   - Per-syscall typed argument decode layer (layer 2 of two-layer decode).
     7 argument structures (`CSpaceMintArgs`, `CSpaceCopyArgs`, `CSpaceMoveArgs`,
-    `CSpaceDeleteArgs`, `LifecycleRetypeArgs`, `VSpaceMapArgs`, `VSpaceUnmapArgs`),
+    `CSpaceDeleteArgs`, `UntypedRetypeArgs`, `VSpaceMapArgs`, `VSpaceUnmapArgs`),
     7 total decode functions via shared `requireMsgReg` helper, 7 determinism
     theorems, 7 error-exclusivity theorems.
   - WS-K-F: 7 encode functions, 7 round-trip theorems (`rcases + rfl`),

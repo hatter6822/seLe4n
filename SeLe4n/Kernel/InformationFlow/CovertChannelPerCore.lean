@@ -55,8 +55,8 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId)
 -- bracket `withLockSet`, which every seam's `BracketSpec.run` is the
 -- executed projection of (WS-LS LS2).
 --
--- Its class is **capability-only**, and for the same reason as `storeObject`'s
--- and `lifecycleRetypeObject`'s: it is an internal building block invoked under
+-- Its class is **capability-only**, and for the same reason as `storeObject`'s:
+-- it is an internal building block invoked under
 -- an already-capability-guarded context, and it consults no information-flow
 -- policy — the bracket cannot admit a flow the guarded transition would not
 -- admit, because it does not carry data across a label boundary at all
@@ -140,7 +140,6 @@ def crossCoreEnforcementEntries : List EnforcementClass :=
   -- wrapper, which the routing walk reaches from it.
   , .capabilityOnly "vspaceMapFromFrameCap"
   , .capabilityOnly "vspaceUnmapPageWithShootdownAndIcacheBroadcast"
-  , .capabilityOnly "lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache"
   -- PR #861 review round 12: the priority-control arms were boot-pinned twice
   -- over — the run-queue re-bucket tested membership in the BOOT core's queue
   -- (a silent no-op for a thread queued anywhere else, so a demotion never took
@@ -157,7 +156,7 @@ def crossCoreEnforcementEntries : List EnforcementClass :=
 
 /-- SM8.B.6: the SMP enforcement boundary — the canonical classification (which
 since SM8.E.3 carries the two-phase-locking bracket the per-object lock
-discipline introduces) and the fifteen live cross-core wrappers.
+discipline introduces) and the fourteen live cross-core wrappers.
 
 The canonical entries are **kept**, not replaced: the boot-pinned
 `syscallEntry` (`Kernel/API.lean` — driven by the trace harness and every
@@ -166,7 +165,7 @@ are live and both must be classified. -/
 def enforcementBoundaryPerCore : List EnforcementClass :=
   enforcementBoundaryExtended ++ crossCoreEnforcementEntries
 
-/-- SM8.B.6: the per-core boundary has 67 entries — the live canonical 52 (39
+/-- SM8.B.6: the per-core boundary has 64 entries — the live canonical 50 (39
 plus the 2PL bracket SM8.E.3 promoted into it, plus WS-SM SM9.A.11's two
 audit-trail entries, plus WS-SM SM9.C.8's data-carrying declassification, plus
 the PR #887 review round's fault-handler configuration `setThreadFaultHandlerOp`,
@@ -175,14 +174,16 @@ BP7.1's untyped carve `untypedRetypeFromCap`, its reset `untypedResetWithShootdo
 two finalising destroyers `cspaceDeleteSlotFinalising` /
 `cspaceRevokeCdtFinalising`, its space change `copyThreadSpaces`, and the two
 page-table operations `pageTableMap` / `pageTableUnmap`, plus WS-ZA ZA4.3's
-yield `yieldOnCore`) and the fifteen cross-core
-wrappers.  Re-anchored at the
+yield `yieldOnCore`, less WS-ZA ZA5.4 part 14's two retired in-place retype
+entries `lifecycleRetypeObject` / `lifecycleRevokeDeleteRetype`) and the
+fourteen cross-core wrappers (the in-place retype's left with it).  Re-anchored at the
 SM8.A cut, in the fourth review round, again in rounds 10 and 12 as the `.send`,
 resume and architecture arms joined the cross-core surface, in round 37 as the
 routing gate found `.tcbSetAffinity`, at SM9.A.11, at SM9.C.8, at the
 PR #887 review round, at WS-RR RR8.16, at WS-BP BP7.1 (five times), at
-WS-ZA ZA4.3, and at WS-ZA ZA5.3 part 8, which removed WS-RR RR8.16's
-`cspaceRevokeCdt` with the general revocation it named.
+WS-ZA ZA4.3, at WS-ZA ZA5.3 part 8, which removed WS-RR RR8.16's
+`cspaceRevokeCdt` with the general revocation it named, and at WS-ZA ZA5.4
+part 14, which removed the in-place retype.
 `enforcementBoundaryExtended_count` is the authority for the base figure and
 this theorem for the total; the sentence above is worth what they are worth, and
 round 38 caught it stale at 53 one commit after the theorem moved.
@@ -190,10 +191,10 @@ round 38 caught it stale at 53 one commit after the theorem moved.
 The SM8.E.3 promotion left the total **unchanged**, which is the point of
 appending the bracket last in the canonical list; SM9.A.11 moves it, because the
 two audit entries are genuinely new operations rather than a reclassification. -/
-theorem enforcementBoundaryPerCore_count : enforcementBoundaryPerCore.length = 67 := by rfl
+theorem enforcementBoundaryPerCore_count : enforcementBoundaryPerCore.length = 64 := by rfl
 
 /-- SM8.B.7 (completeness, part 1): the per-core boundary **extends** the
-canonical one — it is the canonical list followed by the fifteen live cross-core
+canonical one — it is the canonical list followed by the fourteen live cross-core
 wrappers, so no existing classification was dropped or reclassified in the lift.
 Additive by construction: `List.IsPrefix` is the statement that the canonical
 list survives unmodified as a prefix. -/
@@ -237,9 +238,10 @@ theorem enforcementBoundaryPerCore_is_complete : enforcementBoundaryPerCoreCompl
 
 /-- SM8.B.6: **the operation each syscall reaches under SMP.**
 
-Differs from `syscallIdToEnforcementName` at exactly the fifteen arms the SMP
+Differs from `syscallIdToEnforcementName` at exactly the fourteen arms the SMP
 work re-routed — seven from SM6, `.send` and `.tcbResume` from PR #861 review
-round 10, the three SM7.D/SM7.F architecture wrappers, and the two
+round 10, the two SM7.D/SM7.F architecture wrappers still live (the in-place
+retype's third left with it at WS-ZA ZA5.4 part 14), and the two
 priority-control arms from round 12; every other syscall
 reaches the same operation it did before SMP, so it falls through to the
 canonical mapping rather than being restated (a second full copy would be a
@@ -256,7 +258,6 @@ def syscallIdToEnforcementNamePerCore : SyscallId → String
   | .tcbResume           => "resumeThreadOnCore"
   | .vspaceMap           => "vspaceMapFromFrameCap"
   | .vspaceUnmap         => "vspaceUnmapPageWithShootdownAndIcacheBroadcast"
-  | .lifecycleRetype     => "lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache"
   | .tcbSetPriority      => "setPriorityOnCore"
   | .tcbSetMCPriority    => "setMCPriorityOnCore"
   | .tcbSetAffinity      => "setThreadCpuAffinityOnCore"
@@ -280,7 +281,7 @@ def enforcementBoundaryPerCoreCompleteCrossCore : Bool :=
 theorem enforcementBoundaryPerCore_is_complete_crossCore :
     enforcementBoundaryPerCoreCompleteCrossCore = true := by decide
 
-/-- SM8.B.7: the fifteen re-routed arms are genuinely re-routed — the per-core
+/-- SM8.B.7: the fourteen re-routed arms are genuinely re-routed — the per-core
 mapping differs from the canonical one at exactly those syscalls, and nowhere
 else.  A syscall silently added to (or dropped from) the cross-core surface
 moves this count.
@@ -288,11 +289,12 @@ moves this count.
 Was seven until PR #861 review round 10 rerouted `.send` and `.tcbResume` off
 their boot-pinned operations, and round 12 observed that the three SM7.D/SM7.F
 architecture wrappers had been live per-core arms all along without appearing
-here.  Round 37 added `.tcbSetAffinity`, found by the widened routing gate. -/
-theorem syscallIdToEnforcementNamePerCore_differs_at_fifteen :
+here.  Round 37 added `.tcbSetAffinity`, found by the widened routing gate.
+WS-ZA ZA5.4 part 14 removed `.lifecycleRetype` with the in-place retype. -/
+theorem syscallIdToEnforcementNamePerCore_differs_at_fourteen :
     (SyscallId.all.filter (fun sid =>
       decide (syscallIdToEnforcementNamePerCore sid ≠ syscallIdToEnforcementName sid))).length
-      = 15 := by decide
+      = 14 := by decide
 
 /-- SM8.B.7: **a cross-core wrapper carries the same enforcement class as the
 single-core operation it replaced.**  Re-routing a transition to another core

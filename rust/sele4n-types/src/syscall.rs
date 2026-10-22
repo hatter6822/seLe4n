@@ -5,9 +5,11 @@
 
 use crate::rights::AccessRight;
 
-/// Syscall identifier. 42 variants matching the Lean `SyscallId` inductive.
+/// Syscall identifier. 41 variants matching the Lean `SyscallId` inductive.
 ///
 /// The `toNat` encoding from Lean is reflected in the `#[repr(u64)]` discriminants.
+/// Number 8, the retired in-place `lifecycleRetype`, is reserved: no variant
+/// carries it and it is never reassigned (see [`SyscallId::RETIRED`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u64)]
 pub enum SyscallId {
@@ -21,8 +23,7 @@ pub enum SyscallId {
     CSpaceCopy = 5,
     CSpaceMove = 6,
     CSpaceDelete = 7,
-    // Lifecycle
-    LifecycleRetype = 8,
+    // 8: retired (WS-ZA ZA5.4 part 14, the in-place retype); reserved.
     // VSpace
     VSpaceMap = 9,
     VSpaceUnmap = 10,
@@ -161,8 +162,17 @@ pub enum SyscallId {
 }
 
 impl SyscallId {
-    /// Total number of modeled syscalls.
-    pub const COUNT: usize = 42;
+    /// Total number of modeled syscalls (variants).
+    pub const COUNT: usize = 41;
+
+    /// One past the largest syscall number: every number below it is a
+    /// variant's or a retired one.
+    pub const ENCODING_BOUND: u64 = 42;
+
+    /// Retired syscall numbers, reserved and never reassigned.  `8` was the
+    /// in-place `lifecycleRetype`; since WS-ZA ZA5.4 part 14 every object is
+    /// carved from an untyped by `UntypedRetype` (36), as in seL4.
+    pub const RETIRED: [u64; 1] = [8];
 
     /// Convert from a raw `u64` value. Returns `None` for out-of-range.
     /// Lean: `SyscallId.ofNat?`
@@ -176,7 +186,6 @@ impl SyscallId {
             5 => Some(Self::CSpaceCopy),
             6 => Some(Self::CSpaceMove),
             7 => Some(Self::CSpaceDelete),
-            8 => Some(Self::LifecycleRetype),
             9 => Some(Self::VSpaceMap),
             10 => Some(Self::VSpaceUnmap),
             11 => Some(Self::ServiceRegister),
@@ -234,7 +243,6 @@ impl SyscallId {
             // delete is.  Not `Grant`: grant authorises *creating* a derivation
             // (mint/copy/move), and destroying one is not that authority.
             Self::CspaceRevoke => AccessRight::Write,
-            Self::LifecycleRetype => AccessRight::Retype,
             // WS-BP BP7.1: a carve is a retype of the untyped's memory.
             Self::UntypedRetype => AccessRight::Retype,
             // WS-BP BP7.1: a reset is authority over the untyped's memory.
@@ -297,24 +305,39 @@ mod tests {
 
     #[test]
     fn from_u64_roundtrip() {
-        for i in 0..(SyscallId::COUNT as u64) {
+        let mut variants = 0;
+        for i in 0..SyscallId::ENCODING_BOUND {
+            if SyscallId::RETIRED.contains(&i) {
+                assert!(SyscallId::from_u64(i).is_none());
+                continue;
+            }
             let sid = SyscallId::from_u64(i).unwrap();
             assert_eq!(sid.to_u64(), i);
+            variants += 1;
         }
+        assert_eq!(variants, SyscallId::COUNT);
     }
 
     #[test]
     fn from_u64_out_of_range() {
-        assert!(SyscallId::from_u64(SyscallId::COUNT as u64).is_none());
+        assert!(SyscallId::from_u64(SyscallId::ENCODING_BOUND).is_none());
         assert!(SyscallId::from_u64(255).is_none());
+    }
+
+    #[test]
+    fn retired_lifecycle_retype_number_is_reserved() {
+        assert_eq!(SyscallId::RETIRED, [8]);
+        assert!(SyscallId::from_u64(8).is_none());
     }
 
     #[test]
     fn injective() {
         // All variants produce distinct values
-        let mut seen = [false; SyscallId::COUNT];
-        for i in 0..(SyscallId::COUNT as u64) {
-            let sid = SyscallId::from_u64(i).unwrap();
+        let mut seen = [false; SyscallId::ENCODING_BOUND as usize];
+        for i in 0..SyscallId::ENCODING_BOUND {
+            let Some(sid) = SyscallId::from_u64(i) else {
+                continue;
+            };
             let idx = sid.to_u64() as usize;
             assert!(!seen[idx]);
             seen[idx] = true;
@@ -335,14 +358,6 @@ mod tests {
         assert_eq!(SyscallId::CSpaceCopy.required_right(), AccessRight::Grant);
         assert_eq!(SyscallId::CSpaceMove.required_right(), AccessRight::Grant);
         assert_eq!(SyscallId::CSpaceDelete.required_right(), AccessRight::Write);
-    }
-
-    #[test]
-    fn required_right_lifecycle() {
-        assert_eq!(
-            SyscallId::LifecycleRetype.required_right(),
-            AccessRight::Retype
-        );
     }
 
     #[test]
@@ -474,7 +489,8 @@ mod tests {
         // WS-ZA ZA4.3: the yield, appended the same way.
         assert_eq!(SyscallId::from_u64(41), Some(SyscallId::Yield));
         assert_eq!(SyscallId::from_u64(42), None);
-        assert_eq!(SyscallId::COUNT, 42);
+        assert_eq!(SyscallId::COUNT, 41);
+        assert_eq!(SyscallId::ENCODING_BOUND, 42);
         assert_eq!(
             SyscallId::UntypedReset.required_right(),
             AccessRight::Retype

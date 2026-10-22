@@ -500,8 +500,8 @@ theorem tlbInvalidateOnAllCores_isSome_of_quiescent {st : SystemState}
 consistent with the current page tables — its ASID **must resolve** to a root
 *and* the root's lookup must match the cached mapping.  This is an existential
 conjunction, **not** an implication: an entry whose ASID no longer resolves (a
-use-after-retype entry — `lifecycleRetype` replaced the VSpace root, so
-`resolveAsidRoot` returns `none`) is **stale**, not vacuously consistent.  The
+use-after-free entry — its VSpace root is gone, so `resolveAsidRoot` returns
+`none`) is **stale**, not vacuously consistent.  The
 implication form accepted such an entry (the premise being unsatisfiable), so
 the per-core invariant would have failed to flag a real use-after-retype
 state; requiring resolution closes that.  The per-entry kernel of the SM7.F

@@ -274,9 +274,9 @@ A key holding a CNode declares that CNode's **read** lock — the interior lock
 RR7.41 introduced.  A key holding **no CNode** (absent, or another kind of
 object) declares the **state-level** lock in read mode: no per-object lock can
 stand for a key with nothing behind it, and the writers that can change what a
-key holds — a retype installing an object there, a `cspaceDelete` or a cleanup
+key holds — a carve installing an object there, a `cspaceDelete` or a cleanup
 removing one — are the *structural* writers, every one of which declares
-`stateLevelLock` in **write** mode (`lockSet_lifecycleRetype`,
+`stateLevelLock` in **write** mode (`lockSet_untypedRetype`,
 `lockSet_cspaceDelete`).  Read against write conflicts, so a resolution that
 failed at a key and a writer that would make it succeed are ordered by SM3.E's
 conflict relation rather than interleaved.  A lock of the object's *actual*

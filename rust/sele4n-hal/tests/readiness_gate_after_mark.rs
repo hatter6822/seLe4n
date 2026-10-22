@@ -141,9 +141,15 @@ fn prefilters_still_refuse_on_a_ready_core() {
     mark_this_core_ready();
     let args = SyscallArgs::from_trap_frame(&zero_frame());
     assert_eq!(
-        dispatch_svc(SyscallId::COUNT, &args),
+        dispatch_svc(SyscallId::ENCODING_BOUND, &args),
         Err(DispatchError::InvalidSyscallId),
         "an out-of-range id is refused by the prefilter once the core is ready"
+    );
+    // The retired in-place retype's number names no syscall.
+    assert_eq!(
+        dispatch_svc(SyscallId::RETIRED[0], &args),
+        Err(DispatchError::InvalidSyscallId),
+        "a retired id is refused by the prefilter"
     );
     assert_eq!(
         dispatch_svc(SyscallId::TcbSetPriority.to_u32(), &args),

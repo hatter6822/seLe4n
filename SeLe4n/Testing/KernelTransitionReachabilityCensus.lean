@@ -970,7 +970,6 @@ only as the old general revocation's prologue, and that prologue became a read o
 the source slot, because the local sweep matched on the **target** and so destroyed
 capabilities that were not derivations — an independently rooted capability to
 the same object, and the revoked capability's own parent.  What still runs it is
-`lifecycleRevokeDeleteRetype`, an internal proof helper already on this list, and
 the non-interference operation catalogue, where it is an operation in its own
 right; no syscall reaches it.
 
@@ -1059,7 +1058,6 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.Concurrency.setTlbAction
   , `SeLe4n.Kernel.Concurrency.updateObjectAt
   , `SeLe4n.Kernel.Concurrency.withLockSet
-  , `SeLe4n.Kernel.Internal.lifecycleRetypeObject
   , `SeLe4n.Kernel.Lifecycle.Suspend.cancelBoundDonation
   , `SeLe4n.Kernel.Lifecycle.Suspend.cancelDonatedDonation
   , `SeLe4n.Kernel.Lifecycle.Suspend.cancelDonation
@@ -1146,11 +1144,22 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.handleYieldWithBudget
   , `SeLe4n.Kernel.lifecycleCleanupPipeline
   , `SeLe4n.Kernel.lifecyclePreRetypeCleanupWithToken
-  , `SeLe4n.Kernel.lifecycleRetypeWithCleanup
-  , `SeLe4n.Kernel.lifecycleRetypeWithCleanupShootdown
-  , `SeLe4n.Kernel.lifecycleRetypeWithCleanupShootdownPerCore
-  , `SeLe4n.Kernel.lifecycleRetypeWithCleanupShootdownPerCoreIcache
-  , `SeLe4n.Kernel.lifecycleRevokeDeleteRetype
+  -- WS-ZA ZA5.4 part 14: the destroy cleanup and the steps only it runs.  The
+  -- in-place retype was their one seam; it is deleted, and the cleanup is kept
+  -- for the destroy path that will run it (docs/REGISTERED_DEBT.md, "The destroy
+  -- cleanup is kept with no live caller").
+  , `SeLe4n.Kernel.lifecyclePreRetypeCleanup
+  , `SeLe4n.Kernel.cancelDonationArmOnCore
+  , `SeLe4n.Kernel.cleanupEndpointServiceRegistrations
+  , `SeLe4n.Kernel.cleanupTcbReferences
+  , `SeLe4n.Kernel.clearDonationOriginReferences
+  , `SeLe4n.Kernel.detachCNodeSlots
+  , `SeLe4n.Kernel.detachTcbSlots
+  , `SeLe4n.Kernel.releaseSchedContextBinding
+  , `SeLe4n.Kernel.removeRunnableFromAllCores
+  , `SeLe4n.Kernel.removeRunnableStepOnCore
+  , `SeLe4n.Kernel.Architecture.tlbFlushByASID
+  , `SeLe4n.Kernel.Architecture.tlbFlushByASIDWithShootdown
   , `SeLe4n.Kernel.notificationSignal
   , `SeLe4n.Kernel.notificationSignalBound
   , `SeLe4n.Kernel.notificationSignalBoundCrossCoreDispatch

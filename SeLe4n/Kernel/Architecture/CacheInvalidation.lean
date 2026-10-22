@@ -140,9 +140,9 @@ inductive ICacheInvalidation where
       of Unification, then invalidate **every** instruction cache in the domain
       — `DC CVAU` over the range → `DSB ISH` → `IC IALLUIS` → `DSB ISH` → `ISB`.
 
-      The re-type operand.  A re-type *scrubs* the target's backing memory
-      (`scrubObjectMemory` zeroes `[objId × allocSize, + allocSize)`) and then
-      installs a different object over it.  Those zeroing stores land in the
+      The scrub operand.  A carve *scrubs* a frame's page
+      (`PhysicalWrite.zeroPage`) before handing it to a new owner.  Those
+      zeroing stores land in the
       data cache; until a `DC CVAU` pushes them to the Point of Unification an
       instruction fetch of the same physical memory still reads the **previous
       owner's** content, because fetches read at the PoU.  `IC IALLUIS` alone

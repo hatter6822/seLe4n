@@ -11,7 +11,7 @@
 -- confinement theorem, and those moved from the staged
 -- `InformationFlow/NonInterferenceCrossCore` into `Kernel/SlotConfinement` so
 -- that the syscall seam's `BracketSpec.covers` (`SyscallSeamCoverage.lean`)
--- can be built from the seventeen theorems below.
+-- can be built from the sixteen theorems below.
 import SeLe4n.Kernel.SyscallSchedFootprint
 import SeLe4n.Kernel.SchedLockBracket
 import SeLe4n.Kernel.SlotConfinement
@@ -42,8 +42,7 @@ transition writes no core's replenishment at all.  Where the segment names
 cores, the clause is an **exactness** claim: unchanged outside exactly those.
 This module holds the first group, and the arms whose segment names cores
 (`.receive`, `.call`, `.reply`, `.replyRecv`, `.tcbSetAffinity`,
-`.schedContextConfigure`, `.schedContextUnbind`, `.lifecycleRetype`) are Cut
-C6b's, together with the `_ne` frames they need.
+`.schedContextConfigure`, `.schedContextUnbind`) are Cut C6b's, together with the `_ne` frames they need.
 
 `.tcbSuspend` is here despite a non-empty segment, because WS-RR RR8.12's
 fourth cut already built its exactness frame
@@ -562,43 +561,7 @@ theorem schedLockSet_setThreadCpuAffinityOnCore_coversWrites (st st' : SystemSta
       executingCore sgi d hObjInv hd hStep)
 
 -- ============================================================================
--- §11  The retype arm
--- ============================================================================
-
-/-- **Cut C6g**: `.lifecycleRetype`'s footprint covers its writes.
-
-The last arm, and the one whose two segments are read at the **pre**-state for a
-reason no other arm has: the object the retype destroys is gone from the
-post-state, so a post-state reading of either segment would name the empty set on
-exactly the transition the segments exist for.  Both `lifecycleRetypeWriteSet`
-and `lifecycleRetypeReplenishCores` therefore take `st`, which is what the
-bracket needs anyway — it resolves a footprint before the transition runs.
-
-Stated of the arm the syscall dispatches, `lifecycleRetypeDirectWithCleanup\
-ShootdownPerCoreIcache`, rather than of the retype core: the two cached-structure
-layers over it (the `.aside1` shootdown round with the initiator's own TLB drain,
-and the domain-wide `IC IALLUIS`) each write kernel state, and a coverage claim
-taken at the core would be a claim about a program the arm does not run.  Both
-layers are scheduler-silent — `retypeInitiatorDrain_scheduler` and
-`Architecture.withIcacheBroadcast_frame`'s third conjunct — so the exactness
-frame descends through them without a case analysis of its own. -/
-theorem schedLockSet_lifecycleRetypeOnCore_coversWrites (executingCore : CoreId)
-    (authCap : Capability) (target : SeLe4n.ObjId) (newObj : KernelObject)
-    (st st' : SystemState) (S : LockSet) (hInv : st.objects.invExt)
-    (hStep : lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache executingCore authCap
-      target newObj st = .ok ((), st'))
-    (hS : LockSet.ofList? (schedLockSet_lifecycleRetypeOnCore st target) = some S) :
-    footprintCoversWrites S st st' :=
-  footprintCoversWrites_of_confined S (lifecycleRetypeWriteSet st target)
-    (lifecycleRetypeReplenishCores st target) st st'
-    (LockSet.ofList?_pairs hS)
-    (lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_confinedToCores executingCore
-      authCap target newObj st st' hInv hStep)
-    (fun d hd => lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_replenishQueueOnCore_ne
-      executingCore authCap target newObj st st' d hd hStep)
-
--- ============================================================================
--- §12  The yield
+-- §11  The yield
 -- ============================================================================
 
 /-- **WS-ZA ZA4.3**: the yield's charge writes no core's run queue, `current`,

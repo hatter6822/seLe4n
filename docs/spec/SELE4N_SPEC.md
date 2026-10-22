@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.124` (`lakefile.toml`) |
+| **Package version** | `0.36.125` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 489,363 across 440 Lean files |
-| **Test LoC** | 86,795 across 70 Lean test suites |
-| **Proved declarations** | 17,596 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 484,292 across 440 Lean files |
+| **Test LoC** | 86,123 across 70 Lean test suites |
+| **Proved declarations** | 17,449 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits) |
 | **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2), and **BP4.1/BP4.2 (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type)** at v0.36.2 (§6.2.9), and **BP4.3/BP4.4 (the firmware's device tree reaching Lean, and the entry booting the deployment on the variant it describes)** at v0.36.2 (§6.2.10), and **BP4.5 (the image's loaded bytes cleaned to the Point of Unification before any thread can fetch)** at v0.36.2 (§6.2.11), and **BP4.6 (the verified board's RAM outside the kernel's extent mapped, and the boot map sealed before any secondary is released)** and **BP4.7 (that RAM handed to the root task as untypeds)** at v0.36.2 (§6.2.12), and **BP5.1 (the kernel image, a bare-metal binary entered at `_start` under `link.ld`)** and **BP5.2 (the Lean kernel linked into it, under `--gc-sections` from the archive lane's roots)** and **BP5.3 (the firmware's boot files, `kernel8.img` and `config.txt`, cut from that image and checked against it)** and **BP5.4 (its size and section map published with every CI run)** at v0.36.2 (§6.2.13), and **BP5.5 (the firmware's EL2 entry dropped to EL1, with the PSCI conduit following the entry level)** at v0.36.2 (§6.2.15), and **BP6 (every PE marks itself ready after its own per-PE runtime handshake and before it unmasks IRQs, and the boot halts unless every declared PE serves the kernel)** at v0.36.2 (§6.2.16), and **BP7.10 (the first gigabyte's RAM read off the firmware's account, and the constant boot map shrunk to the kernel's reserved extent)** at v0.36.3 (§6.2.17), and **BP7.1 slices 1–3 (frame capabilities, the untyped carve that mints them, and the untyped reset that returns their memory)** at v0.36.4, v0.36.5 and v0.36.6, slice 4a (child untypeds and subtree resets) at v0.36.8, the in-place VSpace-root refusal at v0.36.9, and slice 4b's VSpace-root carve at v0.36.10, `.tcbSetSpace` (a thread runs in a carved address space) at v0.36.11, intermediate page tables at v0.36.12, and every configured address space owning a table page at v0.36.13, which completes BP7.1 (§8.10.2a); BP7.2's user window and 16-bit hardware ASIDs at v0.36.14 and its physical-write ledger and translation install at v0.36.15; BP7.3–BP7.9 at v0.36.16–v0.36.22 (the whole trap frame saved, per-core restore staging, unblock-frame delivery, the live context restore, the delivered declassified badge, overflow message registers, lazily switched FP/SIMD state); and BP7.11 (the boot starts both initial threads, one per domain) at v0.36.23, which completes BP7; BP8.1's first slice (the image built for QEMU's `virt` — its device map from `src/board.rs`, its link script derived from `link.ld`, an arm64 Image header on `_start` — booted there at EL1 and at EL2 by `scripts/test_qemu.sh`) at v0.36.24, and its second (the Lean `virt` binding `SeLe4n/Platform/QemuVirt/` — its board check the RPi5 bridge's own coverage predicates, the RPi5 deployment's layout on it with every boot gate decided, and its own boot entry `lean_kernel_main_qemu_virt`, held by the boot-entry contract's table to its own approved call) at v0.36.25, and its third (the Lean-linked image booted by `scripts/test_qemu.sh --lean-kernel` on four PEs at EL1 and EL2 to every core's first idle dispatch, on every PR — §6.2.18) at v0.36.26, completing BP8.1, and BP8.2 (the four-PE bring-up gate, executed on every PR — §6.2.18) at v0.36.27. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -2335,7 +2335,8 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    `lockSet_endpointReply`, `lockSet_replyRecv`,
    `lockSet_notificationSignal`, `lockSet_notificationWait`,
    `lockSet_cspaceMint`/`Copy`/`Move`/`Delete`,
-   `lockSet_lifecycleRetype`, `lockSet_vspaceMap`/`Unmap`,
+   `lockSet_untypedRetype` (since `v0.36.125`, the in-place
+   retype's `lockSet_lifecycleRetype` is retired), `lockSet_vspaceMap`/`Unmap`,
    `lockSet_serviceRegister`/`Revoke`/`Query`,
    `lockSet_schedContextConfigure`/`Bind`/`Unbind`,
    `lockSet_tcbSuspend`/`Resume`/`SetPriority`/`SetMCPriority`/
@@ -3116,8 +3117,11 @@ layer reads it.  The Rust `ReturnShape` mirror is exhaustive (no wildcard, so
 rustc plays the role Lean's totality plays) **and** cross-checked: both sides
 render the same `id → shape` table against `tests/fixtures/syscall_return_shape.expected`,
 so two independently maintained total functions cannot disagree silently.  The
-`KernelError` count is `SeLe4n.Model.KernelError.kernelErrorCount`, bounded from
-both sides so it is the least strict upper bound.
+`KernelError` encoding bound is `SeLe4n.Model.KernelError.kernelErrorEncodingBound`,
+bounded from both sides so it is the least strict upper bound.  Discriminant `37`
+(the former `allocationMisaligned`) is retired and reserved
+(`retiredDiscriminants`, `ofDiscriminant?_retired`): it decodes to no error, in
+Lean and in Rust (`KernelError::RETIRED`), and is never reassigned (`v0.36.125`).
 
 **WS-RR RR7.14 (v0.34.67) — the frame a forcibly unblocked thread is owed.**
 A thread taken out of a blocking IPC has no value to receive, and both
@@ -4652,25 +4656,38 @@ hardware requires word-aligned access for register-width loads/stores:
   semantics hold for the abstract model; hardware binding adds the alignment
   constraint as an additional platform-level precondition.
 
-### 8.4 Page-Alignment Requirement for VSpace-Bound Retype
+### 8.4 Carve Alignment
 
-`retypeFromUntyped` enforces page-aligned allocation bases (4 KiB) for object
-types that require it. This applies to VSpace roots and CNodes, which must be
-page-aligned for correct hardware page-table walks and CNode radix indexing.
+`retypeFromUntyped` places every carve on its own boundary by rounding the
+free index up to it, as seL4's `decodeUntypedInvocation` does with
+`alignUp(freeRef, objectSize)`; a misaligned free index is skipped over, never
+refused (`v0.36.125`).
 
-- **`requiresPageAlignment`** -- predicate identifying `KernelObjectType` values
-  that require page-aligned allocation (VSpace roots, CNodes).
-- **`allocationBasePageAligned`** -- checks 4 KiB alignment of the allocation base
-  (`base % 4096 == 0`).
-- **`allocationMisaligned`** -- `KernelError` variant returned when the alignment
-  check fails.
-- **Lifecycle invariant preservation**: all existing lifecycle preservation proofs
-  are updated to account for the new error branch. Error returns preserve the
-  unchanged state trivially.
+- **`requiresPageAlignment`** -- the kinds carved on a 4 KiB page: VSpace
+  roots, frames and page tables.
+- **`requiresSizeAlignment`** -- the kernel kinds and a child untyped, carved
+  on a multiple of their own allocation size (a child untyped of `2^b` bytes on
+  a multiple of `2^b`, as seL4's `alignUp(freeRef, 2^b)`; `b ≥ 12`, so it is on
+  a page, `untypedNextChild_of_retype_ok`).
+- **`allocationBasePageAligned`** / **`carveBaseAligned`** -- whether a base is
+  on the carve's boundary (`base % 4096 = 0`, or `base % size = 0`).
+- **`alignedCarveIndex`** -- the free index rounded up to the boundary
+  (`alignUpNat (regionBase + freeIndex) (carveAlignment ty size) - regionBase`);
+  the capacity check is made at it and the free index advances past it.
+- **Theorems**: `carveBaseAligned_alignedCarveIndex` (the rounded index is on
+  the boundary), `le_alignedCarveIndex` (it never moves backwards),
+  `retypeFromUntyped_ok_aligned`, `retypeFromUntyped_ok_pageAligned` and
+  `retypeFromUntyped_ok_sizeAligned` (every carve that succeeds is on its
+  boundary).
+- **Error code 37 is retired**: the `allocationMisaligned` variant the carve
+  returned before is deleted, and its discriminant is reserved
+  (`retiredDiscriminants`, §6.5.1).
 
-This enforcement closes the gap between the abstract model (which previously
-accepted any allocation base) and hardware requirements for ARM64 page-table
-structures. See `SeLe4n/Kernel/Lifecycle/Operations.lean` (S5-G/S5-H).
+Witnesses: `tests/NegativeStateSuite.lean` S5-G (a misaligned VSpace-root base
+is rounded to the next page) and H16-NEG-06 (a TCB, an endpoint, a frame and a
+second TCB each land on their own boundary, and a `2^14`-byte child untyped
+after an endpoint lands on a multiple of `2^14`). See
+`SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean`.
 
 ### 8.5 IPC Timeout Semantics
 seLe4n implements budget-driven timeout for IPC blocking operations (Z6),
@@ -4727,133 +4744,69 @@ ARM64 hardware:
   boundary (512 + 960 = 1472 < 4096). This guarantees a single TLB entry
   covers the entire buffer, avoiding mid-transfer page faults.
 
-### 8.6 Memory Scrubbing on Delete
-When an object is deleted via `lifecycleRetypeWithCleanup`, the backing memory
-region is zeroed using `scrubObjectMemory` before the memory is returned to the
-untyped pool. This prevents information leakage between security domains when
-memory is retyped for a different purpose.
+### 8.6 Memory Zeroing on Creation (`v0.36.125`)
+Every object is made by the untyped carve (`.untypedRetype`, syscall 36,
+`untypedRetypeObject` over a `CarveRequest`); WS-ZA ZA5.4 part 14 retired the
+in-place retype (`.lifecycleRetype`, syscall 8, whose number stays reserved —
+`SyscallId.retiredNumbers`), together with its abstract-extent scrub
+(`scrubObjectMemory`, `scrubExtent`).  Memory returns to its untyped through
+the untyped reset, and is zeroed when it is carved again:
 
+- **`carveZeroFrame`** (`ScrubAndUntyped.lean`): a RAM frame, page table or
+  VSpace root is zeroed at the page the allocator hands out — the untyped's own
+  region base plus the invoked capability's free index — before any capability
+  to it exists, and the zeroing write is cleaned to the Point of Unification
+  (`KernelCodeWriteSite.carveScrub`).  A device frame is not written.
 - **`zeroMemoryRange`** (`Machine.lean`): Primitive that zeroes a contiguous
   range of physical memory addresses.  Its compiled form
   (`zeroMemoryRangeImpl`, equal by `zeroMemoryRange_eq_impl`) returns the
-  machine state unchanged when every byte of the range already reads zero, so
-  a scrub adds nothing to the model's memory unless some byte in its range was
-  written non-zero; the compiled kernel writes no such byte, so no sequence of
-  carves, resets, retypes and deletes grows the kernel heap through memory.
+  machine state unchanged when every byte of the range already reads zero.
 - **`objectIdInAddressSpace`** (`ScrubAndUntyped.lean`): `retypeFromUntyped`
   refuses a child identifier whose extent at the largest kind (a page) ends
-  past `2 ^ physicalAddressWidth`, with `addressOutOfBounds`.  Every scrub range
-  an identifier can name, under its first kind or after an in-place retype, is
-  therefore physical memory (`objectIdInAddressSpace_extent`), and its byte
-  addresses stay machine words, so the zero-check above builds nothing.
+  past `2 ^ physicalAddressWidth`, with `addressOutOfBounds`
+  (`objectIdInAddressSpace_extent`).
 - **`memoryZeroed`** (`Machine.lean`): Postcondition predicate asserting all
-  bytes in a range are zero after scrubbing.
-- **`scrubObjectMemory`** (`Lifecycle/Operations/ScrubAndUntyped.lean` after the
-  AN4-G.5 split; was `Lifecycle/Operations.lean`): Applies `zeroMemoryRange`
-  to the object's backing region during cleanup.
-- **Invariant preservation**: `scrubObjectMemory` preserves lifecycle invariants
-  trivially (only modifies `machine.memory`, not kernel state structures).
-- **NI preservation**: `scrubObjectMemory` preserves `lowEquivalent` for
-  non-observable targets — scrubbing memory outside an observer's domain does
-  not affect their projected state.
+  bytes in a range are zero.
 
-**AN4-G.3 (LIF-M03) — Lifecycle: model-vs-hardware scrub bridge.**
+**Every kind is carved** (`v0.36.125`).  `carveRequestOf?` accepts, with seL4's
+sizes: `.frame`, `.pageTable`, `.vspaceRoot`, `.tcb`, `.endpoint`,
+`.notification` and `.reply` at size `0`; `.untyped` at
+`[minUntypedSizeBits, maxUntypedSizeBits] = [12, 47]`; `.cnode` at a radix in
+`[minCNodeRadixBits, maxCNodeRadixBits] = [1, 42]` (`2 ^ (radix + 5)` bytes,
+seL4's `seL4_SlotBits`); `.schedContext` at `[minSchedContextSizeBits = 7,
+47]`.  A kernel object is placed at the free index rounded up to a multiple of
+its own size, as seL4's `alignUp(freeRef, objectSize)` (§8.4), and a device untyped
+backs untypeds and frames only (`deviceBackable`).  The object is built by
+`CarveRequest.object`: a TCB in the carving core's domain with that core as its
+affinity, no roots and priority 0 (`carvedTcb`, seL4's `createObject`), an
+idle endpoint or notification, a CNode of empty slots (`carvedCNode`), a free
+reply, an empty unbound scheduling context; each carries the id it is stored at
+(`CarveRequest.object_embeddedIdentityMatches`).  A kernel object's capability
+carries every right but `.retype` (`CarveRequest.capability_eq`).  Theorems:
+`untypedRetypeObject_ok_carved`, `untypedRetypeObject_ok_kernelCapability`,
+`untypedRetypeObject_ok_tcb_notQueued`, `untypedRetypeObject_ok_notification`,
+`untypedRetypeObject_ok_reply`, `untypedRetypeObject_ok_schedContext`,
+`retypeFromUntyped_carve_preserves_untypedRegionsDisjoint`.  Witnesses:
+`tests/SyscallDispatchSuite.lean` SD-061 (`sd061_every_kind_is_carved`),
+`tests/ModelIntegritySuite.lean`, `tests/OperationChainSuite.lean`
+(`chain29SyscallCarve`).  The QEMU exerciser scenarios for the kernel kinds
+come with finalising them on final delete (a carve repeats only after its object
+is finalised); the untyped-reset plan schedules them there.
 
-> **Severity: High once bootable (SM10.1); not exploitable today.** This is a
-> *data*-disclosure gap, not merely a stale-cache one. If the scrub does not
-> reach the memory the allocator actually handed out, a re-typed object is
-> handed to its new owner still holding the previous owner's bytes — which is
-> the exact leak `scrubObjectMemory` exists to prevent. Closure target: SM10.1,
-> with the hardware bridge below. No bootable image exists before then, so
-> there is no reachable exploit at present.
+### 8.6.1 Carve Refusal Order (`v0.36.125`)
 
-The model-layer scrub range is `scrubExtent objectId objType` =
-`(objectId.toNat × objectTypeAllocSize, objectTypeAllocSize)` — a purely
-abstract convention. Real hardware (the RPi5 AArch64 target) must route the
-same scrub through the VSpace bridge so it hits the physical frame that
-actually backs the object's allocation extent:
-
-1. The untyped allocator in `retypeFromUntyped` records each child's
-   allocation region as `(regionBase + offset, allocSize)` within the parent
-   untyped object's physical range.
-2. On cleanup, the hardware bridge must map the model-layer PAddr to the
-   physical-frame extent assigned by the allocator and zero that extent
-   using a cache-safe sequence (DSB ISHST + DC CVAC per 64-byte line +
-   DSB ISH) before the memory is returned to the untyped pool.
-3. The VSpace bridge is deferred to AN9 (hardware workstream); until then,
-   the model-level scrub stands in as the abstract witness, and the
-   `memoryZeroed` postcondition covers the model's view of the region.
-   The convention has exactly **one** definition, `scrubExtent`, so the
-   bridge changes that single function: `scrubObjectMemory` (which zeroes
-   the range) and SM7.D's `retypeIcacheOp` (which cleans it to the Point of
-   Unification before `IC IALLUIS`) both read it rather than recomputing the
-   arithmetic, and `retypeIcacheOp_cleans_scrub_extent` pins that they agree.
-   Consequently the SM7.D cache operand inherits this same abstraction gap —
-   it cleans whatever the scrub zeroes, correct relative to the scrub and
-   wrong relative to hardware until item 2 lands. Correcting the cache
-   operand alone would be strictly worse, since it would then clean an
-   extent the scrub does not write.
-4. AN12-B's SMP inventory tracks the additional obligation that the
-   scrub must happen within the same critical section as the retype to
-   prevent another core from observing the pre-scrub contents of the
-   region during a race.
-
-**AN4-G.6 (LIF-M06) — Lifecycle partial-failure semantics.** The
-`lifecycleRevokeDeleteRetype` composition is **non-transactional**. An
-early `.error` return from any of its four phases (revoke / delete /
-post-delete-lookup / final retype) leaves the system state in a
-partially-cleaned form, and the caller must handle this contractually.
-The phase-by-phase side-effect catalogue is:
-
-1. **`cspaceRevoke` failure**: no mutations committed; caller state preserved.
-2. **`cspaceDeleteSlot` failure** (after successful revoke): the revoked
-   CDT edges remain stripped even though the slot still holds its original
-   capability. Caller sees `.error` with the partial revoke side-effect.
-3. **Post-delete `cspaceLookupSlot` returns unexpectedly**: both revoke and
-   delete have committed; retype is skipped; the slot was already scrubbed
-   clean.
-4. **`Internal.lifecycleRetypeObject` failure** (cleanup-bypass path —
-   production callers use `lifecycleRetypeWithCleanup` instead): revoke +
-   delete committed; target object retains its old variant.
-
-Callers needing strict transactional "all-or-nothing" semantics should
-use `lifecycleRetypeWithCleanup`, which wraps the
-strict cleanup pipeline and propagates errors before any retype is
-attempted. `.error` from `lifecycleRevokeDeleteRetype` is a best-effort
-cleanup-partially-completed outcome, NOT a rollback.
-
-### 8.6.1 In-Place Retype Refusal Order (`v0.36.123`)
-
-The `.lifecycleRetype` arm decodes its target object id from a message
-register, so a caller can name any id.  `lifecycleRetypeDirectWithCleanup`
-therefore refuses in seL4's decode order — **authority before anything reads
-the target**:
-
-1. `lifecycleRetypeAuthority` — the resolved capability names `.object target`
-   and carries `.retype`; otherwise `.illegalAuthority`.
-2. `retypeReplacementAdmissible` — the replacement is well-formed, carries its
-   slot's identity and is not memory-backed; otherwise `.illegalState`.
-3. `lifecyclePreRetypeCleanup` — per-kind refusals (`.revocationRequired` for
-   frames, page tables, untypeds, VSpace roots, in-use replies and threads
-   running or holding FP state on some core), then the cleanup itself.
-4. `scrubObjectMemory`, then `lifecycleRetypeDirectCommit` — the target must
-   exist (`.objectNotFound`) with agreeing lifecycle metadata (`.illegalState`),
-   and the replacement is stored.  Every check precedes every write.
-
-Because step 1 reads only the capability and the decoded id, a refusal for a
-target the capability does not name is `.illegalAuthority` on every state: it
-reveals nothing about whether the target exists, its kind, or the run state of
-a thread in another domain.  Before `v0.36.123` the authority check ran last
-(inside the retired `lifecycleRetypeDirect`), so the other refusals formed an
-error-code oracle over arbitrary object ids for any holder of a `.retype`
-capability.  Theorems: `lifecycleRetypeDirectWithCleanup_unauthorized`,
-`lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_unauthorized`,
-`dispatchWithCap_lifecycleRetype_unauthorized` and
-`dispatchWithCapChecked_lifecycleRetype_unauthorized`; a success entails the
-check passed (`lifecycleRetypeDirectWithCleanup_ok_authorized`).  Witness:
-`tests/SyscallDispatchSuite.lean` SD-062.  The CSpaceAddr-authority family
-(`lifecycleRetypeWithCleanup`, which no syscall reaches) still resolves its
-authority after the existence and type checks; see `docs/REGISTERED_DEBT.md`.
+`untypedRetypeObject` resolves the untyped capability and asks
+`lifecycleRetypeAuthority` — the capability names the untyped and carries
+`.retype` — **before** it reads the child id, the destination or the untyped's
+contents, so an admissible request through a capability without `.retype` is
+`.illegalAuthority` whatever the object, the child id and the destination are
+(`untypedRetypeObject_unauthorized`).  Witness:
+`tests/SyscallDispatchSuite.lean` SD-062
+(`sd062_carve_checks_authority_before_child`, on both dispatchers).  The
+in-place retype's `v0.36.123` refusal order, and its CSpaceAddr family that
+still read the target first, are retired with it.  A `.retype` holder still
+learns whether a child id is occupied (`.childIdCollision`), the
+error-versus-success channel `docs/REGISTERED_DEBT.md` registers.
 
 ### 8.7 TLB Flush Requirements for Production Paths
 All production VSpace operations must use TLB-flushing variants to ensure
@@ -4914,8 +4867,9 @@ Every kernel object has a decidable well-formedness predicate:
 - **`KernelObject.wellFormed`**: Validates structural constraints (CNode guard
   bounds, VSpace permission compliance, TCB register consistency, endpoint queue
   integrity).
-- **`lifecycleRetypeWithCleanup`**: Enforces well-formedness at object creation
-  via the decidable validator.
+- **The carve** builds each object from its request (`CarveRequest.object`),
+  so no caller-supplied object is installed and nothing is validated after the
+  fact.
 - **Intrusive queue cleanup**: `spliceOutMidQueueNode` patches predecessor and
   successor links when removing mid-queue nodes, maintaining doubly-linked list
   integrity.
@@ -5233,12 +5187,11 @@ seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
 - **Composition**: `vspaceMapFromFrameCap` is the arm past its address-space
   check; `dispatchWithCap_vspaceMap_requires_frame_cap` and
   `dispatchWithCap_vspaceMap_maps_frame_base` state the two claims.
-- **No other source of memory authority**: an in-place retype refuses a
-  memory-backed replacement (`KernelObjectType.memoryBacked`,
-  `retypeReplacementAdmissible`), the boot refuses a configured frame
-  (`bootSafeObject`), and the pre-retype cleanup refuses to destroy one in
-  place (`.revocationRequired`) — permanently: a frame's memory returns
-  through its untyped (the reset, below), as in seL4.
+- **No other source of memory authority**: every object is carved
+  (`v0.36.125`; the in-place retype is retired), the boot refuses a configured
+  frame (`bootSafeObject`), and the destroy cleanup refuses a frame
+  (`.revocationRequired`) — a frame's memory returns through its untyped (the
+  reset, below), as in seL4.
 - **The untyped carve** (`v0.36.5`, `.untypedRetype`, syscall 36): the one
   source of frames.  `untypedRetypeObject` (at `.frame`) carves the next page of an untyped
   the caller holds `.retype` on — `retypeFromUntyped` at
@@ -5276,8 +5229,7 @@ seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
   region at the invoked capability's free index, of its kind, **parent
   stamped** — handed
   back with read/write/retype (`untypedCapability`) and not written
-  (`untypedNextChild_of_retype_ok`, `untypedRetypeObject_ok_untyped`).  The
-  in-place retype refuses to destroy an untyped, as it refuses a frame.
+  (`untypedNextChild_of_retype_ok`, `untypedRetypeObject_ok_untyped`).
   Page-table objects are slice 4b (registered in `docs/REGISTERED_DEBT.md`
   table B).
 - **The free index is in the capability** (`v0.36.124`, WS-ZA ZA5.4 part 13):
@@ -5387,18 +5339,18 @@ seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
   caller's root.  Which kinds a **device** untyped may back is a separate
   question (`KernelObjectType.deviceBackable`: untypeds and frames), because a
   table must be RAM.  A root's carve from an untyped, with a fresh ASID and a
-  physical table base, is slice 4b's (next item).  Witness:
-  `tests/VSpaceCapabilityBindingSuite.lean` §5h.
+  physical table base, is slice 4b's (next item).  The in-place retype is
+  retired at `v0.36.125`, and its witness (`tests/VSpaceCapabilityBindingSuite.lean`
+  §5h) with it.
 - **...nor destroyed in place** (`v0.36.35`).  The pre-retype cleanup
   (`lifecyclePreRetypeCleanup`) refuses a VSpace-root target with
   `.revocationRequired`, as it refuses a frame, a page table and an untyped:
   it was the identity there, so an in-place retype replaced a live root while
   the threads running in it, its installed page tables and the hardware
   translation all went on naming it.  A root's memory returns through the
-  untyped it was carved from.  The in-place retype's ASID shootdown is
-  therefore vacuous (both sources refused before it runs).  Theorems:
-  `lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_refuses_vspaceRoot`
-  and its CSpaceAddr sibling.  Witness: §5h.
+  untyped it was carved from.  The cleanup's refusal is kept for the finalising
+  delete; the in-place retype that ran it is retired at `v0.36.125`
+  (`tests/SmpTlbShootdownSuite.lean` §4.9 drives the cleanup directly).
 - **An address space is carved memory** (slice 4b, `v0.36.10`).
   `.untypedRetype` at the VSpace-root tag (size `0`) carves a root from a RAM
   untyped: one page, zeroed, which is its top-level table
@@ -6343,8 +6295,8 @@ rewrites parked messages, so the Tier-1 reach gate needs no
 
 **Frozen surface.**  No mirror: the traversal's per-node step ends in
 `cdt.removeNode`, a *key removal* from the derivation tree, and the frozen CDT
-is four `FrozenMap`s with no `erase` — the same reason `lifecycleRetype` and
-the two service operations give.
+is four `FrozenMap`s with no `erase` — the same reason the two service
+operations give.
 
 **Witness.**  `tests/SyscallDispatchSuite.lean` SD-059 drives the live dispatch
 on a state whose derivation lives in a **second** CNode, computing the retired
@@ -7048,7 +7000,10 @@ by the intrusive notification queue's links, `notificationWaiterConsistent`):
   the suite alone: it stores the claiming replacement and Z4-O is **falsified**,
   against a control on the pristine replacement where it holds.
 
-  **And the composite is stated, so register row 63 closes** (`v0.35.185`).  The
+  **And the composite is stated, so register row 63 closes** (`v0.35.185`;
+  the in-place retype composite it names is retired at `v0.36.125`, and the
+  cleanup's own preservation theorems in `Lifecycle/Invariant/CleanupReservation.lean`
+  carry the facts to the finalising delete).  The
   crossing goes through one intermediate — `schedContextBindingRetypeReady`, Z4-O
   with the retype's target carved out of **both the subject and the object** of
   both clauses — and it has to be an intermediate rather than Z4-O itself, because
@@ -7181,7 +7136,9 @@ by the intrusive notification queue's links, `notificationWaiterConsistent`):
   `maxLockSetSize` is unmoved.
 
   **And the destroy path declares its own** (WS-RR RR8.12 Cut C3b-iii,
-  `v0.35.169`).  `schedLockSet_lifecycleRetypeOnCore` is the live
+  `v0.35.169`; the `.lifecycleRetype` arm and its footprint are retired at
+  `v0.36.125`, and the cleanup's replenish-core resolvers remain in
+  `Lifecycle/Operations/CleanupFootprint.lean` for the finalising delete).  `schedLockSet_lifecycleRetypeOnCore` is the live
   `.lifecycleRetype` arm's footprint, and declaring it is what made visible that
   SM8.B's `lifecycleRetypeWriteSet` is a **run-queue** write set:
   `observableSlotsConfinedToCores` covers six per-core slots and the replenish

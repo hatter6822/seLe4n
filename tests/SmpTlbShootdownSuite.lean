@@ -307,11 +307,6 @@ open SeLe4n.Kernel.Concurrency
 #check @asidAllocateWithShootdown_requiresFlush
 #check @asidAllocateWithShootdown_fresh_inert
 
--- SM7.B.11 — retype-with-page-free shootdown:
-#check @SeLe4n.Kernel.lifecycleRetypeDirectWithCleanupShootdown
-#check @SeLe4n.Kernel.lifecycleRetypeDirectWithCleanupShootdown_non_vspace
-#check @SeLe4n.Kernel.lifecycleRetypeDirectWithCleanupShootdown_vspace_posts
-
 -- SM7.B.4 — release-acquire synchronization (vs the SM2.A model):
 #check @AtomicLocation.shootdownAckOf
 #check @AtomicLocation.shootdownAckOf_injective
@@ -388,19 +383,10 @@ open SeLe4n.Kernel.Concurrency
 #check @tlbFlushByASIDWithShootdown_preserves_pendingBounded
 #check @tlbFlushByPageWithShootdown_preserves_pendingBounded
 #check @asidAllocateWithShootdown_preserves_pendingBounded
-#check @SeLe4n.Kernel.lifecycleRetypeDirectWithCleanupShootdown_preserves_pendingBounded
 #check @SeLe4n.Model.storeObject_tlbShootdown_eq
 #check @SeLe4n.Model.default_tlbShootdown_pendingBounded
 #check @vspaceUnmapPageWithFlush_tlbShootdown_eq
 #check @SeLe4n.Kernel.lifecyclePreRetypeCleanup_tlbShootdown_eq
-#check @SeLe4n.Kernel.lifecycleRetypeWithCleanup_tlbShootdown_eq
-
--- SM7.B completion cut — the CSpaceAddr retype-with-shootdown sibling
--- (the storeObject-sweep closure):
-#check @SeLe4n.Kernel.lifecycleRetypeWithCleanupShootdown
-#check @SeLe4n.Kernel.lifecycleRetypeWithCleanupShootdown_non_vspace
-#check @SeLe4n.Kernel.lifecycleRetypeWithCleanupShootdown_vspace_posts
-#check @SeLe4n.Kernel.lifecycleRetypeWithCleanupShootdown_preserves_pendingBounded
 
 -- SM7.B completion cut — handler commutativity + coalesced coverage +
 -- diff characterization + coalescing-round capstones:
@@ -644,23 +630,10 @@ open SeLe4n.Kernel.Concurrency
 -- per-core wrappers (the delegation theorems pin the exact call targets):
 #check @SeLe4n.Kernel.dispatchWithCap_vspaceUnmap_delegates
 #check @SeLe4n.Kernel.dispatchWithCap_vspaceMap_delegates
--- SM7.F.4(b)(iii): the retype seam — the per-core wrapper drains the
--- initiator's view for the destroyed ASID (proven `_initiator_drained`), and
--- the live `.lifecycleRetype` dispatch routes through it:
-#check @SeLe4n.Kernel.lifecycleRetypeDirectWithCleanupShootdownPerCore
-#check @SeLe4n.Kernel.lifecycleRetypeDirectWithCleanupShootdownPerCore_initiator_drained
-#check @SeLe4n.Kernel.dispatchWithCap_lifecycleRetype_delegates
--- SM7.F.4(b)(iii): the shared initiator drain + the CSpaceAddr retype sibling
--- (both production retype-with-shootdown entry points are initiator-atomic):
-#check @SeLe4n.Kernel.retypeInitiatorDrain
-#check @SeLe4n.Kernel.retypeInitiatorDrain_drained
-#check @SeLe4n.Kernel.lifecycleRetypeWithCleanupShootdownPerCore
-#check @SeLe4n.Kernel.lifecycleRetypeWithCleanupShootdownPerCore_initiator_drained
--- SM7.F.4(b)(iii)'s VSpace-root-target preservation theorems are RETIRED at
--- `v0.36.35`: a VSpace root is never destroyed in place (the pre-retype cleanup
--- refuses it), so what stands in their place is the refusal itself:
-#check @SeLe4n.Kernel.lifecycleRetypeDirectWithCleanup_refuses_vspaceRoot
-#check @SeLe4n.Kernel.lifecycleRetypeWithCleanup_refuses_vspaceRoot
+-- SM7.F.4(b)(iii)'s retype seam is RETIRED with the in-place retype
+-- (WS-ZA ZA5.4 part 14): an object is made only by the carve, which writes no
+-- translation in place, and the live `.untypedRetype` dispatch stands there:
+#check @SeLe4n.Kernel.dispatchWithCap_untypedRetype_delegates
 -- The live catch-up fold's ORDER-INDEPENDENCE (the §6 stress group's
 -- concurrency claim): SM7.B proved commutativity for the single-view handler,
 -- but the live `completeShootdownRounds` seam folds the PER-CORE handler, so
@@ -1667,11 +1640,8 @@ private def rtEp : SeLe4n.ObjId := ⟨892⟩
 /-- The CNode holding the two retype capabilities. -/
 private def rtCn : SeLe4n.ObjId := ⟨890⟩
 
-/-- The retype-capable state driven by §4.9's CSpaceAddr sweep-closure check and
-by §8's multi-round-window group, so both exercise the same objects through the
-same production entry point (`lifecycleRetypeWithCleanupShootdown{,PerCore}`).
-The retype path's type-lockstep gate reads lifecycle metadata, hence the
-`withLifecycleObjectType` rows. -/
+/-- The state §4.9's destroy-cleanup checks drive: a live VSpace root, an
+endpoint, and a CNode holding a `.retype` capability to each. -/
 private def rtMultiState : SeLe4n.Model.SystemState :=
   let capVsp : Capability :=
     { target := .object rtVsp, rights := AccessRightSet.ofList [.retype] }
@@ -1794,31 +1764,20 @@ private def runCompletionCutChecks : IO Unit := do
                  decide (stRemapped.tlbShootdown = stUnmapped.tlbShootdown) &&
                  decide (pendingBounded stRemapped.tlbShootdown)
              | .error _ => false))
-  -- (i) the CSpaceAddr retype-with-shootdown sibling (sweep closure).  The
-  -- state is `rtMultiState` (top level, §8) so this group and §8's
-  -- multi-round-window group drive the same objects through the same entry.
+  -- (i) the destroy cleanup the in-place retype ran (kept for the finalising
+  -- delete; the retype itself is retired, WS-ZA ZA5.4 part 14).
   let rtSt := rtMultiState
-  -- `v0.36.35`: a VSpace root is never destroyed in place, so the CSpaceAddr
-  -- retype of a live root is refused by the cleanup (`revocationRequired`)
-  -- and posts nothing; a root's ASID is released by resetting the untyped it
-  -- was carved from.  Until `v0.36.35` this retype committed and posted the
-  -- `.aside1` round, leaving every thread running in the root naming an
-  -- object of another kind.
-  assertBool "the CSpaceAddr retype of a live vspaceRoot is refused (revocationRequired)"
-    (match SeLe4n.Kernel.lifecycleRetypeWithCleanupShootdown core0
-        { cnode := rtCn, slot := SeLe4n.Slot.ofNat 0 } rtVsp
-        (.endpoint {}) rtSt with
+  -- `v0.36.35`: a VSpace root is never destroyed in place, so the cleanup
+  -- refuses a live root (`revocationRequired`); a root's ASID is released by
+  -- resetting the untyped it was carved from.
+  assertBool "the destroy cleanup of a live vspaceRoot is refused (revocationRequired)"
+    (match SeLe4n.Kernel.lifecyclePreRetypeCleanup rtSt rtVsp
+        (.vspaceRoot { asid := asid5, mappings := {} }) (.endpoint {}) with
      | .error .revocationRequired => true
      | _ => false)
-  let rtNewNtfn : SeLe4n.Model.KernelObject :=
-    .notification
-      { state := .idle, 
-        hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }
-  assertBool "a non-vspaceRoot CSpaceAddr retype posts nothing"
-    (match SeLe4n.Kernel.lifecycleRetypeWithCleanupShootdown core0
-        { cnode := rtCn, slot := SeLe4n.Slot.ofNat 1 } rtEp rtNewNtfn rtSt with
-     | .ok ((), st') => allCores.all fun c =>
-         st'.tlbShootdown.pendingOnCore c == []
+  assertBool "the destroy cleanup of a non-vspaceRoot posts nothing"
+    (match SeLe4n.Kernel.lifecyclePreRetypeCleanup rtSt rtEp (.endpoint {}) (.endpoint {}) with
+     | .ok st' => allCores.all fun c => st'.tlbShootdown.pendingOnCore c == []
      | .error _ => false)
 
 -- ----------------------------------------------------------------------------
@@ -2714,20 +2673,6 @@ to `shootdownCatchUpPerCoreInWindow`. -/
 private def windowOf (pre post : SeLe4n.Model.SystemState) : Nat × Nat :=
   shootdownRoundWindow pre post
 
-/-- §8 part (10): the second ASID of a **multi-round** retype.  Retyping a live
-`.vspaceRoot` into a *different* `.vspaceRoot` puts two distinct ASIDs in the
-flush set (`retypeShootdownAsidList`), and the wrapper opens one round per ASID
-— the only production path whose single commit opens more than one round, and
-therefore the only one whose recovered window is wider than a single
-generation. -/
-private def rtAsidNew : SeLe4n.ASID := ⟨9⟩
-
-/-- §8 part (10): the object a multi-round retype installs — a fresh
-`.vspaceRoot` under `rtAsidNew`, so the destroyed (`asid5`) and installed
-(`rtAsidNew`) ASIDs differ and neither is deduplicated away. -/
-private def rtNewVsp : SeLe4n.Model.KernelObject :=
-  .vspaceRoot { asid := rtAsidNew, mappings := {} }
-
 
 private def runRoundWindowChecks : IO Unit := do
   -- (1) Generation allocation: the counter boots at 0, a round open advances
@@ -2919,14 +2864,8 @@ private def runRoundWindowWidthChecks : IO Unit := do
   -- The commit is the page teardown the untyped reset and the finalising
   -- revocation share (`unmapLivePages`) over two live mappings: each removal is
   -- a round.  Until `v0.36.9` this group retyped a live `.vspaceRoot` into a
-  -- *different* `.vspaceRoot` (two ASIDs, two rounds); that retype is refused
-  -- now — an in-place retype never creates a VSpace root — and the refusal is
-  -- asserted below so the group says why it moved.
-  assertBool "the retired two-ASID retype is refused (a VSpace root is never created in place)"
-    (match SeLe4n.Kernel.lifecycleRetypeWithCleanupShootdownPerCore core0
-        { cnode := rtCn, slot := SeLe4n.Slot.ofNat 0 } rtVsp rtNewVsp rtMultiState with
-     | .error .illegalState => true
-     | _ => false)
+  -- *different* `.vspaceRoot` (two ASIDs, two rounds); that in-place retype is
+  -- retired (WS-ZA ZA5.4 part 14), and a VSpace root is made only by the carve.
   match twoPageState with
   | none => assertBool "the two-page setup maps both pages" false
   | some stPre =>

@@ -681,7 +681,6 @@ def refusalSeamClass : SeLe4n.Model.SyscallId → RefusalSeamClass
   | .send | .receive | .call | .reply => .exempt
   | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke => .exempt
   | .untypedRetype | .untypedReset => .exempt
-  | .lifecycleRetype => .exempt
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction => .exempt
   | .serviceRegister | .serviceRevoke | .serviceQuery => .exempt
   | .notificationSignal | .notificationWait | .replyRecv => .exempt

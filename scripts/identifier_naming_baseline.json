@@ -497,9 +497,6 @@
  "an2f3_02_coercion_roundtrip": {
   "tests/ModelIntegritySuite.lean": 2
  },
- "an6_postaudit_ak8a_objectOfKernelType_untyped_zero_regionBase": {
-  "tests/ModelIntegritySuite.lean": 2
- },
  "an6b_architecture_assumptions_index_total": {
   "tests/ModelIntegritySuite.lean": 2
  },

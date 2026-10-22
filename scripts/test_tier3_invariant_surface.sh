@@ -274,7 +274,7 @@ run_check "INVARIANT" rg -n 'isIllegalState \(dispatchSyscallChecked defaultLabe
 # de-privatization: a presence check standing in for the wrong relation.)
 run_check "INVARIANT" rg -n '^def dispatchWithCap ' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^def dispatchWithCapChecked($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
-# S5-G: Page-alignment check in retypeFromUntyped
+# S5-G: the page-alignment predicates the carve rounds to
 run_check "INVARIANT" rg -n '^def requiresPageAlignment($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n '^def allocationBasePageAligned($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 
@@ -335,7 +335,7 @@ run_check "INVARIANT" rg -n '^theorem revokeTargetLocal_slotsUnique($|[ ({:\[\]]
 run_check "INVARIANT" rg -n '^theorem lookup_mem_of_some($|[ ({:\[\]])' SeLe4n/Model/Object/Structures.lean
 run_check "INVARIANT" rg -n '^theorem mem_lookup_of_slotsUnique($|[ ({:\[\]])' SeLe4n/Model/Object/Structures.lean
 # C-01/H-01 remediation: reformulated invariant definitions (non-tautological).
-run_check "INVARIANT" rg -n 'cn.slotsUnique' SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean
+run_check "INVARIANT" rg -n 'cn.slotsUnique' SeLe4n/Kernel/Capability/Invariant/Defs.lean
 # WS-RC R4.A close-out: `cspaceLookupSound_of_cspaceSlotUnique` was renamed
 # to `cspaceLookupSound_holds` (no preconditions; the historical
 # `cspaceSlotUnique` precondition was deleted as a vestigial alias).
@@ -419,45 +419,14 @@ run_check "INVARIANT" rg -n '^abbrev lifecycleIdentityAliasingInvariant($|[ ({:\
 # layer it was conjoined with was a family of tautologies over a reader that read
 # the object store, retired with that reader (see the v0.35.78 block below).
 run_check "INVARIANT" rg -U -n '^def lifecycleInvariantBundle \(st : SystemState\) : Prop :=\n  lifecycleIdentityAliasingInvariant st$' SeLe4n/Kernel/Lifecycle/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_preserves_lifecycleInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem scrubObjectMemory_preserves_lifecycleInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant.lean
 
 # M4-A step-5 lifecycle preservation entrypoint anchors must remain present.
-run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_preserves_lifecycleInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant.lean
 run_check "INVARIANT" rg -n '^def lifecycleCompositionInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_preserves_schedulerInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_preserves_capabilityInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_preserves_ipcInvariant($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_preserves_coreIpcInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_preserves_lifecycleCompositionInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean
-
-# M4-B WS-C preservation theorem expansion anchors must remain present.
-run_check "INVARIANT" rg -n '^theorem lifecycleRevokeDeleteRetype_ok_implies_staged_steps($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRevokeDeleteRetype_preserves_capabilityInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRevokeDeleteRetype_error_preserves_lifecycleCompositionInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean
-
-# M4-B WS-A composition transition anchors must remain present.
-run_check "INVARIANT" rg -n '^def lifecycleRevokeDeleteRetype($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRevokeDeleteRetype_error_authority_cleanup_alias($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRevokeDeleteRetype_ok_implies_authority_ne_cleanup($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
-
-# M4-A step-4 lifecycle local-helper anchors must remain present.
-run_check "INVARIANT" rg -n '^theorem lifecycle_storeObject_objects_eq($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
-run_check "INVARIANT" rg -n '^theorem lifecycle_storeObject_objects_ne($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
-run_check "INVARIANT" rg -n '^theorem lifecycle_storeObject_scheduler_eq($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_ok_as_storeObject($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_ok_lookup_preserved_ne($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_ok_runnable_membership($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_ok_not_runnable_membership($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 
 # M4-A step-2 lifecycle transition anchors must remain present.
 run_check "INVARIANT" rg -n '^\s*\| illegalState' SeLe4n/Model/KernelError.lean
 run_check "INVARIANT" rg -n '^\s*\| illegalAuthority' SeLe4n/Model/KernelError.lean
 run_check "INVARIANT" rg -n '^\s*\| invalidTypeTag' SeLe4n/Model/KernelError.lean
-run_check "INVARIANT" rg -n '^def lifecycleRetypeObject($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_error_illegalState($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_error_illegalAuthority($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_success_updates_object($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 
 # M5-B/Q1: Service registry transition anchors (lifecycle ops removed in Q1).
 run_check "INVARIANT" rg -n '^def storeServiceEntry($|[ ({:\[\]])' SeLe4n/Kernel/Service/Operations.lean
@@ -595,22 +564,6 @@ run_check "TRACE" rg -n 'service isolation api↔db' SeLe4n/Testing/MainTraceHar
 run_check "TRACE" rg -n 'service isolation api↔denied: true' tests/fixtures/main_trace_smoke.expected
 run_check "TRACE" rg -n 'service isolation api↔db: false' tests/fixtures/main_trace_smoke.expected
 run_check "TRACE" rg -n 'register self-loop dependency: SeLe4n.Model.KernelError.cyclicDependency' tests/fixtures/main_trace_smoke.expected
-run_check "TRACE" rg -n 'lifecycle retype unauthorized branch' SeLe4n/Testing/MainTraceHarness.lean
-run_check "TRACE" rg -n 'lifecycle retype illegal-state branch' SeLe4n/Testing/MainTraceHarness.lean
-run_check "TRACE" rg -n 'lifecycle retype success object kind' SeLe4n/Testing/MainTraceHarness.lean
-run_check "TRACE" rg -n 'composed transition alias guard \(expected error\)' SeLe4n/Testing/MainTraceHarness.lean
-run_check "TRACE" rg -n 'composed transition unauthorized branch' SeLe4n/Testing/MainTraceHarness.lean
-run_check "TRACE" rg -n 'composed revoke/delete/retype success' SeLe4n/Testing/MainTraceHarness.lean
-run_check "TRACE" rg -n 'post-revoke sibling lookup' SeLe4n/Testing/MainTraceHarness.lean
-run_check "TRACE" rg -n 'post-delete lookup \(expected error\)' SeLe4n/Testing/MainTraceHarness.lean
-run_check "TRACE" rg -n 'lifecycle retype unauthorized branch: SeLe4n.Model.KernelError.illegalAuthority' tests/fixtures/main_trace_smoke.expected
-run_check "TRACE" rg -n 'lifecycle retype illegal-state branch: SeLe4n.Model.KernelError.illegalState' tests/fixtures/main_trace_smoke.expected
-run_check "TRACE" rg -n 'lifecycle retype success object kind: some \(SeLe4n.Model.KernelObjectType.endpoint\)' tests/fixtures/main_trace_smoke.expected
-run_check "TRACE" rg -n 'composed transition alias guard \(expected error\): SeLe4n.Model.KernelError.illegalState' tests/fixtures/main_trace_smoke.expected
-run_check "TRACE" rg -n 'composed transition unauthorized branch: SeLe4n.Model.KernelError.illegalAuthority' tests/fixtures/main_trace_smoke.expected
-run_check "TRACE" rg -n 'composed revoke/delete/retype success' tests/fixtures/main_trace_smoke.expected
-run_check "TRACE" rg -n 'post-revoke sibling lookup: SeLe4n.Model.KernelError.invalidCapability' tests/fixtures/main_trace_smoke.expected
-run_check "TRACE" rg -n 'post-delete lookup \(expected error\): SeLe4n.Model.KernelError.invalidCapability' tests/fixtures/main_trace_smoke.expected
 
 
 # Full-suite contract should continue to include Tier 3.
@@ -1729,7 +1682,7 @@ run_check "INVARIANT" rg -n '^theorem donationChainWitness_wellFormed($|[ ({:\[\
 # between the two
 # neighbours that bracket the group rather than on the whole runner: the
 # sequence below it is what the fixture check ends.
-run_check "INVARIANT" bash -lc 'rg -U -n "  runHandlerContentionChecks\n  runDonationChainStructureChecks\n  runDonationReturnPopChecks\n  runDonationPushChecks\n  runMiddleCallerRemovalChecks\n  runReplyFrameRemovalChecks\n  runReplyRecvLoopCompletionChecks\n  runMiddleRemovalDepthThreeChecks\n  runMiddleRemovalDepthFourChecks\n  runDonationOriginIdReuseChecks\n  runDonationOriginRedirectChecks\n  runReceivePriorityHandoffChecks\n  runReceiveReplenishSegmentChecks\n  runReplyRecvHolderDescheduleChecks\n  runPreReceiveReturnMigrationChecks\n  runReplyRecvFootprintChecks\n  runCallReplyFootprintChecks\n  runRetypeReservationChecks\n  runRetypeSchedContextChecks\n  runRetypeFootprintChecks\n  runRetypeReplacementGuardChecks\n  runRetypeIdentityStampChecks\n  runObjectDomainDonationMemberChecks\n  runTraceFixtureCheck" tests/SmpIpcSuite.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "  runHandlerContentionChecks\n  runDonationChainStructureChecks\n  runDonationReturnPopChecks\n  runDonationPushChecks\n  runMiddleCallerRemovalChecks\n  runReplyFrameRemovalChecks\n  runReplyRecvLoopCompletionChecks\n  runMiddleRemovalDepthThreeChecks\n  runMiddleRemovalDepthFourChecks\n  runDonationOriginIdReuseChecks\n  runDonationOriginRedirectChecks\n  runReceivePriorityHandoffChecks\n  runReceiveReplenishSegmentChecks\n  runReplyRecvHolderDescheduleChecks\n  runPreReceiveReturnMigrationChecks\n  runReplyRecvFootprintChecks\n  runCallReplyFootprintChecks\n  runRetypeReservationChecks\n  runRetypeSchedContextChecks\n  runCarveIdentityChecks\n  runObjectDomainDonationMemberChecks\n  runTraceFixtureCheck" tests/SmpIpcSuite.lean'
 
 # ============================================================================
 # WS-OD OD3 — the pop, generalised and inert
@@ -4002,20 +3955,18 @@ run_check "INVARIANT" rg -n '^theorem vspaceMapFromFrameCap_crossCoreNonInterfer
 run_negative_check "INVARIANT" rg -n 'decodeVSpaceMapArgsChecked' SeLe4n tests
 run_negative_check "INVARIANT" rg -n 'lockKind_ne_page' SeLe4n tests
 run_negative_check "INVARIANT" rg -n 'args\.paddr|paddr := PAddr\.ofNat r2' SeLe4n/Kernel
-# Nothing but an untyped mints memory authority: an in-place retype refuses a
-# memory-backed replacement, and the pre-retype cleanup refuses a frame.
-run_check "INVARIANT" rg -n '^    newObj\.objectType\.memoryBacked = false$' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
+# Nothing but an untyped mints memory authority: every object is carved from
+# one, and the pre-retype cleanup refuses a frame.
 run_check "INVARIANT" rg -n -U 'def lifecyclePreRetypeCleanup[^\n]*(\n([ \t][^\n]*)?)*  \| \.frame _ =>(\n([ \t][^\n]*)?)*\n    \.error \.revocationRequired\n  \| _ => \.ok st' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
-run_check "INVARIANT" rg -n -U 'def memoryBacked : KernelObjectType → Bool[^\n]*(\n([ \t][^\n]*)?)*  \| \.untyped => true(\n([ \t][^\n]*)?)*  \| \.frame => true' SeLe4n/Model/Object/Structures.lean
 run_check "INVARIANT" rg -n 'TPH-015q checked boot refuses a configured CNode holding a reply capability' tests/TwoPhaseArchSuite.lean
 # WS-BP BP7.1 slice 2: memory reaches a thread only by a carve.  The live
 # `.untypedRetype` arm runs `untypedRetypeFromCap`; the carve is
 # `retypeFromUntyped` at the untyped's own next page (never a register value),
 # a RAM page is zeroed before the capability exists, the new capability is a
-# CDT child of the untyped's, only `.frame` is carved, and a device untyped
-# backs exactly the memory-backed kinds.
-run_check "INVARIANT" rg -n '^    \| \.object _ => untypedRetypeFromCap tid decoded\.capAddr \(decodeUntypedRetypeArgs decoded\)$' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n -U 'def untypedRetypeFromCap[^\n]*(\n([ \t][^\n]*)?)*      match carveRequestOf\? st args\.newType args\.sizeBits with' SeLe4n/Kernel/API.lean
+# CDT child of the untyped's, and a device untyped backs exactly the
+# memory-backed kinds.
+run_check "INVARIANT" rg -n -U '^    \| \.object _ =>\n        untypedRetypeFromCap tid executingCore decoded\.capAddr \(decodeUntypedRetypeArgs decoded\)$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'def untypedRetypeFromCap[^\n]*(\n([ \t][^\n]*)?)*      match carveRequestOf\? st executingCore args\.newType args\.sizeBits with' SeLe4n/Kernel/API.lean
 # WS-BP BP7.1 slice 4b (v0.36.10): a VSpace root is carved, one page, under an
 # ASID the arm picks (never 0) and the carve itself checks is free before
 # anything is written; its table base is the page it owns.
@@ -4038,17 +3989,37 @@ run_check "INVARIANT" rg -n 'the first root is registered under the least free A
 run_check "INVARIANT" rg -n '^  runCarvedRootChecks$' tests/VSpaceCapabilityBindingSuite.lean
 run_check "INVARIANT" rg -n '^pub fn untyped_retype_vspace_root\($' rust/sele4n-sys/src/lifecycle.rs
 run_check "INVARIANT" rg -n -U 'def carveRequestOf\?[^\n]*(\n([ \t][^\n]*)?)*  \| \.frame => if sizeBits = 0 then \.ok \.frame else \.error \.invalidArgument\n[^\n]*\n  \| \.pageTable => if sizeBits = 0 then \.ok \.pageTable else \.error \.invalidArgument\n  \| \.untyped =>\n      if minUntypedSizeBits ≤ sizeBits ∧ sizeBits ≤ maxUntypedSizeBits then' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n -U 'def carveRequestOf\?[^\n]*(\n([ \t][^\n]*)?)*  \| _ => \.error \.invalidArgument' SeLe4n/Kernel/API.lean
+# WS-ZA ZA5.4 part 14: every kernel object kind is carved.  A thread is made
+# in the creating core's domain with that core as its affinity (seL4's
+# `createObject` reads `ksCurDomain` and the current CPU); a CNode's radix and a
+# scheduling context's size are bounded as `Untyped_Retype` bounds them.
+run_check "INVARIANT" rg -n -U 'def carveRequestOf\?[^\n]*(\n([ \t][^\n]*)?)*  \| \.tcb =>\n      if sizeBits = 0 then\n        \.ok \(\.tcb \(st\.scheduler\.activeDomainOnCore executingCore\) executingCore\)' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'def carveRequestOf\?[^\n]*(\n([ \t][^\n]*)?)*  \| \.cnode =>\n      if minCNodeRadixBits ≤ sizeBits ∧ sizeBits ≤ maxCNodeRadixBits then' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'def CarveRequest\.object[^\n]*(\n([ \t][^\n]*)?)*  \| \.tcb dom core => \.tcb \(carvedTcb childId dom core\)\n  \| \.endpoint => \.endpoint \(Endpoint\.ofQueues \{\} \{\}\)' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+# The carve rounds the free index up to its boundary (seL4's
+# `alignUp(freeRef, objectSize)`), never refusing a misaligned one: the index
+# is bound to the rounded one and the next check is the authority.
+run_check "INVARIANT" rg -n -U 'def retypeFromUntyped[^\n]*(\n([ \t][^\n]*)?)*            let idx := alignedCarveIndex newObj\.objectType allocSize ut authCap\.freeIndex\n            if lifecycleRetypeAuthority authCap untypedId then' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n '^def alignedCarveIndex($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n '^theorem carveBaseAligned_alignedCarveIndex($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n -U 'def CarveRequest\.carveIndex[^\n]*(\n([ \t][^\n]*)?)*  alignedCarveIndex req\.objectType req\.size ut idx' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n '^theorem untypedRetypeObject_ok_tcb($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n '^theorem untypedRetypeObject_ok_endpoint($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n '^theorem untypedRetypeObject_ok_cnode($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n '^theorem untypedRetypeObject_stepCovers($|[ ({:\[\]])' SeLe4n/Kernel/ReschedulePendingArms/Dispatch.lean
 run_check "INVARIANT" rg -n -U 'def untypedRetypeFromCap[^\n]*(\n([ \t][^\n]*)?)*          \| \.ok \(src, dst\) => untypedRetypeObject src vChild\.val dst req st' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U 'def untypedRetypeFromCap[^\n]*(\n([ \t][^\n]*)?)*        match validateObjIdArg args\.childId with' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U 'def resolveUntypedRetype[^\n]*(\n([ \t][^\n]*)?)*          capAddr       := args\.dstCNode\n          capDepth      := rootCn\.depth\n          requiredRight := \.write' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U 'def resolveUntypedRetype[^\n]*(\n([ \t][^\n]*)?)*      match resolveCapAddress callerTcb\.cspaceRoot srcAddr rootCn\.depth st with' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n -U 'def untypedRetypeObject[^\n]*(\n([ \t][^\n]*)?)*          match retypeFromUntyped src untypedId childId \(req\.object untypedId ut utCap\.freeIndex\)\n                req\.size st with' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n -U 'def untypedRetypeObject[^\n]*(\n([ \t][^\n]*)?)*            match retypeFromUntyped src untypedId childId\n                \(req\.object untypedId childId ut \(req\.carveIndex ut utCap\.freeIndex\)\) req\.size st with' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n -U 'def untypedRetypeObject[^\n]*(\n([ \t][^\n]*)?)*          match cspaceDstRefusal dst st with(\n([ \t][^\n]*)?)*            match retypeFromUntyped src untypedId childId' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
-run_check "INVARIANT" rg -n -U 'def untypedRetypeObject[^\n]*(\n([ \t][^\n]*)?)*              \.ok \(\(\), \(\(req\.scrub st1 ut utCap\.freeIndex\)\.storeCNodeWith dst\.cnode\n                \(·\.insert dst\.slot \(req\.capability childId\)\)\)\.cdtAddChild src dst \.retype\)' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n -U 'def untypedRetypeObject[^\n]*(\n([ \t][^\n]*)?)*              \.ok \(\(\), \(\(req\.scrub st1 ut \(req\.carveIndex ut utCap\.freeIndex\)\)\.storeCNodeWith dst\.cnode\n                \(·\.insert dst\.slot \(req\.capability childId\)\)\)\.cdtAddChild src dst \.retype\)' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n -U 'def CarveRequest\.scrub[^\n]*\n    CarveRequest → SystemState\n  \| \.frame => carveZeroFrame st \(untypedNextFrame ut idx\)\n  \| \.untyped _ => st' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n -U 'def untypedNextChild[^\n]*(\n([ \t][^\n]*)?)*    parent := some parentId \}' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
-run_check "INVARIANT" rg -n -U 'def requiresPageAlignment[^\n]*(\n([ \t][^\n]*)?)*  \| \.untyped => true' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+# A child untyped is aligned to its own size (seL4's alignUp(freeRef, 2^b)),
+# not to a page.
+run_check "INVARIANT" rg -n -U 'def requiresSizeAlignment[^\n]*(\n([ \t][^\n]*)?)*  \| \.untyped => true' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_negative_check "INVARIANT" rg -n -U 'def requiresPageAlignment[^\n]*(\n([ \t][^\n]*)?)*  \| \.untyped => true' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n '^theorem untypedNextChild_of_retype_ok($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n '^theorem untypedRetypeObject_ok_untyped($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n -U '    \.error \.revocationRequired\n  \| \.untyped _ =>(\n([ \t][^\n]*)?)*    \.error \.revocationRequired\n  \| _ => \.ok st' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
@@ -4056,15 +4027,9 @@ run_negative_check "INVARIANT" rg -n '\buntypedRetypeFrame\b|\bretireFrames?\b|\
 run_check "INVARIANT" rg -n -U 'def untypedNextFrame \(ut : UntypedObject\) \(idx : Nat\) : FrameObject :=\n  \{ base := SeLe4n\.PAddr\.ofNat \(ut\.regionBase\.toNat \+ idx\)\n    isDevice := ut\.isDevice \}' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n -U 'def carveZeroFrame[^\n]*(\n([ \t][^\n]*)?)*  if frame\.isDevice then st\n  else \{ st with\n          machine := SeLe4n\.zeroMemoryRange st\.machine frame\.base SeLe4n\.pageBytes\n([ \t]*\n)*          physicalWrites := st\.physicalWrites\.pushAfter st\.physicalWritesDrained\n            \(SeLe4n\.Kernel\.Architecture\.PhysicalWrite\.zeroPage frame\.base\)\n          physicalWritesDrained := false \}' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n '^        else if ut\.isDevice && !newObj\.objectType\.deviceBackable then$' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
-# v0.36.9: a VSpace root is memory-backed (the in-place retype refuses to create
-# one, which is what closed the ASID-0 collision), and a device untyped still
-# backs only untypeds and frames — a table must be RAM.
-run_check "INVARIANT" rg -n -U 'def memoryBacked : KernelObjectType → Bool[^\n]*(\n([ \t][^\n]*)?)*  \| \.vspaceRoot => true' SeLe4n/Model/Object/Structures.lean
+# A device untyped backs only untypeds and frames — a table must be RAM, and so
+# must every kernel object the carve makes.
 run_check "INVARIANT" rg -n -U 'def deviceBackable : KernelObjectType → Bool[^\n]*(\n([ \t][^\n]*)?)*  \| \.vspaceRoot => false(\n([ \t][^\n]*)?)*  \| \.untyped => true(\n([ \t][^\n]*)?)*  \| \.frame => true' SeLe4n/Model/Object/Structures.lean
-run_negative_check "INVARIANT" rg -n 'ut\.isDevice && !newObj\.objectType\.memoryBacked' SeLe4n
-run_check "INVARIANT" rg -n 'the live .\.lifecycleRetype. into a VSpace root is refused \(illegalState\)' tests/VSpaceCapabilityBindingSuite.lean
-run_check "INVARIANT" rg -n '^  runInPlaceVSpaceRootChecks$' tests/VSpaceCapabilityBindingSuite.lean
-run_check "INVARIANT" rg -n '^theorem retypeReplacementAdmissible_refuses_vspaceRoot($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
 run_negative_check "INVARIANT" rg -n 'ut\.isDevice && newObj\.objectType != \.untyped' SeLe4n
 run_check "INVARIANT" rg -n '^theorem untypedRetypeObject_ok_frame($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n '^theorem untypedNextFrame_of_retype_ok($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
@@ -4079,7 +4044,7 @@ run_check "INVARIANT" rg -n '^    UntypedRetype = 36,$' rust/sele4n-types/src/sy
 run_check "INVARIANT" rg -n '^            Self::UntypedRetype => 4,$' rust/sele4n-hal/src/svc_dispatch.rs
 run_check "INVARIANT" rg -n '^pub fn untyped_retype\($' rust/sele4n-sys/src/lifecycle.rs
 run_check "INVARIANT" rg -n -U 'def lockSet_untypedRetype[^\n]*(\n([ \t][^\n]*)?)*     \(carvedObjectLock childKind childObjId, \.write\),' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-run_check "INVARIANT" rg -n -U 'def carvedObjectLock[^\n]*\n  match childKind with\n  \| \.untyped => untypedLock oid\n  \| \.vspaceRoot => vspaceRootLock oid\n  \| _ => pageLock oid' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n -U 'def carvedObjectLock[^\n]*\n  match childKind with\n  \| \.untyped => untypedLock oid\n  \| \.vspaceRoot => vspaceRootLock oid\n  \| \.tcb => tcbLock \(ThreadId\.ofObjId oid\)\n  \| \.endpoint => endpointLock oid\n  \| \.notification => notificationLock oid\n  \| \.cnode => cnodeLock oid\n  \| \.reply => replyLock \(ReplyId\.ofObjId oid\)\n  \| \.schedContext => schedContextLock \(SchedContextId\.ofObjId oid\)\n  \| \.frame \| \.pageTable => pageLock oid$' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_negative_check "INVARIANT" rg -n '\bchildIsUntyped\b' SeLe4n
 run_check "INVARIANT" rg -n 'the child untyped and the grandchild frame are both retired' tests/VSpaceCapabilityBindingSuite.lean
 run_check "INVARIANT" rg -n 'RETIRED: the frames-only reset guard refuses this state' tests/VSpaceCapabilityBindingSuite.lean
@@ -5208,8 +5173,6 @@ run_check "INVARIANT" rg -n '^def vspaceUnmapPageWithShootdown($|[ ({:\[\]])' Se
 run_check "INVARIANT" rg -n '^def asidAllocateWithShootdown($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
 run_check "INVARIANT" rg -n 'vspaceUnmapPageWithShootdown' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n 'vspaceMapPageCheckedWithShootdownFromState' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n 'lifecycleRetypeDirectWithCleanupShootdown' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^def lifecycleRetypeDirectWithCleanupShootdown($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
 run_check "INVARIANT" rg -n '^theorem shootdownAck_release_acquire($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdownWait.lean
 run_check "INVARIANT" rg -n '^theorem shootdown_wait_loop_terminates($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdownWait.lean
 run_check "INVARIANT" rg -n '^theorem shootdown_timeout_handling($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdownWait.lean
@@ -5283,8 +5246,6 @@ run_check "INVARIANT" rg -n '^theorem shootdownRoundLock_release_acquire($|[ ({:
 run_check "INVARIANT" rg -n '^theorem shootdownAck_release_acquire_multi_pair_witness($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdownWait.lean
 run_check "INVARIANT" rg -n '^theorem storeObject_tlbShootdown_eq($|[ ({:\[\]])' SeLe4n/Model/State.lean
 run_check "INVARIANT" rg -n '^theorem bootFromPlatform_tlbShootdown_eq($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
-run_check "INVARIANT" rg -n '^def lifecycleRetypeWithCleanupShootdown($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRetypeWithCleanupShootdown_preserves_pendingBounded($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
 run_check "INVARIANT" rg -n '^theorem completeShootdownRounds_nil($|[ ({:\[\]])' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n '^def shootdownRoundLockAcquireFuel($|[ ({:\[\]])' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n '^theorem shootdownSharingDomain_rpi5($|[ ({:\[\]])' SeLe4n/Kernel/SyscallDispatchEntry.lean
@@ -5396,9 +5357,6 @@ run_check "INVARIANT" rg -n 'ipcBufferSlotPage tcb.ipcBuffer idx' SeLe4n/Kernel/
 run_check "INVARIANT" rg -n '^theorem proofLayerInvariantBundle_setPerCoreTlb($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/Invariant.lean
 run_check "INVARIANT" rg -n '^theorem tlbFillIpcBufferOnCore_preserves_proofLayerInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/IpcBufferTlbFill.lean
 # WS-SM SM7.F.4(b)(iii): the retype seam drains the initiator's per-core view.
-run_check "INVARIANT" rg -n '^def lifecycleRetypeDirectWithCleanupShootdownPerCore($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRetypeDirectWithCleanupShootdownPerCore_initiator_drained($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
-run_check "INVARIANT" rg -n 'lifecycleRetypeDirectWithCleanupShootdownPerCore' SeLe4n/Kernel/API.lean
 # WS-SM SM7.F.3 — round-generation-tagged descriptors: a commit's catch-up
 # drains ONLY the rounds its own commit opened, so a concurrently-committed
 # round's freshly-posted work survives for its own catch-up (the SM7.B
@@ -5481,7 +5439,7 @@ run_check "INVARIANT" rg -n '^pub const STRESS_ROUNDS: u64 = 8;$' rust/sele4n-ha
 # The instruction-cache broadcast layer (`IC IALLUIS` / `IC IVAU`) and its
 # PE-local counterpart (the hazard), the data-cache-at-PoC reach theorems,
 # the DMA scope tripwire, the 14th `proofLayerInvariantBundle` conjunct, the
-# live `.vspaceUnmap` / `.lifecycleRetype` seams, the FFI + Rust HAL
+# live `.vspaceUnmap` / carve seams, the FFI + Rust HAL
 # realisation, and the suite that exercises all of it.
 # ============================================================================
 # SM7.D module registration + `CacheModel` / `TlbCacheComposition` promotion.
@@ -5521,9 +5479,6 @@ run_check "INVARIANT" rg -n '^theorem ICacheInvalidation.unifyPage_not_covers_cl
 run_check "INVARIANT" rg -n '^@\[inline\] def ICacheInvalidation.isDomainWide' SeLe4n/Kernel/Architecture/CacheInvalidation.lean
 run_check "INVARIANT" rg -n '^@\[inline\] def ICacheInvalidation.toSize' SeLe4n/Kernel/Architecture/CacheInvalidation.lean
 run_check "INVARIANT" rg -n '^def getObjectType\?' SeLe4n/Model/State.lean
-run_check "INVARIANT" rg -n '^def retypeIcacheOp($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
-run_check "INVARIANT" rg -n '^theorem retypeIcacheOp_cleans_scrub_extent($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
-run_check "INVARIANT" rg -n '^theorem retypeIcacheOp_discharges_scrub_obligation($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
 run_check "INVARIANT" rg -n '^def dischargesPoUClean($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
 run_check "INVARIANT" rg -n '^theorem dischargesPoUClean_isDomainWide($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
 run_check "INVARIANT" rg -n '^def kernelCodeWriteEmitted($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
@@ -5554,7 +5509,7 @@ run_check "INVARIANT" rg -n 'fn test_clean_range_pou_line_coverage' rust/sele4n-
 # last step of `apply_physical_write` — after the store and its barrier, so
 # the clean reads the zeroes.
 run_check "INVARIANT" rg -U -n '^def kernelCodeWriteEmitted : KernelCodeWriteSite → Bool[^\n]*(\n([ \t][^\n]*)?)*?  \| \.carveScrub +=> true$' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
-run_check "INVARIANT" rg -U -n '^def kernelCodeWriteSites : List KernelCodeWriteSite :=\n  \[\.retypeScrub, \.bootImageLoad, \.carveScrub\]$' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -U -n '^def kernelCodeWriteSites : List KernelCodeWriteSite :=\n  \[\.bootImageLoad, \.carveScrub\]$' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
 run_check "INVARIANT" rg -n '^theorem zeroPage_discharges_obligation($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
 run_check "INVARIANT" rg -U -n '^def icacheMaintenance : PhysicalWrite → Option ICacheInvalidation\n  \| \.zeroPage base => some \(\.cleanRangeIallu base SeLe4n\.pageBytes\)$' SeLe4n/Kernel/Architecture/PhysicalWrite.lean
 run_check "INVARIANT" rg -n '^theorem carveZeroFrame_pendingPhysicalWrites($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
@@ -5721,18 +5676,6 @@ run_check "INVARIANT" rg -U -n '^pub fn core_serves\(c: usize\) -> bool \{\n    
 run_check "INVARIANT" rg -U -n '^pub fn core_serves_in\(irq_ready: &\[AtomicBool\], lean_ready_mask: u8, c: usize\) -> bool \{\n    c < irq_ready\.len\(\)\n        && irq_ready\[c\]\.load\(Ordering::Acquire\)\n        && crate::lean_ready::mask_marks\(lean_ready_mask, c\)$' rust/sele4n-hal/src/smp.rs
 run_check "INVARIANT" rg -n '^    fn serving_is_the_conjunction_of_irq_and_lean_readiness\(\)' rust/sele4n-hal/src/smp.rs
 run_negative_check "INVARIANT" rg -n 'irq_ready_core_count_within' rust/sele4n-hal/src/
-# The re-type operand must NOT regress to the bare domain-wide invalidate.
-run_check "INVARIANT" bash -c "! rg -q '^  some \\.iallu' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean"
-# The scrubbed extent has exactly ONE definition, and both the scrub and the
-# cache-maintenance operand read it.  A second copy of the arithmetic would let
-# the clean silently name a range the scrub does not zero (PR #845 review 4).
-run_check "INVARIANT" rg -n '^def scrubExtent($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
-run_check "INVARIANT" rg -n '^theorem scrubObjectMemory_zeroes_scrubExtent($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
-run_check "INVARIANT" rg -n '^theorem scrubObjectMemory_cleaned_by_retype($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
-run_check "INVARIANT" rg -n 'scrubExtent target objType' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
-# Neither consumer may re-derive the extent from `objectTypeAllocSize` itself.
-run_check "INVARIANT" bash -c "! rg -q 'objectTypeAllocSize' <(sed -n '/^def retypeIcacheOp /,/^\$/p' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean)"
-run_check "INVARIANT" bash -c "! rg -q 'objectTypeAllocSize' <(sed -n '/^def scrubObjectMemory /,/^\$/p' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean)"
 # PR #845 review (P2): page alignment is enforced at the mapping boundary, not
 # only in the four checked wrappers.  The granule has ONE definition, placed
 # below both layers that must agree on it.
@@ -5782,10 +5725,7 @@ run_check "INVARIANT" rg -n '^theorem icacheCoherentCheck_perCore_iff($|[ ({:\[\
 # SM7.D.1 live wiring: the two production destroy paths + the runtime seam.
 run_check "INVARIANT" rg -n '^def vspaceUnmapPageWithShootdownAndIcacheBroadcast($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
 run_check "INVARIANT" rg -n '^theorem vspaceUnmapPageWithShootdownAndIcacheBroadcast_preserves_icacheCoherent_perCore($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
-run_check "INVARIANT" rg -n '^def lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
-run_check "INVARIANT" rg -n '^def lifecycleRetypeWithCleanupShootdownPerCoreIcache($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
 run_check "INVARIANT" rg -n 'vspaceUnmapPageWithShootdownAndIcacheBroadcast' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n 'lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^def completeIcacheMaintenance($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n 'completeIcacheMaintenance result' SeLe4n/Kernel/SyscallDispatchEntry.lean
 # SM7.D FFI + Rust HAL realisation (broadcast primitives + fail-closed decode).
@@ -5862,19 +5802,11 @@ run_check "INVARIANT" rg -n '^pub fn vspace_unify_instruction' rust/sele4n-sys/s
 run_check "INVARIANT" rg -n '^pub type VSpaceUnifyInstructionArgs' rust/sele4n-abi/src/args/vspace.rs
 run_check "INVARIANT" bash -c "! rg -q 'VspaceUnifyInstruction' rust/sele4n-types/src/syscall.rs rust/sele4n-hal/src/svc_dispatch.rs"
 
-# WS-SM SM7.F.4(b)(iii): shared initiator drain + the CSpaceAddr retype sibling.
-run_check "INVARIANT" rg -n '^def retypeInitiatorDrain($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
-run_check "INVARIANT" rg -n '^def lifecycleRetypeWithCleanupShootdownPerCore($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
-run_check "INVARIANT" rg -n '^theorem retypeInitiatorDrain_drained($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
-# WS-SM SM7.F.4(b)(iii) residual CLOSED: whole-invariant retype preservation.
 # `v0.36.35`: the VSpace-root-target preservation theorems are retired — a root
 # is never destroyed in place — and must not come back; the refusal replaces them.
 run_negative_check "INVARIANT" rg -n '^theorem [A-Za-z]*_preserves_tlbInvalidationConsistent_perCore($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
 run_negative_check "INVARIANT" rg -n '^theorem lifecyclePreRetypeCleanup_vspaceRoot_id($|[ ({:\[\]])' SeLe4n
 run_check "INVARIANT" rg -n -U '^  \| \.vspaceRoot _ =>\n([ \t]*\n)*    \.error \.revocationRequired\n  \| _ => \.ok st$' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
-run_check "INVARIANT" rg -n '^theorem lifecyclePreRetypeCleanup_vspaceRoot_refused($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_refuses_vspaceRoot($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRetypeWithCleanupShootdownPerCoreIcache_refuses_vspaceRoot($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
 
 # ============================================================================
 # WS-SM SM8.A — Per-core observable state
@@ -6131,8 +6063,6 @@ run_check "INVARIANT" rg -n '^theorem cspaceMove_confinedToCore($|[ ({:\[\]])' S
 run_check "INVARIANT" rg -n '^theorem cspaceMint_confinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^theorem cspaceRevoke_confinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^theorem cspaceMutate_confinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_confinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRevokeDeleteRetype_confinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^theorem vspaceMapPage_confinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^theorem vspaceUnmapPage_confinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^theorem vspaceLookup_confinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
@@ -6142,8 +6072,6 @@ run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_chooseThread($|[ (
 run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_endpointSendDual($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_cspaceMint($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_cspaceRevoke($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_lifecycleRetype($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_lifecycleRevokeDeleteRetype($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_notificationSignal($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_notificationWait($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_cspaceInsertSlot($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
@@ -6190,7 +6118,7 @@ run_check "INVARIANT" rg -n '^theorem crossCoreLeakage_bounded_by_globalProjecti
 run_check "INVARIANT" rg -n '^theorem crossCoreTransition_invisible_to_every_observer($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^def enforcementBoundaryPerCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_count($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore\.length = 67' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore\.length = 64' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_extends_canonical($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^def enforcementBoundaryPerCoreComplete($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_is_complete($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
@@ -6479,16 +6407,12 @@ run_check "INVARIANT" rg -n 'delegationProof \(sid : SyscallId\) \(proof : sysca
 # occupancy bound.  All three arrive delegation-backed.
 # `v0.35.169` (WS-RR RR8.12 Cut C3b-iii): repointed -- production now, beside
 # the footprint that reads it; the SM8.B claim is unchanged.
-run_check "INVARIANT" rg -n '^def threadOccupiedCores($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeFootprint.lean
+run_check "INVARIANT" rg -n '^def threadOccupiedCores($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/CleanupFootprint.lean
 run_check "INVARIANT" rg -n '^theorem removeRunnableFromAllCores_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/SlotConfinement/IpcArms.lean
 run_check "INVARIANT" rg -n '^theorem cleanupTcbReferences_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/SlotConfinement/IpcArms.lean
 # `v0.35.169` (WS-RR RR8.12 Cut C3b-iii): repointed -- production now, beside
 # the footprint that reads it; the SM8.B claim is unchanged.
-run_check "INVARIANT" rg -n '^def lifecycleRetypeWriteSet($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeFootprint.lean
 run_check "INVARIANT" rg -n '^theorem lifecyclePreRetypeCleanup_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/SlotConfinement/MemoryArms.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/SlotConfinement/MemoryArms.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_crossCoreNonInterference($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem syscallDelegates_lifecycleRetype($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 # Round 39 (SECURITY): the destroy path refuses to destroy a RUNNING thread.
 # Without it the all-cores sweep clears the current slot of whichever core runs
 # the target — the executing core included — and nothing schedules a successor,
@@ -6667,7 +6591,7 @@ run_check "INVARIANT" rg -n '^def crossCoreEnforcementEntries($|[ ({:\[\]])' SeL
 run_check "INVARIANT" rg -n '^def syscallIdToEnforcementNamePerCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_is_complete_crossCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_crossCore_classes_match($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n '^theorem syscallIdToEnforcementNamePerCore_differs_at_fifteen($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem syscallIdToEnforcementNamePerCore_differs_at_fourteen($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 
 # ---------------------------------------------------------------------------
 # WS-SM SM8.C — the per-core declassification audit
@@ -6904,7 +6828,7 @@ run_check "INVARIANT" rg -n 'NEGATIVE: linearOrder disagrees on exactly one of t
 # SM9.A.11 took it 40 -> 42 with the two audit readers; WS-RR RR8.16
 # (`v0.35.190`) took it 44 -> 45 with `cspaceRevokeCdt`.  The anchor pins HEAD's
 # value; the arrows above are history, which is why they are not restated in it.
-run_check "INVARIANT" rg -n 'enforcementBoundaryExtended.length = 52' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
+run_check "INVARIANT" rg -n 'enforcementBoundaryExtended.length = 50' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
 run_check "INVARIANT" rg -n '^  runEndpointPolicyGateChecks' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'NEGATIVE: a widening override cannot open a flow the lattice denies' tests/SmpInformationFlowSuite.lean
 
@@ -7338,7 +7262,7 @@ run_check "INVARIANT" rg -n 'NEGATIVE: it IS visible at the core it landed on' t
 run_check "INVARIANT" rg -n 'NEGATIVE: the remote wake is not confined to the EXECUTING core' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'SCOPE: the decidable slice cannot see a badge write' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n '^\[smp-information-flow\]' tests/fixtures/smp_information_flow.expected
-run_check "INVARIANT" rg -n 'enforcement boundary: canonical 52' tests/fixtures/smp_information_flow.expected
+run_check "INVARIANT" rg -n 'enforcement boundary: canonical 50' tests/fixtures/smp_information_flow.expected
 run_check "INVARIANT" rg -n 'smp_information_flow\.expected' tests/fixtures/smp_information_flow.expected.sha256
 # The FIXTURE's independence probe must land on a core whose current thread the
 # low observer can SEE, or the reported set is `allCores` and the line is
@@ -7355,7 +7279,7 @@ run_negative_check "INVARIANT" rg -n "a write to core 1's current slot is invisi
 run_check "INVARIANT" rg -n '^def KernelOperation.all($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
 run_check "INVARIANT" rg -n '^theorem KernelOperation.mem_all($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
 run_check "INVARIANT" rg -n '^theorem KernelOperation.all_nodup($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
-run_check "INVARIANT" rg -n 'KernelOperation.all.length = 35' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
+run_check "INVARIANT" rg -n 'KernelOperation.all.length = 34' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
 run_check "INVARIANT" rg -n 'KernelOperation.all.filter perCoreConfinementDerived' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^theorem perCoreConfinementNotDerived_count($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n 'KernelOperation.all.map kernelOperationPerCoreNiTheorem' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
@@ -7516,11 +7440,14 @@ run_check "INVARIANT" rg -n '\| \.auditDrain\s+=> 32' SeLe4n/Model/Object/Types.
 run_check "INVARIANT" rg -n '31 => some \.auditRead' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n '32 => some \.auditDrain' SeLe4n/Model/Object/Types.lean
 # The count anchors pin HEAD's value, not the value the cut above produced:
-# `.tcbSetFaultHandler` took it to 35 and WS-RR RR8.16's `.cspaceRevoke` to 36.
-run_check "INVARIANT" rg -n '^def count : Nat := 42' SeLe4n/Model/Object/Types.lean
+# `.tcbSetFaultHandler` took it to 35 and WS-RR RR8.16's `.cspaceRevoke` to 36;
+# WS-ZA ZA5.4 part 14 retired number 8, leaving 41 variants under a bound of 42.
+run_check "INVARIANT" rg -n '^def count : Nat := 41' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n 'AuditRead = 31' rust/sele4n-types/src/syscall.rs
 run_check "INVARIANT" rg -n 'AuditDrain = 32' rust/sele4n-types/src/syscall.rs
-run_check "INVARIANT" rg -n 'pub const COUNT: usize = 42;' rust/sele4n-types/src/syscall.rs
+run_check "INVARIANT" rg -n 'pub const COUNT: usize = 41;' rust/sele4n-types/src/syscall.rs
+run_check "INVARIANT" rg -n 'pub const ENCODING_BOUND: u64 = 42;' rust/sele4n-types/src/syscall.rs
+run_check "INVARIANT" rg -n 'pub const RETIRED: \[u64; 1\] = \[8\];' rust/sele4n-types/src/syscall.rs
 
 # WS-ZA ZA4.3: the yield syscall, both ABI halves, and the proofs that cover it:
 # IPC invariant preservation, the reschedule flags, the own-core lock footprint,
@@ -7623,7 +7550,7 @@ run_check "INVARIANT" rg -n '^  runAuditDrainSignalChecks' tests/SmpInformationF
 run_check "INVARIANT" rg -n 'capabilityOnly "auditReadFromCore"' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
 run_negative_check "INVARIANT" rg -n 'capabilityOnly "auditReadWord"' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
 run_check "INVARIANT" rg -n 'capabilityOnly "auditDrainVisiblePrefix"' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
-run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore.length = 67' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore.length = 64' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^def lockSet_auditRead($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n '^def lockSet_auditDrain($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 # PR #870 round 6 (the lock domain): a declared footprint covers the COMMITTED
@@ -7686,7 +7613,7 @@ run_check "INVARIANT" rg -n '^theorem queuedFoldBlock_eq_foldBlock($|[ ({:\[\]])
 run_check "INVARIANT" bash -lc 'rg -U -n "def lockSet_serviceRegister[^\n]*(\n([ \t][^\n]*)?)*stateLevelLock, .write" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "def lockSet_serviceRevoke[^\n]*(\n([ \t][^\n]*)?)*stateLevelLock, .write" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "def lockSet_serviceQuery[^\n]*(\n([ \t][^\n]*)?)*stateLevelLock, .read" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "def lockSet_lifecycleRetype[^\n]*(\n([ \t][^\n]*)?)*stateLevelLock, .write" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "def lockSet_untypedRetype[^\n]*(\n([ \t][^\n]*)?)*stateLevelLock, .write" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
 
 # SM9.A tests: the anchors, the elaboration examples, the seven runtime groups
 # and the acceptance gate.  §9.8 is the plan's own acceptance criterion run for
@@ -7705,7 +7632,7 @@ run_check "INVARIANT" rg -n 'NEGATIVE: the PRE-EPOCH rule would have stamped thi
 run_check "INVARIANT" rg -n 'NEGATIVE: an unconfigured deployment still has the cliff' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n '^private def auditReaderTraceLines($|[ ({:\[\]])' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'audit view: trail 3 entries' tests/fixtures/smp_information_flow.expected
-run_check "INVARIANT" rg -n 'audit ABI: auditRead=31 auditDrain=32 syscalls=42' tests/fixtures/smp_information_flow.expected
+run_check "INVARIANT" rg -n 'audit ABI: auditRead=31 auditDrain=32 syscalls=41' tests/fixtures/smp_information_flow.expected
 # The end-to-end ABI witness: the returned word is the SELECTED one, not the
 # caller's own preloaded `x0`.  Without the staged frame the assertion below
 # would read back whatever the caller left there.
@@ -8501,7 +8428,7 @@ run_check "INVARIANT" rg -n '^private def refusalLedgerTraceLines($|[ ({:\[\]])'
 run_check "INVARIANT" rg -n 'refusal seam: recordingSyscalls=2' tests/fixtures/smp_information_flow.expected
 run_check "INVARIANT" rg -n 'refusal write: attempts=1 version=1 trailMoved=false' tests/fixtures/smp_information_flow.expected
 run_check "INVARIANT" rg -n 'refusal read .partial.: status=SeLe4n.Model.KernelError.illegalAuthority' tests/fixtures/smp_information_flow.expected
-run_check "INVARIANT" rg -n 'audit ABI: auditRead=31 auditDrain=32 syscalls=42 opcodes=30 readableStructures=2' tests/fixtures/smp_information_flow.expected
+run_check "INVARIANT" rg -n 'audit ABI: auditRead=31 auditDrain=32 syscalls=41 opcodes=30 readableStructures=2' tests/fixtures/smp_information_flow.expected
 
 # ============================================================================
 # WS-SM SM9.C — the data-carrying declassification
@@ -8602,13 +8529,13 @@ run_negative_check "INVARIANT" rg -n 'def declassifiedSignalEffectFootprint.*Dec
 # `NonInterferenceStep` constructor concludes the projection is *unchanged*, so
 # an operation whose purpose is an authorized visible flow cannot correspond to
 # one; both declassifying operations live in `CrossCoreTransition` instead.
-run_check "INVARIANT" rg -n '^theorem kernelOperation_count : KernelOperation.all.length = 35' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
+run_check "INVARIANT" rg -n '^theorem kernelOperation_count : KernelOperation.all.length = 34' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
 run_negative_check "INVARIANT" rg -n 'declassifiedSignal' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
 
 # SM9.C.8: the syscall, both Rust mirrors and the seam classification the total
 # `refusalSeamClass` forced it to supply.
 run_check "INVARIANT" rg -n '^  \| declassifySignal' SeLe4n/Model/Object/Types.lean
-run_check "INVARIANT" rg -n 'def count : Nat := 42' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n 'def count : Nat := 41' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n 'DeclassifySignal = 33' rust/sele4n-types/src/syscall.rs
 run_check "INVARIANT" rg -n 'DeclassifySignal = 33' rust/sele4n-hal/src/svc_dispatch.rs
 run_check "INVARIANT" rg -n 'DeclassificationDeniedAtReceiver = 56' rust/sele4n-types/src/error.rs
@@ -8847,8 +8774,6 @@ run_check "INVARIANT" rg -n '^theorem newlyRecordedEvents_drained($|[ ({:\[\]])'
 # SM9.D.12: the retype CLEARS rather than frames — it commits `storeObject` at
 # the same id, so a framed retype would leave a destroyed object's tags on its
 # replacement.  The two imprecisions must not be conflated.
-run_check "INVARIANT" rg -n '^theorem retypeClearsTaint($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
-run_check "INVARIANT" rg -n '^theorem retypedObject_taint_empty($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 run_check "INVARIANT" rg -n '^theorem staleTaint_is_not_saturation($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 # The live write sites: BOTH dispatchers, applied to the state each was given.
 # PR #873 round 6 moved the seam down from the two entries, because
@@ -9545,9 +9470,13 @@ run_check "INVARIANT" rg -n 'return_shape_mirror_is_total_and_partitions_the_sur
 # silently and every consumer would still pass over a range with a hole at the
 # top.  The literal that used to sit at nine sites said `57` in a trace line for
 # a whole cut after RR7.14 widened the range.
-run_check "INVARIANT" rg -n '^def kernelErrorCount($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
-run_check "INVARIANT" rg -n '^theorem kernelErrorCount_tight($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
-run_check "INVARIANT" rg -n 'toDiscriminant e < kernelErrorCount' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^def kernelErrorEncodingBound($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^theorem kernelErrorEncodingBound_tight($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n 'toDiscriminant e < kernelErrorEncodingBound' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+# Discriminant 37 (the former allocationMisaligned) is retired and decodes to none.
+run_check "INVARIANT" rg -n '^def retiredDiscriminants : List Nat := \[37\]$' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^theorem ofDiscriminant\?_retired : ofDiscriminant\? 37 = none' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^theorem ofDiscriminant\?_isSome_iff($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 # (b2) …and the mechanism that makes the negative above mean anything.  The
 # overlay linked `.rs` files whole while `test_lib.sh`'s classifier routed
 # EVERY `rg`/`grep` anchor through it, so 215 Tier-3 anchors over Rust read raw
@@ -9637,7 +9566,6 @@ run_check "INVARIANT" rg -n '\.objectIndexSet, \.lifecycle, \.asidTable\]' SeLe4
 # Stated as two-line RELATIONS (the def line and its body): the `-A1` form these
 # replaced printed the body as context and matched on the def line alone, so a
 # list rewritten to anything at all still passed it.
-run_check "INVARIANT" bash -lc 'rg -U -n "def lifecycleRetypeObject_modifiedFields : List StateField :=\n  storeObject_modifiedFields\n" SeLe4n/Kernel/CrossSubsystem.lean'
 # WS-RR RR7 audit round (v0.34.109): the IPC list carries the two fields the
 # dual-queue operations write beyond the store — `scheduler` (the wake and the
 # deschedule; `scThreadIndex`, the receive path's donation return, was the
@@ -9661,7 +9589,6 @@ run_check "INVARIANT" rg -n '^  \| \.tlb, +st, st. => st.\.tlb = st\.tlb' SeLe4n
 # on the very next line — no wildcard, so a conclusion moved to another list, or
 # a theorem restated about another operation, fails it.
 run_check "INVARIANT" bash -lc 'rg -U -n "\(hStep : serviceRegisterDependency svcId depId st = \.ok \(\(\), st.\)\) :\n    preservesFieldsOutside serviceRegisterDependency_modifiedFields st st. := by" SeLe4n/Kernel/CrossSubsystem.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "\(hStep : SeLe4n\.Kernel\.Internal\.lifecycleRetypeObject authority target newObj st = \.ok \(\(\), st.\)\) :\n    preservesFieldsOutside lifecycleRetypeObject_modifiedFields st st. := by" SeLe4n/Kernel/CrossSubsystem.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "\(hStep : cspaceMintWithCdt src dst rights badge st = \.ok \(\(\), st.\)\) :\n    preservesFieldsOutside capabilityOp_modifiedFields st st. := by" SeLe4n/Kernel/CrossSubsystem.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "\(hStep : cspaceCopy src dst st = \.ok \(\(\), st.\)\) :\n    preservesFieldsOutside capabilityOp_modifiedFields st st. := by" SeLe4n/Kernel/CrossSubsystem.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "\(hStep : cspaceMove src dst st = \.ok \(\(\), st.\)\) :\n    preservesFieldsOutside capabilityOp_modifiedFields st st. := by" SeLe4n/Kernel/CrossSubsystem.lean'
@@ -9693,7 +9620,7 @@ run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_implies_capability_
 run_check "INVARIANT" rg -n '^theorem declassifyStoreOnCore_state_log_independent($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
 run_check "INVARIANT" rg -n '^theorem donation_perCore_consistent \(st st. : SystemState\)' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecvInvariant.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_endpointReply_size_le \(a : ThreadId\) \(b : ObjId\) \(c : ThreadId\)' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
-run_check "INVARIANT" rg -n '^theorem toDiscriminant_lt \(e : KernelError\) : toDiscriminant e < kernelErrorCount' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^theorem toDiscriminant_lt \(e : KernelError\) : toDiscriminant e < kernelErrorEncodingBound' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 # The payoff: read-set disjoint from write-set means the operation cannot
 # disturb the predicate.  It consumes BOTH families, which is what makes an
 # under-declared write-set a soundness problem rather than stale documentation.
@@ -9981,9 +9908,6 @@ run_check "INVARIANT" rg -n 'FO-034: control' tests/FrozenOpsSuite.lean
 # PR #873 round 7: a CLEAR is a taint write too, so the retype's cleared key
 # rides its own object lock — the third member of `taintWriteKeys` the key-local
 # declaration had skipped.  The fixed four stay pinned separately.
-run_check "INVARIANT" rg -n '^theorem lockSet_lifecycleRetype_clearedKey_write_mem($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_lifecycleRetype_nonTarget_kinds($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-run_check "INVARIANT" rg -n '^theorem permittedKinds_lifecycleRetype_admits_every_kind($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 # WS-ZA ZA4.7: a frozen parked sender holds no message object; the frozen
 # receive reads it from the sender's frame through the live reader's definition.
 run_negative_check "INVARIANT" rg -n 'pendingMessage := some msg \} \(\.blockedOn(Send|Call)' SeLe4n/Kernel/FrozenOps/Operations.lean
@@ -10302,8 +10226,6 @@ run_check "INVARIANT" rg -n 'recorded.reason = KernelError.policyDenied' tests/S
 # propagation edge in the acceptance fixtures is a refuted shape.
 run_check "INVARIANT" rg -n 'hop 2.s recorded snapshot therefore names hop 1' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'syscallEntryChecked declassChainEntryLabeling' tests/SmpInformationFlowSuite.lean
-run_check "INVARIANT" rg -n 'the live retype cleared the tainted object.s provenance' tests/SmpInformationFlowSuite.lean
-run_check "INVARIANT" rg -n 'the lifecycle case: the downgrade from the replacement names nothing' tests/SmpInformationFlowSuite.lean
 run_negative_check "INVARIANT" rg -n 'edges := ..sink := lowCurrent.toObjId, source := declassTargetA' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'NEGATIVE: two same-domain second hops are distinguished by their snapshots' tests/SmpInformationFlowSuite.lean
 
@@ -10320,7 +10242,6 @@ run_check "TRACE" rg -n 'cliff recovery: postDrainRecords=1 freshTimestamp=256 w
 run_check "TRACE" rg -n 'epoch survivors: survivorStamps=.1, 2. recordedStamp=3 survivorCollision=false' tests/fixtures/declassification_reader.expected
 run_check "TRACE" rg -n 'seam boundary: signalReason=56 signalReceiver=1021 declassifyReason=14 recordingSyscalls=2' tests/fixtures/declassification_reader.expected
 run_check "TRACE" rg -n 'causal verdicts: causal=true launders=true domainOnlyFalsePositive=true adjacencyFalseNegative=true snapshotsDistinguishSameDomain=true' tests/fixtures/declassification_taint.expected
-run_check "TRACE" rg -n 'lifecycle: liveRetypeCleared=true replacementDeliveryClean=true replacementDowngradeNamesNothing=true' tests/fixtures/declassification_taint.expected
 run_check "TRACE" rg -n 'monitor verdict: word=1 strippedWord=0' tests/fixtures/declassification_taint.expected
 
 # SM9.E.4: the closure block in the surface-anchor suite — the four sub-phase
@@ -10577,7 +10498,6 @@ run_check "INVARIANT" rg -n 'retypeFromUntyped_preserves_lowEquivalent' SeLe4n/K
 run_check "INVARIANT" rg -n 'syscallNI_coverage_witness' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
 
 # WS-K-G (v0.16.7): Lifecycle NI composition.
-run_check "INVARIANT" rg -n 'lifecycleRevokeDeleteRetype_preserves_lowEquivalent' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
 run_check "INVARIANT" rg -n 'cspaceRevoke_preserves_projection' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
 
 # WS-RC R2 (DEEP-FFI-01/02/03): hardware syscall dispatch FFI bridge anchors.
@@ -11698,7 +11618,6 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem cancelBoundDonationO
 run_check "INVARIANT" rg -n '\(a\) NEGATIVE \(the defect\): the retired retype FALSIFIES the affinity invariant' tests/SmpIpcSuite.lean
 run_check "INVARIANT" rg -n '\(a\) PAYOFF: the arm migrated the replenishment to the client.s home \(core 0\)' tests/SmpIpcSuite.lean
 # A holder with a reply waiter is refused by the retype (WS-ZA ZA4.6).
-run_check "INVARIANT" rg -n '\(a\) the live retype of a holder with a reply waiter is refused' tests/SmpIpcSuite.lean
 run_check "INVARIANT" rg -n '\(b\) NEGATIVE \(the defect\): the retired retype FALSIFIES the binding invariant' tests/SmpIpcSuite.lean
 run_check "INVARIANT" rg -n '\(b\) PAYOFF: the replenishment was purged from the destroyed thread.s home' tests/SmpIpcSuite.lean
 run_check "INVARIANT" rg -n '\(c\) CONTROL: on an unbound target the two readings agree on every replenish queue' tests/SmpIpcSuite.lean
@@ -11825,39 +11744,39 @@ run_negative_check "INVARIANT" rg -n '^private theorem (spliceOutMidQueueNode_pl
 run_check "INVARIANT" rg -n '^theorem replenishQueueAffinityConsistent_smp_frame \{' SeLe4n/Kernel/SchedContext/ReplenishAffinity.lean
 # The module the composite can finally be stated in, and the root that imports it
 # (a module outside every root is outside every census's derived domain).
-run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.Lifecycle\.Invariant\.RetypeReservation$' SeLe4n.lean
-run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.Lifecycle\.Invariant\.CancellationNotificationShape$' SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean
+run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.Lifecycle\.Invariant\.CleanupReservation$' SeLe4n.lean
+run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.Lifecycle\.Invariant\.CancellationNotificationShape$' SeLe4n/Kernel/Lifecycle/Invariant/CleanupReservation.lean
 # §1: the reference sweep moves no replenish entry, no bound thread, no home core.
-run_check "INVARIANT" rg -n '^theorem cleanupTcbReferences_preserves_objects_invExt \(' SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean
-run_check "INVARIANT" rg -n '^theorem cleanupTcbReferences_replenishQueueOnCore \(' SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean
-run_check "INVARIANT" rg -n '^theorem cleanupTcbReferences_boundThread_frame \(' SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean
-run_check "INVARIANT" rg -n '^theorem cleanupTcbReferences_affinity_frame \(' SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean
-run_check "INVARIANT" rg -n '^theorem cleanupTcbReferences_determineTargetCore_eq \(' SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean
-run_check "INVARIANT" rg -n '^theorem cleanupTcbReferences_preserves_replenishQueueAffinityConsistent_smp$' SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean
+run_check "INVARIANT" rg -n '^theorem cleanupTcbReferences_preserves_objects_invExt \(' SeLe4n/Kernel/Lifecycle/Invariant/CleanupReservation.lean
+run_check "INVARIANT" rg -n '^theorem cleanupTcbReferences_replenishQueueOnCore \(' SeLe4n/Kernel/Lifecycle/Invariant/CleanupReservation.lean
+run_check "INVARIANT" rg -n '^theorem cleanupTcbReferences_boundThread_frame \(' SeLe4n/Kernel/Lifecycle/Invariant/CleanupReservation.lean
+run_check "INVARIANT" rg -n '^theorem cleanupTcbReferences_affinity_frame \(' SeLe4n/Kernel/Lifecycle/Invariant/CleanupReservation.lean
+run_check "INVARIANT" rg -n '^theorem cleanupTcbReferences_determineTargetCore_eq \(' SeLe4n/Kernel/Lifecycle/Invariant/CleanupReservation.lean
+run_check "INVARIANT" rg -n '^theorem cleanupTcbReferences_preserves_replenishQueueAffinityConsistent_smp$' SeLe4n/Kernel/Lifecycle/Invariant/CleanupReservation.lean
 # RELATION: the sweep frames the `boundThread` PROJECTION, not `getSchedContext?`
 # -- its last step (`clearDonationOriginReferences`) genuinely rewrites scheduling
 # contexts, and the invariant reads only the field it leaves alone.  Mutation:
 # state the conclusion as a `getSchedContext?` equality.
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem cleanupTcbReferences_boundThread_frame[^\n]*(\n([ \t][^\n]*)?)*\(\(cleanupTcbReferences st tid\)\.getSchedContext\? scId\)\.map \(·\.boundThread\)\n *= \(st\.getSchedContext\? scId\)\.map \(·\.boundThread\)" SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem cleanupTcbReferences_boundThread_frame[^\n]*(\n([ \t][^\n]*)?)*\(\(cleanupTcbReferences st tid\)\.getSchedContext\? scId\)\.map \(·\.boundThread\)\n *= \(st\.getSchedContext\? scId\)\.map \(·\.boundThread\)" SeLe4n/Kernel/Lifecycle/Invariant/CleanupReservation.lean'
 # NEGATIVE: and the equality itself must not be claimed anywhere -- it is FALSE,
 # for the reason above.  Mutation: add a `cleanupTcbReferences_getSchedContext?_eq`.
 run_negative_check "INVARIANT" rg -n 'cleanupTcbReferences_getSchedContext\?_eq' SeLe4n/
 # The `.tcb` arm's two steps as one lemma, so the composite's six arms are one
 # `exact` each and the suspend's G2/G3 pair has something to cite.
-run_check "INVARIANT" rg -n '^theorem cleanupTcbReferences_after_donationArm_preserves_replenishQueueAffinityConsistent_smp$' SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean
+run_check "INVARIANT" rg -n '^theorem cleanupTcbReferences_after_donationArm_preserves_replenishQueueAffinityConsistent_smp$' SeLe4n/Kernel/Lifecycle/Invariant/CleanupReservation.lean
 # §2: the composite itself.
-run_check "INVARIANT" rg -n '^theorem lifecyclePreRetypeCleanup_preserves_replenishQueueAffinityConsistent_smp$' SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean
+run_check "INVARIANT" rg -n '^theorem lifecyclePreRetypeCleanup_preserves_replenishQueueAffinityConsistent_smp$' SeLe4n/Kernel/Lifecycle/Invariant/CleanupReservation.lean
 # RELATION: the composite cites the two arms that MOVE a reservation -- the `.tcb`
 # arm's pair (`v0.35.164`) and the `.schedContext` arm's release (`v0.35.165`) --
 # and nothing else does.  Mutation: keep every name and drop either citation.
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lifecyclePreRetypeCleanup_preserves_replenishQueueAffinityConsistent_smp[^\n]*(\n([ \t][^\n]*)?)*have hS := cleanupTcbReferences_after_donationArm_preserves_replenishQueueAffinityConsistent_smp" SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lifecyclePreRetypeCleanup_preserves_replenishQueueAffinityConsistent_smp[^\n]*(\n([ \t][^\n]*)?)*exact releaseSchedContextBinding_preserves_replenishQueueAffinityConsistent_smp" SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lifecyclePreRetypeCleanup_preserves_replenishQueueAffinityConsistent_smp[^\n]*(\n([ \t][^\n]*)?)*have hS := cleanupTcbReferences_after_donationArm_preserves_replenishQueueAffinityConsistent_smp" SeLe4n/Kernel/Lifecycle/Invariant/CleanupReservation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lifecyclePreRetypeCleanup_preserves_replenishQueueAffinityConsistent_smp[^\n]*(\n([ \t][^\n]*)?)*exact releaseSchedContextBinding_preserves_replenishQueueAffinityConsistent_smp" SeLe4n/Kernel/Lifecycle/Invariant/CleanupReservation.lean'
 # NEGATIVE: the composite takes NO detachment pack.  Under `retypeTargetDetached`
 # the whole cleanup is the identity (`lifecyclePreRetypeCleanup_detached_frame`),
 # so a theorem stated under it would exercise neither arm -- the pack is the
 # caller obligation and the runtime arm is what makes a violation safe.
 # Mutation: add a `retypeTargetDetached` hypothesis to the composite.
-run_negative_check "INVARIANT" rg -n 'retypeTargetDetached' SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean
+run_negative_check "INVARIANT" rg -n 'retypeTargetDetached' SeLe4n/Kernel/Lifecycle/Invariant/CleanupReservation.lean
 
 # ---------------------------------------------------------------------------
 # WS-RR RR8.12 (`v0.35.183`, register row 63's remaining half): Z4-O
@@ -11898,26 +11817,26 @@ run_negative_check "INVARIANT" rg -n 'spliceOutMidQueueNode_getTcb\?_eq|cleanupT
 
 # §1: the reference sweep's binding frame, and Z4-O across it -- the FIRST
 # `preserves_schedContextBindingConsistent` theorem in the tree.
-run_check "INVARIANT" rg -n '^theorem cleanupTcbReferences_binding_frame \(' SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean
-run_check "INVARIANT" rg -n '^theorem cleanupTcbReferences_preserves_schedContextBindingConsistent$' SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean
+run_check "INVARIANT" rg -n '^theorem cleanupTcbReferences_binding_frame \(' SeLe4n/Kernel/Lifecycle/Invariant/CleanupReservation.lean
+run_check "INVARIANT" rg -n '^theorem cleanupTcbReferences_preserves_schedContextBindingConsistent$' SeLe4n/Kernel/Lifecycle/Invariant/CleanupReservation.lean
 # RELATION: it is the transfer at the sweep's own two frames, not a fresh case
 # analysis of four whole-store folds.  Mutation: keep both frames and inline the
 # predicate's definition instead.
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem cleanupTcbReferences_preserves_schedContextBindingConsistent[^\n]*(\n([ \t][^\n]*)?)*schedContextBindingConsistent_transfer[^\n]*(\n([ \t][^\n]*)?)*cleanupTcbReferences_boundThread_frame" SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem cleanupTcbReferences_preserves_schedContextBindingConsistent[^\n]*(\n([ \t][^\n]*)?)*schedContextBindingConsistent_transfer[^\n]*(\n([ \t][^\n]*)?)*cleanupTcbReferences_boundThread_frame" SeLe4n/Kernel/Lifecycle/Invariant/CleanupReservation.lean'
 
 # §3: the four donation-side steps, in the order they compose.
 run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_preserves_schedContextBindingConsistent$' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
 run_check "INVARIANT" rg -n '^theorem cancelBoundDonationOnCore_preserves_schedContextBindingConsistent$' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
-run_check "INVARIANT" rg -n '^theorem cleanupDonatedSchedContext_preserves_schedContextBindingConsistent$' SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean
-run_check "INVARIANT" rg -n '^theorem cancelDonatedDonationOnCore_preserves_schedContextBindingConsistent$' SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean
-run_check "INVARIANT" rg -n '^theorem cancelDonationArmOnCore_preserves_schedContextBindingConsistent$' SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean
-run_check "INVARIANT" rg -n '^theorem cleanupTcbReferences_after_donationArm_preserves_schedContextBindingConsistent$' SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean
+run_check "INVARIANT" rg -n '^theorem cleanupDonatedSchedContext_preserves_schedContextBindingConsistent$' SeLe4n/Kernel/Lifecycle/Invariant/CleanupReservation.lean
+run_check "INVARIANT" rg -n '^theorem cancelDonatedDonationOnCore_preserves_schedContextBindingConsistent$' SeLe4n/Kernel/Lifecycle/Invariant/CleanupReservation.lean
+run_check "INVARIANT" rg -n '^theorem cancelDonationArmOnCore_preserves_schedContextBindingConsistent$' SeLe4n/Kernel/Lifecycle/Invariant/CleanupReservation.lean
+run_check "INVARIANT" rg -n '^theorem cleanupTcbReferences_after_donationArm_preserves_schedContextBindingConsistent$' SeLe4n/Kernel/Lifecycle/Invariant/CleanupReservation.lean
 # RELATION: the arm theorem covers all THREE bindings -- `.unbound` the identity,
 # `.bound` the unbind that clears a whole reciprocal pair, `.donated` the pop that
 # moves one -- so the suspend pipeline's G3 inherits it through
 # `suspendDonationArm_eq_cancelDonationArmOnCore`.  Mutation: keep the theorem and
 # drop either non-identity citation.
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem cancelDonationArmOnCore_preserves_schedContextBindingConsistent[^\n]*(\n([ \t][^\n]*)?)*cancelBoundDonationOnCore_preserves_schedContextBindingConsistent[^\n]*(\n([ \t][^\n]*)?)*cancelDonatedDonationOnCore_preserves_schedContextBindingConsistent" SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem cancelDonationArmOnCore_preserves_schedContextBindingConsistent[^\n]*(\n([ \t][^\n]*)?)*cancelBoundDonationOnCore_preserves_schedContextBindingConsistent[^\n]*(\n([ \t][^\n]*)?)*cancelDonatedDonationOnCore_preserves_schedContextBindingConsistent" SeLe4n/Kernel/Lifecycle/Invariant/CleanupReservation.lean'
 
 # The REFUTATION: `releaseSchedContextBinding` does not preserve Z4-O, and that
 # is deliberate -- it clears the bound thread's binding and leaves the destroyed
@@ -11926,7 +11845,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^theorem cancelDonationArmOnCore_prese
 # RR8.7's `replyCallerLinkage_refutes_woken_linked_caller` is the precedent): a
 # refutation nothing states is one the next cut re-discovers by looking for a
 # proof that cannot exist.
-run_check "INVARIANT" rg -n '^theorem releaseSchedContextBinding_refutes_schedContextBindingConsistent$' SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean
+run_check "INVARIANT" rg -n '^theorem releaseSchedContextBinding_refutes_schedContextBindingConsistent$' SeLe4n/Kernel/Lifecycle/Invariant/CleanupReservation.lean
 # NEGATIVE: so the preservation must not be claimed anywhere -- it is FALSE.
 # Mutation: add a `releaseSchedContextBinding_preserves_schedContextBindingConsistent`.
 run_negative_check "INVARIANT" rg -n 'releaseSchedContextBinding_preserves_schedContextBindingConsistent' SeLe4n/
@@ -11935,10 +11854,10 @@ run_negative_check "INVARIANT" rg -n 'releaseSchedContextBinding_preserves_sched
 # arm is excluded by `hNotSc` rather than proved, and `hNotSc` is free at the
 # live call site (`retypeTargetDetached`'s `notSc`).  Mutation: keep every other
 # token and try to discharge the arm.
-run_check "INVARIANT" rg -n '^theorem lifecyclePreRetypeCleanup_preserves_schedContextBindingConsistent$' SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lifecyclePreRetypeCleanup_preserves_schedContextBindingConsistent[^\n]*(\n([ \t][^\n]*)?)*\(hNotSc :[^\n]*(\n([ \t][^\n]*)?)*exact absurd hC \(hNotSc sc\)" SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean'
+run_check "INVARIANT" rg -n '^theorem lifecyclePreRetypeCleanup_preserves_schedContextBindingConsistent$' SeLe4n/Kernel/Lifecycle/Invariant/CleanupReservation.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lifecyclePreRetypeCleanup_preserves_schedContextBindingConsistent[^\n]*(\n([ \t][^\n]*)?)*\(hNotSc :[^\n]*(\n([ \t][^\n]*)?)*exact absurd hC \(hNotSc sc\)" SeLe4n/Kernel/Lifecycle/Invariant/CleanupReservation.lean'
 # RELATION: and the `.tcb` arm is the two-step lemma, not a re-derivation.
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lifecyclePreRetypeCleanup_preserves_schedContextBindingConsistent[^\n]*(\n([ \t][^\n]*)?)*have hS := cleanupTcbReferences_after_donationArm_preserves_schedContextBindingConsistent" SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lifecyclePreRetypeCleanup_preserves_schedContextBindingConsistent[^\n]*(\n([ \t][^\n]*)?)*have hS := cleanupTcbReferences_after_donationArm_preserves_schedContextBindingConsistent" SeLe4n/Kernel/Lifecycle/Invariant/CleanupReservation.lean'
 
 # ---------------------------------------------------------------------------
 # Register row 63 (`v0.35.184`): the retype refuses a replacement SchedContext
@@ -11955,13 +11874,15 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lifecyclePreRetypeCleanup_pre
 # The clause itself, beside the `Reply` clause whose precedent it follows.
 run_check "INVARIANT" bash -lc 'rg -F -n "| .schedContext sc => sc.boundThread = none" SeLe4n/Model/Object/Structures.lean'
 run_check "INVARIANT" bash -lc 'rg -F -n "| .reply r => r.caller = none" SeLe4n/Model/Object/Structures.lean'
-# NEGATIVE: and the retired arm must not come back.  `wellFormed` is what the two
-# retype wrappers check and the ONLY thing they check of the replacement, so an
-# arm reverting to `True` re-opens the whole hole.  Mutation: restore
+# NEGATIVE: and the retired arm must not come back.  `wellFormed` was what the
+# two retype wrappers checked of the replacement, so an arm reverting to `True`
+# re-opened the whole hole.  `v0.36.125` deleted those wrappers: the carve builds
+# each object itself (`untypedRetypeObject_ok_schedContext`, `_ok_reply`), and
+# the predicate stays as the fixtures' well-formedness check.  Mutation: restore
 # `| .schedContext _ => True`.
 run_negative_check "INVARIANT" bash -lc 'rg -F -n "| .schedContext _ => True" SeLe4n/Model/Object/Structures.lean'
-# RELATION: EACH retype wrapper checks `wellFormed` and commits nothing when it
-# fails -- which is what makes the clause above a REFUSAL rather than a comment.
+# RELATION (retired at `v0.35.187`, its subject deleted at `v0.36.125`): EACH
+# retype wrapper checked `wellFormed` and committed nothing when it failed.
 #
 # `v0.35.187` RETIRED the spelling this pair pinned: both wrappers now read the
 # named `retypeReplacementAdmissible`, whose FIRST conjunct is `wellFormed` and
@@ -11971,18 +11892,6 @@ run_negative_check "INVARIANT" bash -lc 'rg -F -n "| .schedContext _ => True" Se
 # predicate's own body -- whose composition IS this pair.  Repointing the pair
 # here would be the same relation asserted twice, so it is deleted rather than
 # rewritten, with this tombstone naming what carries it.
-# The §3.34 witness: the pristine replacement is accepted, the claiming one is
-# refused with the guard's own error, and the RETIRED guard stores it and
-# falsifies the invariant -- with a CONTROL on the pristine replacement, so the negative is
-# about `boundThread` rather than about the retype.
-run_check "INVARIANT" rg -n '^private def runRetypeReplacementGuardChecks : IO Unit := do$' tests/SmpIpcSuite.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "^private def runRetypeReplacementGuardChecks[^\n]*(\n([ \t][^\n]*)?)*NEGATIVE \(the defect\): \.\.\.so the binding invariant is FALSIFIED[^\n]*(\n([ \t][^\n]*)?)*CONTROL: on the pristine replacement the retired guard breaks nothing" tests/SmpIpcSuite.lean'
-# RELATION: the two replacements differ in `boundThread` ALONE, asserted rather
-# than left to the reader.  Mutation: keep both fixtures and drop the assertion.
-run_check "INVARIANT" rg -n 'CONTROL: \.\.\.and the two replacements differ in .boundThread. alone' tests/SmpIpcSuite.lean
-# NEGATIVE: the retired guard is spelled in the suite that refutes it and nowhere
-# else.  Mutation: declare a `retiredWellFormedRetype` under `SeLe4n/`.
-run_negative_check "INVARIANT" rg -n 'retiredWellFormedRetype' SeLe4n/
 
 # ---------------------------------------------------------------------------
 # Register row (`v0.35.187`): a retyped object carries the SLOT's identity.
@@ -12003,32 +11912,17 @@ run_negative_check "INVARIANT" rg -n 'retiredWellFormedRetype' SeLe4n/
 run_check "INVARIANT" rg -n '^def embeddedIdentityMatches \(obj : KernelObject\) \(key : SeLe4n\.ObjId\) : Bool :=$' SeLe4n/Model/Object/Structures.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^def embeddedIdentityMatches[^\n]*(\n([ \t][^\n]*)?)*\| \.tcb t => t\.tid\.toObjId == key\n *\| \.schedContext sc => sc\.scId\.toObjId == key\n *\| \.reply r => r\.replyId\.toObjId == key" SeLe4n/Model/Object/Structures.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def embeddedIdentityMatches[^\n]*(\n([ \t][^\n]*)?)*\| _ => true" SeLe4n/Model/Object/Structures.lean'
-# The stamping, and that it is the identity field ALONE -- what makes the guard
-# free of every property the payoff pack reads.
-run_check "INVARIANT" rg -n '^def withIdentity \(obj : KernelObject\) \(key : SeLe4n\.ObjId\) : KernelObject :=$' SeLe4n/Model/Object/Structures.lean
-run_check "INVARIANT" rg -n '^theorem withIdentity_replacementFresh ' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
-# RELATION: EACH retype wrapper reads the named admissibility predicate, which is
-# the `wellFormed` guard AND the identity one.  Scoped per wrapper declaration,
-# because one tree-wide pattern is satisfied by whichever of the two still
-# carries it -- the lesson `v0.35.184` recorded on the same two wrappers.
-# Mutation: revert either wrapper to `newObj.wellFormed st.objects`.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def lifecycleRetypeWithCleanup[^\n]*(\n([ \t][^\n]*)?)*if . retypeReplacementAdmissible newObj target st\.objects then\n *\.error \.illegalState" SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def lifecycleRetypeDirectWithCleanup[^\n]*(\n([ \t][^\n]*)?)*if . retypeReplacementAdmissible newObj target st\.objects then\n *\.error \.illegalState" SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean'
-# ...and the predicate IS the conjunction, not one half wearing the name.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def retypeReplacementAdmissible[^\n]*(\n([ \t][^\n]*)?)*newObj\.wellFormed objects . newObj\.embeddedIdentityMatches target = true" SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean'
-# RELATION: the live dispatch STAMPS, so the refusal is a discipline a caller can
-# meet rather than a wall.  Mutation: drop `.withIdentity` at any of the three
-# sites and the negative below fires.
-run_check "INVARIANT" rg -F -n '(objectOfKernelType args.newType args.size).withIdentity' SeLe4n/Kernel/API.lean
-run_negative_check "INVARIANT" rg -F -n 'objectOfKernelType args.newType args.size) st' SeLe4n/Kernel/API.lean
-# The boot's check and the runtime's guard are ONE question, said by a theorem
+# `v0.36.125`: the stamping and the runtime guard are gone with the in-place
+# retype.  The carve is the one runtime builder, and it builds each of the three
+# with the child id it stores it at -- by construction, so there is nothing to
+# refuse.  Mutation: build the carved TCB with the sentinel tid.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem CarveRequest\.object_embeddedIdentityMatches[^\n]*(\n([ \t][^\n]*)?)*\(req\.object untypedId childId ut idx\)\.embeddedIdentityMatches childId = true" SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean'
+# The boot's check and the shared predicate are ONE question, said by a theorem
 # rather than suggested by a shared spelling.
 run_check "INVARIANT" rg -n '^theorem embeddedIdentitiesMatchSlots_iff ' SeLe4n/Platform/Boot.lean
-# The witness: the unstamped replacement the live builder produces is REFUSED,
-# the stamped one is accepted and its own id IS the slot, and an identity-free
-# kind is accepted either way -- so the refusal is about the field.
-run_check "INVARIANT" rg -n '^private def runRetypeIdentityStampChecks : IO Unit := do$' tests/SmpIpcSuite.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "^private def runRetypeIdentityStampChecks[^\n]*(\n([ \t][^\n]*)?)*NEGATIVE: the unstamped SchedContext replacement is refused[^\n]*(\n([ \t][^\n]*)?)*PAYOFF: the slot holds a context whose own .scId. IS the slot[^\n]*(\n([ \t][^\n]*)?)*CONTROL: an unstamped endpoint replacement is accepted" tests/SmpIpcSuite.lean'
+# The witness: each carved kind's own id IS its slot, and a CONTROL at the
+# sentinel fails the same predicate -- so the check is about the field.
+run_check "INVARIANT" rg -n '\(d\) CONTROL: a SchedContext at the sentinel id fails the predicate at the slot' tests/SmpIpcSuite.lean
 
 # ---------------------------------------------------------------------------
 # WS-RR RR8.15 (`v0.35.186`): the Tier 5 gate's central comparison DECIDES.
@@ -12085,8 +11979,10 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n -g "!test_tier3_invariant_surf
 
 # ---------------------------------------------------------------------------
 # Register row 63 (`v0.35.185`): the retype COMPOSITE's two invariant theorems.
+# `v0.36.125` deleted the composite and its two theorems; the cleanup half and
+# the intermediate below stay with the kept destroy cleanup.
 #
-# `lifecycleRetypeDirectWithCleanup` is the cleanup, then `scrubObjectMemory`,
+# `lifecycleRetypeDirectWithCleanup` was the cleanup, then `scrubObjectMemory`,
 # then a `storeObject` at `target`, and the binding invariant crosses it through
 # ONE intermediate -- `schedContextBindingRetypeReady`, the invariant with the
 # retype's target carved out of BOTH sides.  It has to be an intermediate rather
@@ -12129,32 +12025,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^theorem storeObject_preserves_repleni
 # `tcb.tid` while the store is at `target`, so without it the cleanup can clear a
 # binding at one key and leave the retype's own key paired.  Mutation: keep the
 # theorem and drop `hIdentity`.
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lifecyclePreRetypeCleanup_targetUnpaired[^\n]*(\n([ \t][^\n]*)?)*\(hIdentity : . tcb : TCB, currentObj = \.tcb tcb . tcb\.tid\.toObjId = target\)" SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean'
-# The composite's two theorems, and the shared decomposition they read.
-run_check "INVARIANT" rg -n '^theorem lifecycleRetypeDirectWithCleanup_ok_decompose$' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lifecycleRetypeDirectWithCleanup_preserves_schedContextBindingConsistent[^\n]*(\n([ \t][^\n]*)?)*lifecycleRetypeDirectWithCleanup_ok_decompose h" SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lifecycleRetypeDirectWithCleanup_preserves_replenishQueueAffinityConsistent_smp[^\n]*(\n([ \t][^\n]*)?)*lifecycleRetypeDirectWithCleanup_ok_decompose h" SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean'
-# NEGATIVE: and neither may go back to re-deriving what the composite did.  Two
-# readings of one transition is what the decomposition retires, and the two
-# proofs would then be free to disagree about which state the cleanup left.
-# Mutation: re-inline `unfold lifecycleRetypeDirectWithCleanup at h` in either.
-run_negative_check "INVARIANT" rg -n 'unfold lifecycleRetypeDirectWithCleanup at h' SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean
-# RELATION: the claim's unit is the PROGRAM THE ARM RUNS.  The live
-# `.lifecycleRetype` dispatch runs the composite under three cached-structure
-# layers, and a theorem stated one wrapper down is a claim about a program no
-# syscall reaches (Cut C6g's rule).  Mutation: state either preservation theorem
-# at `lifecycleRetypeDirectWithCleanup` alone and delete the arm-level one.
-run_check "INVARIANT" rg -n '^theorem lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_ok_frame$' SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_preserves_schedContextBindingConsistent$' SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_preserves_replenishQueueAffinityConsistent_smp$' SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean
-# The drain's third frame, public and beside its two siblings -- the layering
-# rule `v0.35.166` paid for the cleanup's sweeps and Cut C6g for this same step.
-run_check "INVARIANT" rg -n '^@\[simp\] theorem retypeInitiatorDrain_objects$' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
-# NEGATIVE: and the `private` conjunction it replaced must not come back.  Its
-# `.2` duplicated the public `retypeInitiatorDrain_scheduler` two lines above,
-# and its `.1` was unreachable from every module upstream of the one that held
-# it.  Mutation: restore the private lemma anywhere under `SeLe4n/`.
-run_negative_check "INVARIANT" rg -n 'retypeInitiatorDrain_objects_scheduler' SeLe4n/
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lifecyclePreRetypeCleanup_targetUnpaired[^\n]*(\n([ \t][^\n]*)?)*\(hIdentity : . tcb : TCB, currentObj = \.tcb tcb . tcb\.tid\.toObjId = target\)" SeLe4n/Kernel/Lifecycle/Invariant/CleanupReservation.lean'
 
 # ---------------------------------------------------------------------------
 # WS-RR RR8.12 Cut C3b-i (`v0.35.167`): the three TCB-control arms' resolved
@@ -12177,7 +12048,7 @@ run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.Lifecycle\.ResumeFootprint$
 run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.SchedContext\.PriorityControlFootprint$' SeLe4n.lean
 run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.Scheduler\.Operations\.AffinityFootprint$' SeLe4n.lean
 run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.SchedContext\.SchedContextFootprint$' SeLe4n.lean
-run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.Lifecycle\.Operations\.RetypeFootprint$' SeLe4n.lean
+run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.Lifecycle\.Operations\.CleanupFootprint$' SeLe4n.lean
 run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.IPC\.CrossCore\.SuspendFootprint$' SeLe4n.lean
 # The constructor sits below the transitions, and the syscall-level module holds
 # no per-transition resolved footprint or write set: a footprint added there
@@ -12333,60 +12204,29 @@ run_check "INVARIANT" rg -n '^  runSchedContextFootprintScenarios$' tests/SmpCbs
 run_check "INVARIANT" bash -lc 'rg -U -n "^private def runSchedContextFootprintScenarios[^\n]*(\n([ \t][^\n]*)?)*homeOnlyUnbindReplenishCores stDangling scIdDangling\.toObjId" tests/SmpCbsSuite.lean'
 
 # ---------------------------------------------------------------------------
-# WS-RR RR8.12 Cut C3b-iii (`v0.35.169`): the `.lifecycleRetype` arm's resolved
-# scheduler-domain footprint.
+# WS-RR RR8.12 Cut C3b-iii (`v0.35.169`): the destroy cleanup's resolved
+# scheduler-domain footprint.  `v0.36.125` deleted the `.lifecycleRetype` arm
+# that ran it; the cleanup and its resolvers stay for the destroy path
+# (docs/REGISTERED_DEBT.md).
 # ---------------------------------------------------------------------------
 # The relocated resolver and write sets.
-run_check "INVARIANT" rg -n '^def threadOccupiedCores \(' SeLe4n/Kernel/Lifecycle/Operations/RetypeFootprint.lean
-run_check "INVARIANT" rg -n '^def lifecycleRetypeWriteSetOf \(' SeLe4n/Kernel/Lifecycle/Operations/RetypeFootprint.lean
-run_check "INVARIANT" rg -n '^def lifecycleRetypeWriteSet \(' SeLe4n/Kernel/Lifecycle/Operations/RetypeFootprint.lean
+run_check "INVARIANT" rg -n '^def threadOccupiedCores \(' SeLe4n/Kernel/Lifecycle/Operations/CleanupFootprint.lean
 # NEGATIVE: and none of the three in the staged module they left.  Mutation:
 # restore any one of them there as code.
 run_negative_check "INVARIANT" rg -n '^def (threadOccupiedCores|lifecycleRetypeWriteSetOf|lifecycleRetypeWriteSet) ' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 # The two step resolvers, the arm's segment and the footprint.
-run_check "INVARIANT" rg -n '^def cancelDonationArmReplenishCores \(' SeLe4n/Kernel/Lifecycle/Operations/RetypeFootprint.lean
-run_check "INVARIANT" rg -n '^def releaseSchedContextBindingReplenishCores \(' SeLe4n/Kernel/Lifecycle/Operations/RetypeFootprint.lean
-run_check "INVARIANT" rg -n '^def lifecycleRetypeReplenishCoresOf \(' SeLe4n/Kernel/Lifecycle/Operations/RetypeFootprint.lean
-run_check "INVARIANT" rg -n '^def lifecycleRetypeReplenishCores \(' SeLe4n/Kernel/Lifecycle/Operations/RetypeFootprint.lean
-run_check "INVARIANT" rg -n '^def schedLockSet_lifecycleRetypeOnCore \(' SeLe4n/Kernel/Lifecycle/Operations/RetypeFootprint.lean
-# RELATION: the footprint IS `schedFootprintOfCores` of the arm's own write set
-# and of the arm's own replenish segment.  Mutation: keep every token and give
-# it the empty replenish segment, which is what SM8.B's write set alone says.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_lifecycleRetypeOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores \(lifecycleRetypeWriteSet st target\)(\n([ \t][^\n]*)?)*\(lifecycleRetypeReplenishCores st target\)" SeLe4n/Kernel/Lifecycle/Operations/RetypeFootprint.lean'
-# RELATION: the arm's segment is keyed on the OBJECT KIND, with exactly two kinds
-# naming a core -- the TCB target's donation arm and the SchedContext target's
-# release -- because those are the cleanup's only two reservation steps.
-# Mutation: keep the definition and give the `.schedContext` arm the empty list.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def lifecycleRetypeReplenishCoresOf[^\n]*(\n([ \t][^\n]*)?)*\| \.tcb tcb => cancelDonationArmReplenishCores st tcb\.tid tcb(\n([ \t][^\n]*)?)*\| \.schedContext sc => releaseSchedContextBindingReplenishCores st sc" SeLe4n/Kernel/Lifecycle/Operations/RetypeFootprint.lean'
+run_check "INVARIANT" rg -n '^def cancelDonationArmReplenishCores \(' SeLe4n/Kernel/Lifecycle/Operations/CleanupFootprint.lean
+run_check "INVARIANT" rg -n '^def releaseSchedContextBindingReplenishCores \(' SeLe4n/Kernel/Lifecycle/Operations/CleanupFootprint.lean
 # RELATION: the release's segment has an `allCores` arm, for the reason the
 # unbind's does -- with the bound TCB gone there is no home core to name.
 # Mutation: answer the home core on both arms.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def releaseSchedContextBindingReplenishCores[^\n]*(\n([ \t][^\n]*)?)*\| none => Concurrency\.allCores" SeLe4n/Kernel/Lifecycle/Operations/RetypeFootprint.lean'
-# The membership halves, the sweep arm's and the no-scheduling-effect one among
-# them.
-run_check "INVARIANT" rg -n '^theorem schedLockSet_lifecycleRetypeOnCore_contains_occupied_runQueue_write$' SeLe4n/Kernel/Lifecycle/Operations/RetypeFootprint.lean
-run_check "INVARIANT" rg -n '^theorem schedLockSet_lifecycleRetypeOnCore_contains_bound_replenishQueue_write$' SeLe4n/Kernel/Lifecycle/Operations/RetypeFootprint.lean
-run_check "INVARIANT" rg -n '^theorem schedLockSet_lifecycleRetypeOnCore_contains_donated_replenishQueue_writes$' SeLe4n/Kernel/Lifecycle/Operations/RetypeFootprint.lean
-run_check "INVARIANT" rg -n '^theorem schedLockSet_lifecycleRetypeOnCore_contains_release_replenishQueue_write$' SeLe4n/Kernel/Lifecycle/Operations/RetypeFootprint.lean
-run_check "INVARIANT" rg -n '^theorem schedLockSet_lifecycleRetypeOnCore_contains_every_replenishQueue_write_of_sweep$' SeLe4n/Kernel/Lifecycle/Operations/RetypeFootprint.lean
-run_check "INVARIANT" rg -n '^theorem schedLockSet_lifecycleRetypeOnCore_empty_of_other \(' SeLe4n/Kernel/Lifecycle/Operations/RetypeFootprint.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^def releaseSchedContextBindingReplenishCores[^\n]*(\n([ \t][^\n]*)?)*\| none => Concurrency\.allCores" SeLe4n/Kernel/Lifecycle/Operations/CleanupFootprint.lean'
 # The exactness halves -- what the destroy path writes, per step and whole.
-run_check "INVARIANT" rg -n '^theorem cancelBoundDonationOnCore_replenishQueueOnCore_ne \(' SeLe4n/Kernel/Lifecycle/Operations/RetypeFootprint.lean
-run_check "INVARIANT" rg -n '^theorem cancelDonatedDonationOnCore_replenishQueueOnCore_ne \(' SeLe4n/Kernel/Lifecycle/Operations/RetypeFootprint.lean
-run_check "INVARIANT" rg -n '^theorem cancelDonationArmOnCore_replenishQueueOnCore_ne \(' SeLe4n/Kernel/Lifecycle/Operations/RetypeFootprint.lean
-run_check "INVARIANT" rg -n '^theorem releaseSchedContextBinding_replenishQueueOnCore_ne \(' SeLe4n/Kernel/Lifecycle/Operations/RetypeFootprint.lean
-run_check "INVARIANT" rg -n '^theorem lifecyclePreRetypeCleanup_replenishQueueOnCore_ne \(' SeLe4n/Kernel/Lifecycle/Operations/RetypeFootprint.lean
-# The witness.  Its runner call needs no anchor of its own: the WS-OD
-# contiguous-run anchor over this suite's runner list names every scenario in
-# order and was extended with it, and a sibling positive would be the
-# duplication that anchor exists to retire.
-run_check "INVARIANT" rg -n '^private def runRetypeFootprintChecks : IO Unit' tests/SmpIpcSuite.lean
-# RELATION: it computes the run-only reading -- SM8.B's write set as a whole
-# footprint -- beside the live one, which is what makes the replenish segment's
-# assertions discriminate: a footprint built from that write set alone declares
-# no replenish lock at all, and is therefore FALSE of the operation.  Mutation:
-# delete the `runOnlyRetypeFootprint` helper and the assertions reading it.
-run_check "INVARIANT" bash -lc 'rg -U -n "^private def runRetypeFootprintChecks[^\n]*(\n([ \t][^\n]*)?)*runOnlyRetypeFootprint stBound" tests/SmpIpcSuite.lean'
+run_check "INVARIANT" rg -n '^theorem cancelBoundDonationOnCore_replenishQueueOnCore_ne \(' SeLe4n/Kernel/Lifecycle/Operations/CleanupFootprint.lean
+run_check "INVARIANT" rg -n '^theorem cancelDonatedDonationOnCore_replenishQueueOnCore_ne \(' SeLe4n/Kernel/Lifecycle/Operations/CleanupFootprint.lean
+run_check "INVARIANT" rg -n '^theorem cancelDonationArmOnCore_replenishQueueOnCore_ne \(' SeLe4n/Kernel/Lifecycle/Operations/CleanupFootprint.lean
+run_check "INVARIANT" rg -n '^theorem releaseSchedContextBinding_replenishQueueOnCore_ne \(' SeLe4n/Kernel/Lifecycle/Operations/CleanupFootprint.lean
+run_check "INVARIANT" rg -n '^theorem lifecyclePreRetypeCleanup_replenishQueueOnCore_ne \(' SeLe4n/Kernel/Lifecycle/Operations/CleanupFootprint.lean
 
 run_check "INVARIANT" rg -n '^def currentThreadUniqueAcrossCores($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean
 run_check "INVARIANT" rg -n '^theorem cancelDonationOnCore_observer_atomic($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
@@ -12414,7 +12254,6 @@ import SeLe4n.Kernel.SchedContext.ReplenishQueue
 #check @SeLe4n.Kernel.cspaceMint_preserves_capabilityInvariantBundle
 #check @SeLe4n.Kernel.cspaceRevoke_preserves_capabilityInvariantBundle
 #check @SeLe4n.Kernel.endpointSendDual_preserves_ipcInvariant
-#check @SeLe4n.Kernel.lifecycleRetypeObject_preserves_lifecycleInvariantBundle
 #check @SeLe4n.Kernel.serviceRegisterDependency_preserves_serviceGraphInvariant
 #check @SeLe4n.Kernel.Architecture.vspaceMapPage_success_preserves_vspaceInvariantBundle
 #check @SeLe4n.Kernel.step_preserves_projection
@@ -12441,38 +12280,28 @@ import SeLe4n.Kernel.SchedContext.ReplenishQueue
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.CSpaceCopyArgs
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.CSpaceMoveArgs
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.CSpaceDeleteArgs
-#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.LifecycleRetypeArgs
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.VSpaceMapArgs
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.VSpaceUnmapArgs
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMintArgs
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceCopyArgs
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMoveArgs
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceDeleteArgs
-#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeLifecycleRetypeArgs
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceMapArgs
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceUnmapArgs
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMintArgs_error_iff
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceCopyArgs_error_iff
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMoveArgs_error_iff
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceDeleteArgs_error_iff
-#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeLifecycleRetypeArgs_error_of_insufficient_regs
-#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeLifecycleRetypeArgs_error_of_invalid_type
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceMapArgs_error_iff
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceUnmapArgs_error_iff
 
 -- WS-K-D: Lifecycle and VSpace dispatch helpers
-#check @SeLe4n.Kernel.objectOfTypeTag
 -- W3: objectOfTypeTag_type and objectOfTypeTag_error_iff removed (dead code)
 #check @SeLe4n.Model.PagePermissions.ofNat
 #check @SeLe4n.Model.PagePermissions.toNat
 #check @SeLe4n.Model.PagePermissions.ofNat_toNat_roundtrip
-#check @SeLe4n.Kernel.lifecycleRetypeDirectCommit
-#check @SeLe4n.Kernel.lifecycleRetypeDirectWithCleanup_unauthorized
-#check @SeLe4n.Kernel.lifecycleRetypeDirectWithCleanup_ok_authorized
-#check @SeLe4n.Kernel.lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_unauthorized
-#check @SeLe4n.Kernel.dispatchWithCap_lifecycleRetype_unauthorized
-#check @SeLe4n.Kernel.dispatchWithCapChecked_lifecycleRetype_unauthorized
-#check @SeLe4n.Kernel.dispatchWithCap_lifecycleRetype_delegates
+#check @SeLe4n.Kernel.untypedRetypeObject_unauthorized
+#check @SeLe4n.Kernel.dispatchWithCap_untypedRetype_delegates
 #check @SeLe4n.Kernel.dispatchWithCap_vspaceMap_delegates
 #check @SeLe4n.Kernel.dispatchWithCap_vspaceUnmap_delegates
 -- WS-K-E/Q1: IPC message population (ServiceConfig, serviceStart/Stop dispatch removed in Q1)
@@ -12487,7 +12316,6 @@ import SeLe4n.Kernel.SchedContext.ReplenishQueue
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeCSpaceCopyArgs
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeCSpaceMoveArgs
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeCSpaceDeleteArgs
-#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeLifecycleRetypeArgs
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeVSpaceMapArgs
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeVSpaceUnmapArgs
 -- WS-K-F2: Layer 2 round-trip proofs
@@ -12495,7 +12323,7 @@ import SeLe4n.Kernel.SchedContext.ReplenishQueue
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceCopyArgs_roundtrip
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMoveArgs_roundtrip
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceDeleteArgs_roundtrip
-#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeLifecycleRetypeArgs_roundtrip
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeUntypedRetypeArgs_roundtrip
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceMapArgs_roundtrip
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceUnmapArgs_roundtrip
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decode_layer2_roundtrip_all
@@ -12510,8 +12338,6 @@ import SeLe4n.Kernel.SchedContext.ReplenishQueue
 #check @SeLe4n.Kernel.syscallNI_coverage_witness
 -- WS-K-G (v0.16.7): Lifecycle NI composition
 #check @SeLe4n.Kernel.cspaceRevoke_preserves_projection
-#check @SeLe4n.Kernel.lifecycleRevokeDeleteRetype_preserves_projection
-#check @SeLe4n.Kernel.lifecycleRevokeDeleteRetype_preserves_lowEquivalent
 -- WS-Z Phase Z2: CBS Budget Engine invariants and preservation
 #check @SeLe4n.Kernel.budgetWithinBounds
 #check @SeLe4n.Kernel.replenishmentListWellFormed
@@ -13902,7 +13728,7 @@ import SeLe4n.Kernel.Concurrency.LockSet
 #check @SeLe4n.Kernel.Concurrency.lockSet_cspaceCopy
 #check @SeLe4n.Kernel.Concurrency.lockSet_cspaceMove
 #check @SeLe4n.Kernel.Concurrency.lockSet_cspaceDelete
-#check @SeLe4n.Kernel.Concurrency.lockSet_lifecycleRetype
+#check @SeLe4n.Kernel.Concurrency.lockSet_untypedRetype
 #check @SeLe4n.Kernel.Concurrency.lockSet_vspaceMap
 #check @SeLe4n.Kernel.Concurrency.lockSet_vspaceUnmap
 #check @SeLe4n.Kernel.Concurrency.lockSet_serviceRegister
@@ -13935,7 +13761,7 @@ import SeLe4n.Kernel.Concurrency.LockSet
 #check @SeLe4n.Kernel.Concurrency.lockSet_consistent_cspaceCopy
 #check @SeLe4n.Kernel.Concurrency.lockSet_consistent_cspaceMove
 #check @SeLe4n.Kernel.Concurrency.lockSet_consistent_cspaceDelete
-#check @SeLe4n.Kernel.Concurrency.lockSet_consistent_lifecycleRetype
+#check @SeLe4n.Kernel.Concurrency.lockSet_consistent_untypedRetype
 #check @SeLe4n.Kernel.Concurrency.lockSet_consistent_vspaceMap
 #check @SeLe4n.Kernel.Concurrency.lockSet_consistent_vspaceUnmap
 #check @SeLe4n.Kernel.Concurrency.lockSet_consistent_serviceRegister
@@ -20704,8 +20530,8 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^theorem suspendThreadOnCore_replenish
 # two askers hand it different cores: the destroy path reads it off the state it
 # runs on, and the suspend's G3 was handed it from the PRE-G2 state.  A frame
 # stated at `determineTargetCore st tid` covers the first and not the second.
-run_check "INVARIANT" rg -n '^theorem donationArmAt_replenishQueueOnCore_ne($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeFootprint.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem cancelDonationArmOnCore_replenishQueueOnCore_ne[^\n]*(\n([ \t][^\n]*)?)*donationArmAt_replenishQueueOnCore_ne st st. tid tcb \(determineTargetCore st tid\) c hne h" SeLe4n/Kernel/Lifecycle/Operations/RetypeFootprint.lean'
+run_check "INVARIANT" rg -n '^theorem donationArmAt_replenishQueueOnCore_ne($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/CleanupFootprint.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem cancelDonationArmOnCore_replenishQueueOnCore_ne[^\n]*(\n([ \t][^\n]*)?)*donationArmAt_replenishQueueOnCore_ne st st. tid tcb \(determineTargetCore st tid\) c hne h" SeLe4n/Kernel/Lifecycle/Operations/CleanupFootprint.lean'
 #
 # The witness computes both retired parametric readings beside the live ones, on
 # a state the live operations reach: the reservation on the holder's home core,
@@ -20819,7 +20645,6 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "\| \.replyRecv, \.object epId
 # `targetObj`.
 run_check "INVARIANT" bash -lc 'rg -U -n "\| \.tcbSetAffinity, \.object objId =>(\n {8,}[^\n]*)*\n {8,}match decodeAffinity args\.affinityRaw with" SeLe4n/Kernel/SyscallLockBracket.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "\| \.schedContextBind, \.object _ =>\n          match resolveSchedContextBindThread tid\n              \(Architecture\.SyscallArgDecode\.decodeSchedContextBindArgs decoded\) s with\n          \| \.error _ => none\n          \| \.ok v => some \(\.ofThreadTarget tid v\.val\)" SeLe4n/Kernel/SyscallLockBracket.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "\| \.lifecycleRetype, \.object _ =>(\n {8,}[^\n]*)*\n {8,}\| \.ok args => some \(\.ofObjectTarget tid args\.targetObj\)" SeLe4n/Kernel/SyscallLockBracket.lean'
 # The witness: both domains at ONE entry, the object domain's answer measured to
 # be unmoved by the five new operands, and the scheduler footprint read off the
 # STATE -- an inactive victim declares the object-store lock alone and an active
@@ -21104,66 +20929,42 @@ run_check "INVARIANT" rg -n 'C6f: EVERY core outside the .+ segment keeps its re
 run_check "INVARIANT" rg -n 'C6f: ...and the segment is a strict subset here' tests/SmpIpcSuite.lean
 
 # ============================================================================
-# WS-RR RR8.12 Cut C6g (`v0.35.180`): the live `.lifecycleRetype` ARM's coverage,
-# and with it the last of the sixteen declared arms.
+# `v0.36.125`: every object kind is carved from an untyped, and the carve asks
+# AUTHORITY before it reads anything the caller named.
 # ============================================================================
 #
-# The unit is the ICACHE-LAYERED arm the syscall dispatches, not the retype core:
-# the `.aside1` shootdown round with the initiator's own TLB drain, and the
-# domain-wide `IC IALLUIS`, each write kernel state, so a coverage claim taken at
-# the core would be a claim about a program the arm does not run.
-run_check "INVARIANT" rg -n '^theorem schedLockSet_lifecycleRetypeOnCore_coversWrites($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedContainment.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem schedLockSet_lifecycleRetypeOnCore_coversWrites[^\n]*(\n([ \t][^\n]*)?)*hStep : lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache" SeLe4n/Kernel/SyscallSchedContainment.lean'
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem schedLockSet_lifecycleRetypeOnCore_coversWrites[^\n]*(\n([ \t][^\n]*)?)*hStep : lifecycleRetypeDirectWithCleanup [^S]" SeLe4n/Kernel/SyscallSchedContainment.lean'
-# The arm's replenish frame, keyed on the footprint's own PRE-STATE segment — it
-# has to be the pre-state, since the object the retype destroys is gone from the
-# post-state and a post-state reading would name the empty set.
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_replenishQueueOnCore_ne[^\n]*(\n([ \t][^\n]*)?)*hne : c ∉ lifecycleRetypeReplenishCores st target" SeLe4n/Kernel/Lifecycle/Operations/RetypeFootprint.lean'
-# ...descending through the two cached-structure layers by their own frames rather
-# than by a second case analysis of the arm.
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_replenishQueueOnCore_ne[^\n]*(\n([ \t][^\n]*)?)*Architecture.withIcacheBroadcast_frame" SeLe4n/Kernel/Lifecycle/Operations/RetypeFootprint.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lifecycleRetypeDirectWithCleanupShootdownPerCore_replenishQueueOnCore_ne[^\n]*(\n([ \t][^\n]*)?)*retypeInitiatorDrain_scheduler" SeLe4n/Kernel/Lifecycle/Operations/RetypeFootprint.lean'
-# The two frames the drain half needs, in PRODUCTION beside the wrapper they frame
-# rather than private to the staged non-interference module that first needed them.
-run_check "INVARIANT" rg -n '^@\[simp\] theorem retypeInitiatorDrain_scheduler' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRetypeDirectCommit_scheduler_machine_eq($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
-run_negative_check "INVARIANT" rg -n 'private theorem lifecycleRetypeDirect_framed' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-# The frame MEASURED over every core on the arm the syscall runs, with the retired
-# reading FAILING the same measurement — every mutation of the production footprint
-# here breaks elaboration rather than this suite, so the discrimination has to be a
-# differential inside it.
-run_check "INVARIANT" rg -n 'C6g: EVERY core outside the declared replenish segment keeps its replenish queue' tests/SmpIpcSuite.lean
-run_check "INVARIANT" rg -n 'C6g NEGATIVE: the retired reading FAILS the same replenish measurement' tests/SmpIpcSuite.lean
-
-# ============================================================================
-# `v0.36.123`: the in-place retype checks AUTHORITY before it reads its target.
-# ============================================================================
-#
-# `.lifecycleRetype` decodes its target id from a message register.  Asked after
-# admissibility, cleanup, scrub and the existence/type checks, authority let every
-# other refusal answer for an object the caller holds no capability to -- an
-# error-code oracle on existence, kind and other domains' run state.
-# RELATION: authority is the wrapper's FIRST question -- the first thing under
-# `fun st =>`, so nothing that reads `st` precedes it.  Mutation: move the check
-# below the admissibility guard.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def lifecycleRetypeDirectWithCleanup\n[^\n]*\n[^\n]*\n *fun st =>\n *if !lifecycleRetypeAuthority authCap target then\n *\.error \.illegalAuthority" SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean'
-# One answer: the commit step takes no capability and asks no authority question,
-# so the check cannot be asked twice.  Mutation: re-add an authority guard there.
-run_check "INVARIANT" rg -n '^def lifecycleRetypeDirectCommit$' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def lifecycleRetypeDirectCommit[^\n]*(\n([ \t][^\n]*)?)*(lifecycleRetypeAuthority|Capability)" SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean'
-# NEGATIVE: the retired authority-last step does not come back.
-run_negative_check "INVARIANT" rg -n '^def lifecycleRetypeDirect( |$)' SeLe4n/
-# The non-interference statement, at the wrapper, the live seam and both dispatchers:
-# the refusal holds for EVERY state.  Mutation: add a hypothesis on `st`.
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lifecycleRetypeDirectWithCleanup_unauthorized\n[^\n]*\n *\(hAuth : lifecycleRetypeAuthority authCap target = false\) \(st : SystemState\) :\n *lifecycleRetypeDirectWithCleanup authCap target newObj st =\n *\.error \.illegalAuthority" SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean'
-run_check "INVARIANT" rg -n '^theorem lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_unauthorized$' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem dispatchWithCap_lifecycleRetype_unauthorized[^\n]*(\n([ \t][^\n]*)?)*\(st : SystemState\) :\n *dispatchWithCap decoded tid executingCore gate cap st = \.error \.illegalAuthority" SeLe4n/Kernel/API.lean'
-run_check "INVARIANT" rg -n '^theorem dispatchWithCapChecked_lifecycleRetype_unauthorized$' SeLe4n/Kernel/API.lean
-# The witness: every unnamed target draws `illegalAuthority` through both
-# dispatchers, with a CONTROL per target, and the suite runs it.
-run_check "INVARIANT" rg -n '^private def sd062_retype_checks_authority_before_target : IO Unit := do$' tests/SyscallDispatchSuite.lean
-run_check "INVARIANT" rg -n '^  sd062_retype_checks_authority_before_target$' tests/SyscallDispatchSuite.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "private def liveRetypeArm[^\n]*(\n([ \t][^\n]*)?)*lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache" tests/SmpIpcSuite.lean'
+# The in-place retype decoded its target id from a message register; it is
+# deleted (syscall number 8 stays reserved) and the carve is the only way an
+# object comes into being.  The carve's child id and destination are caller
+# values too, so authority has to come first there as well: asked after the
+# child-id or destination checks, every other refusal would answer a question
+# about an object the caller holds no capability to.
+# RELATION: the refusal holds for EVERY state, child id and destination, under
+# an admissible request and a capability without the retype right.  Mutation:
+# move the authority test below the child-id collision check.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem untypedRetypeObject_unauthorized\n[^\n]*\n *\(st : SystemState\) \(cap : Capability\) \(untypedId : SeLe4n\.ObjId\)\n *\(hAdm : req\.admissible st = true\)\n *\(hLk : cspaceLookupSlot src st = \.ok \(cap, st\)\)\n *\(hTgt : cap\.target = \.object untypedId\)\n *\(hAu : lifecycleRetypeAuthority cap untypedId = false\) :\n *untypedRetypeObject src childId dst req st = \.error \.illegalAuthority" SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean'
+# NEGATIVE: the retired in-place path does not come back, as code anywhere.
+run_negative_check "INVARIANT" rg -n '^def (lifecycleRetypeObject|lifecycleRetypeDirectWithCleanup|lifecycleRetypeDirectCommit|lifecycleRetypeWithCleanup)( |$)' SeLe4n/
+run_negative_check "INVARIANT" rg -n '^  \| lifecycleRetype\s*$' SeLe4n/Model/Object/Types.lean
+# The carve's per-kind facts: every kind's object, its type, its identity and the
+# capability it mints are one request's answers.
+run_check "INVARIANT" rg -n '^def CarveRequest\.object \(untypedId childId : SeLe4n\.ObjId\)' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n '^theorem CarveRequest\.object_objectType ' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n '^theorem CarveRequest\.object_embeddedIdentityMatches ' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n '^theorem CarveRequest\.capability_eq ' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n '^theorem untypedRetypeObject_ok_carved($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n '^theorem untypedRetypeObject_ok_kernelCapability($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n '^theorem untypedRetypeObject_ok_tcb_notQueued($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n '^theorem untypedRetypeObject_ok_notification($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n '^theorem untypedRetypeObject_ok_reply($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n '^theorem untypedRetypeObject_ok_schedContext($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+# A carved object is aligned to its own size, inside its untyped.
+run_check "INVARIANT" rg -n '^theorem retypeFromUntyped_ok_sizeAligned($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n '^theorem objectIdInAddressSpace_extent ' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+# The witness: every unnamed untyped draws `illegalAuthority` through both
+# dispatchers, with a CONTROL per child, and the suite runs it.
+run_check "INVARIANT" rg -n '^private def sd062_carve_checks_authority_before_child : IO Unit := do$' tests/SyscallDispatchSuite.lean
+run_check "INVARIANT" rg -n '^  sd062_carve_checks_authority_before_child$' tests/SyscallDispatchSuite.lean
 
 # ============================================================================
 # WS-RR RR8.12 Cut C6h (`v0.35.181`): the syscall seam BRACKETS on the scheduler

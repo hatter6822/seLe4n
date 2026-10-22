@@ -49,16 +49,7 @@
 [SST-039] service dependency chain lookup chainTop: some [{ val := 201 }]
 [SST-041] boundary memory low-address byte: 0
 [SST-043] boundary memory high-address byte: 0
-[LEP-001] lifecycle retype unauthorized branch: SeLe4n.Model.KernelError.illegalAuthority
-[LEP-003] lifecycle retype illegal-state branch: SeLe4n.Model.KernelError.illegalState
-[LEP-006] lifecycle retype success object kind: some (SeLe4n.Model.KernelObjectType.endpoint)
-[LEP-008] lifecycle retype-with-cleanup old tid removed: true
 [LEP-011] created sibling cap with the same target
-[LEP-012] composed transition alias guard (expected error): SeLe4n.Model.KernelError.illegalState
-[LEP-014] composed transition unauthorized branch: SeLe4n.Model.KernelError.illegalAuthority
-[LEP-017] composed revoke/delete/retype success
-[LEP-018] post-revoke sibling lookup: SeLe4n.Model.KernelError.invalidCapability
-[LEP-020] post-delete lookup (expected error): SeLe4n.Model.KernelError.invalidCapability
 [LEP-024] handshake send matched waiting receiver
 [LEP-026] queued sender on endpoint
 [LEP-028] endpoint receive #1 sender: 1
@@ -104,9 +95,9 @@
 [STD-011] domain switch active domain: 1
 [STD-012] domain switch time remaining: 5
 [UMT-002] retype-from-untyped success object kind: some (SeLe4n.Model.KernelObjectType.endpoint)
-[UMT-003] untyped free index after retype: 64
+[UMT-003] untyped free index after retype: 16
 [UMT-004] untyped children count: 1
-[UMT-007] untyped free index after second retype: 1088
+[UMT-007] untyped free index after second retype: 32
 [UMT-009] retype-from-untyped type-mismatch branch: SeLe4n.Model.KernelError.untypedTypeMismatch
 [UMT-011] retype-from-untyped region-exhausted branch: SeLe4n.Model.KernelError.untypedRegionExhausted
 [UMT-013] retype-from-untyped not-found branch: SeLe4n.Model.KernelError.objectNotFound
@@ -119,7 +110,7 @@
 [SGT-004] H15e syscall gate send (bad root): SeLe4n.Model.KernelError.objectNotFound
 [SGT-006] H15e syscall gate send (insufficient rights): SeLe4n.Model.KernelError.illegalAuthority
 [SGT-008] H15e syscall gate send (missing cap): SeLe4n.Model.KernelError.invalidCapability
-[SGT-010] H15e syscall gate retype: SeLe4n.Model.KernelError.objectNotFound
+[SGT-009] H15e syscall gate retype: ok
 [RCF-001] F7 timerOnly timer success: 3
 [RCF-003] F7 timerOnly register denied: SeLe4n.Model.KernelError.notImplemented
 [RCF-005] F7 timerOnly memory denied: SeLe4n.Model.KernelError.notImplemented
@@ -134,7 +125,7 @@
 [KSD-001] cspaceMint via decoded regs destination populated: true
 [KSD-002] cspaceCopy via decoded regs target matches: true
 [KSD-003] cspaceDelete via decoded regs slot cleared: true
-[KSD-004] lifecycle retype via decoded regs new type: some (SeLe4n.Model.KernelObjectType.notification)
+[KSD-004] untyped carve via decoded regs new type: some (SeLe4n.Model.KernelObjectType.notification)
 [KSD-005] vspaceMap via decoded regs paddr: 8192
 [KSD-006] service registry lookup present: true
 [KSD-007] IPC message body from registers: #[111, 222, 333, 444]
@@ -156,9 +147,6 @@
 [RRC-005] replyRecv server ready after rendezvous: true
 [RRC-006] replyRecv server received callerB registers: some [70, 80, 90]
 [ELC-001] lifecycle senders blocked: true
-[ELC-002] lifecycle retype-delete succeeded: true
-[ELC-003] lifecycle senders retain stale blocked state: true
-[ELC-004] lifecycle stale endpoint send rejected (invalidCapability): true
 [MEI-001] multi-ep recv1 registers: some [11, 22]
 [MEI-002] multi-ep recv2 registers: some [33, 44]
 [MEI-003] multi-ep endpoint1 queues empty: true
@@ -229,12 +217,12 @@
 [IDLE-004] live schedule current (folded idle dispatch): some 65536
 [IDLE-005] idle-aware dispatch current (idle runs): some 65536
 [IDLE-006] dispatched idle absent from run queue (dequeue-on-dispatch): true
-[ITR-001] inter-transition invariant checks: 38 passed
+[ITR-001] inter-transition invariant checks: 36 passed
 [PTY-001] parameterized topology ok: minimal (threads=1 prio=50 radix=4 asids=1 svcs=1)
 [PTY-001] parameterized topology ok: medium (threads=4 prio=10 radix=8 asids=2 svcs=2)
 [PTY-001] parameterized topology ok: large (threads=8 prio=100 radix=16 asids=4 svcs=4)
 [XVAL-001] MessageInfo roundtrip ok: encoded=2386218 length=42 extraCaps=2 label=4660
-[XVAL-002] SyscallId roundtrip ok: all 42 variants
+[XVAL-002] SyscallId roundtrip ok: all 41 variants
 [XVAL-003] CSpaceMintArgs roundtrip ok: regs=#[{ val := 10 }, { val := 20 }, { val := 7 }, { val := 999 }]
 [XVAL-004] MessageInfo bit layout ok: len=42 caps=384 label=2560
 [XVAL-005] SetIPCBufferArgs roundtrip ok: regs=#[{ val := 512 }]

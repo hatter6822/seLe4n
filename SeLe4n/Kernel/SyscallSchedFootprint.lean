@@ -9,7 +9,7 @@
 
 import SeLe4n.Kernel.API
 import SeLe4n.Kernel.Scheduler.PriorityInheritance.PerCore
-import SeLe4n.Kernel.Lifecycle.Invariant.RetypeReservation
+import SeLe4n.Kernel.Lifecycle.Invariant.CleanupReservation
 import SeLe4n.Kernel.Concurrency.Locks.LockSetForSyscall
 import SeLe4n.Kernel.SyscallLockBracket
 import SeLe4n.Kernel.SchedLockBracket
@@ -17,7 +17,7 @@ import SeLe4n.Kernel.Lifecycle.ResumeFootprint
 import SeLe4n.Kernel.SchedContext.PriorityControlFootprint
 import SeLe4n.Kernel.Scheduler.Operations.AffinityFootprint
 import SeLe4n.Kernel.SchedContext.SchedContextFootprint
-import SeLe4n.Kernel.Lifecycle.Operations.RetypeFootprint
+import SeLe4n.Kernel.Lifecycle.Operations.CleanupFootprint
 import SeLe4n.Kernel.IPC.CrossCore.SuspendFootprint
 
 /-!
@@ -139,9 +139,6 @@ def schedLockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
   | .schedContextUnbind =>
       ops.targetObject.bind fun scObjId =>
         LockSet.ofList? (schedLockSet_schedContextUnbindOnCore st scObjId executingCore)
-  | .lifecycleRetype =>
-      ops.targetObject.bind fun target =>
-        LockSet.ofList? (schedLockSet_lifecycleRetypeOnCore st target)
   | .notificationSignal =>
       ops.targetObject.bind fun nId =>
         LockSet.ofList? (schedLockSet_notificationSignalBoundOnCore st nId)
@@ -214,7 +211,7 @@ footprint without listing it here breaks
 still answers `none` is refused by that arm's own `_isSome_iff`, which states
 the exact operands under which it declares.
 
-There are `SyscallId.count = 42` arms; **seventeen** declare and twenty-five
+There are `SyscallId.count = 41` arms; **sixteen** declare and twenty-five
 answer `none`.  *Which* of those twenty-five write a scheduler slot at all is this
 enumeration's own open question — the arms above are the ones WS-RR RR8.12's
 sequence identified, and a twenty-sixth found to write one is a footprint to
@@ -234,7 +231,6 @@ def declaredSchedFootprintSyscall : SyscallId → Bool
   | .tcbSuspend | .tcbResume
   | .tcbSetPriority | .tcbSetMCPriority | .tcbSetAffinity
   | .schedContextConfigure | .schedContextBind | .schedContextUnbind
-  | .lifecycleRetype
   | .notificationSignal | .notificationWait
   | .send | .receive | .call | .reply | .replyRecv
   | .yield => true
@@ -300,13 +296,13 @@ object is supplied. -/
 theorem schedLockSetForSyscall_objectDirected_isSome_iff
     (sid : SyscallId) (ops : SyscallLockOperands) (executingCore : CoreId) (st : SystemState)
     (h : sid = .schedContextConfigure ∨ sid = .schedContextUnbind ∨
-         sid = .lifecycleRetype ∨ sid = .notificationSignal ∨ sid = .send) :
+         sid = .notificationSignal ∨ sid = .send) :
     (schedLockSetForSyscall sid ops executingCore st).isSome ↔ ops.targetObject.isSome := by
-  rcases h with rfl | rfl | rfl | rfl | rfl <;>
+  rcases h with rfl | rfl | rfl | rfl <;>
     (unfold schedLockSetForSyscall
      cases ops.targetObject <;>
        simp [LockSet.ofList?, schedLockSet_schedContextConfigureOnCore,
-         schedLockSet_schedContextUnbindOnCore, schedLockSet_lifecycleRetypeOnCore,
+         schedLockSet_schedContextUnbindOnCore,
          schedLockSet_notificationSignalBoundOnCore, schedLockSet_endpointSendOnCore,
          schedFootprintOfCores_keys_nodup])
 
@@ -411,7 +407,7 @@ theorem schedLockSetForSyscall_replyRecv_isSome_iff
                   schedFootprintOfCores_keys_nodup]
 
 /-- **WS-LS LS2.3**: every scheduler footprint names the object-store table
-write lock — each of the seventeen arms is `schedFootprintOfCores` of its own
+write lock — each of the sixteen arms is `schedFootprintOfCores` of its own
 core lists, and that constructor leads with the table lock
 (`schedFootprintOfCores_contains_objStore_write`).  What makes the object
 clause of `footprintCoversWrites` vacuous at the syscall seam, so the arms'
@@ -429,7 +425,7 @@ theorem schedLockSetForSyscall_contains_objStore_write (sid : SyscallId)
     simp only [schedLockSet_suspendThreadOnCore, schedLockSet_resumeThreadOnCore,
       schedLockSet_priorityControlOnCore, schedLockSet_setThreadCpuAffinityOnCore,
       schedLockSet_schedContextConfigureOnCore, schedLockSet_schedContextBindOnCore,
-      schedLockSet_schedContextUnbindOnCore, schedLockSet_lifecycleRetypeOnCore,
+      schedLockSet_schedContextUnbindOnCore,
       schedLockSet_notificationSignalBoundOnCore, schedLockSet_notificationWaitOnCore,
       schedLockSet_endpointSendOnCore, schedLockSet_endpointReceiveOnCore,
       schedLockSet_endpointCallOnCore, schedLockSet_replyTransferOnCore,
@@ -592,9 +588,9 @@ thread still resident elsewhere — writes to that core's run queue and `current
 slot that are nobody's arm's.  Nine arms' own write sets already name the
 executing core (`resumeThreadOnCoreWriteSet`, `priorityControlWriteSet`, …);
 the others (`.tcbSetAffinity`, the two SchedContext arms directed at an object,
-`.lifecycleRetype`, the rendezvous paths of the IPC arms) name only the
+the rendezvous paths of the IPC arms) name only the
 cores the arm moves, so the seam adds the lock its own tail needs rather than
-widening seventeen per-arm sets for a write that is not theirs.  No replenish
+widening sixteen per-arm sets for a write that is not theirs.  No replenish
 member is added: the tail's scheduling points move no scheduling context
 (`handleRescheduleSgiOnCore_replenishQueueOnCore`,
 `deferResidentElsewhere`'s legs likewise). -/
@@ -735,9 +731,9 @@ is one of the second, and coverage is monotone upward
 (`footprintCoversWrites_mono`), so the claim travels without being restated
 — which is what keeps "what does this arm's footprint cover" a single question.
 
-Stated once and generically rather than seventeen times at the arms: an instance
-per arm would be seventeen copies of one application, and the next declared arm
-would owe an eighteenth.  **WS-LS LS2.3** discharges `hCover` at the seam
+Stated once and generically rather than sixteen times at the arms: an instance
+per arm would be sixteen copies of one application, and the next declared arm
+would owe a seventeenth.  **WS-LS LS2.3** discharges `hCover` at the seam
 (`SyscallSeamCoverage.lean`) rather than assuming it. -/
 theorem unifiedLockSetForSyscall_coversWrites (sid : SyscallId)
     (ops : Concurrency.SyscallLockOperands) (executingCore : CoreId) (st : SystemState)

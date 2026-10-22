@@ -270,8 +270,14 @@ mod tests {
     fn decode_every_discriminant_roundtrips() {
         // RA.E.3 (Rust half): every KernelError discriminant 0..=54
         // survives the status label round trip, by enumeration.
+        // The retired 37 decodes as `UnknownKernelError`, a code no error has.
         for disc in 0..=54u32 {
-            let expected = KernelError::from_u32(disc).expect("0..=54 are all valid");
+            let expected = KernelError::from_u32(disc).unwrap_or(KernelError::UnknownKernelError);
+            assert_eq!(
+                KernelError::from_u32(disc).is_none(),
+                KernelError::RETIRED.contains(&disc),
+                "only a retired discriminant is unassigned ({disc})"
+            );
             let regs = [0, error_x1(disc as u64), 0, 0, 0, 0, 0];
             assert_eq!(decode_response(regs), Err(expected), "discriminant {disc}");
         }

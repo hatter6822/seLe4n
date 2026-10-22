@@ -13,40 +13,22 @@ import SeLe4n.Kernel.Lifecycle.Operations.RetypePerform
 import SeLe4n.Kernel.Lifecycle.Operations.SetSpace
 
 /-!
-# AN4-G.5 (LIF-M05): `Lifecycle.Operations` hub
+# `Lifecycle.Operations` hub
 
-This module is a thin re-export hub after the AN4-G.5 split of the former
-monolithic 1600-LOC `Operations.lean`. All lifecycle retype-path
-primitives, preservation theorems, and production wrappers now live in
-four child modules:
+A thin re-export hub over the lifecycle child modules:
 
 | Child module                                 | Subject matter                                                                 |
 |----------------------------------------------|--------------------------------------------------------------------------------|
 | `Operations.Cleanup`                         | `lifecycleRetypeAuthority`, `removeThreadFromQueue`, `spliceOutMidQueueNode`, `removeFromAll{Endpoint,Notification}Queues`, `cleanupDonatedSchedContext`, `cleanupTcbReferences` |
-| `Operations.CleanupPreservation`             | Cleanup-primitive preservation theorems, `detachCNodeSlots`, `lifecyclePreRetypeCleanup`, `lifecycleCleanupPipeline` (AN4-G.2), `Internal.lifecycleRetypeObject` (AN4-A), `lifecycleRevokeDeleteRetype` |
-| `Operations.ScrubAndUntyped`                 | `scrubObjectMemory` + frame theorems, `retypeFromUntyped` def + capacity / freshness / atomicity / error-path theorems |
-| `Operations.RetypeWrappers`                  | Production entry points: `lifecycleRetypeWithCleanup`, WS-K-D dispatch helpers, `lifecycleRetypeDirectCommit` + `lifecycleRetypeDirectWithCleanup*` variants |
+| `Operations.CleanupPreservation`             | Cleanup-primitive preservation theorems, `detachCNodeSlots`, `lifecyclePreRetypeCleanup`, `lifecycleCleanupPipeline` — the destroy-path cleanup a capability's finalisation will call |
+| `Operations.ScrubAndUntyped`                 | the object-identifier address-space guard, the carve (`CarveRequest`, `retypeFromUntyped`) + capacity / alignment / freshness / atomicity / error-path theorems |
+| `Operations.RetypeWrappers`                  | The ASID round fold the untyped reset drains through, and the carve-scrub discharge |
+| `Operations.UntypedReset`, `RetypePerform`, `SetSpace` | The reset, the carve's dispatch-level entry, and the space-slot write |
 
-The children form a linear import chain
-(`Cleanup ← CleanupPreservation ← ScrubAndUntyped ← RetypeWrappers`). The
-hub re-exports the tail so every downstream consumer sees the union of
-all lifecycle operations and proofs.
-
-**Migration discipline**: theorem names, statements, and relative order
-are unchanged across the split. One proof — `removeFromAllEndpointQueues_preserves`
-— was rewritten to apply `RHTable.fold_preserves` directly against a
-bundled triple invariant (`scheduler ∧ lifecycle ∧ serviceRegistry`
-equalities) instead of the former `epFold` helper that relied on
-syntactic `let ep' : Endpoint := ...` pattern matching. The rewrite
-eliminated a cross-file elaboration fragility where `unfold` through
-an imported sibling module reshaped the `let` binder into `have` and
-broke the subsequent `rw`. Every other theorem is moved byte-identically.
-Private helpers were promoted to public at file-boundary scope so
-sibling children can reference them without re-proving. The `Internal`
-namespace (AN4-A) is defined in `CleanupPreservation` where
-`lifecycleRetypeObject` is declared; `ScrubAndUntyped` and
-`RetypeWrappers` re-enable the bare name via `open Internal` as allowed
-by `scripts/lifecycle_internal_allowlist.txt`.
+**WS-ZA ZA5.4 part 14**: there is no in-place retype.  Every kernel object is
+carved from an untyped at its free index (`untypedRetypeObject`), so the
+`Internal` namespace that hid the bypass primitive is gone, and with it the
+consumer allowlist that fenced it.
 -/
 
 namespace SeLe4n.Kernel

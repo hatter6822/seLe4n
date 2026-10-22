@@ -318,8 +318,7 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @cspaceMint_confinedToCore
 #check @cspaceRevoke_confinedToCore
 #check @cspaceMutate_confinedToCore
-#check @lifecycleRetypeObject_confinedToCore
-#check @lifecycleRevokeDeleteRetype_confinedToCore
+#check @retypeFromUntyped_confinedToCore
 #check @vspaceMapPage_confinedToCore
 #check @vspaceUnmapPage_confinedToCore
 #check @vspaceLookup_confinedToCore
@@ -329,8 +328,7 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @nonInterference_perCore_endpointSendDual
 #check @nonInterference_perCore_cspaceMint
 #check @nonInterference_perCore_cspaceRevoke
-#check @nonInterference_perCore_lifecycleRetype
-#check @nonInterference_perCore_lifecycleRevokeDeleteRetype
+#check @nonInterference_perCore_retypeFromUntyped
 #check @nonInterference_perCore_notificationSignal
 #check @nonInterference_perCore_notificationWait
 #check @nonInterference_perCore_cspaceInsertSlot
@@ -619,8 +617,8 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 -- SM8.B.2 (PR #861 review round 35): the three entries that emptied the
 -- per-core routing allowlist.  Two carry an EMPTY write set — the shape the
 -- inventory previously could not express, which is the only reason those arms
--- held waivers — and the retype carries the sweep bounded by pre-state
--- occupancy.
+-- held waivers — and the pre-retype cleanup carries the sweep bounded by
+-- pre-state occupancy.
 #check @SeLe4n.Kernel.threadOccupiedCores
 #check @SeLe4n.Kernel.not_threadOccupiesCore_of_not_mem
 #check @SeLe4n.Kernel.threadOccupiedCores_congr
@@ -629,17 +627,11 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @SeLe4n.Kernel.observableSlotsConfinedToCores_of_framed_suffix
 #check @SeLe4n.Kernel.observableSlotsConfinedToCores_of_framed_suffix_regs
 #check @SeLe4n.Kernel.cleanupTcbReferences_confinedToCores
-#check @SeLe4n.Kernel.withIcacheBroadcast_confinedToCores
-#check @SeLe4n.Kernel.lifecycleRetypeWriteSetOf
-#check @SeLe4n.Kernel.lifecycleRetypeWriteSet
-#check @SeLe4n.Kernel.lifecycleRetypeWriteSet_nil_of_not_tcb
+#check @SeLe4n.Kernel.withIcacheBroadcast_framed
 #check @SeLe4n.Kernel.lifecyclePreRetypeCleanup_confinedToCores
-#check @SeLe4n.Kernel.lifecycleRetypeDirectWithCleanup_confinedToCores
-#check @SeLe4n.Kernel.lifecycleRetypeDirectWithCleanupShootdown_confinedToCores
-#check @SeLe4n.Kernel.lifecycleRetypeDirectWithCleanupShootdownPerCore_confinedToCores
-#check @SeLe4n.Kernel.lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_confinedToCores
-#check @SeLe4n.Kernel.lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_crossCoreNonInterference
-#check @SeLe4n.Kernel.syscallDelegates_lifecycleRetype
+#check @SeLe4n.Kernel.untypedRetypeObject_confinedToCores
+#check @SeLe4n.Kernel.untypedRetypeFromCap_crossCoreNonInterference
+#check @SeLe4n.Kernel.syscallDelegates_untypedRetype
 #check @SeLe4n.Kernel.syscallDelegates_vspaceMap
 #check @SeLe4n.Kernel.syscallDelegates_vspaceUnmap
 #check @CovertChannelId.mem_all
@@ -773,7 +765,7 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @syscallIdToEnforcementNamePerCore
 #check @enforcementBoundaryPerCoreCompleteCrossCore
 #check @enforcementBoundaryPerCore_is_complete_crossCore
-#check @syscallIdToEnforcementNamePerCore_differs_at_fifteen
+#check @syscallIdToEnforcementNamePerCore_differs_at_fourteen
 #check @enforcementBoundaryPerCore_crossCore_classes_match
 #check @endpointPolicyRestricted_perCore
 #check @endpointPolicyRestricted_perCore_iff
@@ -2013,7 +2005,6 @@ totality over the wrong domain proves nothing, which is why the
 #check @ContentFlowClass
 #check @contentFlowClass
 #check @contentFlowClass_total
-#check @contentFlowClass_clears_iff
 #check @contentFlowClass_moves_iff
 #check @TaintFlowEdge
 #check @TaintFlowEdge.sink
@@ -2029,7 +2020,6 @@ totality over the wrong domain proves nothing, which is why the
 #check @signalTaintEdges
 #check @waitTaintEdges
 #check @contentFlowEdges
-#check @retypeClearedObjects
 #check @syscallTaintPlan
 #check @syscallTaintPlan_inert
 #check @declassify_idle_notification_bypassed
@@ -2037,8 +2027,6 @@ totality over the wrong domain proves nothing, which is why the
 #check @originationTags_cons_release
 #check @chainArchivedVerdict_refuses_live_timestamp
 #check @declassify_pending_notification_not_bypassed
-#check @SeLe4n.Kernel.Concurrency.lockSet_lifecycleRetype_clearedKey_write_mem
-#check @SeLe4n.Kernel.Concurrency.lockSet_lifecycleRetype_nonTarget_kinds
 #check @applyTaintFlow
 #check @applyTaintClears
 #check @newlyRecordedEvents
@@ -2086,11 +2074,6 @@ totality over the wrong domain proves nothing, which is why the
 #check @taintPropagation_signal_to_notification
 #check @taintPropagation_wait_from_notification
 
--- Retype **clears** rather than frames: it commits `storeObject` at the
--- same id, so a framed retype would leave a destroyed object's tags on
--- its replacement.
-#check @retypeClearsTaint
-#check @retypedObject_taint_empty
 #check @staleTaint_is_not_saturation
 
 /-! ### SM9.D.14 – SM9.D.16 — the causal detector.
@@ -3039,10 +3022,9 @@ private def probeCNodeValue : CNode :=
 /-- The CSpace root every fixture TCB names.
 
 `KernelObject.wellFormed` requires a TCB's `cspaceRoot` and `vspaceRoot` to
-resolve in the object store, so a fixture whose TCBs point at absent ids is one
-the kernel's own construction paths (`lifecycleRetype`, which validates
-`wellFormed` before installing) would reject — the evidence would be computed on
-an unreachable state.  Both roots are therefore real objects, and §3.0 checks
+resolve in the object store, so a fixture whose TCBs point at absent ids is not
+a well-formed state — the evidence would be computed on a state the object
+invariants exclude.  Both roots are therefore real objects, and §3.0 checks
 the well-formedness that makes them necessary.  Empty slots: this root exists to
 be *referenced*, and the redaction probe is `probeCNode`. -/
 private def rootCNodeValue : CNode :=
@@ -3226,9 +3208,8 @@ private def runFixtureChecks : IO Unit := do
              (probeState.objects[highQueued.toObjId]?).isSome = true))
   -- The state has to be one the kernel could actually reach.  A TCB whose
   -- `cspaceRoot`/`vspaceRoot` do not resolve fails `KernelObject.wellFormed`,
-  -- which `lifecycleRetype` validates before installing an object — so a
-  -- fixture missing its roots would compute all of the evidence below on a
-  -- state no construction path can produce.
+  -- so a fixture missing its roots would compute all of the evidence below on
+  -- a state the object invariants exclude.
   assertBool "both declared TCB roots are real objects in the store"
     (decide ((probeState.objects[cnRoot]?).isSome = true ∧
              (probeState.objects[vsRoot]?).isSome = true))
@@ -4695,12 +4676,13 @@ private def runCoreSetAlgebraChecks : IO Unit := do
   IO.println "--- §5.3 the set-of-cores confinement algebra ---"
   assertBool "thirty-three cross-core transitions are covered"
     (decide (SeLe4n.Kernel.CrossCoreTransition.all.length = 33))
-  assertBool "twenty-three of the thirty-three can name a core other than the executing one"
+  assertBool "twenty-two of the thirty-three can name a core other than the executing one"
     (decide ((SeLe4n.Kernel.CrossCoreTransition.all.filter
-      SeLe4n.Kernel.crossCoreTransitionWritesRemote).length = 23))
-  assertBool "…and the wait, the two VSpace arms, the untyped reset, the two finalising destroyers, the declassification, the two audit readers and the yield are the ten that cannot"
+      SeLe4n.Kernel.crossCoreTransitionWritesRemote).length = 22))
+  assertBool "…and the wait, the two VSpace arms, the untyped reset, the carve, the two finalising destroyers, the declassification, the two audit readers and the yield are the eleven that cannot"
     ([SeLe4n.Kernel.CrossCoreTransition.notificationWait,
       .vspaceMapDispatch, .vspaceUnmapDispatch, .untypedResetDispatch,
+      .untypedRetypeDispatch,
       .cspaceDeleteDispatch, .cspaceRevokeDispatch, .declassifyDispatch,
       .auditReadDispatch, .auditDrainDispatch, .yieldDispatch].all (fun t =>
         decide (SeLe4n.Kernel.crossCoreTransitionWritesRemote t = false)))
@@ -4729,13 +4711,14 @@ private def runCoreSetAlgebraChecks : IO Unit := do
       && decide (SeLe4n.Kernel.crossCoreLiveArmSyscall .untypedResetDispatch
                    = some SeLe4n.Model.SyscallId.untypedReset)
       && !SeLe4n.Kernel.crossCoreTransitionWritesRemote .untypedResetDispatch)
-  -- Round 35: the three entries that emptied the per-core routing allowlist.
-  -- All three are live arms, all three arrive delegation-backed, and two of them
-  -- carry an EMPTY write set — the shape the inventory could not express before,
-  -- which is the whole reason those two arms held waivers.
-  assertBool "the three allowlist-closing arms are live and delegation-backed"
+  -- Round 35: the entries that emptied the per-core routing allowlist, with the
+  -- carve that replaced the in-place retype (WS-ZA ZA5.4 part 14).  All three
+  -- are live arms, all three arrive delegation-backed, and all three carry an
+  -- EMPTY write set — the shape the inventory could not express before, which
+  -- is the whole reason the two VSpace arms held waivers.
+  assertBool "the VSpace arms and the carve are live and delegation-backed"
     ([SeLe4n.Kernel.CrossCoreTransition.vspaceMapDispatch,
-      .vspaceUnmapDispatch, .lifecycleRetypeDispatch].all (fun t =>
+      .vspaceUnmapDispatch, .untypedRetypeDispatch].all (fun t =>
         decide (t ∈ SeLe4n.Kernel.CrossCoreTransition.all)
           && SeLe4n.Kernel.crossCoreTransitionIsLiveArm t
           && (SeLe4n.Kernel.crossCoreLiveArmEvidence t).isDelegationBacked))
@@ -4744,15 +4727,17 @@ private def runCoreSetAlgebraChecks : IO Unit := do
                = some SeLe4n.Model.SyscallId.vspaceMap
              ∧ SeLe4n.Kernel.crossCoreLiveArmSyscall .vspaceUnmapDispatch
                = some SeLe4n.Model.SyscallId.vspaceUnmap
-             ∧ SeLe4n.Kernel.crossCoreLiveArmSyscall .lifecycleRetypeDispatch
-               = some SeLe4n.Model.SyscallId.lifecycleRetype))
-  -- NEGATIVE — the distinction the two VSpace entries exist to record: they are
-  -- live arms that take an executing core, and they still write no core.  An
+             ∧ SeLe4n.Kernel.crossCoreLiveArmSyscall .untypedRetypeDispatch
+               = some SeLe4n.Model.SyscallId.untypedRetype))
+  -- NEGATIVE — the distinction the VSpace entries exist to record: they are
+  -- live arms that take an executing core, and they still write no core, while
+  -- a live sibling that does write remotely is classified as such.  An
   -- inventory that could only say "writes remote" would have had to lie either
   -- way round.
-  assertBool "NEGATIVE: the retype writes remote while its two VSpace siblings do not"
-    (decide (SeLe4n.Kernel.crossCoreTransitionWritesRemote .lifecycleRetypeDispatch = true)
-      && !SeLe4n.Kernel.crossCoreTransitionWritesRemote .vspaceMapDispatch)
+  assertBool "NEGATIVE: the delete-free endpoint reply writes remote while the VSpace arms and the carve do not"
+    (decide (SeLe4n.Kernel.crossCoreTransitionWritesRemote .endpointReplyDispatch = true)
+      && !SeLe4n.Kernel.crossCoreTransitionWritesRemote .vspaceMapDispatch
+      && !SeLe4n.Kernel.crossCoreTransitionWritesRemote .untypedRetypeDispatch)
   -- Round 14: routing the SchedContext arms through `determineTargetCore` made
   -- them remote writers.  `.schedContextUnbind` is audited; the other two are a
   -- COUNTED gap rather than a silent one, and deliberately not in the inventory,
@@ -5173,14 +5158,15 @@ private def runRetypeWriteSetChecks : IO Unit := do
   assertBool "…and destroying it is invisible on every core"
     (confinedToSetCheck crossCoreState
       (SeLe4n.Kernel.cleanupTcbReferences crossCoreState remoteHomedThread) [])
-  -- resolved through the object store, which is how the live arm reads it
-  assertBool "the store-resolved write set agrees with the occupancy set"
-    (decide (SeLe4n.Kernel.lifecycleRetypeWriteSet retypeVictimState
-      remoteHomedThread.toObjId = [c2]))
-  assertBool "retyping a NON-TCB writes no core at all"
-    (decide (SeLe4n.Kernel.lifecycleRetypeWriteSet retypeVictimState lowEndpoint = []))
-  assertBool "retyping an absent object writes no core"
-    (decide (SeLe4n.Kernel.lifecycleRetypeWriteSet retypeVictimState ⟨999999⟩ = []))
+  -- read off the object the store holds, which is how the cleanup reads it
+  assertBool "the object-resolved write set agrees with the occupancy set"
+    (match retypeVictimState.objects[remoteHomedThread.toObjId]? with
+     | some o => decide (SeLe4n.Kernel.preRetypeCleanupWriteSetOf retypeVictimState o = [c2])
+     | none => false)
+  assertBool "cleaning a NON-TCB writes no core at all"
+    (match retypeVictimState.objects[lowEndpoint]? with
+     | some o => decide (SeLe4n.Kernel.preRetypeCleanupWriteSetOf retypeVictimState o = [])
+     | none => false)
   -- Round 39: the destroy path refuses to destroy a RUNNING thread.  Without
   -- the guard the sweep clears the current slot of whichever core runs the
   -- target — the executing core included — and nothing schedules a successor,
@@ -5342,24 +5328,24 @@ private def runLeakageBoundChecks : IO Unit := do
 
 /-- §4.6  Per-core coverage of the operation taxonomy (SM8.B.3 / SM8.B.5). -/
 private def runPerCoreCoverageChecks : IO Unit := do
-  IO.println "--- §4.6 per-core coverage of the 35 kernel operations ---"
-  assertBool "35 distinct per-core theorem names, one per KernelOperation"
+  IO.println "--- §4.6 per-core coverage of the 34 kernel operations ---"
+  assertBool "34 distinct per-core theorem names, one per KernelOperation"
     (decide (([ kernelOperationPerCoreNiTheorem .chooseThread
               , kernelOperationPerCoreNiTheorem .endpointSendDual
               , kernelOperationPerCoreNiTheorem .handleInterrupt ]).length = 3) &&
      decide (kernelOperationPerCoreNiTheorem .chooseThread
         ≠ kernelOperationPerCoreNiTheorem .endpointSendDual))
-  assertBool "31 of the 35 operations DERIVE their confinement; exactly 4 do not"
+  assertBool "30 of the 34 operations DERIVE their confinement; exactly 4 do not"
     (decide (perCoreConfinementDerived .endpointSendDual = true) &&
      decide (perCoreConfinementDerived .timerTick = true) &&
      decide (perCoreConfinementDerived .syscallDispatchHigh = false) &&
      decide (perCoreConfinementDerived .handleInterrupt = false) &&
      decide (perCoreConfinementDerived .endpointCallWithDonationHigh = false) &&
      decide (perCoreConfinementDerived .endpointReplyWithReversionHigh = false))
-  assertBool "the taxonomy count is still 35 (single-core authority)"
+  assertBool "the taxonomy count is 34 (single-core authority)"
     (have _h : (List.length
         [KernelOperation.chooseThread, .endpointSendDual, .cspaceMint,
-         .cspaceRevoke, .lifecycleRetype, .lifecycleRevokeDeleteRetype,
+         .cspaceRevoke, .retypeFromUntyped,
          .notificationSignal, .notificationWait, .cspaceInsertSlot,
          .schedule, .vspaceMapPage, .vspaceUnmapPage, .vspaceLookup,
          .cspaceCopy, .cspaceMove, .cspaceDeleteSlot,
@@ -5371,25 +5357,26 @@ private def runPerCoreCoverageChecks : IO Unit := do
          .syscallDecodeError, .syscallDispatchHigh,
          .registerServiceChecked,
          .endpointCallWithDonationHigh, .endpointReplyWithReversionHigh,
-         .handleInterrupt]) = 35 := kernelOperation_count
+         .handleInterrupt]) = 34 := kernelOperation_count
      true)
 
 /-- §4.7  The per-core enforcement boundary (SM8.B.6 / SM8.B.7). -/
 private def runEnforcementBoundaryChecks : IO Unit := do
   IO.println "--- §4.7 the per-core enforcement boundary ---"
-  assertBool "68 entries: 53 canonical (the 2PL bracket, the two audit readers, the declassifying signal, the fault-handler configuration, WS-RR RR8.16's revocation, WS-BP BP7.1's untyped carve and reset and the two finalising destroyers, the space change, the two page-table operations and the yield) + 15 cross-core wrappers"
-    (decide (enforcementBoundaryPerCore.length = 67) &&
-     decide (enforcementBoundaryExtended.length = 52) &&
-     decide (crossCoreEnforcementEntries.length = 15))
+  assertBool "64 entries: 50 canonical (the 2PL bracket, the two audit readers, the declassifying signal, the fault-handler configuration, WS-BP BP7.1's untyped carve and reset and the two finalising destroyers, the space change, the two page-table operations and the yield) + 14 cross-core wrappers"
+    (decide (enforcementBoundaryPerCore.length = 64) &&
+     decide (enforcementBoundaryExtended.length = 50) &&
+     decide (crossCoreEnforcementEntries.length = 14))
   assertBool "every SyscallId is still covered by the extended boundary (single-core half)"
     (enforcementBoundaryPerCoreComplete)
   assertBool "every SyscallId's LIVE cross-core operation is covered (SMP half)"
     (enforcementBoundaryPerCoreCompleteCrossCore)
-  assertBool "the per-core mapping re-routes exactly fifteen syscalls"
+  assertBool "the per-core mapping re-routes exactly fourteen syscalls"
     (decide ((SyscallId.all.filter (fun sid =>
       decide (syscallIdToEnforcementNamePerCore sid
-        ≠ syscallIdToEnforcementName sid))).length = 15))
-  -- Round 37: `.tcbSetAffinity` is the fifteenth, and the first found by the
+        ≠ syscallIdToEnforcementName sid))).length = 14))
+  -- Round 37: `.tcbSetAffinity` was the fifteenth (fourteen since the in-place
+  -- retype's arm retired with it, WS-ZA ZA5.4 part 14), and the first found by the
   -- routing gate rather than by a review round.  Its op hardcoded `bootCoreId`
   -- as the executing core and discarded the SGI that argument determined.
   -- Round 39: the class-equivalence theorem now quantifies over the computed
@@ -5399,7 +5386,7 @@ private def runEnforcementBoundaryChecks : IO Unit := do
   assertBool "the class-match set IS the re-routed set, and is non-empty"
     (decide ((SyscallId.all.filter (fun sid =>
       decide (syscallIdToEnforcementNamePerCore sid
-        ≠ syscallIdToEnforcementName sid))).length = 15))
+        ≠ syscallIdToEnforcementName sid))).length = 14))
   assertBool "the affinity arm re-routes to the per-core form"
     (decide (syscallIdToEnforcementNamePerCore .tcbSetAffinity
                = "setThreadCpuAffinityOnCore")
@@ -5408,8 +5395,8 @@ private def runEnforcementBoundaryChecks : IO Unit := do
   -- Round 10 and round 12 additions, as checked facts: `.send` and `.tcbResume`
   -- were rerouted off boot-pinned operations, and the three SM7.D/SM7.F
   -- architecture wrappers had been live per-core arms without appearing here.
-  assertBool "the seven arms added after the first cut all re-route"
-    ([SyscallId.send, .tcbResume, .vspaceMap, .vspaceUnmap, .lifecycleRetype,
+  assertBool "the six arms added after the first cut that remain all re-route"
+    ([SyscallId.send, .tcbResume, .vspaceMap, .vspaceUnmap,
       .tcbSetPriority, .tcbSetMCPriority].all
       (fun sid => decide (syscallIdToEnforcementNamePerCore sid
         ≠ syscallIdToEnforcementName sid)))
@@ -5759,18 +5746,14 @@ private def declassChainEntryLabeling : LabelingContext :=
   SeLe4n.Kernel.harnessLabelingContext
 
 /-- PR #874 review — a single-level CSpace for the chain's live entries: slot 2
-carries read+write on `declassTargetA` (the wait and the refill signal), slot 4
-carries the retype authority on it (the lifecycle case). -/
+carries read+write on `declassTargetA` (the wait and the signal). -/
 private def declassChainCNode : SeLe4n.ObjId := ⟨1033⟩
 
 private def declassChainCNodeValue : CNode :=
   (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF
       [(SeLe4n.Slot.ofNat 2,
         { target := .object declassTargetA,
-          rights := AccessRightSet.ofList [.read, .write] }),
-       (SeLe4n.Slot.ofNat 4,
-        { target := .object declassTargetA,
-          rights := AccessRightSet.ofList [.retype] })]))
+          rights := AccessRightSet.ofList [.read, .write] })]))
 
 /-- PR #874 review — stage a syscall in a thread's registers exactly as the
 boundary would: `x0` the capability pointer, `x1` the msgInfo word, `x2`-`x4`
@@ -5815,64 +5798,6 @@ private def declassDelivery : Option (DeclassificationAuditLog × SystemState) :
       match syscallEntryChecked declassChainEntryLabeling SeLe4n.arm64DefaultLayout c0 32
           (declassChainStage lowCurrent SyscallId.notificationWait.toNat 2 0 0 0 0 st₁) with
       | .ok ((), st) => some (log₁, st)
-      | .error _ => none
-
-/-- PR #874 review — **the lifecycle case, every station live** (SM9.E.2a):
-retype the object that carried hop 1's taint, refill its replacement with
-ordinary content, deliver, and downgrade — and confirm no causal link is
-reported.
-
-Station 1: core 1's subject (hop 1's actor, holding the retype authority)
-retypes `declassTargetA` through the live entry.  The entry's taint seam is
-what clears the destroyed object's provenance (`contentFlowClass
-.lifecycleRetype = .clearsProvenance`), so running the transition directly
-would skip exactly the behaviour under test. -/
-private def declassLifecycleRetyped : Option SystemState :=
-  match declassHop1 with
-  | none => none
-  | some (_, st₁) =>
-      match syscallEntryChecked declassChainEntryLabeling SeLe4n.arm64DefaultLayout c1 32
-          (declassChainStage highCurrent SyscallId.lifecycleRetype.toNat 4 3
-            declassTargetA.toNat KernelObjectType.notification.toNat 0 st₁) with
-      | .ok ((), st) => some st
-      | .error _ => none
-
-/-- Station 2: core 0's subject signals the REPLACEMENT with ordinary content
-(badge `0xC3`) through the live entry.  The signaller is untainted, so the
-replacement stays untainted — the content that will reach hop 2 genuinely
-comes from the replacement, with no provenance behind it. -/
-private def declassLifecycleRefilled : Option SystemState :=
-  match declassLifecycleRetyped with
-  | none => none
-  | some st =>
-      match syscallEntryChecked declassChainEntryLabeling SeLe4n.arm64DefaultLayout c0 32
-          (declassChainStage lowCurrent SyscallId.notificationSignal.toNat 2 1 0xC3 0 0 st) with
-      | .ok ((), st') => some st'
-      | .error _ => none
-
-/-- Station 3: the same subject waits and consumes that content live —
-the delivery that would have carried hop 1's tag had the retype not
-cleared it. -/
-private def declassLifecycleDelivered : Option SystemState :=
-  match declassLifecycleRefilled with
-  | none => none
-  | some st =>
-      match syscallEntryChecked declassChainEntryLabeling SeLe4n.arm64DefaultLayout c0 32
-          (declassChainStage lowCurrent SyscallId.notificationWait.toNat 2 0 0 0 0 st) with
-      | .ok ((), st') => some st'
-      | .error _ => none
-
-/-- Station 4: the REAL downgrade from the replacement's content — the same
-attributed transition as hop 2, recording whatever provenance the subject
-actually holds.  Its event is what the no-link verdict is read from. -/
-private def declassLifecycleHopTwo : Option (DeclassificationAuditLog × SystemState) :=
-  match declassLifecycleDelivered with
-  | none => none
-  | some st =>
-      match declassifyStoreFromCore declassContext launderingDeclPolicy c0 declassPublic
-          declassTargetB (declassPayload 0xB2) st with
-      | .ok ((), st') =>
-          some (st'.declassificationAuditLog, applySyscallTaint declassifyingPlan st st')
       | .error _ => none
 
 /-- Hop 2 — on **core 0**, whose subject is in the middle domain: a downgrade of
@@ -8432,7 +8357,7 @@ private def runPhaseSurfaceChecks : IO Unit := do
     (decide ((KernelOperation.all.filter perCoreConfinementDerived).length
       + (KernelOperation.all.filter (fun op => !perCoreConfinementDerived op)).length
       = KernelOperation.all.length) &&
-     decide (KernelOperation.all.length = 35))
+     decide (KernelOperation.all.length = 34))
   -- LOAD-BEARING NEGATIVE for the enumeration itself: `all` is checked against
   -- the *type*, so a constructor omitted from it cannot pass unnoticed — which
   -- is what the thirty-five-element literals it replaced could not say.
@@ -9519,7 +9444,7 @@ private def runAuditLiveArmChecks : IO Unit := do
   assertBool "both audit syscalls are in the ABI, with different required rights"
     (decide (SyscallId.auditRead.toNat = 31) &&
      decide (SyscallId.auditDrain.toNat = 32) &&
-     decide (SyscallId.count = 42) &&
+     decide (SyscallId.count = 41) &&
      decide (syscallRequiredRight .auditRead = AccessRight.read) &&
      decide (syscallRequiredRight .auditDrain = AccessRight.write))
   assertBool "both return a WORD, so the boundary reads the staged frame rather than constructing"
@@ -10146,7 +10071,7 @@ private def runDeclassifiedSignalAbiChecks : IO Unit := do
   IO.println "--- §11.6 SM9.C.8 the syscall, end to end ---"
   assertBool "the syscall is in the ABI at 33, count 42, requiring the notification's write right"
     (decide (SyscallId.declassifySignal.toNat = 33) &&
-     decide (SyscallId.count = 42) &&
+     decide (SyscallId.count = 41) &&
      decide (SyscallId.ofNat? 33 = some SyscallId.declassifySignal) &&
      decide (syscallRequiredRight .declassifySignal = AccessRight.write))
   -- The same right the ordinary signal needs: the declassification gates sit
@@ -10548,10 +10473,10 @@ private def runContentFlowClassChecks : IO Unit := do
     ([SyscallId.send, .receive, .call, .reply, .replyRecv, .notificationSignal,
       .notificationWait, .declassifySignal].all
        (fun sid => decide (contentFlowClass sid = .movesContent)))
-  assertBool "exactly the retype clears provenance"
-    (decide (contentFlowClass .lifecycleRetype = .clearsProvenance) &&
-     SyscallId.all.all (fun sid =>
-       decide (contentFlowClass sid = .clearsProvenance) == decide (sid = .lifecycleRetype)))
+  -- WS-ZA ZA5.4 part 14: the carve is inert — a fresh child has no provenance
+  -- to clear, and the in-place retype that did clear it is retired.
+  assertBool "the carve is inert"
+    (decide (contentFlowClass .untypedRetype = .inert))
   -- The load-bearing negative: the CSpace and scheduling arms are inert, and
   -- the reason is checkable — their plans are empty.
   assertBool "NEGATIVE: an inert arm plans nothing"
@@ -10561,8 +10486,7 @@ private def runContentFlowClassChecks : IO Unit := do
   assertBool "every syscall is classified — the total function has no wildcard"
     (SyscallId.all.all (fun sid =>
       decide (contentFlowClass sid = .inert) ||
-      decide (contentFlowClass sid = .movesContent) ||
-      decide (contentFlowClass sid = .clearsProvenance)))
+      decide (contentFlowClass sid = .movesContent)))
 
 /-- §12.4 fixture — a **blocked sender** carrying a declassification identity,
 and the receiver that a `.receive` will hand it to.
@@ -10883,7 +10807,7 @@ downgrade.
 
 The §6.4 fixture runs it end to end (hop 1's origination, an ordinary delivery
 that no declassification edge relates to it, then hop 2); this group states what
-that run establishes, and the lifecycle case the plan names beside it. -/
+that run establishes. -/
 private def runCausalAcceptanceChecks : IO Unit := do
   IO.println "--- §12.7 SM9.E.2a the causal-detector acceptance scenario ---"
   assertBool "hop 1's origination tagged the object its content reached"
@@ -10914,39 +10838,6 @@ private def runCausalAcceptanceChecks : IO Unit := do
      | some (log₂, _) =>
          declassificationChainCausal log₂ && declassificationChainLinked log₂ &&
          chainLaunders declassContext.policy launderingDeclPolicy log₂)
-  -- The lifecycle case, every station live (PR #874 review): retype the
-  -- object that carried the taint through the checked entry — whose taint
-  -- seam performs the clear — refill the REPLACEMENT with ordinary content,
-  -- deliver it, and run the real downgrade.  The recorded event carries an
-  -- empty snapshot, so no causal link is reported even though the domains
-  -- still compose.
-  assertBool "the live retype cleared the tainted object's provenance"
-    (match declassHop1, declassLifecycleRetyped with
-     | some (_, st₁), some st =>
-         (st₁.declassificationTaint declassTargetA).contains 0 &&
-         !((st.declassificationTaint declassTargetA).contains 0)
-     | _, _ => false)
-  assertBool "…and the replacement's delivery hands the subject NO provenance"
-    (match declassLifecycleDelivered with
-     | none => false
-     | some st =>
-         decide ((st.declassificationTaint lowCurrent.toObjId).tags = []) &&
-         !((st.declassificationTaint lowCurrent.toObjId).saturated))
-  assertBool "the lifecycle case: the downgrade from the replacement names nothing"
-    (match declassLifecycleHopTwo with
-     | none => false
-     | some (log₂, _) =>
-         (match log₂.getLast?, log₂.head? with
-          | some e₂, some e₁ =>
-              decide (e₂.predecessorTags.tags = []) &&
-              !(e₂.predecessorTags.saturated) &&
-              !(declassificationEventNames e₂ e₁)
-          | _, _ => false) &&
-         -- …which is the domain-only detector's false positive made flesh:
-         -- the pair still composes by domain, and only the causal conjunct
-         -- knows the retype broke the chain.
-         declassificationChainComposes log₂ &&
-         !(declassificationChainLinked log₂))
 
 /-- §12.9 helper — forget a recorded snapshot, keeping everything else. -/
 private def dropPredecessorTags (e : DeclassificationEvent) : DeclassificationEvent :=
@@ -11205,27 +11096,25 @@ private def runTaintFootprintChecks : IO Unit := do
   --
   -- **WS-RR RR7.23 moved the retype off this line, and this comment's own
   -- criterion is why.**  The line held three footprints: two because they are
-  -- the capless hot path, and `lockSet_lifecycleRetype` because it happened to
-  -- be free of the singleton — not because a retype is a hot path.  It is not.
-  -- `lifecyclePreRetypeCleanup` sweeps `serviceRegistry` and detaches the
-  -- target's CDT slot mappings, both global structure that does not decompose
-  -- by the retype's own object keys — exactly the property under which the
-  -- caps-carrying rendezvous above is admitted.  So the retype declares the
-  -- state-level write, and the assertion after this one is the positive form.
-  -- Keeping it here would have pinned the under-declaration in place: a retype
-  -- and a concurrent `serviceRegister` had provably disjoint footprints while
-  -- read-modify-writing one map.
+  -- the capless hot path, and the in-place retype's because it happened to be
+  -- free of the singleton — not because a retype is a hot path.  It is not.
+  -- Object creation writes global structure that does not decompose by the
+  -- operation's own object keys — exactly the property under which the
+  -- caps-carrying rendezvous above is admitted — so the carve that replaced it
+  -- (WS-ZA ZA5.4 part 14) declares the state-level write, and the assertion
+  -- after this one is the positive form.
   assertBool "the capless content-moving footprints do NOT declare the coarse table lock"
     (decide ((SeLe4n.Kernel.Concurrency.stateLevelLock, SeLe4n.Kernel.Concurrency.AccessMode.write)
         ∉ sendSet.pairs) &&
      decide ((SeLe4n.Kernel.Concurrency.stateLevelLock, SeLe4n.Kernel.Concurrency.AccessMode.write)
         ∉ (SeLe4n.Kernel.Concurrency.lockSet_notificationWait highCurrent probeCNode
              highNotification none).pairs))
-  -- WS-RR RR7.23: the retype declares it, for `serviceRegistry` and the CDT.
-  assertBool "the retype DOES declare the coarse table lock, for the registry and the CDT"
+  -- WS-ZA ZA5.4 part 14: the carve that replaced the in-place retype declares
+  -- it too, for the CDT edge and the object index its child joins.
+  assertBool "the carve DOES declare the coarse table lock, for the CDT and the object index"
     (decide ((SeLe4n.Kernel.Concurrency.stateLevelLock, SeLe4n.Kernel.Concurrency.AccessMode.write)
-      ∈ (SeLe4n.Kernel.Concurrency.lockSet_lifecycleRetype highCurrent probeCNode declassTargetA
-           declassTargetB).pairs))
+      ∈ (SeLe4n.Kernel.Concurrency.lockSet_untypedRetype highCurrent probeCNode probeCNode
+           declassTargetA declassTargetB probeCNode .notification).pairs))
   -- WS-RR RR7.7: and the caps-carrying send does declare it, for the CDT maps.
   assertBool "a caps-carrying send DOES declare the coarse table lock, for the CDT maps"
     (decide ((SeLe4n.Kernel.Concurrency.stateLevelLock, SeLe4n.Kernel.Concurrency.AccessMode.write)
@@ -11283,7 +11172,6 @@ and the detector's verdict on the acceptance chain. -/
 private def taintTraceLines : List String :=
   [ s!"[smp-information-flow] taint classification: moving=\
 {(SyscallId.all.filter (fun s => decide (contentFlowClass s = .movesContent))).length} \
-clearing={(SyscallId.all.filter (fun s => decide (contentFlowClass s = .clearsProvenance))).length} \
 inert={(SyscallId.all.filter (fun s => decide (contentFlowClass s = .inert))).length} \
 maxTags={maxTaintTags}"
   , s!"[smp-information-flow] taint propagation: liveReceiverTagged=\
@@ -11749,7 +11637,7 @@ grep '^\\[declassification-reader\\]' > {declassificationReaderFixturePath}"
 
 /-- §13.4 — the taint-side golden trace: the causal-detector acceptance chain
 (§3.6's downgrade → ORDINARY delivery → downgrade), its three load-bearing
-negative verdicts, the lifecycle case and the monitor's readable verdict, as
+negative verdicts and the monitor's readable verdict, as
 counts and verdicts over the same fixtures §12.6–§12.9 assert on. -/
 private def declassificationTaintTraceLines : List String :=
   [ s!"[declassification-taint] causal chain: hopOneTagsTarget={match declassHop1 with
@@ -11787,20 +11675,6 @@ snapshotsDistinguishSameDomain=\
     [causalHopOne, causalHopTwo (DeclassificationTaint.singleton 0)] &&
   !(declassificationChainLinked
     [causalHopOne, causalHopTwo DeclassificationTaint.empty]))}"
-  , s!"[declassification-taint] lifecycle: liveRetypeCleared={match declassHop1,
-      declassLifecycleRetyped with
-  | some (_, st₁), some st =>
-      toString ((st₁.declassificationTaint declassTargetA).contains 0 &&
-        !((st.declassificationTaint declassTargetA).contains 0))
-  | _, _ => "no-run"} \
-replacementDeliveryClean={match declassLifecycleDelivered with
-  | none => "no-run"
-  | some st => toString (decide ((st.declassificationTaint lowCurrent.toObjId).tags = []))} \
-replacementDowngradeNamesNothing={match declassLifecycleHopTwo with
-  | none => "no-run"
-  | some (log₂, _) =>
-      toString (declassificationChainComposes log₂ &&
-        !(declassificationChainLinked log₂))}"
   , s!"[declassification-taint] saturation: maxTags={maxTaintTags} \
 ninthSaturates=\
 {toString (DeclassificationTaint.join (DeclassificationTaint.ofList taintFullList)

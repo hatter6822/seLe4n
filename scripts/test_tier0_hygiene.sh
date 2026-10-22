@@ -388,13 +388,6 @@ run_check "HYGIENE" python3 "${SCRIPT_DIR}/scenario_catalog.py" validate-registr
 # reported PASS.  Tier 2 runs the same discovery again, for the list.
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/scenario_catalog.py" list-manifests
 
-# AN4-A (H-02): enforce `SeLe4n.Kernel.Internal.lifecycleRetypeObject` consumer allowlist.
-# The internal retype primitive bypasses `lifecyclePreRetypeCleanup` and
-# `scrubObjectMemory`; production dispatch must use `lifecycleRetypeWithCleanup`.
-# Any `.lean` file that references `Internal.lifecycleRetypeObject` or opens
-# `SeLe4n.Kernel.Internal` must appear in `scripts/lifecycle_internal_allowlist.txt`.
-run_check "HYGIENE" "${SCRIPT_DIR}/check_lifecycle_internal_allowlist.sh"
-
 # AN7-A (H-14/PLT-M04): enforce that no consumer outside DeviceTree.lean itself
 # references the deprecated legacy `findMemoryRegProperty` /
 # `classifyMemoryRegion` Option-returning variants.  Callers must use the

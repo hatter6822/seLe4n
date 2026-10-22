@@ -106,8 +106,6 @@ Previously it was just an import barrel (finding L-01); it now defines:
 | `cspaceMutate`, `cspaceInsertSlot`, `cspaceDeleteSlot` | Capability | Stable |
 | `endpointSendDual`, `endpointReceiveDual` | IPC (dual-queue) | Stable |
 | `endpointReply`, `endpointCall`, `endpointReplyRecv` | IPC | Stable |
-| `lifecycleRetypeObject`, `lifecycleRevokeDeleteRetype` | Lifecycle | Internal (proof helpers — use `lifecycleRetypeWithCleanup` for production) |
-| `lifecycleRetypeWithCleanup`, `lifecycleRetypeWithCleanupShootdown`, `lifecycleRetypeWithCleanupShootdownPerCore` | Lifecycle (WS-H2 / WS-SM SM7.B.11 / SM7.F.4(b)(iii)) | Stable (the **CSpaceAddr-authority** retype family, with cleanup + scrubbing; the `Shootdown` form adds the SM7.B.11 TLB round for live `.vspaceRoot` targets.  **Not on an executed path** — WS-RR RR8.12's reachability census measures that no committing `@[export]` reaches this family, because the ABI resolves a capability at the seam and so presents the Direct-cap form; this row said "SMP callers use it" while the same row named the Direct-cap form as what the live dispatch routes through, which is the self-contradiction the census turned into a measurement; the **`…PerCore`** form is the initiator-atomic variant that additionally retires the destroyed ASID on the initiator's own `perCoreTlb` view via the shared `retypeInitiatorDrain`, symmetric with the Direct-cap `lifecycleRetypeDirectWithCleanupShootdownPerCore` the live `.lifecycleRetype` dispatch routes through) |
 | `retypeFromUntyped` | Lifecycle (WS-F2) | Stable |
 | `registerService`, `revokeService`, `lookupServiceByCap` | Service (WS-Q1) | Stable |
 | `adapterAdvanceTimer`, `adapterWriteRegister`, `adapterReadMemory` | Architecture | Stable |
@@ -1023,7 +1021,6 @@ def syscallRequiredRight : SyscallId → AccessRight
   -- be wrong in the other direction: granting is the right to *hand out*
   -- authority, and revocation hands out none.
   | .cspaceRevoke    => .write
-  | .lifecycleRetype => .retype
   -- **WS-BP BP7.1 (`v0.36.5`)**: a carve is a retype of the untyped's memory,
   -- so it takes the retype right — the one `lifecycleRetypeAuthority` checks
   -- inside `retypeFromUntyped` too, so the gate and the primitive agree.
@@ -1119,7 +1116,6 @@ def syscallChecksTargetFirst : SyscallId → Bool
   -- CNode capability rather than a dedicated `CapTarget`, so there is no
   -- wrong-kind refusal to sequence ahead of the rights gate.
   | .cspaceRevoke    => false
-  | .lifecycleRetype => false
   -- **WS-BP BP7.1 (`v0.36.5`)**: classic order.  An untyped capability is an
   -- ordinary `.object` capability, so there is no wrong-kind refusal to
   -- sequence ahead of the rights gate.
@@ -2119,18 +2115,21 @@ theorem resolveUntypedRetypeK_eq {α : Type} (callerTid : SeLe4n.ThreadId)
                 | _ => rfl
               · simp only [hIdle, hR, Bool.false_eq_true, ↓reduceIte]
 
-/-- **WS-BP BP7.1 slice 4 (`v0.36.8`): the carve a decoded `.untypedRetype`
-requests.**  A frame, whose size is fixed, so its `sizeBits` must be `0` — the
-value a frame's MR0 carried before the field existed; or a child untyped of
-`2 ^ sizeBits` bytes with `sizeBits` in `[minUntypedSizeBits,
-maxUntypedSizeBits]`; or (slice 4b, `v0.36.10`) a VSpace root, one page, so
-its `sizeBits` must be `0`, registered under the least free ASID (`freshAsid?`;
-`.resourceExhausted` when every ASID is taken).  Anything else is
-`.invalidArgument`: every other kind is created by the in-place retype
-(`.lifecycleRetype`), and the carve exists for memory a thread is handed *as
-memory* — a translation table included. -/
-def carveRequestOf? (st : SystemState) (newType : KernelObjectType) (sizeBits : Nat) :
-    Except KernelError CarveRequest :=
+/-- **WS-BP BP7.1 slice 4 (`v0.36.8`), every kind since WS-ZA ZA5.4 part 14: the
+carve a decoded `.untypedRetype` requests.**  A kind of fixed size — a frame, a
+page table, a VSpace root, a thread, an endpoint, a notification or a reply —
+takes `sizeBits = 0`, the value a frame's MR0 carried before the field existed;
+a child untyped takes `sizeBits` in `[minUntypedSizeBits, maxUntypedSizeBits]`,
+a CNode its radix in `[minCNodeRadixBits, maxCNodeRadixBits]` and a scheduling
+context its size in `[minSchedContextSizeBits, maxUntypedSizeBits]`, the bounds
+seL4's `decodeUntypedInvocation` puts on `userObjSize`.  The arm supplies what
+the creating core decides: a VSpace root's ASID, the least free one
+(`freshAsid?`; `.resourceExhausted` when every ASID is taken), and a thread's
+domain and affinity, the core's current domain and the core itself, as seL4's
+`createObject` takes `ksCurDomain` and `getCurrentCPUIndex`.  Anything else is
+`.invalidArgument`. -/
+def carveRequestOf? (st : SystemState) (executingCore : Concurrency.CoreId)
+    (newType : KernelObjectType) (sizeBits : Nat) : Except KernelError CarveRequest :=
   match newType with
   | .frame => if sizeBits = 0 then .ok .frame else .error .invalidArgument
   -- WS-BP BP7.1 (`v0.36.12`): a page table is one page, like a frame.
@@ -2145,22 +2144,47 @@ def carveRequestOf? (st : SystemState) (newType : KernelObjectType) (sizeBits : 
         | some asid => .ok (.vspaceRoot asid)
         | none => .error .resourceExhausted
       else .error .invalidArgument
-  | _ => .error .invalidArgument
+  | .tcb =>
+      if sizeBits = 0 then
+        .ok (.tcb (st.scheduler.activeDomainOnCore executingCore) executingCore)
+      else .error .invalidArgument
+  | .endpoint => if sizeBits = 0 then .ok .endpoint else .error .invalidArgument
+  | .notification => if sizeBits = 0 then .ok .notification else .error .invalidArgument
+  | .reply => if sizeBits = 0 then .ok .reply else .error .invalidArgument
+  | .cnode =>
+      if minCNodeRadixBits ≤ sizeBits ∧ sizeBits ≤ maxCNodeRadixBits then
+        .ok (.cnode sizeBits)
+      else .error .invalidArgument
+  | .schedContext =>
+      if minSchedContextSizeBits ≤ sizeBits ∧ sizeBits ≤ maxUntypedSizeBits then
+        .ok (.schedContext sizeBits)
+      else .error .invalidArgument
 
-/-- **WS-BP BP7.1**: a request the decode accepts is a frame or an untyped whose
-size lies in the carve's bounds, (slice 4b) a VSpace root under an ASID
-`freshAsid?` answered, or (`v0.36.12`) a page table — the only requests the arm
-ever hands the carve. -/
-theorem carveRequestOf?_ok (st : SystemState) (newType : KernelObjectType) (sizeBits : Nat)
-    (req : CarveRequest) (h : carveRequestOf? st newType sizeBits = .ok req) :
+/-- **WS-BP BP7.1**: the requests the decode accepts — each kind at the size
+bounds the decode states, a VSpace root under an ASID `freshAsid?` answered and
+(WS-ZA ZA5.4 part 14) a thread in the creating core's domain with that core as
+its affinity.  These are the only requests the arm ever hands the carve. -/
+theorem carveRequestOf?_ok (st : SystemState) (executingCore : Concurrency.CoreId)
+    (newType : KernelObjectType) (sizeBits : Nat)
+    (req : CarveRequest) (h : carveRequestOf? st executingCore newType sizeBits = .ok req) :
     (newType = .frame ∧ sizeBits = 0 ∧ req = .frame) ∨
     (newType = .untyped ∧ minUntypedSizeBits ≤ sizeBits ∧ sizeBits ≤ maxUntypedSizeBits ∧
       req = .untyped sizeBits) ∨
     (newType = .vspaceRoot ∧ sizeBits = 0 ∧
       ∃ asid, freshAsid? st = some asid ∧ req = .vspaceRoot asid) ∨
-    (newType = .pageTable ∧ sizeBits = 0 ∧ req = .pageTable) := by
-  cases newType <;> simp only [carveRequestOf?] at h <;> try cases h
-  · by_cases hB : sizeBits = 0
+    (newType = .pageTable ∧ sizeBits = 0 ∧ req = .pageTable) ∨
+    (newType = .tcb ∧ sizeBits = 0 ∧
+      req = .tcb (st.scheduler.activeDomainOnCore executingCore) executingCore) ∨
+    (newType = .endpoint ∧ sizeBits = 0 ∧ req = .endpoint) ∨
+    (newType = .notification ∧ sizeBits = 0 ∧ req = .notification) ∨
+    (newType = .reply ∧ sizeBits = 0 ∧ req = .reply) ∨
+    (newType = .cnode ∧ minCNodeRadixBits ≤ sizeBits ∧ sizeBits ≤ maxCNodeRadixBits ∧
+      req = .cnode sizeBits) ∨
+    (newType = .schedContext ∧ minSchedContextSizeBits ≤ sizeBits ∧
+      sizeBits ≤ maxUntypedSizeBits ∧ req = .schedContext sizeBits) := by
+  cases newType <;> simp only [carveRequestOf?] at h
+  case vspaceRoot =>
+    by_cases hB : sizeBits = 0
     · simp only [hB, ↓reduceIte] at h
       cases hF : freshAsid? st with
       | none => rw [hF] at h; cases h
@@ -2168,33 +2192,38 @@ theorem carveRequestOf?_ok (st : SystemState) (newType : KernelObjectType) (size
         rw [hF] at h; cases h
         exact Or.inr (Or.inr (Or.inl ⟨rfl, hB, asid, rfl, rfl⟩))
     · simp [hB] at h
-  · split at h
-    · rename_i hB; cases h; exact Or.inr (Or.inl ⟨rfl, hB.1, hB.2, rfl⟩)
-    · cases h
-  · split at h
-    · cases h; exact Or.inl ⟨rfl, by assumption, rfl⟩
-    · cases h
-  · split at h
-    · cases h; exact Or.inr (Or.inr (Or.inr ⟨rfl, by assumption, rfl⟩))
-    · cases h
+  all_goals (split at h <;> (try cases h))
+  all_goals first
+    | (left; exact ⟨rfl, by assumption, rfl⟩)
+    | (right; left; exact ⟨rfl, (by assumption : _ ∧ _).1, (by assumption : _ ∧ _).2, rfl⟩)
+    | (right; right; right; left; exact ⟨rfl, by assumption, rfl⟩)
+    | (right; right; right; right; left; exact ⟨rfl, by assumption, rfl⟩)
+    | (right; right; right; right; right; left; exact ⟨rfl, by assumption, rfl⟩)
+    | (right; right; right; right; right; right; left; exact ⟨rfl, by assumption, rfl⟩)
+    | (right; right; right; right; right; right; right; left; exact ⟨rfl, by assumption, rfl⟩)
+    | (right; right; right; right; right; right; right; right; left;
+        exact ⟨rfl, (by assumption : _ ∧ _).1, (by assumption : _ ∧ _).2, rfl⟩)
+    | (right; right; right; right; right; right; right; right; right;
+        exact ⟨rfl, (by assumption : _ ∧ _).1, (by assumption : _ ∧ _).2, rfl⟩)
 
 /-- **WS-BP BP7.1 (`v0.36.5`, child untypeds at slice 4, `v0.36.8`): the live
-`.untypedRetype` arm's transition** — seL4's `seL4_Untyped_Retype` at the memory
-types: a frame, a child untyped, a VSpace root and a page table.
+`.untypedRetype` arm's transition** — seL4's `seL4_Untyped_Retype`, at every
+object kind since WS-ZA ZA5.4 part 14.
 
 The arm's decode of the message registers (`args?`), then the carve request
-(`carveRequestOf?`: a frame, a child untyped of a bounded size, a VSpace root
-under a fresh ASID, or a page table — anything else `.invalidArgument`).  The
+(`carveRequestOf?`: each kind at its size bounds, a VSpace root under a fresh
+ASID and a thread in the creating core's domain — anything else
+`.invalidArgument`).  The
 child id is a raw operand, so it passes `validateObjIdArg` — no reserved idle object and not
 the sentinel — before anything is resolved.  Then the two slots, then
 `untypedRetypeObject`, whose own guards decide everything else. -/
-def untypedRetypeFromCap (tid : SeLe4n.ThreadId) (srcAddr : SeLe4n.CPtr)
-    (args? : Except KernelError UntypedRetypeArgs) : Kernel Unit :=
+def untypedRetypeFromCap (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
+    (srcAddr : SeLe4n.CPtr) (args? : Except KernelError UntypedRetypeArgs) : Kernel Unit :=
   fun st =>
     match args? with
     | .error e => .error e
     | .ok args =>
-      match carveRequestOf? st args.newType args.sizeBits with
+      match carveRequestOf? st executingCore args.newType args.sizeBits with
       | .error e => .error e
       | .ok req =>
         match validateObjIdArg args.childId with
@@ -2208,13 +2237,14 @@ def untypedRetypeFromCap (tid : SeLe4n.ThreadId) (srcAddr : SeLe4n.CPtr)
 decode, the carve request, the validated child id, the resolved slots, and the
 carve.  The case analysis has one owner, so the invariant and non-interference
 proofs read these equations. -/
-theorem untypedRetypeFromCap_ok (tid : SeLe4n.ThreadId) (srcAddr : SeLe4n.CPtr)
+theorem untypedRetypeFromCap_ok (tid : SeLe4n.ThreadId) (ec : Concurrency.CoreId)
+    (srcAddr : SeLe4n.CPtr)
     (args? : Except KernelError UntypedRetypeArgs) (st st' : SystemState)
-    (h : untypedRetypeFromCap tid srcAddr args? st = .ok ((), st')) :
+    (h : untypedRetypeFromCap tid ec srcAddr args? st = .ok ((), st')) :
     ∃ (args : UntypedRetypeArgs) (req : CarveRequest) (vChild : SeLe4n.ValidObjId)
       (src dst : CSpaceAddr),
       args? = .ok args ∧
-      carveRequestOf? st args.newType args.sizeBits = .ok req ∧
+      carveRequestOf? st ec args.newType args.sizeBits = .ok req ∧
       validateObjIdArg args.childId = .ok vChild ∧
       resolveUntypedRetype tid srcAddr args st = .ok (src, dst) ∧
       untypedRetypeObject src vChild.val dst req st = .ok ((), st') := by
@@ -2224,7 +2254,7 @@ theorem untypedRetypeFromCap_ok (tid : SeLe4n.ThreadId) (srcAddr : SeLe4n.CPtr)
   | ok args =>
     rw [hD] at h
     simp only at h
-    cases hQ : carveRequestOf? st args.newType args.sizeBits with
+    cases hQ : carveRequestOf? st ec args.newType args.sizeBits with
     | error e => rw [hQ] at h; cases h
     | ok req =>
       rw [hQ] at h
@@ -2652,10 +2682,10 @@ theorem vspaceMapFromFrameCap_ok_records (tid : SeLe4n.ThreadId) (executingCore 
   exact CNode.lookup_insert_eq cn frameSlot.slot _ (CNode.slotsUnique_holds cn)
     (CNode.slotAddressable_of_lookup cn _ _ hLk)
 
-/-- V8-H/Z5-J/D1/AE1-A/AE1-B: Shared dispatch for capability-only syscalls — these 14 arms
+/-- V8-H/Z5-J/D1/AE1-A/AE1-B: Shared dispatch for capability-only syscalls — these arms
 derive authority entirely from capability possession and require no
 information-flow checks. Both `dispatchWithCap` and `dispatchWithCapChecked`
-delegate to this helper for: `.cspaceDelete`, `.lifecycleRetype`, `.vspaceMap`,
+delegate to this helper for: `.cspaceDelete`, `.vspaceMap`,
 `.vspaceUnmap`, `.serviceRevoke`, `.serviceQuery`, `.schedContextConfigure`,
 `.schedContextBind`, `.schedContextUnbind`, `.tcbSuspend`, `.tcbResume`,
 `.tcbSetPriority` (AE1-A), `.tcbSetMCPriority` (AE1-A), `.tcbSetIPCBuffer` (AE1-B).
@@ -2724,54 +2754,16 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
             let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
             mintReplyCapWithCdt src dst st
     | _ => fun _ => .error .invalidCapability
-  | .lifecycleRetype =>
-    some <| match cap.target with
-    | .object _ =>
-        fun st => match decodeLifecycleRetypeArgs decoded with
-        | .error e => .error e
-        | .ok args =>
-            -- **`v0.35.187`**: stamp the target slot's identity into the
-            -- replacement.  `objectOfKernelType` builds a TCB, SchedContext
-            -- or Reply carrying the reserved SENTINEL in its own id field,
-            -- and the two retype wrappers now refuse a replacement whose
-            -- embedded identity is not its slot -- the runtime counterpart
-            -- of `PlatformConfig.wellFormed`'s `embeddedIdentitiesMatchSlots`,
-            -- whose own docstring states the hazard: an object stored at one
-            -- key and carrying another is read back through the wrong one.
-            let newObj := (objectOfKernelType args.newType args.size).withIdentity
-              args.targetObj
-            -- WS-SM SM7.B.11: retyping a live VSpaceRoot frees its whole
-            -- address space — the wrapper posts the `.aside1` shootdown
-            -- round from the caller's core; non-VSpaceRoot retypes are
-            -- unchanged (lifecycleRetypeDirectWithCleanupShootdown_non_vspace).
-            -- WS-SM SM7.F.4(b)(iii): route through the per-core wrapper, which
-            -- additionally retires the initiator's own `perCoreTlb` view for
-            -- the destroyed ASID atomically (the initiator's local TLBI
-            -- ASIDE1) — once the live `.vspaceMap` fill is operative, the
-            -- retyped ASID may be cached on the caller's own view, and the
-            -- `.aside1` round posts only to remote cores.  Trace-safe
-            -- (`perCoreTlb ∉ projectState`).
-            -- WS-SM SM7.D.1: and through the instruction-cache seam on top,
-            -- which broadcasts `IC IALLUIS` across the shareability domain.
-            -- A retype scrubs and re-purposes the target's backing memory, so
-            -- any instruction line a PE cached from it is stale — and, because
-            -- instruction caches are physically tagged, such a line stays
-            -- hittable through any later executable mapping of the same frame,
-            -- in any address space.  The TLB round cannot close this: it
-            -- retires translations, not cache lines.  Trace-safe
-            -- (`perCoreICache ∉ projectState`).
-            lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache
-              executingCore cap args.targetObj newObj st
-    | _ => fun _ => .error .invalidCapability
-  -- **WS-BP BP7.1 (`v0.36.5`)**: `seL4_Untyped_Retype`, at the frame type —
-  -- the only path by which a frame comes to exist on a live state, and so the
-  -- only way memory reaches a thread: the caller presents an untyped
-  -- capability, names a fresh object id and an empty slot in a CNode it can
-  -- write, and receives a capability to the page at that capability's free index.
-  -- `.vspaceMap` maps that page and no other.
+  -- **WS-BP BP7.1 (`v0.36.5`)**: `seL4_Untyped_Retype` — the only path by
+  -- which an object comes to exist on a live state (since WS-ZA ZA5.4 part 14
+  -- every kind, as in seL4): the caller presents an untyped capability, names a
+  -- fresh object id and an empty slot in a CNode it can write, and receives a
+  -- capability to the object carved at that capability's free index.
+  -- `.vspaceMap` maps a carved frame and no other page.
   | .untypedRetype =>
     some <| match cap.target with
-    | .object _ => untypedRetypeFromCap tid decoded.capAddr (decodeUntypedRetypeArgs decoded)
+    | .object _ =>
+        untypedRetypeFromCap tid executingCore decoded.capAddr (decodeUntypedRetypeArgs decoded)
     | _ => fun _ => .error .invalidCapability
   -- **WS-BP BP7.1 (`v0.36.6`)**: seL4's `resetUntypedCap` — the untyped's memory
   -- returns to it once no capability names any carved child.  Every mapping of
@@ -3241,9 +3233,6 @@ structure capabilityDispatchQuiescence (decoded : SyscallDecodeResult)
     (cap : Capability) (st : SystemState) : Prop where
   bindingBidirectional : schedContextBindingBidirectional st
   queuedThreadsIdle : unboundQueuedThreadsIdleAllowed st
-  retypeDetached : ∀ args, decoded.syscallId = .lifecycleRetype →
-    decodeLifecycleRetypeArgs decoded = .ok args →
-    retypeTargetDetached st args.targetObj
   /-- **`v0.35.204`**: keyed to the resolver the arm binds through, quantified
   over the caller — the pack carries no caller, and a fact about *every* thread
   any caller's CSpace resolves MR0 to is a pre-state fact all the same. -/
@@ -3344,7 +3333,7 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
   case untypedRetype =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object _ =>
-      obtain ⟨_, _, _, _, _, _, _, _, _, hCarve⟩ := untypedRetypeFromCap_ok tid _ _ st st' hStep
+      obtain ⟨_, _, _, _, _, _, _, _, _, hCarve⟩ := untypedRetypeFromCap_ok tid _ _ _ st st' hStep
       exact untypedRetypeObject_preserves_ipcInvariantFull _ _ _ _ st st' hObjInv hInv hCarve
     all_goals try cases hStep
   case untypedReset =>
@@ -3353,20 +3342,6 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
       obtain ⟨src, cap', cn, hO, hL, -, hS⟩ := untypedResetFromCap_ok _ _ _ _ st st' hStep
       exact untypedResetRewound_preserves_ipcInvariantFull _ src cn cap' _ st st' hObjInv hInv
         hO hL hS
-    all_goals try cases hStep
-  case lifecycleRetype =>
-    cases hTgt : cap.target <;> simp only [hTgt] at hStep
-    case object oid =>
-      try dsimp only [] at hStep
-      cases hDec : decodeLifecycleRetypeArgs decoded with
-      | error e => simp only [hDec] at hStep; cases hStep
-      | ok args =>
-          simp only [hDec] at hStep
-          exact lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_preserves_ipcInvariantFull
-            st st' _ cap args.targetObj _ hObjInv
-            (objectOfKernelType_withIdentity_replacementFresh args.newType args.size
-              args.targetObj)
-            (hPack.retypeDetached args hSy hDec) hInv hStep
     all_goals try cases hStep
   case vspaceMap =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -4040,7 +4015,7 @@ def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
             let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
             cspaceMove src dst st
     | _ => fun _ => .error .invalidCapability
-  -- V8-H/D1: cspaceDelete, lifecycleRetype, vspaceMap, vspaceUnmap, serviceRevoke,
+  -- V8-H/D1: cspaceDelete, vspaceMap, vspaceUnmap, serviceRevoke,
   -- serviceQuery, schedContextConfigure, schedContextBind, schedContextUnbind,
   -- tcbSuspend, tcbResume are all handled by dispatchCapabilityOnly above.
   -- WS-Q1-D: Service register — decode interface spec from message registers,
@@ -4211,9 +4186,9 @@ def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
   -- capability from its boot/CSpace layer.
   | .auditRead | .auditDrain => fun _ => .error .illegalAuthority
   -- AE1-A/AE1-B: tcbSetPriority, tcbSetMCPriority, tcbSetIPCBuffer are now handled
-  -- by dispatchCapabilityOnly above. Together with cspaceDelete, lifecycleRetype,
+  -- by dispatchCapabilityOnly above. Together with cspaceDelete,
   -- vspaceMap, vspaceUnmap, serviceRevoke, serviceQuery, schedContextConfigure,
-  -- schedContextBind, schedContextUnbind, tcbSuspend, tcbResume — 14 total arms
+  -- schedContextBind, schedContextUnbind, tcbSuspend, tcbResume — 13 total arms
   -- handled by dispatchCapabilityOnly. The wildcard satisfies Lean's exhaustiveness
   -- checker and is provably unreachable (dispatchWithCap_wildcard_unreachable).
   -- WS-ZA ZA4.3: a yield invokes no capability, so `dispatchSyscall` runs it
@@ -4497,7 +4472,7 @@ def dispatchWithCapChecked (ctx : LabelingContext)
             let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
             cspaceMoveChecked ctx src dst st
     | _ => fun _ => .error .invalidCapability
-  -- V8-H/D1: cspaceDelete, lifecycleRetype, vspaceMap, vspaceUnmap, serviceRevoke,
+  -- V8-H/D1: cspaceDelete, vspaceMap, vspaceUnmap, serviceRevoke,
   -- serviceQuery, schedContextConfigure, schedContextBind, schedContextUnbind,
   -- tcbSuspend, tcbResume are all handled by dispatchCapabilityOnly above.
   -- T6-I: Service register — checked for thread→service flow
@@ -4765,7 +4740,7 @@ def dispatchWithCapChecked (ctx : LabelingContext)
                     (Architecture.returnFrameOfWord n.toUInt64))
         else .error .illegalAuthority
   -- AE1-A/AE1-B/AE1-C: All remaining capability-only arms (tcbSetPriority,
-  -- tcbSetMCPriority, tcbSetIPCBuffer, cspaceDelete, lifecycleRetype, vspaceMap,
+  -- tcbSetMCPriority, tcbSetIPCBuffer, cspaceDelete, vspaceMap,
   -- vspaceUnmap, serviceRevoke, serviceQuery, schedContextConfigure,
   -- schedContextBind, schedContextUnbind, tcbSuspend, tcbResume) are handled by
   -- dispatchCapabilityOnly returning `some` above. This wildcard is provably
@@ -4988,12 +4963,12 @@ def syscallEntryChecked (ctx : LabelingContext)
 -- U5-A/U5-D: Dispatch structural equivalence theorems
 -- ============================================================================
 
-/-- U5-A/U-M02/V8-H/D1: The 11 capability-only syscalls are handled identically by
+/-- U5-A/U-M02/V8-H/D1: The 10 capability-only syscalls are handled identically by
 both checked and unchecked dispatch paths, since both delegate to
 `dispatchCapabilityOnly`. These arms derive authority entirely from
 capability possession and do not cross security domains.
 
-The shared arms are: `.cspaceDelete`, `.lifecycleRetype`, `.vspaceMap`,
+The shared arms are: `.cspaceDelete`, `.vspaceMap`,
 `.vspaceUnmap`, `.serviceRevoke`, `.serviceQuery`, `.schedContextConfigure`,
 `.schedContextBind`, `.schedContextUnbind`, `.tcbSuspend`, `.tcbResume`.
 
@@ -5003,15 +4978,6 @@ theorem checkedDispatch_cspaceDelete_eq_unchecked
     (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
     (gate : SyscallGate) (cap : Capability)
     (hSyscall : decoded.syscallId = .cspaceDelete) :
-    dispatchWithCapChecked ctx decoded tid executingCore gate cap =
-    dispatchWithCap decoded tid executingCore gate cap := by
-  simp [dispatchWithCapChecked, dispatchWithCap, dispatchCapabilityOnly, hSyscall]
-
-/-- U5-A/V8-H: Structural equivalence for `.lifecycleRetype`. -/
-theorem checkedDispatch_lifecycleRetype_eq_unchecked
-    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
-    (gate : SyscallGate) (cap : Capability)
-    (hSyscall : decoded.syscallId = .lifecycleRetype) :
     dispatchWithCapChecked ctx decoded tid executingCore gate cap =
     dispatchWithCap decoded tid executingCore gate cap := by
   simp [dispatchWithCapChecked, dispatchWithCap, dispatchCapabilityOnly, hSyscall]
@@ -5151,7 +5117,7 @@ capability-only syscalls, the checked and unchecked dispatch paths produce ident
 results.
 
 Both `dispatchWithCap` and `dispatchWithCapChecked` delegate to the shared
-`dispatchCapabilityOnly` helper for these 16 arms, making structural identity
+`dispatchCapabilityOnly` helper for these 15 arms, making structural identity
 trivial.  PR #845 review (P2): `.vspaceUnifyInstruction` (WS-SM SM7.D) and
 `.mintReplyCap` (PR #822 Phase H) were handled by the shared helper but had been
 omitted from this enumeration, so a theorem advertised as *complete* did not in
@@ -5164,7 +5130,6 @@ theorem checkedDispatch_capabilityOnly_eq_unchecked
     (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
     (gate : SyscallGate) (cap : Capability)
     (hCapOnly : decoded.syscallId = .cspaceDelete ∨
-                decoded.syscallId = .lifecycleRetype ∨
                 decoded.syscallId = .vspaceMap ∨
                 decoded.syscallId = .vspaceUnmap ∨
                 decoded.syscallId = .serviceRevoke ∨
@@ -5181,7 +5146,7 @@ theorem checkedDispatch_capabilityOnly_eq_unchecked
                 decoded.syscallId = .vspaceUnifyInstruction) :
     dispatchWithCapChecked ctx decoded tid executingCore gate cap =
     dispatchWithCap decoded tid executingCore gate cap := by
-  rcases hCapOnly with h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h <;>
+  rcases hCapOnly with h | h | h | h | h | h | h | h | h | h | h | h | h | h | h <;>
     simp [dispatchWithCapChecked, dispatchWithCap, dispatchCapabilityOnly, h]
 
 -- ============================================================================
@@ -5354,7 +5319,7 @@ theorem checkedDispatch_replyRecv_recv_flow_denied
     (see `dispatchWithCapChecked_wildcard_unreachable` below). -/
 theorem dispatchWithCap_wildcard_unreachable (sid : SyscallId) :
     sid ∈ ([.send, .receive, .call, .reply, .cspaceMint, .cspaceCopy,
-            .cspaceMove, .cspaceDelete, .lifecycleRetype, .vspaceMap,
+            .cspaceMove, .cspaceDelete, .vspaceMap,
             .vspaceUnmap, .serviceRegister, .serviceRevoke, .serviceQuery,
             .notificationSignal, .notificationWait, .replyRecv,
             .schedContextConfigure, .schedContextBind,
@@ -5377,7 +5342,7 @@ theorem dispatchWithCap_wildcard_unreachable (sid : SyscallId) :
     have the same set of explicit match arms (modulo checked wrappers). -/
 theorem dispatchWithCapChecked_wildcard_unreachable (sid : SyscallId) :
     sid ∈ ([.send, .receive, .call, .reply, .cspaceMint, .cspaceCopy,
-            .cspaceMove, .cspaceDelete, .lifecycleRetype, .vspaceMap,
+            .cspaceMove, .cspaceDelete, .vspaceMap,
             .vspaceUnmap, .serviceRegister, .serviceRevoke, .serviceQuery,
             .notificationSignal, .notificationWait, .replyRecv,
             .schedContextConfigure, .schedContextBind,
@@ -5486,9 +5451,7 @@ def syscallEntry (layout : SeLe4n.SyscallRegisterLayout)
           -- transitions.  The modelled SVC route
           -- (`dispatchSynchronousException`) reaches the kernel through here, so
           -- leaving the step out let a send or receive taken by that route carry
-          -- content without its provenance following, and let a
-          -- `.lifecycleRetype` leave a destroyed object's tags on its
-          -- replacement.
+          -- content without its provenance following.
           --
           -- PR #873 round 6: inherited from `dispatchSyscall` rather than
           -- repeated here, the same way `syscallEntryChecked` inherits it from
@@ -5735,80 +5698,6 @@ theorem dispatchWithCap_cspaceRevoke_delegates
 -- WS-K-D: Lifecycle and VSpace dispatch delegation theorems
 -- ============================================================================
 
-/-- U-H04 / WS-SM SM7.B.11 / SM7.F.4(b)(iii) / SM7.D.1: When lifecycleRetype
-dispatch succeeds, `lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache` is
-invoked with the caller's executing core, the resolved cap, decoded target, and
-constructed object.  The safe wrapper performs pre-retype cleanup (H-05), memory
-scrubbing (S6-C), and — when the retyped object was a live VSpaceRoot — the
-`.aside1` TLB shootdown round for the destroyed address space (SM7.B.11); the
-`…PerCore` layer additionally retires the initiator's own `perCoreTlb` view for
-the destroyed ASID atomically (SM7.F.4(b)(iii)); and the SM7.D.1 layer
-broadcasts `IC IALLUIS` across the shareability domain, because the retype
-re-purposes the target's backing memory (it is scrubbed in the same transition)
-and instruction caches are tagged by physical address, so any line cached from
-that memory stays hittable through a later executable mapping of the same frame.
-All added layers are projection-invisible, so the delegation is
-trace-equivalent to the plain shootdown wrapper. -/
-theorem dispatchWithCap_lifecycleRetype_delegates
-    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
-    (cap : Capability) (objId : SeLe4n.ObjId)
-    (args : Architecture.SyscallArgDecode.LifecycleRetypeArgs)
-    (hSyscall : decoded.syscallId = .lifecycleRetype)
-    (hTarget : cap.target = .object objId)
-    (hDecode : decodeLifecycleRetypeArgs decoded = .ok args) :
-    dispatchWithCap decoded tid executingCore gate cap =
-      fun st => lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache
-        executingCore cap args.targetObj
-        ((objectOfKernelType args.newType args.size).withIdentity args.targetObj) st := by
-  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode]
-
-/-- **The `.lifecycleRetype` arm answers an unauthorized target with
-`illegalAuthority` alone — a non-interference statement for its refusals.**
-
-`args.targetObj` is decoded from a message register, so it can name any object.
-Whenever the resolved capability does not name it with `.retype`
-(`lifecycleRetypeAuthority`), the arm refuses with `illegalAuthority` on
-**every** state: the answer does not depend on whether `args.targetObj` exists,
-on its kind, on a thread's run state or on anything else the state holds.  The
-retype asks authority before admissibility, cleanup or scrub read the target,
-which is seL4's decode order; the checked dispatch shares the arm
-(`checkedDispatch_lifecycleRetype_eq_unchecked`), so the statement holds there
-too (`dispatchWithCapChecked_lifecycleRetype_unauthorized`). -/
-theorem dispatchWithCap_lifecycleRetype_unauthorized
-    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
-    (cap : Capability) (objId : SeLe4n.ObjId)
-    (args : Architecture.SyscallArgDecode.LifecycleRetypeArgs)
-    (hSyscall : decoded.syscallId = .lifecycleRetype)
-    (hTarget : cap.target = .object objId)
-    (hDecode : decodeLifecycleRetypeArgs decoded = .ok args)
-    (hAuth : lifecycleRetypeAuthority cap args.targetObj = false)
-    (st : SystemState) :
-    dispatchWithCap decoded tid executingCore gate cap st = .error .illegalAuthority := by
-  rw [dispatchWithCap_lifecycleRetype_delegates decoded tid executingCore gate cap objId args
-    hSyscall hTarget hDecode]
-  exact lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_unauthorized executingCore _
-    hAuth st
-
-/-- The checked dispatch's `.lifecycleRetype` arm refuses an unauthorized target
-with `illegalAuthority` on every state — the arm is shared with the unchecked
-dispatch (`checkedDispatch_lifecycleRetype_eq_unchecked`). -/
-theorem dispatchWithCapChecked_lifecycleRetype_unauthorized
-    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
-    (executingCore : Concurrency.CoreId) (gate : SyscallGate)
-    (cap : Capability) (objId : SeLe4n.ObjId)
-    (args : Architecture.SyscallArgDecode.LifecycleRetypeArgs)
-    (hSyscall : decoded.syscallId = .lifecycleRetype)
-    (hTarget : cap.target = .object objId)
-    (hDecode : decodeLifecycleRetypeArgs decoded = .ok args)
-    (hAuth : lifecycleRetypeAuthority cap args.targetObj = false)
-    (st : SystemState) :
-    dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
-      .error .illegalAuthority := by
-  rw [checkedDispatch_lifecycleRetype_eq_unchecked ctx decoded tid executingCore gate cap
-    hSyscall]
-  exact dispatchWithCap_lifecycleRetype_unauthorized decoded tid executingCore gate cap objId
-    args hSyscall hTarget hDecode hAuth st
-
 /-- WS-K-D/S6-A/T6-C/X2-E / WS-SM SM7.B.9 / WS-SM SM7.F.4(a)+(b)(ii) / WS-BP
 BP7.1: When vspaceMap dispatch passes its address-space check it is exactly
 `vspaceMapFromFrameCap` — resolve the frame MR2's capability names, admit the
@@ -5901,6 +5790,20 @@ theorem dispatchWithCap_vspaceUnmap_delegates
       Architecture.vspaceUnmapPageWithShootdownAndIcacheBroadcast
         executingCore args.asid args.vaddr st := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode, hAuth]
+
+/-- WS-ZA ZA5.4 part 14: the live `.untypedRetype` arm *is* the carve — every
+kernel object is made this way — at the invoking thread's executing core, whose
+domain and affinity a carved thread takes, and the untyped the capability names.
+The arm's operands are the decoded message registers. -/
+theorem dispatchWithCap_untypedRetype_delegates
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
+    (cap : Capability) (untypedId : SeLe4n.ObjId) (st : SystemState)
+    (hSyscall : decoded.syscallId = .untypedRetype)
+    (hTarget : cap.target = .object untypedId) :
+    dispatchWithCap decoded tid executingCore gate cap st =
+      untypedRetypeFromCap tid executingCore decoded.capAddr
+        (decodeUntypedRetypeArgs decoded) st := by
+  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget]
 
 /-- WS-BP BP7.1 (slice 3): the live `.untypedReset` arm *is* the reset — since
 `v0.36.37` `untypedResetWithShootdown`, the reset followed by one acknowledged
@@ -6602,7 +6505,7 @@ and any decode success passes the original state unmodified to the delegated
 kernel operation.
 
 Proved by showing that two `SyscallDecodeResult` values with the same
-`msgRegs` field produce identical decode results for all 7 structures —
+`msgRegs` field produce identical decode results for all 6 structures —
 confirming that decode depends only on `msgRegs`, not on `capAddr`,
 `msgInfo`, or `syscallId`. -/
 theorem dispatchWithCap_layer2_decode_pure
@@ -6611,13 +6514,12 @@ theorem dispatchWithCap_layer2_decode_pure
     (decodeCSpaceCopyArgs d₁ = decodeCSpaceCopyArgs d₂) ∧
     (decodeCSpaceMoveArgs d₁ = decodeCSpaceMoveArgs d₂) ∧
     (decodeCSpaceDeleteArgs d₁ = decodeCSpaceDeleteArgs d₂) ∧
-    (decodeLifecycleRetypeArgs d₁ = decodeLifecycleRetypeArgs d₂) ∧
     -- AH3-C: These are now function equalities (parameterized by maxASID)
     (decodeVSpaceMapArgs d₁ = decodeVSpaceMapArgs d₂) ∧
     (decodeVSpaceUnmapArgs d₁ = decodeVSpaceUnmapArgs d₂) := by
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;>
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩ <;>
     (try simp only [decodeCSpaceMintArgs, decodeCSpaceCopyArgs, decodeCSpaceMoveArgs,
-      decodeCSpaceDeleteArgs, decodeLifecycleRetypeArgs, requireMsgReg, hRegs]) <;>
+      decodeCSpaceDeleteArgs, requireMsgReg, hRegs]) <;>
     (try funext maxASID; simp only [decodeVSpaceMapArgs, decodeVSpaceUnmapArgs,
       requireMsgReg, hRegs])
 
@@ -6627,7 +6529,7 @@ and the delegated operation's preservation property. The `hDispatchPres` hypothe
 is dischargeable per-dispatch-arm using existing subsystem preservation theorems:
 
 - CSpace mint/copy/move/delete: `Capability/Invariant/Preservation.lean`
-- Lifecycle retype: `Lifecycle/Invariant.lean`
+- Untyped carve: `Lifecycle/Operations/ScrubAndUntyped.lean`
 - VSpace map/unmap: `Architecture/VSpaceInvariant.lean`
 - Service start/stop: `Service/Invariant/Policy.lean`
 - IPC send/call/reply/recv: `IPC/Invariant/EndpointPreservation.lean`
@@ -6712,9 +6614,6 @@ theorem dispatchWithCap_preservation_composition_witness :
       discharge via `projectState_replenishQueue_eq` +
       `objects_insert_preserves_projection_high` × 2 +
       `schedContextBind_frame_runQueue_rebucket`.
-    - `.lifecycleRetype` → `lifecycleRetypeDirectWithCleanup_preserves_projection`
-      (AK6F.16); discharge via cleanup-phase `storeObject_preserves_projection` +
-      `projectMemory_const_when_ownership_none` + final `storeObject_preserves_projection`.
     - `.tcbSuspend` → `suspendThread_preserves_projection` (AK6F.18);
       hardest discharge (9 phases): `storeObject_preserves_projection` × 3 +
       `removeRunnable_preserves_projection` + `cancelDonation_preserves_projection`
@@ -6742,7 +6641,6 @@ theorem dispatchWithCap_preservation_composition_witness :
     | Arm | Discharge |
     |-----|-----------|
     | `.cspaceDelete` | `cspaceDeleteSlot_preserves_projection` (Operations.lean:969) |
-    | `.lifecycleRetype` | compose with `lifecycleRevokeDeleteRetype_preserves_projection` (Operations.lean:2454) via `lifecycleRetypeDirectWithCleanup` frame |
     | `.vspaceMap` | `vspaceMapPage_preserves_projection` (Operations.lean:753); requires `hRootHigh` via ASID resolution |
     | `.vspaceUnmap` | `vspaceUnmapPage_preserves_projection` (Operations.lean:797) |
     | `.serviceRevoke` | reduces to `cspaceRevoke_preserves_projection` (Operations.lean:1000) through the orchestrator |
@@ -8127,17 +8025,6 @@ def syscallDelegates : SyscallId → Prop
                   executingCore st with
            | .ok (st', _) => .ok ((), st')
            | .error e => .error e)
-  | .lifecycleRetype =>
-      ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
-        (cap : Capability) (objId : SeLe4n.ObjId)
-        (args : Architecture.SyscallArgDecode.LifecycleRetypeArgs),
-        decoded.syscallId = .lifecycleRetype →
-        cap.target = .object objId →
-        decodeLifecycleRetypeArgs decoded = .ok args →
-        dispatchWithCap decoded tid executingCore gate cap =
-          fun st => lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache
-            executingCore cap args.targetObj
-            ((objectOfKernelType args.newType args.size).withIdentity args.targetObj) st
   | .vspaceMap =>
       ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
         (cap : Capability) (objId : SeLe4n.ObjId)
@@ -8235,6 +8122,15 @@ def syscallDelegates : SyscallId → Prop
   -- WS-BP BP7.1 (slice 3): the live `.untypedReset` arm.  No decode and no
   -- authority conjunct beyond the dispatcher's own `.retype` right check: the
   -- reset's refusals are its own, and the conclusion names the whole operation.
+  -- WS-ZA ZA5.4 part 14: the carve, the one way a kernel object is made.
+  | .untypedRetype =>
+      ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
+        (cap : Capability) (untypedId : SeLe4n.ObjId) (st : SystemState),
+        decoded.syscallId = .untypedRetype →
+        cap.target = .object untypedId →
+        dispatchWithCap decoded tid executingCore gate cap st =
+          untypedRetypeFromCap tid executingCore decoded.capAddr
+            (decodeUntypedRetypeArgs decoded) st
   | .untypedReset =>
       ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
         (cap : Capability) (untypedId : SeLe4n.ObjId) (st : SystemState),
@@ -8303,17 +8199,6 @@ theorem syscallDelegates_tcbSuspend : syscallDelegates .tcbSuspend := by
   exact dispatchWithCap_tcbSuspend_delegates decoded tid executingCore gate cap objId vtid st
     hSyscall hTarget hDecode hValid
 
-/-- WS-SM SM8.B (PR #861 review round 35): the `.lifecycleRetype` obligation,
-discharged.
-
-Added with the arm's cross-core inventory entry, so the entry rests on a
-machine-checked tie to the dispatch rather than on a human reading of the arm —
-the class of error three separate review rounds found. -/
-theorem syscallDelegates_lifecycleRetype : syscallDelegates .lifecycleRetype := by
-  intro decoded tid executingCore gate cap objId args hSyscall hTarget hDecode
-  exact dispatchWithCap_lifecycleRetype_delegates decoded tid executingCore gate cap objId args
-    hSyscall hTarget hDecode
-
 /-- WS-SM SM8.B: the `.vspaceMap` obligation, discharged. -/
 theorem syscallDelegates_vspaceMap : syscallDelegates .vspaceMap := by
   intro decoded tid executingCore gate cap objId args st hSyscall hTarget hDecode hAuth
@@ -8349,6 +8234,13 @@ theorem syscallDelegates_vspaceUnmap : syscallDelegates .vspaceUnmap := by
   intro decoded tid executingCore gate cap objId args st hSyscall hTarget hDecode hAuth
   exact dispatchWithCap_vspaceUnmap_delegates decoded tid executingCore gate cap objId args st
     hSyscall hTarget hDecode hAuth
+
+/-- WS-ZA ZA5.4 part 14: the `.untypedRetype` obligation, discharged — the
+carve's cross-core inventory entry rests on it. -/
+theorem syscallDelegates_untypedRetype : syscallDelegates .untypedRetype := by
+  intro decoded tid executingCore gate cap untypedId st hSyscall hTarget
+  exact dispatchWithCap_untypedRetype_delegates decoded tid executingCore gate cap untypedId st
+    hSyscall hTarget
 
 /-- WS-BP BP7.1 (slice 3): the `.untypedReset` obligation, discharged. -/
 theorem syscallDelegates_untypedReset : syscallDelegates .untypedReset := by

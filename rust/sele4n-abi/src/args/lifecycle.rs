@@ -1,52 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! Lifecycle syscall argument structures.
 //!
-//! Lean: `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` lines 109–115.
+//! Lean: `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean`.
+//!
+//! WS-ZA ZA5.4 part 14 retired the in-place `lifecycleRetype` (syscall 8) and
+//! its `LifecycleRetypeArgs`: every object is carved from an untyped through
+//! [`UntypedRetypeArgs`], and number 8 stays reserved.
 
 use super::type_tag::TypeTag;
 use sele4n_types::{CPtr, KernelError, KernelResult, ObjId, Slot};
-
-/// Arguments for `lifecycleRetype` (syscall 8).
-/// Register mapping: x2=targetObj, x3=newType tag, x4=size hint.
-///
-/// Lean: `LifecycleRetypeArgs` (SyscallArgDecode.lean:111)
-///
-/// V1-C (M-RS-1): `new_type` is now `TypeTag` (validated enum) rather than
-/// raw `u64`, preventing invalid type tag values from reaching kernel logic.
-///
-/// AK4-H (R-ABI-L1) / WS-SM SM6.D / WS-BP BP7.1: `TypeTag` accepts 10 values:
-/// `0=Tcb, 1=Endpoint, 2=Notification, 3=CNode, 4=VSpaceRoot,
-/// 5=Untyped, 6=SchedContext, 7=Reply, 8=Frame, 9=PageTable`. See
-/// `type_tag.rs::TypeTag::from_u64`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct LifecycleRetypeArgs {
-    pub target_obj: ObjId,
-    pub new_type: TypeTag,
-    pub size: u64,
-}
-
-impl LifecycleRetypeArgs {
-    pub const fn encode(&self) -> [u64; 3] {
-        [self.target_obj.raw(), self.new_type.to_u64(), self.size]
-    }
-
-    /// Decode from message registers. Requires 3 registers.
-    ///
-    /// V1-C: Validates `regs[1]` through `TypeTag::from_u64()`, which rejects
-    /// values > 9. Returns `InvalidTypeTag` for invalid type tags,
-    /// `InvalidMessageInfo` for insufficient registers.
-    pub fn decode(regs: &[u64]) -> KernelResult<Self> {
-        if regs.len() < 3 {
-            return Err(KernelError::InvalidMessageInfo);
-        }
-        let new_type = TypeTag::from_u64(regs[1])?;
-        Ok(Self {
-            target_obj: ObjId::from(regs[0]),
-            new_type,
-            size: regs[2],
-        })
-    }
-}
 
 /// Arguments for `untypedRetype` (syscall 36) — seL4's `seL4_Untyped_Retype`.
 /// Register mapping: x2=newType tag in bits `[0, 8)` and the object's size as a
@@ -55,12 +17,16 @@ impl LifecycleRetypeArgs {
 ///
 /// Lean: `UntypedRetypeArgs` (SyscallArgDecode.lean), decoded by
 /// `decodeUntypedRetypeArgs`.  The syscall is invoked on the **untyped**
-/// capability; the kernel carves [`TypeTag::Frame`] (whose `size_bits` must be
-/// `0` — a frame is one page) and, since slice 4, [`TypeTag::Untyped`] of
-/// `2^size_bits` bytes with `size_bits` in [`MIN_UNTYPED_SIZE_BITS`,
-/// `MAX_UNTYPED_SIZE_BITS`], and since slice 4b [`TypeTag::VSpaceRoot`] (whose
-/// `size_bits` must be `0` — a root is one table page, registered under an ASID
-/// the kernel picks); anything else is `InvalidArgument`.
+/// capability, and every kind is carved (WS-ZA ZA5.4 part 14), with seL4's
+/// sizes: [`TypeTag::Frame`], [`TypeTag::PageTable`], [`TypeTag::VSpaceRoot`],
+/// [`TypeTag::Tcb`], [`TypeTag::Endpoint`], [`TypeTag::Notification`] and
+/// [`TypeTag::Reply`] take `size_bits = 0`; [`TypeTag::Untyped`] takes
+/// `size_bits` in [`MIN_UNTYPED_SIZE_BITS`, `MAX_UNTYPED_SIZE_BITS`];
+/// [`TypeTag::CNode`] takes its radix in [`MIN_CNODE_RADIX_BITS`,
+/// [`MAX_CNODE_RADIX_BITS`]] (seL4's `seL4_SlotBits` is 5, so a CNode of radix
+/// `r` is `2^(r+5)` bytes); [`TypeTag::SchedContext`] takes its size in
+/// [`MIN_SCHED_CONTEXT_SIZE_BITS`, `MAX_UNTYPED_SIZE_BITS`].  Anything else is
+/// `InvalidArgument`.
 ///
 /// `size_bits` shares MR0 with the tag because all four argument registers are
 /// taken.  A frame's MR0 is its tag alone, exactly as before the field existed.
@@ -83,6 +49,17 @@ pub const MIN_UNTYPED_SIZE_BITS: u64 = 12;
 /// The largest child untyped a carve makes, as a power of two — seL4's
 /// `seL4_MaxUntypedBits` on AArch64.  Lean: `maxUntypedSizeBits`.
 pub const MAX_UNTYPED_SIZE_BITS: u64 = 47;
+/// The smallest CNode radix a carve makes.  Lean: `minCNodeRadixBits`.
+pub const MIN_CNODE_RADIX_BITS: u64 = 1;
+/// seL4's `seL4_SlotBits` on AArch64: a CNode slot is `2^5` bytes.  Lean:
+/// `cnodeSlotBits`.
+pub const CNODE_SLOT_BITS: u64 = 5;
+/// The largest CNode radix a carve makes: one that fills the largest untyped.
+/// Lean: `maxCNodeRadixBits`.
+pub const MAX_CNODE_RADIX_BITS: u64 = MAX_UNTYPED_SIZE_BITS - CNODE_SLOT_BITS;
+/// seL4's `seL4_MinSchedContextBits` on AArch64.  Lean:
+/// `minSchedContextSizeBits`.
+pub const MIN_SCHED_CONTEXT_SIZE_BITS: u64 = 7;
 
 impl UntypedRetypeArgs {
     pub const fn encode(&self) -> [u64; 4] {
@@ -150,45 +127,44 @@ mod tests {
     }
 
     #[test]
-    fn roundtrip() {
-        let args = LifecycleRetypeArgs {
-            target_obj: ObjId::from(42u64),
-            new_type: TypeTag::Notification,
-            size: 4096,
+    fn untyped_retype_sized_kinds_roundtrip() {
+        // WS-ZA ZA5.4 part 14: a CNode's radix and a scheduling context's size
+        // ride in MR0's upper bits, as a child untyped's does.
+        let base = UntypedRetypeArgs {
+            new_type: TypeTag::CNode,
+            size_bits: MIN_CNODE_RADIX_BITS + 2,
+            child_id: ObjId::from(42u64),
+            dst_cnode: CPtr::from(3u64),
+            dst_slot: Slot::from(4u64),
         };
-        assert_eq!(LifecycleRetypeArgs::decode(&args.encode()).unwrap(), args);
+        assert_eq!(base.encode()[0], 3 | (3 << 8));
+        assert_eq!(UntypedRetypeArgs::decode(&base.encode()).unwrap(), base);
+        let sc = UntypedRetypeArgs {
+            new_type: TypeTag::SchedContext,
+            size_bits: MIN_SCHED_CONTEXT_SIZE_BITS,
+            ..base
+        };
+        assert_eq!(sc.encode()[0], 6 | (7 << 8));
+        assert_eq!(UntypedRetypeArgs::decode(&sc.encode()).unwrap(), sc);
+        assert_eq!(MAX_CNODE_RADIX_BITS, 42);
     }
 
-    #[test]
-    fn insufficient_regs() {
-        assert_eq!(
-            LifecycleRetypeArgs::decode(&[1, 2]),
-            Err(KernelError::InvalidMessageInfo)
-        );
-    }
-
-    // V1-C: Invalid type tag values must be rejected
+    // V1-C: invalid type tag values must be rejected
     #[test]
     fn invalid_type_tag_rejected() {
         // WS-BP BP7.1: 10 is the first invalid tag (PageTable = 9).
-        assert_eq!(
-            LifecycleRetypeArgs::decode(&[42, 10, 0]),
-            Err(KernelError::InvalidTypeTag)
-        );
-        assert_eq!(
-            LifecycleRetypeArgs::decode(&[42, 100, 0]),
-            Err(KernelError::InvalidTypeTag)
-        );
-        assert_eq!(
-            LifecycleRetypeArgs::decode(&[42, u64::MAX, 0]),
-            Err(KernelError::InvalidTypeTag)
-        );
+        for tag in [10u64, 100, 0xFF] {
+            assert_eq!(
+                UntypedRetypeArgs::decode(&[tag, 1, 2, 3]),
+                Err(KernelError::InvalidTypeTag)
+            );
+        }
     }
 
     #[test]
     fn all_valid_type_tags() {
         for i in 0..=9u64 {
-            let args = LifecycleRetypeArgs::decode(&[1, i, 0]).unwrap();
+            let args = UntypedRetypeArgs::decode(&[i, 1, 2, 3]).unwrap();
             assert_eq!(args.new_type.to_u64(), i);
         }
     }

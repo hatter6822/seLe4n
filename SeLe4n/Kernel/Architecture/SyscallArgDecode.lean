@@ -103,25 +103,15 @@ structure CSpaceDeleteArgs where
 -- Lifecycle and VSpace argument structures
 -- ============================================================================
 
-/-- Per-syscall argument structure for `lifecycleRetype`.
-    Register mapping: x2=targetObj, x3=newType tag, x4=size hint.
-    R7-E/L-10: `newType` is typed as `KernelObjectType` instead of raw `Nat`,
-    ensuring only valid object types are accepted at the decode boundary. -/
-structure LifecycleRetypeArgs where
-  targetObj : ObjId
-  newType   : KernelObjectType
-  size      : Nat
-  deriving Repr, DecidableEq
-
 /-- **WS-BP BP7.1 (`v0.36.5`)**: per-syscall argument structure for
 `untypedRetype` — seL4's `seL4_Untyped_Retype`, invoked on an untyped
 capability.  Register mapping: x2=newType tag in bits `[0, 8)` and the object's
 size in bits `[8, 64)` as a power of two (seL4's `size_bits`), x3=childId (the
 object id the carved object takes), x4=destination CNode capability address,
-x5=destination slot.  `newType` is typed at the decode boundary, as the in-place
-retype's is; the arm then carves only the kinds an untyped's memory can back
-directly — a frame, whose size is fixed (`sizeBits` must be `0`), or a child
-untyped, whose size `sizeBits` names (WS-BP BP7.1 slice 4, `v0.36.8`).
+x5=destination slot.  `newType` is typed at the decode boundary; the arm
+carves every kind (WS-ZA ZA5.4 part 14), each at the size `carveRequestOf?`
+decodes: a fixed-size kind with `sizeBits = 0`, a child untyped, CNode or
+scheduling context at the size `sizeBits` names.
 
 The size shares MR0 with the tag because every register a syscall can read is
 already taken — the four argument registers x2–x5 — and seL4's own
@@ -224,25 +214,8 @@ def decodeCSpaceDeleteArgs (decoded : SyscallDecodeResult)
 -- Lifecycle and VSpace decode functions
 -- ============================================================================
 
-/-- Decode lifecycle retype arguments from message registers.
-    Requires 3 message registers (targetObj, newType tag, size hint).
-    R7-E/L-10: The raw `newType` tag is validated through `KernelObjectType.ofNat?`,
-    rejecting unrecognized type tags at the decode boundary. -/
-def decodeLifecycleRetypeArgs (decoded : SyscallDecodeResult)
-    : Except KernelError LifecycleRetypeArgs := do
-  let r0 ← requireMsgReg decoded.msgRegs 0
-  let r1 ← requireMsgReg decoded.msgRegs 1
-  let r2 ← requireMsgReg decoded.msgRegs 2
-  match KernelObjectType.ofNat? r1.val with
-  | some objType =>
-    pure { targetObj := ObjId.ofNat r0.val
-           newType   := objType
-           size      := r2.val }
-  | none => .error .invalidTypeTag
-
 /-- **WS-BP BP7.1**: decode untyped-retype arguments from message registers.
-Requires 4 message registers; an unrecognised type tag is `.invalidTypeTag`,
-exactly as for the in-place retype. -/
+Requires 4 message registers; an unrecognised type tag is `.invalidTypeTag`. -/
 def decodeUntypedRetypeArgs (decoded : SyscallDecodeResult)
     : Except KernelError UntypedRetypeArgs := do
   let r0 ← requireMsgReg decoded.msgRegs 0
@@ -444,11 +417,6 @@ theorem validateVSpaceMapPermsForMemoryKind_ok_eq
 @[inline] def encodeCSpaceDeleteArgs (args : CSpaceDeleteArgs) : Array RegValue :=
   #[⟨args.targetSlot.toNat⟩]
 
-/-- Encode lifecycle retype arguments into message registers.
-    Inverse of `decodeLifecycleRetypeArgs`. -/
-@[inline] def encodeLifecycleRetypeArgs (args : LifecycleRetypeArgs) : Array RegValue :=
-  #[⟨args.targetObj.toNat⟩, ⟨args.newType.toNat⟩, ⟨args.size⟩]
-
 /-- **WS-BP BP7.1**: encode untyped-retype arguments into message registers.
     Inverse of `decodeUntypedRetypeArgs`. -/
 @[inline] def encodeUntypedRetypeArgs (args : UntypedRetypeArgs) : Array RegValue :=
@@ -597,20 +565,6 @@ theorem decodeCSpaceDeleteArgs_error_iff (d : SyscallDecodeResult) :
     simp only [decodeCSpaceDeleteArgs, bind, Except.bind]
     rw [requireMsgReg_unfold_err _ _ (by omega)]
 
-/-- R7-E/L-10: Lifecycle retype decode fails if fewer than 3 message registers. -/
-theorem decodeLifecycleRetypeArgs_error_of_insufficient_regs (d : SyscallDecodeResult)
-    (h : d.msgRegs.size < 3) :
-    ∃ e, decodeLifecycleRetypeArgs d = .error e := by
-  refine ⟨.invalidMessageInfo, ?_⟩
-  simp only [decodeLifecycleRetypeArgs, bind, Except.bind]
-  by_cases h0 : 0 < d.msgRegs.size
-  · rw [requireMsgReg_unfold_ok _ _ h0]; simp
-    by_cases h1 : 1 < d.msgRegs.size
-    · rw [requireMsgReg_unfold_ok _ _ h1]; simp
-      rw [requireMsgReg_unfold_err _ _ (by omega)]
-    · rw [requireMsgReg_unfold_err _ _ h1]
-  · rw [requireMsgReg_unfold_err _ _ h0]
-
 /-- **WS-BP BP7.1**: untyped-retype decode fails if fewer than 4 message registers. -/
 theorem decodeUntypedRetypeArgs_error_of_insufficient_regs (d : SyscallDecodeResult)
     (h : d.msgRegs.size < 4) :
@@ -627,17 +581,6 @@ theorem decodeUntypedRetypeArgs_error_of_insufficient_regs (d : SyscallDecodeRes
       · rw [requireMsgReg_unfold_err _ _ h2]
     · rw [requireMsgReg_unfold_err _ _ h1]
   · rw [requireMsgReg_unfold_err _ _ h0]
-
-/-- R7-E/L-10: Lifecycle retype decode fails if the type tag is unrecognized. -/
-theorem decodeLifecycleRetypeArgs_error_of_invalid_type (d : SyscallDecodeResult)
-    (hSize : 3 ≤ d.msgRegs.size)
-    (hTag : KernelObjectType.ofNat? d.msgRegs[1].val = none) :
-    ∃ e, decodeLifecycleRetypeArgs d = .error e := by
-  refine ⟨.invalidTypeTag, ?_⟩
-  simp only [decodeLifecycleRetypeArgs, bind, Except.bind,
-    requireMsgReg, dif_pos (show 0 < d.msgRegs.size by omega),
-    dif_pos (show 1 < d.msgRegs.size by omega),
-    dif_pos (show 2 < d.msgRegs.size by omega), hTag]
 
 /-- T6-C/D: VSpace map decode fails if fewer than 4 message registers. -/
 theorem decodeVSpaceMapArgs_error_of_insufficient_regs (d : SyscallDecodeResult) (maxASID : Nat)
@@ -884,16 +827,6 @@ theorem decodeCSpaceMoveArgs_roundtrip (args : CSpaceMoveArgs) :
 theorem decodeCSpaceDeleteArgs_roundtrip (args : CSpaceDeleteArgs) :
     decodeCSpaceDeleteArgs (stubDecoded (encodeCSpaceDeleteArgs args)) = .ok args := by
   rcases args with ⟨t⟩; rfl
-
-/-- Round-trip: encoding then decoding LifecycleRetypeArgs recovers the original.
-    R7-E/L-10: The proof case-splits on `KernelObjectType` — each variant reduces
-    to `rfl` because `ofNat?` and `toNat` are definitional inverses per case. -/
-theorem decodeLifecycleRetypeArgs_roundtrip (args : LifecycleRetypeArgs) :
-    decodeLifecycleRetypeArgs (stubDecoded (encodeLifecycleRetypeArgs args)) = .ok args := by
-  rcases args with ⟨o, t, s⟩
-  simp only [decodeLifecycleRetypeArgs, encodeLifecycleRetypeArgs, stubDecoded,
-    requireMsgReg, KernelObjectType.toNat]
-  cases t <;> rfl
 
 /-- **WS-BP BP7.1**: round-trip for UntypedRetypeArgs — the type tag's `ofNat?`
 and `toNat` are inverses per variant, every tag is below `256` so the size in
@@ -1469,7 +1402,7 @@ theorem decodeReplyRecvArgs_roundtrip (args : ReplyRecvArgs) :
   simp [decodeReplyRecvArgs, encodeReplyRecvArgs, stubDecoded, requireMsgReg,
         Bind.bind, Except.bind, Pure.pure, Except.pure, SeLe4n.CPtr.ofNat_toNat]
 
-/-- Composed round-trip: all 15 argument structures satisfy the encode-decode
+/-- Composed round-trip: all 14 argument structures satisfy the encode-decode
     round-trip property. R6-B: CSpaceMintArgs and NotificationSignalArgs require
     badge validity for lossless roundtrip through `ofNatMasked`. Y1-D:
     CSpaceMintArgs additionally requires rights validity for lossless roundtrip
@@ -1481,7 +1414,6 @@ theorem decode_layer2_roundtrip_all (maxASID : Nat) :
     (∀ args, decodeCSpaceCopyArgs (stubDecoded (encodeCSpaceCopyArgs args)) = .ok args) ∧
     (∀ args, decodeCSpaceMoveArgs (stubDecoded (encodeCSpaceMoveArgs args)) = .ok args) ∧
     (∀ args, decodeCSpaceDeleteArgs (stubDecoded (encodeCSpaceDeleteArgs args)) = .ok args) ∧
-    (∀ args, decodeLifecycleRetypeArgs (stubDecoded (encodeLifecycleRetypeArgs args)) = .ok args) ∧
     (∀ args, decodeUntypedRetypeArgs (stubDecoded (encodeUntypedRetypeArgs args)) = .ok args) ∧
     (∀ args, args.asid.isValidForConfig maxASID = true → args.vaddr.isCanonical = true →
       args.perms.wxCompliant = true →
@@ -1506,7 +1438,6 @@ theorem decode_layer2_roundtrip_all (maxASID : Nat) :
    decodeCSpaceCopyArgs_roundtrip,
    decodeCSpaceMoveArgs_roundtrip,
    decodeCSpaceDeleteArgs_roundtrip,
-   decodeLifecycleRetypeArgs_roundtrip,
    decodeUntypedRetypeArgs_roundtrip,
    fun args hA hV hWx => decodeVSpaceMapArgs_roundtrip args maxASID hA hV hWx,
    fun args hA hV => decodeVSpaceUnmapArgs_roundtrip args maxASID hA hV,

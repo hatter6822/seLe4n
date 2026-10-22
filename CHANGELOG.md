@@ -1,3 +1,82 @@
+## v0.36.125 — WS-ZA ZA5.4 part 14: every object kind is carved from an untyped
+
+Every kernel object now comes from an untyped, as in seL4: the carve makes a
+TCB, endpoint, notification, CNode, reply or SchedContext at seL4's size,
+at the invoked capability's free index rounded up to that size, as seL4's
+`alignUp(freeRef, objectSize)`.  The in-place
+retype is deleted, with its syscall arm and its theorems; syscall number 8
+stays reserved.  Part 14 of the seL4 untyped reset
+([`UNTYPED_RESET_PLAN.md`](docs/planning/UNTYPED_RESET_PLAN.md)).
+
+### Changes
+
+- **The carve covers every kind** (`CarveRequest`, `carveRequestOf?`,
+  `retypeFromUntyped`, `untypedRetypeObject`).  Sizes follow seL4's
+  `getObjectSize`: endpoint 2^4, reply 2^5, notification 2^6, TCB 2^11, a
+  CNode 2^(radix + 5) with radix in [1, 42], a SchedContext 2^b with b ≥ 7.
+  A device untyped still backs only untypeds and frames.  The
+  carved capability carries every right except retype.  Each carved object
+  carries its child id as its own identity, and a carved TCB is unqueued and
+  a carved SchedContext and reply are bound to nothing.
+- **The free index is rounded up, never refused** (`alignedCarveIndex`,
+  `carveAlignment`, `alignUpNat`): as seL4's `decodeUntypedInvocation`, the
+  carve rounds the capability's free index up to the object's boundary — a
+  page for a frame, page table or address-space root, the object's own size
+  for a kernel object and for a child untyped (`2^b` on a multiple of `2^b`,
+  so on a page since `b ≥ 12`) — checks the capacity there, and advances the
+  free index past it.  `retypeFromUntyped_ok_aligned`, `_ok_pageAligned`,
+  `_ok_sizeAligned`, `_ok_decompose`, `_ok_stores`,
+  `_error_regionExhausted` and the per-kind payoff theorems are restated at
+  the rounded index; `carveBaseAligned_alignedCarveIndex`,
+  `le_alignedCarveIndex` and `UntypedObject.childrenBelow_mono` are new;
+  `untypedNextChild_of_retype_ok` and `untypedRetypeObject_ok_untyped` now
+  also state the child's base is a multiple of `2^b`.
+- **Error code 37 is retired** (`KernelError.retiredDiscriminants`,
+  `ofDiscriminant?_retired`, `ofDiscriminant?_isSome_iff`; Rust
+  `KernelError::RETIRED`): `allocationMisaligned`, which no carve returns
+  once the index is rounded, is deleted with its encode and decode arms, its
+  Rust variant and its SD-001 pin.  As syscall number 8, the code is reserved
+  and never reassigned: it decodes to no error in Lean, to `None` from Rust's
+  `from_u32`, and to `UnknownKernelError` from the userspace status decoder.
+  `kernelErrorCount` is renamed `kernelErrorEncodingBound` (still 58, one
+  past the largest discriminant), and the round-trip theorems skip the
+  retired code.
+- **Authority comes first** (`untypedRetypeObject_unauthorized`): a
+  capability without the retype right is refused before the child id or the
+  destination is read, so the refusal answers nothing about them.  This
+  closes the §C authority-order row.
+- **The in-place retype is deleted**: `lifecycleRetypeObject`, the
+  `lifecycleRetype*WithCleanup*` wrappers, `lifecycleRevokeDeleteRetype`,
+  the `.lifecycleRetype` arm and `SyscallId.lifecycleRetype`, their lock
+  sets, footprints, write sets, information-flow entries (the enforcement
+  boundary is 50, per-core 64; `KernelOperation` 34; `SyscallId.count` 41
+  with encoding bound 42), the scrub-extent and identity-stamp machinery, and
+  the census and anchor entries that pinned them.  The destroy cleanup
+  (`lifecyclePreRetypeCleanup`) is kept with no live caller for parts 18 and
+  19, recorded in the reachability census and as a registered-debt row.
+- **Rust**: `LifecycleRetypeArgs`, `lifecycle_retype` and the `retype_*`
+  wrappers are deleted; `untyped_retype_tcb`, `_endpoint`, `_notification`,
+  `_reply`, `_cnode` and `_sched_context` are added; `SyscallId::RETIRED` is
+  `[8]` and the conformance sweeps skip it.
+- **Tests**: the retype tests are retargeted to the carve or to the kept
+  cleanup; a misaligned VSpace-root base is rounded to the next page, a
+  TCB, an endpoint, a frame and a TCB carved in turn each land on their own
+  boundary, and a `2^14`-byte child untyped after an endpoint lands on a
+  multiple of `2^14` (`NegativeStateSuite`, S5-G and H16-NEG-06); SD-001
+  pins 37 unassigned and SD-002/SD-003 skip it; the return-ABI fixture's
+  error-label line states the retired code; the main trace, syscall-return-shape, information-flow and taint
+  fixtures are regenerated from their producers.
+- **Exerciser**: every pin unchanged.  The per-kind scenarios move to part
+  18 (finalise kernel kinds on final delete), since a carve repeats only after
+  its object is finalised: they carve then delete each kernel kind, pinned at
+  the object's own cells, and the reset then reads its pin.  A reschedule in
+  the plan, not debt; the boot configuration is unchanged.
+- **Registered debt**: the §C authority-order row, the scrub-extent row and the table rows 25 and 26 closed; new
+  rows for the destroy cleanup with no live caller and for a destroyed
+  object's provenance not being cleared (both closing in part 18).
+- **Docs**: spec §8.4, §8.6 and §8.6.1, `CLAIM_EVIDENCE_INDEX.md`,
+  `WORKSTREAM_CONTEXT.md`, the plan rows 14 and 18, GitBook chapters 03, 04 and 15.
+
 ## v0.36.124 — WS-ZA ZA5.4 part 13: the free index is in the capability
 
 An untyped capability now carries its own free index, as seL4's

@@ -92,7 +92,10 @@ inductive KernelError where
   | resourceExhausted       -- WS-R2/M-05: fuel exhaustion in streaming BFS revocation
   | invalidCapPtr           -- S4-K: capability pointer exceeds word64 bounds
   | objectStoreCapacityExceeded  -- S4-B: object count exceeds maxObjects capacity
-  | allocationMisaligned  -- S5-G: allocation base not page-aligned for VSpace-bound objects
+  -- Discriminant 37 is retired (WS-ZA ZA5.4 part 14): it was
+  -- `allocationMisaligned`, returned by no carve once the free index is rounded
+  -- up to the object's boundary.  It is reserved and never reassigned
+  -- (`KernelError.retiredDiscriminants`).
   | revocationRequired    -- U-H03: destroying an object or mapping still in use (unmap, cancel or revoke first)
   | invalidArgument      -- U5-E/U-M07: syscall argument decode failed (e.g., invalid permission bits)
   | mmioUnaligned        -- V4-B/M-HW-1: MMIO access at unaligned address (4-byte for 32-bit, 8-byte for 64-bit)

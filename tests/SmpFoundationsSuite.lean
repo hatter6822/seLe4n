@@ -936,11 +936,11 @@ private def runCSpaceWalkFootprintChecks : IO Unit := do
     (decide ((SeLe4n.Kernel.Concurrency.stateLevelLock,
       SeLe4n.Kernel.Concurrency.AccessMode.write) ∈
       (SeLe4n.Kernel.Concurrency.lockSet_cspaceDelete ⟨3⟩ root epKey).pairs))
-  assertBool "…and so does the retype that could install a CNode at that key"
+  assertBool "…and so does the carve that could install a CNode at that key"
     (decide ((SeLe4n.Kernel.Concurrency.stateLevelLock,
       SeLe4n.Kernel.Concurrency.AccessMode.write) ∈
-      (SeLe4n.Kernel.Concurrency.lockSet_lifecycleRetype ⟨3⟩ root
-        (SeLe4n.ObjId.ofNat 12) epKey).pairs))
+      (SeLe4n.Kernel.Concurrency.lockSet_untypedRetype ⟨3⟩ root root
+        (SeLe4n.ObjId.ofNat 12) epKey root .cnode).pairs))
   -- 2. The declaration is REFUSED above the ceiling (PR #892 review round 4).
   --    `maxLockSetSize` is the premise `boundedWait_under_2pl` and the WCRT
   --    surface are stated at, and a walk reads one key per level, so a CSpace

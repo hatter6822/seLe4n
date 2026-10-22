@@ -459,10 +459,10 @@ disjointness requirement.
 side-condition handles one level of parent-child nesting. Transitive
 grandparent/grandchild chains (retype → retype → retype) can produce
 multi-level containment overlap that is NOT captured by this direct-child
-exclusion. Under the current API dispatch
-(`objectOfKernelType .untyped` hardcodes `regionBase = 0`), retype-to-untyped
-is not exercised by any test and the API dispatch never produces a
-well-formed child untyped anyway. A richer invariant (transitive
+exclusion. A child untyped is made only by the carve (`untypedNextChild`,
+which stamps its parent and places it inside the parent's region; the in-place
+retype that could build a parentless one at `regionBase = 0` is retired). A
+richer invariant (transitive
 ancestor/descendant tracking via a CDT-style closure) would be a
 standalone model-refinement effort; it is NOT part of the Phase AK8
 scope; it is registered in the *Registered debt index* (table C.1) in
@@ -1193,15 +1193,6 @@ def storeObject_modifiedFields : List StateField :=
 def serviceRegisterDependency_modifiedFields : List StateField :=
   [.services]
 
-/-- W2-A1: Fields modified by `lifecycleRetypeObject`. Updates objects, indices,
-    and lifecycle metadata.
-
-    **WS-RR RR7.19**: defined *as* `storeObject`'s set rather than repeating it,
-    so the `asidTable` correction cannot reach one and miss the other — a retype
-    can mint a `.vspaceRoot`, which is precisely the case that writes it. -/
-def lifecycleRetypeObject_modifiedFields : List StateField :=
-  storeObject_modifiedFields
-
 /-- W2-A1: Fields modified by IPC endpoint operations (`endpointSendDual`,
     `endpointReceiveDual`, etc.).
 
@@ -1545,27 +1536,6 @@ theorem serviceRegisterDependency_preservesFieldsOutside
             cases f <;> first
               | rfl
               | exact (hf (by decide)).elim
-
-theorem lifecycleRetypeObject_preservesFieldsOutside
-    (authority : CSpaceAddr) (target : SeLe4n.ObjId) (newObj : KernelObject)
-    (st st' : SystemState)
-    (hStep : SeLe4n.Kernel.Internal.lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
-    preservesFieldsOutside lifecycleRetypeObject_modifiedFields st st' := by
-  unfold SeLe4n.Kernel.Internal.lifecycleRetypeObject SystemState.getObject? at hStep
-  split at hStep
-  · cases hStep
-  · split at hStep
-    · cases hLk : cspaceLookupSlot authority st with
-      | error e => simp [hLk] at hStep
-      | ok p =>
-        obtain ⟨authCap, st₁⟩ := p
-        simp only [hLk] at hStep
-        have hEq := cspaceLookupSlot_state_eq st st₁ authority authCap hLk
-        subst hEq
-        split at hStep
-        · exact storeObject_preservesFieldsOutside _ _ _ _ hStep
-        · cases hStep
-    · cases hStep
 
 -- Every capability operation is built from `storeObject`, the lifecycle
 -- reference map, and the CDT; each primitive is stated at the
@@ -2774,7 +2744,7 @@ theorem donation_frame_preserves_schedContextStoreConsistent
 
 /-- Z9-O1: Frame case — SchedContext cleanup on destroy preserves all 3 new
     cross-subsystem predicates when `objects` is unchanged. For the actual
-    mutation case (where `lifecycleRetypeWithCleanup` clears bound thread
+    mutation case (where the destroy path's cleanup clears bound thread
     bindings and removes objects), operation-specific preservation in the
     lifecycle subsystem must show that binding cleanup precedes object removal,
     maintaining store consistency and uniqueness through the cleanup sequence. -/
@@ -2876,8 +2846,6 @@ operations that grow `objectIndex` (new object creation).
 | vspaceUnmapPage | A | ✓ | ✓ |
 | setIPCBufferOp | A | ✓ | ✓ |
 | handleInterrupt | A | ✓ | ✓ |
-| lifecycleRetypeObject | B | ✓ | grows |
-| lifecycleRetypeWithCleanup | B | ✓ | grows |
 | retypeFromUntyped | B | ✓ | grows |
 
 All operations preserve `services` and `serviceRegistry`.
@@ -3732,54 +3700,6 @@ theorem setIPCBuffer_crossSubsystemInvariant_bridge
 -- AD4-I: Lifecycle retype operation cross-subsystem bridge lemmas
 -- ============================================================================
 
-/-- AD4-I (F-08): `lifecycleRetypeObject` preserves `crossSubsystemInvariant`.
-    Creates a new kernel object via `storeObject`, which may grow `objectIndex`
-    for newly-created objects. Uses the retype bridge variant with monotone
-    objectIndex condition. Does not modify `services` or `serviceRegistry`. -/
-theorem lifecycleRetype_crossSubsystemInvariant_bridge
-    (st st' : SystemState)
-    (hPre : crossSubsystemInvariant st)
-    (hServices : st'.services = st.services)
-    (hSvcReg : st'.serviceRegistry = st.serviceRegistry)
-    (hIfaceReg : st'.interfaceRegistry = st.interfaceRegistry)
-    (hObjIdxGrow : st.objectIndex.length ≤ st'.objectIndex.length)
-    (hRegEpValid : registryEndpointValid st')
-    (hEndpointQ : noStaleEndpointQueueReferences st')
-    (hNotifWait : noStaleNotificationWaitReferences st')
-    (hScStore : schedContextStoreConsistent st')
-    (hScDual : schedContextNotDualBound st')
-    (hScRunQ : schedContextRunQueueConsistent st')
-    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st')
-    (hLockstep : lifecycleObjectTypeLockstep st')
-    (hUntypedDisj : untypedRegionsDisjoint st') :
-    crossSubsystemInvariant st' :=
-  crossSubsystemInvariant_retype_bridge st st' hPre hServices hSvcReg hIfaceReg hObjIdxGrow
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
-
-/-- AD4-I (F-08): `lifecycleRetypeWithCleanup` preserves `crossSubsystemInvariant`.
-    Performs pre-retype cleanup (queue removal, service revocation, CDT detach)
-    followed by `lifecycleRetypeObject`. The cleanup phase may modify `objects`
-    extensively. Uses the retype bridge variant. -/
-theorem lifecycleRetypeWithCleanup_crossSubsystemInvariant_bridge
-    (st st' : SystemState)
-    (hPre : crossSubsystemInvariant st)
-    (hServices : st'.services = st.services)
-    (hSvcReg : st'.serviceRegistry = st.serviceRegistry)
-    (hIfaceReg : st'.interfaceRegistry = st.interfaceRegistry)
-    (hObjIdxGrow : st.objectIndex.length ≤ st'.objectIndex.length)
-    (hRegEpValid : registryEndpointValid st')
-    (hEndpointQ : noStaleEndpointQueueReferences st')
-    (hNotifWait : noStaleNotificationWaitReferences st')
-    (hScStore : schedContextStoreConsistent st')
-    (hScDual : schedContextNotDualBound st')
-    (hScRunQ : schedContextRunQueueConsistent st')
-    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st')
-    (hLockstep : lifecycleObjectTypeLockstep st')
-    (hUntypedDisj : untypedRegionsDisjoint st') :
-    crossSubsystemInvariant st' :=
-  crossSubsystemInvariant_retype_bridge st st' hPre hServices hSvcReg hIfaceReg hObjIdxGrow
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
-
 /-- AD4-I (F-08): `retypeFromUntyped` preserves `crossSubsystemInvariant`.
     Creates a child object from untyped memory via two `storeObject` calls
     (one for the untyped, one for the new child). May grow `objectIndex`.
@@ -3925,10 +3845,9 @@ This section lands
 the foundation pieces (C.1 through C.4) so future commits can compose
 on the predicate without re-doing the design work.
 
-**Retype-to-untyped scope**: Under the current API dispatch
-(`objectOfKernelType .untyped` hardcodes `regionBase = 0`), retype never
-produces a `.untyped` child, so every reachable `UntypedObject` in
-current production states has `parent := none` (the default). Multi-level
+**Retype-to-untyped scope**: this paragraph predates the child-untyped
+carve (WS-BP BP7.1 slice 4), which stamps a child's parent; it said that
+every reachable `UntypedObject` had `parent := none`. Multi-level
 ancestor chains therefore never arise *under today's API* — the
 transitive predicate is semantically equivalent to
 `untypedRegionsDisjoint` on every production state. The predicate is
@@ -3991,8 +3910,8 @@ theorem untypedAncestorChain_bounded (st : SystemState) (oid : SeLe4n.ObjId)
     *transitive* ancestor-chain exclusion.
 
     **Under current API dispatch**: every `UntypedObject` has
-    `parent := none` (retype-to-untyped is not exercised — see
-    `objectOfKernelType .untyped` in Model/Object/Types.lean). On such
+    `parent := none` (true before the child-untyped carve, which stamps
+    `parent := some _`). On such
     states, the predicate reduces to `untypedRegionsDisjoint` because
     every ancestor chain has length 1 (just the self-referential ObjId).
 
@@ -4026,10 +3945,7 @@ theorem default_untypedAncestorRegionsDisjoint :
 
 /-- AN6-C.4 (H-09) operational soundness: on a state where every
     `UntypedObject` has `parent := none` (the condition structurally
-    enforced by today's API dispatch — `objectOfKernelType .untyped`
-    hardcodes `regionBase = 0`, so retype never produces a `.untyped`
-    child, so `retypeFromUntyped`'s parent-stamping path is not
-    exercised), the walker `untypedAncestorChain` collapses to the
+    enforced before the child-untyped carve), the walker `untypedAncestorChain` collapses to the
     single-element list `[oid]` for every queried `oid` that resolves
     to an untyped. This is the substantive bridge that, combined with
     the future 13-conjunct cascade (AN6-C.5..C.10), will prove

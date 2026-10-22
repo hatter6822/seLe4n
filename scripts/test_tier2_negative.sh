@@ -456,9 +456,10 @@ run_check_with_timeout "TRACE" lake exe smp_tlb_shootdown_suite
 # the DMA scope tripwire, `icacheCoherent_perCore` (the 14th
 # `proofLayerInvariantBundle` conjunct) computed on a real page-table-backed
 # state — including the non-vacuity witness that a cached line whose mapping
-# was removed FAILS the checker — and the live `.vspaceUnmap` /
-# `.lifecycleRetype` seams (targeted IVAU on an executable unmap, provable
-# inertness on a non-executable one, domain-wide IALLUIS on retype), plus —
+# was removed FAILS the checker — the live `.vspaceUnmap` seam (targeted
+# IVAU on an executable unmap, provable inertness on a non-executable one) and
+# the carve's live cache record (a frame carve records its zeroing write; a
+# kernel-object carve records none), plus —
 # from SM7.E — the cross-cluster reach mock: `icBroadcastReach` narrowed to one
 # mock cluster leaves the other cluster's lines resident (the hazard a
 # multi-cluster port must close with an SGI-based protocol), while the

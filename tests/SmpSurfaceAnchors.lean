@@ -901,7 +901,7 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
   assertBool "lock-set non-interference + the covert-channel inventory resolve"
     (have _w := @SeLe4n.Kernel.withLockSet_preserves_projection
      have _u := @SeLe4n.Kernel.nonInterference_perCore_underLockSet
-     have _e : SeLe4n.Kernel.enforcementBoundaryPerCore.length = 67 :=
+     have _e : SeLe4n.Kernel.enforcementBoundaryPerCore.length = 64 :=
        SeLe4n.Kernel.enforcementBoundaryPerCore_count
      -- PR #861 review round 4: the boundary now also classifies the live
      -- cross-core wrappers, and the SMP completeness half audits them.  Rounds
@@ -1036,7 +1036,7 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
   -- that silently reverted — or a second entry added without reconciling the
   -- per-core list — fails the anchor file too, not only the dedicated suite.
   assertBool "the canonical enforcement boundary carries the two-phase-locking bracket"
-    (have _e : SeLe4n.Kernel.enforcementBoundaryExtended.length = 52 :=
+    (have _e : SeLe4n.Kernel.enforcementBoundaryExtended.length = 50 :=
        SeLe4n.Kernel.enforcementBoundaryExtended_count
      have _c := SeLe4n.Kernel.enforcementBoundary_classifies_withLockSet
      have _o := SeLe4n.Kernel.enforcementBoundaryPerCore_classifies_withLockSet_once
@@ -1206,7 +1206,7 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
      -- Both syscalls are in the ABI and value-returning.
      decide (SeLe4n.Model.SyscallId.auditRead.toNat = 31
        ∧ SeLe4n.Model.SyscallId.auditDrain.toNat = 32
-       ∧ SeLe4n.Model.SyscallId.count = 42
+       ∧ SeLe4n.Model.SyscallId.count = 41
        ∧ SeLe4n.Kernel.Architecture.syscallReturnShape .auditRead = .word
        ∧ SeLe4n.Kernel.Architecture.syscallReturnShape .auditDrain = .word))
 
@@ -1399,7 +1399,7 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
      -- file's import set; `SmpInformationFlowSuite` §11.6 checks it.)
      decide (SeLe4n.Kernel.refusalSeamClass .declassifySignal = .records
        ∧ SeLe4n.Model.SyscallId.declassifySignal.toNat = 33
-       ∧ SeLe4n.Model.SyscallId.count = 42
+       ∧ SeLe4n.Model.SyscallId.count = 41
        ∧ SeLe4n.Kernel.syscallRequiredRight .declassifySignal = .write
        ∧ SeLe4n.Kernel.Architecture.syscallReturnShape .declassifySignal = .unit))
 
@@ -1455,14 +1455,13 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
      -- which is why the *completeness* of the classification is a Tier-1 reach
      -- gate (`scripts/check_content_flow_coverage.py`) rather than a theorem.
      have _ct := @SeLe4n.Kernel.contentFlowClass_total
-     have _cc := @SeLe4n.Kernel.contentFlowClass_clears_iff
      have _cm := @SeLe4n.Kernel.contentFlowClass_moves_iff
      decide (SeLe4n.Kernel.contentFlowClass .send = .movesContent
        ∧ SeLe4n.Kernel.contentFlowClass .declassifySignal = .movesContent
-       ∧ SeLe4n.Kernel.contentFlowClass .lifecycleRetype = .clearsProvenance
+       ∧ SeLe4n.Kernel.contentFlowClass .untypedRetype = .inert
        ∧ SeLe4n.Kernel.contentFlowClass .tcbSuspend = .inert))
 
-  assertBool "SM9.D.8/.D.12: propagation follows content, and a retype forgets"
+  assertBool "SM9.D.8/.D.12: propagation follows content, and a consumed transport forgets"
     (-- Taint propagates through *ordinary* IPC delivery, which is the whole
      -- scoping argument: a downgrade writes a badge, an ordinary delivery
      -- moves it, and the next downgrade must still see it.
@@ -1483,11 +1482,6 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
      -- The tracked-content scope, and its one deliberate exclusion.
      have _tf := @SeLe4n.Kernel.contentTrackedFields
      have _bc := @SeLe4n.Kernel.capabilityBadgeChannel_out_of_scope
-     -- Retype **clears** rather than frames: it commits `storeObject` at the
-     -- same id, so a framed retype would leave a destroyed object's tags on
-     -- its replacement.
-     have _rt := @SeLe4n.Kernel.retypeClearsTaint
-     have _re := @SeLe4n.Kernel.retypedObject_taint_empty
      have _sn2 := @SeLe4n.Kernel.staleTaint_is_not_saturation
      -- The replyRecv REPLY leg (audit): the steady-state server loop's second
      -- hop, resolved the way `resolveReplyRecvReply` resolves it and sharing

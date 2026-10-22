@@ -23,22 +23,21 @@ was `private` in a module the composite's own module cannot see.
 
 ## Why this module exists at all
 
-`lifecyclePreRetypeCleanup` lives in `Lifecycle/Operations/CleanupPreservation.lean`
-and `lifecycleRetypeDirectWithCleanup` in `Lifecycle/Operations/RetypeWrappers.lean`.
-Between them the `.tcb` arm's reference sweep (`cleanupTcbReferences`) runs two
+`lifecyclePreRetypeCleanup` lives in `Lifecycle/Operations/CleanupPreservation.lean`.
+Its `.tcb` arm's reference sweep (`cleanupTcbReferences`) runs two
 whole-store folds — `removeFromAllEndpointQueues` and
 `removeFromNotificationWaitQueue` — whose `getSchedContext?` and `cpuAffinity`
 frames WS-RR RR8.11 wrote `private` in `IPC/Invariant/CancellationBundle.lean`,
-which is **downstream of both**.  So neither program's own module could state a
+which is **downstream of both**.  So the cleanup's own module could not state a
 reservation theorem over its own sweep, and register row 63 recorded the blocker
 as a layering fact rather than an effort estimate.
 
 `v0.35.166` moved each frame to the module holding the fact its proof rests on
 (see that bundle's §4 tombstone for where each went), which puts all of
 them in `CancellationNotificationShape`'s import closure — and that module is
-downstream of the cleanup, of the retype wrapper and of `ReplenishAffinity`,
-while nothing in the other direction imports it.  So this is where the two
-composites can finally be stated, and it is the *only* place they can be.
+downstream of the cleanup and of `ReplenishAffinity`,
+while nothing in the other direction imports it.  So this is where the
+composite can be stated, and it is the *only* place it can be.
 
 ## What is proved
 
@@ -53,32 +52,13 @@ composites can finally be stated, and it is the *only* place they can be.
   `releaseSchedContextBinding`) cite the theorems `v0.35.164` and `v0.35.165`
   proved of them; the other four move none.
 
-## What is deliberately **not** proved here, and why
+## Where the cleanup runs
 
-Two things, and both are **effort** facts rather than layering ones — which is
-the whole of what this cut changes about register row 63's remainder.
-
-**`schedContextBindingConsistent` across either program.**  Measured on the tree
-at `v0.35.165`: there is no `preserves_schedContextBindingConsistent` theorem
-anywhere — not for a queue sweep, not for the two donation arms, not for
-`storeObject` — so the reciprocity would have to be built for eight operations
-before either composite could cite it.  Its *behaviour* is not unwitnessed:
-`tests/SmpIpcSuite.lean` §3.31 and §3.32 assert the decidable reading of it on
-every post-retype state they produce, with the retired cleanup computed beside
-the live one falsifying it.
-
-**The retype composite's own preservation of the affinity invariant.**
-`lifecycleRetypeDirectWithCleanup` runs this cleanup, then `scrubObjectMemory`
-(which frames both `objects` and `scheduler` outright), then a `storeObject` of
-the replacement at `target` — and the store is what needs more than a frame: it
-rewrites `getSchedContext?` and `determineTargetCore` at `target`, so the
-invariant survives it exactly when no surviving scheduling context is bound to
-the thread the retype destroys.  That is a consequence of
-`schedContextBindingConsistent` and of the target's binding after the cleanup, so
-it is the *first* thing the deferred half buys and it cannot be had before it.
-Stating it as a hypothesis instead would be a predicate no transition
-establishes, which `v0.35.126` (WS-RR RR8.16) is the tree's own name for.
--/
+The in-place retype that ran this cleanup (`lifecycleRetypeDirectWithCleanup` and
+its wrappers) was retired at WS-ZA ZA5.4 part 14, and its composite theorems with
+it; every object is now carved from an untyped.  The cleanup and these theorems
+are kept for the finalisation a kernel object's final delete runs, seL4's
+`finaliseCap` (`docs/planning/UNTYPED_RESET_PLAN.md`, part 18).-/
 
 namespace SeLe4n.Kernel
 
@@ -276,8 +256,7 @@ frames this module's header explains were out of reach.
 `hTcb` is the arm's own soundness condition, stated where it binds: the donation
 arm reads the TCB it is handed out of the store, so a caller that supplies a
 record the store does not hold at that thread's key is describing a different
-state.  The live `.lifecycleRetype` dispatch supplies it from the `getObject?`
-it resolved `currentObj` with. -/
+state. -/
 theorem lifecyclePreRetypeCleanup_preserves_replenishQueueAffinityConsistent_smp
     (st st' : SystemState) (target : SeLe4n.ObjId) (currentObj newObj : KernelObject)
     (hInv : st.objects.invExt)
@@ -643,12 +622,11 @@ theorem lifecyclePreRetypeCleanup_preserves_schedContextBindingConsistent
     injection h with h; subst h; exact hCons
 
 -- ============================================================================
--- §4  `v0.35.185` (register row 63): the retype COMPOSITE
+-- §4  `v0.35.185` (register row 63): the destroyed key's binding
 -- ============================================================================
 
-/-! `lifecycleRetypeDirectWithCleanup` is the cleanup, then `scrubObjectMemory`,
-then a `storeObject` at `target`, and the two invariants cross it through **one**
-intermediate: `schedContextBindingRetypeReady`, Z4-O with the target carved out of
+/-! A destroy is the cleanup, then a write at `target`, and the two invariants
+cross it through **one** intermediate: `schedContextBindingRetypeReady`, Z4-O with the target carved out of
 both sides.
 
 It has to be an intermediate rather than Z4-O itself, because the cleanup's
@@ -862,10 +840,8 @@ invariant instead.  It is free at the live call site, where
 retype's own key paired — a state the store does not repair.  Three measurements
 place it: `PlatformConfig.wellFormed`'s `tcbIdentitiesMatchSlots` establishes it
 for every boot TCB; **no transition writes `TCB.tid`**; and the one path that
-installs a TCB (`objectOfKernelType` through the retype) sets it to
-`ThreadId.sentinel` but is refused by `KernelObject.wellFormed`, whose `.tcb` arm
-requires the replacement's `cspaceRoot` and `vspaceRoot` to resolve and whose
-`objectOfKernelType` sets both to `ObjId.sentinel`.  So it holds of every state
+installs a TCB, the carve (`carvedTcb`), sets it to the child's own id
+(`untypedRetypeObject_ok_tcb`).  So it holds of every state
 this kernel reaches — and is stated by no invariant, which is what keeps it a
 hypothesis here and a register row rather than a `hCons`-style premise. -/
 theorem lifecyclePreRetypeCleanup_targetUnpaired
@@ -957,268 +933,4 @@ theorem lifecyclePreRetypeCleanup_targetUnpaired
     exact ⟨fun t hT => by rw [hStored] at hT; exact absurd hT (by simp),
            fun s0 hS => by rw [hStored] at hS; exact absurd hS (by simp)⟩
 
-/-- **`v0.35.185` (register row 63): the destroy path's COMPOSITE preserves Z4-O.**
-
-The theorem register row 63 was opened for.  `lifecycleRetypeDirectWithCleanup`
-is the cleanup, then `scrubObjectMemory`, then a `storeObject` at `target`, and
-the invariant crosses it in three steps of two kinds:
-
-* the cleanup **preserves** Z4-O (§3) and leaves the target unpaired (above), so
-  `schedContextBindingRetypeReady` holds of its post-state;
-* the scrub writes no object, so readiness frames across it;
-* the store **re-establishes** Z4-O from readiness and the replacement's
-  freshness — `hScFresh` being a *runtime refusal* since `v0.35.184` rather than a
-  caller obligation, and `hTcbFresh` the `retypeReplacementFresh` pack the live
-  dispatch supplies through `objectOfKernelType_replacementFresh`.
-
-`hNotSc` and `hIdentity` are the two conditions the cleanup's own §3 and the
-unpaired lemma explain, and both are free at the live call site — the first from
-`retypeTargetDetached`'s `notSc`, the second by the three measurements recorded at
-`lifecyclePreRetypeCleanup_targetUnpaired`.
-
-*What the composite did* is read off
-`lifecycleRetypeDirectWithCleanup_ok_decompose` rather than re-derived here, so
-this proof and its replenish sibling cannot disagree about which state the
-cleanup left or which store the retype performed. -/
-theorem lifecycleRetypeDirectWithCleanup_preserves_schedContextBindingConsistent
-    (st st' : SystemState) (authCap : Capability) (target : SeLe4n.ObjId)
-    (newObj : KernelObject)
-    (hInv : st.objects.invExt)
-    (hCons : schedContextBindingConsistent st)
-    (hTcb : ∀ tcb : TCB, ∀ currentObj : KernelObject,
-      st.objects[target]? = some currentObj → currentObj = .tcb tcb →
-      lookupTcb st tcb.tid = some tcb)
-    (hIdentity : ∀ tcb : TCB, st.objects[target]? = some (.tcb tcb) → tcb.tid.toObjId = target)
-    (hNotSc : ∀ sc : SeLe4n.Kernel.SchedContext, st.objects[target]? ≠ some (.schedContext sc))
-    (hTcbFresh : ∀ t : TCB, newObj = .tcb t →
-      t.schedContextBinding = SchedContextBinding.unbound)
-    (h : lifecycleRetypeDirectWithCleanup authCap target newObj st = .ok ((), st')) :
-    schedContextBindingConsistent st' := by
-  obtain ⟨hWF, currentObj, stClean, hStored, hClean, hStore⟩ :=
-    lifecycleRetypeDirectWithCleanup_ok_decompose h
-  -- The `wellFormed` guard passed, so a replacement SchedContext binds nobody
-  -- (`v0.35.184`): the clause the store's re-establishment consumes.
-  have hScFresh : ∀ sc : SeLe4n.Kernel.SchedContext, newObj = .schedContext sc →
-      sc.boundThread = none := fun sc hEq => by
-    rw [hEq] at hWF; simpa [KernelObject.wellFormed] using hWF.wellFormed'
-  -- The three steps.
-  have hCleanCons : schedContextBindingConsistent stClean :=
-    lifecyclePreRetypeCleanup_preserves_schedContextBindingConsistent st stClean target
-      currentObj newObj hInv hCons (fun tcb hEq => hTcb tcb currentObj hStored hEq)
-      (fun sc hEq => hNotSc sc (hEq ▸ hStored)) hClean
-  have hCleanUnpaired : retypeTargetUnpaired stClean target :=
-    lifecyclePreRetypeCleanup_targetUnpaired st stClean target currentObj newObj hInv
-      hStored (fun tcb hEq => hTcb tcb currentObj hStored hEq)
-      (fun tcb hEq => hIdentity tcb (hEq ▸ hStored))
-      (fun sc hEq => hNotSc sc (hEq ▸ hStored)) hClean
-  have hScrubInv : (scrubObjectMemory stClean target currentObj.objectType).objects.invExt := by
-    rw [scrubObjectMemory_objects_eq]
-    exact lifecyclePreRetypeCleanup_preserves_objects_invExt st stClean target currentObj
-      newObj hInv hClean
-  exact storeObject_establishes_schedContextBindingConsistent hScrubInv hTcbFresh hScFresh
-    (schedContextBindingRetypeReady_of_objects_eq
-      (scrubObjectMemory_objects_eq stClean target currentObj.objectType)
-      (schedContextBindingRetypeReady_of_consistent hCleanUnpaired hCleanCons))
-    hStore
-
-/-- **`v0.35.185` (register row 63): and the composite preserves the SM5.H
-replenish-affinity invariant.**
-
-The other half, and the measurement that
-`schedContextBindingRetypeReady` is the destroy path's own intermediate rather
-than one proof's scaffolding: this consumes the **same** predicate, because the
-carve-out that says a surviving context names no thread at the destroyed key is
-exactly what keeps the store from moving a replenish entry's home core.
-
-Its cleanup step needs no `hNotSc` — §2 covers all six kinds — but its readiness
-does, for the reason §3 proves, so the composite carries the same two conditions
-as its sibling and both stay free at the live call site. -/
-theorem lifecycleRetypeDirectWithCleanup_preserves_replenishQueueAffinityConsistent_smp
-    (st st' : SystemState) (authCap : Capability) (target : SeLe4n.ObjId)
-    (newObj : KernelObject)
-    (hInv : st.objects.invExt)
-    (hCons : schedContextBindingConsistent st)
-    (hAff : replenishQueueAffinityConsistent_smp st)
-    (hTcb : ∀ tcb : TCB, ∀ currentObj : KernelObject,
-      st.objects[target]? = some currentObj → currentObj = .tcb tcb →
-      lookupTcb st tcb.tid = some tcb)
-    (hIdentity : ∀ tcb : TCB, st.objects[target]? = some (.tcb tcb) → tcb.tid.toObjId = target)
-    (hNotSc : ∀ sc : SeLe4n.Kernel.SchedContext, st.objects[target]? ≠ some (.schedContext sc))
-    (h : lifecycleRetypeDirectWithCleanup authCap target newObj st = .ok ((), st')) :
-    replenishQueueAffinityConsistent_smp st' := by
-  obtain ⟨hWF, currentObj, stClean, hStored, hClean, hStore⟩ :=
-    lifecycleRetypeDirectWithCleanup_ok_decompose h
-  have hScFresh : ∀ sc : SeLe4n.Kernel.SchedContext, newObj = .schedContext sc →
-      sc.boundThread = none := fun sc hEq => by
-    rw [hEq] at hWF; simpa [KernelObject.wellFormed] using hWF.wellFormed'
-  have hCleanCons : schedContextBindingConsistent stClean :=
-    lifecyclePreRetypeCleanup_preserves_schedContextBindingConsistent st stClean target
-      currentObj newObj hInv hCons (fun tcb hEq => hTcb tcb currentObj hStored hEq)
-      (fun sc hEq => hNotSc sc (hEq ▸ hStored)) hClean
-  have hCleanUnpaired : retypeTargetUnpaired stClean target :=
-    lifecyclePreRetypeCleanup_targetUnpaired st stClean target currentObj newObj hInv
-      hStored (fun tcb hEq => hTcb tcb currentObj hStored hEq)
-      (fun tcb hEq => hIdentity tcb (hEq ▸ hStored))
-      (fun sc hEq => hNotSc sc (hEq ▸ hStored)) hClean
-  have hCleanAff : replenishQueueAffinityConsistent_smp stClean :=
-    lifecyclePreRetypeCleanup_preserves_replenishQueueAffinityConsistent_smp st stClean
-      target currentObj newObj hInv hAff (fun tcb hEq => hTcb tcb currentObj hStored hEq)
-      hClean
-  have hScrubInv : (scrubObjectMemory stClean target currentObj.objectType).objects.invExt := by
-    rw [scrubObjectMemory_objects_eq]
-    exact lifecyclePreRetypeCleanup_preserves_objects_invExt st stClean target currentObj
-      newObj hInv hClean
-  refine storeObject_preserves_replenishQueueAffinityConsistent_smp hScrubInv hScFresh
-    (schedContextBindingRetypeReady_of_objects_eq
-      (scrubObjectMemory_objects_eq stClean target currentObj.objectType)
-      (schedContextBindingRetypeReady_of_consistent hCleanUnpaired hCleanCons))
-    hStore ?_
-  -- The scrub writes no object and no scheduler state.
-  exact (replenishQueueAffinityConsistent_smp_frame
-    (st := stClean) (st' := scrubObjectMemory stClean target currentObj.objectType)
-    (fun c => by rw [scrubObjectMemory_scheduler_eq])
-    (scrubObjectMemory_objects_eq stClean target currentObj.objectType)).mpr hCleanAff
-
--- ============================================================================
--- §5  `v0.35.185` (register row 63): the ARM's own program
--- ============================================================================
-
-/-! §4 states the two invariants of `lifecycleRetypeDirectWithCleanup`, which is
-the cleanup, the scrub and the store.  The live `.lifecycleRetype` dispatch arm
-runs `lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache` — that composite
-under three cached-structure layers (the `.aside1` shootdown rounds, the
-initiator's per-core TLB drain, the domain-wide `IC IALLUIS`) — and **a claim's
-unit is the program the arm runs, wrappers included** (WS-RR RR8.12 Cut C6g).  A
-theorem stated one wrapper down is a claim about a program no syscall reaches.
-
-The three layers are object- and scheduler-silent, each by a frame the tree
-already has, so the lift is a citation rather than a second argument: that is
-what `lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_ok_frame` says,
-once, for both invariants. -/
-
-/-- **`v0.35.185`**: the ASID shootdown rounds add nothing to the object table or
-the scheduler. -/
-theorem lifecycleRetypeDirectWithCleanupShootdown_ok_frame
-    {st st' : SystemState} {ec : SeLe4n.Kernel.Concurrency.CoreId} {authCap : Capability}
-    {target : SeLe4n.ObjId} {newObj : KernelObject}
-    (h : lifecycleRetypeDirectWithCleanupShootdown ec authCap target newObj st
-      = .ok ((), st')) :
-    ∃ stB, lifecycleRetypeDirectWithCleanup authCap target newObj st = .ok ((), stB) ∧
-      st'.objects = stB.objects ∧ st'.scheduler = stB.scheduler := by
-  unfold lifecycleRetypeDirectWithCleanupShootdown at h
-  cases hBase : lifecycleRetypeDirectWithCleanup authCap target newObj st with
-  | error e => rw [hBase] at h; exact absurd h (by simp)
-  | ok pair =>
-    obtain ⟨u, stB⟩ := pair; cases u
-    rw [hBase] at h
-    simp only [] at h
-    rw [retypeShootdownAsids_eq] at h
-    simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at h
-    subst h
-    exact ⟨stB, rfl, retypeAsidRoundFold_objects _ _ stB,
-      retypeAsidRoundFold_scheduler _ _ stB⟩
-
-/-- **`v0.35.185`**: and so does the initiator's own per-core TLB drain. -/
-theorem lifecycleRetypeDirectWithCleanupShootdownPerCore_ok_frame
-    {st st' : SystemState} {ec : SeLe4n.Kernel.Concurrency.CoreId} {authCap : Capability}
-    {target : SeLe4n.ObjId} {newObj : KernelObject}
-    (h : lifecycleRetypeDirectWithCleanupShootdownPerCore ec authCap target newObj st
-      = .ok ((), st')) :
-    ∃ stB, lifecycleRetypeDirectWithCleanup authCap target newObj st = .ok ((), stB) ∧
-      st'.objects = stB.objects ∧ st'.scheduler = stB.scheduler := by
-  unfold lifecycleRetypeDirectWithCleanupShootdownPerCore at h
-  cases hSh : lifecycleRetypeDirectWithCleanupShootdown ec authCap target newObj st with
-  | error e => rw [hSh] at h; exact absurd h (by simp)
-  | ok pair =>
-    obtain ⟨u, stS⟩ := pair; cases u
-    rw [hSh] at h
-    simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at h
-    subst h
-    obtain ⟨stB, hBase, hObj, hSched⟩ :=
-      lifecycleRetypeDirectWithCleanupShootdown_ok_frame hSh
-    exact ⟨stB, hBase, by rw [retypeInitiatorDrain_objects]; exact hObj,
-      by rw [retypeInitiatorDrain_scheduler]; exact hSched⟩
-
-/-- **`v0.35.185` (register row 63): the live arm's program commits the
-composite's object table and scheduler.**
-
-The three cached-structure layers the `.lifecycleRetype` arm wraps the retype in
-— the ASID shootdown rounds, the initiator drain, the instruction-cache broadcast
-— each frame `objects` and `scheduler` outright, so every object-level and
-scheduler-level fact about §4's composite is a fact about the program the arm
-actually runs.
-
-Stated as one frame rather than once per invariant, so a fourth layer costs one
-proof rather than one per consumer. -/
-theorem lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_ok_frame
-    {st st' : SystemState} {ec : SeLe4n.Kernel.Concurrency.CoreId} {authCap : Capability}
-    {target : SeLe4n.ObjId} {newObj : KernelObject}
-    (h : lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache ec authCap target newObj st
-      = .ok ((), st')) :
-    ∃ stB, lifecycleRetypeDirectWithCleanup authCap target newObj st = .ok ((), stB) ∧
-      st'.objects = stB.objects ∧ st'.scheduler = stB.scheduler := by
-  unfold lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache at h
-  cases hPc : lifecycleRetypeDirectWithCleanupShootdownPerCore ec authCap target newObj st with
-  | error e =>
-    unfold Architecture.withIcacheBroadcast at h
-    rw [hPc] at h
-    exact absurd h (by simp)
-  | ok pair =>
-    obtain ⟨u, stP⟩ := pair; cases u
-    obtain ⟨hObjI, _, hSchedI, _⟩ := Architecture.withIcacheBroadcast_frame hPc h
-    obtain ⟨stB, hBase, hObj, hSched⟩ :=
-      lifecycleRetypeDirectWithCleanupShootdownPerCore_ok_frame hPc
-    exact ⟨stB, hBase, by rw [hObjI]; exact hObj, by rw [hSchedI]; exact hSched⟩
-
-/-- **`v0.35.185` (register row 63): the live `.lifecycleRetype` arm preserves
-Z4-O.**
-
-§4's composite under the three cached-structure layers, which commit no object.
-The hypotheses are §4's unchanged, because the layers read none of them. -/
-theorem lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_preserves_schedContextBindingConsistent
-    (st st' : SystemState) (ec : SeLe4n.Kernel.Concurrency.CoreId) (authCap : Capability)
-    (target : SeLe4n.ObjId) (newObj : KernelObject)
-    (hInv : st.objects.invExt)
-    (hCons : schedContextBindingConsistent st)
-    (hTcb : ∀ tcb : TCB, ∀ currentObj : KernelObject,
-      st.objects[target]? = some currentObj → currentObj = .tcb tcb →
-      lookupTcb st tcb.tid = some tcb)
-    (hIdentity : ∀ tcb : TCB, st.objects[target]? = some (.tcb tcb) → tcb.tid.toObjId = target)
-    (hNotSc : ∀ sc : SeLe4n.Kernel.SchedContext, st.objects[target]? ≠ some (.schedContext sc))
-    (hTcbFresh : ∀ t : TCB, newObj = .tcb t →
-      t.schedContextBinding = SchedContextBinding.unbound)
-    (h : lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache ec authCap target newObj st
-      = .ok ((), st')) :
-    schedContextBindingConsistent st' := by
-  obtain ⟨stB, hBase, hObj, _⟩ :=
-    lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_ok_frame h
-  exact schedContextBindingConsistent_of_objects_eq hObj
-    (lifecycleRetypeDirectWithCleanup_preserves_schedContextBindingConsistent st stB authCap
-      target newObj hInv hCons hTcb hIdentity hNotSc hTcbFresh hBase)
-
-/-- **`v0.35.185` (register row 63): and the SM5.H replenish-affinity
-invariant.**
-
-The same lift, through the same frame: the layers write no replenish entry and no
-object, so `replenishQueueAffinityConsistent_smp_frame` carries §4's conclusion
-the last three steps. -/
-theorem lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_preserves_replenishQueueAffinityConsistent_smp
-    (st st' : SystemState) (ec : SeLe4n.Kernel.Concurrency.CoreId) (authCap : Capability)
-    (target : SeLe4n.ObjId) (newObj : KernelObject)
-    (hInv : st.objects.invExt)
-    (hCons : schedContextBindingConsistent st)
-    (hAff : replenishQueueAffinityConsistent_smp st)
-    (hTcb : ∀ tcb : TCB, ∀ currentObj : KernelObject,
-      st.objects[target]? = some currentObj → currentObj = .tcb tcb →
-      lookupTcb st tcb.tid = some tcb)
-    (hIdentity : ∀ tcb : TCB, st.objects[target]? = some (.tcb tcb) → tcb.tid.toObjId = target)
-    (hNotSc : ∀ sc : SeLe4n.Kernel.SchedContext, st.objects[target]? ≠ some (.schedContext sc))
-    (h : lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache ec authCap target newObj st
-      = .ok ((), st')) :
-    replenishQueueAffinityConsistent_smp st' := by
-  obtain ⟨stB, hBase, hObj, hSched⟩ :=
-    lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_ok_frame h
-  exact (replenishQueueAffinityConsistent_smp_frame (st := stB) (st' := st')
-    (fun c => by rw [hSched]) hObj).mpr
-    (lifecycleRetypeDirectWithCleanup_preserves_replenishQueueAffinityConsistent_smp st stB
-      authCap target newObj hInv hCons hAff hTcb hIdentity hNotSc hBase)
+end SeLe4n.Kernel

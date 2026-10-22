@@ -30,14 +30,14 @@ open SeLe4n.Kernel.Concurrency (bootCoreId)
 
 /-! ### AN6-A.1 (H-07): Shared closure-form proof-sketch recipe
 
-Six capability-only dispatch arms currently ship as *closure-form*
+Five capability-only dispatch arms currently ship as *closure-form*
 `_preserves_projection` theorems — the theorem takes `hProjEq : ∀
 stFinal, op = .ok stFinal → projectState stFinal = projectState st` and
 its body is `hProjEq st' hStep`. The closure form provides a *stable
 interface* for callers but requires them to discharge the projection
 preservation themselves using this file's named frame lemmas.
 
-The six closure-form arms, in stabilising-recipe order:
+The five closure-form arms, in stabilising-recipe order:
 
   1. `schedContextConfigure_preserves_projection` (AK6F.13) — baseline
      recipe: two `storeObject` updates at non-observable target + a
@@ -57,10 +57,6 @@ The six closure-form arms, in stabilising-recipe order:
   5. `tcbSuspend_preserves_projection` = `suspendThread_preserves_projection`
      (AK6F.18) — hardest: 9-phase PIP-revert + IPC cleanup + donation
      cancel + TCB-state transition + optional schedule.
-  6. `lifecycleRetype_preserves_projection` = composite at
-     `lifecycleRetypeDirectWithCleanup_preserves_projection` (AK6F.16)
-     — cross-subsystem retype touches objects, CDT, lifecycle
-     object-type metadata, and optionally scheduler.
 
 **Shared proof-sketch template** (apply per arm):
 
@@ -114,10 +110,7 @@ follow from compositional reasoning over `storeObject`-level primitives.
 - `cspaceMove_preserves_lowEquivalent` — line 1158
 
 **Lifecycle operations (completed WS-K-F5):**
-- `lifecycleRetypeObject_preserves_lowEquivalent` — Helpers.lean:670
 - `retypeFromUntyped_preserves_lowEquivalent` — end of this file
-- `lifecycleRevokeDeleteRetype_preserves_projection` — end of this file
-- `lifecycleRevokeDeleteRetype_preserves_lowEquivalent` — end of this file
 
 The pattern for each is identical: all mutations happen at non-observable
 targets via `storeObject`, and CDT/lifecycle metadata is not part of
@@ -1167,8 +1160,7 @@ private theorem cspaceDeleteSlot_preserves_lowEquivalent
   exact hLow
 
 /-- cspaceRevoke at a non-observable CNode preserves projection.
-Extracted as a standalone theorem for compositional reasoning in
-`lifecycleRevokeDeleteRetype_preserves_projection`. -/
+Extracted as a standalone theorem for compositional reasoning. -/
 theorem cspaceRevoke_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (addr : CSpaceAddr) (st st' : SystemState)
@@ -2931,69 +2923,6 @@ theorem retypeFromUntyped_preserves_lowEquivalent
     (storeObject_preserves_objects_invExt _ _ _ _ hObjInvUt₁ hStoreChild₁)
     (storeObject_preserves_objects_invExt _ _ _ _ hObjInvUt₂ hStoreChild₂) hStoreIdx₁ hStoreIdx₂
 
--- ============================================================================
--- lifecycleRevokeDeleteRetype NI proofs
--- ============================================================================
-
-/-- `lifecycleRevokeDeleteRetype` at non-observable cleanup CNode and target
-preserves projection. The operation decomposes (via
-`lifecycleRevokeDeleteRetype_ok_implies_staged_steps`) into:
-1. `cspaceRevoke` at `cleanup` — projection preserved by `cspaceRevoke_preserves_projection`,
-2. `cspaceDeleteSlot` at `cleanup` — projection preserved by `cspaceDeleteSlot_preserves_projection`,
-3. `cspaceLookupSlot` at `cleanup` — read-only (fails with `invalidCapability`, no state change),
-4. `lifecycleRetypeObject` at `target` — projection preserved via `storeObject_preserves_projection`. -/
-theorem lifecycleRevokeDeleteRetype_preserves_projection
-    (ctx : LabelingContext) (observer : IfObserver)
-    (authority cleanup : CSpaceAddr) (target : SeLe4n.ObjId)
-    (newObj : KernelObject) (st st' : SystemState)
-    (hCleanupHigh : objectObservable ctx observer cleanup.cnode = false)
-    (hTargetHigh : objectObservable ctx observer target = false)
-    (hObjInv : st.objects.invExt)
-    (hStep : lifecycleRevokeDeleteRetype authority cleanup target newObj st = .ok ((), st')) :
-    projectState ctx observer st' = projectState ctx observer st := by
-  rcases lifecycleRevokeDeleteRetype_ok_implies_staged_steps st st' authority cleanup target newObj hStep with
-    ⟨stRevoked, stDeleted, _, hRevoke, hDelete, _, hRetype⟩
-  rcases lifecycleRetypeObject_ok_as_storeObject stDeleted st' authority target newObj hRetype with
-    ⟨_, _, _, _, _, _, hStore⟩
-  -- Propagate invExt through cspaceRevoke: cspaceRevoke does cspaceLookupSlot (preserves state)
-  -- + storeObject (preserves invExt)
-  have hObjInvRevoked : stRevoked.objects.invExt := by
-    obtain ⟨_, _, stS, _, _, hS, rfl⟩ := cspaceRevoke_ok_decompose cleanup st stRevoked hRevoke
-    exact (detachRevokedSlots_agree
-      (storeObject_preserves_objects_invExt st stS cleanup.cnode _ hObjInv hS) _ _ _ _).2
-  -- Propagate invExt through cspaceDeleteSlot: storeObject, then the splice
-  have hObjInvDeleted : stDeleted.objects.invExt := by
-    obtain ⟨stC, hCoreDel, rfl⟩ := cspaceDeleteSlot_ok_decompose _ _ _ hDelete
-    exact (spliceDeletedCdtNode_agree
-      (cspaceDeleteSlotCore_invExt _ _ _ hObjInvRevoked hCoreDel) _).2
-  rw [storeObject_preserves_projection ctx observer stDeleted st' target newObj hTargetHigh hObjInvDeleted hStore,
-      cspaceDeleteSlot_preserves_projection ctx observer cleanup stRevoked stDeleted hCleanupHigh hObjInvRevoked hDelete,
-      cspaceRevoke_preserves_projection ctx observer cleanup st stRevoked hCleanupHigh hObjInv hRevoke]
-
-/-- `lifecycleRevokeDeleteRetype` at non-observable cleanup CNode and target
-preserves low-equivalence. Composes low-equivalence preservation across
-three sub-operations: `cspaceRevoke`, `cspaceDeleteSlot`, and
-`lifecycleRetypeObject`. -/
-theorem lifecycleRevokeDeleteRetype_preserves_lowEquivalent
-    (ctx : LabelingContext) (observer : IfObserver)
-    (authority cleanup : CSpaceAddr) (target : SeLe4n.ObjId)
-    (newObj : KernelObject)
-    (s₁ s₂ s₁' s₂' : SystemState)
-    (hLow : lowEquivalent ctx observer s₁ s₂)
-    (hCleanupHigh : objectObservable ctx observer cleanup.cnode = false)
-    (hTargetHigh : objectObservable ctx observer target = false)
-    (hObjInv₁ : s₁.objects.invExt)
-    (hObjInv₂ : s₂.objects.invExt)
-    (hStep₁ : lifecycleRevokeDeleteRetype authority cleanup target newObj s₁ = .ok ((), s₁'))
-    (hStep₂ : lifecycleRevokeDeleteRetype authority cleanup target newObj s₂ = .ok ((), s₂')) :
-    lowEquivalent ctx observer s₁' s₂' := by
-  unfold lowEquivalent; rw [
-    lifecycleRevokeDeleteRetype_preserves_projection ctx observer authority cleanup target
-      newObj s₁ s₁' hCleanupHigh hTargetHigh hObjInv₁ hStep₁,
-    lifecycleRevokeDeleteRetype_preserves_projection ctx observer authority cleanup target
-      newObj s₂ s₂' hCleanupHigh hTargetHigh hObjInv₂ hStep₂]
-  exact hLow
-
 
 -- ============================================================================
 -- R5-B: registerServiceChecked Non-Interference (M-02)
@@ -3047,77 +2976,6 @@ theorem registerServiceChecked_NI
 -- ============================================================================
 -- S6-E: Memory scrubbing preserves non-interference
 -- ============================================================================
-
-/-- S6-E: `scrubObjectMemory` preserves the observer projection.
-
-    Memory scrubbing zeros a contiguous region in `machine.memory`. Since all
-    non-memory projection fields (objects, scheduler, services, etc.) are
-    unchanged, and `projectMemory` returns the same result when `machine.memory`
-    is deterministically modified, the overall projection is preserved when
-    scrubbing non-observable memory.
-
-    The key insight: if the scrubbed region is NOT observable to the observer
-    (`memoryAddressObservable` returns false for all addresses in the range),
-    then `projectMemory` returns `none` for those addresses both before and
-    after scrubbing. If the region IS observable, the values change from
-    arbitrary data to 0, but this is a deterministic function of the object ID
-    and type — not of the state — so both s₁ and s₂ get the same change.
-
-    For the single-state projection preservation (used by projection lemmas): -/
-theorem scrubObjectMemory_preserves_projection
-    (ctx : LabelingContext) (observer : IfObserver)
-    (objectId : SeLe4n.ObjId) (objType : KernelObjectType)
-    (st : SystemState)
-    (hNotObs : ∀ addr : SeLe4n.PAddr,
-      objectId.toNat * objectTypeAllocSize objType ≤ addr.toNat →
-      addr.toNat < objectId.toNat * objectTypeAllocSize objType +
-        objectTypeAllocSize objType →
-      memoryAddressObservable ctx observer addr = false) :
-    projectState ctx observer (scrubObjectMemory st objectId objType) =
-      projectState ctx observer st := by
-  -- scrubObjectMemory only modifies machine.memory. All non-memory fields
-  -- (objects, scheduler, services, etc.) are definitionally unchanged.
-  -- Only the memory projection needs case analysis.
-  simp only [projectState]; congr 1
-  -- memory projection: for each address, if observable and in range → contradiction;
-  -- if observable and not in range → value unchanged; if not observable → both none
-  funext addr
-  simp only [projectMemory, scrubObjectMemory, scrubExtent, SeLe4n.zeroMemoryRange]
-  split
-  · -- Address observable
-    split
-    · -- In scrubbed range — contradicts hNotObs
-      rename_i hObs hInRange
-      have hNotObs' := hNotObs addr hInRange.1 hInRange.2
-      rw [hNotObs'] at hObs; cases hObs
-    · -- Outside scrubbed range — value unchanged
-      rfl
-  · rfl
-
-/-- S6-E: `scrubObjectMemory` preserves low-equivalence when applied
-    symmetrically to both states with a non-observable target.
-
-    When a deleted object's security label does NOT flow to the observer,
-    the scrubbing region is not observable, so `lowEquivalent` is preserved.
-    This is the standard NI pattern for lifecycle operations that operate
-    on high-domain objects. -/
-theorem scrubObjectMemory_preserves_lowEquivalent
-    (ctx : LabelingContext) (observer : IfObserver)
-    (objectId : SeLe4n.ObjId) (objType : KernelObjectType)
-    (s₁ s₂ : SystemState)
-    (hLow : lowEquivalent ctx observer s₁ s₂)
-    (hNotObs : ∀ addr : SeLe4n.PAddr,
-      objectId.toNat * objectTypeAllocSize objType ≤ addr.toNat →
-      addr.toNat < objectId.toNat * objectTypeAllocSize objType +
-        objectTypeAllocSize objType →
-      memoryAddressObservable ctx observer addr = false) :
-    lowEquivalent ctx observer
-      (scrubObjectMemory s₁ objectId objType)
-      (scrubObjectMemory s₂ objectId objType) := by
-  unfold lowEquivalent
-  rw [scrubObjectMemory_preserves_projection ctx observer objectId objType s₁ hNotObs,
-      scrubObjectMemory_preserves_projection ctx observer objectId objType s₂ hNotObs]
-  exact hLow
 
 -- ============================================================================
 -- AE1-F: Donation and PIP NI preservation theorems (U-04)
@@ -3966,7 +3824,7 @@ deliberately excluded from `ObservableState` (a cache view is a covert
 timing-channel source), so no observable can depend on it. This is the
 explicit NI witness for the SM7.D mount: every `perCoreICache`-evolving
 transition (`icFetchOnCore`, `icInvalidateOnCore`, `icInvalidateBroadcast`, and
-the live `.vspaceUnmap` / `.lifecycleRetype` maintenance seams built on them)
+the live `.vspaceUnmap` maintenance seam built on them)
 trivially preserves `projectState` and hence `lowEquivalent`. -/
 theorem perCoreICache_write_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
@@ -5229,37 +5087,6 @@ theorem schedContextUnbind_preserves_projection
           projectState ctx observer stFinal = projectState ctx observer st)
     (hStep : SeLe4n.Kernel.SchedContextOps.schedContextUnbind vScId st
               = .ok ((), st')) :
-    projectState ctx observer st' = projectState ctx observer st :=
-  hProjEq st' hStep
-
--- ============================================================================
--- AK6-F.16: lifecycleRetypeDirectWithCleanup preservation (closure form)
--- ============================================================================
-
-/-- AK6-F.16: `lifecycleRetypeDirectWithCleanup` preservation. Closure
-    form; substantive 3-phase discharge for a caller:
-    - **Pre-retype cleanup** (`lifecyclePreRetypeCleanup`): TCB IPC cleanup
-      traverses endpoint queues. Each step uses `storeObject_preserves_projection`
-      at the non-observable target or field-level frame lemmas.
-    - **Memory scrub** (`scrubObjectMemory`): preserved trivially when
-      `ctx.memoryOwnership = none` via `projectMemory_const_when_ownership_none`
-      at `Projection.lean:402`. For deployments with memory ownership,
-      requires a per-address non-observability witness.
-    - **Retype** (`lifecycleRetypeDirectCommit`): single `storeObject` at the
-      non-observable target ⇒ `storeObject_preserves_projection`.
-    Typical discharge: ≈60 LOC (longer than other arms due to multi-phase
-    cleanup). -/
-theorem lifecycleRetypeDirectWithCleanup_preserves_projection
-    (ctx : LabelingContext) (observer : IfObserver)
-    (authCap : Capability) (target : SeLe4n.ObjId)
-    (newObj : KernelObject) (st st' : SystemState)
-    (hProjEq :
-        ∀ stFinal,
-          SeLe4n.Kernel.lifecycleRetypeDirectWithCleanup
-            authCap target newObj st = .ok ((), stFinal) →
-          projectState ctx observer stFinal = projectState ctx observer st)
-    (hStep : SeLe4n.Kernel.lifecycleRetypeDirectWithCleanup
-              authCap target newObj st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st :=
   hProjEq st' hStep
 

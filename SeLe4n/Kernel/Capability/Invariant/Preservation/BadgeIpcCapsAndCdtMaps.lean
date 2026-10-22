@@ -23,7 +23,6 @@ blocks.
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model
-open Internal
 
 -- ============================================================================
 -- WS-F5/D1d: cspaceMint / cspaceMutate badge preservation

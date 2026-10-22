@@ -151,12 +151,12 @@ This section formally classifies all kernel operations into enforcement categori
 and proves that the policy-checked wrappers are sufficient for the enforcement
 boundary.
 
-**Canonical classification (22 operations — V2-B/C updated):**
+**Canonical classification (20 operations — V2-B/C updated):**
 
 | Category | Operations |
 |---|---|
 | **Policy-gated** (11) | `endpointSendDualChecked`, `endpointReceiveDualChecked`, `endpointCallChecked` (U5-B), `endpointReplyChecked` (U5-C), `cspaceMintChecked`, `cspaceCopyChecked`, `cspaceMoveChecked`, `notificationSignalChecked`, `registerServiceChecked`, `notificationWaitChecked` (V2-A), `endpointReplyRecvChecked` (V2-C) |
-| **Capability-only** (7) | `cspaceLookupSlot`, `cspaceInsertSlot`, `cspaceDeleteSlot`, `cspaceRevoke`, `lifecycleRetypeObject`, `lifecycleRevokeDeleteRetype`, `storeObject` |
+| **Capability-only** (5) | `cspaceLookupSlot`, `cspaceInsertSlot`, `cspaceDeleteSlot`, `cspaceRevoke`, `storeObject` |
 | **Read-only** (4) | `chooseThread`, `lookupObject`, `lookupService`, `cspaceResolvePath` |
 
 Policy-gated operations cross domain boundaries and carry explicit information-flow
@@ -246,8 +246,6 @@ def enforcementBoundary : List EnforcementClass :=
   , .readOnly "lookupService"
   , .readOnly "cspaceResolvePath"
   -- Internal/lifecycle: building blocks used under capability-guarded contexts
-  , .capabilityOnly "lifecycleRetypeObject"
-  , .capabilityOnly "lifecycleRevokeDeleteRetype"
   , .capabilityOnly "storeObject"
   -- Z8-M: SchedContext capability-only operations (authority from cap possession)
   , .capabilityOnly "schedContextConfigure"
@@ -364,7 +362,7 @@ def enforcementBoundary : List EnforcementClass :=
   , .capabilityOnly "auditDrainVisiblePrefix"
   -- WS-SM SM8.E.3: the SM3 two-phase-locking bracket, promoted here from the
   -- separate per-core list SM8.B introduced. **Capability-only**, and for the
-  -- same reason as `storeObject`'s and `lifecycleRetypeObject`'s: it is an
+  -- same reason as `storeObject`'s: it is an
   -- internal building block invoked under an already-capability-guarded
   -- context, and it consults no information-flow policy — the bracket cannot
   -- admit a flow the guarded transition would not admit, because it carries no
@@ -401,7 +399,6 @@ def syscallIdToEnforcementName : SyscallId → String
   | .cspaceMove => "cspaceMoveChecked"
   | .cspaceDelete => "cspaceDeleteSlotFinalising"
   | .cspaceRevoke => "cspaceRevokeCdtFinalising"
-  | .lifecycleRetype => "lifecycleRetypeObject"
   | .untypedRetype => "untypedRetypeFromCap"
   | .untypedReset => "untypedResetFromCap"
   | .vspaceMap => "vspaceMapPageCheckedWithShootdownFromState"

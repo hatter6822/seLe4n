@@ -17,12 +17,15 @@ import SeLe4n.Kernel.IPC.Invariant.Defs
 AN4-G.5 (LIF-M05) child module extracted from
 `SeLe4n.Kernel.Lifecycle.Operations`. Contains the cleanup-primitive
 preservation theorems, the `detachCNodeSlots` helper, the composite
-`lifecyclePreRetypeCleanup` pipeline, the named `lifecycleCleanupPipeline`
-wrapper (AN4-G.2), the `SeLe4n.Kernel.Internal.lifecycleRetypeObject`
-primitive (AN4-A), and the `lifecycleRevokeDeleteRetype` composition. All
-declarations retain their original names, order, and proofs. Private
-helpers are promoted to file-boundary scope so the sibling
-`ScrubAndUntyped` and `RetypeWrappers` modules can reference them.
+`lifecyclePreRetypeCleanup` pipeline and the named `lifecycleCleanupPipeline`
+wrapper (AN4-G.2). Private helpers are promoted to file-boundary scope so the
+sibling `ScrubAndUntyped` and `RetypeWrappers` modules can reference them.
+
+The pipeline is an object's destroy step.  The in-place retype that ran it was
+retired at WS-ZA ZA5.4 part 14 (every object is carved from an untyped), so no
+transition runs it now; it is kept for seL4's `finaliseCap` on a kernel
+object's final delete, which reuses it (`docs/planning/UNTYPED_RESET_PLAN.md`,
+part 18; `docs/REGISTERED_DEBT.md`).
 -/
 
 namespace SeLe4n.Kernel
@@ -2027,9 +2030,8 @@ def lifecyclePreRetypeCleanup (st : SystemState) (target : SeLe4n.ObjId)
     -- Both target shapes then detach, which is why this arm no longer reads
     -- `newObj`.  CNode → CNode used to skip the detach on the grounds that no
     -- CDT cleanup was needed; that is wrong, because retype replaces the object
-    -- wholesale and `objectOfKernelType` — the only thing the live
-    -- `.lifecycleRetype` dispatch builds a replacement with — yields
-    -- `slots := UniqueSlotMap.empty` for `.cnode`.  No slot survives, so
+    -- wholesale and the replacement CNode had `slots := UniqueSlotMap.empty`.
+    -- No slot survives, so
     -- skipping left every mapping pointing into a CNode that no longer holds
     -- the capability it was minted for: a capability later placed at such a
     -- slot inherits a destroyed one's derivation node, and revoking *that*
@@ -2161,7 +2163,7 @@ def lifecyclePreRetypeCleanup (st : SystemState) (target : SeLe4n.ObjId)
   | .vspaceRoot _ =>
     -- **`v0.36.35`: nor can a VSpace root — the fourth memory-backed kind, and
     -- the one this match had missed.**  `v0.36.9` refused *creating* a root in
-    -- place (`retypeReplacementAdmissible`) and nothing refused *destroying*
+    -- place and nothing refused *destroying*
     -- one: a root fell to the wildcard below, so an in-place retype freed its
     -- ASID and replaced the object while every page table installed under it
     -- kept its page — live leaf descriptors included — and its install record,
@@ -2248,9 +2250,8 @@ per-step primitives:
 3. `cleanupEndpointServiceRegistrations` (service-endpoint detachment)
 4. `detachCNodeSlots` (CDT slot-level detachment)
 
-into a single named entry-point so consumers reading `API.lean` or the
-`lifecycleRetypeWithCleanup` wrapper can reference the pipeline by name
-rather than enumerating its steps. The per-step helpers remain public
+into a single named entry-point so consumers can reference the pipeline by
+name rather than enumerating its steps. The per-step helpers remain public
 because proof-chain callers (preservation theorems, cross-subsystem
 bridge lemmas) reason about each step individually; the wrapper is a
 **pure alias** for documentation consolidation. -/
@@ -2501,170 +2502,6 @@ theorem lifecyclePreRetypeCleanup_tlbShootdown_eq
     · injection hOk with hOk; subst hOk; rfl
   | frame _ | pageTable _ =>
     simp [lifecyclePreRetypeCleanup] at hOk
-
-namespace Internal
-
-/-- **Internal building block — callers should use `lifecycleRetypeWithCleanup` instead.**
-
-Retype an existing object id to a new typed object value.
-This function skips `lifecyclePreRetypeCleanup` and `scrubObjectMemory`,
-which means dangling references may persist and backing memory is not zeroed
-(violating the H-05 safety guarantee and S6-C memory scrubbing guarantee).
-
-AN4-A / H-02: Lives in the `SeLe4n.Kernel.Internal` namespace so a direct
-reference from production dispatch code (`SeLe4n.Kernel.lifecycleRetypeObject`)
-is a compile error. Proof-chain consumers, the cleanup-integrated wrappers
-(`lifecycleRetypeWithCleanup`, `lifecycleRetypeDirectWithCleanup`), and the
-test harness are permitted to `open SeLe4n.Kernel.Internal` — permitted
-consumers are enumerated in `scripts/lifecycle_internal_allowlist.txt` and
-the list is enforced by `scripts/test_tier0_hygiene.sh`.
-
-T5-A (M-NEW-4): Marked as internal. All external retype operations must go
-through `lifecycleRetypeWithCleanup` to ensure cleanup + scrubbing.
-
-V5-B (M-DEF-2): **Internal only — do not call from new code.** This function
-bypasses cleanup and memory scrubbing, violating the H-05 safety guarantee
-and S6-C memory scrubbing guarantee. Production callers must use
-`lifecycleRetypeWithCleanup` (CSpaceAddr path) or
-`lifecycleRetypeDirectWithCleanup` (pre-resolved cap path). This definition
-remains reachable only via `Internal` so the proof chain
-(`lifecycleRetypeObject_ok_as_storeObject`,
-`lifecycleRetypeObject_ok_lookup_preserved_ne`, etc.) can reference it by
-name while production dispatch cannot.
-
-Deterministic branch contract for M4-A step 2:
-1. target object must exist,
-2. lifecycle metadata for the target id must agree with object-store type (`illegalState` otherwise),
-3. authority slot lookup must succeed,
-4. authority must satisfy `lifecycleRetypeAuthority` (`illegalAuthority` otherwise),
-5. object store + lifecycle object-type metadata are updated atomically on success. -/
-def lifecycleRetypeObject
-    (authority : CSpaceAddr)
-    (target : SeLe4n.ObjId)
-    (newObj : KernelObject) : Kernel Unit :=
-  fun st =>
-    match st.getObject? target with
-    | none => .error .objectNotFound
-    | some currentObj =>
-        if st.lifecycle.objectTypes[target]? = some currentObj.objectType then
-          match cspaceLookupSlot authority st with
-          | .error e => .error e
-          | .ok (authCap, st') =>
-              if lifecycleRetypeAuthority authCap target then
-                storeObject target newObj st'
-              else
-                .error .illegalAuthority
-        else
-          .error .illegalState
-
-end Internal
-
--- AN4-A allowlist marker: the rest of this file may reference
--- `lifecycleRetypeObject` by bare name so the wrappers below and the associated
--- preservation theorems can compose without noisy `Internal.` prefixes.
-open Internal
-
-/-- WS-SM SM7.B helper: a successful slot lookup returns the input
-state unchanged (pair form). -/
-private theorem cspaceLookupSlot_pair_state_eq
-    (st : SystemState) (addr : CSpaceAddr)
-    (pair : Capability × SystemState)
-    (h : cspaceLookupSlot addr st = .ok pair) : pair.2 = st := by
-  unfold cspaceLookupSlot at h
-  split at h
-  · simp only [Except.ok.injEq] at h
-    rw [← h]
-  · split at h <;> cases h
-
-/-- WS-SM SM7.B: the raw retype primitive frames the TLB-shootdown
-state — authority lookup is state-preserving and the replace bottoms
-out in `storeObject` (`pendingBounded` bundle-carriage link for the
-CSpaceAddr retype path). -/
-theorem lifecycleRetypeObject_tlbShootdown_eq
-    (authority : CSpaceAddr) (target : SeLe4n.ObjId) (newObj : KernelObject)
-    (st st' : SystemState)
-    (h : lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
-    st'.tlbShootdown = st.tlbShootdown := by
-  unfold lifecycleRetypeObject SystemState.getObject? at h
-  revert h
-  cases hObj : st.objects[target]? with
-  | none => intro h; cases h
-  | some currentObj =>
-      simp only []
-      split
-      · cases hLook : cspaceLookupSlot authority st with
-        | error e => intro h; cases h
-        | ok pair =>
-            simp only []
-            split
-            · intro h
-              rw [SeLe4n.Model.storeObject_tlbShootdown_eq pair.2 target
-                    newObj _ h,
-                  cspaceLookupSlot_pair_state_eq st authority pair hLook]
-            · intro h; cases h
-      · intro h; cases h
-
-/-- Compose local revoke/delete cleanup with lifecycle retype.
-
-Authority and state preconditions for deterministic success:
-1. `authority ≠ cleanup` (delete-before-reuse ordering guard),
-2. `cleanup` must resolve to a capability so revoke/delete can execute,
-3. post-delete lookup of `cleanup` must return `invalidCapability`,
-4. lifecycle retype preconditions from `lifecycleRetypeObject` must hold.
-
-Failure branches remain explicit and ordered:
-- aliasing `authority = cleanup` is rejected as `illegalState`,
-- revoke/delete failures are propagated directly,
-- unexpected post-delete lookup success is rejected as `illegalState`,
-- final retype failures are propagated directly.
-
-**S6-C note:** This is a low-level composition that does not perform memory
-scrubbing. Callers requiring memory scrubbing (to prevent inter-domain
-information leakage) should use `lifecycleRetypeWithCleanup`, which
-integrates `scrubObjectMemory` between cleanup and retype.
-
-**AN4-G.6 (LIF-M06) — partial-failure contract**: this pipeline is
-**non-transactional**. An early `.error` return leaves the system state in
-a partially-cleaned form — specifically:
-
-* If `cspaceRevoke` fails, no mutations have committed; the caller's state
-  is preserved.
-* If `cspaceDeleteSlot` fails **after** a successful revoke, the revoked
-  CDT edges remain stripped even though the slot itself is intact. The
-  caller observes `.error` with the partial revoke side-effect.
-* If the post-delete `cspaceLookupSlot` returns unexpectedly, both revoke
-  and delete have committed; the retype is skipped but the slot was
-  already scrubbed clean.
-* If the final `lifecycleRetypeObject` fails, revoke + delete committed
-  but the target object retains its old variant.
-
-Callers must therefore treat `.error` from this function as a **best-effort
-cleanup partially completed** outcome, NOT as a rollback. Callers needing
-strict transactional semantics should use
-`lifecycleRetypeWithCleanup` which wraps the strict cleanup pipeline and
-propagates errors before any retype is attempted. See `SELE4N_SPEC.md` §5
-"Lifecycle partial-failure semantics" for the rollback-escalation
-protocol. -/
-def lifecycleRevokeDeleteRetype
-    (authority cleanup : CSpaceAddr)
-    (target : SeLe4n.ObjId)
-    (newObj : KernelObject) : Kernel Unit :=
-  fun st =>
-    if authority = cleanup then
-      .error .illegalState
-    else
-      match cspaceRevoke cleanup st with
-      | .error e => .error e
-      | .ok (_, stRevoked) =>
-          match cspaceDeleteSlot cleanup stRevoked with
-          | .error e => .error e
-          | .ok (_, stDeleted) =>
-              match cspaceLookupSlot cleanup stDeleted with
-              | .ok _ => .error .illegalState
-              | .error .invalidCapability =>
-                  lifecycleRetypeObject authority target newObj stDeleted
-              | .error e => .error e
-
 
 -- ============================================================================
 -- WS-RR RR7.22 (residual)  The endpoint sweep, characterised per key

@@ -3663,47 +3663,6 @@ theorem ofNat_toNat (t : KernelObjectType) : ofNat? t.toNat = some t := by
 theorem toNat_injective {a b : KernelObjectType} (h : a.toNat = b.toNat) : a = b := by
   cases a <;> cases b <;> simp [toNat] at h <;> rfl
 
-/-- **WS-BP BP7.1: the kinds whose object *is* authority over physical memory.**
-
-An untyped object names a region of memory it may be carved into, and a frame
-names the page a mapping of it installs; a capability to either is authority
-over the memory itself, not over a kernel data structure.  seL4 creates both
-only from memory the kernel already accounts for — the boot hands out the
-initial untypeds, and every frame is carved out of one — so neither may be
-created from nothing.  That is exactly what an in-place retype would do: it
-replaces an object with a fresh value whose fields the caller chooses, so a
-retype to `.untyped` or `.frame` would forge a region or a page at an address no
-authority covered (`objectOfKernelType .untyped` builds an untyped at physical
-address `0` with a caller-chosen size).  `retypeReplacementAdmissible` refuses
-both kinds by this predicate.
-
-Enumerated constructor by constructor, with no wildcard: a kind added to
-`KernelObjectType` fails to elaborate here until it is classified, where a
-wildcard would classify it as not memory-backed — the fail-open direction.
-
-**A VSpace root is memory-backed** (`v0.36.9`).  A translation table is a page
-of memory the kernel owns and a PE walks, and seL4 creates one only from an
-untyped (`seL4_ARM_VSpaceObject`).  Until this version the in-place retype
-could create one, and it did so at ASID `0` — the ASID the boot VSpace root
-holds — with nothing checking the ASID was free, so `storeObject` moved the ASID
-table's entry from the kernel's own root to the caller's and two live roots
-shared one TLB tag (`tests/VSpaceCapabilityBindingSuite.lean` §5h is the
-witness).  Classifying the kind here is what makes the retype refuse it; a
-root's carve from an untyped, with a fresh ASID and a physical table base, is
-the next slice of BP7.1. -/
-def memoryBacked : KernelObjectType → Bool
-  | .tcb => false
-  | .endpoint => false
-  | .notification => false
-  | .cnode => false
-  | .vspaceRoot => true
-  | .untyped => true
-  | .schedContext => false
-  | .reply => false
-  | .frame => true
-  -- WS-BP BP7.1 (`v0.36.12`): a translation table is a page the kernel owns.
-  | .pageTable => true
-
 /-- **WS-BP BP7.1: the kinds a DEVICE untyped may back.**
 
 A device untyped names MMIO, and a store to it is a command to a device, not a
@@ -3712,14 +3671,12 @@ and a frame, which is how a driver is given its registers — and nothing the
 kernel itself reads or writes as data.  That is seL4's rule (`Untyped_Retype`
 on a device untyped yields frames and untypeds only).
 
-It is **not** `memoryBacked`, and the difference is a VSpace root: a translation
-table is memory the kernel owns and walks, so it may come only from an untyped
-(`memoryBacked`), and it must be RAM, since a table walk reading a device would
-read a register.  Keeping the two questions apart is what lets the first grow a
-kind without widening the second.
+A VSpace root and a page table are refused: a translation table is memory the
+kernel owns and walks, and it must be RAM, since a table walk reading a device
+would read a register.
 
-Enumerated constructor by constructor, with no wildcard, for `memoryBacked`'s
-reason: a kind a wildcard answered would be admitted to MMIO by default. -/
+Enumerated constructor by constructor, with no wildcard: a kind a wildcard
+answered would be admitted to MMIO by default. -/
 def deviceBackable : KernelObjectType → Bool
   | .tcb => false
   | .endpoint => false
@@ -3816,22 +3773,17 @@ def wellFormed (obj : KernelObject)
   | .notification _ => True
   | .vspaceRoot _ => True
   | .untyped _ => True
-  -- **`v0.35.184` (register row 63)**: a retyped/created SchedContext must start
-  -- with **no bound thread** -- the `Reply` clause below, one field over, for the
-  -- same reason and found by the same question.  `lifecycleRetypeDirectWithCleanup`
-  -- checks only `newObj.wellFormed`, so without this the model admits a retype
-  -- installing a scheduling context that claims a thread which does not name it
-  -- back, which is exactly what `schedContextBindingConsistent` (Z4-O) forbids: the
-  -- thread's own binding is whatever it was, and no operation reconciles the two.
-  -- The live dispatch already satisfies it -- `objectOfKernelType`'s `.schedContext`
-  -- arm is `SchedContext.empty`, whose `boundThread` is at its `none` default -- so
-  -- this refuses nothing the kernel does and closes what the *model* admitted.
+  -- **`v0.35.184` (register row 63)**: a created SchedContext must start with
+  -- **no bound thread** -- the `Reply` clause below, one field over, for the same
+  -- reason.  A scheduling context that claims a thread which does not name it
+  -- back is exactly what `schedContextBindingConsistent` (Z4-O) forbids.  The
+  -- carve's `.schedContext` object is `SchedContext.empty`, whose `boundThread`
+  -- is at its `none` default.
   | .schedContext sc => sc.boundThread = none
-  -- WS-SM SM6.D (PR #822 review): a retyped/created Reply must start INERT — no
-  -- caller and no reply-stack link in either direction — mirroring the boot-safe Reply
-  -- requirement.  Otherwise `lifecycleRetypeWithCleanup` (which only checks
-  -- `newObj.wellFormed`) could install a Reply that bypasses the
-  -- `linkCallerReply` / `replyCallerLinkage` setup path and seed a stale/in-use link.
+  -- WS-SM SM6.D (PR #822 review): a created Reply must start INERT — no caller
+  -- and no reply-stack link in either direction — mirroring the boot-safe Reply
+  -- requirement, so no installed Reply bypasses the `linkCallerReply` /
+  -- `replyCallerLinkage` setup path and seeds a stale/in-use link.
   | .reply r => r.caller = none ∧ r.prev = none ∧ r.next = none
   | .frame f => f.wellFormed
   | .pageTable p => p.wellFormed
@@ -3846,12 +3798,9 @@ round 8, and its own docstring states the hazard in terms: *a SchedContext at
 slot 9 carrying `scId = 12` would have its budget replenished on whatever object
 12 is*.
 
-Nothing enforced it at the **runtime**, and the one path that installs such an
-object — `objectOfKernelType` through the retype — stamps the reserved
-**sentinel** into all three.  So a successful retype broke at the runtime exactly
-the agreement the boot enforces; the two retype wrappers refuse it now
-(`lifecycleRetypeWithCleanup`, `lifecycleRetypeDirectWithCleanup`), and the live
-dispatch stamps the target's identity with `withIdentity` below.
+At the **runtime** the one path that installs such an object is the untyped
+carve, which builds each of the three with the child id it is stored at
+(`CarveRequest.object_embeddedIdentityMatches`).
 
 The match has **no** wildcard: a kernel object that starts carrying its own id
 must be classified here, rather than silently answering `true`.  The six that
@@ -3869,55 +3818,6 @@ def embeddedIdentityMatches (obj : KernelObject) (key : SeLe4n.ObjId) : Bool :=
   | .untyped _ => true
   | .frame _ => true
   | .pageTable _ => true
-
-/-- **`v0.35.187`: stamp an object with the identity of the slot it is stored at.**
-
-The other half of the guard above: a refusal with no way to satisfy it would
-refuse every retype.  It writes **only** the identity field, so every property of
-the replacement that the retype's other guards and the dispatch payoff's
-`retypeReplacementFresh` pack read — a TCB's binding and roots, a SchedContext's
-`boundThread`, a Reply's `caller` and stack links — survives it unchanged, which
-is what `withIdentity_preserves_*` below state rather than leave to inspection.
-
-The six kinds that carry no identity are returned untouched, and `.tcb` /
-`.schedContext` / `.reply` are written out rather than matched with a wildcard,
-for the reason `embeddedIdentityMatches` gives. -/
-def withIdentity (obj : KernelObject) (key : SeLe4n.ObjId) : KernelObject :=
-  match obj with
-  | .tcb t => .tcb { t with tid := SeLe4n.ThreadId.ofObjId key }
-  | .schedContext sc => .schedContext { sc with scId := SeLe4n.SchedContextId.ofObjId key }
-  | .reply r => .reply { r with
-      replyId := SeLe4n.ReplyId.ofObjId key
-      capTarget := .replyCap (SeLe4n.ReplyId.ofObjId key)
-      capTarget_eq := rfl }
-  | .endpoint e => .endpoint e
-  | .notification n => .notification n
-  | .cnode c => .cnode c
-  | .vspaceRoot v => .vspaceRoot v
-  | .untyped u => .untyped u
-  | .frame f => .frame f
-  | .pageTable p => .pageTable p
-
-/-- **`v0.35.187`**: stamping satisfies the guard — so the refusal is one a
-caller can meet, which is what keeps it a discipline rather than a wall. -/
-@[simp] theorem withIdentity_embeddedIdentityMatches (obj : KernelObject)
-    (key : SeLe4n.ObjId) :
-    (obj.withIdentity key).embeddedIdentityMatches key = true := by
-  cases obj <;> simp [withIdentity, embeddedIdentityMatches]
-
-/-- **`v0.35.187`**: stamping preserves the *kind*, so every kind-indexed fact
-about a replacement survives it. -/
-@[simp] theorem withIdentity_objectType (obj : KernelObject) (key : SeLe4n.ObjId) :
-    (obj.withIdentity key).objectType = obj.objectType := by
-  cases obj <;> rfl
-
-/-- **`v0.35.187`**: stamping preserves well-formedness — the identity field is
-read by no clause of `wellFormed`, which is what makes the two guards
-independent rather than one constraining the other. -/
-@[simp] theorem withIdentity_wellFormed (obj : KernelObject) (key : SeLe4n.ObjId)
-    (objects : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject) :
-    (obj.withIdentity key).wellFormed objects ↔ obj.wellFormed objects := by
-  cases obj <;> simp [withIdentity, wellFormed]
 
 /-- T5-C: `wellFormed` is decidable for all object kinds, enabling runtime validation. -/
 instance (obj : KernelObject)

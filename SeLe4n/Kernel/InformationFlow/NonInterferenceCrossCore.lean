@@ -397,30 +397,22 @@ theorem cspaceRevokeCdtFinalising_crossCoreNonInterference
   crossCoreNonInterference_ofCores ctx observer (by simp)
     (cspaceRevokeCdtFinalising_confinedToCores executingCore addr st st' hStep) hShared
 
-/-- SM8.B.3 (**the live `.lifecycleRetype` arm, cross-core**): a retype is
-invisible on every core the destroyed object did not occupy.
-
-Read the hypotheses: `hne` is membership in a set computed from the **pre-state**
-(it has to be — the destroyed thread is gone from the post-state), and `hShared`
-is the object-level premise. There is no hypothesis about the label of the
-thread being destroyed.
-
-The CSpaceAddr sibling `lifecycleRetypeWithCleanupShootdownPerCoreIcache` gets no
-entry of its own because no syscall arm routes to it; if one ever does, the
-per-core routing gate will ask for this proof at that form before the arm can
-merge. -/
-theorem lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_crossCoreNonInterference
-    (ctx : LabelingContext) (observer : IfObserver) (executingCore : CoreId)
-    (authCap : Capability) (target : SeLe4n.ObjId) (newObj : KernelObject)
+/-- WS-ZA ZA5.4 part 14 (**the live `.untypedRetype` arm, cross-core**): the
+carve — every kernel object is made this way — is invisible on every core.  It
+takes the executing core only to read the domain a carved thread starts in, and
+writes the object store and the CDT alone. -/
+theorem untypedRetypeFromCap_crossCoreNonInterference
+    (ctx : LabelingContext) (observer : IfObserver) (tid : SeLe4n.ThreadId)
+    (executingCore : CoreId) (srcAddr : SeLe4n.CPtr)
+    (args? : Except KernelError Architecture.SyscallArgDecode.UntypedRetypeArgs)
     (st st' : SystemState) (c : CoreId) (hInv : st.objects.invExt)
-    (hne : c ∉ lifecycleRetypeWriteSet st target)
-    (hStep : lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache executingCore authCap
-      target newObj st = .ok ((), st'))
+    (hStep : untypedRetypeFromCap tid executingCore srcAddr args? st = .ok ((), st'))
     (hShared : sharedViewUnchanged ctx observer st st') :
-    projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
-  crossCoreNonInterference_ofCores ctx observer hne
-    (lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_confinedToCores executingCore
-      authCap target newObj st st' hInv hStep) hShared
+    projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c := by
+  obtain ⟨_, _, _, _, _, -, -, -, -, hCarve⟩ :=
+    untypedRetypeFromCap_ok tid executingCore srcAddr args? st st' hStep
+  exact crossCoreNonInterference_ofCores ctx observer (by simp)
+    (untypedRetypeObject_confinedToCores _ _ _ _ st st' hInv hCarve) hShared
 
 -- ============================================================================
 -- §6 The non-interference instantiations
@@ -1220,13 +1212,12 @@ inductive CrossCoreTransition where
   /-- WS-BP BP7.1 (`v0.36.7`) — the **live** `.cspaceRevoke` arm.  Same reason:
   every frame capability it destroys is finalised. -/
   | cspaceRevokeDispatch
-  /-- SM8.B — the **live** `.lifecycleRetype` arm, and the one of the final three
-  that genuinely writes scheduler state: destroying a TCB sweeps it out of every
-  core's run queue and current slot, because a destroy has no home core to key
-  on. Its write set is therefore the set of cores the destroyed thread
-  *occupied* — sharp rather than the trivially-true `allCores`, and available
-  only because review round 17 made the sweep's step guarded. -/
-  | lifecycleRetypeDispatch
+  /-- WS-ZA ZA5.4 part 14 — the **live** `.untypedRetype` arm, the carve every
+  kernel object is made by.  Takes an executing core (a carved thread's domain
+  and affinity are that core's) and writes no core: the untyped's record, the
+  child, the free index, the new capability and its derivation edge are the
+  object store and the CDT. -/
+  | untypedRetypeDispatch
   /-- SM8.C.9 — the **live** `.declassify` arm. Takes an executing core (to
   resolve the running subject whose domain the downgrade is attributed to) and
   writes **no** core: its whole state effect is one entry appended to the
@@ -1266,7 +1257,7 @@ def CrossCoreTransition.all : List CrossCoreTransition :=
    .suspendThreadDispatch, .resumeThreadDispatch,
    .setPriorityDispatch, .setMCPriorityDispatch,
    .vspaceMapDispatch, .vspaceUnmapDispatch, .untypedResetDispatch,
-   .cspaceDeleteDispatch, .cspaceRevokeDispatch, .lifecycleRetypeDispatch,
+   .cspaceDeleteDispatch, .cspaceRevokeDispatch, .untypedRetypeDispatch,
    .declassifyDispatch, .declassifySignalDispatch,
    .auditReadDispatch, .auditDrainDispatch, .yieldDispatch]
 
@@ -1329,8 +1320,7 @@ def crossCoreNiTheorem : CrossCoreTransition → String
   | .untypedResetDispatch => niName! untypedResetFromCap_crossCoreNonInterference
   | .cspaceDeleteDispatch => niName! cspaceDeleteSlotFinalising_crossCoreNonInterference
   | .cspaceRevokeDispatch => niName! cspaceRevokeCdtFinalising_crossCoreNonInterference
-  | .lifecycleRetypeDispatch =>
-      niName! lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_crossCoreNonInterference
+  | .untypedRetypeDispatch => niName! untypedRetypeFromCap_crossCoreNonInterference
   | .declassifyDispatch =>
       niName! declassifyObjectFromCore_crossCoreNonInterference
   -- SM9.C.6: the DISPATCH-level composition, for the round-4 reason and one
@@ -1424,7 +1414,7 @@ def crossCoreTransitionIsLiveArm : CrossCoreTransition → Bool
   | .declassifySignalDispatch => true
   | .auditReadDispatch => true
   | .auditDrainDispatch => true
-  | .lifecycleRetypeDispatch => true
+  | .untypedRetypeDispatch => true
   | .yieldDispatch => true
 
 theorem crossCoreTransitionIsLiveArm_count :
@@ -1524,7 +1514,7 @@ def crossCoreLiveArmSyscall : CrossCoreTransition → Option SyscallId
   | .declassifySignalDispatch => some .declassifySignal
   | .auditReadDispatch => some .auditRead
   | .auditDrainDispatch => some .auditDrain
-  | .lifecycleRetypeDispatch => some .lifecycleRetype
+  | .untypedRetypeDispatch => some .untypedRetype
   | .yieldDispatch => some .yield
 
 /-- SM8.B.2: the evidence backing each live-arm classification. -/
@@ -1573,8 +1563,8 @@ def crossCoreLiveArmEvidence : CrossCoreTransition → LiveArmEvidence
       .delegationProof .declassifySignal syscallDelegates_declassifySignal
   | .auditReadDispatch => .delegationProof .auditRead syscallDelegates_auditRead
   | .auditDrainDispatch => .delegationProof .auditDrain syscallDelegates_auditDrain
-  | .lifecycleRetypeDispatch =>
-      .delegationProof .lifecycleRetype syscallDelegates_lifecycleRetype
+  | .untypedRetypeDispatch =>
+      .delegationProof .untypedRetype syscallDelegates_untypedRetype
   | .yieldDispatch => .delegationProof .yield syscallDelegates_yield
 
 /-- SM8.B.2 (**the tie is checked, not assumed**): a delegation-backed entry
@@ -1659,7 +1649,8 @@ def crossCoreTransitionWritesRemote : CrossCoreTransition → Bool
   -- reason — their teardown is the unmap's own transition
   | .cspaceDeleteDispatch => false
   | .cspaceRevokeDispatch => false
-  | .lifecycleRetypeDispatch => true
+  -- WS-ZA ZA5.4 part 14: and the carve, which writes the object store alone
+  | .untypedRetypeDispatch => false
   -- SM8.C.9: and the declassification, for a different reason — the only field
   -- it writes is not per-core at all
   | .declassifyDispatch => false
@@ -1674,6 +1665,6 @@ def crossCoreTransitionWritesRemote : CrossCoreTransition → Bool
   | .yieldDispatch => false
 
 theorem crossCoreTransitionWritesRemote_count :
-    (CrossCoreTransition.all.filter crossCoreTransitionWritesRemote).length = 23 := by decide
+    (CrossCoreTransition.all.filter crossCoreTransitionWritesRemote).length = 22 := by decide
 
 end SeLe4n.Kernel

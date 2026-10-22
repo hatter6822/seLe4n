@@ -209,28 +209,33 @@ fn xval_008_cspace_delete() {
 // Lifecycle syscall (RUST-XVAL-009)
 // ============================================================================
 
-/// RUST-XVAL-009: Lifecycle retype register layout.
+/// RUST-XVAL-009: the carve's register layout.  WS-ZA ZA5.4 part 14 retired the
+/// in-place `lifecycleRetype` (syscall 8) this vector used to pin; every object
+/// is now carved from an untyped, so the vector pins the carve of a kernel
+/// object with a size — a CNode of radix 4.
 #[test]
-fn xval_009_lifecycle_retype() {
-    let args = lifecycle::LifecycleRetypeArgs {
-        target_obj: ObjId::from(42u64),
-        new_type: TypeTag::Notification, // V1-C: now TypeTag
-        size: 0,
+fn xval_009_untyped_retype_kernel_object() {
+    let args = lifecycle::UntypedRetypeArgs {
+        new_type: TypeTag::CNode,
+        size_bits: 4,
+        child_id: ObjId::from(42u64),
+        dst_cnode: CPtr::from(3u64),
+        dst_slot: Slot::from(7u64),
     };
-    let encoded = args.encode();
     let req = SyscallRequest {
         cap_addr: CPtr::from(900u64),
-        msg_info: MessageInfo::new(3, 0, 0).unwrap(),
-        msg_regs: [encoded[0], encoded[1], encoded[2], 0],
-        syscall_id: SyscallId::LifecycleRetype,
+        msg_info: MessageInfo::new(4, 0, 0).unwrap(),
+        msg_regs: args.encode(),
+        syscall_id: SyscallId::UntypedRetype,
     };
     verify_regs(
         &req,
         &[
-            (2, 42, "x2=targetObj"),
-            (3, 2, "x3=newType(Notification)"),
-            (4, 0, "x4=size"),
-            (6, 8, "x7=SyscallId::LifecycleRetype"),
+            (2, 3 | (4 << 8), "x2=newType(CNode)|radix<<8"),
+            (3, 42, "x3=childId"),
+            (4, 3, "x4=dstCNode"),
+            (5, 7, "x5=dstSlot"),
+            (6, 36, "x7=SyscallId::UntypedRetype"),
         ],
     );
 }
@@ -540,11 +545,24 @@ fn message_info_exhaustive_bounds() {
 /// PR #887 review: +TcbSetFaultHandler).
 #[test]
 fn syscall_id_exhaustive_roundtrip() {
-    for i in 0..(SyscallId::COUNT as u64) {
+    for i in live_syscall_numbers() {
         let sid = SyscallId::from_u64(i).expect("valid syscall id");
         assert_eq!(sid.to_u64(), i);
     }
-    assert!(SyscallId::from_u64(SyscallId::COUNT as u64).is_none());
+    // WS-ZA ZA5.4 part 14: a retired number decodes to nothing, and so does
+    // the first number past the encoding.
+    for &r in SyscallId::RETIRED.iter() {
+        assert!(SyscallId::from_u64(r).is_none());
+    }
+    assert!(SyscallId::from_u64(SyscallId::ENCODING_BOUND).is_none());
+    assert_eq!(live_syscall_numbers().count(), SyscallId::COUNT);
+}
+
+/// The numbers a live syscall carries: every number below the encoding bound
+/// except the retired ones (WS-ZA ZA5.4 part 14 retired 8, the in-place
+/// retype, and never reassigns it).
+fn live_syscall_numbers() -> impl Iterator<Item = u64> {
+    (0..SyscallId::ENCODING_BOUND).filter(|n| !SyscallId::RETIRED.contains(n))
 }
 
 /// Verify KernelError roundtrip for all 57 variants.
@@ -554,6 +572,10 @@ fn syscall_id_exhaustive_roundtrip() {
 fn kernel_error_exhaustive_roundtrip() {
     // WS-RR RR7.14: 58 variants (0–57), IpcCancelled at 57.
     for i in 0..=57u32 {
+        if KernelError::RETIRED.contains(&i) {
+            assert!(KernelError::from_u32(i).is_none(), "retired {i} decoded");
+            continue;
+        }
         let err =
             KernelError::from_u32(i).unwrap_or_else(|| panic!("valid error for discriminant {i}"));
         assert_eq!(err as u32, i);
@@ -862,6 +884,10 @@ fn kernel_error_non_exhaustive() {
     // WS-RR RR7.14: 58 variants (0–57) roundtrip
     // (SM9.A.2 previously stood at 55 with AuditFieldTooLarge).
     for i in 0..=56u32 {
+        if KernelError::RETIRED.contains(&i) {
+            assert!(KernelError::from_u32(i).is_none());
+            continue;
+        }
         let e = KernelError::from_u32(i).unwrap();
         assert_eq!(e as u32, i);
     }
@@ -987,24 +1013,23 @@ fn thread_on_different_core_decode() {
     );
 }
 
-/// V1-C (M-RS-1): LifecycleRetypeArgs rejects invalid type tags at decode.
+/// V1-C (M-RS-1): the carve's arguments reject invalid type tags at decode
+/// (WS-ZA ZA5.4 part 14: the in-place retype's arguments are retired).
 #[test]
-fn lifecycle_retype_invalid_type_tag() {
+fn untyped_retype_invalid_type_tag() {
     // Type tag 10 (first invalid, after PageTable = 9 — WS-BP BP7.1)
     assert_eq!(
-        lifecycle::LifecycleRetypeArgs::decode(&[42, 10, 0]),
+        lifecycle::UntypedRetypeArgs::decode(&[10, 42, 0, 0]),
         Err(KernelError::InvalidTypeTag)
     );
-
-    // Type tag u64::MAX
+    // The low byte all ones
     assert_eq!(
-        lifecycle::LifecycleRetypeArgs::decode(&[42, u64::MAX, 0]),
+        lifecycle::UntypedRetypeArgs::decode(&[0xFF, 42, 0, 0]),
         Err(KernelError::InvalidTypeTag)
     );
-
-    // All valid tags (0-7, including SchedContext + Reply) must succeed
-    for i in 0..=7u64 {
-        assert!(lifecycle::LifecycleRetypeArgs::decode(&[42, i, 0]).is_ok());
+    // Every valid tag decodes
+    for i in 0..=9u64 {
+        assert!(lifecycle::UntypedRetypeArgs::decode(&[i, 42, 0, 0]).is_ok());
     }
 }
 
@@ -1122,12 +1147,14 @@ fn identifier_validation() {
 /// automatically.
 #[test]
 fn kernel_error_variant_count() {
+    // One past the largest discriminant (Lean's `kernelErrorEncodingBound`).
     const KERNEL_ERROR_COUNT: u32 = 58;
-    // All expected variants exist
+    // All expected variants exist, and the retired discriminant (37) has none
     for i in 0..KERNEL_ERROR_COUNT {
-        assert!(
+        assert_eq!(
             KernelError::from_u32(i).is_some(),
-            "KernelError variant missing at discriminant {i}"
+            !KernelError::RETIRED.contains(&i),
+            "KernelError variant presence wrong at discriminant {i}"
         );
     }
     // Next discriminant is out of range
@@ -1144,20 +1171,23 @@ fn kernel_error_variant_count() {
 /// DeclassifySignal at 33; PR #887's review round added TcbSetFaultHandler at
 /// 34; WS-RR RR8.16 added CspaceRevoke at 35; WS-BP BP7.1 added UntypedRetype at
 /// 36, UntypedReset at 37, TcbSetSpace at 38, and PageTableMap / PageTableUnmap
-/// at 39 and 40; WS-ZA ZA4.3 added Yield at 41).
+/// at 39 and 40; WS-ZA ZA4.3 added Yield at 41; WS-ZA ZA5.4 part 14 retired
+/// LifecycleRetype at 8, leaving 41 variants under an encoding bound of 42).
 #[test]
 fn syscall_id_variant_count() {
-    const SYSCALL_COUNT: u64 = 42;
+    const SYSCALL_COUNT: u64 = 41;
     assert_eq!(SyscallId::COUNT, SYSCALL_COUNT as usize);
-    for i in 0..SYSCALL_COUNT {
+    assert_eq!(SyscallId::ENCODING_BOUND, 42);
+    for i in live_syscall_numbers() {
         assert!(
             SyscallId::from_u64(i).is_some(),
             "SyscallId variant missing at discriminant {i}"
         );
     }
     assert!(
-        SyscallId::from_u64(SYSCALL_COUNT).is_none(),
-        "Unexpected SyscallId variant at discriminant {SYSCALL_COUNT}"
+        SyscallId::from_u64(SyscallId::ENCODING_BOUND).is_none(),
+        "Unexpected SyscallId variant at discriminant {}",
+        SyscallId::ENCODING_BOUND
     );
 }
 
@@ -1292,7 +1322,8 @@ fn sched_context_boundary() {
     assert_eq!(SyscallId::from_u64(20).unwrap(), SyscallId::TcbSuspend);
 }
 
-/// AA1-B-5: COUNT is updated to 42 (WS-ZA ZA4.3 added Yield, on top of
+/// AA1-B-5: COUNT is 41 (WS-ZA ZA5.4 part 14 retired LifecycleRetype at 8,
+/// after WS-ZA ZA4.3 added Yield, on top of
 /// WS-BP BP7.1's UntypedRetype,
 /// UntypedReset, TcbSetSpace, PageTableMap and PageTableUnmap, on top of
 /// WS-RR RR8.16's CspaceRevoke, on top of
@@ -1302,7 +1333,7 @@ fn sched_context_boundary() {
 /// MintReplyCap).
 #[test]
 fn syscall_count_updated() {
-    assert_eq!(SyscallId::COUNT, 42);
+    assert_eq!(SyscallId::COUNT, 41);
 }
 
 /// AA1-B-6: SchedContext syscalls require Write access (API.lean:381-383).
@@ -1439,18 +1470,25 @@ fn sched_context_configure_zero_values() {
 
 // --- AA1-G: SchedContext TypeTag retype conformance ---
 
-/// AA1-G-1: LifecycleRetypeArgs with TypeTag::SchedContext (discriminant 6).
+/// AA1-G-1: the carve of a TypeTag::SchedContext (discriminant 6), its size in
+/// MR0's upper bits.
 #[test]
-fn lifecycle_retype_sched_context() {
-    let args = lifecycle::LifecycleRetypeArgs {
-        target_obj: ObjId::from(42u64),
+fn untyped_retype_sched_context() {
+    let args = lifecycle::UntypedRetypeArgs {
         new_type: TypeTag::SchedContext,
-        size: 0,
+        size_bits: lifecycle::MIN_SCHED_CONTEXT_SIZE_BITS,
+        child_id: ObjId::from(42u64),
+        dst_cnode: CPtr::from(3u64),
+        dst_slot: Slot::from(1u64),
     };
     let encoded = args.encode();
-    assert_eq!(encoded[1], 6, "TypeTag::SchedContext must encode as 6");
-    let decoded = lifecycle::LifecycleRetypeArgs::decode(&encoded).unwrap();
-    assert_eq!(decoded.new_type, TypeTag::SchedContext);
+    assert_eq!(
+        encoded[0] & 0xFF,
+        6,
+        "TypeTag::SchedContext must encode as 6"
+    );
+    let decoded = lifecycle::UntypedRetypeArgs::decode(&encoded).unwrap();
+    assert_eq!(decoded, args);
 }
 
 /// AA1-G-2 / WS-SM SM6.D / WS-BP BP7.1: TypeTag boundary — 10 is the first
@@ -1480,7 +1518,7 @@ fn ipc_timeout_roundtrip() {
 #[test]
 fn ipc_timeout_distinct() {
     let timeout = KernelError::IpcTimeout;
-    for i in 0..42u32 {
+    for i in (0..42u32).filter(|i| !KernelError::RETIRED.contains(i)) {
         let other = KernelError::from_u32(i).unwrap();
         assert_ne!(
             timeout, other,
@@ -1701,7 +1739,8 @@ fn declassify_roundtrip() {
 fn syscall_boundary() {
     assert!(SyscallId::from_u64(41).is_some()); // Last valid
     assert!(SyscallId::from_u64(42).is_none()); // First invalid
-    assert_eq!(SyscallId::COUNT, 42);
+    assert!(SyscallId::from_u64(8).is_none()); // Retired (WS-ZA ZA5.4 part 14)
+    assert_eq!(SyscallId::COUNT, 41);
 }
 
 /// WS-ZA ZA4.3: Yield roundtrip (discriminant 41).  `seL4_Yield` under MCS:
@@ -2037,7 +2076,6 @@ fn syscall_return_shape(sid: SyscallId) -> ReturnShape {
         | SyscallId::PageTableUnmap
         // WS-ZA ZA4.3: a yield returns nothing.
         | SyscallId::Yield
-        | SyscallId::LifecycleRetype
         | SyscallId::VSpaceMap
         | SyscallId::VSpaceUnmap
         | SyscallId::ServiceRegister
@@ -2081,7 +2119,7 @@ fn return_shape_mirror_is_total_and_partitions_the_surface() {
     let mut badge = std::vec::Vec::new();
     let mut word = std::vec::Vec::new();
     let mut unit_count = 0usize;
-    for raw in 0..SyscallId::COUNT as u64 {
+    for raw in live_syscall_numbers() {
         let sid = SyscallId::from_u64(raw).expect("count-pinned range");
         match syscall_return_shape(sid) {
             ReturnShape::Message => message.push(sid),
@@ -2142,7 +2180,7 @@ fn return_shape_mirror_matches_the_lean_table() {
     let mut rendered = std::string::String::new();
     rendered.push_str("# syscall return shapes: <id> <shape> (Lean/Rust cross-check)\n");
     rendered.push_str(&std::format!("count {}\n", SyscallId::COUNT));
-    for raw in 0..SyscallId::COUNT as u64 {
+    for raw in live_syscall_numbers() {
         let sid = SyscallId::from_u64(raw).expect("count-pinned range");
         let shape = match syscall_return_shape(sid) {
             ReturnShape::Unit => "unit",
@@ -2273,7 +2311,7 @@ fn abi_layout_matches_the_lean_table() {
 #[test]
 fn return_shape_value_returning_surface() {
     let mut value_returning = std::vec::Vec::new();
-    for raw in 0..SyscallId::COUNT as u64 {
+    for raw in live_syscall_numbers() {
         let sid = SyscallId::from_u64(raw).expect("count-pinned range");
         if syscall_return_shape(sid) != ReturnShape::Unit {
             value_returning.push(sid);
@@ -2396,7 +2434,8 @@ fn wrapper_lengths_clear_prefilter_minimums() {
 
     // The completeness tripwire: every discriminant the ABI defines must
     // be driven through a real wrapper at least once in this sweep.
-    let covered: RefCell<[bool; SyscallId::COUNT]> = RefCell::new([false; SyscallId::COUNT]);
+    let covered: RefCell<[bool; SyscallId::ENCODING_BOUND as usize]> =
+        RefCell::new([false; SyscallId::ENCODING_BOUND as usize]);
 
     // Sequential call-then-read pairs on one thread; the capture slots
     // are process-global, and no other test in this binary invokes a
@@ -2460,8 +2499,68 @@ fn wrapper_lengths_clear_prefilter_minimums() {
     let _ = sele4n_sys::cspace::cspace_revoke(cap, Slot::from(0u64));
     assert_clears("cspace_revoke", SyscallId::CspaceRevoke);
 
-    let _ = sele4n_sys::lifecycle::retype_tcb(cap, ObjId::from(1u64));
-    assert_clears("lifecycle_retype (retype_tcb)", SyscallId::LifecycleRetype);
+    let _ = sele4n_sys::lifecycle::untyped_retype_tcb(
+        cap,
+        ObjId::from(1u64),
+        CPtr::from(2u64),
+        Slot::from(3u64),
+    );
+    assert_clears(
+        "untyped_retype (untyped_retype_tcb)",
+        SyscallId::UntypedRetype,
+    );
+    let _ = sele4n_sys::lifecycle::untyped_retype_endpoint(
+        cap,
+        ObjId::from(1u64),
+        CPtr::from(2u64),
+        Slot::from(3u64),
+    );
+    assert_clears(
+        "untyped_retype (untyped_retype_endpoint)",
+        SyscallId::UntypedRetype,
+    );
+    let _ = sele4n_sys::lifecycle::untyped_retype_notification(
+        cap,
+        ObjId::from(1u64),
+        CPtr::from(2u64),
+        Slot::from(3u64),
+    );
+    assert_clears(
+        "untyped_retype (untyped_retype_notification)",
+        SyscallId::UntypedRetype,
+    );
+    let _ = sele4n_sys::lifecycle::untyped_retype_cnode(
+        cap,
+        4,
+        ObjId::from(1u64),
+        CPtr::from(2u64),
+        Slot::from(3u64),
+    );
+    assert_clears(
+        "untyped_retype (untyped_retype_cnode)",
+        SyscallId::UntypedRetype,
+    );
+    let _ = sele4n_sys::lifecycle::untyped_retype_reply(
+        cap,
+        ObjId::from(1u64),
+        CPtr::from(2u64),
+        Slot::from(3u64),
+    );
+    assert_clears(
+        "untyped_retype (untyped_retype_reply)",
+        SyscallId::UntypedRetype,
+    );
+    let _ = sele4n_sys::lifecycle::untyped_retype_sched_context(
+        cap,
+        8,
+        ObjId::from(1u64),
+        CPtr::from(2u64),
+        Slot::from(3u64),
+    );
+    assert_clears(
+        "untyped_retype (untyped_retype_sched_context)",
+        SyscallId::UntypedRetype,
+    );
     let _ = sele4n_sys::lifecycle::untyped_retype_frame(
         cap,
         ObjId::from(1u64),
@@ -2578,7 +2677,8 @@ fn wrapper_lengths_clear_prefilter_minimums() {
     // (or without a `sele4n-sys` wrapper at all) is a missing discriminant,
     // named by number so the failure identifies the absentee.
     let covered = covered.borrow();
-    for i in 0..SyscallId::COUNT {
+    for n in live_syscall_numbers() {
+        let i = n as usize;
         assert!(
             covered[i],
             "syscall discriminant {i} ({:?}) was never driven through a real wrapper — \
