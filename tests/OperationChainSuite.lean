@@ -11,7 +11,6 @@ import SeLe4n
 import SeLe4n.Testing.StateBuilder
 import SeLe4n.Testing.InvariantChecks
 import SeLe4n.Testing.Helpers
-import SeLe4n.Testing.Deprecated
 import SeLe4n.Platform.Boot
 import SeLe4n.Testing.BootCoreOps
 
@@ -2358,10 +2357,10 @@ private def chain26BootSequence : IO Unit := do
     irqTable := [irqEntry]
     initialObjects := [ntfnEntry, epEntry]
   }
-  -- Boot
-  -- V5-C: Use the explicitly-named unchecked variant. New code should prefer
-  -- `bootFromPlatformChecked`; this test exercises the unchecked path directly.
-  let ist := SeLe4n.Testing.Deprecated.bootFromPlatformUnchecked config
+  -- Boot through the checked boot (WS-ZA ZA5.4: the unchecked boot is retired).
+  let ist ← match SeLe4n.Platform.Boot.bootFromPlatformChecked config with
+    | .ok ist => pure ist
+    | .error e => throw (IO.userError s!"chain26: checked boot rejected the config: {e}")
   -- Verify all 4 invariant witnesses are bundled in IntermediateState.
   -- Access each proof field explicitly — if any were `sorry`, this would fail
   -- at compile time (Lean's kernel rejects `sorry` in executable code).
@@ -2380,7 +2379,9 @@ private def chain26BootSequence : IO Unit := do
   -- Verify IRQ handler in booted state
   expect "chain26: IRQ handler registered" (ist.state.irqHandlers[irq]? == some ntfnId)
   -- Determinism: same config → same state
-  let ist2 := SeLe4n.Testing.Deprecated.bootFromPlatformUnchecked config
+  let ist2 ← match SeLe4n.Platform.Boot.bootFromPlatformChecked config with
+    | .ok ist => pure ist
+    | .error e => throw (IO.userError s!"chain26: checked boot rejected the config: {e}")
   expect "chain26: deterministic boot" (ist.state.objects[ntfnId]? == ist2.state.objects[ntfnId]?)
   IO.println "operation-chain check passed [chain26: boot sequence test (L-P08)]"
 

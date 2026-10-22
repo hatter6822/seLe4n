@@ -109,17 +109,22 @@ theorem cspaceInsertSlot_preserves_replyCapPointsToValidReply
 WS-RC R4.A close-out: slot-uniqueness is now carried structurally on
 `CNode.slots : UniqueSlotMap` (`UniqueSlotMap.hWF`), so per-CNode
 discharge via `slotsUnique_holds` is direct; the historical state-level
-`cspaceSlotUnique` predicate is no longer threaded as a precondition. -/
-theorem cspaceInsertSlot_preserves_capabilityInvariantBundle
+`cspaceSlotUnique` predicate is no longer threaded as a precondition.
+
+WS-ZA ZA5.4 part 16: an insert alone leaves the bundle **without the tree's
+coverage** (`capabilityBundleOffCoverage`): the new slot holds a capability the
+tree does not name until the caller records its derivation, as every kernel
+insert does in the same step (`cdt_addEdge_after_insert`,
+`treeShape_addEdge_after_insert`). -/
+theorem cspaceInsertSlot_preserves_capabilityBundleOffCoverage
     (st st' : SystemState)
     (addr : CSpaceAddr)
     (cap : Capability)
-    (hInv : capabilityInvariantBundle st)
-    (_hObjInv : st.objects.invExt)
+    (hInv : capabilityBundleOffCoverage st)
     (hCapBacked : ∀ rid, cap.target = .replyCap rid → st.getReply? rid ≠ none)
     (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
-    capabilityInvariantBundle st' := by
-  rcases hInv with ⟨_hSound, hComp, hAcyclic, hDepthPre, hObjInv, hRCPV, hLinks⟩
+    capabilityBundleOffCoverage st' := by
+  rcases hInv with ⟨⟨_hSound, hComp, hAcyclic, hDepthPre, hObjInv, hRCPV⟩, hLinks, hOrd⟩
   -- WS-H4: Transfer new components through the storeObject(CNode) step
   have ⟨hComp', hAcyclic', hDepth', hObjInv', hLinks'⟩ :
       cdtCompleteness st' ∧ cdtAcyclicity st' ∧
@@ -138,10 +143,12 @@ theorem cspaceInsertSlot_preserves_capabilityInvariantBundle
       storeObject_preserves_objects_invExt st st' addr.cnode _ hObjInv hStore,
       cdtLinksAgree_of_eq hLinks (storeObject_cdt_eq st st' addr.cnode _ hStore)
         (SystemState.slotLinkAt_storeObject_cnode hObjInv hPre (CNode.insert_links ..) hStore)⟩
-  exact ⟨cspaceLookupSound_holds st',
+  exact ⟨⟨cspaceLookupSound_holds st',
     hComp', hAcyclic', hDepth', hObjInv',
-    cspaceInsertSlot_preserves_replyCapPointsToValidReply st st' addr cap hRCPV hObjInv hCapBacked hStep,
-    hLinks'⟩
+    cspaceInsertSlot_preserves_replyCapPointsToValidReply st st' addr cap hRCPV hObjInv hCapBacked hStep⟩,
+    hLinks', by
+      obtain ⟨cn, -, -, -, hStore⟩ := cspaceInsertSlot_ok_decompose st st' addr cap hStep
+      rw [storeObject_cdt_eq st st' addr.cnode _ hStore]; exact hOrd⟩
 
 /-- WS-SM SM6.D / PR #822 Phase H (#1.b): `cspaceDeleteSlotCore` preserves
 `replyCapPointsToValidReply` — deletion only *removes* a cap (and detaches its CDT node,
@@ -178,7 +185,7 @@ theorem cspaceDeleteSlotCore_preserves_replyCapPointsToValidReply
 /-- WS-SM SM6.D / PR #822 Phase H (#1.a): a capability resolved from a CSpace slot in a state
 satisfying `capabilityInvariantBundle` is reply-backed — if its target is a reply cap, the
 backing reply object exists.  This is the shared discharge for the `hCapBacked` hypothesis of
-`cspaceInsertSlot_preserves_capabilityInvariantBundle`: `cspaceCopy`/`cspaceMove` insert the
+`cspaceInsertSlot_preserves_capabilityBundleOffCoverage`: `cspaceCopy`/`cspaceMove` insert the
 resolved source cap directly, and `cspaceMint` inserts a derivation with the same target
 (`mintDerivedCap_target_preserved_with_badge_override`).  It unfolds the read-only
 `cspaceLookupSlot` result to the source slot's containing CNode and appeals to the pre-state
@@ -201,14 +208,16 @@ theorem replyCapBacked_of_source_slot
       exact replyCapPointsToValidReply_of_capabilityInvariantBundle st hInv
         src.cnode (.cnode cn) src.slot parent rid hObjCN hCap hTgt
 
-theorem cspaceMint_preserves_capabilityInvariantBundle
+/-- The base mint, which records no derivation, leaves the bundle without the
+tree's coverage; `cspaceMintWithCdt` records the edge. -/
+theorem cspaceMint_preserves_capabilityBundleOffCoverage
     (st st' : SystemState)
     (src dst : CSpaceAddr)
     (rights : AccessRightSet)
     (badge : Option SeLe4n.Badge)
     (hInv : capabilityInvariantBundle st)
     (hStep : cspaceMint src dst rights badge st = .ok ((), st')) :
-    capabilityInvariantBundle st' := by
+    capabilityBundleOffCoverage st' := by
   unfold cspaceMint at hStep
   cases hSrc : cspaceLookupSlot src st with
   | error e => simp [hSrc] at hStep
@@ -232,23 +241,23 @@ theorem cspaceMint_preserves_capabilityInvariantBundle
           -- inherits the parent slot's backing via the pre-state invariant.
           have hChildTgt : child.target = parent.target :=
             mintDerivedCap_target_preserved_with_badge_override ⟨parent, hNotNull⟩ child rights badge hMint
-          exact cspaceInsertSlot_preserves_capabilityInvariantBundle st st' dst child hInv
-            (objects_invExt_of_capabilityInvariantBundle st hInv)
+          exact cspaceInsertSlot_preserves_capabilityBundleOffCoverage st st' dst child hInv.offCoverage
             (fun rid h => replyCapBacked_of_source_slot st src parent hInv hSrc rid
               (by rw [← hChildTgt]; exact h))
             hInsert
 
-/-- WS-SM SM6.D / PR #822 Phase H: `mintReplyCap` preserves `capabilityInvariantBundle`.
+/-- WS-SM SM6.D / PR #822 Phase H: `mintReplyCap` leaves the bundle without the
+tree's coverage (`capabilityBundleOffCoverage`); `mintReplyCapWithCdt` records the edge.
 The source lookup is read-only (`cspaceLookupSlot_preserves_state`); the only success path
 is a single `cspaceInsertSlot` of the derived `.replyCap` at `dst`, so preservation reduces
-to the shared `cspaceInsertSlot_preserves_capabilityInvariantBundle` — exactly like
+to the shared `cspaceInsertSlot_preserves_capabilityBundleOffCoverage` — exactly like
 `cspaceMint` (the derivation of the child cap is irrelevant to the insert's bundle
 preservation; only the slot write matters). -/
-theorem mintReplyCap_preserves_capabilityInvariantBundle
+theorem mintReplyCap_preserves_capabilityBundleOffCoverage
     (st st' : SystemState) (src dst : CSpaceAddr)
     (hInv : capabilityInvariantBundle st)
     (hStep : mintReplyCap src dst st = .ok ((), st')) :
-    capabilityInvariantBundle st' := by
+    capabilityBundleOffCoverage st' := by
   unfold mintReplyCap at hStep
   cases hSrc : cspaceLookupSlot src st with
   | error e => simp [hSrc] at hStep
@@ -265,8 +274,7 @@ theorem mintReplyCap_preserves_capabilityInvariantBundle
                   { target := .replyCap (SeLe4n.ReplyId.ofObjId target),
                     rights := AccessRightSet.ofList [.write] } st
                   = .ok ((), st') := by simpa [hSrc, hTgt, hRep] using hStep
-              exact cspaceInsertSlot_preserves_capabilityInvariantBundle st st' dst _ hInv
-                (objects_invExt_of_capabilityInvariantBundle st hInv)
+              exact cspaceInsertSlot_preserves_capabilityBundleOffCoverage st st' dst _ hInv.offCoverage
                 (fun rid h => by
                   simp only [CapTarget.replyCap.injEq] at h; subst h; rw [hRep]; simp) hInsert
       | cnodeSlot a b => simp [hSrc, hTgt] at hStep
@@ -355,5 +363,42 @@ theorem cdt_addEdge_after_insert (st st1 : SystemState) (src dst : SlotRef)
       (fun _ hM => hComp1.slotInObject hM) op (slotInObject_of_occupied hSrcPost)
       (slotInObject_of_occupied ⟨_, hDstPost, hDstOcc⟩)
       (by rw [hCdt]; exact hDstFresh) hNe
+
+/-- An insert writes one slot: every other slot keeps its capability. -/
+theorem cspaceInsertSlot_slotCapAt_ne {st st' : SystemState} {addr : SlotRef} {cap : Capability}
+    (hObjInv : st.objects.invExt) (hStep : cspaceInsertSlot addr cap st = .ok ((), st'))
+    (r : SlotRef) (hr : r ≠ addr) : st'.slotCapAt r = st.slotCapAt r := by
+  obtain ⟨cn, hGet, -, -, hStore⟩ := cspaceInsertSlot_ok_decompose st st' addr cap hStep
+  have hPre := (SystemState.getCNode?_eq_some_iff st addr.cnode cn).mp hGet
+  exact SystemState.slotCapAt_storeObject_ne hObjInv hPre hStore
+    (fun s' hs => CNode.lookup_insert_ne cn addr.slot s' cap (Ne.symm hs) (CNode.slotsUnique_holds _))
+    r hr
+
+/-- A slot `lookupSlotCap` reads a capability from holds one. -/
+theorem slotCapAt_ne_none_of_lookupSlotCap {st : SystemState} {ref : SlotRef}
+    (h : (SystemState.lookupSlotCap st ref).isSome) : st.slotCapAt ref ≠ none := by
+  obtain ⟨cn, hCn, hL⟩ := slotOccupied_of_lookupSlotCap st ref h
+  rw [SystemState.slotCapAt_of_object hCn]; exact hL
+
+/-- **Installing a derived capability into an empty slot and recording its
+derivation keeps the tree's shape** (WS-ZA ZA5.4 part 16): the source holds a
+capability, so the tree names it, and the destination was empty, so the tree
+did not; the destination becomes the source's first child, right after it in
+the preorder (`SystemState.CapTreeShape.addChild`). -/
+theorem treeShape_addEdge_after_insert (st st1 : SystemState) (src dst : SlotRef)
+    (cap : Capability) (op : DerivationOp) (hShape : SystemState.CapTreeShape st)
+    (hComp : cdtCompleteness st) (hObjInv : st.objects.invExt)
+    (hSrc : (SystemState.lookupSlotCap st src).isSome)
+    (hIns : cspaceInsertSlot dst cap st = .ok ((), st1)) :
+    SystemState.CapTreeShape { st1 with cdt := st1.cdt.addEdge src dst op } := by
+  obtain ⟨cn, hGet, -, hEmpty, hStore⟩ := cspaceInsertSlot_ok_decompose st st1 dst cap hIns
+  have hPre : st.objects[dst.cnode]? = some (.cnode cn) :=
+    (SystemState.getCNode?_eq_some_iff st dst.cnode cn).mp hGet
+  have hCdt : st1.cdt = st.cdt := storeObject_cdt_eq st st1 dst.cnode _ hStore
+  have hDstFresh : ¬ st.cdt.mentions dst :=
+    hComp.not_mentions_of_empty fun cn' h => by rw [hPre] at h; cases h; exact hEmpty
+  exact hShape.addChild op (slotCapAt_ne_none_of_lookupSlotCap hSrc) hDstFresh
+    (by show st1.cdt.addEdge src dst op = _; rw [hCdt])
+    (fun r hr => cspaceInsertSlot_slotCapAt_ne hObjInv hIns r hr)
 
 end SeLe4n.Kernel

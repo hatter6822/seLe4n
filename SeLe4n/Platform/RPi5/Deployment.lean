@@ -905,7 +905,7 @@ theorem bootAndInitialiseRPi5OrHalt_rpi5PlatformConfigFor (board : SeLe4n.Machin
 
 /-- **WS-BP BP3.5**: the state the hardware boot installs for this deployment
     satisfies the proof-layer invariant bundle, and its freeze the frozen one —
-    `bootToRuntime_invariantBridge_checked` at the binding's declared cores — on
+    `bootToRuntime_invariantBridge_started` at the binding's declared cores — on
     every variant.  Stated of the state `bootAndInitialiseRPi5OrHalt` installs
     (`bootAndInitialiseRPi5OrHalt_rpi5PlatformConfigFor`), not of a model of it. -/
 theorem rpi5DeploymentBootStateAt_invariantBridge (v : BCM2712Config) (hv : v.Admissible) :

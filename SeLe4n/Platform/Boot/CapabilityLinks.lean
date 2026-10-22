@@ -210,6 +210,69 @@ def bootCapabilitySlots (objs : List ObjectEntry) : List SlotRef :=
     | .tcb _ => [⟨e.id, SeLe4n.Slot.ofNat 0⟩, ⟨e.id, SeLe4n.Slot.ofNat 1⟩]
     | _ => [])
 
+/-- **Every slot holding a capability is listed** in `rs`: the linking of `rs`
+then leaves no capability outside the tree. -/
+def bootSlotsListed (rs : List SlotRef) (st : SystemState) : Prop :=
+  ∀ r, st.slotCapAt r ≠ none → r ∈ rs
+
+/-- A configured object's slot that holds a capability is a boot capability
+slot. -/
+theorem mem_bootCapabilitySlots {objs : List ObjectEntry} {e : ObjectEntry} (he : e ∈ objs)
+    {s : SeLe4n.Slot} (hs : e.obj.slotCap s ≠ none) : ⟨e.id, s⟩ ∈ bootCapabilitySlots objs := by
+  unfold bootCapabilitySlots
+  rw [List.mem_append, List.mem_flatMap, List.mem_flatMap]
+  cases ho : e.obj with
+  | cnode cn =>
+    rw [ho] at hs
+    obtain ⟨c, hc⟩ := Option.ne_none_iff_exists'.mp hs
+    exact .inl ⟨e, he, by
+      rw [ho]; exact List.mem_map.mpr ⟨(s, c), CNode.mem_occupiedSlots_of_lookup hc, rfl⟩⟩
+  | tcb t =>
+    rw [ho] at hs
+    have hl : s.toNat < 2 := by
+      simp only [KernelObject.slotCap, TCB.spaceSlotCap] at hs
+      split at hs
+      · assumption
+      · exact absurd rfl hs
+    refine .inr ⟨e, he, ?_⟩
+    rw [ho]
+    rcases (by omega : s.toNat = 0 ∨ s.toNat = 1) with h | h
+    · rw [← SeLe4n.Slot.ofNat_toNat s, h]; exact List.mem_cons_self ..
+    · rw [← SeLe4n.Slot.ofNat_toNat s, h]; exact List.mem_cons_of_mem _ (List.mem_cons_self ..)
+  | _ => rw [ho] at hs; exact absurd rfl hs
+
+/-- Linking a slot keeps every linked slot linked, and links the slot when it
+holds a capability. -/
+theorem bootLinkSlot_done (a : BootLinks) (r : SlotRef) :
+    (∀ x ∈ a.done, x ∈ (bootLinkSlot a r).done) ∧
+    (a.st.slotCapAt r ≠ none → r ∈ (bootLinkSlot a r).done) := by
+  unfold bootLinkSlot
+  cases hc : a.st.slotCapAt r with
+  | none => exact ⟨fun _ h => h, fun h => absurd rfl h⟩
+  | some cap =>
+    simp only
+    by_cases hr : r ∈ a.done
+    · rw [if_pos hr]; exact ⟨fun _ h => h, fun _ => hr⟩
+    · rw [if_neg hr]
+      split
+      · exact ⟨fun _ h => List.mem_cons_of_mem _ h, fun _ => List.mem_cons_self ..⟩
+      · exact ⟨fun _ h => List.mem_cons_of_mem _ h, fun _ => List.mem_cons_self ..⟩
+
+/-- **The linking of `rs` links every slot of `rs` that holds a capability**,
+and every slot linked before. -/
+theorem BootLinks.Sound.foldl_done {st₀ : SystemState} (hInv₀ : st₀.objects.invExt) :
+    ∀ (rs : List SlotRef) {a : BootLinks}, BootLinks.Sound st₀ a →
+      (∀ x ∈ a.done, x ∈ (rs.foldl bootLinkSlot a).done) ∧
+      (∀ r ∈ rs, st₀.slotCapAt r ≠ none → r ∈ (rs.foldl bootLinkSlot a).done)
+  | [], _, _ => ⟨fun _ h => h, fun _ h => absurd h (List.not_mem_nil)⟩
+  | r :: rs, a, h => by
+    have ih := BootLinks.Sound.foldl_done hInv₀ rs (h.step hInv₀ r)
+    have hStep := bootLinkSlot_done a r
+    refine ⟨fun x hx => ih.1 x (hStep.1 x hx), fun x hx hc => ?_⟩
+    rcases List.mem_cons.mp hx with rfl | hx
+    · exact ih.1 x (hStep.2 (by rw [(h.1.agree hInv₀).slotCapAt x]; exact hc))
+    · exact ih.2 x hx hc
+
 /-- **Link the boot's capabilities into the derivation tree** (`bootLinkSlot`
 over `rs`, from an empty linking). -/
 def linkBootSlots (st : SystemState) (rs : List SlotRef) : SystemState :=
@@ -286,14 +349,18 @@ theorem linkBootCapabilities_machine (config : PlatformConfig) (ist : Intermedia
     tree's half of the shape; every other conjunct reads past the links, which
     are all the linking writes besides the tree. -/
 theorem linkBootCapabilities_bootLinkedShape (config : PlatformConfig) (ist : IntermediateState)
-    (h : bootStartShape ist) : bootLinkedShape (linkBootCapabilities config ist) := by
+    (h : bootStartShape ist)
+    (hListed : bootSlotsListed (bootCapabilitySlots config.initialObjects) ist.state) :
+    bootLinkedShape (linkBootCapabilities config ist) := by
   obtain ⟨hShape, ⟨hCdt, hF⟩, ⟨hA1, hA2⟩, hUnt, ⟨rq, re, rp, hSch⟩, hRun, hNodup, hQ⟩ := h
   have hInv₀ := ist.hAllTables.1.1
   have hE : ist.state.cdt = CapDerivationTree.empty := hCdt
-  have hL₀ := (bootDerivationTreeSound_of_empty hCdt fun oid obj hO => (hShape oid obj hO).2).2.2.1
+  have hL₀ := cdtLinksAgree_of_bootEmpty hCdt fun oid obj hO => (hShape oid obj hO).2
+  have hStart := BootLinks.Sound.start hE hL₀
+  have hDone := (BootLinks.Sound.foldl_done hInv₀ (bootCapabilitySlots config.initialObjects)
+    hStart).2
   obtain ⟨-, hL, hM, hD, hW, -, -, P, hP⟩ :=
-    BootLinks.Sound.foldl hInv₀ (bootCapabilitySlots config.initialObjects)
-      (BootLinks.Sound.start hE hL₀)
+    BootLinks.Sound.foldl hInv₀ (bootCapabilitySlots config.initialObjects) hStart
   have hA := linkBootCapabilities_agree config ist
   have hFl := linkBootCapabilities_fields config ist
   have hSch' := linkBootCapabilities_scheduler config ist
@@ -307,7 +374,7 @@ theorem linkBootCapabilities_bootLinkedShape (config : PlatformConfig) (ist : In
     SystemState.runQueueRefined_of_frame (runLinkOn_of_agree hA) (by rw [hSch'])
       (by rw [hSch']) hRun,
     ⟨by rw [hSch']; exact hNodup, fun tid hMem => ?_⟩,
-    fun ref hRef => ?_, hW, hL, P, hP⟩
+    fun ref hRef => ?_, hW, hL, fun r hr => ?_, P, hP⟩
   · have e := (hA oid).map_withoutLinks
     rw [hO] at e
     cases h0 : ist.state.objects[oid]? with
@@ -332,6 +399,8 @@ theorem linkBootCapabilities_bootLinkedShape (config : PlatformConfig) (ist : In
     cases hO : (linkBootCapabilities config ist).state.objects[ref.cnode]? with
     | none => rw [hO] at hc; exact absurd rfl hc
     | some o => rw [hO] at hc; exact ⟨o, rfl, hc⟩
+  · rw [hA.slotCapAt r] at hr
+    exact (hM r).mpr (hDone r (hListed r hr) hr)
 
 
 /-! ### What the linking keeps of the threads -/

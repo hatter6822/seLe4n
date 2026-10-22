@@ -9,6 +9,7 @@
 
 import SeLe4n.Kernel.IPC.Invariant
 import SeLe4n.Kernel.Lifecycle.Invariant
+import SeLe4n.Model.SlotTreeShape
 
 namespace SeLe4n.Kernel
 
@@ -273,12 +274,15 @@ that walk them read the tree.  WS-ZA ZA5.3 part 5 retired the slot-count
 conjunct (8 → 7): a CNode's slots are a fixed array since part 1, so every CNode
 is within its slot count by construction (`CNode.slotCountBounded_holds`).
 Per-CNode slot uniqueness is discharged directly via
-`SeLe4n.Model.CNode.slotsUnique_holds`. -/
+`SeLe4n.Model.CNode.slotsUnique_holds`.  WS-ZA ZA5.4 part 16 added the tree's
+shape over the slots (the 8th, `CapTreeShape`): every slot holding a capability
+is in the tree, as every capability is in seL4's mapping database, and the tree
+has a preorder. -/
 def capabilityInvariantBundle (st : SystemState) : Prop :=
   cspaceLookupSound st ∧
     cdtCompleteness st ∧ cdtAcyclicity st ∧
     cspaceDepthConsistent st ∧ st.objects.invExt ∧ replyCapPointsToValidReply st ∧
-    cdtLinksAgree st
+    cdtLinksAgree st ∧ SystemState.CapTreeShape st
 
 /-! ## AN4-F.5 (CAP-M05) — Named-projection refactor of `capabilityInvariantBundle`
 
@@ -317,8 +321,20 @@ theorem capabilityInvariantBundle.offLinks {st : SystemState} (h : capabilityInv
   ⟨h.1, h.2.1, h.2.2.1, h.2.2.2.1, h.2.2.2.2.1, h.2.2.2.2.2.1⟩
 
 theorem capabilityBundleOffLinks.withLinks {st : SystemState} (h : capabilityBundleOffLinks st)
-    (hL : cdtLinksAgree st) : capabilityInvariantBundle st :=
-  ⟨h.1, h.2.1, h.2.2.1, h.2.2.2.1, h.2.2.2.2.1, h.2.2.2.2.2, hL⟩
+    (hL : cdtLinksAgree st) (hShape : SystemState.CapTreeShape st) : capabilityInvariantBundle st :=
+  ⟨h.1, h.2.1, h.2.2.1, h.2.2.2.1, h.2.2.2.2.1, h.2.2.2.2.2, hL, hShape⟩
+
+/-- **The capability bundle without the tree's coverage of the slots**: what an
+insert leaves before it records the new slot's derivation (WS-ZA ZA5.4 part
+16).  Every conjunct but the tree's shape holds, and the tree keeps its
+preorder; the new slot holds a capability the tree does not yet name, until the
+insert's derivation edge (`CapDerivationTree.addEdge`) names it. -/
+def capabilityBundleOffCoverage (st : SystemState) : Prop :=
+  capabilityBundleOffLinks st ∧ cdtLinksAgree st ∧ ∃ P, st.cdt.TreeOrder P
+
+theorem capabilityInvariantBundle.offCoverage {st : SystemState}
+    (h : capabilityInvariantBundle st) : capabilityBundleOffCoverage st :=
+  ⟨h.offLinks, h.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.ordered⟩
 
 /-- AN4-F.5 (CAP-M05): Named-projection view of `capabilityInvariantBundle`.
 Each field records a distinct slot-level invariant (uniqueness,
@@ -345,6 +361,9 @@ structure CapabilityInvariantBundle (st : SystemState) : Prop where
   replyCapBacked : replyCapPointsToValidReply st
   /-- WS-ZA ZA5.3: the slot links encode the derivation tree. -/
   linksAgree : cdtLinksAgree st
+  /-- WS-ZA ZA5.4 part 16: every slot holding a capability is in the tree, and
+      the tree has a preorder (seL4's mapping database). -/
+  treeShape : SystemState.CapTreeShape st
 
 /-- AN4-F.5.1 (CAP-M05): Bidirectional bridge between the tuple and named
 forms. Consumers can move freely between the two representations; the
@@ -354,15 +373,15 @@ theorem capabilityInvariantBundle_iff_CapabilityInvariantBundle
     (st : SystemState) :
     capabilityInvariantBundle st ↔ CapabilityInvariantBundle st := by
   constructor
-  · rintro ⟨hS, hComp, hAcyc, hDep, hObj, hRCPV, hLinks⟩
+  · rintro ⟨hS, hComp, hAcyc, hDep, hObj, hRCPV, hLinks, hShape⟩
     exact { lookupSound := hS
           , cdtCompleteness := hComp, cdtAcyclicity := hAcyc
           , depthConsistent := hDep, objectsInvExt := hObj
-          , replyCapBacked := hRCPV, linksAgree := hLinks }
+          , replyCapBacked := hRCPV, linksAgree := hLinks, treeShape := hShape }
   · intro h
     exact ⟨h.lookupSound,
            h.cdtCompleteness, h.cdtAcyclicity, h.depthConsistent,
-           h.objectsInvExt, h.replyCapBacked, h.linksAgree⟩
+           h.objectsInvExt, h.replyCapBacked, h.linksAgree, h.treeShape⟩
 
 /-! ### AN4-F.5.2 (CAP-M05): `@[simp]` projection abbreviations
 
@@ -399,7 +418,11 @@ tuple form (the 6th conjunct). -/
 
 /-- WS-ZA ZA5.3: extract `cdtLinksAgree` from the tuple form (the 7th conjunct). -/
 @[simp] abbrev linksAgree {st : SystemState} (h : capabilityInvariantBundle st) :
-    _root_.SeLe4n.Kernel.cdtLinksAgree st := h.2.2.2.2.2.2
+    _root_.SeLe4n.Kernel.cdtLinksAgree st := h.2.2.2.2.2.2.1
+
+/-- WS-ZA ZA5.4 part 16: extract the tree's shape (the 8th conjunct). -/
+@[simp] abbrev treeShape {st : SystemState} (h : capabilityInvariantBundle st) :
+    SystemState.CapTreeShape st := h.2.2.2.2.2.2.2
 
 end capabilityInvariantBundle
 
@@ -677,7 +700,7 @@ theorem replyCapPointsToValidReply_of_capabilityInvariantBundle
 /-- WS-ZA ZA5.3: extract the slot-link agreement. -/
 theorem cdtLinksAgree_of_capabilityInvariantBundle
     (st : SystemState) (hInv : capabilityInvariantBundle st) :
-    cdtLinksAgree st := hInv.2.2.2.2.2.2
+    cdtLinksAgree st := hInv.2.2.2.2.2.2.1
 
 -- ============================================================================
 -- WS-H4: Transfer theorems for new components through state transitions

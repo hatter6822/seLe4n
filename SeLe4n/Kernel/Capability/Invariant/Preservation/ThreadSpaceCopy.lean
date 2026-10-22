@@ -45,7 +45,7 @@ theorem threadSlotFilled_preserves_capabilityInvariantBundle
     capabilityInvariantBundle
       ((st.updateTcb tid (·.insertSpaceCap slot c)).cdtAddChild src
         { cnode := tid.toObjId, slot := slot } .copy) := by
-  rcases hInv with ⟨_, hComp, hAcyc, hDepth, hObjInv, hRCPV, hLinks⟩
+  rcases hInv with ⟨_, hComp, hAcyc, hDepth, hObjInv, hRCPV, hLinks, hShape⟩
   have hPre : st.objects[tid.toObjId]? = some (.tcb t) :=
     (SystemState.getTcb?_eq_some_iff st tid t).mp hT
   have hAt : (st.updateTcb tid (·.insertSpaceCap slot c)).objects[tid.toObjId]? =
@@ -108,8 +108,20 @@ theorem threadSlotFilled_preserves_capabilityInvariantBundle
   have hLinks1 : cdtLinksAgree st1 := cdtLinksAgree_of_eq hLinks hCdt1 hL1
   have hAcyc1 : st1.cdt.edgeWellFounded := by
     unfold cdtAcyclicity at hAcyc; rw [hCdt1]; exact hAcyc
+  have hShape1 : SystemState.CapTreeShape
+      { st1 with cdt := st1.cdt.addEdge src { cnode := tid.toObjId, slot := slot } .copy } := by
+    refine hShape.addChild .copy (slotCapAt_ne_none_of_lookupSlotCap (by rw [hSrc]; rfl)) hDstFresh
+      (by show st1.cdt.addEdge _ _ _ = _; rw [hCdt1]) fun r hr => ?_
+    show st1.slotCapAt r = st.slotCapAt r
+    rw [SystemState.slotCapAt_eq_bind, SystemState.slotCapAt_eq_bind]
+    by_cases h : r.cnode = tid.toObjId
+    · rw [h, hAt, hPre]
+      have hrs : r.slot ≠ slot := fun e => hr (by cases r; simp_all)
+      show (t.insertSpaceCap slot c).spaceSlotCap r.slot = t.spaceSlotCap r.slot
+      rw [TCB.spaceSlotCap_insertSpaceCap t hs, if_neg hrs]
+    · rw [hNe _ (Ne.symm h)]
   refine capabilityInvariantBundle_of_linkReach ?_
-    (SystemState.cdtAddChild_reach st1 src _ .copy) hObjInv1 ?_
+    (SystemState.cdtAddChild_reach st1 src _ .copy) hObjInv1 ?_ hShape1
   · refine ⟨cspaceLookupSound_holds _, fun ref hM => ?_, ?_,
       cspaceDepthConsistent_of_objects_eq st1 _ hDepth1 rfl, hObjInv1,
       replyCapPointsToValidReply_of_objects_eq rfl hRCPV1⟩

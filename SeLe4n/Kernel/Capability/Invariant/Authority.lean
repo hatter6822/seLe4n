@@ -592,10 +592,11 @@ theorem capabilityInvariantBundle_of_components
     (hDepth : cspaceDepthConsistent st)
     (hObjInv : st.objects.invExt)
     (hRCPV : replyCapPointsToValidReply st)
-    (hLinks : cdtLinksAgree st) :
+    (hLinks : cdtLinksAgree st)
+    (hShape : SystemState.CapTreeShape st) :
     capabilityInvariantBundle st :=
   ⟨cspaceLookupSound_holds st,
-    hComp, hAcyclic, hDepth, hObjInv, hRCPV, hLinks⟩
+    hComp, hAcyclic, hDepth, hObjInv, hRCPV, hLinks, hShape⟩
 
 /-! ## WS-RR RR8.16 (`v0.35.197`) — what the capability bundle READS
 
@@ -659,12 +660,13 @@ theorem capabilityInvariantBundle_of_frame {st st' : SystemState}
     (hReply : ∀ rid : SeLe4n.ReplyId, st.getReply? rid ≠ none → st'.getReply? rid ≠ none)
     (hObjInv : st'.objects.invExt) :
     capabilityInvariantBundle st' := by
-  obtain ⟨_, hComp, hAcyclic, hDepth, _, hRCPV, hLinks⟩ := h
+  obtain ⟨_, hComp, hAcyclic, hDepth, _, hRCPV, hLinks, hShape⟩ := h
   have hCn : ∀ (oid : SeLe4n.ObjId) (cn : CNode),
       st'.objects[oid]? = some (.cnode cn) ↔ st.objects[oid]? = some (.cnode cn) :=
     fun oid cn => ⟨hCnode oid cn, hCnodeFwd oid cn⟩
   refine capabilityInvariantBundle_of_components st' ?_ ?_ ?_ hObjInv ?_
     (cdtLinksAgree_of_cnode_iff hLinks hCdt hCn hTcb)
+    (hShape.of_frame (SystemState.SlotTreeFrame.of_slots hCdt hCn hTcb))
   · intro ref hRef
     rw [hCdt] at hRef
     obtain ⟨o, hO, hL⟩ := hComp ref hRef
@@ -718,21 +720,23 @@ theorem capabilityInvariantBundle_of_agree {st st' : SystemState}
     (h : capabilityBundleOffLinks st)
     (hA : SystemState.objectsAgreeOffDerivationLinks st' st)
     (hCdt : st'.cdt = st.cdt) (hObjInv : st'.objects.invExt)
-    (hLinks : cdtLinksAgree st') :
+    (hLinks : cdtLinksAgree st') (hShape : SystemState.CapTreeShape st) :
     capabilityInvariantBundle st' := by
   obtain ⟨_, hComp, hAcyclic, hDepth, _, hRCPV⟩ := h
   refine capabilityInvariantBundle_of_components st'
     (cdtCompleteness_of_agree hA hCdt hComp)
     ?_ (cspaceDepthConsistent_of_agree hA hDepth) hObjInv
     (replyCapPointsToValidReply_of_agree hA hRCPV) hLinks
+    (hShape.of_frame (.of_agree hA hCdt))
   unfold cdtAcyclicity at hAcyclic ⊢; rw [hCdt]; exact hAcyclic
 
 /-- A run of link writes keeps the capability bundle when its links agree with the
 tree: the other conjuncts read no link. -/
 theorem capabilityInvariantBundle_of_linkReach {st₀ st : SystemState}
     (h : capabilityBundleOffLinks st₀) (hR : SystemState.linkReach st₀ st)
-    (hInv : st₀.objects.invExt) (hLinks : cdtLinksAgree st) : capabilityInvariantBundle st :=
-  capabilityInvariantBundle_of_agree h (hR.agree hInv) hR.cdt (hR.invExt hInv) hLinks
+    (hInv : st₀.objects.invExt) (hLinks : cdtLinksAgree st)
+    (hShape : SystemState.CapTreeShape st₀) : capabilityInvariantBundle st :=
+  capabilityInvariantBundle_of_agree h (hR.agree hInv) hR.cdt (hR.invExt hInv) hLinks hShape
 
 /-- WS-RR RR8.16 (`v0.35.197`): the degenerate instance — a step that writes no
 object and no CDT table.  Kept beside the frame rather than left to each caller,
