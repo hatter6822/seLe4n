@@ -241,8 +241,9 @@ children in its place and a move keeps the slot's place, the preorder
 (`CapDerivationTree.TreeOrder`) is kept by every tree write, and the started
 boot links its capabilities (`linkBootCapabilities`), a thread's space slots
 derived from the CNode slot naming the same object.  New tree code must
-keep `LinksAgree` with root chains (`cdtAppendRoot` for a new root) and, for
-part 16, insert only under a source the tree names.  The
+keep `LinksAgree` with root chains (`cdtAppendRoot` for a new root); part 16
+proves every capability-holding slot is in the tree, so an insert's source
+always is (`docs/REGISTERED_DEBT.md`).  The
 suspend of a thread blocked in IPC or holding a donated context is the one
 syscall arm left on the general path (ZA6.1).  ZA6 covers the other
 entries and makes the rule standing.  Plan:

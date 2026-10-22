@@ -73,9 +73,19 @@ seL4's `create_initial_thread` does.  Part 15 of the seL4 untyped reset
 
 ### Registered debt
 
-- New row: a capability can still sit outside the tree (the unchecked boot,
-  and an insert under a source the tree does not name), so the root chain and
-  the preorder are not yet kernel invariants.  Part 16 closes it.
+- New row, closed by part 16: prove that every slot holding a capability is in
+  the derivation tree (seL4's every non-null capability in the MDB),
+  established by boot and kept by every slot write; then make `TreeOrder` a
+  bundle conjunct; the hand-built test states (`StateBuilder`) then name their
+  sources, and the deprecated, test-only unchecked `bootFromPlatform` is
+  retired rather than linked.  No writer change: a slot's link words cannot
+  tell a lone root from a slot outside the tree, and D1 keeps no new word.
+
+### Housekeeping
+
+- `origin/main` merged (the merges of #975 and #976; no content change).
+- The identifier-naming baseline is regenerated, locking in the 32 retired
+  occurrences (`scripts/check_identifier_naming.py --regenerate-baseline`).
 
 ## v0.36.125 — WS-ZA ZA5.4 part 14: every object kind is carved from an untyped
 
