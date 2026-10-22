@@ -1035,8 +1035,8 @@ theorem vspaceUnmapPage_entry_consistent_frame
 it erases a page mapping within a root but leaves every ASID→root binding
 resolvable.  So an entry whose ASID resolved before the unmap still resolves
 after.  The resolution half of the per-core `tlbEntryConsistent` (SM7.F): an
-unresolvable ASID is a *stale* (use-after-retype) entry, and this lemma proves
-the *unmap* is not what makes an ASID unresolvable — that is `lifecycleRetype`. -/
+unresolvable ASID is a *stale* (use-after-free) entry, and this lemma proves
+the *unmap* is not what makes an ASID unresolvable. -/
 theorem vspaceUnmapPage_resolveAsidRoot_isSome
     {st stMid : SystemState} (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
     (hStep : vspaceUnmapPage asid vaddr st = .ok ((), stMid))

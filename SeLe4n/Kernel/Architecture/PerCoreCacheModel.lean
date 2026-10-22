@@ -709,11 +709,10 @@ may observe the *old* content — even on the very PE that performed the store,
 and regardless of any I-cache invalidation.  Two kernel paths write such
 memory:
 
-* `retypeScrub` — `scrubObjectMemory` zeroes the target's backing memory as
-  part of a re-type, so a subject that later maps the frame executable must not
-  fetch the previous owner's instructions from a stale PoU copy.  (seL4's
-  `clearMemory` does exactly this: `memzero` followed by
-  `cleanCacheRange_PoU`.)
+* `carveScrub` — the carve zeroes a frame's page before handing it out, so a
+  subject that later maps the frame executable must not fetch the previous
+  owner's instructions from a stale PoU copy.  (seL4's `clearMemory` does
+  exactly this: `memzero` followed by `cleanCacheRange_PoU`.)
 * `bootImageLoad` — the image's loaded bytes, where an initial task's code is
   carried, are present before the first fetch; the boot seam cleans them
   (`bootImageIcacheOp`, WS-BP BP4.5).
@@ -723,22 +722,18 @@ comment: `kernelCodeWriteSites_owe_pou_clean` states it, and
 `kernelCodeWriteSites_complete` is the tripwire that fails if a site is added
 without an entry. -/
 inductive KernelCodeWriteSite where
-  /-- `scrubObjectMemory` during a re-type. -/
-  | retypeScrub
   /-- Object/code materialisation during boot. -/
   | bootImageLoad
   /-- **WS-BP post-landing audit (`v0.36.32`)**: the untyped carve's scrub
       (`CarveRequest.scrub` — a frame, a VSpace root's table page, a page table),
-      recorded as `PhysicalWrite.zeroPage` and performed by the HAL.  Since
-      WS-BP BP7.1 this, not `.retypeScrub`, is how memory reaches a thread, and
-      it went unlisted for twenty-eight cuts while the in-place re-type it
-      replaced for memory-backed kinds carried the obligation. -/
+      recorded as `PhysicalWrite.zeroPage` and performed by the HAL — the only
+      path by which memory reaches a thread. -/
   | carveScrub
   deriving DecidableEq, Repr, Inhabited
 
 /-- **WS-SM SM7.D.2**: the enumeration of kernel code-write sites. -/
 def kernelCodeWriteSites : List KernelCodeWriteSite :=
-  [.retypeScrub, .bootImageLoad, .carveScrub]
+  [.bootImageLoad, .carveScrub]
 
 /-- **WS-SM SM7.D.2** (the tripwire): every constructor is listed.  Adding a
 site to `KernelCodeWriteSite` without listing it breaks this `decide`, which is
@@ -758,12 +753,6 @@ whether a transition emits it: the operand addresses below are placeholders,
 because a site's extent is a property of each individual write, not of the site.
 Which sites actually emit is `kernelCodeWriteEmitted`.
 
-At v0.32.100 `.retypeScrub` **does** emit (`retypeIcacheOp`, live behind
-`.lifecycleRetype`, cleaning exactly the range `scrubObjectMemory` zeroes).  The
-v0.32.94 claim that no site could name its extent — "only `UntypedObject` has
-`regionBase` / `regionSize`" — was inherited from `.bootImageLoad`, where it
-holds, and was simply false for the re-type: `scrubObjectMemory` computes
-`(base, size)` from `(ObjId, KernelObjectType)` at the point of the write.
 `.bootImageLoad` emits since WS-BP BP4.5: its extent is the image's loaded
 bytes, which the HAL's boot seam reads off the link (`bootImageIcacheOp`).
 
@@ -808,14 +797,10 @@ def ICacheInvalidation.invalidatesInstruction : ICacheInvalidation → Bool
 What is pinned here is the **shape** — a clean to PoU, an instruction
 invalidate, and the ARMv8 sequence ordering them — so the operand addresses are
 the placeholder `0`: an extent belongs to an individual write, not to the site.
-The concrete extent appears where the write does; for `.retypeScrub` that is
-`retypeIcacheOp`, whose emitted operand is tied back to this obligation by
-`retypeIcacheOp_discharges_scrub_obligation` through `dischargesPoUClean`. -/
+The concrete extent appears where the write does; for `.carveScrub` that is
+the zeroed page, whose operand is tied back to this obligation by
+`zeroPage_discharges_obligation` through `dischargesPoUClean`. -/
 def kernelCodeWriteObligation : KernelCodeWriteSite → PoUCleanObligation
-  | .retypeScrub =>
-      { cleanToPoU := .cleanByVA (SeLe4n.PAddr.ofNat 0)
-        invalidate := .iallu
-        barriers   := armv8DCacheToICacheSequence }
   | .bootImageLoad =>
       { cleanToPoU := .cleanByVA (SeLe4n.PAddr.ofNat 0)
         invalidate := .iallu
@@ -885,9 +870,7 @@ which no boot untyped may describe (`untypedPlacementRespected`) and no boot
 VSpace maps (`bootSafeUserVSpaceRootCheck` refuses a configured mapping), so no
 thread can ever fetch it.  An initial task's code, when the image carries one,
 is in those loaded bytes; memory a thread *does* receive comes from an untyped
-through a carve, whose scrub's physical write cleans it (`.carveScrub`) — the
-in-place re-type, which cleans its own scrub (`.retypeScrub`), refuses every
-memory-backed kind since WS-BP BP7.1.
+through a carve, whose scrub's physical write cleans it (`.carveScrub`).
 
 The HAL emits this operand in the boot seam, in
 `lean_entry::enter_lean_kernel`, after the install and before it mints the
@@ -928,11 +911,6 @@ theorem zeroPage_discharges_obligation (base : SeLe4n.PAddr) :
 /-- **WS-SM SM7.D.2**: does the kernel emit this site's obligation before the
 memory the site writes can be fetched as instructions?
 
-* `.retypeScrub` — **yes** (since v0.32.100).  `retypeIcacheOp` reads the
-  target object's type from the pre-state, computes the same
-  `(base, size)` that `scrubObjectMemory` will zero, and emits
-  `cleanRangeIallu base size`; `retypeIcacheOp_discharges_scrub_obligation`
-  is the machine-checked link.
 * `.bootImageLoad` — **yes** (since WS-BP BP4.5).  The HAL's boot seam emits
   `bootImageIcacheOp` over the image's loaded extent after the install and
   before the secondary-release permit exists;
@@ -947,7 +925,6 @@ memory the site writes can be fetched as instructions?
   carve's recorded write to it.  Carried by the write rather than recorded
   beside it, so the clean follows the zero it cleans by construction. -/
 def kernelCodeWriteEmitted : KernelCodeWriteSite → Bool
-  | .retypeScrub   => true
   | .bootImageLoad => true
   | .carveScrub    => true
 
@@ -1030,7 +1007,7 @@ Two conjuncts, and both are load-bearing:
 * `tlbEntryConsistent st l.toTranslation` — the ASID still resolves to a root
   and that root still maps `l.vaddr` to `(l.paddr, l.perms)`.  This is the
   SM7.F post-review *conjunction* form, so a line whose address space was
-  destroyed (`resolveAsidRoot = none` after a VSpaceRoot retype) is **stale**,
+  destroyed (`resolveAsidRoot = none` once its root is gone) is **stale**,
   not vacuously fine.
 * `l.perms.execute = true` — the mapping is still executable.  A fetch can
   only occur through an executable translation, so a line whose mapping has
@@ -1038,7 +1015,8 @@ Two conjuncts, and both are load-bearing:
 
 The kernel's obligation is to broadcast the maintenance *before* committing a
 transition that would falsify either conjunct — which is exactly what the live
-`.vspaceUnmap` and `.lifecycleRetype` wrappers do. -/
+`.vspaceUnmap` wrapper does, and what the untyped reset does before a root's
+page returns to its untyped. -/
 def icacheLineConsistent (st : SystemState) (l : ICacheLine) : Prop :=
   tlbEntryConsistent st l.toTranslation ∧ l.perms.execute = true
 

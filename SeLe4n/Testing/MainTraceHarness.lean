@@ -533,42 +533,6 @@ private def runServiceAndStressTrace (counter : IO.Ref Nat) (st1 : SystemState) 
   checkInvariants counter "post-stress-boundary-memory" st1
 
 private def runLifecycleAndEndpointTrace (counter : IO.Ref Nat) (st1 : SystemState) : IO Unit := do
-  match SeLe4n.Kernel.Internal.lifecycleRetypeObject rootSlot ⟨12⟩
-      (.endpoint {}) st1 with
-  | .error err =>
-      IO.println s!"[LEP-001] lifecycle retype unauthorized branch: {reprStr err}"
-  | .ok _ =>
-      IO.println "[LEP-002] unexpected lifecycle retype success with wrong authority"
-  let stIllegalState : SystemState :=
-    { st1 with
-      lifecycle := {
-        st1.lifecycle with
-          objectTypes := st1.lifecycle.objectTypes.insert ⟨12⟩ .endpoint
-      }
-    }
-  match SeLe4n.Kernel.Internal.lifecycleRetypeObject lifecycleAuthSlot ⟨12⟩
-      (.endpoint {}) stIllegalState with
-  | .error err => IO.println s!"[LEP-003] lifecycle retype illegal-state branch: {reprStr err}"
-  | .ok _ =>
-      IO.println "[LEP-004] unexpected lifecycle retype success under stale metadata"
-  match SeLe4n.Kernel.Internal.lifecycleRetypeObject lifecycleAuthSlot ⟨12⟩
-      (.endpoint {}) st1 with
-  | .error err => IO.println s!"[LEP-005] lifecycle retype error: {reprStr err}"
-  | .ok (_, stLifecycle) =>
-      IO.println s!"[LEP-006] lifecycle retype success object kind: {reprStr <| stLifecycle.getObjectType? ⟨12⟩}"
-  -- LIFE-10: WS-H2/H-05 lifecycleRetypeWithCleanup removes old TCB tid from run queue
-  match SeLe4n.Kernel.lifecycleRetypeWithCleanup lifecycleAuthSlot ⟨12⟩
-      (.endpoint {}) st1 with
-  | .error err => IO.println s!"[LEP-007] lifecycle retype-with-cleanup error: {reprStr err}"
-  | .ok (_, stCleaned) =>
-      let tid12InQueue := (stCleaned.runQueueWalk bootCoreId).any (· == (SeLe4n.ThreadId.ofNat 12))
-      IO.println s!"[LEP-008] lifecycle retype-with-cleanup old tid removed: {!tid12InQueue}"
-  -- T7-B: Post-mutation invariant check on lifecycle retype-with-cleanup result
-  match SeLe4n.Kernel.lifecycleRetypeWithCleanup lifecycleAuthSlot ⟨12⟩
-      (.endpoint {}) st1 with
-  | .ok (_, stCleanedMut) => checkInvariants counter "post-lifecycle-retype-with-cleanup-mutated" stCleanedMut
-  | .error _ => pure ()
-  checkInvariants counter "post-lifecycle-retype-cleanup" st1
   match SeLe4n.Kernel.cspaceMintChecked SeLe4n.Kernel.harnessLabelingContext rootSlot mintedSlot (AccessRightSet.ofList [.read]) none st1 with
   | .error err => IO.println s!"[LEP-009] cspace mint error: {reprStr err}"
   | .ok (_, st2) =>
@@ -576,63 +540,38 @@ private def runLifecycleAndEndpointTrace (counter : IO.Ref Nat) (st1 : SystemSta
       | .error err => IO.println s!"[LEP-010] sibling mint error: {reprStr err}"
       | .ok (_, st3) =>
           IO.println "[LEP-011] created sibling cap with the same target"
-          match SeLe4n.Kernel.lifecycleRevokeDeleteRetype mintedSlot mintedSlot ⟨12⟩
-              (.endpoint {}) st3 with
-          | .error err =>
-              IO.println s!"[LEP-012] composed transition alias guard (expected error): {reprStr err}"
-          | .ok _ =>
-              IO.println "[LEP-013] unexpected composed transition success with aliased authority/cleanup"
-          match SeLe4n.Kernel.lifecycleRevokeDeleteRetype rootSlot mintedSlot ⟨12⟩
-              (.endpoint {}) st3 with
-          | .error err =>
-              IO.println s!"[LEP-014] composed transition unauthorized branch: {reprStr err}"
-          | .ok _ =>
-              IO.println "[LEP-015] unexpected composed transition success with wrong authority"
-          match SeLe4n.Kernel.lifecycleRevokeDeleteRetype lifecycleAuthSlot mintedSlot ⟨12⟩
-              (.endpoint {}) st3 with
-          | .error err => IO.println s!"[LEP-016] composed transition error: {reprStr err}"
-          | .ok (_, st5) =>
-              IO.println "[LEP-017] composed revoke/delete/retype success"
-              match SeLe4n.Kernel.cspaceLookupSlot siblingSlot st5 with
-              | .error err => IO.println s!"[LEP-018] post-revoke sibling lookup: {reprStr err}"
-              | .ok (cap, _) =>
-                  IO.println s!"[LEP-019] unexpected sibling cap after revoke: {reprStr cap}"
-              match SeLe4n.Kernel.cspaceLookupSlot mintedSlot st5 with
-              | .error err => IO.println s!"[LEP-020] post-delete lookup (expected error): {reprStr err}"
-              | .ok (cap, _) =>
-                  IO.println s!"[LEP-021] unexpected cap after delete: {reprStr cap}"
-              -- WS-G7: handshake + send-queue test using dual-queue operations
-              -- Use st3 (pre-retype) where both TCBs (1, 12) still exist
-              match SeLe4n.Kernel.endpointReceiveDual demoEndpoint ⟨12⟩ none st3 with
-                  | .error err => IO.println s!"[LEP-022] endpoint await-receive error: {reprStr err}"
-                  | .ok (_, st6) =>
-                      match SeLe4n.Kernel.endpointSendDualChecked SeLe4n.Kernel.harnessLabelingContext demoEndpoint ⟨1⟩ (.frame none false) default st6 with
-                      | .error err => IO.println s!"[LEP-023] endpoint handshake send error: {reprStr err}"
-                      | .ok (_, st7) =>
-                          IO.println "[LEP-024] handshake send matched waiting receiver"
-                          -- Sender blocks (no receiver waiting), then receiver dequeues
-                          match SeLe4n.Kernel.endpointSendDualChecked SeLe4n.Kernel.harnessLabelingContext demoEndpoint ⟨1⟩ (.frame none false) default st7 with
-                          | .error err => IO.println s!"[LEP-025] endpoint send #1 error: {reprStr err}"
-                          | .ok (_, st8) =>
-                              IO.println "[LEP-026] queued sender on endpoint"
-                              match SeLe4n.Kernel.endpointReceiveDual demoEndpoint ⟨12⟩ none st8 with
-                              | .error err => IO.println s!"[LEP-027] endpoint receive #1 error: {reprStr err}"
-                              | .ok (sender1, st9) =>
-                                  IO.println s!"[LEP-028] endpoint receive #1 sender: {sender1}"
-                                  match SeLe4n.Kernel.notificationWait demoNotification ⟨1⟩ st9 with
-                                  | .error err => IO.println s!"[LEP-029] notification wait #1 error: {reprStr err}"
-                                  | .ok (badge, st10) =>
-                                      IO.println s!"[LEP-030] notification wait #1 result: {reprStr badge}"
-                                      match SeLe4n.Kernel.notificationSignal demoNotification (SeLe4n.Badge.ofNatMasked 99) st10 with
-                                      | .error err => IO.println s!"[LEP-031] notification signal #1 error: {reprStr err}"
-                                      | .ok (_, st11) =>
-                                          match SeLe4n.Kernel.notificationSignal demoNotification (SeLe4n.Badge.ofNatMasked 123) st11 with
-                                          | .error err => IO.println s!"[LEP-032] notification signal #2 error: {reprStr err}"
-                                          | .ok (_, st12) =>
-                                              match SeLe4n.Kernel.notificationWait demoNotification ⟨1⟩ st12 with
-                                              | .error err => IO.println s!"[LEP-033] notification wait #2 error: {reprStr err}"
-                                              | .ok (badge2, _) =>
-                                                  IO.println s!"[LEP-034] notification wait #2 result: {reprStr badge2}"
+          -- WS-G7: handshake + send-queue test using dual-queue operations
+          -- Use st3, where both TCBs (1, 12) exist
+          match SeLe4n.Kernel.endpointReceiveDual demoEndpoint ⟨12⟩ none st3 with
+              | .error err => IO.println s!"[LEP-022] endpoint await-receive error: {reprStr err}"
+              | .ok (_, st6) =>
+                  match SeLe4n.Kernel.endpointSendDualChecked SeLe4n.Kernel.harnessLabelingContext demoEndpoint ⟨1⟩ (.frame none false) default st6 with
+                  | .error err => IO.println s!"[LEP-023] endpoint handshake send error: {reprStr err}"
+                  | .ok (_, st7) =>
+                      IO.println "[LEP-024] handshake send matched waiting receiver"
+                      -- Sender blocks (no receiver waiting), then receiver dequeues
+                      match SeLe4n.Kernel.endpointSendDualChecked SeLe4n.Kernel.harnessLabelingContext demoEndpoint ⟨1⟩ (.frame none false) default st7 with
+                      | .error err => IO.println s!"[LEP-025] endpoint send #1 error: {reprStr err}"
+                      | .ok (_, st8) =>
+                          IO.println "[LEP-026] queued sender on endpoint"
+                          match SeLe4n.Kernel.endpointReceiveDual demoEndpoint ⟨12⟩ none st8 with
+                          | .error err => IO.println s!"[LEP-027] endpoint receive #1 error: {reprStr err}"
+                          | .ok (sender1, st9) =>
+                              IO.println s!"[LEP-028] endpoint receive #1 sender: {sender1}"
+                              match SeLe4n.Kernel.notificationWait demoNotification ⟨1⟩ st9 with
+                              | .error err => IO.println s!"[LEP-029] notification wait #1 error: {reprStr err}"
+                              | .ok (badge, st10) =>
+                                  IO.println s!"[LEP-030] notification wait #1 result: {reprStr badge}"
+                                  match SeLe4n.Kernel.notificationSignal demoNotification (SeLe4n.Badge.ofNatMasked 99) st10 with
+                                  | .error err => IO.println s!"[LEP-031] notification signal #1 error: {reprStr err}"
+                                  | .ok (_, st11) =>
+                                      match SeLe4n.Kernel.notificationSignal demoNotification (SeLe4n.Badge.ofNatMasked 123) st11 with
+                                      | .error err => IO.println s!"[LEP-032] notification signal #2 error: {reprStr err}"
+                                      | .ok (_, st12) =>
+                                          match SeLe4n.Kernel.notificationWait demoNotification ⟨1⟩ st12 with
+                                          | .error err => IO.println s!"[LEP-033] notification wait #2 error: {reprStr err}"
+                                          | .ok (badge2, _) =>
+                                              IO.println s!"[LEP-034] notification wait #2 result: {reprStr badge2}"
       match SeLe4n.Kernel.cspaceLookupSlot mintedSlot st2 with
       | .error err => IO.println s!"[LEP-035] cspace lookup error: {reprStr err}"
       | .ok (cap, _) =>
@@ -1048,14 +987,11 @@ private def runUntypedMemoryTrace (counter : IO.Ref Nat) (st1 : SystemState) : I
           IO.println s!"[UMT-003] untyped free index after retype: {cap.freeIndex}"
           IO.println s!"[UMT-004] untyped children count: {ut.children.length}"
       | _, _ => IO.println "[UMT-005] untyped object missing after retype"
-      -- F2-02: Retype a second object (TCB) from the same untyped
-      let childTcb : SeLe4n.ObjId := ⟨51⟩
-      let newTcb : KernelObject := .tcb {
-        tid := ⟨51⟩, priority := ⟨50⟩, domain := ⟨0⟩,
-        spaceCells := SeLe4n.Model.TCB.spaceCellsOf ⟨10⟩ ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 12288)
-        }
-      let tcbAllocSize : Nat := SeLe4n.Kernel.objectTypeAllocSize .tcb
-      match SeLe4n.Kernel.retypeFromUntyped untypedAuthSlot demoUntyped childTcb newTcb tcbAllocSize stRetyped with
+      -- F2-02: Retype a second object from the same untyped.  WS-ZA ZA5.4
+      -- part 14: a second endpoint, since a kernel object is carved on a
+      -- multiple of its own size and the free index now sits at 16.
+      let childEp2 : SeLe4n.ObjId := ⟨51⟩
+      match SeLe4n.Kernel.retypeFromUntyped untypedAuthSlot demoUntyped childEp2 newEp epAllocSize stRetyped with
       | .error err => IO.println s!"[UMT-006] retype-from-untyped second alloc error: {reprStr err}"
       | .ok (_, stRetyped2) =>
           match stRetyped2.lookupSlotCap untypedAuthSlot with
@@ -1067,13 +1003,7 @@ private def runUntypedMemoryTrace (counter : IO.Ref Nat) (st1 : SystemState) : I
   let epAllocSizeUT : Nat := SeLe4n.Kernel.objectTypeAllocSize .endpoint
   match SeLe4n.Kernel.retypeFromUntyped untypedAuthSlot demoUntyped ⟨50⟩ newEpUT epAllocSizeUT st1 with
   | .ok (_, stRet1) =>
-    let childTcbUT : SeLe4n.ObjId := ⟨51⟩
-    let newTcbUT : KernelObject := .tcb {
-      tid := ⟨51⟩, priority := ⟨50⟩, domain := ⟨0⟩,
-      spaceCells := SeLe4n.Model.TCB.spaceCellsOf ⟨10⟩ ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 12288)
-      }
-    let tcbAllocSizeUT := SeLe4n.Kernel.objectTypeAllocSize .tcb
-    match SeLe4n.Kernel.retypeFromUntyped untypedAuthSlot demoUntyped childTcbUT newTcbUT tcbAllocSizeUT stRet1 with
+    match SeLe4n.Kernel.retypeFromUntyped untypedAuthSlot demoUntyped ⟨51⟩ newEpUT epAllocSizeUT stRet1 with
     | .ok (_, stRet2) => checkInvariants counter "post-untyped-double-retype-mutated" stRet2
     | .error _ => pure ()
   | .error _ => pure ()
@@ -1082,8 +1012,10 @@ private def runUntypedMemoryTrace (counter : IO.Ref Nat) (st1 : SystemState) : I
   match SeLe4n.Kernel.retypeFromUntyped lifecycleAuthSlot ⟨12⟩ ⟨50⟩ newEp epAllocSize st1 with
   | .error err => IO.println s!"[UMT-009] retype-from-untyped type-mismatch branch: {reprStr err}"
   | .ok _ => IO.println "[UMT-010] unexpected retype-from-untyped success on non-untyped object"
-  -- F2-04: Region exhausted — try to allocate more than available
-  let hugeAllocSize : Nat := 999999
+  -- F2-04: Region exhausted — try to allocate more than available.  WS-ZA
+  -- ZA5.4 part 14: a size the region base is aligned to, so the refusal is the
+  -- region's and not the alignment's.
+  let hugeAllocSize : Nat := 32768
   match SeLe4n.Kernel.retypeFromUntyped untypedAuthSlot demoUntyped ⟨52⟩ newEp hugeAllocSize st1 with
   | .error err => IO.println s!"[UMT-011] retype-from-untyped region-exhausted branch: {reprStr err}"
   | .ok _ => IO.println "[UMT-012] unexpected retype-from-untyped success with oversized allocation"
@@ -1369,16 +1301,17 @@ private def runSyscallGateTrace (counter : IO.Ref Nat) (st1 : SystemState) : IO 
   match sendViaGate missingCapGate stLocal with
   | .ok _ => IO.println "[SGT-007] H15e syscall gate send (missing cap): unexpected ok"
   | .error e => IO.println s!"[SGT-008] H15e syscall gate send (missing cap): {reprStr e}"
-  -- Case 5: S2-J: Using syscallInvoke directly instead of deprecated apiLifecycleRetype
+  -- Case 5: a carve through the gate — the `.retype` capability in slot 2 names
+  -- the demo untyped, and an endpoint is carved from it into slot 3.
   let retypeGate : SeLe4n.Kernel.SyscallGate := {
     callerId := callerId, cspaceRoot := cnodeId,
     capAddr := SeLe4n.CPtr.ofNat 2, capDepth := 4, requiredRight := .retype
   }
   let authSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 2 }
-  let newObj : KernelObject := .endpoint {}
+  let dstSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 3 }
   match SeLe4n.Kernel.syscallInvoke { retypeGate with requiredRight := .retype }
       (fun cap => match cap.target with
-        | .object _ => SeLe4n.Kernel.Internal.lifecycleRetypeObject authSlot ⟨60⟩ newObj
+        | .object _ => SeLe4n.Kernel.untypedRetypeObject authSlot ⟨60⟩ dstSlot .endpoint
         | _ => fun _ => .error .invalidCapability) stLocal with
   | .ok _ => IO.println "[SGT-009] H15e syscall gate retype: ok"
   | .error e => IO.println s!"[SGT-010] H15e syscall gate retype: {reprStr e}"
@@ -1631,37 +1564,29 @@ private def runSyscallDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState) :
         let slotEmpty := (SeLe4n.Model.SystemState.lookupSlotCap stDeleted ksdDstSlot).isNone
         IO.println s!"[KSD-003] cspaceDelete via decoded regs slot cleared: {slotEmpty}"
 
-  -- KSD-004: Lifecycle retype via decoded registers — success path
-  let ksdRetypeTargetId : SeLe4n.ObjId := ⟨602⟩
-  let stRetype : SystemState :=
-    (BootstrapBuilder.empty
-      |>.withObject ksdRetypeTargetId (.endpoint {})
-      |>.withLifecycleObjectType ksdRetypeTargetId .endpoint
-      |>.buildChecked)
-  let retypeDecoded : SyscallDecodeResult := {
-    capAddr := SeLe4n.CPtr.ofNat 0
-    msgInfo := { length := 3, extraCaps := 0, label := 0 }
-    syscallId := .lifecycleRetype
-    msgRegs := #[⟨602⟩, ⟨2⟩, ⟨0⟩]  -- targetObj=602, typeTag=2(notification), size=0
+  -- KSD-004: an untyped carve via decoded registers — success path.  The
+  -- type word is `tag | sizeBits << 8` (notification is tag 2, size 0); the
+  -- child is object 602, carved from the demo untyped (slot 6 of CNode 10)
+  -- into the root CNode's empty slot 3.
+  let ksdCarveChild : SeLe4n.ObjId := ⟨602⟩
+  let carveDecoded : SyscallDecodeResult := {
+    capAddr := SeLe4n.CPtr.ofNat 6
+    msgInfo := { length := 4, extraCaps := 0, label := 0 }
+    syscallId := .untypedRetype
+    msgRegs := #[⟨2⟩, ⟨602⟩, ⟨0⟩, ⟨3⟩]
   }
-  match SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeLifecycleRetypeArgs retypeDecoded with
-  | .error e => IO.println s!"[KSD-004] lifecycleRetype decode error: {reprStr e}"
-  | .ok retypeArgs =>
-      -- `v0.35.187`: the harness builds the replacement the live dispatch
-      -- builds, stamped identity included -- the wrappers refuse an
-      -- unstamped one, so an unstamped fixture would measure the refusal
-      -- rather than the retype.
-      let newObj := (SeLe4n.Kernel.objectOfKernelType retypeArgs.newType
-        retypeArgs.size).withIdentity retypeArgs.targetObj
-      let retypeCap : SeLe4n.Model.Capability := {
-        target := .object (ObjId.ofNat retypeArgs.targetObj.toNat)
-        rights := AccessRightSet.ofList [.read, .write, .retype]
-      }
-      match SeLe4n.Kernel.lifecycleRetypeDirectWithCleanup retypeCap ksdRetypeTargetId newObj stRetype with
-      | .error e => IO.println s!"[KSD-004] lifecycleRetypeDirectWithCleanup error: {reprStr e}"
-      | .ok (_, stRetyped) =>
-        let objKind := stRetyped.getObjectType? ksdRetypeTargetId
-        IO.println s!"[KSD-004] lifecycle retype via decoded regs new type: {reprStr objKind}"
+  match SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeUntypedRetypeArgs carveDecoded with
+  | .error e => IO.println s!"[KSD-004] untypedRetype decode error: {reprStr e}"
+  | .ok carveArgs =>
+      match SeLe4n.Kernel.carveRequestOf? st1 bootCoreId carveArgs.newType carveArgs.sizeBits with
+      | .error e => IO.println s!"[KSD-004] untypedRetype request error: {reprStr e}"
+      | .ok req =>
+          let dst : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨10⟩, slot := carveArgs.dstSlot }
+          match SeLe4n.Kernel.untypedRetypeObject untypedAuthSlot carveArgs.childId dst req st1 with
+          | .error e => IO.println s!"[KSD-004] untypedRetype carve error: {reprStr e}"
+          | .ok (_, stCarved) =>
+            let objKind := stCarved.getObjectType? ksdCarveChild
+            IO.println s!"[KSD-004] untyped carve via decoded regs new type: {reprStr objKind}"
 
   -- KSD-005: VSpace map via decoded registers — success path.
   -- WS-BP BP7.1: MR2 is a frame CAPABILITY address, not a physical address.
@@ -2021,8 +1946,7 @@ private def runEndpointLifecycleTrace (counter : IO.Ref Nat) (st1 : SystemState)
   let lcEpId : SeLe4n.ObjId := ⟨50⟩
   let lcSender1 : SeLe4n.ThreadId := ⟨1⟩
   let lcSender2 : SeLe4n.ThreadId := ⟨12⟩
-  let lcAuthSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨10⟩, slot := SeLe4n.Slot.ofNat 0 }
-  -- Fresh endpoint and CNode with authority cap for lifecycle retype
+  -- Fresh endpoint and a CNode holding a capability to it
   let lcEp : KernelObject := .endpoint (Endpoint.ofQueues {} {})
   let lcCnode : KernelObject := .cnode (SeLe4n.Model.CNode.ofSlots 0 0 0 0 (SeLe4n.UniqueSlotMap.ofListWF [
       (SeLe4n.Slot.ofNat 0, ({ target := .object lcEpId, rights := AccessRightSet.ofList [.read, .write, .retype] } : Capability))
@@ -2069,38 +1993,6 @@ private def runEndpointLifecycleTrace (counter : IO.Ref Nat) (st1 : SystemState)
               | _ => false
             | none => false
           IO.println s!"[ELC-001] lifecycle senders blocked: {s1Blocked && s2Blocked}"
-          -- B2: Delete endpoint via lifecycleRetypeObject (direct retype)
-          -- Retype endpoint to a fresh notification (effectively deleting it)
-          let newObj : KernelObject := .notification {
-            state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }
-          match SeLe4n.Kernel.Internal.lifecycleRetypeObject lcAuthSlot lcEpId newObj stBlk2 with
-          | .error err =>
-              IO.println s!"[ELC-002] lifecycle retype-delete error: {reprStr err}"
-          | .ok (_, stRetyped) =>
-              IO.println s!"[ELC-002] lifecycle retype-delete succeeded: true"
-              -- B2 continued: Verify senders retain stale blockedOnSend state
-              -- (no automatic cleanup — per Operations.lean:33-37 design)
-              let s1StillBlocked := match SeLe4n.Kernel.lookupTcb stRetyped lcSender1 with
-                | some tcb => match tcb.ipcState with
-                  | .blockedOnSend _ => true
-                  | _ => false
-                | none => false
-              let s2StillBlocked := match SeLe4n.Kernel.lookupTcb stRetyped lcSender2 with
-                | some tcb => match tcb.ipcState with
-                  | .blockedOnSend _ => true
-                  | _ => false
-                | none => false
-              IO.println s!"[ELC-003] lifecycle senders retain stale blocked state: {s1StillBlocked && s2StillBlocked}"
-              -- B3: Verify stale IPC operations on retyped endpoint are rejected
-              -- The endpoint was retyped to a notification, so endpointSendDual
-              -- pattern-matches `some (.endpoint ep)` which fails → falls to
-              -- `some _ => .error .invalidCapability`
-              let msg3 : IpcMessage := { registers := #[⟨99⟩], badge := none }
-              let staleResult := SeLe4n.Kernel.endpointSendDual lcEpId ⟨1⟩ (.frame msg3.badge false) (SeLe4n.Testing.withSenderFrame stRetyped ⟨1⟩ msg3)
-              let staleRejected := match staleResult with
-                | .error .invalidCapability => true
-                | _ => false
-              IO.println s!"[ELC-004] lifecycle stale endpoint send rejected (invalidCapability): {staleRejected}"
 
   checkInvariants counter "post-endpoint-lifecycle-trace" st1
 

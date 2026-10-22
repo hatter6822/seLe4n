@@ -20,9 +20,6 @@ namespace SeLe4n.Kernel
 
 open SeLe4n.Model
 open SeLe4n.Kernel.Concurrency (bootCoreId)
--- AN4-A allowlist: proof-chain reference to `lifecycleRetypeObject` from
--- `SeLe4n.Kernel.Internal`. Enforced by `scripts/test_tier0_hygiene.sh`.
-open Internal
 
 -- ============================================================================
 -- R5-C.1: Memory projection preservation helper
@@ -1332,32 +1329,6 @@ theorem cspaceRevoke_preserves_lowEquivalent
   · -- V6-E: serviceRegistry
     funext sid; simp only [projectServiceRegistry]
     exact congrFun (congrArg ObservableState.serviceRegistry hLow) sid
-
--- ============================================================================
--- Non-interference theorem #5: lifecycleRetypeObject (WS-D2, F-05, TPI-D03)
--- ============================================================================
-
-/-- Retyping a non-observable object preserves low-equivalence. -/
-theorem lifecycleRetypeObject_preserves_lowEquivalent
-    (ctx : LabelingContext)
-    (observer : IfObserver)
-    (authority : CSpaceAddr)
-    (target : SeLe4n.ObjId)
-    (newObj : KernelObject)
-    (s₁ s₂ s₁' s₂' : SystemState)
-    (hLow : lowEquivalent ctx observer s₁ s₂)
-    (hTargetHigh : objectObservable ctx observer target = false)
-    (hObjInv₁ : s₁.objects.invExt)
-    (hObjInv₂ : s₂.objects.invExt)
-    (hStep₁ : lifecycleRetypeObject authority target newObj s₁ = .ok ((), s₁'))
-    (hStep₂ : lifecycleRetypeObject authority target newObj s₂ = .ok ((), s₂')) :
-    lowEquivalent ctx observer s₁' s₂' := by
-  rcases lifecycleRetypeObject_ok_as_storeObject s₁ s₁' authority target newObj hStep₁ with
-    ⟨_, _, _, _, _, _, hStore₁⟩
-  rcases lifecycleRetypeObject_ok_as_storeObject s₂ s₂' authority target newObj hStep₂ with
-    ⟨_, _, _, _, _, _, hStore₂⟩
-  exact storeObject_at_unobservable_preserves_lowEquivalent
-    ctx observer target newObj newObj s₁ s₂ s₁' s₂' hLow hTargetHigh hObjInv₁ hObjInv₂ hStore₁ hStore₂
 
 -- ============================================================================
 -- WS-F3/F-21: notificationSignal non-interference

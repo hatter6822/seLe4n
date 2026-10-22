@@ -153,8 +153,6 @@ def lockSetTheorems : List LockSetTheorem :=
       lockSet_cspaceMove .lockSet,
     lkst! "lockSet for cspaceDelete"
       lockSet_cspaceDelete .lockSet,
-    lkst! "lockSet for lifecycleRetype"
-      lockSet_lifecycleRetype .lockSet,
     lkst! "lockSet for untypedRetype"
       lockSet_untypedRetype .lockSet,
     lkst! "lockSet for vspaceMap"
@@ -232,8 +230,6 @@ def lockSetTheorems : List LockSetTheorem :=
       lockSet_consistent_cspaceMove .consistency,
     lkst! "lockSet_consistent for cspaceDelete"
       lockSet_consistent_cspaceDelete .consistency,
-    lkst! "lockSet_consistent for lifecycleRetype"
-      lockSet_consistent_lifecycleRetype .consistency,
     lkst! "lockSet_consistent for untypedRetype"
       lockSet_consistent_untypedRetype .consistency,
     lkst! "lockSet_consistent for vspaceMap"
@@ -370,18 +366,18 @@ PR #822 Phase H's `mintReplyCap` pair, and SM6.B's `tcbBindNotification` /
 A regression that adds a new SM3.B theorem without updating the
 inventory fails this count witness at the Tier-3 surface check. -/
 theorem lockSetTheorems_count :
-    lockSetTheorems.length = 99 := by decide
+    lockSetTheorems.length = 97 := by decide
 
 /-- WS-SM SM3.B: 37 entries in the `lockSet` category (one per statically
 declared SyscallId variant). -/
 theorem lockSetTheorems_lockSet_count :
-    (lockSetTheorems.filter (fun t => t.category == .lockSet)).length = 39 := by
+    (lockSetTheorems.filter (fun t => t.category == .lockSet)).length = 38 := by
   decide
 
 /-- WS-SM SM3.B: 37 entries in the `consistency` category (one per statically
 declared SyscallId variant). -/
 theorem lockSetTheorems_consistency_count :
-    (lockSetTheorems.filter (fun t => t.category == .consistency)).length = 39 := by
+    (lockSetTheorems.filter (fun t => t.category == .consistency)).length = 38 := by
   decide
 
 /-- WS-SM SM3.B: 6 entries in the `acquireSort` category

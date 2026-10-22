@@ -76,7 +76,7 @@ fn svc_out_of_range_id_halts_before_the_prefilter() {
     // so an out-of-range id on a not-ready core halts rather than being handed
     // back as an `InvalidSyscallId` the thread would resume on.
     let args = zero_args();
-    let outcome = std::panic::catch_unwind(|| dispatch_svc(SyscallId::COUNT, &args));
+    let outcome = std::panic::catch_unwind(|| dispatch_svc(SyscallId::ENCODING_BOUND, &args));
     assert!(
         outcome.is_err(),
         "an out-of-range syscall id on a not-ready core must halt, not be refused \

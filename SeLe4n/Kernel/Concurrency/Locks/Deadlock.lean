@@ -1496,12 +1496,6 @@ theorem lockSet_cspaceDelete_size_le (a : ThreadId) (b c : ObjId)
   unfold lockSet_cspaceDelete maxLockSetSize
   exact Nat.le_trans (size_le_1 _ _) (by size_bound)
 
-theorem lockSet_lifecycleRetype_size_le (a : ThreadId) (b c d : ObjId)
-    (t : Option LockKey) :
-    (lockSet_lifecycleRetype a b c d t).size ≤ maxLockSetSize := by
-  unfold lockSet_lifecycleRetype maxLockSetSize
-  exact Nat.le_trans (size_le_1 _ _) (by size_bound)
-
 /-- **WS-BP BP7.1**: the carve's footprint is within the ceiling. -/
 theorem lockSet_untypedRetype_size_le (a : ThreadId) (b c d e g : ObjId)
     (f : KernelObjectType) :
@@ -1726,7 +1720,6 @@ theorem lockSetTransitions_within_bound :
     (∀ a b c, (lockSet_cspaceCopy a b c).size ≤ maxLockSetSize) ∧
     (∀ a b c, (lockSet_cspaceMove a b c).size ≤ maxLockSetSize) ∧
     (∀ a b c d, (lockSet_cspaceDelete a b c d).size ≤ maxLockSetSize) ∧
-    (∀ a b c d t, (lockSet_lifecycleRetype a b c d t).size ≤ maxLockSetSize) ∧
     (∀ a b c d e g f, (lockSet_untypedRetype a b c d e g f).size ≤ maxLockSetSize) ∧
     (∀ a b c d e, (lockSet_vspaceMap a b c d e).size ≤ maxLockSetSize) ∧
     (∀ a b c, (lockSet_vspaceUnmap a b c).size ≤ maxLockSetSize) ∧
@@ -1761,7 +1754,7 @@ theorem lockSetTransitions_within_bound :
    lockSet_notificationSignal_size_le,
    lockSet_notificationWait_size_le, lockSet_cspaceMint_size_le,
    lockSet_cspaceCopy_size_le, lockSet_cspaceMove_size_le,
-   lockSet_cspaceDelete_size_le, lockSet_lifecycleRetype_size_le,
+   lockSet_cspaceDelete_size_le,
    lockSet_untypedRetype_size_le,
    lockSet_vspaceMap_size_le, lockSet_vspaceUnmap_size_le,
    lockSet_vspaceUnifyInstruction_size_le, lockSet_declassify_size_le,

@@ -95,7 +95,7 @@ open SeLe4n.Kernel.Concurrency
 #check @lockSet_cspaceCopy
 #check @lockSet_cspaceMove
 #check @lockSet_cspaceDelete
-#check @lockSet_lifecycleRetype
+#check @lockSet_untypedRetype
 #check @lockSet_vspaceMap
 #check @lockSet_vspaceUnmap
 #check @lockSet_serviceRegister
@@ -134,7 +134,7 @@ open SeLe4n.Kernel.Concurrency
 #check @lockSet_consistent_cspaceCopy
 #check @lockSet_consistent_cspaceMove
 #check @lockSet_consistent_cspaceDelete
-#check @lockSet_consistent_lifecycleRetype
+#check @lockSet_consistent_untypedRetype
 #check @lockSet_consistent_vspaceMap
 #check @lockSet_consistent_vspaceUnmap
 #check @lockSet_consistent_serviceRegister
@@ -467,15 +467,12 @@ example : permittedKinds .cspaceMove = [.tcb, .cnode, .objStore] := by decide
 -- WS-BP BP7.1 (v0.36.7): the delete also writes the VSpace root its frame
 -- capability's mapping record names, so `.vspaceRoot` joins it.
 example : permittedKinds .cspaceDelete = [.tcb, .cnode, .objStore, .vspaceRoot] := by decide
--- PR #873 round 7: `.lifecycleRetype` admits EVERY kind too, and for the same
--- reason `.declassify` does below.  SM9.D.12 makes the retype the arm that
--- *clears* taint at `args.targetObj`, so `lockSet_lifecycleRetype` carries that
--- target's own lock — and a retype re-purposes an object whose kind the state,
--- not the syscall, decides.  The fixed four stay pinned by
--- `lockSet_lifecycleRetype_nonTarget_kinds`.
-example : permittedKinds .lifecycleRetype =
-    [.tcb, .cnode, .untyped,
-     .objStore, .endpoint, .notification, .reply, .schedContext, .vspaceRoot, .page] := by decide
+-- WS-ZA ZA5.4 part 14: the carve writes the child's own lock, and the child may
+-- be any kind the request names (`carvedObjectLock`), so every carvable kind's
+-- lock kind is permitted.
+example : permittedKinds .untypedRetype =
+    [.tcb, .cnode, .untyped, .page, .vspaceRoot, .objStore,
+     .endpoint, .notification, .reply, .schedContext] := by decide
 -- WS-BP BP7.1 (v0.36.7): the map reads the frame its capability names; PR #956
 -- review: and declares the derivation tree's subject, since it rewrites a CNode.
 example : permittedKinds .vspaceMap = [.tcb, .cnode, .vspaceRoot, .page, .objStore] := by decide
@@ -644,11 +641,11 @@ example :
   lockSet_consistent_schedContextBind ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩ ⟨3⟩ none
 
 example :
-    ∀ p ∈ (lockSet_lifecycleRetype ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
-              (ObjId.ofNat 30)).pairs,
-      p.fst.kind ∈ permittedKinds .lifecycleRetype :=
-  lockSet_consistent_lifecycleRetype ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
-    (ObjId.ofNat 30)
+    ∀ p ∈ (lockSet_untypedRetype ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 10) (ObjId.ofNat 20)
+              (ObjId.ofNat 30) (ObjId.ofNat 10) .schedContext).pairs,
+      p.fst.kind ∈ permittedKinds .untypedRetype :=
+  lockSet_consistent_untypedRetype ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 10) (ObjId.ofNat 20)
+    (ObjId.ofNat 30) (ObjId.ofNat 10) .schedContext
 
 -- ============================================================================
 -- §6d — Runtime exercise of lockAcquireSequence_canonical
@@ -757,12 +754,12 @@ example :
 -- §7 — Inventory examples (decidable)
 -- ============================================================================
 
-example : lockSetTheorems.length = 99 := by decide
+example : lockSetTheorems.length = 97 := by decide
 
-example : (lockSetTheorems.filter (fun t => t.category == .lockSet)).length = 39 := by
+example : (lockSetTheorems.filter (fun t => t.category == .lockSet)).length = 38 := by
   decide
 
-example : (lockSetTheorems.filter (fun t => t.category == .consistency)).length = 39 := by
+example : (lockSetTheorems.filter (fun t => t.category == .consistency)).length = 38 := by
   decide
 
 example : (lockSetTheorems.filter (fun t => t.category == .acquireSort)).length = 6 := by
@@ -858,24 +855,18 @@ private def runPermittedKindsChecks : IO Unit := do
     (decide (permittedKinds .send = [.tcb, .cnode, .endpoint, .objStore]))
   assertBool "permittedKinds .vspaceMap"
     (decide (permittedKinds .vspaceMap = [.tcb, .cnode, .vspaceRoot, .page, .objStore]))
-  -- PR #873 round 7: every kind, because the retype's taint clear keys on
-  -- `args.targetObj`, whose type the state decides.  The fixed four are pinned
-  -- separately by `lockSet_lifecycleRetype_nonTarget_kinds`.
-  assertBool "permittedKinds .lifecycleRetype"
-    (decide (permittedKinds .lifecycleRetype =
-      [.tcb, .cnode, .untyped,
-       .objStore, .endpoint, .notification, .reply, .schedContext, .vspaceRoot, .page]))
-  -- WS-RR RR7.23: five members, four kinds — the state-level lock joined the
-  -- fixed part because `lifecyclePreRetypeCleanup` sweeps the service registry
-  -- (an endpoint being re-purposed) and detaches CDT slot mappings (a CNode),
-  -- and neither map is nameable by a per-object kind.
-  assertBool "NEGATIVE: the retype's fixed footprint is still exactly four kinds"
-    ((lockSet_lifecycleRetype ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
-        (ObjId.ofNat 30) none).pairs.all (fun p =>
-      decide (p.fst.kind ∈
-        [LockKind.tcb, LockKind.cnode, LockKind.untyped, LockKind.objStore])))
+  -- WS-ZA ZA5.4 part 14: the carve's child lock is the carved kind's own lock,
+  -- for every kind it can carve — a kernel object's, not a page's.
+  assertBool "the carve locks each carved kind under its own lock kind"
+    ([(KernelObjectType.tcb, LockKind.tcb), (.endpoint, .endpoint),
+      (.notification, .notification), (.cnode, .cnode), (.reply, .reply),
+      (.schedContext, .schedContext), (.untyped, .untyped), (.vspaceRoot, .vspaceRoot),
+      (.frame, .page), (.pageTable, .page)].all fun (ty, k) =>
+      (lockSet_untypedRetype ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 10) (ObjId.ofNat 20)
+          (ObjId.ofNat 30) (ObjId.ofNat 10) ty).pairs.any (fun p =>
+        decide (p.fst.kind = k ∧ p.snd = AccessMode.write)))
   -- WS-RR RR7.23 (register finding 5): every registry writer declares the
-  -- state-level lock — the trio in write/write/read, and the retype.
+  -- state-level lock — the trio in write/write/read.
   assertBool "serviceRegister declares the registry's state-level write"
     ((lockSet_serviceRegister ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)).pairs.any (fun p =>
       decide (p.fst = stateLevelLock ∧ p.snd = AccessMode.write)))
@@ -885,19 +876,10 @@ private def runPermittedKindsChecks : IO Unit := do
   assertBool "serviceQuery declares the registry's state-level read"
     ((lockSet_serviceQuery ⟨5⟩ (ObjId.ofNat 10)).pairs.any (fun p =>
       decide (p.fst = stateLevelLock ∧ p.snd = AccessMode.read)))
-  assertBool "the retype declares the registry's state-level write (the sweep no footprint named)"
-    ((lockSet_lifecycleRetype ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
-        (ObjId.ofNat 30) none).pairs.any (fun p =>
-      decide (p.fst = stateLevelLock ∧ p.snd = AccessMode.write)))
   -- The pin is that no two registry writers can hold disjoint sets.
   assertBool "no two registry writers have disjoint footprints"
     (decide (((lockSet_serviceRegister ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)).pairs.map (·.fst)).any
-        (fun l => ((lockSet_lifecycleRetype ⟨6⟩ (ObjId.ofNat 11) (ObjId.ofNat 21)
-          (ObjId.ofNat 31) none).pairs.map (·.fst)).contains l)))
-  assertBool "the resolved retype footprint carries the target's own write lock"
-    ((lockSet_lifecycleRetype ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20) (ObjId.ofNat 30)
-        (some (notificationLock (ObjId.ofNat 40)))).pairs.any (fun p =>
-      decide (p.fst = notificationLock (ObjId.ofNat 40) ∧ p.snd = AccessMode.write)))
+        (fun l => ((lockSet_serviceRevoke ⟨6⟩ (ObjId.ofNat 11)).pairs.map (·.fst)).contains l)))
   -- Audit-pass-3: .tcbSuspend now includes .schedContext (donation-cancel).
   -- WS-SM SM6.E: + .reply (the `.blockedOnReply` reply-link teardown).
   -- WS-OD OD3.5: `.objStore` — a suspend that cancels a donation maintains
@@ -1040,12 +1022,12 @@ private def runPerTransitionShapeChecks : IO Unit := do
             (some (ObjId.ofNat 50))).pairs) &&
      decide ((lockSet_cspaceDelete ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
             (some (ObjId.ofNat 50))).size = 5))
-  -- Lifecycle: 5 locks (caller TCB read + CNode root read + untyped write + dst
-  -- CNode write + the state-level write WS-RR RR7.23 added for the registry
-  -- sweep and the CDT detach the pre-retype cleanup performs).
-  assertBool "lifecycleRetype size = 5"
-    (decide ((lockSet_lifecycleRetype ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
-              (ObjId.ofNat 30)).size = 5))
+  -- Lifecycle: the carve's 7 locks (caller TCB read + CNode root read +
+  -- authority CNode write + untyped write + child write + dst CNode write + the
+  -- state-level CDT write), on distinct CNodes.
+  assertBool "untypedRetype size = 7"
+    (decide ((lockSet_untypedRetype ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 11) (ObjId.ofNat 30)
+              (ObjId.ofNat 40) (ObjId.ofNat 20) .endpoint).size = 7))
   -- **WS-OD (`v0.35.4`)**: the suspend's optional members, at the two footprints
   -- that own them since the parametric `lockSet_tcbSuspend` was retired.
   -- Teardown with both blocked objects: victim + endpoint + notification.
@@ -1465,13 +1447,13 @@ private def runConsistencyRuntimeChecks : IO Unit := do
     decide (p.fst.kind ∈ permittedKinds .cspaceMint))
   assertBool "lockSet_cspaceMint: all kinds in permittedKinds .cspaceMint"
     allOk_mint
-  -- 4-base-arg transition.
-  let retype := lockSet_lifecycleRetype ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
-                  (ObjId.ofNat 30)
-  let allOk_retype := retype.pairs.all (fun p =>
-    decide (p.fst.kind ∈ permittedKinds .lifecycleRetype))
-  assertBool "lockSet_lifecycleRetype: all kinds in permittedKinds .lifecycleRetype"
-    allOk_retype
+  -- The carve, at a kernel-object child.
+  let carve := lockSet_untypedRetype ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 10) (ObjId.ofNat 20)
+                  (ObjId.ofNat 30) (ObjId.ofNat 10) .tcb
+  let allOk_carve := carve.pairs.all (fun p =>
+    decide (p.fst.kind ∈ permittedKinds .untypedRetype))
+  assertBool "lockSet_untypedRetype: all kinds in permittedKinds .untypedRetype"
+    allOk_carve
   -- Audit-pass-3: donation extension on .call.
   let callDon := lockSet_endpointCall ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
                    (some ⟨8⟩) (some ⟨100⟩)
@@ -1708,8 +1690,8 @@ private def runFstInjChecks : IO Unit := do
 
 private def runInventoryChecks : IO Unit := do
   IO.println "--- §8 Inventory aggregator ---"
-  assertBool "lockSetTheorems.length = 99"
-    (decide (lockSetTheorems.length = 99))
+  assertBool "lockSetTheorems.length = 97"
+    (decide (lockSetTheorems.length = 97))
   -- WS-RR RR8.16: the figure is DERIVED from the classifier rather than
   -- written down.  `.cspaceRevoke` declares no static footprint (its CDT
   -- subtree is unbounded and a `LockSet` is capped at `maxLockSetSize`), so

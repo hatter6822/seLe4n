@@ -930,10 +930,10 @@ def SchedulerState.domainScheduleAllPositive (schedule : List DomainScheduleEntr
 
 /-- Lifecycle metadata required by the first M4-A transition story.
 
-`objectTypes` keeps object-store identity explicit: the retype path reads it
-(`Lifecycle/Operations/RetypeWrappers.lean` refuses a retype whose target's
-recorded type disagrees with the stored object) and
-`objectTypeMetadataConsistent` is the relation it is held to.
+`objectTypes` keeps object-store identity explicit: every store records the
+stored object's type beside it, and `objectTypeMetadataConsistent` is the
+relation it is held to.  Its runtime reader was the in-place retype's type
+check, retired in WS-ZA ZA5.4 part 14.
 
 `v0.35.78`: the capability-reference table — `capabilityRefs : RHTable SlotRef
 CapTarget`, "the target named by each populated capability slot reference" —
@@ -1302,10 +1302,9 @@ structure SystemState where
       `icInvalidateBroadcast` (`IC IALLUIS` / `IC IVAU`, which reaches every
       core in the sharing domain).  It is **operative on the live path**: the
       `.vspaceUnmap` arm broadcasts an `IC IVAU` for a retired *executable*
-      translation, and the `.lifecycleRetype` arm broadcasts `IC IALLUIS`
-      because a retype re-purposes the target's backing memory (it is scrubbed
-      in the same transition), so any line cached from it is stale by
-      construction.
+      translation, and the carve's frame scrub carries its own
+      `cleanRangeIallu` (`PhysicalWrite.icacheMaintenance`), so no line cached
+      from a page's previous contents survives the page being handed out.
 
       The per-core coherency invariant `icacheCoherent_perCore` (every cached
       line still has a live *executable* mapping) is the 14th
@@ -2118,8 +2117,7 @@ policy at the allocation boundary.
 
 **U2-L callsite audit** (v0.21.1):
 - **Allocation-guarded** (capacity checked by `retypeFromUntyped`):
-  `lifecycleRetypeObject`, `lifecycleRetypeWithCleanup`,
-  `lifecycleRetypeDirectWithCleanup` — all go through retype authority + untyped
+  `untypedRetypeObject` — the carve goes through retype authority + untyped
   capacity validation before reaching `storeObject`.
 - **In-place mutation** (no new ObjId, just updating an existing object):
   `vspaceMapPage`/`vspaceUnmapPage` (VSpaceRoot update), `cspaceInsertSlot`/
@@ -2744,9 +2742,9 @@ can move an object's provenance as a side effect of moving the object.
 
 Deliberately a *frame* and not a clear.  Ordinary object writes are exactly
 where propagation records taint — a blanket clear-on-store would erase what
-SM9.D.8-.D.11 exist to record — so the one place a store must *forget*
-provenance is a retype, which replaces the object at the same id and therefore
-clears explicitly (`retypeClearsTaint`). -/
+SM9.D.8-.D.11 exist to record.  No store replaces an object at an occupied id
+with an unrelated one (every object is carved into a fresh id), so no store
+owes a clear. -/
 theorem storeObject_declassificationTaint_eq
     (st : SystemState)
     (id : SeLe4n.ObjId)
@@ -3488,13 +3486,11 @@ without discriminating its variant.
 
 The kind-agnostic member of the AL2-A / AN10-B typed-accessor family, for
 callers that need only what the object's identity implies — its allocation
-footprint — rather than its contents.  The re-type's cache-maintenance operand
-is the motivating consumer: it must name the extent `scrubObjectMemory` will
-zero, which is a function of `(ObjId, KernelObjectType)` alone.
+footprint — rather than its contents.
 
 Distinct from `lookupObjectTypeMeta`, which reads the *lifecycle metadata*
 view: this one reads the store, so it agrees by construction with any transition
-that derives behaviour from the stored object (`scrubObjectMemory` does). -/
+that derives behaviour from the stored object. -/
 def getObjectType? (st : SystemState) (id : SeLe4n.ObjId) : Option KernelObjectType :=
   (st.objects[id]?).map KernelObject.objectType
 

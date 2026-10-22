@@ -131,7 +131,7 @@ import SeLe4n.Kernel.Lifecycle.Invariant.CancellationReplyShape
 -- `private` in a module downstream of both the cleanup and the retype wrapper.
 -- It sits below the two `Cancellation*Shape` modules above (which is the only
 -- layer that sees every frame it composes) and above nothing.
-import SeLe4n.Kernel.Lifecycle.Invariant.RetypeReservation
+import SeLe4n.Kernel.Lifecycle.Invariant.CleanupReservation
 -- `v0.35.167` (WS-RR RR8.12 Cut C3b-i): the three TCB-control arms' resolved
 -- scheduler-domain footprints.  A resolved footprint is `schedFootprintOfCores`
 -- of its arm's own SM8.B write set, and it names `SchedLockId`, which is declared
@@ -150,7 +150,7 @@ import SeLe4n.Kernel.Lifecycle.ResumeFootprint
 import SeLe4n.Kernel.SchedContext.PriorityControlFootprint
 import SeLe4n.Kernel.Scheduler.Operations.AffinityFootprint
 import SeLe4n.Kernel.SchedContext.SchedContextFootprint
-import SeLe4n.Kernel.Lifecycle.Operations.RetypeFootprint
+import SeLe4n.Kernel.Lifecycle.Operations.CleanupFootprint
 import SeLe4n.Kernel.IPC.CrossCore.SuspendFootprint
 -- WS-LS LS2.3: the syscall and suspend seams' footprint coverage — each
 -- declared footprint covers every object-store and scheduler write its seam

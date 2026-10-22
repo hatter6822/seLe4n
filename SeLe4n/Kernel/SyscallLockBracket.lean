@@ -422,8 +422,8 @@ reads to tell a restart from an abandon, `.replyRecv` the reply *payload* badged
 with the reply capability's own badge, and `.tcbSetAffinity` the destination core
 — whose own `Option` is the unpin request, so it must not be collapsed with "not
 supplied".  And eight arms the object domain declares nothing for are here
-because the scheduler domain declares for them: the five TCB-directed ones, the
-three SchedContext ones and the retype.  `lockSetForSyscall` answers `none` at
+because the scheduler domain declares for them: the five TCB-directed ones and the
+three SchedContext ones.  `lockSetForSyscall` answers `none` at
 every one of those whatever these fields hold, so adding them left the object
 domain untouched.
 
@@ -528,10 +528,6 @@ def abiEntryLockOperands (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
               (Architecture.SyscallArgDecode.decodeSchedContextBindArgs decoded) s with
           | .error _ => none
           | .ok v => some (.ofThreadTarget tid v.val)
-      | .lifecycleRetype, .object _ =>
-          match Architecture.SyscallArgDecode.decodeLifecycleRetypeArgs decoded with
-          | .error _ => none
-          | .ok args => some (.ofObjectTarget tid args.targetObj)
       | _, _ => none
 
 /-- **WS-RR RR7.12**: the footprint the live ABI seam declares.

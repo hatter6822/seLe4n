@@ -205,7 +205,10 @@ theorem untypedRetypeObject_of_admitted {src dst : CSpaceAddr} {childId : SeLe4n
         obtain ⟨hD, hR⟩ := hRest
         have hUt : st.getObject? untypedId = some (.untyped ut) :=
           (SystemState.getUntyped?_eq_some_iff st untypedId ut).mp hU
-        dsimp only
+        have hAu : lifecycleRetypeAuthority utCap untypedId = true := by
+          revert hR; unfold retypeFromUntypedAdmitted; simp only [Bool.and_eq_true]
+          intro h; exact h.1.1.2
+        simp only [hAu, Bool.not_true, Bool.false_eq_true, ↓reduceIte, hU]
         rw [(cspaceDstRefusal_eq_ok_iff dst st).mpr hD]
         dsimp only
         rw [← CarveRequest.object_objectType untypedId childId ut utCap.freeIndex] at hR

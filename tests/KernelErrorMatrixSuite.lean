@@ -641,18 +641,18 @@ private def row_illegalAuthority_over_mcp : KernelErrorRejection :=
       SeLe4n.Kernel.SchedContext.PriorityManagement.validatePriorityAuthority caller
         (SeLe4n.Priority.mk 50) }
 
-/-- Row: `decodeLifecycleRetypeArgs` rejects unknown type tag with
+/-- Row: `decodeUntypedRetypeArgs` rejects unknown type tag with
 `.invalidTypeTag` (R7-E / L-10). -/
 private def row_invalidTypeTag : KernelErrorRejection :=
-  { syscall       := "decodeLifecycleRetypeArgs"
+  { syscall       := "decodeUntypedRetypeArgs"
     expectedError := .invalidTypeTag
     scenarioTag   := "AN11A.4.invalidTypeTag.unknown"
-    scenarioDesc  := "Lifecycle retype with a type-tag value not in the" ++
+    scenarioDesc  := "Untyped carve with a type-tag value not in the" ++
                      " modeled KernelObjectType set (here, 99) is rejected" ++
                      " at the ABI decode boundary"
     runScenario   := fun _ =>
-      runUnit (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeLifecycleRetypeArgs
-        (mkDecoded #[rv 0, rv 99, rv 0])) }
+      runUnit (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeUntypedRetypeArgs
+        (mkDecoded #[rv 99, rv 0, rv 0, rv 0])) }
 
 -- ============================================================================
 -- AN11-A.5 — Architecture / Capability / Service residual variants

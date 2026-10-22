@@ -54,7 +54,7 @@ that decomposition applied to a different premise:
   the shared fragment of the global projection
   (`onCore_sharedFragment_eq_globalProjection`).  The boot core is the global
   projection itself; every other core is §2 at `c' = bootCoreId`.
-* §4 lifts all thirty-five `KernelOperation` variants.
+* §4 lifts all thirty-four `KernelOperation` variants.
 * §6 carries the result through the SM3 two-phase-locking bracket.
 
 ## On the plan's proof sketch
@@ -414,7 +414,7 @@ So the two cores split:
 `endpointReplyWithReversionHigh`, `handleInterrupt`) carry only a whole-state
 projection hypothesis and no operational one, so they range over transitions
 that genuinely do write another core — the live cross-core dispatch is one.
-For those the premise must be supplied; §4 proves it for the other thirty-one
+For those the premise must be supplied; §4 proves it for the other thirty
 from the operations' own semantics. -/
 theorem nonInterference_perCore (ctx : LabelingContext) (observer : IfObserver)
     (st st' : SystemState)
@@ -488,7 +488,7 @@ theorem trace_preserves_projectionOnCore (ctx : LabelingContext) (observer : IfO
 
 
 -- ============================================================================
--- §4  SM8.B.3 — the thirty-five per-operation lifts
+-- §4  SM8.B.3 — the thirty-four per-operation lifts
 -- ============================================================================
 --
 -- §4a proves the confinement premise of §3 for each kernel operation the
@@ -1483,47 +1483,19 @@ theorem cspaceMutate_confinedToCore (st st' : SystemState) (addr : CSpaceAddr)
           | schedContext _ | reply _ | frame _ | pageTable _ => simp [hObj] at hStep
       · simp at hStep
 
-/-- SM8.B.3: `lifecycleRetypeObject` writes only the object store (it installs
-the new object through `storeObject`). -/
-theorem lifecycleRetypeObject_confinedToCore (st st' : SystemState) (authority : CSpaceAddr)
-    (target : SeLe4n.ObjId) (newObj : KernelObject) (c₀ : CoreId)
-    (hStep : Internal.lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
+/-- WS-ZA ZA5.4 part 14: the carve writes only the object store — the untyped's
+record, the child and the authority's CNode, three `storeObject`s. -/
+theorem retypeFromUntyped_confinedToCore (st st' : SystemState) (authority : CSpaceAddr)
+    (untypedId childId : SeLe4n.ObjId) (newObj : KernelObject) (allocSize : Nat)
+    (c₀ : CoreId) (hObjInv : st.objects.invExt)
+    (hStep : retypeFromUntyped authority untypedId childId newObj allocSize st = .ok ((), st')) :
     observableSlotsConfinedToCore st st' c₀ := by
-  obtain ⟨_, _, _, _, _, _, hStore⟩ :=
-    lifecycleRetypeObject_ok_as_storeObject st st' authority target newObj hStep
-  exact storeObject_confinedToCore st st' target newObj c₀ hStore
-
-/-- SM8.B.3: `lifecycleRevokeDeleteRetype` writes only the object store, the
-capability reference map and the CDT. -/
-theorem lifecycleRevokeDeleteRetype_confinedToCore (st st' : SystemState)
-    (authority cleanup : CSpaceAddr) (target : SeLe4n.ObjId) (newObj : KernelObject)
-    (c₀ : CoreId)
-    (hStep : lifecycleRevokeDeleteRetype authority cleanup target newObj st = .ok ((), st')) :
-    observableSlotsConfinedToCore st st' c₀ := by
-  unfold lifecycleRevokeDeleteRetype at hStep
-  split at hStep
-  · simp at hStep
-  · cases hRev : SeLe4n.Kernel.cspaceRevoke cleanup st with
-    | error e => simp [hRev] at hStep
-    | ok pairR =>
-      simp only [hRev] at hStep
-      have hRevC := cspaceRevoke_confinedToCore st pairR.2 cleanup c₀ hRev
-      cases hDel : SeLe4n.Kernel.cspaceDeleteSlot cleanup pairR.2 with
-      | error e => simp [hDel] at hStep
-      | ok pairD =>
-        simp only [hDel] at hStep
-        have hDelC := cspaceDeleteSlot_confinedToCore pairR.2 pairD.2 cleanup c₀ hDel
-        cases hLook : cspaceLookupSlot cleanup pairD.2 with
-        | ok _ => simp [hLook] at hStep
-        | error e =>
-          cases e with
-          | invalidCapability =>
-            simp only [hLook] at hStep
-            exact observableSlotsConfinedToCore_trans hRevC
-              (observableSlotsConfinedToCore_trans hDelC
-                (lifecycleRetypeObject_confinedToCore pairD.2 st' authority target newObj c₀
-                  hStep))
-          | _ => simp [hLook] at hStep
+  obtain ⟨_, _, _, stUt, _, stCh, _, _, _, _, _, _, _, _, _, _, _, hStoreUt,
+    hStoreChild, _, hStoreIdx⟩ :=
+    retypeFromUntyped_ok_stores st st' authority untypedId childId newObj allocSize hObjInv hStep
+  exact observableSlotsConfinedToCore_trans (storeObject_confinedToCore _ _ _ _ c₀ hStoreUt)
+    (observableSlotsConfinedToCore_trans (storeObject_confinedToCore _ _ _ _ c₀ hStoreChild)
+      (storeObject_confinedToCore _ _ _ _ c₀ hStoreIdx))
 
 /-- SM8.B.3: `vspaceMapPage` writes only the VSpace root object. -/
 theorem vspaceMapPage_confinedToCore (st st' : SystemState) (asid : SeLe4n.ASID)
@@ -1613,13 +1585,13 @@ theorem registerServiceChecked_confinedToCore (ctx : LabelingContext) (st st' : 
   exact registerService_confinedToCore st st' reg c₀ hStep
 
 
-/-! ### §4b  The thirty-five per-operation non-interference theorems
+/-! ### §4b  The thirty-four per-operation non-interference theorems
 
 One theorem per `KernelOperation` variant.  Each takes exactly the hypotheses
 its `NonInterferenceStep` constructor takes — no more — and concludes
 `lowEquivalent_smp`, i.e. the observer's view is preserved on **every** core,
 not merely on the boot core.  The confinement premise of
-`nonInterference_perCore` is discharged from §4a for all thirty-one
+`nonInterference_perCore` is discharged from §4a for all thirty
 operationally-specified constructors.
 
 The four catch-all constructors (`syscallDispatchHigh`,
@@ -1689,31 +1661,21 @@ theorem nonInterference_perCore_cspaceRevoke (ctx : LabelingContext) (observer :
     (.cspaceRevoke addr hAddrHigh hStep)
     (cspaceRevoke_confinedToCore st st' addr bootCoreId hStep)
 
-theorem nonInterference_perCore_lifecycleRetype (ctx : LabelingContext) (observer : IfObserver)
-    (st st' : SystemState) (authority : CSpaceAddr) (target : SeLe4n.ObjId)
-    (newObj : KernelObject)
+theorem nonInterference_perCore_retypeFromUntyped (ctx : LabelingContext)
+    (observer : IfObserver) (st st' : SystemState) (authority : CSpaceAddr)
+    (untypedId childId : SeLe4n.ObjId) (newObj : KernelObject) (allocSize : Nat)
     (hObjInv : st.objects.invExt) (hIdxComplete : objectIndexSetComplete st)
     (hObjSetInv : st.objectIndexSet.table.invExt)
-    (hTargetHigh : objectObservable ctx observer target = false)
-    (hStep : Internal.lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
+    (hUntypedHigh : objectObservable ctx observer untypedId = false)
+    (hChildHigh : objectObservable ctx observer childId = false)
+    (hAuthorityHigh : objectObservable ctx observer authority.cnode = false)
+    (hStep : retypeFromUntyped authority untypedId childId newObj allocSize st = .ok ((), st')) :
     lowEquivalent_smp ctx observer st' st :=
   nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv
-    (.lifecycleRetype authority target newObj hTargetHigh hStep)
-    (lifecycleRetypeObject_confinedToCore st st' authority target newObj bootCoreId hStep)
-
-theorem nonInterference_perCore_lifecycleRevokeDeleteRetype (ctx : LabelingContext)
-    (observer : IfObserver) (st st' : SystemState) (authority cleanup : CSpaceAddr)
-    (target : SeLe4n.ObjId) (newObj : KernelObject)
-    (hObjInv : st.objects.invExt) (hIdxComplete : objectIndexSetComplete st)
-    (hObjSetInv : st.objectIndexSet.table.invExt)
-    (hCleanupHigh : objectObservable ctx observer cleanup.cnode = false)
-    (hTargetHigh : objectObservable ctx observer target = false)
-    (hStep : lifecycleRevokeDeleteRetype authority cleanup target newObj st = .ok ((), st')) :
-    lowEquivalent_smp ctx observer st' st :=
-  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv
-    (.lifecycleRevokeDeleteRetype authority cleanup target newObj hCleanupHigh hTargetHigh hStep)
-    (lifecycleRevokeDeleteRetype_confinedToCore st st' authority cleanup target newObj bootCoreId
-      hStep)
+    (.retypeFromUntyped authority untypedId childId newObj allocSize hUntypedHigh hChildHigh
+      hAuthorityHigh hStep)
+    (retypeFromUntyped_confinedToCore st st' authority untypedId childId newObj allocSize
+      bootCoreId hObjInv hStep)
 
 theorem nonInterference_perCore_notificationSignal (ctx : LabelingContext) (observer : IfObserver)
     (st st' : SystemState) (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
@@ -2074,7 +2036,7 @@ projection hypothesis instead of an operational one, so nothing about their
 per-core write set can be derived — and under SMP the dispatch they stand for
 genuinely writes a remote core (the cross-core wake).  Each therefore takes the
 confinement premise; `perCoreConfinementDerived_count` records that this
-is exactly four of the thirty-five. -/
+is exactly four of the thirty-four. -/
 
 theorem nonInterference_perCore_syscallDispatch (ctx : LabelingContext) (observer : IfObserver)
     (st st' : SystemState)
@@ -2163,8 +2125,7 @@ def kernelOperationPerCoreNiTheorem : KernelOperation → String
   | .endpointSendDual               => niName! nonInterference_perCore_endpointSendDual
   | .cspaceMint                     => niName! nonInterference_perCore_cspaceMint
   | .cspaceRevoke                   => niName! nonInterference_perCore_cspaceRevoke
-  | .lifecycleRetype                => niName! nonInterference_perCore_lifecycleRetype
-  | .lifecycleRevokeDeleteRetype    => niName! nonInterference_perCore_lifecycleRevokeDeleteRetype
+  | .retypeFromUntyped              => niName! nonInterference_perCore_retypeFromUntyped
   | .notificationSignal             => niName! nonInterference_perCore_notificationSignal
   | .notificationWait               => niName! nonInterference_perCore_notificationWait
   | .cspaceInsertSlot               => niName! nonInterference_perCore_cspaceInsertSlot
@@ -2203,7 +2164,7 @@ theorem niStepCoverage_perCore_injective :
   intro op₁ op₂ hEq
   cases op₁ <;> cases op₂ <;> (first | rfl | simp [kernelOperationPerCoreNiTheorem] at hEq)
 
-/-- SM8.B.5: thirty-five distinct per-core theorem names — the count the plan
+/-- SM8.B.5: thirty-four distinct per-core theorem names — the count the plan
 re-anchored at the SM8.A cut (`kernelOperation_count` /
 `niStepCoverage_count` are the authority).
 
@@ -2214,7 +2175,7 @@ Paired with `KernelOperation.mem_all` the enumeration is now tied to the type,
 and `eraseDups` makes the "distinct" in the sentence above a checked word rather
 than a claim resting on `niStepCoverage_perCore_injective` alone. -/
 theorem niStepCoverage_perCore_count :
-    (KernelOperation.all.map kernelOperationPerCoreNiTheorem).eraseDups.length = 35 := by
+    (KernelOperation.all.map kernelOperationPerCoreNiTheorem).eraseDups.length = 34 := by
   decide
 
 /-- SM8.B.5: **whether the operation's own semantics establish the confinement
@@ -2227,13 +2188,13 @@ hypothesis and no operational one.
 silently classified any future `KernelOperation` variant as "derived" — a
 wildcard cannot be an exhaustiveness tripwire, and only
 `perCoreConfinementDerived_count` breaking would have caught it, one step
-removed from the cause.  Spelling all thirty-five arms out makes a new variant a
+removed from the cause.  Spelling all thirty-four arms out makes a new variant a
 *compile* error here, at the table that would have mis-described it. -/
 def perCoreConfinementDerived : KernelOperation → Bool
   | .syscallDispatchHigh | .endpointCallWithDonationHigh
   | .endpointReplyWithReversionHigh | .handleInterrupt => false
   | .chooseThread | .endpointSendDual | .cspaceMint | .cspaceRevoke
-  | .lifecycleRetype | .lifecycleRevokeDeleteRetype | .notificationSignal
+  | .retypeFromUntyped | .notificationSignal
   | .notificationWait | .cspaceInsertSlot | .schedule | .vspaceMapPage
   | .vspaceUnmapPage | .vspaceLookup | .cspaceCopy | .cspaceMove
   | .cspaceDeleteSlot | .endpointReply | .endpointReceiveDualHigh
@@ -2243,7 +2204,7 @@ def perCoreConfinementDerived : KernelOperation → Bool
   | .cspaceMutateHigh | .handleYield | .timerTick | .syscallDecodeError
   | .registerServiceChecked => true
 
-/-- SM8.B.5: thirty-one of the thirty-five operations discharge the confinement
+/-- SM8.B.5: thirty of the thirty-four operations discharge the confinement
 premise from their own semantics; exactly four — the catch-alls — do not.
 
 **Stated over `KernelOperation.all`** (WS-SM SM8.E.2) for the reason
@@ -2252,7 +2213,7 @@ replaced could not notice a thirty-sixth operation.  The complement is stated
 too, so the two numbers are checked against the same enumeration rather than
 against each other's arithmetic. -/
 theorem perCoreConfinementDerived_count :
-    (KernelOperation.all.filter perCoreConfinementDerived).length = 31 := by decide
+    (KernelOperation.all.filter perCoreConfinementDerived).length = 30 := by decide
 
 /-- SM8.B.5: …and exactly four do not, so the split is total over the
 enumeration.  A future operation added to `KernelOperation.all` without a
@@ -2269,7 +2230,7 @@ post-state is `lowEquivalent_smp` to the pre-state.
 Like its single-core counterpart `niStepConstructorCoverage`, this witnesses
 *discoverability* over the operation taxonomy, not per-op semantics: the
 universal witness is the state-identity step.  The per-op semantic content is
-§4b's thirty-five theorems, indexed by `kernelOperationPerCoreNiTheorem`.  The
+§4b's thirty-four theorems, indexed by `kernelOperationPerCoreNiTheorem`.  The
 exhaustive match is the tripwire — a new `KernelOperation` variant makes this
 proof non-exhaustive and the build fails. -/
 theorem niStepCoverage_perCore (ctx : LabelingContext) (observer : IfObserver)
@@ -2281,7 +2242,7 @@ theorem niStepCoverage_perCore (ctx : LabelingContext) (observer : IfObserver)
         lowEquivalent_smp ctx observer st' st) := by
   intro
     | .chooseThread | .endpointSendDual | .cspaceMint | .cspaceRevoke
-    | .lifecycleRetype | .lifecycleRevokeDeleteRetype | .notificationSignal
+    | .retypeFromUntyped | .notificationSignal
     | .notificationWait | .cspaceInsertSlot | .schedule | .vspaceMapPage
     | .vspaceUnmapPage | .vspaceLookup | .cspaceCopy | .cspaceMove
     | .cspaceDeleteSlot | .endpointReply | .endpointReceiveDualHigh

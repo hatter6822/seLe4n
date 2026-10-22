@@ -23,7 +23,6 @@ them unchanged.
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model
-open Internal
 
 
 /-! ## U4-L / U-M26: the derivation tree's invariants from the pre-state

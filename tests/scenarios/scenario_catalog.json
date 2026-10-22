@@ -167,16 +167,6 @@
       ],
       "replay_tier": "smoke",
       "expected_trace_fragment": "retype-from-untyped childId collision guard: SeLe4n.Model.KernelError.childIdCollision"
-    },
-    {
-      "id": "SCN-H2-RETYPE-CLEANUP",
-      "subsystem": "lifecycle",
-      "risk_tags": [
-        "safety",
-        "correctness"
-      ],
-      "replay_tier": "smoke",
-      "expected_trace_fragment": "lifecycle retype-with-cleanup old tid removed: true"
     }
   ]
 }

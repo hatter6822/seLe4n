@@ -923,13 +923,13 @@ check("a manifest's digest is not scanned",
       _digest in gate.strip_checksum_manifest(_digest + "  x.expected\n"), False)
 
 # `.txt` carries tracked allowlists and fixtures whose entries are module
-# and check NAMES -- `scripts/lifecycle_internal_allowlist.txt`,
+# and check NAMES -- `scripts/website_link_manifest.txt`,
 # `tests/fixtures/qemu_boot_expected.txt`. Classifying `.txt` as
 # non-documentation only puts those files in scope; it does not scan a
 # byte of them, so the "txt outside docs is in scope" check above is not
 # evidence that their contents are covered. These probe the dispatch and
 # the stripper, so dropping `.txt` from the map fails here.
-_txt_rule = gate.content_rule("scripts/lifecycle_internal_allowlist.txt")
+_txt_rule = gate.content_rule("scripts/website_link_manifest.txt")
 check("a txt allowlist reaches a content stripper", _txt_rule is not None, True)
 check("a txt allowlist's entries are scanned",
       "phase5_helper" in _txt_rule[0]("phase5_helper\n"), True)

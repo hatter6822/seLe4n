@@ -141,7 +141,7 @@ the 13th.  On every core, every cached instruction line still has a live
 disjunct: instruction-cache maintenance is a synchronous broadcast instruction
 (`IC IALLUIS` / `IC IVAU`), not a queued request/acknowledge round, so no
 committed state has a line that is stale-but-scheduled-for-retirement — the
-live `.vspaceUnmap` and `.lifecycleRetype` seams broadcast atomically with the
+live `.vspaceUnmap` seam broadcasts atomically with the
 transition that would falsify a line's witness.  It reads exactly three fields
 — `perCoreICache` (via `icacheOnCore`) plus `objects` + `asidTable` (via
 `resolveAsidRoot`) — and none of `machine` / `scheduler` / `tlbShootdown`, so
@@ -1824,7 +1824,7 @@ theorem writeRegisterState_preserves_registerDecodeConsistent
 /-! ### AK8-A (WS-AK / C-M01) — Retype preservation proofs
 
 This section closes a gap discovered during the end-to-end Phase AK8 audit:
-`lifecycleRetype_crossSubsystemInvariant_bridge` plumbs
+`retypeFromUntyped_crossSubsystemInvariant_bridge` plumbs
 `hUntypedDisj : untypedRegionsDisjoint st'` as a hypothesis, but no theorem
 **proves** that `retypeFromUntyped` actually preserves the invariant. The
 theorems below fill that gap with substantive proofs.
@@ -1850,10 +1850,8 @@ multi-level untyped nesting would require a richer invariant
 (root-restricted disjointness or transitive-ancestor exclusion).  The
 full-coverage proof is registered in the *Registered debt index* (table C.1) in `docs/REGISTERED_DEBT.md`, row 24.
 The `retypeFromUntyped_preserves_untypedRegionsDisjoint_nonUntypedChild`
-theorem below covers the API dispatch path's primary use cases
-(`.tcb`, `.endpoint`, `.notification`, `.cnode`, `.vspaceRoot`,
-`.schedContext`) which account for every existing
-`objectOfKernelType` retype target exercised in the test suite. -/
+theorem below covers every carve but a child untyped's
+(`retypeFromUntyped_carve_preserves_untypedRegionsDisjoint`). -/
 
 /-- AK8-A (WS-AK / C-M01): `retypeFromUntyped` preserves `untypedRegionsDisjoint`
 under the primary API dispatch precondition that `newObj.objectType ≠ .untyped`.
@@ -1922,155 +1920,24 @@ theorem retypeFromUntyped_preserves_untypedRegionsDisjoint_nonUntypedChild
     stCh st' authority.cnode _ (fun _ h => by cases h) hDisjAfterChild
     (SeLe4n.Model.storeObject_preserves_objects_invExt _ _ _ _ hObjInvUt hStoreChild) hStoreIdx
 
-/-- AK8-A (WS-AK / C-M01): Convenience corollary — `retypeFromUntyped`
-preserves `untypedRegionsDisjoint` when the API-dispatch-layer
-`objectOfKernelType` constructs the target with a non-`.untyped` type tag
-(i.e., `.tcb`, `.endpoint`, `.notification`, `.cnode`, `.vspaceRoot`, or
-`.schedContext`). This is the direct production-path specialization of
-`retypeFromUntyped_preserves_untypedRegionsDisjoint_nonUntypedChild` and
-it automatically discharges the `hNotUntypedChild` hypothesis from the
-`objType ≠ .untyped` side-condition. The six allowed object types
-together with `.untyped` exhaust `KernelObjectType`, so this theorem
-covers every retype target that API dispatch currently produces EXCEPT
-`.untyped` → `.untyped` (a post-1.0 hardening candidate, registered in the *Registered debt index* (table C.1) in `docs/REGISTERED_DEBT.md`,
-row 25 — see discussion below). -/
-theorem retypeFromUntyped_objectOfKernelType_preserves_untypedRegionsDisjoint
-    (st st' : SystemState)
-    (authority : Kernel.CSpaceAddr)
-    (untypedId childId : SeLe4n.ObjId)
-    (objType : KernelObjectType) (sizeHint : Nat) (allocSize : Nat)
-    (hNotUntyped : objType ≠ .untyped)
-    (hPre : Kernel.untypedRegionsDisjoint st)
-    (hObjInv : st.objects.invExt)
+/-- WS-ZA ZA5.4 part 14: **every carve of a kernel object, a frame or a VSpace
+root preserves `untypedRegionsDisjoint`** — the carve is the one way any of them
+is made, and its object (`CarveRequest.object`) is an untyped only for an
+untyped request.  The child-untyped carve is `untypedNextChild`'s, with its
+parent stamped, and is covered by its own row of `docs/REGISTERED_DEBT.md`. -/
+theorem retypeFromUntyped_carve_preserves_untypedRegionsDisjoint
+    (st st' : SystemState) (authority : Kernel.CSpaceAddr)
+    (untypedId childId : SeLe4n.ObjId) (req : Kernel.CarveRequest) (ut : UntypedObject)
+    (idx allocSize : Nat) (hKind : ∀ b, req ≠ .untyped b)
+    (hPre : Kernel.untypedRegionsDisjoint st) (hObjInv : st.objects.invExt)
     (hStep : Kernel.retypeFromUntyped authority untypedId childId
-      (Kernel.objectOfKernelType objType sizeHint) allocSize st
-      = .ok ((), st')) :
+      (req.object untypedId childId ut idx) allocSize st = .ok ((), st')) :
     Kernel.untypedRegionsDisjoint st' := by
   apply retypeFromUntyped_preserves_untypedRegionsDisjoint_nonUntypedChild
-    st st' authority untypedId childId (Kernel.objectOfKernelType objType sizeHint)
-    allocSize _ hPre hObjInv hStep
+    st st' authority untypedId childId _ allocSize _ hPre hObjInv hStep
   intro childUt hEq
-  -- objectOfKernelType objType sizeHint returns .untyped _ only when
-  -- objType = .untyped; we excluded that case.
-  cases objType <;> simp [Kernel.objectOfKernelType] at hEq
-  exact hNotUntyped rfl
-
-/-! ## AK8-A (WS-AK / C-M01) — Retype-to-untyped scope analysis (TPI-DOC)
-
-The theorem above closes the common API dispatch case (retype to `.tcb`,
-`.endpoint`, `.notification`, `.cnode`, `.vspaceRoot`, `.schedContext`) by
-substantively proving `untypedRegionsDisjoint` preservation.
-
-For the **retype-to-untyped** case, a substantive proof requires a stronger
-caller obligation than the current model naturally provides:
-
-1. **Well-formed child region:** The caller's `newObj : .untyped childUt`
-   must have `childUt.regionBase.val = parent.regionBase.val + offset` and
-   `childUt.regionSize = allocSize` (parent-derived sub-region). The
-   production `objectOfKernelType .untyped sz` helper does NOT enforce
-   this — it hardcodes `regionBase := PAddr.ofNat 0`. Any caller exercising
-   retype-to-untyped must therefore construct `newObj` via a
-   parent-context-aware wrapper. The wrapper is not part of the Phase AK8
-   scope (AK8 targets baseline correctness of the invariant plumbing).
-
-2. **Transitive ancestor exclusion:** The current invariant formulation
-   allows direct parent-child containment but does not account for
-   transitive grandparent-grandchild relationships. A full solution either
-   (a) restricts the invariant to root untypeds (no parent in any
-   `children` list), or (b) extends the child-exclusion side condition to
-   transitive closure of the children relation.
-
-Neither refinement is in scope for Phase AK8, which closes the API
-dispatch's primary retype paths (all non-`.untyped` children) with a
-machine-checked proof, establishes the runtime invariant infrastructure
-(12th conjunct + bridges + boot preservation), and documents the residual
-retype-to-untyped obligation as post-1.0 hardening work.
-
-**Post-AN6 audit substantive closure**: the prior `True := trivial`
-marker has been replaced with a chain of three substantive theorems
-that *structurally* witness the gap: (a)
-`objectOfKernelType_untyped_hardcodes_zero_regionBase` proves the
-production dispatch helper builds a `.untyped` with `regionBase =
-PAddr.ofNat 0`; (b) `retypeFromUntyped_ok_decompose` (existing) gives
-that a successful retype-to-untyped performs `storeObject childId
-newObj stUt = .ok ((), st')`; (c) the combining theorem
-`retypeFromUntyped_via_objectOfKernelType_untyped_child_has_zero_regionBase`
-proves that the post-retype `st'.objects[childId]?` is a `.untyped`
-with `regionBase = PAddr.ofNat 0`. Under `untypedRegionsDisjoint`'s
-preconditions, this zero-regionBase child would overlap the parent
-only if the parent also has `regionBase = 0` (the boot-allocated
-top-level untyped) — in which case the direct-child-exclusion side
-condition (`oid₂ ∉ ut₁.children.map .objId`) handles the containment.
-The full-coverage proof is registered in the *Registered debt index* (table C.1) in `docs/REGISTERED_DEBT.md`, row 26
-(AN6-C.5..C.10 follow-up is the next slice).
--/
-
-/-- AK8-A post-AN6-audit: `objectOfKernelType .untyped sizeHint` produces a
-    `.untyped` child with `regionBase = PAddr.ofNat 0`. This is the
-    structural property that makes retype-to-untyped via the production
-    dispatch path produce a non-parent-derived region — the necessary
-    well-formedness precondition for transitive ancestor tracking is
-    not enforced at construction time. Proven by unfolding `objectOfKernelType`. -/
-theorem objectOfKernelType_untyped_hardcodes_zero_regionBase (sizeHint : Nat) :
-    ∃ ut : UntypedObject,
-      Kernel.objectOfKernelType .untyped sizeHint = .untyped ut ∧
-      ut.regionBase = SeLe4n.PAddr.ofNat 0 := by
-  refine ⟨_, rfl, rfl⟩
-
-/-- AK8-A post-AN6-audit: retype-to-untyped via the production dispatch
-    path (`objectOfKernelType .untyped`) produces a child with
-    `regionBase = PAddr.ofNat 0`. Composes the structural helper
-    `objectOfKernelType_untyped_hardcodes_zero_regionBase` with
-    `storeObject_objects_eq` on the final retype mutation. Requires
-    the standard well-formedness precondition `hObjInv` that the
-    object-store satisfies the external HashMap invariant (available
-    from `allTablesInvExt` for any reachable state).
-
-    This theorem structurally witnesses the AK8-A scope gap: the
-    production retype-to-untyped path CANNOT produce a valid
-    parent-derived untyped region without going through a
-    parent-context-aware wrapper that AK8 does not ship. -/
-theorem retypeFromUntyped_via_objectOfKernelType_untyped_child_has_zero_regionBase
-    (authority : CSpaceAddr)
-    (untypedId childId : SeLe4n.ObjId) (sizeHint allocSize : Nat)
-    (st st' : SystemState) (hObjInv : st.objects.invExt)
-    (hStep :
-      Kernel.retypeFromUntyped authority untypedId childId
-        (Kernel.objectOfKernelType .untyped sizeHint) allocSize st = .ok ((), st')) :
-    ∃ ut, st'.objects[childId]? = some (.untyped ut) ∧
-          ut.regionBase = SeLe4n.PAddr.ofNat 0 := by
-  -- Decompose the successful retype into its `storeObject`-on-child tail.
-  obtain ⟨_ut, _ut', _cap, stUt, _offset, stCh, _cn,
-          _hUt, _hDev, _hAlloc, _hLookupSlot, _hAuth, _hAlloc', _, _, _, hNeC, hStoreUt,
-          hStoreChild, _, hStoreIdx⟩ :=
-    Kernel.retypeFromUntyped_ok_stores st st' authority untypedId childId
-      (Kernel.objectOfKernelType .untyped sizeHint) allocSize hObjInv hStep
-  -- The intermediate `storeObject` on the parent preserves `objects.invExt`.
-  have hObjInvUt : stUt.objects.invExt :=
-    storeObject_preserves_objects_invExt st stUt untypedId
-      (.untyped _ut') hObjInv hStoreUt
-  have hObjInvCh := storeObject_preserves_objects_invExt _ _ _ _ hObjInvUt hStoreChild
-  -- Lookup the child: storeObject writes `.untyped ut` where ut.regionBase = 0,
-  -- and the authority's free-index write is to another object.
-  have hLookup := storeObject_objects_eq stUt stCh childId
-    (Kernel.objectOfKernelType .untyped sizeHint) hObjInvUt hStoreChild
-  rw [← storeObject_objects_ne _ _ _ _ _ (Ne.symm hNeC) hObjInvCh hStoreIdx] at hLookup
-  -- The structural helper unwraps `objectOfKernelType .untyped sizeHint`.
-  obtain ⟨ut, hOfKind, hBase⟩ :=
-    objectOfKernelType_untyped_hardcodes_zero_regionBase sizeHint
-  rw [hOfKind] at hLookup
-  exact ⟨ut, hLookup, hBase⟩
-
-/-- AK8-A post-AN6-audit: named marker for discoverability, superseding the
-    prior `True := trivial` form. Points readers to the two substantive
-    theorems above that jointly witness the retype-to-untyped scope
-    gap (production path produces zero-regionBase child → needs
-    parent-context wrapper → not shipped in AK8). -/
-theorem retypeFromUntyped_untypedRegionsDisjoint_retype_to_untyped_documented
-    (sizeHint : Nat) :
-    ∃ ut : UntypedObject,
-      Kernel.objectOfKernelType .untyped sizeHint = .untyped ut ∧
-      ut.regionBase = SeLe4n.PAddr.ofNat 0 :=
-  objectOfKernelType_untyped_hardcodes_zero_regionBase sizeHint
+  cases req with
+  | untyped b => exact hKind b rfl
+  | _ => simp [Kernel.CarveRequest.object] at hEq
 
 end SeLe4n.Kernel.Architecture

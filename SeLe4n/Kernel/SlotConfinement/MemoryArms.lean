@@ -8,14 +8,15 @@
 -/
 
 import SeLe4n.Kernel.SlotConfinement.PriorityArms
-import SeLe4n.Kernel.Lifecycle.Operations.RetypeFootprint
+import SeLe4n.Kernel.Lifecycle.Operations.CleanupFootprint
 
 /-!
 # Per-core slot confinement — the live memory and lifecycle arms
 
 §5j: the VSpace, untyped and CSpace arms, confined to no core at all;
-§5k: `.lifecycleRetype`, a sweep over every core bounded by the cores the
-destroyed thread occupied in the pre-state.
+§5k: `.untypedRetype`, confined to no core, and the destroy path's cleanup, a
+sweep over every core bounded by the cores the destroyed thread occupied in the
+pre-state.
 -/
 
 namespace SeLe4n.Kernel
@@ -29,7 +30,7 @@ open SeLe4n.Kernel.PriorityInheritance
 -- §5j The live memory-subsystem arms
 -- ============================================================================
 --
--- `.vspaceMap`, `.vspaceUnmap` and `.lifecycleRetype` route through per-core
+-- `.vspaceMap`, `.vspaceUnmap` and `.untypedRetype` route through per-core
 -- wrappers (they take an `executingCore`), so round 15's inventory-completeness
 -- check demands an entry for each. Their entry is the **strongest** one this
 -- module can carry: an *empty* write set. Every field these wrappers touch
@@ -432,57 +433,47 @@ theorem cspaceRevokeCdtFinalising_confinedToCores
   exact ⟨hs.trans hQ.1, hm.trans hQ.2⟩
 
 -- ============================================================================
--- §5k The live `.lifecycleRetype` arm — a sweep bounded by occupancy
+-- §5k The live `.untypedRetype` arm, and the destroy path's cleanup
 -- ============================================================================
 --
--- The third and last routing-allowlist exception, and the only one of the three
--- that genuinely writes scheduler state: destroying a TCB sweeps it out of
--- **every** core's run queue and current slot, because a destroy has no home
--- core to key on.
+-- WS-ZA ZA5.4 part 14: every kernel object is carved from an untyped, and the
+-- carve takes the executing core (a carved thread's domain and affinity are
+-- that core's).  It writes no core: the untyped's record, the child, the
+-- authority's free index, the new capability and its derivation edge are the
+-- object store and the CDT, and the scrub writes memory, never a register
+-- bank.
 --
--- The naive bound is therefore `allCores`, which is true and says nothing. The
--- honest one is the set of cores the destroyed thread actually occupied in the
--- pre-state, and it is available only because review round 17 rewrote the
--- sweep's step to be *guarded* by `threadOccupiesCore`: an unoccupied core is
--- left literally untouched rather than rewritten with equal values.
---
--- Everything else the retype pipeline does — the donation return, the two
--- IPC-reference sweeps, the service-registration
--- cleanup, the CDT detach, the memory scrub, the object store, the ASID
--- shootdown rounds, the initiator's own TLB drain and the I-cache broadcast —
--- writes no scheduler slot and no register bank, and each of those is discharged
--- by a frame rather than by an argument.
+-- The cleanup below is the destroy path's: the in-place retype that ran it is
+-- retired, and the finalisation a kernel object's final delete will run calls
+-- it (`docs/REGISTERED_DEBT.md`).  Destroying a TCB sweeps it out of **every**
+-- core's run queue and current slot, bounded by the cores the destroyed thread
+-- occupied in the pre-state — available only because review round 17 rewrote
+-- the sweep's step to be *guarded* by `threadOccupiesCore`.
 
-/-- SM8.B.2: the I-cache broadcast seam preserves whatever confinement its
-wrapped transition has.
-
-The `withIcacheBroadcast_framed` sibling, keyed on the write set rather than on
-whole-machine equality — the retype needs this one because its memory scrub
-genuinely writes `machine`, so the `Framed` form is unavailable. -/
-theorem withIcacheBroadcast_confinedToCores
-    (mkOp : SystemState → Option Architecture.ICacheInvalidation) (k : Kernel Unit)
-    (cs : List CoreId) (st st' : SystemState)
-    (hk : ∀ s', k st = .ok ((), s') → observableSlotsConfinedToCores st s' cs)
-    (h : Architecture.withIcacheBroadcast mkOp k st = .ok ((), st')) :
-    observableSlotsConfinedToCores st st' cs := by
-  unfold Architecture.withIcacheBroadcast at h
-  simp only [] at h
-  split at h
-  · exact absurd h (by simp)
-  · next stK hK =>
-    have hInner := hk stK hK
-    split at h <;>
-      · rw [Except.ok.injEq, Prod.mk.injEq] at h
-        obtain ⟨-, he⟩ := h
-        subst he
-        exact observableSlotsConfinedToCores_of_framed_suffix (stMid := stK) rfl rfl hInner
-
--- WS-RR RR8.12 Cut C3b-iii (`v0.35.169`): `lifecycleRetypeWriteSetOf` and
--- `lifecycleRetypeWriteSet` moved to the production
--- `SeLe4n/Kernel/Lifecycle/Operations/RetypeFootprint.lean` (via
--- `SyscallSchedFootprint.lean` until WS-LS LS2.5), beside
--- `schedLockSet_lifecycleRetypeOnCore`, whose run segment IS the second.  Same
--- names, same namespace; the confinement theorems below stay here.
+/-- WS-ZA ZA5.4 part 14: **the carve writes no core.**  Its three object stores,
+the scrub, the capability insertion and the derivation edge keep the scheduler,
+and the scrub writes memory alone, so every core's register bank is kept. -/
+theorem untypedRetypeObject_confinedToCores (src dst : CSpaceAddr)
+    (childId : SeLe4n.ObjId) (req : CarveRequest) (st st' : SystemState)
+    (hObjInv : st.objects.invExt)
+    (hStep : untypedRetypeObject src childId dst req st = .ok ((), st')) :
+    observableSlotsConfinedToCores st st' [] := by
+  obtain ⟨utCap, untypedId, ut, st1, st2, _, _, _, hRt, hIns, rfl⟩ :=
+    untypedRetypeObject_ok_decompose src dst childId req st st' hObjInv hStep
+  obtain ⟨_, _, _, stUt, _, stCh, _, _, _, _, _, _, _, _, _, _, _, hStUt, hStCh, _, hStIdx⟩ :=
+    retypeFromUntyped_ok_stores st st1 src untypedId childId _ _ hObjInv hRt
+  have hS1 : st1.scheduler = st.scheduler :=
+    (storeObject_scheduler_eq _ _ _ _ hStIdx).trans
+      ((storeObject_scheduler_eq _ _ _ _ hStCh).trans (storeObject_scheduler_eq _ _ _ _ hStUt))
+  have hM1 : st1.machine = st.machine :=
+    (storeObject_machine_eq _ _ _ _ hStIdx).trans
+      ((storeObject_machine_eq _ _ _ _ hStCh).trans (storeObject_machine_eq _ _ _ _ hStUt))
+  have hS2 : st2.scheduler = st.scheduler := by
+    rw [cspaceInsertSlot_preserves_scheduler _ st2 dst _ hIns, CarveRequest.scrub_scheduler, hS1]
+  refine observableSlotsConfinedToCores_nil_of_scheduler_regs_eq
+    (by rw [SystemState.cdtAddChild_scheduler, hS2]) (fun c => ?_)
+  rw [SystemState.cdtAddChild_machine, cspaceInsertSlot_preserves_machine _ st2 dst _ hIns, ← hM1]
+  cases req <;> simp only [CarveRequest.scrub, carveZeroFrame] <;> (try split) <;> rfl
 
 -- `v0.35.164`: `tcbCleanupArm_confinedToCores` is gone with the two mid-states it
 -- abstracted over; the pipeline's first step is the reservation arm, composed
@@ -504,7 +495,7 @@ theorem lifecyclePreRetypeCleanup_confinedToCores
     (st stClean : SystemState) (target : SeLe4n.ObjId) (currentObj newObj : KernelObject)
     (hInv : st.objects.invExt)
     (hOk : lifecyclePreRetypeCleanup st target currentObj newObj = .ok stClean) :
-    observableSlotsConfinedToCores st stClean (lifecycleRetypeWriteSetOf st currentObj) := by
+    observableSlotsConfinedToCores st stClean (preRetypeCleanupWriteSetOf st currentObj) := by
   cases currentObj with
   | tcb tcb =>
     simp only [lifecyclePreRetypeCleanup] at hOk
@@ -524,7 +515,7 @@ theorem lifecyclePreRetypeCleanup_confinedToCores
         | true => rw [if_pos hr] at hOk; exact absurd hOk (by simp)
       rw [if_neg (by simp only [hRO]; exact Bool.false_ne_true)] at hOk
       obtain rfl := Except.ok.inj hOk
-      simp only [lifecycleRetypeWriteSetOf]
+      simp only [preRetypeCleanupWriteSetOf]
       -- The arm writes no observable slot; the sweep's write set at the arm's
       -- post-state is the entry state's, because the arm keeps every run queue
       -- and current slot.
@@ -543,7 +534,7 @@ theorem lifecyclePreRetypeCleanup_confinedToCores
       rw [List.nil_append, List.append_nil, hOcc] at hTrans'
       exact hTrans'
   | cnode cn =>
-    simp only [lifecyclePreRetypeCleanup, lifecycleRetypeWriteSetOf] at hOk ⊢
+    simp only [lifecyclePreRetypeCleanup, preRetypeCleanupWriteSetOf] at hOk ⊢
     have hDetach : observableSlotsConfinedToCores st (detachCNodeSlots st target cn) [] :=
       observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
         (detachCNodeSlots_scheduler_eq st target cn)
@@ -555,13 +546,13 @@ theorem lifecyclePreRetypeCleanup_confinedToCores
     · cases hOk
     · injection hOk with hOk; subst hOk; exact hDetach
   | endpoint _ =>
-    simp only [lifecyclePreRetypeCleanup, lifecycleRetypeWriteSetOf] at hOk ⊢
+    simp only [lifecyclePreRetypeCleanup, preRetypeCleanupWriteSetOf] at hOk ⊢
     injection hOk with hOk; subst hOk
     exact observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
       (cleanupEndpointServiceRegistrations_scheduler_eq st target)
       (cleanupEndpointServiceRegistrations_machine_eq st target)
   | reply _ =>
-    simp only [lifecyclePreRetypeCleanup, lifecycleRetypeWriteSetOf] at hOk ⊢
+    simp only [lifecyclePreRetypeCleanup, preRetypeCleanupWriteSetOf] at hOk ⊢
     split at hOk
     · cases hOk
     · injection hOk with hOk; subst hOk; exact observableSlotsConfinedToCores_refl _ _
@@ -571,152 +562,16 @@ theorem lifecyclePreRetypeCleanup_confinedToCores
     -- `.ok` post-state.
     simp [lifecyclePreRetypeCleanup] at hOk
   | notification _ =>
-    simp only [lifecyclePreRetypeCleanup, lifecycleRetypeWriteSetOf] at hOk ⊢
+    simp only [lifecyclePreRetypeCleanup, preRetypeCleanupWriteSetOf] at hOk ⊢
     injection hOk with hOk; subst hOk; exact observableSlotsConfinedToCores_refl _ _
   | schedContext _ =>
     -- WS-OD OD5.4: a context heading a reply stack is refused (vacuous on `.ok`).
     -- `v0.35.165`: past that guard the arm RELEASES the binding, which writes no
     -- confined slot -- the replenish queue is not one of the six.
-    simp only [lifecyclePreRetypeCleanup, lifecycleRetypeWriteSetOf] at hOk ⊢
+    simp only [lifecyclePreRetypeCleanup, preRetypeCleanupWriteSetOf] at hOk ⊢
     split at hOk
     · cases hOk
     · injection hOk with hOk; subst hOk
       exact releaseSchedContextBinding_confinedToCores _ _ _
-
--- **WS-RR RR8.12 Cut C6g (`v0.35.180`)**: `lifecycleRetypeDirect_framed` is
--- deleted.  It was a `private` copy of what is now the production
--- `lifecycleRetypeDirectCommit_scheduler_machine_eq` (`Lifecycle/Operations/RetypeWrappers.lean`,
--- beside the step) — the same body, in a staged module, where no production asker
--- could reach it.  Every use below reads the public one.
-
-/-- SM8.B.2: the base retype-with-cleanup writes no core outside the write set.
-
-Three of its four steps are frames — the well-formedness reject, the memory
-scrub (`machine.memory`, and `machine.regs` is a field beside it) and the object
-store — so the whole transition's bound is the cleanup's. -/
-theorem lifecycleRetypeDirectWithCleanup_confinedToCores
-    (authCap : Capability) (target : SeLe4n.ObjId) (newObj : KernelObject)
-    (st st' : SystemState) (hInv : st.objects.invExt)
-    (h : lifecycleRetypeDirectWithCleanup authCap target newObj st = .ok ((), st')) :
-    observableSlotsConfinedToCores st st' (lifecycleRetypeWriteSet st target) := by
-  have hAuthOk := lifecycleRetypeDirectWithCleanup_ok_authorized h
-  unfold lifecycleRetypeDirectWithCleanup SystemState.getObject? at h
-  simp only [hAuthOk, Bool.not_true, Bool.false_eq_true, ↓reduceIte] at h
-  simp only [lifecycleRetypeWriteSet, SystemState.getObject?_eq_getElem]
-  split at h
-  · exact absurd h (by simp)
-  · next =>
-    split at h
-    · -- absent target: the direct store errors or replaces, either way scheduler-silent
-      next hNone =>
-        rw [hNone]
-        obtain ⟨hs, hm⟩ := lifecycleRetypeDirectCommit_scheduler_machine_eq target newObj st st' h
-        exact observableSlotsConfinedToCores_nil_of_scheduler_machine_eq hs hm
-    · next currentObj hSome =>
-      rw [hSome]
-      split at h
-      · exact absurd h (by simp)
-      · next stClean hClean =>
-        have hCleanConf :=
-          lifecyclePreRetypeCleanup_confinedToCores st stClean target currentObj newObj hInv hClean
-        obtain ⟨hs, hm⟩ := lifecycleRetypeDirectCommit_scheduler_machine_eq target newObj _ st' h
-        -- the scrub writes `machine.memory`, so the suffix frame here is the
-        -- register-bank one rather than whole-machine equality
-        refine observableSlotsConfinedToCores_of_framed_suffix_regs
-          (hs.trans (scrubObjectMemory_scheduler_eq stClean target currentObj.objectType))
-          (fun c => by
-            rw [hm, scrubObjectMemory_regsOnCore]) hCleanConf
-
--- **WS-RR RR8.12 Cut C6g (`v0.35.180`)**: `retypeInitiatorDrain_scheduler` and
--- `retypeInitiatorDrain_machine` moved to `Lifecycle/Operations/RetypeWrappers.lean`,
--- beside the definition they frame.  They were declared here — in a STAGED module —
--- while the step is production, so the production retype footprint's replenish frame
--- could not read them: *when a question has one owner and an asker that cannot see
--- it, the owner is in the wrong layer* (`v0.35.59`).  Their sibling
--- `retypeAsidRoundFold_scheduler` had been in that production module all along, which
--- is what made the split visible.
-
-/-- SM8.B.2: adding the ASID shootdown rounds does not widen the write set —
-TLB maintenance is not scheduling. -/
-theorem lifecycleRetypeDirectWithCleanupShootdown_confinedToCores
-    (executingCore : CoreId) (authCap : Capability) (target : SeLe4n.ObjId)
-    (newObj : KernelObject) (st st' : SystemState) (hInv : st.objects.invExt)
-    (h : lifecycleRetypeDirectWithCleanupShootdown executingCore authCap target newObj st
-      = .ok ((), st')) :
-    observableSlotsConfinedToCores st st' (lifecycleRetypeWriteSet st target) := by
-  unfold lifecycleRetypeDirectWithCleanupShootdown at h
-  cases hBase : lifecycleRetypeDirectWithCleanup authCap target newObj st with
-  | error e => rw [hBase] at h; exact absurd h (by simp)
-  | ok pair =>
-    obtain ⟨u, stBase⟩ := pair
-    cases u
-    rw [hBase] at h
-    simp only [] at h
-    rw [retypeShootdownAsids_eq] at h
-    rw [Except.ok.injEq, Prod.mk.injEq] at h
-    obtain ⟨-, he⟩ := h
-    subst he
-    exact observableSlotsConfinedToCores_of_framed_suffix
-      (retypeAsidRoundFold_scheduler _ _ _) (retypeAsidRoundFold_machine _ _ _)
-      (lifecycleRetypeDirectWithCleanup_confinedToCores authCap target newObj st stBase hInv
-        hBase)
-
-/-- SM8.B.2: nor does the initiator's own per-core view drain. -/
-theorem lifecycleRetypeDirectWithCleanupShootdownPerCore_confinedToCores
-    (executingCore : CoreId) (authCap : Capability) (target : SeLe4n.ObjId)
-    (newObj : KernelObject) (st st' : SystemState) (hInv : st.objects.invExt)
-    (h : lifecycleRetypeDirectWithCleanupShootdownPerCore executingCore authCap target
-      newObj st = .ok ((), st')) :
-    observableSlotsConfinedToCores st st' (lifecycleRetypeWriteSet st target) := by
-  unfold lifecycleRetypeDirectWithCleanupShootdownPerCore at h
-  cases hRound : lifecycleRetypeDirectWithCleanupShootdown executingCore authCap target
-      newObj st with
-  | error e => rw [hRound] at h; exact absurd h (by simp)
-  | ok pair =>
-    obtain ⟨u, stRound⟩ := pair
-    cases u
-    rw [hRound] at h
-    simp only [] at h
-    rw [Except.ok.injEq, Prod.mk.injEq] at h
-    obtain ⟨-, he⟩ := h
-    subst he
-    exact observableSlotsConfinedToCores_of_framed_suffix
-      (retypeInitiatorDrain_scheduler _ _ _) (retypeInitiatorDrain_machine _ _ _)
-      (lifecycleRetypeDirectWithCleanupShootdown_confinedToCores executingCore authCap target
-        newObj st stRound hInv hRound)
-
-/-- SM8.B.2 (**the live `.lifecycleRetype` bound**): a retype writes no core the
-destroyed object did not occupy.
-
-The third routing-allowlist exception discharged, and the sharp statement rather
-than the trivially-true `allCores` one: destroying a thread that no core held
-(suspended, or queued nowhere) is invisible on **every** core, and destroying a
-running one is visible only where it ran. Retyping anything that is not a TCB
-has an empty write set outright. -/
-theorem lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_confinedToCores
-    (executingCore : CoreId) (authCap : Capability) (target : SeLe4n.ObjId)
-    (newObj : KernelObject) (st st' : SystemState) (hInv : st.objects.invExt)
-    (h : lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache executingCore authCap
-      target newObj st = .ok ((), st')) :
-    observableSlotsConfinedToCores st st' (lifecycleRetypeWriteSet st target) :=
-  withIcacheBroadcast_confinedToCores _ _ _ st st'
-    (fun _ hk => lifecycleRetypeDirectWithCleanupShootdownPerCore_confinedToCores
-      executingCore authCap target newObj st _ hInv hk) h
-
-/-- SM8.B.2: destroying an object that is not a TCB writes **no** core.
-
-The load-bearing sharpness check on the other side from
-`removeRunnableFromAllCores_confinedToCores`: the write set is not merely
-*smaller* than `allCores`, it is empty for six of the seven object kinds. -/
-theorem lifecycleRetypeWriteSet_nil_of_not_tcb (st : SystemState) (target : SeLe4n.ObjId)
-    (h : ∀ tcb : TCB, st.objects[target]? ≠ some (.tcb tcb)) :
-    lifecycleRetypeWriteSet st target = [] := by
-  unfold lifecycleRetypeWriteSet SystemState.getObject?
-  cases hObj : st.objects[target]? with
-  | none => rfl
-  | some obj =>
-    cases obj with
-    | tcb tcb => exact absurd hObj (h tcb)
-    | _ => rfl
 
 end SeLe4n.Kernel

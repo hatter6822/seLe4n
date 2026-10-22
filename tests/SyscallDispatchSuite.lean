@@ -1370,9 +1370,9 @@ private def sd057_rawSuspendSeamRefusesIdleIds : IO Unit := do
 /-- SD-058 (WS-RR RR7.29, register finding 2): **`.mintReplyCap` driven through
 the syscall gate.**
 
-The reply-objects plan's #2.d acceptance chain (`reply_cap_end_to_end_retype_mint_link`,
+The reply-objects plan's #2.d acceptance chain (`reply_cap_end_to_end_carve_mint_link`,
 `tests/ModelIntegritySuite.lean`) provisions a reply capability by calling
-`lifecycleRetypeDirectCommit`, `mintReplyCap` and `linkCallerReply` *directly*.  It
+`untypedRetypeObject`, `mintReplyCap` and `linkCallerReply` *directly*.  It
 therefore exercises the operations and never the gate in front of them: the
 rights requirement (`syscallRequiredRight .mintReplyCap = .grant`), the CSpace
 resolution of the primary capability, the `.object`-target check on it, and the
@@ -1761,164 +1761,139 @@ private def sd060_schedContextBind_requires_tcb_capability : IO Unit := do
      | _ => false)
     "an empty CSpace slot must fail with invalidCapability"
 
-/-- SD-061 (WS-BP BP7.1): **an in-place retype never mints memory authority, and
-never destroys a frame.**
+/-- SD-061 (WS-ZA ZA5.4 part 14): **every kernel object kind is carved from an
+untyped through the live dispatch.**
 
-An untyped names memory it may be carved into and a frame names the page a
-mapping installs, so a capability to either is authority over physical memory.
-`objectOfKernelType .untyped` builds an untyped at address 0 with a caller-chosen
-size, so a retype to it would forge a region no authority covered;
-`retypeReplacementAdmissible` refuses both memory kinds
-(`KernelObjectType.memoryBacked`).  And a frame may still be mapped — a mapping
-records the frame's address, not its id — so the pre-retype cleanup refuses a
-frame target until the destroy path unmaps it.  Through `dispatchSyscall`: an
-endpoint retyped to a notification commits (the CONTROL); to an untyped or a
-frame is refused and the endpoint survives; a frame retyped to anything is
-refused and the frame survives. -/
-private def sd061_retype_never_mints_or_destroys_memory_authority : IO Unit := do
+seL4 creates every object with `seL4_Untyped_Retype`; since this cut so does
+this kernel, and the in-place retype (syscall 8) is gone — its number stays
+reserved, so it decodes to no syscall at all.  Through `dispatchSyscall`, from
+one untyped at `0x100000`: a TCB, an endpoint, a notification, a two-slot CNode,
+a 128-byte scheduling context and a reply are each carved at a fresh child id,
+the child holds the requested kind, and the destination slot holds a capability
+to it.  NEGATIVE: a `.retype`-bearing capability to a frame is not an untyped and
+carves nothing, and an untyped capability without `.retype` is refused at the
+gate. -/
+private def sd061_every_kind_is_carved : IO Unit := do
   let caller : SeLe4n.ThreadId := ⟨1⟩
   let cnId  : SeLe4n.ObjId := ⟨50⟩
-  let epObj : SeLe4n.ObjId := ⟨80⟩
+  let utObj : SeLe4n.ObjId := ⟨90⟩
   let frObj : SeLe4n.ObjId := ⟨81⟩
-  let epCap : Capability := { target := .object epObj, rights := AccessRightSet.ofList [.retype] }
-  let frCap : Capability := { target := .object frObj, rights := AccessRightSet.ofList [.retype] }
-  -- The retype reads the kind table beside the store, so the fixture records
-  -- each object's kind there (`mkState` records none).
+  let capTo (o : SeLe4n.ObjId) (rs : List AccessRight) : Capability :=
+    { target := .object o, rights := AccessRightSet.ofList rs }
+  -- Slot 0: the untyped with `.retype`; 1: the CSpace root, writable; 2: a frame
+  -- with `.retype`; 3: the untyped without `.retype`.
   let builder : SeLe4n.Testing.BootstrapBuilder := {
     objects := [
       (caller.toObjId, .tcb ((mkTcb 1).withCSpaceRoot cnId)),
-      (epObj, .endpoint {}),
+      (utObj, .untyped { regionBase := SeLe4n.PAddr.ofNat 0x100000, regionSize := 0x10000 }),
       (frObj, .frame { base := SeLe4n.PAddr.ofNat 0x20000 }),
       (cnId, .cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF
-            [(SeLe4n.Slot.ofNat 0, epCap), (SeLe4n.Slot.ofNat 1, frCap)]))) ]
-    lifecycleObjectTypes := [
-      (caller.toObjId, .tcb), (epObj, .endpoint), (frObj, .frame), (cnId, .cnode) ] }
+            [(SeLe4n.Slot.ofNat 0, capTo utObj [.read, .write, .retype]),
+             (SeLe4n.Slot.ofNat 1, capTo cnId [.read, .write]),
+             (SeLe4n.Slot.ofNat 2, capTo frObj [.read, .retype]),
+             (SeLe4n.Slot.ofNat 3, capTo utObj [.read, .write])]))) ] }
   let st : SystemState := builder.buildChecked
-  let retype (slot target tag : Nat) : SyscallDecodeResult :=
-    { capAddr := SeLe4n.CPtr.ofNat slot,
-      msgInfo := { length := 3, extraCaps := 0, label := 0 },
-      syscallId := .lifecycleRetype,
-      msgRegs := #[SeLe4n.RegValue.ofNat target, SeLe4n.RegValue.ofNat tag,
-                   SeLe4n.RegValue.ofNat 4096],
-      inlineCount := 3, overflowCount := 0 }
-  let kindAt (s : SystemState) (o : ObjId) : Option KernelObjectType :=
-    (s.getObject? o).map KernelObject.objectType
-  -- CONTROL: an ordinary kind is retyped in place.
-  match dispatchSyscallAsCurrent (retype 0 epObj.toNat 2) caller bootCoreId st with
-  | .ok ((), st') =>
-      expect "sd061_control_endpoint_to_notification_commits"
-        (kindAt st' epObj == some .notification)
-        "an endpoint retyped to a notification must commit"
-  | .error e =>
-      failLine "sd061_control_endpoint_to_notification_commits"
-        s!"unexpected refusal: {repr e}"
-  -- A retype to an untyped (tag 5) or a frame (tag 8) forges memory authority.
-  for tag in [5, 8] do
-    expect s!"sd061_retype_to_memory_kind_{tag}_refused"
-      (match dispatchSyscallAsCurrent (retype 0 epObj.toNat tag) caller bootCoreId st with
-       | .error .illegalState => kindAt st epObj == some .endpoint
-       | _ => false)
-      s!"a retype to memory kind tag {tag} must be refused with the endpoint intact"
-  -- A frame target is refused, whatever it would become.
-  expect "sd061_frame_target_refused"
-    (match dispatchSyscallAsCurrent (retype 1 frObj.toNat 1) caller bootCoreId st with
-     | .error .revocationRequired => kindAt st frObj == some .frame
+  let carve (utSlot typeWord child dstSlot : Nat) : SyscallDecodeResult :=
+    { capAddr := SeLe4n.CPtr.ofNat utSlot,
+      msgInfo := { length := 4, extraCaps := 0, label := 0 },
+      syscallId := .untypedRetype,
+      msgRegs := #[SeLe4n.RegValue.ofNat typeWord, SeLe4n.RegValue.ofNat child,
+                   SeLe4n.RegValue.ofNat 1, SeLe4n.RegValue.ofNat dstSlot],
+      inlineCount := 4, overflowCount := 0 }
+  let kindAt (s : SystemState) (o : Nat) : Option KernelObjectType :=
+    (s.getObject? (SeLe4n.ObjId.ofNat o)).map KernelObject.objectType
+  -- The type word is `tag ||| sizeBits <<< 8`.
+  let kinds : List (String × Nat × KernelObjectType) :=
+    [("tcb", 0, .tcb), ("endpoint", 1, .endpoint), ("notification", 2, .notification),
+     ("cnode", 3 + 1 * 256, .cnode), ("schedContext", 6 + 7 * 256, .schedContext),
+     ("reply", 7, .reply)]
+  let mut child := 100
+  for (name, word, ty) in kinds do
+    match dispatchSyscallAsCurrent (carve 0 word child 4) caller bootCoreId st with
+    | .ok ((), st') =>
+        let cap := SystemState.lookupSlotCap st' { cnode := cnId, slot := SeLe4n.Slot.ofNat 4 }
+        expect s!"sd061_carve_{name}"
+          (kindAt st' child == some ty &&
+            (cap.map (·.target)) == some (.object (SeLe4n.ObjId.ofNat child)))
+          s!"the carve of a {name} must store one at the child and a capability to it"
+    | .error e =>
+        failLine s!"sd061_carve_{name}" s!"unexpected refusal: {repr e}"
+    child := child + 1
+  -- NEGATIVE: a frame is not an untyped, whatever rights its capability holds.
+  expect "sd061_frame_source_refused"
+    (match dispatchSyscallAsCurrent (carve 2 1 120 4) caller bootCoreId st with
+     | .error _ => kindAt st 120 == none && kindAt st frObj.toNat == some .frame
+     | .ok _ => false)
+    "a carve through a capability to a frame must be refused and carve nothing"
+  -- NEGATIVE: the untyped without `.retype` carves nothing.
+  expect "sd061_untyped_without_retype_refused"
+    (match dispatchSyscallAsCurrent (carve 3 1 121 4) caller bootCoreId st with
+     | .error .illegalAuthority => true
      | _ => false)
-    "retyping a frame away must be refused (revocationRequired) with the frame intact"
+    "an untyped capability without .retype must be refused with illegalAuthority"
+  -- The retired number decodes to no syscall.
+  expect "sd061_retired_number_decodes_to_none"
+    (SyscallId.ofNat? 8 == none && SyscallId.retiredNumbers == [8])
+    "syscall number 8 must stay reserved"
 
-/-- SD-062: **the in-place retype checks authority before it reads its target.**
+/-- SD-062 (WS-ZA ZA5.4 part 14): **the carve asks authority before it reads the
+child id.**
 
-The target id arrives in a message register, so a caller holding a `.retype`
-capability to one object (here an untyped `U`) can name any id at all.  Before
-authority came first, the wrapper ran admissibility, the per-kind cleanup and the
-scrub on that id before asking whether the capability named it, so each refusal
-answered a question about an object the caller had no capability to:
-`objectNotFound` (no such id), `revocationRequired` (a frame, a mapped page),
-`revocationRequired` again for a thread running on another core, in another
-domain, where the same thread idle cleaned up without complaint — so the run
-state of a thread the caller cannot name was observable — and `illegalAuthority`
-only for a plain object that cleaned up without complaint.
-
-Through both dispatchers: with the capability on `U`, every one of those targets
-draws `illegalAuthority` — the one answer, independent of the target's state —
-and, being an `.error`, commits no state.  CONTROL per target: a `.retype`
-capability that DOES name it draws the target-dependent answer — `objectNotFound`,
-`revocationRequired` for the frame and the running thread, success for an idle
-thread and the endpoint — so the fixture distinguishes the states and the uniform
-refusal is the gate's doing, not the fixture's. -/
-private def sd062_retype_checks_authority_before_target : IO Unit := do
+The child id arrives in a message register, so a caller can name any id.  The
+in-place retype this replaces answered target-dependent errors before it asked
+authority (`docs/REGISTERED_DEBT.md`, the authority-order row this cut closes).
+The carve's authority is the invoked capability, checked at the gate: through an
+untyped capability without `.retype`, a fresh id, an occupied id and the
+untyped's own id all draw `illegalAuthority`, on both dispatchers.  CONTROL: with
+`.retype`, the fresh id commits and the occupied ones are refused for a reason
+other than authority, so the fixture tells the ids apart and the uniform answer
+is the gate's doing. -/
+private def sd062_carve_checks_authority_before_child : IO Unit := do
   let caller : SeLe4n.ThreadId := ⟨1⟩
-  let other  : SeLe4n.ThreadId := ⟨2⟩
-  let idle   : SeLe4n.ThreadId := ⟨3⟩
-  let cnId   : SeLe4n.ObjId := ⟨50⟩
-  let untypedU : SeLe4n.ObjId := ⟨90⟩
-  let missing  : SeLe4n.ObjId := ⟨999⟩
-  let frObj    : SeLe4n.ObjId := ⟨81⟩
-  let epObj    : SeLe4n.ObjId := ⟨80⟩
-  let otherCore : SeLe4n.Kernel.Concurrency.CoreId := ⟨1, by decide⟩
-  let retypeCapOn (o : SeLe4n.ObjId) : Capability :=
-    { target := .object o, rights := AccessRightSet.ofList [.retype] }
-  -- Slot 0: the caller's one capability for the probes, on `U`.  Slots 1-4: the
-  -- CONTROL capabilities, each naming its probe target.
-  let targets : List (String × SeLe4n.ObjId × Nat) :=
-    [("nonexistent", missing, 1), ("frame", frObj, 2),
-     ("running_tcb", other.toObjId, 3), ("idle_tcb", idle.toObjId, 5),
-     ("endpoint", epObj, 4)]
+  let cnId  : SeLe4n.ObjId := ⟨50⟩
+  let utObj : SeLe4n.ObjId := ⟨90⟩
+  let epObj : SeLe4n.ObjId := ⟨80⟩
+  let capTo (o : SeLe4n.ObjId) (rs : List AccessRight) : Capability :=
+    { target := .object o, rights := AccessRightSet.ofList rs }
   let builder : SeLe4n.Testing.BootstrapBuilder := {
     objects := [
       (caller.toObjId, .tcb ((mkTcb 1).withCSpaceRoot cnId)),
-      (other.toObjId, .tcb { (mkTcb 2 .Running) with domain := ⟨1⟩ }),
-      (idle.toObjId, .tcb { (mkTcb 3) with domain := ⟨1⟩ }),
-      (untypedU, SeLe4n.Kernel.objectOfKernelType .untyped 4096),
+      (utObj, .untyped { regionBase := SeLe4n.PAddr.ofNat 0x100000, regionSize := 0x10000 }),
       (epObj, .endpoint {}),
-      (frObj, .frame { base := SeLe4n.PAddr.ofNat 0x20000 }),
       (cnId, .cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF
-            ((SeLe4n.Slot.ofNat 0, retypeCapOn untypedU) ::
-              targets.map fun (_, o, slot) => (SeLe4n.Slot.ofNat slot, retypeCapOn o))))) ]
-    lifecycleObjectTypes := [
-      (caller.toObjId, .tcb), (other.toObjId, .tcb), (idle.toObjId, .tcb),
-      (untypedU, .untyped),
-      (epObj, .endpoint), (frObj, .frame), (cnId, .cnode) ] }
-  -- `other` runs on another core: the run state the old order leaked.
-  let st : SystemState :=
-    SeLe4n.Testing.withCurrentOnCore builder.buildChecked otherCore other
-  -- Retype to a notification (tag 2): an admissible replacement, so admissibility
-  -- is not what answers.
-  let retype (slot : Nat) (target : SeLe4n.ObjId) : SyscallDecodeResult :=
-    { capAddr := SeLe4n.CPtr.ofNat slot,
-      msgInfo := { length := 3, extraCaps := 0, label := 0 },
-      syscallId := .lifecycleRetype,
-      msgRegs := #[SeLe4n.RegValue.ofNat target.toNat, SeLe4n.RegValue.ofNat 2,
-                   SeLe4n.RegValue.ofNat 0],
-      inlineCount := 3, overflowCount := 0 }
+            [(SeLe4n.Slot.ofNat 0, capTo utObj [.read, .write, .retype]),
+             (SeLe4n.Slot.ofNat 1, capTo cnId [.read, .write]),
+             (SeLe4n.Slot.ofNat 3, capTo utObj [.read, .write])]))) ] }
+  let st : SystemState := builder.buildChecked
+  let carve (utSlot child : Nat) : SyscallDecodeResult :=
+    { capAddr := SeLe4n.CPtr.ofNat utSlot,
+      msgInfo := { length := 4, extraCaps := 0, label := 0 },
+      syscallId := .untypedRetype,
+      msgRegs := #[SeLe4n.RegValue.ofNat 2, SeLe4n.RegValue.ofNat child,
+                   SeLe4n.RegValue.ofNat 1, SeLe4n.RegValue.ofNat 4],
+      inlineCount := 4, overflowCount := 0 }
   let isIllegalAuthority : Except KernelError (Unit × SystemState) → Bool
     | .error .illegalAuthority => true
     | _ => false
-  for (name, target, slot) in targets do
-    -- NEGATIVE: the capability on `U` names none of them.
-    expect s!"sd062_{name}_unnamed_target_illegalAuthority"
-      (isIllegalAuthority (dispatchSyscallAsCurrent (retype 0 target) caller bootCoreId st))
-      s!"a retype of the {name} through a cap on U must be illegalAuthority"
-    expect s!"sd062_{name}_unnamed_target_illegalAuthority_checked"
+  let children : List (String × Nat) :=
+    [("fresh", 130), ("endpoint", epObj.toNat), ("untyped", utObj.toNat)]
+  for (name, child) in children do
+    expect s!"sd062_{name}_child_illegalAuthority"
+      (isIllegalAuthority (dispatchSyscallAsCurrent (carve 3 child) caller bootCoreId st))
+      s!"a carve at the {name} id through a cap without .retype must be illegalAuthority"
+    expect s!"sd062_{name}_child_illegalAuthority_checked"
       (isIllegalAuthority (dispatchSyscallCheckedAsCurrent SeLe4n.Kernel.defaultLabelingContext
-        (retype 0 target) caller bootCoreId st))
-      s!"the checked dispatch must give the {name} the same illegalAuthority"
-    -- CONTROL: a capability naming the target reaches the target-dependent answer.
-    expect s!"sd062_{name}_named_target_control"
-      (!isIllegalAuthority (dispatchSyscallAsCurrent (retype slot target) caller bootCoreId st))
-      s!"a retype of the {name} through a cap naming it must not be refused for authority"
-  -- CONTROL detail: the named answers are the target-dependent ones the old order
-  -- returned to ANY `.retype` holder -- existence, kind, and (running against idle,
-  -- the same kind in the same domain) another domain's run state.
-  let answer (slot : Nat) (target : SeLe4n.ObjId) : Option KernelError :=
-    match dispatchSyscallAsCurrent (retype slot target) caller bootCoreId st with
+        (carve 3 child) caller bootCoreId st))
+      s!"the checked dispatch must give the {name} id the same illegalAuthority"
+  let answer (child : Nat) : Option KernelError :=
+    match dispatchSyscallAsCurrent (carve 0 child) caller bootCoreId st with
     | .ok _ => none
     | .error e => some e
-  let named := targets.map fun (_, o, slot) => answer slot o
-  expect "sd062_named_answers_distinguish_states"
-    (named == [some .objectNotFound, some .revocationRequired, some .revocationRequired,
-      none, none])
-    s!"the named-target answers must be the target-dependent ones: {repr named}"
+  let named := children.map fun (_, c) => answer c
+  expect "sd062_authorised_answers_distinguish_ids"
+    (named.head? == some none && !(named.drop 1).any (· == some .illegalAuthority) &&
+      (named.drop 1).all Option.isSome)
+    s!"with .retype the fresh id must commit and the occupied ids be refused otherwise: {repr named}"
 
 /-- SD-051: faithful seL4-MCS receive linkage, folded into `endpointReceiveDual`
     itself (#7.2; formerly the separate `linkReceivedCaller` `.receive`-arm step).
@@ -2381,7 +2356,7 @@ def main : IO Unit := do
   IO.println "--- v0.35.204: .schedContextBind takes a TCB capability, not a thread id ---"
   sd060_schedContextBind_requires_tcb_capability
   IO.println "--- WS-BP BP7.1: an in-place retype never mints or destroys memory authority ---"
-  sd061_retype_never_mints_or_destroys_memory_authority
+  sd061_every_kind_is_carved
   IO.println "--- the in-place retype checks authority before it reads its target ---"
-  sd062_retype_checks_authority_before_target
+  sd062_carve_checks_authority_before_child
   IO.println "=== All WS-RC R2.C SyscallDispatch tests passed ==="

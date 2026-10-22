@@ -2801,7 +2801,6 @@ def capFaultReceivePhase? : SyscallId → Option Bool
   | .cspaceRevoke           => some false
   | .untypedRetype          => some false
   | .untypedReset           => some false
-  | .lifecycleRetype        => some false
   | .vspaceMap              => some false
   | .vspaceUnmap            => some false
   | .serviceRegister        => some false
@@ -3353,10 +3352,11 @@ opaque ffiIcIalluIs : BaseIO Unit
     matters: the invalidations must not be observed before the cleans complete,
     or a PE could re-fill an instruction line from the pre-clean PoU content.
 
-    Tag 3 (`cleanRangeIallu`) is the `.lifecycleRetype` operand, and carries the
-    same inter-loop ordering for the same reason — with a caller-supplied extent
-    (the scrubbed region) and a domain-wide invalidate, because a re-type cannot
-    name the mappings that alias the frame it re-purposes.
+    Tag 3 (`cleanRangeIallu`) is the scrub operand (a zeroed page's
+    `PhysicalWrite.icacheMaintenance`, and the boot image's clean), and carries
+    the same inter-loop ordering for the same reason — with a caller-supplied
+    extent and a domain-wide invalidate, because a scrub cannot name the
+    mappings that alias the memory it rewrote.
 
     Rust: `ffi::cache_ic_maintenance` in `sele4n-hal/src/ffi.rs`. -/
 @[extern "cache_ic_maintenance"]

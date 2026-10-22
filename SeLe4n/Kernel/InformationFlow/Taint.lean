@@ -1095,12 +1095,12 @@ def joinAt (tbl : TaintTable) (oid : SeLe4n.ObjId) (T : DeclassificationTaint) :
   let joined := DeclassificationTaint.join (tbl oid) T
   if joined = tbl oid then tbl else tbl.set oid joined
 
-/-- WS-SM SM9.D.12: **forget one object's provenance** — what a retype owes,
-and the only operation in this module that removes a causal link.
+/-- WS-SM SM9.D.12: **forget one object's provenance** — what a consumed
+transport owes, and the only operation in this module that removes a causal
+link.
 
-Retype commits `storeObject target newObj` at the *same* id, so a framed retype
-would leave a destroyed object's tags on its unrelated replacement — a false
-positive with nothing to do with saturation, which is why
+A framed transport would hand its stale tags to the next unrelated content it
+carries — a false positive with nothing to do with saturation, which is why
 `staleTaint_is_not_saturation` keeps the two apart.
 
 **Value-preserving clears are elided**, for the reason `joinAt` elides
@@ -1202,7 +1202,7 @@ theorem contains_joinAt_of_source (tbl : TaintTable) (oid : SeLe4n.ObjId)
   simp only [joinAt_self]; exact DeclassificationTaint.contains_join_of_right h
 
 /-- WS-SM SM9.D.12: **a cleared object carries nothing** — the property
-`retypedObject_taint_empty` is stated over. -/
+`applySyscallTaint_cleared_empty` is stated over. -/
 @[simp] theorem contains_clearAt_self (tbl : TaintTable) (oid : SeLe4n.ObjId) (t : Nat) :
     ((tbl.clearAt oid) oid).contains t = false := by
   simp only [clearAt_self]; exact DeclassificationTaint.contains_empty t

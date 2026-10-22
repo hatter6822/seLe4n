@@ -171,14 +171,11 @@ theorem validateThreadIdArg_ok_val_not_idle {tid : SeLe4n.ThreadId} {vtid : SeLe
   exact validateThreadIdArg_ok_not_reserved _ _ h
 
 /-- The capability-only dispatch keeps the run queues in agreement with the
-threads' links on every arm.  The one premise is the retype arm's: the target
-it replaces is detached (`retypeDetachedFor`, a field of the pack the invariant
-payoff reads). -/
+threads' links on every arm. -/
 theorem dispatchCapabilityOnly_runQueueEntryStage
     (decoded : SyscallDecodeResult) (cap : Capability) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (k : Kernel Unit) (st st' : SystemState)
     (hArm : dispatchCapabilityOnly decoded cap tid executingCore = some k)
-    (hDet : retypeDetachedFor decoded st)
     (hStep : k st = .ok ((), st')) :
     SystemState.RunQueueEntryStage st st' := by
   unfold dispatchCapabilityOnly at hArm
@@ -236,18 +233,6 @@ theorem dispatchCapabilityOnly_runQueueEntryStage
       exact (storeObject_inert_runQueueStage (setCapFreeIndex_eq_storeObject (idx := 0) hO) hO
         (fun _ h => KernelObject.noConfusion h) (fun _ h => KernelObject.noConfusion h)).trans
         (untypedResetWithShootdown_runQueueStage hS)
-    all_goals try cases hStep
-  case lifecycleRetype =>
-    cases hTgt : cap.target <;> simp only [hTgt] at hStep
-    case object oid =>
-      try dsimp only [] at hStep
-      cases hDec : decodeLifecycleRetypeArgs decoded with
-      | error e => simp only [hDec] at hStep; cases hStep
-      | ok args =>
-          simp only [hDec] at hStep
-          exact lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_runQueueEntryStage
-              (objectOfKernelType_withIdentity_replacementFresh args.newType args.size args.targetObj)
-              (hDet args hSy hDec) hStep
     all_goals try cases hStep
   case vspaceMap =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -745,7 +730,7 @@ included. -/
 theorem dispatchWithCapChecked_runQueueEntryStage (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (gate : SyscallGate) (cap : Capability)
-    (st st' : SystemState) (hDet : retypeDetachedFor decoded st)
+    (st st' : SystemState)
     (P : SyscallArmPremises st executingCore tid)
     (h : dispatchWithCapChecked ctx decoded tid executingCore gate cap st = .ok ((), st')) :
     SystemState.RunQueueEntryStage st st' := by
@@ -753,7 +738,7 @@ theorem dispatchWithCapChecked_runQueueEntryStage (ctx : LabelingContext)
   cases hC : dispatchCapabilityOnly decoded cap tid executingCore with
   | some k =>
     rw [hC] at h
-    exact dispatchCapabilityOnly_runQueueEntryStage decoded cap tid executingCore k st st' hC hDet h
+    exact dispatchCapabilityOnly_runQueueEntryStage decoded cap tid executingCore k st st' hC h
   | none =>
   rw [hC] at h
   dsimp only at h
@@ -906,7 +891,7 @@ retype arm's detached target. -/
 theorem dispatchSyscallChecked_runQueueEntryStage (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (st st' : SystemState)
-    (hDet : retypeDetachedFor decoded st) (P : SyscallArmPremises st executingCore tid)
+    (P : SyscallArmPremises st executingCore tid)
     (h : dispatchSyscallChecked ctx decoded tid executingCore st = .ok ((), st')) :
     SystemState.RunQueueEntryStage st st' := by
   unfold dispatchSyscallChecked at h
@@ -940,7 +925,7 @@ theorem dispatchSyscallChecked_runQueueEntryStage (ctx : LabelingContext)
       obtain ⟨-, -, -, hStEq⟩ := syscallResolveCap_implies_capability_at_slot _ st cap s1 hRz
       subst hStEq
       exact dispatchWithCapChecked_runQueueEntryStage ctx decoded tid executingCore _ cap _ stPost
-        hDet P hD
+        P hD
   · unfold syscallInvokeResolved at hD
     split at hD
     · cases hD
@@ -948,21 +933,21 @@ theorem dispatchSyscallChecked_runQueueEntryStage (ctx : LabelingContext)
       obtain ⟨-, -, -, hStEq⟩ := syscallResolveCap_implies_capability_at_slot _ st cap s1 hRz
       subst hStEq
       exact dispatchWithCapChecked_runQueueEntryStage ctx decoded tid executingCore _ cap _ stPost
-        hDet P hD
+        P hD
 
 /-- **Every arm the unchecked `dispatchWithCap` routes keeps the run queues in
 agreement with the threads' links**, the capability-only arms included. -/
 theorem dispatchWithCap_runQueueEntryStage (decoded : SyscallDecodeResult)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
     (cap : Capability) (st st' : SystemState)
-    (hDet : retypeDetachedFor decoded st) (P : SyscallArmPremises st executingCore tid)
+    (P : SyscallArmPremises st executingCore tid)
     (h : dispatchWithCap decoded tid executingCore gate cap st = .ok ((), st')) :
     SystemState.RunQueueEntryStage st st' := by
   unfold dispatchWithCap at h
   cases hC : dispatchCapabilityOnly decoded cap tid executingCore with
   | some k =>
     rw [hC] at h
-    exact dispatchCapabilityOnly_runQueueEntryStage decoded cap tid executingCore k st st' hC hDet h
+    exact dispatchCapabilityOnly_runQueueEntryStage decoded cap tid executingCore k st st' hC h
   | none =>
   rw [hC] at h
   dsimp only at h
@@ -1056,7 +1041,7 @@ theorem dispatchWithCap_runQueueEntryStage (decoded : SyscallDecodeResult)
 threads' links.** -/
 theorem dispatchSyscall_runQueueEntryStage (decoded : SyscallDecodeResult)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (st st' : SystemState)
-    (hDet : retypeDetachedFor decoded st) (P : SyscallArmPremises st executingCore tid)
+    (P : SyscallArmPremises st executingCore tid)
     (h : dispatchSyscall decoded tid executingCore st = .ok ((), st')) :
     SystemState.RunQueueEntryStage st st' := by
   unfold dispatchSyscall at h
@@ -1087,6 +1072,6 @@ theorem dispatchSyscall_runQueueEntryStage (decoded : SyscallDecodeResult)
     obtain ⟨-, -, -, hStEq⟩ := syscallResolveCap_implies_capability_at_slot _ st cap s1 hRz
     subst hStEq
     exact dispatchWithCap_runQueueEntryStage decoded tid executingCore _ cap _ stPost
-      hDet P hD
+      P hD
 
 end SeLe4n.Kernel

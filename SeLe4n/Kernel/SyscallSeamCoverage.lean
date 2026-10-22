@@ -184,7 +184,7 @@ theorem validThreadId_val_toValid? (v : SeLe4n.ValidThreadId) :
   unfold SeLe4n.ThreadId.toValid?
   rw [dif_neg v.property]
 
-/-- **The seventeen declared arms are covered by the footprint the resolver
+/-- **The sixteen declared arms are covered by the footprint the resolver
 declares for them**, at the operands the ABI entry resolves.
 
 One `cases` over the syscall id: the twenty-five undeclared arms are closed by
@@ -421,23 +421,6 @@ theorem dispatchWithCapChecked_coversWrites (ctx : LabelingContext)
           subst hDisp
           exact schedLockSet_schedContextUnbindOnCore_coversWrites st st₁ vScId e sgi S hStep hSched
         · exact absurd hDisp (by simp)
-  -- ---- `.lifecycleRetype` -------------------------------------------------
-  case lifecycleRetype =>
-    cases hT : cap.target <;> rw [hT] at hOps <;> simp only [reduceCtorEq] at hOps
-    rename_i objId
-    split at hOps
-    · exact absurd hOps (by simp)
-    · rename_i args hArgs
-      injection hOps with hOps
-      subst hOps
-      simp only [schedLockSetForSyscall, Concurrency.SyscallLockOperands.ofObjectTarget,
-        Option.bind_some] at hSched
-      rw [hT] at hDisp
-      simp only at hDisp
-      rw [hArgs] at hDisp
-      simp only at hDisp
-      exact schedLockSet_lifecycleRetypeOnCore_coversWrites e cap args.targetObj _ st st' S
-        hObjInv hDisp hSched
   -- ---- `.notificationSignal` ----------------------------------------------
   case notificationSignal =>
     cases hT : cap.target <;> rw [hT] at hOps <;> simp only [Option.some.injEq, reduceCtorEq] at hOps

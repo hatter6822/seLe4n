@@ -22,7 +22,6 @@ through retype and scrub.
 
 **Substantive preservation theorems** (high assurance — prove invariant preservation
 over *changed* state after a *successful* operation):
-- `lifecycleRetypeObject_preserves_lifecycleInvariantBundle`
 - `retypeFromUntyped_preserves_lifecycleInvariantBundle`
 - `retypeFromUntyped_preserves_untypedMemoryInvariant`
 
@@ -56,9 +55,6 @@ preservation theorems in this module.
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model
--- AN4-A allowlist: proof-chain reference to `lifecycleRetypeObject` from
--- `SeLe4n.Kernel.Internal`. Enforced by `scripts/test_tier0_hygiene.sh`.
-open Internal
 
 /-- M4-A step-3 identity invariant: lifecycle object-type metadata exactly tracks
 object-store identity typing for each object id. -/
@@ -91,21 +87,6 @@ def lifecycleInvariantBundle (st : SystemState) : Prop :=
 -- predicate has been removed, the implication's target has disappeared and the
 -- theorem is no longer needed. Proof-chain consumers now reason directly from
 -- `lifecycleIdentityTypeExact`.
-
-theorem lifecycleRetypeObject_preserves_lifecycleInvariantBundle
-    (st st' : SystemState)
-    (authority : CSpaceAddr)
-    (target : SeLe4n.ObjId)
-    (newObj : KernelObject)
-    (hInv : lifecycleInvariantBundle st)
-    (hObjInv : st.objects.invExt)
-    (hObjTypesInv : st.lifecycle.objectTypes.invExt)
-    (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
-    lifecycleInvariantBundle st' := by
-  rcases lifecycleRetypeObject_ok_as_storeObject st st' authority target newObj hStep with
-    ⟨_, _, _, _, _, _, hStore⟩
-  exact storeObject_preserves_objectTypeMetadataConsistent st st' target newObj hInv hObjInv
-    hObjTypesInv hStore
 
 -- ============================================================================
 -- WS-F2 / WS-ZA ZA5.4 part 13: Untyped Memory Model Invariants
@@ -549,26 +530,5 @@ theorem retypeFromUntyped_preserves_untypedMemoryInvariant_auto
 -- ============================================================================
 -- S6-D: Memory scrubbing preserves lifecycle invariants
 -- ============================================================================
-
-/-- S6-D: `scrubObjectMemory` preserves the lifecycle invariant bundle.
-
-    Memory scrubbing only modifies `machine.memory` — it does not touch the
-    object store, lifecycle metadata, capabilities, or slots. The lifecycle
-    invariant (`lifecycleIdentityTypeExact`) operates on the `objects` and
-    `lifecycle` fields, so it is trivially preserved. -/
-theorem scrubObjectMemory_preserves_lifecycleInvariantBundle
-    (st : SystemState) (objectId : SeLe4n.ObjId) (objType : KernelObjectType)
-    (hInv : lifecycleInvariantBundle st) :
-    lifecycleInvariantBundle (scrubObjectMemory st objectId objType) := by
-  -- scrubObjectMemory only changes machine.memory; all fields that lifecycle
-  -- invariants reference (objects, lifecycle, cdt) are definitionally equal
-  have : (scrubObjectMemory st objectId objType).objects = st.objects :=
-    scrubObjectMemory_objects_eq st objectId objType
-  have : (scrubObjectMemory st objectId objType).lifecycle = st.lifecycle :=
-    scrubObjectMemory_lifecycle_eq st objectId objType
-  -- The invariant bundle only mentions objects/lifecycle/cdt fields which are
-  -- unchanged by scrubObjectMemory. The scrubbed state's objects/lifecycle/cdt
-  -- are definitionally equal to the original, so the invariant transfers directly.
-  exact hInv
 
 end SeLe4n.Kernel

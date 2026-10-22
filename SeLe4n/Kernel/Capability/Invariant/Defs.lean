@@ -405,12 +405,13 @@ end capabilityInvariantBundle
 
 /-! ## AN4-F.4 (CAP-M04) — `RetypeTarget` precondition subtype
 
-The retype pipeline (`lifecyclePreRetypeCleanup` → `scrubObjectMemory` →
-`Internal.lifecycleRetypeObject`) carries a caller obligation: the cleanup
-hook must have run on the target id before the retype primitive executes.
-Historically this was a documented invariant maintained by
-`lifecycleRetypeWithCleanup` (AN4-A) and its `Direct` variant, but the
-obligation was not reflected in any type.
+The destroy path (`lifecyclePreRetypeCleanup` → the scrub → the write that
+replaces the object) carries a caller obligation: the cleanup
+hook must have run on the target id before the object is replaced.  It was
+first a documented invariant of the in-place retype's wrappers, retired in
+WS-ZA ZA5.4 part 14 when every object came to be carved from an untyped; the
+cleanup and this subtype stay for the capability finalisation that will
+destroy objects (`docs/REGISTERED_DEBT.md`).
 
 AN4-F.4 adds a subtype `RetypeTarget` that bundles the target `ObjId`
 with a `cleanupHookDischarged` witness — a `Prop` that holds iff
@@ -582,9 +583,9 @@ def cleanupHookDischarged (st : SystemState) (target : SeLe4n.ObjId) : Prop :=
 
 /-- AN4-F.4 (CAP-M04): Precondition subtype for cleanup-aware retype entry
 points. Bundles a target `ObjId` with a `cleanupHookDischarged` witness at
-the *pre-retype* state `st`. The subtype is used at the boundary of
-`lifecycleRetypeWithCleanup` and its proof-chain companions so callers
-cannot construct a target without carrying the discharge obligation.
+the *pre-retype* state `st`. The subtype is the boundary a destroy-path
+entry point takes, so callers cannot construct a target without carrying the
+discharge obligation.
 
 **WS-RC R4.B (DEEP-CAP-04)**: the predicate now incorporates a
 `ScrubToken`-backed witness; manual discharge by reasoning about

@@ -11,7 +11,7 @@ import SeLe4n.Kernel.IPC.CrossCore.Cancellation
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreWake
 import SeLe4n.Kernel.SchedContext.ReplenishAffinity
 import SeLe4n.Kernel.Scheduler.PriorityInheritance.PerCore
-import SeLe4n.Kernel.Lifecycle.Operations.RetypeFootprint
+import SeLe4n.Kernel.Lifecycle.Operations.CleanupFootprint
 
 /-!
 # The `.tcbSuspend` arm's scheduler footprint

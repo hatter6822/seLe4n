@@ -575,7 +575,7 @@ root = "tests.SmpTlbShootdownSuite"
 # broadcast (`IC IALLUIS` / `IC IVAU`) vs the PE-local `IC IALLU` hazard,
 # the data-cache-at-PoC system-wide reach, the DMA scope tripwire, and
 # `icacheCoherent_perCore` (the 14th `proofLayerInvariantBundle` conjunct)
-# across the live `.vspaceUnmap` / `.lifecycleRetype` seams.
+# across the live `.vspaceUnmap` seam and the carve's frame scrub.
 [[lean_exe]]
 name = "smp_cache_maintenance_suite"
 root = "tests.SmpCacheMaintenanceSuite"

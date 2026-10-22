@@ -132,8 +132,8 @@ equal to the ones already there.  The unguarded form wrote
 `setRunQueueOnCore c ((runQueueOnCore c).remove tid)` at every core, and while
 that removal changes nothing a non-member can observe
 (`RunQueue.remove_of_not_mem`), it is not *syntactically* the old queue
-— so the sweep's write set could only ever be bounded by `allCores`, and
-`.lifecycleRetype` inherited that.
+— so the sweep's write set could only ever be bounded by `allCores`, and every
+consumer inherited that.
 
 Same discipline as the v0.32.65 cancellation sweeps (insert-only-on-change).
 Proving the unguarded form inert instead would need "erasing an absent key from
@@ -396,8 +396,8 @@ slots alone.
 The three domain slots complete the six-field observable set: the sweep's step
 writes only `runQueueOnCore` and `currentOnCore`, in the taken branch, and
 nothing at all in the untaken one.  Needed because `observableSlotsConfinedToCores`
-quantifies over all six, and the `.lifecycleRetype` write set is the first
-consumer to ask the sweep for them. -/
+quantifies over all six, and the pre-retype cleanup's write set asks the sweep
+for them. -/
 theorem foldl_removeRunnableStepOnCore_domain_frame
     (cs : List SeLe4n.Kernel.Concurrency.CoreId) (tid : SeLe4n.ThreadId) :
     ∀ (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreId),

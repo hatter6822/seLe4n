@@ -13,22 +13,15 @@ import SeLe4n.Kernel.Lifecycle.Operations.CleanupPreservation
 AN4-G.5 (LIF-M05) child module extracted from
 `SeLe4n.Kernel.Lifecycle.Operations`. Contains the untyped-memory model
 (`objectTypeAllocSize`, `requiresPageAlignment`, `allocationBasePageAligned`),
-the memory-scrubbing primitive (`scrubObjectMemory` + its frame theorems
-+ `memoryZeroed` post-condition witness), the `retypeFromUntyped`
+the object-identifier address-space guard, the `retypeFromUntyped`
 definition, and the complete preservation / soundness theorem cluster
 that witnesses its capacity-gated, fresh-id-allocating, and
-sequentially-atomic behaviour. `SeLe4n.Kernel.Internal.lifecycleRetypeObject`
-is reached via `open Internal` (AN4-A allowlist). All declarations retain
-their original names, order, and proofs.
+sequentially-atomic behaviour.
 -/
 
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model
--- AN4-A / AN4-G.5 allowlist: proof-chain reference to
--- `lifecycleRetypeObject` from `SeLe4n.Kernel.Internal`. Enforced by
--- `scripts/test_tier0_hygiene.sh`.
-open Internal
 
 -- ============================================================================
 -- WS-F2: Untyped Memory Model — retypeFromUntyped
@@ -123,107 +116,8 @@ theorem carveBaseAligned_of_page {ty : KernelObjectType} (h : requiresPageAlignm
   simp [carveBaseAligned, h]
 
 -- ============================================================================
--- S6-C: Memory scrubbing on object deletion/retype
+-- The object identifier's extent stays inside the physical address space
 -- ============================================================================
-
-/-- S6-C: the byte range a re-type scrubs, as **one** function.
-
-    Every consumer that must cover the scrub — the scrub itself, and the
-    SM7.D cache-maintenance operand that cleans those stores to the Point of
-    Unification — reads this single definition, so the two cannot drift.  A
-    second copy of the arithmetic would let the clean silently name a
-    different extent than the zeroing writes; that is precisely the failure
-    mode this exists to make impossible.
-
-    **Abstract model note:** the base address is `objectId.toNat ×
-    objectTypeAllocSize` — an abstract convention for the formal model, *not*
-    the address the hardware allocator would use.
-
-    **AN4-G.3 (LIF-M03) — H3 hardware-binding cross-reference**: on real
-    hardware (RPi5 AArch64) the real extent is the untyped allocator's
-    `regionBase + offset` (recorded in state as `UntypedChild.offset` /
-    `.size`), and the scrub must route through the VSpace bridge to hit the
-    physical frame backing it — see `SELE4N_SPEC.md` §5 "Lifecycle:
-    model-vs-hardware scrub bridge" and the AN9 hardware workstream.  That
-    bridge changes this function, and both consumers follow. -/
-def scrubExtent (objectId : SeLe4n.ObjId) (objType : KernelObjectType) :
-    SeLe4n.PAddr × Nat :=
-  let size := objectTypeAllocSize objType
-  (SeLe4n.PAddr.ofNat (objectId.toNat * size), size)
-
-/-- S6-C: Scrub backing memory for a deleted/retyped kernel object.
-
-    Zeros the memory region that backed the old object, preventing information
-    leakage when the memory is reallocated to a different security domain.
-    The scrubbed region is `scrubExtent` — see there for the model-vs-hardware
-    address convention (AN4-G.3 / LIF-M03).
-
-    **Security rationale:** Without scrubbing, `retypeFromUntyped` could
-    allocate a new object in memory that still contains data from a
-    deleted object belonging to a different security domain. This violates
-    non-interference even though the Lean-level object store is correctly
-    updated, because the underlying machine memory retains the old data.
-
-    **Cache note (SM7.D):** zeroing stores land in the *data* cache, so the
-    re-type additionally owes a clean of this same extent to the Point of
-    Unification before any instruction invalidate — emitted by
-    `retypeIcacheOp`, which reads `scrubExtent` rather than recomputing it. -/
-def scrubObjectMemory (st : SystemState) (objectId : SeLe4n.ObjId)
-    (objType : KernelObjectType) : SystemState :=
-  let extent := scrubExtent objectId objType
-  { st with machine := SeLe4n.zeroMemoryRange st.machine extent.fst extent.snd }
-
-/-- S6-C: `scrubObjectMemory` zeroes exactly `scrubExtent` — the bridge that
-lets a consumer reason about the scrub's byte range without unfolding the
-transition.  Definitional, so it stays true by construction. -/
-theorem scrubObjectMemory_zeroes_scrubExtent (st : SystemState)
-    (objectId : SeLe4n.ObjId) (objType : KernelObjectType) :
-    (scrubObjectMemory st objectId objType).machine =
-      SeLe4n.zeroMemoryRange st.machine
-        (scrubExtent objectId objType).fst (scrubExtent objectId objType).snd := rfl
-
-/-- S6-C: `scrubObjectMemory` preserves the object store. -/
-theorem scrubObjectMemory_objects_eq (st : SystemState) (objectId : SeLe4n.ObjId)
-    (objType : KernelObjectType) :
-    (scrubObjectMemory st objectId objType).objects = st.objects := rfl
-
-/-- WS-SM SM7.B: `scrubObjectMemory` is machine-memory-only — the
-TLB-shootdown state is framed (`pendingBounded` bundle-carriage leaf). -/
-theorem scrubObjectMemory_tlbShootdown_eq (st : SystemState) (objectId : SeLe4n.ObjId)
-    (objType : KernelObjectType) :
-    (scrubObjectMemory st objectId objType).tlbShootdown = st.tlbShootdown := rfl
-
-/-- S6-C: `scrubObjectMemory` preserves the scheduler state. -/
-theorem scrubObjectMemory_scheduler_eq (st : SystemState) (objectId : SeLe4n.ObjId)
-    (objType : KernelObjectType) :
-    (scrubObjectMemory st objectId objType).scheduler = st.scheduler := rfl
-
-/-- WS-SM SM8.B.2: `scrubObjectMemory` preserves every core's register bank.
-
-The scrub is the one step of the retype pipeline that genuinely writes
-`machine`, so the whole-machine frame the other steps use is unavailable here
-and the per-core observer's read set has to be addressed directly: `machine.regs`
-is a field beside `machine.memory`, and `zeroMemoryRange` rewrites only the
-latter. -/
-theorem scrubObjectMemory_regsOnCore (st : SystemState) (objectId : SeLe4n.ObjId)
-    (objType : KernelObjectType) (c : SeLe4n.Kernel.Concurrency.CoreId) :
-    (scrubObjectMemory st objectId objType).machine.regsOnCore c
-      = st.machine.regsOnCore c := rfl
-
-/-- S6-C: `scrubObjectMemory` preserves lifecycle metadata. -/
-theorem scrubObjectMemory_lifecycle_eq (st : SystemState) (objectId : SeLe4n.ObjId)
-    (objType : KernelObjectType) :
-    (scrubObjectMemory st objectId objType).lifecycle = st.lifecycle := rfl
-
-/-- S6-C: `scrubObjectMemory` establishes the `memoryZeroed` postcondition
-    for the scrubbed region. -/
-theorem scrubObjectMemory_establishes_memoryZeroed
-    (st : SystemState) (objectId : SeLe4n.ObjId)
-    (objType : KernelObjectType) :
-    SeLe4n.memoryZeroed (scrubObjectMemory st objectId objType).machine
-      (scrubExtent objectId objType).fst (scrubExtent objectId objType).snd := by
-  simp only [scrubObjectMemory]
-  exact SeLe4n.zeroMemoryRange_establishes_memoryZeroed st.machine _ _
 
 /-- The largest extent any object kind has: a page. -/
 def maxObjectAllocSize : Nat := SeLe4n.pageBytes
@@ -232,20 +126,18 @@ theorem objectTypeAllocSize_le_max (ty : KernelObjectType) :
     objectTypeAllocSize ty ≤ maxObjectAllocSize := by
   cases ty <;> simp [objectTypeAllocSize, maxObjectAllocSize, SeLe4n.pageBytes]
 
-/-- Whether every extent `scrubExtent childId ty` lies inside the machine's
-physical address space, whatever kind `ty` the identifier holds now or after a
-later in-place retype: `(childId + 1) × maxObjectAllocSize ≤ 2 ^ width`,
+/-- Whether every extent `[childId × size, + size)` an identifier names (`size`
+the `objectTypeAllocSize` of any kind) lies inside the machine's physical
+address space: `(childId + 1) × maxObjectAllocSize ≤ 2 ^ width`,
 compared as `childId < 2 ^ width / maxObjectAllocSize` so a refused identifier
 is never multiplied out.  An object is memory, so its extent is a physical
-range; an extent past the address width named no memory, and on a model scrub
-its byte addresses outgrew a machine word, so every byte a zero-check read
-built a fresh big number. -/
+range; an extent past the address width names no memory. -/
 def objectIdInAddressSpace (ms : MachineState) (childId : SeLe4n.ObjId) : Bool :=
   childId.toNat < 2 ^ ms.physicalAddressWidth / maxObjectAllocSize
 
 theorem objectIdInAddressSpace_extent (ms : MachineState) (childId : SeLe4n.ObjId)
     (h : objectIdInAddressSpace ms childId = true) (ty : KernelObjectType) :
-    (scrubExtent childId ty).fst.toNat + (scrubExtent childId ty).snd ≤
+    childId.toNat * objectTypeAllocSize ty + objectTypeAllocSize ty ≤
       2 ^ ms.physicalAddressWidth := by
   have hPos : 0 < maxObjectAllocSize := by simp [maxObjectAllocSize, SeLe4n.pageBytes]
   have hLt : childId.toNat < 2 ^ ms.physicalAddressWidth / maxObjectAllocSize := by
@@ -254,7 +146,6 @@ theorem objectIdInAddressSpace_extent (ms : MachineState) (childId : SeLe4n.ObjI
     (Nat.le_div_iff_mul_le hPos).mp hLt
   have hTy : (childId.toNat + 1) * objectTypeAllocSize ty ≤ 2 ^ ms.physicalAddressWidth :=
     Nat.le_trans (Nat.mul_le_mul_left _ (objectTypeAllocSize_le_max ty)) hLe
-  simp only [scrubExtent, SeLe4n.PAddr.toNat_ofNat]
   rw [Nat.succ_mul] at hTy
   exact hTy
 
@@ -266,8 +157,8 @@ Deterministic branch contract:
    admits — other untypeds and frames; never a translation table, since a table
    walk reading a device reads a register (`untypedDeviceRestriction` if
    violated).
-3. The child's identifier must keep every extent it can hold (`scrubExtent` at
-   the largest kind) inside the machine's physical address space
+3. The child's identifier must keep every extent it can name (at the largest
+   kind) inside the machine's physical address space
    (`objectIdInAddressSpace`; `addressOutOfBounds` otherwise).
 4. The allocation size must be at least `objectTypeAllocSize` for the target type
    (`untypedAllocSizeTooSmall` otherwise).
@@ -643,33 +534,6 @@ theorem retypeFromUntyped_error_regionExhausted
 These theorems keep preservation scripts focused on invariant obligations rather than
 repeating transition case analysis. -/
 
-theorem lifecycle_storeObject_objects_eq
-    (st st' : SystemState)
-    (id : SeLe4n.ObjId)
-    (obj : KernelObject)
-    (hObjInv : st.objects.invExt)
-    (hStore : storeObject id obj st = .ok ((), st')) :
-    st'.objects[id]? = some obj :=
-  SeLe4n.Model.storeObject_objects_eq st st' id obj hObjInv hStore
-
-theorem lifecycle_storeObject_objects_ne
-    (st st' : SystemState)
-    (id oid : SeLe4n.ObjId)
-    (obj : KernelObject)
-    (hNe : oid ≠ id)
-    (hObjInv : st.objects.invExt)
-    (hStore : storeObject id obj st = .ok ((), st')) :
-    st'.objects[oid]? = st.objects[oid]? :=
-  SeLe4n.Model.storeObject_objects_ne st st' id oid obj hNe hObjInv hStore
-
-theorem lifecycle_storeObject_scheduler_eq
-    (st st' : SystemState)
-    (id : SeLe4n.ObjId)
-    (obj : KernelObject)
-    (hStore : storeObject id obj st = .ok ((), st')) :
-    st'.scheduler = st.scheduler :=
-  SeLe4n.Model.storeObject_scheduler_eq st st' id obj hStore
-
 theorem cspaceLookupSlot_ok_state_eq
     (st : SystemState)
     (addr : CSpaceAddr)
@@ -689,203 +553,6 @@ theorem cspaceLookupSlot_ok_state_eq
       exact hLookup.2.symm
 
 
-theorem lifecycleRetypeObject_ok_as_storeObject
-    (st st' : SystemState)
-    (authority : CSpaceAddr)
-    (target : SeLe4n.ObjId)
-    (newObj : KernelObject)
-    (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
-    ∃ currentObj cap,
-      st.objects[target]? = some currentObj ∧
-      st.lifecycle.objectTypes[target]? = some currentObj.objectType ∧
-      cspaceLookupSlot authority st = .ok (cap, st) ∧
-      lifecycleRetypeAuthority cap target = true ∧
-      storeObject target newObj st = .ok ((), st') := by
-  unfold lifecycleRetypeObject SystemState.getObject? at hStep
-  cases hObj : st.objects[target]? with
-  | none => simp [hObj] at hStep
-  | some currentObj =>
-      by_cases hMeta : st.lifecycle.objectTypes[target]? = some currentObj.objectType
-      · cases hLookup : cspaceLookupSlot authority st with
-        | error e => simp [hObj, hMeta, hLookup] at hStep
-        | ok pair =>
-            rcases pair with ⟨cap, stLookup⟩
-            cases hAuth : lifecycleRetypeAuthority cap target with
-            | false => simp [hObj, hMeta, hLookup, hAuth] at hStep
-            | true =>
-                have hLookupSt : stLookup = st :=
-                  cspaceLookupSlot_ok_state_eq st authority cap stLookup hLookup
-                subst hLookupSt
-                simp [hObj, hMeta, hLookup, hAuth] at hStep
-                exact ⟨currentObj, cap, by simp, hMeta, by simp, hAuth, hStep⟩
-      · simp [hObj, hMeta] at hStep
-
-theorem lifecycleRetypeObject_ok_lookup_preserved_ne
-    (st st' : SystemState)
-    (authority : CSpaceAddr)
-    (target oid : SeLe4n.ObjId)
-    (newObj : KernelObject)
-    (hNe : oid ≠ target)
-    (hObjInv : st.objects.invExt)
-    (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
-    st'.objects[oid]? = st.objects[oid]? := by
-  rcases lifecycleRetypeObject_ok_as_storeObject st st' authority target newObj hStep with
-    ⟨_, _, _, _, _, _, hStore⟩
-  exact lifecycle_storeObject_objects_ne st st' target oid newObj hNe hObjInv hStore
-
-theorem lifecycleRetypeObject_ok_runnable_membership
-    (st st' : SystemState)
-    (authority : CSpaceAddr)
-    (target : SeLe4n.ObjId)
-    (newObj : KernelObject)
-    (tid : SeLe4n.ThreadId)
-    (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st'))
-    (hRun : tid ∈ st'.scheduler.runnable) :
-    tid ∈ st.scheduler.runnable := by
-  rcases lifecycleRetypeObject_ok_as_storeObject st st' authority target newObj hStep with
-    ⟨_, _, _, _, _, _, hStore⟩
-  have hSchedEq : st'.scheduler = st.scheduler :=
-    lifecycle_storeObject_scheduler_eq st st' target newObj hStore
-  simpa [hSchedEq] using hRun
-
-theorem lifecycleRetypeObject_ok_not_runnable_membership
-    (st st' : SystemState)
-    (authority : CSpaceAddr)
-    (target : SeLe4n.ObjId)
-    (newObj : KernelObject)
-    (tid : SeLe4n.ThreadId)
-    (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st'))
-    (hNotRun : tid ∉ st.scheduler.runnable) :
-    tid ∉ st'.scheduler.runnable := by
-  rcases lifecycleRetypeObject_ok_as_storeObject st st' authority target newObj hStep with
-    ⟨_, _, _, _, _, _, hStore⟩
-  have hSchedEq : st'.scheduler = st.scheduler :=
-    lifecycle_storeObject_scheduler_eq st st' target newObj hStore
-  simpa [hSchedEq] using hNotRun
-
-theorem lifecycleRetypeObject_error_illegalState
-    (st : SystemState)
-    (authority : CSpaceAddr)
-    (target : SeLe4n.ObjId)
-    (newObj currentObj : KernelObject)
-    (hObj : st.objects[target]? = some currentObj)
-    (hMetaMismatch : st.lifecycle.objectTypes[target]? ≠ some currentObj.objectType) :
-    lifecycleRetypeObject authority target newObj st = .error .illegalState := by
-  unfold lifecycleRetypeObject SystemState.getObject?
-  simp [hObj, hMetaMismatch]
-
-theorem lifecycleRetypeObject_error_illegalAuthority
-    (st : SystemState)
-    (authority : CSpaceAddr)
-    (target : SeLe4n.ObjId)
-    (newObj currentObj : KernelObject)
-    (cap : Capability)
-    (hObj : st.objects[target]? = some currentObj)
-    (hMeta : st.lifecycle.objectTypes[target]? = some currentObj.objectType)
-    (hLookup : cspaceLookupSlot authority st = .ok (cap, st))
-    (hAuthFail : lifecycleRetypeAuthority cap target = false) :
-    lifecycleRetypeObject authority target newObj st = .error .illegalAuthority := by
-  unfold lifecycleRetypeObject SystemState.getObject?
-  simp [hObj, hMeta, hLookup, hAuthFail]
-
-
-theorem lifecycleRetypeObject_success_updates_object
-    (st st' : SystemState)
-    (authority : CSpaceAddr)
-    (target : SeLe4n.ObjId)
-    (newObj currentObj : KernelObject)
-    (cap : Capability)
-    (hObj : st.objects[target]? = some currentObj)
-    (hMeta : st.lifecycle.objectTypes[target]? = some currentObj.objectType)
-    (hLookup : cspaceLookupSlot authority st = .ok (cap, st))
-    (hAuth : lifecycleRetypeAuthority cap target = true)
-    (hObjInv : st.objects.invExt)
-    (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
-    st'.objects[target]? = some newObj := by
-  have _ : st.lifecycle.objectTypes[target]? = some currentObj.objectType := hMeta
-  have _ : lifecycleRetypeAuthority cap target = true := hAuth
-  rcases lifecycleRetypeObject_ok_as_storeObject st st' authority target newObj hStep with
-    ⟨currentObj', cap', hObj', _, hLookup', _, hStore⟩
-  have hCurrent : currentObj' = currentObj := by
-    apply Option.some.inj
-    rw [← hObj', hObj]
-  subst hCurrent
-  have hCapLookup' : SystemState.lookupSlotCap st authority = some cap' :=
-    (cspaceLookupSlot_ok_iff_lookupSlotCap st authority cap').1 hLookup'
-  have hCapLookup : SystemState.lookupSlotCap st authority = some cap :=
-    (cspaceLookupSlot_ok_iff_lookupSlotCap st authority cap).1 hLookup
-  rw [hCapLookup'] at hCapLookup
-  injection hCapLookup with hCapEq
-  subst hCapEq
-  exact lifecycle_storeObject_objects_eq st st' target newObj hObjInv hStore
-
-theorem lifecycleRevokeDeleteRetype_error_authority_cleanup_alias
-    (st : SystemState)
-    (authority cleanup : CSpaceAddr)
-    (target : SeLe4n.ObjId)
-    (newObj : KernelObject)
-    (hAlias : authority = cleanup) :
-    lifecycleRevokeDeleteRetype authority cleanup target newObj st = .error .illegalState := by
-  unfold lifecycleRevokeDeleteRetype
-  simp [hAlias]
-
-theorem lifecycleRevokeDeleteRetype_ok_implies_authority_ne_cleanup
-    (st st' : SystemState)
-    (authority cleanup : CSpaceAddr)
-    (target : SeLe4n.ObjId)
-    (newObj : KernelObject)
-    (hStep : lifecycleRevokeDeleteRetype authority cleanup target newObj st = .ok ((), st')) :
-    authority ≠ cleanup := by
-  intro hAlias
-  have hErr := lifecycleRevokeDeleteRetype_error_authority_cleanup_alias
-    st authority cleanup target newObj hAlias
-  rw [hErr] at hStep
-  cases hStep
-
-theorem lifecycleRevokeDeleteRetype_ok_implies_staged_steps
-    (st st' : SystemState)
-    (authority cleanup : CSpaceAddr)
-    (target : SeLe4n.ObjId)
-    (newObj : KernelObject)
-    (hStep : lifecycleRevokeDeleteRetype authority cleanup target newObj st = .ok ((), st')) :
-    ∃ stRevoked stDeleted,
-      authority ≠ cleanup ∧
-      cspaceRevoke cleanup st = .ok ((), stRevoked) ∧
-      cspaceDeleteSlot cleanup stRevoked = .ok ((), stDeleted) ∧
-      cspaceLookupSlot cleanup stDeleted = .error .invalidCapability ∧
-      lifecycleRetypeObject authority target newObj stDeleted = .ok ((), st') := by
-  by_cases hAlias : authority = cleanup
-  · have hErr : lifecycleRevokeDeleteRetype authority cleanup target newObj st = .error .illegalState := by
-      simp [lifecycleRevokeDeleteRetype, hAlias]
-    rw [hErr] at hStep
-    cases hStep
-  · cases hRevoke : cspaceRevoke cleanup st with
-    | error e =>
-        simp [lifecycleRevokeDeleteRetype, hAlias, hRevoke] at hStep
-    | ok revPair =>
-        cases revPair with
-        | mk revUnit stRevoked =>
-            cases revUnit
-            cases hDelete : cspaceDeleteSlot cleanup stRevoked with
-            | error e =>
-                simp [lifecycleRevokeDeleteRetype, hAlias, hRevoke, hDelete] at hStep
-            | ok delPair =>
-                cases delPair with
-                | mk delUnit stDeleted =>
-                    cases delUnit
-                    cases hLookup : cspaceLookupSlot cleanup stDeleted with
-                    | ok pair =>
-                        simp [lifecycleRevokeDeleteRetype, hAlias, hRevoke, hDelete, hLookup] at hStep
-                    | error err =>
-                        have hErr : err = .invalidCapability := by
-                          cases err <;> simp [lifecycleRevokeDeleteRetype, hAlias, hRevoke, hDelete, hLookup] at hStep
-                          rfl
-                        subst hErr
-                        refine ⟨stRevoked, stDeleted, hAlias, ?_, ?_, ?_, ?_⟩
-                        · rfl
-                        · simpa using hDelete
-                        · exact hLookup
-                        · simpa [lifecycleRevokeDeleteRetype, hAlias, hRevoke, hDelete, hLookup] using hStep
 
 
 /-- WS-ZA ZA5.4 part 13: **a successful `retypeFromUntyped` as three stores**
@@ -1012,10 +679,9 @@ regionBase + idx + 2 ^ sizeBits)` — of the parent's memory kind, with its
 **parent stamped** (`parent := some parentId`) and nothing carved from it yet.
 The stamp is what `retypeFromUntyped`'s AN6-C.2 contract asks every caller
 carving an `.untyped` child to perform, and what the transitive
-`untypedAncestorRegionsDisjoint` walk reads; `objectOfKernelType .untyped`,
-which builds `regionBase = 0` and no parent, is the in-place retype's builder
-and is refused for memory-backed kinds, so this is the only child untyped a live
-state can acquire.  One definition, read by the carve and by every statement
+`untypedAncestorRegionsDisjoint` walk reads.  The carve is the only way a
+live state acquires a child untyped, so this is the only child untyped a live
+state can hold.  One definition, read by the carve and by every statement
 about which memory the child owns. -/
 def untypedNextChild (ut : UntypedObject) (idx : Nat) (parentId : SeLe4n.ObjId)
     (sizeBits : Nat) : UntypedObject :=
@@ -1136,8 +802,7 @@ def untypedNextPageTable (ut : UntypedObject) (idx : Nat) : PageTableObject :=
 
 /-- **WS-BP BP7.1 (`v0.36.12`): the capability a carve hands back for a page
 table.**  Read and write — `.pageTableMap` and `.pageTableUnmap` ask `.write`.
-`.retype` is absent: a table's page returns through the reset, never through an
-in-place retype, which refuses a table outright. -/
+`.retype` is absent: a table's page returns to its untyped through the reset. -/
 def pageTableCapability (tableId : SeLe4n.ObjId) : Capability :=
   { target := .object tableId
     rights := AccessRightSet.ofList [.read, .write] }
@@ -1152,8 +817,7 @@ def untypedNextVSpaceRoot (ut : UntypedObject) (idx : Nat) (asid : SeLe4n.ASID) 
 /-- **WS-BP BP7.1 slice 4b: the capability a carve hands back for a VSpace
 root.**  Read and write — the rights `.vspaceMap` and `.vspaceUnmap` ask of an
 address-space capability.  `.retype` is absent: a root's page returns to its
-untyped through the reset, never through an in-place retype, which refuses a
-root outright. -/
+untyped through the reset. -/
 def vspaceRootCapability (rootId : SeLe4n.ObjId) : Capability :=
   { target := .object rootId
     rights := AccessRightSet.ofList [.read, .write] }
@@ -1209,7 +873,7 @@ child untyped has none beyond the primitive's.  A VSpace root's ASID must be
 non-zero, below the machine's bound, and free in the ASID table — decided here,
 by the carve, rather than trusted of whoever chose it: `storeObject` inserts a
 root's ASID unconditionally, and an ASID already held would move its entry to
-the new root (the defect `v0.36.9` closed on the in-place retype). -/
+the new root. -/
 def CarveRequest.admissible (st : SystemState) : CarveRequest → Bool
   | .frame => true
   | .untyped _ => true
@@ -1240,7 +904,7 @@ def CarveRequest.objectType : CarveRequest → KernelObjectType
 
 /-- The object a request carves out of `ut` (stored at `untypedId`) at free
 index `idx`, to be stored at `childId`.  A kernel object carries the id it is
-stored at as its own identity (`KernelObject.identityMatches`). -/
+stored at as its own identity (`KernelObject.embeddedIdentityMatches`). -/
 def CarveRequest.object (untypedId childId : SeLe4n.ObjId) (ut : UntypedObject) (idx : Nat) :
     CarveRequest → KernelObject
   | .frame => .frame (untypedNextFrame ut idx)
@@ -1259,6 +923,14 @@ theorem CarveRequest.object_objectType (untypedId childId : SeLe4n.ObjId) (ut : 
     (idx : Nat) (req : CarveRequest) :
     (req.object untypedId childId ut idx).objectType = req.objectType := by
   cases req <;> rfl
+
+/-- A carved object carries the id it is stored at: the runtime half of the
+agreement the boot enforces with `embeddedIdentitiesMatchSlots`. -/
+theorem CarveRequest.object_embeddedIdentityMatches (untypedId childId : SeLe4n.ObjId)
+    (ut : UntypedObject) (idx : Nat) (req : CarveRequest) :
+    (req.object untypedId childId ut idx).embeddedIdentityMatches childId = true := by
+  cases req <;> simp [CarveRequest.object, KernelObject.embeddedIdentityMatches, carvedTcb,
+    SeLe4n.Kernel.Reply.empty, SeLe4n.Kernel.SchedContext.empty]
 
 /-- The bytes a request takes from the parent's region: a page for the page
 kinds, `2 ^ b` for a child untyped, and seL4's `getObjectSize` for a kernel
@@ -1371,10 +1043,10 @@ Four steps, and every refusal commits nothing:
    untyped capability (`DerivationOp.retype`), so revoking the untyped
    capability reaches it — the edge every other install path records.
 
-This is the only path that creates a frame or an untyped on a live state: the
-in-place retype refuses memory-backed kinds and the boot refuses configured
-frames and requires every boot untyped pristine, so every such object in a
-reachable state was carved from an untyped by a holder of a capability to it.
+This is the only path that creates an object on a live state, of every kind:
+the boot refuses configured frames and requires every boot untyped pristine,
+so every object a live transition creates was carved from an untyped by a
+holder of a capability to it.
 
 *Tombstone:* `untypedRetypeFrame` (`v0.36.5`–`v0.36.7`) was this operation at
 `req = .frame`; it is deleted rather than kept beside the general carve. -/
@@ -1387,6 +1059,9 @@ def untypedRetypeObject (src : CSpaceAddr) (childId : SeLe4n.ObjId)
     | .ok (utCap, _) =>
       match utCap.target with
       | .object untypedId =>
+        -- Authority first: a capability without `.retype` learns nothing about
+        -- the object it names, the child id or the destination.
+        if !lifecycleRetypeAuthority utCap untypedId then .error .illegalAuthority else
         match st.getUntyped? untypedId with
         | none => .error .untypedTypeMismatch
         | some ut =>
@@ -1498,6 +1173,9 @@ theorem untypedRetypeObject_ok_writes
     | object untypedId =>
       rw [hTgt] at hStep
       simp only at hStep
+      cases hAu : lifecycleRetypeAuthority utCap untypedId
+      · simp only [hAu, Bool.not_false, ↓reduceIte] at hStep; cases hStep
+      simp only [hAu, Bool.not_true, Bool.false_eq_true, ↓reduceIte] at hStep
       cases hUt : stL.getUntyped? untypedId with
       | none => rw [hUt] at hStep; cases hStep
       | some ut =>
@@ -1589,6 +1267,23 @@ theorem untypedRetypeObject_ok_admissible
   cases hAdm : req.admissible st
   · simp only [hAdm, Bool.not_false, ↓reduceIte] at hStep; cases hStep
   · rfl
+
+/-- **WS-ZA ZA5.4 part 14: the carve asks authority before it reads anything
+the caller named.**  An admissible request through a capability that names an
+object without the `.retype` right is refused with `.illegalAuthority`, whatever
+the object, the child id and the destination are — so the refusal answers no
+question about any of them. -/
+theorem untypedRetypeObject_unauthorized
+    (src dst : CSpaceAddr) (childId : SeLe4n.ObjId) (req : CarveRequest)
+    (st : SystemState) (cap : Capability) (untypedId : SeLe4n.ObjId)
+    (hAdm : req.admissible st = true)
+    (hLk : cspaceLookupSlot src st = .ok (cap, st))
+    (hTgt : cap.target = .object untypedId)
+    (hAu : lifecycleRetypeAuthority cap untypedId = false) :
+    untypedRetypeObject src childId dst req st = .error .illegalAuthority := by
+  unfold untypedRetypeObject
+  simp only [hAdm, Bool.not_true, Bool.false_eq_true, ↓reduceIte, hLk, hTgt, hAu,
+    Bool.not_false]
 
 /-- **WS-BP BP7.1 slice 4b: `freshAsid?` answers an ASID a VSpace-root carve
 admits** — non-zero, below the machine's bound, and free in the ASID table. -/

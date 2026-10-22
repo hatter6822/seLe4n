@@ -328,7 +328,7 @@ def lockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
   -- revocation one is a cut of its own.
   | .cspaceRevoke
   | .mintReplyCap
-  | .lifecycleRetype | .untypedRetype | .untypedReset
+  | .untypedRetype | .untypedReset
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction
   | .serviceRegister | .serviceRevoke | .serviceQuery
   | .schedContextConfigure | .schedContextBind | .schedContextUnbind
@@ -1166,7 +1166,7 @@ mechanically closed. The other direction — listing an arm that still answers
 and pre-state under which its arm declares, so an arm that had quietly become
 unconditionally `none` could not satisfy its own `iff`.
 
-There are `SyscallId.count = 42` arms; eight are declared and thirty-four
+There are `SyscallId.count = 41` arms; eight are declared and thirty-three
 answer `none`. -/
 def declaredFootprintSyscall : SyscallId → Bool
   | .tcbSuspend
@@ -1184,7 +1184,7 @@ def declaredFootprintSyscall : SyscallId → Bool
   -- revocation one is a cut of its own.
   | .cspaceRevoke
   | .mintReplyCap
-  | .lifecycleRetype | .untypedRetype | .untypedReset
+  | .untypedRetype | .untypedReset
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction
   | .serviceRegister | .serviceRevoke | .serviceQuery
   | .schedContextConfigure | .schedContextBind | .schedContextUnbind
@@ -1275,7 +1275,7 @@ theorem declaredFootprintSyscall_declared_set :
     declaredFootprintSyscall .replyRecv = true ∧
     declaredFootprintSyscall .notificationSignal = true ∧
     declaredFootprintSyscall .notificationWait = true ∧
-    ((List.range SyscallId.count).filterMap SyscallId.ofNat?).countP
+    ((List.range SyscallId.encodingBound).filterMap SyscallId.ofNat?).countP
       declaredFootprintSyscall = 8 := by
   refine ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, ?_⟩
   decide

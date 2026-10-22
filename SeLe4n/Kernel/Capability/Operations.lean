@@ -1650,9 +1650,8 @@ seLe4n has two revocations:
   destroys exactly the source's derivations, and a target match reaches an
   independently rooted capability to the same object and the source's own
   parent as well.  It predates the CDT, and since `v0.36.1` no syscall reaches
-  it.  What still calls it is the
-  internal proof helper `lifecycleRevokeDeleteRetype` and the non-interference
-  operation catalogue, where it is an operation in its own right.
+  it.  What still calls it is the non-interference operation catalogue, where
+  it is an operation in its own right.
 
 - **`cspaceRevokeCdtFinalising`** (`Capability/FrameFinalise.lean`): seL4's
   `cteRevoke`, revocation of exactly the source slot's CDT descendants, in every

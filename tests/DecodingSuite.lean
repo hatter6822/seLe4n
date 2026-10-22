@@ -306,18 +306,23 @@ private def sad005_cspaceDelete : IO Unit := do
 
 -- Lifecycle family -------------------------------------------------------------
 
-/-- SAD-006: decodeLifecycleRetypeArgs — valid decode with recognized type. -/
-private def sad006_lifecycleRetype : IO Unit := do
-  -- KernelObjectType tag 0 should be the first valid type
-  let stub := mkStub #[⟨100⟩, ⟨0⟩, ⟨4096⟩]
-  let result := decodeLifecycleRetypeArgs stub
-  expect "SAD-006a retype ok" result.isOk
+/-- SAD-006: decodeUntypedRetypeArgs — valid decode of every kernel object
+kind's type word (`tag ||| sizeBits <<< 8`, WS-ZA ZA5.4 part 14). -/
+private def sad006_untypedRetype : IO Unit := do
+  for tag in [0, 1, 2, 3, 6, 7] do
+    let stub := mkStub #[⟨tag + 256⟩, ⟨100⟩, ⟨1⟩, ⟨4⟩]
+    match decodeUntypedRetypeArgs stub with
+    | .ok args =>
+        expect s!"SAD-006a carve decode tag {tag}"
+          (args.newType.toNat == tag && args.sizeBits == 1 && args.childId == ⟨100⟩)
+    | .error _ => expect s!"SAD-006a carve decode tag {tag}" false
+  expect "SAD-006b carve decode short err" (!(decodeUntypedRetypeArgs (mkStub #[⟨1⟩, ⟨100⟩, ⟨1⟩])).isOk)
 
-/-- SAD-007: decodeLifecycleRetypeArgs — invalid type tag. -/
-private def sad007_lifecycleRetypeInvalidType : IO Unit := do
-  let stub := mkStub #[⟨100⟩, ⟨999⟩, ⟨4096⟩]
-  let result := decodeLifecycleRetypeArgs stub
-  expect "SAD-007a retype invalid type" (!result.isOk)
+/-- SAD-007: decodeUntypedRetypeArgs — invalid type tag. -/
+private def sad007_untypedRetypeInvalidType : IO Unit := do
+  let stub := mkStub #[⟨99⟩, ⟨100⟩, ⟨1⟩, ⟨4⟩]
+  let result := decodeUntypedRetypeArgs stub
+  expect "SAD-007a carve invalid type" (!result.isOk)
 
 -- VSpace family ----------------------------------------------------------------
 
@@ -808,8 +813,8 @@ private def runSyscallArgDecodeTests : IO Unit := do
   sad004_cspaceMove
   sad005_cspaceDelete
   -- Lifecycle
-  sad006_lifecycleRetype
-  sad007_lifecycleRetypeInvalidType
+  sad006_untypedRetype
+  sad007_untypedRetypeInvalidType
   -- VSpace
   sad008_vspaceMap
   sad009_vspaceMapInvalidAsid

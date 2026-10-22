@@ -9,7 +9,7 @@
 
 import SeLe4n.Kernel.ReschedulePendingArms.Ipc
 import SeLe4n.Kernel.API
-import SeLe4n.Kernel.Lifecycle.Invariant.RetypeReservation
+import SeLe4n.Kernel.Lifecycle.Invariant.CleanupReservation
 
 /-!
 # The checked dispatcher's own arms cover
@@ -106,12 +106,6 @@ def placedThreadsHaveTcbs (st : SystemState) : Prop :=
   ∀ c t, (t ∈ st.scheduler.runQueueOnCore c ∨ st.scheduler.currentOnCore c = some t) →
     (st.getTcb? t).isSome
 
-/-- A retype the decode names targets a detached object — the pre-state pack
-the dispatch's invariant payoff consumes (`capabilityDispatchQuiescence`). -/
-def retypeDetachedFor (decoded : SyscallDecodeResult) (st : SystemState) : Prop :=
-  ∀ args, decoded.syscallId = .lifecycleRetype →
-    decodeLifecycleRetypeArgs decoded = .ok args → retypeTargetDetached st args.targetObj
-
 /-- A write that moves only slot `X` keeps the key of every thread that neither
 lives at `X` nor names `X` as its scheduling context. -/
 theorem schedKeyView_eq_of_slotUnread {pre post : SystemState} {X : SeLe4n.ObjId}
@@ -189,100 +183,15 @@ theorem untypedRetypeObject_stepCovers (e : CoreId) {src dst : CSpaceAddr}
     untypedRetypeObject_keyFrameOffChild src dst childId req st st' hInv h
   exact ⟨stepCovers_of_freshSlot e hFrame hAbs hUnq hSched hBi hPlaced, hInv'⟩
 
-/-- **The retype covers**, under the detachment pack the dispatch's invariant
-payoff already consumes: the cleanup is the identity on the object store and the
-scheduler, so the retype is one store at a slot no placed thread lives at or
-reads its deadline from. -/
-theorem lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_stepCovers (e : CoreId)
-    {ec : CoreId} {authCap : Capability} {target : SeLe4n.ObjId} {newObj : KernelObject}
-    {st st' : SystemState} (hInv : st.objects.invExt)
-    (hBi : schedContextBindingBidirectional st) (hDet : retypeTargetDetached st target)
-    (hPlaced : placedThreadsHaveTcbs st) (hFresh : retypeReplacementFresh newObj)
-    (h : lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache ec authCap target newObj st
-      = .ok ((), st')) :
-    stepCovers e st st' ∧ st'.objects.invExt := by
-  obtain ⟨stB, hB, hObjB, hSchB⟩ :=
-    lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_ok_frame h
-  obtain ⟨_, cur, stClean, hCur, hClean, hStore⟩ := lifecycleRetypeDirectWithCleanup_ok_decompose hB
-  obtain ⟨stM, hMO, hMS, _, hR⟩ :=
-    lifecyclePreRetypeCleanup_detached_frame st stClean target cur newObj hInv hCur hDet hClean
-  have hInvM : stM.objects.invExt := hMO ▸ hInv
-  have hScrubInv : (scrubObjectMemory stClean target cur.objectType).objects.invExt := by
-    rw [scrubObjectMemory_objects_eq]; exact hR.invExt hInvM
-  have hSched : st'.scheduler = st.scheduler := by
-    rw [hSchB, storeObject_scheduler_eq _ _ _ _ hStore, scrubObjectMemory_scheduler_eq]
-    have h := congrArg SystemState.scheduler hR.fields
-    exact h.trans hMS
-  -- The cleanup's tree detach writes only CNode derivation links.
-  have hFrame : ∀ oid, oid ≠ target → SystemState.objectAgreesOffDerivationLinksAt st' st oid := by
-    intro oid hne
-    have e : st'.objects[oid]? = stClean.objects[oid]? := by
-      rw [hObjB, storeObject_objects_ne _ _ _ _ _ hne hScrubInv hStore, scrubObjectMemory_objects_eq]
-    rcases hR.agree hInvM oid with e2 | ⟨cn, cn', ha, hb, hw⟩ | ⟨t, t', ha, hb, hw⟩
-    · exact .inl (by rw [e, e2, hMO])
-    · exact .inr (.inl ⟨cn, cn', by rw [← hMO]; exact ha, by rw [e]; exact hb, hw⟩)
-    · exact .inr (.inr ⟨t, t', by rw [← hMO]; exact ha, by rw [e]; exact hb, hw⟩)
-  have hKeyNe : ∀ t, t.toObjId ≠ target → schedKeyView st' t = schedKeyView st t := by
-    intro t ht
-    refine schedKeyView_eq_of_slotUnread (fun oid hne => by
-      rcases hFrame oid hne with e | ⟨_, _, ha, hb, _⟩ | ⟨_, _, ha, hb, hw⟩
-      · rw [e]
-      · rw [ha, hb]; rfl
-      · rw [ha, hb]
-        exact TCB.proj_eq_of_withoutLinks_eq (fun x : TCB => keyInputsOf (some (.tcb x))) hw) ht ?_
-    intro tcb hT sc hsc hEq
-    obtain ⟨sco, hSo, _⟩ := hBi t tcb sc ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hsc
-    rw [hEq] at hSo
-    exact hDet.notSc sco hSo
-  have hUnread : ∀ c t, st.scheduler.currentOnCore c = some t →
-      schedKeyView st' t = schedKeyView st t := by
-    intro c t hP
-    obtain ⟨tcb, hT⟩ := Option.isSome_iff_exists.mp (hPlaced c t (Or.inr hP))
-    have hTo := (SystemState.getTcb?_eq_some_iff _ _ _).mp hT
-    refine hKeyNe t (fun hEq => ?_)
-    rw [hEq] at hTo
-    have hDs := hDet.tcbDescheduled tcb hTo c
-    have hId : tcb.tid = t :=
-      SeLe4n.ThreadId.toObjId_injective _ _ ((hDet.tcbSelfId tcb hTo).trans hEq.symm)
-    rw [hId] at hDs
-    exact hDs.2.2 hP
-  refine ⟨⟨fun c _ => Or.inr ⟨fun t ht => ?_, by rw [hSched], fun t ht => ?_⟩,
-    fun c _ hc => by rw [hSched]; exact hc⟩, ?_⟩
-  · -- The replacement is fresh, so a thread queued after the retype is not the
-    -- target and was queued before it.
-    have hne : t.toObjId ≠ target := by
-      intro hEq
-      unfold SystemState.queuedOn SystemState.getTcb? at ht
-      rw [hEq, hObjB, storeObject_objects_eq _ _ _ _ hScrubInv hStore] at ht
-      revert ht
-      cases newObj with
-      | tcb tn =>
-        obtain ⟨-, -, -, -, -, -, -, -, -, hC⟩ := hFresh
-        simp [hC]
-      | _ => simp
-    have hq : st.queuedOn c t = true := by
-      unfold SystemState.queuedOn SystemState.getTcb? at ht ⊢
-      rcases hFrame _ hne with e | ⟨_, _, _, hb, _⟩ | ⟨_, _, ha, hb, hw⟩
-      · rw [e] at ht; exact ht
-      · rw [hb] at ht; simp at ht
-      · rw [hb] at ht; rw [ha]
-        have hc := TCB.proj_eq_of_withoutLinks_eq (fun x : TCB => x.runCoreCode) hw
-        simp only at ht hc ⊢
-        rw [← hc]; exact ht
-    exact ⟨hq, (hKeyNe t hne).symm⟩
-  · rw [hSched] at ht; exact schedKeyNotWeakened_of_eq (hUnread c t ht).symm
-  · rw [hObjB]; exact storeObject_preserves_objects_invExt _ _ _ _ hScrubInv hStore
-
 /-! ### The capability-only arms -/
 
 /-- **Every arm `dispatchCapabilityOnly` routes covers**, on the executing core,
-under the binding reciprocity, the placement facts and the retype detachment
-pack — the pre-state facts the dispatch's invariant payoff consumes. -/
+under the binding reciprocity and the placement facts — pre-state facts the
+dispatch's invariant payoff consumes. -/
 theorem dispatchCapabilityOnly_stepCovers {decoded : SyscallDecodeResult} {cap : Capability}
     {tid : SeLe4n.ThreadId} {ec : CoreId} {k : Kernel Unit} {st st' : SystemState}
     (hInv : st.objects.invExt) (hBi : schedContextBindingBidirectional st)
     (hPlaced : placedThreadsHaveTcbs st)
-    (hDet : retypeDetachedFor decoded st)
     (hK : dispatchCapabilityOnly decoded cap tid ec = some k)
     (h : k st = .ok ((), st')) : stepCovers ec st st' ∧ st'.objects.invExt := by
   unfold dispatchCapabilityOnly at hK
@@ -291,13 +200,6 @@ theorem dispatchCapabilityOnly_stepCovers {decoded : SyscallDecodeResult} {cap :
   all_goals subst hK
   all_goals cases hT : cap.target <;> rw [hT] at h <;> dsimp only at h
   all_goals first | (cases h; done) | skip
-  case lifecycleRetype.object =>
-    split at h
-    · cases h
-    · rename_i args hArgs
-      exact lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_stepCovers ec hInv hBi
-        (hDet args hId hArgs) hPlaced
-        (objectOfKernelType_withIdentity_replacementFresh args.newType args.size args.targetObj) h
   all_goals (repeat' split at h)
   all_goals first | (cases h; done) | skip
   all_goals try first
@@ -380,12 +282,11 @@ theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
     {gate : SyscallGate} {cap : Capability} {st st' : SystemState} (hInv : st.objects.invExt)
     (hBi : schedContextBindingBidirectional st)
     (hPlaced : placedThreadsHaveTcbs st)
-    (hDet : retypeDetachedFor decoded st)
     (h : dispatchWithCapChecked ctx decoded tid e gate cap st = .ok ((), st')) :
     stepCovers e st st' ∧ st'.objects.invExt := by
   unfold dispatchWithCapChecked at h
   cases hC : dispatchCapabilityOnly decoded cap tid e with
-  | some k => rw [hC] at h; exact dispatchCapabilityOnly_stepCovers hInv hBi hPlaced hDet hC h
+  | some k => rw [hC] at h; exact dispatchCapabilityOnly_stepCovers hInv hBi hPlaced hC h
   | none =>
   rw [hC] at h
   dsimp only at h
@@ -543,7 +444,6 @@ theorem dispatchSyscallChecked_stepCovers {ctx : LabelingContext}
     {st st' : SystemState} (hInv : st.objects.invExt)
     (hBi : schedContextBindingBidirectional st)
     (hPlaced : placedThreadsHaveTcbs st)
-    (hDet : retypeDetachedFor decoded st)
     (h : dispatchSyscallChecked ctx decoded tid e st = .ok ((), st')) :
     stepCovers e st st' ∧ st'.objects.invExt := by
   unfold dispatchSyscallChecked at h
@@ -575,32 +475,13 @@ theorem dispatchSyscallChecked_stepCovers {ctx : LabelingContext}
     · cases hD
     · rename_i cap s1 hR
       cases syscallLookupCap_preserves_state _ _ _ _ hR
-      exact dispatchWithCapChecked_stepCovers e hInv hBi hPlaced hDet hD
+      exact dispatchWithCapChecked_stepCovers e hInv hBi hPlaced hD
   · unfold syscallInvokeResolved at hD
     split at hD
     · cases hD
     · rename_i cap s1 hR
       cases syscallResolveCap_state hR
-      exact dispatchWithCapChecked_stepCovers e hInv hBi hPlaced hDet hD
-
-/-- The detachment pack does not read the per-core TLBs. -/
-theorem retypeDetachedFor_perCoreTlb {decoded : SyscallDecodeResult} {st : SystemState}
-    {t : Vector TlbState Concurrency.numCores} (h : retypeDetachedFor decoded st) :
-    retypeDetachedFor decoded { st with perCoreTlb := t } := by
-  intro args h1 h2
-  have hD := h args h1 h2
-  cases hD
-  constructor <;> assumption
-
-/-- Every syscall the executing core's current thread can decode from `st`
-retypes, if it retypes at all, a detached target. -/
-def entryRetypeDetached (e : CoreId) (layout : SeLe4n.SyscallRegisterLayout) (regCount : Nat)
-    (st : SystemState) : Prop :=
-  ∀ tid regs s decoded, st.scheduler.currentOnCore e = some tid →
-    lookupThreadRegisterContext tid st = .ok (regs, s) →
-    Architecture.RegisterDecode.decodeSyscallArgsFromState st tid layout regs regCount
-      = .ok decoded →
-    retypeDetachedFor decoded st
+      exact dispatchWithCapChecked_stepCovers e hInv hBi hPlaced hD
 
 /-- **The checked syscall entry covers** on the executing core: the register
 read and the decode read, and the IPC-buffer fill writes one core's TLB. -/
@@ -608,7 +489,6 @@ theorem syscallEntryChecked_stepCovers {ctx : LabelingContext}
     {layout : SeLe4n.SyscallRegisterLayout} {e : CoreId} {regCount : Nat}
     {st st' : SystemState} (hInv : st.objects.invExt)
     (hBi : schedContextBindingBidirectional st) (hPlaced : placedThreadsHaveTcbs st)
-    (hDet : entryRetypeDetached e layout regCount st)
     (h : syscallEntryChecked ctx layout e regCount st = .ok ((), st')) :
     stepCovers e st st' ∧ st'.objects.invExt := by
   unfold syscallEntryChecked at h
@@ -628,6 +508,6 @@ theorem syscallEntryChecked_stepCovers {ctx : LabelingContext}
     decoded.overflowCount
   rw [ht] at h
   exact dispatchSyscallChecked_stepCovers (st := { st with perCoreTlb := t }) hInv hBi hPlaced
-    (retypeDetachedFor_perCoreTlb (hDet tid regs s decoded hCur hLk hDec)) h
+    h
 
 end SeLe4n.Kernel

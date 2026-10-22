@@ -1155,11 +1155,12 @@ private theorem entryIdentity_iff (entry : ObjectEntry) :
          | .reply r => r.replyId.toObjId == entry.id | _ => true) = true)) := by
   cases entry.obj <;> simp [KernelObject.embeddedIdentityMatches]
 
-/-- **`v0.35.187`: the boot check and the retype guard ask ONE question.**
+/-- **`v0.35.187`: the boot check and the carve ask ONE question.**
 
 `KernelObject.embeddedIdentityMatches` is that question — *is this object's own
-embedded identity the key it is stored at* — and it is what
-`retypeReplacementAdmissible` reads at the runtime.  This theorem says the
+embedded identity the key it is stored at* — and it is what the carve
+establishes at the runtime (`CarveRequest.object_embeddedIdentityMatches`).
+This theorem says the
 boot's three-way conjunction above is the same predicate, applied per entry.
 
 Stated rather than substituted into the definitions: the three per-kind checks
@@ -3560,10 +3561,10 @@ theorem installIdleThread_objects_ne (ist : IntermediateState)
        uses `ObjId.sentinel` for `cspaceRoot` / `vspaceRoot` (idle runs in
        kernel context with no user caps — seL4 idle-thread semantics), so the
        idle TCB fails `KernelObject.wellFormed` (which requires both roots to
-       resolve).  That predicate is a **retype-time precondition**
-       (`Lifecycle/Operations/RetypeWrappers.lean`), **not** a global
-       invariant, and idle TCBs are builder-installed — never retyped — so
-       there is **no current contract violation** and no system invariant is
+       resolve).  That predicate is **not** a global invariant — the
+       in-place retype that checked it before installing an object is retired
+       (WS-ZA ZA5.4 part 14), and idle TCBs are builder-installed — so there
+       is **no current contract violation** and no system invariant is
        broken.  SM5, when wiring idle through any `wellFormed`-checked path,
        either installs valid idle roots or formalises an explicit idle-thread
        exemption in `KernelObject.wellFormed`. -/

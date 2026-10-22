@@ -79,26 +79,19 @@ because the defect lived in dispatch and only dispatch can witness it.
   `unmapPage`), with the retired non-finalising delete computed beside it; a
   record gone stale removes nothing — a different frame mapped since at the
   same address survives — and does not block a fresh map; a CNode holding a
-  recording capability is not retyped in place; and the boot refuses a
+  recording capability is refused by the destroy cleanup; and the boot refuses a
   configured record.  §5e's revocation witness inverts in the same cut: the
   revocation now removes the mapping the reset used to be the first to remove.
 * §5g — **WS-BP BP7.1 slice 4 (`v0.36.8`): an untyped carves child untypeds,
   and a reset returns the whole subtree.**  `.untypedRetype` at the untyped tag
   carves a child untyped of `2^sizeBits` bytes at the parent capability's free index, with
   its parent stamped and its memory left unwritten; the child carves a frame,
-  zeroed, which maps.  The in-place retype refuses to destroy the child.  After
+  zeroed, which maps.  A second carve at the child's id is refused.  After
   one revocation of the parent capability — which destroys the child's
   capability and the grandchild frame's with it — the parent's reset retires
   the child and the frame together and unmaps the page, where the retired
   frames-only reset (computed beside it) would refuse that state forever.
   Every size the decode refuses is exercised.
-* §5h — **`v0.36.9`: a VSpace root is never created in place.**  The in-place
-  retype built a root at ASID `0` — the boot VSpace root's — and nothing checked
-  the ASID was free, so the ASID table's entry moved to the caller's root while
-  the owner's was still stored.  The retired guard is computed beside the live
-  one on a state holding an ASID-`0` root; the live `.lifecycleRetype` refuses
-  the kind (`KernelObjectType.memoryBacked`), and the same retype into an
-  endpoint is the control.
 * §5i — **WS-BP BP7.1 slice 4b (`v0.36.10`): an address space is carved
   memory.**  `.untypedRetype` at the VSpace-root tag carves a root on a zeroed
   page of its untyped, under the least free ASID — never `0`, never one another
@@ -142,6 +135,21 @@ open SeLe4n.Kernel.Architecture
 #check @SeLe4n.Kernel.untypedRetypeObject_ok_decompose
 #check @SeLe4n.Kernel.untypedRetypeObject_ok_frame
 #check @SeLe4n.Kernel.untypedRetypeObject_ok_untyped
+-- WS-ZA ZA5.4 part 14: every kind is carved, and the carve asks authority first.
+#check @SeLe4n.Kernel.CarveRequest.object_objectType
+#check @SeLe4n.Kernel.CarveRequest.object_embeddedIdentityMatches
+#check @SeLe4n.Kernel.CarveRequest.capability_eq
+#check @SeLe4n.Kernel.untypedRetypeObject_ok_writes
+#check @SeLe4n.Kernel.untypedRetypeObject_unauthorized
+#check @SeLe4n.Kernel.untypedRetypeObject_ok_carved
+#check @SeLe4n.Kernel.untypedRetypeObject_ok_kernelCapability
+#check @SeLe4n.Kernel.untypedRetypeObject_ok_tcb_notQueued
+#check @SeLe4n.Kernel.untypedRetypeObject_ok_notification
+#check @SeLe4n.Kernel.untypedRetypeObject_ok_reply
+#check @SeLe4n.Kernel.untypedRetypeObject_ok_schedContext
+#check @SeLe4n.Kernel.retypeFromUntyped_ok_aligned
+#check @SeLe4n.Kernel.retypeFromUntyped_ok_sizeAligned
+#check @SeLe4n.Kernel.objectIdInAddressSpace_extent
 #check @SeLe4n.Kernel.untypedNextFrame_of_retype_ok
 #check @SeLe4n.Kernel.untypedNextChild_of_retype_ok
 #check @SeLe4n.Kernel.untypedRetypeFromCap_ok
@@ -720,9 +728,14 @@ private def runCarveChecks : IO Unit := do
     (isErr .illegalAuthority
       (dispatchSyscallAsCurrent (decodeCarve slotUtNoRetype frameTag 953 slotOwnCnRW slotCarved)
         carveOwner Concurrency.bootCoreId st))
-  assertBool "a non-frame type is refused (invalidArgument) — kernel objects are the in-place retype's"
-    (isErr .invalidArgument
-      (dispatchSyscallAsCurrent (decodeCarve slotUtRetype 1 953 slotOwnCnRW slotCarved) carveOwner Concurrency.bootCoreId st))
+  -- Every kind is carved: the endpoint tag the frames-only carve refused is now
+  -- the endpoint carve (WS-ZA ZA5.4 part 14).
+  match dispatchSyscallAsCurrent (decodeCarve slotUtRetype 1 953 slotOwnCnRW slotCarved)
+      carveOwner Concurrency.bootCoreId st with
+  | .error e => assertBool s!"a kernel-object tag is carved too (got {repr e})" false
+  | .ok ((), stE) =>
+    assertBool "a kernel-object tag is carved too: an endpoint at the child id"
+      (stE.getObjectType? (SeLe4n.ObjId.ofNat 953) == some .endpoint)
   assertBool "an unknown type tag is refused (invalidTypeTag)"
     (isErr .invalidTypeTag
       (dispatchSyscallAsCurrent (decodeCarve slotUtRetype 10 953 slotOwnCnRW slotCarved) carveOwner Concurrency.bootCoreId st))
@@ -953,15 +966,6 @@ it would refuse forever. -/
 private def retiredFramesOnlyRetirable (st : SystemState) (ut : UntypedObject) : Bool :=
   ut.children.all fun c => (st.getFrame? c.objId).isSome
 
-/-- `.lifecycleRetype` of `target` into an endpoint, invoked on the capability at
-`capSlot`. -/
-private def decodeInPlaceRetype (capSlot target : Nat) : SyscallDecodeResult :=
-  { capAddr   := SeLe4n.CPtr.ofNat capSlot
-  , msgInfo   := { length := 3, extraCaps := 0, label := 0 }
-  , syscallId := .lifecycleRetype
-  , msgRegs   := #[SeLe4n.RegValue.ofNat target, SeLe4n.RegValue.ofNat 1,
-                   SeLe4n.RegValue.ofNat 64] }
-
 private def runChildUntypedChecks : IO Unit := do
   IO.println "-- §5g `.untypedRetype` carves child untypeds, and a reset returns the subtree (WS-BP BP7.1)"
   let st := carveScenario
@@ -999,8 +1003,9 @@ private def runChildUntypedChecks : IO Unit := do
     assertBool "the destination holds a read/write/retype capability to the child"
       (SystemState.lookupSlotCap st1 { cnode := carveCn, slot := SeLe4n.Slot.ofNat 12 }
         == some (untypedCapability (SeLe4n.ObjId.ofNat 970)))
-    assertBool "the in-place retype refuses to destroy the carved untyped (revocationRequired)"
-      (isErr .revocationRequired (dispatchSyscallAsCurrent (decodeInPlaceRetype 12 970) carveOwner Concurrency.bootCoreId st1))
+    assertBool "a second carve at the child's id is refused (childIdCollision): nothing overwrites it"
+      (isErr .childIdCollision (dispatchSyscallAsCurrent
+        (decodeCarve slotUtRetype frameTag 970 slotOwnCnRW 13) carveOwner Concurrency.bootCoreId st1))
     match runAll st1
         [decodeCarve 12 frameTag 971 slotOwnCnRW 13,
          decodeOwnMap 0x60000 13 permsRWUC] with
@@ -1109,118 +1114,6 @@ private def retiredRecordLive (st : SystemState) (slot : Nat) : Bool :=
     | some p => mappedPageLive st { p with epoch := none }
     | none => false
   | none => false
-
--- ============================================================================
--- §5h  `v0.36.9` — a VSpace root is never created in place
--- ============================================================================
-
-/-- A root at ASID `0`, the ASID the boot VSpace root holds, stored at `950`. -/
-private def asidZeroRootId : SeLe4n.ObjId := ⟨950⟩
-
-/-- §5g's scenario with an ASID-`0` root registered in the ASID table, as the
-boot's own root is, and the lifecycle metadata the retype's first check reads
-recorded for the target root (the builder records none), so a refusal below is
-the kind's and not a metadata mismatch. -/
-private def asidZeroScenario : SystemState :=
-  let base := { carveScenario with
-    lifecycle := { carveScenario.lifecycle with
-      objectTypes := carveScenario.lifecycle.objectTypes.insert carveVsp .vspaceRoot } }
-  match storeObject asidZeroRootId
-      (.vspaceRoot { asid := SeLe4n.ASID.ofNat 0, mappings := {} }) base with
-  | .ok ((), st) => st
-  | .error _ => base
-
-/-- A kernel object that is not memory: the control target for the in-place
-retype, so a refusal of the VSpace root is shown to be about the root and not
-about the authority or the arm. -/
-private def plainTargetId : SeLe4n.ObjId := ⟨947⟩
-
-/-- The owner's CSpace slot holding a `.retype`-bearing capability to
-`plainTargetId` (unused by every other section). -/
-private def slotPlainRetype : Nat := 10
-
-/-- `asidZeroScenario` with an endpoint stored at `plainTargetId` and a
-`.retype`-bearing capability to it at `slotPlainRetype`. -/
-private def inPlaceControlScenario : SystemState :=
-  let st := asidZeroScenario
-  match storeObject plainTargetId (.endpoint {}) st with
-  | .error _ => st
-  | .ok ((), st1) =>
-    match st1.getCNode? carveCn with
-    | none => st1
-    | some cn =>
-      match storeObject carveCn (.cnode (cn.insert (SeLe4n.Slot.ofNat slotPlainRetype)
-          (frameCapTo plainTargetId [.read, .retype]))) st1 with
-      | .ok ((), st2) => st2
-      | .error _ => st1
-
-/-- `.lifecycleRetype` of `target` into the kind at `tag`, invoked on the
-capability at `capSlot`. -/
-private def decodeInPlaceRetypeTo (capSlot target tag : Nat) : SyscallDecodeResult :=
-  { capAddr   := SeLe4n.CPtr.ofNat capSlot
-  , msgInfo   := { length := 3, extraCaps := 0, label := 0 }
-  , syscallId := .lifecycleRetype
-  , msgRegs   := #[SeLe4n.RegValue.ofNat target, SeLe4n.RegValue.ofNat tag,
-                   SeLe4n.RegValue.ofNat 64] }
-
-/-- The RETIRED admissibility guard (`v0.36.4`–`v0.36.8`): well-formed, the
-slot's identity, and not an untyped or a frame — a VSpace root passed it.
-Spelled here and nowhere else, so the witness can show what it admitted. -/
-private def retiredAdmissible (newObj : KernelObject) (target : SeLe4n.ObjId)
-    (st : SystemState) : Bool :=
-  decide (newObj.wellFormed st.objects) && newObj.embeddedIdentityMatches target &&
-    !(newObj.objectType == .untyped || newObj.objectType == .frame)
-
-private def runInPlaceVSpaceRootChecks : IO Unit := do
-  IO.println "-- §5h a VSpace root is never created or destroyed in place (v0.36.9, v0.36.35)"
-  let st := asidZeroScenario
-  let zero := SeLe4n.ASID.ofNat 0
-  assertBool "setup: ASID 0 is registered to the ASID-0 root"
-    (st.asidTable[zero]? == some asidZeroRootId)
-  let replacement := objectOfKernelType .vspaceRoot 64
-  assertBool "the replacement a retype to a VSpace root builds carries ASID 0"
-    (match replacement with | .vspaceRoot r => r.asid == zero | _ => false)
-  -- The retired guard admitted it, and the store it guarded took ASID 0.
-  assertBool "RETIRED: the pre-v0.36.9 guard admits the replacement"
-    (retiredAdmissible replacement carveVsp st)
-  match storeObject carveVsp replacement st with
-  | .error _ => assertBool "RETIRED: the store succeeds" false
-  | .ok ((), stBad) =>
-    assertBool "RETIRED: ASID 0 now resolves to the caller's root, and the ASID-0 root is still stored"
-      (stBad.asidTable[zero]? == some carveVsp &&
-        (stBad.getVSpaceRoot? asidZeroRootId).isSome)
-  -- The live arm refuses it, and changes nothing.
-  assertBool "the live guard refuses a VSpace-root replacement"
-    (!decide (retypeReplacementAdmissible replacement carveVsp st.objects))
-  match dispatchSyscallAsCurrent (decodeInPlaceRetypeTo slotVspRetype carveVsp.toNat 4) carveOwner Concurrency.bootCoreId st with
-  | .ok _ => assertBool "the live `.lifecycleRetype` into a VSpace root is refused" false
-  | .error e =>
-    assertBool "the live `.lifecycleRetype` into a VSpace root is refused (illegalState)"
-      (e == .illegalState)
-  -- `v0.36.35`: nor is one DESTROYED in place.  The same capability, the same
-  -- target, retyped into an endpoint, is refused by the pre-retype cleanup
-  -- (`revocationRequired`): a root's mappings, its registered ASID and every
-  -- thread running in it are released by a reset of the untyped it was carved
-  -- from, never by overwriting the object.  Until `v0.36.35` this succeeded —
-  -- the owner kept `vspaceRoot := carveVsp` naming an endpoint, and the ASID
-  -- entry named it too.
-  assertBool "setup: the owner runs in the root the retype targets"
-    (match st.getTcb? carveOwner with | some t => t.vspaceRoot == carveVsp | none => false)
-  match dispatchSyscallAsCurrent (decodeInPlaceRetypeTo slotVspRetype carveVsp.toNat 1) carveOwner Concurrency.bootCoreId st with
-  | .ok _ => assertBool "a VSpace root is not destroyed in place (retype into an endpoint)" false
-  | .error e =>
-    assertBool s!"a VSpace root is not destroyed in place (revocationRequired, got {repr e})"
-      (e == .revocationRequired)
-  -- CONTROL: the same arm, the same kind of capability, a target that is not
-  -- memory — the retype succeeds, so the refusal above is about the root.
-  let stC := inPlaceControlScenario
-  assertBool "setup: the control target is an endpoint"
-    ((stC.getEndpoint? plainTargetId).isSome)
-  match dispatchSyscallAsCurrent (decodeInPlaceRetypeTo slotPlainRetype plainTargetId.toNat 2) carveOwner Concurrency.bootCoreId stC with
-  | .error e => assertBool s!"CONTROL: an endpoint retyped into a notification succeeds (got {repr e})" false
-  | .ok ((), stOk) =>
-    assertBool "CONTROL: an endpoint retyped into a notification succeeds, and ASID 0 stays the ASID-0 root's"
-      ((stOk.getNotification? plainTargetId).isSome && stOk.asidTable[zero]? == some asidZeroRootId)
 
 -- ============================================================================
 -- §5i  WS-BP BP7.1 slice 4b (`v0.36.10`) — an address space is carved memory
@@ -1453,9 +1346,9 @@ private def runFrameFinaliseChecks : IO Unit := do
       | .error .revocationRequired => false
       | .error _ => false
       | .ok _ => true
-  assertBool "a CNode holding a capability that records a mapping is not retyped in place"
+  assertBool "the destroy cleanup refuses a CNode holding a capability that records a mapping"
     (!retypeLone recCap)
-  assertBool "CONTROL: the same CNode with the record stripped is retyped"
+  assertBool "CONTROL: the same CNode with the record stripped is cleaned"
     (retypeLone recCap.withoutMapping)
   -- The boot admits no configured record: every mapping is one a capability made.
   assertBool "the boot refuses a configured capability that records a mapping"
@@ -1750,8 +1643,6 @@ private def runPageTableChecks : IO Unit := do
   assertBool "a device untyped cannot back a page table (untypedDeviceRestriction)"
     (isErr .untypedDeviceRestriction (dispatchSyscallAsCurrent
       (decodeCarve slotDevUt pageTableTag 983 slotOwnCnRW 15) carveOwner Concurrency.bootCoreId st))
-  assertBool "a page table is never created in place (the in-place retype refuses it)"
-    ((dispatchSyscallAsCurrent (decodeInPlaceRetypeTo slotVspRetype 983 pageTableTag) carveOwner Concurrency.bootCoreId st).toOption.isNone)
   match runAll st
       [decodeCarve slotUtRetype vspaceRootTag 980 slotOwnCnRW 12,
        decodeCarve slotUtRetype frameTag 982 slotOwnCnRW 14,
@@ -1866,7 +1757,7 @@ private def runPageTableChecks : IO Unit := do
              | .ok ((), r) => slotsOf r 980 == some [(1, 984)] &&
                  (installOf r 984).map (·.level) == some 1
              | .error _ => false)
-          assertBool "a CNode holding an installed table's capability is not retyped in place"
+          assertBool "a CNode holding an installed table's capability is one the destroy cleanup refuses"
             (match st3.objects[carveCn]? with
              | some (.cnode cn) => Architecture.cnodeHoldsInstalledPageTableCap st3 cn
              | _ => false)
@@ -2091,7 +1982,6 @@ def runVSpaceCapabilityBindingChecks : IO Unit := do
   runUntypedCopyChecks
   runResetChecks
   runChildUntypedChecks
-  runInPlaceVSpaceRootChecks
   runCarvedRootChecks
   runSetSpaceChecks
   runPageTableChecks

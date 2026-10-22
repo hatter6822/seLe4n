@@ -702,8 +702,8 @@ def replyStash_validated_against_preBlock_state : IO Unit := do
 
 /-- WS-SM SM6.D (PR #822 review, Phase H): `mintReplyCap` is the production path that
 derives `.replyCap` authority from an `.object` cap targeting a retyped Reply object.
-The in-place retype (`lifecycleRetypeDirectWithCleanup`) keeps the holder's `.object target` cap, so
-without this a retyped Reply is unusable by the receive-with-reply ABI.  This test mints
+The carve hands back an `.object target` cap to a Reply, so without this a
+carved Reply is unusable by the receive-with-reply ABI.  This test mints
 a reply cap from an object-to-Reply cap and confirms it targets the Reply
 (`.replyCap (ReplyId.ofObjId target)`) and resolves (`getReply?`), and that minting from
 an object cap whose target is NOT a Reply fails closed. -/
@@ -888,9 +888,9 @@ def replyCapPointsToValidReply_distinguishes_backed_and_dangling : IO Unit := do
   expect "dangling reply cap is unbacked (getReply? isNone)" ((st.getReply? danglingRid).isNone)
 
 /-- WS-SM SM6.D (PR #822 review, Phase H #2.d): end-to-end provisioning chain for a reply
-capability — **retype** Untyped → Reply, **`mintReplyCap`** to derive the `.replyCap`, then **link**
-a blocked caller through the production `linkCallerReply`.  This drives the full production path #2
-established: a Reply object is provisioned by an in-place retype (the holder keeps an `.object` cap),
+capability — **carve** a Reply from an untyped, **`mintReplyCap`** to derive the `.replyCap`, then
+**link** a blocked caller through the production `linkCallerReply`.  This drives the full production
+path: a Reply object is provisioned by a carve (which hands back an `.object` cap),
 `mintReplyCap` converts that authority into the reply ABI's `.replyCap rid` (rid derived from the
 object id), and the resulting cap is a functional handle whose reply resolves (`getReply?`) and
 accepts a caller link.  (The receive-path auto-linking on `.recv`/`.replyRecv` is the gated re-wire;
@@ -903,37 +903,35 @@ capability, the `.object`-target check and the two-register ABI are all invisibl
 half lives in `sd058_mintReplyCapThroughTheSyscallGate` (`tests/SyscallDispatchSuite.lean`),
 which drives `.mintReplyCap` through `dispatchSyscall`; the two together are the end-to-end
 claim, and neither is it alone. -/
-def reply_cap_end_to_end_retype_mint_link : IO Unit := do
+def reply_cap_end_to_end_carve_mint_link : IO Unit := do
   let target : SeLe4n.ObjId := ⟨400⟩
   let rid : SeLe4n.ReplyId := SeLe4n.ReplyId.ofObjId target
   let caller : SeLe4n.ThreadId := ⟨401⟩
+  let utId : SeLe4n.ObjId := ⟨402⟩
   let cnId : SeLe4n.ObjId := ⟨100⟩
-  -- Slot 0 holds an `.object target` cap with retype authority — it is both the retype-authority
-  -- cap and the `mintReplyCap` source.
-  let authCap : Capability :=
-    { target := .object target,
+  -- Slot 2 holds a `.retype` capability to an untyped; the carve installs the
+  -- Reply's capability in slot 0, which is then the `mintReplyCap` source.
+  let utCap : Capability :=
+    { target := .object utId,
       rights := AccessRightSet.ofList [.read, .write, .retype] }
   let mkCn : KernelObject := .cnode
-    (SeLe4n.Model.CNode.ofSlots 8 0 0 8 (SeLe4n.UniqueSlotMap.ofListWF [ ((SeLe4n.Slot.ofNat 0), authCap) ]))
+    (SeLe4n.Model.CNode.ofSlots 8 0 0 8 (SeLe4n.UniqueSlotMap.ofListWF [ ((SeLe4n.Slot.ofNat 2), utCap) ]))
   let callerTcb : TCB :=
     { tid := caller, priority := ⟨0⟩, domain := ⟨0⟩, spaceCells := SeLe4n.Model.TCB.spaceCellsOf ⟨0⟩ ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0 }
   let st0 : SystemState :=
     (SeLe4n.Testing.BootstrapBuilder.empty
-      |>.withObject target (SeLe4n.Kernel.objectOfKernelType .untyped 0)
-      |>.withLifecycleObjectType target .untyped
+      |>.withObject utId (.untyped
+          { regionBase := SeLe4n.PAddr.ofNat 0x100000, regionSize := 0x1000 })
       |>.withObject caller.toObjId (.tcb callerTcb)
       |>.withObject cnId mkCn
       |>.build)
-  -- 1. Retype the Untyped in place to a fresh Reply object.
-  -- The in-place retype asks authority first; the cap names the target with `.retype`, so the
-  -- commit step below is the one the wrapper reaches.  (The wrapper itself refuses an Untyped
-  -- target with `.revocationRequired`, so the chain drives its commit step directly.)
-  expect "the slot-0 cap authorizes the in-place retype"
-    (SeLe4n.Kernel.lifecycleRetypeAuthority authCap target)
-  match SeLe4n.Kernel.lifecycleRetypeDirectCommit target (SeLe4n.Kernel.objectOfKernelType .reply 0) st0 with
-  | .error _ => throw <| IO.userError "retype Untyped → Reply should succeed"
+  -- 1. Carve a Reply from the untyped (WS-ZA ZA5.4 part 14: every object is carved).
+  let utSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := cnId, slot := SeLe4n.Slot.ofNat 2 }
+  let replySlot : SeLe4n.Kernel.CSpaceAddr := { cnode := cnId, slot := SeLe4n.Slot.ofNat 0 }
+  match SeLe4n.Kernel.untypedRetypeObject utSlot target replySlot .reply st0 with
+  | .error e => throw <| IO.userError s!"the carve of a Reply should succeed: {repr e}"
   | .ok ((), st1) =>
-      expect "after retype, the Reply resolves via getReply?" ((st1.getReply? rid).isSome)
+      expect "after the carve, the Reply resolves via getReply?" ((st1.getReply? rid).isSome)
       -- 2. Mint a reply cap from the object cap at slot 0 into slot 1.
       let src : SeLe4n.Kernel.CSpaceAddr := { cnode := cnId, slot := SeLe4n.Slot.ofNat 0 }
       let dst : SeLe4n.Kernel.CSpaceAddr := { cnode := cnId, slot := SeLe4n.Slot.ofNat 1 }
@@ -2046,31 +2044,22 @@ def an6c3_untypedAncestorChain_walks_synthetic_chain : IO Unit := do
   expect "bound: length-2 chain with fuel 2 has length ≤ 2"
     (chainFrom2.length ≤ 2)
 
-/-- AN6 post-audit (AK8-A): `objectOfKernelType .untyped sizeHint`
-    hardcodes `regionBase = PAddr.ofNat 0`. The substantive theorem
-    replaces the prior `True := trivial` marker and structurally
-    witnesses the retype-to-untyped scope gap.
-
-    The theorem is a `Prop`-level existential so we can't destructure
-    it at the `IO` value level; instead we reference the theorem as a
-    typed `@` identifier (catches renaming/deletion) and runtime-check
-    the structural fact directly on the computed object. -/
-def an6_postaudit_ak8a_objectOfKernelType_untyped_zero_regionBase : IO Unit := do
-  -- Resolve the theorem under its exact type (catches signature drift).
-  let _ := @SeLe4n.Kernel.Architecture.objectOfKernelType_untyped_hardcodes_zero_regionBase
-  let _ := @SeLe4n.Kernel.Architecture.retypeFromUntyped_via_objectOfKernelType_untyped_child_has_zero_regionBase
-  let _ := @SeLe4n.Kernel.Architecture.retypeFromUntyped_untypedRegionsDisjoint_retype_to_untyped_documented
-  -- Structural runtime witness: compute `objectOfKernelType .untyped n`
-  -- for a few n and confirm the result is `.untyped` with `regionBase = 0`.
-  -- The theorem's proposition is provable by reflexivity; the runtime
-  -- check below validates the underlying computational content.
-  for sz in [0, 4, 4096, 1048576] do
-    match SeLe4n.Kernel.objectOfKernelType .untyped sz with
+/-- WS-ZA ZA5.4 part 14 (replaces AN6 post-audit AK8-A's zero-`regionBase`
+witness): a child untyped is made only by a carve, and the carve places it at
+its parent's region base plus the invoking capability's free index — never at
+address 0, which the in-place retype's `.untyped` arm hard-coded.  The disjointness
+the carve preserves for every other kind is
+`retypeFromUntyped_carve_preserves_untypedRegionsDisjoint`. -/
+def carved_child_untyped_region_at_parent_free_index : IO Unit := do
+  let _ := @SeLe4n.Kernel.Architecture.retypeFromUntyped_carve_preserves_untypedRegionsDisjoint
+  let parent : UntypedObject := { regionBase := SeLe4n.PAddr.ofNat 0x100000, regionSize := 0x10000 }
+  for idx in [0, 0x1000, 0x8000] do
+    match (SeLe4n.Kernel.CarveRequest.untyped 12).object ⟨500⟩ ⟨501⟩ parent idx with
     | SeLe4n.Model.KernelObject.untyped ut =>
-        expect s!"AK8-A: objectOfKernelType .untyped {sz} has regionBase = 0"
-          (ut.regionBase == SeLe4n.PAddr.ofNat 0)
+        expect s!"a carved child untyped at free index {idx} starts at the parent's base plus it"
+          (ut.regionBase == SeLe4n.PAddr.ofNat (0x100000 + idx) && ut.regionSize == 4096)
     | _ =>
-        expect s!"AK8-A: objectOfKernelType .untyped {sz} is .untyped variant" false
+        expect s!"a carved child untyped at free index {idx} is an untyped" false
 
 /-- AN6-C.4 (H-09): Default state satisfies the transitive
     ancestor-disjointness predicate vacuously.
@@ -2211,7 +2200,7 @@ def main : IO Unit := do
   direct_reply_consumes_caller_link_single_use
   call_without_reply_object_fails_closed_no_unanswerable_block
   replyCapPointsToValidReply_distinguishes_backed_and_dangling
-  reply_cap_end_to_end_retype_mint_link
+  reply_cap_end_to_end_carve_mint_link
   -- `lifecycle_reply_cap_metadata_backed` retired at v0.35.78 with the
   -- capability-reference reader it exhibited (`lookupCapabilityRefMeta` was
   -- `lookupSlotCap`'s target projection); the surviving content — a reply cap
@@ -2279,7 +2268,7 @@ def main : IO Unit := do
   an6c3_untypedAncestorChain_walks_synthetic_chain
   an6c4_untypedAncestorRegionsDisjoint_default
   -- AN6 post-audit: AK8-A `True := trivial` → substantive theorems
-  an6_postaudit_ak8a_objectOfKernelType_untyped_zero_regionBase
+  carved_child_untyped_region_at_parent_free_index
   -- AN6-F (CX-M01/M03/M04/M05): CrossSubsystem MEDIUM batch
   an6f_cxm01_collectQueueMembers_structural_signatures
   bootFromPlatform_smp_witness_reachable

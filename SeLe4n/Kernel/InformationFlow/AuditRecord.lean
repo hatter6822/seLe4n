@@ -363,8 +363,8 @@ attribution.
 The plan lists this as a stored `sourceSubject : ObjId` field.  It is a derived
 accessor instead, because SM9.C.1 had already landed `actor.subject` — the same
 identity, better typed — and storing it twice is the drift the project's
-single-source discipline exists to prevent (the `retypeIcacheOp` /
-`scrubObjectMemory` extent, v0.32.101).  The name the plan and the detector use
+single-source discipline exists to prevent (a cache operand and the scrub
+it cleaned once computed one extent twice, v0.32.101).  The name the plan and the detector use
 is kept; what it reads is the one field that holds the identity
 (`declassificationEvent_sourceSubject_is_actor`). -/
 abbrev DeclassificationEvent.sourceSubject (e : DeclassificationEvent) : SeLe4n.ObjId :=

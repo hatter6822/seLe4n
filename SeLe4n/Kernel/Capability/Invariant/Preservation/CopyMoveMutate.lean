@@ -23,7 +23,6 @@ All declarations retain their original names, order, and proofs.
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model
-open Internal
 
 -- ============================================================================
 -- WS-E4/C-02: Preservation theorems for new capability operations

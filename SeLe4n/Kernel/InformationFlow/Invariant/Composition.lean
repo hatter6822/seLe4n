@@ -13,9 +13,6 @@ namespace SeLe4n.Kernel
 
 open SeLe4n.Model
 open SeLe4n.Kernel.Concurrency (bootCoreId)
--- AN4-A allowlist: proof-chain reference to `lifecycleRetypeObject` from
--- `SeLe4n.Kernel.Internal`. Enforced by `scripts/test_tier0_hygiene.sh`.
-open Internal
 
 /-! ## H-05 — Composed Bundle Non-Interference
 
@@ -84,16 +81,15 @@ inductive NonInterferenceStep
       (hAddrHigh : objectObservable ctx observer addr.cnode = false)
       (hStep : cspaceRevoke addr st = .ok ((), st'))
     : NonInterferenceStep ctx observer st st'
-  | lifecycleRetype
-      (authority : CSpaceAddr) (target : SeLe4n.ObjId) (newObj : KernelObject)
-      (hTargetHigh : objectObservable ctx observer target = false)
-      (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st'))
-    : NonInterferenceStep ctx observer st st'
-  | lifecycleRevokeDeleteRetype
-      (authority cleanup : CSpaceAddr) (target : SeLe4n.ObjId) (newObj : KernelObject)
-      (hCleanupHigh : objectObservable ctx observer cleanup.cnode = false)
-      (hTargetHigh : objectObservable ctx observer target = false)
-      (hStep : lifecycleRevokeDeleteRetype authority cleanup target newObj st = .ok ((), st'))
+  /-- WS-ZA ZA5.4 part 14: the carve — every kernel object is made this way —
+  at a non-observable untyped, child and authority CNode. -/
+  | retypeFromUntyped
+      (authority : CSpaceAddr) (untypedId childId : SeLe4n.ObjId)
+      (newObj : KernelObject) (allocSize : Nat)
+      (hUntypedHigh : objectObservable ctx observer untypedId = false)
+      (hChildHigh : objectObservable ctx observer childId = false)
+      (hAuthorityHigh : objectObservable ctx observer authority.cnode = false)
+      (hStep : retypeFromUntyped authority untypedId childId newObj allocSize st = .ok ((), st'))
     : NonInterferenceStep ctx observer st st'
   | notificationSignal
       (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
@@ -412,13 +408,16 @@ theorem step_preserves_projection
           (cspaceInsertSlot_preserves_services st st' dst c hInsert)
   | cspaceRevoke addr hAddrH hOp =>
     exact cspaceRevoke_preserves_projection ctx observer addr st st' hAddrH hObjInv hOp
-  | lifecycleRetype authority target newObj hTH hOp =>
-    rcases lifecycleRetypeObject_ok_as_storeObject st st' authority target newObj hOp with
-      ⟨_, _, _, _, _, _, hStore⟩
-    exact storeObject_preserves_projection ctx observer st st' target newObj hTH hObjInv hStore
-  | lifecycleRevokeDeleteRetype authority cleanup target newObj hCH hTH hOp =>
-    exact lifecycleRevokeDeleteRetype_preserves_projection ctx observer authority cleanup target
-      newObj st st' hCH hTH hObjInv hOp
+  | retypeFromUntyped authority untypedId childId newObj allocSize hUH hCH hAH hOp =>
+    obtain ⟨_, _, _, stUt, _, stCh, _, _, _, _, _, _, _, _, _, _, _, hStoreUt,
+      hStoreChild, _, hStoreIdx⟩ :=
+      retypeFromUntyped_ok_stores st st' authority untypedId childId newObj allocSize hObjInv hOp
+    have hI1 := storeObject_preserves_objects_invExt st stUt untypedId _ hObjInv hStoreUt
+    have hI2 := storeObject_preserves_objects_invExt _ _ _ _ hI1 hStoreChild
+    exact (storeObject_preserves_projection ctx observer stCh st' authority.cnode _ hAH hI2
+      hStoreIdx).trans ((storeObject_preserves_projection ctx observer stUt stCh childId newObj
+        hCH hI1 hStoreChild).trans (storeObject_preserves_projection ctx observer st stUt
+          untypedId _ hUH hObjInv hStoreUt))
   | notificationSignal ntfnId badge hNH hCo hWD hSH hOp =>
     exact notificationSignal_projection_preserved ctx observer ntfnId badge st st'
       hNH hCo hWD hSH hObjInv hOp
@@ -1464,10 +1463,10 @@ theorem errorAction_preserves_lowEquiv
 /-- WS-K-F6: NI coverage verification — all syscall dispatch paths introduced
 in WS-K are covered by existing `NonInterferenceStep` constructors.
 
-The 35 constructors cover every operation reachable from `dispatchWithCap`
+The 34 constructors cover every operation reachable from `dispatchWithCap`
 plus interrupt handling:
 - CSpace: `.cspaceMint`, `.cspaceCopy`, `.cspaceMove`, `.cspaceDeleteSlot`
-- Lifecycle: `.lifecycleRetype`, `.lifecycleRevokeDeleteRetype`
+- Lifecycle: `.retypeFromUntyped` (the carve)
 - VSpace: `.vspaceMapPage`, `.vspaceUnmapPage`
 - Service: `.registerServiceChecked` (R5-B/M-02)
 - IPC: `.endpointSendDual`, `.endpointCallHigh`, `.endpointReply`,
@@ -1488,7 +1487,7 @@ The `syscallEntry`-level bridge theorems are in `API.lean`:
 This theorem witnesses (1) that the decode-error constructor is always available
 (state identity), (2) that every `NonInterferenceStep` composes into a single-step
 `NonInterferenceTrace`, and (3) that `step_preserves_projection` handles every
-constructor (checked by the Lean exhaustiveness checker on the 35-arm match). -/
+constructor (checked by the Lean exhaustiveness checker on the 34-arm match). -/
 theorem syscallNI_coverage_witness
     (ctx : LabelingContext) (observer : IfObserver)
     (st : SystemState)
@@ -1500,7 +1499,7 @@ theorem syscallNI_coverage_witness
     -- Every NI step composes into a single-step trace
     (∀ st' (_hStep : NonInterferenceStep ctx observer st st'),
       NonInterferenceTrace ctx observer st st') ∧
-    -- step_preserves_projection is total (exhaustive match on all 35 constructors)
+    -- step_preserves_projection is total (exhaustive match on all 34 constructors)
     (∀ st' (_ : NonInterferenceStep ctx observer st st'),
       projectState ctx observer st' = projectState ctx observer st) :=
   ⟨.syscallDecodeError rfl,
@@ -1546,8 +1545,7 @@ inductive KernelOperation where
   | endpointSendDual
   | cspaceMint
   | cspaceRevoke
-  | lifecycleRetype
-  | lifecycleRevokeDeleteRetype
+  | retypeFromUntyped
   | notificationSignal
   | notificationWait
   | cspaceInsertSlot
@@ -1596,7 +1594,7 @@ inductive KernelOperation where
     `perCoreConfinementDerived`'s arms, never the counts. -/
 def KernelOperation.all : List KernelOperation :=
   [.chooseThread, .endpointSendDual, .cspaceMint,
-   .cspaceRevoke, .lifecycleRetype, .lifecycleRevokeDeleteRetype,
+   .cspaceRevoke, .retypeFromUntyped,
    .notificationSignal, .notificationWait, .cspaceInsertSlot,
    .schedule, .vspaceMapPage, .vspaceUnmapPage, .vspaceLookup,
    .cspaceCopy, .cspaceMove, .cspaceDeleteSlot,
@@ -1631,7 +1629,7 @@ theorem KernelOperation.all_nodup : KernelOperation.all.Nodup := by decide
     `KernelOperation.mem_all` it *is* the assertion its predecessor's docstring
     claimed to be: a new variant either fails `mem_all` (if the enumeration was
     not extended) or moves this count (if it was). -/
-theorem kernelOperation_count : KernelOperation.all.length = 35 := by rfl
+theorem kernelOperation_count : KernelOperation.all.length = 34 := by rfl
 
 -- ============================================================================
 -- U4-F / U-H10: NI step coverage theorem
@@ -1661,18 +1659,18 @@ theorem kernelOperation_count : KernelOperation.all.length = 35 := by rfl
     unchanged = trivially NI-preserving) — this is a statement about
     CONSTRUCTOR EXISTENCE for every `KernelOperation`, not about any
     specific op's semantics. See `step_preserves_projection` for the
-    operational correspondence that covers all 35 constructors. -/
+    operational correspondence that covers all 34 constructors. -/
 theorem niStepConstructorCoverage
     (ctx : LabelingContext) (observer : IfObserver)
     (st : SystemState) :
     ∀ (_op : KernelOperation),
     ∃ (st' : SystemState), NonInterferenceStep ctx observer st st' := by
   intro
-    -- Exhaustive match on all 35 variants — each witnesses a valid NI step
+    -- Exhaustive match on all 34 variants — each witnesses a valid NI step
     -- via syscallDecodeError (state identity). The match ensures completeness:
     -- adding a new KernelOperation variant without a case here is a compile error.
     | .chooseThread | .endpointSendDual | .cspaceMint | .cspaceRevoke
-    | .lifecycleRetype | .lifecycleRevokeDeleteRetype | .notificationSignal
+    | .retypeFromUntyped | .notificationSignal
     | .notificationWait | .cspaceInsertSlot | .schedule | .vspaceMapPage
     | .vspaceUnmapPage | .vspaceLookup | .cspaceCopy | .cspaceMove
     | .cspaceDeleteSlot | .endpointReply | .endpointReceiveDualHigh
@@ -1705,7 +1703,7 @@ theorem niStepConstructorCoverage
       notificationWait, storeTcbIpcStateAndMessageHigh, storeTcbQueueLinksHigh
     Batch 3 (capability/lifecycle): cspaceMint, cspaceRevoke, cspaceInsertSlot,
       cspaceCopy, cspaceMove, cspaceDeleteSlot, cspaceMutateHigh,
-      lifecycleRetype, lifecycleRevokeDeleteRetype, storeObjectHigh
+      retypeFromUntyped, storeObjectHigh
     Batch 4 (remaining): vspaceMapPage, vspaceUnmapPage, vspaceLookup,
       syscallDecodeError, syscallDispatchHigh, registerServiceChecked,
       endpointCallWithDonationHigh, endpointReplyWithReversionHigh,
@@ -1715,8 +1713,7 @@ def kernelOperationNiConstructor : KernelOperation → String
   | .endpointSendDual               => "endpointSendDual"
   | .cspaceMint                     => "cspaceMint"
   | .cspaceRevoke                   => "cspaceRevoke"
-  | .lifecycleRetype                => "lifecycleRetype"
-  | .lifecycleRevokeDeleteRetype    => "lifecycleRevokeDeleteRetype"
+  | .retypeFromUntyped              => "retypeFromUntyped"
   | .notificationSignal             => "notificationSignal"
   | .notificationWait               => "notificationWait"
   | .cspaceInsertSlot               => "cspaceInsertSlot"
@@ -1754,7 +1751,7 @@ theorem niStepCoverage_operational :
     ∀ op : KernelOperation, (kernelOperationNiConstructor op).length > 0 := by
   intro
     | .chooseThread | .endpointSendDual | .cspaceMint | .cspaceRevoke
-    | .lifecycleRetype | .lifecycleRevokeDeleteRetype | .notificationSignal
+    | .retypeFromUntyped | .notificationSignal
     | .notificationWait | .cspaceInsertSlot | .schedule | .vspaceMapPage
     | .vspaceUnmapPage | .vspaceLookup | .cspaceCopy | .cspaceMove
     | .cspaceDeleteSlot | .endpointReply | .endpointReceiveDualHigh
@@ -1777,14 +1774,13 @@ theorem niStepCoverage_injective :
   cases op₁ <;> cases op₂ <;> (first | rfl | simp [kernelOperationNiConstructor] at hEq)
 
 /-- V6-I5: The number of distinct NI constructor names matches the
-    KernelOperation count (35), confirming surjective coverage. -/
+    KernelOperation count (34), confirming surjective coverage. -/
 theorem niStepCoverage_count :
     ([ kernelOperationNiConstructor .chooseThread
      , kernelOperationNiConstructor .endpointSendDual
      , kernelOperationNiConstructor .cspaceMint
      , kernelOperationNiConstructor .cspaceRevoke
-     , kernelOperationNiConstructor .lifecycleRetype
-     , kernelOperationNiConstructor .lifecycleRevokeDeleteRetype
+     , kernelOperationNiConstructor .retypeFromUntyped
      , kernelOperationNiConstructor .notificationSignal
      , kernelOperationNiConstructor .notificationWait
      , kernelOperationNiConstructor .cspaceInsertSlot
@@ -1814,6 +1810,6 @@ theorem niStepCoverage_count :
      , kernelOperationNiConstructor .endpointCallWithDonationHigh
      , kernelOperationNiConstructor .endpointReplyWithReversionHigh
      , kernelOperationNiConstructor .handleInterrupt
-     ]).length = 35 := by rfl
+     ]).length = 34 := by rfl
 
 end SeLe4n.Kernel

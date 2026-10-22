@@ -71,13 +71,11 @@ than misleading its next reader.
 |23 | `frozenSetMCPriority`        | `setMCPriorityOp`          | SchedContext |
 |24 | `frozenSetIPCBuffer`         | `setIPCBufferOp`           | Architecture |
 
-**Lifecycle operations** (`lifecycleRetype`) are builder-only — but not, since
-PR #873 round 17, because a frozen map cannot gain a key: `FrozenMap.insert`
-appends, which is what let the run-queue enqueue create a bucket.  What retype
-still needs and the representation still lacks is *removal* — it erases the
-replaced VSpace root's `asidTable` entry, and there is no `FrozenMap.erase`.
-Adding one is a shrink, so it renumbers every index above the hole; that is a
-separate piece of work, not a corollary of the append.
+**Lifecycle operations** (`untypedRetype`, `untypedReset`) are builder-only.
+The carve adds an object and a CDT node; the reset *removes* the frames it
+retires, and there is no `FrozenMap.erase`.  Adding one is a shrink, so it
+renumbers every index above the hole; that is a separate piece of work, not a
+corollary of the append `FrozenMap.insert` performs.
 -/
 
 namespace SeLe4n.Kernel.FrozenOps
@@ -2018,8 +2016,8 @@ def frozenSetIPCBuffer (targetTid : SeLe4n.ThreadId)
     frozen operation. The compile-time check ensures that adding a new SyscallId
     without a frozen operation (or vice versa) produces a type error.
 
-    Lifecycle operations (`lifecycleRetype`) are intentionally excluded — they
-    *remove* keys (the replaced VSpace root's `asidTable` entry), and a frozen
+    Lifecycle operations (`untypedRetype`, `untypedReset`) are intentionally
+    excluded — the reset *removes* keys (the frames it retires), and a frozen
     map has no `erase`: a shrink renumbers every index above the hole, unlike
     the append `FrozenMap.insert` performs. Service registration/revocation are
     also builder-only for the same reason.  `tcbSetAffinity` (WS-SM SM5.H.4)
@@ -2047,10 +2045,9 @@ def frozenOpCoverage : SyscallId → Bool
                              -- (`cspaceRevokeCdtFinalising`), which tears down
                              -- each destroyed frame's mapping; the frozen phase
                              -- has no form of it.
-  | .lifecycleRetype => false -- builder-only (adds keys)
   | .untypedRetype => false   -- WS-BP BP7.1 (`v0.36.5`): adds a key (the carved
-                             -- frame) and a CDT node, which the frozen phase's
-                             -- fixed key set cannot — as for `lifecycleRetype`.
+                             -- object) and a CDT node, which the frozen phase's
+                             -- fixed key set cannot.
   | .untypedReset => false    -- WS-BP BP7.1 (`v0.36.6`): *removes* keys (the retired
                              -- frames), and the frozen object store is a
                              -- `FrozenMap` with no `erase`.

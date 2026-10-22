@@ -537,7 +537,7 @@ private def runRendezvousChecks : IO Unit := do
 #check @cspaceDeleteSlot_preserves_ipcInvariantFull
 #check @cspaceMintWithCdt_preserves_ipcInvariantFull
 #check @mintReplyCapWithCdt_preserves_ipcInvariantFull
-#check @lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_preserves_ipcInvariantFull
+#check @untypedRetypeObject_preserves_ipcInvariantFull
 #check @vspaceMapPageCheckedWithShootdownFromStatePerCore_preserves_ipcInvariantFull
 #check @vspaceUnmapPageWithShootdownAndIcacheBroadcast_preserves_ipcInvariantFull
 #check @vspaceUnifyInstructionPage_preserves_ipcInvariantFull
@@ -576,12 +576,11 @@ private def runRendezvousChecks : IO Unit := do
 #check @checkedSyscallDispatchQuiescence_inhabited
 -- The per-arm witness family (PR #886 review): each indexed pack field is
 -- exercised with its premises firing — the signal confinement and thread
--- quiescence on present objects, retype detachedness of the decoded target,
--- the send/receive/call stages by evaluating the transitions, the mint badge
--- by computing the decoder, the reply arm to the lever boundary against a
--- stored reply, and the checked tier's declassifying confinement:
+-- quiescence on present objects, the send/receive/call stages by evaluating
+-- the transitions, the mint badge by computing the decoder, the reply arm to
+-- the lever boundary against a stored reply, and the checked tier's
+-- declassifying confinement:
 #check @syscallDispatchQuiescence_inhabited_signal
-#check @syscallDispatchQuiescence_inhabited_retype
 #check @syscallDispatchQuiescence_inhabited_send
 #check @syscallDispatchQuiescence_inhabited_receive
 #check @syscallDispatchQuiescence_inhabited_call

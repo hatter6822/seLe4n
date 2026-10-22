@@ -26,7 +26,7 @@ modules sat below it were collected in `SyscallSchedFootprint.lean` instead.
 Moving the constructor here, below every transition module, is what lets each
 resolved footprint sit beside the transition it is about:
 `schedLockSet_suspendThreadOnCore` in `IPC/CrossCore/SuspendFootprint.lean`,
-`schedLockSet_lifecycleRetypeOnCore` in `Lifecycle/Operations/RetypeFootprint.lean`,
+`schedLockSet_schedContextUnbindOnCore` beside the SchedContext transitions,
 and so on.  The names and statements are unchanged.
 -/
 

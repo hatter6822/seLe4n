@@ -23,7 +23,7 @@ former file — and the original public API is preserved byte-for-byte:
 | `Preservation.Insert`                     | `cspaceLookupSlot` / `cspaceInsertSlot` / `cspaceMint` base preservation  |
 | `Preservation.Delete`                     | `cspaceDeleteSlotCore` / `cspaceDeleteSlot` / `cspaceRevoke` base         |
 | `Preservation.CopyMoveMutate`             | `cspaceCopy` / `cspaceMove` / `cspaceMintWithCdt` / `cspaceMutate`        |
-| `Preservation.EndpointReplyAndLifecycle`  | `endpointReply` + `coreIpcInvariantBundle` + `lifecycleRetypeObject` / `lifecycleRevokeDeleteRetype` preservation cluster |
+| `Preservation.EndpointReplyAndLifecycle`  | `endpointReply` + `coreIpcInvariantBundle` preservation cluster |
 | `Preservation.BadgeIpcCapsAndCdtMaps` | Mint/Mutate badge preservation + `ipcTransferSingleCap` / `ipcUnwrapCaps` variants + CDT composition witnesses |
 | `Preservation.Revoke`                     | the finalising delete and `cteRevoke` loop: bundle preservation and the revocation's completeness |
 | `Preservation.ThreadSpaceCopy`            | setting a thread's space (`copyThreadSpaces`): each space slot's delete, copy and derivation edge |

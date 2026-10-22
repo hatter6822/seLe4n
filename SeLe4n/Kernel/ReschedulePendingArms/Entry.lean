@@ -173,9 +173,6 @@ theorem syscallDispatchFromAbi_stepCovers {ctx : LabelingContext} {e : CoreId}
     {st st' : SystemState} {outcome : Architecture.SyscallOutcome}
     (hInv : st.objects.invExt) (hBi : schedContextBindingBidirectional st)
     (hPlaced : placedThreadsHaveTcbs st)
-    (hDet : ∀ tid, st.scheduler.currentOnCore e = some tid →
-      entryRetypeDetached e SeLe4n.arm64DefaultLayout 32
-        (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5))
     (h : Platform.FFI.syscallDispatchFromAbi ctx e syscallId x0 x1 x2 x3 x4 x5
       ipcBufferAddr elr spsr spEl0 x30 st = .ok (outcome, st')) :
     stepCovers e st st' ∧ st'.objects.invExt := by
@@ -211,7 +208,7 @@ theorem syscallDispatchFromAbi_stepCovers {ctx : LabelingContext} {e : CoreId}
       unfold Platform.FFI.writeFfiRegistersToTcb
       exact placedThreadsHaveTcbs_updateTcb hInv hPlaced
     exact stepCoversInv_trans hW.stepCovers
-      (syscallEntryChecked_stepCovers hW.2.2 hBi' hPl (hDet tid hCur) hE)
+      (syscallEntryChecked_stepCovers hW.2.2 hBi' hPl hE)
 
 /-! ### The committing seams
 
@@ -242,15 +239,12 @@ theorem syscallDispatchCrossCoreStep_stepCovers {ctx : LabelingContext} {e : Cor
     {st st' : SystemState} {outcome : Architecture.SyscallOutcome}
     (hInv : st.objects.invExt) (hBi : schedContextBindingBidirectional st)
     (hPlaced : placedThreadsHaveTcbs st)
-    (hDet : ∀ tid, st.scheduler.currentOnCore e = some tid →
-      entryRetypeDetached e SeLe4n.arm64DefaultLayout 32
-        (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5))
     (h : Platform.FFI.syscallDispatchFromAbi ctx e syscallId x0 x1 x2 x3 x4 x5
       ipcBufferAddr elr spsr spEl0 x30 st = .ok (outcome, st')) :
     stepCovers e st (PriorityInheritance.settleResidencyOnCore
       (PriorityInheritance.scheduleLocalSuccessor st
         (Architecture.stageCallerReturn st st' e outcome) e) e) := by
-  obtain ⟨hD, hDInv⟩ := syscallDispatchFromAbi_stepCovers hInv hBi hPlaced hDet h
+  obtain ⟨hD, hDInv⟩ := syscallDispatchFromAbi_stepCovers hInv hBi hPlaced h
   exact stepCovers_trans hD
     (syscallCommitTail_stepCovers e (st.scheduler.currentOnCore e) st' outcome hDInv)
 
@@ -308,9 +302,6 @@ theorem syscallDispatchCrossCoreStep_sgis_cover_diff {ctx : LabelingContext} {e 
     {st st' : SystemState} {outcome : Architecture.SyscallOutcome}
     (hInv : st.objects.invExt) (hBi : schedContextBindingBidirectional st)
     (hPlaced : placedThreadsHaveTcbs st)
-    (hDet : ∀ tid, st.scheduler.currentOnCore e = some tid →
-      entryRetypeDetached e SeLe4n.arm64DefaultLayout 32
-        (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5))
     (h : Platform.FFI.syscallDispatchFromAbi ctx e syscallId x0 x1 x2 x3 x4 x5
       ipcBufferAddr elr spsr spEl0 x30 st = .ok (outcome, st'))
     (hId : ∀ oid (tcb : TCB), (PriorityInheritance.settleResidencyOnCore
@@ -328,6 +319,6 @@ theorem syscallDispatchCrossCoreStep_sgis_cover_diff {ctx : LabelingContext} {e 
   dsimp only
   rw [← rescheduleSgisFromFlags_eq_sgisOfRaised]
   exact computeCrossCoreSgis_mem_flags_of_covers hId
-    (syscallDispatchCrossCoreStep_stepCovers hInv hBi hPlaced hDet h).1 hMem
+    (syscallDispatchCrossCoreStep_stepCovers hInv hBi hPlaced h).1 hMem
 
 end SeLe4n.Kernel

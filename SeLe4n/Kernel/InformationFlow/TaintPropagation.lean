@@ -15,9 +15,11 @@ Three things move a tag, and exactly three:
 * **Ordinary delivery.**  IPC moves content between objects, so it moves tags:
   the sink joins the source's taint.  Every content-moving syscall declares its
   edges from the pre-state, in `contentFlowEdges`.
-* **Destruction.**  A retype commits `storeObject target newObj` at the *same*
-  id, so a framed retype would leave a destroyed object's tags on its unrelated
-  replacement.  Retype **clears** (`retypeClearsTaint`).
+* **Consumption.**  A transport whose content is taken (a `.notificationWait`,
+  or a signal delivered straight to a waiter) is **cleared**
+  (`contentFlowClears`), so the next unrelated badge does not inherit the last
+  one's provenance.  No transition re-creates an object at an occupied id:
+  every object is carved into a fresh one.
 
 **Where the write happens, and why there.**  `applySyscallTaint` runs once per
 syscall, in each of the two **dispatchers** — `API.dispatchSyscall` and
@@ -94,9 +96,6 @@ inductive ContentFlowClass where
   /-- Delivers content from one object to another; the edges are declared in
       `contentFlowEdges`. -/
   | movesContent
-  /-- Destroys and re-creates an object at the same id, so its provenance must
-      be **forgotten** rather than framed. -/
-  | clearsProvenance
   deriving Repr, DecidableEq
 
 /-- WS-SM SM9.D.7: **the classification of every syscall.**
@@ -144,8 +143,9 @@ justified groups:
   and resume move no content between objects; they move a thread's *scheduling*
   attributes.  `.tcbSetIPCBuffer` installs a buffer address, not its contents.
 
-`.lifecycleRetype` is the sole `.clearsProvenance` arm, and the **eight**
-content-moving arms are the seven-strong IPC and notification surface plus the
+No syscall re-creates an object at an id that already holds one — every
+object is carved from an untyped into a fresh id — so there is no class that
+must forget provenance.  The **eight** content-moving arms are the seven-strong IPC and notification surface plus the
 declassifying signal (PR #873 round 8: the count said seven, from before
 `.declassifySignal` joined them — the arm whose whole point is that it moves
 content, omitted from the inventory that says which arms do). -/
@@ -160,10 +160,8 @@ def contentFlowClass : SyscallId → ContentFlowClass
   | .notificationWait => .movesContent
   -- WS-SM SM9.C: the data-carrying declassification rides the notification path.
   | .declassifySignal => .movesContent
-  -- WS-SM SM9.D.12: a retype re-purposes the object at the same id.
-  | .lifecycleRetype => .clearsProvenance
-  -- **WS-BP BP7.1 (`v0.36.5`)**: the untyped carve is inert, and not on the
-  -- retype's ground.  It re-purposes nothing: the child id must hold no object
+  -- **WS-BP BP7.1 (`v0.36.5`)**: the untyped carve is inert.  It re-purposes
+  -- nothing: the child id must hold no object
   -- (`retypeFromUntyped`'s collision guards), so there is no predecessor whose
   -- provenance a replacement could inherit and nothing to clear.  Its writes are
   -- the untyped's child list, the authority capability's free index, the fresh
@@ -227,14 +225,7 @@ def contentFlowClass : SyscallId → ContentFlowClass
 has one, by construction.  Stated over `SyscallId.all` so a constructor added
 without an arm fails `mem_all` as well as elaboration. -/
 theorem contentFlowClass_total (sid : SyscallId) :
-    contentFlowClass sid = .inert ∨ contentFlowClass sid = .movesContent ∨
-      contentFlowClass sid = .clearsProvenance := by
-  cases sid <;> simp [contentFlowClass]
-
-/-- WS-SM SM9.D.7: exactly one syscall clears provenance, and it is the retype —
-the arm SM9.D.12 requires to forget rather than frame. -/
-theorem contentFlowClass_clears_iff (sid : SyscallId) :
-    contentFlowClass sid = .clearsProvenance ↔ sid = .lifecycleRetype := by
+    contentFlowClass sid = .inert ∨ contentFlowClass sid = .movesContent := by
   cases sid <;> simp [contentFlowClass]
 
 /-- WS-SM SM9.D.7: the content-moving arms, named.  The list a reader checks
@@ -274,7 +265,7 @@ def syscallRecordsDeclassification : SyscallId → Bool
   | .cspaceCopy | .cspaceMove | .cspaceMint | .cspaceDelete | .mintReplyCap => false
   | .cspaceRevoke => false
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction => false
-  | .lifecycleRetype | .untypedRetype | .untypedReset => false
+  | .untypedRetype | .untypedReset => false
   | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority => false
   | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .yield => false
   | .tcbBindNotification | .tcbUnbindNotification => false
@@ -361,7 +352,7 @@ transition happened to do. -/
 structure TaintPlan where
   /-- Content flows: `sink ⊔= source`, sources read from the pre-state. -/
   edges : List TaintFlowEdge := []
-  /-- Objects whose provenance is destroyed (SM9.D.12: retype). -/
+  /-- Objects whose provenance is forgotten: a consumed transport. -/
   cleared : List SeLe4n.ObjId := []
   /-- Objects the commit's recorded downgrade *names* but whose content it
       **bypassed**, so the fresh event must not be originated onto them.
@@ -777,7 +768,7 @@ def contentFlowEdges (st : SystemState) (tid : SeLe4n.ThreadId)
         match cap.target with
         | .object nid => waitTaintEdges tid nid
         | _ => []
-    | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke | .lifecycleRetype
+    | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke
   | .untypedRetype | .untypedReset
     | .vspaceMap | .vspaceUnmap | .serviceRegister | .serviceRevoke | .serviceQuery
     | .schedContextConfigure | .schedContextBind | .schedContextUnbind
@@ -958,7 +949,7 @@ def declassifyBypassedTargets (st : SystemState) (tid : SeLe4n.ThreadId)
       | none => []
   | .send | .receive | .call | .reply | .replyRecv
   | .notificationSignal | .notificationWait | .declassifySignal
-  | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke | .lifecycleRetype
+  | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke
   | .untypedRetype | .untypedReset
   | .vspaceMap | .vspaceUnmap | .serviceRegister | .serviceRevoke | .serviceQuery
   | .schedContextConfigure | .schedContextBind | .schedContextUnbind
@@ -994,7 +985,7 @@ def contentFlowBypassed (st : SystemState) (tid : SeLe4n.ThreadId)
         | .object nid => signalBypassedNotification st nid
         | _ => []
     | .send | .receive | .call | .reply | .replyRecv | .notificationWait
-    | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke | .lifecycleRetype
+    | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke
   | .untypedRetype | .untypedReset
     | .vspaceMap | .vspaceUnmap | .serviceRegister | .serviceRevoke | .serviceQuery
     | .schedContextConfigure | .schedContextBind | .schedContextUnbind
@@ -1041,8 +1032,11 @@ would erase provenance of content the thread actually read, and a later
 downgrade by that thread would record no predecessor — a missed chain, the
 direction this module must never err in.  `endpointReceiveDual`'s block path
 discards a stale `pendingMessage` the same way and is not a clear for the same
-reason; the only thing that clears a TCB's taint is its own destruction
-(`retypeClearedObjects`). -/
+reason; the only thing that may clear a TCB's taint is its own destruction,
+and no transition destroys a kernel object yet (an untyped reset refuses while
+one is carved from it), so its id is never re-used.  The destroy path owes that
+clear when it lands (`docs/REGISTERED_DEBT.md`, the destroy-path provenance
+row). -/
 def contentFlowClears (st : SystemState) (tid : SeLe4n.ThreadId)
     (decoded : SyscallDecodeResult) : List SeLe4n.ObjId :=
   match syscallOperandCap? st tid decoded.capAddr with
@@ -1066,7 +1060,7 @@ def contentFlowClears (st : SystemState) (tid : SeLe4n.ThreadId)
         | .object nid => signalClearedNotification st nid
         | _ => []
     | .send | .receive | .call | .reply | .replyRecv
-    | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke | .lifecycleRetype
+    | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke
   | .untypedRetype | .untypedReset
     | .vspaceMap | .vspaceUnmap | .serviceRegister | .serviceRevoke | .serviceQuery
     | .schedContextConfigure | .schedContextBind | .schedContextUnbind
@@ -1074,16 +1068,6 @@ def contentFlowClears (st : SystemState) (tid : SeLe4n.ThreadId)
     | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .yield | .tcbBindNotification
     | .tcbUnbindNotification | .mintReplyCap | .vspaceUnifyInstruction
     | .declassify | .auditRead | .auditDrain => []
-
-/-- WS-SM SM9.D.12: **what a retype destroys.**
-
-The target comes from the decoded arguments rather than from the capability —
-the retype's capability names the *authority*, and `args.targetObj` names the
-object being re-purposed, exactly as the live arm reads it. -/
-def retypeClearedObjects (decoded : SyscallDecodeResult) : List SeLe4n.ObjId :=
-  match Architecture.SyscallArgDecode.decodeLifecycleRetypeArgs decoded with
-  | .error _ => []
-  | .ok args => [args.targetObj]
 
 /-- WS-SM SM9.D.7: **the plan a syscall runs**, from its classification. -/
 def syscallTaintPlan (st : SystemState) (tid : SeLe4n.ThreadId)
@@ -1105,7 +1089,6 @@ def syscallTaintPlan (st : SystemState) (tid : SeLe4n.ThreadId)
                        cleared := contentFlowClears st tid decoded,
                        bypassed := contentFlowBypassed st tid decoded,
                        originates }
-  | .clearsProvenance => { cleared := retypeClearedObjects decoded, originates }
 
 /-- WS-SM SM9.D.7: an inert syscall plans no content movement — the property the
 reach gate checks the *other* half of (that nothing it calls moves content
@@ -1341,8 +1324,7 @@ reason:
   pre-event taint and the fresh downgrade would have no successor — a missed
   chain, the direction a detector must never err in.  The seed is a no-op for
   every syscall that records nothing (`originationTags _ [] = []`);
-* clears next, so a retype forgets provenance the same commit's flows could not
-  have given it, and a consumed transport (a `.notificationWait`, or a signal
+* clears next, so a consumed transport (a `.notificationWait`, or a signal
   delivered directly to a waiter) is emptied to the content it now holds;
 * origination last on the committed table, because a downgrade's identity does
   not exist until the event is recorded, and it must land on the object the
@@ -1996,33 +1978,6 @@ theorem waitClearsNotificationTaint (st post : SystemState) (tid : SeLe4n.Thread
     simp [contentFlowClears, hCap, hSid, hTarget]
   exact applySyscallTaint_cleared_empty _ st post nid (by rw [hCleared]; simp)
 
--- ============================================================================
--- §3c  WS-SM SM9.D.12 — the retype forgets
--- ============================================================================
-
-/-- WS-SM SM9.D.12: **a retype's plan clears its target** — and declares no
-flows, so nothing re-establishes what it removes in the same commit. -/
-theorem retypeClearsTaint (st : SystemState) (tid : SeLe4n.ThreadId)
-    (decoded : SyscallDecodeResult) (hSid : decoded.syscallId = .lifecycleRetype)
-    (args : Architecture.SyscallArgDecode.LifecycleRetypeArgs)
-    (hArgs : Architecture.SyscallArgDecode.decodeLifecycleRetypeArgs decoded = .ok args) :
-    syscallTaintPlan st tid decoded = { edges := [], cleared := [args.targetObj] } := by
-  simp [syscallTaintPlan, contentFlowClass, hSid, retypeClearedObjects, hArgs,
-    syscallRecordsDeclassification]
-
-/-- WS-SM SM9.D.12 (**the property**): after a retype the destroyed object
-carries **no** provenance.
-
-No hypothesis on the trail is needed — the final origination pass skips cleared
-keys — so this holds for an arbitrary pre/post pair rather than only for the
-retype's own (event-free) commit, and the lifecycle layer owes nothing here. -/
-theorem retypedObject_taint_empty (plan : TaintPlan) (pre post : SystemState)
-    (oid : SeLe4n.ObjId) (hPlan : plan = { edges := [], cleared := [oid] }) :
-    (applySyscallTaint plan pre post).declassificationTaint oid =
-      DeclassificationTaint.empty := by
-  subst hPlan
-  exact applySyscallTaint_cleared_empty _ pre post oid (by simp)
-
 /-- WS-SM SM9.D.10 (**the bound-delivery family, in one place**): on the bound
 path the notification is not written, so all three of its taint consumers agree
 that nothing about it changes.
@@ -2180,11 +2135,10 @@ that never received anything from it — and the two must not be conflated,
 because the claim "the residual imprecision is saturation" would be false the day
 it was written.
 
-There are exactly **two** ways an object can outlive its content, and both are
-closed by a clear rather than a frame:
+There is exactly **one** way an object can outlive its content — no transition
+re-creates an object at an occupied id, since every object is carved into a
+fresh one — and it is closed by a clear rather than a frame:
 
-* a **retype** re-purposes the object at the same id (`retypeClearedObjects`), so
-  a framed retype would leave a destroyed object's tags on its replacement;
 * a **consumed transport** — a `.notificationWait` takes the whole pending badge,
   and a signal delivered straight to a waiter stores none — so a framed
   notification would hand the *next* unrelated badge's receiver the previous
@@ -2192,7 +2146,7 @@ closed by a clear rather than a frame:
   because they are not taint sinks: they buffer no content of their own, and a
   receiver reads the head sender directly (`senderTaintEdges`).
 
-With both closed, the residual really is saturation.
+With it closed, the residual really is saturation.
 
 Exhibited rather than argued: a table carrying one specific tag at an object,
 unsaturated, whose only removal is the clear. -/
@@ -2243,14 +2197,9 @@ it.
 
 **And a *clear* is a write** (PR #873 round 7).  The rule above was applied to
 the flow sinks and the origination keys and skipped the third member of
-`taintWriteKeys`: `.lifecycleRetype`'s `cleared` list is `[args.targetObj]`, a
-key whose lock `lockSet_lifecycleRetype` did not name — so a retype and a
-delivery into the object being re-purposed had provably disjoint footprints while
-updating the same entry, and the *clear* is the half that must not be lost (a
-replacement object inheriting a destroyed one's predecessor is a chain that
-outlives the object it described).  The retype now carries the resolved target's
-own write lock, exactly as `.declassify` carries its target's;
-`lockSet_lifecycleRetype_clearedKey_write_mem` is the checkable form.
+`taintWriteKeys`.  Every `cleared` key is now the notification the invoked
+capability names, which the arm already write-locks, so a clear and a delivery
+into the same object cannot have disjoint footprints.
 
 **Implementation obligation, registered rather than assumed.**  The model writes
 the field whole, so the key-local reading is sound only if the runtime realises

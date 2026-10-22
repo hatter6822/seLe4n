@@ -23,7 +23,6 @@ delete's splice and the revocation sweep alike.
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model
-open Internal
 
 /-- The capability bundle with the tree's completeness relaxed at the slots
 `gone` names (`cdtCompletenessOff`): what a destroyer leaves between emptying
