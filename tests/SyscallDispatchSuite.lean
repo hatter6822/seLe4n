@@ -132,7 +132,13 @@ private def sd001_kernelErrorDiscriminants : IO Unit := do
   pin "sd001_34_resourceExhausted"            .resourceExhausted            34
   pin "sd001_35_invalidCapPtr"                .invalidCapPtr                35
   pin "sd001_36_objectStoreCapacityExceeded"  .objectStoreCapacityExceeded  36
-  pin "sd001_37_allocationMisaligned"         .allocationMisaligned         37
+  -- 37 is retired (the former `allocationMisaligned`): no error has it, and it
+  -- decodes to none, as the retired syscall number 8 does.
+  expect "sd001_37_retired_unassigned"
+    (SeLe4n.Model.KernelError.ofDiscriminant? 37 == none &&
+      SeLe4n.Model.KernelError.retiredDiscriminants == [37] &&
+      (Kernel.Architecture.ofErrorLabel? (Kernel.Architecture.errorLabelBase + 37)).isNone)
+    "discriminant 37 is retired: it must decode to no error"
   pin "sd001_38_revocationRequired"           .revocationRequired           38
   pin "sd001_39_invalidArgument"              .invalidArgument              39
   pin "sd001_40_mmioUnaligned"                .mmioUnaligned                40
@@ -161,11 +167,12 @@ the boundary is pinned both ways below (WS-RR RR7.14 added
 `.ipcCancelled` at 57, so the last discriminant is 57 and 58 is the
 first rejected one). -/
 private def sd002_errorLabelCarriage : IO Unit := do
-  for disc in [0:SeLe4n.Model.KernelError.kernelErrorCount] do
+  for disc in [0:SeLe4n.Model.KernelError.kernelErrorEncodingBound] do
     match SeLe4n.Model.KernelError.ofDiscriminant? disc with
     | none =>
-        expect s!"sd002a_discriminant_{disc}_resolves" false
-          s!"discriminant {disc} must resolve to a KernelError"
+        expect s!"sd002a_discriminant_{disc}_resolves"
+          (SeLe4n.Model.KernelError.retiredDiscriminants.contains disc)
+          s!"discriminant {disc} must resolve to a KernelError unless it is retired"
     | some e => do
         expect s!"sd002b_label_offset_{disc}"
           (Kernel.Architecture.errorLabel e == Kernel.Architecture.errorLabelBase + disc)
@@ -207,9 +214,12 @@ label `0`.  The retired SD-003 pinned `encodeOk`'s bit-63 masking, whose
 badge-aliasing hazard now lives as
 `Architecture.bit63Encoding_not_injective_on_badges`. -/
 private def sd003_errorLabelRoundtrip : IO Unit := do
-  for disc in [0:SeLe4n.Model.KernelError.kernelErrorCount] do
+  for disc in [0:SeLe4n.Model.KernelError.kernelErrorEncodingBound] do
     match SeLe4n.Model.KernelError.ofDiscriminant? disc with
-    | none => expect s!"sd003a_resolve_{disc}" false "must resolve"
+    | none =>
+        expect s!"sd003a_resolve_{disc}"
+          (SeLe4n.Model.KernelError.retiredDiscriminants.contains disc)
+          "must resolve unless retired"
     | some e => do
         expect s!"sd003b_label_never_zero_{disc}"
           (Kernel.Architecture.errorLabel e != 0)

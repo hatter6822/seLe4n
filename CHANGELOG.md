@@ -21,15 +21,26 @@ stays reserved.  Part 14 of the seL4 untyped reset
 - **The free index is rounded up, never refused** (`alignedCarveIndex`,
   `carveAlignment`, `alignUpNat`): as seL4's `decodeUntypedInvocation`, the
   carve rounds the capability's free index up to the object's boundary — a
-  page for a frame, page table, address-space root or child untyped, the
-  object's own size for a kernel object — checks the capacity there, and
-  advances the free index past it.  `retypeFromUntyped` no longer returns
-  `allocationMisaligned` (the error code 37 stays in the table, returned by
-  nothing).  `retypeFromUntyped_ok_aligned`, `_ok_pageAligned`,
+  page for a frame, page table or address-space root, the object's own size
+  for a kernel object and for a child untyped (`2^b` on a multiple of `2^b`,
+  so on a page since `b ≥ 12`) — checks the capacity there, and advances the
+  free index past it.  `retypeFromUntyped_ok_aligned`, `_ok_pageAligned`,
   `_ok_sizeAligned`, `_ok_decompose`, `_ok_stores`,
   `_error_regionExhausted` and the per-kind payoff theorems are restated at
   the rounded index; `carveBaseAligned_alignedCarveIndex`,
-  `le_alignedCarveIndex` and `UntypedObject.childrenBelow_mono` are new.
+  `le_alignedCarveIndex` and `UntypedObject.childrenBelow_mono` are new;
+  `untypedNextChild_of_retype_ok` and `untypedRetypeObject_ok_untyped` now
+  also state the child's base is a multiple of `2^b`.
+- **Error code 37 is retired** (`KernelError.retiredDiscriminants`,
+  `ofDiscriminant?_retired`, `ofDiscriminant?_isSome_iff`; Rust
+  `KernelError::RETIRED`): `allocationMisaligned`, which no carve returns
+  once the index is rounded, is deleted with its encode and decode arms, its
+  Rust variant and its SD-001 pin.  As syscall number 8, the code is reserved
+  and never reassigned: it decodes to no error in Lean, to `None` from Rust's
+  `from_u32`, and to `UnknownKernelError` from the userspace status decoder.
+  `kernelErrorCount` is renamed `kernelErrorEncodingBound` (still 58, one
+  past the largest discriminant), and the round-trip theorems skip the
+  retired code.
 - **Authority comes first** (`untypedRetypeObject_unauthorized`): a
   capability without the retype right is refused before the child id or the
   destination is read, so the refusal answers nothing about them.  This
@@ -48,9 +59,12 @@ stays reserved.  Part 14 of the seL4 untyped reset
   `_reply`, `_cnode` and `_sched_context` are added; `SyscallId::RETIRED` is
   `[8]` and the conformance sweeps skip it.
 - **Tests**: the retype tests are retargeted to the carve or to the kept
-  cleanup; a misaligned VSpace-root base is rounded to the next page, and a
+  cleanup; a misaligned VSpace-root base is rounded to the next page, a
   TCB, an endpoint, a frame and a TCB carved in turn each land on their own
-  boundary (`NegativeStateSuite`, S5-G and H16-NEG-06); the main trace, syscall-return-shape, information-flow and taint
+  boundary, and a `2^14`-byte child untyped after an endpoint lands on a
+  multiple of `2^14` (`NegativeStateSuite`, S5-G and H16-NEG-06); SD-001
+  pins 37 unassigned and SD-002/SD-003 skip it; the return-ABI fixture's
+  error-label line states the retired code; the main trace, syscall-return-shape, information-flow and taint
   fixtures are regenerated from their producers.
 - **Exerciser**: every pin unchanged.  The per-kind scenarios move to part
   18 (finalise kernel kinds on final delete), since a carve repeats only after

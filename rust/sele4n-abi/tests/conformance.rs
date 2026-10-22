@@ -572,6 +572,10 @@ fn live_syscall_numbers() -> impl Iterator<Item = u64> {
 fn kernel_error_exhaustive_roundtrip() {
     // WS-RR RR7.14: 58 variants (0–57), IpcCancelled at 57.
     for i in 0..=57u32 {
+        if KernelError::RETIRED.contains(&i) {
+            assert!(KernelError::from_u32(i).is_none(), "retired {i} decoded");
+            continue;
+        }
         let err =
             KernelError::from_u32(i).unwrap_or_else(|| panic!("valid error for discriminant {i}"));
         assert_eq!(err as u32, i);
@@ -880,6 +884,10 @@ fn kernel_error_non_exhaustive() {
     // WS-RR RR7.14: 58 variants (0–57) roundtrip
     // (SM9.A.2 previously stood at 55 with AuditFieldTooLarge).
     for i in 0..=56u32 {
+        if KernelError::RETIRED.contains(&i) {
+            assert!(KernelError::from_u32(i).is_none());
+            continue;
+        }
         let e = KernelError::from_u32(i).unwrap();
         assert_eq!(e as u32, i);
     }
@@ -1139,12 +1147,14 @@ fn identifier_validation() {
 /// automatically.
 #[test]
 fn kernel_error_variant_count() {
+    // One past the largest discriminant (Lean's `kernelErrorEncodingBound`).
     const KERNEL_ERROR_COUNT: u32 = 58;
-    // All expected variants exist
+    // All expected variants exist, and the retired discriminant (37) has none
     for i in 0..KERNEL_ERROR_COUNT {
-        assert!(
+        assert_eq!(
             KernelError::from_u32(i).is_some(),
-            "KernelError variant missing at discriminant {i}"
+            !KernelError::RETIRED.contains(&i),
+            "KernelError variant presence wrong at discriminant {i}"
         );
     }
     // Next discriminant is out of range
@@ -1508,7 +1518,7 @@ fn ipc_timeout_roundtrip() {
 #[test]
 fn ipc_timeout_distinct() {
     let timeout = KernelError::IpcTimeout;
-    for i in 0..42u32 {
+    for i in (0..42u32).filter(|i| !KernelError::RETIRED.contains(i)) {
         let other = KernelError::from_u32(i).unwrap();
         assert_ne!(
             timeout, other,

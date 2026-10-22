@@ -1074,7 +1074,8 @@ mod tests {
             frame[..6].copy_from_slice(&regs);
             assert_eq!(
                 sele4n_abi::decode_response(frame),
-                Err(sele4n_types::KernelError::from_u32(disc).expect("0..=56 are all valid"))
+                Err(sele4n_types::KernelError::from_u32(disc)
+                    .unwrap_or(sele4n_types::KernelError::UnknownKernelError))
             );
         }
         // The four fault tags a handler receives are deliveries, not status:

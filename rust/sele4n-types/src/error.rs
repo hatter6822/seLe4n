@@ -2,14 +2,17 @@
 //! Kernel error enumeration — mirrors `SeLe4n.Model.KernelError`.
 //!
 //! Lean source: `SeLe4n/Model/KernelError.lean`.
-//! Discriminants 0–57 are a 1:1 mapping from the Lean inductive (58 variants
-//! after WS-RR RR7.14's `IpcCancelled` at 57 — the error a forcibly-cancelled
+//! Discriminants 0–57 other than the retired 37 are a 1:1 mapping from the
+//! Lean inductive (57 variants after WS-RR RR7.14's `IpcCancelled` at 57 — the error a forcibly-cancelled
 //! blocking IPC returns, distinct from `IpcTimeout`'s budget expiry —
 //! WS-SM SM9.C.1's `DeclassificationDeniedAtReceiver` at 56,
 //! WS-SM SM9.A.2's `AuditFieldTooLarge` at 55, WS-SM SM8.C.9's
 //! `AuditLogCapacityExceeded` at 54 and WS-SM SM5.B's
 //! `ThreadOnDifferentCore` at 53, extending R5.E's
 //! `MissingSchedContext` at 52 and AN7-E's `PartialResolution` at 51).
+//! Discriminant 37 is retired (WS-ZA ZA5.4 part 14, the former
+//! `AllocationMisaligned`): no variant carries it and it is never reassigned
+//! (see [`KernelError::RETIRED`]).
 //! `UnknownKernelError` (255) is a Rust-only sentinel for forward compatibility.
 
 /// All kernel error variants, plus a Rust-only forward-compatibility sentinel.
@@ -65,8 +68,7 @@ pub enum KernelError {
     InvalidCapPtr = 35,
     /// T1-F/H-4: Object count exceeds maxObjects capacity
     ObjectStoreCapacityExceeded = 36,
-    /// T1-F/H-4: Allocation base not page-aligned for VSpace-bound objects
-    AllocationMisaligned = 37,
+    // 37: retired (WS-ZA ZA5.4 part 14, `AllocationMisaligned`); reserved.
     /// U-H03: Destroying an object or mapping still in use (unmap, cancel or revoke first)
     RevocationRequired = 38,
     /// U5-E/U-M07: Syscall argument decode failed (e.g., invalid permission bits)
@@ -159,7 +161,14 @@ pub enum KernelError {
 }
 
 impl KernelError {
-    /// Convert from a raw `u32` discriminant. Returns `None` for out-of-range values.
+    /// Retired discriminants, reserved and never reassigned.  `37` was
+    /// `AllocationMisaligned`, which no carve returns once the free index is
+    /// rounded up to the object's boundary; `from_u32` maps it to `None`.
+    /// Mirrors Lean's `KernelError.retiredDiscriminants`.
+    pub const RETIRED: [u32; 1] = [37];
+
+    /// Convert from a raw `u32` discriminant. Returns `None` for out-of-range
+    /// and retired values.
     pub const fn from_u32(v: u32) -> Option<Self> {
         match v {
             0 => Some(Self::InvalidCapability),
@@ -199,7 +208,6 @@ impl KernelError {
             34 => Some(Self::ResourceExhausted),
             35 => Some(Self::InvalidCapPtr),
             36 => Some(Self::ObjectStoreCapacityExceeded),
-            37 => Some(Self::AllocationMisaligned),
             38 => Some(Self::RevocationRequired),
             39 => Some(Self::InvalidArgument),
             40 => Some(Self::MmioUnaligned),
@@ -267,7 +275,6 @@ impl std::fmt::Display for KernelError {
             Self::ResourceExhausted => write!(f, "resource exhausted"),
             Self::InvalidCapPtr => write!(f, "invalid capability pointer"),
             Self::ObjectStoreCapacityExceeded => write!(f, "object store capacity exceeded"),
-            Self::AllocationMisaligned => write!(f, "allocation misaligned"),
             Self::RevocationRequired => write!(f, "revocation required"),
             Self::InvalidArgument => write!(f, "invalid argument"),
             Self::MmioUnaligned => write!(f, "MMIO access at unaligned address"),
@@ -313,6 +320,10 @@ mod tests {
         // WS-SM SM9.C.1: DeclassificationDeniedAtReceiver added at discriminant 56.
         // WS-RR RR7.14: IpcCancelled added at discriminant 57.
         for i in 0..=57u32 {
+            if KernelError::RETIRED.contains(&i) {
+                assert!(KernelError::from_u32(i).is_none(), "retired {i} decoded");
+                continue;
+            }
             let e = KernelError::from_u32(i).unwrap();
             assert_eq!(e as u32, i);
         }
@@ -338,7 +349,9 @@ mod tests {
         assert_eq!(KernelError::ResourceExhausted as u32, 34);
         assert_eq!(KernelError::InvalidCapPtr as u32, 35);
         assert_eq!(KernelError::ObjectStoreCapacityExceeded as u32, 36);
-        assert_eq!(KernelError::AllocationMisaligned as u32, 37);
+        // 37 is retired: no variant carries it.
+        assert_eq!(KernelError::RETIRED, [37]);
+        assert!(KernelError::from_u32(37).is_none());
         assert_eq!(KernelError::RevocationRequired as u32, 38);
         assert_eq!(KernelError::InvalidArgument as u32, 39);
         assert_eq!(KernelError::MmioUnaligned as u32, 40);
@@ -364,11 +377,11 @@ mod tests {
     }
 
     /// T1-H: Cross-validation — verify Lean-Rust enum correspondence
-    /// The Lean KernelError inductive has these 4 variants at positions 34-37:
+    /// The Lean KernelError inductive has these 3 variants at positions 34-36,
+    /// and 37 is retired:
     ///   | resourceExhausted       (34)
     ///   | invalidCapPtr           (35)
     ///   | objectStoreCapacityExceeded (36)
-    ///   | allocationMisaligned    (37)
     #[test]
     fn lean_rust_correspondence() {
         // WS-RR RR7.14: 58 variants (0-57) — verify total variant count
@@ -389,6 +402,10 @@ mod tests {
         let mut prev = None;
         for i in 0..=56u32 {
             let e = KernelError::from_u32(i);
+            if KernelError::RETIRED.contains(&i) {
+                assert!(e.is_none(), "retired discriminant {i} decoded");
+                continue;
+            }
             assert!(e.is_some(), "gap at discriminant {i}");
             if let Some(p) = prev {
                 assert!(p < i, "non-sequential at {i}");

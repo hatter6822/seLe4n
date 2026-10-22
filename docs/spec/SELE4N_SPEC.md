@@ -3117,8 +3117,11 @@ layer reads it.  The Rust `ReturnShape` mirror is exhaustive (no wildcard, so
 rustc plays the role Lean's totality plays) **and** cross-checked: both sides
 render the same `id → shape` table against `tests/fixtures/syscall_return_shape.expected`,
 so two independently maintained total functions cannot disagree silently.  The
-`KernelError` count is `SeLe4n.Model.KernelError.kernelErrorCount`, bounded from
-both sides so it is the least strict upper bound.
+`KernelError` encoding bound is `SeLe4n.Model.KernelError.kernelErrorEncodingBound`,
+bounded from both sides so it is the least strict upper bound.  Discriminant `37`
+(the former `allocationMisaligned`) is retired and reserved
+(`retiredDiscriminants`, `ofDiscriminant?_retired`): it decodes to no error, in
+Lean and in Rust (`KernelError::RETIRED`), and is never reassigned (`v0.36.125`).
 
 **WS-RR RR7.14 (v0.34.67) — the frame a forcibly unblocked thread is owed.**
 A thread taken out of a blocking IPC has no value to receive, and both
@@ -4661,9 +4664,11 @@ free index up to it, as seL4's `decodeUntypedInvocation` does with
 refused (`v0.36.125`).
 
 - **`requiresPageAlignment`** -- the kinds carved on a 4 KiB page: VSpace
-  roots, frames, page tables and child untypeds.
-- **`requiresSizeAlignment`** -- the kernel kinds, carved on a multiple of
-  their own allocation size.
+  roots, frames and page tables.
+- **`requiresSizeAlignment`** -- the kernel kinds and a child untyped, carved
+  on a multiple of their own allocation size (a child untyped of `2^b` bytes on
+  a multiple of `2^b`, as seL4's `alignUp(freeRef, 2^b)`; `b ≥ 12`, so it is on
+  a page, `untypedNextChild_of_retype_ok`).
 - **`allocationBasePageAligned`** / **`carveBaseAligned`** -- whether a base is
   on the carve's boundary (`base % 4096 = 0`, or `base % size = 0`).
 - **`alignedCarveIndex`** -- the free index rounded up to the boundary
@@ -4674,12 +4679,14 @@ refused (`v0.36.125`).
   `retypeFromUntyped_ok_aligned`, `retypeFromUntyped_ok_pageAligned` and
   `retypeFromUntyped_ok_sizeAligned` (every carve that succeeds is on its
   boundary).
-- **`allocationMisaligned`** -- the `KernelError` variant (ABI code 37) is
-  kept in the error table; no carve returns it.
+- **Error code 37 is retired**: the `allocationMisaligned` variant the carve
+  returned before is deleted, and its discriminant is reserved
+  (`retiredDiscriminants`, §6.5.1).
 
 Witnesses: `tests/NegativeStateSuite.lean` S5-G (a misaligned VSpace-root base
 is rounded to the next page) and H16-NEG-06 (a TCB, an endpoint, a frame and a
-second TCB each land on their own boundary). See
+second TCB each land on their own boundary, and a `2^14`-byte child untyped
+after an endpoint lands on a multiple of `2^14`). See
 `SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean`.
 
 ### 8.5 IPC Timeout Semantics

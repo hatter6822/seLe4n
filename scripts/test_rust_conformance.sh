@@ -83,7 +83,7 @@ if [[ "${1:-}" == "--dump" ]]; then
     echo "#"
     echo "# KernelError vectors"
     echo "KE-001 | from_u32(0)  | Some(InvalidCapability)"
-    echo "KE-002 | from_u32(37) | Some(AllocationMisaligned)"
+    echo "KE-002 | from_u32(37) | None (retired)"
     echo "KE-003 | from_u32(38) | None"
 fi
 

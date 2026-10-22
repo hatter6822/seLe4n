@@ -736,9 +736,9 @@ private def returnAbiTraceLines : List String :=
     match signalled with
     | .ok (_, st) => dispatchFromAbi SyscallId.notificationWait.toNat 0 0 st
     | e => e
-  -- `KernelError.kernelErrorCount` = the full `KernelError` enumeration
-  -- (discriminants `0..count - 1`, the newest being WS-RR RR7.14's
-  -- `.ipcCancelled` at 57).  The boundary conjunct pins the count from above:
+  -- `KernelError.kernelErrorEncodingBound` = one past the largest `KernelError`
+  -- discriminant (the newest being WS-RR RR7.14's `.ipcCancelled` at 57); every
+  -- value below it is a variant's or a retired one (`37`, WS-ZA ZA5.4 part 14).  The boundary conjunct pins the count from above:
   -- when the next variant lands, `ofDiscriminant? count` stops being `none`, the
   -- fixture line diverges, and this range has to move with it rather than
   -- silently under-covering.  **WS-RR RR7.17**: the figure is interpolated into
@@ -746,20 +746,23 @@ private def returnAbiTraceLines : List String :=
   -- `57` for a whole cut after RR7.14 widened the range, so the line described
   -- a check it was not performing while the fixture agreed with the prose.
   let labelRoundtrips :=
-    (List.range SeLe4n.Model.KernelError.kernelErrorCount).all fun d =>
+    (List.range SeLe4n.Model.KernelError.kernelErrorEncodingBound).all fun d =>
       match SeLe4n.Model.KernelError.ofDiscriminant? d with
       | some e => Kernel.Architecture.ofErrorLabel? (Kernel.Architecture.errorLabel e) == some e
-      | none => false
+      | none => SeLe4n.Model.KernelError.retiredDiscriminants.contains d
+  let retired := SeLe4n.Model.KernelError.retiredDiscriminants
+  let retiredUnassigned :=
+    retired.all fun d => (SeLe4n.Model.KernelError.ofDiscriminant? d).isNone
   let labelBoundary :=
     (SeLe4n.Model.KernelError.ofDiscriminant?
-      SeLe4n.Model.KernelError.kernelErrorCount).isNone
-  let errorCount := SeLe4n.Model.KernelError.kernelErrorCount
+      SeLe4n.Model.KernelError.kernelErrorEncodingBound).isNone
+  let errorCount := SeLe4n.Model.KernelError.kernelErrorEncodingBound
   [ s!"[ret-abi] abi-version: {Kernel.Architecture.syscallAbiVersion}"
   , outcomeLine "unit signal (cap ptr 5)" signalled
   , outcomeLine "badge wait after signal 42" waitAfterSignal
   , outcomeLine "blocking wait (idle notification)"
       (dispatchFromAbi SyscallId.notificationWait.toNat 0 0 witnessState)
-  , s!"[ret-abi] error labels: all {errorCount} discriminants round-trip = {labelRoundtrips}; {errorCount} unassigned = {labelBoundary}"
+  , s!"[ret-abi] error labels: every discriminant below {errorCount} round-trips or is retired = {labelRoundtrips}; retired {retired} unassigned = {retiredUnassigned}; {errorCount} unassigned = {labelBoundary}"
   , s!"[ret-abi] full-width badge frame: " ++
       frameCells (Kernel.Architecture.returnFrameOfBadge
         (Badge.ofNatMasked 0x8000000000000042))

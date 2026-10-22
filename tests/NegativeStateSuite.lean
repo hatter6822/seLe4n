@@ -2330,6 +2330,31 @@ def runWSH16LifecycleChecks : IO Unit := do
     expectCond "H16-NEG-06" "a TCB after the frame lands on its own boundary (12288, index 14336)"
       (indexOf s4 == some 14336 &&
         (0x40000 + 12288) % 2048 == 0)
+  -- A child untyped is aligned to its own size, as seL4's `alignUp(freeRef, 2^b)`:
+  -- after an endpoint (index 16), a 2^14-byte child lands at 16384 (0x44000),
+  -- not at the next page (4096), and the index past it is 32768.
+  let childBase (s : SystemState) : Option Nat :=
+    match (s.objects[(⟨166⟩ : SeLe4n.ObjId)]? : Option KernelObject) with
+    | some (.untyped u) => some u.regionBase.toNat
+    | _ => none
+  let smallFirstState : SystemState :=
+    (BootstrapBuilder.empty
+      |>.withObject carveRefusalUtId (.untyped
+          { regionBase := SeLe4n.PAddr.ofNat 0x40000, regionSize := 0x10000 })
+      |>.withObject carveRefusalCnId (.cnode (CNode.ofList 0 0 0 3 [
+          (SeLe4n.Slot.ofNat 0, { target := .object carveRefusalUtId, rights := AccessRightSet.ofList [.read, .write, .retype] })
+        ]))
+      |>.withLifecycleObjectType carveRefusalUtId .untyped
+      |>.withLifecycleObjectType carveRefusalCnId .cnode
+      |>.buildChecked)
+  match (do
+      let s1 ← carveAt .endpoint 165 1 smallFirstState
+      let s2 ← carveAt (.untyped 14) 166 2 s1
+      pure (s1, s2) : Option (SystemState × SystemState)) with
+  | none => expectCond "H16-NEG-06" "an endpoint then a child untyped are carved" false
+  | some (s1, s2) =>
+    expectCond "H16-NEG-06" "a 2^14-byte child untyped after an endpoint lands on its own size (0x44000, index 32768)"
+      (indexOf s1 == some 16 && childBase s2 == some 0x44000 && indexOf s2 == some 32768)
 
   -- H16-NEG-07: retypeFromUntyped with exhausted untyped (the authority capability's free index at the region boundary) → regionExhausted
   let h16ExhaustedUntypedId : SeLe4n.ObjId := ⟨160⟩
