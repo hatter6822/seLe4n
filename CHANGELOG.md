@@ -1,3 +1,99 @@
+## v0.36.124 — WS-ZA ZA5.4 part 13: the free index is in the capability
+
+An untyped capability now carries its own free index, as seL4's
+`capFreeIndex`, and the untyped object has no watermark.  Every derivation
+of an untyped capability follows seL4's rule: it is refused while the source
+has a derivation child, and otherwise the source is set full.  Part 13 of the
+seL4 untyped reset ([`UNTYPED_RESET_PLAN.md`](docs/planning/UNTYPED_RESET_PLAN.md)).
+
+### Changes
+
+- **The free index word** (`Model/Object/Types.lean`, `Model/SlotLinks.lean`):
+  `Capability.freeIndex`, with `withFreeIndex` and its field lemmas, stored in
+  the slot's cell (`cellWithFreeIndex`, `ofWords_freeIndex`).
+  `UntypedObject.watermark` is deleted.  `UntypedObject.allocate` takes the
+  index to carve at, and `freeIndexValid` / `childrenBelow` replace
+  `watermarkValid` / `childrenWithinWatermark`.  `CNode.setFreeIndex` and
+  `setCapFreeIndex` write one slot's index in place; the compiled form writes
+  only that cell (`setCapFreeIndexImpl`, `setCapFreeIndex_eq_impl`).
+- **The carve** (`retypeFromUntyped`, `untypedRetypeObject`): carves at the
+  invoked capability's free index and advances that slot's index.
+  `untypedNextFrame` and `untypedNextChild` take the index.
+- **Copy, mint and IPC transfer follow seL4's derivation rule.**  This covers
+  `.cspaceCopy`, CDT-tracked `.cspaceMint` and `ipcTransferSingleCap`.  The
+  derivation is refused with `.revocationRequired` while the source slot has a
+  derivation child (`untypedDeriveRefused`, seL4's `ensureNoChildren`).
+  Otherwise the derived capability takes the source's index and the source is
+  set full (`untypedSourceSetFull`, seL4's `setUntypedCapAsFull`).  A refused
+  transfer stops the transfer, as seL4's `transferCaps` breaks: capabilities
+  already installed stay, and the rest report `.noSlot`.
+  `ipcTransferSingleCap_ok_cases` is the transfer's one case split, and every
+  transfer theorem is proved through it.
+- **The reset** (`untypedResetFromCap`, `untypedResetSlot`): the arm resolves
+  the invoked capability to its slot.  It refuses `.revocationRequired` while
+  that slot has a derivation child, rewinds the slot's index to 0, and then
+  runs the reset as before.  The whole-store reference scan stays until part 19
+  (see Registered debt).
+- **The untyped invariants are over capabilities**, as seL4's `untyped_inc`.
+  `untypedFreeIndexInvariant` (every naming capability's index is valid) and
+  `untypedChildrenBoundsInvariant` (every child lies below it) replace
+  `untypedWatermarkInvariant`.  The new `untypedSoleCarverInvariant` says that
+  of two slots naming one untyped, one is full.  The carve is proved to
+  preserve all three.
+- **Boot**: boot capabilities start at index 0 (`bootSafeCapCheck`).
+  `PlatformConfig.wellFormed` gains a ninth conjunct,
+  `untypedCapabilitiesUnique`: it refuses a configuration that names one
+  untyped through two capabilities, with its own diagnostic
+  (`untypedCapabilityDuplicateBootError`).  Two non-full capabilities to one
+  region would each carve from their own index, so their carves could
+  overlap.  No configuration in the tree did this.
+- **Locks**: the free index is derivation metadata beside the link words, so
+  every write of it holds `stateLevelLock` in write mode.  The lock-set
+  capstones are stated over `objectAgreesOffDerivationMetadataAt`, which
+  closes link rewrites and free-index writes (`CNode.derivationVariant`).
+  `lockSet_cspaceCopy` and `lockSet_cspaceMint` declare the source CNode in
+  write mode.  `lockSet_untypedRetype` gains the authority capability's CNode
+  in write mode (seven members).  `lockSet_mintReplyCap` keeps its source in
+  read mode, as its own list.
+- **Deleted**: `untypedWatermarkInvariant`, `watermarkValid`,
+  `childrenWithinWatermark`, `freeSpace`, `untypedWatermarkChecks`,
+  `allocate_watermark_advance`, `allocate_watermark_monotone`,
+  `allocate_offset_eq_watermark`, `allocate_preserves_watermarkValid`,
+  `allocate_preserves_childrenWithinWatermark`, `empty_watermarkValid`,
+  `empty_childrenWithinWatermark`, `reset_watermarkValid`,
+  `allocationBasePageAligned_allocated`, `allocationBasePageAlignedAfter`
+  and `storeObject_preserves_untypedWatermarkInvariant_ne`.
+  `untypedResetWithShootdown_confinedToCores` and
+  `…_crossCoreNonInterference` are restated on the slot entry
+  (`untypedResetRewound_confinedToCores`,
+  `untypedResetFromCap_crossCoreNonInterference`).
+- **Tests**:
+  - The suites move off the watermark: authority capabilities carry
+    `freeIndex`, and `allocate` takes the index.
+  - `tests/VSpaceCapabilityBindingSuite.lean` §5e: a copy of an untyped
+    capability with children is refused.  A new childless-copy check: the
+    source goes full, the copy carves from 0, and a carve through the source
+    is refused with `untypedRegionExhausted`.
+  - `ipcUntypedGrantFollowsDerivationRule` (`tests/OperationChainSuite.lean`):
+    a grant of an untyped capability sets the sender full.  A transfer after a
+    copy reports `#[installed, noSlot, noSlot]`.
+  - `tests/SmpIdleSuite.lean`: a boot configuration with a duplicated untyped
+    capability is refused with its own diagnostic.
+  - `tests/LockSetSuite.lean` and `tests/DeadlockFreedomSuite.lean` pin the
+    new write modes.
+  - The trace fixture reads the free index from the authority capability
+    (UMT-003, UMT-007); the values are unchanged.
+- **Exerciser**: every pin unchanged.  Page-table retype is 16 / 14 / 14 at
+  first call and 13 in steady state; frame retype is 12 / 11; `untyped-reset`
+  is 151; `cspace-copy` and `cspace-mint` are 0.
+- **Registered debt**: boot is not yet proven to establish
+  `untypedMemoryInvariant`.  It is now a row in `docs/REGISTERED_DEBT.md` §C,
+  closing in part 19.
+- **Docs**: spec §8.10.2a, `CLAIM_EVIDENCE_INDEX.md` (a new row; the reset row
+  restated), `WORKSTREAM_CONTEXT.md`, the plan rows in `UNTYPED_RESET_PLAN.md`
+  and `ZERO_ALLOCATION_SYSCALL_PLAN.md`, and the Tier 3 anchors that named the
+  watermark.
+
 ## v0.36.123 — Retype checks authority before reading its target
 
 The in-place retype (`.lifecycleRetype`) now asks authority first, in seL4's

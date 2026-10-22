@@ -3912,7 +3912,7 @@ run_negative_check "INVARIANT" rg -n '\b(bootSafeObjectCheck_admits_rpi5BootVSpa
 run_check "INVARIANT" rg -n '^def bootVSpaceAsidsDistinct \(config : PlatformConfig\) : Bool :=' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^      if bootVSpaceAsidsDistinct config then$' SeLe4n/Platform/Boot.lean
 # BP3.2 — untyped placement is a conjunct of `wellFormed`, with its own row.
-run_check "INVARIANT" rg -n -U 'objectBudgetRespected config && declaredCoreCountInRange config &&\n    untypedPlacementRespected config && bootRootTablesPlaced config$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n -U 'objectBudgetRespected config && declaredCoreCountInRange config &&\n    untypedPlacementRespected config && bootRootTablesPlaced config &&\n    untypedCapabilitiesUnique config$' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n -F '(untypedPlacementRespected config, untypedPlacementBootError)' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^def untypedClearOfKernel\b' SeLe4n/Platform/Boot.lean
 # BP3.2 — the kernel's reserved extent, stated in three places and held equal.
@@ -4027,7 +4027,7 @@ run_check "INVARIANT" rg -n -U '^def freshAsidFrom[^\n]*(\n([ \t][^\n]*)?)*     
 run_negative_check "INVARIANT" rg -n 'List\.range st\.machine\.maxASID' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n -U 'def CarveRequest\.admissible[^\n]*(\n([ \t][^\n]*)?)*  \| \.vspaceRoot asid =>\n      asid\.toNat != 0 && decide \(asid\.toNat < st\.machine\.maxASID\) &&\n        \(st\.asidTable\[asid\]\?\)\.isNone' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n -U 'def untypedRetypeObject \(src[^\n]*(\n([ \t][^\n]*)?)*  fun st =>\n    if !req\.admissible st then \.error \.illegalState else' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
-run_check "INVARIANT" rg -n -U 'def untypedNextVSpaceRoot[^\n]*\n  \{ asid := asid, mappings := \{\}, tableBase := some \(untypedNextFrame ut\)\.base \}' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n -U 'def untypedNextVSpaceRoot[^\n]*\n  \{ asid := asid, mappings := \{\}, tableBase := some \(untypedNextFrame ut idx\)\.base \}' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n '^theorem untypedRetypeObject_ok_vspaceRoot($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n '^theorem untypedNextVSpaceRoot_of_retype_ok($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n '^theorem freshAsid\?_admissible($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
@@ -4043,10 +4043,10 @@ run_check "INVARIANT" rg -n -U 'def untypedRetypeFromCap[^\n]*(\n([ \t][^\n]*)?)
 run_check "INVARIANT" rg -n -U 'def untypedRetypeFromCap[^\n]*(\n([ \t][^\n]*)?)*        match validateObjIdArg args\.childId with' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U 'def resolveUntypedRetype[^\n]*(\n([ \t][^\n]*)?)*          capAddr       := args\.dstCNode\n          capDepth      := rootCn\.depth\n          requiredRight := \.write' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U 'def resolveUntypedRetype[^\n]*(\n([ \t][^\n]*)?)*      match resolveCapAddress callerTcb\.cspaceRoot srcAddr rootCn\.depth st with' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n -U 'def untypedRetypeObject[^\n]*(\n([ \t][^\n]*)?)*          match retypeFromUntyped src untypedId childId \(req\.object untypedId ut\) req\.size st with' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n -U 'def untypedRetypeObject[^\n]*(\n([ \t][^\n]*)?)*          match retypeFromUntyped src untypedId childId \(req\.object untypedId ut utCap\.freeIndex\)\n                req\.size st with' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n -U 'def untypedRetypeObject[^\n]*(\n([ \t][^\n]*)?)*          match cspaceDstRefusal dst st with(\n([ \t][^\n]*)?)*            match retypeFromUntyped src untypedId childId' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
-run_check "INVARIANT" rg -n -U 'def untypedRetypeObject[^\n]*(\n([ \t][^\n]*)?)*              \.ok \(\(\), \(\(req\.scrub st1 ut\)\.storeCNodeWith dst\.cnode\n                \(·\.insert dst\.slot \(req\.capability childId\)\)\)\.cdtAddChild src dst \.retype\)' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
-run_check "INVARIANT" rg -n -U 'def CarveRequest\.scrub[^\n]*\n  \| \.frame => carveZeroFrame st \(untypedNextFrame ut\)\n  \| \.untyped _ => st' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n -U 'def untypedRetypeObject[^\n]*(\n([ \t][^\n]*)?)*              \.ok \(\(\), \(\(req\.scrub st1 ut utCap\.freeIndex\)\.storeCNodeWith dst\.cnode\n                \(·\.insert dst\.slot \(req\.capability childId\)\)\)\.cdtAddChild src dst \.retype\)' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n -U 'def CarveRequest\.scrub[^\n]*\n    CarveRequest → SystemState\n  \| \.frame => carveZeroFrame st \(untypedNextFrame ut idx\)\n  \| \.untyped _ => st' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n -U 'def untypedNextChild[^\n]*(\n([ \t][^\n]*)?)*    parent := some parentId \}' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n -U 'def requiresPageAlignment[^\n]*(\n([ \t][^\n]*)?)*  \| \.untyped => true' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n '^theorem untypedNextChild_of_retype_ok($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
@@ -4227,7 +4227,18 @@ run_check "INVARIANT" rg -n '^  \| \.tcbSetSpace           => \.write$' SeLe4n/K
 run_check "INVARIANT" rg -n '^theorem lockSet_tcbSetSpace_size_le($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_consistent_tcbSetSpace($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n 'runSetSpaceChecks$' tests/VSpaceCapabilityBindingSuite.lean
-run_check "INVARIANT" rg -n 'a reset through a derivation-free SIBLING copy is still refused' tests/VSpaceCapabilityBindingSuite.lean
+run_check "INVARIANT" rg -n 'a reset through a derivation-free DUPLICATE is still refused' tests/VSpaceCapabilityBindingSuite.lean
+# WS-ZA ZA5.4 part 13 (v0.36.124): an untyped capability is derived by seL4's
+# rule on every path — refused with children, the source set full otherwise —
+# and the free-index write is declared as a write of the source's CNode.
+run_check "INVARIANT" rg -n 'a copy of an untyped capability with children is refused \(revocationRequired\)' tests/VSpaceCapabilityBindingSuite.lean
+run_check "INVARIANT" rg -n 'runUntypedCopyChecks$' tests/VSpaceCapabilityBindingSuite.lean
+run_check "INVARIANT" rg -n -U 'def ipcTransferSingleCap[^\n]*(\n([ \t][^\n]*)?)*            if untypedDeriveRefused st srcNode cap then \.error \.revocationRequired else' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n -U 'def ipcTransferSingleCap[^\n]*(\n([ \t][^\n]*)?)*untypedSourceSetFull \(st.\.cdtAddChild srcNode dstAddr \.ipcTransfer\)' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^  ipcUntypedGrantFollowsDerivationRule$' tests/OperationChainSuite.lean
+run_check "INVARIANT" rg -n -U 'def lockSet_cspaceCopy[^\n]*(\n([ \t][^\n]*)?)*     \(cnodeLock srcCnodeObjId, \.write\),' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n -U 'def lockSet_cspaceMint [^\n]*(\n([ \t][^\n]*)?)*     \(cnodeLock srcCnodeObjId, \.write\),' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n -U 'def lockSet_untypedRetype[^\n]*(\n([ \t][^\n]*)?)*     \(cnodeLock authCnodeObjId, \.write\),' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n 'and leaves the mapping of a page OUTSIDE the region alone' tests/VSpaceCapabilityBindingSuite.lean
 # WS-BP BP7.1 (v0.36.12): intermediate page tables.  A table installs at the
 # shallowest missing level, writes BOTH sides of the install, and a carved root
@@ -4296,8 +4307,14 @@ run_check "INVARIANT" rg -n '^  fo013c_cspaceDeleteRefusesInstalledTableCap$' te
 # the binding's pool, and a root with no page maps nothing.
 run_check "INVARIANT" rg -n '^  root\.tableBase\.isSome && root\.walkComplete vaddr$' SeLe4n/Model/Object/Structures.lean
 run_negative_check "INVARIANT" rg -n 'root\.tableBase\.isNone \|\| root\.walkComplete' SeLe4n/Model/Object/Structures.lean
-run_check "INVARIANT" rg -n '^    untypedPlacementRespected config && bootRootTablesPlaced config$' SeLe4n/Platform/Boot.lean
-run_check "INVARIANT" rg -n '^   \(bootRootTablesPlaced config, bootRootTablesBootError\)\]$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^    untypedPlacementRespected config && bootRootTablesPlaced config &&$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^   \(bootRootTablesPlaced config, bootRootTablesBootError\),$' SeLe4n/Platform/Boot.lean
+# WS-ZA ZA5.4 part 13 (v0.36.124): no boot untyped is named by two capabilities,
+# the ninth conjunct of `wellFormed`, with its own diagnostic row.
+run_check "INVARIANT" rg -n '^    untypedCapabilitiesUnique config$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^   \(untypedCapabilitiesUnique config, untypedCapabilityDuplicateBootError\)\]$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem PlatformConfig\.wellFormed_untypedCapabilitiesUnique($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n 'runBootUntypedCapabilityChecks$' tests/SmpIdleSuite.lean
 run_check "INVARIANT" rg -n -U 'def bootRootTablesPlaced [^\n]*(\n([ \t][^\n]*)?)*  decide \(\(configuredRootTableBases config\)\.filterMap id\)\.Nodup &&' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^theorem bootRootTablesPlaced_withoutExtents($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n -U '^    decide \(root\.mappings\.size = 0\) && root\.tables\.isEmpty &&\n    decide \(4 ≤ root\.mappings\.capacity\) && root\.mappingEpochs\.vacant$' SeLe4n/Platform/RPi5/VSpaceBoot.lean

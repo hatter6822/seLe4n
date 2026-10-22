@@ -45,12 +45,13 @@ derivation of an untyped capability follows seL4's rule (refused while the
 source has a child; the source set full once it has one), and the reset entry
 (`untypedResetSlot`) refuses an invoked slot with a derivation child and rewinds
 that slot's free index.  The question is asked of the objects as well
-(`carvedSubtreeUnreferenced`): no CNode slot, and no capability parked in a
-blocked sender's message, names any object of the subtree.  The per-slot rule
-holds only from states where at most one capability to an untyped can carve, and
-the boot state is not yet shown to be one (`docs/REGISTERED_DEBT.md`), so the
-store-wide question is what keeps a capability another slot carved through from
-naming reset memory.
+(`carvedSubtreeUnreferenced`): no CNode slot, and no thread's space slot, names
+any object of the subtree.  The per-slot rule holds only from states where at
+most one capability to an untyped can carve (`untypedSoleCarverInvariant`).  Boot
+refuses a configuration naming one untyped through two capabilities
+(`untypedCapabilitiesUnique`), but the boot state is not yet proven to satisfy
+`untypedMemoryInvariant` (`docs/REGISTERED_DEBT.md`), so the store-wide question
+is what keeps a capability another slot carved through from naming reset memory.
 
 A capability is not the only way to reach memory.  A **mapping** is recorded on
 the frame capability that made it (`Capability.mapping`, `v0.36.7`), and
