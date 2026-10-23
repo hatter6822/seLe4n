@@ -228,6 +228,14 @@ for driver in drivers:
             "receive-for-badged-send", "badged-send-to-receiver",
             "badged-send-blocks", "receive-from-badged-sender",
             "receive-for-badged-call", "badged-call", "reply-to-badged-call",
+            # WS-ZA ZA5.4 part 23: a receive and a wait blocked on a carved
+            # endpoint and notification, the notification bound to the
+            # partner, and each one's only capability deleted: the
+            # finalisation cancels the waiter in place (the waiters are linked
+            # through their TCBs) or unbinds the thread, then the retire.
+            "receive-on-carved", "busy-endpoint-delete",
+            "wait-on-carved", "busy-notification-delete",
+            "bind-carved-notification", "bound-notification-delete",
             # WS-ZA ZA5.2: the thread and notification arms change their
             # objects in place.
             "tcb-set-priority", "tcb-set-mc-priority", "tcb-set-affinity",
@@ -270,18 +278,29 @@ for driver in drivers:
             "untyped-retype-page-table-1": (16, 13),
             "untyped-retype-page-table-2": (14, 13),
             "untyped-retype-page-table-3": (14, 13),
-            "untyped-retype-frame": (12, 11), "vspace-map": (9, 0),
+            # The first carve after boot takes one cell more than its steady
+            # state; since v0.36.134 that is the busy-endpoint carve, which
+            # now runs first, so the frame carve reads 11 both times.
+            "untyped-retype-frame": (11, 11), "vspace-map": (9, 0),
             # WS-ZA ZA5.4 part 22: each passive kind's carve, read at its own
             # cells (attributed by a QEMU trace of lean_alloc_small's callers).
             # 9 are the store's: the untyped's record and child cell written
             # in place (2), the object, index-set and type-table inserts (2
-            # each) and the index row (1); an endpoint and a notification are
-            # built as shared constants and add nothing.  A reply adds its
+            # each) and the index row (1).  An endpoint and a notification
+            # add their own record and object cell (2): since v0.36.134 the
+            # carve rebuilds the shared constant it is built from
+            # (`CarveRequest.object_eq_impl`, `KernelObject.unshareFresh`), so
+            # the first receive or wait on it writes in place.  A reply adds its
             # record (2) and the carve request (1); a CNode adds the carve
             # request and its decode (3), its spare slot cells (12) and the
             # CNode record (1), and 4 larger cells the heap serves as page
             # runs, which the small-object trace does not see.
-            "untyped-retype-endpoint": (9, 9), "untyped-retype-notification": (9, 9),
+            "untyped-retype-endpoint": (11, 11), "untyped-retype-notification": (11, 11),
+            # WS-ZA ZA5.4 part 23: the same carves at the finalising deletes'
+            # own ids; the busy endpoint's is the run's first carve (12).
+            "untyped-retype-busy-endpoint": (12, 11),
+            "untyped-retype-busy-notification": (11, 11),
+            "untyped-retype-bound-notification": (11, 11),
             "untyped-retype-reply": (12, 12), "untyped-retype-cnode": (29, 29),
             "vspace-unmap-first": (0, 0), "vspace-map-again": (0, 0),
             "vspace-unify-instruction": (4, 3),

@@ -4117,7 +4117,44 @@ run_check "INVARIANT" rg -n -U 'def cspaceDeleteSlotFinalising[^\n]*\n[^\n]*\n  
 # target is a final `.object` capability to a retirable kind; a root's retire posts
 # its ASID's acknowledged round; and the delete fast path admits only a delete
 # that retires nothing.
-run_check "INVARIANT" rg -n -U 'def cspaceDeleteThenFinalise[^\n]*(\n([ \t][^\n]*)?){0,9}\n      \| \.ok \(\(\), st2\) => \.ok \(\(\), retireFinalObject executingCore target recorder st2\)' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n -U 'def cspaceDeleteThenFinalise[^\n]*(\n([ \t][^\n]*)?){0,9}\n      \| \.ok \(\(\), st2\) => \.ok \(\(\), retireFinalisedObject executingCore target recorder st2\)' SeLe4n/Kernel/Capability/FrameFinalise.lean
+# v0.36.134: the final delete FINALISES before it retires (seL4's finaliseCap):
+# an endpoint's waiters are cancelled (cancelAllIPC), a notification is unbound
+# and then its waiters cancelled (unbindMaybeNotification, cancelAllSignals),
+# and only then is the object retired.  The anchors pin the kind dispatch, the
+# order (unbind before cancel; finalise before retire) and that both finalising
+# capability paths route through the finalised retire.
+run_check "INVARIANT" rg -n -U 'def finaliseFinalObject [^\n]*(\n([ \t][^\n]*)?){0,5}\n      \| some \.endpoint => cancelAllIpc x st\n      \| some \.notification => cancelAllSignals x \(unbindMaybeNotification x st\)\n      \| _ => st' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n -U 'def retireFinalisedObject [^\n]*\n[^\n]*\n  retireFinalObject executingCore target recorder \(finaliseFinalObject target st\)' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_negative_check "INVARIANT" rg -n '[^d]Object executingCore target recorder' SeLe4n/Kernel/Capability/FrameFinalise.lean
+# The IPC bundle, the reachability bundle and the projection are each proven
+# preserved by the finalised retire, and the delete/revoke closures consume them.
+run_check "INVARIANT" rg -n '^theorem finaliseFinalObject_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllPreservation.lean
+run_check "INVARIANT" rg -n '^theorem retireFinalisedObject_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllPreservation.lean
+run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlotFinalising_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllPreservation.lean
+run_check "INVARIANT" rg -n '^theorem finaliseFinalObject_closed($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllFrame.lean
+run_check "INVARIANT" rg -n '^theorem popHead_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/IPC/DualQueue/PopInPlace.lean
+run_check "INVARIANT" rg -n '^theorem finaliseFinalObject_preserves_ipcReachable($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllReachability.lean
+run_check "INVARIANT" rg -n '^theorem retireFinalisedObject_preserves_ipcReachable($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllReachability.lean
+run_check "INVARIANT" rg -n '^theorem finaliseFinalObject_preserves_projection($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/FinaliseProjection.lean
+run_check "INVARIANT" rg -n '^theorem retireFinalisedObject_preserves_projection($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/FinaliseProjection.lean
+# Delete and revoke now write remote run queues (a cancelled waiter is woken on
+# its own core), so both DECLARE a scheduler footprint, and the seam proves it
+# covers their writes.
+run_check "INVARIANT" rg -n -U '  \| \.cspaceDelete \| \.cspaceRevoke =>\n      LockSet\.ofList\? schedLockSet_capabilityDestroyOnCore' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_cspaceDeleteSlotFinalising_coversWrites($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedContainment.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_cspaceRevokeCdtFinalising_coversWrites($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedContainment.lean
+# The notification step is compiled as its in-place writes, and the walk that
+# cancelAllSignals runs is defined AFTER the substitution, so the compiler takes
+# it (a definition compiled before a @[csimp] keeps the specification's body).
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_notificationHead_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n -U '@\[csimp\] theorem cancelNotificationQueue_eq_impl :\n    @cancelNotificationQueue = @cancelNotificationQueueImpl' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n -U '@\[csimp\] theorem cancelNotificationQueue_eq_impl :(\n[^\n]*){0,40}\ndef cancelAllSignals ' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+# A carved endpoint or notification is rebuilt into its own cells, by a call
+# the compiler may not hoist into a shared constant.
+run_check "INVARIANT" rg -n -U '  \| \.endpoint => \(KernelObject\.endpoint \(Endpoint\.ofQueues \{\} \{\}\)\)\.unshareFresh\n  \| \.notification =>\n      \(KernelObject\.notification \(\{ state := \.idle \} : Notification\)\)\.unshareFresh' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n -U '@\[csimp\] theorem CarveRequest\.object_eq_impl :\n    @CarveRequest\.object = @CarveRequest\.objectImpl' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n -U '@\[noinline, never_extract\] def KernelObject\.unshareFresh \(o : KernelObject\) : KernelObject :=\n  o\.unshare' SeLe4n/Model/Object/Unshare.lean
 run_check "INVARIANT" rg -n -U 'def slotRetireTarget[^\n]*(\n([ \t][^\n]*)?){0,4}\n    \| \.object x => if retirableKind st x && st\.capIsFinal cnode slot then x\.val \+ 1 else 0' SeLe4n/Kernel/Capability/FinalRetire.lean
 run_check "INVARIANT" rg -n -U 'def retirableKind[^\n]*\n  match st\.getObjectType\? x with\n  \| some \.frame \| some \.pageTable \| some \.vspaceRoot => true\n  \| some \.endpoint \| some \.notification \| some \.reply \| some \.cnode => true\n  \| some \.untyped =>\n    match st\.getUntyped\? x with\n    \| some U => U\.children\.isEmpty\n    \| none => false\n  \| _ => false' SeLe4n/Kernel/Capability/FinalRetire.lean
 run_check "INVARIANT" rg -n -U 'def retireRecordedObject[^\n]*(\n([ \t][^\n]*)?){0,3}\n  match st1\.getVSpaceRoot\? x with\n  \| some root => retypeAsidRoundStep executingCore root\.asid \(retireCarvedObject st1 x\)\n  \| none => retireCarvedObject st1 x' SeLe4n/Kernel/Capability/FinalRetire.lean
@@ -4148,7 +4185,7 @@ run_check "INVARIANT" rg -n -U '\(hNtfnFwd : ∀ \(noid : SeLe4n\.ObjId\) \(ntfn
 # A delete whose capability names no page table and records no page builds no
 # slot address and no list: the frame teardown retires it directly.
 run_check "INVARIANT" rg -n '^theorem cspaceDeleteTeardownAt_of_nothing ' SeLe4n/Kernel/Capability/FrameFinalise.lean
-run_check "INVARIANT" rg -n -U '      \| none =>\n        if \(st\.getPageTable\? frameId\)\.isSome then\n          cspaceDeleteTeardownAt executingCore cnode slot st\n        else\n          let target := slotRetireTarget st cnode slot\n          let recorder := recorderFor st target cnode slot\n          retireFinalObject executingCore target recorder \(cspaceDeletePerformAt cnode slot st\)\n    \| _ =>\n      let target' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n -U '      \| none =>\n        if \(st\.getPageTable\? frameId\)\.isSome then\n          cspaceDeleteTeardownAt executingCore cnode slot st\n        else\n          let target := slotRetireTarget st cnode slot\n          let recorder := recorderFor st target cnode slot\n          retireFinalisedObject executingCore target recorder \(cspaceDeletePerformAt cnode slot st\)\n    \| _ =>\n      let target' SeLe4n/Kernel/Capability/FrameFinalise.lean
 run_check "INVARIANT" rg -n '^theorem retirePassiveObject_frame ' SeLe4n/Kernel/Capability/FinalRetire.lean
 run_check "INVARIANT" rg -n '^theorem retirePassiveObject_preserves_teardownWellFormed ' SeLe4n/Kernel/Capability/FinalRetire.lean
 run_check "INVARIANT" rg -n '^theorem passiveObjectQuiescent\.slotCap ' SeLe4n/Kernel/Capability/FinalRetire.lean
@@ -4275,7 +4312,9 @@ run_check "INVARIANT" rg -n '^theorem retireFinalObject_untypedRecordsChild ' Se
 run_check "INVARIANT" rg -n '^theorem slotRetireTarget_names ' SeLe4n/Kernel/Capability/Invariant/Preservation/Revoke.lean
 run_check "INVARIANT" rg -n '^  runPassiveRetireChecks$' tests/VSpaceCapabilityBindingSuite.lean
 run_check "INVARIANT" rg -n 'deleting the \{name\}.s last capability retires it from the store and the untyped.s list' tests/VSpaceCapabilityBindingSuite.lean
-run_check "INVARIANT" rg -n 'a notification bound to a thread outlives its last capability, still recorded' tests/VSpaceCapabilityBindingSuite.lean
+# v0.36.134: a bound notification's last delete unbinds its thread, then retires it.
+run_check "INVARIANT" rg -n -U '"deleting a bound notification.s last capability unbinds its thread"\n        \(\(st1\.getTcb\? spaceWorker\)\.map \(·\.boundNotification\) == some none\)' tests/VSpaceCapabilityBindingSuite.lean
+run_negative_check "INVARIANT" rg -n 'a notification bound to a thread outlives its last capability' tests/VSpaceCapabilityBindingSuite.lean
 run_check "INVARIANT" rg -n 'the replace retires the root, releases its ASID and unrecords it' tests/VSpaceCapabilityBindingSuite.lean
 run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.Capability\.Invariant\.Preservation\.ThreadSpaceCopy$' SeLe4n/Kernel/Capability/Invariant/Preservation.lean
 run_check "INVARIANT" rg -n '^theorem resolveSetSpace_ok_authorised($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
@@ -4341,7 +4380,7 @@ run_check "INVARIANT" rg -n -U 'def cspaceDeleteThenFinalise [^\n]*(\n([ \t][^\n
 run_check "INVARIANT" rg -n -U 'def pageTablesOrphaned [^\n]*(\n([ \t][^\n]*)?)*          if Architecture\.pageTableInstallLive st id then\n            \(id, inst\) :: acc' SeLe4n/Kernel/Capability/FrameFinalise.lean
 run_negative_check "INVARIANT" rg -n -U 'def pageTablesOrphaned [^\n]*(\n([ \t][^\n]*)?)*carvedSubtreeUnreferenced' SeLe4n/Kernel/Capability/FrameFinalise.lean
 run_check "INVARIANT" rg -n -U '^@\[inline\] def slotPageTables \(st : SystemState\) \(addr : CSpaceAddr\) : List SeLe4n\.ObjId :=\n  match \(st\.slotCapAt addr\)\.bind \(capabilityPageTable st\) with\n  \| some id => if st\.capIsFinal addr\.cnode addr\.slot then \[id\] else \[\]\n  \| none => \[\]$' SeLe4n/Kernel/Capability/FrameFinalise.lean
-run_check "INVARIANT" rg -n -U 'def cspaceDeleteTeardownAtTable [^\n]*(\n([ \t][^\n]*)?)*      \| some _ =>\n        let target := slotRetireTarget st cnode slot\n        let recorder := recorderFor st target cnode slot\n        retireFinalObject executingCore target recorder\n          \(if st\.capIsFinal cnode slot then\n            let st1 := cspaceDeletePerformAt cnode slot st\n            if Architecture\.pageTableInstallLive st1 tableId then\n              finaliseDestroyedCapabilitiesState executingCore \[tableId\] \[\] st1\n            else st1\n          else cspaceDeletePerformAt cnode slot st\)' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n -U 'def cspaceDeleteTeardownAtTable [^\n]*(\n([ \t][^\n]*)?)*      \| some _ =>\n        let target := slotRetireTarget st cnode slot\n        let recorder := recorderFor st target cnode slot\n        retireFinalisedObject executingCore target recorder\n          \(if st\.capIsFinal cnode slot then\n            let st1 := cspaceDeletePerformAt cnode slot st\n            if Architecture\.pageTableInstallLive st1 tableId then\n              finaliseDestroyedCapabilitiesState executingCore \[tableId\] \[\] st1\n            else st1\n          else cspaceDeletePerformAt cnode slot st\)' SeLe4n/Kernel/Capability/FrameFinalise.lean
 run_negative_check "INVARIANT" rg -n 'carvedSubtreeUnreferenced|objectNamesListed|capNamesListed' SeLe4n/Kernel/Capability/FrameFinalise.lean
 # v0.36.131 finality (seL4's isFinalCapability over mdb_chunked): the slots
 # naming one object are one contiguous preorder run, a conjunct of the tree
@@ -21309,8 +21348,9 @@ run_check "INVARIANT" rg -n 'sd059_dispatch_removes_the_same_cnode_derivation' t
 run_check "INVARIANT" rg -n 'sd059_local_only_destroys_the_independent_sibling' tests/SyscallDispatchSuite.lean
 # 3. THE DISPATCH PAYOFF covers it -- the arm is in
 # `dispatchCapabilityOnly_preserves_ipcInvariantFull`, through the finalising
-# revoke's closure theorem (v0.36.111).
-run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdtFinalising_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
+# revoke's closure theorem (v0.36.111; since v0.36.134 it lives beside the
+# finalisation it now runs, in CancelAllPreservation).
+run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdtFinalising_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllPreservation.lean
 # 5. A `donationReadAgreement` DOES NOT DEMAND pendingMessage EQUALITY: only
 # two conjuncts of the bundle read the field, and they read its presence.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def pendingMessageReadAgrees[^\n]*(\n([ \t][^\n]*)?)*mx\.isSome = my\.isSome" SeLe4n/Kernel/IPC/Invariant/Defs.lean'

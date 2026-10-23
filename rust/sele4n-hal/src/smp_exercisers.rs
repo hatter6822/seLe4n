@@ -1613,11 +1613,12 @@ const fn partner_step(
 }
 
 /// The round trips that need a second thread (WS-ZA ZA4.1), each a sequence
-/// issued as whichever thread is current.  Each opens with a step that blocks
-/// the current thread, so core 0 switches to the other (the only other
-/// runnable thread there), which the next step runs as: whichever thread
-/// started, the sequence is the same, so a tick that switched the two between
-/// sequences changes nothing.
+/// issued as whichever thread is current.  A step that blocks the current
+/// thread makes core 0 switch to the other (the only other runnable thread
+/// there), which the next step runs as: whichever thread started, the sequence
+/// is the same, so a tick that switched the two between sequences changes
+/// nothing.  The IPC sequences open with such a step; the finalising deletes
+/// carve first, and the bound notification's blocks no thread.
 /// - a receive that blocks, then a send that finds the receiver waiting and
 ///   continues;
 /// - a wait that blocks, then a signal that wakes the waiter and continues;
@@ -1630,9 +1631,20 @@ const fn partner_step(
 /// - the send to a waiting receiver, the send that blocks and the call again,
 ///   each through the badged endpoint capability (WS-ZA ZA5.3: a capability
 ///   holds its badge as a word and a flag, which the send hands on as they
-///   are).
+///   are);
+/// - an endpoint carved, a receive on it that blocks, and its only capability
+///   deleted by the other thread, which cancels the blocked receive (seL4's
+///   `cancelAllIPC`), wakes the receiver and retires the endpoint (WS-ZA ZA5.4
+///   part 23);
+/// - the same of a notification and a wait (`cancelAllSignals`);
+/// - a notification carved, bound to the partner thread, and its only
+///   capability deleted, which unbinds it (`unbindMaybeNotification`) and
+///   retires it.
+///
+/// Each carve's object is its own id ([`FINALISED_CHILD_IDS`]) in the frame
+/// slot, which the invocation scenarios fill only later; the delete empties it.
 #[cfg(feature = "hw_target")]
-const PARTNER_SCENARIOS: [&[RoundTrip]; 7] = [
+const PARTNER_SCENARIOS: [&[RoundTrip]; 10] = [
     &[
         partner_step("receive-blocks", RECEIVE, ENDPOINT_CAP, 0, [0, 0], true),
         partner_step("send-to-receiver", SEND, ENDPOINT_CAP, 1, [0x55, 0], false),
@@ -1742,6 +1754,68 @@ const PARTNER_SCENARIOS: [&[RoundTrip]; 7] = [
             false,
         ),
     ],
+    // WS-ZA ZA5.4 part 23: the final delete of a busy endpoint, of a busy
+    // notification, and of a bound one.
+    &[
+        invocation(
+            "untyped-retype-busy-endpoint",
+            UNTYPED_RETYPE,
+            UNTYPED_CAP,
+            [ENDPOINT_TYPE, FINALISED_CHILD_IDS[0], CNODE_CAP, FRAME_SLOT],
+        ),
+        partner_step("receive-on-carved", RECEIVE, FRAME_CAP, 0, [0, 0], true),
+        invocation(
+            "busy-endpoint-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [FRAME_SLOT, 0, 0, 0],
+        ),
+    ],
+    &[
+        invocation(
+            "untyped-retype-busy-notification",
+            UNTYPED_RETYPE,
+            UNTYPED_CAP,
+            [
+                NOTIFICATION_TYPE,
+                FINALISED_CHILD_IDS[1],
+                CNODE_CAP,
+                FRAME_SLOT,
+            ],
+        ),
+        partner_step("wait-on-carved", WAIT, FRAME_CAP, 0, [0, 0], true),
+        invocation(
+            "busy-notification-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [FRAME_SLOT, 0, 0, 0],
+        ),
+    ],
+    &[
+        invocation(
+            "untyped-retype-bound-notification",
+            UNTYPED_RETYPE,
+            UNTYPED_CAP,
+            [
+                NOTIFICATION_TYPE,
+                FINALISED_CHILD_IDS[2],
+                CNODE_CAP,
+                FRAME_SLOT,
+            ],
+        ),
+        invocation(
+            "bind-carved-notification",
+            TCB_BIND_NOTIFICATION,
+            PARTNER_TCB_CAP,
+            [FRAME_CAP, 0, 0, 0],
+        ),
+        invocation(
+            "bound-notification-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [FRAME_SLOT, 0, 0, 0],
+        ),
+    ],
 ];
 
 /// A capability invocation with all four message registers inline, which
@@ -1786,6 +1860,11 @@ const PAGE_TABLE_CHILD_IDS: [u64; 3] = [17, 18, 19];
 /// before the next is carved.
 #[cfg(feature = "hw_target")]
 const PASSIVE_CHILD_IDS: [u64; 4] = [20, 21, 22, 23];
+/// The ids the finalising-delete scenarios carve at: an endpoint a receive
+/// blocks on, a notification a wait blocks on, and a notification bound to the
+/// partner, each finalised and retired by its only capability's delete.
+#[cfg(feature = "hw_target")]
+const FINALISED_CHILD_IDS: [u64; 3] = [24, 25, 26];
 /// `KernelObjectType` tags of the passive kinds; the CNode's size bits (its
 /// radix, 2: four slots) in the tag word's upper bits.
 #[cfg(feature = "hw_target")]
