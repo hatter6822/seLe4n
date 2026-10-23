@@ -4872,6 +4872,47 @@ untyped is pristine (`bootFromPlatformCheckedWithIdleThreadsFor_ok_untypedsUncar
 the starts keep both (`startInitialThreads_untypedsSole`) and the linked tree
 is acyclic, so `linkBootCapabilities_bootLinkedShape` reads all six off them.
 
+**Finality** (`v0.36.131`, seL4's `mdb_chunked` and `isFinalCapability`).  The
+tree shape holds two more facts:
+
+- **the slots naming one object form one contiguous run of the preorder**
+  (`sameObjectContiguous`, over `SlotList.Chunked`), so a second slot naming a
+  capability's object exists exactly when the slot just before or just after it
+  in the preorder names it;
+- **a capability naming an untyped is an untyped capability** (`untypedNamed`):
+  no CNode-slot or reply capability names an untyped, so an untyped's slots are
+  its chain and a carve, which inserts its child right after its source, never
+  splits a run.
+
+Every slot write keeps both: an insert puts its child right after its source,
+which is the end of the source's run (a copy names its source's object; a carve's
+child names a fresh object, and its source is an untyped capability that is not
+full, so the last of its untyped's chain), a delete removes one slot of a run, a
+move renames one, and a boot root joins the end of the root chain.  The boot
+establishes them: it groups its root chains by the object a capability names
+(`Capability.namedObject`), not by its whole target, and its untyped check
+(`untypedCapabilitiesUnique`) counts the configured capabilities naming each
+boot untyped and requires the one it finds to be an untyped capability
+(`bootFromPlatformCheckedWithIdleThreadsFor_ok_untypedNamed`,
+`startInitialThreads_untypedNamed`).
+
+The kernel reads finality off the slot's links (`SystemState.capIsFinal`,
+`Model/CapabilityFinality.lean`): its capability is compared by object id
+(`Capability.namesObjectWord`) with the capabilities in the slots its parent,
+first-child, `prev` and `next` words name, word reads and comparisons only.
+The specification stays "no other slot names the object"
+(`SystemState.capFinalSpec`), and the two are equal under the capability bundle
+(`capIsFinal_iff_capFinalSpec`, from `SystemState.capIsFinal_iff_of_shape`):
+the slot after a slot is its first child, its next sibling, or a slot outside
+the subtree of the parent it is the last child of, which `below` then makes name
+the object; the slot before it is its parent or lies at or below its previous
+sibling, which then names the object (`ForestOrder.succ_cases`,
+`ForestOrder.pred_cases`, `SystemState.names_up_of_shape`).  An empty slot and
+the audit-trail capability are final.  The page-table teardown of a delete or
+revoke reads it before the delete (`slotPageTables`,
+`cspaceDeleteTeardownAtTable`); a CNode-slot or reply capability naming a table
+id counts as naming it, as seL4's `sameObjectAs` does.
+
 ### 8.6.1 Carve Refusal Order (`v0.36.125`)
 
 `untypedRetypeObject` resolves the untyped capability and asks
@@ -5501,12 +5542,15 @@ seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
   `pageTablesOrphaned`, `detachPageTables`; payoff
   `finaliseDestroyedCapabilities_ok_tables`), seL4's `finaliseCap` →
   `unmapPageTable`; a CNode holding such a capability is not retyped in place.
-  "Last" is decided on every slot of every object, a CNode's or a thread's
-  (`carvedSubtreeUnreferenced`, `v0.36.122`; CNode slots only from `v0.36.38`): a
-  copy parked in a blocked sender's message can be dropped by a cancellation
-  that finalises nothing, so counting it would leave a table installed with no
-  capability anywhere; a parked copy delivered later names a table installed
-  nowhere, which `.pageTableMap` installs again.
+  "Last" is seL4's `isFinalCapability` since `v0.36.131`: before the delete,
+  the destroyed slot's capability is compared by object id with the four slots
+  its derivation links name (`SystemState.capIsFinal`, read by `slotPageTables`
+  and the page-table delete teardown), which under the capability bundle is
+  "no other slot names the object" (`capIsFinal_iff_capFinalSpec`,
+  `mem_slotPageTables_iff_of_bundle`; §8.6).  From `v0.36.122` to `v0.36.130`
+  it was a scan of every slot of every object after the step
+  (`carvedSubtreeUnreferenced`, CNode slots only from `v0.36.38`), which the
+  untyped reset still runs.
   The root is the truth and a table's record a pointer (`pageTableInstallLive`):
   a stale record reads as installed nowhere.  The record is plain fields under
   a flag (`PageTableObject.installed`, seL4's `capPTIsMapped`), cleared with its slot words

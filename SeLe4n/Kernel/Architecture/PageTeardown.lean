@@ -636,10 +636,11 @@ theorem unmapLivePages_ok_frame (ec : Concurrency.CoreId) :
 -- §3  Does any capability still name an object?
 -- ============================================================================
 --
--- Asked by the untyped reset (no capability may name a retired object) and by
--- capability finalisation (a page table whose last capability is destroyed
--- leaves its address space).  Moved here from `UntypedReset.lean` at
--- `v0.36.12` so both askers reach one answer.
+-- Asked by the untyped reset (no capability may name a retired object).  Moved
+-- here from `UntypedReset.lean` at `v0.36.12`, when capability finalisation asked
+-- it too; since `v0.36.131` finalisation reads finality off the destroyed slot's
+-- derivation links instead (`SystemState.capIsFinal`), so the reset is its one
+-- asker.
 
 /-- **Does this capability name an object in the subtree?**  Only an `.object`
 target names an object; a CNode-slot, reply or audit-trail target names none. -/

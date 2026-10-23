@@ -269,7 +269,16 @@ untyped record (`kindPreservingWrite`, `storeObject_kindPreservingWrite`'s
 `hUntyped`); a derivation of an untyped capability goes through the bundle off
 (b) at its source (`capabilityBundleOffSource`) and sets the source full; a
 free-index write needs the slot's no-strict-descendant fact (`hLeaf`); a carved
-untyped must record no child.  The
+untyped must record no child.  Since part 20 (`v0.36.131`) the slots naming one
+object form one contiguous preorder run (`TreeShapeOver.sameObjectContiguous`,
+seL4's `mdb_chunked`) and a capability naming an untyped is an untyped
+capability (`TreeShapeOver.untypedNamed`): a new slot write must say what the
+written slot names as an equivalence (`TreeShapeOver.addChild`'s `hNew`), an
+insert lands right after its source, the end of the source's run, and a
+capability that names an untyped must target it.  Finality is read off the
+four link words (`SystemState.capIsFinal`, equal to `capFinalSpec` under the
+bundle by `capIsFinal_iff_capFinalSpec`); new code asks it, never a store
+scan.  The
 suspend of a thread blocked in IPC or holding a donated context is the one
 syscall arm left on the general path (ZA6.1).  ZA6 covers the other
 entries and makes the rule standing.  Plan:

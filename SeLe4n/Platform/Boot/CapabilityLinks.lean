@@ -18,15 +18,18 @@ derivation tree in MDB order.  This module is that stage.  It walks the
 configuration's capability slots in boot order (`bootCapabilitySlots`: every
 configured CNode's occupied slots, then every configured thread's two space
 slots) and links each slot that holds a capability (`bootLinkSlot`): the first
-slot naming a target joins the end of the root chain, and a later slot naming
-the same target becomes that root's first child, a copy of it.  The slots
-naming one target are therefore one contiguous preorder run, a root followed by
-its copies.
+slot naming an object (`Capability.namedObject`, seL4's `sameObjectAs`) joins
+the end of the root chain, and a later slot naming the same object becomes that
+root's first child, a copy of it.  The slots naming one object are therefore one
+contiguous preorder run, a root followed by its copies (`sameObjectContiguous`).
+Until `v0.36.131` slots were grouped by their whole target, so a CNode's own
+capability and a CNode-slot capability into it were two runs of one object.
 
 `BootLinks.Sound` is what each step keeps: link writes and a tree alone moved,
 the links agree with the tree, the tree names exactly the linked slots and each
 holds a capability, the tree is acyclic and has a preorder
-(`CapDerivationTree.TreeOrder`).  `linkBootCapabilities_bootLinkedShape` reads
+(`CapDerivationTree.TreeOrder`) over which the slots naming each object are one
+run.  `linkBootCapabilities_bootLinkedShape` reads
 the stage's whole effect off it: a boot-shaped state is taken to a state of
 linked boot shape (`bootLinkedShape`), whose proof-layer bundle
 `proofLayerInvariantBundle_of_bootLinkedShape` gives.
@@ -47,7 +50,8 @@ theorem linkReach_perObjectMappingsInvariant {st₀ st : SystemState} (h : linkR
 
 
 /-- The boot's capability linking in progress: the state so far, the last slot
-of the root chain, the slots linked, and the root of each target linked. -/
+of the root chain, the slots linked, and the root of each object linked with
+the object it names. -/
 structure BootLinks where
   st : SystemState
   last : Option SlotRef

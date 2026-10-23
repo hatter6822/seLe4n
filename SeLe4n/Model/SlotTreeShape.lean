@@ -49,6 +49,17 @@ store's untyped records (`SystemState.getUntyped?`):
   one untyped** (`TreeShapeOver.childLive`, `TreeShapeOver.childUnique`, seL4's
   `untyped_inc`).
 
+WS-ZA ZA5.4 part 20 adds the two facts finality reads off the links:
+
+* **a capability naming an untyped is an untyped capability**
+  (`TreeShapeOver.untypedNamed`): no CNode-slot or reply alias names an
+  untyped, so the slots naming one are its chain;
+* **the slots naming one object form one contiguous preorder run**
+  (`TreeShapeOver.sameObjectContiguous`, seL4's `mdb_chunked`, over
+  `SlotList.Chunked`), so a capability is final exactly when neither preorder
+  neighbour names its object (`SystemState.capIsFinal`,
+  `Model/CapabilityFinality.lean`).
+
 `CapTreeShape` bundles them.  Each tree write keeps it by one lemma here: a
 step that keeps the tree, every slot and every untyped and no object leaves the
 store (`SlotTreeFrame`), an insert that records its edge
@@ -532,6 +543,10 @@ WS-ZA ZA5.4 part 19 adds the untyped facts, seL4's `untyped_mdb` and
   closure of the untyped's child list (`CarvedFrom`);
 * every child an untyped records is in the store (`childLive`), and an object is
   recorded by at most one untyped (`childUnique`).
+
+WS-ZA ZA5.4 part 20 adds what finality reads: a capability naming an untyped is
+an untyped capability (`untypedNamed`), and the slots naming one object form one
+contiguous run of the preorder (`sameObjectContiguous`, seL4's `mdb_chunked`).
 
 Stated over the tree and the readers rather than the state, so a step that
 rewrites none of them (a scheduler or machine write) keeps it definitionally. -/
