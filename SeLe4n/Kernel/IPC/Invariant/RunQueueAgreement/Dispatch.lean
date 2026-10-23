@@ -573,7 +573,7 @@ theorem dispatchCapabilityOnly_runQueueEntryStage
               | ok p =>
                   obtain ⟨cn, vr⟩ := p
                   simp only [hR] at hStep
-                  cases hSet : copyThreadSpaces st vtid cn vr with
+                  cases hSet : copyThreadSpaces executingCore st vtid cn vr with
                   | error e => simp only [hSet] at hStep; cases hStep
                   | ok stU =>
                       simp only [hSet] at hStep

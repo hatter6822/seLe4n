@@ -4226,7 +4226,7 @@ run_check "INVARIANT" rg -n 'RETIRED: the bare reset posted no .aside1 round for
 run_check "INVARIANT" rg -n -U 'def copyThreadSpaces [^\n]*(\n([ \t][^\n]*)?)*    if tcb\.threadState != \.Inactive \|\| inferThreadState st vtid\.val tcb != \.Inactive then\n      \.error \.illegalState' SeLe4n/Kernel/Lifecycle/Operations/SetSpace.lean
 run_negative_check "INVARIANT" rg -n 'if tcb\.threadState != \.Inactive then \.error \.illegalState' SeLe4n/Kernel/Lifecycle/Operations/SetSpace.lean
 # The checks come before the writes: both sources are read, then the copies run.
-run_check "INVARIANT" rg -n -U 'def copyThreadSpaces [^\n]*(\n([ \t][^\n]*)?)*    else if !cspaceRootSourceAdmitted st cnSrc then \.error \.invalidCapability\n    else if !vspaceRootSourceAdmitted st vrSrc then \.error \.invalidCapability\n    else \.ok \(copyThreadSpacesPerform st vtid\.val cnSrc\.cnode cnSrc\.slot vrSrc\.cnode vrSrc\.slot\)' SeLe4n/Kernel/Lifecycle/Operations/SetSpace.lean
+run_check "INVARIANT" rg -n -U 'def copyThreadSpaces [^\n]*(\n([ \t][^\n]*)?)*    else if !cspaceRootSourceAdmitted st cnSrc then \.error \.invalidCapability\n    else if !vspaceRootSourceAdmitted st vrSrc then \.error \.invalidCapability\n    else \.ok \(copyThreadSpacesPerform executingCore st vtid\.val cnSrc\.cnode cnSrc\.slot vrSrc\.cnode\n      vrSrc\.slot\)' SeLe4n/Kernel/Lifecycle/Operations/SetSpace.lean
 # Each slot is set as seL4 sets it: the slot delete (clear, then splice out of the
 # derivation tree), then the copy of the source's capability with the edge from it.
 run_check "INVARIANT" rg -n -U 'def threadSlotCopied [^\n]*(\n([ \t][^\n]*)?)*  let stD := spliceDeletedCdtNode \(threadSlotCleared tid\.toObjId slot st\)(\n([ \t][^\n]*)?)*    \(stD\.updateTcb tid \(·\.insertSpaceCap slot \(TCB\.spaceCopyOf cap rights\)\)\)\.cdtAddChild\n      \{ cnode := srcCNode, slot := srcSlot \} \{ cnode := tid\.toObjId, slot := slot \} \.copy' SeLe4n/Kernel/Lifecycle/Operations/SetSpace.lean
@@ -4237,12 +4237,33 @@ run_check "INVARIANT" rg -n '^theorem copyThreadSpaces_refuses_active($|[ ({:\[\
 run_check "INVARIANT" rg -n '^theorem copyThreadSpaces_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
 run_check "INVARIANT" rg -n '^theorem copyThreadSpaces_preserves_capabilityInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/ThreadSpaceCopy.lean
 run_check "INVARIANT" rg -n '^theorem copyThreadSpaces_preserves_projection($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
+# WS-ZA ZA5.4 part 22: each space slot is set through the finalising retire.
+run_check "INVARIANT" rg -n -U 'def threadSlotSet [^\n]*(\n([ \t][^\n]*)?){0,3}\n  let target := slotRetireTarget st tid\.toObjId slot\n  retireFinalObject executingCore target \(recorderFor st target tid\.toObjId slot\)\n    \(threadSlotCopied st tid slot srcCNode srcSlot rights\)' SeLe4n/Kernel/Lifecycle/Operations/SetSpace.lean
+run_check "INVARIANT" rg -n -U 'def copyThreadSpacesPerform [^\n]*(\n([ \t][^\n]*)?){0,3}\n  threadSlotSet executingCore\n    \(threadSlotSet executingCore st tid TCB\.cspaceRootSlot cnCNode cnSlot TCB\.cspaceRootRights\)\n    tid TCB\.vspaceRootSlot vrCNode vrSlot TCB\.vspaceRootRights' SeLe4n/Kernel/Lifecycle/Operations/SetSpace.lean
+run_negative_check "INVARIANT" rg -n 'threadSlotCopied \(threadSlotCopied' SeLe4n
+run_check "INVARIANT" rg -n '^theorem threadSlotSet_preserves_capabilityInvariantBundle ' SeLe4n/Kernel/Capability/Invariant/Preservation/ThreadSpaceCopy.lean
+run_check "INVARIANT" rg -n '^theorem threadSlotSet_preserves_ipcInvariantFull ' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
+run_check "INVARIANT" rg -n '^theorem threadSlotSet_runQueueStage ' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Capability.lean
+run_check "INVARIANT" rg -n '^theorem copyThreadSpaces_runQueueStage ' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Capability.lean
+run_check "INVARIANT" rg -n '^theorem threadSlotSet_keyFrame ' SeLe4n/Kernel/ReschedulePendingArms/Capability.lean
+run_check "INVARIANT" rg -n '^theorem copyThreadSpaces_keyFrame ' SeLe4n/Kernel/ReschedulePendingArms/Capability.lean
+run_check "INVARIANT" rg -n '^theorem retireFinalObject_preserves_projection ' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
+run_check "INVARIANT" rg -n '^theorem threadSlotSet_preserves_projection ' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
+run_check "INVARIANT" rg -n -U 'theorem copyThreadSpaces_preserves_projection [^\n]*(\n([ \t][^\n]*)?){0,4}\n    \(hHid : ∀ s : SeLe4n\.Slot, s\.toNat < 2 → ∀ c o,' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
+run_check "INVARIANT" rg -n '^theorem retireFinalObject_objects_of_excluded ' SeLe4n/Kernel/Capability/FinalRetire.lean
+run_check "INVARIANT" rg -n '^theorem retireFinalObject_tables ' SeLe4n/Kernel/Capability/FinalRetire.lean
+run_check "INVARIANT" rg -n '^theorem retireFinalObject_untypedRecordsChild ' SeLe4n/Kernel/Capability/FinalRetire.lean
+run_check "INVARIANT" rg -n '^theorem slotRetireTarget_names ' SeLe4n/Kernel/Capability/Invariant/Preservation/Revoke.lean
+run_check "INVARIANT" rg -n '^  runPassiveRetireChecks$' tests/VSpaceCapabilityBindingSuite.lean
+run_check "INVARIANT" rg -n 'deleting the \{name\}.s last capability retires it from the store and the untyped.s list' tests/VSpaceCapabilityBindingSuite.lean
+run_check "INVARIANT" rg -n 'a notification bound to a thread outlives its last capability, still recorded' tests/VSpaceCapabilityBindingSuite.lean
+run_check "INVARIANT" rg -n 'the replace retires the root, releases its ASID and unrecords it' tests/VSpaceCapabilityBindingSuite.lean
 run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.Capability\.Invariant\.Preservation\.ThreadSpaceCopy$' SeLe4n/Kernel/Capability/Invariant/Preservation.lean
 run_check "INVARIANT" rg -n '^theorem resolveSetSpace_ok_authorised($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem resolveCallerCapObject_ok($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem resolveCallerCapSlot_ok($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U 'def resolveSetSpace [^\n]*(\n([ \t][^\n]*)?)*  match resolveCallerCapSlot callerTid args\.cspaceRoot \.grant st with(\n([ \t][^\n]*)?)*    if !cnCap\.hasRight \.write then \.error \.illegalAuthority(\n([ \t][^\n]*)?)*      match resolveCallerCapSlot callerTid args\.vspaceRoot \.write st with' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n -U '  \| \.tcbSetSpace =>\n    some <\| match cap\.target with(\n([ \t][^\n]*)?)*            match resolveSetSpace tid args st with(\n([ \t][^\n]*)?)*                match copyThreadSpaces st vtid cnSrc vrSrc with' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U '  \| \.tcbSetSpace =>\n    some <\| match cap\.target with(\n([ \t][^\n]*)?)*            match resolveSetSpace tid args st with(\n([ \t][^\n]*)?)*                match copyThreadSpaces executingCore st vtid cnSrc vrSrc with' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U 'case tcbSetSpace =>(\n([ \t][^\n]*)?)*                      exact copyThreadSpaces_preserves_ipcInvariantFull' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^  \| \.tcbSetSpace           => 38$' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n '^  \| \.tcbSetSpace           => \.write$' SeLe4n/Kernel/API.lean

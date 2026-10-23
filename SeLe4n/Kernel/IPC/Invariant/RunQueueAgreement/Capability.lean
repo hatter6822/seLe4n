@@ -399,16 +399,25 @@ theorem threadSlotCopied_runQueueStage {st : SystemState} {tid : SeLe4n.ThreadId
       rw [SystemState.updateTcb_eq_of_some hU]
       exact insertTcb_runQueueStage ((SystemState.getTcb?_eq_some_iff _ _ _).mp hU) (fun _ => rfl)
 
-theorem copyThreadSpaces_runQueueStage {st st' : SystemState} {vtid : SeLe4n.ValidThreadId}
-    {cnSrc vrSrc : CSpaceAddr} (h : copyThreadSpaces st vtid cnSrc vrSrc = .ok st') :
+/-- A thread space slot's set is a run-queue stage: the copy, then the retire. -/
+theorem threadSlotSet_runQueueStage (ec : Concurrency.CoreId) {st : SystemState}
+    {tid : SeLe4n.ThreadId} {t : TCB} (hT : st.getTcb? tid = some t) (slot : SeLe4n.Slot)
+    (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) :
+    RunQueueStage st (threadSlotSet ec st tid slot srcCNode srcSlot rights) := by
+  unfold threadSlotSet
+  exact (threadSlotCopied_runQueueStage hT _ _ _ _).trans (retireFinalObject_runQueueStage ec _ _ _)
+
+theorem copyThreadSpaces_runQueueStage {ec : Concurrency.CoreId} {st st' : SystemState}
+    {vtid : SeLe4n.ValidThreadId}
+    {cnSrc vrSrc : CSpaceAddr} (h : copyThreadSpaces ec st vtid cnSrc vrSrc = .ok st') :
     RunQueueStage st st' := by
   refine RunQueueStage.of_inv fun hInv => ?_
   obtain ⟨tcb, hT, -, -, -, -, rfl⟩ := copyThreadSpaces_ok h
-  obtain ⟨hT1, -⟩ := threadSlotCopied_tcb hInv hT TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot
-    TCB.cspaceRootRights
-  obtain ⟨t1, hT1'⟩ := Option.isSome_iff_exists.mp hT1
-  exact (threadSlotCopied_runQueueStage hT _ _ _ _).trans
-    (threadSlotCopied_runQueueStage hT1' _ _ _ _)
+  obtain ⟨t1, hT1'⟩ := Option.isSome_iff_exists.mp
+    (threadSlotSet_getTcb? ec hInv hT TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot
+      TCB.cspaceRootRights)
+  exact (threadSlotSet_runQueueStage ec hT _ _ _ _).trans
+    (threadSlotSet_runQueueStage ec hT1' _ _ _ _)
 
 theorem bindNotification_runQueueStage {st st' : SystemState} {nid : SeLe4n.ObjId}
     {tcbId : SeLe4n.ThreadId} (h : bindNotification nid tcbId st = .ok ((), st')) :

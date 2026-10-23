@@ -1436,12 +1436,16 @@ private def slotWorkerTcb : Nat := 10  -- a writable capability to the suspended
 private def slotOwnerTcb  : Nat := 11  -- a writable capability to the running owner
 
 /-- §5d's scenario with a **suspended** worker thread and two TCB capabilities
-in the owner's CSpace root: one to the worker, one to the owner itself. -/
+in the owner's CSpace root: one to the worker, one to the owner itself.  The
+worker's space slots start empty, as a carved thread's do (WS-ZA ZA5.4 part
+14): a capability written into them by hand would be in no derivation tree, so
+its slot would read as the final capability to the owner's own roots (part
+20's `capIsFinal` reads the slot's links), and its replace would retire them
+(part 22). -/
 private def spaceScenario : SystemState :=
   let st := carveScenario
   let worker : TCB :=
     { tid := spaceWorker, priority := ⟨10⟩, domain := ⟨0⟩,
-      spaceCells := SeLe4n.Model.TCB.spaceCellsOf carveCn carveVsp,
       ipcBuffer := SeLe4n.VAddr.ofNat 4096 }
   let st1 := match storeObject spaceWorker.toObjId (.tcb worker) st with
     | .ok ((), s) => s
@@ -2010,9 +2014,13 @@ private def runPhysicalWriteChecks : IO Unit := do
   -- The thread-translation operands: a thread whose root owns a page and a
   -- non-kernel ASID installs that page and ASID; any other runs under the
   -- kernel's translation, `(0, 0)`.
-  match dispatchSyscallAsCurrent (decodeCarve slotUtRetype vspaceRootTag 980 slotOwnCnRW 12) carveOwner Concurrency.bootCoreId spaceScenario with
-  | .error e => assertBool s!"carving a root in the §5j scenario succeeds (got {repr e})" false
-  | .ok ((), sp1) => do
+  -- The worker is put in the fixture's root first, through the set-space that
+  -- copies the owner's capabilities into its slots.
+  match runAll spaceScenario
+      [decodeSetSpace slotWorkerTcb slotOwnCnGrant slotOwnVsp,
+       decodeCarve slotUtRetype vspaceRootTag 980 slotOwnCnRW 12] with
+  | .error e => assertBool s!"placing the worker and carving a root in the §5j scenario succeeds (got {repr e})" false
+  | .ok sp1 => do
     assertBool "a thread in the fixture's mappable root installs that root's page and ASID"
       (Architecture.threadTranslationOperands sp1 spaceWorker ==
         ((0x7D000 : UInt64), carveAsid.toNat.toUInt64))
@@ -2111,6 +2119,95 @@ private def runFinalDeleteRetireChecks : IO Unit := do
     assertBool "a page table is retired with its last capability"
       ((st.getPageTable? (SeLe4n.ObjId.ofNat 990)).isNone && !recordsChildAt st carveUt 990)
 
+-- ============================================================================
+-- §5m  WS-ZA ZA5.4 part 22 — a quiescent kernel object goes with its final
+-- capability, and so does what a space-slot replace destroys
+-- ============================================================================
+
+private def endpointTag : Nat := 1
+private def notificationTag : Nat := 2
+private def replyTag : Nat := 7
+/-- A CNode of `2 ^ radix` slots. -/
+private def cnodeTagOfRadix (radix : Nat) : Nat := 3 + radix * 256
+
+/-- `.tcbBindNotification` on the TCB capability at `tcbSlot`: MR0 the
+notification's capability address. -/
+private def decodeBindNotification (tcbSlot ntfnSlot : Nat) : SyscallDecodeResult :=
+  { capAddr   := SeLe4n.CPtr.ofNat tcbSlot
+  , msgInfo   := { length := 1, extraCaps := 0, label := 0 }
+  , syscallId := .tcbBindNotification
+  , msgRegs   := #[SeLe4n.RegValue.ofNat ntfnSlot] }
+
+/-- Is an object stored at `oid`? -/
+private def storedAt (st : SystemState) (oid : Nat) : Bool :=
+  (st.objects[SeLe4n.ObjId.ofNat oid]?).isSome
+
+private def runPassiveRetireChecks : IO Unit := do
+  IO.println "-- §5m the final capability's delete retires a quiescent kernel object (WS-ZA ZA5.4)"
+  for (name, tag) in [("endpoint", endpointTag), ("notification", notificationTag),
+      ("reply", replyTag), ("CNode", cnodeTagOfRadix 2)] do
+    match runAll carveScenario [decodeCarve slotUtRetype tag 960 slotOwnCnRW 12] with
+    | .error e => assertBool s!"carving the {name} succeeds (got {repr e})" false
+    | .ok st => do
+      assertBool s!"setup: the untyped records the {name}"
+        (recordsChildAt st carveUt 960 && storedAt st 960)
+      match runAll st [decodeCopy 12 13, decodeDelete 13] with
+      | .error e => assertBool s!"copying and deleting the {name}'s capability succeeds (got {repr e})" false
+      | .ok st1 => do
+        assertBool s!"deleting a capability to the {name} that is not the last keeps it"
+          (storedAt st1 960 && recordsChildAt st1 carveUt 960)
+        match runAll st1 [decodeDelete 12] with
+        | .error e => assertBool s!"deleting the {name}'s last capability succeeds (got {repr e})" false
+        | .ok st2 => do
+          assertBool s!"deleting the {name}'s last capability retires it from the store and the untyped's list"
+            (!storedAt st2 960 && !recordsChildAt st2 carveUt 960 && (st2.getUntyped? carveUt).isSome)
+          assertBool s!"RETIRED: the plain delete left the {name} in the store and recorded"
+            (match cspaceDeleteSlot { cnode := carveCn, slot := SeLe4n.Slot.ofNat 12 } st1 with
+              | .ok ((), stOld) => storedAt stOld 960 && recordsChildAt stOld carveUt 960
+              | .error _ => false)
+          assertBool s!"the retired {name}'s id carves again"
+            ((runAll st2 [decodeCarve slotUtRetype tag 960 slotOwnCnRW 12]).toOption.isSome)
+  -- A notification bound to a thread is not quiescent: it outlives its last
+  -- capability until its finalise unbinds it (`docs/planning/UNTYPED_RESET_PLAN.md`
+  -- row 23).
+  match runAll spaceScenario
+      [decodeCarve slotUtRetype notificationTag 960 slotOwnCnRW 12,
+       decodeBindNotification slotWorkerTcb 12] with
+  | .error e => assertBool s!"carving and binding a notification succeeds (got {repr e})" false
+  | .ok st => do
+    match runAll st [decodeDelete 12] with
+    | .error e => assertBool s!"deleting the bound notification's capability succeeds (got {repr e})" false
+    | .ok st1 =>
+      assertBool "a notification bound to a thread outlives its last capability, still recorded"
+        (storedAt st1 960 && recordsChildAt st1 carveUt 960)
+  -- The space-slot replace destroys what the slot held: a VSpace root whose
+  -- last capability is the worker's slot is retired with it.
+  match runAll spaceScenario
+      [decodeCarve slotUtRetype vspaceRootTag 980 slotOwnCnRW 12,
+       decodeSetSpace slotWorkerTcb slotOwnCnGrant 12,
+       decodeDelete 12] with
+  | .error e => assertBool s!"carving a root, moving the worker into it and deleting the source succeeds (got {repr e})" false
+  | .ok st => do
+    assertBool "setup: the worker's VSpace slot holds the carved root's last capability"
+      ((rootAt st 980).isSome && rootsOf st spaceWorker == some (carveCn, SeLe4n.ObjId.ofNat 980))
+    match runAll st [decodeSetSpace slotWorkerTcb slotOwnCnGrant slotOwnVsp] with
+    | .error e => assertBool s!"moving the worker back to the boot root succeeds (got {repr e})" false
+    | .ok st1 => do
+      assertBool "the replace retires the root, releases its ASID and unrecords it"
+        ((rootAt st1 980).isNone && st1.asidTable[SeLe4n.ASID.ofNat 1]? == none &&
+          !recordsChildAt st1 carveUt 980)
+      assertBool "and the worker names the boot root"
+        (rootsOf st1 spaceWorker == some (carveCn, carveVsp))
+  -- A replace that is not the last capability's destroy retires nothing.
+  match runAll spaceScenario
+      [decodeCarve slotUtRetype vspaceRootTag 980 slotOwnCnRW 12,
+       decodeSetSpace slotWorkerTcb slotOwnCnGrant 12,
+       decodeSetSpace slotWorkerTcb slotOwnCnGrant slotOwnVsp] with
+  | .error e => assertBool s!"setting and replacing the worker's root succeeds (got {repr e})" false
+  | .ok st =>
+    assertBool "replacing a slot whose root another slot still names keeps the root"
+      ((rootAt st 980).isSome && recordsChildAt st carveUt 980)
+
 def runVSpaceCapabilityBindingChecks : IO Unit := do
   IO.println "===================================================="
   IO.println "VSpace capability-binding suite (PR #845 review, P1)"
@@ -2131,6 +2228,7 @@ def runVSpaceCapabilityBindingChecks : IO Unit := do
   runPhysicalWriteChecks
   runFrameFinaliseChecks
   runFinalDeleteRetireChecks
+  runPassiveRetireChecks
   runAuthorizedChecks
   IO.println "===================================================="
   IO.println "All VSpace capability-binding checks PASS."

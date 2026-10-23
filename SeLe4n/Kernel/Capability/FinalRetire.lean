@@ -12,7 +12,7 @@ import SeLe4n.Model.CapabilityFinality
 import SeLe4n.Kernel.Architecture.PageTeardownClears
 
 /-!
-# Retiring a memory object with its final capability
+# Retiring an object with its final capability
 
 WS-ZA ZA5.4 part 21 (plan D2).  seL4's `cteDelete` runs `finaliseCap` on a
 capability when `isFinalCapability` holds, and the object goes with its last
@@ -22,11 +22,20 @@ detach the teardown already does (`finaliseDestroyedCapabilities`); this module
 is what follows it: the object leaves the store (`retireCarvedObject`, the
 store's one erase, which the untyped reset uses too).
 
+**The passive kernel kinds** (part 22, `v0.36.133`).  An endpoint, a
+notification, a reply or a CNode goes the same way when seL4's `finaliseCap`
+would have nothing to cancel (`passiveObjectQuiescent`) and nothing names it
+outside a slot (`passiveObjectRetirable`: no object by id, no service
+registration or graph entry, no interrupt handler); it leaves the store first
+(`retirePassiveObject`), then its recorder's list.  One that fails either check
+outlives its last capability, recorded, until the finalise of its kind lands
+(`docs/planning/UNTYPED_RESET_PLAN.md` rows 23, 25 and 26).
+
 **What is decided before the slot is emptied** (`slotRetireTarget`): the
-capability names a memory object by `.object`, the capability is final
+capability names the object (`Capability.namedObject`), the capability is final
 (`SystemState.capIsFinal`, read from the slot's four link words), and the
-object is retirable (`retirableKind`): a frame, a page table, a root, or an
-untyped that records no child.  Under the capability bundle a final capability
+object is retirable (`retirableKind`): a frame, a page table, a root, an
+untyped that records no child, or a passive kernel kind.  Under the capability bundle a final capability
 is the only slot naming its object (`capIsFinal_iff_capFinalSpec`), so once the
 slot is emptied no slot names it.
 
@@ -49,7 +58,7 @@ leaves every other record, so `childLive`, `childUnique` and `carvedBelow`
 hold after the retire (`TreeShapeOver.retire`).
 
 **An untyped is retired only while it records no child.**  Until every kernel
-object kind is finalised and retired with its last capability (part 22), a
+object kind is finalised and retired with its last capability (parts 22–26), a
 kernel object can outlive its capabilities, recorded by its untyped alone.
 Retiring that untyped would drop the record, and its own parent's reset would
 then hand the object's memory to a new carve; so an untyped with a live record
@@ -449,7 +458,7 @@ quiescent, and nothing names it by id: no object (`storeNamesNone`), no
 service registration or service-graph entry, no interrupt handler.  A passive
 object that fails this outlives its last capability, as every kernel object did
 before `v0.36.133`; the cancelling finalisation that would retire it is
-`docs/planning/UNTYPED_RESET_PLAN.md` rows 23 and 26. -/
+`docs/planning/UNTYPED_RESET_PLAN.md` rows 23, 25 and 26. -/
 @[inline] def passiveObjectRetirable (st : SystemState) (x : SeLe4n.ObjId) : Bool :=
   passiveObjectQuiescent st x && storeNamesNone st x && registryNamesNone st x &&
     servicesNameNone st x && irqHandlersNameNone st x
@@ -1183,6 +1192,121 @@ theorem retireFinalObject_cases (ec : Concurrency.CoreId) (target recorder : Nat
     · exact .inl rfl
   · exact .inl rfl
 
+/-- **What the retire leaves at each key**: what it held, or — where it held no
+thread and no capability — nothing or an untyped. -/
+theorem retireFinalObject_key (ec : Concurrency.CoreId) (target recorder : Nat)
+    (st : SystemState) (hInv : st.objects.invExt) (oid : SeLe4n.ObjId) :
+    (retireFinalObject ec target recorder st).objects[oid]? = st.objects[oid]? ∨
+      ((∀ o, st.objects[oid]? = some o → ∀ s, o.slotCap s = none) ∧
+        (∀ t, st.objects[oid]? ≠ some (.tcb t)) ∧
+        ((retireFinalObject ec target recorder st).objects[oid]? = none ∨
+          ∃ U, (retireFinalObject ec target recorder st).objects[oid]? = some (.untyped U))) := by
+  rcases retireFinalObject_admitted ec target recorder st with hE | hAdm
+  · rw [hE]; exact .inl rfl
+  have hW := (retireFinalObject_frame ec target recorder st hInv).2.2.2.2
+  generalize retireFinalObject ec target recorder st = st' at hW ⊢
+  rcases hW oid with e | ⟨hxo, hcp, hn⟩ | ⟨U, hU, hU'⟩
+  · exact .inl e
+  · refine .inr ⟨?_, ?_, .inl hn⟩
+    · intro o hO s
+      rcases hcp with (⟨f, hf⟩ | ⟨u, hu⟩ | ⟨r, hr⟩ | ⟨p, hp⟩) | hp
+      · rw [hf] at hO; cases hO; rfl
+      · rw [hu] at hO; cases hO; rfl
+      · rw [hr] at hO; cases hO; rfl
+      · rw [hp] at hO; cases hO; rfl
+      · subst hxo
+        exact passiveObjectQuiescent.slotCap
+          (passiveObjectRetirable_parts (finalRetireAdmitted.retirable hAdm hp)).1 o hO s
+    · intro t hT
+      rcases hcp with (⟨f, hf⟩ | ⟨u, hu⟩ | ⟨r, hr⟩ | ⟨p, hp⟩) | hp
+      · rw [hf] at hT; cases hT
+      · rw [hu] at hT; cases hT
+      · rw [hr] at hT; cases hT
+      · rw [hp] at hT; cases hT
+      · rw [hT] at hp; exact hp
+  · exact .inr ⟨fun o hO s => (by rw [hU] at hO; cases hO; rfl),
+      fun t hT => (by rw [hU] at hT; cases hT), .inr ⟨_, hU'⟩⟩
+
+/-- **The retire keeps every thread**, key by key. -/
+theorem retireFinalObject_tcb_iff (ec : Concurrency.CoreId) (target recorder : Nat)
+    (st : SystemState) (hInv : st.objects.invExt) (oid : SeLe4n.ObjId) (t : TCB) :
+    (retireFinalObject ec target recorder st).objects[oid]? = some (.tcb t) ↔
+      st.objects[oid]? = some (.tcb t) := by
+  rcases retireFinalObject_key ec target recorder st hInv oid with e | ⟨-, hNT, hn | ⟨U, hU⟩⟩
+  · rw [e]
+  · rw [hn]; exact ⟨fun h => (by cases h), fun h => absurd h (hNT t)⟩
+  · rw [hU]; exact ⟨fun h => (by cases h), fun h => absurd h (hNT t)⟩
+
+theorem retireFinalObject_getTcb? (ec : Concurrency.CoreId) (target recorder : Nat)
+    (st : SystemState) (hInv : st.objects.invExt) :
+    (retireFinalObject ec target recorder st).getTcb? = st.getTcb? := by
+  funext tid
+  cases h : st.getTcb? tid with
+  | some t =>
+    exact (SystemState.getTcb?_eq_some_iff _ tid t).mpr
+      ((retireFinalObject_tcb_iff ec target recorder st hInv _ t).mpr
+        ((SystemState.getTcb?_eq_some_iff st tid t).mp h))
+  | none =>
+    cases h' : (retireFinalObject ec target recorder st).getTcb? tid with
+    | none => rfl
+    | some t =>
+      have := (retireFinalObject_tcb_iff ec target recorder st hInv _ t).mp
+        ((SystemState.getTcb?_eq_some_iff _ tid t).mp h')
+      rw [(SystemState.getTcb?_eq_some_iff st tid t).mpr this] at h; cases h
+
+/-- **The retire keeps every slot's capability**: a key it changes held none. -/
+theorem retireFinalObject_slotCapAt (ec : Concurrency.CoreId) (target recorder : Nat)
+    (st : SystemState) (hInv : st.objects.invExt) (r : SlotRef) :
+    (retireFinalObject ec target recorder st).slotCapAt r = st.slotCapAt r := by
+  rw [SystemState.slotCapAt_eq_bind, SystemState.slotCapAt_eq_bind]
+  rcases retireFinalObject_key ec target recorder st hInv r.cnode with e | ⟨hb, -, ha⟩
+  · rw [e]
+  · have l : ((retireFinalObject ec target recorder st).objects[r.cnode]?).bind
+        (fun o => o.slotCap r.slot) = none := by
+      rcases ha with hn | ⟨U, hU⟩
+      · rw [hn]; rfl
+      · rw [hU]; rfl
+    have r' : (st.objects[r.cnode]?).bind (fun o => o.slotCap r.slot) = none := by
+      cases hs : st.objects[r.cnode]? with
+      | none => rfl
+      | some o => exact hb o hs r.slot
+    rw [l, r']
+
+/-- **The retire keeps every CNode slot lookup.** -/
+theorem retireFinalObject_lookupSlotCap (ec : Concurrency.CoreId) (target recorder : Nat)
+    (st : SystemState) (hInv : st.objects.invExt) (r : SlotRef) :
+    SystemState.lookupSlotCap (retireFinalObject ec target recorder st) r =
+      SystemState.lookupSlotCap st r := by
+  unfold SystemState.lookupSlotCap SystemState.lookupCNode
+  rcases retireFinalObject_key ec target recorder st hInv r.cnode with e | ⟨hb, -, ha⟩
+  · rw [e]
+  · have hR : (match st.objects[r.cnode]? with
+        | some (.cnode cn) => some cn | _ => none).bind (fun cn => cn.lookup r.slot) = none := by
+      cases hs : st.objects[r.cnode]? with
+      | none => rfl
+      | some o =>
+        cases o with
+        | cnode cn => exact hb _ hs r.slot
+        | _ => rfl
+    rcases ha with hn | ⟨U, hU⟩
+    all_goals
+      first | rw [hn] | rw [hU]
+      revert hR
+      cases st.objects[r.cnode]? with
+      | none => intro _; rfl
+      | some o => cases o <;> simp <;> exact fun h => h.symm
+
+/-- **The retire makes no untyped**: a key that held none holds none after. -/
+theorem retireFinalObject_getUntyped?_none (ec : Concurrency.CoreId) (target recorder : Nat)
+    (st : SystemState) (hInv : st.objects.invExt) {u : SeLe4n.ObjId}
+    (h : st.getUntyped? u = none) :
+    (retireFinalObject ec target recorder st).getUntyped? u = none := by
+  rw [SystemState.getUntyped?_eq_bind] at h ⊢
+  rcases (retireFinalObject_frame ec target recorder st hInv).2.2.2.2 u with e | ⟨-, -, hn⟩ | ⟨U, hU, -⟩
+  · rw [e]; exact h
+  · rw [hn]; rfl
+  · rw [hU] at h; simp [KernelObject.untyped?] at h
+
 -- ============================================================================
 -- §6  The retire keeps the teardown's state well formed
 -- ============================================================================
@@ -1422,3 +1546,147 @@ theorem retireFinalObject_fields (ec : Concurrency.CoreId) (target recorder : Na
 theorem retireFinalObject_cdt (ec : Concurrency.CoreId) (target recorder : Nat) (st : SystemState) :
     (retireFinalObject ec target recorder st).cdt = st.cdt :=
   (retireFinalObject_fields ec target recorder st).1
+
+-- ============================================================================
+-- §9  What the retire leaves of the keys a predicate admits
+-- ============================================================================
+
+theorem childListErase_of_not_records {l : List UntypedChild} {x : SeLe4n.ObjId}
+    (h : childListRecords l x = false) : childListErase l x = l := by
+  rw [childListErase_eq_filter, List.filter_eq_self]
+  intro ch hm
+  have hne : ch.objId ≠ x := fun e => by
+    have hr := (childListRecords_iff l x).mpr ⟨ch, hm, e⟩
+    rw [h] at hr; cases hr
+  simpa using hne
+
+theorem untypedWithoutChild_of_not_records {U : UntypedObject} {x : SeLe4n.ObjId}
+    (h : childListRecords U.children x = false) : untypedWithoutChild U x = U := by
+  unfold untypedWithoutChild; rw [childListErase_of_not_records h]
+
+/-- **The retire keeps every key a predicate admits**, when the predicate admits
+neither the target nor any untyped recording it. -/
+theorem retireFinalObject_objects_of_excluded (ec : Concurrency.CoreId) (target recorder : Nat)
+    (st : SystemState) (hInv : st.objects.invExt) (p : SeLe4n.ObjId → Bool)
+    (hx : target ≠ 0 → p (SeLe4n.ObjId.ofNat (target - 1)) = false)
+    (hU : target ≠ 0 → ∀ w, untypedRecordsChild st w (SeLe4n.ObjId.ofNat (target - 1)) = true →
+      p w = false)
+    (o : SeLe4n.ObjId) (ho : p o = true) :
+    (retireFinalObject ec target recorder st).objects[o]? = st.objects[o]? := by
+  by_cases h0 : target = 0
+  · rw [h0, retireFinalObject_zero]
+  rcases (retireFinalObject_frame ec target recorder st hInv).2.2.2.2 o with
+    e | ⟨hxo, -, -⟩ | ⟨U, hU0, hU1⟩
+  · exact e
+  · subst hxo; rw [hx h0] at ho; cases ho
+  · have hr : childListRecords U.children (SeLe4n.ObjId.ofNat (target - 1)) = false := by
+      cases hc : childListRecords U.children (SeLe4n.ObjId.ofNat (target - 1)) with
+      | false => rfl
+      | true =>
+        have hrec : untypedRecordsChild st o (SeLe4n.ObjId.ofNat (target - 1)) = true := by
+          unfold untypedRecordsChild
+          rw [(SystemState.getUntyped?_eq_some_iff st o U).mpr hU0]; exact hc
+        rw [hU h0 o hrec] at ho; cases ho
+    rw [hU1, hU0, untypedWithoutChild_of_not_records hr]
+
+/-- **The retire records no new child**: an untyped that records `o` after it
+recorded `o` before. -/
+theorem retireFinalObject_untypedRecordsChild (ec : Concurrency.CoreId) (target recorder : Nat)
+    (st : SystemState) (hInv : st.objects.invExt) {w o : SeLe4n.ObjId}
+    (h : untypedRecordsChild (retireFinalObject ec target recorder st) w o = true) :
+    untypedRecordsChild st w o = true := by
+  unfold untypedRecordsChild at h ⊢
+  cases hA : (retireFinalObject ec target recorder st).getUntyped? w with
+  | none => rw [hA] at h; cases h
+  | some U' =>
+    rw [hA] at h
+    dsimp only at h
+    have hA' := (SystemState.getUntyped?_eq_some_iff _ w U').mp hA
+    rcases (retireFinalObject_frame ec target recorder st hInv).2.2.2.2 w with
+      e | ⟨-, -, hn⟩ | ⟨U, hU0, hU1⟩
+    · rw [e] at hA'; rw [(SystemState.getUntyped?_eq_some_iff st w U').mpr hA']; exact h
+    · rw [hn] at hA'; cases hA'
+    · rw [hU1] at hA'
+      cases hA'
+      rw [(SystemState.getUntyped?_eq_some_iff st w U).mpr hU0]
+      dsimp only
+      simp only [untypedWithoutChild] at h
+      obtain ⟨ch, hm, he⟩ := (childListRecords_iff _ _).mp h
+      exact (childListRecords_iff _ _).mpr ⟨ch, (mem_childListErase.mp hm).1, he⟩
+
+theorem filter_bne_filter {l : List SeLe4n.ObjId} {x : SeLe4n.ObjId} {p : SeLe4n.ObjId → Bool}
+    (hx : p x = false) : (l.filter (· != x)).filter p = l.filter p := by
+  induction l with
+  | nil => rfl
+  | cons a rest ih =>
+    by_cases h : a = x
+    · subst h; simp [List.filter_cons, hx, ih]
+    · simp [List.filter_cons, h, ih]
+
+/-- **The retire keeps the service and interrupt tables, and the object index
+on the keys a predicate admits**, when the predicate admits neither the target
+nor the recorder. -/
+theorem retireFinalObject_tables (ec : Concurrency.CoreId) (target recorder : Nat)
+    (st : SystemState) (p : SeLe4n.ObjId → Bool)
+    (hx : target ≠ 0 → p (SeLe4n.ObjId.ofNat (target - 1)) = false)
+    (hR : recorder ≠ 0 → p (SeLe4n.ObjId.ofNat (recorder - 1)) = false) :
+    (retireFinalObject ec target recorder st).services = st.services ∧
+    (retireFinalObject ec target recorder st).irqHandlers = st.irqHandlers ∧
+    (retireFinalObject ec target recorder st).objectIndex.filter p = st.objectIndex.filter p := by
+  unfold retireFinalObject
+  split
+  · exact ⟨rfl, rfl, rfl⟩
+  next h0 =>
+  split
+  · dsimp only
+    split
+    · have h1 : (retirePassiveObject st (SeLe4n.ObjId.ofNat (target - 1))).services = st.services ∧
+          (retirePassiveObject st (SeLe4n.ObjId.ofNat (target - 1))).irqHandlers = st.irqHandlers ∧
+          (retirePassiveObject st (SeLe4n.ObjId.ofNat (target - 1))).objectIndex.filter p =
+            st.objectIndex.filter p := by
+        unfold retirePassiveObject
+        split
+        · exact ⟨rfl, rfl, filter_bne_filter (hx h0)⟩
+        · exact ⟨rfl, rfl, rfl⟩
+      generalize retirePassiveObject st (SeLe4n.ObjId.ofNat (target - 1)) = s0 at h1 ⊢
+      unfold retireRecordedObject
+      dsimp only
+      have h2 : (if recorder = 0 then s0
+            else unrecordChild s0 (SeLe4n.ObjId.ofNat (recorder - 1)) (SeLe4n.ObjId.ofNat (target - 1))).services
+              = st.services ∧
+          (if recorder = 0 then s0
+            else unrecordChild s0 (SeLe4n.ObjId.ofNat (recorder - 1)) (SeLe4n.ObjId.ofNat (target - 1))).irqHandlers
+              = st.irqHandlers ∧
+          (if recorder = 0 then s0
+            else unrecordChild s0 (SeLe4n.ObjId.ofNat (recorder - 1))
+              (SeLe4n.ObjId.ofNat (target - 1))).objectIndex.filter p = st.objectIndex.filter p := by
+        split
+        · exact h1
+        · next hr =>
+          rcases unrecordChild_cases s0 (SeLe4n.ObjId.ofNat (recorder - 1))
+              (SeLe4n.ObjId.ofNat (target - 1)) with ⟨-, hE⟩ | ⟨U, -, hS⟩
+          · rw [hE]; exact h1
+          · unfold storeObject at hS
+            simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hS
+            rw [← hS]
+            refine ⟨h1.1, h1.2.1, ?_⟩
+            dsimp only
+            split
+            · exact h1.2.2
+            · rw [List.filter_cons, hR hr]; exact h1.2.2
+      generalize (if recorder = 0 then s0
+          else unrecordChild s0 (SeLe4n.ObjId.ofNat (recorder - 1))
+            (SeLe4n.ObjId.ofNat (target - 1))) = s1 at h2 ⊢
+      have h3 : (retireCarvedObject s1 (SeLe4n.ObjId.ofNat (target - 1))).services = st.services ∧
+          (retireCarvedObject s1 (SeLe4n.ObjId.ofNat (target - 1))).irqHandlers = st.irqHandlers ∧
+          (retireCarvedObject s1 (SeLe4n.ObjId.ofNat (target - 1))).objectIndex.filter p =
+            st.objectIndex.filter p := by
+        unfold retireCarvedObject
+        split
+        · exact ⟨h2.1, h2.2.1, (filter_bne_filter (hx h0)).trans h2.2.2⟩
+        · exact h2
+      split
+      · exact h3
+      · exact h3
+    · exact ⟨rfl, rfl, rfl⟩
+  · exact ⟨rfl, rfl, rfl⟩

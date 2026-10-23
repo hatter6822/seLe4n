@@ -302,21 +302,19 @@ theorem objId_ofNat_succ_sub_one (x : SeLe4n.ObjId) : SeLe4n.ObjId.ofNat (x.val 
 
 /-- **What a nonzero retire word names**: the slot's capability names the
 target (`Capability.namedObject`: by `.object`, as a reply capability's reply
-or as a CNode-slot capability's CNode), and under the capability bundle it is
-the target's final capability (`capIsFinal_iff_capFinalSpec`). -/
-theorem slotRetireTarget_spec {st : SystemState} {cnode : SeLe4n.ObjId} {slot : SeLe4n.Slot}
-    (h : capabilityInvariantBundle st) (hT : slotRetireTarget st cnode slot ≠ 0) :
+or as a CNode-slot capability's CNode), and the capability is final as the
+store reads it (`SystemState.capIsFinal`). -/
+theorem slotRetireTarget_names {st : SystemState} {cnode : SeLe4n.ObjId} {slot : SeLe4n.Slot}
+    (hT : slotRetireTarget st cnode slot ≠ 0) :
     ∃ c, st.slotCapAt ⟨cnode, slot⟩ = some c ∧
       c.namedObject = some (SeLe4n.ObjId.ofNat (slotRetireTarget st cnode slot - 1)) ∧
-      st.capFinalSpec ⟨cnode, slot⟩ := by
+      st.capIsFinal cnode slot = true := by
   unfold slotRetireTarget at hT ⊢
   cases hL : st.slotCapAt ⟨cnode, slot⟩ with
   | none => rw [hL] at hT; exact absurd rfl hT
   | some c =>
     rw [hL] at hT
     dsimp only at hT ⊢
-    have hFin : st.capIsFinal cnode slot = true → st.capFinalSpec ⟨cnode, slot⟩ :=
-      (capIsFinal_iff_capFinalSpec h ⟨cnode, slot⟩).mp
     cases hTg : c.target with
     | object x =>
       rw [hTg] at hT
@@ -325,7 +323,7 @@ theorem slotRetireTarget_spec {st : SystemState} {cnode : SeLe4n.ObjId} {slot : 
       · next hc =>
         rw [if_pos hc]
         simp only [Bool.and_eq_true] at hc
-        exact ⟨c, rfl, by unfold Capability.namedObject; rw [hTg, objId_ofNat_succ_sub_one], hFin hc.2⟩
+        exact ⟨c, rfl, by unfold Capability.namedObject; rw [hTg, objId_ofNat_succ_sub_one], hc.2⟩
       · exact absurd rfl hT
     | replyCap r =>
       rw [hTg] at hT
@@ -334,7 +332,7 @@ theorem slotRetireTarget_spec {st : SystemState} {cnode : SeLe4n.ObjId} {slot : 
       · next hc =>
         rw [if_pos hc]
         simp only [Bool.and_eq_true] at hc
-        exact ⟨c, rfl, by unfold Capability.namedObject; rw [hTg, objId_ofNat_succ_sub_one], hFin hc.2⟩
+        exact ⟨c, rfl, by unfold Capability.namedObject; rw [hTg, objId_ofNat_succ_sub_one], hc.2⟩
       · exact absurd rfl hT
     | cnodeSlot cn _ =>
       rw [hTg] at hT
@@ -343,9 +341,19 @@ theorem slotRetireTarget_spec {st : SystemState} {cnode : SeLe4n.ObjId} {slot : 
       · next hc =>
         rw [if_pos hc]
         simp only [Bool.and_eq_true] at hc
-        exact ⟨c, rfl, by unfold Capability.namedObject; rw [hTg, objId_ofNat_succ_sub_one], hFin hc.2⟩
+        exact ⟨c, rfl, by unfold Capability.namedObject; rw [hTg, objId_ofNat_succ_sub_one], hc.2⟩
       · exact absurd rfl hT
     | auditTrail => rw [hTg] at hT; exact absurd rfl hT
+
+/-- **What a nonzero retire word names, under the capability bundle**: the
+target's final capability (`slotRetireTarget_names`, `capIsFinal_iff_capFinalSpec`). -/
+theorem slotRetireTarget_spec {st : SystemState} {cnode : SeLe4n.ObjId} {slot : SeLe4n.Slot}
+    (h : capabilityInvariantBundle st) (hT : slotRetireTarget st cnode slot ≠ 0) :
+    ∃ c, st.slotCapAt ⟨cnode, slot⟩ = some c ∧
+      c.namedObject = some (SeLe4n.ObjId.ofNat (slotRetireTarget st cnode slot - 1)) ∧
+      st.capFinalSpec ⟨cnode, slot⟩ := by
+  obtain ⟨c, hc, hn, hf⟩ := slotRetireTarget_names hT
+  exact ⟨c, hc, hn, (capIsFinal_iff_capFinalSpec h ⟨cnode, slot⟩).mp hf⟩
 
 /-- **The delete empties its slot and keeps every other slot and every untyped
 record.** -/

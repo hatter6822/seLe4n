@@ -3213,7 +3213,7 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
             match resolveSetSpace tid args st with
             | .error e => .error e
             | .ok (cnSrc, vrSrc) =>
-                match copyThreadSpaces st vtid cnSrc vrSrc with
+                match copyThreadSpaces executingCore st vtid cnSrc vrSrc with
                 | .ok st' => .ok ((), st')
                 | .error e => .error e
     | _ => fun _ => .error .invalidCapability
@@ -3712,12 +3712,12 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
               | ok p =>
                   obtain ⟨cn, vr⟩ := p
                   simp only [hR] at hStep
-                  cases hSet : copyThreadSpaces st vtid cn vr with
+                  cases hSet : copyThreadSpaces executingCore st vtid cn vr with
                   | error e => simp only [hSet] at hStep; cases hStep
                   | ok stU =>
                       simp only [hSet] at hStep
                       cases hStep
-                      exact copyThreadSpaces_preserves_ipcInvariantFull st st' vtid cn vr
+                      exact copyThreadSpaces_preserves_ipcInvariantFull executingCore st st' vtid cn vr
                         hObjInv hInv hSet
     all_goals try cases hStep
   case pageTableMap =>

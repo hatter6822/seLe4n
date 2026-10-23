@@ -4996,19 +4996,45 @@ theorem threadSlotCopied_preserves_ipcInvariantFull {st : SystemState} {tid : Se
         · simp at hB
         · exact h')
 
+/-- **A thread space slot's set preserves the IPC bundle**: the copy does
+(`threadSlotCopied_preserves_ipcInvariantFull`), and so does the retire after it
+(`retireFinalObject_preserves_ipcInvariantFull`). -/
+theorem threadSlotSet_preserves_ipcInvariantFull (ec : Concurrency.CoreId) {st : SystemState}
+    {tid : SeLe4n.ThreadId} {t : TCB} (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hT : st.getTcb? tid = some t) (slot : SeLe4n.Slot) (srcCNode : SeLe4n.ObjId)
+    (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) :
+    ipcInvariantFull (threadSlotSet ec st tid slot srcCNode srcSlot rights) ∧
+      (threadSlotSet ec st tid slot srcCNode srcSlot rights).objects.invExt := by
+  unfold threadSlotSet
+  exact retireFinalObject_preserves_ipcInvariantFull ec _ _ _
+    (threadSlotCopied_tcb hObjInv hT slot srcCNode srcSlot rights).2
+    (threadSlotCopied_preserves_ipcInvariantFull hObjInv hInv hT slot srcCNode srcSlot rights)
+
+/-- A slot set keeps the thread stored. -/
+theorem threadSlotSet_getTcb? (ec : Concurrency.CoreId) {st : SystemState}
+    {tid : SeLe4n.ThreadId} {t : TCB} (hObjInv : st.objects.invExt)
+    (hT : st.getTcb? tid = some t) (slot : SeLe4n.Slot) (srcCNode : SeLe4n.ObjId)
+    (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) :
+    ((threadSlotSet ec st tid slot srcCNode srcSlot rights).getTcb? tid).isSome := by
+  obtain ⟨hT1, hI1⟩ := threadSlotCopied_tcb hObjInv hT slot srcCNode srcSlot rights
+  unfold threadSlotSet
+  dsimp only
+  rw [retireFinalObject_getTcb? _ _ _ _ hI1]; exact hT1
+
 /-- **WS-BP BP7.1 (`v0.36.11`)**: a space change preserves the IPC bundle — each
-slot copy does (`threadSlotCopied_preserves_ipcInvariantFull`). -/
-theorem copyThreadSpaces_preserves_ipcInvariantFull
+slot set does (`threadSlotSet_preserves_ipcInvariantFull`). -/
+theorem copyThreadSpaces_preserves_ipcInvariantFull (ec : Concurrency.CoreId)
     (st st' : SystemState) (vtid : SeLe4n.ValidThreadId) (cnSrc vrSrc : CSpaceAddr)
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
-    (hStep : copyThreadSpaces st vtid cnSrc vrSrc = .ok st') :
+    (hStep : copyThreadSpaces ec st vtid cnSrc vrSrc = .ok st') :
     ipcInvariantFull st' := by
   obtain ⟨tcb, hT, -, -, -, -, rfl⟩ := copyThreadSpaces_ok hStep
-  obtain ⟨hT1, hI1⟩ := threadSlotCopied_tcb hObjInv hT TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot
-    TCB.cspaceRootRights
-  obtain ⟨t1, hT1'⟩ := Option.isSome_iff_exists.mp hT1
-  exact threadSlotCopied_preserves_ipcInvariantFull hI1
-    (threadSlotCopied_preserves_ipcInvariantFull hObjInv hInv hT _ _ _ _) hT1' _ _ _ _
+  obtain ⟨t1, hT1'⟩ := Option.isSome_iff_exists.mp
+    (threadSlotSet_getTcb? ec hObjInv hT TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot
+      TCB.cspaceRootRights)
+  obtain ⟨h1, hI1⟩ := threadSlotSet_preserves_ipcInvariantFull ec hObjInv hInv hT
+    TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot TCB.cspaceRootRights
+  exact (threadSlotSet_preserves_ipcInvariantFull ec hI1 h1 hT1' _ _ _ _).1
 
 /-- Review round (PR #887): and the object-store invariant. -/
 theorem setThreadFaultHandlerOp_preserves_objects_invExt
