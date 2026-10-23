@@ -123,6 +123,7 @@ _TABLE_OPS = {
     "insertNoResizeCell": "write",
     "insertAbsentCell": "write",
     "eraseAt": "write",
+    "eraseImpl": "write",
     "set": "write",
     "fold": "sweep",
     "toList": "sweep",
