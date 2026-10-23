@@ -71,8 +71,9 @@ invariants are proven preserved.  This is part 21 of the seL4 untyped reset
   carved from it (a CNode, a TCB, an endpoint) can have no capability left and
   still be recorded; retiring the untyped would drop that record, and its reset
   would recarve the object's memory.  Kernel kinds are part 22.
-- A thread's space-slot delete (`copyThreadSpaces`) does not finalise, as
-  before; it retires nothing.
+- A thread's space-slot delete (`copyThreadSpaces`) does not finalise yet, so
+  it retires nothing; seL4's `cteDelete` there finalises, and routing it
+  through the finalising delete is now part of plan row 22.
 
 ### Tests
 
