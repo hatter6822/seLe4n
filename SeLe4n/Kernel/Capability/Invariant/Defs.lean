@@ -9,7 +9,7 @@
 
 import SeLe4n.Kernel.IPC.Invariant
 import SeLe4n.Kernel.Lifecycle.Invariant
-import SeLe4n.Model.SlotTreeShape
+import SeLe4n.Model.CapabilityFinality
 
 namespace SeLe4n.Kernel
 
@@ -439,6 +439,25 @@ tuple form (the 6th conjunct). -/
     SystemState.CapTreeShape st := h.2.2.2.2.2.2.2
 
 end capabilityInvariantBundle
+
+/-- **Every slot the tree names holds a capability**, read through the slot
+reader: `cdtCompleteness`. -/
+theorem cdtCompleteness.slotCapAt {st : SystemState} (h : cdtCompleteness st) (r : SlotRef)
+    (hr : st.cdt.mentions r) : st.slotCapAt r ≠ none := by
+  obtain ⟨o, hO, hC⟩ := h r hr
+  rw [SystemState.slotCapAt_of_object hO]; exact hC
+
+/-- **Finality is read from the links** (seL4's `isFinalCapability`): under the
+capability bundle, the kernel's word-only reader `SystemState.capIsFinal` holds
+of a slot exactly when no other slot names the object its capability names
+(`SystemState.capFinalSpec`).  The slots naming one object are one preorder run
+(`sameObjectContiguous`), so a second one sits next to the slot, and the slot's
+parent, first-child, `prev` and `next` links reach it
+(`SystemState.capIsFinal_iff_of_shape`). -/
+theorem capIsFinal_iff_capFinalSpec {st : SystemState} (h : capabilityInvariantBundle st)
+    (r : SlotRef) : st.capIsFinal r.cnode r.slot = true ↔ st.capFinalSpec r :=
+  SystemState.capIsFinal_iff_of_shape h.linksAgree h.treeShape h.cdtCompleteness.slotCapAt
+    h.cdtAcyclicity r
 
 /-! ## AN4-F.4 (CAP-M04) — `RetypeTarget` precondition subtype
 

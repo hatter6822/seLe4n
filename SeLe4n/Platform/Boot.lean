@@ -1448,8 +1448,8 @@ def untypedCapabilitiesUnique (config : PlatformConfig) : Bool :=
 
 /-- The ninth conjunct's diagnostic. -/
 def untypedCapabilityDuplicateBootError : String :=
-  "boot: two capabilities name one boot untyped, so two could carve its memory " ++
-    "(WS-ZA ZA5.4 part 13)"
+  "boot: two capabilities name one boot untyped, or one names it other than as " ++
+    "the untyped itself, so two could carve its memory (WS-ZA ZA5.4 parts 13, 20)"
 
 /-- **WS-ZA ZA5.4 part 18**: the tenth `wellFormed` conjunct — **every boot
     capability names an object the boot installs.**

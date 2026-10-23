@@ -32,6 +32,26 @@ namespace SeLe4n.Kernel
 open SeLe4n.Model
 
 -- ============================================================================
+-- §0  The finalising delete reads finality from the links
+-- ============================================================================
+
+/-- **The table a finalising delete owes a teardown is the one no other slot
+names**: under the capability bundle, `slotPageTables` (which reads finality
+off the slot's four derivation links, `SystemState.capIsFinal`) lists a table
+exactly when the slot's capability names it and no other slot names the object
+that capability names (`SystemState.capFinalSpec`), as seL4's `finaliseCap`
+tears down a page table only on its final capability. -/
+theorem mem_slotPageTables_iff_of_bundle {st : SystemState} (h : capabilityInvariantBundle st)
+    (addr : CSpaceAddr) (id : SeLe4n.ObjId) :
+    id ∈ slotPageTables st addr ↔
+      (st.slotCapAt addr).bind (capabilityPageTable st) = some id ∧ st.capFinalSpec addr := by
+  rw [← capIsFinal_iff_capFinalSpec h addr]
+  unfold slotPageTables
+  cases (st.slotCapAt addr).bind (capabilityPageTable st) with
+  | none => simp
+  | some t => cases st.capIsFinal addr.cnode addr.slot <;> simp [eq_comm]
+
+-- ============================================================================
 -- §1  The teardown writes no derivation edge
 -- ============================================================================
 
