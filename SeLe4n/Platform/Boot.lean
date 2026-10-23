@@ -1421,7 +1421,7 @@ def bootEntryCapabilities (e : ObjectEntry) : List Capability :=
   | _ => []
 
 /-- **WS-ZA ZA5.4 part 13**: the ninth `wellFormed` conjunct — **each boot
-    untyped is named by at most one capability.**
+    untyped is named by at most one capability, an untyped capability.**
 
     Since part 13 the free index is in the capability (seL4's `freeIndex`), and
     an untyped's memory is carved without overlap only while at most one
@@ -1431,12 +1431,19 @@ def bootEntryCapabilities (e : ObjectEntry) : List Capability :=
     naming one untyped would be two carvers, each starting at its own index
     over the same memory.  seL4's boot hands the root task exactly one
     capability per untyped; this refuses a configuration that does otherwise.
+    Since part 20 the count is of the capabilities naming the untyped
+    (`Capability.namedObject`, seL4's `sameObjectAs`), and the one there is must
+    be an untyped capability: a CNode-slot capability aliasing an untyped's id
+    would sit in its run of the derivation preorder without being a carver, so
+    a carve's new child would split the run (`TreeShapeOver.untypedNamed`).
     Not attacker-reachable — the configuration is the integrator's. -/
 def untypedCapabilitiesUnique (config : PlatformConfig) : Bool :=
   let caps := config.initialObjects.flatMap bootEntryCapabilities
   config.initialObjects.all fun e =>
     match e.obj with
-    | .untyped _ => decide ((caps.filter fun c => decide (c.target = .object e.id)).length ≤ 1)
+    | .untyped _ =>
+      let named := caps.filter fun c => decide (c.namedObject = some e.id)
+      decide (named.length ≤ 1) && named.all fun c => decide (c.target = .object e.id)
     | _ => true
 
 /-- The ninth conjunct's diagnostic. -/
@@ -7916,10 +7923,10 @@ theorem bootFromPlatformCheckedWithIdleThreadsFor_ok_untypedCapUnique
   dsimp only at hChk
   have hOne := List.all_eq_true.mp hChk eu heu
   rw [hObjU, hIdU] at hOne
-  simp only [decide_eq_true_eq] at hOne
-  let p : Capability → Bool := fun d => decide (d.target = .object u)
-  have hp : p c = true := by simp [p, hct]
-  have hp' : p c' = true := by simp [p, hct']
+  simp only [Bool.and_eq_true, decide_eq_true_eq] at hOne
+  let p : Capability → Bool := fun d => decide (d.namedObject = some u)
+  have hp : p c = true := by simp [p, Capability.namedObject, hct]
+  have hp' : p c' = true := by simp [p, Capability.namedObject, hct']
   have hPos : ∀ {x : ObjectEntry} {s d}, x.obj.slotCap s = some d → p d = true →
       0 < ((bootEntryCapabilities x).filter p).length := by
     intro x s d hd hpd
@@ -7951,8 +7958,47 @@ theorem bootFromPlatformCheckedWithIdleThreadsFor_ok_untypedCapUnique
       exact Nat.le_trans h2 (length_filter_le_flatMap he)
     · exact two_le_length_filter_flatMap he he' (fun e => hcn (by rw [← hId, ← hId', e]))
         (hPos hs hp) (hPos hs' hp')
-  have : ((config.initialObjects.flatMap bootEntryCapabilities).filter p).length ≤ 1 := hOne
+  have : ((config.initialObjects.flatMap bootEntryCapabilities).filter p).length ≤ 1 := hOne.1
   omega
+
+/-- **WS-ZA ZA5.4 part 20**: **every capability the idle-storing boot holds that
+    names an untyped is an untyped capability** — the capability is a
+    configured one, and `untypedCapabilitiesUnique` admits only an untyped
+    capability among those naming a boot untyped. -/
+theorem bootFromPlatformCheckedWithIdleThreadsFor_ok_untypedNamed
+    (cores : List SeLe4n.Kernel.Concurrency.CoreId) (config : PlatformConfig)
+    (ist : IntermediateState) (h : bootFromPlatformCheckedWithIdleThreadsFor cores config = .ok ist)
+    (r : SlotRef) (u : SeLe4n.ObjId) (hr : SystemState.namesAt ist.state.slotCapAt r u)
+    (hu : ist.state.getUntyped? u ≠ none) :
+    SystemState.untypedCapAt ist.state.slotCapAt ist.state.getUntyped? r u := by
+  obtain ⟨c, hc, hco⟩ := hr
+  obtain ⟨U, hU⟩ := Option.ne_none_iff_exists'.mp hu
+  obtain ⟨eu, heu, hIdU, hObjU⟩ := bootFromPlatformCheckedWithIdleThreadsFor_ok_untyped_of_config
+    cores config ist h u U ((SystemState.getUntyped?_eq_some_iff _ _ _).mp hU)
+  have hc0 := hc
+  rw [SystemState.slotCapAt_eq_bind] at hc0
+  obtain ⟨e, he, hs⟩ : ∃ e ∈ config.initialObjects, e.obj.slotCap r.slot = some c := by
+    cases hO : ist.state.objects[r.cnode]? with
+    | none => rw [hO] at hc0; cases hc0
+    | some obj =>
+      rw [hO, Option.bind_some] at hc0
+      obtain ⟨e, he, -, hObj⟩ := bootFromPlatformCheckedWithIdleThreadsFor_ok_capObject_of_config
+        cores config ist h r.cnode obj hO r.slot (by rw [hc0]; exact Option.some_ne_none _)
+      exact ⟨e, he, by rw [hObj]; exact hc0⟩
+  have hChk := (config.wellFormed_untypedCapabilitiesUnique
+    (bootFromPlatformCheckedWithIdleThreadsFor_ok_checks cores config ist h).1)
+  unfold untypedCapabilitiesUnique at hChk
+  dsimp only at hChk
+  have hOne := List.all_eq_true.mp hChk eu heu
+  rw [hObjU, hIdU] at hOne
+  simp only [Bool.and_eq_true, decide_eq_true_eq] at hOne
+  obtain ⟨l, hl, hcl⟩ := bootEntryCapabilities_cells (e := e)
+  have hmem : c ∈ (config.initialObjects.flatMap bootEntryCapabilities).filter
+      (fun d => decide (d.namedObject = some u)) :=
+    List.mem_filter.mpr ⟨List.mem_flatMap.mpr ⟨e, he, by
+      rw [hl]; exact List.mem_filterMap.mpr ⟨some c, List.mem_of_getElem? (hcl _ _ hs), rfl⟩⟩,
+      by simp [hco]⟩
+  exact ⟨c, hc, of_decide_eq_true (List.all_eq_true.mp hOne.2 c hmem), hu⟩
 
 /-- **WS-BP BP7.11**: **what a boot leaves, for the bundle to be read off** —
     every object boot-shaped, the untouched fields their defaults, the ASID

@@ -179,27 +179,18 @@ theorem threadSlotFilled_preserves_capabilityInvariantBundle
       fun u ⟨c', hc', ht', hu'⟩ => hSrcNotUt u ⟨c', (hS1 src hNeSD).symm.trans hc', ht', hu'⟩
     refine hShape.addChild .copy (slotCapAt_ne_none_of_lookupSlotCap (by rw [hSrc]; rfl)) hDstFresh
       (by show st1.cdt.addEdge _ _ _ = _; rw [hCdt1]) (fun r hr => hS1 r hr) (fun o hp => ?_)
-      (.inl ⟨fun o ho => ?_, fun u hu => ?_, fun u hu => (hSrcNotUt u hu).elim⟩)
+      (.inl ⟨fun o => ?_, fun u => ?_, fun u hu => (hSrcNotUt u hu).elim⟩)
     · show st1.objects[o]? ≠ none
       by_cases h : o = tid.toObjId
       · rw [h, hAt]; exact Option.some_ne_none _
       · rw [hNe _ (Ne.symm h)]; exact hp
-    · obtain ⟨c', hc', hco⟩ := ho
-      have hDst : st1.slotCapAt { cnode := tid.toObjId, slot := slot } = some c := by
-        rw [SystemState.slotCapAt_of_object hAt]
-        show (t.insertSpaceCap slot c).spaceSlotCap slot = some c
-        rw [TCB.spaceSlotCap_insertSpaceCap t hs]; simp
-      have hcc : c' = c := Option.some.inj ((hc' : st1.slotCapAt _ = some c').symm.trans hDst)
-      subst hcc
-      exact namesAt_of_source hSrc (Capability.namedObject_of_target hTgt) o hco
-    · obtain ⟨c', hc', ht', hu'⟩ := hu
-      have hDst : st1.slotCapAt { cnode := tid.toObjId, slot := slot } = some c := by
-        rw [SystemState.slotCapAt_of_object hAt]
-        show (t.insertSpaceCap slot c).spaceSlotCap slot = some c
-        rw [TCB.spaceSlotCap_insertSpaceCap t hs]; simp
-      have hcc : c' = c := Option.some.inj ((hc' : st1.slotCapAt _ = some c').symm.trans hDst)
-      subst hcc
-      exact ⟨cap, hSrcSlot, hTgt ▸ ht', hu'⟩
+    all_goals have hDst : st1.slotCapAt { cnode := tid.toObjId, slot := slot } = some c := by
+                rw [SystemState.slotCapAt_of_object hAt]
+                show (t.insertSpaceCap slot c).spaceSlotCap slot = some c
+                rw [TCB.spaceSlotCap_insertSpaceCap t hs]; simp
+    · show SystemState.namesAt st1.slotCapAt _ o ↔ _
+      unfold SystemState.namesAt; rw [hDst, hSrcSlot]; simp [Capability.namedObject_of_target hTgt]
+    · exact SystemState.untypedCapAt_of_target hSrcSlot hDst hTgt
   refine capabilityInvariantBundle_of_linkReach ?_
     (SystemState.cdtAddChild_reach st1 src _ .copy) hObjInv1 ?_ hShape1
   · refine ⟨cspaceLookupSound_holds _, fun ref hM => ?_, ?_,

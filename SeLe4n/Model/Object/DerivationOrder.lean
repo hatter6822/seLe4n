@@ -835,6 +835,72 @@ theorem pred_cases {S P : List SlotRef} (h : ForestOrder ch S P) (hnd : P.Nodup)
 
 end ForestOrder
 
+
+/-- A descent starts at a slot with a child. -/
+theorem Desc.first {ch : SlotRef → List SlotRef} {a b : SlotRef} (h : Desc ch a b) :
+    ∃ c, c ∈ ch a := by
+  induction h with
+  | child hb => exact ⟨_, hb⟩
+  | trans _ _ ih => exact ih
+
+/-- **A slot of a duplicate-free list has one place in it.** -/
+theorem split_unique {b : SlotRef} :
+    ∀ {X Y X' Y' : List SlotRef}, (X ++ b :: Y).Nodup → X ++ b :: Y = X' ++ b :: Y' →
+      X = X' ∧ Y = Y'
+  | [], Y, [], Y', _, e => by simpa using e
+  | [], Y, c :: X', Y', hnd, e => by
+    simp only [List.nil_append, List.cons_append, List.cons.injEq] at e
+    obtain ⟨rfl, rfl⟩ := e
+    exact absurd (by simp) (List.nodup_cons.mp hnd).1
+  | c :: X, Y, [], Y', hnd, e => by
+    simp only [List.nil_append, List.cons_append, List.cons.injEq] at e
+    obtain ⟨rfl, -⟩ := e
+    exact absurd (by simp) (List.nodup_cons.mp hnd).1
+  | c :: X, Y, c' :: X', Y', hnd, e => by
+    simp only [List.cons_append, List.cons.injEq] at e
+    obtain ⟨rfl, e⟩ := e
+    obtain ⟨h1, h2⟩ := split_unique (List.nodup_cons.mp hnd).2 e
+    exact ⟨by rw [h1], h2⟩
+
+namespace ForestOrder
+
+variable {ch : SlotRef → List SlotRef}
+
+/-- **A slot's descendants follow it in the preorder.** -/
+theorem desc_split {S P : List SlotRef} (h : ForestOrder ch S P) {a b : SlotRef}
+    (ha : a ∈ P) (hb : Desc ch a b) : ∃ X Y, P = X ++ a :: Y ∧ b ∈ Y := by
+  induction h with
+  | nil => cases ha
+  | @cons x S Q R hQ _ ihQ ihR =>
+    rcases List.mem_cons.mp ha with rfl | ha
+    · exact ⟨[], Q ++ R, rfl, List.mem_append_left _ (hQ.desc_mem_top hb)⟩
+    · rcases List.mem_append.mp ha with ha | ha
+      · obtain ⟨X, Y, rfl, hY⟩ := ihQ ha
+        exact ⟨x :: X, Y ++ R, by simp, List.mem_append_left _ hY⟩
+      · obtain ⟨X, Y, rfl, hY⟩ := ihR ha
+        exact ⟨x :: (Q ++ X), Y, by simp, hY⟩
+
+end ForestOrder
+
+/-- **An ancestor precedes its descendant in the preorder**: nothing after `b`
+lies above it. -/
+theorem TreeOrder.not_after_of_reach {cdt : CapDerivationTree} {P : List SlotRef}
+    (h : TreeOrder cdt P) {a b : SlotRef} (hr : CdtChildReachable cdt a b) {X Y : List SlotRef}
+    (hP : P = X ++ b :: Y) : a ∉ Y := by
+  intro haY
+  have hd := (desc_childrenOf_iff cdt a b).mpr hr
+  obtain ⟨c, hc⟩ := hd.first
+  have ha : a ∈ P := by
+    obtain ⟨e, he, hp, -⟩ := childrenOf_to_edge cdt a c hc
+    exact h.complete a (.inl ⟨e, he, .inl hp⟩)
+  obtain ⟨X', Y', hP', hbY'⟩ := h.forest.desc_split ha hd
+  obtain ⟨Y1, Y2, rfl⟩ := List.append_of_mem haY
+  have hnd := h.nodup
+  have e : P = (X ++ b :: Y1) ++ a :: Y2 := by rw [hP]; simp
+  obtain ⟨-, rfl⟩ := split_unique (e ▸ hnd) (e.symm.trans hP')
+  rw [hP] at hnd
+  exact (List.nodup_cons.mp (List.nodup_append.mp hnd).2.1).1 (by simp [hbY'])
+
 end CapDerivationTree
 
 namespace SlotList
@@ -849,6 +915,10 @@ def Chunked (q : SlotRef → Prop) (l : List SlotRef) : Prop :=
 namespace Chunked
 
 variable {q q' : SlotRef → Prop} {l : List SlotRef}
+
+/-- A list where `q` holds nowhere has one (empty) run. -/
+theorem of_none (h : ∀ x ∈ l, ¬ q x) : Chunked q l :=
+  ⟨l, [], [], by simp, h, by simp, by simp⟩
 
 /-- A predicate agreeing on the list's slots has the same runs. -/
 theorem congr (h : Chunked q l) (hq : ∀ x ∈ l, q' x ↔ q x) : Chunked q' l := by
