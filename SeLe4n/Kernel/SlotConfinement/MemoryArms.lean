@@ -435,6 +435,64 @@ theorem cspaceRevokeCdtFinalising_confinedToCores
   exact ⟨hs.trans hQ.1, hm.trans hQ.2⟩
 
 -- ============================================================================
+-- §5j.1 The live `.tcbSetSpace` arm
+-- ============================================================================
+--
+-- WS-ZA ZA5.4 part 22: the space change retires what each slot's old capability
+-- took with it (`threadSlotSet`), so it takes the executing core for the retire
+-- of a root, whose acknowledged ASID round writes the TLB state alone.  It
+-- writes no core: the slot copies are the object store and the CDT, and the
+-- retire keeps the scheduler and the machine (`retireFinalObject_fields`).
+
+/-- A thread space slot's copy writes no scheduler and no machine state: the
+slot delete, the thread's record and the derivation edge. -/
+theorem threadSlotCopied_framed {st : SystemState} {tid : SeLe4n.ThreadId} {t : TCB}
+    (hT : st.getTcb? tid = some t) (slot : SeLe4n.Slot) (srcCNode : SeLe4n.ObjId)
+    (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) :
+    SchedulerMachineFramed st (threadSlotCopied st tid slot srcCNode srcSlot rights) := by
+  obtain ⟨hs, hm⟩ := cspaceDeleteSlot_scheduler_machine _ st _ (copyIntoThreadSlot_delete hT slot)
+  rcases threadSlotCopied_cases st tid slot srcCNode srcSlot rights with ⟨-, e⟩ | ⟨cap, -, e⟩
+  · rw [e]; exact ⟨hs, hm⟩
+  · rw [e]
+    exact ⟨(SystemState.cdtAddChild_scheduler _ _ _ _).trans
+        ((SystemState.updateTcb_scheduler _ _ _).trans hs),
+      (SystemState.cdtAddChild_machine _ _ _ _).trans
+        ((SystemState.updateTcb_machine _ _ _).trans hm)⟩
+
+/-- A thread space slot's set writes no scheduler and no machine state: the
+copy, then the retire. -/
+theorem threadSlotSet_framed (ec : CoreId) {st : SystemState} {tid : SeLe4n.ThreadId} {t : TCB}
+    (hT : st.getTcb? tid = some t) (slot : SeLe4n.Slot) (srcCNode : SeLe4n.ObjId)
+    (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) :
+    SchedulerMachineFramed st (threadSlotSet ec st tid slot srcCNode srcSlot rights) := by
+  obtain ⟨hs, hm⟩ := threadSlotCopied_framed hT slot srcCNode srcSlot rights
+  obtain ⟨-, hs2, hm2⟩ := retireFinalObject_fields ec (slotRetireTarget st tid.toObjId slot)
+    (recorderFor st (slotRetireTarget st tid.toObjId slot) tid.toObjId slot)
+    (threadSlotCopied st tid slot srcCNode srcSlot rights)
+  exact ⟨hs2.trans hs, hm2.trans hm⟩
+
+/-- WS-ZA ZA5.4 part 22: **the live `.tcbSetSpace` arm writes no core.**  Its
+two slot sets each copy into the thread's slot and retire what the old
+capability took with it, writing the object store, the CDT and (for a root) the
+TLB state, never a scheduler slot or a register bank. -/
+theorem copyThreadSpaces_confinedToCores (ec : CoreId) (st st' : SystemState)
+    (vtid : SeLe4n.ValidThreadId) (cnSrc vrSrc : CSpaceAddr) (hInv : st.objects.invExt)
+    (hStep : copyThreadSpaces ec st vtid cnSrc vrSrc = .ok st') :
+    observableSlotsConfinedToCores st st' [] := by
+  obtain ⟨tcb, hT, -, -, -, -, rfl⟩ := copyThreadSpaces_ok hStep
+  obtain ⟨hC1, hI1⟩ := threadSlotCopied_tcb hInv hT TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot
+    TCB.cspaceRootRights
+  obtain ⟨t1, hT1⟩ := Option.isSome_iff_exists.mp
+    (show ((threadSlotSet ec st vtid.val TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot
+        TCB.cspaceRootRights).getTcb? vtid.val).isSome by
+      unfold threadSlotSet; dsimp only; rw [retireFinalObject_getTcb? _ _ _ _ hI1]; exact hC1)
+  obtain ⟨hs1, hm1⟩ := threadSlotSet_framed ec hT TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot
+    TCB.cspaceRootRights
+  obtain ⟨hs2, hm2⟩ := threadSlotSet_framed ec hT1 TCB.vspaceRootSlot vrSrc.cnode vrSrc.slot
+    TCB.vspaceRootRights
+  exact observableSlotsConfinedToCores_nil_of_framed ⟨hs2.trans hs1, hm2.trans hm1⟩
+
+-- ============================================================================
 -- §5k The live `.untypedRetype` arm, and the destroy path's cleanup
 -- ============================================================================
 --

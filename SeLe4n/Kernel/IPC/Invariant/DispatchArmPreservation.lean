@@ -1413,51 +1413,6 @@ theorem finaliseDestroyedCapabilities_preserves_ipcInvariantFull
     finaliseDestroyedCapabilities_ok_frame ec named pages st st' hObjInv hStep
   exact ⟨ipcInvariantFull_of_vspaceRootOnlyWrite hW hSched hInv, hExt⟩
 
-/-- **The final-delete retire preserves the bundle**: it touches only what a
-reset touches (`finalRetireWrite.touched`) and frames the scheduler. -/
-theorem retireFinalObject_preserves_ipcInvariantFull (ec : Concurrency.CoreId)
-    (target recorder : Nat) (st : SystemState) (hObjInv : st.objects.invExt)
-    (hInv : ipcInvariantFull st) :
-    ipcInvariantFull (retireFinalObject ec target recorder st) ∧
-      (retireFinalObject ec target recorder st).objects.invExt := by
-  obtain ⟨hExt, hSched, -, -, hW⟩ := retireFinalObject_frame ec target recorder st hObjInv
-  exact ⟨ipcInvariantFull_of_resetTouchedWrite hSched hW.touched hInv, hExt⟩
-
-/-- `.cspaceDelete`: the finalising delete preserves the bundle — the delete's
-own theorem, then the teardown's, then the retire's. -/
-theorem cspaceDeleteSlotFinalising_preserves_ipcInvariantFull
-    (ec : Concurrency.CoreId) (addr : CSpaceAddr) (st st' : SystemState)
-    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
-    (hStep : cspaceDeleteSlotFinalising ec addr st = .ok ((), st')) :
-    ipcInvariantFull st' := by
-  obtain ⟨st1, st2, hD, hF, rfl⟩ := cspaceDeleteSlotFinalising_ok ec addr st st' hStep
-  have h2 := finaliseDestroyedCapabilities_preserves_ipcInvariantFull ec _ _ st1 st2
-    (cspaceDeleteSlot_preserves_objects_invExt st st1 addr hObjInv hD)
-    (cspaceDeleteSlot_preserves_ipcInvariantFull st st1 addr hObjInv hInv hD) hF
-  exact (retireFinalObject_preserves_ipcInvariantFull ec _ _ st2 h2.2 h2.1).1
-
-/-- The finalising delete keeps the object table well formed. -/
-theorem cspaceDeleteSlotFinalising_preserves_objects_invExt
-    (ec : Concurrency.CoreId) (addr : CSpaceAddr) (st st' : SystemState)
-    (hObjInv : st.objects.invExt)
-    (hStep : cspaceDeleteSlotFinalising ec addr st = .ok ((), st')) :
-    st'.objects.invExt := by
-  obtain ⟨st1, st2, hD, hF, rfl⟩ := cspaceDeleteSlotFinalising_ok ec addr st st' hStep
-  exact (retireFinalObject_frame ec _ _ st2 (finaliseDestroyedCapabilities_ok_frame ec _ _ st1 st2
-    (cspaceDeleteSlot_preserves_objects_invExt st st1 addr hObjInv hD) hF).1).1
-
-/-- `.cspaceRevoke`: the finalising revocation preserves the bundle — the
-revocation's own theorem at the state it reaches, then the teardown's. -/
-theorem cspaceRevokeCdtFinalising_preserves_ipcInvariantFull
-    (ec : Concurrency.CoreId) (addr : CSpaceAddr) (st st' : SystemState)
-    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
-    (hStep : cspaceRevokeCdtFinalising ec addr st = .ok ((), st')) :
-    ipcInvariantFull st' := by
-  refine (cspaceRevokeCdtFinalising_closed (fun s => ipcInvariantFull s ∧ s.objects.invExt)
-    (fun c s s' hQ hD => ⟨cspaceDeleteSlotFinalising_preserves_ipcInvariantFull ec c s s'
-      hQ.2 hQ.1 hD, cspaceDeleteSlotFinalising_preserves_objects_invExt ec c s s' hQ.2 hD⟩)
-    ⟨hInv, hObjInv⟩ hStep).1
-
 /-- **PR #904 review (`v0.36.41`): the mapping-epoch tag preserves the bundle** —
 it stores back one VSpace root and one frame, both kinds the bundle never reads. -/
 theorem tagFrameMapping_preserves_ipcInvariantFull
@@ -3337,16 +3292,19 @@ structure retypeTargetDetached (st : SystemState) (target : SeLe4n.ObjId) : Prop
     st.objects[tid.toObjId]? = some (.tcb tcb) → tcb.pendingReceiveReply = some rid →
     rid.toObjId ≠ target
 
-/-- At-target lookup of a post-state kind pins the replacement object. -/
+/-- At-target lookup of a post-state kind pins the replacement object, or is
+absurd where the write erased the target. -/
 private theorem retypeWrite_at_target {st' : SystemState} {target : SeLe4n.ObjId}
     {newObj o : KernelObject}
-    (hAt : st'.objects[target]? = some newObj)
-    (hT : st'.objects[target]? = some o) : newObj = o :=
-  Option.some.inj ((hAt.symm.trans hT))
+    (hAt : st'.objects[target]? = some newObj ∨ st'.objects[target]? = none)
+    (hT : st'.objects[target]? = some o) : newObj = o := by
+  rcases hAt with hAt | hAt
+  · exact Option.some.inj ((hAt.symm.trans hT))
+  · rw [hAt] at hT; cases hT
 
 private theorem retypeWrite_allPendingMessagesBounded
     {st st' : SystemState} {target : SeLe4n.ObjId} {newObj : KernelObject}
-    (hAt : st'.objects[target]? = some newObj)
+    (hAt : st'.objects[target]? = some newObj ∨ st'.objects[target]? = none)
     (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]?)
     (hFresh : retypeReplacementFresh newObj)
     (hInv : allPendingMessagesBounded st) :
@@ -3363,7 +3321,7 @@ private theorem retypeWrite_allPendingMessagesBounded
 
 private theorem retypeWrite_notificationBadgesWellFormed
     {st st' : SystemState} {target : SeLe4n.ObjId} {newObj : KernelObject}
-    (hAt : st'.objects[target]? = some newObj)
+    (hAt : st'.objects[target]? = some newObj ∨ st'.objects[target]? = none)
     (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]?)
     (hFresh : retypeReplacementFresh newObj)
     (hInv : notificationBadgesWellFormed st) :
@@ -3380,7 +3338,7 @@ private theorem retypeWrite_notificationBadgesWellFormed
 
 private theorem retypeWrite_capabilityBadgesWellFormed
     {st st' : SystemState} {target : SeLe4n.ObjId} {newObj : KernelObject}
-    (hAt : st'.objects[target]? = some newObj)
+    (hAt : st'.objects[target]? = some newObj ∨ st'.objects[target]? = none)
     (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]?)
     (hFresh : retypeReplacementFresh newObj)
     (hInv : capabilityBadgesWellFormed st) :
@@ -3403,7 +3361,7 @@ private theorem retypeWrite_capabilityBadgesWellFormed
 
 private theorem retypeWrite_ipcInvariant
     {st st' : SystemState} {target : SeLe4n.ObjId} {newObj : KernelObject}
-    (hAt : st'.objects[target]? = some newObj)
+    (hAt : st'.objects[target]? = some newObj ∨ st'.objects[target]? = none)
     (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]?)
     (hFresh : retypeReplacementFresh newObj)
     (hInv : ipcInvariant st) :
@@ -3422,7 +3380,7 @@ private theorem retypeWrite_ipcInvariant
 
 private theorem retypeWrite_blockedThreadsPendingMessageConsistent
     {st st' : SystemState} {target : SeLe4n.ObjId} {newObj : KernelObject}
-    (hAt : st'.objects[target]? = some newObj)
+    (hAt : st'.objects[target]? = some newObj ∨ st'.objects[target]? = none)
     (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]?)
     (hFresh : retypeReplacementFresh newObj)
     (hInv : blockedThreadsPendingMessageConsistent st) :
@@ -3439,7 +3397,7 @@ private theorem retypeWrite_blockedThreadsPendingMessageConsistent
 
 private theorem retypeWrite_blockedThreadTimeoutConsistent
     {st st' : SystemState} {target : SeLe4n.ObjId} {newObj : KernelObject}
-    (hAt : st'.objects[target]? = some newObj)
+    (hAt : st'.objects[target]? = some newObj ∨ st'.objects[target]? = none)
     (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]?)
     (hFresh : retypeReplacementFresh newObj)
     (hDet : retypeTargetDetached st target)
@@ -3461,7 +3419,7 @@ private theorem retypeWrite_blockedThreadTimeoutConsistent
 
 private theorem retypeWrite_donationChainAcyclic
     {st st' : SystemState} {target : SeLe4n.ObjId} {newObj : KernelObject}
-    (hAt : st'.objects[target]? = some newObj)
+    (hAt : st'.objects[target]? = some newObj ∨ st'.objects[target]? = none)
     (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]?)
     (hFresh : retypeReplacementFresh newObj)
     (hInv : donationChainAcyclic st) :
@@ -3485,7 +3443,7 @@ private theorem retypeWrite_donationChainAcyclic
 
 private theorem retypeWrite_donationOwnerUnique
     {st st' : SystemState} {target : SeLe4n.ObjId} {newObj : KernelObject}
-    (hAt : st'.objects[target]? = some newObj)
+    (hAt : st'.objects[target]? = some newObj ∨ st'.objects[target]? = none)
     (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]?)
     (hFresh : retypeReplacementFresh newObj)
     (hInv : donationOwnerUnique st) :
@@ -3509,7 +3467,7 @@ private theorem retypeWrite_donationOwnerUnique
 
 private theorem retypeWrite_donationBudgetTransfer
     {st st' : SystemState} {target : SeLe4n.ObjId} {newObj : KernelObject}
-    (hAt : st'.objects[target]? = some newObj)
+    (hAt : st'.objects[target]? = some newObj ∨ st'.objects[target]? = none)
     (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]?)
     (hFresh : retypeReplacementFresh newObj)
     (hInv : donationBudgetTransfer st) :
@@ -3533,7 +3491,7 @@ private theorem retypeWrite_donationBudgetTransfer
 
 private theorem retypeWrite_blockedOnReplyHasTarget
     {st st' : SystemState} {target : SeLe4n.ObjId} {newObj : KernelObject}
-    (hAt : st'.objects[target]? = some newObj)
+    (hAt : st'.objects[target]? = some newObj ∨ st'.objects[target]? = none)
     (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]?)
     (hFresh : retypeReplacementFresh newObj)
     (hInv : blockedOnReplyHasTarget st) :
@@ -3550,7 +3508,7 @@ private theorem retypeWrite_blockedOnReplyHasTarget
 
 private theorem retypeWrite_blockedOnReplyHasReplyObject
     {st st' : SystemState} {target : SeLe4n.ObjId} {newObj : KernelObject}
-    (hAt : st'.objects[target]? = some newObj)
+    (hAt : st'.objects[target]? = some newObj ∨ st'.objects[target]? = none)
     (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]?)
     (hFresh : retypeReplacementFresh newObj)
     (hInv : blockedOnReplyHasReplyObject st) :
@@ -3567,7 +3525,7 @@ private theorem retypeWrite_blockedOnReplyHasReplyObject
 
 private theorem retypeWrite_queueNextBlockingConsistent
     {st st' : SystemState} {target : SeLe4n.ObjId} {newObj : KernelObject}
-    (hAt : st'.objects[target]? = some newObj)
+    (hAt : st'.objects[target]? = some newObj ∨ st'.objects[target]? = none)
     (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]?)
     (hFresh : retypeReplacementFresh newObj)
     (hDet : retypeTargetDetached st target)
@@ -3588,7 +3546,7 @@ private theorem retypeWrite_queueNextBlockingConsistent
 
 private theorem retypeWrite_queueNextTargetBlocked
     {st st' : SystemState} {target : SeLe4n.ObjId} {newObj : KernelObject}
-    (hAt : st'.objects[target]? = some newObj)
+    (hAt : st'.objects[target]? = some newObj ∨ st'.objects[target]? = none)
     (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]?)
     (hFresh : retypeReplacementFresh newObj)
     (hDet : retypeTargetDetached st target)
@@ -3609,7 +3567,7 @@ private theorem retypeWrite_queueNextTargetBlocked
 
 private theorem retypeWrite_queueHeadBlockedConsistent
     {st st' : SystemState} {target : SeLe4n.ObjId} {newObj : KernelObject}
-    (hAt : st'.objects[target]? = some newObj)
+    (hAt : st'.objects[target]? = some newObj ∨ st'.objects[target]? = none)
     (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]?)
     (hFresh : retypeReplacementFresh newObj)
     (hDet : retypeTargetDetached st target)
@@ -3635,7 +3593,7 @@ private theorem retypeWrite_queueHeadBlockedConsistent
 
 private theorem retypeWrite_endpointQueueTailBlockedConsistent
     {st st' : SystemState} {target : SeLe4n.ObjId} {newObj : KernelObject}
-    (hAt : st'.objects[target]? = some newObj)
+    (hAt : st'.objects[target]? = some newObj ∨ st'.objects[target]? = none)
     (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]?)
     (hFresh : retypeReplacementFresh newObj)
     (hDet : retypeTargetDetached st target)
@@ -3661,7 +3619,7 @@ private theorem retypeWrite_endpointQueueTailBlockedConsistent
 
 private theorem retypeWrite_endpointQueueNoDup
     {st st' : SystemState} {target : SeLe4n.ObjId} {newObj : KernelObject}
-    (hAt : st'.objects[target]? = some newObj)
+    (hAt : st'.objects[target]? = some newObj ∨ st'.objects[target]? = none)
     (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]?)
     (hFresh : retypeReplacementFresh newObj)
     (hDet : retypeTargetDetached st target)
@@ -3692,7 +3650,7 @@ private theorem retypeWrite_endpointQueueNoDup
 
 private theorem retypeWrite_donationOwnerValid
     {st st' : SystemState} {target : SeLe4n.ObjId} {newObj : KernelObject}
-    (hAt : st'.objects[target]? = some newObj)
+    (hAt : st'.objects[target]? = some newObj ∨ st'.objects[target]? = none)
     (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]?)
     (hFresh : retypeReplacementFresh newObj)
     (hDet : retypeTargetDetached st target)
@@ -3719,7 +3677,7 @@ private theorem retypeWrite_donationOwnerValid
 
 private theorem retypeWrite_ipcStateQueueMembershipConsistent
     {st st' : SystemState} {target : SeLe4n.ObjId} {newObj : KernelObject}
-    (hAt : st'.objects[target]? = some newObj)
+    (hAt : st'.objects[target]? = some newObj ∨ st'.objects[target]? = none)
     (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]?)
     (hFresh : retypeReplacementFresh newObj)
     (hDet : retypeTargetDetached st target)
@@ -3810,7 +3768,7 @@ private theorem retypeWrite_ipcStateQueueMembershipConsistent
 
 private theorem retypeWrite_replyCallerLinkageReciprocal
     {st st' : SystemState} {target : SeLe4n.ObjId} {newObj : KernelObject}
-    (hAt : st'.objects[target]? = some newObj)
+    (hAt : st'.objects[target]? = some newObj ∨ st'.objects[target]? = none)
     (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]?)
     (hFresh : retypeReplacementFresh newObj)
     (hDet : retypeTargetDetached st target)
@@ -3844,7 +3802,7 @@ private theorem retypeWrite_replyCallerLinkageReciprocal
 
 private theorem retypeWrite_pendingReceiveReplyWellFormed
     {st st' : SystemState} {target : SeLe4n.ObjId} {newObj : KernelObject}
-    (hAt : st'.objects[target]? = some newObj)
+    (hAt : st'.objects[target]? = some newObj ∨ st'.objects[target]? = none)
     (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]?)
     (hFresh : retypeReplacementFresh newObj)
     (hDet : retypeTargetDetached st target)
@@ -3890,7 +3848,7 @@ private theorem retypeWrite_pendingReceiveReplyWellFormed
 
 private theorem retypeWrite_passiveServerIdle
     {st st' : SystemState} {target : SeLe4n.ObjId} {newObj : KernelObject}
-    (hAt : st'.objects[target]? = some newObj)
+    (hAt : st'.objects[target]? = some newObj ∨ st'.objects[target]? = none)
     (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]?)
     (hSched : st'.scheduler = st.scheduler)
     (hFresh : retypeReplacementFresh newObj)
@@ -3908,7 +3866,7 @@ private theorem retypeWrite_passiveServerIdle
 
 private theorem retypeWrite_dualQueueSystemInvariant
     {st st' : SystemState} {target : SeLe4n.ObjId} {newObj : KernelObject}
-    (hAt : st'.objects[target]? = some newObj)
+    (hAt : st'.objects[target]? = some newObj ∨ st'.objects[target]? = none)
     (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]?)
     (hFresh : retypeReplacementFresh newObj)
     (hDet : retypeTargetDetached st target)
@@ -4035,13 +3993,13 @@ private theorem retypeWrite_dualQueueSystemInvariant
           rw [hRH] at hHk; cases hHk
     · exact Or.inl ⟨e, by rw [← hNe _ hKe]; exact hEk, hHk⟩
 
-/-- The retype write — one arbitrary-kind object replaced by a pristine one at
-a fully detached slot — preserves the whole `ipcInvariantFull` bundle.  This is
-the storeObject-shape core the carve's payoff composes
-(`retypeFromUntyped_carve_preserves_ipcInvariantFull`). -/
-theorem retypeWrite_preserves_ipcInvariantFull
+/-- **A write that replaces the target by a pristine object or erases it**
+preserves the bundle: every at-target clause reads the replacement or is
+vacuous, and every other key reads the pre-state, where the detached target is
+named by nothing the bundle reads. -/
+private theorem retypeOrEraseWrite_preserves_ipcInvariantFull
     {st st' : SystemState} {target : SeLe4n.ObjId} {newObj : KernelObject}
-    (hAt : st'.objects[target]? = some newObj)
+    (hAt : st'.objects[target]? = some newObj ∨ st'.objects[target]? = none)
     (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]?)
     (hSched : st'.scheduler = st.scheduler)
     (hFresh : retypeReplacementFresh newObj)
@@ -4077,6 +4035,21 @@ theorem retypeWrite_preserves_ipcInvariantFull
    retypeWrite_endpointQueueTailBlockedConsistent hAt hNe hFresh hDet
      hInv.endpointQueueTailBlockedConsistent,
    retypeWrite_queueNextTargetBlocked hAt hNe hFresh hDet hInv.queueNextTargetBlocked⟩
+
+/-- The retype write — one arbitrary-kind object replaced by a pristine one at
+a fully detached slot — preserves the whole `ipcInvariantFull` bundle.  This is
+the storeObject-shape core the carve's payoff composes
+(`retypeFromUntyped_carve_preserves_ipcInvariantFull`). -/
+theorem retypeWrite_preserves_ipcInvariantFull
+    {st st' : SystemState} {target : SeLe4n.ObjId} {newObj : KernelObject}
+    (hAt : st'.objects[target]? = some newObj)
+    (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]?)
+    (hSched : st'.scheduler = st.scheduler)
+    (hFresh : retypeReplacementFresh newObj)
+    (hDet : retypeTargetDetached st target)
+    (hInv : ipcInvariantFull st) :
+    ipcInvariantFull st' :=
+  retypeOrEraseWrite_preserves_ipcInvariantFull (.inl hAt) hNe hSched hFresh hDet hInv
 
 /-- **WS-ZA ZA5.4 part 14: a key that holds no object is detached from
 everything the bundle reads.**  Every reference the bundle constrains names a
@@ -4133,6 +4106,127 @@ theorem retypeTargetDetached_of_absent {st : SystemState} {target : SeLe4n.ObjId
     obtain ⟨-, r, hR, -⟩ := hInv.pendingReceiveReplyWellFormed.1 tid tcb rid
       ((SystemState.getTcb?_eq_some_iff st tid tcb).mpr hT) hP
     exact hNe _ _ ((SystemState.getReply?_eq_some_iff st rid r).mp hR)
+
+/-- **An erase of a detached object preserves the bundle**: the retype write
+with nothing in the target's place (`retypeOrEraseWrite_preserves_ipcInvariantFull`),
+the final-delete retire of a passive object being such a write. -/
+theorem eraseWrite_preserves_ipcInvariantFull
+    {st st' : SystemState} {target : SeLe4n.ObjId}
+    (hAt : st'.objects[target]? = none)
+    (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]?)
+    (hSched : st'.scheduler = st.scheduler)
+    (hDet : retypeTargetDetached st target)
+    (hInv : ipcInvariantFull st) :
+    ipcInvariantFull st' :=
+  retypeOrEraseWrite_preserves_ipcInvariantFull (newObj := .reply (Reply.empty ⟨0⟩))
+    (.inr hAt) hNe hSched rfl hDet hInv
+
+/-- **An unreferenced passive object is detached from everything the bundle
+reads**: it is no thread and no scheduling context, so every clause about the
+object at the key is vacuous; queue links, boundaries and heads name threads,
+so none names it; and no thread names it by id (`storeNamesNone`), so none is
+blocked on it, linked to it as its reply, or holds it as its stashed reply. -/
+theorem retypeTargetDetached_of_unreferenced {st : SystemState} {x : SeLe4n.ObjId}
+    (hP : passiveKernelObject st.objects[x]?) (hS : storeNamesNone st x = true)
+    (hInv : ipcInvariantFull st) : retypeTargetDetached st x := by
+  have hNo : ∀ t : TCB, st.objects[x]? ≠ some (.tcb t) := fun t h => by rw [h] at hP; exact hP
+  have hNe : ∀ (oid : SeLe4n.ObjId) (t : TCB), st.objects[oid]? = some (.tcb t) → oid ≠ x :=
+    fun oid t h hEq => hNo t (hEq ▸ h)
+  refine ⟨fun sc h => by rw [h] at hP; exact hP, fun t h => absurd h (hNo _),
+    fun t h => absurd h (hNo _), fun t h => absurd h (hNo _), fun t h => absurd h (hNo _),
+    fun t h => absurd h (hNo _), fun t h => absurd h (hNo _), fun t h => absurd h (hNo _),
+    fun t h => absurd h (hNo _), fun t h => absurd h (hNo _), fun t h => absurd h (hNo _),
+    fun t h => absurd h (hNo _), fun t h => absurd h (hNo _), fun t h => absurd h (hNo _),
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · intro tid tcb hT
+    have h := (objectNamesById_tcb (storeNamesNone_spec hS hT)).1
+    exact ⟨h.1, h.2.1, h.2.2.1⟩
+  · intro a tcbA b hA hN
+    obtain ⟨tcbB, hB, -⟩ := hInv.dualQueueSystemInvariant.linkIntegrity.1 a tcbA hA b hN
+    exact hNe _ _ hB
+  · intro b tcbB a hB hPv
+    obtain ⟨tcbA, hA, -⟩ := hInv.dualQueueSystemInvariant.linkIntegrity.2 b tcbB hB a hPv
+    exact hNe _ _ hA
+  · intro epId ep hd hEp hH
+    have hW := hInv.dualQueueSystemInvariant.endpointsWellFormed epId ep hEp
+    unfold dualQueueEndpointWellFormed at hW
+    rw [hEp] at hW
+    rcases hH with hH | hH
+    · obtain ⟨tcb, hT, -⟩ := hW.1.2.1 hd hH; exact hNe _ _ hT
+    · obtain ⟨tcb, hT, -⟩ := hW.2.2.1 hd hH; exact hNe _ _ hT
+  · intro epId ep tl hEp hTl
+    have hW := hInv.dualQueueSystemInvariant.endpointsWellFormed epId ep hEp
+    unfold dualQueueEndpointWellFormed at hW
+    rw [hEp] at hW
+    rcases hTl with hTl | hTl
+    · obtain ⟨tcb, hT, -⟩ := hW.1.2.2 tl hTl; exact hNe _ _ hT
+    · obtain ⟨tcb, hT, -⟩ := hW.2.2.2 tl hTl; exact hNe _ _ hT
+  · intro tid tcb hT
+    exact tcbQueueChainAcyclic_no_self_loop hInv.dualQueueSystemInvariant.chainAcyclic tid tcb hT
+  · intro tid tcb rid hT hRO
+    exact (objectNamesById_tcb (storeNamesNone_spec hS hT)).2.2.1 rid hRO
+  · intro tid tcb rid hT hPR
+    exact (objectNamesById_tcb (storeNamesNone_spec hS hT)).2.2.2 rid hPR
+
+/-- **The final-delete retire preserves the bundle**: the passive erase takes
+out an object nothing the bundle reads names (`eraseWrite_preserves_ipcInvariantFull`,
+`retypeTargetDetached_of_unreferenced`), and the recorded retire after it
+touches only what a reset touches (`finalRetireWrite.resetTouched`) and frames
+the scheduler. -/
+theorem retireFinalObject_preserves_ipcInvariantFull (ec : Concurrency.CoreId)
+    (target recorder : Nat) (st : SystemState) (hObjInv : st.objects.invExt)
+    (hInv : ipcInvariantFull st) :
+    ipcInvariantFull (retireFinalObject ec target recorder st) ∧
+      (retireFinalObject ec target recorder st).objects.invExt := by
+  rcases retireFinalObject_cases ec target recorder st with hE | ⟨hSz, hAdm, hE⟩
+  · rw [hE]; exact ⟨hInv, hObjInv⟩
+  rw [hE]
+  generalize SeLe4n.ObjId.ofNat (target - 1) = x at hAdm ⊢
+  obtain ⟨i0, room0, s0, -, -, -, ne0, -⟩ := retirePassiveObject_frame st x hObjInv hSz
+  have h0 : ipcInvariantFull (retirePassiveObject st x) := by
+    by_cases hP : passiveKernelObject st.objects[x]?
+    · have hR := passiveObjectRetirable_parts (finalRetireAdmitted.retirable hAdm hP)
+      exact eraseWrite_preserves_ipcInvariantFull (retirePassiveObject_self hP hObjInv) ne0 s0
+        (retypeTargetDetached_of_unreferenced hP hR.2.1 hInv) hInv
+    · rw [retirePassiveObject_of_not st x hP]; exact hInv
+  obtain ⟨hExt, hSched, -, -, hW⟩ := retireRecordedObject_frame ec recorder x _ i0 room0
+  exact ⟨ipcInvariantFull_of_resetTouchedWrite hSched
+    (hW.resetTouched (retirePassiveObject_not_passive st x hObjInv)) h0, hExt⟩
+
+/-- `.cspaceDelete`: the finalising delete preserves the bundle — the delete's
+own theorem, then the teardown's, then the retire's. -/
+theorem cspaceDeleteSlotFinalising_preserves_ipcInvariantFull
+    (ec : Concurrency.CoreId) (addr : CSpaceAddr) (st st' : SystemState)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hStep : cspaceDeleteSlotFinalising ec addr st = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  obtain ⟨st1, st2, hD, hF, rfl⟩ := cspaceDeleteSlotFinalising_ok ec addr st st' hStep
+  have h2 := finaliseDestroyedCapabilities_preserves_ipcInvariantFull ec _ _ st1 st2
+    (cspaceDeleteSlot_preserves_objects_invExt st st1 addr hObjInv hD)
+    (cspaceDeleteSlot_preserves_ipcInvariantFull st st1 addr hObjInv hInv hD) hF
+  exact (retireFinalObject_preserves_ipcInvariantFull ec _ _ st2 h2.2 h2.1).1
+
+/-- The finalising delete keeps the object table well formed. -/
+theorem cspaceDeleteSlotFinalising_preserves_objects_invExt
+    (ec : Concurrency.CoreId) (addr : CSpaceAddr) (st st' : SystemState)
+    (hObjInv : st.objects.invExt)
+    (hStep : cspaceDeleteSlotFinalising ec addr st = .ok ((), st')) :
+    st'.objects.invExt := by
+  obtain ⟨st1, st2, hD, hF, rfl⟩ := cspaceDeleteSlotFinalising_ok ec addr st st' hStep
+  exact (retireFinalObject_frame ec _ _ st2 (finaliseDestroyedCapabilities_ok_frame ec _ _ st1 st2
+    (cspaceDeleteSlot_preserves_objects_invExt st st1 addr hObjInv hD) hF).1).1
+
+/-- `.cspaceRevoke`: the finalising revocation preserves the bundle — the
+revocation's own theorem at the state it reaches, then the teardown's. -/
+theorem cspaceRevokeCdtFinalising_preserves_ipcInvariantFull
+    (ec : Concurrency.CoreId) (addr : CSpaceAddr) (st st' : SystemState)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hStep : cspaceRevokeCdtFinalising ec addr st = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  refine (cspaceRevokeCdtFinalising_closed (fun s => ipcInvariantFull s ∧ s.objects.invExt)
+    (fun c s s' hQ hD => ⟨cspaceDeleteSlotFinalising_preserves_ipcInvariantFull ec c s s'
+      hQ.2 hQ.1 hD, cspaceDeleteSlotFinalising_preserves_objects_invExt ec c s s' hQ.2 hD⟩)
+    ⟨hInv, hObjInv⟩ hStep).1
 
 /-- **WS-ZA ZA5.4 part 14: every object a carve makes is pristine** — a thread
 unblocked, unqueued, unbound and with empty space slots, an endpoint with both
@@ -4902,19 +4996,45 @@ theorem threadSlotCopied_preserves_ipcInvariantFull {st : SystemState} {tid : Se
         · simp at hB
         · exact h')
 
+/-- **A thread space slot's set preserves the IPC bundle**: the copy does
+(`threadSlotCopied_preserves_ipcInvariantFull`), and so does the retire after it
+(`retireFinalObject_preserves_ipcInvariantFull`). -/
+theorem threadSlotSet_preserves_ipcInvariantFull (ec : Concurrency.CoreId) {st : SystemState}
+    {tid : SeLe4n.ThreadId} {t : TCB} (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hT : st.getTcb? tid = some t) (slot : SeLe4n.Slot) (srcCNode : SeLe4n.ObjId)
+    (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) :
+    ipcInvariantFull (threadSlotSet ec st tid slot srcCNode srcSlot rights) ∧
+      (threadSlotSet ec st tid slot srcCNode srcSlot rights).objects.invExt := by
+  unfold threadSlotSet
+  exact retireFinalObject_preserves_ipcInvariantFull ec _ _ _
+    (threadSlotCopied_tcb hObjInv hT slot srcCNode srcSlot rights).2
+    (threadSlotCopied_preserves_ipcInvariantFull hObjInv hInv hT slot srcCNode srcSlot rights)
+
+/-- A slot set keeps the thread stored. -/
+theorem threadSlotSet_getTcb? (ec : Concurrency.CoreId) {st : SystemState}
+    {tid : SeLe4n.ThreadId} {t : TCB} (hObjInv : st.objects.invExt)
+    (hT : st.getTcb? tid = some t) (slot : SeLe4n.Slot) (srcCNode : SeLe4n.ObjId)
+    (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) :
+    ((threadSlotSet ec st tid slot srcCNode srcSlot rights).getTcb? tid).isSome := by
+  obtain ⟨hT1, hI1⟩ := threadSlotCopied_tcb hObjInv hT slot srcCNode srcSlot rights
+  unfold threadSlotSet
+  dsimp only
+  rw [retireFinalObject_getTcb? _ _ _ _ hI1]; exact hT1
+
 /-- **WS-BP BP7.1 (`v0.36.11`)**: a space change preserves the IPC bundle — each
-slot copy does (`threadSlotCopied_preserves_ipcInvariantFull`). -/
-theorem copyThreadSpaces_preserves_ipcInvariantFull
+slot set does (`threadSlotSet_preserves_ipcInvariantFull`). -/
+theorem copyThreadSpaces_preserves_ipcInvariantFull (ec : Concurrency.CoreId)
     (st st' : SystemState) (vtid : SeLe4n.ValidThreadId) (cnSrc vrSrc : CSpaceAddr)
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
-    (hStep : copyThreadSpaces st vtid cnSrc vrSrc = .ok st') :
+    (hStep : copyThreadSpaces ec st vtid cnSrc vrSrc = .ok st') :
     ipcInvariantFull st' := by
   obtain ⟨tcb, hT, -, -, -, -, rfl⟩ := copyThreadSpaces_ok hStep
-  obtain ⟨hT1, hI1⟩ := threadSlotCopied_tcb hObjInv hT TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot
-    TCB.cspaceRootRights
-  obtain ⟨t1, hT1'⟩ := Option.isSome_iff_exists.mp hT1
-  exact threadSlotCopied_preserves_ipcInvariantFull hI1
-    (threadSlotCopied_preserves_ipcInvariantFull hObjInv hInv hT _ _ _ _) hT1' _ _ _ _
+  obtain ⟨t1, hT1'⟩ := Option.isSome_iff_exists.mp
+    (threadSlotSet_getTcb? ec hObjInv hT TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot
+      TCB.cspaceRootRights)
+  obtain ⟨h1, hI1⟩ := threadSlotSet_preserves_ipcInvariantFull ec hObjInv hInv hT
+    TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot TCB.cspaceRootRights
+  exact (threadSlotSet_preserves_ipcInvariantFull ec hI1 h1 hT1' _ _ _ _).1
 
 /-- Review round (PR #887): and the object-store invariant. -/
 theorem setThreadFaultHandlerOp_preserves_objects_invExt

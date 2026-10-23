@@ -215,26 +215,27 @@ theorem cspaceDeleteSlot_runQueueStage {st st' : SystemState} {addr : CSpaceAddr
   exact (cspaceDeleteSlotCore_runQueueStage hCore).trans ((withCdt_runQueueStage _ _).trans
     (RunQueueStage.of_linkReach (spliceDeletedCdtNode_reach stC addr)))
 
-/-- **A write of the kinds a reset touches is a run-queue stage**: no key it
-changes holds a TCB on either side (`resetTouched`), and it frames the
-scheduler.  The untyped reset and the final-delete retire are such writes. -/
-theorem RunQueueStage.of_resetTouched {st st' : SystemState}
+/-- **A write of the kinds a retire touches is a run-queue stage**: no key it
+changes holds a TCB on either side (`retireTouched`), and it frames the
+scheduler.  The untyped reset (`resetTouchedWrite.retireTouched`) and the
+final-delete retire are such writes. -/
+theorem RunQueueStage.of_retireTouched {st st' : SystemState}
     (h : st.objects.invExt → st'.objects.invExt ∧ st'.scheduler = st.scheduler ∧
       ∀ oid : SeLe4n.ObjId, st'.objects[oid]? = st.objects[oid]? ∨
-        (resetTouched st.objects[oid]? ∧ resetTouched st'.objects[oid]?)) :
+        (retireTouched st.objects[oid]? ∧ retireTouched st'.objects[oid]?)) :
     RunQueueStage st st' := by
   refine RunQueueStage.of_slots fun hInv => ?_
   obtain ⟨hExt, hS1, hW⟩ := h hInv
-  have hT : ∀ o : Option KernelObject, resetTouched o → ∀ c, SystemState.objRunLinkOn o c = RunQueue.RunQueueLink.none := by
+  have hT : ∀ o : Option KernelObject, retireTouched o → ∀ c, SystemState.objRunLinkOn o c = RunQueue.RunQueueLink.none := by
     intro o h c
     cases o with
     | none => rfl
-    | some obj => cases obj <;> first | rfl | exact absurd h (by simp [resetTouched])
-  have hN : ∀ o : Option KernelObject, resetTouched o → SystemState.objTcb? o = none := by
+    | some obj => cases obj <;> first | rfl | exact absurd h (by simp [retireTouched])
+  have hN : ∀ o : Option KernelObject, retireTouched o → SystemState.objTcb? o = none := by
     intro o h
     cases o with
     | none => rfl
-    | some obj => cases obj <;> first | rfl | exact absurd h (by simp [resetTouched])
+    | some obj => cases obj <;> first | rfl | exact absurd h (by simp [retireTouched])
   refine ⟨hExt, fun oid c => ?_, fun oid => ?_, hS1⟩
   · rcases hW oid with e | ⟨t1, t2⟩
     · rw [e]
@@ -248,7 +249,7 @@ theorem RunQueueStage.of_resetTouched {st st' : SystemState}
 /-- **The final-delete retire is a run-queue stage.** -/
 theorem retireFinalObject_runQueueStage (ec : Concurrency.CoreId) (target recorder : Nat)
     (st : SystemState) : RunQueueStage st (retireFinalObject ec target recorder st) :=
-  RunQueueStage.of_resetTouched fun hInv =>
+  RunQueueStage.of_retireTouched fun hInv =>
     have h := retireFinalObject_frame ec target recorder st hInv
     ⟨h.1, h.2.1, h.2.2.2.2.touched⟩
 
@@ -327,7 +328,9 @@ theorem untypedResetWithShootdown_runQueueStage {ec : Concurrency.CoreId} {untyp
     RunQueueStage st st' := by
   obtain ⟨st1, hR, hObj, hSched, -, -⟩ := untypedResetWithShootdown_ok_frame ec untypedId st st' h
   exact RunQueueStage.trans (st' := st1)
-    (RunQueueStage.of_resetTouched fun hInv => untypedReset_ok_frame ec untypedId st st1 hInv hR)
+    (RunQueueStage.of_retireTouched fun hInv =>
+      have h := untypedReset_ok_frame ec untypedId st st1 hInv hR
+      ⟨h.1, h.2.1, resetTouchedWrite.retireTouched h.2.2⟩)
     (RunQueueStage.of_frame hObj (by rw [hSched]) (by rw [hSched]))
 
 theorem revokeService_runQueueStage {sid : ServiceId} {st st' : SystemState}
@@ -396,16 +399,25 @@ theorem threadSlotCopied_runQueueStage {st : SystemState} {tid : SeLe4n.ThreadId
       rw [SystemState.updateTcb_eq_of_some hU]
       exact insertTcb_runQueueStage ((SystemState.getTcb?_eq_some_iff _ _ _).mp hU) (fun _ => rfl)
 
-theorem copyThreadSpaces_runQueueStage {st st' : SystemState} {vtid : SeLe4n.ValidThreadId}
-    {cnSrc vrSrc : CSpaceAddr} (h : copyThreadSpaces st vtid cnSrc vrSrc = .ok st') :
+/-- A thread space slot's set is a run-queue stage: the copy, then the retire. -/
+theorem threadSlotSet_runQueueStage (ec : Concurrency.CoreId) {st : SystemState}
+    {tid : SeLe4n.ThreadId} {t : TCB} (hT : st.getTcb? tid = some t) (slot : SeLe4n.Slot)
+    (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) :
+    RunQueueStage st (threadSlotSet ec st tid slot srcCNode srcSlot rights) := by
+  unfold threadSlotSet
+  exact (threadSlotCopied_runQueueStage hT _ _ _ _).trans (retireFinalObject_runQueueStage ec _ _ _)
+
+theorem copyThreadSpaces_runQueueStage {ec : Concurrency.CoreId} {st st' : SystemState}
+    {vtid : SeLe4n.ValidThreadId}
+    {cnSrc vrSrc : CSpaceAddr} (h : copyThreadSpaces ec st vtid cnSrc vrSrc = .ok st') :
     RunQueueStage st st' := by
   refine RunQueueStage.of_inv fun hInv => ?_
   obtain ⟨tcb, hT, -, -, -, -, rfl⟩ := copyThreadSpaces_ok h
-  obtain ⟨hT1, -⟩ := threadSlotCopied_tcb hInv hT TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot
-    TCB.cspaceRootRights
-  obtain ⟨t1, hT1'⟩ := Option.isSome_iff_exists.mp hT1
-  exact (threadSlotCopied_runQueueStage hT _ _ _ _).trans
-    (threadSlotCopied_runQueueStage hT1' _ _ _ _)
+  obtain ⟨t1, hT1'⟩ := Option.isSome_iff_exists.mp
+    (threadSlotSet_getTcb? ec hInv hT TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot
+      TCB.cspaceRootRights)
+  exact (threadSlotSet_runQueueStage ec hT _ _ _ _).trans
+    (threadSlotSet_runQueueStage ec hT1' _ _ _ _)
 
 theorem bindNotification_runQueueStage {st st' : SystemState} {nid : SeLe4n.ObjId}
     {tcbId : SeLe4n.ThreadId} (h : bindNotification nid tcbId st = .ok ((), st')) :

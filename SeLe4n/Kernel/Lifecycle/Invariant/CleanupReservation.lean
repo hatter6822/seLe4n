@@ -58,7 +58,7 @@ The in-place retype that ran this cleanup (`lifecycleRetypeDirectWithCleanup` an
 its wrappers) was retired at WS-ZA ZA5.4 part 14, and its composite theorems with
 it; every object is now carved from an untyped.  The cleanup and these theorems
 are kept for the finalisation a kernel object's final delete runs, seL4's
-`finaliseCap` (`docs/planning/UNTYPED_RESET_PLAN.md`, part 22).-/
+`finaliseCap` (`docs/planning/UNTYPED_RESET_PLAN.md`, part 24).-/
 
 namespace SeLe4n.Kernel
 

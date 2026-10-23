@@ -255,7 +255,10 @@ for driver in drivers:
             # with that cell handed back, and its capability deleted.
             "page-table-map-1", "page-table-map-2", "page-table-map-3",
             "page-table-unmap-3", "page-table-unmap-2", "page-table-unmap-1",
-            "page-table-delete-3", "page-table-delete-2", "page-table-delete-1")}
+            "page-table-delete-3", "page-table-delete-2", "page-table-delete-1",
+            # WS-ZA ZA5.4 part 22: a quiescent endpoint, notification, reply
+            # and CNode retired by their only capability's delete.
+            "endpoint-delete", "notification-delete", "reply-delete", "cnode-delete")}
         # WS-ZA ZA5.1: the memory invocations' readings today, each the
         # operation's own cells (object writes, the store's copy); the rows
         # that bring them to zero lower these pins.
@@ -268,6 +271,18 @@ for driver in drivers:
             "untyped-retype-page-table-2": (14, 13),
             "untyped-retype-page-table-3": (14, 13),
             "untyped-retype-frame": (12, 11), "vspace-map": (9, 0),
+            # WS-ZA ZA5.4 part 22: each passive kind's carve, read at its own
+            # cells (attributed by a QEMU trace of lean_alloc_small's callers).
+            # 9 are the store's: the untyped's record and child cell written
+            # in place (2), the object, index-set and type-table inserts (2
+            # each) and the index row (1); an endpoint and a notification are
+            # built as shared constants and add nothing.  A reply adds its
+            # record (2) and the carve request (1); a CNode adds the carve
+            # request and its decode (3), its spare slot cells (12) and the
+            # CNode record (1), and 4 larger cells the heap serves as page
+            # runs, which the small-object trace does not see.
+            "untyped-retype-endpoint": (9, 9), "untyped-retype-notification": (9, 9),
+            "untyped-retype-reply": (12, 12), "untyped-retype-cnode": (29, 29),
             "vspace-unmap-first": (0, 0), "vspace-map-again": (0, 0),
             "vspace-unify-instruction": (4, 3),
             "vspace-map-copy": (7, 5), "frame-revoke": (0, 0),
@@ -280,7 +295,7 @@ for driver in drivers:
             # them the whole-store reset); 10 of the 30 are the free-index
             # rewind, copied because the reset still refuses after it writes,
             # so its dispatch keeps the pre-state alive (docs/REGISTERED_DEBT.md
-            # §C, "The reset's rewind costs 10 heap cells"; part 23 reads 0).
+            # §C, "The reset's rewind costs 10 heap cells"; part 27 reads 0).
             "untyped-reset": (30, 30),
         })
         expected = set(pinned)
