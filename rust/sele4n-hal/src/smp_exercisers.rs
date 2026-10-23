@@ -1781,6 +1781,21 @@ const fn configure(name: &'static str, cptr: u64, msg: [u64; 4]) -> RoundTrip {
 const FRAME_CHILD_ID: u64 = 16;
 #[cfg(feature = "hw_target")]
 const PAGE_TABLE_CHILD_IDS: [u64; 3] = [17, 18, 19];
+/// The ids the passive kinds are carved at, one per kind: an endpoint, a
+/// notification, a reply and a CNode, each retired by its capability's delete
+/// before the next is carved.
+#[cfg(feature = "hw_target")]
+const PASSIVE_CHILD_IDS: [u64; 4] = [20, 21, 22, 23];
+/// `KernelObjectType` tags of the passive kinds; the CNode's size bits (its
+/// radix, 2: four slots) in the tag word's upper bits.
+#[cfg(feature = "hw_target")]
+const ENDPOINT_TYPE: u64 = 1;
+#[cfg(feature = "hw_target")]
+const NOTIFICATION_TYPE: u64 = 2;
+#[cfg(feature = "hw_target")]
+const REPLY_TYPE: u64 = 7;
+#[cfg(feature = "hw_target")]
+const CNODE_TYPE: u64 = 3 + (2 << 8);
 /// `KernelObjectType` tags of a frame and a page table, each one page (size
 /// bits 0 in the tag word's upper bits).
 #[cfg(feature = "hw_target")]
@@ -1830,7 +1845,9 @@ const PARTNER_PRIORITY: u64 = 255;
 ///   capability minted over the record the copy left (its target shared with
 ///   the frame's capability) and deleted, named as the partner's IPC buffer,
 ///   unmapped and deleted; the tables taken out deepest first and
-///   deleted; and the untyped reset.  While the frame is mapped it is also the
+///   deleted; an endpoint, a notification, a reply and a CNode each carved
+///   and its only capability deleted, which retires it; and the untyped
+///   reset.  While the frame is mapped it is also the
 ///   root task's IPC buffer, and the image's scheduling context is configured
 ///   (its fifth word read from that buffer), bound to the suspended partner
 ///   and unbound, then bound again and held while the partner is resumed and
@@ -2166,6 +2183,56 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 5] = [
             CSPACE_DELETE,
             CNODE_CAP,
             [PAGE_TABLE_SLOTS[0], 0, 0, 0],
+        ),
+        // WS-ZA ZA5.4 part 22: each passive kernel kind carved and its only
+        // capability deleted, which retires it, quiescent and unreferenced.
+        invocation(
+            "untyped-retype-endpoint",
+            UNTYPED_RETYPE,
+            UNTYPED_CAP,
+            [ENDPOINT_TYPE, PASSIVE_CHILD_IDS[0], CNODE_CAP, FRAME_SLOT],
+        ),
+        invocation(
+            "endpoint-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [FRAME_SLOT, 0, 0, 0],
+        ),
+        invocation(
+            "untyped-retype-notification",
+            UNTYPED_RETYPE,
+            UNTYPED_CAP,
+            [NOTIFICATION_TYPE, PASSIVE_CHILD_IDS[1], CNODE_CAP, FRAME_SLOT],
+        ),
+        invocation(
+            "notification-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [FRAME_SLOT, 0, 0, 0],
+        ),
+        invocation(
+            "untyped-retype-reply",
+            UNTYPED_RETYPE,
+            UNTYPED_CAP,
+            [REPLY_TYPE, PASSIVE_CHILD_IDS[2], CNODE_CAP, FRAME_SLOT],
+        ),
+        invocation(
+            "reply-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [FRAME_SLOT, 0, 0, 0],
+        ),
+        invocation(
+            "untyped-retype-cnode",
+            UNTYPED_RETYPE,
+            UNTYPED_CAP,
+            [CNODE_TYPE, PASSIVE_CHILD_IDS[3], CNODE_CAP, FRAME_SLOT],
+        ),
+        invocation(
+            "cnode-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [FRAME_SLOT, 0, 0, 0],
         ),
         invocation("untyped-reset", UNTYPED_RESET, UNTYPED_CAP, [0; 4]),
     ],
