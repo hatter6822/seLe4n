@@ -1,3 +1,121 @@
+## v0.36.131 — WS-ZA ZA5.4 part 20: finality
+
+A capability's finality is now read from its derivation links, as seL4's
+`isFinalCapability` reads it from the mapping database.  The capability
+bundle's tree shape holds seL4's `mdb_chunked`: the slots naming one object
+form one contiguous preorder run.  It is kept by every slot write and by the
+carve, and established by boot.  The page-table teardown of a delete or revoke
+reads finality before the delete instead of scanning the whole store after it.
+This is part 20 of the seL4 untyped reset
+([`UNTYPED_RESET_PLAN.md`](docs/planning/UNTYPED_RESET_PLAN.md)).
+
+### Changes
+
+- **Preorder neighbours** (`Model/Object/DerivationOrder.lean`).
+  - `Desc` is a descent in a forest (`desc_childrenOf_iff` makes it the
+    tree's `CdtChildReachable`).
+  - `ForestOrder.succ_cases`: the slot after `u` in a preorder is its first
+    child; or, when it has none, its next sibling, or a slot outside the
+    subtree of the parent it is the last child of.
+  - `ForestOrder.pred_cases`: the slot before `u` is its parent, when `u` is
+    a first child; or its previous sibling `q` or a slot below `q`, where `u`
+    does not lie below `q`.
+  - `TreeOrder.not_after_of_reach`: an ancestor precedes its descendant.
+  - `SlotList.Chunked q l`: the slots satisfying `q` are one contiguous run of
+    `l`.  It is kept by `filter`, `map`, `insertAfter` (when the inserted slot
+    joins the run only after its last slot) and `append_last`; `neighbour`
+    gives a run of two or more slots a run neighbour.
+- **Two new shape fields** (`Model/SlotTreeShape.lean`).
+  - `sameObjectContiguous`: on the tree's preorder, the slots naming each
+    object are `Chunked`.
+  - `untypedNamed`: a capability naming an untyped is an untyped capability.
+  - `TreeShapeOver.addChild`'s copy case states what the new slot names as an
+    equivalence with its source, untyped capabilities included; its fresh case
+    and `addChild_fresh` take that the source is an untyped capability and the
+    new capability names an untyped only by targeting it.
+- **Every slot write keeps them.**  An insert puts its child right after its
+  source in the preorder, which is the end of the source's run: a copy names
+  its source's object, and a carve's source is an untyped capability that is
+  not full, so it is the last slot of its untyped's chain
+  (`untypedNamed`, `chainLinear`, `notFullLeaf`, `TreeOrder.not_after_of_reach`).
+  A delete filters one slot out, a move renames one, a root joins the end.
+  The carve's authority stays an untyped capability
+  (`retypeFromUntyped_authority_untyped`).
+- **Finality** (`Model/CapabilityFinality.lean`, new).
+  - `SystemState.capIsFinal st cnode slot`: the slot's capability is compared
+    by object id (`Capability.namesObjectWord`) with the capabilities in the
+    slots its parent, first-child, `prev` and `next` words name.  Word reads
+    and comparisons only, on the slot's two words: no list, no kept `Option`,
+    no closure, no address record.
+  - `SystemState.capFinalSpec`: no other slot names the object the slot's
+    capability names.  It stays the specification.
+  - `capIsFinal_eq_true_iff_links`: the reader is the link-level statement.
+  - `linksFinal_iff_of_shape` and `capIsFinal_iff_of_shape`: under the links'
+    agreement, the shape, the occupied tree slots and acyclicity, the
+    link-level statement is the specification.  `names_up_of_shape` carries
+    naming up a descent through `below`.
+  - `capIsFinal_iff_capFinalSpec` (`Capability/Invariant/Defs.lean`): the same
+    under the capability bundle.
+- **The page-table consumer** (`Capability/FrameFinalise.lean`).
+  - `slotPageTables` lists the table a slot's capability names only when that
+    capability is final (`mem_slotPageTables_iff_of_bundle`: exactly when no
+    other slot names it, under the bundle).
+  - `pageTablesOrphaned` no longer asks `carvedSubtreeUnreferenced`; the named
+    tables are already the ones whose final capability the step destroyed.
+  - `cspaceDeleteTeardownAtTable` asks `capIsFinal` before the delete; a
+    capability that is not final is deleted with nothing to finalise.
+    `cspaceDeleteTeardownAt_eq_table` is re-proved.
+  - `carvedSubtreeUnreferenced` stays in `Architecture/PageTeardown.lean` for
+    the untyped reset, its one asker now.
+  - A CNode-slot or reply capability naming a table's id now counts as naming
+    the table, as seL4's `sameObjectAs` does.
+
+### Model corrections
+
+The row as written does not hold at boot or across a carve; two seL4-faithful
+corrections make it hold.
+- **Boot links by the object a capability names**
+  (`Platform/Boot/CapabilityLinks.lean`), not by its whole target.  With a
+  CNode `C` holding `.object C` in slot 0, `.object ep` in slot 1 and
+  `.cnodeSlot C 3` in slot 2, linking by target makes three roots `[s0, s1, s2]`
+  in which `s0` and `s2` both name `C` and are not contiguous.
+  `BootLinks` records each root's `namedObject`, and `BootLinks.Sound` carries
+  the contiguity of the preorder.
+- **A boot untyped is named only by one untyped capability**
+  (`untypedCapabilitiesUnique`, `Platform/Boot.lean`).  The check counts the
+  configured capabilities naming each boot untyped (at most one) and requires
+  the one it finds to target the untyped.  Without it, slot 0 holding
+  `.object u` (not full) with a child slot 1 holding `.cnodeSlot u 0` is split
+  by a carve from slot 0, which inserts its child between them, and slot 0
+  would then read as final.  The boot establishes `untypedNamed`
+  (`bootFromPlatformCheckedWithIdleThreadsFor_ok_untypedNamed`,
+  `startInitialThreads_untypedNamed`).
+
+### Tests
+
+- `tests/VSpaceCapabilityBindingSuite.lean`: while a copy of a page-table
+  capability lives neither it nor the original is final, and deleting the
+  original leaves the table installed and the copy final.
+
+### Documentation
+
+- `SELE4N_SPEC.md` §8.6 and the page-table paragraph.
+- GitBook chapter 12.
+- A new `CLAIM_EVIDENCE_INDEX.md` row, and the untyped-derivation row's boot
+  refusal.
+- Plan row 20, marked landed.
+- The workstream context.
+- Tier 3 anchors for the new surface, with negative checks for the retired
+  store scan in the page-table consumer and the target-keyed boot linking.
+
+### Validation
+
+- `./scripts/test_full.sh --continue` passes, and so do
+  `./scripts/test_lean_aarch64_archive.sh` and
+  `./scripts/test_aarch64_cross_build.sh`.
+- Every QEMU heap pin is unchanged, `page-table-delete-*` at 0
+  (`./scripts/test_qemu_heap_allocations_per_syscall.sh --lean-kernel`).
+
 ## v0.36.130 — WS-ZA ZA5.4 part 19: untyped chains and descendants
 
 The capability bundle's tree shape now holds seL4's untyped facts
