@@ -453,8 +453,8 @@ theorem mintReplyCapWithCdt_preserves_capabilityInvariantBundle
       -- untyped capability, so the source owes (b) nothing
       have hShapeOff := treeShape_addEdge_after_insert st st1 src dst child .mint
         hInv.treeShape hInv.2.1 hObjInv (by rw [hLc]; rfl) hI
-        (.inl ⟨fun o ho => namesAt_of_source hLc hObj o ho,
-          fun u ht _ => absurd ht (hNotU u),
+        (.inl ⟨⟨parent, SystemState.slotCapAt_of_lookupSlotCap hLc, hObj, fun u hu =>
+            ⟨fun ht => absurd ht (hNotU u), fun ht => absurd (hParU u ht) hu⟩⟩,
           fun u hu => by
             obtain ⟨c, hc, ht, hut⟩ := hu
             rw [SystemState.slotCapAt_of_lookupSlotCap hLc] at hc; cases hc

@@ -49,6 +49,17 @@ store's untyped records (`SystemState.getUntyped?`):
   one untyped** (`TreeShapeOver.childLive`, `TreeShapeOver.childUnique`, seL4's
   `untyped_inc`).
 
+WS-ZA ZA5.4 part 20 adds the two facts finality reads off the links:
+
+* **a capability naming an untyped is an untyped capability**
+  (`TreeShapeOver.untypedNamed`): no CNode-slot or reply alias names an
+  untyped, so the slots naming one are its chain;
+* **the slots naming one object form one contiguous preorder run**
+  (`TreeShapeOver.sameObjectContiguous`, seL4's `mdb_chunked`, over
+  `SlotList.Chunked`), so a capability is final exactly when neither preorder
+  neighbour names its object (`SystemState.capIsFinal`,
+  `Model/CapabilityFinality.lean`).
+
 `CapTreeShape` bundles them.  Each tree write keeps it by one lemma here: a
 step that keeps the tree, every slot and every untyped and no object leaves the
 store (`SlotTreeFrame`), an insert that records its edge
@@ -533,6 +544,10 @@ WS-ZA ZA5.4 part 19 adds the untyped facts, seL4's `untyped_mdb` and
 * every child an untyped records is in the store (`childLive`), and an object is
   recorded by at most one untyped (`childUnique`).
 
+WS-ZA ZA5.4 part 20 adds what finality reads: a capability naming an untyped is
+an untyped capability (`untypedNamed`), and the slots naming one object form one
+contiguous run of the preorder (`sameObjectContiguous`, seL4's `mdb_chunked`).
+
 Stated over the tree and the readers rather than the state, so a step that
 rewrites none of them (a scheduler or machine write) keeps it definitionally. -/
 structure TreeShapeOver (cdt : CapDerivationTree) (cap : SlotRef → Option Capability)
@@ -558,6 +573,8 @@ structure TreeShapeOver (cdt : CapDerivationTree) (cap : SlotRef → Option Capa
   childLive : ∀ u U, ut u = some U → ∀ ch ∈ U.children, present ch.objId
   childUnique : ∀ u v U V, ut u = some U → ut v = some V → ∀ ch ∈ U.children,
     ∀ ch' ∈ V.children, ch.objId = ch'.objId → u = v
+  untypedNamed : ∀ r u, namesAt cap r u → ut u ≠ none → untypedCapAt cap ut r u
+  sameObjectContiguous : ∀ P, cdt.TreeOrder P → ∀ o, SlotList.Chunked (namesAt cap · o) P
 
 /-- **The shape of the derivation tree over the slots and the store**: every slot
 holding a capability is in the tree (`slotsInTree`), the tree has a preorder,
@@ -634,7 +651,8 @@ theorem of_sub (h : TreeShapeOver cdt cap present ut off)
     fun u p r hp hr => h.chainLinear u p r (hU hp) (hU hr),
     fun u p r hp hr hpr => ?_, fun p c u U ho hc ht hu hf r hr hru => ?_,
     fun u x hx p r hp hr => h.carvedBelow u x hx p r (hU hp) (hN hr),
-    fun u U hu ch hch => hP _ (h.childLive u U hu ch hch), h.childUnique⟩
+    fun u U hu ch hch => hP _ (h.childLive u U hu ch hch), h.childUnique,
+    fun r u hr hu => ?_, fun Q hQ o => ?_⟩
   · exact h.below p c o hc (hN hcO) (by rw [← hS1 p hp]; exact hp)
       (fun e => hpO ((namesAt_of_eq (hS1 p hp)).mpr e)) r (hN hr)
   · obtain ⟨c, hc, hcu, hcr⟩ := h.chainFirst u p r (hU hp) (hU hr) hpr
@@ -643,6 +661,9 @@ theorem of_sub (h : TreeShapeOver cdt cap present ut off)
     exact ⟨c, hc, (untypedCapAt_of_eq (hS c (.inr hm))).mpr hcu, hcr⟩
   · have hp : cap' p ≠ none := by rw [hc]; exact Option.some_ne_none _
     exact h.notFullLeaf p c u U ho (by rw [← hS1 p hp]; exact hc) ht hu hf r hr (hU hru)
+  · exact (untypedCapAt_of_eq (hS1 _ (namesAt_occupied hr))).mpr (h.untypedNamed r u (hN hr) hu)
+  · exact (h.sameObjectContiguous Q hQ o).congr fun x hx =>
+      namesAt_of_eq (hS x (.inr ((hQ.mem_iff x).mp hx)))
 
 /-- **The same tree, slots, untypeds and no object lost keep the shape.** -/
 theorem of_readers (h : TreeShapeOver cdt cap present ut off) {cdt' : CapDerivationTree}
@@ -686,7 +707,8 @@ theorem splice (h : TreeShapeOver cdt cap present ut off) {n : SlotRef} {cdt' : 
     fun p c o hc hcO hp hpO r hr => ?_, fun u p r hp hr => ?_, fun u p r hp hr hpr => ?_,
     fun p c u U ho hc ht hu hf r hr hru => ?_,
     fun u x hx p r hp hr => hFwd (h.carvedBelow u x hx p r (hUt hp) (hN hr)) (hrnU hp) (hrn hr),
-    fun u U hu ch hch => hP _ (h.childLive u U hu ch hch), h.childUnique⟩
+    fun u U hu ch hch => hP _ (h.childLive u U hu ch hch), h.childUnique,
+    fun r u hr hu => ?_, fun Q hQ o => ?_⟩
   · have hrn' : r ≠ n := fun e => hr (e ▸ hn)
     refine (hP'.mem_iff r).mp (List.mem_filter.mpr ⟨(hPo.mem_iff r).mpr (h.inTree r ?_),
       by simp [hrn']⟩)
@@ -734,6 +756,12 @@ theorem splice (h : TreeShapeOver cdt cap present ut off) {n : SlotRef} {cdt' : 
     have hp' : cap' p ≠ none := by rw [hc]; exact Option.some_ne_none _
     exact h.notFullLeaf p c u U ho (by rw [← hS1 p hpn hp']; exact hc) ht hu hf r (hBack hr)
       (hUt hru)
+  · exact (untypedCapAt_of_eq (hS1 _ (hrn hr) (namesAt_occupied hr))).mpr
+      (h.untypedNamed r u (hN hr) hu)
+  · rw [hQ.unique hP']
+    refine ((h.sameObjectContiguous P hPo o).filter _).congr fun x hx => ?_
+    have hxn : x ≠ n := by simpa using (List.mem_filter.mp hx).2
+    exact namesAt_of_eq (hS x hxn (.inr ((hP'.mem_iff x).mp hx)))
 
 /-- **An in-place rewrite of an occupied slot that keeps its target keeps the
 shape**, when no object leaves the store and (b) holds at the rewritten slot
@@ -763,7 +791,9 @@ theorem rewrite (h : TreeShapeOver cdt cap present ut off) {off' : SlotRef → P
     fun u p r hp hr => h.chainLinear u p r ((hU _ _).mp hp) ((hU _ _).mp hr),
     fun u p r hp hr hpr => ?_, fun p d u U ho hd ht hu hf r hr hru => ?_,
     fun u x hx p r hp hr => h.carvedBelow u x hx p r ((hU _ _).mp hp) ((hN _ _).mp hr),
-    fun u U hu ch hch => hP _ (h.childLive u U hu ch hch), h.childUnique⟩
+    fun u U hu ch hch => hP _ (h.childLive u U hu ch hch), h.childUnique,
+    fun r u hr hu => (hU _ _).mpr (h.untypedNamed r u ((hN _ _).mp hr) hu),
+    fun Q hQ o => (h.sameObjectContiguous Q hQ o).congr fun x _ => hN x o⟩
   · exact h.below p c₀ o hc ((hN _ _).mp hcO) ((hOcc p).mp hp)
       (fun e => hpO ((hN _ _).mpr e)) r ((hN _ _).mp hr)
   · obtain ⟨d, hd, hdu, hdr⟩ := h.chainFirst u p r ((hU _ _).mp hp) ((hU _ _).mp hr) hpr
@@ -812,11 +842,13 @@ theorem addChild (h : TreeShapeOver cdt cap present ut (fun _ => False)) {src ds
     (hCdt : cdt' = cdt.addEdge src dst op)
     (hS : ∀ r, r ≠ dst → cap' r = cap r)
     (hP : ∀ o, present o → present' o)
-    (hNew : ((∀ o, namesAt cap' dst o → namesAt cap src o) ∧
-          (∀ u, untypedCapAt cap' ut dst u → untypedCapAt cap ut src u) ∧
+    (hNew : ((∀ o, namesAt cap' dst o ↔ namesAt cap src o) ∧
+          (∀ u, untypedCapAt cap' ut dst u ↔ untypedCapAt cap ut src u) ∧
           (∀ u, untypedCapAt cap ut src u → cdt.childrenOf src = [])) ∨
         ((∀ u, untypedCapAt cap ut src u → ∀ r, CdtChildReachable cdt src r →
             ¬ untypedCapAt cap ut r u) ∧
+          (∃ u, untypedCapAt cap ut src u) ∧
+          (∀ u, namesAt cap' dst u → ut u ≠ none → untypedCapAt cap' ut dst u) ∧
           ∀ o, namesAt cap' dst o → (∀ r, ¬ namesAt cap r o) ∧ present' o ∧
             (∀ t, CarvedFrom ut t o → ∀ p, untypedCapAt cap ut p t →
               p = src ∨ CdtChildReachable cdt p src) ∧
@@ -851,7 +883,7 @@ theorem addChild (h : TreeShapeOver cdt cap present ut (fun _ => False)) {src ds
       rw [hChNe (Ne.symm hsd)]; exact CapDerivationTree.childrenOf_eq_nil_of_not_mentions hDst) r
   have hLeaf : ∀ u, untypedCapAt cap ut src u → ∀ r, CdtChildReachable cdt src r →
       ¬ untypedCapAt cap ut r u := by
-    rcases hNew with ⟨-, -, hL⟩ | ⟨hL, -⟩
+    rcases hNew with ⟨-, -, hL⟩ | ⟨hL, -, -, -⟩
     · intro u hu r hr; exact absurd hr (CdtChildReachable.not_of_childless (hL u hu))
     · exact hL
   -- what `dst` names: what `src` names, or a fresh object
@@ -859,8 +891,8 @@ theorem addChild (h : TreeShapeOver cdt cap present ut (fun _ => False)) {src ds
       present' o ∧ (∀ t, CarvedFrom ut t o → ∀ p, untypedCapAt cap ut p t →
         p = src ∨ CdtChildReachable cdt p src)) := by
     intro o ho
-    rcases hNew with ⟨hNmC, -, -⟩ | ⟨-, hF⟩
-    · exact .inl (hNmC o ho)
+    rcases hNew with ⟨hNmC, -, -⟩ | ⟨-, -, -, hF⟩
+    · exact .inl ((hNmC o).mp ho)
     · obtain ⟨h1, h2, h3, -⟩ := hF o ho
       exact .inr ⟨h1, h2, h3⟩
   -- an untyped capability at `dst`: in a copy, `src`'s too; never in a carve
@@ -868,14 +900,14 @@ theorem addChild (h : TreeShapeOver cdt cap present ut (fun _ => False)) {src ds
       (untypedCapAt cap ut src u ∧ cdt.childrenOf src = []) ∨
         ((∀ r, ¬ namesAt cap r u) ∧ ∀ U, ut u = some U → U.children = []) := by
     intro u hu
-    rcases hNew with ⟨-, hUC, hL⟩ | ⟨-, hF⟩
-    · exact .inl ⟨hUC u hu, hL u (hUC u hu)⟩
+    rcases hNew with ⟨-, hUC, hL⟩ | ⟨-, -, -, hF⟩
+    · exact .inl ⟨(hUC u).mp hu, hL u ((hUC u).mp hu)⟩
     · obtain ⟨h1, -, -, h4⟩ := hF u hu.namesAt
       exact .inr ⟨h1, h4⟩
   refine ⟨fun r hr => ?_, ?_, fun r o hr => ?_, fun p c o hc hcO hp hpO r hr => ?_,
     fun u p r hp hr => ?_, fun u p r hp hr hpr => ?_, fun p c u U ho hc ht hu hf r hr hru => ?_,
     fun t x hx p r hp hr => ?_, fun u U hu ch hch => hP _ (h.childLive u U hu ch hch),
-    h.childUnique⟩
+    h.childUnique, fun r u hr hu => ?_, fun Q hQ o => ?_⟩
   · rw [CapDerivationTree.mentions_addEdge]
     by_cases e : r = dst
     · exact .inr (.inr e)
@@ -998,6 +1030,45 @@ theorem addChild (h : TreeShapeOver cdt cap present ut (fun _ => False)) {src ds
         · exact hToDst (.inr (h.carvedBelow t x hx p src hpOld hs))
         · exact hToDst (hF t hx p hpOld)
       · exact hLift (h.carvedBelow t x hx p r hpOld ((hN er).mp hr))
+  · by_cases er : r = dst
+    · rw [er] at hr ⊢
+      rcases hNew with ⟨hNmC, hUC, -⟩ | ⟨-, -, hDN, -⟩
+      · exact (hUC u).mpr (h.untypedNamed src u ((hNmC u).mp hr) hu)
+      · exact hDN u hr hu
+    · exact (hUe er).mpr (h.untypedNamed r u ((hN er).mp hr) hu)
+  · obtain ⟨P, hPo⟩ := h.ordered
+    rw [hQ.unique (hPo.addEdge (h.inTree src hSrc) hDst op)]
+    have hdP : dst ∉ P := fun hm => hDst ((hPo.mem_iff dst).mp hm)
+    have hsP : src ∈ P := (hPo.mem_iff src).mpr (h.inTree src hSrc)
+    have hC := (h.sameObjectContiguous P hPo o).congr (q' := (namesAt cap' · o)) fun x hx =>
+      hN (fun e => hdP (e ▸ hx))
+    refine hC.insertAfter hPo.nodup hsP (fun hd => ?_) (fun hs hnd X Y hXY x hx hxo => ?_)
+    · rcases hNew with ⟨hNmC, -, -⟩ | ⟨-, -, -, hF⟩
+      · exact .inl ((hN hsd).mpr ((hNmC o).mp hd))
+      · exact .inr fun x hx hxo =>
+          (hF o hd).1 x ((hN (fun e => hdP (e ▸ hx))).mp hxo)
+    · have hs' := (hN hsd).mp hs
+      have hnd' : ¬ namesAt cap' dst o := hnd
+      rcases hNew with ⟨hNmC, -, -⟩ | ⟨hL, ⟨u, hsu⟩, -, -⟩
+      · exact hnd' ((hNmC o).mpr hs')
+      · have hxP : x ∈ P := by rw [hXY]; simp [hx]
+        have hxd : x ≠ dst := fun e => hdP (e ▸ hxP)
+        have hx' := (hN hxd).mp hxo
+        have hou : o = u := by
+          obtain ⟨c1, h1, h1o⟩ := hs'
+          obtain ⟨c2, h2, h2t, -⟩ := hsu
+          rw [h1] at h2; obtain rfl := Option.some.inj h2
+          simp [Capability.namedObject, h2t] at h1o
+          exact h1o.symm
+        subst hou
+        have hut : ut o ≠ none := by obtain ⟨_, _, _, h⟩ := hsu; exact h
+        have hxu := h.untypedNamed x o hx' hut
+        have hxs : x ≠ src := fun e =>
+          (List.nodup_cons.mp (List.nodup_append.mp (hXY ▸ hPo.nodup)).2.1).1 (e ▸ hx)
+        rcases h.chainLinear o src x hsu hxu with e | e | e
+        · exact hxs e.symm
+        · exact hL o hsu x e hxu
+        · exact hPo.not_after_of_reach e hXY hx
 
 /-- **A carve's insert keeps the shape with no exception**: the new capability
 names a fresh object and the source has no strict descendant naming its untyped,
@@ -1010,13 +1081,15 @@ theorem addChild_fresh (h : TreeShapeOver cdt cap present ut (fun _ => False))
     (hP : ∀ o, present o → present' o)
     (hLeaf : ∀ u, untypedCapAt cap ut src u → ∀ r, CdtChildReachable cdt src r →
         ¬ untypedCapAt cap ut r u)
+    (hSrcU : ∃ u, untypedCapAt cap ut src u)
+    (hDstU : ∀ u, namesAt cap' dst u → ut u ≠ none → untypedCapAt cap' ut dst u)
     (hFresh : ∀ o, namesAt cap' dst o → (∀ r, ¬ namesAt cap r o) ∧ present' o ∧
       (∀ t, CarvedFrom ut t o → ∀ p, untypedCapAt cap ut p t →
         p = src ∨ CdtChildReachable cdt p src) ∧
       (∀ U, ut o = some U → U.children = [])) :
     TreeShapeOver cdt' cap' present' ut (fun _ => False) := by
   have hsd : src ≠ dst := fun e => hDst (e ▸ h.inTree src hSrc)
-  have h' := h.addChild op hSrc hDst hCdt hS hP (.inr ⟨hLeaf, hFresh⟩)
+  have h' := h.addChild op hSrc hDst hCdt hS hP (.inr ⟨hLeaf, hSrcU, hDstU, hFresh⟩)
   subst hCdt
   refine h'.reoff fun p _ ho c u U hc ht hu _ r hr hru => ?_
   rw [ho] at hc hr
@@ -1072,7 +1145,8 @@ theorem move (h : TreeShapeOver cdt cap present ut (fun _ => False)) {old new : 
   refine ⟨fun r hr => ?_, ⟨_, hP'⟩, fun r o hr => hP o (h.live _ o ((hN (hro hr)).mp hr)),
     fun p c o hc hcO hp hpO r hr => ?_, fun u p r hp hr => ?_, fun u p r hp hr hpr => ?_,
     fun p c u U _ hc ht hu hf r hr hru => ?_, fun t x hx p r hp hr => ?_,
-    fun u U hu ch hch => hP _ (h.childLive u U hu ch hch), h.childUnique⟩
+    fun u U hu ch hch => hP _ (h.childLive u U hu ch hch), h.childUnique,
+    fun r u hr hu => ?_, fun Q hQ o => ?_⟩
   · refine (hP'.mem_iff r).mp (List.mem_map.mpr ?_)
     by_cases e : r = new
     · exact ⟨old, (hPo.mem_iff old).mpr (h.inTree old hOld),
@@ -1119,6 +1193,12 @@ theorem move (h : TreeShapeOver cdt cap present ut (fun _ => False)) {old new : 
   · have hpo := hroU hp
     have hro' := hro hr
     exact hFwd' hpo hro' (h.carvedBelow t x hx _ _ ((hUt hpo).mp hp) ((hN hro').mp hr))
+  · have hro' := hro hr
+    exact (hUt hro').mpr (h.untypedNamed _ u ((hN hro').mp hr) hu)
+  · rw [hQ.unique hP']
+    refine (h.sameObjectContiguous P hPo o).map _ fun x hx => ?_
+    have hxn : x ≠ new := fun e => hNew (e ▸ (hPo.mem_iff x).mp hx)
+    rw [hN (CapDerivationTree.renameSlot_ne_old hon x), CapDerivationTree.renameSlot_back hxn]
 
 /-- **Recording a carved object keeps the shape**: untyped `u`, keeping its
 region, records `w`, a fresh object no slot names and now in the store, whose own
@@ -1180,7 +1260,8 @@ theorem carveRecord (h : TreeShapeOver cdt cap present ut off)
     fun v p r hp hr => h.chainLinear v p r (hUt hp).1 (hUt hr).1,
     fun v p r hp hr hpr => ?_, fun p c v V ho hc ht hv hf r hr hru => ?_,
     fun t x hx p r hp hr => ?_, fun v V hv ch hch => ?_,
-    fun a b A B ha hb ch hch ch' hch' hc => ?_⟩
+    fun a b A B ha hb ch hch ch' hch' hc => ?_, fun r v hr hv => ?_,
+    fun Q hQ o => h.sameObjectContiguous Q hQ o⟩
   · obtain ⟨c, hc, hcu, hcr⟩ := h.chainFirst v p r (hUt hp).1 (hUt hr).1 hpr
     exact ⟨c, hc, hUt' hcu (hUt hp).2, hcr⟩
   · have hvw := hNw hc ht
@@ -1217,6 +1298,8 @@ theorem carveRecord (h : TreeShapeOver cdt cap present ut off)
     · exact absurd ex' (hlive hA)
     · exact absurd ex (hlive hB)
     · exact ea.trans eb.symm
+  · have hvw : v ≠ w := fun e => hw r (e ▸ hr)
+    exact hUt' (h.untypedNamed r v hr ((hNone v hvw).mp hv)) hvw
 
 /-- **A step that keeps the tree, the slots, the untyped records and every
 object keeps the shape, off the same slots.** -/

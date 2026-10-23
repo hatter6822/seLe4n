@@ -322,6 +322,36 @@ theorem retypeFromUntyped_authority_leaf
   exact hInv.treeShape.notFullLeaf authority cap _ ut id hSrc hT hUtSt hNotFull r hr
     ⟨d, hd, hdt ▸ hct, by rw [hUtSt]; exact Option.some_ne_none _⟩
 
+/-- **The carve's authority still holds an untyped capability to its untyped**:
+the authority's capability keeps its target, and the untyped's record is
+rewritten in place, not removed. -/
+theorem retypeFromUntyped_authority_untyped
+    (st st' : SystemState) (authority : CSpaceAddr) (untypedId childId : SeLe4n.ObjId)
+    (newObj : KernelObject) (allocSize : Nat) (hObjInv : st.objects.invExt)
+    (hStep : retypeFromUntyped authority untypedId childId newObj allocSize st = .ok ((), st')) :
+    SystemState.untypedCapAt st'.slotCapAt st'.getUntyped? authority untypedId := by
+  have hFresh := retypeFromUntyped_childId_fresh authority untypedId childId newObj allocSize
+    st st' hStep
+  obtain ⟨ut, ut', cap, stUt, _, stCh, cn, hUt, _, _, _, hAuth, _, _, hLkA, hAU, _, hStUt,
+    hStCh, _, hStIdx⟩ := retypeFromUntyped_ok_stores st st' authority untypedId childId _ _
+      hObjInv hStep
+  have hNe : childId ≠ untypedId := by
+    intro h; rw [h, hUt] at hFresh; simp at hFresh
+  have hInvUt := storeObject_preserves_objects_invExt _ _ _ _ hObjInv hStUt
+  have hInvCh := storeObject_preserves_objects_invExt _ _ _ _ hInvUt hStCh
+  have hT : cap.target = .object untypedId := by
+    unfold lifecycleRetypeAuthority at hAuth; simp at hAuth; exact hAuth.1
+  refine ⟨cap.withFreeIndex (alignedCarveIndex newObj.objectType allocSize ut cap.freeIndex +
+    allocSize), ?_, (Capability.withFreeIndex_target _ _).trans hT, ?_⟩
+  · rw [SystemState.slotCapAt_of_object (storeObject_objects_eq _ _ _ _ hInvCh hStIdx)]
+    exact CNode.lookup_insert_eq cn authority.slot _ (CNode.slotsUnique_holds _)
+      (CNode.slotAddressable_of_lookup _ _ _ hLkA)
+  · rw [SystemState.getUntyped?_eq_bind,
+      storeObject_objects_ne _ _ _ _ _ (Ne.symm hAU) hInvCh hStIdx,
+      storeObject_objects_ne _ _ _ _ _ (Ne.symm hNe) hInvUt hStCh,
+      storeObject_objects_eq _ _ _ _ hObjInv hStUt]
+    simp [KernelObject.untyped?]
+
 /-- **What a carve owes its new capability's place**: the carved object, if an
 untyped, records nothing, and every capability to an untyped the carved object
 is carved from is the authority or lies above it — the carved object's one
@@ -549,7 +579,15 @@ theorem untypedRetypeObject_preserves_capabilityInvariantBundle
       st1.getUntyped? := funext fun o => by
     rw [SystemState.getUntyped?_eq_bind, SystemState.getUntyped?_eq_bind, hObjZ]
   have hShape := treeShape_addEdge_after_fresh _ st2 src dst _ .retype hInvZ.treeShape
-    hInvZ.2.1 hObjInvZ hSrc hIns (by rw [hCapZ, hUtZ, hCdtZ]; exact hLeaf1) fun o ho => by
+    hInvZ.2.1 hObjInvZ hSrc hIns (by rw [hCapZ, hUtZ, hCdtZ]; exact hLeaf1)
+    ⟨untypedId, by
+      rw [hCapZ, hUtZ]
+      exact retypeFromUntyped_authority_untyped st st1 src untypedId childId _ _
+        hInv.2.2.2.2.1 hRt⟩
+    (fun u hu _ => by
+      rw [CarveRequest.capability_eq] at hu ⊢
+      simp only [Capability.namedObject, Option.some.injEq] at hu
+      rw [hu]) fun o ho => by
       rw [CarveRequest.capability_eq] at ho
       simp only [Capability.namedObject, Option.some.injEq] at ho
       subst ho

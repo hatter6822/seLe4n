@@ -496,7 +496,10 @@ private theorem default_capabilityInvariantBundle :
     (by intro p _ _ _ _ h; rw [default_slotCapAt_none] at h; cases h),
     (by intro _ _ _ p _ ⟨_, h, _, _⟩; rw [default_slotCapAt_none] at h; cases h),
     (by intro u _ h; rw [default_getUntyped?_none] at h; cases h),
-    (by intro u _ _ _ h; rw [default_getUntyped?_none] at h; cases h)⟩⟩
+    (by intro u _ _ _ h; rw [default_getUntyped?_none] at h; cases h),
+    (by intro r _ ⟨_, h, _⟩; rw [default_slotCapAt_none] at h; cases h),
+    fun _ _ _ => SlotList.Chunked.of_none fun x _ ⟨_, h, _⟩ => by
+      rw [default_slotCapAt_none] at h; cases h⟩⟩
 
 -- WS-H12e: Default-state proofs for new invariant components
 

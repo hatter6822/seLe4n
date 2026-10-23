@@ -1739,6 +1739,24 @@ private def runPageTableChecks : IO Unit := do
           assertBool "a table another capability still names stays installed, with everything beneath it"
             (slotsOf sCopy 980 == slotsOf st3 980 &&
              mappedPaddr sCopy one (SeLe4n.Testing.fixtureUserVAddr va) == some (carveUtBase + SeLe4n.pageBytes))
+        -- Finality is read off the slot's derivation links (`capIsFinal`, seL4's
+        -- `isFinalCapability`): the copy is the original's first child, so
+        -- neither is final while both live, and the one left is final again.
+        match runAll st3 [decodeCopy 15 21] with
+        | .error e => assertBool s!"copying the level-1 table capability succeeds (got {repr e})" false
+        | .ok sTwo => do
+          assertBool "while a copy lives, neither the original nor the copy is final"
+            (st3.capIsFinal carveCn (SeLe4n.Slot.ofNat 15) &&
+             !sTwo.capIsFinal carveCn (SeLe4n.Slot.ofNat 15) &&
+             !sTwo.capIsFinal carveCn (SeLe4n.Slot.ofNat 21))
+          match dispatchSyscallAsCurrent (decodeDelete 15) carveOwner Concurrency.bootCoreId sTwo with
+          | .error e => assertBool s!"deleting the original while its copy lives succeeds (got {repr e})" false
+          | .ok ((), sOrig) =>
+            assertBool "deleting the original while its copy lives leaves the table installed, and the copy final"
+              (slotsOf sOrig 980 == slotsOf st3 980 &&
+               mappedPaddr sOrig one (SeLe4n.Testing.fixtureUserVAddr va) ==
+                 some (carveUtBase + SeLe4n.pageBytes) &&
+               sOrig.capIsFinal carveCn (SeLe4n.Slot.ofNat 21))
         match dispatchSyscallAsCurrent (decodeDelete 15) carveOwner Concurrency.bootCoreId st3 with
         | .error e => assertBool s!"deleting the level-1 table's only capability succeeds (got {repr e})" false
         | .ok ((), sDel) => do

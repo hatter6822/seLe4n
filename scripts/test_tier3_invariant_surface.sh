@@ -4247,9 +4247,34 @@ run_check "INVARIANT" rg -n 'so resetting the child alone is refused \(revocatio
 # capability, read before the step, and named by no slot after"; the root is the truth, so every reader asks the live question and the
 # record-only reading must not come back.
 run_check "INVARIANT" rg -n -U 'def cspaceDeleteThenFinalise [^\n]*(\n([ \t][^\n]*)?)*    \| \.ok \(\(\), st1\) => finaliseDestroyedCapabilities executingCore named pages st1' SeLe4n/Kernel/Capability/FrameFinalise.lean
-# A table's final capability is decided on every slot of every object, a CNode's
-# or a thread's, the places a capability lives, through the one whole-store check.
-run_check "INVARIANT" rg -n -U 'def pageTablesOrphaned [^\n]*(\n([ \t][^\n]*)?)*          if Architecture\.pageTableInstallLive st id && carvedSubtreeUnreferenced st \[id\] then\n            \(id, inst\) :: acc' SeLe4n/Kernel/Capability/FrameFinalise.lean
+# v0.36.131: a table's final capability is read off the destroyed slot's four
+# derivation links before the step (seL4's isFinalCapability, `capIsFinal`), not
+# by the whole-store scan after it: the orphan set is the named tables still
+# installed, and the scan must not come back into it.
+run_check "INVARIANT" rg -n -U 'def pageTablesOrphaned [^\n]*(\n([ \t][^\n]*)?)*          if Architecture\.pageTableInstallLive st id then\n            \(id, inst\) :: acc' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_negative_check "INVARIANT" rg -n -U 'def pageTablesOrphaned [^\n]*(\n([ \t][^\n]*)?)*carvedSubtreeUnreferenced' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n -U '^@\[inline\] def slotPageTables \(st : SystemState\) \(addr : CSpaceAddr\) : List SeLe4n\.ObjId :=\n  match \(st\.slotCapAt addr\)\.bind \(capabilityPageTable st\) with\n  \| some id => if st\.capIsFinal addr\.cnode addr\.slot then \[id\] else \[\]\n  \| none => \[\]$' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n -U 'def cspaceDeleteTeardownAtTable [^\n]*(\n([ \t][^\n]*)?)*      \| some _ =>\n        if st\.capIsFinal cnode slot then\n          let st1 := cspaceDeletePerformAt cnode slot st\n          if Architecture\.pageTableInstallLive st1 tableId then\n            finaliseDestroyedCapabilitiesState executingCore \[tableId\] \[\] st1\n          else st1\n        else cspaceDeletePerformAt cnode slot st' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_negative_check "INVARIANT" rg -n 'carvedSubtreeUnreferenced|objectNamesListed|capNamesListed' SeLe4n/Kernel/Capability/FrameFinalise.lean
+# v0.36.131 finality (seL4's isFinalCapability over mdb_chunked): the slots
+# naming one object are one contiguous preorder run, a conjunct of the tree
+# shape; the kernel's reader compares the slot's capability with the four slots
+# its link words name, word-only; under the bundle it is the specification "no
+# other slot names the object", which stays as the specification.
+run_check "INVARIANT" rg -n '^  sameObjectContiguous : ∀ P, cdt\.TreeOrder P → ∀ o, SlotList\.Chunked \(namesAt cap · o\) P$' SeLe4n/Model/SlotTreeShape.lean
+run_check "INVARIANT" rg -n '^  untypedNamed : ∀ r u, namesAt cap r u → ut u ≠ none → untypedCapAt cap ut r u$' SeLe4n/Model/SlotTreeShape.lean
+run_check "INVARIANT" rg -n '^def Chunked \(q : SlotRef → Prop\) \(l : List SlotRef\) : Prop :=$' SeLe4n/Model/Object/DerivationOrder.lean
+run_check "INVARIANT" rg -n '^theorem (succ_cases|pred_cases|neighbour|insertAfter|append_last) ' SeLe4n/Model/Object/DerivationOrder.lean
+run_check "INVARIANT" rg -n -U '^def capIsFinal \(st : SystemState\) \(cnode : SeLe4n\.ObjId\) \(slot : SeLe4n\.Slot\) : Bool :=\n  match st\.slotCapAt ⟨cnode, slot⟩ with\n  \| none => true\n  \| some c =>\n    match c\.target with\n    \| \.object x => st\.linksMissObject ⟨cnode, slot⟩ x\.val$' SeLe4n/Model/CapabilityFinality.lean
+run_check "INVARIANT" rg -n -U '^@\[inline\] def linksMissObject \(st : SystemState\) \(r : SlotRef\) \(o : Nat\) : Bool :=\n  !st\.linkNamesObject r \.parent o && !st\.linkNamesObject r \.firstChild o &&\n    !st\.linkNamesObject r \.prev o && !st\.linkNamesObject r \.next o$' SeLe4n/Model/CapabilityFinality.lean
+run_negative_check "INVARIANT" rg -n 'objects\.fold|List\.all|\.toList|deriving' SeLe4n/Model/CapabilityFinality.lean
+run_check "INVARIANT" rg -n -U '^def capFinalSpec \(st : SystemState\) \(r : SlotRef\) : Prop :=\n  ∀ o, namesAt st\.slotCapAt r o → ∀ r'"'"', r'"'"' ≠ r → ¬ namesAt st\.slotCapAt r'"'"' o$' SeLe4n/Model/CapabilityFinality.lean
+run_check "INVARIANT" rg -n '^theorem (capIsFinal_eq_true_iff_links|linksFinal_iff_of_shape|capIsFinal_iff_of_shape) ' SeLe4n/Model/CapabilityFinality.lean
+run_check "INVARIANT" rg -n -U '^theorem capIsFinal_iff_capFinalSpec \{st : SystemState\} \(h : capabilityInvariantBundle st\)\n    \(r : SlotRef\) : st\.capIsFinal r\.cnode r\.slot = true ↔ st\.capFinalSpec r :=$' SeLe4n/Kernel/Capability/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem mem_slotPageTables_iff_of_bundle ' SeLe4n/Kernel/Capability/Invariant/Preservation/Revoke.lean
+run_check "INVARIANT" rg -n -U '^      let named := caps\.filter fun c => decide \(c\.namedObject = some e\.id\)\n      decide \(named\.length ≤ 1\) && named\.all fun c => decide \(c\.target = \.object e\.id\)$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedWithIdleThreadsFor_ok_untypedNamed$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem startInitialThreads_untypedNamed ' SeLe4n/Platform/Boot/InitialThreads.lean
 # v0.36.107: a revoke that finalises nothing is decided before any write and
 # performed in place, as seL4's first-child loop; since v0.36.110 so is every
 # delete, whatever its capability names.
@@ -21878,7 +21903,10 @@ run_check "INVARIANT" rg -n '^theorem cdtAppendRoot_agree \{st : SystemState\}' 
 run_check "INVARIANT" rg -n -U '^def bootDerivationTreeSound \(st : SystemState\) : Prop :=\n  cdtCompleteness st ∧ cdtAcyclicity st ∧ cdtLinksAgree st ∧ st\.CapTreeShape$' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^def bootLinkedShape($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^theorem proofLayerInvariantBundle_of_bootLinkedShape($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
-run_check "INVARIANT" rg -n -U '        match a\.roots\.find\? \(fun q => decide \(q\.2 = cap\.target\)\) with\n        \| some q => \{ a with st := a\.st\.cdtAddChild q\.1 r \.copy, done := r :: a\.done \}\n        \| none =>\n            \{ st := a\.st\.cdtAppendRoot a\.last r, last := some r, done := r :: a\.done,' SeLe4n/Platform/Boot/CapabilityLinks.lean
+run_check "INVARIANT" rg -n -U '        match a\.roots\.find\? \(fun q => decide \(q\.2 = cap\.namedObject\)\) with\n        \| some q => \{ a with st := a\.st\.cdtAddChild q\.1 r \.copy, done := r :: a\.done \}\n        \| none =>\n            \{ st := a\.st\.cdtAppendRoot a\.last r, last := some r, done := r :: a\.done,' SeLe4n/Platform/Boot/CapabilityLinks.lean
+# v0.36.131: boot groups its root chains by the object a capability names
+# (seL4's sameObjectAs), not by its target, so one object's slots are one run.
+run_negative_check "INVARIANT" rg -n 'q\.2 = cap\.target|roots := a\.roots \+\+ \[\(r, cap\.target\)\]' SeLe4n/Platform/Boot/CapabilityLinks.lean
 run_check "INVARIANT" rg -n -U '^def bootCapabilitySlots \(objs : List ObjectEntry\) : List SlotRef :=\n  objs\.flatMap \(fun e => match e\.obj with\n    \| \.cnode cn => cn\.occupiedSlots\.map fun p => ⟨e\.id, p\.1⟩\n    \| _ => \[\]\) \+\+\n  objs\.flatMap \(fun e => match e\.obj with\n    \| \.tcb _ => \[⟨e\.id, SeLe4n\.Slot\.ofNat 0⟩, ⟨e\.id, SeLe4n\.Slot\.ofNat 1⟩\]' SeLe4n/Platform/Boot/CapabilityLinks.lean
 run_check "INVARIANT" rg -n '^theorem BootLinks\.Sound\.step($|[ ({:\[\]])' SeLe4n/Platform/Boot/CapabilityLinks.lean
 run_check "INVARIANT" rg -n '^theorem linkBootCapabilities_bootLinkedShape($|[ ({:\[\]])' SeLe4n/Platform/Boot/CapabilityLinks.lean

@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Kernel.Capability.Operations
+import SeLe4n.Model.CapabilityFinality
 import SeLe4n.Kernel.Architecture.PageTeardownClears
 import SeLe4n.Kernel.Architecture.PageTableInstall
 
@@ -51,12 +52,15 @@ delete those capabilities first, which unmaps.
 
 **Page tables (`v0.36.12`).**  A page table's install is recorded on the table
 and in its root rather than on a capability, so what a destroying step owes it is
-decided over the store: a table a destroyed capability named (read off the
-capability before the step, `slotPageTables`, as seL4's `finaliseCap` acts on the
-capability it destroys) that no slot names after it (`pageTablesOrphaned`, over
-`carvedSubtreeUnreferenced`: every slot of every object, a CNode's or a
-thread's) has lost its **final** capability, and
+decided over the destroyed capability: a table a destroyed capability named
+when that capability was **final** (read off the capability and its slot's four
+derivation links before the step, `slotPageTables` over `SystemState.capIsFinal`,
+seL4's `isFinalCapability`, as seL4's `finaliseCap` acts on the capability it
+destroys; under the capability bundle, no other slot names the table) has lost
+its last capability (`pageTablesOrphaned`), and
 seL4's `finaliseCap` → `unmapPageTable` takes it out of its address space.
+Until `v0.36.131` finality was a scan of every slot of every object after the
+step.
 `finaliseDestroyedCapabilities` is the composite both destroying arms run: it
 detaches each orphaned table and every table beneath it from its root
 (`detachPageTables`), removes the frame capabilities' recorded pages and the
@@ -149,21 +153,28 @@ frame's base are matched where they are read (`mappedPageLiveWords`), so no
   | .object id => if (st.getPageTable? id).isSome then some id else none
   | _ => none
 
-/-- **The page table the capability in `addr` names**, at most one, read before
-a destroying step empties the slot: the candidate for its page-table teardown,
-as seL4's `finaliseCap` acts on the capability being destroyed. -/
+/-- **The page table whose final capability `addr` holds**, at most one, read
+before a destroying step empties the slot: the table the capability names, when
+the capability is final (`SystemState.capIsFinal`, seL4's `isFinalCapability`,
+read from the slot's four derivation links).  That is the candidate for its
+page-table teardown, as seL4's `finaliseCap` acts on the capability being
+destroyed when it is the last one naming its object; a table another slot still
+names stays where it is, since that slot's holder can still unmap it.  Equal,
+under the capability bundle, to the table when no other slot names it
+(`slotPageTables_of_bundle`). -/
 @[inline] def slotPageTables (st : SystemState) (addr : CSpaceAddr) : List SeLe4n.ObjId :=
-  ((st.slotCapAt addr).bind (capabilityPageTable st)).toList
+  match (st.slotCapAt addr).bind (capabilityPageTable st) with
+  | some id => if st.capIsFinal addr.cnode addr.slot then [id] else []
+  | none => []
 
 /-- **The page tables a destroying step orphaned**, each with the install its
-root holds: a table a destroyed capability named (`named`, read before the step
-by `slotPageTables`), installed after the step (`pageTableInstallLive`), that
-no capability names after it.  That is seL4's `finaliseCap` condition for a page
-table — the capability destroyed was its **final** one — and reading it off the
+root holds: a table whose **final** capability the step destroyed (`named`, read
+before the step by `slotPageTables`, which reads finality off the slot's
+derivation links), still installed after the step (`pageTableInstallLive`).
+That is seL4's `finaliseCap` condition for a page table, and reading it off the
 destroyed capabilities, not off a state before the step, is what lets the step
-write the store in place.  A table another capability still names stays where
-it is: the holder of that capability can still unmap it.  Each table appears
-once, however many destroyed capabilities named it. -/
+write the store in place.  Each table appears once, however many destroyed
+capabilities named it. -/
 def pageTablesOrphaned (named : List SeLe4n.ObjId) (st : SystemState) :
     List (SeLe4n.ObjId × PageTableInstall) :=
   named.foldl (init := []) fun acc id =>
@@ -173,7 +184,7 @@ def pageTablesOrphaned (named : List SeLe4n.ObjId) (st : SystemState) :
       | some p =>
         match p.installedIn with
         | some inst =>
-          if Architecture.pageTableInstallLive st id && carvedSubtreeUnreferenced st [id] then
+          if Architecture.pageTableInstallLive st id then
             (id, inst) :: acc
           else acc
         | none => acc
@@ -881,10 +892,12 @@ theorem cspaceDeleteTeardownAt_eq_frame :
             mappedPageLive_eq_words]
 
 /-- WS-ZA ZA5.4: **`cspaceDeleteTeardownAt` for a page table's capability**, on
-the slot's words: the capability names the table and records no page, so the
-slot is emptied and the table is taken out of its root only if it is still
-installed there after the delete (`pageTablesOrphaned`); a table installed
-nowhere leaves nothing to finalise, and no list or slot address is built.  Any
+the slot's words: the capability names the table and records no page.  When it
+is the table's final capability (`SystemState.capIsFinal`, read from the slot's
+four derivation links before the delete), the slot is emptied and the table is
+taken out of its root only if it is still installed there after the delete
+(`pageTablesOrphaned`); a capability that is not final, or a table installed
+nowhere, leaves nothing to finalise.  No list or slot address is built.  Any
 other capability takes `cspaceDeleteTeardownAtFrame`
 (`cspaceDeleteTeardownAt_eq_table`). -/
 @[noinline] def cspaceDeleteTeardownAtTable (executingCore : Concurrency.CoreId)
@@ -895,10 +908,12 @@ other capability takes `cspaceDeleteTeardownAtFrame`
     | .object tableId =>
       match st.getPageTable? tableId with
       | some _ =>
-        let st1 := cspaceDeletePerformAt cnode slot st
-        if Architecture.pageTableInstallLive st1 tableId then
-          finaliseDestroyedCapabilitiesState executingCore [tableId] [] st1
-        else st1
+        if st.capIsFinal cnode slot then
+          let st1 := cspaceDeletePerformAt cnode slot st
+          if Architecture.pageTableInstallLive st1 tableId then
+            finaliseDestroyedCapabilitiesState executingCore [tableId] [] st1
+          else st1
+        else cspaceDeletePerformAt cnode slot st
       | none => cspaceDeleteTeardownAtFrame executingCore cnode slot st
     | _ => cspaceDeleteTeardownAtFrame executingCore cnode slot st
   | none => cspaceDeleteTeardownAtFrame executingCore cnode slot st
@@ -928,14 +943,25 @@ other capability takes `cspaceDeleteTeardownAtFrame`
           cases hO : st.objects[tableId]? with
           | none => rfl
           | some o => rw [hO] at hPT; cases o <;> simp_all
-        have hNamed : slotPageTables st ⟨cnode, slot⟩ = [tableId] := by
-          simp [slotPageTables, hL, capabilityPageTable, hT, hPT]
         have hPages : slotMappedPages st ⟨cnode, slot⟩ = [] := by
           cases hM : cap.mapping <;> simp [slotMappedPages, hL, capabilityMappedPage, hM, hT, hF]
         unfold cspaceDeleteTeardownAt
         dsimp only
-        rw [hNamed, hPages]
+        rw [hPages]
         simp only [cspaceDeletePerformAt]
+        cases hFin : st.capIsFinal cnode slot with
+        | false =>
+          have hNamed : slotPageTables st ⟨cnode, slot⟩ = [] := by
+            simp [slotPageTables, hL, capabilityPageTable, hT, hPT, hFin]
+          rw [hNamed]
+          simp only [Bool.false_eq_true, ↓reduceIte, finaliseDestroyedCapabilitiesState,
+            pageTablesOrphaned, List.foldl_nil, orphanedTableMappings, List.flatMap_nil,
+            List.append_nil, detachPageTablesState, unmapLivePagesState]
+        | true =>
+        have hNamed : slotPageTables st ⟨cnode, slot⟩ = [tableId] := by
+          simp [slotPageTables, hL, capabilityPageTable, hT, hPT, hFin]
+        rw [hNamed]
+        simp only [↓reduceIte]
         split
         · rfl
         · next hLive =>

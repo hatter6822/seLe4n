@@ -18,15 +18,18 @@ derivation tree in MDB order.  This module is that stage.  It walks the
 configuration's capability slots in boot order (`bootCapabilitySlots`: every
 configured CNode's occupied slots, then every configured thread's two space
 slots) and links each slot that holds a capability (`bootLinkSlot`): the first
-slot naming a target joins the end of the root chain, and a later slot naming
-the same target becomes that root's first child, a copy of it.  The slots
-naming one target are therefore one contiguous preorder run, a root followed by
-its copies.
+slot naming an object (`Capability.namedObject`, seL4's `sameObjectAs`) joins
+the end of the root chain, and a later slot naming the same object becomes that
+root's first child, a copy of it.  The slots naming one object are therefore one
+contiguous preorder run, a root followed by its copies (`sameObjectContiguous`).
+Until `v0.36.131` slots were grouped by their whole target, so a CNode's own
+capability and a CNode-slot capability into it were two runs of one object.
 
 `BootLinks.Sound` is what each step keeps: link writes and a tree alone moved,
 the links agree with the tree, the tree names exactly the linked slots and each
 holds a capability, the tree is acyclic and has a preorder
-(`CapDerivationTree.TreeOrder`).  `linkBootCapabilities_bootLinkedShape` reads
+(`CapDerivationTree.TreeOrder`) over which the slots naming each object are one
+run.  `linkBootCapabilities_bootLinkedShape` reads
 the stage's whole effect off it: a boot-shaped state is taken to a state of
 linked boot shape (`bootLinkedShape`), whose proof-layer bundle
 `proofLayerInvariantBundle_of_bootLinkedShape` gives.
@@ -47,36 +50,43 @@ theorem linkReach_perObjectMappingsInvariant {st₀ st : SystemState} (h : linkR
 
 
 /-- The boot's capability linking in progress: the state so far, the last slot
-of the root chain, the slots linked, and the root of each target linked. -/
+of the root chain, the slots linked, and the root of each object linked with
+the object it names. -/
 structure BootLinks where
   st : SystemState
   last : Option SlotRef
   done : List SlotRef
-  roots : List (SlotRef × CapTarget)
+  roots : List (SlotRef × Option SeLe4n.ObjId)
 
-/-- **Link one boot slot**: a slot holding a capability that no earlier slot
-names the target of goes to the end of the root chain; one whose target an
-earlier root names becomes that root's first child, a copy of it, as seL4's
-`create_initial_thread` derives a thread's slots from the root CNode's.  A
-slot that holds nothing, or that is already linked, is left alone. -/
+/-- **Link one boot slot**: a slot holding a capability to an object no
+earlier root names goes to the end of the root chain; one naming an object an
+earlier root names (`Capability.namedObject`, seL4's `sameObjectAs`) becomes
+that root's first child, a copy of it, as seL4's `create_initial_thread` derives
+a thread's slots from the root CNode's.  Grouping by object rather than by
+target is what keeps the slots naming one object one contiguous preorder run
+(WS-ZA ZA5.4 part 20): a CNode-slot capability names its CNode as the CNode's
+own capability does.  A slot that holds nothing, or that is already linked, is
+left alone. -/
 def bootLinkSlot (a : BootLinks) (r : SlotRef) : BootLinks :=
   match a.st.slotCapAt r with
   | none => a
   | some cap =>
       if r ∈ a.done then a
       else
-        match a.roots.find? (fun q => decide (q.2 = cap.target)) with
+        match a.roots.find? (fun q => decide (q.2 = cap.namedObject)) with
         | some q => { a with st := a.st.cdtAddChild q.1 r .copy, done := r :: a.done }
         | none =>
             { st := a.st.cdtAppendRoot a.last r, last := some r, done := r :: a.done,
-              roots := a.roots ++ [(r, cap.target)] }
+              roots := a.roots ++ [(r, cap.namedObject)] }
 
 /-- What the linking keeps, against the state it started from: link writes and
 a tree alone moved, the links agree with the tree, the tree names exactly the
 linked slots, each of which holds a capability, the tree is acyclic, `last` is
 the root chain's last slot, every root is linked, every child holds a capability
-to its parent's target, every root holds a capability to the target it is
-recorded under, and the tree has a preorder. -/
+naming its parent's object, every root holds a capability naming the object it
+is recorded under, every linked slot names a recorded root's object, and the
+tree has a preorder in which the slots naming one object are one contiguous
+run. -/
 def BootLinks.Sound (st₀ : SystemState) (a : BootLinks) : Prop :=
   linkReach { st₀ with cdt := a.st.cdt } a.st ∧
   LinksAgree a.st.slotLinkAt a.st.cdt ∧
@@ -86,14 +96,17 @@ def BootLinks.Sound (st₀ : SystemState) (a : BootLinks) : Prop :=
   a.last = a.st.cdt.firstChain.getLast? ∧
   (∀ q ∈ a.roots, q.1 ∈ a.done) ∧
   (∀ p c, c ∈ a.st.cdt.childrenOf p → ∃ cp cc, st₀.slotCapAt p = some cp ∧
-    st₀.slotCapAt c = some cc ∧ cc.target = cp.target) ∧
-  (∀ q ∈ a.roots, ∃ cq, st₀.slotCapAt q.1 = some cq ∧ cq.target = q.2) ∧
-  ∃ P, CapDerivationTree.TreeOrder a.st.cdt P
+    st₀.slotCapAt c = some cc ∧ cc.namedObject = cp.namedObject) ∧
+  (∀ q ∈ a.roots, ∃ cq, st₀.slotCapAt q.1 = some cq ∧ cq.namedObject = q.2) ∧
+  (∀ x ∈ a.done, ∃ q ∈ a.roots, ∃ cx, st₀.slotCapAt x = some cx ∧ cx.namedObject = q.2) ∧
+  ∃ P, CapDerivationTree.TreeOrder a.st.cdt P ∧
+    ∀ o, SlotList.Chunked (SystemState.namesAt st₀.slotCapAt · o) P
 
 theorem BootLinks.Sound.start {st₀ : SystemState} (hE : st₀.cdt = CapDerivationTree.empty)
     (hL : LinksAgree st₀.slotLinkAt st₀.cdt) : BootLinks.Sound st₀ ⟨st₀, none, [], []⟩ := by
   refine ⟨linkReach.refl _, hL, fun x => ?_, fun _ h => (by cases h), ?_, ?_,
-    fun _ h => (by cases h), fun p c h => ?_, fun _ h => (by cases h), [], ?_⟩
+    fun _ h => (by cases h), fun p c h => ?_, fun _ h => (by cases h), fun _ h => (by cases h),
+    [], ?_, fun _ => SlotList.Chunked.of_none fun _ h => by cases h⟩
   · simp only [List.not_mem_nil, iff_false]; rw [hE]; exact CapDerivationTree.empty_not_mentions x
   · rw [hE]; exact CapDerivationTree.empty_edgeWellFounded
   · show none = _
@@ -108,7 +121,7 @@ theorem BootLinks.Sound.start {st₀ : SystemState} (hE : st₀.cdt = CapDerivat
 
 theorem BootLinks.Sound.step {st₀ : SystemState} (hInv₀ : st₀.objects.invExt) {a : BootLinks}
     (h : BootLinks.Sound st₀ a) (r : SlotRef) : BootLinks.Sound st₀ (bootLinkSlot a r) := by
-  obtain ⟨hR, hL, hM, hD, hW, hLast, hRoots, hEd, hRT, P, hP⟩ := h
+  obtain ⟨hR, hL, hM, hD, hW, hLast, hRoots, hEd, hRT, hDR, P, hP, hC⟩ := h
   have hInv : a.st.objects.invExt := hR.invExt hInv₀
   have hCap : ∀ x, a.st.slotCapAt x = st₀.slotCapAt x := fun x =>
     (hR.agree hInv₀).slotCapAt x
@@ -116,17 +129,28 @@ theorem BootLinks.Sound.step {st₀ : SystemState} (hInv₀ : st₀.objects.invE
     SystemState.slotInObject_of_slotCapAt (by rw [hCap]; exact hD x ((hM x).mp hx))
   unfold bootLinkSlot
   cases hc : a.st.slotCapAt r with
-  | none => exact ⟨hR, hL, hM, hD, hW, hLast, hRoots, hEd, hRT, P, hP⟩
+  | none => exact ⟨hR, hL, hM, hD, hW, hLast, hRoots, hEd, hRT, hDR, P, hP, hC⟩
   | some cap =>
     simp only
     by_cases hr : r ∈ a.done
-    · rw [if_pos hr]; exact ⟨hR, hL, hM, hD, hW, hLast, hRoots, hEd, hRT, P, hP⟩
+    · rw [if_pos hr]; exact ⟨hR, hL, hM, hD, hW, hLast, hRoots, hEd, hRT, hDR, P, hP, hC⟩
     rw [if_neg hr]
     have hrN : ¬ a.st.cdt.mentions r := fun e => hr ((hM r).mp e)
     have hrO : a.st.slotInObject r := SystemState.slotInObject_of_slotCapAt (by rw [hc]; simp)
     have hrD : st₀.slotCapAt r ≠ none := by rw [← hCap, hc]; simp
-    cases hq : a.roots.find? (fun q => decide (q.2 = cap.target)) with
+    have hcap : st₀.slotCapAt r = some cap := by rw [← hCap, hc]
+    cases hq : a.roots.find? (fun q => decide (q.2 = cap.namedObject)) with
     | some q =>
+      have hqT : q.2 = cap.namedObject := of_decide_eq_true
+        (List.find?_some (p := fun q : SlotRef × Option SeLe4n.ObjId =>
+          decide (q.2 = cap.namedObject)) hq)
+      obtain ⟨cq, hcq, hT⟩ := hRT q (List.mem_of_find?_eq_some hq)
+      have hNameEq : ∀ o, SystemState.namesAt st₀.slotCapAt r o ↔
+          SystemState.namesAt st₀.slotCapAt q.1 o := fun o => by
+        unfold SystemState.namesAt
+        rw [hcap, hcq]
+        simp only [Option.some.injEq, exists_eq_left']
+        rw [hT, hqT]
       have hqD : q.1 ∈ a.done := hRoots q (List.mem_of_find?_eq_some hq)
       have hqM : a.st.cdt.mentions q.1 := (hM q.1).mpr hqD
       have hqr : q.1 ≠ r := fun e => hr (e ▸ hqD)
@@ -134,7 +158,9 @@ theorem BootLinks.Sound.step {st₀ : SystemState} (hInv₀ : st₀.objects.invE
       have hCdt : (a.st.cdtAddChild q.1 r .copy).cdt = a.st.cdt.addEdge q.1 r .copy := hR'.cdt
       refine ⟨?_, SystemState.cdtAddChild_agree hInv hL hIn .copy (hIn _ hqM) hrO hrN hqr,
         fun x => ?_, ?_, ?_, ?_, fun q' hq' => List.mem_cons_of_mem _ (hRoots q' hq'),
-        fun p c hc' => ?_, hRT, CapDerivationTree.insertAfter q.1 r P, ?_⟩
+        fun p c hc' => ?_, hRT, fun x hx => ?_, CapDerivationTree.insertAfter q.1 r P, ?_,
+        fun o => (hC o).insertAfter hP.nodup (hP.complete q.1 hqM)
+          (fun h => .inl ((hNameEq o).mp h)) fun h hn => absurd ((hNameEq o).mpr h) hn⟩
       · rw [hCdt]; exact (hR.with_cdt (a.st.cdt.addEdge q.1 r .copy)).trans hR'
       · simp only; rw [hCdt, CapDerivationTree.mentions_addEdge, hM, List.mem_cons]
         constructor
@@ -158,18 +184,19 @@ theorem BootLinks.Sound.step {st₀ : SystemState} (hInv₀ : st₀.objects.invE
         split at hc'
         · rename_i hp; subst hp
           rcases List.mem_cons.mp hc' with rfl | hc'
-          · obtain ⟨cq, hcq, hT⟩ := hRT q (List.mem_of_find?_eq_some hq)
-            have hqT : q.2 = cap.target := of_decide_eq_true (List.find?_some (p := fun q : SlotRef × CapTarget => decide (q.2 = cap.target)) hq)
-            exact ⟨cq, cap, hcq, by rw [← hCap, hc], by rw [hT, hqT]⟩
+          · exact ⟨cq, cap, hcq, hcap, by rw [hT, hqT]⟩
           · exact hEd _ _ hc'
         · exact hEd _ _ hc'
+      · rcases List.mem_cons.mp hx with rfl | hx
+        · exact ⟨q, List.mem_of_find?_eq_some hq, cap, hcap, hqT.symm⟩
+        · exact hDR x hx
       · simp only; rw [hCdt]; exact hP.addEdge hqM hrN .copy
     | none =>
       have hR' := SystemState.cdtAppendRoot_reach a.st a.last r
       have hCdt : (a.st.cdtAppendRoot a.last r).cdt = a.st.cdt.appendRoot r := hR'.cdt
       refine ⟨?_, SystemState.cdtAppendRoot_agree hInv hL hIn hrO hrN hLast,
         fun x => ?_, ?_, ?_, ?_, fun q' hq' => ?_, fun p c hc' => ?_, fun q' hq' => ?_,
-        P ++ [r], ?_⟩
+        fun x hx => ?_, P ++ [r], ?_, fun o => (hC o).append_last ?_⟩
       · rw [hCdt]; exact (hR.with_cdt (a.st.cdt.appendRoot r)).trans hR'
       · simp only; rw [hCdt, CapDerivationTree.mentions_appendRoot, hM, List.mem_cons]
         exact Or.comm
@@ -188,8 +215,23 @@ theorem BootLinks.Sound.step {st₀ : SystemState} (hInv₀ : st₀.objects.invE
       · rcases List.mem_append.mp hq' with hq' | hq'
         · exact hRT q' hq'
         · rw [List.mem_singleton] at hq'; subst hq'
-          exact ⟨cap, by rw [← hCap, hc], rfl⟩
+          exact ⟨cap, hcap, rfl⟩
+      · rcases List.mem_cons.mp hx with rfl | hx
+        · exact ⟨(x, cap.namedObject), List.mem_append_right _ (List.mem_singleton_self _), cap,
+            hcap, rfl⟩
+        · obtain ⟨q', hq', cx, hcx, hxq⟩ := hDR x hx
+          exact ⟨q', List.mem_append_left _ hq', cx, hcx, hxq⟩
       · simp only; rw [hCdt]; exact hP.appendRoot hrN
+      · by_cases hro : SystemState.namesAt st₀.slotCapAt r o
+        · refine .inr fun x hx hxo => ?_
+          obtain ⟨q', hq', cx, hcx, hxq⟩ := hDR x ((hM x).mp ((hP.mem_iff x).mp hx))
+          obtain ⟨c1, h1, h1o⟩ := hxo
+          obtain ⟨c2, h2, h2o⟩ := hro
+          rw [hcx] at h1; cases h1
+          rw [hcap] at h2; cases h2
+          exact absurd (decide_eq_true (hxq.symm.trans (h1o.trans h2o.symm)))
+            (List.find?_eq_none.mp hq q' hq')
+        · exact .inl hro
 
 /-- The linking of a list of slots keeps `Sound`. -/
 theorem BootLinks.Sound.foldl {st₀ : SystemState} (hInv₀ : st₀.objects.invExt) :
@@ -379,7 +421,9 @@ theorem linkBootCapabilities_bootLinkedShape (config : PlatformConfig) (ist : In
     (hLive : ∀ r o, SystemState.namesAt ist.state.slotCapAt r o → ist.state.objectPresent o)
     (hUnique : ∀ u r r', SystemState.untypedCapAt ist.state.slotCapAt ist.state.getUntyped? r u →
       SystemState.untypedCapAt ist.state.slotCapAt ist.state.getUntyped? r' u → r = r')
-    (hUncarved : ∀ u U, ist.state.getUntyped? u = some U → U.children = []) :
+    (hUncarved : ∀ u U, ist.state.getUntyped? u = some U → U.children = [])
+    (hNamedU : ∀ r u, SystemState.namesAt ist.state.slotCapAt r u → ist.state.getUntyped? u ≠ none →
+      SystemState.untypedCapAt ist.state.slotCapAt ist.state.getUntyped? r u) :
     bootLinkedShape (linkBootCapabilities config ist) := by
   obtain ⟨hShape, ⟨hCdt, hF⟩, ⟨hA1, hA2⟩, hUnt, ⟨rq, re, rp, hSch⟩, hRun, hNodup, hQ⟩ := h
   have hInv₀ := ist.hAllTables.1.1
@@ -388,7 +432,7 @@ theorem linkBootCapabilities_bootLinkedShape (config : PlatformConfig) (ist : In
   have hStart := BootLinks.Sound.start hE hL₀
   have hDone := (BootLinks.Sound.foldl_done hInv₀ (bootCapabilitySlots config.initialObjects)
     hStart).2
-  obtain ⟨-, hL, hM, hD, hW, -, -, hEd, -, P, hP⟩ :=
+  obtain ⟨-, hL, hM, hD, hW, -, -, hEd, -, -, P, hP, hC⟩ :=
     BootLinks.Sound.foldl hInv₀ (bootCapabilitySlots config.initialObjects) hStart
   have hA := linkBootCapabilities_agree config ist
   have hUt : (linkBootCapabilities config ist).state.getUntyped? = ist.state.getUntyped? :=
@@ -421,7 +465,8 @@ theorem linkBootCapabilities_bootLinkedShape (config : PlatformConfig) (ist : In
     fun u x hx => (SystemState.CarvedFrom.not_of_childless (fun U h => hUncarved u U
       (hUt ▸ h)) hx).elim,
     fun u U h => by rw [hUncarved u U (hUt ▸ h)]; simp,
-    fun u _ U _ h => by rw [hUncarved u U (hUt ▸ h)]; simp⟩
+    fun u _ U _ h => by rw [hUncarved u U (hUt ▸ h)]; simp,
+    fun r u hr hu => ?_, fun Q hQ o => ?_⟩
   · have e := (hA oid).map_withoutLinks
     rw [hO] at e
     cases h0 : ist.state.objects[oid]? with
@@ -456,12 +501,19 @@ theorem linkBootCapabilities_bootLinkedShape (config : PlatformConfig) (ist : In
     rw [hA.slotCapAt c, hcc] at hc'
     cases hc'
     exact absurd ⟨cp, by rw [hA.slotCapAt p]; exact hp,
-      (Capability.namedObject_of_target hT).symm.trans hco⟩ hpN
+      hT.symm.trans hco⟩ hpN
   · -- one slot names the untyped, and the tree is acyclic
     cases hU u p r hp hr
     exact absurd (CapDerivationTree.CdtChildReachable_implies_cdtReachable _ hR) (hW p)
   · cases hU u p r ⟨c, hc, ht, by rw [hu]; exact Option.some_ne_none _⟩ hr
     exact absurd (CapDerivationTree.CdtChildReachable_implies_cdtReachable _ hR) (hW p)
+  · -- a capability naming an untyped is an untyped capability, as the started state's are
+    obtain ⟨c, hc, ht, hu'⟩ := hNamedU r u ((SystemState.namesAt_of_eq (hA.slotCapAt r)).mp hr)
+      (hUt ▸ hu)
+    exact ⟨c, (hA.slotCapAt r).trans hc, ht, hUt ▸ hu'⟩
+  · -- the linking's own preorder, over the slots it read
+    rw [hQ.unique hP]
+    exact (hC o).congr fun x _ => SystemState.namesAt_of_eq (hA.slotCapAt x)
 
 
 /-! ### What the linking keeps of the threads -/

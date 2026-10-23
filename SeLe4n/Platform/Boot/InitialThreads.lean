@@ -428,6 +428,31 @@ theorem startInitialThreads_untypedsSole (L : List SeLe4n.ThreadId)
       exact ⟨fun u r r' hr hr' => hP.1 u r r' (hBack hr) (hBack hr'), hP.2⟩)
     L ist ist' h hL
 
+/-- **WS-ZA ZA5.4 part 20**: the starts keep every capability naming an untyped
+an untyped capability: they write no capability slot and no untyped. -/
+theorem startInitialThreads_untypedNamed (L : List SeLe4n.ThreadId)
+    (ist ist' : IntermediateState) (h : startInitialThreads L ist = .ok ist')
+    (hL : ∀ r u, SystemState.namesAt ist.state.slotCapAt r u → ist.state.getUntyped? u ≠ none →
+      SystemState.untypedCapAt ist.state.slotCapAt ist.state.getUntyped? r u) :
+    ∀ r u, SystemState.namesAt ist'.state.slotCapAt r u → ist'.state.getUntyped? u ≠ none →
+      SystemState.untypedCapAt ist'.state.slotCapAt ist'.state.getUntyped? r u :=
+  startInitialThreads_induct
+    (fun i => ∀ r u, SystemState.namesAt i.state.slotCapAt r u → i.state.getUntyped? u ≠ none →
+      SystemState.untypedCapAt i.state.slotCapAt i.state.getUntyped? r u)
+    (fun i tid _ hP => by
+      have hInv := i.hAllTables.1.1
+      show ∀ r u, SystemState.namesAt (startInitialThreadOnCore i.state tid).slotCapAt r u →
+          (startInitialThreadOnCore i.state tid).getUntyped? u ≠ none →
+          SystemState.untypedCapAt (startInitialThreadOnCore i.state tid).slotCapAt
+            (startInitialThreadOnCore i.state tid).getUntyped? r u
+      rw [startInitialThreadOnCore_getUntyped? i.state tid hInv]
+      intro r u hr hu
+      have hEq := startInitialThreadOnCore_slotCapAt_of_ne_none i.state tid hInv r
+        (SystemState.namesAt_occupied hr)
+      obtain ⟨c, hc, ht, hu'⟩ := hP r u ((SystemState.namesAt_of_eq hEq).mp hr) hu
+      exact ⟨c, hEq.trans hc, ht, hu'⟩)
+    L ist ist' h hL
+
 /-- **WS-ZA ZA5.4**: the checked, idle-storing boot lists every slot holding a
 capability among the configuration's boot capability slots: each such slot is
 a configured object's (`bootFromPlatformCheckedWithIdleThreadsFor_ok_capObject_of_config`). -/
@@ -479,6 +504,8 @@ theorem bootFromPlatformCheckedStartedFor_bootLinkedShape
     (startInitialThreads_capabilitiesLive _ _ _ hStart
       (bootFromPlatformCheckedWithIdleThreadsFor_ok_capabilitiesLive cores config base hBase))
     hSole.1 hSole.2
+    (startInitialThreads_untypedNamed _ _ _ hStart
+      (bootFromPlatformCheckedWithIdleThreadsFor_ok_untypedNamed cores config base hBase))
 
 /-- **WS-BP BP7.11**: **the state the started boot installs satisfies the
 proof-layer invariant bundle** — the idle boot's argument, applied to the state

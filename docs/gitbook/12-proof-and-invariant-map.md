@@ -105,7 +105,11 @@ naming an object it does not install; since `v0.36.130` it holds seL4's untyped
 chains and descendants — the slots naming one untyped form one first-child
 chain, an untyped capability with room left has no descendant naming its
 untyped, and everything carved from an untyped lies below every capability to
-it ([`SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) §8.6).  Every slot write keeps the bundle,
+it; since `v0.36.131` the slots naming one object form one contiguous preorder
+run (seL4's `mdb_chunked`), so the kernel reads a capability's finality off its
+four derivation links (`capIsFinal`, seL4's `isFinalCapability`), proven equal
+under the bundle to "no other slot names the object"
+([`SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) §8.6).  Every slot write keeps the bundle,
 the untyped carve included (`untypedRetypeObject_preserves_capabilityInvariantBundle`;
 see `SELE4N_SPEC.md` §8.6).
 

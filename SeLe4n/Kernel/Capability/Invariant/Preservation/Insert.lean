@@ -418,14 +418,15 @@ theorem treeShape_addEdge_after_insert (st st1 : SystemState) (src dst : SlotRef
     (hComp : cdtCompleteness st) (hObjInv : st.objects.invExt)
     (hSrc : (SystemState.lookupSlotCap st src).isSome)
     (hIns : cspaceInsertSlot dst cap st = .ok ((), st1))
-    (hNew : ((∀ o, cap.namedObject = some o → SystemState.namesAt st.slotCapAt src o) ∧
-          (∀ u, cap.target = .object u → st.getUntyped? u ≠ none →
-            SystemState.untypedCapAt st.slotCapAt st.getUntyped? src u) ∧
+    (hNew : ((∃ cs, st.slotCapAt src = some cs ∧ cap.namedObject = cs.namedObject ∧
+            ∀ u, st.getUntyped? u ≠ none → (cap.target = .object u ↔ cs.target = .object u)) ∧
           (∀ u, SystemState.untypedCapAt st.slotCapAt st.getUntyped? src u →
             st.cdt.childrenOf src = [])) ∨
         ((∀ u, SystemState.untypedCapAt st.slotCapAt st.getUntyped? src u →
             ∀ r, CapDerivationTree.CdtChildReachable st.cdt src r →
               ¬ SystemState.untypedCapAt st.slotCapAt st.getUntyped? r u) ∧
+          (∃ u, SystemState.untypedCapAt st.slotCapAt st.getUntyped? src u) ∧
+          (∀ u, cap.namedObject = some u → st.getUntyped? u ≠ none → cap.target = .object u) ∧
           ∀ o, cap.namedObject = some o → (∀ r, ¬ SystemState.namesAt st.slotCapAt r o) ∧
             st1.objectPresent o ∧
             (∀ t, SystemState.CarvedFrom st.getUntyped? t o →
@@ -447,13 +448,17 @@ theorem treeShape_addEdge_after_insert (st st1 : SystemState) (src dst : SlotRef
   refine hShape.addChild op (slotCapAt_ne_none_of_lookupSlotCap hSrc) hDstFresh
     (by rw [hCdt]) (fun r hr => cspaceInsertSlot_slotCapAt_ne hObjInv hIns r hr)
     (fun o hp => cspaceInsertSlot_objectPresent (st' := st1) hObjInv hIns o hp) ?_
-  rcases hNew with ⟨hNm, hUC, hL⟩ | ⟨hLeaf, hF⟩
-  · refine .inl ⟨fun o ho => ?_, fun u hu => ?_, hL⟩
-    · obtain ⟨c, hc, hco⟩ := ho
-      rw [hSelf] at hc; cases hc; exact hNm o hco
-    · obtain ⟨c, hc, ht, hut⟩ := hu
-      rw [hSelf] at hc; cases hc; exact hUC u ht hut
-  · refine .inr ⟨hLeaf, fun o ho => ?_⟩
+  rcases hNew with ⟨⟨cs, hcs, hNmE, hTE⟩, hL⟩ | ⟨hLeaf, hSU, hDT, hF⟩
+  · refine .inl ⟨fun o => ?_, fun u => ?_, hL⟩
+    · unfold SystemState.namesAt; rw [hSelf, hcs]; simp [hNmE]
+    · unfold SystemState.untypedCapAt; rw [hSelf, hcs]
+      constructor
+      · rintro ⟨c, hc, ht, hut⟩; cases hc; exact ⟨cs, rfl, (hTE u hut).mp ht, hut⟩
+      · rintro ⟨c, hc, ht, hut⟩; cases hc; exact ⟨cap, rfl, (hTE u hut).mpr ht, hut⟩
+  · refine .inr ⟨hLeaf, hSU, fun u hu hut => ?_, fun o ho => ?_⟩
+    · obtain ⟨c, hc, hco⟩ := hu
+      rw [hSelf] at hc; cases hc
+      exact ⟨cap, hSelf, hDT u hco hut, hut⟩
     obtain ⟨c, hc, hco⟩ := ho
     have hcc : c = cap := Option.some.inj (hc.symm.trans hSelf)
     subst hcc
@@ -473,6 +478,8 @@ theorem treeShape_addEdge_after_fresh (st st1 : SystemState) (src dst : SlotRef)
     (hLeaf : ∀ u, SystemState.untypedCapAt st.slotCapAt st.getUntyped? src u →
       ∀ r, CapDerivationTree.CdtChildReachable st.cdt src r →
         ¬ SystemState.untypedCapAt st.slotCapAt st.getUntyped? r u)
+    (hSrcU : ∃ u, SystemState.untypedCapAt st.slotCapAt st.getUntyped? src u)
+    (hDstT : ∀ u, cap.namedObject = some u → st.getUntyped? u ≠ none → cap.target = .object u)
     (hFresh : ∀ o, cap.namedObject = some o → (∀ r, ¬ SystemState.namesAt st.slotCapAt r o) ∧
       st1.objectPresent o ∧
       (∀ t, SystemState.CarvedFrom st.getUntyped? t o →
@@ -492,8 +499,11 @@ theorem treeShape_addEdge_after_fresh (st st1 : SystemState) (src dst : SlotRef)
   rw [cspaceInsertSlot_getUntyped? hObjInv hIns]
   refine hShape.addChild_fresh op (slotCapAt_ne_none_of_lookupSlotCap hSrc) hDstFresh
     (by rw [hCdt]) (fun r hr => cspaceInsertSlot_slotCapAt_ne hObjInv hIns r hr)
-    (fun o hp => cspaceInsertSlot_objectPresent (st' := st1) hObjInv hIns o hp) hLeaf
-    fun o ho => ?_
+    (fun o hp => cspaceInsertSlot_objectPresent (st' := st1) hObjInv hIns o hp) hLeaf hSrcU
+    (fun u hu hut => ?_) fun o ho => ?_
+  · obtain ⟨c, hc, hco⟩ := hu
+    rw [hSelf] at hc; cases hc
+    exact ⟨cap, hSelf, hDstT u hco hut, hut⟩
   obtain ⟨c, hc, hco⟩ := ho
   have hcc : c = cap := Option.some.inj (hc.symm.trans hSelf)
   subst hcc
@@ -535,8 +545,7 @@ theorem treeShape_addEdge_after_copy (st st1 : SystemState) (src dst : SlotRef)
     SystemState.CapTreeShapeOff { st1 with cdt := st1.cdt.addEdge src dst op } src :=
   have hS := SystemState.slotCapAt_of_lookupSlotCap hSrc
   treeShape_addEdge_after_insert st st1 src dst cap op hShape hComp hObjInv (by rw [hSrc]; rfl) hIns
-    (.inl ⟨fun o ho => ⟨cs, hS, (Capability.namedObject_of_target hT).symm.trans ho⟩,
-      fun u ht hut => ⟨cs, hS, hT.symm.trans ht, hut⟩,
+    (.inl ⟨⟨cs, hS, Capability.namedObject_of_target hT, fun _ _ => by rw [hT]⟩,
       childrenOf_eq_nil_of_untypedDeriveRefused hL hS hRT hR⟩)
 
 /-- **A derived capability names what its source names**: the shape of every
