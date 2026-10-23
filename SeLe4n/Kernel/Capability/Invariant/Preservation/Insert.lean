@@ -395,20 +395,90 @@ theorem cspaceInsertSlot_objectPresent {st st' : SystemState} {addr : SlotRef} {
   obtain ⟨cn, -, -, -, hStore⟩ := cspaceInsertSlot_ok_decompose st st' addr cap hStep
   exact SystemState.objectPresent_storeObject hObjInv hStore o hp
 
+/-- An insert keeps every untyped record: it stores a CNode over a CNode. -/
+theorem cspaceInsertSlot_getUntyped? {st st' : SystemState} {addr : SlotRef} {cap : Capability}
+    (hObjInv : st.objects.invExt) (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
+    st'.getUntyped? = st.getUntyped? := by
+  obtain ⟨cn, hGet, -, -, hStore⟩ := cspaceInsertSlot_ok_decompose st st' addr cap hStep
+  exact SystemState.getUntyped?_storeObject_cnode hObjInv
+    ((SystemState.getCNode?_eq_some_iff st addr.cnode cn).mp hGet) hStore
+
 /-- **Installing a derived capability into an empty slot and recording its
-derivation keeps the tree's shape** (WS-ZA ZA5.4 parts 16 and 18): the source
-holds a capability, so the tree names it, and the destination was empty, so the
-tree did not; the destination becomes the source's first child, right after it
-in the preorder (`SystemState.CapTreeShape.addChild`).  The installed capability
-names what the source names, or an object present after the insert that no slot
-named before (`hNew`). -/
+derivation keeps the tree's shape, off (b) at the source** (WS-ZA ZA5.4 parts
+16, 18 and 19): the source holds a capability, so the tree names it, and the
+destination was empty, so the tree did not; the destination becomes the
+source's first child, right after it in the preorder
+(`SystemState.TreeShapeOver.addChild`).  The installed capability is a copy of
+the source's (it names what the source names, an untyped capability only to the
+source's untyped, and an untyped source has no child, seL4's
+`ensureNoChildren`), or names a fresh object (a carve's, `hNew`'s second
+alternative). -/
 theorem treeShape_addEdge_after_insert (st st1 : SystemState) (src dst : SlotRef)
     (cap : Capability) (op : DerivationOp) (hShape : SystemState.CapTreeShape st)
     (hComp : cdtCompleteness st) (hObjInv : st.objects.invExt)
     (hSrc : (SystemState.lookupSlotCap st src).isSome)
     (hIns : cspaceInsertSlot dst cap st = .ok ((), st1))
-    (hNew : ∀ o, cap.namedObject = some o → SystemState.namesAt st.slotCapAt src o ∨
-      ((∀ r, ¬ SystemState.namesAt st.slotCapAt r o) ∧ st1.objectPresent o)) :
+    (hNew : ((∀ o, cap.namedObject = some o → SystemState.namesAt st.slotCapAt src o) ∧
+          (∀ u, cap.target = .object u → st.getUntyped? u ≠ none →
+            SystemState.untypedCapAt st.slotCapAt st.getUntyped? src u) ∧
+          (∀ u, SystemState.untypedCapAt st.slotCapAt st.getUntyped? src u →
+            st.cdt.childrenOf src = [])) ∨
+        ((∀ u, SystemState.untypedCapAt st.slotCapAt st.getUntyped? src u →
+            ∀ r, CapDerivationTree.CdtChildReachable st.cdt src r →
+              ¬ SystemState.untypedCapAt st.slotCapAt st.getUntyped? r u) ∧
+          ∀ o, cap.namedObject = some o → (∀ r, ¬ SystemState.namesAt st.slotCapAt r o) ∧
+            st1.objectPresent o ∧
+            (∀ t, SystemState.CarvedFrom st.getUntyped? t o →
+              ∀ p, SystemState.untypedCapAt st.slotCapAt st.getUntyped? p t →
+                p = src ∨ CapDerivationTree.CdtChildReachable st.cdt p src) ∧
+            (∀ U, st.getUntyped? o = some U → U.children = []))) :
+    SystemState.CapTreeShapeOff { st1 with cdt := st1.cdt.addEdge src dst op } src := by
+  obtain ⟨cn, hGet, -, hEmpty, hStore⟩ := cspaceInsertSlot_ok_decompose st st1 dst cap hIns
+  have hPre : st.objects[dst.cnode]? = some (.cnode cn) :=
+    (SystemState.getCNode?_eq_some_iff st dst.cnode cn).mp hGet
+  have hCdt : st1.cdt = st.cdt := storeObject_cdt_eq st st1 dst.cnode _ hStore
+  have hUt : st1.getUntyped? = st.getUntyped? := cspaceInsertSlot_getUntyped? hObjInv hIns
+  have hDstFresh : ¬ st.cdt.mentions dst :=
+    hComp.not_mentions_of_empty fun cn' h => by rw [hPre] at h; cases h; exact hEmpty
+  have hSelf := cspaceInsertSlot_slotCapAt_self hObjInv hIns
+  show SystemState.TreeShapeOver (st1.cdt.addEdge src dst op) st1.slotCapAt st1.objectPresent
+    st1.getUntyped? (· = src)
+  rw [hUt]
+  refine hShape.addChild op (slotCapAt_ne_none_of_lookupSlotCap hSrc) hDstFresh
+    (by rw [hCdt]) (fun r hr => cspaceInsertSlot_slotCapAt_ne hObjInv hIns r hr)
+    (fun o hp => cspaceInsertSlot_objectPresent (st' := st1) hObjInv hIns o hp) ?_
+  rcases hNew with ⟨hNm, hUC, hL⟩ | ⟨hLeaf, hF⟩
+  · refine .inl ⟨fun o ho => ?_, fun u hu => ?_, hL⟩
+    · obtain ⟨c, hc, hco⟩ := ho
+      rw [hSelf] at hc; cases hc; exact hNm o hco
+    · obtain ⟨c, hc, ht, hut⟩ := hu
+      rw [hSelf] at hc; cases hc; exact hUC u ht hut
+  · refine .inr ⟨hLeaf, fun o ho => ?_⟩
+    obtain ⟨c, hc, hco⟩ := ho
+    have hcc : c = cap := Option.some.inj (hc.symm.trans hSelf)
+    subst hcc
+    exact hF o hco
+
+/-- **Installing a carve's capability into an empty slot and recording its
+derivation keeps the tree's shape** (WS-ZA ZA5.4 part 19): the capability names
+a fresh object, whose untyped records nothing and which lies below every
+capability to an untyped it is carved from once it is below `src`, and `src`
+has no strict descendant holding a capability to its untyped, so (b) holds at
+`src` too (`SystemState.TreeShapeOver.addChild_fresh`). -/
+theorem treeShape_addEdge_after_fresh (st st1 : SystemState) (src dst : SlotRef)
+    (cap : Capability) (op : DerivationOp) (hShape : SystemState.CapTreeShape st)
+    (hComp : cdtCompleteness st) (hObjInv : st.objects.invExt)
+    (hSrc : (SystemState.lookupSlotCap st src).isSome)
+    (hIns : cspaceInsertSlot dst cap st = .ok ((), st1))
+    (hLeaf : ∀ u, SystemState.untypedCapAt st.slotCapAt st.getUntyped? src u →
+      ∀ r, CapDerivationTree.CdtChildReachable st.cdt src r →
+        ¬ SystemState.untypedCapAt st.slotCapAt st.getUntyped? r u)
+    (hFresh : ∀ o, cap.namedObject = some o → (∀ r, ¬ SystemState.namesAt st.slotCapAt r o) ∧
+      st1.objectPresent o ∧
+      (∀ t, SystemState.CarvedFrom st.getUntyped? t o →
+        ∀ p, SystemState.untypedCapAt st.slotCapAt st.getUntyped? p t →
+          p = src ∨ CapDerivationTree.CdtChildReachable st.cdt p src) ∧
+      (∀ U, st.getUntyped? o = some U → U.children = [])) :
     SystemState.CapTreeShape { st1 with cdt := st1.cdt.addEdge src dst op } := by
   obtain ⟨cn, hGet, -, hEmpty, hStore⟩ := cspaceInsertSlot_ok_decompose st st1 dst cap hIns
   have hPre : st.objects[dst.cnode]? = some (.cnode cn) :=
@@ -417,15 +487,57 @@ theorem treeShape_addEdge_after_insert (st st1 : SystemState) (src dst : SlotRef
   have hDstFresh : ¬ st.cdt.mentions dst :=
     hComp.not_mentions_of_empty fun cn' h => by rw [hPre] at h; cases h; exact hEmpty
   have hSelf := cspaceInsertSlot_slotCapAt_self hObjInv hIns
-  refine hShape.addChild (st' := { st1 with cdt := st1.cdt.addEdge src dst op }) op
-    (slotCapAt_ne_none_of_lookupSlotCap hSrc) hDstFresh
-    (by show st1.cdt.addEdge src dst op = _; rw [hCdt])
-    (fun r hr => cspaceInsertSlot_slotCapAt_ne hObjInv hIns r hr)
-    (fun o hp => cspaceInsertSlot_objectPresent (st' := st1) hObjInv hIns o hp) fun o ho => ?_
+  show SystemState.TreeShapeOver (st1.cdt.addEdge src dst op) st1.slotCapAt st1.objectPresent
+    st1.getUntyped? (fun _ => False)
+  rw [cspaceInsertSlot_getUntyped? hObjInv hIns]
+  refine hShape.addChild_fresh op (slotCapAt_ne_none_of_lookupSlotCap hSrc) hDstFresh
+    (by rw [hCdt]) (fun r hr => cspaceInsertSlot_slotCapAt_ne hObjInv hIns r hr)
+    (fun o hp => cspaceInsertSlot_objectPresent (st' := st1) hObjInv hIns o hp) hLeaf
+    fun o ho => ?_
   obtain ⟨c, hc, hco⟩ := ho
   have hcc : c = cap := Option.some.inj (hc.symm.trans hSelf)
   subst hcc
-  exact hNew o hco
+  exact hFresh o hco
+
+/-- **An untyped source the derivation rule admits has no child** (seL4's
+`ensureNoChildren`): `untypedDeriveRefused` read on a capability with the
+source's target refuses exactly when the source holds an untyped capability and
+has a derivation child, and the slot links read the tree's children. -/
+theorem childrenOf_eq_nil_of_untypedDeriveRefused {st : SystemState} {src : SlotRef}
+    {cs cr : Capability} (hL : cdtLinksAgree st) (hS : st.slotCapAt src = some cs)
+    (hRT : cr.target = cs.target) (hR : untypedDeriveRefused st src cr = false) :
+    ∀ u, SystemState.untypedCapAt st.slotCapAt st.getUntyped? src u →
+      st.cdt.childrenOf src = [] := by
+  intro u hu
+  obtain ⟨c, hc, ht, hut⟩ := hu
+  rw [hS] at hc; cases hc
+  unfold untypedDeriveRefused at hR
+  rw [hRT, ht] at hR
+  cases hU : st.getUntyped? u with
+  | none => exact absurd hU hut
+  | some U =>
+    simp only [hU] at hR
+    rw [hasCdtChildren_eq_tree hL] at hR
+    simpa using hR
+
+/-- **Installing a copy of the source's capability and recording its derivation
+keeps the tree's shape, off (b) at the source** — the shape of every copy, mint
+and transfer: the installed capability has the source's target, and the
+derivation rule admitted it (`untypedDeriveRefused`, read on a capability with
+that target). -/
+theorem treeShape_addEdge_after_copy (st st1 : SystemState) (src dst : SlotRef)
+    (cap : Capability) (op : DerivationOp) (hShape : SystemState.CapTreeShape st)
+    (hComp : cdtCompleteness st) (hObjInv : st.objects.invExt) (hL : cdtLinksAgree st)
+    {cs cr : Capability} (hSrc : SystemState.lookupSlotCap st src = some cs)
+    (hT : cap.target = cs.target) (hRT : cr.target = cs.target)
+    (hR : untypedDeriveRefused st src cr = false)
+    (hIns : cspaceInsertSlot dst cap st = .ok ((), st1)) :
+    SystemState.CapTreeShapeOff { st1 with cdt := st1.cdt.addEdge src dst op } src :=
+  have hS := SystemState.slotCapAt_of_lookupSlotCap hSrc
+  treeShape_addEdge_after_insert st st1 src dst cap op hShape hComp hObjInv (by rw [hSrc]; rfl) hIns
+    (.inl ⟨fun o ho => ⟨cs, hS, (Capability.namedObject_of_target hT).symm.trans ho⟩,
+      fun u ht hut => ⟨cs, hS, hT.symm.trans ht, hut⟩,
+      childrenOf_eq_nil_of_untypedDeriveRefused hL hS hRT hR⟩)
 
 /-- **A derived capability names what its source names**: the shape of every
 copy, mint and transfer, whose capability is the source's with its rights or
