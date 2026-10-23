@@ -2152,8 +2152,8 @@ def carveRequestOf? (st : SystemState) (executingCore : Concurrency.CoreId)
   | .notification => if sizeBits = 0 then .ok .notification else .error .invalidArgument
   | .reply => if sizeBits = 0 then .ok .reply else .error .invalidArgument
   | .cnode =>
-      if minCNodeRadixBits ≤ sizeBits ∧ sizeBits ≤ maxCNodeRadixBits then
-        .ok (.cnode sizeBits)
+      if hB : minCNodeRadixBits ≤ sizeBits ∧ sizeBits ≤ maxCNodeRadixBits then
+        .ok (.cnode sizeBits (Nat.le_trans hB.2 maxCNodeRadixBits_le_maxCSpaceDepth))
       else .error .invalidArgument
   | .schedContext =>
       if minSchedContextSizeBits ≤ sizeBits ∧ sizeBits ≤ maxUntypedSizeBits then
@@ -2179,7 +2179,7 @@ theorem carveRequestOf?_ok (st : SystemState) (executingCore : Concurrency.CoreI
     (newType = .notification ∧ sizeBits = 0 ∧ req = .notification) ∨
     (newType = .reply ∧ sizeBits = 0 ∧ req = .reply) ∨
     (newType = .cnode ∧ minCNodeRadixBits ≤ sizeBits ∧ sizeBits ≤ maxCNodeRadixBits ∧
-      req = .cnode sizeBits) ∨
+      ∃ hB, req = .cnode sizeBits hB) ∨
     (newType = .schedContext ∧ minSchedContextSizeBits ≤ sizeBits ∧
       sizeBits ≤ maxUntypedSizeBits ∧ req = .schedContext sizeBits) := by
   cases newType <;> simp only [carveRequestOf?] at h
@@ -2202,7 +2202,7 @@ theorem carveRequestOf?_ok (st : SystemState) (executingCore : Concurrency.CoreI
     | (right; right; right; right; right; right; left; exact ⟨rfl, by assumption, rfl⟩)
     | (right; right; right; right; right; right; right; left; exact ⟨rfl, by assumption, rfl⟩)
     | (right; right; right; right; right; right; right; right; left;
-        exact ⟨rfl, (by assumption : _ ∧ _).1, (by assumption : _ ∧ _).2, rfl⟩)
+        exact ⟨rfl, (by assumption : _ ∧ _).1, (by assumption : _ ∧ _).2, _, rfl⟩)
     | (right; right; right; right; right; right; right; right; right;
         exact ⟨rfl, (by assumption : _ ∧ _).1, (by assumption : _ ∧ _).2, rfl⟩)
 
@@ -2272,6 +2272,19 @@ theorem untypedRetypeFromCap_ok (tid : SeLe4n.ThreadId) (ec : Concurrency.CoreId
           exact ⟨args, req, vChild, src, dst, by first | exact hD | rfl,
             by first | exact hQ | rfl,
             by first | exact hV | rfl, by first | exact hR | rfl, h⟩
+
+/-- **WS-ZA ZA5.4 part 17: the `.untypedRetype` arm preserves the capability
+bundle** — the carve keeps every conjunct
+(`untypedRetypeObject_preserves_capabilityInvariantBundle`) of whatever request
+the decode built. -/
+theorem untypedRetypeFromCap_preserves_capabilityInvariantBundle (tid : SeLe4n.ThreadId)
+    (ec : Concurrency.CoreId) (srcAddr : SeLe4n.CPtr)
+    (args? : Except KernelError UntypedRetypeArgs) (st st' : SystemState)
+    (hInv : capabilityInvariantBundle st)
+    (h : untypedRetypeFromCap tid ec srcAddr args? st = .ok ((), st')) :
+    capabilityInvariantBundle st' := by
+  obtain ⟨_, req, _, _, _, _, _, _, _, hCarve⟩ := untypedRetypeFromCap_ok tid ec srcAddr args? st st' h
+  exact untypedRetypeObject_preserves_capabilityInvariantBundle _ _ _ req st st' hInv hCarve
 
 /-- WS-ZA ZA5.4: **`.untypedReset` on the invoked slot.**  The free index is in
 the invoked capability, so the arm resolves the capability address to its slot

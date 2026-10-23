@@ -90,13 +90,17 @@ Per-core lifts live in `Scheduler/Invariant/PerCore.lean` and
 capabilityInvariantBundle :=
   cspaceLookupSound ∧ cdtCompleteness ∧ cdtAcyclicity
   ∧ cspaceDepthConsistent ∧ objects.invExt ∧ replyCapPointsToValidReply
-  ∧ cdtLinksAgree
+  ∧ cdtLinksAgree ∧ CapTreeShape
 ```
 
 `cdtAcyclicity` and `cdtCompleteness` are the capability derivation tree's
 structural guarantees — the two that make revocation terminate and make it
 complete. `objects.invExt` is the Robin Hood table's own well-formedness
 (§3.6), carried here because capability lookup goes through it.
+`CapTreeShape` puts every capability-holding slot in the tree, as seL4's
+mapping database holds every capability.  Every slot write keeps the bundle,
+the untyped carve included (`untypedRetypeObject_preserves_capabilityInvariantBundle`;
+see `SELE4N_SPEC.md` §8.6).
 
 Since `v0.35.190` (WS-RR RR8.16) a thread can actually *reach* that machinery:
 `seL4_CNode_Revoke` has a dispatch arm (`SyscallId.cspaceRevoke`), which

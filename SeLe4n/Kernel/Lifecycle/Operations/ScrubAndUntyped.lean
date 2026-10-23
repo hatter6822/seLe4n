@@ -772,6 +772,10 @@ untyped (`maxUntypedSizeBits`). -/
 def minCNodeRadixBits : Nat := 1
 def maxCNodeRadixBits : Nat := maxUntypedSizeBits - cnodeSlotBits
 
+/-- The largest radix the carve accepts is within the CSpace depth bound, so a
+CNode request the decode builds carries its bound (`CarveRequest.cnode`). -/
+theorem maxCNodeRadixBits_le_maxCSpaceDepth : maxCNodeRadixBits ≤ maxCSpaceDepth := by decide
+
 /-- The scheduling-context sizes a carve accepts, as powers of two: from seL4's
 `seL4_MinSchedContextBits` (7) to the largest untyped. -/
 def minSchedContextSizeBits : Nat := 7
@@ -832,8 +836,11 @@ inductive CarveRequest where
   | endpoint
   /-- A notification, idle, with no waiter and no pending badge. -/
   | notification
-  /-- A CNode of `2 ^ radixBits` empty slots (`carvedCNode`). -/
-  | cnode (radixBits : Nat)
+  /-- A CNode of `2 ^ radixBits` empty slots (`carvedCNode`).  WS-ZA ZA5.4
+      part 17: the request carries the proof that its radix is within
+      `maxCSpaceDepth`, so a carved CNode is depth-consistent by construction;
+      the proof is erased, so the constructor holds the radix alone. -/
+  | cnode (radixBits : Nat) (bounded : radixBits ≤ maxCSpaceDepth)
   /-- A reply with no caller and no stack link. -/
   | reply
   /-- A scheduling context of `2 ^ sizeBits` bytes, with no budget and no
@@ -935,7 +942,7 @@ def CarveRequest.admissible (st : SystemState) : CarveRequest → Bool
   | .tcb _ _ => true
   | .endpoint => true
   | .notification => true
-  | .cnode _ => true
+  | .cnode _ _ => true
   | .reply => true
   | .schedContext _ => true
 
@@ -949,7 +956,7 @@ def CarveRequest.objectType : CarveRequest → KernelObjectType
   | .tcb _ _ => .tcb
   | .endpoint => .endpoint
   | .notification => .notification
-  | .cnode _ => .cnode
+  | .cnode _ _ => .cnode
   | .reply => .reply
   | .schedContext _ => .schedContext
 
@@ -965,7 +972,7 @@ def CarveRequest.object (untypedId childId : SeLe4n.ObjId) (ut : UntypedObject) 
   | .tcb dom core => .tcb (carvedTcb childId dom core)
   | .endpoint => .endpoint (Endpoint.ofQueues {} {})
   | .notification => .notification ({ state := .idle } : Notification)
-  | .cnode r => .cnode (carvedCNode r)
+  | .cnode r _ => .cnode (carvedCNode r)
   | .reply => .reply (SeLe4n.Kernel.Reply.empty (SeLe4n.ReplyId.ofObjId childId))
   | .schedContext _ =>
       .schedContext (SeLe4n.Kernel.SchedContext.empty (SeLe4n.SchedContextId.ofObjId childId))
@@ -994,7 +1001,7 @@ def CarveRequest.size : CarveRequest → Nat
   | .tcb _ _ => objectTypeAllocSize .tcb
   | .endpoint => objectTypeAllocSize .endpoint
   | .notification => objectTypeAllocSize .notification
-  | .cnode r => 2 ^ (r + cnodeSlotBits)
+  | .cnode r _ => 2 ^ (r + cnodeSlotBits)
   | .reply => objectTypeAllocSize .reply
   | .schedContext b => 2 ^ b
 
@@ -1008,7 +1015,7 @@ def CarveRequest.rights : CarveRequest → AccessRightSet
   | .tcb _ _ => kernelObjectRights
   | .endpoint => kernelObjectRights
   | .notification => kernelObjectRights
-  | .cnode _ => kernelObjectRights
+  | .cnode _ _ => kernelObjectRights
   | .reply => kernelObjectRights
   | .schedContext _ => kernelObjectRights
 
@@ -1023,7 +1030,7 @@ def CarveRequest.capability (childId : SeLe4n.ObjId) : CarveRequest → Capabili
   | .tcb _ _ => kernelObjectCapability childId
   | .endpoint => kernelObjectCapability childId
   | .notification => kernelObjectCapability childId
-  | .cnode _ => kernelObjectCapability childId
+  | .cnode _ _ => kernelObjectCapability childId
   | .reply => kernelObjectCapability childId
   | .schedContext _ => kernelObjectCapability childId
 
@@ -1049,7 +1056,7 @@ def CarveRequest.scrub (st : SystemState) (ut : UntypedObject) (idx : Nat) :
   -- no capability names its memory as memory, so nothing a thread can read
   -- is written.  Its memory returns through the reset, and a frame carved
   -- from it later zeroes its own page.
-  | .tcb _ _ | .endpoint | .notification | .cnode _ | .reply | .schedContext _ => st
+  | .tcb _ _ | .endpoint | .notification | .cnode _ _ | .reply | .schedContext _ => st
   | .vspaceRoot _ =>
       { st with
           machine := SeLe4n.zeroMemoryRange st.machine (untypedNextFrame ut idx).base SeLe4n.pageBytes
@@ -1827,15 +1834,15 @@ theorem untypedRetypeObject_ok_notification
 
 /-- **A carved CNode** has `2 ^ radixBits` slots, every one empty, and no guard. -/
 theorem untypedRetypeObject_ok_cnode
-    (src dst : CSpaceAddr) (childId : SeLe4n.ObjId) (r : Nat) (st st' : SystemState)
-    (hObjInv : st.objects.invExt)
-    (hStep : untypedRetypeObject src childId dst (.cnode r) st = .ok ((), st')) :
+    (src dst : CSpaceAddr) (childId : SeLe4n.ObjId) (r : Nat) (hr : r ≤ maxCSpaceDepth)
+    (st st' : SystemState) (hObjInv : st.objects.invExt)
+    (hStep : untypedRetypeObject src childId dst (.cnode r hr) st = .ok ((), st')) :
     ∃ cn : CNode, st'.objects[childId]? = some (.cnode cn) ∧
       cn.withoutLinks = (carvedCNode r).withoutLinks ∧
       cn.radixWidth = (carvedCNode r).radixWidth ∧ cn.guardWidth = (carvedCNode r).guardWidth ∧
       ∀ s, cn.lookup s = (carvedCNode r).lookup s := by
   obtain ⟨_, _, _, _, _, _, _, _, hW, -⟩ :=
-    untypedRetypeObject_ok_carved src dst childId (.cnode r) st st' hObjInv hStep
+    untypedRetypeObject_ok_carved src dst childId (.cnode r hr) st st' hObjInv hStep
   cases hO : st'.objects[childId]? with
   | none => rw [hO] at hW; cases hW
   | some o =>

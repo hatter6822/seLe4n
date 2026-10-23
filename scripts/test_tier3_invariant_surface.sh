@@ -3991,7 +3991,7 @@ run_check "INVARIANT" rg -n -U 'def carveRequestOf\?[^\n]*(\n([ \t][^\n]*)?)*  \
 # `createObject` reads `ksCurDomain` and the current CPU); a CNode's radix and a
 # scheduling context's size are bounded as `Untyped_Retype` bounds them.
 run_check "INVARIANT" rg -n -U 'def carveRequestOf\?[^\n]*(\n([ \t][^\n]*)?)*  \| \.tcb =>\n      if sizeBits = 0 then\n        \.ok \(\.tcb \(st\.scheduler\.activeDomainOnCore executingCore\) executingCore\)' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n -U 'def carveRequestOf\?[^\n]*(\n([ \t][^\n]*)?)*  \| \.cnode =>\n      if minCNodeRadixBits ≤ sizeBits ∧ sizeBits ≤ maxCNodeRadixBits then' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'def carveRequestOf\?[^\n]*(\n([ \t][^\n]*)?)*  \| \.cnode =>\n      if hB : minCNodeRadixBits ≤ sizeBits ∧ sizeBits ≤ maxCNodeRadixBits then\n        \.ok \(\.cnode sizeBits \(Nat\.le_trans hB\.2 maxCNodeRadixBits_le_maxCSpaceDepth\)\)' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U 'def CarveRequest\.object[^\n]*(\n([ \t][^\n]*)?)*  \| \.tcb dom core => \.tcb \(carvedTcb childId dom core\)\n  \| \.endpoint => \.endpoint \(Endpoint\.ofQueues \{\} \{\}\)' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 # The carve rounds the free index up to its boundary (seL4's
 # `alignUp(freeRef, objectSize)`), never refusing a misaligned one: the index
@@ -4034,6 +4034,19 @@ run_check "INVARIANT" rg -n '^theorem retypeFromUntyped_ok_pageAligned($|[ ({:\[
 run_check "INVARIANT" rg -n '^theorem untypedRetypeObject_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
 run_check "INVARIANT" rg -n '^theorem of_fresh_inert_write($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean
 run_check "INVARIANT" rg -n -U 'case untypedRetype =>(\n([ \t][^\n]*)?)*      exact untypedRetypeObject_preserves_ipcInvariantFull' SeLe4n/Kernel/API.lean
+# WS-ZA ZA5.4 part 17: the carve keeps the capability bundle.  The carved
+# object lands at an id that held nothing, holding no capability and no link;
+# the install and its .retype edge are a copy's.  A CNode request carries its
+# radix bound as an erased proof field, which the decode builds, so no theorem
+# takes the bound as a hypothesis.
+run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.Capability\.Invariant\.Preservation\.Carve$' SeLe4n/Kernel/Capability/Invariant/Preservation.lean
+run_check "INVARIANT" rg -n '^theorem storeObject_absent_preserves_capabilityInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/Carve.lean
+run_check "INVARIANT" rg -n -U '^theorem retypeFromUntyped_preserves_capabilityInvariantBundle(\n([ \t][^\n]*)?)*  have hInvCh := storeObject_absent_preserves_capabilityInvariantBundle hInvUt hChildNone hStCh\n    hCaps hLinks hDepth\n  exact storeObject_capRewrite_preserves_capabilityInvariantBundle ' SeLe4n/Kernel/Capability/Invariant/Preservation/Carve.lean
+run_check "INVARIANT" rg -n -U '^theorem untypedRetypeObject_preserves_capabilityInvariantBundle(\n([ \t][^\n]*)?)*  have hInv1 := retypeFromUntyped_preserves_capabilityInvariantBundle [^\n]*(\n([ \t][^\n]*)?)*  have hCdt := cdt_addEdge_after_insert _ st2 src dst _ \.retype [^\n]*(\n([ \t][^\n]*)?)*  have hShape := treeShape_addEdge_after_insert _ st2 src dst _ \.retype ' SeLe4n/Kernel/Capability/Invariant/Preservation/Carve.lean
+run_check "INVARIANT" rg -n '^  \| cnode \(radixBits : Nat\) \(bounded : radixBits ≤ maxCSpaceDepth\)$' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n '^theorem maxCNodeRadixBits_le_maxCSpaceDepth : maxCNodeRadixBits ≤ maxCSpaceDepth := by decide$' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n -U '^theorem untypedRetypeFromCap_preserves_capabilityInvariantBundle[^\n]*(\n([ \t][^\n]*)?)*  exact untypedRetypeObject_preserves_capabilityInvariantBundle _ _ _ req st st. hInv hCarve$' SeLe4n/Kernel/API.lean
+run_negative_check "INVARIANT" rg -n '\bdepthBounded\b' SeLe4n
 run_check "INVARIANT" rg -n '^  \| \.untypedRetype   => \.retype$' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^  \| untypedRetype\s*$' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n '^  \| \.untypedRetype         => 36$' SeLe4n/Model/Object/Types.lean
@@ -12248,6 +12261,8 @@ import SeLe4n.Kernel.SchedContext.ReplenishQueue
 #check @SeLe4n.Kernel.timerTick_preserves_schedulerInvariantBundle
 #check @SeLe4n.Kernel.cspaceMint_preserves_capabilityBundleOffCoverage
 #check @SeLe4n.Kernel.cspaceRevoke_preserves_capabilityInvariantBundle
+#check @SeLe4n.Kernel.untypedRetypeObject_preserves_capabilityInvariantBundle
+#check @SeLe4n.Kernel.untypedRetypeFromCap_preserves_capabilityInvariantBundle
 #check @SeLe4n.Kernel.endpointSendDual_preserves_ipcInvariant
 #check @SeLe4n.Kernel.serviceRegisterDependency_preserves_serviceGraphInvariant
 #check @SeLe4n.Kernel.Architecture.vspaceMapPage_success_preserves_vspaceInvariantBundle

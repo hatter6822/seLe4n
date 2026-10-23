@@ -1,3 +1,65 @@
+## v0.36.128 — WS-ZA ZA5.4 part 17: the carve keeps the capability bundle
+
+The untyped carve is now proven to keep all eight conjuncts of
+`capabilityInvariantBundle`, so every tree-changing operation proves the
+tree's completeness from its pre-state.  Part 17 of the seL4 untyped reset
+([`UNTYPED_RESET_PLAN.md`](docs/planning/UNTYPED_RESET_PLAN.md)).  No
+behaviour changed: the one change to code is an erased proof field on the
+CNode carve request.
+
+### Changes
+
+- **New module** `Capability/Invariant/Preservation/Carve.lean`, re-exported
+  by the preservation hub.
+  - `storeObject_absent_preserves_capabilityInvariantBundle`: storing an
+    object at an id that held nothing keeps the bundle when the object holds
+    no capability and no link and, if a CNode, is within the depth bound.
+    Every slot and link reads as before, and the tree is untouched.
+  - `retypeFromUntyped_preserves_capabilityInvariantBundle`: the untyped's
+    record is rewritten in kind, the object is stored at a fresh id, and the
+    invoked capability's free index is rewritten in its occupied slot.
+  - `untypedRetypeObject_preserves_capabilityInvariantBundle`: the carve, the
+    scrub (no object and no tree written, `CarveRequest.scrub_cdt`), and the
+    install with its edge `cdtAddChild src dst .retype`, as a copy's
+    (`cdt_addEdge_after_insert`, `treeShape_addEdge_after_insert`).  The
+    invoked slot still holds a capability after the carve
+    (`retypeFromUntyped_lookupSlotCap_authority`).
+  - Every carved object holds no capability (`CarveRequest.object_slotCap`)
+    and no link (`CarveRequest.object_linkAt`).
+- **A CNode request carries its depth bound.**  A CNode of radix above
+  `maxCSpaceDepth` would break the depth conjunct, and the bound was a
+  convention of the decode.  It is now part of the request:
+  `CarveRequest.cnode radixBits bounded` takes the proof
+  `radixBits ≤ maxCSpaceDepth`, erased at run time, so the constructor still
+  holds the radix alone.  The decode builds it from its radix check
+  (`maxCNodeRadixBits_le_maxCSpaceDepth`, radix at most 42), and
+  `carveRequestOf?_ok` states the CNode case with the proof.  The carve
+  theorems take no depth hypothesis, and the `.untypedRetype` arm keeps the
+  bundle (`untypedRetypeFromCap_preserves_capabilityInvariantBundle`,
+  `API.lean`).
+  No kernel-wide composition of the capability bundle took the carve as a
+  hypothesis, so no hypothesis is removed.
+- Tier 3 anchors pin the new theorems and their compositions.
+
+### Documentation
+
+- `SELE4N_SPEC.md` §8.6, GitBook chapter 12 (which also gains the bundle's
+  `CapTreeShape` conjunct), `CLAIM_EVIDENCE_INDEX.md` row 50 (now true of the
+  carve, citing the new theorem), the plan's row 17 and the workstream
+  context.
+
+### Validation
+
+- `./scripts/test_full.sh --continue` passes, and so does
+  `./scripts/test_lean_aarch64_archive.sh`.
+- Every QEMU heap pin is unchanged
+  (`./scripts/test_qemu_heap_allocations_per_syscall.sh --lean-kernel`).
+
+### Registered debt
+
+- Closed: "The carve has no capability-bundle preservation theorem"
+  (registered `v0.36.127`).
+
 ## v0.36.127 — WS-ZA ZA5.4 part 16: every capability-holding slot is in the derivation tree
 
 Every slot that holds a capability is now in the capability derivation tree,
