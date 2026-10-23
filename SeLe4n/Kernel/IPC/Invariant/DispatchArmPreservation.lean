@@ -1287,18 +1287,17 @@ theorem storeObject_capRewrite_preserves_ipcInvariantFull
     hCap hInv,
     storeObject_preserves_objects_invExt st st' addr.cnode _ hObjInv hStore⟩
 
-/-- **WS-BP BP7.1 slice 3 (`v0.36.6`)**: the untyped reset preserves
-`ipcInvariantFull`.  Every key it writes holds, on each side, nothing or a kind
-the bundle does not read — VSpace roots (the unmap pass), frames (erased) and
-the untyped (its child list cleared) — so the read view agrees
-(`of_inertOrAbsentWrites`); the scheduler is framed; and no CNode or TCB is
-written, which carries the badge clause and the passive-server clause. -/
-theorem untypedReset_preserves_ipcInvariantFull
-    (ec : Concurrency.CoreId) (untypedId : SeLe4n.ObjId) (st st' : SystemState)
-    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
-    (hStep : untypedReset ec untypedId st = .ok ((), st')) :
-    ipcInvariantFull st' := by
-  obtain ⟨-, hSched, hW⟩ := untypedReset_ok_frame ec untypedId st st' hObjInv hStep
+/-- **A write of the kinds a reset touches preserves `ipcInvariantFull`**: every
+key holds what it held, or on each side nothing or a kind the bundle does not
+read (`resetTouched`), so the read view agrees (`of_inertOrAbsentWrites`); with
+the scheduler framed and no CNode or TCB written, the badge clause and the
+passive-server clause carry.  The untyped reset and the final-delete retire are
+such writes. -/
+theorem ipcInvariantFull_of_resetTouchedWrite {st st' : SystemState}
+    (hSched : st'.scheduler = st.scheduler)
+    (hW : ∀ oid : SeLe4n.ObjId, st'.objects[oid]? = st.objects[oid]? ∨
+      (resetTouched st.objects[oid]? ∧ resetTouched st'.objects[oid]?))
+    (hInv : ipcInvariantFull st) : ipcInvariantFull st' := by
   have hTouched : ∀ o : Option KernelObject, resetTouched o → o = none ∨ ipcReadInert o := by
     intro o h
     cases o with
@@ -1334,6 +1333,20 @@ theorem untypedReset_preserves_ipcInvariantFull
     (passiveServerIdle_of_frame (passiveServerIdleFrame_of_backward hBack hSched)
       hInv.passiveServerIdle)
     hCap hInv
+
+/-- **WS-BP BP7.1 slice 3 (`v0.36.6`)**: the untyped reset preserves
+`ipcInvariantFull`.  Every key it writes holds, on each side, nothing or a kind
+the bundle does not read — VSpace roots (the unmap pass), frames (erased) and
+the untyped (its child list cleared) — so the read view agrees
+(`of_inertOrAbsentWrites`); the scheduler is framed; and no CNode or TCB is
+written, which carries the badge clause and the passive-server clause. -/
+theorem untypedReset_preserves_ipcInvariantFull
+    (ec : Concurrency.CoreId) (untypedId : SeLe4n.ObjId) (st st' : SystemState)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hStep : untypedReset ec untypedId st = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  obtain ⟨-, hSched, hW⟩ := untypedReset_ok_frame ec untypedId st st' hObjInv hStep
+  exact ipcInvariantFull_of_resetTouchedWrite hSched hW hInv
 
 /-- **`v0.36.37`: the live `.untypedReset` arm preserves `ipcInvariantFull`.**  The
 arm is the reset followed by the `.aside1` round fold, which writes neither the
@@ -1400,17 +1413,28 @@ theorem finaliseDestroyedCapabilities_preserves_ipcInvariantFull
     finaliseDestroyedCapabilities_ok_frame ec named pages st st' hObjInv hStep
   exact ⟨ipcInvariantFull_of_vspaceRootOnlyWrite hW hSched hInv, hExt⟩
 
+/-- **The final-delete retire preserves the bundle**: it touches only what a
+reset touches (`finalRetireWrite.touched`) and frames the scheduler. -/
+theorem retireFinalObject_preserves_ipcInvariantFull (ec : Concurrency.CoreId)
+    (target recorder : Nat) (st : SystemState) (hObjInv : st.objects.invExt)
+    (hInv : ipcInvariantFull st) :
+    ipcInvariantFull (retireFinalObject ec target recorder st) ∧
+      (retireFinalObject ec target recorder st).objects.invExt := by
+  obtain ⟨hExt, hSched, -, -, hW⟩ := retireFinalObject_frame ec target recorder st hObjInv
+  exact ⟨ipcInvariantFull_of_resetTouchedWrite hSched hW.touched hInv, hExt⟩
+
 /-- `.cspaceDelete`: the finalising delete preserves the bundle — the delete's
-own theorem, then the teardown's. -/
+own theorem, then the teardown's, then the retire's. -/
 theorem cspaceDeleteSlotFinalising_preserves_ipcInvariantFull
     (ec : Concurrency.CoreId) (addr : CSpaceAddr) (st st' : SystemState)
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
     (hStep : cspaceDeleteSlotFinalising ec addr st = .ok ((), st')) :
     ipcInvariantFull st' := by
-  obtain ⟨st1, hD, hF⟩ := cspaceDeleteSlotFinalising_ok ec addr st st' hStep
-  exact (finaliseDestroyedCapabilities_preserves_ipcInvariantFull ec _ _ st1 st'
+  obtain ⟨st1, st2, hD, hF, rfl⟩ := cspaceDeleteSlotFinalising_ok ec addr st st' hStep
+  have h2 := finaliseDestroyedCapabilities_preserves_ipcInvariantFull ec _ _ st1 st2
     (cspaceDeleteSlot_preserves_objects_invExt st st1 addr hObjInv hD)
-    (cspaceDeleteSlot_preserves_ipcInvariantFull st st1 addr hObjInv hInv hD) hF).1
+    (cspaceDeleteSlot_preserves_ipcInvariantFull st st1 addr hObjInv hInv hD) hF
+  exact (retireFinalObject_preserves_ipcInvariantFull ec _ _ st2 h2.2 h2.1).1
 
 /-- The finalising delete keeps the object table well formed. -/
 theorem cspaceDeleteSlotFinalising_preserves_objects_invExt
@@ -1418,9 +1442,9 @@ theorem cspaceDeleteSlotFinalising_preserves_objects_invExt
     (hObjInv : st.objects.invExt)
     (hStep : cspaceDeleteSlotFinalising ec addr st = .ok ((), st')) :
     st'.objects.invExt := by
-  obtain ⟨st1, hD, hF⟩ := cspaceDeleteSlotFinalising_ok ec addr st st' hStep
-  exact (finaliseDestroyedCapabilities_ok_frame ec _ _ st1 st'
-    (cspaceDeleteSlot_preserves_objects_invExt st st1 addr hObjInv hD) hF).1
+  obtain ⟨st1, st2, hD, hF, rfl⟩ := cspaceDeleteSlotFinalising_ok ec addr st st' hStep
+  exact (retireFinalObject_frame ec _ _ st2 (finaliseDestroyedCapabilities_ok_frame ec _ _ st1 st2
+    (cspaceDeleteSlot_preserves_objects_invExt st st1 addr hObjInv hD) hF).1).1
 
 /-- `.cspaceRevoke`: the finalising revocation preserves the bundle — the
 revocation's own theorem at the state it reaches, then the teardown's. -/

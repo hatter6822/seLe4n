@@ -325,12 +325,41 @@ final (`SystemState.capIsFinal`). -/
     | _ => 0
   | none => 0
 
+/-- The recorder word of the target word `t` (`0` for none), read from slot
+`slot` of `cnode`. -/
+@[inline] def recorderFor (st : SystemState) (t : Nat) (cnode : SeLe4n.ObjId) (slot : SeLe4n.Slot) :
+    Nat :=
+  if t = 0 then 0 else recorderWord st (SeLe4n.ObjId.ofNat (t - 1)) cnode slot
+
 /-- **The recorder of what slot `slot` of `cnode` retires**, as a word, read
 before the slot is emptied: `0` when it retires nothing. -/
 @[inline] def slotRetireRecorder (st : SystemState) (cnode : SeLe4n.ObjId) (slot : SeLe4n.Slot) :
     Nat :=
-  let t := slotRetireTarget st cnode slot
-  if t = 0 then 0 else recorderWord st (SeLe4n.ObjId.ofNat (t - 1)) cnode slot
+  recorderFor st (slotRetireTarget st cnode slot) cnode slot
+
+/-- **Whether destroying `cap`, held in slot `slot` of `cnode`, retires
+nothing**: the check a delete's fast path asks of the capability it read
+(`slotRetireTarget_eq_zero_iff`). -/
+@[inline] def capabilityRetiresNothing (st : SystemState) (cnode : SeLe4n.ObjId)
+    (slot : SeLe4n.Slot) (cap : Capability) : Bool :=
+  match cap.target with
+  | .object x => !(retirableKind st x && st.capIsFinal cnode slot)
+  | _ => true
+
+theorem slotRetireTarget_eq_zero_iff {st : SystemState} {cnode : SeLe4n.ObjId}
+    {slot : SeLe4n.Slot} {cap : Capability} (h : st.slotCapAt ⟨cnode, slot⟩ = some cap) :
+    slotRetireTarget st cnode slot = 0 ↔ capabilityRetiresNothing st cnode slot cap = true := by
+  unfold slotRetireTarget capabilityRetiresNothing
+  rw [h]
+  dsimp only
+  cases cap.target with
+  | object x => cases retirableKind st x <;> cases st.capIsFinal cnode slot <;> simp
+  | _ => simp
+
+theorem slotRetireTarget_of_empty {st : SystemState} {cnode : SeLe4n.ObjId}
+    {slot : SeLe4n.Slot} (h : st.slotCapAt ⟨cnode, slot⟩ = none) :
+    slotRetireTarget st cnode slot = 0 := by
+  unfold slotRetireTarget; rw [h]
 
 /-- **`x` taken out of the child list of the untyped at `w`**, written in its
 slot. -/
@@ -792,3 +821,47 @@ theorem retireFinalObject_preserves_teardownWellFormed (ec : Concurrency.CoreId)
       exact ⟨r', h', rfl, fun _ _ hm => hm, fun _ _ he => he, fun _ hs => hs⟩
     · exact ⟨hW2, hS1'.trans hS2⟩
   · exact ⟨hW, vspaceRootsShrink.refl st⟩
+
+/-- A retire of nothing is the identity. -/
+theorem retireFinalObject_zero (ec : Concurrency.CoreId) (recorder : Nat) (st : SystemState) :
+    retireFinalObject ec 0 recorder st = st := by
+  unfold retireFinalObject; rfl
+
+/-- **The retire writes no derivation edge, no scheduler and no machine
+state.** -/
+theorem retireFinalObject_fields (ec : Concurrency.CoreId) (target recorder : Nat) (st : SystemState) :
+    (retireFinalObject ec target recorder st).cdt = st.cdt ∧
+    (retireFinalObject ec target recorder st).scheduler = st.scheduler ∧
+    (retireFinalObject ec target recorder st).machine = st.machine := by
+  unfold retireFinalObject
+  split
+  · exact ⟨rfl, rfl, rfl⟩
+  split
+  · dsimp only
+    generalize SeLe4n.ObjId.ofNat (target - 1) = x
+    have h1 : (if recorder = 0 then st
+        else unrecordChild st (SeLe4n.ObjId.ofNat (recorder - 1)) x).cdt = st.cdt ∧
+        (if recorder = 0 then st
+        else unrecordChild st (SeLe4n.ObjId.ofNat (recorder - 1)) x).scheduler = st.scheduler ∧
+        (if recorder = 0 then st
+        else unrecordChild st (SeLe4n.ObjId.ofNat (recorder - 1)) x).machine = st.machine := by
+      split
+      · exact ⟨rfl, rfl, rfl⟩
+      · rcases unrecordChild_cases st (SeLe4n.ObjId.ofNat (recorder - 1)) x with ⟨-, hE⟩ | ⟨U, -, hS⟩
+        · rw [hE]; exact ⟨rfl, rfl, rfl⟩
+        · exact ⟨storeObject_cdt_eq _ _ _ _ hS, storeObject_scheduler_eq _ _ _ _ hS,
+            storeObject_machine_eq _ _ _ _ hS⟩
+    generalize (if recorder = 0 then st
+        else unrecordChild st (SeLe4n.ObjId.ofNat (recorder - 1)) x) = st1 at h1
+    obtain ⟨s2, m2, c2⟩ := retireCarvedObject_scheduler_machine_cdt st1 x
+    split
+    · rw [retypeAsidRoundStep_cdt, retypeAsidRoundStep_scheduler, retypeAsidRoundStep_machine,
+        c2, s2, m2]
+      exact h1
+    · rw [c2, s2, m2]; exact h1
+  · exact ⟨rfl, rfl, rfl⟩
+
+/-- **The retire writes no derivation edge.** -/
+theorem retireFinalObject_cdt (ec : Concurrency.CoreId) (target recorder : Nat) (st : SystemState) :
+    (retireFinalObject ec target recorder st).cdt = st.cdt :=
+  (retireFinalObject_fields ec target recorder st).1
