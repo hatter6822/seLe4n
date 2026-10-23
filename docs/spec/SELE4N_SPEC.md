@@ -4932,8 +4932,9 @@ object table has no headroom for the erase, so it never refuses.
 
 An untyped with a live record stays: a kernel object carved from it (a CNode, a
 TCB, an endpoint) may have no capability left yet still be recorded, and the
-untyped's reset would recarve that memory; kernel kinds are finalised by the
-next part of the plan.  The capability bundle is preserved
+untyped's reset would recarve that memory; kernel kinds are finalised from
+`v0.36.133` on (below), and the restriction is lifted once every kind is
+(`docs/planning/UNTYPED_RESET_PLAN.md` row 26).  The capability bundle is preserved
 (`retireFinalObject_preserves_capabilityInvariantBundle`, through
 `TreeShapeOver.retire`: no slot names the retired object, every other object
 stays, and each untyped's record only shrinks), and so are the IPC, run-queue,
@@ -4942,6 +4943,42 @@ reschedule and teardown invariants (`retireFinalObject_preserves_ipcInvariantFul
 `retireFinalObject_preserves_teardownWellFormed`), all through the reset's
 touched-key frame (`finalRetireWrite.touched`).  The compiled retire erases the
 object's entry, index and type rows in place (`retireCarvedObject_eq_impl`).
+
+**Quiescent passive kinds and the space-slot replace** (`v0.36.133`).  The
+retire also takes an endpoint, a notification, a reply or a CNode whose final
+capability is destroyed, when seL4's `finaliseCap` would have nothing to cancel
+and nothing names the object outside a slot (`passiveObjectRetirable`): the
+object is quiescent (`passiveObjectQuiescent`: an endpoint's two queues empty, a
+notification with no waiter and no bound thread, a reply with no caller and no
+stack link, a CNode whose every slot is empty), no object names it by id
+(`storeNamesNone`: a thread blocked on it, bound to it or linked to it as its
+reply, another reply's stack link, a scheduling context's reply-stack head), and
+no service registration, service-graph entry or interrupt handler names it.  It
+leaves the store first (`retirePassiveObject`), then its recorder's child list,
+through the same `retireRecordedObject` as a carved object.  **A kernel object
+that is not quiescent, or is named outside a slot, still outlives its last
+capability**, as every kernel object did before `v0.36.133`, and stays recorded
+by its untyped: an endpoint or notification with waiters or a bound thread
+until row 23 of `docs/planning/UNTYPED_RESET_PLAN.md` (`cancelAllIPC`,
+`unbindMaybeNotification`, `cancelAllSignals`), a TCB or scheduling context
+until row 24, a busy reply or a scheduling context with a reply stack until
+row 25, and a CNode holding capabilities until row 26 (the zombie loop).  The
+names-by-id check walks the object table once per final delete of a passive
+kind (`docs/REGISTERED_DEBT.md`).
+
+The space-slot replace of `copyThreadSpaces` (seL4's `invokeTCB_ThreadControl`,
+which runs `cteDelete` on the TCB's CTable and VTable slots) retires what each
+slot's old capability took with it: each slot is set by `threadSlotSet`, the
+copy then `retireFinalObject`, its target and recorder read before the copy.
+The retire runs after the copy because the copy names its source's object, not
+the retired one, and the retire writes no slot and no thread.  The capability
+bundle, the IPC invariant, the run-queue stage and the reschedule key frame are
+preserved by each set (`threadSlotSet_preserves_capabilityInvariantBundle`,
+`threadSlotSet_preserves_ipcInvariantFull`, `threadSlotSet_runQueueStage`,
+`threadSlotSet_keyFrame`), and the space change is invisible to an observer
+the thread, the objects its two space slots name, and the untypeds recording
+them are hidden from (`copyThreadSpaces_preserves_projection`, through
+`retireFinalObject_preserves_projection`).
 
 ### 8.6.1 Carve Refusal Order (`v0.36.125`)
 
@@ -5421,7 +5458,7 @@ seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
   (`untypedResetFromCap`) and first refuses (`.revocationRequired`) while that
   slot has a derivation child, seL4's per-slot `ensureNoChildren`
   (`untypedResetFromCap_ok`); the store-wide check stays beside it until the
-  reset is restated as seL4's (WS-ZA ZA5.4 part 23, `docs/REGISTERED_DEBT.md`).
+  reset is restated as seL4's (WS-ZA ZA5.4 part 27, `docs/REGISTERED_DEBT.md`).
   Then every
   mapping of a page meeting the region is removed through the `.vspaceUnmap`
   arm's own transition — TLB flush, shootdown round, initiator drain,

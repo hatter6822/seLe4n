@@ -234,7 +234,7 @@ children, source set full otherwise); at `v0.36.125` (part 14) every object
 kind is carved from an untyped at seL4's size, the free index rounded up to the
 object's boundary as seL4's `alignUp(freeRef, objectSize)`, and the in-place
 retype, its syscall arm (number 8, kept reserved) and its theorems are deleted.
-The destroy cleanup it ran stays, with no live caller, for parts 22 and 23
+The destroy cleanup it ran stays, with no live caller, for part 24
 (`docs/REGISTERED_DEBT.md`).  At `v0.36.126` (part 15) the tree is in seL4's MDB
 order: the parentless slots form one ghost root chain, a delete puts its
 children in its place and a move keeps the slot's place, the preorder
@@ -284,8 +284,12 @@ retires the object (`retireFinalObject`, the last write of
 `cspaceDeleteThenFinalise`), its target and recorder read before the slot is
 emptied (`slotRetireTarget`, `slotRetireRecorder`): a new delete path must
 retire too, and a delete fast path must admit only a delete that retires
-nothing (`capabilityRetiresNothing`).  An untyped that still records a child is
-not retired; kernel kinds are part 22.  The
+nothing (`capabilityRetiresNothing`).  Since part 22 (`v0.36.133`) the retire
+also takes a quiescent endpoint, notification, reply or CNode that nothing
+names outside a slot (`passiveObjectRetirable`), and a thread's space-slot
+replace retires through it (`threadSlotSet`): a new transition that destroys a
+capability must too.  A busy or referenced kernel object, and an untyped that
+still records a child, outlive their last capability until parts 23–26.  The
 suspend of a thread blocked in IPC or holding a donated context is the one
 syscall arm left on the general path (ZA6.1).  ZA6 covers the other
 entries and makes the rule standing.  Plan:

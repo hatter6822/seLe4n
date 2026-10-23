@@ -111,7 +111,11 @@ four derivation links (`capIsFinal`, seL4's `isFinalCapability`), proven equal
 under the bundle to "no other slot names the object"; since `v0.36.132` a
 delete or revoke that destroys the final capability to a frame, page table,
 address-space root or childless untyped retires the object, keeping the bundle
-(`retireFinalObject_preserves_capabilityInvariantBundle`)
+(`retireFinalObject_preserves_capabilityInvariantBundle`), and since
+`v0.36.133` it retires a quiescent, unreferenced endpoint, notification, reply
+or CNode the same way, as does a thread's space-slot replace
+(`threadSlotSet_preserves_capabilityInvariantBundle`); a busy kernel object
+still outlives its last capability until its kind's finalise lands
 ([`SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) §8.6).  Every slot write keeps the bundle,
 the untyped carve included (`untypedRetypeObject_preserves_capabilityInvariantBundle`;
 see `SELE4N_SPEC.md` §8.6).
