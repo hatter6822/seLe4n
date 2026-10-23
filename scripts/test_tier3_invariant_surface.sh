@@ -4132,6 +4132,12 @@ run_check "INVARIANT" rg -n '^theorem retireFinalObject_preserves_ipcInvariantFu
 run_check "INVARIANT" rg -n '^theorem retireFinalObject_runQueueStage ' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Capability.lean
 run_check "INVARIANT" rg -n '^theorem retireFinalObject_keyFrame ' SeLe4n/Kernel/ReschedulePendingArms/Capability.lean
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem retireCarvedObject_eq_impl : @retireCarvedObject = @retireCarvedObjectImpl' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
+# v0.36.132: the retire's erases allocate nothing: the compiled erase probes for
+# a bare index, and the compiled backshift takes each moved cell out of the
+# array before rewriting it, so an exclusively owned table is erased in place.
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem RHTable\.erase_eq_impl : @RHTable\.erase = @RHTable\.eraseImpl' SeLe4n/Kernel/RobinHood/Core.lean
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem backshiftLoop_eq_impl : @backshiftLoop = @backshiftLoopImpl' SeLe4n/Kernel/RobinHood/Core.lean
+run_check "INVARIANT" rg -n -U 'def backshiftLoopImpl[^\n]*(\n([ \t][^\n]*)?){0,16}\n      let v := slots\[nextI\]\n      let slots1 := slots\.set nextI none hNext\n      match v with(\n([ \t][^\n]*)?){0,5}\n            \(slots1\.set \(gapIdx % capacity\) \(RHEntry\.shiftedBack \(some e\)\)' SeLe4n/Kernel/RobinHood/Core.lean
 run_check "INVARIANT" rg -n -U 'def cspaceRevokeCdtFinalising[^\n]*\n[^\n]*\n  fun st =>\n    match SystemState\.lookupSlotCap st addr with\n    \| some _ => \.ok \(\(\), cspaceRevokePerformAt executingCore addr\.cnode addr\.slot st\)' SeLe4n/Kernel/Capability/FrameFinalise.lean
 # v0.36.111: every revoke is seL4's cteRevoke, a run of finalising deletes; the
 # general revocation's batch teardown is gone.
