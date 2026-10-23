@@ -1224,16 +1224,6 @@ theorem replenishWakeTarget_runnable {stPre refilled : SystemState}
   repeat' split at h
   all_goals first | cases h | exact key _ h
 
-/-- A thread no core runs is no core's current thread. -/
-private theorem currentNowhere_of_runningOnSomeCore_false {st : SystemState}
-    {tid : SeLe4n.ThreadId} (h : runningOnSomeCore st tid = false) (c : Concurrency.CoreId) :
-    st.scheduler.currentOnCore c ≠ some tid := by
-  simp only [runningOnSomeCore, SeLe4n.Kernel.Concurrency.allCores, List.any_eq_false] at h
-  intro hc
-  have hcc := h c (List.mem_finRange c)
-  rw [hc] at hcc
-  simp at hcc
-
 /-- One due replenishment: the refill and, for a runnable thread it makes
 eligible and no core runs, the wake. -/
 theorem processOneReplenishmentOnCore_runQueueStage (st : SystemState) (c : Concurrency.CoreId)

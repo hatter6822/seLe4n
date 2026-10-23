@@ -4193,19 +4193,6 @@ theorem retireFinalObject_preserves_ipcInvariantFull (ec : Concurrency.CoreId)
   exact ⟨ipcInvariantFull_of_resetTouchedWrite hSched
     (hW.resetTouched (retirePassiveObject_not_passive st x hObjInv)) h0, hExt⟩
 
-/-- `.cspaceDelete`: the finalising delete preserves the bundle — the delete's
-own theorem, then the teardown's, then the retire's. -/
-theorem cspaceDeleteSlotFinalising_preserves_ipcInvariantFull
-    (ec : Concurrency.CoreId) (addr : CSpaceAddr) (st st' : SystemState)
-    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
-    (hStep : cspaceDeleteSlotFinalising ec addr st = .ok ((), st')) :
-    ipcInvariantFull st' := by
-  obtain ⟨st1, st2, hD, hF, rfl⟩ := cspaceDeleteSlotFinalising_ok ec addr st st' hStep
-  have h2 := finaliseDestroyedCapabilities_preserves_ipcInvariantFull ec _ _ st1 st2
-    (cspaceDeleteSlot_preserves_objects_invExt st st1 addr hObjInv hD)
-    (cspaceDeleteSlot_preserves_ipcInvariantFull st st1 addr hObjInv hInv hD) hF
-  exact (retireFinalObject_preserves_ipcInvariantFull ec _ _ st2 h2.2 h2.1).1
-
 /-- The finalising delete keeps the object table well formed. -/
 theorem cspaceDeleteSlotFinalising_preserves_objects_invExt
     (ec : Concurrency.CoreId) (addr : CSpaceAddr) (st st' : SystemState)
@@ -4213,20 +4200,9 @@ theorem cspaceDeleteSlotFinalising_preserves_objects_invExt
     (hStep : cspaceDeleteSlotFinalising ec addr st = .ok ((), st')) :
     st'.objects.invExt := by
   obtain ⟨st1, st2, hD, hF, rfl⟩ := cspaceDeleteSlotFinalising_ok ec addr st st' hStep
-  exact (retireFinalObject_frame ec _ _ st2 (finaliseDestroyedCapabilities_ok_frame ec _ _ st1 st2
-    (cspaceDeleteSlot_preserves_objects_invExt st st1 addr hObjInv hD) hF).1).1
-
-/-- `.cspaceRevoke`: the finalising revocation preserves the bundle — the
-revocation's own theorem at the state it reaches, then the teardown's. -/
-theorem cspaceRevokeCdtFinalising_preserves_ipcInvariantFull
-    (ec : Concurrency.CoreId) (addr : CSpaceAddr) (st st' : SystemState)
-    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
-    (hStep : cspaceRevokeCdtFinalising ec addr st = .ok ((), st')) :
-    ipcInvariantFull st' := by
-  refine (cspaceRevokeCdtFinalising_closed (fun s => ipcInvariantFull s ∧ s.objects.invExt)
-    (fun c s s' hQ hD => ⟨cspaceDeleteSlotFinalising_preserves_ipcInvariantFull ec c s s'
-      hQ.2 hQ.1 hD, cspaceDeleteSlotFinalising_preserves_objects_invExt ec c s s' hQ.2 hD⟩)
-    ⟨hInv, hObjInv⟩ hStep).1
+  exact (retireFinalObject_frame ec _ _ _ (finaliseFinalObject_frame _ st2
+    (finaliseDestroyedCapabilities_ok_frame ec _ _ st1 st2
+      (cspaceDeleteSlot_preserves_objects_invExt st st1 addr hObjInv hD) hF).1).invExt).1
 
 /-- **WS-ZA ZA5.4 part 14: every object a carve makes is pristine** — a thread
 unblocked, unqueued, unbound and with empty space slots, an endpoint with both
@@ -4655,7 +4631,7 @@ private theorem resumeReadyMidState_preserves_ipcInvariantFull
 /-- Enqueueing an already-`.ready` thread rewrites its TCB to itself and grows
 one run queue — the bundle transports, with `passiveServerIdle` covered by the
 queue-growth direction. -/
-private theorem enqueueRunnableOnCore_preserves_ipcInvariantFull
+theorem enqueueRunnableOnCore_preserves_ipcInvariantFull
     (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
     (hObjInv : st.objects.invExt)
     (hReady : ∀ tcb : TCB, st.getTcb? tid = some tcb → tcb.ipcState = .ready)

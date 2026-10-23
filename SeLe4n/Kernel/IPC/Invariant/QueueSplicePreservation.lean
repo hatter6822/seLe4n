@@ -2391,6 +2391,57 @@ theorem endpointQueueRemoveDual_establishes_ipcInvariantFullExceptMembership
 -- the twenty-conjunct carriage and its two live consumers stayed at the weaker
 -- `ipcInvariant`, which is the residual this section removes.
 
+/-- **A step that keeps every budget-carrying thread's budget and blocking
+state, and every scheduling context, keeps `blockedThreadTimeoutConsistent`.**
+The conjunct reads only those: a thread with a budget names a context that
+exists, and is blocked. -/
+theorem blockedThreadTimeoutConsistent_of_rewrites {st st' : SystemState}
+    (hPre : blockedThreadTimeoutConsistent st)
+    (hTcb : ∀ (t : SeLe4n.ThreadId) (tcb' : TCB) (scId : SeLe4n.SchedContextId),
+      st'.objects[t.toObjId]? = some (.tcb tcb') → tcb'.timeoutBudget = some scId →
+      ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb) ∧ tcb.timeoutBudget = some scId ∧
+        tcb.ipcState = tcb'.ipcState)
+    (hSc : ∀ (o : SeLe4n.ObjId) (sc : SeLe4n.Kernel.SchedContext),
+      st.objects[o]? = some (.schedContext sc) →
+      ∃ sc', st'.objects[o]? = some (.schedContext sc')) :
+    blockedThreadTimeoutConsistent st' := by
+  intro t tcb' scId hT hB
+  obtain ⟨tcb, h0, hB0, hI⟩ := hTcb t tcb' scId hT hB
+  obtain ⟨⟨sc, hSc0⟩, hBlk⟩ := hPre t tcb scId h0 hB0
+  exact ⟨hSc _ sc hSc0, hI ▸ hBlk⟩
+
+/-- **The receive-completing store keeps `blockedThreadTimeoutConsistent`** when
+the thread it makes `.ready` carries no budget: every other thread is the
+pre-state's, and the store writes a thread, not a scheduling context. -/
+theorem storeTcbReceiveComplete_preserves_blockedThreadTimeoutConsistent
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (msg : Option IpcMessage)
+    (hObjInv : st.objects.invExt)
+    (hBudget : ∀ (tcb : TCB), st.objects[tid.toObjId]? = some (.tcb tcb) →
+      tcb.timeoutBudget = none)
+    (hPre : blockedThreadTimeoutConsistent st)
+    (hStep : storeTcbReceiveComplete st tid msg = .ok st') :
+    blockedThreadTimeoutConsistent st' := by
+  obtain ⟨tcbT, hTcbT⟩ : ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) := by
+    unfold storeTcbReceiveComplete modifyTcb at hStep
+    cases hL : lookupTcb st tid with
+    | none => simp [hL] at hStep
+    | some tcb => exact ⟨tcb, lookupTcb_some_objects st tid tcb hL⟩
+  refine blockedThreadTimeoutConsistent_of_rewrites hPre ?_ ?_
+  · intro t tcb' scId hT hB
+    by_cases hk : t.toObjId = tid.toObjId
+    · obtain ⟨tcb, h0, hb⟩ :=
+        storeTcbReceiveComplete_timeoutBudgetFrame st st' tid msg hObjInv hStep t tcb' hT
+      rw [hk] at h0
+      rw [hBudget tcb h0] at hb
+      rw [← hb] at hB
+      cases hB
+    · rw [storeTcbReceiveComplete_preserves_objects_ne st st' tid msg _ hk hObjInv hStep] at hT
+      exact ⟨tcb', hT, hB, rfl⟩
+  · intro o sc hO
+    have hk : o ≠ tid.toObjId := by intro h; rw [h, hTcbT] at hO; cases hO
+    rw [← storeTcbReceiveComplete_preserves_objects_ne st st' tid msg _ hk hObjInv hStep] at hO
+    exact ⟨sc, hO⟩
+
 /-- **WS-RR RR7.22 (residual)**: the receive-completing store turns the splice's
 relaxed bundle back into the full one.
 
@@ -2404,11 +2455,11 @@ composites by the splice that produced it.
 
 * `hMsgBounded` — the delivered message is bounded, so the store cannot install
   an oversized `pendingMessage`.
-* `hAllNone` is `allTimeoutBudgetsNone`, the discipline every IPC bundle here
-  carries.  A store that unblocks a thread cannot preserve the weaker,
-  seL4-faithful `blockedThreadTimeoutConsistent` on its own — the conclusion's
-  "is blocked" clause is exactly what it falsifies — so the family establishes
-  the conjunct from the strong form instead, uniformly.
+* `hNoBudget` — `tid` carries no timeout budget.  A store that unblocks a thread
+  with a budget would falsify `blockedThreadTimeoutConsistent`'s "is blocked"
+  clause; every other thread keeps its budget and its state, so the conjunct
+  carries from the pre-state (`storeTcbReceiveComplete_preserves_blockedThreadTimeoutConsistent`).
+  A caller holding `allTimeoutBudgetsNone` discharges it at `tid`.
 * `hNotReply` — `tid` was not `.blockedOnReply`.  A donation *owner* must be
   blocked on reply (`donationOwnerValid`), so making an owner `.ready` would
   break that conjunct.
@@ -2431,7 +2482,8 @@ theorem storeTcbReceiveComplete_closes_exceptMembership
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (msg : Option IpcMessage)
     (hObjInv : st.objects.invExt)
     (hMsgBounded : ∀ m, msg = some m → m.bounded)
-    (hAllNone : allTimeoutBudgetsNone st)
+    (hNoBudget : ∀ (tcb : TCB), st.objects[tid.toObjId]? = some (.tcb tcb) →
+      tcb.timeoutBudget = none)
     (hNotReply : ∀ (tcb : TCB), st.objects[tid.toObjId]? = some (.tcb tcb) →
       ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt)
     (hNotHead : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
@@ -2480,8 +2532,8 @@ theorem storeTcbReceiveComplete_closes_exceptMembership
       hStep,
     storeTcbReceiveComplete_preserves_queueHeadBlockedConsistent st st' tid msg hQHB hObjInv
       hStep hNotHead,
-    blockedThreadTimeoutConsistent_of_frame
-      (storeTcbReceiveComplete_timeoutBudgetFrame st st' tid msg hObjInv hStep) hAllNone,
+    storeTcbReceiveComplete_preserves_blockedThreadTimeoutConsistent st st' tid msg hObjInv
+      hNoBudget hTimeout hStep,
     donationOwnerValid_implies_donationChainAcyclic st' hOwnerValid',
     hOwnerValid',
     passiveServerIdle_of_frame

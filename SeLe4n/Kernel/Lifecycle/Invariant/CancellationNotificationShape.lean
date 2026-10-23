@@ -887,10 +887,12 @@ theorem purgedAndRestored_ipcStateQueueMembershipConsistent
 /-- **WS-RR RR7.22 (residual) — the notification arm's keystone**: the
 purge-then-restore composite preserves the whole of `ipcInvariantFull`.
 
-Two hypotheses beyond the bundle.  `hAllBudgetsNone` is the same one the endpoint
-arm takes, and for the same reason: the conjunct says a budget-carrying thread is
-blocked, and this operation makes one `.ready`.  `hOff` is this arm's one
-queue-coherence fact.  `hNotReply` — which the reply-linkage and donation-owner
+One hypothesis beyond the bundle, `hOff`, this arm's one queue-coherence fact.
+The operation makes a thread `.ready`, which would falsify
+`blockedThreadTimeoutConsistent` for a thread with a timeout budget; a thread
+blocked on a notification carries none (the conjunct's own blocked states omit
+`.blockedOnNotification`), so the conjunct carries from the pre-state
+(`blockedThreadTimeoutConsistent_of_rewrites`) with no budget premise.  `hNotReply` — which the reply-linkage and donation-owner
 frames need — is *derived* from the blocking state, not taken. -/
 theorem purgedAndRestored_preserves_ipcInvariantFull
     (st : SystemState) (v : SeLe4n.ThreadId)
@@ -898,10 +900,9 @@ theorem purgedAndRestored_preserves_ipcInvariantFull
     (hInv : st.objects.invExt) (hLookup : lookupTcb st v = some tcbV)
     (hBlocked : tcbV.ipcState = .blockedOnNotification nId)
     (hBundle : ipcInvariantFull st)
-    (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hOff : sweptThreadOffQueueChains st v) :
     ipcInvariantFull (purgedAndRestored st v frame) := by
-  obtain ⟨hIpc, hDual, hBnd, hBadge, hBlkMsg, hNoDup, hMem, hQNB, hQHB, _hTimeout,
+  obtain ⟨hIpc, hDual, hBnd, hBadge, hBlkMsg, hNoDup, hMem, hQNB, hQHB, hTimeout,
     hDonAcyc, hDonOwner, hPassive, hDonBudget, hBlkReply, hReplyLink, hStash,
     hDonUnique, hTailBlk, hTgt⟩ := hBundle
   have hLink : tcbQueueLinkIntegrity st := hDual.2.1
@@ -910,6 +911,28 @@ theorem purgedAndRestored_preserves_ipcInvariantFull
     rw [hBlocked] at hEq
     cases hEq
   have hBind := purgedAndRestored_sameSchedContextBindings st v frame tcbV hInv hLookup
+  -- The victim carries no budget: it is blocked on a notification, a state the
+  -- timeout conjunct does not admit a budget in.
+  have hVBudget : tcbV.timeoutBudget = none := by
+    cases hb : tcbV.timeoutBudget with
+    | none => rfl
+    | some sc =>
+      have hBlk := (hTimeout v tcbV sc (lookupTcb_some_objects st v tcbV hLookup) hb).2
+      simp [hBlocked] at hBlk
+  have hTimeout' : blockedThreadTimeoutConsistent (purgedAndRestored st v frame) := by
+    refine blockedThreadTimeoutConsistent_of_rewrites hTimeout ?_ ?_
+    · intro t tcb' scId hT hB
+      rcases purgedAndRestored_tcb_pullback st v frame tcbV hInv hLookup t.toObjId tcb' hT with
+        ⟨_, t0, h0, _, _, rfl⟩ | ⟨_, t1, ⟨np, nn, rfl⟩, rfl⟩
+      · exact ⟨t0, h0, hB, rfl⟩
+      · have e : tcbV.timeoutBudget =
+            (restoredTcb { tcbV with ntfnPrevCode := np, ntfnNextCode := nn } frame).timeoutBudget := by
+          rw [restoredTcb_eq]
+        rw [← e, hVBudget] at hB
+        cases hB
+    · intro o sc hO
+      exact ⟨sc, (purgedAndRestored_nonNotification st v frame tcbV hInv hLookup o _
+        (by simp) (by simp)).mpr hO⟩
   exact ⟨purgedAndRestored_ipcInvariant st v frame tcbV hInv hLookup hIpc,
     purgedAndRestored_dualQueueSystemInvariant st v frame tcbV hInv hLookup hOff
       (fun k e hE =>
@@ -924,8 +947,7 @@ theorem purgedAndRestored_preserves_ipcInvariantFull
     purgedAndRestored_queueNextBlockingConsistent st v frame tcbV hInv hLookup hLink hOff hQNB,
     purgedAndRestored_queueHeadBlockedConsistent st v frame tcbV nId hInv hLookup hBlocked
       hQHB hTailBlk,
-    blockedThreadTimeoutConsistent_of_frame
-      (purgedAndRestored_timeoutBudgetFrame st v frame tcbV hInv hLookup) hAllBudgetsNone,
+    hTimeout',
     purgedAndRestored_donationChainAcyclic st v frame tcbV hInv hLookup hDonAcyc,
     donationOwnerValid_of_frames hBind
       (purgedAndRestored_donationOwnerFrame st v frame tcbV hInv hLookup hNotReply) hDonOwner,
@@ -980,11 +1002,10 @@ theorem cancelIpcBlocking_notificationArm_preserves_ipcInvariantFull
     (hInv : st.objects.invExt) (hLookup : lookupTcb st v = some tcbV)
     (hBlocked : tcbV.ipcState = .blockedOnNotification nId)
     (hBundle : ipcInvariantFull st)
-    (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hOff : sweptThreadOffQueueChains st v) :
     ipcInvariantFull (Lifecycle.Suspend.cancelIpcBlocking st v tcbV) := by
   rw [cancelIpcBlocking_notification_arm_eq st v tcbV nId hBlocked]
   exact purgedAndRestored_preserves_ipcInvariantFull st v _ tcbV nId hInv hLookup hBlocked
-    hBundle hAllBudgetsNone hOff
+    hBundle hOff
 
 end SeLe4n.Kernel

@@ -4678,14 +4678,13 @@ private def runCoreSetAlgebraChecks : IO Unit := do
   IO.println "--- §5.3 the set-of-cores confinement algebra ---"
   assertBool "thirty-four cross-core transitions are covered"
     (decide (SeLe4n.Kernel.CrossCoreTransition.all.length = 34))
-  assertBool "twenty-two of the thirty-four can name a core other than the executing one"
+  assertBool "twenty-four of the thirty-four can name a core other than the executing one"
     (decide ((SeLe4n.Kernel.CrossCoreTransition.all.filter
-      SeLe4n.Kernel.crossCoreTransitionWritesRemote).length = 22))
-  assertBool "…and the wait, the two VSpace arms, the untyped reset, the carve, the space change, the two finalising destroyers, the declassification, the two audit readers and the yield are the twelve that cannot"
+      SeLe4n.Kernel.crossCoreTransitionWritesRemote).length = 24))
+  assertBool "…and the wait, the two VSpace arms, the untyped reset, the carve, the space change, the declassification, the two audit readers and the yield are the ten that cannot"
     ([SeLe4n.Kernel.CrossCoreTransition.notificationWait,
       .vspaceMapDispatch, .vspaceUnmapDispatch, .untypedResetDispatch,
-      .untypedRetypeDispatch, .tcbSetSpaceDispatch,
-      .cspaceDeleteDispatch, .cspaceRevokeDispatch, .declassifyDispatch,
+      .untypedRetypeDispatch, .tcbSetSpaceDispatch, .declassifyDispatch,
       .auditReadDispatch, .auditDrainDispatch, .yieldDispatch].all (fun t =>
         decide (SeLe4n.Kernel.crossCoreTransitionWritesRemote t = false)))
   assertBool "twenty-seven of the thirty-four are the arms the live syscall dispatch reaches"
@@ -4701,15 +4700,15 @@ private def runCoreSetAlgebraChecks : IO Unit := do
                    = some SeLe4n.Model.SyscallId.tcbSetSpace)
       && !SeLe4n.Kernel.crossCoreTransitionWritesRemote .tcbSetSpaceDispatch)
   -- WS-BP BP7.1 (v0.36.7): the delete and the CDT revocation are live arms,
-  -- delegation-backed, naming their own syscalls, and writing no core — each is
-  -- the destroying step followed by the unmap of the mappings the destroyed
-  -- frame capabilities recorded, whose shootdown writes no scheduler slot.
-  assertBool "the two finalising destroyers are live, delegation-backed arms that write no core"
+  -- delegation-backed and naming their own syscalls.  WS-ZA ZA5.4 part 23: they
+  -- write remote cores — the finalisation of a final capability's endpoint or
+  -- notification wakes each waiter it cancels on the waiter's own core.
+  assertBool "the two finalising destroyers are live, delegation-backed arms that write remote cores"
     ([SeLe4n.Kernel.CrossCoreTransition.cspaceDeleteDispatch,
       .cspaceRevokeDispatch].all (fun t =>
         SeLe4n.Kernel.crossCoreTransitionIsLiveArm t
           && (SeLe4n.Kernel.crossCoreLiveArmEvidence t).isDelegationBacked
-          && !SeLe4n.Kernel.crossCoreTransitionWritesRemote t)
+          && SeLe4n.Kernel.crossCoreTransitionWritesRemote t)
       && decide (SeLe4n.Kernel.crossCoreLiveArmSyscall .cspaceDeleteDispatch
                    = some SeLe4n.Model.SyscallId.cspaceDelete)
       && decide (SeLe4n.Kernel.crossCoreLiveArmSyscall .cspaceRevokeDispatch

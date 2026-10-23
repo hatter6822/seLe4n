@@ -12,6 +12,7 @@ import SeLe4n.Model.CapabilityFinality
 import SeLe4n.Kernel.Architecture.PageTeardownClears
 import SeLe4n.Kernel.Architecture.PageTableInstall
 import SeLe4n.Kernel.Capability.FinalRetire
+import SeLe4n.Kernel.IPC.Invariant.CancelAllFrame
 
 /-!
 # Frame finalisation — destroying a frame capability unmaps what it mapped
@@ -33,8 +34,10 @@ does not carry it; and the two destroying arms are composites here:
 
 * `cspaceDeleteSlotFinalising` — the delete, then the page the destroyed
   capability's record names (`slotMappedPages`, read from the slot the delete
-  destroys) removed, then the object it was the final capability to retired
-  (`retireFinalObject`);
+  destroys) removed, then the object it was the final capability to finalised
+  and retired (`retireFinalisedObject`: an endpoint's or a notification's
+  waiters cancelled and a notification unbound, `finaliseFinalObject`, then
+  `retireFinalObject`);
 * `cspaceRevokeCdtFinalising` — seL4's `cteRevoke`: the source's first child
   deleted by `cspaceDeleteSlotFinalising` until it has none.
 
@@ -103,6 +106,14 @@ that records no child retires it after the teardown (`retireFinalObject`,
 before the slot is emptied (`slotRetireTarget`, `slotRetireRecorder`).  The
 delete fast path admits only a delete that retires nothing
 (`capabilityRetiresNothing`), and every revoke retires through its deletes.
+
+**Finalise before the retire (`v0.36.134`).**  For an endpoint seL4's
+`finaliseCap` runs `cancelAllIPC`, and for a notification
+`unbindMaybeNotification` then `cancelAllSignals`; the delete runs the same
+(`finaliseFinalObject`, `IPC/Operations/CancelAll.lean`) before the retire, so a
+busy endpoint or a busy or bound notification is emptied and then retired.  The
+finalisation writes threads, endpoints and notifications only, keeping their
+kinds and slots (`FinaliseFrame`, `IPC/Invariant/CancelAllFrame.lean`).
 -/
 
 namespace SeLe4n.Kernel
@@ -604,7 +615,8 @@ theorem finaliseDestroyedCapabilities_ok_wellFormed (ec : Concurrency.CoreId)
 
 /-- The delete, then the teardown of what its capability named (`named`,
 `pages`), then the retire of the object it was the final capability to
-(`target`, `recorder`, `retireFinalObject`), all read before the delete by
+(`target`, `recorder`, `retireFinalisedObject`: the object finalised, then
+retired), all read before the delete by
 `cspaceDeleteSlotFinalising`.  Kept out of line so those reads are made before
 the delete writes: the state from before the delete is then dead when the
 delete runs, and its stores are made in place. -/
@@ -617,7 +629,7 @@ delete runs, and its stores are made in place. -/
     | .ok ((), st1) =>
       match finaliseDestroyedCapabilities executingCore named pages st1 with
       | .error e => .error e
-      | .ok ((), st2) => .ok ((), retireFinalObject executingCore target recorder st2)
+      | .ok ((), st2) => .ok ((), retireFinalisedObject executingCore target recorder st2)
 
 /-- **`.cspaceDelete`: delete the capability in `addr`, then remove the mapping it
 records, then retire the object it was the last capability to.**  The page and
@@ -642,7 +654,7 @@ theorem cspaceDeleteSlotFinalising_ok (ec : Concurrency.CoreId) (addr : CSpaceAd
     ∃ st1 st2, cspaceDeleteSlot addr st = .ok ((), st1) ∧
       finaliseDestroyedCapabilities ec (slotPageTables st addr) (slotMappedPages st addr)
         st1 = .ok ((), st2) ∧
-      st' = retireFinalObject ec (slotRetireTarget st addr.cnode addr.slot)
+      st' = retireFinalisedObject ec (slotRetireTarget st addr.cnode addr.slot)
         (slotRetireRecorder st addr.cnode addr.slot) st2 := by
   unfold cspaceDeleteSlotFinalising cspaceDeleteThenFinalise at h
   cases hD : cspaceDeleteSlot addr st with
@@ -717,7 +729,7 @@ theorem cspaceDeleteSlotFinalising_ok_unmapped (ec : Concurrency.CoreId) (addr :
   have hW1 := cspaceDeleteSlot_preserves_teardownWellFormed hW hD
   have hW2 := finaliseDestroyedCapabilities_ok_wellFormed ec _ _ _ st2 hW1 hF
   refine mappedPageLive_false_of_shrink hW2
-    (retireFinalObject_preserves_teardownWellFormed ec _ _ st2 hW2).2
+    (retireFinalisedObject_preserves_teardownWellFormed ec _ _ st2 hW2).2
     (finaliseDestroyedCapabilities_ok_unmapped ec _ _ _ st2 hW1 hF p ?_)
   simp [slotMappedPages, hCap, hP]
 
@@ -726,7 +738,7 @@ theorem cspaceDeleteSlotFinalising_preserves_teardownWellFormed (ec : Concurrenc
     {addr : CSpaceAddr} {st st' : SystemState} (hW : teardownWellFormed st)
     (h : cspaceDeleteSlotFinalising ec addr st = .ok ((), st')) : teardownWellFormed st' := by
   obtain ⟨_, st2, hD, hF, rfl⟩ := cspaceDeleteSlotFinalising_ok ec addr st st' h
-  exact (retireFinalObject_preserves_teardownWellFormed ec _ _ st2
+  exact (retireFinalisedObject_preserves_teardownWellFormed ec _ _ st2
     (finaliseDestroyedCapabilities_ok_wellFormed ec _ _ _ st2
       (cspaceDeleteSlot_preserves_teardownWellFormed hW hD) hF)).1
 
@@ -831,7 +843,7 @@ theorem cspaceDeleteSlotFinalising_of_admitted {ec : Concurrency.CoreId} {addr :
     have hDel : cspaceDeleteSlot addr st = .ok ((), cspaceDeletePerform addr st) := by
       unfold cspaceDeleteSlot cspaceDeletePerform
       rw [cspaceDeleteSlotCore_eq_slotCleared hO hH]
-    simp only [hDel, finaliseDestroyedCapabilities_nil, retireFinalObject_zero]
+    simp only [hDel, finaliseDestroyedCapabilities_nil, retireFinalisedObject_zero]
 
 /-- WS-ZA ZA5.3 part 7: **a finalising delete's one check**, read before any
 write: the address names an object that holds slots, a CNode or a thread.
@@ -865,7 +877,7 @@ the lists. -/
   let pages := slotMappedPages st addr
   let target := slotRetireTarget st cnode slot
   let recorder := recorderFor st target cnode slot
-  retireFinalObject executingCore target recorder
+  retireFinalisedObject executingCore target recorder
     (finaliseDestroyedCapabilitiesState executingCore named pages (cspaceDeletePerform addr st))
 
 /-- `cspaceDeletePerform` on slot `slot` of `cnode`: the dispatcher hands the
@@ -879,7 +891,7 @@ record's words: the capability's mapping record, its frame's base and what the
 delete retires are read before the delete, then the slot is emptied, then the
 one page is unmapped if the capability recorded one and it is still live
 (`mappedPageLiveWords`), then the frame is retired if the capability was its
-last (`retireFinalObject`).  A frame names no page table, so the table pass has
+last (`retireFinalisedObject`, whose finalisation does nothing to a frame).  A frame names no page table, so the table pass has
 nothing to do and no list, page record or slot address is built.  Any other
 capability takes `cspaceDeleteTeardownAt` (`cspaceDeleteTeardownAt_eq_frame`). -/
 @[noinline] def cspaceDeleteTeardownAtFrame (executingCore : Concurrency.CoreId)
@@ -893,7 +905,7 @@ capability takes `cspaceDeleteTeardownAt` (`cspaceDeleteTeardownAt_eq_frame`). -
         let target := slotRetireTarget st cnode slot
         let recorder := recorderFor st target cnode slot
         let st1 := cspaceDeletePerformAt cnode slot st
-        retireFinalObject executingCore target recorder
+        retireFinalisedObject executingCore target recorder
           (match cap.mapping with
            | some m =>
              if mappedPageLiveWords st1 m.asid m.vaddr f.base m.epoch then
@@ -906,15 +918,15 @@ capability takes `cspaceDeleteTeardownAt` (`cspaceDeleteTeardownAt_eq_frame`). -
         else
           let target := slotRetireTarget st cnode slot
           let recorder := recorderFor st target cnode slot
-          retireFinalObject executingCore target recorder (cspaceDeletePerformAt cnode slot st)
+          retireFinalisedObject executingCore target recorder (cspaceDeletePerformAt cnode slot st)
     | _ =>
       let target := slotRetireTarget st cnode slot
       let recorder := recorderFor st target cnode slot
-      retireFinalObject executingCore target recorder (cspaceDeletePerformAt cnode slot st)
+      retireFinalisedObject executingCore target recorder (cspaceDeletePerformAt cnode slot st)
   | none =>
     let target := slotRetireTarget st cnode slot
     let recorder := recorderFor st target cnode slot
-    retireFinalObject executingCore target recorder (cspaceDeletePerformAt cnode slot st)
+    retireFinalisedObject executingCore target recorder (cspaceDeletePerformAt cnode slot st)
 
 /-- A teardown of nothing is the identity. -/
 theorem finaliseDestroyedCapabilitiesState_nil (ec : Concurrency.CoreId) (st : SystemState) :
@@ -930,7 +942,7 @@ theorem cspaceDeleteTeardownAt_of_nothing (ec : Concurrency.CoreId) (cnode : SeL
     (hNamed : slotPageTables st ⟨cnode, slot⟩ = [])
     (hPages : slotMappedPages st ⟨cnode, slot⟩ = []) :
     cspaceDeleteTeardownAt ec cnode slot st =
-      retireFinalObject ec (slotRetireTarget st cnode slot)
+      retireFinalisedObject ec (slotRetireTarget st cnode slot)
         (recorderFor st (slotRetireTarget st cnode slot) cnode slot)
         (cspaceDeletePerformAt cnode slot st) := by
   unfold cspaceDeleteTeardownAt
@@ -1009,7 +1021,8 @@ four derivation links before the delete), the slot is emptied and the table is
 taken out of its root only if it is still installed there after the delete
 (`pageTablesOrphaned`); a capability that is not final, or a table installed
 nowhere, leaves nothing to finalise.  Then the table is retired if the
-capability was its last (`retireFinalObject`).  No list or slot address is
+capability was its last (`retireFinalisedObject`, whose finalisation does nothing
+to a page table).  No list or slot address is
 built.  Any other capability takes `cspaceDeleteTeardownAtFrame`
 (`cspaceDeleteTeardownAt_eq_table`). -/
 @[noinline] def cspaceDeleteTeardownAtTable (executingCore : Concurrency.CoreId)
@@ -1022,7 +1035,7 @@ built.  Any other capability takes `cspaceDeleteTeardownAtFrame`
       | some _ =>
         let target := slotRetireTarget st cnode slot
         let recorder := recorderFor st target cnode slot
-        retireFinalObject executingCore target recorder
+        retireFinalisedObject executingCore target recorder
           (if st.capIsFinal cnode slot then
             let st1 := cspaceDeletePerformAt cnode slot st
             if Architecture.pageTableInstallLive st1 tableId then
@@ -1191,7 +1204,7 @@ theorem cspaceDeleteSlotFinalising_shrinks (ec : Concurrency.CoreId) {addr : CSp
   have hW1 := cspaceDeleteSlot_preserves_teardownWellFormed hW hD
   exact ((cspaceDeleteSlot_shrinks hW hD).trans
     (finaliseDestroyedCapabilities_shrinks ec _ _ st1 st2 hW1 hF)).trans
-    (retireFinalObject_preserves_teardownWellFormed ec _ _ st2
+    (retireFinalisedObject_preserves_teardownWellFormed ec _ _ st2
       (finaliseDestroyedCapabilities_ok_wellFormed ec _ _ _ st2 hW1 hF)).2
 
 /-- **A run of finalising deletes**, one after another: what seL4's `cteRevoke`

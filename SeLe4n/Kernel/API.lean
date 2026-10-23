@@ -14,6 +14,7 @@ import SeLe4n.Kernel.Capability.FrameFinalise
 import SeLe4n.Kernel.IPC.DualQueue
 import SeLe4n.Kernel.IPC.Invariant
 import SeLe4n.Kernel.IPC.Invariant.DonationPreservation
+import SeLe4n.Kernel.IPC.Invariant.CancelAllPreservation
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCallDispatch
 import SeLe4n.Kernel.IPC.CrossCore.EndpointSend
 import SeLe4n.Kernel.IPC.CrossCore.EndpointSendInvariant

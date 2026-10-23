@@ -291,7 +291,7 @@ theorem notificationSignalBoundOnCore_preserves_ipcInvariantFull
               cases hm
               unfold IpcMessage.bounded IpcMessage.empty maxMessageRegisters
               simp [Array.size])
-            hAllNone1 hNotReply1 hNotHead1 hNotTail1 hNoIncoming1
+            (fun tcbX hX => hAllNone1 t tcbX hX) hNotReply1 hNotHead1 hNotTail1 hNoIncoming1
             ⟨hIpc1, hDual1, hBounded1, hBadge1, hPend1, hNoDup1, hMem1, hQNB1, hQHB1,
               hTimeout1, hAcyc1, hOwner1, hPsi1, hBudget1, hRTgt1, hRLink1, hStash1, hUniq1,
               hQTB1, hQNT1⟩ hStore
