@@ -1,3 +1,102 @@
+## v0.36.133 — WS-ZA ZA5.4 part 22: retire quiescent passive kinds; the space-slot replace finalises
+
+A delete or revoke that destroys the final capability to an endpoint, a
+notification, a reply or a CNode now retires that object when seL4's
+`finaliseCap` would have nothing to cancel and nothing names the object
+outside a slot.  A thread's space-slot replace (`copyThreadSpaces`, seL4's
+`invokeTCB_ThreadControl`, which runs `cteDelete` on the TCB's CTable and
+VTable slots) retires what each slot's old capability took with it.  **A
+kernel object that is not quiescent, or is named outside a slot, still
+outlives its last capability**: rows 23–26 of
+[`UNTYPED_RESET_PLAN.md`](docs/planning/UNTYPED_RESET_PLAN.md) close that.
+This is part 22 of the seL4 untyped reset.
+
+### Changes
+
+- **The plan's rows are split** (`docs/planning/UNTYPED_RESET_PLAN.md`).
+  - Row 22 is this part.
+  - Row 23: endpoint and notification cancel-all, and notification unbind.
+  - Row 24: TCB and scheduling-context finalise (wiring
+    `lifecyclePreRetypeCleanup`, closing its debt row).
+  - Row 25: a busy reply or scheduling context.
+  - Row 26: the CNode zombie loop and the TCB space-slot deletes, and lifting
+    part 21's untyped-children restriction.
+  - The reset's rewind (was row 23) is row 27; every citation is renumbered.
+- **What a final delete retires of a passive kind**
+  (`Capability/FinalRetire.lean`).
+  - `passiveKindAt`: an endpoint, notification, reply or CNode, read off the
+    object-type table.
+  - `passiveObjectQuiescent`: an endpoint's two queues empty, a notification
+    with no waiter and no bound thread, a reply with no caller and no stack
+    link, a CNode whose every slot is empty.
+  - `storeNamesNone` (`objectNamesById`), `registryNamesNone`,
+    `servicesNameNone`, `irqHandlersNameNone`: nothing names it by id.
+  - `passiveObjectRetirable` and `finalRetireAdmitted`, read on the
+    pre-retire state; a passive object that fails is kept.
+  - `retirePassiveObject`: the erase, through the carved erase's compiled
+    primitives (`withObjectErased` and its index and type companions); its
+    record form is `retirePassiveObject_eq`.
+  - `retireFinalObject` erases a passive object first, then runs
+    `retireRecordedObject` (unrecord, carved erase, a root's ASID round).
+  - Every check precedes every write, the retire never refuses, and no delete
+    is refused because of it.
+- **The space-slot replace finalises** (`Lifecycle/Operations/SetSpace.lean`).
+  - `threadSlotSet`: the slot copy, then `retireFinalObject` with the target
+    and recorder read before the copy.  `copyThreadSpacesPerform` nests two.
+- **A delete with nothing to tear down builds nothing**
+  (`Capability/FrameFinalise.lean`).  The compiled frame teardown retires a
+  capability that names no page table and records no page directly, without
+  the slot's address record or the teardown lists
+  (`cspaceDeleteTeardownAt_of_nothing`, used by
+  `cspaceDeleteTeardownAt_eq_frame`).  The general teardown cost each passive
+  delete 1 cell.
+- **Theorems.**
+  - Capability bundle: `threadSlotSet_preserves_capabilityInvariantBundle`,
+    `copyThreadSpaces_preserves_capabilityInvariantBundle`.
+  - IPC: `eraseWrite_preserves_ipcInvariantFull`,
+    `retireFinalObject_preserves_ipcInvariantFull`,
+    `threadSlotSet_preserves_ipcInvariantFull`,
+    `copyThreadSpaces_preserves_ipcInvariantFull`.
+  - Reachable state: `retireFinalObject_preserves_ipcReachable`, through
+    `retireFinalObject_preserves_notificationWaiterConsistent`,
+    `retireFinalObject_preserves_donationChainWellFormed` and
+    `retireFinalObject_replyViews`, so no boost or reply link survives a
+    retire.  `notificationWaiterConsistent_frame` now asks only that a
+    notification some blocked thread names be kept.
+  - Frames: `retireFinalObject_passive_kept`,
+    `retireFinalObject_kept_of_unretirable`, `retireFinalObject_schedContext`,
+    `retireFinalObject_back`, `retireFinalObject_objects_of_excluded`,
+    `retireFinalObject_untypedRecordsChild`, `retireFinalObject_tables`,
+    `RunQueueStage.of_retireTouched`, `capabilityKeyFrame_of_retireTouched`.
+  - Information flow: `retireFinalObject_preserves_projection`,
+    `threadSlotSet_preserves_projection`, and
+    `copyThreadSpaces_preserves_projection`, which now asks that the two space
+    slots name only objects, and untypeds recording them, the observer cannot
+    see.
+- **Tests.** `tests/VSpaceCapabilityBindingSuite.lean` §5m: each passive kind
+  carved, its non-final copy deleted (kept), its last capability deleted
+  (retired from the store and the untyped's list, its id carving again); a
+  notification bound to a thread kept and still recorded; the space-slot
+  replace retiring the old root with its ASID, and keeping a root another slot
+  still names.  A hand-built capability with no
+  derivation links reads as final, so the set-space scenarios now place their
+  capabilities through the set-space itself.
+- **Exerciser** (`rust/sele4n-hal/src/smp_exercisers.rs`): each passive kind
+  carved then deleted (`untyped-retype-endpoint` / `endpoint-delete`, and the
+  same for notification, reply and CNode), before `untyped-reset`.
+- **Debt.** `docs/REGISTERED_DEBT.md` §C: the names-by-id check scans the
+  object table once per passive final delete.
+
+### Validation
+
+- `./scripts/test_lean_aarch64_archive.sh` passes.
+- `endpoint-delete`, `notification-delete`, `reply-delete` and `cnode-delete`
+  read 0 at first call and steady state; `untyped-retype-endpoint` and
+  `untyped-retype-notification` read 9, `untyped-retype-reply` 12 and
+  `untyped-retype-cnode` 29, pinned there; `untyped-reset` reads 30 and every
+  other pin is unchanged
+  (`./scripts/test_qemu_heap_allocations_per_syscall.sh --lean-kernel`).
+
 ## v0.36.132 — WS-ZA ZA5.4 part 21: retire memory kinds on final delete
 
 A delete or revoke that destroys the final capability to a frame, a page

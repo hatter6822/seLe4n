@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.132` (`lakefile.toml`) |
+| **Package version** | `0.36.133` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 492,699 across 445 Lean files |
 | **Test LoC** | 86,326 across 70 Lean test suites |
@@ -4979,6 +4979,16 @@ preserved by each set (`threadSlotSet_preserves_capabilityInvariantBundle`,
 the thread, the objects its two space slots name, and the untypeds recording
 them are hidden from (`copyThreadSpaces_preserves_projection`, through
 `retireFinalObject_preserves_projection`).
+
+The retire keeps the reachable IPC state (`retireFinalObject_preserves_ipcReachable`):
+it keeps every thread and scheduling context, and erases no notification a
+blocked thread names and no reply a donation chain reads, so no priority boost
+or reply link survives a retired object.  A delete whose capability names no
+page table and records no page retires without building the slot's address or
+the teardown lists (`cspaceDeleteTeardownAt_of_nothing`), so each passive
+kind's delete allocates nothing (`endpoint-delete`, `notification-delete`,
+`reply-delete`, `cnode-delete` read 0; their carves read the object's own
+cells, 9, 9, 12 and 29).
 
 ### 8.6.1 Carve Refusal Order (`v0.36.125`)
 
