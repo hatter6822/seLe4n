@@ -376,7 +376,10 @@ theorem linkBootCapabilities_machine (config : PlatformConfig) (ist : Intermedia
 theorem linkBootCapabilities_bootLinkedShape (config : PlatformConfig) (ist : IntermediateState)
     (h : bootStartShape ist)
     (hListed : bootSlotsListed (bootCapabilitySlots config.initialObjects) ist.state)
-    (hLive : ∀ r o, SystemState.namesAt ist.state.slotCapAt r o → ist.state.objectPresent o) :
+    (hLive : ∀ r o, SystemState.namesAt ist.state.slotCapAt r o → ist.state.objectPresent o)
+    (hUnique : ∀ u r r', SystemState.untypedCapAt ist.state.slotCapAt ist.state.getUntyped? r u →
+      SystemState.untypedCapAt ist.state.slotCapAt ist.state.getUntyped? r' u → r = r')
+    (hUncarved : ∀ u U, ist.state.getUntyped? u = some U → U.children = []) :
     bootLinkedShape (linkBootCapabilities config ist) := by
   obtain ⟨hShape, ⟨hCdt, hF⟩, ⟨hA1, hA2⟩, hUnt, ⟨rq, re, rp, hSch⟩, hRun, hNodup, hQ⟩ := h
   have hInv₀ := ist.hAllTables.1.1
@@ -388,6 +391,18 @@ theorem linkBootCapabilities_bootLinkedShape (config : PlatformConfig) (ist : In
   obtain ⟨-, hL, hM, hD, hW, -, -, hEd, -, P, hP⟩ :=
     BootLinks.Sound.foldl hInv₀ (bootCapabilitySlots config.initialObjects) hStart
   have hA := linkBootCapabilities_agree config ist
+  have hUt : (linkBootCapabilities config ist).state.getUntyped? = ist.state.getUntyped? :=
+    hA.getUntyped?
+  -- an untyped capability of the linked state is one of the state it linked
+  have hBack : ∀ {r u}, SystemState.untypedCapAt (linkBootCapabilities config ist).state.slotCapAt
+      (linkBootCapabilities config ist).state.getUntyped? r u →
+      SystemState.untypedCapAt ist.state.slotCapAt ist.state.getUntyped? r u :=
+    fun {r _} ⟨c, hc, ht, hu⟩ => ⟨c, (hA.slotCapAt r).symm.trans hc, ht, hUt ▸ hu⟩
+  have hU : ∀ u p r, SystemState.untypedCapAt (linkBootCapabilities config ist).state.slotCapAt
+      (linkBootCapabilities config ist).state.getUntyped? p u →
+      SystemState.untypedCapAt (linkBootCapabilities config ist).state.slotCapAt
+      (linkBootCapabilities config ist).state.getUntyped? r u → p = r :=
+    fun u p r hp hr => hUnique u p r (hBack hp) (hBack hr)
   have hFl := linkBootCapabilities_fields config ist
   have hSch' := linkBootCapabilities_scheduler config ist
   have hVs : ∀ oid vs, (linkBootCapabilities config ist).state.objects[oid]? =
@@ -401,7 +416,12 @@ theorem linkBootCapabilities_bootLinkedShape (config : PlatformConfig) (ist : In
       (by rw [hSch']) hRun,
     ⟨by rw [hSch']; exact hNodup, fun tid hMem => ?_⟩,
     fun ref hRef => ?_, hW, hL, fun r hr => ?_, ⟨P, hP⟩, fun r o hN => ?_,
-    fun p c o hc hcN _ hpN => ?_⟩
+    fun p c o hc hcN _ hpN => ?_, fun u p r hp hr => .inl (hU u p r hp hr),
+    fun u p r hp hr hR => ?_, fun p c u U _ hc ht hu _ r hR hr => ?_,
+    fun u x hx => (SystemState.CarvedFrom.not_of_childless (fun U h => hUncarved u U
+      (hUt ▸ h)) hx).elim,
+    fun u U h => by rw [hUncarved u U (hUt ▸ h)]; simp,
+    fun u _ U _ h => by rw [hUncarved u U (hUt ▸ h)]; simp⟩
   · have e := (hA oid).map_withoutLinks
     rw [hO] at e
     cases h0 : ist.state.objects[oid]? with
@@ -437,6 +457,11 @@ theorem linkBootCapabilities_bootLinkedShape (config : PlatformConfig) (ist : In
     cases hc'
     exact absurd ⟨cp, by rw [hA.slotCapAt p]; exact hp,
       (Capability.namedObject_of_target hT).symm.trans hco⟩ hpN
+  · -- one slot names the untyped, and the tree is acyclic
+    cases hU u p r hp hr
+    exact absurd (CapDerivationTree.CdtChildReachable_implies_cdtReachable _ hR) (hW p)
+  · cases hU u p r ⟨c, hc, ht, by rw [hu]; exact Option.some_ne_none _⟩ hr
+    exact absurd (CapDerivationTree.CdtChildReachable_implies_cdtReachable _ hR) (hW p)
 
 
 /-! ### What the linking keeps of the threads -/
