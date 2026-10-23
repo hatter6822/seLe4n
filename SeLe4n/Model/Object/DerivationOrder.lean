@@ -499,5 +499,501 @@ theorem moveNode (h : TreeOrder cdt P) {old new : SlotRef} (hnew : ¬ cdt.mentio
       exact List.mem_map.mpr ⟨old, h.complete old hold, by simp [renameSlot]⟩
     · exact List.mem_map.mpr ⟨x, h.complete x hm, by simp [renameSlot, hxo]⟩
 end TreeOrder
+
+/-! ### Preorder neighbours (WS-ZA ZA5.4 part 20)
+
+What lies next to a slot in the preorder, read from the tree.  The slot after
+`u` is its first child, or, when it has none, its next sibling, or a slot
+outside the subtree of the parent it is the last child of (`succ_cases`).  The
+slot before `u` is its parent, when `u` is a first child, or its previous
+sibling or a slot below it, a sibling `u` does not lie below (`pred_cases`).
+Finality reads its four link words through these: seL4's `isFinalCapability`
+compares a capability with its two mapping-database neighbours. -/
+
+/-- **`b` lies strictly below `a`** in the forest whose children are `ch`. -/
+inductive Desc (ch : SlotRef → List SlotRef) : SlotRef → SlotRef → Prop
+  | child {a b : SlotRef} : b ∈ ch a → Desc ch a b
+  | trans {a m b : SlotRef} : Desc ch a m → b ∈ ch m → Desc ch a b
+
+/-- A descent from a child is a descent from its parent. -/
+theorem Desc.head {ch : SlotRef → List SlotRef} {a b c : SlotRef} (hb : b ∈ ch a)
+    (h : Desc ch b c) : Desc ch a c := by
+  induction h with
+  | child hc => exact .trans (.child hb) hc
+  | trans _ hc ih => exact .trans ih hc
+
+/-- A descent in the tree's forest is the tree's descent. -/
+theorem desc_childrenOf_iff (cdt : CapDerivationTree) (a b : SlotRef) :
+    Desc cdt.childrenOf a b ↔ CdtChildReachable cdt a b := by
+  constructor
+  · intro h
+    induction h with
+    | child h => exact .child h
+    | trans _ h ih => exact .trans ih h
+  · intro h
+    induction h with
+    | child h => exact .child h
+    | trans _ h ih => exact .trans ih h
+
+namespace ForestOrder
+
+variable {ch : SlotRef → List SlotRef}
+
+/-- A forest's preorder starts at its first top slot. -/
+theorem head_eq {L Q : List SlotRef} (h : ForestOrder ch L Q) : Q.head? = L.head? := by
+  cases h <;> rfl
+
+/-- An empty preorder lists an empty forest. -/
+theorem eq_nil_of_nil {L : List SlotRef} (h : ForestOrder ch L []) : L = [] := by
+  cases h; rfl
+
+/-- Every slot below a listed slot is listed. -/
+theorem desc_mem {L Q : List SlotRef} (h : ForestOrder ch L Q) {y v : SlotRef} (hy : y ∈ Q)
+    (hv : Desc ch y v) : v ∈ Q := by
+  induction hv with
+  | child hb => exact h.mem_of_child hy hb
+  | trans _ hb ih => exact h.mem_of_child ih hb
+
+/-- Every slot below `x` is in the preorder of `x`'s children. -/
+theorem desc_mem_top {x : SlotRef} {Q : List SlotRef} (h : ForestOrder ch (ch x) Q) {v : SlotRef}
+    (hv : Desc ch x v) : v ∈ Q := by
+  induction hv with
+  | child hb => exact h.mem_of_top hb
+  | trans _ hb ih => exact h.mem_of_child ih hb
+
+/-- A listed slot is a top slot or lies below one. -/
+theorem mem_top_or_desc {L Q : List SlotRef} (h : ForestOrder ch L Q) {w : SlotRef}
+    (hw : w ∈ Q) : w ∈ L ∨ ∃ l ∈ L, Desc ch l w := by
+  induction h with
+  | nil => cases hw
+  | @cons x S Q R hQ _ ihQ ihR =>
+    rcases List.mem_cons.mp hw with rfl | hw
+    · exact .inl (List.mem_cons_self ..)
+    · rcases List.mem_append.mp hw with hw | hw
+      · rcases ihQ hw with hw | ⟨l, hl, hd⟩
+        · exact .inr ⟨x, List.mem_cons_self .., .child hw⟩
+        · exact .inr ⟨x, List.mem_cons_self .., hd.head hl⟩
+      · rcases ihR hw with hw | ⟨l, hl, hd⟩
+        · exact .inl (List.mem_cons_of_mem _ hw)
+        · exact .inr ⟨l, List.mem_cons_of_mem _ hl, hd⟩
+
+private theorem getLast?_cons_append (x : SlotRef) (Q R : List SlotRef) :
+    (x :: (Q ++ R)).getLast? = R.getLast?.or (Q.getLast?.or (some x)) := by
+  rw [show x :: (Q ++ R) = ([x] ++ Q) ++ R by simp, List.getLast?_append, List.getLast?_append]
+  rfl
+
+/-- **The last slot of a preorder has no children.** -/
+theorem getLast_childless {L Q : List SlotRef} (h : ForestOrder ch L Q) {u : SlotRef}
+    (hu : Q.getLast? = some u) : ch u = [] := by
+  induction h with
+  | nil => cases hu
+  | @cons x S Q R hQ _ ihQ ihR =>
+    rw [getLast?_cons_append] at hu
+    cases hRl : R.getLast? with
+    | some r => rw [hRl, Option.some_or] at hu; cases hu; exact ihR hRl
+    | none =>
+      rw [hRl, Option.none_or] at hu
+      cases hQl : Q.getLast? with
+      | some q => rw [hQl, Option.some_or] at hu; cases hu; exact ihQ hQl
+      | none =>
+        rw [hQl, Option.none_or] at hu
+        cases hu
+        rw [List.getLast?_eq_none_iff.mp hQl] at hQ
+        exact eq_nil_of_nil hQ
+
+/-- **The last slot of a preorder is the last of its siblings**: of the top
+level when it is a top slot, and of its parent's children. -/
+theorem getLast_succNone {L Q : List SlotRef} (h : ForestOrder ch L Q) (hnd : Q.Nodup)
+    {u : SlotRef} (hu : Q.getLast? = some u) :
+    (u ∈ L → SlotList.succIn L u = none) ∧
+      ∀ y ∈ Q, u ∈ ch y → SlotList.succIn (ch y) u = none := by
+  induction h with
+  | nil => cases hu
+  | @cons x S Q R hQ hR ihQ ihR =>
+    have hxQR := (List.nodup_cons.mp hnd).1
+    have hnd' := (List.nodup_cons.mp hnd).2
+    have hQnd := (List.nodup_append.mp hnd').1
+    have hRnd := (List.nodup_append.mp hnd').2.1
+    have hdis := (List.nodup_append.mp hnd').2.2
+    rw [getLast?_cons_append] at hu
+    cases hRl : R.getLast? with
+    | some r =>
+      rw [hRl, Option.some_or] at hu
+      cases hu
+      have huR : u ∈ R := List.mem_of_getLast? hRl
+      have hux : x ≠ u := fun e => hxQR (List.mem_append_right _ (by rw [e]; exact huR))
+      obtain ⟨ih1, ih2⟩ := ihR hRnd hRl
+      refine ⟨fun hm => ?_, fun y hy hc => ?_⟩
+      · rcases List.mem_cons.mp hm with e | hm
+        · exact absurd e.symm hux
+        · rw [SlotList.succIn_cons, if_neg hux]; exact ih1 hm
+      · rcases List.mem_cons.mp hy with rfl | hy
+        · exact absurd rfl (hdis u (hQ.mem_of_top hc) u huR)
+        · rcases List.mem_append.mp hy with hy | hy
+          · exact absurd rfl (hdis u (hQ.mem_of_child hy hc) u huR)
+          · exact ih2 y hy hc
+    | none =>
+      rw [hRl, Option.none_or] at hu
+      have hR0 : R = [] := List.getLast?_eq_none_iff.mp hRl
+      subst hR0
+      have hS0 : S = [] := eq_nil_of_nil hR
+      subst hS0
+      cases hQl : Q.getLast? with
+      | some q =>
+        rw [hQl, Option.some_or] at hu
+        cases hu
+        have huQ : u ∈ Q := List.mem_of_getLast? hQl
+        obtain ⟨ih1, ih2⟩ := ihQ hQnd hQl
+        refine ⟨fun hm => ?_, fun y hy hc => ?_⟩
+        · rcases List.mem_cons.mp hm with e | hm
+          · exact absurd (List.mem_append_left _ (e ▸ huQ)) hxQR
+          · cases hm
+        · rcases List.mem_cons.mp hy with rfl | hy
+          · exact ih1 hc
+          · rcases List.mem_append.mp hy with hy | hy
+            · exact ih2 y hy hc
+            · cases hy
+      | none =>
+        rw [hQl, Option.none_or] at hu
+        cases hu
+        have hQ0 : Q = [] := List.getLast?_eq_none_iff.mp hQl
+        subst hQ0
+        refine ⟨fun _ => by simp [SlotList.succIn], fun y hy hc => ?_⟩
+        rcases List.mem_cons.mp hy with rfl | hy
+        · exact absurd (hQ.mem_of_top hc) (by simp)
+        · simp at hy
+
+private theorem mem_of_succIn {l : List SlotRef} {w x : SlotRef}
+    (h : SlotList.succIn l w = some x) : w ∈ l :=
+  Classical.byContradiction fun hn => by rw [SlotList.succIn_of_not_mem hn] at h; cases h
+
+/-- **The slot after `u` in a preorder** is its first child; or, when it has
+none, its next sibling on the top level or among its parent's children, or a
+slot outside the subtree of the parent it is the last child of. -/
+theorem succ_cases {S P : List SlotRef} (h : ForestOrder ch S P) (hnd : P.Nodup)
+    {A B : List SlotRef} {u v : SlotRef} (hP : P = A ++ u :: v :: B) :
+    (ch u).head? = some v ∨
+      (ch u = [] ∧ (SlotList.succIn S u = some v ∨ ∃ y ∈ P, u ∈ ch y ∧
+        (SlotList.succIn (ch y) u = some v ∨
+          (SlotList.succIn (ch y) u = none ∧ ¬ Desc ch y v)))) := by
+  induction h generalizing A B with
+  | nil => cases A <;> simp at hP
+  | @cons x S Q R hQ hR ihQ ihR =>
+    have hxQR := (List.nodup_cons.mp hnd).1
+    have hnd' := (List.nodup_cons.mp hnd).2
+    have hQnd := (List.nodup_append.mp hnd').1
+    have hRnd := (List.nodup_append.mp hnd').2.1
+    have hdis := (List.nodup_append.mp hnd').2.2
+    have hsub : ∀ {y}, y ∈ Q ++ R → y ∈ x :: (Q ++ R) := List.mem_cons_of_mem _
+    have hInR : ∀ as, R = as ++ u :: v :: B → ((ch u).head? = some v ∨
+        (ch u = [] ∧ (SlotList.succIn (x :: S) u = some v ∨ ∃ y ∈ x :: (Q ++ R), u ∈ ch y ∧
+          (SlotList.succIn (ch y) u = some v ∨
+            (SlotList.succIn (ch y) u = none ∧ ¬ Desc ch y v))))) := fun as hRe => by
+      have huR : u ∈ R := by rw [hRe]; simp
+      have hux : x ≠ u := fun e => hxQR (List.mem_append_right _ (by rw [e]; exact huR))
+      rcases ihR hRnd hRe with h1 | ⟨h0, h2⟩
+      · exact Or.inl h1
+      · refine Or.inr ⟨h0, ?_⟩
+        rcases h2 with h2 | ⟨y, hy, hc, h3⟩
+        · exact .inl (by rw [SlotList.succIn_cons, if_neg hux]; exact h2)
+        · exact .inr ⟨y, hsub (List.mem_append_right _ hy), hc, h3⟩
+    cases A with
+    | nil =>
+      simp only [List.nil_append, List.cons.injEq] at hP
+      obtain ⟨rfl, hP⟩ := hP
+      cases Q with
+      | cons q Q' =>
+        left
+        rw [← hQ.head_eq]
+        simp only [List.cons_append, List.cons.injEq] at hP
+        rw [hP.1]; rfl
+      | nil =>
+        right
+        refine ⟨hQ.eq_nil_of_nil, .inl ?_⟩
+        simp only [List.nil_append] at hP
+        rw [SlotList.succIn_cons, if_pos rfl, ← hR.head_eq, hP]; rfl
+    | cons a A' =>
+      simp only [List.cons_append, List.cons.injEq] at hP
+      obtain ⟨-, hP⟩ := hP
+      rcases List.append_eq_append_iff.mp hP with ⟨as, -, hRe⟩ | ⟨bs, hQe, hBe⟩
+      · exact hInR as hRe
+      · match bs, hBe with
+        | [], hBe => exact hInR [] (by simpa using hBe.symm)
+        | [b], hBe =>
+          simp only [List.cons_append, List.nil_append, List.cons.injEq] at hBe
+          obtain ⟨rfl, hRe⟩ := hBe
+          have hQl : Q.getLast? = some u := by rw [hQe]; simp
+          have huQ : u ∈ Q := List.mem_of_getLast? hQl
+          have hvR : v ∈ R := by rw [← hRe]; simp
+          have h0 := hQ.getLast_childless hQl
+          obtain ⟨hl1, hl2⟩ := hQ.getLast_succNone hQnd hQl
+          refine .inr ⟨h0, .inr ?_⟩
+          rcases hQ.mem_cases huQ with hc | ⟨y, hy, hc⟩
+          · exact ⟨x, List.mem_cons_self .., hc, .inr ⟨hl1 hc, fun hd =>
+              hdis v (hQ.desc_mem_top hd) v hvR rfl⟩⟩
+          · exact ⟨y, hsub (List.mem_append_left _ hy), hc, .inr ⟨hl2 y hy hc, fun hd =>
+              hdis v (hQ.desc_mem hy hd) v hvR rfl⟩⟩
+        | b :: c :: bs', hBe =>
+          simp only [List.cons_append, List.cons.injEq] at hBe
+          obtain ⟨rfl, rfl, -⟩ := hBe
+          rcases ihQ hQnd hQe with h1 | ⟨h0, h2⟩
+          · exact .inl h1
+          · refine .inr ⟨h0, .inr ?_⟩
+            rcases h2 with h2 | ⟨y, hy, hc, h3⟩
+            · exact ⟨x, List.mem_cons_self .., mem_of_succIn h2, .inl h2⟩
+            · exact ⟨y, hsub (List.mem_append_left _ hy), hc, h3⟩
+
+private theorem predIn_cons_of_some {c w q : SlotRef} {l : List SlotRef} (hc : c ≠ w)
+    (h : SlotList.predIn l w = some q) : SlotList.predIn (c :: l) w = some q := by
+  rw [SlotList.predIn_cons, if_neg hc]
+  split
+  · next hh =>
+    cases l with
+    | nil => cases hh
+    | cons a l =>
+      simp only [List.head?_cons, Option.some.injEq] at hh
+      subst hh
+      rw [SlotList.predIn_cons, if_pos rfl] at h; cases h
+  · exact h
+
+private theorem predIn_cons_head {c w : SlotRef} {l : List SlotRef} (hc : c ≠ w)
+    (h : l.head? = some w) : SlotList.predIn (c :: l) w = some c := by
+  rw [SlotList.predIn_cons, if_neg hc, if_pos h]
+
+/-- **The slot before `u` in a preorder** is its parent, when `u` is that
+parent's first child; or its previous sibling `q` (on the top level or among its
+parent's children), or a slot below `q`, where `u` does not lie below `q`. -/
+theorem pred_cases {S P : List SlotRef} (h : ForestOrder ch S P) (hnd : P.Nodup)
+    {A B : List SlotRef} {u v : SlotRef} (hP : P = A ++ v :: u :: B) :
+    (u ∈ ch v ∧ (ch v).head? = some u) ∨
+      ∃ M, (M = S ∨ ∃ y ∈ P, M = ch y) ∧ ∃ q, SlotList.predIn M u = some q ∧
+        (v = q ∨ Desc ch q v) ∧ ¬ Desc ch q u := by
+  induction h generalizing A B with
+  | nil => cases A <;> simp at hP
+  | @cons x S Q R hQ hR ihQ ihR =>
+    have hxQR := (List.nodup_cons.mp hnd).1
+    have hnd' := (List.nodup_cons.mp hnd).2
+    have hQnd := (List.nodup_append.mp hnd').1
+    have hRnd := (List.nodup_append.mp hnd').2.1
+    have hdis := (List.nodup_append.mp hnd').2.2
+    have hsub : ∀ {y}, y ∈ Q ++ R → y ∈ x :: (Q ++ R) := List.mem_cons_of_mem _
+    have hInR : ∀ as, R = as ++ v :: u :: B → ((u ∈ ch v ∧ (ch v).head? = some u) ∨
+        ∃ M, (M = x :: S ∨ ∃ y ∈ x :: (Q ++ R), M = ch y) ∧ ∃ q, SlotList.predIn M u = some q ∧
+          (v = q ∨ Desc ch q v) ∧ ¬ Desc ch q u) := fun as hRe => by
+      have huR : u ∈ R := by rw [hRe]; simp
+      have hux : x ≠ u := fun e => hxQR (List.mem_append_right _ (by rw [e]; exact huR))
+      rcases ihR hRnd hRe with h1 | ⟨M, hM, q, hq, h2⟩
+      · exact Or.inl h1
+      · rcases hM with rfl | ⟨y, hy, rfl⟩
+        · exact Or.inr ⟨x :: M, .inl rfl, q, predIn_cons_of_some hux hq, h2⟩
+        · exact Or.inr ⟨ch y, .inr ⟨y, hsub (List.mem_append_right _ hy), rfl⟩, q, hq, h2⟩
+    cases A with
+    | nil =>
+      simp only [List.nil_append, List.cons.injEq] at hP
+      obtain ⟨rfl, hP⟩ := hP
+      cases Q with
+      | cons q Q' =>
+        simp only [List.cons_append, List.cons.injEq] at hP
+        obtain ⟨rfl, -⟩ := hP
+        have hh : (ch x).head? = some q := by rw [← hQ.head_eq]; rfl
+        exact .inl ⟨List.mem_of_mem_head? hh, hh⟩
+      | nil =>
+        simp only [List.nil_append] at hP
+        have huR : u ∈ R := by rw [hP]; simp
+        have hux : x ≠ u := fun e => hxQR (List.mem_append_right _ (by rw [e]; exact huR))
+        refine .inr ⟨x :: S, .inl rfl, x, predIn_cons_head hux (by rw [← hR.head_eq, hP]; rfl),
+          .inl rfl, fun hd => ?_⟩
+        have := hQ.desc_mem_top hd
+        cases this
+    | cons a A' =>
+      simp only [List.cons_append, List.cons.injEq] at hP
+      obtain ⟨-, hP⟩ := hP
+      rcases List.append_eq_append_iff.mp hP with ⟨as, -, hRe⟩ | ⟨bs, hQe, hBe⟩
+      · exact hInR as hRe
+      · match bs, hBe with
+        | [], hBe => exact hInR [] (by simpa using hBe.symm)
+        | [b], hBe =>
+          simp only [List.cons_append, List.nil_append, List.cons.injEq] at hBe
+          obtain ⟨rfl, hRe⟩ := hBe
+          have hvQ : v ∈ Q := by rw [hQe]; simp
+          have huR : u ∈ R := by rw [← hRe]; simp
+          have hux : x ≠ u := fun e => hxQR (List.mem_append_right _ (by rw [e]; exact huR))
+          refine .inr ⟨x :: S, .inl rfl, x,
+            predIn_cons_head hux (by rw [← hR.head_eq, ← hRe]; rfl), .inr ?_, fun hd =>
+              hdis u (hQ.desc_mem_top hd) u huR rfl⟩
+          rcases hQ.mem_top_or_desc hvQ with hc | ⟨l, hl, hd⟩
+          · exact .child hc
+          · exact hd.head hl
+        | b :: c :: bs', hBe =>
+          simp only [List.cons_append, List.cons.injEq] at hBe
+          obtain ⟨rfl, rfl, -⟩ := hBe
+          rcases ihQ hQnd hQe with h1 | ⟨M, hM, q, hq, h2⟩
+          · exact .inl h1
+          · rcases hM with rfl | ⟨y, hy, rfl⟩
+            · exact .inr ⟨ch x, .inr ⟨x, List.mem_cons_self .., rfl⟩, q, hq, h2⟩
+            · exact .inr ⟨ch y, .inr ⟨y, hsub (List.mem_append_left _ hy), rfl⟩, q, hq, h2⟩
+
+end ForestOrder
+
 end CapDerivationTree
+
+namespace SlotList
+
+/-- **`q` holds on one contiguous run of `l`**: `l` is a part where `q` fails,
+then a run where it holds, then a part where it fails.  seL4's `mdb_chunked`
+read on a list: over the preorder, with `q` "names object `o`", it says the
+slots naming `o` are one contiguous run of the mapping database. -/
+def Chunked (q : SlotRef → Prop) (l : List SlotRef) : Prop :=
+  ∃ A B C, l = A ++ B ++ C ∧ (∀ x ∈ A, ¬ q x) ∧ (∀ x ∈ B, q x) ∧ (∀ x ∈ C, ¬ q x)
+
+namespace Chunked
+
+variable {q q' : SlotRef → Prop} {l : List SlotRef}
+
+/-- A predicate agreeing on the list's slots has the same runs. -/
+theorem congr (h : Chunked q l) (hq : ∀ x ∈ l, q' x ↔ q x) : Chunked q' l := by
+  obtain ⟨A, B, C, rfl, hA, hB, hC⟩ := h
+  exact ⟨A, B, C, rfl, fun x hx e => hA x hx ((hq x (by simp [hx])).mp e),
+    fun x hx => (hq x (by simp [hx])).mpr (hB x hx),
+    fun x hx e => hC x hx ((hq x (by simp [hx])).mp e)⟩
+
+/-- **Dropping slots keeps a run contiguous** (a delete's splice). -/
+theorem filter (h : Chunked q l) (f : SlotRef → Bool) : Chunked q (l.filter f) := by
+  obtain ⟨A, B, C, rfl, hA, hB, hC⟩ := h
+  exact ⟨A.filter f, B.filter f, C.filter f, by simp [List.filter_append],
+    fun x hx => hA x (List.mem_filter.mp hx).1, fun x hx => hB x (List.mem_filter.mp hx).1,
+    fun x hx => hC x (List.mem_filter.mp hx).1⟩
+
+/-- **Renaming slots in place keeps a run contiguous** (a move). -/
+theorem map (h : Chunked q l) (g : SlotRef → SlotRef) (hq : ∀ x ∈ l, q' (g x) ↔ q x) :
+    Chunked q' (l.map g) := by
+  obtain ⟨A, B, C, rfl, hA, hB, hC⟩ := h
+  refine ⟨A.map g, B.map g, C.map g, by simp [List.map_append], ?_, ?_, ?_⟩
+  · intro y hy
+    obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hy
+    exact fun e => hA x hx ((hq x (by simp [hx])).mp e)
+  · intro y hy
+    obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hy
+    exact (hq x (by simp [hx])).mpr (hB x hx)
+  · intro y hy
+    obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hy
+    exact fun e => hC x hx ((hq x (by simp [hx])).mp e)
+
+/-- **A slot appended last keeps the run contiguous** when it is outside the run
+or the run is empty (a new root). -/
+theorem append_last (h : Chunked q l) {r : SlotRef} (hr : ¬ q r ∨ ∀ x ∈ l, ¬ q x) :
+    Chunked q (l ++ [r]) := by
+  by_cases hq : q r
+  · have hl := hr.resolve_left (· hq)
+    exact ⟨l, [r], [], by simp, hl, fun x hx => by rw [List.mem_singleton.mp hx]; exact hq,
+      by simp⟩
+  · obtain ⟨A, B, C, rfl, hA, hB, hC⟩ := h
+    refine ⟨A, B, C ++ [r], by simp, hA, hB, fun x hx => ?_⟩
+    rcases List.mem_append.mp hx with hx | hx
+    · exact hC x hx
+    · rw [List.mem_singleton.mp hx]; exact hq
+
+theorem not_mem_of_nodup_split {X Y : List SlotRef} {p : SlotRef} (h : (X ++ p :: Y).Nodup) :
+    p ∉ X :=
+  fun hm => (List.nodup_append.mp h).2.2 p hm p (List.mem_cons_self ..) rfl
+
+/-- **A slot inserted right after `p` keeps every run contiguous** (an insert)
+when it is in `p`'s run exactly when `p` is (a copy), or when it starts a run of
+its own (a fresh object) right after the last slot of `p`'s run. -/
+theorem insertAfter (h : Chunked q l) (hnd : l.Nodup) {p d : SlotRef} (hp : p ∈ l)
+    (hd : q d → q p ∨ ∀ x ∈ l, ¬ q x)
+    (hlast : q p → ¬ q d → ∀ X Y, l = X ++ p :: Y → ∀ x ∈ Y, ¬ q x) :
+    Chunked q (CapDerivationTree.insertAfter p d l) := by
+  have ins : ∀ X Y, l = X ++ p :: Y → CapDerivationTree.insertAfter p d l = X ++ p :: d :: Y :=
+    fun X Y e => by
+      rw [e]; exact CapDerivationTree.insertAfter_split (not_mem_of_nodup_split (e ▸ hnd))
+  have hl := h
+  obtain ⟨A, B, C, rfl, hA, hB, hC⟩ := h
+  have hpB : q p → p ∈ B := fun hqp => by
+    rcases List.mem_append.mp hp with hp | hp
+    · rcases List.mem_append.mp hp with hp | hp
+      · exact absurd hqp (hA p hp)
+      · exact hp
+    · exact absurd hqp (hC p hp)
+  by_cases hqd : q d <;> by_cases hqp : q p
+  · obtain ⟨B1, B2, rfl⟩ := List.append_of_mem (hpB hqp)
+    rw [ins (A ++ B1) (B2 ++ C) (by simp)]
+    refine ⟨A, B1 ++ p :: d :: B2, C, by simp, hA, fun x hx => ?_, hC⟩
+    simp only [List.mem_append, List.mem_cons] at hx
+    rcases hx with hx | rfl | rfl | hx
+    · exact hB x (by simp [hx])
+    · exact hqp
+    · exact hqd
+    · exact hB x (by simp [hx])
+  · have hall := (hd hqd).resolve_left hqp
+    obtain ⟨X, Y, e⟩ := List.append_of_mem hp
+    rw [ins X Y e]
+    refine ⟨X ++ [p], [d], Y, by simp, fun x hx => ?_, fun x hx => by
+      rw [List.mem_singleton.mp hx]; exact hqd, fun x hx => hall x (by rw [e]; simp [hx])⟩
+    rcases List.mem_append.mp hx with hx | hx
+    · exact hall x (by rw [e]; simp [hx])
+    · rw [List.mem_singleton.mp hx]; exact hqp
+  · obtain ⟨B1, B2, rfl⟩ := List.append_of_mem (hpB hqp)
+    have hY := hlast hqp hqd (A ++ B1) (B2 ++ C) (by simp)
+    cases B2 with
+    | cons b B2' => exact absurd (hB b (by simp)) (hY b (by simp))
+    | nil =>
+      rw [ins (A ++ B1) C (by simp)]
+      refine ⟨A, B1 ++ [p], d :: C, by simp, hA, fun x hx => hB x (by simpa using hx), ?_⟩
+      intro x hx
+      rcases List.mem_cons.mp hx with rfl | hx
+      · exact hqd
+      · exact hC x hx
+  · rcases List.mem_append.mp hp with hp' | hp'
+    · rcases List.mem_append.mp hp' with hp' | hp'
+      · obtain ⟨A1, A2, rfl⟩ := List.append_of_mem hp'
+        rw [ins A1 (A2 ++ B ++ C) (by simp)]
+        refine ⟨A1 ++ p :: d :: A2, B, C, by simp, fun x hx => ?_, hB, hC⟩
+        simp only [List.mem_append, List.mem_cons] at hx
+        rcases hx with hx | rfl | rfl | hx
+        · exact hA x (by simp [hx])
+        · exact hqp
+        · exact hqd
+        · exact hA x (by simp [hx])
+      · exact absurd (hB p hp') hqp
+    · obtain ⟨C1, C2, rfl⟩ := List.append_of_mem hp'
+      rw [ins (A ++ B ++ C1) C2 (by simp)]
+      refine ⟨A, B, C1 ++ p :: d :: C2, by simp, hA, hB, fun x hx => ?_⟩
+      simp only [List.mem_append, List.mem_cons] at hx
+      rcases hx with hx | rfl | rfl | hx
+      · exact hC x (by simp [hx])
+      · exact hqp
+      · exact hqd
+      · exact hC x (by simp [hx])
+
+/-- **A slot in a run of two or more has a run neighbour**: the slot right
+before it or the slot right after it is in the run. -/
+theorem neighbour (h : Chunked q l) {r t : SlotRef} (hr : r ∈ l) (hqr : q r) (ht : t ∈ l)
+    (hqt : q t) (htr : t ≠ r) :
+    (∃ X x Y, l = X ++ x :: r :: Y ∧ q x) ∨ (∃ X x Y, l = X ++ r :: x :: Y ∧ q x) := by
+  obtain ⟨A, B, C, rfl, hA, hB, hC⟩ := h
+  have inB : ∀ {y}, y ∈ A ++ B ++ C → q y → y ∈ B := fun hy hq => by
+    rcases List.mem_append.mp hy with hy | hy
+    · rcases List.mem_append.mp hy with hy | hy
+      · exact absurd hq (hA _ hy)
+      · exact hy
+    · exact absurd hq (hC _ hy)
+  obtain ⟨B1, B2, rfl⟩ := List.append_of_mem (inB hr hqr)
+  cases B2 with
+  | cons x B2' => exact .inr ⟨A ++ B1, x, B2' ++ C, by simp, hB x (by simp)⟩
+  | nil =>
+    have htB1 : t ∈ B1 := by
+      have := inB ht hqt
+      simp only [List.mem_append, List.mem_cons, List.not_mem_nil, or_false] at this
+      exact this.resolve_right htr
+    rcases List.eq_nil_or_concat B1 with e | ⟨B1', x, e⟩
+    · rw [e] at htB1; cases htB1
+    · rw [List.concat_eq_append] at e
+      subst e
+      exact .inl ⟨A ++ B1', x, C, by simp, hB x (by simp)⟩
+
+end Chunked
+
+end SlotList
+
 end SeLe4n.Model
