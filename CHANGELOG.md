@@ -1,3 +1,107 @@
+## v0.36.132 — WS-ZA ZA5.4 part 21: retire memory kinds on final delete
+
+A delete or revoke that destroys the final capability to a frame, a page
+table, an address-space root or an untyped that records no child now retires
+that object, as seL4's `cteDelete` runs `finaliseCap` on the capability
+`isFinalCapability` reports final.  The object leaves the child list of the
+untyped that records it and then the store; a root's ASID is released with its
+acknowledged round.  The capability, IPC, run-queue, reschedule and teardown
+invariants are proven preserved.  This is part 21 of the seL4 untyped reset
+([`UNTYPED_RESET_PLAN.md`](docs/planning/UNTYPED_RESET_PLAN.md)).
+
+### Changes
+
+- **What a final delete retires** (`Capability/FinalRetire.lean`, new).
+  - `retirableKind`: a frame, a page table, a root, or an untyped whose child
+    list is empty.
+  - `slotRetireTarget st cnode slot`: the object the slot's `.object`
+    capability names, as a word (`x + 1`, `0` for none), when it is retirable
+    and the capability is final (`SystemState.capIsFinal`).  It is read before
+    the slot is emptied.
+  - `recorderWord`: the untyped that records the object, found by walking the
+    slot's ancestors (`recorderAbove`, checked by membership in the child
+    list) with a scan of the store's untypeds as the fallback
+    (`recorderInStore`).  `recorderWord_spec`: a nonzero word names an untyped
+    that records the object; zero means none does.
+  - `capabilityRetiresNothing`: the fast path's question
+    (`slotRetireTarget_eq_zero_iff`).
+  - `retireFinalObject ec target recorder st`: the object leaves its
+    recorder's child list (`unrecordChild`), then the store
+    (`retireCarvedObject`); a root also gets `retypeAsidRoundStep`.  It does
+    nothing when the target word is `0` or when the object table has no
+    headroom for the erase, so it never refuses.
+- **The delete and revoke** (`Capability/FrameFinalise.lean`).
+  - `cspaceDeleteThenFinalise` takes the target and recorder words and ends
+    with `retireFinalObject`; `cspaceDeleteSlotFinalising` reads both on the
+    pre-delete state.  Every revoke retires through its deletes.
+  - The compiled teardowns (`cspaceDeleteTeardownAt`,
+    `cspaceDeleteTeardownAtFrame`, `cspaceDeleteTeardownAtTable`) retire too;
+    the frame teardown now also handles a frame capability with no mapping.
+  - `cspaceDeleteAdmitted`, `threadSlotDeleteAdmitted` and the compiled
+    admission add `capabilityRetiresNothing`.
+- **Proofs.**
+  - `TreeShapeOver.retire`: retiring an object no slot names keeps the tree's
+    shape when every other object stays and each untyped's record only
+    shrinks.
+  - `retireFinalObject_frame`, `finalRetireWrite.touched`,
+    `retireFinalObject_unrecorded`, `retireFinalObject_preserves_teardownWellFormed`.
+  - `retireFinalObject_preserves_capabilityInvariantBundle` (`Revoke.lean`),
+    with `slotRetireTarget_spec`; `cspaceDeleteSlotFinalising_preserves_capabilityInvariantBundle`
+    is re-proved over the retire, and the revoke follows.
+  - The IPC, run-queue and reschedule frames are shared with the reset:
+    `ipcInvariantFull_of_resetTouchedWrite`, `RunQueueStage.of_resetTouched`
+    and `capabilityKeyFrame_of_resetTouched` are general, and the retire uses
+    them (`retireFinalObject_preserves_ipcInvariantFull`,
+    `retireFinalObject_runQueueStage`, `retireFinalObject_keyFrame`).
+- **Compiled forms.**
+  - `retireCarvedObject_eq_impl` (`@[csimp]`): a frame, an untyped or a page
+    table is erased one table at a time, each write out of line.
+  - `RHTable.erase_eq_impl` (`@[csimp]`): the compiled erase probes for a bare
+    index (`findIdxLoop`, then `eraseAt`), so no `Option` is built.
+  - `backshiftLoop_eq_impl` (`@[csimp]`): the compiled backshift takes each
+    moved cell out of the array before rewriting it out of line
+    (`RHEntry.shiftedBack`), so an exclusively owned table is erased in place.
+  - The retire reads the store through `getObjectType?`, `getUntyped?` and
+    `getVSpaceRoot?`; `withObjectErased` is registered as a store write
+    primitive.
+
+### Model notes
+
+- An untyped is retired only while its child list is empty.  A kernel object
+  carved from it (a CNode, a TCB, an endpoint) can have no capability left and
+  still be recorded; retiring the untyped would drop that record, and its reset
+  would recarve the object's memory.  Kernel kinds are part 22.
+- A thread's space-slot delete (`copyThreadSpaces`) does not finalise, as
+  before; it retires nothing.
+
+### Tests
+
+- `tests/VSpaceCapabilityBindingSuite.lean`: deleting the last capability
+  retires a frame (not while a copy lives), a root (its ASID released and its
+  record dropped), a childless untyped (not one that records a child) and a
+  page table; the revocations of the carve and page-table scenarios retire
+  what they destroy, and the reset-boundary checks rebuild the objects a
+  revocation used to leave.
+
+### Documentation
+
+- `SELE4N_SPEC.md` §8.6 and the page-table paragraph.
+- GitBook chapter 12.
+- A new `CLAIM_EVIDENCE_INDEX.md` row.
+- Plan row 21, marked landed.
+- The workstream context, and the reset-rewind debt row's reading.
+- Tier 3 anchors for the retire and the compiled erase; the delete-finalising,
+  delete-then-finalise and page-table teardown anchors re-pointed.
+
+### Validation
+
+- `./scripts/test_full.sh --continue` passes, and so do
+  `./scripts/test_lean_aarch64_archive.sh` and
+  `./scripts/test_aarch64_cross_build.sh`.
+- `frame-delete` and `page-table-delete-*` read 0; `untyped-reset` reads 30 at
+  first call and steady state (was 161), pinned there; every other pin is
+  unchanged (`./scripts/test_qemu_heap_allocations_per_syscall.sh --lean-kernel`).
+
 ## v0.36.131 — WS-ZA ZA5.4 part 20: finality
 
 A capability's finality is now read from its derivation links, as seL4's
