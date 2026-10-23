@@ -4108,7 +4108,30 @@ run_check "INVARIANT" rg -n -U '        else if capabilityMappingLive st frameCa
 run_check "INVARIANT" rg -n -U 'def vspaceMapFromFrameCap[^\n]*(\n([ \t][^\n]*)?)*            cspaceRecordFrameMapping frameSlot\n              \{ asid := args\.asid, vaddr := args\.vaddr, epoch := epoch \} st2' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U '  \| \.cspaceDelete =>\n    some <\| match cap\.target with(\n([ \t][^\n]*)?){0,11}            cspaceDeleteSlotFinalising executingCore addr st' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U '  \| \.cspaceRevoke =>\n    some <\| match cap\.target with(\n([ \t][^\n]*)?){0,9}            cspaceRevokeCdtFinalising executingCore addr st' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n -U 'def cspaceDeleteSlotFinalising[^\n]*\n[^\n]*\n  fun st =>\n    cspaceDeleteThenFinalise executingCore \(slotPageTables st addr\)\n      \(slotMappedPages st addr\) addr st' SeLe4n/Kernel/Capability/FrameFinalise.lean
+# v0.36.132: the teardown lists, the retire target and its recorder are all
+# read on the pre-delete state `st` (seL4 decides finality before emptying the slot).
+run_check "INVARIANT" rg -n -U 'def cspaceDeleteSlotFinalising[^\n]*\n[^\n]*\n  fun st =>\n    cspaceDeleteThenFinalise executingCore \(slotPageTables st addr\)\n      \(slotMappedPages st addr\) \(slotRetireTarget st addr\.cnode addr\.slot\)\n      \(slotRetireRecorder st addr\.cnode addr\.slot\) addr st' SeLe4n/Kernel/Capability/FrameFinalise.lean
+# v0.36.132: a delete that destroys the final capability to a frame, page table,
+# address-space root or childless untyped retires it (seL4's finaliseCap on
+# isFinalCapability).  The retire is the last write of the finalising delete; the
+# target is a final `.object` capability to a retirable kind; a root's retire posts
+# its ASID's acknowledged round; and the delete fast path admits only a delete
+# that retires nothing.
+run_check "INVARIANT" rg -n -U 'def cspaceDeleteThenFinalise[^\n]*(\n([ \t][^\n]*)?){0,9}\n      \| \.ok \(\(\), st2\) => \.ok \(\(\), retireFinalObject executingCore target recorder st2\)' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n -U 'def slotRetireTarget[^\n]*(\n([ \t][^\n]*)?){0,4}\n    \| \.object x => if retirableKind st x && st\.capIsFinal cnode slot then x\.val \+ 1 else 0' SeLe4n/Kernel/Capability/FinalRetire.lean
+run_check "INVARIANT" rg -n -U 'def retirableKind[^\n]*(\n([ \t][^\n]*)?){0,5}\n  \| some \(\.untyped U\) => U\.children\.isEmpty\n  \| _ => false' SeLe4n/Kernel/Capability/FinalRetire.lean
+run_check "INVARIANT" rg -n -U 'def retireFinalObject[^\n]*(\n([ \t][^\n]*)?){0,6}\n    \| some \(\.vspaceRoot root\) => retypeAsidRoundStep executingCore root\.asid \(retireCarvedObject st1 x\)\n    \| _ => retireCarvedObject st1 x' SeLe4n/Kernel/Capability/FinalRetire.lean
+run_check "INVARIANT" rg -n -U '       \| some cap =>\n         capabilityFinalisesNothing st cap && capabilityRetiresNothing st addr\.cnode addr\.slot cap' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n -U '    \| some cap => capabilityFinalisesNothing st cap && capabilityRetiresNothing st tcbId slot cap' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n -U '    \| some cap =>\n      capabilityFinalisesNothing st cap && capabilityRetiresNothing st addr\.cnode addr\.slot cap\n    \| none => true\n  \| none => threadSlotDeleteAdmitted' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n '^theorem _root_\.SeLe4n\.Model\.SystemState\.TreeShapeOver\.retire$' SeLe4n/Kernel/Capability/FinalRetire.lean
+run_check "INVARIANT" rg -n '^theorem retireFinalObject_frame ' SeLe4n/Kernel/Capability/FinalRetire.lean
+run_check "INVARIANT" rg -n '^theorem retireFinalObject_preserves_teardownWellFormed ' SeLe4n/Kernel/Capability/FinalRetire.lean
+run_check "INVARIANT" rg -n '^theorem retireFinalObject_preserves_capabilityInvariantBundle ' SeLe4n/Kernel/Capability/Invariant/Preservation/Revoke.lean
+run_check "INVARIANT" rg -n '^theorem retireFinalObject_preserves_ipcInvariantFull ' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
+run_check "INVARIANT" rg -n '^theorem retireFinalObject_runQueueStage ' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Capability.lean
+run_check "INVARIANT" rg -n '^theorem retireFinalObject_keyFrame ' SeLe4n/Kernel/ReschedulePendingArms/Capability.lean
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem retireCarvedObject_eq_impl : @retireCarvedObject = @retireCarvedObjectImpl' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
 run_check "INVARIANT" rg -n -U 'def cspaceRevokeCdtFinalising[^\n]*\n[^\n]*\n  fun st =>\n    match SystemState\.lookupSlotCap st addr with\n    \| some _ => \.ok \(\(\), cspaceRevokePerformAt executingCore addr\.cnode addr\.slot st\)' SeLe4n/Kernel/Capability/FrameFinalise.lean
 # v0.36.111: every revoke is seL4's cteRevoke, a run of finalising deletes; the
 # general revocation's batch teardown is gone.
@@ -4246,7 +4269,7 @@ run_check "INVARIANT" rg -n 'so resetting the child alone is refused \(revocatio
 # arms run the one finalisation; the orphan set is "named by a destroyed
 # capability, read before the step, and named by no slot after"; the root is the truth, so every reader asks the live question and the
 # record-only reading must not come back.
-run_check "INVARIANT" rg -n -U 'def cspaceDeleteThenFinalise [^\n]*(\n([ \t][^\n]*)?)*    \| \.ok \(\(\), st1\) => finaliseDestroyedCapabilities executingCore named pages st1' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n -U 'def cspaceDeleteThenFinalise [^\n]*(\n([ \t][^\n]*)?)*    \| \.ok \(\(\), st1\) =>\n      match finaliseDestroyedCapabilities executingCore named pages st1 with' SeLe4n/Kernel/Capability/FrameFinalise.lean
 # v0.36.131: a table's final capability is read off the destroyed slot's four
 # derivation links before the step (seL4's isFinalCapability, `capIsFinal`), not
 # by the whole-store scan after it: the orphan set is the named tables still
@@ -4254,7 +4277,7 @@ run_check "INVARIANT" rg -n -U 'def cspaceDeleteThenFinalise [^\n]*(\n([ \t][^\n
 run_check "INVARIANT" rg -n -U 'def pageTablesOrphaned [^\n]*(\n([ \t][^\n]*)?)*          if Architecture\.pageTableInstallLive st id then\n            \(id, inst\) :: acc' SeLe4n/Kernel/Capability/FrameFinalise.lean
 run_negative_check "INVARIANT" rg -n -U 'def pageTablesOrphaned [^\n]*(\n([ \t][^\n]*)?)*carvedSubtreeUnreferenced' SeLe4n/Kernel/Capability/FrameFinalise.lean
 run_check "INVARIANT" rg -n -U '^@\[inline\] def slotPageTables \(st : SystemState\) \(addr : CSpaceAddr\) : List SeLe4n\.ObjId :=\n  match \(st\.slotCapAt addr\)\.bind \(capabilityPageTable st\) with\n  \| some id => if st\.capIsFinal addr\.cnode addr\.slot then \[id\] else \[\]\n  \| none => \[\]$' SeLe4n/Kernel/Capability/FrameFinalise.lean
-run_check "INVARIANT" rg -n -U 'def cspaceDeleteTeardownAtTable [^\n]*(\n([ \t][^\n]*)?)*      \| some _ =>\n        if st\.capIsFinal cnode slot then\n          let st1 := cspaceDeletePerformAt cnode slot st\n          if Architecture\.pageTableInstallLive st1 tableId then\n            finaliseDestroyedCapabilitiesState executingCore \[tableId\] \[\] st1\n          else st1\n        else cspaceDeletePerformAt cnode slot st' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n -U 'def cspaceDeleteTeardownAtTable [^\n]*(\n([ \t][^\n]*)?)*      \| some _ =>\n        let target := slotRetireTarget st cnode slot\n        let recorder := recorderFor st target cnode slot\n        retireFinalObject executingCore target recorder\n          \(if st\.capIsFinal cnode slot then\n            let st1 := cspaceDeletePerformAt cnode slot st\n            if Architecture\.pageTableInstallLive st1 tableId then\n              finaliseDestroyedCapabilitiesState executingCore \[tableId\] \[\] st1\n            else st1\n          else cspaceDeletePerformAt cnode slot st\)' SeLe4n/Kernel/Capability/FrameFinalise.lean
 run_negative_check "INVARIANT" rg -n 'carvedSubtreeUnreferenced|objectNamesListed|capNamesListed' SeLe4n/Kernel/Capability/FrameFinalise.lean
 # v0.36.131 finality (seL4's isFinalCapability over mdb_chunked): the slots
 # naming one object are one contiguous preorder run, a conjunct of the tree
