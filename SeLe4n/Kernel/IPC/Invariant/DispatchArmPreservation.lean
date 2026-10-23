@@ -1181,7 +1181,7 @@ theorem mintReplyCapWithCdt_preserves_ipcInvariantFull
   · contradiction
   · rename_i stM hMint
     cases hStep
-    obtain ⟨_, _, _, hInsM⟩ := mintReplyCap_ok_decompose src dst st stM hMint
+    obtain ⟨_, _, _, hInsM, -⟩ := mintReplyCap_ok_decompose src dst st stM hMint
     exact cdtRecord_bundle_frame stM src dst DerivationOp.mint
       (cspaceInsertSlot_preserves_objects_invExt st stM dst _ hObjInv hInsM)
       (mintReplyCap_preserves_ipcInvariantFull st stM src dst hObjInv hInv hMint)
@@ -1519,7 +1519,7 @@ theorem cspaceMintWithCdt_preserves_ipcInvariantFull
     (hStep : cspaceMintWithCdt src dst rights badge st = .ok ((), st')) :
     ipcInvariantFull st' := by
   obtain ⟨_, stM, hMint, hLP, -, rfl⟩ := cspaceMintWithCdt_ok_decompose hStep
-  obtain ⟨_, _, _, hInsM⟩ := cspaceMint_ok_decompose src dst rights badge st stM hMint
+  obtain ⟨_, _, _, hInsM, -⟩ := cspaceMint_ok_decompose src dst rights badge st stM hMint
   have hInvM := cspaceInsertSlot_preserves_objects_invExt st stM dst _ hObjInv hInsM
   have hMid := cdtRecord_bundle_frame stM src dst DerivationOp.mint hInvM
     (cspaceMint_preserves_ipcInvariantFull st stM src dst rights badge

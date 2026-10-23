@@ -33,7 +33,7 @@ theorem cspaceMint_ok_decompose (src dst : CSpaceAddr) (rights : AccessRightSet)
     (badge : Option SeLe4n.Badge) (st st1 : SystemState)
     (h : cspaceMint src dst rights badge st = .ok ((), st1)) :
     ∃ parent child, cspaceLookupSlot src st = .ok (parent, st) ∧
-      cspaceInsertSlot dst child st = .ok ((), st1) := by
+      cspaceInsertSlot dst child st = .ok ((), st1) ∧ child.namedObject = parent.namedObject := by
   unfold cspaceMint at h
   cases hL : cspaceLookupSlot src st with
   | error e => simp [hL] at h
@@ -47,13 +47,20 @@ theorem cspaceMint_ok_decompose (src dst : CSpaceAddr) (rights : AccessRightSet)
       simp only [hNN] at h
       cases hM : mintDerivedCap pNN rights badge with
       | error e => simp [hM] at h
-      | ok child => simp only [hM] at h; exact ⟨parent, child, rfl, h⟩
+      | ok child =>
+        simp only [hM] at h
+        have hV : pNN.val = parent := by
+          unfold Capability.toNonNull? at hNN; split at hNN
+          · cases hNN; rfl
+          · cases hNN
+        exact ⟨parent, child, rfl, h, Capability.namedObject_of_target
+          (hV ▸ mintDerivedCap_preserves_target pNN rights badge child hM)⟩
 
 /-- A successful reply-cap mint read its source and installed into its destination. -/
 theorem mintReplyCap_ok_decompose (src dst : CSpaceAddr) (st st1 : SystemState)
     (h : mintReplyCap src dst st = .ok ((), st1)) :
     ∃ parent child, cspaceLookupSlot src st = .ok (parent, st) ∧
-      cspaceInsertSlot dst child st = .ok ((), st1) := by
+      cspaceInsertSlot dst child st = .ok ((), st1) ∧ child.namedObject = parent.namedObject := by
   unfold mintReplyCap at h
   cases hL : cspaceLookupSlot src st with
   | error e => simp [hL] at h
@@ -62,8 +69,10 @@ theorem mintReplyCap_ok_decompose (src dst : CSpaceAddr) (st st1 : SystemState)
     have hEq := cspaceLookupSlot_preserves_state st stL src parent hL; subst hEq
     simp only [hL] at h
     split at h
-    · split at h
-      · exact ⟨parent, _, rfl, h⟩
+    · next t hT =>
+      split at h
+      · exact ⟨parent, _, rfl, h, by
+          simp [Capability.namedObject, hT, SeLe4n.ReplyId.toObjId_ofObjId]⟩
       · cases h
     · cases h
 
@@ -91,10 +100,15 @@ theorem storeObject_capRewrite_preserves_capabilityInvariantBundle
     cdtLinksAgree_of_eq hLinks (storeObject_cdt_eq st st' addr.cnode _ hStore)
       (SystemState.slotLinkAt_storeObject_cnode hObjInv hPre (CNode.insert_links ..) hStore),
     hShape.rewrite (storeObject_cdt_eq st st' addr.cnode _ hStore)
-      (by rw [SystemState.slotCapAt_of_object hPre]; show preCn.lookup addr.slot ≠ none
-          rw [hLk]; simp)
+      ((SystemState.slotCapAt_of_object hPre).trans hLk)
+      ((SystemState.slotCapAt_of_object
+        (storeObject_objects_eq st st' addr.cnode _ hObjInv hStore)).trans
+        (CNode.lookup_insert_eq preCn addr.slot cap' (CNode.slotsUnique_holds _)
+          (CNode.slotAddressable_of_lookup _ _ _ hLk)))
+      (Capability.namedObject_of_target hTgtEq)
       (SystemState.slotCapAt_storeObject_ne hObjInv hPre hStore
-        fun s' hs => CNode.lookup_insert_ne preCn addr.slot s' _ (Ne.symm hs) (CNode.slotsUnique_holds _))⟩
+        fun s' hs => CNode.lookup_insert_ne preCn addr.slot s' _ (Ne.symm hs) (CNode.slotsUnique_holds _))
+      (SystemState.objectPresent_storeObject hObjInv hStore)⟩
   -- The rewritten capability keeps its target, so the reply-cap-bearing slots are
   -- the pre-state's: the rewritten slot inherits its own pre-state backing, and
   -- every other slot frames through the single CNode store.
@@ -172,7 +186,8 @@ theorem cspaceCopy_preserves_capabilityInvariantBundle
     (by rw [hL]; rfl) hInsert hInv.linksAgree
   have hShape := treeShape_addEdge_after_insert st st2 src dst cap.withoutMapping .copy
     hInv.treeShape hInv.2.1 (objects_invExt_of_capabilityInvariantBundle st hInv)
-    (by rw [hL]; rfl) hInsert
+    (by rw [hL]; rfl) hInsert fun o ho => .inl (namesAt_of_source hL
+      (Capability.namedObject_of_target (Capability.withMapping_target _ _)) o ho)
   rcases hBundleSt2 with ⟨⟨_, hComp2, _, hDepth2, hObjInv2, hRCPV2⟩, -, -⟩
   have hIX := hObjInv2
   have hObjFinal : ({ st2 with cdt := st2.cdt.addEdge src dst .copy }).objects = st2.objects := rfl
@@ -270,8 +285,14 @@ theorem cspaceMove_preserves_capabilityInvariantBundle
               have hShape3 : SystemState.CapTreeShape { st3 with cdt := st3.cdt.moveNode src dst } :=
                 hInv.treeShape.move hSelf hSrcOcc (by rw [← hCdt3]; exact hFresh)
                   (by show st3.cdt.moveNode src dst = _; rw [hCdt3]) hE3.1
-                  fun r hrs hrd => (hE3.2 r hrs).trans
-                    (cspaceInsertSlot_slotCapAt_ne hInv.2.2.2.2.1 hInsert r hrd)
+                  ((hE3.2 dst (Ne.symm hSelf)).trans
+                    ((cspaceInsertSlot_slotCapAt_self hInv.2.2.2.2.1 hInsert).trans
+                      (SystemState.slotCapAt_of_lookupSlotCap
+                        ((cspaceLookupSlot_ok_iff_lookupSlotCap st src cap).1 hSrc)).symm))
+                  (fun r hrs hrd => (hE3.2 r hrs).trans
+                    (cspaceInsertSlot_slotCapAt_ne hInv.2.2.2.2.1 hInsert r hrd))
+                  fun o hp => cspaceDeleteSlotCore_objectPresent (st' := st3) hBundleSt2.1.2.2.2.2.1
+                    hDelete o (cspaceInsertSlot_objectPresent hInv.2.2.2.2.1 hInsert o hp)
               rcases hBundleSt3 with ⟨_, hComp3, hAcyc3, hDepth3, hObjInv3, hRCPV3, -⟩
               simp [hSrc, hToNN, hInsert, hDelete] at hStep
               cases hStep
@@ -302,7 +323,7 @@ theorem cspaceMintWithCdt_preserves_capabilityInvariantBundle
   obtain ⟨_, st1, hMint, hLP, -, rfl⟩ := cspaceMintWithCdt_ok_decompose hStep
   have hBundle := cspaceMint_preserves_capabilityBundleOffCoverage st st1 src dst rights badge hInv
     hMint
-  obtain ⟨parent, child, hL, hI⟩ := cspaceMint_ok_decompose src dst rights badge st st1 hMint
+  obtain ⟨parent, child, hL, hI, hObj⟩ := cspaceMint_ok_decompose src dst rights badge st st1 hMint
   have hCdt := cdt_addEdge_after_insert st st1 src dst child .mint
     hInv.2.1 hInv.2.2.1 (objects_invExt_of_capabilityInvariantBundle st hInv)
     (by rw [(cspaceLookupSlot_ok_iff_lookupSlotCap st src parent).1 hL]; rfl) hI
@@ -310,6 +331,8 @@ theorem cspaceMintWithCdt_preserves_capabilityInvariantBundle
   have hShape := treeShape_addEdge_after_insert st st1 src dst child .mint
     hInv.treeShape hInv.2.1 (objects_invExt_of_capabilityInvariantBundle st hInv)
     (by rw [(cspaceLookupSlot_ok_iff_lookupSlotCap st src parent).1 hL]; rfl) hI
+    fun o ho => .inl (namesAt_of_source
+      ((cspaceLookupSlot_ok_iff_lookupSlotCap st src parent).1 hL) hObj o ho)
   rcases hBundle with ⟨⟨_, _, _, hDepth1, hObjInv1, hRCPV1⟩, -, -⟩
   have hIX := hObjInv1
   have hObjFinal : ({ st1 with cdt := st1.cdt.addEdge src dst .mint }).objects = st1.objects := rfl
@@ -342,7 +365,7 @@ theorem mintReplyCapWithCdt_preserves_capabilityInvariantBundle
       rcases pair with ⟨_, st1⟩
       have hBundle := mintReplyCap_preserves_capabilityBundleOffCoverage st st1 src dst hInv
         hMint
-      obtain ⟨parent, child, hL, hI⟩ := mintReplyCap_ok_decompose src dst st st1 hMint
+      obtain ⟨parent, child, hL, hI, hObj⟩ := mintReplyCap_ok_decompose src dst st st1 hMint
       have hCdt := cdt_addEdge_after_insert st st1 src dst child .mint
         hInv.2.1 hInv.2.2.1 (objects_invExt_of_capabilityInvariantBundle st hInv)
         (by rw [(cspaceLookupSlot_ok_iff_lookupSlotCap st src parent).1 hL]; rfl) hI
@@ -350,6 +373,8 @@ theorem mintReplyCapWithCdt_preserves_capabilityInvariantBundle
       have hShape := treeShape_addEdge_after_insert st st1 src dst child .mint
         hInv.treeShape hInv.2.1 (objects_invExt_of_capabilityInvariantBundle st hInv)
         (by rw [(cspaceLookupSlot_ok_iff_lookupSlotCap st src parent).1 hL]; rfl) hI
+        fun o ho => .inl (namesAt_of_source
+          ((cspaceLookupSlot_ok_iff_lookupSlotCap st src parent).1 hL) hObj o ho)
       rcases hBundle with ⟨⟨_, _, _, hDepth1, hObjInv1, hRCPV1⟩, -, -⟩
       have hIX := hObjInv1
       simp [hMint] at hStep
@@ -495,6 +520,10 @@ theorem cspaceMutate_preserves_capabilityInvariantBundle
                 ({ cap with rights := rights }.withBadge (badge.orElse (fun _ => cap.badge)))
                 hDepthPre hObjInv hPre hStore
               have hObjInvMid := storeObject_preserves_objects_invExt st stMid addr.cnode _ hObjInv hStore
+              have hCapPre := SystemState.slotCapAt_of_lookupSlotCap
+                ((cspaceLookupSlot_ok_iff_lookupSlotCap st addr cap).1 hLookup2)
+              have hLkPre : preCn.lookup addr.slot = some cap :=
+                (SystemState.slotCapAt_of_object hPre).symm.trans hCapPre
               exact ⟨cdtCompleteness_of_objects_cdt_eq stMid st' hCompMid hRefObj hRefCdt,
                 cdtAcyclicity_of_cdt_eq stMid st' hAcyclicMid hRefCdt,
                 cspaceDepthConsistent_of_objects_eq stMid st' hDepthMid hRefObj,
@@ -503,13 +532,22 @@ theorem cspaceMutate_preserves_capabilityInvariantBundle
                   ((SystemState.slotLinkAt_eq_of_objects fun o => by rw [hRefObj]).trans
                     (SystemState.slotLinkAt_storeObject_cnode hObjInv hPre (CNode.insert_links ..) hStore)),
                 hShape.rewrite (hRefCdt.trans (storeObject_cdt_eq st stMid addr.cnode _ hStore))
-                  (slotCapAt_ne_none_of_lookupSlotCap
-                    (by rw [(cspaceLookupSlot_ok_iff_lookupSlotCap st addr cap).1 hLookup2]; rfl))
-                  fun r hr => by
+                  hCapPre
+                  (by
+                    rw [SystemState.slotCapAt_eq_bind, hRefObj, ← SystemState.slotCapAt_eq_bind,
+                      SystemState.slotCapAt_of_object
+                        (storeObject_objects_eq st stMid addr.cnode _ hObjInv hStore)]
+                    exact CNode.lookup_insert_eq preCn addr.slot _ (CNode.slotsUnique_holds _)
+                      (CNode.slotAddressable_of_lookup _ _ _ hLkPre))
+                  (Capability.namedObject_of_target (by simp))
+                  (fun r hr => by
                     rw [SystemState.slotCapAt_eq_bind, hRefObj, ← SystemState.slotCapAt_eq_bind]
                     exact SystemState.slotCapAt_storeObject_ne hObjInv hPre hStore
                       (fun s' hs => CNode.lookup_insert_ne preCn addr.slot s' _ (Ne.symm hs)
-                        (CNode.slotsUnique_holds _)) r hr⟩
+                        (CNode.slotsUnique_holds _)) r hr)
+                  fun o hp => by
+                    show st'.objects[o]? ≠ none
+                    rw [hRefObj]; exact SystemState.objectPresent_storeObject hObjInv hStore o hp⟩
       · simp_all
   exact ⟨cspaceLookupSound_holds st',
     hComp', hAcyclic', hDepth', hObjInv',
