@@ -1536,6 +1536,10 @@ const VSPACE_CAP: u64 = cap_address(VSPACE_SLOT);
 const UNTYPED_CAP: u64 = cap_address(UNTYPED_SLOT);
 #[cfg(feature = "hw_target")]
 const FRAME_CAP: u64 = cap_address(FRAME_SLOT);
+/// The mint slot's capability, where the thread-finalising scenarios carve a
+/// scheduling context.
+#[cfg(feature = "hw_target")]
+const MINT_CAP: u64 = cap_address(MINT_SLOT);
 /// The frame capability's copy, in the move slot, while the revoke scenario
 /// maps it.
 #[cfg(feature = "hw_target")]
@@ -1865,6 +1869,17 @@ const PASSIVE_CHILD_IDS: [u64; 4] = [20, 21, 22, 23];
 /// partner, each finalised and retired by its only capability's delete.
 #[cfg(feature = "hw_target")]
 const FINALISED_CHILD_IDS: [u64; 3] = [24, 25, 26];
+/// The ids the thread-finalising scenarios carve at: an inactive thread, a
+/// thread bound to the boot notification, a scheduling context and the thread
+/// it is bound to, each finalised and retired by its only capability's delete.
+#[cfg(feature = "hw_target")]
+const THREAD_CHILD_IDS: [u64; 4] = [27, 28, 29, 30];
+/// `KernelObjectType` tags of a thread and a scheduling context, the context's
+/// size bits (7: the least the carve takes) in the tag word's upper bits.
+#[cfg(feature = "hw_target")]
+const TCB_TYPE: u64 = 0;
+#[cfg(feature = "hw_target")]
+const SCHED_CONTEXT_TYPE: u64 = 6 + (7 << 8);
 /// `KernelObjectType` tags of the passive kinds; the CNode's size bits (its
 /// radix, 2: four slots) in the tag word's upper bits.
 #[cfg(feature = "hw_target")]
@@ -1935,7 +1950,7 @@ const PARTNER_PRIORITY: u64 = 255;
 /// No service is in the image, so the service revoke and query are not
 /// issued.
 #[cfg(feature = "hw_target")]
-const INVOCATION_SCENARIOS: [&[RoundTrip]; 5] = [
+const INVOCATION_SCENARIOS: [&[RoundTrip]; 6] = [
     &[
         invocation(
             "cspace-copy",
@@ -2029,6 +2044,73 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 5] = [
         ),
         invocation("tcb-resume", TCB_RESUME, PARTNER_TCB_CAP, [0; 4]),
         invocation("tcb-suspend", TCB_SUSPEND, PARTNER_TCB_CAP, [0; 4]),
+    ],
+    // WS-ZA ZA5.4 part 24: a carved thread's last capability deleted while it
+    // is inactive, and while it is bound to the boot notification; a carved
+    // scheduling context's while it is bound to a carved thread, then that
+    // thread's.  Each delete finalises its object (seL4's `finaliseCap`) and
+    // retires it.
+    &[
+        invocation(
+            "untyped-retype-tcb",
+            UNTYPED_RETYPE,
+            UNTYPED_CAP,
+            [TCB_TYPE, THREAD_CHILD_IDS[0], CNODE_CAP, FRAME_SLOT],
+        ),
+        invocation(
+            "inactive-tcb-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [FRAME_SLOT, 0, 0, 0],
+        ),
+        invocation(
+            "untyped-retype-bound-tcb",
+            UNTYPED_RETYPE,
+            UNTYPED_CAP,
+            [TCB_TYPE, THREAD_CHILD_IDS[1], CNODE_CAP, FRAME_SLOT],
+        ),
+        invocation(
+            "bind-carved-tcb",
+            TCB_BIND_NOTIFICATION,
+            FRAME_CAP,
+            [NOTIFICATION_CAP, 0, 0, 0],
+        ),
+        invocation(
+            "bound-tcb-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [FRAME_SLOT, 0, 0, 0],
+        ),
+        invocation(
+            "untyped-retype-sched-context",
+            UNTYPED_RETYPE,
+            UNTYPED_CAP,
+            [SCHED_CONTEXT_TYPE, THREAD_CHILD_IDS[2], CNODE_CAP, MINT_SLOT],
+        ),
+        invocation(
+            "untyped-retype-sc-thread",
+            UNTYPED_RETYPE,
+            UNTYPED_CAP,
+            [TCB_TYPE, THREAD_CHILD_IDS[3], CNODE_CAP, FRAME_SLOT],
+        ),
+        invocation(
+            "bind-carved-sched-context",
+            SCHED_CONTEXT_BIND,
+            MINT_CAP,
+            [FRAME_CAP, 0, 0, 0],
+        ),
+        invocation(
+            "bound-sched-context-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [MINT_SLOT, 0, 0, 0],
+        ),
+        invocation(
+            "unbound-tcb-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [FRAME_SLOT, 0, 0, 0],
+        ),
     ],
     &[
         invocation(

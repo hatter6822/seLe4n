@@ -4124,7 +4124,7 @@ run_check "INVARIANT" rg -n -U 'def cspaceDeleteThenFinalise[^\n]*(\n([ \t][^\n]
 # and only then is the object retired.  The anchors pin the kind dispatch, the
 # order (unbind before cancel; finalise before retire) and that both finalising
 # capability paths route through the finalised retire.
-run_check "INVARIANT" rg -n -U 'def finaliseFinalObject [^\n]*(\n([ \t][^\n]*)?){0,5}\n      \| some \.endpoint => cancelAllIpc x st\n      \| some \.notification => cancelAllSignals x \(unbindMaybeNotification x st\)\n      \| _ => st' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n -U 'def finaliseFinalObject [^\n]*(\n([ \t][^\n]*)?){0,5}\n      \| some \.endpoint => cancelAllIpc x st\n      \| some \.notification => cancelAllSignals x \(unbindMaybeNotification x st\)\n      \| some \.tcb => finaliseThread x st\n      \| some \.schedContext => finaliseSchedContext x st\n      \| _ => st' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 run_check "INVARIANT" rg -n -U 'def retireFinalisedObject [^\n]*\n[^\n]*\n  retireFinalObject executingCore target recorder \(finaliseFinalObject target st\)' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 run_negative_check "INVARIANT" rg -n '[^d]Object executingCore target recorder' SeLe4n/Kernel/Capability/FrameFinalise.lean
 # The IPC bundle, the reachability bundle and the projection are each proven
@@ -4133,6 +4133,21 @@ run_check "INVARIANT" rg -n '^theorem finaliseFinalObject_preserves_ipcInvariant
 run_check "INVARIANT" rg -n '^theorem retireFinalisedObject_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllPreservation.lean
 run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlotFinalising_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllPreservation.lean
 run_check "INVARIANT" rg -n '^theorem finaliseFinalObject_closed($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllFrame.lean
+# v0.36.135: a thread is finalised in seL4's finaliseCap order (notification
+# unbind, scheduling-context unbind, then suspend: cancel, then .Inactive, then
+# the destroy cleanup), only when the pre-state admits it; a held or executing
+# thread, or the idle thread, is refused; the cleanup is proven the identity on
+# the finalised object and compiled away, so the spec keeps it.
+run_check "INVARIANT" rg -n -U 'def finaliseThread \(x : SeLe4n\.ObjId\) \(st : SystemState\) : SystemState :=\n  if threadFinaliseAdmitted st x then\n[^\n]*\n    finaliseThreadCleanup\n      \(finaliseThreadSuspend\n        \(finaliseThreadCancel\n          \(finaliseThreadUnbindSchedContext\n            \(finaliseThreadUnbindNotification st tid\) tid\) tid\) tid\) x' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n -U 'def threadFinaliseAdmitted[^\n]*(\n([ \t][^\n]*)?){0,5}\n    !threadHeldOnSomeCore st tid && t\.runCoreCode == 0 &&' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n -U 'def finaliseSchedContext \(x : SeLe4n\.ObjId\) \(st : SystemState\) : SystemState :=\n  if schedContextFinaliseAdmitted st x then\n    finaliseSchedContextCleanup \(finaliseSchedContextUnbind st x\) x' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n '^theorem finaliseThreadCleanup_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n '^theorem finaliseSchedContextCleanup_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n '^theorem finaliseThread_closed($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllFrame.lean
+run_check "INVARIANT" rg -n '^theorem finaliseFinalObject_runQueueEntryStage($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Capability.lean
+run_negative_check "INVARIANT" rg -n '^theorem finaliseFinalObject_runQueueStage($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Capability.lean
+run_check "INVARIANT" rg -n '^theorem finaliseThread_hidden($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/FinaliseProjection.lean
+run_check "INVARIANT" rg -n -U 'def schedLockSet_capabilityDestroyOnCore : List \(LockKey × Concurrency\.AccessMode\) :=\n  schedFootprintOfCores Concurrency\.allCores Concurrency\.allCores' SeLe4n/Kernel/Scheduler/SchedFootprint.lean
 run_check "INVARIANT" rg -n '^theorem popHead_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/IPC/DualQueue/PopInPlace.lean
 run_check "INVARIANT" rg -n '^theorem finaliseFinalObject_preserves_ipcReachable($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllReachability.lean
 run_check "INVARIANT" rg -n '^theorem retireFinalisedObject_preserves_ipcReachable($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllReachability.lean
@@ -4156,7 +4171,7 @@ run_check "INVARIANT" rg -n -U '  \| \.endpoint => \(KernelObject\.endpoint \(En
 run_check "INVARIANT" rg -n -U '@\[csimp\] theorem CarveRequest\.object_eq_impl :\n    @CarveRequest\.object = @CarveRequest\.objectImpl' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n -U '@\[noinline, never_extract\] def KernelObject\.unshareFresh \(o : KernelObject\) : KernelObject :=\n  o\.unshare' SeLe4n/Model/Object/Unshare.lean
 run_check "INVARIANT" rg -n -U 'def slotRetireTarget[^\n]*(\n([ \t][^\n]*)?){0,4}\n    \| \.object x => if retirableKind st x && st\.capIsFinal cnode slot then x\.val \+ 1 else 0' SeLe4n/Kernel/Capability/FinalRetire.lean
-run_check "INVARIANT" rg -n -U 'def retirableKind[^\n]*\n  match st\.getObjectType\? x with\n  \| some \.frame \| some \.pageTable \| some \.vspaceRoot => true\n  \| some \.endpoint \| some \.notification \| some \.reply \| some \.cnode => true\n  \| some \.untyped =>\n    match st\.getUntyped\? x with\n    \| some U => U\.children\.isEmpty\n    \| none => false\n  \| _ => false' SeLe4n/Kernel/Capability/FinalRetire.lean
+run_check "INVARIANT" rg -n -U 'def retirableKind[^\n]*\n  match st\.getObjectType\? x with\n  \| some \.frame \| some \.pageTable \| some \.vspaceRoot => true\n  \| some \.endpoint \| some \.notification \| some \.reply \| some \.cnode => true\n  \| some \.tcb \| some \.schedContext => true\n  \| some \.untyped =>\n    match st\.getUntyped\? x with\n    \| some U => U\.children\.isEmpty\n    \| none => false\n  \| _ => false' SeLe4n/Kernel/Capability/FinalRetire.lean
 run_check "INVARIANT" rg -n -U 'def retireRecordedObject[^\n]*(\n([ \t][^\n]*)?){0,3}\n  match st1\.getVSpaceRoot\? x with\n  \| some root => retypeAsidRoundStep executingCore root\.asid \(retireCarvedObject st1 x\)\n  \| none => retireCarvedObject st1 x' SeLe4n/Kernel/Capability/FinalRetire.lean
 # v0.36.133: a final delete of an endpoint, notification, reply or CNode retires
 # it while it is quiescent and nothing names it by id (seL4's finaliseCap of a
@@ -4165,10 +4180,10 @@ run_check "INVARIANT" rg -n -U 'def retireRecordedObject[^\n]*(\n([ \t][^\n]*)?)
 # last capability.
 run_check "INVARIANT" rg -n -U 'def retireFinalObject[^\n]*(\n([ \t][^\n]*)?){0,4}\n    if finalRetireAdmitted st x then\n      retireRecordedObject executingCore recorder x \(eraseRetiredObject st x\)\n    else st' SeLe4n/Kernel/Capability/FinalRetire.lean
 run_check "INVARIANT" rg -n -U 'def passiveObjectRetirable[^\n]*\n  passiveObjectQuiescent st x && storeNamesNone st x && registryNamesNone st x &&\n    servicesNameNone st x && irqHandlersNameNone st x' SeLe4n/Kernel/Capability/FinalRetire.lean
-run_check "INVARIANT" rg -n -U 'def finalRetireAdmitted[^\n]*\n  !passiveKindAt st x \|\| passiveObjectRetirable st x' SeLe4n/Kernel/Capability/FinalRetire.lean
+run_check "INVARIANT" rg -n -U 'def finalRetireAdmitted[^\n]*\n  \(!passiveKindAt st x \|\| passiveObjectRetirable st x\) &&\n    \(!schedulingKindAt st x \|\| schedulingObjectRetirable st x\)' SeLe4n/Kernel/Capability/FinalRetire.lean
 # The passive erase runs through the registered erase primitives (no raw
 # object-table write of its own), and its record form is a theorem.
-run_check "INVARIANT" rg -n -U 'def eraseRetiredObject \(st : SystemState\) \(x : SeLe4n\.ObjId\) : SystemState :=\n  if passiveKindAt st x then\n    withObjectTypeErased \(withObjectIndexSetErased \(withObjectUnindexed \(withObjectErased st x\) x\) x\) x\n  else st' SeLe4n/Kernel/Capability/FinalRetire.lean
+run_check "INVARIANT" rg -n -U 'def eraseRetiredObject \(st : SystemState\) \(x : SeLe4n\.ObjId\) : SystemState :=\n  if erasableKindAt st x then\n    withObjectTypeErased \(withObjectIndexSetErased \(withObjectUnindexed \(withObjectErased st x\) x\) x\) x\n  else st' SeLe4n/Kernel/Capability/FinalRetire.lean
 run_check "INVARIANT" rg -n '^theorem eraseRetiredObject_eq ' SeLe4n/Kernel/Capability/FinalRetire.lean
 run_negative_check "INVARIANT" rg -n 'eraseRetiredObjectImpl|eraseRetiredObject_eq_impl' SeLe4n
 # The final-delete retire keeps what other objects name, and the reachable state.

@@ -290,7 +290,7 @@ theorem storeUnbindNotification_preserves_ipcInvariantFull
 per-core unbind (`cancelBoundDonationOnCore_preserves_ipcInvariantFull`), on a
 thread whose context is bound back to it and whose IPC state an unbound thread
 may idle in. -/
-theorem finaliseScUnbind_preserves_ipcInvariantFull :
+theorem finaliseScUnbindStep_keepsIpcInvariantFull :
     FinaliseScUnbindStep (fun s => ipcInvariantFull s ∧ s.objects.invExt) := by
   intro s s' t tcb sc h hT hS hO _ _ hA hSc hB hOk
   rw [cancelDonationArmOnCore_of_codes s t hS hO] at hOk
@@ -304,7 +304,7 @@ theorem finaliseScUnbind_preserves_ipcInvariantFull :
 
 /-- **A thread's notification cancel, without the wake, keeps the bundle**
 (`cancelIpcBlocking_notificationArm_preserves_ipcInvariantFull`). -/
-theorem finaliseCancel_preserves_ipcInvariantFull :
+theorem finaliseCancelStep_keepsIpcInvariantFull :
     FinaliseCancelStep (fun s => ipcInvariantFull s ∧ s.objects.invExt) := by
   intro s n t tcb _ h hT hI _ _ hC
   obtain ⟨hNotRes, -, hP, hN, -⟩ := notificationWaiterCancellable_parts hC
@@ -317,7 +317,7 @@ theorem finaliseCancel_preserves_ipcInvariantFull :
 
 /-- **The suspend keeps the bundle**: `threadState` is a field the bundle does
 not read (`insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull`). -/
-theorem finaliseSuspend_preserves_ipcInvariantFull :
+theorem finaliseSuspendStep_keepsIpcInvariantFull :
     FinaliseSuspendStep (fun s => ipcInvariantFull s ∧ s.objects.invExt) := by
   intro s t tcb h hT _ _ _ _ _ _
   rw [SystemState.updateTcb_eq_of_some hT]
@@ -349,8 +349,8 @@ theorem finaliseFinalObject_preserves_ipcInvariantFull (target : Nat) (st : Syst
     (fun n s _ t h _ _ hCode hIn =>
       ⟨storeUnbindNotification_preserves_ipcInvariantFull s n t h.2 h.1 hCode hIn,
         (FinaliseFrame.storeUnbindNotification s t n h.2).invExt⟩)
-    finaliseScUnbind_preserves_ipcInvariantFull finaliseCancel_preserves_ipcInvariantFull
-    finaliseSuspend_preserves_ipcInvariantFull
+    finaliseScUnbindStep_keepsIpcInvariantFull finaliseCancelStep_keepsIpcInvariantFull
+    finaliseSuspendStep_keepsIpcInvariantFull
     target st ⟨hInv, hObjInv⟩).1
 
 /-- **The retire after the finalisation keeps the IPC bundle**: the

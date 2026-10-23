@@ -791,7 +791,7 @@ theorem scUnbind {s s' : SystemState} {t : SeLe4n.ThreadId} {tcb : TCB} {sc : Sc
     (hB : sc.boundThreadCode = t.val + 1)
     (hOk : cancelDonationArmOnCore s t tcb = .ok s') :
     finaliseStepInvariant s' ∧ timeoutBudgetFrame s s' :=
-  have hI := finaliseScUnbind_preserves_ipcInvariantFull s s' t tcb sc ⟨h.1, h.2.1⟩ hT hS hO hR
+  have hI := finaliseScUnbindStep_keepsIpcInvariantFull s s' t tcb sc ⟨h.1, h.2.1⟩ hT hS hO hR
     hH hA hSc hB hOk
   have hOk' : cancelBoundDonationOnCore s t tcb (determineTargetCore s t) = .ok s' := by
     rw [← cancelDonationArmOnCore_of_codes s t hS hO]; exact hOk
@@ -806,7 +806,7 @@ theorem cancel {s : SystemState} {n : SeLe4n.ObjId} {t : SeLe4n.ThreadId} {tcb :
     (hH : ntfn.waitHead = some t) (hC : notificationWaiterCancellable s n t tcb = true) :
     finaliseStepInvariant (Lifecycle.Suspend.cancelIpcBlocking s t tcb) ∧
       timeoutBudgetFrame s (Lifecycle.Suspend.cancelIpcBlocking s t tcb) :=
-  have hF := finaliseCancel_preserves_ipcInvariantFull s n t tcb ntfn ⟨h.1, h.2.1⟩ hT hI hN hH hC
+  have hF := finaliseCancelStep_keepsIpcInvariantFull s n t tcb ntfn ⟨h.1, h.2.1⟩ hT hI hN hH hC
   have r := notificationCancel_preserves_reachableParts s n ntfn t tcb h.2.1 hN hH hT hI
     h.2.2.1 h.2.2.2
   ⟨⟨hF.1, hF.2, r.1, r.2.2⟩, r.2.1⟩

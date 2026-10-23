@@ -2213,6 +2213,117 @@ private def runPassiveRetireChecks : IO Unit := do
     assertBool "replacing a slot whose root another slot still names keeps the root"
       ((rootAt st 980).isSome && recordsChildAt st carveUt 980)
 
+-- ============================================================================
+-- §5n  WS-ZA ZA5.4 part 24 — a thread and a scheduling context are finalised
+-- by their last capability's delete
+-- ============================================================================
+
+private def tcbTag : Nat := 0
+/-- A scheduling context of `2 ^ 7` bytes, the least the carve takes
+(`minSchedContextSizeBits`). -/
+private def schedContextTag : Nat := 6 + 7 * 256
+
+/-- `.schedContextBind` on the scheduling-context capability at `scSlot`: MR0
+the thread's capability address. -/
+private def decodeBindSchedContext (scSlot tcbSlot : Nat) : SyscallDecodeResult :=
+  { capAddr   := SeLe4n.CPtr.ofNat scSlot
+  , msgInfo   := { length := 1, extraCaps := 0, label := 0 }
+  , syscallId := .schedContextBind
+  , msgRegs   := #[SeLe4n.RegValue.ofNat tcbSlot] }
+
+/-- The scheduling-context code of the thread at `oid` (its id plus one, `0`
+when unbound). -/
+private def scCodeOf (st : SystemState) (oid : Nat) : Option Nat :=
+  (st.getTcb? ⟨oid⟩).map (·.scBindingScCode)
+
+private def runThreadFinaliseChecks : IO Unit := do
+  IO.println "-- §5n the final capability's delete finalises a thread or a scheduling context (WS-ZA ZA5.4 part 24)"
+  for (name, tag) in [("thread", tcbTag), ("scheduling context", schedContextTag)] do
+    match runAll carveScenario [decodeCarve slotUtRetype tag 960 slotOwnCnRW 12] with
+    | .error e => assertBool s!"carving the {name} succeeds (got {repr e})" false
+    | .ok st => do
+      assertBool s!"setup: the untyped records the {name}"
+        (recordsChildAt st carveUt 960 && storedAt st 960)
+      match runAll st [decodeCopy 12 13, decodeDelete 13] with
+      | .error e => assertBool s!"copying and deleting the {name}'s capability succeeds (got {repr e})" false
+      | .ok st1 => do
+        assertBool s!"deleting a capability to the {name} that is not the last keeps it"
+          (storedAt st1 960 && recordsChildAt st1 carveUt 960)
+        match runAll st1 [decodeDelete 12] with
+        | .error e => assertBool s!"deleting the {name}'s last capability succeeds (got {repr e})" false
+        | .ok st2 => do
+          assertBool s!"deleting the {name}'s last capability finalises it and retires it from the store and the untyped's list"
+            (!storedAt st2 960 && !recordsChildAt st2 carveUt 960 && (st2.getUntyped? carveUt).isSome)
+          assertBool s!"the finalised {name}'s id carves again"
+            ((runAll st2 [decodeCarve slotUtRetype tag 960 slotOwnCnRW 12]).toOption.isSome)
+  -- A thread bound to a notification is unbound from it (seL4's
+  -- `unbindNotification`) before it is retired; the notification stays.
+  match runAll carveScenario
+      [decodeCarve slotUtRetype tcbTag 960 slotOwnCnRW 12,
+       decodeCarve slotUtRetype notificationTag 961 slotOwnCnRW 13,
+       decodeBindNotification 12 13] with
+  | .error e => assertBool s!"carving a thread and a notification and binding them succeeds (got {repr e})" false
+  | .ok st => do
+    assertBool "setup: the carved thread is bound to the carved notification"
+      ((st.getTcb? ⟨960⟩).map (·.boundNotification) == some (some (SeLe4n.ObjId.ofNat 961)))
+    match runAll st [decodeDelete 12] with
+    | .error e => assertBool s!"deleting the bound thread's last capability succeeds (got {repr e})" false
+    | .ok st1 =>
+      assertBool "deleting a bound thread's last capability unbinds its notification and retires the thread"
+        (!storedAt st1 960 && !recordsChildAt st1 carveUt 960 && storedAt st1 961 &&
+          (st1.getNotification? (SeLe4n.ObjId.ofNat 961)).map (·.boundTCB) == some none)
+  -- A scheduling context bound to a thread: either side's last capability's
+  -- delete unbinds the two (seL4's `schedContext_unbindAllTCBs` /
+  -- `unbindFromSC`) and retires only the destroyed side.
+  match runAll carveScenario
+      [decodeCarve slotUtRetype tcbTag 960 slotOwnCnRW 12,
+       decodeCarve slotUtRetype schedContextTag 961 slotOwnCnRW 13,
+       decodeBindSchedContext 13 12] with
+  | .error e => assertBool s!"carving a thread and a scheduling context and binding them succeeds (got {repr e})" false
+  | .ok st => do
+    assertBool "setup: the carved thread is bound to the carved scheduling context"
+      (scCodeOf st 960 == some 962)
+    match runAll st [decodeDelete 13] with
+    | .error e => assertBool s!"deleting the bound scheduling context's last capability succeeds (got {repr e})" false
+    | .ok st1 =>
+      assertBool "deleting a bound scheduling context's last capability unbinds its thread and retires the context"
+        (!storedAt st1 961 && !recordsChildAt st1 carveUt 961 && scCodeOf st1 960 == some 0)
+    match runAll st [decodeDelete 12] with
+    | .error e => assertBool s!"deleting the bound thread's last capability succeeds (got {repr e})" false
+    | .ok st1 =>
+      assertBool "deleting a bound thread's last capability unbinds its scheduling context and retires the thread"
+        (!storedAt st1 960 && !recordsChildAt st1 carveUt 960 && storedAt st1 961 &&
+          (st1.getSchedContext? ⟨961⟩).map (·.boundThreadCode) == some 0)
+  -- A thread blocked on a notification as its head waiter has its wait
+  -- cancelled (seL4's `suspend` → `cancelIPC`) and is retired, leaving the
+  -- notification's queue empty.  No syscall blocks a thread whose space slots
+  -- are empty (their finalising delete is a later row), so the wait is staged
+  -- through the kernel's own wait on the carved thread.
+  match runAll carveScenario
+      [decodeCarve slotUtRetype tcbTag 960 slotOwnCnRW 12,
+       decodeCarve slotUtRetype notificationTag 961 slotOwnCnRW 13] with
+  | .error e => assertBool s!"carving a thread and a notification succeeds (got {repr e})" false
+  | .ok st0 =>
+    let staged := st0.updateTcb ⟨960⟩ fun t => { t with threadState := .BlockedNotif }
+    match SeLe4n.Kernel.notificationWait (SeLe4n.ObjId.ofNat 961) ⟨960⟩ staged with
+    | .error e => assertBool s!"the carved thread's wait on the carved notification blocks (got {repr e})" false
+    | .ok (_, st) => do
+      assertBool "setup: the carved thread is the carved notification's head waiter"
+        ((st.getNotification? (SeLe4n.ObjId.ofNat 961)).map (·.waitHead) == some (some ⟨960⟩))
+      match runAll st [decodeDelete 12] with
+      | .error e => assertBool s!"deleting the blocked thread's last capability succeeds (got {repr e})" false
+      | .ok st1 =>
+        assertBool "deleting a blocked thread's last capability cancels its wait and retires it"
+          (!storedAt st1 960 && !recordsChildAt st1 carveUt 960 &&
+            (st1.getNotification? (SeLe4n.ObjId.ofNat 961)).map (·.waitHead) == some none)
+  -- The executing thread is not finalised (`docs/REGISTERED_DEBT.md`): its
+  -- capability's delete leaves it in the store, still current.
+  match runAll spaceScenario [decodeDelete slotOwnerTcb] with
+  | .error e => assertBool s!"deleting a capability to the executing thread succeeds (got {repr e})" false
+  | .ok st =>
+    assertBool "deleting the executing thread's capability keeps the thread, current"
+      (storedAt st carveOwner.toNat && st.scheduler.currentOnCore Concurrency.bootCoreId == some carveOwner)
+
 def runVSpaceCapabilityBindingChecks : IO Unit := do
   IO.println "===================================================="
   IO.println "VSpace capability-binding suite (PR #845 review, P1)"
@@ -2234,6 +2345,7 @@ def runVSpaceCapabilityBindingChecks : IO Unit := do
   runFrameFinaliseChecks
   runFinalDeleteRetireChecks
   runPassiveRetireChecks
+  runThreadFinaliseChecks
   runAuthorizedChecks
   IO.println "===================================================="
   IO.println "All VSpace capability-binding checks PASS."

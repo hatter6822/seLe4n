@@ -266,7 +266,16 @@ for driver in drivers:
             "page-table-delete-3", "page-table-delete-2", "page-table-delete-1",
             # WS-ZA ZA5.4 part 22: a quiescent endpoint, notification, reply
             # and CNode retired by their only capability's delete.
-            "endpoint-delete", "notification-delete", "reply-delete", "cnode-delete")}
+            "endpoint-delete", "notification-delete", "reply-delete", "cnode-delete",
+            # WS-ZA ZA5.4 part 24: a carved thread's only capability deleted
+            # while it is inactive and while it is bound to the boot
+            # notification, a carved scheduling context's while it is bound
+            # to a carved thread, then that thread's: each finalised in place
+            # (the unbinds and the suspend write the objects' own cells) and
+            # retired.
+            "inactive-tcb-delete", "bind-carved-tcb", "bound-tcb-delete",
+            "bind-carved-sched-context", "bound-sched-context-delete",
+            "unbound-tcb-delete")}
         # WS-ZA ZA5.1: the memory invocations' readings today, each the
         # operation's own cells (object writes, the store's copy); the rows
         # that bring them to zero lower these pins.
@@ -302,6 +311,9 @@ for driver in drivers:
             "untyped-retype-busy-notification": (11, 11),
             "untyped-retype-bound-notification": (11, 11),
             "untyped-retype-reply": (12, 12), "untyped-retype-cnode": (29, 29),
+            # WS-ZA ZA5.4 part 24: a thread's and a scheduling context's carve.
+            "untyped-retype-tcb": (11, 11), "untyped-retype-bound-tcb": (11, 11),
+            "untyped-retype-sched-context": (11, 11), "untyped-retype-sc-thread": (11, 11),
             "vspace-unmap-first": (0, 0), "vspace-map-again": (0, 0),
             "vspace-unify-instruction": (4, 3),
             "vspace-map-copy": (7, 5), "frame-revoke": (0, 0),

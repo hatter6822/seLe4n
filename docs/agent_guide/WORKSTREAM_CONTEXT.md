@@ -294,9 +294,17 @@ IPC and unbinds a notification and cancels its waiters (`finaliseFinalObject`,
 `IPC/Operations/CancelAll.lean`), waking each cancelled waiter on its own core:
 a new transition that destroys a capability must retire through it, and
 `.cspaceDelete` / `.cspaceRevoke` are remote writers that declare a scheduler
-footprint.  A busy or referenced reply, TCB or scheduling context, and an
-untyped that still records a child, outlive their last capability until parts
-24–26.  The
+footprint.  Since part 24 (`v0.36.135`) it also finalises a thread (unbound
+from its notification and scheduling context, its notification wait cancelled,
+suspended: `finaliseThread`) and a scheduling context (unbound from its thread:
+`finaliseSchedContext`) through `lifecyclePreRetypeCleanup`, which is proven the
+identity on the finalised object and compiled away; the delete and revoke
+footprint names every core's run and replenish queue, and the finalisation
+carries `RunQueueEntryStage`, not `RunQueueStage` (the suspend is not
+state-monotone).  A thread that is running, held, queued, endpoint- or
+reply-blocked, donating or holding space-slot capabilities, a busy reply or
+scheduling context, and an untyped that still records a child, outlive their
+last capability until parts 25–26 (`docs/REGISTERED_DEBT.md`).  The
 suspend of a thread blocked in IPC or holding a donated context is the one
 syscall arm left on the general path (ZA6.1).  ZA6 covers the other
 entries and makes the rule standing.  Plan:
