@@ -33,7 +33,8 @@ does not carry it; and the two destroying arms are composites here:
 
 * `cspaceDeleteSlotFinalising` — the delete, then the page the destroyed
   capability's record names (`slotMappedPages`, read from the slot the delete
-  destroys) removed;
+  destroys) removed, then the object it was the final capability to retired
+  (`retireFinalObject`);
 * `cspaceRevokeCdtFinalising` — seL4's `cteRevoke`: the source's first child
   deleted by `cspaceDeleteSlotFinalising` until it has none.
 
@@ -93,6 +94,15 @@ destroyed capability recorded is not live afterwards, since each delete clears
 its own page and every later one only shrinks roots
 (`FinalisingDeleteChain.unmapped`).  The general revocation and its batch
 teardown are retired.
+
+**Retire on final delete (`v0.36.132`).**  seL4's `finaliseCap` acts on the
+final capability, and for memory it ends the object: a delete that destroys the
+final capability to a frame, a page table, an address-space root or an untyped
+that records no child retires it after the teardown (`retireFinalObject`,
+`Capability/FinalRetire.lean`), the object and the untyped that records it read
+before the slot is emptied (`slotRetireTarget`, `slotRetireRecorder`).  The
+delete fast path admits only a delete that retires nothing
+(`capabilityRetiresNothing`), and every revoke retires through its deletes.
 -/
 
 namespace SeLe4n.Kernel

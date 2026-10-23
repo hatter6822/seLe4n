@@ -133,9 +133,9 @@ theorem childListErase_eq_filter (l : List UntypedChild) (x : SeLe4n.ObjId) :
 
 /-- **Whether the untyped at `w` records `x`** in its child list. -/
 @[inline] def untypedRecordsChild (st : SystemState) (w x : SeLe4n.ObjId) : Bool :=
-  match st.objects[w]? with
-  | some (.untyped U) => childListRecords U.children x
-  | _ => false
+  match st.getUntyped? w with
+  | some U => childListRecords U.children x
+  | none => false
 
 theorem untypedRecordsChild_iff (st : SystemState) (w x : SeLe4n.ObjId) :
     untypedRecordsChild st w x = true ↔ SystemState.recordsChild st.getUntyped? w x := by
@@ -242,7 +242,7 @@ theorem recorderInStore_spec (st : SystemState) (x : SeLe4n.ObjId) (hInv : st.ob
         split
         · next hr =>
           refine .inr ⟨k, rfl, ?_⟩
-          unfold untypedRecordsChild
+          unfold untypedRecordsChild SystemState.getUntyped?
           rw [show st.objects[k]? = some (.untyped U) from hGet]
           exact hr
         · exact .inl rfl
@@ -251,7 +251,7 @@ theorem recorderInStore_spec (st : SystemState) (x : SeLe4n.ObjId) (hInv : st.ob
       exact hAcc
   · intro h0 w
     cases hw : st.objects[w]? with
-    | none => simp [untypedRecordsChild, hw]
+    | none => simp [untypedRecordsChild, SystemState.getUntyped?, hw]
     | some v =>
       have hQ := SeLe4n.Kernel.RobinHood.RHTable.fold_pointwise st.objects 0
         (fun acc k o =>
@@ -264,7 +264,7 @@ theorem recorderInStore_spec (st : SystemState) (x : SeLe4n.ObjId) (hInv : st.ob
         (fun _ => trivial) (fun _ _ _ _ _ _ => trivial)
         (fun acc k o hGet _ hz => by
           obtain ⟨-, hU⟩ := recorderInStore_step hz
-          unfold untypedRecordsChild
+          unfold untypedRecordsChild SystemState.getUntyped?
           rw [show st.objects[k]? = some o from hGet]
           cases o with
           | untyped U => exact hU U rfl
@@ -305,11 +305,12 @@ page table, an address-space root, or an untyped whose child list records
 nothing (see the module docstring for why an untyped with a live record
 stays). -/
 @[inline] def retirableKind (st : SystemState) (x : SeLe4n.ObjId) : Bool :=
-  match st.objects[x]? with
-  | some (.frame _) => true
-  | some (.pageTable _) => true
-  | some (.vspaceRoot _) => true
-  | some (.untyped U) => U.children.isEmpty
+  match st.getObjectType? x with
+  | some .frame | some .pageTable | some .vspaceRoot => true
+  | some .untyped =>
+    match st.getUntyped? x with
+    | some U => U.children.isEmpty
+    | none => false
   | _ => false
 
 /-- **The object the capability in slot `slot` of `cnode` takes with it**, as a
@@ -378,9 +379,9 @@ def retireFinalObject (executingCore : Concurrency.CoreId) (target recorder : Na
   else if st.objects.size < st.objects.capacity then
     let x := SeLe4n.ObjId.ofNat (target - 1)
     let st1 := if recorder = 0 then st else unrecordChild st (SeLe4n.ObjId.ofNat (recorder - 1)) x
-    match st1.objects[x]? with
-    | some (.vspaceRoot root) => retypeAsidRoundStep executingCore root.asid (retireCarvedObject st1 x)
-    | _ => retireCarvedObject st1 x
+    match st1.getVSpaceRoot? x with
+    | some root => retypeAsidRoundStep executingCore root.asid (retireCarvedObject st1 x)
+    | none => retireCarvedObject st1 x
   else st
 
 -- ============================================================================
@@ -636,13 +637,13 @@ theorem retireFinalObject_unrecorded (ec : Concurrency.CoreId) (target recorder 
       split at hu
       · next h0 =>
         have := hR0 h0 u
-        unfold untypedRecordsChild at this
+        unfold untypedRecordsChild SystemState.getUntyped? at this
         rw [hu] at this
         exact absurd ((childListRecords_iff _ _).mpr ⟨ch, hch, hc⟩) (by simp [this])
       · next h0 =>
         have hw := hR1 h0
         rcases unrecordChild_cases st (SeLe4n.ObjId.ofNat (recorder - 1)) x with ⟨hN, -⟩ | ⟨U, hW, hS⟩
-        · unfold untypedRecordsChild at hw
+        · unfold untypedRecordsChild SystemState.getUntyped? at hw
           cases hO : st.objects[SeLe4n.ObjId.ofNat (recorder - 1)]? with
           | none => rw [hO] at hw; cases hw
           | some o =>
@@ -656,7 +657,7 @@ theorem retireFinalObject_unrecorded (ec : Concurrency.CoreId) (target recorder 
             exact (mem_childListErase.mp hch).2 hc
           · rw [storeObject_objects_ne _ _ _ _ _ hK hInv hS] at hu
             have hr : untypedRecordsChild st u x = true := by
-              unfold untypedRecordsChild; rw [hu]
+              unfold untypedRecordsChild SystemState.getUntyped?; rw [hu]
               exact (childListRecords_iff _ _).mpr ⟨ch, hch, hc⟩
             exact hK (hUniq _ _ hr hw)
     generalize hS1 : (if recorder = 0 then st

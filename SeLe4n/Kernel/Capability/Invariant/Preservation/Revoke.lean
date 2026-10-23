@@ -166,10 +166,8 @@ theorem finaliseDestroyedCapabilities_preserves_capabilityInvariantBundle
 /-- Whether an untyped records a child reads the untyped records alone. -/
 theorem untypedRecordsChild_congr {st st' : SystemState} (h : st'.getUntyped? = st.getUntyped?)
     (w x : SeLe4n.ObjId) : untypedRecordsChild st' w x = untypedRecordsChild st w x := by
-  have e := congrFun h w
-  unfold SystemState.getUntyped? at e
   unfold untypedRecordsChild
-  split <;> split <;> simp_all
+  rw [h]
 
 /-- **The retire keeps the capability invariants** when no slot names its target
 and its recorder word answers truly.  It writes no slot and no edge; it takes

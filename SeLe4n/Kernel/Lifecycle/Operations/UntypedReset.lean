@@ -486,10 +486,10 @@ so every table is written in place and the state record reused; a VSpace root,
 whose ASID leaves the table with it, takes the specification's body
 (`retireCarvedObject_eq_impl`). -/
 def retireCarvedObjectImpl (st : SystemState) (id : SeLe4n.ObjId) : SystemState :=
-  match st.objects[id]? with
-  | some (.frame _) | some (.untyped _) | some (.pageTable _) =>
+  match st.getObjectType? id with
+  | some .frame | some .untyped | some .pageTable =>
     withObjectTypeErased (withObjectIndexSetErased (withObjectUnindexed (withObjectErased st id) id) id) id
-  | some (.vspaceRoot _) => retireCarvedObject st id
+  | some .vspaceRoot => retireCarvedObject st id
   | _ => st
 
 private theorem retireCarvedObject_of_nonRoot {st : SystemState} {id : SeLe4n.ObjId}
@@ -518,12 +518,14 @@ private theorem retireCarvedObject_of_nonRoot {st : SystemState} {id : SeLe4n.Ob
     cases o <;> rfl
   cases hO : st.objects[id]? with
   | none =>
+    rw [show st.getObjectType? id = none by simp [SystemState.getObjectType?, hO]]
     unfold retireCarvedObject
     rw [if_neg]
     simp [SystemState.getFrame?, SystemState.getUntyped?, SystemState.getPageTable?,
       SystemState.getVSpaceRoot?, hO]
   | some o =>
     have hG := hGuard o hO
+    rw [show st.getObjectType? id = some o.objectType by simp [SystemState.getObjectType?, hO]]
     cases o with
     | frame f => exact retireCarvedObject_of_nonRoot hG (by unfold SystemState.getVSpaceRoot?; rw [hO])
     | untyped u => exact retireCarvedObject_of_nonRoot hG (by unfold SystemState.getVSpaceRoot?; rw [hO])
@@ -532,6 +534,7 @@ private theorem retireCarvedObject_of_nonRoot {st : SystemState} {id : SeLe4n.Ob
     | _ =>
       unfold retireCarvedObject
       rw [if_neg (by rw [hG]; simp)]
+      rfl
 
 /-- **WS-BP BP7.1 slice 4b (`v0.36.10`): no ASID-table entry names a listed
 object.**  What a retired VSpace root's ASID release means: `retireCarvedObject`
