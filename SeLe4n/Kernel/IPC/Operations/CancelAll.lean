@@ -160,7 +160,102 @@ def cancelNotificationQueue (notificationId : SeLe4n.ObjId) :
       | none => st
     | none => st
 
-/-- **seL4's `cancelAllSignals`**: every waiter. -/
+
+/-- **A notification head's cancel, as an update of the notification's cell**:
+`next` heads the queue, the tail is kept unless the queue empties, and a
+`.waiting` notification whose queue empties goes `.idle` — the writes
+`removeFromNotificationWaitQueue` makes when the waiter it removes is the head.
+`RHTable.modify` hands the update the cell exclusively, so it is rewritten where
+it stands. -/
+@[inline] def cancelPoppedObject (next : Option SeLe4n.ThreadId) : KernelObject → KernelObject
+  | .notification n => .notification { n with
+      waitHeadCode := SeLe4n.ThreadId.optCode next
+      waitTailCode := SeLe4n.ThreadId.optCode (if next.isSome then n.waitTail else none)
+      state := if n.state = .waiting ∧ next.isNone then .idle else n.state }
+  | o => o
+
+/-- **Cancel the head `t` of the notification at `notificationId`** (`next` its
+successor), each write in its slot: the notification's cell rewritten
+(`cancelPoppedObject`), the head detached from its neighbours
+(`detachNtfnHead`), restored `.ready` with the cancellation frame
+(`Lifecycle.Suspend.restoreToReadyCancelled`), and woken.  Out of line, so each
+update is specialised in. -/
+@[noinline] def storeNotificationWaiterCancelled (st : SystemState)
+    (notificationId : SeLe4n.ObjId) (t : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId) :
+    SystemState :=
+  wakeCancelledWaiter
+    (Lifecycle.Suspend.restoreToReadyCancelled
+      (detachNtfnHead (st.modifyObject notificationId (cancelPoppedObject next)) t next) t) t
+
+/-- **The cancel of a notification's head is its in-place writes**: on the head
+`t` of the notification's queue, blocked on it, `cancelIpcBlocking` rewrites the
+notification with `cancelPoppedObject`'s fields (its `rewriteObject` is the
+table's `insert`, which is `modify` on a key that is present), then makes the
+writes `storeNotificationWaiterCancelled` makes. -/
+theorem cancelIpcBlocking_notificationHead_inPlace {st : SystemState}
+    {notificationId : SeLe4n.ObjId} {ntfn : Notification} {t : SeLe4n.ThreadId} {tcb : TCB}
+    (hN : st.getNotification? notificationId = some ntfn) (hH : ntfn.waitHead = some t)
+    (hT : st.getTcb? t = some tcb)
+    (hB : tcb.ipcState = .blockedOnNotification notificationId) :
+    wakeCancelledWaiter (Lifecycle.Suspend.cancelIpcBlocking st t tcb) t =
+      storeNotificationWaiterCancelled st notificationId t tcb.ntfnNext := by
+  have hNo := (SystemState.getNotification?_eq_some_iff _ _ _).mp hN
+  unfold storeNotificationWaiterCancelled Lifecycle.Suspend.cancelIpcBlocking
+  rw [hB]
+  unfold removeFromNotificationWaitQueue
+  simp only [hT, hB, SystemState.getNotificationWitnessed?_eq_some hN, hH, if_true]
+  unfold SystemState.rewriteObject SystemState.modifyObject
+  rw [RobinHood.RHTable.modify_of_get? (show st.objects.get? notificationId = _ from hNo)]
+  rfl
+
+/-- **`cancelNotificationQueue` as compiled**: each admitted head is cancelled
+by `storeNotificationWaiterCancelled`, in place, which is the specification's
+step (`cancelIpcBlocking_notificationHead_inPlace`). -/
+def cancelNotificationQueueImpl (notificationId : SeLe4n.ObjId) :
+    Nat → SystemState → SystemState
+  | 0, st => st
+  | fuel + 1, st =>
+    match st.getNotification? notificationId with
+    | some n =>
+      match n.waitHead with
+      | some t =>
+        match st.getTcb? t with
+        | some tcb =>
+          if notificationWaiterCancellable st notificationId t tcb then
+            cancelNotificationQueueImpl notificationId fuel
+              (storeNotificationWaiterCancelled st notificationId t tcb.ntfnNext)
+          else st
+        | none => st
+      | none => st
+    | none => st
+
+@[csimp] theorem cancelNotificationQueue_eq_impl :
+    @cancelNotificationQueue = @cancelNotificationQueueImpl := by
+  funext notificationId fuel
+  induction fuel with
+  | zero => funext st; rfl
+  | succ fuel ih =>
+    funext st
+    unfold cancelNotificationQueue cancelNotificationQueueImpl
+    split
+    · rename_i n hN
+      split
+      · rename_i t hH
+        split
+        · rename_i tcb hT
+          split
+          · rename_i hC
+            have hB : tcb.ipcState = .blockedOnNotification notificationId := by
+              simp only [notificationWaiterCancellable, Bool.and_eq_true, decide_eq_true_eq] at hC
+              exact hC.1.1.1.2
+            rw [cancelIpcBlocking_notificationHead_inPlace hN hH hT hB, ih]
+          · rfl
+        · rfl
+      · rfl
+    · rfl
+
+/-- **seL4's `cancelAllSignals`**: every waiter, compiled through the in-place step
+(`cancelNotificationQueue_eq_impl`, stated above it so the compiler takes it). -/
 def cancelAllSignals (notificationId : SeLe4n.ObjId) (st : SystemState) : SystemState :=
   cancelNotificationQueue notificationId st.objects.size st
 

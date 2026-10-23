@@ -178,4 +178,16 @@ def KernelObject.unshareImpl : KernelObject → KernelObject
     simp only [KernelObject.unshare, KernelObject.unshareImpl, hId, hIdN, Array.map_id, opaqueId,
       RHTable.unshare]
 
+/-- **An object built from constant fields, given its own cells where it is
+built**: the identity (`unshare`).  A carve's default endpoint or notification
+is a closed term, which the compiler hoists to one shared static value, and a
+call of `unshare` on a closed term is itself a closed term it would hoist.
+`never_extract` keeps this call where it is written, so the rebuild it compiles
+to (`unshareImpl`) runs on every carve and the first in-place write to the
+object finds it unshared. -/
+@[noinline, never_extract] def KernelObject.unshareFresh (o : KernelObject) : KernelObject :=
+  o.unshare
+
+@[simp] theorem KernelObject.unshareFresh_eq (o : KernelObject) : o.unshareFresh = o := rfl
+
 end SeLe4n.Model
