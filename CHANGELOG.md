@@ -98,7 +98,9 @@ This is part 22 of the seL4 untyped reset.
 
 ### Validation
 
-- `./scripts/test_lean_aarch64_archive.sh` passes.
+- `./scripts/test_full.sh --continue` passes, and so do
+  `./scripts/test_lean_aarch64_archive.sh`, `./scripts/test_rust.sh` and
+  `./scripts/test_aarch64_cross_build.sh`.
 - `endpoint-delete`, `notification-delete`, `reply-delete` and `cnode-delete`
   read 0 at first call and steady state; `untyped-retype-endpoint` and
   `untyped-retype-notification` read 9, `untyped-retype-reply` 12 and
