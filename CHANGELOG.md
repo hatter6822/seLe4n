@@ -1,3 +1,116 @@
+## v0.36.130 — WS-ZA ZA5.4 part 19: untyped chains and descendants
+
+The capability bundle's tree shape now holds seL4's untyped facts
+(`untyped_mdb`, `untyped_inc`).  They are kept by every slot write and by
+the carve, and established by boot.  No behaviour changes.  This is part 19
+of the seL4 untyped reset
+([`UNTYPED_RESET_PLAN.md`](docs/planning/UNTYPED_RESET_PLAN.md)).
+
+### Changes
+
+- **The shape reads the untyped records** (`Model/SlotTreeShape.lean`).
+  - `TreeShapeOver` now also takes the store's untyped reader
+    (`SystemState.getUntyped?`) and an `off` predicate.
+  - `KernelObject.untyped?` reads an object's untyped record.
+  - `untypedCapAt cap ut r u` reads "slot `r` holds a capability to the
+    untyped `u`".
+  - `recordsChild` and `CarvedFrom` give "carved from": the transitive
+    closure of the child lists.
+- **Six new shape fields.**
+  - (a) `chainLinear`: any two slots naming one untyped lie on one descent.
+  - (a) `chainFirst`: a slot with one below it has its first child on that
+    descent, so the chain is vertical, contiguous and first-child.
+  - (b) `notFullLeaf`: an untyped capability that is not full has no strict
+    descendant naming its untyped.  It is owed at every slot `off` does not
+    name.
+  - `carvedBelow`: every capability naming memory carved from an untyped lies
+    strictly below every capability to it.
+  - `childLive`: every child an untyped records is in the store.
+  - `childUnique`: an object is recorded by at most one untyped.
+
+  `CapTreeShape` is the shape with `off` empty.  `CapTreeShapeOff st a` is
+  off (b) at `a`, and `TreeShapeOver.unoff_of_not_untyped` drops the `off`
+  at a slot holding no untyped capability.
+- **Frames.**
+  - `kindPreservingWrite` gains `post.untyped? = pre.untyped?`.
+    `storeObject_kindPreservingWrite` and `rewriteObject_kindPreservingWrite`
+    take it as `hUntyped`, an auto-param (`:= by rfl`) on the store.
+  - `SlotTreeFrame` gains the untyped reader.
+  - `capabilityInvariantBundle_of_frame` takes the untyped-record frame
+    (`hUntyped`), over a new core, `capabilityBundleOffLinks_of_frame`.
+- **Every slot write keeps the facts.**
+  - Copy, mint and IPC transfer go through a middle state off (b) at the
+    source (`capabilityBundleOffSource`, from
+    `capabilityBundleOffSource_of_linkReach`).  The insert's shape lemma
+    (`treeShape_addEdge_after_copy`) copies an untyped source only while it
+    has no child (`childrenOf_eq_nil_of_untypedDeriveRefused`).  Setting the
+    source full restores the bundle
+    (`untypedSourceSetFull_preserves_capabilityInvariantBundle`).
+  - `setCapFreeIndex_preserves_capabilityInvariantBundle` takes the
+    no-strict-descendant premise (`hLeaf`).  The in-place rewrite core
+    (`storeObject_capRewrite_restores_capabilityInvariantBundle`) takes a
+    free index that is not lowered.
+  - Delete, the local revoke fold, move, mutate and mint-reply carry the
+    untyped reader through their splices and rewrites.
+  - A thread space copy's source names a CNode or a VSpace root, never an
+    untyped (`threadSlotFilled_preserves_capabilityInvariantBundle`'s
+    `hNotUt`, discharged from `copyThreadSpaces`' checks).
+- **The carve keeps them.**
+  - The authority was not full (`canAllocate` asks for room), so nothing
+    below it names its untyped (`retypeFromUntyped_authority_leaf`).
+  - The child record is new and names a fresh object
+    (`TreeShapeOver.carveRecord`).
+  - The new capability's object is recorded by the authority's untyped
+    alone, so every capability to an untyped it is carved from is the
+    authority or lies above it (`retypeFromUntyped_fresh_child`).
+  - A carved untyped records no child (`CarveRequest.object_untyped_children`).
+  - `retypeFromUntyped_preserves_capabilityInvariantBundle` takes that last
+    fact as `hKids`.
+  - The absent-object store keeps the bundle less its shape
+    (`storeObject_absent_preserves_capabilityBundleOffLinks`).  It replaces
+    `storeObject_absent_preserves_capabilityInvariantBundle`.
+- **The boot establishes them.**
+  - Each boot untyped is named from one slot at most
+    (`bootFromPlatformCheckedWithIdleThreadsFor_ok_untypedCapUnique`).  Two
+    slots naming one untyped would put two capabilities to it in the
+    configuration's list, which `untypedCapabilitiesUnique` refuses.
+  - Every boot untyped records no child
+    (`bootFromPlatformCheckedWithIdleThreadsFor_ok_untypedsUncarved`, from
+    `bootSafeUntypedCheck`).
+  - The starts keep both (`startInitialThreads_untypedsSole`).
+  - `linkBootCapabilities_bootLinkedShape` reads all six fields off them and
+    the acyclic linked tree.
+  - `bootFromPlatform_objects_of_config` is the configured-object lookup the
+    two boot lemmas share.
+
+### Model corrections
+
+Two premises are now stronger, the way seL4 states them.  Every caller
+already had what they ask for at hand.
+- An IPC transfer's capability carries its source slot's target, where before
+  it named only the same object.  Without this, a CNode-slot alias of an
+  untyped's id would start a second untyped chain.
+- The mint-reply decomposition now records that neither side is an untyped
+  capability.
+
+### Documentation
+
+- `SELE4N_SPEC.md` §8.6.
+- GitBook chapter 12.
+- A new `CLAIM_EVIDENCE_INDEX.md` row.
+- Plan row 19, marked landed.
+- The workstream context.
+- Tier 3 anchors for the new surface.  The carve and boot anchors the cut
+  moved are re-pointed.
+
+### Validation
+
+- `./scripts/test_full.sh --continue` passes, and so do
+  `./scripts/test_lean_aarch64_archive.sh` and
+  `./scripts/test_aarch64_cross_build.sh`.
+- Every QEMU heap pin is unchanged
+  (`./scripts/test_qemu_heap_allocations_per_syscall.sh --lean-kernel`).
+
 ## v0.36.129 — WS-ZA ZA5.4 part 18: live objects and (S)
 
 Every capability now names an object in the store, and a capability naming

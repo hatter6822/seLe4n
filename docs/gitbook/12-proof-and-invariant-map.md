@@ -101,7 +101,11 @@ complete. `objects.invExt` is the Robin Hood table's own well-formedness
 mapping database holds every capability; since `v0.36.129` it also holds every
 capability to a live object and every capability naming another object than
 its parent below that parent, and the boot refuses a configured capability
-naming an object it does not install.  Every slot write keeps the bundle,
+naming an object it does not install; since `v0.36.130` it holds seL4's untyped
+chains and descendants — the slots naming one untyped form one first-child
+chain, an untyped capability with room left has no descendant naming its
+untyped, and everything carved from an untyped lies below every capability to
+it ([`SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) §8.6).  Every slot write keeps the bundle,
 the untyped carve included (`untypedRetypeObject_preserves_capabilityInvariantBundle`;
 see `SELE4N_SPEC.md` §8.6).
 

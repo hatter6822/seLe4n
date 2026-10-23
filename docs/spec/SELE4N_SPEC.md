@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.129` (`lakefile.toml`) |
+| **Package version** | `0.36.130` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 488,394 across 443 Lean files |
-| **Test LoC** | 86,180 across 70 Lean test suites |
-| **Proved declarations** | 17,670 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 490,171 across 443 Lean files |
+| **Test LoC** | 86,182 across 70 Lean test suites |
+| **Proved declarations** | 17,734 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits) |
 | **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2), and **BP4.1/BP4.2 (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type)** at v0.36.2 (§6.2.9), and **BP4.3/BP4.4 (the firmware's device tree reaching Lean, and the entry booting the deployment on the variant it describes)** at v0.36.2 (§6.2.10), and **BP4.5 (the image's loaded bytes cleaned to the Point of Unification before any thread can fetch)** at v0.36.2 (§6.2.11), and **BP4.6 (the verified board's RAM outside the kernel's extent mapped, and the boot map sealed before any secondary is released)** and **BP4.7 (that RAM handed to the root task as untypeds)** at v0.36.2 (§6.2.12), and **BP5.1 (the kernel image, a bare-metal binary entered at `_start` under `link.ld`)** and **BP5.2 (the Lean kernel linked into it, under `--gc-sections` from the archive lane's roots)** and **BP5.3 (the firmware's boot files, `kernel8.img` and `config.txt`, cut from that image and checked against it)** and **BP5.4 (its size and section map published with every CI run)** at v0.36.2 (§6.2.13), and **BP5.5 (the firmware's EL2 entry dropped to EL1, with the PSCI conduit following the entry level)** at v0.36.2 (§6.2.15), and **BP6 (every PE marks itself ready after its own per-PE runtime handshake and before it unmasks IRQs, and the boot halts unless every declared PE serves the kernel)** at v0.36.2 (§6.2.16), and **BP7.10 (the first gigabyte's RAM read off the firmware's account, and the constant boot map shrunk to the kernel's reserved extent)** at v0.36.3 (§6.2.17), and **BP7.1 slices 1–3 (frame capabilities, the untyped carve that mints them, and the untyped reset that returns their memory)** at v0.36.4, v0.36.5 and v0.36.6, slice 4a (child untypeds and subtree resets) at v0.36.8, the in-place VSpace-root refusal at v0.36.9, and slice 4b's VSpace-root carve at v0.36.10, `.tcbSetSpace` (a thread runs in a carved address space) at v0.36.11, intermediate page tables at v0.36.12, and every configured address space owning a table page at v0.36.13, which completes BP7.1 (§8.10.2a); BP7.2's user window and 16-bit hardware ASIDs at v0.36.14 and its physical-write ledger and translation install at v0.36.15; BP7.3–BP7.9 at v0.36.16–v0.36.22 (the whole trap frame saved, per-core restore staging, unblock-frame delivery, the live context restore, the delivered declassified badge, overflow message registers, lazily switched FP/SIMD state); and BP7.11 (the boot starts both initial threads, one per domain) at v0.36.23, which completes BP7; BP8.1's first slice (the image built for QEMU's `virt` — its device map from `src/board.rs`, its link script derived from `link.ld`, an arm64 Image header on `_start` — booted there at EL1 and at EL2 by `scripts/test_qemu.sh`) at v0.36.24, and its second (the Lean `virt` binding `SeLe4n/Platform/QemuVirt/` — its board check the RPi5 bridge's own coverage predicates, the RPi5 deployment's layout on it with every boot gate decided, and its own boot entry `lean_kernel_main_qemu_virt`, held by the boot-entry contract's table to its own approved call) at v0.36.25, and its third (the Lean-linked image booted by `scripts/test_qemu.sh --lean-kernel` on four PEs at EL1 and EL2 to every core's first idle dispatch, on every PR — §6.2.18) at v0.36.26, completing BP8.1, and BP8.2 (the four-PE bring-up gate, executed on every PR — §6.2.18) at v0.36.27. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -4800,7 +4800,7 @@ of `capabilityInvariantBundle` hold after a carve
 the untyped's record in kind, stores the object at an id that held nothing —
 every carved object holds no capability and no derivation link
 (`CarveRequest.object_slotCap`, `CarveRequest.object_linkAt`), so no slot,
-link or tree node moves (`storeObject_absent_preserves_capabilityInvariantBundle`)
+link or tree node moves (`storeObject_absent_preserves_capabilityBundleOffLinks`)
 — and advances the invoked capability's free index in its occupied slot
 (`retypeFromUntyped_preserves_capabilityInvariantBundle`).  The install of the
 new capability into the empty destination and its edge under the invoked slot
@@ -4825,7 +4825,7 @@ strictly below the parent in the tree.  Every slot write keeps both — copy,
 mint, mint-reply, move, mutate, insert, delete, the local revoke (whose slots
 are emptied before they are spliced, so the shape is carried over their
 pre-revoke reading while they stay in the tree), the IPC transfer (whose
-capabilities name what their source slots name), the space copy and the carve
+capabilities carry their source slots' targets), the space copy and the carve
 (whose new object no slot named, by `live`).  The boot establishes them: the
 linked boot's children are copies of their parents, so `below` holds, and the
 checked boot refuses a configured capability naming an object it does not
@@ -4833,6 +4833,44 @@ install — a configured object or the boot VSpace root — as the tenth
 `wellFormed` conjunct (`bootCapabilitiesNameInstalledObjects`, diagnostic
 `bootCapabilityDanglingBootError`), so `live` holds
 (`bootFromPlatformCheckedWithIdleThreadsFor_ok_capabilitiesLive`).
+
+**The untyped chains and descendants** (`v0.36.130`).  The tree shape also
+reads the store's untyped records (`SystemState.getUntyped?`) and holds seL4's
+`untyped_mdb` and `untyped_inc` facts:
+
+- **(a)** the slots naming one untyped form one contiguous vertical first-child
+  chain: any two lie on one descent (`chainLinear`), and a slot with one below
+  it has its first child on that descent (`chainFirst`);
+- **(b)** an untyped capability that is not full has no strict descendant naming
+  its untyped (`notFullLeaf`);
+- every capability naming memory carved from an untyped lies strictly below
+  every capability to that untyped (`carvedBelow`), "carved from" being the
+  transitive closure of the untyped's child list (`CarvedFrom`);
+- every child an untyped records is in the store (`childLive`), and an object is
+  recorded by at most one untyped (`childUnique`).
+
+A write that keeps every object's kind keeps its untyped record
+(`kindPreservingWrite`'s `post.untyped? = pre.untyped?`), and
+`capabilityInvariantBundle_of_frame` takes the untyped-record frame.  A copy,
+mint or IPC transfer of an untyped capability is read in a middle state where
+(b) is not owed at the source (`capabilityBundleOffSource`,
+`SystemState.CapTreeShapeOff`): the source may be copied only while it has no
+child, as seL4's `ensureNoChildren`, and setting it full
+(`untypedSourceSetFull_preserves_capabilityInvariantBundle`) restores the
+bundle.  A free-index write takes the premise that the slot has no strict
+descendant naming its untyped (`setCapFreeIndex_preserves_capabilityInvariantBundle`).
+The carve keeps every fact: its authority was not full, so nothing below it
+names the untyped (`retypeFromUntyped_authority_leaf`); the new capability's
+object is recorded by the authority's untyped alone and lies below every
+capability to an untyped it is carved from (`retypeFromUntyped_fresh_child`);
+and a carved untyped records no child (`CarveRequest.object_untyped_children`).
+A thread space copy's source names a CNode or a VSpace root, never an untyped.
+The boot establishes them: the configuration names each boot untyped from one
+capability at most (`untypedCapabilitiesUnique`), so from one slot
+(`bootFromPlatformCheckedWithIdleThreadsFor_ok_untypedCapUnique`), and a boot
+untyped is pristine (`bootFromPlatformCheckedWithIdleThreadsFor_ok_untypedsUncarved`);
+the starts keep both (`startInitialThreads_untypedsSole`) and the linked tree
+is acyclic, so `linkBootCapabilities_bootLinkedShape` reads all six off them.
 
 ### 8.6.1 Carve Refusal Order (`v0.36.125`)
 
