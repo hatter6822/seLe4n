@@ -2202,7 +2202,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 5] = [
             "untyped-retype-notification",
             UNTYPED_RETYPE,
             UNTYPED_CAP,
-            [NOTIFICATION_TYPE, PASSIVE_CHILD_IDS[1], CNODE_CAP, FRAME_SLOT],
+            [
+                NOTIFICATION_TYPE,
+                PASSIVE_CHILD_IDS[1],
+                CNODE_CAP,
+                FRAME_SLOT,
+            ],
         ),
         invocation(
             "notification-delete",
