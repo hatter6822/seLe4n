@@ -574,6 +574,12 @@ import SeLe4n.Kernel.IPC.Invariant.DispatchPayoff
 -- *production* imports it: `API.lean`'s production payoff takes its invariant
 -- hypotheses directly rather than through the pack.
 import SeLe4n.Kernel.IPC.Invariant.Reachability
+-- WS-ZA ZA5.4 part 23: a final delete's finalisation (`finaliseFinalObject`:
+-- seL4's `cancelAllIPC`, `unbindMaybeNotification`, `cancelAllSignals`) keeps
+-- `ipcReachable`, and is invisible to an observer who sees neither the object
+-- nor any thread waiting on it or bound to it.  Staged with `Reachability`.
+import SeLe4n.Kernel.IPC.Invariant.CancelAllReachability
+import SeLe4n.Kernel.InformationFlow.Invariant.FinaliseProjection
 -- WS-SM SM8.A: the per-core observable state — the SMP information-flow
 -- observer `(c, L)` (plan Definition 3.1.1) and the state it observes
 -- (`ObservableState.onCore`, Definition 3.2.1), layered on the SM4.D

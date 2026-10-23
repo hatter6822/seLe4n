@@ -226,6 +226,23 @@ theorem dispatchWithCapChecked_coversWrites (ctx : LabelingContext)
   cases hId : decoded.syscallId <;> rw [hId] at hOps hSched hDisp <;> simp only at hDisp
   all_goals try (simp only [schedLockSetForSyscall, reduceCtorEq] at hSched; done)
   case yield => exact absurd hId hY
+  -- ---- `.cspaceDelete` / `.cspaceRevoke` (WS-ZA ZA5.4 part 23) ------------
+  case cspaceDelete =>
+    simp only [schedLockSetForSyscall] at hSched
+    cases hT : cap.target <;> rw [hT] at hDisp <;> simp only [reduceCtorEq] at hDisp
+    split at hDisp
+    · cases hDisp
+    · split at hDisp
+      · cases hDisp
+      · exact schedLockSet_cspaceDeleteSlotFinalising_coversWrites e _ st st' S hSched hDisp
+  case cspaceRevoke =>
+    simp only [schedLockSetForSyscall] at hSched
+    cases hT : cap.target <;> rw [hT] at hDisp <;> simp only [reduceCtorEq] at hDisp
+    split at hDisp
+    · cases hDisp
+    · split at hDisp
+      · cases hDisp
+      · exact schedLockSet_cspaceRevokeCdtFinalising_coversWrites e _ st st' S hSched hDisp
   -- ---- `.tcbSuspend` ------------------------------------------------------
   case tcbSuspend =>
     cases hT : cap.target <;> rw [hT] at hOps <;> simp only [reduceCtorEq] at hOps

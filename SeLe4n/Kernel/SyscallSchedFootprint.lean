@@ -70,7 +70,7 @@ open SeLe4n.Kernel.Concurrency (SyscallLockOperands)
 /-- **WS-RR RR8.12 Cut C4: the scheduler-domain footprint the live syscall seam
 declares**, at the decoded arm and the operands that arm's capability names.
 
-Seventeen arms declare; the other twenty-five answer `none`.  Each declared arm is
+Eighteen arms declare; the other twenty-three answer `none`.  Each declared arm is
 `LockSet.ofList?` of its own resolved footprint, and that constructor's
 `Nodup` obligation is `schedFootprintOfCores_keys_nodup` — so it provably never
 refuses a footprint this kernel declares, which the per-arm `_isSome_iff`
@@ -191,7 +191,12 @@ def schedLockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
                   LockSet.ofList?
                     (schedLockSet_endpointReplyRecvOnCore epId ops.caller rid prevCaller msg
                       receiver.cspaceRoot slotBase executingCore st)
-  | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke
+  -- **WS-ZA ZA5.4 part 23**: a delete that destroys the last capability to an
+  -- endpoint or a notification wakes its cancelled waiters on their own cores,
+  -- and the revocation is a sequence of such deletes; neither reads an operand.
+  | .cspaceDelete | .cspaceRevoke =>
+      LockSet.ofList? schedLockSet_capabilityDestroyOnCore
+  | .cspaceMint | .cspaceCopy | .cspaceMove
   | .untypedRetype | .untypedReset
   | .mintReplyCap
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction
@@ -211,14 +216,15 @@ footprint without listing it here breaks
 still answers `none` is refused by that arm's own `_isSome_iff`, which states
 the exact operands under which it declares.
 
-There are `SyscallId.count = 41` arms; **sixteen** declare and twenty-five
-answer `none`.  *Which* of those twenty-five write a scheduler slot at all is this
+There are `SyscallId.count = 41` arms; **eighteen** declare and twenty-three
+answer `none`.  *Which* of those twenty-three write a scheduler slot at all is this
 enumeration's own open question — the arms above are the ones WS-RR RR8.12's
-sequence identified, and a twenty-sixth found to write one is a footprint to
-declare rather than a row to move.  `.cspaceRevoke` (`v0.35.190`) is in the
-`none` group for the same reason its `.cspaceDelete` sibling is: the revocation
-family writes CNodes, the derivation tree and in-flight messages, and no
-run-queue or replenish-queue slot on any core.  `.untypedRetype` (`v0.36.5`) is
+sequence identified, and one found to write one is a footprint to declare rather
+than a row to move.  `.cspaceDelete` and `.cspaceRevoke` were in the `none` group
+until WS-ZA ZA5.4 part 23 made the finalising delete cancel a destroyed
+endpoint's or notification's waiters and wake each on its own core: they declare
+every core's run queue now (`schedLockSet_capabilityDestroyOnCore`).
+`.untypedRetype` (`v0.36.5`) is
 there too: a carve writes an untyped, a fresh frame, one CNode slot, the CDT and
 a page of machine memory — no scheduler field at all.  `.untypedReset` (`v0.36.6`)
 writes VSpace roots, TLB, shootdown and instruction-cache state, erased frames
@@ -233,8 +239,9 @@ def declaredSchedFootprintSyscall : SyscallId → Bool
   | .schedContextConfigure | .schedContextBind | .schedContextUnbind
   | .notificationSignal | .notificationWait
   | .send | .receive | .call | .reply | .replyRecv
-  | .yield => true
-  | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke
+  | .yield
+  | .cspaceDelete | .cspaceRevoke => true
+  | .cspaceMint | .cspaceCopy | .cspaceMove
   | .untypedRetype | .untypedReset
   | .mintReplyCap
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction
@@ -290,6 +297,17 @@ does: it reads no operand and its footprint is fixed by the executing core. -/
     (schedLockSetForSyscall .yield ops executingCore st).isSome := by
   simp [schedLockSetForSyscall, LockSet.ofList?, schedLockSet_yieldOnCore,
     schedFootprintOfCores_keys_nodup]
+
+/-- **WS-ZA ZA5.4 part 23**: the finalising delete and the revocation declare
+unconditionally, as `.yield` does: they read no operand, and their footprint is
+every core's run queue. -/
+@[simp] theorem schedLockSetForSyscall_capabilityDestroy_isSome
+    (sid : SyscallId) (ops : SyscallLockOperands) (executingCore : CoreId) (st : SystemState)
+    (h : sid = .cspaceDelete ∨ sid = .cspaceRevoke) :
+    (schedLockSetForSyscall sid ops executingCore st).isSome := by
+  rcases h with rfl | rfl <;>
+    simp [schedLockSetForSyscall, LockSet.ofList?, schedLockSet_capabilityDestroyOnCore,
+      schedFootprintOfCores_keys_nodup]
 
 /-- The four object-directed arms declare exactly when the operand naming the
 object is supplied. -/
@@ -407,7 +425,7 @@ theorem schedLockSetForSyscall_replyRecv_isSome_iff
                   schedFootprintOfCores_keys_nodup]
 
 /-- **WS-LS LS2.3**: every scheduler footprint names the object-store table
-write lock — each of the sixteen arms is `schedFootprintOfCores` of its own
+write lock — each of the eighteen arms is `schedFootprintOfCores` of its own
 core lists, and that constructor leads with the table lock
 (`schedFootprintOfCores_contains_objStore_write`).  What makes the object
 clause of `footprintCoversWrites` vacuous at the syscall seam, so the arms'
@@ -419,6 +437,9 @@ theorem schedLockSetForSyscall_contains_objStore_write (sid : SyscallId)
     (LockKey.objStore, Concurrency.AccessMode.write) ∈ S.pairs := by
   unfold schedLockSetForSyscall at hS
   cases sid <;> simp only [Option.bind_eq_some_iff, reduceCtorEq] at hS
+  case cspaceDelete | cspaceRevoke =>
+    rw [LockSet.ofList?_pairs hS]
+    exact schedFootprintOfCores_contains_objStore_write _ _
   all_goals
     repeat' obtain ⟨_, _, hS⟩ := hS
     rw [LockSet.ofList?_pairs hS]
@@ -590,7 +611,7 @@ executing core (`resumeThreadOnCoreWriteSet`, `priorityControlWriteSet`, …);
 the others (`.tcbSetAffinity`, the two SchedContext arms directed at an object,
 the rendezvous paths of the IPC arms) name only the
 cores the arm moves, so the seam adds the lock its own tail needs rather than
-widening sixteen per-arm sets for a write that is not theirs.  No replenish
+widening the per-arm sets for a write that is not theirs.  No replenish
 member is added: the tail's scheduling points move no scheduling context
 (`handleRescheduleSgiOnCore_replenishQueueOnCore`,
 `deferResidentElsewhere`'s legs likewise). -/
@@ -731,9 +752,9 @@ is one of the second, and coverage is monotone upward
 (`footprintCoversWrites_mono`), so the claim travels without being restated
 — which is what keeps "what does this arm's footprint cover" a single question.
 
-Stated once and generically rather than sixteen times at the arms: an instance
-per arm would be sixteen copies of one application, and the next declared arm
-would owe a seventeenth.  **WS-LS LS2.3** discharges `hCover` at the seam
+Stated once and generically rather than once per declared arm: an instance per
+arm would be eighteen copies of one application, and the next declared arm would
+owe a nineteenth.  **WS-LS LS2.3** discharges `hCover` at the seam
 (`SyscallSeamCoverage.lean`) rather than assuming it. -/
 theorem unifiedLockSetForSyscall_coversWrites (sid : SyscallId)
     (ops : Concurrency.SyscallLockOperands) (executingCore : CoreId) (st : SystemState)
