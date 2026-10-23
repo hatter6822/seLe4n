@@ -459,6 +459,14 @@ private theorem default_slotCapAt_none (r : SlotRef) :
   | none => rfl
   | some o => exact default_objects_absurd h
 
+/-- The default state holds no untyped. -/
+private theorem default_getUntyped?_none (u : SeLe4n.ObjId) :
+    (default : SystemState).getUntyped? u = none := by
+  rw [SystemState.getUntyped?_eq_bind]
+  cases h : (default : SystemState).objects[u]? with
+  | none => rfl
+  | some o => exact default_objects_absurd h
+
 /-- WS-H4 refactor: Extract default-state capabilityInvariantBundle construction
 to eliminate 4x duplication in `default_system_state_proofLayerInvariantBundle`.
 All components are vacuously true (empty objects and derivation tree) or use
@@ -482,7 +490,13 @@ private theorem default_capabilityInvariantBundle :
     ⟨[], CapDerivationTree.TreeOrder.empty_tree CapDerivationTree.empty_edges
       CapDerivationTree.empty_rootChains⟩,
     fun r _ h => absurd (default_slotCapAt_none r) (SystemState.namesAt_occupied h),
-    fun _ _ _ _ _ hp => absurd (default_slotCapAt_none _) hp⟩⟩
+    fun _ _ _ _ _ hp => absurd (default_slotCapAt_none _) hp,
+    (by intro _ p _ ⟨_, h, _, _⟩; rw [default_slotCapAt_none] at h; cases h),
+    (by intro _ p _ ⟨_, h, _, _⟩; rw [default_slotCapAt_none] at h; cases h),
+    (by intro p _ _ _ _ h; rw [default_slotCapAt_none] at h; cases h),
+    (by intro _ _ _ p _ ⟨_, h, _, _⟩; rw [default_slotCapAt_none] at h; cases h),
+    (by intro u _ h; rw [default_getUntyped?_none] at h; cases h),
+    (by intro u _ _ _ h; rw [default_getUntyped?_none] at h; cases h)⟩⟩
 
 -- WS-H12e: Default-state proofs for new invariant components
 

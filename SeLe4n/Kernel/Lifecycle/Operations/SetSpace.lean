@@ -333,6 +333,25 @@ theorem copyThreadSpaces_refuses_active (st : SystemState) (vtid : SeLe4n.ValidT
       = true := by simp [hS]
   simp [copyThreadSpaces, hT, this]
 
+/-- **A thread slot's delete keeps every slot lookup**: it writes the thread,
+which holds no CNode slot, and links, which a lookup does not read. -/
+theorem threadSlotDeleted_lookupSlotCap {st : SystemState} {tid : SeLe4n.ThreadId} {t : TCB}
+    (hObjInv : st.objects.invExt) (hT : st.getTcb? tid = some t) (slot : SeLe4n.Slot)
+    (r : SlotRef) :
+    SystemState.lookupSlotCap (spliceDeletedCdtNode (threadSlotCleared tid.toObjId slot st)
+      { cnode := tid.toObjId, slot := slot }) r = SystemState.lookupSlotCap st r := by
+  have hPre : st.objects[tid.toObjId]? = some (.tcb t) :=
+    (SystemState.getTcb?_eq_some_iff st tid t).mp hT
+  have hS := threadSlotCleared_store hT slot
+  have hC := storeObject_objects_eq _ _ _ _ hObjInv hS
+  have hInvC := storeObject_preserves_objects_invExt _ _ _ _ hObjInv hS
+  obtain ⟨hA, -⟩ := spliceDeletedCdtNode_agree hInvC { cnode := tid.toObjId, slot := slot }
+  rw [hA.lookupSlotCap r]
+  unfold SystemState.lookupSlotCap SystemState.lookupCNode
+  by_cases h : r.cnode = tid.toObjId
+  · rw [h, hC, hPre]
+  · rw [storeObject_objects_ne _ _ _ _ _ h hObjInv hS]
+
 /-- **What a slot copy leaves**: every object but the thread's is the
 pre-state's up to derivation links, and the thread is the pre-state's with the
 slot emptied and, when the source held a capability, its copy put in, up to
@@ -358,14 +377,7 @@ theorem threadSlotCopied_frame {st : SystemState} {tid : SeLe4n.ThreadId} {t : T
     fun k h => storeObject_objects_ne _ _ _ k _ h hObjInv hS
   have hInvC := storeObject_preserves_objects_invExt _ _ _ _ hObjInv hS
   obtain ⟨hA, hI⟩ := spliceDeletedCdtNode_agree hInvC { cnode := tid.toObjId, slot := slot }
-  have hLk : ∀ r, SystemState.lookupSlotCap (spliceDeletedCdtNode (threadSlotCleared tid.toObjId
-      slot st) { cnode := tid.toObjId, slot := slot }) r = SystemState.lookupSlotCap st r := by
-    intro r
-    rw [hA.lookupSlotCap r]
-    unfold SystemState.lookupSlotCap SystemState.lookupCNode
-    by_cases h : r.cnode = tid.toObjId
-    · rw [h, hC, hPre]
-    · rw [hCne _ h]
+  have hLk := threadSlotDeleted_lookupSlotCap hObjInv hT slot
   have hFar : ∀ k, k ≠ tid.toObjId → SystemState.objectAgreesOffDerivationLinksAt
       (spliceDeletedCdtNode (threadSlotCleared tid.toObjId slot st)
         { cnode := tid.toObjId, slot := slot }) st k :=

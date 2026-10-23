@@ -103,7 +103,7 @@ theorem cspaceDeleteSlotFinalising_preserves_capabilityInvariantBundle
     simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hF
     subst hF
     exact finaliseDestroyedCapabilitiesState_cdt ec _ _ st1
-  refine capabilityInvariantBundle_of_frame h1 hCdt ?_ ?_ ?_ ?_ hI' ?_
+  refine capabilityInvariantBundle_of_frame h1 hCdt ?_ ?_ ?_ ?_ hI' ?_ ?_
   · intro oid cn hC
     rcases hW oid with e | ⟨-, ⟨r, hr⟩⟩
     · rwa [← e]
@@ -125,6 +125,11 @@ theorem cspaceDeleteSlotFinalising_preserves_capabilityInvariantBundle
     rcases hW o with e | ⟨-, ⟨r, hr⟩⟩
     · show st'.objects[o]? ≠ none; rw [e]; exact hp
     · show st'.objects[o]? ≠ none; rw [hr]; exact Option.some_ne_none _
+  · funext o
+    rw [SystemState.getUntyped?_eq_bind, SystemState.getUntyped?_eq_bind]
+    rcases hW o with e | ⟨⟨r, hr⟩, ⟨r', hr'⟩⟩
+    · rw [e]
+    · rw [hr, hr']; rfl
 
 /-- **The finalising revocation keeps the capability invariants**: it is a run
 of finalising deletes (`cspaceRevokeCdtFinalising_closed`). -/
