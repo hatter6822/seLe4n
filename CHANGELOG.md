@@ -73,6 +73,15 @@ This is part 22 of the seL4 untyped reset.
     `copyThreadSpaces_preserves_projection`, which now asks that the two space
     slots name only objects, and untypeds recording them, the observer cannot
     see.
+- **The space change is a cross-core inventory entry**
+  (`InformationFlow/NonInterferenceCrossCore.lean`).  It now takes the
+  executing core, so the routing gate asks for an entry:
+  `.tcbSetSpaceDispatch`, citing `copyThreadSpaces_crossCoreNonInterference`
+  (through `copyThreadSpaces_confinedToCores`, `threadSlotSet_framed` and
+  `threadSlotCopied_framed`, `SlotConfinement/MemoryArms.lean`), writing no
+  core, and delegation-backed by `syscallDelegates_tcbSetSpace`
+  (`dispatchWithCap_tcbSetSpace_delegates`, `API.lean`).  The inventory is 34
+  transitions, 27 live arms, 19 delegation-backed.
 - **Tests.** `tests/VSpaceCapabilityBindingSuite.lean` §5m: each passive kind
   carved, its non-final copy deleted (kept), its last capability deleted
   (retired from the store and the untyped's list, its id carving again); a

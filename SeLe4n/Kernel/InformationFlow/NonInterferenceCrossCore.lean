@@ -414,6 +414,21 @@ theorem untypedRetypeFromCap_crossCoreNonInterference
   exact crossCoreNonInterference_ofCores ctx observer (by simp)
     (untypedRetypeObject_confinedToCores _ _ _ _ st st' hInv hCarve) hShared
 
+/-- WS-ZA ZA5.4 part 22 (**the live `.tcbSetSpace` arm, cross-core**): the space
+change is invisible on every core.  It takes the executing core only for the
+retire of a root its slot replace destroyed the last capability to, whose
+acknowledged ASID round writes the TLB state alone, and writes the object store
+and the CDT otherwise (`copyThreadSpaces_confinedToCores`). -/
+theorem copyThreadSpaces_crossCoreNonInterference
+    (ctx : LabelingContext) (observer : IfObserver) (executingCore : CoreId)
+    (vtid : SeLe4n.ValidThreadId) (cnSrc vrSrc : CSpaceAddr) (st st' : SystemState)
+    (c : CoreId) (hInv : st.objects.invExt)
+    (hStep : copyThreadSpaces executingCore st vtid cnSrc vrSrc = .ok st')
+    (hShared : sharedViewUnchanged ctx observer st st') :
+    projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
+  crossCoreNonInterference_ofCores ctx observer (by simp)
+    (copyThreadSpaces_confinedToCores executingCore st st' vtid cnSrc vrSrc hInv hStep) hShared
+
 -- ============================================================================
 -- §6 The non-interference instantiations
 -- ============================================================================
@@ -1218,6 +1233,11 @@ inductive CrossCoreTransition where
   child, the free index, the new capability and its derivation edge are the
   object store and the CDT. -/
   | untypedRetypeDispatch
+  /-- WS-ZA ZA5.4 part 22 — the **live** `.tcbSetSpace` arm.  Takes an executing
+  core since the slot replace retires what each slot's old capability took with
+  it (a root with its acknowledged ASID round), and writes no core: the slot
+  copies and the retire are the object store, the CDT and the TLB state. -/
+  | tcbSetSpaceDispatch
   /-- SM8.C.9 — the **live** `.declassify` arm. Takes an executing core (to
   resolve the running subject whose domain the downgrade is attributed to) and
   writes **no** core: its whole state effect is one entry appended to the
@@ -1257,7 +1277,7 @@ def CrossCoreTransition.all : List CrossCoreTransition :=
    .suspendThreadDispatch, .resumeThreadDispatch,
    .setPriorityDispatch, .setMCPriorityDispatch,
    .vspaceMapDispatch, .vspaceUnmapDispatch, .untypedResetDispatch,
-   .cspaceDeleteDispatch, .cspaceRevokeDispatch, .untypedRetypeDispatch,
+   .cspaceDeleteDispatch, .cspaceRevokeDispatch, .untypedRetypeDispatch, .tcbSetSpaceDispatch,
    .declassifyDispatch, .declassifySignalDispatch,
    .auditReadDispatch, .auditDrainDispatch, .yieldDispatch]
 
@@ -1321,6 +1341,7 @@ def crossCoreNiTheorem : CrossCoreTransition → String
   | .cspaceDeleteDispatch => niName! cspaceDeleteSlotFinalising_crossCoreNonInterference
   | .cspaceRevokeDispatch => niName! cspaceRevokeCdtFinalising_crossCoreNonInterference
   | .untypedRetypeDispatch => niName! untypedRetypeFromCap_crossCoreNonInterference
+  | .tcbSetSpaceDispatch => niName! copyThreadSpaces_crossCoreNonInterference
   | .declassifyDispatch =>
       niName! declassifyObjectFromCore_crossCoreNonInterference
   -- SM9.C.6: the DISPATCH-level composition, for the round-4 reason and one
@@ -1341,7 +1362,7 @@ def crossCoreNiTheorem : CrossCoreTransition → String
       niName! auditDrainDispatch_crossCoreNonInterference
   | .yieldDispatch => niName! yieldOnCore_crossCoreNonInterference
 
-theorem crossCoreNiTheorem_count : CrossCoreTransition.all.length = 33 := by rfl
+theorem crossCoreNiTheorem_count : CrossCoreTransition.all.length = 34 := by rfl
 
 /-- SM8.B.2: **which entries are the arms the live syscall dispatch actually
 reaches**, as opposed to the below-API transitions they are built from.
@@ -1415,10 +1436,11 @@ def crossCoreTransitionIsLiveArm : CrossCoreTransition → Bool
   | .auditReadDispatch => true
   | .auditDrainDispatch => true
   | .untypedRetypeDispatch => true
+  | .tcbSetSpaceDispatch => true
   | .yieldDispatch => true
 
 theorem crossCoreTransitionIsLiveArm_count :
-    (CrossCoreTransition.all.filter crossCoreTransitionIsLiveArm).length = 26 := by decide
+    (CrossCoreTransition.all.filter crossCoreTransitionIsLiveArm).length = 27 := by decide
 
 -- The check is quadratic in the inventory and linear in each theorem name, and
 -- round 35's three entries (one of them 76 characters) pushed it past the
@@ -1515,6 +1537,7 @@ def crossCoreLiveArmSyscall : CrossCoreTransition → Option SyscallId
   | .auditReadDispatch => some .auditRead
   | .auditDrainDispatch => some .auditDrain
   | .untypedRetypeDispatch => some .untypedRetype
+  | .tcbSetSpaceDispatch => some .tcbSetSpace
   | .yieldDispatch => some .yield
 
 /-- SM8.B.2: the evidence backing each live-arm classification. -/
@@ -1565,6 +1588,7 @@ def crossCoreLiveArmEvidence : CrossCoreTransition → LiveArmEvidence
   | .auditDrainDispatch => .delegationProof .auditDrain syscallDelegates_auditDrain
   | .untypedRetypeDispatch =>
       .delegationProof .untypedRetype syscallDelegates_untypedRetype
+  | .tcbSetSpaceDispatch => .delegationProof .tcbSetSpace syscallDelegates_tcbSetSpace
   | .yieldDispatch => .delegationProof .yield syscallDelegates_yield
 
 /-- SM8.B.2 (**the tie is checked, not assumed**): a delegation-backed entry
@@ -1602,7 +1626,7 @@ def crossCoreLiveArmDelegationBacked : List CrossCoreTransition :=
     crossCoreTransitionIsLiveArm t && (crossCoreLiveArmEvidence t).isDelegationBacked)
 
 theorem crossCoreLiveArmDelegationBacked_count :
-    crossCoreLiveArmDelegationBacked.length = 18 := by decide
+    crossCoreLiveArmDelegationBacked.length = 19 := by decide
 
 /-- SM8.B.2: and the residual — the live arms still resting on a human reading
 of `API.lean`, which is the state every one of the three drifts occurred in. -/
@@ -1651,6 +1675,9 @@ def crossCoreTransitionWritesRemote : CrossCoreTransition → Bool
   | .cspaceRevokeDispatch => false
   -- WS-ZA ZA5.4 part 14: and the carve, which writes the object store alone
   | .untypedRetypeDispatch => false
+  -- WS-ZA ZA5.4 part 22: and the space change, which retires through the same
+  -- object-store erase
+  | .tcbSetSpaceDispatch => false
   -- SM8.C.9: and the declassification, for a different reason — the only field
   -- it writes is not per-core at all
   | .declassifyDispatch => false

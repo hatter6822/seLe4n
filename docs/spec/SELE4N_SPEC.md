@@ -4978,7 +4978,12 @@ preserved by each set (`threadSlotSet_preserves_capabilityInvariantBundle`,
 `threadSlotSet_keyFrame`), and the space change is invisible to an observer
 the thread, the objects its two space slots name, and the untypeds recording
 them are hidden from (`copyThreadSpaces_preserves_projection`, through
-`retireFinalObject_preserves_projection`).
+`retireFinalObject_preserves_projection`).  The arm now takes the executing
+core, for the retire of a root and its acknowledged ASID round, and is a
+cross-core inventory entry that writes no core
+(`copyThreadSpaces_crossCoreNonInterference`, through
+`copyThreadSpaces_confinedToCores`), delegation-backed by
+`syscallDelegates_tcbSetSpace`.
 
 The retire keeps the reachable IPC state (`retireFinalObject_preserves_ipcReachable`):
 it keeps every thread and scheduling context, and erases no notification a

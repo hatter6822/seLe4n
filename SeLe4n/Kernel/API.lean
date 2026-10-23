@@ -7720,6 +7720,26 @@ theorem dispatchWithCap_tcbSuspend_delegates
   obtain ⟨a, hD⟩ := hDecode
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hD, hValid]
 
+/-- WS-ZA ZA5.4 part 22: **the live `.tcbSetSpace` arm is the space change** at
+the invoking thread's executing core, on the thread the capability names and the
+two roots resolved through the caller's CSpace (`resolveSetSpace`).  It takes
+the core for the retire of what each slot's old capability took with it. -/
+theorem dispatchWithCap_tcbSetSpace_delegates
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
+    (gate : SyscallGate) (cap : Capability) (objId : SeLe4n.ObjId)
+    (args : Architecture.SyscallArgDecode.SetSpaceArgs) (vtid : SeLe4n.ValidThreadId)
+    (cnSrc vrSrc : CSpaceAddr) (st : SystemState)
+    (hSyscall : decoded.syscallId = .tcbSetSpace)
+    (hTarget : cap.target = .object objId)
+    (hDecode : Architecture.SyscallArgDecode.decodeSetSpaceArgs decoded = .ok args)
+    (hValid : validateThreadIdArg (SeLe4n.ThreadId.ofNat objId.toNat) = .ok vtid)
+    (hResolve : resolveSetSpace tid args st = .ok (cnSrc, vrSrc)) :
+    dispatchWithCap decoded tid executingCore gate cap st =
+      (match copyThreadSpaces executingCore st vtid cnSrc vrSrc with
+       | .ok st' => .ok ((), st')
+       | .error e => .error e) := by
+  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode, hValid, hResolve]
+
 /-- **The live `.tcbResume` arm routes to `resumeThreadOnCore`.**
 
 Round 10 of the PR #861 review found this arm still calling the boot-pinned
@@ -8176,6 +8196,22 @@ def syscallDelegates : SyscallId → Prop
           if !cnodeInvoked cnodeId st then .error .objectNotFound else
             cspaceRevokeCdtFinalising executingCore
               { cnode := cnodeId, slot := args.targetSlot } st
+  -- WS-ZA ZA5.4 part 22: the space change, which retires what each slot's old
+  -- capability took with it at the invoking thread's core.
+  | .tcbSetSpace =>
+      ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
+        (cap : Capability) (objId : SeLe4n.ObjId)
+        (args : Architecture.SyscallArgDecode.SetSpaceArgs) (vtid : SeLe4n.ValidThreadId)
+        (cnSrc vrSrc : CSpaceAddr) (st : SystemState),
+        decoded.syscallId = .tcbSetSpace →
+        cap.target = .object objId →
+        Architecture.SyscallArgDecode.decodeSetSpaceArgs decoded = .ok args →
+        validateThreadIdArg (SeLe4n.ThreadId.ofNat objId.toNat) = .ok vtid →
+        resolveSetSpace tid args st = .ok (cnSrc, vrSrc) →
+        dispatchWithCap decoded tid executingCore gate cap st =
+          (match copyThreadSpaces executingCore st vtid cnSrc vrSrc with
+           | .ok st' => .ok ((), st')
+           | .error e => .error e)
   -- WS-ZA ZA4.3: the capability-free yield.  Both dispatchers run it from the
   -- guard ahead of the caller's CSpace lookup, so the obligation is stated
   -- over the dispatchers themselves: once the caller is current on the
@@ -8272,6 +8308,14 @@ theorem syscallDelegates_cspaceRevoke : syscallDelegates .cspaceRevoke := by
   intro decoded tid executingCore gate cap cnodeId args st hSyscall hTarget hDecode
   exact dispatchWithCap_cspaceRevoke_delegates decoded tid executingCore gate cap cnodeId args st
     hSyscall hTarget hDecode
+
+/-- WS-ZA ZA5.4 part 22: the `.tcbSetSpace` obligation, discharged — the space
+change's cross-core inventory entry rests on it. -/
+theorem syscallDelegates_tcbSetSpace : syscallDelegates .tcbSetSpace := by
+  intro decoded tid executingCore gate cap objId args vtid cnSrc vrSrc st hSyscall hTarget hDecode
+    hValid hResolve
+  exact dispatchWithCap_tcbSetSpace_delegates decoded tid executingCore gate cap objId args vtid
+    cnSrc vrSrc st hSyscall hTarget hDecode hValid hResolve
 
 /-- The `.send` obligation, discharged. -/
 theorem syscallDelegates_send : syscallDelegates .send := by

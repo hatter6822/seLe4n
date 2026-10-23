@@ -6655,7 +6655,15 @@ run_check "INVARIANT" rg -n '^theorem endpointReceiveDualOnCore_crossCoreNonInte
 # Audit IPC-2 (`v0.36.49`): the two-leg ReplyRecv composite these three named is
 # deleted; the live transition took its name and its entries are anchored above.
 run_negative_check "INVARIANT" rg -n '^def endpointReplyRecvWriteSet($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem crossCoreNiTheorem_count : CrossCoreTransition\.all\.length = 33' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem crossCoreNiTheorem_count : CrossCoreTransition\.all\.length = 34' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+# WS-ZA ZA5.4 part 22: the space change takes the executing core for its retire,
+# so it is a cross-core inventory entry: delegation-backed, and writing no core.
+run_check "INVARIANT" rg -n '^  \| \.tcbSetSpaceDispatch => niName! copyThreadSpaces_crossCoreNonInterference$' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^  \| \.tcbSetSpaceDispatch => \.delegationProof \.tcbSetSpace syscallDelegates_tcbSetSpace$' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem copyThreadSpaces_crossCoreNonInterference$' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem copyThreadSpaces_confinedToCores ' SeLe4n/Kernel/SlotConfinement/MemoryArms.lean
+run_check "INVARIANT" rg -n '^theorem syscallDelegates_tcbSetSpace : syscallDelegates \.tcbSetSpace' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchWithCap_tcbSetSpace_delegates$' SeLe4n/Kernel/API.lean
 # Round 14: all three SchedContext arms this cut made remote writers are audited.
 # The negative is the point — `crossCoreRemoteWriterPendingAudit` was the counted
 # gap while two were unproven, and it must not come back as an empty list, which
