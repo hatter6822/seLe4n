@@ -3865,7 +3865,7 @@ run_negative_check "INVARIANT" rg -n '\b(bootSafeObjectCheck_admits_rpi5BootVSpa
 run_check "INVARIANT" rg -n '^def bootVSpaceAsidsDistinct \(config : PlatformConfig\) : Bool :=' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^      if bootVSpaceAsidsDistinct config then$' SeLe4n/Platform/Boot.lean
 # BP3.2 — untyped placement is a conjunct of `wellFormed`, with its own row.
-run_check "INVARIANT" rg -n -U 'objectBudgetRespected config && declaredCoreCountInRange config &&\n    untypedPlacementRespected config && bootRootTablesPlaced config &&\n    untypedCapabilitiesUnique config$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n -U 'objectBudgetRespected config && declaredCoreCountInRange config &&\n    untypedPlacementRespected config && bootRootTablesPlaced config &&\n    untypedCapabilitiesUnique config && bootCapabilitiesNameInstalledObjects config$' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n -F '(untypedPlacementRespected config, untypedPlacementBootError)' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^def untypedClearOfKernel\b' SeLe4n/Platform/Boot.lean
 # BP3.2 — the kernel's reserved extent, stated in three places and held equal.
@@ -4293,8 +4293,8 @@ run_check "INVARIANT" rg -n '^    untypedPlacementRespected config && bootRootTa
 run_check "INVARIANT" rg -n '^   \(bootRootTablesPlaced config, bootRootTablesBootError\),$' SeLe4n/Platform/Boot.lean
 # WS-ZA ZA5.4 part 13 (v0.36.124): no boot untyped is named by two capabilities,
 # the ninth conjunct of `wellFormed`, with its own diagnostic row.
-run_check "INVARIANT" rg -n '^    untypedCapabilitiesUnique config$' SeLe4n/Platform/Boot.lean
-run_check "INVARIANT" rg -n '^   \(untypedCapabilitiesUnique config, untypedCapabilityDuplicateBootError\)\]$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^    untypedCapabilitiesUnique config && bootCapabilitiesNameInstalledObjects config$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^   \(untypedCapabilitiesUnique config, untypedCapabilityDuplicateBootError\),$' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^theorem PlatformConfig\.wellFormed_untypedCapabilitiesUnique($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n 'runBootUntypedCapabilityChecks$' tests/SmpIdleSuite.lean
 run_check "INVARIANT" rg -n -U 'def bootRootTablesPlaced [^\n]*(\n([ \t][^\n]*)?)*  decide \(\(configuredRootTableBases config\)\.filterMap id\)\.Nodup &&' SeLe4n/Platform/Boot.lean
@@ -21886,11 +21886,27 @@ run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedStartedFor_bootLink
 # WS-ZA ZA5.4 part 16: every capability-holding slot is in the tree.  The
 # bundle carries the shape, the linked boot establishes it from the listing of
 # every boot slot, and the unlinked and unchecked boots' bundle claims are gone.
-run_check "INVARIANT" rg -n '^abbrev CapTreeShape \(st : SystemState\) : Prop := TreeShapeOver st\.cdt st\.slotCapAt$' SeLe4n/Model/SlotTreeShape.lean
+run_check "INVARIANT" rg -n -U '^abbrev CapTreeShape \(st : SystemState\) : Prop :=\n  TreeShapeOver st\.cdt st\.slotCapAt st\.objectPresent$' SeLe4n/Model/SlotTreeShape.lean
 run_check "INVARIANT" rg -n '^theorem BootLinks\.Sound\.foldl_done($|[ ({:\[\]])' SeLe4n/Platform/Boot/CapabilityLinks.lean
 run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedWithIdleThreadsFor_bootSlotsListed($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean
 run_check "INVARIANT" rg -n '^theorem startInitialThreads_bootSlotsListed($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean
 run_negative_check "INVARIANT" rg -n '\b(bootFromPlatformUnchecked|proofLayerInvariantBundle_of_bootStartShape|bootFromPlatform_proofLayerInvariantBundle_general|bootFromPlatformCheckedWithIdleThreadsFor_proofLayerInvariantBundle|bootToRuntime_invariantBridge_checked)\b' SeLe4n/ tests/
 run_check "INVARIANT" rg -n '^  linkBootCapabilities qemuVirtBoundPlatformConfig qemuVirtDeploymentStartedState$' SeLe4n/Platform/QemuVirt/Deployment.lean
 run_check "INVARIANT" rg -n '^  linkBootCapabilities \(rpi5BoundPlatformConfigAt v\) \(rpi5DeploymentStartedStateAt v\)$' SeLe4n/Platform/RPi5/Deployment.lean
+# WS-ZA ZA5.4 part 18 (v0.36.129): the tree shape holds every capability to a
+# live object and every capability naming another object than its parent below
+# that parent; boot refuses a configured capability naming an object it does
+# not install (the tenth `wellFormed` conjunct, with its own diagnostic row),
+# and the linked boot establishes both.
+run_check "INVARIANT" rg -n '^def Capability\.namedObject \(c : Capability\) : Option SeLe4n\.ObjId :=' SeLe4n/Model/SlotTreeShape.lean
+run_check "INVARIANT" rg -n '^  live : ∀ r o, namesAt cap r o → present o$' SeLe4n/Model/SlotTreeShape.lean
+run_check "INVARIANT" rg -n -U '^  below : ∀ p c o, c ∈ cdt\.childrenOf p → namesAt cap c o → cap p ≠ none → ¬ namesAt cap p o →\n    ∀ r, namesAt cap r o → CapDerivationTree\.CdtChildReachable cdt p r$' SeLe4n/Model/SlotTreeShape.lean
+run_check "INVARIANT" rg -n '^def bootCapabilitiesNameInstalledObjects \(config : PlatformConfig\) : Bool :=' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^   \(bootCapabilitiesNameInstalledObjects config, bootCapabilityDanglingBootError\)\]$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem PlatformConfig\.wellFormed_bootCapabilitiesNameInstalledObjects($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedWithIdleThreadsFor_ok_capabilitiesLive($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem startInitialThreads_capabilitiesLive($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean
+run_check "INVARIANT" rg -n -U '^    \(startInitialThreads_capabilitiesLive _ _ _ hStart\n      \(bootFromPlatformCheckedWithIdleThreadsFor_ok_capabilitiesLive cores config base hBase\)\)' SeLe4n/Platform/Boot/InitialThreads.lean
+run_check "INVARIANT" rg -n -U '^    \(hLive : ∀ r o, SystemState\.namesAt ist\.state\.slotCapAt r o → ist\.state\.objectPresent o\) :\n    bootLinkedShape \(linkBootCapabilities config ist\) := by$' SeLe4n/Platform/Boot/CapabilityLinks.lean
+run_check "INVARIANT" rg -n 'runBootCapabilityLiveChecks$' tests/SmpIdleSuite.lean
 finalize_report

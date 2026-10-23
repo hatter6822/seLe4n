@@ -98,7 +98,10 @@ structural guarantees — the two that make revocation terminate and make it
 complete. `objects.invExt` is the Robin Hood table's own well-formedness
 (§3.6), carried here because capability lookup goes through it.
 `CapTreeShape` puts every capability-holding slot in the tree, as seL4's
-mapping database holds every capability.  Every slot write keeps the bundle,
+mapping database holds every capability; since `v0.36.129` it also holds every
+capability to a live object and every capability naming another object than
+its parent below that parent, and the boot refuses a configured capability
+naming an object it does not install.  Every slot write keeps the bundle,
 the untyped carve included (`untypedRetypeObject_preserves_capabilityInvariantBundle`;
 see `SELE4N_SPEC.md` §8.6).
 
