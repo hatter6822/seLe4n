@@ -244,8 +244,8 @@ derived from the CNode slot naming the same object.  New tree code must
 keep `LinksAgree` with root chains (`cdtAppendRoot` for a new root).  Since
 part 16 the capability bundle carries `CapTreeShape`: every slot holding a
 capability is in the tree and the tree has a preorder, so an insert's source
-always is in the tree.  A new slot write must keep it (`CapTreeShape.addChild`,
-`splice`, `move`, `rewrite`, `of_frame`), and a hand-built state that records
+always is in the tree.  A new slot write must keep it (`TreeShapeOver.addChild`,
+`CapTreeShape.splice`, `move`, `rewrite`, `of_frame`), and a hand-built state that records
 edges names its sources (`withDerivationEdges`).  The unchecked boot is
 retired: `bootFromPlatform` is the checked boot's fold stage only.  Since
 part 17 (`v0.36.128`) the carve keeps the capability bundle
@@ -256,9 +256,20 @@ part 18 (`v0.36.129`) the tree shape also holds every capability to a live
 object (`TreeShapeOver.live`) and every capability naming another object than
 its parent below that parent (`TreeShapeOver.below`), over
 `Capability.namedObject`: a new slot write must say what the written slot names
-(`CapTreeShape.addChild`'s `hNew`, `rewrite`'s `hObj`) and keep every present
+(`TreeShapeOver.addChild`'s `hNew`, `rewrite`'s target equality) and keep every present
 object present, and the boot refuses a configured capability naming an object
-it does not install (`bootCapabilitiesNameInstalledObjects`).  The
+it does not install (`bootCapabilitiesNameInstalledObjects`).  Since part 19
+(`v0.36.130`) the shape also reads the store's untyped records
+(`SystemState.getUntyped?`) and holds seL4's untyped facts: the slots naming one
+untyped form one vertical first-child chain, an untyped capability that is not
+full has no strict descendant naming its untyped, everything carved from an
+untyped lies below every capability to it, and an untyped's children are live
+and recorded once.  A new write that keeps an object's kind must keep its
+untyped record (`kindPreservingWrite`, `storeObject_kindPreservingWrite`'s
+`hUntyped`); a derivation of an untyped capability goes through the bundle off
+(b) at its source (`capabilityBundleOffSource`) and sets the source full; a
+free-index write needs the slot's no-strict-descendant fact (`hLeaf`); a carved
+untyped must record no child.  The
 suspend of a thread blocked in IPC or holding a donated context is the one
 syscall arm left on the general path (ZA6.1).  ZA6 covers the other
 entries and makes the rule standing.  Plan:

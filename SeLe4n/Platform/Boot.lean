@@ -7574,6 +7574,22 @@ private theorem bootFromPlatformChecked_ok_untyped (config : PlatformConfig)
       cases hObj
     · rwa [installBootVSpaceRoot_objects_ne _ _ _ _ _ hEq] at hObj
 
+/-- **Every object the plain boot installs is a configured object at its id.** -/
+theorem bootFromPlatform_objects_of_config (config : PlatformConfig) (oid : SeLe4n.ObjId)
+    (obj : KernelObject) (hB : (bootFromPlatform config).state.objects[oid]? = some obj) :
+    ∃ e ∈ config.initialObjects, e.id = oid ∧ e.obj = obj := by
+  unfold bootFromPlatform at hB
+  rw [applyMachineConfig_objects_eq] at hB
+  have hB' : (foldObjects config.initialObjects
+      (foldIrqs config.irqTable mkEmptyIntermediateState)).state.objects[oid]? = some obj := by
+    simp only [RHTable_getElem?_eq_get?]; exact hB
+  rcases foldObjects_objects_reachable config.initialObjects _ oid obj hB' with hE | hE
+  · exact hE
+  · rw [foldIrqs_objects, mkEmpty_state_eq_default] at hE
+    have hEmpty : (default : SystemState).objects[oid]? = none := by
+      simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
+    rw [hEmpty] at hE; cases hE
+
 /-- **WS-ZA ZA5.4**: **every object the checked boot holds that holds a
     capability is a configured object at its id** — the binding's VSpace root
     holds none. -/
@@ -7582,20 +7598,7 @@ theorem bootFromPlatformChecked_ok_capObject_of_config (config : PlatformConfig)
     (oid : SeLe4n.ObjId) (obj : KernelObject)
     (hObj : ist.state.objects[oid]? = some obj) (s : SeLe4n.Slot) (hs : obj.slotCap s ≠ none) :
     ∃ e ∈ config.initialObjects, e.id = oid ∧ e.obj = obj := by
-  have hBase : (bootFromPlatform config).state.objects[oid]? = some obj →
-      ∃ e ∈ config.initialObjects, e.id = oid ∧ e.obj = obj := by
-    intro hB
-    unfold bootFromPlatform at hB
-    rw [applyMachineConfig_objects_eq] at hB
-    have hB' : (foldObjects config.initialObjects
-        (foldIrqs config.irqTable mkEmptyIntermediateState)).state.objects[oid]? = some obj := by
-      simp only [RHTable_getElem?_eq_get?]; exact hB
-    rcases foldObjects_objects_reachable config.initialObjects _ oid obj hB' with hE | hE
-    · exact hE
-    · rw [foldIrqs_objects, mkEmpty_state_eq_default] at hE
-      have hEmpty : (default : SystemState).objects[oid]? = none := by
-        simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
-      rw [hEmpty] at hE; cases hE
+  have hBase := bootFromPlatform_objects_of_config config oid obj
   obtain ⟨_, _, hShape⟩ := bootFromPlatformChecked_ok_shape config ist h
   rcases hShape with ⟨_, rfl⟩ | ⟨entry, _, rfl⟩
   · rw [bootEnableInterruptsOp_objects_eq] at hObj; exact hBase hObj
@@ -7732,6 +7735,224 @@ theorem bootFromPlatformCheckedWithIdleThreadsFor_ok_capabilitiesLive
         subst hv
         exact bootFromPlatformCheckedWithIdleThreadsFor_ok_bootVSpaceRoot_present cores config ist
           h v hR
+
+/-- **WS-ZA ZA5.4 part 19**: **every untyped the idle-storing boot holds is a
+    configured untyped at its id** — the binding's root and the idle threads
+    are not untypeds. -/
+theorem bootFromPlatformCheckedWithIdleThreadsFor_ok_untyped_of_config
+    (cores : List SeLe4n.Kernel.Concurrency.CoreId) (config : PlatformConfig)
+    (ist : IntermediateState) (h : bootFromPlatformCheckedWithIdleThreadsFor cores config = .ok ist)
+    (oid : SeLe4n.ObjId) (ut : UntypedObject)
+    (hObj : ist.state.objects[oid]? = some (KernelObject.untyped ut)) :
+    ∃ e ∈ config.initialObjects, e.id = oid ∧ e.obj = .untyped ut := by
+  cases hChecked : bootFromPlatformChecked config with
+  | error e =>
+    rw [bootFromPlatformCheckedWithIdleThreadsFor_rejects_invalid cores config e hChecked] at h
+    cases h
+  | ok base =>
+    have hNd := bootFromPlatformCheckedWithIdleThreadsFor_ok_nodup cores config ist h
+    rw [bootFromPlatformCheckedWithIdleThreadsFor_map_ok cores config base hChecked
+      (bootFromPlatformCheckedWithIdleThreadsFor_ok_affinitiesDeclared cores config ist h)
+      hNd] at h
+    injection h with h
+    subst h
+    rcases foldl_storeIdleThread_objects_cases cores base oid _ hObj with hB | ⟨c, _, hc⟩
+    · exact bootFromPlatform_objects_of_config config oid _
+        (bootFromPlatformChecked_ok_untyped config base hChecked oid ut hB)
+    · cases hc
+
+/-- The configuration the idle-storing boot accepted is well formed and every
+    configured object passed its boot-safety check. -/
+private theorem bootFromPlatformCheckedWithIdleThreadsFor_ok_checks
+    (cores : List SeLe4n.Kernel.Concurrency.CoreId) (config : PlatformConfig)
+    (ist : IntermediateState) (h : bootFromPlatformCheckedWithIdleThreadsFor cores config = .ok ist) :
+    config.wellFormed = true ∧
+      config.initialObjects.all (fun entry => bootSafeObjectCheck entry.obj) = true := by
+  cases hChecked : bootFromPlatformChecked config with
+  | error err =>
+    rw [bootFromPlatformCheckedWithIdleThreadsFor_rejects_invalid cores config err hChecked] at h
+    cases h
+  | ok base =>
+    obtain ⟨hWf, hSafe, -⟩ := bootFromPlatformChecked_ok_shape config base hChecked
+    exact ⟨hWf, hSafe⟩
+
+/-- **WS-ZA ZA5.4 part 19**: **every untyped the idle-storing boot holds records
+    no child** — a configured untyped is pristine (`bootSafeUntypedCheck`). -/
+theorem bootFromPlatformCheckedWithIdleThreadsFor_ok_untypedsUncarved
+    (cores : List SeLe4n.Kernel.Concurrency.CoreId) (config : PlatformConfig)
+    (ist : IntermediateState) (h : bootFromPlatformCheckedWithIdleThreadsFor cores config = .ok ist)
+    (u : SeLe4n.ObjId) (U : UntypedObject) (hU : ist.state.getUntyped? u = some U) :
+    U.children = [] := by
+  obtain ⟨e, he, -, hObj⟩ := bootFromPlatformCheckedWithIdleThreadsFor_ok_untyped_of_config
+    cores config ist h u U ((SystemState.getUntyped?_eq_some_iff _ _ _).mp hU)
+  have hCheck := List.all_eq_true.mp
+    (bootFromPlatformCheckedWithIdleThreadsFor_ok_checks cores config ist h).2 e he
+  rw [hObj] at hCheck
+  exact ((bootSafeObjectCheck_sound _ hCheck).2.2.2.2.2.2.2.1 U rfl).1
+
+/-- A filter of a flattened list counts at least what one member contributes. -/
+private theorem length_filter_le_flatMap {α β : Type} {L : List α} {f : α → List β}
+    {p : β → Bool} {a : α} (ha : a ∈ L) :
+    ((f a).filter p).length ≤ ((L.flatMap f).filter p).length := by
+  induction L with
+  | nil => cases ha
+  | cons x xs ih =>
+    rw [List.flatMap_cons, List.filter_append, List.length_append]
+    rcases List.mem_cons.mp ha with rfl | ha
+    · omega
+    · have := ih ha; omega
+
+/-- Two members of a list, each contributing an element a filter keeps, make
+    the flattened filter at least two long. -/
+private theorem two_le_length_filter_flatMap {α β : Type} {L : List α} {f : α → List β}
+    {p : β → Bool} {a b : α} (ha : a ∈ L) (hb : b ∈ L) (hab : a ≠ b)
+    (hfa : 0 < ((f a).filter p).length) (hfb : 0 < ((f b).filter p).length) :
+    2 ≤ ((L.flatMap f).filter p).length := by
+  induction L with
+  | nil => cases ha
+  | cons x xs ih =>
+    rw [List.flatMap_cons, List.filter_append, List.length_append]
+    rcases List.mem_cons.mp ha with rfl | ha'
+    · rcases List.mem_cons.mp hb with rfl | hb'
+      · exact absurd rfl hab
+      · have := length_filter_le_flatMap (f := f) (p := p) hb'; omega
+    · rcases List.mem_cons.mp hb with rfl | hb'
+      · have := length_filter_le_flatMap (f := f) (p := p) ha'; omega
+      · have := ih ha' hb'; omega
+
+/-- Two distinct positions of a list of cells, each holding a value a filter
+    keeps, make the filter of the held values at least two long. -/
+private theorem two_le_length_filter_filterMap {β : Type} {p : β → Bool} :
+    ∀ {l : List (Option β)} {i j : Nat} {x y : β}, i ≠ j → l[i]? = some (some x) →
+      l[j]? = some (some y) → p x = true → p y = true →
+      2 ≤ ((l.filterMap id).filter p).length
+  | [], _, _, _, _, _, hi, _, _, _ => by cases hi
+  | a :: t, i, j, x, y, hij, hi, hj, hx, hy => by
+    have hpos : ∀ {k z}, t[k]? = some (some z) → p z = true →
+        0 < ((t.filterMap id).filter p).length := fun {k z} hk hz =>
+      List.length_pos_of_mem (List.mem_filter.mpr
+        ⟨List.mem_filterMap.mpr ⟨some z, List.mem_of_getElem? hk, rfl⟩, hz⟩)
+    cases i with
+    | zero =>
+      cases j with
+      | zero => exact absurd rfl hij
+      | succ j =>
+        simp only [List.getElem?_cons_zero, Option.some.injEq] at hi; subst hi
+        simp only [List.getElem?_cons_succ] at hj
+        simp only [List.filterMap_cons, id, List.filter_cons, hx, if_true, List.length_cons]
+        have := hpos hj hy; omega
+    | succ i =>
+      simp only [List.getElem?_cons_succ] at hi
+      cases j with
+      | zero =>
+        simp only [List.getElem?_cons_zero, Option.some.injEq] at hj; subst hj
+        simp only [List.filterMap_cons, id, List.filter_cons, hy, if_true, List.length_cons]
+        have := hpos hi hx; omega
+      | succ j =>
+        simp only [List.getElem?_cons_succ] at hj
+        have ih := two_le_length_filter_filterMap (fun e => hij (by rw [e])) hi hj hx hy
+        cases a with
+        | none => simpa only [List.filterMap_cons, id] using ih
+        | some z =>
+          simp only [List.filterMap_cons, id, List.filter_cons]
+          split <;> (try simp only [List.length_cons]) <;> omega
+
+/-- A configured object's slot capability sits in its cell list at the slot's
+    index. -/
+private theorem bootEntryCapabilities_cells {e : ObjectEntry} :
+    ∃ l : List (Option Capability), bootEntryCapabilities e = l.filterMap id ∧
+      ∀ s c, e.obj.slotCap s = some c → l[s.toNat]? = some (some c) := by
+  unfold bootEntryCapabilities
+  cases ho : e.obj with
+  | cnode cn =>
+    refine ⟨cn.cells.toList, rfl, fun s c hs => ?_⟩
+    simp only [KernelObject.slotCap, CNode.lookup_eq_lookupCells, CNode.lookupCells,
+      slotArrayGet] at hs
+    split at hs
+    · rename_i hl; simp [hl, hs]
+    · cases hs
+  | tcb t =>
+    refine ⟨t.spaceCells.toList, rfl, fun s c hs => ?_⟩
+    simp only [KernelObject.slotCap, TCB.spaceSlotCap] at hs
+    split at hs
+    · rename_i hl; simp [hl, hs]
+    · cases hs
+  | _ => exact ⟨[], rfl, fun s c hs => by simp [KernelObject.slotCap] at hs⟩
+
+/-- **WS-ZA ZA5.4 part 19**: **the idle-storing boot names each untyped from one
+    slot at most** — the capability invariant's untyped-chain conjuncts at boot.
+    Two slots naming one untyped are configured objects' slots, so the
+    configuration's capability list holds two capabilities to it — two cells of
+    one object, or one cell of each of two — which `untypedCapabilitiesUnique`
+    refuses. -/
+theorem bootFromPlatformCheckedWithIdleThreadsFor_ok_untypedCapUnique
+    (cores : List SeLe4n.Kernel.Concurrency.CoreId) (config : PlatformConfig)
+    (ist : IntermediateState) (h : bootFromPlatformCheckedWithIdleThreadsFor cores config = .ok ist)
+    (u : SeLe4n.ObjId) (r r' : SlotRef)
+    (hr : SystemState.untypedCapAt ist.state.slotCapAt ist.state.getUntyped? r u)
+    (hr' : SystemState.untypedCapAt ist.state.slotCapAt ist.state.getUntyped? r' u) :
+    r = r' := by
+  obtain ⟨c, hc, hct, hu⟩ := hr
+  obtain ⟨c', hc', hct', -⟩ := hr'
+  obtain ⟨U, hU⟩ := Option.ne_none_iff_exists'.mp hu
+  obtain ⟨eu, heu, hIdU, hObjU⟩ := bootFromPlatformCheckedWithIdleThreadsFor_ok_untyped_of_config
+    cores config ist h u U ((SystemState.getUntyped?_eq_some_iff _ _ _).mp hU)
+  have hEntry : ∀ {x : SlotRef} {d : Capability}, ist.state.slotCapAt x = some d →
+      ∃ e ∈ config.initialObjects, e.id = x.cnode ∧ e.obj.slotCap x.slot = some d := by
+    intro x d hd
+    rw [SystemState.slotCapAt_eq_bind] at hd
+    cases hO : ist.state.objects[x.cnode]? with
+    | none => rw [hO] at hd; cases hd
+    | some obj =>
+      rw [hO, Option.bind_some] at hd
+      obtain ⟨e, he, hId, hObj⟩ := bootFromPlatformCheckedWithIdleThreadsFor_ok_capObject_of_config
+        cores config ist h x.cnode obj hO x.slot (by rw [hd]; exact Option.some_ne_none _)
+      exact ⟨e, he, hId, by rw [hObj]; exact hd⟩
+  obtain ⟨e, he, hId, hs⟩ := hEntry hc
+  obtain ⟨e', he', hId', hs'⟩ := hEntry hc'
+  have hChk := (config.wellFormed_untypedCapabilitiesUnique
+    (bootFromPlatformCheckedWithIdleThreadsFor_ok_checks cores config ist h).1)
+  unfold untypedCapabilitiesUnique at hChk
+  dsimp only at hChk
+  have hOne := List.all_eq_true.mp hChk eu heu
+  rw [hObjU, hIdU] at hOne
+  simp only [decide_eq_true_eq] at hOne
+  let p : Capability → Bool := fun d => decide (d.target = .object u)
+  have hp : p c = true := by simp [p, hct]
+  have hp' : p c' = true := by simp [p, hct']
+  have hPos : ∀ {x : ObjectEntry} {s d}, x.obj.slotCap s = some d → p d = true →
+      0 < ((bootEntryCapabilities x).filter p).length := by
+    intro x s d hd hpd
+    obtain ⟨l, hl, hcl⟩ := bootEntryCapabilities_cells (e := x)
+    rw [hl]
+    exact List.length_pos_of_mem (List.mem_filter.mpr
+      ⟨List.mem_filterMap.mpr ⟨some d, List.mem_of_getElem? (hcl s d hd), rfl⟩, hpd⟩)
+  refine Classical.byContradiction fun hne => ?_
+  have hTwo : 2 ≤ ((config.initialObjects.flatMap bootEntryCapabilities).filter p).length := by
+    by_cases hcn : r.cnode = r'.cnode
+    · have hss : r.slot ≠ r'.slot := fun e => hne (by cases r; cases r'; simp_all)
+      have hs'' : e.obj.slotCap r'.slot = some c' := by
+        obtain ⟨o, ho⟩ : ∃ o, ist.state.objects[r.cnode]? = some o := by
+          rw [SystemState.slotCapAt_eq_bind] at hc
+          cases hO : ist.state.objects[r.cnode]? with
+          | none => rw [hO] at hc; cases hc
+          | some o => exact ⟨o, rfl⟩
+        have hE : ∀ {x : ObjectEntry}, x ∈ config.initialObjects → x.id = r.cnode → x.obj = o := by
+          intro x hx hxid
+          rw [← hxid, bootFromPlatformCheckedWithIdleThreadsFor_ok_objects_of_mem cores config ist
+            h x hx] at ho
+          exact Option.some.inj ho
+        rw [hE he hId, ← hE he' (hId'.trans hcn.symm)]; exact hs'
+      obtain ⟨l, hl, hcl⟩ := bootEntryCapabilities_cells (e := e)
+      have h2 : 2 ≤ ((bootEntryCapabilities e).filter p).length := by
+        rw [hl]
+        exact two_le_length_filter_filterMap (fun h => hss (SeLe4n.Slot.ext h))
+          (hcl _ _ hs) (hcl _ _ hs'') hp hp'
+      exact Nat.le_trans h2 (length_filter_le_flatMap he)
+    · exact two_le_length_filter_flatMap he he' (fun e => hcn (by rw [← hId, ← hId', e]))
+        (hPos hs hp) (hPos hs' hp')
+  have : ((config.initialObjects.flatMap bootEntryCapabilities).filter p).length ≤ 1 := hOne
+  omega
 
 /-- **WS-BP BP7.11**: **what a boot leaves, for the bundle to be read off** —
     every object boot-shaped, the untouched fields their defaults, the ASID

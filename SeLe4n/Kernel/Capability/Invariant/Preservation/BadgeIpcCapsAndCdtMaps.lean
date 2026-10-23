@@ -174,13 +174,13 @@ theorem cspaceMutate_preserves_badgeWellFormed
     · simp at hStep
 
 
-/-- A free-index write keeps what every slot names: it rewrites one occupied
-slot's index and keeps its target. -/
-theorem setCapFreeIndex_namesAt {st : SystemState} {a : CSpaceAddr} {cn : CNode} {c : Capability}
+/-- A free-index write keeps every occupied slot's target: it rewrites one
+occupied slot's index and keeps its target. -/
+theorem setCapFreeIndex_slotTarget {st : SystemState} {a : CSpaceAddr} {cn : CNode} {c : Capability}
     (idx : Nat) (hObjInv : st.objects.invExt) (hPre : st.objects[a.cnode]? = some (.cnode cn))
-    (hLk : cn.lookup a.slot = some c) (r : SlotRef) (o : SeLe4n.ObjId) :
-    SystemState.namesAt (setCapFreeIndex st a idx).slotCapAt r o ↔
-      SystemState.namesAt st.slotCapAt r o := by
+    (hLk : cn.lookup a.slot = some c) (r : SlotRef) {d : Capability}
+    (h : st.slotCapAt r = some d) :
+    ∃ d', (setCapFreeIndex st a idx).slotCapAt r = some d' ∧ d'.target = d.target := by
   have hS := setCapFreeIndex_eq_storeObject (idx := idx) hPre
   rw [CNode.setFreeIndex_of_lookup hLk] at hS
   by_cases e : r = a
@@ -190,50 +190,47 @@ theorem setCapFreeIndex_namesAt {st : SystemState} {a : CSpaceAddr} {cn : CNode}
       exact CNode.lookup_insert_eq cn r.slot _ (CNode.slotsUnique_holds _)
         (CNode.slotAddressable_of_lookup _ _ _ hLk)
     have h0 : st.slotCapAt r = some c := (SystemState.slotCapAt_of_object hPre).trans hLk
-    unfold SystemState.namesAt; rw [h1, h0]
-    simp [Capability.namedObject_of_target (Capability.withFreeIndex_target c idx)]
-  · exact SystemState.namesAt_of_eq (SystemState.slotCapAt_storeObject_ne hObjInv hPre hS
+    rw [h0] at h; cases h
+    exact ⟨_, h1, Capability.withFreeIndex_target _ _⟩
+  · exact ⟨d, (SystemState.slotCapAt_storeObject_ne hObjInv hPre hS
       (fun s' hs => CNode.lookup_insert_ne cn a.slot s' _ (Ne.symm hs) (CNode.slotsUnique_holds _))
-      r e)
+      r e).trans h, rfl⟩
 
-/-- Setting a derivation's source full keeps what every slot names. -/
-theorem untypedSourceSetFull_namesAt {st : SystemState} {a : CSpaceAddr} {cn : CNode}
+/-- Setting a derivation's source full keeps every occupied slot's target. -/
+theorem untypedSourceSetFull_slotTarget {st : SystemState} {a : CSpaceAddr} {cn : CNode}
     {c : Capability} (cap : Capability) (hObjInv : st.objects.invExt)
     (hPre : st.objects[a.cnode]? = some (.cnode cn)) (hLk : cn.lookup a.slot = some c)
-    (r : SlotRef) (o : SeLe4n.ObjId) :
-    SystemState.namesAt (untypedSourceSetFull st a cap).slotCapAt r o ↔
-      SystemState.namesAt st.slotCapAt r o :=
-  untypedSourceSetFull_of (P := fun s => SystemState.namesAt s.slotCapAt r o ↔
-      SystemState.namesAt st.slotCapAt r o) Iff.rfl
-    fun idx => setCapFreeIndex_namesAt idx hObjInv hPre hLk r o
+    (r : SlotRef) {d : Capability} (h : st.slotCapAt r = some d) :
+    ∃ d', (untypedSourceSetFull st a cap).slotCapAt r = some d' ∧ d'.target = d.target :=
+  untypedSourceSetFull_of (P := fun s => ∃ d', s.slotCapAt r = some d' ∧ d'.target = d.target)
+    ⟨d, h, rfl⟩ fun idx => setCapFreeIndex_slotTarget idx hObjInv hPre hLk r h
 
-/-- **A transfer keeps what every slot names**: it installs into an empty slot,
-records an edge, and may set its source full. -/
-theorem ipcTransferSingleCap_namesAt {st st' : SystemState} {cap : Capability} {srcNode : SlotRef}
-    {receiverRoot : SeLe4n.ObjId} {slotBase : SeLe4n.Slot} {scanLimit : Nat}
+/-- **A transfer keeps every occupied slot's target**: it installs into an
+empty slot, records an edge, and may set its source full. -/
+theorem ipcTransferSingleCap_slotTarget {st st' : SystemState} {cap : Capability}
+    {srcNode : SlotRef} {receiverRoot : SeLe4n.ObjId} {slotBase : SeLe4n.Slot} {scanLimit : Nat}
     {result : CapTransferResult} (hObjInv : st.objects.invExt)
     (hStep : ipcTransferSingleCap cap srcNode receiverRoot slotBase scanLimit st
-             = .ok (result, st')) (r : SlotRef) (o : SeLe4n.ObjId)
-    (h : SystemState.namesAt st.slotCapAt r o) : SystemState.namesAt st'.slotCapAt r o := by
+             = .ok (result, st')) (r : SlotRef) {d : Capability} (h : st.slotCapAt r = some d) :
+    ∃ d', st'.slotCapAt r = some d' ∧ d'.target = d.target := by
   obtain ⟨_, -, ⟨rfl, -⟩ | ⟨emptySlot, st2, -, hSrc, -, hIns, -, rfl⟩⟩ :=
     ipcTransferSingleCap_ok_cases hStep
-  · exact h
+  · exact ⟨d, h, rfl⟩
   · obtain ⟨c, hLc⟩ := Option.isSome_iff_exists.mp
       (by unfold cdtNodeIsRevocable at hSrc; exact hSrc)
     obtain ⟨cnS, hOS, hLS⟩ := cspaceInsertSlot_cdtAddChild_src .ipcTransfer hObjInv hLc hIns
     have hInv2 := cspaceInsertSlot_preserves_objects_invExt _ _ _ _ hObjInv hIns
     have hA := SystemState.cdtAddChild_agreeObjects hInv2 srcNode
       { cnode := receiverRoot, slot := emptySlot } .ipcTransfer
-    refine (untypedSourceSetFull_namesAt cap hA.2 hOS hLS r o).mpr ?_
-    refine (SystemState.namesAt_of_eq (hA.1.slotCapAt r)).mpr ?_
+    refine untypedSourceSetFull_slotTarget cap hA.2 hOS hLS r ?_
+    rw [hA.1.slotCapAt r]
     have hrd : r ≠ { cnode := receiverRoot, slot := emptySlot } := by
       rintro rfl
       obtain ⟨cn0, hGet, -, hE, -⟩ := cspaceInsertSlot_ok_decompose _ _ _ _ hIns
-      obtain ⟨c0, hc0, -⟩ := h
-      rw [SystemState.slotCapAt_eq_bind] at hc0
+      rw [SystemState.slotCapAt_eq_bind] at h
       have hG := (SystemState.getCNode?_eq_some_iff st receiverRoot cn0).mp hGet
-      simp [hG, KernelObject.slotCap, hE] at hc0
-    exact (SystemState.namesAt_of_eq (cspaceInsertSlot_slotCapAt_ne hObjInv hIns r hrd)).mpr h
+      simp [hG, KernelObject.slotCap, hE] at h
+    exact (cspaceInsertSlot_slotCapAt_ne hObjInv hIns r hrd).trans h
 
 /-- M-D01: IPC single-cap transfer preserves the capability invariant bundle.
 
@@ -255,38 +252,39 @@ theorem ipcTransferSingleCap_preserves_capabilityInvariantBundle
     (result : CapTransferResult)
     (hInv : capabilityInvariantBundle st)
     (hCapBacked : ∀ rid, cap.target = .replyCap rid → st.getReply? rid ≠ none)
-    (hNames : ∀ o, cap.namedObject = some o → SystemState.namesAt st.slotCapAt srcNode o)
+    (hSrcCap : ∃ c, st.slotCapAt srcNode = some c ∧ cap.target = c.target)
     (hStep : ipcTransferSingleCap cap srcNode receiverRoot slotBase scanLimit st
              = .ok (result, st')) :
     capabilityInvariantBundle st' := by
-  obtain ⟨_, -, ⟨rfl, -⟩ | ⟨emptySlot, st2, -, hSrc, -, hIns, -, rfl⟩⟩ :=
+  obtain ⟨_, -, ⟨rfl, -⟩ | ⟨emptySlot, st2, -, hSrc, hRef, hIns, -, rfl⟩⟩ :=
     ipcTransferSingleCap_ok_cases hStep
   · exact hInv
   · have hObjInv := objects_invExt_of_capabilityInvariantBundle st hInv
+    obtain ⟨c, hLc⟩ := Option.isSome_iff_exists.mp
+      (by unfold cdtNodeIsRevocable at hSrc; exact hSrc)
+    obtain ⟨c0, hc0, hT0⟩ := hSrcCap
+    rw [Option.some.inj (hc0.symm.trans (SystemState.slotCapAt_of_lookupSlotCap hLc))] at hT0
     have hBundleSt2 := cspaceInsertSlot_preserves_capabilityBundleOffCoverage st st2
       { cnode := receiverRoot, slot := emptySlot } cap.withoutMapping hInv.offCoverage hCapBacked hIns
     have hCdt := cdt_addEdge_after_insert st st2 srcNode
       { cnode := receiverRoot, slot := emptySlot } cap.withoutMapping .ipcTransfer
       hInv.2.1 hInv.2.2.1 hObjInv
       (by unfold cdtNodeIsRevocable at hSrc; exact hSrc) hIns hInv.linksAgree
-    have hShape := treeShape_addEdge_after_insert st st2 srcNode
+    have hShape := treeShape_addEdge_after_copy st st2 srcNode
       { cnode := receiverRoot, slot := emptySlot } cap.withoutMapping .ipcTransfer
-      hInv.treeShape hInv.2.1 hObjInv
-      (by unfold cdtNodeIsRevocable at hSrc; exact hSrc) hIns
-      fun o ho => .inl (hNames o
-        (by rw [← Capability.namedObject_of_target (Capability.withMapping_target cap none)]; exact ho))
+      hInv.treeShape hInv.2.1 hObjInv hInv.linksAgree hLc
+      ((Capability.withMapping_target cap none).trans hT0) hT0 hRef hIns
     rcases hBundleSt2 with ⟨⟨_, _, _, hDepth2, hObjInv2, hRCPV2⟩, -, -⟩
     have hIX := hObjInv2
     have hObjFinal : ∀ cdt' : CapDerivationTree,
         ({ st2 with cdt := cdt' } : SystemState).objects = st2.objects := fun _ => rfl
-    have hMid := capabilityInvariantBundle_of_linkReach ?_
+    have hMid := capabilityBundleOffSource_of_linkReach ?_
       (SystemState.cdtAddChild_reach st2 srcNode _ .ipcTransfer) hIX hCdt.2.2 hShape
     · -- `cdtNodeIsRevocable`: the source holds a capability, and still does after
-      -- the install and the edge, so setting it full keeps the bundle.
-      obtain ⟨c, hLc⟩ := Option.isSome_iff_exists.mp
-        (by unfold cdtNodeIsRevocable at hSrc; exact hSrc)
+      -- the install and the edge, so setting it full restores the bundle.
       obtain ⟨cnS, hOS, hLS⟩ := cspaceInsertSlot_cdtAddChild_src .ipcTransfer hObjInv hLc hIns
       exact untypedSourceSetFull_preserves_capabilityInvariantBundle _ srcNode cnS cap hMid hOS hLS
+        hT0
     · exact ⟨cspaceLookupSound_holds _,
         hCdt.1, hCdt.2.1,
         cspaceDepthConsistent_of_objects_eq st2 _ hDepth2 (hObjFinal _),
@@ -306,8 +304,8 @@ theorem ipcUnwrapCapsLoop_preserves_capabilityInvariantBundle
     (hCapBacked : ∀ (stI : SystemState) (cap : Capability),
         capabilityInvariantBundle stI →
         ∀ rid, cap.target = .replyCap rid → stI.getReply? rid ≠ none)
-    (hNames : ∀ (i : Nat) (tc : TransferCap), caps[i]? = some tc → ∀ o, tc.cap.namedObject = some o →
-        SystemState.namesAt st.slotCapAt tc.srcSlot o)
+    (hNames : ∀ (i : Nat) (tc : TransferCap), caps[i]? = some tc →
+        ∃ c, st.slotCapAt tc.srcSlot = some c ∧ tc.cap.target = c.target)
     (hStep : ipcUnwrapCapsLoop caps receiverRoot idx nextBase
              accResults fuel st = .ok (summary, st')) :
     capabilityInvariantBundle st' := by
@@ -339,9 +337,12 @@ theorem ipcUnwrapCapsLoop_preserves_capabilityInvariantBundle
           hInv
           (hCapBacked st tc.cap hInv) (hNames idx tc hCap)
           hTransfer
-        have hNamesNext : ∀ (i : Nat) (tc : TransferCap), caps[i]? = some tc → ∀ o, tc.cap.namedObject = some o →
-            SystemState.namesAt stNext.slotCapAt tc.srcSlot o := fun i tc' hi o ho =>
-          ipcTransferSingleCap_namesAt hInv.2.2.2.2.1 hTransfer _ o (hNames i tc' hi o ho)
+        have hNamesNext : ∀ (i : Nat) (tc : TransferCap), caps[i]? = some tc →
+            ∃ c, stNext.slotCapAt tc.srcSlot = some c ∧ tc.cap.target = c.target := by
+          intro i tc' hi
+          obtain ⟨c, hc, hT⟩ := hNames i tc' hi
+          obtain ⟨c', hc', hT'⟩ := ipcTransferSingleCap_slotTarget hInv.2.2.2.2.1 hTransfer _ hc
+          exact ⟨c', hc', hT.trans hT'.symm⟩
         simp [hTransfer] at hStep
         cases result with
         | installed c s => exact ih _ _ _ _ hInvNext hNamesNext hStep
@@ -362,8 +363,8 @@ theorem ipcUnwrapCaps_preserves_capabilityInvariantBundle_grant
     (hCapBacked : ∀ (stI : SystemState) (cap : Capability),
         capabilityInvariantBundle stI →
         ∀ rid, cap.target = .replyCap rid → stI.getReply? rid ≠ none)
-    (hNames : ∀ (i : Nat) (tc : TransferCap), caps[i]? = some tc → ∀ o, tc.cap.namedObject = some o →
-        SystemState.namesAt st.slotCapAt tc.srcSlot o)
+    (hNames : ∀ (i : Nat) (tc : TransferCap), caps[i]? = some tc →
+        ∃ c, st.slotCapAt tc.srcSlot = some c ∧ tc.cap.target = c.target)
     (hStep : ipcUnwrapCaps caps receiverRoot slotBase true st
              = .ok (summary, st')) :
     capabilityInvariantBundle st' := by
@@ -412,8 +413,8 @@ theorem ipcUnwrapCaps_preserves_capabilityInvariantBundle
     (hCapBacked : ∀ (stI : SystemState) (cap : Capability),
         capabilityInvariantBundle stI →
         ∀ rid, cap.target = .replyCap rid → stI.getReply? rid ≠ none)
-    (hNames : ∀ (i : Nat) (tc : TransferCap), caps[i]? = some tc → ∀ o, tc.cap.namedObject = some o →
-        SystemState.namesAt st.slotCapAt tc.srcSlot o)
+    (hNames : ∀ (i : Nat) (tc : TransferCap), caps[i]? = some tc →
+        ∃ c, st.slotCapAt tc.srcSlot = some c ∧ tc.cap.target = c.target)
     (hStep : ipcUnwrapCaps caps receiverRoot slotBase
              endpointGrantRight st = .ok (summary, st')) :
     capabilityInvariantBundle st' := by
@@ -468,8 +469,8 @@ theorem cdtShrinkingOps_preserve_acyclicity
 `ipcUnwrapCapsLoop_preserves_capabilityInvariantBundle` composes the per-step
 `ipcTransferSingleCap_preserves_capabilityInvariantBundle` by induction on the
 fuel, threading the reply-cap backing (`hCapBacked`) and each capability's
-naming of its source slot's object (`hNames`, kept by every transfer,
-`ipcTransferSingleCap_namesAt`).  The no-Grant
+target being its source slot's (`hNames`, kept by every transfer,
+`ipcTransferSingleCap_slotTarget`).  The no-Grant
 case leaves the state unchanged
 (`ipcUnwrapCaps_preserves_capabilityInvariantBundle_noGrant`).
 -/

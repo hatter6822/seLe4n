@@ -648,7 +648,10 @@ theorem cdtLinksAgree_of_named {st st' : SystemState} (h : cdtLinksAgree st)
   · exact hNamed r f hm
   · rw [hOff r f hm, h.none_of_not_mentions hm f]
 
-theorem capabilityInvariantBundle_of_frame {st st' : SystemState}
+/-- **What a frame keeps of the bundle less its shape**: a step that keeps the
+tree, every CNode, every thread's slots and every Reply keeps every conjunct but
+the tree's shape, which reads the untyped records too. -/
+theorem capabilityBundleOffLinks_of_frame {st st' : SystemState}
     (h : capabilityInvariantBundle st)
     (hCdt : st'.cdt = st.cdt)
     (hCnode : ∀ (oid : SeLe4n.ObjId) (cn : CNode),
@@ -658,16 +661,14 @@ theorem capabilityInvariantBundle_of_frame {st st' : SystemState}
     (hTcb : ∀ oid : SeLe4n.ObjId,
       (st'.objects[oid]?).bind KernelObject.tcbSlots = (st.objects[oid]?).bind KernelObject.tcbSlots)
     (hReply : ∀ rid : SeLe4n.ReplyId, st.getReply? rid ≠ none → st'.getReply? rid ≠ none)
-    (hObjInv : st'.objects.invExt)
-    (hPresent : ∀ o, st.objectPresent o → st'.objectPresent o) :
-    capabilityInvariantBundle st' := by
-  obtain ⟨_, hComp, hAcyclic, hDepth, _, hRCPV, hLinks, hShape⟩ := h
+    (hObjInv : st'.objects.invExt) :
+    capabilityBundleOffLinks st' ∧ cdtLinksAgree st' := by
+  obtain ⟨_, hComp, hAcyclic, hDepth, _, hRCPV, hLinks, -⟩ := h
   have hCn : ∀ (oid : SeLe4n.ObjId) (cn : CNode),
       st'.objects[oid]? = some (.cnode cn) ↔ st.objects[oid]? = some (.cnode cn) :=
     fun oid cn => ⟨hCnode oid cn, hCnodeFwd oid cn⟩
-  refine capabilityInvariantBundle_of_components st' ?_ ?_ ?_ hObjInv ?_
-    (cdtLinksAgree_of_cnode_iff hLinks hCdt hCn hTcb)
-    (hShape.of_frame (SystemState.SlotTreeFrame.of_slots hCdt hCn hTcb hPresent))
+  refine ⟨⟨cspaceLookupSound_holds st', ?_, ?_, ?_, hObjInv, ?_⟩,
+    cdtLinksAgree_of_cnode_iff hLinks hCdt hCn hTcb⟩
   · intro ref hRef
     rw [hCdt] at hRef
     obtain ⟨o, hO, hL⟩ := hComp ref hRef
@@ -679,6 +680,27 @@ theorem capabilityInvariantBundle_of_frame {st st' : SystemState}
     obtain ⟨o, hO, hE⟩ := SystemState.slotCap_back_of_slots (hCn oid) (hTcb oid) hO'
       (by rw [hLook]; exact Option.some_ne_none _)
     exact hReply rid (hRCPV oid o slot cap rid hO (by rw [hE]; exact hLook) hTgt)
+
+theorem capabilityInvariantBundle_of_frame {st st' : SystemState}
+    (h : capabilityInvariantBundle st)
+    (hCdt : st'.cdt = st.cdt)
+    (hCnode : ∀ (oid : SeLe4n.ObjId) (cn : CNode),
+      st'.objects[oid]? = some (.cnode cn) → st.objects[oid]? = some (.cnode cn))
+    (hCnodeFwd : ∀ (oid : SeLe4n.ObjId) (cn : CNode),
+      st.objects[oid]? = some (.cnode cn) → st'.objects[oid]? = some (.cnode cn))
+    (hTcb : ∀ oid : SeLe4n.ObjId,
+      (st'.objects[oid]?).bind KernelObject.tcbSlots = (st.objects[oid]?).bind KernelObject.tcbSlots)
+    (hReply : ∀ rid : SeLe4n.ReplyId, st.getReply? rid ≠ none → st'.getReply? rid ≠ none)
+    (hObjInv : st'.objects.invExt)
+    (hPresent : ∀ o, st.objectPresent o → st'.objectPresent o)
+    (hUntyped : st'.getUntyped? = st.getUntyped?) :
+    capabilityInvariantBundle st' := by
+  have hCn : ∀ (oid : SeLe4n.ObjId) (cn : CNode),
+      st'.objects[oid]? = some (.cnode cn) ↔ st.objects[oid]? = some (.cnode cn) :=
+    fun oid cn => ⟨hCnode oid cn, hCnodeFwd oid cn⟩
+  obtain ⟨hB, hL⟩ := capabilityBundleOffLinks_of_frame h hCdt hCnode hCnodeFwd hTcb hReply hObjInv
+  exact hB.withLinks hL
+    (h.treeShape.of_frame (SystemState.SlotTreeFrame.of_slots hCdt hCn hTcb hPresent hUntyped))
 
 /-! ### WS-ZA ZA5.3: the bundle reads no derivation link
 
@@ -714,6 +736,28 @@ theorem replyCapPointsToValidReply_of_agree {st st' : SystemState}
   obtain ⟨o, hc, hS, -⟩ := hA.obj_slots_back hO
   rw [hA.getReply? rid]
   exact h oid o slot cap rid hc (by rw [← hS]; exact hL) hT
+
+/-- A step that keeps the tree and changes objects only in their CNodes' links
+keeps every conjunct of the bundle less the links and the shape. -/
+theorem capabilityBundleOffLinks_of_agree {st st' : SystemState}
+    (h : capabilityBundleOffLinks st)
+    (hA : SystemState.objectsAgreeOffDerivationLinks st' st)
+    (hCdt : st'.cdt = st.cdt) (hObjInv : st'.objects.invExt) :
+    capabilityBundleOffLinks st' := by
+  obtain ⟨_, hComp, hAcyclic, hDepth, _, hRCPV⟩ := h
+  refine ⟨cspaceLookupSound_holds st', cdtCompleteness_of_agree hA hCdt hComp, ?_,
+    cspaceDepthConsistent_of_agree hA hDepth, hObjInv, replyCapPointsToValidReply_of_agree hA hRCPV⟩
+  unfold cdtAcyclicity at hAcyclic ⊢; rw [hCdt]; exact hAcyclic
+
+/-- **A run of link writes keeps the bundle off (b) at a source** when its links
+agree with the tree: the other conjuncts read no link, and the shape reads none
+either (WS-ZA ZA5.4 part 19). -/
+theorem capabilityBundleOffSource_of_linkReach {st₀ st : SystemState} {src : SlotRef}
+    (h : capabilityBundleOffLinks st₀) (hR : SystemState.linkReach st₀ st)
+    (hInv : st₀.objects.invExt) (hLinks : cdtLinksAgree st)
+    (hShape : SystemState.CapTreeShapeOff st₀ src) : capabilityBundleOffSource st src :=
+  ⟨capabilityBundleOffLinks_of_agree h (hR.agree hInv) hR.cdt (hR.invExt hInv), hLinks,
+    SystemState.TreeShapeOver.of_frame hShape (.of_linkReach hR hInv)⟩
 
 /-- A step that keeps the tree and changes objects only in their CNodes' links
 keeps every conjunct but the links' own agreement, which the caller supplies. -/
@@ -754,6 +798,7 @@ theorem capabilityInvariantBundle_of_objects_and_cdt_eq {st st' : SystemState}
     (fun _ hR => by unfold SystemState.getReply? at hR ⊢; rw [hObjs]; exact hR)
     (by rw [hObjs]; exact h.2.2.2.2.1)
     (fun o hp => by unfold SystemState.objectPresent at hp ⊢; rw [hObjs]; exact hp)
+    (funext fun o => by rw [SystemState.getUntyped?_eq_bind, SystemState.getUntyped?_eq_bind, hObjs])
 
 /-- WS-RR RR8.16 (`v0.35.197`): the **pointwise** instance, which is the one the
 IPC chains use.  A step whose every write lands on a key that keeps its object
@@ -779,6 +824,8 @@ theorem capabilityInvariantBundle_of_kindPreserving {st st' : SystemState}
     (hAt : kindPreservingWrite st st') :
     capabilityInvariantBundle st' := by
   refine capabilityInvariantBundle_of_frame h hCdt ?_ ?_ ?_ ?_ hObjInv (SystemState.kindPreservingWrite.present hAt)
+    (funext fun o => by
+      rw [SystemState.getUntyped?_eq_bind, SystemState.getUntyped?_eq_bind]; exact hAt.untyped o)
   · intro oid cn hCn
     rcases hAt oid with hEq | ⟨_, post, _, hPost, _, hNe, _⟩
     · rw [← hEq]; exact hCn
@@ -825,13 +872,14 @@ theorem storeObject_preserves_capabilityInvariantBundle_of_kind
     (hPre : st.objects[oid]? = some pre)
     (hKind : obj.objectType = pre.objectType)
     (hNotCnode : obj.objectType ≠ KernelObjectType.cnode)
-    (hSlots : obj.tcbSlots = pre.tcbSlots) :
+    (hSlots : obj.tcbSlots = pre.tcbSlots)
+    (hUntyped : obj.untyped? = pre.untyped? := by rfl) :
     capabilityInvariantBundle st' := by
   have hObjInv : st.objects.invExt := h.2.2.2.2.1
   exact capabilityInvariantBundle_of_kindPreserving h
     (storeObject_cdt_eq st st' oid obj hStore)
     (storeObject_preserves_objects_invExt st st' oid obj hObjInv hStore)
-    (storeObject_kindPreservingWrite hObjInv hStore hPre hKind hNotCnode hSlots)
+    (storeObject_kindPreservingWrite hObjInv hStore hPre hKind hNotCnode hSlots hUntyped)
 
 /-- WS-RR RR8.16 (`v0.35.199`): the walk's own `kindPreservingWrite`, so a chain
 that ends in it is a `.trans` rather than a second pointwise argument. -/
@@ -845,7 +893,7 @@ theorem propagatePipChainCrossCore_kindPreservingWrite (st : SystemState)
       startTid ec hInv oid with hEq | ⟨pre, post, hPre, hPost, hC, hL⟩
   · exact Or.inl hEq
   · exact Or.inr ⟨.tcb pre, .tcb post, hPre, hPost, rfl, by simp [KernelObject.objectType],
-      by simp [KernelObject.tcbSlots, hC, hL]⟩
+      by simp [KernelObject.tcbSlots, hC, hL], rfl⟩
 
 /-- WS-RR RR8.16 (`v0.35.197`): **the priority-inheritance chain walk preserves the
 capability invariant bundle** — the first instance of the frame above, and one of

@@ -412,6 +412,18 @@ def tcbSlots (o : KernelObject) : Option (Vector (Option Capability) 2 × Vector
   | .tcb t => some (t.spaceCells, t.spaceLinks)
   | _ => none
 
+/-- The untyped record an object is, none for any other object.  The part of
+the store the capability invariant's untyped facts read: an untyped's region,
+which bounds its capabilities' free indices, and the children it records. -/
+def untyped? (o : KernelObject) : Option UntypedObject :=
+  match o with
+  | .untyped u => some u
+  | _ => none
+
+/-- Clearing an object's derivation links keeps its untyped record. -/
+@[simp] theorem untyped?_withoutLinks (o : KernelObject) : o.withoutLinks.untyped? = o.untyped? := by
+  cases o <;> rfl
+
 theorem hasSlot_holdsSlots {o : KernelObject} {s : SeLe4n.Slot} (h : o.hasSlot s) :
     o.holdsSlots = true := by
   cases o <;> first | rfl | exact absurd h id

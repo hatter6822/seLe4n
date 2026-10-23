@@ -61,6 +61,13 @@ theorem cspaceDeleteSlotCore_objectPresent {st st' : SystemState} {addr : SlotRe
   obtain ⟨_, -, -, hStore⟩ := cspaceDeleteSlotCore_ok hStep
   exact SystemState.objectPresent_storeObject hObjInv hStore o hp
 
+/-- The core delete keeps every untyped record: it empties a slot. -/
+theorem cspaceDeleteSlotCore_getUntyped? {st st' : SystemState} {addr : SlotRef}
+    (hObjInv : st.objects.invExt) (hStep : cspaceDeleteSlotCore addr st = .ok ((), st')) :
+    st'.getUntyped? = st.getUntyped? := by
+  obtain ⟨o, hPre, -, hStore⟩ := cspaceDeleteSlotCore_ok hStep
+  exact SystemState.getUntyped?_storeObject hObjInv hStore (by rw [hPre]; cases o <;> rfl)
+
 /-- The core delete empties its slot and keeps every other slot's capability. -/
 theorem cspaceDeleteSlotCore_slotCapAt {st st' : SystemState} {addr : SlotRef}
     (hObjInv : st.objects.invExt) (hStep : cspaceDeleteSlotCore addr st = .ok ((), st')) :
@@ -201,6 +208,7 @@ theorem cspaceDeleteSlot_preserves_capabilityInvariantBundle
       (hL.parentOf_ne_self_of_wf hInv.2.2.1 addr)
       (by show stC.cdt.spliceNode addr = _; rw [cspaceDeleteSlotCore_cdt_eq st stC addr hCore])
       hE.1 hE.2 (fun o hp => cspaceDeleteSlotCore_objectPresent (st' := stC) hInv.2.2.2.2.1 hCore o hp)
+      (cspaceDeleteSlotCore_getUntyped? (st' := stC) hInv.2.2.2.2.1 hCore)
       hInv.cdtCompleteness.slotCapAt_of_children)
 
 /-- The slots of `cn` (stored at `cnodeId`) the local revoke empties: every
@@ -221,7 +229,7 @@ theorem detachRevokedSlots_preserves (st : SystemState) (cnodeId : SeLe4n.ObjId)
     (hObjInv : st.objects.invExt) (hLinks : cdtLinksAgree st)
     (hIn : ∀ r, st.cdt.mentions r → st.slotInObject r)
     (cap₀ : SlotRef → Option Capability)
-    (hShape : SystemState.TreeShapeOver st.cdt cap₀ st.objectPresent)
+    (hShape : SystemState.TreeShapeOver st.cdt cap₀ st.objectPresent st.getUntyped? (fun _ => False))
     (hSub : ∀ r, st.slotCapAt r ≠ none → st.slotCapAt r = cap₀ r)
     (hOrig : ∀ s c, cn.lookup s = some c →
       CNode.revokeTargetLocalKeeps sourceSlot target s c = false → cap₀ ⟨cnodeId, s⟩ = some c)
@@ -245,7 +253,8 @@ theorem detachRevokedSlots_preserves (st : SystemState) (cnodeId : SeLe4n.ObjId)
       cdtAcyclicity acc ∧ cspaceDepthConsistent acc ∧ acc.objects.invExt ∧
       cdtLinksAgree acc ∧ (∀ r, acc.cdt.mentions r → acc.slotInObject r) ∧
       SystemState.TreeShapeOver acc.cdt
-        (fun r => if acc.cdt.mentions r then cap₀ r else acc.slotCapAt r) acc.objectPresent ∧
+        (fun r => if acc.cdt.mentions r then cap₀ r else acc.slotCapAt r) acc.objectPresent
+        acc.getUntyped? (fun _ => False) ∧
       ∀ r, acc.slotCapAt r = st.slotCapAt r)
     (fun s acc => ∀ c, cn.lookup s = some c →
       CNode.revokeTargetLocalKeeps sourceSlot target s c = false →
@@ -254,7 +263,10 @@ theorem detachRevokedSlots_preserves (st : SystemState) (cnodeId : SeLe4n.ObjId)
       hShape.of_sub (fun r hr => by
         split
         · rfl
-        · next hm => rw [if_neg hm] at hr; exact hSub r hr) fun _ h => h,
+        · next hm =>
+          rcases hr with hr | hr
+          · rw [if_neg hm] at hr; exact hSub r hr
+          · exact absurd hr hm) fun _ h => h,
       fun _ => rfl⟩
     (fun acc slot cap hLk h => by
       simp only [] at h ⊢
@@ -272,7 +284,7 @@ theorem detachRevokedSlots_preserves (st : SystemState) (cnodeId : SeLe4n.ObjId)
           SystemState.cdtSplice_agree g5 g6 g7 g3 _,
           fun r hM => (hA.slotInObject_iff r).mpr (g7 r (CapDerivationTree.spliceNode_mentions _ _ _
             (by rw [spliceDeletedCdtNode_cdt] at hM; exact hM))),
-          g8.splice g6.childrenUnique g6.rootsParentless (g6.parentOf_ne_self_of_wf g3 _)
+          hA.getUntyped? ▸ g8.splice g6.childrenUnique g6.rootsParentless (g6.parentOf_ne_self_of_wf g3 _)
             (spliceDeletedCdtNode_cdt _ _)
             (by
               have hNm : ¬ (spliceDeletedCdtNode acc ⟨cnodeId, slot⟩).cdt.mentions ⟨cnodeId, slot⟩ := by
@@ -286,7 +298,8 @@ theorem detachRevokedSlots_preserves (st : SystemState) (cnodeId : SeLe4n.ObjId)
                   rw [spliceDeletedCdtNode_cdt] at hm'
                   exact CapDerivationTree.spliceNode_mentions _ _ _ hm'
                 rw [if_pos hm', if_pos hm]
-              · rw [if_neg hm'] at hr ⊢
+              · have hr := hr.resolve_right hm'
+                rw [if_neg hm'] at hr ⊢
                 rw [hA.slotCapAt] at hr ⊢
                 split
                 · rw [g9] at hr ⊢; exact hSub r hr
@@ -311,12 +324,13 @@ theorem detachRevokedSlots_preserves (st : SystemState) (cnodeId : SeLe4n.ObjId)
       · exact hRs c hL' hK hM
       · rw [spliceDeletedCdtNode_cdt] at hM
         exact hRs c hL' hK (CapDerivationTree.spliceNode_mentions _ _ _ hM))
-  exact ⟨h2.complete fun ref ⟨hc, c, hL, hK⟩ => by
-      obtain ⟨rc, rs⟩ := ref; simp only at hc hL hK; subst hc; exact hR rs c hL c hL hK,
-    h3, h4, h5, h6, h8.of_sub (fun r hr => by
+  have hCompF := h2.complete fun ref ⟨hc, c, hL, hK⟩ => by
+    obtain ⟨rc, rs⟩ := ref; simp only at hc hL hK; subst hc; exact hR rs c hL c hL hK
+  exact ⟨hCompF, h3, h4, h5, h6, h8.of_sub (fun r hr => by
+      have hr' := hr.elim id fun hm => hCompF.slotCapAt_ne_none hm
       show _ = ite _ _ _
       split
-      · rw [h9] at hr ⊢; exact hSub r hr
+      · rw [h9] at hr' ⊢; exact hSub r hr'
       · rfl) fun _ h => h⟩
 
 /-- Detaching the revoked siblings names no slot the tree did not. -/
@@ -470,7 +484,8 @@ theorem cspaceRevoke_preserves_capabilityInvariantBundle
                 (cn' := preCn.revokeTargetLocal addr.slot parent.target) hObjInv hPre rfl hStore r).mpr
                 (hComp.slotInObject (hCdtMid ▸ hM)))
               st.slotCapAt
-              (by rw [hCdtMid]; exact SystemState.TreeShapeOver.of_sub hShape (fun _ _ => rfl)
+              (by rw [hCdtMid, SystemState.getUntyped?_storeObject_cnode hObjInv hPre hStore]
+                  exact SystemState.TreeShapeOver.of_sub hShape (fun _ _ => rfl)
                     (SystemState.objectPresent_storeObject hObjInv hStore))
               (fun r hr => by
                 rw [SystemState.slotCapAt_storeObject hObjInv hStore] at hr ⊢

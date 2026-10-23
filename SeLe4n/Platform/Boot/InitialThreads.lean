@@ -380,6 +380,54 @@ theorem startInitialThreads_capabilitiesLive (L : List SeLe4n.ThreadId)
       exact startInitialThreadOnCore_objectPresent i.state tid hInv o (hP r o hN))
     L ist ist' h hL
 
+/-- **WS-ZA ZA5.4 part 19**: a start keeps every untyped record: it writes a
+thread over a thread and removes no object. -/
+theorem startInitialThreadOnCore_getUntyped? (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) :
+    (startInitialThreadOnCore st tid).getUntyped? = st.getUntyped? := by
+  funext k
+  rw [SystemState.getUntyped?_eq_bind, SystemState.getUntyped?_eq_bind]
+  cases hO : (startInitialThreadOnCore st tid).objects[k]? with
+  | none =>
+    cases hP : st.objects[k]? with
+    | none => rfl
+    | some o =>
+      exact absurd hO (startInitialThreadOnCore_objectPresent st tid hInv k
+        (show st.objects[k]? ≠ none by rw [hP]; simp))
+  | some o =>
+    rcases startInitialThreadOnCore_objects_cases st tid hInv k o hO with hB | ⟨_, _, hT, rfl, _⟩
+    · rw [hB]
+    · rw [hT]; rfl
+
+/-- **WS-ZA ZA5.4 part 19**: the starts keep each untyped named from one slot at
+most and recording no child: they write no capability slot and no untyped. -/
+theorem startInitialThreads_untypedsSole (L : List SeLe4n.ThreadId)
+    (ist ist' : IntermediateState) (h : startInitialThreads L ist = .ok ist')
+    (hL : (∀ u r r', SystemState.untypedCapAt ist.state.slotCapAt ist.state.getUntyped? r u →
+        SystemState.untypedCapAt ist.state.slotCapAt ist.state.getUntyped? r' u → r = r') ∧
+      ∀ u U, ist.state.getUntyped? u = some U → U.children = []) :
+    (∀ u r r', SystemState.untypedCapAt ist'.state.slotCapAt ist'.state.getUntyped? r u →
+        SystemState.untypedCapAt ist'.state.slotCapAt ist'.state.getUntyped? r' u → r = r') ∧
+      ∀ u U, ist'.state.getUntyped? u = some U → U.children = [] :=
+  startInitialThreads_induct
+    (fun i => (∀ u r r', SystemState.untypedCapAt i.state.slotCapAt i.state.getUntyped? r u →
+        SystemState.untypedCapAt i.state.slotCapAt i.state.getUntyped? r' u → r = r') ∧
+      ∀ u U, i.state.getUntyped? u = some U → U.children = [])
+    (fun i tid _ hP => by
+      have hInv := i.hAllTables.1.1
+      show (∀ u r r', SystemState.untypedCapAt (startInitialThreadOnCore i.state tid).slotCapAt
+          (startInitialThreadOnCore i.state tid).getUntyped? r u →
+          SystemState.untypedCapAt (startInitialThreadOnCore i.state tid).slotCapAt
+          (startInitialThreadOnCore i.state tid).getUntyped? r' u → r = r') ∧
+        ∀ u U, (startInitialThreadOnCore i.state tid).getUntyped? u = some U → U.children = []
+      rw [startInitialThreadOnCore_getUntyped? i.state tid hInv]
+      have hBack : ∀ {r u}, SystemState.untypedCapAt (startInitialThreadOnCore i.state tid).slotCapAt
+          i.state.getUntyped? r u → SystemState.untypedCapAt i.state.slotCapAt i.state.getUntyped? r u :=
+        fun {r _} ⟨c, hc, ht, hu⟩ => ⟨c, (startInitialThreadOnCore_slotCapAt_of_ne_none i.state tid
+          hInv r (by rw [hc]; exact Option.some_ne_none _)).symm.trans hc, ht, hu⟩
+      exact ⟨fun u r r' hr hr' => hP.1 u r r' (hBack hr) (hBack hr'), hP.2⟩)
+    L ist ist' h hL
+
 /-- **WS-ZA ZA5.4**: the checked, idle-storing boot lists every slot holding a
 capability among the configuration's boot capability slots: each such slot is
 a configured object's (`bootFromPlatformCheckedWithIdleThreadsFor_ok_capObject_of_config`). -/
@@ -418,6 +466,9 @@ theorem bootFromPlatformCheckedStartedFor_bootLinkedShape
     (h : bootFromPlatformCheckedStartedFor cores config = .ok ist) :
     bootLinkedShape ist := by
   obtain ⟨base, started, hBase, hStart, rfl⟩ := bootFromPlatformCheckedStartedFor_ok cores config ist h
+  have hSole := startInitialThreads_untypedsSole _ _ _ hStart
+    ⟨bootFromPlatformCheckedWithIdleThreadsFor_ok_untypedCapUnique cores config base hBase,
+      bootFromPlatformCheckedWithIdleThreadsFor_ok_untypedsUncarved cores config base hBase⟩
   exact linkBootCapabilities_bootLinkedShape config started
     (startInitialThreads_induct bootStartShape
       (fun ist tid hs hP => startInitialThread_preserves_bootStartShape ist tid hs hP)
@@ -427,6 +478,7 @@ theorem bootFromPlatformCheckedStartedFor_bootLinkedShape
       (bootFromPlatformCheckedWithIdleThreadsFor_bootSlotsListed cores config base hBase))
     (startInitialThreads_capabilitiesLive _ _ _ hStart
       (bootFromPlatformCheckedWithIdleThreadsFor_ok_capabilitiesLive cores config base hBase))
+    hSole.1 hSole.2
 
 /-- **WS-BP BP7.11**: **the state the started boot installs satisfies the
 proof-layer invariant bundle** — the idle boot's argument, applied to the state

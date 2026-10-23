@@ -277,7 +277,12 @@ Per-CNode slot uniqueness is discharged directly via
 `SeLe4n.Model.CNode.slotsUnique_holds`.  WS-ZA ZA5.4 part 16 added the tree's
 shape over the slots (the 8th, `CapTreeShape`): every slot holding a capability
 is in the tree, as every capability is in seL4's mapping database, and the tree
-has a preorder. -/
+has a preorder.  WS-ZA ZA5.4 part 19 added the untyped facts to that shape
+(seL4's `untyped_mdb` and `untyped_inc`): the capabilities to one untyped form
+one vertical first-child chain, one that is not full has no strict descendant
+to its untyped, the capabilities to memory carved from an untyped lie below
+every capability to it, and every child an untyped records is live and recorded
+by it alone. -/
 def capabilityInvariantBundle (st : SystemState) : Prop :=
   cspaceLookupSound st ∧
     cdtCompleteness st ∧ cdtAcyclicity st ∧
@@ -336,6 +341,14 @@ theorem capabilityInvariantBundle.offCoverage {st : SystemState}
     (h : capabilityInvariantBundle st) : capabilityBundleOffCoverage st :=
   ⟨h.offLinks, h.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.ordered⟩
 
+/-- **The capability bundle off (b) at one source** (WS-ZA ZA5.4 part 19): what a
+copy, mint or transfer of an untyped capability leaves between recording its
+derivation and setting its source full (`untypedSourceSetFull`).  Every
+conjunct holds, and the tree's shape holds but for (b) at `src`: the source,
+not yet full, has the new copy below it (`SystemState.CapTreeShapeOff`). -/
+def capabilityBundleOffSource (st : SystemState) (src : SlotRef) : Prop :=
+  capabilityBundleOffLinks st ∧ cdtLinksAgree st ∧ SystemState.CapTreeShapeOff st src
+
 /-- AN4-F.5 (CAP-M05): Named-projection view of `capabilityInvariantBundle`.
 Each field records a distinct slot-level invariant (uniqueness,
 soundness, size-bounded) or a CDT structural invariant (completeness,
@@ -362,7 +375,8 @@ structure CapabilityInvariantBundle (st : SystemState) : Prop where
   /-- WS-ZA ZA5.3: the slot links encode the derivation tree. -/
   linksAgree : cdtLinksAgree st
   /-- WS-ZA ZA5.4 part 16: every slot holding a capability is in the tree, and
-      the tree has a preorder (seL4's mapping database). -/
+      the tree has a preorder (seL4's mapping database); part 19: the untyped
+      chains and descendants (seL4's `untyped_mdb` and `untyped_inc`). -/
   treeShape : SystemState.CapTreeShape st
 
 /-- AN4-F.5.1 (CAP-M05): Bidirectional bridge between the tuple and named
