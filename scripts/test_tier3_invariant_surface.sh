@@ -4119,8 +4119,26 @@ run_check "INVARIANT" rg -n -U 'def cspaceDeleteSlotFinalising[^\n]*\n[^\n]*\n  
 # that retires nothing.
 run_check "INVARIANT" rg -n -U 'def cspaceDeleteThenFinalise[^\n]*(\n([ \t][^\n]*)?){0,9}\n      \| \.ok \(\(\), st2\) => \.ok \(\(\), retireFinalObject executingCore target recorder st2\)' SeLe4n/Kernel/Capability/FrameFinalise.lean
 run_check "INVARIANT" rg -n -U 'def slotRetireTarget[^\n]*(\n([ \t][^\n]*)?){0,4}\n    \| \.object x => if retirableKind st x && st\.capIsFinal cnode slot then x\.val \+ 1 else 0' SeLe4n/Kernel/Capability/FinalRetire.lean
-run_check "INVARIANT" rg -n -U 'def retirableKind[^\n]*\n  match st\.getObjectType\? x with\n  \| some \.frame \| some \.pageTable \| some \.vspaceRoot => true\n  \| some \.untyped =>\n    match st\.getUntyped\? x with\n    \| some U => U\.children\.isEmpty\n    \| none => false\n  \| _ => false' SeLe4n/Kernel/Capability/FinalRetire.lean
-run_check "INVARIANT" rg -n -U 'def retireFinalObject[^\n]*(\n([ \t][^\n]*)?){0,6}\n    match st1\.getVSpaceRoot\? x with\n    \| some root => retypeAsidRoundStep executingCore root\.asid \(retireCarvedObject st1 x\)\n    \| none => retireCarvedObject st1 x' SeLe4n/Kernel/Capability/FinalRetire.lean
+run_check "INVARIANT" rg -n -U 'def retirableKind[^\n]*\n  match st\.getObjectType\? x with\n  \| some \.frame \| some \.pageTable \| some \.vspaceRoot => true\n  \| some \.endpoint \| some \.notification \| some \.reply \| some \.cnode => true\n  \| some \.untyped =>\n    match st\.getUntyped\? x with\n    \| some U => U\.children\.isEmpty\n    \| none => false\n  \| _ => false' SeLe4n/Kernel/Capability/FinalRetire.lean
+run_check "INVARIANT" rg -n -U 'def retireRecordedObject[^\n]*(\n([ \t][^\n]*)?){0,3}\n  match st1\.getVSpaceRoot\? x with\n  \| some root => retypeAsidRoundStep executingCore root\.asid \(retireCarvedObject st1 x\)\n  \| none => retireCarvedObject st1 x' SeLe4n/Kernel/Capability/FinalRetire.lean
+# v0.36.133: a final delete of an endpoint, notification, reply or CNode retires
+# it while it is quiescent and nothing names it by id (seL4's finaliseCap of a
+# passive kind with nothing to cancel); the admission is read on the pre-retire
+# state, the passive erase comes first, and a refused passive object outlives its
+# last capability.
+run_check "INVARIANT" rg -n -U 'def retireFinalObject[^\n]*(\n([ \t][^\n]*)?){0,4}\n    if finalRetireAdmitted st x then\n      retireRecordedObject executingCore recorder x \(retirePassiveObject st x\)\n    else st' SeLe4n/Kernel/Capability/FinalRetire.lean
+run_check "INVARIANT" rg -n -U 'def passiveObjectRetirable[^\n]*\n  passiveObjectQuiescent st x && storeNamesNone st x && registryNamesNone st x &&\n    servicesNameNone st x && irqHandlersNameNone st x' SeLe4n/Kernel/Capability/FinalRetire.lean
+run_check "INVARIANT" rg -n -U 'def finalRetireAdmitted[^\n]*\n  !passiveKindAt st x \|\| passiveObjectRetirable st x' SeLe4n/Kernel/Capability/FinalRetire.lean
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem retirePassiveObject_eq_impl : @retirePassiveObject = @retirePassiveObjectImpl' SeLe4n/Kernel/Capability/FinalRetire.lean
+run_check "INVARIANT" rg -n '^theorem retirePassiveObject_frame ' SeLe4n/Kernel/Capability/FinalRetire.lean
+run_check "INVARIANT" rg -n '^theorem retirePassiveObject_preserves_teardownWellFormed ' SeLe4n/Kernel/Capability/FinalRetire.lean
+run_check "INVARIANT" rg -n '^theorem passiveObjectQuiescent\.slotCap ' SeLe4n/Kernel/Capability/FinalRetire.lean
+run_check "INVARIANT" rg -n '^theorem storeNamesNone_spec ' SeLe4n/Kernel/Capability/FinalRetire.lean
+run_check "INVARIANT" rg -n '^theorem eraseWrite_preserves_ipcInvariantFull$' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
+run_check "INVARIANT" rg -n '^theorem retypeTargetDetached_of_unreferenced ' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
+run_check "INVARIANT" rg -n '^theorem RunQueueStage\.of_retireTouched ' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Capability.lean
+run_check "INVARIANT" rg -n '^theorem capabilityKeyFrame_of_retireTouched ' SeLe4n/Kernel/ReschedulePendingArms/Capability.lean
+run_negative_check "INVARIANT" rg -n 'RunQueueStage\.of_resetTouched|capabilityKeyFrame_of_resetTouched' SeLe4n
 run_check "INVARIANT" rg -n -U '       \| some cap =>\n         capabilityFinalisesNothing st cap && capabilityRetiresNothing st addr\.cnode addr\.slot cap' SeLe4n/Kernel/Capability/FrameFinalise.lean
 run_check "INVARIANT" rg -n -U '    \| some cap => capabilityFinalisesNothing st cap && capabilityRetiresNothing st tcbId slot cap' SeLe4n/Kernel/Capability/FrameFinalise.lean
 run_check "INVARIANT" rg -n -U '    \| some cap =>\n      capabilityFinalisesNothing st cap && capabilityRetiresNothing st addr\.cnode addr\.slot cap\n    \| none => true\n  \| none => threadSlotDeleteAdmitted' SeLe4n/Kernel/Capability/FrameFinalise.lean

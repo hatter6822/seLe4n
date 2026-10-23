@@ -194,51 +194,96 @@ theorem retireFinalObject_preserves_capabilityInvariantBundle (ec : Concurrency.
     exact hShape.childUnique u v U V hU hV ch hch ch' hch' (hc.trans hc'.symm)
   rcases retireFinalObject_unrecorded ec target recorder st h.2.2.2.2.1 hRec hUniq with hE | hUn
   · rw [hE]; exact h
-  generalize hX : SeLe4n.ObjId.ofNat (target - 1) = x at hUn hNamed
+  rcases retireFinalObject_admitted ec target recorder st with hE | hAdm
+  · rw [hE]; exact h
+  generalize hX : SeLe4n.ObjId.ofNat (target - 1) = x at hUn hNamed hAdm
   have hx := hNamed hT
   obtain ⟨hI', -, -, hCdt, hW⟩ := retireFinalObject_frame ec target recorder st h.2.2.2.2.1
   rw [hX] at hW
   generalize retireFinalObject ec target recorder st = st' at hUn hI' hCdt hW ⊢
+  -- every key the retire changes holds no capability on either side, and
+  -- after it is absent or an untyped
+  have hKey : ∀ oid : SeLe4n.ObjId, st'.objects[oid]? = st.objects[oid]? ∨
+      ((∀ o, st.objects[oid]? = some o → ∀ s, o.slotCap s = none) ∧
+        (st'.objects[oid]? = none ∨ ∃ U, st'.objects[oid]? = some (.untyped U))) := by
+    intro oid
+    rcases hW oid with e | ⟨hxo, hcp, hn⟩ | ⟨U, hU, hU'⟩
+    · exact .inl e
+    · refine .inr ⟨fun o hO s => ?_, .inl hn⟩
+      rcases hcp with (⟨f, hf⟩ | ⟨u, hu⟩ | ⟨r, hr⟩ | ⟨p, hp⟩) | hp
+      · rw [hf] at hO; cases hO; rfl
+      · rw [hu] at hO; cases hO; rfl
+      · rw [hr] at hO; cases hO; rfl
+      · rw [hp] at hO; cases hO; rfl
+      · subst hxo
+        exact passiveObjectQuiescent.slotCap (passiveObjectRetirable_parts (finalRetireAdmitted.retirable hAdm hp)).1 o hO s
+    · exact .inr ⟨fun o hO s => by rw [hU] at hO; cases hO; rfl, .inr ⟨_, hU'⟩⟩
+  have hAfter : ∀ oid : SeLe4n.ObjId, (st'.objects[oid]? = none ∨
+      ∃ U, st'.objects[oid]? = some (.untyped U)) → ∀ o, st'.objects[oid]? = some o →
+      ∀ s, o.slotCap s = none := by
+    rintro oid (hn | ⟨U, hU⟩) o hO s
+    · rw [hn] at hO; cases hO
+    · rw [hU] at hO; cases hO; rfl
+  have hCap : ∀ r, st'.slotCapAt r = st.slotCapAt r := fun r => by
+    rw [SystemState.slotCapAt_eq_bind, SystemState.slotCapAt_eq_bind]
+    rcases hKey r.cnode with e | ⟨hb, ha⟩
+    · rw [e]
+    · have l : (st'.objects[r.cnode]?).bind (fun o => o.slotCap r.slot) = none := by
+        cases hs : st'.objects[r.cnode]? with
+        | none => rfl
+        | some o => exact hAfter _ ha o hs r.slot
+      have r' : (st.objects[r.cnode]?).bind (fun o => o.slotCap r.slot) = none := by
+        cases hs : st.objects[r.cnode]? with
+        | none => rfl
+        | some o => exact hb o hs r.slot
+      rw [l, r']
   have hCnB : ∀ (oid : SeLe4n.ObjId) (cn : CNode),
       st'.objects[oid]? = some (.cnode cn) → st.objects[oid]? = some (.cnode cn) := by
     intro oid cn hC
-    rcases hW oid with e | ⟨-, -, hn⟩ | ⟨U, -, hU'⟩
+    rcases hKey oid with e | ⟨-, hn | ⟨U, hU⟩⟩
     · rwa [← e]
     · rw [hn] at hC; cases hC
-    · rw [hU'] at hC; cases hC
-  have hCnF : ∀ (oid : SeLe4n.ObjId) (cn : CNode),
-      st.objects[oid]? = some (.cnode cn) → st'.objects[oid]? = some (.cnode cn) := by
-    intro oid cn hC
-    rcases hW oid with e | ⟨-, hc, -⟩ | ⟨U, hU, -⟩
-    · rwa [e]
-    · rcases hc with ⟨f, hf⟩ | ⟨u, hu⟩ | ⟨r, hr⟩ | ⟨p, hp⟩ <;> simp_all
     · rw [hU] at hC; cases hC
-  have hTcb : ∀ oid : SeLe4n.ObjId,
-      (st'.objects[oid]?).bind KernelObject.tcbSlots = (st.objects[oid]?).bind KernelObject.tcbSlots := by
-    intro oid
-    rcases hW oid with e | ⟨-, hc, hn⟩ | ⟨U, hU, hU'⟩
-    · rw [e]
-    · rw [hn]
-      rcases hc with ⟨f, hf⟩ | ⟨u, hu⟩ | ⟨r, hr⟩ | ⟨p, hp⟩
-      · rw [hf]; rfl
-      · rw [hu]; rfl
-      · rw [hr]; rfl
-      · rw [hp]; rfl
-    · rw [hU, hU']; rfl
-  have hCn : ∀ (oid : SeLe4n.ObjId) (cn : CNode),
-      st'.objects[oid]? = some (.cnode cn) ↔ st.objects[oid]? = some (.cnode cn) :=
-    fun oid cn => ⟨hCnB oid cn, hCnF oid cn⟩
-  have hCap : ∀ r, st'.slotCapAt r = st.slotCapAt r := fun r => by
-    rw [SystemState.slotCapAt_eq_bind, SystemState.slotCapAt_eq_bind]
-    exact (KernelObject.optSlots_eq_of_cnode_iff (hCn r.cnode) (hTcb r.cnode)).1 r.slot
-  obtain ⟨hB, hL⟩ := capabilityBundleOffLinks_of_frame h hCdt hCnB hCnF hTcb (fun rid hR => by
-    unfold SystemState.getReply? at hR ⊢
-    rcases hW rid.toObjId with e | ⟨-, hc, -⟩ | ⟨U, hU, -⟩
-    · rwa [e]
-    · rcases hc with ⟨f, hf⟩ | ⟨u, hu⟩ | ⟨r, hr⟩ | ⟨p, hp⟩ <;> simp_all
-    · rw [hU] at hR; exact absurd rfl hR) hI'
-  refine hB.withLinks hL ((hShape.retire hx (fun o hp ho => ?_) (fun u U' hu => ?_)).of_readers
-    hCdt hCap (fun _ hp => hp) rfl)
+  -- a slot the tree names holds a capability, so its key is unchanged
+  have hNamedKey : ∀ r : SlotRef, st.cdt.mentions r → st'.objects[r.cnode]? = st.objects[r.cnode]? := by
+    intro r hm
+    obtain ⟨o, hO, hL⟩ := h.2.1 r hm
+    rcases hKey r.cnode with e | ⟨hb, -⟩
+    · exact e
+    · exact absurd (hb o hO r.slot) hL
+  have hComp' : cdtCompleteness st' := by
+    intro ref hRef
+    rw [hCdt] at hRef
+    obtain ⟨o, hO, hL⟩ := h.2.1 ref hRef
+    exact ⟨o, by rw [hNamedKey ref hRef]; exact hO, hL⟩
+  have hRCPV' : replyCapPointsToValidReply st' := by
+    intro oid o' slot cap rid hO' hL hTg
+    have hS : st.slotCapAt ⟨oid, slot⟩ = some cap := by
+      rw [← hCap, SystemState.slotCapAt_of_object (r := ⟨oid, slot⟩) hO']; exact hL
+    cases hO : st.objects[oid]? with
+    | none =>
+      rw [SystemState.slotCapAt_eq_bind] at hS
+      simp only at hS; rw [hO] at hS; cases hS
+    | some o =>
+      have hR := h.2.2.2.2.2.1 oid o slot cap rid hO
+        (by rw [← SystemState.slotCapAt_of_object (r := ⟨oid, slot⟩) hO]; exact hS) hTg
+      unfold SystemState.getReply? at hR ⊢
+      rcases hW rid.toObjId with e | ⟨hxo, -, -⟩ | ⟨U, hU, -⟩
+      · rwa [e]
+      · exact absurd ⟨cap, hS, by unfold Capability.namedObject; rw [hTg]; exact congrArg some hxo⟩ (hx ⟨oid, slot⟩)
+      · rw [hU] at hR; exact absurd rfl hR
+  have hL : cdtLinksAgree st' := by
+    refine cdtLinksAgree_of_named h.2.2.2.2.2.2.1 hCdt (fun r f hm => ?_) (fun r f hm => ?_)
+    · rw [SystemState.slotLinkAt_def, SystemState.slotLinkAt_def, hNamedKey r hm]
+    · have hNone := LinksAgree.none_of_not_mentions h.2.2.2.2.2.2.1 hm f
+      rcases hKey r.cnode with e | ⟨-, hn | ⟨U, hU⟩⟩
+      · rw [SystemState.slotLinkAt_def, e, ← SystemState.slotLinkAt_def]; exact hNone
+      · rw [SystemState.slotLinkAt_def, hn]
+      · rw [SystemState.slotLinkAt_def, hU]; rfl
+  refine ⟨cspaceLookupSound_holds st', hComp', ?_, fun oid cn hC => h.2.2.2.1 oid cn (hCnB oid cn hC),
+    hI', hRCPV', hL, (hShape.retire hx (fun o hp ho => ?_) (fun u U' hu => ?_)).of_readers
+      hCdt hCap (fun _ hp => hp) rfl⟩
+  · have hA := h.2.2.1; unfold cdtAcyclicity at hA ⊢; rw [hCdt]; exact hA
   · rcases hW o with e | ⟨he, -, -⟩ | ⟨U, -, hU'⟩
     · show st'.objects[o]? ≠ none; rw [e]; exact hp
     · exact absurd he ho
@@ -256,12 +301,13 @@ theorem objId_ofNat_succ_sub_one (x : SeLe4n.ObjId) : SeLe4n.ObjId.ofNat (x.val 
   simp [SeLe4n.ObjId.ofNat]
 
 /-- **What a nonzero retire word names**: the slot's capability names the
-target by `.object`, and under the capability bundle it is the target's final
-capability (`capIsFinal_iff_capFinalSpec`). -/
+target (`Capability.namedObject`: by `.object`, as a reply capability's reply
+or as a CNode-slot capability's CNode), and under the capability bundle it is
+the target's final capability (`capIsFinal_iff_capFinalSpec`). -/
 theorem slotRetireTarget_spec {st : SystemState} {cnode : SeLe4n.ObjId} {slot : SeLe4n.Slot}
     (h : capabilityInvariantBundle st) (hT : slotRetireTarget st cnode slot ≠ 0) :
     ∃ c, st.slotCapAt ⟨cnode, slot⟩ = some c ∧
-      c.target = .object (SeLe4n.ObjId.ofNat (slotRetireTarget st cnode slot - 1)) ∧
+      c.namedObject = some (SeLe4n.ObjId.ofNat (slotRetireTarget st cnode slot - 1)) ∧
       st.capFinalSpec ⟨cnode, slot⟩ := by
   unfold slotRetireTarget at hT ⊢
   cases hL : st.slotCapAt ⟨cnode, slot⟩ with
@@ -269,6 +315,8 @@ theorem slotRetireTarget_spec {st : SystemState} {cnode : SeLe4n.ObjId} {slot : 
   | some c =>
     rw [hL] at hT
     dsimp only at hT ⊢
+    have hFin : st.capIsFinal cnode slot = true → st.capFinalSpec ⟨cnode, slot⟩ :=
+      (capIsFinal_iff_capFinalSpec h ⟨cnode, slot⟩).mp
     cases hTg : c.target with
     | object x =>
       rw [hTg] at hT
@@ -277,11 +325,26 @@ theorem slotRetireTarget_spec {st : SystemState} {cnode : SeLe4n.ObjId} {slot : 
       · next hc =>
         rw [if_pos hc]
         simp only [Bool.and_eq_true] at hc
-        exact ⟨c, rfl, by rw [hTg, objId_ofNat_succ_sub_one],
-          (capIsFinal_iff_capFinalSpec h ⟨cnode, slot⟩).mp hc.2⟩
+        exact ⟨c, rfl, by unfold Capability.namedObject; rw [hTg, objId_ofNat_succ_sub_one], hFin hc.2⟩
       · exact absurd rfl hT
-    | cnodeSlot _ _ => rw [hTg] at hT; exact absurd rfl hT
-    | replyCap _ => rw [hTg] at hT; exact absurd rfl hT
+    | replyCap r =>
+      rw [hTg] at hT
+      dsimp only at hT ⊢
+      split at hT
+      · next hc =>
+        rw [if_pos hc]
+        simp only [Bool.and_eq_true] at hc
+        exact ⟨c, rfl, by unfold Capability.namedObject; rw [hTg, objId_ofNat_succ_sub_one], hFin hc.2⟩
+      · exact absurd rfl hT
+    | cnodeSlot cn _ =>
+      rw [hTg] at hT
+      dsimp only at hT ⊢
+      split at hT
+      · next hc =>
+        rw [if_pos hc]
+        simp only [Bool.and_eq_true] at hc
+        exact ⟨c, rfl, by unfold Capability.namedObject; rw [hTg, objId_ofNat_succ_sub_one], hFin hc.2⟩
+      · exact absurd rfl hT
     | auditTrail => rw [hTg] at hT; exact absurd rfl hT
 
 /-- **The delete empties its slot and keeps every other slot and every untyped
@@ -322,8 +385,7 @@ theorem cspaceDeleteSlotFinalising_preserves_capabilityInvariantBundle
     (fun hT r hr => ?_) (fun hT => ?_)
   · obtain ⟨c, hc, ht, hFin⟩ := slotRetireTarget_spec hInv hT
     have hAddr : SystemState.namesAt st.slotCapAt ⟨addr.cnode, addr.slot⟩
-        (SeLe4n.ObjId.ofNat (slotRetireTarget st addr.cnode addr.slot - 1)) :=
-      ⟨c, hc, by unfold Capability.namedObject; rw [ht]⟩
+        (SeLe4n.ObjId.ofNat (slotRetireTarget st addr.cnode addr.slot - 1)) := ⟨c, hc, ht⟩
     rw [SystemState.namesAt_of_eq (hC2 r)] at hr
     by_cases hra : r = addr
     · subst hra
