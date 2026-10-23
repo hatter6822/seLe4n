@@ -4129,7 +4129,26 @@ run_check "INVARIANT" rg -n -U 'def retireRecordedObject[^\n]*(\n([ \t][^\n]*)?)
 run_check "INVARIANT" rg -n -U 'def retireFinalObject[^\n]*(\n([ \t][^\n]*)?){0,4}\n    if finalRetireAdmitted st x then\n      retireRecordedObject executingCore recorder x \(retirePassiveObject st x\)\n    else st' SeLe4n/Kernel/Capability/FinalRetire.lean
 run_check "INVARIANT" rg -n -U 'def passiveObjectRetirable[^\n]*\n  passiveObjectQuiescent st x && storeNamesNone st x && registryNamesNone st x &&\n    servicesNameNone st x && irqHandlersNameNone st x' SeLe4n/Kernel/Capability/FinalRetire.lean
 run_check "INVARIANT" rg -n -U 'def finalRetireAdmitted[^\n]*\n  !passiveKindAt st x \|\| passiveObjectRetirable st x' SeLe4n/Kernel/Capability/FinalRetire.lean
-run_check "INVARIANT" rg -n '^@\[csimp\] theorem retirePassiveObject_eq_impl : @retirePassiveObject = @retirePassiveObjectImpl' SeLe4n/Kernel/Capability/FinalRetire.lean
+# The passive erase runs through the registered erase primitives (no raw
+# object-table write of its own), and its record form is a theorem.
+run_check "INVARIANT" rg -n -U 'def retirePassiveObject \(st : SystemState\) \(x : SeLe4n\.ObjId\) : SystemState :=\n  if passiveKindAt st x then\n    withObjectTypeErased \(withObjectIndexSetErased \(withObjectUnindexed \(withObjectErased st x\) x\) x\) x\n  else st' SeLe4n/Kernel/Capability/FinalRetire.lean
+run_check "INVARIANT" rg -n '^theorem retirePassiveObject_eq ' SeLe4n/Kernel/Capability/FinalRetire.lean
+run_negative_check "INVARIANT" rg -n 'retirePassiveObjectImpl|retirePassiveObject_eq_impl' SeLe4n
+# The final-delete retire keeps what other objects name, and the reachable state.
+run_check "INVARIANT" rg -n '^theorem retireFinalObject_passive_kept ' SeLe4n/Kernel/Capability/FinalRetire.lean
+run_check "INVARIANT" rg -n '^theorem retireFinalObject_kept_of_unretirable ' SeLe4n/Kernel/Capability/FinalRetire.lean
+run_check "INVARIANT" rg -n '^theorem retireFinalObject_schedContext ' SeLe4n/Kernel/Capability/FinalRetire.lean
+run_check "INVARIANT" rg -n '^theorem retireFinalObject_back ' SeLe4n/Kernel/Capability/FinalRetire.lean
+run_check "INVARIANT" rg -n '^theorem retireFinalObject_preserves_notificationWaiterConsistent ' SeLe4n/Kernel/IPC/Invariant/Reachability.lean
+run_check "INVARIANT" rg -n '^theorem retireFinalObject_preserves_donationChainWellFormed ' SeLe4n/Kernel/IPC/Invariant/Reachability.lean
+run_check "INVARIANT" rg -n '^theorem retireFinalObject_replyViews ' SeLe4n/Kernel/IPC/Invariant/Reachability.lean
+run_check "INVARIANT" rg -n '^theorem retireFinalObject_preserves_ipcReachable ' SeLe4n/Kernel/IPC/Invariant/Reachability.lean
+# The notification frame asks only for the notifications a blocked thread names.
+run_check "INVARIANT" rg -n -U '\(hNtfnFwd : ∀ \(noid : SeLe4n\.ObjId\) \(ntfn : Notification\) \(tid : SeLe4n\.ThreadId\) \(tcb : TCB\),\n      st\.objects\[noid\]\? = some \(\.notification ntfn\) →\n      st\.objects\[tid\.toObjId\]\? = some \(\.tcb tcb\) →\n      tcb\.ipcState = \.blockedOnNotification noid →' SeLe4n/Kernel/IPC/Invariant/NotificationQueue.lean
+# A delete whose capability names no page table and records no page builds no
+# slot address and no list: the frame teardown retires it directly.
+run_check "INVARIANT" rg -n '^theorem cspaceDeleteTeardownAt_of_nothing ' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n -U '      \| none =>\n        if \(st\.getPageTable\? frameId\)\.isSome then\n          cspaceDeleteTeardownAt executingCore cnode slot st\n        else\n          let target := slotRetireTarget st cnode slot\n          let recorder := recorderFor st target cnode slot\n          retireFinalObject executingCore target recorder \(cspaceDeletePerformAt cnode slot st\)\n    \| _ =>\n      let target' SeLe4n/Kernel/Capability/FrameFinalise.lean
 run_check "INVARIANT" rg -n '^theorem retirePassiveObject_frame ' SeLe4n/Kernel/Capability/FinalRetire.lean
 run_check "INVARIANT" rg -n '^theorem retirePassiveObject_preserves_teardownWellFormed ' SeLe4n/Kernel/Capability/FinalRetire.lean
 run_check "INVARIANT" rg -n '^theorem passiveObjectQuiescent\.slotCap ' SeLe4n/Kernel/Capability/FinalRetire.lean

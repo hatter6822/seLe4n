@@ -471,28 +471,28 @@ while `passiveObjectRetirable` holds. -/
 
 /-- **Erase a passive object** — an endpoint, a notification, a reply or a CNode
 — from the object store, with its index row, its index-set entry and its type,
-as `retireCarvedObject` erases a carved memory object; the identity at any
-other key.  `retireFinalObject` runs it only on an object
-`passiveObjectRetirable` admits. -/
+through the erase primitives `retireCarvedObject` compiles to
+(`withObjectErased` and its index and type companions, each out of line over
+the state it is handed, so the tables are erased in place); the identity at any
+other key.  The record it makes is `retirePassiveObject_eq`.
+`retireFinalObject` runs it only on an object `passiveObjectRetirable` admits. -/
 def retirePassiveObject (st : SystemState) (x : SeLe4n.ObjId) : SystemState :=
-  if passiveKindAt st x then
-    { st with
-        objects := st.objects.erase x
-        objectIndex := st.objectIndex.filter (· != x)
-        objectIndexSet := st.objectIndexSet.erase x
-        lifecycle := { objectTypes := st.lifecycle.objectTypes.erase x } }
-  else st
-
-/-- `retirePassiveObject` as compiled: each table erased out of line over the
-state it is handed, as `retireCarvedObjectImpl` does. -/
-def retirePassiveObjectImpl (st : SystemState) (x : SeLe4n.ObjId) : SystemState :=
   if passiveKindAt st x then
     withObjectTypeErased (withObjectIndexSetErased (withObjectUnindexed (withObjectErased st x) x) x) x
   else st
 
-@[csimp] theorem retirePassiveObject_eq_impl : @retirePassiveObject = @retirePassiveObjectImpl := by
-  funext st x
-  unfold retirePassiveObject retirePassiveObjectImpl withObjectTypeErased withObjectIndexSetErased
+/-- **`retirePassiveObject` as a record**: the object, its index row, its
+index-set entry and its type erased, every other field kept. -/
+theorem retirePassiveObject_eq (st : SystemState) (x : SeLe4n.ObjId) :
+    retirePassiveObject st x =
+      if passiveKindAt st x then
+        { st with
+            objects := st.objects.erase x
+            objectIndex := st.objectIndex.filter (· != x)
+            objectIndexSet := st.objectIndexSet.erase x
+            lifecycle := { objectTypes := st.lifecycle.objectTypes.erase x } }
+      else st := by
+  unfold retirePassiveObject withObjectTypeErased withObjectIndexSetErased
     withObjectUnindexed withObjectErased
   split
   · rw [objIdListDrop_eq_filter]; simp
@@ -692,7 +692,7 @@ theorem not_carvedAt_of_passive {st : SystemState} {x : SeLe4n.ObjId}
 
 theorem retirePassiveObject_of_not (st : SystemState) (x : SeLe4n.ObjId)
     (h : ¬ passiveKernelObject st.objects[x]?) : retirePassiveObject st x = st := by
-  unfold retirePassiveObject
+  rw [retirePassiveObject_eq]
   rw [if_neg (fun h' => h ((passiveKindAt_iff st x).mp h'))]
 
 /-- **The passive erase's frame**: the table keeps its invariant and headroom;
@@ -717,7 +717,7 @@ theorem retirePassiveObject_frame (st : SystemState) (x : SeLe4n.ObjId)
           objectIndex := st.objectIndex.filter (· != x)
           objectIndexSet := st.objectIndexSet.erase x
           lifecycle := { objectTypes := st.lifecycle.objectTypes.erase x } } := by
-      unfold retirePassiveObject; rw [if_pos ((passiveKindAt_iff st x).mpr hP)]
+      rw [retirePassiveObject_eq, if_pos ((passiveKindAt_iff st x).mpr hP)]
     rw [hE]
     refine ⟨SeLe4n.Kernel.RobinHood.RHTable.erase_preserves_invExt st.objects x hInv hSz,
       SeLe4n.Kernel.RobinHood.RHTable.erase_size_lt_capacity st.objects x hSz, rfl, rfl, rfl, rfl,
@@ -1142,7 +1142,7 @@ theorem objectNamesById_schedContext {sc : SchedContext} {x : SeLe4n.ObjId}
 theorem retirePassiveObject_self {st : SystemState} {x : SeLe4n.ObjId}
     (hP : passiveKernelObject st.objects[x]?) (hInv : st.objects.invExt) :
     (retirePassiveObject st x).objects[x]? = none := by
-  unfold retirePassiveObject
+  rw [retirePassiveObject_eq]
   rw [if_pos ((passiveKindAt_iff st x).mpr hP)]
   exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_self st.objects x hInv
 
@@ -1277,24 +1277,21 @@ theorem retireFinalObject_lookupSlotCap (ec : Concurrency.CoreId) (target record
     (st : SystemState) (hInv : st.objects.invExt) (r : SlotRef) :
     SystemState.lookupSlotCap (retireFinalObject ec target recorder st) r =
       SystemState.lookupSlotCap st r := by
-  unfold SystemState.lookupSlotCap SystemState.lookupCNode
   rcases retireFinalObject_key ec target recorder st hInv r.cnode with e | ⟨hb, -, ha⟩
-  · rw [e]
-  · have hR : (match st.objects[r.cnode]? with
-        | some (.cnode cn) => some cn | _ => none).bind (fun cn => cn.lookup r.slot) = none := by
+  · unfold SystemState.lookupSlotCap SystemState.lookupCNode; rw [e]
+  · have hR : SystemState.lookupSlotCap st r = none := by
+      unfold SystemState.lookupSlotCap SystemState.lookupCNode
       cases hs : st.objects[r.cnode]? with
       | none => rfl
       | some o =>
         cases o with
         | cnode cn => exact hb _ hs r.slot
         | _ => rfl
+    rw [hR]
+    unfold SystemState.lookupSlotCap SystemState.lookupCNode
     rcases ha with hn | ⟨U, hU⟩
-    all_goals
-      first | rw [hn] | rw [hU]
-      revert hR
-      cases st.objects[r.cnode]? with
-      | none => intro _; rfl
-      | some o => cases o <;> simp <;> exact fun h => h.symm
+    · rw [hn]
+    · rw [hU]
 
 /-- **The retire makes no untyped**: a key that held none holds none after. -/
 theorem retireFinalObject_getUntyped?_none (ec : Concurrency.CoreId) (target recorder : Nat)
@@ -1493,7 +1490,7 @@ theorem retirePassiveObject_fields (st : SystemState) (x : SeLe4n.ObjId) :
     (retirePassiveObject st x).cdt = st.cdt ∧
     (retirePassiveObject st x).scheduler = st.scheduler ∧
     (retirePassiveObject st x).machine = st.machine := by
-  unfold retirePassiveObject; split <;> exact ⟨rfl, rfl, rfl⟩
+  rw [retirePassiveObject_eq]; split <;> exact ⟨rfl, rfl, rfl⟩
 
 theorem retireRecordedObject_fields (ec : Concurrency.CoreId) (recorder : Nat) (x : SeLe4n.ObjId)
     (st : SystemState) :
@@ -1644,7 +1641,7 @@ theorem retireFinalObject_tables (ec : Concurrency.CoreId) (target recorder : Na
           (retirePassiveObject st (SeLe4n.ObjId.ofNat (target - 1))).irqHandlers = st.irqHandlers ∧
           (retirePassiveObject st (SeLe4n.ObjId.ofNat (target - 1))).objectIndex.filter p =
             st.objectIndex.filter p := by
-        unfold retirePassiveObject
+        rw [retirePassiveObject_eq]
         split
         · exact ⟨rfl, rfl, filter_bne_filter (hx h0)⟩
         · exact ⟨rfl, rfl, rfl⟩
@@ -1690,3 +1687,93 @@ theorem retireFinalObject_tables (ec : Concurrency.CoreId) (target recorder : Na
       · exact h3
     · exact ⟨rfl, rfl, rfl⟩
   · exact ⟨rfl, rfl, rfl⟩
+
+-- ============================================================================
+-- §10  What the retire keeps of the objects other objects name
+-- ============================================================================
+
+/-- **The retire keeps a passive object that is named or busy**: one an object
+names by id, or one that is not quiescent, is not admitted. -/
+theorem retireFinalObject_passive_kept (ec : Concurrency.CoreId) (target recorder : Nat)
+    (st : SystemState) (hInv : st.objects.invExt) {o : SeLe4n.ObjId}
+    (hP : passiveKernelObject st.objects[o]?)
+    (hKeep : (∃ (k : SeLe4n.ObjId) (ok : KernelObject), st.objects[k]? = some ok ∧ objectNamesById ok o = true) ∨
+      passiveObjectQuiescent st o = false) :
+    (retireFinalObject ec target recorder st).objects[o]? = st.objects[o]? := by
+  rcases retireFinalObject_admitted ec target recorder st with hE | hAdm
+  · rw [hE]
+  rcases (retireFinalObject_frame ec target recorder st hInv).2.2.2.2 o with
+    e | ⟨hxo, -, -⟩ | ⟨U, hU, -⟩
+  · exact e
+  · subst hxo
+    have hR := passiveObjectRetirable_parts (finalRetireAdmitted.retirable hAdm hP)
+    rcases hKeep with ⟨k, ok, hk, hn⟩ | hq
+    · rw [storeNamesNone_spec hR.2.1 hk] at hn; cases hn
+    · rw [hR.1] at hq; cases hq
+  · rw [hU] at hP; simp only [passiveKernelObject] at hP
+
+/-- **The retire keeps every key holding no carved, passive or untyped
+object** — a thread or a scheduling context. -/
+theorem retireFinalObject_kept_of_unretirable (ec : Concurrency.CoreId) (target recorder : Nat)
+    (st : SystemState) (hInv : st.objects.invExt) {o : SeLe4n.ObjId}
+    (hC : ¬ carvedAt st o) (hP : ¬ passiveKernelObject st.objects[o]?)
+    (hU : ∀ U, st.objects[o]? ≠ some (.untyped U)) :
+    (retireFinalObject ec target recorder st).objects[o]? = st.objects[o]? := by
+  rcases (retireFinalObject_frame ec target recorder st hInv).2.2.2.2 o with
+    e | ⟨-, hcp, -⟩ | ⟨U, hU0, -⟩
+  · exact e
+  · rcases hcp with h | h
+    · exact absurd h hC
+    · exact absurd h hP
+  · exact absurd hU0 (hU U)
+
+/-- **The retire keeps every scheduling context.** -/
+theorem retireFinalObject_schedContext (ec : Concurrency.CoreId) (target recorder : Nat)
+    (st : SystemState) (hInv : st.objects.invExt) {o : SeLe4n.ObjId} {sc : SchedContext}
+    (h : st.objects[o]? = some (.schedContext sc)) :
+    (retireFinalObject ec target recorder st).objects[o]? = some (.schedContext sc) := by
+  rw [retireFinalObject_kept_of_unretirable ec target recorder st hInv ?_ ?_ ?_, h]
+  · rintro (⟨_, hf⟩ | ⟨_, hf⟩ | ⟨_, hf⟩ | ⟨_, hf⟩) <;> (rw [h] at hf; cases hf)
+  · rw [h]; simp [passiveKernelObject]
+  · intro U hU; rw [h] at hU; cases hU
+
+/-- **What the retire leaves at a key that is not an untyped was there
+before.** -/
+theorem retireFinalObject_back (ec : Concurrency.CoreId) (target recorder : Nat)
+    (st : SystemState) (hInv : st.objects.invExt) {o : SeLe4n.ObjId} {obj : KernelObject}
+    (h : (retireFinalObject ec target recorder st).objects[o]? = some obj)
+    (hNU : ∀ U, obj ≠ .untyped U) :
+    st.objects[o]? = some obj := by
+  rcases retireFinalObject_key ec target recorder st hInv o with e | ⟨-, -, hn | ⟨U, hU⟩⟩
+  · rw [← e]; exact h
+  · rw [hn] at h; cases h
+  · rw [hU] at h; cases h; exact absurd rfl (hNU U)
+
+/-- A thread blocked on a notification names it by id. -/
+theorem objectNamesById_of_blockedOnNotification {t : TCB} {x : SeLe4n.ObjId}
+    (h : t.ipcState = .blockedOnNotification x) : objectNamesById (.tcb t) x = true := by
+  cases hn : objectNamesById (.tcb t) x with
+  | true => rfl
+  | false => exact absurd h (objectNamesById_tcb hn).1.2.2.2.1
+
+/-- A reply names the frame below it by id. -/
+theorem objectNamesById_of_replyPrev {r : Reply} {p : SeLe4n.ReplyId}
+    (h : r.prev = some p) : objectNamesById (.reply r) p.toObjId = true := by
+  cases hn : objectNamesById (.reply r) p.toObjId with
+  | true => rfl
+  | false => exact absurd rfl ((objectNamesById_reply hn).1 p h)
+
+/-- A scheduling context names the head of its reply stack by id. -/
+theorem objectNamesById_of_scReply {sc : SchedContext} {r : SeLe4n.ReplyId}
+    (h : sc.scReply = some r) : objectNamesById (.schedContext sc) r.toObjId = true := by
+  cases hn : objectNamesById (.schedContext sc) r.toObjId with
+  | true => rfl
+  | false => exact absurd rfl (objectNamesById_schedContext hn r h)
+
+/-- A reply linked upward is not quiescent. -/
+theorem passiveObjectQuiescent_of_next {st : SystemState} {o : SeLe4n.ObjId} {r : Reply}
+    (hR : st.objects[o]? = some (.reply r)) (hN : r.next.isSome = true) :
+    passiveObjectQuiescent st o = false := by
+  cases hn : r.next with
+  | none => rw [hn] at hN; cases hN
+  | some _ => simp [passiveObjectQuiescent, SystemState.getObject?, hR, hn]
