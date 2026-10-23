@@ -24,7 +24,7 @@ G3 reuses the donation arm's (`SuspendFootprint.lean`).
 
 The in-place retype that ran this cleanup, and its arm's lock set, were retired
 at WS-ZA ZA5.4 part 14; the cleanup is kept for a kernel object's final-delete
-finalisation (`docs/planning/UNTYPED_RESET_PLAN.md`, part 21).
+finalisation (`docs/planning/UNTYPED_RESET_PLAN.md`, part 22).
 -/
 
 namespace SeLe4n.Kernel

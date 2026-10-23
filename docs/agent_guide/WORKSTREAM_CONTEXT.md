@@ -234,7 +234,7 @@ children, source set full otherwise); at `v0.36.125` (part 14) every object
 kind is carved from an untyped at seL4's size, the free index rounded up to the
 object's boundary as seL4's `alignUp(freeRef, objectSize)`, and the in-place
 retype, its syscall arm (number 8, kept reserved) and its theorems are deleted.
-The destroy cleanup it ran stays, with no live caller, for parts 21 and 22
+The destroy cleanup it ran stays, with no live caller, for parts 22 and 23
 (`docs/REGISTERED_DEBT.md`).  At `v0.36.126` (part 15) the tree is in seL4's MDB
 order: the parentless slots form one ghost root chain, a delete puts its
 children in its place and a move keeps the slot's place, the preorder
@@ -251,7 +251,14 @@ retired: `bootFromPlatform` is the checked boot's fold stage only.  Since
 part 17 (`v0.36.128`) the carve keeps the capability bundle
 (`untypedRetypeObject_preserves_capabilityInvariantBundle`): a new carvable
 kind must hold no capability and no link when carved, and a CNode request
-carries its radix bound as a proof field (`CarveRequest.cnode`).  The
+carries its radix bound as a proof field (`CarveRequest.cnode`).  Since
+part 18 (`v0.36.129`) the tree shape also holds every capability to a live
+object (`TreeShapeOver.live`) and every capability naming another object than
+its parent below that parent (`TreeShapeOver.below`), over
+`Capability.namedObject`: a new slot write must say what the written slot names
+(`CapTreeShape.addChild`'s `hNew`, `rewrite`'s `hObj`) and keep every present
+object present, and the boot refuses a configured capability naming an object
+it does not install (`bootCapabilitiesNameInstalledObjects`).  The
 suspend of a thread blocked in IPC or holding a donated context is the one
 syscall arm left on the general path (ZA6.1).  ZA6 covers the other
 entries and makes the rule standing.  Plan:

@@ -62,7 +62,8 @@ theorem storeObject_absent_preserves_capabilityInvariantBundle
     · rw [hNe _ e]
   refine ⟨cspaceLookupSound_holds st', ?_, cdtAcyclicity_of_cdt_eq st st' hAcyc hCdt, ?_,
     storeObject_preserves_objects_invExt st st' k o hObjInv hStore, ?_,
-    cdtLinksAgree_of_eq hLinksAgree hCdt hLinkAt, hShape.of_frame ⟨hCdt, hCapAt⟩⟩
+    cdtLinksAgree_of_eq hLinksAgree hCdt hLinkAt,
+    hShape.of_frame ⟨hCdt, hCapAt, SystemState.objectPresent_storeObject hObjInv hStore⟩⟩
   · intro ref hM
     rw [hCdt] at hM
     obtain ⟨o0, hO, hL⟩ := hComp ref hM
@@ -115,6 +116,46 @@ theorem retypeFromUntyped_preserves_capabilityInvariantBundle
     hCaps hLinks hDepth
   exact storeObject_capRewrite_preserves_capabilityInvariantBundle stCh st' authority cn cap _
     hInvCh hOCh hLkA (Capability.withFreeIndex_target _ _) hStIdx
+
+/-- **A carve names nothing new in the slots, and its object is in the store**:
+the untyped's record and the carved object hold no capability, and the free-index
+write keeps the invoked capability's target. -/
+theorem retypeFromUntyped_namesAt
+    (st st' : SystemState) (authority : CSpaceAddr) (untypedId childId : SeLe4n.ObjId)
+    (newObj : KernelObject) (allocSize : Nat) (hObjInv : st.objects.invExt)
+    (hCaps : ∀ s, newObj.slotCap s = none)
+    (hStep : retypeFromUntyped authority untypedId childId newObj allocSize st = .ok ((), st')) :
+    (∀ r o, SystemState.namesAt st'.slotCapAt r o → SystemState.namesAt st.slotCapAt r o) ∧
+      st'.objectPresent childId := by
+  have hFresh := retypeFromUntyped_childId_fresh authority untypedId childId newObj allocSize
+    st st' hStep
+  obtain ⟨ut, ut', cap, stUt, _, stCh, cn, hUt, _, _, _, _, _, _, hLkA, _, _, hStUt, hStCh, hOCh,
+    hStIdx⟩ := retypeFromUntyped_ok_stores st st' authority untypedId childId _ _ hObjInv hStep
+  have hNe : childId ≠ untypedId := by
+    intro h; rw [h, hUt] at hFresh; simp at hFresh
+  have hInvUt := storeObject_preserves_objects_invExt _ _ _ _ hObjInv hStUt
+  have hInvCh := storeObject_preserves_objects_invExt _ _ _ _ hInvUt hStCh
+  have hChildNone : stUt.objects[childId]? = none := by
+    rw [storeObject_objects_ne _ _ _ _ _ hNe hObjInv hStUt]
+    cases h : st.objects[childId]? with
+    | none => rfl
+    | some _ => rw [h] at hFresh; simp at hFresh
+  have hA : ∀ r, stUt.slotCapAt r = st.slotCapAt r := fun r => by
+    rw [SystemState.slotCapAt_storeObject hObjInv hStUt]
+    split
+    · next h => rw [SystemState.slotCapAt_eq_bind, h, hUt]; rfl
+    · rfl
+  have hB : ∀ r, stCh.slotCapAt r = stUt.slotCapAt r := fun r => by
+    rw [SystemState.slotCapAt_storeObject hInvUt hStCh]
+    split
+    · next h => rw [hCaps, SystemState.slotCapAt_eq_bind, h, hChildNone]; rfl
+    · rfl
+  refine ⟨fun r o h => ?_, SystemState.objectPresent_storeObject hInvCh hStIdx childId ?_⟩
+  · have h' := (SystemState.namesAt_storeObject_insert hInvCh hOCh hLkA
+      (Capability.namedObject_of_target (Capability.withFreeIndex_target _ _)) hStIdx r o).mp h
+    exact (SystemState.namesAt_of_eq ((hB r).trans (hA r))).mp h'
+  · show stCh.objects[childId]? ≠ none
+    rw [storeObject_objects_eq _ _ _ _ hInvUt hStCh]; exact Option.some_ne_none _
 
 /-- After a carve the authority's slot still holds a capability: its free index
 was advanced in place. -/
@@ -214,8 +255,26 @@ theorem untypedRetypeObject_preserves_capabilityInvariantBundle
       rw [CarveRequest.capability_eq] at hT; cases hT) hIns
   have hCdt := cdt_addEdge_after_insert _ st2 src dst _ .retype hInvZ.2.1 hInvZ.2.2.1 hObjInvZ
     hSrc hIns hInvZ.linksAgree
+  -- The carved object's id held nothing, so no slot named it (`live`), and the
+  -- carve names nothing new: the new capability is the only slot naming it.
+  have hFresh := retypeFromUntyped_childId_fresh src untypedId childId _ _ st st1 hRt
+  obtain ⟨hNm1, hPres1⟩ := retypeFromUntyped_namesAt st st1 src untypedId childId _ _
+    hInv.2.2.2.2.1 (CarveRequest.object_slotCap _ _ _ _ req) hRt
+  have hCapZ : ∀ r, (req.scrub st1 ut (req.carveIndex ut utCap.freeIndex)).slotCapAt r =
+      st1.slotCapAt r := fun r => by
+    rw [SystemState.slotCapAt_eq_bind, SystemState.slotCapAt_eq_bind, hObjZ]
   have hShape := treeShape_addEdge_after_insert _ st2 src dst _ .retype hInvZ.treeShape
-    hInvZ.2.1 hObjInvZ hSrc hIns
+    hInvZ.2.1 hObjInvZ hSrc hIns fun o ho => by
+      rw [CarveRequest.capability_eq] at ho
+      simp only [Capability.namedObject, Option.some.injEq] at ho
+      subst ho
+      refine .inr ⟨fun r hr => ?_, cspaceInsertSlot_objectPresent hObjInvZ hIns _ ?_⟩
+      · have h0 := hInv.treeShape.live r _ (hNm1 r _ ((SystemState.namesAt_of_eq (hCapZ r)).mp hr))
+        cases h : st.objects[childId]? with
+        | none => exact h0 h
+        | some _ => rw [h] at hFresh; simp at hFresh
+      · show (req.scrub st1 ut (req.carveIndex ut utCap.freeIndex)).objects[childId]? ≠ none
+        rw [hObjZ]; exact hPres1
   rcases hBundle2 with ⟨⟨_, _, _, hDepth2, hObjInv2, hRCPV2⟩, -, -⟩
   have hObjFinal : ({ st2 with cdt := st2.cdt.addEdge src dst .retype }).objects = st2.objects := rfl
   exact capabilityInvariantBundle_of_linkReach

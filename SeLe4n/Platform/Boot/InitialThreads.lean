@@ -316,27 +316,69 @@ theorem startInitialThread_preserves_bootStartShape (ist : IntermediateState)
   · exact startInitialThreadOnCore_preserves_runQueueBootSound hStart hInv hRun bootCoreId hQueue
 
 /-- **WS-ZA ZA5.4**: a start writes no capability slot: the thread it writes
-keeps its space slots. -/
-theorem startInitialThreadOnCore_slotCapAt_ne_none (st : SystemState) (tid : SeLe4n.ThreadId)
+keeps its space slots, so a slot holding a capability after it held the same
+one before. -/
+theorem startInitialThreadOnCore_slotCapAt_of_ne_none (st : SystemState) (tid : SeLe4n.ThreadId)
     (hInv : st.objects.invExt) (r : SlotRef)
-    (h : (startInitialThreadOnCore st tid).slotCapAt r ≠ none) : st.slotCapAt r ≠ none := by
+    (h : (startInitialThreadOnCore st tid).slotCapAt r ≠ none) :
+    (startInitialThreadOnCore st tid).slotCapAt r = st.slotCapAt r := by
   rw [SystemState.slotCapAt_eq_bind] at h ⊢
+  rw [SystemState.slotCapAt_eq_bind]
   cases hO : (startInitialThreadOnCore st tid).objects[r.cnode]? with
   | none => rw [hO] at h; exact absurd rfl h
   | some o =>
-    rw [hO] at h
     rcases startInitialThreadOnCore_objects_cases st tid hInv r.cnode o hO with
       hB | ⟨t, t', hT, rfl, hw⟩
-    · rw [hB]; exact h
+    · rw [hB]
     · rw [hT]
       have hc : t'.spaceCells = t.spaceCells := by
         rcases hw with hw | hw | hw
         · exact TCB.proj_eq_of_withoutRunLinks_eq TCB.spaceCells hw
         · exact TCB.proj_eq_of_withoutRunLinks_eq TCB.spaceCells hw
         · exact TCB.proj_eq_of_withoutRunLinks_eq TCB.spaceCells hw
-      have e : (KernelObject.tcb t').slotCap r.slot = (KernelObject.tcb t).slotCap r.slot := by
-        simp only [KernelObject.slotCap, TCB.spaceSlotCap, hc]
-      exact fun h' => h (by simp only [Option.bind_some] at h' ⊢; rw [e]; exact h')
+      simp only [Option.bind_some, KernelObject.slotCap, TCB.spaceSlotCap, hc]
+
+theorem startInitialThreadOnCore_slotCapAt_ne_none (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) (r : SlotRef)
+    (h : (startInitialThreadOnCore st tid).slotCapAt r ≠ none) : st.slotCapAt r ≠ none := by
+  rw [← startInitialThreadOnCore_slotCapAt_of_ne_none st tid hInv r h]; exact h
+
+/-- **WS-ZA ZA5.4 part 18**: a start removes no object. -/
+theorem startInitialThreadOnCore_objectPresent (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) (k : SeLe4n.ObjId) (h : st.objectPresent k) :
+    (startInitialThreadOnCore st tid).objectPresent k := by
+  obtain ⟨obj, hO⟩ := Option.ne_none_iff_exists'.mp h
+  by_cases hT : ∃ t, obj = .tcb t
+  · obtain ⟨t, rfl⟩ := hT
+    have hG : (st.getTcb? (SeLe4n.ThreadId.ofObjId k)).isSome = true := by
+      rw [Option.isSome_iff_exists]
+      exact ⟨t, (SystemState.getTcb?_eq_some_iff _ _ _).mpr hO⟩
+    obtain ⟨t', hT'⟩ := Option.isSome_iff_exists.mp
+      (startInitialThreadOnCore_getTcb?_isSome st tid _ hInv hG)
+    have e := (SystemState.getTcb?_eq_some_iff _ _ _).mp hT'
+    show (startInitialThreadOnCore st tid).objects[k]? ≠ none
+    rw [SeLe4n.ThreadId.toObjId_ofObjId] at e
+    rw [e]; exact Option.some_ne_none _
+  · show (startInitialThreadOnCore st tid).objects[k]? ≠ none
+    rw [startInitialThreadOnCore_objects_of_nonTcb st tid hInv k obj
+      (fun t e => hT ⟨t, e⟩) hO]
+    exact Option.some_ne_none _
+
+/-- **WS-ZA ZA5.4 part 18**: the starts keep every capability naming a live
+object: they write no capability slot and remove no object. -/
+theorem startInitialThreads_capabilitiesLive (L : List SeLe4n.ThreadId)
+    (ist ist' : IntermediateState) (h : startInitialThreads L ist = .ok ist')
+    (hL : ∀ r o, SystemState.namesAt ist.state.slotCapAt r o → ist.state.objectPresent o) :
+    ∀ r o, SystemState.namesAt ist'.state.slotCapAt r o → ist'.state.objectPresent o :=
+  startInitialThreads_induct
+    (fun i => ∀ r o, SystemState.namesAt i.state.slotCapAt r o → i.state.objectPresent o)
+    (fun i tid _ hP r o hN => by
+      have hInv := i.hAllTables.1.1
+      rw [startInitialThread_state] at hN ⊢
+      rw [SystemState.namesAt_of_eq (startInitialThreadOnCore_slotCapAt_of_ne_none i.state tid
+        hInv r (SystemState.namesAt_occupied hN))] at hN
+      exact startInitialThreadOnCore_objectPresent i.state tid hInv o (hP r o hN))
+    L ist ist' h hL
 
 /-- **WS-ZA ZA5.4**: the checked, idle-storing boot lists every slot holding a
 capability among the configuration's boot capability slots: each such slot is
@@ -383,6 +425,8 @@ theorem bootFromPlatformCheckedStartedFor_bootLinkedShape
       (bootFromPlatformCheckedWithIdleThreadsFor_bootStartShape cores hNodup config base hBase))
     (startInitialThreads_bootSlotsListed _ _ _ _ hStart
       (bootFromPlatformCheckedWithIdleThreadsFor_bootSlotsListed cores config base hBase))
+    (startInitialThreads_capabilitiesLive _ _ _ hStart
+      (bootFromPlatformCheckedWithIdleThreadsFor_ok_capabilitiesLive cores config base hBase))
 
 /-- **WS-BP BP7.11**: **the state the started boot installs satisfies the
 proof-layer invariant bundle** — the idle boot's argument, applied to the state

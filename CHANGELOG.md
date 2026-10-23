@@ -1,3 +1,122 @@
+## v0.36.129 — WS-ZA ZA5.4 part 18: live objects and (S)
+
+Every capability now names an object in the store, and a capability naming
+another object than its parent lies below that parent.  Both facts are
+conjuncts of the capability bundle's tree shape, kept by every slot write and
+established by boot.  The boot refuses a configuration with a capability
+naming an object it does not install.  That refusal is the only behaviour
+change.  Part 18 of the seL4 untyped reset
+([`UNTYPED_RESET_PLAN.md`](docs/planning/UNTYPED_RESET_PLAN.md)).  The
+schedule is renumbered (below).
+
+### Changes
+
+- **What a capability names** (`Model/SlotTreeShape.lean`).
+  `Capability.namedObject` is seL4's `sameObjectAs` by object id: an object
+  capability names its object, a CNode-slot capability its CNode, a reply
+  capability its reply, and an audit capability nothing.
+  `SystemState.namesAt cap r o` reads "slot `r` holds a capability naming
+  `o`", and `SystemState.objectPresent` is the store's presence reader.
+- **Two new tree-shape conjuncts.**  `TreeShapeOver` now reads a presence
+  reader as well as the slot reader and the tree, and has two new fields:
+  - `live`: every capability names a present object (seL4's `valid_cap`).
+  - `below` (S): when a child names another object than its occupied
+    parent, every slot naming that object is reachable below the parent
+    (`CdtChildReachable`).
+
+  `SlotTreeFrame` gains presence monotonicity.  The shape lemmas take what
+  the written slot names:
+  - `CapTreeShape.addChild`'s `hNew`: the slot names what its source names,
+    or an object that no slot named before and that is present after.
+  - `rewrite`'s `hObj`.
+  - `move`'s `hMoved`.
+  - `splice`'s occupancy of a parent with children (from
+    `cdtCompleteness`).
+
+  Reachability is carried across the tree writes by
+  `CdtChildReachable.addEdge`, `.spliceNode` and `.moveNode`.
+- **Every capability transition keeps both conjuncts.**
+  - Copy, mint, mint-reply, move, mutate, insert and delete.  Mint's and
+    mint-reply's decompositions now state that the child names what its
+    parent names.
+  - The local revoke fold.  It empties slots before it splices them, so it
+    carries the shape over the pre-revoke reading of the slots still in the
+    tree.
+  - The IPC transfer, single and looped, and the grant and unified unwrap
+    paths.  These take the fact that each capability names what its source
+    slot names (`hNames`).
+  - The space copy (`threadSlotFilled`, which takes `hObj`).
+  - The carve.  Its new object is absent before the carve, so by `live` no
+    slot named it.
+  - `capabilityInvariantBundle_of_frame` takes presence monotonicity.
+  - `objectsAgreeOffDerivationLinks.present` and
+    `kindPreservingWrite.present` supply presence monotonicity to frame
+    callers.
+- **The boot refuses a dangling capability.**
+  - `bootCapabilitiesNameInstalledObjects` is the tenth `wellFormed`
+    conjunct, next to `untypedCapabilitiesUnique`.  Every configured
+    capability must name a configured object, the boot VSpace root, or
+    nothing.  Its diagnostic is `bootCapabilityDanglingBootError`, and it has
+    a `wellFormedConjuncts` row.
+  - `wellFormed_of_withoutExtents` carries the new conjunct.
+  - The boot establishes `live`
+    (`bootFromPlatformCheckedWithIdleThreadsFor_ok_capabilitiesLive`, through
+    `mem_bootEntryCapabilities_of_slotCap` and
+    `bootFromPlatformCheckedWithIdleThreadsFor_ok_bootVSpaceRoot_present`).
+  - The starts keep `live` (`startInitialThreads_capabilitiesLive`;
+    `startInitialThreadOnCore_slotCapAt_of_ne_none`,
+    `startInitialThreadOnCore_objectPresent`).
+  - `BootLinks.Sound` records that every child holds a capability to its
+    parent's target, so `linkBootCapabilities_bootLinkedShape` proves
+    `below`.
+- **Tests.**
+  - `tests/SmpIdleSuite.lean` (`runBootCapabilityLiveChecks`) refuses a
+    capability naming an unconfigured object and a slot capability into an
+    unconfigured CNode, names the new diagnostic, and is refused by the
+    checked boot.  Its control (capabilities to a configured untyped and a
+    configured CNode's slot) is accepted.
+  - The idle-slot reservation control used to accept a TCB whose root was
+    absent.  That root is now configured, because a dangling root is refused
+    on its own account.
+
+### Plan renumbered
+
+The old row 18 is split.  Row 18 is this part.  Row 19 (new) holds the
+untyped chain facts:
+- (a): the slots naming one untyped form a contiguous first-child chain.
+- (b): an untyped capability that is not full has no strict descendant
+  naming it.
+- The descendants fact, in seL4's `untyped_mdb` form.
+- Its two companions: every recorded child is live, and an object is
+  recorded by at most one untyped.
+
+Row 19 also carries the `kindPreservingWrite` / frame-hypothesis /
+off-(b)-at-src notes.  Finality is now row 20, retire 21, finalise 22 and
+reset 23, and each row states what it consumes.  These citations are
+updated:
+- `REGISTERED_DEBT.md`.
+- `WORKSTREAM_CONTEXT.md`.
+- `SELE4N_SPEC.md`.
+- `ZERO_ALLOCATION_SYSCALL_PLAN.md`.
+- The untyped-reset pin comment in `scripts/qemu_exerciser_lib.sh` (comment
+  only; the pin is unchanged).
+- The cleanup modules' source comments.
+
+### Documentation
+
+- `SELE4N_SPEC.md` §8.6.
+- GitBook chapter 12.
+- A new `CLAIM_EVIDENCE_INDEX.md` row.
+- The plan's rows 18–23.
+- The workstream context.
+
+### Validation
+
+- `./scripts/test_full.sh --continue` passes, and so does
+  `./scripts/test_lean_aarch64_archive.sh`.
+- Every QEMU heap pin is unchanged
+  (`./scripts/test_qemu_heap_allocations_per_syscall.sh --lean-kernel`).
+
 ## v0.36.128 — WS-ZA ZA5.4 part 17: the carve keeps the capability bundle
 
 The untyped carve is now proven to keep all eight conjuncts of
