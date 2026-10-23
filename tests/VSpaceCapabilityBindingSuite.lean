@@ -2167,19 +2167,24 @@ private def runPassiveRetireChecks : IO Unit := do
               | .error _ => false)
           assertBool s!"the retired {name}'s id carves again"
             ((runAll st2 [decodeCarve slotUtRetype tag 960 slotOwnCnRW 12]).toOption.isSome)
-  -- A notification bound to a thread is not quiescent: it outlives its last
-  -- capability until its finalise unbinds it (`docs/planning/UNTYPED_RESET_PLAN.md`
-  -- row 23).
+  -- A notification bound to a thread is finalised before it is retired: its
+  -- last capability's delete unbinds the thread (seL4's
+  -- `unbindMaybeNotification`, `finaliseFinalObject`), and the then quiescent
+  -- notification is retired (`docs/planning/UNTYPED_RESET_PLAN.md` row 23).
   match runAll spaceScenario
       [decodeCarve slotUtRetype notificationTag 960 slotOwnCnRW 12,
        decodeBindNotification slotWorkerTcb 12] with
   | .error e => assertBool s!"carving and binding a notification succeeds (got {repr e})" false
   | .ok st => do
+    assertBool "setup: the worker is bound to the carved notification"
+      ((st.getTcb? spaceWorker).map (·.boundNotification) == some (some (SeLe4n.ObjId.ofNat 960)))
     match runAll st [decodeDelete 12] with
     | .error e => assertBool s!"deleting the bound notification's capability succeeds (got {repr e})" false
-    | .ok st1 =>
-      assertBool "a notification bound to a thread outlives its last capability, still recorded"
-        (storedAt st1 960 && recordsChildAt st1 carveUt 960)
+    | .ok st1 => do
+      assertBool "deleting a bound notification's last capability unbinds its thread"
+        ((st1.getTcb? spaceWorker).map (·.boundNotification) == some none)
+      assertBool "...and retires it from the store and the untyped's list"
+        (!storedAt st1 960 && !recordsChildAt st1 carveUt 960)
   -- The space-slot replace destroys what the slot held: a VSpace root whose
   -- last capability is the worker's slot is retired with it.
   match runAll spaceScenario

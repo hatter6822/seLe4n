@@ -288,8 +288,15 @@ nothing (`capabilityRetiresNothing`).  Since part 22 (`v0.36.133`) the retire
 also takes a quiescent endpoint, notification, reply or CNode that nothing
 names outside a slot (`passiveObjectRetirable`), and a thread's space-slot
 replace retires through it (`threadSlotSet`): a new transition that destroys a
-capability must too.  A busy or referenced kernel object, and an untyped that
-still records a child, outlive their last capability until parts 23–26.  The
+capability must too.  Since part 23 (`v0.36.134`) the finalising delete
+retires through `retireFinalisedObject`, which first cancels a busy endpoint's
+IPC and unbinds a notification and cancels its waiters (`finaliseFinalObject`,
+`IPC/Operations/CancelAll.lean`), waking each cancelled waiter on its own core:
+a new transition that destroys a capability must retire through it, and
+`.cspaceDelete` / `.cspaceRevoke` are remote writers that declare a scheduler
+footprint.  A busy or referenced reply, TCB or scheduling context, and an
+untyped that still records a child, outlive their last capability until parts
+24–26.  The
 suspend of a thread blocked in IPC or holding a donated context is the one
 syscall arm left on the general path (ZA6.1).  ZA6 covers the other
 entries and makes the rule standing.  Plan:

@@ -13,6 +13,7 @@
 
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCallDispatch
 import SeLe4n.Kernel.IPC.CrossCore.EndpointEnqueueInPlace
+import SeLe4n.Kernel.IPC.DualQueue.PopInPlace
 
 /-!
 # WS-SM SM6 — the cross-core `Send`
@@ -113,41 +114,10 @@ def endpointSendDualOnCore (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId
       if (st.getObject? endpointId).isSome then (st, .error .invalidCapability)
       else (st, .error .objectNotFound)
 
-/-- WS-ZA ZA4.7: the endpoint a pop leaves: its receive queue
-(`isReceiveQ`) or its send queue starts at the popped head's successor, given
-as its code (`SeLe4n.ThreadId.optCode`), so a caller holding the successor's
-link code passes it without building an `Option`. -/
-@[inline] def popEndpoint (isReceiveQ : Bool) (nextCode : Nat) :
-    KernelObject → KernelObject
-  | .endpoint e =>
-      -- the queue ends are codes in the endpoint, rewritten in its cell
-      -- (`Endpoint.withReceiveQ_head`, `Endpoint.withSendQ_head`)
-      match isReceiveQ, nextCode with
-      | true, 0 => .endpoint { e with recvHeadCode := 0, recvTailCode := 0 }
-      | true, c + 1 => .endpoint { e with recvHeadCode := c + 1 }
-      | false, 0 => .endpoint { e with sendHeadCode := 0, sendTailCode := 0 }
-      | false, c + 1 => .endpoint { e with sendHeadCode := c + 1 }
-  | o => o
-
 /-- WS-ZA ZA4.7: the receive completion a send rendezvous writes into the
 woken receiver. -/
 @[inline] def receiveCompleteTcb (msg : IpcMessage) (t : TCB) : TCB :=
   (TCB.setIpcState { t with pendingMessage := some msg, pendingReceiveReplyCode := 0 } .ready)
-
-/-- WS-ZA ZA4.7: a thread taken off an endpoint queue: its three link codes
-cleared (`tcbWithQueueLinks t none none none` by definition). -/
-@[inline] def tcbOffQueue (t : TCB) : TCB :=
-  { t with queuePrevCode := 0, queuePPrevCode := 0, queueNextCode := 0 }
-
-/-- WS-ZA ZA4.7: a queue's new head: no predecessor, its back-pointer the
-queue head, as codes (`tcbAsQueueHead_eq`). -/
-@[inline] def tcbAsQueueHead (t : TCB) : TCB :=
-  { t with queuePrevCode := 0, queuePPrevCode := 1 }
-
-theorem tcbAsQueueHead_eq (t : TCB) :
-    tcbAsQueueHead t = tcbWithQueueLinks t none (some .endpointHead) t.queueNext := by
-  simp only [tcbAsQueueHead, tcbWithQueueLinks, TCB.optCode_queueNext]
-  rfl
 
 /-- WS-ZA ZA4.7: the send rendezvous's writes, each in its slot: the head
 popped off the receive queue, its successor made the new head, the popped
@@ -162,25 +132,6 @@ each update is specialised in. -/
     | some n => s1.updateTcb n tcbAsQueueHead
   (s2.updateTcb head tcbOffQueue).updateTcb head
     (receiveCompleteTcb msg)
-
-/-- WS-ZA ZA4.7: **the send rendezvous writes only its slots** — the endpoint,
-the popped receiver and its successor each rewritten where it stands
-(`RHTable.findsInPlace`), each store changing only `objects`
-(`storeLeavesIndexAndTypes`), the receiver and its successor distinct,
-unreserved TCBs. -/
-@[inline] def sendWakesInPlace (st : SystemState) (endpointId : SeLe4n.ObjId)
-    (head : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId) : Bool :=
-  !head.isReserved &&
-  storeLeavesIndexAndTypes st endpointId .endpoint &&
-  st.objects.findsInPlace endpointId &&
-  storeLeavesIndexAndTypes st head.toObjId .tcb &&
-  st.objects.findsInPlace head.toObjId &&
-  (match next with
-   | none => true
-   | some n => !n.isReserved && n != head &&
-       storeLeavesIndexAndTypes st n.toObjId .tcb &&
-       st.objects.findsInPlace n.toObjId &&
-       (st.getTcb? n).isSome)
 
 /-- WS-ZA ZA4.7: the guarded send rendezvous's writes are the specification's
 pop and receive completion. -/

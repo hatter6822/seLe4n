@@ -375,26 +375,34 @@ theorem untypedResetFromCap_crossCoreNonInterference
   exact crossCoreNonInterference_ofCores ctx observer (by simp)
     (untypedResetRewound_confinedToCores executingCore src cn untypedId st st' hO hS) hShared
 
-/-- WS-BP BP7.1 (`v0.36.7`) (**the live `.cspaceDelete` arm, cross-core**): a
-finalising delete is invisible on **every** core. -/
+/-- WS-BP BP7.1 (`v0.36.7`), WS-ZA ZA5.4 part 23 (**the live `.cspaceDelete`
+arm, cross-core**): a finalising delete is invisible on every core outside
+`cspaceDeleteSlotFinalisingCores` — on every core when it destroys no final
+capability, since the finalisation of a final capability's endpoint or
+notification wakes the waiters it cancels on their own cores. -/
 theorem cspaceDeleteSlotFinalising_crossCoreNonInterference
     (ctx : LabelingContext) (observer : IfObserver) (executingCore : CoreId)
     (addr : CSpaceAddr) (st st' : SystemState) (c : CoreId)
     (hStep : cspaceDeleteSlotFinalising executingCore addr st = .ok ((), st'))
+    (hne : c ∉ cspaceDeleteSlotFinalisingCores st addr)
     (hShared : sharedViewUnchanged ctx observer st st') :
     projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
-  crossCoreNonInterference_ofCores ctx observer (by simp)
+  crossCoreNonInterference_ofCores ctx observer hne
     (cspaceDeleteSlotFinalising_confinedToCores executingCore addr st st' hStep) hShared
 
-/-- WS-BP BP7.1 (`v0.36.7`) (**the live `.cspaceRevoke` arm, cross-core**): a
-finalising revocation is invisible on **every** core. -/
+/-- WS-BP BP7.1 (`v0.36.7`), WS-ZA ZA5.4 part 23 (**the live `.cspaceRevoke`
+arm, cross-core**): each delete of a finalising revocation may wake the waiters
+of an endpoint or notification whose final capability it destroys, on their
+own cores, so the revocation declares every core
+(`cspaceRevokeCdtFinalising_confinedToCores`); outside it, it is invisible. -/
 theorem cspaceRevokeCdtFinalising_crossCoreNonInterference
     (ctx : LabelingContext) (observer : IfObserver) (executingCore : CoreId)
     (addr : CSpaceAddr) (st st' : SystemState) (c : CoreId)
     (hStep : cspaceRevokeCdtFinalising executingCore addr st = .ok ((), st'))
+    (hne : c ∉ Concurrency.allCores)
     (hShared : sharedViewUnchanged ctx observer st st') :
     projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
-  crossCoreNonInterference_ofCores ctx observer (by simp)
+  crossCoreNonInterference_ofCores ctx observer hne
     (cspaceRevokeCdtFinalising_confinedToCores executingCore addr st st' hStep) hShared
 
 /-- WS-ZA ZA5.4 part 14 (**the live `.untypedRetype` arm, cross-core**): the
@@ -1669,10 +1677,12 @@ def crossCoreTransitionWritesRemote : CrossCoreTransition → Bool
   | .vspaceUnmapDispatch => false
   -- WS-BP BP7.1 (slice 3): and the reset, for the unmap's own reason
   | .untypedResetDispatch => false
-  -- WS-BP BP7.1 (`v0.36.7`): and the two finalising destroyers, for the same
-  -- reason — their teardown is the unmap's own transition
-  | .cspaceDeleteDispatch => false
-  | .cspaceRevokeDispatch => false
+  -- WS-BP BP7.1 (`v0.36.7`): the two finalising destroyers' teardown is the
+  -- unmap's own transition, but (WS-ZA ZA5.4 part 23) the finalisation of a
+  -- final capability's endpoint or notification wakes each waiter it cancels
+  -- on the waiter's own core
+  | .cspaceDeleteDispatch => true
+  | .cspaceRevokeDispatch => true
   -- WS-ZA ZA5.4 part 14: and the carve, which writes the object store alone
   | .untypedRetypeDispatch => false
   -- WS-ZA ZA5.4 part 22: and the space change, which retires through the same
@@ -1692,6 +1702,6 @@ def crossCoreTransitionWritesRemote : CrossCoreTransition → Bool
   | .yieldDispatch => false
 
 theorem crossCoreTransitionWritesRemote_count :
-    (CrossCoreTransition.all.filter crossCoreTransitionWritesRemote).length = 22 := by decide
+    (CrossCoreTransition.all.filter crossCoreTransitionWritesRemote).length = 24 := by decide
 
 end SeLe4n.Kernel

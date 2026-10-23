@@ -429,6 +429,16 @@ def schedLockSet_yieldOnCore (executingCore : CoreId) :
     List (LockKey × Concurrency.AccessMode) :=
   schedFootprintOfCores [executingCore] [executingCore]
 
+/-- **WS-ZA ZA5.4 part 23**: the scheduler-domain footprint of a capability
+destroy that may finalise — the finalising delete and the revocation built from
+it.  A delete that destroys the last capability to an endpoint or a notification
+cancels its waiters and wakes each on its own core (`finaliseFinalObject`), and
+which cores those are the state decides, so the footprint names every core's run
+queue.  It names no replenish queue: the wake enqueues, and no step of a
+delete writes one. -/
+def schedLockSet_capabilityDestroyOnCore : List (LockKey × Concurrency.AccessMode) :=
+  schedFootprintOfCores Concurrency.allCores []
+
 /-- WS-SM SM5.H.4 (lock-set): `migrateSchedContextReplenishment fromCore toCore`
 writes both cores' replenish-queue slots. -/
 def migrateSchedContextReplenishmentLockSet (fromCore toCore : CoreId) :

@@ -212,7 +212,7 @@ theorem abortPendingIpcOnEndpoint_preserves_ipcInvariantFull
     rw [hStoreRc]
   have hFullRc : ipcInvariantFull sRc :=
     storeTcbReceiveComplete_closes_exceptMembership st1 sRc tid none hI1
-      (fun _ hm => by cases hm) hAllNone1
+      (fun _ hm => by cases hm) (fun tcbX hX => hAllNone1 tid tcbX hX)
       (fun tcbX hX => hNotReply1 tcbX ((SystemState.getTcb?_eq_some_iff st1 tid tcbX).mpr hX))
       (fun epId ep hEp =>
         hNoHead epId ep ((SystemState.getEndpoint?_eq_some_iff st1 epId ep).mpr hEp))

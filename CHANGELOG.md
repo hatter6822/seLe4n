@@ -1,3 +1,202 @@
+## v0.36.134 — WS-ZA ZA5.4 part 23: a final delete cancels an endpoint's IPC and unbinds and cancels a notification
+
+A delete or revoke that destroys the final capability to an endpoint now
+cancels every thread queued on it first (seL4's `cancelAllIPC`).  For a
+notification it unbinds the bound thread and then cancels every waiter
+(`unbindMaybeNotification`, `cancelAllSignals`).  Only then is the object
+retired through part 22's `retireFinalObject`.
+
+- **Before:** a busy endpoint, or a busy or bound notification, outlived its
+  last capability.
+- **After:** it is emptied and retired.
+- **Still open:** a reply, TCB or scheduling context that is busy or
+  referenced still outlives its last capability (rows 24–26 of
+  [`UNTYPED_RESET_PLAN.md`](docs/planning/UNTYPED_RESET_PLAN.md)), and so
+  does an endpoint a reply-blocked caller still names (a debt row).
+
+This is part 23 of the seL4 untyped reset.
+
+### Changes
+
+- **The walks** (`IPC/Operations/CancelAll.lean`).
+  - `cancelEndpointQueue` / `cancelAllIpc` and `cancelNotificationQueue` /
+    `cancelAllSignals` each take the queue's head, one waiter at a time.
+  - The waiters are linked through their TCBs, so each walk follows those
+    links in place and builds nothing.
+  - An endpoint's head is popped as a rendezvous pops it, with every write
+    in its slot (`storePopHead`, which `popHead_inPlace` equates with the
+    specification's `endpointQueuePopHead`).
+  - A notification's head leaves the queue as a cancelled thread leaves it
+    (`cancelIpcBlocking`'s notification arm).
+  - `unbindMaybeNotification` unbinds the notification's bound thread on both
+    sides, each rewritten where it stands (`storeUnbindNotification`).  A
+    binding the two sides disagree on is left as it is, and the retire then
+    keeps the notification.
+  - `finaliseFinalObject` dispatches on the object's kind, and does nothing
+    for any other kind.  It also does nothing for an object still named
+    outside a slot (a service registration's endpoint, an interrupt's
+    notification: `registryNamesNone`, `irqHandlersNameNone`), since seL4
+    would hold a capability there and the slot's would not be final.
+  - `retireFinalisedObject` is `finaliseFinalObject`, then `retireFinalObject`.
+    The finalising delete (`cspaceDeleteThenFinalise`, the page-table
+    teardown arms) and the revocation's per-child delete now retire through it.
+- **What a cancelled waiter becomes.**
+  - It becomes `.ready`, with no pending message, no stashed reply and the
+    `.ipcCancelled` frame staged (`Architecture.cancelledIpcFrame`).
+  - It is woken on its own core (`determineTargetCore`, `enqueueRunnableOnCore`,
+    which sets that core's reschedule flag).
+  - **Deviation from seL4.** seL4 sets the thread to `Restart`, so the thread
+    reissues its system call. This model answers a cancelled IPC with
+    `.ipcCancelled`, the frame `cancelIpcBlocking` already gives a suspended
+    thread's IPC.
+- **Checks before writes.** A step runs only when its waiter meets all of
+  these (`cancelledWaiterWakeable`, `endpointWaiterCancellable`,
+  `notificationWaiterCancellable`):
+  - it is active and runs on no core;
+  - at an endpoint, it holds no timeout budget and every write of the pop
+    stays in its slot;
+  - at a notification, it is no reserved thread, is blocked on that
+    notification and is linked into no endpoint queue.
+
+  A refused step ends the walk. The object is then not quiescent, and
+  part 22's retire keeps it, so nothing is refused and nothing dangles.
+- **The notification step is compiled in place** (`IPC/Operations/CancelAll.lean`).
+  - The specification's step is `cancelIpcBlocking`, whose notification arm
+    rebuilds the notification record (7 cells per waiter).
+  - `storeNotificationWaiterCancelled` makes the same writes, each in its slot:
+    the notification's cell through `modifyObject` (`cancelPoppedObject`), the
+    head detached (`detachNtfnHead`), restored and woken.
+  - `cancelIpcBlocking_notificationHead_inPlace` proves the two equal on a
+    blocked head, and `cancelNotificationQueue_eq_impl` (`@[csimp]`)
+    substitutes `cancelNotificationQueueImpl`.  The specification and every
+    proof over it stay.
+- **A carved endpoint or notification owns its cells**
+  (`Lifecycle/Operations/ScrubAndUntyped.lean`, `Model/Object/Unshare.lean`).
+  - Both are built from constant fields alone, which the compiler holds as
+    one shared static value, so the first receive or wait on a carved one
+    copied it (2 cells).
+  - `CarveRequest.object_eq_impl` (`@[csimp]`) builds each through
+    `KernelObject.unshareFresh`, the identity, compiled as `unshareImpl` and
+    marked `never_extract` so it is not itself hoisted.  The carve pays the 2
+    cells once.
+- **No allocation on the delete path.** Each walk's fuel is the object
+  table's size, which bounds the number of threads. The walk proves nothing
+  about emptying the queue: the retire asks that question itself
+  (`passiveObjectQuiescent`).
+- **Theorems.**
+  - Write frame (`IPC/Invariant/CancelAllFrame.lean`):
+    - closures `cancelEndpointQueue_closed`, `cancelNotificationQueue_closed`,
+      `unbindMaybeNotification_closed`, `finaliseFinalObject_closed`;
+    - `finaliseWrite` and its steps;
+    - `finaliseFinalObject_frame`, `finaliseFinalObject_onlyObjectsSchedulerDiffer`,
+      `finaliseFinalObject_cdt`;
+    - `retireFinalisedObject_preserves_teardownWellFormed`.
+  - IPC bundle (`IPC/Invariant/CancelAllPreservation.lean`):
+    - `storeEndpointWaiterCancelled_preserves_ipcInvariantFull`,
+      `notificationWaiterCancel_preserves_ipcInvariantFull`,
+      `storeUnbindNotification_preserves_ipcInvariantFull`;
+    - `finaliseFinalObject_preserves_ipcInvariantFull`,
+      `retireFinalisedObject_preserves_ipcInvariantFull`;
+    - `cspaceDeleteSlotFinalising_preserves_ipcInvariantFull`,
+      `cspaceRevokeCdtFinalising_preserves_ipcInvariantFull` (moved here from
+      `DispatchArmPreservation`).
+  - Reachable state (`IPC/Invariant/CancelAllReachability.lean`, staged with
+    `IPC.Invariant.Reachability`):
+    - `finaliseFinalObject_preserves_ipcReachable`,
+      `retireFinalisedObject_preserves_ipcReachable`;
+    - the step invariant `finaliseStepInvariant`, which carries
+      `notificationWaiterConsistent`, `replyWaitersConsistent` and the
+      donation chain (`finaliseWrite.donationChainFrame`).
+  - Run-queue coupling (`RunQueueAgreement/Capability.lean`):
+    - `wakeCancelledWaiter_runQueueStage`,
+      `storeEndpointWaiterCancelled_runQueueStage`,
+      `notificationWaiterCancel_runQueueStage`,
+      `finaliseFinalObject_runQueueStage`;
+    - the delete's and revoke's `_runQueueStage`, rebuilt on these.
+  - Reschedule coverage (`ReschedulePendingArms/Dispatch.lean`):
+    `finaliseFinalObject_stepCovers`, `cspaceDeleteSlotFinalising_stepCovers`,
+    `cspaceRevokeCdtFinalising_stepCovers`.
+  - Information-flow projection (`InformationFlow/Invariant/FinaliseProjection.lean`,
+    staged with the reachable-state surface it composes):
+    - `finaliseFinalObject_preserves_projection`,
+      `retireFinalisedObject_preserves_projection`;
+    - these hold when the object and every thread waiting on it are hidden
+      from the observer (`waitersHidden`) and the bound thread is hidden.
+  - `storeTcbReceiveComplete_closes_exceptMembership` and the notification
+    cancellation arm take a per-thread budget fact instead of the global
+    `allTimeoutBudgetsNone`.
+- **The cross-core inventory** (`InformationFlow/NonInterferenceCrossCore.lean`).
+  - The finalising delete and the revocation now write remote cores, since
+    the wake does. The inventory counts 24 remote writers (was 22).
+  - The delete's write set is empty when the destroyed capability names
+    nothing (target `0`), and all cores otherwise.
+  - The revocation writes all cores. This is an over-approximation; see Debt.
+- **The scheduler footprint** (`Scheduler/SchedFootprint.lean`,
+  `SyscallSchedFootprint.lean`, `SyscallSchedContainment.lean`,
+  `SyscallSeamCoverage.lean`).
+  - `.cspaceDelete` and `.cspaceRevoke` now declare
+    `schedLockSet_capabilityDestroyOnCore`: every core's run lock, and no
+    replenish lock.
+  - `schedLockSet_cspaceDeleteSlotFinalising_coversWrites` and
+    `schedLockSet_cspaceRevokeCdtFinalising_coversWrites` prove that this
+    covers their writes, and the seam's `dispatchWithCapChecked_coversWrites`
+    consumes them.
+  - Eighteen arms declare a footprint and twenty-three answer `none`.
+  - Until now both arms answered `none` ("no exclusion established"), which
+    was sound but no longer described a delete that wakes threads.
+- **Tests.**
+  - `tests/VSpaceCapabilityBindingSuite.lean` §5m: deleting a bound
+    notification's last capability now unbinds its thread and retires it.
+    Part 22 asserted the notification outlived the delete; that assertion is
+    replaced.
+  - `tests/SmpCbsSuite.lean` checks that delete and revoke declare a
+    footprint unconditionally.
+  - `tests/fixtures/smp_information_flow.expected` now reads 24 remote
+    writers, and its checksum is refreshed.
+- **Exerciser** (`rust/sele4n-hal/src/smp_exercisers.rs`). It runs three new
+  scenario groups, each on a freshly carved object (`FINALISED_CHILD_IDS`):
+  - a receive blocked on a carved endpoint, then the endpoint's only
+    capability deleted (`untyped-retype-busy-endpoint`, `receive-on-carved`,
+    `busy-endpoint-delete`);
+  - a wait blocked on a carved notification, then deleted
+    (`untyped-retype-busy-notification`, `wait-on-carved`,
+    `busy-notification-delete`);
+  - a carved notification bound to the partner, then deleted
+    (`untyped-retype-bound-notification`, `bind-carved-notification`,
+    `bound-notification-delete`).
+- **Debt.** `docs/REGISTERED_DEBT.md` §C has two new rows:
+  - the delete's and revoke's core sets (the scheduler footprint, and the
+    cross-core write set of a delete that names an object and of every
+    revocation) are all cores rather than the cancelled waiters' home cores;
+  - an endpoint that a reply-blocked caller still names
+    (`.blockedOnReply endpoint`) is kept past its last capability, where seL4
+    frees it.
+
+### Validation
+
+- `./scripts/test_full.sh --continue` passes.  So do these:
+  - `./scripts/test_lean_aarch64_archive.sh`;
+  - `./scripts/test_rust.sh`;
+  - `./scripts/test_aarch64_cross_build.sh`;
+  - `lake build SeLe4n.Platform.Staged`.
+- `./scripts/test_qemu_heap_allocations_per_syscall.sh --lean-kernel` passes
+  with exact pins.
+  - `busy-endpoint-delete`, `busy-notification-delete` and
+    `bound-notification-delete` read 0 at first call and steady state.
+  - So do `receive-on-carved`, `wait-on-carved` and
+    `bind-carved-notification`.
+  - Before the two compiled forms above, `busy-notification-delete` read 7
+    and the receive, wait and bind 2 each.
+  - The carves read the object's own cells:
+    - `untyped-retype-endpoint` and `untyped-retype-notification` read 11
+      (was 9);
+    - `untyped-retype-busy-notification` and
+      `untyped-retype-bound-notification` read 11;
+    - `untyped-retype-busy-endpoint` reads 12 then 11, since it is the run's
+      first carve and takes the one cell `untyped-retype-frame`'s first call
+      used to take (11, was 12).
+  - `untyped-reset` reads 30, and every other pin is unchanged.
+
 ## v0.36.133 — WS-ZA ZA5.4 part 22: retire quiescent passive kinds; the space-slot replace finalises
 
 A delete or revoke that destroys the final capability to an endpoint, a

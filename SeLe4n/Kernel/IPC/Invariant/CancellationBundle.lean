@@ -271,7 +271,7 @@ theorem cancelIpcBlocking_preserves_ipcInvariantFull
       (Or.inr (Or.inr hIp)) hBundle hAllBudgetsNone (hArms.endpointArm ep (Or.inr (Or.inr hIp)))
   | blockedOnNotification nId =>
     exact cancelIpcBlocking_notificationArm_preserves_ipcInvariantFull st v tcbV nId hObjInv
-      hLookup hIp hBundle hAllBudgetsNone (hArms.notificationArm nId hIp)
+      hLookup hIp hBundle (hArms.notificationArm nId hIp)
   | blockedOnReply ep rt =>
     have hR := hArms.replyArm ep rt hIp
     exact cancelIpcBlocking_replyArm_preserves_ipcInvariantFull st v tcbV ep rt hObjInv hLookup

@@ -183,6 +183,94 @@ theorem untypedRetypeObject_stepCovers (e : CoreId) {src dst : CSpaceAddr}
     untypedRetypeObject_keyFrameOffChild src dst childId req st st' hInv h
   exact ⟨stepCovers_of_freshSlot e hFrame hAbs hUnq hSched hBi hPlaced, hInv'⟩
 
+/-! ### The finalising destroyers -/
+
+/-- WS-ZA ZA5.4 part 23: **an endpoint waiter's cancel covers**: the head pop
+(`endpointQueuePopHead_keyFrame`, through `popHead_inPlace`) and the waiter's
+rewrite move no key input and no scheduler field, and the wake raises the flag
+of the core it queues on (`enqueueRunnableOnCore_covers`). -/
+theorem storeEndpointWaiterCancelled_stepCovers (e : CoreId) (st : SystemState)
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (ep : Endpoint) (t : SeLe4n.ThreadId)
+    (tcb : TCB) (hInv : st.objects.invExt) (hE : st.getEndpoint? endpointId = some ep)
+    (hH : (endpointWaitQueue ep isReceiveQ).head = some t) (hT : st.getTcb? t = some tcb)
+    (hC : endpointWaiterCancellable st endpointId t tcb = true) :
+    stepCovers e st (storeEndpointWaiterCancelled st endpointId isReceiveQ t tcb.queueNext) := by
+  obtain ⟨-, -, hG⟩ := endpointWaiterCancellable_parts hC
+  have hEo := (SystemState.getEndpoint?_eq_some_iff st endpointId ep).mp hE
+  have hTo := (SystemState.getTcb?_eq_some_iff st t tcb).mp hT
+  have hH' : (if isReceiveQ then ep.receiveQ else ep.sendQ).head = some t := hH
+  obtain ⟨hPop, -⟩ := popHead_inPlace st endpointId isReceiveQ ep t tcb hEo hH' hTo hG
+  have hF1 := endpointQueuePopHead_keyFrame hInv hPop
+  unfold storeEndpointWaiterCancelled wakeCancelledWaiter
+  generalize storePopHead st endpointId isReceiveQ t tcb.queueNext = s1 at hPop hF1 ⊢
+  have hI2 := SystemState.updateTcb_preserves_objects_invExt s1 t cancelledEndpointWaiterTcb hF1.2.2
+  have hK : keyInputsEq s1 (s1.updateTcb t cancelledEndpointWaiterTcb) :=
+    keyInputsEq_updateTcb hF1.2.2 (fun _ => rfl)
+  have hS : (s1.updateTcb t cancelledEndpointWaiterTcb).scheduler = st.scheduler := by
+    rw [SystemState.updateTcb_scheduler, hF1.2.1]
+  have h1 : stepCovers e st (s1.updateTcb t cancelledEndpointWaiterTcb) :=
+    stepCovers_of_keys_sched (keyInputsEq_trans hF1.1 hK) hS
+  exact stepCovers_trans h1
+    ⟨enqueueRunnableOnCore_covers e (determineTargetCore (s1.updateTcb t cancelledEndpointWaiterTcb) t)
+      _ t hI2, enqueueRunnableOnCore_monotone e _ _ t⟩
+
+/-- WS-ZA ZA5.4 part 23: **a notification waiter's cancel covers**: the
+cancellation (`cancelIpcBlocking_stepCovers`), then the wake. -/
+theorem notificationWaiterCancel_stepCovers (e : CoreId) (st : SystemState)
+    (t : SeLe4n.ThreadId) (tcb : TCB) (hInv : st.objects.invExt) :
+    stepCovers e st (wakeCancelledWaiter (Lifecycle.Suspend.cancelIpcBlocking st t tcb) t) :=
+  stepCovers_trans (cancelIpcBlocking_stepCovers e st t tcb hInv)
+    ⟨enqueueRunnableOnCore_covers e _ _ t
+      (Lifecycle.Suspend.cancelIpcBlocking_preserves_objects_invExt st t tcb hInv),
+     enqueueRunnableOnCore_monotone e _ _ t⟩
+
+/-- WS-ZA ZA5.4 part 23: **the finalisation covers**, every step of it
+(`finaliseFinalObject_closed`): each cancel's, and the unbind's
+(`unbindNotification_keyFrame`, through `unbindNotification_of_inPlace`). -/
+theorem finaliseFinalObject_stepCovers (e : CoreId) (target : Nat) (st : SystemState)
+    (hInv : st.objects.invExt) :
+    stepCovers e st (finaliseFinalObject target st) ∧ (finaliseFinalObject target st).objects.invExt :=
+  finaliseFinalObject_closed (fun s => stepCovers e st s ∧ s.objects.invExt)
+    (fun en q s ep t tcb h hE hH hT hC =>
+      ⟨stepCovers_trans h.1 (storeEndpointWaiterCancelled_stepCovers e s en q ep t tcb h.2 hE hH hT hC),
+        (FinaliseFrame.storeEndpointWaiterCancelled s en q t _ h.2).invExt⟩)
+    (fun n s _ t tcb h _ _ _ hC =>
+      ⟨stepCovers_trans h.1 (notificationWaiterCancel_stepCovers e s t tcb h.2),
+        ((FinaliseFrame.notificationCancel s t tcb n h.2
+          (notificationWaiterCancellable_blocked hC)).trans
+          (FinaliseFrame.wakeCancelledWaiter _ t
+            (FinaliseFrame.notificationCancel s t tcb n h.2
+              (notificationWaiterCancellable_blocked hC)).invExt)).invExt⟩)
+    (fun n s _ t h _ _ hCode hIn => by
+      have hSpec := unbindNotification_of_inPlace s t hIn
+      rw [hCode, Nat.add_sub_cancel] at hSpec
+      exact stepCoversInv_trans h.1 (unbindNotification_keyFrame _ _ _ h.2 hSpec).stepCoversInv)
+    target st ⟨stepCovers_refl e st, hInv⟩
+
+/-- WS-ZA ZA5.4 part 23: **the finalising delete covers**: the delete and the
+page teardown move no key input and no scheduler field, the finalisation covers
+(`finaliseFinalObject_stepCovers`), and so does the retire. -/
+theorem cspaceDeleteSlotFinalising_stepCovers (e ec : CoreId) (addr : CSpaceAddr)
+    (st st' : SystemState) (hInv : st.objects.invExt)
+    (hStep : cspaceDeleteSlotFinalising ec addr st = .ok ((), st')) :
+    stepCovers e st st' ∧ st'.objects.invExt := by
+  obtain ⟨st1, st2, hD, hF, rfl⟩ := cspaceDeleteSlotFinalising_ok ec addr st st' hStep
+  have h1 : capabilityKeyFrame st st1 := cspaceDeleteSlot_keyInputsEq st st1 addr hInv hD
+  have h2 := h1.trans (finaliseDestroyedCapabilities_keyFrame ec _ _ st1 st2 h1.2.2 hF)
+  have h3 := finaliseFinalObject_stepCovers e (slotRetireTarget st addr.cnode addr.slot) st2 h2.2.2
+  exact stepCoversInv_trans (stepCovers_trans h2.stepCovers h3.1)
+    (retireFinalObject_keyFrame ec _ _ _ h3.2).stepCoversInv
+
+/-- WS-ZA ZA5.4 part 23: **the finalising revocation covers**, one finalising
+delete at a time. -/
+theorem cspaceRevokeCdtFinalising_stepCovers (e ec : CoreId) (addr : CSpaceAddr)
+    (st st' : SystemState) (hInv : st.objects.invExt)
+    (hStep : cspaceRevokeCdtFinalising ec addr st = .ok ((), st')) :
+    stepCovers e st st' ∧ st'.objects.invExt :=
+  cspaceRevokeCdtFinalising_closed (fun s => stepCovers e st s ∧ s.objects.invExt)
+    (fun c s s' hQ hD => stepCoversInv_trans hQ.1 (cspaceDeleteSlotFinalising_stepCovers e ec c s s' hQ.2 hD))
+    ⟨stepCovers_refl e st, hInv⟩ hStep
+
 /-! ### The capability-only arms -/
 
 /-- **Every arm `dispatchCapabilityOnly` routes covers**, on the executing core,
@@ -203,8 +291,8 @@ theorem dispatchCapabilityOnly_stepCovers {decoded : SyscallDecodeResult} {cap :
   all_goals (repeat' split at h)
   all_goals first | (cases h; done) | skip
   all_goals try first
-    | exact (cspaceDeleteSlotFinalising_keyFrame _ _ _ _ hInv h).stepCoversInv
-    | exact (cspaceRevokeCdtFinalising_keyFrame _ _ _ _ hInv h).stepCoversInv
+    | exact cspaceDeleteSlotFinalising_stepCovers _ _ _ _ _ hInv h
+    | exact cspaceRevokeCdtFinalising_stepCovers _ _ _ _ _ hInv h
     | exact (mintReplyCapWithCdt_keyFrame _ _ _ _ hInv h).stepCoversInv
     | exact (untypedResetFromCap_keyFrame _ _ _ _ _ _ hInv h).stepCoversInv
     | exact (vspaceMapFromFrameCap_keyFrame _ _ _ _ _ hInv h).stepCoversInv

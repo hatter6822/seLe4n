@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Kernel.Lifecycle.Operations.CleanupPreservation
+import SeLe4n.Model.Object.Unshare
 
 /-!
 AN4-G.5 (LIF-M05) child module extracted from
@@ -976,6 +977,32 @@ def CarveRequest.object (untypedId childId : SeLe4n.ObjId) (ut : UntypedObject) 
   | .reply => .reply (SeLe4n.Kernel.Reply.empty (SeLe4n.ReplyId.ofObjId childId))
   | .schedContext _ =>
       .schedContext (SeLe4n.Kernel.SchedContext.empty (SeLe4n.SchedContextId.ofObjId childId))
+
+/-- `CarveRequest.object` as compiled: the endpoint and the notification, built
+from constant fields alone, are closed terms the compiler would hold as one
+shared static value, so the first in-place write to a carved one (a receive's
+queue end, a wait's) would copy it; each is given its own cells where it is
+built (`KernelObject.unshareFresh`).  Every other kind is built from the carve's
+operands, so its cells are already its own. -/
+def CarveRequest.objectImpl (untypedId childId : SeLe4n.ObjId) (ut : UntypedObject) (idx : Nat) :
+    CarveRequest → KernelObject
+  | .frame => .frame (untypedNextFrame ut idx)
+  | .untyped b => .untyped (untypedNextChild ut idx untypedId b)
+  | .vspaceRoot asid => .vspaceRoot (untypedNextVSpaceRoot ut idx asid)
+  | .pageTable => .pageTable (untypedNextPageTable ut idx)
+  | .tcb dom core => .tcb (carvedTcb childId dom core)
+  | .endpoint => (KernelObject.endpoint (Endpoint.ofQueues {} {})).unshareFresh
+  | .notification =>
+      (KernelObject.notification ({ state := .idle } : Notification)).unshareFresh
+  | .cnode r _ => .cnode (carvedCNode r)
+  | .reply => .reply (SeLe4n.Kernel.Reply.empty (SeLe4n.ReplyId.ofObjId childId))
+  | .schedContext _ =>
+      .schedContext (SeLe4n.Kernel.SchedContext.empty (SeLe4n.SchedContextId.ofObjId childId))
+
+@[csimp] theorem CarveRequest.object_eq_impl :
+    @CarveRequest.object = @CarveRequest.objectImpl := by
+  funext untypedId childId ut idx req
+  cases req <;> rfl
 
 theorem CarveRequest.object_objectType (untypedId childId : SeLe4n.ObjId) (ut : UntypedObject)
     (idx : Nat) (req : CarveRequest) :

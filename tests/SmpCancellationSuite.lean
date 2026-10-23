@@ -683,11 +683,11 @@ notification arm, applied. -/
 example (n : SeLe4n.ObjId)
     (hInv : st.objects.invExt) (hLookup : lookupTcb st victim = some tcb)
     (hBlocked : tcb.ipcState = .blockedOnNotification n)
-    (hBundle : ipcInvariantFull st) (hBudgets : allTimeoutBudgetsNone st)
+    (hBundle : ipcInvariantFull st)
     (hOff : sweptThreadOffQueueChains st victim) :
     ipcInvariantFull (Lifecycle.Suspend.cancelIpcBlocking st victim tcb) :=
   cancelIpcBlocking_notificationArm_preserves_ipcInvariantFull st victim tcb n hInv hLookup
-    hBlocked hBundle hBudgets hOff
+    hBlocked hBundle hOff
 
 /-- WS-RR RR7.22 (residual, remediation): after the corrected reply arm no thread
 holds a SchedContext donated by the cancelled caller — the invariant premise the

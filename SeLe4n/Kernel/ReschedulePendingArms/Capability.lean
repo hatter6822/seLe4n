@@ -278,23 +278,6 @@ theorem retireFinalObject_keyFrame (ec : CoreId) (target recorder : Nat) (st : S
   have h := retireFinalObject_frame ec target recorder st hObjInv
   capabilityKeyFrame_of_retireTouched h.1 h.2.1 h.2.2.2.2.touched
 
-theorem cspaceDeleteSlotFinalising_keyFrame (ec : CoreId) (addr : CSpaceAddr)
-    (st st' : SystemState) (hObjInv : st.objects.invExt)
-    (hStep : cspaceDeleteSlotFinalising ec addr st = .ok ((), st')) :
-    capabilityKeyFrame st st' := by
-  obtain ⟨st1, st2, hD, hF, rfl⟩ := cspaceDeleteSlotFinalising_ok ec addr st st' hStep
-  have h1 : capabilityKeyFrame st st1 := cspaceDeleteSlot_keyInputsEq st st1 addr hObjInv hD
-  have h2 := h1.trans (finaliseDestroyedCapabilities_keyFrame ec _ _ st1 st2 h1.2.2 hF)
-  exact h2.trans (retireFinalObject_keyFrame ec _ _ st2 h2.2.2)
-
-theorem cspaceRevokeCdtFinalising_keyFrame (ec : CoreId) (addr : CSpaceAddr)
-    (st st' : SystemState) (hObjInv : st.objects.invExt)
-    (hStep : cspaceRevokeCdtFinalising ec addr st = .ok ((), st')) :
-    capabilityKeyFrame st st' :=
-  cspaceRevokeCdtFinalising_closed (capabilityKeyFrame st)
-    (fun c s s' hQ hD => hQ.trans (cspaceDeleteSlotFinalising_keyFrame ec c s s' hQ.2.2 hD))
-    (capabilityKeyFrame_of_objects_scheduler_eq hObjInv rfl rfl) hStep
-
 /-! ### VSpace and untyped -/
 
 /-- A store whose slot feeds no key on either side. -/

@@ -375,7 +375,9 @@ theorem cspaceDeleteSlot_slots {addr : CSpaceAddr} {st st' : SystemState}
 /-- **The finalising delete keeps the capability invariants**: the delete keeps
 them (`cspaceDeleteSlot_preserves_capabilityInvariantBundle`), the teardown
 after it writes neither the tree nor any slot
-(`finaliseDestroyedCapabilities_preserves_capabilityInvariantBundle`), and the
+(`finaliseDestroyedCapabilities_preserves_capabilityInvariantBundle`), the
+finalisation writes threads, endpoints and notifications only, each keeping its
+kind and slots (`finaliseFinalObject_frame`), and the
 retire takes out an object whose final capability the delete destroyed, so no
 slot names it any more, from the one untyped the recorder word read before the
 delete names (`recorderWord_spec`). -/
@@ -389,19 +391,24 @@ theorem cspaceDeleteSlotFinalising_preserves_capabilityInvariantBundle
   have h2 := finaliseDestroyedCapabilities_preserves_capabilityInvariantBundle ec _ _ st1 st2 h1 hF
   obtain ⟨-, -, hC2, hU2, -⟩ := finaliseDestroyedCapabilities_slots ec _ _ st1 st2 h1.2.2.2.2.1 hF
   obtain ⟨hC1n, hC1, hU1⟩ := cspaceDeleteSlot_slots hInv.2.2.2.2.1 hD
-  refine retireFinalObject_preserves_capabilityInvariantBundle ec _ _ st2 h2
+  -- The finalisation writes threads, endpoints and notifications only, each
+  -- keeping its kind and slots (`FinaliseFrame`).
+  have hFr := finaliseFinalObject_frame (slotRetireTarget st addr.cnode addr.slot) st2
+    h2.2.2.2.2.1
+  have h3 := capabilityInvariantBundle_of_kindPreserving h2 hFr.cdt hFr.invExt hFr.kind
+  refine retireFinalObject_preserves_capabilityInvariantBundle ec _ _ _ h3
     (fun hT r hr => ?_) (fun hT => ?_)
   · obtain ⟨c, hc, ht, hFin⟩ := slotRetireTarget_spec hInv hT
     have hAddr : SystemState.namesAt st.slotCapAt ⟨addr.cnode, addr.slot⟩
         (SeLe4n.ObjId.ofNat (slotRetireTarget st addr.cnode addr.slot - 1)) := ⟨c, hc, ht⟩
-    rw [SystemState.namesAt_of_eq (hC2 r)] at hr
+    rw [SystemState.namesAt_of_eq (hFr.slotCapAt r), SystemState.namesAt_of_eq (hC2 r)] at hr
     by_cases hra : r = addr
     · subst hra
       obtain ⟨c', hc', -⟩ := hr
       rw [hC1n] at hc'; cases hc'
     · rw [SystemState.namesAt_of_eq (hC1 r hra)] at hr
       exact hFin _ hAddr r hra hr
-  · have hU := hU2.trans hU1
+  · have hU := hFr.getUntyped?.trans (hU2.trans hU1)
     obtain ⟨hS1, hS0⟩ := recorderWord_spec st
       (SeLe4n.ObjId.ofNat (slotRetireTarget st addr.cnode addr.slot - 1)) addr.cnode addr.slot
       hInv.2.2.2.2.1
@@ -483,7 +490,8 @@ theorem cspaceDeleteSlotFinalising_ok_cdt {ec : Concurrency.CoreId} {addr : CSpa
   simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hF
   subst hF
   obtain ⟨stC, hC, rfl⟩ := cspaceDeleteSlot_ok_decompose addr st st1 hD
-  rw [retireFinalObject_cdt, finaliseDestroyedCapabilitiesState_cdt, spliceDeletedCdtNode_cdt,
+  rw [retireFinalisedObject, retireFinalObject_cdt, finaliseFinalObject_cdt,
+    finaliseDestroyedCapabilitiesState_cdt, spliceDeletedCdtNode_cdt,
     cspaceDeleteSlotCore_cdt_eq st stC addr hC]
 
 /-- A slot's link, read as the loop reads it: its two words, decoded. -/

@@ -319,6 +319,16 @@ theorem enqueueRunnableOnCore_runnable (st : SystemState) (c : Concurrency.CoreI
   simp only [RHTable_getElem?_eq_get?]
   rw [RobinHood.RHTable.getElem?_insert_self st.objects _ _ hInv]
 
+/-- A thread no core runs is no core's current thread. -/
+theorem currentNowhere_of_runningOnSomeCore_false {st : SystemState}
+    {tid : SeLe4n.ThreadId} (h : runningOnSomeCore st tid = false) (c : Concurrency.CoreId) :
+    st.scheduler.currentOnCore c ≠ some tid := by
+  simp only [runningOnSomeCore, SeLe4n.Kernel.Concurrency.allCores, List.any_eq_false] at h
+  intro hc
+  have hcc := h c (List.mem_finRange c)
+  rw [hc] at hcc
+  simp at hcc
+
 /-- The wake of an active thread current on no core: the `.ready` mark and the
 link-writing enqueue keep every current thread off the queues, queue only the
 now-runnable thread, and the enqueue guard admits no idle thread. -/

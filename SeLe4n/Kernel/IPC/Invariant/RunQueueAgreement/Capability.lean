@@ -259,20 +259,6 @@ theorem finaliseDestroyedCapabilities_runQueueStage {ec : Concurrency.CoreId} {n
   vspaceRootOnlyWrite_runQueueStage fun hInv =>
     finaliseDestroyedCapabilities_ok_frame ec named pages st st' hInv h
 
-theorem cspaceDeleteSlotFinalising_runQueueStage {ec : Concurrency.CoreId} {addr : CSpaceAddr}
-    {st st' : SystemState} (h : cspaceDeleteSlotFinalising ec addr st = .ok ((), st')) :
-    RunQueueStage st st' := by
-  obtain ⟨st1, st2, hD, hF, rfl⟩ := cspaceDeleteSlotFinalising_ok ec addr st st' h
-  exact ((cspaceDeleteSlot_runQueueStage hD).trans (finaliseDestroyedCapabilities_runQueueStage hF)).trans
-    (retireFinalObject_runQueueStage ec _ _ st2)
-
-theorem cspaceRevokeCdtFinalising_runQueueStage {ec : Concurrency.CoreId} {addr : CSpaceAddr}
-    {st st' : SystemState} (h : cspaceRevokeCdtFinalising ec addr st = .ok ((), st')) :
-    RunQueueStage st st' :=
-  cspaceRevokeCdtFinalising_closed (RunQueueStage st)
-    (fun _ _ _ hQ hD => hQ.trans (cspaceDeleteSlotFinalising_runQueueStage hD))
-    (RunQueueStage.refl st) h
-
 /-- A store whose slot holds no TCB on either side. -/
 theorem storeObject_inert_runQueueStage {st st' : SystemState} {oid : SeLe4n.ObjId}
     {obj old : KernelObject} (hStore : storeObject oid obj st = .ok ((), st'))
@@ -473,6 +459,101 @@ theorem unbindNotification_runQueueStage {st st' : SystemState} {tcbId : SeLe4n.
             exact k1.trans (storeObject_inert_runQueueStage hStore2
               ((SystemState.getNotification?_eq_some_iff _ nid ntfn).mp hN1) (fun _ h => KernelObject.noConfusion h) (fun _ h => KernelObject.noConfusion h))
         · cases h; exact k1
+
+/-! ### The finalisation of a final delete's object -/
+
+/-- **A cancelled waiter's wake is a stage**: the walk asked that no core runs
+the thread (`cancelledWaiterWakeable`), and the thread is active. -/
+theorem wakeCancelledWaiter_runQueueStage (st : SystemState) (t : SeLe4n.ThreadId)
+    (hRun : runningOnSomeCore st t = false) (hA : st.activeAt t) :
+    RunQueueStage st (wakeCancelledWaiter st t) :=
+  enqueueRunnableOnCore_runQueueStage st _ t
+    (fun c => currentNowhere_of_runningOnSomeCore_false hRun c) hA
+
+/-- **An endpoint waiter's cancel is a stage**: the head pop
+(`endpointQueuePopHead_runQueueStage`, through `popHead_inPlace`), the waiter's
+TCB rewritten with its run-queue links and its activity kept and its IPC state
+made `.ready`, and the wake of a thread no core runs. -/
+theorem storeEndpointWaiterCancelled_runQueueStage (st : SystemState)
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (ep : Endpoint) (t : SeLe4n.ThreadId)
+    (tcb : TCB) (hE : st.getEndpoint? endpointId = some ep)
+    (hH : (endpointWaitQueue ep isReceiveQ).head = some t) (hT : st.getTcb? t = some tcb)
+    (hC : endpointWaiterCancellable st endpointId t tcb = true) :
+    RunQueueStage st (storeEndpointWaiterCancelled st endpointId isReceiveQ t tcb.queueNext) := by
+  refine RunQueueStage.of_invExt fun hInv => ?_
+  obtain ⟨hW, -, hG⟩ := endpointWaiterCancellable_parts hC
+  simp only [cancelledWaiterWakeable, Bool.and_eq_true, decide_eq_true_eq,
+    Bool.not_eq_true'] at hW
+  have hEo := (SystemState.getEndpoint?_eq_some_iff st endpointId ep).mp hE
+  have hTo := (SystemState.getTcb?_eq_some_iff st t tcb).mp hT
+  have hH' : (if isReceiveQ then ep.receiveQ else ep.sendQ).head = some t := hH
+  obtain ⟨hPop, hFr⟩ := popHead_inPlace st endpointId isReceiveQ ep t tcb hEo hH' hTo hG
+  have hS1 := endpointQueuePopHead_scheduler_eq endpointId isReceiveQ st _ t hPop
+  have hI1 :=
+    endpointQueuePopHead_preserves_objects_invExt endpointId isReceiveQ st _ t tcb hInv hPop
+  unfold storeEndpointWaiterCancelled wakeCancelledWaiter
+  generalize storePopHead st endpointId isReceiveQ t tcb.queueNext = s1 at hPop hFr hS1 hI1 ⊢
+  have hM : TCB.StateMono cancelledEndpointWaiterTcb := fun x =>
+    ⟨fun _ => TCB.ipcState_setIpcState
+      { x with pendingMessage := none, pendingReceiveReplyCode := 0 } .ready, id⟩
+  refine ((endpointQueuePopHead_runQueueStage hPop).trans
+    (RunQueueStage.updateTcb s1 t (f := cancelledEndpointWaiterTcb) (fun _ _ => rfl) hM)).trans
+    (enqueueRunnableOnCore_runQueueStage _ _ t (fun c => ?_) ?_)
+  · have hR : runningOnSomeCore (s1.updateTcb t cancelledEndpointWaiterTcb) t =
+        runningOnSomeCore st t := by
+      unfold runningOnSomeCore; rw [SystemState.updateTcb_scheduler, hS1]
+    exact currentNowhere_of_runningOnSomeCore_false (hR.trans hW.2) c
+  · exact ⟨cancelledEndpointWaiterTcb (tcbOffQueue tcb),
+      by rw [SystemState.updateTcb_getTcb?_self _ _ _ hI1, hFr.head_tcb]; rfl, hW.1⟩
+
+/-- **A notification waiter's cancel is a stage**: the cancellation
+(`cancelIpcBlocking_runQueueStage`) keeps the thread active
+(`cancelIpcBlocking_stateMono`) and moves no core's current thread, then the
+wake. -/
+theorem notificationWaiterCancel_runQueueStage (st : SystemState)
+    (notificationId : SeLe4n.ObjId) (t : SeLe4n.ThreadId) (tcb : TCB)
+    (hT : st.getTcb? t = some tcb)
+    (hC : notificationWaiterCancellable st notificationId t tcb = true) :
+    RunQueueStage st (wakeCancelledWaiter (Lifecycle.Suspend.cancelIpcBlocking st t tcb) t) := by
+  refine RunQueueStage.of_invExt fun hInv => ?_
+  obtain ⟨-, -, -, -, hW⟩ := notificationWaiterCancellable_parts hC
+  simp only [cancelledWaiterWakeable, Bool.and_eq_true, decide_eq_true_eq,
+    Bool.not_eq_true'] at hW
+  refine (cancelIpcBlocking_runQueueStage st t tcb).trans
+    (wakeCancelledWaiter_runQueueStage _ t ?_
+      ((cancelIpcBlocking_stateMono st t tcb hInv).activeAt ⟨tcb, hT, hW.1⟩))
+  unfold runningOnSomeCore
+  rw [Lifecycle.Suspend.cancelIpcBlocking_scheduler_eq]
+  exact hW.2
+
+/-- **The finalisation is a run-queue stage**, every step of it
+(`finaliseFinalObject_closed`): each cancel's, and the unbind's
+(`unbindNotification_runQueueStage`, through `unbindNotification_of_inPlace`). -/
+theorem finaliseFinalObject_runQueueStage (target : Nat) (st : SystemState) :
+    RunQueueStage st (finaliseFinalObject target st) :=
+  finaliseFinalObject_closed (RunQueueStage st)
+    (fun e q s ep t tcb h hE hH hT hC =>
+      h.trans (storeEndpointWaiterCancelled_runQueueStage s e q ep t tcb hE hH hT hC))
+    (fun n s _ t tcb h _ _ hT hC => h.trans (notificationWaiterCancel_runQueueStage s n t tcb hT hC))
+    (fun n s _ t h _ _ hCode hIn => by
+      have hSpec := unbindNotification_of_inPlace s t hIn
+      rw [hCode, Nat.add_sub_cancel] at hSpec
+      exact h.trans (unbindNotification_runQueueStage hSpec))
+    target st (RunQueueStage.refl st)
+
+theorem cspaceDeleteSlotFinalising_runQueueStage {ec : Concurrency.CoreId} {addr : CSpaceAddr}
+    {st st' : SystemState} (h : cspaceDeleteSlotFinalising ec addr st = .ok ((), st')) :
+    RunQueueStage st st' := by
+  obtain ⟨st1, st2, hD, hF, rfl⟩ := cspaceDeleteSlotFinalising_ok ec addr st st' h
+  exact (((cspaceDeleteSlot_runQueueStage hD).trans (finaliseDestroyedCapabilities_runQueueStage hF)).trans
+    (finaliseFinalObject_runQueueStage _ st2)).trans (retireFinalObject_runQueueStage ec _ _ _)
+
+theorem cspaceRevokeCdtFinalising_runQueueStage {ec : Concurrency.CoreId} {addr : CSpaceAddr}
+    {st st' : SystemState} (h : cspaceRevokeCdtFinalising ec addr st = .ok ((), st')) :
+    RunQueueStage st st' :=
+  cspaceRevokeCdtFinalising_closed (RunQueueStage st)
+    (fun _ _ _ hQ hD => hQ.trans (cspaceDeleteSlotFinalising_runQueueStage hD))
+    (RunQueueStage.refl st) h
 
 /-! ### Page tables and the untyped carve -/
 

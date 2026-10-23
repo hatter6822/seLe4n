@@ -1253,8 +1253,8 @@ private def runSyscallSchedResolverScenarios : IO Unit := do
   -- (iv) The undeclared arms, on a state and operands that would satisfy a
   -- declared one — so the `none` is the inventory's answer rather than a
   -- missing operand's.
-  assertBool "NEGATIVE: nineteen arms declare nothing on fully-supplied operands"
-    ([SyscallId.cspaceMint, .cspaceCopy, .cspaceMove, .cspaceDelete, .mintReplyCap,
+  assertBool "NEGATIVE: eighteen arms declare nothing on fully-supplied operands"
+    ([SyscallId.cspaceMint, .cspaceCopy, .cspaceMove, .mintReplyCap,
       .vspaceMap, .vspaceUnmap, .vspaceUnifyInstruction,
       .serviceRegister, .serviceRevoke, .serviceQuery,
       .tcbSetIPCBuffer, .tcbSetFaultHandler,
@@ -1274,6 +1274,13 @@ private def runSyscallSchedResolverScenarios : IO Unit := do
       .notificationSignal, .notificationWait,
       .send, .receive, .call, .reply, .replyRecv].filter
         (fun sid => declaredSchedFootprintSyscall sid)).length = 15))
+  -- (vi) WS-ZA ZA5.4 part 23: the finalising delete and the revocation declare
+  -- whatever the operands — every core's run queue, since a destroyed
+  -- endpoint's or notification's cancelled waiters wake on their own cores.
+  assertBool "the capability destroys declare unconditionally"
+    ([SyscallId.cspaceDelete, .cspaceRevoke].all fun sid =>
+      declaredSchedFootprintSyscall sid &&
+        (schedLockSetForSyscall sid { caller := tid0 } bootCoreId st).isSome)
 
 def main : IO Unit := do
   IO.println "=== WS-SM SM5.H — Per-core CBS suite ==="

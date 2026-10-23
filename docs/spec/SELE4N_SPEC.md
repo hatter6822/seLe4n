@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.133` (`lakefile.toml`) |
+| **Package version** | `0.36.134` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 494,399 across 445 Lean files |
-| **Test LoC** | 86,435 across 70 Lean test suites |
-| **Proved declarations** | 17,893 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 497,186 across 451 Lean files |
+| **Test LoC** | 86,446 across 70 Lean test suites |
+| **Proved declarations** | 18,002 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits) |
 | **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2), and **BP4.1/BP4.2 (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type)** at v0.36.2 (§6.2.9), and **BP4.3/BP4.4 (the firmware's device tree reaching Lean, and the entry booting the deployment on the variant it describes)** at v0.36.2 (§6.2.10), and **BP4.5 (the image's loaded bytes cleaned to the Point of Unification before any thread can fetch)** at v0.36.2 (§6.2.11), and **BP4.6 (the verified board's RAM outside the kernel's extent mapped, and the boot map sealed before any secondary is released)** and **BP4.7 (that RAM handed to the root task as untypeds)** at v0.36.2 (§6.2.12), and **BP5.1 (the kernel image, a bare-metal binary entered at `_start` under `link.ld`)** and **BP5.2 (the Lean kernel linked into it, under `--gc-sections` from the archive lane's roots)** and **BP5.3 (the firmware's boot files, `kernel8.img` and `config.txt`, cut from that image and checked against it)** and **BP5.4 (its size and section map published with every CI run)** at v0.36.2 (§6.2.13), and **BP5.5 (the firmware's EL2 entry dropped to EL1, with the PSCI conduit following the entry level)** at v0.36.2 (§6.2.15), and **BP6 (every PE marks itself ready after its own per-PE runtime handshake and before it unmasks IRQs, and the boot halts unless every declared PE serves the kernel)** at v0.36.2 (§6.2.16), and **BP7.10 (the first gigabyte's RAM read off the firmware's account, and the constant boot map shrunk to the kernel's reserved extent)** at v0.36.3 (§6.2.17), and **BP7.1 slices 1–3 (frame capabilities, the untyped carve that mints them, and the untyped reset that returns their memory)** at v0.36.4, v0.36.5 and v0.36.6, slice 4a (child untypeds and subtree resets) at v0.36.8, the in-place VSpace-root refusal at v0.36.9, and slice 4b's VSpace-root carve at v0.36.10, `.tcbSetSpace` (a thread runs in a carved address space) at v0.36.11, intermediate page tables at v0.36.12, and every configured address space owning a table page at v0.36.13, which completes BP7.1 (§8.10.2a); BP7.2's user window and 16-bit hardware ASIDs at v0.36.14 and its physical-write ledger and translation install at v0.36.15; BP7.3–BP7.9 at v0.36.16–v0.36.22 (the whole trap frame saved, per-core restore staging, unblock-frame delivery, the live context restore, the delivered declassified badge, overflow message registers, lazily switched FP/SIMD state); and BP7.11 (the boot starts both initial threads, one per domain) at v0.36.23, which completes BP7; BP8.1's first slice (the image built for QEMU's `virt` — its device map from `src/board.rs`, its link script derived from `link.ld`, an arm64 Image header on `_start` — booted there at EL1 and at EL2 by `scripts/test_qemu.sh`) at v0.36.24, and its second (the Lean `virt` binding `SeLe4n/Platform/QemuVirt/` — its board check the RPi5 bridge's own coverage predicates, the RPi5 deployment's layout on it with every boot gate decided, and its own boot entry `lean_kernel_main_qemu_virt`, held by the boot-entry contract's table to its own approved call) at v0.36.25, and its third (the Lean-linked image booted by `scripts/test_qemu.sh --lean-kernel` on four PEs at EL1 and EL2 to every core's first idle dispatch, on every PR — §6.2.18) at v0.36.26, completing BP8.1, and BP8.2 (the four-PE bring-up gate, executed on every PR — §6.2.18) at v0.36.27. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -4959,8 +4959,7 @@ through the same `retireRecordedObject` as a carved object.  **A kernel object
 that is not quiescent, or is named outside a slot, still outlives its last
 capability**, as every kernel object did before `v0.36.133`, and stays recorded
 by its untyped: an endpoint or notification with waiters or a bound thread
-until row 23 of `docs/planning/UNTYPED_RESET_PLAN.md` (`cancelAllIPC`,
-`unbindMaybeNotification`, `cancelAllSignals`), a TCB or scheduling context
+until `v0.36.134` (row 23 of `docs/planning/UNTYPED_RESET_PLAN.md`, below), a TCB or scheduling context
 until row 24, a busy reply or a scheduling context with a reply stack until
 row 25, and a CNode holding capabilities until row 26 (the zombie loop).  The
 names-by-id check walks the object table once per final delete of a passive
@@ -4993,7 +4992,77 @@ page table and records no page retires without building the slot's address or
 the teardown lists (`cspaceDeleteTeardownAt_of_nothing`), so each passive
 kind's delete allocates nothing (`endpoint-delete`, `notification-delete`,
 `reply-delete`, `cnode-delete` read 0; their carves read the object's own
-cells, 9, 9, 12 and 29).
+cells, 11, 11, 12 and 29 — an endpoint's and a notification's 9 until
+`v0.36.134`, when the carve began rebuilding the shared constant each is built
+from, below).
+
+**Endpoint and notification finalisation** (`v0.36.134`).  Before the retire,
+the finalising delete runs seL4's `finaliseCap` on an endpoint or a
+notification whose final capability it destroyed (`finaliseFinalObject`,
+`SeLe4n/Kernel/IPC/Operations/CancelAll.lean`): an endpoint's waiters are all
+cancelled (`cancelAllIpc`, seL4's `cancelAllIPC`), and a notification is
+unbound from its bound thread and then its waiters are cancelled
+(`unbindMaybeNotification`, `cancelAllSignals`).  `retireFinalisedObject` —
+the finalisation, then `retireFinalObject` — is the last write of the
+finalising delete and of the compiled teardowns, so every revoke finalises
+through its deletes.  Nothing is finalised for an object a service
+registration or an interrupt handler still names, since seL4 would hold a
+capability there and the slot's would not be final.
+
+Each walk takes its queue's head, one waiter at a time, through the links
+held in the threads themselves, and builds nothing: an endpoint's head is
+popped in place as a rendezvous pops it (`storePopHead`, equal to the
+specification's `endpointQueuePopHead` by `popHead_inPlace`), a
+notification's head leaves its queue as a cancelled thread leaves it
+(`cancelIpcBlocking`'s notification arm), and the unbind rewrites both sides
+where they stand (`storeUnbindNotification`).  Every check precedes the step's
+writes: the waiter is active and runs on no core (`cancelledWaiterWakeable`);
+at an endpoint it holds no timeout budget and every write of the pop stays in
+its slot (`endpointWaiterCancellable`); at a notification it is no reserved
+thread, is blocked on that notification and is linked into no endpoint queue
+(`notificationWaiterCancellable`).  A refused step ends the walk, and the
+object, then not quiescent, is kept by the retire; the walk's fuel is the
+object table's size.  A cancelled waiter becomes `.ready` with no pending
+message or stashed reply and the `.ipcCancelled` frame staged
+(`Architecture.cancelledIpcFrame`), and is woken on its own core
+(`determineTargetCore`, `enqueueRunnableOnCore`).  seL4 sets the thread
+`Restart`, so it reissues its system call; this model's answer to a cancelled
+IPC is the `.ipcCancelled` frame, the one `cancelIpcBlocking` already gives.
+
+The finalisation keeps the IPC bundle (`finaliseFinalObject_preserves_ipcInvariantFull`,
+each step by `storeEndpointWaiterCancelled_preserves_ipcInvariantFull`,
+`notificationWaiterCancel_preserves_ipcInvariantFull` and
+`storeUnbindNotification_preserves_ipcInvariantFull`), the reachable IPC state
+— `notificationWaiterConsistent`, the reply-waiter links and the donation
+chain included (`finaliseFinalObject_preserves_ipcReachable`, over the step
+invariant `finaliseStepInvariant`) — run-queue coupling
+(`finaliseFinalObject_runQueueStage`), reschedule coverage
+(`finaliseFinalObject_stepCovers`), and teardown well-formedness and the
+capability bundle through its write frame (`finaliseFinalObject_frame`: it
+writes threads, endpoints and notifications only, each keeping its kind and
+slots).  It is invisible to an observer the object, each thread waiting on it
+and its bound thread are hidden from (`finaliseFinalObject_preserves_projection`).
+Because a cancelled waiter is woken on its own core, `.cspaceDelete` and
+`.cspaceRevoke` write remote cores: both are cross-core remote writers (the
+delete writing no core when its capability names nothing) and declare a
+scheduler footprint of every core's run lock
+(`schedLockSet_capabilityDestroyOnCore`), proven to cover their writes
+(`schedLockSet_cspaceDeleteSlotFinalising_coversWrites`,
+`schedLockSet_cspaceRevokeCdtFinalising_coversWrites`).  Both core sets
+over-approximate the cancelled waiters' home cores, and an endpoint that a
+reply-blocked caller still names is kept (`docs/REGISTERED_DEBT.md`).  The
+busy-endpoint, waiting-notification and bound-notification deletes
+allocate nothing (`busy-endpoint-delete`, `busy-notification-delete`,
+`bound-notification-delete` read 0): an endpoint's step writes each cell in its
+slot, and a notification's is compiled as its in-place writes
+(`storeNotificationWaiterCancelled`, equal to the specification's
+`cancelIpcBlocking` step by `cancelIpcBlocking_notificationHead_inPlace`,
+substituted by `cancelNotificationQueue_eq_impl`).  So does the receive, wait
+or bind that made each object busy (`receive-on-carved`, `wait-on-carved`,
+`bind-carved-notification` read 0): a carved endpoint or notification is built
+from constant fields, which the compiler holds as one shared static value, so
+the carve now gives it its own cells (`CarveRequest.object_eq_impl`, through
+`KernelObject.unshareFresh`), and each carve reads 11.
 
 ### 8.6.1 Carve Refusal Order (`v0.36.125`)
 
