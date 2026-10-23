@@ -1,8 +1,8 @@
 {
   "description": "This GitBook is the long-form guide for seLe4n — a production-oriented microkernel written in Lean 4 with machine-checked proofs, targeting Raspberry Pi 5.",
   "current_state_bullets": [
-    "**Version:** 0.36.130 (Lean v4.28.0).",
-    "**Codebase metrics:** 490,171 production LoC across 443 Lean files, 86,182 test LoC across 70 suites, 17,734 proved declarations, zero `sorry` and zero `axiom`. Regenerate with `python3 scripts/report_current_state.py`.",
+    "**Version:** 0.36.131 (Lean v4.28.0).",
+    "**Codebase metrics:** 491,326 production LoC across 444 Lean files, 86,200 test LoC across 70 suites, 17,776 proved declarations, zero `sorry` and zero `axiom`. Regenerate with `python3 scripts/report_current_state.py`.",
     "**Registered debt:** [`docs/REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) — every deferred item, with an owner and a closure target.",
     "**Hardware target:** Raspberry Pi 5 (ARM64).",
     "**Metrics source of truth:** [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key). Cross-check with `./scripts/report_current_state.py`.",
