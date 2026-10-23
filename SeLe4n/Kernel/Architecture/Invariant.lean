@@ -451,6 +451,14 @@ private theorem default_ipcSchedulerContractPredicates :
   · intro tid tcb eid rt hObj; exact default_objects_absurd hObj
   · intro tid tcb nid hObj; exact default_objects_absurd hObj
 
+/-- No slot of the default state holds a capability: it has no objects. -/
+private theorem default_slotCapAt_none (r : SlotRef) :
+    (default : SystemState).slotCapAt r = none := by
+  rw [SystemState.slotCapAt_eq_bind]
+  cases h : (default : SystemState).objects[r.cnode]? with
+  | none => rfl
+  | some o => exact default_objects_absurd h
+
 /-- WS-H4 refactor: Extract default-state capabilityInvariantBundle construction
 to eliminate 4x duplication in `default_system_state_proofLayerInvariantBundle`.
 All components are vacuously true (empty objects and derivation tree) or use
@@ -470,13 +478,11 @@ private theorem default_capabilityInvariantBundle :
      cases h : (default : SystemState).objects[r.cnode]? with
      | none => rfl
      | some o => exact default_objects_absurd h,
-   ⟨fun r hr => absurd (by
-       rw [SystemState.slotCapAt_eq_bind]
-       cases h : (default : SystemState).objects[r.cnode]? with
-       | none => rfl
-       | some o => exact default_objects_absurd h) hr,
+   ⟨fun r hr => absurd (default_slotCapAt_none r) hr,
     ⟨[], CapDerivationTree.TreeOrder.empty_tree CapDerivationTree.empty_edges
-      CapDerivationTree.empty_rootChains⟩⟩⟩
+      CapDerivationTree.empty_rootChains⟩,
+    fun r _ h => absurd (default_slotCapAt_none r) (SystemState.namesAt_occupied h),
+    fun _ _ _ _ _ hp => absurd (default_slotCapAt_none _) hp⟩⟩
 
 -- WS-H12e: Default-state proofs for new invariant components
 

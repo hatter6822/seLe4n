@@ -1444,6 +1444,30 @@ def untypedCapabilityDuplicateBootError : String :=
   "boot: two capabilities name one boot untyped, so two could carve its memory " ++
     "(WS-ZA ZA5.4 part 13)"
 
+/-- **WS-ZA ZA5.4 part 18**: the tenth `wellFormed` conjunct — **every boot
+    capability names an object the boot installs.**
+
+    The capability invariant holds every capability to a live object
+    (`TreeShapeOver.live`, seL4's `valid_cap`): the object a capability names
+    (`Capability.namedObject`) is in the store.  No transition makes a
+    capability to an absent object, but the boot installs the configuration's
+    capabilities as given, and the objects it installs are the configured ones
+    and the boot VSpace root; a capability naming anything else would dangle
+    from the first instruction.  seL4's boot creates every object before the
+    capability to it; this refuses a configuration that names one it does not
+    create.  Not attacker-reachable — the configuration is the integrator's. -/
+def bootCapabilitiesNameInstalledObjects (config : PlatformConfig) : Bool :=
+  (config.initialObjects.flatMap bootEntryCapabilities).all fun c =>
+    match c.namedObject with
+    | none => true
+    | some o => config.initialObjects.any (fun e => decide (e.id = o)) ||
+        config.bootVSpaceRoot.any (fun v => decide (v.id = o))
+
+/-- The tenth conjunct's diagnostic. -/
+def bootCapabilityDanglingBootError : String :=
+  "boot: a capability names an object the configuration does not install " ++
+    "(WS-ZA ZA5.4 part 18)"
+
 /-- U6-E/F: A well-formed PlatformConfig has unique IRQs, unique object IDs,
     (WS-RR RR5.13, PR #889 review) keeps the per-core idle slots free,
     (PR #889 review rounds 7 and 8) stores every TCB, SchedContext and Reply
@@ -1451,14 +1475,14 @@ def untypedCapabilityDuplicateBootError : String :=
     root and the per-core idle threads, (round 23) declares between one and
     `numCores` PEs, (WS-BP BP3.2) places every boot untyped over memory it
     may describe, (WS-BP BP7.1) gives every configured address space a
-    table page of its own, and (WS-ZA ZA5.4 part 13) names each boot untyped
-    by at most one capability. -/
+    table page of its own, (WS-ZA ZA5.4 part 13) names each boot untyped
+    by at most one capability, and (part 18) names only objects it installs. -/
 def PlatformConfig.wellFormed (config : PlatformConfig) : Bool :=
   irqsUnique config.irqTable && objectIdsUnique config.initialObjects &&
     idleSlotsReserved config && embeddedIdentitiesMatchSlots config &&
     objectBudgetRespected config && declaredCoreCountInRange config &&
     untypedPlacementRespected config && bootRootTablesPlaced config &&
-    untypedCapabilitiesUnique config
+    untypedCapabilitiesUnique config && bootCapabilitiesNameInstalledObjects config
 
 /-- **PR #889 review round 23**: a well-formed config declares at least one PE
     and no more than the model has.  Zero is what this refuses: the derivation
@@ -1478,6 +1502,12 @@ theorem PlatformConfig.wellFormed_bootRootTablesPlaced (config : PlatformConfig)
     at most one capability. -/
 theorem PlatformConfig.wellFormed_untypedCapabilitiesUnique (config : PlatformConfig)
     (h : config.wellFormed = true) : untypedCapabilitiesUnique config = true := by
+  simp_all only [PlatformConfig.wellFormed, Bool.and_eq_true]
+
+/-- **WS-ZA ZA5.4 part 18**: a well-formed config's capabilities name only
+    objects the boot installs. -/
+theorem PlatformConfig.wellFormed_bootCapabilitiesNameInstalledObjects (config : PlatformConfig)
+    (h : config.wellFormed = true) : bootCapabilitiesNameInstalledObjects config = true := by
   simp_all only [PlatformConfig.wellFormed, Bool.and_eq_true]
 
 /-- **WS-BP BP3.2**: a well-formed config places every boot untyped over
@@ -1519,7 +1549,8 @@ def wellFormedConjuncts (config : PlatformConfig) : List (Bool × String) :=
    (declaredCoreCountInRange config, declaredCoreCountBootError),
    (untypedPlacementRespected config, untypedPlacementBootError),
    (bootRootTablesPlaced config, bootRootTablesBootError),
-   (untypedCapabilitiesUnique config, untypedCapabilityDuplicateBootError)]
+   (untypedCapabilitiesUnique config, untypedCapabilityDuplicateBootError),
+   (bootCapabilitiesNameInstalledObjects config, bootCapabilityDanglingBootError)]
 
 /-- The first conjunct `config` fails, reported in its own words. -/
 def wellFormedDiagnostic (config : PlatformConfig) : String :=
@@ -4247,6 +4278,13 @@ theorem untypedCapabilitiesUnique_withoutExtents (c : PlatformConfig) :
   simp only [ObjectEntry.withoutUntypedExtent_id, ObjectEntry.withoutUntypedExtent_obj]
   cases e.obj <;> rfl
 
+theorem bootCapabilitiesNameInstalledObjects_withoutExtents (c : PlatformConfig) :
+    bootCapabilitiesNameInstalledObjects c.withoutExtents =
+      bootCapabilitiesNameInstalledObjects c := by
+  unfold bootCapabilitiesNameInstalledObjects PlatformConfig.withoutExtents
+  simp only [List.flatMap_map, bootEntryCapabilities_withoutUntypedExtent, List.any_map,
+    Function.comp_def, ObjectEntry.withoutUntypedExtent_id]
+
 theorem declaredCoreCountInRange_withoutExtents (c : PlatformConfig) :
     declaredCoreCountInRange c.withoutExtents = declaredCoreCountInRange c := rfl
 
@@ -4336,11 +4374,13 @@ theorem PlatformConfig.wellFormed_of_withoutExtents (c c' : PlatformConfig)
   rw [hEq, declaredCoreCountInRange_withoutExtents] at h6
   have h8 := untypedCapabilitiesUnique_withoutExtents c
   rw [hEq, untypedCapabilitiesUnique_withoutExtents] at h8
+  have h9 := bootCapabilitiesNameInstalledObjects_withoutExtents c
+  rw [hEq, bootCapabilitiesNameInstalledObjects_withoutExtents] at h9
   unfold PlatformConfig.wellFormed at hWf ⊢
   simp only [Bool.and_eq_true] at hWf ⊢
-  obtain ⟨⟨⟨⟨⟨⟨⟨⟨w1, w2⟩, w3⟩, w4⟩, w5⟩, w6⟩, _⟩, w7⟩, w8⟩ := hWf
-  exact ⟨⟨⟨⟨⟨⟨⟨⟨h1 ▸ w1, h2 ▸ w2⟩, h3 ▸ w3⟩, h4 ▸ w4⟩, h5 ▸ w5⟩, h6 ▸ w6⟩, hPlace⟩, h7 ▸ w7⟩,
-    h8 ▸ w8⟩
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨w1, w2⟩, w3⟩, w4⟩, w5⟩, w6⟩, _⟩, w7⟩, w8⟩, w9⟩ := hWf
+  exact ⟨⟨⟨⟨⟨⟨⟨⟨⟨h1 ▸ w1, h2 ▸ w2⟩, h3 ▸ w3⟩, h4 ▸ w4⟩, h5 ▸ w5⟩, h6 ▸ w6⟩, hPlace⟩, h7 ▸ w7⟩,
+    h8 ▸ w8⟩, h9 ▸ w9⟩
 
 /-- PR #889 review round 3: the idle store over a **declared** core list — the
     cores a platform binding says exist (`PlatformBinding.declaredCores`), rather than
@@ -7596,6 +7636,102 @@ theorem bootFromPlatformCheckedWithIdleThreadsFor_ok_capObject_of_config
         split
         · rw [hc]; exact hn _ _
         · rfl) hs
+
+/-- **WS-ZA ZA5.4 part 18**: a configured object's slot capability is one of
+    its boot capabilities (`bootEntryCapabilities`). -/
+theorem mem_bootEntryCapabilities_of_slotCap {e : ObjectEntry} {s : SeLe4n.Slot}
+    {c : Capability} (hs : e.obj.slotCap s = some c) : c ∈ bootEntryCapabilities e := by
+  unfold bootEntryCapabilities
+  cases ho : e.obj with
+  | cnode cn =>
+    rw [ho] at hs
+    simp only [KernelObject.slotCap, CNode.lookup_eq_lookupCells, CNode.lookupCells,
+      slotArrayGet] at hs
+    split at hs
+    · rename_i hl
+      exact List.mem_filterMap.mpr ⟨some c, Array.mem_toList_iff.mpr (hs ▸ Array.getElem_mem hl), rfl⟩
+    · cases hs
+  | tcb t =>
+    rw [ho] at hs
+    simp only [KernelObject.slotCap, TCB.spaceSlotCap] at hs
+    split at hs
+    · rename_i hl
+      exact List.mem_filterMap.mpr ⟨some c, Vector.mem_toList_iff.mpr (hs ▸ Vector.getElem_mem hl), rfl⟩
+    · cases hs
+  | _ => rw [ho] at hs; cases hs
+
+/-- **WS-ZA ZA5.4 part 18**: the idle-storing boot installs the boot VSpace root. -/
+theorem bootFromPlatformCheckedWithIdleThreadsFor_ok_bootVSpaceRoot_present
+    (cores : List SeLe4n.Kernel.Concurrency.CoreId) (config : PlatformConfig)
+    (ist : IntermediateState) (h : bootFromPlatformCheckedWithIdleThreadsFor cores config = .ok ist)
+    (v : BootVSpaceRootEntry) (hv : config.bootVSpaceRoot = some v) :
+    ist.state.objects[v.id]? ≠ none := by
+  cases hChecked : bootFromPlatformChecked config with
+  | error err =>
+    rw [bootFromPlatformCheckedWithIdleThreadsFor_rejects_invalid cores config err hChecked] at h
+    cases h
+  | ok base =>
+    have hNd := bootFromPlatformCheckedWithIdleThreadsFor_ok_nodup cores config ist h
+    rw [bootFromPlatformCheckedWithIdleThreadsFor_map_ok cores config base hChecked
+      (bootFromPlatformCheckedWithIdleThreadsFor_ok_affinitiesDeclared cores config ist h)
+      hNd] at h
+    injection h with h
+    subst h
+    obtain ⟨hWf, _, hShape⟩ := bootFromPlatformChecked_ok_shape config base hChecked
+    have hNotIdle := idleSlotsReserved_bootVSpaceRoot config
+      (PlatformConfig.wellFormed_idleSlotsReserved config hWf) v hv
+    rw [foldl_storeIdleThread_objects_frame_of_not_idle cores base v.id
+      (fun c _ => SeLe4n.Kernel.idleThreadId_toObjId_ne_of_not_isIdleObjId v.id hNotIdle c)]
+    rcases hShape with ⟨hNone, -⟩ | ⟨entry, hSome, rfl⟩
+    · rw [hv] at hNone; cases hNone
+    · rw [hv] at hSome; cases hSome
+      rw [bootEnableInterruptsOp_objects_eq, installBootVSpaceRoot_objects_lookup]
+      exact Option.some_ne_none _
+
+/-- **WS-ZA ZA5.4 part 18**: **every capability the idle-storing boot installs
+    names an object it installs** — the capability invariant's live-object
+    conjunct at boot.  A capability is a configured object's
+    (`bootFromPlatformCheckedWithIdleThreadsFor_ok_capObject_of_config`), so one
+    of the configuration's boot capabilities, which the configuration check
+    holds to configured objects and the boot root
+    (`bootCapabilitiesNameInstalledObjects`); the boot installs each. -/
+theorem bootFromPlatformCheckedWithIdleThreadsFor_ok_capabilitiesLive
+    (cores : List SeLe4n.Kernel.Concurrency.CoreId) (config : PlatformConfig)
+    (ist : IntermediateState) (h : bootFromPlatformCheckedWithIdleThreadsFor cores config = .ok ist)
+    (r : SlotRef) (o : SeLe4n.ObjId) (hN : SystemState.namesAt ist.state.slotCapAt r o) :
+    ist.state.objectPresent o := by
+  obtain ⟨c, hc, hn⟩ := hN
+  rw [SystemState.slotCapAt_eq_bind] at hc
+  cases hO : ist.state.objects[r.cnode]? with
+  | none => rw [hO] at hc; cases hc
+  | some obj =>
+    rw [hO, Option.bind_some] at hc
+    obtain ⟨e, he, -, hObj⟩ := bootFromPlatformCheckedWithIdleThreadsFor_ok_capObject_of_config
+      cores config ist h r.cnode obj hO r.slot (by rw [hc]; exact Option.some_ne_none _)
+    have hMem := mem_bootEntryCapabilities_of_slotCap (e := e) (s := r.slot) (by rw [hObj]; exact hc)
+    have hWf : config.wellFormed = true := by
+      cases hChecked : bootFromPlatformChecked config with
+      | error err =>
+        rw [bootFromPlatformCheckedWithIdleThreadsFor_rejects_invalid cores config err hChecked] at h
+        cases h
+      | ok base => exact (bootFromPlatformChecked_ok_shape config base hChecked).1
+    have hChk := config.wellFormed_bootCapabilitiesNameInstalledObjects hWf
+    unfold bootCapabilitiesNameInstalledObjects at hChk
+    have hC := List.all_eq_true.mp hChk c (List.mem_flatMap.mpr ⟨e, he, hMem⟩)
+    rw [hn] at hC
+    simp only [Bool.or_eq_true, List.any_eq_true, decide_eq_true_eq] at hC
+    rcases hC with ⟨e', he', rfl⟩ | hv
+    · show ist.state.objects[e'.id]? ≠ none
+      rw [bootFromPlatformCheckedWithIdleThreadsFor_ok_objects_of_mem cores config ist h e' he']
+      exact Option.some_ne_none _
+    · cases hR : config.bootVSpaceRoot with
+      | none => rw [hR] at hv; cases hv
+      | some v =>
+        rw [hR] at hv
+        simp only [Option.any_some, decide_eq_true_eq] at hv
+        subst hv
+        exact bootFromPlatformCheckedWithIdleThreadsFor_ok_bootVSpaceRoot_present cores config ist
+          h v hR
 
 /-- **WS-BP BP7.11**: **what a boot leaves, for the bundle to be read off** —
     every object boot-shaped, the untouched fields their defaults, the ASID

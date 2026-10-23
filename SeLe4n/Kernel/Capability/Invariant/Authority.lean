@@ -658,7 +658,8 @@ theorem capabilityInvariantBundle_of_frame {st st' : SystemState}
     (hTcb : ∀ oid : SeLe4n.ObjId,
       (st'.objects[oid]?).bind KernelObject.tcbSlots = (st.objects[oid]?).bind KernelObject.tcbSlots)
     (hReply : ∀ rid : SeLe4n.ReplyId, st.getReply? rid ≠ none → st'.getReply? rid ≠ none)
-    (hObjInv : st'.objects.invExt) :
+    (hObjInv : st'.objects.invExt)
+    (hPresent : ∀ o, st.objectPresent o → st'.objectPresent o) :
     capabilityInvariantBundle st' := by
   obtain ⟨_, hComp, hAcyclic, hDepth, _, hRCPV, hLinks, hShape⟩ := h
   have hCn : ∀ (oid : SeLe4n.ObjId) (cn : CNode),
@@ -666,7 +667,7 @@ theorem capabilityInvariantBundle_of_frame {st st' : SystemState}
     fun oid cn => ⟨hCnode oid cn, hCnodeFwd oid cn⟩
   refine capabilityInvariantBundle_of_components st' ?_ ?_ ?_ hObjInv ?_
     (cdtLinksAgree_of_cnode_iff hLinks hCdt hCn hTcb)
-    (hShape.of_frame (SystemState.SlotTreeFrame.of_slots hCdt hCn hTcb))
+    (hShape.of_frame (SystemState.SlotTreeFrame.of_slots hCdt hCn hTcb hPresent))
   · intro ref hRef
     rw [hCdt] at hRef
     obtain ⟨o, hO, hL⟩ := hComp ref hRef
@@ -752,6 +753,7 @@ theorem capabilityInvariantBundle_of_objects_and_cdt_eq {st st' : SystemState}
     (fun _ => by rw [hObjs])
     (fun _ hR => by unfold SystemState.getReply? at hR ⊢; rw [hObjs]; exact hR)
     (by rw [hObjs]; exact h.2.2.2.2.1)
+    (fun o hp => by unfold SystemState.objectPresent at hp ⊢; rw [hObjs]; exact hp)
 
 /-- WS-RR RR8.16 (`v0.35.197`): the **pointwise** instance, which is the one the
 IPC chains use.  A step whose every write lands on a key that keeps its object
@@ -776,7 +778,7 @@ theorem capabilityInvariantBundle_of_kindPreserving {st st' : SystemState}
     (hObjInv : st'.objects.invExt)
     (hAt : kindPreservingWrite st st') :
     capabilityInvariantBundle st' := by
-  refine capabilityInvariantBundle_of_frame h hCdt ?_ ?_ ?_ ?_ hObjInv
+  refine capabilityInvariantBundle_of_frame h hCdt ?_ ?_ ?_ ?_ hObjInv (SystemState.kindPreservingWrite.present hAt)
   · intro oid cn hCn
     rcases hAt oid with hEq | ⟨_, post, _, hPost, _, hNe, _⟩
     · rw [← hEq]; exact hCn

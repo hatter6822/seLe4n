@@ -380,16 +380,35 @@ theorem slotCapAt_ne_none_of_lookupSlotCap {st : SystemState} {ref : SlotRef}
   obtain ⟨cn, hCn, hL⟩ := slotOccupied_of_lookupSlotCap st ref h
   rw [SystemState.slotCapAt_of_object hCn]; exact hL
 
+/-- An insert writes its capability at its slot. -/
+theorem cspaceInsertSlot_slotCapAt_self {st st' : SystemState} {addr : SlotRef} {cap : Capability}
+    (hObjInv : st.objects.invExt) (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
+    st'.slotCapAt addr = some cap := by
+  obtain ⟨cn, -, hAddr, -, hStore⟩ := cspaceInsertSlot_ok_decompose st st' addr cap hStep
+  rw [SystemState.slotCapAt_of_object (storeObject_objects_eq st st' addr.cnode _ hObjInv hStore)]
+  exact CNode.lookup_insert_eq cn addr.slot cap (CNode.slotsUnique_holds _) hAddr
+
+/-- An insert keeps every object in the store. -/
+theorem cspaceInsertSlot_objectPresent {st st' : SystemState} {addr : SlotRef} {cap : Capability}
+    (hObjInv : st.objects.invExt) (hStep : cspaceInsertSlot addr cap st = .ok ((), st'))
+    (o : SeLe4n.ObjId) (hp : st.objectPresent o) : st'.objectPresent o := by
+  obtain ⟨cn, -, -, -, hStore⟩ := cspaceInsertSlot_ok_decompose st st' addr cap hStep
+  exact SystemState.objectPresent_storeObject hObjInv hStore o hp
+
 /-- **Installing a derived capability into an empty slot and recording its
-derivation keeps the tree's shape** (WS-ZA ZA5.4 part 16): the source holds a
-capability, so the tree names it, and the destination was empty, so the tree
-did not; the destination becomes the source's first child, right after it in
-the preorder (`SystemState.CapTreeShape.addChild`). -/
+derivation keeps the tree's shape** (WS-ZA ZA5.4 parts 16 and 18): the source
+holds a capability, so the tree names it, and the destination was empty, so the
+tree did not; the destination becomes the source's first child, right after it
+in the preorder (`SystemState.CapTreeShape.addChild`).  The installed capability
+names what the source names, or an object present after the insert that no slot
+named before (`hNew`). -/
 theorem treeShape_addEdge_after_insert (st st1 : SystemState) (src dst : SlotRef)
     (cap : Capability) (op : DerivationOp) (hShape : SystemState.CapTreeShape st)
     (hComp : cdtCompleteness st) (hObjInv : st.objects.invExt)
     (hSrc : (SystemState.lookupSlotCap st src).isSome)
-    (hIns : cspaceInsertSlot dst cap st = .ok ((), st1)) :
+    (hIns : cspaceInsertSlot dst cap st = .ok ((), st1))
+    (hNew : ∀ o, cap.namedObject = some o → SystemState.namesAt st.slotCapAt src o ∨
+      ((∀ r, ¬ SystemState.namesAt st.slotCapAt r o) ∧ st1.objectPresent o)) :
     SystemState.CapTreeShape { st1 with cdt := st1.cdt.addEdge src dst op } := by
   obtain ⟨cn, hGet, -, hEmpty, hStore⟩ := cspaceInsertSlot_ok_decompose st st1 dst cap hIns
   have hPre : st.objects[dst.cnode]? = some (.cnode cn) :=
@@ -397,8 +416,24 @@ theorem treeShape_addEdge_after_insert (st st1 : SystemState) (src dst : SlotRef
   have hCdt : st1.cdt = st.cdt := storeObject_cdt_eq st st1 dst.cnode _ hStore
   have hDstFresh : ¬ st.cdt.mentions dst :=
     hComp.not_mentions_of_empty fun cn' h => by rw [hPre] at h; cases h; exact hEmpty
-  exact hShape.addChild op (slotCapAt_ne_none_of_lookupSlotCap hSrc) hDstFresh
+  have hSelf := cspaceInsertSlot_slotCapAt_self hObjInv hIns
+  refine hShape.addChild (st' := { st1 with cdt := st1.cdt.addEdge src dst op }) op
+    (slotCapAt_ne_none_of_lookupSlotCap hSrc) hDstFresh
     (by show st1.cdt.addEdge src dst op = _; rw [hCdt])
     (fun r hr => cspaceInsertSlot_slotCapAt_ne hObjInv hIns r hr)
+    (fun o hp => cspaceInsertSlot_objectPresent (st' := st1) hObjInv hIns o hp) fun o ho => ?_
+  obtain ⟨c, hc, hco⟩ := ho
+  have hcc : c = cap := Option.some.inj (hc.symm.trans hSelf)
+  subst hcc
+  exact hNew o hco
+
+/-- **A derived capability names what its source names**: the shape of every
+copy, mint and transfer, whose capability is the source's with its rights or
+badge changed. -/
+theorem namesAt_of_source {st : SystemState} {src : SlotRef} {c cap : Capability}
+    (hL : SystemState.lookupSlotCap st src = some c) (hObj : cap.namedObject = c.namedObject)
+    (o : SeLe4n.ObjId) (ho : cap.namedObject = some o) :
+    SystemState.namesAt st.slotCapAt src o :=
+  ⟨c, SystemState.slotCapAt_of_lookupSlotCap hL, hObj ▸ ho⟩
 
 end SeLe4n.Kernel

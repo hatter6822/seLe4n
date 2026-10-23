@@ -244,7 +244,7 @@ theorem cspaceMintChecked_NI
   have hInvOf : ∀ s s' : SystemState, s.objects.invExt →
       cspaceMint src dst rights badge s = .ok ((), s') → s'.objects.invExt := by
     intro s s' hI h
-    obtain ⟨_, _, _, hIns⟩ := cspaceMint_ok_decompose src dst rights badge s s' h
+    obtain ⟨_, _, _, hIns, -⟩ := cspaceMint_ok_decompose src dst rights badge s s' h
     exact cspaceInsertSlot_preserves_objects_invExt s s' dst _ hI hIns
   have hTail : ∀ (s : SystemState) (p : Capability), s.objects.invExt →
       projectState ctx observer (untypedSourceSetFull (s.cdtAddChild src dst .mint) src p) =

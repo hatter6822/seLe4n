@@ -1026,6 +1026,53 @@ private def runBootUntypedCapabilityChecks : IO Unit := do
   assertBool "the duplicate config is refused by the checked boot"
     ((SeLe4n.Platform.Boot.bootFromPlatformChecked two).isOk == false)
 
+/-- **WS-ZA ZA5.4 part 18**: every boot capability names an object the boot
+installs.  The capability invariant holds each capability to a live object, so
+a configured capability naming an object the configuration does not install
+would dangle from boot; the boot refuses the configuration, naming its own
+conjunct.  The controls — a capability to a configured untyped, and one to a
+configured CNode's slot — are accepted, so the refusal is about the dangling
+name and not about the kind of capability. -/
+private def runBootCapabilityLiveChecks : IO Unit := do
+  IO.println "--- WS-ZA ZA5.4 part 18: boot capabilities name installed objects ---"
+  let mc : SeLe4n.MachineConfig :=
+    { SeLe4n.defaultMachineConfig with
+      memoryMap := [{ base := SeLe4n.PAddr.ofNat 0x1000_0000, size := 0x10_0000, kind := .ram }]
+      kernelReserved := [] }
+  let utId : SeLe4n.ObjId := ⟨110⟩
+  let cnId : SeLe4n.ObjId := ⟨111⟩
+  let rights := AccessRightSet.ofList [.read, .write, .retype]
+  let utEntry : SeLe4n.Platform.Boot.ObjectEntry :=
+    { id := utId
+      obj := .untyped { regionBase := SeLe4n.PAddr.ofNat 0x1000_0000, regionSize := 0x1000 }
+      hSlots := fun _ h => nomatch h
+      hMappings := fun _ h => nomatch h }
+  let cnEntry (slots : List (SeLe4n.Slot × Capability)) : SeLe4n.Platform.Boot.ObjectEntry :=
+    { id := cnId
+      obj := .cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF slots))
+      hSlots := fun _ h => by cases h; exact SeLe4n.Model.CNode.slotsUnique_holds _
+      hMappings := fun _ h => nomatch h }
+  let withSlots (slots : List (SeLe4n.Slot × Capability)) : SeLe4n.Platform.Boot.PlatformConfig :=
+    { irqTable := [], machineConfig := mc, initialObjects := [utEntry, cnEntry slots] }
+  let live := withSlots [(SeLe4n.Slot.ofNat 0, { target := .object utId, rights }),
+    (SeLe4n.Slot.ofNat 1, { target := .cnodeSlot cnId (SeLe4n.Slot.ofNat 0), rights })]
+  let dangling := withSlots [(SeLe4n.Slot.ofNat 0, { target := .object ⟨120⟩, rights })]
+  let danglingSlot := withSlots
+    [(SeLe4n.Slot.ofNat 0, { target := .cnodeSlot ⟨121⟩ (SeLe4n.Slot.ofNat 0), rights })]
+  assertBool "CONTROL: capabilities to configured objects are well-formed"
+    (live.wellFormed == true)
+  assertBool "NEGATIVE: a capability naming an object the boot does not install is refused"
+    (dangling.wellFormed == false &&
+      SeLe4n.Platform.Boot.bootCapabilitiesNameInstalledObjects dangling == false)
+  assertBool "NEGATIVE: a slot capability into a CNode the boot does not install is refused"
+    (danglingSlot.wellFormed == false &&
+      SeLe4n.Platform.Boot.bootCapabilitiesNameInstalledObjects danglingSlot == false)
+  assertBool "...and the refusal names the dangling capability, not another conjunct"
+    (SeLe4n.Platform.Boot.wellFormedDiagnostic dangling ==
+      SeLe4n.Platform.Boot.bootCapabilityDanglingBootError)
+  assertBool "the dangling config is refused by the checked boot"
+    ((SeLe4n.Platform.Boot.bootFromPlatformChecked dangling).isOk == false)
+
 /-- PR #889 review round 18: a successful boot must leave the object index
     inside `maxObjects`.  Nothing bounded the count before: the checked boot
     did not, and the idle fold adds one entry per core on top of it, so a
@@ -1163,6 +1210,7 @@ def runSmpIdleChecks : IO Unit := do
   runDeclaredCoreCountChecks
   runBootTablePoolChecks
   runBootUntypedCapabilityChecks
+  runBootCapabilityLiveChecks
   runInactiveFlagChecks
   IO.println "===================================="
   IO.println "All SM5.E per-core idle thread checks PASS."
