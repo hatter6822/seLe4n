@@ -4913,6 +4913,36 @@ revoke reads it before the delete (`slotPageTables`,
 `cspaceDeleteTeardownAtTable`); a CNode-slot or reply capability naming a table
 id counts as naming it, as seL4's `sameObjectAs` does.
 
+**Retire on final delete** (`v0.36.132`, seL4's `cteDelete` → `finaliseCap` on
+`isFinalCapability`).  A delete or revoke that destroys the **final** capability
+to a frame, a page table, an address-space root or an untyped whose child list
+records nothing retires that object: it leaves the child list of the untyped that
+records it, then the store (`retireCarvedObject`, the reset's retire), and a
+root's ASID is released with its acknowledged `.aside1` round
+(`retypeAsidRoundStep`).  Both the object and its recorder are read **before**
+the slot is emptied (`slotRetireTarget`, `slotRetireRecorder`), finality by
+`capIsFinal`; the recorder is found by walking the destroyed capability's
+ancestors to the nearest untyped capability whose untyped records the object,
+checked by membership, with a scan of the store's untypeds as the fallback
+(`recorderWord`, `recorderWord_spec`).  `retireFinalObject` is the last write of
+the finalising delete (`cspaceDeleteThenFinalise`), so every revoke, a run of
+finalising deletes, retires too; the delete fast path admits only a delete that
+retires nothing (`capabilityRetiresNothing`).  The retire does nothing when the
+object table has no headroom for the erase, so it never refuses.
+
+An untyped with a live record stays: a kernel object carved from it (a CNode, a
+TCB, an endpoint) may have no capability left yet still be recorded, and the
+untyped's reset would recarve that memory; kernel kinds are finalised by the
+next part of the plan.  The capability bundle is preserved
+(`retireFinalObject_preserves_capabilityInvariantBundle`, through
+`TreeShapeOver.retire`: no slot names the retired object, every other object
+stays, and each untyped's record only shrinks), and so are the IPC, run-queue,
+reschedule and teardown invariants (`retireFinalObject_preserves_ipcInvariantFull`,
+`retireFinalObject_runQueueStage`, `retireFinalObject_keyFrame`,
+`retireFinalObject_preserves_teardownWellFormed`), all through the reset's
+touched-key frame (`finalRetireWrite.touched`).  The compiled retire erases the
+object's entry, index and type rows in place (`retireCarvedObject_eq_impl`).
+
 ### 8.6.1 Carve Refusal Order (`v0.36.125`)
 
 `untypedRetypeObject` resolves the untyped capability and asks
@@ -5551,6 +5581,9 @@ seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
   it was a scan of every slot of every object after the step
   (`carvedSubtreeUnreferenced`, CNode slots only from `v0.36.38`), which the
   untyped reset still runs.
+  Since `v0.36.132` the table itself then leaves the store and its untyped's
+  record (`retireFinalObject`, §8.6), as a frame, a root and a childless untyped
+  do when their final capability goes.
   The root is the truth and a table's record a pointer (`pageTableInstallLive`):
   a stale record reads as installed nowhere.  The record is plain fields under
   a flag (`PageTableObject.installed`, seL4's `capPTIsMapped`), cleared with its slot words

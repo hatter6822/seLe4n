@@ -278,7 +278,14 @@ insert lands right after its source, the end of the source's run, and a
 capability that names an untyped must target it.  Finality is read off the
 four link words (`SystemState.capIsFinal`, equal to `capFinalSpec` under the
 bundle by `capIsFinal_iff_capFinalSpec`); new code asks it, never a store
-scan.  The
+scan.  Since part 21 (`v0.36.132`) a delete or revoke destroying the final
+capability to a frame, page table, address-space root or childless untyped
+retires the object (`retireFinalObject`, the last write of
+`cspaceDeleteThenFinalise`), its target and recorder read before the slot is
+emptied (`slotRetireTarget`, `slotRetireRecorder`): a new delete path must
+retire too, and a delete fast path must admit only a delete that retires
+nothing (`capabilityRetiresNothing`).  An untyped that still records a child is
+not retired; kernel kinds are part 22.  The
 suspend of a thread blocked in IPC or holding a donated context is the one
 syscall arm left on the general path (ZA6.1).  ZA6 covers the other
 entries and makes the rule standing.  Plan:
