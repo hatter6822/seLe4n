@@ -444,6 +444,95 @@ def retireCarvedObject (st : SystemState) (id : SeLe4n.ObjId) : SystemState :=
           | none => st.physicalWritesDrained }
   else st
 
+/-- `id` dropped from an object-index list: `List.filter`, written as a
+tail-recursive walk whose kept cells are consed onto `acc` and reversed back,
+so an exclusively owned index is rewritten cell for cell in place
+(`objIdListDrop_eq_filter`). -/
+def objIdListDrop (id : SeLe4n.ObjId) : List SeLe4n.ObjId → List SeLe4n.ObjId → List SeLe4n.ObjId
+  | [], acc => acc.reverse
+  | a :: rest, acc => if a == id then objIdListDrop id rest acc else objIdListDrop id rest (a :: acc)
+
+theorem objIdListDrop_eq_filter (id : SeLe4n.ObjId) :
+    ∀ (l acc : List SeLe4n.ObjId), objIdListDrop id l acc = acc.reverse ++ l.filter (· != id)
+  | [], acc => by simp [objIdListDrop]
+  | a :: rest, acc => by
+    unfold objIdListDrop
+    by_cases h : a = id
+    · subst h; simp [objIdListDrop_eq_filter a rest acc]
+    · have hb : (a == id) = false := by simpa using h
+      rw [if_neg (by simp [hb]), objIdListDrop_eq_filter id rest (a :: acc)]
+      simp [h]
+
+/-- The object table with `id` erased, out of line, so the state is handed over
+and its table written in place. -/
+@[noinline] def withObjectErased (st : SystemState) (id : SeLe4n.ObjId) : SystemState :=
+  { st with objects := st.objects.erase id }
+
+/-- `id` dropped from the object index, out of line. -/
+@[noinline] def withObjectUnindexed (st : SystemState) (id : SeLe4n.ObjId) : SystemState :=
+  { st with objectIndex := objIdListDrop id st.objectIndex [] }
+
+/-- `id` erased from the index set, out of line. -/
+@[noinline] def withObjectIndexSetErased (st : SystemState) (id : SeLe4n.ObjId) : SystemState :=
+  { st with objectIndexSet := st.objectIndexSet.erase id }
+
+/-- `id`'s type erased, the lifecycle record updated rather than rebuilt. -/
+@[noinline] def withObjectTypeErased (st : SystemState) (id : SeLe4n.ObjId) : SystemState :=
+  { st with lifecycle := { st.lifecycle with objectTypes := st.lifecycle.objectTypes.erase id } }
+
+/-- **`retireCarvedObject` as compiled**: a frame, an untyped or a page table is
+erased one table at a time, each write out of line over the state it is handed,
+so every table is written in place and the state record reused; a VSpace root,
+whose ASID leaves the table with it, takes the specification's body
+(`retireCarvedObject_eq_impl`). -/
+def retireCarvedObjectImpl (st : SystemState) (id : SeLe4n.ObjId) : SystemState :=
+  match st.objects[id]? with
+  | some (.frame _) | some (.untyped _) | some (.pageTable _) =>
+    withObjectTypeErased (withObjectIndexSetErased (withObjectUnindexed (withObjectErased st id) id) id) id
+  | some (.vspaceRoot _) => retireCarvedObject st id
+  | _ => st
+
+private theorem retireCarvedObject_of_nonRoot {st : SystemState} {id : SeLe4n.ObjId}
+    (hG : ((st.getFrame? id).isSome || (st.getUntyped? id).isSome ||
+      (st.getVSpaceRoot? id).isSome || (st.getPageTable? id).isSome) = true)
+    (hR : st.getVSpaceRoot? id = none) :
+    retireCarvedObject st id =
+      withObjectTypeErased (withObjectIndexSetErased (withObjectUnindexed (withObjectErased st id) id) id) id := by
+  unfold retireCarvedObject withObjectTypeErased withObjectIndexSetErased withObjectUnindexed
+    withObjectErased
+  rw [if_pos hG, hR, objIdListDrop_eq_filter]
+  simp
+
+@[csimp] theorem retireCarvedObject_eq_impl : @retireCarvedObject = @retireCarvedObjectImpl := by
+  funext st id
+  unfold retireCarvedObjectImpl
+  have hGuard : ∀ o, st.objects[id]? = some o →
+      ((st.getFrame? id).isSome || (st.getUntyped? id).isSome ||
+        (st.getVSpaceRoot? id).isSome || (st.getPageTable? id).isSome) =
+      (match o with
+       | .frame _ | .untyped _ | .vspaceRoot _ | .pageTable _ => true
+       | _ => false) := by
+    intro o hO
+    simp only [SystemState.getFrame?, SystemState.getUntyped?, SystemState.getPageTable?,
+      SystemState.getVSpaceRoot?, hO]
+    cases o <;> rfl
+  cases hO : st.objects[id]? with
+  | none =>
+    unfold retireCarvedObject
+    rw [if_neg]
+    simp [SystemState.getFrame?, SystemState.getUntyped?, SystemState.getPageTable?,
+      SystemState.getVSpaceRoot?, hO]
+  | some o =>
+    have hG := hGuard o hO
+    cases o with
+    | frame f => exact retireCarvedObject_of_nonRoot hG (by unfold SystemState.getVSpaceRoot?; rw [hO])
+    | untyped u => exact retireCarvedObject_of_nonRoot hG (by unfold SystemState.getVSpaceRoot?; rw [hO])
+    | pageTable p => exact retireCarvedObject_of_nonRoot hG (by unfold SystemState.getVSpaceRoot?; rw [hO])
+    | vspaceRoot r => rfl
+    | _ =>
+      unfold retireCarvedObject
+      rw [if_neg (by rw [hG]; simp)]
+
 /-- **WS-BP BP7.1 slice 4b (`v0.36.10`): no ASID-table entry names a listed
 object.**  What a retired VSpace root's ASID release means: `retireCarvedObject`
 erases the entry at the root's own ASID, and this decides afterwards that no
