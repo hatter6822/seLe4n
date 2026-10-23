@@ -464,7 +464,7 @@ theorem kindPreserving : SeLe4n.Model.kindPreservingWrite st st' := by
       exact Or.inr ⟨_, _, rfl, h', rfl, by simp [KernelObject.objectType], by
         simp only [KernelObject.tcbSlots,
           TCB.proj_eq_of_withoutRunLinks_eq (·.spaceCells) ht,
-          TCB.proj_eq_of_withoutRunLinks_eq (·.spaceLinks) ht]⟩
+          TCB.proj_eq_of_withoutRunLinks_eq (·.spaceLinks) ht], rfl⟩
     | _ => exact Or.inl (h.get_of_not_tcb (fun _ e => KernelObject.noConfusion e) e)
 
 end objectsAgreeOffRunLinks
