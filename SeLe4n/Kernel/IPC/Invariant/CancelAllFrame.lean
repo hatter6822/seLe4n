@@ -111,7 +111,179 @@ theorem unbindMaybeNotification_closed (P : SystemState → Prop) (notificationI
     · exact h
   · exact h
 
-/-- **A property every cancel and the unbind keep holds after the
+/-- **The reservation-unbind step a thread's or a context's finalisation takes**:
+a `.bound` thread, queued and held nowhere, whose context is bound back to it,
+unbound by the destroy cleanup's reservation arm (`cancelDonationArmOnCore`). -/
+def FinaliseScUnbindStep (P : SystemState → Prop) : Prop :=
+  ∀ (s s' : SystemState) (t : SeLe4n.ThreadId) (tcb : TCB) (sc : SchedContext), P s →
+    s.getTcb? t = some tcb → tcb.scBindingScCode ≠ 0 → tcb.scBindingOwnerCode = 0 →
+    tcb.runCoreCode = 0 → threadHeldOnSomeCore s t = false →
+    ipcCodesIdleAllowed tcb.ipcObjectCode tcb.ipcStateCode = true →
+    s.getSchedContext? ⟨tcb.scBindingScCode - 1⟩ = some sc → sc.boundThreadCode = t.val + 1 →
+    cancelDonationArmOnCore s t tcb = .ok s' → P s'
+
+/-- **The cancel step a thread's finalisation takes**: the head waiter of a
+notification leaves its queue, and is not woken (`cancelIpcBlocking`). -/
+def FinaliseCancelStep (P : SystemState → Prop) : Prop :=
+  ∀ (s : SystemState) (n : SeLe4n.ObjId) (t : SeLe4n.ThreadId) (tcb : TCB) (ntfn : Notification),
+    P s → s.getTcb? t = some tcb → tcb.ipcState = .blockedOnNotification n →
+    s.getNotification? n = some ntfn → ntfn.waitHead = some t →
+    notificationWaiterCancellable s n t tcb = true →
+    P (Lifecycle.Suspend.cancelIpcBlocking s t tcb)
+
+/-- **The suspend step a thread's finalisation takes**: a ready thread that is
+not suspended, queued on no core and held by none is marked `.Inactive`. -/
+def FinaliseSuspendStep (P : SystemState → Prop) : Prop :=
+  ∀ (s : SystemState) (t : SeLe4n.ThreadId) (tcb : TCB), P s → s.getTcb? t = some tcb →
+    tcb.ipcStateCode = 0 → tcb.ipcObjectCode = 0 → tcb.threadState ≠ .Inactive →
+    tcb.runCoreCode = 0 → threadHeldOnSomeCore s t = false → isIdleThreadId t = false →
+    P (s.updateTcb t fun t => { t with threadState := .Inactive })
+
+/-- **The notification-unbind step**: as `unbindMaybeNotification_closed` asks. -/
+def FinaliseUnbindStep (P : SystemState → Prop) : Prop :=
+  ∀ (notificationId : SeLe4n.ObjId) (s : SystemState) (n : Notification)
+    (t : SeLe4n.ThreadId), P s →
+    s.getNotification? notificationId = some n → n.boundTCB = some t →
+    boundNotificationCodeOf s t = notificationId.val + 1 →
+    unbindNotificationInPlace s t = true →
+    P (storeUnbindNotification s t notificationId)
+
+/-- **An IPC state `ipcCodesIdleAllowed` admits is one an unbound thread may
+idle in.** -/
+theorem passiveServerIdleAllowed_of_codes {tcb : TCB}
+    (h : ipcCodesIdleAllowed tcb.ipcObjectCode tcb.ipcStateCode = true) :
+    passiveServerIdleAllowed tcb.ipcState := by
+  unfold ipcCodesIdleAllowed at h
+  unfold TCB.ipcState ThreadIpcState.ofCodes passiveServerIdleAllowed
+  generalize tcb.ipcObjectCode = o at h ⊢
+  generalize tcb.ipcStateCode = c at h ⊢
+  match c, o with
+  | 0, 0 => exact Or.inl rfl
+  | 0, _ + 1 => simp at h
+  | 1, _ => exact Or.inr (Or.inl ⟨_, Or.inl rfl⟩)
+  | 2, _ => exact Or.inr (Or.inl ⟨_, Or.inr rfl⟩)
+  | 3, _ => simp at h
+  | _ + 4, _ => exact Or.inr (Or.inr ⟨_, _, rfl⟩)
+
+/-- A thread code `t + 1` decodes to `t`. -/
+theorem threadOfOptCode_succ (t : SeLe4n.ThreadId) :
+    SeLe4n.ThreadId.ofOptCode (t.val + 1) = some t := by
+  have := SeLe4n.ThreadId.ofOptCode_optCode (some t)
+  exact this
+
+/-- **A property the thread finalisation's steps keep holds after it.** -/
+theorem finaliseThread_closed (P : SystemState → Prop) (hUnbind : FinaliseUnbindStep P)
+    (hSc : FinaliseScUnbindStep P) (hCancel : FinaliseCancelStep P)
+    (hSuspend : FinaliseSuspendStep P) (x : SeLe4n.ObjId) (st : SystemState) (h : P st) :
+    P (finaliseThread x st) := by
+  rw [finaliseThread_eq]
+  split
+  · generalize hTid : (⟨x.val⟩ : SeLe4n.ThreadId) = tid
+    -- The notification unbind.
+    have h1 : P (finaliseThreadUnbindNotification st tid) := by
+      unfold finaliseThreadUnbindNotification
+      dsimp only
+      split
+      · exact h
+      · rename_i hc
+        split
+        · rename_i n hN
+          split
+          · rename_i hB
+            simp only [Bool.and_eq_true, beq_iff_eq] at hB hc
+            refine hUnbind _ st n tid h hN ?_ ?_ hB.2
+            · unfold Notification.boundTCB; rw [hB.1]; exact threadOfOptCode_succ tid
+            · simp only [SeLe4n.ObjId.val]; omega
+          · exact h
+        · exact h
+    -- The reservation unbind.
+    have h2 : P (finaliseThreadUnbindSchedContext (finaliseThreadUnbindNotification st tid) tid) := by
+      generalize finaliseThreadUnbindNotification st tid = s at h1 ⊢
+      unfold finaliseThreadUnbindSchedContext
+      split
+      · rename_i t hT
+        cases hM : s.getSchedContext? ⟨t.scBindingScCode - 1⟩ with
+        | none => simp only [hM, Bool.and_false, Bool.false_eq_true, ↓reduceIte]; exact h1
+        | some sc =>
+          simp only [hM]
+          split
+          · rename_i hG
+            simp only [Bool.and_eq_true, bne_iff_ne, ne_eq, beq_iff_eq, Bool.not_eq_true'] at hG
+            obtain ⟨⟨⟨⟨⟨hS, hO⟩, hR⟩, hH⟩, hA⟩, hM'⟩ := hG
+            split
+            · rename_i s' hOk
+              exact hSc s s' tid t sc h1 hT hS hO hR hH hA hM hM' hOk
+            · exact h1
+          · exact h1
+      · exact h1
+    -- The cancel.
+    have h3 : P (finaliseThreadCancel (finaliseThreadUnbindSchedContext
+        (finaliseThreadUnbindNotification st tid) tid) tid) := by
+      generalize finaliseThreadUnbindSchedContext _ tid = s at h2 ⊢
+      unfold finaliseThreadCancel
+      split
+      · rename_i t hT
+        split
+        · rename_i n hI
+          split
+          · rename_i ntfn hN
+            split
+            · rename_i hG
+              simp only [Bool.and_eq_true, beq_iff_eq] at hG
+              exact hCancel s n tid t ntfn h2 hT hI hN hG.1 hG.2
+            · exact h2
+          · exact h2
+        · exact h2
+      · exact h2
+    -- The suspend.
+    generalize finaliseThreadCancel _ tid = s at h3 ⊢
+    unfold finaliseThreadSuspend
+    split
+    · rename_i t hT
+      split
+      · rename_i hG
+        simp only [Bool.and_eq_true, beq_iff_eq, bne_iff_ne, ne_eq, Bool.not_eq_true'] at hG
+        obtain ⟨⟨⟨⟨⟨hS, hO⟩, hI⟩, hR⟩, hH⟩, hId⟩ := hG
+        exact hSuspend s tid t h3 hT hS hO hI hR hH hId
+      · exact h3
+    · exact h3
+  · exact h
+
+/-- **A property the reservation unbind keeps holds after the
+scheduling-context finalisation.** -/
+theorem finaliseSchedContext_closed (P : SystemState → Prop) (hSc : FinaliseScUnbindStep P)
+    (x : SeLe4n.ObjId) (st : SystemState) (h : P st) : P (finaliseSchedContext x st) := by
+  rw [finaliseSchedContext_eq]
+  split
+  · unfold finaliseSchedContextUnbind
+    split
+    · rename_i sc hX
+      split
+      · exact h
+      · rename_i hB0
+        dsimp only
+        split
+        · rename_i t hT
+          split
+          · rename_i hG
+            simp only [Bool.and_eq_true, beq_iff_eq, Bool.not_eq_true'] at hG
+            obtain ⟨⟨⟨⟨hS, hO⟩, hR⟩, hH⟩, hA⟩ := hG
+            split
+            · rename_i s' hOk
+              refine hSc st s' _ t sc h hT (by omega) hO hR hH hA ?_ ?_ hOk
+              · rw [hS, Nat.add_sub_cancel]
+                have hO : st.objects[x]? = some (.schedContext sc) := by rw [← hX]; simp
+                unfold SystemState.getSchedContext?
+                rw [show (⟨x.val⟩ : SeLe4n.SchedContextId).toObjId = x from rfl, hO]
+              · simp only [beq_iff_eq] at hB0
+                show _ = _ - 1 + 1; omega
+            · exact h
+          · exact h
+        · exact h
+    · exact h
+  · exact h
+
+/-- **A property every cancel, unbind and suspend keeps holds after the
 finalisation.** -/
 theorem finaliseFinalObject_closed (P : SystemState → Prop)
     (hEp : ∀ (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (s : SystemState) (ep : Endpoint)
@@ -124,12 +296,8 @@ theorem finaliseFinalObject_closed (P : SystemState → Prop)
       s.getNotification? notificationId = some n → n.waitHead = some t →
       s.getTcb? t = some tcb → notificationWaiterCancellable s notificationId t tcb = true →
       P (wakeCancelledWaiter (Lifecycle.Suspend.cancelIpcBlocking s t tcb) t))
-    (hUnbind : ∀ (notificationId : SeLe4n.ObjId) (s : SystemState) (n : Notification)
-      (t : SeLe4n.ThreadId), P s →
-      s.getNotification? notificationId = some n → n.boundTCB = some t →
-      boundNotificationCodeOf s t = notificationId.val + 1 →
-      unbindNotificationInPlace s t = true →
-      P (storeUnbindNotification s t notificationId))
+    (hUnbind : FinaliseUnbindStep P) (hSc : FinaliseScUnbindStep P)
+    (hCancel : FinaliseCancelStep P) (hSuspend : FinaliseSuspendStep P)
     (target : Nat) (st : SystemState) (h : P st) : P (finaliseFinalObject target st) := by
   unfold finaliseFinalObject
   split
@@ -141,6 +309,8 @@ theorem finaliseFinalObject_closed (P : SystemState → Prop)
         (cancelEndpointQueue_closed P _ false (hEp _ false) _ _ h)
     · exact cancelNotificationQueue_closed P _ (hNtfn _) _ _
         (unbindMaybeNotification_closed P _ (hUnbind _) st h)
+    · exact finaliseThread_closed P hUnbind hSc hCancel hSuspend _ st h
+    · exact finaliseSchedContext_closed P hSc _ st h
     · exact h
   · exact h
 
@@ -148,10 +318,11 @@ theorem finaliseFinalObject_closed (P : SystemState → Prop)
 -- §2  The write frame
 -- ============================================================================
 
-/-- **An object a finalisation may write**: a thread, an endpoint or a
-notification. -/
+/-- **An object a finalisation may write**: a thread, an endpoint, a
+notification or a scheduling context. -/
 def finaliseWritable (o : KernelObject) : Prop :=
-  o.objectType = .tcb ∨ o.objectType = .endpoint ∨ o.objectType = .notification
+  o.objectType = .tcb ∨ o.objectType = .endpoint ∨ o.objectType = .notification ∨
+    o.objectType = .schedContext
 
 theorem finaliseWritable.untyped {o : KernelObject} (h : finaliseWritable o) :
     o.untyped? = none := by
@@ -159,21 +330,27 @@ theorem finaliseWritable.untyped {o : KernelObject} (h : finaliseWritable o) :
 
 theorem finaliseWritable.not_cnode {o : KernelObject} (h : finaliseWritable o) :
     o.objectType ≠ .cnode := by
-  rcases h with h | h | h <;> rw [h] <;> decide
+  rcases h with h | h | h | h <;> rw [h] <;> decide
 
 theorem finaliseWritable.not_vspaceRoot {o : KernelObject} (h : finaliseWritable o) :
     o.objectType ≠ .vspaceRoot := by
-  rcases h with h | h | h <;> rw [h] <;> decide
+  rcases h with h | h | h | h <;> rw [h] <;> decide
 
 theorem finaliseWritable_tcb (t : TCB) : finaliseWritable (.tcb t) := Or.inl rfl
 
+theorem finaliseWritable_schedContext (sc : SchedContext) :
+    finaliseWritable (.schedContext sc) := Or.inr (Or.inr (Or.inr rfl))
+
 /-- **What a finalisation writes, key by key**: each key keeps its object, or
-holds a thread, an endpoint or a notification before and after, of the same
-kind and with the same capability slots. -/
+holds a thread, an endpoint, a notification or a scheduling context before and
+after, of the same kind, with the same capability slots and, for a context, the
+same reply-stack head. -/
 def finaliseWrite (st st' : SystemState) : Prop :=
   ∀ oid : SeLe4n.ObjId, st'.objects[oid]? = st.objects[oid]? ∨
     ∃ pre post : KernelObject, st.objects[oid]? = some pre ∧ st'.objects[oid]? = some post ∧
-      post.objectType = pre.objectType ∧ post.tcbSlots = pre.tcbSlots ∧ finaliseWritable pre
+      post.objectType = pre.objectType ∧ post.tcbSlots = pre.tcbSlots ∧
+      schedContextStackHead? (some post) = schedContextStackHead? (some pre) ∧
+      finaliseWritable pre
 
 namespace finaliseWrite
 
@@ -182,21 +359,21 @@ theorem refl (st : SystemState) : finaliseWrite st st := fun _ => Or.inl rfl
 theorem trans {a b c : SystemState} (h₁ : finaliseWrite a b) (h₂ : finaliseWrite b c) :
     finaliseWrite a c := by
   intro oid
-  rcases h₁ oid with e₁ | ⟨p₁, q₁, hp₁, hq₁, ht₁, hs₁, hw₁⟩
-  · rcases h₂ oid with e₂ | ⟨p₂, q₂, hp₂, hq₂, ht₂, hs₂, hw₂⟩
+  rcases h₁ oid with e₁ | ⟨p₁, q₁, hp₁, hq₁, ht₁, hs₁, hh₁, hw₁⟩
+  · rcases h₂ oid with e₂ | ⟨p₂, q₂, hp₂, hq₂, ht₂, hs₂, hh₂, hw₂⟩
     · exact Or.inl (e₂.trans e₁)
-    · exact Or.inr ⟨p₂, q₂, e₁ ▸ hp₂, hq₂, ht₂, hs₂, hw₂⟩
-  · rcases h₂ oid with e₂ | ⟨p₂, q₂, hp₂, hq₂, ht₂, hs₂, hw₂⟩
-    · exact Or.inr ⟨p₁, q₁, hp₁, e₂.trans hq₁, ht₁, hs₁, hw₁⟩
+    · exact Or.inr ⟨p₂, q₂, e₁ ▸ hp₂, hq₂, ht₂, hs₂, hh₂, hw₂⟩
+  · rcases h₂ oid with e₂ | ⟨p₂, q₂, hp₂, hq₂, ht₂, hs₂, hh₂, hw₂⟩
+    · exact Or.inr ⟨p₁, q₁, hp₁, e₂.trans hq₁, ht₁, hs₁, hh₁, hw₁⟩
     · rw [hq₁] at hp₂
       cases hp₂
-      exact Or.inr ⟨p₁, q₂, hp₁, hq₂, ht₂.trans ht₁, hs₂.trans hs₁, hw₁⟩
+      exact Or.inr ⟨p₁, q₂, hp₁, hq₂, ht₂.trans ht₁, hs₂.trans hs₁, hh₂.trans hh₁, hw₁⟩
 
 /-- A finalisation write is kind-preserving: what it writes is no CNode, and
 keeps its untyped record (none). -/
 theorem kind {st st' : SystemState} (h : finaliseWrite st st') : kindPreservingWrite st st' := by
   intro oid
-  rcases h oid with e | ⟨pre, post, hp, hq, ht, hs, hw⟩
+  rcases h oid with e | ⟨pre, post, hp, hq, ht, hs, -, hw⟩
   · exact Or.inl e
   · have hw' : finaliseWritable post := by unfold finaliseWritable; rw [ht]; exact hw
     exact Or.inr ⟨pre, post, hp, hq, ht, ht ▸ hw.not_cnode, hs, by
@@ -206,7 +383,7 @@ theorem kind {st st' : SystemState} (h : finaliseWrite st st') : kindPreservingW
 theorem keeps {st st' : SystemState} (h : finaliseWrite st st') {oid : SeLe4n.ObjId}
     {o : KernelObject} (hO : st.objects[oid]? = some o) (hN : ¬ finaliseWritable o) :
     st'.objects[oid]? = some o := by
-  rcases h oid with e | ⟨pre, post, hp, -, -, -, hw⟩
+  rcases h oid with e | ⟨pre, post, hp, -, -, -, -, hw⟩
   · rw [e]; exact hO
   · rw [hO] at hp; cases hp; exact absurd hw hN
 
@@ -215,7 +392,7 @@ before it. -/
 theorem keeps' {st st' : SystemState} (h : finaliseWrite st st') {oid : SeLe4n.ObjId}
     {o : KernelObject} (hO : st'.objects[oid]? = some o) (hN : ¬ finaliseWritable o) :
     st.objects[oid]? = some o := by
-  rcases h oid with e | ⟨pre, post, hp, hq, ht, -, hw⟩
+  rcases h oid with e | ⟨pre, post, hp, hq, ht, -, -, hw⟩
   · rw [← e]; exact hO
   · rw [hO] at hq; cases hq
     exact absurd (by unfold finaliseWritable; rw [ht]; exact hw) hN
@@ -231,27 +408,32 @@ theorem roots_iff {st st' : SystemState} (h : finaliseWrite st st') (oid : SeLe4
 finalisation write.** -/
 theorem of_kind_keeps {st st' : SystemState} (hK : kindPreservingWrite st st')
     (hT : ∀ (oid : SeLe4n.ObjId) (o : KernelObject), st.objects[oid]? = some o →
-      ¬ finaliseWritable o → st'.objects[oid]? = some o) :
+      ¬ finaliseWritable o → st'.objects[oid]? = some o)
+    (hH : ∀ (oid : SeLe4n.ObjId), schedContextStackHead? st'.objects[oid]? =
+      schedContextStackHead? st.objects[oid]?) :
     finaliseWrite st st' := by
   intro oid
   rcases hK oid with e | ⟨pre, post, hp, hq, ht, -, hs, -⟩
   · exact Or.inl e
   · by_cases hw : finaliseWritable pre
-    · exact Or.inr ⟨pre, post, hp, hq, ht, hs, hw⟩
+    · have := hH oid; rw [hp, hq] at this
+      exact Or.inr ⟨pre, post, hp, hq, ht, hs, this, hw⟩
     · exact Or.inl ((hT oid pre hp hw).trans hp.symm)
 
 /-- **A store of a finalisation-writable object's like at its own key.** -/
 theorem of_insert {st st' : SystemState} {k : SeLe4n.ObjId} {o o' : KernelObject}
     (hInv : st.objects.invExt) (hO : st'.objects = st.objects.insert k o')
     (hPre : st.objects[k]? = some o) (hW : finaliseWritable o)
-    (hT : o'.objectType = o.objectType) (hS : o'.tcbSlots = o.tcbSlots) :
+    (hT : o'.objectType = o.objectType) (hS : o'.tcbSlots = o.tcbSlots)
+    (hH : schedContextStackHead? (some o') = schedContextStackHead? (some o) := by
+      first | rfl | simp [schedContextStackHead?]) :
     finaliseWrite st st' := by
   intro oid
   rw [hO]
   by_cases e : oid = k
   · subst e
     exact Or.inr ⟨o, o', hPre, RobinHood.RHTable.getElem?_insert_self st.objects oid o' hInv,
-      hT, hS, hW⟩
+      hT, hS, hH, hW⟩
   · exact Or.inl (RobinHood.RHTable.getElem?_insert_ne st.objects k oid o'
       (by intro h; exact e (eq_of_beq h).symm) hInv)
 
@@ -265,7 +447,7 @@ theorem of_agreeOffRunLinks {st st' : SystemState} (h : st'.objectsAgreeOffRunLi
   · obtain ⟨t'', ht'', hE⟩ := h.get_tcb ht
     rw [ht'] at ht''
     cases ht''
-    refine Or.inr ⟨.tcb t, .tcb t', ht, ht', rfl, ?_, finaliseWritable_tcb t⟩
+    refine Or.inr ⟨.tcb t, .tcb t', ht, ht', rfl, ?_, rfl, finaliseWritable_tcb t⟩
     simp only [KernelObject.tcbSlots,
       TCB.proj_eq_of_withoutRunLinks_eq (·.spaceCells) hE,
       TCB.proj_eq_of_withoutRunLinks_eq (·.spaceLinks) hE]
@@ -277,8 +459,9 @@ theorem of_ntfnUnlinkReach {st st' : SystemState} (h : ntfnUnlinkReach st st') :
   intro oid
   rcases h.2 oid with e | ⟨n, n', hn, hn', -⟩ | ⟨t, t', ht, ht', ⟨np, nn, rfl⟩⟩
   · exact Or.inl e
-  · exact Or.inr ⟨.notification n, .notification n', hn, hn', rfl, rfl, Or.inr (Or.inr rfl)⟩
-  · exact Or.inr ⟨.tcb t, .tcb _, ht, ht', rfl, rfl, finaliseWritable_tcb t⟩
+  · exact Or.inr ⟨.notification n, .notification n', hn, hn', rfl, rfl, rfl,
+      Or.inr (Or.inr (Or.inl rfl))⟩
+  · exact Or.inr ⟨.tcb t, .tcb _, ht, ht', rfl, rfl, rfl, finaliseWritable_tcb t⟩
 
 end finaliseWrite
 
@@ -326,7 +509,7 @@ a thread it writes keeps its space slots. -/
 theorem slotCapAt {st st' : SystemState} (h : FinaliseFrame st st') (r : SlotRef) :
     st'.slotCapAt r = st.slotCapAt r := by
   rw [SystemState.slotCapAt_eq_bind, SystemState.slotCapAt_eq_bind]
-  rcases h.write r.cnode with e | ⟨pre, post, hp, hq, ht, hs, hw⟩
+  rcases h.write r.cnode with e | ⟨pre, post, hp, hq, ht, hs, -, hw⟩
   · rw [e]
   · rw [hp, hq]
     simp only [Option.bind_some,
@@ -365,6 +548,7 @@ keeps a writable one's kind and slots. -/
 theorem modifyObject (st : SystemState) (k : SeLe4n.ObjId) (f : KernelObject → KernelObject)
     (hInv : st.objects.invExt)
     (hf : ∀ o, f o = o ∨ ((f o).objectType = o.objectType ∧ (f o).tcbSlots = o.tcbSlots ∧
+      schedContextStackHead? (some (f o)) = schedContextStackHead? (some o) ∧
       finaliseWritable o)) :
     FinaliseFrame st (st.modifyObject k f) := by
   unfold SystemState.modifyObject
@@ -376,7 +560,7 @@ theorem modifyObject (st : SystemState) (k : SeLe4n.ObjId) (f : KernelObject →
   | some o =>
     rw [RobinHood.RHTable.modify_of_get? hG]
     refine ⟨rfl, RHTable_insert_preserves_invExt _ _ _ hInv, ?_⟩
-    rcases hf o with e | ⟨hT, hS, hW⟩
+    rcases hf o with e | ⟨hT, hS, hH, hW⟩
     · rw [e]
       intro oid
       left
@@ -385,7 +569,7 @@ theorem modifyObject (st : SystemState) (k : SeLe4n.ObjId) (f : KernelObject →
       · subst h; exact (RobinHood.RHTable.getElem?_insert_self st.objects oid o hInv).trans hG.symm
       · exact RobinHood.RHTable.getElem?_insert_ne st.objects k oid o
           (by intro h'; exact h (eq_of_beq h').symm) hInv
-    · exact finaliseWrite.of_insert hInv rfl hG hW hT hS
+    · exact finaliseWrite.of_insert hInv rfl hG hW hT hS hH
 
 /-- The wake: a run-queue insert and the `.ready` mark, on threads only. -/
 theorem enqueueRunnableOnCore (st : SystemState) (c : Concurrency.CoreId) (t : SeLe4n.ThreadId)
@@ -423,7 +607,7 @@ theorem storePopHead (st : SystemState) (endpointId : SeLe4n.ObjId) (isReceiveQ 
       | endpoint e =>
         right
         simp only [popEndpoint]
-        split <;> exact ⟨rfl, rfl, Or.inr (Or.inl rfl)⟩
+        split <;> exact ⟨rfl, rfl, rfl, Or.inr (Or.inl rfl)⟩
       | _ => exact Or.inl rfl)
   cases next with
   | none =>
@@ -468,8 +652,62 @@ theorem storeUnbindNotification (st : SystemState) (t : SeLe4n.ThreadId) (n : Se
   have h1 := updateTcb st t (fun x => { x with boundNotificationCode := 0 }) hInv
   exact h1.trans (modifyObject _ n _ h1.invExt (fun o => by
     cases o with
-    | notification m => exact Or.inr ⟨rfl, rfl, Or.inr (Or.inr rfl)⟩
+    | notification m => exact Or.inr ⟨rfl, rfl, rfl, Or.inr (Or.inr (Or.inl rfl))⟩
     | _ => exact Or.inl rfl))
+
+/-- A step that writes the scheduler alone. -/
+theorem of_objects_eq {st st' : SystemState} (hR : SystemState.onlyObjectsSchedulerDiffer st' st)
+    (hO : st'.objects = st.objects) (hInv : st.objects.invExt) : FinaliseFrame st st' :=
+  ⟨hR, hO ▸ hInv, fun oid => Or.inl (by rw [hO])⟩
+
+/-- A scheduling context rewritten in its slot, its reply-stack head kept. -/
+theorem updateSchedContext (st : SystemState) (scId : SeLe4n.SchedContextId)
+    (f : SchedContext → SchedContext) (hInv : st.objects.invExt)
+    (hf : ∀ x, (f x).scReply = x.scReply) :
+    FinaliseFrame st (st.updateSchedContext scId f) := by
+  cases hG : st.getSchedContext? scId with
+  | none => rw [SystemState.updateSchedContext_eq_self_of_none hG]; exact .refl hInv
+  | some x =>
+    rw [SystemState.updateSchedContext_eq_of_some hG]
+    exact ⟨rfl, RHTable_insert_preserves_invExt _ _ _ hInv,
+      finaliseWrite.of_insert hInv rfl ((SystemState.getSchedContext?_eq_some_iff st scId x).mp hG)
+        (finaliseWritable_schedContext x) rfl rfl (by simp [schedContextStackHead?, hf x])⟩
+
+/-- The key hook rewrites the scheduler alone. -/
+theorem markKeyChangeFrom (pre st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) : FinaliseFrame st (SeLe4n.Kernel.markKeyChangeFrom pre st tid) :=
+  let post := SeLe4n.Kernel.markKeyChangeFrom pre st tid
+  of_objects_eq (markKeyChangeFrom_extract_frame
+    (fun s : SystemState => ({ s with objects := post.objects, scheduler := post.scheduler } :
+      SystemState)) pre st tid (fun _ _ => rfl))
+    (markKeyChangeFrom_objects pre st tid) hInv
+
+/-- **The reservation unbind**: the context's binding cleared, its replenishment
+purged, the thread's binding cleared, the key hook. -/
+theorem cancelBoundDonationOnCore {st st' : SystemState} {t : SeLe4n.ThreadId} {tcb : TCB}
+    {c : Concurrency.CoreId} (hInv : st.objects.invExt)
+    (h : SeLe4n.Kernel.cancelBoundDonationOnCore st t tcb c = .ok st') : FinaliseFrame st st' := by
+  unfold SeLe4n.Kernel.cancelBoundDonationOnCore at h
+  split at h
+  · rename_i scId _
+    injection h with h; subst h
+    have h1 := updateSchedContext st scId
+      (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })
+      hInv (fun _ => rfl)
+    generalize st.updateSchedContext scId _ = st1 at h1 ⊢
+    let sch := st1.scheduler.setReplenishQueueOnCore c
+      (ReplenishQueue.remove (st1.scheduler.replenishQueueOnCore c) scId)
+    have h2 := h1.trans (of_objects_eq (st' := { st1 with scheduler := sch }) rfl rfl h1.invExt)
+    have h3 := h2.trans (updateTcb _ t
+      (fun tcb' => { tcb' with scBindingScCode := 0, scBindingOwnerCode := 0 }) h2.invExt)
+    exact h3.trans (markKeyChangeFrom _ _ t h3.invExt)
+  · cases h
+
+/-- The reservation-unbind step, as the closure asks it. -/
+theorem scUnbindStep (st : SystemState) : FinaliseScUnbindStep (FinaliseFrame st) := by
+  intro s s' t tcb _ h _ hS hO _ _ _ _ _ hOk
+  rw [cancelDonationArmOnCore_of_codes s t hS hO] at hOk
+  exact h.trans (cancelBoundDonationOnCore h.invExt hOk)
 
 end FinaliseFrame
 
@@ -502,6 +740,9 @@ theorem finaliseFinalObject_frame (target : Nat) (st : SystemState) (hInv : st.o
         (notificationWaiterCancellable_blocked hC))
       h1.trans (.wakeCancelledWaiter _ _ h1.invExt))
     (fun _ _ _ _ h _ _ _ _ => h.trans (.storeUnbindNotification _ _ _ h.invExt))
+    (FinaliseFrame.scUnbindStep st)
+    (fun s n t tcb _ h _ hI _ _ _ => h.trans (FinaliseFrame.notificationCancel s t tcb n h.invExt hI))
+    (fun _ t _ h _ _ _ _ _ _ _ => h.trans (FinaliseFrame.updateTcb _ t _ h.invExt))
     target st (.refl hInv)
 
 /-- **The finalisation writes only the object store and the scheduler**, on any
@@ -522,9 +763,33 @@ theorem finaliseFinalObject_onlyObjectsSchedulerDiffer (target : Nat) (st : Syst
     | some m =>
       simp only [SeLe4n.Kernel.storePopHead]
       exact (hU _ _ _).trans ((hU _ _ _).trans (hM _ _ _))
+  have hS : ∀ (s : SystemState) (k : SeLe4n.SchedContextId) (f : SchedContext → SchedContext),
+      SystemState.onlyObjectsSchedulerDiffer (s.updateSchedContext k f) s := by
+    intro s k f; unfold SystemState.updateSchedContext; split <;> rfl
+  have hK : ∀ (pre s : SystemState) (t : SeLe4n.ThreadId),
+      SystemState.onlyObjectsSchedulerDiffer (markKeyChangeFrom pre s t) s := by
+    intro pre s t
+    let post := markKeyChangeFrom pre s t
+    exact markKeyChangeFrom_extract_frame
+      (fun x : SystemState => ({ x with objects := post.objects, scheduler := post.scheduler } :
+        SystemState)) pre s t (fun _ _ => rfl)
+  have hNc : ∀ (s : SystemState) (t : SeLe4n.ThreadId) (tcb : TCB) (n : SeLe4n.ObjId),
+      tcb.ipcState = .blockedOnNotification n →
+      SystemState.onlyObjectsSchedulerDiffer (Lifecycle.Suspend.cancelIpcBlocking s t tcb) s := by
+    intro s t tcb n hB
+    have hEq : Lifecycle.Suspend.cancelIpcBlocking s t tcb =
+        Lifecycle.Suspend.restoreToReadyCancelled (removeFromNotificationWaitQueue s t) t := by
+      unfold Lifecycle.Suspend.cancelIpcBlocking; rw [hB]
+    rw [hEq]
+    obtain ⟨objs, e⟩ := removeFromNotificationWaitQueue_eq_objects s t
+    have hR : SystemState.onlyObjectsSchedulerDiffer (removeFromNotificationWaitQueue s t) s := by
+      rw [e]; rfl
+    exact (hU _ _ _).trans hR
   refine finaliseFinalObject_closed (fun s => SystemState.onlyObjectsSchedulerDiffer s st)
     (fun _ _ s _ t _ h _ _ _ _ => ?_) (fun _ s _ t tcb h _ _ _ hC => ?_)
-    (fun _ s _ t h _ _ _ _ => ?_) target st (.refl st)
+    (fun _ s _ t h _ _ _ _ => ?_) (fun s s' t tcb _ h _ hS' hO _ _ _ _ _ hOk => ?_)
+    (fun s n t tcb _ h _ hI _ _ _ => (hNc s t tcb n hI).trans h)
+    (fun s t _ h _ _ _ _ _ _ _ => (hU s t _).trans h) target st (.refl st)
   · unfold storeEndpointWaiterCancelled wakeCancelledWaiter
     exact (enqueueRunnableOnCore_onlyObjectsSchedulerDiffer _ _ _).trans
       ((hU _ _ _).trans ((hP _ _ _ _ _).trans h))
@@ -540,6 +805,22 @@ theorem finaliseFinalObject_onlyObjectsSchedulerDiffer (target : Nat) (st : Syst
       ((hU _ _ _).trans (hR.trans h))
   · unfold SeLe4n.Kernel.storeUnbindNotification
     exact (hM _ _ _).trans ((hU _ _ _).trans h)
+  · rw [cancelDonationArmOnCore_of_codes s t hS' hO] at hOk
+    unfold cancelBoundDonationOnCore at hOk
+    split at hOk
+    · rename_i scId _
+      injection hOk with hOk; subst hOk
+      have h1 := (hS s scId
+        (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })).trans h
+      generalize s.updateSchedContext scId _ = s1 at h1 ⊢
+      let c := determineTargetCore s t
+      let sch := s1.scheduler.setReplenishQueueOnCore c
+        (ReplenishQueue.remove (s1.scheduler.replenishQueueOnCore c) scId)
+      have h2 : SystemState.onlyObjectsSchedulerDiffer { s1 with scheduler := sch } st :=
+        SystemState.onlyObjectsSchedulerDiffer.trans
+          (show SystemState.onlyObjectsSchedulerDiffer { s1 with scheduler := sch } s1 from rfl) h1
+      exact (hK _ _ _).trans ((hU _ _ _).trans h2)
+    · cases hOk
 
 theorem finaliseFinalObject_cdt (target : Nat) (st : SystemState) :
     (finaliseFinalObject target st).cdt = st.cdt := by

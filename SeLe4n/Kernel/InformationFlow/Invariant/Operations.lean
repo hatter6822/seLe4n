@@ -5436,10 +5436,12 @@ theorem copyThreadSpaces_preserves_projection (ctx : LabelingContext) (observer 
           ∀ w, untypedRecordsChild st w o = true → objectObservable ctx observer w = false)
     (hStep : copyThreadSpaces ec st vtid cnSrc vrSrc = .ok st') :
     projectState ctx observer st' = projectState ctx observer st := by
-  obtain ⟨tcb, hT, -, -, -, -, rfl⟩ := copyThreadSpaces_ok hStep
-  obtain ⟨hT1, hI1⟩ := threadSlotCopied_tcb hObjInv hT TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot
+  obtain ⟨tcb, hT, -, -, hCn, -, rfl⟩ := copyThreadSpaces_ok hStep
+  obtain ⟨-, hI1⟩ := threadSlotCopied_tcb hObjInv hT TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot
     TCB.cspaceRootRights
-  obtain ⟨t1, hT1'⟩ := Option.isSome_iff_exists.mp hT1
+  obtain ⟨cnCap, -, hCL, -⟩ := cspaceRootSourceAdmitted_spec hCn
+  obtain ⟨t1, hT1', hF1⟩ := threadSlotCopied_slotFilled hObjInv hT (slot := TCB.cspaceRootSlot)
+    (by decide) TCB.cspaceRootRights (srcCNode := cnSrc.cnode) (srcSlot := cnSrc.slot) hCL
   have hUt := threadSlotCopied_getUntyped? hObjInv hT TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot
     TCB.cspaceRootRights
   generalize hS1 : threadSlotSet ec st vtid.val TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot
@@ -5450,7 +5452,7 @@ theorem copyThreadSpaces_preserves_projection (ctx : LabelingContext) (observer 
   have hI2 : st1.objects.invExt := by
     rw [← hS1']; exact (retireFinalObject_frame _ _ _ _ hI1).1
   have hT2 : st1.getTcb? vtid.val = some t1 := by
-    rw [← hS1', retireFinalObject_getTcb? _ _ _ _ hI1]; exact hT1'
+    rw [← hS1']; exact retireFinalObject_getTcb?_of_slotCap _ _ _ _ hI1 hT1' hF1
   have hHid2 : ∀ c o, st1.slotCapAt ⟨vtid.val.toObjId, TCB.vspaceRootSlot⟩ = some c →
       c.namedObject = some o → objectObservable ctx observer o = false ∧
         ∀ w, untypedRecordsChild st1 w o = true → objectObservable ctx observer w = false := by

@@ -16,6 +16,13 @@ three, and `finaliseFinalObject`, which a final delete runs before the retire
 (`retireFinalObject`) so that a busy endpoint or a busy or bound notification
 is emptied and can then be retired.
 
+WS-ZA ZA5.4 part 24: and on the final capability to a thread `finaliseCap`
+unbinds its notification and its scheduling context and suspends it, and on the
+final capability to a scheduling context it unbinds the context's thread
+(`finaliseThread`, `finaliseSchedContext`, §4); each then runs the destroy
+cleanup (`lifecyclePreRetypeCleanup`), so a thread or a context leaves no
+reference behind and the retire can erase it.
+
 * **One waiter at a time, at the head.**  Each step takes the head of the queue
   (`cancelEndpointQueue`, `cancelNotificationQueue`): the endpoint's head is
   popped as a rendezvous pops it, each write in its slot (`storePopHead`, the
@@ -277,14 +284,467 @@ def unbindMaybeNotification (notificationId : SeLe4n.ObjId) (st : SystemState) :
   | none => st
 
 -- ============================================================================
--- §4  The finalisation a final delete runs
+-- §4  A thread's and a scheduling context's finalisation
 -- ============================================================================
 
-/-- **seL4's `finaliseCap` on the final capability to an endpoint or a
-notification** (`target`, a word as `slotRetireTarget` reads it: `x + 1`, or
-`0` for none): an endpoint's waiters are cancelled (`cancelAllIpc`); a
-notification is unbound from its thread and its waiters are cancelled
-(`unbindMaybeNotification`, `cancelAllSignals`).  Nothing when no object is
+/-- **Whether an IPC state, held as its two codes, is one an unbound thread off
+every run queue may be in** (the invariants' `passiveServerIdleAllowed`): not
+blocked sending and not blocked calling, so unbinding its scheduling context
+strands no sender. -/
+@[inline] def ipcCodesIdleAllowed (objCode stateCode : Nat) : Bool :=
+  !(stateCode == 0 && objCode != 0) && stateCode != 3
+
+/-- **No scheduling context records `c` as the origin of a reservation on loan**
+(`c` a thread's id plus one): the scan `clearDonationOriginReferences` would
+otherwise have work to do, which a thread being finalised may not leave it. -/
+@[inline] def originsNameNone (st : SystemState) (c : Nat) : Bool :=
+  st.objects.fold true fun acc _ o => acc && match o with
+    | .schedContext sc => SeLe4n.ThreadId.optCode sc.donationOrigin != c
+    | _ => true
+
+/-- **Whether a final delete may finalise the thread at `x`**, read on the
+pre-state before any write.  The thread is stored under its own id, is no
+reserved or idle thread and is held by no core (seL4 suspends a running thread
+and reschedules; this kernel refuses, `docs/REGISTERED_DEBT.md`); it is on no
+run queue; it is suspended and ready, or the head waiter of a notification
+(the one blocking state this cut cancels); it is linked into no endpoint or
+reply-waiter queue, holds no reply link, stash, timeout budget or message, and
+lends or borrows no reservation; its space slots are empty (their finalising
+delete is a later cut's); a bound notification and a bound scheduling context
+are bound back to it; and nothing else names it as a reservation's origin or as
+a service's owner.  Each step below re-reads its own guard, so a state outside
+this set is left as it is and the retire then refuses the thread. -/
+@[inline] def threadFinaliseAdmitted (st : SystemState) (x : SeLe4n.ObjId) : Bool :=
+  match st.getObject? x with
+  | some (.tcb t) =>
+    let tid : SeLe4n.ThreadId := ⟨x.val⟩
+    t.tid.val == x.val && !tid.isReserved && !isIdleThreadId tid &&
+    !threadHeldOnSomeCore st tid && t.runCoreCode == 0 &&
+    t.queueNextCode == 0 && t.queuePrevCode == 0 && t.queuePPrevCode == 0 &&
+    t.replyWaiterNextCode == 0 && t.replyWaiterPrevCode == 0 && t.replyWaitersHeadCode == 0 &&
+    t.replyObjectCode == 0 && t.pendingReceiveReplyCode == 0 && t.timeoutBudget.isNone &&
+    t.pendingMessage.isNone && t.scBindingOwnerCode == 0 &&
+    t.spaceCells[0].isNone && t.spaceCells[1].isNone &&
+    ((t.ipcStateCode == 0 && t.ipcObjectCode == 0 && t.threadState == .Inactive &&
+        t.ntfnNextCode == 0 && t.ntfnPrevCode == 0) ||
+      (t.ipcStateCode == 2 && t.threadState != .Inactive && t.ntfnPrevCode == 0 &&
+        match st.getNotification? ⟨t.ipcObjectCode⟩ with
+        | some n => n.waitHeadCode == x.val + 1
+        | none => false)) &&
+    (t.boundNotificationCode == 0 ||
+      ((match st.getNotification? ⟨t.boundNotificationCode - 1⟩ with
+        | some n => n.boundTCBCode == x.val + 1
+        | none => false) && unbindNotificationInPlace st tid)) &&
+    (t.scBindingScCode == 0 ||
+      match st.getSchedContext? ⟨t.scBindingScCode - 1⟩ with
+      | some sc => sc.boundThreadCode == x.val + 1
+      | none => false) &&
+    originsNameNone st (x.val + 1) && servicesNameNone st x
+  | _ => false
+
+/-- **Cancel the blocked IPC of a thread being finalised** (seL4's `suspend` →
+`cancelIPC` → `cancelSignal`): the head waiter of a notification leaves its
+queue and is made `.ready` with the cancellation frame, as
+`cancelIpcBlocking`'s notification arm makes it, and is **not** woken — it is
+being destroyed.  Any other state is left alone. -/
+def finaliseThreadCancel (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
+  match st.getTcb? tid with
+  | some t =>
+    match t.ipcState with
+    | .blockedOnNotification n =>
+      match st.getNotification? n with
+      | some ntfn =>
+        if ntfn.waitHead == some tid && notificationWaiterCancellable st n tid t then
+          Lifecycle.Suspend.cancelIpcBlocking st tid t
+        else st
+      | none => st
+    | _ => st
+  | none => st
+
+/-- **Suspend a thread being finalised**: a ready thread, no core's idle thread,
+that runs and waits on no core is marked `.Inactive`, seL4's
+`setThreadState Inactive`. -/
+def finaliseThreadSuspend (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
+  match st.getTcb? tid with
+  | some t =>
+    if t.ipcStateCode == 0 && t.ipcObjectCode == 0 && t.threadState != .Inactive &&
+        t.runCoreCode == 0 && !threadHeldOnSomeCore st tid && !isIdleThreadId tid then
+      st.updateTcb tid fun t => { t with threadState := .Inactive }
+    else st
+  | none => st
+
+/-- **Unbind a thread being finalised from its notification** (seL4's
+`unbindNotification`), when the notification is bound back to it, each side
+rewritten where it stands (`storeUnbindNotification`). -/
+def finaliseThreadUnbindNotification (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
+  let c := boundNotificationCodeOf st tid
+  if c == 0 then st
+  else
+    match st.getNotification? ⟨c - 1⟩ with
+    | some n =>
+      if n.boundTCBCode == tid.val + 1 && unbindNotificationInPlace st tid then
+        storeUnbindNotification st tid ⟨c - 1⟩
+      else st
+    | none => st
+
+/-- **Unbind a thread being finalised from the scheduling context it owns**
+(seL4's `unbindFromSC`): the reservation arm the destroy cleanup runs
+(`cancelDonationArmOnCore`), at a `.bound` thread whose context is bound back
+to it, and before the cleanup, so the cleanup finds the thread unbound. -/
+def finaliseThreadUnbindSchedContext (st : SystemState) (tid : SeLe4n.ThreadId) :
+    SystemState :=
+  match st.getTcb? tid with
+  | some t =>
+    if t.scBindingScCode != 0 && t.scBindingOwnerCode == 0 && t.runCoreCode == 0 &&
+        !threadHeldOnSomeCore st tid && ipcCodesIdleAllowed t.ipcObjectCode t.ipcStateCode &&
+        (match st.getSchedContext? ⟨t.scBindingScCode - 1⟩ with
+          | some sc => sc.boundThreadCode == tid.val + 1
+          | none => false) then
+      match cancelDonationArmOnCore st tid t with
+      | .ok st' => st'
+      | .error _ => st
+    else st
+  | none => st
+
+/-- **The destroy cleanup of a finalised thread** (`lifecyclePreRetypeCleanup`'s
+thread arm): run once the thread is retirable — quiescent, held by no core and
+named by no object — so its reference sweeps find nothing and only its two
+space slots leave the derivation tree. -/
+def finaliseThreadCleanup (st : SystemState) (x : SeLe4n.ObjId) : SystemState :=
+  if threadRetirable st x && x.val != 0 then
+    match st.getObject? x with
+    | some (.tcb t) =>
+      match lifecyclePreRetypeCleanup st x (.tcb t) (.tcb t) with
+      | .ok st' => st'
+      | .error _ => st
+    | _ => st
+  else st
+
+/-- **seL4's `finaliseCap` on the final capability to a thread**, in seL4's
+order: unbound from its notification (`unbindNotification`) and from its
+scheduling context (`schedContext_unbindTCB`), then suspended (`suspend`: its
+blocked IPC cancelled, then `.Inactive`), then the destroy cleanup; all of it
+only when the pre-state admits it (`threadFinaliseAdmitted`), checks before
+writes. -/
+def finaliseThread (x : SeLe4n.ObjId) (st : SystemState) : SystemState :=
+  if threadFinaliseAdmitted st x then
+    let tid : SeLe4n.ThreadId := ⟨x.val⟩
+    finaliseThreadCleanup
+      (finaliseThreadSuspend
+        (finaliseThreadCancel
+          (finaliseThreadUnbindSchedContext
+            (finaliseThreadUnbindNotification st tid) tid) tid) tid) x
+  else st
+
+/-- **Whether a final delete may finalise the scheduling context at `x`**: it
+heads no reply stack and is lent by no one, and a thread it is bound to is bound
+back to it as its own (`.bound`), runs and waits on no core, and is in a state
+an unbound thread may idle in. -/
+@[inline] def schedContextFinaliseAdmitted (st : SystemState) (x : SeLe4n.ObjId) : Bool :=
+  match st.getObject? x with
+  | some (.schedContext sc) =>
+    sc.scReply.isNone && sc.donationOrigin.isNone &&
+    (sc.boundThreadCode == 0 ||
+      let tid : SeLe4n.ThreadId := ⟨sc.boundThreadCode - 1⟩
+      match st.getTcb? tid with
+      | some t =>
+        t.scBindingScCode == x.val + 1 && t.scBindingOwnerCode == 0 &&
+        t.runCoreCode == 0 && !threadHeldOnSomeCore st tid &&
+        ipcCodesIdleAllowed t.ipcObjectCode t.ipcStateCode
+      | none => false)
+  | _ => false
+
+/-- **Unbind a scheduling context being finalised from its thread** (seL4's
+`schedContext_unbindAllTCBs`): the thread's reservation arm
+(`cancelDonationArmOnCore`), which clears both sides and the context's
+replenishment on the thread's home core. -/
+def finaliseSchedContextUnbind (st : SystemState) (x : SeLe4n.ObjId) : SystemState :=
+  match st.getObject? x with
+  | some (.schedContext sc) =>
+    if sc.boundThreadCode == 0 then st
+    else
+      let tid : SeLe4n.ThreadId := ⟨sc.boundThreadCode - 1⟩
+      match st.getTcb? tid with
+      | some t =>
+        if t.scBindingScCode == x.val + 1 && t.scBindingOwnerCode == 0 && t.runCoreCode == 0 &&
+            !threadHeldOnSomeCore st tid && ipcCodesIdleAllowed t.ipcObjectCode t.ipcStateCode then
+          match cancelDonationArmOnCore st tid t with
+          | .ok st' => st'
+          | .error _ => st
+        else st
+      | none => st
+  | _ => st
+
+/-- **The destroy cleanup of a finalised scheduling context**
+(`lifecyclePreRetypeCleanup`'s scheduling-context arm), run once the context is
+bound to no thread and heads no reply stack, so its release finds no binding
+(`lifecyclePreRetypeCleanup_of_schedContextFree`). -/
+def finaliseSchedContextCleanup (st : SystemState) (x : SeLe4n.ObjId) : SystemState :=
+  match st.getObject? x with
+  | some (.schedContext sc) =>
+    if sc.boundThreadCode == 0 && sc.scReply.isNone then
+      match lifecyclePreRetypeCleanup st x (.schedContext sc) (.schedContext sc) with
+      | .ok st' => st'
+      | .error _ => st
+    else st
+  | _ => st
+
+/-- **seL4's `finaliseCap` on the final capability to a scheduling context**:
+unbound from its thread, then the destroy cleanup, when the pre-state admits it
+(`schedContextFinaliseAdmitted`). -/
+def finaliseSchedContext (x : SeLe4n.ObjId) (st : SystemState) : SystemState :=
+  if schedContextFinaliseAdmitted st x then
+    finaliseSchedContextCleanup (finaliseSchedContextUnbind st x) x
+  else st
+
+-- ============================================================================
+-- §4a  What the destroy cleanup finds on a finalised object
+-- ============================================================================
+
+/-- A thread code other than `b`'s does not decode to `b`. -/
+theorem threadOfOptCode_beq_some_false {n : Nat} {b : SeLe4n.ThreadId} (h : n ≠ b.val + 1) :
+    (SeLe4n.ThreadId.ofOptCode n == some b) = false := by
+  cases hc : (SeLe4n.ThreadId.ofOptCode n == some b)
+  · rfl
+  · exact absurd (threadOfOptCode_eq_some (beq_iff_eq.mp hc)) h
+
+/-- **The run-queue sweep has nothing to do for a thread no core holds**:
+queued on no core and current on none. -/
+theorem removeRunnableFromAllCores_of_unoccupied {st : SystemState} {tid : SeLe4n.ThreadId}
+    (h : ∀ c, threadOccupiesCore st tid c = false) : removeRunnableFromAllCores st tid = st := by
+  unfold removeRunnableFromAllCores
+  generalize SeLe4n.Kernel.Concurrency.allCores = cs
+  induction cs with
+  | nil => rfl
+  | cons c cs ih =>
+    rw [List.foldl_cons]
+    have hc : removeRunnableStepOnCore tid st c = st := by
+      unfold removeRunnableStepOnCore; rw [h c]; rfl
+    rw [hc]; exact ih
+
+/-- **What a retirable thread is**, unpacked from `threadRetirable`. -/
+theorem threadRetirable_spec {st : SystemState} {x : SeLe4n.ObjId} {t : TCB}
+    (hT : st.getObject? x = some (.tcb t)) (h : threadRetirable st x = true) :
+    t.tid = ⟨x.val⟩ ∧ threadQuiescent t = true ∧ threadHeldOnSomeCore st t.tid = false ∧
+      storeNamesThreadNone st (x.val + 1) = true := by
+  unfold threadRetirable at h; rw [hT] at h
+  simp only [Bool.and_eq_true, beq_iff_eq, Bool.not_eq_true'] at h
+  obtain ⟨⟨⟨⟨⟨hId, -⟩, hQ⟩, hH⟩, hN⟩, -⟩ := h
+  exact ⟨by cases ht : t.tid; rw [ht] at hId; simp only at hId; rw [hId], hQ, hH, hN⟩
+
+/-- **The destroy cleanup of a retirable thread is the identity.**  A thread a
+final delete may retire is quiescent, held by no core and named by no object
+(`threadRetirable`), so each sweep of `lifecyclePreRetypeCleanup`'s thread arm
+finds nothing: no reservation to end, no run queue, endpoint queue or
+notification queue to leave, no reservation origin to clear, no space slot to
+splice out of the derivation tree, and no reply link to refuse on.  This is the
+statement that the finalisation before it left the thread nothing dangling. -/
+theorem lifecyclePreRetypeCleanup_of_threadRetirable {st : SystemState} {x : SeLe4n.ObjId}
+    {t : TCB} (hT : st.getObject? x = some (.tcb t)) (hR : threadRetirable st x = true)
+    (hRes : x.val ≠ 0) :
+    lifecyclePreRetypeCleanup st x (.tcb t) (.tcb t) = .ok st := by
+  obtain ⟨hTid, hQ, hHeld, hNames⟩ := threadRetirable_spec hT hR
+  obtain ⟨-, hIS, hIO, -, hQN, hQP, -, -, -, hRC, -, -, -, -, -, -, hWH, hSC, hSO, -, hRO, -,
+    -, hS0, hS1⟩ := threadQuiescent_codes hQ
+  have hX : t.tid.toObjId = x := by rw [hTid]; rfl
+  have hObj : st.objects[x]? = some (.tcb t) := by rw [← hT]; simp
+  have hGet : st.getTcb? t.tid = some t := (SystemState.getTcb?_eq_some_iff st _ t).mpr (hX ▸ hObj)
+  have hNm : ∀ (k : SeLe4n.ObjId) (o : KernelObject), st.objects[k]? = some o → objectNamesThread o (x.val + 1) = false := by
+    intro k o hk
+    have := RobinHood.RHTable.fold_and_true_of_get? st.objects
+      (fun _ o => !objectNamesThread o (x.val + 1)) hNames hk
+    simpa using this
+  have hCode : t.tid.val + 1 = x.val + 1 := by rw [hTid]
+  -- The reservation arm: an unbound thread is left alone.
+  have hUnb : t.schedContextBinding = .unbound := by
+    unfold TCB.schedContextBinding; rw [hSC, hSO]; rfl
+  -- The run-queue sweep: queued on no core, current on none.
+  have hRun : removeRunnableFromAllCores st t.tid = st := by
+    refine removeRunnableFromAllCores_of_unoccupied (fun c => ?_)
+    unfold threadOccupiesCore SystemState.queuedOn
+    rw [hGet]; dsimp only; rw [hRC]
+    have hCur : (st.scheduler.currentOnCore c == some t.tid) = false := by
+      cases hc : (st.scheduler.currentOnCore c == some t.tid)
+      · rfl
+      · have : threadCurrentOnSomeCore st t.tid = true :=
+          (threadCurrentOnSomeCore_iff st t.tid).mpr ⟨c, beq_iff_eq.mp hc⟩
+        unfold threadHeldOnSomeCore at hHeld; rw [this] at hHeld; cases hHeld
+    rw [hCur]; simp
+  -- The endpoint sweep: no interior link to splice, no queue end to move.
+  have hSplice : spliceOutMidQueueNode st t.tid = st := by
+    unfold spliceOutMidQueueNode
+    have hL : lookupTcb st t.tid = some t := by
+      unfold lookupTcb
+      rw [hTid] at hGet ⊢
+      simp only [SeLe4n.ThreadId.isReserved, hRes, decide_false, Bool.false_eq_true, if_false]
+      exact hGet
+    rw [hL]; dsimp only
+    rw [show t.queuePrev = none by unfold TCB.queuePrev; rw [hQP]; rfl,
+      show t.queueNext = none by unfold TCB.queueNext; rw [hQN]; rfl]
+  have hEp : removeFromAllEndpointQueues st t.tid = st := by
+    unfold removeFromAllEndpointQueues
+    rw [hSplice]
+    refine RobinHood.RHTable.fold_preserves _ _ _ (· = st) rfl (fun acc k v hacc => ?_)
+    subst acc
+    cases v with
+    | endpoint _ =>
+      dsimp only
+      split
+      · rename_i ep hEp _
+        have hn := hNm k _ ((SystemState.getEndpoint?_eq_some_iff st k ep).mp hEp)
+        simp only [objectNamesThread, Bool.or_eq_false_iff, beq_eq_false_iff_ne] at hn
+        obtain ⟨⟨⟨h1, h2⟩, h3⟩, h4⟩ := hn
+        rw [if_neg]
+        simp only [Endpoint.sendQ, Endpoint.receiveQ,
+          threadOfOptCode_beq_some_false (b := t.tid) (hCode ▸ h1),
+          threadOfOptCode_beq_some_false (b := t.tid) (hCode ▸ h2),
+          threadOfOptCode_beq_some_false (b := t.tid) (hCode ▸ h3),
+          threadOfOptCode_beq_some_false (b := t.tid) (hCode ▸ h4)]
+        decide
+      · rfl
+    | _ => rfl
+  -- The notification sweep: blocked on no notification.
+  have hNtfn : removeFromNotificationWaitQueue st t.tid = st := by
+    unfold removeFromNotificationWaitQueue
+    rw [hGet]; dsimp only; rw [threadQuiescent_ipcState hQ]
+  -- The origin sweep: no context names the thread as its reservation's origin.
+  have hOrig : clearDonationOriginReferences st t.tid = st := by
+    unfold clearDonationOriginReferences
+    refine RobinHood.RHTable.fold_preserves_of_fold_and st.objects
+      (fun _ o => !objectNamesThread o (x.val + 1)) hNames st _ (· = st) rfl
+      (fun acc k v hv hacc => ?_)
+    subst acc
+    cases v with
+    | schedContext sc =>
+      simp only [objectNamesThread, Bool.not_or, Bool.and_eq_true, Bool.not_eq_true',
+        beq_eq_false_iff_ne] at hv
+      dsimp only
+      rw [if_neg]
+      intro hb
+      have := congrArg SeLe4n.ThreadId.optCode (beq_iff_eq.mp hb)
+      exact hv.2 (by rw [this]; exact hCode)
+    | _ => rfl
+  have hClean : cleanupTcbReferences st t.tid = st := by
+    unfold cleanupTcbReferences
+    simp only [hRun, hEp, hNtfn, hOrig]
+  -- The space slots: both empty, so neither is spliced.
+  have hDet : detachTcbSlots st x = st := by
+    refine detachTcbSlots_of_empty ?_ ?_
+    · rw [SystemState.slotCapAt_of_object hObj]
+      simp only [KernelObject.slotCap, TCB.spaceSlotCap, TCB.cspaceRootSlot]
+      rw [dif_pos (by decide)]; exact hS0
+    · rw [SystemState.slotCapAt_of_object hObj]
+      simp only [KernelObject.slotCap, TCB.spaceSlotCap, TCB.vspaceRootSlot]
+      rw [dif_pos (by decide)]; exact hS1
+  unfold lifecyclePreRetypeCleanup
+  simp only [hHeld, cancelDonationArmOnCore_of_unbound _ _ _ hUnb, Bool.false_eq_true, if_false]
+  rw [hClean, hDet]
+  have hRO' : t.replyObject = none := by unfold TCB.replyObject; rw [hRO]; rfl
+  simp [hRO', hWH]
+
+/-- **The destroy cleanup of a scheduling context bound to nothing and heading
+no reply stack is the identity**: its release finds no binding. -/
+theorem lifecyclePreRetypeCleanup_of_schedContextFree (st : SystemState) (x : SeLe4n.ObjId)
+    (sc : SeLe4n.Kernel.SchedContext) (hB : sc.boundThreadCode = 0) (hR : sc.scReply = none) :
+    lifecyclePreRetypeCleanup st x (.schedContext sc) (.schedContext sc) = .ok st := by
+  unfold lifecyclePreRetypeCleanup
+  simp only [hR, Option.isSome_none, Bool.false_eq_true, if_false]
+  rw [releaseSchedContextBinding_of_unbound _ _ _
+    (by unfold SeLe4n.Kernel.SchedContext.boundThread; rw [hB]; rfl)]
+
+/-- **A finalised thread's destroy cleanup leaves the state as it is**: it runs
+only on a retirable thread, on which the cleanup is the identity
+(`lifecyclePreRetypeCleanup_of_threadRetirable`). -/
+theorem finaliseThreadCleanup_eq (st : SystemState) (x : SeLe4n.ObjId) :
+    finaliseThreadCleanup st x = st := by
+  unfold finaliseThreadCleanup
+  split
+  · rename_i h
+    simp only [Bool.and_eq_true, bne_iff_ne, ne_eq] at h
+    split
+    · rename_i t hT
+      rw [lifecyclePreRetypeCleanup_of_threadRetirable hT h.1 h.2]
+    · rfl
+  · rfl
+
+/-- **A finalised scheduling context's destroy cleanup leaves the state as it
+is**: it runs only on a context bound to nothing and heading no reply stack
+(`lifecyclePreRetypeCleanup_of_schedContextFree`). -/
+theorem finaliseSchedContextCleanup_eq (st : SystemState) (x : SeLe4n.ObjId) :
+    finaliseSchedContextCleanup st x = st := by
+  unfold finaliseSchedContextCleanup
+  split
+  · rename_i sc _
+    split
+    · rename_i h
+      simp only [Bool.and_eq_true, beq_iff_eq, Option.isNone_iff_eq_none] at h
+      rw [lifecyclePreRetypeCleanup_of_schedContextFree st x sc h.1 h.2]
+    · rfl
+  · rfl
+
+/-- The compiled destroy cleanup of a finalised thread: what it provably is,
+so the store scans its guard and sweeps would make are not run
+(`finaliseThreadCleanup_eq`). -/
+@[inline] def finaliseThreadCleanupImpl (st : SystemState) (_x : SeLe4n.ObjId) : SystemState := st
+
+@[csimp] theorem finaliseThreadCleanup_eq_impl :
+    @finaliseThreadCleanup = @finaliseThreadCleanupImpl := by
+  funext st x; exact finaliseThreadCleanup_eq st x
+
+/-- The compiled destroy cleanup of a finalised scheduling context
+(`finaliseSchedContextCleanup_eq`). -/
+@[inline] def finaliseSchedContextCleanupImpl (st : SystemState) (_x : SeLe4n.ObjId) :
+    SystemState := st
+
+@[csimp] theorem finaliseSchedContextCleanup_eq_impl :
+    @finaliseSchedContextCleanup = @finaliseSchedContextCleanupImpl := by
+  funext st x; exact finaliseSchedContextCleanup_eq st x
+
+/-- **The thread finalisation, with its cleanup read as what it is.** -/
+theorem finaliseThread_eq (x : SeLe4n.ObjId) (st : SystemState) :
+    finaliseThread x st =
+      if threadFinaliseAdmitted st x then
+        finaliseThreadSuspend
+          (finaliseThreadCancel
+            (finaliseThreadUnbindSchedContext
+              (finaliseThreadUnbindNotification st ⟨x.val⟩) ⟨x.val⟩) ⟨x.val⟩) ⟨x.val⟩
+      else st := by
+  unfold finaliseThread; rw [finaliseThreadCleanup_eq]
+
+/-- **The scheduling-context finalisation, with its cleanup read as what it
+is.** -/
+theorem finaliseSchedContext_eq (x : SeLe4n.ObjId) (st : SystemState) :
+    finaliseSchedContext x st =
+      if schedContextFinaliseAdmitted st x then finaliseSchedContextUnbind st x else st := by
+  unfold finaliseSchedContext; rw [finaliseSchedContextCleanup_eq]
+
+/-- A thread whose binding codes name a context and no owner is `.bound` to it. -/
+theorem schedContextBinding_of_codes {tcb : TCB} (hS : tcb.scBindingScCode ≠ 0)
+    (hO : tcb.scBindingOwnerCode = 0) :
+    tcb.schedContextBinding = .bound ⟨tcb.scBindingScCode - 1⟩ := by
+  unfold TCB.schedContextBinding SchedContextBinding.ofCodes
+  obtain ⟨s, hs⟩ := Nat.exists_eq_succ_of_ne_zero hS
+  rw [hs, hO]; simp
+
+/-- **The reservation arm on such a thread is the per-core unbind** at its
+home core. -/
+theorem cancelDonationArmOnCore_of_codes (st : SystemState) (tid : SeLe4n.ThreadId) {tcb : TCB}
+    (hS : tcb.scBindingScCode ≠ 0) (hO : tcb.scBindingOwnerCode = 0) :
+    cancelDonationArmOnCore st tid tcb =
+      cancelBoundDonationOnCore st tid tcb (determineTargetCore st tid) :=
+  cancelDonationArmOnCore_of_bound st tid tcb _ (schedContextBinding_of_codes hS hO)
+
+-- ============================================================================
+-- §5  The finalisation a final delete runs
+-- ============================================================================
+
+/-- **seL4's `finaliseCap` on the final capability to an endpoint, a
+notification, a thread or a scheduling context** (`target`, a word as
+`slotRetireTarget` reads it: `x + 1`, or `0` for none): an endpoint's waiters
+are cancelled (`cancelAllIpc`); a notification is unbound from its thread and
+its waiters are cancelled (`unbindMaybeNotification`, `cancelAllSignals`); a
+thread is suspended and unbound (`finaliseThread`); a scheduling context is
+unbound (`finaliseSchedContext`).  Nothing when no object is
 targeted, for any other kind, or when the object is still held outside every
 slot — a service registration's endpoint capability, an interrupt's
 notification — since seL4 would hold a capability there and the slot's would
@@ -297,6 +757,8 @@ def finaliseFinalObject (target : Nat) (st : SystemState) : SystemState :=
       match st.getObjectType? x with
       | some .endpoint => cancelAllIpc x st
       | some .notification => cancelAllSignals x (unbindMaybeNotification x st)
+      | some .tcb => finaliseThread x st
+      | some .schedContext => finaliseSchedContext x st
       | _ => st
     else st
 

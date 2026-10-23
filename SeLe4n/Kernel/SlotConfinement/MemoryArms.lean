@@ -502,13 +502,17 @@ theorem copyThreadSpaces_confinedToCores (ec : CoreId) (st st' : SystemState)
     (vtid : SeLe4n.ValidThreadId) (cnSrc vrSrc : CSpaceAddr) (hInv : st.objects.invExt)
     (hStep : copyThreadSpaces ec st vtid cnSrc vrSrc = .ok st') :
     observableSlotsConfinedToCores st st' [] := by
-  obtain ⟨tcb, hT, -, -, -, -, rfl⟩ := copyThreadSpaces_ok hStep
-  obtain ⟨hC1, hI1⟩ := threadSlotCopied_tcb hInv hT TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot
+  obtain ⟨tcb, hT, -, -, hCn, -, rfl⟩ := copyThreadSpaces_ok hStep
+  obtain ⟨cnCap, -, hCL, -⟩ := cspaceRootSourceAdmitted_spec hCn
+  obtain ⟨-, hI1⟩ := threadSlotCopied_tcb hInv hT TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot
     TCB.cspaceRootRights
+  obtain ⟨t1', hT1', hF⟩ := threadSlotCopied_slotFilled hInv hT (slot := TCB.cspaceRootSlot)
+    (by decide) TCB.cspaceRootRights hCL
   obtain ⟨t1, hT1⟩ := Option.isSome_iff_exists.mp
     (show ((threadSlotSet ec st vtid.val TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot
         TCB.cspaceRootRights).getTcb? vtid.val).isSome by
-      unfold threadSlotSet; dsimp only; rw [retireFinalObject_getTcb? _ _ _ _ hI1]; exact hC1)
+      unfold threadSlotSet; dsimp only
+      rw [retireFinalObject_getTcb?_of_slotCap _ _ _ _ hI1 hT1' hF]; rfl)
   obtain ⟨hs1, hm1⟩ := threadSlotSet_framed ec hT TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot
     TCB.cspaceRootRights
   obtain ⟨hs2, hm2⟩ := threadSlotSet_framed ec hT1 TCB.vspaceRootSlot vrSrc.cnode vrSrc.slot

@@ -2130,6 +2130,24 @@ theorem StateMono.of_pointwise {st st' : SystemState}
     fun hc x' hx' => h2 t x' hx' hc,
     fun ⟨x, hx, ha⟩ => let ⟨x', hx', hm⟩ := h1 t x hx; ⟨x', hx', hm.2 ha⟩⟩
 
+/-- **A step that may also erase suspended threads is state-monotone**: a TCB
+it keeps is replaced by a monotone step of it, or the TCB is gone and was not
+active, so neither runnable nor active before. -/
+theorem StateMono.of_pointwise_erase {st st' : SystemState}
+    (h1 : ∀ t x, st.getTcb? t = some x →
+      (∃ x', st'.getTcb? t = some x' ∧ x.StepMono x') ∨ (st'.getTcb? t = none ∧ ¬ x.Active))
+    (h2 : ∀ t x', st'.getTcb? t = some x' → (∀ x, st.getTcb? t = some x → x.Coherent) →
+      x'.Coherent) : StateMono st st' := fun t =>
+  ⟨fun ⟨x, hx, hr⟩ => by
+      rcases h1 t x hx with ⟨x', hx', hm⟩ | ⟨-, hA⟩
+      · exact ⟨x', hx', hm.runnable hr⟩
+      · exact absurd hr.2 hA,
+    fun hc x' hx' => h2 t x' hx' hc,
+    fun ⟨x, hx, ha⟩ => by
+      rcases h1 t x hx with ⟨x', hx', hm⟩ | ⟨-, hA⟩
+      · exact ⟨x', hx', hm.2 ha⟩
+      · exact absurd ha hA⟩
+
 /-- The same, read off a step that rewrites every TCB through a monotone map
 and adds or removes none. -/
 theorem StateMono.of_map {st st' : SystemState} {f : SeLe4n.ThreadId → TCB → TCB}

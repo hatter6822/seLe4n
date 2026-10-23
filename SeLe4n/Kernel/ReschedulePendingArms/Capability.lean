@@ -271,13 +271,6 @@ theorem capabilityKeyFrame_of_retireTouched {st st' : SystemState}
   · rw [e]
   · rw [hT _ t1, hT _ t2]
 
-/-- **The final-delete retire moves no key input.** -/
-theorem retireFinalObject_keyFrame (ec : CoreId) (target recorder : Nat) (st : SystemState)
-    (hObjInv : st.objects.invExt) :
-    capabilityKeyFrame st (retireFinalObject ec target recorder st) :=
-  have h := retireFinalObject_frame ec target recorder st hObjInv
-  capabilityKeyFrame_of_retireTouched h.1 h.2.1 h.2.2.2.2.touched
-
 /-! ### VSpace and untyped -/
 
 /-- A store whose slot feeds no key on either side. -/
@@ -489,30 +482,6 @@ theorem threadSlotCopied_keyFrame {st : SystemState} {tid : SeLe4n.ThreadId} {t 
       exact insertObjects_tcbKeyKeeping_keyFrame hI
         ((SystemState.getTcb?_eq_some_iff _ tid t').mp hT') rfl
     exact (hD.trans hU).trans (cdtRecord_keyFrame _ _ _ _ hU.2.2)
-
-/-- A thread space slot's set moves no key input: the copy, then the retire. -/
-theorem threadSlotSet_keyFrame (ec : CoreId) {st : SystemState} {tid : SeLe4n.ThreadId} {t : TCB}
-    (hObjInv : st.objects.invExt) (hT : st.getTcb? tid = some t) (slot : SeLe4n.Slot)
-    (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) :
-    capabilityKeyFrame st (threadSlotSet ec st tid slot srcCNode srcSlot rights) := by
-  unfold threadSlotSet
-  exact (threadSlotCopied_keyFrame hObjInv hT _ _ _ _).trans
-    (retireFinalObject_keyFrame ec _ _ _ (threadSlotCopied_tcb hObjInv hT slot srcCNode srcSlot rights).2)
-
-theorem copyThreadSpaces_keyFrame (ec : CoreId) (st st' : SystemState) (vtid : SeLe4n.ValidThreadId)
-    (cnSrc vrSrc : CSpaceAddr) (hObjInv : st.objects.invExt)
-    (hStep : copyThreadSpaces ec st vtid cnSrc vrSrc = .ok st') : capabilityKeyFrame st st' := by
-  obtain ⟨tcb, hT, -, -, -, -, rfl⟩ := copyThreadSpaces_ok hStep
-  obtain ⟨t1, hT1'⟩ := Option.isSome_iff_exists.mp
-    (threadSlotSet_getTcb? ec hObjInv hT TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot
-      TCB.cspaceRootRights)
-  have hI1 : (threadSlotSet ec st vtid.val TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot
-      TCB.cspaceRootRights).objects.invExt := by
-    unfold threadSlotSet
-    exact (retireFinalObject_frame ec _ _ _ (threadSlotCopied_tcb hObjInv hT TCB.cspaceRootSlot
-      cnSrc.cnode cnSrc.slot TCB.cspaceRootRights).2).1
-  exact (threadSlotSet_keyFrame ec hObjInv hT _ _ _ _).trans
-    (threadSlotSet_keyFrame ec hI1 hT1' _ _ _ _)
 
 theorem bindNotification_keyFrame (st st' : SystemState) (nid : SeLe4n.ObjId)
     (tcbId : SeLe4n.ThreadId) (hObjInv : st.objects.invExt)

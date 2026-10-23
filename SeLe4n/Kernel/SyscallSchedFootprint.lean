@@ -193,7 +193,9 @@ def schedLockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
                       receiver.cspaceRoot slotBase executingCore st)
   -- **WS-ZA ZA5.4 part 23**: a delete that destroys the last capability to an
   -- endpoint or a notification wakes its cancelled waiters on their own cores,
-  -- and the revocation is a sequence of such deletes; neither reads an operand.
+  -- one that destroys the last capability to a thread or a scheduling context
+  -- purges a replenish entry (part 24), and the revocation is a sequence of
+  -- such deletes; neither reads an operand.
   | .cspaceDelete | .cspaceRevoke =>
       LockSet.ofList? schedLockSet_capabilityDestroyOnCore
   | .cspaceMint | .cspaceCopy | .cspaceMove
@@ -223,7 +225,9 @@ sequence identified, and one found to write one is a footprint to declare rather
 than a row to move.  `.cspaceDelete` and `.cspaceRevoke` were in the `none` group
 until WS-ZA ZA5.4 part 23 made the finalising delete cancel a destroyed
 endpoint's or notification's waiters and wake each on its own core: they declare
-every core's run queue now (`schedLockSet_capabilityDestroyOnCore`).
+every core's run queue now, and every core's replenish queue since part 24 made
+it unbind a destroyed thread's or scheduling context's reservation
+(`schedLockSet_capabilityDestroyOnCore`).
 `.untypedRetype` (`v0.36.5`) is
 there too: a carve writes an untyped, a fresh frame, one CNode slot, the CDT and
 a page of machine memory — no scheduler field at all.  `.untypedReset` (`v0.36.6`)
@@ -300,7 +304,7 @@ does: it reads no operand and its footprint is fixed by the executing core. -/
 
 /-- **WS-ZA ZA5.4 part 23**: the finalising delete and the revocation declare
 unconditionally, as `.yield` does: they read no operand, and their footprint is
-every core's run queue. -/
+every core's run queue and replenish queue. -/
 @[simp] theorem schedLockSetForSyscall_capabilityDestroy_isSome
     (sid : SyscallId) (ops : SyscallLockOperands) (executingCore : CoreId) (st : SystemState)
     (h : sid = .cspaceDelete ∨ sid = .cspaceRevoke) :

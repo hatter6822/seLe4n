@@ -190,8 +190,7 @@ theorem dispatchCapabilityOnly_runQueueEntryStage
           simp only [hDec] at hStep
           split at hStep
           · cases hStep
-          refine RunQueueStage.entry ?_
-          exact cspaceDeleteSlotFinalising_runQueueStage hStep
+          exact cspaceDeleteSlotFinalising_runQueueEntryStage hStep
     all_goals try cases hStep
   case cspaceRevoke =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -203,8 +202,7 @@ theorem dispatchCapabilityOnly_runQueueEntryStage
           simp only [hDec] at hStep
           split at hStep
           · cases hStep
-          refine RunQueueStage.entry ?_
-          exact cspaceRevokeCdtFinalising_runQueueStage hStep
+          exact cspaceRevokeCdtFinalising_runQueueEntryStage hStep
     all_goals try cases hStep
   case mintReplyCap =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep

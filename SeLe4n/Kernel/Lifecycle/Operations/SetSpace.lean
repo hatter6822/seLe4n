@@ -436,6 +436,21 @@ theorem threadSlotCopied_frame {st : SystemState} {tid : SeLe4n.ThreadId} {t : T
     show (t'.withoutLinks).insertSpaceCap slot _ = ((t.removeSpaceCap slot).withoutLinks).insertSpaceCap slot _
     rw [hW]
 
+/-- **A slot copy from a filled source fills the thread's slot.** -/
+theorem threadSlotCopied_slotFilled {st : SystemState} {tid : SeLe4n.ThreadId} {t : TCB}
+    (hObjInv : st.objects.invExt) (hT : st.getTcb? tid = some t) {slot : SeLe4n.Slot}
+    (hs : slot.toNat < 2) {srcCNode : SeLe4n.ObjId} {srcSlot : SeLe4n.Slot}
+    (rights : AccessRightSet) {cap : Capability}
+    (hL : SystemState.lookupSlotCap st { cnode := srcCNode, slot := srcSlot } = some cap) :
+    ∃ t', (threadSlotCopied st tid slot srcCNode srcSlot rights).getTcb? tid = some t' ∧
+      (t'.spaceSlotCap slot).isSome = true := by
+  obtain ⟨-, t', hT', hW⟩ := threadSlotCopied_frame hObjInv hT slot srcCNode srcSlot rights
+  refine ⟨t', hT', ?_⟩
+  rw [← TCB.spaceSlotCap_withoutLinks, hW, hL]
+  dsimp only
+  rw [TCB.spaceSlotCap_withoutLinks, TCB.spaceSlotCap_insertSpaceCap _ hs, if_pos rfl]
+  rfl
+
 /-- **The slots after a slot copy**: the thread's slot holds the copy of what
 the source held in the pre-state, or nothing; every other slot holds what it
 held. -/
@@ -564,8 +579,12 @@ theorem copyThreadSpaces_ok_tcb {ec : Concurrency.CoreId} {st st' : SystemState}
     (recorderFor st (slotRetireTarget st vtid.val.toObjId TCB.cspaceRootSlot) vtid.val.toObjId
       TCB.cspaceRootSlot) s1 = r1
   have hIr1 : r1.objects.invExt := hR1 ▸ (retireFinalObject_frame ec _ _ s1 hI1).1
+  have hS1c : (t1.spaceSlotCap TCB.cspaceRootSlot).isSome = true := by
+    obtain ⟨t1', hT1', hF⟩ := threadSlotCopied_slotFilled hObjInv hT (slot := TCB.cspaceRootSlot)
+      (by decide) TCB.cspaceRootRights (srcCNode := cnSrc.cnode) (srcSlot := cnSrc.slot) hCL
+    rw [hS1] at hT1'; rw [hT1] at hT1'; cases hT1'; exact hF
   have hTr1 : r1.getTcb? vtid.val = some t1 := by
-    rw [← hR1, retireFinalObject_getTcb? ec _ _ s1 hI1]; exact hT1
+    rw [← hR1]; exact retireFinalObject_getTcb?_of_slotCap ec _ _ s1 hI1 hT1 hS1c
   obtain ⟨-, t2, hT2, hW2⟩ := threadSlotCopied_frame hIr1 hTr1 TCB.vspaceRootSlot
     vrSrc.cnode vrSrc.slot TCB.vspaceRootRights
   have hI2 := (threadSlotCopied_tcb hIr1 hTr1 TCB.vspaceRootSlot vrSrc.cnode vrSrc.slot
@@ -593,8 +612,10 @@ theorem copyThreadSpaces_ok_tcb {ec : Concurrency.CoreId} {st st' : SystemState}
     show t2.withoutLinks.spaceSlotCap s = _
     rw [hW]; rfl
   have hne : TCB.cspaceRootSlot ≠ TCB.vspaceRootSlot := by decide
+  have hS2c : (t2.spaceSlotCap TCB.vspaceRootSlot).isSome = true := by
+    rw [hSC, TCB.spaceSlotCap_insertSpaceCap _ (by decide), if_pos rfl]; rfl
   refine ⟨tcb, cnCap, vrCap, cnId, vrId, hT, hCL, hCT, hCK, hVL, hVT, hVK, t2,
-    by rw [retireFinalObject_getTcb? _ _ _ _ hI2]; exact hT2, ?_, ?_, hW⟩
+    retireFinalObject_getTcb?_of_slotCap _ _ _ _ hI2 hT2 hS2c, ?_, ?_, hW⟩
   · rw [cspaceRoot_eq_slotCap, hSC, TCB.spaceSlotCap_insertSpaceCap _ (by decide), if_neg hne,
       TCB.spaceSlotCap_removeSpaceCap, if_neg hne, TCB.spaceSlotCap_insertSpaceCap _ (by decide),
       if_pos rfl]

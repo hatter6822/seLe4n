@@ -823,19 +823,23 @@ theorem retireFinalObject_preserves_notificationWaiterConsistent (ec : Concurren
     (target recorder : Nat) {st : SystemState} (hObjInv : st.objects.invExt)
     (h : notificationWaiterConsistent st) :
     notificationWaiterConsistent (retireFinalObject ec target recorder st) := by
-  have hT := retireFinalObject_tcb_iff ec target recorder st hObjInv
-  have hTcbEq : ∀ k t, st.objects[k]? = some (KernelObject.tcb t) →
+  have hPost : ∀ k t, (retireFinalObject ec target recorder st).objects[k]? =
+      some (KernelObject.tcb t) →
       (retireFinalObject ec target recorder st).objects[k]? = st.objects[k]? :=
-    fun k t hk => ((hT k t).mpr hk).trans hk.symm
+    fun _ _ hk => retireFinalObject_tcb_post ec target recorder st hObjInv hk
   refine notificationWaiterConsistent_frame h
     (fun _ _ hN => retireFinalObject_back ec target recorder st hObjInv hN (fun _ e => by cases e))
     (fun _ _ _ _ hN hTt hB => by
       rw [retireFinalObject_passive_kept ec target recorder st hObjInv (by rw [hN]; trivial)
         (.inl ⟨_, _, hTt, objectNamesById_of_blockedOnNotification hB⟩)]
       exact hN)
-    (fun _ tcb _ hTt _ => hTcbEq _ tcb hTt)
-    (fun _ tcb _ hTt _ => hTcbEq _ tcb ((hT _ tcb).mp hTt))
-    (fun _ tcb hTt _ => .inl (hTcbEq _ tcb ((hT _ tcb).mp hTt)))
+    (fun _ tcb _ hTt hB => by
+      rcases retireFinalObject_tcb_kept_or_quiescent ec target recorder st hObjInv hTt with
+        e | ⟨-, -, -, hQ, -⟩
+      · exact e
+      · rw [threadQuiescent_ipcState hQ] at hB; cases hB)
+    (fun _ tcb _ hTt _ => hPost _ tcb hTt)
+    (fun _ tcb hTt _ => .inl (hPost _ tcb hTt))
 
 /-- **The retire keeps the donation chains**: every reply and scheduling
 context it leaves is as it was, and no reply a chain reads is erased — a head
@@ -866,7 +870,9 @@ theorem retireFinalObject_preserves_donationChainWellFormed (ec : Concurrency.Co
     exact hR
   · intro rid r scId hR hN
     obtain ⟨sc, hSc, hS⟩ := h.headLinkResolves rid r scId (back hR (fun _ e => by cases e)) hN
-    exact ⟨sc, retireFinalObject_schedContext ec target recorder st hObjInv hSc, hS⟩
+    refine ⟨sc, retireFinalObject_schedContext ec target recorder st hObjInv hSc
+      (schedContextRetirable_false_of_named (back hR (fun _ e => by cases e)) ?_), hS⟩
+    simp only [objectNamesSchedContext, hN, beq_iff_eq]; rfl
   · intro rid r below hR hP
     have hR0 := back hR (fun _ e => by cases e)
     obtain ⟨b, hB, hBN⟩ := h.prevLinkReciprocal rid r below hR0 hP
@@ -883,27 +889,39 @@ theorem retireFinalObject_preserves_donationChainWellFormed (ec : Concurrency.Co
     rw [retireFinalObject_passive_kept ec target recorder st hObjInv (by rw [hR]; trivial)
       (.inr (passiveObjectQuiescent_of_next hR hNs))]
 
-/-- **The retire keeps every thread's reply view**: it keeps every thread, and
-every other key's view is none before and after. -/
+/-- **The retire keeps every thread's reply view but a quiescent thread's**:
+a key keeps its view, or loses an idle one — the retired thread's, which waits on
+no server and heads no queue. -/
 theorem retireFinalObject_replyViews (ec : Concurrency.CoreId) (target recorder : Nat)
-    {st : SystemState} (hObjInv : st.objects.invExt) :
-    (retireFinalObject ec target recorder st).replyViews = st.replyViews := by
-  funext k
+    {st : SystemState} (hObjInv : st.objects.invExt) (k : SeLe4n.ObjId) :
+    (retireFinalObject ec target recorder st).replyViews k = st.replyViews k ∨
+      ((retireFinalObject ec target recorder st).replyViews k = none ∧
+        ∃ v, st.replyViews k = some v ∧ v.server = none ∧ v.headCode = 0) := by
   unfold SystemState.replyViews SystemState.getObject?
   rcases retireFinalObject_key ec target recorder st hObjInv k with e | ⟨-, hNT, hn | ⟨U, hU⟩⟩
-  · rw [e]
-  · rw [hn]
-    cases hk : st.objects[k]? with
-    | none => rfl
+  · rw [e]; exact .inl rfl
+  · cases hk : st.objects[k]? with
+    | none => rw [hn]; exact .inl rfl
     | some o => cases o with
-      | tcb t => exact absurd hk (hNT t)
-      | _ => rfl
+      | tcb t =>
+        obtain ⟨t', hT', -, -, hQ, -⟩ := threadRetirable_parts (hNT t hk)
+        rw [hk] at hT'; cases hT'
+        refine .inr ⟨by rw [hn]; rfl, t.replyView, rfl, threadQuiescent_blockingServer hQ, ?_⟩
+        obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, h0, -⟩ := threadQuiescent_codes hQ
+        exact h0
+      | _ => rw [hn]; exact .inl rfl
   · rw [hU]
     cases hk : st.objects[k]? with
-    | none => rfl
+    | none => exact .inl rfl
     | some o => cases o with
-      | tcb t => exact absurd hk (hNT t)
-      | _ => rfl
+      | tcb t =>
+        exfalso
+        rcases (retireFinalObject_frame ec target recorder st hObjInv).2.2.2.2 k with
+          e | ⟨-, -, hn'⟩ | ⟨U', hU0, -⟩
+        · rw [e, hk] at hU; cases hU
+        · rw [hn'] at hU; cases hU
+        · rw [hk] at hU0; cases hU0
+      | _ => exact .inl rfl
 
 /-- **The final-delete retire keeps the reachable state** (`ipcReachable`): the
 IPC bundle (`retireFinalObject_preserves_ipcInvariantFull`), the store's
@@ -917,16 +935,16 @@ theorem retireFinalObject_preserves_ipcReachable (ec : Concurrency.CoreId)
   obtain ⟨hI, hE⟩ := retireFinalObject_preserves_ipcInvariantFull ec target recorder st hObjInv
     h.ipcInvariantFull
   have hS := (retireFinalObject_fields ec target recorder st).2.1
-  have hG := retireFinalObject_getTcb? ec target recorder st hObjInv
   refine ⟨hI, hE, fun tid tcb hT => h.allTimeoutBudgetsNone tid tcb
-      ((retireFinalObject_tcb_iff ec target recorder st hObjInv _ tcb).mp hT),
+      (retireFinalObject_tcb_back ec target recorder st hObjInv hT),
     retireFinalObject_preserves_notificationWaiterConsistent ec target recorder hObjInv
       h.notificationWaiterConsistent,
     retireFinalObject_preserves_donationChainWellFormed ec target recorder hObjInv
       h.donationChainWellFormed,
-    SystemState.runQueueRefined_of_frame (fun c t => SystemState.runLinkOn_of_getTcb? (congrFun hG t) c)
+    SystemState.runQueueRefined_of_frame
+      (fun c t => retireFinalObject_runLinkOn ec target recorder hObjInv c t)
       (by rw [hS]) (by rw [hS]) h.runQueueRefined,
-    SystemState.replyWaitersConsistent.of_views
+    SystemState.replyWaitersConsistent.of_views_erased
       (retireFinalObject_replyViews ec target recorder hObjInv) h.replyWaitersConsistent⟩
 
 end SeLe4n.Kernel

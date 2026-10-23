@@ -249,9 +249,13 @@ theorem RunQueueStage.of_retireTouched {st st' : SystemState}
 /-- **The final-delete retire is a run-queue stage.** -/
 theorem retireFinalObject_runQueueStage (ec : Concurrency.CoreId) (target recorder : Nat)
     (st : SystemState) : RunQueueStage st (retireFinalObject ec target recorder st) :=
-  RunQueueStage.of_retireTouched fun hInv =>
-    have h := retireFinalObject_frame ec target recorder st hInv
-    ⟨h.1, h.2.1, h.2.2.2.2.touched⟩
+  have hS := (retireFinalObject_fields ec target recorder st).2.1
+  have hL := fun hInv c t => retireFinalObject_runLinkOn ec target recorder (st := st) hInv c t
+  ⟨fun hInv r => ⟨(retireFinalObject_frame ec target recorder st hInv).1,
+      SystemState.runQueueRefined_of_frame (hL hInv) (by rw [hS]) (by rw [hS]) r⟩,
+    fun _ hInv _ _ d => SystemState.currentDequeuedUniqueExcept_of_eq (by rw [hS]) (hL hInv)
+      (retireFinalObject_stateMono ec target recorder hInv) d,
+    fun hInv _ => retireFinalObject_stateMono ec target recorder hInv⟩
 
 theorem finaliseDestroyedCapabilities_runQueueStage {ec : Concurrency.CoreId} {named : List SeLe4n.ObjId}
     {pages : List MappedPage} {st st' : SystemState}
@@ -398,10 +402,12 @@ theorem copyThreadSpaces_runQueueStage {ec : Concurrency.CoreId} {st st' : Syste
     {cnSrc vrSrc : CSpaceAddr} (h : copyThreadSpaces ec st vtid cnSrc vrSrc = .ok st') :
     RunQueueStage st st' := by
   refine RunQueueStage.of_inv fun hInv => ?_
-  obtain ⟨tcb, hT, -, -, -, -, rfl⟩ := copyThreadSpaces_ok h
+  obtain ⟨tcb, hT, -, -, hCn, -, rfl⟩ := copyThreadSpaces_ok h
+  obtain ⟨cnCap, -, hCL, -⟩ := cspaceRootSourceAdmitted_spec hCn
   obtain ⟨t1, hT1'⟩ := Option.isSome_iff_exists.mp
-    (threadSlotSet_getTcb? ec hInv hT TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot
-      TCB.cspaceRootRights)
+    (threadSlotSet_getTcb? ec hInv hT (slot := TCB.cspaceRootSlot) (by decide)
+      cnSrc.cnode cnSrc.slot
+      TCB.cspaceRootRights hCL)
   exact (threadSlotSet_runQueueStage ec hT _ _ _ _).trans
     (threadSlotSet_runQueueStage ec hT1' _ _ _ _)
 
@@ -526,34 +532,62 @@ theorem notificationWaiterCancel_runQueueStage (st : SystemState)
   rw [Lifecycle.Suspend.cancelIpcBlocking_scheduler_eq]
   exact hW.2
 
-/-- **The finalisation is a run-queue stage**, every step of it
-(`finaliseFinalObject_closed`): each cancel's, and the unbind's
-(`unbindNotification_runQueueStage`, through `unbindNotification_of_inPlace`). -/
-theorem finaliseFinalObject_runQueueStage (target : Nat) (st : SystemState) :
-    RunQueueStage st (finaliseFinalObject target st) :=
-  finaliseFinalObject_closed (RunQueueStage st)
+/-- **A finalised thread's suspend is a kernel entry's worth of run-queue
+steps**: a ready thread, no core's idle thread, current nowhere and queued
+nowhere, marked `.Inactive`, its run links kept.  It is no stage: the thread
+was runnable and is not after it, which is what a suspend is. -/
+theorem finaliseSuspend_runQueueEntryStage (st : SystemState) (t : SeLe4n.ThreadId) (tcb : TCB)
+    (hT : st.getTcb? t = some tcb) (hS : tcb.ipcStateCode = 0) (hO : tcb.ipcObjectCode = 0)
+    (hR : tcb.runCoreCode = 0) (hH : threadHeldOnSomeCore st t = false)
+    (hId : isIdleThreadId t = false) :
+    SystemState.RunQueueEntryStage st
+      (st.updateTcb t fun t => { t with threadState := .Inactive }) := by
+  refine ⟨SystemState.RunQueueLinkStage.updateTcb st t (fun _ _ => rfl), fun hInv _ _ hD => ?_⟩
+  refine SystemState.currentDequeuedUniqueExcept_updateTcb_offWrite hInv hD (fun c hc => ?_) (fun c => ?_) hId
+    (fun _ _ => rfl) (fun x hx => ?_)
+  · have : threadCurrentOnSomeCore st t = true := (threadCurrentOnSomeCore_iff st t).mpr ⟨c, hc⟩
+    unfold threadHeldOnSomeCore at hH; rw [this] at hH; cases hH
+  · unfold SystemState.queuedOn; rw [hT]; dsimp only; rw [hR]; simp
+  · rw [hT] at hx; cases hx
+    exact Or.inl (by unfold TCB.ipcState; rw [hS, hO]; rfl)
+
+/-- **The finalisation is a kernel entry's worth of run-queue steps**, every
+step of it (`finaliseFinalObject_closed`): each cancel's and each unbind's
+stage, and a finalised thread's suspend (`finaliseSuspend_runQueueEntryStage`). -/
+theorem finaliseFinalObject_runQueueEntryStage (target : Nat) (st : SystemState) :
+    SystemState.RunQueueEntryStage st (finaliseFinalObject target st) :=
+  finaliseFinalObject_closed (SystemState.RunQueueEntryStage st)
     (fun e q s ep t tcb h hE hH hT hC =>
-      h.trans (storeEndpointWaiterCancelled_runQueueStage s e q ep t tcb hE hH hT hC))
-    (fun n s _ t tcb h _ _ hT hC => h.trans (notificationWaiterCancel_runQueueStage s n t tcb hT hC))
+      h.trans (storeEndpointWaiterCancelled_runQueueStage s e q ep t tcb hE hH hT hC).entry)
+    (fun n s _ t tcb h _ _ hT hC =>
+      h.trans (notificationWaiterCancel_runQueueStage s n t tcb hT hC).entry)
     (fun n s _ t h _ _ hCode hIn => by
       have hSpec := unbindNotification_of_inPlace s t hIn
       rw [hCode, Nat.add_sub_cancel] at hSpec
-      exact h.trans (unbindNotification_runQueueStage hSpec))
-    target st (RunQueueStage.refl st)
+      exact h.trans (unbindNotification_runQueueStage hSpec).entry)
+    (fun _ _ _ _ _ h _ _ _ _ _ _ _ _ hOk => h.trans (cancelDonationArmOnCore_runQueueStage hOk).entry)
+    (fun s _ t tcb _ h _ _ _ _ _ => h.trans (cancelIpcBlocking_runQueueStage s t tcb).entry)
+    (fun s t tcb h hT hS hO _ hR hH hId =>
+      h.trans (finaliseSuspend_runQueueEntryStage s t tcb hT hS hO hR hH hId))
+    target st ⟨SystemState.RunQueueLinkStage.refl st, fun _ _ _ d => d⟩
 
-theorem cspaceDeleteSlotFinalising_runQueueStage {ec : Concurrency.CoreId} {addr : CSpaceAddr}
-    {st st' : SystemState} (h : cspaceDeleteSlotFinalising ec addr st = .ok ((), st')) :
-    RunQueueStage st st' := by
+theorem cspaceDeleteSlotFinalising_runQueueEntryStage {ec : Concurrency.CoreId}
+    {addr : CSpaceAddr} {st st' : SystemState}
+    (h : cspaceDeleteSlotFinalising ec addr st = .ok ((), st')) :
+    SystemState.RunQueueEntryStage st st' := by
   obtain ⟨st1, st2, hD, hF, rfl⟩ := cspaceDeleteSlotFinalising_ok ec addr st st' h
-  exact (((cspaceDeleteSlot_runQueueStage hD).trans (finaliseDestroyedCapabilities_runQueueStage hF)).trans
-    (finaliseFinalObject_runQueueStage _ st2)).trans (retireFinalObject_runQueueStage ec _ _ _)
+  exact ((((cspaceDeleteSlot_runQueueStage hD).trans
+    (finaliseDestroyedCapabilities_runQueueStage hF)).entry.trans
+    (finaliseFinalObject_runQueueEntryStage _ st2)).trans
+    (retireFinalObject_runQueueStage ec _ _ _).entry)
 
-theorem cspaceRevokeCdtFinalising_runQueueStage {ec : Concurrency.CoreId} {addr : CSpaceAddr}
-    {st st' : SystemState} (h : cspaceRevokeCdtFinalising ec addr st = .ok ((), st')) :
-    RunQueueStage st st' :=
-  cspaceRevokeCdtFinalising_closed (RunQueueStage st)
-    (fun _ _ _ hQ hD => hQ.trans (cspaceDeleteSlotFinalising_runQueueStage hD))
-    (RunQueueStage.refl st) h
+theorem cspaceRevokeCdtFinalising_runQueueEntryStage {ec : Concurrency.CoreId}
+    {addr : CSpaceAddr} {st st' : SystemState}
+    (h : cspaceRevokeCdtFinalising ec addr st = .ok ((), st')) :
+    SystemState.RunQueueEntryStage st st' :=
+  cspaceRevokeCdtFinalising_closed (SystemState.RunQueueEntryStage st)
+    (fun _ _ _ hQ hD => hQ.trans (cspaceDeleteSlotFinalising_runQueueEntryStage hD))
+    ⟨SystemState.RunQueueLinkStage.refl st, fun _ _ _ d => d⟩ h
 
 /-! ### Page tables and the untyped carve -/
 

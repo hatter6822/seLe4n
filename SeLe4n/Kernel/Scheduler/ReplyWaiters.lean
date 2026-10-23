@@ -106,6 +106,62 @@ theorem SystemState.replyWaitersConsistent.of_views {st st' : SystemState}
     st'.replyWaitersConsistent := by
   unfold replyWaitersConsistent; rw [h]; exact hc
 
+/-- **The queues stay consistent when idle views are dropped**: a store whose
+every slot keeps its view, or loses a view that waits on no server and heads no
+queue, keeps the queues consistent.  No queue can contain a dropped view (each
+member waits on its server), and no waiter can name a dropped view as its server
+(that server's queue is empty).  What the retire of a quiescent thread does. -/
+theorem ReplyViews.consistent_of_erased {V V' : ReplyViews}
+    (h : ∀ k, V' k = V k ∨ (V' k = none ∧ ∃ v, V k = some v ∧ v.server = none ∧ v.headCode = 0))
+    (hc : V.consistent) : V'.consistent := by
+  have hSome : ∀ k v, V' k = some v → V k = some v := fun k v hv => by
+    rcases h k with e | ⟨hn, -⟩
+    · rw [← e]; exact hv
+    · rw [hn] at hv; cases hv
+  have hWait : ∀ w s, V'.waiterOf w s ↔ V.waiterOf w s := fun w s => by
+    refine ⟨fun ⟨v, hv, hs⟩ => ⟨v, hSome _ _ hv, hs⟩, fun ⟨v, hv, hs⟩ => ?_⟩
+    rcases h w.toObjId with e | ⟨-, v', hv', hn, -⟩
+    · exact ⟨v, e ▸ hv, hs⟩
+    · rw [hv] at hv'; cases hv'; rw [hn] at hs; cases hs
+  have hChain : ∀ (l : List ThreadId) (p c : Option ThreadId), V.chain p c l →
+      (∀ w ∈ l, V' w.toObjId = V w.toObjId) → V'.chain p c l := by
+    intro l
+    induction l with
+    | nil => intro p c hc' _; exact hc'
+    | cons w l ih =>
+      intro p c hc' hm
+      obtain ⟨hcur, v, hv, hp, hrest⟩ := hc'
+      exact ⟨hcur, v, (hm w (List.mem_cons_self ..)).trans hv, hp,
+        ih _ _ hrest (fun u hu => hm u (List.mem_cons_of_mem _ hu))⟩
+  refine ⟨fun s vs hs => ?_, fun w vw s hw hs => ?_, fun w vw hw hn => ?_, fun w vw hw => ?_⟩
+  · obtain ⟨l, hCh, hLen, hNd, hMem⟩ := hc.1 s vs (hSome _ _ hs)
+    refine ⟨l, hChain l _ _ hCh (fun w hw => ?_), hLen, hNd, fun w => (hMem w).trans (hWait w s).symm⟩
+    obtain ⟨v, hv, hsv⟩ := (hMem w).mp hw
+    rcases h w.toObjId with e | ⟨-, v', hv', hn, -⟩
+    · exact e
+    · rw [hv] at hv'; cases hv'; rw [hn] at hsv; cases hsv
+  · obtain ⟨vs, hvs⟩ := hc.2.1 w vw s (hSome _ _ hw) hs
+    rcases h s.toObjId with e | ⟨-, v0, hv0, -, hh⟩
+    · exact ⟨vs, e.trans hvs⟩
+    · exfalso
+      rw [hvs] at hv0; cases hv0
+      obtain ⟨l, hCh, -, -, hMem⟩ := hc.1 s vs hvs
+      have hl : l = [] := by
+        cases l with
+        | nil => rfl
+        | cons u l => rw [hh] at hCh; exact absurd hCh.1 (by simp [ThreadId.ofOptCode])
+      subst hl
+      exact absurd ((hMem w).mpr ⟨vw, hSome _ _ hw, hs⟩) (List.not_mem_nil)
+  · exact hc.2.2.1 w vw (hSome _ _ hw) hn
+  · exact hc.2.2.2 w vw (hSome _ _ hw)
+
+/-- The store-level form of `ReplyViews.consistent_of_erased`. -/
+theorem SystemState.replyWaitersConsistent.of_views_erased {st st' : SystemState}
+    (h : ∀ k, st'.replyViews k = st.replyViews k ∨
+      (st'.replyViews k = none ∧ ∃ v, st.replyViews k = some v ∧ v.server = none ∧ v.headCode = 0))
+    (hc : st.replyWaitersConsistent) : st'.replyWaitersConsistent :=
+  ReplyViews.consistent_of_erased h hc
+
 /-- A TCB at a slot gives that slot its view. -/
 theorem SystemState.replyViews_of_tcb {st : SystemState} {k : ObjId} {t : TCB}
     (h : st.objects[k]? = some (.tcb t)) : st.replyViews k = some t.replyView := by

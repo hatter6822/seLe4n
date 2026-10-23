@@ -4163,14 +4163,14 @@ run_check "INVARIANT" rg -n -U 'def retireRecordedObject[^\n]*(\n([ \t][^\n]*)?)
 # passive kind with nothing to cancel); the admission is read on the pre-retire
 # state, the passive erase comes first, and a refused passive object outlives its
 # last capability.
-run_check "INVARIANT" rg -n -U 'def retireFinalObject[^\n]*(\n([ \t][^\n]*)?){0,4}\n    if finalRetireAdmitted st x then\n      retireRecordedObject executingCore recorder x \(retirePassiveObject st x\)\n    else st' SeLe4n/Kernel/Capability/FinalRetire.lean
+run_check "INVARIANT" rg -n -U 'def retireFinalObject[^\n]*(\n([ \t][^\n]*)?){0,4}\n    if finalRetireAdmitted st x then\n      retireRecordedObject executingCore recorder x \(eraseRetiredObject st x\)\n    else st' SeLe4n/Kernel/Capability/FinalRetire.lean
 run_check "INVARIANT" rg -n -U 'def passiveObjectRetirable[^\n]*\n  passiveObjectQuiescent st x && storeNamesNone st x && registryNamesNone st x &&\n    servicesNameNone st x && irqHandlersNameNone st x' SeLe4n/Kernel/Capability/FinalRetire.lean
 run_check "INVARIANT" rg -n -U 'def finalRetireAdmitted[^\n]*\n  !passiveKindAt st x \|\| passiveObjectRetirable st x' SeLe4n/Kernel/Capability/FinalRetire.lean
 # The passive erase runs through the registered erase primitives (no raw
 # object-table write of its own), and its record form is a theorem.
-run_check "INVARIANT" rg -n -U 'def retirePassiveObject \(st : SystemState\) \(x : SeLe4n\.ObjId\) : SystemState :=\n  if passiveKindAt st x then\n    withObjectTypeErased \(withObjectIndexSetErased \(withObjectUnindexed \(withObjectErased st x\) x\) x\) x\n  else st' SeLe4n/Kernel/Capability/FinalRetire.lean
-run_check "INVARIANT" rg -n '^theorem retirePassiveObject_eq ' SeLe4n/Kernel/Capability/FinalRetire.lean
-run_negative_check "INVARIANT" rg -n 'retirePassiveObjectImpl|retirePassiveObject_eq_impl' SeLe4n
+run_check "INVARIANT" rg -n -U 'def eraseRetiredObject \(st : SystemState\) \(x : SeLe4n\.ObjId\) : SystemState :=\n  if passiveKindAt st x then\n    withObjectTypeErased \(withObjectIndexSetErased \(withObjectUnindexed \(withObjectErased st x\) x\) x\) x\n  else st' SeLe4n/Kernel/Capability/FinalRetire.lean
+run_check "INVARIANT" rg -n '^theorem eraseRetiredObject_eq ' SeLe4n/Kernel/Capability/FinalRetire.lean
+run_negative_check "INVARIANT" rg -n 'eraseRetiredObjectImpl|eraseRetiredObject_eq_impl' SeLe4n
 # The final-delete retire keeps what other objects name, and the reachable state.
 run_check "INVARIANT" rg -n '^theorem retireFinalObject_passive_kept ' SeLe4n/Kernel/Capability/FinalRetire.lean
 run_check "INVARIANT" rg -n '^theorem retireFinalObject_kept_of_unretirable ' SeLe4n/Kernel/Capability/FinalRetire.lean
@@ -4186,12 +4186,12 @@ run_check "INVARIANT" rg -n -U '\(hNtfnFwd : ∀ \(noid : SeLe4n\.ObjId\) \(ntfn
 # slot address and no list: the frame teardown retires it directly.
 run_check "INVARIANT" rg -n '^theorem cspaceDeleteTeardownAt_of_nothing ' SeLe4n/Kernel/Capability/FrameFinalise.lean
 run_check "INVARIANT" rg -n -U '      \| none =>\n        if \(st\.getPageTable\? frameId\)\.isSome then\n          cspaceDeleteTeardownAt executingCore cnode slot st\n        else\n          let target := slotRetireTarget st cnode slot\n          let recorder := recorderFor st target cnode slot\n          retireFinalisedObject executingCore target recorder \(cspaceDeletePerformAt cnode slot st\)\n    \| _ =>\n      let target' SeLe4n/Kernel/Capability/FrameFinalise.lean
-run_check "INVARIANT" rg -n '^theorem retirePassiveObject_frame ' SeLe4n/Kernel/Capability/FinalRetire.lean
-run_check "INVARIANT" rg -n '^theorem retirePassiveObject_preserves_teardownWellFormed ' SeLe4n/Kernel/Capability/FinalRetire.lean
+run_check "INVARIANT" rg -n '^theorem eraseRetiredObject_frame ' SeLe4n/Kernel/Capability/FinalRetire.lean
+run_check "INVARIANT" rg -n '^theorem eraseRetiredObject_preserves_teardownWellFormed ' SeLe4n/Kernel/Capability/FinalRetire.lean
 run_check "INVARIANT" rg -n '^theorem passiveObjectQuiescent\.slotCap ' SeLe4n/Kernel/Capability/FinalRetire.lean
 run_check "INVARIANT" rg -n '^theorem storeNamesNone_spec ' SeLe4n/Kernel/Capability/FinalRetire.lean
 run_check "INVARIANT" rg -n '^theorem eraseWrite_preserves_ipcInvariantFull$' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
-run_check "INVARIANT" rg -n '^theorem retypeTargetDetached_of_unreferenced ' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
+run_check "INVARIANT" rg -n '^theorem erasedTargetDetached_of_unreferenced ' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
 run_check "INVARIANT" rg -n '^theorem RunQueueStage\.of_retireTouched ' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Capability.lean
 run_check "INVARIANT" rg -n '^theorem capabilityKeyFrame_of_retireTouched ' SeLe4n/Kernel/ReschedulePendingArms/Capability.lean
 run_negative_check "INVARIANT" rg -n 'RunQueueStage\.of_resetTouched|capabilityKeyFrame_of_resetTouched' SeLe4n
@@ -4204,7 +4204,7 @@ run_check "INVARIANT" rg -n '^theorem retireFinalObject_preserves_teardownWellFo
 run_check "INVARIANT" rg -n '^theorem retireFinalObject_preserves_capabilityInvariantBundle ' SeLe4n/Kernel/Capability/Invariant/Preservation/Revoke.lean
 run_check "INVARIANT" rg -n '^theorem retireFinalObject_preserves_ipcInvariantFull ' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
 run_check "INVARIANT" rg -n '^theorem retireFinalObject_runQueueStage ' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Capability.lean
-run_check "INVARIANT" rg -n '^theorem retireFinalObject_keyFrame ' SeLe4n/Kernel/ReschedulePendingArms/Capability.lean
+run_check "INVARIANT" rg -n '^theorem retireFinalObject_stepCovers ' SeLe4n/Kernel/ReschedulePendingArms/Dispatch.lean
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem retireCarvedObject_eq_impl : @retireCarvedObject = @retireCarvedObjectImpl' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
 # v0.36.132: the retire's erases allocate nothing: the compiled erase probes for
 # a bare index, and the compiled backshift takes each moved cell out of the
@@ -4301,8 +4301,8 @@ run_check "INVARIANT" rg -n '^theorem threadSlotSet_preserves_capabilityInvarian
 run_check "INVARIANT" rg -n '^theorem threadSlotSet_preserves_ipcInvariantFull ' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
 run_check "INVARIANT" rg -n '^theorem threadSlotSet_runQueueStage ' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Capability.lean
 run_check "INVARIANT" rg -n '^theorem copyThreadSpaces_runQueueStage ' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Capability.lean
-run_check "INVARIANT" rg -n '^theorem threadSlotSet_keyFrame ' SeLe4n/Kernel/ReschedulePendingArms/Capability.lean
-run_check "INVARIANT" rg -n '^theorem copyThreadSpaces_keyFrame ' SeLe4n/Kernel/ReschedulePendingArms/Capability.lean
+run_check "INVARIANT" rg -n '^theorem threadSlotSet_stepCovers ' SeLe4n/Kernel/ReschedulePendingArms/Dispatch.lean
+run_check "INVARIANT" rg -n '^theorem copyThreadSpaces_stepCovers ' SeLe4n/Kernel/ReschedulePendingArms/Dispatch.lean
 run_check "INVARIANT" rg -n '^theorem retireFinalObject_preserves_projection ' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
 run_check "INVARIANT" rg -n '^theorem threadSlotSet_preserves_projection ' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
 run_check "INVARIANT" rg -n -U 'theorem copyThreadSpaces_preserves_projection [^\n]*(\n([ \t][^\n]*)?){0,4}\n    \(hHid : ∀ s : SeLe4n\.Slot, s\.toNat < 2 → ∀ c o,' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean

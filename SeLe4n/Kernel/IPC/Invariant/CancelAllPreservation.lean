@@ -286,6 +286,45 @@ theorem storeUnbindNotification_preserves_ipcInvariantFull
   rw [hCode, Nat.add_sub_cancel] at hSpec
   exact unbindNotification_preserves_ipcInvariantFull _ _ _ hObjInv hInv hSpec
 
+/-- **A thread's or a context's reservation unbind keeps the bundle**: the
+per-core unbind (`cancelBoundDonationOnCore_preserves_ipcInvariantFull`), on a
+thread whose context is bound back to it and whose IPC state an unbound thread
+may idle in. -/
+theorem finaliseScUnbind_preserves_ipcInvariantFull :
+    FinaliseScUnbindStep (fun s => ipcInvariantFull s ∧ s.objects.invExt) := by
+  intro s s' t tcb sc h hT hS hO _ _ hA hSc hB hOk
+  rw [cancelDonationArmOnCore_of_codes s t hS hO] at hOk
+  refine ⟨cancelBoundDonationOnCore_preserves_ipcInvariantFull s s' t tcb _ h.2 h.1
+    ((SystemState.getTcb?_eq_some_iff s t tcb).mp hT) (passiveServerIdleAllowed_of_codes hA)
+    (fun scId hb => ?_) hOk, (FinaliseFrame.cancelBoundDonationOnCore h.2 hOk).invExt⟩
+  rw [schedContextBinding_of_codes hS hO] at hb
+  cases hb
+  refine ⟨sc, (SystemState.getSchedContext?_eq_some_iff s _ sc).mp hSc, ?_⟩
+  unfold SchedContext.boundThread; rw [hB]; exact threadOfOptCode_succ t
+
+/-- **A thread's notification cancel, without the wake, keeps the bundle**
+(`cancelIpcBlocking_notificationArm_preserves_ipcInvariantFull`). -/
+theorem finaliseCancel_preserves_ipcInvariantFull :
+    FinaliseCancelStep (fun s => ipcInvariantFull s ∧ s.objects.invExt) := by
+  intro s n t tcb _ h hT hI _ _ hC
+  obtain ⟨hNotRes, -, hP, hN, -⟩ := notificationWaiterCancellable_parts hC
+  have hTo := (SystemState.getTcb?_eq_some_iff s t tcb).mp hT
+  have hLookup : lookupTcb s t = some tcb := lookupTcb_of_objects_of_not_reserved s t tcb hTo hNotRes
+  have hOff : sweptThreadOffQueueChains s t := by
+    intro tcbX hX; rw [hLookup] at hX; cases hX; exact ⟨hP, hN⟩
+  exact ⟨cancelIpcBlocking_notificationArm_preserves_ipcInvariantFull s t tcb n h.2 hLookup hI h.1
+    hOff, (FinaliseFrame.notificationCancel s t tcb n h.2 hI).invExt⟩
+
+/-- **The suspend keeps the bundle**: `threadState` is a field the bundle does
+not read (`insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull`). -/
+theorem finaliseSuspend_preserves_ipcInvariantFull :
+    FinaliseSuspendStep (fun s => ipcInvariantFull s ∧ s.objects.invExt) := by
+  intro s t tcb h hT _ _ _ _ _ _
+  rw [SystemState.updateTcb_eq_of_some hT]
+  exact ⟨insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull s t tcb
+    { tcb with threadState := .Inactive } h.2 h.1 ((SystemState.getTcb?_eq_some_iff s t tcb).mp hT)
+    rfl rfl rfl rfl rfl rfl rfl rfl rfl, RHTable_insert_preserves_invExt _ _ _ h.2⟩
+
 -- ============================================================================
 -- §4  The finalisation
 -- ============================================================================
@@ -310,6 +349,8 @@ theorem finaliseFinalObject_preserves_ipcInvariantFull (target : Nat) (st : Syst
     (fun n s _ t h _ _ hCode hIn =>
       ⟨storeUnbindNotification_preserves_ipcInvariantFull s n t h.2 h.1 hCode hIn,
         (FinaliseFrame.storeUnbindNotification s t n h.2).invExt⟩)
+    finaliseScUnbind_preserves_ipcInvariantFull finaliseCancel_preserves_ipcInvariantFull
+    finaliseSuspend_preserves_ipcInvariantFull
     target st ⟨hInv, hObjInv⟩).1
 
 /-- **The retire after the finalisation keeps the IPC bundle**: the

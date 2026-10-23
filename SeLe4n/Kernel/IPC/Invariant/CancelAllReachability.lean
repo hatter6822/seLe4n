@@ -18,7 +18,7 @@ time (`finaliseFinalObject_closed`), except the donation chains, which the
 finalisation's write frame leaves alone outright (`FinaliseFrame`: no reply and
 no scheduling context is written), and the run queues' agreement with the
 threads' links, which is the finalisation's run-queue stage
-(`finaliseFinalObject_runQueueStage`).
+(`finaliseFinalObject_runQueueEntryStage`).
 
 * **The notification queues** (`notificationWaiterConsistent`).  An endpoint
   waiter's pop writes the endpoint and two threads' endpoint-queue links; its
@@ -435,11 +435,38 @@ theorem timeoutBudgetFrame_of_ntfnUnlinkReach {st s : SystemState} (h : ntfnUnli
     obtain ⟨np, nn, hEq⟩ := hR
     exact ⟨t0, h0, by rw [hEq]⟩
 
+/-- **What a notification waiter's cancel keeps of the reachable state**,
+before any wake: the queue it leaves (the head's detach,
+`cancelIpcBlocking_notificationHead_eq`), every timeout budget, and the
+reply-waiter queues (the cancellation's own theorem). -/
+theorem notificationCancel_preserves_reachableParts (st : SystemState)
+    (notificationId : SeLe4n.ObjId) (ntfn : Notification) (t : SeLe4n.ThreadId) (tcb : TCB)
+    (hInv : st.objects.invExt) (hN : st.getNotification? notificationId = some ntfn)
+    (hH : ntfn.waitHead = some t) (hT : st.getTcb? t = some tcb)
+    (hB : tcb.ipcState = .blockedOnNotification notificationId)
+    (hNC : notificationWaiterConsistent st) (hR : st.replyWaitersConsistent) :
+    notificationWaiterConsistent (Lifecycle.Suspend.cancelIpcBlocking st t tcb) ∧
+      timeoutBudgetFrame st (Lifecycle.Suspend.cancelIpcBlocking st t tcb) ∧
+      (Lifecycle.Suspend.cancelIpcBlocking st t tcb).replyWaitersConsistent := by
+  have hTo := (SystemState.getTcb?_eq_some_iff st t tcb).mp hT
+  have hNo := (SystemState.getNotification?_eq_some_iff st notificationId ntfn).mp hN
+  refine ⟨?_, ?_, cancelIpcBlocking_preserves_replyWaitersConsistent st t tcb hT hInv hR⟩
+  · obtain ⟨st1, n', -, hN1, hI1, hO1, hHd, hTl, hEq⟩ :=
+      cancelIpcBlocking_notificationHead_eq hN hH hT hB hInv
+    rw [hEq]
+    exact notificationWaiterConsistent_headDetached hNC hNo hH hTo hI1 hN1 hO1 hHd hTl _
+      (fun x => ⟨by simp, rfl, rfl⟩)
+  · have hEq : Lifecycle.Suspend.cancelIpcBlocking st t tcb =
+        Lifecycle.Suspend.restoreToReadyCancelled (removeFromNotificationWaitQueue st t) t := by
+      unfold Lifecycle.Suspend.cancelIpcBlocking; rw [hB]
+    have hReach := removeFromNotificationWaitQueue_reach st t hInv
+    rw [hEq]
+    exact (timeoutBudgetFrame_of_ntfnUnlinkReach hReach).trans
+      (timeoutBudgetFrame_updateTcb _ t hReach.1 (fun _ => rfl))
+
 /-- **What a notification waiter's cancel keeps of the reachable state**: the
-notification queues (`notificationWaiterConsistent_headDetached`, the cancel
-being the head's detach, `cancelIpcBlocking_notificationHead_eq`), every timeout
-budget, and the reply-waiter queues (the cancellation's own theorem), then the
-wake of the `.ready` thread, which writes run links alone. -/
+cancel's (`notificationCancel_preserves_reachableParts`), then the wake of the
+`.ready` thread, which writes run links alone. -/
 theorem notificationWaiterCancel_preserves_reachableParts (st : SystemState)
     (notificationId : SeLe4n.ObjId) (ntfn : Notification) (t : SeLe4n.ThreadId) (tcb : TCB)
     (hInv : st.objects.invExt) (hN : st.getNotification? notificationId = some ntfn)
@@ -453,27 +480,12 @@ theorem notificationWaiterCancel_preserves_reachableParts (st : SystemState)
       (wakeCancelledWaiter (Lifecycle.Suspend.cancelIpcBlocking st t tcb) t).replyWaitersConsistent := by
   obtain ⟨hNotRes, hB, -, -, -⟩ := notificationWaiterCancellable_parts hC
   have hTo := (SystemState.getTcb?_eq_some_iff st t tcb).mp hT
-  have hNo := (SystemState.getNotification?_eq_some_iff st notificationId ntfn).mp hN
   have hLookup : lookupTcb st t = some tcb :=
     lookupTcb_of_objects_of_not_reserved st t tcb hTo hNotRes
-  -- The cancel.
-  have hNC1 : notificationWaiterConsistent (Lifecycle.Suspend.cancelIpcBlocking st t tcb) := by
-    obtain ⟨st1, n', -, hN1, hI1, hO1, hHd, hTl, hEq⟩ :=
-      cancelIpcBlocking_notificationHead_eq hN hH hT hB hInv
-    rw [hEq]
-    exact notificationWaiterConsistent_headDetached hNC hNo hH hTo hI1 hN1 hO1 hHd hTl _
-      (fun x => ⟨by simp, rfl, rfl⟩)
+  obtain ⟨hNC1, hB1, hR1⟩ :=
+    notificationCancel_preserves_reachableParts st notificationId ntfn t tcb hInv hN hH hT hB hNC hR
   have hFr := FinaliseFrame.notificationCancel st t tcb notificationId hInv hB
   have hI1 := hFr.invExt
-  have hB1 : timeoutBudgetFrame st (Lifecycle.Suspend.cancelIpcBlocking st t tcb) := by
-    have hEq : Lifecycle.Suspend.cancelIpcBlocking st t tcb =
-        Lifecycle.Suspend.restoreToReadyCancelled (removeFromNotificationWaitQueue st t) t := by
-      unfold Lifecycle.Suspend.cancelIpcBlocking; rw [hB]
-    have hReach := removeFromNotificationWaitQueue_reach st t hInv
-    rw [hEq]
-    exact (timeoutBudgetFrame_of_ntfnUnlinkReach hReach).trans
-      (timeoutBudgetFrame_updateTcb _ t hReach.1 (fun _ => rfl))
-  have hR1 := cancelIpcBlocking_preserves_replyWaitersConsistent st t tcb hT hInv hR
   -- The victim, `.ready`, where it stands.
   obtain ⟨x, hX⟩ : ∃ x, (Lifecycle.Suspend.cancelIpcBlocking st t tcb).objects[t.toObjId]? =
       some (.tcb x) := by
@@ -552,31 +564,174 @@ theorem storeUnbindNotification_preserves_reachableParts (st : SystemState)
     · rfl
 
 -- ============================================================================
+-- §4a  A step that writes only fields the reachable parts do not read
+-- ============================================================================
+
+/-- **What the notification queues, the budgets and the reply views read of a
+thread**, kept by a step. -/
+def tcbReachFieldsKept (tx ty : TCB) : Prop :=
+  tx.ipcState = ty.ipcState ∧ tx.ntfnPrev = ty.ntfnPrev ∧ tx.ntfnNext = ty.ntfnNext ∧
+    tx.timeoutBudget = ty.timeoutBudget ∧ tx.replyView = ty.replyView
+
+/-- **A step that keeps every notification, and every thread up to fields the
+reachable parts do not read** (a scheduling binding, the thread state), with
+any other object free to change: what a reservation unbind and a suspend
+write. -/
+structure ReachFieldFrame (st st' : SystemState) : Prop where
+  ntfn : ∀ (k : SeLe4n.ObjId) (n : Notification),
+    st'.objects[k]? = some (.notification n) ↔ st.objects[k]? = some (.notification n)
+  fwd : ∀ (k : SeLe4n.ObjId) (ty : TCB), st.objects[k]? = some (.tcb ty) →
+    ∃ tx, st'.objects[k]? = some (.tcb tx) ∧ tcbReachFieldsKept tx ty
+  bwd : ∀ (k : SeLe4n.ObjId) (tx : TCB), st'.objects[k]? = some (.tcb tx) →
+    ∃ ty, st.objects[k]? = some (.tcb ty) ∧ tcbReachFieldsKept tx ty
+
+namespace ReachFieldFrame
+
+theorem of_objects_eq {st st' : SystemState} (h : st'.objects = st.objects) :
+    ReachFieldFrame st st' :=
+  ⟨fun _ _ => by rw [h], fun _ ty hy => ⟨ty, by rw [h]; exact hy, rfl, rfl, rfl, rfl, rfl⟩,
+    fun _ tx hx => ⟨tx, by rw [← h]; exact hx, rfl, rfl, rfl, rfl, rfl⟩⟩
+
+theorem trans {a b c : SystemState} (h₁ : ReachFieldFrame a b) (h₂ : ReachFieldFrame b c) :
+    ReachFieldFrame a c := by
+  refine ⟨fun k n => (h₂.ntfn k n).trans (h₁.ntfn k n), fun k ty hy => ?_, fun k tx hx => ?_⟩
+  · obtain ⟨tm, hm, r₁⟩ := h₁.fwd k ty hy
+    obtain ⟨tx, hx, r₂⟩ := h₂.fwd k tm hm
+    exact ⟨tx, hx, r₂.1.trans r₁.1, r₂.2.1.trans r₁.2.1, r₂.2.2.1.trans r₁.2.2.1,
+      r₂.2.2.2.1.trans r₁.2.2.2.1, r₂.2.2.2.2.trans r₁.2.2.2.2⟩
+  · obtain ⟨tm, hm, r₂⟩ := h₂.bwd k tx hx
+    obtain ⟨ty, hy, r₁⟩ := h₁.bwd k tm hm
+    exact ⟨ty, hy, r₂.1.trans r₁.1, r₂.2.1.trans r₁.2.1, r₂.2.2.1.trans r₁.2.2.1,
+      r₂.2.2.2.1.trans r₁.2.2.2.1, r₂.2.2.2.2.trans r₁.2.2.2.2⟩
+
+/-- A thread rewritten in its slot keeping what the reachable parts read. -/
+theorem updateTcb (st : SystemState) (t : SeLe4n.ThreadId) {f : TCB → TCB}
+    (hInv : st.objects.invExt) (hf : ∀ x, tcbReachFieldsKept (f x) x) :
+    ReachFieldFrame st (st.updateTcb t f) := by
+  cases hG : st.getTcb? t with
+  | none => rw [SystemState.updateTcb_eq_self_of_none hG]; exact of_objects_eq rfl
+  | some x =>
+    have hT := (SystemState.getTcb?_eq_some_iff st t x).mp hG
+    have hS := updateTcb_objects_self_of_tcb f hInv hT
+    have hO : ∀ k, t.toObjId ≠ k → (st.updateTcb t f).objects[k]? = st.objects[k]? :=
+      fun k hk => SystemState.updateTcb_objects_ne _ _ _ k hk hInv
+    refine ⟨fun k n => ?_, fun k ty hy => ?_, fun k tx hx => ?_⟩
+    · by_cases e : t.toObjId = k
+      · subst e; rw [hS, hT]; simp
+      · rw [hO k e]
+    · by_cases e : t.toObjId = k
+      · subst e; rw [hT] at hy; cases hy; exact ⟨f x, hS, hf x⟩
+      · exact ⟨ty, by rw [hO k e]; exact hy, rfl, rfl, rfl, rfl, rfl⟩
+    · by_cases e : t.toObjId = k
+      · subst e; rw [hS] at hx; cases hx; exact ⟨x, hT, hf x⟩
+      · exact ⟨tx, by rw [← hO k e]; exact hx, rfl, rfl, rfl, rfl, rfl⟩
+
+/-- A scheduling context rewritten in its slot. -/
+theorem updateSchedContext (st : SystemState) (s : SeLe4n.SchedContextId)
+    (f : SchedContext → SchedContext) (hInv : st.objects.invExt) :
+    ReachFieldFrame st (st.updateSchedContext s f) := by
+  cases hG : st.getSchedContext? s with
+  | none => rw [SystemState.updateSchedContext_eq_self_of_none hG]; exact of_objects_eq rfl
+  | some x =>
+    have hT := (SystemState.getSchedContext?_eq_some_iff st s x).mp hG
+    rw [SystemState.updateSchedContext_eq_of_some hG]
+    have hS : (st.objects.insert s.toObjId (.schedContext (f x)))[s.toObjId]? =
+        some (.schedContext (f x)) := RobinHood.RHTable.getElem?_insert_self _ _ _ hInv
+    have hO : ∀ k, s.toObjId ≠ k →
+        (st.objects.insert s.toObjId (.schedContext (f x)))[k]? = st.objects[k]? :=
+      fun k hk => RobinHood.RHTable.getElem?_insert_ne _ _ _ _ (fun h => hk (eq_of_beq h)) hInv
+    refine ⟨fun k n => ?_, fun k ty hy => ?_, fun k tx hx => ?_⟩
+    · show (st.objects.insert s.toObjId _)[k]? = _ ↔ _
+      by_cases e : s.toObjId = k
+      · subst e; rw [hS, hT]; simp
+      · rw [hO k e]
+    · show ∃ tx, (st.objects.insert s.toObjId _)[k]? = _ ∧ _
+      by_cases e : s.toObjId = k
+      · subst e; rw [hT] at hy; cases hy
+      · exact ⟨ty, by rw [hO k e]; exact hy, rfl, rfl, rfl, rfl, rfl⟩
+    · change (st.objects.insert s.toObjId _)[k]? = _ at hx
+      by_cases e : s.toObjId = k
+      · subst e; rw [hS] at hx; cases hx
+      · exact ⟨tx, by rw [← hO k e]; exact hx, rfl, rfl, rfl, rfl, rfl⟩
+
+/-- **The reachable parts a frame keeps**: the notification queues, every
+budget, and the reply views. -/
+theorem parts {st st' : SystemState} (h : ReachFieldFrame st st')
+    (hC : notificationWaiterConsistent st) :
+    notificationWaiterConsistent st' ∧ timeoutBudgetFrame st st' ∧
+      st'.replyViews = st.replyViews := by
+  refine ⟨notificationWaiterConsistent_of_tcbLinkFrame hC (fun k n hk => (h.ntfn k n).mp hk)
+    (fun k n hk => (h.ntfn k n).mpr hk)
+    (fun k ty hy => ?_) (fun k tx hx => ?_), fun tid tcb' hx => ?_, ?_⟩
+  · obtain ⟨tx, hx, r⟩ := h.fwd k ty hy; exact ⟨tx, hx, r.1, r.2.1, r.2.2.1⟩
+  · obtain ⟨ty, hy, r⟩ := h.bwd k tx hx; exact ⟨ty, hy, r.1, r.2.1, r.2.2.1⟩
+  · obtain ⟨ty, hy, r⟩ := h.bwd _ tcb' hx; exact ⟨ty, hy, r.2.2.2.1.symm⟩
+  · funext k
+    unfold SystemState.replyViews SystemState.getObject?
+    by_cases hT' : ∃ tx, st'.objects[k]? = some (.tcb tx)
+    · obtain ⟨tx, hx⟩ := hT'
+      obtain ⟨ty, hy, r⟩ := h.bwd k tx hx
+      rw [hx, hy, objReplyView_tcb, objReplyView_tcb, r.2.2.2.2]
+    · have hT : ¬ ∃ ty, st.objects[k]? = some (.tcb ty) := fun ⟨ty, hy⟩ =>
+        hT' (let ⟨tx, hx, _⟩ := h.fwd k ty hy; ⟨tx, hx⟩)
+      have a : ∀ x : Option KernelObject, (¬ ∃ t, x = some (.tcb t)) → objReplyView x = none := by
+        intro x hx
+        rcases x with _ | o
+        · rfl
+        · cases o <;> first | rfl | exact absurd ⟨_, rfl⟩ hx
+      rw [a _ hT', a _ hT]
+
+end ReachFieldFrame
+
+/-- **The reservation unbind keeps the reachable parts' fields**: a context
+rewritten, the scheduler, the thread's binding codes, the key hook. -/
+theorem cancelBoundDonationOnCore_reachFieldFrame {st st' : SystemState} {t : SeLe4n.ThreadId}
+    {tcb : TCB} {c : Concurrency.CoreId} (hInv : st.objects.invExt)
+    (h : cancelBoundDonationOnCore st t tcb c = .ok st') : ReachFieldFrame st st' := by
+  unfold cancelBoundDonationOnCore at h
+  split at h
+  · rename_i scId _
+    injection h with h; subst h
+    let g : SchedContext → SchedContext := fun sc =>
+      { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }
+    have h1 := ReachFieldFrame.updateSchedContext st scId g hInv
+    have hI1 : (st.updateSchedContext scId g).objects.invExt :=
+      (FinaliseFrame.updateSchedContext st scId g hInv (fun _ => rfl)).invExt
+    generalize st.updateSchedContext scId _ = st1 at h1 hI1 ⊢
+    let sch := st1.scheduler.setReplenishQueueOnCore c
+      (ReplenishQueue.remove (st1.scheduler.replenishQueueOnCore c) scId)
+    have h2 := (h1.trans (ReachFieldFrame.of_objects_eq (st' := { st1 with scheduler := sch })
+      rfl)).trans (ReachFieldFrame.updateTcb { st1 with scheduler := sch } t
+      (f := fun tcb' => { tcb' with scBindingScCode := 0, scBindingOwnerCode := 0 }) hI1
+      (fun _ => ⟨rfl, rfl, rfl, rfl, rfl⟩))
+    exact h2.trans (ReachFieldFrame.of_objects_eq (markKeyChangeFrom_objects _ _ _))
+  · cases h
+
+-- ============================================================================
 -- §5  The finalisation
 -- ============================================================================
 
-/-- **A finalisation write frames the donation chains**: it writes no reply and
-no scheduling context. -/
+/-- **A finalisation write frames the donation chains**: it writes no reply, and
+no scheduling context's reply-stack head. -/
 theorem finaliseWrite.donationChainFrame {st st' : SystemState} (h : finaliseWrite st st') :
     donationChainFrame st st' := by
   have hNot : ∀ o : KernelObject, finaliseWritable o → replyStackLinks? (some o) = none ∧
-      schedContextStackHead? (some o) = none ∧ ∀ r, o ≠ .reply r := by
+      ∀ r, o ≠ .reply r := by
     intro o hw
-    cases o <;> simp_all [finaliseWritable, KernelObject.objectType, replyStackLinks?,
-      schedContextStackHead?]
+    cases o <;> simp_all [finaliseWritable, KernelObject.objectType, replyStackLinks?]
   have hPost : ∀ {pre post : KernelObject}, post.objectType = pre.objectType →
       finaliseWritable pre → finaliseWritable post := by
     intro pre post ht hw; unfold finaliseWritable; rw [ht]; exact hw
   refine ⟨fun oid => ?_, fun oid => ?_, fun oid r' hR hC => ?_⟩
-  · rcases h oid with e | ⟨pre, post, hp, hq, ht, -, hw⟩
+  · rcases h oid with e | ⟨pre, post, hp, hq, ht, -, -, hw⟩
     · rw [e]
     · rw [hp, hq, (hNot _ hw).1, (hNot _ (hPost ht hw)).1]
-  · rcases h oid with e | ⟨pre, post, hp, hq, ht, -, hw⟩
+  · rcases h oid with e | ⟨pre, post, hp, hq, -, -, hh, -⟩
     · rw [e]
-    · rw [hp, hq, (hNot _ hw).2.1, (hNot _ (hPost ht hw)).2.1]
-  · rcases h oid with e | ⟨pre, post, hp, hq, ht, -, hw⟩
+    · rw [hp, hq, hh]
+  · rcases h oid with e | ⟨pre, post, hp, hq, ht, -, -, hw⟩
     · exact ⟨r', e.symm.trans hR, hC⟩
-    · rw [hq] at hR; cases hR; exact absurd rfl ((hNot _ (hPost ht hw)).2.2 r')
+    · rw [hq] at hR; cases hR; exact absurd rfl ((hNot _ (hPost ht hw)).2 r')
 
 /-- **What each step of a finalisation carries**: the IPC bundle, the object
 table's well-formedness, the notification queues and the reply-waiter queues. -/
@@ -625,6 +780,53 @@ theorem unbind {s : SystemState} {n : SeLe4n.ObjId} {ntfn : Notification} {t : S
   ⟨⟨storeUnbindNotification_preserves_ipcInvariantFull s n t h.2.1 h.1 hCode hIn,
     (FinaliseFrame.storeUnbindNotification s t n h.2.1).invExt, r.1, r.2.2⟩, r.2.1⟩
 
+/-- A thread's or a context's reservation unbind carries it, and frames every
+budget. -/
+theorem scUnbind {s s' : SystemState} {t : SeLe4n.ThreadId} {tcb : TCB} {sc : SchedContext}
+    (h : finaliseStepInvariant s) (hT : s.getTcb? t = some tcb) (hS : tcb.scBindingScCode ≠ 0)
+    (hO : tcb.scBindingOwnerCode = 0) (hR : tcb.runCoreCode = 0)
+    (hH : threadHeldOnSomeCore s t = false)
+    (hA : ipcCodesIdleAllowed tcb.ipcObjectCode tcb.ipcStateCode = true)
+    (hSc : s.getSchedContext? ⟨tcb.scBindingScCode - 1⟩ = some sc)
+    (hB : sc.boundThreadCode = t.val + 1)
+    (hOk : cancelDonationArmOnCore s t tcb = .ok s') :
+    finaliseStepInvariant s' ∧ timeoutBudgetFrame s s' :=
+  have hI := finaliseScUnbind_preserves_ipcInvariantFull s s' t tcb sc ⟨h.1, h.2.1⟩ hT hS hO hR
+    hH hA hSc hB hOk
+  have hOk' : cancelBoundDonationOnCore s t tcb (determineTargetCore s t) = .ok s' := by
+    rw [← cancelDonationArmOnCore_of_codes s t hS hO]; exact hOk
+  have r := (cancelBoundDonationOnCore_reachFieldFrame h.2.1 hOk').parts h.2.2.1
+  ⟨⟨hI.1, hI.2, r.1, SystemState.replyWaitersConsistent.of_views r.2.2 h.2.2.2⟩, r.2.1⟩
+
+/-- A thread's notification cancel, before any wake, carries it, and frames
+every budget. -/
+theorem cancel {s : SystemState} {n : SeLe4n.ObjId} {t : SeLe4n.ThreadId} {tcb : TCB}
+    {ntfn : Notification} (h : finaliseStepInvariant s) (hT : s.getTcb? t = some tcb)
+    (hI : tcb.ipcState = .blockedOnNotification n) (hN : s.getNotification? n = some ntfn)
+    (hH : ntfn.waitHead = some t) (hC : notificationWaiterCancellable s n t tcb = true) :
+    finaliseStepInvariant (Lifecycle.Suspend.cancelIpcBlocking s t tcb) ∧
+      timeoutBudgetFrame s (Lifecycle.Suspend.cancelIpcBlocking s t tcb) :=
+  have hF := finaliseCancel_preserves_ipcInvariantFull s n t tcb ntfn ⟨h.1, h.2.1⟩ hT hI hN hH hC
+  have r := notificationCancel_preserves_reachableParts s n ntfn t tcb h.2.1 hN hH hT hI
+    h.2.2.1 h.2.2.2
+  ⟨⟨hF.1, hF.2, r.1, r.2.2⟩, r.2.1⟩
+
+/-- A finalised thread's suspend carries it, and frames every budget. -/
+theorem suspend {s : SystemState} {t : SeLe4n.ThreadId} {tcb : TCB}
+    (h : finaliseStepInvariant s) (hT : s.getTcb? t = some tcb) :
+    finaliseStepInvariant (s.updateTcb t fun t => { t with threadState := .Inactive }) ∧
+      timeoutBudgetFrame s (s.updateTcb t fun t => { t with threadState := .Inactive }) :=
+  have hF : ipcInvariantFull (s.updateTcb t fun t => { t with threadState := .Inactive }) ∧
+      (s.updateTcb t fun t => { t with threadState := .Inactive }).objects.invExt := by
+    rw [SystemState.updateTcb_eq_of_some hT]
+    exact ⟨insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull s t tcb
+      { tcb with threadState := .Inactive } h.2.1 h.1
+      ((SystemState.getTcb?_eq_some_iff s t tcb).mp hT) rfl rfl rfl rfl rfl rfl rfl rfl rfl,
+      RHTable_insert_preserves_invExt _ _ _ h.2.1⟩
+  have r := (ReachFieldFrame.updateTcb s t (f := fun t => { t with threadState := .Inactive })
+    h.2.1 (fun _ => ⟨rfl, rfl, rfl, rfl, rfl⟩)).parts h.2.2.1
+  ⟨⟨hF.1, hF.2, r.1, SystemState.replyWaitersConsistent.of_views r.2.2 h.2.2.2⟩, r.2.1⟩
+
 end finaliseStepInvariant
 
 /-- **The finalisation keeps the reachable state**: the bundle, the notification
@@ -645,12 +847,21 @@ theorem finaliseFinalObject_preserves_ipcReachable (target : Nat) {st : SystemSt
     (fun _ _ _ _ h hN _ hCode hIn =>
       have r := h.1.unbind hN hCode hIn
       ⟨r.1, h.2.trans r.2⟩)
+    (fun _ _ _ _ _ h hT hS hO hR hH hA hSc hB hOk =>
+      have r := h.1.scUnbind hT hS hO hR hH hA hSc hB hOk
+      ⟨r.1, h.2.trans r.2⟩)
+    (fun _ _ _ _ _ h hT hI hN hH hC =>
+      have r := h.1.cancel hT hI hN hH hC
+      ⟨r.1, h.2.trans r.2⟩)
+    (fun _ _ _ h hT _ _ _ _ _ _ =>
+      have r := h.1.suspend hT
+      ⟨r.1, h.2.trans r.2⟩)
     target st ⟨.of_ipcReachable h, .refl st⟩
   exact ⟨hFull', hInv', allTimeoutBudgetsNone_of_frame hB' h.2.2.1, hNC',
     donationChainWellFormed_of_frame
       (finaliseWrite.donationChainFrame (finaliseFinalObject_frame target st h.2.1).write)
       h.2.2.2.2.1,
-    ((finaliseFinalObject_runQueueStage target st).1 h.2.1 h.2.2.2.2.2.1).2, hRW'⟩
+    ((finaliseFinalObject_runQueueEntryStage target st).1 h.2.1 h.2.2.2.2.2.1).2, hRW'⟩
 
 /-- **The retire after the finalisation keeps the reachable state**: the
 finalisation's (`finaliseFinalObject_preserves_ipcReachable`), then the
