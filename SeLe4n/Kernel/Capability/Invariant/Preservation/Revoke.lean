@@ -106,24 +106,41 @@ theorem finaliseDestroyedCapabilitiesState_cdt (ec : Concurrency.CoreId)
 -- §2  The finalising delete and revocation keep the bundle
 -- ============================================================================
 
-/-- **The finalising delete keeps the capability invariants**: the delete keeps
-them (`cspaceDeleteSlot_preserves_capabilityInvariantBundle`), and the teardown
-after it writes neither the tree nor any CNode or reply object
-(`finaliseDestroyedCapabilities_ok_frame`, `finaliseDestroyedCapabilitiesState_cdt`). -/
-theorem cspaceDeleteSlotFinalising_preserves_capabilityInvariantBundle
-    (ec : Concurrency.CoreId) (addr : CSpaceAddr) (st st' : SystemState)
-    (hInv : capabilityInvariantBundle st)
-    (h : cspaceDeleteSlotFinalising ec addr st = .ok ((), st')) :
+/-- **The teardown writes no slot and no untyped**: it writes address-space
+roots, which hold neither. -/
+theorem finaliseDestroyedCapabilities_slots (ec : Concurrency.CoreId)
+    (named : List SeLe4n.ObjId) (pages : List MappedPage) (st st' : SystemState)
+    (hObjInv : st.objects.invExt)
+    (h : finaliseDestroyedCapabilities ec named pages st = .ok ((), st')) :
+    st'.objects.invExt ∧ st'.cdt = st.cdt ∧ (∀ r, st'.slotCapAt r = st.slotCapAt r) ∧
+      st'.getUntyped? = st.getUntyped? ∧ vspaceRootOnlyWrite st st' := by
+  obtain ⟨hI', hW, -⟩ := finaliseDestroyedCapabilities_ok_frame ec _ _ st st' hObjInv h
+  have hCdt : st'.cdt = st.cdt := by
+    rw [finaliseDestroyedCapabilities_eq_ok_state] at h
+    simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at h
+    subst h
+    exact finaliseDestroyedCapabilitiesState_cdt ec _ _ st
+  refine ⟨hI', hCdt, fun r => ?_, ?_, hW⟩
+  · rw [SystemState.slotCapAt_eq_bind, SystemState.slotCapAt_eq_bind]
+    rcases hW r.cnode with e | ⟨⟨q, hq⟩, ⟨q', hq'⟩⟩
+    · rw [e]
+    · rw [hq, hq']; rfl
+  · funext o
+    rw [SystemState.getUntyped?_eq_bind, SystemState.getUntyped?_eq_bind]
+    rcases hW o with e | ⟨⟨q, hq⟩, ⟨q', hq'⟩⟩
+    · rw [e]
+    · rw [hq, hq']; rfl
+
+/-- **The teardown keeps the capability invariants**: it writes neither the
+tree nor any CNode or reply object (`finaliseDestroyedCapabilities_ok_frame`,
+`finaliseDestroyedCapabilitiesState_cdt`). -/
+theorem finaliseDestroyedCapabilities_preserves_capabilityInvariantBundle
+    (ec : Concurrency.CoreId) (named : List SeLe4n.ObjId) (pages : List MappedPage)
+    (st1 st' : SystemState) (h1 : capabilityInvariantBundle st1)
+    (hF : finaliseDestroyedCapabilities ec named pages st1 = .ok ((), st')) :
     capabilityInvariantBundle st' := by
-  obtain ⟨st1, hD, hF⟩ := cspaceDeleteSlotFinalising_ok ec addr st st' h
-  have h1 := cspaceDeleteSlot_preserves_capabilityInvariantBundle st st1 addr hInv hD
-  obtain ⟨hI', hW, -⟩ := finaliseDestroyedCapabilities_ok_frame ec _ _ st1 st' h1.2.2.2.2.1 hF
-  have hCdt : st'.cdt = st1.cdt := by
-    rw [finaliseDestroyedCapabilities_eq_ok_state] at hF
-    simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hF
-    subst hF
-    exact finaliseDestroyedCapabilitiesState_cdt ec _ _ st1
-  refine capabilityInvariantBundle_of_frame h1 hCdt ?_ ?_ ?_ ?_ hI' ?_ ?_
+  obtain ⟨hI', hCdt, -, hUt, hW⟩ := finaliseDestroyedCapabilities_slots ec _ _ st1 st' h1.2.2.2.2.1 hF
+  refine capabilityInvariantBundle_of_frame h1 hCdt ?_ ?_ ?_ ?_ hI' ?_ hUt
   · intro oid cn hC
     rcases hW oid with e | ⟨-, ⟨r, hr⟩⟩
     · rwa [← e]
@@ -145,11 +162,184 @@ theorem cspaceDeleteSlotFinalising_preserves_capabilityInvariantBundle
     rcases hW o with e | ⟨-, ⟨r, hr⟩⟩
     · show st'.objects[o]? ≠ none; rw [e]; exact hp
     · show st'.objects[o]? ≠ none; rw [hr]; exact Option.some_ne_none _
-  · funext o
-    rw [SystemState.getUntyped?_eq_bind, SystemState.getUntyped?_eq_bind]
-    rcases hW o with e | ⟨⟨r, hr⟩, ⟨r', hr'⟩⟩
+
+/-- Whether an untyped records a child reads the untyped records alone. -/
+theorem untypedRecordsChild_congr {st st' : SystemState} (h : st'.getUntyped? = st.getUntyped?)
+    (w x : SeLe4n.ObjId) : untypedRecordsChild st' w x = untypedRecordsChild st w x := by
+  unfold untypedRecordsChild
+  rw [h]
+
+/-- **The retire keeps the capability invariants** when no slot names its target
+and its recorder word answers truly.  It writes no slot and no edge; it takes
+the target, which no slot names, out of the store and out of the one untyped
+that recorded it (`retireFinalObject_frame`, `retireFinalObject_unrecorded`),
+and that keeps the tree's shape (`TreeShapeOver.retire`). -/
+theorem retireFinalObject_preserves_capabilityInvariantBundle (ec : Concurrency.CoreId)
+    (target recorder : Nat) (st : SystemState) (h : capabilityInvariantBundle st)
+    (hNamed : target ≠ 0 →
+      ∀ r, ¬ SystemState.namesAt st.slotCapAt r (SeLe4n.ObjId.ofNat (target - 1)))
+    (hRec : target ≠ 0 →
+      (recorder ≠ 0 → untypedRecordsChild st (SeLe4n.ObjId.ofNat (recorder - 1))
+        (SeLe4n.ObjId.ofNat (target - 1)) = true) ∧
+      (recorder = 0 → ∀ w, untypedRecordsChild st w (SeLe4n.ObjId.ofNat (target - 1)) = false)) :
+    capabilityInvariantBundle (retireFinalObject ec target recorder st) := by
+  by_cases hT : target = 0
+  · subst hT; rw [retireFinalObject_zero]; exact h
+  have hShape := h.2.2.2.2.2.2.2
+  have hUniq : ∀ u v, untypedRecordsChild st u (SeLe4n.ObjId.ofNat (target - 1)) = true →
+      untypedRecordsChild st v (SeLe4n.ObjId.ofNat (target - 1)) = true → u = v := by
+    intro u v hu hv
+    obtain ⟨U, hU, ch, hch, hc⟩ := (untypedRecordsChild_iff st u _).mp hu
+    obtain ⟨V, hV, ch', hch', hc'⟩ := (untypedRecordsChild_iff st v _).mp hv
+    exact hShape.childUnique u v U V hU hV ch hch ch' hch' (hc.trans hc'.symm)
+  rcases retireFinalObject_unrecorded ec target recorder st h.2.2.2.2.1 hRec hUniq with hE | hUn
+  · rw [hE]; exact h
+  generalize hX : SeLe4n.ObjId.ofNat (target - 1) = x at hUn hNamed
+  have hx := hNamed hT
+  obtain ⟨hI', -, -, hCdt, hW⟩ := retireFinalObject_frame ec target recorder st h.2.2.2.2.1
+  rw [hX] at hW
+  generalize retireFinalObject ec target recorder st = st' at hUn hI' hCdt hW ⊢
+  have hCnB : ∀ (oid : SeLe4n.ObjId) (cn : CNode),
+      st'.objects[oid]? = some (.cnode cn) → st.objects[oid]? = some (.cnode cn) := by
+    intro oid cn hC
+    rcases hW oid with e | ⟨-, -, hn⟩ | ⟨U, -, hU'⟩
+    · rwa [← e]
+    · rw [hn] at hC; cases hC
+    · rw [hU'] at hC; cases hC
+  have hCnF : ∀ (oid : SeLe4n.ObjId) (cn : CNode),
+      st.objects[oid]? = some (.cnode cn) → st'.objects[oid]? = some (.cnode cn) := by
+    intro oid cn hC
+    rcases hW oid with e | ⟨-, hc, -⟩ | ⟨U, hU, -⟩
+    · rwa [e]
+    · rcases hc with ⟨f, hf⟩ | ⟨u, hu⟩ | ⟨r, hr⟩ | ⟨p, hp⟩ <;> simp_all
+    · rw [hU] at hC; cases hC
+  have hTcb : ∀ oid : SeLe4n.ObjId,
+      (st'.objects[oid]?).bind KernelObject.tcbSlots = (st.objects[oid]?).bind KernelObject.tcbSlots := by
+    intro oid
+    rcases hW oid with e | ⟨-, hc, hn⟩ | ⟨U, hU, hU'⟩
     · rw [e]
-    · rw [hr, hr']; rfl
+    · rw [hn]
+      rcases hc with ⟨f, hf⟩ | ⟨u, hu⟩ | ⟨r, hr⟩ | ⟨p, hp⟩
+      · rw [hf]; rfl
+      · rw [hu]; rfl
+      · rw [hr]; rfl
+      · rw [hp]; rfl
+    · rw [hU, hU']; rfl
+  have hCn : ∀ (oid : SeLe4n.ObjId) (cn : CNode),
+      st'.objects[oid]? = some (.cnode cn) ↔ st.objects[oid]? = some (.cnode cn) :=
+    fun oid cn => ⟨hCnB oid cn, hCnF oid cn⟩
+  have hCap : ∀ r, st'.slotCapAt r = st.slotCapAt r := fun r => by
+    rw [SystemState.slotCapAt_eq_bind, SystemState.slotCapAt_eq_bind]
+    exact (KernelObject.optSlots_eq_of_cnode_iff (hCn r.cnode) (hTcb r.cnode)).1 r.slot
+  obtain ⟨hB, hL⟩ := capabilityBundleOffLinks_of_frame h hCdt hCnB hCnF hTcb (fun rid hR => by
+    unfold SystemState.getReply? at hR ⊢
+    rcases hW rid.toObjId with e | ⟨-, hc, -⟩ | ⟨U, hU, -⟩
+    · rwa [e]
+    · rcases hc with ⟨f, hf⟩ | ⟨u, hu⟩ | ⟨r, hr⟩ | ⟨p, hp⟩ <;> simp_all
+    · rw [hU] at hR; exact absurd rfl hR) hI'
+  refine hB.withLinks hL ((hShape.retire hx (fun o hp ho => ?_) (fun u U' hu => ?_)).of_readers
+    hCdt hCap (fun _ hp => hp) rfl)
+  · rcases hW o with e | ⟨he, -, -⟩ | ⟨U, -, hU'⟩
+    · show st'.objects[o]? ≠ none; rw [e]; exact hp
+    · exact absurd he ho
+    · show st'.objects[o]? ≠ none; rw [hU']; exact Option.some_ne_none _
+  · have hu' := (SystemState.getUntyped?_eq_some_iff st' u U').mp hu
+    rcases hW u with e | ⟨-, -, hn⟩ | ⟨U, hU, hU'⟩
+    · refine ⟨U', (SystemState.getUntyped?_eq_some_iff st u U').mpr (e ▸ hu'), rfl,
+        fun ch hch => ⟨hch, hUn u U' hu' ch hch⟩⟩
+    · rw [hn] at hu'; cases hu'
+    · rw [hU'] at hu'; cases hu'
+      exact ⟨U, (SystemState.getUntyped?_eq_some_iff st u U).mpr hU, rfl,
+        fun ch hch => mem_childListErase.mp hch⟩
+
+theorem objId_ofNat_succ_sub_one (x : SeLe4n.ObjId) : SeLe4n.ObjId.ofNat (x.val + 1 - 1) = x := by
+  simp [SeLe4n.ObjId.ofNat]
+
+/-- **What a nonzero retire word names**: the slot's capability names the
+target by `.object`, and under the capability bundle it is the target's final
+capability (`capIsFinal_iff_capFinalSpec`). -/
+theorem slotRetireTarget_spec {st : SystemState} {cnode : SeLe4n.ObjId} {slot : SeLe4n.Slot}
+    (h : capabilityInvariantBundle st) (hT : slotRetireTarget st cnode slot ≠ 0) :
+    ∃ c, st.slotCapAt ⟨cnode, slot⟩ = some c ∧
+      c.target = .object (SeLe4n.ObjId.ofNat (slotRetireTarget st cnode slot - 1)) ∧
+      st.capFinalSpec ⟨cnode, slot⟩ := by
+  unfold slotRetireTarget at hT ⊢
+  cases hL : st.slotCapAt ⟨cnode, slot⟩ with
+  | none => rw [hL] at hT; exact absurd rfl hT
+  | some c =>
+    rw [hL] at hT
+    dsimp only at hT ⊢
+    cases hTg : c.target with
+    | object x =>
+      rw [hTg] at hT
+      dsimp only at hT ⊢
+      split at hT
+      · next hc =>
+        rw [if_pos hc]
+        simp only [Bool.and_eq_true] at hc
+        exact ⟨c, rfl, by rw [hTg, objId_ofNat_succ_sub_one],
+          (capIsFinal_iff_capFinalSpec h ⟨cnode, slot⟩).mp hc.2⟩
+      · exact absurd rfl hT
+    | cnodeSlot _ _ => rw [hTg] at hT; exact absurd rfl hT
+    | replyCap _ => rw [hTg] at hT; exact absurd rfl hT
+    | auditTrail => rw [hTg] at hT; exact absurd rfl hT
+
+/-- **The delete empties its slot and keeps every other slot and every untyped
+record.** -/
+theorem cspaceDeleteSlot_slots {addr : CSpaceAddr} {st st' : SystemState}
+    (hObjInv : st.objects.invExt) (h : cspaceDeleteSlot addr st = .ok ((), st')) :
+    st'.slotCapAt addr = none ∧ (∀ r, r ≠ addr → st'.slotCapAt r = st.slotCapAt r) ∧
+      st'.getUntyped? = st.getUntyped? := by
+  obtain ⟨stC, hC, rfl⟩ := cspaceDeleteSlot_ok_decompose addr st st' h
+  obtain ⟨o, -, -, hStore⟩ := cspaceDeleteSlotCore_ok hC
+  have hInvC := storeObject_preserves_objects_invExt _ _ _ _ hObjInv hStore
+  have hF : SystemState.SlotTreeFrame { stC with cdt := stC.cdt.spliceNode addr }
+      (spliceDeletedCdtNode stC addr) :=
+    .of_linkReach (spliceDeletedCdtNode_reach stC addr) hInvC
+  obtain ⟨hSelf, hOther⟩ := cspaceDeleteSlotCore_slotCapAt hObjInv hC
+  have hUC : stC.getUntyped? = st.getUntyped? := cspaceDeleteSlotCore_getUntyped? hObjInv hC
+  exact ⟨(hF.slotCapAt addr).trans hSelf, fun r hr => (hF.slotCapAt r).trans (hOther r hr),
+    hF.untyped.trans hUC⟩
+
+/-- **The finalising delete keeps the capability invariants**: the delete keeps
+them (`cspaceDeleteSlot_preserves_capabilityInvariantBundle`), the teardown
+after it writes neither the tree nor any slot
+(`finaliseDestroyedCapabilities_preserves_capabilityInvariantBundle`), and the
+retire takes out an object whose final capability the delete destroyed, so no
+slot names it any more, from the one untyped the recorder word read before the
+delete names (`recorderWord_spec`). -/
+theorem cspaceDeleteSlotFinalising_preserves_capabilityInvariantBundle
+    (ec : Concurrency.CoreId) (addr : CSpaceAddr) (st st' : SystemState)
+    (hInv : capabilityInvariantBundle st)
+    (h : cspaceDeleteSlotFinalising ec addr st = .ok ((), st')) :
+    capabilityInvariantBundle st' := by
+  obtain ⟨st1, st2, hD, hF, rfl⟩ := cspaceDeleteSlotFinalising_ok ec addr st st' h
+  have h1 := cspaceDeleteSlot_preserves_capabilityInvariantBundle st st1 addr hInv hD
+  have h2 := finaliseDestroyedCapabilities_preserves_capabilityInvariantBundle ec _ _ st1 st2 h1 hF
+  obtain ⟨-, -, hC2, hU2, -⟩ := finaliseDestroyedCapabilities_slots ec _ _ st1 st2 h1.2.2.2.2.1 hF
+  obtain ⟨hC1n, hC1, hU1⟩ := cspaceDeleteSlot_slots hInv.2.2.2.2.1 hD
+  refine retireFinalObject_preserves_capabilityInvariantBundle ec _ _ st2 h2
+    (fun hT r hr => ?_) (fun hT => ?_)
+  · obtain ⟨c, hc, ht, hFin⟩ := slotRetireTarget_spec hInv hT
+    have hAddr : SystemState.namesAt st.slotCapAt ⟨addr.cnode, addr.slot⟩
+        (SeLe4n.ObjId.ofNat (slotRetireTarget st addr.cnode addr.slot - 1)) :=
+      ⟨c, hc, by unfold Capability.namedObject; rw [ht]⟩
+    rw [SystemState.namesAt_of_eq (hC2 r)] at hr
+    by_cases hra : r = addr
+    · subst hra
+      obtain ⟨c', hc', -⟩ := hr
+      rw [hC1n] at hc'; cases hc'
+    · rw [SystemState.namesAt_of_eq (hC1 r hra)] at hr
+      exact hFin _ hAddr r hra hr
+  · have hU := hU2.trans hU1
+    obtain ⟨hS1, hS0⟩ := recorderWord_spec st
+      (SeLe4n.ObjId.ofNat (slotRetireTarget st addr.cnode addr.slot - 1)) addr.cnode addr.slot
+      hInv.2.2.2.2.1
+    unfold slotRetireRecorder recorderFor
+    rw [if_neg hT]
+    refine ⟨fun hne => ?_, fun h0 w => ?_⟩
+    · rw [untypedRecordsChild_congr hU]; exact hS1 hne
+    · rw [untypedRecordsChild_congr hU]; exact hS0 h0 w
 
 /-- **The finalising revocation keeps the capability invariants**: it is a run
 of finalising deletes (`cspaceRevokeCdtFinalising_closed`). -/
@@ -218,12 +408,12 @@ splices the slot out and the teardown writes no edge. -/
 theorem cspaceDeleteSlotFinalising_ok_cdt {ec : Concurrency.CoreId} {addr : CSpaceAddr}
     {st st' : SystemState} (h : cspaceDeleteSlotFinalising ec addr st = .ok ((), st')) :
     st'.cdt = st.cdt.spliceNode addr := by
-  obtain ⟨st1, hD, hF⟩ := cspaceDeleteSlotFinalising_ok ec addr st st' h
+  obtain ⟨st1, st2, hD, hF, rfl⟩ := cspaceDeleteSlotFinalising_ok ec addr st st' h
   rw [finaliseDestroyedCapabilities_eq_ok_state] at hF
   simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hF
   subst hF
   obtain ⟨stC, hC, rfl⟩ := cspaceDeleteSlot_ok_decompose addr st st1 hD
-  rw [finaliseDestroyedCapabilitiesState_cdt, spliceDeletedCdtNode_cdt,
+  rw [retireFinalObject_cdt, finaliseDestroyedCapabilitiesState_cdt, spliceDeletedCdtNode_cdt,
     cspaceDeleteSlotCore_cdt_eq st stC addr hC]
 
 /-- A slot's link, read as the loop reads it: its two words, decoded. -/

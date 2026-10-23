@@ -275,11 +275,13 @@ for driver in drivers:
             # a map at a second address after an unmap: the root's retained
             # mapping and epoch cells take the new address.
             "vspace-map-moved": (0, 0), "vspace-unmap-moved": (0, 0),
-            # 151 is the whole-store reset; 10 more are the free-index rewind,
-            # copied because the reset still refuses after it writes, so its
-            # dispatch keeps the pre-state alive (docs/REGISTERED_DEBT.md §C,
-            # "The reset's rewind costs 10 heap cells"; part 23 reads 0).
-            "untyped-reset": (161, 161),
+            # The reset of a region whose carved objects the revocation before
+            # it already retired (part 21, `v0.36.132`; 161 before, 151 of
+            # them the whole-store reset); 10 of the 30 are the free-index
+            # rewind, copied because the reset still refuses after it writes,
+            # so its dispatch keeps the pre-state alive (docs/REGISTERED_DEBT.md
+            # §C, "The reset's rewind costs 10 heap cells"; part 23 reads 0).
+            "untyped-reset": (30, 30),
         })
         expected = set(pinned)
         observed = set(names) | {m.group(1) for m in returned}

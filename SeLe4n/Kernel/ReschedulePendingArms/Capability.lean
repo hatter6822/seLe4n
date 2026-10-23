@@ -252,13 +252,39 @@ theorem finaliseDestroyedCapabilities_keyFrame (ec : CoreId) (named : List SeLe4
     finaliseDestroyedCapabilities_ok_frame ec named pages st st' hObjInv hStep
   exact ⟨keyInputsEq_of_vspaceRootOnlyWrite hW, hSched, hExt⟩
 
+/-- **A write of the kinds a reset touches moves no key input**: none of those
+kinds feeds a key (`resetTouched`).  The untyped reset and the final-delete
+retire are such writes. -/
+theorem capabilityKeyFrame_of_resetTouched {st st' : SystemState}
+    (hExt : st'.objects.invExt) (hSched : st'.scheduler = st.scheduler)
+    (hW : ∀ oid : SeLe4n.ObjId, st'.objects[oid]? = st.objects[oid]? ∨
+      (resetTouched st.objects[oid]? ∧ resetTouched st'.objects[oid]?)) :
+    capabilityKeyFrame st st' := by
+  have hT : ∀ o : Option KernelObject, resetTouched o → keyInputsOf o = none := by
+    intro o h
+    cases o with
+    | none => rfl
+    | some obj => cases obj <;> first | rfl | exact absurd h (by simp [resetTouched])
+  refine ⟨fun oid => ?_, hSched, hExt⟩
+  rcases hW oid with e | ⟨t1, t2⟩
+  · rw [e]
+  · rw [hT _ t1, hT _ t2]
+
+/-- **The final-delete retire moves no key input.** -/
+theorem retireFinalObject_keyFrame (ec : CoreId) (target recorder : Nat) (st : SystemState)
+    (hObjInv : st.objects.invExt) :
+    capabilityKeyFrame st (retireFinalObject ec target recorder st) :=
+  have h := retireFinalObject_frame ec target recorder st hObjInv
+  capabilityKeyFrame_of_resetTouched h.1 h.2.1 h.2.2.2.2.touched
+
 theorem cspaceDeleteSlotFinalising_keyFrame (ec : CoreId) (addr : CSpaceAddr)
     (st st' : SystemState) (hObjInv : st.objects.invExt)
     (hStep : cspaceDeleteSlotFinalising ec addr st = .ok ((), st')) :
     capabilityKeyFrame st st' := by
-  obtain ⟨st1, hD, hF⟩ := cspaceDeleteSlotFinalising_ok ec addr st st' hStep
+  obtain ⟨st1, st2, hD, hF, rfl⟩ := cspaceDeleteSlotFinalising_ok ec addr st st' hStep
   have h1 : capabilityKeyFrame st st1 := cspaceDeleteSlot_keyInputsEq st st1 addr hObjInv hD
-  exact h1.trans (finaliseDestroyedCapabilities_keyFrame ec _ _ st1 st' h1.2.2 hF)
+  have h2 := h1.trans (finaliseDestroyedCapabilities_keyFrame ec _ _ st1 st2 h1.2.2 hF)
+  exact h2.trans (retireFinalObject_keyFrame ec _ _ st2 h2.2.2)
 
 theorem cspaceRevokeCdtFinalising_keyFrame (ec : CoreId) (addr : CSpaceAddr)
     (st st' : SystemState) (hObjInv : st.objects.invExt)
@@ -366,16 +392,7 @@ theorem untypedResetWithShootdown_keyFrame (ec : CoreId) (untypedId : SeLe4n.Obj
   obtain ⟨st1, hR, hObj, hSched, -, -⟩ :=
     untypedResetWithShootdown_ok_frame ec untypedId st st' hStep
   obtain ⟨hExt, hS1, hW⟩ := untypedReset_ok_frame ec untypedId st st1 hObjInv hR
-  have hT : ∀ o : Option KernelObject, resetTouched o → keyInputsOf o = none := by
-    intro o h
-    cases o with
-    | none => rfl
-    | some obj => cases obj <;> first | rfl | exact absurd h (by simp [resetTouched])
-  have k1 : capabilityKeyFrame st st1 := by
-    refine ⟨fun oid => ?_, hS1, hExt⟩
-    rcases hW oid with e | ⟨t1, t2⟩
-    · rw [e]
-    · rw [hT _ t1, hT _ t2]
+  have k1 : capabilityKeyFrame st st1 := capabilityKeyFrame_of_resetTouched hExt hS1 hW
   exact k1.trans (capabilityKeyFrame_of_objects_scheduler_eq hExt hObj hSched)
 
 /-- WS-ZA ZA5.4: the `.untypedReset` arm — the invoked slot's free-index rewind

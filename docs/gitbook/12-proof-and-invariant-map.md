@@ -108,7 +108,10 @@ untyped, and everything carved from an untyped lies below every capability to
 it; since `v0.36.131` the slots naming one object form one contiguous preorder
 run (seL4's `mdb_chunked`), so the kernel reads a capability's finality off its
 four derivation links (`capIsFinal`, seL4's `isFinalCapability`), proven equal
-under the bundle to "no other slot names the object"
+under the bundle to "no other slot names the object"; since `v0.36.132` a
+delete or revoke that destroys the final capability to a frame, page table,
+address-space root or childless untyped retires the object, keeping the bundle
+(`retireFinalObject_preserves_capabilityInvariantBundle`)
 ([`SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) §8.6).  Every slot write keeps the bundle,
 the untyped carve included (`untypedRetypeObject_preserves_capabilityInvariantBundle`;
 see `SELE4N_SPEC.md` §8.6).

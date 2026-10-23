@@ -1134,6 +1134,15 @@ private def decodeMapVia (rootSlot asid vaddr frameSlot perms : Nat) : SyscallDe
 private def rootAt (st : SystemState) (oid : Nat) : Option VSpaceRoot :=
   st.getVSpaceRoot? (SeLe4n.ObjId.ofNat oid)
 
+/-- The objects at `ids` stored in `dst` as `src` holds them. -/
+private def restoreObjects (src dst : SystemState) (ids : List SeLe4n.ObjId) : SystemState :=
+  ids.foldl (fun s id =>
+    match src.objects[id]? with
+    | some o => match storeObject id o s with
+      | .ok ((), s') => s'
+      | .error _ => s
+    | none => s) dst
+
 private def runCarvedRootChecks : IO Unit := do
   IO.println "-- §5i `.untypedRetype` carves a VSpace root, and the reset retires it (WS-BP BP7.1)"
   let st := carveScenario
@@ -1172,9 +1181,22 @@ private def runCarvedRootChecks : IO Unit := do
         carveOwner Concurrency.bootCoreId st1))
     assertBool "a reset while the roots' capabilities live is refused (revocationRequired)"
       (isErr .revocationRequired (dispatchSyscallAsCurrent (decodeReset slotUtRetype) carveOwner Concurrency.bootCoreId st1))
+    -- WS-ZA ZA5.4 part 21: the live revocation retires each carved object with
+    -- its last capability, the roots' ASIDs with them.
     match dispatchSyscallAsCurrent (decodeRevoke slotUtRetype) carveOwner Concurrency.bootCoreId st1 with
     | .error e => assertBool s!"revoking the untyped capability succeeds (got {repr e})" false
-    | .ok ((), stRev) => do
+    | .ok ((), stLive) => do
+      assertBool "the revocation retires both roots and the frame, releasing the roots' ASIDs"
+        ((stLive.objects[SeLe4n.ObjId.ofNat 980]?).isNone &&
+         (stLive.objects[SeLe4n.ObjId.ofNat 981]?).isNone &&
+         (stLive.objects[SeLe4n.ObjId.ofNat 982]?).isNone &&
+         stLive.asidTable[one]? == none && stLive.asidTable[SeLe4n.ASID.ofNat 2]? == none &&
+         (Architecture.shootdownPostedOps st1 stLive).contains (Architecture.encodeAsidInvalidation one))
+      -- The reset's own retire, over carved objects no capability names: the
+      -- roots, the frame and the untyped's record of them put back as the
+      -- carve left them (what a revocation left before part 21).
+      let stRev := restoreObjects st1 stLive
+        [carveUt, SeLe4n.ObjId.ofNat 980, SeLe4n.ObjId.ofNat 981, SeLe4n.ObjId.ofNat 982]
       -- A thread still running in a carved root names it without a capability.
       let stUsed : SystemState :=
         match stRev.getTcb? carveOwner with
@@ -1801,7 +1823,15 @@ private def runPageTableChecks : IO Unit := do
               ((slotsOf stA 980).any (·.contains (1, 991)))
             match dispatchSyscallAsCurrent (decodeRevoke 19) carveOwner Concurrency.bootCoreId stA with
             | .error e => assertBool s!"revoking the child's capability succeeds (got {repr e})" false
-            | .ok ((), st5) => do
+            | .ok ((), st5Live) => do
+              -- WS-ZA ZA5.4 part 21: the table goes with its last capability.
+              assertBool "the revocation retires the child's table and its record"
+                ((st5Live.objects[SeLe4n.ObjId.ofNat 991]?).isNone &&
+                 (st5Live.getUntyped? (SeLe4n.ObjId.ofNat 990)).map (·.children.length) == some 0)
+              -- The reset's boundary, over the table put back as the carve left
+              -- it, unnamed and stale-recorded (what a revocation left before
+              -- part 21).
+              let st5 := restoreObjects stA st5Live [SeLe4n.ObjId.ofNat 990, SeLe4n.ObjId.ofNat 991]
               let childIds := match st5.getUntyped? (SeLe4n.ObjId.ofNat 990) with
                 | some u => (untypedCarvedSubtree st5 u).getD []
                 | none => []
@@ -1829,10 +1859,22 @@ private def runPageTableChecks : IO Unit := do
                 match runAll st5r
                     [decodeCarve 19 vspaceRootTag 993 slotOwnCnRW 21,
                      decodeCarve slotUtRetype pageTableTag 994 slotOwnCnRW 22,
-                     decodeTableMap 22 21 va,
-                     decodeRevoke 19] with
-                | .error e => assertBool s!"carving a root from the child, installing a parent table in it, and revoking the child succeeds (got {repr e})" false
-                | .ok st6 => do
+                     decodeTableMap 22 21 va] with
+                | .error e => assertBool s!"carving a root from the child and installing a parent table in it succeeds (got {repr e})" false
+                | .ok st6pre =>
+                match dispatchSyscallAsCurrent (decodeRevoke 19) carveOwner Concurrency.bootCoreId st6pre with
+                | .error e => assertBool s!"revoking the child succeeds (got {repr e})" false
+                | .ok ((), st6Live) => do
+                  -- v0.36.132: the revocation destroys the root's final
+                  -- capability, so it retires the root and its record.
+                  assertBool "the child's revocation retires its root and the child's record of it"
+                    ((st6Live.objects[SeLe4n.ObjId.ofNat 993]?).isNone &&
+                     (match st6Live.getUntyped? (SeLe4n.ObjId.ofNat 990) with
+                      | some u => !(u.children.any (fun c => c.objId == SeLe4n.ObjId.ofNat 993))
+                      | none => false))
+                  -- The boundary is a property of the state a revocation that
+                  -- leaves the root behind would reach: rebuild it.
+                  let st6 := restoreObjects st6pre st6Live [SeLe4n.ObjId.ofNat 990, SeLe4n.ObjId.ofNat 993]
                   let childIds6 := match st6.getUntyped? (SeLe4n.ObjId.ofNat 990) with
                     | some u => (untypedCarvedSubtree st6 u).getD []
                     | none => []
@@ -1986,6 +2028,89 @@ private def runPhysicalWriteChecks : IO Unit := do
       assertBool "moved into the carved root, it installs that root's page under ASID 1"
         (Architecture.threadTranslationOperands sp2 spaceWorker == (carveUtBase.toUInt64, (1 : UInt64)))
 
+-- ============================================================================
+-- §5l  WS-ZA ZA5.4 part 21 — a memory object goes with its final capability
+-- ============================================================================
+
+/-- Does untyped `ut` record `oid` among its children? -/
+private def recordsChildAt (st : SystemState) (ut : SeLe4n.ObjId) (oid : Nat) : Bool :=
+  match st.getUntyped? ut with
+  | some u => u.children.any (·.objId == SeLe4n.ObjId.ofNat oid)
+  | none => false
+
+private def runFinalDeleteRetireChecks : IO Unit := do
+  IO.println "-- §5l the final capability's delete retires its memory object (WS-ZA ZA5.4)"
+  -- A frame and a copy of its capability: the copy's delete is not final.
+  match runAll carveScenario
+      [decodeCarve slotUtRetype frameTag 950 slotOwnCnRW slotCarved,
+       decodeCopy slotCarved 12] with
+  | .error e => assertBool s!"the carve-copy setup succeeds (got {repr e})" false
+  | .ok st => do
+    assertBool "setup: the untyped records the frame"
+      (recordsChildAt st carveUt 950 && (frameAt st 950).isSome)
+    match dispatchSyscallAsCurrent (decodeDelete 12) carveOwner Concurrency.bootCoreId st with
+    | .error e => assertBool s!"deleting the copy succeeds (got {repr e})" false
+    | .ok ((), st1) => do
+      assertBool "deleting a capability that is not the last keeps the frame and its record"
+        ((frameAt st1 950).isSome && recordsChildAt st1 carveUt 950)
+      match dispatchSyscallAsCurrent (decodeDelete slotCarved) carveOwner Concurrency.bootCoreId st1 with
+      | .error e => assertBool s!"deleting the last capability succeeds (got {repr e})" false
+      | .ok ((), st2) => do
+        assertBool "deleting the last capability retires the frame from the store"
+          ((st2.objects[SeLe4n.ObjId.ofNat 950]?).isNone)
+        assertBool "and from the untyped's child list"
+          (!recordsChildAt st2 carveUt 950 && (st2.getUntyped? carveUt).isSome)
+        assertBool "RETIRED: the plain delete left the frame in the store and recorded"
+          (match cspaceDeleteSlot { cnode := carveCn, slot := SeLe4n.Slot.ofNat slotCarved } st1 with
+            | .ok ((), stOld) => (frameAt stOld 950).isSome && recordsChildAt stOld carveUt 950
+            | .error _ => false)
+  -- A carved address space: its last capability's delete retires it and
+  -- releases its ASID.
+  match runAll carveScenario [decodeCarve slotUtRetype vspaceRootTag 980 slotOwnCnRW 12] with
+  | .error e => assertBool s!"the root carve succeeds (got {repr e})" false
+  | .ok st => do
+    let one := SeLe4n.ASID.ofNat 1
+    assertBool "setup: the root holds ASID 1"
+      (st.asidTable[one]? == some (SeLe4n.ObjId.ofNat 980))
+    match dispatchSyscallAsCurrent (decodeDelete 12) carveOwner Concurrency.bootCoreId st with
+    | .error e => assertBool s!"deleting the root's capability succeeds (got {repr e})" false
+    | .ok ((), st1) => do
+      assertBool "the root is retired, its ASID released and unrecorded"
+        ((rootAt st1 980).isNone && st1.asidTable[one]? == none && !recordsChildAt st1 carveUt 980)
+      assertBool "and its ASID gets an acknowledged .aside1 round"
+        ((Architecture.shootdownPostedOps st st1).contains (Architecture.encodeAsidInvalidation one))
+  -- A child untyped that still records a frame stays when its capability goes;
+  -- the frame goes with its own.
+  match runAll carveScenario
+      [decodeCarve slotUtRetype (untypedTagOfSize 12) 970 slotOwnCnRW 12,
+       decodeCarve 12 frameTag 971 slotOwnCnRW 13] with
+  | .error e => assertBool s!"the child-untyped setup succeeds (got {repr e})" false
+  | .ok st => do
+    match runAll st [decodeDelete 12] with
+    | .error e => assertBool s!"deleting the child untyped's capability succeeds (got {repr e})" false
+    | .ok st1 => do
+      assertBool "an untyped recording a child is not retired with its capability"
+        ((st1.getUntyped? (SeLe4n.ObjId.ofNat 970)).isSome && recordsChildAt st1 (SeLe4n.ObjId.ofNat 970) 971)
+      match runAll st1 [decodeDelete 13] with
+      | .error e => assertBool s!"deleting the frame's capability succeeds (got {repr e})" false
+      | .ok st2 =>
+        assertBool "the frame is retired from the child untyped's list"
+          ((frameAt st2 971).isNone && !recordsChildAt st2 (SeLe4n.ObjId.ofNat 970) 971)
+  -- An empty child untyped goes with its last capability.
+  match runAll carveScenario
+      [decodeCarve slotUtRetype (untypedTagOfSize 12) 970 slotOwnCnRW 12, decodeDelete 12] with
+  | .error e => assertBool s!"the child-untyped carve and delete succeed (got {repr e})" false
+  | .ok st =>
+    assertBool "a childless untyped is retired with its last capability"
+      ((st.getUntyped? (SeLe4n.ObjId.ofNat 970)).isNone && !recordsChildAt st carveUt 970)
+  -- A page table installed nowhere goes with its last capability.
+  match runAll carveScenario
+      [decodeCarve slotUtRetype pageTableTag 990 slotOwnCnRW 12, decodeDelete 12] with
+  | .error e => assertBool s!"the table carve and delete succeed (got {repr e})" false
+  | .ok st =>
+    assertBool "a page table is retired with its last capability"
+      ((st.getPageTable? (SeLe4n.ObjId.ofNat 990)).isNone && !recordsChildAt st carveUt 990)
+
 def runVSpaceCapabilityBindingChecks : IO Unit := do
   IO.println "===================================================="
   IO.println "VSpace capability-binding suite (PR #845 review, P1)"
@@ -2005,6 +2130,7 @@ def runVSpaceCapabilityBindingChecks : IO Unit := do
   runPageTableChecks
   runPhysicalWriteChecks
   runFrameFinaliseChecks
+  runFinalDeleteRetireChecks
   runAuthorizedChecks
   IO.println "===================================================="
   IO.println "All VSpace capability-binding checks PASS."

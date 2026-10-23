@@ -123,6 +123,7 @@ _TABLE_OPS = {
     "insertNoResizeCell": "write",
     "insertAbsentCell": "write",
     "eraseAt": "write",
+    "eraseImpl": "write",
     "set": "write",
     "fold": "sweep",
     "toList": "sweep",
@@ -1636,7 +1637,9 @@ WRITE_PRIMITIVE_BODIES = {
     ("SeLe4n/Kernel/FrozenOps/Core.lean", "frozenWithObjectStored"):
         "the frozen surface's one store, over `FrozenMap.set`",
     ("SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean", "retireCarvedObject"):
-        "the one object-store erase: a frame or an untyped, with its index and metadata rows",
+        "the one object-store erase: a frame, an untyped, a page table or a root, with its index and metadata rows",
+    ("SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean", "withObjectErased"):
+        "`retireCarvedObject`'s compiled object-table erase (`@[csimp]`), out of line so the table is erased in place",
     ("SeLe4n/Testing/ReplyStackWriteCensus.lean", "censusWitnessRawTableWrite"):
         "the reply-stack write census's planted raw-table witness",
 }

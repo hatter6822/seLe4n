@@ -403,10 +403,12 @@ theorem cspaceDeleteSlotFinalising_framed
     (executingCore : CoreId) (addr : CSpaceAddr) (st st' : SystemState)
     (hStep : cspaceDeleteSlotFinalising executingCore addr st = .ok ((), st')) :
     SchedulerMachineFramed st st' := by
-  obtain ⟨st1, hD, hF⟩ := cspaceDeleteSlotFinalising_ok executingCore addr st st' hStep
+  obtain ⟨st1, st2, hD, hF, rfl⟩ := cspaceDeleteSlotFinalising_ok executingCore addr st st' hStep
   obtain ⟨hs1, hm1⟩ := cspaceDeleteSlot_scheduler_machine addr st st1 hD
-  obtain ⟨hs2, hm2⟩ := finaliseDestroyedCapabilities_framed executingCore _ _ st1 st' hF
-  exact ⟨hs2.trans hs1, hm2.trans hm1⟩
+  obtain ⟨hs2, hm2⟩ := finaliseDestroyedCapabilities_framed executingCore _ _ st1 st2 hF
+  obtain ⟨-, hs3, hm3⟩ := retireFinalObject_fields executingCore
+    (slotRetireTarget st addr.cnode addr.slot) (slotRetireRecorder st addr.cnode addr.slot) st2
+  exact ⟨hs3.trans (hs2.trans hs1), hm3.trans (hm2.trans hm1)⟩
 
 /-- WS-BP BP7.1 (`v0.36.7`): **the live `.cspaceDelete` arm writes no core.**  The
 delete writes a CNode and the CDT; the teardown that removes the destroyed frame

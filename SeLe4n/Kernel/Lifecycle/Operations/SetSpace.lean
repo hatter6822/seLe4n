@@ -45,9 +45,13 @@ Two cases seL4 names are decided by the model:
 * **The source is the thread's own slot.**  It cannot be: the source slots are
   resolved through the caller's CSpace (`resolveSetSpace`), and a CSpace
   resolves to CNode slots alone, while the destination is a slot of a TCB.  The
-  delete does not finalise either, so it changes no CNode slot and the source
+  delete does not finalise yet, so it changes no CNode slot and the source
   still holds its capability when it is read again (seL4's `checkCapAt` asks
-  this, since its `cteDelete` may finalise the source's object).
+  this, since its `cteDelete` may finalise the source's object).  seL4's
+  `cteDelete` here finalises like any delete; routing the space-slot delete
+  through the finalising delete, so a replaced last capability to a VSpace
+  root or CNode is retired or finalised, is WS-ZA ZA5.4 part 22
+  (`docs/planning/UNTYPED_RESET_PLAN.md` row 22).
 * **The slot was empty.**  An empty slot is outside the derivation tree
   (`cdtCompleteness`), so its delete changes no edge, and the insert adds the
   slot as a fresh node, as seL4's `cteInsert` into a null slot does.

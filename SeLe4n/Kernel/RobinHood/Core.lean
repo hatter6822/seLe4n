@@ -393,6 +393,77 @@ theorem backshiftLoop_preserves_len
       · rfl
       · rw [ih]; simp [Array.size_set]
 
+/-- A slot's cell moved one slot back on its probe chain: its entry's distance
+one less.  Out of line, so the cell is handed over whole and, when exclusively
+owned, rewritten in place, its `some` first and then its entry. -/
+@[noinline] def RHEntry.shiftedBack : Option (RHEntry α β) → Option (RHEntry α β)
+  | some e => some { e with dist := e.dist - 1 }
+  | none => none
+
+/-- `backshiftLoop` as compiled: the next slot's cell is taken out of the array
+before the shifted entry is built from it, so on an exclusively owned array the
+cell and its entry are rewritten in place rather than copied
+(`backshiftLoop_eq_impl`).  A one-slot table, whose gap and next slot coincide,
+takes the specification's step. -/
+def backshiftLoopImpl
+    (fuel : Nat) (gapIdx : Nat)
+    (slots : Array (Option (RHEntry α β)))
+    (capacity : Nat) (hLen : slots.size = capacity)
+    (hCapPos : 0 < capacity)
+    : Array (Option (RHEntry α β)) :=
+  match fuel with
+  | 0 => slots
+  | fuel' + 1 =>
+    let nextI := (gapIdx + 1) % capacity
+    have hNext : nextI < slots.size := by rw [hLen]; exact Nat.mod_lt _ hCapPos
+    have hGap : gapIdx % capacity < slots.size := by rw [hLen]; exact Nat.mod_lt _ hCapPos
+    if gapIdx % capacity = nextI then
+      backshiftLoop (fuel' + 1) gapIdx slots capacity hLen hCapPos
+    else
+      let v := slots[nextI]
+      let slots1 := slots.set nextI none hNext
+      match v with
+      | none => slots1
+      | some e =>
+        if e.dist == 0 then slots1.set nextI (some e) (by rw [Array.size_set]; exact hNext)
+        else
+          backshiftLoopImpl fuel' nextI
+            (slots1.set (gapIdx % capacity) (RHEntry.shiftedBack (some e))
+              (by rw [Array.size_set]; exact hGap))
+            capacity (by rw [Array.size_set, Array.size_set]; exact hLen) hCapPos
+
+@[csimp] theorem backshiftLoop_eq_impl : @backshiftLoop = @backshiftLoopImpl := by
+  funext α β fuel
+  induction fuel with
+  | zero => funext gapIdx slots capacity hLen hCapPos; rfl
+  | succ n ih =>
+    funext gapIdx slots capacity hLen hCapPos
+    have hNext : (gapIdx + 1) % capacity < slots.size := by rw [hLen]; exact Nat.mod_lt _ hCapPos
+    have hGap : gapIdx % capacity < slots.size := by rw [hLen]; exact Nat.mod_lt _ hCapPos
+    unfold backshiftLoopImpl
+    dsimp only
+    by_cases hEq : gapIdx % capacity = (gapIdx + 1) % capacity
+    · rw [if_pos hEq]
+    · rw [if_neg hEq]
+      unfold backshiftLoop
+      dsimp only
+      cases hv : slots[(gapIdx + 1) % capacity] with
+      | none =>
+        dsimp only
+        rw [← hv, Array.set_getElem_self]
+      | some e =>
+        dsimp only
+        by_cases hd : (e.dist == 0) = true
+        · rw [if_pos hd, if_pos hd, Array.set_set, ← hv, Array.set_getElem_self]
+        · rw [if_neg hd, if_neg hd, ih]
+          simp only [RHEntry.shiftedBack]
+          congr 1
+          apply Array.ext
+          · simp
+          · intro j h1 h2
+            simp only [Array.getElem_set]
+            split <;> split <;> simp_all
+
 /-- N1-F3: Top-level erase.  Two-phase: find the key, then backshift.
 
 **V7-H: Size decrement safety.** The `size - 1` in the `some` branch is safe
@@ -873,6 +944,19 @@ theorem RHTable.erase_eq_eraseAt [BEq α] [Hashable α] [LawfulBEq α] (t : RHTa
   · rw [if_pos h, dif_pos h]
     simp only [RHTable.eraseAt, Nat.mod_eq_of_lt h]
   · rw [if_neg h, dif_neg h]
+
+/-- `erase` as compiled: the probe's slot as a bare index (`findIdxLoop`), then
+`eraseAt` there, so no `Option` of the index is built (`RHTable.erase_eq_impl`). -/
+@[inline] def RHTable.eraseImpl [BEq α] [Hashable α] [LawfulBEq α] (t : RHTable α β) (k : α) :
+    RHTable α β :=
+  if h : findIdxLoop t.capacity (idealIndex k t.capacity t.hCapPos) k 0 t.slots t.capacity
+      t.hSlotsLen t.hCapPos < t.capacity then
+    t.eraseAt _ h
+  else t
+
+@[csimp] theorem RHTable.erase_eq_impl : @RHTable.erase = @RHTable.eraseImpl := by
+  funext α β _ _ _ t k
+  exact RHTable.erase_eq_eraseAt t k
 
 /-- N1-G3: Resize the table by doubling capacity and re-inserting all entries. -/
 def RHTable.resize [BEq α] [Hashable α] [LawfulBEq α] (t : RHTable α β) : RHTable α β :=
