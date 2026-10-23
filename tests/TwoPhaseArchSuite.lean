@@ -847,13 +847,15 @@ private def cnodeHolding (id : Nat) (cap : Capability) : ObjectEntry :=
     check looked at the CNode's shape and at nothing its slots held, so this
     configuration booted.  The control is the same CNode holding an object
     capability, which boots: the refusal is about the reply capability, not the
-    CNode.  (The check's badge half has no runtime witness: every public `Badge`
+    CNode.  The control's capability names the CNode itself, since a capability
+    naming an object the boot does not install is refused on its own account
+    (WS-ZA ZA5.4 part 18).  (The check's badge half has no runtime witness: every public `Badge`
     constructor yields a valid badge.) -/
 private def tph015q_replyCapInBootCNodeRefused : IO Unit := do
   let replyCap : Capability :=
     { target := .replyCap (SeLe4n.ReplyId.ofNat 20), rights := AccessRightSet.ofList [.grant] }
   let objectCap : Capability :=
-    SeLe4n.Platform.RPi5.rpi5InitialCap (SeLe4n.ObjId.ofNat 12) [.read]
+    SeLe4n.Platform.RPi5.rpi5InitialCap (SeLe4n.ObjId.ofNat 9) [.read]
   expect "TPH-015q CNode check refuses a slot holding a reply capability"
     (!bootSafeObjectCheck (cnodeHolding 9 replyCap).obj)
   expect "TPH-015q CNode check admits a slot holding an object capability (control)"
