@@ -4040,9 +4040,9 @@ run_check "INVARIANT" rg -n -U 'case untypedRetype =>(\n([ \t][^\n]*)?)*      ex
 # radix bound as an erased proof field, which the decode builds, so no theorem
 # takes the bound as a hypothesis.
 run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.Capability\.Invariant\.Preservation\.Carve$' SeLe4n/Kernel/Capability/Invariant/Preservation.lean
-run_check "INVARIANT" rg -n '^theorem storeObject_absent_preserves_capabilityInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/Carve.lean
-run_check "INVARIANT" rg -n -U '^theorem retypeFromUntyped_preserves_capabilityInvariantBundle(\n([ \t][^\n]*)?)*  have hInvCh := storeObject_absent_preserves_capabilityInvariantBundle hInvUt hChildNone hStCh\n    hCaps hLinks hDepth\n  exact storeObject_capRewrite_preserves_capabilityInvariantBundle ' SeLe4n/Kernel/Capability/Invariant/Preservation/Carve.lean
-run_check "INVARIANT" rg -n -U '^theorem untypedRetypeObject_preserves_capabilityInvariantBundle(\n([ \t][^\n]*)?)*  have hInv1 := retypeFromUntyped_preserves_capabilityInvariantBundle [^\n]*(\n([ \t][^\n]*)?)*  have hCdt := cdt_addEdge_after_insert _ st2 src dst _ \.retype [^\n]*(\n([ \t][^\n]*)?)*  have hShape := treeShape_addEdge_after_insert _ st2 src dst _ \.retype ' SeLe4n/Kernel/Capability/Invariant/Preservation/Carve.lean
+run_check "INVARIANT" rg -n '^theorem storeObject_absent_preserves_capabilityBundleOffLinks($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/Carve.lean
+run_check "INVARIANT" rg -n -U '^theorem retypeFromUntyped_preserves_capabilityInvariantBundle(\n([ \t][^\n]*)?)*  obtain ⟨hBCh, hLCh⟩ := storeObject_absent_preserves_capabilityBundleOffLinks hBUt hLUt hChildUt\n    hStCh hLinks hDepth hCaps\n  have hShapeCh := retypeFromUntyped_stores_shape hInv\.treeShape [^\n]*(\n([ \t][^\n]*)?)*  refine storeObject_capRewrite_restores_capabilityInvariantBundle stCh st. authority cn cap _\n    hBCh hLCh hShapeCh ' SeLe4n/Kernel/Capability/Invariant/Preservation/Carve.lean
+run_check "INVARIANT" rg -n -U '^theorem untypedRetypeObject_preserves_capabilityInvariantBundle(\n([ \t][^\n]*)?)*  have hInv1 := retypeFromUntyped_preserves_capabilityInvariantBundle [^\n]*(\n([ \t][^\n]*)?)*  have hCdt := cdt_addEdge_after_insert _ st2 src dst _ \.retype [^\n]*(\n([ \t][^\n]*)?)*  have hShape := treeShape_addEdge_after_fresh _ st2 src dst _ \.retype ' SeLe4n/Kernel/Capability/Invariant/Preservation/Carve.lean
 run_check "INVARIANT" rg -n '^  \| cnode \(radixBits : Nat\) \(bounded : radixBits ≤ maxCSpaceDepth\)$' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n '^theorem maxCNodeRadixBits_le_maxCSpaceDepth : maxCNodeRadixBits ≤ maxCSpaceDepth := by decide$' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n -U '^theorem untypedRetypeFromCap_preserves_capabilityInvariantBundle[^\n]*(\n([ \t][^\n]*)?)*  exact untypedRetypeObject_preserves_capabilityInvariantBundle _ _ _ req st st. hInv hCarve$' SeLe4n/Kernel/API.lean
@@ -21886,7 +21886,7 @@ run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedStartedFor_bootLink
 # WS-ZA ZA5.4 part 16: every capability-holding slot is in the tree.  The
 # bundle carries the shape, the linked boot establishes it from the listing of
 # every boot slot, and the unlinked and unchecked boots' bundle claims are gone.
-run_check "INVARIANT" rg -n -U '^abbrev CapTreeShape \(st : SystemState\) : Prop :=\n  TreeShapeOver st\.cdt st\.slotCapAt st\.objectPresent$' SeLe4n/Model/SlotTreeShape.lean
+run_check "INVARIANT" rg -n -U '^abbrev CapTreeShape \(st : SystemState\) : Prop :=\n  TreeShapeOver st\.cdt st\.slotCapAt st\.objectPresent st\.getUntyped\? \(fun _ => False\)$' SeLe4n/Model/SlotTreeShape.lean
 run_check "INVARIANT" rg -n '^theorem BootLinks\.Sound\.foldl_done($|[ ({:\[\]])' SeLe4n/Platform/Boot/CapabilityLinks.lean
 run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedWithIdleThreadsFor_bootSlotsListed($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean
 run_check "INVARIANT" rg -n '^theorem startInitialThreads_bootSlotsListed($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean
@@ -21907,6 +21907,41 @@ run_check "INVARIANT" rg -n '^theorem PlatformConfig\.wellFormed_bootCapabilitie
 run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedWithIdleThreadsFor_ok_capabilitiesLive($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^theorem startInitialThreads_capabilitiesLive($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean
 run_check "INVARIANT" rg -n -U '^    \(startInitialThreads_capabilitiesLive _ _ _ hStart\n      \(bootFromPlatformCheckedWithIdleThreadsFor_ok_capabilitiesLive cores config base hBase\)\)' SeLe4n/Platform/Boot/InitialThreads.lean
-run_check "INVARIANT" rg -n -U '^    \(hLive : ∀ r o, SystemState\.namesAt ist\.state\.slotCapAt r o → ist\.state\.objectPresent o\) :\n    bootLinkedShape \(linkBootCapabilities config ist\) := by$' SeLe4n/Platform/Boot/CapabilityLinks.lean
+run_check "INVARIANT" rg -n -U '^    \(hLive : ∀ r o, SystemState\.namesAt ist\.state\.slotCapAt r o → ist\.state\.objectPresent o\)\n    \(hUnique : ' SeLe4n/Platform/Boot/CapabilityLinks.lean
 run_check "INVARIANT" rg -n 'runBootCapabilityLiveChecks$' tests/SmpIdleSuite.lean
+# WS-ZA ZA5.4 part 19 (v0.36.130): the untyped chains and descendants.  The
+# shape reads the store's untyped records: the slots naming one untyped form one
+# vertical first-child chain, an untyped capability that is not full has no
+# strict descendant naming its untyped (off at a copy's, mint's or transfer's
+# source until it is set full), everything carved from an untyped lies below
+# every capability to it, and an untyped's children are live and recorded once.
+# Every slot write, the carve and the boot keep or establish them.
+run_check "INVARIANT" rg -n '^def untyped\? \(o : KernelObject\) : Option UntypedObject :=$' SeLe4n/Model/ObjectSlots.lean
+run_check "INVARIANT" rg -n '^      post\.tcbSlots = pre\.tcbSlots ∧ post\.untyped\? = pre\.untyped\?$' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^    \(hUntyped : obj\.untyped\? = pre\.untyped\? := by rfl\)' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^inductive CarvedFrom \(ut : SeLe4n\.ObjId → Option UntypedObject\) : SeLe4n\.ObjId → SeLe4n\.ObjId → Prop$' SeLe4n/Model/SlotTreeShape.lean
+run_check "INVARIANT" rg -n -U '^  chainLinear : ∀ u p r, untypedCapAt cap ut p u → untypedCapAt cap ut r u →\n    p = r ∨ CapDerivationTree\.CdtChildReachable cdt p r ∨\n      CapDerivationTree\.CdtChildReachable cdt r p$' SeLe4n/Model/SlotTreeShape.lean
+run_check "INVARIANT" rg -n -U '^  chainFirst : ∀ u p r, untypedCapAt cap ut p u → untypedCapAt cap ut r u →\n    CapDerivationTree\.CdtChildReachable cdt p r →\n    ∃ c, \(cdt\.childrenOf p\)\.head\? = some c ∧ untypedCapAt cap ut c u ∧' SeLe4n/Model/SlotTreeShape.lean
+run_check "INVARIANT" rg -n -U '^  notFullLeaf : ∀ p c u U, ¬ off p → cap p = some c → c\.target = \.object u → ut u = some U →\n    c\.freeIndex < U\.regionSize →\n    ∀ r, CapDerivationTree\.CdtChildReachable cdt p r → ¬ untypedCapAt cap ut r u$' SeLe4n/Model/SlotTreeShape.lean
+run_check "INVARIANT" rg -n -U '^  carvedBelow : ∀ u x, CarvedFrom ut u x → ∀ p r, untypedCapAt cap ut p u → namesAt cap r x →\n    CapDerivationTree\.CdtChildReachable cdt p r$' SeLe4n/Model/SlotTreeShape.lean
+run_check "INVARIANT" rg -n '^  childLive : ∀ u U, ut u = some U → ∀ ch ∈ U\.children, present ch\.objId$' SeLe4n/Model/SlotTreeShape.lean
+run_check "INVARIANT" rg -n -U '^  childUnique : ∀ u v U V, ut u = some U → ut v = some V → ∀ ch ∈ U\.children,\n    ∀ ch. ∈ V\.children, ch\.objId = ch.\.objId → u = v$' SeLe4n/Model/SlotTreeShape.lean
+run_check "INVARIANT" rg -n -U '^abbrev CapTreeShapeOff \(st : SystemState\) \(a : SlotRef\) : Prop :=\n  TreeShapeOver st\.cdt st\.slotCapAt st\.objectPresent st\.getUntyped\? \(· = a\)$' SeLe4n/Model/SlotTreeShape.lean
+run_check "INVARIANT" rg -n -U '^theorem addChild \(h : TreeShapeOver cdt cap present ut \(fun _ => False\)\) \{src dst : SlotRef\}(\n([ \t][^\n]*)?)*    TreeShapeOver cdt. cap. present. ut \(· = src\) := by$' SeLe4n/Model/SlotTreeShape.lean
+run_check "INVARIANT" rg -n -U '^def capabilityBundleOffSource \(st : SystemState\) \(src : SlotRef\) : Prop :=\n  capabilityBundleOffLinks st ∧ cdtLinksAgree st ∧ SystemState\.CapTreeShapeOff st src$' SeLe4n/Kernel/Capability/Invariant/Defs.lean
+run_check "INVARIANT" rg -n -U '^theorem capabilityInvariantBundle_of_frame(\n([ \t][^\n]*)?)*    \(hUntyped : st.\.getUntyped\? = st\.getUntyped\?\) :' SeLe4n/Kernel/Capability/Invariant/Authority.lean
+run_check "INVARIANT" rg -n -U '^theorem setCapFreeIndex_preserves_capabilityInvariantBundle(\n([ \t][^\n]*)?)*    \(hLeaf : ∀ u, cap\.target = \.object u → ∀ r, CapDerivationTree\.CdtChildReachable st\.cdt addr r →\n      ¬ SystemState\.untypedCapAt st\.slotCapAt st\.getUntyped\? r u\) :' SeLe4n/Kernel/Capability/Invariant/Preservation/CopyMoveMutate.lean
+run_check "INVARIANT" rg -n -U '^theorem untypedSourceSetFull_preserves_capabilityInvariantBundle(\n([ \t][^\n]*)?)*    \(hInv : capabilityBundleOffSource st src\)' SeLe4n/Kernel/Capability/Invariant/Preservation/CopyMoveMutate.lean
+run_check "INVARIANT" rg -n -U '^theorem cspaceCopy_preserves_capabilityInvariantBundle(\n([ \t][^\n]*)?)*  have hMid : capabilityBundleOffSource \(st2\.cdtAddChild src dst \.copy\) src := by\n    refine capabilityBundleOffSource_of_linkReach (\n([ \t][^\n]*)?)*  exact untypedSourceSetFull_preserves_capabilityInvariantBundle _ src cnS cap hMid ' SeLe4n/Kernel/Capability/Invariant/Preservation/CopyMoveMutate.lean
+run_check "INVARIANT" rg -n -U '^theorem cspaceMintWithCdt_preserves_capabilityInvariantBundle(\n([ \t][^\n]*)?)*  have hMid : capabilityBundleOffSource \(st1\.cdtAddChild src dst \.mint\) src := by\n    refine capabilityBundleOffSource_of_linkReach (\n([ \t][^\n]*)?)*  exact untypedSourceSetFull_preserves_capabilityInvariantBundle _ src cnS _ hMid ' SeLe4n/Kernel/Capability/Invariant/Preservation/CopyMoveMutate.lean
+run_check "INVARIANT" rg -n -U '^theorem ipcTransferSingleCap_preserves_capabilityInvariantBundle(\n([ \t][^\n]*)?)*    have hMid := capabilityBundleOffSource_of_linkReach (\n([ \t][^\n]*)?)*      exact untypedSourceSetFull_preserves_capabilityInvariantBundle _ srcNode cnS cap hMid ' SeLe4n/Kernel/Capability/Invariant/Preservation/BadgeIpcCapsAndCdtMaps.lean
+run_check "INVARIANT" rg -n '^theorem retypeFromUntyped_authority_leaf($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/Carve.lean
+run_check "INVARIANT" rg -n '^theorem retypeFromUntyped_fresh_child($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/Carve.lean
+run_check "INVARIANT" rg -n '^theorem CarveRequest\.object_untyped_children($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/Carve.lean
+run_check "INVARIANT" rg -n -U '^theorem threadSlotFilled_preserves_capabilityInvariantBundle(\n([ \t][^\n]*)?)*    \(hNotUt : ∀ u, cap\.target = \.object u → st\.getUntyped\? u = none\) :' SeLe4n/Kernel/Capability/Invariant/Preservation/ThreadSpaceCopy.lean
+run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedWithIdleThreadsFor_ok_untypedCapUnique($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedWithIdleThreadsFor_ok_untypedsUncarved($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem startInitialThreads_untypedsSole($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean
+run_check "INVARIANT" rg -n -U '^  have hSole := startInitialThreads_untypedsSole _ _ _ hStart\n    ⟨bootFromPlatformCheckedWithIdleThreadsFor_ok_untypedCapUnique cores config base hBase,\n      bootFromPlatformCheckedWithIdleThreadsFor_ok_untypedsUncarved cores config base hBase⟩\n  exact linkBootCapabilities_bootLinkedShape config started' SeLe4n/Platform/Boot/InitialThreads.lean
+run_negative_check "INVARIANT" rg -n '\bstoreObject_absent_preserves_capabilityInvariantBundle\b' SeLe4n
 finalize_report
