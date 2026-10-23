@@ -900,9 +900,21 @@ capability takes `cspaceDeleteTeardownAt` (`cspaceDeleteTeardownAt_eq_frame`). -
                unmapPageState executingCore m.asid m.vaddr st1
              else st1
            | none => st1)
-      | none => cspaceDeleteTeardownAt executingCore cnode slot st
-    | _ => cspaceDeleteTeardownAt executingCore cnode slot st
-  | none => cspaceDeleteTeardownAt executingCore cnode slot st
+      | none =>
+        if (st.getPageTable? frameId).isSome then
+          cspaceDeleteTeardownAt executingCore cnode slot st
+        else
+          let target := slotRetireTarget st cnode slot
+          let recorder := recorderFor st target cnode slot
+          retireFinalObject executingCore target recorder (cspaceDeletePerformAt cnode slot st)
+    | _ =>
+      let target := slotRetireTarget st cnode slot
+      let recorder := recorderFor st target cnode slot
+      retireFinalObject executingCore target recorder (cspaceDeletePerformAt cnode slot st)
+  | none =>
+    let target := slotRetireTarget st cnode slot
+    let recorder := recorderFor st target cnode slot
+    retireFinalObject executingCore target recorder (cspaceDeletePerformAt cnode slot st)
 
 /-- A teardown of nothing is the identity. -/
 theorem finaliseDestroyedCapabilitiesState_nil (ec : Concurrency.CoreId) (st : SystemState) :
@@ -910,22 +922,57 @@ theorem finaliseDestroyedCapabilitiesState_nil (ec : Concurrency.CoreId) (st : S
   simp [finaliseDestroyedCapabilitiesState, pageTablesOrphaned, detachPageTablesState,
     orphanedTableMappings, unmapLivePagesState]
 
+/-- **A teardown with nothing to tear down**: when the slot's capability names
+no page table and records no page, `cspaceDeleteTeardownAt` is the delete then
+the retire, with no list and no slot address built. -/
+theorem cspaceDeleteTeardownAt_of_nothing (ec : Concurrency.CoreId) (cnode : SeLe4n.ObjId)
+    (slot : SeLe4n.Slot) (st : SystemState)
+    (hNamed : slotPageTables st ⟨cnode, slot⟩ = [])
+    (hPages : slotMappedPages st ⟨cnode, slot⟩ = []) :
+    cspaceDeleteTeardownAt ec cnode slot st =
+      retireFinalObject ec (slotRetireTarget st cnode slot)
+        (recorderFor st (slotRetireTarget st cnode slot) cnode slot)
+        (cspaceDeletePerformAt cnode slot st) := by
+  unfold cspaceDeleteTeardownAt
+  dsimp only
+  rw [hNamed, hPages, finaliseDestroyedCapabilitiesState_nil]
+  rfl
+
 theorem cspaceDeleteTeardownAt_eq_frame :
     @cspaceDeleteTeardownAt = @cspaceDeleteTeardownAtFrame := by
   funext ec cnode slot st
   unfold cspaceDeleteTeardownAtFrame
   cases hL : st.slotCapAt ⟨cnode, slot⟩ with
-  | none => rfl
+  | none =>
+    exact cspaceDeleteTeardownAt_of_nothing ec cnode slot st
+      (by simp [slotPageTables, hL]) (by simp [slotMappedPages, hL])
   | some cap =>
     dsimp only
     cases hT : cap.target with
-    | cnodeSlot _ _ => rfl
-    | replyCap _ => rfl
-    | auditTrail => rfl
+    | cnodeSlot _ _ =>
+      refine cspaceDeleteTeardownAt_of_nothing ec cnode slot st ?_ ?_
+      · simp [slotPageTables, hL, capabilityPageTable, hT]
+      · cases hM : cap.mapping <;> simp [slotMappedPages, hL, capabilityMappedPage, hT, hM]
+    | replyCap _ =>
+      refine cspaceDeleteTeardownAt_of_nothing ec cnode slot st ?_ ?_
+      · simp [slotPageTables, hL, capabilityPageTable, hT]
+      · cases hM : cap.mapping <;> simp [slotMappedPages, hL, capabilityMappedPage, hT, hM]
+    | auditTrail =>
+      refine cspaceDeleteTeardownAt_of_nothing ec cnode slot st ?_ ?_
+      · simp [slotPageTables, hL, capabilityPageTable, hT]
+      · cases hM : cap.mapping <;> simp [slotMappedPages, hL, capabilityMappedPage, hT, hM]
     | object frameId =>
       dsimp only
       cases hF : st.getFrame? frameId with
-      | none => rfl
+      | none =>
+        dsimp only
+        cases hPT : (st.getPageTable? frameId).isSome with
+        | true => rfl
+        | false =>
+          refine cspaceDeleteTeardownAt_of_nothing ec cnode slot st ?_ ?_
+          · simp [slotPageTables, hL, capabilityPageTable, hT, hPT]
+          · cases hM : cap.mapping <;>
+              simp [slotMappedPages, hL, capabilityMappedPage, hT, hF, hM]
       | some f =>
         dsimp only
         have hPT : st.getPageTable? frameId = none := by

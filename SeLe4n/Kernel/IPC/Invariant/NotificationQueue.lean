@@ -44,15 +44,18 @@ theorem notificationQueueReaches.transport {st st' : SystemState} {n : SeLe4n.Ob
   | head hN hH => exact hHead _ _ hN hH
   | next hRa hTa hNx ih => exact hStep _ _ _ hRa hTa hNx ih
 
-/-- The frame: a step that changes no notification and no TCB blocked on a
-notification, before or after, keeps the queues consistent. -/
+/-- The frame: a step that changes no notification, keeps every notification a
+blocked thread names, and changes no TCB blocked on a notification, before or
+after, keeps the queues consistent. -/
 theorem notificationWaiterConsistent_frame {st st' : SystemState}
     (hInv : notificationWaiterConsistent st)
     (hNtfnBack : ∀ (noid : SeLe4n.ObjId) (ntfn : Notification),
       st'.objects[noid]? = some (.notification ntfn) →
       st.objects[noid]? = some (.notification ntfn))
-    (hNtfnFwd : ∀ (noid : SeLe4n.ObjId) (ntfn : Notification),
+    (hNtfnFwd : ∀ (noid : SeLe4n.ObjId) (ntfn : Notification) (tid : SeLe4n.ThreadId) (tcb : TCB),
       st.objects[noid]? = some (.notification ntfn) →
+      st.objects[tid.toObjId]? = some (.tcb tcb) →
+      tcb.ipcState = .blockedOnNotification noid →
       st'.objects[noid]? = some (.notification ntfn))
     (hBlockedPre : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (oid : SeLe4n.ObjId),
       st.objects[tid.toObjId]? = some (.tcb tcb) →
@@ -79,7 +82,7 @@ theorem notificationWaiterConsistent_frame {st st' : SystemState}
   · have hTpre : st.objects[tid.toObjId]? = some (.tcb tcb) :=
       (hBlockedPost tid tcb oid hT hB).symm.trans hT
     obtain ⟨ntfn, hN, hPrev, hTail, hNext⟩ := hInv.2.1 tid tcb oid hTpre hB
-    refine ⟨ntfn, hNtfnFwd oid ntfn hN, ?_, hTail, ?_⟩
+    refine ⟨ntfn, hNtfnFwd oid ntfn tid tcb hN hTpre hB, ?_, hTail, ?_⟩
     · rcases hPrev with h | ⟨a, ta, ha, hTa, hBa, hNa⟩
       · exact Or.inl h
       · exact Or.inr ⟨a, ta, ha, (hBlockedPre a ta oid hTa hBa).trans hTa, hBa, hNa⟩
@@ -89,7 +92,7 @@ theorem notificationWaiterConsistent_frame {st st' : SystemState}
   · have hTpre : st.objects[tid.toObjId]? = some (.tcb tcb) :=
       (hBlockedPost tid tcb oid hT hB).symm.trans hT
     refine (hInv.reaches hTpre hB).transport
-      (fun _ _ hN hH => .head (hNtfnFwd _ _ hN) hH) (fun a _ ta hRa hTa hNx hRa' => ?_)
+      (fun _ _ hN hH => .head (hNtfnFwd _ _ tid tcb hN hTpre hB) hH) (fun a _ ta hRa hTa hNx hRa' => ?_)
     obtain ⟨ta', hTa', hBa⟩ := notificationQueueReaches_blocked hInv hRa
     rw [hTa] at hTa'; cases hTa'
     exact .next hRa' ((hBlockedPre a ta oid hTa hBa).trans hTa) hNx
@@ -166,7 +169,7 @@ theorem notificationWaiterConsistent_of_unblocked_tcb_write {st st' : SystemStat
     by_cases h : noid = tid.toObjId
     · subst h; rw [hT1] at hN; cases hN
     · rwa [hOther noid h] at hN
-  · intro noid ntfn hN
+  · intro noid ntfn _ _ hN _ _
     by_cases h : noid = tid.toObjId
     · subst h; rw [hT0] at hN; cases hN
     · rwa [hOther noid h]
@@ -817,5 +820,5 @@ theorem notificationWaiterConsistent_of_objects_eq {st st' : SystemState}
     (h : st'.objects = st.objects) (hInv : notificationWaiterConsistent st) :
     notificationWaiterConsistent st' :=
   notificationWaiterConsistent_frame hInv (fun _ _ hN => by rwa [h] at hN)
-    (fun _ _ hN => by rwa [h]) (fun _ _ _ _ _ => by rw [h]) (fun _ _ _ _ _ => by rw [h])
+    (fun _ _ _ _ hN _ _ => by rwa [h]) (fun _ _ _ _ _ => by rw [h]) (fun _ _ _ _ _ => by rw [h])
     (fun _ _ _ _ => Or.inl (by rw [h]))
