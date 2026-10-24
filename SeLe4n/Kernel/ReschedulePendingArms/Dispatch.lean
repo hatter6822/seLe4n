@@ -344,8 +344,11 @@ theorem notificationWaiterCancel_stepCovers (e : CoreId) (st : SystemState)
 /-- WS-ZA ZA5.4 parts 23–24: **the finalisation covers**, every step of it
 (`finaliseFinalObject_closed`): each cancel's, the notification unbind's
 (`unbindNotification_keyFrame`, through `unbindNotification_of_inPlace`), the
-reservation unbind's (`cancelBoundDonationOnCore_stepCovers`), and the suspend,
-which writes no key field (`updateTcb_keyFrame`). -/
+reservation unbind's (`cancelBoundDonationOnCore_stepCovers`), the suspend — the
+deschedule wherever the thread is placed (`descheduleAtPlacement_stepCovers`),
+then a mark that writes no key field (`updateTcb_keyFrame`) — and the release
+of the cores' holds on the thread, which writes no object and no scheduler
+field. -/
 theorem finaliseFinalObject_stepCovers (e : CoreId) (target : Nat) (st : SystemState)
     (hInv : st.objects.invExt) :
     stepCovers e st (finaliseFinalObject target st) ∧ (finaliseFinalObject target st).objects.invExt :=
@@ -370,9 +373,15 @@ theorem finaliseFinalObject_stepCovers (e : CoreId) (target : Nat) (st : SystemS
     (fun s _ t tcb _ h _ _ _ _ _ =>
       ⟨stepCovers_trans h.1 (cancelIpcBlocking_stepCovers e s t tcb h.2),
         Lifecycle.Suspend.cancelIpcBlocking_preserves_objects_invExt s t tcb h.2⟩)
-    (fun s t _ h _ _ _ _ _ _ _ =>
-      stepCoversInv_trans h.1 (updateTcb_keyFrame s t
-        (f := fun t => { t with threadState := .Inactive }) (fun _ => rfl) h.2).stepCoversInv)
+    (fun s t _ h _ _ _ _ _ =>
+      have d := descheduleAtPlacement_stepCovers e s t h.2
+      stepCoversInv_trans (stepCovers_trans h.1 d.1) (updateTcb_keyFrame _ t
+        (f := finaliseSuspendMark) (fun _ => rfl) d.2).stepCoversInv)
+    (fun s t h => by
+      have hO := finaliseThreadReleaseCores_objects s t
+      refine ⟨stepCovers_trans h.1 (stepCovers_of_scheduler_eq (keyInputsEq_of_objects_eq hO)
+        (finaliseThreadReleaseCores_scheduler s t)), ?_⟩
+      rw [hO]; exact h.2)
     target st ⟨stepCovers_refl e st, hInv⟩
 
 /-- WS-ZA ZA5.4 part 23: **the finalising delete covers**: the delete and the

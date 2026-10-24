@@ -681,6 +681,43 @@ theorem parts {st st' : SystemState} (h : ReachFieldFrame st st')
         · cases o <;> first | rfl | exact absurd ⟨_, rfl⟩ hx
       rw [a _ hT', a _ hT]
 
+/-- **A step that changes only run-queue links and keeps every reply view**
+keeps what the reachable parts read: the run-queue fields are no notification
+link, no IPC state and no budget. -/
+theorem of_agreeOffRunLinks {st st' : SystemState} (h : st'.objectsAgreeOffRunLinks st)
+    (hV : st'.replyViews = st.replyViews) : ReachFieldFrame st st' := by
+  have hView : ∀ (k : SeLe4n.ObjId) (tx ty : TCB), st'.objects[k]? = some (KernelObject.tcb tx) →
+      st.objects[k]? = some (KernelObject.tcb ty) → tx.replyView = ty.replyView := by
+    intro k tx ty hx hy
+    have e := congrFun hV k
+    unfold SystemState.replyViews SystemState.getObject? at e
+    rw [hx, hy, objReplyView_tcb, objReplyView_tcb] at e
+    exact Option.some.inj e
+  have hKept : ∀ (tx ty : TCB), tx.withoutRunLinks = ty.withoutRunLinks →
+      tx.replyView = ty.replyView → tcbReachFieldsKept tx ty := fun tx ty e hv =>
+    ⟨TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState e,
+      TCB.proj_eq_of_withoutRunLinks_eq TCB.ntfnPrev e,
+      TCB.proj_eq_of_withoutRunLinks_eq TCB.ntfnNext e,
+      TCB.proj_eq_of_withoutRunLinks_eq TCB.timeoutBudget e, hv⟩
+  refine ⟨fun k n => ⟨fun hk => ?_, fun hk => ?_⟩, fun k ty hy => ?_, fun k tx hx => ?_⟩
+  · exact KernelObject.map_withoutRunLinks_of_not_tcb (h k).symm hk
+      (fun _ e => KernelObject.noConfusion e)
+  · exact KernelObject.map_withoutRunLinks_of_not_tcb (h k) hk
+      (fun _ e => KernelObject.noConfusion e)
+  · obtain ⟨tx, hx, e⟩ := KernelObject.map_withoutRunLinks_tcb (h k) hy
+    exact ⟨tx, hx, hKept tx ty e (hView k tx ty hx hy)⟩
+  · obtain ⟨ty, hy, e⟩ := KernelObject.map_withoutRunLinks_tcb (h k).symm hx
+    exact ⟨ty, hy, hKept tx ty e.symm (hView k tx ty hx hy)⟩
+
+/-- The deschedule at a thread's placement: it rewrites run-queue links alone. -/
+theorem descheduleAtPlacement (st : SystemState) (t : SeLe4n.ThreadId) :
+    ReachFieldFrame st (SeLe4n.Kernel.descheduleAtPlacement st t) := by
+  refine of_agreeOffRunLinks (descheduleAtPlacement_objectsAgreeOffRunLinks st t) ?_
+  unfold SeLe4n.Kernel.descheduleAtPlacement descheduleAt
+  split
+  · exact SystemState.removeRunnableOnCore_replyViews_eq _ _ _
+  · rfl
+
 end ReachFieldFrame
 
 /-- **The reservation unbind keeps the reachable parts' fields**: a context
@@ -811,20 +848,30 @@ theorem cancel {s : SystemState} {n : SeLe4n.ObjId} {t : SeLe4n.ThreadId} {tcb :
     h.2.2.1 h.2.2.2
   ⟨⟨hF.1, hF.2, r.1, r.2.2⟩, r.2.1⟩
 
-/-- A finalised thread's suspend carries it, and frames every budget. -/
+/-- A finalised thread's suspend carries it, and frames every budget: the
+deschedule wherever it is placed, then the inactive mark. -/
 theorem suspend {s : SystemState} {t : SeLe4n.ThreadId} {tcb : TCB}
-    (h : finaliseStepInvariant s) (hT : s.getTcb? t = some tcb) :
-    finaliseStepInvariant (s.updateTcb t fun t => { t with threadState := .Inactive }) ∧
-      timeoutBudgetFrame s (s.updateTcb t fun t => { t with threadState := .Inactive }) :=
-  have hF : ipcInvariantFull (s.updateTcb t fun t => { t with threadState := .Inactive }) ∧
-      (s.updateTcb t fun t => { t with threadState := .Inactive }).objects.invExt := by
-    rw [SystemState.updateTcb_eq_of_some hT]
-    exact ⟨insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull s t tcb
-      { tcb with threadState := .Inactive } h.2.1 h.1
-      ((SystemState.getTcb?_eq_some_iff s t tcb).mp hT) rfl rfl rfl rfl rfl rfl rfl rfl rfl,
-      RHTable_insert_preserves_invExt _ _ _ h.2.1⟩
-  have r := (ReachFieldFrame.updateTcb s t (f := fun t => { t with threadState := .Inactive })
-    h.2.1 (fun _ => ⟨rfl, rfl, rfl, rfl, rfl⟩)).parts h.2.2.1
+    (h : finaliseStepInvariant s) (hT : s.getTcb? t = some tcb) (hS : tcb.ipcStateCode = 0)
+    (hO : tcb.ipcObjectCode = 0) (hI : tcb.threadState ≠ .Inactive)
+    (hId : isIdleThreadId t = false) :
+    finaliseStepInvariant ((descheduleAtPlacement s t).updateTcb t finaliseSuspendMark) ∧
+      timeoutBudgetFrame s ((descheduleAtPlacement s t).updateTcb t finaliseSuspendMark) :=
+  have hF := finaliseSuspendStep_keepsIpcInvariantFull s t tcb ⟨h.1, h.2.1⟩ hT hS hO hI hId
+  have hD := (FinaliseFrame.descheduleAt s t (placedCoreOf? s t) h.2.1).invExt
+  have r := ((ReachFieldFrame.descheduleAtPlacement s t).trans
+    (ReachFieldFrame.updateTcb (descheduleAtPlacement s t) t
+      (f := finaliseSuspendMark) hD
+      (fun _ => ⟨rfl, rfl, rfl, rfl, rfl⟩))).parts h.2.2.1
+  ⟨⟨hF.1, hF.2, r.1, SystemState.replyWaitersConsistent.of_views r.2.2 h.2.2.2⟩, r.2.1⟩
+
+/-- The release of every core's hold on a thread carries it, and frames every
+budget: it writes no object. -/
+theorem release {s : SystemState} (t : SeLe4n.ThreadId) (h : finaliseStepInvariant s) :
+    finaliseStepInvariant (finaliseThreadReleaseCores s t) ∧
+      timeoutBudgetFrame s (finaliseThreadReleaseCores s t) :=
+  have hF := finaliseReleaseStep_keepsIpcInvariantFull s t ⟨h.1, h.2.1⟩
+  have r := (ReachFieldFrame.of_objects_eq (st := s) (st' := finaliseThreadReleaseCores s t)
+    (finaliseThreadReleaseCores_objects s t)).parts h.2.2.1
   ⟨⟨hF.1, hF.2, r.1, SystemState.replyWaitersConsistent.of_views r.2.2 h.2.2.2⟩, r.2.1⟩
 
 end finaliseStepInvariant
@@ -853,8 +900,11 @@ theorem finaliseFinalObject_preserves_ipcReachable (target : Nat) {st : SystemSt
     (fun _ _ _ _ _ h hT hI hN hH hC =>
       have r := h.1.cancel hT hI hN hH hC
       ⟨r.1, h.2.trans r.2⟩)
-    (fun _ _ _ h hT _ _ _ _ _ _ =>
-      have r := h.1.suspend hT
+    (fun _ _ _ h hT hS hO hI hId =>
+      have r := h.1.suspend hT hS hO hI hId
+      ⟨r.1, h.2.trans r.2⟩)
+    (fun _ t h =>
+      have r := h.1.release t
       ⟨r.1, h.2.trans r.2⟩)
     target st ⟨.of_ipcReachable h, .refl st⟩
   exact ⟨hFull', hInv', allTimeoutBudgetsNone_of_frame hB' h.2.2.1, hNC',

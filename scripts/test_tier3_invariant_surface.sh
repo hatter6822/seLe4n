@@ -4133,13 +4133,23 @@ run_check "INVARIANT" rg -n '^theorem finaliseFinalObject_preserves_ipcInvariant
 run_check "INVARIANT" rg -n '^theorem retireFinalisedObject_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllPreservation.lean
 run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlotFinalising_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllPreservation.lean
 run_check "INVARIANT" rg -n '^theorem finaliseFinalObject_closed($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllFrame.lean
-# v0.36.135: a thread is finalised in seL4's finaliseCap order (notification
-# unbind, scheduling-context unbind, then suspend: cancel, then .Inactive, then
-# the destroy cleanup), only when the pre-state admits it; a held or executing
-# thread, or the idle thread, is refused; the cleanup is proven the identity on
-# the finalised object and compiled away, so the spec keeps it.
-run_check "INVARIANT" rg -n -U 'def finaliseThread \(x : SeLe4n\.ObjId\) \(st : SystemState\) : SystemState :=\n  if threadFinaliseAdmitted st x then\n[^\n]*\n    finaliseThreadCleanup\n      \(finaliseThreadSuspend\n        \(finaliseThreadCancel\n          \(finaliseThreadUnbindSchedContext\n            \(finaliseThreadUnbindNotification st tid\) tid\) tid\) tid\) x' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
-run_check "INVARIANT" rg -n -U 'def threadFinaliseAdmitted[^\n]*(\n([ \t][^\n]*)?){0,5}\n    !threadHeldOnSomeCore st tid && t\.runCoreCode == 0 &&' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+# v0.36.135: a thread is finalised as seL4's finaliseCap finalises it, only when
+# the pre-state admits it: notification unbind, IPC cancel, suspend (the
+# deschedule wherever the thread is placed, queued or current on any core, the
+# executing core's own thread included, then .Inactive), the release of every
+# core's FP/SIMD and resident hold, the scheduling-context unbind, then the
+# destroy cleanup.  A held or executing thread is finalised, not refused: the
+# admission no longer reads the core holds.  The cleanup is proven the identity
+# on the finalised object and compiled away, so the spec keeps it.
+run_check "INVARIANT" rg -n -U 'def finaliseThread \(x : SeLe4n\.ObjId\) \(st : SystemState\) : SystemState :=\n  if threadFinaliseAdmitted st x then\n[^\n]*\n    finaliseThreadCleanup\n      \(finaliseThreadUnbindSchedContext\n        \(finaliseThreadReleaseCores\n          \(finaliseThreadSuspend\n            \(finaliseThreadCancel\n              \(finaliseThreadUnbindNotification st tid\) tid\) tid\) tid\) tid\) x' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n -U 'def finaliseThreadSuspend [^\n]*\n  match st\.getTcb\? tid with\n  \| some t =>\n    if t\.ipcStateCode == 0 && t\.ipcObjectCode == 0 && t\.threadState != \.Inactive &&\n        !isIdleThreadId tid then\n      \(descheduleAtPlacement st tid\)\.updateTcb tid' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n -U '@\[inline\] def finaliseSuspendMark \(t : TCB\) : TCB :=\n  \{ t with threadState := \.Inactive\n           runPrevCode := if t\.runCoreCode == 0 then 0 else t\.runPrevCode' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n '^theorem finaliseSuspendMark_runLinkOn($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n -U 'def finaliseThreadReleaseCores \(st : SystemState\) \(tid : SeLe4n\.ThreadId\) : SystemState :=\n  \{ st with machine := st\.machine\.releaseThread tid \}' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n -U '@\[inline\] def MachineState\.releaseThread [^\n]*\n[^\n]*releaseThreadOnCores tid SeLe4n\.Kernel\.Concurrency\.allCores' SeLe4n/Machine.lean
+run_check "INVARIANT" rg -n '^theorem MachineState\.releaseThread_releases($|[ ({:\[\]])' SeLe4n/Machine.lean
+run_check "INVARIANT" rg -n '^theorem finaliseThreadReleaseCores_unheld($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_negative_check "INVARIANT" rg -n -U 'def threadFinaliseAdmitted[^\n]*(\n([ \t][^\n]*)?){0,40}\n[^\n]*(threadHeldOnSomeCore|runCoreCode)' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 run_check "INVARIANT" rg -n -U 'def finaliseSchedContext \(x : SeLe4n\.ObjId\) \(st : SystemState\) : SystemState :=\n  if schedContextFinaliseAdmitted st x then\n    finaliseSchedContextCleanup \(finaliseSchedContextUnbind st x\) x' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 run_check "INVARIANT" rg -n '^theorem finaliseThreadCleanup_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 run_check "INVARIANT" rg -n '^theorem finaliseSchedContextCleanup_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/CancelAll.lean

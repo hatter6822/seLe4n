@@ -533,27 +533,25 @@ theorem notificationWaiterCancel_runQueueStage (st : SystemState)
   exact hW.2
 
 /-- **A finalised thread's suspend is a kernel entry's worth of run-queue
-steps**: a ready thread, no core's idle thread, current nowhere and queued
-nowhere, marked `.Inactive`, its run links kept.  It is no stage: the thread
-was runnable and is not after it, which is what a suspend is. -/
+steps**: a ready thread, no core's idle thread, taken off whichever core holds
+it — queued there or current there — and marked `.Inactive`
+(`descheduleAtPlacedThenOffWrite_runQueueEntryStage`).  It is no stage: the
+thread was runnable and is not after it, which is what a suspend is. -/
 theorem finaliseSuspend_runQueueEntryStage (st : SystemState) (t : SeLe4n.ThreadId) (tcb : TCB)
     (hT : st.getTcb? t = some tcb) (hS : tcb.ipcStateCode = 0) (hO : tcb.ipcObjectCode = 0)
-    (hR : tcb.runCoreCode = 0) (hH : threadHeldOnSomeCore st t = false)
     (hId : isIdleThreadId t = false) :
     SystemState.RunQueueEntryStage st
-      (st.updateTcb t fun t => { t with threadState := .Inactive }) := by
-  refine ⟨SystemState.RunQueueLinkStage.updateTcb st t (fun _ _ => rfl), fun hInv _ _ hD => ?_⟩
-  refine SystemState.currentDequeuedUniqueExcept_updateTcb_offWrite hInv hD (fun c hc => ?_) (fun c => ?_) hId
-    (fun _ _ => rfl) (fun x hx => ?_)
-  · have : threadCurrentOnSomeCore st t = true := (threadCurrentOnSomeCore_iff st t).mpr ⟨c, hc⟩
-    unfold threadHeldOnSomeCore at hH; rw [this] at hH; cases hH
-  · unfold SystemState.queuedOn; rw [hT]; dsimp only; rw [hR]; simp
-  · rw [hT] at hx; cases hx
-    exact Or.inl (by unfold TCB.ipcState; rw [hS, hO]; rfl)
+      ((descheduleAtPlacement st t).updateTcb t finaliseSuspendMark) :=
+  descheduleAtPlacedThenOffWrite_runQueueEntryStage st t
+    (fun _ x hx => by
+      rw [hT] at hx; cases hx
+      unfold TCB.ipcState; rw [hS, hO]; rfl)
+    hId finaliseSuspendMark_runLinkOn (fun _ h => h)
 
 /-- **The finalisation is a kernel entry's worth of run-queue steps**, every
 step of it (`finaliseFinalObject_closed`): each cancel's and each unbind's
-stage, and a finalised thread's suspend (`finaliseSuspend_runQueueEntryStage`). -/
+stage, a finalised thread's suspend (`finaliseSuspend_runQueueEntryStage`), and
+the release of the cores' holds on it, which writes no object and no queue. -/
 theorem finaliseFinalObject_runQueueEntryStage (target : Nat) (st : SystemState) :
     SystemState.RunQueueEntryStage st (finaliseFinalObject target st) :=
   finaliseFinalObject_closed (SystemState.RunQueueEntryStage st)
@@ -567,8 +565,12 @@ theorem finaliseFinalObject_runQueueEntryStage (target : Nat) (st : SystemState)
       exact h.trans (unbindNotification_runQueueStage hSpec).entry)
     (fun _ _ _ _ _ h _ _ _ _ _ _ _ _ hOk => h.trans (cancelDonationArmOnCore_runQueueStage hOk).entry)
     (fun s _ t tcb _ h _ _ _ _ _ => h.trans (cancelIpcBlocking_runQueueStage s t tcb).entry)
-    (fun s t tcb h hT hS hO _ hR hH hId =>
-      h.trans (finaliseSuspend_runQueueEntryStage s t tcb hT hS hO hR hH hId))
+    (fun s t tcb h hT hS hO _ hId =>
+      h.trans (finaliseSuspend_runQueueEntryStage s t tcb hT hS hO hId))
+    (fun s t h => h.trans (SystemState.RunQueueStage.of_frame
+      (finaliseThreadReleaseCores_objects s t)
+      (by rw [finaliseThreadReleaseCores_scheduler]) (by rw [finaliseThreadReleaseCores_scheduler])
+      (by rw [finaliseThreadReleaseCores_scheduler])).entry)
     target st ⟨SystemState.RunQueueLinkStage.refl st, fun _ _ _ d => d⟩
 
 theorem cspaceDeleteSlotFinalising_runQueueEntryStage {ec : Concurrency.CoreId}
