@@ -386,9 +386,10 @@ thread, which waits in no notification queue. -/
     | none => false
 
 /-- **Whether the finalisation's cancel admits the IPC state of the thread
-`tid`**, read from its two codes: ready, holding no queue link, message or
-stashed reply; or blocked on a notification, which the notification cancel
-admits (`notificationWaiterCancellable`), holding no message or stashed reply;
+`tid`**, read from its two codes: ready, holding no queue link or stashed
+reply (a message delivered to it is dropped by the suspend's mark,
+`finalisedSuspendMark`); or blocked on a notification, which the notification
+cancel admits (`notificationWaiterCancellable`), holding no stashed reply;
 or blocked sending, calling or receiving on an endpoint, which the endpoint
 cancel admits (`endpointCancelAdmitted`) — that cancel ends the message and the
 stash.  A thread blocked on a reply is not admitted. -/
@@ -398,12 +399,11 @@ stash.  A thread blocked on a reply is not admitted. -/
   | 0 =>
     if t.ipcObjectCode == 0 then
       t.queueNextCode == 0 && t.queuePrevCode == 0 && t.queuePPrevCode == 0 &&
-        t.pendingReceiveReplyCode == 0 && t.pendingMessage.isNone &&
-        t.ntfnNextCode == 0 && t.ntfnPrevCode == 0
+        t.pendingReceiveReplyCode == 0 && t.ntfnNextCode == 0 && t.ntfnPrevCode == 0
     else endpointCancelAdmitted st ⟨t.ipcObjectCode - 1⟩ false tid t
   | 1 => endpointCancelAdmitted st ⟨t.ipcObjectCode⟩ true tid t
   | 2 =>
-    t.queuePPrevCode == 0 && t.pendingReceiveReplyCode == 0 && t.pendingMessage.isNone &&
+    t.queuePPrevCode == 0 && t.pendingReceiveReplyCode == 0 &&
       match st.getNotification? ⟨t.ipcObjectCode⟩ with
       | some _ => notificationWaiterCancellable st ⟨t.ipcObjectCode⟩ tid t
       | none => false
@@ -510,6 +510,15 @@ def finaliseThreadCancelImpl (st : SystemState) (tid : SeLe4n.ThreadId) : System
     all_goals rfl
   · rfl
 
+/-- **The mark a finalised thread's suspend writes** (seL4's `setThreadState
+Inactive`): `.Inactive`, holding no message.  A message delivered to a ready
+thread and not yet read is dropped, as the suspend syscall's
+`Lifecycle.Suspend.clearPendingState` drops it: seL4 keeps a delivered message
+only in the receiver's registers and IPC buffer, which die with the thread.
+One field update of the thread's own cell. -/
+@[inline] def finalisedSuspendMark (t : TCB) : TCB :=
+  { t with threadState := .Inactive, pendingMessage := none }
+
 /-- **Suspend a thread being finalised** (seL4's `suspend`: `setThreadState
 Inactive`, then `tcbSchedDequeue`, with the `rescheduleRequired` a dequeued
 running thread takes): a ready thread, no core's idle thread, that is not
@@ -521,13 +530,16 @@ that core's reschedule flag, so the executing core, when it is the thread's
 own, chooses a successor before the syscall returns
 (`scheduleLocalSuccessorFrom`), and any other core takes the `.reschedule`
 interrupt the flag raises and does (`dispatchVacatedCore`).  A core whose slot
-is empty resumes its idle loop, never the frame it trapped with. -/
+is empty resumes its idle loop, never the frame it trapped with.  The mark also
+drops a message delivered to the thread and not yet read
+(`finalisedSuspendMark`), so a suspended thread still holding one is marked
+again rather than kept. -/
 def finaliseThreadSuspend (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
   match st.getTcb? tid with
   | some t =>
-    if t.ipcStateCode == 0 && t.ipcObjectCode == 0 && t.threadState != .Inactive &&
-        !isIdleThreadId tid then
-      (descheduleAtPlacement st tid).updateTcb tid fun t => { t with threadState := .Inactive }
+    if t.ipcStateCode == 0 && t.ipcObjectCode == 0 &&
+        (t.threadState != .Inactive || t.pendingMessage.isSome) && !isIdleThreadId tid then
+      (descheduleAtPlacement st tid).updateTcb tid finalisedSuspendMark
     else st
   | none => st
 

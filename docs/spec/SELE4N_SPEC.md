@@ -51,8 +51,8 @@ enforcement, and scheduling.
 |-----------|-------|
 | **Package version** | `0.36.135` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 502,096 across 453 Lean files |
-| **Test LoC** | 86,750 across 70 Lean test suites |
+| **Production LoC** | 502,133 across 453 Lean files |
+| **Test LoC** | 86,768 across 70 Lean test suites |
 | **Proved declarations** | 18,172 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits) |
@@ -5126,7 +5126,10 @@ the pre-state before any write (`threadFinaliseAdmitted`,
 blocked on a reply or holding a reply link, a receive stash or a reply-waiter
 link (each names a reply object, the busy reply's removal, part 25), a donated
 binding and occupied space slots (part 26) are refused; the timeout-budget
-check refuses no reachable thread (`timeoutBudget_isNone_of_ipcReachable`).  A
+check refuses no reachable thread (`timeoutBudget_isNone_of_ipcReachable`), and
+a message delivered to the thread and not yet read is dropped by the suspend's
+mark (`finalisedSuspendMark`), as the suspend syscall's `clearPendingState`
+drops it.  A
 scheduling context is refused with a reply stack, a loan or a busy thread.  A
 refused object is not finalised and the retire keeps it
 (`docs/REGISTERED_DEBT.md`).  On a finalised object the cleanup is proven to be

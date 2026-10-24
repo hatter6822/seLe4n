@@ -2485,6 +2485,24 @@ private def runThreadFinaliseChecks : IO Unit := do
             | .ok st3 =>
               assertBool s!"deleting the last {name} thread's last capability retires it and empties the queue"
                 (!storedAt st3 962 && queueOf st3 == some {})
+  -- A ready thread holding a delivered message it has not yet read is
+  -- finalised and retired, its message dropped with it (seL4 keeps a delivered
+  -- message only in the receiver's registers and IPC buffer); so is a
+  -- suspended one still holding one.  The message is staged on the carved
+  -- thread directly, as a payload wake leaves it.
+  for (name, ts) in [("ready", ThreadState.Ready), ("suspended", ThreadState.Inactive)] do
+    match runAll carveScenario [decodeCarve slotUtRetype tcbTag 960 slotOwnCnRW 12] with
+    | .error e => assertBool s!"carving a thread succeeds (got {repr e})" false
+    | .ok st0 => do
+      let msg : IpcMessage := { registers := #[SeLe4n.RegValue.ofNat 7] }
+      let staged := st0.updateTcb ⟨960⟩ fun t => { t with threadState := ts, pendingMessage := some msg }
+      assertBool s!"setup: the carved {name} thread holds a pending message"
+        ((staged.getTcb? ⟨960⟩).map (·.pendingMessage.isSome) == some true)
+      match runAll staged [decodeDelete 12] with
+      | .error e => assertBool s!"deleting the {name} thread's last capability succeeds (got {repr e})" false
+      | .ok st1 =>
+        assertBool s!"deleting a {name} thread's last capability while it holds a pending message finalises and retires it"
+          (!storedAt st1 960 && !recordsChildAt st1 carveUt 960)
   -- A thread waiting on a notification behind another is cancelled off the
   -- queue just as its head is, wherever it waits: the middle waiter's delete,
   -- then the tail's.

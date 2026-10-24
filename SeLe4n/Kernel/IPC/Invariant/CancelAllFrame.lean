@@ -143,13 +143,15 @@ def FinaliseEndpointCancelStep (P : SystemState → Prop) : Prop :=
     P (storeEndpointBlockedCancelled s e q t ep tcb)
 
 /-- **The suspend step a thread's finalisation takes**: a ready thread that is
-not suspended and is no core's idle thread leaves the scheduler where the state
-places it (`descheduleAtPlacement`) and is marked `.Inactive`. -/
+not suspended, or holds a message, and is no core's idle thread leaves the
+scheduler where the state places it (`descheduleAtPlacement`) and is marked
+`.Inactive`, its message dropped (`finalisedSuspendMark`). -/
 def FinaliseSuspendStep (P : SystemState → Prop) : Prop :=
   ∀ (s : SystemState) (t : SeLe4n.ThreadId) (tcb : TCB), P s → s.getTcb? t = some tcb →
-    tcb.ipcStateCode = 0 → tcb.ipcObjectCode = 0 → tcb.threadState ≠ .Inactive →
+    tcb.ipcStateCode = 0 → tcb.ipcObjectCode = 0 →
+    (tcb.threadState ≠ .Inactive ∨ tcb.pendingMessage.isSome = true) →
     isIdleThreadId t = false →
-    P ((descheduleAtPlacement s t).updateTcb t (fun t => { t with threadState := .Inactive }))
+    P ((descheduleAtPlacement s t).updateTcb t finalisedSuspendMark)
 
 /-- **The release step a thread's finalisation takes**: no core holds the thread
 as its FP/SIMD owner or its resident (`finaliseThreadReleaseCores`). -/
@@ -251,7 +253,7 @@ theorem finaliseThread_closed (P : SystemState → Prop) (hUnbind : FinaliseUnbi
       · rename_i t hT
         split
         · rename_i hG
-          simp only [Bool.and_eq_true, beq_iff_eq, bne_iff_ne, ne_eq, Bool.not_eq_true'] at hG
+          simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq, bne_iff_ne, ne_eq, Bool.not_eq_true'] at hG
           obtain ⟨⟨⟨hS, hO⟩, hI⟩, hId⟩ := hG
           exact hSuspend s tid t h2 hT hS hO hI hId
         · exact h2
@@ -841,9 +843,10 @@ theorem descheduleAt (st : SystemState) (t : SeLe4n.ThreadId) (p : Option Concur
       removeRunnableOnCore_objects_invExt st t c hInv,
       finaliseWrite.of_agreeOffRunLinks (removeRunnableOnCore_objectsAgreeOffRunLinks st t c)⟩
 
-/-- **A finalised thread's suspend**: the deschedule, then the `.Inactive` mark. -/
+/-- **A finalised thread's suspend**: the deschedule, then the `.Inactive` mark,
+the thread's message dropped. -/
 theorem suspend (st : SystemState) (t : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
-    FinaliseFrame st ((descheduleAtPlacement st t).updateTcb t (fun t => { t with threadState := .Inactive })) := by
+    FinaliseFrame st ((descheduleAtPlacement st t).updateTcb t finalisedSuspendMark) := by
   have h1 := descheduleAt st t (placedCoreOf? st t) hInv
   exact h1.trans (updateTcb _ t _ h1.invExt)
 
