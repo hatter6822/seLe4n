@@ -203,13 +203,15 @@ def FinaliseUnstackStep (P : SystemState → Prop) : Prop :=
     P (s1.updateSchedContext ⟨x.val⟩ fun sc => { sc with scReply := none })
 
 /-- **The cancel step a reply's finalisation takes**: the reply's waiting caller,
-admitted by `replyCallerFinalisable`, cancelled, and the boost it lent its server
-reverted. -/
+admitted by `replyCallerFinalisable`, cancelled with the reservation it lent
+handed back (`cancelIpcBlockingReclaimed`, which `finaliseReplyCancel` runs, or
+reduces to, on every admitted reply: `finaliseReplyCancel_eq`), and the boost it
+lent its server reverted. -/
 def FinaliseReplyStep (P : SystemState → Prop) : Prop :=
   ∀ (s : SystemState) (x : SeLe4n.ObjId) (r : Reply) (c : SeLe4n.ThreadId) (t : TCB), P s →
     s.getObject? x = some (.reply r) → r.callerCode = c.val + 1 → s.getTcb? c = some t →
-    replyCallerFinalisable x r c t = true →
-    P (finaliseReplyRevert (Lifecycle.Suspend.cancelIpcBlocking s c t) t.blockingServer?)
+    replyCallerFinalisable s x r c t = true →
+    P (finaliseReplyRevert (cancelIpcBlockingReclaimed c t s) t.blockingServer?)
 
 /-- **The unlink step a stashed reply's finalisation takes**: the receiver
 holding the reply stashed, its stash cleared in its slot. -/
@@ -245,19 +247,16 @@ theorem replyStackLinkHeads_spec {x : SeLe4n.ObjId} {n : Option ReplyStackLink}
     subst h; rfl
 
 /-- **What the reply finalisation's check admits**, read off its codes: the
-reply heads no stack, the caller is no reserved or idle thread and is held and
-queued nowhere, is blocked on this reply and linked into no endpoint queue, has
-no timeout budget, and is owed no reservation back.  That it lends none is not
-read here: it follows from the delete's stated lent-context fact
-(`replyCaller_lendsNone`). -/
+head pop commits (or the reply heads no stack), the caller is no reserved or
+idle thread and is held and queued nowhere, is blocked on this reply and linked
+into no endpoint queue, and has no timeout budget.  What the cancel hands back
+is `replyCallerFinalisable_cases`. -/
 theorem replyCallerFinalisable_parts {st : SystemState} {x : SeLe4n.ObjId} {r : Reply}
-    {c : SeLe4n.ThreadId} {t : TCB} (hX : st.getObject? x = some (.reply r))
-    (h : replyCallerFinalisable x r c t = true) :
-    replyStackLinkIsHead r.next = false ∧ ¬ c.isReserved ∧ isIdleThreadId c = false ∧
+    {c : SeLe4n.ThreadId} {t : TCB} (h : replyCallerFinalisable st x r c t = true) :
+    replyHeadPopCommits st x r c = true ∧ ¬ c.isReserved ∧ isIdleThreadId c = false ∧
       t.runCoreCode = 0 ∧
       (∃ ep rt, t.ipcState = .blockedOnReply ep rt) ∧ t.replyObject = some ⟨x.val⟩ ∧
-      t.queueNext = none ∧ t.queuePrev = none ∧ t.timeoutBudget = none ∧
-      Lifecycle.Suspend.cancelledCallerDonation? st c t = none := by
+      t.queueNext = none ∧ t.queuePrev = none ∧ t.timeoutBudget = none := by
   simp only [replyCallerFinalisable, Bool.and_eq_true, Bool.not_eq_true', decide_eq_true_eq,
     beq_iff_eq, Option.isNone_iff_eq_none] at h
   obtain ⟨⟨⟨⟨⟨⟨⟨⟨hHd, hRes⟩, hId⟩, hRun⟩, hSt⟩, hRO⟩, hQN⟩, hQP⟩, hBud⟩ := h
@@ -268,27 +267,127 @@ theorem replyCallerFinalisable_parts {st : SystemState} {x : SeLe4n.ObjId} {r : 
     exact ⟨_, _, rfl⟩
   have hRO' : t.replyObject = some ⟨x.val⟩ := by
     unfold TCB.replyObject; rw [hRO]; rfl
-  refine ⟨hHd, by simpa using hRes, hId, hRun, hIpc, hRO', ?_, ?_, hBud, ?_⟩
+  refine ⟨hHd, by simpa using hRes, hId, hRun, hIpc, hRO', ?_, ?_, hBud⟩
   · simp [TCB.queueNext, hQN, SeLe4n.ThreadId.ofOptCode]
   · simp [TCB.queuePrev, hQP, SeLe4n.ThreadId.ofOptCode]
-  · obtain ⟨ep, rt, hB⟩ := hIpc
+
+/-- **What a committing head pop reads**: the context `s` the reply heads names
+the reply back, is bound to a thread `h` holding it on loan from the caller
+(`.donated s c`), and the donation return of `s` from `h` to `c` commits. -/
+theorem replyHeadPopCommits_head {st : SystemState} {x : SeLe4n.ObjId} {r : Reply}
+    {c : SeLe4n.ThreadId} {s : SeLe4n.SchedContextId} (hN : r.next = some (.head s))
+    (h : replyHeadPopCommits st x r c = true) :
+    ∃ (sc : SchedContext) (hd : SeLe4n.ThreadId) (ht : TCB),
+      st.getSchedContext? s = some sc ∧ sc.scReply = some ⟨x.val⟩ ∧ sc.boundThread = some hd ∧
+      st.getTcb? hd = some ht ∧ ht.schedContextBinding = .donated s c ∧
+      donatedReturnCommits st hd s c = true := by
+  unfold replyHeadPopCommits at h
+  rw [hN] at h
+  simp only at h
+  cases hSc : st.getSchedContext? s with
+  | none => rw [hSc] at h; cases h
+  | some sc =>
+    rw [hSc] at h
+    simp only at h
+    cases hB : sc.boundThreadCode with
+    | zero => rw [hB] at h; cases h
+    | succ k =>
+      rw [hB] at h
+      simp only [Bool.and_eq_true] at h
+      obtain ⟨⟨hR, hT⟩, hC⟩ := h
+      cases hRp : sc.scReply with
+      | none => rw [hRp] at hR; cases hR
+      | some rid =>
+        rw [hRp] at hR
+        cases hTk : st.getTcb? ⟨k⟩ with
+        | none => rw [hTk] at hT; cases hT
+        | some ht =>
+          rw [hTk] at hT
+          simp only [Bool.and_eq_true, beq_iff_eq] at hT hR
+          obtain ⟨hS, hO⟩ := hT
+          refine ⟨sc, ⟨k⟩, ht, rfl, ?_, ?_, hTk, ?_, hC⟩
+          · obtain ⟨rv⟩ := rid
+            simp only at hR
+            subst hR; exact hRp
+          · show SeLe4n.ThreadId.ofOptCode sc.boundThreadCode = _
+            rw [hB]; rfl
+          · unfold TCB.schedContextBinding SchedContextBinding.ofCodes
+            rw [hS, hO]
+
+/-- **What a finalised reply's cancel hands back**: nothing, for a reply heading
+no stack; for a head reply, the context it heads, from the thread holding it on
+loan from the caller, through a return that commits. -/
+theorem replyCallerFinalisable_cases {st : SystemState} {x : SeLe4n.ObjId} {r : Reply}
+    {c : SeLe4n.ThreadId} {t : TCB} (hX : st.getObject? x = some (.reply r))
+    (h : replyCallerFinalisable st x r c t = true) :
+    (replyStackLinkIsHead r.next = false ∧
+      Lifecycle.Suspend.cancelledCallerDonation? st c t = none) ∨
+    ∃ (s : SeLe4n.SchedContextId) (sc : SchedContext) (hd : SeLe4n.ThreadId) (ht : TCB),
+      r.next = some (.head s) ∧ st.getSchedContext? s = some sc ∧
+      sc.scReply = some ⟨x.val⟩ ∧ sc.boundThread = some hd ∧
+      st.getTcb? hd = some ht ∧ ht.schedContextBinding = .donated s c ∧
+      donatedReturnCommits st hd s c = true ∧
+      Lifecycle.Suspend.cancelledCallerDonation? st c t = some (s, hd) := by
+  obtain ⟨hHd, -, -, -, ⟨ep, rt, hB⟩, hRO, -, -, -⟩ := replyCallerFinalisable_parts h
+  have hGR : st.getReply? ⟨x.val⟩ = some r := by
+    unfold SystemState.getReply?
+    rw [show (⟨x.val⟩ : SeLe4n.ReplyId).toObjId = x from rfl, ← SystemState.getObject?_eq_getElem,
+      hX]
+  have hDon : Lifecycle.Suspend.cancelledCallerDonation? st c t =
+      replyFrameHeadHolder? st ⟨x.val⟩ := by
     unfold Lifecycle.Suspend.cancelledCallerDonation?
     rw [hB]
-    simp only [hRO']
-    apply replyFrameHeadHolder?_of_no_head
-    have hGR : st.getReply? ⟨x.val⟩ = some r := by
-      unfold SystemState.getReply?
-      rw [show (⟨x.val⟩ : SeLe4n.ReplyId).toObjId = x from rfl, ← SystemState.getObject?_eq_getElem,
-        hX]
-    unfold replyFrameHeadContext?
-    rw [hGR]
-    simp only
-    cases hN : r.next with
-    | none => rfl
-    | some l =>
-      cases l with
-      | frame _ => rfl
-      | head _ => rw [hN] at hHd; cases hHd
+    simp only [hRO]
+  cases hN : r.next with
+  | none =>
+    refine Or.inl ⟨rfl, ?_⟩
+    rw [hDon]; apply replyFrameHeadHolder?_of_no_head
+    unfold replyFrameHeadContext?; rw [hGR]; simp only [hN]
+  | some l =>
+    cases l with
+    | frame _ =>
+      refine Or.inl ⟨rfl, ?_⟩
+      rw [hDon]; apply replyFrameHeadHolder?_of_no_head
+      unfold replyFrameHeadContext?; rw [hGR]; simp only [hN]
+    | head s =>
+      obtain ⟨sc, hd, ht, hSc, hRp, hBt, hT, hBind, hC⟩ := replyHeadPopCommits_head hN hHd
+      refine Or.inr ⟨s, sc, hd, ht, rfl, hSc, hRp, hBt, hT, hBind, hC, ?_⟩
+      rw [hDon]
+      unfold replyFrameHeadHolder? replyFrameHeadContext?
+      rw [hGR]
+      simp only [hN, hSc, hRp, beq_self_eq_true, ↓reduceIte, Option.bind_some, hBt]
+
+/-- **A head reply's admitted pop commits**: the cancelled caller's donation
+return is the return of the context the reply heads, from the thread holding it
+on loan, at the reply stack's answer, which the admission's
+`donatedReturnCommits` has read (`returnDonatedSchedContextResolved_ok_of_commits`). -/
+theorem replyHeadPop_commits {st : SystemState} {c : SeLe4n.ThreadId} {t : TCB}
+    {s : SeLe4n.SchedContextId} {hd : SeLe4n.ThreadId} (hInv : st.objects.invExt)
+    (hT : st.getTcb? c = some t)
+    (hD : Lifecycle.Suspend.cancelledCallerDonation? st c t = some (s, hd))
+    (hC : donatedReturnCommits st hd s c = true) :
+    ∃ (n : Option SeLe4n.ThreadId) (st' : SystemState), replyStackOuterCaller? st s = .ok n ∧
+      returnDonatedSchedContext st hd s c n = .ok st' ∧
+      Lifecycle.Suspend.returnDonationToCancelledCaller st c t = st' := by
+  obtain ⟨st', hOk⟩ := returnDonatedSchedContextResolved_ok_of_commits hInv hC
+  obtain ⟨n, hResN, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hOk
+  refine ⟨n, st', hResN, hPop, ?_⟩
+  unfold Lifecycle.Suspend.returnDonationToCancelledCaller
+  rw [hD, hT]
+  simp only [hOk]
+
+/-- **The cancel a finalised reply runs is the reclaim**: a head reply's pop is
+`cancelIpcBlockingReclaimed` itself, and a reply heading no stack hands nothing
+back, where the reclaim is the bare cancel
+(`cancelIpcBlockingReclaimed_of_no_donation`). -/
+theorem finaliseReplyCancel_eq {st : SystemState} {x : SeLe4n.ObjId} {r : Reply}
+    {c : SeLe4n.ThreadId} {t : TCB} (hX : st.getObject? x = some (.reply r))
+    (h : replyCallerFinalisable st x r c t = true) :
+    finaliseReplyCancel st r c t = cancelIpcBlockingReclaimed c t st := by
+  unfold finaliseReplyCancel
+  rcases replyCallerFinalisable_cases hX h with ⟨hHd, hD⟩ | ⟨s, -, -, -, hN, -⟩
+  · rw [hHd, cancelIpcBlockingReclaimed_of_no_donation c t st hD]; rfl
+  · rw [hN]; rfl
 
 /-- **The priority-inheritance walk writes only the object store and the
 scheduler.** -/
@@ -307,6 +406,21 @@ theorem propagatePipChainCrossCore_onlyObjectsSchedulerDiffer :
     cases PriorityInheritance.blockingServer st s with
     | none => exact h1
     | some nx => exact (propagatePipChainCrossCore_onlyObjectsSchedulerDiffer n _ nx ec).trans h1
+
+/-- **A reply-blocked caller's cancel**: the donation return, then the splice,
+the restore, the consume and the unlink. -/
+theorem cancelIpcBlocking_replyArm_unfold (st : SystemState) (c : SeLe4n.ThreadId)
+    (t : TCB) {ep : SeLe4n.ObjId} {rt : Option SeLe4n.ThreadId}
+    (hB : t.ipcState = .blockedOnReply ep rt) :
+    Lifecycle.Suspend.cancelIpcBlocking st c t =
+      SystemState.unlinkReplyWaiterOpt
+        (Lifecycle.Suspend.consumeReplyLink
+          (Lifecycle.Suspend.restoreToReadyCancelled
+            (spliceThreadReplyFrameOut (Lifecycle.Suspend.returnDonationToCancelledCaller st c t) t)
+            c) c t)
+        c t.blockingServer? := by
+  unfold Lifecycle.Suspend.cancelIpcBlocking
+  rw [hB]
 
 /-- **A reply-blocked caller's cancel, with nothing to give back**: the donation
 return declines, so the arm is the splice, the restore, the consume and the
@@ -688,6 +802,7 @@ theorem finaliseReply_closed (P : SystemState → Prop) (hRep : FinaliseReplySte
       · rename_i t hT
         split
         · rename_i hG
+          rw [finaliseReplyCancel_eq hX hG]
           refine finaliseThreadSuspend_closed P hSuspend _ _ (hRep st x r _ t h hX ?_ hT hG)
           simp only [beq_iff_eq] at h0
           show _ = _ - 1 + 1; omega
@@ -1568,21 +1683,102 @@ theorem unlinkReplyWaiterOpt (st : SystemState) (w : SeLe4n.ThreadId)
     SystemState.unlinkReplyWaiterOpt_objects_invExt st w s? hInv,
     .of_write (.of_agreeOffRunLinks (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks st w s?))⟩
 
-/-- **A reply-blocked caller's cancel, with nothing to give back**: the splice,
-the restore, the consume and the unlink (`cancelIpcBlocking`'s reply arm, its
-donation return declining). -/
+/-- **The pop's two reply stores**: the head's links cleared, then the frame
+below re-headed. -/
+theorem storeDonationHeadPop {st st' : SystemState} {scId : SeLe4n.SchedContextId}
+    {head? : Option (SeLe4n.ReplyId × Reply)} (hInv : st.objects.invExt)
+    (h : SeLe4n.Kernel.storeDonationHeadPop scId head? st = .ok st') : FinaliseFrameAny st st' := by
+  rcases storeDonationHeadPop_cases h with ⟨_, rfl⟩ | ⟨rid, r, s1, _, hClear, hReHead⟩
+  · exact .refl hInv
+  · have f1 : FinaliseFrameAny st s1 := by
+      rcases storeDonationHeadClear_cases hClear with rfl | ⟨rid0, r0, _, hRead, hS0⟩
+      · exact .refl hInv
+      · exact storeObject hInv hRead (finaliseWritableAny_reply r0) hS0 rfl rfl
+    refine f1.trans ?_
+    rcases storeReplyReHead_cases hReHead with rfl | ⟨b, rb, _, hReadB, hS2⟩
+    · exact .refl f1.invExt
+    · exact storeObject f1.invExt hReadB (finaliseWritableAny_reply rb) hS2 rfl rfl
+
+/-- **The donation return**: the context's store, the pop's two reply stores,
+then the recipient's and the holder's binding rewrites. -/
+theorem returnDonatedSchedContext {st st' : SystemState} {serverTid : SeLe4n.ThreadId}
+    {scId : SeLe4n.SchedContextId} {originalOwner : SeLe4n.ThreadId}
+    {newOwner? : Option SeLe4n.ThreadId} (hInv : st.objects.invExt)
+    (h : SeLe4n.Kernel.returnDonatedSchedContext st serverTid scId originalOwner newOwner? = .ok st') :
+    FinaliseFrameAny st st' := by
+  obtain ⟨sc, head?, clientTcb, serverTcb, s1, s2, s3, s4, hSc, -, -, -, hS1, hClear, hL1, hS3,
+    hL2, hS4, hEq⟩ := returnDonatedSchedContext_ok_storeChain _ _ serverTid scId originalOwner
+      newOwner? h
+  have f1 := storeObject hInv hSc (Or.inl (finaliseWritable_schedContext sc)) hS1 rfl rfl
+  have f2 := f1.trans (storeDonationHeadPop f1.invExt hClear)
+  have f3 := f2.trans (storeObject f2.invExt (lookupTcb_some_objects _ _ _ hL1)
+    (Or.inl (finaliseWritable_tcb _)) hS3 rfl rfl)
+  have f4 := f3.trans (storeObject f3.invExt (lookupTcb_some_objects _ _ _ hL2)
+    (Or.inl (finaliseWritable_tcb _)) hS4 rfl rfl)
+  have eO : st'.objects = s4.objects := by rw [hEq]
+  have eC : st'.cdt = s4.cdt := by rw [hEq]
+  have eA : st'.asidTable = s4.asidTable := by rw [hEq]
+  exact ⟨eC.trans f4.cdt, eA.trans f4.asidTable, eO ▸ f4.invExt,
+    fun k => by rw [eO]; exact f4.write k⟩
+
+/-- **A cancelled caller's donation return**: the pop, or nothing when it
+declines. -/
+theorem returnDonationToCancelledCaller (st : SystemState) (c : SeLe4n.ThreadId) (t : TCB)
+    (hInv : st.objects.invExt) :
+    FinaliseFrameAny st (Lifecycle.Suspend.returnDonationToCancelledCaller st c t) := by
+  unfold Lifecycle.Suspend.returnDonationToCancelledCaller
+  split
+  · split
+    · rename_i hOk
+      obtain ⟨n, -, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hOk
+      exact returnDonatedSchedContext hInv hPop
+    · exact .refl hInv
+  · exact .refl hInv
+
+/-- **A reply-blocked caller's cancel**: the donation return, the splice, the
+restore, the consume and the unlink (`cancelIpcBlocking`'s reply arm). -/
 theorem replyCancel (st : SystemState) (c : SeLe4n.ThreadId) (t : TCB) {ep : SeLe4n.ObjId}
     {rt : Option SeLe4n.ThreadId} (hInv : st.objects.invExt)
-    (hB : t.ipcState = .blockedOnReply ep rt)
-    (hD : Lifecycle.Suspend.cancelledCallerDonation? st c t = none) :
+    (hB : t.ipcState = .blockedOnReply ep rt) :
     FinaliseFrameAny st (Lifecycle.Suspend.cancelIpcBlocking st c t) := by
-  rw [cancelIpcBlocking_replyArm_of_noDonation st c t hB hD]
-  have f1 := spliceThreadReplyFrameOut st t hInv
+  rw [cancelIpcBlocking_replyArm_unfold st c t hB]
+  have f0 := returnDonationToCancelledCaller st c t hInv
+  have f1 := f0.trans (spliceThreadReplyFrameOut _ t f0.invExt)
   have f2 := f1.trans (show FinaliseFrameAny _ (Lifecycle.Suspend.restoreToReadyCancelled _ c) by
     unfold Lifecycle.Suspend.restoreToReadyCancelled Lifecycle.Suspend.restoreToReadyStaging
     exact (FinaliseFrame.updateTcb _ c _ f1.invExt).any)
   have f3 := f2.trans (consumeReplyLink _ c t f2.invExt)
   exact f3.trans (unlinkReplyWaiterOpt _ c _ f3.invExt)
+
+/-- **The migration of a returned context's replenishments** writes only the
+scheduler's replenish queues. -/
+theorem cancelIpcBlockingMigrated (st : SystemState) (c : SeLe4n.ThreadId) (t : TCB)
+    (hInv : (Lifecycle.Suspend.cancelIpcBlocking st c t).objects.invExt) :
+    FinaliseFrameAny (Lifecycle.Suspend.cancelIpcBlocking st c t)
+      (SeLe4n.Kernel.cancelIpcBlockingMigrated c t st) := by
+  have hE := cancelIpcBlockingMigrated_objects c t st
+  have hR : (SeLe4n.Kernel.cancelIpcBlockingMigrated c t st).cdt =
+        (Lifecycle.Suspend.cancelIpcBlocking st c t).cdt ∧
+      (SeLe4n.Kernel.cancelIpcBlockingMigrated c t st).asidTable =
+        (Lifecycle.Suspend.cancelIpcBlocking st c t).asidTable := by
+    unfold SeLe4n.Kernel.cancelIpcBlockingMigrated
+    split
+    · unfold migrateSchedContextReplenishment; dsimp only; split <;> exact ⟨rfl, rfl⟩
+    · exact ⟨rfl, rfl⟩
+  exact ⟨hR.1, hR.2, by rw [hE]; exact hInv, fun _ => Or.inl (by rw [hE])⟩
+
+/-- **A reply-blocked caller's cancel with its reservation handed back**: the
+cancel, the replenishment migration, and the holder taken off its core. -/
+theorem cancelIpcBlockingReclaimed (st : SystemState) (c : SeLe4n.ThreadId) (t : TCB)
+    {ep : SeLe4n.ObjId} {rt : Option SeLe4n.ThreadId} (hInv : st.objects.invExt)
+    (hB : t.ipcState = .blockedOnReply ep rt) :
+    FinaliseFrameAny st (SeLe4n.Kernel.cancelIpcBlockingReclaimed c t st) := by
+  have f1 := replyCancel st c t hInv hB
+  have f2 := f1.trans (cancelIpcBlockingMigrated st c t f1.invExt)
+  unfold SeLe4n.Kernel.cancelIpcBlockingReclaimed descheduleUnboundHolder
+  split
+  · exact f2
+  · exact f2.trans (FinaliseFrame.descheduleAt _ _ _ f2.invExt).any
 
 /-- **The unstack**: the head reply's upward link cleared, then the context's
 head. -/
@@ -1656,8 +1852,8 @@ theorem finaliseFinalObject_frame (target : Nat) (st : SystemState) (hInv : st.o
     (fun s t h => h.trans (FinaliseFrame.releaseCores s t h.invExt).any)
     (FinaliseFrameAny.unstackStep st)
     (fun s x r c t h hX hC _ hG => by
-      obtain ⟨-, -, -, -, ⟨ep, rt, hB⟩, -, -, -, -, hD⟩ := replyCallerFinalisable_parts hX hG
-      have h1 := FinaliseFrameAny.replyCancel s c t h.invExt hB hD
+      obtain ⟨-, -, -, -, ⟨ep, rt, hB⟩, -, -, -, -⟩ := replyCallerFinalisable_parts hG
+      have h1 := FinaliseFrameAny.cancelIpcBlockingReclaimed s c t h.invExt hB
       exact h.trans (h1.trans (FinaliseFrame.finaliseReplyRevert _ _ h1.invExt).any))
     (fun s _ _ tid _ h _ _ e => e ▸ h.trans (FinaliseFrame.updateTcb s tid _ h.invExt).any)
     target st (.refl hInv)
@@ -1766,13 +1962,36 @@ theorem finaliseFinalObject_cdt (target : Nat) (st : SystemState) :
       exact (hC ((hK _ _ _).trans ((hU _ _ _).trans h2))).trans h
     · cases hOk
   · exact (hC (hS s1 _ _)).trans ((hSt hSt1).trans h)
-  · obtain ⟨-, -, -, -, ⟨ep, rt, hB⟩, -, -, -, -, hD⟩ := replyCallerFinalisable_parts hX hG
+  · obtain ⟨-, -, -, -, ⟨ep, rt, hB⟩, -, -, -, -⟩ := replyCallerFinalisable_parts hG
     have hRev : ∀ (a : SystemState) (sv : Option SeLe4n.ThreadId),
         (finaliseReplyRevert a sv).cdt = a.cdt := by
       intro a sv; cases sv with
       | none => rfl
       | some v => exact PriorityInheritance.propagatePipChainCrossCore_cdt _ a v _
-    rw [hRev, cancelIpcBlocking_replyArm_of_noDonation s c t hB hD]
+    have hRecl : (cancelIpcBlockingReclaimed c t s).cdt =
+        (Lifecycle.Suspend.cancelIpcBlocking s c t).cdt := by
+      unfold cancelIpcBlockingReclaimed
+      refine (hC (descheduleUnboundHolder_onlyObjectsSchedulerDiffer _ _ _ _)).trans ?_
+      unfold cancelIpcBlockingMigrated
+      split
+      · unfold migrateSchedContextReplenishment; dsimp only; split <;> rfl
+      · rfl
+    have hRet : (Lifecycle.Suspend.returnDonationToCancelledCaller s c t).cdt = s.cdt := by
+      unfold Lifecycle.Suspend.returnDonationToCancelledCaller
+      split
+      · split
+        · rename_i hOk
+          obtain ⟨n, -, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hOk
+          obtain ⟨_, _, _, _, s1, s2, s3, s4, -, -, -, -, hS1, hClear, -, hS3, -, hS4, hEq⟩ :=
+            returnDonatedSchedContext_ok_storeChain _ _ _ _ _ n hPop
+          have eC := congrArg SystemState.cdt hEq
+          exact eC.trans ((hSt hS4).trans ((hSt hS3).trans ((storeDonationHeadPop_cdt_eq hClear).trans
+            (hSt hS1))))
+        · rfl
+      · rfl
+    rw [hRev, hRecl, cancelIpcBlocking_replyArm_unfold s c t hB]
+    replace h : (Lifecycle.Suspend.returnDonationToCancelledCaller s c t).cdt = st.cdt :=
+      hRet.trans h
     have hCons : ∀ (a : SystemState), (Lifecycle.Suspend.consumeReplyLink a c t).cdt = a.cdt := by
       intro a
       unfold Lifecycle.Suspend.consumeReplyLink
@@ -1797,7 +2016,9 @@ theorem finaliseFinalObject_cdt (target : Nat) (st : SystemState) :
           · exact (hSt hE).trans h1
     have e := SystemState.unlinkReplyWaiterOpt_eq_objects
       (Lifecycle.Suspend.consumeReplyLink
-        (Lifecycle.Suspend.restoreToReadyCancelled (spliceThreadReplyFrameOut s t) c) c t)
+        (Lifecycle.Suspend.restoreToReadyCancelled
+          (spliceThreadReplyFrameOut (Lifecycle.Suspend.returnDonationToCancelledCaller s c t) t)
+          c) c t)
       c t.blockingServer?
     refine (show _ = _ by rw [e]).trans ((hCons _).trans ?_)
     unfold Lifecycle.Suspend.restoreToReadyCancelled Lifecycle.Suspend.restoreToReadyStaging

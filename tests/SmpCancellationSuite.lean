@@ -372,7 +372,6 @@ open SeLe4n.Testing
 -- WS-RR RR8.7: the reply arm's own keystone and the steps it composes.
 #check @cancelledCallerDonation?_holder_holds_victim_donation
 #check @returnDonationToCancelledCaller_preserves_ipcInvariantFull
-#check @returnDonationToCancelledCaller_preserves_allTimeoutBudgetsNone
 #check @returnDonationToCancelledCaller_victim_tcb_rewrite
 #check @spliceThreadReplyFrameOut_preserves_ipcInvariantFull
 #check @restoredAndConsumed_congr

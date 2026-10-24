@@ -638,7 +638,9 @@ stage, a context's dequeue of its holder (`descheduleAt_runQueueStage`), a
 finalised thread's suspend (`finaliseSuspend_runQueueEntryStage`), the
 release of the cores' holds on it, which writes no object and no queue, a
 context's reply-stack unlink (a reply and a context rewritten), a reply's
-caller cancel with its boost reverted, and a stashed reply's unlink (a stash
+caller cancel (a head reply's with its loan returned and its holder
+descheduled: `cancelIpcBlockingReclaimed_runQueueStage`) with its boost
+reverted, and a stashed reply's unlink (a stash
 field rewritten, off the run links). -/
 theorem finaliseFinalObject_runQueueEntryStage (target : Nat) (st : SystemState) :
     SystemState.RunQueueEntryStage st (finaliseFinalObject target st) :=
@@ -667,7 +669,7 @@ theorem finaliseFinalObject_runQueueEntryStage (target : Nat) (st : SystemState)
       h.trans ((storeObject_replyOver_runQueueStage hR hS).trans
         (updateSchedContext_runQueueStage s1 ⟨x.val⟩ _)).entry)
     (fun s _ _ c t h _ _ _ _ =>
-      h.trans ((cancelIpcBlocking_runQueueStage s c t).trans
+      h.trans ((cancelIpcBlockingReclaimed_runQueueStage s c t).trans
         (finaliseReplyRevert_runQueueStage _ _)).entry)
     (fun s _ _ tid _ h _ _ e => e ▸ h.trans
       (RunQueueStage.updateTcb s tid (f := TCB.stashCleared) (fun _ _ => rfl)).entry)

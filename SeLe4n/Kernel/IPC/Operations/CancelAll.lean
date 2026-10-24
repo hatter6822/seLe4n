@@ -28,6 +28,12 @@ or a context leaves no reference behind and the retire can erase it; a core
 whose current thread was deleted chooses a successor, or resumes its idle
 loop.
 
+WS-ZA ZA5.4 part 25: on the final capability to a reply whose caller still
+waits on it `finaliseCap` runs `reply_remove`: a reply heading a scheduling
+context's stack is popped, the context going back to the caller (`reply_pop`),
+and any other is spliced out of its stack; the caller's call is then cancelled
+and the caller made inactive (`finaliseReply`, §4).
+
 * **One waiter at a time, at the head.**  Each step takes the head of the queue
   (`cancelEndpointQueue`, `cancelNotificationQueue`): the endpoint's head is
   popped as a rendezvous pops it, each write in its slot (`storePopHead`, the
@@ -1102,27 +1108,70 @@ theorem cancelDonationArmOnCore_of_codes (st : SystemState) (tid : SeLe4n.Thread
   | some (.head _) => true
   | _ => false
 
+/-- **Whether the pop of a head reply commits, read on the pre-state** (seL4
+MCS's `reply_pop` hand-back, decided before any write).  A reply that heads no
+stack answers `true`: it has nothing to hand back.  A reply heading the stack of
+the context `s` answers `true` when the context names it back as its head, is
+bound to a thread `h` that holds it on loan from the reply's caller `c`
+(`.donated s c`, read off the binding codes), and the donation return of `s`
+from `h` to `c` commits (`donatedReturnCommits`, which decides every refusal of
+`returnDonatedSchedContextResolved` on the state it runs on).  Each read is
+`O(1)`: the context, its bound thread, that thread's two binding words, and the
+return's own checks (the reply stack's head and the frame below it). -/
+@[inline] def replyHeadPopCommits (st : SystemState) (x : SeLe4n.ObjId) (r : Reply)
+    (c : SeLe4n.ThreadId) : Bool :=
+  match r.next with
+  | some (.head s) =>
+    match st.getSchedContext? s with
+    | some sc =>
+      match sc.boundThreadCode with
+      | 0 => false
+      | k + 1 =>
+        (match sc.scReply with
+         | some rid => rid.val == x.val
+         | none => false) &&
+        (match st.getTcb? ⟨k⟩ with
+         | some ht => ht.scBindingScCode == s.val + 1 && ht.scBindingOwnerCode == c.val + 1
+         | none => false) &&
+        donatedReturnCommits st ⟨k⟩ s c
+    | none => false
+  | _ => true
+
 /-- **Whether a final delete may finalise the reply at `x`, whose caller `c`
-(its TCB `t`) waits on it**, read on the pre-state before any write.  The reply
-is no stack's head, so no reservation goes back to the caller (seL4's
-`reply_remove` non-head branch; the head's `reply_pop` is registered in
-`docs/REGISTERED_DEBT.md`, "A head reply and a lent reservation are not returned
-on a final delete"); the caller is no reserved or idle thread and is on
-no run queue — a core's FP/SIMD or resident hold on it stays, as seL4 keeps a
-lazily saved context across `setThreadState Inactive` — is blocked on this reply, is linked into no
-endpoint queue, and waits with no timeout budget.  Each check reads the reply
-and the caller the cancel then writes, in `O(1)`.  The caller lends its
-reservation to no one, and no check walks the store for it: a thread lending a
-context finds its own reply heading that context's stack (seL4 MCS pushes the
+(its TCB `t`) waits on it**, read on the pre-state before any write.  A reply
+heading a context's stack is popped only when the pop commits
+(`replyHeadPopCommits`: the context goes back to the caller, seL4's
+`reply_remove` head branch, `reply_pop`); a reply heading none is spliced out
+(the non-head branch).  The caller is no reserved or idle thread and is on no
+run queue — a core's FP/SIMD or resident hold on it stays, as seL4 keeps a
+lazily saved context across `setThreadState Inactive` — is blocked on this
+reply, is linked into no endpoint queue, and waits with no timeout budget.  Each
+check reads the reply, the caller and, for a head, the context and its holder,
+in `O(1)`.  No check walks the store for a loan of the caller's: a thread lending
+a context finds its own reply heading that context's stack (seL4 MCS pushes the
 lender's reply as the head in the step that lends,
-`lentContextHeadsLenderFrame`), and this reply heads no stack
-(`replyCaller_lendsNone`). -/
-@[inline] def replyCallerFinalisable (x : SeLe4n.ObjId) (r : Reply)
+`lentContextHeadsLenderFrame`), so a caller whose reply heads no stack lends to
+no one (`replyCaller_lendsNone`), and one whose reply heads `s` lends only `s`,
+to the thread the pop takes it from (`donationOwnerUnique`). -/
+@[inline] def replyCallerFinalisable (st : SystemState) (x : SeLe4n.ObjId) (r : Reply)
     (c : SeLe4n.ThreadId) (t : TCB) : Bool :=
-  !replyStackLinkIsHead r.next && !c.isReserved && !isIdleThreadId c &&
+  replyHeadPopCommits st x r c && !c.isReserved && !isIdleThreadId c &&
     t.runCoreCode == 0 && decide (4 ≤ t.ipcStateCode) &&
     t.replyObjectCode == x.val + 1 && t.queueNextCode == 0 && t.queuePrevCode == 0 &&
     t.timeoutBudget.isNone
+
+/-- **A finalised reply's caller cancel** (seL4's `reply_remove`): the pop of a
+head reply — the context handed back to the caller, its replenishments moved to
+the caller's core, and the thread it is taken from off its core
+(`cancelIpcBlockingReclaimed`, the suspend's reclaim) — or the splice of a
+reply heading no stack, whose cancel has nothing to give back
+(`Lifecycle.Suspend.cancelIpcBlocking`'s reply arm, which the reclaim reduces to
+there, `cancelIpcBlockingReclaimed_of_no_donation`).  The branch reads the
+reply's own link, which the admission has already read. -/
+@[inline] def finaliseReplyCancel (st : SystemState) (r : Reply) (c : SeLe4n.ThreadId)
+    (t : TCB) : SystemState :=
+  if replyStackLinkIsHead r.next then cancelIpcBlockingReclaimed c t st
+  else Lifecycle.Suspend.cancelIpcBlocking st c t
 
 /-- **A thread's reply stash, cleared.** -/
 @[inline] def TCB.stashCleared (t : TCB) : TCB := { t with pendingReceiveReplyCode := 0 }
@@ -1157,10 +1206,10 @@ not depend on the core it is run from
 
 /-- **seL4's `finaliseCap` on the final capability to a reply whose caller
 still waits on it** (`reply_remove`, then `reply_unlink`): the caller's blocked
-call is cancelled (`Lifecycle.Suspend.cancelIpcBlocking`'s reply arm: the reply
-taken off its stack, the caller restored with the cancellation frame, the
-reply's caller link and the caller's reply link cleared, the caller off its
-server's reply-waiter queue), the boost it lent its server reverted
+call is cancelled (`finaliseReplyCancel`: a head reply popped, its context
+handed back to the caller; any other reply spliced out of its stack; then the
+caller restored with the cancellation frame, the reply's caller link and the
+caller's reply link cleared, the caller off its server's reply-waiter queue), the boost it lent its server reverted
 (`finaliseReplyRevert`), and the caller made `.Inactive`
 (`finaliseThreadSuspend`, seL4's `setThreadState Inactive`).  Only when the
 pre-state admits it (`replyCallerFinalisable`), checks before writes; a reply
@@ -1174,9 +1223,8 @@ def finaliseReply (x : SeLe4n.ObjId) (st : SystemState) : SystemState :=
       let c : SeLe4n.ThreadId := ⟨r.callerCode - 1⟩
       match st.getTcb? c with
       | some t =>
-        if replyCallerFinalisable x r c t then
-          finaliseThreadSuspend
-            (finaliseReplyRevert (Lifecycle.Suspend.cancelIpcBlocking st c t) t.blockingServer?) c
+        if replyCallerFinalisable st x r c t then
+          finaliseThreadSuspend (finaliseReplyRevert (finaliseReplyCancel st r c t) t.blockingServer?) c
         else st
       | none => st
   | _ => st

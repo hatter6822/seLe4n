@@ -1515,6 +1515,61 @@ theorem finaliseSchedContextUnstack_preserves_donationChainWellFormed {s : Syste
     · exact hC
   · exact hC
 
+/-- A binding rewrite keeps what the notification queues and the budgets read. -/
+theorem tcbNtfnFieldsKept.of_bindingRewrite {tx ty : TCB} (h : tcbBindingRewrite tx ty) :
+    tcbNtfnFieldsKept tx ty := by
+  obtain ⟨_, _, rfl⟩ := h
+  exact ⟨fun _ => Iff.rfl, rfl, rfl, rfl⟩
+
+/-- **The donation return** (seL4 MCS's `reply_pop`) writes a context, the
+stack's replies and two threads' binding codes: no notification, and nothing
+the notification queues or the budgets read of a thread. -/
+theorem NtfnFrame.returnDonatedSchedContext {st st' : SystemState} {h : SeLe4n.ThreadId}
+    {sc : SeLe4n.SchedContextId} {c : SeLe4n.ThreadId} {n : Option SeLe4n.ThreadId}
+    (hInv : st.objects.invExt) (hPop : SeLe4n.Kernel.returnDonatedSchedContext st h sc c n = .ok st') :
+    NtfnFrame st st' :=
+  ⟨fun k o => ⟨fun hk => returnDonatedSchedContext_objects_backward_of_kind st st' h sc c n hInv hPop
+      k _ (donationReturnWritesKind_notification o) hk,
+    fun hk => returnDonatedSchedContext_objects_forward_of_kind st st' h sc c n hInv hPop
+      k _ (donationReturnWritesKind_notification o) hk⟩,
+    fun k ty hy =>
+      let ⟨tx, hx, hR⟩ := returnDonatedSchedContext_tcb_rewrite st st' h sc c hInv n hPop k ty hy
+      ⟨tx, hx, .of_bindingRewrite hR⟩,
+    fun k tx hx =>
+      let ⟨ty, hy, hR⟩ := returnDonatedSchedContext_tcb_rewrite_backward st st' h sc c n hInv hPop
+        k tx hx
+      ⟨ty, hy, .of_bindingRewrite hR⟩⟩
+
+/-- **A cancelled caller's donation return**: the return when it commits, the
+state itself when there is none to make. -/
+theorem NtfnFrame.returnDonationToCancelledCaller (st : SystemState) (c : SeLe4n.ThreadId)
+    (t : TCB) (hInv : st.objects.invExt) :
+    NtfnFrame st (Lifecycle.Suspend.returnDonationToCancelledCaller st c t) := by
+  unfold Lifecycle.Suspend.returnDonationToCancelledCaller
+  split
+  · split
+    · rename_i hOk
+      obtain ⟨n, -, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hOk
+      exact NtfnFrame.returnDonatedSchedContext hInv hPop
+    · exact .refl st
+  · exact .refl st
+
+/-- **A cancelled caller's donation return keeps the donation chains**
+(`returnDonatedSchedContext_preserves_donationChainWellFormed`, unconditional in
+the outer caller). -/
+theorem returnDonationToCancelledCaller_preserves_donationChainWellFormed (st : SystemState)
+    (c : SeLe4n.ThreadId) (t : TCB) (hInv : st.objects.invExt)
+    (hChain : donationChainWellFormed st) :
+    donationChainWellFormed (Lifecycle.Suspend.returnDonationToCancelledCaller st c t) := by
+  unfold Lifecycle.Suspend.returnDonationToCancelledCaller
+  split
+  · split
+    · rename_i hOk
+      obtain ⟨n, -, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hOk
+      exact returnDonatedSchedContext_preserves_donationChainWellFormed _ _ _ _ _ n hInv hChain hPop
+    · exact hChain
+  · exact hChain
+
 /-- **What each step of a finalisation carries**: the IPC bundle, the object
 table's well-formedness, the notification queues, the reply-waiter queues, the
 donation chains and the delete's stated lent-context fact. -/
@@ -1687,41 +1742,57 @@ theorem unstack {s s1 : SystemState} {x : SeLe4n.ObjId} {sc : SchedContext}
       (finaliseSchedContextUnbind_unbound h₀.2.1 hA (hS₀ ▸ hSc)) hR hN hS⟩, q.2.1⟩
 
 /-- A reply's caller cancel, with its boost reverted, carries it, and frames
-every budget: the splice, the restore, the consume, the unlink and the PIP walk
-keep every notification and what the queues and budgets read of every thread
-(`NtfnFrame`); the reply-waiter queues by the cancel's own carriage
-(`cancelIpcBlocking_preserves_replyWaitersConsistent`) and the walk's
-(`propagatePipChainCrossCore_replyViews_eq`); the chains by the splice's, the
-consume's (on a frame heading no context, which no `prev` names once spliced)
-and the walk's. -/
+every budget.  A head reply's cancel first hands the caller's reservation back
+(seL4 MCS's `reply_pop`): a context, the stack's replies and two threads'
+binding codes written (`NtfnFrame.returnDonationToCancelledCaller`), the chains
+kept (`returnDonationToCancelledCaller_preserves_donationChainWellFormed`) and
+the reply left heading no stack (`finaliseReplyReturn_replyUnheaded`).  Then the
+splice, the restore, the consume, the unlink, the replenishment migration, the
+holder's deschedule and the PIP walk keep every notification and what the
+queues and budgets read of every thread (`NtfnFrame`); the reply-waiter queues
+by the cancel's own carriage
+(`cancelIpcBlocking_preserves_replyWaitersConsistent`), the migration's, the
+deschedule's and the walk's (`propagatePipChainCrossCore_replyViews_eq`); the
+chains by the splice's, the consume's (on a frame heading no context, which no
+`prev` names once spliced), the run-link frame's and the walk's. -/
 theorem reply {s : SystemState} {x : SeLe4n.ObjId} {r : Reply} {c : SeLe4n.ThreadId} {t : TCB}
     (h : finaliseStepInvariant s) (hX : s.getObject? x = some (.reply r))
     (hC : r.callerCode = c.val + 1) (hT : s.getTcb? c = some t)
-    (hF : replyCallerFinalisable x r c t = true) :
+    (hF : replyCallerFinalisable s x r c t = true) :
     finaliseStepInvariant
-        (finaliseReplyRevert (Lifecycle.Suspend.cancelIpcBlocking s c t) t.blockingServer?) ∧
+        (finaliseReplyRevert (cancelIpcBlockingReclaimed c t s) t.blockingServer?) ∧
       timeoutBudgetFrame s
-        (finaliseReplyRevert (Lifecycle.Suspend.cancelIpcBlocking s c t) t.blockingServer?) := by
+        (finaliseReplyRevert (cancelIpcBlockingReclaimed c t s) t.blockingServer?) := by
   have hI := finaliseReplyStep_keepsIpcInvariantFull s x r c t ⟨h.1, h.2.1, h.2.2.2.2.2⟩ hX hC hT hF
-  obtain ⟨hNH, hNotRes, -, -, ⟨ep, rt, hB⟩, hRO, -, -, -, hD⟩ :=
-    replyCallerFinalisable_parts hX hF
+  obtain ⟨-, hNotRes, -, -, ⟨ep, rt, hB⟩, hRO, -, -, -⟩ := replyCallerFinalisable_parts hF
   have hTo := (SystemState.getTcb?_eq_some_iff s c t).mp hT
+  have hLk : lookupTcb s c = some t := lookupTcb_of_objects_of_not_reserved s c t hTo hNotRes
+  -- The donation return.
+  have g0 := FinaliseFrameAny.returnDonationToCancelledCaller s c t h.2.1
+  have n0 := NtfnFrame.returnDonationToCancelledCaller s c t h.2.1
+  have hC0 := returnDonationToCancelledCaller_preserves_donationChainWellFormed s c t h.2.1
+    h.2.2.2.2.1
+  obtain ⟨rR, hPreR, hNotHeadPre⟩ := finaliseReplyReturn_replyUnheaded h.2.1 hX hT hF
+  obtain ⟨tR, hAtR, hRw⟩ := returnDonationToCancelledCaller_victim_tcb_rewrite s c t h.2.1 hLk
+  have hIpcR : tR.ipcState = t.ipcState := by obtain ⟨_, _, e⟩ := hRw; rw [e]
+  have hEq := cancelIpcBlocking_replyArm_unfold s c t hB
+  generalize hR0 : Lifecycle.Suspend.returnDonationToCancelledCaller s c t = R at *
   -- The cancel, step by step.
-  have g1 := FinaliseFrameAny.spliceThreadReplyFrameOut s t h.2.1
-  generalize hS1 : spliceThreadReplyFrameOut s t = s1 at g1
-  have hAt1 : s1.objects[c.toObjId]? = some (.tcb t) := by
-    rw [← hS1]; exact spliceThreadReplyFrameOut_tcb_eq s t h.2.1 c.toObjId t hTo
-  have hLk1 : lookupTcb s1 c = some t := lookupTcb_of_objects_of_not_reserved _ c t hAt1 hNotRes
+  have g1 := FinaliseFrameAny.spliceThreadReplyFrameOut R t g0.invExt
+  generalize hS1 : spliceThreadReplyFrameOut R t = s1 at g1
+  have hAt1 : s1.objects[c.toObjId]? = some (.tcb tR) := by
+    rw [← hS1]; exact spliceThreadReplyFrameOut_tcb_eq R t g0.invExt c.toObjId tR hAtR
+  have hLk1 : lookupTcb s1 c = some tR := lookupTcb_of_objects_of_not_reserved _ c tR hAt1 hNotRes
   have hR2 : FinaliseFrameAny s1 (Lifecycle.Suspend.restoreToReadyCancelled s1 c) := by
     unfold Lifecycle.Suspend.restoreToReadyCancelled Lifecycle.Suspend.restoreToReadyStaging
     exact (FinaliseFrame.updateTcb _ c _ g1.invExt).any
   have g3 := FinaliseFrameAny.consumeReplyLink _ c t hR2.invExt
   have g4 := FinaliseFrameAny.unlinkReplyWaiterOpt _ c t.blockingServer? g3.invExt
-  have hEq := cancelIpcBlocking_replyArm_of_noDonation s c t hB hD
   rw [hS1] at hEq
-  have n1 : NtfnFrame s s1 := hS1 ▸ NtfnFrame.spliceThreadReplyFrameOut s t h.2.1
+  have n1 : NtfnFrame R s1 := hS1 ▸ NtfnFrame.spliceThreadReplyFrameOut R t g0.invExt
   have n2 : NtfnFrame s1 (Lifecycle.Suspend.restoreToReadyCancelled s1 c) :=
-    NtfnFrame.restoreToReadyStaging s1 c _ t g1.invExt hLk1 (fun o e => by rw [hB] at e; cases e)
+    NtfnFrame.restoreToReadyStaging s1 c _ tR g1.invExt hLk1
+      (fun o e => by rw [hIpcR, hB] at e; cases e)
   have n3 := NtfnFrame.consumeReplyLink (Lifecycle.Suspend.restoreToReadyCancelled s1 c) c t
     hR2.invExt
   have n4 := NtfnFrame.of_agreeOffRunLinks (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks
@@ -1730,35 +1801,41 @@ theorem reply {s : SystemState} {x : SeLe4n.ObjId} {r : Reply} {c : SeLe4n.Threa
   have hInvC : (Lifecycle.Suspend.cancelIpcBlocking s c t).objects.invExt := by
     rw [hEq]; exact g4.invExt
   have nC : NtfnFrame s (Lifecycle.Suspend.cancelIpcBlocking s c t) := by
-    rw [hEq]; exact n1.trans (n2.trans (n3.trans n4))
-  have nAll := nC.trans (NtfnFrame.finaliseReplyRevert _ t.blockingServer? hInvC)
+    rw [hEq]; exact n0.trans (n1.trans (n2.trans (n3.trans n4)))
+  -- The replenishment migration and the holder's deschedule write run links alone.
+  have hAgM := cancelIpcBlockingReclaimed_objectsAgreeOffRunLinks c t s
+  have hInvM : (cancelIpcBlockingReclaimed c t s).objects.invExt :=
+    cancelIpcBlockingReclaimed_objects_invExt c t s hInvC
+  have nAll := (nC.trans (NtfnFrame.of_agreeOffRunLinks hAgM)).trans
+    (NtfnFrame.finaliseReplyRevert _ t.blockingServer? hInvM)
   have q := nAll.parts h.2.2.1
   -- The reply-waiter queues.
   have hRW1 := cancelIpcBlocking_preserves_replyWaitersConsistent s c t hT h.2.1 h.2.2.2.1
-  have hRW : (finaliseReplyRevert (Lifecycle.Suspend.cancelIpcBlocking s c t)
+  have hRWM : (cancelIpcBlockingReclaimed c t s).replyWaitersConsistent := by
+    refine SystemState.replyWaitersConsistent.of_views ?_ hRW1
+    unfold cancelIpcBlockingReclaimed
+    rw [descheduleUnboundHolder_replyViews_eq, cancelIpcBlockingMigrated_replyViews_eq]
+  have hRW : (finaliseReplyRevert (cancelIpcBlockingReclaimed c t s)
       t.blockingServer?).replyWaitersConsistent := by
     unfold finaliseReplyRevert
     cases t.blockingServer? with
-    | none => exact hRW1
+    | none => exact hRWM
     | some sv =>
       exact SystemState.replyWaitersConsistent.of_views
-        (propagatePipChainCrossCore_replyViews_eq _ sv _ _ hInvC) hRW1
+        (propagatePipChainCrossCore_replyViews_eq _ sv _ _ hInvM) hRWM
   -- The donation chains.
   have hC1 : donationChainWellFormed s1 := by
-    rw [← hS1]; exact spliceThreadReplyFrameOut_preserves_donationChainWellFormed s t h.2.1 h.2.2.2.2.1
+    rw [← hS1]; exact spliceThreadReplyFrameOut_preserves_donationChainWellFormed R t g0.invExt hC0
   have hC2 : donationChainWellFormed (Lifecycle.Suspend.restoreToReadyCancelled s1 c) := by
     unfold Lifecycle.Suspend.restoreToReadyCancelled Lifecycle.Suspend.restoreToReadyStaging
     exact donationChainWellFormed_of_frame
       (finaliseWrite.donationChainFrame (FinaliseFrame.updateTcb _ c _ g1.invExt).write) hC1
   have hRid : (⟨x.val⟩ : SeLe4n.ReplyId).toObjId = x := rfl
-  have hPreR : s.objects[x]? = some (.reply r) := hX
-  have hNotHeadPre : ∀ sc, r.next ≠ some (.head sc) := fun sc e => by
-    rw [e] at hNH; simp [replyStackLinkIsHead] at hNH
   -- The restore writes no reply, so a reply reads the same in the spliced state.
   have hRestR : ∀ (k : SeLe4n.ObjId) (rq : Reply),
       (Lifecycle.Suspend.restoreToReadyCancelled s1 c).objects[k]? = some (.reply rq) →
       s1.objects[k]? = some (.reply rq) := fun k rq hk =>
-    (restoreToReadyStaging_nonTcb s1 c _ t g1.invExt hLk1 k _ (fun _ e => by cases e)).mp hk
+    (restoreToReadyStaging_nonTcb s1 c _ tR g1.invExt hLk1 k _ (fun _ e => by cases e)).mp hk
   have hC3 : donationChainWellFormed
       (Lifecycle.Suspend.consumeReplyLink (Lifecycle.Suspend.restoreToReadyCancelled s1 c) c t) := by
     refine consumeReplyLink_preserves_donationChainWellFormed _ c t hR2.invExt hC2
@@ -1766,37 +1843,40 @@ theorem reply {s : SystemState} {x : SeLe4n.ObjId} {r : Reply} {c : SeLe4n.Threa
     · rw [hRO] at hr; cases hr
       have hq1 := hRestR _ rq ((SystemState.getReply?_eq_some_iff _ _ _).mp hq)
       -- The spliced frame's upward link is its pre-state one, or a frame link.
-      rcases spliceThreadReplyFrameOut_cases s t with e1 | ⟨rid0, hr0, e1⟩
+      rcases spliceThreadReplyFrameOut_cases R t with e1 | ⟨rid0, hr0, e1⟩
       · rw [← hS1, e1, hRid, hPreR] at hq1
-        have hrq : rq = r := by cases hq1; rfl
+        have hrq : rq = rR := by cases hq1; rfl
         exact hNotHeadPre sc (by rw [← hrq]; exact e)
       · rw [hRO] at hr0; cases hr0
         rw [← hS1] at hq1
         rcases spliceReplyFrameOut_cases e1 with e2 | ⟨r1, above, a1, hR1, hN1, hA1, hP1, hSt⟩
         · rw [e2, hRid, hPreR] at hq1
-          have hrq : rq = r := by cases hq1; rfl
+          have hrq : rq = rR := by cases hq1; rfl
           exact hNotHeadPre sc (by rw [← hrq]; exact e)
-        · obtain ⟨rp, hrp, -, hnx⟩ := spliceReplyFrameStores_reply_caller_and_headLink h.2.1 hR1 hN1
-            hA1 hP1 hSt _ rq ((SystemState.getReply?_eq_some_iff _ _ _).mpr hq1)
+        · obtain ⟨rp, hrp, -, hnx⟩ := spliceReplyFrameStores_reply_caller_and_headLink g0.invExt
+            hR1 hN1 hA1 hP1 hSt _ rq ((SystemState.getReply?_eq_some_iff _ _ _).mpr hq1)
           rw [(SystemState.getReply?_eq_some_iff _ _ _).mpr hPreR] at hrp
-          have hrp' : rp = r := by cases hrp; rfl
+          have hrp' : rp = rR := by cases hrp; rfl
           subst hrp'
           rcases hnx with hn | ⟨_, y, -, hy⟩
           · exact hNotHeadPre sc (hn.symm.trans e)
           · rw [e] at hy; cases hy
     · rw [hRO] at hr; cases hr
-      exact spliceThreadReplyFrameOut_unreferenced s t _ h.2.1 h.2.2.2.2.1 hRO a ra
+      exact spliceThreadReplyFrameOut_unreferenced R t _ g0.invExt hC0 hRO a ra
         (by rw [hS1]; exact hRestR _ ra ha)
   have hC4 : donationChainWellFormed (Lifecycle.Suspend.cancelIpcBlocking s c t) := by
     rw [hEq]
     exact donationChainWellFormed_of_frame (finaliseWrite.donationChainFrame
       (.of_agreeOffRunLinks (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ c _))) hC3
+  have hCM : donationChainWellFormed (cancelIpcBlockingReclaimed c t s) :=
+    donationChainWellFormed_of_frame (finaliseWrite.donationChainFrame (.of_agreeOffRunLinks hAgM))
+      hC4
   have hC5 : donationChainWellFormed
-      (finaliseReplyRevert (Lifecycle.Suspend.cancelIpcBlocking s c t) t.blockingServer?) := by
+      (finaliseReplyRevert (cancelIpcBlockingReclaimed c t s) t.blockingServer?) := by
     unfold finaliseReplyRevert
     cases t.blockingServer? with
-    | none => exact hC4
-    | some sv => exact propagatePipChainCrossCore_preserves_donationChainWellFormed _ sv _ _ hInvC hC4
+    | none => exact hCM
+    | some sv => exact propagatePipChainCrossCore_preserves_donationChainWellFormed _ sv _ _ hInvM hCM
   exact ⟨⟨hI.1, hI.2.1, q.1, hRW, hC5, hI.2.2⟩, q.2⟩
 
 /-- A stashed reply's unlink carries it, and frames every budget: the

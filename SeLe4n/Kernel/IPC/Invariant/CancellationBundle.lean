@@ -187,14 +187,15 @@ theorem cancelIpcBlocking_victim_ready
 
 They are cited together everywhere — the arm keystone takes all five — so they
 get one name rather than five positional hypotheses threaded through the
-composite.  None is entailed by `ipcInvariantFull`: `donationChainWellFormed` is
-a separate predicate, `sweptThreadOffQueueChains` is the queue-connectivity fact
+composite.  None is entailed by `ipcInvariantFull`: the reply-stack resolution
+(`cancelDonationResolves`) follows from `donationChainWellFormed`, a separate
+predicate, or from a pre-state commit check, `sweptThreadOffQueueChains` is the queue-connectivity fact
 the bundle carries nowhere, and the last three are the local coherence facts
 WS-HP HP7 measured as stated rather than derived.  (`v0.36.136` retired a sixth,
 the queue coherence of a holder the reclaim used to pull off its endpoint: the
 reclaim no longer touches the holder's queue.) -/
 structure cancelReplyArmPremises (st : SystemState) (v : SeLe4n.ThreadId) (tcbV : TCB) : Prop where
-  chain : donationChainWellFormed st
+  resolves : cancelDonationResolves st v tcbV
   offQueue : sweptThreadOffQueueChains st v
   owed : ∀ rid, tcbV.replyObject = some rid → replyFrameHeadHolderDonation st rid v
   holder : donatedContextIsOwnerFrameHead st v
@@ -261,7 +262,8 @@ theorem cancelIpcBlocking_preserves_ipcInvariantFull
   | blockedOnReply ep rt =>
     have hR := hArms.replyArm ep rt hIp
     exact cancelIpcBlocking_replyArm_preserves_ipcInvariantFull st v tcbV ep rt hObjInv hLookup
-      hIp hBundle hR.chain hAllBudgetsNone hR.offQueue hR.owed hR.holder hR.stack
+      hIp hBundle hR.resolves (hAllBudgetsNone v tcbV (lookupTcb_some_objects st v tcbV hLookup))
+      hR.offQueue hR.owed hR.holder hR.stack
 
 -- ============================================================================
 -- §4  The lift to the cross-core composite

@@ -384,39 +384,120 @@ table's well-formedness, and the delete's stated lent-context fact
 def finaliseLoanBundle (s : SystemState) : Prop :=
   ipcInvariantFull s ∧ s.objects.invExt ∧ lentContextHeadsLenderFrame s
 
+/-- **What a finalised reply's cancel owes the reply arm**, on the delete's
+bundle: the reply-stack resolution answers, the head is held on loan from the
+caller, the caller's one loan is that head, and the outer caller is a waiting
+donor that nobody holds a loan from.  A reply heading no stack owes nothing:
+its caller lends to no one (`replyCaller_lendsNone`).  A head reply's admission
+read the first two (`donatedReturnCommits`, the holder's binding codes); the
+third is `donationOwnerUnique`; and a loan from the outer caller would make the
+outer caller's frame a head (`lentContextHeadsLenderFrame`), where the reply
+stack reads a frame link (`replyStackOuterCaller?_ok_some`, `replyCallerLinkage`). -/
+theorem finaliseReply_armPremises {s : SystemState} {x : SeLe4n.ObjId} {r : Reply}
+    {c : SeLe4n.ThreadId} {t : TCB} (hInv : s.objects.invExt) (hFull : ipcInvariantFull s)
+    (hW : lentContextHeadsLenderFrame s) (hX : s.getObject? x = some (.reply r))
+    (hT : s.getTcb? c = some t) (hF : replyCallerFinalisable s x r c t = true) :
+    cancelDonationResolves s c t ∧
+      (∀ rid, t.replyObject = some rid → replyFrameHeadHolderDonation s rid c) ∧
+      donatedContextIsOwnerFrameHead s c ∧ cancelDonationStackValid s c t := by
+  obtain ⟨-, hNotRes, -, -, ⟨ep, rt, hB⟩, hRO, -, -, -⟩ := replyCallerFinalisable_parts hF
+  have hTo := (SystemState.getTcb?_eq_some_iff s c t).mp hT
+  have hLk : lookupTcb s c = some t := lookupTcb_of_objects_of_not_reserved s c t hTo hNotRes
+  have hDonEq : Lifecycle.Suspend.cancelledCallerDonation? s c t =
+      replyFrameHeadHolder? s ⟨x.val⟩ := by
+    unfold Lifecycle.Suspend.cancelledCallerDonation?
+    rw [hB]
+    simp only [hRO]
+  rcases replyCallerFinalisable_cases hX hF with ⟨hHd, hD⟩ |
+    ⟨sd, sc, hd, htd, -, hSc, -, hBt, hTd, hBd, hC, hD⟩
+  · have hNo := replyCaller_lendsNone hW hX hT hHd hRO
+    refine ⟨fun _ _ e => (by rw [hD] at e; cases e), fun rid e => ?_,
+      fun _ _ holder ht sd hH hBd => absurd hBd (hNo holder ht sd hH),
+      fun _ _ e => (by rw [hD] at e; cases e)⟩
+    rw [hRO] at e
+    cases e
+    exact replyFrameHeadHolderDonation_of_no_head _ _ _ (hDonEq.symm.trans hD)
+  · obtain ⟨n, -, hResN, -, -⟩ := replyHeadPop_commits hInv hT hD hC
+    have hC' := hC
+    unfold donatedReturnCommits at hC'
+    rw [hResN, hSc] at hC'
+    simp only [Bool.and_eq_true] at hC'
+    obtain ⟨⟨⟨⟨-, hOut⟩, -⟩, -⟩, hSv⟩ := hC'
+    have hTdO := (SystemState.getTcb?_eq_some_iff _ _ _).mp hTd
+    have hLkd : lookupTcb s hd = some htd := by
+      obtain ⟨t', ht'⟩ := Option.isSome_iff_exists.mp hSv
+      rw [ht']
+      have := lookupTcb_some_objects s hd t' ht'
+      rw [hTdO] at this
+      rw [KernelObject.tcb.inj (Option.some.inj this)]
+    refine ⟨fun sd' hd' e _ _ => ?_, fun rid e => ?_, fun ot hLkc holder ht sd' hH hBd' => ?_,
+      fun sd' hd' e n' hRes' => ?_⟩
+    · rw [hD] at e
+      obtain ⟨e1, -⟩ := Prod.mk.inj (Option.some.inj e)
+      exact ⟨n, e1 ▸ hResN⟩
+    · rw [hRO] at e
+      cases e
+      intro sd' hd' e'
+      rw [← hDonEq, hD] at e'
+      obtain ⟨e1, e2⟩ := Prod.mk.inj (Option.some.inj e')
+      subst e1 e2
+      unfold replyDonationReturn?
+      rw [hLkd]
+      simp only [hBd]
+    · have eH : holder = hd := hFull.donationOwnerUnique holder hd ht htd sd' sd c hH hTdO hBd' hBd
+      subst eH
+      have eT : ht = htd := KernelObject.tcb.inj (Option.some.inj (hH.symm.trans hTdO))
+      subst eT
+      rw [hBd] at hBd'
+      have eS : sd = sd' := (SchedContextBinding.donated.inj hBd').1
+      subst eS
+      have eO : ot = t := Option.some.inj (hLkc.symm.trans hLk)
+      subst eO
+      exact ⟨by rw [← Lifecycle.Suspend.cancelledCallerDonation?_eq_answeredFrameHeadContext? s c ot
+        hLkc ep rt hB, hD], hLkd⟩
+    · rw [hD] at e
+      obtain ⟨e1, e2⟩ := Prod.mk.inj (Option.some.inj e)
+      subst e1 e2
+      rw [hResN] at hRes'
+      have eN : n = n' := Except.ok.inj hRes'
+      subst eN
+      refine ⟨hOut, fun outer hn tid tcb scIdx hTid hBindO => ?_⟩
+      subst hn
+      obtain ⟨-, ridH, -, below, b, -, -, -, hBelow, hBN, hBC⟩ :=
+        replyStackOuterCaller?_ok_some s sd outer hResN
+      have hBo := (SystemState.getReply?_eq_some_iff _ _ _).mp hBelow
+      obtain ⟨tcbO, hTO, hROO, -⟩ := hFull.replyCallerLinkage.1.2 below b outer hBo hBC
+      obtain ⟨rid', r', hRO', hR', hN'⟩ := hW tid tcb scIdx outer tcbO hTid hBindO hTO
+      rw [hROO] at hRO'
+      cases hRO'
+      rw [hBo] at hR'
+      have eB : b = r' := KernelObject.reply.inj (Option.some.inj hR')
+      rw [← eB, hBN] at hN'
+      cases hN'
+
 /-- **A reply's caller cancel keeps the bundle**: the reply arm of the cancel
-with no donation to return — the splice
-(`spliceThreadReplyFrameOut_preserves_ipcInvariantFull`), the restore and
-teardown pair (`restoredAndConsumed_preserves_ipcInvariantFull`, at a caller
-holding no timeout budget, linked into no queue and lending to no thread, which
-the lent-context fact gives: `replyCaller_lendsNone`) — then the revert of the
-boost it lent its server (`propagatePipChainCrossCore_preserves_ipcInvariantFull`);
-and the fact itself (`finaliseReplyStep_keepsLentContextHeads`). -/
+(`cancelIpcBlocking_replyArm_preserves_ipcInvariantFull`, its premises from the
+admission: `finaliseReply_armPremises`), carried across the head reply's
+replenishment migration and holder deschedule, which agree with the cancel off
+the run links (`cancelIpcBlockingReclaimed_objectsAgreeOffRunLinks`), then the
+revert of the boost it lent its server
+(`propagatePipChainCrossCore_preserves_ipcInvariantFull`); and the lent-context
+fact itself (`finaliseReplyStep_keepsLentContextHeads`). -/
 theorem finaliseReplyStep_keepsIpcInvariantFull : FinaliseReplyStep finaliseLoanBundle := by
   intro s x r c t h hX _ hT hF
-  obtain ⟨hHd, hNotRes, -, -, ⟨ep, rt, hB⟩, hRO, hN, hP, hBud, hD⟩ :=
-    replyCallerFinalisable_parts hX hF
-  have hNoLoan := replyCaller_lendsNone h.2.2 hX hT hHd hRO
-  have hW' := finaliseReplyStep_keepsLentContextHeads h.2.1 h.2.2 hX hT hF
-  replace h : ipcInvariantFull s ∧ s.objects.invExt := ⟨h.1, h.2.1⟩
+  obtain ⟨-, hNotRes, -, -, ⟨ep, rt, hB⟩, -, hN, hP, hBud⟩ := replyCallerFinalisable_parts hF
+  obtain ⟨hResolves, hOwed, hHolder, hStack⟩ :=
+    finaliseReply_armPremises h.2.1 h.1 h.2.2 hX hT hF
+  have hW' := finaliseReplyStep_keepsLentContextHeads h.2.1 h.1 h.2.2 hX hT hF
   have hTo := (SystemState.getTcb?_eq_some_iff s c t).mp hT
-  have hRet : Lifecycle.Suspend.returnDonationToCancelledCaller s c t = s := by
-    unfold Lifecycle.Suspend.returnDonationToCancelledCaller; rw [hD]
-  have hEq := cancelIpcBlocking_reply_arm_eq s c t ep rt hB
-  rw [hRet] at hEq
-  have hInvS := spliceThreadReplyFrameOut_preserves_objects_invExt s t h.2
-  have hBundleS := spliceThreadReplyFrameOut_preserves_ipcInvariantFull s t h.2 h.1
-  have hAtS := spliceThreadReplyFrameOut_tcb_eq s t h.2 c.toObjId t hTo
-  have hLkS : lookupTcb (spliceThreadReplyFrameOut s t) c = some t :=
-    lookupTcb_of_objects_of_not_reserved _ c t hAtS hNotRes
-  have hOffS : sweptThreadOffQueueChains (spliceThreadReplyFrameOut s t) c := by
-    intro tcbX hX; rw [hLkS] at hX; cases hX; exact ⟨hP, hN⟩
-  have h1 : ipcInvariantFull (Lifecycle.Suspend.cancelIpcBlocking s c t) := by
-    rw [hEq]
-    exact restoredAndConsumed_preserves_ipcInvariantFull _ c t _ ep rt hInvS hLkS hB hBundleS hBud
-      hOffS (fun tid tcb scId hA => hNoLoan tid tcb scId
-        (spliceThreadReplyFrameOut_tcb_backward s t h.2 tid.toObjId tcb hA))
-  have hI1 := (FinaliseFrameAny.replyCancel s c t h.2 hB hD).invExt
+  have hLk : lookupTcb s c = some t := lookupTcb_of_objects_of_not_reserved s c t hTo hNotRes
+  have hOff : sweptThreadOffQueueChains s c := by
+    intro tcbX e; rw [hLk] at e; cases e; exact ⟨hP, hN⟩
+  have h0 := cancelIpcBlocking_replyArm_preserves_ipcInvariantFull s c t ep rt h.2.1 hLk hB h.1
+    hResolves hBud hOff hOwed hHolder hStack
+  have h1 := ipcInvariantFull_of_objectsAgreeOffRunLinks
+    (cancelIpcBlockingReclaimed_objectsAgreeOffRunLinks c t s) h0
+  have hI1 := (FinaliseFrameAny.cancelIpcBlockingReclaimed s c t h.2.1 hB).invExt
   revert hW'
   cases hSv : t.blockingServer? with
   | none => exact fun hW' => ⟨h1, hI1, hW'⟩

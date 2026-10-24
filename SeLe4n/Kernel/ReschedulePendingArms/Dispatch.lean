@@ -368,8 +368,9 @@ deschedule wherever the thread is placed (`descheduleAtPlacement_stepCovers`),
 then a mark that writes no key field (`updateTcb_keyFrame`) — the release of the
 cores' holds on the thread, which writes no object and no scheduler field, a
 context's reply-stack unlink (a reply and a context's head, neither a key
-input), a reply's caller cancel with its boost reverted
-(`propagatePipChainCrossCore_stepCovers`), and a stashed reply's unlink, a stash
+input), a reply's caller cancel — a head reply's with its loan returned and its
+holder descheduled (`cancelIpcBlockingReclaimed_stepCovers`) — with its boost
+reverted (`propagatePipChainCrossCore_stepCovers`), and a stashed reply's unlink, a stash
 that is no key input (`updateTcb_keyFrame`). -/
 theorem finaliseFinalObject_stepCovers (e : CoreId) (target : Nat) (st : SystemState)
     (hInv : st.objects.invExt) :
@@ -420,8 +421,9 @@ theorem finaliseFinalObject_stepCovers (e : CoreId) (target : Nat) (st : SystemS
       exact ⟨stepCovers_trans h.1 (stepCovers_of_keys_sched (keyInputsEq_trans hK1 hK2) hSch),
         SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hI1⟩)
     (fun s _ _ c t h _ _ _ _ => by
-      have h1 := stepCovers_trans h.1 (cancelIpcBlocking_stepCovers e s c t h.2)
-      have hI1 := Lifecycle.Suspend.cancelIpcBlocking_preserves_objects_invExt s c t h.2
+      have h1 := stepCovers_trans h.1 (cancelIpcBlockingReclaimed_stepCovers e s c t h.2)
+      have hI1 := cancelIpcBlockingReclaimed_objects_invExt c t s
+        (Lifecycle.Suspend.cancelIpcBlocking_preserves_objects_invExt s c t h.2)
       unfold finaliseReplyRevert
       cases t.blockingServer? with
       | none => exact ⟨h1, hI1⟩

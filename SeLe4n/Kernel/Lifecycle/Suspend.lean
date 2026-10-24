@@ -1142,11 +1142,10 @@ seL4-MCS's `schedContext_donate` (read at `13.0.0`) dequeues the previous holder
 (`tcbSchedDequeue(from); from->tcbSchedContext = NULL`).  The reclaim was the one
 deliberate outlier; this is it agreeing with the other four.
 
-**What the holder is left with.**  `.ready`, `.unbound`, on no scheduler slot,
-with the `.ipcTimeout` frame the abort staged (WS-RR RR7.14) still in its
-register context — delivered the first time it is dispatched, which is the first
-time it holds a reservation to be dispatched on.  Its own manager recovers it:
-a `.tcbSuspend` followed by a `.tcbResume` (the resume enqueues it), or a
+**What the holder is left with.**  Its IPC state as it was, `.unbound`, on no
+scheduler slot, as seL4 MCS's `schedContext_unbindTCB` leaves it (`v0.36.136`
+retired the abort that ended a holder's operation).  Its own manager recovers
+it: a `.tcbSuspend` followed by a `.tcbResume` (the resume enqueues it), or a
 `schedContextBind` that places it (seL4-MCS's `schedContext_bindTCB` ends in
 `SCHED_ENQUEUE` when the thread is schedulable; this kernel's bind re-buckets only
 an already-queued thread, which `docs/REGISTERED_DEBT.md` records as the
@@ -1154,14 +1153,13 @@ divergence to close once `.schedContextBind` declares its scheduler footprint).
 What no ordinary client suspension can do any more is hand a server the CPU on
 nobody's budget.
 
-**Three states, one reading.**  A holder blocked sending or calling is aborted
-to `.ready` and is on no slot, so the deschedule is the identity there — the
-thread is parked already.  A holder blocked in receive or on a notification is
-left blocked by the abort, off every slot, identity again.  A holder that is
-**queued or running** on the donated context — the ordinary passive server
-servicing the request whose client is being suspended — is the case the wake
-never touched and the case that ran unbudgeted: it is taken off its placement,
-which is the step the reply path performs on the server it unbinds. -/
+**Three states, one reading.**  A holder blocked — sending, calling, receiving
+or on a notification — is on no slot, so the deschedule is the identity there:
+the thread is parked already.  A holder that is **queued or running** on the
+donated context — the ordinary passive server servicing the request whose
+client is being suspended — is the case that would run unbudgeted: it is taken
+off its placement, which is the step the reply path performs on the server it
+unbinds. -/
 def cancelUnboundHolder? (stPre stPost : SystemState) (victim : SeLe4n.ThreadId)
     (tcb : TCB) : Option SeLe4n.ThreadId :=
   match Lifecycle.Suspend.cancelledCallerDonation? stPre victim tcb with

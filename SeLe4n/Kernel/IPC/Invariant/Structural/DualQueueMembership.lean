@@ -227,19 +227,6 @@ theorem spliceReplyFrameOutOrSelf_timeoutBudgetFrame
     ⟨tcb', spliceReplyFrameOutOrSelf_tcb_backward st rid hObjInv _ tcb' hT, rfl⟩
 
 open SeLe4n.Model.SystemState in
-/-- **WS-RR RR8.7**: and the fold over a thread's **own** reply object frames it too.
-
-The cancellation's reply arm splices at `tcb.replyObject` rather than at a reply
-id it was handed, so its consumers need the frame at that spelling; the splice
-writes no TCB at all, so this is the `_tcb_backward` reading with the budget read
-off the same record. -/
-theorem spliceThreadReplyFrameOut_timeoutBudgetFrame
-    (st : SystemState) (tcb : TCB) (hObjInv : st.objects.invExt) :
-    timeoutBudgetFrame st (spliceThreadReplyFrameOut st tcb) :=
-  fun tid tcb' hT =>
-    ⟨tcb', spliceThreadReplyFrameOut_tcb_backward st tcb hObjInv _ tcb' hT, rfl⟩
-
-open SeLe4n.Model.SystemState in
 theorem spliceReplyFrameOutOrSelf_donationOwnerFrameExcept
     (st : SystemState) (rid : SeLe4n.ReplyId) (hObjInv : st.objects.invExt)
     (woken : SeLe4n.ThreadId) :

@@ -4525,6 +4525,32 @@ def replyStackOuterCallerResolves (st : SystemState) (scId : SeLe4n.SchedContext
   ∀ sc : SchedContext, st.objects[scId.toObjId]? = some (.schedContext sc) →
     ∃ outer?, replyStackOuterCaller? st scId = .ok outer?
 
+/-- **A context whose outer caller resolves has a resolving head**: the
+resolver's success validates the head (`donationHeadOf?`) and reads the frame
+below it. -/
+theorem donationHeadResolves_of_outerCallerResolves (st : SystemState)
+    (scId : SeLe4n.SchedContextId) (h : replyStackOuterCallerResolves st scId) :
+    donationHeadResolves st scId := by
+  intro sc hSc
+  obtain ⟨n, hRes⟩ := h sc hSc
+  have hGetSc : st.getSchedContext? scId = some sc :=
+    (SystemState.getSchedContext?_eq_some_iff _ _ _).mpr hSc
+  unfold replyStackOuterCaller? at hRes
+  rw [hGetSc] at hRes
+  simp only at hRes
+  cases hH : donationHeadOf? st scId sc with
+  | error e => rw [hH] at hRes; cases hRes
+  | ok head? =>
+    refine ⟨head?, rfl, fun rid r below hEq hPrev => ?_⟩
+    subst hEq
+    rw [hH] at hRes
+    simp only at hRes
+    rw [hPrev] at hRes
+    simp only at hRes
+    cases hGb : st.getReply? below with
+    | none => rw [hGb] at hRes; cases hRes
+    | some b => exact ⟨b, (SystemState.getReply?_eq_some_iff _ _ _).mp hGb⟩
+
 /-- WS-OD OD3.4 / `v0.35.4`: the chain invariant establishes the outer-caller
 resolution.  The head validation needs `headLinkReciprocal`; this needs one link
 more — `prevLinkReciprocal` for the frame below the head — and `replyWellFormed`

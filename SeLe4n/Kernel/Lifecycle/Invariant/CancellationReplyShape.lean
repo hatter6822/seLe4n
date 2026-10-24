@@ -171,6 +171,20 @@ def cancelDonationStackValid (st : SystemState) (v : SeLe4n.ThreadId) (tcbV : TC
     Lifecycle.Suspend.cancelledCallerDonation? st v tcbV = some (scId, holder) →
     replyStackOuterCallerValid st scId holder v
 
+/-- **The reclaim's reply-stack resolution answers**: whatever donation the
+cancellation reclaims, the resolver answers on its context, so the pop is
+decided by its own checks.  The chain invariant gives it
+(`cancelDonationResolves_of_chainWellFormed`), and so does a pre-state check
+that the return commits (`donatedReturnCommits`). -/
+def cancelDonationResolves (st : SystemState) (v : SeLe4n.ThreadId) (tcbV : TCB) : Prop :=
+  ∀ (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId),
+    Lifecycle.Suspend.cancelledCallerDonation? st v tcbV = some (scId, holder) →
+    replyStackOuterCallerResolves st scId
+
+theorem cancelDonationResolves_of_chainWellFormed (st : SystemState) (v : SeLe4n.ThreadId)
+    (tcbV : TCB) (h : donationChainWellFormed st) : cancelDonationResolves st v tcbV :=
+  fun scId _ _ => replyStackOuterCallerResolves_of_chainWellFormed st scId h
+
 /-- `v0.35.4`: the cancelled caller's frame splice writes only Reply objects, so
 every binding reads through unchanged. -/
 theorem spliceThreadReplyFrameOut_sameSchedContextBindings (st : SystemState) (tcb : TCB)
@@ -224,10 +238,10 @@ theorem returnDonationToCancelledCaller_no_donation_to_victim
     (hInv : st.objects.invExt) (hLookup : lookupTcb st v = some tcbV)
     (hOwner : donationOwnerValid st)
     -- WS-OD OD3.2: the reclaim's hand-back runs `returnDonatedSchedContext`, whose
-    -- reply-stack head validation is ruled out by the chain invariant.  It is a
-    -- conjunct of `ipcReachable` rather than of `ipcInvariantFull`, so it is
-    -- stated rather than projected.
-    (hChain : donationChainWellFormed st)
+    -- reply-stack head validation the resolver's answer settles; the chain
+    -- invariant gives that answer (`cancelDonationResolves_of_chainWellFormed`),
+    -- and so does a pre-state commit check.
+    (hResolves : cancelDonationResolves st v tcbV)
     (hHolder : donatedContextIsOwnerFrameHead st v)
     -- **WS-OD OD4.4**: the reclaim's pop resolves its new owner from the context's
     -- own reply stack; this is the obligation that resolution carries, and it is
@@ -265,15 +279,14 @@ theorem returnDonationToCancelledCaller_no_donation_to_victim
     obtain ⟨_, _, _, sc, _, _, _, hSc, _, hBt⟩ := cancelledCallerDonation?_some st v tcbV
       scId0 holder hRes
     have hHeadResA : donationHeadResolves st scId0 :=
-      donationHeadResolves_of_chainWellFormed st scId0 hChain
+      donationHeadResolves_of_outerCallerResolves st scId0 (hResolves scId0 holder hRes)
     -- **WS-OD OD4.4**: the pop resolves its new owner off the context's own reply
     -- stack.  The chain invariant makes the resolver *answer*; what it answers is
     -- the caller's obligation.  The SchedContext witness the resolution needs
     -- comes from the trigger rather than from a binding.
     have hScA : st.objects[scId0.toObjId]? = some (.schedContext sc) :=
       (SystemState.getSchedContext?_eq_some_iff st scId0 sc).mp hSc
-    obtain ⟨n, hResN⟩ :=
-      replyStackOuterCallerResolves_of_chainWellFormed _ scId0 hChain sc hScA
+    obtain ⟨n, hResN⟩ := hResolves scId0 holder hRes sc hScA
     rw [returnDonatedSchedContextResolved_of_resolved hResN] at hTcb
     cases hRet : returnDonatedSchedContext st
         holder scId0 v n with
@@ -400,7 +413,7 @@ theorem cancelIpcBlocking_reply_no_donation_to_victim
     (hInv : st.objects.invExt) (hLookup : lookupTcb st v = some tcbV)
     (hBlocked : tcbV.ipcState = .blockedOnReply ep rt)
     (hOwner : donationOwnerValid st)
-    (hChain : donationChainWellFormed st)
+    (hResolves : cancelDonationResolves st v tcbV)
     (hHolder : donatedContextIsOwnerFrameHead st v)
     -- **WS-OD OD4.4**: see `returnDonationToCancelledCaller_no_donation_to_victim`.
     (hStack : cancelDonationStackValid st v tcbV)
@@ -435,7 +448,7 @@ theorem cancelIpcBlocking_reply_no_donation_to_victim
   obtain ⟨t0, h0, hEqB⟩ := hSame tid tcbU hTcbU
   intro hBind
   exact returnDonationToCancelledCaller_no_donation_to_victim st v tcbV hInv hLookup hOwner
-    hChain hHolder hStack tid t0 scId h0 (by rw [hEqB]; exact hBind)
+    hResolves hHolder hStack tid t0 scId h0 (by rw [hEqB]; exact hBind)
 
 -- ============================================================================
 -- WS-OD OD3.5 — the reply arm relinks no queue neighbour
@@ -2561,7 +2574,7 @@ theorem returnDonationToCancelledCaller_preserves_ipcInvariantFull
     (st : SystemState) (v : SeLe4n.ThreadId) (tcbV : TCB)
     (hObjInv : st.objects.invExt) (hLookup : lookupTcb st v = some tcbV)
     (hBundle : ipcInvariantFull st)
-    (hChain : donationChainWellFormed st)
+    (hResolves : cancelDonationResolves st v tcbV)
     (hOwed : ∀ rid, tcbV.replyObject = some rid → replyFrameHeadHolderDonation st rid v)
     (hStack : cancelDonationStackValid st v tcbV) :
     ipcInvariantFull (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) := by
@@ -2585,8 +2598,7 @@ theorem returnDonationToCancelledCaller_preserves_ipcInvariantFull
       rw [hc] at hNotRes
       exact hNotRes SeLe4n.ThreadId.sentinel_isReserved
     obtain ⟨n, hResN⟩ :=
-      replyStackOuterCallerResolves_of_chainWellFormed _ scId hChain sc
-        ((SystemState.getSchedContext?_eq_some_iff st scId sc).mp hSc)
+      hResolves scId holder hRes sc ((SystemState.getSchedContext?_eq_some_iff st scId sc).mp hSc)
     rw [returnDonatedSchedContextResolved_of_resolved hResN]
     cases hPop : returnDonatedSchedContext st holder scId v n with
     | error _ => exact hBundle
@@ -2595,26 +2607,6 @@ theorem returnDonationToCancelledCaller_preserves_ipcInvariantFull
         ⟨holder, hNeSent⟩ scId v hObjInv
         (ipcInvariantFullExceptDonationOwner_of_full v hBundle) hRet n
         (donationReturnOuterValid_of_stackValid (hStack scId holder hRes) hResN) hPop
-
-open SeLe4n.Model.SystemState in
-/-- **WS-RR RR8.7**: and the reclaim keeps every timeout budget `none` — the pop's
-`returnDonatedSchedContext_tcb_timeoutBudget_backward`, which is that operation's
-`tcbBindingRewrite` reading at one field. -/
-theorem returnDonationToCancelledCaller_preserves_allTimeoutBudgetsNone (st : SystemState)
-    (v : SeLe4n.ThreadId) (tcbV : TCB) (hObjInv : st.objects.invExt)
-    (hAll : allTimeoutBudgetsNone st) :
-    allTimeoutBudgetsNone (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) := by
-  unfold Lifecycle.Suspend.returnDonationToCancelledCaller
-  split
-  · rename_i scId holder _ _ _
-    split
-    · rename_i st' h
-      obtain ⟨n, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose h
-      exact allTimeoutBudgetsNone_of_frame
-        (fun t tcb' hT => returnDonatedSchedContext_tcb_timeoutBudget_backward _ st' holder scId v
-          hObjInv n hPop t.toObjId tcb' hT) hAll
-    · exact hAll
-  · exact hAll
 
 open SeLe4n.Model.SystemState in
 /-- **WS-RR RR8.7: the reclaim rewrites the victim's binding and nothing else of it.**
@@ -2729,8 +2721,8 @@ theorem cancelIpcBlocking_replyArm_preserves_ipcInvariantFull
     (hObjInv : st.objects.invExt) (hLookup : lookupTcb st v = some tcbV)
     (hBlocked : tcbV.ipcState = .blockedOnReply epV rtV)
     (hBundle : ipcInvariantFull st)
-    (hChain : donationChainWellFormed st)
-    (hAllBudgetsNone : allTimeoutBudgetsNone st)
+    (hResolves : cancelDonationResolves st v tcbV)
+    (hBud : tcbV.timeoutBudget = none)
     (hOff : sweptThreadOffQueueChains st v)
     (hOwed : ∀ rid, tcbV.replyObject = some rid → replyFrameHeadHolderDonation st rid v)
     (hHolder : donatedContextIsOwnerFrameHead st v)
@@ -2740,9 +2732,7 @@ theorem cancelIpcBlocking_replyArm_preserves_ipcInvariantFull
   have hInvR :=
     Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_objects_invExt st v tcbV hObjInv
   have hBundleR := returnDonationToCancelledCaller_preserves_ipcInvariantFull st v tcbV
-    hObjInv hLookup hBundle hChain hOwed hStack
-  have hBudgetsR := returnDonationToCancelledCaller_preserves_allTimeoutBudgetsNone st v tcbV
-    hObjInv hAllBudgetsNone
+    hObjInv hLookup hBundle hResolves hOwed hStack
   obtain ⟨tcbR, hAtR, _, _, hEqR⟩ := returnDonationToCancelledCaller_victim_tcb_rewrite st v tcbV
     hObjInv hLookup
   -- Step 2: the splice, which writes no TCB at all.
@@ -2750,9 +2740,6 @@ theorem cancelIpcBlocking_replyArm_preserves_ipcInvariantFull
     (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV hInvR
   have hBundleS := spliceThreadReplyFrameOut_preserves_ipcInvariantFull
     (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV hInvR hBundleR
-  have hBudgetsS := allTimeoutBudgetsNone_of_frame
-    (spliceThreadReplyFrameOut_timeoutBudgetFrame
-      (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV hInvR) hBudgetsR
   have hAtS := spliceThreadReplyFrameOut_tcb_eq
     (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV hInvR v.toObjId tcbR hAtR
   have hLkS : lookupTcb (spliceThreadReplyFrameOut
@@ -2766,7 +2753,7 @@ theorem cancelIpcBlocking_replyArm_preserves_ipcInvariantFull
           = some (.tcb tcb) → tcb.schedContextBinding ≠ .donated scId v := by
     intro tid tcb scId hAt
     exact returnDonationToCancelledCaller_no_donation_to_victim st v tcbV hObjInv hLookup
-      hBundle.donationOwnerValid hChain hHolder hStack tid tcb scId
+      hBundle.donationOwnerValid hResolves hHolder hStack tid tcb scId
       (spliceThreadReplyFrameOut_tcb_backward _ tcbV hInvR tid.toObjId tcb hAt)
   -- And the queue-coherence fact, which survives because only the binding moved.
   have hOffS : sweptThreadOffQueueChains (spliceThreadReplyFrameOut
@@ -2780,6 +2767,6 @@ theorem cancelIpcBlocking_replyArm_preserves_ipcInvariantFull
     restoredAndConsumed_congr _ v tcbV tcbR _ (by rw [hEqR]) (by rw [hEqR] <;> rfl)]
   exact restoredAndConsumed_preserves_ipcInvariantFull _ v tcbR _ epV rtV hInvS hLkS
     (by rw [hEqR]; exact hBlocked) hBundleS
-    (hBudgetsS v tcbR (lookupTcb_some_objects _ v tcbR hLkS)) hOffS hNotOwnerS
+    (by rw [hEqR]; exact hBud) hOffS hNotOwnerS
 
 end SeLe4n.Kernel

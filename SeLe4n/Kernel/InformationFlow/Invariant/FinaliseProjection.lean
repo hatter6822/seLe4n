@@ -28,11 +28,14 @@ unchanged (`finaliseThread_hidden`, `finaliseSchedContext_hidden`).
 
 WS-ZA ZA5.4 part 25: a scheduling context's finalisation also releases a holder
 it lends to and unlinks the head of its reply stack, a stack link the projection
-strips; a reply's (`finaliseReply`) cancels its waiting caller, reverts the boost
-the caller lent along its blocking chain, and suspends it.  When the caller is
-hidden (`replyFinaliseHidden`) and the blocking chain of a hidden thread is
-hidden (`hBlockingChainHigh`), the projection is unchanged
-(`finaliseReply_hidden`).
+strips; a reply's (`finaliseReply`) cancels its waiting caller — a head reply's
+cancel hands the caller's reservation back and deschedules the thread it is taken
+from (seL4 MCS's `reply_pop`) — reverts the boost the caller lent along its
+blocking chain, and suspends it.  When the caller is hidden
+(`replyFinaliseHidden`), the blocking chain of a hidden thread is hidden
+(`hBlockingChainHigh`), and every lender flows to the thread it lends to
+(`donationOwnerFlowsToHolder`, so the descheduled thread is hidden too), the
+projection is unchanged (`finaliseReply_hidden`).
 
 * **Which threads wait.**  The hypothesis names the threads that wait on the
   object in the pre-state (`waitersHidden`).  Every step leaves each thread
@@ -939,13 +942,19 @@ theorem finaliseReplyUnstash_hidden (ctx : LabelingContext) (observer : IfObserv
     · rfl
 
 /-- **A reply's finalisation is invisible** when the caller waiting on it is
-hidden: the cancel's reply arm with no donation to return
-(`cancelIpcBlocking_blockedOnReply_preserves_projection`), the boost revert along
-the caller's blocking chain (`propagatePipChainCrossCore_preserves_projection`),
-and the caller's suspend (`finaliseThreadSuspend_hidden`); a stashed reply's
-unlink (`finaliseReplyUnstash_hidden`). -/
+hidden: the cancel's reply arm, with the donation return a head reply makes
+(`cancelIpcBlocking_blockedOnReply_preserves_projection`), the replenishment
+migration (`cancelIpcBlockingMigrated_preserves_projection`), the deschedule of
+the thread the context is taken from, hidden since the hidden caller lent it the
+context (`descheduledHolderHigh_of_donationOwnerFlowsToHolder`, from the loan the
+admission reads: `finaliseReply_armPremises`), the boost revert along the
+caller's blocking chain (`propagatePipChainCrossCore_preserves_projection`), and
+the caller's suspend (`finaliseThreadSuspend_hidden`); a stashed reply's unlink
+(`finaliseReplyUnstash_hidden`). -/
 theorem finaliseReply_hidden (ctx : LabelingContext) (observer : IfObserver)
     {st : SystemState} {x : SeLe4n.ObjId} (hInv : st.objects.invExt)
+    (hFull : ipcInvariantFull st) (hLc : lentContextHeadsLenderFrame st)
+    (hFlow : donationOwnerFlowsToHolder ctx st)
     (hValid : LabelingContextValid ctx)
     (hIdx : SeLe4n.Model.objectIndexSetComplete st) (hSet : st.objectIndexSet.table.invExt)
     (hBlockingChainHigh : ∀ (s : SystemState) (t server : SeLe4n.ThreadId),
@@ -965,18 +974,23 @@ theorem finaliseReply_hidden (ctx : LabelingContext) (observer : IfObserver)
       · next t hT =>
         split
         · next hF =>
-          obtain ⟨-, -, -, -, ⟨ep, rt, hB⟩, -, -, -, -, -⟩ :=
-            replyCallerFinalisable_parts hX hF
+          obtain ⟨-, -, -, -, ⟨ep, rt, hB⟩, -, -, -, -⟩ := replyCallerFinalisable_parts hF
+          obtain ⟨-, hOwed, -, -⟩ := finaliseReply_armPremises hInv hFull hLc hX hT hF
           have hHigh := hH.1 r hX (by simpa using h0)
           have hP1 := cancelIpcBlocking_blockedOnReply_preserves_projection ctx observer st
             ⟨r.callerCode - 1⟩ t ep rt hB hValid hHigh hInv hIdx hSet
-          have hI1 := Lifecycle.Suspend.cancelIpcBlocking_preserves_objects_invExt st
-            ⟨r.callerCode - 1⟩ t hInv
+          have hPR : projectState ctx observer (cancelIpcBlockingReclaimed ⟨r.callerCode - 1⟩ t st) =
+              projectState ctx observer st := by
+            unfold cancelIpcBlockingReclaimed
+            rw [descheduleUnboundHolder_preserves_projection ctx observer st _ t
+              (descheduledHolderHigh_of_donationOwnerFlowsToHolder ctx observer st _ t hFlow hOwed
+                hHigh), cancelIpcBlockingMigrated_preserves_projection, hP1]
+          have hI1 := cancelIpcBlockingReclaimed_objects_invExt ⟨r.callerCode - 1⟩ t st
+            (Lifecycle.Suspend.cancelIpcBlocking_preserves_objects_invExt st ⟨r.callerCode - 1⟩ t hInv)
           have hRev : projectState ctx observer
-              (finaliseReplyRevert (Lifecycle.Suspend.cancelIpcBlocking st ⟨r.callerCode - 1⟩ t)
+              (finaliseReplyRevert (cancelIpcBlockingReclaimed ⟨r.callerCode - 1⟩ t st)
                 t.blockingServer?) =
-              projectState ctx observer
-                (Lifecycle.Suspend.cancelIpcBlocking st ⟨r.callerCode - 1⟩ t) := by
+              projectState ctx observer (cancelIpcBlockingReclaimed ⟨r.callerCode - 1⟩ t st) := by
             unfold finaliseReplyRevert
             cases hS : t.blockingServer? with
             | none => rfl
@@ -985,9 +999,9 @@ theorem finaliseReply_hidden (ctx : LabelingContext) (observer : IfObserver)
                 (hValid.coherenceImpliesObjectHigh observer) hBlockingChainHigh _ sv _ _
                 (hBlockingChainHigh st _ sv hHigh (by
                   unfold PriorityInheritance.blockingServer; rw [hT]; exact hS)) hI1
-          rw [finaliseThreadSuspend_hidden ctx observer _ _
+          rw [finaliseReplyCancel_eq hX hF, finaliseThreadSuspend_hidden ctx observer _ _
             (FinaliseFrame.finaliseReplyRevert _ _ hI1).invExt
-            (hValid.coherenceImpliesObjectHigh observer _ hHigh) hHigh, hRev, hP1]
+            (hValid.coherenceImpliesObjectHigh observer _ hHigh) hHigh, hRev, hPR]
         · rfl
       · rfl
   · rfl
@@ -1013,6 +1027,7 @@ theorem finaliseFinalObject_preserves_projection (ctx : LabelingContext) (observ
     (hSF : target ≠ 0 →
       schedContextFinaliseHidden ctx observer st (SeLe4n.ObjId.ofNat (target - 1)))
     (hRF : target ≠ 0 → replyFinaliseHidden ctx observer st (SeLe4n.ObjId.ofNat (target - 1)))
+    (hFlow : donationOwnerFlowsToHolder ctx st)
     (hValid : LabelingContextValid ctx)
     (hIdx : SeLe4n.Model.objectIndexSetComplete st) (hSet : st.objectIndexSet.table.invExt)
     (hBlockingChainHigh : ∀ (s : SystemState) (t server : SeLe4n.ThreadId),
@@ -1063,7 +1078,8 @@ theorem finaliseFinalObject_preserves_projection (ctx : LabelingContext) (observ
       · exact hP0
     · exact finaliseThread_hidden ctx observer h.2.1 hX (hTF h0)
     · exact finaliseSchedContext_hidden ctx observer h.2.1 hIdx hX (hSF h0)
-    · exact finaliseReply_hidden ctx observer h.2.1 hValid hIdx hSet hBlockingChainHigh (hRF h0)
+    · exact finaliseReply_hidden ctx observer h.2.1 h.1 hLc hFlow hValid hIdx hSet hBlockingChainHigh
+        (hRF h0)
     · rfl
   · rfl
 
@@ -1083,6 +1099,7 @@ theorem retireFinalisedObject_preserves_projection (ctx : LabelingContext)
     (hSF : target ≠ 0 →
       schedContextFinaliseHidden ctx observer st (SeLe4n.ObjId.ofNat (target - 1)))
     (hRF : target ≠ 0 → replyFinaliseHidden ctx observer st (SeLe4n.ObjId.ofNat (target - 1)))
+    (hFlow : donationOwnerFlowsToHolder ctx st)
     (hValid : LabelingContextValid ctx)
     (hIdx : SeLe4n.Model.objectIndexSetComplete st) (hSet : st.objectIndexSet.table.invExt)
     (hBlockingChainHigh : ∀ (s : SystemState) (t server : SeLe4n.ThreadId),
@@ -1100,7 +1117,7 @@ theorem retireFinalisedObject_preserves_projection (ctx : LabelingContext)
   unfold retireFinalisedObject
   rw [retireFinalObject_preserves_projection ctx observer ec target recorder hF.invExt hx
     (fun h0 w hw => hU h0 w (by unfold untypedRecordsChild at hw ⊢; rw [hUt] at hw; exact hw)) hR,
-    finaliseFinalObject_preserves_projection ctx observer target h hLc hx hW hBd hTF hSF hRF hValid
-      hIdx hSet hBlockingChainHigh]
+    finaliseFinalObject_preserves_projection ctx observer target h hLc hx hW hBd hTF hSF hRF hFlow
+      hValid hIdx hSet hBlockingChainHigh]
 
 end SeLe4n.Kernel
