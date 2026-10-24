@@ -581,8 +581,9 @@ step of it (`finaliseFinalObject_closed`): each cancel's and each unbind's
 stage, a context's dequeue of its holder (`descheduleAt_runQueueStage`), a
 finalised thread's suspend (`finaliseSuspend_runQueueEntryStage`), the
 release of the cores' holds on it, which writes no object and no queue, a
-context's reply-stack unlink (a reply and a context rewritten), and a reply's
-caller cancel with its boost reverted. -/
+context's reply-stack unlink (a reply and a context rewritten), a reply's
+caller cancel with its boost reverted, and a stashed reply's unlink (a stash
+field rewritten, off the run links). -/
 theorem finaliseFinalObject_runQueueEntryStage (target : Nat) (st : SystemState) :
     SystemState.RunQueueEntryStage st (finaliseFinalObject target st) :=
   finaliseFinalObject_closed (SystemState.RunQueueEntryStage st)
@@ -610,6 +611,7 @@ theorem finaliseFinalObject_runQueueEntryStage (target : Nat) (st : SystemState)
     (fun s _ _ c t h _ _ _ _ =>
       h.trans ((cancelIpcBlocking_runQueueStage s c t).trans
         (finaliseReplyRevert_runQueueStage _ _)).entry)
+    (fun _ _ _ _ _ h hT _ hS => h.trans (storeObject_tcbOver_runQueueStage hT hS (fun _ => rfl)).entry)
     target st ⟨SystemState.RunQueueLinkStage.refl st, fun _ _ _ d => d⟩
 
 theorem cspaceDeleteSlotFinalising_runQueueEntryStage {ec : Concurrency.CoreId}

@@ -350,8 +350,9 @@ deschedule wherever the thread is placed (`descheduleAtPlacement_stepCovers`),
 then a mark that writes no key field (`updateTcb_keyFrame`) — the release of the
 cores' holds on the thread, which writes no object and no scheduler field, a
 context's reply-stack unlink (a reply and a context's head, neither a key
-input), and a reply's caller cancel with its boost reverted
-(`propagatePipChainCrossCore_stepCovers`). -/
+input), a reply's caller cancel with its boost reverted
+(`propagatePipChainCrossCore_stepCovers`), and a stashed reply's unlink, a stash
+that is no key input (`keyFrame_storeObject_tcbKeeping_after`). -/
 theorem finaliseFinalObject_stepCovers (e : CoreId) (target : Nat) (st : SystemState)
     (hInv : st.objects.invExt) :
     stepCovers e st (finaliseFinalObject target st) ∧ (finaliseFinalObject target st).objects.invExt :=
@@ -407,6 +408,10 @@ theorem finaliseFinalObject_stepCovers (e : CoreId) (target : Nat) (st : SystemS
       | some sv =>
         exact ⟨stepCovers_trans h1 (propagatePipChainCrossCore_stepCovers e _ _ _ sv hI1).1,
           (propagatePipChainCrossCore_stepCovers e _ _ _ sv hI1).2⟩)
+    (fun _ _ _ _ _ h hT _ hS =>
+      stepCoversInv_trans h.1 (keyFrame_storeObject_tcbKeeping_after (pair := ((), _))
+        ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) (by rfl) (capabilityKeyFrame_refl h.2)
+        hS).stepCoversInv)
     target st ⟨stepCovers_refl e st, hInv⟩
 
 /-- WS-ZA ZA5.4 part 23: **the finalising delete covers**: the delete and the

@@ -776,6 +776,25 @@ theorem storeReplyOver {st st' : SystemState} {k : SeLe4n.ObjId} {o o' : Reply}
     · subst e; rw [hAt] at hx; cases hx
     · exact ⟨tx, by rw [← hNe j e]; exact hx, rfl, rfl, rfl, rfl, rfl⟩
 
+/-- A thread stored over a thread, keeping what the reachable parts read. -/
+theorem storeTcbOver {st st' : SystemState} {k : SeLe4n.ObjId} {t t' : TCB}
+    (hInv : st.objects.invExt) (hPre : st.objects[k]? = some (.tcb t))
+    (hS : storeObject k (.tcb t') st = .ok ((), st')) (hK : tcbReachFieldsKept t' t) :
+    ReachFieldFrame st st' := by
+  have hAt := storeObject_objects_eq st st' _ _ hInv hS
+  have hNe : ∀ j, j ≠ k → st'.objects[j]? = st.objects[j]? :=
+    fun j e => storeObject_objects_ne st st' k j _ e hInv hS
+  refine ⟨fun j n => ?_, fun j ty hy => ?_, fun j tx hx => ?_⟩
+  · by_cases e : j = k
+    · subst e; rw [hAt, hPre]; simp
+    · rw [hNe j e]
+  · by_cases e : j = k
+    · subst e; rw [hPre] at hy; cases hy; exact ⟨t', hAt, hK⟩
+    · exact ⟨ty, by rw [hNe j e]; exact hy, rfl, rfl, rfl, rfl, rfl⟩
+  · by_cases e : j = k
+    · subst e; rw [hAt] at hx; cases hx; exact ⟨t, hPre, hK⟩
+    · exact ⟨tx, by rw [← hNe j e]; exact hx, rfl, rfl, rfl, rfl, rfl⟩
+
 end ReachFieldFrame
 
 /-- **What the notification queues and the budgets read of a thread**, kept by
@@ -1360,7 +1379,7 @@ theorem reply {s : SystemState} {x : SeLe4n.ObjId} {r : Reply} {c : SeLe4n.Threa
       timeoutBudgetFrame s
         (finaliseReplyRevert (Lifecycle.Suspend.cancelIpcBlocking s c t) t.blockingServer?) := by
   have hI := finaliseReplyStep_keepsIpcInvariantFull s x r c t ⟨h.1, h.2.1⟩ hX hC hT hF
-  obtain ⟨hNH, hNotRes, -, -, -, ⟨ep, rt, hB⟩, hRO, -, -, -, -, hD⟩ :=
+  obtain ⟨hNH, hNotRes, -, -, ⟨ep, rt, hB⟩, hRO, -, -, -, -, hD⟩ :=
     replyCallerFinalisable_parts hX hC hF
   have hTo := (SystemState.getTcb?_eq_some_iff s c t).mp hT
   -- The cancel, step by step.
@@ -1456,6 +1475,28 @@ theorem reply {s : SystemState} {x : SeLe4n.ObjId} {r : Reply} {c : SeLe4n.Threa
     | some sv => exact propagatePipChainCrossCore_preserves_donationChainWellFormed _ sv _ _ hInvC hC4
   exact ⟨⟨hI.1, hI.2, q.1, hRW, hC5⟩, q.2⟩
 
+/-- A stashed reply's unlink carries it, and frames every budget: the
+receiver's stash, a field neither the queues nor the budgets read; the chains
+by the store's write frame. -/
+theorem unstash {s s1 : SystemState} {tid : SeLe4n.ThreadId} {t : TCB} (x : SeLe4n.ObjId)
+    (h : finaliseStepInvariant s) (hT : s.getTcb? tid = some t)
+    (hC : t.pendingReceiveReplyCode = x.val + 1)
+    (hS : storeObject tid.toObjId (.tcb { t with pendingReceiveReplyCode := 0 }) s = .ok ((), s1)) :
+    finaliseStepInvariant s1 ∧ timeoutBudgetFrame s s1 :=
+  have hI := finaliseUnstashStep_keepsIpcInvariantFull s s1 x tid t ⟨h.1, h.2.1⟩ hT hC hS
+  have hTo := (SystemState.getTcb?_eq_some_iff _ _ _).mp hT
+  have q := (ReachFieldFrame.storeTcbOver h.2.1 hTo hS ⟨rfl, rfl, rfl, rfl, rfl⟩).parts h.2.2.1
+  have W : finaliseWrite s s1 := fun oid => by
+    by_cases e : oid = tid.toObjId
+    · subst e
+      exact Or.inr ⟨.tcb t, .tcb { t with pendingReceiveReplyCode := 0 }, hTo,
+        storeObject_objects_eq s s1 _ _ h.2.1 hS, rfl, rfl, by simp [schedContextStackHead?],
+        finaliseWritable_tcb t⟩
+    · exact Or.inl (storeObject_objects_ne s s1 _ oid _ e h.2.1 hS)
+  ⟨⟨hI.1, hI.2, q.1, SystemState.replyWaitersConsistent.of_views q.2.2 h.2.2.2.1,
+    donationChainWellFormed_of_frame (finaliseWrite.donationChainFrame W) h.2.2.2.2⟩,
+    q.2.1⟩
+
 end finaliseStepInvariant
 
 /-- **The finalisation keeps the reachable state**: the bundle, the notification
@@ -1495,6 +1536,9 @@ theorem finaliseFinalObject_preserves_ipcReachable (target : Nat) {st : SystemSt
       ⟨r.1, h.2.trans r.2⟩)
     (fun _ _ _ _ _ h hX hC hT hF =>
       have r := h.1.reply hX hC hT hF
+      ⟨r.1, h.2.trans r.2⟩)
+    (fun _ _ x _ _ h hT hC hS =>
+      have r := h.1.unstash x hT hC hS
       ⟨r.1, h.2.trans r.2⟩)
     target st ⟨.of_ipcReachable h, .refl st⟩
   exact ⟨hFull', hInv', allTimeoutBudgetsNone_of_frame hB' h.2.2.1, hNC', hCh',

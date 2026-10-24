@@ -334,6 +334,14 @@ theorem finaliseUnstackStep_keepsIpcInvariantFull :
       ((SystemState.getSchedContext?_eq_some_iff _ _ _).mp hG) rfl,
       RHTable_insert_preserves_invExt _ _ _ hI1⟩
 
+/-- **A stashed reply's unlink keeps the bundle**: the receiver's stash cleared
+in its slot (`storeObject_stashCleared_preserves_ipcInvariantFull`). -/
+theorem finaliseUnstashStep_keepsIpcInvariantFull :
+    FinaliseUnstashStep (fun s => ipcInvariantFull s ∧ s.objects.invExt) := by
+  intro s s1 _ tid t h hT _ hS
+  exact ⟨storeObject_stashCleared_preserves_ipcInvariantFull s s1 tid t h.2 h.1 hT hS,
+    storeObject_preserves_objects_invExt s s1 _ _ h.2 hS⟩
+
 /-- **A reply's caller cancel keeps the bundle**: the reply arm of the cancel
 with no donation to return — the splice
 (`spliceThreadReplyFrameOut_preserves_ipcInvariantFull`), the restore and
@@ -344,7 +352,7 @@ the revert of the boost it lent its server
 theorem finaliseReplyStep_keepsIpcInvariantFull :
     FinaliseReplyStep (fun s => ipcInvariantFull s ∧ s.objects.invExt) := by
   intro s x r c t h hX hC hT hF
-  obtain ⟨-, hNotRes, -, -, -, ⟨ep, rt, hB⟩, -, hN, hP, hBud, hNoLoan, hD⟩ :=
+  obtain ⟨-, hNotRes, -, -, ⟨ep, rt, hB⟩, -, hN, hP, hBud, hNoLoan, hD⟩ :=
     replyCallerFinalisable_parts hX hC hF
   have hTo := (SystemState.getTcb?_eq_some_iff s c t).mp hT
   have hRet : Lifecycle.Suspend.returnDonationToCancelledCaller s c t = s := by
@@ -446,6 +454,7 @@ theorem finaliseFinalObject_preserves_ipcInvariantFull (target : Nat) (st : Syst
     finaliseScReleaseStep_keepsIpcInvariantFull finaliseCancelStep_keepsIpcInvariantFull
     finaliseSuspendStep_keepsIpcInvariantFull finaliseReleaseStep_keepsIpcInvariantFull
     finaliseUnstackStep_keepsIpcInvariantFull finaliseReplyStep_keepsIpcInvariantFull
+    finaliseUnstashStep_keepsIpcInvariantFull
     target st ⟨hInv, hObjInv⟩).1
 
 /-- **The retire after the finalisation keeps the IPC bundle**: the

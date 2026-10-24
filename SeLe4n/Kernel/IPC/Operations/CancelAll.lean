@@ -1002,16 +1002,51 @@ table walked once, in place, as `storeNamesNone` walks it. -/
 (its TCB `t`) waits on it**, read on the pre-state before any write.  The reply
 is no stack's head, so no reservation goes back to the caller (seL4's
 `reply_remove` non-head branch; the head's `reply_pop` is a later cut's,
-`docs/REGISTERED_DEBT.md`); the caller is no reserved or idle thread, is held by
-no core and is on no run queue, is blocked on this reply, is linked into no
+`docs/REGISTERED_DEBT.md`); the caller is no reserved or idle thread and is on
+no run queue — a core's FP/SIMD or resident hold on it stays, as seL4 keeps a
+lazily saved context across `setThreadState Inactive` — is blocked on this reply, is linked into no
 endpoint queue, waits with no timeout budget, and lends its reservation to no
 one.  Each check reads the state the cancel then writes. -/
 @[inline] def replyCallerFinalisable (st : SystemState) (x : SeLe4n.ObjId) (r : Reply)
     (c : SeLe4n.ThreadId) (t : TCB) : Bool :=
   !replyStackLinkIsHead r.next && !c.isReserved && !isIdleThreadId c &&
-    !threadHeldOnSomeCore st c && t.runCoreCode == 0 && decide (4 ≤ t.ipcStateCode) &&
+    t.runCoreCode == 0 && decide (4 ≤ t.ipcStateCode) &&
     t.replyObjectCode == x.val + 1 && t.queueNextCode == 0 && t.queuePrevCode == 0 &&
     t.timeoutBudget.isNone && loansFromNone st r.callerCode
+
+/-- **Whether `o` is a thread holding the reply at `x` stashed** (a receiver
+blocked with that reply named for the call it waits for: its
+`pendingReceiveReply`, coded `x + 1`). -/
+@[inline] def objectStashesReply (o : KernelObject) (x : SeLe4n.ObjId) : Bool :=
+  match o with
+  | .tcb t => t.pendingReceiveReplyCode == x.val + 1
+  | _ => false
+
+/-- **The thread stashing the reply at `x`, as a code** (`k + 1` for the thread
+at key `k`, `0` for none): the table walked once, in place, as
+`loansFromNone` walks it; a stash is injective
+(`pendingReceiveReplyWellFormed`), so the first found is the only one. -/
+@[inline] def replyStasherCode (st : SystemState) (x : SeLe4n.ObjId) : Nat :=
+  st.objects.fold 0 fun acc k o => if acc == 0 && objectStashesReply o x then k.val + 1 else acc
+
+/-- **seL4's `finaliseCap` on the final capability to a reply a receiver has
+stashed** (`reply_unlink` on a `BlockedOnReceive` thread): the receiver's stash
+is cleared, and it keeps waiting on its endpoint, now for a call it receives
+with no reply.  The receiver is found by its stash and checked again before the
+write; a reply nobody stashes is left as it is. -/
+def finaliseReplyUnstash (st : SystemState) (x : SeLe4n.ObjId) : SystemState :=
+  let code := replyStasherCode st x
+  if code == 0 then st
+  else
+    let s : SeLe4n.ThreadId := ⟨code - 1⟩
+    match st.getTcb? s with
+    | some t =>
+      if t.pendingReceiveReplyCode == x.val + 1 then
+        match storeObject s.toObjId (.tcb { t with pendingReceiveReplyCode := 0 }) st with
+        | .ok ((), st1) => st1
+        | .error _ => st
+      else st
+    | none => st
 
 /-- **The boost a finalised reply's caller lent its server, reverted**: the
 priority-inheritance walk from the server the caller was blocked on (`server?`,
@@ -1032,11 +1067,12 @@ server's reply-waiter queue), the boost it lent its server reverted
 (`finaliseReplyRevert`), and the caller made `.Inactive`
 (`finaliseThreadSuspend`, seL4's `setThreadState Inactive`).  Only when the
 pre-state admits it (`replyCallerFinalisable`), checks before writes; a reply
-with no caller is left as it is, and the retire takes it if it is quiescent. -/
+with no caller but stashed by a receiver is unlinked from it
+(`finaliseReplyUnstash`), and the retire then takes it if it is quiescent. -/
 def finaliseReply (x : SeLe4n.ObjId) (st : SystemState) : SystemState :=
   match st.getObject? x with
   | some (.reply r) =>
-    if r.callerCode == 0 then st
+    if r.callerCode == 0 then finaliseReplyUnstash st x
     else
       let c : SeLe4n.ThreadId := ⟨r.callerCode - 1⟩
       match st.getTcb? c with

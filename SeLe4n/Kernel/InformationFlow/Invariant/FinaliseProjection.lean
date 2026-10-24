@@ -781,19 +781,46 @@ theorem finaliseSchedContext_hidden (ctx : LabelingContext) (observer : IfObserv
   · rfl
 
 /-- **What a reply's finalisation writes, besides the reply**: the caller waiting
-on it — hidden.  The cancel's other writes are stack links and reply-waiter
-links, which the projection strips, and the boost revert's are threads on the
-caller's blocking chain, which `hBlockingChainHigh` puts out of sight. -/
+on it, or the receiver that has it stashed — hidden.  The cancel's other writes
+are stack links and reply-waiter links, which the projection strips, and the
+boost revert's are threads on the caller's blocking chain, which
+`hBlockingChainHigh` puts out of sight. -/
 def replyFinaliseHidden (ctx : LabelingContext) (observer : IfObserver)
     (st : SystemState) (x : SeLe4n.ObjId) : Prop :=
-  ∀ r, st.getObject? x = some (.reply r) → r.callerCode ≠ 0 →
-    threadObservable ctx observer (⟨r.callerCode - 1⟩ : SeLe4n.ThreadId) = false
+  (∀ r, st.getObject? x = some (.reply r) → r.callerCode ≠ 0 →
+    threadObservable ctx observer (⟨r.callerCode - 1⟩ : SeLe4n.ThreadId) = false) ∧
+  (∀ (tid : SeLe4n.ThreadId) (t : TCB), st.getTcb? tid = some t →
+    t.pendingReceiveReplyCode = x.val + 1 → objectObservable ctx observer tid.toObjId = false)
+
+/-- **A stashed reply's unlink is invisible** when the receiver holding it is
+hidden: one store in that receiver's slot (`storeObject_preserves_projection`). -/
+theorem finaliseReplyUnstash_hidden (ctx : LabelingContext) (observer : IfObserver)
+    {st : SystemState} {x : SeLe4n.ObjId} (hInv : st.objects.invExt)
+    (hH : ∀ (tid : SeLe4n.ThreadId) (t : TCB), st.getTcb? tid = some t →
+      t.pendingReceiveReplyCode = x.val + 1 → objectObservable ctx observer tid.toObjId = false) :
+    projectState ctx observer (finaliseReplyUnstash st x) = projectState ctx observer st := by
+  unfold finaliseReplyUnstash
+  dsimp only
+  split
+  · rfl
+  · split
+    · next t hT =>
+      split
+      · next hC =>
+        split
+        · next st1 hS =>
+          exact storeObject_preserves_projection ctx observer st st1 _ _
+            (hH _ t hT (by simpa using hC)) hInv hS
+        · rfl
+      · rfl
+    · rfl
 
 /-- **A reply's finalisation is invisible** when the caller waiting on it is
 hidden: the cancel's reply arm with no donation to return
 (`cancelIpcBlocking_blockedOnReply_preserves_projection`), the boost revert along
 the caller's blocking chain (`propagatePipChainCrossCore_preserves_projection`),
-and the caller's suspend (`finaliseThreadSuspend_hidden`). -/
+and the caller's suspend (`finaliseThreadSuspend_hidden`); a stashed reply's
+unlink (`finaliseReplyUnstash_hidden`). -/
 theorem finaliseReply_hidden (ctx : LabelingContext) (observer : IfObserver)
     {st : SystemState} {x : SeLe4n.ObjId} (hInv : st.objects.invExt)
     (hValid : LabelingContextValid ctx)
@@ -808,7 +835,7 @@ theorem finaliseReply_hidden (ctx : LabelingContext) (observer : IfObserver)
   split
   · next r hX =>
     split
-    · rfl
+    · exact finaliseReplyUnstash_hidden ctx observer hInv hH.2
     · next h0 =>
       dsimp only
       split
@@ -817,9 +844,9 @@ theorem finaliseReply_hidden (ctx : LabelingContext) (observer : IfObserver)
         · next hF =>
           have hC : r.callerCode = (⟨r.callerCode - 1⟩ : SeLe4n.ThreadId).val + 1 := by
             simp only [beq_iff_eq] at h0; show _ = _ - 1 + 1; omega
-          obtain ⟨-, -, -, -, -, ⟨ep, rt, hB⟩, -, -, -, -, -, hD⟩ :=
+          obtain ⟨-, -, -, -, ⟨ep, rt, hB⟩, -, -, -, -, -, hD⟩ :=
             replyCallerFinalisable_parts hX hC hF
-          have hHigh := hH r hX (by simpa using h0)
+          have hHigh := hH.1 r hX (by simpa using h0)
           have hP1 := cancelIpcBlocking_blockedOnReply_preserves_projection ctx observer st
             ⟨r.callerCode - 1⟩ t ep rt hB hValid hHigh hInv hIdx hSet
             (fun scId holder e => by rw [hD] at e; cases e)

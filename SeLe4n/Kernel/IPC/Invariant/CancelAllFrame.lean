@@ -197,6 +197,14 @@ def FinaliseReplyStep (P : SystemState → Prop) : Prop :=
     replyCallerFinalisable s x r c t = true →
     P (finaliseReplyRevert (Lifecycle.Suspend.cancelIpcBlocking s c t) t.blockingServer?)
 
+/-- **The unlink step a stashed reply's finalisation takes**: the receiver
+holding the reply stashed, its stash cleared in its slot. -/
+def FinaliseUnstashStep (P : SystemState → Prop) : Prop :=
+  ∀ (s s1 : SystemState) (x : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (t : TCB), P s →
+    s.getTcb? tid = some t → t.pendingReceiveReplyCode = x.val + 1 →
+    storeObject tid.toObjId (.tcb { t with pendingReceiveReplyCode := 0 }) s = .ok ((), s1) →
+    P s1
+
 /-- A thread whose owner code is already clear is its own owner-cleared view. -/
 theorem TCB.ownerCleared_of_zero {t : TCB} (h : t.scBindingOwnerCode = 0) :
     ({ t with scBindingOwnerCode := 0 } : TCB) = t := by
@@ -232,7 +240,7 @@ theorem replyCallerFinalisable_parts {st : SystemState} {x : SeLe4n.ObjId} {r : 
     (hC : r.callerCode = c.val + 1)
     (h : replyCallerFinalisable st x r c t = true) :
     replyStackLinkIsHead r.next = false ∧ ¬ c.isReserved ∧ isIdleThreadId c = false ∧
-      threadHeldOnSomeCore st c = false ∧ t.runCoreCode = 0 ∧
+      t.runCoreCode = 0 ∧
       (∃ ep rt, t.ipcState = .blockedOnReply ep rt) ∧ t.replyObject = some ⟨x.val⟩ ∧
       t.queueNext = none ∧ t.queuePrev = none ∧ t.timeoutBudget = none ∧
       (∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId),
@@ -240,7 +248,7 @@ theorem replyCallerFinalisable_parts {st : SystemState} {x : SeLe4n.ObjId} {r : 
       Lifecycle.Suspend.cancelledCallerDonation? st c t = none := by
   simp only [replyCallerFinalisable, Bool.and_eq_true, Bool.not_eq_true', decide_eq_true_eq,
     beq_iff_eq, Option.isNone_iff_eq_none] at h
-  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hHd, hRes⟩, hId⟩, hHeld⟩, hRun⟩, hSt⟩, hRO⟩, hQN⟩, hQP⟩, hBud⟩, hL⟩ := h
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨hHd, hRes⟩, hId⟩, hRun⟩, hSt⟩, hRO⟩, hQN⟩, hQP⟩, hBud⟩, hL⟩ := h
   have hIpc : ∃ ep rt, t.ipcState = .blockedOnReply ep rt := by
     obtain ⟨k, hk⟩ : ∃ k, t.ipcStateCode = k + 4 := ⟨t.ipcStateCode - 4, by omega⟩
     unfold TCB.ipcState ThreadIpcState.ofCodes
@@ -248,7 +256,7 @@ theorem replyCallerFinalisable_parts {st : SystemState} {x : SeLe4n.ObjId} {r : 
     exact ⟨_, _, rfl⟩
   have hRO' : t.replyObject = some ⟨x.val⟩ := by
     unfold TCB.replyObject; rw [hRO]; rfl
-  refine ⟨hHd, by simpa using hRes, hId, hHeld, hRun, hIpc, hRO', ?_, ?_, hBud, ?_, ?_⟩
+  refine ⟨hHd, by simpa using hRes, hId, hRun, hIpc, hRO', ?_, ?_, hBud, ?_, ?_⟩
   · simp [TCB.queueNext, hQN, SeLe4n.ThreadId.ofOptCode]
   · simp [TCB.queuePrev, hQP, SeLe4n.ThreadId.ofOptCode]
   · intro tid tcb scId hO hD
@@ -516,16 +524,35 @@ theorem finaliseThread_closed (P : SystemState → Prop) (hUnbind : FinaliseUnbi
     · exact h4
   · exact h
 
-/-- **A property the reply cancel and the suspend keep holds after the reply
-finalisation.** -/
+/-- **A property the stash clear keeps holds after `finaliseReplyUnstash`.** -/
+theorem finaliseReplyUnstash_closed (P : SystemState → Prop) (hSt : FinaliseUnstashStep P)
+    (x : SeLe4n.ObjId) (st : SystemState) (h : P st) : P (finaliseReplyUnstash st x) := by
+  unfold finaliseReplyUnstash
+  dsimp only
+  split
+  · exact h
+  · split
+    · rename_i t hT
+      split
+      · rename_i hC
+        split
+        · rename_i st1 hS
+          exact hSt st st1 x _ t h hT (by simpa using hC) hS
+        · exact h
+      · exact h
+    · exact h
+
+/-- **A property the reply cancel, the suspend and the stash clear keep holds
+after the reply finalisation.** -/
 theorem finaliseReply_closed (P : SystemState → Prop) (hRep : FinaliseReplyStep P)
-    (hSuspend : FinaliseSuspendStep P) (x : SeLe4n.ObjId) (st : SystemState) (h : P st) :
+    (hSuspend : FinaliseSuspendStep P) (hSt : FinaliseUnstashStep P) (x : SeLe4n.ObjId)
+    (st : SystemState) (h : P st) :
     P (finaliseReply x st) := by
   unfold finaliseReply
   split
   · rename_i r hX
     split
-    · exact h
+    · exact finaliseReplyUnstash_closed P hSt x st h
     · rename_i h0
       dsimp only
       split
@@ -556,6 +583,7 @@ theorem finaliseFinalObject_closed (P : SystemState → Prop)
     (hRel : FinaliseScReleaseStep P)
     (hCancel : FinaliseCancelStep P) (hSuspend : FinaliseSuspendStep P)
     (hRelease : FinaliseReleaseStep P) (hUn : FinaliseUnstackStep P) (hRep : FinaliseReplyStep P)
+    (hSt : FinaliseUnstashStep P)
     (target : Nat) (st : SystemState) (h : P st) : P (finaliseFinalObject target st) := by
   unfold finaliseFinalObject
   split
@@ -569,7 +597,7 @@ theorem finaliseFinalObject_closed (P : SystemState → Prop)
         (unbindMaybeNotification_closed P _ (hUnbind _) st h)
     · exact finaliseThread_closed P hUnbind hRel.scUnbind hCancel hSuspend hRelease _ st h
     · exact finaliseSchedContext_closed P hDes hRel hUn _ st h
-    · exact finaliseReply_closed P hRep hSuspend _ st h
+    · exact finaliseReply_closed P hRep hSuspend hSt _ st h
     · exact h
   · exact h
 
@@ -1394,9 +1422,11 @@ theorem finaliseFinalObject_frame (target : Nat) (st : SystemState) (hInv : st.o
     (fun s t h => h.trans (FinaliseFrame.releaseCores s t h.invExt).any)
     (FinaliseFrameAny.unstackStep st)
     (fun s x r c t h hX hC _ hG => by
-      obtain ⟨-, -, -, -, -, ⟨ep, rt, hB⟩, -, -, -, -, -, hD⟩ := replyCallerFinalisable_parts hX hC hG
+      obtain ⟨-, -, -, -, ⟨ep, rt, hB⟩, -, -, -, -, -, hD⟩ := replyCallerFinalisable_parts hX hC hG
       have h1 := FinaliseFrameAny.replyCancel s c t h.invExt hB hD
       exact h.trans (h1.trans (FinaliseFrame.finaliseReplyRevert _ _ h1.invExt).any))
+    (fun _ _ _ _ t h hT _ hS => h.trans (FinaliseFrameAny.storeObject h.invExt
+      ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) (Or.inl (finaliseWritable_tcb t)) hS rfl rfl))
     target st (.refl hInv)
 
 /-- **The finalisation keeps the derivation tree**, on any state. -/
@@ -1453,7 +1483,8 @@ theorem finaliseFinalObject_cdt (target : Nat) (st : SystemState) :
       (descheduleAtPlacement_onlyObjectsSchedulerDiffer s t))).trans h)
     (fun s t h => (onlyObjectsSchedulerCoreHoldsDiffer.releaseCores s t).cdt.trans h)
     (fun s s1 x _ _ _ h _ _ _ _ hSt1 => ?_)
-    (fun s x r c t h hX hCc _ hG => ?_) target st rfl
+    (fun s x r c t h hX hCc _ hG => ?_) (fun _ _ _ _ _ h _ _ hS1 => (hSt hS1).trans h)
+    target st rfl
   · unfold storeEndpointWaiterCancelled wakeCancelledWaiter
     exact (hC ((enqueueRunnableOnCore_onlyObjectsSchedulerDiffer _ _ _).trans
       ((hU _ _ _).trans (hP _ _ _ _ _)))).trans h
@@ -1485,7 +1516,7 @@ theorem finaliseFinalObject_cdt (target : Nat) (st : SystemState) :
       exact (hC ((hK _ _ _).trans ((hU _ _ _).trans h2))).trans h
     · cases hOk
   · exact (hC (hS s1 _ _)).trans ((hSt hSt1).trans h)
-  · obtain ⟨-, -, -, -, -, ⟨ep, rt, hB⟩, -, -, -, -, -, hD⟩ := replyCallerFinalisable_parts hX hCc hG
+  · obtain ⟨-, -, -, -, ⟨ep, rt, hB⟩, -, -, -, -, -, hD⟩ := replyCallerFinalisable_parts hX hCc hG
     have hRev : ∀ (a : SystemState) (sv : Option SeLe4n.ThreadId),
         (finaliseReplyRevert a sv).cdt = a.cdt := by
       intro a sv; cases sv with

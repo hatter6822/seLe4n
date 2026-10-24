@@ -2452,6 +2452,48 @@ private def runReplyFinaliseChecks : IO Unit := do
               (st1.getTcb? ⟨960⟩).map (fun t =>
                 t.replyObjectCode == 0 && t.ipcStateCode == 0 && t.threadState == .Inactive) ==
                 some true)
+  -- A busy reply whose caller a core still holds as its FP/SIMD owner: the
+  -- delete finalises it all the same (seL4 keeps a lazily saved context across
+  -- `setThreadState Inactive`), and the hold stays.
+  match runAll carveScenario
+      [decodeCarve slotUtRetype tcbTag 960 slotOwnCnRW 12,
+       decodeCarve slotUtRetype replyTag 961 slotOwnCnRW 13] with
+  | .error e => assertBool s!"carving a caller and a reply succeeds (got {repr e})" false
+  | .ok st0 =>
+    let c1 : Concurrency.CoreId := ⟨1, by decide⟩
+    match stageReplyCaller st0 none with
+    | none => assertBool "staging the carved caller's call on the carved reply succeeds" false
+    | some st =>
+      let held : SystemState :=
+        { st with machine := st.machine.setFpOwnerOnCore c1 (some ⟨960⟩) }
+      match runAll held [decodeDelete 13] with
+      | .error e => assertBool s!"deleting a held caller's reply's last capability succeeds (got {repr e})" false
+      | .ok st1 =>
+        assertBool "deleting the reply of a caller a core holds finalises the reply and leaves the hold"
+          (!storedAt st1 961 && !recordsChildAt st1 carveUt 961 &&
+            (st1.getTcb? ⟨960⟩).map (·.threadState) == some .Inactive &&
+            st1.machine.fpOwnerOnCore c1 == some ⟨960⟩)
+  -- A reply a receiver has stashed for the call it waits for: the delete
+  -- clears the stash (seL4's `reply_unlink` on a `BlockedOnReceive` thread),
+  -- the receiver keeps waiting on its endpoint, and the reply is retired.
+  match runAll carveScenario
+      [decodeCarve slotUtRetype tcbTag 960 slotOwnCnRW 12,
+       decodeCarve slotUtRetype replyTag 961 slotOwnCnRW 13,
+       decodeCarve slotUtRetype endpointTag 962 slotOwnCnRW 14] with
+  | .error e => assertBool s!"carving a receiver, a reply and an endpoint succeeds (got {repr e})" false
+  | .ok st0 => do
+    let st := st0.updateTcb ⟨960⟩ fun t =>
+      { (t.setIpcState (.blockedOnReceive (SeLe4n.ObjId.ofNat 962))) with
+          threadState := .BlockedRecv, pendingReceiveReplyCode := 962 }
+    assertBool "setup: the carved receiver stashes the carved reply"
+      (SystemState.replyIsStashed st ⟨961⟩)
+    match runAll st [decodeDelete 13] with
+    | .error e => assertBool s!"deleting a stashed reply's last capability succeeds (got {repr e})" false
+    | .ok st1 =>
+      assertBool "deleting a stashed reply's last capability clears the stash, keeps the receiver waiting and retires the reply"
+        (!storedAt st1 961 && !recordsChildAt st1 carveUt 961 &&
+          (st1.getTcb? ⟨960⟩).map (fun t => t.pendingReceiveReplyCode == 0 && t.ipcStateCode == 1) ==
+            some true)
   -- A reply heading a scheduling context's stack is not finalised (seL4's
   -- `reply_pop` hands the reservation back; `docs/REGISTERED_DEBT.md`): its
   -- delete keeps the reply and its caller.
