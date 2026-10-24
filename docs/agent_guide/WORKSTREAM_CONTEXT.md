@@ -321,7 +321,11 @@ boost reverted and the caller suspended; a stash cleared in place) and a busy
 scheduling context (a ready holder dequeued, then unbound, then the reply stack
 unlinked), and an endpoint only a reply-blocked caller names is retired; the
 reply's caller cancel is the suspend's general path and allocates (11 cells,
-pinned).  A thread that is reply-blocked, holds a reply link, stash or
+pinned).  A reply records the thread that stashed it (`Reply.stasherCode`,
+seL4 MCS's `replyTCB`): every stash writes it and every reader re-checks the
+named thread (`SystemState.replyStashedAt`), so new code that stashes a reply
+must write the record, and new code that asks whether a reply is stashed reads
+it; `replyIsStashed`'s table scan is only the derived spec view.  A thread that is reply-blocked, holds a reply link, stash or
 reply-waiter link, donates or holds space-slot capabilities, a head reply or a caller lending a reservation, a
 context whose holder is blocked sending or calling, and an untyped that still
 records a child, outlive their last capability until part 26 and ZA6.1

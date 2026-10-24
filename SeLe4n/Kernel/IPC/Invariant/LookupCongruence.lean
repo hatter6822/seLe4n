@@ -407,6 +407,29 @@ theorem storeObject_offSchedulerAgrees_of_agree {s1 s2 r1 r2 : SystemState}
         | tcb t => obtain ⟨t', h', _⟩ := hRel.objects.get_tcb e; rw [h']
         | _ => rw [hRel.objects.get_of_not_tcb (fun _ e => KernelObject.noConfusion e) e]
 
+
+/-- Recording a Reply's stasher keeps two states that agree off the scheduler in
+agreement: a Reply is the same object in both, so both record it or neither
+does. -/
+theorem recordReplyStasher_offSchedulerAgrees {s1 s2 : SystemState} (code : Nat)
+    (recv : SeLe4n.ThreadId) (hRel : OffSchedulerAgrees s1 s2)
+    (hInv1 : s1.objects.invExt) (hInv2 : s2.objects.invExt) :
+    OffSchedulerAgrees (s1.recordReplyStasher code recv) (s2.recordReplyStasher code recv) := by
+  rcases code with _ | k
+  · exact hRel
+  · by_cases hR : ∃ r, s1.objects[(⟨k⟩ : SeLe4n.ReplyId).toObjId]? = some (.reply r)
+    · obtain ⟨r, e1⟩ := hR
+      have e2 := hRel.objects.get_of_not_tcb (fun _ h => by cases h) e1
+      exact storeObject_offSchedulerAgrees_of_agree _ rfl hRel hInv1 hInv2
+        (SystemState.recordReplyStasher_of_reply s1 ⟨k⟩ recv e1)
+        (SystemState.recordReplyStasher_of_reply s2 ⟨k⟩ recv e2)
+    · have h1 : ∀ r, s1.objects[(⟨k⟩ : SeLe4n.ReplyId).toObjId]? ≠ some (.reply r) :=
+        fun r e => hR ⟨r, e⟩
+      have h2 : ∀ r, s2.objects[(⟨k⟩ : SeLe4n.ReplyId).toObjId]? ≠ some (.reply r) :=
+        fun r e => h1 r (hRel.objects.get_of_not_tcb' (fun _ h => by cases h) e)
+      rw [SystemState.recordReplyStasher_of_not_reply _ _ _ h1,
+        SystemState.recordReplyStasher_of_not_reply _ _ _ h2]
+      exact hRel
 /-- SM6.D step congruence: `storeObject` of one object maps
 off-scheduler-agreeing inputs to off-scheduler-agreeing outputs. -/
 theorem storeObject_offSchedulerAgrees {s1 s2 r1 r2 : SystemState}
@@ -1426,7 +1449,8 @@ theorem pendingReceiveReplyWellFormed_of_readViewAgreement {s1 s2 : SystemState}
     (hView : ipcReadViewAgreement s1 s2)
     (h : pendingReceiveReplyWellFormed s1) : pendingReceiveReplyWellFormed s2 := by
   refine ⟨fun tid tcb rid hTcb hStash => ?_,
-          fun tid₁ tid₂ tcb₁ tcb₂ rid h1 h2 hS1 hS2 => ?_⟩
+          fun tid₁ tid₂ tcb₁ tcb₂ rid h1 h2 hS1 hS2 => ?_,
+          fun tid tcb rid hTcb hStash => ?_⟩
   · rw [SystemState.getTcb?_eq_some_iff] at hTcb
     run_links_back hView at tcb hTcb
     rw [← SystemState.getTcb?_eq_some_iff] at hTcb
@@ -1435,7 +1459,12 @@ theorem pendingReceiveReplyWellFormed_of_readViewAgreement {s1 s2 : SystemState}
   · rw [SystemState.getTcb?_eq_some_iff] at h1 h2
     run_links_back hView at tcb₁ h1; run_links_back hView at tcb₂ h2
     rw [← SystemState.getTcb?_eq_some_iff] at h1 h2
-    exact h.2 tid₁ tid₂ tcb₁ tcb₂ rid h1 h2 hS1 hS2
+    exact h.2.1 tid₁ tid₂ tcb₁ tcb₂ rid h1 h2 hS1 hS2
+  · rw [SystemState.getTcb?_eq_some_iff] at hTcb
+    run_links_back hView at tcb hTcb
+    rw [← SystemState.getTcb?_eq_some_iff] at hTcb
+    obtain ⟨r, hR, hS⟩ := h.2.2 tid tcb rid hTcb hStash
+    exact ⟨r, (hView.getReply?_iff _ _).mpr hR, hS⟩
 
 /-- Read-view transport of `donationOwnerUnique`. -/
 theorem donationOwnerUnique_of_readViewAgreement {s1 s2 : SystemState}

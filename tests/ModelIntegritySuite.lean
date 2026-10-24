@@ -619,7 +619,11 @@ def reply_inUse_retype_rejected : IO Unit := do
       pendingReceiveReplyCode := SeLe4n.ReplyId.optCode (some ⟨505⟩) } (.blockedOnReceive ⟨700⟩))
   let stStashed : SystemState :=
     (SeLe4n.Testing.BootstrapBuilder.empty |>.withObject ⟨600⟩ (.tcb stashTcb) |>.build)
-  match SeLe4n.Kernel.lifecyclePreRetypeCleanup stStashed target freeReply newObj with
+  -- The Reply records its stasher (`stasherCode`, the receiver's id + 1), as
+  -- the receive that stashed it wrote; the retype reads that record and
+  -- re-checks the named thread.
+  let stashedReply : KernelObject := .reply { replyId := ⟨505⟩, stasherCode := 601 }
+  match SeLe4n.Kernel.lifecyclePreRetypeCleanup stStashed target stashedReply newObj with
   | .error e => expect "stashed Reply retype → revocationRequired" (e == .revocationRequired)
   | .ok _ => throw <| IO.userError "stashed (pendingReceiveReply) Reply retype must be rejected"
   -- PR #822 review: a server that was woken (e.g. by a bound notification) is now
@@ -631,7 +635,10 @@ def reply_inUse_retype_rejected : IO Unit := do
       pendingReceiveReplyCode := SeLe4n.ReplyId.optCode (some ⟨505⟩) }
   let stWokenStash : SystemState :=
     (SeLe4n.Testing.BootstrapBuilder.empty |>.withObject ⟨603⟩ (.tcb wokenStashTcb) |>.build)
-  match SeLe4n.Kernel.lifecyclePreRetypeCleanup stWokenStash target freeReply newObj with
+  -- The Reply still records the woken server (the record is cleared lazily);
+  -- the re-check of the named thread finds it no longer receiving.
+  let staleRecordReply : KernelObject := .reply { replyId := ⟨505⟩, stasherCode := 604 }
+  match SeLe4n.Kernel.lifecyclePreRetypeCleanup stWokenStash target staleRecordReply newObj with
   | .ok _ => expect "woken (.ready) server with stale stash → Reply free, retype allowed" true
   | .error _ => throw <| IO.userError "a woken server's stale stash must not keep the Reply in use"
   -- PR #822 review: retyping a caller TCB that still holds a reply link

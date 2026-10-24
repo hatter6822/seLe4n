@@ -211,8 +211,9 @@ theorem resolveReplyRecvK_eq {α : Type} (st : SystemState) (tid : SeLe4n.Thread
 /-- WS-ZA ZA4.7: a reply-receive answers a caller blocked on this server and
 then blocks, every write in its slot: the caller's reply leg may write in place
 (`replyWakesInPlace`), no sender waits on the endpoint, the server may block
-there in place and its reply object, consumed by the reply leg, is free and not
-stashed.  Each check reads the pre-state; `replyRecvBlocksFast_spec` carries
+there in place and its reply object, consumed by the reply leg, is free, not
+stashed and in its slot for the stasher record (`replyRecordsInPlace`).  Each
+check reads the pre-state; `replyRecvBlocksFast_spec` carries
 them to `replyRecvOnCore_blocks_delivered`. -/
 @[inline] def replyRecvBlocksFast (st : SystemState) (epId : SeLe4n.ObjId)
     (tid c : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) : Bool :=
@@ -233,7 +234,8 @@ them to `replyRecvOnCore_blocks_delivered`. -/
         | none => false)
    | none => false) &&
   (match st.getReply? rid with
-   | some rp => rp.consumedIsFree && !st.replyIsStashed rid
+   | some rp => rp.consumedIsFree && !st.replyStashedAt rid rp &&
+       replyRecordsInPlace st (rid.val + 1)
    | none => false)
 
 theorem replyRecvBlocksFast_spec {st : SystemState} {epId : SeLe4n.ObjId}
@@ -247,7 +249,8 @@ theorem replyRecvBlocksFast_spec {st : SystemState} {epId : SeLe4n.ObjId}
       st.objects[tid.toObjId]? = some (.tcb rt) ∧ receiveBlockAdmits rt = true ∧
       enqueuesInPlace st epId tid ep.receiveQ.tail = true ∧
       st.objects[rid.toObjId]? = some (.reply rp) ∧ rp.consumed.isFree = true ∧
-      st.replyIsStashed rid = false ∧ receiveQueueTailCode st epId = ep.recvTailCode := by
+      st.replyStashedAt rid rp = false ∧ replyRecordsInPlace st (rid.val + 1) = true ∧
+      receiveQueueTailCode st epId = ep.recvTailCode := by
   unfold replyRecvBlocksFast at h
   simp only [Bool.and_eq_true] at h
   obtain ⟨⟨⟨hNe, hC⟩, hE⟩, hRp⟩ := h
@@ -285,12 +288,12 @@ theorem replyRecvBlocksFast_spec {st : SystemState} {epId : SeLe4n.ObjId}
   | some rp =>
   rw [hR] at hRp
   simp only [Bool.and_eq_true, Bool.not_eq_true'] at hRp
-  obtain ⟨hFree, hStash⟩ := hRp
+  obtain ⟨⟨hFree, hStash⟩, hRecR⟩ := hRp
   refine ⟨ct, ep0, rt, ep, rp, (SystemState.getTcb?_eq_some_iff _ _ _).mp hTc, hIpc', ?_, hW,
     hNe', (SystemState.getEndpoint?_eq_some_iff _ _ _).mp hEp, hS,
     (SystemState.getTcb?_eq_some_iff _ _ _).mp hTt, hA, ?_,
     (SystemState.getReply?_eq_some_iff _ _ _).mp hR, (Reply.consumedIsFree_eq rp).symm.trans hFree,
-    hStash, ?_⟩
+    hStash, hRecR, ?_⟩
   · simp only [TCB.replyObject, beq_iff_eq.mp hRO, SeLe4n.ReplyId.ofOptCode]
   · rw [enqueuesInPlaceCode_eq, Endpoint.ofOptCode_recvTailCode] at hEnq; exact hEnq
   · simp only [receiveQueueTailCode, hEp]
@@ -398,21 +401,21 @@ theorem endpointReplyRecvCheckedArmR_eq_general (ctx : LabelingContext)
               simp only [Bool.and_eq_true, decide_eq_true_eq] at hG
               obtain ⟨hSz, hF⟩ := hG
               obtain ⟨ct, ep0, rt, ep, rp, hT, hIpc, hRO, hW, hNe, hE, hS, hR, hA, hEnq, hRp,
-                hFree, hStash, hTail⟩ := replyRecvBlocksFast_spec hF
+                hFree, hStash, hRecR, hTail⟩ := replyRecvBlocksFast_spec hF
               have hSz4 : (Architecture.regReplyRecvBody layout rf len).size ≤ 4 := by
                 rw [Architecture.regReplyRecvBody_size]; exact hSz
               have h := replyRecvOnCore_blocks_delivered st epId tid c rid
                 { registers := Architecture.regReplyRecvBody layout rf len,
                   badge := badge } (callerCspaceRoot st tid) (SeLe4n.Slot.ofNat 0) executingCore
                 ct ep0 rt ep rp (by simp only; unfold maxMessageRegisters; omega) hSz4 hT hIpc
-                hRO hW hNe hE hS hR hA hEnq hRp hFree hStash
+                hRO hW hNe hE hS hR hA hEnq hRp hFree hStash hRecR
               rw [Architecture.returnFrameOfMessage_regReplyRecvBody,
                 replyRecvOnCore_blocks_inPlace st epId tid c rid _ _ _ _ ct ep0 rt ep rp
                   (by simp only; unfold maxMessageRegisters; omega) hT hIpc hRO hW hNe hE hS hR
-                  hA hEnq hRp hFree hStash] at h
+                  hA hEnq hRp hFree hStash hRecR] at h
               simp only [CapTransferSummary.installedCount_empty] at h
               rw [hTail, replyRecvOnCore_blocks_inPlace st epId tid c rid _ _ _ _ ct ep0 rt ep rp
-                  ?_ hT hIpc hRO hW hNe hE hS hR hA hEnq hRp hFree hStash]
+                  ?_ hT hIpc hRO hW hNe hE hS hR hA hEnq hRp hFree hStash hRecR]
               · simp only [CapTransferSummary.installedCount_empty]
                 have h2 := congrArg Prod.snd (Except.ok.inj h)
                 dsimp only at h2

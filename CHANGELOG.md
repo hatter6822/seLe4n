@@ -14,6 +14,9 @@ retire.
   thread, and an endpoint only a reply-blocked caller still named, all
   outlived their last capability.
 - **After:** each is finalised and retired.
+- **Also:** a reply records the thread that stashed it, so the receive's
+  stash check and the delete's unstash read one field instead of walking
+  the object table.
 - **Still open** (debt rows): a reply heading a scheduling context's stack,
   where seL4's `reply_pop` hands a lent reservation back; and a scheduling
   context whose thread is blocked sending or calling, which this model's
@@ -34,8 +37,8 @@ This is part 25 of the seL4 untyped reset.
   - A reply a blocked receiver has stashed: the receiver's stash is cleared
     in its slot (`finaliseReplyUnstash`, seL4's `reply_unlink`; an
     `updateTcb`, compiled as an in-place modify), and it keeps waiting on its
-    endpoint.  The stasher is found by one walk of the object table
-    (`replyStasherCode`) and checked again before the write.
+    endpoint.  The stasher is read off the reply's own record
+    (`Reply.stasherCode`, below) and checked again before the write.
   - Checks before writes: `replyCallerFinalisable` reads, on the pre-state,
     that the reply heads no stack and that the caller is no reserved or idle
     thread, is on no run queue, is blocked on this reply, is linked into no
@@ -121,6 +124,53 @@ This is part 25 of the seL4 untyped reset.
     read back as an option, which inlining `finaliseReplyRevert` matches away.
     `stashed-reply-delete` reads 0.
 
+### The reply records its stasher
+
+- **Same behaviour as seL4's `replyTCB` with a lazily cleared field,
+  re-checked at every read.**  A `Reply` carries `stasherCode : Nat`
+  (`Model/Object/Reply.lean`, `0` for none, `tid + 1` otherwise).  Every
+  stash writes it: the receive's `recordReplyStasher`
+  (`Model/State.lean`), beside the receiver's own `pendingReceiveReply`
+  write, as seL4's `receiveIPC` sets `reply->replyTCB`.
+- **The readers are O(1).**  The receive's admission (`resolveRecvReplyId`,
+  `API.lean`, and its register-path twin in `RefusalCarryingEndpoint.lean`),
+  the retype's live-stash check (`lifecyclePreRetypeCleanup`) and the
+  delete's unstash (`finaliseReplyUnstash`) read the field and re-check the
+  named thread: blocked receiving, with this reply as its stash
+  (`SystemState.replyStashedAt`).  The whole-table scan the receive asked
+  on every reply-naming receive is gone from every path.  `replyIsStashed`
+  stays as the derived spec view.
+- **The invariant.** `pendingReceiveReplyWellFormed` gains a third clause:
+  every stash is recorded on its reply.  Only that direction is stated, so
+  a stash cleared on the thread's side leaves the field to be cleared
+  lazily.  A carved reply starts at `0`, and a recarved TCB stays exact
+  because it stashes nothing until its first stash rewrites the record.
+  The retype's replacement freshness now requires `stasherCode = 0` for a
+  carved reply.
+- **Equal answers.**  Under the invariant (with its injectivity clause) the
+  O(1) admission equals the retired scan's answer
+  (`replyStashedAt_eq_replyIsStashed`, `IPC/Invariant/Defs.lean`), and the
+  unstash clears exactly the thread the scan would find
+  (`finaliseReplyUnstash_eq_of_stasher`,
+  `finaliseReplyUnstash_eq_self_of_no_stasher`, `CancelAllFrame.lean`).
+- **Fast forms.**  The register path's receive block writes the field in
+  place (`storeReplyStasher`, `IPC/CrossCore/EndpointReply.lean`), equal to
+  the spec record when the slot is found in place
+  (`storeReplyStasher_eq_record`).  The reply-receive guard admits it only
+  then (`replyRecordsInPlace`).  The compiled scan's fold view
+  (`RobinHood/Invariant/MapValueAtFold.lean`, `stashView`) is deleted with
+  the scan; a negative Tier 3 anchor pins its absence.
+- **Bundles.**  The record is framed in every bundle by shared lemmas:
+  object-index and invariant extension, scheduler and per-core frames,
+  reply views and run-queue stage (`recordReplyStasher_*`), the dual
+  queue, the off-scheduler agreement and the cross-core confinement.  For
+  information flow, the reply projection does not read the field
+  (`projectKernelObject_reply_stasher_invariant`), so no wake or clear site
+  that leaves it changes the projection, and the record preserves the
+  projection (`recordReplyStasher_preserves_projection`).  The reply-stack
+  write census registers the write as chain-neutral.
+- **QEMU.**  The receive and reply-receive pins stay at 0.
+
 ### Merge
 
 - Part 24 (#986) is merged in, with merge commits: its dequeue detach, the
@@ -133,6 +183,8 @@ This is part 25 of the seL4 untyped reset.
 
 - Closed: "An endpoint a reply-blocked caller still names outlives its last
   capability".
+- Closed: "A receive naming a reply object scans every object to learn
+  whether another receiver has stashed it" (the stasher record above).
 - Narrowed: the scheduling-context row now covers only a holder blocked
   sending or calling.  seL4 unbinds it and leaves it blocked; this model's
   `passiveServerIdle` admits no unbound sender or caller, so the bundle is

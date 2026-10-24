@@ -547,9 +547,9 @@ theorem finaliseThread_closed (P : SystemState → Prop) (hUnbind : FinaliseUnbi
 
 /-- **A property the stash clear keeps holds after `finaliseReplyUnstash`.** -/
 theorem finaliseReplyUnstash_closed (P : SystemState → Prop) (hSt : FinaliseUnstashStep P)
-    (x : SeLe4n.ObjId) (st : SystemState) (h : P st) : P (finaliseReplyUnstash st x) := by
+    (x : SeLe4n.ObjId) (r : Reply) (st : SystemState) (h : P st) :
+    P (finaliseReplyUnstash st x r) := by
   unfold finaliseReplyUnstash
-  dsimp only
   split
   · exact h
   · split
@@ -559,6 +559,56 @@ theorem finaliseReplyUnstash_closed (P : SystemState → Prop) (hSt : FinaliseUn
         exact hSt st _ x _ t h hT (by simpa using hC) rfl
       · exact h
     · exact h
+
+/-- **The delete's unstash clears the thread the retired scan would find.**  On
+a state whose stashes are all recorded (`pendingReceiveReplyWellFormed`'s third
+clause), a thread that stashes the reply at `rid` is the one the Reply records,
+so the `O(1)` unstash (`finaliseReplyUnstash`, one field read and the named
+thread's stash re-checked) clears exactly that thread's stash, the one a scan
+of every thread for this stash would find (and the only one, by the second
+clause). -/
+theorem finaliseReplyUnstash_eq_of_stasher {st : SystemState}
+    (h : pendingReceiveReplyWellFormed st) {rid : SeLe4n.ReplyId} {r : Reply}
+    (hR : st.getReply? rid = some r) {tid : SeLe4n.ThreadId} {tcb : TCB}
+    (hT : st.getTcb? tid = some tcb) (hP : tcb.pendingReceiveReply = some rid) :
+    finaliseReplyUnstash st rid.toObjId r = st.updateTcb tid TCB.stashCleared := by
+  obtain ⟨r', hR', hS⟩ := h.2.2 tid tcb rid hT hP
+  rw [hR] at hR'; cases hR'
+  have hCode : tcb.pendingReceiveReplyCode = rid.val + 1 := by
+    have e := congrArg SeLe4n.ReplyId.optCode hP
+    simp only [TCB.pendingReceiveReply, SeLe4n.ReplyId.optCode_ofOptCode] at e
+    exact e
+  unfold finaliseReplyUnstash
+  rw [hS]
+  dsimp only
+  rw [show (⟨tid.val⟩ : SeLe4n.ThreadId) = tid from rfl, hT]
+  dsimp only
+  rw [if_pos (by rw [hCode]; exact beq_self_eq_true _)]
+
+/-- **…and leaves the state when no thread stashes the reply**, as the scan
+finding no stasher would. -/
+theorem finaliseReplyUnstash_eq_self_of_no_stasher {st : SystemState}
+    {rid : SeLe4n.ReplyId} {r : Reply}
+    (hNone : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB), st.getTcb? tid = some tcb →
+      tcb.pendingReceiveReply ≠ some rid) :
+    finaliseReplyUnstash st rid.toObjId r = st := by
+  unfold finaliseReplyUnstash
+  split
+  · rfl
+  · rename_i k _
+    split
+    · rename_i t hT
+      split
+      · rename_i hC
+        exfalso
+        apply hNone ⟨k⟩ t hT
+        have e : t.pendingReceiveReplyCode = rid.val + 1 := by
+          have := beq_iff_eq.mp hC
+          rw [this]; rfl
+        simp only [TCB.pendingReceiveReply, e]
+        rfl
+      · rfl
+    · rfl
 
 /-- **A property the reply cancel, the suspend and the stash clear keep holds
 after the reply finalisation.** -/
@@ -570,7 +620,7 @@ theorem finaliseReply_closed (P : SystemState → Prop) (hRep : FinaliseReplySte
   split
   · rename_i r hX
     split
-    · exact finaliseReplyUnstash_closed P hSt x st h
+    · exact finaliseReplyUnstash_closed P hSt x r st h
     · rename_i h0
       dsimp only
       split

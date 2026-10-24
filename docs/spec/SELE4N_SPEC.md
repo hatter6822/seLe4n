@@ -5163,8 +5163,13 @@ its server is reverted (`finaliseReplyRevert`), and the caller is made
 or resident hold on the caller stays, as seL4 keeps a lazily saved context
 across `setThreadState Inactive`.  A reply a blocked receiver has stashed is
 unlinked from it, seL4's `reply_unlink` (`finaliseReplyUnstash`): the stasher,
-found by one walk of the table (`replyStasherCode`) and checked again, has its
-stash cleared in its slot and keeps waiting.  `replyCallerFinalisable` reads the
+read off the reply's own record (`Reply.stasherCode`, seL4 MCS's `replyTCB`)
+and checked again, has its stash cleared in its slot and keeps waiting.  Every
+stash writes that record (`recordReplyStasher`) and every reader re-checks the
+thread it names (`SystemState.replyStashedAt`), so the receive's admission and
+the retype's stash check read one field too; `pendingReceiveReplyWellFormed`'s
+record clause makes the answer the table scan's
+(`replyStashedAt_eq_replyIsStashed`).  `replyCallerFinalisable` reads the
 whole admission on the pre-state: the reply heads no context's reply stack, and
 its caller is no reserved or idle thread, is on no run queue, is blocked on
 this reply, is linked into no endpoint queue, has no timeout budget and lends

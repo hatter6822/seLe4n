@@ -999,15 +999,17 @@ theorem endpointReceiveDual_preserves_ipcInvariant
                   | false => simp [hb] at hStep
                   | true => rfl
                 rw [if_pos hValid] at hStep
-                cases hStash : storeObject receiver.toObjId (.tcb { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId }) st2 with
+                cases hStash : storeObject receiver.toObjId (.tcb { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId }) (st2.recordReplyStasher (SeLe4n.ReplyId.optCode replyId) receiver) with
                 | error e => simp [hStash] at hStep
                 | ok pStash =>
                   obtain ⟨_, stStashed⟩ := pStash
                   simp only [hStash, Except.ok.injEq, Prod.mk.injEq] at hStep
                   obtain ⟨_, hEq⟩ := hStep; subst hEq
                   have hInv3 : ipcInvariant stStashed :=
-                    storeObject_preserves_ipcInvariant_of_ne_notification st2 stStashed receiver.toObjId _
-                      (fun _ => by exact KernelObject.noConfusion) hInv2 hObjInv2 hStash
+                    storeObject_preserves_ipcInvariant_of_ne_notification _ stStashed receiver.toObjId _
+                      (fun _ => by exact KernelObject.noConfusion)
+                      (ipcInvariant_of_recordReplyStasher hObjInv2 hInv2)
+                      (SystemState.recordReplyStasher_objects_invExt _ _ _ hObjInv2) hStash
                   exact fun oid ntfn h => hInv3 oid ntfn ((removeRunnable_objectsAgreeOffRunLinks _ _).get_notification_iff.mp h)
 
 open SeLe4n.Model.SystemState in
@@ -1499,7 +1501,7 @@ theorem endpointReceiveDual_preserves_schedulerInvariantBundle
                     | false => simp [hb] at hStep
                     | true => rfl
                   rw [if_pos hValid] at hStep
-                  cases hStash : storeObject receiver.toObjId (.tcb { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId }) st2 with
+                  cases hStash : storeObject receiver.toObjId (.tcb { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId }) (st2.recordReplyStasher (SeLe4n.ReplyId.optCode replyId) receiver) with
                   | error e => simp [hStash] at hStep
                   | ok pStash =>
                     obtain ⟨_, stStashed⟩ := pStash
@@ -1507,11 +1509,14 @@ theorem endpointReceiveDual_preserves_schedulerInvariantBundle
                     obtain ⟨_, hEq⟩ := hStep
                     have hSchedStash : stStashed.scheduler =
                         { st.scheduler with reschedulePending := stStashed.scheduler.reschedulePending } := by
-                      rw [storeObject_scheduler_eq st2 stStashed receiver.toObjId _ hStash]; exact hSchedEq
+                      rw [storeObject_scheduler_eq _ stStashed receiver.toObjId _ hStash,
+                        SystemState.recordReplyStasher_scheduler]; exact hSchedEq
                     refine hGoal stStashed hSchedStash (fun x hEq' hCurr => ?_) hEq.symm
                     obtain ⟨tcbS2, hTcbS2⟩ := hTcbInSt2 x hEq' hCurr
                     have hNeTid : x.toObjId ≠ receiver.toObjId := fun h => hEq' (threadId_toObjId_injective h)
-                    exact ⟨tcbS2, (storeObject_objects_ne st2 stStashed receiver.toObjId x.toObjId _ hNeTid hObjInvIpc hStash) ▸ hTcbS2⟩
+                    exact ⟨tcbS2, (storeObject_objects_ne _ stStashed receiver.toObjId x.toObjId _ hNeTid
+                      (SystemState.recordReplyStasher_objects_invExt _ _ _ hObjInvIpc) hStash).trans
+                      ((SystemState.recordReplyStasher_getElem?_tcb_iff _ _ _ hObjInvIpc).mpr hTcbS2)⟩
               -- Discharge the generalised bundle for an arbitrary `S = removeRunnable S receiver`.
               intro S hSchedS hTcbS hEq; subst hEq
               refine ⟨?_, ?_, ?_⟩
@@ -1869,15 +1874,16 @@ theorem endpointReceiveDual_preserves_ipcSchedulerContractPredicates
               -- Generalise over the final base state `Sbase` (`st2` or its stash store):
               -- both agree with `st2` at every non-receiver slot and share its scheduler.
               suffices hGoal : ∀ Sbase : SystemState, Sbase.scheduler = st2.scheduler →
-                  (∀ tid : SeLe4n.ThreadId, tid ≠ receiver →
-                    Sbase.objects[tid.toObjId]? = st2.objects[tid.toObjId]?) →
+                  (∀ (tid : SeLe4n.ThreadId) (tcb : TCB), tid ≠ receiver →
+                    Sbase.objects[tid.toObjId]? = some (.tcb tcb) →
+                    st2.objects[tid.toObjId]? = some (.tcb tcb)) →
                   st' = removeRunnable Sbase receiver →
                   ipcSchedulerContractPredicates st' by
                 cases hGetR : st2.getTcb? receiver with
                 | none =>
                   simp only [hGetR, Except.ok.injEq, Prod.mk.injEq] at hStep
                   obtain ⟨_, hEq⟩ := hStep
-                  exact hGoal st2 rfl (fun _ _ => rfl) hEq.symm
+                  exact hGoal st2 rfl (fun _ _ _ h => h) hEq.symm
                 | some rTcb =>
                   simp only [hGetR] at hStep
                   -- WS-SM SM6.D (PR #827 review #6): the `.ok` outcome forces the stash guard
@@ -1887,16 +1893,19 @@ theorem endpointReceiveDual_preserves_ipcSchedulerContractPredicates
                     | false => simp [hb] at hStep
                     | true => rfl
                   rw [if_pos hValid] at hStep
-                  cases hStash : storeObject receiver.toObjId (.tcb { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId }) st2 with
+                  cases hStash : storeObject receiver.toObjId (.tcb { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId }) (st2.recordReplyStasher (SeLe4n.ReplyId.optCode replyId) receiver) with
                   | error e => simp [hStash] at hStep
                   | ok pStash =>
                     obtain ⟨_, stStashed⟩ := pStash
                     simp only [hStash, Except.ok.injEq, Prod.mk.injEq] at hStep
                     obtain ⟨_, hEq⟩ := hStep
-                    refine hGoal stStashed (storeObject_scheduler_eq st2 stStashed receiver.toObjId _ hStash)
-                      (fun tid hNe => ?_) hEq.symm
+                    refine hGoal stStashed ((storeObject_scheduler_eq _ stStashed receiver.toObjId _ hStash).trans
+                      (SystemState.recordReplyStasher_scheduler _ _ _))
+                      (fun tid tcb hNe hT => ?_) hEq.symm
                     have hNeObjId : tid.toObjId ≠ receiver.toObjId := fun h => hNe (threadId_toObjId_injective h)
-                    exact storeObject_objects_ne st2 stStashed receiver.toObjId tid.toObjId _ hNeObjId hObjInvIpc hStash
+                    rw [storeObject_objects_ne _ stStashed receiver.toObjId tid.toObjId _ hNeObjId
+                      (SystemState.recordReplyStasher_objects_invExt _ _ _ hObjInvIpc) hStash] at hT
+                    exact (SystemState.recordReplyStasher_getElem?_tcb_iff _ _ _ hObjInvIpc).mp hT
               -- Discharge the generalised contracts for an arbitrary base state `Sbase`.
               intro Sbase hSchedBase hObjBase hEq; subst hEq
               have hSchedBaseEq : Sbase.scheduler = st1.scheduler := hSchedBase.trans hSchedIpc
@@ -1907,7 +1916,7 @@ theorem endpointReceiveDual_preserves_ipcSchedulerContractPredicates
                 by_cases hNe : tid = receiver
                 · subst hNe; exact absurd hRun' (removeRunnable_not_mem_self Sbase _)
                 · have hNeObjId : tid.toObjId ≠ receiver.toObjId := fun h => hNe (threadId_toObjId_injective h)
-                  have hTcbPre := (storeTcbIpcStateAndMessage_preserves_objects_ne st1 st2 receiver _ _ tid.toObjId hNeObjId hObjInvEnq2 hIpc).symm.trans ((hObjBase tid hNe).symm.trans hTcb')
+                  have hTcbPre := (storeTcbIpcStateAndMessage_preserves_objects_ne st1 st2 receiver _ _ tid.toObjId hNeObjId hObjInvEnq2 hIpc).symm.trans (hObjBase tid tcb' hNe hTcb')
                   have ⟨hRunSt2, _⟩ := (removeRunnable_runnable_mem Sbase receiver tid).mp hRun'
                   exact hReady' tid tcb' hTcbPre (show tid ∈ st1.scheduler.runnable by rwa [← hSchedBaseEq])
               · -- blockedOnSendNotRunnable
@@ -1916,7 +1925,7 @@ theorem endpointReceiveDual_preserves_ipcSchedulerContractPredicates
                 by_cases hNe : tid = receiver
                 · subst hNe; exact removeRunnable_not_mem_self Sbase _
                 · have hNeObjId : tid.toObjId ≠ receiver.toObjId := fun h => hNe (threadId_toObjId_injective h)
-                  have hTcbPre := (storeTcbIpcStateAndMessage_preserves_objects_ne st1 st2 receiver _ _ tid.toObjId hNeObjId hObjInvEnq2 hIpc).symm.trans ((hObjBase tid hNe).symm.trans hTcb')
+                  have hTcbPre := (storeTcbIpcStateAndMessage_preserves_objects_ne st1 st2 receiver _ _ tid.toObjId hNeObjId hObjInvEnq2 hIpc).symm.trans (hObjBase tid tcb' hNe hTcb')
                   intro hRun'
                   have ⟨hRunSt2, _⟩ := (removeRunnable_runnable_mem Sbase receiver tid).mp hRun'
                   exact hBlockSend' tid tcb' eid hTcbPre hIpcState' (show tid ∈ st1.scheduler.runnable by rwa [← hSchedBaseEq])
@@ -1926,7 +1935,7 @@ theorem endpointReceiveDual_preserves_ipcSchedulerContractPredicates
                 by_cases hNe : tid = receiver
                 · subst hNe; exact removeRunnable_not_mem_self Sbase _
                 · have hNeObjId : tid.toObjId ≠ receiver.toObjId := fun h => hNe (threadId_toObjId_injective h)
-                  have hTcbPre := (storeTcbIpcStateAndMessage_preserves_objects_ne st1 st2 receiver _ _ tid.toObjId hNeObjId hObjInvEnq2 hIpc).symm.trans ((hObjBase tid hNe).symm.trans hTcb')
+                  have hTcbPre := (storeTcbIpcStateAndMessage_preserves_objects_ne st1 st2 receiver _ _ tid.toObjId hNeObjId hObjInvEnq2 hIpc).symm.trans (hObjBase tid tcb' hNe hTcb')
                   intro hRun'
                   have ⟨hRunSt2, _⟩ := (removeRunnable_runnable_mem Sbase receiver tid).mp hRun'
                   exact hBlockRecv' tid tcb' eid hTcbPre hIpcState' (show tid ∈ st1.scheduler.runnable by rwa [← hSchedBaseEq])
@@ -1936,7 +1945,7 @@ theorem endpointReceiveDual_preserves_ipcSchedulerContractPredicates
                 by_cases hNe : tid = receiver
                 · subst hNe; exact removeRunnable_not_mem_self Sbase _
                 · have hNeObjId : tid.toObjId ≠ receiver.toObjId := fun h => hNe (threadId_toObjId_injective h)
-                  have hTcbPre := (storeTcbIpcStateAndMessage_preserves_objects_ne st1 st2 receiver _ _ tid.toObjId hNeObjId hObjInvEnq2 hIpc).symm.trans ((hObjBase tid hNe).symm.trans hTcb')
+                  have hTcbPre := (storeTcbIpcStateAndMessage_preserves_objects_ne st1 st2 receiver _ _ tid.toObjId hNeObjId hObjInvEnq2 hIpc).symm.trans (hObjBase tid tcb' hNe hTcb')
                   intro hRun'
                   have ⟨hRunSt2, _⟩ := (removeRunnable_runnable_mem Sbase receiver tid).mp hRun'
                   exact hBlockCall' tid tcb' eid hTcbPre hIpcState' (show tid ∈ st1.scheduler.runnable by rwa [← hSchedBaseEq])
@@ -1946,7 +1955,7 @@ theorem endpointReceiveDual_preserves_ipcSchedulerContractPredicates
                 by_cases hNe : tid = receiver
                 · subst hNe; exact removeRunnable_not_mem_self Sbase _
                 · have hNeObjId : tid.toObjId ≠ receiver.toObjId := fun h => hNe (threadId_toObjId_injective h)
-                  have hTcbPre := (storeTcbIpcStateAndMessage_preserves_objects_ne st1 st2 receiver _ _ tid.toObjId hNeObjId hObjInvEnq2 hIpc).symm.trans ((hObjBase tid hNe).symm.trans hTcb')
+                  have hTcbPre := (storeTcbIpcStateAndMessage_preserves_objects_ne st1 st2 receiver _ _ tid.toObjId hNeObjId hObjInvEnq2 hIpc).symm.trans (hObjBase tid tcb' hNe hTcb')
                   intro hRun'
                   have ⟨hRunSt2, _⟩ := (removeRunnable_runnable_mem Sbase receiver tid).mp hRun'
                   exact hBlockReply' tid tcb' eid rt hTcbPre hIpcState' (show tid ∈ st1.scheduler.runnable by rwa [← hSchedBaseEq])
@@ -1956,7 +1965,7 @@ theorem endpointReceiveDual_preserves_ipcSchedulerContractPredicates
                 by_cases hNe : tid = receiver
                 · subst hNe; exact removeRunnable_not_mem_self Sbase _
                 · have hNeObjId : tid.toObjId ≠ receiver.toObjId := fun h => hNe (threadId_toObjId_injective h)
-                  have hTcbPre := (storeTcbIpcStateAndMessage_preserves_objects_ne st1 st2 receiver _ _ tid.toObjId hNeObjId hObjInvEnq2 hIpc).symm.trans ((hObjBase tid hNe).symm.trans hTcb')
+                  have hTcbPre := (storeTcbIpcStateAndMessage_preserves_objects_ne st1 st2 receiver _ _ tid.toObjId hNeObjId hObjInvEnq2 hIpc).symm.trans (hObjBase tid tcb' hNe hTcb')
                   intro hRun'
                   have ⟨hRunSt2, _⟩ := (removeRunnable_runnable_mem Sbase receiver tid).mp hRun'
                   exact hBlockNotif' tid tcb' nid hTcbPre hIpcState' (show tid ∈ st1.scheduler.runnable by rwa [← hSchedBaseEq])
@@ -2222,14 +2231,15 @@ theorem endpointReceiveDual_preserves_objects_invExt
                   | false => simp [hb] at hStep
                   | true => rfl
                 rw [if_pos hValid] at hStep
-                cases hStash : storeObject receiver.toObjId (.tcb { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId }) st2 with
+                cases hStash : storeObject receiver.toObjId (.tcb { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId }) (st2.recordReplyStasher (SeLe4n.ReplyId.optCode replyId) receiver) with
                 | error e => simp [hStash] at hStep
                 | ok pStash =>
                   obtain ⟨_, stStashed⟩ := pStash
                   simp only [hStash, Except.ok.injEq, Prod.mk.injEq] at hStep
                   obtain ⟨_, hEq⟩ := hStep; subst hEq
                   have hObjInvStash : stStashed.objects.invExt :=
-                    storeObject_preserves_objects_invExt st2 stStashed receiver.toObjId _ hObjInvIpc hStash
+                    storeObject_preserves_objects_invExt _ stStashed receiver.toObjId _
+                      (SystemState.recordReplyStasher_objects_invExt _ _ _ hObjInvIpc) hStash
                   exact removeRunnable_objects_invExt _ _ (by assumption)
 
 /-- M3-E4: endpointSendDualWithCaps preserves ipcInvariant. Every branch

@@ -201,6 +201,15 @@ theorem storeObject_confinedToCores (st st' : SystemState) (oid : SeLe4n.ObjId)
     (storeObject_scheduler_eq st st' oid obj hStep)
     (storeObject_machine_eq st st' oid obj hStep)
 
+/-- **The reply's stasher record writes only the object store**, so it is
+confined to no core: the identity, or one store. -/
+theorem recordReplyStasher_confinedToCores (st : SystemState) (code : Nat)
+    (recv : SeLe4n.ThreadId) :
+    observableSlotsConfinedToCores st (st.recordReplyStasher code recv) [] := by
+  rcases SystemState.recordReplyStasher_eq_or st code recv with h | ⟨_, _, _, _, hS⟩
+  · rw [h]; exact observableSlotsConfinedToCores_nil_of_scheduler_machine_eq rfl rfl
+  · exact storeObject_confinedToCores _ _ _ _ hS
+
 theorem storeTcbIpcStateAndMessage_confinedToCores (st st' : SystemState)
     (tid : SeLe4n.ThreadId) (ipc : ThreadIpcState) (msg : Option IpcMessage)
     (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st') :
@@ -825,7 +834,9 @@ theorem endpointReceiveDualOnCore_confinedToCores (endpointId : SeLe4n.ObjId)
                 · next _ st3 hStash =>
                   exact observableSlotsConfinedToCores_widen_cons
                     (observableSlotsConfinedToCores_trans hPre2
-                      (storeObject_confinedToCores st2 st3 _ _ hStash))
+                      (observableSlotsConfinedToCores_trans
+                        (recordReplyStasher_confinedToCores st2 _ receiver)
+                        (storeObject_confinedToCores _ st3 _ _ hStash)))
                     (removeRunnableOnCore_confinedToCores st3 receiver executingCore)
               · exact observableSlotsConfinedToCores_of_eq _ rfl
     | some senderHead =>

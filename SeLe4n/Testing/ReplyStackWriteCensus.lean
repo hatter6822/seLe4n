@@ -284,6 +284,17 @@ def chainNeutralConstructors : List (Name × String) :=
     -- is the operation's, registered below with its chain result.
   , (`SeLe4n.Kernel.FinaliseUnstackStep,
       "a step predicate (`Prop`) naming the unstack's two writes in a hypothesis; it builds no state, and the write it describes is `finaliseSchedContextUnstack`'s, registered with its chain result")
+    -- WS-ZA ZA5.4 part 25: the reply's stasher record (seL4 MCS's
+    -- `reply->replyTCB`).  `{ r with stasherCode := _ }` and nothing else, so
+    -- `prev`, `next` and `caller` keep the values read: the spec record, its
+    -- in-place compiled form, and the register-path receive block that writes
+    -- it in place beside the receiver's own stash.
+  , (`SeLe4n.Model.SystemState.recordReplyStasher,
+      "`{ r with stasherCode := _ }` on the stashed Reply; `prev`, `next` and `caller` are not in the assignment list")
+  , (`SeLe4n.Model.SystemState.recordReplyStasherImpl,
+      "the in-place form of `recordReplyStasher` (`@[csimp]`): `{ r with stasherCode := _ }` through `storeReplyWith`; no chain field")
+  , (`SeLe4n.Kernel.storeReceiveBlock,
+      "the register-path receive block: the endpoint enqueue, the receiver's block, and the Reply's `{ r with stasherCode := _ }` (`storeReplyStasher`); no chain field")
   , (`SeLe4n.Kernel.FrozenOps.frozenSchedContextUnbind,
       "`{ sc with boundThread := none, isActive := false }`; `scReply` is untouched")
     -- `v0.35.99`: `frozenSetPriority` LEFT this list, and that is the

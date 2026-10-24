@@ -2459,8 +2459,10 @@ theorem endpointReceiveDual_preserves_blockedThreadsPendingMessageConsistent
                   | false => simp [hb] at hStep
                   | true => rfl
                 rw [if_pos hValid] at hStep
+                have hObjInv2r := SystemState.recordReplyStasher_objects_invExt st2
+                  (SeLe4n.ReplyId.optCode replyId) receiver hObjInv2
                 cases hStash : storeObject receiver.toObjId
-                    (.tcb { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId }) st2 with
+                    (.tcb { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId }) (st2.recordReplyStasher (SeLe4n.ReplyId.optCode replyId) receiver) with
                 | error e => simp [hStash] at hStep
                 | ok pStash =>
                   obtain ⟨_, stStashed⟩ := pStash
@@ -2471,14 +2473,15 @@ theorem endpointReceiveDual_preserves_blockedThreadsPendingMessageConsistent
                   have hInv3 : blockedThreadsPendingMessageConsistent stStashed := by
                     intro t tcb' hObj
                     by_cases hEq : t.toObjId = receiver.toObjId
-                    · rw [hEq, storeObject_objects_eq st2 stStashed receiver.toObjId _ hObjInv2 hStash] at hObj
+                    · rw [hEq, storeObject_objects_eq _ stStashed receiver.toObjId _ hObjInv2r hStash] at hObj
                       cases hObj
                       have hTcbPre : st2.objects[receiver.toObjId]? = some (.tcb rTcb) :=
                         (SystemState.getTcb?_eq_some_iff st2 receiver rTcb).mp hGetR
                       have := hInv2 t rTcb (by rw [hEq]; exact hTcbPre)
                       simpa using this
                     · have hObjPre : st2.objects[t.toObjId]? = some (.tcb tcb') := by
-                        rwa [storeObject_objects_ne st2 stStashed receiver.toObjId t.toObjId _ hEq hObjInv2 hStash] at hObj
+                        rwa [storeObject_objects_ne _ stStashed receiver.toObjId t.toObjId _ hEq hObjInv2r hStash,
+                          SystemState.recordReplyStasher_getElem?_tcb_iff _ _ _ hObjInv2] at hObj
                       exact hInv2 t tcb' hObjPre
                   exact removeRunnable_preserves_blockedThreadsPendingMessageConsistent _ _ hInv3
 

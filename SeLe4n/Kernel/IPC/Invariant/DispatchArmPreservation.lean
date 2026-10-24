@@ -541,7 +541,7 @@ theorem storeObject_stashCleared_preserves_ipcInvariantFull
     (storeObject_tcb_preserves_pendingReceiveReplyWellFormed st st' receiver rTcb
       { rTcb with pendingReceiveReplyCode := 0 } hObjInv hTcb
       hInv.pendingReceiveReplyWellFormed
-      (fun rid' h => by cases h) (fun rid' h => by cases h) hStep)
+      (fun rid' h => by cases h) (fun rid' h => by cases h) (fun rid' h => by cases h) hStep)
     (donationOwnerUnique_of_sameSchedContextBindings
       (storeObject_modifiedTcb_sameSchedContextBindings st st' receiver.toObjId rTcb
         { rTcb with pendingReceiveReplyCode := 0 } hRaw rfl hObjInv hStep)
@@ -1998,8 +1998,23 @@ theorem ipcInvariantFull_of_schedBindingRewrite
       · intro hx; exact absurd (Option.some.inj hx) (fun h => KernelObject.noConfusion h)
       · intro hx; exact absurd (Option.some.inj hx) (fun h => KernelObject.noConfusion h)
     · rw [hFrame oid hT hS]
+  have hRA : ∀ (rid : SeLe4n.ReplyId) (r : Reply),
+      (st').objects[rid.toObjId]? = some (.reply r) ↔ st.objects[rid.toObjId]? = some (.reply r) := by
+    intro rid r
+    by_cases hT : rid.toObjId = tid.toObjId
+    · rw [hT, hAtT, hPreT]
+      constructor
+      · intro hx; cases hx
+      · intro hx; cases hx
+    · by_cases hS : rid.toObjId = scId.toObjId
+      · rw [hS, hAtS, hPreS]
+        constructor
+        · intro hx; cases hx
+        · intro hx; cases hx
+      · rw [hFrame _ hT hS]
   have hAgree : donationReadAgreement st st' := by
-    refine ⟨?_, ?_, ?_, replyCallerAgree_of_objectAgree (fun rid r => ?_), ?_, ?_⟩
+    refine ⟨?_, ?_, ?_, replyCallerAgree_of_objectAgree hRA,
+      replyStasherAgree_of_objectAgree hRA, ?_, ?_⟩
     · intro oid tx hx
       obtain ⟨ty, hy, h1, h2, h3, h4, h5, h6, h7, h8, _⟩ := hBwd oid tx hx
       exact ⟨ty, hy, h1, pendingMessageReadAgrees_of_eq h2, h3, h4, h5, h6, h7, h8⟩
@@ -2027,17 +2042,6 @@ theorem ipcInvariantFull_of_schedBindingRewrite
           · intro hx; exact absurd (Option.some.inj hx).symm (hkS sc')
           · intro hx; exact absurd (Option.some.inj hx).symm (hkS sc)
         · rw [hFrame oid hT hS]
-    · by_cases hT : rid.toObjId = tid.toObjId
-      · rw [hT, hAtT, hPreT]
-        constructor
-        · intro hx; cases hx
-        · intro hx; cases hx
-      · by_cases hS : rid.toObjId = scId.toObjId
-        · rw [hS, hAtS, hPreS]
-          constructor
-          · intro hx; cases hx
-          · intro hx; cases hx
-        · rw [hFrame _ hT hS]
     · intro oid x hx
       by_cases hS : oid = scId.toObjId
       · exact ⟨sc', by rw [hS]; exact hAtS⟩
@@ -2683,9 +2687,19 @@ private theorem insertObjects_schedContextClear_preserves_ipcInvariantFull
       · intro hx; exact absurd (Option.some.inj hx) (fun hk => KernelObject.noConfusion hk)
       · intro hx; exact absurd (Option.some.inj hx) (fun hk => KernelObject.noConfusion hk)
     · rw [hNe oid h]
+  have hRA : ∀ (rid : SeLe4n.ReplyId) (r : Reply),
+      ({ st with objects := st.objects.insert scObj (.schedContext sc') }).objects[rid.toObjId]? = some (.reply r) ↔ st.objects[rid.toObjId]? = some (.reply r) := by
+    intro rid r
+    by_cases h : rid.toObjId = scObj
+    · rw [h, hAt, hPre]
+      constructor
+      · intro hx; cases hx
+      · intro hx; cases hx
+    · rw [hNe _ h]
   have hAgree : donationReadAgreement st
       { st with objects := st.objects.insert scObj (.schedContext sc') } := by
-    refine ⟨?_, ?_, ?_, replyCallerAgree_of_objectAgree (fun rid r => ?_), ?_, ?_⟩
+    refine ⟨?_, ?_, ?_, replyCallerAgree_of_objectAgree hRA,
+      replyStasherAgree_of_objectAgree hRA, ?_, ?_⟩
     · intro oid tx hx
       exact ⟨tx, (hTcbEq oid tx).mp hx, rfl, pendingMessageReadAgrees_refl _, rfl, rfl, rfl, rfl, rfl, rfl⟩
     · intro oid ty hy
@@ -2697,12 +2711,6 @@ private theorem insertObjects_schedContextClear_preserves_ipcInvariantFull
         · intro hx; exact absurd (Option.some.inj hx).symm (hkS sc')
         · intro hx; exact absurd (Option.some.inj hx).symm (hkS sc)
       · rw [hNe oid h]
-    · by_cases h : rid.toObjId = scObj
-      · rw [h, hAt, hPre]
-        constructor
-        · intro hx; cases hx
-        · intro hx; cases hx
-      · rw [hNe _ h]
     · intro oid x hx
       by_cases h : oid = scObj
       · exact ⟨sc', by rw [h]; exact hAt⟩
@@ -3295,7 +3303,10 @@ alone.
 core, so storing it keeps every run queue in agreement with the threads' links.
 
 A fresh thread's two space slots hold no capability (`spaceSlotCaps = []`), as a
-fresh CNode's slots hold none: the badge clause reads both. -/
+fresh CNode's slots hold none: the badge clause reads both.
+
+A fresh Reply records no caller and no stasher (`stasherCode = 0`), so a carved
+Reply names no thread it was stashed by before. -/
 def retypeReplacementFresh : KernelObject → Prop
   | .tcb t => t.ipcState = .ready ∧ t.pendingMessage = none ∧ t.queueNext = none ∧
       t.queuePrev = none ∧ t.queuePPrev = none ∧
@@ -3305,7 +3316,7 @@ def retypeReplacementFresh : KernelObject → Prop
   | .endpoint ep => ep.sendQ.head = none ∧ ep.sendQ.tail = none ∧
       ep.receiveQ.head = none ∧ ep.receiveQ.tail = none
   | .notification n => n.state = .idle ∧ n.waitHead = none ∧ n.pendingBadge = none
-  | .reply r => r.caller = none
+  | .reply r => r.caller = none ∧ r.stasherCode = 0
   | .cnode cn => ∀ slot : SeLe4n.Slot, cn.lookup slot = none
   | .schedContext _ => True
   | .vspaceRoot _ => True
@@ -3971,7 +3982,7 @@ private theorem retypeWrite_replyCallerLinkageReciprocal
     by_cases hK : rid.toObjId = target
     · rw [hK] at hR
       obtain rfl : newObj = .reply r := retypeWrite_at_target hAt hR
-      rw [hFresh] at hCaller
+      rw [hFresh.1] at hCaller
       cases hCaller
     · rw [hNe _ hK] at hR
       obtain ⟨tcb, hT, hRO, hBlocked⟩ := hInv.2 rid r tid hR hCaller
@@ -3989,7 +4000,7 @@ private theorem retypeWrite_pendingReceiveReplyWellFormed
     (hDet : erasedTargetDetached st target)
     (hInv : pendingReceiveReplyWellFormed st) :
     pendingReceiveReplyWellFormed st' := by
-  constructor
+  refine ⟨?_, ?_, ?_⟩
   · intro tid tcb rid hT hPRR
     have hTobj := (SystemState.getTcb?_eq_some_iff st' tid tcb).mp hT
     by_cases hK : tid.toObjId = target
@@ -4023,9 +4034,26 @@ private theorem retypeWrite_pendingReceiveReplyWellFormed
         cases hP2
       · rw [hNe _ hK1] at hT1obj
         rw [hNe _ hK2] at hT2obj
-        exact hInv.2 tid1 tid2 tcb1 tcb2 rid
+        exact hInv.2.1 tid1 tid2 tcb1 tcb2 rid
           ((SystemState.getTcb?_eq_some_iff st tid1 tcb1).mpr hT1obj)
           ((SystemState.getTcb?_eq_some_iff st tid2 tcb2).mpr hT2obj) hP1 hP2
+  · -- A carved TCB stashes nothing; a Reply standing elsewhere is untouched,
+    -- and the stashed Reply is never the erased target.
+    intro tid tcb rid hT hPRR
+    have hTobj := (SystemState.getTcb?_eq_some_iff st' tid tcb).mp hT
+    by_cases hK : tid.toObjId = target
+    · rw [hK] at hTobj
+      obtain rfl : newObj = .tcb tcb := retypeWrite_at_target hAt hTobj
+      obtain ⟨-, -, -, -, -, -, -, hPRR0, -⟩ := hFresh
+      rw [hPRR0] at hPRR
+      cases hPRR
+    · rw [hNe _ hK] at hTobj
+      have hTpre := (SystemState.getTcb?_eq_some_iff st tid tcb).mpr hTobj
+      obtain ⟨r, hR, hS⟩ := hInv.2.2 tid tcb rid hTpre hPRR
+      have hRobj := (SystemState.getReply?_eq_some_iff st rid r).mp hR
+      have hneR : rid.toObjId ≠ target := hDet.notStashed tid tcb rid hTobj hPRR
+      exact ⟨r, (SystemState.getReply?_eq_some_iff st' rid r).mpr
+        (by rw [hNe _ hneR]; exact hRobj), hS⟩
 
 private theorem retypeWrite_passiveServerIdle
     {st st' : SystemState} {target : SeLe4n.ObjId} {newObj : KernelObject}
@@ -4300,7 +4328,7 @@ theorem eraseWrite_preserves_ipcInvariantFull
     (hInv : ipcInvariantFull st) :
     ipcInvariantFull st' :=
   retypeOrEraseWrite_preserves_ipcInvariantFull (newObj := .reply (Reply.empty ⟨0⟩))
-    (.inr hAt) hNe hSched rfl hDet hInv
+    (.inr hAt) hNe hSched ⟨rfl, rfl⟩ hDet hInv
 
 /-- **An unreferenced passive object is detached from everything the bundle
 reads**: it is no thread and no scheduling context, so every clause about the

@@ -2674,7 +2674,7 @@ private theorem witnessSt4_lookup (oid : SeLe4n.ObjId) :
 private theorem witnessInv4 : ipcInvariantFull witnessSt4 := by
   refine retypeWrite_preserves_ipcInvariantFull (st := witnessSt3)
     (target := SeLe4n.ObjId.ofNat 3) (newObj := .reply witnessReplyFresh)
-    ?_ ?_ (SystemState.withObjectStored_scheduler _ _ _) rfl
+    ?_ ?_ (SystemState.withObjectStored_scheduler _ _ _) ⟨rfl, rfl⟩
     (witnessSt3_detached_of _ (by decide) (by decide)) witnessInv3
   · rw [witnessSt4_lookup]; simp
   · intro oid hne

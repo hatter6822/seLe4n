@@ -335,7 +335,11 @@ def pendingReceiveReplyWellFormed_perCore (st : SystemState) (c : CoreId) : Prop
     st.getTcb? tid₁ = some tcb₁ → threadHomeCore tcb₁ = c →
     st.getTcb? tid₂ = some tcb₂ →
     tcb₁.pendingReceiveReply = some rid → tcb₂.pendingReceiveReply = some rid →
-    tid₁ = tid₂)
+    tid₁ = tid₂) ∧
+  (∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (rid : SeLe4n.ReplyId),
+    st.getTcb? tid = some tcb → threadHomeCore tcb = c →
+    tcb.pendingReceiveReply = some rid →
+    ∃ r, st.getReply? rid = some r ∧ r.stasherCode = tid.val + 1)
 
 /-- SM6.D: per-core form of `donationOwnerUnique` (Z7-H').  Restricted on
 the first donation holder of the uniqueness pair. -/
@@ -516,7 +520,8 @@ theorem pendingReceiveReplyWellFormed_perCore_of_global {st : SystemState}
     (h : pendingReceiveReplyWellFormed st) (c : CoreId) :
     pendingReceiveReplyWellFormed_perCore st c :=
   ⟨fun tid tcb rid hTcb _ hStash => h.1 tid tcb rid hTcb hStash,
-   fun tid₁ tid₂ tcb₁ tcb₂ rid h1 _ h2 hS1 hS2 => h.2 tid₁ tid₂ tcb₁ tcb₂ rid h1 h2 hS1 hS2⟩
+   fun tid₁ tid₂ tcb₁ tcb₂ rid h1 _ h2 hS1 hS2 => h.2.1 tid₁ tid₂ tcb₁ tcb₂ rid h1 h2 hS1 hS2,
+   fun tid tcb rid hTcb _ hStash => h.2.2 tid tcb rid hTcb hStash⟩
 
 theorem donationOwnerUnique_perCore_of_global {st : SystemState}
     (h : donationOwnerUnique st) (c : CoreId) :
@@ -701,7 +706,9 @@ theorem pendingReceiveReplyWellFormed_of_forall_perCore {st : SystemState}
   ⟨fun tid tcb rid hTcb hStash =>
       (h (threadHomeCore tcb)).1 tid tcb rid hTcb rfl hStash,
    fun tid₁ tid₂ tcb₁ tcb₂ rid h1 h2 hS1 hS2 =>
-      (h (threadHomeCore tcb₁)).2 tid₁ tid₂ tcb₁ tcb₂ rid h1 rfl h2 hS1 hS2⟩
+      (h (threadHomeCore tcb₁)).2.1 tid₁ tid₂ tcb₁ tcb₂ rid h1 rfl h2 hS1 hS2,
+   fun tid tcb rid hTcb hStash =>
+      (h (threadHomeCore tcb)).2.2 tid tcb rid hTcb rfl hStash⟩
 
 theorem donationOwnerUnique_of_forall_perCore {st : SystemState}
     (h : ∀ c, donationOwnerUnique_perCore st c) :
@@ -959,7 +966,8 @@ theorem default_ipcInvariantFull_perCore (c : CoreId) :
      fun tid tcb ep rt hTcb _ _ => absurd hTcb default_no_tcb⟩
   pendingReceiveReplyWellFormed :=
     ⟨fun tid tcb rid hTcb _ _ => absurd hTcb default_no_tcb,
-     fun tid₁ tid₂ tcb₁ tcb₂ rid h1 _ _ _ _ => absurd h1 default_no_tcb⟩
+     fun tid₁ tid₂ tcb₁ tcb₂ rid h1 _ _ _ _ => absurd h1 default_no_tcb,
+     fun tid tcb rid hTcb _ _ => absurd hTcb default_no_tcb⟩
   donationOwnerUnique := fun tid1 tid2 tcb1 tcb2 scId1 scId2 owner h1 _ _ _ _ =>
     absurd h1 default_no_tcb
   endpointQueueTailBlockedConsistent := fun epId ep tl tcb hEp _ _ => by

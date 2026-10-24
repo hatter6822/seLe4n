@@ -676,6 +676,24 @@ theorem storeDonationHeadClear_preserves_projection
       (hIdxComplete rid.toObjId (by rw [hRead]; intro hx; cases hx))
       hObjInv hS
 
+/-- **Recording a Reply's stasher is invisible to every observer.**  It is
+nothing or one store of the Reply with its `stasherCode` set, which
+`projectKernelObject` erases, so it is projection-stable whether or not the
+Reply is low-visible. -/
+theorem recordReplyStasher_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (code : Nat) (recv : SeLe4n.ThreadId)
+    (hIdxComplete : ∀ oid, st.objects[oid]? ≠ none → st.objectIndexSet.contains oid = true)
+    (hObjInv : st.objects.invExt) :
+    projectState ctx observer (st.recordReplyStasher code recv) = projectState ctx observer st := by
+  rcases SystemState.recordReplyStasher_eq_or st code recv with h | ⟨rid, r, _, hRead, hS⟩
+  · rw [h]
+  · exact storeObject_projectionStable_preserves_projection ctx observer st _ rid.toObjId
+      _ (.reply r) hRead
+      (projectKernelObject_reply_stasher_invariant ctx observer r _)
+      (hIdxComplete rid.toObjId (by rw [hRead]; intro hx; cases hx))
+      hObjInv hS
+
 /-- `v0.35.4`: the pop's re-head of the frame below preserves the projection for
 the same reason — it writes a Reply's `next`, which `projectKernelObject` strips. -/
 theorem storeReplyReHead_preserves_projection

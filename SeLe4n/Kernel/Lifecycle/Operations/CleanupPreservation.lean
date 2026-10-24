@@ -2117,7 +2117,7 @@ def lifecyclePreRetypeCleanup (st : SystemState) (target : SeLe4n.ObjId)
     -- pop, the splice, `Reply.consumed`), so nothing is pinned by this guard
     -- that a cancellation cannot free: the `v0.35.4` finding was exactly a frame
     -- that stayed linked after its caller was consumed.
-    if !r.isFree || st.replyIsStashed (SeLe4n.ReplyId.ofNat target.toNat) then
+    if !r.isFree || st.replyStashedAt (SeLe4n.ReplyId.ofNat target.toNat) r then
       .error .revocationRequired
     else .ok st
   | .tcb tcb =>

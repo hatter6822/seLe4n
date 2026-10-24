@@ -931,12 +931,11 @@ def replyFinaliseHidden (ctx : LabelingContext) (observer : IfObserver)
 /-- **A stashed reply's unlink is invisible** when the receiver holding it is
 hidden: one rewrite in that receiver's slot (`hiddenObjectsWrite.updateTcb`). -/
 theorem finaliseReplyUnstash_hidden (ctx : LabelingContext) (observer : IfObserver)
-    {st : SystemState} {x : SeLe4n.ObjId} (hInv : st.objects.invExt)
+    {st : SystemState} {x : SeLe4n.ObjId} {r : Reply} (hInv : st.objects.invExt)
     (hH : ∀ (tid : SeLe4n.ThreadId) (t : TCB), st.getTcb? tid = some t →
       t.pendingReceiveReplyCode = x.val + 1 → objectObservable ctx observer tid.toObjId = false) :
-    projectState ctx observer (finaliseReplyUnstash st x) = projectState ctx observer st := by
+    projectState ctx observer (finaliseReplyUnstash st x r) = projectState ctx observer st := by
   unfold finaliseReplyUnstash
-  dsimp only
   split
   · rfl
   · split

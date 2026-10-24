@@ -139,6 +139,13 @@ theorem storeObject_replyOver_runQueueStage {st st' : SystemState} {rid : SeLe4n
     (SystemState.objStateMono_nonTcb
       (by rw [(SystemState.getReply?_eq_some_iff st rid r).mp hOld]; rfl) rfl)
 
+/-- Recording a Reply's stasher is nothing or one Reply stored over a Reply. -/
+theorem recordReplyStasher_runQueueStage (st : SystemState) (code : Nat)
+    (recv : SeLe4n.ThreadId) : RunQueueStage st (st.recordReplyStasher code recv) := by
+  rcases SystemState.recordReplyStasher_eq_or st code recv with h | ⟨_, _, _, hR, hS⟩
+  · rw [h]; exact RunQueueStage.refl _
+  · exact storeObject_replyOver_runQueueStage ((SystemState.getReply?_eq_some_iff _ _ _).mpr hR) hS
+
 theorem linkReply_runQueueStage {rid : SeLe4n.ReplyId} {caller : SeLe4n.ThreadId}
     {st st' : SystemState} (h : SystemState.linkReply rid caller st = .ok ((), st')) :
     RunQueueStage st st' := by

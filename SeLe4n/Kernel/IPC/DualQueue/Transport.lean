@@ -2630,8 +2630,11 @@ def endpointReceiveDual (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
                           -- self-reservation artefact (the receiver is not `.blockedOnReceive`
                           -- in the input).
                           if st.replyStashValid replyId then
+                            -- The reply records its stasher first (`receiveIPC`'s
+                            -- `reply->replyTCB = thread`), then the receiver stashes it.
                             match storeObject receiver.toObjId
-                                (.tcb { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId }) st'' with
+                                (.tcb { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId })
+                                (st''.recordReplyStasher (SeLe4n.ReplyId.optCode replyId) receiver) with
                             | .error e => .error e
                             | .ok ((), stStashed) =>
                                 .ok (receiver, removeRunnable stStashed receiver)

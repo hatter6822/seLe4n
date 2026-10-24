@@ -987,14 +987,16 @@ def schedContextReferencesReservedIdleSlot (sc : SchedContext) : Bool :=
 /-- PR #889 review round 8: a boot **Reply**'s own id, its blocked caller and its
     two reply-stack links — `prev` (a reply object id the round-6 arm did not
     read) and, since WS-OD `v0.35.4`, `next`, which names either the frame above
-    (a reply object id) or the scheduling context this frame heads.  Its
+    (a reply object id) or the scheduling context this frame heads — and the
+    thread it records as its stasher (`stasherCode`).  Its
     reply-capability target names its own id (`Reply.capTarget_eq`), so the id
     check covers it. -/
 def replyReferencesReservedIdleSlot (r : Reply) : Bool :=
   match r with
-  | ⟨replyId, callerCode, prev, next, _capTarget, _hCapTarget⟩ =>
+  | ⟨replyId, callerCode, prev, next, stasherCode, _capTarget, _hCapTarget⟩ =>
     SeLe4n.Kernel.isIdleObjId replyId.toObjId ||
     (SeLe4n.ThreadId.ofOptCode callerCode).any SeLe4n.Kernel.isIdleThreadId ||
+    (SeLe4n.ThreadId.ofOptCode stasherCode).any SeLe4n.Kernel.isIdleThreadId ||
     prev.any (fun p => SeLe4n.Kernel.isIdleObjId p.toObjId) ||
     next.any (fun
       | .frame above => SeLe4n.Kernel.isIdleObjId above.toObjId
@@ -2041,7 +2043,7 @@ def bootSafeSchedContextCheck (sc : SchedContext) : Bool :=
     `PlatformConfig.wellFormed`. -/
 def bootSafeReplyCheck (r : Reply) : Bool :=
   match r with
-  | ⟨_replyId, _caller, _prev, _next, _capTarget, _hCapTarget⟩ => r.isFree
+  | ⟨_replyId, _caller, _prev, _next, _stasher, _capTarget, _hCapTarget⟩ => r.isFree
 
 @[simp] theorem bootSafeReplyCheck_def (r : Reply) :
     bootSafeReplyCheck r = (r.caller.isNone && r.prev.isNone && r.next.isNone) := rfl
@@ -5890,7 +5892,8 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
       refine ⟨⟨⟨fun tid tcb rid hObj hRep => ?_, fun rid r tid hObj hCaller => ?_⟩,
          fun tid tcb ep rt hObj hIpc => ?_⟩,
         ⟨fun tid tcb rid hObj hRep => ?_,
-         fun tid₁ _ tcb₁ _ _ hObj₁ _ hRep₁ _ => ?_⟩,
+         fun tid₁ _ tcb₁ _ _ hObj₁ _ hRep₁ _ => ?_,
+         fun tidS tcbS ridS hObjS hRepS => ?_⟩,
         fun tidA _ tcbA _ _ _ _ hA _ hBA _ => ?_,
         ?_,
         ?_⟩
@@ -5909,6 +5912,10 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
         have hObjRaw := (SystemState.getTcb?_eq_some_iff _ tid₁ tcb₁).mp hObj₁
         have hTcb := (hBS tid₁.toObjId _ hObjRaw).2.2.2.1 tcb₁ rfl
         rw [hTcb.2.2.2.2.2.2.2.2.1] at hRep₁; cases hRep₁
+      · -- pendingReceiveReplyWellFormed record clause (17th.3): boot TCBs carry no stash.
+        have hObjRaw := (SystemState.getTcb?_eq_some_iff _ tidS tcbS).mp hObjS
+        have hTcb := (hBS tidS.toObjId _ hObjRaw).2.2.2.1 tcbS rfl
+        rw [hTcb.2.2.2.2.2.2.2.2.1] at hRepS; cases hRepS
       · -- IPC de-threading D6: donationOwnerUnique (18th, vacuous — boot TCBs are .unbound).
         have hTcb := (hBS tidA.toObjId _ hA).2.2.2.1 tcbA rfl
         rw [hTcb.2.2.2.2.2.2.1] at hBA; cases hBA

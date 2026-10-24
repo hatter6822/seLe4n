@@ -594,7 +594,7 @@ private theorem default_replyCallerLinkage :
 
 private theorem default_pendingReceiveReplyWellFormed :
     pendingReceiveReplyWellFormed (default : SystemState) := by
-  refine ⟨?_, ?_⟩
+  refine ⟨?_, ?_, ?_⟩
   · intro tid tcb rid h _
     unfold SystemState.getTcb? at h
     rw [default_objects_none] at h
@@ -603,6 +603,10 @@ private theorem default_pendingReceiveReplyWellFormed :
     unfold SystemState.getTcb? at h₁
     rw [default_objects_none] at h₁
     simp at h₁
+  · intro tid tcb rid h _
+    unfold SystemState.getTcb? at h
+    rw [default_objects_none] at h
+    simp at h
 
 /-- WS-RR RR3.13: the boot state satisfies the whole IPC bundle.  Public because
 it is the base case the reachability bundle

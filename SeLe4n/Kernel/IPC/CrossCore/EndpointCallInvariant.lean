@@ -1263,18 +1263,22 @@ theorem endpointReceiveDualOnCore_preserves_dualQueueSystemInvariant
               -- invalid branch returns the pre-state (invariant carried by `hInv`).
               split
               · cases hStash : storeObject receiver.toObjId
-                    (.tcb { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId }) st2 with
+                    (.tcb { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId })
+                    (st2.recordReplyStasher (SeLe4n.ReplyId.optCode replyId) receiver) with
                 | error e => simp only [hStash]; exact hInv
                 | ok pStash =>
                   obtain ⟨_, stStashed⟩ := pStash
                   simp only [hStash]
-                  have hTcbPre : st2.objects[receiver.toObjId]? = some (.tcb rTcb) :=
-                    (SystemState.getTcb?_eq_some_iff st2 receiver rTcb).mp hGetR
+                  have hTcbPre : (st2.recordReplyStasher (SeLe4n.ReplyId.optCode replyId)
+                      receiver).objects[receiver.toObjId]? = some (.tcb rTcb) :=
+                    (SystemState.getTcb?_eq_some_iff _ receiver rTcb).mp
+                      (by rw [SystemState.recordReplyStasher_getTcb? _ _ _ hObjInv2]; exact hGetR)
                   exact removeRunnableOnCore_preserves_dualQueueSystemInvariant _ receiver executingCore
                     (storeObject_tcb_preserves_dualQueueSystemInvariant_of_queueAgree
-                      st2 stStashed receiver.toObjId rTcb
+                      _ stStashed receiver.toObjId rTcb
                       { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId } rfl rfl rfl
-                      hTcbPre hObjInv2 hStash hInv2)
+                      hTcbPre (SystemState.recordReplyStasher_objects_invExt _ _ _ hObjInv2) hStash
+                      (recordReplyStasher_preserves_dualQueueSystemInvariant _ _ _ hObjInv2 hInv2))
               · exact hInv
 
 /-- IPC de-threading D8: `removeRunnableOnCore` preserves `endpointQueueNoDup`
@@ -2507,7 +2511,7 @@ theorem endpointCallOnCore_preserves_pendingReceiveReplyWellFormed
                 rw [hStep3]; exact hRobj2
               -- Apply the shared `linkServerStashedReply` crux frame from the post-pop PRR.
               have hP5 : pendingReceiveReplyWellFormed st5 := by
-                refine linkServerStashedReply_preserves_pendingReceiveReplyWellFormed st4 st5 caller pair.1 hObjInv4 ?_ ?_ hLink
+                refine linkServerStashedReply_preserves_pendingReceiveReplyWellFormed st4 st5 caller pair.1 hObjInv4 ?_ ?_ ?_ hLink
                 · intro tid tcb ridX hTNeServer hT4 hStash4
                   obtain ⟨tc0, hTc0, hStash0, hIpc0⟩ := hBackTcb tid tcb hT4
                   have hStashX0 : tc0.pendingReceiveReply = some ridX := hStash0.trans hStash4
@@ -2524,7 +2528,12 @@ theorem endpointCallOnCore_preserves_pendingReceiveReplyWellFormed
                 · intro tid₁ tid₂ tcb₁ tcb₂ ridX hT4₁ hT4₂ hStash4₁ hStash4₂
                   obtain ⟨tc0₁, hTc0₁, hStash0₁, _⟩ := hBackTcb tid₁ tcb₁ hT4₁
                   obtain ⟨tc0₂, hTc0₂, hStash0₂, _⟩ := hBackTcb tid₂ tcb₂ hT4₂
-                  exact hP1.2 tid₁ tid₂ tc0₁ tc0₂ ridX hTc0₁ hTc0₂ (hStash0₁.trans hStash4₁) (hStash0₂.trans hStash4₂)
+                  exact hP1.2.1 tid₁ tid₂ tc0₁ tc0₂ ridX hTc0₁ hTc0₂ (hStash0₁.trans hStash4₁) (hStash0₂.trans hStash4₂)
+                · -- hC3 at `st4`: the stash records live on Replies, which neither store writes.
+                  intro tid tcb ridX hT4 hStash4
+                  obtain ⟨tc0, hTc0, hStash0, _⟩ := hBackTcb tid tcb hT4
+                  obtain ⟨rr, hGetRR, hRec⟩ := hP1.2.2 tid tc0 ridX hTc0 (hStash0.trans hStash4)
+                  exact ⟨rr, hReplyFrame ridX rr hGetRR, hRec⟩
               refine pendingReceiveReplyWellFormed_of_readViewAgreement (ipcReadViewAgreement.of_objectsAgreeOffRunLinks (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _)) ?_
               show pendingReceiveReplyWellFormed (removeRunnableOnCore st5 caller executingCore)
               exact pendingReceiveReplyWellFormed_of_objectsAgreeOffRunLinks

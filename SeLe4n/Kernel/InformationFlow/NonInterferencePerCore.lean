@@ -527,6 +527,16 @@ theorem storeObject_confinedToCore (st st' : SystemState) (oid : SeLe4n.ObjId)
     (storeObject_scheduler_eq st st' oid obj hStep)
     (storeObject_machine_eq st st' oid obj hStep)
 
+/-- Recording a Reply's stasher is nothing or one `storeObject`, confined to
+every core. -/
+theorem recordReplyStasher_confinedToCore (st : SystemState) (code : Nat)
+    (recv : SeLe4n.ThreadId) (c₀ : CoreId) :
+    observableSlotsConfinedToCore st (st.recordReplyStasher code recv) c₀ := by
+  rcases SystemState.recordReplyStasher_eq_or st code recv with h | ⟨_, _, _, _, hS⟩
+  · rw [h]
+    exact observableSlotsConfinedToCore_of_scheduler_machine_eq c₀ rfl rfl
+  · exact storeObject_confinedToCore _ _ _ _ c₀ hS
+
 theorem storeTcbIpcState_confinedToCore (st st' : SystemState) (tid : SeLe4n.ThreadId)
     (ipc : ThreadIpcState) (c₀ : CoreId)
     (hStep : storeTcbIpcState st tid ipc = .ok st') :
@@ -1159,7 +1169,8 @@ theorem endpointReceiveDual_confinedToBootCore (st st' : SystemState)
                 simp only [hGet] at hStep
                 split at hStep
                 · cases hStash : storeObject receiver.toObjId
-                      (.tcb { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId }) st2 with
+                      (.tcb { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId })
+                      (st2.recordReplyStasher (SeLe4n.ReplyId.optCode replyId) receiver) with
                   | error e => simp [hStash] at hStep
                   | ok pairS =>
                     simp only [hStash, Except.ok.injEq, Prod.mk.injEq] at hStep
@@ -1169,7 +1180,9 @@ theorem endpointReceiveDual_confinedToBootCore (st st' : SystemState)
                     refine observableSlotsConfinedToCore_trans hEnqC ?_
                     refine observableSlotsConfinedToCore_trans hStoreC ?_
                     refine observableSlotsConfinedToCore_trans
-                      (storeObject_confinedToCore st2 pairS.2 receiver.toObjId _ bootCoreId
+                      (recordReplyStasher_confinedToCore st2 (SeLe4n.ReplyId.optCode replyId) receiver bootCoreId) ?_
+                    refine observableSlotsConfinedToCore_trans
+                      (storeObject_confinedToCore _ pairS.2 receiver.toObjId _ bootCoreId
                         hStash) ?_
                     exact removeRunnable_confinedToBootCore pairS.2 receiver
                 · simp at hStep

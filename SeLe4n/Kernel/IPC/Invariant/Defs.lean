@@ -1859,7 +1859,20 @@ def pendingReceiveReplyWellFormed (st : SystemState) : Prop :=
   (∀ (tid₁ tid₂ : SeLe4n.ThreadId) (tcb₁ tcb₂ : TCB) (rid : SeLe4n.ReplyId),
     st.getTcb? tid₁ = some tcb₁ → st.getTcb? tid₂ = some tcb₂ →
     tcb₁.pendingReceiveReply = some rid → tcb₂.pendingReceiveReply = some rid →
-    tid₁ = tid₂)
+    tid₁ = tid₂) ∧
+  -- **Every stash is recorded on its Reply** (`Reply.stasherCode`, seL4-MCS's
+  -- `reply->replyTCB`): the receiver a stash names is the stasher its Reply
+  -- records.  Only this direction is stated, so the record is cleared lazily —
+  -- a receiver's stash cleared on its own side (a wake, a cancel, a link) leaves
+  -- the Reply naming it, and every reader re-checks the named thread
+  -- (`SystemState.replyStashedAt`), which this clause makes exact
+  -- (`replyStashedAt_eq_replyIsStashed`).  A carved Reply records no one, and no
+  -- stash names a key before a Reply is carved there; a record naming a thread
+  -- id whose TCB is retired and later recarved stays exact, because a recarved
+  -- TCB stashes nothing until its first stash, which rewrites the record.
+  (∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (rid : SeLe4n.ReplyId),
+    st.getTcb? tid = some tcb → tcb.pendingReceiveReply = some rid →
+    ∃ r, st.getReply? rid = some r ∧ r.stasherCode = tid.val + 1)
 
 /-- WS-SM SM6.D (PR #822 review): `pendingReceiveReplyWellFormed` reads only the
 object store (through the typed `getTcb?` / `getReply?` accessors), so any transition
@@ -1883,13 +1896,17 @@ theorem pendingReceiveReplyWellFormed_of_objectsAgreeOffRunLinks {st st' : Syste
     have hT' := (SystemState.getTcb?_eq_some_iff _ t tcb').mp hT
     run_links_back hA at tcb' hT'
     exact ⟨tcb', (SystemState.getTcb?_eq_some_iff _ t tcb').mpr hT', rfl, rfl⟩
-  refine ⟨fun tid tcb' rid hT hP => ?_, fun t1 t2 c1 c2 rid h1 h2 p1 p2 => ?_⟩
+  refine ⟨fun tid tcb' rid hT hP => ?_, fun t1 t2 c1 c2 rid h1 h2 p1 p2 => ?_,
+    fun tid tcb' rid hT hP => ?_⟩
   · obtain ⟨tcb, hT0, hI, hP0⟩ := back hT
     obtain ⟨⟨ep, hEp⟩, ⟨r, hr, hc⟩⟩ := h.1 tid tcb rid hT0 (hP0 ▸ hP)
     exact ⟨⟨ep, hI.trans hEp⟩, ⟨r, (hA.getReply? rid).trans hr, hc⟩⟩
   · obtain ⟨d1, h1', _, q1⟩ := back h1
     obtain ⟨d2, h2', _, q2⟩ := back h2
-    exact h.2 t1 t2 d1 d2 rid h1' h2' (q1 ▸ p1) (q2 ▸ p2)
+    exact h.2.1 t1 t2 d1 d2 rid h1' h2' (q1 ▸ p1) (q2 ▸ p2)
+  · obtain ⟨tcb, hT0, _, hP0⟩ := back hT
+    obtain ⟨r, hr, hs⟩ := h.2.2 tid tcb rid hT0 (hP0 ▸ hP)
+    exact ⟨r, (hA.getReply? rid).trans hr, hs⟩
 
 /-- WS-ZA ZA4.4: a rewrite of notification-queue links keeps every TCB's IPC
 state and stashed reply, and every Reply. -/
@@ -1903,13 +1920,91 @@ theorem pendingReceiveReplyWellFormed_of_ntfnLinksRewritten {st st' : SystemStat
     have hT' := (SystemState.getTcb?_eq_some_iff _ t tcb').mp hT
     ntfn_links_back hA at tcb' hT'
     exact ⟨tcb', (SystemState.getTcb?_eq_some_iff _ t tcb').mpr hT', rfl, rfl⟩
-  refine ⟨fun tid tcb' rid hT hP => ?_, fun t1 t2 c1 c2 rid h1 h2 p1 p2 => ?_⟩
+  refine ⟨fun tid tcb' rid hT hP => ?_, fun t1 t2 c1 c2 rid h1 h2 p1 p2 => ?_,
+    fun tid tcb' rid hT hP => ?_⟩
   · obtain ⟨tcb, hT0, hI, hP0⟩ := back hT
     obtain ⟨⟨ep, hEp⟩, ⟨r, hr, hc⟩⟩ := h.1 tid tcb rid hT0 (hP0 ▸ hP)
     exact ⟨⟨ep, hI.trans hEp⟩, ⟨r, (hA.getReply? rid).trans hr, hc⟩⟩
   · obtain ⟨d1, h1', _, q1⟩ := back h1
     obtain ⟨d2, h2', _, q2⟩ := back h2
-    exact h.2 t1 t2 d1 d2 rid h1' h2' (q1 ▸ p1) (q2 ▸ p2)
+    exact h.2.1 t1 t2 d1 d2 rid h1' h2' (q1 ▸ p1) (q2 ▸ p2)
+  · obtain ⟨tcb, hT0, _, hP0⟩ := back hT
+    obtain ⟨r, hr, hs⟩ := h.2.2 tid tcb rid hT0 (hP0 ▸ hP)
+    exact ⟨r, (hA.getReply? rid).trans hr, hs⟩
+
+/-- **The recorded stasher answers the whole-table scan.**  On a state whose
+stashes are all recorded (`pendingReceiveReplyWellFormed`'s third clause), the
+`O(1)` read of the Reply's recorded stasher, re-checked against that thread
+(`SystemState.replyStashedAt`), is exactly `replyIsStashed`'s scan of every
+object: a thread blocked receiving with this reply stashed is the one the Reply
+records, and the one it records stashes it when the re-check passes.  So every
+stash admission and every stashed-reply check reads the field and keeps the
+scan's meaning on every state the bundle holds of. -/
+theorem replyStashedAt_eq_replyIsStashed {st : SystemState}
+    (hObjInv : st.objects.invExt) (h : pendingReceiveReplyWellFormed st)
+    {rid : SeLe4n.ReplyId} {r : Reply} (hR : st.getReply? rid = some r) :
+    st.replyStashedAt rid r = st.replyIsStashed rid := by
+  have hTest : ∀ t : TCB, (t.ipcStateCode == 1 && t.pendingReceiveReplyCode == rid.val + 1) =
+      (match t.ipcState with
+        | .blockedOnReceive _ => t.pendingReceiveReply == some rid
+        | _ => false) := by
+    intro t
+    have hs : t.ipcStateCode = t.ipcState.stateCode := by
+      unfold TCB.ipcState; rw [ThreadIpcState.stateCode_ofCodes]
+    have hp : (t.pendingReceiveReplyCode == rid.val + 1) = (t.pendingReceiveReply == some rid) := by
+      unfold TCB.pendingReceiveReply SeLe4n.ReplyId.ofOptCode
+      rcases t.pendingReceiveReplyCode with _ | k
+      · simp
+      · rcases rid with ⟨v⟩
+        by_cases hkv : k = v
+        · subst hkv; simp
+        · rw [beq_eq_false_iff_ne.mpr (by simp only [ne_eq]; omega), beq_eq_false_iff_ne.mpr
+            (fun e => hkv (congrArg SeLe4n.ReplyId.val (Option.some.inj e)))]
+    rw [hs, hp]
+    cases t.ipcState <;> simp [ThreadIpcState.stateCode]
+  apply Bool.eq_iff_iff.mpr
+  unfold SystemState.replyIsStashed
+  change _ ↔ st.objects.fold false (fun acc k v => acc || (fun (_ : SeLe4n.ObjId) (obj : KernelObject) =>
+      match obj with
+        | .tcb t =>
+            match t.ipcState with
+            | .blockedOnReceive _ => t.pendingReceiveReply == some rid
+            | _ => false
+        | _ => false) k v) = true
+  rw [RobinHood.RHTable.fold_or_false_iff _ _ hObjInv]
+  constructor
+  · unfold SystemState.replyStashedAt
+    intro hA
+    split at hA
+    · cases hA
+    · next k _ =>
+      split at hA
+      · next t hT =>
+        refine ⟨(⟨k⟩ : SeLe4n.ThreadId).toObjId, .tcb t, ?_, ?_⟩
+        · rw [← SeLe4n.RHTable_getElem?_eq_get?]; exact (SystemState.getTcb?_eq_some_iff _ _ _).mp hT
+        · simp only; rw [← hTest]; exact hA
+      · cases hA
+  · rintro ⟨k, v, hG, hP⟩
+    cases v with
+    | tcb t =>
+      simp only at hP
+      rw [← hTest] at hP
+      simp only [Bool.and_eq_true, beq_iff_eq] at hP
+      obtain ⟨hI, hPc⟩ := hP
+      have hTcb : st.getTcb? (ThreadId.ofObjId k) = some t := by
+        rw [SystemState.getTcb?_eq_some_iff, ThreadId.toObjId_ofObjId,
+          SeLe4n.RHTable_getElem?_eq_get?]; exact hG
+      have hStash : t.pendingReceiveReply = some rid := by
+        unfold TCB.pendingReceiveReply SeLe4n.ReplyId.ofOptCode; rw [hPc]
+      obtain ⟨r', hR', hS⟩ := h.2.2 _ t rid hTcb hStash
+      rw [hR] at hR'; cases hR'
+      unfold SystemState.replyStashedAt
+      rw [hS]
+      simp only
+      rw [show (⟨(ThreadId.ofObjId k).val⟩ : SeLe4n.ThreadId) = ThreadId.ofObjId k from rfl, hTcb]
+      simp [hI, hPc]
+    | _ => simp at hP
+
 
 /-- WS-SM SM6.E: `ipcInvariant` reads only the object store, so any
 transition that leaves the object store unchanged frames it (the cross-core
@@ -2020,6 +2115,38 @@ theorem storeObject_preserves_ipcInvariant_of_ne_notification
   · rw [hNe, storeObject_objects_eq st st' id obj hObjInv hStore] at hObj
     exact absurd (Option.some.inj hObj) (hNotNtfn ntfn)
   · exact hInv oid ntfn (by rwa [storeObject_objects_ne st st' id oid obj hNe hObjInv hStore] at hObj)
+
+/-- **A property every one-Reply store keeps survives the record of a reply's
+stasher** — the record is the identity or exactly that store
+(`SystemState.recordReplyStasher_eq_or`), so each bundle reads it through the
+Reply-store lemma it already has. -/
+theorem recordReplyStasher_of_store {P : SystemState → Prop} {st : SystemState} {code : Nat}
+    {recv : SeLe4n.ThreadId} (hP : P st)
+    (hStore : ∀ (rid : SeLe4n.ReplyId) (r : Reply) (st' : SystemState),
+      st.objects[rid.toObjId]? = some (.reply r) →
+      storeObject rid.toObjId (.reply { r with stasherCode := recv.val + 1 }) st = .ok ((), st') →
+      P st') :
+    P (st.recordReplyStasher code recv) := by
+  rcases SystemState.recordReplyStasher_eq_or st code recv with h | ⟨rid, r, _, hR, hS⟩
+  · rw [h]; exact hP
+  · exact hStore rid r _ hR hS
+
+/-- A property read off thread objects alone survives the record. -/
+theorem recordReplyStasher_of_tcbs {P : SystemState → Prop} {st : SystemState} {code : Nat}
+    {recv : SeLe4n.ThreadId} (hObjInv : st.objects.invExt)
+    (hTcbs : ∀ st' : SystemState, (∀ (x : SeLe4n.ObjId) (t : TCB),
+        st'.objects[x]? = some (.tcb t) ↔ st.objects[x]? = some (.tcb t)) → P st') :
+    P (st.recordReplyStasher code recv) :=
+  hTcbs _ (fun _ _ => SystemState.recordReplyStasher_getElem?_tcb_iff st code recv hObjInv)
+
+/-- The record of a reply's stasher writes no notification. -/
+theorem ipcInvariant_of_recordReplyStasher {st : SystemState} {code : Nat}
+    {recv : SeLe4n.ThreadId} (hObjInv : st.objects.invExt) (hInv : ipcInvariant st) :
+    ipcInvariant (st.recordReplyStasher code recv) := by
+  rcases SystemState.recordReplyStasher_eq_or st code recv with h | ⟨_, _, _, _, hS⟩
+  · rw [h]; exact hInv
+  · exact storeObject_preserves_ipcInvariant_of_ne_notification _ _ _ _
+      (fun _ => by exact KernelObject.noConfusion) hInv hObjInv hS
 
 -- **WS-RR RR8.16 (`v0.35.200`)**: `linkCallerReply_preserves_objects_invExt`
 -- moved to `Model/State.lean`, beside the primitive it frames.  It is built from
@@ -6191,8 +6318,8 @@ theorem replyCallerLinkage_of_storeAgrees {st st' : SystemState}
 theorem pendingReceiveReplyWellFormed_of_storeAgrees {st st' : SystemState}
     (hA : objectStoreAgrees st st') (h : pendingReceiveReplyWellFormed st) :
     pendingReceiveReplyWellFormed st' := by
-  obtain ⟨hWf, hInj⟩ := h
-  constructor
+  obtain ⟨hWf, hInj, hRec⟩ := h
+  refine ⟨?_, ?_, ?_⟩
   · intro tid tcb rid hTcb hStash
     unfold SystemState.getTcb? at hTcb
     rw [hA] at hTcb
@@ -6204,6 +6331,13 @@ theorem pendingReceiveReplyWellFormed_of_storeAgrees {st st' : SystemState}
     unfold SystemState.getTcb? at hT1 hT2
     rw [hA] at hT1 hT2
     exact hInj tid1 tid2 tcb1 tcb2 rid hT1 hT2 hS1 hS2
+  · intro tid tcb rid hTcb hStash
+    unfold SystemState.getTcb? at hTcb
+    rw [hA] at hTcb
+    obtain ⟨r, hR, hS⟩ := hRec tid tcb rid hTcb hStash
+    refine ⟨r, ?_, hS⟩
+    unfold SystemState.getReply? at hR ⊢
+    rw [hA]; exact hR
 
 theorem donationOwnerUnique_of_storeAgrees {st st' : SystemState}
     (hA : objectStoreAgrees st st') (h : donationOwnerUnique st) :

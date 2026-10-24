@@ -360,6 +360,15 @@ theorem linkReply_keyFrame {rid : SeLe4n.ReplyId} {caller : SeLe4n.ThreadId}
         (by rw [(SystemState.getReply?_eq_some_iff st rid r).mp hR]; rfl) rfl
     · simp at h
 
+/-- **The reply's stasher record keeps every key**: the identity, or the store
+of a Reply, which no key reads. -/
+theorem recordReplyStasher_keyFrame {st : SystemState} (hInv : st.objects.invExt)
+    (code : Nat) (recv : SeLe4n.ThreadId) :
+    capabilityKeyFrame st (st.recordReplyStasher code recv) := by
+  rcases SystemState.recordReplyStasher_eq_or st code recv with h | ⟨_, _, _, hR, hS⟩
+  · rw [h]; exact capabilityKeyFrame_of_objects_scheduler_eq hInv rfl rfl
+  · exact storeObject_inert_keyFrame hInv hS (by rw [hR]; rfl) rfl
+
 theorem linkCallerReply_keyFrame {caller : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId}
     {st st' : SystemState} (hInv : st.objects.invExt)
     (h : SystemState.linkCallerReply caller rid st = .ok ((), st')) :
@@ -468,8 +477,10 @@ theorem endpointReceiveDualOnCore_stepCovers (e : CoreId) {endpointId : SeLe4n.O
               · split
                 · exact hRefl
                 · rename_i stS hS
-                  have hF3 := storeObject_tcbKeyKeeping_keyFrame hF2.2.2
-                    ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hS rfl
+                  have hFR := recordReplyStasher_keyFrame hF2.2.2 (SeLe4n.ReplyId.optCode replyId) receiver
+                  have hF3 := hFR.trans (storeObject_tcbKeyKeeping_keyFrame (tcb := rTcb) hFR.2.2
+                    ((SystemState.getTcb?_eq_some_iff _ _ _).mp
+                      (by rw [SystemState.recordReplyStasher_getTcb? _ _ _ hF2.2.2]; exact hT)) hS rfl)
                   exact ⟨stepCovers_trans (stepCovers_trans hPre hF3.stepCovers)
                     (removeRunnableOnCore_stepCovers e _ _ _), removeRunnableOnCore_objects_invExt _ _ _ hF3.2.2⟩
               · exact hRefl

@@ -4,7 +4,6 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -/
 import SeLe4n.Kernel.IPC.CrossCore.DeliveredInPlace
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyRecv
-import SeLe4n.Kernel.RobinHood.Invariant.MapValueAtFold
 
 /-!
 # Reply-receive in place
@@ -13,185 +12,12 @@ WS-ZA ZA4.7.  A reply-receive that answers a caller blocked on the server and
 then blocks the server on an endpoint no sender waits on is the reply's
 in-place writes followed by the receive's (`replyRecvOnCore_blocks_inPlace`):
 every check the receive leg makes is read on the pre-state and carried across
-the reply leg (`storeReplyRendezvous_receiveGuard`), including the whole-table
-scan for a stashed reply (`replyIsStashed_of_stashView`), which reads one code
-per object that no write of the reply leg moves.
+the reply leg (`storeReplyRendezvous_receiveGuard`), including whether the
+reply is stashed, which reads the thread the Reply records as its stasher
+(`SystemState.replyStashedAt`): that thread is the answered caller, now ready,
+or one the reply leg leaves as it was off its run-queue links
+(`stasherTestAt_of_view`).
 -/
-
-namespace SeLe4n.Kernel
-
-open SeLe4n.Model SeLe4n.Kernel.RobinHood SeLe4n.Kernel.Concurrency
-
-/-- What `replyIsStashed` reads of an object: the stashed reply object's code
-of a thread blocked receiving, `0` for anything else. -/
-def stashCode : KernelObject → Nat
-  | .tcb t =>
-      match t.ipcState with
-      | .blockedOnReceive _ => t.pendingReceiveReplyCode
-      | _ => 0
-  | _ => 0
-
-/-- `replyIsStashed`'s test of a thread is a test of its `stashCode`. -/
-theorem stashTest_eq_stashCode (t : TCB) (rid : SeLe4n.ReplyId) :
-    (match t.ipcState with
-      | .blockedOnReceive _ => t.pendingReceiveReply == some rid
-      | _ => false) = (stashCode (.tcb t) == rid.val + 1) := by
-  cases h : t.ipcState <;> simp only [stashCode, h] <;> try simp
-  rcases hc : t.pendingReceiveReplyCode with _ | k
-  · simp [TCB.pendingReceiveReply, hc, SeLe4n.ReplyId.ofOptCode]
-  · rcases rid with ⟨r⟩
-    by_cases hkr : k = r
-    · subst hkr; simp [TCB.pendingReceiveReply, hc, SeLe4n.ReplyId.ofOptCode]
-    · have : ¬ (k + 1 = r + 1) := by omega
-      simp [TCB.pendingReceiveReply, hc, SeLe4n.ReplyId.ofOptCode]
-      rw [Bool.eq_iff_iff, beq_iff_eq, beq_iff_eq]
-      exact ⟨fun e => by cases e; rfl, fun e => by subst e; rfl⟩
-
-/-- `replyIsStashed` reads each object only through `stashCode`. -/
-theorem replyIsStashed_eq_fold_stashCode (st : SystemState) (rid : SeLe4n.ReplyId) :
-    st.replyIsStashed rid =
-      st.objects.fold false (fun acc _ v => (fun a x => a || x == rid.val + 1) acc (stashCode v)) := by
-  unfold SystemState.replyIsStashed
-  congr
-  funext acc _k obj
-  cases obj with
-  | tcb t => exact congrArg (acc || ·) (stashTest_eq_stashCode t rid)
-  | _ => simp [stashCode]
-
-/-- The object table's slots, each read through `stashCode`. -/
-def stashView (st : SystemState) : List (Option Nat) := st.objects.slotView stashCode
-
-/-- **`replyIsStashed` sees only the stash view.** -/
-theorem replyIsStashed_of_stashView {st st' : SystemState} (h : stashView st' = stashView st)
-    (rid : SeLe4n.ReplyId) : st'.replyIsStashed rid = st.replyIsStashed rid := by
-  rw [replyIsStashed_eq_fold_stashCode, replyIsStashed_eq_fold_stashCode]
-  exact RHTable.fold_eq_of_slotView st.objects st'.objects stashCode false
-    (fun a x => a || x == rid.val + 1) h
-
-theorem stashView_of_objects_eq {st st' : SystemState} (h : st'.objects = st.objects) :
-    stashView st' = stashView st := by
-  unfold stashView; rw [h]
-
-/-- A TCB rewritten in its slot keeps the stash view when the rewrite keeps
-the stash of the TCB the thread holds. -/
-theorem stashView_mapTcbInPlace (st : SystemState) (t : SeLe4n.ThreadId) (g : TCB → TCB)
-    (h : ∀ x, st.getTcb? t = some x → stashCode (.tcb (g x)) = stashCode (.tcb x)) :
-    stashView (st.mapTcbInPlace t g) = stashView st := by
-  unfold stashView SystemState.mapTcbInPlace
-  apply RHTable.slotView_mapValueAt
-  intro v hv
-  cases v with
-  | tcb x =>
-    exact h x ((SystemState.getTcb?_eq_some_iff _ _ _).mpr
-      (by simpa only [RHTable_getElem?_eq_get?] using hv))
-  | _ => rfl
-
-theorem stashView_updateTcbAtCode (st : SystemState) (k : Nat) (g : TCB → TCB)
-    (h : ∀ x, stashCode (.tcb (g x)) = stashCode (.tcb x)) :
-    stashView (st.updateTcbAtCode k g) = stashView st := by
-  unfold SystemState.updateTcbAtCode
-  split
-  · rfl
-  · exact stashView_mapTcbInPlace _ _ _ (fun x _ => h x)
-
-theorem stashView_modifyObject (st : SystemState) (x : SeLe4n.ObjId)
-    (F : KernelObject → KernelObject) (hNo : st.objects.noResizeDue)
-    (h : ∀ v, st.objects.get? x = some v → stashCode (F v) = stashCode v) :
-    stashView (st.modifyObject x F) = stashView st := by
-  rw [SystemState.modifyObject_eq_mapValueAt _ _ _ hNo]
-  exact RHTable.slotView_mapValueAt _ _ _ _ h
-
-theorem stashView_updateTcb (st : SystemState) (t : SeLe4n.ThreadId) (g : TCB → TCB)
-    (hNo : st.objects.noResizeDue)
-    (h : ∀ x, st.getTcb? t = some x → stashCode (.tcb (g x)) = stashCode (.tcb x)) :
-    stashView (st.updateTcb t g) = stashView st := by
-  rw [SystemState.updateTcb_eq_mapTcbInPlace _ _ _ hNo]
-  exact stashView_mapTcbInPlace _ _ _ h
-
-theorem stashView_runAppendOnCore (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
-    (p : SeLe4n.Priority) : stashView (st.runAppendOnCore c t p) = stashView st := by
-  show stashView (st.runAppendLinks c t p) = _
-  unfold SystemState.runAppendLinks
-  dsimp only
-  rw [stashView_updateTcbAtCode, stashView_updateTcbAtCode, stashView_mapTcbInPlace]
-  all_goals intros; rfl
-
-theorem stashView_runEnqueueAdmitted (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
-    (p : SeLe4n.Priority) : stashView (st.runEnqueueAdmitted c t p) = stashView st := by
-  unfold SystemState.runEnqueueAdmitted
-  dsimp only
-  split
-  · rfl
-  · exact stashView_runAppendOnCore st c t p
-
-/-- A wake keeps the stash view when the woken thread stashes nothing. -/
-theorem stashView_enqueueRunnableOnCore (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
-    (hNo : st.objects.noResizeDue)
-    (h : ∀ x, st.getTcb? t = some x → stashCode (.tcb x) = 0) :
-    stashView (enqueueRunnableOnCore st c t) = stashView st := by
-  rw [enqueueRunnableOnCore_eq_impl]
-  unfold enqueueRunnableOnCoreImpl
-  split
-  · next x hx =>
-    dsimp only
-    split
-    · rfl
-    · show stashView ((st.modifyObject _ _).runEnqueueAdmitted c t _) = _
-      rw [stashView_runEnqueueAdmitted, stashView_modifyObject _ _ _ hNo]
-      intro v hv
-      cases v with
-      | tcb y =>
-        have hy : st.getTcb? t = some y := (SystemState.getTcb?_eq_some_iff _ _ _).mpr
-          (by simpa only [RHTable_getElem?_eq_get?] using hv)
-        rw [h y hy]
-        simp [SystemState.mapTcbObject, stashCode]
-      | _ => rfl
-  · rfl
-
-theorem stashView_unlinkReplyWaiter (st : SystemState) (w s : SeLe4n.ThreadId) :
-    stashView (st.unlinkReplyWaiter w s) = stashView st := by
-  unfold SystemState.unlinkReplyWaiter
-  dsimp only
-  rw [stashView_mapTcbInPlace, stashView_mapTcbInPlace, stashView_updateTcbAtCode,
-    stashView_updateTcbAtCode]
-  all_goals intros; rfl
-
-/-- **The reply's writes keep the stash view**: the answered caller, blocked on
-its reply, stashes nothing before or after, and every other write is a link or
-a reply object. -/
-theorem stashView_storeReplyRendezvousReady (st : SystemState) (c server : SeLe4n.ThreadId)
-    (rid : SeLe4n.ReplyId) (ct : TCB) (ep : SeLe4n.ObjId) (s? : Option SeLe4n.ThreadId)
-    (hNo : st.objects.noResizeDue) (hT : st.getTcb? c = some ct)
-    (hIpc : ct.ipcState = .blockedOnReply ep s?) :
-    stashView (storeReplyRendezvousReady st c server rid) = stashView st := by
-  unfold storeReplyRendezvousReady
-  dsimp only
-  have hNo1 := updateTcb_noResizeDue st c receiverReady hNo
-  have hNo2 := enqueueRunnableOnCore_noResizeDue _ (determineTargetCore (st.updateTcb c receiverReady) c)
-    c hNo1
-  have hNo3 := modifyObject_noResizeDue _ rid.toObjId replyConsumedObject hNo2
-  rw [stashView_unlinkReplyWaiter, stashView_updateTcb _ _ _ hNo3,
-    stashView_modifyObject _ _ _ hNo2,
-    stashView_enqueueRunnableOnCore _ _ _ hNo1,
-    stashView_updateTcb _ _ _ hNo]
-  · intro x hx
-    rw [hT] at hx; cases hx
-    simp [stashCode, receiverReady, hIpc]
-  · intro x hx
-    rw [SystemState.updateTcb_eq_mapTcbInPlace _ _ _ hNo, SystemState.mapTcbInPlace_getTcb?_self,
-      hT] at hx
-    cases hx
-    simp [stashCode, receiverReady]
-  · intro v _; cases v <;> rfl
-  · intros; rfl
-
-/-- The delivery's write keeps the stash view. -/
-theorem stashView_hold (st : SystemState) (r : SeLe4n.ThreadId) (msg : IpcMessage) :
-    stashView (st.mapTcbInPlace r (holdMessage msg)) = stashView st := by
-  rw [stashView_mapTcbInPlace]
-  intros; rfl
-
-end SeLe4n.Kernel
 
 namespace SeLe4n.Kernel
 
@@ -340,7 +166,8 @@ theorem storeReplyRendezvousReady_caller (st : SystemState) (c server : SeLe4n.T
     (rid : SeLe4n.ReplyId) (ct : TCB) (hNo : st.objects.noResizeDue)
     (hT : st.getTcb? c = some ct) (hFC : st.objects.findsInPlace c.toObjId = true)
     (hNe : rid.toObjId ≠ c.toObjId) :
-    ∃ t, (storeReplyRendezvousReady st c server rid).objects[c.toObjId]? = some (.tcb t) := by
+    ∃ t, (storeReplyRendezvousReady st c server rid).objects[c.toObjId]? = some (.tcb t) ∧
+      t.ipcStateCode = (receiverReady ct).ipcStateCode := by
   unfold storeReplyRendezvousReady
   dsimp only
   have hNo1 := updateTcb_noResizeDue st c receiverReady hNo
@@ -356,7 +183,7 @@ theorem storeReplyRendezvousReady_caller (st : SystemState) (c server : SeLe4n.T
   have hA2 := enqueueRunnableOnCore_agree_of_findsInPlace _
     (determineTargetCore (st.updateTcb c receiverReady) c) c (receiverReady ct) hT1
       (by simp [receiverReady]) hF1
-  obtain ⟨t2, h2, _⟩ := hA2.get_tcb ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT1)
+  obtain ⟨t2, h2, e2⟩ := hA2.get_tcb ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT1)
   have h3 : ((enqueueRunnableOnCore (st.updateTcb c receiverReady)
       (determineTargetCore (st.updateTcb c receiverReady) c) c).modifyObject rid.toObjId
         replyConsumedObject).getTcb? c = some t2 :=
@@ -370,8 +197,12 @@ theorem storeReplyRendezvousReady_caller (st : SystemState) (c server : SeLe4n.T
     rw [h4]
     exact (SystemState.getTcb?_eq_some_iff _ _ _).mp
       (by rw [SystemState.mapTcbInPlace_getTcb?_self, h3]; rfl)
-  obtain ⟨t5, h5, _⟩ := (SystemState.unlinkReplyWaiter_objectsAgreeOffRunLinks _ c server).get_tcb h4'
-  exact ⟨t5, h5⟩
+  obtain ⟨t5, h5, e5⟩ := (SystemState.unlinkReplyWaiter_objectsAgreeOffRunLinks _ c server).get_tcb h4'
+  refine ⟨t5, h5, ?_⟩
+  have a5 := congrArg TCB.ipcStateCode e5
+  have a2 := congrArg TCB.ipcStateCode e2
+  simp only [TCB.withoutRunLinks] at a5 a2
+  rw [a5]; exact a2
 
 end ReplyFrame
 
@@ -407,6 +238,58 @@ theorem notVSpaceRootAt_of_view {s s' : SystemState} {x : SeLe4n.ObjId}
   unfold SystemState.getObjectType?
   rw [e]
 
+/-- A store-locality answer carries over to a state with the same index and
+lifecycle and no new VSpace root. -/
+theorem storeLeavesIndexAndTypes_of_frame {s s' : SystemState}
+    (hI : s'.objectIndexSet = s.objectIndexSet) (hL : s'.lifecycle = s.lifecycle)
+    (hV : ∀ x, notVSpaceRootAt s x = true → notVSpaceRootAt s' x = true)
+    {id : SeLe4n.ObjId} {ty : KernelObjectType} (h : storeLeavesIndexAndTypes s id ty = true) :
+    storeLeavesIndexAndTypes s' id ty = true := by
+  unfold storeLeavesIndexAndTypes at h ⊢
+  rw [hI, hL]
+  simp only [Bool.and_eq_true] at h ⊢
+  exact ⟨h.1, hV id h.2⟩
+
+/-- **The stasher test of one key**: the thread there is blocked receiving with
+reply code `n` as its stash — what `SystemState.replyStashedAt` asks of the
+thread a Reply records. -/
+@[inline] def stasherTestAt (s : SystemState) (x : SeLe4n.ThreadId) (n : Nat) : Bool :=
+  match s.getTcb? x with
+  | some t => t.ipcStateCode == 1 && t.pendingReceiveReplyCode == n
+  | none => false
+
+theorem replyStashedAt_eq_stasherTestAt (s : SystemState) (rid : SeLe4n.ReplyId) (r : Reply) :
+    s.replyStashedAt rid r = (match r.stasherCode with
+      | 0 => false
+      | k + 1 => stasherTestAt s (⟨k⟩ : SeLe4n.ThreadId) (rid.val + 1)) := by
+  unfold SystemState.replyStashedAt stasherTestAt
+  rfl
+
+/-- Objects that agree off their run-queue links agree on the stasher test: it
+reads a thread's state and stash codes, which no run-queue link holds. -/
+theorem stasherTestAt_of_view {s s' : SystemState} {x : SeLe4n.ThreadId}
+    (h : (s'.objects[x.toObjId]?).map KernelObject.withoutRunLinks =
+      (s.objects[x.toObjId]?).map KernelObject.withoutRunLinks) (n : Nat) :
+    stasherTestAt s' x n = stasherTestAt s x n := by
+  unfold stasherTestAt SystemState.getTcb?
+  cases e : s.objects[x.toObjId]? with
+  | none =>
+    rw [e] at h
+    cases e' : s'.objects[x.toObjId]? with
+    | none => rfl
+    | some _ => rw [e'] at h; cases h
+  | some o =>
+    cases o with
+    | tcb t =>
+      obtain ⟨t', h', e1⟩ := agreeAt_tcb h e
+      rw [h']
+      have a := congrArg TCB.ipcStateCode e1
+      have b := congrArg TCB.pendingReceiveReplyCode e1
+      simp only [TCB.withoutRunLinks] at a b
+      simp only [a, b]
+    | _ =>
+      rw [agreeAt_of_not_tcb h (fun _ e => by cases e) e]
+
 /-- **An enqueue's in-place guard carries over** to a state with the same index
 and lifecycle, every key found where it was, no new VSpace root and every
 thread still a thread. -/
@@ -419,12 +302,8 @@ theorem enqueuesInPlace_of_frame {s s' : SystemState} (endpointId : SeLe4n.ObjId
     (h : enqueuesInPlace s endpointId tid tail? = true) :
     enqueuesInPlace s' endpointId tid tail? = true := by
   have hS : ∀ {id ty}, storeLeavesIndexAndTypes s id ty = true →
-      storeLeavesIndexAndTypes s' id ty = true := by
-    intro id ty h
-    unfold storeLeavesIndexAndTypes at h ⊢
-    rw [hI, hL]
-    simp only [Bool.and_eq_true] at h ⊢
-    exact ⟨h.1, hV id h.2⟩
+      storeLeavesIndexAndTypes s' id ty = true :=
+    fun h => storeLeavesIndexAndTypes_of_frame hI hL hV h
   unfold enqueuesInPlace at h ⊢
   simp only [Bool.and_eq_true] at h ⊢
   obtain ⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩, h6⟩ := h
@@ -451,7 +330,8 @@ theorem storeReplyRendezvous_receiveGuard (st : SystemState) (c tid : SeLe4n.Thr
     (hE : st.objects[epId]? = some (.endpoint ep))
     (hR : st.objects[tid.toObjId]? = some (.tcb rt)) (hA : receiveBlockAdmits rt = true)
     (hEnq : enqueuesInPlace st epId tid ep.receiveQ.tail = true)
-    (hFree : rp.consumed.isFree = true) (hStash : st.replyIsStashed rid = false) :
+    (hFree : rp.consumed.isFree = true) (hStash : st.replyStashedAt rid rp = false)
+    (hRec : replyRecordsInPlace st (rid.val + 1) = true) :
     (storeReplyRendezvous st c tid rid msg).objects[epId]? = some (.endpoint ep) ∧
       (∃ rt1, (storeReplyRendezvous st c tid rid msg).objects[tid.toObjId]? = some (.tcb rt1) ∧
         receiveBlockAdmits rt1 = true) ∧
@@ -476,16 +356,17 @@ theorem storeReplyRendezvous_receiveGuard (st : SystemState) (c tid : SeLe4n.Thr
     have : receiveBlockAdmits rt1 = receiveBlockAdmits rt1.withoutRunLinks := rfl
     rw [this, e1]; exact hA
   · unfold receiveBlocksInPlace
-    rw [Bool.and_eq_true]
+    rw [Bool.and_eq_true, Bool.and_eq_true]
     obtain ⟨hI, hL⟩ := storeReplyRendezvousReady_fields st c tid rid hNo
     rw [hS1] at hI hL
     have hK : S1.objectsKeepFinds st := hS1 ▸ storeReplyRendezvousReady_keepsFinds st c tid rid hNo hFC
-    obtain ⟨tc1, htc1⟩ := hS1 ▸ storeReplyRendezvousReady_caller st c tid rid ct hNo hTc hFC hRc
+    obtain ⟨tc1, htc1, hc1⟩ := hS1 ▸ storeReplyRendezvousReady_caller st c tid rid ct hNo hTc hFC hRc
     have hR1 : S1.objects[rid.toObjId]? = some (.reply rp.consumed) :=
       hS1 ▸ storeReplyRendezvousReady_reply st c tid rid ct rp hNo hTc hFC hRp hRc
     -- every key: the caller and its reply object by name, the rest by agreement
     have hAt : ∀ x, (x = c.toObjId ∧
-          ∃ t, (S1.mapTcbInPlace c (holdMessage msg)).objects[x]? = some (.tcb t)) ∨
+          ∃ t, (S1.mapTcbInPlace c (holdMessage msg)).objects[x]? = some (.tcb t) ∧
+            t.ipcStateCode = (receiverReady ct).ipcStateCode) ∨
         (x = rid.toObjId ∧
           (S1.mapTcbInPlace c (holdMessage msg)).objects[x]? = some (.reply rp.consumed)) ∨
         ((S1.mapTcbInPlace c (holdMessage msg)).objects[x]?).map KernelObject.withoutRunLinks =
@@ -494,35 +375,55 @@ theorem storeReplyRendezvous_receiveGuard (st : SystemState) (c tid : SeLe4n.Thr
       by_cases hxc : x = c.toObjId
       · subst hxc
         left
-        refine ⟨rfl, holdMessage msg tc1, ?_⟩
+        refine ⟨rfl, holdMessage msg tc1, ?_, hc1⟩
         rw [SystemState.objects_mapTcbInPlace, if_pos (beq_self_eq_true _), htc1]; rfl
       · by_cases hxr : x = rid.toObjId
         · subst hxr; right; left; rw [hHold _ hxc]; exact ⟨rfl, hR1⟩
         · right; right; rw [hHold _ hxc]; exact hAg x hxc hxr
-    refine ⟨enqueuesInPlace_of_frame _ _ _ hI hL
-      (((SystemState.mapTcbInPlace_keepsFinds _ _ _).trans hK)) ?_ ?_ hEnq, ?_⟩
-    · intro x hx
-      rcases hAt x with ⟨_, t, h⟩ | ⟨_, h⟩ | h
+    have hV : ∀ x, notVSpaceRootAt st x = true →
+        notVSpaceRootAt (S1.mapTcbInPlace c (holdMessage msg)) x = true := by
+      intro x hx
+      rcases hAt x with ⟨_, t, h, _⟩ | ⟨_, h⟩ | h
       · unfold notVSpaceRootAt; rw [SystemState.getObject?_eq_getElem, h]
       · unfold notVSpaceRootAt; rw [SystemState.getObject?_eq_getElem, h]
       · rw [notVSpaceRootAt_of_view h]; exact hx
+    have hKF : (S1.mapTcbInPlace c (holdMessage msg)).objectsKeepFinds st :=
+      (SystemState.mapTcbInPlace_keepsFinds _ _ _).trans hK
+    refine ⟨⟨enqueuesInPlace_of_frame _ _ _ hI hL hKF hV ?_ hEnq, ?_⟩, ?_⟩
     · intro p hp
       obtain ⟨t, ht⟩ := Option.isSome_iff_exists.mp hp
       have h1 := (SystemState.getTcb?_eq_some_iff _ _ _).mp ht
-      rcases hAt p.toObjId with ⟨_, t', h⟩ | ⟨e, _⟩ | h
+      rcases hAt p.toObjId with ⟨_, t', h, _⟩ | ⟨e, _⟩ | h
       · exact Option.isSome_iff_exists.mpr ⟨t', (SystemState.getTcb?_eq_some_iff _ _ _).mpr h⟩
       · rw [e, hRp] at h1; cases h1
       · obtain ⟨t', h', _⟩ := agreeAt_tcb h h1
         exact Option.isSome_iff_exists.mpr ⟨t', (SystemState.getTcb?_eq_some_iff _ _ _).mpr h'⟩
-    · have hSt : (S1.mapTcbInPlace c (holdMessage msg)).replyIsStashed rid = false := by
-        rw [replyIsStashed_of_stashView (st := st) (by
-          rw [stashView_hold, ← hS1]
-          exact stashView_storeReplyRendezvousReady st c tid rid ct _ _ hNo hTc hIpc) rid]
-        exact hStash
+    · -- The Reply records the thread that stashes it; that thread is the
+      -- caller (now ready), the Reply's own key (no thread) or a thread the
+      -- reply leg leaves as it was off its run-queue links.
+      have hSt : (S1.mapTcbInPlace c (holdMessage msg)).replyStashedAt rid rp.consumed = false := by
+        rw [replyStashedAt_eq_stasherTestAt, Reply.consumed_stasherCode]
+        rw [replyStashedAt_eq_stasherTestAt] at hStash
+        revert hStash
+        cases rp.stasherCode with
+        | zero => intro _; rfl
+        | succ k =>
+          intro hStash
+          dsimp only at hStash ⊢
+          rcases hAt (⟨k⟩ : SeLe4n.ThreadId).toObjId with ⟨_, t, h, hc⟩ | ⟨_, h⟩ | h
+          · unfold stasherTestAt SystemState.getTcb?; rw [h]
+            simp only [hc, receiverReady, TCB.setIpcState_ipcStateCode]
+            rfl
+          · unfold stasherTestAt SystemState.getTcb?; rw [h]
+          · rw [stasherTestAt_of_view h]; exact hStash
       simp only [SystemState.replyStashValid]
       rw [(SystemState.getReply?_eq_some_iff _ _ _).mpr (by rw [hHold _ hRc]; exact hR1)]
       simp only [hSt, hFree]
       rfl
+    · show replyRecordsInPlace _ (rid.val + 1) = true
+      simp only [replyRecordsInPlace, Bool.and_eq_true] at hRec ⊢
+      exact ⟨(hKF _).trans hRec.1, storeLeavesIndexAndTypes_of_frame
+        (s' := S1.mapTcbInPlace c (holdMessage msg)) hI hL hV hRec.2⟩
 
 /-- **The reply-receive that blocks, in place**: under the reply's guard
 (`replyWakesInPlace`), with the receiver the server the caller recorded, no
@@ -544,7 +445,8 @@ theorem replyRecvOnCore_blocks_inPlace (st : SystemState) (epId : SeLe4n.ObjId)
     (hR : st.objects[tid.toObjId]? = some (.tcb rt)) (hA : receiveBlockAdmits rt = true)
     (hEnq : enqueuesInPlace st epId tid ep.receiveQ.tail = true)
     (hRp : st.objects[rid.toObjId]? = some (.reply rp))
-    (hFree : rp.consumed.isFree = true) (hStash : st.replyIsStashed rid = false) :
+    (hFree : rp.consumed.isFree = true) (hStash : st.replyStashedAt rid rp = false)
+    (hRec : replyRecordsInPlace st (rid.val + 1) = true) :
     endpointReplyRecvOnCore epId tid rid c msg root slot core st =
       .ok ({ results := #[] }, Architecture.stageDeliveredMessage
         (PriorityInheritance.propagatePipChainCrossCore
@@ -557,7 +459,7 @@ theorem replyRecvOnCore_blocks_inPlace (st : SystemState) (epId : SeLe4n.ObjId)
   obtain ⟨hEq, hHead⟩ := replyOnCore_inPlace st tid c tid ct ep0 rid msg core hSz
     hT hIpc hRO hG
   obtain ⟨hE1, ⟨rt1, hR1, hA1⟩, hG1⟩ := storeReplyRendezvous_receiveGuard st c tid rid msg ct rp
-    epId ep rt hNo hT hIpc hFC hRp hNe hE hR hA hEnq hFree hStash
+    epId ep rt hNo hT hIpc hFC hRp hNe hE hR hA hEnq hFree hStash hRec
   have hTc : st.getTcb? c = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
   have hRec : recordedReplyServer? st c = some tid := by
     simp only [recordedReplyServer?, hTc, hIpc]
@@ -589,6 +491,24 @@ open SeLe4n.Model SeLe4n.Kernel.RobinHood SeLe4n.Kernel.Concurrency
 
 section ReplyRecvDelivered
 
+theorem storeReplyStasher_noResizeDue (st : SystemState) (rc : Nat) (recv : SeLe4n.ThreadId)
+    (hNo : st.objects.noResizeDue) : (storeReplyStasher st rc recv).objects.noResizeDue := by
+  rcases rc with _ | k
+  · exact hNo
+  · exact modifyObject_noResizeDue _ _ _ hNo
+
+/-- The stasher record commutes with a message-slot write: it rewrites one
+Reply, which holds no message slot. -/
+theorem storeReplyStasher_msg (st : SystemState) (r recv : SeLe4n.ThreadId) (rc : Nat)
+    (ρ : SeLe4n.RegisterFile → SeLe4n.RegisterFile) (μ : Option IpcMessage → Option IpcMessage)
+    (π : Nat → Nat)
+    (hNo : st.objects.noResizeDue) :
+    storeReplyStasher (st.mapTcbInPlace r (TCB.withMessageSlots ρ μ π)) rc recv =
+      (storeReplyStasher st rc recv).mapTcbInPlace r (TCB.withMessageSlots ρ μ π) := by
+  rcases rc with _ | k
+  · rfl
+  · exact modifyObject_msg _ _ _ _ _ _ hNo (fun o => by cases o <;> rfl)
+
 theorem storeReceiveBlock_noResizeDue (st : SystemState) (epId : SeLe4n.ObjId)
     (tid : SeLe4n.ThreadId) (tc rc : Nat) (hNo : st.objects.noResizeDue) :
     (storeReceiveBlock st epId tid tc rc).objects.noResizeDue := by
@@ -596,8 +516,8 @@ theorem storeReceiveBlock_noResizeDue (st : SystemState) (epId : SeLe4n.ObjId)
   dsimp only
   have h1 := modifyObject_noResizeDue st epId
     (enqueueEndpoint true tid (ThreadId.optCode (ThreadId.ofOptCode tc))) hNo
-  refine updateTcb_noResizeDue _ _ _ (updateTcb_noResizeDue _ _ _
-    (updateTcb_noResizeDue _ _ _ ?_))
+  refine updateTcb_noResizeDue _ _ _ (storeReplyStasher_noResizeDue _ _ _
+    (updateTcb_noResizeDue _ _ _ (updateTcb_noResizeDue _ _ _ ?_)))
   split
   · exact h1
   · exact updateTcb_noResizeDue _ _ _ h1
@@ -619,12 +539,12 @@ theorem storeReceiveBlock_msg (st : SystemState) (epId : SeLe4n.ObjId)
     (enqueueEndpoint true tid (ThreadId.optCode (ThreadId.ofOptCode tc))) = s1 at h1
   generalize ThreadId.ofOptCode tc = tail?
   have key : ∀ s2 : SystemState, s2.objects.noResizeDue →
-      (((s2.mapTcbInPlace r (TCB.withMessageSlots id (fun _ => some msg) id)).updateTcb tid
+      (storeReplyStasher (((s2.mapTcbInPlace r (TCB.withMessageSlots id (fun _ => some msg) id)).updateTcb tid
         (enqueueLinks tail?)).updateTcb tid
-        (fun t => TCB.setIpcState { t with pendingMessage := none } (.blockedOnReceive epId))).updateTcb
+        (fun t => TCB.setIpcState { t with pendingMessage := none } (.blockedOnReceive epId))) rc tid).updateTcb
         tid (fun t => { t with pendingReceiveReplyCode := rc }) =
-      (((s2.updateTcb tid (enqueueLinks tail?)).updateTcb tid
-        (fun t => TCB.setIpcState { t with pendingMessage := none } (.blockedOnReceive epId))).updateTcb
+      ((storeReplyStasher ((s2.updateTcb tid (enqueueLinks tail?)).updateTcb tid
+        (fun t => TCB.setIpcState { t with pendingMessage := none } (.blockedOnReceive epId))) rc tid).updateTcb
         tid (fun t => { t with pendingReceiveReplyCode := rc })).mapTcbInPlace r
         (TCB.withMessageSlots id (fun _ => some msg) id) := by
     intro s2 hNo2
@@ -634,8 +554,11 @@ theorem storeReceiveBlock_msg (st : SystemState) (epId : SeLe4n.ObjId)
     rw [updateTcb_msg _ _ _ _ _ _
       (fun t => TCB.setIpcState { t with pendingMessage := none } (.blockedOnReceive epId)) hNo3
       (fun h => absurd h hNe)]
+    have hNo4 := updateTcb_noResizeDue _ tid
+      (fun t => TCB.setIpcState { t with pendingMessage := none } (.blockedOnReceive epId)) hNo3
+    rw [storeReplyStasher_msg _ _ _ _ _ _ _ hNo4]
     rw [updateTcb_msg _ _ _ _ _ _ (fun t => { t with pendingReceiveReplyCode := rc })
-      (updateTcb_noResizeDue _ _ _ hNo3) (fun _ _ => rfl)]
+      (storeReplyStasher_noResizeDue _ _ _ hNo4) (fun _ _ => rfl)]
   cases tail? with
   | none => exact key s1 h1
   | some p =>
@@ -789,7 +712,8 @@ theorem replyRecvOnCore_blocks_delivered (st : SystemState) (epId : SeLe4n.ObjId
     (hR : st.objects[tid.toObjId]? = some (.tcb rt)) (hA : receiveBlockAdmits rt = true)
     (hEnq : enqueuesInPlace st epId tid ep.receiveQ.tail = true)
     (hRp : st.objects[rid.toObjId]? = some (.reply rp))
-    (hFree : rp.consumed.isFree = true) (hStash : st.replyIsStashed rid = false) :
+    (hFree : rp.consumed.isFree = true) (hStash : st.replyStashedAt rid rp = false)
+    (hRec : replyRecordsInPlace st (rid.val + 1) = true) :
     (match endpointReplyRecvOnCore epId tid rid c msg root slot core st with
       | .ok (summary, st') =>
           (.ok ((), Architecture.stageDeliveredMessage st' tid summary.installedCount) :
@@ -806,11 +730,11 @@ theorem replyRecvOnCore_blocks_delivered (st : SystemState) (epId : SeLe4n.ObjId
     exact hG.1.1.1.1.2
   have hCT : c.toObjId ≠ tid.toObjId := fun e => hNe (SeLe4n.ThreadId.toObjId_injective _ _ e).symm
   rw [replyRecvOnCore_blocks_inPlace st epId tid c rid msg root slot core ct ep0 rt ep rp hSz
-    hT hIpc hRO hG hNe hE hS hR hA hEnq hRp hFree hStash]
+    hT hIpc hRO hG hNe hE hS hR hA hEnq hRp hFree hStash hRec]
   simp only [CapTransferSummary.installedCount_empty]
   rw [replyRecvBlock_staged _ _ _ _ _ _ _ _ hNo hNe hSz4]
   obtain ⟨hE1, ⟨rt1, hR1, hA1⟩, hG1⟩ := storeReplyRendezvous_receiveGuard st c tid rid msg ct rp
-    epId ep rt hNo hT hIpc hFC hRp hNe hE hR hA hEnq hFree hStash
+    epId ep rt hNo hT hIpc hFC hRp hNe hE hR hA hEnq hFree hStash hRec
   obtain ⟨t, hT1, hB⟩ := receiveBlock_receiver_blocked _ epId ep tid rt1 (some rid) core hE1 hR1
     hA1 hG1
   have h1 := storeReplyRendezvousReady_noResizeDue st c tid rid hNo

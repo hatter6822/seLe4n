@@ -224,6 +224,14 @@ theorem linkReply_replyViews_eq {st st' : SystemState} {rid : ReplyId} {c : Thre
     · cases h
   · cases h
 
+/-- Recording a Reply's stasher keeps the views: it stores one Reply over a
+Reply, and a Reply has no reply-waiter view. -/
+theorem recordReplyStasher_replyViews_eq (st : SystemState) (code : Nat) (recv : ThreadId)
+    (hInv : st.objects.invExt) : (st.recordReplyStasher code recv).replyViews = st.replyViews := by
+  rcases SystemState.recordReplyStasher_eq_or st code recv with h | ⟨_, _, _, hR, hS⟩
+  · rw [h]
+  · exact replyViews_storeReply_eq hInv ((SystemState.getReply?_eq_some_iff _ _ _).mpr hR) hS
+
 theorem consumeReply_replyViews_eq {st st' : SystemState} {rid : ReplyId}
     (hInv : st.objects.invExt) (h : consumeReply rid st = .ok ((), st')) :
     st'.replyViews = st.replyViews := by

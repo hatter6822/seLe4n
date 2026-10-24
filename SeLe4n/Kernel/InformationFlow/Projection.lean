@@ -368,8 +368,13 @@ def projectKernelObject (ctx : LabelingContext) (observer : IfObserver) (obj : K
       -- and a retyped Reply is built with `ReplyId.sentinel`), so an un-normalized
       -- internal id would leak a hidden ReplyId through a low-visible Reply object.
       -- Erasing it to the canonical sentinel removes the channel.
+      --
+      -- The recorded stasher (`stasherCode`) is erased with the caller link: it
+      -- names a receiving thread exactly as `callerCode` names a calling one, and
+      -- a stash records it only on its own write, so no wake or clear on the
+      -- thread's side changes this projection.
       .reply { r with replyId := SeLe4n.ReplyId.sentinel,
-                      callerCode := 0, prev := none, next := none,
+                      callerCode := 0, prev := none, next := none, stasherCode := 0,
                       capTarget := .replyCap SeLe4n.ReplyId.sentinel, capTarget_eq := rfl }
   -- WS-SM SM8.B.4 stripped the per-object lock word here, because `RwLockState`
   -- carries core identities (`writerHeld`, `readers`, `waiters`) and an
@@ -581,6 +586,15 @@ theorem projectKernelObject_reply_stackLinks_invariant
     (ctx : LabelingContext) (observer : IfObserver) (r : SeLe4n.Kernel.Reply)
     (prev : Option SeLe4n.ReplyId) (next : Option SeLe4n.Kernel.ReplyStackLink) :
     projectKernelObject ctx observer (.reply { r with prev := prev, next := next })
+      = projectKernelObject ctx observer (.reply r) := by
+  simp [projectKernelObject]
+
+/-- The projection is invariant under recording a Reply's stasher: the `.reply`
+arm erases `stasherCode`, so the stash's record on the Reply is unobservable
+through it whatever the Reply's label. -/
+theorem projectKernelObject_reply_stasher_invariant
+    (ctx : LabelingContext) (observer : IfObserver) (r : SeLe4n.Kernel.Reply) (k : Nat) :
+    projectKernelObject ctx observer (.reply { r with stasherCode := k })
       = projectKernelObject ctx observer (.reply r) := by
   simp [projectKernelObject]
 

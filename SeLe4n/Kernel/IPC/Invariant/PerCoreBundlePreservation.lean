@@ -114,6 +114,16 @@ theorem trans {st st' st'' : SystemState} {c : CoreId}
     obtain ⟨tcb, hh, hUU, hQQ, hCC, hIpc⟩ := h1.pullback tid tcb' h' hU' hQ' hC' (hIpc' ▸ hNA)
     exact ⟨tcb, hh, hUU, hQQ, hCC, hIpc.trans hIpc'⟩⟩
 
+/-- Recording a Reply's stasher frames every core's slice: it writes one
+Reply, so no thread and no scheduler state changes. -/
+theorem of_recordReplyStasher {st : SystemState} {code : Nat} {recv : SeLe4n.ThreadId}
+    {c : CoreId} (hObjInv : st.objects.invExt) :
+    passiveServerIdleFrameOnCore st (st.recordReplyStasher code recv) c := by
+  refine ⟨fun tid tcb' hT hU hQ hC _ => ?_⟩
+  rw [SystemState.recordReplyStasher_scheduler] at hQ hC
+  rw [SystemState.recordReplyStasher_getTcb? _ _ _ hObjInv] at hT
+  exact ⟨tcb', hT, hU, hQ, hC, rfl⟩
+
 /-- WS-ZA ZA4.4: a rewrite of notification-queue links frames every core's
 slice: the scheduler is untouched and every TCB keeps its binding and IPC state. -/
 theorem of_ntfnLinksRewritten {st st' : SystemState} {c : CoreId}
@@ -936,7 +946,9 @@ theorem endpointReceiveDual_passiveServerIdleFrameOnCore
                   | false => simp [hb] at hStep
                   | true => rfl
                 rw [if_pos hValid] at hStep
-                cases hStash : storeObject receiver.toObjId (.tcb { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId }) st2 with
+                cases hStash : storeObject receiver.toObjId
+                    (.tcb { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId })
+                    (st2.recordReplyStasher (SeLe4n.ReplyId.optCode replyId) receiver) with
                 | error e => simp [hStash] at hStep
                 | ok pStash =>
                   obtain ⟨_, stStashed⟩ := pStash
@@ -945,13 +957,20 @@ theorem endpointReceiveDual_passiveServerIdleFrameOnCore
                   have hRecvObj := (getTcb?_eq_some_iff st2 receiver rTcb).mp hGetR
                   have hRTcbIpc : rTcb.ipcState = .blockedOnReceive endpointId :=
                     storeTcbIpcStateAndMessage_ipcState_eq st1 st2 receiver _ _ hObjInvEnq hIpc rTcb hRecvObj
-                  have hF3 := hF2.trans (storeObject_modifiedTcb_passiveServerIdleFrameOnCore st2 stStashed receiver.toObjId rTcb
-                    { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId } hRecvObj rfl
+                  have hObjInvR := SystemState.recordReplyStasher_objects_invExt st2
+                    (SeLe4n.ReplyId.optCode replyId) receiver hObjInv2
+                  have hRecvObjR : (st2.recordReplyStasher (SeLe4n.ReplyId.optCode replyId)
+                      receiver).objects[receiver.toObjId]? = some (.tcb rTcb) :=
+                    (getTcb?_eq_some_iff _ receiver rTcb).mp
+                      (by rw [SystemState.recordReplyStasher_getTcb? _ _ _ hObjInv2]; exact hGetR)
+                  have hF3 := (hF2.trans (passiveServerIdleFrameOnCore.of_recordReplyStasher hObjInv2)).trans
+                    (storeObject_modifiedTcb_passiveServerIdleFrameOnCore _ stStashed receiver.toObjId rTcb
+                    { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId } hRecvObjR rfl
                     (Or.inl (by rw [show ({ rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId } : TCB).ipcState
                       = .blockedOnReceive endpointId from hRTcbIpc]; exact Or.inr (Or.inl ⟨endpointId, Or.inl rfl⟩)))
-                    hObjInv2 hStash)
-                  have hStashObj := storeObject_objects_eq st2 stStashed receiver.toObjId
-                    (.tcb { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId }) hObjInv2 hStash
+                    hObjInvR hStash)
+                  have hStashObj := storeObject_objects_eq _ stStashed receiver.toObjId
+                    (.tcb { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId }) hObjInvR hStash
                   exact hF3.trans (removeRunnable_passiveServerIdleFrameOnCore stStashed receiver (fun tcb hTcb => Or.inr (by
                     have hTcbRaw := (getTcb?_eq_some_iff stStashed receiver tcb).mp hTcb
                     rw [hStashObj] at hTcbRaw; obtain rfl := KernelObject.tcb.inj (Option.some.inj hTcbRaw)

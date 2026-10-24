@@ -2632,11 +2632,14 @@ private def runReplyFinaliseChecks : IO Unit := do
        decodeCarve slotUtRetype endpointTag 962 slotOwnCnRW 14] with
   | .error e => assertBool s!"carving a receiver, a reply and an endpoint succeeds (got {repr e})" false
   | .ok st0 => do
-    let st := st0.updateTcb ⟨960⟩ fun t =>
+    -- The stash as a receive makes it: the Reply records its stasher, then the
+    -- receiver stashes it.
+    let st := (st0.recordReplyStasher 962 ⟨960⟩).updateTcb ⟨960⟩ fun t =>
       { (t.setIpcState (.blockedOnReceive (SeLe4n.ObjId.ofNat 962))) with
           threadState := .BlockedRecv, pendingReceiveReplyCode := 962 }
-    assertBool "setup: the carved receiver stashes the carved reply"
-      (SystemState.replyIsStashed st ⟨961⟩)
+    assertBool "setup: the carved receiver stashes the carved reply, recorded on the reply"
+      (SystemState.replyIsStashed st ⟨961⟩ &&
+        (st.getReply? ⟨961⟩).any (fun r => st.replyStashedAt ⟨961⟩ r))
     match runAll st [decodeDelete 13] with
     | .error e => assertBool s!"deleting a stashed reply's last capability succeeds (got {repr e})" false
     | .ok st1 =>

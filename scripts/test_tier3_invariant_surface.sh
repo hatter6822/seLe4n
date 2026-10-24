@@ -2861,7 +2861,7 @@ run_check "INVARIANT" rg -n '^theorem cancelDonatedDonationOnCore_migrates_to_re
 run_check "INVARIANT" bash -lc 'rg -U -n "let tcb. := \(st\.getTcb\? tid\)\.getD tcb\n[ \t]*match \(match tcb.\.schedContextBinding with" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
 
 # OD5.4: retype refuses both halves of a live stack -- the frame and the head.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def lifecyclePreRetypeCleanup[^\n]*(\n([ \t][^\n]*)?)*if !r\.isFree \|\| st\.replyIsStashed" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def lifecyclePreRetypeCleanup[^\n]*(\n([ \t][^\n]*)?)*if !r\.isFree \|\| st\.replyStashedAt \(SeLe4n\.ReplyId\.ofNat target\.toNat\) r then" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def lifecyclePreRetypeCleanup[^\n]*(\n([ \t][^\n]*)?)*if sc\.scReply\.isSome then \.error \.revocationRequired" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
 run_check "INVARIANT" rg -n '^theorem lifecyclePreRetypeCleanup_reply_refuses_live_stack_frame($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
 run_check "INVARIANT" rg -n '^theorem lifecyclePreRetypeCleanup_schedContext_refuses_stack_head($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
@@ -3406,7 +3406,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^private theorem witnessSt1_lookup[^\n
 run_check "INVARIANT" bash -lc 'rg -U -n "^private theorem chainWitnessSt1_lookup[^\n]*(\n([ \t][^\n]*)?)*  unfold chainWitnessSt1\n  rw \[SystemState\.withObjectStored_objects, RHTable_getElem\?_eq_get\?," SeLe4n/Kernel/IPC/Invariant/Reachability.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^private theorem witnessInv1[^\n]*(\n([ \t][^\n]*)?)*    \?_ \?_ \(SystemState\.withObjectStored_scheduler _ _ _\) \?_" SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^private theorem witnessInv2[^\n]*(\n([ \t][^\n]*)?)*    \?_ \?_ \(SystemState\.withObjectStored_scheduler _ _ _\) \?_ witnessSt1_detached witnessInv1" SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^private theorem witnessInv4[^\n]*(\n([ \t][^\n]*)?)*    \?_ \?_ \(SystemState\.withObjectStored_scheduler _ _ _\) rfl" SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^private theorem witnessInv4[^\n]*(\n([ \t][^\n]*)?)*    \?_ \?_ \(SystemState\.withObjectStored_scheduler _ _ _\) ⟨rfl, rfl⟩" SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean'
 # NEGATIVE: a stored witness's lookup does not expose its table by `show`
 # (that is the raw insert one step removed: it holds only while the table is
 # definitionally the insert), and the three retype-lever instances do not
@@ -4185,7 +4185,24 @@ run_check "INVARIANT" rg -n -U 'def finaliseReply [^\n]*(\n([ \t][^\n]*)?){0,8}\
 run_check "INVARIANT" rg -n '^theorem finaliseSchedContextDeschedule_closed($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllFrame.lean
 # A stashed reply is unlinked from its receiver in the receiver's slot
 # (reply_unlink), the stash re-checked before the write.
-run_check "INVARIANT" rg -n -U 'def finaliseReplyUnstash [^\n]*(\n([ \t][^\n]*)?){0,6}\n      if t\.pendingReceiveReplyCode == x\.val \+ 1 then st\.updateTcb s TCB\.stashCleared' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n -U 'def finaliseReplyUnstash [^\n]*\n  match r\.stasherCode with\n  \| 0 => st\n  \| k \+ 1 =>\n    match st\.getTcb\? ⟨k⟩ with\n    \| some t =>\n      if t\.pendingReceiveReplyCode == x\.val \+ 1 then st\.updateTcb ⟨k⟩ TCB\.stashCleared' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+# The stasher is read off the Reply's record, not found by a table walk.
+run_negative_check "INVARIANT" rg -n 'replyStasherCode|objectStashesReply' SeLe4n
+# A Reply records the thread that stashed it (seL4 MCS's reply->replyTCB), a
+# field written at every stash and cleared lazily: each read re-checks the named
+# thread.  The receive's admission and the delete's unstash read it in O(1); the
+# whole-table scan survives only as the derived view proven equal to it.
+run_check "INVARIANT" rg -n '^  stasherCode : Nat +:= 0$' SeLe4n/Model/Object/Reply.lean
+run_check "INVARIANT" rg -n -U '\(st..\.recordReplyStasher \(SeLe4n\.ReplyId\.optCode replyId\) receiver\)' SeLe4n/Kernel/IPC/DualQueue/Transport.lean
+run_check "INVARIANT" rg -n -U 'if r\.caller\.isNone && !st\.replyStashedAt rid r then \.ok \(some rid\)' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
+run_check "INVARIANT" rg -n -U 'if r\.caller\.isNone && !st\.replyStashedAt rid r then \.ok \(some rid\)' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem replyStashedAt_eq_replyIsStashed($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem finaliseReplyUnstash_eq_of_stasher($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllFrame.lean
+run_check "INVARIANT" rg -n '^theorem storeReplyStasher_eq_record($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem recordReplyStasher_preserves_projection($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean
+run_check "INVARIANT" rg -n '^theorem projectKernelObject_reply_stasher_invariant($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Projection.lean
+# The fold view the scan's fast form was compiled through is gone with the scan.
+run_negative_check "INVARIANT" rg -n 'stashView|MapValueAtFold' SeLe4n
 run_check "INVARIANT" rg -n '^theorem finaliseReplyUnstash_closed($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllFrame.lean
 run_check "INVARIANT" rg -n '^theorem finaliseUnstashStep_keepsIpcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllPreservation.lean
 run_check "INVARIANT" rg -n '^theorem storeObject_stashCleared_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean

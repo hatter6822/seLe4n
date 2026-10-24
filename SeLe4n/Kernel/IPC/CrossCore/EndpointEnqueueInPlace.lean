@@ -246,4 +246,50 @@ theorem endpointEnqueue_inPlace_eq (st : SystemState) (endpointId : SeLe4n.ObjId
     · rw [updateTcb_findsInPlace _ hRT2 ((hF2 _).trans hFR), hF2]; exact hFR
     · exact updateTcb_storeLeaves _ hRT2 ((hF2 _).trans hFR) hL2
 
+/-- **A guarded enqueue leaves a Reply's slot**: it writes the endpoint, the
+appended thread and the old tail, each in place, and none of those keys holds a
+Reply. -/
+theorem storeEndpointEnqueue_replySlotInPlace (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (ep : Endpoint) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
+    (tail? : Option SeLe4n.ThreadId)
+    (hE : st.objects[endpointId]? = some (.endpoint ep))
+    (hG : enqueuesInPlace st endpointId tid tail? = true)
+    {rk : SeLe4n.ObjId} {r : Reply} (h : replySlotInPlace st rk r) :
+    replySlotInPlace (storeEndpointEnqueue st endpointId isReceiveQ tid tail?) rk r := by
+  simp only [enqueuesInPlace, Bool.and_eq_true, Bool.not_eq_true'] at hG
+  obtain ⟨⟨⟨⟨⟨_, _⟩, hFE⟩, _⟩, hFR⟩, hTl⟩ := hG
+  obtain ⟨h1, h2, h3⟩ := h
+  have hNeE : endpointId ≠ rk := by intro he; rw [he, h3] at hE; cases hE
+  have hNotV : ∀ r',
+      enqueueEndpoint isReceiveQ tid (ThreadId.optCode tail?) (.endpoint ep) ≠
+      .vspaceRoot r' := by
+    intro r' h; simp only [enqueueEndpoint] at h; split at h <;> cases h
+  have hMo : st.modifyObject endpointId
+      (enqueueEndpoint isReceiveQ tid (ThreadId.optCode tail?)) = { st with objects :=
+        (st.objects.insert endpointId
+          (enqueueEndpoint isReceiveQ tid (ThreadId.optCode tail?) (.endpoint ep))) } := by
+    unfold SystemState.modifyObject
+    rw [SeLe4n.Kernel.RobinHood.RHTable.modify_of_get? hE]
+  have hF1 : ∀ k, (st.modifyObject endpointId
+      (enqueueEndpoint isReceiveQ tid (ThreadId.optCode tail?))).objects.findsInPlace k =
+        st.objects.findsInPlace k := fun k => by
+    rw [hMo]; exact SeLe4n.Kernel.RobinHood.RHTable.findsInPlace_insert_of_findsInPlace k _ hFE
+  have hS1 : replySlotInPlace (st.modifyObject endpointId
+      (enqueueEndpoint isReceiveQ tid (ThreadId.optCode tail?))) rk r := by
+    refine ⟨(hF1 rk).trans h1, ?_, ?_⟩
+    · rw [hMo]; exact storeLeavesIndexAndTypes_insert_inPlace hFE hNotV h2
+    · rw [hMo]
+      exact (SeLe4n.Kernel.RobinHood.RHTable.get?_insert_ne_of_findsInPlace rk _ hFE hNeE).trans h3
+  unfold storeEndpointEnqueue
+  cases tail? with
+  | none =>
+    exact updateTcb_replySlotInPlace _ ((hF1 _).trans hFR) hS1
+  | some p =>
+    simp only [Bool.and_eq_true] at hTl
+    obtain ⟨⟨_, hFP⟩, _⟩ := hTl
+    simp only []
+    exact updateTcb_replySlotInPlace _
+      ((updateTcb_findsInPlace_of_key _ ((hF1 _).trans hFP) _).trans ((hF1 _).trans hFR))
+      (updateTcb_replySlotInPlace _ ((hF1 _).trans hFP) hS1)
+
 end SeLe4n.Kernel

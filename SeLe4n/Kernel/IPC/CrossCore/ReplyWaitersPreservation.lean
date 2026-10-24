@@ -245,7 +245,10 @@ theorem endpointReceiveDualOnCore_preserves_replyWaitersConsistent (endpointId :
                 · exact hC
                 · rename_i stS hSt
                   refine replyWaitersConsistent.of_views ?_ hC
-                  rw [removeRunnableOnCore_replyViews_eq, replyViews_storeTcb_eq hI3 hT hSt rfl, hV3]
+                  rw [removeRunnableOnCore_replyViews_eq,
+                    replyViews_storeTcb_eq (old := rTcb) (SystemState.recordReplyStasher_objects_invExt _ _ _ hI3)
+                      (by rw [SystemState.recordReplyStasher_getTcb? _ _ _ hI3]; exact hT) hSt rfl,
+                    recordReplyStasher_replyViews_eq _ _ _ hI3, hV3]
               · exact hC
   · split <;> exact hC
 

@@ -1140,38 +1140,24 @@ one.  Each check reads the state the cancel then writes. -/
     t.replyObjectCode == x.val + 1 && t.queueNextCode == 0 && t.queuePrevCode == 0 &&
     t.timeoutBudget.isNone && loansFromNone st r.callerCode
 
-/-- **Whether `o` is a thread holding the reply at `x` stashed** (a receiver
-blocked with that reply named for the call it waits for: its
-`pendingReceiveReply`, coded `x + 1`). -/
-@[inline] def objectStashesReply (o : KernelObject) (x : SeLe4n.ObjId) : Bool :=
-  match o with
-  | .tcb t => t.pendingReceiveReplyCode == x.val + 1
-  | _ => false
-
-/-- **The thread stashing the reply at `x`, as a code** (`k + 1` for the thread
-at key `k`, `0` for none): the table walked once, in place, as
-`loansFromNone` walks it; a stash is injective
-(`pendingReceiveReplyWellFormed`), so the first found is the only one. -/
-@[inline] def replyStasherCode (st : SystemState) (x : SeLe4n.ObjId) : Nat :=
-  st.objects.fold 0 fun acc k o => if acc == 0 && objectStashesReply o x then k.val + 1 else acc
-
 /-- **A thread's reply stash, cleared.** -/
 @[inline] def TCB.stashCleared (t : TCB) : TCB := { t with pendingReceiveReplyCode := 0 }
 
 /-- **seL4's `finaliseCap` on the final capability to a reply a receiver has
-stashed** (`reply_unlink` on a `BlockedOnReceive` thread): the receiver's stash
-is cleared in its slot (`updateTcb`, compiled as the in-place rewrite), and it
-keeps waiting on its endpoint, now for a call it receives with no reply.  The
-receiver is found by its stash and checked again before the write; a reply
-nobody stashes is left as it is. -/
-def finaliseReplyUnstash (st : SystemState) (x : SeLe4n.ObjId) : SystemState :=
-  let code := replyStasherCode st x
-  if code == 0 then st
-  else
-    let s : SeLe4n.ThreadId := ⟨code - 1⟩
-    match st.getTcb? s with
+stashed** (`reply_unlink` on the `BlockedOnReceive` thread the reply's
+`replyTCB` names): the receiver the Reply records as its stasher
+(`Reply.stasherCode`, one field read) has its stash cleared in its slot
+(`updateTcb`, compiled as the in-place rewrite), and it keeps waiting on its
+endpoint, now for a call it receives with no reply.  The record is cleared
+lazily, so the named receiver's own stash is checked before the write; a reply
+whose record names no thread that still stashes it is left as it is. -/
+def finaliseReplyUnstash (st : SystemState) (x : SeLe4n.ObjId) (r : Reply) : SystemState :=
+  match r.stasherCode with
+  | 0 => st
+  | k + 1 =>
+    match st.getTcb? ⟨k⟩ with
     | some t =>
-      if t.pendingReceiveReplyCode == x.val + 1 then st.updateTcb s TCB.stashCleared
+      if t.pendingReceiveReplyCode == x.val + 1 then st.updateTcb ⟨k⟩ TCB.stashCleared
       else st
     | none => st
 
@@ -1199,7 +1185,7 @@ with no caller but stashed by a receiver is unlinked from it
 def finaliseReply (x : SeLe4n.ObjId) (st : SystemState) : SystemState :=
   match st.getObject? x with
   | some (.reply r) =>
-    if r.callerCode == 0 then finaliseReplyUnstash st x
+    if r.callerCode == 0 then finaliseReplyUnstash st x r
     else
       let c : SeLe4n.ThreadId := ⟨r.callerCode - 1⟩
       match st.getTcb? c with
