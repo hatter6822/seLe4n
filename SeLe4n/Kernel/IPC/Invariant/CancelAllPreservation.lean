@@ -315,18 +315,18 @@ theorem finaliseCancelStep_keepsIpcInvariantFull :
   exact ⟨cancelIpcBlocking_notificationArm_preserves_ipcInvariantFull s t tcb n h.2 hLookup hI h.1
     hOff, (FinaliseFrame.notificationCancel s t tcb n h.2 hI).invExt⟩
 
-/-- **The suspend's mark keeps the bundle**: `threadState` and a dequeued
-thread's own run links are fields the bundle does not read (`insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull`). -/
+/-- **The suspend's mark keeps the bundle**: `threadState` is a field the
+bundle does not read (`insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull`). -/
 theorem inactiveMark_keepsIpcInvariantFull (s : SystemState) (t : SeLe4n.ThreadId)
     (h : ipcInvariantFull s ∧ s.objects.invExt) :
-    ipcInvariantFull (s.updateTcb t finaliseSuspendMark) ∧
-      (s.updateTcb t finaliseSuspendMark).objects.invExt := by
+    ipcInvariantFull (s.updateTcb t (fun t => { t with threadState := .Inactive })) ∧
+      (s.updateTcb t (fun t => { t with threadState := .Inactive })).objects.invExt := by
   cases hT : s.getTcb? t with
   | none => rw [SystemState.updateTcb_eq_self_of_none hT]; exact h
   | some tcb =>
     rw [SystemState.updateTcb_eq_of_some hT]
     exact ⟨insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull s t tcb
-      (finaliseSuspendMark tcb) h.2 h.1 ((SystemState.getTcb?_eq_some_iff s t tcb).mp hT)
+      { tcb with threadState := .Inactive } h.2 h.1 ((SystemState.getTcb?_eq_some_iff s t tcb).mp hT)
       rfl rfl rfl rfl rfl rfl rfl rfl rfl, RHTable_insert_preserves_invExt _ _ _ h.2⟩
 
 /-- **The suspend keeps the bundle**: the deschedule of a ready thread

@@ -1871,10 +1871,10 @@ const PASSIVE_CHILD_IDS: [u64; 4] = [20, 21, 22, 23];
 const FINALISED_CHILD_IDS: [u64; 3] = [24, 25, 26];
 /// The ids the thread-finalising scenarios carve at: an inactive thread, a
 /// thread bound to the boot notification, a scheduling context and the thread
-/// it is bound to, and a thread resumed onto a run queue, each finalised and
-/// retired by its only capability's delete.
+/// it is bound to, and two threads resumed onto one run queue, each finalised
+/// and retired by its only capability's delete.
 #[cfg(feature = "hw_target")]
-const THREAD_CHILD_IDS: [u64; 5] = [27, 28, 29, 30, 31];
+const THREAD_CHILD_IDS: [u64; 6] = [27, 28, 29, 30, 31, 32];
 /// `KernelObjectType` tags of a thread and a scheduling context, the context's
 /// size bits (7: the least the carve takes) in the tag word's upper bits.
 #[cfg(feature = "hw_target")]
@@ -2049,7 +2049,8 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 6] = [
     // WS-ZA ZA5.4 part 24: a carved thread's last capability deleted while it
     // is inactive, and while it is bound to the boot notification; a carved
     // scheduling context's while it is bound to a carved thread, then that
-    // thread's; and a carved thread's while it is queued to run.  Each delete
+    // thread's; a carved thread's once it is suspended off a run queue it
+    // shared; and a carved thread's while it is queued to run.  Each delete
     // finalises its object (seL4's `finaliseCap`) and retires it.
     &[
         invocation(
@@ -2117,9 +2118,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 6] = [
             CNODE_CAP,
             [FRAME_SLOT, 0, 0, 0],
         ),
-        // A carved thread resumed, so queued where its placement puts it,
-        // then its last capability deleted: the finalisation suspends it,
-        // taking it off that run queue in place, and retires it.
+        // Two carved threads resumed, so queued one behind the other where
+        // their placement puts them; the first suspended, which takes it off
+        // that queue and leaves it no run link, then its last capability
+        // deleted, which retires it (the steady-state run carves its id
+        // again); then the second's, which the finalisation suspends, taking
+        // it off the queue in place, and retires.
         invocation(
             "untyped-retype-queued-tcb",
             UNTYPED_RETYPE,
@@ -2128,10 +2132,24 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 6] = [
         ),
         invocation("resume-carved-tcb", TCB_RESUME, FRAME_CAP, [0; 4]),
         invocation(
-            "queued-tcb-delete",
+            "untyped-retype-shared-tcb",
+            UNTYPED_RETYPE,
+            UNTYPED_CAP,
+            [TCB_TYPE, THREAD_CHILD_IDS[5], CNODE_CAP, MINT_SLOT],
+        ),
+        invocation("resume-shared-tcb", TCB_RESUME, MINT_CAP, [0; 4]),
+        invocation("suspend-queued-tcb", TCB_SUSPEND, FRAME_CAP, [0; 4]),
+        invocation(
+            "suspended-tcb-delete",
             CSPACE_DELETE,
             CNODE_CAP,
             [FRAME_SLOT, 0, 0, 0],
+        ),
+        invocation(
+            "queued-tcb-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [MINT_SLOT, 0, 0, 0],
         ),
     ],
     &[

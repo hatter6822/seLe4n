@@ -374,29 +374,6 @@ def finaliseThreadCancel (st : SystemState) (tid : SeLe4n.ThreadId) : SystemStat
     | _ => st
   | none => st
 
-/-- **The mark a finalised thread's suspend leaves**: `.Inactive`, and, once the
-thread is on no run queue, its own run links cleared.  The dequeue rewrites the
-neighbours' links and the thread's core code, and leaves the thread's own links
-behind, which no reader consults while the core code is `0`; the retire asks
-them zero (`threadQuiescent`).  On a queued thread it writes the state alone, so
-it never changes what a run queue reads (`finaliseSuspendMark_runLinkOn`). -/
-@[inline] def finaliseSuspendMark (t : TCB) : TCB :=
-  { t with threadState := .Inactive
-           runPrevCode := if t.runCoreCode == 0 then 0 else t.runPrevCode
-           runNextCode := if t.runCoreCode == 0 then 0 else t.runNextCode
-           runBucketPrevCode := if t.runCoreCode == 0 then 0 else t.runBucketPrevCode
-           runBucketNextCode := if t.runCoreCode == 0 then 0 else t.runBucketNextCode }
-
-theorem finaliseSuspendMark_runLinkOn (t : TCB) (c : Concurrency.CoreId) :
-    (finaliseSuspendMark t).runLinkOn c = t.runLinkOn c := by
-  unfold TCB.runLinkOn
-  show (if t.runCoreCode = c.val + 1 then _ else _) = (if t.runCoreCode = c.val + 1 then _ else _)
-  by_cases h : t.runCoreCode = c.val + 1
-  · have h0 : (t.runCoreCode == 0) = false := by rw [h]; rfl
-    rw [if_pos h, if_pos h]
-    simp only [TCB.runLink, finaliseSuspendMark, h0, Bool.false_eq_true, if_false]
-  · rw [if_neg h, if_neg h]
-
 /-- **Suspend a thread being finalised** (seL4's `suspend`: `setThreadState
 Inactive`, then `tcbSchedDequeue`, with the `rescheduleRequired` a dequeued
 running thread takes): a ready thread, no core's idle thread, that is not
@@ -414,7 +391,7 @@ def finaliseThreadSuspend (st : SystemState) (tid : SeLe4n.ThreadId) : SystemSta
   | some t =>
     if t.ipcStateCode == 0 && t.ipcObjectCode == 0 && t.threadState != .Inactive &&
         !isIdleThreadId tid then
-      (descheduleAtPlacement st tid).updateTcb tid finaliseSuspendMark
+      (descheduleAtPlacement st tid).updateTcb tid fun t => { t with threadState := .Inactive }
     else st
   | none => st
 

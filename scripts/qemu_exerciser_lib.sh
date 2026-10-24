@@ -272,12 +272,14 @@ for driver in drivers:
             # notification, a carved scheduling context's while it is bound
             # to a carved thread, then that thread's: each finalised in place
             # (the unbinds and the suspend write the objects' own cells) and
-            # retired.  A carved thread resumed onto a run queue and its only
-            # capability deleted: the suspend unlinks it from the queue in
-            # place (the run links live in the TCBs).
+            # retired.  Two carved threads resumed onto one run queue, the
+            # first suspended and its only capability deleted, then the
+            # second's: the suspends unlink each from the queue in place (the
+            # run links live in the TCBs).
             "inactive-tcb-delete", "bind-carved-tcb", "bound-tcb-delete",
             "bind-carved-sched-context", "bound-sched-context-delete",
-            "unbound-tcb-delete", "resume-carved-tcb", "queued-tcb-delete")}
+            "unbound-tcb-delete", "resume-shared-tcb", "suspend-queued-tcb",
+            "suspended-tcb-delete", "queued-tcb-delete")}
         # WS-ZA ZA5.1: the memory invocations' readings today, each the
         # operation's own cells (object writes, the store's copy); the rows
         # that bring them to zero lower these pins.
@@ -322,7 +324,14 @@ for driver in drivers:
             # first call, which also builds the capability's target record
             # (`CapTarget.objectOver`).
             "untyped-retype-tcb": (14, 14), "untyped-retype-bound-tcb": (14, 14),
-            "untyped-retype-queued-tcb": (14, 14),
+            "untyped-retype-queued-tcb": (14, 14), "untyped-retype-shared-tcb": (14, 14),
+            # The first resume of a carved thread enqueues a run-queue key no
+            # thread has held (a QEMU trace of lean_alloc_small's callers):
+            # the run queue's membership table builds the new key's entry
+            # (`RHTable.insertNoResizeImpl` under `RunQueue.insert`, 2) and
+            # the queue's ends record its new priority bucket
+            # (`RunQueueEnds.appendImpl`, 1).  The steady state reuses both.
+            "resume-carved-tcb": (3, 0),
             "untyped-retype-sched-context": (14, 13), "untyped-retype-sc-thread": (14, 14),
             "vspace-unmap-first": (0, 0), "vspace-map-again": (0, 0),
             "vspace-unify-instruction": (4, 3),

@@ -376,7 +376,7 @@ theorem finaliseFinalObject_stepCovers (e : CoreId) (target : Nat) (st : SystemS
     (fun s t _ h _ _ _ _ _ =>
       have d := descheduleAtPlacement_stepCovers e s t h.2
       stepCoversInv_trans (stepCovers_trans h.1 d.1) (updateTcb_keyFrame _ t
-        (f := finaliseSuspendMark) (fun _ => rfl) d.2).stepCoversInv)
+        (f := fun t => { t with threadState := .Inactive }) (fun _ => rfl) d.2).stepCoversInv)
     (fun s t h => by
       have hO := finaliseThreadReleaseCores_objects s t
       refine ⟨stepCovers_trans h.1 (stepCovers_of_scheduler_eq (keyInputsEq_of_objects_eq hO)

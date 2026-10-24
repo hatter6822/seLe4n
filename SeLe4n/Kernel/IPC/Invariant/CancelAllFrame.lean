@@ -140,7 +140,7 @@ def FinaliseSuspendStep (P : SystemState → Prop) : Prop :=
   ∀ (s : SystemState) (t : SeLe4n.ThreadId) (tcb : TCB), P s → s.getTcb? t = some tcb →
     tcb.ipcStateCode = 0 → tcb.ipcObjectCode = 0 → tcb.threadState ≠ .Inactive →
     isIdleThreadId t = false →
-    P ((descheduleAtPlacement s t).updateTcb t finaliseSuspendMark)
+    P ((descheduleAtPlacement s t).updateTcb t (fun t => { t with threadState := .Inactive }))
 
 /-- **The release step a thread's finalisation takes**: no core holds the thread
 as its FP/SIMD owner or its resident (`finaliseThreadReleaseCores`). -/
@@ -768,7 +768,7 @@ theorem descheduleAt (st : SystemState) (t : SeLe4n.ThreadId) (p : Option Concur
 
 /-- **A finalised thread's suspend**: the deschedule, then the `.Inactive` mark. -/
 theorem suspend (st : SystemState) (t : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
-    FinaliseFrame st ((descheduleAtPlacement st t).updateTcb t finaliseSuspendMark) := by
+    FinaliseFrame st ((descheduleAtPlacement st t).updateTcb t (fun t => { t with threadState := .Inactive })) := by
   have h1 := descheduleAt st t (placedCoreOf? st t) hInv
   exact h1.trans (updateTcb _ t _ h1.invExt)
 

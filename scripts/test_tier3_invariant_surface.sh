@@ -4143,8 +4143,12 @@ run_check "INVARIANT" rg -n '^theorem finaliseFinalObject_closed($|[ ({:\[\]])' 
 # on the finalised object and compiled away, so the spec keeps it.
 run_check "INVARIANT" rg -n -U 'def finaliseThread \(x : SeLe4n\.ObjId\) \(st : SystemState\) : SystemState :=\n  if threadFinaliseAdmitted st x then\n[^\n]*\n    finaliseThreadCleanup\n      \(finaliseThreadUnbindSchedContext\n        \(finaliseThreadReleaseCores\n          \(finaliseThreadSuspend\n            \(finaliseThreadCancel\n              \(finaliseThreadUnbindNotification st tid\) tid\) tid\) tid\) tid\) x' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 run_check "INVARIANT" rg -n -U 'def finaliseThreadSuspend [^\n]*\n  match st\.getTcb\? tid with\n  \| some t =>\n    if t\.ipcStateCode == 0 && t\.ipcObjectCode == 0 && t\.threadState != \.Inactive &&\n        !isIdleThreadId tid then\n      \(descheduleAtPlacement st tid\)\.updateTcb tid' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
-run_check "INVARIANT" rg -n -U '@\[inline\] def finaliseSuspendMark \(t : TCB\) : TCB :=\n  \{ t with threadState := \.Inactive\n           runPrevCode := if t\.runCoreCode == 0 then 0 else t\.runPrevCode' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
-run_check "INVARIANT" rg -n '^theorem finaliseSuspendMark_runLinkOn($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+# A dequeue leaves the removed thread on no core with its own run links
+# cleared (the retire's quiescence reads all five), in the spec and the compiled
+# object-table form alike.
+run_check "INVARIANT" rg -n -U '@\[inline\] def TCB\.detachRun \(tcb : TCB\) : TCB :=\n  \{ tcb with runCoreCode := 0, runPrevCode := 0, runNextCode := 0,\n             runBucketPrevCode := 0, runBucketNextCode := 0 \}' SeLe4n/Kernel/Scheduler/RunQueueThreadLinks.lean
+run_check "INVARIANT" rg -n -U 'def runUnlinkLinks [^\n]*\n(  let [^\n]*\n){4}  st4\.mapTcbInPlace t TCB\.detachRun$' SeLe4n/Kernel/Scheduler/RunQueueThreadLinks.lean
+run_check "INVARIANT" rg -n -U 'def unlinkLinkObjects [^\n]*\n[^\n]*\n(  let [^\n]*\n){4}  o4\.mapValueAt t\.toObjId \(KernelObject\.mapTcb TCB\.detachRun\)$' SeLe4n/Kernel/Scheduler/RunQueueThreadLinks.lean
 run_check "INVARIANT" rg -n -U 'def finaliseThreadReleaseCores \(st : SystemState\) \(tid : SeLe4n\.ThreadId\) : SystemState :=\n  \{ st with machine := st\.machine\.releaseThread tid \}' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 run_check "INVARIANT" rg -n -U '@\[inline\] def MachineState\.releaseThread [^\n]*\n[^\n]*releaseThreadOnCores tid SeLe4n\.Kernel\.Concurrency\.allCores' SeLe4n/Machine.lean
 run_check "INVARIANT" rg -n '^theorem MachineState\.releaseThread_releases($|[ ({:\[\]])' SeLe4n/Machine.lean

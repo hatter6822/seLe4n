@@ -541,12 +541,12 @@ theorem finaliseSuspend_runQueueEntryStage (st : SystemState) (t : SeLe4n.Thread
     (hT : st.getTcb? t = some tcb) (hS : tcb.ipcStateCode = 0) (hO : tcb.ipcObjectCode = 0)
     (hId : isIdleThreadId t = false) :
     SystemState.RunQueueEntryStage st
-      ((descheduleAtPlacement st t).updateTcb t finaliseSuspendMark) :=
+      ((descheduleAtPlacement st t).updateTcb t (fun t => { t with threadState := .Inactive })) :=
   descheduleAtPlacedThenOffWrite_runQueueEntryStage st t
     (fun _ x hx => by
       rw [hT] at hx; cases hx
       unfold TCB.ipcState; rw [hS, hO]; rfl)
-    hId finaliseSuspendMark_runLinkOn (fun _ h => h)
+    hId (fun _ _ => rfl) (fun _ h => h)
 
 /-- **The finalisation is a kernel entry's worth of run-queue steps**, every
 step of it (`finaliseFinalObject_closed`): each cancel's and each unbind's
