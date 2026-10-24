@@ -5175,8 +5175,19 @@ record clause makes the answer the table scan's
 (`replyStashedAt_eq_replyIsStashed`).  `replyCallerFinalisable` reads the
 whole admission on the pre-state: the reply heads no context's reply stack, and
 its caller is no reserved or idle thread, is on no run queue, is blocked on
-this reply, is linked into no endpoint queue and has no timeout budget.  That
-the caller lends to no one is not read: a lent context heads its lender's own
+this reply, is linked into no endpoint queue and has no timeout budget.  A reply
+heading a context's reply stack is popped first, as `reply_remove`'s head branch
+does it (`reply_pop`): the context goes back to the caller with its
+replenishments on the caller's core, the thread it is taken from leaves its core,
+and the reply is unheaded (`finaliseReplyCancel`, `cancelIpcBlockingReclaimed`).
+Whether the pop commits is decided on the pre-state, before any write
+(`replyHeadPopCommits`, which reads the donated return's own check
+`donatedReturnCommits`); it refuses a caller that holds a binding of its own,
+which no reachable state gives, since a lender holds none (`donationOwnerValid`).
+The projection keeps the descheduled holder hidden from the donation's own flow
+fact (`donationOwnerFlowsToHolder`, a premise `finaliseReply_hidden` now
+carries).  For a reply heading no stack, that the caller lends to no one is not
+read: a lent context heads its lender's own
 reply stack (`lentContextHeadsLenderFrame`), the caller's top reply is this
 one, and this reply heads no stack (`replyCaller_lendsNone`).  The delete
 carries that fact as a pre-state premise of the dispatch
@@ -5195,9 +5206,10 @@ rather than the live unbind syscall: that syscall leaves its thread queued at
 its legacy priority, the finalise dequeues it.  A caller blocked on its reply
 is blocked on the reply object, so an endpoint only a reply-blocked caller
 names is no longer kept by the retire's names-by-id check.  Still refused, and
-kept by the retire (`docs/REGISTERED_DEBT.md`, owned by WS-ZA ZA6.1): a reply
-heading a stack and a caller lending a reservation (seL4's `reply_pop` and the
-loan return).  A context whose holder is blocked sending or calling is finalised
+kept by the retire (`docs/REGISTERED_DEBT.md`, owned by WS-ZA ZA6.1): a thread
+blocked on a reply or holding a reply link, and a thread lending or borrowing a
+reservation, on the thread's own final delete (seL4's `reply_remove_tcb` and the
+borrower's return).  A context whose holder is blocked sending or calling is finalised
 seL4's way: the holder is unbound and keeps waiting, its IPC unended, as
 `schedContext_unbindTCB` leaves it — `v0.36.136` retired `passiveServerIdle`,
 the IPC conjunct that forbade an unbound sender or caller, rather than restating

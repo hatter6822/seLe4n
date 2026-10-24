@@ -802,6 +802,13 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
       .states [`SeLe4n.Kernel.spliceReplyFrameOut_preserves_donationChainWellFormed])
   , (`SeLe4n.Kernel.spliceReplyFrameOutOrSelf,
       .states [`SeLe4n.Kernel.spliceReplyFrameOutOrSelf_preserves_donationChainWellFormed])
+    -- The compiled forms a final delete runs (`@[csimp]` through
+    -- `finaliseReply_eq_impl`): each equals its spec form, and states the
+    -- chain through that equality.
+  , (`SeLe4n.Kernel.spliceReplyFrameOutOrSelfInPlace,
+      .states [`SeLe4n.Kernel.spliceReplyFrameOutOrSelfInPlace_preserves_donationChainWellFormed])
+  , (`SeLe4n.Kernel.consumeCallerReplyInPlace,
+      .states [`SeLe4n.Kernel.consumeCallerReplyInPlace_preserves_donationChainWellFormed])
   , (`SeLe4n.Kernel.spliceThreadReplyFrameOut,
       .states [`SeLe4n.Kernel.spliceThreadReplyFrameOut_preserves_donationChainWellFormed])
     -- The cancellation path's teardown: the projection above under the victim's

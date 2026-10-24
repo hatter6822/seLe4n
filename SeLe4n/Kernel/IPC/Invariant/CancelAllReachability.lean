@@ -1964,4 +1964,29 @@ theorem retireFinalisedObject_preserves_ipcReachable (ec : Concurrency.CoreId)
   retireFinalObject_preserves_ipcReachable ec target recorder
     (finaliseFinalObject_preserves_ipcReachable target h hW)
 
+
+/-- **The compiled splice keeps the donation chain.**  The in-place form a final
+delete runs is `spliceReplyFrameOutOrSelf` (`spliceReplyFrameOutOrSelfInPlace_eq`),
+so it keeps `donationChainWellFormed` for the same reason. -/
+theorem spliceReplyFrameOutOrSelfInPlace_preserves_donationChainWellFormed (st : SystemState)
+    (rid : SeLe4n.ReplyId) (hInv : st.objects.invExt) (hChain : donationChainWellFormed st) :
+    donationChainWellFormed (spliceReplyFrameOutOrSelfInPlace st rid) := by
+  rw [spliceReplyFrameOutOrSelfInPlace_eq]
+  exact spliceReplyFrameOutOrSelf_preserves_donationChainWellFormed st rid hInv hChain
+
+/-- **The compiled consume keeps the donation chain** under the premises the
+link form needs: the reply heads no stack and no frame below names it.  It is
+`consumeCallerReplyLink` (`consumeCallerReplyInPlace_eq`). -/
+theorem consumeCallerReplyInPlace_preserves_donationChainWellFormed (st : SystemState)
+    (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (hInv : st.objects.invExt)
+    (hChain : donationChainWellFormed st)
+    (hNotHead : ∀ (r : Reply) (sc : SeLe4n.SchedContextId),
+      st.getReply? rid = some r → r.next ≠ some (.head sc))
+    (hUnreferenced : ∀ (a : SeLe4n.ReplyId) (ra : Reply),
+      st.objects[a.toObjId]? = some (.reply ra) → ra.prev ≠ some rid) :
+    donationChainWellFormed (consumeCallerReplyInPlace st caller rid) := by
+  rw [consumeCallerReplyInPlace_eq]
+  exact consumeCallerReplyLink_preserves_donationChainWellFormed st caller rid hInv hChain
+    hNotHead hUnreferenced
+
 end SeLe4n.Kernel

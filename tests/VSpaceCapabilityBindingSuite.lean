@@ -2647,10 +2647,49 @@ private def runReplyFinaliseChecks : IO Unit := do
         (!storedAt st1 961 && !recordsChildAt st1 carveUt 961 &&
           (st1.getTcb? ⟨960⟩).map (fun t => t.pendingReceiveReplyCode == 0 && t.ipcStateCode == 1) ==
             some true)
-  -- A reply heading a scheduling context's stack is not finalised (seL4's
-  -- `reply_pop` hands the reservation back; `docs/REGISTERED_DEBT.md`, "A head
-  -- reply and a lent reservation are not returned on a final delete"): its
-  -- delete keeps the reply and its caller.
+  -- A reply heading the stack of the context its caller lent a server: its
+  -- delete pops it (seL4's `reply_remove` head branch, `reply_pop`) — the
+  -- context goes back to the caller, the server holds none — then cancels the
+  -- caller's call, makes the caller inactive and retires the reply.
+  match runAll carveScenario
+      [decodeCarve slotUtRetype tcbTag 960 slotOwnCnRW 12,
+       decodeCarve slotUtRetype replyTag 961 slotOwnCnRW 13,
+       decodeCarve slotUtRetype tcbTag 962 slotOwnCnRW 14,
+       decodeCarve slotUtRetype schedContextTag 963 slotOwnCnRW 15] with
+  | .error e => assertBool s!"carving a caller, a reply, a server and a context succeeds (got {repr e})" false
+  | .ok st0 =>
+    match stageReplyCaller st0 (some ⟨962⟩) with
+    | none => assertBool "staging the carved caller's call on the carved reply succeeds" false
+    | some st =>
+      match replyAt st 961 with
+      | none => assertBool "setup: the carved reply is stored" false
+      | some r =>
+        match SeLe4n.Model.storeObject (SeLe4n.ObjId.ofNat 961)
+            (.reply { r with next := some (.head ⟨963⟩) }) st with
+        | .error _ => assertBool "staging the reply as the lent context's stack head succeeds" false
+        | .ok ((), stH) => do
+          -- The loan as a call's donation makes it: the context names the reply
+          -- as its head and the server as its holder, which holds it on loan
+          -- from the caller.
+          let stL := (stH.updateSchedContext ⟨963⟩ fun sc =>
+              { sc with scReply := some ⟨961⟩, boundThreadCode := 963 }).updateTcb ⟨962⟩ fun t =>
+            { t with scBindingScCode := 964, scBindingOwnerCode := 961 }
+          assertBool "setup: the server holds the context on loan from the caller, and the reply heads its stack"
+            ((stL.getSchedContext? ⟨963⟩).map (fun sc => sc.scReply == some ⟨961⟩ && sc.boundThreadCode == 963) == some true &&
+              (stL.getTcb? ⟨962⟩).map (·.schedContextBinding) == some (.donated ⟨963⟩ ⟨960⟩))
+          match runAll stL [decodeDelete 13] with
+          | .error e => assertBool s!"deleting the lent context's head reply's last capability succeeds (got {repr e})" false
+          | .ok st1 =>
+            assertBool "deleting a head reply's last capability hands the context back to the caller, makes the caller inactive and retires the reply"
+              (!storedAt st1 961 && !recordsChildAt st1 carveUt 961 &&
+                (st1.getSchedContext? ⟨963⟩).map (fun sc => sc.scReply.isNone && sc.boundThreadCode == 961) == some true &&
+                (st1.getTcb? ⟨960⟩).map (fun t =>
+                  t.schedContextBinding == .bound ⟨963⟩ && t.replyObjectCode == 0 &&
+                    t.threadState == .Inactive) == some true &&
+                (st1.getTcb? ⟨962⟩).map (·.schedContextBinding) == some .unbound)
+  -- A reply heading a stack whose pop would not commit — here the context does
+  -- not name it back as its head, nor any thread as its holder — is not
+  -- finalised: checks before writes, its delete keeps the reply and its caller.
   match runAll carveScenario
       [decodeCarve slotUtRetype tcbTag 960 slotOwnCnRW 12,
        decodeCarve slotUtRetype replyTag 961 slotOwnCnRW 13,
@@ -2670,7 +2709,7 @@ private def runReplyFinaliseChecks : IO Unit := do
           match runAll stH [decodeDelete 13] with
           | .error e => assertBool s!"deleting the head reply's last capability succeeds (got {repr e})" false
           | .ok st1 =>
-            assertBool "deleting a stack-heading reply's last capability keeps it and its caller"
+            assertBool "deleting a head reply whose pop would not commit keeps it and its caller"
               (storedAt st1 961 && (replyAt st1 961).map (·.callerCode) == some 961)
   -- A scheduling context heading a reply stack: its delete lets go of the
   -- stack (seL4's `schedContext_unbindReply`: the head's upward link cleared)

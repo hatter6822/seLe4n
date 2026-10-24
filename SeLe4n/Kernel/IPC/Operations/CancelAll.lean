@@ -1229,6 +1229,212 @@ def finaliseReply (x : SeLe4n.ObjId) (st : SystemState) : SystemState :=
       | none => st
   | _ => st
 
+/-- **The splice of a reply heading no stack, as compiled**: the same reads and
+the same stores as `spliceReplyFrameOutOrSelf`, with no `Except` cell on the
+arms that write nothing (a reply linked to no frame above, the busy reply's
+case). -/
+@[inline] def spliceReplyFrameOutOrSelfInPlace (st : SystemState) (rid : SeLe4n.ReplyId) :
+    SystemState :=
+  match st.getReply? rid with
+  | none => st
+  | some r =>
+    match r.next with
+    | some (.frame above) =>
+      match st.getReply? above with
+      | none => st
+      | some a =>
+        if a.prev != some rid then st
+        else
+          match spliceReplyFrameStores st rid above r a with
+          | .ok st' => st'
+          | .error _ => st
+    | _ => st
+
+theorem spliceReplyFrameOutOrSelfInPlace_eq (st : SystemState) (rid : SeLe4n.ReplyId) :
+    spliceReplyFrameOutOrSelfInPlace st rid = spliceReplyFrameOutOrSelf st rid := by
+  unfold spliceReplyFrameOutOrSelfInPlace spliceReplyFrameOutOrSelf spliceReplyFrameOut
+  cases st.getReply? rid with
+  | none => rfl
+  | some r =>
+    dsimp only
+    cases r.next with
+    | none => rfl
+    | some l =>
+      cases l with
+      | head _ => rfl
+      | frame above =>
+        dsimp only
+        cases st.getReply? above with
+        | none => rfl
+        | some a =>
+          dsimp only
+          by_cases hP : (a.prev != some rid) = true
+          · simp only [hP, ↓reduceIte]
+          · simp only [hP, Bool.false_eq_true, ↓reduceIte]
+            cases spliceReplyFrameStores st rid above r a <;> rfl
+
+/-- **A caller's reply link consumed, as compiled**: the reply's consumed record
+and the caller's cleared link, each written in its slot (`storeReplyWith`,
+`storeTcbWith`) — the stores `consumeCallerReplyLink` makes. -/
+@[inline] def consumeCallerReplyInPlace (st : SystemState) (c : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) : SystemState :=
+  let st1 := st.storeReplyWith rid.toObjId Reply.consumed
+  match st1.objects[c.toObjId]? with
+  | some (.tcb _) => st1.storeTcbWith c.toObjId fun tcb => { tcb with replyObjectCode := 0 }
+  | _ => st1
+
+theorem consumeCallerReplyInPlace_eq (st : SystemState) (c : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) :
+    consumeCallerReplyInPlace st c rid = st.consumeCallerReplyLink c rid := by
+  have hL := SystemState.consumeCallerReply_eq_link st c rid
+  suffices hS : SystemState.consumeCallerReply c rid st = .ok ((), consumeCallerReplyInPlace st c rid) by
+    rw [hS] at hL
+    exact (Prod.mk.inj (Except.ok.inj hL)).2
+  have hR : SystemState.consumeReply rid st = .ok ((), st.storeReplyWith rid.toObjId Reply.consumed) := by
+    unfold SystemState.consumeReply
+    cases hg : st.getReply? rid with
+    | some r => exact SystemState.storeObject_reply_eq_storeReplyWith ((SystemState.getReply?_eq_some_iff _ _ _).mp hg) _
+    | none =>
+      show Except.ok ((), st) = _
+      unfold SystemState.storeReplyWith
+      cases ho : st.objects[rid.toObjId]? with
+      | none => rfl
+      | some o =>
+        cases o with
+        | reply r =>
+          rw [(SystemState.getReply?_eq_some_iff _ _ _).mpr ho] at hg; cases hg
+        | _ => rfl
+  unfold SystemState.consumeCallerReply consumeCallerReplyInPlace
+  rw [hR]
+  dsimp only
+  generalize st.storeReplyWith rid.toObjId Reply.consumed = st1
+  cases ht : st1.objects[c.toObjId]? with
+  | none =>
+    have : st1.getTcb? c = none := by unfold SystemState.getTcb?; rw [ht]
+    rw [this]
+  | some o =>
+    cases o with
+    | tcb t =>
+      rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr ht]
+      exact SystemState.storeObject_tcb_eq_storeTcbWith ht (fun tcb => { tcb with replyObjectCode := 0 })
+    | _ =>
+      have : st1.getTcb? c = none := by unfold SystemState.getTcb?; rw [ht]
+      rw [this]
+
+/-- **A reply-blocked caller's cancel with nothing to give back, as compiled**:
+the splice, the restore, the consume and the reply-waiter unlink of
+`cancelIpcBlocking`'s reply arm, read from the caller's reply code and its
+server's code, each object written in its slot. -/
+@[inline] def cancelReplyArmInPlace (st : SystemState) (c : SeLe4n.ThreadId) (code : Nat)
+    (serverCode : Nat) : SystemState :=
+  let st1 := match code with
+    | 0 => st
+    | k + 1 => spliceReplyFrameOutOrSelfInPlace st ⟨k⟩
+  let st2 := Lifecycle.Suspend.restoreToReadyCancelled st1 c
+  let st3 := match code with
+    | 0 => st2
+    | k + 1 => consumeCallerReplyInPlace st2 c ⟨k⟩
+  st3.unlinkReplyWaiterOpt c (SeLe4n.ThreadId.ofOptCode serverCode)
+
+/-- **The server a caller blocked on a reply waits for, as a code**: `0` for none,
+`s + 1` for the server `s` (`TCB.blockingServer?`). -/
+@[inline] def replyCallerServerCode (t : TCB) : Nat :=
+  match t.blockingServer? with
+  | some s => s.val + 1
+  | none => 0
+
+theorem ofOptCode_replyCallerServerCode (t : TCB) :
+    SeLe4n.ThreadId.ofOptCode (replyCallerServerCode t) = t.blockingServer? := by
+  unfold replyCallerServerCode
+  cases t.blockingServer? <;> rfl
+
+theorem cancelReplyArmInPlace_eq (st : SystemState) (c : SeLe4n.ThreadId) (t : TCB) :
+    cancelReplyArmInPlace st c t.replyObjectCode (replyCallerServerCode t) =
+      SystemState.unlinkReplyWaiterOpt
+        (Lifecycle.Suspend.consumeReplyLink
+          (Lifecycle.Suspend.restoreToReadyCancelled (spliceThreadReplyFrameOut st t) c) c t)
+        c t.blockingServer? := by
+  unfold cancelReplyArmInPlace spliceThreadReplyFrameOut Lifecycle.Suspend.consumeReplyLink
+  rw [ofOptCode_replyCallerServerCode]
+  unfold TCB.replyObject
+  cases t.replyObjectCode with
+  | zero => rfl
+  | succ k =>
+    simp only [SeLe4n.ReplyId.ofOptCode, spliceReplyFrameOutOrSelfInPlace_eq,
+      consumeCallerReplyInPlace_eq]
+
+/-- **The cancel of a reply heading no stack, as compiled**: on a caller blocked on
+a reply with no donation to return, `cancelReplyArmInPlace`; otherwise the
+cancel itself. -/
+@[inline] def finaliseReplyCancelSplice (st : SystemState) (c : SeLe4n.ThreadId) (t : TCB)
+    (serverCode : Nat) : SystemState :=
+  match t.ipcState with
+  | .blockedOnReply _ _ =>
+    match Lifecycle.Suspend.cancelledCallerDonation? st c t with
+    | none => cancelReplyArmInPlace st c t.replyObjectCode serverCode
+    | some _ => Lifecycle.Suspend.cancelIpcBlocking st c t
+  | _ => Lifecycle.Suspend.cancelIpcBlocking st c t
+
+theorem finaliseReplyCancelSplice_eq (st : SystemState) (c : SeLe4n.ThreadId) (t : TCB) :
+    finaliseReplyCancelSplice st c t (replyCallerServerCode t) =
+      Lifecycle.Suspend.cancelIpcBlocking st c t := by
+  unfold finaliseReplyCancelSplice
+  split
+  · next ep rt hB =>
+    split
+    · next hD =>
+      rw [cancelReplyArmInPlace_eq]
+      have hR : Lifecycle.Suspend.returnDonationToCancelledCaller st c t = st := by
+        unfold Lifecycle.Suspend.returnDonationToCancelledCaller; rw [hD]
+      unfold Lifecycle.Suspend.cancelIpcBlocking
+      rw [hB]
+      simp only [hR]
+    · rfl
+  · rfl
+
+/-- **A finalised reply's caller cancelled, reverted and suspended, as
+compiled**: a head reply as `finaliseReply` runs it; any other through
+`finaliseReplyCancelSplice`, with the caller's reply and server read as codes
+before the first write, so the caller's thread record is held by its slot alone
+when the restore and the consume write it, and is rewritten there. -/
+@[inline] def finaliseReplyCaller (st : SystemState) (r : Reply) (c : SeLe4n.ThreadId)
+    (t : TCB) : SystemState :=
+  if replyStackLinkIsHead r.next then
+    finaliseThreadSuspend (finaliseReplyRevert (cancelIpcBlockingReclaimed c t st)
+      t.blockingServer?) c
+  else
+    let serverCode := replyCallerServerCode t
+    finaliseThreadSuspend (finaliseReplyRevert (finaliseReplyCancelSplice st c t serverCode)
+      (SeLe4n.ThreadId.ofOptCode serverCode)) c
+
+theorem finaliseReplyCaller_eq (st : SystemState) (r : Reply) (c : SeLe4n.ThreadId) (t : TCB) :
+    finaliseReplyCaller st r c t =
+      finaliseThreadSuspend (finaliseReplyRevert (finaliseReplyCancel st r c t)
+        t.blockingServer?) c := by
+  unfold finaliseReplyCaller finaliseReplyCancel
+  split
+  · rfl
+  · simp only [finaliseReplyCancelSplice_eq, ofOptCode_replyCallerServerCode]
+
+/-- **`finaliseReply` as compiled** (`finaliseReplyCaller`). -/
+def finaliseReplyImpl (x : SeLe4n.ObjId) (st : SystemState) : SystemState :=
+  match st.getObject? x with
+  | some (.reply r) =>
+    if r.callerCode == 0 then finaliseReplyUnstash st x r
+    else
+      let c : SeLe4n.ThreadId := ⟨r.callerCode - 1⟩
+      match st.getTcb? c with
+      | some t =>
+        if replyCallerFinalisable st x r c t then finaliseReplyCaller st r c t
+        else st
+      | none => st
+  | _ => st
+
+@[csimp] theorem finaliseReply_eq_impl : @finaliseReply = @finaliseReplyImpl := by
+  funext x st
+  unfold finaliseReply finaliseReplyImpl
+  simp only [finaliseReplyCaller_eq]
+
 -- ============================================================================
 -- §5  The finalisation a final delete runs
 -- ============================================================================
