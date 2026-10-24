@@ -334,13 +334,37 @@ theorem finaliseUnstackStep_keepsIpcInvariantFull :
       ((SystemState.getSchedContext?_eq_some_iff _ _ _).mp hG) rfl,
       RHTable_insert_preserves_invExt _ _ _ hI1⟩
 
+/-- **A thread's stash cleared in place keeps the bundle**: the in-place rewrite
+agrees, object for object and on the scheduler, with the store of the cleared
+thread (`storeObject_stashCleared_preserves_ipcInvariantFull`). -/
+theorem updateTcb_stashCleared_preserves_ipcInvariantFull (s : SystemState)
+    (tid : SeLe4n.ThreadId) (t : TCB) (hInv : s.objects.invExt) (hFull : ipcInvariantFull s)
+    (hT : s.getTcb? tid = some t) :
+    ipcInvariantFull (s.updateTcb tid TCB.stashCleared) := by
+  obtain ⟨s1, hS⟩ : ∃ s1, storeObject tid.toObjId (.tcb (TCB.stashCleared t)) s = .ok ((), s1) :=
+    ⟨_, rfl⟩
+  have h1 := storeObject_stashCleared_preserves_ipcInvariantFull s s1 tid t hInv hFull hT hS
+  rw [SystemState.updateTcb_eq_of_some hT]
+  refine ipcInvariantFull_of_storeAgrees_of_scheduler_eq (fun k => ?_)
+    (storeObject_scheduler_eq s s1 _ _ hS).symm h1
+  show (s.objects.insert tid.toObjId _)[k]? = s1.objects[k]?
+  by_cases hk : k = tid.toObjId
+  · subst hk
+    rw [storeObject_objects_eq s s1 _ _ hInv hS, RHTable_getElem?_eq_get?,
+      RobinHood.RHTable.getElem?_insert_self _ _ _ hInv]
+  · have hne : (tid.toObjId == k) = false := by simp [Ne.symm hk]
+    rw [storeObject_objects_ne s s1 _ k _ hk hInv hS, RHTable_getElem?_eq_get?,
+      RobinHood.RHTable.getElem?_insert_ne _ _ _ _ (by simp [hne]) hInv,
+      ← RHTable_getElem?_eq_get?]
+
 /-- **A stashed reply's unlink keeps the bundle**: the receiver's stash cleared
-in its slot (`storeObject_stashCleared_preserves_ipcInvariantFull`). -/
+in its slot (`updateTcb_stashCleared_preserves_ipcInvariantFull`). -/
 theorem finaliseUnstashStep_keepsIpcInvariantFull :
     FinaliseUnstashStep (fun s => ipcInvariantFull s ∧ s.objects.invExt) := by
-  intro s s1 _ tid t h hT _ hS
-  exact ⟨storeObject_stashCleared_preserves_ipcInvariantFull s s1 tid t h.2 h.1 hT hS,
-    storeObject_preserves_objects_invExt s s1 _ _ h.2 hS⟩
+  intro s s1 _ tid t h hT _ e
+  subst e
+  exact ⟨updateTcb_stashCleared_preserves_ipcInvariantFull s tid t h.2 h.1 hT,
+    SystemState.updateTcb_preserves_objects_invExt _ _ _ h.2⟩
 
 /-- **A reply's caller cancel keeps the bundle**: the reply arm of the cancel
 with no donation to return — the splice

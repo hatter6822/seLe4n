@@ -793,7 +793,7 @@ def replyFinaliseHidden (ctx : LabelingContext) (observer : IfObserver)
     t.pendingReceiveReplyCode = x.val + 1 → objectObservable ctx observer tid.toObjId = false)
 
 /-- **A stashed reply's unlink is invisible** when the receiver holding it is
-hidden: one store in that receiver's slot (`storeObject_preserves_projection`). -/
+hidden: one rewrite in that receiver's slot (`hiddenObjectsWrite.updateTcb`). -/
 theorem finaliseReplyUnstash_hidden (ctx : LabelingContext) (observer : IfObserver)
     {st : SystemState} {x : SeLe4n.ObjId} (hInv : st.objects.invExt)
     (hH : ∀ (tid : SeLe4n.ThreadId) (t : TCB), st.getTcb? tid = some t →
@@ -807,11 +807,7 @@ theorem finaliseReplyUnstash_hidden (ctx : LabelingContext) (observer : IfObserv
     · next t hT =>
       split
       · next hC =>
-        split
-        · next st1 hS =>
-          exact storeObject_preserves_projection ctx observer st st1 _ _
-            (hH _ t hT (by simpa using hC)) hInv hS
-        · rfl
+        exact (hiddenObjectsWrite.updateTcb st _ _ hInv (hH _ t hT (by simpa using hC))).projection
       · rfl
     · rfl
 

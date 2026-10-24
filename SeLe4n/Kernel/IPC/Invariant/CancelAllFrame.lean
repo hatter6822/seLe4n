@@ -202,8 +202,7 @@ holding the reply stashed, its stash cleared in its slot. -/
 def FinaliseUnstashStep (P : SystemState → Prop) : Prop :=
   ∀ (s s1 : SystemState) (x : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (t : TCB), P s →
     s.getTcb? tid = some t → t.pendingReceiveReplyCode = x.val + 1 →
-    storeObject tid.toObjId (.tcb { t with pendingReceiveReplyCode := 0 }) s = .ok ((), s1) →
-    P s1
+    s1 = s.updateTcb tid TCB.stashCleared → P s1
 
 /-- A thread whose owner code is already clear is its own owner-cleared view. -/
 theorem TCB.ownerCleared_of_zero {t : TCB} (h : t.scBindingOwnerCode = 0) :
@@ -535,10 +534,7 @@ theorem finaliseReplyUnstash_closed (P : SystemState → Prop) (hSt : FinaliseUn
     · rename_i t hT
       split
       · rename_i hC
-        split
-        · rename_i st1 hS
-          exact hSt st st1 x _ t h hT (by simpa using hC) hS
-        · exact h
+        exact hSt st _ x _ t h hT (by simpa using hC) rfl
       · exact h
     · exact h
 
@@ -1425,8 +1421,7 @@ theorem finaliseFinalObject_frame (target : Nat) (st : SystemState) (hInv : st.o
       obtain ⟨-, -, -, -, ⟨ep, rt, hB⟩, -, -, -, -, -, hD⟩ := replyCallerFinalisable_parts hX hC hG
       have h1 := FinaliseFrameAny.replyCancel s c t h.invExt hB hD
       exact h.trans (h1.trans (FinaliseFrame.finaliseReplyRevert _ _ h1.invExt).any))
-    (fun _ _ _ _ t h hT _ hS => h.trans (FinaliseFrameAny.storeObject h.invExt
-      ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) (Or.inl (finaliseWritable_tcb t)) hS rfl rfl))
+    (fun s _ _ tid _ h _ _ e => e ▸ h.trans (FinaliseFrame.updateTcb s tid _ h.invExt).any)
     target st (.refl hInv)
 
 /-- **The finalisation keeps the derivation tree**, on any state. -/
@@ -1483,7 +1478,7 @@ theorem finaliseFinalObject_cdt (target : Nat) (st : SystemState) :
       (descheduleAtPlacement_onlyObjectsSchedulerDiffer s t))).trans h)
     (fun s t h => (onlyObjectsSchedulerCoreHoldsDiffer.releaseCores s t).cdt.trans h)
     (fun s s1 x _ _ _ h _ _ _ _ hSt1 => ?_)
-    (fun s x r c t h hX hCc _ hG => ?_) (fun _ _ _ _ _ h _ _ hS1 => (hSt hS1).trans h)
+    (fun s x r c t h hX hCc _ hG => ?_) (fun s _ _ tid _ h _ _ e => e ▸ (hC (hU s tid _)).trans h)
     target st rfl
   · unfold storeEndpointWaiterCancelled wakeCancelledWaiter
     exact (hC ((enqueueRunnableOnCore_onlyObjectsSchedulerDiffer _ _ _).trans

@@ -1029,11 +1029,15 @@ at key `k`, `0` for none): the table walked once, in place, as
 @[inline] def replyStasherCode (st : SystemState) (x : SeLe4n.ObjId) : Nat :=
   st.objects.fold 0 fun acc k o => if acc == 0 && objectStashesReply o x then k.val + 1 else acc
 
+/-- **A thread's reply stash, cleared.** -/
+@[inline] def TCB.stashCleared (t : TCB) : TCB := { t with pendingReceiveReplyCode := 0 }
+
 /-- **seL4's `finaliseCap` on the final capability to a reply a receiver has
 stashed** (`reply_unlink` on a `BlockedOnReceive` thread): the receiver's stash
-is cleared, and it keeps waiting on its endpoint, now for a call it receives
-with no reply.  The receiver is found by its stash and checked again before the
-write; a reply nobody stashes is left as it is. -/
+is cleared in its slot (`updateTcb`, compiled as the in-place rewrite), and it
+keeps waiting on its endpoint, now for a call it receives with no reply.  The
+receiver is found by its stash and checked again before the write; a reply
+nobody stashes is left as it is. -/
 def finaliseReplyUnstash (st : SystemState) (x : SeLe4n.ObjId) : SystemState :=
   let code := replyStasherCode st x
   if code == 0 then st
@@ -1041,10 +1045,7 @@ def finaliseReplyUnstash (st : SystemState) (x : SeLe4n.ObjId) : SystemState :=
     let s : SeLe4n.ThreadId := ⟨code - 1⟩
     match st.getTcb? s with
     | some t =>
-      if t.pendingReceiveReplyCode == x.val + 1 then
-        match storeObject s.toObjId (.tcb { t with pendingReceiveReplyCode := 0 }) st with
-        | .ok ((), st1) => st1
-        | .error _ => st
+      if t.pendingReceiveReplyCode == x.val + 1 then st.updateTcb s TCB.stashCleared
       else st
     | none => st
 

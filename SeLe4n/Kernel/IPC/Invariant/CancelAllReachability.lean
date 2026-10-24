@@ -1476,26 +1476,18 @@ theorem reply {s : SystemState} {x : SeLe4n.ObjId} {r : Reply} {c : SeLe4n.Threa
   exact ⟨⟨hI.1, hI.2, q.1, hRW, hC5⟩, q.2⟩
 
 /-- A stashed reply's unlink carries it, and frames every budget: the
-receiver's stash, a field neither the queues nor the budgets read; the chains
-by the store's write frame. -/
+receiver's stash, a field neither the queues nor the budgets read, rewritten in
+its slot. -/
 theorem unstash {s s1 : SystemState} {tid : SeLe4n.ThreadId} {t : TCB} (x : SeLe4n.ObjId)
     (h : finaliseStepInvariant s) (hT : s.getTcb? tid = some t)
-    (hC : t.pendingReceiveReplyCode = x.val + 1)
-    (hS : storeObject tid.toObjId (.tcb { t with pendingReceiveReplyCode := 0 }) s = .ok ((), s1)) :
-    finaliseStepInvariant s1 ∧ timeoutBudgetFrame s s1 :=
-  have hI := finaliseUnstashStep_keepsIpcInvariantFull s s1 x tid t ⟨h.1, h.2.1⟩ hT hC hS
-  have hTo := (SystemState.getTcb?_eq_some_iff _ _ _).mp hT
-  have q := (ReachFieldFrame.storeTcbOver h.2.1 hTo hS ⟨rfl, rfl, rfl, rfl, rfl⟩).parts h.2.2.1
-  have W : finaliseWrite s s1 := fun oid => by
-    by_cases e : oid = tid.toObjId
-    · subst e
-      exact Or.inr ⟨.tcb t, .tcb { t with pendingReceiveReplyCode := 0 }, hTo,
-        storeObject_objects_eq s s1 _ _ h.2.1 hS, rfl, rfl, by simp [schedContextStackHead?],
-        finaliseWritable_tcb t⟩
-    · exact Or.inl (storeObject_objects_ne s s1 _ oid _ e h.2.1 hS)
-  ⟨⟨hI.1, hI.2, q.1, SystemState.replyWaitersConsistent.of_views q.2.2 h.2.2.2.1,
-    donationChainWellFormed_of_frame (finaliseWrite.donationChainFrame W) h.2.2.2.2⟩,
-    q.2.1⟩
+    (hC : t.pendingReceiveReplyCode = x.val + 1) (e : s1 = s.updateTcb tid TCB.stashCleared) :
+    finaliseStepInvariant s1 ∧ timeoutBudgetFrame s s1 := by
+  subst e
+  have hI := finaliseUnstashStep_keepsIpcInvariantFull s _ x tid t ⟨h.1, h.2.1⟩ hT hC rfl
+  have q := (ReachFieldFrame.updateTcb s tid (f := TCB.stashCleared) h.2.1
+    (fun _ => ⟨rfl, rfl, rfl, rfl, rfl⟩)).parts h.2.2.1
+  exact ⟨⟨hI.1, hI.2, q.1, SystemState.replyWaitersConsistent.of_views q.2.2 h.2.2.2.1,
+    h.chain_of_frame (FinaliseFrame.updateTcb s tid _ h.2.1)⟩, q.2.1⟩
 
 end finaliseStepInvariant
 

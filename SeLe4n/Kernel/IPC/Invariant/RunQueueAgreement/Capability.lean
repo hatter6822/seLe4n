@@ -611,7 +611,8 @@ theorem finaliseFinalObject_runQueueEntryStage (target : Nat) (st : SystemState)
     (fun s _ _ c t h _ _ _ _ =>
       h.trans ((cancelIpcBlocking_runQueueStage s c t).trans
         (finaliseReplyRevert_runQueueStage _ _)).entry)
-    (fun _ _ _ _ _ h hT _ hS => h.trans (storeObject_tcbOver_runQueueStage hT hS (fun _ => rfl)).entry)
+    (fun s _ _ tid _ h _ _ e => e ▸ h.trans
+      (RunQueueStage.updateTcb s tid (f := TCB.stashCleared) (fun _ _ => rfl)).entry)
     target st ⟨SystemState.RunQueueLinkStage.refl st, fun _ _ _ d => d⟩
 
 theorem cspaceDeleteSlotFinalising_runQueueEntryStage {ec : Concurrency.CoreId}
