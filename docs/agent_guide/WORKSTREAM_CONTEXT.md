@@ -307,9 +307,16 @@ not state-monotone).  A delete may therefore vacate any core's current slot,
 its own included: the syscall step's local successor choice and the
 reschedule interrupt the vacated core's flag raises take over, and a destroyed
 caller's return frame is written nowhere (`stageCallerReturnFor_destroyed`).
-A thread that is endpoint- or reply-blocked, donating or holding space-slot
-capabilities, a busy reply or scheduling context, and an untyped that still
-records a child, outlive their last capability until parts 25–26 and ZA6.1
+Since part 25 (`v0.36.136`) it finalises a busy reply (`finaliseReply`: a
+waiting caller's call cancelled through `cancelIpcBlocking`'s reply arm, its
+boost reverted and the caller suspended; a stash cleared in place) and a busy
+scheduling context (a ready holder dequeued, then unbound, then the reply stack
+unlinked), and an endpoint only a reply-blocked caller names is retired; the
+reply's caller cancel is the suspend's general path and allocates (12 cells,
+pinned).  A thread that is endpoint- or reply-blocked, donating or holding
+space-slot capabilities, a head reply or a caller lending a reservation, a
+context whose holder is blocked sending or calling, and an untyped that still
+records a child, outlive their last capability until part 26 and ZA6.1
 (`docs/REGISTERED_DEBT.md`).  The suspend of a thread blocked in IPC or
 holding a donated context is the one syscall arm left on the general path
 (ZA6.1).  ZA6 covers the other

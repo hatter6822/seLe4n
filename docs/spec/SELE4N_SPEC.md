@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.135` (`lakefile.toml`) |
+| **Package version** | `0.36.136` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 500,211 across 451 Lean files |
-| **Test LoC** | 86,650 across 70 Lean test suites |
-| **Proved declarations** | 18,132 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 502,150 across 451 Lean files |
+| **Test LoC** | 86,833 across 70 Lean test suites |
+| **Proved declarations** | 18,219 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits) |
 | **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2), and **BP4.1/BP4.2 (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type)** at v0.36.2 (§6.2.9), and **BP4.3/BP4.4 (the firmware's device tree reaching Lean, and the entry booting the deployment on the variant it describes)** at v0.36.2 (§6.2.10), and **BP4.5 (the image's loaded bytes cleaned to the Point of Unification before any thread can fetch)** at v0.36.2 (§6.2.11), and **BP4.6 (the verified board's RAM outside the kernel's extent mapped, and the boot map sealed before any secondary is released)** and **BP4.7 (that RAM handed to the root task as untypeds)** at v0.36.2 (§6.2.12), and **BP5.1 (the kernel image, a bare-metal binary entered at `_start` under `link.ld`)** and **BP5.2 (the Lean kernel linked into it, under `--gc-sections` from the archive lane's roots)** and **BP5.3 (the firmware's boot files, `kernel8.img` and `config.txt`, cut from that image and checked against it)** and **BP5.4 (its size and section map published with every CI run)** at v0.36.2 (§6.2.13), and **BP5.5 (the firmware's EL2 entry dropped to EL1, with the PSCI conduit following the entry level)** at v0.36.2 (§6.2.15), and **BP6 (every PE marks itself ready after its own per-PE runtime handshake and before it unmasks IRQs, and the boot halts unless every declared PE serves the kernel)** at v0.36.2 (§6.2.16), and **BP7.10 (the first gigabyte's RAM read off the firmware's account, and the constant boot map shrunk to the kernel's reserved extent)** at v0.36.3 (§6.2.17), and **BP7.1 slices 1–3 (frame capabilities, the untyped carve that mints them, and the untyped reset that returns their memory)** at v0.36.4, v0.36.5 and v0.36.6, slice 4a (child untypeds and subtree resets) at v0.36.8, the in-place VSpace-root refusal at v0.36.9, and slice 4b's VSpace-root carve at v0.36.10, `.tcbSetSpace` (a thread runs in a carved address space) at v0.36.11, intermediate page tables at v0.36.12, and every configured address space owning a table page at v0.36.13, which completes BP7.1 (§8.10.2a); BP7.2's user window and 16-bit hardware ASIDs at v0.36.14 and its physical-write ledger and translation install at v0.36.15; BP7.3–BP7.9 at v0.36.16–v0.36.22 (the whole trap frame saved, per-core restore staging, unblock-frame delivery, the live context restore, the delivered declassified badge, overflow message registers, lazily switched FP/SIMD state); and BP7.11 (the boot starts both initial threads, one per domain) at v0.36.23, which completes BP7; BP8.1's first slice (the image built for QEMU's `virt` — its device map from `src/board.rs`, its link script derived from `link.ld`, an arm64 Image header on `_start` — booted there at EL1 and at EL2 by `scripts/test_qemu.sh`) at v0.36.24, and its second (the Lean `virt` binding `SeLe4n/Platform/QemuVirt/` — its board check the RPi5 bridge's own coverage predicates, the RPi5 deployment's layout on it with every boot gate decided, and its own boot entry `lean_kernel_main_qemu_virt`, held by the boot-entry contract's table to its own approved call) at v0.36.25, and its third (the Lean-linked image booted by `scripts/test_qemu.sh --lean-kernel` on four PEs at EL1 and EL2 to every core's first idle dispatch, on every PR — §6.2.18) at v0.36.26, completing BP8.1, and BP8.2 (the four-PE bring-up gate, executed on every PR — §6.2.18) at v0.36.27. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -5103,8 +5103,8 @@ same reservation arm), then runs the cleanup.  The whole admission is read on
 the pre-state before any write (`threadFinaliseAdmitted`,
 `schedContextFinaliseAdmitted`) and each step re-reads its guard.  The blocking
 states other than a notification's head waiter, a donated binding and occupied
-space slots are refused; a scheduling context is refused with a reply stack, a
-loan or a busy thread.  A
+space slots are refused; a scheduling context's refusals are narrowed by
+part 25 below.  A
 refused object is not finalised and the retire keeps it
 (`docs/REGISTERED_DEBT.md`).  On a finalised object the cleanup is proven to be
 the identity (`finaliseThreadCleanup_eq`, `finaliseSchedContextCleanup_eq`), so
@@ -5124,6 +5124,49 @@ the objects' cells in place, the per-core held tests compile to structural
 recursions, and the scheduling-context unbind compiles to
 `cancelBoundDonationPerform`, which reads the thread's old key before its first
 write.  A thread's carve reads 14 and a scheduling context's 13.
+
+**Busy reply and scheduling-context finalisation** (`v0.36.136`).  On the final
+capability to a reply, `finaliseFinalObject` runs `finaliseReply`, seL4 MCS's
+`finaliseCap` on a reply.  A reply a caller waits on is removed as
+`reply_remove`'s non-head branch removes it: the caller's blocked call is
+cancelled through `cancelIpcBlocking`'s reply arm (the reply leaves its stack,
+the caller is restored with its cancellation frame, both reply links are
+cleared and the caller leaves its server's reply-waiter queue, so no waiter
+names a server through a destroyed reply), the priority boost the caller lent
+its server is reverted (`finaliseReplyRevert`), and the caller is made
+`.Inactive` through the thread finalise's suspend, not woken.  A core's FP/SIMD
+or resident hold on the caller stays, as seL4 keeps a lazily saved context
+across `setThreadState Inactive`.  A reply a blocked receiver has stashed is
+unlinked from it, seL4's `reply_unlink` (`finaliseReplyUnstash`): the stasher,
+found by one walk of the table (`replyStasherCode`) and checked again, has its
+stash cleared in its slot and keeps waiting.  `replyCallerFinalisable` reads the
+whole admission on the pre-state: the reply heads no context's reply stack, and
+its caller is no reserved or idle thread, is on no run queue, is blocked on
+this reply, is linked into no endpoint queue, has no timeout budget and lends
+to no one.  A scheduling context's finalise now runs, in `finaliseCap`'s order,
+`finaliseSchedContextDeschedule` (a ready holder leaves its run queue or the
+core running it, seL4's `schedContext_unbindTCB` → `tcbSchedDequeue`; the core
+reschedules), the unbind (`schedContext_unbindAllTCBs`, a context held as its
+own or on loan), and `finaliseSchedContextUnstack` (`schedContext_unbindReply`:
+the stack head's upward link and the context's head are cleared, the frames
+below keep their callers).  `schedContext_completeYieldTo` has nothing to do:
+the model keeps no yield-to link.  Where they differ, the finalise follows seL4
+rather than the live unbind syscall: that syscall leaves its thread queued at
+its legacy priority, the finalise dequeues it.  A caller blocked on its reply
+is blocked on the reply object, so an endpoint only a reply-blocked caller
+names is no longer kept by the retire's names-by-id check.  Still refused, and
+kept by the retire (`docs/REGISTERED_DEBT.md`, owned by WS-ZA ZA6.1): a reply
+heading a stack and a caller lending a reservation (seL4's `reply_pop` and the
+loan return), and a context whose holder is blocked sending or calling, which
+`passiveServerIdle` does not admit unbound.  The IPC bundle, the reachable
+state (reply waiters, PIP, donation chain), the run-queue entry stage,
+reschedule coverage, the reply-stack write census
+(`finaliseSchedContextUnstack_preserves_donationChainWellFormed`) and the
+projection (`finaliseReply_hidden`, `finaliseSchedContextDeschedule_hidden`)
+are kept over the new steps (`finaliseReply_closed`,
+`finaliseSchedContextDeschedule_closed`).  A stashed reply's delete allocates
+nothing (`stashed-reply-delete` reads 0); a busy reply's reads 12, every cell in
+the caller cancel's general path (`busy-reply-delete`), registered for ZA6.1.
 
 ### 8.6.1 Carve Refusal Order (`v0.36.125`)
 

@@ -1,3 +1,150 @@
+## v0.36.136 — WS-ZA ZA5.4 part 25: a final delete finalises a busy reply and a busy scheduling context
+
+A delete or revoke that destroys the final capability to a reply now
+finalises it as seL4 MCS's `finaliseCap` does.  If a caller waits on the
+reply, its call is cancelled (`reply_remove`).  If a receiver has the reply
+stashed, the stash is cleared (`reply_unlink`).  A scheduling context's final
+delete now takes its ready holder off the scheduler, unbinds it, and lets go
+of the reply stack it heads (`schedContext_unbindAllTCBs`,
+`schedContext_unbindReply`).  Each object is then retired through part 22's
+retire.
+
+- **Before:** a reply a caller waited on or a receiver had stashed, a
+  scheduling context heading a reply stack or bound to a queued or running
+  thread, and an endpoint only a reply-blocked caller still named, all
+  outlived their last capability.
+- **After:** each is finalised and retired.
+- **Still open** (debt rows): a reply heading a scheduling context's stack,
+  where seL4's `reply_pop` hands a lent reservation back; and a scheduling
+  context whose thread is blocked sending or calling, which this model's
+  passive-server invariant does not admit unbound.
+
+This is part 25 of the seL4 untyped reset.
+
+### Changes
+
+- **The reply finalisation** (`finaliseReply`, `IPC/Operations/CancelAll.lean`).
+  - `finaliseFinalObject` gains a `.reply` arm.
+  - A reply whose caller waits on it: the caller's blocked call is cancelled
+    by `cancelIpcBlocking`'s reply arm.  That arm takes the reply off its
+    stack, restores the caller with the cancellation frame, clears both reply
+    links and unlinks the caller from its server's reply-waiter queue.  The
+    boost the caller lent its server is reverted (`finaliseReplyRevert`), and
+    the caller is suspended `.Inactive` through part 24's suspend.
+  - A reply a blocked receiver has stashed: the receiver's stash is cleared
+    in its slot (`finaliseReplyUnstash`, seL4's `reply_unlink`; an
+    `updateTcb`, compiled as an in-place modify), and it keeps waiting on its
+    endpoint.  The stasher is found by one walk of the object table
+    (`replyStasherCode`) and checked again before the write.
+  - Checks before writes: `replyCallerFinalisable` reads, on the pre-state,
+    that the reply heads no stack and that the caller is no reserved or idle
+    thread, is on no run queue, is blocked on this reply, is linked into no
+    endpoint queue, holds no timeout budget and lends to no one.
+  - A core's FP/SIMD or resident hold on the caller does not refuse the
+    finalise.  seL4 keeps a lazily saved context across
+    `setThreadState Inactive`, and so does this cut.
+- **The scheduling-context finalisation** (`finaliseSchedContext`) now runs
+  three steps, then the cleanup:
+  - `finaliseSchedContextDeschedule` takes a ready holder off its run queue
+    or its core (seL4's `schedContext_unbindTCB`: `tcbSchedDequeue`, and the
+    reschedule a running thread takes).  It uses the suspend's own removal
+    (`descheduleAtPlacement`).
+  - `finaliseSchedContextUnbind` unbinds the holder (`schedContext_unbindAllTCBs`).
+    It goes through the reservation arm on the holder's owner-cleared view,
+    so a loaned context's lender is cleared with it.
+  - `finaliseSchedContextUnstack` clears the stack head's upward link and
+    then the context's head (`schedContext_unbindReply`).  The frames below
+    keep their callers.
+  - The admission no longer refuses a queued or current ready holder, or a
+    context heading a stack whose head links back to it.
+  - Nothing to do for `schedContext_completeYieldTo`: this model keeps no
+    yield-to link (`schedContextYieldTo` is a one-shot budget transfer).
+- **An endpoint a reply-blocked caller names is retired.**
+  - A reply-blocked caller is blocked on its reply object, as seL4 MCS's
+    `BlockedOnReply` is.  So the retire's names-by-id check no longer counts
+    its endpoint word as a reference (`ipcCodesName`,
+    `Capability/FinalRetire.lean`).
+- **Forks taken (seL4-faithful).**
+  - Step order: deschedule, unbind, unstack.  The plan names "unbinds both";
+    `finaliseCap` runs `schedContext_unbindAllTCBs` before
+    `schedContext_unbindReply`, and this cut does the same.
+  - Where the holder goes: the finalise dequeues a ready holder.  The live
+    `schedContextUnbind` syscall instead leaves it queued at its legacy
+    priority; the finalise follows seL4's `tcbSchedDequeue`.
+  - What happens to the caller: the reply's caller is made `.Inactive`, as
+    `reply_remove` does.  It is not woken.
+- **Proofs.** Every bundle is carried over the new steps:
+  - the IPC bundle (`finaliseScDescheduleStep_`, `finaliseUnstackStep_`,
+    `finaliseReplyStep_`, `finaliseUnstashStep_keepsIpcInvariantFull`);
+  - the stash clear is the store the dispatch's post-wake clear already
+    proves.  Its proof moves below the dispatch
+    (`storeObject_stashCleared_preserves_ipcInvariantFull`,
+    `DispatchArmPreservation.lean`), and `clearWokenReceiverStash` uses it;
+  - the reachable state, with the reply waiters, the PIP revert (#934's
+    no-boost-survives property kept) and the donation chain
+    (`finaliseStepInvariant.deschedule`, `.unstack`, `.reply`, `.unstash`,
+    `finaliseSchedContextUnstack_preserves_donationChainWellFormed`);
+  - the run-queue entry stage (`descheduleAt_runQueueStage`);
+  - reschedule coverage (`descheduleAtPlacement_stepCovers`,
+    `updateTcb_keyFrame`);
+  - the write frame and the derivation tree;
+  - the projection, when the holder (as a thread too), the caller and the
+    stasher are hidden (`finaliseSchedContextDeschedule_hidden`,
+    `finaliseReply_hidden`, `finaliseReplyUnstash_hidden`).
+  - The reply-stack write census registers the unstack.
+- **Tests.**
+  - The suite's §5o witnesses each case:
+    - a busy reply, with and without a server, and with a caller a core holds;
+    - a stashed reply;
+    - a stack-heading reply, which is kept;
+    - a stack-heading context's unstack;
+    - the endpoint retire.
+  - §5n witnesses a resumed thread's context deleted: the thread is dequeued
+    and unbound.
+  - Tier 3 pins the reply arm, the deschedule, the stash unlink, the
+    admission's dropped hold check (a negative anchor) and their theorems.
+- **QEMU** (`--lean-kernel`).
+  - `BUSY_REPLY_SCENARIO`: a reply carved, minted, received through, called
+    on, and both capabilities deleted.
+  - `STASHED_REPLY_SCENARIO`: a reply carved, minted, stashed by a blocking
+    receive, both capabilities deleted by the partner, then a send that finds
+    the receiver waiting.
+  - Pins (`scripts/qemu_exerciser_lib.sh`): every new step reads 0 except
+    the two carves (`untyped-retype-busy-reply`,
+    `untyped-retype-stashed-reply`, 12, a reply's carve) and
+    `busy-reply-delete`, pinned at `(12, 12)`.  A `lean_alloc_small` caller
+    trace (QEMU under gdb, breakpoints armed only inside `finaliseFinalObject`)
+    puts 11 of its cells in the caller cancel `finaliseReply` reuses,
+    `cancelIpcBlocking`'s reply arm, the suspend's general path: the reply's
+    consumed rebuild and store (8), the reply-frame splice (1) and the
+    ready-staging restore (2); the last is the caller's server read back as an
+    option in `finaliseReply`.  `stashed-reply-delete` reads 0.
+
+### Merge
+
+- Part 24 (#986) is merged in, with merge commits: its dequeue detach and
+  the first resume's pin (`resume-carved-tcb`, `(3, 0)`).
+
+### Debt (`docs/REGISTERED_DEBT.md`)
+
+- Closed: "An endpoint a reply-blocked caller still names outlives its last
+  capability".
+- Narrowed: the scheduling-context row now covers only a holder blocked
+  sending or calling.  seL4 unbinds it and leaves it blocked; this model's
+  `passiveServerIdle` admits no unbound sender or caller, so the bundle is
+  restated first (owner WS-ZA ZA6.1).
+- Registered: "A head reply and a lent reservation are not returned on a
+  final delete" (seL4's `reply_pop` and the loan return, which need the
+  donated return's refusal decided first; owner ZA6.1).  The thread row's
+  clause (3), a thread lending or borrowing a binding, now points at it.
+- Registered: "A busy reply's final delete allocates 12 cells" (owner ZA6.1).
+
+### Documentation
+
+- `SELE4N_SPEC.md` §8.6, `CLAIM_EVIDENCE_INDEX.md`, the plan's row 25,
+  `WORKSTREAM_CONTEXT.md`, GitBook chapter 12, the debt register, and the
+  synchronised metrics and codebase map.
+
 ## v0.36.135 — WS-ZA ZA5.4 part 24: a final delete finalises a thread and a scheduling context
 
 A delete or revoke that destroys the final capability to a thread now
