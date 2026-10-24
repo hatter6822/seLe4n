@@ -302,7 +302,6 @@ open SeLe4n.Testing
 #check @sweptAndRestored_nonTcbNonEndpoint
 #check @sweptAndRestored_sameSchedContextBindings
 #check @sweptAndRestored_timeoutBudgetFrame
-#check @sweptAndRestored_passiveServerIdleFrame
 #check @sweptAndRestored_donationOwnerFrame
 #check @sweptAndRestored_replyLinkageFrame
 -- WS-RR RR7.22 (residual): every conjunct of `ipcInvariantFull`, then the bundle
@@ -341,7 +340,6 @@ open SeLe4n.Testing
 #check @purgedAndRestored_dualQueueSystemInvariant
 #check @purgedAndRestored_sameSchedContextBindings
 #check @purgedAndRestored_timeoutBudgetFrame
-#check @purgedAndRestored_passiveServerIdleFrame
 #check @purgedAndRestored_donationOwnerFrame
 #check @purgedAndRestored_replyLinkageFrame
 #check @purgedAndRestored_ipcInvariant
@@ -371,13 +369,8 @@ open SeLe4n.Testing
 #check @Lifecycle.Suspend.cancelledCallerDonation?
 #check @Lifecycle.Suspend.returnDonationToCancelledCaller
 #check @cancelledCallerDonation?_some
--- WS-RR RR8.7: the reply arm's own keystone and the four steps it composes.
-#check @abortHolderQueueCoherent
-#check @abortHolderPendingIpc_preserves_ipcInvariantFull
-#check @abortHolderPendingIpc_preserves_allTimeoutBudgetsNone
+-- WS-RR RR8.7: the reply arm's own keystone and the steps it composes.
 #check @cancelledCallerDonation?_holder_holds_victim_donation
-#check @cancelledCallerDonation?_holder_ne_victim
-#check @abortHolderPendingIpc_offQueue_tcb_eq
 #check @returnDonationToCancelledCaller_preserves_ipcInvariantFull
 #check @returnDonationToCancelledCaller_preserves_allTimeoutBudgetsNone
 #check @returnDonationToCancelledCaller_victim_tcb_rewrite
@@ -400,12 +393,10 @@ open SeLe4n.Testing
 #check @Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_ipcInvariant
 #check @Lifecycle.Suspend.returnDonationToCancelledCaller_tcb_lookup
 #check @Lifecycle.Suspend.returnDonationToCancelledCaller_eq_self_of_getTcb?_none
--- WS-OD OD1.4: the reclaim's holder abort — the `passiveServerIdle` half.  The
--- operation, its frames, the two facts the hand-back reads across it
--- (`donationOwnerValid`, the holder's own binding), the identity-registry
--- carriage its information-flow argument needs, and the exact bound on its
--- reach: it is the identity unless the holder is blocked sending or calling.
-#check @Lifecycle.Suspend.abortHolderPendingIpc
+-- WS-OD OD1.3: the timeout abort's own carriage (`timeoutThread`'s object-only
+-- prefix).  The cancellation's reclaim no longer runs it on the donation's
+-- holder: as in seL4's `schedContext_donate`, a holder blocked sending or
+-- calling keeps waiting when its reservation goes back.
 #check @abortPendingIpcOnEndpoint_shape
 #check @abortPendingIpcOnEndpoint_preserves_ipcInvariantFull
 #check @abortPendingIpcOnEndpoint_preserves_donationOwnerValid
@@ -416,20 +407,9 @@ open SeLe4n.Testing
 #check @endpointQueueRemove_objects_present_backward
 #check @endpointQueueRemove_objectIndexSet_eq
 #check @endpointQueueRemove_preserves_objectIndexSetComplete
-#check @Lifecycle.Suspend.abortHolderPendingIpc_scheduler_eq
-#check @Lifecycle.Suspend.abortHolderPendingIpc_machine_eq
-#check @Lifecycle.Suspend.abortHolderPendingIpc_serviceRegistry_eq
-#check @Lifecycle.Suspend.abortHolderPendingIpc_preserves_objects_invExt
-#check @Lifecycle.Suspend.abortHolderPendingIpc_preserves_objectIndexSetComplete
-#check @Lifecycle.Suspend.abortHolderPendingIpc_preserves_objectIndexSet_invExt
-#check @Lifecycle.Suspend.abortHolderPendingIpc_preserves_donationOwnerValid
-#check @Lifecycle.Suspend.abortHolderPendingIpc_binding_forward
-#check @Lifecycle.Suspend.abortHolderPendingIpc_binding_backward
-#check @Lifecycle.Suspend.abortHolderPendingIpc_eq_self_of_allowed
--- WS-OD OD1.4: the information-flow obligation the abort adds
--- (`abortHolderProjectionStable`) and the states on which it is free live in
--- the **staged** `IPC/CrossCore/CancellationNI.lean`, which no executable suite
--- imports; they are pinned by Tier 3 anchors instead.
+-- The reply arm's information-flow proof lives in the **staged**
+-- `IPC/CrossCore/CancellationNI.lean`, which no executable suite imports; it is
+-- pinned by Tier 3 anchors instead.
 #check @returnDonatedSchedContext_ok_storeChain
 #check @returnDonatedSchedContext_tcb_rewrite
 #check @tcbBindingRewrite
@@ -439,14 +419,7 @@ open SeLe4n.Testing
 #check @lockSet_cancelIpcBlocking_returned_donation_sc_write_mem
 #check @lockSet_cancelIpcBlocking_donation_holder_tcb_write_mem
 #check @lockSet_cancelIpcBlockingOnCore_size_le
--- WS-OD OD1.5: the reclaim's abort prefix is three more declared writes — the
--- holder's endpoint and its two queue neighbours — resolved from `st` rather
--- than from the victim's TCB, since the holder is resolved rather than supplied.
-#check @cancelHolderBlockedEndpoint?
-#check @cancelHolderSpliceNeighbors?
-#check @lockSet_cancelIpcBlocking_holder_endpoint_write_mem
-#check @lockSet_cancelIpcBlocking_holder_splice_prev_write_mem
-#check @lockSet_cancelIpcBlocking_holder_splice_next_write_mem
+-- The reply arm's footprint bounds, with and without a donation to return.
 #check @lockSet_cancelIpcBlocking_reply_size_le
 #check @lockSet_cancelIpcBlocking_noDonation_size_le
 -- WS-OD OD3.5: the footprint is **arm-selected** rather than summed — the
@@ -465,39 +438,27 @@ open SeLe4n.Testing
 #check @lockSet_cancelIpcBlockingOnCore_replyArm_covers_server
 #check @lockSet_cancelIpcBlockingOnCore_replyArm_covers_prev
 #check @lockSet_cancelIpcBlockingOnCore_replyArm_covers_next
-#check @lockSet_cancelIpcBlockingOnCore_size_le_sixteen
+#check @lockSet_cancelIpcBlockingOnCore_size_le_thirteen
 #check @lockSet_cancelIpcBlockingOnCore_size_le_of_no_donation
 #check @lockSet_cancelIpcBlockingOnCore_size_le_of_donation
-#check @lockSet_tcbSuspendOnCore_size_le_twenty
+#check @lockSet_tcbSuspendOnCore_size_le_seventeen
 #check @lockSet_tcbSuspendOnCore_size_le
 -- ...and the frames that license it: the arms that declare no neighbour write
 -- none.
 #check @cancelIpcBlocking_notificationArm_objects_off
 #check @cancelIpcBlocking_replyArm_noDonation_tcb_frame
 #check @consumeReplyLink_other_tcb_eq
--- ...and the general reply-arm frame, with the reclaim live: the four steps
+-- ...and the general reply-arm frame, with the reclaim live: the steps
 -- stated OUTSIDE their write sets, and the composite over them.
 #check @endpointQueueRemove_ok_getEndpoint?
 #check @endpointQueueRemove_eq_patches
 #check @endpointQueueRemove_objects_ne
-#check @abortPendingIpcOnEndpoint_other_tcb_eq
-#check @abortHolderPendingIpc_other_tcb_eq
 #check @returnDonatedSchedContext_other_tcb_eq
 #check @cancelIpcBlocking_replyArm_tcb_frame
--- WS-OD OD1.5: and the payoff — `passiveServerIdle` is preserved by
--- `cancelIpcBlocking` on every arm, which is what OD1 exists to prove.
-#check @passiveServerIdleFrame_of_backward_of_not_allowed
+-- The timeout abort's own facts: the abort succeeds on a queued waiter and
+-- leaves it aborted.
 #check @abortPendingIpcOnEndpoint_ok
 #check @abortPendingIpcOnEndpoint_aborted_ipcState
-#check @abortPendingIpcOnEndpoint_passiveServerIdleFrame
-#check @Lifecycle.Suspend.abortHolderPendingIpc_passiveServerIdleFrame
-#check @Lifecycle.Suspend.abortHolderPendingIpc_holder_ipcState_allowed
-#check @consumeReplyLink_passiveServerIdleFrame
-#check @restoreToReadyStaging_passiveServerIdleFrame
-#check @returnDonatedSchedContext_passiveServerIdleFrame
-#check @returnDonationToCancelledCaller_passiveServerIdleFrame
-#check @cancelIpcBlocking_passiveServerIdleFrame
-#check @cancelIpcBlocking_preserves_passiveServerIdle
 
 -- ============================================================================
 -- §2  Elaboration-time examples: headline theorems applied
@@ -510,10 +471,6 @@ variable (st s : SystemState)
 variable (blEp blN : Option SeLe4n.ObjId) (r? : Option SeLe4n.ReplyId)
 variable (sc? : Option SeLe4n.SchedContextId) (ot? : Option SeLe4n.ThreadId)
 variable (rdSc? : Option SeLe4n.SchedContextId) (dh? : Option SeLe4n.ThreadId)
--- WS-OD OD1.5: the reclaim's abort prefix declares three more members — the
--- holder's endpoint and its two queue neighbours.
-variable (hEp? : Option SeLe4n.ObjId)
-variable (hNb? : Option SeLe4n.ThreadId × Option SeLe4n.ThreadId)
 -- WS-OD OD3.7: and two more — the Reply one frame below the reply-stack head and
 -- that frame's caller's TCB, which the hand-back reaches at call depth ≥ 2.
 variable (bhR? : Option SeLe4n.ReplyId) (oc? : Option SeLe4n.ThreadId)
@@ -632,14 +589,14 @@ example (stPost : SystemState) (holder : SeLe4n.ThreadId)
 applies (ghost 2PL bracket shape) — the teardown on the kernel half, the
 bracket's trace on the lock half. -/
 example :
-    withLockSet (lockSet_cancelIpcBlocking victim blEp blN r? rdSc? dh? hEp? hNb? bhR? oc? rh? fa? sb?) ec
+    withLockSet (lockSet_cancelIpcBlocking victim blEp blN r? rdSc? dh? bhR? oc? rh? fa? sb?) ec
         (fun st => (cancelIpcBlocking st victim tcb, ())) ⟨s, LockState.unheld⟩
       = (⟨cancelIpcBlocking s victim tcb,
           LockState.bracket ec
-            (lockSet_cancelIpcBlocking victim blEp blN r? rdSc? dh? hEp? hNb? bhR? oc? rh? fa? sb?)
+            (lockSet_cancelIpcBlocking victim blEp blN r? rdSc? dh? bhR? oc? rh? fa? sb?)
             LockState.unheld⟩,
          ()) :=
-  cancelIpcBlocking_atomic_under_lockSet victim tcb ec blEp blN r? rdSc? dh? hEp? hNb?
+  cancelIpcBlocking_atomic_under_lockSet victim tcb ec blEp blN r? rdSc? dh?
     bhR? oc? rh? fa? sb? ⟨s, LockState.unheld⟩
 
 /-- SM6.E.4 (WS-LS LS2.1: over the pair): the donation atomicity companion
@@ -705,7 +662,7 @@ example (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId)
     (hChain : donationChainWellFormed st)
     (hHolder : donatedContextIsOwnerFrameHead st victim)
     -- **WS-OD OD4.4**: the reclaim resolves its new owner off the holder's reply
-    -- stack at the post-abort state, so the arm carries that obligation in the
+    -- stack, so the arm carries that obligation in the
     -- cancellation's own shape (`cancelDonationStackValid`, vacuous wherever the
     -- context heads no stack).
     (hStack : cancelDonationStackValid st victim tcb)
@@ -732,13 +689,10 @@ example (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId)
     (hOff : sweptThreadOffQueueChains st victim)
     (hOwed : ∀ rid, tcb.replyObject = some rid → replyFrameHeadHolderDonation st rid victim)
     (hHolder : donatedContextIsOwnerFrameHead st victim)
-    (hStack : cancelDonationStackValid st victim tcb)
-    (hCoh : ∀ (sc : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId),
-      Lifecycle.Suspend.cancelledCallerDonation? st victim tcb = some (sc, holder) →
-      abortHolderQueueCoherent st holder) :
+    (hStack : cancelDonationStackValid st victim tcb) :
     ipcInvariantFull (Lifecycle.Suspend.cancelIpcBlocking st victim tcb) :=
   cancelIpcBlocking_replyArm_preserves_ipcInvariantFull st victim tcb ep rt hInv hLookup
-    hBlocked hBundle hChain hBudgets hOff hOwed hHolder hStack hCoh
+    hBlocked hBundle hChain hBudgets hOff hOwed hHolder hStack
 
 /-- **WS-RR RR8.7**: and the arm *is* that composition — reclaim, splice, then the
 teardown pair — by `rfl`, so a step inserted or reordered fails to elaborate rather
@@ -2103,9 +2057,8 @@ private def mkStackedSc (bound : Option SeLe4n.ThreadId)
 /-- **The seL4-MCS shape both triggers agree on**: the victim Called a passive
 server, donating its reservation, so its own reply object heads the context and the
 server holds `.donated scId victim`.  Home cores differ (victim core 1, server
-core 2) so the replenishment migration is observable, and the server is `.ready`
-so OD1.4's abort prefix is inert and the reclaim's own writes are what the
-assertions see. -/
+core 2) so the replenishment migration is observable, and the server is `.ready`,
+so the reclaim's own writes are what the assertions see. -/
 private def stFrameHeadReclaim : SystemState :=
   let base :=
     (BootstrapBuilder.empty

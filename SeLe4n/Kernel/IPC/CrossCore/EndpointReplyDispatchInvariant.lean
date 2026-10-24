@@ -196,20 +196,15 @@ Three stages, and only the first touches an object: the SchedContext return
 replenishment migration (a per-core replenish-queue write — no object, no run
 queue, no `current`), and the replier's deschedule on its own core.
 
-`hHolderIdleAllowed` is the same precondition the single-core form carries, and
-for the same reason: the deschedule hands `passiveServerIdle` an obligation for a
-thread it previously had none for.  **WS-HP HP4.3**: both it and `hHolderDonation`
-are quantified over the trigger, because the thread the step deschedules is now
-read off `SchedContext.boundThread` rather than supplied by the caller. -/
+**WS-HP HP4.3**: `hHolderDonation` is quantified over the trigger, because the
+thread the step deschedules is read off `SchedContext.boundThread` rather than
+supplied by the caller. -/
 theorem applyReplyDonationOnCore_preserves_ipcInvariantFull
     (st st'' : SystemState) (rid : SeLe4n.ReplyId) (targetVtid : SeLe4n.ValidThreadId)
     (holderHome ownerHome : CoreId)
     (hObjInv : st.objects.invExt)
     (hInv : ipcInvariantFull st)
     (hHolderDonation : replyFrameHeadHolderDonation st rid targetVtid.val)
-    (hHolderIdleAllowed : ∀ scId holder,
-        replyFrameHeadHolder? st rid = some (scId, holder) →
-        ∀ tcb, st.getTcb? holder = some tcb → passiveServerIdleAllowed tcb.ipcState)
     -- **WS-OD OD4.4**: the pop resolves its new owner from the context's reply
     -- stack, so at depth ≥ 2 it mints a `.donated` binding at the outer caller.
     (hStackValid : ∀ scId serverTid originalOwner,
@@ -223,23 +218,12 @@ theorem applyReplyDonationOnCore_preserves_ipcInvariantFull
   · rw [hEq]; exact hInv
   · have hRet : replyDonationReturn? st holderVtid.val = some (scId, targetVtid.val) :=
       hHolderDonation scId holderVtid.val hHead
-    have hIdle : ∀ tcb, st.getTcb? holderVtid.val = some tcb →
-        passiveServerIdleAllowed tcb.ipcState := hHolderIdleAllowed scId holderVtid.val hHead
-    obtain ⟨pTcb, hLk, hPB⟩ :=
-      replyDonationReturn?_some_lookup st holderVtid.val scId targetVtid.val hRet
-    have hPPre : st.getTcb? holderVtid.val = some pTcb :=
-      getTcb?_of_lookupTcb st holderVtid.val pTcb hLk
-    have hNe : replyDonationRecipient st scId targetVtid.val ≠ holderVtid.val := by
-      intro hEqq
-      have hUnb := returnDonatedSchedContext_ok_recipient_unbound st st' holderVtid.val scId
-        (replyDonationRecipient st scId targetVtid.val) n hR pTcb (hEqq ▸ hLk)
-      rw [hPB] at hUnb; cases hUnb
     -- **WS-HP HP10.7**: three cases, as in the single-core spine.
     have hFull' : ipcInvariantFull st' := by
       by_cases hNoOrigin : donationOriginRecipient? st scId = none
       · rw [replyDonationRecipient_eq_of_no_origin st scId targetVtid.val hNoOrigin] at hR
         exact returnDonatedSchedContext_preserves_ipcInvariantFull st st' holderVtid scId
-          targetVtid.val hObjInv hInv hRet hIdle n
+          targetVtid.val hObjInv hInv hRet n
           (donationReturnOuterValid_of_stackValid
             (hStackValid scId holderVtid.val targetVtid.val) hRes) hR
       · obtain ⟨o, hOrigin⟩ : ∃ o, donationOriginRecipient? st scId = some o := by
@@ -251,7 +235,7 @@ theorem applyReplyDonationOnCore_preserves_ipcInvariantFull
         by_cases hSame : o = targetVtid.val
         · rw [hRecipEq, hSame] at hR
           exact returnDonatedSchedContext_preserves_ipcInvariantFull st st' holderVtid scId
-            targetVtid.val hObjInv hInv hRet hIdle n
+            targetVtid.val hObjInv hInv hRet n
             (donationReturnOuterValid_of_stackValid
               (hStackValid scId holderVtid.val targetVtid.val) hRes) hR
         · rw [hRecipEq] at hR
@@ -262,34 +246,16 @@ theorem applyReplyDonationOnCore_preserves_ipcInvariantFull
               (hOriginCoherent scId holderVtid.val o hHead hOrigin hSame)
               (donationOriginRecipient?_resolves st hOrigin)
               (donationOriginRecipient?_rebindable st hOrigin))
-            hIdle n
+            n
             (donationReturnOuterValid_of_stackValid (hStackValid scId holderVtid.val o) hRes) hR
-    obtain ⟨_, ⟨pTcb0, hPPre0, hPPost⟩, _⟩ :=
-      returnDonatedSchedContext_getTcb?_char st st' holderVtid.val scId
-        (replyDonationRecipient st scId targetVtid.val) hObjInv hNe n hR
-    have hPEq : pTcb0 = pTcb := Option.some.inj (hPPre0.symm.trans hPPre)
-    rw [hPEq] at hPPost
-    -- The migration writes only per-core replenish queues.
+    -- The migration writes only per-core replenish queues; the deschedule
+    -- writes only run-queue links.
     let stM : SystemState := migrateSchedContextReplenishment st' scId holderHome ownerHome
     have hMObjs : stM.objects = st'.objects := migrateSchedContextReplenishment_objects _ _ _ _
-    have hMRq := migrateSchedContextReplenishment_runQueue_current_eq st' scId holderHome
-      ownerHome bootCoreId
-    have hFullM : ipcInvariantFull stM :=
-      ipcInvariantFull_of_descheduleFrame st' stM hFull' (.of_objects_eq hMObjs)
-        (passiveServerIdleFrame.of_objects_scheduler_eq hMObjs hMRq.1 hMRq.2)
-    -- The deschedule writes only the placed core's queue and `current` slot --
-    -- and nothing at all when the state places the holder on no core.
     rw [hEq]
-    refine ipcInvariantFull_of_descheduleFrame stM _ hFullM
+    exact ipcInvariantFull_of_objectsAgreeOffRunLinks
       (descheduleAtPlacement_objectsAgreeOffRunLinks stM holderVtid.val)
-      (descheduleAtPlacement_passiveServerIdleFrame stM holderVtid.val
-        (fun tcb hTcb => ?_))
-    rw [hMObjs] at hTcb
-    have hEqT : { pTcb with scBindingScCode := 0, scBindingOwnerCode := 0 } = tcb :=
-      Option.some.inj (hPPost.symm.trans ((getTcb?_eq_some_iff st' _ tcb).mpr hTcb))
-    exact Or.inr (by rw [← hEqT]; exact hIdle pTcb hPPre)
-
-
+      (ipcInvariantFull_of_objects_eq hMObjs hFull')
 
 /-- WS-RR RR3.12: `applyReplyDonationOnCore` **establishes** the full bundle from the
 form relaxed at the thread the reply woke — the cross-core counterpart of
@@ -314,9 +280,6 @@ theorem applyReplyDonationOnCore_establishes_ipcInvariantFull_of_except
       sTcb.schedContextBinding = .donated sc woken →
       replyFrameHeadHolder? st rid = some (sc, s))
     (hHolderDonation : replyFrameHeadHolderDonation st rid targetVtid.val)
-    (hHolderIdleAllowed : ∀ scId holder,
-        replyFrameHeadHolder? st rid = some (scId, holder) →
-        ∀ tcb, st.getTcb? holder = some tcb → passiveServerIdleAllowed tcb.ipcState)
     -- **WS-OD OD4.4**: the pop resolves its new owner from the context's reply
     -- stack, so at depth ≥ 2 it mints a `.donated` binding at the outer caller.
     (hStackValid : ∀ scId serverTid originalOwner,
@@ -343,22 +306,11 @@ theorem applyReplyDonationOnCore_establishes_ipcInvariantFull_of_except
         (answeredHeadHolder_donation_owner_eq st targetVtid.val holderVtid.val woken sTcb0
           scId scId hRet hS0 hB0).2
       subst hWoken
-      have hIdle : ∀ tcb, st.getTcb? holderVtid.val = some tcb →
-          passiveServerIdleAllowed tcb.ipcState := hHolderIdleAllowed scId holderVtid.val hHead
-      obtain ⟨pTcb, hLk, hPB⟩ :=
-        replyDonationReturn?_some_lookup st holderVtid.val scId targetVtid.val hRet
-      have hPPre : st.getTcb? holderVtid.val = some pTcb :=
-        getTcb?_of_lookupTcb st holderVtid.val pTcb hLk
-      have hNe : replyDonationRecipient st scId targetVtid.val ≠ holderVtid.val := by
-        intro hEqq
-        have hUnb := returnDonatedSchedContext_ok_recipient_unbound st st' holderVtid.val scId
-          (replyDonationRecipient st scId targetVtid.val) n hR pTcb (hEqq ▸ hLk)
-        rw [hPB] at hUnb; cases hUnb
       have hFull' : ipcInvariantFull st' := by
         by_cases hNoOrigin : donationOriginRecipient? st scId = none
         · rw [replyDonationRecipient_eq_of_no_origin st scId targetVtid.val hNoOrigin] at hR
           exact returnDonatedSchedContext_establishes_ipcInvariantFull_of_except st st' holderVtid
-            scId targetVtid.val hObjInv hInv hRet hIdle n
+            scId targetVtid.val hObjInv hInv hRet n
             (donationReturnOuterValid_of_stackValid
               (hStackValid scId holderVtid.val targetVtid.val) hRes) hR
         · obtain ⟨o, hOrigin⟩ : ∃ o, donationOriginRecipient? st scId = some o := by
@@ -370,7 +322,7 @@ theorem applyReplyDonationOnCore_establishes_ipcInvariantFull_of_except
           by_cases hSame : o = targetVtid.val
           · rw [hRecipEq, hSame] at hR
             exact returnDonatedSchedContext_establishes_ipcInvariantFull_of_except st st'
-              holderVtid scId targetVtid.val hObjInv hInv hRet hIdle n
+              holderVtid scId targetVtid.val hObjInv hInv hRet n
               (donationReturnOuterValid_of_stackValid
                 (hStackValid scId holderVtid.val targetVtid.val) hRes) hR
           · rw [hRecipEq] at hR
@@ -380,35 +332,22 @@ theorem applyReplyDonationOnCore_establishes_ipcInvariantFull_of_except
                 (hOriginCoherent scId holderVtid.val o hHead hOrigin hSame)
                 (donationOriginRecipient?_resolves st hOrigin)
                 (donationOriginRecipient?_rebindable st hOrigin))
-              hIdle n
+              n
               (donationReturnOuterValid_of_stackValid (hStackValid scId holderVtid.val o) hRes) hR
-      obtain ⟨_, ⟨pTcb0, hPPre0, hPPost⟩, _⟩ :=
-        returnDonatedSchedContext_getTcb?_char st st' holderVtid.val scId
-          (replyDonationRecipient st scId targetVtid.val) hObjInv hNe n hR
-      have hPEq : pTcb0 = pTcb := Option.some.inj (hPPre0.symm.trans hPPre)
-      rw [hPEq] at hPPost
+      -- The migration writes only per-core replenish queues; the deschedule
+      -- writes only run-queue links.
       let stM : SystemState := migrateSchedContextReplenishment st' scId holderHome ownerHome
       have hMObjs : stM.objects = st'.objects := migrateSchedContextReplenishment_objects _ _ _ _
-      have hMRq := migrateSchedContextReplenishment_runQueue_current_eq st' scId holderHome
-        ownerHome bootCoreId
-      have hFullM : ipcInvariantFull stM :=
-        ipcInvariantFull_of_descheduleFrame st' stM hFull' (.of_objects_eq hMObjs)
-          (passiveServerIdleFrame.of_objects_scheduler_eq hMObjs hMRq.1 hMRq.2)
       rw [hEq]
-      refine ipcInvariantFull_of_descheduleFrame stM _ hFullM
+      exact ipcInvariantFull_of_objectsAgreeOffRunLinks
         (descheduleAtPlacement_objectsAgreeOffRunLinks stM holderVtid.val)
-        (descheduleAtPlacement_passiveServerIdleFrame stM holderVtid.val
-          (fun tcb hTcb => ?_))
-      rw [hMObjs] at hTcb
-      have hEqT : { pTcb with scBindingScCode := 0, scBindingOwnerCode := 0 } = tcb :=
-        Option.some.inj (hPPost.symm.trans ((getTcb?_eq_some_iff st' _ tcb).mpr hTcb))
-      exact Or.inr (by rw [← hEqT]; exact hIdle pTcb hPPre)
+        (ipcInvariantFull_of_objects_eq hMObjs hFull')
   · exact applyReplyDonationOnCore_preserves_ipcInvariantFull st st'' rid targetVtid
       holderHome ownerHome hObjInv
       (ipcInvariantFull_of_exceptDonationOwner hInv
         (donationOwnerValid_of_except_of_no_donation_owned_by hInv.donationOwnerValidExcept
           (fun tid tcb sc hTcb hBind => hAny ⟨tid, tcb, sc, hTcb, hBind⟩)))
-      hHolderDonation hHolderIdleAllowed hStackValid hOriginCoherent h
+      hHolderDonation hStackValid hOriginCoherent h
 
 -- ============================================================================
 -- §5  RR2.11 — the cross-core `.reply` chain
@@ -459,12 +398,10 @@ theorem applyReplyDonationOnCore_tcb_ipcState_backward
 /-- **WS-RR RR8.16 (`v0.35.195`)**: a successful cross-core reply leaves the thread
 it answers `.ready`.
 
-The fault reply's abandon arm needs exactly this, and carried it as a caller
-hypothesis (`hTargetIdleAllowed`) from WS-RR RR4.18 until this cut: the abandon
-deschedules the faulted thread, so `passiveServerIdle` has to be re-established at
-it, and `.ready` is a `passiveServerIdleAllowed` state.  Reading it off the
-**outcome** instead is what retires that hypothesis — and the hypothesis was
-consumed on the `.ok` branch alone, so nothing weaker was ever being asked for.
+The fault reply's abandon arm reads exactly this off the **outcome** rather
+than taking it as a caller hypothesis (`hTargetIdleAllowed`, WS-RR RR4.18 to
+this cut), and the hypothesis was consumed on the `.ok` branch alone, so nothing
+weaker was ever being asked for.
 
 Every step after the reply leg frames the answered thread's `ipcState`: the
 donation return through `applyReplyDonationOnCore_tcb_ipcState_backward`, the
@@ -595,13 +532,6 @@ theorem endpointReplyCrossCoreDispatch_establishes_ipcInvariantFull
       replyFrameHeadHolderDonation
         (endpointReplyOnCore replier target msg executingCore st).1 rid target)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
-    (hHolderIdleAllowed : ∀ (rid : SeLe4n.ReplyId) (scId : SeLe4n.SchedContextId)
-        (holder : SeLe4n.ThreadId),
-      answeredReplyObject? st target = some rid →
-      replyFrameHeadHolder?
-          (endpointReplyOnCore replier target msg executingCore st).1 rid = some (scId, holder) →
-      ∀ tcb, (endpointReplyOnCore replier target msg executingCore st).1.getTcb? holder = some tcb →
-        passiveServerIdleAllowed tcb.ipcState)
     -- **WS-OD OD4.4**: the donation return resolves its new owner from the
     -- context's reply stack, so at depth ≥ 2 it mints a `.donated` binding at the
     -- outer caller.  Stated at the state the pop actually runs at -- the reply leg
@@ -625,7 +555,7 @@ theorem endpointReplyCrossCoreDispatch_establishes_ipcInvariantFull
   unfold endpointReplyCrossCoreDispatch
   cases hRep : endpointReplyOnCore replier target msg executingCore st with
   | mk st1 res =>
-    rw [hRep] at hReplyExc hReplyInv hStackValid hDonationReturned hHolderDonation hHolderIdleAllowed hOriginCoherent
+    rw [hRep] at hReplyExc hReplyInv hStackValid hDonationReturned hHolderDonation hOriginCoherent
     cases res with
     | error e => exact hInv
     | ok replySgi =>
@@ -671,7 +601,6 @@ theorem endpointReplyCrossCoreDispatch_establishes_ipcInvariantFull
                       rw [hRid] at hRid0
                       exact (Option.some.inj hRid0) ▸ hHead0)
                     (by rw [hTEq]; exact hHolderDonation rid hRid)
-                    (fun scId holder hHead => hHolderIdleAllowed rid scId holder hRid hHead)
                     hStackValid (by rw [hTEq]; exact hOriginCoherent rid hRid) hDon
                 have hDonInv : st2.objects.invExt :=
                   applyReplyDonationOnCore_preserves_objects_invExt st1 st2 rid targetV _ _
@@ -731,7 +660,6 @@ theorem endpointReplyCrossCoreDispatch_preserves_ipcInvariantFull
       exact absurd (hB0.trans hB) (hNoDonationOwnedBy s sTcb0 sc hS0))
     (fun rid hRid => replyFrameHeadHolderDonation_of_no_head _ rid target (hNoHead rid hRid))
     hAllBudgetsNone
-    (fun rid scId holder hRid hHead _ _ => by rw [hNoHead rid hRid] at hHead; cases hHead)
     hStackValid
     (fun rid hRid scId holder origin hHead _ _ => by rw [hNoHead rid hRid] at hHead; cases hHead)
 

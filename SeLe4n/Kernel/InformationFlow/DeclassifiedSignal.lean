@@ -2037,9 +2037,9 @@ theorem notificationSignalDeclassifiedOnCore_preserves_ipcInvariant
   exact ipcInvariant_of_objects_eq hObjects
     (notificationSignalBoundOnCore_preserves_ipcInvariant notificationId badge c st hInv hObjInv)
 
-/-- WS-SM SM9.C.3: **the whole twenty-conjunct IPC bundle, transferred.**
+/-- WS-SM SM9.C.3: **the whole nineteen-conjunct IPC bundle, transferred.**
 
-The audit append changes no object lookup and no scheduler slot, so a bundle
+The audit append changes no object lookup, so a bundle
 that holds of the delivery's post-state holds of the committed one.  The premise
 is the delivery's own obligation — SM6.D's, discharged unconditionally on the
 fall-through path below and registered debt on the bound-delivery path. -/
@@ -2051,14 +2051,9 @@ theorem notificationSignalDeclassifiedOnCore_ipcInvariantFull_transfer
     (hStep : notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge c st =
       (st', .ok sgi)) :
     ipcInvariantFull st' := by
-  obtain ⟨hObjects, hSched, -, -⟩ := declassifiedSignal_delivers_badge ctx declPolicy
+  obtain ⟨hObjects, -, -, -⟩ := declassifiedSignal_delivers_badge ctx declPolicy
     notificationId badge c st st' sgi hStep
-  refine ipcInvariantFull_of_getElem_eq (fun oid => by rw [hObjects]) ?_ hSignalInv
-  have hPsi := hSignalInv.passiveServerIdle
-  unfold passiveServerIdle at hPsi ⊢
-  intro tid tcb hTcb hUnbound hNotQ hNotCur
-  exact hPsi tid tcb (by rw [← hObjects]; exact hTcb) hUnbound
-    (by rw [← hSched]; exact hNotQ) (by rw [← hSched]; exact hNotCur)
+  exact ipcInvariantFull_of_getElem_eq (fun oid => by rw [hObjects]) hSignalInv
 
 /-- WS-SM SM9.C.3 (**the fall-through instance, unconditional**): off the
 bound-delivery path the delivery *is* `notificationSignalOnCore`, whose whole
@@ -2085,30 +2080,18 @@ theorem notificationSignalDeclassifiedOnCore_preserves_ipcInvariantFull_fallthro
   exact notificationSignalOnCore_preserves_ipcInvariantFull notificationId badge c st hInv
     hObjInv hNWC hAllBudgetsNone
 
-/-- WS-SM SM9.C.3: **the per-core bundle**, from the whole-bundle form and core
-`c`'s passive slice — which the audit append leaves alone for the same reason
-everything else does. -/
+/-- WS-SM SM9.C.3: **the per-core bundle**, from the whole-bundle form. -/
 theorem notificationSignalDeclassifiedOnCore_ipcInvariantFull_perCore_transfer
     (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy)
     (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) (c : CoreId)
     (st st' : SystemState) (sgi : Option (CoreId × SgiKind)) (view : CoreId)
     (hSignalInv : ipcInvariantFull (notificationSignalBoundOnCore notificationId badge c st).1)
-    (hSignalPsi : passiveServerIdle_perCore
-      (notificationSignalBoundOnCore notificationId badge c st).1 view)
     (hStep : notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge c st =
       (st', .ok sgi)) :
-    ipcInvariantFull_perCore st' view := by
-  obtain ⟨hObjects, hSched, -, -⟩ := declassifiedSignal_delivers_badge ctx declPolicy
-    notificationId badge c st st' sgi hStep
-  refine ipcInvariantFull_perCore_of_full
+    ipcInvariantFull_perCore st' view :=
+  ipcInvariantFull_perCore_of_full
     (notificationSignalDeclassifiedOnCore_ipcInvariantFull_transfer ctx declPolicy notificationId
-      badge c st st' sgi hSignalInv hStep) ?_
-  unfold passiveServerIdle_perCore at hSignalPsi ⊢
-  intro tid tcb hTcb hUnbound hNotQ hNotCur
-  refine hSignalPsi tid tcb ?_ hUnbound (by rw [← hSched]; exact hNotQ)
-    (by rw [← hSched]; exact hNotCur)
-  rw [SystemState.getTcb?] at hTcb ⊢
-  rw [← hObjects]; exact hTcb
+      badge c st st' sgi hSignalInv hStep)
 
 -- ============================================================================
 -- §12  WS-SM SM9.C.1 — the ordering, the trail invariants, the dispatch

@@ -64,7 +64,7 @@ theorem endpointQueuePopHead_establishes_ipcInvariantFullExceptMembership
     (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (tid, headTcb, st')) :
     ipcInvariantFullExceptMembership st' tid := by
   obtain ⟨hIpc, hDual, hBnd, hBadge, hPend, hNoDup, hMem, hQNB, hQHB, hTimeout,
-    _hAcyc, hOwner, hPassive, hBudget, hReplyTarget, hReplyLink, hStash, hUnique, hTail,
+    _hAcyc, hOwner, hBudget, hReplyTarget, hReplyLink, hStash, hUnique, hTail,
     hQNT⟩ := hInv
   have hDual' := endpointQueuePopHead_preserves_dualQueueSystemInvariant endpointId isReceiveQ
     st st' tid hObjInv hStep hDual
@@ -112,9 +112,6 @@ theorem endpointQueuePopHead_establishes_ipcInvariantFullExceptMembership
     hTimeout',
     donationOwnerValid_implies_donationChainAcyclic st' hOwner',
     hOwner',
-    passiveServerIdle_of_frame
-      (endpointQueuePopHead_passiveServerIdleFrame endpointId isReceiveQ st st' tid headTcb
-        hObjInv hStep) hPassive,
     donationBudgetTransfer_of_sameSchedContextBindings hSame hBudget,
     endpointQueuePopHead_preserves_blockedOnReplyHasTarget endpointId isReceiveQ st st' tid
       headTcb hObjInv hReplyTarget hStep,
@@ -208,12 +205,7 @@ theorem cancelledEndpointWaiter_closes (s1 : SystemState) (t : SeLe4n.ThreadId) 
         RobinHood.RHTable.getElem?_insert_ne _ _ _ _ (by simp [hne]) hIRc,
         ← RHTable_getElem?_eq_get?, ← RHTable_getElem?_eq_get?,
         storeObject_objects_ne s1 sRc t.toObjId k _ hk hI1 hStoreRc]
-  have hSched : (s1.updateTcb t cancelledEndpointWaiterTcb).scheduler =
-      (Architecture.writeReturnFrameToTcb sRc t Architecture.cancelledIpcFrame).scheduler := by
-    unfold Architecture.writeReturnFrameToTcb
-    rw [SystemState.updateTcb_eq_of_some hG1, SystemState.updateTcb_eq_of_some hRcG]
-    exact (storeObject_scheduler_eq s1 sRc t.toObjId _ hStoreRc).symm
-  exact ipcInvariantFull_of_storeAgrees_of_scheduler_eq hAgree hSched hFullStage
+  exact ipcInvariantFull_of_storeAgrees hAgree hFullStage
 
 /-- **An endpoint waiter's cancel keeps the bundle.**  The pop relaxes it at the
 waiter (`endpointQueuePopHead_establishes_ipcInvariantFullExceptMembership`) and
@@ -315,30 +307,25 @@ theorem storeUnbindNotification_preserves_ipcInvariantFull
 /-- **A context's release of its holder keeps the bundle**: the per-core unbind
 read through the owner-cleared view
 (`cancelBoundDonationOnCore_view_preserves_ipcInvariantFull`), on a thread whose
-context — its own or on loan — is bound back to it and whose IPC state an
-unbound thread may idle in.  The thread finalisation's unbind is the case of a
+context — its own or on loan — is bound back to it.  The thread finalisation's unbind is the case of a
 `.bound` holder (`FinaliseScReleaseStep.scUnbind`). -/
 theorem finaliseScReleaseStep_keepsIpcInvariantFull :
     FinaliseScReleaseStep (fun s => ipcInvariantFull s ∧ s.objects.invExt) := by
-  intro s s' t tcb sc x h hT hS hA hSc hB hOk
+  intro s s' t tcb sc x h hT hS hSc hB hOk
   refine ⟨cancelBoundDonationOnCore_view_preserves_ipcInvariantFull s s' t tcb _ _ h.2 h.1
-    ((SystemState.getTcb?_eq_some_iff s t tcb).mp hT) (passiveServerIdleAllowed_of_codes hA)
+    ((SystemState.getTcb?_eq_some_iff s t tcb).mp hT)
     (fun scId hb => ?_) hOk, (FinaliseFrame.cancelBoundDonationOnCore h.2 hOk).invExt⟩
   rw [schedContextBinding_ownerCleared hS] at hb
   cases hb
   refine ⟨sc, (SystemState.getSchedContext?_eq_some_iff s _ sc).mp hSc, ?_⟩
   unfold SchedContext.boundThread; rw [hB]; exact threadOfOptCode_succ t
 
-/-- **A context's deschedule of its holder keeps the bundle**: the holder idles
-in no IPC state (codes `0`/`0`), so it is `.ready` and the dequeue
-(`descheduleAt_preserves_ipcInvariantFull`) applies. -/
+/-- **A context's deschedule of its holder keeps the bundle**: the dequeue
+(`descheduleAt_preserves_ipcInvariantFull`) writes only run-queue links. -/
 theorem finaliseScDescheduleStep_keepsIpcInvariantFull :
     FinaliseScDescheduleStep (fun s => ipcInvariantFull s ∧ s.objects.invExt) := by
-  intro s t tcb h hT hS hO _
-  have hReady : ∀ x : TCB, s.getTcb? t = some x → x.ipcState = .ready := by
-    intro x hx; rw [hT] at hx; cases hx
-    unfold TCB.ipcState; rw [hS, hO]; rfl
-  exact ⟨descheduleAt_preserves_ipcInvariantFull s t _ hReady h.1,
+  intro s t _ h _ _ _ _
+  exact ⟨descheduleAt_preserves_ipcInvariantFull s t _ h.1,
     (FinaliseFrame.descheduleAt s t _ h.2).invExt⟩
 
 /-- **A context's reply-stack unlink keeps the bundle**: the head reply's
@@ -371,8 +358,7 @@ theorem updateTcb_stashCleared_preserves_ipcInvariantFull (s : SystemState)
     ⟨_, rfl⟩
   have h1 := storeObject_stashCleared_preserves_ipcInvariantFull s s1 tid t hInv hFull hT hS
   rw [SystemState.updateTcb_eq_of_some hT]
-  refine ipcInvariantFull_of_storeAgrees_of_scheduler_eq (fun k => ?_)
-    (storeObject_scheduler_eq s s1 _ _ hS).symm h1
+  refine ipcInvariantFull_of_storeAgrees (fun k => ?_) h1
   show (s.objects.insert tid.toObjId _)[k]? = s1.objects[k]?
   by_cases hk : k = tid.toObjId
   · subst hk
@@ -550,7 +536,7 @@ theorem storeEndpointBlockedCancelled_preserves_ipcInvariantFull
   have hT1 : s1.objects[t.toObjId]? = some (.tcb (tcbOffQueue tcb)) :=
     (SystemState.getTcb?_eq_some_iff _ _ _).mp hFr.removed_tcb
   have hEx' := hEx
-  obtain ⟨-, hDual1, -, -, -, -, -, -, hQHB1, -, -, -, -, -, -, -, -, -, hQTB1, -⟩ := hEx'
+  obtain ⟨-, hDual1, -, -, -, -, -, -, hQHB1, -, -, -, -, -, -, -, -, hQTB1, -⟩ := hEx'
   obtain ⟨hNotHead, hNotTail, hNoInc⟩ := endpointQueueRemoveDual_removed_detached_side st s1 e q
     t hObjInv hInv.dualQueueSystemInvariant hRem _ hT1 hSideS hQHB1 hQTB1 hDual1.2.1
   refine cancelledEndpointWaiter_closes s1 t (tcbOffQueue tcb) hI1 hNotRes hT1 hNoBudget
@@ -591,7 +577,7 @@ theorem finalisedSuspendMark_keepsIpcInvariantFull (s : SystemState) (t : SeLe4n
       rw [hReady tcb hT]; exact pendingMessageReadAgrees_ready_none _
     exact ⟨ipcInvariantFull_of_tcbFieldUpdateAgree s _ t.toObjId tcb (finalisedSuspendMark tcb)
         h.1 hPre hAt hFrame rfl hMsg rfl rfl rfl rfl rfl rfl rfl
-        (passiveServerIdleFrame_of_tcbFieldUpdate t.toObjId tcb _ hPre hAt hFrame rfl rfl hSched),
+        ,
       SystemState.updateTcb_preserves_objects_invExt s t _ h.2⟩
 
 /-- **The suspend keeps the bundle**: the deschedule of a ready thread
@@ -610,7 +596,7 @@ theorem finaliseSuspendStep_keepsIpcInvariantFull :
     run_links_back (descheduleAtPlacement_objectsAgreeOffRunLinks s t) at x hxo
     exact hReady x ((SystemState.getTcb?_eq_some_iff _ _ _).mpr hxo)
   exact finalisedSuspendMark_keepsIpcInvariantFull _ t
-    ⟨descheduleAt_preserves_ipcInvariantFull s t _ hReady h.1,
+    ⟨descheduleAt_preserves_ipcInvariantFull s t _ h.1,
       (FinaliseFrame.descheduleAt s t _ h.2).invExt⟩ hReadyD
 
 /-- **The release keeps the bundle**: it writes neither the objects nor the
@@ -618,8 +604,8 @@ scheduler. -/
 theorem finaliseReleaseStep_keepsIpcInvariantFull :
     FinaliseReleaseStep (fun s => ipcInvariantFull s ∧ s.objects.invExt) := by
   intro s t h
-  refine ⟨ipcInvariantFull_of_storeAgrees_of_scheduler_eq (fun k => ?_)
-    (finaliseThreadReleaseCores_scheduler s t) h.1, (FinaliseFrame.releaseCores s t h.2).invExt⟩
+  refine ⟨ipcInvariantFull_of_storeAgrees (fun k => ?_) h.1,
+    (FinaliseFrame.releaseCores s t h.2).invExt⟩
   rw [finaliseThreadReleaseCores_objects]
 
 -- ============================================================================
@@ -656,8 +642,8 @@ theorem finaliseFinalObject_preserves_finaliseLoanBundle (target : Nat) (st : Sy
     (fun s t tcb h hT hS hO hId =>
       h.of_frame (finaliseScDescheduleStep_keepsIpcInvariantFull s t tcb ⟨h.1, h.2.1⟩ hT hS hO hId).1
         (FinaliseFrame.descheduleAt s t _ h.2.1))
-    (fun s s' t tcb sc x h hT hS hA hSc hB hOk =>
-      h.of_frame (finaliseScReleaseStep_keepsIpcInvariantFull s s' t tcb sc x ⟨h.1, h.2.1⟩ hT hS hA
+    (fun s s' t tcb sc x h hT hS hSc hB hOk =>
+      h.of_frame (finaliseScReleaseStep_keepsIpcInvariantFull s s' t tcb sc x ⟨h.1, h.2.1⟩ hT hS
         hSc hB hOk).1 (FinaliseFrame.cancelBoundDonationOnCore h.2.1 hOk))
     (fun s n t tcb nt h hT hI hN hC =>
       h.of_frame (finaliseNotificationCancelStep_keepsIpcInvariantFull s n t tcb nt ⟨h.1, h.2.1⟩ hT

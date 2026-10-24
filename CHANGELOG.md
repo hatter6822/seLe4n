@@ -18,10 +18,12 @@ retire.
   stash check and the delete's unstash read one field instead of walking
   the object table.  And the reply finalisation no longer walks the table to
   learn that the caller lends no reservation: it reads it off the reply.
-- **Still open** (debt rows): a reply heading a scheduling context's stack,
-  where seL4's `reply_pop` hands a lent reservation back; and a scheduling
-  context whose thread is blocked sending or calling, which this model's
-  passive-server invariant does not admit unbound.
+- **And:** a scheduling context whose holder is blocked sending or calling
+  is finalised too.  seL4 unbinds such a holder and leaves it blocked; this
+  model's passive-server invariant forbade that, so the invariant is retired
+  (see "A thread may wait unbound" below).
+- **Still open** (debt row): a reply heading a scheduling context's stack,
+  where seL4's `reply_pop` hands a lent reservation back.
 
 This is part 25 of the seL4 untyped reset.
 
@@ -218,6 +220,69 @@ heads no stack, so its caller lends to no one (`replyCaller_lendsNone`).
 - **The admission fails closed.**  `replyCallerFinalisable` still refuses a
   reply that heads a stack, which is the only reply whose caller can lend.
 
+### A thread may wait unbound (seL4's unbind)
+
+seL4's `schedContext_unbindTCB` unbinds a thread whatever it is waiting on,
+and leaves its IPC alone: a thread blocked sending or calling stays blocked,
+with no reservation, and runs again only once a context is bound or donated to
+it.  This model's IPC bundle had a conjunct seL4 does not state,
+`passiveServerIdle`: an unbound thread off every run queue is ready, receiving
+or blocked on a reply.  It kept a scheduling context whose holder was blocked
+sending or calling from being finalised, and it is why the cancellation
+reclaim ended the holder's IPC before returning the reservation
+(`abortHolderPendingIpc`, `v0.34.104`).
+
+- **The decision (seL4-faithful).**  The plan forked: restate the conjunct to
+  admit an unbound sender or caller, or retire it.  This cut retires it, since
+  the restated form would state nothing seL4 relies on.
+  - `passiveServerIdle`, its per-core slice and frames, and
+    `ipcCodesIdleAllowed` (the finalise's and the thread unbind's check of it)
+    are deleted.  `ipcInvariantFull` has nineteen conjuncts, and
+    `ipcInvariantCore` fourteen.
+  - The reclaim's holder abort is deleted (`abortHolderPendingIpc`,
+    `abortHolderProjectionStable`, `abortHolderQueueCoherent`,
+    `abortHolderSpliceHigh`, `cancelHolderBlockedEndpoint?`,
+    `cancelHolderSpliceNeighbors?`).  The reclaim returns the reservation and
+    leaves the holder blocked and queued, as seL4's `schedContext_donate`
+    leaves the previous holder.  Its lock-set footprint loses the holder's
+    endpoint and the two queue neighbours.
+  - `schedContextFinaliseAdmitted` and `finaliseSchedContextUnbind` no longer
+    refuse a holder blocked sending or calling: it is unbound and keeps
+    waiting.
+  - `timeoutBudget` is kept: the timeout abort (`abortPendingIpcOnEndpoint`,
+    `timeoutThread`'s prefix) is unchanged, with its proofs.
+- **What it buys.**
+  - No IPC bundle conjunct reads the scheduler.  The transport levers
+    (`ipcInvariantFull_of_storeAgrees`,
+    `ipcInvariantFullExceptMembership_of_storeAgrees`, the flag-only, VSpace
+    and retype writes) lose their scheduler hypothesis, and the switch,
+    reschedule, priority, unbind, resume and suspend proofs lose
+    `currentRequeueAdmitted`.
+  - The dispatch payoffs no longer take `currentDequeuedUnique` or the
+    no-idle-caller premise; the invariant stays a run-queue entry-stage
+    obligation.  `currentRequeueAdmitted` and the `CurrentPlacementFrame`
+    family, which existed only to re-establish the conjunct after a requeue,
+    are deleted (25 declarations).
+  - The call and fault-delivery bundle theorems drop `hCallerNotUnbound`.
+  - The cancellation reply arm's information-flow result carries no
+    queue-neighbour obligation: `returnDonationToCancelledCaller` again
+    writes only projection-erased fields, and `hAbortProj` is gone.
+- **The consequence, owned by WS-CB CB1.12.**  Under the single `.unbound`, a
+  holder left blocked sending or calling becomes a legacy time-sliced thread
+  when its IPC later completes, which is the `.unbound`-ambiguity debt row's
+  reading reached by a second route.  CB1.12's passive/legacy split parks it
+  instead; its plan row now states that as a scheduler-bundle invariant,
+  `passiveThreadParked` (a `.passive` thread is on no run queue and in no
+  current slot), in place of the retired IPC conjunct.
+- **Witnesses.**
+  - The main trace's `[SCO-020b]` now shows the reclaim leaving a calling
+    holder blocked and queued while it loses the reservation, and
+    `[SCO-020c]` the same for a receiving holder.  The fixture is refreshed
+    for those two lines.
+  - Tier 3: the anchors on the retired names become negative anchors, over
+    the code view, for both families.
+  - The Tier 1 store-reader census baseline is regenerated.
+
 ### Merge
 
 - Part 24 (#986) is merged in, with merge commits: its dequeue detach, the
@@ -232,10 +297,13 @@ heads no stack, so its caller lends to no one (`replyCaller_lendsNone`).
   capability".
 - Closed: "A receive naming a reply object scans every object to learn
   whether another receiver has stashed it" (the stasher record above).
-- Narrowed: the scheduling-context row now covers only a holder blocked
-  sending or calling.  seL4 unbinds it and leaves it blocked; this model's
-  `passiveServerIdle` admits no unbound sender or caller, so the bundle is
-  restated first (owner WS-ZA ZA6.1).
+- Closed: "A scheduling context whose holder is blocked sending or calling
+  outlives its last capability" (narrowed by this cut's first half, closed by
+  its second: the conjunct retired, see above).
+- Extended: the `.unbound`-ambiguity row (owner WS-CB CB1.12) now names the
+  legacy reading of a holder left blocked unbound, and the closed rows on the
+  holder abort's projection obligation and on the dispatch payoffs' premises
+  record the retirement.
 - Registered: "A head reply and a lent reservation are not returned on a
   final delete" (seL4's `reply_pop` and the loan return, which need the
   donated return's refusal decided first; owner ZA6.1).  The thread row's

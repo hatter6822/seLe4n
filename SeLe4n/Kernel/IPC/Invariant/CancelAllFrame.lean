@@ -121,7 +121,6 @@ def FinaliseScUnbindStep (P : SystemState → Prop) : Prop :=
   ∀ (s s' : SystemState) (t : SeLe4n.ThreadId) (tcb : TCB) (sc : SchedContext), P s →
     s.getTcb? t = some tcb → tcb.scBindingScCode ≠ 0 → tcb.scBindingOwnerCode = 0 →
     tcb.runCoreCode = 0 → threadHeldOnSomeCore s t = false →
-    ipcCodesIdleAllowed tcb.ipcObjectCode tcb.ipcStateCode = true →
     s.getSchedContext? ⟨tcb.scBindingScCode - 1⟩ = some sc → sc.boundThreadCode = t.val + 1 →
     cancelDonationArmOnCore s t tcb = .ok s' → P s'
 
@@ -177,14 +176,13 @@ def FinaliseScDescheduleStep (P : SystemState → Prop) : Prop :=
     P (descheduleAtPlacement s t)
 
 /-- **The release step a scheduling context's finalisation takes**: the thread
-bound to the context — as its own or on loan — in a state an unbound thread may
-idle in, unbound by the reservation arm's in-place unbind with its binding read
-as the context's own. -/
+bound to the context — as its own or on loan, in whatever state it waits —
+unbound by the reservation arm's in-place unbind with its binding read as the
+context's own. -/
 def FinaliseScReleaseStep (P : SystemState → Prop) : Prop :=
   ∀ (s s' : SystemState) (t : SeLe4n.ThreadId) (tcb : TCB) (sc : SchedContext)
     (x : SeLe4n.ObjId), P s →
     s.getTcb? t = some tcb → tcb.scBindingScCode = x.val + 1 →
-    ipcCodesIdleAllowed tcb.ipcObjectCode tcb.ipcStateCode = true →
     s.getSchedContext? ⟨x.val⟩ = some sc → sc.boundThreadCode = t.val + 1 →
     cancelBoundDonationOnCore s t { tcb with scBindingOwnerCode := 0 }
       (determineTargetCore s t) = .ok s' → P s'
@@ -229,9 +227,9 @@ theorem TCB.ownerCleared_of_zero {t : TCB} (h : t.scBindingOwnerCode = 0) :
 thread is its own owner-cleared view. -/
 theorem FinaliseScReleaseStep.scUnbind {P : SystemState → Prop} (h : FinaliseScReleaseStep P) :
     FinaliseScUnbindStep P := by
-  intro s s' t tcb sc hP hT hS hO _ _ hA hSc hB hOk
+  intro s s' t tcb sc hP hT hS hO _ _ hSc hB hOk
   rw [cancelDonationArmOnCore_of_codes s t hS hO] at hOk
-  refine h s s' t tcb sc ⟨tcb.scBindingScCode - 1⟩ hP hT (by show _ = _ - 1 + 1; omega) hA
+  refine h s s' t tcb sc ⟨tcb.scBindingScCode - 1⟩ hP hT (by show _ = _ - 1 + 1; omega)
     hSc hB ?_
   rw [TCB.ownerCleared_of_zero hO]; exact hOk
 
@@ -328,23 +326,6 @@ theorem cancelIpcBlocking_replyArm_of_noDonation (st : SystemState) (c : SeLe4n.
   rw [hB]
   simp only [hR]
 
-/-- **An IPC state `ipcCodesIdleAllowed` admits is one an unbound thread may
-idle in.** -/
-theorem passiveServerIdleAllowed_of_codes {tcb : TCB}
-    (h : ipcCodesIdleAllowed tcb.ipcObjectCode tcb.ipcStateCode = true) :
-    passiveServerIdleAllowed tcb.ipcState := by
-  unfold ipcCodesIdleAllowed at h
-  unfold TCB.ipcState ThreadIpcState.ofCodes passiveServerIdleAllowed
-  generalize tcb.ipcObjectCode = o at h ⊢
-  generalize tcb.ipcStateCode = c at h ⊢
-  match c, o with
-  | 0, 0 => exact Or.inl rfl
-  | 0, _ + 1 => simp at h
-  | 1, _ => exact Or.inr (Or.inl ⟨_, Or.inl rfl⟩)
-  | 2, _ => exact Or.inr (Or.inl ⟨_, Or.inr rfl⟩)
-  | 3, _ => simp at h
-  | _ + 4, _ => exact Or.inr (Or.inr ⟨_, _, rfl⟩)
-
 /-- A thread code `t + 1` decodes to `t`. -/
 theorem threadOfOptCode_succ (t : SeLe4n.ThreadId) :
     SeLe4n.ThreadId.ofOptCode (t.val + 1) = some t := by
@@ -388,11 +369,11 @@ theorem finaliseSchedContextUnbind_closed (P : SystemState → Prop) (hRel : Fin
       · rename_i t hT
         split
         · rename_i hG
-          simp only [Bool.and_eq_true, beq_iff_eq] at hG
-          obtain ⟨hS, hA⟩ := hG
+          simp only [beq_iff_eq] at hG
+          have hS := hG
           split
           · rename_i s' hOk
-            refine hRel st s' _ t sc x h hT hS hA ?_ ?_ hOk
+            refine hRel st s' _ t sc x h hT hS ?_ ?_ hOk
             · have hO : st.objects[x]? = some (.schedContext sc) := by rw [← hX]; simp
               unfold SystemState.getSchedContext?
               rw [show (⟨x.val⟩ : SeLe4n.SchedContextId).toObjId = x from rfl, hO]
@@ -432,8 +413,8 @@ theorem finaliseSchedContextDeschedule_objectsAgreeOffRunLinks (st : SystemState
     (.refl st)
 
 /-- **An admitted context is bound to no thread once its holder is unbound**:
-the admission names a holder bound back to it in a state an unbound thread may
-idle in, the deschedule keeps both, and the in-place unbind of the holder read
+the admission names a holder bound back to it, the deschedule keeps the
+binding, and the in-place unbind of the holder read
 as the context's own (`cancelBoundDonationOnCore` on a `.bound` view) always
 runs and clears the context's binding.  So the unstack that follows runs on a
 context no thread holds, as its own or on loan. -/
@@ -456,8 +437,7 @@ theorem finaliseSchedContextUnbind_unbound {st : SystemState} {x : SeLe4n.ObjId}
         | some t =>
           t.scBindingScCode == x.val + 1 && !isIdleThreadId ⟨sc0.boundThreadCode - 1⟩ &&
           ((t.ipcStateCode == 0 && t.ipcObjectCode == 0) ||
-            (t.runCoreCode == 0 && !threadCurrentOnSomeCore st ⟨sc0.boundThreadCode - 1⟩)) &&
-          ipcCodesIdleAllowed t.ipcObjectCode t.ipcStateCode
+            (t.runCoreCode == 0 && !threadCurrentOnSomeCore st ⟨sc0.boundThreadCode - 1⟩))
         | none => false) = true := by
     split at hA
     · rename_i sc0 hO
@@ -482,7 +462,7 @@ theorem finaliseSchedContextUnbind_unbound {st : SystemState} {x : SeLe4n.ObjId}
   | some t =>
   rw [hT] at hB
   simp only [Bool.and_eq_true, beq_iff_eq] at hB
-  obtain ⟨⟨⟨hS, -⟩, -⟩, hIdle⟩ := hB
+  obtain ⟨⟨hS, -⟩, -⟩ := hB
   have hT1 := hD.getTcb? tid
   rw [hT] at hT1
   cases hT1' : s1.getTcb? tid with
@@ -492,13 +472,9 @@ theorem finaliseSchedContextUnbind_unbound {st : SystemState} {x : SeLe4n.ObjId}
   simp only [Option.map_some, Option.some.injEq] at hT1
   have hS' : t'.scBindingScCode = x.val + 1 := by
     rw [← hS]; exact TCB.proj_eq_of_withoutRunLinks_eq (·.scBindingScCode) hT1
-  have hIdle' : ipcCodesIdleAllowed t'.ipcObjectCode t'.ipcStateCode = true := by
-    rw [TCB.proj_eq_of_withoutRunLinks_eq (·.ipcObjectCode) hT1,
-      TCB.proj_eq_of_withoutRunLinks_eq (·.ipcStateCode) hT1]; exact hIdle
   rw [hT1'] at hSc
   dsimp only at hSc
-  rw [if_pos (show (t'.scBindingScCode == x.val + 1 &&
-    ipcCodesIdleAllowed t'.ipcObjectCode t'.ipcStateCode) = true by simp [hS', hIdle'])] at hSc
+  rw [if_pos (show (t'.scBindingScCode == x.val + 1) = true by simp [hS'])] at hSc
   have hBind := schedContextBinding_ownerCleared (t := t') hS'
   rw [cancelBoundDonationOnCore_of_bound _ _ _ _ _ hBind] at hSc
   dsimp only at hSc
@@ -621,10 +597,10 @@ theorem finaliseThread_closed (P : SystemState → Prop) (hUnbind : FinaliseUnbi
         split
         · rename_i hG
           simp only [Bool.and_eq_true, bne_iff_ne, ne_eq, beq_iff_eq, Bool.not_eq_true'] at hG
-          obtain ⟨⟨⟨⟨⟨hS, hO⟩, hR⟩, hH⟩, hA⟩, hM'⟩ := hG
+          obtain ⟨⟨⟨⟨hS, hO⟩, hR⟩, hH⟩, hM'⟩ := hG
           split
           · rename_i s' hOk
-            exact hSc s s' tid t sc h4 hT hS hO hR hH hA hM hM' hOk
+            exact hSc s s' tid t sc h4 hT hS hO hR hH hM hM' hOk
           · exact h4
         · exact h4
     · exact h4
@@ -1482,7 +1458,7 @@ theorem releaseCores (st : SystemState) (t : SeLe4n.ThreadId) (hInv : st.objects
 
 /-- The release step, as the closure asks it. -/
 theorem releaseStep (st : SystemState) : FinaliseScReleaseStep (FinaliseFrame st) := by
-  intro s s' _ _ _ _ h _ _ _ _ _ hOk
+  intro s s' _ _ _ _ h _ _ _ _ hOk
   exact h.trans (cancelBoundDonationOnCore h.invExt hOk)
 
 /-- **The priority-inheritance walk**: boosts and run-queue moves, threads
@@ -1669,8 +1645,8 @@ theorem finaliseFinalObject_frame (target : Nat) (st : SystemState) (hInv : st.o
       h.trans (h1.trans (.wakeCancelledWaiter _ _ h1.invExt)).any)
     (fun _ _ _ _ h _ _ _ _ => h.trans (FinaliseFrame.storeUnbindNotification _ _ _ h.invExt).any)
     (fun s t _ h _ _ _ _ => h.trans (FinaliseFrame.descheduleAt s t _ h.invExt).any)
-    (fun s s' t tcb sc x h hT hS hA hSc hB hOk =>
-      h.trans (FinaliseFrame.releaseStep s s s' t tcb sc x (.refl h.invExt) hT hS hA hSc hB
+    (fun s s' t tcb sc x h hT hS hSc hB hOk =>
+      h.trans (FinaliseFrame.releaseStep s s s' t tcb sc x (.refl h.invExt) hT hS hSc hB
         hOk).any)
     (fun s n t tcb _ h _ hI _ _ =>
       h.trans (FinaliseFrame.notificationCancel s t tcb n h.invExt hI).any)
@@ -1750,7 +1726,7 @@ theorem finaliseFinalObject_cdt (target : Nat) (st : SystemState) :
     (fun _ _ s _ t _ h _ _ _ _ => ?_) (fun _ s _ t tcb h _ _ _ hC' => ?_)
     (fun _ s _ t h _ _ _ _ => ?_)
     (fun s t _ h _ _ _ _ => (hC (descheduleAtPlacement_onlyObjectsSchedulerDiffer s t)).trans h)
-    (fun s s' t tcb _ x h _ _ _ _ _ hOk => ?_)
+    (fun s s' t tcb _ x h _ _ _ _ hOk => ?_)
     (fun s n t tcb _ h _ hI _ _ => (hC (hNc s t tcb n hI)).trans h)
     (fun s e q t ep tcb h _ _ _ => (hC (hQR s e q t ep tcb)).trans h)
     (fun s t _ h _ _ _ _ _ => (hC ((hU _ t _).trans

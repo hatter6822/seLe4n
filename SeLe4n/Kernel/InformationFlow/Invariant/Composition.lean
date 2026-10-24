@@ -955,8 +955,7 @@ def donationOwnerFlowsToHolder (ctx : LabelingContext) (st : SystemState) : Prop
 
 The whole content of `descheduledHolderHigh` (`abortHolderWakeHigh` until
 `v0.35.158`, when the reclaim started descheduling the holder it unbinds rather
-than waking it), and the first of `abortHolderProjectionStable`'s three write
-classes: a run-queue removal, like the insert it replaced, is filtered by the
+than waking it): a run-queue removal, like the insert it replaced, is filtered by the
 removed thread's own observability, and the holder's own TCB is projected away
 exactly when the holder is. -/
 theorem donationHolderHigh_of_donorHigh
@@ -987,8 +986,7 @@ epId)`, so `endpointFlowGate_implies_securityFlowsTo` gives the conclusion at th
 instant the thread blocks.
 
 The two blocked states are the ones that name a *send* queue, which is the queue
-`abortPendingIpcOnEndpoint` splices and the one `cancelHolderBlockedEndpoint?`
-resolves; `.blockedOnReceive` is deliberately absent, its gate running in the
+`abortPendingIpcOnEndpoint` splices; `.blockedOnReceive` is deliberately absent, its gate running in the
 other direction (`endpointLabelOf ⊑ threadLabelOf`). -/
 def blockedSenderFlowsToEndpoint (ctx : LabelingContext) (st : SystemState) : Prop :=
   ∀ (tid : SeLe4n.ThreadId) (t : TCB) (epId : SeLe4n.ObjId),
@@ -998,9 +996,7 @@ def blockedSenderFlowsToEndpoint (ctx : LabelingContext) (st : SystemState) : Pr
       securityFlowsTo (ctx.threadLabelOf tid) (ctx.endpointLabelOf epId) = true
 
 /-- **WS-RR RR8.8**: the endpoint a non-observable thread is blocked sending or
-calling on is itself non-observable — the second of
-`abortHolderProjectionStable`'s three write classes, composed from the two facts
-above. -/
+calling on is itself non-observable, composed from the two facts above. -/
 theorem blockedSenderEndpointObjectHigh
     (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
     (tid : SeLe4n.ThreadId) (t : TCB) (epId : SeLe4n.ObjId)

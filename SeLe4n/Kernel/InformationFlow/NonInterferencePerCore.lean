@@ -836,9 +836,8 @@ theorem storeTcbIpcStateAndMessage_fromTcb_confinedToCore (st st' : SystemState)
 /-! #### The IPC transitions
 
 Each is a chain of object-store steps plus at most one `ensureRunnable` /
-`removeRunnable`, and every one of those is boot-pinned.  The case skeletons
-mirror the SM6.D.2 `…_passiveServerIdleFrameOnCore` proofs (same operations,
-same branch structure, different payload). -/
+`removeRunnable`, and every one of those is boot-pinned.  Each case skeleton
+follows its operation's branch structure. -/
 
 /-- SM8.B.3: `notificationSignal` writes only the boot core. -/
 theorem notificationSignal_confinedToBootCore (st st' : SystemState)

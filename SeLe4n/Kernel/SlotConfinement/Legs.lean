@@ -1119,8 +1119,8 @@ only to put the cores in reading order.
 
 **The second core is the point of the reclaim's scheduler step, not a
 regression.**  The list read `[determineTargetCore st victim]` before OD1.7, and
-that was true only because the reclaim's abort left the holder on no run queue
-at all — the stranding defect.  Taking the holder the reclaim unbound off its
+that was true only because the reclaim left the holder it unblocked on no run
+queue at all — the stranding defect.  Taking the holder the reclaim unbound off its
 placement necessarily writes that core, which is neither the victim's nor the
 executing core, so the honest statement names it.  Where no donation is resolved
 the holder list is empty and this is the pre-OD1.7 statement at the placed core

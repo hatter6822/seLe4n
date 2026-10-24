@@ -56,10 +56,8 @@ theorem saveTrapFrameOnCore_preserves_ipcInvariantFull (st : SystemState) (c : C
     have h1 : ipcInvariantFull (st.updateTcb tid fun t => { t with registerContext := rf }) :=
       ipcInvariantFull_of_tcbFieldUpdate st _ tid.toObjId tcb { tcb with registerContext := rf }
         hInv hPre hAt hFrame rfl rfl rfl rfl rfl rfl rfl rfl rfl
-        (passiveServerIdleFrame_of_tcbFieldUpdate tid.toObjId tcb { tcb with registerContext := rf }
-          hPre hAt hFrame rfl rfl hSched)
-    exact ipcInvariantFull_of_objects_scheduler_eq
-      (st := st.updateTcb tid fun t => { t with registerContext := rf }) rfl rfl h1
+    exact ipcInvariantFull_of_objects_eq
+      (st := st.updateTcb tid fun t => { t with registerContext := rf }) rfl h1
 
 /-- **The save establishes the executing core's match**: after it, core `c`'s
 bank is the frame the current thread's saved context also holds — or, when the
@@ -114,8 +112,8 @@ theorem stageCallerReturn_preserves_ipcInvariantFull (pre post : SystemState) (c
     | some tid =>
       simp only [stageCallerReturn, stageCallerReturnFor, hP]
       split
-      · exact ipcInvariantFull_of_objects_scheduler_eq
-          (st := writeReturnFrameToTcb post tid f) rfl rfl
+      · exact ipcInvariantFull_of_objects_eq
+          (st := writeReturnFrameToTcb post tid f) rfl
           (writeReturnFrameToTcb_preserves_ipcInvariantFull post tid f hObjInv hInv)
       · exact writeReturnFrameToTcb_preserves_ipcInvariantFull post tid f hObjInv hInv
 

@@ -996,9 +996,8 @@ theorem endpointQueueRemove_machine
 
 /-- WS-OD OD1.4: `endpointQueueRemove` does not modify the service registry.
 
-Stated beside its scheduler sibling because the cancellation reclaim's
-`returnDonationToCancelledCaller_serviceRegistry_eq` composes it through the
-abort prefix, and the registry is one of the three fields those frames pin. -/
+Stated beside its scheduler sibling; the registry is one of the three fields
+the removal's frames pin. -/
 theorem endpointQueueRemove_serviceRegistry_eq
     (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
     (tid : SeLe4n.ThreadId) (st st' : SystemState)
@@ -1288,9 +1287,8 @@ theorem endpointQueueRemove_getTcb_upToReg
   endpointQueueRemove_getTcb_upToField (fun t => t.registerContext)
     (fun _ _ _ _ => rfl) endpointId isReceiveQ tid st st' hInv h a ot ha
 
-/-- WS-OD OD1.4: the `TCB.placement` instance (home core and run-queue links).  The
-    cancellation reclaim's `_tcb_lookup` frame carries placement across the holder abort, and the abort's
-    first write is this splice. -/
+/-- WS-OD OD1.4: the `TCB.placement` instance (home core and run-queue links): the
+    splice carries every TCB's placement across. -/
 theorem endpointQueueRemove_getTcb_upToPlacement
     (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
     (st st' : SystemState) (hInv : st.objects.invExt)

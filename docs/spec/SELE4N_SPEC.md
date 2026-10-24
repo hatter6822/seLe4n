@@ -3585,8 +3585,10 @@ Hardware-mode kernel state lives in two `IO.Ref` cells:
   (`bootFromPlatformCheckedWithIdleThreads_currentDequeuedUnique`) and
   for the started boot, every initial-thread start being a run-queue
   stage (`bootFromPlatformCheckedStartedFor_allCores_currentDequeuedUnique`).
-  Every kernel entry carries it (`RunQueueEntryStage`), so the dispatch
-  payoffs take it in place of bare premises.
+  Every kernel entry carries it (`RunQueueEntryStage`).  Since `v0.36.136`
+  the IPC dispatch payoffs need neither it nor a bare premise: no IPC
+  bundle conjunct reads the scheduler, so a requeue of the current thread
+  has nothing in the bundle to re-establish.
   `bootAndInitialisePlatform platform config` is the same entry under
   the platform binding's own labeling (§6.7).
 - `kernelLabelingContextRef : IO.Ref LabelingContext` — the
@@ -5195,8 +5197,11 @@ is blocked on the reply object, so an endpoint only a reply-blocked caller
 names is no longer kept by the retire's names-by-id check.  Still refused, and
 kept by the retire (`docs/REGISTERED_DEBT.md`, owned by WS-ZA ZA6.1): a reply
 heading a stack and a caller lending a reservation (seL4's `reply_pop` and the
-loan return), and a context whose holder is blocked sending or calling, which
-`passiveServerIdle` does not admit unbound.  The IPC bundle, the reachable
+loan return).  A context whose holder is blocked sending or calling is finalised
+seL4's way: the holder is unbound and keeps waiting, its IPC unended, as
+`schedContext_unbindTCB` leaves it — `v0.36.136` retired `passiveServerIdle`,
+the IPC conjunct that forbade an unbound sender or caller, rather than restating
+it, since seL4 states no such invariant.  The IPC bundle, the reachable
 state (reply waiters, PIP, donation chain), the run-queue entry stage,
 reschedule coverage, the reply-stack write census
 (`finaliseSchedContextUnstack_preserves_donationChainWellFormed`) and the
@@ -7022,8 +7027,8 @@ disciplines — so `ipcInvariantFull` across a syscall is machine-checked
 in `docs/REGISTERED_DEBT.md`.  The `.reply` arm's own confinement is
 **retired** at `v0.35.195` (WS-RR RR8.16): RR4.14 held the payoff to *unfaulted*
 callers because the seam is seL4's `doReplyTransfer` and the fault branch's
-abandon arm needs the answered thread `passiveServerIdleAllowed` at the
-**post**-state, which the de-threading discipline forbids threading.
+abandon arm needed the answered thread `passiveServerIdleAllowed` (retired at
+`v0.36.136`) at the **post**-state, which the de-threading discipline forbids threading.
 `endpointReplyCrossCoreDispatch_ok_target_ready` reads that off the dispatch's
 own outcome, so the arm case-splits on `threadHasPendingFault` and covers both
 branches — the donating one included, which
@@ -7050,29 +7055,21 @@ by the intrusive notification queue's links, `notificationWaiterConsistent`):
   and `returnDonatedSchedContext` upgrades it back to the full form.  A bundle
   theorem must not assume `donationOwnerValid` of such a state: it would be
   vacuous rather than conditional.
-- `passiveServerIdle`: unbound non-runnable threads are
-  ready/receiving/blocked-on-reply (a donor awaiting the reply that returns
-  its SchedContext).  **Preserved by `cancelIpcBlocking` on every arm** since
-  `v0.34.105` (WS-OD OD1.5).  It was not before: the reply arm's reclaim hands
-  a donated SchedContext back and thereby makes its holder `.unbound`, and a
-  holder that had Called an endpoint with no receiver waiting was left
-  `.blockedOnCall` — which this conjunct forbids, reachable at depth 1 with no
-  donation chain.  The reclaim now ends that holder's outstanding send or call
-  first (`abortHolderPendingIpc`, seL4-MCS's timeout semantics: the budget the
-  operation was issued on has been revoked), and the abort's reach is exactly
-  those two states — a holder in any state the conjunct permits is left
-  untouched.  **And the cross-core composite places the holder it unblocks**
-  since `v0.34.108` (WS-OD OD1.7): satisfying the conjunct is not the same as
-  being schedulable, and the abort alone left the holder `.ready` on no run
-  queue with every recovery path closed — `.tcbResume` demands `.Inactive`,
-  `schedContextBind` re-buckets only an already-queued thread, and
-  `chooseThreadOnCore` never scans ready TCBs — so the server was stranded
-  permanently.  `cancelIpcBlockingOnCore` enqueues it on its **home** core,
-  which is neither necessarily the victim's nor the executing core; the declared
-  scheduler footprint names that core's run-queue write lock, and the composite's
-  per-core run-queue locality clause excludes it.  **That placement is retired at
-  `v0.35.158`** — the reclaim deschedules the holder it unbinds; see the
-  paragraph on it below.
+- `passiveServerIdle` — **retired at `v0.36.136`** (WS-ZA ZA5.4 part 25).  It
+  stated that an unbound thread off every run queue is ready, receiving or
+  blocked on a reply, and so forbade an unbound thread blocked sending or
+  calling.  seL4 has no such invariant: `schedContext_unbindTCB` unbinds a
+  thread whatever it waits on and leaves its IPC alone, and the thread runs
+  again only once a context is bound or donated to it.  The conjunct was also
+  the bundle's one scheduler reader.  Its retirement takes with it the
+  cancellation reclaim's holder abort (`abortHolderPendingIpc`, `v0.34.104`):
+  the reclaim now returns the reservation and leaves the holder blocked and
+  queued, as seL4 does; the final delete of a scheduling context whose holder
+  is blocked sending or calling finalises it the same way; and no IPC bundle
+  conjunct reads the scheduler, so every IPC-bundle proof frames scheduler
+  writes for free.  Under the single `.unbound`, such a holder becomes a legacy
+  time-sliced thread when its IPC later completes; the passive/legacy split
+  (WS-CB CB1.12) parks it instead, under a scheduler-bundle invariant.
 
   **And the live `.tcbSuspend` performs that wake only since `v0.35.90`** (WS-RR
   RR8.12, second cut).  `cancelIpcBlockingOnCore` has no production caller: the
@@ -7117,8 +7114,8 @@ by the intrusive notification queue's links, `notificationWaiterConsistent`):
   `timerTickBudgetOnCore`'s refills `configDefaultTimeSlice` forever), so an
   ordinary `.tcbSuspend` of a *client* — authority over the client, none over the
   server — handed the server the CPU on nobody's budget, outside CBS admission
-  entirely, and `passiveServerIdle` could not see it because its antecedent is
-  *not queued*.  Every other donation pop in the tree already took the
+  entirely, and `passiveServerIdle` (retired at `v0.36.136`) could not see it
+  because its antecedent was *not queued*.  Every other donation pop in the tree already took the
   MCS-passive reading (`applyReplyDonation`, `applyReplyDonationOnCore`,
   `replyRecvHolderDeschedule`; seL4-MCS's `schedContext_donate`, read at
   `13.0.0`, dequeues the previous holder), and the reclaim was the one outlier.
@@ -8481,9 +8478,8 @@ Six properties of the surface this leaves.
 3. **A resolved holder may resolve to no TCB.**  `SchedContext.boundThread` is
    tied to no stored TCB by any invariant, unlike a thread read out of a stored
    binding.  What rules the case out is the pop **declining**
-   (`returnDonatedSchedContext_ok_server_not_reserved`), with
-   `abortHolderPendingIpc_eq_self_of_lookup_none` the frame a consumer needs to
-   act on that.
+   (`returnDonatedSchedContext_ok_server_not_reserved`); since `v0.36.136` the
+   reclaim runs no holder abort, so nothing further acts on the holder.
 
 4. **`returnDonatedSchedContext_ok_under_invariants` became an instance.**  The
    general form `_ok_of_boundAndRecipient` takes the context, its bound thread and

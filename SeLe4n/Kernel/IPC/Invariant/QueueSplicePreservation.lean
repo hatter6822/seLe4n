@@ -16,7 +16,7 @@ import SeLe4n.Kernel.IPC.Invariant.Structural.DualQueueMembership
 
 `endpointQueueRemoveDual` is the mid-queue removal behind two live cross-core
 operations (bound-notification delivery and IPC cancellation), and it had
-preservation lemmas for exactly two of `ipcInvariantFull`'s twenty conjuncts.
+preservation lemmas for exactly two of `ipcInvariantFull`'s nineteen conjuncts.
 The register's finding 4 asks for the rest.
 
 The obstacle was never the individual conjuncts — the primitive layer
@@ -611,32 +611,6 @@ theorem endpointQueueRemoveDual_carry {P : SystemState → Prop}
 -- §5  The two primitive frames the queue-link write did not have
 -- ============================================================================
 
-/-- WS-RR RR7.22: a queue-link write frames `passiveServerIdle`.
-
-`storeObject_modifiedTcb_passiveServerIdleFrame` carries the side condition
-`passiveServerIdleAllowed newTcb.ipcState ∨ origTcb.schedContextBinding ≠
-.unbound`, which a general TCB store needs because it may change the thread's
-`ipcState`.  A queue-link write cannot: it rewrites three link fields and
-nothing else, so the frame holds outright. -/
-theorem storeTcbQueueLinks_passiveServerIdleFrame
-    (st st' : SystemState) (tid : SeLe4n.ThreadId)
-    (prev : Option SeLe4n.ThreadId) (pprev : Option QueuePPrev) (next : Option SeLe4n.ThreadId)
-    (hObjInv : st.objects.invExt)
-    (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st') :
-    passiveServerIdleFrame st st' := by
-  have hSched := storeTcbQueueLinks_scheduler_eq st st' tid prev pprev next hStep
-  refine ⟨fun t tcb' hTcb' hUnbound' hNotInQ' hNotCurrent' _ => ?_⟩
-  obtain ⟨tcbPre, hPre, hIpc⟩ :=
-    storeTcbQueueLinks_tcb_ipcState_backward st st' tid prev pprev next hObjInv hStep t tcb' hTcb'
-  obtain ⟨tcbB, hB, hBind⟩ :=
-    storeTcbQueueLinks_sameSchedContextBindings st st' tid prev pprev next hObjInv hStep t tcb' hTcb'
-  have hSame : tcbB = tcbPre := by
-    rw [hB] at hPre; exact KernelObject.tcb.inj (Option.some.inj hPre)
-  subst hSame
-  refine ⟨tcbB, hB, by rw [hBind]; exact hUnbound', ?_, ?_, hIpc⟩
-  · rw [hSched] at hNotInQ'; exact hNotInQ'
-  · rw [hSched] at hNotCurrent'; exact hNotCurrent'
-
 -- ============================================================================
 -- §6  The relations the splice carries end to end
 -- ============================================================================
@@ -678,22 +652,6 @@ theorem endpointQueueRemoveDual_donationOwnerFrame
       hP.trans (storeTcbQueueLinks_donationOwnerFrame s s' t qp qpp qn hInvS hStore))
     hObjInv hStep (donationOwnerFrame.refl st)
 
-/-- WS-RR RR7.22: the splice frames the passive-server-idle reading. -/
-theorem endpointQueueRemoveDual_passiveServerIdleFrame
-    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
-    (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
-    (hObjInv : st.objects.invExt)
-    (hStep : endpointQueueRemoveDual endpointId isReceiveQ tid st = .ok ((), st')) :
-    passiveServerIdleFrame st st' :=
-  endpointQueueRemoveDual_carry (P := fun s => passiveServerIdleFrame st s)
-    endpointId isReceiveQ tid st st'
-    (fun s s' _ epNew _ hInvS hStore hP =>
-      hP.trans (storeObject_oldNonTcb_passiveServerIdleFrame s s' endpointId (.endpoint epNew)
-        (fun _ => by simp) hInvS hStore))
-    (fun s s' t qp qpp qn hInvS hStore hP =>
-      hP.trans (storeTcbQueueLinks_passiveServerIdleFrame s s' t qp qpp qn hInvS hStore))
-    hObjInv hStep (passiveServerIdleFrame.refl st)
-
 /-- WS-RR RR7.22: the splice frames every thread's timeout budget. -/
 theorem endpointQueueRemoveDual_timeoutBudgetFrame
     (st st' : SystemState) (endpointId : SeLe4n.ObjId)
@@ -731,9 +689,9 @@ theorem endpointQueueRemoveDual_replyLinkageFrame
 -- §7  The conjuncts the splice frames
 -- ============================================================================
 --
--- Twelve of `ipcInvariantFull`'s twenty conjuncts read no queue field: the
+-- Eleven of `ipcInvariantFull`'s nineteen conjuncts read no queue field: the
 -- pending-message bounds, badge well-formedness, the reply linkage, the
--- donation quartet, the timeout consistency and the passive-server reading.
+-- donation trio and the timeout consistency.
 -- Each is two or three lines here, because §4's carrier already did the work.
 
 /-- WS-RR RR7.22 -/
@@ -929,20 +887,8 @@ theorem endpointQueueRemoveDual_preserves_blockedThreadTimeoutConsistent
   obtain ⟨⟨sc, hScPre⟩, hBlk⟩ := hInv t tcbI scId hI (by rw [hBEq]; exact hBudget')
   exact ⟨⟨sc, hSc scId sc hScPre⟩, by rw [← hIEq]; exact hBlk⟩
 
-/-- WS-RR RR7.22: the passive-server reading, from its frame. -/
-theorem endpointQueueRemoveDual_preserves_passiveServerIdle
-    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
-    (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
-    (hObjInv : st.objects.invExt)
-    (hStep : endpointQueueRemoveDual endpointId isReceiveQ tid st = .ok ((), st'))
-    (hInv : passiveServerIdle st) : passiveServerIdle st' :=
-  passiveServerIdle_of_frame
-    (endpointQueueRemoveDual_passiveServerIdleFrame st st' endpointId isReceiveQ tid
-      hObjInv hStep)
-    hInv
-
-/-- WS-RR RR7.22: the donation quartet.  `donationOwnerValid` needs both
-donation relations; the other three fall out of it and of the bindings. -/
+/-- WS-RR RR7.22: the donation trio.  `donationOwnerValid` needs both
+donation relations; the other two fall out of it and of the bindings. -/
 theorem endpointQueueRemoveDual_preserves_donationOwnerValid
     (st st' : SystemState) (endpointId : SeLe4n.ObjId)
     (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
@@ -2304,7 +2250,7 @@ def ipcInvariantFullExceptMembership (st : SystemState) (ex : SeLe4n.ThreadId) :
   queueNextBlockingConsistent st ∧ queueHeadBlockedConsistent st ∧
   blockedThreadTimeoutConsistent st ∧
   donationChainAcyclic st ∧ donationOwnerValid st ∧
-  passiveServerIdle st ∧ donationBudgetTransfer st ∧
+  donationBudgetTransfer st ∧
   blockedOnReplyHasTarget st ∧ replyCallerLinkage st ∧
   pendingReceiveReplyWellFormed st ∧ donationOwnerUnique st ∧
   endpointQueueTailBlockedConsistent st ∧
@@ -2357,8 +2303,6 @@ theorem endpointQueueRemoveDual_establishes_ipcInvariantFullExceptMembership
       hObjInv hStep hInv.donationOwnerValid,
     endpointQueueRemoveDual_preserves_donationOwnerValid st st' endpointId isReceiveQ tid
       hObjInv hStep hInv.donationOwnerValid,
-    endpointQueueRemoveDual_preserves_passiveServerIdle st st' endpointId isReceiveQ tid
-      hObjInv hStep hInv.passiveServerIdle,
     endpointQueueRemoveDual_preserves_donationBudgetTransfer st st' endpointId isReceiveQ
       tid hObjInv hStep hInv.donationBudgetTransfer,
     endpointQueueRemoveDual_preserves_blockedOnReplyHasTarget st st' endpointId isReceiveQ
@@ -2388,7 +2332,7 @@ theorem endpointQueueRemoveDual_establishes_ipcInvariantFullExceptMembership
 -- nineteen, so the pair closes back to the full bundle.
 --
 -- Without this the splice engine was a payoff nobody could spend: RR7.22 landed
--- the twenty-conjunct carriage and its two live consumers stayed at the weaker
+-- the nineteen-conjunct carriage and its two live consumers stayed at the weaker
 -- `ipcInvariant`, which is the residual this section removes.
 
 /-- **A step that keeps every budget-carrying thread's budget and blocking
@@ -2477,7 +2421,7 @@ re-run that two-step argument.
 
 Together with `endpointQueueRemoveDual_establishes_ipcInvariantFullExceptMembership`
 this closes the pair: splice relaxes at `tid`, store restores at `tid`, and the
-twenty conjuncts hold of the composite's post-state. -/
+nineteen conjuncts hold of the composite's post-state. -/
 theorem storeTcbReceiveComplete_closes_exceptMembership
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (msg : Option IpcMessage)
     (hObjInv : st.objects.invExt)
@@ -2498,7 +2442,7 @@ theorem storeTcbReceiveComplete_closes_exceptMembership
     (hStep : storeTcbReceiveComplete st tid msg = .ok st') :
     ipcInvariantFull st' := by
   obtain ⟨hIpc, hDual, hBounded, hBadge, hPend, hNoDup, hMemExcept, hQNB, hQHB,
-    hTimeout, _hAcyc, hOwnerValid, hPassive, hBudget, hReplyTarget, hReplyLink,
+    hTimeout, _hAcyc, hOwnerValid, hBudget, hReplyTarget, hReplyLink,
     hStash, hUnique, hTail, hQNT⟩ := hExcept
   -- `tid` carries no reply object: a `replyObject` forces a reciprocal `caller`
   -- back-link, and the backward clause makes that caller `.blockedOnReply` —
@@ -2536,8 +2480,6 @@ theorem storeTcbReceiveComplete_closes_exceptMembership
       hNoBudget hTimeout hStep,
     donationOwnerValid_implies_donationChainAcyclic st' hOwnerValid',
     hOwnerValid',
-    passiveServerIdle_of_frame
-      (storeTcbReceiveComplete_passiveServerIdleFrame st st' tid msg hObjInv hStep) hPassive,
     donationBudgetTransfer_of_sameSchedContextBindings hSame hBudget,
     storeTcbReceiveComplete_preserves_blockedOnReplyHasTarget st st' tid msg hObjInv
       hReplyTarget hStep,
@@ -2839,7 +2781,7 @@ theorem endpointQueueRemoveDual_removed_detached
 -- the pointwise hypothesis, under the `_of_objects_eq` name) get their wrappers
 -- here, so a caller reaches for one family rather than two.  The two bundle
 -- frames below are what OD1.3 exists to build: they transfer a whole
--- twenty-conjunct conclusion from one state to another that holds the same
+-- nineteen-conjunct conclusion from one state to another that holds the same
 -- object at every key.
 --
 -- Why pointwise and not `st'.objects = st.objects`: the store is a Robin Hood
@@ -2899,15 +2841,11 @@ theorem ipcStateQueueMembershipConsistentExcept_of_storeAgrees {st st' : SystemS
   | .blockedOnNotification _ => trivial
   | .blockedOnReply _ _ => trivial
 
-/-- WS-OD OD1.3: **the whole bundle transfers across pointwise store agreement**,
-given that the scheduler agrees too.
-
-Nineteen of the twenty conjuncts read the object store and nothing else.  The
-twentieth, `passiveServerIdle`, also reads the boot core's run queue and current
-slot, which is why this is not called `_of_storeAgrees` alone: a scheduler-writing
-step owes that conjunct its own proof, and the name says so. -/
-theorem ipcInvariantFull_of_storeAgrees_of_scheduler_eq {st st' : SystemState}
-    (hA : objectStoreAgrees st st') (hSched : st'.scheduler = st.scheduler)
+/-- WS-OD OD1.3: **the whole bundle transfers across pointwise store
+agreement.**  Every conjunct reads the object store and nothing else, so the
+scheduler may differ. -/
+theorem ipcInvariantFull_of_storeAgrees {st st' : SystemState}
+    (hA : objectStoreAgrees st st')
     (h : ipcInvariantFull st) : ipcInvariantFull st' :=
   ⟨ipcInvariant_of_storeAgrees hA h.ipcInvariant,
    dualQueueSystemInvariant_of_storeAgrees hA h.dualQueueSystemInvariant,
@@ -2922,7 +2860,6 @@ theorem ipcInvariantFull_of_storeAgrees_of_scheduler_eq {st st' : SystemState}
    blockedThreadTimeoutConsistent_of_storeAgrees hA h.blockedThreadTimeoutConsistent,
    donationChainAcyclic_of_storeAgrees hA h.donationChainAcyclic,
    donationOwnerValid_of_storeAgrees hA h.donationOwnerValid,
-   passiveServerIdle_of_storeAgrees hA hSched h.passiveServerIdle,
    donationBudgetTransfer_of_storeAgrees hA h.donationBudgetTransfer,
    blockedOnReplyHasTarget_of_storeAgrees hA h.blockedOnReplyHasTarget,
    replyCallerLinkage_of_storeAgrees hA h.replyCallerLinkage,
@@ -2933,9 +2870,9 @@ theorem ipcInvariantFull_of_storeAgrees_of_scheduler_eq {st st' : SystemState}
    queueNextTargetBlocked_of_storeAgrees hA h.queueNextTargetBlocked⟩
 
 /-- WS-OD OD1.3: the splice's relaxed bundle transfers the same way. -/
-theorem ipcInvariantFullExceptMembership_of_storeAgrees_of_scheduler_eq
+theorem ipcInvariantFullExceptMembership_of_storeAgrees
     {st st' : SystemState} {ex : SeLe4n.ThreadId}
-    (hA : objectStoreAgrees st st') (hSched : st'.scheduler = st.scheduler)
+    (hA : objectStoreAgrees st st')
     (h : ipcInvariantFullExceptMembership st ex) :
     ipcInvariantFullExceptMembership st' ex :=
   ⟨ipcInvariant_of_storeAgrees hA h.1,
@@ -2950,15 +2887,14 @@ theorem ipcInvariantFullExceptMembership_of_storeAgrees_of_scheduler_eq
    blockedThreadTimeoutConsistent_of_storeAgrees hA h.2.2.2.2.2.2.2.2.2.1,
    donationChainAcyclic_of_storeAgrees hA h.2.2.2.2.2.2.2.2.2.2.1,
    donationOwnerValid_of_storeAgrees hA h.2.2.2.2.2.2.2.2.2.2.2.1,
-   passiveServerIdle_of_storeAgrees hA hSched h.2.2.2.2.2.2.2.2.2.2.2.2.1,
-   donationBudgetTransfer_of_storeAgrees hA h.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
-   blockedOnReplyHasTarget_of_storeAgrees hA h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
-   replyCallerLinkage_of_storeAgrees hA h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
-   pendingReceiveReplyWellFormed_of_storeAgrees hA h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
-   donationOwnerUnique_of_storeAgrees hA h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+   donationBudgetTransfer_of_storeAgrees hA h.2.2.2.2.2.2.2.2.2.2.2.2.1,
+   blockedOnReplyHasTarget_of_storeAgrees hA h.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+   replyCallerLinkage_of_storeAgrees hA h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+   pendingReceiveReplyWellFormed_of_storeAgrees hA h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+   donationOwnerUnique_of_storeAgrees hA h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
    endpointQueueTailBlockedConsistent_of_storeAgrees hA
-     h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
-   queueNextTargetBlocked_of_storeAgrees hA h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2⟩
+     h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+   queueNextTargetBlocked_of_storeAgrees hA h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2⟩
 
 -- ============================================================================
 -- §18  WS-OD OD1.3 — the two endpoint-queue removals agree
@@ -2967,7 +2903,7 @@ theorem ipcInvariantFullExceptMembership_of_storeAgrees_of_scheduler_eq
 -- OD1.1 made `endpointQueueRemove` write the successor's `queuePPrev`, and its
 -- comment claims the two removals "now write the same fields to the same
 -- values".  A comment cannot be checked.  This section turns the claim into a
--- theorem, and the theorem is what carries the dual's twenty-conjunct surface
+-- theorem, and the theorem is what carries the dual's nineteen-conjunct surface
 -- (§14) onto the single removal — and so onto `abortPendingIpcOnEndpoint`,
 -- which the cancellation reclaim will call.
 --
@@ -3592,14 +3528,13 @@ def dualRemovalEnabled (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
     (tid : SeLe4n.ThreadId) (st : SystemState) : Prop :=
   ∃ stD, endpointQueueRemoveDual endpointId isReceiveQ tid st = .ok ((), stD)
 
-/-- **WS-OD OD1.3 — the single removal carries the twenty-conjunct bundle.**
+/-- **WS-OD OD1.3 — the single removal carries the nineteen-conjunct bundle.**
 
 `endpointQueueRemoveDual_establishes_ipcInvariantFullExceptMembership` (§14) is
 the dual's capstone; this is the same statement about the removal
 `timeoutThread` — and, from OD1.4, the cancellation reclaim — actually calls.
-It is a *transfer* rather than a second twenty-conjunct proof: the two removals
-agree pointwise on the object store, both leave the scheduler alone, and every
-conjunct reads exactly those two.
+It is a *transfer* rather than a second nineteen-conjunct proof: the two removals
+agree pointwise on the object store, and every conjunct reads exactly that.
 
 The membership conjunct is relaxed at the removed thread for the same reason it
 is for the dual — the splice does not touch that thread's `ipcState`, and the
@@ -3618,10 +3553,7 @@ theorem endpointQueueRemove_establishes_ipcInvariantFullExceptMembership
     endpointQueueRemove_agrees_with_dual hObjInv hInv hDual
   have hEq : stS' = stS := by rw [hStep'] at hStep; exact Except.ok.inj hStep
   rw [hEq] at hAgree
-  have hSched : stS.scheduler = stD.scheduler := by
-    rw [endpointQueueRemove_scheduler_eq endpointId isReceiveQ tid st stS hStep,
-      endpointQueueRemoveDual_scheduler_eq st stD endpointId isReceiveQ tid hDual]
-  exact ipcInvariantFullExceptMembership_of_storeAgrees_of_scheduler_eq hAgree hSched
+  exact ipcInvariantFullExceptMembership_of_storeAgrees hAgree
     (endpointQueueRemoveDual_establishes_ipcInvariantFullExceptMembership st stD endpointId
       isReceiveQ tid hObjInv hDual hInv hPred)
 
@@ -3760,9 +3692,6 @@ theorem timeoutStaging_preserves_ipcInvariantFull
     hObjInv hStore
   have hOwnerValid' : donationOwnerValid st' :=
     donationOwnerValid_of_frames hSame hOwnerFrame h.donationOwnerValid
-  have hPassiveFrame := storeObject_modifiedTcb_passiveServerIdleFrame st st' tid.toObjId tcb
-    (timeoutStagedTcb tcb) hRaw rfl (Or.inl (by rw [hStagedReady]; exact Or.inl rfl))
-    hObjInv hStore
   have hLinkFrame := storeObject_modifiedTcb_replyLinkageFrame st st' tid.toObjId tcb
     (timeoutStagedTcb tcb) hRaw rfl
     (fun _ ep rt hc => by rw [hReady] at hc; cases hc) hObjInv hStore
@@ -3777,7 +3706,6 @@ theorem timeoutStaging_preserves_ipcInvariantFull
     blockedThreadTimeoutConsistent_of_all_none st' hAllNone',
     donationOwnerValid_implies_donationChainAcyclic st' hOwnerValid',
     hOwnerValid',
-    passiveServerIdle_of_frame hPassiveFrame h.passiveServerIdle,
     donationBudgetTransfer_of_sameSchedContextBindings hSame h.donationBudgetTransfer,
     ?_, ?_, ?_,
     donationOwnerUnique_of_sameSchedContextBindings hSame h.donationOwnerUnique,

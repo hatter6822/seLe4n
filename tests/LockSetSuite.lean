@@ -388,14 +388,14 @@ caller's TCB read and the CSpace root read on top of the teardown's. -/
 
 example :
     (SeLe4n.Kernel.lockSet_cancelIpcBlocking ⟨3⟩
-      (some (ObjId.ofNat 20)) (some (ObjId.ofNat 30)) none none none none
-      (none, none) none none none none none).size = 3 := by decide
+      (some (ObjId.ofNat 20)) (some (ObjId.ofNat 30)) none none none
+      none none none none none).size = 3 := by decide
 
 /-! ### Teardown with no blocked objects: the victim's TCB alone. -/
 
 example :
-    (SeLe4n.Kernel.lockSet_cancelIpcBlocking ⟨3⟩ none none none none none none
-      (none, none) none none none none none).size = 1 := by decide
+    (SeLe4n.Kernel.lockSet_cancelIpcBlocking ⟨3⟩ none none none none none
+      none none none none none).size = 1 := by decide
 
 /-! ### Donation cancellation of a `.donated` binding: 4 (victim + donated SC +
 original owner + — WS-OD OD3.5 — the state-level lock the `scThreadIndex` write
@@ -416,8 +416,8 @@ example :
 the Reply object its reply link is consumed from). -/
 
 example :
-    (SeLe4n.Kernel.lockSet_cancelIpcBlocking ⟨3⟩ none none (some ⟨60⟩) none none none
-      (none, none) none none none none none).size = 2 := by decide
+    (SeLe4n.Kernel.lockSet_cancelIpcBlocking ⟨3⟩ none none (some ⟨60⟩) none none
+      none none none none none).size = 2 := by decide
 
 /-! ### WS-OD (`v0.35.4`) — …and the pop's own three stack objects, on the
 donated arm that performs it: 7. -/
@@ -612,14 +612,13 @@ example :
 example :
     ∀ p ∈ (SeLe4n.Kernel.lockSet_cancelIpcBlocking ⟨3⟩
               (some (ObjId.ofNat 20)) (some (ObjId.ofNat 30)) (some ⟨60⟩)
-              (some ⟨50⟩) (some ⟨7⟩) (some (ObjId.ofNat 21))
-              (some ⟨8⟩, some ⟨9⟩) (some ⟨61⟩) (some ⟨11⟩)
+              (some ⟨50⟩) (some ⟨7⟩)
+              (some ⟨61⟩) (some ⟨11⟩)
               (some ⟨62⟩) (some ⟨63⟩) (some ⟨64⟩)).pairs,
       p.fst.kind ∈ permittedKinds .tcbSuspend :=
   SeLe4n.Kernel.lockSet_consistent_cancelIpcBlocking ⟨3⟩
     (some (ObjId.ofNat 20)) (some (ObjId.ofNat 30)) (some ⟨60⟩)
-    (some ⟨50⟩) (some ⟨7⟩) (some (ObjId.ofNat 21))
-    (some ⟨8⟩, some ⟨9⟩) (some ⟨61⟩) (some ⟨11⟩) (some ⟨62⟩) (some ⟨63⟩)
+    (some ⟨50⟩) (some ⟨7⟩) (some ⟨61⟩) (some ⟨11⟩) (some ⟨62⟩) (some ⟨63⟩)
     (some ⟨64⟩)
 
 example :
@@ -1033,12 +1032,12 @@ private def runPerTransitionShapeChecks : IO Unit := do
   -- Teardown with both blocked objects: victim + endpoint + notification.
   assertBool "cancelIpcBlocking size (block-options some, no donation) = 3"
     (decide ((SeLe4n.Kernel.lockSet_cancelIpcBlocking ⟨3⟩
-              (some (ObjId.ofNat 20)) (some (ObjId.ofNat 30)) none none none none
-              (none, none) none none none none none).size = 3))
+              (some (ObjId.ofNat 20)) (some (ObjId.ofNat 30)) none none none
+              none none none none none).size = 3))
   -- Teardown with no options: the victim alone.
   assertBool "cancelIpcBlocking size (no Options) = 1"
-    (decide ((SeLe4n.Kernel.lockSet_cancelIpcBlocking ⟨3⟩ none none none none none none
-              (none, none) none none none none none).size = 1))
+    (decide ((SeLe4n.Kernel.lockSet_cancelIpcBlocking ⟨3⟩ none none none none none
+              none none none none none).size = 1))
   -- Donation cancellation of a `.bound` binding: victim + SC + index.
   -- **WS-OD OD3.5**: the state-level lock, because `scThreadIndex` is an
   -- `RHTable` no per-object lock decomposes.
@@ -1069,21 +1068,21 @@ private def runPerTransitionShapeChecks : IO Unit := do
   assertBool "cancelIpcBlocking size (full: every member some) = 15"
     (decide ((SeLe4n.Kernel.lockSet_cancelIpcBlocking ⟨3⟩
               (some (ObjId.ofNat 20)) (some (ObjId.ofNat 30)) (some ⟨60⟩)
-              (some ⟨50⟩) (some ⟨7⟩) (some (ObjId.ofNat 21))
-              (some ⟨8⟩, some ⟨9⟩) (some ⟨61⟩) (some ⟨11⟩)
+              (some ⟨50⟩) (some ⟨7⟩)
+              (some ⟨61⟩) (some ⟨11⟩)
               (some ⟨62⟩) (some ⟨63⟩) (some ⟨64⟩)).size = 15))
   assertBool "…and dropping only the frame below the cut drops it to 14"
     (decide ((SeLe4n.Kernel.lockSet_cancelIpcBlocking ⟨3⟩
               (some (ObjId.ofNat 20)) (some (ObjId.ofNat 30)) (some ⟨60⟩)
-              (some ⟨50⟩) (some ⟨7⟩) (some (ObjId.ofNat 21))
-              (some ⟨8⟩, some ⟨9⟩) (some ⟨61⟩) (some ⟨11⟩)
+              (some ⟨50⟩) (some ⟨7⟩)
+              (some ⟨61⟩) (some ⟨11⟩)
               (some ⟨62⟩) (some ⟨63⟩) none).size = 14))
   assertBool "…and the frame below the cut is declared WRITE"
     (decide ((replyLock ⟨64⟩, AccessMode.write)
       ∈ (SeLe4n.Kernel.lockSet_cancelIpcBlocking ⟨3⟩
               (some (ObjId.ofNat 20)) (some (ObjId.ofNat 30)) (some ⟨60⟩)
-              (some ⟨50⟩) (some ⟨7⟩) (some (ObjId.ofNat 21))
-              (some ⟨8⟩, some ⟨9⟩) (some ⟨61⟩) (some ⟨11⟩)
+              (some ⟨50⟩) (some ⟨7⟩)
+              (some ⟨61⟩) (some ⟨11⟩)
               (some ⟨62⟩) (some ⟨63⟩) (some ⟨64⟩)).pairs))
   -- Audit-pass-6 P1: tcbSetPriority with unbound target = 3 locks
   -- (caller TCB read, CNode read, target TCB write — no SC).
@@ -1405,8 +1404,8 @@ private def runConsistencyRuntimeChecks : IO Unit := do
   -- suspend footprint is built over, with every optional member `some`.
   let susp := SeLe4n.Kernel.lockSet_cancelIpcBlocking ⟨3⟩
                 (some (ObjId.ofNat 20)) (some (ObjId.ofNat 30)) (some ⟨60⟩)
-                (some ⟨50⟩) (some ⟨7⟩) (some (ObjId.ofNat 21))
-                (some ⟨8⟩, some ⟨9⟩) (some ⟨61⟩) (some ⟨11⟩)
+                (some ⟨50⟩) (some ⟨7⟩)
+                (some ⟨61⟩) (some ⟨11⟩)
                 (some ⟨62⟩) (some ⟨63⟩) (some ⟨64⟩)
   let allOk_susp := susp.pairs.all (fun p =>
     decide (p.fst.kind ∈ permittedKinds .tcbSuspend))

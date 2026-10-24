@@ -198,7 +198,7 @@ theorem notificationSignalBoundOnCore_preserves_ipcInvariant
 
 open SeLe4n.Model.SystemState in
 /-- **WS-RR RR7.22 (residual)**: the bound-aware cross-core signal preserves the
-**whole twenty-conjunct bundle**.
+**whole nineteen-conjunct bundle**.
 
 This is one of the two consumers RR7.22's splice engine was built for, and the
 reason the engine relaxes exactly one conjunct: the bound delivery is
@@ -253,7 +253,7 @@ theorem notificationSignalBoundOnCore_preserves_ipcInvariantFull
       have hExcept := endpointQueueRemoveDual_establishes_ipcInvariantFullExceptMembership
         st p.2 epId true t hObjInv hRemove hInv (hPred t epId hTarget)
       obtain ⟨hIpc1, hDual1, hBounded1, hBadge1, hPend1, hNoDup1, hMem1, hQNB1, hQHB1,
-        hTimeout1, hAcyc1, hOwner1, hPsi1, hBudget1, hRTgt1, hRLink1, hStash1, hUniq1,
+        hTimeout1, hAcyc1, hOwner1, hBudget1, hRTgt1, hRLink1, hStash1, hUniq1,
         hQTB1, hQNT1⟩ := hExcept
       -- The delivered thread survives the splice with its `ipcState` untouched:
       -- still `.blockedOnReceive epId`, which is what the detachment argument reads.
@@ -293,7 +293,7 @@ theorem notificationSignalBoundOnCore_preserves_ipcInvariantFull
               simp [Array.size])
             (fun tcbX hX => hAllNone1 t tcbX hX) hNotReply1 hNotHead1 hNotTail1 hNoIncoming1
             ⟨hIpc1, hDual1, hBounded1, hBadge1, hPend1, hNoDup1, hMem1, hQNB1, hQHB1,
-              hTimeout1, hAcyc1, hOwner1, hPsi1, hBudget1, hRTgt1, hRLink1, hStash1, hUniq1,
+              hTimeout1, hAcyc1, hOwner1, hBudget1, hRTgt1, hRLink1, hStash1, hUniq1,
               hQTB1, hQNT1⟩ hStore
         have hObj2 := storeTcbReceiveComplete_preserves_objects_invExt p.2 st2 t _ hObj1 hStore
         obtain ⟨tr, hTrGet, hTrReady⟩ :=
@@ -301,57 +301,7 @@ theorem notificationSignalBoundOnCore_preserves_ipcInvariantFull
         show ipcInvariantFull (wakeThread st2 t executingCore).1
         exact ipcInvariantFull_of_objectsAgreeOffRunLinks
           (wakeThread_objectsAgreeOffRunLinks_of_ready st2 t executingCore tr hTrGet hTrReady hObj2)
-          (passiveServerIdle_of_frame
-            ((passiveServerIdleFrameOnCore_boot_iff st2 (wakeThread st2 t executingCore).1).mp
-              (wakeThread_passiveServerIdleFrameOnCore_of_ready st2 t executingCore tr hTrGet
-                hTrReady hObj2))
-            hFull2.passiveServerIdle)
           hFull2
-
-open SeLe4n.Model.SystemState in
-/-- **WS-RR RR7.22 (residual)**: the bound-aware cross-core signal frames every
-core's `passiveServerIdle` slice.
-
-The fall-through is the unbound signal's own frame; the delivery path is the
-three legs' per-core frames chained — splice, receive-completing store, and the
-wake of an already-`.ready` thread.  No idle-core assumption, matching the
-sibling `notificationSignalOnCore_passiveServerIdleFrameOnCore`. -/
-theorem notificationSignalBoundOnCore_passiveServerIdleFrameOnCore
-    (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) (executingCore : CoreId)
-    (st : SystemState) (c : CoreId) (hObjInv : st.objects.invExt) :
-    passiveServerIdleFrameOnCore st
-      (notificationSignalBoundOnCore notificationId badge executingCore st).1 c := by
-  unfold notificationSignalBoundOnCore
-  cases hTarget : boundDeliveryTarget? st notificationId with
-  | none =>
-    simp only
-    exact notificationSignalOnCore_passiveServerIdleFrameOnCore notificationId badge
-      executingCore st c hObjInv
-  | some pair =>
-    obtain ⟨t, epId⟩ := pair
-    simp only
-    cases hRemove : endpointQueueRemoveDual epId true t st with
-    | error e => simp only; exact passiveServerIdleFrameOnCore.refl st
-    | ok p =>
-      simp only
-      have hObj1 := endpointQueueRemoveDual_preserves_objects_invExt st p.2 epId true t hObjInv
-        hRemove
-      have f1 : passiveServerIdleFrameOnCore st p.2 c :=
-        endpointQueueRemoveDual_passiveServerIdleFrameOnCore st p.2 epId true t hObjInv hRemove
-      cases hStore : storeTcbReceiveComplete p.2 t
-          (some { IpcMessage.empty with badge := some badge }) with
-      | error e => simp only; exact passiveServerIdleFrameOnCore.refl st
-      | ok st2 =>
-        simp only
-        have hObj2 := storeTcbReceiveComplete_preserves_objects_invExt p.2 st2 t _ hObj1 hStore
-        have f2 : passiveServerIdleFrameOnCore p.2 st2 c :=
-          storeTcbReceiveComplete_passiveServerIdleFrameOnCore p.2 st2 t _ hObj1 hStore
-        obtain ⟨tr, hTrGet, hTrReady⟩ :=
-          storeTcbReceiveComplete_getTcb?_ipcState p.2 st2 t _ hObj1 hStore
-        show passiveServerIdleFrameOnCore st (wakeThread st2 t executingCore).1 c
-        exact (f1.trans f2).trans
-          (wakeThread_passiveServerIdleFrameOnCore_of_ready st2 t executingCore tr hTrGet
-            hTrReady hObj2)
 
 open SeLe4n.Model.SystemState in
 /-- **WS-RR RR7.22 (residual)** flagship: the bound-aware cross-core signal
@@ -374,10 +324,6 @@ theorem notificationSignalBoundOnCore_preserves_ipcInvariantFull_perCore
   ipcInvariantFull_perCore_of_full
     (notificationSignalBoundOnCore_preserves_ipcInvariantFull notificationId badge executingCore
       st (ipcInvariantFull_of_smp hInv) hObjInv hNWC hAllBudgetsNone hPred)
-    (passiveServerIdle_perCore_of_frameOnCore
-      (notificationSignalBoundOnCore_passiveServerIdleFrameOnCore notificationId badge
-        executingCore st c hObjInv)
-      (hInv c).passiveServerIdle)
 
 -- ============================================================================
 -- §5  Bind / unbind invariant preservation

@@ -535,16 +535,6 @@ theorem updatePrioritySource_runCoreCode (st : SystemState) (tid : SeLe4n.Thread
   · exact SystemState.updateTcb_runCoreCode _ _ (fun t => { t with priority := newPriority })
       (fun _ => rfl) hInv y
 
-/-- WS-ZA ZA4.5: the priority write is a current-placement frame: it moves no
-current slot, no queue and no TCB in or out of the store. -/
-theorem updatePrioritySource_currentPlacementFrame (st : SystemState)
-    (tid : SeLe4n.ThreadId) (tcb : TCB) (newPriority : SeLe4n.Priority)
-    (hInv : st.objects.invExt) (c : Concurrency.CoreId) :
-    SystemState.CurrentPlacementFrame c st (updatePrioritySource st tid tcb newPriority) := by
-  obtain ⟨o, ho⟩ := updatePrioritySource_only_modifies_objects st tid tcb newPriority
-  exact SystemState.CurrentPlacementFrame.of_parts (by rw [ho])
-    (updatePrioritySource_runCoreCode st tid tcb newPriority hInv)
-
 /-- WS-ZA ZA4.5: the bucket migration keeps the agreement — it re-keys a thread
 its home queue holds, which under the agreement that core's links queue. -/
 theorem migrateRunQueueBucketOnCore_runQueueStage (st : SystemState)
@@ -557,16 +547,6 @@ theorem migrateRunQueueBucketOnCore_runQueueStage (st : SystemState)
       rw [← SystemState.queuedOn_eq_runLinkOn]; exact hMem
     exact SystemState.RunQueueStage.runRequeueOnCore _ _ _ _ hq
   · exact .refl _
-
-/-- WS-ZA ZA4.5: the bucket migration is a current-placement frame. -/
-theorem migrateRunQueueBucketOnCore_currentPlacementFrame (st : SystemState)
-    (tid : SeLe4n.ThreadId) (newPriority : SeLe4n.Priority) (homeCore c : Concurrency.CoreId) :
-    SystemState.CurrentPlacementFrame c st (migrateRunQueueBucketOnCore st tid newPriority homeCore) := by
-  unfold migrateRunQueueBucketOnCore
-  split
-  · rename_i hMem
-    exact SystemState.CurrentPlacementFrame.runRequeueOnCore _ _ _ _ _ hMem
-  · exact .refl _ _
 
 /-- D2-E: Set the scheduling priority of a target thread.
 

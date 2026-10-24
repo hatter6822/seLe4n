@@ -1043,69 +1043,6 @@ theorem runEnqueueAdmitted_getTcb?_isSome (st : SystemState) (c : CoreId) (t y :
     rw [updateTcbAtCode_getTcb?_isSome, updateTcbAtCode_getTcb?_isSome,
       mapTcbInPlace_getTcb?_isSome]
 
-/-- A re-key of `t` on the core whose queue holds it moves no thread to
-another core, and keeps every core's current slot and every TCB. -/
-theorem CurrentPlacementFrame.runRequeueOnCore (st : SystemState) (c c0 : CoreId)
-    (t : SeLe4n.ThreadId) (p : SeLe4n.Priority) (hq : st.queuedOn c0 t = true) :
-    CurrentPlacementFrame c st (st.runRequeueOnCore c0 t p) := by
-  intro y hy
-  refine ⟨by simpa using hy, fun h => ?_, fun c' _ hm => ?_⟩
-  · have ho := runRequeueOnCore_objects st c0 t p
-    unfold getTcb? at h ⊢; rw [ho]
-    have := runEnqueueAdmitted_getTcb?_isSome (st.runRemoveOnCore c0 t) c0 t y p
-    rw [runRemoveOnCore_getTcb?_isSome] at this
-    unfold getTcb? at this; rw [this]; exact h
-  · rwa [runRequeueOnCore_queuedOn_of_queued p hq] at hm
-
-/-- A removal from core `c0`'s queue moves no thread anywhere new. -/
-theorem CurrentPlacementFrame.runRemoveOnCore (st : SystemState) (c c0 : CoreId)
-    (t : SeLe4n.ThreadId) : CurrentPlacementFrame c st (st.runRemoveOnCore c0 t) := by
-  intro y hy
-  refine ⟨by simpa using hy, fun h => by rw [runRemoveOnCore_getTcb?_isSome]; exact h,
-    fun c' _ hm => ?_⟩
-  rw [runRemoveOnCore_queuedOn] at hm
-  split at hm
-  · cases hm
-  · exact hm
-
-/-- Taking a thread off core `c0` moves no thread anywhere new; the only current
-slot it writes, it clears. -/
-theorem CurrentPlacementFrame.runDescheduleOnCore (st : SystemState) (c c0 : CoreId)
-    (t : SeLe4n.ThreadId) : CurrentPlacementFrame c st (st.runDescheduleOnCore c0 t) := by
-  intro y hy
-  have hR := CurrentPlacementFrame.runRemoveOnCore st c c0 t
-  unfold SystemState.runDescheduleOnCore at hy ⊢
-  dsimp only at hy ⊢
-  simp only [SchedulerState.markReschedulePendingOnCoreIf_currentOnCore] at hy
-  have hy0 : st.scheduler.currentOnCore c = some y := by
-    by_cases hc : c0 = c
-    · subst hc
-      rw [SchedulerState.setCurrentOnCore_currentOnCore_self] at hy
-      split at hy
-      · cases hy
-      · exact hy
-    · rw [SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ hc] at hy
-      simpa using hy
-  obtain ⟨-, hT, hQ⟩ := hR y (by simpa using hy0)
-  exact ⟨hy0, hT, fun c' hne hm => hQ c' hne hm⟩
-
-/-- An enqueue on core `c0` of a thread other than core `c`'s current one moves
-that current thread nowhere new. -/
-theorem CurrentPlacementFrame.runEnqueueOnCore (st : SystemState) (c c0 : CoreId)
-    (t : SeLe4n.ThreadId) (p : SeLe4n.Priority) (hNe : st.scheduler.currentOnCore c ≠ some t) :
-    CurrentPlacementFrame c st (st.runEnqueueOnCore c0 t p) := by
-  intro y hy
-  have hy0 : st.scheduler.currentOnCore c = some y := by simpa using hy
-  refine ⟨hy0, fun h => ?_, fun c' _ hm => ?_⟩
-  · unfold SystemState.runEnqueueOnCore
-    split
-    · rw [runEnqueueAdmitted_getTcb?_isSome]; exact h
-    · exact h
-  · rw [runEnqueueOnCore_queuedOn] at hm
-    split at hm
-    · rename_i hyt; exact absurd (hyt.1 ▸ hy0) hNe
-    · exact hm
-
 theorem runUnlinkLinks_objects_invExtK (st : SystemState) (t : SeLe4n.ThreadId)
     (pv nx bpv bnx : Nat) (hK : st.objects.invExtK) :
     (st.runUnlinkLinks t pv nx bpv bnx).objects.invExtK :=

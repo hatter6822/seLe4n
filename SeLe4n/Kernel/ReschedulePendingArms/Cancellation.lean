@@ -321,40 +321,6 @@ theorem endpointQueueRemove_keyInputsEq {epId : SeLe4n.ObjId} {isRecvQ : Bool}
       endpointQueueRemove_getTcb_backward_upToField tcbKeyCore hLF _ _ _ _ _ hInv h a t' ha
     exact ⟨t, h'⟩
 
-/-- The holder's abort removes it from its endpoint queue and readies it: no
-key field. -/
-theorem abortHolderPendingIpc_keyInputsEq (st : SystemState) (holder : SeLe4n.ThreadId)
-    (hInv : st.objects.invExt) :
-    keyInputsEq st (Lifecycle.Suspend.abortHolderPendingIpc st holder) := by
-  unfold Lifecycle.Suspend.abortHolderPendingIpc
-  cases lookupTcb st holder with
-  | none => exact keyInputsEq_refl _
-  | some holderTcb =>
-    simp only []
-    split
-    all_goals first
-      | exact keyInputsEq_refl _
-      | (split
-         · rename_i st' hAb
-           unfold abortPendingIpcOnEndpoint at hAb
-           split at hAb
-           · cases hAb
-           · rename_i st1 hEQR
-             have hInv1 := endpointQueueRemove_preserves_objects_invExt _ _ _ _ _ hInv hEQR
-             split at hAb
-             · cases hAb
-             · rename_i tcb hLook
-               dsimp only at hAb
-               split at hAb
-               · cases hAb
-               · rename_i hS
-                 cases hAb
-                 refine keyInputsEq_trans (endpointQueueRemove_keyInputsEq hInv hEQR)
-                   (keyInputsEq_storeObject hInv1 hS ?_)
-                 rw [lookupTcb_some_objects _ _ _ hLook]
-                 simp [keyInputsOf, TCB.withReturnFrame]
-         · exact keyInputsEq_refl _)
-
 /-- The caller-link teardown consumes a Reply and clears the caller's reply
 object: no key field. -/
 theorem consumeCallerReply_keyInputsEq {st st' : SystemState} {caller : SeLe4n.ThreadId}
@@ -420,21 +386,17 @@ theorem stepCovers_of_keys_sched {e : CoreId} {pre post : SystemState}
     stepCovers e pre post :=
   stepCovers_of_scheduler_eq hKeys hSched
 
-/-- **The cancelled caller's reclaim covers**: the holder's abort is object-only
-and moves no key, and the return ends in its two hooks. -/
+/-- **The cancelled caller's reclaim covers**: the return ends in its two
+hooks. -/
 theorem returnDonationToCancelledCaller_stepCovers (e : CoreId) (st : SystemState)
     (tid : SeLe4n.ThreadId) (tcb : TCB) (hInv : st.objects.invExt) :
     stepCovers e st (Lifecycle.Suspend.returnDonationToCancelledCaller st tid tcb) := by
   unfold Lifecycle.Suspend.returnDonationToCancelledCaller
   split
   · rename_i scId holder _ _ _
-    have hA := Lifecycle.Suspend.abortHolderPendingIpc_preserves_objects_invExt st holder hInv
     split
     · rename_i st' hRet
-      exact stepCovers_trans
-        (stepCovers_of_keys_sched (abortHolderPendingIpc_keyInputsEq st holder hInv)
-          (Lifecycle.Suspend.abortHolderPendingIpc_scheduler_eq st holder))
-        (returnDonatedSchedContextResolved_stepCovers e hA hRet).1
+      exact (returnDonatedSchedContextResolved_stepCovers e hInv hRet).1
     · exact stepCovers_refl e st
   · exact stepCovers_refl e st
 

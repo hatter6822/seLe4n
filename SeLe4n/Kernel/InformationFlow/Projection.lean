@@ -1209,8 +1209,9 @@ theorem serviceOrchestration_boundary_disjunction
 **non-observable** thread on the *same* endpoint queue.
 
 This decides how the cancellation path's two standing projection obligations
-(`abortHolderProjectionStable`, `descheduledHolderHigh` — `abortHolderWakeHigh`
-until `v0.35.158`) and the three queue arms'
+(`abortHolderProjectionStable`, retired at `v0.36.136` with the abort it
+covered, and `descheduledHolderHigh` — `abortHolderWakeHigh` until
+`v0.35.158`) and the three queue arms'
 `hTeardownProj` can be closed — and it **refutes the remedy all three were
 registered with**.
 

@@ -193,33 +193,8 @@ theorem abortPendingIpcOnEndpoint_runQueueStage {epId : SeLe4n.ObjId} {isReceive
     (by rw [hS]) (by rw [hS]) (fun hInv x => abortPendingIpcOnEndpoint_placement_frame hInv hA x)
     (fun hInv => abortPendingIpcOnEndpoint_stateMono hInv hA)
 
-/-- WS-RR RR8.11: the holder abort ends an outstanding send or call and moves no
-thread's home core. -/
-private theorem abortHolderPendingIpc_linkFrame_frame (st : SystemState)
-    (holder : SeLe4n.ThreadId) (hInv : st.objects.invExt) (x : SeLe4n.ThreadId) :
-    ((Lifecycle.Suspend.abortHolderPendingIpc st holder).getTcb? x).map TCB.linkFrame
-      = (st.getTcb? x).map TCB.linkFrame := by
-  have hArm : ∀ (epId : SeLe4n.ObjId),
-      (((match abortPendingIpcOnEndpoint epId false holder st with
-        | .ok s => s
-        | .error _ => st : SystemState)).getTcb? x).map TCB.linkFrame
-        = (st.getTcb? x).map TCB.linkFrame := by
-    intro epId
-    cases hA : abortPendingIpcOnEndpoint epId false holder st with
-    | error _ => rfl
-    | ok stA => exact abortPendingIpcOnEndpoint_linkFrame_frame hInv hA x
-  unfold Lifecycle.Suspend.abortHolderPendingIpc
-  split
-  · rfl
-  · rename_i holderTcb _
-    split
-    · rename_i epId _; exact hArm epId
-    · rename_i epId _; exact hArm epId
-    · rfl
-
-/-- WS-RR RR8.11: the reclaim moves no thread's home core — its abort prefix
-patches queue links and blocking state, and the pop rebinds scheduling contexts
-(`returnDonatedSchedContext_getTcb?_placement_eq`). -/
+/-- WS-RR RR8.11: the reclaim moves no thread's home core — the pop rebinds
+scheduling contexts (`returnDonatedSchedContext_getTcb?_placement_eq`). -/
 private theorem returnDonationToCancelledCaller_linkFrame_frame (st : SystemState)
     (v : SeLe4n.ThreadId) (tcbV : TCB) (hInv : st.objects.invExt) (x : SeLe4n.ThreadId) :
     ((Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV).getTcb? x).map TCB.linkFrame
@@ -233,15 +208,12 @@ private theorem returnDonationToCancelledCaller_linkFrame_frame (st : SystemStat
     | none => rfl
     | some _ =>
       dsimp only
-      cases hRet : returnDonatedSchedContextResolved
-          (Lifecycle.Suspend.abortHolderPendingIpc st holder) holder scId v with
+      cases hRet : returnDonatedSchedContextResolved st holder scId v with
       | error _ => rfl
       | ok st' =>
         obtain ⟨newOwner?, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hRet
-        rw [returnDonatedSchedContext_getTcb?_map_eq TCB.linkFrame (fun _ _ _ => rfl) _ st' holder
-            scId v (Lifecycle.Suspend.abortHolderPendingIpc_preserves_objects_invExt st holder hInv)
-            newOwner? hPop x,
-          abortHolderPendingIpc_linkFrame_frame st holder hInv x]
+        exact returnDonatedSchedContext_getTcb?_map_eq TCB.linkFrame (fun _ _ _ => rfl) _ st'
+          holder scId v hInv newOwner? hPop x
 
 /-- WS-RR RR8.11: **the consume materialises no thread.**  The backward half the
 tree lacked: its two stores are at keys their own lookups found occupied, so a TCB
@@ -386,28 +358,7 @@ theorem restoreToReadyStaging_stateMono (st : SystemState) (tid : SeLe4n.ThreadI
   exact SystemState.StateMono.updateTcb hInv tid fun x =>
     ⟨fun _ => by cases frame <;> rfl, fun h => by cases frame <;> exact h⟩
 
-/-- The holder abort ends an outstanding send or call: it makes the holder ready
-and leaves it active. -/
-private theorem abortHolderPendingIpc_stateMono (st : SystemState)
-    (holder : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
-    SystemState.StateMono st (Lifecycle.Suspend.abortHolderPendingIpc st holder) := by
-  have hArm : ∀ (epId : SeLe4n.ObjId), SystemState.StateMono st
-      (match abortPendingIpcOnEndpoint epId false holder st with
-        | .ok s => s
-        | .error _ => st : SystemState) := by
-    intro epId
-    cases hA : abortPendingIpcOnEndpoint epId false holder st with
-    | error _ => exact SystemState.StateMono.refl _
-    | ok stA => exact abortPendingIpcOnEndpoint_stateMono hInv hA
-  unfold Lifecycle.Suspend.abortHolderPendingIpc
-  split
-  · exact SystemState.StateMono.refl _
-  · split
-    · rename_i epId _; exact hArm epId
-    · rename_i epId _; exact hArm epId
-    · exact SystemState.StateMono.refl _
-
-/-- The reclaim's abort readies the holder; its pop rebinds scheduling contexts. -/
+/-- The reclaim's pop rebinds scheduling contexts and blocks no thread. -/
 private theorem returnDonationToCancelledCaller_stateMono (st : SystemState)
     (v : SeLe4n.ThreadId) (tcbV : TCB) (hInv : st.objects.invExt) :
     SystemState.StateMono st (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) := by
@@ -420,16 +371,13 @@ private theorem returnDonationToCancelledCaller_stateMono (st : SystemState)
     | none => exact SystemState.StateMono.refl _
     | some _ =>
       dsimp only
-      cases hRet : returnDonatedSchedContextResolved
-          (Lifecycle.Suspend.abortHolderPendingIpc st holder) holder scId v with
+      cases hRet : returnDonatedSchedContextResolved st holder scId v with
       | error _ => exact SystemState.StateMono.refl _
       | ok st' =>
         obtain ⟨newOwner?, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hRet
-        exact (abortHolderPendingIpc_stateMono st holder hInv).trans
-          (SystemState.StateMono.of_stateFields
-            (returnDonatedSchedContext_getTcb?_stateFields_eq _ st' holder scId v
-              (Lifecycle.Suspend.abortHolderPendingIpc_preserves_objects_invExt st holder hInv)
-              newOwner? hPop))
+        exact SystemState.StateMono.of_stateFields
+          (returnDonatedSchedContext_getTcb?_stateFields_eq _ st' holder scId v hInv
+            newOwner? hPop)
 
 /-- **The teardown blocks and suspends no thread**: it readies the victim and,
 on the reply arm, the donation holder, and otherwise patches queue links,

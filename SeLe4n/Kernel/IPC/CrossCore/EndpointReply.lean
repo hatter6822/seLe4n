@@ -2368,10 +2368,10 @@ theorem endpointReplyOnCore_ok_decompose
 `.ready`.
 
 The fact the fault reply's abandon arm needs, and the one its own docstring had
-been asserting in prose since WS-RR RR4.18: `.ready` is a
-`passiveServerIdleAllowed` state, so the abandon's idle-state obligation is a
-consequence of the reply having succeeded rather than a hypothesis a caller must
-carry.  Composed from the SM6.C.6 delivery result over the decomposition above,
+been asserting in prose since WS-RR RR4.18: the abandon's run-queue entry stage
+(`faultReplyApplyOnCore_runQueueEntryStage`) reads the target's state, so its
+obligation is a consequence of the reply having succeeded rather than a
+hypothesis a caller must carry.  Composed from the SM6.C.6 delivery result over the decomposition above,
 so it states nothing the delivery lemma does not already prove — what is new is
 that it is keyed on the **outcome** instead of on the preconditions. -/
 theorem endpointReplyOnCore_ok_target_ready
@@ -3227,8 +3227,7 @@ theorem endpointReplyOnCore_replay_rejected
     (hIpc : tcb.ipcState = .blockedOnReply ep (some expected))
     (hStore : storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) = .ok st')
     (hObjInv : st.objects.invExt)
-    (hSz1' : ¬ msg2.registers.size > maxMessageRegisters)
-    :
+    (hSz1' : ¬ msg2.registers.size > maxMessageRegisters) :
     (endpointReplyOnCore replier2 target msg2 executingCore2
         (endpointReplyOnCore replier target msg executingCore st).1).2 = .error .replyCapInvalid := by
   obtain ⟨t, hGet, hReady, _⟩ :=

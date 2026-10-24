@@ -329,10 +329,16 @@ it; `replyIsStashed`'s table scan is only the derived spec view.  The delete
 and revoke loop carries `lentContextHeadsLenderFrame` (a lent context heads its
 lender's reply stack) as a pre-state premise of the dispatch, so new code that
 lends a context, moves a reply stack's head or a thread's reply link, or adds a
-step to that loop must keep it (`loanWrite`, `finaliseLoanBundle`).  A thread that is reply-blocked, holds a reply link, stash or
-reply-waiter link, donates or holds space-slot capabilities, a head reply or a caller lending a reservation, a
-context whose holder is blocked sending or calling, and an untyped that still
-records a child, outlive their last capability until part 26 and ZA6.1
+step to that loop must keep it (`loanWrite`, `finaliseLoanBundle`).  No IPC
+bundle conjunct reads the scheduler: part 25 retired `passiveServerIdle` and
+the cancellation reclaim's holder abort, so a thread may wait blocked sending
+or calling while unbound (seL4's `schedContext_unbindTCB`), the reclaim and a
+scheduling context's final delete leave such a holder blocked, and new IPC
+code must not reintroduce a scheduler read into `ipcInvariantFull` — a fact
+about the run queues belongs in the scheduler bundle (WS-CB CB1.12's
+`passiveThreadParked`).  A thread that is reply-blocked, holds a reply link, stash or
+reply-waiter link, donates or holds space-slot capabilities, a head reply or a caller lending a reservation,
+and an untyped that still records a child, outlive their last capability until part 26 and ZA6.1
 (`docs/REGISTERED_DEBT.md`).  The suspend of a thread blocked in IPC or
 holding a donated context is the one syscall arm left on the general path
 (ZA6.1).  ZA6 covers the other
@@ -3844,7 +3850,7 @@ code may assume:
   which were the one member of the family that did not.  The widest arm is the
   reply arm, at **eight** after OD3.5 and **ten** since OD3.7
   (`lockSet_cancelIpcBlockingOnCore_size_le_ten` then; the live bound is
-  `lockSet_cancelIpcBlockingOnCore_size_le_sixteen`); the endpoint arm is four and
+  `lockSet_cancelIpcBlockingOnCore_size_le_thirteen`); the endpoint arm is four and
   the notification arm two.  Before the OD3.5 split the reply arm declared two
   TCB write locks for a splice it does not perform, which also put it at ten —
   the same number for the opposite reason, so read the theorem rather than the

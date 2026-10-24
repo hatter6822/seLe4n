@@ -257,8 +257,7 @@ import SeLe4n.Kernel.CrossSubsystemPerCore
 -- WS-SM SM4.D audit-pass-2: per-operation cross-subsystem SMP-preservation.
 -- Connects the per-core / ∀c SMP invariant predicates to the kernel's
 -- transitions: `…_holds_if_idle` idle-discharge lemmas, the generic
--- single-core→SMP lifters, the `passiveServerIdle_scheduledNowhere`
--- natural-SMP form, and 11 concrete per-operation preservation theorems
+-- single-core→SMP lifters, and 11 concrete per-operation preservation theorems
 -- (8 IPC ops → `ipcSchedulerContractPredicates_smp`, 2 architecture ops →
 -- `registerDecodeConsistent_smp`, `timerTick` → schedContext↔run-queue),
 -- each reusing the existing single-core preservation verbatim.  SM5's

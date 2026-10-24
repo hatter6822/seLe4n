@@ -241,9 +241,7 @@ theorem endpointCallWithCapsOnCore_preserves_ipcInvariantFull
     (hCallerReady : ∀ (tcb : TCB), st.getTcb? caller = some tcb →
         tcb.ipcState = .ready)
     (hCallerNotReply : ∀ (tcb : TCB), st.getTcb? caller = some tcb →
-        ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt)
-    (hCallerNotUnbound : ∀ (tcb : TCB), st.getTcb? caller = some tcb →
-        tcb.schedContextBinding ≠ .unbound) :
+        ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt) :
     ipcInvariantFull (endpointCallWithCapsOnCore endpointId caller payload
       receiverSlotBase executingCore st).1 := by
   have hBare := endpointCallOnCore_preserves_ipcInvariantFull endpointId caller
@@ -252,7 +250,6 @@ theorem endpointCallWithCapsOnCore_preserves_ipcInvariantFull
     hCallerNotRecv
     (fun tcb h => hCallerReady tcb ((SystemState.getTcb?_eq_some_iff st caller tcb).mpr h))
     (fun tcb h => hCallerNotReply tcb ((SystemState.getTcb?_eq_some_iff st caller tcb).mpr h))
-    (fun tcb h => hCallerNotUnbound tcb ((SystemState.getTcb?_eq_some_iff st caller tcb).mpr h))
   have hBareInv := endpointCallOnCore_preserves_objects_invExt endpointId caller
     payload executingCore st hObjInv
   unfold endpointCallWithCapsOnCore
@@ -272,7 +269,7 @@ theorem endpointCallWithCapsOnCore_preserves_ipcInvariantFull
         | exact hBare
         | (rename_i hT
            obtain ⟨stR, caps, hO, hS, hCaps, hOr⟩ := receiveTransferCaps_frame hT
-           have hR : ipcInvariantFull stR := ipcInvariantFull_of_objects_scheduler_eq hO hS hBare
+           have hR : ipcInvariantFull stR := ipcInvariantFull_of_objects_eq hO hBare
            rcases hOr with rfl | hU
            · exact hR
            · exact ipcUnwrapCaps_preserves_ipcInvariantFull _ _ receiverSlotBase _ stR _ _ hR
@@ -383,8 +380,6 @@ theorem endpointCallCrossCoreDispatch_preserves_ipcInvariantFull
         tcb.ipcState = .ready)
     (hCallerNotReply : ∀ (tcb : TCB), st.getTcb? caller = some tcb →
         ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt)
-    (hCallerNotUnbound : ∀ (tcb : TCB), st.getTcb? caller = some tcb →
-        tcb.schedContextBinding ≠ .unbound)
     (hNe : ∀ ep receiverTid, st.getEndpoint? endpointId = some ep →
       ep.receiveQ.head = some receiverTid → caller ≠ receiverTid) :
     ipcInvariantFull (endpointCallCrossCoreDispatch endpointId caller payload
@@ -394,7 +389,7 @@ theorem endpointCallCrossCoreDispatch_preserves_ipcInvariantFull
     endpointCallWithCapsOnCore_preserves_ipcInvariantFull endpointId caller payload
       receiverSlotBase executingCore st hInv hObjInv hAllBudgetsNone
       hFreshCaller hSendTailFresh hCallerNotRecv
-      hCallerReady hCallerNotReply hCallerNotUnbound
+      hCallerReady hCallerNotReply
   have hWithCapsInv : (endpointCallWithCapsOnCore endpointId caller payload
       receiverSlotBase executingCore st).1.objects.invExt :=
     endpointCallWithCapsOnCore_preserves_objects_invExt endpointId caller payload

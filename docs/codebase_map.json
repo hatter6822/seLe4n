@@ -63200,8 +63200,8 @@
         },
         {
           "kind": "theorem",
-          "name": "lockSet_cancelIpcBlockingOnCore_size_le_sixteen",
-          "full_name": "SeLe4n.Kernel.lockSet_cancelIpcBlockingOnCore_size_le_sixteen",
+          "name": "lockSet_cancelIpcBlockingOnCore_size_le_thirteen",
+          "full_name": "SeLe4n.Kernel.lockSet_cancelIpcBlockingOnCore_size_le_thirteen",
           "line": 652,
           "called": [
             "SeLe4n.Kernel.Lifecycle.Suspend.cancelledCallerDonation?",
@@ -63222,7 +63222,7 @@
           "called": [
             "SeLe4n.Kernel.Concurrency.maxLockSetSize",
             "SeLe4n.Kernel.lockSet_cancelIpcBlockingOnCore",
-            "SeLe4n.Kernel.lockSet_cancelIpcBlockingOnCore_size_le_sixteen",
+            "SeLe4n.Kernel.lockSet_cancelIpcBlockingOnCore_size_le_thirteen",
             "SeLe4n.Model.SystemState",
             "SeLe4n.ThreadId"
           ]
@@ -63259,8 +63259,8 @@
         },
         {
           "kind": "theorem",
-          "name": "lockSet_tcbSuspendOnCore_size_le_twenty",
-          "full_name": "SeLe4n.Kernel.lockSet_tcbSuspendOnCore_size_le_twenty",
+          "name": "lockSet_tcbSuspendOnCore_size_le_seventeen",
+          "full_name": "SeLe4n.Kernel.lockSet_tcbSuspendOnCore_size_le_seventeen",
           "line": 743,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
@@ -63297,7 +63297,7 @@
           "called": [
             "SeLe4n.Kernel.Concurrency.maxLockSetSize",
             "SeLe4n.Kernel.lockSet_tcbSuspendOnCore",
-            "SeLe4n.Kernel.lockSet_tcbSuspendOnCore_size_le_twenty",
+            "SeLe4n.Kernel.lockSet_tcbSuspendOnCore_size_le_seventeen",
             "SeLe4n.Model.SystemState",
             "SeLe4n.ObjId",
             "SeLe4n.ThreadId"

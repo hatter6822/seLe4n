@@ -148,7 +148,7 @@ theorem notificationSignalBoundCrossCoreDispatch_preserves_ipcInvariant
     executingCore st hInv hObjInv
 
 /-- **WS-RR RR7.22 (residual)**: the unchecked bound-signal dispatch preserves
-the whole twenty-conjunct bundle — the live arm's payoff for the splice engine.
+the whole nineteen-conjunct bundle — the live arm's payoff for the splice engine.
 
 The dispatch is `notificationSignalBoundOnCore` at the executing core, so the bundle is that transition's, instantiated. -/
 theorem notificationSignalBoundCrossCoreDispatch_preserves_ipcInvariantFull

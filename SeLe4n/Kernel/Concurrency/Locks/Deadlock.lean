@@ -725,9 +725,8 @@ theorem size_le_7 (L : List (LockKey × AccessMode))
   refine Nat.le_trans (Nat.add_le_add_right (size_le_6 L o₁ o₂ o₃ o₄ o₅ o₆) 1) ?_
   omega
 
-/-- WS-OD OD1.5: eight optional extensions — the arity the state-resolved
-cancellation footprint reaches once the reclaim's abort prefix declares the
-holder's endpoint and its two queue neighbours. -/
+/-- WS-OD OD1.5: eight optional extensions — the arity `lockSet_endpointCall`
+reaches (`lockSet_endpointCall_size_le`). -/
 theorem size_le_8 (L : List (LockKey × AccessMode))
     (o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ : Option (LockKey × AccessMode)) :
     (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
@@ -1458,7 +1457,7 @@ Slack remains, which is the honest reading: this is the largest
 notification-side footprint the kernel declares, and it is *not* at the bound
 the way the widest IPC footprints are (`lockSet_replyRecv` reached the ceiling
 at WS-OD OD3.5; since WS-OD `v0.35.4` the footprint that defines the ceiling is
-the state-resolved suspend footprint, `lockSet_tcbSuspendOnCore_size_le_twenty`
+the state-resolved suspend footprint, `lockSet_tcbSuspendOnCore_size_le_seventeen`
 in `ResolvedFootprintBounds.lean`). -/
 theorem lockSet_declassifySignal_size_le (a : ThreadId) (b c : ObjId)
     (d : Option ThreadId) (e : Option ObjId) (f : Option ThreadId) :

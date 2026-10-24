@@ -652,7 +652,7 @@ theorem finaliseFinalObject_runQueueEntryStage (target : Nat) (st : SystemState)
       rw [hCode, Nat.add_sub_cancel] at hSpec
       exact h.trans (unbindNotification_runQueueStage hSpec).entry)
     (fun s t _ h _ _ _ _ => h.trans (descheduleAt_runQueueStage s t _).entry)
-    (fun _ _ _ _ _ _ h _ _ _ _ _ hOk =>
+    (fun _ _ _ _ _ _ h _ _ _ _ hOk =>
       h.trans (cancelBoundDonationOnCore_runQueueStage hOk).entry)
     (fun s _ t tcb _ h _ _ _ _ => h.trans (cancelIpcBlocking_runQueueStage s t tcb).entry)
     (fun s e q t ep tcb h hT hE hC =>

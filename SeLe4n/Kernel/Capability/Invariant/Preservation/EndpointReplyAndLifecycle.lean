@@ -264,15 +264,10 @@ theorem coreIpcInvariantBundle_to_donationOwnerValid {st : SystemState}
     (h : coreIpcInvariantBundle st) : donationOwnerValid st :=
   h.2.2.2.2.2.2.2.2.2.2.2.2.2.1
 
-/-- Z7-H: Extract `passiveServerIdle` from the core bundle. -/
-theorem coreIpcInvariantBundle_to_passiveServerIdle {st : SystemState}
-    (h : coreIpcInvariantBundle st) : passiveServerIdle st :=
-  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
-
 /-- Z7-I: Extract `donationBudgetTransfer` from the core bundle. -/
 theorem coreIpcInvariantBundle_to_donationBudgetTransfer {st : SystemState}
     (h : coreIpcInvariantBundle st) : donationBudgetTransfer st :=
-  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
 
 -- WS-RC R4.C close-out: `coreIpcInvariantBundle_to_uniqueWaiters` was
 -- deleted along with the `uniqueWaiters` predicate it extracted.
@@ -284,36 +279,36 @@ WS-SM SM6.D (PR #822): `+.1` after `replyCallerLinkage` became the 16th
 replyCallerLinkage` pair). -/
 theorem coreIpcInvariantBundle_to_blockedOnReplyHasTarget {st : SystemState}
     (h : coreIpcInvariantBundle st) : blockedOnReplyHasTarget st :=
-  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
 
 /-- WS-SM SM6.D (PR #822 review): extract the bidirectional `replyCallerLinkage`
-(16th `ipcInvariantFull` conjunct) from the core bundle. -/
+(15th `ipcInvariantFull` conjunct) from the core bundle. -/
 theorem coreIpcInvariantBundle_to_replyCallerLinkage {st : SystemState}
     (h : coreIpcInvariantBundle st) : replyCallerLinkage st :=
-  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
 
 /-- WS-SM SM6.D (PR #822 review): extract the server-first stash well-formedness
-(17th `ipcInvariantFull` conjunct) from the core bundle. -/
+(16th `ipcInvariantFull` conjunct) from the core bundle. -/
 theorem coreIpcInvariantBundle_to_pendingReceiveReplyWellFormed {st : SystemState}
     (h : coreIpcInvariantBundle st) : pendingReceiveReplyWellFormed st :=
-  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
 
-/-- IPC de-threading D6: extract donation-owner uniqueness (18th `ipcInvariantFull` conjunct). -/
+/-- IPC de-threading D6: extract donation-owner uniqueness (17th `ipcInvariantFull` conjunct). -/
 theorem coreIpcInvariantBundle_to_donationOwnerUnique {st : SystemState}
     (h : coreIpcInvariantBundle st) : donationOwnerUnique st :=
-  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
 
 /-- IPC de-threading D4 (Finding F-2): extract endpoint-queue tail-blocked consistency
-(19th `ipcInvariantFull` conjunct). -/
+(18th `ipcInvariantFull` conjunct). -/
 theorem coreIpcInvariantBundle_to_endpointQueueTailBlockedConsistent {st : SystemState}
     (h : coreIpcInvariantBundle st) : endpointQueueTailBlockedConsistent st :=
-  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
 
 /-- IPC de-threading D4 Slice 2c: extract queue-next target-blocked consistency
-(20th `ipcInvariantFull` conjunct). -/
+(19th `ipcInvariantFull` conjunct). -/
 theorem coreIpcInvariantBundle_to_queueNextTargetBlocked {st : SystemState}
     (h : coreIpcInvariantBundle st) : queueNextTargetBlocked st :=
-  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
 
 /-- Named M3.5 coherence component: runnable threads stay IPC-ready. -/
 def ipcSchedulerRunnableReadyComponent (st : SystemState) : Prop :=

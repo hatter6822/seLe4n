@@ -244,10 +244,8 @@ theorem cancelIpcBlockingMigrated_preserves_projectionOnCore
 *deschedule* carries (`abortHolderWakeHigh` until this cut, for the wake it
 replaced).
 
-The step is the scheduler twin of OD1.4's `abortHolderProjectionStable`, and it
-carries the same gap for the same reason: the reclaim's abort and its deschedule
-both act on the **holder**, whose label the victim's does not determine.  A
-run-queue removal is filtered by the removed thread's own observability
+The deschedule acts on the **holder**, whose label the victim's does not
+determine.  A run-queue removal is filtered by the removed thread's own observability
 (`projectRunnable`; `removeRunnableOnCore_preserves_projection`), so the
 deschedule is invisible exactly when the holder is non-observable — which is the
 condition the wake carried, unchanged, because an insert and a removal are
@@ -568,68 +566,6 @@ theorem consumeReplyLink_preserves_projection_high
     exact consumeCallerReply_preserves_projection ctx observer st _ tid rid hTidObjHigh
       hIdxComplete hObjInv (SystemState.consumeCallerReply_eq_link st tid rid)
 
-/-- **WS-OD OD1.4**: the projection obligation the holder abort adds to the
-donation return.
-
-The return's own three stores are invisible to every observer (see
-`returnDonationToCancelledCaller_preserves_projection` below).  Its *prefix* is
-not: `abortHolderPendingIpc` ends the holder's outstanding send or call, and that
-writes the holder's endpoint object, the holder's queue neighbours' links and the
-holder's own `ipcState` / `threadState` / queue links — every one of which
-survives `projectKernelObject`.  So a low observer that can see the holder's
-endpoint would see a high victim's cancellation through it.
-
-This is **the same gap the three queue arms already carry**, arriving at the
-reply arm through the holder rather than through the victim.  Two of the three
-write classes are **discharged** (WS-RR RR8.8, `v0.35.84`): the holder is
-non-observable whenever the victim is
-(`donationHolderHigh_of_donorHigh`, over `donationOwnerFlowsToHolder` — the
-donating `Call`'s gate composed with the server's own receive gate,
-`label victim ⊑ label endpoint ⊑ label holder`), and the endpoint **object** is
-non-observable whenever the holder is
-(`blockedSenderEndpointObjectHigh`).  The second needed a conjunct that did not
-exist: the gate compares `endpointLabelOf` while the projection decides
-visibility from `objectLabelOf`, two independent fields nothing related, so
-`LabelingContextValid.endpointObjectCoherence` was added to carry the one to the
-other.  `v0.35.83` asserted this step from the gate alone, which was not
-available.  The third class is the holder's
-**queue neighbours**, whose labels are constrained only against the *endpoint's*,
-so no labelling fact closes it: a queue label-uniformity invariant is not merely
-absent but **unestablishable**, the gate admitting a non-uniform queue by design
-so that a lower-labelled client can send to a higher-labelled server.  The
-remaining closure is representational — a queue's content must live in an object
-whose label *dominates* every member's, which the endpoint is and a member's own
-TCB is not — and is registered in `docs/REGISTERED_DEBT.md`.  Stated as an
-obligation rather than assumed away, and discharged
-outright wherever the abort is inert (`abortHolderProjectionStable_of_allowed`) —
-which is every state on which the reclaim's `passiveServerIdle` hole did not
-exist in the first place. -/
-def abortHolderProjectionStable (ctx : LabelingContext) (observer : IfObserver)
-    (st : SystemState) (victim : SeLe4n.ThreadId) (tcb : TCB) : Prop :=
-  ∀ (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId),
-    Lifecycle.Suspend.cancelledCallerDonation? st victim tcb = some (scId, holder) →
-    projectState ctx observer (Lifecycle.Suspend.abortHolderPendingIpc st holder)
-      = projectState ctx observer st
-
-/-- **WS-OD OD1.4**: the obligation is discharged outright when the abort is the
-identity.
-
-A holder that is not blocked sending or calling is left untouched by the reclaim
-— bit for bit — so there is nothing for an observer of any label to see.  That
-covers every state on which the `passiveServerIdle` hole did not arise, which is
-why the remediation costs no *existing* information-flow result: it adds an
-obligation exactly where it adds a write. -/
-theorem abortHolderProjectionStable_of_allowed
-    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
-    (victim : SeLe4n.ThreadId) (tcb : TCB)
-    (hAllowed : ∀ (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId),
-      Lifecycle.Suspend.cancelledCallerDonation? st victim tcb = some (scId, holder) →
-      ∀ t, lookupTcb st holder = some t → passiveServerIdleAllowed t.ipcState) :
-    abortHolderProjectionStable ctx observer st victim tcb := by
-  intro scId holder hRes
-  rw [Lifecycle.Suspend.abortHolderPendingIpc_eq_self_of_allowed st holder
-    (hAllowed scId holder hRes)]
-
 /-- **WS-RR RR7.22 (residual, remediation)**: the donation return's own writes are
 invisible to **every** observer, high or low.
 
@@ -644,35 +580,23 @@ opposite: returning a high caller's SchedContext writes the *server's* TCB, and 
 low server would then see a high thread's cancellation.  It does not, because the
 donation binding is not part of what the projection shows.
 
-**WS-OD OD1.4** adds the one hypothesis that is not structural:
-`abortHolderProjectionStable`, the holder abort's own projection equality.  The
-abort writes queue state, which the projection keeps, so it cannot be discharged
-from the erasure argument — see that predicate's docstring for what closing it
-needs, and `abortHolderProjectionStable_of_allowed` for the states where it is
-free.  The remaining hypotheses are structural: the identity registry is complete
-and well-formed, so `storeObject` extends neither. -/
+The hypotheses are structural: the identity registry is complete and
+well-formed, so `storeObject` extends neither.  (`v0.36.136` retired the one that
+was not, `abortHolderProjectionStable`: the reclaim no longer ends the holder's
+send or call, so it writes no queue state the projection keeps.) -/
 theorem returnDonationToCancelledCaller_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
     (victim : SeLe4n.ThreadId) (tcb : TCB)
     (hObjInv : st.objects.invExt)
     (hIdxComplete : SeLe4n.Model.objectIndexSetComplete st)
-    (hObjSetInv : st.objectIndexSet.table.invExt)
-    (hAbortProj : abortHolderProjectionStable ctx observer st victim tcb) :
+    (hObjSetInv : st.objectIndexSet.table.invExt) :
     projectState ctx observer (Lifecycle.Suspend.returnDonationToCancelledCaller st victim tcb)
       = projectState ctx observer st := by
   unfold Lifecycle.Suspend.returnDonationToCancelledCaller
   split
-  · rename_i scId holder _ hRes _
+  · rename_i scId holder _ _ _
     split
     · rename_i st' h
-      -- WS-OD OD1.4: the store chain runs on the *aborted* state, so its three
-      -- structural facts are carried across the abort first.
-      have hObjInvA := Lifecycle.Suspend.abortHolderPendingIpc_preserves_objects_invExt st holder
-        hObjInv
-      have hObjSetInvA := Lifecycle.Suspend.abortHolderPendingIpc_preserves_objectIndexSet_invExt
-        st holder hObjSetInv
-      have hIdxCompleteA := Lifecycle.Suspend.abortHolderPendingIpc_preserves_objectIndexSetComplete
-        st holder hObjInv hObjSetInv hIdxComplete
       -- WS-OD OD3.2: the chain is four object writes now — the head clear sits
       -- between the SchedContext store and the client's binding, and is
       -- projection-stable for the same reason the other three are (every field
@@ -681,23 +605,23 @@ theorem returnDonationToCancelledCaller_preserves_projection
       obtain ⟨sc, head?, clientTcb, serverTcb, s1, s2, s3, s4,
         hSc, _, _, _hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
         returnDonatedSchedContext_ok_storeChain _ st' holder scId victim n hPop
-      have hInv1 := SeLe4n.Model.storeObject_preserves_objects_invExt _ s1 _ _ hObjInvA hS1
+      have hInv1 := SeLe4n.Model.storeObject_preserves_objects_invExt _ s1 _ _ hObjInv hS1
       have hInv2 := storeDonationHeadPop_preserves_objects_invExt hInv1 hClear
       have hInv3 := SeLe4n.Model.storeObject_preserves_objects_invExt s2 s3 _ _ hInv2 hS3
       have hSet1 := SeLe4n.Model.storeObject_preserves_objectIndexSet_invExt _ s1 _ _
-        hObjSetInvA hS1
+        hObjSetInv hS1
       have hSet2 := storeDonationHeadPop_preserves_objectIndexSet_invExt hSet1 hClear
       have hSet3 := SeLe4n.Model.storeObject_preserves_objectIndexSet_invExt s2 s3 _ _ hSet2 hS3
-      have hC1 := SeLe4n.Model.storeObject_preserves_objectIndexSetComplete _ s1 _ _ hObjInvA
-        hObjSetInvA hIdxCompleteA hS1
+      have hC1 := SeLe4n.Model.storeObject_preserves_objectIndexSetComplete _ s1 _ _ hObjInv
+        hObjSetInv hIdxComplete hS1
       have hC2 := storeDonationHeadPop_preserves_objectIndexSetComplete hInv1 hSet1 hC1 hClear
       have hC3 := SeLe4n.Model.storeObject_preserves_objectIndexSetComplete s2 s3 _ _ hInv2
         hSet2 hC2 hS3
       have hP1 := storeObject_projectionStable_preserves_projection ctx observer _ s1
         scId.toObjId _ (.schedContext sc) hSc
         (projectKernelObject_schedContext_donationWrite_invariant ctx observer sc _ _ _)
-        (hIdxCompleteA scId.toObjId (by rw [hSc]; intro hx; cases hx))
-        hObjInvA hS1
+        (hIdxComplete scId.toObjId (by rw [hSc]; intro hx; cases hx))
+        hObjInv hS1
       have hP2 := storeDonationHeadPop_preserves_projection ctx observer hC1 hSet1 hInv1 hClear
       have hP3 := storeObject_projectionStable_preserves_projection ctx observer s2 s3
         victim.toObjId _ (.tcb clientTcb) (lookupTcb_some_objects s2 victim clientTcb hL1)
@@ -719,7 +643,6 @@ theorem returnDonationToCancelledCaller_preserves_projection
         rw [hEq]
         rfl
       rw [hFinal, hP4, hP3, hP2, hP1]
-      exact hAbortProj scId holder hRes
     · rfl
   · rfl
 
@@ -754,14 +677,7 @@ take as a hypothesis, proved rather than assumed.
 `consumeCallerReply` now, so their invisibility is
 `consumeCallerReply_preserves_projection` through the bridge; what the composite
 adds is the index completeness that theorem reads, carried from the return
-through the splice and the restore.
-
-**WS-OD OD1.4**: the return acquired a *prefix* — the holder abort — whose write
-set the projection does **not** erase, so the arm now carries
-`abortHolderProjectionStable` and nothing else changes.  The obligation is free
-(`abortHolderProjectionStable_of_allowed`) on every state where the abort is
-inert, which is every state on which the `passiveServerIdle` hole this
-remediation closes did not arise. -/
+through the splice and the restore. -/
 theorem cancelIpcBlocking_blockedOnReply_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
     (victim : SeLe4n.ThreadId) (tcb : TCB) (ep : SeLe4n.ObjId)
@@ -771,8 +687,7 @@ theorem cancelIpcBlocking_blockedOnReply_preserves_projection
     (hVictimHigh : threadObservable ctx observer victim = false)
     (hObjInv : st.objects.invExt)
     (hIdxComplete : SeLe4n.Model.objectIndexSetComplete st)
-    (hObjSetInv : st.objectIndexSet.table.invExt)
-    (hAbortProj : abortHolderProjectionStable ctx observer st victim tcb) :
+    (hObjSetInv : st.objectIndexSet.table.invExt) :
     projectState ctx observer (Lifecycle.Suspend.cancelIpcBlocking st victim tcb)
       = projectState ctx observer st := by
   have hObjHigh : objectObservable ctx observer victim.toObjId = false :=
@@ -826,7 +741,7 @@ theorem cancelIpcBlocking_blockedOnReply_preserves_projection
       ((spliceThreadReplyFrameOut_preserves_projection ctx observer _ tcb hCompR hSetInvR
         hInvR).trans
         (returnDonationToCancelledCaller_preserves_projection ctx observer st victim tcb hObjInv
-          hIdxComplete hObjSetInv hAbortProj)))
+          hIdxComplete hObjSetInv)))
 
 
 /-- **WS-RR RR2.18 (boot-core form, fully substantive)**: cancelling a
@@ -859,39 +774,18 @@ closure is representational: a queue's content must live in an object whose labe
 *dominates* every member's, which the endpoint is and a member's own TCB is not.
 Registered as WS-RR RR8.8 debt rather than papered over here.
 
-**WS-OD OD1.4 — what this arm now carries, and why it is not the same
-hypothesis.**  The reclaim's holder abort splices a *third* thread out of a
-*third* endpoint's queue, so the reply arm reaches the same labelling gap through
-the holder that the queue arms reach through the victim, and takes
-`abortHolderProjectionStable` for it.  Three things distinguish it from
-`hTeardownProj` and are the reason it is stated rather than absorbed.  (1) It is
-about a state the theorem's own hypotheses do not name — the holder is resolved
-by `cancelledCallerDonation?`, not supplied — so the predicate quantifies over
-the resolution rather than over a bound thread.  (2) It is **discharged
-outright** whenever the abort is inert (`abortHolderProjectionStable_of_allowed`),
-which is every state on which the `passiveServerIdle` hole did not arise; no
-information-flow result that held before this remediation is weakened on the
-states it held for.  (3) Closing it in general needs the same queue-link
-relocation the queue arms need, and only for the **neighbour** writes.  Its
-*labelling* half is **discharged** since `v0.35.84`
-(`abortHolderSpliceHigh_of_victimHigh`): the holder is high when the victim is,
-from the flow check the donating `Call` passed composed with the server's own
-receive gate (`label victim ⊑ label endpoint ⊑ label holder`,
-`securityFlowsTo_trans`), and the endpoint object is high with it.  The
-neighbour clause is registered as WS-RR RR8.8 debt beside the queue arms' gap.
-
-**`v0.35.158`** adds `descheduledHolderHigh` (WS-OD OD1.7's `abortHolderWakeHigh`
-until then), the scheduler twin of the same gap: the reclaim not only aborts the
-holder's IPC, it takes the holder it unbound off the scheduler slot the state
-places it on, and a run-queue removal is filtered by the removed thread's own
-observability.  All three distinguishing points above apply to it unchanged —
-it quantifies over the same resolution, it is discharged outright where no
+**What this arm carries.**  `v0.36.136` retired the reclaim's holder abort (the
+holder of a returned donation keeps waiting, unbound, as seL4 MCS leaves it), so
+the reply arm no longer reaches the queue-neighbour gap through the holder: its
+object writes are all the victim's own or erased by the projection, and the one
+labelling obligation it carries is `descheduledHolderHigh`, the scheduler side.
+The reclaim takes the holder it unbound off the scheduler slot the state places
+it on, and a run-queue removal is filtered by the removed thread's own
+observability.  It quantifies over the resolution (the holder comes out of
+`cancelledCallerDonation?`, not a parameter), it is discharged outright where no
 donation is resolved (`descheduledHolderHigh_of_no_donation`), and it closes in
-general from the same `Call`-time flow check — **entirely**, unlike OD1.4's,
-since a removal is filtered by the removed thread's own observability and so
-asks nothing about any queue's representation.  Two obligations rather than one
-because they are two writes in two domains: OD1.4's is about the object store,
-this one about the scheduler. -/
+general from the `Call`-time flow check
+(`descheduledHolderHigh_of_donationOwnerFlowsToHolder`). -/
 theorem cancelIpcBlockingOnCore_reply_cancellation_NI
     (ctx : LabelingContext) (observer : IfObserver)
     (victim : SeLe4n.ThreadId) (tcb : TCB) (executingCore : CoreId)
@@ -902,18 +796,17 @@ theorem cancelIpcBlockingOnCore_reply_cancellation_NI
     (hObjInv : st.objects.invExt)
     (hIdxComplete : SeLe4n.Model.objectIndexSetComplete st)
     (hObjSetInv : st.objectIndexSet.table.invExt)
-    (hAbortProj : abortHolderProjectionStable ctx observer st victim tcb)
     (hHolderHigh : descheduledHolderHigh ctx observer st victim tcb) :
     projectState ctx observer
         (cancelIpcBlockingOnCore victim tcb executingCore st).1
       = projectState ctx observer st :=
   cancelIpcBlockingOnCore_cancellation_NI ctx observer victim tcb executingCore st hVictimHigh
     (cancelIpcBlocking_blockedOnReply_preserves_projection ctx observer st victim tcb ep rt
-      hBlocked hValid hVictimHigh hObjInv hIdxComplete hObjSetInv hAbortProj)
+      hBlocked hValid hVictimHigh hObjInv hIdxComplete hObjSetInv)
     hHolderHigh
 
 -- ============================================================================
--- §6  WS-RR RR8.8 / RR8.9 — the two obligations, discharged from the labelling
+-- §6  WS-RR RR8.9 — the deschedule obligation, discharged from the labelling
 -- ============================================================================
 
 -- `v0.35.158`: `cancelAbortedHolderWake?_donation` is retired with the wake;
@@ -949,154 +842,4 @@ theorem descheduledHolderHigh_of_donationOwnerFlowsToHolder
     (cancelledCallerDonation?_holder_holds_victim_donation st victim tcb scId holder hOwed hRes)
     hVictimHigh
 
-/-- **WS-RR RR8.8**: the reclaim's abort prefix is confined to high objects
-**except** at the holder's queue neighbours — the obligation reduced from three
-write classes to one.
-
-`abortHolderPendingIpc` removes the holder from the endpoint it is blocked
-sending or calling on, and `endpointSpliceHigh` names exactly the four objects
-such a removal writes (`InformationFlow/Invariant/Operations.lean`; relocated
-there so this asker can reach the predicate the notification path's removal
-already used).  Two of its three clauses are now *derived*:
-
-* the **endpoint object** from `blockedSenderFlowsToEndpoint` composed with
-  `LabelingContextValid.endpointObjectCoherence` — a thread the live gate
-  admitted onto an endpoint has `threadLabelOf ⊑ endpointLabelOf`, and the
-  coherence conjunct carries that on to `objectLabelOf`;
-* the **holder's own TCB** from `LabelingContextValid.coherenceImpliesObjectHigh`.
-
-The third — the **queue neighbours** — is the parameter, and it is a parameter
-because no labelling fact can close it: a neighbour's label is constrained only
-against the *endpoint's*, so a lower-labelled neighbour beside a higher-labelled
-holder is admitted by design (`endpointAdmissionAdmitsMixedObservability`).  Its
-closure is representational and registered; see `docs/REGISTERED_DEBT.md`. -/
-theorem abortHolderSpliceHigh_of_neighbourHigh
-    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
-    (holder : SeLe4n.ThreadId) (holderTcb : TCB) (epId : SeLe4n.ObjId)
-    (hValid : LabelingContextValid ctx)
-    (hEpFlow : blockedSenderFlowsToEndpoint ctx st)
-    (hLookup : lookupTcb st holder = some holderTcb)
-    (hBlocked : holderTcb.ipcState = ThreadIpcState.blockedOnSend epId ∨
-      holderTcb.ipcState = ThreadIpcState.blockedOnCall epId)
-    (hHolderHigh : threadObservable ctx observer holder = false)
-    (hNbr : ∀ t : TCB, lookupTcb st holder = some t →
-        (∀ p : SeLe4n.ThreadId, t.queuePPrev = some (.tcbNext p) →
-            objectObservable ctx observer p.toObjId = false)
-          ∧ (∀ n : SeLe4n.ThreadId, t.queueNext = some n →
-              objectObservable ctx observer n.toObjId = false)) :
-    endpointSpliceHigh ctx observer st epId holder :=
-  ⟨blockedSenderEndpointObjectHigh ctx observer st holder holderTcb epId hValid hEpFlow
-      hLookup hBlocked hHolderHigh,
-   hValid.coherenceImpliesObjectHigh observer holder hHolderHigh,
-   hNbr⟩
-
-/-- **WS-RR RR8.8**: the same reduction with the holder resolved from the
-victim, which is the shape the reclaim's own callers hold.
-
-The holder is not a parameter of `abortHolderProjectionStable` — it comes out of
-`cancelledCallerDonation?` — so the useful form takes the *victim*'s
-observability and derives the holder's, exactly as RR8.9's wake discharge does.
-That leaves the queue-neighbour clause as the one thing a caller must still
-supply. -/
-theorem abortHolderSpliceHigh_of_victimHigh
-    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
-    (victim : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId)
-    (holder : SeLe4n.ThreadId) (holderTcb : TCB) (epId : SeLe4n.ObjId)
-    (hValid : LabelingContextValid ctx)
-    (hFlow : donationOwnerFlowsToHolder ctx st)
-    (hEpFlow : blockedSenderFlowsToEndpoint ctx st)
-    (hOwed : ∀ rid, tcb.replyObject = some rid →
-      replyFrameHeadHolderDonation st rid victim)
-    (hRes : Lifecycle.Suspend.cancelledCallerDonation? st victim tcb = some (scId, holder))
-    (hLookup : lookupTcb st holder = some holderTcb)
-    (hBlocked : holderTcb.ipcState = ThreadIpcState.blockedOnSend epId ∨
-      holderTcb.ipcState = ThreadIpcState.blockedOnCall epId)
-    (hVictimHigh : threadObservable ctx observer victim = false)
-    (hNbr : ∀ t : TCB, lookupTcb st holder = some t →
-        (∀ p : SeLe4n.ThreadId, t.queuePPrev = some (.tcbNext p) →
-            objectObservable ctx observer p.toObjId = false)
-          ∧ (∀ n : SeLe4n.ThreadId, t.queueNext = some n →
-              objectObservable ctx observer n.toObjId = false)) :
-    endpointSpliceHigh ctx observer st epId holder :=
-  abortHolderSpliceHigh_of_neighbourHigh ctx observer st holder holderTcb epId hValid hEpFlow
-    hLookup hBlocked
-    (donationHolderHigh_of_donorHigh ctx observer st holder victim scId hFlow
-      (cancelledCallerDonation?_holder_holds_victim_donation st victim tcb scId holder hOwed hRes)
-      hVictimHigh)
-    hNbr
-
-/-- **WS-RR RR8.8 (`v0.35.193`)**: the obligation `abortHolderProjectionStable`
-states is **discharged** from `endpointSpliceHigh` — the connection the register
-row said was missing while the labelling layer under it was already proved.
-
-`v0.35.84` reduced the three write classes to one and stopped there, because
-`abortPendingIpcOnEndpoint` runs the *single* `endpointQueueRemove` and only the
-*dual* removal had a projection lemma.  It has one now
-(`endpointQueueRemove_preserves_projection`,
-`InformationFlow/Invariant/Operations.lean`), so the reclaim's abort prefix is
-provably invisible whenever the four objects it writes are, and the obligation is
-no longer a hypothesis a caller carries whole.
-
-`hPair` is RR8.3's fourth `dualQueueSystemInvariant` conjunct: the single removal
-reads `queuePrev` where `endpointSpliceHigh` names the predecessor through
-`queuePPrev`, and the pairing is what makes those the same thread.  A caller
-holding `ipcInvariantFull` has it. -/
-theorem abortHolderProjectionStable_of_spliceHigh
-    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
-    (victim : SeLe4n.ThreadId) (tcb : TCB)
-    (hObjInv : st.objects.invExt)
-    (hPair : queuePPrevAgreesWithPrev st)
-    (hSplice : ∀ (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId),
-      Lifecycle.Suspend.cancelledCallerDonation? st victim tcb = some (scId, holder) →
-      ∀ (holderTcb : TCB) (epId : SeLe4n.ObjId),
-        lookupTcb st holder = some holderTcb →
-        (holderTcb.ipcState = ThreadIpcState.blockedOnSend epId ∨
-          holderTcb.ipcState = ThreadIpcState.blockedOnCall epId) →
-        endpointSpliceHigh ctx observer st epId holder) :
-    abortHolderProjectionStable ctx observer st victim tcb := by
-  intro scId holder hRes
-  exact abortHolderPendingIpc_preserves_projection ctx observer st holder
-    (hSplice scId holder hRes)
-    (fun _ hLk => queuePPrevAgreesWithPrev_lookupTcb hPair hLk) hObjInv
-
-/-- **WS-RR RR8.8 (`v0.35.193`)**: the obligation, reduced to the **one** class
-no labelling fact can close.
-
-The composition of `abortHolderProjectionStable_of_spliceHigh` with
-`abortHolderSpliceHigh_of_victimHigh`: the endpoint object and the holder's own
-TCB are derived from the two flow facts and the coherence conjunct, the removal's
-invisibility is derived from those, and what a caller supplies is the holder's
-**queue neighbours** — whose labels are constrained only against the endpoint's,
-so a lower-labelled neighbour beside a higher-labelled holder is admitted by
-design (`endpointAdmissionAdmitsMixedObservability`).
-
-That residue is representational, not a missing proof: a queue's content must
-live in an object whose label *dominates* every member's, which the endpoint is
-and a member's own TCB is not.  It is registered in
-`docs/REGISTERED_DEBT.md` as non-intrusive endpoint queues, and it is now the
-*whole* of what this obligation costs. -/
-theorem abortHolderProjectionStable_of_neighbourHigh
-    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
-    (victim : SeLe4n.ThreadId) (tcb : TCB)
-    (hValid : LabelingContextValid ctx)
-    (hFlow : donationOwnerFlowsToHolder ctx st)
-    (hEpFlow : blockedSenderFlowsToEndpoint ctx st)
-    (hOwed : ∀ rid, tcb.replyObject = some rid →
-      replyFrameHeadHolderDonation st rid victim)
-    (hVictimHigh : threadObservable ctx observer victim = false)
-    (hObjInv : st.objects.invExt)
-    (hPair : queuePPrevAgreesWithPrev st)
-    (hNbr : ∀ (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId),
-      Lifecycle.Suspend.cancelledCallerDonation? st victim tcb = some (scId, holder) →
-      ∀ t : TCB, lookupTcb st holder = some t →
-        (∀ p : SeLe4n.ThreadId, t.queuePPrev = some (.tcbNext p) →
-            objectObservable ctx observer p.toObjId = false)
-          ∧ (∀ n : SeLe4n.ThreadId, t.queueNext = some n →
-              objectObservable ctx observer n.toObjId = false)) :
-    abortHolderProjectionStable ctx observer st victim tcb :=
-  abortHolderProjectionStable_of_spliceHigh ctx observer st victim tcb hObjInv hPair
-    (fun scId holder hRes holderTcb epId hLookup hBlocked =>
-      abortHolderSpliceHigh_of_victimHigh ctx observer st victim tcb scId holder holderTcb
-        epId hValid hFlow hEpFlow hOwed hRes hLookup hBlocked hVictimHigh
-        (hNbr scId holder hRes))
 end SeLe4n.Kernel

@@ -305,13 +305,6 @@ def unbindMaybeNotification (notificationId : SeLe4n.ObjId) (st : SystemState) :
 -- §4  A thread's and a scheduling context's finalisation
 -- ============================================================================
 
-/-- **Whether an IPC state, held as its two codes, is one an unbound thread off
-every run queue may be in** (the invariants' `passiveServerIdleAllowed`): not
-blocked sending and not blocked calling, so unbinding its scheduling context
-strands no sender. -/
-@[inline] def ipcCodesIdleAllowed (objCode stateCode : Nat) : Bool :=
-  !(stateCode == 0 && objCode != 0) && stateCode != 3
-
 /-- **No scheduling context records `c` as the origin of a reservation on loan**
 (`c` a thread's id plus one): the scan `clearDonationOriginReferences` would
 otherwise have work to do, which a thread being finalised may not leave it. -/
@@ -600,7 +593,7 @@ def finaliseThreadUnbindSchedContext (st : SystemState) (tid : SeLe4n.ThreadId) 
   match st.getTcb? tid with
   | some t =>
     if t.scBindingScCode != 0 && t.scBindingOwnerCode == 0 && t.runCoreCode == 0 &&
-        !threadHeldOnSomeCore st tid && ipcCodesIdleAllowed t.ipcObjectCode t.ipcStateCode &&
+        !threadHeldOnSomeCore st tid &&
         (match st.getSchedContext? ⟨t.scBindingScCode - 1⟩ with
           | some sc => sc.boundThreadCode == tid.val + 1
           | none => false) then
@@ -620,7 +613,7 @@ its writes. -/
   | some t =>
     let scCode := t.scBindingScCode
     if scCode != 0 && t.scBindingOwnerCode == 0 && t.runCoreCode == 0 &&
-        !threadHeldOnSomeCore st tid && ipcCodesIdleAllowed t.ipcObjectCode t.ipcStateCode &&
+        !threadHeldOnSomeCore st tid &&
         (match st.getSchedContext? ⟨scCode - 1⟩ with
           | some sc => sc.boundThreadCode == tid.val + 1
           | none => false) then
@@ -638,9 +631,9 @@ its writes. -/
     refine ite_congr rfl (fun hG => ?_) (fun _ => rfl)
     simp only [Bool.and_eq_true, bne_iff_ne, ne_eq, beq_iff_eq] at hG
     rw [cancelDonationArmOnCore_of_bound st tid t _
-      (schedContextBinding_of_codes' hG.1.1.1.1.1 hG.1.1.1.1.2),
+      (schedContextBinding_of_codes' hG.1.1.1.1 hG.1.1.1.2),
       cancelBoundDonationOnCore_of_bound st tid t _ _
-      (schedContextBinding_of_codes' hG.1.1.1.1.1 hG.1.1.1.1.2)]
+      (schedContextBinding_of_codes' hG.1.1.1.1 hG.1.1.1.2)]
 
 /-- **The destroy cleanup of a finalised thread** (`lifecyclePreRetypeCleanup`'s
 thread arm): run once the thread is retirable — quiescent, held by no core and
@@ -665,9 +658,10 @@ def finaliseThreadCleanup (st : SystemState) (x : SeLe4n.ObjId) : SystemState :=
 reply stack it heads has a head that names it back; a thread it is bound to is
 bound back to it, as its own (`.bound`) or on loan (`.donated`), is no core's
 idle thread, is ready (queued, current on a core, or neither: the deschedule
-takes it off whichever core places it) or else on no core, and is in a state an
-unbound thread may idle in; and a context bound to no thread is lent by no
-one. -/
+takes it off whichever core places it) or else on no core, whatever it waits
+on: a thread blocked sending or calling keeps waiting with no reservation, as
+seL4's `schedContext_unbindTCB` leaves it; and a context bound to no thread is
+lent by no one. -/
 @[inline] def schedContextFinaliseAdmitted (st : SystemState) (x : SeLe4n.ObjId) : Bool :=
   match st.getObject? x with
   | some (.schedContext sc) =>
@@ -684,8 +678,7 @@ one. -/
       | some t =>
         t.scBindingScCode == x.val + 1 && !isIdleThreadId tid &&
         ((t.ipcStateCode == 0 && t.ipcObjectCode == 0) ||
-          (t.runCoreCode == 0 && !threadCurrentOnSomeCore st tid)) &&
-        ipcCodesIdleAllowed t.ipcObjectCode t.ipcStateCode
+          (t.runCoreCode == 0 && !threadCurrentOnSomeCore st tid))
       | none => false)
   | _ => false
 
@@ -729,8 +722,7 @@ def finaliseSchedContextUnbind (st : SystemState) (x : SeLe4n.ObjId) : SystemSta
       let tid : SeLe4n.ThreadId := ⟨sc.boundThreadCode - 1⟩
       match st.getTcb? tid with
       | some t =>
-        if t.scBindingScCode == x.val + 1 &&
-            ipcCodesIdleAllowed t.ipcObjectCode t.ipcStateCode then
+        if t.scBindingScCode == x.val + 1 then
           match cancelBoundDonationOnCore st tid { t with scBindingOwnerCode := 0 }
               (determineTargetCore st tid) with
           | .ok st' => st'
@@ -760,8 +752,7 @@ context, so the reservation arm is the in-place unbind
       let tid : SeLe4n.ThreadId := ⟨bc - 1⟩
       match st.getTcb? tid with
       | some t =>
-        if t.scBindingScCode == x.val + 1 &&
-            ipcCodesIdleAllowed t.ipcObjectCode t.ipcStateCode then
+        if t.scBindingScCode == x.val + 1 then
           cancelBoundDonationPerform st tid ⟨x.val⟩ (determineTargetCore st tid)
         else st
       | none => st
@@ -782,9 +773,9 @@ context, so the reservation arm is the in-place unbind
         simp only
         split
         · next hG =>
-          simp only [Bool.and_eq_true, beq_iff_eq] at hG
+          simp only [beq_iff_eq] at hG
           rw [cancelBoundDonationOnCore_of_bound st _ _ _ _
-            (schedContextBinding_ownerCleared hG.1)]
+            (schedContextBinding_ownerCleared hG)]
         · rfl
   · rfl
 

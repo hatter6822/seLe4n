@@ -563,7 +563,7 @@ after their transition — preserves the whole IPC invariant bundle.
 Every arm but one returns the state untouched.  The one that stores writes a
 single TCB differing only in `pendingReceiveReply := none`, and:
 
-* the fifteen structural conjuncts read no `pendingReceiveReply`
+* the fourteen structural conjuncts read no `pendingReceiveReply`
   (`storeObject_tcb_pendingReceiveReply_preserves_ipcInvariantCore`);
 * the reply linkage reads `replyObject` and `ipcState`, both unchanged;
 * `pendingReceiveReplyWellFormed` — the one conjunct that *does* read the field —
@@ -572,7 +572,7 @@ single TCB differing only in `pendingReceiveReply := none`, and:
   they are vacuous.  Clearing a stash can only discharge obligations, never
   create one, which is precisely why the clear was introduced (a woken server
   leaving `.blockedOnReceive` with a live stash violates the conjunct);
-* the donation quartet's binding half is framed, and the tail/queue-target
+* the donation trio's binding half is framed, and the tail/queue-target
   conjuncts are framed by the unchanged `ipcState` / `queueNext`.
 
 Unconditional in the post-state: nothing here is threaded. -/
@@ -3147,7 +3147,6 @@ so the payoff theorem below carries no post-state obligation. -/
 structure capabilityDispatchQuiescence (decoded : SyscallDecodeResult)
     (cap : Capability) (st : SystemState) : Prop where
   bindingBidirectional : schedContextBindingBidirectional st
-  queuedThreadsIdle : unboundQueuedThreadsIdleAllowed st
   /-- **`v0.35.204`**: keyed to the resolver the arm binds through, quantified
   over the caller — the pack carries no caller, and a fact about *every* thread
   any caller's CSpace resolves MR0 to is a pre-state fact all the same. -/
@@ -3159,14 +3158,6 @@ structure capabilityDispatchQuiescence (decoded : SyscallDecodeResult)
     ∀ (s : SeLe4n.ThreadId) (sTcb : TCB) (sc0 : SeLe4n.SchedContextId),
       st.objects[s.toObjId]? = some (.tcb sTcb) →
       sTcb.schedContextBinding ≠ .donated sc0 vThreadId.val
-  unbindBoundThreadPassive : ∀ (scObj : SeLe4n.ObjId),
-    decoded.syscallId = .schedContextUnbind → cap.target = .object scObj →
-    ∀ vScId, validateObjIdArg scObj = .ok vScId →
-    ∀ (scX : SeLe4n.Kernel.SchedContext) (t : SeLe4n.ThreadId) (tcbX : TCB),
-      st.objects[(SchedContextId.ofObjId vScId.val).toObjId]? = some (.schedContext scX) →
-      scX.boundThread = some t →
-      st.objects[t.toObjId]? = some (.tcb tcbX) →
-      passiveServerIdleAllowed tcbX.ipcState
   targetThreadQuiescent : ∀ (objId : SeLe4n.ObjId),
     decoded.syscallId = .tcbSuspend ∨ decoded.syscallId = .tcbResume →
     cap.target = .object objId →
@@ -3212,9 +3203,7 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
     (hObjInv : st.objects.invExt)
     (hInv : ipcInvariantFull st)
     (hPack : capabilityDispatchQuiescence decoded cap st)
-    (hR : st.runQueueRefined) (hAdm : st.currentRequeueAdmitted executingCore)
-    (hU : ∀ c' t, st.scheduler.currentOnCore executingCore = some t →
-      st.scheduler.currentOnCore c' = some t → c' = executingCore)
+    (hR : st.runQueueRefined)
     (hStep : k st = .ok ((), st')) :
     ipcInvariantFull st' := by
   unfold dispatchCapabilityOnly at hArm
@@ -3392,8 +3381,7 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
                   cases hStep
                   exact schedContextUnbindOnCore_preserves_ipcInvariantFull st st' vScId _
                     sgiU hObjInv hInv
-                    (hPack.unbindBoundThreadPassive scId hSy hTgt vScId hVal)
-                    hR hAdm hU hUn
+                    hR hUn
     all_goals try cases hStep
   case tcbBindNotification =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -3458,7 +3446,7 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
                   exact suspendThreadOnCore_preserves_ipcInvariantFull st st' vtid _ sgiU
                     hObjInv (hPack.targetThreadQuiescent objId (Or.inl hSy) hTgt vtid hVal)
                     hPack.bindingBidirectional hInv
-                    hPack.replyStacksSettleOnWaitingDonors hR hAdm hSus
+                    hPack.replyStacksSettleOnWaitingDonors hSus
     all_goals try cases hStep
   case tcbResume =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -3485,8 +3473,7 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
                 (retirePendingFaultForResume_preserves_objects_invExt st _ hObjInv)
                 (threadIpcFieldsQuiescent_retirePendingFaultForResume st _ hObjInv
                   (hPack.targetThreadQuiescent objId (Or.inr hSy) hTgt vtid hVal))
-                (retirePendingFaultForResume_preserves_ipcInvariantFull st _ hObjInv hInv)
-                (retirePendingFaultForResume_currentRequeueAdmitted st _ _ hObjInv hAdm) hRes
+                (retirePendingFaultForResume_preserves_ipcInvariantFull st _ hObjInv hInv) hRes
     all_goals try cases hStep
   case tcbSetPriority =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -3513,7 +3500,7 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
                       simp only [hSet] at hStep
                       cases hStep
                       exact setPriorityOnCore_preserves_ipcInvariantFull st st' vCallerTid
-                        vTargetTid _ _ sgiU hObjInv hInv hAdm hSet
+                        vTargetTid _ _ sgiU hObjInv hInv hSet
     all_goals try cases hStep
   case tcbSetMCPriority =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -3540,7 +3527,7 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
                       simp only [hSet] at hStep
                       cases hStep
                       exact setMCPriorityOnCore_preserves_ipcInvariantFull st st' vCallerTid
-                        vTargetTid _ _ sgiU hObjInv hInv hAdm hSet
+                        vTargetTid _ _ sgiU hObjInv hInv hSet
     all_goals try cases hStep
   case tcbSetIPCBuffer =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -3587,7 +3574,7 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
                       simp only [hSet] at hStep
                       cases hStep
                       exact setThreadCpuAffinityOnCore_preserves_ipcInvariantFull st st'
-                        vtid affinity _ sgiU hObjInv hInv hPack.queuedThreadsIdle hSet
+                        vtid affinity _ sgiU hObjInv hInv hSet
     all_goals try cases hStep
   case tcbSetFaultHandler =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep

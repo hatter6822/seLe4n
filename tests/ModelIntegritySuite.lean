@@ -1710,8 +1710,6 @@ def ipc_invariant_full_named_projection_signatures : IO Unit := do
     @ipcInvariantFull.donationChainAcyclic
   let _ : ∀ {st : SystemState}, ipcInvariantFull st -> donationOwnerValid st :=
     @ipcInvariantFull.donationOwnerValid
-  let _ : ∀ {st : SystemState}, ipcInvariantFull st -> passiveServerIdle st :=
-    @ipcInvariantFull.passiveServerIdle
   let _ : ∀ {st : SystemState}, ipcInvariantFull st -> donationBudgetTransfer st :=
     @ipcInvariantFull.donationBudgetTransfer
   -- WS-RC R4.C.7: uniqueWaiters projection removed (conjunct retired in C2).

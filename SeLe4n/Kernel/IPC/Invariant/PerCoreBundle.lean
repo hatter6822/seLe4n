@@ -15,9 +15,9 @@ import SeLe4n.Kernel.IPC.Invariant.PerCore
 
 This module is the definitional layer of SM6.D (plan
 WS-SM SM6.D, §3.3): it restricts
-the full IPC invariant bundle (`ipcInvariantFull`, twenty conjuncts at the
-time of landing — the plan's "15 conjuncts post-R4" grew by five during the
-SM6.D reply-object hardening) to **per-core views** parameterised by an
+the full IPC invariant bundle (`ipcInvariantFull`, nineteen conjuncts since
+`v0.36.136` — the plan's "15 conjuncts post-R4" grew by five during the
+SM6.D reply-object hardening, and `passiveServerIdle` was retired) to **per-core views** parameterised by an
 explicit `(c : CoreId)`.
 
 ## Restriction discipline
@@ -50,17 +50,14 @@ restricted:
   are part of the asserted property, not the quantification domain.
 
 This makes the decomposition **exact**: the ∀-core aggregate
-(`ipcInvariantFull_smp`) is equivalent to the global bundle plus the
-`∀ c` slices of the one scheduler-reading conjunct
-(`ipcInvariantFull_smp_iff_full_and_passive_smp`) — instantiating each
+(`ipcInvariantFull_smp`) is equivalent to the global bundle
+(`ipcInvariantFull_smp_iff_full`) — instantiating each
 restricted conjunct at the subject's own home core recovers the global
 form, and the global form weakens to every slice.  Nothing is lost and
 nothing is silently strengthened.
 
-The one scheduler-reading conjunct, `passiveServerIdle`, uses the
-established SM4.D per-core form `passiveServerIdle_perCore`
-(`IPC/Invariant/PerCore.lean`), which parameterises the scheduler *reads*
-(`runQueueOnCore c` / `currentOnCore c`) rather than the thread domain.
+No conjunct reads the scheduler: the one that did, `passiveServerIdle`,
+was retired in `v0.36.136`.
 
 **AK7 typed-accessor discipline** (matching SM4.D): every per-core
 predicate routes TCB / Reply / SchedContext lookups through the typed
@@ -771,7 +768,8 @@ The plan (WS-SM SM6 §3.3) sketched this aggregate over
 the fifteen R4-era conjuncts; the bundle grew to twenty during the SM6.D
 reply-object hardening (reply↔caller linkage, server-first receive stash,
 donation-owner uniqueness, queue-tail blocking, strict link-target
-blocking), and this per-core form mirrors the **current** twenty-conjunct
+blocking), then lost `passiveServerIdle` at `v0.36.136`, and this per-core
+form mirrors the **current** nineteen-conjunct
 `ipcInvariantFull` — dropping the five newer conjuncts from the per-core
 view would re-open on the SMP surface exactly the false-assurance gaps
 they closed (a stale reply cap acting on the wrong caller, a stranded
@@ -780,9 +778,7 @@ receive stash, a double-spent donation).
 Thread-subject conjuncts are restricted to the threads homed on `c`;
 shared-object clauses (`ipcInvariant`, `badgeWellFormed`, the embedded
 endpoint well-formedness / head-disjointness / backward reply-linkage
-clauses) are carried whole in every core's view; the scheduler-reading
-`passiveServerIdle` uses the SM4.D per-core form (core `c`'s scheduler
-slots).  Declared as a `structure` so consumers use named projections
+clauses) are carried whole in every core's view.  Declared as a `structure` so consumers use named projections
 (`h.queueHeadBlockedConsistent`) rather than fragile `.2.2.…` chains —
 the AN3-B lesson applied from day one. -/
 structure ipcInvariantFull_perCore (st : SystemState) (c : CoreId) : Prop where
@@ -798,7 +794,6 @@ structure ipcInvariantFull_perCore (st : SystemState) (c : CoreId) : Prop where
   blockedThreadTimeoutConsistent : blockedThreadTimeoutConsistent_perCore st c
   donationChainAcyclic : donationChainAcyclic_perCore st c
   donationOwnerValid : donationOwnerValid_perCore st c
-  passiveServerIdle : passiveServerIdle_perCore st c
   donationBudgetTransfer : donationBudgetTransfer_perCore st c
   blockedOnReplyHasTarget : blockedOnReplyHasTarget_perCore st c
   replyCallerLinkage : replyCallerLinkage_perCore st c
@@ -815,12 +810,9 @@ def ipcInvariantFull_smp (st : SystemState) : Prop :=
 theorem ipcInvariantFull_smp_at {st : SystemState} (c : CoreId)
     (h : ipcInvariantFull_smp st) : ipcInvariantFull_perCore st c := h c
 
-/-- SM6.D.1 restriction: the global bundle weakens to core `c`'s view,
-given core `c`'s slice of the one scheduler-reading conjunct
-(`passiveServerIdle_perCore` — the global bundle carries only the
-boot-core instance). -/
+/-- SM6.D.1 restriction: the global bundle weakens to core `c`'s view. -/
 theorem ipcInvariantFull_perCore_of_full {st : SystemState} {c : CoreId}
-    (h : ipcInvariantFull st) (hPsi : passiveServerIdle_perCore st c) :
+    (h : ipcInvariantFull st) :
     ipcInvariantFull_perCore st c where
   ipcInvariant := h.ipcInvariant
   dualQueueSystemInvariant := dualQueueSystemInvariant_perCore_of_global h.dualQueueSystemInvariant c
@@ -839,7 +831,6 @@ theorem ipcInvariantFull_perCore_of_full {st : SystemState} {c : CoreId}
     blockedThreadTimeoutConsistent_perCore_of_global h.blockedThreadTimeoutConsistent c
   donationChainAcyclic := donationChainAcyclic_perCore_of_global h.donationChainAcyclic c
   donationOwnerValid := donationOwnerValid_perCore_of_global h.donationOwnerValid c
-  passiveServerIdle := hPsi
   donationBudgetTransfer := donationBudgetTransfer_perCore_of_global h.donationBudgetTransfer c
   blockedOnReplyHasTarget := blockedOnReplyHasTarget_perCore_of_global h.blockedOnReplyHasTarget c
   replyCallerLinkage := replyCallerLinkage_perCore_of_global h.replyCallerLinkage c
@@ -851,8 +842,7 @@ theorem ipcInvariantFull_perCore_of_full {st : SystemState} {c : CoreId}
   queueNextTargetBlocked := queueNextTargetBlocked_perCore_of_global h.queueNextTargetBlocked c
 
 /-- SM6.D.1 recovery: the ∀-core SMP aggregate recovers the full global
-bundle (each restricted conjunct instantiated at its subject's home core;
-`passiveServerIdle` at the boot core via the SM4.D bridge). -/
+bundle (each restricted conjunct instantiated at its subject's home core). -/
 theorem ipcInvariantFull_of_smp {st : SystemState}
     (h : ipcInvariantFull_smp st) : ipcInvariantFull st :=
   ⟨(h bootCoreId).ipcInvariant,
@@ -870,7 +860,6 @@ theorem ipcInvariantFull_of_smp {st : SystemState}
      (fun c => (h c).blockedThreadTimeoutConsistent),
    donationChainAcyclic_of_forall_perCore (fun c => (h c).donationChainAcyclic),
    donationOwnerValid_of_forall_perCore (fun c => (h c).donationOwnerValid),
-   (passiveServerIdle_perCore_bootCore_iff st).mp (h bootCoreId).passiveServerIdle,
    donationBudgetTransfer_of_forall_perCore (fun c => (h c).donationBudgetTransfer),
    blockedOnReplyHasTarget_of_forall_perCore (fun c => (h c).blockedOnReplyHasTarget),
    replyCallerLinkage_of_forall_perCore (fun c => (h c).replyCallerLinkage),
@@ -888,15 +877,12 @@ theorem ipcInvariantCore_of_smp {st : SystemState}
   (ipcInvariantFull_of_smp h).toCore
 
 /-- SM6.D.1 **exact decomposition**: the ∀-core SMP bundle is equivalent
-to the global bundle plus the ∀-core slices of the one scheduler-reading
-conjunct.  This is the precise sense in which "the 15-conjunct bundle
-carries through per-core structurally unchanged" (plan §3.3): nothing is
-weakened, and the only genuinely new SMP content is the per-core
-passive-idle discipline. -/
-theorem ipcInvariantFull_smp_iff_full_and_passive_smp (st : SystemState) :
-    ipcInvariantFull_smp st ↔ ipcInvariantFull st ∧ passiveServerIdle_smp st :=
-  ⟨fun h => ⟨ipcInvariantFull_of_smp h, fun c => (h c).passiveServerIdle⟩,
-   fun h c => ipcInvariantFull_perCore_of_full h.1 (h.2 c)⟩
+to the global bundle.  This is the precise sense in which "the 15-conjunct
+bundle carries through per-core structurally unchanged" (plan §3.3): nothing
+is weakened and nothing is added. -/
+theorem ipcInvariantFull_smp_iff_full (st : SystemState) :
+    ipcInvariantFull_smp st ↔ ipcInvariantFull st :=
+  ⟨ipcInvariantFull_of_smp, fun h _ => ipcInvariantFull_perCore_of_full h⟩
 
 -- ============================================================================
 -- §6  Default-state witness: every core's bundle view holds at boot
@@ -953,7 +939,6 @@ theorem default_ipcInvariantFull_perCore (c : CoreId) :
   donationChainAcyclic := fun tid1 tid2 tcb1 tcb2 scId1 scId2 h1 _ _ _ _ =>
     default_no_tcb h1
   donationOwnerValid := fun tid tcb scId owner hTcb _ _ => absurd hTcb default_no_tcb
-  passiveServerIdle := default_passiveServerIdle_perCore c
   donationBudgetTransfer := fun tid1 tid2 tcb1 tcb2 scId h1 _ _ _ _ _ =>
     default_no_tcb h1
   blockedOnReplyHasTarget := fun tid tcb endpointId replyTarget hTcb _ _ =>

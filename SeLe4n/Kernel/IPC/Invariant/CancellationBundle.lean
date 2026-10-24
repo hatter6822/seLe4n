@@ -36,35 +36,25 @@ worth having — the composite is the prefix the pipeline's G2 reads plus the
 victim's deschedule (`cancelIpcBlockingOnCore_eq_reclaimed_deschedule`) — and the
 honest statement of its reach is that, not a claim about the dispatch.
 
-Three things decide its shape.
+Two things decide its shape.
 
 **The premises are per-arm, because the facts are.**  `ipcInvariantFull` entails
 none of the queue-coherence facts the three bodies need (that is stated at each
 of them and is why they take hypotheses at all), so demanding every fact
 unconditionally would make a `.ready` cancellation — which commits no write at
-all — carry the reply arm's six-fact pack.  `cancelIpcBlockingArmPremises` gates
+all — carry the reply arm's five-fact pack.  `cancelIpcBlockingArmPremises` gates
 each group on the arm's own `ipcState` equation, so a caller discharges exactly
 what its arm reaches, and the `.ready` arm discharges nothing.
 
-**Only one of the twenty conjuncts reads the scheduler**, which is what makes the
-cross-core lift short rather than a second twenty-conjunct argument.
-`passiveServerIdle` is that conjunct — every other one is a property of the
-object store alone — and `ipcInvariantFull_of_descheduleFrame` (WS-RR RR2.5) is
-the tool it was factored for: objects unchanged plus a `passiveServerIdleFrame`
-transports the whole bundle.
-
-**The composite adds three scheduler steps, and each frames for its own
-reason.**  The replenishment migration writes neither a run queue nor a current
-slot, so it frames by `of_objects_scheduler_eq`.  The reclaim's holder
-deschedule (`descheduleUnboundHolder`, `v0.35.158`; WS-OD OD1.7's wake until
-then) is a *removal*, so the pullback fires on the removed thread and the
-frame owes the holder's post-teardown state — discharged from the abort that
-runs first (`cancelIpcBlocking_unboundHolder_binding_or_allowed`), where the
-wake it replaced, an insert, owed nothing.  And the victim's placement removal is
-`descheduleAtPlacement_passiveServerIdleFrame`, whose obligation is discharged
-rather than assumed: `cancelIpcBlocking_victim_ready` establishes that a
-cancelled victim ends `.ready` on every arm, and `.ready` is a state
-`passiveServerIdleAllowed` admits.
+**No conjunct reads the scheduler**, which is what makes the cross-core lift
+short rather than a second nineteen-conjunct argument.  Every conjunct is a
+property of the object store alone (`v0.36.136` retired `passiveServerIdle`, the
+one that read the boot core's run queue and `current` slot), so the three
+scheduler steps the composite adds over the teardown — the replenishment
+migration, the reclaim's holder deschedule and the victim's placement removal —
+write only run-queue links in TCBs and scheduler state, and
+`ipcInvariantFull_of_objectsAgreeOffRunLinks` transports the whole bundle across
+them.
 -/
 
 namespace SeLe4n.Kernel
@@ -91,11 +81,9 @@ private theorem restoreVictimReady (v : SeLe4n.ThreadId)
 
 /-- **WS-RR RR8.10**: a cancelled victim ends `.ready`, on every arm.
 
-The fact the cross-core composite's deschedule needs, and the reason it needs it:
-taking a thread off its run queue hands `passiveServerIdle` an obligation it did
-not have, dischargeable only if that thread's `ipcState` is one the predicate
-admits.  `.ready` is — so the obligation is free, but only because it is
-*established* here rather than assumed at the call site.
+What the suspend's runnability argument and the cancel-all sweep read off the
+teardown: the victim leaves the cancellation able to run, and that is
+*established* here rather than assumed at each call site.
 
 Each arm for its own reason.  `.ready` commits no write at all, so the victim's
 stored TCB is the one the caller looked up.  The three endpoint states and the
@@ -195,24 +183,22 @@ theorem cancelIpcBlocking_victim_ready
 -- §2  The four-arm composite over the pure teardown
 -- ============================================================================
 
-/-- **WS-RR RR8.10**: the reply arm's six premises, named.
+/-- **WS-RR RR8.10**: the reply arm's five premises, named.
 
-They are cited together everywhere — the arm keystone takes all six and
-`CLAUDE.md`'s RR8.7 note lists them as a group — so they get one name rather than
-six positional hypotheses threaded through the composite.  None is entailed by
-`ipcInvariantFull`: `donationChainWellFormed` is a separate predicate,
-`sweptThreadOffQueueChains` is the queue-connectivity fact the bundle carries
-nowhere, and the last four are the local coherence facts WS-HP HP7 measured as
-stated rather than derived. -/
+They are cited together everywhere — the arm keystone takes all five — so they
+get one name rather than five positional hypotheses threaded through the
+composite.  None is entailed by `ipcInvariantFull`: `donationChainWellFormed` is
+a separate predicate, `sweptThreadOffQueueChains` is the queue-connectivity fact
+the bundle carries nowhere, and the last three are the local coherence facts
+WS-HP HP7 measured as stated rather than derived.  (`v0.36.136` retired a sixth,
+the queue coherence of a holder the reclaim used to pull off its endpoint: the
+reclaim no longer touches the holder's queue.) -/
 structure cancelReplyArmPremises (st : SystemState) (v : SeLe4n.ThreadId) (tcbV : TCB) : Prop where
   chain : donationChainWellFormed st
   offQueue : sweptThreadOffQueueChains st v
   owed : ∀ rid, tcbV.replyObject = some rid → replyFrameHeadHolderDonation st rid v
   holder : donatedContextIsOwnerFrameHead st v
   stack : cancelDonationStackValid st v tcbV
-  abortCoherent : ∀ (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId),
-    Lifecycle.Suspend.cancelledCallerDonation? st v tcbV = some (scId, holder) →
-    abortHolderQueueCoherent st holder
 
 /-- **WS-RR RR8.10**: the teardown's premises, **gated on the arm that needs
 them**.
@@ -220,7 +206,7 @@ them**.
 Three fields, one per non-identity arm, each an implication from that arm's own
 `ipcState` equation.  The `.ready` arm appears nowhere, which is the point: it
 commits no write, so it owes nothing, and an unconditional pack would have made
-it carry the reply arm's six facts to prove that the identity preserves the
+it carry the reply arm's five facts to prove that the identity preserves the
 bundle.
 
 The gate is the `ipcState` equation rather than a re-spelled arm classifier,
@@ -275,144 +261,7 @@ theorem cancelIpcBlocking_preserves_ipcInvariantFull
   | blockedOnReply ep rt =>
     have hR := hArms.replyArm ep rt hIp
     exact cancelIpcBlocking_replyArm_preserves_ipcInvariantFull st v tcbV ep rt hObjInv hLookup
-      hIp hBundle hR.chain hAllBudgetsNone hR.offQueue hR.owed hR.holder hR.stack hR.abortCoherent
-
--- ============================================================================
--- §3  The two scheduler frames the cross-core composite adds
--- ============================================================================
-
-/-- **WS-RR RR8.10**: the replenishment migration frames `passiveServerIdle`.
-
-It moves a scheduling context's pending replenishments between cores' replenish
-queues, which is neither a run queue nor a current slot — so all three of
-`of_objects_scheduler_eq`'s inputs are existing `@[simp]` frames and the proof is
-their composition.  Stated at `bootCoreId` because that is the only core
-`passiveServerIdle` reads. -/
-theorem cancelIpcBlockingMigrated_passiveServerIdleFrame
-    (victim : SeLe4n.ThreadId) (tcb : TCB) (st : SystemState) :
-    passiveServerIdleFrame (Lifecycle.Suspend.cancelIpcBlocking st victim tcb)
-      (cancelIpcBlockingMigrated victim tcb st) :=
-  passiveServerIdleFrame.of_objects_scheduler_eq
-    (cancelIpcBlockingMigrated_objects victim tcb st)
-    (cancelIpcBlockingMigrated_runQueueOnCore victim tcb st bootCoreId)
-    (cancelIpcBlockingMigrated_currentOnCore victim tcb st bootCoreId)
-
-/-- **`v0.35.158`: the holder the reclaim UNBINDS ends the teardown in a state
-`passiveServerIdle` permits — or keeps a binding.**
-
-The reclaim's deschedule step (`descheduleUnboundHolder`) is a *removal*, so
-`passiveServerIdleFrame`'s pullback fires on the removed thread; the wake it
-replaced was an insert, which frames with no hypothesis at all, and this is the
-obligation the swap creates.  Where the fact comes from: the abort runs first
-and moves a holder blocked sending or calling into `.ready`
-(`abortHolderPendingIpc_holder_ipcState_allowed`), the pop then rewrites the
-holder's **binding** and nothing else (`returnDonatedSchedContext_tcb_rewrite`),
-and the splice, the restore and the consume write Reply objects and the
-**victim's** TCB — so the holder's `ipcState` is the abort's.  A pop that
-declines discards the abort whole (WS-OD OD1.4), and the holder then keeps the
-`.donated` binding `owed` says it holds, which is the other disjunct.  The
-`holder = victim` corner is the victim's own `.ready`
-(`cancelIpcBlocking_victim_ready`): it is unreachable, and it costs one case
-rather than a distinctness hypothesis. -/
-theorem cancelIpcBlocking_unboundHolder_binding_or_allowed (st : SystemState)
-    (v : SeLe4n.ThreadId) (tcbV : TCB) (scId : SeLe4n.SchedContextId)
-    (holder : SeLe4n.ThreadId)
-    (hInv : st.objects.invExt) (hMem : ipcStateQueueMembershipConsistent st)
-    (hLookup : lookupTcb st v = some tcbV)
-    (hOwed : ∀ rid, tcbV.replyObject = some rid → replyFrameHeadHolderDonation st rid v)
-    (hRes : Lifecycle.Suspend.cancelledCallerDonation? st v tcbV = some (scId, holder))
-    (t : TCB)
-    (hAt : (Lifecycle.Suspend.cancelIpcBlocking st v tcbV).objects[holder.toObjId]?
-        = some (.tcb t)) :
-    t.schedContextBinding ≠ SchedContextBinding.unbound ∨ passiveServerIdleAllowed t.ipcState := by
-  by_cases hHV : holder = v
-  · subst hHV
-    exact Or.inr (Or.inl (cancelIpcBlocking_victim_ready st holder tcbV hInv hLookup t hAt))
-  obtain ⟨⟨ep, rt, hIp⟩, _⟩ := cancelledCallerDonation?_some st v tcbV scId holder hRes
-  rw [cancelIpcBlocking_reply_arm_eq st v tcbV ep rt hIp] at hAt
-  have hRet : replyDonationReturn? st holder = some (scId, v) :=
-    cancelledCallerDonation?_holder_holds_victim_donation st v tcbV scId holder hOwed hRes
-  obtain ⟨pTcb, hLkP, hBindP⟩ := replyDonationReturn?_some_lookup st holder scId v hRet
-  have hGetV : st.getTcb? v = some tcbV := by
-    rw [SystemState.getTcb?_eq_some_iff]; exact lookupTcb_some_objects st v tcbV hLookup
-  have hPre : st.objects[holder.toObjId]? = some (.tcb pTcb) :=
-    lookupTcb_some_objects st holder pTcb hLkP
-  have hNeK : holder.toObjId ≠ v.toObjId :=
-    fun h => hHV (SeLe4n.ThreadId.toObjId_injective holder v h)
-  -- The holder's TCB after the reclaim: the abort's `ipcState`, or the pre-state
-  -- binding when the pop declined.
-  have hAfterReturn : ∃ t1,
-      (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV).objects[holder.toObjId]?
-        = some (.tcb t1)
-      ∧ (t1.schedContextBinding ≠ SchedContextBinding.unbound
-          ∨ passiveServerIdleAllowed t1.ipcState) := by
-    unfold Lifecycle.Suspend.returnDonationToCancelledCaller
-    rw [hGetV, hRes]
-    simp only []
-    cases hOk : returnDonatedSchedContextResolved
-        (Lifecycle.Suspend.abortHolderPendingIpc st holder) holder scId v with
-    | error e =>
-      simp only []
-      exact ⟨pTcb, hPre, Or.inl (by rw [hBindP]; intro h; cases h)⟩
-    | ok st' =>
-      simp only []
-      obtain ⟨n, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hOk
-      have hInvA : (Lifecycle.Suspend.abortHolderPendingIpc st holder).objects.invExt :=
-        Lifecycle.Suspend.abortHolderPendingIpc_preserves_objects_invExt st holder hInv
-      obtain ⟨tA, hAtA, _⟩ :=
-        Lifecycle.Suspend.abortHolderPendingIpc_tcb_lookup st holder hInv holder.toObjId pTcb hPre
-      have hAllowedA : passiveServerIdleAllowed tA.ipcState :=
-        Lifecycle.Suspend.abortHolderPendingIpc_holder_ipcState_allowed st holder pTcb hInv hMem
-          hLkP tA ((SystemState.getTcb?_eq_some_iff _ holder tA).mpr hAtA)
-      obtain ⟨t1, hAt1, _, _, hEq1⟩ :=
-        returnDonatedSchedContext_tcb_rewrite _ st' holder scId v hInvA n hPop
-          holder.toObjId tA hAtA
-      refine ⟨t1, hAt1, Or.inr ?_⟩
-      rw [hEq1]
-      exact hAllowedA
-  obtain ⟨t1, hAt1, hDisj⟩ := hAfterReturn
-  -- The splice writes no TCB; the restore and the consume write the victim's.
-  have hInvR : (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV).objects.invExt :=
-    Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_objects_invExt st v tcbV hInv
-  have hAtS := spliceThreadReplyFrameOut_tcb_eq _ tcbV hInvR holder.toObjId t1 hAt1
-  have hInvS := spliceThreadReplyFrameOut_preserves_objects_invExt _ tcbV hInvR
-  unfold restoredAndConsumed at hAt
-  obtain ⟨t0, hAt, e⟩ :=
-    (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ v _).get_tcb' hAt
-  rw [TCB.proj_eq_of_withoutRunLinks_eq TCB.schedContextBinding e,
-    TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState e]
-  have hAtR : (Lifecycle.Suspend.restoreToReadyStaging
-      (spliceThreadReplyFrameOut (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV)
-        tcbV) v (some Architecture.cancelledIpcFrame)).objects[holder.toObjId]?
-      = some (.tcb t1) := by
-    rw [restoreToReadyStaging_objects_ne _ v _ holder.toObjId hInvS hNeK]
-    exact hAtS
-  have hInvRR :=
-    Lifecycle.Suspend.restoreToReadyStaging_invExt _ v (some Architecture.cancelledIpcFrame) hInvS
-  have hAtC := consumeReplyLink_other_tcb_eq _ v tcbV hInvRR holder.toObjId t1 hNeK hAtR
-  rw [hAtC] at hAt
-  have hEqT : t1 = t0 := KernelObject.tcb.inj (Option.some.inj hAt)
-  rw [← hEqT]
-  exact hDisj
-
-/-- **`v0.35.158`**: the reclaim's holder deschedule frames `passiveServerIdle`
-given the holder's post-teardown state — the obligation
-`cancelIpcBlocking_unboundHolder_binding_or_allowed` discharges.  With no holder
-unbound the step is the identity and frames by reflexivity; with one, it is the
-state-resolved removal, whose frame is the removed thread's own
-(`descheduleAtPlacement_passiveServerIdleFrame`). -/
-theorem descheduleUnboundHolder_passiveServerIdleFrame (stPre stPost : SystemState)
-    (victim : SeLe4n.ThreadId) (tcb : TCB)
-    (hHolder : ∀ holder, cancelUnboundHolder? stPre stPost victim tcb = some holder →
-      ∀ t, stPost.objects[holder.toObjId]? = some (.tcb t) →
-        t.schedContextBinding ≠ SchedContextBinding.unbound
-          ∨ passiveServerIdleAllowed t.ipcState) :
-    passiveServerIdleFrame stPost (descheduleUnboundHolder stPre stPost victim tcb) := by
-  unfold descheduleUnboundHolder
-  split
-  · exact passiveServerIdleFrame.refl stPost
-  · rename_i holder hW
-    exact descheduleAtPlacement_passiveServerIdleFrame stPost holder (hHolder holder hW)
+      hIp hBundle hR.chain hAllBudgetsNone hR.offQueue hR.owed hR.holder hR.stack
 
 -- ============================================================================
 -- §4  The lift to the cross-core composite
@@ -423,57 +272,22 @@ theorem descheduleUnboundHolder_passiveServerIdleFrame (stPre stPost : SystemSta
 
 The transition the live `.tcbSuspend` dispatch runs, and the second half of the
 RR7.22 residual.  Its premises are the teardown's and nothing more: the three
-scheduler steps the composite adds over `cancelIpcBlocking` contribute no
-hypothesis, because each frames for a reason that is a property of the step
-rather than of the state (see the three frames above), and the two obligations
-that *are* about the state — the victim's `ipcState` at its deschedule, and the
-unbound holder's at the reclaim's (`v0.35.158`) — are discharged from
-`cancelIpcBlocking_victim_ready` and
-`cancelIpcBlocking_unboundHolder_binding_or_allowed`, the second under the reply
-arm's own `owed` premise, which the pack already carries.
-
-`ipcInvariantFull_of_descheduleFrame` is the whole argument: objects unchanged
-off the run-queue links (`cancelIpcBlockingOnCore_objectsAgreeOffRunLinks`, which
-is where the three steps' object frames already compose) plus a `passiveServerIdleFrame` chained from the three.
-Nineteen of the twenty conjuncts never see the scheduler, so there is nothing
-else to transport. -/
+scheduler steps the composite adds over `cancelIpcBlocking` write only run-queue
+links in TCBs and scheduler state, and no conjunct of the bundle reads either
+(`v0.36.136` retired the one that read the boot core's run queue), so objects
+unchanged off the run-queue links (`cancelIpcBlockingOnCore_objectsAgreeOffRunLinks`,
+which is where the three steps' object frames already compose) is the whole
+argument. -/
 theorem cancelIpcBlockingOnCore_preserves_ipcInvariantFull
     (victim : SeLe4n.ThreadId) (tcb : TCB) (executingCore : CoreId) (st : SystemState)
     (hObjInv : st.objects.invExt) (hLookup : lookupTcb st victim = some tcb)
     (hBundle : ipcInvariantFull st) (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hArms : cancelIpcBlockingArmPremises st victim tcb) :
-    ipcInvariantFull (cancelIpcBlockingOnCore victim tcb executingCore st).1 := by
-  have hTeardown := cancelIpcBlocking_preserves_ipcInvariantFull st victim tcb hObjInv hLookup
-    hBundle hAllBudgetsNone hArms
-  have hReady := cancelIpcBlocking_victim_ready st victim tcb hObjInv hLookup
-  -- the victim's deschedule's own obligation, discharged from its post-teardown
-  -- state (the three scheduler steps write no object)
-  have hRemoved : ∀ t, (cancelIpcBlockingReclaimed victim tcb st).objects[victim.toObjId]?
-      = some (.tcb t) →
-      t.schedContextBinding ≠ SchedContextBinding.unbound ∨ passiveServerIdleAllowed t.ipcState := by
-    intro t hAt
-    run_links_back (cancelIpcBlockingReclaimed_objectsAgreeOffRunLinks victim tcb st) at t hAt
-    exact Or.inr (Or.inl (hReady t hAt))
-  -- the holder deschedule's obligation, discharged from the reclaim's own reading
-  -- of the holder and the reply arm's `owed` premise
-  have hHolder : ∀ holder,
-      cancelUnboundHolder? st (cancelIpcBlockingMigrated victim tcb st) victim tcb = some holder →
-      ∀ t, (cancelIpcBlockingMigrated victim tcb st).objects[holder.toObjId]? = some (.tcb t) →
-        t.schedContextBinding ≠ SchedContextBinding.unbound
-          ∨ passiveServerIdleAllowed t.ipcState := by
-    intro holder hW t hAt
-    obtain ⟨scId, hRes⟩ := cancelUnboundHolder?_donation st _ victim tcb holder hW
-    rw [cancelIpcBlockingMigrated_objects] at hAt
-    obtain ⟨⟨epV, rtV, hIp⟩, _⟩ := cancelledCallerDonation?_some st victim tcb scId holder hRes
-    exact cancelIpcBlocking_unboundHolder_binding_or_allowed st victim tcb scId holder hObjInv
-      hBundle.ipcStateQueueMembershipConsistent hLookup (hArms.replyArm epV rtV hIp).owed hRes
-      t hAt
-  refine ipcInvariantFull_of_descheduleFrame _ _ hTeardown
-    (cancelIpcBlockingOnCore_objectsAgreeOffRunLinks victim tcb executingCore st) ?_
-  rw [cancelIpcBlockingOnCore_state_eq]
-  exact ((cancelIpcBlockingMigrated_passiveServerIdleFrame victim tcb st).trans
-    (descheduleUnboundHolder_passiveServerIdleFrame st _ victim tcb hHolder)).trans
-    (descheduleAtPlacement_passiveServerIdleFrame _ victim hRemoved)
+    ipcInvariantFull (cancelIpcBlockingOnCore victim tcb executingCore st).1 :=
+  ipcInvariantFull_of_objectsAgreeOffRunLinks
+    (cancelIpcBlockingOnCore_objectsAgreeOffRunLinks victim tcb executingCore st)
+    (cancelIpcBlocking_preserves_ipcInvariantFull st victim tcb hObjInv hLookup
+      hBundle hAllBudgetsNone hArms)
 
 -- ============================================================================
 -- §4  WS-RR RR8.11 — the composite establishes the SM5.H replenish-affinity
@@ -559,23 +373,6 @@ theorem consumeReplyLink_getSchedContext?_eq (st : SystemState)
     exact consumeCallerReply_getSchedContext?_eq st _ tid rid hInv
       (SystemState.consumeCallerReply_eq_link st tid rid) scId
 
-/-- WS-RR RR8.11: the holder abort writes endpoints and TCBs, so it writes no
-scheduling context — the `unwritten_kind` pair WS-OD OD3.2 built for the chain
-frame, read at the SchedContext kind. -/
-theorem abortHolderPendingIpc_getSchedContext?_eq (st : SystemState)
-    (holder : SeLe4n.ThreadId) (hInv : st.objects.invExt) (scId : SeLe4n.SchedContextId) :
-    (Lifecycle.Suspend.abortHolderPendingIpc st holder).getSchedContext? scId
-      = st.getSchedContext? scId := by
-  refine SystemState.getSchedContext?_eq_of_kind_iff (fun sc => ?_)
-  exact ⟨fun h => Lifecycle.Suspend.abortHolderPendingIpc_unwritten_kind_backward st holder hInv
-      (fun o => ∃ sc0 : SeLe4n.Kernel.SchedContext, o = .schedContext sc0)
-      (fun _ hc => nomatch hc.choose_spec) (fun _ hc => nomatch hc.choose_spec)
-      scId.toObjId _ ⟨sc, rfl⟩ h,
-    fun h => Lifecycle.Suspend.abortHolderPendingIpc_unwritten_kind_forward st holder hInv
-      (fun o => ∃ sc0 : SeLe4n.Kernel.SchedContext, o = .schedContext sc0)
-      (fun _ hc => nomatch hc.choose_spec) (fun _ hc => nomatch hc.choose_spec)
-      scId.toObjId _ ⟨sc, rfl⟩ h⟩
-
 /-- WS-RR RR8.11: **the reclaim writes exactly the scheduling context it hands
 back.**  Its three refusing shapes — no donation resolved, a caller with no TCB,
 and a refused return — commit nothing at all, and on the committing shape the only
@@ -594,15 +391,12 @@ private theorem returnDonationToCancelledCaller_getSchedContext?_ne (st : System
   | none => rfl
   | some _ =>
     dsimp only
-    cases hRet : returnDonatedSchedContextResolved
-        (Lifecycle.Suspend.abortHolderPendingIpc st holder) holder scId v with
+    cases hRet : returnDonatedSchedContextResolved st holder scId v with
     | error _ => rfl
     | ok st' =>
       obtain ⟨newOwner?, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hRet
-      rw [returnDonatedSchedContext_getSchedContext?_ne _ st' holder scId scId₀ v hne
-          (Lifecycle.Suspend.abortHolderPendingIpc_preserves_objects_invExt st holder hInv)
-          newOwner? hPop,
-        abortHolderPendingIpc_getSchedContext?_eq st holder hInv scId₀]
+      exact returnDonatedSchedContext_getSchedContext?_ne _ st' holder scId scId₀ v hne hInv
+        newOwner? hPop
 
 /-- **WS-RR RR8.11: the teardown writes a scheduling context only through the
 reclaim.**

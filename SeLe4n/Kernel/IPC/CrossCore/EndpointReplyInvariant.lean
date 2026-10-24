@@ -32,7 +32,7 @@ single-core per-step preservation lemmas verbatim.
 
 **WS-SM SM6.D closure** (§4–§10): the two cross-core reply-path legs,
 `endpointReplyOnCore` and `endpointReceiveDualOnCore`, preserve the **whole
-twenty-conjunct bundle** and every core's per-core view of it, via the
+nineteen-conjunct bundle** and every core's per-core view of it, via the
 off-scheduler agreement dichotomy against their single-core counterparts (both
 spines run the same object-store sequence and diverge only in scheduler
 placement; `endpointReply`'s `replier == expected` gate is discharged by
@@ -45,8 +45,8 @@ freshness), which the live ReplyRecv's preservation theorem
 `IPC/Invariant/DispatchPayoff.lean`) consumes — for the **global** bundle only:
 the live transition has no `ipcInvariantFull_perCore` statement yet (the one
 deleted at `v0.36.49` covered a composite no arm ran; `docs/REGISTERED_DEBT.md`
-carries the row).  The scheduler-reading `passiveServerIdle` rides the per-core
-frames through the two legs.
+carries the row).  No conjunct reads the scheduler, so nothing rides a
+per-core frame through the two legs.
 -/
 
 namespace SeLe4n.Kernel
@@ -189,46 +189,6 @@ theorem endpointReplyOnCore_preserves_ipcInvariant
       exact removeCallerReplyFrame_preserves_ipcInvariant _ _ target rid hWakeObjInv hWakeInv hCons
 
 -- ============================================================================
--- §4  SM6.D: per-core passive-server frame for the cross-core reply
--- ============================================================================
-
-open SeLe4n.Model.SystemState in
-/-- WS-SM SM6.D: `endpointReplyOnCore` frames every core's `passiveServerIdle`
-slice, unconditionally over success/failure.  The unblocked caller is woken
-`.ready` (allowed); the folded consume rewrites only the caller's `replyObject`
-and the reply's `caller` (binding/ipcState-invisible). -/
-theorem endpointReplyOnCore_passiveServerIdleFrameOnCore
-    (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
-    (st : SystemState) (c : CoreId) (hObjInv : st.objects.invExt) :
-    passiveServerIdleFrameOnCore st
-      (endpointReplyOnCore replier target msg executingCore st).1 c := by
-  rcases endpointReplyOnCore_state_eq replier target msg executingCore st with
-    hEq | ⟨tcb, st', server, pre, hLk, hStore, hPost, hTail⟩
-  · rw [hEq]; exact passiveServerIdleFrameOnCore.refl st
-  · rw [hPost]
-    refine (fun (h : passiveServerIdleFrameOnCore st pre c) => h.trans
-      (passiveServerIdleFrameOnCore.of_objectsAgreeOffRunLinks
-        (SystemState.unlinkReplyWaiter_objectsAgreeOffRunLinks pre target server)
-        (SystemState.unlinkReplyWaiter_scheduler _ _ _))) ?_
-    have hStore' : storeTcbIpcStateAndMessage st target .ready (some msg) = .ok st' := by
-      rw [← storeTcbIpcStateAndMessage_fromTcb_eq hLk]; exact hStore
-    have hObjInv1 := storeTcbIpcStateAndMessage_preserves_objects_invExt st st' target .ready
-      (some msg) hObjInv hStore'
-    obtain ⟨tr, hTrGet, hTrReady⟩ :=
-      storeTcbIpcStateAndMessage_getTcb?_ipcState st st' target .ready (some msg) hObjInv hStore'
-    have hFWake : passiveServerIdleFrameOnCore st (wakeThread st' target executingCore).1 c :=
-      (storeTcbIpcStateAndMessage_passiveServerIdleFrameOnCore st st' target .ready (some msg)
-        (Or.inl (Or.inl rfl)) hObjInv hStore').trans
-        (wakeThread_passiveServerIdleFrameOnCore_of_ready st' target executingCore tr
-          hTrGet hTrReady hObjInv1)
-    rcases hTail with ⟨_, hEq⟩ | ⟨rid, _, hCons⟩
-    · rw [hEq]; exact hFWake
-    · have hWakeInv : (wakeThread st' target executingCore).1.objects.invExt :=
-        wakeThread_preserves_objects_invExt st' target executingCore hObjInv1
-      exact hFWake.trans
-        (removeCallerReplyFrame_passiveServerIdleFrameOnCore _ _ target rid hWakeInv hCons)
-
--- ============================================================================
 -- §5  SM6.D: cross-core / single-core off-scheduler agreement dichotomy (reply)
 -- ============================================================================
 
@@ -362,22 +322,16 @@ theorem endpointReplyOnCore_preserves_ipcInvariantFullExceptDonationOwner
     (hAllBudgetsNone : allTimeoutBudgetsNone st) :
     ipcInvariantFullExceptDonationOwner
       (endpointReplyOnCore replier target msg executingCore st).1 target := by
-  have hPsi' : passiveServerIdle (endpointReplyOnCore replier target msg executingCore st).1 :=
-    (passiveServerIdle_perCore_bootCore_iff _).mp
-      (passiveServerIdle_perCore_of_frameOnCore
-        (endpointReplyOnCore_passiveServerIdleFrameOnCore replier target msg executingCore
-          st bootCoreId hObjInv)
-        ((passiveServerIdle_perCore_bootCore_iff st).mpr hInv.passiveServerIdle))
   rcases endpointReplyOnCore_post_agrees replier target msg executingCore st hObjInv with
     hPre | ⟨expected, r1, hStep1, hAgree⟩
   · rw [hPre]; exact ipcInvariantFullExceptDonationOwner_of_full target hInv
-  · exact ipcInvariantFullExceptDonationOwner_of_objectsAgreeOffRunLinks hAgree.objects hPsi'
+  · exact ipcInvariantFullExceptDonationOwner_of_objectsAgreeOffRunLinks hAgree.objects
       (endpointReply_preserves_ipcInvariantFullExceptDonationOwner st r1 expected target msg
         hInv hObjInv hAllBudgetsNone hStep1)
 
 open SeLe4n.Model.SystemState in
 /-- WS-SM SM6.D (SM6.C closure) / WS-RR RR3.12: the cross-core reply preserves the
-**whole twenty-conjunct bundle**, unconditionally over success/failure, on a reply
+**whole nineteen-conjunct bundle**, unconditionally over success/failure, on a reply
 whose answered caller donated nothing.  Hypotheses mirror
 `endpointReply_preserves_ipcInvariantFull`, `hNoDonationOwnedBy` included: the
 threaded post-state `hDOV'` it replaces is false of this transition's own result
@@ -394,16 +348,10 @@ theorem endpointReplyOnCore_preserves_ipcInvariantFull
       tcb.schedContextBinding ≠ .donated scId target)
     (hAllBudgetsNone : allTimeoutBudgetsNone st) :
     ipcInvariantFull (endpointReplyOnCore replier target msg executingCore st).1 := by
-  have hPsi' : passiveServerIdle (endpointReplyOnCore replier target msg executingCore st).1 :=
-    (passiveServerIdle_perCore_bootCore_iff _).mp
-      (passiveServerIdle_perCore_of_frameOnCore
-        (endpointReplyOnCore_passiveServerIdleFrameOnCore replier target msg executingCore
-          st bootCoreId hObjInv)
-        ((passiveServerIdle_perCore_bootCore_iff st).mpr hInv.passiveServerIdle))
   rcases endpointReplyOnCore_post_agrees replier target msg executingCore st hObjInv with
     hPre | ⟨expected, r1, hStep1, hAgree⟩
   · rw [hPre]; exact hInv
-  · exact ipcInvariantFull_of_objectsAgreeOffRunLinks hAgree.objects hPsi'
+  · exact ipcInvariantFull_of_objectsAgreeOffRunLinks hAgree.objects
       (endpointReply_preserves_ipcInvariantFull st r1 expected target msg hInv hObjInv
         hAllBudgetsNone hNoDonationOwnedBy hStep1)
 
@@ -427,26 +375,10 @@ theorem endpointReplyOnCore_preserves_ipcInvariantFull_perCore
   ipcInvariantFull_perCore_of_full
     (endpointReplyOnCore_preserves_ipcInvariantFull replier target msg executingCore st
       (ipcInvariantFull_of_smp hInv) hObjInv hNoDonationOwnedBy hAllBudgetsNone)
-    (passiveServerIdle_perCore_of_frameOnCore
-      (endpointReplyOnCore_passiveServerIdleFrameOnCore replier target msg executingCore
-        st c hObjInv)
-      (hInv c).passiveServerIdle)
 
 -- ============================================================================
--- §7  SM6.D: per-core passive-server frame for the cross-core receive leg
+-- §7  SM6.D: the receive leg's pre-return migration frame
 -- ============================================================================
-
-/-- **`v0.35.161`**: the pre-receive return's replenishment migration frames every
-core's `passiveServerIdle` slice — it reads and writes no object, no run queue and
-no current slot (`preReceiveReturnMigration_getTcb?`, `_runQueueOnCore`,
-`_currentOnCore`), so every pullback is the identity. -/
-theorem preReceiveReturnMigration_passiveServerIdleFrameOnCore (st stClean : SystemState)
-    (receiver : SeLe4n.ThreadId) {c : CoreId} :
-    passiveServerIdleFrameOnCore stClean (preReceiveReturnMigration st stClean receiver) c :=
-  ⟨fun tid tcb' h hU hQ hC _ =>
-    ⟨tcb', by rwa [preReceiveReturnMigration_getTcb?] at h, hU,
-      by rwa [preReceiveReturnMigration_runQueueOnCore] at hQ,
-      by rwa [preReceiveReturnMigration_currentOnCore] at hC, rfl⟩⟩
 
 /-- **`v0.35.161`**: and it agrees with its input off the scheduler — the migration
 is a scheduler-only update (`migrateSchedContextReplenishment` rewrites two
@@ -460,190 +392,6 @@ theorem preReceiveReturnMigration_offSchedulerAgrees (st stClean : SystemState)
   split
   · exact migrateSchedContextReplenishment_offSchedulerAgrees _ _ _ _
   · exact OffSchedulerAgrees.refl _
-
-open SeLe4n.Model.SystemState in
-/-- WS-SM SM6.D: `endpointReceiveDualOnCore` frames every core's
-`passiveServerIdle` slice, unconditionally over success/failure.  Rendezvous:
-pop the sender + set it `.blockedOnReply` (Call, allowed) or `.ready` (Send,
-allowed, then cross-core wake) + complete the receiver `.ready`.  Blocking:
-return the receiver's own donation (needs the running receiver `.ready`) +
-enqueue + block `.blockedOnReceive` (allowed) + optional stash + per-core
-deschedule. -/
-theorem endpointReceiveDualOnCore_passiveServerIdleFrameOnCore
-    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
-    (replyId : Option SeLe4n.ReplyId) (executingCore : CoreId)
-    (st : SystemState) (c : CoreId)
-    (hReceiverReady : ∀ (tcb : TCB), st.getTcb? receiver = some tcb →
-        tcb.ipcState = .ready)
-    (hObjInv : st.objects.invExt) :
-    passiveServerIdleFrameOnCore st
-      (endpointReceiveDualOnCore endpointId receiver replyId executingCore st).1 c := by
-  unfold endpointReceiveDualOnCore
-  cases hEp : st.getEndpoint? endpointId with
-  | none => simp only; split <;> exact passiveServerIdleFrameOnCore.refl st
-  | some ep =>
-    simp only
-    cases hHead : ep.sendQ.head with
-    | some sHead =>
-      simp only
-      cases hPop : endpointQueuePopHead endpointId false st with
-      | error e => simp only; exact passiveServerIdleFrameOnCore.refl st
-      | ok popRes =>
-        obtain ⟨sender, senderTcb, st1⟩ := popRes
-        simp only
-        have hObjInvPop : st1.objects.invExt :=
-          endpointQueuePopHead_preserves_objects_invExt endpointId false st st1 sender senderTcb
-            hObjInv hPop
-        have hF1 := endpointQueuePopHead_passiveServerIdleFrameOnCore (c := c) endpointId false
-          st st1 sender senderTcb hObjInv hPop
-        cases hSIpc : senderTcb.ipcState with
-        | blockedOnCall _ =>
-          simp only
-          cases hStore1 : storeTcbIpcStateAndMessage st1 sender
-              (.blockedOnReply endpointId (some receiver)) none with
-          | error e => simp only; exact passiveServerIdleFrameOnCore.refl st
-          | ok st2 =>
-            simp only
-            have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt st1 st2 sender _
-              none hObjInvPop hStore1
-            have hF2 := hF1.trans (storeTcbIpcStateAndMessage_passiveServerIdleFrameOnCore
-              (c := c) st1 st2 sender (.blockedOnReply endpointId (some receiver)) none
-              (Or.inl (Or.inr (Or.inr ⟨endpointId, some receiver, rfl⟩))) hObjInvPop hStore1)
-            cases hRid : replyId with
-            | none => simp only; exact passiveServerIdleFrameOnCore.refl st
-            | some rid =>
-              simp only
-              cases hLink : SystemState.linkCallerReply sender rid st2 with
-              | error e => simp only; exact passiveServerIdleFrameOnCore.refl st
-              | ok lp =>
-                obtain ⟨⟨⟩, st3⟩ := lp
-                simp only
-                have hObjInv3 : st3.objects.invExt :=
-                  linkCallerReply_preserves_objects_invExt st2 st3 sender rid hObjInv2 hLink
-                have hF3 := hF2.trans
-                  (linkCallerReply_passiveServerIdleFrameOnCore st2 st3 sender rid hObjInv2 hLink)
-                cases hStore2 : storeTcbIpcStateAndMessage st3 receiver .ready
-                    (some (blockedSenderMessage st1 sender senderTcb)) with
-                | error e => simp only; exact passiveServerIdleFrameOnCore.refl st
-                | ok st4 =>
-                  simp only
-                  exact (hF3.trans (storeTcbIpcStateAndMessage_passiveServerIdleFrameOnCore
-                    (c := c) st3 st4 receiver .ready (some (blockedSenderMessage st1 sender senderTcb))
-                    (Or.inl (Or.inl rfl)) hObjInv3 hStore2)).trans
-                    (passiveServerIdleFrameOnCore.of_objectsAgreeOffRunLinks
-                      (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _)
-                      (SystemState.linkReplyWaiter_scheduler _ _ _))
-        | ready | blockedOnSend _ | blockedOnReceive _ | blockedOnNotification _
-        | blockedOnReply _ _ =>
-          all_goals
-            simp only
-            cases hStore1 : storeTcbIpcStateAndMessage st1 sender .ready none with
-            | error e => simp only; exact passiveServerIdleFrameOnCore.refl st
-            | ok st2 =>
-              simp only
-              have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt st1 st2 sender
-                .ready none hObjInvPop hStore1
-              obtain ⟨tr, hTrGet, hTrReady⟩ :=
-                storeTcbIpcStateAndMessage_getTcb?_ipcState st1 st2 sender .ready none
-                  hObjInvPop hStore1
-              have hF2 := hF1.trans (storeTcbIpcStateAndMessage_passiveServerIdleFrameOnCore
-                (c := c) st1 st2 sender .ready none (Or.inl (Or.inl rfl)) hObjInvPop hStore1)
-              have hF3 := hF2.trans (wakeThread_passiveServerIdleFrameOnCore_of_ready st2 sender
-                executingCore tr hTrGet hTrReady hObjInv2)
-              have hInvWake : (wakeThread st2 sender executingCore).1.objects.invExt :=
-                wakeThread_preserves_objects_invExt st2 sender executingCore hObjInv2
-              cases hStore2 : storeTcbIpcStateAndMessage (wakeThread st2 sender executingCore).1
-                  receiver .ready (some (blockedSenderMessage st1 sender senderTcb)) with
-              | error e => simp only; exact passiveServerIdleFrameOnCore.refl st
-              | ok st4 =>
-                simp only
-                exact hF3.trans (storeTcbIpcStateAndMessage_passiveServerIdleFrameOnCore
-                  (c := c) (wakeThread st2 sender executingCore).1 st4 receiver .ready
-                  (some (blockedSenderMessage st1 sender senderTcb)) (Or.inl (Or.inl rfl)) hInvWake hStore2)
-    | none =>
-      simp only
-      cases hClean : cleanupPreReceiveDonationMigrated st receiver with
-      | error e => simp only; exact passiveServerIdleFrameOnCore.refl st
-      | ok stClean' =>
-        simp only
-        -- **`v0.35.161`**: the cross-core return is the pop followed by the
-        -- replenishment migration it owes.  The pop frames the slice exactly as
-        -- before; the migration reads and writes no object, run queue or current
-        -- slot, so it frames it trivially.
-        obtain ⟨stClean, hChecked, hMig⟩ := cleanupPreReceiveDonationMigrated_ok_decompose hClean
-        have hBridge : stClean = cleanupPreReceiveDonation st receiver :=
-          (cleanupPreReceiveDonationChecked_ok_eq_cleanup st stClean receiver hChecked).symm
-        subst hBridge
-        have hObjInvClean : stClean'.objects.invExt :=
-          cleanupPreReceiveDonationMigrated_preserves_objects_invExt st stClean' receiver
-            hObjInv hClean
-        have hFClean : passiveServerIdleFrameOnCore st stClean' c := by
-          rw [hMig]
-          exact (cleanupPreReceiveDonation_passiveServerIdleFrameOnCore (c := c) st receiver
-            hObjInv (fun tcb h => Or.inl (hReceiverReady tcb h))).trans
-            (preReceiveReturnMigration_passiveServerIdleFrameOnCore st _ receiver)
-        cases hEnq : endpointQueueEnqueue endpointId true receiver stClean' with
-        | error e => simp only; exact passiveServerIdleFrameOnCore.refl st
-        | ok st1 =>
-          simp only
-          have hObjInvEnq : st1.objects.invExt :=
-            endpointQueueEnqueue_preserves_objects_invExt endpointId true receiver
-              stClean' st1 hObjInvClean hEnq
-          have hF1 := hFClean.trans (endpointQueueEnqueue_passiveServerIdleFrameOnCore endpointId
-            true receiver stClean' st1 hObjInvClean hEnq)
-          cases hIpc : storeTcbIpcStateAndMessage st1 receiver (.blockedOnReceive endpointId) none with
-          | error e => simp only; exact passiveServerIdleFrameOnCore.refl st
-          | ok st2 =>
-            simp only
-            have hObjInv2 : st2.objects.invExt :=
-              storeTcbIpcStateAndMessage_preserves_objects_invExt st1 st2 receiver _ _ hObjInvEnq hIpc
-            have hF2 := hF1.trans (storeTcbIpcStateAndMessage_passiveServerIdleFrameOnCore st1 st2 receiver
-              (.blockedOnReceive endpointId) none (Or.inl (Or.inr (Or.inl ⟨endpointId, Or.inl rfl⟩)))
-              hObjInvEnq hIpc)
-            cases hGetR : st2.getTcb? receiver with
-            | none =>
-              simp only
-              exact hF2.trans (removeRunnableOnCore_passiveServerIdleFrameOnCore st2 receiver
-                executingCore (fun tcb hTcb => by rw [hGetR] at hTcb; cases hTcb))
-            | some rTcb =>
-              simp only
-              split
-              · next hValid =>
-                cases hStash : storeObject receiver.toObjId
-                    (.tcb { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId })
-                    (st2.recordReplyStasher (SeLe4n.ReplyId.optCode replyId) receiver) with
-                | error e => simp only; exact passiveServerIdleFrameOnCore.refl st
-                | ok pStash =>
-                  obtain ⟨⟨⟩, stStashed⟩ := pStash
-                  simp only
-                  have hRecvObj := (getTcb?_eq_some_iff st2 receiver rTcb).mp hGetR
-                  have hRTcbIpc : rTcb.ipcState = .blockedOnReceive endpointId :=
-                    storeTcbIpcStateAndMessage_ipcState_eq st1 st2 receiver _ _ hObjInvEnq hIpc rTcb hRecvObj
-                  have hObjInvR := SystemState.recordReplyStasher_objects_invExt st2
-                    (SeLe4n.ReplyId.optCode replyId) receiver hObjInv2
-                  have hRecvObjR : (st2.recordReplyStasher (SeLe4n.ReplyId.optCode replyId)
-                      receiver).objects[receiver.toObjId]? = some (.tcb rTcb) :=
-                    (getTcb?_eq_some_iff _ receiver rTcb).mp
-                      (by rw [SystemState.recordReplyStasher_getTcb? _ _ _ hObjInv2]; exact hGetR)
-                  have hF3 := (hF2.trans (passiveServerIdleFrameOnCore.of_recordReplyStasher hObjInv2)).trans
-                    (storeObject_modifiedTcb_passiveServerIdleFrameOnCore _
-                    stStashed receiver.toObjId rTcb { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId }
-                    hRecvObjR rfl
-                    (Or.inl (by rw [show ({ rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId } : TCB).ipcState
-                      = .blockedOnReceive endpointId from hRTcbIpc]
-                                exact Or.inr (Or.inl ⟨endpointId, Or.inl rfl⟩)))
-                    hObjInvR hStash)
-                  have hStashObj := storeObject_objects_eq _ stStashed receiver.toObjId
-                    (.tcb { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId }) hObjInvR hStash
-                  exact hF3.trans (removeRunnableOnCore_passiveServerIdleFrameOnCore stStashed
-                    receiver executingCore (fun tcb hTcb => Or.inr (by
-                      have hTcbRaw := (getTcb?_eq_some_iff stStashed receiver tcb).mp hTcb
-                      rw [hStashObj] at hTcbRaw
-                      obtain rfl := KernelObject.tcb.inj (Option.some.inj hTcbRaw)
-                      rw [show ({ rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId } : TCB).ipcState
-                        = .blockedOnReceive endpointId from hRTcbIpc]
-                      exact Or.inr (Or.inl ⟨endpointId, Or.inl rfl⟩))))
-              · exact passiveServerIdleFrameOnCore.refl st
 
 -- ============================================================================
 -- §8  SM6.D: cross-core / single-core agreement dichotomy (receive leg)
@@ -847,7 +595,7 @@ theorem endpointReceiveDualOnCore_post_agrees
 
 open SeLe4n.Model.SystemState in
 /-- WS-SM SM6.D (SM6.C closure): the cross-core receive leg preserves the
-**whole twenty-conjunct bundle**, unconditionally over success/failure.
+**whole nineteen-conjunct bundle**, unconditionally over success/failure.
 Hypotheses mirror `endpointReceiveDual_preserves_ipcInvariantFull`, with TCB
 lookups routed through the typed `getTcb?` and the threaded post-state facts
 stated at the cross-core post-state. -/
@@ -881,17 +629,10 @@ theorem endpointReceiveDualOnCore_preserves_ipcInvariantFull
         tcb.ipcState = .ready) :
     ipcInvariantFull
       (endpointReceiveDualOnCore endpointId receiver replyId executingCore st).1 := by
-  have hPsi' : passiveServerIdle
-      (endpointReceiveDualOnCore endpointId receiver replyId executingCore st).1 :=
-    (passiveServerIdle_perCore_bootCore_iff _).mp
-      (passiveServerIdle_perCore_of_frameOnCore
-        (endpointReceiveDualOnCore_passiveServerIdleFrameOnCore endpointId receiver replyId
-          executingCore st bootCoreId hReceiverReady hObjInv)
-        ((passiveServerIdle_perCore_bootCore_iff st).mpr hInv.passiveServerIdle))
   rcases endpointReceiveDualOnCore_post_agrees endpointId receiver replyId executingCore st
     hObjInv with hPre | ⟨sender, r1, hStep1, hAgree⟩
   · rw [hPre]; exact hInv
-  · exact ipcInvariantFull_of_objectsAgreeOffRunLinks hAgree.objects hPsi'
+  · exact ipcInvariantFull_of_objectsAgreeOffRunLinks hAgree.objects
       (endpointReceiveDual_preserves_ipcInvariantFull endpointId receiver sender replyId st r1
         hInv hObjInv hStackValid
         hAllBudgetsNone
@@ -939,10 +680,6 @@ theorem endpointReceiveDualOnCore_preserves_ipcInvariantFull_perCore
       executingCore st (ipcInvariantFull_of_smp hInv) hObjInv hStackValid
       hAllBudgetsNone hFreshReceiver hRecvTailFresh hReplyIdValid hReceiverNotRecv
       hReceiverReady)
-    (passiveServerIdle_perCore_of_frameOnCore
-      (endpointReceiveDualOnCore_passiveServerIdleFrameOnCore endpointId receiver replyId
-        executingCore st c hReceiverReady hObjInv)
-      (hInv c).passiveServerIdle)
 
 -- ============================================================================
 -- §10  SM6.D: reply-leg effect characterisations (composite transports)
@@ -1371,55 +1108,12 @@ theorem endpointReceiveDualWithCapsOnCore_preserves_ipcInvariantFull
         · exact hBare
         · rename_i summary stFinal hT
           obtain ⟨stR, caps, hO, hS, hCaps, hOr⟩ := receiveTransferCaps_frame hT
-          have hR : ipcInvariantFull stR := ipcInvariantFull_of_objects_scheduler_eq hO hS hBare
+          have hR : ipcInvariantFull stR := ipcInvariantFull_of_objects_eq hO hBare
           rcases hOr with rfl | hU
           · exact hR
           · exact ipcUnwrapCaps_preserves_ipcInvariantFull _ receiverCspaceRoot
               receiverSlotBase _ stR _ _ hR (hO ▸ hBareInv)
               (fun i c hc b hb => hCaps hBare.badgeWellFormed.2 i c hc b hb) hU
-
-open SeLe4n.Model.SystemState in
-/-- WS-RR RR2 (closure audit): the capability-carrying cross-core receive frames
-every core's `passiveServerIdle` reading — §7's frame for the bare receive, then
-the capability transfer's own (`ipcUnwrapCaps_passiveServerIdleFrameOnCore`; the
-transfer writes no TCB at all). -/
-theorem endpointReceiveDualWithCapsOnCore_passiveServerIdleFrameOnCore
-    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
-    (replyId : Option SeLe4n.ReplyId)
-    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
-    (executingCore : CoreId) (st : SystemState) (c : CoreId)
-    (hObjInv : st.objects.invExt)
-    (hReceiverReady : ∀ (tcb : TCB), st.getTcb? receiver = some tcb →
-        tcb.ipcState = .ready) :
-    passiveServerIdleFrameOnCore st
-      (endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
-        receiverSlotBase executingCore st).1 c := by
-  have hBare := endpointReceiveDualOnCore_passiveServerIdleFrameOnCore endpointId receiver
-    replyId executingCore st c hReceiverReady hObjInv
-  have hBareInv := endpointReceiveDualOnCore_preserves_objects_invExt endpointId receiver replyId
-    executingCore st hObjInv
-  unfold endpointReceiveDualWithCapsOnCore
-  cases hRecv : endpointReceiveDualOnCore endpointId receiver replyId executingCore st with
-  | mk stRecv res =>
-    rw [hRecv] at hBare hBareInv
-    cases res with
-    | error e => exact hBare
-    | ok pr =>
-      obtain ⟨senderId, sgi⟩ := pr
-      simp only
-      split
-      · exact hBare
-      · split
-        · exact hBare
-        · rename_i summary stFinal hT
-          obtain ⟨stR, caps, hO, hS, _, hOr⟩ := receiveTransferCaps_frame hT
-          have hR : passiveServerIdleFrameOnCore st stR c :=
-            hBare.trans (passiveServerIdleFrameOnCore.of_objectsAgreeOffRunLinks
-              (fun _ => by rw [hO]) hS)
-          rcases hOr with rfl | hU
-          · exact hR
-          · exact hR.trans (ipcUnwrapCaps_passiveServerIdleFrameOnCore _
-              receiverCspaceRoot receiverSlotBase _ stR _ _ (hO ▸ hBareInv) hU)
 
 open SeLe4n.Model.SystemState in
 /-- WS-RR RR2 (closure audit): the per-core bundle form for the live `.receive`
@@ -1462,10 +1156,6 @@ theorem endpointReceiveDualWithCapsOnCore_preserves_ipcInvariantFull_perCore
       receiverCspaceRoot receiverSlotBase executingCore st (ipcInvariantFull_of_smp hInv)
       hObjInv hStackValid hAllBudgetsNone hFreshReceiver hRecvTailFresh hReplyIdValid
       hReceiverNotRecv hReceiverReady)
-    (passiveServerIdle_perCore_of_frameOnCore
-      (endpointReceiveDualWithCapsOnCore_passiveServerIdleFrameOnCore endpointId receiver
-        replyId receiverCspaceRoot receiverSlotBase executingCore st c hObjInv hReceiverReady)
-      (hInv c).passiveServerIdle)
 
 -- ============================================================================
 -- WS-RR RR7.4: observer atomicity for the reply pair

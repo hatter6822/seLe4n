@@ -172,7 +172,7 @@ invariant in the representation when you can.
 | Queue structure | `dualQueueSystemInvariant`, `endpointQueueNoDup`, `ipcStateQueueMembershipConsistent`, `queueNextBlockingConsistent`, `queueHeadBlockedConsistent`, `endpointQueueTailBlockedConsistent`, `queueNextTargetBlocked` |
 | Blocked-thread coherence | `blockedThreadsPendingMessageConsistent`, `blockedThreadTimeoutConsistent`, `blockedOnReplyHasTarget`, `pendingReceiveReplyWellFormed` |
 | Reply linkage | `replyCallerLinkage` |
-| SchedContext donation | `donationChainAcyclic`, `donationOwnerValid`, `donationOwnerUnique`, `donationBudgetTransfer`, `passiveServerIdle` |
+| SchedContext donation | `donationChainAcyclic`, `donationOwnerValid`, `donationOwnerUnique`, `donationBudgetTransfer` |
 
 **The bundle is de-threaded end to end.** No theorem in the
 `*_preserves_ipcInvariantFull*` / `*_establishes_ipcInvariantFull*` family binds

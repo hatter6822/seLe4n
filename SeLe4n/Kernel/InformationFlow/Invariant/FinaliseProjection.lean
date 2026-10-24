@@ -462,7 +462,7 @@ theorem finaliseThreadUnbindSchedContext_hidden (ctx : LabelingContext)
     rename_i hG
     simp only [Bool.and_eq_true, bne_iff_ne, ne_eq, beq_iff_eq, Bool.false_eq_true,
       and_false] at hG
-  obtain ⟨⟨⟨⟨⟨hS, hO⟩, -⟩, -⟩, -⟩, -⟩ := hG
+  obtain ⟨⟨⟨⟨hS, hO⟩, -⟩, -⟩, -⟩ := hG
   · split
     · next st' hOk =>
       rw [cancelDonationArmOnCore_of_codes s tid hS hO] at hOk
@@ -832,11 +832,11 @@ theorem finaliseSchedContextUnbind_hidden (ctx : LabelingContext) (observer : If
       · next t hT =>
         split
         · next hG =>
-          simp only [Bool.and_eq_true, beq_iff_eq] at hG
+          simp only [beq_iff_eq] at hG
           split
           · next st' hOk =>
             exact cancelBoundDonationOnCore_hidden ctx observer hInv
-              (schedContextBinding_ownerCleared hG.1) hX (hH sc hO (by simpa using h0)).1 hOk
+              (schedContextBinding_ownerCleared hG) hX (hH sc hO (by simpa using h0)).1 hOk
           · rfl
         · rfl
       · rfl
@@ -965,12 +965,11 @@ theorem finaliseReply_hidden (ctx : LabelingContext) (observer : IfObserver)
       · next t hT =>
         split
         · next hF =>
-          obtain ⟨-, -, -, -, ⟨ep, rt, hB⟩, -, -, -, -, hD⟩ :=
+          obtain ⟨-, -, -, -, ⟨ep, rt, hB⟩, -, -, -, -, -⟩ :=
             replyCallerFinalisable_parts hX hF
           have hHigh := hH.1 r hX (by simpa using h0)
           have hP1 := cancelIpcBlocking_blockedOnReply_preserves_projection ctx observer st
             ⟨r.callerCode - 1⟩ t ep rt hB hValid hHigh hInv hIdx hSet
-            (fun scId holder e => by rw [hD] at e; cases e)
           have hI1 := Lifecycle.Suspend.cancelIpcBlocking_preserves_objects_invExt st
             ⟨r.callerCode - 1⟩ t hInv
           have hRev : projectState ctx observer

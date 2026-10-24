@@ -3532,60 +3532,6 @@ theorem cancelDonationArmOnCore_runQueueStage {st st' : SystemState}
   · exact cancelBoundDonationOnCore_runQueueStage h
   · exact cancelDonatedDonationOnCore_runQueueStage h
 
-/-- The replenishment migration is a current-placement frame: it writes two
-replenish queues. -/
-theorem migrateSchedContextReplenishment_currentPlacementFrame (st : SystemState)
-    (scId : SeLe4n.SchedContextId) (fromCore toCore c : SeLe4n.Kernel.Concurrency.CoreId) :
-    SystemState.CurrentPlacementFrame c st (migrateSchedContextReplenishment st scId fromCore toCore) := by
-  unfold migrateSchedContextReplenishment
-  split
-  · exact .refl c st
-  · exact .of_frame rfl rfl
-
-/-- The migrating donation cancel is a current-placement frame: the hand-back
-rebinds and moves no thread, and keeps every TCB. -/
-theorem cancelDonatedDonationOnCore_currentPlacementFrame {st st' : SystemState}
-    {tid : SeLe4n.ThreadId} {tcb : TCB} (hInv : st.objects.invExt)
-    (h : cancelDonatedDonationOnCore st tid tcb = .ok st') (c : SeLe4n.Kernel.Concurrency.CoreId) :
-    SystemState.CurrentPlacementFrame c st st' := by
-  unfold cancelDonatedDonationOnCore at h
-  split at h
-  · split at h
-    · cases h
-    · rename_i s1 h1
-      cases h
-      have hS := cleanupDonatedSchedContext_scheduler_eq st s1 tid h1
-      refine SystemState.CurrentPlacementFrame.trans ?_
-        (migrateSchedContextReplenishment_currentPlacementFrame _ _ _ _ c)
-      exact SystemState.CurrentPlacementFrame.of_parts (by rw [hS]; rfl)
-        (cleanupDonatedSchedContext_runCoresAgree st s1 tid hInv h1)
-  · cases h
-
-/-- The in-place donation cancel is a current-placement frame: a context write,
-two scheduler-side writes no current slot or run queue reads, the binding clear,
-and the key flags. -/
-theorem cancelBoundDonationOnCore_currentPlacementFrame {st st' : SystemState}
-    {tid : SeLe4n.ThreadId} {tcb : TCB} {rqCore : SeLe4n.Kernel.Concurrency.CoreId}
-    (hInv : st.objects.invExt) (h : cancelBoundDonationOnCore st tid tcb rqCore = .ok st')
-    (c : SeLe4n.Kernel.Concurrency.CoreId) : SystemState.CurrentPlacementFrame c st st' := by
-  unfold cancelBoundDonationOnCore at h
-  split at h
-  · rename_i scId _
-    cases h
-    refine SystemState.CurrentPlacementFrame.trans ?_ (markKeyChangeFrom_currentPlacementFrame _ _ _ c)
-    have hU := SystemState.updateSchedContext_scheduler st scId
-      (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })
-    have hInv1 := SystemState.updateSchedContext_preserves_objects_invExt st scId
-      (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) hInv
-    refine SystemState.CurrentPlacementFrame.trans ?_
-      (SystemState.CurrentPlacementFrame.updateTcb c _ tid _ (fun _ => rfl) hInv1)
-    refine SystemState.CurrentPlacementFrame.trans
-      (SystemState.CurrentPlacementFrame.of_parts (st' := st.updateSchedContext scId
-        (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }))
-        (by rw [hU]) (fun y => by rw [SystemState.updateSchedContext_getTcb? _ _ _ hInv])) ?_
-    exact SystemState.CurrentPlacementFrame.of_frame rfl rfl
-  · cases h
-
 /-- The migrating donation cancel moves no thread's run-queue core: the
 hand-back rewrites bindings and the migration writes replenish queues. -/
 theorem cancelDonatedDonationOnCore_runCoresAgree {st st' : SystemState}

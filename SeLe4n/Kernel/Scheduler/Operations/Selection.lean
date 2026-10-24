@@ -2001,29 +2001,6 @@ theorem enqueueRunnableOnCore_runQueueRefined {st : SystemState} (c : CoreId)
         exact SystemState.runEnqueueAdmits_not_contains hR hAdm c' hne
   · exact hR
 
-/-- The wake keeps a thread admitted on core `c` admitted there: the `.ready`
-mark moves no core code, and the enqueue on `c` either leaves another thread's
-code alone or puts the woken one on `c`. -/
-theorem enqueueRunnableOnCore_runEnqueueAdmits {st : SystemState} (c : CoreId)
-    (tid y : SeLe4n.ThreadId) (hInv : st.objects.invExt) (h : st.runEnqueueAdmits c y = true) :
-    (enqueueRunnableOnCore st c tid).runEnqueueAdmits c y = true := by
-  unfold enqueueRunnableOnCore
-  split
-  · rename_i tcb hT _
-    split
-    · exact h
-    · show (SystemState.runEnqueueAdmitted _ c tid _).runEnqueueAdmits c y = true
-      have h' := SystemState.runEnqueueAdmits_rewriteObject_tcb
-        (t' := (tcb.setIpcState .ready)) (SystemState.rewriteAdmissible_tcb hT _) hInv hT
-        rfl c y
-      rw [← h'] at h
-      by_cases hy : y = tid
-      · subst hy; exact SystemState.runEnqueueAdmitted_runEnqueueAdmits_self _ c y _ h
-      · rw [SystemState.runEnqueueAdmits_congr
-          (SystemState.runEnqueueAdmitted_runCoreCode_ne _ c tid y _ hy)]
-        exact h
-  · exact h
-
 /-- WS-ZA ZA4.5: the enqueue is the identity, or it inserts `tid` into core
 `c`'s run queue (ghost queue and concrete ends) and marks `c` for rescheduling. -/
 theorem enqueueRunnableOnCore_scheduler_cases (st : SystemState) (c : CoreId)
@@ -2514,16 +2491,6 @@ theorem descheduleAt_runQueueStage (st : SystemState) (tid : SeLe4n.ThreadId)
   cases placed with
   | none => exact SystemState.RunQueueStage.refl st
   | some c => exact removeRunnableOnCore_runQueueStage st tid c
-
-/-- The removal at a resolved placement is a current-placement frame. -/
-theorem descheduleAt_currentPlacementFrame (st : SystemState) (tid : SeLe4n.ThreadId)
-    (placed : Option CoreId) (c : CoreId) :
-    SystemState.CurrentPlacementFrame c st (descheduleAt st tid placed) := by
-  unfold descheduleAt
-  cases placed with
-  | none => exact .refl c st
-  | some c0 => exact SystemState.CurrentPlacementFrame.runDescheduleOnCore st c c0 tid
-
 
 /-- WS-RR RR2.9 (frame): descheduling a thread on a core writes that core's run
 queue and current slot and nothing else — in particular **no** replenish queue.

@@ -17,14 +17,13 @@ import SeLe4n.Kernel.IPC.CrossCore.EndpointCall
 /-!
 # WS-SM SM6.D — Pointwise-lookup congruence for the IPC invariant surface
 
-Every conjunct of `ipcInvariantFull` except the scheduler-reading
-`passiveServerIdle` reads the system state **only** through `objects[·]?`
-lookups.  This module makes that observation a reusable theorem family:
+Every conjunct of `ipcInvariantFull` reads the system state **only** through
+`objects[·]?` lookups (`v0.36.136` retired the one that read the scheduler).  This module makes that observation a reusable theorem family:
 
 * **§1** — per-conjunct transports `X_of_getElem_eq`: two states whose
   object lookups agree pointwise satisfy each conjunct interchangeably,
-  assembled into `ipcInvariantFull_of_getElem_eq` (all twenty conjuncts,
-  the passive slice supplied for the target state).  Pointwise (rather
+  assembled into `ipcInvariantFull_of_getElem_eq` (all nineteen
+  conjuncts).  Pointwise (rather
   than structural `objects`-equality) matters because the cross-core wake
   (`enqueueRunnableOnCore`) re-inserts the woken TCB with an identical
   value: every lookup is unchanged while the Robin-Hood array
@@ -1492,15 +1491,13 @@ theorem queueNextTargetBlocked_of_readViewAgreement {s1 s2 : SystemState}
   exact h a b tcbA tcbB hA hB hNext
 
 /-- **The read-view master transport**: two states agreeing on every object
-kind the bundle reads satisfy the eighteen CNode-free object conjuncts
-interchangeably; the one scheduler-reading conjunct (`passiveServerIdle`) and
-the one CNode-reading clause (`capabilityBadgesWellFormed`) are supplied for
-the target state.  This is the lever that carries the whole bundle across the
+kind the bundle reads satisfy the eighteen CNode-free conjuncts
+interchangeably; the one CNode-reading clause (`capabilityBadgesWellFormed`) is
+supplied for the target state.  This is the lever that carries the whole bundle across the
 capability, VSpace and untyped-scrub dispatch arms, whose writes the bundle
 never reads. -/
 theorem ipcInvariantFull_of_readViewAgreement {s1 s2 : SystemState}
     (hView : ipcReadViewAgreement s1 s2)
-    (hPsi2 : passiveServerIdle s2)
     (hCapBadges : capabilityBadgesWellFormed s2)
     (h : ipcInvariantFull s1) : ipcInvariantFull s2 :=
   ⟨ipcInvariant_of_readViewAgreement hView h.ipcInvariant,
@@ -1517,7 +1514,6 @@ theorem ipcInvariantFull_of_readViewAgreement {s1 s2 : SystemState}
    blockedThreadTimeoutConsistent_of_readViewAgreement hView h.blockedThreadTimeoutConsistent,
    donationChainAcyclic_of_readViewAgreement hView h.donationChainAcyclic,
    donationOwnerValid_of_readViewAgreement hView h.donationOwnerValid,
-   hPsi2,
    donationBudgetTransfer_of_readViewAgreement hView h.donationBudgetTransfer,
    blockedOnReplyHasTarget_of_readViewAgreement hView h.blockedOnReplyHasTarget,
    replyCallerLinkage_of_readViewAgreement hView h.replyCallerLinkage,
@@ -1538,23 +1534,19 @@ theorem capabilityBadgesWellFormed_of_objectsAgreeOffRunLinks {s1 s2 : SystemSta
 
 /-- WS-SM SM6.D, restated for WS-ZA ZA4.5: **the whole-bundle transport** —
 two states whose object stores agree off the run-queue links satisfy the
-nineteen object-reading conjuncts of `ipcInvariantFull` interchangeably; the
-one scheduler-reading conjunct (`passiveServerIdle`) is supplied for the
-target state.  This is the lever that carries the single-core whole-bundle
+nineteen conjuncts of `ipcInvariantFull` interchangeably.  This is the lever that carries the single-core whole-bundle
 theorems across the cross-core wake, whose run-queue placement differs. -/
 theorem ipcInvariantFull_of_objectsAgreeOffRunLinks {s1 s2 : SystemState}
     (hA : s2.objectsAgreeOffRunLinks s1)
-    (hPsi2 : passiveServerIdle s2)
     (h : ipcInvariantFull s1) : ipcInvariantFull s2 :=
-  ipcInvariantFull_of_readViewAgreement (.of_objectsAgreeOffRunLinks hA) hPsi2
+  ipcInvariantFull_of_readViewAgreement (.of_objectsAgreeOffRunLinks hA)
     (capabilityBadgesWellFormed_of_objectsAgreeOffRunLinks hA h.badgeWellFormed.2) h
 
 /-- The same for pointwise-equal lookups. -/
 theorem ipcInvariantFull_of_getElem_eq {s1 s2 : SystemState}
     (hEq : ∀ oid : SeLe4n.ObjId, s2.objects[oid]? = s1.objects[oid]?)
-    (hPsi2 : passiveServerIdle s2)
     (h : ipcInvariantFull s1) : ipcInvariantFull s2 :=
-  ipcInvariantFull_of_objectsAgreeOffRunLinks (.of_getElem_eq hEq) hPsi2 h
+  ipcInvariantFull_of_objectsAgreeOffRunLinks (.of_getElem_eq hEq) h
 
 /-- WS-RR RR3.12: read-view transport of the relaxed donation-owner invariant. -/
 theorem donationOwnerValidExcept_of_readViewAgreement {s1 s2 : SystemState}
@@ -1575,7 +1567,6 @@ does for the full one. -/
 theorem ipcInvariantFullExceptDonationOwner_of_objectsAgreeOffRunLinks {s1 s2 : SystemState}
     {woken : SeLe4n.ThreadId}
     (hA : s2.objectsAgreeOffRunLinks s1)
-    (hPsi2 : passiveServerIdle s2)
     (h : ipcInvariantFullExceptDonationOwner s1 woken) :
     ipcInvariantFullExceptDonationOwner s2 woken := by
   have hView : ipcReadViewAgreement s1 s2 := .of_objectsAgreeOffRunLinks hA
@@ -1591,28 +1582,23 @@ theorem ipcInvariantFullExceptDonationOwner_of_objectsAgreeOffRunLinks {s1 s2 : 
    blockedThreadTimeoutConsistent_of_readViewAgreement hView h.2.2.2.2.2.2.2.2.2.1,
    donationChainAcyclic_of_readViewAgreement hView h.2.2.2.2.2.2.2.2.2.2.1,
    donationOwnerValidExcept_of_readViewAgreement hView h.donationOwnerValidExcept,
-   hPsi2,
-   donationBudgetTransfer_of_readViewAgreement hView h.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
-   blockedOnReplyHasTarget_of_readViewAgreement hView h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
-   replyCallerLinkage_of_readViewAgreement hView h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+   donationBudgetTransfer_of_readViewAgreement hView h.2.2.2.2.2.2.2.2.2.2.2.2.1,
+   blockedOnReplyHasTarget_of_readViewAgreement hView h.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+   replyCallerLinkage_of_readViewAgreement hView h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
    pendingReceiveReplyWellFormed_of_readViewAgreement hView
-     h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+     h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
    donationOwnerUnique_of_readViewAgreement hView h.donationOwnerUnique,
    endpointQueueTailBlockedConsistent_of_readViewAgreement hView
-     h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
-   queueNextTargetBlocked_of_readViewAgreement hView h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2⟩
+     h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+   queueNextTargetBlocked_of_readViewAgreement hView h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2⟩
 
 /-- The transition frame nearly every capability-only dispatch arm induces:
-objects and scheduler both untouched.  `ipcInvariantFull` transports whole. -/
-theorem ipcInvariantFull_of_objects_scheduler_eq {st st' : SystemState}
+objects untouched.  `ipcInvariantFull` reads nothing else, so it transports
+whole. -/
+theorem ipcInvariantFull_of_objects_eq {st st' : SystemState}
     (hObjs : st'.objects = st.objects)
-    (hSched : st'.scheduler = st.scheduler)
     (h : ipcInvariantFull st) : ipcInvariantFull st' :=
   ipcInvariantFull_of_getElem_eq (fun _ => by rw [hObjs])
-    (passiveServerIdle_of_frame
-      (passiveServerIdleFrame.of_objects_scheduler_eq hObjs
-        (by rw [hSched]) (by rw [hSched]))
-      h.passiveServerIdle)
     h
 
 end SeLe4n.Kernel

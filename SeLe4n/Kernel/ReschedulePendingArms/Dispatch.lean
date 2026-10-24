@@ -392,7 +392,7 @@ theorem finaliseFinalObject_stepCovers (e : CoreId) (target : Nat) (st : SystemS
     (fun s t _ h _ _ _ _ =>
       have d := descheduleAtPlacement_stepCovers e s t h.2
       ⟨stepCovers_trans h.1 d.1, d.2⟩)
-    (fun _ _ _ _ _ _ h _ _ _ _ _ hOk =>
+    (fun _ _ _ _ _ _ h _ _ _ _ hOk =>
       stepCoversInv_trans h.1 (cancelBoundDonationOnCore_stepCovers e h.2 hOk))
     (fun s _ t tcb _ h _ _ _ _ =>
       ⟨stepCovers_trans h.1 (cancelIpcBlocking_stepCovers e s t tcb h.2),

@@ -27,18 +27,8 @@ theorem verbatim** and lifts it through:
 
 * a boot-core bridge (`…_perCore_bootCore_iff`), and
 * the `…_holds_if_idle` discharge for non-boot cores (§1) — every
-  cross-subsystem per-core predicate except `passiveServerIdle` is
-  *vacuous* on an idle core (empty run queue / no current thread).
-
-`passiveServerIdle_perCore` is the one exception: its idle-core slice is
-NOT vacuous (it reduces to "every unbound thread is passive").  So its
-preservation goes through the **`passiveServerIdle_scheduledNowhere`**
-natural-SMP form (§3) — "an unbound thread scheduled on no core is
-passive" — which is implied *directly* by the single-core
-`passiveServerIdle` (stronger hypotheses), giving clean per-op
-preservation without any idle hypothesis.  The uniform `∀ c`
-`passiveServerIdle_smp` is *stronger* and implies this natural form
-(`passiveServerIdle_smp_to_scheduledNowhere`).
+  cross-subsystem per-core predicate is *vacuous* on an idle core (empty run
+  queue / no current thread).
 
 The non-boot-idle hypothesis (`∀ c ≠ bootCoreId, …`) is the SM4.B
 structural fact (operations write only `bootCoreId`'s scheduler slots, so
@@ -195,65 +185,7 @@ theorem cleanupNoStaleSchedRef_smp_of_singleCore_and_idle {st : SystemState}
   · exact cleanupNoStaleSchedRef_perCore_holds_if_idle (hIdle c hc)
 
 -- ============================================================================
--- §3  `passiveServerIdle` natural-SMP form (preservation-friendly)
--- ============================================================================
---
--- `passiveServerIdle_perCore` is NOT vacuous on an idle core (its idle
--- slice reduces to "every unbound thread is passive"), so the `∀ c`
--- `passiveServerIdle_smp` cannot be lifted from the single-core form by
--- the idle discharge.  The natural-SMP form below — "an unbound thread
--- scheduled on no core is passive" — IS implied directly by the
--- single-core `passiveServerIdle` (its hypotheses are stronger), giving
--- clean per-op preservation; and it is implied by the `∀ c` form too.
-
-/-- SM4.D: the natural SMP generalisation of `passiveServerIdle` — an
-unbound thread that is in no core's run queue and is no core's current
-thread is in a passive state (ready / blocked-on-receive / -notification /
--reply).  (Finding F-3: the passive states include `.blockedOnReply` — a
-donor descheduled while awaiting the reply that returns its SchedContext.) -/
-def passiveServerIdle_scheduledNowhere (st : SystemState) : Prop :=
-  ∀ (tid : SeLe4n.ThreadId) (tcb : TCB),
-    st.getTcb? tid = some tcb →
-    tcb.schedContextBinding = .unbound →
-    (∀ c : CoreId, tid ∉ (st.scheduler.runQueueOnCore c)) →
-    (∀ c : CoreId, st.scheduler.currentOnCore c ≠ some tid) →
-    (tcb.ipcState = .ready ∨
-     (∃ epId, tcb.ipcState = .blockedOnReceive epId ∨
-              tcb.ipcState = .blockedOnNotification epId) ∨
-     ∃ epId replyTarget, tcb.ipcState = .blockedOnReply epId replyTarget)
-
-/-- SM4.D: the natural-SMP form follows directly from the single-core
-`passiveServerIdle` (the natural form's "scheduled nowhere" hypotheses
-imply the single-core "not boot-scheduled" hypotheses).  This is the
-clean per-op preservation route. -/
-theorem passiveServerIdle_scheduledNowhere_of_singleCore {st : SystemState}
-    (h : passiveServerIdle st) : passiveServerIdle_scheduledNowhere st := by
-  intro tid tcb hTcb hUnbound hNoQ hNoC
-  exact h tid tcb ((SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb) hUnbound
-    (hNoQ bootCoreId) (hNoC bootCoreId)
-
-/-- SM4.D: the uniform `∀ c` `passiveServerIdle_smp` is stronger than the
-natural form and implies it (instantiate the conjunction at `bootCoreId`). -/
-theorem passiveServerIdle_smp_to_scheduledNowhere {st : SystemState}
-    (h : passiveServerIdle_smp st) : passiveServerIdle_scheduledNowhere st := by
-  intro tid tcb hTcb hUnbound hNoQ hNoC
-  exact h bootCoreId tid tcb hTcb hUnbound (hNoQ bootCoreId) (hNoC bootCoreId)
-
-theorem default_passiveServerIdle_scheduledNowhere :
-    passiveServerIdle_scheduledNowhere (default : SystemState) :=
-  passiveServerIdle_smp_to_scheduledNowhere default_passiveServerIdle_smp
-
-/-- SM4.D: clean per-op preservation route for `passiveServerIdle` — any
-operation that preserves the single-core `ipcInvariantFull` bundle
-preserves the natural-SMP `passiveServerIdle_scheduledNowhere` (extract
-`passiveServerIdle` from the bundle, then lift).  SM5 plugs in the op's
-existing `…_preserves_ipcInvariantFull` theorem for the post-state. -/
-theorem passiveServerIdle_scheduledNowhere_of_ipcInvariantFull {st : SystemState}
-    (h : ipcInvariantFull st) : passiveServerIdle_scheduledNowhere st :=
-  passiveServerIdle_scheduledNowhere_of_singleCore (ipcInvariantFull.passiveServerIdle h)
-
--- ============================================================================
--- §4  Concrete per-operation SMP-preservation theorems
+-- §3  Concrete per-operation SMP-preservation theorems
 -- ============================================================================
 --
 -- Each reuses the existing single-core preservation theorem verbatim and
@@ -262,7 +194,7 @@ theorem passiveServerIdle_scheduledNowhere_of_ipcInvariantFull {st : SystemState
 -- scheduler slots); SM5 discharges it from the non-boot cores' default-
 -- idle values.
 
--- §4.1  IPC operations preserve `ipcSchedulerContractPredicates_smp`.
+-- §3.1  IPC operations preserve `ipcSchedulerContractPredicates_smp`.
 
 theorem endpointSendDual_preserves_ipcSchedulerContractPredicates_smp
     (st st' : SystemState) (endpointId : SeLe4n.ObjId)
@@ -366,7 +298,7 @@ theorem endpointQueueRemoveDual_preserves_ipcSchedulerContractPredicates_smp
       tid (ipcSchedulerContractPredicates_smp_to_singleCore st hPre) hObjInv hStep)
     hNonBootIdle
 
--- §4.2  Architecture operations preserve `registerDecodeConsistent_smp`.
+-- §3.2  Architecture operations preserve `registerDecodeConsistent_smp`.
 
 theorem advanceTimerState_preserves_registerDecodeConsistent_smp
     (ticks : Nat) (st : SystemState)
@@ -390,7 +322,7 @@ theorem writeRegisterState_preserves_registerDecodeConsistent_smp
       (Architecture.registerDecodeConsistent_smp_to_singleCore st hPre))
     hNonBootIdle
 
--- §4.3  `timerTick` preserves the per-core SchedContext↔run-queue consistency
+-- §3.3  `timerTick` preserves the per-core SchedContext↔run-queue consistency
 -- (SM4.C's `schedContextRunQueueConsistent_perCore`, used by the SM4.D capstone).
 
 theorem timerTick_preserves_schedContextRunQueueConsistent_smp

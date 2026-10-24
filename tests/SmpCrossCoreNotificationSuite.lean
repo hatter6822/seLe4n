@@ -174,7 +174,6 @@ open SeLe4n.Testing
 #check @endpointQueueRemoveDual_preserves_endpointQueueNoDup
 #check @endpointQueueRemoveDual_preserves_ipcStateQueueMembershipConsistent_except
 #check @endpointQueueRemoveDual_preserves_donationOwnerValid
-#check @endpointQueueRemoveDual_preserves_passiveServerIdle
 #check @endpointQueueRemoveDual_preserves_blockedThreadTimeoutConsistent
 #check @splicePredecessorBlocked
 #check @splicePredecessorBlocked_of_head
@@ -196,9 +195,7 @@ open SeLe4n.Testing
 #check @endpointQueueRemoveDual_removed_detached
 #check @spliceQueue_wellFormed_of_dual
 #check @boundDeliveryTarget?_some
-#check @endpointQueueRemoveDual_passiveServerIdleFrameOnCore
 #check @notificationSignalBoundOnCore_preserves_ipcInvariantFull
-#check @notificationSignalBoundOnCore_passiveServerIdleFrameOnCore
 #check @notificationSignalBoundOnCore_preserves_ipcInvariantFull_perCore
 #check @notificationSignalBoundCrossCoreDispatch_preserves_ipcInvariantFull
 #check @notificationSignalBoundCrossCoreDispatchChecked_preserves_ipcInvariantFull

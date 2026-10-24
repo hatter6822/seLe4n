@@ -309,36 +309,6 @@ theorem updatePipBoostOnCore_runQueueStage (st : SystemState) (c : CoreId) (tid 
         · exact markKeyChangeFor_runQueueStage _ _ _
       · exact markKeyChangeFor_runQueueStage _ _ _
 
-/-- The boost gives no thread a new place on another core: its TCB write keeps
-every TCB, and its re-key moves a thread within the queue that holds it. -/
-theorem updatePipBoostOnCore_currentPlacementFrame (st : SystemState) (c0 : CoreId)
-    (tid : ThreadId) (c : CoreId) (hInv : st.objects.invExt) :
-    SystemState.CurrentPlacementFrame c st (updatePipBoostOnCore st c0 tid) := by
-  cases hT : st.getTcb? tid with
-  | none =>
-    unfold updatePipBoostOnCore
-    rw [SystemState.getTcbWitnessed?_eq_none hT]
-    exact .refl c st
-  | some tcb =>
-    unfold updatePipBoostOnCore
-    simp only [SystemState.getTcbWitnessed?_eq_some hT]
-    split
-    · exact .refl c st
-    · have hW := SystemState.CurrentPlacementFrame.rewriteObject_tcb c
-        (t := { tcb with pipBoostCode := SeLe4n.Priority.optCode (computeMaxWaiterPriority st tid) })
-        (SystemState.rewriteAdmissible_tcb hT _) hInv
-        (fun t0 h0 => by rw [hT] at h0; cases h0; rfl)
-      split
-      · rename_i hMem
-        split
-        · refine hW.trans ((SystemState.CurrentPlacementFrame.runRequeueOnCore _ c c0 tid _ ?_).trans
-            (markKeyChangeFor_currentPlacementFrame _ _ _ c))
-          rw [SystemState.rewriteObject_tcb_queuedOn
-            (t' := { tcb with pipBoostCode := SeLe4n.Priority.optCode (computeMaxWaiterPriority st tid) }) _ hInv hT rfl]
-          exact hMem
-        · exact hW.trans (markKeyChangeFor_currentPlacementFrame _ _ _ c)
-      · exact hW.trans (markKeyChangeFor_currentPlacementFrame _ _ _ c)
-
 -- ============================================================================
 -- D4-H: propagatePriorityInheritance (chain walk)
 -- ============================================================================
@@ -924,22 +894,6 @@ theorem propagatePipChainCrossCore_runQueueStage (st : SystemState) (tid : Threa
     | none => exact hNext
     | some nextServer => exact hNext.trans (ih _ nextServer)
 
-/-- The chain walk gives no thread a new place on another core, one boost at a
-time. -/
-theorem propagatePipChainCrossCore_currentPlacementFrame (st : SystemState) (tid : ThreadId)
-    (ec c : CoreId) (fuel : Nat) (hInv : st.objects.invExt) :
-    SystemState.CurrentPlacementFrame c st (propagatePipChainCrossCore st tid ec fuel).1 := by
-  induction fuel generalizing st tid with
-  | zero => rw [propagatePipChainCrossCore_zero]; exact .refl c st
-  | succ n ih =>
-    rw [propagatePipChainCrossCore_step]
-    have hNext : SystemState.CurrentPlacementFrame c st (pipBoostWithWake st tid ec).1 := by
-      rw [pipBoostWithWake_state]; exact updatePipBoostOnCore_currentPlacementFrame st _ tid c hInv
-    cases blockingServer st tid with
-    | none => exact hNext
-    | some nextServer =>
-      exact hNext.trans (ih _ nextServer (pipBoostWithWake_preserves_objects_invExt st tid ec hInv))
-
 /-- `repropagateFromWaiter` is the identity or one full chain walk — the case
 split every preservation proof of it reduces to, so each property a chain walk
 preserves transfers without unfolding the `match` at the call site. -/
@@ -976,13 +930,6 @@ theorem repropagateFromWaiter_runQueueStage (st : SystemState) (tid : ThreadId)
     SystemState.RunQueueStage st (repropagateFromWaiter st tid ec fuel) :=
   repropagateFromWaiter_preserves (SystemState.RunQueueStage st) st tid ec fuel
     (fun _ _ => propagatePipChainCrossCore_runQueueStage st _ ec _) (.refl st)
-
-/-- WS-ZA ZA4.5: the re-walk is a current-placement frame. -/
-theorem repropagateFromWaiter_currentPlacementFrame (st : SystemState) (tid : ThreadId)
-    (ec c : CoreId) (fuel : Nat) (hInv : st.objects.invExt) :
-    SystemState.CurrentPlacementFrame c st (repropagateFromWaiter st tid ec fuel) :=
-  repropagateFromWaiter_preserves (SystemState.CurrentPlacementFrame c st) st tid ec fuel
-    (fun _ _ => propagatePipChainCrossCore_currentPlacementFrame st _ ec c _ hInv) (.refl c st)
 
 /-- WS-ZA ZA4.5: the boost's only object write stores a `.tcb` at a key that
 already held one, and its re-key writes run-queue links only, so every object

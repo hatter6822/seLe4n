@@ -3415,10 +3415,11 @@ theorem setIPCBufferOp_preserves_projection
 /-- **WS-RR RR7.22**: the label hypothesis an endpoint splice needs.
 
 **WS-RR RR8.8** relocated it here from `IPC/CrossCore/NotificationSignalNI.lean`:
-the cancellation reclaim's abort prefix (`abortHolderPendingIpc`) removes a
-thread from an endpoint queue too, and asks this same question of the same four
-objects -- but its own module is not in that one's import closure, so the
-predicate had one owner that one of its two askers could not reach.  Here both
+the final-delete cancel of an endpoint-blocked thread
+(`storeEndpointBlockedCancelled_hidden`) removes a thread from an endpoint queue
+too, and asks this same question of the same four objects -- but its module is
+not in that one's import closure, so the predicate had one owner that one of its
+two askers could not reach.  Here both
 reach it, beside `objects_insert_preserves_projection_high`, which is the lemma
 every clause of it is consumed by.
 
@@ -3576,10 +3577,10 @@ theorem endpointSpliceHigh_queuePrev_high
 invisible to an observer that sees none of the four objects it writes — the
 lemma `endpointQueueRemoveDual` has had since RR7.22 and this one did not.
 
-Its absence is what left `abortHolderProjectionStable` carrying its whole
-obligation as a hypothesis after `v0.35.84` had proved the labelling layer under
-it: the reclaim's abort prefix runs `abortPendingIpcOnEndpoint`, whose removal is
-the **single** one, and nothing connected `endpointSpliceHigh` to it.
+Its absence is what left `abortHolderProjectionStable` (retired at `v0.36.136`)
+carrying its whole obligation as a hypothesis after `v0.35.84` had proved the
+labelling layer under it: `abortPendingIpcOnEndpoint`'s removal is the
+**single** one, and nothing connected `endpointSpliceHigh` to it.
 
 Three differences from the dual's lemma, all of them consequences of the two
 removals being written differently rather than of the property differing.  (1)
@@ -3719,62 +3720,6 @@ theorem abortPendingIpcOnEndpoint_preserves_projection
     · exact absurd hStep (by simp)
     · exact hFinal _ hStep
 
-/-- **WS-RR RR8.8 (`v0.35.193`)**: the cancellation reclaim's **abort prefix** is
-invisible — the composite `abortHolderProjectionStable` is about.
-
-`abortHolderPendingIpc` is the identity unless the holder is blocked sending or
-calling (`abortHolderPendingIpc_eq_self_of_allowed`), and on those two arms it is
-`abortPendingIpcOnEndpoint` at the endpoint the holder's own `ipcState` names.
-The hypothesis is therefore quantified over that resolution rather than over a
-supplied endpoint: a caller supplies one fact about whatever endpoint the holder
-turns out to be blocked on, which is the shape that makes an under-stated
-hypothesis impossible.
-
-`hPair` is RR8.3's pairing at the holder — the bridge that lets
-`endpointSpliceHigh`'s `queuePPrev` clause reach the `queuePrev` the single
-removal reads; a caller holding `queuePPrevAgreesWithPrev` (the fourth conjunct
-of `dualQueueSystemInvariant`) discharges it through
-`queuePPrevAgreesWithPrev_lookupTcb`. -/
-theorem abortHolderPendingIpc_preserves_projection
-    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
-    (holder : SeLe4n.ThreadId)
-    (hHigh : ∀ (holderTcb : TCB) (epId : SeLe4n.ObjId),
-        lookupTcb st holder = some holderTcb →
-        (holderTcb.ipcState = ThreadIpcState.blockedOnSend epId ∨
-          holderTcb.ipcState = ThreadIpcState.blockedOnCall epId) →
-        endpointSpliceHigh ctx observer st epId holder)
-    (hPair : ∀ t : TCB, lookupTcb st holder = some t → t.queuePPrevAgreesWithPrev)
-    (hObjInv : st.objects.invExt) :
-    projectState ctx observer (Lifecycle.Suspend.abortHolderPendingIpc st holder)
-      = projectState ctx observer st := by
-  unfold Lifecycle.Suspend.abortHolderPendingIpc
-  cases hLk : lookupTcb st holder with
-  | none => rfl
-  | some holderTcb =>
-    dsimp only
-    -- both blocking arms are the same program at their own endpoint, so the
-    -- arm analysis states it once rather than twice
-    have harm : ∀ epId : SeLe4n.ObjId,
-        (holderTcb.ipcState = ThreadIpcState.blockedOnSend epId ∨
-          holderTcb.ipcState = ThreadIpcState.blockedOnCall epId) →
-        projectState ctx observer
-            (match abortPendingIpcOnEndpoint epId false holder st with
-             | .ok st' => st'
-             | .error _ => st)
-          = projectState ctx observer st := by
-      intro epId hB
-      cases hAbort : abortPendingIpcOnEndpoint epId false holder st with
-      | error _ => rfl
-      | ok st' =>
-          exact abortPendingIpcOnEndpoint_preserves_projection ctx observer st st' epId
-            false holder (hHigh holderTcb epId hLk hB) hPair hObjInv hAbort
-    cases hIpc : holderTcb.ipcState with
-    | blockedOnSend epId => exact harm epId (Or.inl hIpc)
-    | blockedOnCall epId => exact harm epId (Or.inr hIpc)
-    | ready => rfl
-    | blockedOnReceive _ => rfl
-    | blockedOnNotification _ => rfl
-    | blockedOnReply _ _ => rfl
 end EndpointQueueRemoveProjection
 
 -- ============================================================================
