@@ -4142,7 +4142,11 @@ run_check "INVARIANT" rg -n '^theorem finaliseFinalObject_closed($|[ ({:\[\]])' 
 # admission no longer reads the core holds.  The cleanup is proven the identity
 # on the finalised object and compiled away, so the spec keeps it.
 run_check "INVARIANT" rg -n -U 'def finaliseThread \(x : SeLe4n\.ObjId\) \(st : SystemState\) : SystemState :=\n  if threadFinaliseAdmitted st x then\n[^\n]*\n    finaliseThreadCleanup\n      \(finaliseThreadUnbindSchedContext\n        \(finaliseThreadReleaseCores\n          \(finaliseThreadSuspend\n            \(finaliseThreadCancel\n              \(finaliseThreadUnbindNotification st tid\) tid\) tid\) tid\) tid\) x' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
-run_check "INVARIANT" rg -n -U 'def finaliseThreadSuspend [^\n]*\n  match st\.getTcb\? tid with\n  \| some t =>\n    if t\.ipcStateCode == 0 && t\.ipcObjectCode == 0 && t\.threadState != \.Inactive &&\n        !isIdleThreadId tid then\n      \(descheduleAtPlacement st tid\)\.updateTcb tid' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n -U 'def finaliseThreadSuspend [^\n]*\n  match st\.getTcb\? tid with\n  \| some t =>\n    if t\.ipcStateCode == 0 && t\.ipcObjectCode == 0 &&\n        \(t\.threadState != \.Inactive \|\| t\.pendingMessage\.isSome\) && !isIdleThreadId tid then\n      \(descheduleAtPlacement st tid\)\.updateTcb tid finalisedSuspendMark' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+# A finalised thread's message dies with it, as the suspend syscall drops it.
+run_check "INVARIANT" rg -n -U '@\[inline\] def finalisedSuspendMark \(t : TCB\) : TCB :=\n  \{ t with threadState := \.Inactive, pendingMessage := none \}' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n '^theorem finalisedSuspendMark_keepsIpcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllPreservation.lean
+run_negative_check "INVARIANT" rg -n 'pendingMessage\.isNone' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 # A dequeue leaves the removed thread on no core with its own run links
 # cleared (the retire's quiescence reads all five), in the spec and the compiled
 # object-table form alike.

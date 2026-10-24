@@ -556,31 +556,51 @@ theorem finaliseEndpointCancelStep_keepsIpcInvariantFull :
     ⟨storeEndpointBlockedCancelled_preserves_ipcInvariantFull s e q t ep tcb h.2 h.1 hT hE hC,
       (FinaliseFrame.storeEndpointBlockedCancelled s e q t ep tcb h.2).invExt⟩
 
-/-- **The suspend's mark keeps the bundle**: `threadState` is a field the
-bundle does not read (`insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull`). -/
-theorem inactiveMark_keepsIpcInvariantFull (s : SystemState) (t : SeLe4n.ThreadId)
-    (h : ipcInvariantFull s ∧ s.objects.invExt) :
-    ipcInvariantFull (s.updateTcb t (fun t => { t with threadState := .Inactive })) ∧
-      (s.updateTcb t (fun t => { t with threadState := .Inactive })).objects.invExt := by
+/-- **The suspend's mark keeps the bundle**: `threadState` is a field the bundle
+does not read, and the message of a ready thread is one it asks nothing of
+(`pendingMessageReadAgrees_ready_none`), so the mark is a field update the bundle
+agrees with (`ipcInvariantFull_of_tcbFieldUpdateAgree`). -/
+theorem finalisedSuspendMark_keepsIpcInvariantFull (s : SystemState) (t : SeLe4n.ThreadId)
+    (h : ipcInvariantFull s ∧ s.objects.invExt)
+    (hReady : ∀ x : TCB, s.getTcb? t = some x → x.ipcState = .ready) :
+    ipcInvariantFull (s.updateTcb t finalisedSuspendMark) ∧
+      (s.updateTcb t finalisedSuspendMark).objects.invExt := by
   cases hT : s.getTcb? t with
   | none => rw [SystemState.updateTcb_eq_self_of_none hT]; exact h
   | some tcb =>
-    rw [SystemState.updateTcb_eq_of_some hT]
-    exact ⟨insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull s t tcb
-      { tcb with threadState := .Inactive } h.2 h.1 ((SystemState.getTcb?_eq_some_iff s t tcb).mp hT)
-      rfl rfl rfl rfl rfl rfl rfl rfl rfl, RHTable_insert_preserves_invExt _ _ _ h.2⟩
+    have hPre := (SystemState.getTcb?_eq_some_iff s t tcb).mp hT
+    have hAt := updateTcb_objects_self_of_tcb finalisedSuspendMark h.2 hPre
+    have hFrame : ∀ oid : SeLe4n.ObjId, oid ≠ t.toObjId →
+        (s.updateTcb t finalisedSuspendMark).objects[oid]? = s.objects[oid]? :=
+      fun oid hNe => SystemState.updateTcb_objects_ne _ _ _ _ (Ne.symm hNe) h.2
+    have hSched : (s.updateTcb t finalisedSuspendMark).scheduler = s.scheduler := by
+      rw [SystemState.updateTcb_eq_objects_update]
+    have hMsg : pendingMessageReadAgrees tcb.ipcState (finalisedSuspendMark tcb).pendingMessage
+        tcb.pendingMessage := by
+      rw [hReady tcb hT]; exact pendingMessageReadAgrees_ready_none _
+    exact ⟨ipcInvariantFull_of_tcbFieldUpdateAgree s _ t.toObjId tcb (finalisedSuspendMark tcb)
+        h.1 hPre hAt hFrame rfl hMsg rfl rfl rfl rfl rfl rfl rfl
+        (passiveServerIdleFrame_of_tcbFieldUpdate t.toObjId tcb _ hPre hAt hFrame rfl rfl hSched),
+      SystemState.updateTcb_preserves_objects_invExt s t _ h.2⟩
 
 /-- **The suspend keeps the bundle**: the deschedule of a ready thread
-(`descheduleAt_preserves_ipcInvariantFull`), then the `.Inactive` mark. -/
+(`descheduleAt_preserves_ipcInvariantFull`), which keeps it ready, then the
+mark. -/
 theorem finaliseSuspendStep_keepsIpcInvariantFull :
     FinaliseSuspendStep (fun s => ipcInvariantFull s ∧ s.objects.invExt) := by
   intro s t tcb h hT hS hO _ _
   have hReady : ∀ x : TCB, s.getTcb? t = some x → x.ipcState = .ready := by
     intro x hx; rw [hT] at hx; cases hx
     unfold TCB.ipcState; rw [hS, hO]; rfl
-  exact inactiveMark_keepsIpcInvariantFull _ t
+  have hReadyD : ∀ x : TCB, (descheduleAtPlacement s t).getTcb? t = some x →
+      x.ipcState = .ready := by
+    intro x hx
+    have hxo := (SystemState.getTcb?_eq_some_iff _ _ _).mp hx
+    run_links_back (descheduleAtPlacement_objectsAgreeOffRunLinks s t) at x hxo
+    exact hReady x ((SystemState.getTcb?_eq_some_iff _ _ _).mpr hxo)
+  exact finalisedSuspendMark_keepsIpcInvariantFull _ t
     ⟨descheduleAt_preserves_ipcInvariantFull s t _ hReady h.1,
-      (FinaliseFrame.descheduleAt s t _ h.2).invExt⟩
+      (FinaliseFrame.descheduleAt s t _ h.2).invExt⟩ hReadyD
 
 /-- **The release keeps the bundle**: it writes neither the objects nor the
 scheduler. -/

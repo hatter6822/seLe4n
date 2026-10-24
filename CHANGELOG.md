@@ -220,7 +220,9 @@ This is part 24 of the seL4 untyped reset.
   re-reads its own guard:
   - the thread is stored under its own id and is no reserved or idle thread;
   - it is ready (suspended, queued, current on any core, FP/SIMD owner or
-    resident) holding no queue link, stash or message, or it waits on a
+    resident) holding no queue link or stash (a message delivered to it and
+    not yet read is dropped by the suspend's mark, `finalisedSuspendMark`), or
+    it waits on a
     notification or an endpoint where the in-place cancel admits it
     (`threadIpcCancelAdmitted`);
   - it holds no reply-waiter or reply links and no timeout budget, and lends
@@ -513,6 +515,21 @@ This is part 24 of the seL4 untyped reset.
   - No QEMU scenario can stage it: a carved thread never runs, so it cannot
     block itself, and a thread that runs holds its CSpace slot (row 26).  The
     suite's witnesses above cover every queue position.
+- **Review: a thread holding an unread message was kept.**  The admission
+  refused a ready thread holding a delivered message, on the grounds that the
+  waking syscall drops it in the same step, which no theorem stated; seL4 has
+  no such refusal.  The refusal is removed, from a ready and from a
+  notification-blocked thread alike, and the suspend's mark now drops the
+  message as the suspend syscall's `clearPendingState` drops it:
+  `finalisedSuspendMark` (`.Inactive`, no message) is one field update of the
+  thread's own cell, and the suspend also runs on an already-suspended thread
+  that still holds one.  The bundle is kept because the bundle asks nothing of
+  a ready thread's message (`finalisedSuspendMark_keepsIpcInvariantFull`, over
+  `ipcInvariantFull_of_tcbFieldUpdateAgree`); the frame, the reachable state,
+  the run queues, reschedule coverage and the projection take the new mark
+  unchanged.  Witnesses: §5n, a ready and a suspended carved thread each
+  holding a staged message, each finalised and retired by its last
+  capability's delete.
 
 ### Validation
 

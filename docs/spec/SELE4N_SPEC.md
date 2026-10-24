@@ -5126,8 +5126,10 @@ the pre-state before any write (`threadFinaliseAdmitted`,
 blocked on a reply or holding a reply link, a receive stash or a reply-waiter
 link (each names a reply object, the busy reply's removal, part 25), a donated
 binding and occupied space slots (part 26) are refused; the timeout-budget
-check refuses no reachable thread (`timeoutBudget_isNone_of_ipcReachable`).  A
-scheduling context's refusals are narrowed by part 25 below.  A
+check refuses no reachable thread (`timeoutBudget_isNone_of_ipcReachable`), and
+a message delivered to the thread and not yet read is dropped by the suspend's
+mark (`finalisedSuspendMark`), as the suspend syscall's `clearPendingState`
+drops it.  A scheduling context's refusals are narrowed by part 25 below.  A
 refused object is not finalised and the retire keeps it
 (`docs/REGISTERED_DEBT.md`).  On a finalised object the cleanup is proven to be
 the identity (`finaliseThreadCleanup_eq`, `finaliseSchedContextCleanup_eq`), so

@@ -597,7 +597,7 @@ theorem finaliseSuspend_runQueueEntryStage (st : SystemState) (t : SeLe4n.Thread
     (hT : st.getTcb? t = some tcb) (hS : tcb.ipcStateCode = 0) (hO : tcb.ipcObjectCode = 0)
     (hId : isIdleThreadId t = false) :
     SystemState.RunQueueEntryStage st
-      ((descheduleAtPlacement st t).updateTcb t (fun t => { t with threadState := .Inactive })) :=
+      ((descheduleAtPlacement st t).updateTcb t finalisedSuspendMark) :=
   descheduleAtPlacedThenOffWrite_runQueueEntryStage st t
     (fun _ x hx => by
       rw [hT] at hx; cases hx
