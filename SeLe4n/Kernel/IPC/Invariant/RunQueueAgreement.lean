@@ -948,6 +948,30 @@ theorem placedThenOffWrite_runQueueEntryStage (st : SystemState) (tid : SeLe4n.T
       · rw [d.not_queued hc c] at h; cases h
       · exact (d.current c tid (beq_iff_eq.mp h)).2.1 c' hc
 
+/-- **A deschedule where the thread is placed, then one off-queue write**: a
+final delete's suspend, the removal and the `.Inactive` mark.  As
+`placedThenOffWrite_runQueueEntryStage`, with the removal skipped for a thread
+placed nowhere. -/
+theorem descheduleAtPlacedThenOffWrite_runQueueEntryStage (st : SystemState)
+    (tid : SeLe4n.ThreadId) {f : TCB → TCB}
+    (hRdy : st.currentDequeuedUnique → ∀ x, st.getTcb? tid = some x → x.ipcState = .ready)
+    (hNI : isIdleThreadId tid = false) (hf : ∀ x c, (f x).runLinkOn c = x.runLinkOn c)
+    (hReady : ∀ x, x.ipcState = .ready → (f x).ipcState = .ready) :
+    SystemState.RunQueueEntryStage st
+      ((descheduleAt st tid (placedCoreOf? st tid)).updateTcb tid f) := by
+  cases hP : placedCoreOf? st tid with
+  | none =>
+    refine ⟨SystemState.RunQueueLinkStage.updateTcb st tid hf, fun hInv _ _ d => ?_⟩
+    exact SystemState.currentDequeuedUniqueExcept_updateTcb_offWrite hInv d
+      (fun c => ((placedCoreOf?_none_iff st tid).mp hP c).2)
+      (fun c => ((placedCoreOf?_none_iff st tid).mp hP c).1) hNI hf
+      (fun x hx => .inl (hReady x (hRdy d x hx)))
+  | some c =>
+    have e : (placedCoreOf? st tid).getD c = c := by rw [hP]; rfl
+    have h := placedThenOffWrite_runQueueEntryStage st tid c hRdy hNI hf hReady
+    rw [e] at h
+    exact h
+
 /-- **A deschedule where the thread is placed, then two off-queue writes**: the
 suspend's removal, pending-state clear and `.Inactive` mark.  As
 `placedThenOffWrite_runQueueEntryStage`, with the removal skipped for a thread

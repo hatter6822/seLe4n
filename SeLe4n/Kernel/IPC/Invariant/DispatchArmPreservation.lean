@@ -5283,7 +5283,7 @@ private theorem cancelIpcBlockingReclaimed_ready_id
 /-- Descheduling a `.ready` thread on one core preserves the bundle: objects
 are untouched, and `passiveServerIdle` closes over the removed thread because
 `.ready` is an allowed passive state. -/
-private theorem removeRunnableOnCore_preserves_ipcInvariantFull
+theorem removeRunnableOnCore_preserves_ipcInvariantFull
     (st : SystemState) (tid : SeLe4n.ThreadId) (c : CoreId)
     (hReady : ∀ tcbX : TCB, st.getTcb? tid = some tcbX → tcbX.ipcState = .ready)
     (hInv : ipcInvariantFull st) :
@@ -5690,7 +5690,7 @@ private theorem suspendClearStore_preserves_ipcInvariantFull
 
 /-- WS-RR RR8.6: descheduling a `.ready` thread at a pre-resolved placement
 preserves the bundle — the one-core removal at `some c`, nothing at `none`. -/
-private theorem descheduleAt_preserves_ipcInvariantFull
+theorem descheduleAt_preserves_ipcInvariantFull
     (st : SystemState) (tid : SeLe4n.ThreadId) (placed : Option CoreId)
     (hReady : ∀ tcbX : TCB, st.getTcb? tid = some tcbX → tcbX.ipcState = .ready)
     (hInv : ipcInvariantFull st) :

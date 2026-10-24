@@ -272,10 +272,12 @@ for driver in drivers:
             # notification, a carved scheduling context's while it is bound
             # to a carved thread, then that thread's: each finalised in place
             # (the unbinds and the suspend write the objects' own cells) and
-            # retired.
+            # retired.  A carved thread resumed onto a run queue and its only
+            # capability deleted: the suspend unlinks it from the queue in
+            # place (the run links live in the TCBs).
             "inactive-tcb-delete", "bind-carved-tcb", "bound-tcb-delete",
             "bind-carved-sched-context", "bound-sched-context-delete",
-            "unbound-tcb-delete",
+            "unbound-tcb-delete", "resume-carved-tcb", "queued-tcb-delete",
             # WS-ZA ZA5.4 part 25: a carved reply's minted capability received
             # through, the partner's call that blocks on it, and both its
             # capabilities deleted: the final delete cancels the waiting
@@ -330,6 +332,7 @@ for driver in drivers:
             # first call, which also builds the capability's target record
             # (`CapTarget.objectOver`).
             "untyped-retype-tcb": (14, 14), "untyped-retype-bound-tcb": (14, 14),
+            "untyped-retype-queued-tcb": (14, 14),
             "untyped-retype-sched-context": (14, 13), "untyped-retype-sc-thread": (14, 14),
             "vspace-unmap-first": (0, 0), "vspace-map-again": (0, 0),
             "vspace-unify-instruction": (4, 3),

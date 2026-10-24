@@ -123,6 +123,22 @@ theorem stageCurrentCallerReturn_eq (post : SystemState) (c : CoreId)
   cases o <;> cases caller? <;>
     simp only [stageCallerReturnFor, stageCallerReturnForImpl, hEq, stageCurrentCallerReturn_eq]
 
+/-- **A destroyed caller's return writes nothing**: a caller whose thread the
+syscall finalised and retired — its own last capability deleted — has no TCB
+left to take the frame and is current on no core, so neither its saved
+context nor the core's register bank is written; the core resumes the
+successor or the idle loop the reschedule chose. -/
+theorem stageCallerReturnFor_destroyed (tid : SeLe4n.ThreadId) (post : SystemState)
+    (c : CoreId) (o : SyscallOutcome) (hT : post.getTcb? tid = none)
+    (hC : post.scheduler.currentOnCore c ≠ some tid) :
+    stageCallerReturnFor (some tid) post c o = post := by
+  cases o with
+  | returns f =>
+    simp only [stageCallerReturnFor, hC, if_false]
+    exact SystemState.updateTcb_eq_self_of_none hT _
+  | blocks => rfl
+  | faulted => rfl
+
 /-- WS-ZA ZA4: a return frame's six words written into `x0`-`x5`
 (`stageReturnFrame` of the frame they make).  A call, so the file arrives as
 an owned argument and an exclusive one is written in place. -/

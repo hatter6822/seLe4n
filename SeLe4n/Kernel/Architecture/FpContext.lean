@@ -57,9 +57,11 @@ it, and no transition here lets a thread read another's.  The load is the
 current thread's own saved context (`fpAccessOnCore_load_eq_own_context`), and
 the only TCB the captured live values are written into is the core's recorded
 owner, whose values those registers hold.  What a core's registers hold after a
-destroyed owner — the destroy path refuses a thread that owns a core's registers
-(`MachineState.fpOwnedOnSomeCore`), so an owner is never replaced under its id — is
-overwritten whole by the next load.
+destroyed owner — a final delete releases the owner record before its retire
+(`MachineState.releaseThread`), the retire and the retype refuse a thread that
+still owns a core's registers (`MachineState.fpOwnedOnSomeCore`), so an owner is
+never replaced under its id and no capture writes into a successor — is
+overwritten whole by the next load, which the trap left armed forces.
 -/
 
 namespace SeLe4n.Kernel.Architecture

@@ -371,15 +371,40 @@ theorem finaliseCancelStep_keepsIpcInvariantFull :
   exact ⟨cancelIpcBlocking_notificationArm_preserves_ipcInvariantFull s t tcb n h.2 hLookup hI h.1
     hOff, (FinaliseFrame.notificationCancel s t tcb n h.2 hI).invExt⟩
 
-/-- **The suspend keeps the bundle**: `threadState` is a field the bundle does
-not read (`insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull`). -/
+/-- **The suspend's mark keeps the bundle**: `threadState` and a dequeued
+thread's own run links are fields the bundle does not read (`insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull`). -/
+theorem inactiveMark_keepsIpcInvariantFull (s : SystemState) (t : SeLe4n.ThreadId)
+    (h : ipcInvariantFull s ∧ s.objects.invExt) :
+    ipcInvariantFull (s.updateTcb t finaliseSuspendMark) ∧
+      (s.updateTcb t finaliseSuspendMark).objects.invExt := by
+  cases hT : s.getTcb? t with
+  | none => rw [SystemState.updateTcb_eq_self_of_none hT]; exact h
+  | some tcb =>
+    rw [SystemState.updateTcb_eq_of_some hT]
+    exact ⟨insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull s t tcb
+      (finaliseSuspendMark tcb) h.2 h.1 ((SystemState.getTcb?_eq_some_iff s t tcb).mp hT)
+      rfl rfl rfl rfl rfl rfl rfl rfl rfl, RHTable_insert_preserves_invExt _ _ _ h.2⟩
+
+/-- **The suspend keeps the bundle**: the deschedule of a ready thread
+(`descheduleAt_preserves_ipcInvariantFull`), then the `.Inactive` mark. -/
 theorem finaliseSuspendStep_keepsIpcInvariantFull :
     FinaliseSuspendStep (fun s => ipcInvariantFull s ∧ s.objects.invExt) := by
-  intro s t tcb h hT _ _ _ _ _ _
-  rw [SystemState.updateTcb_eq_of_some hT]
-  exact ⟨insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull s t tcb
-    { tcb with threadState := .Inactive } h.2 h.1 ((SystemState.getTcb?_eq_some_iff s t tcb).mp hT)
-    rfl rfl rfl rfl rfl rfl rfl rfl rfl, RHTable_insert_preserves_invExt _ _ _ h.2⟩
+  intro s t tcb h hT hS hO _ _
+  have hReady : ∀ x : TCB, s.getTcb? t = some x → x.ipcState = .ready := by
+    intro x hx; rw [hT] at hx; cases hx
+    unfold TCB.ipcState; rw [hS, hO]; rfl
+  exact inactiveMark_keepsIpcInvariantFull _ t
+    ⟨descheduleAt_preserves_ipcInvariantFull s t _ hReady h.1,
+      (FinaliseFrame.descheduleAt s t _ h.2).invExt⟩
+
+/-- **The release keeps the bundle**: it writes neither the objects nor the
+scheduler. -/
+theorem finaliseReleaseStep_keepsIpcInvariantFull :
+    FinaliseReleaseStep (fun s => ipcInvariantFull s ∧ s.objects.invExt) := by
+  intro s t h
+  refine ⟨ipcInvariantFull_of_storeAgrees_of_scheduler_eq (fun k => ?_)
+    (finaliseThreadReleaseCores_scheduler s t) h.1, (FinaliseFrame.releaseCores s t h.2).invExt⟩
+  rw [finaliseThreadReleaseCores_objects]
 
 -- ============================================================================
 -- §4  The finalisation
@@ -406,8 +431,8 @@ theorem finaliseFinalObject_preserves_ipcInvariantFull (target : Nat) (st : Syst
       ⟨storeUnbindNotification_preserves_ipcInvariantFull s n t h.2 h.1 hCode hIn,
         (FinaliseFrame.storeUnbindNotification s t n h.2).invExt⟩)
     finaliseScReleaseStep_keepsIpcInvariantFull finaliseCancelStep_keepsIpcInvariantFull
-    finaliseSuspendStep_keepsIpcInvariantFull finaliseUnstackStep_keepsIpcInvariantFull
-    finaliseReplyStep_keepsIpcInvariantFull
+    finaliseSuspendStep_keepsIpcInvariantFull finaliseReleaseStep_keepsIpcInvariantFull
+    finaliseUnstackStep_keepsIpcInvariantFull finaliseReplyStep_keepsIpcInvariantFull
     target st ⟨hInv, hObjInv⟩).1
 
 /-- **The retire after the finalisation keeps the IPC bundle**: the

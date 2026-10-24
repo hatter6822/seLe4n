@@ -2316,13 +2316,73 @@ private def runThreadFinaliseChecks : IO Unit := do
         assertBool "deleting a blocked thread's last capability cancels its wait and retires it"
           (!storedAt st1 960 && !recordsChildAt st1 carveUt 960 &&
             (st1.getNotification? (SeLe4n.ObjId.ofNat 961)).map (·.waitHead) == some none)
-  -- The executing thread is not finalised (`docs/REGISTERED_DEBT.md`): its
-  -- capability's delete leaves it in the store, still current.
-  match runAll spaceScenario [decodeDelete slotOwnerTcb] with
-  | .error e => assertBool s!"deleting a capability to the executing thread succeeds (got {repr e})" false
-  | .ok st =>
-    assertBool "deleting the executing thread's capability keeps the thread, current"
-      (storedAt st carveOwner.toNat && st.scheduler.currentOnCore Concurrency.bootCoreId == some carveOwner)
+  -- A thread a core holds is finalised as seL4's `finaliseCap` finalises it:
+  -- suspended (taken off the run queue it waits on, or off the current slot of
+  -- the core running it, that core's reschedule flag raised), every core's
+  -- FP/SIMD and resident hold on it released, and retired.  Each placement is
+  -- staged through the kernel's own writers on the carved thread.
+  match runAll carveScenario [decodeCarve slotUtRetype tcbTag 960 slotOwnCnRW 12] with
+  | .error e => assertBool s!"carving a thread succeeds (got {repr e})" false
+  | .ok st0 => do
+    let tid : SeLe4n.ThreadId := ⟨960⟩
+    let c0 := Concurrency.bootCoreId
+    let c1 : Concurrency.CoreId := ⟨1, by decide⟩
+    let ready := st0.updateTcb tid fun t => { t with threadState := .Ready }
+    -- Queued on the executing core.
+    let queued := enqueueRunnableOnCore ready c0 tid
+    assertBool "setup: the carved thread is queued on the executing core"
+      (queued.queuedOn c0 tid)
+    match runAll queued [decodeDelete 12] with
+    | .error e => assertBool s!"deleting a queued thread's last capability succeeds (got {repr e})" false
+    | .ok st1 =>
+      assertBool "deleting a queued thread's last capability dequeues it and retires it"
+        (!storedAt st1 960 && !recordsChildAt st1 carveUt 960 && !st1.queuedOn c0 tid)
+    -- Resumed by the syscall (the QEMU exerciser's sequence), so queued
+    -- wherever its placement puts it.
+    let resume : SyscallDecodeResult :=
+      { capAddr := SeLe4n.CPtr.ofNat 12, msgInfo := { length := 0, extraCaps := 0, label := 0 },
+        syscallId := .tcbResume, msgRegs := #[] }
+    match runAll st0 [resume] with
+    | .error e => assertBool s!"resuming the carved thread succeeds (got {repr e})" false
+    | .ok stR => do
+      assertBool "setup: the resumed thread is queued on some core"
+        (runnableOnSomeCore stR tid)
+      match runAll stR [decodeDelete 12] with
+      | .error e => assertBool s!"deleting a resumed thread's last capability succeeds (got {repr e})" false
+      | .ok st1 =>
+        assertBool "deleting a resumed thread's last capability dequeues it and retires it"
+          (!storedAt st1 960 && !recordsChildAt st1 carveUt 960 && !runnableOnSomeCore st1 tid)
+    -- Current on another core, that core's FP/SIMD owner and its resident.
+    let remote : SystemState :=
+      { ready with
+        scheduler := ready.scheduler.setCurrentOnCore c1 (some tid)
+        machine := (ready.machine.setFpOwnerOnCore c1 (some tid)).setResidentOnCore c1 (some tid) }
+    assertBool "setup: the carved thread is current, FP owner and resident on core 1"
+      (remote.scheduler.currentOnCore c1 == some tid && remote.machine.fpOwnerOnCore c1 == some tid &&
+        remote.machine.residentOnCore c1 == some tid)
+    match runAll remote [decodeDelete 12] with
+    | .error e => assertBool s!"deleting a remotely running thread's last capability succeeds (got {repr e})" false
+    | .ok st1 =>
+      assertBool "deleting a thread running on another core retires it, empties that core's slot and its FP/SIMD and resident records, and flags that core to reschedule"
+        (!storedAt st1 960 && !recordsChildAt st1 carveUt 960 &&
+          st1.scheduler.currentOnCore c1 == none && st1.machine.fpOwnerOnCore c1 == none &&
+          st1.machine.residentOnCore c1 == none && st1.scheduler.reschedulePendingOnCore c1)
+    -- Current on the executing core itself, the self-delete's state: a thread
+    -- that makes the syscall holds its CSpace root in a space slot, which the
+    -- admission refuses until row 26, so the finalisation is run on the state
+    -- directly.  It vacates the core's own slot and flags the core, so the
+    -- syscall step chooses a successor before it returns, and leaves the
+    -- thread retirable; a destroyed caller's return frame is written nowhere
+    -- (`stageCallerReturnFor_destroyed`).
+    let ownCore : SystemState :=
+      { ready with
+        scheduler := ready.scheduler.setCurrentOnCore c0 (some tid)
+        machine := (ready.machine.setFpOwnerOnCore c0 (some tid)).setResidentOnCore c0 (some tid) }
+    let st1 := SeLe4n.Kernel.finaliseFinalObject 961 ownCore
+    assertBool "finalising the executing core's current thread empties the core's slot and its FP/SIMD and resident records, flags the core to reschedule, and leaves the thread retirable"
+      (st1.scheduler.currentOnCore c0 == none && st1.machine.fpOwnerOnCore c0 == none &&
+        st1.machine.residentOnCore c0 == none && st1.scheduler.reschedulePendingOnCore c0 &&
+        SeLe4n.Kernel.threadRetirable st1 (SeLe4n.ObjId.ofNat 960))
 
 /-- The reply at `oid`, if one is stored there. -/
 private def replyAt (st : SystemState) (oid : Nat) : Option SeLe4n.Kernel.Reply :=

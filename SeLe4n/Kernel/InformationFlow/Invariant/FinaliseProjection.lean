@@ -491,21 +491,96 @@ theorem finaliseThreadCancel_hidden (ctx : LabelingContext) (observer : IfObserv
     · exact ⟨rfl, hInv⟩
   · exact ⟨rfl, hInv⟩
 
-/-- **A finalised thread's suspend is invisible** when the thread is hidden. -/
+/-- **A finalised thread's notification cancel keeps its scheduling binding**:
+the cancel detaches the queue head, rewriting its notification links, and
+restores it to ready. -/
+theorem finaliseThreadCancel_scBinding {s : SystemState} {tid : SeLe4n.ThreadId} {t : TCB}
+    (hInv : s.objects.invExt) (hT : s.getTcb? tid = some t) :
+    ∃ t', (finaliseThreadCancel s tid).getTcb? tid = some t' ∧
+      t'.scBindingScCode = t.scBindingScCode := by
+  have hTo := (SystemState.getTcb?_eq_some_iff s tid t).mp hT
+  unfold finaliseThreadCancel
+  rw [hT]; dsimp only
+  split
+  · next n hB =>
+    split
+    · next ntfn hNt =>
+      split
+      · next hC =>
+        simp only [Bool.and_eq_true, beq_iff_eq] at hC
+        obtain ⟨st1, n', -, hn', hI1, hOff, -, -, hEq⟩ :=
+          cancelIpcBlocking_notificationHead_eq hNt hC.1 hT hB hInv
+        have hNo := (SystemState.getNotification?_eq_some_iff s n ntfn).mp hNt
+        have hNe : n ≠ tid.toObjId := by
+          intro e; rw [e, hTo] at hNo; cases hNo
+        have h1 : st1.objects[tid.toObjId]? = some (.tcb t) := (hOff _ hNe).trans hTo
+        have hL := detachNtfnHead_linksRewritten st1 tid t.ntfnNext hI1
+        rw [hEq, SystemState.updateTcb_getTcb?_self _ _ _ hL.2.1]
+        rcases hL.2.2 tid.toObjId with e | ⟨a, b, ha, hb, np, nn, rfl⟩
+        · rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr (e.trans h1)]
+          exact ⟨_, rfl, rfl⟩
+        · rw [h1] at ha; cases ha
+          rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr hb]
+          exact ⟨_, rfl, rfl⟩
+      · exact ⟨t, hT, rfl⟩
+    · exact ⟨t, hT, rfl⟩
+  · exact ⟨t, hT, rfl⟩
+
+/-- **A finalised thread's suspend keeps the object table well formed and the
+thread's scheduling binding**: the deschedule rewrites run-queue links alone,
+and the mark the thread state. -/
+theorem finaliseThreadSuspend_scBinding {s : SystemState} {tid : SeLe4n.ThreadId} {t : TCB}
+    (hInv : s.objects.invExt) (hT : s.getTcb? tid = some t) :
+    (finaliseThreadSuspend s tid).objects.invExt ∧
+      ∃ t', (finaliseThreadSuspend s tid).getTcb? tid = some t' ∧
+        t'.scBindingScCode = t.scBindingScCode := by
+  have hTo := (SystemState.getTcb?_eq_some_iff s tid t).mp hT
+  unfold finaliseThreadSuspend
+  rw [hT]; dsimp only
+  split
+  · have hD : (descheduleAtPlacement s tid).objects.invExt :=
+      (FinaliseFrame.descheduleAt s tid (placedCoreOf? s tid) hInv).invExt
+    obtain ⟨t1, h1, e⟩ := KernelObject.map_withoutRunLinks_tcb
+      (descheduleAtPlacement_objectsAgreeOffRunLinks s tid tid.toObjId) hTo
+    refine ⟨(FinaliseFrame.suspend s tid hInv).invExt, ?_⟩
+    rw [SystemState.updateTcb_getTcb?_self _ _ _ hD, (SystemState.getTcb?_eq_some_iff _ _ _).mpr h1]
+    exact ⟨_, rfl, TCB.proj_eq_of_withoutRunLinks_eq TCB.scBindingScCode e⟩
+  · exact ⟨hInv, t, hT, rfl⟩
+
+/-- **A finalised thread's suspend is invisible** when the thread is hidden, as
+an object and as a thread: the deschedule wherever it is placed
+(`descheduleAtPlacement_preserves_projection`), then the mark. -/
 theorem finaliseThreadSuspend_hidden (ctx : LabelingContext) (observer : IfObserver)
     (s : SystemState) (tid : SeLe4n.ThreadId) (hInv : s.objects.invExt)
-    (hTh : objectObservable ctx observer tid.toObjId = false) :
+    (hTh : objectObservable ctx observer tid.toObjId = false)
+    (hThr : threadObservable ctx observer tid = false) :
     projectState ctx observer (finaliseThreadSuspend s tid) = projectState ctx observer s := by
   unfold finaliseThreadSuspend
   split
   · split
-    · exact (hiddenObjectsWrite.updateTcb s tid _ hInv hTh).projection
+    · have hD : (descheduleAtPlacement s tid).objects.invExt :=
+        (FinaliseFrame.descheduleAt s tid (placedCoreOf? s tid) hInv).invExt
+      rw [(hiddenObjectsWrite.updateTcb _ tid _ hD hTh).projection,
+        descheduleAtPlacement_preserves_projection ctx observer s tid hThr]
     · rfl
   · rfl
 
+/-- **The release of every core's hold on a thread is invisible**: no
+projection reads a core's FP/SIMD owner or its resident. -/
+theorem finaliseThreadReleaseCores_hidden (ctx : LabelingContext) (observer : IfObserver)
+    (s : SystemState) (tid : SeLe4n.ThreadId) :
+    projectState ctx observer (finaliseThreadReleaseCores s tid) = projectState ctx observer s := by
+  have hHolds : ∀ fo rc, projectState ctx observer
+      { s with machine := { s.machine with fpOwner := fo, residentCode := rc } } =
+      projectState ctx observer s := fun _ _ => rfl
+  rw [onlyObjectsSchedulerCoreHoldsDiffer.releaseCores s tid, finaliseThreadReleaseCores_objects,
+    finaliseThreadReleaseCores_scheduler]
+  exact hHolds _ _
+
 /-- **What a thread's finalisation writes, besides the thread**: its bound
 notification, its scheduling context, the notification it waits on and the
-waiter after it — each hidden. -/
+waiter after it — each hidden — and, since the suspend takes it off whichever
+core holds it, the thread is hidden as a thread too. -/
 def threadFinaliseHidden (ctx : LabelingContext) (observer : IfObserver)
     (st : SystemState) (x : SeLe4n.ObjId) : Prop :=
   ∀ t, st.getObject? x = some (.tcb t) →
@@ -514,7 +589,8 @@ def threadFinaliseHidden (ctx : LabelingContext) (observer : IfObserver)
     (t.scBindingScCode ≠ 0 → objectObservable ctx observer
       (⟨t.scBindingScCode - 1⟩ : SeLe4n.SchedContextId).toObjId = false) ∧
     (∀ n, t.ipcState = .blockedOnNotification n → objectObservable ctx observer n = false) ∧
-    (∀ b, t.ntfnNext = some b → objectObservable ctx observer b.toObjId = false)
+    (∀ b, t.ntfnNext = some b → objectObservable ctx observer b.toObjId = false) ∧
+    threadObservable ctx observer ⟨x.val⟩ = false
 
 /-- **What a scheduling context's finalisation writes, besides the context**:
 the thread bound to it — hidden. -/
@@ -538,16 +614,21 @@ theorem finaliseThread_hidden (ctx : LabelingContext) (observer : IfObserver)
       split at hAd
       · exact ⟨_, ‹_›⟩
       · cases hAd
-    obtain ⟨h1, h2, h3, h4⟩ := hH t hO
+    obtain ⟨h1, h2, h3, h4, h5⟩ := hH t hO
     have hT : st.getTcb? ⟨x.val⟩ = some t :=
       (SystemState.getTcb?_eq_some_iff _ _ _).mpr hO
     obtain ⟨hP1, hI1, t1, hT1, e1, e2, e3, -⟩ :=
       finaliseThreadUnbindNotification_hidden ctx observer hInv hT hX h1
-    obtain ⟨hP2, hI2, t2, hT2, f1, f2⟩ :=
-      finaliseThreadUnbindSchedContext_hidden ctx observer hI1 hT1 hX (by rw [e3]; exact h2)
-    obtain ⟨hP3, hI3⟩ := finaliseThreadCancel_hidden ctx observer hI2 hT2 hX
-      (by rw [f1, e1]; exact h3) (by rw [f2, e2]; exact h4)
-    rw [finaliseThreadSuspend_hidden ctx observer _ ⟨x.val⟩ hI3 hX, hP3, hP2, hP1]
+    obtain ⟨hP2, hI2⟩ := finaliseThreadCancel_hidden ctx observer hI1 hT1 hX
+      (by rw [e1]; exact h3) (by rw [e2]; exact h4)
+    obtain ⟨t2, hT2, f2⟩ := finaliseThreadCancel_scBinding hI1 hT1
+    have hP3 := finaliseThreadSuspend_hidden ctx observer _ ⟨x.val⟩ hI2 hX h5
+    obtain ⟨hI3, t3, hT3, f3⟩ := finaliseThreadSuspend_scBinding hI2 hT2
+    have hT4 := (finaliseThreadReleaseCores_getTcb? _ ⟨x.val⟩ ⟨x.val⟩).trans hT3
+    have hI4 := (FinaliseFrame.releaseCores _ ⟨x.val⟩ hI3).invExt
+    obtain ⟨hP5, -, -⟩ := finaliseThreadUnbindSchedContext_hidden ctx observer hI4 hT4 hX
+      (by rw [f3, f2, e3]; exact h2)
+    rw [hP5, finaliseThreadReleaseCores_hidden, hP3, hP2, hP1]
   · rfl
 
 namespace hiddenObjectsWrite
@@ -713,7 +794,7 @@ theorem finaliseReply_hidden (ctx : LabelingContext) (observer : IfObserver)
                   unfold PriorityInheritance.blockingServer; rw [hT]; exact hS)) hI1
           rw [finaliseThreadSuspend_hidden ctx observer _ _
             (FinaliseFrame.finaliseReplyRevert _ _ hI1).invExt
-            (hValid.coherenceImpliesObjectHigh observer _ hHigh), hRev, hP1]
+            (hValid.coherenceImpliesObjectHigh observer _ hHigh) hHigh, hRev, hP1]
         · rfl
       · rfl
   · rfl

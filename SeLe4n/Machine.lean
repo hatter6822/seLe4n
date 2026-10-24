@@ -1250,9 +1250,10 @@ theorem MachineState.fpOwnedOnCores_eq_any (ms : MachineState) (tid : ThreadId)
 
 /-- **PR #904 review (`v0.36.41`)**: some core's registers still hold `tid`'s EL0
 context — the core resumed it and has not yet saved it back.  The residency
-sibling of `fpOwnedOnSomeCore`, and refused by the destroy path for the same
-reason: that core's next entry saves those registers into the TCB stored under
-`tid`, so a thread retyped under the id would receive them. -/
+sibling of `fpOwnedOnSomeCore`, released by a final delete's finalisation
+(`releaseThread`) and refused by the retire after it for the same reason: that
+core's next entry saves those registers into the TCB stored under `tid`, so a
+thread retyped under the id would receive them. -/
 def MachineState.residentOnSomeCore (ms : MachineState) (tid : ThreadId) : Bool :=
   SeLe4n.Kernel.Concurrency.allCores.any fun c => ms.residentOnCore c == some tid
 
@@ -1293,6 +1294,184 @@ theorem MachineState.residentOnCores_eq_any (ms : MachineState) (tid : ThreadId)
     @MachineState.residentOnSomeCore = @MachineState.residentOnSomeCoreImpl := by
   funext ms tid
   exact (MachineState.residentOnCores_eq_any ms tid _).symm
+
+/-- **A destroyed thread's hold on core `c`, released**: an FP/SIMD owner that
+is `tid` becomes nobody (seL4's `fpuThreadDelete`, which
+`Arch_prepareThreadDelete` runs on a thread's final delete), and a resident that
+is `tid` becomes nobody.  The owner's live registers are not saved — the thread
+they belong to is being destroyed — and the next thread to use FP/SIMD on the
+core traps and loads its own context.  A core that still runs the thread at EL0
+saves nothing when it next enters the kernel (`saveVacatedFrameOnCore` finds no
+resident), so no state of the destroyed thread reaches a thread later stored
+under its id.  Each word is tested in place, so the release builds no `some tid`. -/
+def MachineState.releaseThreadOnCore (ms : MachineState) (tid : ThreadId) (c : CoreId) :
+    MachineState :=
+  let ms1 := match ms.fpOwnerOnCore c with
+    | some t => if t.val == tid.val then ms.setFpOwnerOnCore c none else ms
+    | none => ms
+  if ms1.residentCode.get c == tid.val + 1 then ms1.setResidentOnCore c none else ms1
+
+/-- The release on each of the cores `cs`, by structural recursion, so it builds
+no closure. -/
+def MachineState.releaseThreadOnCores (ms : MachineState) (tid : ThreadId) :
+    List CoreId → MachineState
+  | [] => ms
+  | c :: cs => (ms.releaseThreadOnCore tid c).releaseThreadOnCores tid cs
+
+/-- The release on every core. -/
+@[inline] def MachineState.releaseThread (ms : MachineState) (tid : ThreadId) : MachineState :=
+  ms.releaseThreadOnCores tid SeLe4n.Kernel.Concurrency.allCores
+
+/-- One core's release writes the owner table and the residency table alone. -/
+theorem MachineState.releaseThreadOnCore_fields (ms : MachineState) (tid : ThreadId)
+    (c : CoreId) :
+    ms.releaseThreadOnCore tid c =
+      { ms with fpOwner := (ms.releaseThreadOnCore tid c).fpOwner,
+                residentCode := (ms.releaseThreadOnCore tid c).residentCode } := by
+  unfold MachineState.releaseThreadOnCore
+  dsimp only
+  split
+  · split
+    · split <;> rfl
+    · split <;> rfl
+  · split <;> rfl
+
+/-- The release writes the owner table and the residency table alone. -/
+theorem MachineState.releaseThreadOnCores_fields (ms : MachineState) (tid : ThreadId)
+    (cs : List CoreId) :
+    ms.releaseThreadOnCores tid cs =
+      { ms with fpOwner := (ms.releaseThreadOnCores tid cs).fpOwner,
+                residentCode := (ms.releaseThreadOnCores tid cs).residentCode } := by
+  induction cs generalizing ms with
+  | nil => rfl
+  | cons c cs ih =>
+    simp only [MachineState.releaseThreadOnCores]
+    rw [ih, MachineState.releaseThreadOnCore_fields ms tid c]
+
+/-- One core's release, read at core `d`'s FP/SIMD owner. -/
+theorem MachineState.releaseThreadOnCore_fpOwnerOnCore (ms : MachineState) (tid : ThreadId)
+    (c d : CoreId) :
+    (ms.releaseThreadOnCore tid c).fpOwnerOnCore d =
+      if d = c ∧ ms.fpOwnerOnCore d = some tid then none else ms.fpOwnerOnCore d := by
+  have hR : ∀ m : MachineState, (if m.residentCode.get c == tid.val + 1 then
+      m.setResidentOnCore c none else m).fpOwnerOnCore d = m.fpOwnerOnCore d := by
+    intro m; split <;> rfl
+  unfold MachineState.releaseThreadOnCore
+  simp only []
+  rw [hR]
+  by_cases hd : d = c
+  · subst hd
+    cases hO : ms.fpOwnerOnCore d with
+    | none => simp [hO]
+    | some t =>
+      by_cases ht : t.val = tid.val
+      · have : t = tid := by cases t; cases tid; simp_all
+        subst this; simp
+      · have : t ≠ tid := fun e => ht (e ▸ rfl)
+        simp [ht, this, hO]
+  · have hne : c ≠ d := fun e => hd e.symm
+    simp only [hd, false_and, if_false]
+    split
+    · split
+      · exact MachineState.fpOwnerOnCore_setFpOwnerOnCore_ne _ _ _ _ hne
+      · rfl
+    · rfl
+
+/-- One core's release, read at core `d`'s resident. -/
+theorem MachineState.releaseThreadOnCore_residentOnCore (ms : MachineState) (tid : ThreadId)
+    (c d : CoreId) :
+    (ms.releaseThreadOnCore tid c).residentOnCore d =
+      if d = c ∧ ms.residentOnCore d = some tid then none else ms.residentOnCore d := by
+  have hF : ∀ m : MachineState, (match m.fpOwnerOnCore c with
+      | some t => if t.val == tid.val then m.setFpOwnerOnCore c none else m
+      | none => m).residentOnCore d = m.residentOnCore d ∧
+      (match m.fpOwnerOnCore c with
+      | some t => if t.val == tid.val then m.setFpOwnerOnCore c none else m
+      | none => m).residentCode = m.residentCode := by
+    intro m; split
+    · split <;> exact ⟨rfl, rfl⟩
+    · exact ⟨rfl, rfl⟩
+  unfold MachineState.releaseThreadOnCore
+  simp only []
+  generalize hM : (match ms.fpOwnerOnCore c with
+      | some t => if t.val == tid.val then ms.setFpOwnerOnCore c none else ms
+      | none => ms) = ms1
+  obtain ⟨hR1, hC1⟩ := hF ms
+  rw [hM] at hR1 hC1
+  rw [← hR1]
+  have hRes : ms1.residentOnCore c = some tid ↔ ms1.residentCode.get c = tid.val + 1 := by
+    simp [MachineState.residentOnCore]
+  by_cases hd : d = c
+  · subst hd
+    by_cases hc : ms1.residentCode.get d = tid.val + 1
+    · simp [hc, hRes.mpr hc]
+    · have : ¬ ms1.residentOnCore d = some tid := fun h => hc (hRes.mp h)
+      simp [hc, this]
+  · have hne : c ≠ d := fun e => hd e.symm
+    simp only [hd, false_and, if_false]
+    split
+    · exact MachineState.residentOnCore_setResidentOnCore_ne _ _ _ _ hne
+    · rfl
+
+/-- **What the release leaves as a core's FP/SIMD owner**: nobody on a core
+among `cs` that `tid` owned, the owner it had everywhere else. -/
+theorem MachineState.releaseThreadOnCores_fpOwnerOnCore (ms : MachineState) (tid : ThreadId)
+    (cs : List CoreId) (d : CoreId) :
+    (ms.releaseThreadOnCores tid cs).fpOwnerOnCore d =
+      if d ∈ cs ∧ ms.fpOwnerOnCore d = some tid then none else ms.fpOwnerOnCore d := by
+  induction cs generalizing ms with
+  | nil => simp [MachineState.releaseThreadOnCores]
+  | cons c cs ih =>
+    simp only [MachineState.releaseThreadOnCores]
+    rw [ih, MachineState.releaseThreadOnCore_fpOwnerOnCore]
+    by_cases hd : d = c
+    · subst hd; by_cases hO : ms.fpOwnerOnCore d = some tid <;> simp [hO]
+    · by_cases hO : ms.fpOwnerOnCore d = some tid <;> simp [hd, hO]
+
+/-- **What the release leaves as a core's resident**: nobody on a core among
+`cs` where `tid` was resident, the resident it had everywhere else. -/
+theorem MachineState.releaseThreadOnCores_residentOnCore (ms : MachineState) (tid : ThreadId)
+    (cs : List CoreId) (d : CoreId) :
+    (ms.releaseThreadOnCores tid cs).residentOnCore d =
+      if d ∈ cs ∧ ms.residentOnCore d = some tid then none else ms.residentOnCore d := by
+  induction cs generalizing ms with
+  | nil => simp [MachineState.releaseThreadOnCores]
+  | cons c cs ih =>
+    simp only [MachineState.releaseThreadOnCores]
+    rw [ih, MachineState.releaseThreadOnCore_residentOnCore]
+    by_cases hd : d = c
+    · subst hd; by_cases hO : ms.residentOnCore d = some tid <;> simp [hO]
+    · by_cases hO : ms.residentOnCore d = some tid <;> simp [hd, hO]
+
+/-- **After the release no core holds `tid`**: no core's FP/SIMD registers are
+its, and no core records it as resident. -/
+theorem MachineState.releaseThread_releases (ms : MachineState) (tid : ThreadId) :
+    (ms.releaseThread tid).fpOwnedOnSomeCore tid = false ∧
+      (ms.releaseThread tid).residentOnSomeCore tid = false := by
+  refine ⟨(MachineState.fpOwnedOnSomeCore_eq_false_iff _ _).mpr fun d => ?_,
+    (MachineState.residentOnSomeCore_eq_false_iff _ _).mpr fun d => ?_⟩
+  · unfold MachineState.releaseThread
+    rw [MachineState.releaseThreadOnCores_fpOwnerOnCore]
+    by_cases hO : ms.fpOwnerOnCore d = some tid <;>
+      simp [hO, SeLe4n.Kernel.Concurrency.mem_allCores]
+  · unfold MachineState.releaseThread
+    rw [MachineState.releaseThreadOnCores_residentOnCore]
+    by_cases hO : ms.residentOnCore d = some tid <;>
+      simp [hO, SeLe4n.Kernel.Concurrency.mem_allCores]
+
+/-- **The release keeps every other thread's hold**: a core's owner or resident
+that is not `tid` is kept. -/
+theorem MachineState.releaseThread_fpOwnerOnCore_of_ne (ms : MachineState) (tid : ThreadId)
+    (d : CoreId) (h : ms.fpOwnerOnCore d ≠ some tid) :
+    (ms.releaseThread tid).fpOwnerOnCore d = ms.fpOwnerOnCore d := by
+  unfold MachineState.releaseThread
+  rw [MachineState.releaseThreadOnCores_fpOwnerOnCore]; simp [h]
+
+theorem MachineState.releaseThread_residentOnCore_of_ne (ms : MachineState) (tid : ThreadId)
+    (d : CoreId) (h : ms.residentOnCore d ≠ some tid) :
+    (ms.releaseThread tid).residentOnCore d = ms.residentOnCore d := by
+  unfold MachineState.releaseThread
+  rw [MachineState.releaseThreadOnCores_residentOnCore]; simp [h]
 
 /-- **WS-BP BP7.9**: an owner write touches nothing but the owner table. -/
 @[simp] theorem MachineState.setFpOwnerOnCore_coreRegs (ms : MachineState) (c : CoreId)

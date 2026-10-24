@@ -146,7 +146,13 @@ as its resident EL0 context (`MachineState.residentOnSomeCore`).  The window is
 the same one — a remote deschedule clears the slot while the thread still runs
 there — and the write-back is the vacated core's saving of its trap frame into
 the resident's TCB at its next entry, so a retype there would hand one thread's
-general-purpose registers to the thread created under the id. -/
+general-purpose registers to the thread created under the id.
+
+A final delete does not refuse: it finalises the thread as seL4's `finaliseCap`
+does, taking it off whichever core runs or queues it and releasing every core's
+FP/SIMD and resident hold on it (`finaliseThreadReleaseCores`), so the window is
+closed by there being no record left to write back under the id; the retire after
+it still asks this question, before it writes. -/
 def threadHeldOnSomeCore (st : SystemState) (tid : SeLe4n.ThreadId) : Bool :=
   threadCurrentOnSomeCore st tid || st.machine.fpOwnedOnSomeCore tid ||
     st.machine.residentOnSomeCore tid

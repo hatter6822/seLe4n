@@ -17,11 +17,15 @@ three, and `finaliseFinalObject`, which a final delete runs before the retire
 is emptied and can then be retired.
 
 WS-ZA ZA5.4 part 24: and on the final capability to a thread `finaliseCap`
-unbinds its notification and its scheduling context and suspends it, and on the
-final capability to a scheduling context it unbinds the context's thread
-(`finaliseThread`, `finaliseSchedContext`, §4); each then runs the destroy
-cleanup (`lifecyclePreRetypeCleanup`), so a thread or a context leaves no
-reference behind and the retire can erase it.
+unbinds its notification, cancels its IPC, suspends it — taking it off whichever
+core holds it, queued there or current there, the executing core's own thread
+included — releases every core's FP/SIMD and resident hold on it, and unbinds
+its scheduling context; on the final capability to a scheduling context it
+unbinds the context's thread (`finaliseThread`, `finaliseSchedContext`, §4).
+Each then runs the destroy cleanup (`lifecyclePreRetypeCleanup`), so a thread
+or a context leaves no reference behind and the retire can erase it; a core
+whose current thread was deleted chooses a successor, or resumes its idle
+loop.
 
 * **One waiter at a time, at the head.**  Each step takes the head of the queue
   (`cancelEndpointQueue`, `cancelNotificationQueue`): the endpoint's head is
@@ -312,29 +316,29 @@ theorem schedContextBinding_of_codes' {tcb : TCB} (hS : tcb.scBindingScCode ≠ 
   rw [hs, hO]; simp
 
 /-- **Whether a final delete may finalise the thread at `x`**, read on the
-pre-state before any write.  The thread is stored under its own id, is no
-reserved or idle thread and is held by no core (seL4 suspends a running thread
-and reschedules; this kernel refuses, `docs/REGISTERED_DEBT.md`); it is on no
-run queue; it is suspended and ready, or the head waiter of a notification
-(the one blocking state this cut cancels); it is linked into no endpoint or
-reply-waiter queue, holds no reply link, stash, timeout budget or message, and
-lends or borrows no reservation; its space slots are empty (their finalising
-delete is a later cut's); a bound notification and a bound scheduling context
-are bound back to it; and nothing else names it as a reservation's origin or as
-a service's owner.  Each step below re-reads its own guard, so a state outside
-this set is left as it is and the retire then refuses the thread. -/
+pre-state before any write.  The thread is stored under its own id and is no
+reserved or idle thread; it is ready (suspended, queued, current on a core —
+the executing core's own thread deleting its last capability included — or held
+by a core as its FP/SIMD owner or its resident), or the head waiter of a
+notification (the one blocking state this cut cancels); it is linked into no
+endpoint or reply-waiter queue, holds no reply link, stash, timeout budget or
+message, and lends or borrows no reservation; its space slots are empty (their
+finalising delete is a later cut's); a bound notification and a bound
+scheduling context are bound back to it; and nothing else names it as a
+reservation's origin or as a service's owner.  Each step below re-reads its own
+guard, so a state outside this set is left as it is and the retire then refuses
+the thread. -/
 @[inline] def threadFinaliseAdmitted (st : SystemState) (x : SeLe4n.ObjId) : Bool :=
   match st.getObject? x with
   | some (.tcb t) =>
     let tid : SeLe4n.ThreadId := ⟨x.val⟩
     t.tid.val == x.val && !tid.isReserved && !isIdleThreadId tid &&
-    !threadHeldOnSomeCore st tid && t.runCoreCode == 0 &&
     t.queueNextCode == 0 && t.queuePrevCode == 0 && t.queuePPrevCode == 0 &&
     t.replyWaiterNextCode == 0 && t.replyWaiterPrevCode == 0 && t.replyWaitersHeadCode == 0 &&
     t.replyObjectCode == 0 && t.pendingReceiveReplyCode == 0 && t.timeoutBudget.isNone &&
     t.pendingMessage.isNone && t.scBindingOwnerCode == 0 &&
     t.spaceCells[0].isNone && t.spaceCells[1].isNone &&
-    ((t.ipcStateCode == 0 && t.ipcObjectCode == 0 && t.threadState == .Inactive &&
+    ((t.ipcStateCode == 0 && t.ipcObjectCode == 0 &&
         t.ntfnNextCode == 0 && t.ntfnPrevCode == 0) ||
       (t.ipcStateCode == 2 && t.threadState != .Inactive && t.ntfnPrevCode == 0 &&
         match st.getNotification? ⟨t.ipcObjectCode⟩ with
@@ -370,17 +374,83 @@ def finaliseThreadCancel (st : SystemState) (tid : SeLe4n.ThreadId) : SystemStat
     | _ => st
   | none => st
 
-/-- **Suspend a thread being finalised**: a ready thread, no core's idle thread,
-that runs and waits on no core is marked `.Inactive`, seL4's
-`setThreadState Inactive`. -/
+/-- **The mark a finalised thread's suspend leaves**: `.Inactive`, and, once the
+thread is on no run queue, its own run links cleared.  The dequeue rewrites the
+neighbours' links and the thread's core code, and leaves the thread's own links
+behind, which no reader consults while the core code is `0`; the retire asks
+them zero (`threadQuiescent`).  On a queued thread it writes the state alone, so
+it never changes what a run queue reads (`finaliseSuspendMark_runLinkOn`). -/
+@[inline] def finaliseSuspendMark (t : TCB) : TCB :=
+  { t with threadState := .Inactive
+           runPrevCode := if t.runCoreCode == 0 then 0 else t.runPrevCode
+           runNextCode := if t.runCoreCode == 0 then 0 else t.runNextCode
+           runBucketPrevCode := if t.runCoreCode == 0 then 0 else t.runBucketPrevCode
+           runBucketNextCode := if t.runCoreCode == 0 then 0 else t.runBucketNextCode }
+
+theorem finaliseSuspendMark_runLinkOn (t : TCB) (c : Concurrency.CoreId) :
+    (finaliseSuspendMark t).runLinkOn c = t.runLinkOn c := by
+  unfold TCB.runLinkOn
+  show (if t.runCoreCode = c.val + 1 then _ else _) = (if t.runCoreCode = c.val + 1 then _ else _)
+  by_cases h : t.runCoreCode = c.val + 1
+  · have h0 : (t.runCoreCode == 0) = false := by rw [h]; rfl
+    rw [if_pos h, if_pos h]
+    simp only [TCB.runLink, finaliseSuspendMark, h0, Bool.false_eq_true, if_false]
+  · rw [if_neg h, if_neg h]
+
+/-- **Suspend a thread being finalised** (seL4's `suspend`: `setThreadState
+Inactive`, then `tcbSchedDequeue`, with the `rescheduleRequired` a dequeued
+running thread takes): a ready thread, no core's idle thread, that is not
+already suspended leaves the scheduler where the state places it — the run
+queue it waits on, or the current slot of the core running it — and is marked
+`.Inactive`.  The removal is `descheduleAtPlacement`, the suspend syscall's own
+(`suspendPerform`): it clears a vacated core's slot and raises
+that core's reschedule flag, so the executing core, when it is the thread's
+own, chooses a successor before the syscall returns
+(`scheduleLocalSuccessorFrom`), and any other core takes the `.reschedule`
+interrupt the flag raises and does (`dispatchVacatedCore`).  A core whose slot
+is empty resumes its idle loop, never the frame it trapped with. -/
 def finaliseThreadSuspend (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
   match st.getTcb? tid with
   | some t =>
     if t.ipcStateCode == 0 && t.ipcObjectCode == 0 && t.threadState != .Inactive &&
-        t.runCoreCode == 0 && !threadHeldOnSomeCore st tid && !isIdleThreadId tid then
-      st.updateTcb tid fun t => { t with threadState := .Inactive }
+        !isIdleThreadId tid then
+      (descheduleAtPlacement st tid).updateTcb tid finaliseSuspendMark
     else st
   | none => st
+
+/-- **Release every core's hold on a thread being finalised** (seL4's
+`fpuThreadDelete`, which `Arch_prepareThreadDelete` runs): no core's FP/SIMD
+registers are recorded as its and no core records it as resident
+(`MachineState.releaseThread`).  Neither the live FP/SIMD values nor the
+registers a core still running it at EL0 holds are saved: the thread is being
+destroyed, and the next entry on that core saves nothing for it
+(`saveVacatedFrameOnCore`), so nothing of it reaches a thread later stored under
+its id. -/
+def finaliseThreadReleaseCores (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
+  { st with machine := st.machine.releaseThread tid }
+
+@[simp] theorem finaliseThreadReleaseCores_objects (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (finaliseThreadReleaseCores st tid).objects = st.objects := by
+  unfold finaliseThreadReleaseCores; dsimp only
+
+@[simp] theorem finaliseThreadReleaseCores_scheduler (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (finaliseThreadReleaseCores st tid).scheduler = st.scheduler := by
+  unfold finaliseThreadReleaseCores; dsimp only
+
+@[simp] theorem finaliseThreadReleaseCores_machine (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (finaliseThreadReleaseCores st tid).machine = st.machine.releaseThread tid := by
+  unfold finaliseThreadReleaseCores; dsimp only
+
+@[simp] theorem finaliseThreadReleaseCores_getTcb? (st : SystemState) (tid t : SeLe4n.ThreadId) :
+    (finaliseThreadReleaseCores st tid).getTcb? t = st.getTcb? t := by
+  unfold SystemState.getTcb?; rw [finaliseThreadReleaseCores_objects]
+
+/-- The release names a thread on no core's FP/SIMD registers and as no core's
+resident. -/
+theorem finaliseThreadReleaseCores_unheld (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (finaliseThreadReleaseCores st tid).machine.fpOwnedOnSomeCore tid = false ∧
+      (finaliseThreadReleaseCores st tid).machine.residentOnSomeCore tid = false := by
+  rw [finaliseThreadReleaseCores_machine]; exact MachineState.releaseThread_releases _ _
 
 /-- **Unbind a thread being finalised from its notification** (seL4's
 `unbindNotification`), when the notification is bound back to it, each side
@@ -806,20 +876,25 @@ so the store scans its guard and sweeps would make are not run
 -- The finalisations are defined after their cleanups' `@[csimp]` theorems, so
 -- their compiled code takes the compiled cleanups.
 
-/-- **seL4's `finaliseCap` on the final capability to a thread**, in seL4's
-order: unbound from its notification (`unbindNotification`) and from its
-scheduling context (`schedContext_unbindTCB`), then suspended (`suspend`: its
-blocked IPC cancelled, then `.Inactive`), then the destroy cleanup; all of it
-only when the pre-state admits it (`threadFinaliseAdmitted`), checks before
-writes. -/
+/-- **seL4's `finaliseCap` on the final capability to a thread**: unbound from
+its notification (`unbindNotification`); suspended (`suspend`: its blocked IPC
+cancelled, then `.Inactive` and off the scheduler, a core it ran on made to
+choose another thread); released by every core (`fpuThreadDelete`, and the
+residency record); unbound from its scheduling context (`schedContext_unbindTCB`,
+whose own dequeue the suspend has made); then the destroy cleanup.  seL4 runs the
+context unbind before the suspend, and the cut runs it after, so the unbind finds
+the thread on no core, which is all the order changes: the whole finalisation is
+one kernel step.  All of it runs only when the pre-state admits it
+(`threadFinaliseAdmitted`), checks before writes. -/
 def finaliseThread (x : SeLe4n.ObjId) (st : SystemState) : SystemState :=
   if threadFinaliseAdmitted st x then
     let tid : SeLe4n.ThreadId := ⟨x.val⟩
     finaliseThreadCleanup
-      (finaliseThreadSuspend
-        (finaliseThreadCancel
-          (finaliseThreadUnbindSchedContext
-            (finaliseThreadUnbindNotification st tid) tid) tid) tid) x
+      (finaliseThreadUnbindSchedContext
+        (finaliseThreadReleaseCores
+          (finaliseThreadSuspend
+            (finaliseThreadCancel
+              (finaliseThreadUnbindNotification st tid) tid) tid) tid) tid) x
   else st
 
 /-- **seL4's `finaliseCap` on the final capability to a scheduling context**:
@@ -837,10 +912,11 @@ def finaliseSchedContext (x : SeLe4n.ObjId) (st : SystemState) : SystemState :=
 theorem finaliseThread_eq (x : SeLe4n.ObjId) (st : SystemState) :
     finaliseThread x st =
       if threadFinaliseAdmitted st x then
-        finaliseThreadSuspend
-          (finaliseThreadCancel
-            (finaliseThreadUnbindSchedContext
-              (finaliseThreadUnbindNotification st ⟨x.val⟩) ⟨x.val⟩) ⟨x.val⟩) ⟨x.val⟩
+        finaliseThreadUnbindSchedContext
+          (finaliseThreadReleaseCores
+            (finaliseThreadSuspend
+              (finaliseThreadCancel
+                (finaliseThreadUnbindNotification st ⟨x.val⟩) ⟨x.val⟩) ⟨x.val⟩) ⟨x.val⟩) ⟨x.val⟩
       else st := by
   unfold finaliseThread; rw [finaliseThreadCleanup_eq]
 
