@@ -669,7 +669,8 @@ example (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId)
       = some (.tcb holderTcb)) :
     holderTcb.schedContextBinding ≠ .donated sc victim :=
   cancelIpcBlocking_reply_no_donation_to_victim st victim tcb ep rt hInv hLookup hBlocked
-    hOwner hChain hHolder hStack holder holderTcb sc hTcb
+    hOwner (cancelDonationResolves_of_chainWellFormed st victim tcb hChain) hHolder hStack
+    holder holderTcb sc hTcb
 
 /-- **WS-RR RR8.7: the whole bundle across the cancellation's reply arm, applied**
 — the shape a caller sees, and the third of the three arms.
@@ -691,7 +692,8 @@ example (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId)
     (hStack : cancelDonationStackValid st victim tcb) :
     ipcInvariantFull (Lifecycle.Suspend.cancelIpcBlocking st victim tcb) :=
   cancelIpcBlocking_replyArm_preserves_ipcInvariantFull st victim tcb ep rt hInv hLookup
-    hBlocked hBundle hChain hBudgets hOff hOwed hHolder hStack
+    hBlocked hBundle (cancelDonationResolves_of_chainWellFormed st victim tcb hChain)
+    (hBudgets victim tcb (lookupTcb_some_objects st victim tcb hLookup)) hOff hOwed hHolder hStack
 
 /-- **WS-RR RR8.7**: and the arm *is* that composition — reclaim, splice, then the
 teardown pair — by `rfl`, so a step inserted or reordered fails to elaborate rather
