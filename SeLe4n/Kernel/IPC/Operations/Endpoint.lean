@@ -7241,6 +7241,218 @@ theorem returnDonatedSchedContextResolved_eq_legacy_of_no_stack
   returnDonatedSchedContextResolved_of_resolved
     (replyStackOuterCaller?_of_no_stack st scId sc hSc hNoHead)
 
+/-- **Whether the donation return commits, read on the state it runs on** (the
+decision half of seL4's `reply_pop` hand-back, asked before any write).
+`returnDonatedSchedContextResolved` refuses at the reply-stack resolver, at the
+context's own `boundThread` guard, at the outer caller's and the recipient's
+acceptability, at the head and its lower frame, and at the two thread lookups
+after its first stores.  Every one of those reads is answered here on the
+pre-state: the resolver's success already validates the head and the frame
+below it (`replyStackOuterCaller?`), and a store of one kind keeps every object
+of another, so the two late lookups are the pre-state's.  So a caller that asks
+this first commits the return or refuses it before writing anything
+(`returnDonatedSchedContextResolved_ok_of_commits`). -/
+def donatedReturnCommits (st : SystemState) (serverTid : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId) : Bool :=
+  match replyStackOuterCaller? st scId with
+  | .error _ => false
+  | .ok newOwner? =>
+    match st.getSchedContext? scId with
+    | none => false
+    | some sc =>
+      sc.boundThread == some serverTid &&
+        outerCallerAcceptable st serverTid originalOwner newOwner? &&
+        donationRecipientAcceptable st originalOwner &&
+        (lookupTcb st originalOwner).isSome && (lookupTcb st serverTid).isSome
+
+private theorem storeObject_keeps_other {s s' : SystemState} {k j : SeLe4n.ObjId} {o : KernelObject}
+    (hInv : s.objects.invExt) (hS : storeObject k o s = .ok ((), s')) (hne : j ≠ k) :
+    s'.objects[j]? = s.objects[j]? :=
+  storeObject_objects_ne s s' k j o hne hInv hS
+
+/-- A store over a reply keeps every object that is not a reply. -/
+private theorem storeReply_keeps_nonReply {s s' : SystemState} {k : SeLe4n.ObjId} {r0 r' : Reply}
+    (hInv : s.objects.invExt) (hK : s.objects[k]? = some (.reply r0))
+    (hS : storeObject k (.reply r') s = .ok ((), s'))
+    {j : SeLe4n.ObjId} {o : KernelObject} (hJ : s.objects[j]? = some o) (hO : ∀ r, o ≠ KernelObject.reply r) :
+    s'.objects[j]? = some o := by
+  have hne : j ≠ k := by
+    intro e; subst e; rw [hK] at hJ; cases hJ; exact hO r0 rfl
+  rw [storeObject_keeps_other hInv hS hne]; exact hJ
+
+/-- After a reply store, every key that held a reply still holds one. -/
+private theorem storeReply_keeps_reply {s s' : SystemState} {k : SeLe4n.ObjId} {r' : Reply}
+    (hInv : s.objects.invExt) (hS : storeObject k (.reply r') s = .ok ((), s'))
+    {j : SeLe4n.ObjId} {r : Reply} (hJ : s.objects[j]? = some (.reply r)) :
+    ∃ r'', s'.objects[j]? = some (.reply r'') := by
+  by_cases e : j = k
+  · subst e; exact ⟨r', storeObject_objects_eq s s' _ _ hInv hS⟩
+  · exact ⟨r, by rw [storeObject_keeps_other hInv hS e]; exact hJ⟩
+
+/-- The head pop commits when its head and the head's lower frame are replies,
+and it keeps every object that is not a reply. -/
+private theorem storeDonationHeadPop_ok_of {s : SystemState} {scId : SeLe4n.SchedContextId}
+    {rid : SeLe4n.ReplyId} {r : Reply} (hInv : s.objects.invExt)
+    (hR : s.objects[rid.toObjId]? = some (.reply r))
+    (hPrev : ∀ p, r.prev = some p → ∃ b, s.objects[p.toObjId]? = some (.reply b)) :
+    ∃ s', storeDonationHeadPop scId (some (rid, r)) s = .ok s' ∧
+      ∀ (j : SeLe4n.ObjId) (o : KernelObject), s.objects[j]? = some o → (∀ r, o ≠ KernelObject.reply r) → s'.objects[j]? = some o := by
+  have hG : s.getReply? rid = some r := (SystemState.getReply?_eq_some_iff _ _ _).mpr hR
+  obtain ⟨s1, hS1⟩ : ∃ s1, storeObject rid.toObjId (.reply { r with prev := none, next := none }) s
+      = .ok ((), s1) := ⟨_, rfl⟩
+  have hInv1 := storeObject_preserves_objects_invExt s s1 _ _ hInv hS1
+  have hC : storeDonationHeadClear (some rid) s = .ok s1 := by
+    rw [storeDonationHeadClear_some, hG]; simp only []; rw [hS1]
+  rw [storeDonationHeadPop_some, hC]; simp only []
+  cases hP : r.prev with
+  | none =>
+    refine ⟨s1, storeReplyReHead_none _ _, fun j o hJ hO => storeReply_keeps_nonReply hInv hR hS1 hJ hO⟩
+  | some p =>
+    obtain ⟨b, hB⟩ := hPrev p hP
+    obtain ⟨b1, hB1⟩ := storeReply_keeps_reply hInv hS1 hB
+    have hG1 : s1.getReply? p = some b1 := (SystemState.getReply?_eq_some_iff _ _ _).mpr hB1
+    obtain ⟨s2, hS2⟩ : ∃ s2, storeObject p.toObjId (.reply { b1 with next := some (.head scId) }) s1
+        = .ok ((), s2) := ⟨_, rfl⟩
+    refine ⟨s2, ?_, fun j o hJ hO => storeReply_keeps_nonReply hInv1 hB1 hS2
+      (storeReply_keeps_nonReply hInv hR hS1 hJ hO) hO⟩
+    rw [storeReplyReHead_some, hG1]; simp only []; rw [hS2]
+
+/-- **The donation return commits on every state `donatedReturnCommits`
+admits** (checks before writes): the admission is the whole refusal surface of
+`returnDonatedSchedContextResolved`, decided on its pre-state. -/
+theorem returnDonatedSchedContextResolved_ok_of_commits {st : SystemState}
+    {serverTid : SeLe4n.ThreadId} {scId : SeLe4n.SchedContextId} {originalOwner : SeLe4n.ThreadId}
+    (hInv : st.objects.invExt)
+    (h : donatedReturnCommits st serverTid scId originalOwner = true) :
+    ∃ st', returnDonatedSchedContextResolved st serverTid scId originalOwner = .ok st' := by
+  unfold donatedReturnCommits at h
+  unfold returnDonatedSchedContextResolved
+  cases hRes : replyStackOuterCaller? st scId with
+  | error e => rw [hRes] at h; cases h
+  | ok newOwner? =>
+    rw [hRes] at h
+    simp only []
+    cases hSc : st.getSchedContext? scId with
+    | none => rw [hSc] at h; cases h
+    | some sc =>
+      rw [hSc] at h
+      simp only [Bool.and_eq_true] at h
+      obtain ⟨⟨⟨⟨hB, hOut⟩, hRcp⟩, hOw⟩, hSv⟩ := h
+      unfold returnDonatedSchedContext
+      rw [hSc]
+      simp only [bne_iff_ne, ne_eq, hOut, hRcp, Bool.not_true]
+      have hBeq : sc.boundThread = some serverTid := by simpa using hB
+      rw [if_neg (fun hn => hn hBeq)]
+      simp only [Bool.false_eq_true, ↓reduceIte]
+      have hScO := (SystemState.getSchedContext?_eq_some_iff _ _ _).mp hSc
+      -- the resolver validated the head and the frame below it
+      have hHead : ∃ head?, donationHeadOf? st scId sc = .ok head? ∧
+          ∀ rid r, head? = some (rid, r) →
+            st.objects[rid.toObjId]? = some (.reply r) ∧
+            ∀ p, r.prev = some p → ∃ b, st.objects[p.toObjId]? = some (.reply b) := by
+        unfold replyStackOuterCaller? at hRes
+        rw [hSc] at hRes
+        simp only [] at hRes
+        cases hH : donationHeadOf? st scId sc with
+        | error e => rw [hH] at hRes; cases hRes
+        | ok head? =>
+          refine ⟨head?, rfl, fun rid r hEq => ?_⟩
+          subst hEq
+          rw [hH] at hRes
+          simp only [] at hRes
+          have hHeadAt : st.objects[rid.toObjId]? = some (.reply r) := by
+            unfold donationHeadOf? at hH
+            revert hH
+            cases sc.scReply with
+            | none => intro hH; cases hH
+            | some rid' =>
+              simp only []
+              cases hG : st.getReply? rid' with
+              | none => intro hH; cases hH
+              | some r' =>
+                simp only []
+                split
+                · intro hH; cases hH
+                · intro hH; cases hH
+                  exact (SystemState.getReply?_eq_some_iff _ _ _).mp hG
+          refine ⟨hHeadAt, fun p hP => ?_⟩
+          rw [hP] at hRes
+          simp only [] at hRes
+          cases hGb : st.getReply? p with
+          | none => rw [hGb] at hRes; cases hRes
+          | some b => exact ⟨b, (SystemState.getReply?_eq_some_iff _ _ _).mp hGb⟩
+      obtain ⟨head?, hH, hHeadFacts⟩ := hHead
+      rw [hH]
+      simp only []
+      obtain ⟨st1, hS1⟩ : ∃ st1, storeObject scId.toObjId (.schedContext
+          (donationReturnSchedContext sc originalOwner (head?.bind (fun p => p.2.prev)) newOwner?))
+          st = .ok ((), st1) := ⟨_, rfl⟩
+      rw [hS1]
+      simp only []
+      have hInv1 := storeObject_preserves_objects_invExt st st1 _ _ hInv hS1
+      -- the TCBs the return reads
+      obtain ⟨ow, hOwL⟩ := Option.isSome_iff_exists.mp hOw
+      obtain ⟨sv, hSvL⟩ := Option.isSome_iff_exists.mp hSv
+      have hOwNR := lookupTcb_some_not_reserved _ _ _ hOwL
+      have hSvNR := lookupTcb_some_not_reserved _ _ _ hSvL
+      have hOwO : st.objects[originalOwner.toObjId]? = some (.tcb ow) :=
+        (SystemState.getTcb?_eq_some_iff _ _ _).mp (by
+          unfold lookupTcb at hOwL; rw [if_neg hOwNR] at hOwL; exact hOwL)
+      have hSvO : st.objects[serverTid.toObjId]? = some (.tcb sv) :=
+        (SystemState.getTcb?_eq_some_iff _ _ _).mp (by
+          unfold lookupTcb at hSvL; rw [if_neg hSvNR] at hSvL; exact hSvL)
+      have keep1 : ∀ (k : SeLe4n.ObjId) (t : TCB), st.objects[k]? = some (KernelObject.tcb t) → st1.objects[k]? = some (KernelObject.tcb t) := by
+        intro k t hk
+        have hne : k ≠ scId.toObjId := by
+          intro e; subst e; rw [hScO] at hk; cases hk
+        rw [storeObject_keeps_other hInv hS1 hne]; exact hk
+      -- the head pop commits and keeps every thread
+      obtain ⟨st2, hS2, keep2⟩ : ∃ st2, storeDonationHeadPop scId head? st1 = .ok st2 ∧
+          ∀ (k : SeLe4n.ObjId) (t : TCB), st1.objects[k]? = some (KernelObject.tcb t) → st2.objects[k]? = some (KernelObject.tcb t) := by
+        cases hHd : head? with
+        | none => exact ⟨st1, rfl, fun _ _ h => h⟩
+        | some pr =>
+          obtain ⟨rid, r⟩ := pr
+          obtain ⟨hHeadAt, hPrev⟩ := hHeadFacts rid r hHd
+          have hne : rid.toObjId ≠ scId.toObjId := by
+            intro e; rw [e, hScO] at hHeadAt; cases hHeadAt
+          have hHeadAt1 : st1.objects[rid.toObjId]? = some (.reply r) := by
+            rw [storeObject_keeps_other hInv hS1 hne]; exact hHeadAt
+          have hPrev1 : ∀ p, r.prev = some p → ∃ b, st1.objects[p.toObjId]? = some (.reply b) := by
+            intro p hp
+            obtain ⟨b, hb⟩ := hPrev p hp
+            have hne' : p.toObjId ≠ scId.toObjId := by
+              intro e; rw [e, hScO] at hb; cases hb
+            exact ⟨b, by rw [storeObject_keeps_other hInv hS1 hne']; exact hb⟩
+          obtain ⟨st2, h2, hk⟩ := storeDonationHeadPop_ok_of (scId := scId) hInv1 hHeadAt1 hPrev1
+          exact ⟨st2, h2, fun k t hkt => hk k _ hkt (fun _ h => by cases h)⟩
+      have hInv2 : st2.objects.invExt :=
+        storeDonationHeadPop_preserves_objects_invExt hInv1 hS2
+      rw [hS2]
+      simp only []
+      have hOw2 : lookupTcb st2 originalOwner = some ow := by
+        unfold lookupTcb; rw [if_neg hOwNR]
+        exact (SystemState.getTcb?_eq_some_iff _ _ _).mpr (keep2 _ _ (keep1 _ _ hOwO))
+      rw [hOw2]
+      simp only []
+      generalize hOwT : ({ ow with
+          scBindingScCode := SchedContextBinding.scCode (donationReturnBinding scId newOwner?),
+          scBindingOwnerCode := SchedContextBinding.ownerCode (donationReturnBinding scId newOwner?) } : TCB) = owT
+      obtain ⟨st3, hS3⟩ : ∃ st3, storeObject originalOwner.toObjId (.tcb owT) st2 = .ok ((), st3) :=
+        ⟨_, rfl⟩
+      rw [hS3]
+      simp only []
+      have hSv3 : ∃ t, lookupTcb st3 serverTid = some t := by
+        unfold lookupTcb; rw [if_neg hSvNR]
+        by_cases e : serverTid.toObjId = originalOwner.toObjId
+        · exact ⟨owT, (SystemState.getTcb?_eq_some_iff _ _ _).mpr
+            (by rw [e]; exact storeObject_objects_eq st2 st3 _ _ hInv2 hS3)⟩
+        · exact ⟨sv, (SystemState.getTcb?_eq_some_iff _ _ _).mpr
+            (by rw [storeObject_keeps_other hInv2 hS3 e]; exact keep2 _ _ (keep1 _ _ hSvO))⟩
+      obtain ⟨svT, hSvT⟩ := hSv3
+      rw [hSvT]
+      exact ⟨_, rfl⟩
+
 -- **WS-RR RR8.12 follow-on (`v0.35.192`): `cleanupActiveDonation` is DELETED.**
 --
 -- Z7-E's alias for `returnDonatedSchedContext` — definitionally that function,
