@@ -278,6 +278,12 @@ def chainNeutralConstructors : List (Name × String) :=
     -- indistinguishable from one re-heading a stack until somebody says which.
   , (`SeLe4n.Kernel.clearDonationOriginReferences,
       "`{ sc with donationOrigin := none }` on the destroy path; `scReply` is untouched by the update")
+    -- WS-ZA ZA5.4 part 25: the finalisation's unstack-step predicate.  A
+    -- `Prop` over the two writes `finaliseSchedContextUnstack` makes (it states
+    -- what a predicate survives across them), so it stores nothing: the write
+    -- is the operation's, registered below with its chain result.
+  , (`SeLe4n.Kernel.FinaliseUnstackStep,
+      "a step predicate (`Prop`) naming the unstack's two writes in a hypothesis; it builds no state, and the write it describes is `finaliseSchedContextUnstack`'s, registered with its chain result")
   , (`SeLe4n.Kernel.FrozenOps.frozenSchedContextUnbind,
       "`{ sc with boundThread := none, isActive := false }`; `scReply` is untouched")
     -- `v0.35.99`: `frozenSetPriority` LEFT this list, and that is the
@@ -793,6 +799,11 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
     -- chain proof; it is a corollary now.
   , (`SeLe4n.Kernel.Lifecycle.Suspend.consumeReplyLink,
       .states [`SeLe4n.Kernel.consumeReplyLink_preserves_donationChainWellFormed])
+    -- WS-ZA ZA5.4 part 25: a finalised scheduling context lets go of the
+    -- stack it heads (seL4's `schedContext_unbindReply`): the head's upward
+    -- link cleared, then the context's head.
+  , (`SeLe4n.Kernel.finaliseSchedContextUnstack,
+      .states [`SeLe4n.Kernel.finaliseSchedContextUnstack_preserves_donationChainWellFormed])
     -- The push's second store: the new head's links and the old head's `next`.
     -- Between the two stores the context's head names a frame that does not yet
     -- answer it, so the chain is broken by construction here.

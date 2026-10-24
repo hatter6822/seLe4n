@@ -1128,6 +1128,38 @@ theorem finaliseUnstack_preserves_donationChainWellFormed {s s1 : SystemState}
           sc2.scReply chain hW (fun q hq => Or.inl (hAg q hq))
         exact ⟨fuel, chain', h'⟩
 
+/-- **A scheduling context's unstack keeps the donation chains** (seL4's
+`schedContext_unbindReply`): the stack it let go of is no context's, so every
+remaining context's walk reads what it read before. -/
+theorem finaliseSchedContextUnstack_preserves_donationChainWellFormed {s : SystemState}
+    (x : SeLe4n.ObjId) (hInv : s.objects.invExt) (hC : donationChainWellFormed s) :
+    donationChainWellFormed (finaliseSchedContextUnstack s x) := by
+  unfold finaliseSchedContextUnstack
+  split
+  · next sc hSc =>
+    split
+    · next rid _ =>
+      split
+      · next r hR =>
+        split
+        · next hH =>
+          split
+          · next s1 hS =>
+            have hNext : r.next = some (.head ⟨x.val⟩) := by
+              unfold replyStackLinkHeads at hH
+              split at hH
+              · next sId hn =>
+                have : sId = ⟨x.val⟩ := by
+                  cases sId; simp only [beq_iff_eq] at hH; subst hH; rfl
+                rw [hn, this]
+              · cases hH
+            exact finaliseUnstack_preserves_donationChainWellFormed hInv hC hSc hR hNext hS
+          · exact hC
+        · exact hC
+      · exact hC
+    · exact hC
+  · exact hC
+
 /-- **What each step of a finalisation carries**: the IPC bundle, the object
 table's well-formedness, the notification queues, the reply-waiter queues and the
 donation chains. -/

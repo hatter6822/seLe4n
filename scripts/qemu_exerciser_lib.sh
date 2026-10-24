@@ -275,7 +275,14 @@ for driver in drivers:
             # retired.
             "inactive-tcb-delete", "bind-carved-tcb", "bound-tcb-delete",
             "bind-carved-sched-context", "bound-sched-context-delete",
-            "unbound-tcb-delete")}
+            "unbound-tcb-delete",
+            # WS-ZA ZA5.4 part 25: a carved reply's minted capability received
+            # through, the partner's call that blocks on it, and both its
+            # capabilities deleted: the final delete cancels the waiting
+            # caller in place (its reply links, the reply-waiter queue and the
+            # stack splice are the objects' own cells) and retires the reply.
+            "mint-busy-reply-cap", "receive-with-carved-reply", "call-to-carved-reply",
+            "busy-reply-cap-delete", "busy-reply-delete")}
         # WS-ZA ZA5.1: the memory invocations' readings today, each the
         # operation's own cells (object writes, the store's copy); the rows
         # that bring them to zero lower these pins.
@@ -311,6 +318,9 @@ for driver in drivers:
             "untyped-retype-busy-notification": (11, 11),
             "untyped-retype-bound-notification": (11, 11),
             "untyped-retype-reply": (12, 12), "untyped-retype-cnode": (29, 29),
+            # WS-ZA ZA5.4 part 25: the busy reply's carve, at the passive
+            # reply's id once that reply is retired.
+            "untyped-retype-busy-reply": (12, 12),
             # WS-ZA ZA5.4 part 24: a thread's and a scheduling context's carve
             # (same trace).  Past the store's 9, a thread adds its TCB cell and
             # two 16-byte cells built with it (`CarveRequest.objectImpl`, 3)
