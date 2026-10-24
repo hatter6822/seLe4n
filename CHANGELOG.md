@@ -124,15 +124,23 @@ This is part 25 of the seL4 untyped reset.
     the receiver waiting.
   - Pins (`scripts/qemu_exerciser_lib.sh`): every new step reads 0 except
     the two carves (`untyped-retype-busy-reply`,
-    `untyped-retype-stashed-reply`, 12, a reply's carve) and
-    `busy-reply-delete`, pinned at `(11, 11)`.  A `lean_alloc_small` caller
-    trace (QEMU under gdb, breakpoints armed only inside `finaliseFinalObject`)
-    put 12 cells there: 11 in the caller cancel `finaliseReply` reuses,
-    `cancelIpcBlocking`'s reply arm, the suspend's general path (the reply's
-    consumed rebuild and store, 8; the reply-frame splice, 1; the
-    ready-staging restore, 2), and one in `finaliseReply`, the caller's server
-    read back as an option, which inlining `finaliseReplyRevert` matches away.
-    `stashed-reply-delete` reads 0.
+    `untyped-retype-stashed-reply`, 12, a reply's carve).
+    `busy-reply-delete` and `stashed-reply-delete` read 0 at the first call
+    and in the steady state.
+  - **The busy reply's delete compiled in place.**  A `lean_alloc_small`
+    caller trace (QEMU under gdb, breakpoints armed only inside
+    `finaliseFinalObject`) first put 12 cells on `busy-reply-delete`, every
+    one in the caller cancel `finaliseReply` reused, `cancelIpcBlocking`'s
+    reply arm: the reply's consumed rebuild and its stores (8), the splice's
+    `Except` cell (1), the restore's caller copy (2, the caller's record
+    still live), and the caller's server read back as an option (1).
+    `finaliseReply_eq_impl` (`@[csimp]`) replaces the finalise with a form
+    that reads the caller's codes before any write and stores the splice,
+    the consumed reply and the caller's cleared link in their slots
+    (`spliceReplyFrameOutOrSelfInPlace`, `consumeCallerReplyInPlace`, each
+    proved equal to its spec form, and each registered in the reply-stack
+    write census with its chain result stated through that equality).  The
+    specification and its proofs are unchanged.
 
 ### The reply records its stasher
 
@@ -356,7 +364,11 @@ reclaim ended the holder's IPC before returning the reservation
   scheduling context takes the general path": the reply arm's return is
   decided by `replyHeadPopCommits` before any write; the borrower's return
   remains.
-- Registered: "A busy reply's final delete allocates 11 cells" (owner ZA6.1).
+- Registered and closed: "A busy reply's final delete allocates 11 cells"
+  (`busy-reply-delete` reads `(0, 0)`, above).
+- Registered: "A head reply's final delete has no QEMU scenario" (owner
+  ZA6.1, whose exerciser gains the third thread the step needs).  The ZA6.1
+  plan row names the step.
 - Extended: the v1.0.0 row on the stated coherence hypotheses (WS-HP) now
   names `lentContextHeadsLenderFrame`, the delete's pre-state fact above.
 

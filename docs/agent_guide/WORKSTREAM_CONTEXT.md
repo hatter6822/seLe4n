@@ -320,8 +320,8 @@ waiting caller's call cancelled through `cancelIpcBlocking`'s reply arm, its
 boost reverted and the caller suspended; a stash cleared in place) and a busy
 scheduling context (a ready holder dequeued, then unbound, then the reply stack
 unlinked), and an endpoint only a reply-blocked caller names is retired; the
-reply's caller cancel is the suspend's general path and allocates (11 cells,
-pinned).  A reply records the thread that stashed it (`Reply.stasherCode`,
+reply's caller cancel is compiled in place (`finaliseReply_eq_impl`) and reads
+0, and a reply heading a stack is popped first (`reply_pop`).  A reply records the thread that stashed it (`Reply.stasherCode`,
 seL4 MCS's `replyTCB`): every stash writes it and every reader re-checks the
 named thread (`SystemState.replyStashedAt`), so new code that stashes a reply
 must write the record, and new code that asks whether a reply is stashed reads

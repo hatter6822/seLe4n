@@ -299,8 +299,13 @@ for driver in drivers:
             # receive, both its capabilities deleted by the partner: the final
             # delete clears the receiver's stash in its own TCB and retires
             # the reply, and the partner's send then finds the receiver waiting.
+            # The busy reply's final delete cancels its caller in place: the
+            # finalise reads the caller's codes before any write and stores
+            # the splice, the consumed reply and the caller's cleared link in
+            # their slots (`finaliseReply_eq_impl`, an @[csimp] over the
+            # specification's `cancelIpcBlocking` reply arm).
             "mint-busy-reply-cap", "receive-with-carved-reply", "call-to-carved-reply",
-            "busy-reply-cap-delete",
+            "busy-reply-cap-delete", "busy-reply-delete",
             "mint-stashed-reply-cap", "receive-stashing-reply", "stashed-reply-cap-delete",
             "stashed-reply-delete", "send-to-unstashed-receiver")}
         # WS-ZA ZA5.1: the memory invocations' readings today, each the
@@ -358,19 +363,6 @@ for driver in drivers:
             # the queue's ends record its new priority bucket
             # (`RunQueueEnds.appendImpl`, 1).  The steady state reuses both.
             "resume-carved-tcb": (3, 0),
-            # WS-ZA ZA5.4 part 25: a busy reply's final delete cancels its
-            # caller through cancelIpcBlocking's reply arm, the suspend's
-            # general path (`docs/REGISTERED_DEBT.md`, "A busy reply's final
-            # delete allocates 11 cells", owned by ZA6.1), compiled as the
-            # specification (a QEMU trace of lean_alloc_small's callers): the
-            # caller's reply-link consume rebuilds and stores the reply
-            # (`consumeCallerReplyLink`, `consumeCallerReply`, `consumeReply`,
-            # `Reply.consumed`, `storeObjectImpl`: 8), the frame splice builds
-            # one (`spliceReplyFrameOut`, 1), the restore rewrites the caller
-            # with its cancellation frame (`restoreToReadyStaging`,
-            # `TCB.withReturnFrame`: 2).  The finalise's own read of the
-            # caller's server is matched away (`finaliseReplyRevert` inlined).
-            "busy-reply-delete": (11, 11),
             "untyped-retype-sched-context": (14, 13), "untyped-retype-sc-thread": (14, 14),
             "vspace-unmap-first": (0, 0), "vspace-map-again": (0, 0),
             "vspace-unify-instruction": (4, 3),
