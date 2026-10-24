@@ -574,7 +574,6 @@
   "SeLe4n/Kernel/Scheduler/Operations/Selection.lean": 5
  },
  "h13": {
-  "SeLe4n/Kernel/Architecture/Invariant.lean": 6,
   "SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean": 2,
   "SeLe4n/Kernel/Scheduler/Operations/Selection.lean": 1
  },
