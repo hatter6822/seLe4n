@@ -17923,16 +17923,17 @@ run_negative_check "INVARIANT" rg -n '^def cancelIpcBlockingReplenishCores' SeLe
 # change updates all of the dispatcher's own frame theorems, which is the case no
 # other theorem covers.
 run_check "INVARIANT" rg -n '^theorem suspendDonationArm_eq_cancelDonationOnCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-# The witness: the retired G2 computed beside the live one on a state where the
-# abort really unblocks the holder, plus the live transition run on it -- and,
-# since `v0.35.158`, the retired WAKE computed beside the live deschedule on the
-# blocked, the queued and the running holder, with the queued rows the ones the
-# wake could never have passed.
+# The witness: the bare G2 computed beside the live one on a holder blocked on a
+# call of its own, plus the live transition run on it -- and, since `v0.35.158`,
+# the retired WAKE computed beside the live deschedule on the blocked, the queued
+# and the running holder, with the queued rows the ones the wake could never have
+# passed.  Since `v0.36.136` no abort fires: the blocked holder is unbound and
+# left blocked, as seL4's schedContext_unbindTCB leaves it.
 run_check "INVARIANT" rg -n '^private def bareTeardownG2($|[ ({:\[\]])' tests/SmpCancellationSuite.lean
 run_check "INVARIANT" rg -n '^private def retiredHolderWake($|[ ({:\[\]])' tests/SmpCancellationSuite.lean
 run_check "INVARIANT" rg -n '^private def stStrandedHolderReclaim($|[ ({:\[\]])' tests/SmpCancellationSuite.lean
 run_check "INVARIANT" rg -n '^private def stQueuedHolderReclaim($|[ ({:\[\]])' tests/SmpCancellationSuite.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "^private def runReclaimCompleteSuspendChecks[^\n]*(\n([ \t][^\n]*)?)*and leaves it on NO run queue on any core, as the live reclaim now does deliberately" tests/SmpCancellationSuite.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^private def runReclaimCompleteSuspendChecks[^\n]*(\n([ \t][^\n]*)?)*the LIVE reclaim-complete teardown leaves the blocked holder BLOCKED, unbound, on no slot" tests/SmpCancellationSuite.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^private def runReclaimCompleteSuspendChecks[^\n]*(\n([ \t][^\n]*)?)*the RETIRED wake leaves the unbound holder QUEUED" tests/SmpCancellationSuite.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^private def runReclaimCompleteSuspendChecks[^\n]*(\n([ \t][^\n]*)?)*the LIVE reclaim takes the holder it unbound OFF core 2" tests/SmpCancellationSuite.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^private def runReclaimCompleteSuspendChecks[^\n]*(\n([ \t][^\n]*)?)*the live suspend leaves the unbound holder on NO scheduler slot" tests/SmpCancellationSuite.lean'

@@ -333,6 +333,12 @@ reclaim ended the holder's IPC before returning the reservation
   - Tier 3: the anchors on the retired names become negative anchors, over
     the code view, for both families.
   - The Tier 1 store-reader census baseline is regenerated.
+  - `smp_cancellation_suite` §3.26 now measures the seL4 reading on a holder
+    blocked on a call of its own: unbound, still blocked, on no slot.  The
+    parked-holder rows (§3.26b, §3.26c) start from the queued holder, which
+    the reclaim still takes off its run queue.  The applied reply-arm
+    examples pass the arm's narrowed premises (`cancelDonationResolves`, the
+    victim's own timeout budget).
 
 ### Merge
 
