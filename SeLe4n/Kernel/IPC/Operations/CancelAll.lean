@@ -978,8 +978,9 @@ table walked once, in place, as `storeNamesNone` walks it. -/
 /-- **Whether a final delete may finalise the reply at `x`, whose caller `c`
 (its TCB `t`) waits on it**, read on the pre-state before any write.  The reply
 is no stack's head, so no reservation goes back to the caller (seL4's
-`reply_remove` non-head branch; the head's `reply_pop` is a later cut's,
-`docs/REGISTERED_DEBT.md`); the caller is no reserved or idle thread and is on
+`reply_remove` non-head branch; the head's `reply_pop` is registered in
+`docs/REGISTERED_DEBT.md`, "A head reply and a lent reservation are not returned
+on a final delete"); the caller is no reserved or idle thread and is on
 no run queue — a core's FP/SIMD or resident hold on it stays, as seL4 keeps a
 lazily saved context across `setThreadState Inactive` — is blocked on this reply, is linked into no
 endpoint queue, waits with no timeout budget, and lends its reservation to no
@@ -1031,7 +1032,7 @@ priority-inheritance walk from the server the caller was blocked on (`server?`,
 read on the pre-state), as the suspend's revert runs it.  The walk's state does
 not depend on the core it is run from
 (`PriorityInheritance.propagatePipChainCrossCore_state_core_independent`). -/
-def finaliseReplyRevert (st : SystemState) (server? : Option SeLe4n.ThreadId) : SystemState :=
+@[inline] def finaliseReplyRevert (st : SystemState) (server? : Option SeLe4n.ThreadId) : SystemState :=
   match server? with
   | some s => (PriorityInheritance.propagatePipChainCrossCore st s Concurrency.bootCoreId).1
   | none => st

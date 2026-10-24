@@ -2527,7 +2527,8 @@ private def runReplyFinaliseChecks : IO Unit := do
           (st1.getTcb? ⟨960⟩).map (fun t => t.pendingReceiveReplyCode == 0 && t.ipcStateCode == 1) ==
             some true)
   -- A reply heading a scheduling context's stack is not finalised (seL4's
-  -- `reply_pop` hands the reservation back; `docs/REGISTERED_DEBT.md`): its
+  -- `reply_pop` hands the reservation back; `docs/REGISTERED_DEBT.md`, "A head
+  -- reply and a lent reservation are not returned on a final delete"): its
   -- delete keeps the reply and its caller.
   match runAll carveScenario
       [decodeCarve slotUtRetype tcbTag 960 slotOwnCnRW 12,

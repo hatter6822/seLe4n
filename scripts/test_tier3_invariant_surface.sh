@@ -4166,6 +4166,13 @@ run_check "INVARIANT" rg -n -U 'def finaliseSchedContextDeschedule [^\n]*(\n([ \
 run_negative_check "INVARIANT" rg -n -U 'def schedContextFinaliseAdmitted[^\n]*(\n([ \t][^\n]*)?){0,20}\n[^\n]*threadHeldOnSomeCore' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 run_check "INVARIANT" rg -n -U 'def finaliseReply [^\n]*(\n([ \t][^\n]*)?){0,8}\n          finaliseThreadSuspend\n            \(finaliseReplyRevert \(Lifecycle\.Suspend\.cancelIpcBlocking st c t\) t\.blockingServer\?\) c' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 run_check "INVARIANT" rg -n '^theorem finaliseSchedContextDeschedule_closed($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllFrame.lean
+# A stashed reply is unlinked from its receiver in the receiver's slot
+# (reply_unlink), the stash re-checked before the write.
+run_check "INVARIANT" rg -n -U 'def finaliseReplyUnstash [^\n]*(\n([ \t][^\n]*)?){0,6}\n      if t\.pendingReceiveReplyCode == x\.val \+ 1 then st\.updateTcb s TCB\.stashCleared' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n '^theorem finaliseReplyUnstash_closed($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllFrame.lean
+run_check "INVARIANT" rg -n '^theorem finaliseUnstashStep_keepsIpcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllPreservation.lean
+run_check "INVARIANT" rg -n '^theorem storeObject_stashCleared_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
+run_check "INVARIANT" rg -n '^theorem finaliseReplyUnstash_hidden($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/FinaliseProjection.lean
 run_check "INVARIANT" rg -n '^theorem finaliseReply_closed($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllFrame.lean
 run_check "INVARIANT" rg -n '^theorem finaliseReplyStep_keepsIpcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllPreservation.lean
 run_check "INVARIANT" rg -n '^theorem finaliseScDescheduleStep_keepsIpcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllPreservation.lean

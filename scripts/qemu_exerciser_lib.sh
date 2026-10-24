@@ -347,7 +347,8 @@ for driver in drivers:
             "resume-carved-tcb": (3, 0),
             # WS-ZA ZA5.4 part 25: a busy reply's final delete cancels its
             # caller through cancelIpcBlocking's reply arm, the suspend's
-            # general path (`docs/REGISTERED_DEBT.md`, ZA6.1), compiled as the
+            # general path (`docs/REGISTERED_DEBT.md`, "A busy reply's final
+            # delete allocates 12 cells", owned by ZA6.1), compiled as the
             # specification (a QEMU trace of lean_alloc_small's callers): the
             # caller's reply-link consume rebuilds and stores the reply
             # (`consumeCallerReplyLink`, `consumeCallerReply`, `consumeReply`,

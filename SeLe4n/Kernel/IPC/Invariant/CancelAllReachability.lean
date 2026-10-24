@@ -776,25 +776,6 @@ theorem storeReplyOver {st st' : SystemState} {k : SeLe4n.ObjId} {o o' : Reply}
     · subst e; rw [hAt] at hx; cases hx
     · exact ⟨tx, by rw [← hNe j e]; exact hx, rfl, rfl, rfl, rfl, rfl⟩
 
-/-- A thread stored over a thread, keeping what the reachable parts read. -/
-theorem storeTcbOver {st st' : SystemState} {k : SeLe4n.ObjId} {t t' : TCB}
-    (hInv : st.objects.invExt) (hPre : st.objects[k]? = some (.tcb t))
-    (hS : storeObject k (.tcb t') st = .ok ((), st')) (hK : tcbReachFieldsKept t' t) :
-    ReachFieldFrame st st' := by
-  have hAt := storeObject_objects_eq st st' _ _ hInv hS
-  have hNe : ∀ j, j ≠ k → st'.objects[j]? = st.objects[j]? :=
-    fun j e => storeObject_objects_ne st st' k j _ e hInv hS
-  refine ⟨fun j n => ?_, fun j ty hy => ?_, fun j tx hx => ?_⟩
-  · by_cases e : j = k
-    · subst e; rw [hAt, hPre]; simp
-    · rw [hNe j e]
-  · by_cases e : j = k
-    · subst e; rw [hPre] at hy; cases hy; exact ⟨t', hAt, hK⟩
-    · exact ⟨ty, by rw [hNe j e]; exact hy, rfl, rfl, rfl, rfl, rfl⟩
-  · by_cases e : j = k
-    · subst e; rw [hAt] at hx; cases hx; exact ⟨t, hPre, hK⟩
-    · exact ⟨tx, by rw [← hNe j e]; exact hx, rfl, rfl, rfl, rfl, rfl⟩
-
 end ReachFieldFrame
 
 /-- **What the notification queues and the budgets read of a thread**, kept by
