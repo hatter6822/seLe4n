@@ -120,16 +120,14 @@ This is part 25 of the seL4 untyped reset.
     ready-staging restore, 2), and one in `finaliseReply`, the caller's server
     read back as an option, which inlining `finaliseReplyRevert` matches away.
     `stashed-reply-delete` reads 0.
-  - The remote-stall driver's step 2 is retried, as its step 1 is: on the
-    merged image a kernel entry step 1's poke raised met step 2's request
-    on core 2 before the exit gate ran, so the gate passed (the protocol's
-    other legal order) and the driver failed deterministically.
 
 ### Merge
 
 - Part 24 (#986) is merged in, with merge commits: its dequeue detach, the
   first resume's pin (`resume-carved-tcb`, `(3, 0)`) and the synchronous
-  remote-core stall (`remoteTCBStall`).
+  remote-core stall (`remoteTCBStall`), and its exerciser's gate probe made
+  atomic with the request on the secondary, which this branch's longer run
+  had exposed as a failing race on core 2.
 
 ### Debt (`docs/REGISTERED_DEBT.md`)
 
@@ -433,6 +431,19 @@ This is part 24 of the seL4 untyped reset.
     next kernel entry meets it).  The exercisers cannot run a user thread on
     a secondary, so the end-to-end case (a remote EL0 thread deleted) is the
     protocol's composition, not a scenario.
+- **Codex review of e5dedc4: the exerciser's gate probe raced the
+  secondary.**  `remote-stall` set its request from the boot core and then
+  sent the secondary the gate probe as a separate command.  In between, a
+  kernel entry of the secondary could meet and clear the request: the
+  reschedule from the step before, whose wait ended at the entry mark and
+  not at the handler's end, or a tick.  The probe then saw no request and
+  the driver failed although the protocol was right.  The probe command
+  (`COMMAND_EXIT_GATE`) now makes the request and runs the gate together, on
+  the secondary inside its agent handler with its IRQs masked, so no kernel
+  entry of that core can run between them.  It reports which part failed.
+  `test_rust.sh`, the cross build, the archive with both images'
+  exercisers, and the QEMU heap gate pass.  The exercisers then passed
+  again on three more Lean-image runs and two more HAL-only runs.
 - **CI: the Lean aarch64 archive's QEMU gate failed on b3739de.**  The new
   `resume-carved-tcb` scenario was pinned at 0 and reads 3 at first call:
   the first resume of a carved thread enqueues a run-queue key and a
