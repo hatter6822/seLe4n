@@ -96,9 +96,9 @@ seLe4n은 Lean 4로 처음부터 설계된 마이크로커널입니다. 모든 �
 |------|-----|
 | **버전** | `0.36.136` |
 | **Lean 툴체인** | `v4.28.0` |
-| **프로덕션 Lean LoC** | 451개 파일, 502,239줄 |
-| **테스트 Lean LoC** | 70개 테스트 스위트, 86,833줄 |
-| **증명된 선언** | 18,222개 theorem/lemma 선언 (sorry/axiom 제로) |
+| **프로덕션 Lean LoC** | 452개 파일, 505,671줄 |
+| **테스트 Lean LoC** | 70개 테스트 스위트, 86,961줄 |
+| **증명된 선언** | 18,312개 theorem/lemma 선언 (sorry/axiom 제로) |
 | **Rust 크레이트** | 4개(`sele4n-types`, `sele4n-abi`, `sele4n-sys`, `sele4n-hal`), 소스 파일 80개 |
 | **대상 하드웨어** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **하드웨어 바인딩** | **H3 완료** (WS-AG AG1–AG10): HAL, GIC-400, 타이머, ARMv8 페이지 테이블, FFI 브리지, QEMU 부팅 |
