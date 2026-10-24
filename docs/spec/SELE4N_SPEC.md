@@ -5055,8 +5055,8 @@ busy-endpoint, waiting-notification and bound-notification deletes
 allocate nothing (`busy-endpoint-delete`, `busy-notification-delete`,
 `bound-notification-delete` read 0): an endpoint's step writes each cell in its
 slot, and a notification's is compiled as its in-place writes
-(`storeNotificationWaiterCancelled`, equal to the specification's
-`cancelIpcBlocking` step by `cancelIpcBlocking_notificationHead_inPlace`,
+(`storeNotificationBlockedCancelled`, equal to the specification's
+`cancelIpcBlocking` step by `cancelIpcBlocking_notification_inPlace`,
 substituted by `cancelNotificationQueue_eq_impl`).  So does the receive, wait
 or bind that made each object busy (`receive-on-carved`, `wait-on-carved`,
 `bind-carved-notification` read 0): a carved endpoint or notification is built
@@ -5067,9 +5067,16 @@ the carve now gives it its own cells (`CarveRequest.object_eq_impl`, through
 **Thread and scheduling-context finalisation** (`v0.36.135`).  On the final
 capability to a thread, `finaliseFinalObject` runs `finaliseThread`, seL4's
 `finaliseCap`: the thread is unbound from its notification
-(`unbindNotification`), suspended (`suspend`: a notification's head waiter
-leaves its queue as `cancelIpcBlocking` makes it leave, and is not woken, since
-it is being destroyed; then the thread is taken off whichever core holds it —
+(`unbindNotification`), suspended (`suspend` → `cancelIPC`: a thread waiting
+on a notification leaves its queue wherever it waits there, as
+`cancelIpcBlocking` makes it leave, written in place
+(`storeNotificationBlockedCancelled`, `cancelIpcBlocking_notification_inPlace`);
+a thread blocked receiving, sending or calling on an endpoint is removed from
+wherever it waits in that endpoint's queue (`blockedCancelIPC`,
+`storeEndpointBlockedCancelled`: the removal `storeQueueRemove`, equal to the
+specification's `endpointQueueRemoveDual` by `queueRemove_inPlace`) and ended
+`.ready` with no message or stash; neither is woken, since it is being
+destroyed; then the thread is taken off whichever core holds it —
 the run queue it waits on, or the current slot of the core running it — and
 marked `.Inactive`, `finaliseThreadSuspend`; every dequeue clears the removed
 thread's own run links with its core code, `TCB.detachRun`, so a thread
@@ -5115,10 +5122,12 @@ secondary (`remote-stall`).  On the final capability to a scheduling context,
 `finaliseSchedContext` unbinds its thread (`schedContext_unbindAllTCBs`, the
 same reservation arm), then runs the cleanup.  The whole admission is read on
 the pre-state before any write (`threadFinaliseAdmitted`,
-`schedContextFinaliseAdmitted`) and each step re-reads its guard.  The blocking
-states other than a notification's head waiter, a donated binding and occupied
-space slots are refused; a scheduling context's refusals are narrowed by
-part 25 below.  A
+`schedContextFinaliseAdmitted`) and each step re-reads its guard.  A thread
+blocked on a reply or holding a reply link, a receive stash or a reply-waiter
+link (each names a reply object, the busy reply's removal, part 25), a donated
+binding and occupied space slots (part 26) are refused; the timeout-budget
+check refuses no reachable thread (`timeoutBudget_isNone_of_ipcReachable`).  A
+scheduling context's refusals are narrowed by part 25 below.  A
 refused object is not finalised and the retire keeps it
 (`docs/REGISTERED_DEBT.md`).  On a finalised object the cleanup is proven to be
 the identity (`finaliseThreadCleanup_eq`, `finaliseSchedContextCleanup_eq`), so

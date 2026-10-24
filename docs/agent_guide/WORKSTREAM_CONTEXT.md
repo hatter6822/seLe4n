@@ -295,7 +295,8 @@ IPC and unbinds a notification and cancels its waiters (`finaliseFinalObject`,
 a new transition that destroys a capability must retire through it, and
 `.cspaceDelete` / `.cspaceRevoke` are remote writers that declare a scheduler
 footprint.  Since part 24 (`v0.36.135`) it also finalises a thread (unbound
-from its notification, its notification wait cancelled, suspended — taken off
+from its notification, its endpoint or notification wait cancelled off the
+queue wherever it waits there, suspended — taken off
 whichever core queues or runs it, the executing core's own thread included —
 every core's FP/SIMD and resident hold on it released, and unbound from its
 scheduling context: `finaliseThread`) and a scheduling context (unbound from its
@@ -320,8 +321,8 @@ boost reverted and the caller suspended; a stash cleared in place) and a busy
 scheduling context (a ready holder dequeued, then unbound, then the reply stack
 unlinked), and an endpoint only a reply-blocked caller names is retired; the
 reply's caller cancel is the suspend's general path and allocates (11 cells,
-pinned).  A thread that is endpoint- or reply-blocked, donating or holding
-space-slot capabilities, a head reply or a caller lending a reservation, a
+pinned).  A thread that is reply-blocked, holds a reply link, stash or
+reply-waiter link, donates or holds space-slot capabilities, a head reply or a caller lending a reservation, a
 context whose holder is blocked sending or calling, and an untyped that still
 records a child, outlive their last capability until part 26 and ZA6.1
 (`docs/REGISTERED_DEBT.md`).  The suspend of a thread blocked in IPC or

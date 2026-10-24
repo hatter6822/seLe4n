@@ -4,6 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -/
 import SeLe4n.Kernel.Lifecycle.Suspend
 import SeLe4n.Kernel.IPC.DualQueue.PopInPlace
+import SeLe4n.Kernel.IPC.DualQueue.RemoveInPlace
 import SeLe4n.Kernel.IPC.Operations.NotificationBind
 
 /-!
@@ -138,8 +139,9 @@ def cancelAllIpc (endpointId : SeLe4n.ObjId) (st : SystemState) : SystemState :=
 -- §3  `cancelAllSignals` and `unbindMaybeNotification`
 -- ============================================================================
 
-/-- **Whether the head waiter `t` of the notification at `notificationId` may
-be cancelled**: it is no reserved thread (the cancellation reads it as
+/-- **Whether a waiter `t` of the notification at `notificationId` may be
+cancelled** — the head a walk takes, or a finalised thread wherever it waits: it
+is no reserved thread (the cancellation reads it as
 `lookupTcb` does), it is blocked on that notification (so the removal edits that
 queue), it is linked into no endpoint queue (the removal clears no endpoint
 link), and a cancel may wake it. -/
@@ -172,56 +174,65 @@ def cancelNotificationQueue (notificationId : SeLe4n.ObjId) :
     | none => st
 
 
-/-- **A notification head's cancel, as an update of the notification's cell**:
-`next` heads the queue, the tail is kept unless the queue empties, and a
-`.waiting` notification whose queue empties goes `.idle` — the writes
-`removeFromNotificationWaitQueue` makes when the waiter it removes is the head.
-`RHTable.modify` hands the update the cell exclusively, so it is rewritten where
-it stands. -/
-@[inline] def cancelPoppedObject (next : Option SeLe4n.ThreadId) : KernelObject → KernelObject
-  | .notification n => .notification { n with
-      waitHeadCode := SeLe4n.ThreadId.optCode next
-      waitTailCode := SeLe4n.ThreadId.optCode (if next.isSome then n.waitTail else none)
-      state := if n.state = .waiting ∧ next.isNone then .idle else n.state }
+/-- **A notification waiter's cancel, as an update of the notification's cell**
+(`isHead` whether the waiter heads the queue, `prev` and `next` its neighbours):
+the queue's ends rewritten as `removeFromNotificationWaitQueue` rewrites them —
+the successor heads the queue when the head leaves, the predecessor ends it when
+the tail leaves — and a `.waiting` notification whose queue empties goes
+`.idle`.  `RHTable.modify` hands the update the cell exclusively, so it is
+rewritten where it stands. -/
+@[inline] def cancelledNotificationObject (isHead : Bool) (prev next : Option SeLe4n.ThreadId) :
+    KernelObject → KernelObject
+  | .notification n =>
+    let head' := if isHead then next else n.waitHead
+    .notification { n with
+      waitHeadCode := SeLe4n.ThreadId.optCode head'
+      waitTailCode := SeLe4n.ThreadId.optCode
+        (if next.isSome then n.waitTail else if isHead then none else prev)
+      state := if n.state = .waiting ∧ head'.isNone then .idle else n.state }
   | o => o
 
-/-- **Cancel the head `t` of the notification at `notificationId`** (`next` its
-successor), each write in its slot: the notification's cell rewritten
-(`cancelPoppedObject`), the head detached from its neighbours
-(`detachNtfnHead`), restored `.ready` with the cancellation frame
-(`Lifecycle.Suspend.restoreToReadyCancelled`), and woken.  Out of line, so each
-update is specialised in. -/
-@[noinline] def storeNotificationWaiterCancelled (st : SystemState)
-    (notificationId : SeLe4n.ObjId) (t : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId) :
-    SystemState :=
-  wakeCancelledWaiter
-    (Lifecycle.Suspend.restoreToReadyCancelled
-      (detachNtfnHead (st.modifyObject notificationId (cancelPoppedObject next)) t next) t) t
+/-- **Cancel the waiter `t` of the notification at `notificationId`**, wherever it
+waits in the queue (`isHead`, `prev` and `next` as `cancelledNotificationObject`
+takes them), each write in its slot: the notification's cell rewritten, the
+waiter's links cleared and its neighbours linked to each other
+(`clearNtfnLinks`, `unlinkNtfnNeighbours`), and the waiter restored `.ready`
+with the cancellation frame (`Lifecycle.Suspend.restoreToReadyCancelled`).  Out
+of line, so each update is specialised in.  It wakes nothing: a walk wakes the
+waiter after it, a thread's finalisation does not. -/
+@[noinline] def storeNotificationBlockedCancelled (st : SystemState)
+    (notificationId : SeLe4n.ObjId) (t : SeLe4n.ThreadId) (isHead : Bool)
+    (prev next : Option SeLe4n.ThreadId) : SystemState :=
+  Lifecycle.Suspend.restoreToReadyCancelled
+    (unlinkNtfnNeighbours
+      (clearNtfnLinks (st.modifyObject notificationId (cancelledNotificationObject isHead prev next))
+        t)
+      (if isHead then none else prev) next) t
 
-/-- **The cancel of a notification's head is its in-place writes**: on the head
-`t` of the notification's queue, blocked on it, `cancelIpcBlocking` rewrites the
-notification with `cancelPoppedObject`'s fields (its `rewriteObject` is the
-table's `insert`, which is `modify` on a key that is present), then makes the
-writes `storeNotificationWaiterCancelled` makes. -/
-theorem cancelIpcBlocking_notificationHead_inPlace {st : SystemState}
+/-- **A notification waiter's cancel is its in-place writes**: on a waiter `t`
+blocked on the notification, `cancelIpcBlocking` rewrites the notification with
+`cancelledNotificationObject`'s fields (its `rewriteObject` is the table's
+`insert`, which is `modify` on a key that is present), then makes the writes
+`storeNotificationBlockedCancelled` makes, wherever `t` waits. -/
+theorem cancelIpcBlocking_notification_inPlace {st : SystemState}
     {notificationId : SeLe4n.ObjId} {ntfn : Notification} {t : SeLe4n.ThreadId} {tcb : TCB}
-    (hN : st.getNotification? notificationId = some ntfn) (hH : ntfn.waitHead = some t)
-    (hT : st.getTcb? t = some tcb)
+    (hN : st.getNotification? notificationId = some ntfn) (hT : st.getTcb? t = some tcb)
     (hB : tcb.ipcState = .blockedOnNotification notificationId) :
-    wakeCancelledWaiter (Lifecycle.Suspend.cancelIpcBlocking st t tcb) t =
-      storeNotificationWaiterCancelled st notificationId t tcb.ntfnNext := by
+    Lifecycle.Suspend.cancelIpcBlocking st t tcb =
+      storeNotificationBlockedCancelled st notificationId t (ntfn.waitHead == some t)
+        tcb.ntfnPrev tcb.ntfnNext := by
   have hNo := (SystemState.getNotification?_eq_some_iff _ _ _).mp hN
-  unfold storeNotificationWaiterCancelled Lifecycle.Suspend.cancelIpcBlocking
+  unfold storeNotificationBlockedCancelled Lifecycle.Suspend.cancelIpcBlocking
   rw [hB]
   unfold removeFromNotificationWaitQueue
-  simp only [hT, hB, SystemState.getNotificationWitnessed?_eq_some hN, hH, if_true]
+  simp only [hT, hB, SystemState.getNotificationWitnessed?_eq_some hN]
   unfold SystemState.rewriteObject SystemState.modifyObject
   rw [RobinHood.RHTable.modify_of_get? (show st.objects.get? notificationId = _ from hNo)]
-  rfl
+  by_cases hH : ntfn.waitHead = some t <;> simp [hH, cancelledNotificationObject]
 
 /-- **`cancelNotificationQueue` as compiled**: each admitted head is cancelled
-by `storeNotificationWaiterCancelled`, in place, which is the specification's
-step (`cancelIpcBlocking_notificationHead_inPlace`). -/
+by `storeNotificationBlockedCancelled`, in place, then woken, which is the
+specification's step (`cancelIpcBlocking_notification_inPlace`). -/
 def cancelNotificationQueueImpl (notificationId : SeLe4n.ObjId) :
     Nat → SystemState → SystemState
   | 0, st => st
@@ -234,7 +245,9 @@ def cancelNotificationQueueImpl (notificationId : SeLe4n.ObjId) :
         | some tcb =>
           if notificationWaiterCancellable st notificationId t tcb then
             cancelNotificationQueueImpl notificationId fuel
-              (storeNotificationWaiterCancelled st notificationId t tcb.ntfnNext)
+              (wakeCancelledWaiter
+                (storeNotificationBlockedCancelled st notificationId t true tcb.ntfnPrev
+                  tcb.ntfnNext) t)
           else st
         | none => st
       | none => st
@@ -259,7 +272,8 @@ def cancelNotificationQueueImpl (notificationId : SeLe4n.ObjId) :
             have hB : tcb.ipcState = .blockedOnNotification notificationId := by
               simp only [notificationWaiterCancellable, Bool.and_eq_true, decide_eq_true_eq] at hC
               exact hC.1.1.1.2
-            rw [cancelIpcBlocking_notificationHead_inPlace hN hH hT hB, ih]
+            rw [cancelIpcBlocking_notification_inPlace hN hT hB, ih, hH]
+            simp
           · rfl
         · rfl
       · rfl
@@ -315,35 +329,111 @@ theorem schedContextBinding_of_codes' {tcb : TCB} (hS : tcb.scBindingScCode ≠ 
   obtain ⟨s, hs⟩ := Nat.exists_eq_succ_of_ne_zero hS
   rw [hs, hO]; simp
 
+/-- **Whether the thread `tid` (its TCB `tcb`), blocked on the endpoint `ep` at
+`endpointId`, may be cancelled off that endpoint's receive queue
+(`isReceiveQ`) or its send queue, wherever it waits there**: it is blocked on
+that side (`blockedOnQueueSide`, which the receive-completing store needs: a
+thread blocked on a reply holds a link that store does not end), it waits with
+no timeout budget (a `.ready` thread holding one would break
+`blockedThreadTimeoutConsistent`; no transition gives a waiter one), every write
+of the removal stays in its slot (`queueRemoveInPlace`, under which the removal
+is `storeQueueRemove`, `queueRemove_inPlace`), and a predecessor the removal
+makes the queue's tail is blocked on the same side (the splice's
+`splicePredecessorBlocked`, which the invariants do not entail). -/
+@[inline] def endpointBlockedCancellable (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (isReceiveQ : Bool) (tid : SeLe4n.ThreadId) (ep : Endpoint) (tcb : TCB) : Bool :=
+  blockedOnQueueSide isReceiveQ endpointId tcb && tcb.timeoutBudget.isNone &&
+    queueRemoveInPlace st endpointId isReceiveQ tid ep tcb &&
+    match tcb.queueNext, tcb.queuePPrev with
+    | none, some (.tcbNext p) =>
+      match st.getTcb? p with
+      | some pt => blockedOnQueueSide isReceiveQ endpointId pt
+      | none => false
+    | _, _ => true
+
+/-- **Cancel the thread `tid`, blocked on an endpoint, off its queue** (seL4's
+`cancelIPC` → `blockedCancelIPC` → `tcbEPDequeue`): removed from wherever it waits
+(`storeQueueRemove`, the specification's `endpointQueueRemoveDual` by
+`queueRemove_inPlace`), its IPC ended as a cancelled waiter's is
+(`cancelledEndpointWaiterTcb`: `.ready`, no message, no stashed reply, the
+cancellation frame staged), each write in its slot.  It wakes nothing: the
+thread is being finalised, and the suspend after it takes it off the scheduler.
+Out of line, so each update is specialised in. -/
+@[noinline] def storeEndpointBlockedCancelled (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (isReceiveQ : Bool) (tid : SeLe4n.ThreadId) (ep : Endpoint) (tcb : TCB) : SystemState :=
+  (storeQueueRemove st endpointId isReceiveQ tid ep tcb).updateTcb tid cancelledEndpointWaiterTcb
+
+/-- **The cancel of a thread blocked on the endpoint at `endpointId`**: when the
+endpoint is present and `endpointBlockedCancellable` admits the thread,
+`storeEndpointBlockedCancelled`; otherwise nothing is written. -/
+@[inline] def cancelEndpointBlocked (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (isReceiveQ : Bool) (tid : SeLe4n.ThreadId) (tcb : TCB) : SystemState :=
+  match st.getEndpoint? endpointId with
+  | some ep =>
+    if endpointBlockedCancellable st endpointId isReceiveQ tid ep tcb then
+      storeEndpointBlockedCancelled st endpointId isReceiveQ tid ep tcb
+    else st
+  | none => st
+
+/-- **Whether the endpoint cancel admits the thread `tid`**, as the admission
+reads it: the endpoint is present and `endpointBlockedCancellable` admits the
+thread, which waits in no notification queue. -/
+@[inline] def endpointCancelAdmitted (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (isReceiveQ : Bool) (tid : SeLe4n.ThreadId) (tcb : TCB) : Bool :=
+  tcb.ntfnNextCode == 0 && tcb.ntfnPrevCode == 0 &&
+    match st.getEndpoint? endpointId with
+    | some ep => endpointBlockedCancellable st endpointId isReceiveQ tid ep tcb
+    | none => false
+
+/-- **Whether the finalisation's cancel admits the IPC state of the thread
+`tid`**, read from its two codes: ready, holding no queue link, message or
+stashed reply; or blocked on a notification, which the notification cancel
+admits (`notificationWaiterCancellable`), holding no message or stashed reply;
+or blocked sending, calling or receiving on an endpoint, which the endpoint
+cancel admits (`endpointCancelAdmitted`) — that cancel ends the message and the
+stash.  A thread blocked on a reply is not admitted. -/
+@[inline] def threadIpcCancelAdmitted (st : SystemState) (tid : SeLe4n.ThreadId) (t : TCB) :
+    Bool :=
+  match t.ipcStateCode with
+  | 0 =>
+    if t.ipcObjectCode == 0 then
+      t.queueNextCode == 0 && t.queuePrevCode == 0 && t.queuePPrevCode == 0 &&
+        t.pendingReceiveReplyCode == 0 && t.pendingMessage.isNone &&
+        t.ntfnNextCode == 0 && t.ntfnPrevCode == 0
+    else endpointCancelAdmitted st ⟨t.ipcObjectCode - 1⟩ false tid t
+  | 1 => endpointCancelAdmitted st ⟨t.ipcObjectCode⟩ true tid t
+  | 2 =>
+    t.queuePPrevCode == 0 && t.pendingReceiveReplyCode == 0 && t.pendingMessage.isNone &&
+      match st.getNotification? ⟨t.ipcObjectCode⟩ with
+      | some _ => notificationWaiterCancellable st ⟨t.ipcObjectCode⟩ tid t
+      | none => false
+  | 3 => endpointCancelAdmitted st ⟨t.ipcObjectCode⟩ false tid t
+  | _ => false
+
 /-- **Whether a final delete may finalise the thread at `x`**, read on the
 pre-state before any write.  The thread is stored under its own id and is no
-reserved or idle thread; it is ready (suspended, queued, current on a core —
-the executing core's own thread deleting its last capability included — or held
-by a core as its FP/SIMD owner or its resident), or the head waiter of a
-notification (the one blocking state this cut cancels); it is linked into no
-endpoint or reply-waiter queue, holds no reply link, stash, timeout budget or
-message, and lends or borrows no reservation; its space slots are empty (their
-finalising delete is a later cut's); a bound notification and a bound
-scheduling context are bound back to it; and nothing else names it as a
-reservation's origin or as a service's owner.  Each step below re-reads its own
-guard, so a state outside this set is left as it is and the retire then refuses
-the thread. -/
+reserved or idle thread; its IPC state is one the cancel ends
+(`threadIpcCancelAdmitted`): ready (suspended, queued, current on a core — the
+executing core's own thread deleting its last capability included — or held by
+a core as its FP/SIMD owner or its resident), blocked on a notification, or
+blocked receiving, sending or calling on an endpoint, wherever it waits in that
+queue; it is linked into no reply-waiter queue, holds no reply link or timeout
+budget, and lends or borrows no reservation (a reply-blocked thread, its reply
+links and a donated binding are the busy reply's finalisation, a later cut's);
+its space slots are empty (their finalising delete is a later cut's); a bound
+notification and a bound scheduling context are bound back to it; and nothing
+else names it as a reservation's origin or as a service's owner.  Each step
+below re-reads its own guard, so a state outside this set is left as it is and
+the retire then refuses the thread. -/
 @[inline] def threadFinaliseAdmitted (st : SystemState) (x : SeLe4n.ObjId) : Bool :=
   match st.getObject? x with
   | some (.tcb t) =>
     let tid : SeLe4n.ThreadId := ⟨x.val⟩
     t.tid.val == x.val && !tid.isReserved && !isIdleThreadId tid &&
-    t.queueNextCode == 0 && t.queuePrevCode == 0 && t.queuePPrevCode == 0 &&
     t.replyWaiterNextCode == 0 && t.replyWaiterPrevCode == 0 && t.replyWaitersHeadCode == 0 &&
-    t.replyObjectCode == 0 && t.pendingReceiveReplyCode == 0 && t.timeoutBudget.isNone &&
-    t.pendingMessage.isNone && t.scBindingOwnerCode == 0 &&
+    t.replyObjectCode == 0 && t.timeoutBudget.isNone && t.scBindingOwnerCode == 0 &&
     t.spaceCells[0].isNone && t.spaceCells[1].isNone &&
-    ((t.ipcStateCode == 0 && t.ipcObjectCode == 0 &&
-        t.ntfnNextCode == 0 && t.ntfnPrevCode == 0) ||
-      (t.ipcStateCode == 2 && t.threadState != .Inactive && t.ntfnPrevCode == 0 &&
-        match st.getNotification? ⟨t.ipcObjectCode⟩ with
-        | some n => n.waitHeadCode == x.val + 1
-        | none => false)) &&
+    threadIpcCancelAdmitted st tid t &&
     (t.boundNotificationCode == 0 ||
       ((match st.getNotification? ⟨t.boundNotificationCode - 1⟩ with
         | some n => n.boundTCBCode == x.val + 1
@@ -356,23 +446,69 @@ the thread. -/
   | _ => false
 
 /-- **Cancel the blocked IPC of a thread being finalised** (seL4's `suspend` →
-`cancelIPC` → `cancelSignal`): the head waiter of a notification leaves its
-queue and is made `.ready` with the cancellation frame, as
-`cancelIpcBlocking`'s notification arm makes it, and is **not** woken — it is
-being destroyed.  Any other state is left alone. -/
+`cancelIPC`): a thread blocked on a notification leaves its queue, wherever it
+waits there, and is made `.ready` with the cancellation frame, as
+`cancelIpcBlocking`'s notification arm makes it (`cancelSignal`); a thread
+blocked receiving, sending or calling on an endpoint leaves that endpoint's
+queue, wherever it waits there, and is made `.ready` with the cancellation frame
+(`cancelEndpointBlocked`: `blockedCancelIPC`).  Neither is woken — the thread is
+being destroyed.  A thread blocked on a reply, and any other state, is left
+alone. -/
 def finaliseThreadCancel (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
   match st.getTcb? tid with
   | some t =>
     match t.ipcState with
     | .blockedOnNotification n =>
       match st.getNotification? n with
-      | some ntfn =>
-        if ntfn.waitHead == some tid && notificationWaiterCancellable st n tid t then
+      | some _ =>
+        if notificationWaiterCancellable st n tid t then
           Lifecycle.Suspend.cancelIpcBlocking st tid t
         else st
       | none => st
+    | .blockedOnReceive e => cancelEndpointBlocked st e true tid t
+    | .blockedOnSend e => cancelEndpointBlocked st e false tid t
+    | .blockedOnCall e => cancelEndpointBlocked st e false tid t
     | _ => st
   | none => st
+
+/-- **`finaliseThreadCancel` as compiled**: the notification cancel is its
+in-place writes (`storeNotificationBlockedCancelled`,
+`cancelIpcBlocking_notification_inPlace`); the endpoint cancel is already
+written in place. -/
+def finaliseThreadCancelImpl (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
+  match st.getTcb? tid with
+  | some t =>
+    match t.ipcState with
+    | .blockedOnNotification n =>
+      match st.getNotification? n with
+      | some ntfn =>
+        if notificationWaiterCancellable st n tid t then
+          storeNotificationBlockedCancelled st n tid (ntfn.waitHead == some tid) t.ntfnPrev
+            t.ntfnNext
+        else st
+      | none => st
+    | .blockedOnReceive e => cancelEndpointBlocked st e true tid t
+    | .blockedOnSend e => cancelEndpointBlocked st e false tid t
+    | .blockedOnCall e => cancelEndpointBlocked st e false tid t
+    | _ => st
+  | none => st
+
+@[csimp] theorem finaliseThreadCancel_eq_impl :
+    @finaliseThreadCancel = @finaliseThreadCancelImpl := by
+  funext st tid
+  unfold finaliseThreadCancel finaliseThreadCancelImpl
+  split
+  · rename_i t hT
+    split
+    · rename_i n hB
+      split
+      · rename_i ntfn hN
+        split
+        · exact cancelIpcBlocking_notification_inPlace hN hT hB
+        · rfl
+      · rfl
+    all_goals rfl
+  · rfl
 
 /-- **Suspend a thread being finalised** (seL4's `suspend`: `setThreadState
 Inactive`, then `tcbSchedDequeue`, with the `rescheduleRequired` a dequeued

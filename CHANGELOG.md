@@ -163,16 +163,17 @@ Both run through `lifecyclePreRetypeCleanup`, which gains its live caller.
 
 - **Before:** a thread or a scheduling context outlived its last capability,
   and the destroy cleanup had no transition that ran it.
-- **After:** an inactive, ready, queued, running (on any core, its own
-  included) or notification-blocked thread, and a scheduling context bound to
-  an idle thread, are finalised and retired.
-- **Still open:** a thread that is endpoint- or reply-blocked, donating or
-  holding capabilities in its space slots — every thread that can make a
-  syscall, so the self-delete end to end waits on row 26 — and a scheduling
-  context with a reply stack, a loan or a busy thread, still outlive their last
-  capability (debt rows; rows 25–26 of
-  [`UNTYPED_RESET_PLAN.md`](docs/planning/UNTYPED_RESET_PLAN.md), and
-  ZA6.1 of [`ZERO_ALLOCATION_SYSCALL_PLAN.md`](docs/planning/ZERO_ALLOCATION_SYSCALL_PLAN.md)).
+- **After:** an inactive, ready, queued or running (on any core, its own
+  included) thread, a thread blocked receiving, sending or calling on an
+  endpoint or waiting on a notification — wherever it waits in that queue —
+  and a scheduling context bound to an idle thread, are finalised and retired.
+- **Still open:** a thread that is reply-blocked or holds a reply link, a
+  receive stash or a reply-waiter link (each names a reply object: row 25's
+  busy reply), that donates (row 25), or that holds capabilities in its space
+  slots (row 26) — every thread that can make a syscall, so the self-delete end
+  to end waits on row 26 — and a scheduling context with a reply stack, a loan
+  or a busy thread, still outlive their last capability (debt rows; rows 25–26
+  of [`UNTYPED_RESET_PLAN.md`](docs/planning/UNTYPED_RESET_PLAN.md)).
 
 This is part 24 of the seL4 untyped reset.
 
@@ -183,8 +184,11 @@ This is part 24 of the seL4 untyped reset.
     `.schedContext` arm (`finaliseSchedContext`).
   - `finaliseThread` runs `unbindNotification`
     (`finaliseThreadUnbindNotification`), then `suspend` — the blocked IPC
-    cancelled (`finaliseThreadCancel`, a notification's head waiter leaving its
-    queue as `cancelIpcBlocking` makes it leave, **not** woken), then the thread
+    cancelled (`finaliseThreadCancel`, seL4's `cancelIPC`: a notification
+    waiter leaving its queue wherever it waits there, as `cancelIpcBlocking`
+    makes it leave; a thread blocked receiving, sending or calling on an
+    endpoint removed from wherever it waits in that queue, `blockedCancelIPC`;
+    neither **woken**), then the thread
     taken off whichever core queues or runs it and marked `.Inactive`
     (`finaliseThreadSuspend`, through the suspend syscall's
     `descheduleAtPlacement`) — then `fpuThreadDelete`
@@ -216,9 +220,11 @@ This is part 24 of the seL4 untyped reset.
   re-reads its own guard:
   - the thread is stored under its own id and is no reserved or idle thread;
   - it is ready (suspended, queued, current on any core, FP/SIMD owner or
-    resident), or the head waiter of a notification;
-  - it holds no queue, reply-waiter or reply links, no stash, timeout budget
-    or message, and lends or borrows no reservation;
+    resident) holding no queue link, stash or message, or it waits on a
+    notification or an endpoint where the in-place cancel admits it
+    (`threadIpcCancelAdmitted`);
+  - it holds no reply-waiter or reply links and no timeout budget, and lends
+    or borrows no reservation;
   - its space slots are empty, a bound notification and a bound scheduling
     context are bound back to it, and nothing names it as a reservation's
     origin or a service's owner;
@@ -237,14 +243,16 @@ This is part 24 of the seL4 untyped reset.
     `finaliseSchedContextCleanupImpl`, `@[csimp]`).
 - **No allocation on the delete path.** Every step writes the objects' own
   cells in place (`updateTcb`, `updateSchedContext`, `storeUnbindNotification`,
-  `cancelIpcBlocking`'s notification arm), and the admission reads only.
+  `storeNotificationBlockedCancelled`, `storeEndpointBlockedCancelled`), and
+  the admission reads only.
 - **The retire** (`Capability/FinalRetire.lean`): `retirableKind` admits a
   thread and a scheduling context, `finalRetireAdmitted` asks
   `schedulingObjectRetirable` of them, and `eraseRetiredObject` erases any
   `erasableKindAt` object.
 - **Theorems.**
   - Write frame (`IPC/Invariant/CancelAllFrame.lean`): the step predicates
-    `FinaliseScUnbindStep`, `FinaliseCancelStep`, `FinaliseSuspendStep` (the
+    `FinaliseScUnbindStep`, `FinaliseNotificationCancelStep`,
+    `FinaliseEndpointCancelStep`, `FinaliseSuspendStep` (the
     deschedule and the mark), `FinaliseReleaseStep`, `FinaliseUnbindStep`;
     `finaliseThread_closed`, `finaliseSchedContext_closed` and the extended
     `finaliseFinalObject_closed`; `finaliseWritable` covers a scheduling
@@ -258,7 +266,8 @@ This is part 24 of the seL4 untyped reset.
     names the thread after it); `finaliseThreadReleaseCores_unheld`.
   - IPC bundle (`IPC/Invariant/CancelAllPreservation.lean`):
     `finaliseScUnbindStep_keepsIpcInvariantFull`,
-    `finaliseCancelStep_keepsIpcInvariantFull`,
+    `finaliseNotificationCancelStep_keepsIpcInvariantFull`,
+    `finaliseEndpointCancelStep_keepsIpcInvariantFull`,
     `finaliseSuspendStep_keepsIpcInvariantFull` (through the now public
     `descheduleAt_preserves_ipcInvariantFull`),
     `finaliseReleaseStep_keepsIpcInvariantFull`, consumed by
@@ -288,8 +297,9 @@ This is part 24 of the seL4 untyped reset.
   - Information-flow projection (`InformationFlow/Invariant/FinaliseProjection.lean`,
     staged): `finaliseThread_hidden` and `finaliseSchedContext_hidden`, under
     `threadFinaliseHidden` / `schedContextFinaliseHidden` (the bound
-    notification, the scheduling context, the notification waited on and the
-    waiter after it, or the context's bound thread, hidden, and the thread
+    notification, the scheduling context, the notification or endpoint waited
+    on and the thread's neighbours in that queue, or the context's bound
+    thread, hidden, and the thread
     hidden as a thread, since the suspend may empty a core's current slot;
     `finaliseThreadSuspend_hidden` through
     `descheduleAtPlacement_preserves_projection`,
@@ -336,7 +346,10 @@ This is part 24 of the seL4 untyped reset.
   context retired by their only capability's delete; a thread bound to a
   notification; a thread bound to a context, with either side deleted first;
   a thread blocked as a notification's head waiter, its wait cancelled and it
-  retired; a thread queued on the executing core, and one resumed by the
+  retired; three threads blocked receiving, then sending, then calling on one
+  endpoint, deleted middle, head, tail — each cancelled off the queue and
+  retired, its neighbours linked and still blocked; three waiting on one
+  notification, the middle and then the tail deleted; a thread queued on the executing core, and one resumed by the
   syscall, dequeued and retired; a thread current on core 1 that is also its
   FP/SIMD owner and resident, retired by the delete with that core's slot and
   records emptied and its reschedule flag raised; and the self-delete's state
@@ -369,12 +382,13 @@ This is part 24 of the seL4 untyped reset.
     CSpace slot is occupied (row 26), and has no way to make a carved thread
     current on a secondary; the suite's witnesses cover both.
   - A blocked thread cannot be driven to its last-capability delete through
-    syscalls today, since a thread that blocks holds its own CSpace slot (debt
-    row (4) below); the suite's witness covers it.
+    syscalls today, since a thread that blocks holds its own CSpace slot
+    (clause (3) of the debt row below), and a carved thread never runs, so it
+    cannot block; the suite's witnesses cover every blocking state.
 - **Debt.** `docs/REGISTERED_DEBT.md` closes "The destroy cleanup is kept with
   no live caller" and registers three rows: a thread a final delete cannot
-  finalise (the remaining blocking states, a donated binding, occupied space
-  slots); a scheduling context it cannot finalise; and the admission not yet
+  finalise (a reply-blocked thread and the reply links, a donated binding,
+  occupied space slots); a scheduling context it cannot finalise; and the admission not yet
   proven to make the retire accept.  The running, held or queued thread is
   finalised, not registered.
 - **Codex review of b3739de (same PR): a thread suspended off a shared run
@@ -451,6 +465,54 @@ This is part 24 of the seL4 untyped reset.
   callers: `RHTable.insertNoResizeImpl` under `RunQueue.insert`, 2;
   `RunQueueEnds.appendImpl`, 1).  The steady state reuses both and reads 0;
   it is pinned (3, 0).
+- **Review: an endpoint-blocked thread was kept past its last capability.**
+  seL4's `finaliseCap` suspends a thread, and `suspend` runs `cancelIPC`, which
+  takes an endpoint- or notification-blocked thread off its queue wherever it
+  waits; the finalise admitted only a notification's head waiter, so every
+  other blocked thread outlived its last capability, and the debt was given to
+  ZA6.1.  Now the finalise cancels them itself, each write in its slot, and
+  ZA6.1 is as it was:
+  - *Endpoint* (`IPC/DualQueue/RemoveInPlace.lean`, new): `storeQueueRemove`
+    unlinks a thread from wherever it waits, each write in its slot, and is
+    the specification's `endpointQueueRemoveDual` under the in-place check
+    `queueRemoveInPlace` (`queueRemove_inPlace`, with its write frame
+    `QueueRemoveFrame`).  `storeEndpointBlockedCancelled` then ends the
+    thread's IPC as a cancelled waiter's is (`cancelledEndpointWaiterTcb`:
+    `.ready`, no message, no stash, the cancellation frame); its check
+    `endpointBlockedCancellable` asks that the thread is blocked on that side
+    with no timeout budget, the removal is in place, and a predecessor the
+    removal makes the tail is blocked on the same side.
+  - *Notification*: part 23's head-only form becomes
+    `storeNotificationBlockedCancelled`, the cancel wherever the waiter waits
+    (`cancelledNotificationObject` rewrites the queue's ends), proven
+    `cancelIpcBlocking`'s by `cancelIpcBlocking_notification_inPlace`; part
+    23's walk compiles to it at the head.  `cancelPoppedObject`,
+    `storeNotificationWaiterCancelled` and
+    `cancelIpcBlocking_notificationHead_inPlace` are deleted.
+  - *Admission*: `threadIpcCancelAdmitted` reads the IPC state's codes and
+    asks the matching cancel's own check, so the admission and the step agree.
+  - *Theorems*: the frame takes the endpoint cancel as its own step
+    (`FinaliseEndpointCancelStep`, `FinaliseFrame.storeEndpointBlockedCancelled`);
+    the IPC bundle (`storeEndpointBlockedCancelled_preserves_ipcInvariantFull`,
+    over `cancelledEndpointWaiter_closes`, factored out of part 23's waiter
+    proof), the run queues (`storeEndpointBlockedCancelled_runQueueStage`;
+    `endpointQueueRemoveDual_runQueueStage` moves to
+    `RunQueueAgreement/Capability.lean`), reschedule coverage
+    (`storeEndpointBlockedCancelled_stepCovers`), the reachable state
+    (`storeEndpointBlockedCancelled_preserves_reachableParts`; a non-head
+    notification cancel keeps `notificationWaiterConsistent` by the new
+    `notificationWaiterConsistent_of_unlink`, `IPC/Invariant/NotificationUnlink.lean`)
+    and the projection (`storeEndpointBlockedCancelled_hidden`,
+    `storeNotificationBlockedCancelled_hidden`; `threadFinaliseHidden` names
+    the endpoint and the queue neighbours) are kept.
+  - *Left to row 25*, whose text owns a reply bound to a caller and the
+    donated context: a reply-blocked thread, a reply link, a receive stash and
+    a reply-waiter link, each of which names a reply object and is ended by
+    seL4's `reply_remove_tcb`.  A timeout budget is no refusal in practice: no
+    reachable thread holds one (`timeoutBudget_isNone_of_ipcReachable`).
+  - No QEMU scenario can stage it: a carved thread never runs, so it cannot
+    block itself, and a thread that runs holds its CSpace slot (row 26).  The
+    suite's witnesses above cover every queue position.
 
 ### Validation
 
@@ -497,6 +559,18 @@ This is part 24 of the seL4 untyped reset.
   - `./scripts/check_changed_file_anchors.sh` (546 of 546).
   - The new `build.rs` scan of `trap.S` was tested by putting the gate call
     after a `restore_context`: the build failed.
+- After the endpoint and notification cancel, the whole set passes again:
+  - `./scripts/test_full.sh --continue`: Tiers 1 to 3 passed; Tier 0 failed on
+    the production/staged partition, which did not yet list the new staged
+    `IPC.Invariant.NotificationUnlink`; it is registered, and Tier 0 then
+    passes;
+  - `./scripts/test_lean_aarch64_archive.sh`;
+  - `./scripts/test_qemu_heap_allocations_per_syscall.sh --lean-kernel`,
+    every pin unchanged;
+  - `./scripts/test_rust.sh` and `./scripts/test_aarch64_cross_build.sh`;
+  - `lake build SeLe4n SeLe4n.Platform.Staged`, the default target and each
+    changed module by name; `lake exe vspace_capability_binding_suite`;
+  - `./scripts/check_changed_file_anchors.sh` (223 of 223).
 
 ## v0.36.134 — WS-ZA ZA5.4 part 23: a final delete cancels an endpoint's IPC and unbinds and cancels a notification
 

@@ -120,7 +120,8 @@ its waiters cancelled, before the retire (`finaliseFinalObject`, seL4's
 `cancelAllIPC`, `unbindMaybeNotification` and `cancelAllSignals`), keeping the
 IPC bundle and its reachable state (`finaliseFinalObject_preserves_ipcInvariantFull`,
 `finaliseFinalObject_preserves_ipcReachable`); since `v0.36.135` a thread is
-unbound, has its notification wait cancelled and is suspended — taken off
+unbound, has its endpoint or notification wait cancelled wherever it waits in
+that queue and is suspended — taken off
 whichever core queues or runs it, the executing thread deleting its own last
 capability included, with every core's FP/SIMD and resident hold released and
 a remote core running it stalled until it has left it, as seL4's

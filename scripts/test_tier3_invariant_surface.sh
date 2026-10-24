@@ -4198,6 +4198,27 @@ run_check "INVARIANT" rg -n '^theorem finaliseThread_closed($|[ ({:\[\]])' SeLe4
 run_check "INVARIANT" rg -n '^theorem finaliseFinalObject_runQueueEntryStage($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Capability.lean
 run_negative_check "INVARIANT" rg -n '^theorem finaliseFinalObject_runQueueStage($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Capability.lean
 run_check "INVARIANT" rg -n '^theorem finaliseThread_hidden($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/FinaliseProjection.lean
+# v0.36.135: a final delete cancels an endpoint- or notification-blocked thread
+# off its queue wherever it waits (seL4's suspend -> cancelIPC): the removal is
+# written in place and proven the specification's, and every bundle is kept.
+run_check "INVARIANT" rg -n '^(@\[(inline|noinline)\] )?def storeQueueRemove($|[ ({:\[\]])' SeLe4n/Kernel/IPC/DualQueue/RemoveInPlace.lean
+run_check "INVARIANT" rg -n '^theorem queueRemove_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/IPC/DualQueue/RemoveInPlace.lean
+run_check "INVARIANT" rg -n '^(@\[(inline|noinline)\] )?def endpointBlockedCancellable($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n '^(@\[(inline|noinline)\] )?def storeEndpointBlockedCancelled($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n '^(@\[(inline|noinline)\] )?def storeNotificationBlockedCancelled($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n '^(@\[(inline|noinline)\] )?def threadIpcCancelAdmitted($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n -U '    \| \.blockedOnReceive e => cancelEndpointBlocked st e true tid t\n    \| \.blockedOnSend e => cancelEndpointBlocked st e false tid t\n    \| \.blockedOnCall e => cancelEndpointBlocked st e false tid t' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n -U '@\[csimp\] theorem finaliseThreadCancel_eq_impl :\n    @finaliseThreadCancel = @finaliseThreadCancelImpl' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n '^theorem finaliseEndpointCancelStep_keepsIpcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllPreservation.lean
+run_check "INVARIANT" rg -n '^theorem finaliseNotificationCancelStep_keepsIpcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllPreservation.lean
+run_check "INVARIANT" rg -n '^theorem storeEndpointBlockedCancelled_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllPreservation.lean
+run_check "INVARIANT" rg -n '^theorem storeEndpointBlockedCancelled_runQueueStage($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Capability.lean
+run_check "INVARIANT" rg -n '^theorem storeEndpointBlockedCancelled_stepCovers($|[ ({:\[\]])' SeLe4n/Kernel/ReschedulePendingArms/Dispatch.lean
+run_check "INVARIANT" rg -n '^theorem notificationWaiterConsistent_of_unlink($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/NotificationUnlink.lean
+run_check "INVARIANT" rg -n '^theorem storeEndpointBlockedCancelled_preserves_reachableParts($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllReachability.lean
+run_check "INVARIANT" rg -n '^theorem timeoutBudget_isNone_of_ipcReachable($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllReachability.lean
+run_check "INVARIANT" rg -n '^theorem storeEndpointBlockedCancelled_hidden($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/FinaliseProjection.lean
+run_check "INVARIANT" rg -n '^theorem storeNotificationBlockedCancelled_hidden($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/FinaliseProjection.lean
 run_check "INVARIANT" rg -n -U 'def schedLockSet_capabilityDestroyOnCore : List \(LockKey × Concurrency\.AccessMode\) :=\n  schedFootprintOfCores Concurrency\.allCores Concurrency\.allCores' SeLe4n/Kernel/Scheduler/SchedFootprint.lean
 run_check "INVARIANT" rg -n '^theorem popHead_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/IPC/DualQueue/PopInPlace.lean
 run_check "INVARIANT" rg -n '^theorem finaliseFinalObject_preserves_ipcReachable($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllReachability.lean
@@ -4213,7 +4234,8 @@ run_check "INVARIANT" rg -n '^theorem schedLockSet_cspaceRevokeCdtFinalising_cov
 # The notification step is compiled as its in-place writes, and the walk that
 # cancelAllSignals runs is defined AFTER the substitution, so the compiler takes
 # it (a definition compiled before a @[csimp] keeps the specification's body).
-run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_notificationHead_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_notification_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_negative_check "INVARIANT" rg -n 'cancelIpcBlocking_notificationHead_inPlace|storeNotificationWaiterCancelled|cancelPoppedObject' SeLe4n
 run_check "INVARIANT" rg -n -U '@\[csimp\] theorem cancelNotificationQueue_eq_impl :\n    @cancelNotificationQueue = @cancelNotificationQueueImpl' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 run_check "INVARIANT" rg -n -U '@\[csimp\] theorem cancelNotificationQueue_eq_impl :(\n[^\n]*){0,40}\ndef cancelAllSignals ' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 # A carved endpoint or notification is rebuilt into its own cells, by a call
