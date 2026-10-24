@@ -593,11 +593,50 @@ def threadFinaliseHidden (ctx : LabelingContext) (observer : IfObserver)
     threadObservable ctx observer ⟨x.val⟩ = false
 
 /-- **What a scheduling context's finalisation writes, besides the context**:
-the thread bound to it — hidden. -/
+the thread bound to it — hidden, as an object (the unbind rewrites it) and as a
+thread (the deschedule takes it off its core's run queue). -/
 def schedContextFinaliseHidden (ctx : LabelingContext) (observer : IfObserver)
     (st : SystemState) (x : SeLe4n.ObjId) : Prop :=
   ∀ sc, st.getObject? x = some (.schedContext sc) → sc.boundThreadCode ≠ 0 →
-    objectObservable ctx observer (⟨sc.boundThreadCode - 1⟩ : SeLe4n.ThreadId).toObjId = false
+    objectObservable ctx observer (⟨sc.boundThreadCode - 1⟩ : SeLe4n.ThreadId).toObjId = false ∧
+      threadObservable ctx observer ⟨sc.boundThreadCode - 1⟩ = false
+
+/-- The deschedule of a context's holder writes nothing off the run-queue links. -/
+theorem finaliseSchedContextDeschedule_objectsAgreeOffRunLinks (st : SystemState)
+    (x : SeLe4n.ObjId) :
+    (finaliseSchedContextDeschedule st x).objectsAgreeOffRunLinks st :=
+  finaliseSchedContextDeschedule_closed (fun s => s.objectsAgreeOffRunLinks st)
+    (fun s t _ h _ _ _ _ => (descheduleAtPlacement_objectsAgreeOffRunLinks s t).trans h) st x
+    (.refl st)
+
+/-- ...so what the context's finalisation writes stays hidden after it: the
+context in its slot is the pre-state's. -/
+theorem schedContextFinaliseHidden.deschedule {ctx : LabelingContext} {observer : IfObserver}
+    {st : SystemState} {x : SeLe4n.ObjId} (hH : schedContextFinaliseHidden ctx observer st x) :
+    schedContextFinaliseHidden ctx observer (finaliseSchedContextDeschedule st x) x := by
+  intro sc hO h0
+  simp only [SystemState.getObject?_eq_getElem] at hO
+  exact hH sc ((finaliseSchedContextDeschedule_objectsAgreeOffRunLinks st x).get_schedContext_iff.mp hO) h0
+
+/-- **A scheduling context's deschedule of its holder is invisible** when the
+thread bound to it is hidden as a thread (`descheduleAtPlacement_preserves_projection`). -/
+theorem finaliseSchedContextDeschedule_hidden (ctx : LabelingContext) (observer : IfObserver)
+    {st : SystemState} {x : SeLe4n.ObjId} (hH : schedContextFinaliseHidden ctx observer st x) :
+    projectState ctx observer (finaliseSchedContextDeschedule st x) = projectState ctx observer st := by
+  unfold finaliseSchedContextDeschedule
+  split
+  · next sc hO =>
+    split
+    · rfl
+    · next h0 =>
+      dsimp only
+      split
+      · split
+        · exact descheduleAtPlacement_preserves_projection ctx observer st _
+            (hH sc hO (by simpa using h0)).2
+        · rfl
+      · rfl
+  · rfl
 
 /-- **A thread's finalisation is invisible** when the thread and what its steps
 write are hidden: the unbinds keep what the cancel reads, and the destroy
@@ -669,7 +708,7 @@ theorem finaliseSchedContextUnbind_hidden (ctx : LabelingContext) (observer : If
           split
           · next st' hOk =>
             exact cancelBoundDonationOnCore_hidden ctx observer hInv
-              (schedContextBinding_ownerCleared hG.1.1.1) hX (hH sc hO (by simpa using h0)) hOk
+              (schedContextBinding_ownerCleared hG.1) hX (hH sc hO (by simpa using h0)).1 hOk
           · rfl
         · rfl
       · rfl
@@ -706,7 +745,8 @@ theorem finaliseSchedContextUnstack_hidden (ctx : LabelingContext) (observer : I
   · rfl
 
 /-- **A scheduling context's finalisation is invisible** when the context and
-the thread bound to it are hidden: the release (`finaliseSchedContextUnbind_hidden`),
+the thread bound to it are hidden: the holder's deschedule
+(`finaliseSchedContextDeschedule_hidden`), the release (`finaliseSchedContextUnbind_hidden`),
 the reply-stack unlink (`finaliseSchedContextUnstack_hidden`, at the replies the
 pre-state indexes — the release writes a thread and a context only, and no
 index), and the destroy cleanup, the identity on the finalised context
@@ -719,13 +759,19 @@ theorem finaliseSchedContext_hidden (ctx : LabelingContext) (observer : IfObserv
     projectState ctx observer (finaliseSchedContext x st) = projectState ctx observer st := by
   rw [finaliseSchedContext_eq]
   split
-  · have hF : FinaliseFrame st (finaliseSchedContextUnbind st x) := by
-      refine finaliseSchedContextUnbind_closed (FinaliseFrame st) ?_ st x (.refl hInv)
+  · have hD : FinaliseFrame st (finaliseSchedContextDeschedule st x) :=
+      finaliseSchedContextDeschedule_closed (FinaliseFrame st)
+        (fun s t _ h _ _ _ _ => h.trans (FinaliseFrame.descheduleAt s t _ h.invExt)) st x
+        (.refl hInv)
+    have hF : FinaliseFrame st (finaliseSchedContextUnbind (finaliseSchedContextDeschedule st x) x) := by
+      refine finaliseSchedContextUnbind_closed (FinaliseFrame st) ?_ _ x hD
       exact FinaliseFrame.releaseStep st
-    have hSet : (finaliseSchedContextUnbind st x).objectIndexSet = st.objectIndexSet := by
+    have hSet : (finaliseSchedContextUnbind (finaliseSchedContextDeschedule st x) x).objectIndexSet =
+        st.objectIndexSet := by
       rw [hF.rest]
     refine (finaliseSchedContextUnstack_hidden ctx observer hF.invExt hX
-      (fun rid r hR => ?_)).trans (finaliseSchedContextUnbind_hidden ctx observer hInv hX hH)
+      (fun rid r hR => ?_)).trans ((finaliseSchedContextUnbind_hidden ctx observer hD.invExt hX
+        hH.deschedule).trans (finaliseSchedContextDeschedule_hidden ctx observer hH))
     rw [hSet]
     refine hIdx _ (fun e => ?_)
     have hR' := (SystemState.getReply?_eq_some_iff _ _ _).mp hR

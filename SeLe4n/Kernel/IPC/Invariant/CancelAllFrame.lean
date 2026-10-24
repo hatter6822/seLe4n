@@ -156,15 +156,22 @@ def FinaliseUnbindStep (P : SystemState → Prop) : Prop :=
     unbindNotificationInPlace s t = true →
     P (storeUnbindNotification s t notificationId)
 
+/-- **The deschedule step a scheduling context's finalisation takes**: its
+ready holder, no core's idle thread, taken off the scheduler where the state
+places it. -/
+def FinaliseScDescheduleStep (P : SystemState → Prop) : Prop :=
+  ∀ (s : SystemState) (t : SeLe4n.ThreadId) (tcb : TCB), P s → s.getTcb? t = some tcb →
+    tcb.ipcStateCode = 0 → tcb.ipcObjectCode = 0 → isIdleThreadId t = false →
+    P (descheduleAtPlacement s t)
+
 /-- **The release step a scheduling context's finalisation takes**: the thread
-bound to the context — as its own or on loan — queued and held nowhere, in a
-state an unbound thread may idle in, unbound by the reservation arm's in-place
-unbind with its binding read as the context's own. -/
+bound to the context — as its own or on loan — in a state an unbound thread may
+idle in, unbound by the reservation arm's in-place unbind with its binding read
+as the context's own. -/
 def FinaliseScReleaseStep (P : SystemState → Prop) : Prop :=
   ∀ (s s' : SystemState) (t : SeLe4n.ThreadId) (tcb : TCB) (sc : SchedContext)
     (x : SeLe4n.ObjId), P s →
     s.getTcb? t = some tcb → tcb.scBindingScCode = x.val + 1 →
-    tcb.runCoreCode = 0 → threadHeldOnSomeCore s t = false →
     ipcCodesIdleAllowed tcb.ipcObjectCode tcb.ipcStateCode = true →
     s.getSchedContext? ⟨x.val⟩ = some sc → sc.boundThreadCode = t.val + 1 →
     cancelBoundDonationOnCore s t { tcb with scBindingOwnerCode := 0 }
@@ -199,9 +206,9 @@ theorem TCB.ownerCleared_of_zero {t : TCB} (h : t.scBindingOwnerCode = 0) :
 thread is its own owner-cleared view. -/
 theorem FinaliseScReleaseStep.scUnbind {P : SystemState → Prop} (h : FinaliseScReleaseStep P) :
     FinaliseScUnbindStep P := by
-  intro s s' t tcb sc hP hT hS hO hR hH hA hSc hB hOk
+  intro s s' t tcb sc hP hT hS hO _ _ hA hSc hB hOk
   rw [cancelDonationArmOnCore_of_codes s t hS hO] at hOk
-  refine h s s' t tcb sc ⟨tcb.scBindingScCode - 1⟩ hP hT (by show _ = _ - 1 + 1; omega) hR hH hA
+  refine h s s' t tcb sc ⟨tcb.scBindingScCode - 1⟩ hP hT (by show _ = _ - 1 + 1; omega) hA
     hSc hB ?_
   rw [TCB.ownerCleared_of_zero hO]; exact hOk
 
@@ -377,11 +384,11 @@ theorem finaliseSchedContextUnbind_closed (P : SystemState → Prop) (hRel : Fin
       · rename_i t hT
         split
         · rename_i hG
-          simp only [Bool.and_eq_true, beq_iff_eq, Bool.not_eq_true'] at hG
-          obtain ⟨⟨⟨hS, hR⟩, hH⟩, hA⟩ := hG
+          simp only [Bool.and_eq_true, beq_iff_eq] at hG
+          obtain ⟨hS, hA⟩ := hG
           split
           · rename_i s' hOk
-            refine hRel st s' _ t sc x h hT hS hR hH hA ?_ ?_ hOk
+            refine hRel st s' _ t sc x h hT hS hA ?_ ?_ hOk
             · have hO : st.objects[x]? = some (.schedContext sc) := by rw [← hX]; simp
               unfold SystemState.getSchedContext?
               rw [show (⟨x.val⟩ : SeLe4n.SchedContextId).toObjId = x from rfl, hO]
@@ -392,14 +399,36 @@ theorem finaliseSchedContextUnbind_closed (P : SystemState → Prop) (hRel : Fin
       · exact h
   · exact h
 
-/-- **A property the release and the unstack keep holds after the
-scheduling-context finalisation.** -/
-theorem finaliseSchedContext_closed (P : SystemState → Prop) (hRel : FinaliseScReleaseStep P)
+/-- **A property the deschedule keeps holds after
+`finaliseSchedContextDeschedule`.** -/
+theorem finaliseSchedContextDeschedule_closed (P : SystemState → Prop)
+    (hDes : FinaliseScDescheduleStep P) (st : SystemState) (x : SeLe4n.ObjId) (h : P st) :
+    P (finaliseSchedContextDeschedule st x) := by
+  unfold finaliseSchedContextDeschedule
+  split
+  · split
+    · exact h
+    · dsimp only
+      split
+      · rename_i t hT
+        split
+        · rename_i hG
+          simp only [Bool.and_eq_true, beq_iff_eq, Bool.not_eq_true'] at hG
+          exact hDes st _ t h hT hG.1.1.2 hG.1.2 hG.2
+        · exact h
+      · exact h
+  · exact h
+
+/-- **A property the deschedule, the release and the unstack keep holds after
+the scheduling-context finalisation.** -/
+theorem finaliseSchedContext_closed (P : SystemState → Prop) (hDes : FinaliseScDescheduleStep P)
+    (hRel : FinaliseScReleaseStep P)
     (hUn : FinaliseUnstackStep P) (x : SeLe4n.ObjId) (st : SystemState) (h : P st) :
     P (finaliseSchedContext x st) := by
   rw [finaliseSchedContext_eq]
   split
-  · exact finaliseSchedContextUnstack_closed P hUn x _ (finaliseSchedContextUnbind_closed P hRel st x h)
+  · exact finaliseSchedContextUnstack_closed P hUn x _ (finaliseSchedContextUnbind_closed P hRel _ x
+      (finaliseSchedContextDeschedule_closed P hDes st x h))
   · exact h
 
 /-- **A property the suspend keeps holds after `finaliseThreadSuspend`.** -/
@@ -523,7 +552,8 @@ theorem finaliseFinalObject_closed (P : SystemState → Prop)
       s.getNotification? notificationId = some n → n.waitHead = some t →
       s.getTcb? t = some tcb → notificationWaiterCancellable s notificationId t tcb = true →
       P (wakeCancelledWaiter (Lifecycle.Suspend.cancelIpcBlocking s t tcb) t))
-    (hUnbind : FinaliseUnbindStep P) (hRel : FinaliseScReleaseStep P)
+    (hUnbind : FinaliseUnbindStep P) (hDes : FinaliseScDescheduleStep P)
+    (hRel : FinaliseScReleaseStep P)
     (hCancel : FinaliseCancelStep P) (hSuspend : FinaliseSuspendStep P)
     (hRelease : FinaliseReleaseStep P) (hUn : FinaliseUnstackStep P) (hRep : FinaliseReplyStep P)
     (target : Nat) (st : SystemState) (h : P st) : P (finaliseFinalObject target st) := by
@@ -538,7 +568,7 @@ theorem finaliseFinalObject_closed (P : SystemState → Prop)
     · exact cancelNotificationQueue_closed P _ (hNtfn _) _ _
         (unbindMaybeNotification_closed P _ (hUnbind _) st h)
     · exact finaliseThread_closed P hUnbind hRel.scUnbind hCancel hSuspend hRelease _ st h
-    · exact finaliseSchedContext_closed P hRel hUn _ st h
+    · exact finaliseSchedContext_closed P hDes hRel hUn _ st h
     · exact finaliseReply_closed P hRep hSuspend _ st h
     · exact h
   · exact h
@@ -1180,7 +1210,7 @@ theorem releaseCores (st : SystemState) (t : SeLe4n.ThreadId) (hInv : st.objects
 
 /-- The release step, as the closure asks it. -/
 theorem releaseStep (st : SystemState) : FinaliseScReleaseStep (FinaliseFrame st) := by
-  intro s s' _ _ _ _ h _ _ _ _ _ _ _ hOk
+  intro s s' _ _ _ _ h _ _ _ _ _ hOk
   exact h.trans (cancelBoundDonationOnCore h.invExt hOk)
 
 /-- **The priority-inheritance walk**: boosts and run-queue moves, threads
@@ -1354,8 +1384,9 @@ theorem finaliseFinalObject_frame (target : Nat) (st : SystemState) (hInv : st.o
         (notificationWaiterCancellable_blocked hC)
       h.trans (h1.trans (.wakeCancelledWaiter _ _ h1.invExt)).any)
     (fun _ _ _ _ h _ _ _ _ => h.trans (FinaliseFrame.storeUnbindNotification _ _ _ h.invExt).any)
-    (fun s s' t tcb sc x h hT hS hR hH hA hSc hB hOk =>
-      h.trans (FinaliseFrame.releaseStep s s s' t tcb sc x (.refl h.invExt) hT hS hR hH hA hSc hB
+    (fun s t _ h _ _ _ _ => h.trans (FinaliseFrame.descheduleAt s t _ h.invExt).any)
+    (fun s s' t tcb sc x h hT hS hA hSc hB hOk =>
+      h.trans (FinaliseFrame.releaseStep s s s' t tcb sc x (.refl h.invExt) hT hS hA hSc hB
         hOk).any)
     (fun s n t tcb _ h _ hI _ _ _ =>
       h.trans (FinaliseFrame.notificationCancel s t tcb n h.invExt hI).any)
@@ -1414,7 +1445,9 @@ theorem finaliseFinalObject_cdt (target : Nat) (st : SystemState) :
     fun e => storeObject_cdt_eq _ _ _ _ e
   refine finaliseFinalObject_closed (fun s => s.cdt = st.cdt)
     (fun _ _ s _ t _ h _ _ _ _ => ?_) (fun _ s _ t tcb h _ _ _ hC' => ?_)
-    (fun _ s _ t h _ _ _ _ => ?_) (fun s s' t tcb _ x h _ _ _ _ _ _ _ hOk => ?_)
+    (fun _ s _ t h _ _ _ _ => ?_)
+    (fun s t _ h _ _ _ _ => (hC (descheduleAtPlacement_onlyObjectsSchedulerDiffer s t)).trans h)
+    (fun s s' t tcb _ x h _ _ _ _ _ hOk => ?_)
     (fun s n t tcb _ h _ hI _ _ _ => (hC (hNc s t tcb n hI)).trans h)
     (fun s t _ h _ _ _ _ _ => (hC ((hU _ t _).trans
       (descheduleAtPlacement_onlyObjectsSchedulerDiffer s t))).trans h)

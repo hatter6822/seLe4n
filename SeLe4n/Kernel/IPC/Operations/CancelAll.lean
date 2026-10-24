@@ -538,9 +538,11 @@ def finaliseThreadCleanup (st : SystemState) (x : SeLe4n.ObjId) : SystemState :=
 
 /-- **Whether a final delete may finalise the scheduling context at `x`**: a
 reply stack it heads has a head that names it back; a thread it is bound to is
-bound back to it, as its own (`.bound`) or on loan (`.donated`), runs and waits
-on no core, and is in a state an unbound thread may idle in; and a context bound
-to no thread is lent by no one. -/
+bound back to it, as its own (`.bound`) or on loan (`.donated`), is no core's
+idle thread, is ready (queued, current on a core, or neither: the deschedule
+takes it off whichever core places it) or else on no core, and is in a state an
+unbound thread may idle in; and a context bound to no thread is lent by no
+one. -/
 @[inline] def schedContextFinaliseAdmitted (st : SystemState) (x : SeLe4n.ObjId) : Bool :=
   match st.getObject? x with
   | some (.schedContext sc) =>
@@ -555,13 +557,39 @@ to no thread is lent by no one. -/
       let tid : SeLe4n.ThreadId := ⟨sc.boundThreadCode - 1⟩
       match st.getTcb? tid with
       | some t =>
-        t.scBindingScCode == x.val + 1 && t.runCoreCode == 0 && !threadHeldOnSomeCore st tid &&
+        t.scBindingScCode == x.val + 1 && !isIdleThreadId tid &&
+        ((t.ipcStateCode == 0 && t.ipcObjectCode == 0) ||
+          (t.runCoreCode == 0 && !threadCurrentOnSomeCore st tid)) &&
         ipcCodesIdleAllowed t.ipcObjectCode t.ipcStateCode
       | none => false)
   | _ => false
 
+/-- **Take a scheduling context's ready holder off the scheduler** (seL4's
+`schedContext_unbindTCB`: `tcbSchedDequeue`, with the `rescheduleRequired` a
+running thread takes): the thread bound to the context leaves the run queue it
+waits on, or the current slot of the core running it, by the suspend's own
+removal (`descheduleAtPlacement`), which raises that core's reschedule flag, so
+the core chooses another thread.  The thread stays ready, with no reservation:
+it is not runnable until a context is bound to it again.  A holder that is not
+ready waits on no core and is left as it is. -/
+def finaliseSchedContextDeschedule (st : SystemState) (x : SeLe4n.ObjId) : SystemState :=
+  match st.getObject? x with
+  | some (.schedContext sc) =>
+    if sc.boundThreadCode == 0 then st
+    else
+      let tid : SeLe4n.ThreadId := ⟨sc.boundThreadCode - 1⟩
+      match st.getTcb? tid with
+      | some t =>
+        if t.scBindingScCode == x.val + 1 && t.ipcStateCode == 0 && t.ipcObjectCode == 0 &&
+            !isIdleThreadId tid then
+          descheduleAtPlacement st tid
+        else st
+      | none => st
+  | _ => st
+
 /-- **Unbind a scheduling context being finalised from its thread** (seL4's
-`schedContext_unbindAllTCBs`): the in-place unbind of the reservation arm
+`schedContext_unbindAllTCBs`), once the thread is off the scheduler
+(`finaliseSchedContextDeschedule`): the in-place unbind of the reservation arm
 (`cancelBoundDonationOnCore`), which clears both sides, the context's lender and
 its replenishment on the thread's home core, with the thread's binding read as
 the context's own whether it holds it as its own or on loan
@@ -576,8 +604,8 @@ def finaliseSchedContextUnbind (st : SystemState) (x : SeLe4n.ObjId) : SystemSta
       let tid : SeLe4n.ThreadId := ⟨sc.boundThreadCode - 1⟩
       match st.getTcb? tid with
       | some t =>
-        if t.scBindingScCode == x.val + 1 && t.runCoreCode == 0 &&
-            !threadHeldOnSomeCore st tid && ipcCodesIdleAllowed t.ipcObjectCode t.ipcStateCode then
+        if t.scBindingScCode == x.val + 1 &&
+            ipcCodesIdleAllowed t.ipcObjectCode t.ipcStateCode then
           match cancelBoundDonationOnCore st tid { t with scBindingOwnerCode := 0 }
               (determineTargetCore st tid) with
           | .ok st' => st'
@@ -607,8 +635,8 @@ context, so the reservation arm is the in-place unbind
       let tid : SeLe4n.ThreadId := ⟨bc - 1⟩
       match st.getTcb? tid with
       | some t =>
-        if t.scBindingScCode == x.val + 1 && t.runCoreCode == 0 &&
-            !threadHeldOnSomeCore st tid && ipcCodesIdleAllowed t.ipcObjectCode t.ipcStateCode then
+        if t.scBindingScCode == x.val + 1 &&
+            ipcCodesIdleAllowed t.ipcObjectCode t.ipcStateCode then
           cancelBoundDonationPerform st tid ⟨x.val⟩ (determineTargetCore st tid)
         else st
       | none => st
@@ -631,7 +659,7 @@ context, so the reservation arm is the in-place unbind
         · next hG =>
           simp only [Bool.and_eq_true, beq_iff_eq] at hG
           rw [cancelBoundDonationOnCore_of_bound st _ _ _ _
-            (schedContextBinding_ownerCleared hG.1.1.1)]
+            (schedContextBinding_ownerCleared hG.1)]
         · rfl
   · rfl
 
@@ -898,14 +926,17 @@ def finaliseThread (x : SeLe4n.ObjId) (st : SystemState) : SystemState :=
   else st
 
 /-- **seL4's `finaliseCap` on the final capability to a scheduling context**:
-unbound from its thread (`schedContext_unbindAllTCBs`), its reply stack let go
+its ready holder taken off the scheduler and unbound from it
+(`schedContext_unbindAllTCBs`, `finaliseSchedContextDeschedule` then
+`finaliseSchedContextUnbind`), its reply stack let go
 (`schedContext_unbindReply`), then the destroy cleanup, when the pre-state admits
 it (`schedContextFinaliseAdmitted`).  seL4's `schedContext_unbindNtfn` and
 `schedContext_completeYieldTo` have nothing to do here: this model's context is
 bound to no notification and records no yield. -/
 def finaliseSchedContext (x : SeLe4n.ObjId) (st : SystemState) : SystemState :=
   if schedContextFinaliseAdmitted st x then
-    finaliseSchedContextCleanup (finaliseSchedContextUnstack (finaliseSchedContextUnbind st x) x) x
+    finaliseSchedContextCleanup (finaliseSchedContextUnstack
+      (finaliseSchedContextUnbind (finaliseSchedContextDeschedule st x) x) x) x
   else st
 
 /-- **The thread finalisation, with its cleanup read as what it is.** -/
@@ -925,7 +956,8 @@ is.** -/
 theorem finaliseSchedContext_eq (x : SeLe4n.ObjId) (st : SystemState) :
     finaliseSchedContext x st =
       if schedContextFinaliseAdmitted st x then
-        finaliseSchedContextUnstack (finaliseSchedContextUnbind st x) x
+        finaliseSchedContextUnstack
+          (finaliseSchedContextUnbind (finaliseSchedContextDeschedule st x) x) x
       else st := by
   unfold finaliseSchedContext; rw [finaliseSchedContextCleanup_eq]
 

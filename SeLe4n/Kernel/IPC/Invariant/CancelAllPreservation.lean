@@ -294,7 +294,7 @@ unbound thread may idle in.  The thread finalisation's unbind is the case of a
 `.bound` holder (`FinaliseScReleaseStep.scUnbind`). -/
 theorem finaliseScReleaseStep_keepsIpcInvariantFull :
     FinaliseScReleaseStep (fun s => ipcInvariantFull s ∧ s.objects.invExt) := by
-  intro s s' t tcb sc x h hT hS _ _ hA hSc hB hOk
+  intro s s' t tcb sc x h hT hS hA hSc hB hOk
   refine ⟨cancelBoundDonationOnCore_view_preserves_ipcInvariantFull s s' t tcb _ _ h.2 h.1
     ((SystemState.getTcb?_eq_some_iff s t tcb).mp hT) (passiveServerIdleAllowed_of_codes hA)
     (fun scId hb => ?_) hOk, (FinaliseFrame.cancelBoundDonationOnCore h.2 hOk).invExt⟩
@@ -302,6 +302,18 @@ theorem finaliseScReleaseStep_keepsIpcInvariantFull :
   cases hb
   refine ⟨sc, (SystemState.getSchedContext?_eq_some_iff s _ sc).mp hSc, ?_⟩
   unfold SchedContext.boundThread; rw [hB]; exact threadOfOptCode_succ t
+
+/-- **A context's deschedule of its holder keeps the bundle**: the holder idles
+in no IPC state (codes `0`/`0`), so it is `.ready` and the dequeue
+(`descheduleAt_preserves_ipcInvariantFull`) applies. -/
+theorem finaliseScDescheduleStep_keepsIpcInvariantFull :
+    FinaliseScDescheduleStep (fun s => ipcInvariantFull s ∧ s.objects.invExt) := by
+  intro s t tcb h hT hS hO _
+  have hReady : ∀ x : TCB, s.getTcb? t = some x → x.ipcState = .ready := by
+    intro x hx; rw [hT] at hx; cases hx
+    unfold TCB.ipcState; rw [hS, hO]; rfl
+  exact ⟨descheduleAt_preserves_ipcInvariantFull s t _ hReady h.1,
+    (FinaliseFrame.descheduleAt s t _ h.2).invExt⟩
 
 /-- **A context's reply-stack unlink keeps the bundle**: the head reply's
 upward link is a stack link, not its caller
@@ -430,6 +442,7 @@ theorem finaliseFinalObject_preserves_ipcInvariantFull (target : Nat) (st : Syst
     (fun n s _ t h _ _ hCode hIn =>
       ⟨storeUnbindNotification_preserves_ipcInvariantFull s n t h.2 h.1 hCode hIn,
         (FinaliseFrame.storeUnbindNotification s t n h.2).invExt⟩)
+    finaliseScDescheduleStep_keepsIpcInvariantFull
     finaliseScReleaseStep_keepsIpcInvariantFull finaliseCancelStep_keepsIpcInvariantFull
     finaliseSuspendStep_keepsIpcInvariantFull finaliseReleaseStep_keepsIpcInvariantFull
     finaliseUnstackStep_keepsIpcInvariantFull finaliseReplyStep_keepsIpcInvariantFull

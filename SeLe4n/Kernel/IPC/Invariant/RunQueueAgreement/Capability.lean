@@ -578,7 +578,8 @@ theorem finaliseReplyRevert_runQueueStage (st : SystemState) (server? : Option S
 
 /-- **The finalisation is a kernel entry's worth of run-queue steps**, every
 step of it (`finaliseFinalObject_closed`): each cancel's and each unbind's
-stage, a finalised thread's suspend (`finaliseSuspend_runQueueEntryStage`), the
+stage, a context's dequeue of its holder (`descheduleAt_runQueueStage`), a
+finalised thread's suspend (`finaliseSuspend_runQueueEntryStage`), the
 release of the cores' holds on it, which writes no object and no queue, a
 context's reply-stack unlink (a reply and a context rewritten), and a reply's
 caller cancel with its boost reverted. -/
@@ -593,7 +594,8 @@ theorem finaliseFinalObject_runQueueEntryStage (target : Nat) (st : SystemState)
       have hSpec := unbindNotification_of_inPlace s t hIn
       rw [hCode, Nat.add_sub_cancel] at hSpec
       exact h.trans (unbindNotification_runQueueStage hSpec).entry)
-    (fun _ _ _ _ _ _ h _ _ _ _ _ _ _ hOk =>
+    (fun s t _ h _ _ _ _ => h.trans (descheduleAt_runQueueStage s t _).entry)
+    (fun _ _ _ _ _ _ h _ _ _ _ _ hOk =>
       h.trans (cancelBoundDonationOnCore_runQueueStage hOk).entry)
     (fun s _ t tcb _ h _ _ _ _ _ => h.trans (cancelIpcBlocking_runQueueStage s t tcb).entry)
     (fun s t tcb h hT hS hO _ hId =>

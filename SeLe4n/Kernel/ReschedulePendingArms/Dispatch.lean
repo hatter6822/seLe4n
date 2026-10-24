@@ -343,7 +343,8 @@ theorem notificationWaiterCancel_stepCovers (e : CoreId) (st : SystemState)
 
 /-- WS-ZA ZA5.4 parts 23–24: **the finalisation covers**, every step of it
 (`finaliseFinalObject_closed`): each cancel's, the notification unbind's
-(`unbindNotification_keyFrame`, through `unbindNotification_of_inPlace`), the
+(`unbindNotification_keyFrame`, through `unbindNotification_of_inPlace`), a
+context's dequeue of its holder (`descheduleAtPlacement_stepCovers`), the
 reservation unbind's (`cancelBoundDonationOnCore_stepCovers`), the suspend — the
 deschedule wherever the thread is placed (`descheduleAtPlacement_stepCovers`),
 then a mark that writes no key field (`updateTcb_keyFrame`) — the release of the
@@ -369,7 +370,10 @@ theorem finaliseFinalObject_stepCovers (e : CoreId) (target : Nat) (st : SystemS
       have hSpec := unbindNotification_of_inPlace s t hIn
       rw [hCode, Nat.add_sub_cancel] at hSpec
       exact stepCoversInv_trans h.1 (unbindNotification_keyFrame _ _ _ h.2 hSpec).stepCoversInv)
-    (fun _ _ _ _ _ _ h _ _ _ _ _ _ _ hOk =>
+    (fun s t _ h _ _ _ _ =>
+      have d := descheduleAtPlacement_stepCovers e s t h.2
+      ⟨stepCovers_trans h.1 d.1, d.2⟩)
+    (fun _ _ _ _ _ _ h _ _ _ _ _ hOk =>
       stepCoversInv_trans h.1 (cancelBoundDonationOnCore_stepCovers e h.2 hOk))
     (fun s _ t tcb _ h _ _ _ _ _ =>
       ⟨stepCovers_trans h.1 (cancelIpcBlocking_stepCovers e s t tcb h.2),

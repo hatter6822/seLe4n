@@ -1258,18 +1258,29 @@ theorem unbind {s : SystemState} {n : SeLe4n.ObjId} {ntfn : Notification} {t : S
 carries it, and frames every budget. -/
 theorem release {s s' : SystemState} {t : SeLe4n.ThreadId} {tcb : TCB} {sc : SchedContext}
     {x : SeLe4n.ObjId} (h : finaliseStepInvariant s) (hT : s.getTcb? t = some tcb)
-    (hS : tcb.scBindingScCode = x.val + 1) (hR : tcb.runCoreCode = 0)
-    (hH : threadHeldOnSomeCore s t = false)
+    (hS : tcb.scBindingScCode = x.val + 1)
     (hA : ipcCodesIdleAllowed tcb.ipcObjectCode tcb.ipcStateCode = true)
     (hSc : s.getSchedContext? ⟨x.val⟩ = some sc) (hB : sc.boundThreadCode = t.val + 1)
     (hOk : cancelBoundDonationOnCore s t { tcb with scBindingOwnerCode := 0 }
       (determineTargetCore s t) = .ok s') :
     finaliseStepInvariant s' ∧ timeoutBudgetFrame s s' :=
-  have hI := finaliseScReleaseStep_keepsIpcInvariantFull s s' t tcb sc x ⟨h.1, h.2.1⟩ hT hS hR
-    hH hA hSc hB hOk
+  have hI := finaliseScReleaseStep_keepsIpcInvariantFull s s' t tcb sc x ⟨h.1, h.2.1⟩ hT hS
+    hA hSc hB hOk
   have r := (cancelBoundDonationOnCore_reachFieldFrame h.2.1 hOk).parts h.2.2.1
   ⟨⟨hI.1, hI.2, r.1, SystemState.replyWaitersConsistent.of_views r.2.2 h.2.2.2.1,
     h.chain_of_frame (FinaliseFrame.cancelBoundDonationOnCore h.2.1 hOk)⟩, r.2.1⟩
+
+/-- A context's deschedule of its holder carries it, and frames every budget:
+the dequeue wherever the holder is placed. -/
+theorem deschedule {s : SystemState} {t : SeLe4n.ThreadId} {tcb : TCB}
+    (h : finaliseStepInvariant s) (hT : s.getTcb? t = some tcb) (hS : tcb.ipcStateCode = 0)
+    (hO : tcb.ipcObjectCode = 0) (hId : isIdleThreadId t = false) :
+    finaliseStepInvariant (descheduleAtPlacement s t) ∧
+      timeoutBudgetFrame s (descheduleAtPlacement s t) :=
+  have hF := finaliseScDescheduleStep_keepsIpcInvariantFull s t tcb ⟨h.1, h.2.1⟩ hT hS hO hId
+  have r := (ReachFieldFrame.descheduleAtPlacement s t).parts h.2.2.1
+  ⟨⟨hF.1, hF.2, r.1, SystemState.replyWaitersConsistent.of_views r.2.2 h.2.2.2.1,
+    h.chain_of_frame (FinaliseFrame.descheduleAt s t (placedCoreOf? s t) h.2.1)⟩, r.2.1⟩
 
 /-- A thread's notification cancel, before any wake, carries it, and frames
 every budget. -/
@@ -1464,8 +1475,11 @@ theorem finaliseFinalObject_preserves_ipcReachable (target : Nat) {st : SystemSt
     (fun _ _ _ _ h hN _ hCode hIn =>
       have r := h.1.unbind hN hCode hIn
       ⟨r.1, h.2.trans r.2⟩)
-    (fun _ _ _ _ _ _ h hT hS hR hH hA hSc hB hOk =>
-      have r := h.1.release hT hS hR hH hA hSc hB hOk
+    (fun _ _ _ h hT hS hO hId =>
+      have r := h.1.deschedule hT hS hO hId
+      ⟨r.1, h.2.trans r.2⟩)
+    (fun _ _ _ _ _ _ h hT hS hA hSc hB hOk =>
+      have r := h.1.release hT hS hA hSc hB hOk
       ⟨r.1, h.2.trans r.2⟩)
     (fun _ _ _ _ _ h hT hI hN hH hC =>
       have r := h.1.cancel hT hI hN hH hC

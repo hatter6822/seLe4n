@@ -2294,6 +2294,24 @@ private def runThreadFinaliseChecks : IO Unit := do
       assertBool "deleting a bound thread's last capability unbinds its scheduling context and retires the thread"
         (!storedAt st1 960 && !recordsChildAt st1 carveUt 960 && storedAt st1 961 &&
           (st1.getSchedContext? ⟨961⟩).map (·.boundThreadCode) == some 0)
+    -- The context's thread resumed, so queued on a core: the context's delete
+    -- takes it off the run queue (seL4's `schedContext_unbindTCB` →
+    -- `tcbSchedDequeue`) before the unbind, then retires the context; the
+    -- thread stays, unbound and runnable on no core.  (WS-ZA ZA5.4 part 25)
+    let resumeSc : SyscallDecodeResult :=
+      { capAddr := SeLe4n.CPtr.ofNat 12, msgInfo := { length := 0, extraCaps := 0, label := 0 },
+        syscallId := .tcbResume, msgRegs := #[] }
+    match runAll st [resumeSc] with
+    | .error e => assertBool s!"resuming the bound thread succeeds (got {repr e})" false
+    | .ok stR => do
+      assertBool "setup: the resumed bound thread is queued on some core"
+        (runnableOnSomeCore stR ⟨960⟩ && scCodeOf stR 960 == some 962)
+      match runAll stR [decodeDelete 13] with
+      | .error e => assertBool s!"deleting a queued thread's scheduling context's last capability succeeds (got {repr e})" false
+      | .ok st1 =>
+        assertBool "deleting a queued thread's scheduling context dequeues and unbinds the thread and retires the context"
+          (!storedAt st1 961 && !recordsChildAt st1 carveUt 961 && storedAt st1 960 &&
+            scCodeOf st1 960 == some 0 && !runnableOnSomeCore st1 ⟨960⟩)
   -- A thread blocked on a notification as its head waiter has its wait
   -- cancelled (seL4's `suspend` → `cancelIPC`) and is retired, leaving the
   -- notification's queue empty.  No syscall blocks a thread whose space slots
