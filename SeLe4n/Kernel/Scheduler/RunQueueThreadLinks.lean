@@ -90,9 +90,16 @@ theorem TCB.runLinkOn_setBucketPrev (tcb : TCB) (v : Nat) (c : CoreId) :
   unfold TCB.runLinkOn RunQueueLink.withBucketPrevIfQueued
   by_cases h : tcb.runCoreCode = c.val + 1 <;> simp [h, TCB.runLink, RunQueue.RunQueueLink.none]
 
-theorem TCB.runLinkOn_clearCore (tcb : TCB) (c : CoreId) :
-    ({ tcb with runCoreCode := 0 } : TCB).runLinkOn c = RunQueue.RunQueueLink.none := by
-  unfold TCB.runLinkOn; rw [if_neg (fun h => by simp at h)]
+/-- A TCB taken out of its run queue: marked on no core, with its four
+neighbour links cleared too, so a dequeued thread keeps no stale neighbour
+code (a final delete's retire reads all five, `threadQuiescent`). -/
+@[inline] def TCB.detachRun (tcb : TCB) : TCB :=
+  { tcb with runCoreCode := 0, runPrevCode := 0, runNextCode := 0,
+             runBucketPrevCode := 0, runBucketNextCode := 0 }
+
+theorem TCB.runLinkOn_detachRun (tcb : TCB) (c : CoreId) :
+    tcb.detachRun.runLinkOn c = RunQueue.RunQueueLink.none := by
+  unfold TCB.runLinkOn TCB.detachRun; rw [if_neg (fun h => by simp at h)]
 
 theorem TCB.runLinkOn_eq_none_of_not_queued {tcb : TCB} {c : CoreId}
     (h : (tcb.runLinkOn c).queued = false) : tcb.runLinkOn c = RunQueue.RunQueueLink.none := by
@@ -1605,13 +1612,14 @@ theorem _root_.SeLe4n.Model.RunQueueLink.withBucketPrevIfQueued_of_not_queued {l
 
 /-- WS-ZA ZA4.5: the TCB writes that take `t` out of its queue, given its four
 links (read before any write): each neighbour takes over the link `t` held
-towards the other, and `t` is marked on no core.  As `RunQueue.unlinkLinks`. -/
+towards the other, and `t` is marked on no core with its own links cleared
+(`TCB.detachRun`).  As `RunQueue.unlinkLinks`. -/
 def runUnlinkLinks (st : SystemState) (t : SeLe4n.ThreadId) (pv nx bpv bnx : Nat) : SystemState :=
   let st1 := st.updateTcbAtCode pv (fun y => { y with runNextCode := nx })
   let st2 := st1.updateTcbAtCode nx (fun y => { y with runPrevCode := pv })
   let st3 := st2.updateTcbAtCode bpv (fun y => { y with runBucketNextCode := bnx })
   let st4 := st3.updateTcbAtCode bnx (fun y => { y with runBucketPrevCode := bpv })
-  st4.mapTcbInPlace t (fun y => { y with runCoreCode := 0 })
+  st4.mapTcbInPlace t TCB.detachRun
 
 /-- A TCB write at a link code on the object table; nothing for the code `0`. -/
 @[inline] def mapTcbAtCodeObjects (o : RHTable SeLe4n.ObjId KernelObject) (k : Nat)
@@ -1625,7 +1633,7 @@ def unlinkLinkObjects (o : RHTable SeLe4n.ObjId KernelObject) (t : SeLe4n.Thread
   let o2 := mapTcbAtCodeObjects o1 nx (fun y => { y with runPrevCode := pv })
   let o3 := mapTcbAtCodeObjects o2 bpv (fun y => { y with runBucketNextCode := bnx })
   let o4 := mapTcbAtCodeObjects o3 bnx (fun y => { y with runBucketPrevCode := bpv })
-  o4.mapValueAt t.toObjId (KernelObject.mapTcb fun y => { y with runCoreCode := 0 })
+  o4.mapValueAt t.toObjId (KernelObject.mapTcb TCB.detachRun)
 
 /-- WS-ZA ZA4.5: the compiled `runUnlinkLinks`: the state record is rebuilt
 once around the table writes (`runAppendLinksImpl`). -/
@@ -1662,7 +1670,7 @@ theorem runUnlinkLinks_runLinkOn (st : SystemState) (t : SeLe4n.ThreadId) (pv nx
       if code y = bnx then RunQueueLink.withBucketPrevIfQueued bpv L3 else L3 := by
   unfold runUnlinkLinks
   rw [runLinkOn_mapTcbInPlace_map _ _ _ c (fun _ => RunQueue.RunQueueLink.none)
-      (fun tcb => TCB.runLinkOn_clearCore tcb c) rfl,
+      (fun tcb => TCB.runLinkOn_detachRun tcb c) rfl,
     runLinkOn_updateTcbAtCode_map _ _ _ c _ (fun tcb => TCB.runLinkOn_setBucketPrev tcb _ c)
       (RunQueueLink.withBucketPrevIfQueued_none _),
     runLinkOn_updateTcbAtCode_map _ _ _ c _ (fun tcb => TCB.runLinkOn_setBucketNext tcb _ c)
@@ -1951,7 +1959,7 @@ theorem runUnlinkLinks_runCoreCode_ne (st : SystemState) (t : SeLe4n.ThreadId)
     bnx (fun y => { y with runBucketPrevCode := bpv }) (fun _ => rfl) y
   have h5 := mapTcbInPlace_runCoreCode ((((st.updateTcbAtCode pv (fun y => { y with runNextCode := nx })).updateTcbAtCode
     nx (fun y => { y with runPrevCode := pv })).updateTcbAtCode bpv (fun y => { y with runBucketNextCode := bnx })).updateTcbAtCode
-    bnx (fun y => { y with runBucketPrevCode := bpv })) t y (fun y => { y with runCoreCode := 0 })
+    bnx (fun y => { y with runBucketPrevCode := bpv })) t y TCB.detachRun
     (fun _ => Or.inr (Ne.symm hy))
   exact h5.trans (h4.trans (h3.trans (h2.trans h1)))
 
@@ -2129,6 +2137,24 @@ theorem StateMono.of_pointwise {st st' : SystemState}
   ⟨fun ⟨x, hx, hr⟩ => let ⟨x', hx', hm⟩ := h1 t x hx; ⟨x', hx', hm.runnable hr⟩,
     fun hc x' hx' => h2 t x' hx' hc,
     fun ⟨x, hx, ha⟩ => let ⟨x', hx', hm⟩ := h1 t x hx; ⟨x', hx', hm.2 ha⟩⟩
+
+/-- **A step that may also erase suspended threads is state-monotone**: a TCB
+it keeps is replaced by a monotone step of it, or the TCB is gone and was not
+active, so neither runnable nor active before. -/
+theorem StateMono.of_pointwise_erase {st st' : SystemState}
+    (h1 : ∀ t x, st.getTcb? t = some x →
+      (∃ x', st'.getTcb? t = some x' ∧ x.StepMono x') ∨ (st'.getTcb? t = none ∧ ¬ x.Active))
+    (h2 : ∀ t x', st'.getTcb? t = some x' → (∀ x, st.getTcb? t = some x → x.Coherent) →
+      x'.Coherent) : StateMono st st' := fun t =>
+  ⟨fun ⟨x, hx, hr⟩ => by
+      rcases h1 t x hx with ⟨x', hx', hm⟩ | ⟨-, hA⟩
+      · exact ⟨x', hx', hm.runnable hr⟩
+      · exact absurd hr.2 hA,
+    fun hc x' hx' => h2 t x' hx' hc,
+    fun ⟨x, hx, ha⟩ => by
+      rcases h1 t x hx with ⟨x', hx', hm⟩ | ⟨-, hA⟩
+      · exact ⟨x', hx', hm.2 ha⟩
+      · exact absurd ha hA⟩
 
 /-- The same, read off a step that rewrites every TCB through a monotone map
 and adds or removes none. -/

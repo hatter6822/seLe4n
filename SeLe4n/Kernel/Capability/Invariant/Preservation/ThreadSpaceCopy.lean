@@ -346,10 +346,13 @@ theorem copyThreadSpaces_preserves_capabilityInvariantBundle (ec : Concurrency.C
     cnSrc.cnode cnSrc.slot TCB.cspaceRootRights (slot := TCB.cspaceRootSlot) hCnNot
   obtain ⟨hT1, hI1⟩ := threadSlotCopied_tcb hObjInv hT TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot
     TCB.cspaceRootRights
-  obtain ⟨t1, hT1'⟩ := Option.isSome_iff_exists.mp hT1
+  obtain ⟨cnCap, -, hCL, -⟩ := cspaceRootSourceAdmitted_spec hCn
+  obtain ⟨t1, hT1', hF1⟩ := threadSlotCopied_slotFilled hObjInv hT (slot := TCB.cspaceRootSlot)
+    (by decide) TCB.cspaceRootRights (srcCNode := cnSrc.cnode) (srcSlot := cnSrc.slot) hCL
   unfold copyThreadSpacesPerform
   refine threadSlotSet_preserves_capabilityInvariantBundle ec h1
-    (by unfold threadSlotSet; dsimp only; rw [retireFinalObject_getTcb? _ _ _ _ hI1]; exact hT1')
+    (by unfold threadSlotSet; dsimp only
+        exact retireFinalObject_getTcb?_of_slotCap _ _ _ _ hI1 hT1' hF1)
     (by decide) vrSrc.cnode vrSrc.slot TCB.vspaceRootRights fun cap hL u hu => ?_
   unfold threadSlotSet at hL ⊢
   dsimp only at hL ⊢

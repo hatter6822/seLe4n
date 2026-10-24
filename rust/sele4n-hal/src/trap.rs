@@ -1438,6 +1438,9 @@ fn deliver_unknown_syscall(frame: &mut TrapFrame) {
 /// would otherwise mutate the live ESR/FAR before we inspected them.
 #[no_mangle]
 pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
+    // The remote-core stall: this core is no longer at user, before anything
+    // here can block (`remote_stall`).
+    crate::remote_stall::note_kernel_entry();
     let esr = frame.esr_el1;
     // WS-BP BP7.3: the frame is the Lean kernel's to read for the handler's
     // duration, so the whole outgoing context reaches the thread's TCB.
@@ -1679,6 +1682,9 @@ pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
 #[no_mangle]
 #[deny(clippy::panic, clippy::unreachable, clippy::todo)]
 pub extern "C" fn handle_irq_per_core(frame: &mut TrapFrame) {
+    // The remote-core stall: this core is no longer at user, before anything
+    // here can block (`remote_stall`).
+    crate::remote_stall::note_kernel_entry();
     // WS-BP BP7.3: a preempted thread's whole context is the Lean kernel's to
     // save for the handler's duration.
     let _in_flight = InFlightFrame::publish(frame);
@@ -1863,6 +1869,40 @@ pub unsafe fn register_reschedule_sgi_handler() {
     // `register_sgi_handler`'s write-once precondition.
     unsafe {
         crate::gic::register_sgi_handler(RESCHEDULE_INTID, reschedule_sgi_handler);
+    }
+}
+
+/// `SPSR_EL1.M[4:0]` of a return to EL0t, the only user mode a frame
+/// resumes (`sanitise_user_spsr` keeps the flags alone).
+const SPSR_MODE_MASK: u64 = 0x1F;
+
+/// **The remote-core stall's exit gate**: run by `trap.S` after every
+/// handler that may return, immediately before `restore_context`.  A frame
+/// that resumes EL1 (the idle loop) passes.  One that resumes EL0 marks the
+/// core at user and returns, unless a commit on another core has since
+/// changed what this core runs (`remote_stall::enter_user`): then the core
+/// takes the reschedule first, under the kernel-entry lock, which installs
+/// what the committed state runs here into the frame, and checks again.  So
+/// a core never returns to a thread another core's commit took off it, even
+/// on a path that took no lock (a shootdown SGI, a spurious interrupt) or in
+/// the window between a locked entry's release and its `eret`.
+///
+/// # Safety (caller contract)
+///
+/// Called only from `trap.S`, with `frame` the frame `restore_context` is
+/// about to `eret` through.
+#[no_mangle]
+pub extern "C" fn user_exit_gate(frame: &mut TrapFrame) {
+    let core = crate::per_cpu::current_core_id_from_tpidr();
+    while frame.spsr_el1 & SPSR_MODE_MASK == 0 && !crate::remote_stall::enter_user(core as usize) {
+        // A core whose Lean runtime is not ready runs no thread, so no commit
+        // can have taken one off it; the reschedule it cannot take is moot.
+        if !crate::lean_ready::lean_ready(core as usize) {
+            crate::remote_stall::clear_stall_request(core as usize);
+            continue;
+        }
+        let _in_flight = InFlightFrame::publish(frame);
+        reschedule_sgi_handler(RESCHEDULE_INTID, 0);
     }
 }
 

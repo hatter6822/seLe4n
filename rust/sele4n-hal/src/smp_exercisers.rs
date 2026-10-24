@@ -116,6 +116,15 @@ pub const COMMAND_PROBE_ALL: u32 = 5;
 /// Remap this core's own window page to generation `arg` through a shootdown
 /// round; the result is the round's [`RoundOutcome::code`].
 pub const COMMAND_ROUND: u32 = 6;
+/// Request a remote-core stall of this core (`remote_stall::stall_if_changed_in`)
+/// and run its exit gate check (`remote_stall::enter_user`), clearing the user
+/// flag the gate sets.  Both run inside this core's agent handler, with its
+/// IRQs masked, so no kernel entry of this core (a reschedule or a tick, which
+/// meets and clears a request under the kernel-entry lock) can run between
+/// them.  The result is `0` when the request found the core in the kernel and
+/// the gate refused the return to EL0, `1` when the gate let it return, and
+/// `2` when the request did not find the core in the kernel.
+pub const COMMAND_EXIT_GATE: u32 = 7;
 
 /// One core's command slot: one cache line, written by the issuer (the boot
 /// core, or a secondary acknowledging a ping into slot 0) and by the servicing
@@ -727,6 +736,23 @@ fn execute(core: usize, source_cpu: u8, command: u32, arg: u64) -> u64 {
             report_round("tlb-shootdown-stress", core, arg, round, outcome);
             outcome.code()
         }
+        COMMAND_EXIT_GATE => {
+            let requested = crate::remote_stall::stall_if_changed_in(
+                &crate::remote_stall::AT_USER,
+                &crate::remote_stall::STALL_REQUESTED,
+                core,
+                true,
+                0,
+                |_| {},
+            );
+            if requested != crate::remote_stall::StallOutcome::NotAtUser {
+                return 2;
+            }
+            let allowed = crate::remote_stall::enter_user(core);
+            // This core is in an interrupt handler, not at EL0.
+            crate::remote_stall::note_kernel_entry();
+            u64::from(allowed)
+        }
         _ => u64::MAX,
     }
 }
@@ -842,6 +868,91 @@ fn sgi_round_trip() -> bool {
     pass
 }
 
+/// The remote-core stall (seL4's `remoteTCBStall`), driven between the boot
+/// core and each secondary through the real flags, SGI and handlers:
+///
+/// 1. the secondary marked at user, the boot core's stall pokes it with the
+///    `.reschedule` SGI and waits; the secondary's interrupt entry
+///    (`note_kernel_entry`) is what ends the wait (`StallOutcome::Left`);
+/// 2. the secondary in the kernel, the stall requests and does not wait
+///    (`NotAtUser`), and the secondary's own exit gate then refuses its return
+///    to EL0.  Both run on the secondary in one agent command
+///    ([`COMMAND_EXIT_GATE`]), so no kernel entry of the secondary can meet
+///    the request between them;
+/// 3. on the Lean-linked image, the secondary's next kernel entry under the
+///    kernel-entry lock (its reschedule) meets the request.
+///
+/// A secondary's tick may end step 1's wait before the poke does, which is
+/// the protocol too (`NotAtUser`), so step 1 is retried until the poke is what
+/// ended it.  A wait that times out fails the driver.
+fn remote_stall() -> bool {
+    use crate::remote_stall::{StallOutcome, AT_USER, STALL_REQUESTED};
+    let poke = |target: usize| crate::gic::send_sgi(1u8 << target, crate::trap::RESCHEDULE_INTID);
+    let mut pass = true;
+    for core in 1..CORE_COUNT {
+        let mut left = false;
+        for _ in 0..16 {
+            AT_USER[core].store(true, Ordering::SeqCst);
+            let fuel = crate::remote_stall::STALL_WAIT_FUEL;
+            match crate::remote_stall::stall_if_changed_in(
+                &AT_USER,
+                &STALL_REQUESTED,
+                core,
+                true,
+                fuel,
+                poke,
+            ) {
+                StallOutcome::Left => {
+                    left = true;
+                    break;
+                }
+                StallOutcome::TimedOut => break,
+                StallOutcome::NotAtUser | StallOutcome::Unchanged => {}
+            }
+        }
+        AT_USER[core].store(false, Ordering::SeqCst);
+        if left {
+            crate::kprintln!("[smp-test] remote-stall: core {core}: at user, poked, entered the kernel before the stall returned");
+        }
+        // The request and the gate run together on the secondary: a request
+        // made here could be met by a kernel entry of the secondary still in
+        // flight (step 1's reschedule, or a tick) before the gate ran.
+        let refused = command(core, COMMAND_EXIT_GATE, 0) == Some(0);
+        if refused {
+            crate::kprintln!("[smp-test] remote-stall: core {core}: in the kernel, requested; its exit gate refused the return to user");
+        }
+        let met = if cfg!(feature = "hw_target") {
+            poke(core);
+            let deadline = crate::timer::read_counter().saturating_add(command_timeout_ticks());
+            while STALL_REQUESTED[core].load(Ordering::SeqCst)
+                && crate::timer::read_counter() < deadline
+            {
+                core::hint::spin_loop();
+            }
+            let met = !STALL_REQUESTED[core].load(Ordering::SeqCst);
+            if met {
+                crate::kprintln!(
+                    "[smp-test] remote-stall: core {core}: its next kernel entry met the request"
+                );
+            }
+            met
+        } else {
+            true
+        };
+        crate::remote_stall::clear_stall_request(core);
+        if !(left && refused && met) {
+            pass = false;
+            crate::kprintln!("[smp-test] FAIL: remote-stall: core {core}: left {left}, refused {refused}, met {met}");
+        }
+    }
+    if pass {
+        crate::kprintln!(
+            "[smp-test] remote-stall: every core left user mode before the stall returned"
+        );
+    }
+    pass
+}
+
 /// How many lines each core prints under the console stress.
 pub const STRESS_LINES: u64 = 32;
 
@@ -953,7 +1064,7 @@ fn shootdown_stress() -> bool {
 
 /// How many drivers this image runs: the four of BP8.4 on every image, and
 /// the per-core counter check on the image that links the kernel (BP8.5).
-const DRIVER_COUNT: u32 = if cfg!(feature = "hw_target") { 5 } else { 4 };
+const DRIVER_COUNT: u32 = if cfg!(feature = "hw_target") { 7 } else { 5 };
 
 /// How long the boot core waits for every PE to become IRQ-serviceable: one
 /// second of the counter.
@@ -1015,6 +1126,9 @@ pub fn run_on_boot_core(smp_enabled: bool) {
     if let Some(ok) = heap_allocations_per_syscall() {
         tally("heap-allocations-per-syscall", ok);
     }
+    // The remote-core stall's protocol between the boot core and each
+    // secondary, last, so its extra SGIs reach no counter a driver above reads.
+    tally("remote-stall", remote_stall());
     crate::kprintln!("[smp-test] exercisers: {passed} passed, {failed} failed");
 }
 
@@ -1536,6 +1650,10 @@ const VSPACE_CAP: u64 = cap_address(VSPACE_SLOT);
 const UNTYPED_CAP: u64 = cap_address(UNTYPED_SLOT);
 #[cfg(feature = "hw_target")]
 const FRAME_CAP: u64 = cap_address(FRAME_SLOT);
+/// The mint slot's capability, where the thread-finalising scenarios carve a
+/// scheduling context.
+#[cfg(feature = "hw_target")]
+const MINT_CAP: u64 = cap_address(MINT_SLOT);
 /// The frame capability's copy, in the move slot, while the revoke scenario
 /// maps it.
 #[cfg(feature = "hw_target")]
@@ -1865,6 +1983,18 @@ const PASSIVE_CHILD_IDS: [u64; 4] = [20, 21, 22, 23];
 /// partner, each finalised and retired by its only capability's delete.
 #[cfg(feature = "hw_target")]
 const FINALISED_CHILD_IDS: [u64; 3] = [24, 25, 26];
+/// The ids the thread-finalising scenarios carve at: an inactive thread, a
+/// thread bound to the boot notification, a scheduling context and the thread
+/// it is bound to, and two threads resumed onto one run queue, each finalised
+/// and retired by its only capability's delete.
+#[cfg(feature = "hw_target")]
+const THREAD_CHILD_IDS: [u64; 6] = [27, 28, 29, 30, 31, 32];
+/// `KernelObjectType` tags of a thread and a scheduling context, the context's
+/// size bits (7: the least the carve takes) in the tag word's upper bits.
+#[cfg(feature = "hw_target")]
+const TCB_TYPE: u64 = 0;
+#[cfg(feature = "hw_target")]
+const SCHED_CONTEXT_TYPE: u64 = 6 + (7 << 8);
 /// `KernelObjectType` tags of the passive kinds; the CNode's size bits (its
 /// radix, 2: four slots) in the tag word's upper bits.
 #[cfg(feature = "hw_target")]
@@ -1935,7 +2065,7 @@ const PARTNER_PRIORITY: u64 = 255;
 /// No service is in the image, so the service revoke and query are not
 /// issued.
 #[cfg(feature = "hw_target")]
-const INVOCATION_SCENARIOS: [&[RoundTrip]; 5] = [
+const INVOCATION_SCENARIOS: [&[RoundTrip]; 6] = [
     &[
         invocation(
             "cspace-copy",
@@ -2029,6 +2159,112 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 5] = [
         ),
         invocation("tcb-resume", TCB_RESUME, PARTNER_TCB_CAP, [0; 4]),
         invocation("tcb-suspend", TCB_SUSPEND, PARTNER_TCB_CAP, [0; 4]),
+    ],
+    // WS-ZA ZA5.4 part 24: a carved thread's last capability deleted while it
+    // is inactive, and while it is bound to the boot notification; a carved
+    // scheduling context's while it is bound to a carved thread, then that
+    // thread's; a carved thread's once it is suspended off a run queue it
+    // shared; and a carved thread's while it is queued to run.  Each delete
+    // finalises its object (seL4's `finaliseCap`) and retires it.
+    &[
+        invocation(
+            "untyped-retype-tcb",
+            UNTYPED_RETYPE,
+            UNTYPED_CAP,
+            [TCB_TYPE, THREAD_CHILD_IDS[0], CNODE_CAP, FRAME_SLOT],
+        ),
+        invocation(
+            "inactive-tcb-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [FRAME_SLOT, 0, 0, 0],
+        ),
+        invocation(
+            "untyped-retype-bound-tcb",
+            UNTYPED_RETYPE,
+            UNTYPED_CAP,
+            [TCB_TYPE, THREAD_CHILD_IDS[1], CNODE_CAP, FRAME_SLOT],
+        ),
+        invocation(
+            "bind-carved-tcb",
+            TCB_BIND_NOTIFICATION,
+            FRAME_CAP,
+            [NOTIFICATION_CAP, 0, 0, 0],
+        ),
+        invocation(
+            "bound-tcb-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [FRAME_SLOT, 0, 0, 0],
+        ),
+        invocation(
+            "untyped-retype-sched-context",
+            UNTYPED_RETYPE,
+            UNTYPED_CAP,
+            [
+                SCHED_CONTEXT_TYPE,
+                THREAD_CHILD_IDS[2],
+                CNODE_CAP,
+                MINT_SLOT,
+            ],
+        ),
+        invocation(
+            "untyped-retype-sc-thread",
+            UNTYPED_RETYPE,
+            UNTYPED_CAP,
+            [TCB_TYPE, THREAD_CHILD_IDS[3], CNODE_CAP, FRAME_SLOT],
+        ),
+        invocation(
+            "bind-carved-sched-context",
+            SCHED_CONTEXT_BIND,
+            MINT_CAP,
+            [FRAME_CAP, 0, 0, 0],
+        ),
+        invocation(
+            "bound-sched-context-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [MINT_SLOT, 0, 0, 0],
+        ),
+        invocation(
+            "unbound-tcb-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [FRAME_SLOT, 0, 0, 0],
+        ),
+        // Two carved threads resumed, so queued one behind the other where
+        // their placement puts them; the first suspended, which takes it off
+        // that queue and leaves it no run link, then its last capability
+        // deleted, which retires it (the steady-state run carves its id
+        // again); then the second's, which the finalisation suspends, taking
+        // it off the queue in place, and retires.
+        invocation(
+            "untyped-retype-queued-tcb",
+            UNTYPED_RETYPE,
+            UNTYPED_CAP,
+            [TCB_TYPE, THREAD_CHILD_IDS[4], CNODE_CAP, FRAME_SLOT],
+        ),
+        invocation("resume-carved-tcb", TCB_RESUME, FRAME_CAP, [0; 4]),
+        invocation(
+            "untyped-retype-shared-tcb",
+            UNTYPED_RETYPE,
+            UNTYPED_CAP,
+            [TCB_TYPE, THREAD_CHILD_IDS[5], CNODE_CAP, MINT_SLOT],
+        ),
+        invocation("resume-shared-tcb", TCB_RESUME, MINT_CAP, [0; 4]),
+        invocation("suspend-queued-tcb", TCB_SUSPEND, FRAME_CAP, [0; 4]),
+        invocation(
+            "suspended-tcb-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [FRAME_SLOT, 0, 0, 0],
+        ),
+        invocation(
+            "queued-tcb-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [MINT_SLOT, 0, 0, 0],
+        ),
     ],
     &[
         invocation(

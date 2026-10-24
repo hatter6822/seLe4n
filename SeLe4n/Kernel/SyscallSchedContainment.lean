@@ -618,82 +618,33 @@ theorem schedLockSet_yieldOnCore_coversWrites (executingCore : CoreId)
 -- §12  The finalising delete and the revocation
 -- ============================================================================
 
-/-- **WS-ZA ZA5.4 part 23**: the finalisation writes no replenish queue.  Each
-cancel rewrites objects and wakes its waiter (`enqueueRunnableOnCore`, which
-enqueues); the unbind rewrites two objects. -/
-theorem finaliseFinalObject_replenishQueueOnCore (target : Nat) (st : SystemState) (d : CoreId) :
-    (finaliseFinalObject target st).scheduler.replenishQueueOnCore d =
-      st.scheduler.replenishQueueOnCore d :=
-  finaliseFinalObject_closed
-    (fun s => s.scheduler.replenishQueueOnCore d = st.scheduler.replenishQueueOnCore d)
-    (fun e q s _ t tcb h _ _ _ _ => by
-      have hP : (storePopHead s e q t tcb.queueNext).scheduler = s.scheduler := by
-        unfold storePopHead
-        cases tcb.queueNext <;>
-          simp only [SystemState.updateTcb_scheduler] <;> rfl
-      unfold storeEndpointWaiterCancelled wakeCancelledWaiter
-      simp only [] at h ⊢
-      rw [enqueueRunnableOnCore_replenishQueueOnCore, SystemState.updateTcb_scheduler, hP, h])
-    (fun _ s _ t tcb h _ _ _ hC => by
-      have hB := notificationWaiterCancellable_blocked hC
-      have hEq : Lifecycle.Suspend.cancelIpcBlocking s t tcb =
-          Lifecycle.Suspend.restoreToReadyCancelled (removeFromNotificationWaitQueue s t) t := by
-        unfold Lifecycle.Suspend.cancelIpcBlocking; rw [hB]
-      obtain ⟨objs, hR⟩ := removeFromNotificationWaitQueue_eq_objects s t
-      unfold wakeCancelledWaiter
-      simp only [] at h ⊢
-      rw [enqueueRunnableOnCore_replenishQueueOnCore, hEq, Lifecycle.Suspend.restoreToReadyCancelled,
-        Lifecycle.Suspend.restoreToReadyStaging, SystemState.updateTcb_scheduler, hR]
-      exact h)
-    (fun n s _ t h _ _ _ _ => by
-      have hS : (storeUnbindNotification s t n).scheduler = s.scheduler :=
-        SystemState.updateTcb_scheduler _ _ _
-      simp only [] at h ⊢
-      rw [hS]; exact h)
-    target st rfl
-
-/-- **The finalising delete writes no replenish queue**: the slot's delete and
-the teardown keep the scheduler, the finalisation writes none
-(`finaliseFinalObject_replenishQueueOnCore`), and the retire keeps the
-scheduler. -/
-theorem cspaceDeleteSlotFinalising_replenishQueueOnCore (ec : CoreId) (addr : CSpaceAddr)
-    (st st' : SystemState) (h : cspaceDeleteSlotFinalising ec addr st = .ok ((), st'))
-    (d : CoreId) :
-    st'.scheduler.replenishQueueOnCore d = st.scheduler.replenishQueueOnCore d := by
-  obtain ⟨st1, st2, hD, hF, rfl⟩ := cspaceDeleteSlotFinalising_ok ec addr st st' h
-  have hs1 := (cspaceDeleteSlot_scheduler_machine addr st st1 hD).1
-  have hs2 := (finaliseDestroyedCapabilities_framed ec _ _ st1 st2 hF).1
-  unfold retireFinalisedObject
-  rw [(retireFinalObject_fields ec _ _ _).2.1, finaliseFinalObject_replenishQueueOnCore, hs2, hs1]
-
 /-- **The finalising delete's footprint covers its writes**: it names every
-core's run queue, and the delete writes no replenish queue. -/
-theorem schedLockSet_capabilityDestroyOnCore_coversWrites_of_replenish (st st' : SystemState)
-    (S : LockSet) (hS : LockSet.ofList? schedLockSet_capabilityDestroyOnCore = some S)
-    (hR : ∀ d : CoreId, st'.scheduler.replenishQueueOnCore d = st.scheduler.replenishQueueOnCore d) :
+core's run queue and every core's replenish queue — the wake of a cancelled
+waiter enqueues on the waiter's core, and the reservation unbind of a finalised
+thread or scheduling context purges the reservation's replenish entry on its
+core, and which cores those are the state decides. -/
+theorem schedLockSet_capabilityDestroyOnCore_coversWrites (st st' : SystemState)
+    (S : LockSet) (hS : LockSet.ofList? schedLockSet_capabilityDestroyOnCore = some S) :
     footprintCoversWrites S st st' :=
-  footprintCoversWrites_of_cores S Concurrency.allCores [] st st' (LockSet.ofList?_pairs hS)
-    (fun d hd => absurd (Concurrency.mem_allCores d) hd) (fun d _ => hR d)
+  footprintCoversWrites_of_cores S Concurrency.allCores Concurrency.allCores st st'
+    (LockSet.ofList?_pairs hS)
+    (fun d hd => absurd (Concurrency.mem_allCores d) hd)
+    (fun d hd => absurd (Concurrency.mem_allCores d) hd)
 
 theorem schedLockSet_cspaceDeleteSlotFinalising_coversWrites (ec : CoreId) (addr : CSpaceAddr)
     (st st' : SystemState) (S : LockSet)
     (hS : LockSet.ofList? schedLockSet_capabilityDestroyOnCore = some S)
-    (h : cspaceDeleteSlotFinalising ec addr st = .ok ((), st')) :
+    (_h : cspaceDeleteSlotFinalising ec addr st = .ok ((), st')) :
     footprintCoversWrites S st st' :=
-  schedLockSet_capabilityDestroyOnCore_coversWrites_of_replenish st st' S hS
-    (cspaceDeleteSlotFinalising_replenishQueueOnCore ec addr st st' h)
+  schedLockSet_capabilityDestroyOnCore_coversWrites st st' S hS
 
 /-- **The revocation's footprint covers its writes**: each of its steps is a
-finalising delete (`cspaceRevokeCdtFinalising_closed`). -/
+finalising delete, and the footprint names every scheduler-domain lock. -/
 theorem schedLockSet_cspaceRevokeCdtFinalising_coversWrites (ec : CoreId) (addr : CSpaceAddr)
     (st st' : SystemState) (S : LockSet)
     (hS : LockSet.ofList? schedLockSet_capabilityDestroyOnCore = some S)
-    (h : cspaceRevokeCdtFinalising ec addr st = .ok ((), st')) :
+    (_h : cspaceRevokeCdtFinalising ec addr st = .ok ((), st')) :
     footprintCoversWrites S st st' :=
-  schedLockSet_capabilityDestroyOnCore_coversWrites_of_replenish st st' S hS fun d =>
-    cspaceRevokeCdtFinalising_closed
-      (fun s => s.scheduler.replenishQueueOnCore d = st.scheduler.replenishQueueOnCore d)
-      (fun c s s' hQ hD => (cspaceDeleteSlotFinalising_replenishQueueOnCore ec c s s' hD d).trans hQ)
-      rfl h
+  schedLockSet_capabilityDestroyOnCore_coversWrites st st' S hS
 
 end SeLe4n.Kernel

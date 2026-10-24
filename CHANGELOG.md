@@ -1,3 +1,443 @@
+## v0.36.135 — WS-ZA ZA5.4 part 24: a final delete finalises a thread and a scheduling context
+
+A delete or revoke that destroys the final capability to a thread now
+finalises the thread as seL4's `finaliseCap` does, and then retires it.  The
+thread is unbound from its notification, its blocked IPC is cancelled, it is
+suspended — taken off whichever core queues or runs it, the executing thread
+deleting its own last capability included, as seL4 suspends it and
+reschedules — every core's FP/SIMD and resident hold on it is released, and it
+is unbound from its scheduling context.  For a scheduling context the
+delete unbinds its thread (`schedContext_unbindAllTCBs`), then retires it.
+Both run through `lifecyclePreRetypeCleanup`, which gains its live caller.
+
+- **Before:** a thread or a scheduling context outlived its last capability,
+  and the destroy cleanup had no transition that ran it.
+- **After:** an inactive, ready, queued or running (on any core, its own
+  included) thread, a thread blocked receiving, sending or calling on an
+  endpoint or waiting on a notification — wherever it waits in that queue —
+  and a scheduling context bound to an idle thread, are finalised and retired.
+- **Still open:** a thread that is reply-blocked or holds a reply link, a
+  receive stash or a reply-waiter link (each names a reply object: row 25's
+  busy reply), that donates (row 25), or that holds capabilities in its space
+  slots (row 26) — every thread that can make a syscall, so the self-delete end
+  to end waits on row 26 — and a scheduling context with a reply stack, a loan
+  or a busy thread, still outlive their last capability (debt rows; rows 25–26
+  of [`UNTYPED_RESET_PLAN.md`](docs/planning/UNTYPED_RESET_PLAN.md)).
+
+This is part 24 of the seL4 untyped reset.
+
+### Changes
+
+- **The finalisations** (`IPC/Operations/CancelAll.lean`).
+  - `finaliseFinalObject` gains a `.tcb` arm (`finaliseThread`) and a
+    `.schedContext` arm (`finaliseSchedContext`).
+  - `finaliseThread` runs `unbindNotification`
+    (`finaliseThreadUnbindNotification`), then `suspend` — the blocked IPC
+    cancelled (`finaliseThreadCancel`, seL4's `cancelIPC`: a notification
+    waiter leaving its queue wherever it waits there, as `cancelIpcBlocking`
+    makes it leave; a thread blocked receiving, sending or calling on an
+    endpoint removed from wherever it waits in that queue, `blockedCancelIPC`;
+    neither **woken**), then the thread
+    taken off whichever core queues or runs it and marked `.Inactive`
+    (`finaliseThreadSuspend`, through the suspend syscall's
+    `descheduleAtPlacement`) — then `fpuThreadDelete`
+    (`finaliseThreadReleaseCores`, `MachineState.releaseThread`: no core's
+    FP/SIMD owner or resident names it), then `unbindFromSC`
+    (`finaliseThreadUnbindSchedContext`, the reservation arm
+    `cancelDonationArmOnCore`), then the destroy cleanup
+    (`finaliseThreadCleanup`).
+  - **Fork taken.** seL4's `finaliseCap` unbinds the scheduling context
+    before it suspends; this cut unbinds it after, because the reservation
+    unbind's guard asks that no core holds the thread, and the finalisation is
+    one kernel step, so the order is unobservable.  A cancelled waiter is not
+    woken, since it is being destroyed, where part 23's cancels wake theirs.
+  - **The running thread is finalised, as seL4 does.**  The deschedule empties
+    the current slot of the core running the thread and raises that core's
+    reschedule flag: the executing core, when the thread is its own, chooses a
+    successor before the syscall returns (`scheduleLocalSuccessorFrom`), any
+    other core takes the reschedule interrupt the flag raises
+    (`dispatchVacatedCore`), and a core with nothing to run resumes its idle
+    loop.  A destroyed caller's return frame is written nowhere
+    (`stageCallerReturnFor_destroyed`, `Architecture/ContextRestore.lean`).
+    A remote core is stalled synchronously, as seL4's `remoteTCBStall` does:
+    see **The remote-core stall** below.
+  - `finaliseSchedContext` unbinds its bound thread through the same
+    reservation arm (`finaliseSchedContextUnbind`), then runs the cleanup
+    (`finaliseSchedContextCleanup`).
+- **Checks before writes.** Both read their whole admission on the pre-state
+  (`threadFinaliseAdmitted`, `schedContextFinaliseAdmitted`), then each step
+  re-reads its own guard:
+  - the thread is stored under its own id and is no reserved or idle thread;
+  - it is ready (suspended, queued, current on any core, FP/SIMD owner or
+    resident) holding no queue link or stash (a message delivered to it and
+    not yet read is dropped by the suspend's mark, `finalisedSuspendMark`), or
+    it waits on a
+    notification or an endpoint where the in-place cancel admits it
+    (`threadIpcCancelAdmitted`);
+  - it holds no reply-waiter or reply links and no timeout budget, and lends
+    or borrows no reservation;
+  - its space slots are empty, a bound notification and a bound scheduling
+    context are bound back to it, and nothing names it as a reservation's
+    origin or a service's owner;
+  - a scheduling context heads no reply stack, is lent by no one, and its
+    bound thread is `.bound` to it, idle and on no core.
+  A refused object is not finalised, and part 22's retire then keeps it.
+- **The cleanup's live caller.** On a finalised object the cleanup is the
+  identity (`finaliseThreadCleanup_eq`, `finaliseSchedContextCleanup_eq`, via
+  `lifecyclePreRetypeCleanup_of_threadRetirable` and
+  `lifecyclePreRetypeCleanup_of_schedContextFree`).
+  - `detachTcbSlots` now splices only an occupied space slot
+    (`spliceOccupiedSlot`, `Lifecycle/Operations/CleanupPreservation.lean`),
+    so the derivation tree is unchanged by a finalised thread's cleanup.
+  - The specification keeps the cleanup as the step `finaliseCap` names, and
+    the compiled form drops it (`finaliseThreadCleanupImpl`,
+    `finaliseSchedContextCleanupImpl`, `@[csimp]`).
+- **No allocation on the delete path.** Every step writes the objects' own
+  cells in place (`updateTcb`, `updateSchedContext`, `storeUnbindNotification`,
+  `storeNotificationBlockedCancelled`, `storeEndpointBlockedCancelled`), and
+  the admission reads only.
+- **The retire** (`Capability/FinalRetire.lean`): `retirableKind` admits a
+  thread and a scheduling context, `finalRetireAdmitted` asks
+  `schedulingObjectRetirable` of them, and `eraseRetiredObject` erases any
+  `erasableKindAt` object.
+- **Theorems.**
+  - Write frame (`IPC/Invariant/CancelAllFrame.lean`): the step predicates
+    `FinaliseScUnbindStep`, `FinaliseNotificationCancelStep`,
+    `FinaliseEndpointCancelStep`, `FinaliseSuspendStep` (the
+    deschedule and the mark), `FinaliseReleaseStep`, `FinaliseUnbindStep`;
+    `finaliseThread_closed`, `finaliseSchedContext_closed` and the extended
+    `finaliseFinalObject_closed`; `finaliseWritable` covers a scheduling
+    context, `finaliseWrite` keeps every context's reply-stack head, and
+    `FinaliseFrame.rest` is `onlyObjectsSchedulerCoreHoldsDiffer` (objects,
+    scheduler, and the cores' FP/SIMD-owner and resident records), so
+    `finaliseFinalObject_onlyObjectsSchedulerCoreHoldsDiffer` replaces the
+    objects-and-scheduler frame.
+  - Release (`Machine.lean`): `MachineState.releaseThread` and its per-core
+    lemmas, `releaseThread_releases` (no core's FP/SIMD owner or resident
+    names the thread after it); `finaliseThreadReleaseCores_unheld`.
+  - IPC bundle (`IPC/Invariant/CancelAllPreservation.lean`):
+    `finaliseScUnbindStep_keepsIpcInvariantFull`,
+    `finaliseNotificationCancelStep_keepsIpcInvariantFull`,
+    `finaliseEndpointCancelStep_keepsIpcInvariantFull`,
+    `finaliseSuspendStep_keepsIpcInvariantFull` (through the now public
+    `descheduleAt_preserves_ipcInvariantFull`),
+    `finaliseReleaseStep_keepsIpcInvariantFull`, consumed by
+    `finaliseFinalObject_preserves_ipcInvariantFull`;
+    `cancelBoundDonationOnCore_preserves_ipcInvariantFull` is public and takes
+    the back-binding of the one thread it unbinds.
+  - Reachable state, reply waiters and donation (`CancelAllReachability.lean`):
+    `ReachFieldFrame`, `cancelBoundDonationOnCore_reachFieldFrame`,
+    `notificationCancel_preserves_reachableParts`, and the
+    `finaliseStepInvariant` steps `scUnbind`, `cancel`, `suspend` and
+    `release` (`ReachFieldFrame.of_agreeOffRunLinks`,
+    `ReachFieldFrame.descheduleAtPlacement`), so
+    `finaliseFinalObject_preserves_ipcReachable` (with the PIP, reply-waiter
+    and donation-chain conjuncts) covers the new arms.
+  - Run queues (`RunQueueAgreement/Capability.lean`): the suspend breaks the
+    old stage's state monotonicity, so the finalisation, the delete and the
+    revocation now carry `SystemState.RunQueueEntryStage`
+    (`finaliseSuspend_runQueueEntryStage`, over the new
+    `descheduleAtPlacedThenOffWrite_runQueueEntryStage`,
+    `finaliseFinalObject_runQueueEntryStage`,
+    `cspaceDeleteSlotFinalising_runQueueEntryStage`,
+    `cspaceRevokeCdtFinalising_runQueueEntryStage`), which is what the
+    dispatch consumers read; the `_runQueueStage` forms are deleted.
+  - Reschedule coverage (`ReschedulePendingArms/Dispatch.lean`):
+    `finaliseFinalObject_stepCovers` covers the new steps, the suspend's
+    deschedule through `descheduleAtPlacement_stepCovers`.
+  - Information-flow projection (`InformationFlow/Invariant/FinaliseProjection.lean`,
+    staged): `finaliseThread_hidden` and `finaliseSchedContext_hidden`, under
+    `threadFinaliseHidden` / `schedContextFinaliseHidden` (the bound
+    notification, the scheduling context, the notification or endpoint waited
+    on and the thread's neighbours in that queue, or the context's bound
+    thread, hidden, and the thread
+    hidden as a thread, since the suspend may empty a core's current slot;
+    `finaliseThreadSuspend_hidden` through
+    `descheduleAtPlacement_preserves_projection`,
+    `finaliseThreadReleaseCores_hidden`), feed
+    `finaliseFinalObject_preserves_projection` and
+    `retireFinalisedObject_preserves_projection`;
+    `cancelIpcBlocking_notificationHead_hidden` and
+    `cancelBoundDonationOnCore_hidden` are factored out.
+  - `RobinHood.RHTable.fold_preserves_of_fold_and` (`FinalRetire.lean`).
+- **The scheduler footprint** (`Scheduler/SchedFootprint.lean`,
+  `SyscallSchedContainment.lean`).  The reservation unbind purges the
+  context's replenish entry on its core, so
+  `schedLockSet_capabilityDestroyOnCore` now names every core's replenish
+  queue as well as its run queue, and
+  `schedLockSet_capabilityDestroyOnCore_coversWrites` holds outright.  The
+  now-false `finaliseFinalObject_replenishQueueOnCore`,
+  `cspaceDeleteSlotFinalising_replenishQueueOnCore` and
+  `schedLockSet_capabilityDestroyOnCore_coversWrites_of_replenish` are deleted.
+- **The delete path is compiled allocation-free.**  Four compiled forms, each
+  proven equal to its specification (`@[csimp]`):
+  - `finaliseThread` and `finaliseSchedContext` are defined after the
+    cleanups' `@[csimp]` theorems, so their compiled code takes the identity
+    cleanup.  Defined before them, the compiled finalise still ran
+    `lifecyclePreRetypeCleanup` (the trace below found it).
+  - `threadCurrentOnSomeCore`, `MachineState.fpOwnedOnSomeCore` and
+    `MachineState.residentOnSomeCore` compile to structural recursions over
+    the cores (`threadCurrentOnCores`, `MachineState.fpOwnedOnCores`,
+    `MachineState.residentOnCores`) that compare codes, where the `List.any`
+    over a lambda built a closure per call and a `some tid` to compare with.
+  - `replenishQueuesNameNone` is a structural recursion
+    (`replenishQueuesOnNameNone`), since the `List.all` closure was hoisted
+    to the head of every retire whatever the object's kind.
+  - The two scheduling-context unbinds (`finaliseThreadUnbindSchedContext`,
+    `finaliseSchedContextUnbind`) compile to the in-place unbind
+    `cancelBoundDonationPerform` (`Lifecycle/Operations/Cleanup.lean`,
+    `cancelBoundDonationOnCore_of_bound`): the old key is read as three parts
+    before the first write and the key hook takes them
+    (`markKeyChangeParts`), so neither the pre-state nor the TCB is held
+    across the writes.  Through `cancelDonationArmOnCore`'s error branch and
+    `markKeyChangeFrom`'s pre-state, the specification's spelling copied the
+    object table, the context and the TCB.
+- **Tests.** `tests/VSpaceCapabilityBindingSuite.lean` §5n
+  (`runThreadFinaliseChecks`): a carved thread and a carved scheduling
+  context retired by their only capability's delete; a thread bound to a
+  notification; a thread bound to a context, with either side deleted first;
+  a thread blocked as a notification's head waiter, its wait cancelled and it
+  retired; three threads blocked receiving, then sending, then calling on one
+  endpoint, deleted middle, head, tail — each cancelled off the queue and
+  retired, its neighbours linked and still blocked; three waiting on one
+  notification, the middle and then the tail deleted; a thread queued on the executing core, and one resumed by the
+  syscall, dequeued and retired; a thread current on core 1 that is also its
+  FP/SIMD owner and resident, retired by the delete with that core's slot and
+  records emptied and its reschedule flag raised; and the self-delete's state
+  (the thread current on the executing core), finalised directly — the
+  syscall cannot be staged until row 26 — with the same result and the thread
+  left retirable.  The executing thread's kept-and-current assertion is
+  removed.
+- **Census** (`SeLe4n/Testing/KernelTransitionReachabilityCensus.lean`): the
+  destroy cleanup and the nine helpers it runs leave the "not executed by any
+  transition" list.
+- **Exerciser** (`rust/sele4n-hal/src/smp_exercisers.rs`): a new scenario group
+  on fresh carves (`THREAD_CHILD_IDS`):
+  - a carved inactive thread's only capability deleted
+    (`untyped-retype-tcb`, `inactive-tcb-delete`);
+  - a carved thread bound to the boot notification, then deleted
+    (`untyped-retype-bound-tcb`, `bind-carved-tcb`, `bound-tcb-delete`);
+  - a carved scheduling context bound to a carved thread, the context's
+    capability deleted, then the thread's
+    (`untyped-retype-sched-context`, `untyped-retype-sc-thread`,
+    `bind-carved-sched-context`, `bound-sched-context-delete`,
+    `unbound-tcb-delete`);
+  - two carved threads resumed onto one run queue, the first suspended and
+    its last capability deleted, then the second's
+    (`untyped-retype-queued-tcb`, `resume-carved-tcb`,
+    `untyped-retype-shared-tcb`, `resume-shared-tcb`, `suspend-queued-tcb`,
+    `suspended-tcb-delete`, `queued-tcb-delete`); the steady-state run carves
+    the first's id again, so a suspended thread left unretired fails it.
+  - A self-delete, or a delete of a thread current on another core, cannot be
+    staged by the exerciser: it drives core 0 as its current thread, whose
+    CSpace slot is occupied (row 26), and has no way to make a carved thread
+    current on a secondary; the suite's witnesses cover both.
+  - A blocked thread cannot be driven to its last-capability delete through
+    syscalls today, since a thread that blocks holds its own CSpace slot
+    (clause (3) of the debt row below), and a carved thread never runs, so it
+    cannot block; the suite's witnesses cover every blocking state.
+- **Debt.** `docs/REGISTERED_DEBT.md` closes "The destroy cleanup is kept with
+  no live caller" and registers three rows: a thread a final delete cannot
+  finalise (a reply-blocked thread and the reply links, a donated binding,
+  occupied space slots); a scheduling context it cannot finalise; and the admission not yet
+  proven to make the retire accept.  The running, held or queued thread is
+  finalised, not registered.
+- **Codex review of b3739de (same PR): a thread suspended off a shared run
+  queue was never retired.**  A dequeue (`runUnlinkLinks`, and its compiled
+  `unlinkLinkObjects`) rewrote the neighbours' links and cleared only the
+  removed thread's core code, leaving its own four neighbour links behind.
+  No run-queue reader consults them while the core code is `0`, but the
+  retire's quiescence reads all five (`threadQuiescent`), so a thread the
+  suspend syscall had already taken off a queue it shared was admitted to the
+  finalisation, skipped by its suspend (already `.Inactive`) and kept by the
+  retire after its last capability was gone, its untyped child record with it.
+  The fix is at the root: every dequeue now detaches the removed thread
+  wholly (`TCB.detachRun`: the core code and the four links, with
+  `TCB.runLinkOn_detachRun`), so the finalisation's suspend writes `.Inactive`
+  alone again and its own link-clearing mark is removed.  Witnesses: the
+  suite (§5n, two threads queued together, the first suspended by the
+  syscall, then deleted: it keeps no run link and is retired, the other
+  still queued) and the exerciser scenario above.
+- **The remote-core stall** (seL4's `remoteTCBStall`; coordinator review of
+  8d6b3c5, same PR).  Before it, a core whose current thread another core's
+  delete or suspend took away kept running that thread at EL0 until it took
+  the `.reschedule` interrupt, after the deleter had been told the thread was
+  gone.  Now the deleter does not return until that core has left the thread.
+  - *Lean.*  The syscall entry and the cross-core suspend entry return the
+    committed state's current-thread codes from their atomic step and, after
+    the commit and its SGIs, check every other core against them
+    (`Concurrency.stallChangedCores`, `stallChangedCores_eq`: one
+    `Platform.FFI.ffiStallIfChanged` per core but the executing one).  The
+    retire admits a thread only once no core's current slot names it
+    (`threadRetirable_currentNowhere`, `Capability/FinalRetire.lean`).
+  - *HAL* (`rust/sele4n-hal/src/remote_stall.rs`, `ffi_stall_if_changed`).  A
+    core is changed when the committed state runs on it something other than
+    what it last decided to run (its `PER_CPU_CURRENT_THREAD` record).  The
+    initiator, under the kernel-entry lock, sets the core's stall request and,
+    when the core is at EL0, sends it the `.reschedule` SGI and waits, bounded
+    (`STALL_WAIT_FUEL`, then a fail-closed halt), until the core's user flag
+    clears.  Both exception handlers clear it first, before anything that can
+    block (`note_kernel_entry`); `trap.S` passes every return through
+    `trap::user_exit_gate`, which sets it and refuses a return to EL0 while a
+    request stands, taking the reschedule first; the kernel-entry bracket
+    clears the request once the core's decision reads the committed state.
+    The request and the flag are a store-buffering pair (`SeqCst`), so either
+    the initiator waits or the gate refuses.  A target spinning on the
+    kernel-entry lock is not at user and is not waited on, so two cores taking
+    each other's threads cannot deadlock; nothing on the path allocates.
+  - *Checks.*  `build.rs`'s `scan_trap_s_user_exit_gate` holds every
+    `restore_context` in `trap.S` to the gate (tested by swapping the gate
+    call and its argument set-up); Tier 3 anchors hold both entries' stall
+    call after their SGIs, both handlers' entry mark and the bracket's clear.
+    Host tests cover each outcome and the store-buffering race; the QEMU
+    exercisers gain `remote-stall`, which drives the flags, the SGI and the
+    handlers between the boot core and each secondary (the poke ends a wait,
+    the gate refuses under a request, and on the Lean image the secondary's
+    next kernel entry meets it).  The exercisers cannot run a user thread on
+    a secondary, so the end-to-end case (a remote EL0 thread deleted) is the
+    protocol's composition, not a scenario.
+- **Codex review of e5dedc4: the exerciser's gate probe raced the
+  secondary.**  `remote-stall` set its request from the boot core and then
+  sent the secondary the gate probe as a separate command.  In between, a
+  kernel entry of the secondary could meet and clear the request: the
+  reschedule from the step before, whose wait ended at the entry mark and
+  not at the handler's end, or a tick.  The probe then saw no request and
+  the driver failed although the protocol was right.  The probe command
+  (`COMMAND_EXIT_GATE`) now makes the request and runs the gate together, on
+  the secondary inside its agent handler with its IRQs masked, so no kernel
+  entry of that core can run between them.  It reports which part failed.
+  `test_rust.sh`, the cross build, the archive with both images'
+  exercisers, and the QEMU heap gate pass.  The exercisers then passed
+  again on three more Lean-image runs and two more HAL-only runs.
+- **CI: the Lean aarch64 archive's QEMU gate failed on b3739de.**  The new
+  `resume-carved-tcb` scenario was pinned at 0 and reads 3 at first call:
+  the first resume of a carved thread enqueues a run-queue key and a
+  priority bucket no thread has held (a QEMU trace of `lean_alloc_small`'s
+  callers: `RHTable.insertNoResizeImpl` under `RunQueue.insert`, 2;
+  `RunQueueEnds.appendImpl`, 1).  The steady state reuses both and reads 0;
+  it is pinned (3, 0).
+- **Review: an endpoint-blocked thread was kept past its last capability.**
+  seL4's `finaliseCap` suspends a thread, and `suspend` runs `cancelIPC`, which
+  takes an endpoint- or notification-blocked thread off its queue wherever it
+  waits; the finalise admitted only a notification's head waiter, so every
+  other blocked thread outlived its last capability, and the debt was given to
+  ZA6.1.  Now the finalise cancels them itself, each write in its slot, and
+  ZA6.1 is as it was:
+  - *Endpoint* (`IPC/DualQueue/RemoveInPlace.lean`, new): `storeQueueRemove`
+    unlinks a thread from wherever it waits, each write in its slot, and is
+    the specification's `endpointQueueRemoveDual` under the in-place check
+    `queueRemoveInPlace` (`queueRemove_inPlace`, with its write frame
+    `QueueRemoveFrame`).  `storeEndpointBlockedCancelled` then ends the
+    thread's IPC as a cancelled waiter's is (`cancelledEndpointWaiterTcb`:
+    `.ready`, no message, no stash, the cancellation frame); its check
+    `endpointBlockedCancellable` asks that the thread is blocked on that side
+    with no timeout budget, the removal is in place, and a predecessor the
+    removal makes the tail is blocked on the same side.
+  - *Notification*: part 23's head-only form becomes
+    `storeNotificationBlockedCancelled`, the cancel wherever the waiter waits
+    (`cancelledNotificationObject` rewrites the queue's ends), proven
+    `cancelIpcBlocking`'s by `cancelIpcBlocking_notification_inPlace`; part
+    23's walk compiles to it at the head.  `cancelPoppedObject`,
+    `storeNotificationWaiterCancelled` and
+    `cancelIpcBlocking_notificationHead_inPlace` are deleted.
+  - *Admission*: `threadIpcCancelAdmitted` reads the IPC state's codes and
+    asks the matching cancel's own check, so the admission and the step agree.
+  - *Theorems*: the frame takes the endpoint cancel as its own step
+    (`FinaliseEndpointCancelStep`, `FinaliseFrame.storeEndpointBlockedCancelled`);
+    the IPC bundle (`storeEndpointBlockedCancelled_preserves_ipcInvariantFull`,
+    over `cancelledEndpointWaiter_closes`, factored out of part 23's waiter
+    proof), the run queues (`storeEndpointBlockedCancelled_runQueueStage`;
+    `endpointQueueRemoveDual_runQueueStage` moves to
+    `RunQueueAgreement/Capability.lean`), reschedule coverage
+    (`storeEndpointBlockedCancelled_stepCovers`), the reachable state
+    (`storeEndpointBlockedCancelled_preserves_reachableParts`; a non-head
+    notification cancel keeps `notificationWaiterConsistent` by the new
+    `notificationWaiterConsistent_of_unlink`, `IPC/Invariant/NotificationUnlink.lean`)
+    and the projection (`storeEndpointBlockedCancelled_hidden`,
+    `storeNotificationBlockedCancelled_hidden`; `threadFinaliseHidden` names
+    the endpoint and the queue neighbours) are kept.
+  - *Left to row 25*, whose text owns a reply bound to a caller and the
+    donated context: a reply-blocked thread, a reply link, a receive stash and
+    a reply-waiter link, each of which names a reply object and is ended by
+    seL4's `reply_remove_tcb`.  A timeout budget is no refusal in practice: no
+    reachable thread holds one (`timeoutBudget_isNone_of_ipcReachable`).
+  - No QEMU scenario can stage it: a carved thread never runs, so it cannot
+    block itself, and a thread that runs holds its CSpace slot (row 26).  The
+    suite's witnesses above cover every queue position.
+- **Review: a thread holding an unread message was kept.**  The admission
+  refused a ready thread holding a delivered message, on the grounds that the
+  waking syscall drops it in the same step, which no theorem stated; seL4 has
+  no such refusal.  The refusal is removed, from a ready and from a
+  notification-blocked thread alike, and the suspend's mark now drops the
+  message as the suspend syscall's `clearPendingState` drops it:
+  `finalisedSuspendMark` (`.Inactive`, no message) is one field update of the
+  thread's own cell, and the suspend also runs on an already-suspended thread
+  that still holds one.  The bundle is kept because the bundle asks nothing of
+  a ready thread's message (`finalisedSuspendMark_keepsIpcInvariantFull`, over
+  `ipcInvariantFull_of_tcbFieldUpdateAgree`); the frame, the reachable state,
+  the run queues, reschedule coverage and the projection take the new mark
+  unchanged.  Witnesses: §5n, a ready and a suspended carved thread each
+  holding a staged message, each finalised and retired by its last
+  capability's delete.
+
+### Validation
+
+- `./scripts/test_full.sh --continue`: on the first run Tiers 0, 2 and 3
+  passed and Tier 1 failed on the reply-stack write census, which did not yet
+  know the new in-place unbind `cancelBoundDonationPerform`; it is registered
+  (it writes no `scReply`).  After the review and CI fixes the whole run
+  passes, Tiers 0 to 3.  So do these:
+  - `./scripts/test_lean_aarch64_archive.sh`;
+  - `./scripts/test_rust.sh` (after `cargo fmt` on the exerciser);
+  - `./scripts/test_aarch64_cross_build.sh`;
+  - `lake build SeLe4n SeLe4n.Platform.Staged`, and each changed module by
+    name;
+  - `./scripts/check_changed_file_anchors.sh` (246 of 246 anchors over the
+    changed files).
+- `./scripts/test_qemu_heap_allocations_per_syscall.sh --lean-kernel` passes
+  with exact pins.
+  - `resume-carved-tcb` reads 3 at first call and 0 after (attributed
+    above); `resume-shared-tcb`, `suspend-queued-tcb`,
+    `suspended-tcb-delete` and `queued-tcb-delete` read 0 both times, and the
+    shared thread's carve 14 both times.
+  - `inactive-tcb-delete`, `bound-tcb-delete`, `bound-sched-context-delete`
+    and `unbound-tcb-delete` read 0 at first call and steady state.  So do
+    `bind-carved-tcb` and `bind-carved-sched-context`.
+  - Before the compiled forms above, the thread deletes read 80 and the
+    scheduling-context delete 51, then 16.  A QEMU trace of
+    `lean_alloc_small`'s callers attributed them: the cleanup still compiled
+    into the finalise, the per-core held tests' closures, and the
+    specification unbind's copies of the object table, the context and the
+    TCB.  Midway through this cut every passive delete read 1, from the
+    retire's new replenish-queue scan's closure.
+  - The carves read the object's own cells (same trace): a thread's 14 (the
+    store's 9, the TCB and two cells built with it, the request and its
+    decode), a scheduling context's 13, and 14 on its first call.
+  - Every other pin is unchanged.
+- After the remote-core stall, the whole set passes again:
+  - `./scripts/test_full.sh --continue`, Tiers 0 to 3;
+  - `./scripts/test_lean_aarch64_archive.sh`, whose `all` exerciser run on
+    the HAL-only and the Lean image now includes `remote-stall`;
+  - `./scripts/test_qemu_heap_allocations_per_syscall.sh --lean-kernel`,
+    every pin unchanged (the stall allocates nothing);
+  - `./scripts/test_rust.sh` and `./scripts/test_aarch64_cross_build.sh`;
+  - `lake build SeLe4n SeLe4n.Platform.Staged` and the default target;
+  - `./scripts/check_changed_file_anchors.sh` (546 of 546).
+  - The new `build.rs` scan of `trap.S` was tested by putting the gate call
+    after a `restore_context`: the build failed.
+- After the endpoint and notification cancel, the whole set passes again:
+  - `./scripts/test_full.sh --continue`: Tiers 1 to 3 passed; Tier 0 failed on
+    the production/staged partition, which did not yet list the new staged
+    `IPC.Invariant.NotificationUnlink`; it is registered, and Tier 0 then
+    passes;
+  - `./scripts/test_lean_aarch64_archive.sh`;
+  - `./scripts/test_qemu_heap_allocations_per_syscall.sh --lean-kernel`,
+    every pin unchanged;
+  - `./scripts/test_rust.sh` and `./scripts/test_aarch64_cross_build.sh`;
+  - `lake build SeLe4n SeLe4n.Platform.Staged`, the default target and each
+    changed module by name; `lake exe vspace_capability_binding_suite`;
+  - `./scripts/check_changed_file_anchors.sh` (223 of 223).
+
 ## v0.36.134 — WS-ZA ZA5.4 part 23: a final delete cancels an endpoint's IPC and unbinds and cancels a notification
 
 A delete or revoke that destroys the final capability to an endpoint now

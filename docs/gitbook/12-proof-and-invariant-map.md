@@ -119,8 +119,18 @@ busy endpoint's IPC is cancelled, and a busy or bound notification unbound and
 its waiters cancelled, before the retire (`finaliseFinalObject`, seL4's
 `cancelAllIPC`, `unbindMaybeNotification` and `cancelAllSignals`), keeping the
 IPC bundle and its reachable state (`finaliseFinalObject_preserves_ipcInvariantFull`,
-`finaliseFinalObject_preserves_ipcReachable`); any other busy kernel object
-still outlives its last capability until its kind's finalise lands
+`finaliseFinalObject_preserves_ipcReachable`); since `v0.36.135` a thread is
+unbound, has its endpoint or notification wait cancelled wherever it waits in
+that queue and is suspended — taken off
+whichever core queues or runs it, the executing thread deleting its own last
+capability included, with every core's FP/SIMD and resident hold released and
+a remote core running it stalled until it has left it, as seL4's
+`remoteTCBStall` does (`stallChangedCores_eq`, `threadRetirable_currentNowhere`) —
+and a scheduling context is unbound from its thread, before the retire (`finaliseThread`,
+`finaliseSchedContext`, seL4's `finaliseCap`), through the destroy cleanup
+`lifecyclePreRetypeCleanup`, with the same bundles and the run-queue entry
+stage kept (`finaliseFinalObject_runQueueEntryStage`); any other busy kernel
+object still outlives its last capability until its kind's finalise lands
 ([`SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) §8.6).  Every slot write keeps the bundle,
 the untyped carve included (`untypedRetypeObject_preserves_capabilityInvariantBundle`;
 see `SELE4N_SPEC.md` §8.6).

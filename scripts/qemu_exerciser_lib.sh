@@ -31,7 +31,7 @@
 
 EXERCISER_MACHINE="virt,gic-version=2,virtualization=on"
 EXERCISER_SUMMARY="[smp-test] exercisers: "
-EXERCISER_DRIVERS=(sgi-round-trip kprintln-stress tlb-shootdown tlb-shootdown-stress per-core-stats heap-allocations-per-syscall)
+EXERCISER_DRIVERS=(sgi-round-trip kprintln-stress tlb-shootdown tlb-shootdown-stress per-core-stats heap-allocations-per-syscall remote-stall)
 
 # exerciser_parse_args "$@": `--lean-kernel` selects the Lean-linked image
 # (LEAN_KERNEL=1); any other argument is an error.
@@ -85,7 +85,8 @@ exerciser_boot() {
 # `tlb-shootdown-stress`, `per-core-stats` (WS-BP BP8.5; the Lean-linked image
 # only, since the reader and the verdict are the kernel's),
 # `heap-allocations-per-syscall` (WS-CV CV0.1; Lean-linked only, it measures a
-# syscall through the Lean kernel), or `all` for every
+# syscall through the Lean kernel), `remote-stall` (the remote-core stall's
+# protocol between the boot core and each secondary), or `all` for every
 # driver the image runs and the summary tally.  Records a failure per finding;
 # returns 1 on any.
 exerciser_check() {
@@ -125,6 +126,7 @@ every = ["sgi-round-trip", "kprintln-stress", "tlb-shootdown", "tlb-shootdown-st
 if lean:
     every.append("per-core-stats")
     every.append("heap-allocations-per-syscall")
+every.append("remote-stall")
 if "all" in drivers:
     drivers = every
     require(f"[smp-test] exercisers: {len(every)} passed, 0 failed")
@@ -203,6 +205,17 @@ for driver in drivers:
             sgis_by_core[core] = sgis
         if len(set(sgis_by_core.values())) != len(sgis_by_core):
             failures.append(f"per-core-stats: two cores report one SGI count ({sgis_by_core}), so a wrong slot could not be told from the right one")
+    elif driver == "remote-stall":
+        # The remote-core stall (seL4's remoteTCBStall): per secondary, the
+        # poke ended a wait on a core at user, and a core in the kernel was
+        # requested and its exit gate refused the return; on the Lean-linked
+        # image its next kernel entry also met the request.
+        require("[smp-test] remote-stall: every core left user mode before the stall returned")
+        for core in (1, 2, 3):
+            require(f"[smp-test] remote-stall: core {core}: at user, poked, entered the kernel before the stall returned")
+            require(f"[smp-test] remote-stall: core {core}: in the kernel, requested; its exit gate refused the return to user")
+            if lean:
+                require(f"[smp-test] remote-stall: core {core}: its next kernel entry met the request")
     elif driver == "heap-allocations-per-syscall":
         # WS-CV CV0.1, WS-ZA ZA4.1: a syscall allocates nothing.  Each round
         # trip runs twice on the boot core, its first call and its steady
@@ -266,7 +279,20 @@ for driver in drivers:
             "page-table-delete-3", "page-table-delete-2", "page-table-delete-1",
             # WS-ZA ZA5.4 part 22: a quiescent endpoint, notification, reply
             # and CNode retired by their only capability's delete.
-            "endpoint-delete", "notification-delete", "reply-delete", "cnode-delete")}
+            "endpoint-delete", "notification-delete", "reply-delete", "cnode-delete",
+            # WS-ZA ZA5.4 part 24: a carved thread's only capability deleted
+            # while it is inactive and while it is bound to the boot
+            # notification, a carved scheduling context's while it is bound
+            # to a carved thread, then that thread's: each finalised in place
+            # (the unbinds and the suspend write the objects' own cells) and
+            # retired.  Two carved threads resumed onto one run queue, the
+            # first suspended and its only capability deleted, then the
+            # second's: the suspends unlink each from the queue in place (the
+            # run links live in the TCBs).
+            "inactive-tcb-delete", "bind-carved-tcb", "bound-tcb-delete",
+            "bind-carved-sched-context", "bound-sched-context-delete",
+            "unbound-tcb-delete", "resume-shared-tcb", "suspend-queued-tcb",
+            "suspended-tcb-delete", "queued-tcb-delete")}
         # WS-ZA ZA5.1: the memory invocations' readings today, each the
         # operation's own cells (object writes, the store's copy); the rows
         # that bring them to zero lower these pins.
@@ -302,6 +328,24 @@ for driver in drivers:
             "untyped-retype-busy-notification": (11, 11),
             "untyped-retype-bound-notification": (11, 11),
             "untyped-retype-reply": (12, 12), "untyped-retype-cnode": (29, 29),
+            # WS-ZA ZA5.4 part 24: a thread's and a scheduling context's carve
+            # (same trace).  Past the store's 9, a thread adds its TCB cell and
+            # two 16-byte cells built with it (`CarveRequest.objectImpl`, 3)
+            # and the carve request and its decode (`carveRequestOf?`, 2): 14.
+            # A scheduling context adds its record (`SchedContext.empty`), its
+            # object cell and the request and decode (4): 13, and 14 on its
+            # first call, which also builds the capability's target record
+            # (`CapTarget.objectOver`).
+            "untyped-retype-tcb": (14, 14), "untyped-retype-bound-tcb": (14, 14),
+            "untyped-retype-queued-tcb": (14, 14), "untyped-retype-shared-tcb": (14, 14),
+            # The first resume of a carved thread enqueues a run-queue key no
+            # thread has held (a QEMU trace of lean_alloc_small's callers):
+            # the run queue's membership table builds the new key's entry
+            # (`RHTable.insertNoResizeImpl` under `RunQueue.insert`, 2) and
+            # the queue's ends record its new priority bucket
+            # (`RunQueueEnds.appendImpl`, 1).  The steady state reuses both.
+            "resume-carved-tcb": (3, 0),
+            "untyped-retype-sched-context": (14, 13), "untyped-retype-sc-thread": (14, 14),
             "vspace-unmap-first": (0, 0), "vspace-map-again": (0, 0),
             "vspace-unify-instruction": (4, 3),
             "vspace-map-copy": (7, 5), "frame-revoke": (0, 0),

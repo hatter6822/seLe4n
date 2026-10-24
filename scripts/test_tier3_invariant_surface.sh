@@ -4124,7 +4124,7 @@ run_check "INVARIANT" rg -n -U 'def cspaceDeleteThenFinalise[^\n]*(\n([ \t][^\n]
 # and only then is the object retired.  The anchors pin the kind dispatch, the
 # order (unbind before cancel; finalise before retire) and that both finalising
 # capability paths route through the finalised retire.
-run_check "INVARIANT" rg -n -U 'def finaliseFinalObject [^\n]*(\n([ \t][^\n]*)?){0,5}\n      \| some \.endpoint => cancelAllIpc x st\n      \| some \.notification => cancelAllSignals x \(unbindMaybeNotification x st\)\n      \| _ => st' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n -U 'def finaliseFinalObject [^\n]*(\n([ \t][^\n]*)?){0,5}\n      \| some \.endpoint => cancelAllIpc x st\n      \| some \.notification => cancelAllSignals x \(unbindMaybeNotification x st\)\n      \| some \.tcb => finaliseThread x st\n      \| some \.schedContext => finaliseSchedContext x st\n      \| _ => st' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 run_check "INVARIANT" rg -n -U 'def retireFinalisedObject [^\n]*\n[^\n]*\n  retireFinalObject executingCore target recorder \(finaliseFinalObject target st\)' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 run_negative_check "INVARIANT" rg -n '[^d]Object executingCore target recorder' SeLe4n/Kernel/Capability/FrameFinalise.lean
 # The IPC bundle, the reachability bundle and the projection are each proven
@@ -4133,6 +4133,73 @@ run_check "INVARIANT" rg -n '^theorem finaliseFinalObject_preserves_ipcInvariant
 run_check "INVARIANT" rg -n '^theorem retireFinalisedObject_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllPreservation.lean
 run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlotFinalising_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllPreservation.lean
 run_check "INVARIANT" rg -n '^theorem finaliseFinalObject_closed($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllFrame.lean
+# v0.36.135: a thread is finalised as seL4's finaliseCap finalises it, only when
+# the pre-state admits it: notification unbind, IPC cancel, suspend (the
+# deschedule wherever the thread is placed, queued or current on any core, the
+# executing core's own thread included, then .Inactive), the release of every
+# core's FP/SIMD and resident hold, the scheduling-context unbind, then the
+# destroy cleanup.  A held or executing thread is finalised, not refused: the
+# admission no longer reads the core holds.  The cleanup is proven the identity
+# on the finalised object and compiled away, so the spec keeps it.
+run_check "INVARIANT" rg -n -U 'def finaliseThread \(x : SeLe4n\.ObjId\) \(st : SystemState\) : SystemState :=\n  if threadFinaliseAdmitted st x then\n[^\n]*\n    finaliseThreadCleanup\n      \(finaliseThreadUnbindSchedContext\n        \(finaliseThreadReleaseCores\n          \(finaliseThreadSuspend\n            \(finaliseThreadCancel\n              \(finaliseThreadUnbindNotification st tid\) tid\) tid\) tid\) tid\) x' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n -U 'def finaliseThreadSuspend [^\n]*\n  match st\.getTcb\? tid with\n  \| some t =>\n    if t\.ipcStateCode == 0 && t\.ipcObjectCode == 0 &&\n        \(t\.threadState != \.Inactive \|\| t\.pendingMessage\.isSome\) && !isIdleThreadId tid then\n      \(descheduleAtPlacement st tid\)\.updateTcb tid finalisedSuspendMark' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+# A finalised thread's message dies with it, as the suspend syscall drops it.
+run_check "INVARIANT" rg -n -U '@\[inline\] def finalisedSuspendMark \(t : TCB\) : TCB :=\n  \{ t with threadState := \.Inactive, pendingMessage := none \}' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n '^theorem finalisedSuspendMark_keepsIpcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllPreservation.lean
+run_negative_check "INVARIANT" rg -n 'pendingMessage\.isNone' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+# A dequeue leaves the removed thread on no core with its own run links
+# cleared (the retire's quiescence reads all five), in the spec and the compiled
+# object-table form alike.
+run_check "INVARIANT" rg -n -U '@\[inline\] def TCB\.detachRun \(tcb : TCB\) : TCB :=\n  \{ tcb with runCoreCode := 0, runPrevCode := 0, runNextCode := 0,\n             runBucketPrevCode := 0, runBucketNextCode := 0 \}' SeLe4n/Kernel/Scheduler/RunQueueThreadLinks.lean
+run_check "INVARIANT" rg -n -U 'def runUnlinkLinks [^\n]*\n(  let [^\n]*\n){4}  st4\.mapTcbInPlace t TCB\.detachRun$' SeLe4n/Kernel/Scheduler/RunQueueThreadLinks.lean
+run_check "INVARIANT" rg -n -U 'def unlinkLinkObjects [^\n]*\n[^\n]*\n(  let [^\n]*\n){4}  o4\.mapValueAt t\.toObjId \(KernelObject\.mapTcb TCB\.detachRun\)$' SeLe4n/Kernel/Scheduler/RunQueueThreadLinks.lean
+run_check "INVARIANT" rg -n -U 'def finaliseThreadReleaseCores \(st : SystemState\) \(tid : SeLe4n\.ThreadId\) : SystemState :=\n  \{ st with machine := st\.machine\.releaseThread tid \}' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n -U '@\[inline\] def MachineState\.releaseThread [^\n]*\n[^\n]*releaseThreadOnCores tid SeLe4n\.Kernel\.Concurrency\.allCores' SeLe4n/Machine.lean
+run_check "INVARIANT" rg -n '^theorem MachineState\.releaseThread_releases($|[ ({:\[\]])' SeLe4n/Machine.lean
+run_check "INVARIANT" rg -n '^theorem finaliseThreadReleaseCores_unheld($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+# The remote-core stall (seL4's remoteTCBStall): the syscall and suspend entries
+# check every other core against the committed current slots after their
+# commit and SGIs; the HAL waits for a changed core to leave EL0, every handler
+# clears the core's user flag first (the handler-prologue anchors below), and
+# trap.S gates every return (build.rs).
+run_check "INVARIANT" rg -n -U 'def syscallDispatchCrossCoreEntry [^\n]*(\n[^\n]*){0,80}\n  Concurrency\.fireRaisedReschedules rest\.1\n([ \t]*(--[^\n]*)?\n)*  Concurrency\.stallChangedCores committedCodes execCore\n' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n -U 'restoreAsidOnCore post execCore, post\.scheduler\.currentCode\), post\)' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '^def stallChangedCores \(codes : Vector Nat numCores\) \(execCore : CoreId\) : BaseIO Unit :=$' SeLe4n/Kernel/Concurrency/Runtime.lean
+run_check "INVARIANT" rg -n '^theorem stallChangedCores_eq($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Runtime.lean
+run_check "INVARIANT" rg -n '^theorem threadRetirable_currentNowhere($|[ ({:\[\]])' SeLe4n/Kernel/Capability/FinalRetire.lean
+run_check "INVARIANT" rg -n -U '@\[extern "ffi_stall_if_changed"\]\nopaque ffiStallIfChanged ' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n -U 'pub extern "C" fn ffi_stall_if_changed\(\n    core_id: u64,\n    committed_code: u64,\n\)' rust/sele4n-hal/src/ffi.rs
+run_check "INVARIANT" rg -n -U 'let _ticket = acquire_kernel_entry\(core_id\);\n([ \t]*(//[^\n]*)?\n)*    crate::remote_stall::clear_stall_request\(core_id\);\n    let out = f\(\);' rust/sele4n-hal/src/kernel_entry.rs
+run_negative_check "INVARIANT" rg -n -U 'def threadFinaliseAdmitted[^\n]*(\n([ \t][^\n]*)?){0,40}\n[^\n]*(threadHeldOnSomeCore|runCoreCode)' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n -U 'def finaliseSchedContext \(x : SeLe4n\.ObjId\) \(st : SystemState\) : SystemState :=\n  if schedContextFinaliseAdmitted st x then\n    finaliseSchedContextCleanup \(finaliseSchedContextUnbind st x\) x' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n '^theorem finaliseThreadCleanup_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n '^theorem finaliseSchedContextCleanup_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n '^theorem finaliseThread_closed($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllFrame.lean
+run_check "INVARIANT" rg -n '^theorem finaliseFinalObject_runQueueEntryStage($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Capability.lean
+run_negative_check "INVARIANT" rg -n '^theorem finaliseFinalObject_runQueueStage($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Capability.lean
+run_check "INVARIANT" rg -n '^theorem finaliseThread_hidden($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/FinaliseProjection.lean
+# v0.36.135: a final delete cancels an endpoint- or notification-blocked thread
+# off its queue wherever it waits (seL4's suspend -> cancelIPC): the removal is
+# written in place and proven the specification's, and every bundle is kept.
+run_check "INVARIANT" rg -n '^(@\[(inline|noinline)\] )?def storeQueueRemove($|[ ({:\[\]])' SeLe4n/Kernel/IPC/DualQueue/RemoveInPlace.lean
+run_check "INVARIANT" rg -n '^theorem queueRemove_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/IPC/DualQueue/RemoveInPlace.lean
+run_check "INVARIANT" rg -n '^(@\[(inline|noinline)\] )?def endpointBlockedCancellable($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n '^(@\[(inline|noinline)\] )?def storeEndpointBlockedCancelled($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n '^(@\[(inline|noinline)\] )?def storeNotificationBlockedCancelled($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n '^(@\[(inline|noinline)\] )?def threadIpcCancelAdmitted($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n -U '    \| \.blockedOnReceive e => cancelEndpointBlocked st e true tid t\n    \| \.blockedOnSend e => cancelEndpointBlocked st e false tid t\n    \| \.blockedOnCall e => cancelEndpointBlocked st e false tid t' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n -U '@\[csimp\] theorem finaliseThreadCancel_eq_impl :\n    @finaliseThreadCancel = @finaliseThreadCancelImpl' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n '^theorem finaliseEndpointCancelStep_keepsIpcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllPreservation.lean
+run_check "INVARIANT" rg -n '^theorem finaliseNotificationCancelStep_keepsIpcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllPreservation.lean
+run_check "INVARIANT" rg -n '^theorem storeEndpointBlockedCancelled_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllPreservation.lean
+run_check "INVARIANT" rg -n '^theorem storeEndpointBlockedCancelled_runQueueStage($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Capability.lean
+run_check "INVARIANT" rg -n '^theorem storeEndpointBlockedCancelled_stepCovers($|[ ({:\[\]])' SeLe4n/Kernel/ReschedulePendingArms/Dispatch.lean
+run_check "INVARIANT" rg -n '^theorem notificationWaiterConsistent_of_unlink($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/NotificationUnlink.lean
+run_check "INVARIANT" rg -n '^theorem storeEndpointBlockedCancelled_preserves_reachableParts($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllReachability.lean
+run_check "INVARIANT" rg -n '^theorem timeoutBudget_isNone_of_ipcReachable($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllReachability.lean
+run_check "INVARIANT" rg -n '^theorem storeEndpointBlockedCancelled_hidden($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/FinaliseProjection.lean
+run_check "INVARIANT" rg -n '^theorem storeNotificationBlockedCancelled_hidden($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/FinaliseProjection.lean
+run_check "INVARIANT" rg -n -U 'def schedLockSet_capabilityDestroyOnCore : List \(LockKey × Concurrency\.AccessMode\) :=\n  schedFootprintOfCores Concurrency\.allCores Concurrency\.allCores' SeLe4n/Kernel/Scheduler/SchedFootprint.lean
 run_check "INVARIANT" rg -n '^theorem popHead_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/IPC/DualQueue/PopInPlace.lean
 run_check "INVARIANT" rg -n '^theorem finaliseFinalObject_preserves_ipcReachable($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllReachability.lean
 run_check "INVARIANT" rg -n '^theorem retireFinalisedObject_preserves_ipcReachable($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllReachability.lean
@@ -4147,7 +4214,8 @@ run_check "INVARIANT" rg -n '^theorem schedLockSet_cspaceRevokeCdtFinalising_cov
 # The notification step is compiled as its in-place writes, and the walk that
 # cancelAllSignals runs is defined AFTER the substitution, so the compiler takes
 # it (a definition compiled before a @[csimp] keeps the specification's body).
-run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_notificationHead_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_notification_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_negative_check "INVARIANT" rg -n 'cancelIpcBlocking_notificationHead_inPlace|storeNotificationWaiterCancelled|cancelPoppedObject' SeLe4n
 run_check "INVARIANT" rg -n -U '@\[csimp\] theorem cancelNotificationQueue_eq_impl :\n    @cancelNotificationQueue = @cancelNotificationQueueImpl' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 run_check "INVARIANT" rg -n -U '@\[csimp\] theorem cancelNotificationQueue_eq_impl :(\n[^\n]*){0,40}\ndef cancelAllSignals ' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 # A carved endpoint or notification is rebuilt into its own cells, by a call
@@ -4156,21 +4224,21 @@ run_check "INVARIANT" rg -n -U '  \| \.endpoint => \(KernelObject\.endpoint \(En
 run_check "INVARIANT" rg -n -U '@\[csimp\] theorem CarveRequest\.object_eq_impl :\n    @CarveRequest\.object = @CarveRequest\.objectImpl' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n -U '@\[noinline, never_extract\] def KernelObject\.unshareFresh \(o : KernelObject\) : KernelObject :=\n  o\.unshare' SeLe4n/Model/Object/Unshare.lean
 run_check "INVARIANT" rg -n -U 'def slotRetireTarget[^\n]*(\n([ \t][^\n]*)?){0,4}\n    \| \.object x => if retirableKind st x && st\.capIsFinal cnode slot then x\.val \+ 1 else 0' SeLe4n/Kernel/Capability/FinalRetire.lean
-run_check "INVARIANT" rg -n -U 'def retirableKind[^\n]*\n  match st\.getObjectType\? x with\n  \| some \.frame \| some \.pageTable \| some \.vspaceRoot => true\n  \| some \.endpoint \| some \.notification \| some \.reply \| some \.cnode => true\n  \| some \.untyped =>\n    match st\.getUntyped\? x with\n    \| some U => U\.children\.isEmpty\n    \| none => false\n  \| _ => false' SeLe4n/Kernel/Capability/FinalRetire.lean
+run_check "INVARIANT" rg -n -U 'def retirableKind[^\n]*\n  match st\.getObjectType\? x with\n  \| some \.frame \| some \.pageTable \| some \.vspaceRoot => true\n  \| some \.endpoint \| some \.notification \| some \.reply \| some \.cnode => true\n  \| some \.tcb \| some \.schedContext => true\n  \| some \.untyped =>\n    match st\.getUntyped\? x with\n    \| some U => U\.children\.isEmpty\n    \| none => false\n  \| _ => false' SeLe4n/Kernel/Capability/FinalRetire.lean
 run_check "INVARIANT" rg -n -U 'def retireRecordedObject[^\n]*(\n([ \t][^\n]*)?){0,3}\n  match st1\.getVSpaceRoot\? x with\n  \| some root => retypeAsidRoundStep executingCore root\.asid \(retireCarvedObject st1 x\)\n  \| none => retireCarvedObject st1 x' SeLe4n/Kernel/Capability/FinalRetire.lean
 # v0.36.133: a final delete of an endpoint, notification, reply or CNode retires
 # it while it is quiescent and nothing names it by id (seL4's finaliseCap of a
 # passive kind with nothing to cancel); the admission is read on the pre-retire
 # state, the passive erase comes first, and a refused passive object outlives its
 # last capability.
-run_check "INVARIANT" rg -n -U 'def retireFinalObject[^\n]*(\n([ \t][^\n]*)?){0,4}\n    if finalRetireAdmitted st x then\n      retireRecordedObject executingCore recorder x \(retirePassiveObject st x\)\n    else st' SeLe4n/Kernel/Capability/FinalRetire.lean
+run_check "INVARIANT" rg -n -U 'def retireFinalObject[^\n]*(\n([ \t][^\n]*)?){0,4}\n    if finalRetireAdmitted st x then\n      retireRecordedObject executingCore recorder x \(eraseRetiredObject st x\)\n    else st' SeLe4n/Kernel/Capability/FinalRetire.lean
 run_check "INVARIANT" rg -n -U 'def passiveObjectRetirable[^\n]*\n  passiveObjectQuiescent st x && storeNamesNone st x && registryNamesNone st x &&\n    servicesNameNone st x && irqHandlersNameNone st x' SeLe4n/Kernel/Capability/FinalRetire.lean
-run_check "INVARIANT" rg -n -U 'def finalRetireAdmitted[^\n]*\n  !passiveKindAt st x \|\| passiveObjectRetirable st x' SeLe4n/Kernel/Capability/FinalRetire.lean
+run_check "INVARIANT" rg -n -U 'def finalRetireAdmitted[^\n]*\n  \(!passiveKindAt st x \|\| passiveObjectRetirable st x\) &&\n    \(!schedulingKindAt st x \|\| schedulingObjectRetirable st x\)' SeLe4n/Kernel/Capability/FinalRetire.lean
 # The passive erase runs through the registered erase primitives (no raw
 # object-table write of its own), and its record form is a theorem.
-run_check "INVARIANT" rg -n -U 'def retirePassiveObject \(st : SystemState\) \(x : SeLe4n\.ObjId\) : SystemState :=\n  if passiveKindAt st x then\n    withObjectTypeErased \(withObjectIndexSetErased \(withObjectUnindexed \(withObjectErased st x\) x\) x\) x\n  else st' SeLe4n/Kernel/Capability/FinalRetire.lean
-run_check "INVARIANT" rg -n '^theorem retirePassiveObject_eq ' SeLe4n/Kernel/Capability/FinalRetire.lean
-run_negative_check "INVARIANT" rg -n 'retirePassiveObjectImpl|retirePassiveObject_eq_impl' SeLe4n
+run_check "INVARIANT" rg -n -U 'def eraseRetiredObject \(st : SystemState\) \(x : SeLe4n\.ObjId\) : SystemState :=\n  if erasableKindAt st x then\n    withObjectTypeErased \(withObjectIndexSetErased \(withObjectUnindexed \(withObjectErased st x\) x\) x\) x\n  else st' SeLe4n/Kernel/Capability/FinalRetire.lean
+run_check "INVARIANT" rg -n '^theorem eraseRetiredObject_eq ' SeLe4n/Kernel/Capability/FinalRetire.lean
+run_negative_check "INVARIANT" rg -n 'eraseRetiredObjectImpl|eraseRetiredObject_eq_impl' SeLe4n
 # The final-delete retire keeps what other objects name, and the reachable state.
 run_check "INVARIANT" rg -n '^theorem retireFinalObject_passive_kept ' SeLe4n/Kernel/Capability/FinalRetire.lean
 run_check "INVARIANT" rg -n '^theorem retireFinalObject_kept_of_unretirable ' SeLe4n/Kernel/Capability/FinalRetire.lean
@@ -4186,12 +4254,12 @@ run_check "INVARIANT" rg -n -U '\(hNtfnFwd : ∀ \(noid : SeLe4n\.ObjId\) \(ntfn
 # slot address and no list: the frame teardown retires it directly.
 run_check "INVARIANT" rg -n '^theorem cspaceDeleteTeardownAt_of_nothing ' SeLe4n/Kernel/Capability/FrameFinalise.lean
 run_check "INVARIANT" rg -n -U '      \| none =>\n        if \(st\.getPageTable\? frameId\)\.isSome then\n          cspaceDeleteTeardownAt executingCore cnode slot st\n        else\n          let target := slotRetireTarget st cnode slot\n          let recorder := recorderFor st target cnode slot\n          retireFinalisedObject executingCore target recorder \(cspaceDeletePerformAt cnode slot st\)\n    \| _ =>\n      let target' SeLe4n/Kernel/Capability/FrameFinalise.lean
-run_check "INVARIANT" rg -n '^theorem retirePassiveObject_frame ' SeLe4n/Kernel/Capability/FinalRetire.lean
-run_check "INVARIANT" rg -n '^theorem retirePassiveObject_preserves_teardownWellFormed ' SeLe4n/Kernel/Capability/FinalRetire.lean
+run_check "INVARIANT" rg -n '^theorem eraseRetiredObject_frame ' SeLe4n/Kernel/Capability/FinalRetire.lean
+run_check "INVARIANT" rg -n '^theorem eraseRetiredObject_preserves_teardownWellFormed ' SeLe4n/Kernel/Capability/FinalRetire.lean
 run_check "INVARIANT" rg -n '^theorem passiveObjectQuiescent\.slotCap ' SeLe4n/Kernel/Capability/FinalRetire.lean
 run_check "INVARIANT" rg -n '^theorem storeNamesNone_spec ' SeLe4n/Kernel/Capability/FinalRetire.lean
 run_check "INVARIANT" rg -n '^theorem eraseWrite_preserves_ipcInvariantFull$' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
-run_check "INVARIANT" rg -n '^theorem retypeTargetDetached_of_unreferenced ' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
+run_check "INVARIANT" rg -n '^theorem erasedTargetDetached_of_unreferenced ' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
 run_check "INVARIANT" rg -n '^theorem RunQueueStage\.of_retireTouched ' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Capability.lean
 run_check "INVARIANT" rg -n '^theorem capabilityKeyFrame_of_retireTouched ' SeLe4n/Kernel/ReschedulePendingArms/Capability.lean
 run_negative_check "INVARIANT" rg -n 'RunQueueStage\.of_resetTouched|capabilityKeyFrame_of_resetTouched' SeLe4n
@@ -4204,7 +4272,7 @@ run_check "INVARIANT" rg -n '^theorem retireFinalObject_preserves_teardownWellFo
 run_check "INVARIANT" rg -n '^theorem retireFinalObject_preserves_capabilityInvariantBundle ' SeLe4n/Kernel/Capability/Invariant/Preservation/Revoke.lean
 run_check "INVARIANT" rg -n '^theorem retireFinalObject_preserves_ipcInvariantFull ' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
 run_check "INVARIANT" rg -n '^theorem retireFinalObject_runQueueStage ' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Capability.lean
-run_check "INVARIANT" rg -n '^theorem retireFinalObject_keyFrame ' SeLe4n/Kernel/ReschedulePendingArms/Capability.lean
+run_check "INVARIANT" rg -n '^theorem retireFinalObject_stepCovers ' SeLe4n/Kernel/ReschedulePendingArms/Dispatch.lean
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem retireCarvedObject_eq_impl : @retireCarvedObject = @retireCarvedObjectImpl' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
 # v0.36.132: the retire's erases allocate nothing: the compiled erase probes for
 # a bare index, and the compiled backshift takes each moved cell out of the
@@ -4301,8 +4369,8 @@ run_check "INVARIANT" rg -n '^theorem threadSlotSet_preserves_capabilityInvarian
 run_check "INVARIANT" rg -n '^theorem threadSlotSet_preserves_ipcInvariantFull ' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
 run_check "INVARIANT" rg -n '^theorem threadSlotSet_runQueueStage ' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Capability.lean
 run_check "INVARIANT" rg -n '^theorem copyThreadSpaces_runQueueStage ' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Capability.lean
-run_check "INVARIANT" rg -n '^theorem threadSlotSet_keyFrame ' SeLe4n/Kernel/ReschedulePendingArms/Capability.lean
-run_check "INVARIANT" rg -n '^theorem copyThreadSpaces_keyFrame ' SeLe4n/Kernel/ReschedulePendingArms/Capability.lean
+run_check "INVARIANT" rg -n '^theorem threadSlotSet_stepCovers ' SeLe4n/Kernel/ReschedulePendingArms/Dispatch.lean
+run_check "INVARIANT" rg -n '^theorem copyThreadSpaces_stepCovers ' SeLe4n/Kernel/ReschedulePendingArms/Dispatch.lean
 run_check "INVARIANT" rg -n '^theorem retireFinalObject_preserves_projection ' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
 run_check "INVARIANT" rg -n '^theorem threadSlotSet_preserves_projection ' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
 run_check "INVARIANT" rg -n -U 'theorem copyThreadSpaces_preserves_projection [^\n]*(\n([ \t][^\n]*)?){0,4}\n    \(hHid : ∀ s : SeLe4n\.Slot, s\.toNat < 2 → ∀ c o,' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
@@ -4544,8 +4612,8 @@ run_check "INVARIANT" rg -n '^      \(Concurrency\.saveCapturedTrapFrameAt st co
 run_check "INVARIANT" rg -n '^theorem saveTrapFrameOnCore_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TrapFrameSaveInvariant.lean
 run_check "INVARIANT" rg -n '^theorem saveTrapFrameOnCore_contextMatchesCurrentOnCore($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TrapFrameSaveInvariant.lean
 run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.Architecture\.TrapFrameSaveInvariant$' SeLe4n.lean
-run_check "INVARIANT" rg -n -U '^pub extern "C" fn handle_synchronous_exception\(frame: &mut TrapFrame\) \{\n    let esr = frame\.esr_el1;\n([ \t]*\n)*    let _in_flight = InFlightFrame::publish\(frame\);$' rust/sele4n-hal/src/trap.rs
-run_check "INVARIANT" rg -n -U '^pub extern "C" fn handle_irq_per_core\(frame: &mut TrapFrame\) \{\n([ \t]*\n)*    let _in_flight = InFlightFrame::publish\(frame\);$' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n -U '^pub extern "C" fn handle_synchronous_exception\(frame: &mut TrapFrame\) \{\n([ \t]*\n)*    crate::remote_stall::note_kernel_entry\(\);\n    let esr = frame\.esr_el1;\n([ \t]*\n)*    let _in_flight = InFlightFrame::publish\(frame\);$' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n -U '^pub extern "C" fn handle_irq_per_core\(frame: &mut TrapFrame\) \{\n([ \t]*\n)*    crate::remote_stall::note_kernel_entry\(\);\n([ \t]*\n)*    let _in_flight = InFlightFrame::publish\(frame\);$' rust/sele4n-hal/src/trap.rs
 run_check "INVARIANT" rg -n 'switching away then saves every register the thread trapped with' tests/SmpSwitchToThreadSuite.lean
 # WS-BP BP7.4 (v0.36.17): the caller's result is staged where a switch saves
 # from, before the local reschedule; every entry hands the HAL the context the
@@ -7910,7 +7978,7 @@ run_check "INVARIANT" rg -n -U '^  Concurrency\.releaseSwitchedFpOwner coreId\n 
 run_check "INVARIANT" rg -n -U '      \(st.\.drainedPhysicalWrites, st.\.pendingIcacheMaintenance\)\),\n      Architecture\.clearIcacheMaintenance \(Architecture\.clearPhysicalWrites st.\)\)\)\n  Platform\.FFI\.completePhysicalWrites r\.2\.2\.2\.1$' SeLe4n/Kernel/PerCoreTimerEntry.lean
 run_check "INVARIANT" rg -n -U '^  Concurrency\.fireCrossCoreSgis r\.1\.1\n  Platform\.FFI\.completeIcacheMaintenance r\.2\.2\.2\.2\n  Concurrency\.releaseSwitchedFpOwner coreId$' SeLe4n/Kernel/PerCoreTimerEntry.lean
 run_check "INVARIANT" rg -n -U '      \(st.\.drainedPhysicalWrites, st.\.pendingIcacheMaintenance\)\),\n      Architecture\.clearIcacheMaintenance \(Architecture\.clearPhysicalWrites st.\)\)\)\n  Platform\.FFI\.completePhysicalWrites record\.2\.2\.1\n  Platform\.FFI\.completeIcacheMaintenance record\.2\.2\.2$' SeLe4n/Kernel/PerCoreRescheduleEntry.lean
-run_check "INVARIANT" rg -n -U '    \(suspendThreadCrossCoreDrainedStep tid execCore\)\n  Platform\.FFI\.completePhysicalWrites result\.2\.1\n  Concurrency\.fireCrossCoreSgis result\.1\.2\n  Platform\.FFI\.completeIcacheMaintenance result\.2\.2$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n -U '    \(suspendThreadCrossCoreDrainedStep tid execCore\)\n  Platform\.FFI\.completePhysicalWrites result\.2\.1\n  Concurrency\.fireCrossCoreSgis result\.1\.2\n([ \t]*(--[^\n]*)?\n)*  Concurrency\.stallChangedCores result\.2\.2\.2 execCore\n  Platform\.FFI\.completeIcacheMaintenance result\.2\.2\.1$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n '^theorem suspendThreadCrossCoreDrainedStep_idle_refused($|[ ({:\[\]])' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n -U '^  Concurrency\.releaseSwitchedFpOwnerOnCore execCore\n([ \t]*\n)*  Platform\.FFI\.restoreTrapFrameParts restoreKind restoreContext restoreTableBase restoreAsid$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 # The FP routines keep an output section of their own in the linked image.
@@ -8299,7 +8367,7 @@ run_check "INVARIANT" rg -n -F -- 'if ticks + sgis > irqs:' scripts/qemu_exercis
 run_check "INVARIANT" rg -n -F -- 'if irqs == 0 or ticks == 0:' scripts/qemu_exerciser_lib.sh
 run_check "INVARIANT" rg -n -F -- 'if not all(b <= w <= a for b, w, a in zip(before, words, after)):' scripts/qemu_exerciser_lib.sh
 run_check "INVARIANT" rg -n -F -- 'if len(set(sgis_by_core.values())) != len(sgis_by_core):' scripts/qemu_exerciser_lib.sh
-run_check "INVARIANT" rg -n '^EXERCISER_DRIVERS=\(sgi-round-trip kprintln-stress tlb-shootdown tlb-shootdown-stress per-core-stats heap-allocations-per-syscall\)$' scripts/qemu_exerciser_lib.sh
+run_check "INVARIANT" rg -n '^EXERCISER_DRIVERS=\(sgi-round-trip kprintln-stress tlb-shootdown tlb-shootdown-stress per-core-stats heap-allocations-per-syscall remote-stall\)$' scripts/qemu_exerciser_lib.sh
 # The gate runs on the Lean-linked image alone and reports NOT RUN otherwise;
 # the Tier-4 runner runs it in that mode only, and the archive lane reaches it
 # through the all-driver gate's Lean run.
@@ -10721,7 +10789,7 @@ run_check "INVARIANT" rg -n '^theorem idleSlotsReserved_no_idle_references($|[ (
 # field.
 run_check "INVARIANT" rg -n 'if SeLe4n.Kernel.isIdleThreadId vtid.val then' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n -U '^  let result ← Platform\.FFI\.modifyGetKernelState\n    \(suspendThreadCrossCoreDrainedStep tid execCore\)$' SeLe4n/Kernel/SyscallDispatchEntry.lean
-run_check "INVARIANT" rg -n -U '^  let \(out, st.\) := suspendThreadCrossCoreStep tid execCore st\n  \(\(out, \(st.\.drainedPhysicalWrites, st.\.pendingIcacheMaintenance\)\),$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n -U '^  let \(out, st.\) := suspendThreadCrossCoreStep tid execCore st\n  \(\(out, \(st.\.drainedPhysicalWrites, st.\.pendingIcacheMaintenance,\n      st.\.scheduler\.currentCode\)\),$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n '^theorem suspendThreadCrossCoreStep_idle_refused($|[ ({:\[\]])' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n 'tcb.queueNext.isNone && tcb.queuePrev.isNone && tcb.queuePPrev.isNone &&' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '  \| .tcb tcb => tcbReferencesReservedIdleSlot tcb' SeLe4n/Platform/Boot.lean

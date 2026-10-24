@@ -216,7 +216,7 @@ theorem retireFinalObject_preserves_capabilityInvariantBundle (ec : Concurrency.
       · rw [hr] at hO; cases hO; rfl
       · rw [hp] at hO; cases hO; rfl
       · subst hxo
-        exact passiveObjectQuiescent.slotCap (passiveObjectRetirable_parts (finalRetireAdmitted.retirable hAdm hp)).1 o hO s
+        exact finalRetireAdmitted.slotCap hAdm hp o hO s
     · exact .inr ⟨fun o hO s => by rw [hU] at hO; cases hO; rfl, .inr ⟨_, hU'⟩⟩
   have hAfter : ∀ oid : SeLe4n.ObjId, (st'.objects[oid]? = none ∨
       ∃ U, st'.objects[oid]? = some (.untyped U)) → ∀ o, st'.objects[oid]? = some o →

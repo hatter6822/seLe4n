@@ -1144,20 +1144,6 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.handleYieldWithBudget
   , `SeLe4n.Kernel.lifecycleCleanupPipeline
   , `SeLe4n.Kernel.lifecyclePreRetypeCleanupWithToken
-  -- WS-ZA ZA5.4 part 14: the destroy cleanup and the steps only it runs.  The
-  -- in-place retype was their one seam; it is deleted, and the cleanup is kept
-  -- for the destroy path that will run it (docs/REGISTERED_DEBT.md, "The destroy
-  -- cleanup is kept with no live caller").
-  , `SeLe4n.Kernel.lifecyclePreRetypeCleanup
-  , `SeLe4n.Kernel.cancelDonationArmOnCore
-  , `SeLe4n.Kernel.cleanupEndpointServiceRegistrations
-  , `SeLe4n.Kernel.cleanupTcbReferences
-  , `SeLe4n.Kernel.clearDonationOriginReferences
-  , `SeLe4n.Kernel.detachCNodeSlots
-  , `SeLe4n.Kernel.detachTcbSlots
-  , `SeLe4n.Kernel.releaseSchedContextBinding
-  , `SeLe4n.Kernel.removeRunnableFromAllCores
-  , `SeLe4n.Kernel.removeRunnableStepOnCore
   , `SeLe4n.Kernel.Architecture.tlbFlushByASID
   , `SeLe4n.Kernel.Architecture.tlbFlushByASIDWithShootdown
   , `SeLe4n.Kernel.notificationSignal

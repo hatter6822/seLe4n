@@ -99,6 +99,123 @@ theorem stepCoversInv_trans {e : CoreId} {a b d : SystemState} (h₁ : stepCover
     (h₂ : stepCovers e b d ∧ d.objects.invExt) : stepCovers e a d ∧ d.objects.invExt :=
   ⟨stepCovers_trans h₁ h₂.1, h₂.2⟩
 
+/-! ### The final-delete retire -/
+
+/-- A binding that names a scheduling context carries its code. -/
+theorem SchedContextBinding.scCode_of_scId? {b : SchedContextBinding} {sc : SeLe4n.SchedContextId}
+    (h : b.scId? = some sc) : b.scCode = sc.val + 1 := by
+  cases b with
+  | unbound => cases h
+  | bound s => cases h; rfl
+  | donated s o => cases h; rfl
+
+/-- **The retire keeps the key of every thread it keeps**: the thread's own
+fields are untouched, and the scheduling context its binding names is named by
+it, so the retire scan refuses that context and it stays. -/
+theorem retireFinalObject_schedKeyView (ec : CoreId) (target recorder : Nat) (st : SystemState)
+    (hObjInv : st.objects.invExt) {t : SeLe4n.ThreadId} {x : TCB}
+    (hx : (retireFinalObject ec target recorder st).getTcb? t = some x) :
+    schedKeyView (retireFinalObject ec target recorder st) t = schedKeyView st t := by
+  have hp := (SystemState.getTcb?_eq_some_iff _ t x).mp hx
+  have hk := retireFinalObject_tcb_back ec target recorder st hObjInv hp
+  have hpre : st.getTcb? t = some x := (SystemState.getTcb?_eq_some_iff st t x).mpr hk
+  unfold schedKeyView
+  rw [hx, hpre]
+  simp only [Option.map_some, Option.some.injEq]
+  rw [effectiveSchedParams_congr_binding (a := x) (b := x) rfl (fun sc hsc => ?_)]
+  unfold SystemState.getSchedContext?
+  cases hS : st.objects[sc.toObjId]? with
+  | some o =>
+    cases o with
+    | schedContext s =>
+      have hN : objectNamesSchedContext (.tcb x) (sc.toObjId.val + 1) = true := by
+        have hc := SchedContextBinding.scCode_of_scId? hsc
+        rw [SeLe4n.Kernel.SchedContextBinding.scCode_ofCodes] at hc
+        simp only [objectNamesSchedContext, Bool.or_eq_true, beq_iff_eq]
+        exact .inl hc
+      rw [retireFinalObject_schedContext ec target recorder st hObjInv hS
+        (schedContextRetirable_false_of_named hk hN)]
+    | _ =>
+      cases hP : (retireFinalObject ec target recorder st).objects[sc.toObjId]? with
+      | none => rfl
+      | some o' =>
+        cases o' with
+        | schedContext s' =>
+          rw [retireFinalObject_back ec target recorder st hObjInv hP (fun _ e => by cases e)] at hS
+          cases hS
+        | _ => rfl
+  | none =>
+    cases hP : (retireFinalObject ec target recorder st).objects[sc.toObjId]? with
+    | none => rfl
+    | some o' =>
+      cases o' with
+      | schedContext s' =>
+        rw [retireFinalObject_back ec target recorder st hObjInv hP (fun _ e => by cases e)] at hS
+        cases hS
+      | _ => rfl
+
+/-- **The final-delete retire covers**: it frames the scheduler and every
+thread's run-queue links, so no core's queue gains a thread and no current slot
+moves, and every thread it keeps keeps its key
+(`retireFinalObject_schedKeyView`); the thread it erases is queued nowhere and
+claims nothing afterwards. -/
+theorem retireFinalObject_stepCovers (e ec : CoreId) (target recorder : Nat) (st : SystemState)
+    (hObjInv : st.objects.invExt) :
+    stepCovers e st (retireFinalObject ec target recorder st) ∧
+      (retireFinalObject ec target recorder st).objects.invExt := by
+  have hS := (retireFinalObject_fields ec target recorder st).2.1
+  have hQ : ∀ c t, (retireFinalObject ec target recorder st).queuedOn c t = st.queuedOn c t :=
+    fun c t => by
+      rw [SystemState.queuedOn_eq_runLinkOn, SystemState.queuedOn_eq_runLinkOn,
+        retireFinalObject_runLinkOn ec target recorder hObjInv]
+  have hView : ∀ t kq, schedKeyView (retireFinalObject ec target recorder st) t = some kq →
+      schedKeyView (retireFinalObject ec target recorder st) t = schedKeyView st t := by
+    intro t kq hq
+    unfold schedKeyView at hq
+    cases hx : (retireFinalObject ec target recorder st).getTcb? t with
+    | none => rw [hx] at hq; cases hq
+    | some x => exact retireFinalObject_schedKeyView ec target recorder st hObjInv hx
+  refine ⟨⟨fun c _ => .inr ⟨fun t ht => ⟨(hQ c t) ▸ ht, ?_⟩, by rw [hS],
+      fun t _ kq hq => ⟨kq, ((hView t kq hq).symm.trans hq), Nat.le_refl _, Nat.le_refl _, rfl⟩⟩,
+    reschedulePendingMonotone_of_scheduler_eq hS⟩,
+    (retireFinalObject_frame ec target recorder st hObjInv).1⟩
+  unfold SystemState.queuedOn at ht
+  cases hx : (retireFinalObject ec target recorder st).getTcb? t with
+  | none => rw [hx] at ht; cases ht
+  | some x => exact (retireFinalObject_schedKeyView ec target recorder st hObjInv hx).symm
+
+/-- A thread space slot's set covers: the copy moves no key input, and the
+retire of what the old capability took with it covers
+(`retireFinalObject_stepCovers`). -/
+theorem threadSlotSet_stepCovers (e ec : CoreId) {st : SystemState} {tid : SeLe4n.ThreadId}
+    {t : TCB} (hObjInv : st.objects.invExt) (hT : st.getTcb? tid = some t) (slot : SeLe4n.Slot)
+    (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) :
+    stepCovers e st (threadSlotSet ec st tid slot srcCNode srcSlot rights) ∧
+      (threadSlotSet ec st tid slot srcCNode srcSlot rights).objects.invExt := by
+  unfold threadSlotSet
+  exact stepCoversInv_trans
+    (threadSlotCopied_keyFrame hObjInv hT slot srcCNode srcSlot rights).stepCovers
+    (retireFinalObject_stepCovers e ec _ _ _
+      (threadSlotCopied_tcb hObjInv hT slot srcCNode srcSlot rights).2)
+
+theorem copyThreadSpaces_stepCovers (e ec : CoreId) (st st' : SystemState)
+    (vtid : SeLe4n.ValidThreadId) (cnSrc vrSrc : CSpaceAddr) (hObjInv : st.objects.invExt)
+    (hStep : copyThreadSpaces ec st vtid cnSrc vrSrc = .ok st') :
+    stepCovers e st st' ∧ st'.objects.invExt := by
+  obtain ⟨tcb, hT, -, -, hCn, -, rfl⟩ := copyThreadSpaces_ok hStep
+  obtain ⟨cnCap, -, hCL, -⟩ := cspaceRootSourceAdmitted_spec hCn
+  obtain ⟨t1, hT1'⟩ := Option.isSome_iff_exists.mp
+    (threadSlotSet_getTcb? ec hObjInv hT (slot := TCB.cspaceRootSlot) (by decide)
+      cnSrc.cnode cnSrc.slot
+      TCB.cspaceRootRights hCL)
+  have hI1 : (threadSlotSet ec st vtid.val TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot
+      TCB.cspaceRootRights).objects.invExt := by
+    unfold threadSlotSet
+    exact (retireFinalObject_frame ec _ _ _ (threadSlotCopied_tcb hObjInv hT TCB.cspaceRootSlot
+      cnSrc.cnode cnSrc.slot TCB.cspaceRootRights).2).1
+  exact stepCoversInv_trans (threadSlotSet_stepCovers e ec hObjInv hT _ _ _ _).1
+    (threadSlotSet_stepCovers e ec hI1 hT1' _ _ _ _)
+
 /-! ### Retype -/
 
 /-- Every thread queued or current on a core has a TCB. -/
@@ -214,6 +331,24 @@ theorem storeEndpointWaiterCancelled_stepCovers (e : CoreId) (st : SystemState)
     ⟨enqueueRunnableOnCore_covers e (determineTargetCore (s1.updateTcb t cancelledEndpointWaiterTcb) t)
       _ t hI2, enqueueRunnableOnCore_monotone e _ _ t⟩
 
+/-- WS-ZA ZA5.4 part 24: **a thread's endpoint cancel covers**: the removal
+(`endpointQueueRemoveDual_keyFrame`, through `queueRemove_inPlace`) and the
+thread's rewrite move no key input and no scheduler field. -/
+theorem storeEndpointBlockedCancelled_stepCovers (e : CoreId) (st : SystemState)
+    (en : SeLe4n.ObjId) (q : Bool) (t : SeLe4n.ThreadId) (ep : Endpoint) (tcb : TCB)
+    (hInv : st.objects.invExt) (hT : st.getTcb? t = some tcb) (hE : st.getEndpoint? en = some ep)
+    (hC : endpointBlockedCancellable st en q t ep tcb = true) :
+    stepCovers e st (storeEndpointBlockedCancelled st en q t ep tcb) ∧
+      (storeEndpointBlockedCancelled st en q t ep tcb).objects.invExt := by
+  obtain ⟨-, -, hG, -⟩ := endpointBlockedCancellable_parts hC
+  obtain ⟨hRem, -⟩ := queueRemove_inPlace st en q t ep tcb
+    ((SystemState.getEndpoint?_eq_some_iff st en ep).mp hE)
+    ((SystemState.getTcb?_eq_some_iff st t tcb).mp hT) hG
+  have hF1 := endpointQueueRemoveDual_keyFrame hInv hRem
+  unfold storeEndpointBlockedCancelled
+  exact (hF1.trans (updateTcb_keyFrame _ t (f := cancelledEndpointWaiterTcb) (fun _ => rfl)
+    hF1.2.2)).stepCoversInv
+
 /-- WS-ZA ZA5.4 part 23: **a notification waiter's cancel covers**: the
 cancellation (`cancelIpcBlocking_stepCovers`), then the wake. -/
 theorem notificationWaiterCancel_stepCovers (e : CoreId) (st : SystemState)
@@ -224,9 +359,14 @@ theorem notificationWaiterCancel_stepCovers (e : CoreId) (st : SystemState)
       (Lifecycle.Suspend.cancelIpcBlocking_preserves_objects_invExt st t tcb hInv),
      enqueueRunnableOnCore_monotone e _ _ t⟩
 
-/-- WS-ZA ZA5.4 part 23: **the finalisation covers**, every step of it
-(`finaliseFinalObject_closed`): each cancel's, and the unbind's
-(`unbindNotification_keyFrame`, through `unbindNotification_of_inPlace`). -/
+/-- WS-ZA ZA5.4 parts 23–24: **the finalisation covers**, every step of it
+(`finaliseFinalObject_closed`): each cancel's, the notification unbind's
+(`unbindNotification_keyFrame`, through `unbindNotification_of_inPlace`), the
+reservation unbind's (`cancelBoundDonationOnCore_stepCovers`), the suspend — the
+deschedule wherever the thread is placed (`descheduleAtPlacement_stepCovers`),
+then a mark that writes no key field (`updateTcb_keyFrame`) — and the release
+of the cores' holds on the thread, which writes no object and no scheduler
+field. -/
 theorem finaliseFinalObject_stepCovers (e : CoreId) (target : Nat) (st : SystemState)
     (hInv : st.objects.invExt) :
     stepCovers e st (finaliseFinalObject target st) ∧ (finaliseFinalObject target st).objects.invExt :=
@@ -245,6 +385,23 @@ theorem finaliseFinalObject_stepCovers (e : CoreId) (target : Nat) (st : SystemS
       have hSpec := unbindNotification_of_inPlace s t hIn
       rw [hCode, Nat.add_sub_cancel] at hSpec
       exact stepCoversInv_trans h.1 (unbindNotification_keyFrame _ _ _ h.2 hSpec).stepCoversInv)
+    (fun s _ t tcb _ h _ hS hO _ _ _ _ _ hOk => by
+      rw [cancelDonationArmOnCore_of_codes s t hS hO] at hOk
+      exact stepCoversInv_trans h.1 (cancelBoundDonationOnCore_stepCovers e h.2 hOk))
+    (fun s _ t tcb _ h _ _ _ _ =>
+      ⟨stepCovers_trans h.1 (cancelIpcBlocking_stepCovers e s t tcb h.2),
+        Lifecycle.Suspend.cancelIpcBlocking_preserves_objects_invExt s t tcb h.2⟩)
+    (fun s en q t ep tcb h hT hE hC =>
+      stepCoversInv_trans h.1 (storeEndpointBlockedCancelled_stepCovers e s en q t ep tcb h.2 hT hE hC))
+    (fun s t _ h _ _ _ _ _ =>
+      have d := descheduleAtPlacement_stepCovers e s t h.2
+      stepCoversInv_trans (stepCovers_trans h.1 d.1) (updateTcb_keyFrame _ t
+        (f := finalisedSuspendMark) (fun _ => rfl) d.2).stepCoversInv)
+    (fun s t h => by
+      have hO := finaliseThreadReleaseCores_objects s t
+      refine ⟨stepCovers_trans h.1 (stepCovers_of_scheduler_eq (keyInputsEq_of_objects_eq hO)
+        (finaliseThreadReleaseCores_scheduler s t)), ?_⟩
+      rw [hO]; exact h.2)
     target st ⟨stepCovers_refl e st, hInv⟩
 
 /-- WS-ZA ZA5.4 part 23: **the finalising delete covers**: the delete and the
@@ -259,7 +416,7 @@ theorem cspaceDeleteSlotFinalising_stepCovers (e ec : CoreId) (addr : CSpaceAddr
   have h2 := h1.trans (finaliseDestroyedCapabilities_keyFrame ec _ _ st1 st2 h1.2.2 hF)
   have h3 := finaliseFinalObject_stepCovers e (slotRetireTarget st addr.cnode addr.slot) st2 h2.2.2
   exact stepCoversInv_trans (stepCovers_trans h2.stepCovers h3.1)
-    (retireFinalObject_keyFrame ec _ _ _ h3.2).stepCoversInv
+    (retireFinalObject_stepCovers e ec _ _ _ h3.2)
 
 /-- WS-ZA ZA5.4 part 23: **the finalising revocation covers**, one finalising
 delete at a time. -/
@@ -323,7 +480,7 @@ theorem dispatchCapabilityOnly_stepCovers {decoded : SyscallDecodeResult} {cap :
         | exact (setThreadCpuAffinityOnCore_stepCovers _ _ _ _ _ _ hInv hU)
         | exact (setIPCBufferOp_keyFrame _ _ _ _ hInv hU).stepCoversInv
         | exact (setThreadFaultHandlerOp_keyFrame _ _ _ _ hInv hU).stepCoversInv
-        | exact (copyThreadSpaces_keyFrame _ _ _ _ _ _ hInv hU).stepCoversInv)
+        | exact copyThreadSpaces_stepCovers _ _ _ _ _ _ _ hInv hU)
   all_goals
     obtain ⟨_, _, _, _, _, _, _, _, _, hU⟩ := untypedRetypeFromCap_ok _ _ _ _ _ _ h
     exact untypedRetypeObject_stepCovers ec hInv hBi hPlaced hU

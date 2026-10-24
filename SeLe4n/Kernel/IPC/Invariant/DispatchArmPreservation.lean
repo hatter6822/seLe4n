@@ -3292,6 +3292,72 @@ structure retypeTargetDetached (st : SystemState) (target : SeLe4n.ObjId) : Prop
     st.objects[tid.toObjId]? = some (.tcb tcb) → tcb.pendingReceiveReply = some rid →
     rid.toObjId ≠ target
 
+/-- **The part of the detachment the bundle's erase-or-replace write reads.**
+A replace (the carve) and an erase (the final-delete retire) of the object at
+`target` keep `ipcInvariantFull` exactly when nothing the bundle reads names
+`target`: no thread blocked on it, no queue link, queue boundary, reply link or
+stash pointing at it, no thread's timeout or donation naming it as their
+scheduling context, and, when it holds a thread, that thread owns no pending
+reply and links to no successor.  The carve's `retypeTargetDetached` gives it
+(`retypeTargetDetached.toErased`); the retire builds it from its admission scans
+for a passive object, a thread and a scheduling context. -/
+structure erasedTargetDetached (st : SystemState) (target : SeLe4n.ObjId) : Prop where
+  scNotBudget : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId),
+    st.objects[tid.toObjId]? = some (.tcb tcb) → tcb.timeoutBudget = some scId →
+    scId.toObjId ≠ target
+  scNotDonated : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId)
+    (owner : SeLe4n.ThreadId), st.objects[tid.toObjId]? = some (.tcb tcb) →
+    tcb.schedContextBinding = .donated scId owner → scId.toObjId ≠ target
+  notOwner : ∀ t : TCB, st.objects[target]? = some (.tcb t) →
+    ∀ ep rt, t.ipcState ≠ .blockedOnReply ep rt
+  tcbNoNext : ∀ t : TCB, st.objects[target]? = some (.tcb t) → t.queueNext = none
+  blockedRefsAvoid : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB),
+    st.objects[tid.toObjId]? = some (.tcb tcb) →
+    tcb.ipcState ≠ .blockedOnSend target ∧ tcb.ipcState ≠ .blockedOnReceive target ∧
+    tcb.ipcState ≠ .blockedOnCall target
+  notQueueLinked : ∀ (a : SeLe4n.ThreadId) (tcbA : TCB) (b : SeLe4n.ThreadId),
+    st.objects[a.toObjId]? = some (.tcb tcbA) → tcbA.queueNext = some b → b.toObjId ≠ target
+  notPrevLinked : ∀ (b : SeLe4n.ThreadId) (tcbB : TCB) (a : SeLe4n.ThreadId),
+    st.objects[b.toObjId]? = some (.tcb tcbB) → tcbB.queuePrev = some a → a.toObjId ≠ target
+  notHead : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint) (hd : SeLe4n.ThreadId),
+    st.objects[epId]? = some (.endpoint ep) →
+    (ep.sendQ.head = some hd ∨ ep.receiveQ.head = some hd) → hd.toObjId ≠ target
+  notTail : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint) (tl : SeLe4n.ThreadId),
+    st.objects[epId]? = some (.endpoint ep) →
+    (ep.sendQ.tail = some tl ∨ ep.receiveQ.tail = some tl) → tl.toObjId ≠ target
+  noSelfLoops : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB),
+    st.objects[tid.toObjId]? = some (.tcb tcb) → tcb.queueNext ≠ some tid
+  notReplyLinked : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (rid : SeLe4n.ReplyId),
+    st.objects[tid.toObjId]? = some (.tcb tcb) → tcb.replyObject = some rid →
+    rid.toObjId ≠ target
+  notStashed : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (rid : SeLe4n.ReplyId),
+    st.objects[tid.toObjId]? = some (.tcb tcb) → tcb.pendingReceiveReply = some rid →
+    rid.toObjId ≠ target
+
+/-- The carve's detachment gives the erase-or-replace part: its two
+scheduling-context clauses follow from the target holding no scheduling context,
+since a thread's timeout and donation name live ones
+(`blockedThreadTimeoutConsistent`, `donationOwnerValid`). -/
+theorem retypeTargetDetached.toErased {st : SystemState} {target : SeLe4n.ObjId}
+    (h : retypeTargetDetached st target) (hInv : ipcInvariantFull st) :
+    erasedTargetDetached st target where
+  scNotBudget tid tcb scId hT hTB hEq := by
+    obtain ⟨⟨sc, hSc⟩, -⟩ := hInv.blockedThreadTimeoutConsistent tid tcb scId hT hTB
+    exact h.notSc sc (hEq ▸ hSc)
+  scNotDonated tid tcb scId owner hT hB hEq := by
+    obtain ⟨⟨sc, hSc, -⟩, -⟩ := hInv.donationOwnerValid tid tcb scId owner hT hB
+    exact h.notSc sc (hEq ▸ hSc)
+  notOwner := h.notOwner
+  tcbNoNext := h.tcbNoNext
+  blockedRefsAvoid := h.blockedRefsAvoid
+  notQueueLinked := h.notQueueLinked
+  notPrevLinked := h.notPrevLinked
+  notHead := h.notHead
+  notTail := h.notTail
+  noSelfLoops := h.noSelfLoops
+  notReplyLinked := h.notReplyLinked
+  notStashed := h.notStashed
+
 /-- At-target lookup of a post-state kind pins the replacement object, or is
 absurd where the write erased the target. -/
 private theorem retypeWrite_at_target {st' : SystemState} {target : SeLe4n.ObjId}
@@ -3400,7 +3466,7 @@ private theorem retypeWrite_blockedThreadTimeoutConsistent
     (hAt : st'.objects[target]? = some newObj ∨ st'.objects[target]? = none)
     (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]?)
     (hFresh : retypeReplacementFresh newObj)
-    (hDet : retypeTargetDetached st target)
+    (hDet : erasedTargetDetached st target)
     (hInv : blockedThreadTimeoutConsistent st) :
     blockedThreadTimeoutConsistent st' := by
   intro tid tcb scId hT hTB
@@ -3413,7 +3479,7 @@ private theorem retypeWrite_blockedThreadTimeoutConsistent
   · rw [hNe _ hK] at hT
     obtain ⟨⟨sc, hSc⟩, hBlk⟩ := hInv tid tcb scId hT hTB
     refine ⟨⟨sc, ?_⟩, hBlk⟩
-    have hneT : scId.toObjId ≠ target := fun hEq => hDet.notSc sc (hEq ▸ hSc)
+    have hneT : scId.toObjId ≠ target := hDet.scNotBudget tid tcb scId hT hTB
     rw [hNe _ hneT]
     exact hSc
 
@@ -3528,7 +3594,7 @@ private theorem retypeWrite_queueNextBlockingConsistent
     (hAt : st'.objects[target]? = some newObj ∨ st'.objects[target]? = none)
     (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]?)
     (hFresh : retypeReplacementFresh newObj)
-    (hDet : retypeTargetDetached st target)
+    (hDet : erasedTargetDetached st target)
     (hInv : queueNextBlockingConsistent st) :
     queueNextBlockingConsistent st' := by
   intro a b tcbA tcbB hA hB hN
@@ -3549,7 +3615,7 @@ private theorem retypeWrite_queueNextTargetBlocked
     (hAt : st'.objects[target]? = some newObj ∨ st'.objects[target]? = none)
     (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]?)
     (hFresh : retypeReplacementFresh newObj)
-    (hDet : retypeTargetDetached st target)
+    (hDet : erasedTargetDetached st target)
     (hInv : queueNextTargetBlocked st) :
     queueNextTargetBlocked st' := by
   intro a b tcbA tcbB hA hB hN
@@ -3570,7 +3636,7 @@ private theorem retypeWrite_queueHeadBlockedConsistent
     (hAt : st'.objects[target]? = some newObj ∨ st'.objects[target]? = none)
     (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]?)
     (hFresh : retypeReplacementFresh newObj)
-    (hDet : retypeTargetDetached st target)
+    (hDet : erasedTargetDetached st target)
     (hInv : queueHeadBlockedConsistent st) :
     queueHeadBlockedConsistent st' := by
   intro epId ep hd tcb hEp hT
@@ -3596,7 +3662,7 @@ private theorem retypeWrite_endpointQueueTailBlockedConsistent
     (hAt : st'.objects[target]? = some newObj ∨ st'.objects[target]? = none)
     (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]?)
     (hFresh : retypeReplacementFresh newObj)
-    (hDet : retypeTargetDetached st target)
+    (hDet : erasedTargetDetached st target)
     (hInv : endpointQueueTailBlockedConsistent st) :
     endpointQueueTailBlockedConsistent st' := by
   intro epId ep tl tcb hEp hT
@@ -3622,7 +3688,7 @@ private theorem retypeWrite_endpointQueueNoDup
     (hAt : st'.objects[target]? = some newObj ∨ st'.objects[target]? = none)
     (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]?)
     (hFresh : retypeReplacementFresh newObj)
-    (hDet : retypeTargetDetached st target)
+    (hDet : erasedTargetDetached st target)
     (hInv : endpointQueueNoDup st) :
     endpointQueueNoDup st' := by
   have hSelf : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB),
@@ -3653,7 +3719,7 @@ private theorem retypeWrite_donationOwnerValid
     (hAt : st'.objects[target]? = some newObj ∨ st'.objects[target]? = none)
     (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]?)
     (hFresh : retypeReplacementFresh newObj)
-    (hDet : retypeTargetDetached st target)
+    (hDet : erasedTargetDetached st target)
     (hInv : donationOwnerValid st) :
     donationOwnerValid st' := by
   intro tid tcb scId owner hT hB
@@ -3666,7 +3732,7 @@ private theorem retypeWrite_donationOwnerValid
   · rw [hNe _ hK] at hT
     obtain ⟨⟨sc, hSc, hBound⟩, ⟨ownerTcb, hOT, hOUnbound, hOBlocked⟩⟩ :=
       hInv tid tcb scId owner hT hB
-    have hneSc : scId.toObjId ≠ target := fun hEq => hDet.notSc sc (hEq ▸ hSc)
+    have hneSc : scId.toObjId ≠ target := hDet.scNotDonated tid tcb scId owner hT hB
     have hneOwner : owner.toObjId ≠ target := by
       intro hEq
       obtain ⟨epId, rt, hIpc⟩ := hOBlocked
@@ -3680,7 +3746,7 @@ private theorem retypeWrite_ipcStateQueueMembershipConsistent
     (hAt : st'.objects[target]? = some newObj ∨ st'.objects[target]? = none)
     (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]?)
     (hFresh : retypeReplacementFresh newObj)
-    (hDet : retypeTargetDetached st target)
+    (hDet : erasedTargetDetached st target)
     (hInv : ipcStateQueueMembershipConsistent st) :
     ipcStateQueueMembershipConsistent st' := by
   have hWitness : ∀ (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (ep : Endpoint),
@@ -3771,7 +3837,7 @@ private theorem retypeWrite_replyCallerLinkageReciprocal
     (hAt : st'.objects[target]? = some newObj ∨ st'.objects[target]? = none)
     (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]?)
     (hFresh : retypeReplacementFresh newObj)
-    (hDet : retypeTargetDetached st target)
+    (hDet : erasedTargetDetached st target)
     (hInv : replyCallerLinkageReciprocal st) :
     replyCallerLinkageReciprocal st' := by
   constructor
@@ -3805,7 +3871,7 @@ private theorem retypeWrite_pendingReceiveReplyWellFormed
     (hAt : st'.objects[target]? = some newObj ∨ st'.objects[target]? = none)
     (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]?)
     (hFresh : retypeReplacementFresh newObj)
-    (hDet : retypeTargetDetached st target)
+    (hDet : erasedTargetDetached st target)
     (hInv : pendingReceiveReplyWellFormed st) :
     pendingReceiveReplyWellFormed st' := by
   constructor
@@ -3869,7 +3935,7 @@ private theorem retypeWrite_dualQueueSystemInvariant
     (hAt : st'.objects[target]? = some newObj ∨ st'.objects[target]? = none)
     (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]?)
     (hFresh : retypeReplacementFresh newObj)
-    (hDet : retypeTargetDetached st target)
+    (hDet : erasedTargetDetached st target)
     (hInv : dualQueueSystemInvariant st) :
     dualQueueSystemInvariant st' := by
   obtain ⟨hEpWF, ⟨hFwd, hRev⟩, hAcyclic, hPPair, hHD⟩ := hInv
@@ -4003,7 +4069,7 @@ private theorem retypeOrEraseWrite_preserves_ipcInvariantFull
     (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]?)
     (hSched : st'.scheduler = st.scheduler)
     (hFresh : retypeReplacementFresh newObj)
-    (hDet : retypeTargetDetached st target)
+    (hDet : erasedTargetDetached st target)
     (hInv : ipcInvariantFull st) :
     ipcInvariantFull st' :=
   ⟨retypeWrite_ipcInvariant hAt hNe hFresh hInv.ipcInvariant,
@@ -4049,7 +4115,7 @@ theorem retypeWrite_preserves_ipcInvariantFull
     (hDet : retypeTargetDetached st target)
     (hInv : ipcInvariantFull st) :
     ipcInvariantFull st' :=
-  retypeOrEraseWrite_preserves_ipcInvariantFull (.inl hAt) hNe hSched hFresh hDet hInv
+  retypeOrEraseWrite_preserves_ipcInvariantFull (.inl hAt) hNe hSched hFresh (hDet.toErased hInv) hInv
 
 /-- **WS-ZA ZA5.4 part 14: a key that holds no object is detached from
 everything the bundle reads.**  Every reference the bundle constrains names a
@@ -4115,7 +4181,7 @@ theorem eraseWrite_preserves_ipcInvariantFull
     (hAt : st'.objects[target]? = none)
     (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]?)
     (hSched : st'.scheduler = st.scheduler)
-    (hDet : retypeTargetDetached st target)
+    (hDet : erasedTargetDetached st target)
     (hInv : ipcInvariantFull st) :
     ipcInvariantFull st' :=
   retypeOrEraseWrite_preserves_ipcInvariantFull (newObj := .reply (Reply.empty ⟨0⟩))
@@ -4126,18 +4192,21 @@ reads**: it is no thread and no scheduling context, so every clause about the
 object at the key is vacuous; queue links, boundaries and heads name threads,
 so none names it; and no thread names it by id (`storeNamesNone`), so none is
 blocked on it, linked to it as its reply, or holds it as its stashed reply. -/
-theorem retypeTargetDetached_of_unreferenced {st : SystemState} {x : SeLe4n.ObjId}
+theorem erasedTargetDetached_of_unreferenced {st : SystemState} {x : SeLe4n.ObjId}
     (hP : passiveKernelObject st.objects[x]?) (hS : storeNamesNone st x = true)
-    (hInv : ipcInvariantFull st) : retypeTargetDetached st x := by
+    (hInv : ipcInvariantFull st) : erasedTargetDetached st x := by
   have hNo : ∀ t : TCB, st.objects[x]? ≠ some (.tcb t) := fun t h => by rw [h] at hP; exact hP
   have hNe : ∀ (oid : SeLe4n.ObjId) (t : TCB), st.objects[oid]? = some (.tcb t) → oid ≠ x :=
     fun oid t h hEq => hNo t (hEq ▸ h)
-  refine ⟨fun sc h => by rw [h] at hP; exact hP, fun t h => absurd h (hNo _),
-    fun t h => absurd h (hNo _), fun t h => absurd h (hNo _), fun t h => absurd h (hNo _),
-    fun t h => absurd h (hNo _), fun t h => absurd h (hNo _), fun t h => absurd h (hNo _),
-    fun t h => absurd h (hNo _), fun t h => absurd h (hNo _), fun t h => absurd h (hNo _),
-    fun t h => absurd h (hNo _), fun t h => absurd h (hNo _), fun t h => absurd h (hNo _),
-    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  have hNoSc : ∀ (s : SeLe4n.SchedContextId) (sc : SchedContext),
+      st.objects[s.toObjId]? = some (.schedContext sc) → s.toObjId ≠ x :=
+    fun s sc h hEq => by rw [hEq] at h; rw [h] at hP; exact hP
+  refine ⟨fun tid tcb scId hT hTB => ?_, fun tid tcb scId owner hT hB => ?_,
+    fun t h => absurd h (hNo _), fun t h => absurd h (hNo _), ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · obtain ⟨⟨sc, hSc⟩, -⟩ := hInv.blockedThreadTimeoutConsistent tid tcb scId hT hTB
+    exact hNoSc _ _ hSc
+  · obtain ⟨⟨sc, hSc, -⟩, -⟩ := hInv.donationOwnerValid tid tcb scId owner hT hB
+    exact hNoSc _ _ hSc
   · intro tid tcb hT
     have h := (objectNamesById_tcb (storeNamesNone_spec hS hT)).1
     exact ⟨h.1, h.2.1, h.2.2.1⟩
@@ -4168,9 +4237,163 @@ theorem retypeTargetDetached_of_unreferenced {st : SystemState} {x : SeLe4n.ObjI
   · intro tid tcb rid hT hPR
     exact (objectNamesById_tcb (storeNamesNone_spec hS hT)).2.2.2 rid hPR
 
+/-- **A retirable thread is detached from everything the bundle reads**: it is
+no endpoint, reply or scheduling context, so no blocked thread, reply link,
+stash, timeout or donation names it (each names a live object of its own
+kind); it is ready and links to no successor (`threadQuiescent`); and no queue
+link or queue boundary names it (`storeNamesThreadNone`). -/
+theorem erasedTargetDetached_of_threadRetirable {st : SystemState} {x : SeLe4n.ObjId}
+    (h : threadRetirable st x = true) (hInv : ipcInvariantFull st) :
+    erasedTargetDetached st x := by
+  obtain ⟨t, hT, -, -, hQ, -, hS, -⟩ := threadRetirable_parts h
+  have hNoEp : ∀ ep : Endpoint, st.objects[x]? ≠ some (.endpoint ep) := fun ep h' => by
+    rw [hT] at h'; cases h'
+  have hNoR : ∀ r : Reply, st.objects[x]? ≠ some (.reply r) := fun r h' => by
+    rw [hT] at h'; cases h'
+  have hNoSc : ∀ sc : SchedContext, st.objects[x]? ≠ some (.schedContext sc) := fun sc h' => by
+    rw [hT] at h'; cases h'
+  have hVal : ∀ b : SeLe4n.ThreadId, b.toObjId = x → b.val = x.val :=
+    fun b hb => congrArg SeLe4n.ObjId.val hb
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · intro tid tcb scId hT' hTB hEq
+    obtain ⟨⟨sc, hSc⟩, -⟩ := hInv.blockedThreadTimeoutConsistent tid tcb scId hT' hTB
+    exact hNoSc sc (hEq ▸ hSc)
+  · intro tid tcb scId owner hT' hB hEq
+    obtain ⟨⟨sc, hSc, -⟩, -⟩ := hInv.donationOwnerValid tid tcb scId owner hT' hB
+    exact hNoSc sc (hEq ▸ hSc)
+  · intro t' hT' ep rt hIpc
+    rw [hT] at hT'; cases hT'
+    rw [threadQuiescent_ipcState hQ] at hIpc; cases hIpc
+  · intro t' hT'
+    rw [hT] at hT'; cases hT'
+    exact threadQuiescent_queueNext hQ
+  · intro tid tcb hT'
+    have hM := hInv.ipcStateQueueMembershipConsistent tid tcb hT'
+    refine ⟨fun hS' => ?_, fun hR => ?_, fun hC => ?_⟩
+    · rw [hS'] at hM; obtain ⟨ep, hEp, -⟩ := hM; exact hNoEp _ hEp
+    · rw [hR] at hM; obtain ⟨ep, hEp, -⟩ := hM; exact hNoEp _ hEp
+    · rw [hC] at hM; obtain ⟨ep, hEp, -⟩ := hM; exact hNoEp _ hEp
+  · intro a tcbA b hA hN hEq
+    have hc := threadOfOptCode_eq_some (n := tcbA.queueNextCode) hN
+    have hn := storeNamesThreadNone_spec hS hA
+    simp [objectNamesThread, hc, hVal b hEq] at hn
+  · intro b tcbB a hB hP hEq
+    have hc := threadOfOptCode_eq_some (n := tcbB.queuePrevCode) hP
+    have hn := storeNamesThreadNone_spec hS hB
+    simp [objectNamesThread, hc, hVal a hEq] at hn
+  · intro epId ep hd hEp hH hEq
+    have hn := storeNamesThreadNone_spec hS hEp
+    rcases hH with hH | hH
+    · have hc := threadOfOptCode_eq_some (n := ep.sendHeadCode) hH
+      simp [objectNamesThread, hc, hVal hd hEq] at hn
+    · have hc := threadOfOptCode_eq_some (n := ep.recvHeadCode) hH
+      simp [objectNamesThread, hc, hVal hd hEq] at hn
+  · intro epId ep tl hEp hTl hEq
+    have hn := storeNamesThreadNone_spec hS hEp
+    rcases hTl with hTl | hTl
+    · have hc := threadOfOptCode_eq_some (n := ep.sendTailCode) hTl
+      simp [objectNamesThread, hc, hVal tl hEq] at hn
+    · have hc := threadOfOptCode_eq_some (n := ep.recvTailCode) hTl
+      simp [objectNamesThread, hc, hVal tl hEq] at hn
+  · intro tid tcb hT'
+    exact tcbQueueChainAcyclic_no_self_loop hInv.dualQueueSystemInvariant.chainAcyclic tid tcb hT'
+  · intro tid tcb rid hT' hRO hEq
+    obtain ⟨r, hR, -⟩ := hInv.replyCallerLinkage.1.1 tid tcb rid hT' hRO
+    exact hNoR r (hEq ▸ hR)
+  · intro tid tcb rid hT' hP hEq
+    obtain ⟨-, r, hR, -⟩ := hInv.pendingReceiveReplyWellFormed.1 tid tcb rid
+      ((SystemState.getTcb?_eq_some_iff st tid tcb).mpr hT') hP
+    exact hNoR r (hEq ▸ (SystemState.getReply?_eq_some_iff st rid r).mp hR)
+
+/-- **A retirable scheduling context is detached from everything the bundle
+reads**: it is no thread, endpoint or reply, so every clause about a thread at
+the key is vacuous and no blocked thread, queue link, boundary, reply link or
+stash names it; and no thread's timeout or donation names it
+(`storeNamesSchedContextNone`). -/
+theorem erasedTargetDetached_of_schedContextRetirable {st : SystemState} {x : SeLe4n.ObjId}
+    (h : schedContextRetirable st x = true) (hInv : ipcInvariantFull st) :
+    erasedTargetDetached st x := by
+  obtain ⟨sc, hT, -, -, -, hS, -⟩ := schedContextRetirable_parts h
+  have hNoEp : ∀ ep : Endpoint, st.objects[x]? ≠ some (.endpoint ep) := fun ep h' => by
+    rw [hT] at h'; cases h'
+  have hNoR : ∀ r : Reply, st.objects[x]? ≠ some (.reply r) := fun r h' => by
+    rw [hT] at h'; cases h'
+  have hNo : ∀ t : TCB, st.objects[x]? ≠ some (.tcb t) := fun t h' => by
+    rw [hT] at h'; cases h'
+  have hNe : ∀ (oid : SeLe4n.ObjId) (t : TCB), st.objects[oid]? = some (.tcb t) → oid ≠ x :=
+    fun oid t h hEq => hNo t (hEq ▸ h)
+  have hVal : ∀ s : SeLe4n.SchedContextId, s.toObjId = x → s.val = x.val :=
+    fun s hs => congrArg SeLe4n.ObjId.val hs
+  refine ⟨?_, ?_, fun t h => absurd h (hNo _), fun t h => absurd h (hNo _),
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · intro tid tcb scId hT' hTB hEq
+    have hn := storeNamesSchedContextNone_spec hS hT'
+    simp [objectNamesSchedContext, hTB, hVal scId hEq] at hn
+  · intro tid tcb scId owner hT' hB hEq
+    have hc : tcb.scBindingScCode = scId.val + 1 := by
+      have := congrArg SeLe4n.Kernel.SchedContextBinding.scCode hB
+      rwa [SeLe4n.Kernel.SchedContextBinding.scCode_ofCodes] at this
+    have hn := storeNamesSchedContextNone_spec hS hT'
+    simp [objectNamesSchedContext, hc, hVal scId hEq] at hn
+  · intro tid tcb hT'
+    have hM := hInv.ipcStateQueueMembershipConsistent tid tcb hT'
+    refine ⟨fun hS' => ?_, fun hR => ?_, fun hC => ?_⟩
+    · rw [hS'] at hM; obtain ⟨ep, hEp, -⟩ := hM; exact hNoEp _ hEp
+    · rw [hR] at hM; obtain ⟨ep, hEp, -⟩ := hM; exact hNoEp _ hEp
+    · rw [hC] at hM; obtain ⟨ep, hEp, -⟩ := hM; exact hNoEp _ hEp
+  · intro a tcbA b hA hN
+    obtain ⟨tcbB, hB, -⟩ := hInv.dualQueueSystemInvariant.linkIntegrity.1 a tcbA hA b hN
+    exact hNe _ _ hB
+  · intro b tcbB a hB hPv
+    obtain ⟨tcbA, hA, -⟩ := hInv.dualQueueSystemInvariant.linkIntegrity.2 b tcbB hB a hPv
+    exact hNe _ _ hA
+  · intro epId ep hd hEp hH
+    have hW := hInv.dualQueueSystemInvariant.endpointsWellFormed epId ep hEp
+    unfold dualQueueEndpointWellFormed at hW
+    rw [hEp] at hW
+    rcases hH with hH | hH
+    · obtain ⟨tcb, hT', -⟩ := hW.1.2.1 hd hH; exact hNe _ _ hT'
+    · obtain ⟨tcb, hT', -⟩ := hW.2.2.1 hd hH; exact hNe _ _ hT'
+  · intro epId ep tl hEp hTl
+    have hW := hInv.dualQueueSystemInvariant.endpointsWellFormed epId ep hEp
+    unfold dualQueueEndpointWellFormed at hW
+    rw [hEp] at hW
+    rcases hTl with hTl | hTl
+    · obtain ⟨tcb, hT', -⟩ := hW.1.2.2 tl hTl; exact hNe _ _ hT'
+    · obtain ⟨tcb, hT', -⟩ := hW.2.2.2 tl hTl; exact hNe _ _ hT'
+  · intro tid tcb hT'
+    exact tcbQueueChainAcyclic_no_self_loop hInv.dualQueueSystemInvariant.chainAcyclic tid tcb hT'
+  · intro tid tcb rid hT' hRO hEq
+    obtain ⟨r, hR, -⟩ := hInv.replyCallerLinkage.1.1 tid tcb rid hT' hRO
+    exact hNoR r (hEq ▸ hR)
+  · intro tid tcb rid hT' hP hEq
+    obtain ⟨-, r, hR, -⟩ := hInv.pendingReceiveReplyWellFormed.1 tid tcb rid
+      ((SystemState.getTcb?_eq_some_iff st tid tcb).mpr hT') hP
+    exact hNoR r (hEq ▸ (SystemState.getReply?_eq_some_iff st rid r).mp hR)
+
+/-- **An admitted erase is detached**: the retire admits a passive object only
+unreferenced and a thread or scheduling context only retirable, and each gives
+the pack. -/
+theorem erasedTargetDetached_of_admitted {st : SystemState} {x : SeLe4n.ObjId}
+    (hAdm : finalRetireAdmitted st x = true) (hE : erasableKernelObject st.objects[x]?)
+    (hInv : ipcInvariantFull st) : erasedTargetDetached st x := by
+  by_cases hP : passiveKernelObject st.objects[x]?
+  · exact erasedTargetDetached_of_unreferenced hP
+      (passiveObjectRetirable_parts (finalRetireAdmitted.retirable hAdm hP)).2.1 hInv
+  · have hK : schedulingKindAt st x = true := by
+      rw [schedulingKindAt_iff]
+      unfold erasableKernelObject at hE; unfold passiveKernelObject at hP
+      unfold schedulingKernelObject
+      split at hE <;> simp_all
+    have hR := finalRetireAdmitted.schedulingRetirable hAdm hK
+    unfold schedulingObjectRetirable at hR
+    rcases Bool.or_eq_true_iff.mp hR with hR | hR
+    · exact erasedTargetDetached_of_threadRetirable hR hInv
+    · exact erasedTargetDetached_of_schedContextRetirable hR hInv
+
 /-- **The final-delete retire preserves the bundle**: the passive erase takes
 out an object nothing the bundle reads names (`eraseWrite_preserves_ipcInvariantFull`,
-`retypeTargetDetached_of_unreferenced`), and the recorded retire after it
+`erasedTargetDetached_of_admitted`), and the recorded retire after it
 touches only what a reset touches (`finalRetireWrite.resetTouched`) and frames
 the scheduler. -/
 theorem retireFinalObject_preserves_ipcInvariantFull (ec : Concurrency.CoreId)
@@ -4182,16 +4405,15 @@ theorem retireFinalObject_preserves_ipcInvariantFull (ec : Concurrency.CoreId)
   · rw [hE]; exact ⟨hInv, hObjInv⟩
   rw [hE]
   generalize SeLe4n.ObjId.ofNat (target - 1) = x at hAdm ⊢
-  obtain ⟨i0, room0, s0, -, -, -, ne0, -⟩ := retirePassiveObject_frame st x hObjInv hSz
-  have h0 : ipcInvariantFull (retirePassiveObject st x) := by
-    by_cases hP : passiveKernelObject st.objects[x]?
-    · have hR := passiveObjectRetirable_parts (finalRetireAdmitted.retirable hAdm hP)
-      exact eraseWrite_preserves_ipcInvariantFull (retirePassiveObject_self hP hObjInv) ne0 s0
-        (retypeTargetDetached_of_unreferenced hP hR.2.1 hInv) hInv
-    · rw [retirePassiveObject_of_not st x hP]; exact hInv
+  obtain ⟨i0, room0, s0, -, -, -, ne0, -⟩ := eraseRetiredObject_frame st x hObjInv hSz
+  have h0 : ipcInvariantFull (eraseRetiredObject st x) := by
+    by_cases hP : erasableKernelObject st.objects[x]?
+    · exact eraseWrite_preserves_ipcInvariantFull (eraseRetiredObject_self hP hObjInv) ne0 s0
+        (erasedTargetDetached_of_admitted hAdm hP hInv) hInv
+    · rw [eraseRetiredObject_of_not st x hP]; exact hInv
   obtain ⟨hExt, hSched, -, -, hW⟩ := retireRecordedObject_frame ec recorder x _ i0 room0
   exact ⟨ipcInvariantFull_of_resetTouchedWrite hSched
-    (hW.resetTouched (retirePassiveObject_not_passive st x hObjInv)) h0, hExt⟩
+    (hW.resetTouched (eraseRetiredObject_not_passive st x hObjInv)) h0, hExt⟩
 
 /-- The finalising delete keeps the object table well formed. -/
 theorem cspaceDeleteSlotFinalising_preserves_objects_invExt
@@ -4986,16 +5208,19 @@ theorem threadSlotSet_preserves_ipcInvariantFull (ec : Concurrency.CoreId) {st :
     (threadSlotCopied_tcb hObjInv hT slot srcCNode srcSlot rights).2
     (threadSlotCopied_preserves_ipcInvariantFull hObjInv hInv hT slot srcCNode srcSlot rights)
 
-/-- A slot set keeps the thread stored. -/
+/-- A slot set from a filled source keeps the thread stored: its slot then
+holds a capability, so the retire after the copy cannot take the thread. -/
 theorem threadSlotSet_getTcb? (ec : Concurrency.CoreId) {st : SystemState}
     {tid : SeLe4n.ThreadId} {t : TCB} (hObjInv : st.objects.invExt)
-    (hT : st.getTcb? tid = some t) (slot : SeLe4n.Slot) (srcCNode : SeLe4n.ObjId)
-    (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) :
+    (hT : st.getTcb? tid = some t) {slot : SeLe4n.Slot} (hs : slot.toNat < 2)
+    (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) {cap : Capability}
+    (hL : SystemState.lookupSlotCap st { cnode := srcCNode, slot := srcSlot } = some cap) :
     ((threadSlotSet ec st tid slot srcCNode srcSlot rights).getTcb? tid).isSome := by
-  obtain ⟨hT1, hI1⟩ := threadSlotCopied_tcb hObjInv hT slot srcCNode srcSlot rights
+  obtain ⟨-, hI1⟩ := threadSlotCopied_tcb hObjInv hT slot srcCNode srcSlot rights
+  obtain ⟨t1, hT1, hF⟩ := threadSlotCopied_slotFilled hObjInv hT hs rights hL
   unfold threadSlotSet
   dsimp only
-  rw [retireFinalObject_getTcb? _ _ _ _ hI1]; exact hT1
+  rw [retireFinalObject_getTcb?_of_slotCap _ _ _ _ hI1 hT1 hF]; rfl
 
 /-- **WS-BP BP7.1 (`v0.36.11`)**: a space change preserves the IPC bundle — each
 slot set does (`threadSlotSet_preserves_ipcInvariantFull`). -/
@@ -5004,10 +5229,12 @@ theorem copyThreadSpaces_preserves_ipcInvariantFull (ec : Concurrency.CoreId)
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
     (hStep : copyThreadSpaces ec st vtid cnSrc vrSrc = .ok st') :
     ipcInvariantFull st' := by
-  obtain ⟨tcb, hT, -, -, -, -, rfl⟩ := copyThreadSpaces_ok hStep
+  obtain ⟨tcb, hT, -, -, hCn, -, rfl⟩ := copyThreadSpaces_ok hStep
+  obtain ⟨cnCap, -, hCL, -⟩ := cspaceRootSourceAdmitted_spec hCn
   obtain ⟨t1, hT1'⟩ := Option.isSome_iff_exists.mp
-    (threadSlotSet_getTcb? ec hObjInv hT TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot
-      TCB.cspaceRootRights)
+    (threadSlotSet_getTcb? ec hObjInv hT (slot := TCB.cspaceRootSlot) (by decide)
+      cnSrc.cnode cnSrc.slot
+      TCB.cspaceRootRights hCL)
   obtain ⟨h1, hI1⟩ := threadSlotSet_preserves_ipcInvariantFull ec hObjInv hInv hT
     TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot TCB.cspaceRootRights
   exact (threadSlotSet_preserves_ipcInvariantFull ec hI1 h1 hT1' _ _ _ _).1
@@ -5056,7 +5283,7 @@ private theorem cancelIpcBlockingReclaimed_ready_id
 /-- Descheduling a `.ready` thread on one core preserves the bundle: objects
 are untouched, and `passiveServerIdle` closes over the removed thread because
 `.ready` is an allowed passive state. -/
-private theorem removeRunnableOnCore_preserves_ipcInvariantFull
+theorem removeRunnableOnCore_preserves_ipcInvariantFull
     (st : SystemState) (tid : SeLe4n.ThreadId) (c : CoreId)
     (hReady : ∀ tcbX : TCB, st.getTcb? tid = some tcbX → tcbX.ipcState = .ready)
     (hInv : ipcInvariantFull st) :
@@ -5140,12 +5367,13 @@ private theorem suspendRescheduleOnCore_preserves_ipcInvariantFull
 /-- The bound-donation cancel: SC clear, replenish drop, index drop, victim
 unbind — the §11 unbind-direction rewrite under a replenish-only scheduler
 change. -/
-private theorem cancelBoundDonationOnCore_preserves_ipcInvariantFull
+theorem cancelBoundDonationOnCore_preserves_ipcInvariantFull
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) (rqCore : CoreId)
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
     (hStored : st.objects[tid.toObjId]? = some (.tcb tcb))
     (hAllowed : passiveServerIdleAllowed tcb.ipcState)
-    (hBidir : schedContextBindingBidirectional st)
+    (hBack : ∀ scId, tcb.schedContextBinding = .bound scId → ∃ sc : SchedContext,
+      st.objects[scId.toObjId]? = some (.schedContext sc) ∧ sc.boundThread = some tid)
     (hStep : cancelBoundDonationOnCore st tid tcb rqCore = .ok st') :
     ipcInvariantFull st' := by
   unfold cancelBoundDonationOnCore at hStep
@@ -5155,8 +5383,7 @@ private theorem cancelBoundDonationOnCore_preserves_ipcInvariantFull
   | bound scId =>
       rw [hB] at hStep
       dsimp only [] at hStep
-      obtain ⟨sc, hScPre, hScBack⟩ := hBidir tid tcb scId hStored
-        (by rw [hB]; rfl)
+      obtain ⟨sc, hScPre, hScBack⟩ := hBack scId hB
       have hScLk : st.getSchedContext? scId = some sc :=
         (SystemState.getSchedContext?_eq_some_iff st scId sc).mpr hScPre
       rw [SystemState.updateSchedContext_eq_of_some hScLk] at hStep
@@ -5443,7 +5670,7 @@ private theorem suspendClearStore_preserves_ipcInvariantFull
 
 /-- WS-RR RR8.6: descheduling a `.ready` thread at a pre-resolved placement
 preserves the bundle — the one-core removal at `some c`, nothing at `none`. -/
-private theorem descheduleAt_preserves_ipcInvariantFull
+theorem descheduleAt_preserves_ipcInvariantFull
     (st : SystemState) (tid : SeLe4n.ThreadId) (placed : Option CoreId)
     (hReady : ∀ tcbX : TCB, st.getTcb? tid = some tcbX → tcbX.ipcState = .ready)
     (hInv : ipcInvariantFull st) :
@@ -5610,7 +5837,8 @@ theorem suspendThreadOnCore_preserves_ipcInvariantFull
                 dsimp only [] at hStep
                 have hInvD := cancelBoundDonationOnCore_preserves_ipcInvariantFull st stD
                   vtid.val tcb (determineTargetCore st vtid.val) hObjInv hInv hPre
-                  (Or.inl hReady) hBidir hDon
+                  (Or.inl hReady)
+                  (fun s hb => hBidir _ tcb s hPre (by rw [hb]; rfl)) hDon
                 have hObjInvD := cancelBoundDonationOnCore_preserves_objects_invExt st stD
                   vtid.val tcb (determineTargetCore st vtid.val) hObjInv
                   hDon

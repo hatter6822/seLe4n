@@ -294,11 +294,33 @@ IPC and unbinds a notification and cancels its waiters (`finaliseFinalObject`,
 `IPC/Operations/CancelAll.lean`), waking each cancelled waiter on its own core:
 a new transition that destroys a capability must retire through it, and
 `.cspaceDelete` / `.cspaceRevoke` are remote writers that declare a scheduler
-footprint.  A busy or referenced reply, TCB or scheduling context, and an
-untyped that still records a child, outlive their last capability until parts
-24–26.  The
-suspend of a thread blocked in IPC or holding a donated context is the one
-syscall arm left on the general path (ZA6.1).  ZA6 covers the other
+footprint.  Since part 24 (`v0.36.135`) it also finalises a thread (unbound
+from its notification, its endpoint or notification wait cancelled off the
+queue wherever it waits there, suspended — taken off
+whichever core queues or runs it, the executing core's own thread included —
+every core's FP/SIMD and resident hold on it released, and unbound from its
+scheduling context: `finaliseThread`) and a scheduling context (unbound from its
+thread: `finaliseSchedContext`) through `lifecyclePreRetypeCleanup`, which is
+proven the identity on the finalised object and compiled away; the delete and
+revoke footprint names every core's run and replenish queue, and the
+finalisation carries `RunQueueEntryStage`, not `RunQueueStage` (the suspend is
+not state-monotone).  A delete may therefore vacate any core's current slot,
+its own included: the syscall step's local successor choice and the
+reschedule interrupt the vacated core's flag raises take over, and a destroyed
+caller's return frame is written nowhere (`stageCallerReturnFor_destroyed`).
+**Standing constraint (the remote-core stall):** a committing entry that can
+take a thread off another core must run `Concurrency.stallChangedCores` against
+its committed current slots after its SGIs, as the syscall and cross-core
+suspend entries do, and every `restore_context` in `trap.S` passes
+`trap::user_exit_gate` (`build.rs` refuses one that does not); an exception
+handler clears the core's user flag (`remote_stall::note_kernel_entry`) before
+anything that can block.
+A thread that is reply-blocked, holds a reply link, stash or reply-waiter
+link, donates, or holds space-slot capabilities, a busy reply or scheduling
+context, and an untyped that still records a child, outlive their last
+capability until parts 25–26 (`docs/REGISTERED_DEBT.md`).  The suspend of a thread blocked in IPC or
+holding a donated context is the one syscall arm left on the general path
+(ZA6.1).  ZA6 covers the other
 entries and makes the rule standing.  Plan:
 [`docs/planning/ZERO_ALLOCATION_SYSCALL_PLAN.md`](../planning/ZERO_ALLOCATION_SYSCALL_PLAN.md)
 (phases ZA1–ZA6).
