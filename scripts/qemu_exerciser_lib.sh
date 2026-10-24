@@ -311,9 +311,16 @@ for driver in drivers:
             "untyped-retype-busy-notification": (11, 11),
             "untyped-retype-bound-notification": (11, 11),
             "untyped-retype-reply": (12, 12), "untyped-retype-cnode": (29, 29),
-            # WS-ZA ZA5.4 part 24: a thread's and a scheduling context's carve.
-            "untyped-retype-tcb": (11, 11), "untyped-retype-bound-tcb": (11, 11),
-            "untyped-retype-sched-context": (11, 11), "untyped-retype-sc-thread": (11, 11),
+            # WS-ZA ZA5.4 part 24: a thread's and a scheduling context's carve
+            # (same trace).  Past the store's 9, a thread adds its TCB cell and
+            # two 16-byte cells built with it (`CarveRequest.objectImpl`, 3)
+            # and the carve request and its decode (`carveRequestOf?`, 2): 14.
+            # A scheduling context adds its record (`SchedContext.empty`), its
+            # object cell and the request and decode (4): 13, and 14 on its
+            # first call, which also builds the capability's target record
+            # (`CapTarget.objectOver`).
+            "untyped-retype-tcb": (14, 14), "untyped-retype-bound-tcb": (14, 14),
+            "untyped-retype-sched-context": (14, 13), "untyped-retype-sc-thread": (14, 14),
             "vspace-unmap-first": (0, 0), "vspace-map-again": (0, 0),
             "vspace-unify-instruction": (4, 3),
             "vspace-map-copy": (7, 5), "frame-revoke": (0, 0),

@@ -98,6 +98,34 @@ def threadCurrentOnSomeCore (st : SystemState) (tid : SeLe4n.ThreadId) : Bool :=
   SeLe4n.Kernel.Concurrency.allCores.any (fun c =>
     st.scheduler.currentOnCore c == some tid)
 
+/-- Whether one of the cores `cs` runs `tid`, by structural recursion over the
+current-thread codes: the compiled current test, which builds no closure over
+the state and no `some tid`. -/
+def threadCurrentOnCores (st : SystemState) (tid : SeLe4n.ThreadId) :
+    List SeLe4n.Kernel.Concurrency.CoreId → Bool
+  | [] => false
+  | c :: cs => st.scheduler.currentCode.get c == tid.val + 1 || threadCurrentOnCores st tid cs
+
+theorem threadCurrentOnCores_eq_any (st : SystemState) (tid : SeLe4n.ThreadId)
+    (cs : List SeLe4n.Kernel.Concurrency.CoreId) :
+    threadCurrentOnCores st tid cs = cs.any fun c => st.scheduler.currentOnCore c == some tid := by
+  induction cs with
+  | nil => rfl
+  | cons c cs ih =>
+    simp only [threadCurrentOnCores, List.any_cons, ih, SchedulerState.currentOnCore]
+    congr 1
+    apply Bool.eq_iff_iff.mpr
+    simp only [beq_iff_eq, SeLe4n.ThreadId.ofOptCode_eq_some_iff]
+
+/-- The compiled current test (`threadCurrentOnCores`). -/
+@[inline] def threadCurrentOnSomeCoreImpl (st : SystemState) (tid : SeLe4n.ThreadId) : Bool :=
+  threadCurrentOnCores st tid SeLe4n.Kernel.Concurrency.allCores
+
+@[csimp] theorem threadCurrentOnSomeCore_eq_impl :
+    @threadCurrentOnSomeCore = @threadCurrentOnSomeCoreImpl := by
+  funext st tid
+  exact (threadCurrentOnCores_eq_any st tid _).symm
+
 /-- **WS-BP BP7.9: a thread some core still holds** — current there, or the
 owner of that core's FP/SIMD registers (`MachineState.fpOwnedOnSomeCore`).
 
@@ -617,6 +645,45 @@ def cancelBoundDonationOnCore (st : SystemState) (tid : SeLe4n.ThreadId)
     .ok (markKeyChangeFrom st
       (st2.updateTcb tid fun tcb' => { tcb' with scBindingScCode := 0, scBindingOwnerCode := 0 }) tid)
   | _ => .error .illegalState
+
+/-- **The `.bound` unbind's state, compiled in place.**  The thread's old key is
+read off its TCB as three parts before the first write, so neither the
+pre-state nor the TCB is held across the context, queue and TCB writes, and each
+is written in its slot; the key hook then takes the parts
+(`markKeyChangeParts`).  A thread with no TCB keeps the specification's
+spelling (`cancelBoundDonationOnCore_of_bound`). -/
+@[inline] def cancelBoundDonationPerform (st : SystemState) (tid : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (rqCore : SeLe4n.Kernel.Concurrency.CoreId) : SystemState :=
+  match st.getTcb? tid with
+  | some t0 =>
+    let p0 := t0.boostedPriority
+    let d0 := effectiveDeadline st t0
+    let dom0 := t0.domain
+    let st1 := st.updateSchedContext scId fun sc =>
+      { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }
+    let st2 := SchedContextOps.purgeReplenishmentOnCore st1 rqCore scId
+    markKeyChangeParts
+      (st2.updateTcb tid fun tcb' => { tcb' with scBindingScCode := 0, scBindingOwnerCode := 0 })
+      tid p0 d0 dom0
+  | none =>
+    let st1 : SystemState := st.updateSchedContext scId fun sc =>
+      { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }
+    let st2 := { st1 with scheduler := st1.scheduler.setReplenishQueueOnCore rqCore (ReplenishQueue.remove (st1.scheduler.replenishQueueOnCore rqCore) scId) }
+    markKeyChangeFrom st
+      (st2.updateTcb tid fun tcb' => { tcb' with scBindingScCode := 0, scBindingOwnerCode := 0 }) tid
+
+/-- **A `.bound` thread's unbind succeeds with the in-place state.** -/
+theorem cancelBoundDonationOnCore_of_bound (st : SystemState) (tid : SeLe4n.ThreadId)
+    (tcb : TCB) (rqCore : SeLe4n.Kernel.Concurrency.CoreId) (scId : SeLe4n.SchedContextId)
+    (h : tcb.schedContextBinding = .bound scId) :
+    cancelBoundDonationOnCore st tid tcb rqCore = .ok (cancelBoundDonationPerform st tid scId rqCore) := by
+  unfold cancelBoundDonationOnCore cancelBoundDonationPerform
+  rw [h]
+  cases hT : st.getTcb? tid with
+  | none => rfl
+  | some t0 =>
+    simp only [markKeyChangeFrom, hT, markKeyChangeFor_eq_parts, effectiveSchedParams_eq_parts]
+    rfl
 
 /-- **`v0.35.183` (register row 63): the unbind's object store, in two writes.**
 

@@ -1215,6 +1215,39 @@ theorem MachineState.fpOwnedOnSomeCore_eq_false_iff (ms : MachineState) (tid : T
   · intro h
     exact List.any_eq_false.mpr fun c _ => by simp [h c]
 
+/-- Whether one of the cores `cs` owns `tid`'s FP/SIMD state, by structural
+recursion: the compiled owner test, which builds no closure over `ms` and no
+`some tid` to compare against. -/
+def MachineState.fpOwnedOnCores (ms : MachineState) (tid : ThreadId) : List CoreId → Bool
+  | [] => false
+  | c :: cs =>
+    (match ms.fpOwnerOnCore c with
+     | some t => t.val == tid.val
+     | none => false) || ms.fpOwnedOnCores tid cs
+
+theorem MachineState.fpOwnedOnCores_eq_any (ms : MachineState) (tid : ThreadId)
+    (cs : List CoreId) : ms.fpOwnedOnCores tid cs = cs.any fun c => ms.fpOwnerOnCore c == some tid := by
+  induction cs with
+  | nil => rfl
+  | cons c cs ih =>
+    simp only [MachineState.fpOwnedOnCores, List.any_cons, ih]
+    congr 1
+    cases ms.fpOwnerOnCore c with
+    | none => rfl
+    | some t =>
+      apply Bool.eq_iff_iff.mpr
+      simp only [beq_iff_eq, Option.some.injEq]
+      exact ⟨fun h => by cases t; cases tid; simp_all, fun h => h ▸ rfl⟩
+
+/-- The compiled owner test (`fpOwnedOnCores`). -/
+@[inline] def MachineState.fpOwnedOnSomeCoreImpl (ms : MachineState) (tid : ThreadId) : Bool :=
+  ms.fpOwnedOnCores tid SeLe4n.Kernel.Concurrency.allCores
+
+@[csimp] theorem MachineState.fpOwnedOnSomeCore_eq_impl :
+    @MachineState.fpOwnedOnSomeCore = @MachineState.fpOwnedOnSomeCoreImpl := by
+  funext ms tid
+  exact (MachineState.fpOwnedOnCores_eq_any ms tid _).symm
+
 /-- **PR #904 review (`v0.36.41`)**: some core's registers still hold `tid`'s EL0
 context — the core resumed it and has not yet saved it back.  The residency
 sibling of `fpOwnedOnSomeCore`, and refused by the destroy path for the same
@@ -1234,6 +1267,32 @@ theorem MachineState.residentOnSomeCore_eq_false_iff (ms : MachineState) (tid : 
     simp [hc] at this
   · intro h
     exact List.any_eq_false.mpr fun c _ => by simp [h c]
+
+/-- Whether one of the cores `cs` holds `tid` as its resident, by structural
+recursion over the residency codes: the compiled residency test, which builds no
+closure and no `some tid`. -/
+def MachineState.residentOnCores (ms : MachineState) (tid : ThreadId) : List CoreId → Bool
+  | [] => false
+  | c :: cs => ms.residentCode.get c == tid.val + 1 || ms.residentOnCores tid cs
+
+theorem MachineState.residentOnCores_eq_any (ms : MachineState) (tid : ThreadId)
+    (cs : List CoreId) : ms.residentOnCores tid cs = cs.any fun c => ms.residentOnCore c == some tid := by
+  induction cs with
+  | nil => rfl
+  | cons c cs ih =>
+    simp only [MachineState.residentOnCores, List.any_cons, ih, MachineState.residentOnCore]
+    congr 1
+    apply Bool.eq_iff_iff.mpr
+    simp only [beq_iff_eq, ThreadId.ofOptCode_eq_some_iff]
+
+/-- The compiled residency test (`residentOnCores`). -/
+@[inline] def MachineState.residentOnSomeCoreImpl (ms : MachineState) (tid : ThreadId) : Bool :=
+  ms.residentOnCores tid SeLe4n.Kernel.Concurrency.allCores
+
+@[csimp] theorem MachineState.residentOnSomeCore_eq_impl :
+    @MachineState.residentOnSomeCore = @MachineState.residentOnSomeCoreImpl := by
+  funext ms tid
+  exact (MachineState.residentOnCores_eq_any ms tid _).symm
 
 /-- **WS-BP BP7.9**: an owner write touches nothing but the owner table. -/
 @[simp] theorem MachineState.setFpOwnerOnCore_coreRegs (ms : MachineState) (c : CoreId)

@@ -554,10 +554,19 @@ def replenishEntriesNameNone : List (SeLe4n.SchedContextId × Nat) → SeLe4n.Sc
   | [], _ => true
   | e :: rest, s => e.1 != s && replenishEntriesNameNone rest s
 
+/-- **No replenishment queue of the cores `cs` holds an entry for the context
+`s`**, by structural recursion over the cores: a `List.all` over a lambda that
+captures the state is a closure, which the compiler hoists to the head of every
+retire whatever the object's kind. -/
+def replenishQueuesOnNameNone (st : SystemState) (s : SeLe4n.SchedContextId) :
+    List SeLe4n.Kernel.Concurrency.CoreId → Bool
+  | [] => true
+  | c :: cs => replenishEntriesNameNone (st.scheduler.replenishQueueOnCore c).entries s &&
+      replenishQueuesOnNameNone st s cs
+
 /-- **No core's replenishment queue holds an entry for the context `s`.** -/
 @[inline] def replenishQueuesNameNone (st : SystemState) (s : SeLe4n.SchedContextId) : Bool :=
-  SeLe4n.Kernel.Concurrency.allCores.all fun c =>
-    replenishEntriesNameNone (st.scheduler.replenishQueueOnCore c).entries s
+  replenishQueuesOnNameNone st s SeLe4n.Kernel.Concurrency.allCores
 
 /-- **Whether a final delete retires the scheduling context at `x`**: bound to
 no thread, lent from none, heading no reply stack, named by no object

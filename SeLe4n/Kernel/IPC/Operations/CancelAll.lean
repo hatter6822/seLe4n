@@ -302,6 +302,15 @@ otherwise have work to do, which a thread being finalised may not leave it. -/
     | .schedContext sc => SeLe4n.ThreadId.optCode sc.donationOrigin != c
     | _ => true
 
+/-- A thread whose binding codes name a context and no owner is `.bound` to it
+(stated here, ahead of the compiled unbinds that read it). -/
+theorem schedContextBinding_of_codes' {tcb : TCB} (hS : tcb.scBindingScCode ≠ 0)
+    (hO : tcb.scBindingOwnerCode = 0) :
+    tcb.schedContextBinding = .bound ⟨tcb.scBindingScCode - 1⟩ := by
+  unfold TCB.schedContextBinding SchedContextBinding.ofCodes
+  obtain ⟨s, hs⟩ := Nat.exists_eq_succ_of_ne_zero hS
+  rw [hs, hO]; simp
+
 /-- **Whether a final delete may finalise the thread at `x`**, read on the
 pre-state before any write.  The thread is stored under its own id, is no
 reserved or idle thread and is held by no core (seL4 suspends a running thread
@@ -406,6 +415,38 @@ def finaliseThreadUnbindSchedContext (st : SystemState) (tid : SeLe4n.ThreadId) 
     else st
   | none => st
 
+/-- The compiled `finaliseThreadUnbindSchedContext`: the guard names a `.bound`
+binding, on which the reservation arm is the in-place unbind
+(`cancelBoundDonationPerform`), so no error branch holds the pre-state across
+its writes. -/
+@[inline] def finaliseThreadUnbindSchedContextImpl (st : SystemState) (tid : SeLe4n.ThreadId) :
+    SystemState :=
+  match st.getTcb? tid with
+  | some t =>
+    let scCode := t.scBindingScCode
+    if scCode != 0 && t.scBindingOwnerCode == 0 && t.runCoreCode == 0 &&
+        !threadHeldOnSomeCore st tid && ipcCodesIdleAllowed t.ipcObjectCode t.ipcStateCode &&
+        (match st.getSchedContext? ⟨scCode - 1⟩ with
+          | some sc => sc.boundThreadCode == tid.val + 1
+          | none => false) then
+      cancelBoundDonationPerform st tid ⟨scCode - 1⟩ (determineTargetCore st tid)
+    else st
+  | none => st
+
+@[csimp] theorem finaliseThreadUnbindSchedContext_eq_impl :
+    @finaliseThreadUnbindSchedContext = @finaliseThreadUnbindSchedContextImpl := by
+  funext st tid
+  unfold finaliseThreadUnbindSchedContext finaliseThreadUnbindSchedContextImpl
+  cases st.getTcb? tid with
+  | none => rfl
+  | some t =>
+    refine ite_congr rfl (fun hG => ?_) (fun _ => rfl)
+    simp only [Bool.and_eq_true, bne_iff_ne, ne_eq, beq_iff_eq] at hG
+    rw [cancelDonationArmOnCore_of_bound st tid t _
+      (schedContextBinding_of_codes' hG.1.1.1.1.1 hG.1.1.1.1.2),
+      cancelBoundDonationOnCore_of_bound st tid t _ _
+      (schedContextBinding_of_codes' hG.1.1.1.1.1 hG.1.1.1.1.2)]
+
 /-- **The destroy cleanup of a finalised thread** (`lifecyclePreRetypeCleanup`'s
 thread arm): run once the thread is retirable — quiescent, held by no core and
 named by no object — so its reference sweeps find nothing and only its two
@@ -418,22 +459,6 @@ def finaliseThreadCleanup (st : SystemState) (x : SeLe4n.ObjId) : SystemState :=
       | .ok st' => st'
       | .error _ => st
     | _ => st
-  else st
-
-/-- **seL4's `finaliseCap` on the final capability to a thread**, in seL4's
-order: unbound from its notification (`unbindNotification`) and from its
-scheduling context (`schedContext_unbindTCB`), then suspended (`suspend`: its
-blocked IPC cancelled, then `.Inactive`), then the destroy cleanup; all of it
-only when the pre-state admits it (`threadFinaliseAdmitted`), checks before
-writes. -/
-def finaliseThread (x : SeLe4n.ObjId) (st : SystemState) : SystemState :=
-  if threadFinaliseAdmitted st x then
-    let tid : SeLe4n.ThreadId := ⟨x.val⟩
-    finaliseThreadCleanup
-      (finaliseThreadSuspend
-        (finaliseThreadCancel
-          (finaliseThreadUnbindSchedContext
-            (finaliseThreadUnbindNotification st tid) tid) tid) tid) x
   else st
 
 /-- **Whether a final delete may finalise the scheduling context at `x`**: it
@@ -475,6 +500,50 @@ def finaliseSchedContextUnbind (st : SystemState) (x : SeLe4n.ObjId) : SystemSta
       | none => st
   | _ => st
 
+/-- The compiled `finaliseSchedContextUnbind`: the guard names a `.bound`
+binding to the context, so the reservation arm is the in-place unbind
+(`cancelBoundDonationPerform`). -/
+@[inline] def finaliseSchedContextUnbindImpl (st : SystemState) (x : SeLe4n.ObjId) :
+    SystemState :=
+  match st.getObject? x with
+  | some (.schedContext sc) =>
+    let bc := sc.boundThreadCode
+    if bc == 0 then st
+    else
+      let tid : SeLe4n.ThreadId := ⟨bc - 1⟩
+      match st.getTcb? tid with
+      | some t =>
+        if t.scBindingScCode == x.val + 1 && t.scBindingOwnerCode == 0 && t.runCoreCode == 0 &&
+            !threadHeldOnSomeCore st tid && ipcCodesIdleAllowed t.ipcObjectCode t.ipcStateCode then
+          cancelBoundDonationPerform st tid ⟨x.val⟩ (determineTargetCore st tid)
+        else st
+      | none => st
+  | _ => st
+
+@[csimp] theorem finaliseSchedContextUnbind_eq_impl :
+    @finaliseSchedContextUnbind = @finaliseSchedContextUnbindImpl := by
+  funext st x
+  unfold finaliseSchedContextUnbind finaliseSchedContextUnbindImpl
+  split
+  · next sc _ =>
+    simp only
+    split
+    · rfl
+    · cases st.getTcb? ⟨sc.boundThreadCode - 1⟩ with
+      | none => rfl
+      | some t =>
+        simp only
+        split
+        · next hG =>
+          simp only [Bool.and_eq_true, beq_iff_eq] at hG
+          have hB : t.schedContextBinding = .bound ⟨x.val⟩ := by
+            have h := schedContextBinding_of_codes' (by omega) hG.1.1.1.2
+            rw [h, hG.1.1.1.1]; rfl
+          rw [cancelDonationArmOnCore_of_bound st _ t _ hB,
+            cancelBoundDonationOnCore_of_bound st _ t _ _ hB]
+        · rfl
+  · rfl
+
 /-- **The destroy cleanup of a finalised scheduling context**
 (`lifecyclePreRetypeCleanup`'s scheduling-context arm), run once the context is
 bound to no thread and heads no reply stack, so its release finds no binding
@@ -488,14 +557,6 @@ def finaliseSchedContextCleanup (st : SystemState) (x : SeLe4n.ObjId) : SystemSt
       | .error _ => st
     else st
   | _ => st
-
-/-- **seL4's `finaliseCap` on the final capability to a scheduling context**:
-unbound from its thread, then the destroy cleanup, when the pre-state admits it
-(`schedContextFinaliseAdmitted`). -/
-def finaliseSchedContext (x : SeLe4n.ObjId) (st : SystemState) : SystemState :=
-  if schedContextFinaliseAdmitted st x then
-    finaliseSchedContextCleanup (finaliseSchedContextUnbind st x) x
-  else st
 
 -- ============================================================================
 -- §4a  What the destroy cleanup finds on a finalised object
@@ -699,6 +760,33 @@ so the store scans its guard and sweeps would make are not run
 @[csimp] theorem finaliseSchedContextCleanup_eq_impl :
     @finaliseSchedContextCleanup = @finaliseSchedContextCleanupImpl := by
   funext st x; exact finaliseSchedContextCleanup_eq st x
+
+-- The finalisations are defined after their cleanups' `@[csimp]` theorems, so
+-- their compiled code takes the compiled cleanups.
+
+/-- **seL4's `finaliseCap` on the final capability to a thread**, in seL4's
+order: unbound from its notification (`unbindNotification`) and from its
+scheduling context (`schedContext_unbindTCB`), then suspended (`suspend`: its
+blocked IPC cancelled, then `.Inactive`), then the destroy cleanup; all of it
+only when the pre-state admits it (`threadFinaliseAdmitted`), checks before
+writes. -/
+def finaliseThread (x : SeLe4n.ObjId) (st : SystemState) : SystemState :=
+  if threadFinaliseAdmitted st x then
+    let tid : SeLe4n.ThreadId := ⟨x.val⟩
+    finaliseThreadCleanup
+      (finaliseThreadSuspend
+        (finaliseThreadCancel
+          (finaliseThreadUnbindSchedContext
+            (finaliseThreadUnbindNotification st tid) tid) tid) tid) x
+  else st
+
+/-- **seL4's `finaliseCap` on the final capability to a scheduling context**:
+unbound from its thread, then the destroy cleanup, when the pre-state admits it
+(`schedContextFinaliseAdmitted`). -/
+def finaliseSchedContext (x : SeLe4n.ObjId) (st : SystemState) : SystemState :=
+  if schedContextFinaliseAdmitted st x then
+    finaliseSchedContextCleanup (finaliseSchedContextUnbind st x) x
+  else st
 
 /-- **The thread finalisation, with its cleanup read as what it is.** -/
 theorem finaliseThread_eq (x : SeLe4n.ObjId) (st : SystemState) :

@@ -5036,17 +5036,17 @@ each step by `storeEndpointWaiterCancelled_preserves_ipcInvariantFull`,
 — `notificationWaiterConsistent`, the reply-waiter links and the donation
 chain included (`finaliseFinalObject_preserves_ipcReachable`, over the step
 invariant `finaliseStepInvariant`) — run-queue coupling
-(`finaliseFinalObject_runQueueStage`), reschedule coverage
+(`finaliseFinalObject_runQueueEntryStage`, since `v0.36.135`), reschedule coverage
 (`finaliseFinalObject_stepCovers`), and teardown well-formedness and the
 capability bundle through its write frame (`finaliseFinalObject_frame`: it
-writes threads, endpoints and notifications only, each keeping its kind and
-slots).  It is invisible to an observer the object, each thread waiting on it
+writes threads, endpoints, notifications and, since `v0.36.135`, scheduling
+contexts only, each keeping its kind and slots).  It is invisible to an observer the object, each thread waiting on it
 and its bound thread are hidden from (`finaliseFinalObject_preserves_projection`).
 Because a cancelled waiter is woken on its own core, `.cspaceDelete` and
 `.cspaceRevoke` write remote cores: both are cross-core remote writers (the
 delete writing no core when its capability names nothing) and declare a
-scheduler footprint of every core's run lock
-(`schedLockSet_capabilityDestroyOnCore`), proven to cover their writes
+scheduler footprint of every core's run lock, and since `v0.36.135` every
+core's replenish lock (`schedLockSet_capabilityDestroyOnCore`), proven to cover their writes
 (`schedLockSet_cspaceDeleteSlotFinalising_coversWrites`,
 `schedLockSet_cspaceRevokeCdtFinalising_coversWrites`).  Both core sets
 over-approximate the cancelled waiters' home cores, and an endpoint that a
@@ -5063,6 +5063,41 @@ or bind that made each object busy (`receive-on-carved`, `wait-on-carved`,
 from constant fields, which the compiler holds as one shared static value, so
 the carve now gives it its own cells (`CarveRequest.object_eq_impl`, through
 `KernelObject.unshareFresh`), and each carve reads 11.
+
+**Thread and scheduling-context finalisation** (`v0.36.135`).  On the final
+capability to a thread, `finaliseFinalObject` runs `finaliseThread`, seL4's
+`finaliseCap` in its order: the thread is unbound from its notification
+(`unbindNotification`) and from the scheduling context it owns (`unbindFromSC`,
+the reservation arm `cancelDonationArmOnCore`), then suspended (`suspend`: a
+notification's head waiter leaves its queue as `cancelIpcBlocking` makes it
+leave, and is not woken, since it is being destroyed; then `.Inactive`), then
+the destroy cleanup `lifecyclePreRetypeCleanup` runs on it.  On the final
+capability to a scheduling context, `finaliseSchedContext` unbinds its thread
+(`schedContext_unbindAllTCBs`, the same reservation arm), then runs the cleanup.
+The whole admission is read on the pre-state before any write
+(`threadFinaliseAdmitted`, `schedContextFinaliseAdmitted`) and each step
+re-reads its guard.  A thread a core holds or runs is refused — the executing
+thread deleting its own last capability included, where seL4 suspends it and
+reschedules — as are a queued thread, the blocking states other than a
+notification's head waiter, a donated binding and occupied space slots; a
+scheduling context is refused with a reply stack, a loan or a busy thread.  A
+refused object is not finalised and the retire keeps it
+(`docs/REGISTERED_DEBT.md`).  On a finalised object the cleanup is proven to be
+the identity (`finaliseThreadCleanup_eq`, `finaliseSchedContextCleanup_eq`), so
+its compiled form is dropped (`@[csimp]`).  The finalisation keeps the IPC,
+reachable-state, reply-waiter, donation, run-queue (`RunQueueEntryStage`) and
+reschedule bundles over the new steps, and it is invisible to an observer the
+thread or context and every object it touches are hidden from
+(`finaliseThread_hidden`, `finaliseSchedContext_hidden`).  Because the
+reservation unbind purges the context's replenishment on its home core,
+`schedLockSet_capabilityDestroyOnCore` names every core's replenish lock as well
+(`schedLockSet_capabilityDestroyOnCore_coversWrites`).  The deletes allocate
+nothing (`inactive-tcb-delete`, `bound-tcb-delete`,
+`bound-sched-context-delete`, `unbound-tcb-delete` read 0): every step writes
+the objects' cells in place, the per-core held tests compile to structural
+recursions, and the scheduling-context unbind compiles to
+`cancelBoundDonationPerform`, which reads the thread's old key before its first
+write.  A thread's carve reads 14 and a scheduling context's 13.
 
 ### 8.6.1 Carve Refusal Order (`v0.36.125`)
 
