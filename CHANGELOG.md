@@ -55,11 +55,8 @@ This is part 24 of the seL4 untyped reset.
     (`dispatchVacatedCore`), and a core with nothing to run resumes its idle
     loop.  A destroyed caller's return frame is written nowhere
     (`stageCallerReturnFor_destroyed`, `Architecture/ContextRestore.lean`).
-    seL4 stalls a remote core synchronously (`remoteTCBStall`); here that core
-    may run the destroyed thread at EL0 until it takes its interrupt, and with
-    its resident and FP/SIMD records released its next entry saves nothing into
-    the id, so no thread later created there receives the destroyed thread's
-    registers.
+    A remote core is stalled synchronously, as seL4's `remoteTCBStall` does:
+    see **The remote-core stall** below.
   - `finaliseSchedContext` unbinds its bound thread through the same
     reservation arm (`finaliseSchedContextUnbind`), then runs the cleanup
     (`finaliseSchedContextCleanup`).
@@ -245,6 +242,44 @@ This is part 24 of the seL4 untyped reset.
   suite (§5n, two threads queued together, the first suspended by the
   syscall, then deleted: it keeps no run link and is retired, the other
   still queued) and the exerciser scenario above.
+- **The remote-core stall** (seL4's `remoteTCBStall`; coordinator review of
+  8d6b3c5, same PR).  Before it, a core whose current thread another core's
+  delete or suspend took away kept running that thread at EL0 until it took
+  the `.reschedule` interrupt, after the deleter had been told the thread was
+  gone.  Now the deleter does not return until that core has left the thread.
+  - *Lean.*  The syscall entry and the cross-core suspend entry return the
+    committed state's current-thread codes from their atomic step and, after
+    the commit and its SGIs, check every other core against them
+    (`Concurrency.stallChangedCores`, `stallChangedCores_eq`: one
+    `Platform.FFI.ffiStallIfChanged` per core but the executing one).  The
+    retire admits a thread only once no core's current slot names it
+    (`threadRetirable_currentNowhere`, `Capability/FinalRetire.lean`).
+  - *HAL* (`rust/sele4n-hal/src/remote_stall.rs`, `ffi_stall_if_changed`).  A
+    core is changed when the committed state runs on it something other than
+    what it last decided to run (its `PER_CPU_CURRENT_THREAD` record).  The
+    initiator, under the kernel-entry lock, sets the core's stall request and,
+    when the core is at EL0, sends it the `.reschedule` SGI and waits, bounded
+    (`STALL_WAIT_FUEL`, then a fail-closed halt), until the core's user flag
+    clears.  Both exception handlers clear it first, before anything that can
+    block (`note_kernel_entry`); `trap.S` passes every return through
+    `trap::user_exit_gate`, which sets it and refuses a return to EL0 while a
+    request stands, taking the reschedule first; the kernel-entry bracket
+    clears the request once the core's decision reads the committed state.
+    The request and the flag are a store-buffering pair (`SeqCst`), so either
+    the initiator waits or the gate refuses.  A target spinning on the
+    kernel-entry lock is not at user and is not waited on, so two cores taking
+    each other's threads cannot deadlock; nothing on the path allocates.
+  - *Checks.*  `build.rs`'s `scan_trap_s_user_exit_gate` holds every
+    `restore_context` in `trap.S` to the gate (tested by swapping the gate
+    call and its argument set-up); Tier 3 anchors hold both entries' stall
+    call after their SGIs, both handlers' entry mark and the bracket's clear.
+    Host tests cover each outcome and the store-buffering race; the QEMU
+    exercisers gain `remote-stall`, which drives the flags, the SGI and the
+    handlers between the boot core and each secondary (the poke ends a wait,
+    the gate refuses under a request, and on the Lean image the secondary's
+    next kernel entry meets it).  The exercisers cannot run a user thread on
+    a secondary, so the end-to-end case (a remote EL0 thread deleted) is the
+    protocol's composition, not a scenario.
 - **CI: the Lean aarch64 archive's QEMU gate failed on b3739de.**  The new
   `resume-carved-tcb` scenario was pinned at 0 and reads 3 at first call:
   the first resume of a carved thread enqueues a run-queue key and a
@@ -287,6 +322,17 @@ This is part 24 of the seL4 untyped reset.
     store's 9, the TCB and two cells built with it, the request and its
     decode), a scheduling context's 13, and 14 on its first call.
   - Every other pin is unchanged.
+- After the remote-core stall, the whole set passes again:
+  - `./scripts/test_full.sh --continue`, Tiers 0 to 3;
+  - `./scripts/test_lean_aarch64_archive.sh`, whose `all` exerciser run on
+    the HAL-only and the Lean image now includes `remote-stall`;
+  - `./scripts/test_qemu_heap_allocations_per_syscall.sh --lean-kernel`,
+    every pin unchanged (the stall allocates nothing);
+  - `./scripts/test_rust.sh` and `./scripts/test_aarch64_cross_build.sh`;
+  - `lake build SeLe4n SeLe4n.Platform.Staged` and the default target;
+  - `./scripts/check_changed_file_anchors.sh` (546 of 546).
+  - The new `build.rs` scan of `trap.S` was tested by putting the gate call
+    after a `restore_context`: the build failed.
 
 ## v0.36.134 — WS-ZA ZA5.4 part 23: a final delete cancels an endpoint's IPC and unbinds and cancels a notification
 

@@ -305,6 +305,19 @@ opaque ffiSendSgiToSelf : (intid : UInt8) → BaseIO Unit
 @[extern "ffi_send_sgi_to_all_but_self"]
 opaque ffiSendSgiToAllButSelf : (intid : UInt8) → BaseIO Unit
 
+/-- **The remote-core stall's check of one core** (seL4's `remoteTCBStall`).
+`committedCode` is the thread code (`0` none, `tid + 1`) the committed state
+runs on `core`.  When that is not what `core` last decided to run, the commit
+took a thread off it: `core` is asked to reschedule before it next returns to
+EL0 and, if it is at EL0 now, poked with the `.reschedule` SGI and waited on
+until it has entered the kernel.  The executing core is skipped; a core that
+never enters halts the system fail-closed.  Called after a commit, under the
+kernel-entry lock, by `Concurrency.stallChangedCores`.
+
+    Rust: `ffi_stall_if_changed` in `sele4n-hal/src/ffi.rs` -/
+@[extern "ffi_stall_if_changed"]
+opaque ffiStallIfChanged : (core : UInt64) → (committedCode : UInt64) → BaseIO Unit
+
 -- ============================================================================
 -- WS-SM SM7.A.3 — TLB-shootdown acknowledgment-flag FFI bindings
 -- ============================================================================

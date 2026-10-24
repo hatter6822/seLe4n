@@ -307,6 +307,13 @@ not state-monotone).  A delete may therefore vacate any core's current slot,
 its own included: the syscall step's local successor choice and the
 reschedule interrupt the vacated core's flag raises take over, and a destroyed
 caller's return frame is written nowhere (`stageCallerReturnFor_destroyed`).
+**Standing constraint (the remote-core stall):** a committing entry that can
+take a thread off another core must run `Concurrency.stallChangedCores` against
+its committed current slots after its SGIs, as the syscall and cross-core
+suspend entries do, and every `restore_context` in `trap.S` passes
+`trap::user_exit_gate` (`build.rs` refuses one that does not); an exception
+handler clears the core's user flag (`remote_stall::note_kernel_entry`) before
+anything that can block.
 A thread that is endpoint- or reply-blocked, donating or holding space-slot
 capabilities, a busy reply or scheduling context, and an untyped that still
 records a child, outlive their last capability until parts 25–26 and ZA6.1

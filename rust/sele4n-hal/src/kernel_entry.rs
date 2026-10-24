@@ -297,6 +297,9 @@ where
     F: FnOnce() -> R,
 {
     let _ticket = acquire_kernel_entry(core_id);
+    // The entry decides on the committed state, so a remote commit's stall
+    // request against this core is met by this decision.
+    crate::remote_stall::clear_stall_request(core_id);
     let out = f();
     release_kernel_entry();
     out
