@@ -331,6 +331,24 @@ theorem storeEndpointWaiterCancelled_stepCovers (e : CoreId) (st : SystemState)
     ⟨enqueueRunnableOnCore_covers e (determineTargetCore (s1.updateTcb t cancelledEndpointWaiterTcb) t)
       _ t hI2, enqueueRunnableOnCore_monotone e _ _ t⟩
 
+/-- WS-ZA ZA5.4 part 24: **a thread's endpoint cancel covers**: the removal
+(`endpointQueueRemoveDual_keyFrame`, through `queueRemove_inPlace`) and the
+thread's rewrite move no key input and no scheduler field. -/
+theorem storeEndpointBlockedCancelled_stepCovers (e : CoreId) (st : SystemState)
+    (en : SeLe4n.ObjId) (q : Bool) (t : SeLe4n.ThreadId) (ep : Endpoint) (tcb : TCB)
+    (hInv : st.objects.invExt) (hT : st.getTcb? t = some tcb) (hE : st.getEndpoint? en = some ep)
+    (hC : endpointBlockedCancellable st en q t ep tcb = true) :
+    stepCovers e st (storeEndpointBlockedCancelled st en q t ep tcb) ∧
+      (storeEndpointBlockedCancelled st en q t ep tcb).objects.invExt := by
+  obtain ⟨-, -, hG, -⟩ := endpointBlockedCancellable_parts hC
+  obtain ⟨hRem, -⟩ := queueRemove_inPlace st en q t ep tcb
+    ((SystemState.getEndpoint?_eq_some_iff st en ep).mp hE)
+    ((SystemState.getTcb?_eq_some_iff st t tcb).mp hT) hG
+  have hF1 := endpointQueueRemoveDual_keyFrame hInv hRem
+  unfold storeEndpointBlockedCancelled
+  exact (hF1.trans (updateTcb_keyFrame _ t (f := cancelledEndpointWaiterTcb) (fun _ => rfl)
+    hF1.2.2)).stepCoversInv
+
 /-- WS-ZA ZA5.4 part 23: **a notification waiter's cancel covers**: the
 cancellation (`cancelIpcBlocking_stepCovers`), then the wake. -/
 theorem notificationWaiterCancel_stepCovers (e : CoreId) (st : SystemState)
@@ -370,9 +388,11 @@ theorem finaliseFinalObject_stepCovers (e : CoreId) (target : Nat) (st : SystemS
     (fun s _ t tcb _ h _ hS hO _ _ _ _ _ hOk => by
       rw [cancelDonationArmOnCore_of_codes s t hS hO] at hOk
       exact stepCoversInv_trans h.1 (cancelBoundDonationOnCore_stepCovers e h.2 hOk))
-    (fun s _ t tcb _ h _ _ _ _ _ =>
+    (fun s _ t tcb _ h _ _ _ _ =>
       ⟨stepCovers_trans h.1 (cancelIpcBlocking_stepCovers e s t tcb h.2),
         Lifecycle.Suspend.cancelIpcBlocking_preserves_objects_invExt s t tcb h.2⟩)
+    (fun s en q t ep tcb h hT hE hC =>
+      stepCoversInv_trans h.1 (storeEndpointBlockedCancelled_stepCovers e s en q t ep tcb h.2 hT hE hC))
     (fun s t _ h _ _ _ _ _ =>
       have d := descheduleAtPlacement_stepCovers e s t h.2
       stepCoversInv_trans (stepCovers_trans h.1 d.1) (updateTcb_keyFrame _ t

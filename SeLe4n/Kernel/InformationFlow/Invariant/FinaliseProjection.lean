@@ -5,6 +5,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -- STATUS: staged for WS-ZA ZA5.4 part 23 — the finalisation's projection theorem, staged with the reachable-state surface it composes (`IPC.Invariant.CancelAllReachability`).
 import SeLe4n.Kernel.IPC.Invariant.CancelAllReachability
 import SeLe4n.Kernel.IPC.CrossCore.CancellationNI
+import SeLe4n.Kernel.IPC.CrossCore.NotificationSignalNI
 
 /-!
 # The finalisation is invisible when what it touches is hidden
@@ -17,8 +18,9 @@ is unchanged (`finaliseFinalObject_preserves_projection`), and so is the retire
 after it (`retireFinalisedObject_preserves_projection`).
 
 WS-ZA ZA5.4 part 24: a thread's finalisation (`finaliseThread`) writes the
-thread, its bound notification, its scheduling context, the notification it
-waits on and the waiter after it; a scheduling context's (`finaliseSchedContext`)
+thread, its bound notification, its scheduling context, the notification or
+endpoint it waits on and its neighbours in that queue; a scheduling context's
+(`finaliseSchedContext`)
 writes the context and its bound thread.  The replenish entry and the reschedule
 flags they write are outside the projection.  When the observer sees none of the
 objects (`threadFinaliseHidden`, `schedContextFinaliseHidden`), the projection is
@@ -80,6 +82,11 @@ theorem rewriteObject (s : SystemState) (x : SeLe4n.ObjId) (o : KernelObject)
     hiddenObjectsWrite ctx observer s (s.rewriteObject x o h) :=
   ⟨rfl, fun k hk => SystemState.rewriteObject_objects_ne _ _ _ _ _
     (fun e => by rw [← e, hX] at hk; cases hk) hInv⟩
+
+/-- Two hidden writes in sequence are one. -/
+theorem trans {a b c : SystemState} (h₁ : hiddenObjectsWrite ctx observer a b)
+    (h₂ : hiddenObjectsWrite ctx observer b c) : hiddenObjectsWrite ctx observer a c :=
+  ⟨h₂.1.trans (by rw [h₁.1]), fun k hk => (h₂.2 k hk).trans (h₁.2 k hk)⟩
 
 end hiddenObjectsWrite
 
@@ -381,7 +388,7 @@ theorem cancelBoundDonationOnCore_hidden (ctx : LabelingContext) (observer : IfO
 
 /-- **A finalised thread's notification unbind is invisible** when the thread
 and its notification are hidden; it keeps the thread's IPC state, its
-notification successor and its scheduling binding. -/
+notification and endpoint queue links and its scheduling binding. -/
 theorem finaliseThreadUnbindNotification_hidden (ctx : LabelingContext)
     (observer : IfObserver) {s : SystemState} {tid : SeLe4n.ThreadId} {t : TCB}
     (hInv : s.objects.invExt) (hT : s.getTcb? tid = some t)
@@ -392,7 +399,8 @@ theorem finaliseThreadUnbindNotification_hidden (ctx : LabelingContext)
         projectState ctx observer s ∧
       (finaliseThreadUnbindNotification s tid).objects.invExt ∧
       ∃ t', (finaliseThreadUnbindNotification s tid).getTcb? tid = some t' ∧
-        t'.ipcState = t.ipcState ∧ t'.ntfnNext = t.ntfnNext ∧
+        t'.ipcState = t.ipcState ∧ t'.ntfnPrev = t.ntfnPrev ∧ t'.ntfnNext = t.ntfnNext ∧
+        t'.queuePPrev = t.queuePPrev ∧ t'.queueNext = t.queueNext ∧
         t'.scBindingScCode = t.scBindingScCode ∧
         t'.scBindingOwnerCode = t.scBindingOwnerCode := by
   have hTo := (SystemState.getTcb?_eq_some_iff s tid t).mp hT
@@ -402,7 +410,7 @@ theorem finaliseThreadUnbindNotification_hidden (ctx : LabelingContext)
   dsimp only
   rw [hc]
   split
-  · exact ⟨rfl, hInv, t, hT, rfl, rfl, rfl, rfl⟩
+  · exact ⟨rfl, hInv, t, hT, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
   next h0 =>
   split
   · next n hN =>
@@ -414,15 +422,15 @@ theorem finaliseThreadUnbindNotification_hidden (ctx : LabelingContext)
       have hI1 := SystemState.updateTcb_preserves_objects_invExt s tid
         (fun y => { y with boundNotificationCode := 0 }) hInv
       refine ⟨hP, modifyObject_preserves_objects_invExt hI1,
-        { t with boundNotificationCode := 0 }, ?_, rfl, rfl, rfl, rfl⟩
+        { t with boundNotificationCode := 0 }, ?_, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
       have hNe : (⟨t.boundNotificationCode - 1⟩ : SeLe4n.ObjId) ≠ tid.toObjId := by
         intro e; rw [e, hTo] at hNo; cases hNo
       refine (SystemState.getTcb?_eq_some_iff _ _ _).mpr ?_
       unfold storeUnbindNotification
       rw [modifyObject_objects_getElem hI1, if_neg hNe]
       exact updateTcb_objects_self_of_tcb _ hInv hTo
-    · exact ⟨rfl, hInv, t, hT, rfl, rfl, rfl, rfl⟩
-  · exact ⟨rfl, hInv, t, hT, rfl, rfl, rfl, rfl⟩
+    · exact ⟨rfl, hInv, t, hT, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+  · exact ⟨rfl, hInv, t, hT, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 /-- **A finalised thread's reservation unbind is invisible** when the thread and
 its scheduling context are hidden; it keeps the thread's IPC state and its
@@ -457,16 +465,121 @@ theorem finaliseThreadUnbindSchedContext_hidden (ctx : LabelingContext)
       exact ⟨hP, hI, tx, (SystemState.getTcb?_eq_some_iff _ _ _).mpr hx, hk.1, hk.2.2.1⟩
     · exact ⟨rfl, hInv, t, hT, rfl, rfl⟩
 
+/-- **Relinking a leaving waiter's notification neighbours is invisible** when
+the neighbours are hidden: it rewrites each of them in its slot. -/
+theorem unlinkNtfnNeighbours_hidden (ctx : LabelingContext) (observer : IfObserver)
+    (s : SystemState) (prev next : Option SeLe4n.ThreadId) (hInv : s.objects.invExt)
+    (hP : ∀ p, prev = some p → objectObservable ctx observer p.toObjId = false)
+    (hN : ∀ b, next = some b → objectObservable ctx observer b.toObjId = false) :
+    hiddenObjectsWrite ctx observer s (unlinkNtfnNeighbours s prev next) ∧
+      (unlinkNtfnNeighbours s prev next).objects.invExt := by
+  have hStep : ∀ (s : SystemState) (u : SeLe4n.ThreadId) (f : TCB → TCB), s.objects.invExt →
+      objectObservable ctx observer u.toObjId = false →
+      hiddenObjectsWrite ctx observer s (s.updateTcb u f) ∧ (s.updateTcb u f).objects.invExt :=
+    fun s u f hi hu => ⟨hiddenObjectsWrite.updateTcb s u f hi hu,
+      SystemState.updateTcb_preserves_objects_invExt s u f hi⟩
+  unfold unlinkNtfnNeighbours
+  cases prev with
+  | none =>
+    cases next with
+    | none => exact ⟨⟨rfl, fun _ _ => rfl⟩, hInv⟩
+    | some b => exact hStep s b _ hInv (hN b rfl)
+  | some p =>
+    obtain ⟨h1, i1⟩ := hStep s p (fun t => { t with
+      ntfnNextCode := SeLe4n.ThreadId.optCode next }) hInv (hP p rfl)
+    cases next with
+    | none => exact ⟨h1, i1⟩
+    | some b =>
+      obtain ⟨h2, i2⟩ := hStep _ b (fun t => { t with
+        ntfnPrevCode := SeLe4n.ThreadId.optCode (some p) }) i1 (hN b rfl)
+      exact ⟨h1.trans h2, i2⟩
+
+/-- **A notification waiter's in-place cancel is invisible** when the
+notification, the waiter and its neighbours are hidden: it rewrites the
+notification, clears the waiter's links, relinks the neighbours and restores the
+waiter, each in its slot. -/
+theorem storeNotificationBlockedCancelled_hidden (ctx : LabelingContext)
+    (observer : IfObserver) (s : SystemState) (x : SeLe4n.ObjId) (t : SeLe4n.ThreadId)
+    (isHead : Bool) (prev next : Option SeLe4n.ThreadId) (hInv : s.objects.invExt)
+    (hX : objectObservable ctx observer x = false)
+    (hT : objectObservable ctx observer t.toObjId = false)
+    (hP : ∀ p, prev = some p → objectObservable ctx observer p.toObjId = false)
+    (hN : ∀ b, next = some b → objectObservable ctx observer b.toObjId = false) :
+    projectState ctx observer (storeNotificationBlockedCancelled s x t isHead prev next) =
+        projectState ctx observer s ∧
+      (storeNotificationBlockedCancelled s x t isHead prev next).objects.invExt := by
+  have h1 := hiddenObjectsWrite.modifyObject (ctx := ctx) (observer := observer) s x
+    (cancelledNotificationObject isHead prev next) hInv hX
+  have i1 : (s.modifyObject x (cancelledNotificationObject isHead prev next)).objects.invExt :=
+    modifyObject_preserves_objects_invExt hInv
+  have h2 : hiddenObjectsWrite ctx observer _
+      (clearNtfnLinks (s.modifyObject x (cancelledNotificationObject isHead prev next)) t) :=
+    hiddenObjectsWrite.updateTcb _ t _ i1 hT
+  have i2 : (clearNtfnLinks (s.modifyObject x (cancelledNotificationObject isHead prev next))
+      t).objects.invExt := SystemState.updateTcb_preserves_objects_invExt _ t _ i1
+  obtain ⟨h3, i3⟩ := unlinkNtfnNeighbours_hidden ctx observer _ (if isHead then none else prev)
+    next i2 (fun p hp => by cases isHead <;> simp at hp; exact hP p hp) hN
+  unfold storeNotificationBlockedCancelled Lifecycle.Suspend.restoreToReadyCancelled
+    Lifecycle.Suspend.restoreToReadyStaging
+  exact ⟨((h1.trans h2).trans (h3.trans (hiddenObjectsWrite.updateTcb _ t _ i3 hT))).projection,
+    SystemState.updateTcb_preserves_objects_invExt _ t _ i3⟩
+
+/-- **An endpoint-blocked thread's in-place cancel is invisible** when the
+endpoint, the thread and its queue neighbours are hidden: the removal is the
+specification's (`queueRemove_inPlace`), whose splice writes only those
+(`endpointQueueRemoveDual_preserves_projection_and_invExt`), and the IPC end
+rewrites the thread. -/
+theorem storeEndpointBlockedCancelled_hidden (ctx : LabelingContext) (observer : IfObserver)
+    (s : SystemState) (e : SeLe4n.ObjId) (q : Bool) (t : SeLe4n.ThreadId) (ep : Endpoint)
+    (tcb : TCB) (hInv : s.objects.invExt) (hE : s.getEndpoint? e = some ep)
+    (hT : s.getTcb? t = some tcb) (hC : endpointBlockedCancellable s e q t ep tcb = true)
+    (hX : objectObservable ctx observer e = false)
+    (hTh : objectObservable ctx observer t.toObjId = false)
+    (hP : ∀ p, tcb.queuePPrev = some (.tcbNext p) → objectObservable ctx observer p.toObjId = false)
+    (hN : ∀ b, tcb.queueNext = some b → objectObservable ctx observer b.toObjId = false) :
+    projectState ctx observer (storeEndpointBlockedCancelled s e q t ep tcb) =
+        projectState ctx observer s ∧
+      (storeEndpointBlockedCancelled s e q t ep tcb).objects.invExt := by
+  obtain ⟨-, -, hG, -⟩ := endpointBlockedCancellable_parts hC
+  have hTo := (SystemState.getTcb?_eq_some_iff s t tcb).mp hT
+  obtain ⟨hRm, -⟩ := queueRemove_inPlace s e q t ep tcb
+    ((SystemState.getEndpoint?_eq_some_iff s e ep).mp hE) hTo hG
+  have hHigh : endpointSpliceHigh ctx observer s e t := ⟨hX, hTh, fun y hy => by
+    have hy' := (lookupTcb_some_objects s t y hy).symm.trans hTo
+    cases hy'
+    exact ⟨hP, hN⟩⟩
+  obtain ⟨hP1, hI1⟩ := endpointQueueRemoveDual_preserves_projection_and_invExt ctx observer s _
+    e q t hHigh hInv hRm
+  unfold storeEndpointBlockedCancelled
+  exact ⟨(hiddenObjectsWrite.updateTcb _ t _ hI1 hTh).projection.trans hP1,
+    SystemState.updateTcb_preserves_objects_invExt _ t _ hI1⟩
+
 /-- **A finalised thread's IPC cancel is invisible** when the thread, the
-notification it waits on and the waiter after it are hidden. -/
+object it is blocked on and its queue neighbours are hidden. -/
 theorem finaliseThreadCancel_hidden (ctx : LabelingContext) (observer : IfObserver)
     {s : SystemState} {tid : SeLe4n.ThreadId} {t : TCB}
     (hInv : s.objects.invExt) (hT : s.getTcb? tid = some t)
     (hTh : objectObservable ctx observer tid.toObjId = false)
-    (hN : ∀ n, t.ipcState = .blockedOnNotification n → objectObservable ctx observer n = false)
-    (hNx : ∀ b, t.ntfnNext = some b → objectObservable ctx observer b.toObjId = false) :
+    (hW : ∀ x, waitsOn x t.ipcState → objectObservable ctx observer x = false)
+    (hNp : ∀ b, t.ntfnPrev = some b → objectObservable ctx observer b.toObjId = false)
+    (hNx : ∀ b, t.ntfnNext = some b → objectObservable ctx observer b.toObjId = false)
+    (hQp : ∀ p, t.queuePPrev = some (.tcbNext p) → objectObservable ctx observer p.toObjId = false)
+    (hQn : ∀ b, t.queueNext = some b → objectObservable ctx observer b.toObjId = false) :
     projectState ctx observer (finaliseThreadCancel s tid) = projectState ctx observer s ∧
       (finaliseThreadCancel s tid).objects.invExt := by
+  have hEnd : ∀ e q, objectObservable ctx observer e = false →
+      projectState ctx observer (cancelEndpointBlocked s e q tid t) = projectState ctx observer s ∧
+        (cancelEndpointBlocked s e q tid t).objects.invExt := by
+    intro e q hX
+    unfold cancelEndpointBlocked
+    split
+    · next ep hE =>
+      split
+      · next hC =>
+        exact storeEndpointBlockedCancelled_hidden ctx observer s e q tid ep t hInv hE hT
+          hC hX hTh hQp hQn
+      · exact ⟨rfl, hInv⟩
+    · exact ⟨rfl, hInv⟩
   unfold finaliseThreadCancel
   rw [hT]; dsimp only
   split
@@ -474,48 +587,67 @@ theorem finaliseThreadCancel_hidden (ctx : LabelingContext) (observer : IfObserv
     split
     · next ntfn hNt =>
       split
-      · next hC =>
-        simp only [Bool.and_eq_true, beq_iff_eq] at hC
-        exact ⟨cancelIpcBlocking_notificationHead_hidden ctx observer hInv hNt hC.1 hT hB
-            (hN n hB) hTh hNx,
-          Lifecycle.Suspend.cancelIpcBlocking_preserves_objects_invExt s tid t hInv⟩
+      · rw [cancelIpcBlocking_notification_inPlace hNt hT hB]
+        exact storeNotificationBlockedCancelled_hidden ctx observer s n tid _ _ _ hInv
+          (hW n (by simp [waitsOn, hB])) hTh hNp hNx
       · exact ⟨rfl, hInv⟩
     · exact ⟨rfl, hInv⟩
+  · next e hB => exact hEnd e true (hW e (by simp [waitsOn, hB]))
+  · next e hB => exact hEnd e false (hW e (by simp [waitsOn, hB]))
+  · next e hB => exact hEnd e false (hW e (by simp [waitsOn, hB]))
   · exact ⟨rfl, hInv⟩
 
-/-- **A finalised thread's notification cancel keeps its scheduling binding**:
-the cancel detaches the queue head, rewriting its notification links, and
-restores it to ready. -/
+/-- **A finalised thread's IPC cancel keeps its scheduling binding**: the
+notification cancel rewrites notification links and restores the thread
+(`removeFromNotificationWaitQueue_reach`); the endpoint cancel takes the thread
+off its queue (`QueueRemoveFrame.removed_tcb`) and ends its IPC. -/
 theorem finaliseThreadCancel_scBinding {s : SystemState} {tid : SeLe4n.ThreadId} {t : TCB}
     (hInv : s.objects.invExt) (hT : s.getTcb? tid = some t) :
     ∃ t', (finaliseThreadCancel s tid).getTcb? tid = some t' ∧
       t'.scBindingScCode = t.scBindingScCode := by
   have hTo := (SystemState.getTcb?_eq_some_iff s tid t).mp hT
+  have hEnd : ∀ e q, ∃ t', (cancelEndpointBlocked s e q tid t).getTcb? tid = some t' ∧
+      t'.scBindingScCode = t.scBindingScCode := by
+    intro e q
+    unfold cancelEndpointBlocked
+    split
+    · next ep hE =>
+      split
+      · next hC =>
+        obtain ⟨-, -, hG, -⟩ := endpointBlockedCancellable_parts hC
+        obtain ⟨hRm, hFr⟩ := queueRemove_inPlace s e q tid ep t
+          ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hE) hTo hG
+        have hI1 := endpointQueueRemoveDual_preserves_objects_invExt s _ e q tid hInv hRm
+        unfold storeEndpointBlockedCancelled
+        rw [SystemState.updateTcb_getTcb?_self _ _ _ hI1, hFr.removed_tcb]
+        exact ⟨_, rfl, rfl⟩
+      · exact ⟨t, hT, rfl⟩
+    · exact ⟨t, hT, rfl⟩
   unfold finaliseThreadCancel
   rw [hT]; dsimp only
   split
   · next n hB =>
     split
-    · next ntfn hNt =>
-      split
-      · next hC =>
-        simp only [Bool.and_eq_true, beq_iff_eq] at hC
-        obtain ⟨st1, n', -, hn', hI1, hOff, -, -, hEq⟩ :=
-          cancelIpcBlocking_notificationHead_eq hNt hC.1 hT hB hInv
-        have hNo := (SystemState.getNotification?_eq_some_iff s n ntfn).mp hNt
-        have hNe : n ≠ tid.toObjId := by
-          intro e; rw [e, hTo] at hNo; cases hNo
-        have h1 : st1.objects[tid.toObjId]? = some (.tcb t) := (hOff _ hNe).trans hTo
-        have hL := detachNtfnHead_linksRewritten st1 tid t.ntfnNext hI1
-        rw [hEq, SystemState.updateTcb_getTcb?_self _ _ _ hL.2.1]
-        rcases hL.2.2 tid.toObjId with e | ⟨a, b, ha, hb, np, nn, rfl⟩
-        · rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr (e.trans h1)]
+    · split
+      · have hEq : Lifecycle.Suspend.cancelIpcBlocking s tid t =
+            Lifecycle.Suspend.restoreToReadyCancelled (removeFromNotificationWaitQueue s tid) tid := by
+          unfold Lifecycle.Suspend.cancelIpcBlocking; rw [hB]
+        have hReach := removeFromNotificationWaitQueue_reach s tid hInv
+        rw [hEq]
+        unfold Lifecycle.Suspend.restoreToReadyCancelled Lifecycle.Suspend.restoreToReadyStaging
+        rw [SystemState.updateTcb_getTcb?_self _ _ _ hReach.1]
+        rcases hReach.2 tid.toObjId with e | ⟨_, _, hO, -, -⟩ | ⟨t0, t1, h0, h1, np, nn, hR⟩
+        · rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr (e.trans hTo)]
           exact ⟨_, rfl, rfl⟩
-        · rw [h1] at ha; cases ha
-          rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr hb]
+        · rw [hTo] at hO; cases hO
+        · rw [hTo] at h0; cases h0
+          rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr h1, hR]
           exact ⟨_, rfl, rfl⟩
       · exact ⟨t, hT, rfl⟩
     · exact ⟨t, hT, rfl⟩
+  · exact hEnd _ true
+  · exact hEnd _ false
+  · exact hEnd _ false
   · exact ⟨t, hT, rfl⟩
 
 /-- **A finalised thread's suspend keeps the object table well formed and the
@@ -570,9 +702,9 @@ theorem finaliseThreadReleaseCores_hidden (ctx : LabelingContext) (observer : If
   exact hHolds _ _
 
 /-- **What a thread's finalisation writes, besides the thread**: its bound
-notification, its scheduling context, the notification it waits on and the
-waiter after it — each hidden — and, since the suspend takes it off whichever
-core holds it, the thread is hidden as a thread too. -/
+notification, its scheduling context, the notification or endpoint it waits on
+and its neighbours in that queue — each hidden — and, since the suspend takes it
+off whichever core holds it, the thread is hidden as a thread too. -/
 def threadFinaliseHidden (ctx : LabelingContext) (observer : IfObserver)
     (st : SystemState) (x : SeLe4n.ObjId) : Prop :=
   ∀ t, st.getObject? x = some (.tcb t) →
@@ -580,8 +712,11 @@ def threadFinaliseHidden (ctx : LabelingContext) (observer : IfObserver)
       objectObservable ctx observer ⟨t.boundNotificationCode - 1⟩ = false) ∧
     (t.scBindingScCode ≠ 0 → objectObservable ctx observer
       (⟨t.scBindingScCode - 1⟩ : SeLe4n.SchedContextId).toObjId = false) ∧
-    (∀ n, t.ipcState = .blockedOnNotification n → objectObservable ctx observer n = false) ∧
+    (∀ y, waitsOn y t.ipcState → objectObservable ctx observer y = false) ∧
+    (∀ b, t.ntfnPrev = some b → objectObservable ctx observer b.toObjId = false) ∧
     (∀ b, t.ntfnNext = some b → objectObservable ctx observer b.toObjId = false) ∧
+    (∀ p, t.queuePPrev = some (.tcbNext p) → objectObservable ctx observer p.toObjId = false) ∧
+    (∀ b, t.queueNext = some b → objectObservable ctx observer b.toObjId = false) ∧
     threadObservable ctx observer ⟨x.val⟩ = false
 
 /-- **What a scheduling context's finalisation writes, besides the context**:
@@ -606,20 +741,21 @@ theorem finaliseThread_hidden (ctx : LabelingContext) (observer : IfObserver)
       split at hAd
       · exact ⟨_, ‹_›⟩
       · cases hAd
-    obtain ⟨h1, h2, h3, h4, h5⟩ := hH t hO
+    obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8⟩ := hH t hO
     have hT : st.getTcb? ⟨x.val⟩ = some t :=
       (SystemState.getTcb?_eq_some_iff _ _ _).mpr hO
-    obtain ⟨hP1, hI1, t1, hT1, e1, e2, e3, -⟩ :=
+    obtain ⟨hP1, hI1, t1, hT1, e1, e2, e3, e4, e5, e6, -⟩ :=
       finaliseThreadUnbindNotification_hidden ctx observer hInv hT hX h1
     obtain ⟨hP2, hI2⟩ := finaliseThreadCancel_hidden ctx observer hI1 hT1 hX
-      (by rw [e1]; exact h3) (by rw [e2]; exact h4)
+      (by rw [e1]; exact h3) (by rw [e2]; exact h4) (by rw [e3]; exact h5)
+      (by rw [e4]; exact h6) (by rw [e5]; exact h7)
     obtain ⟨t2, hT2, f2⟩ := finaliseThreadCancel_scBinding hI1 hT1
-    have hP3 := finaliseThreadSuspend_hidden ctx observer _ ⟨x.val⟩ hI2 hX h5
+    have hP3 := finaliseThreadSuspend_hidden ctx observer _ ⟨x.val⟩ hI2 hX h8
     obtain ⟨hI3, t3, hT3, f3⟩ := finaliseThreadSuspend_scBinding hI2 hT2
     have hT4 := (finaliseThreadReleaseCores_getTcb? _ ⟨x.val⟩ ⟨x.val⟩).trans hT3
     have hI4 := (FinaliseFrame.releaseCores _ ⟨x.val⟩ hI3).invExt
     obtain ⟨hP5, -, -⟩ := finaliseThreadUnbindSchedContext_hidden ctx observer hI4 hT4 hX
-      (by rw [f3, f2, e3]; exact h2)
+      (by rw [f3, f2, e6]; exact h2)
     rw [hP5, finaliseThreadReleaseCores_hidden, hP3, hP2, hP1]
   · rfl
 
@@ -697,7 +833,7 @@ theorem finaliseFinalObject_preserves_projection (ctx : LabelingContext) (observ
       ⟨r.1, p.2.waitersHidden hP.2.1, p.1.trans hP.2.2⟩)
   have hNt : ∀ (fuel : Nat) (s : SystemState), P s → P (cancelNotificationQueue x fuel s) :=
     cancelNotificationQueue_closed P x (fun s n t tcb hP hN hH hT hC =>
-      have r := hP.1.notificationCancel hN hH hT hC
+      have r := hP.1.notificationCancel hN hT hC
       have p := notificationWaiterCancel_hidden ctx observer s x n t tcb hP.1.2.1 hP.1.2.2.1 hX
         hP.2.1 hN hH hT hC
       ⟨r.1, p.2.waitersHidden hP.2.1, p.1.trans hP.2.2⟩)

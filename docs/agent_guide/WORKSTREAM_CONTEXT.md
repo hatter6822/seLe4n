@@ -295,7 +295,8 @@ IPC and unbinds a notification and cancels its waiters (`finaliseFinalObject`,
 a new transition that destroys a capability must retire through it, and
 `.cspaceDelete` / `.cspaceRevoke` are remote writers that declare a scheduler
 footprint.  Since part 24 (`v0.36.135`) it also finalises a thread (unbound
-from its notification, its notification wait cancelled, suspended — taken off
+from its notification, its endpoint or notification wait cancelled off the
+queue wherever it waits there, suspended — taken off
 whichever core queues or runs it, the executing core's own thread included —
 every core's FP/SIMD and resident hold on it released, and unbound from its
 scheduling context: `finaliseThread`) and a scheduling context (unbound from its
@@ -314,10 +315,10 @@ suspend entries do, and every `restore_context` in `trap.S` passes
 `trap::user_exit_gate` (`build.rs` refuses one that does not); an exception
 handler clears the core's user flag (`remote_stall::note_kernel_entry`) before
 anything that can block.
-A thread that is endpoint- or reply-blocked, donating or holding space-slot
-capabilities, a busy reply or scheduling context, and an untyped that still
-records a child, outlive their last capability until parts 25–26 and ZA6.1
-(`docs/REGISTERED_DEBT.md`).  The suspend of a thread blocked in IPC or
+A thread that is reply-blocked, holds a reply link, stash or reply-waiter
+link, donates, or holds space-slot capabilities, a busy reply or scheduling
+context, and an untyped that still records a child, outlive their last
+capability until parts 25–26 (`docs/REGISTERED_DEBT.md`).  The suspend of a thread blocked in IPC or
 holding a donated context is the one syscall arm left on the general path
 (ZA6.1).  ZA6 covers the other
 entries and makes the rule standing.  Plan:

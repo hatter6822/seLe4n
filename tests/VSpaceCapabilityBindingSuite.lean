@@ -2236,6 +2236,18 @@ when unbound). -/
 private def scCodeOf (st : SystemState) (oid : Nat) : Option Nat :=
   (st.getTcb? ⟨oid⟩).map (·.scBindingScCode)
 
+/-- The thread at `oid` in the scheduler state `ts`, the state its IPC block
+leaves it in. -/
+private def stageThreadState (st : SystemState) (oid : Nat) (ts : ThreadState) : SystemState :=
+  st.updateTcb ⟨oid⟩ fun t => { t with threadState := ts }
+
+/-- A kernel step's state, its result dropped. -/
+private def kernelState {α : Type} (r : Except KernelError (α × SystemState)) :
+    Except KernelError SystemState :=
+  match r with
+  | .ok (_, s) => .ok s
+  | .error e => .error e
+
 private def runThreadFinaliseChecks : IO Unit := do
   IO.println "-- §5n the final capability's delete finalises a thread or a scheduling context (WS-ZA ZA5.4 part 24)"
   for (name, tag) in [("thread", tcbTag), ("scheduling context", schedContextTag)] do
@@ -2415,6 +2427,94 @@ private def runThreadFinaliseChecks : IO Unit := do
         assertBool "deleting a suspended thread's last capability retires it, the other thread still queued"
           (!storedAt st1 960 && !recordsChildAt st1 carveUt 960 && storedAt st1 961 &&
             st1.queuedOn c0 ⟨961⟩)
+  -- A thread blocked on an endpoint (receiving, sending or calling) is
+  -- cancelled off its queue wherever it waits there (seL4's `suspend` →
+  -- `cancelIPC` → `blockedCancelIPC`), ended `.ready` with no message, and
+  -- retired; its neighbours are linked to each other and stay blocked.  As for
+  -- the notification wait, each block is staged through the kernel's own IPC on
+  -- the carved threads, three waiting in carve order: the middle one's delete
+  -- comes first, then the head's, then the tail's.
+  let threeThreads :=
+    [decodeCarve slotUtRetype tcbTag 960 slotOwnCnRW 12,
+     decodeCarve slotUtRetype tcbTag 961 slotOwnCnRW 13,
+     decodeCarve slotUtRetype tcbTag 962 slotOwnCnRW 14]
+  let epId := SeLe4n.ObjId.ofNat 963
+  let blocks : List (String × ThreadState × Bool × ThreadIpcState ×
+      (SeLe4n.ThreadId → SystemState → Except KernelError SystemState)) :=
+    [("receiving", .BlockedRecv, true, .blockedOnReceive epId,
+       fun t st => kernelState (SeLe4n.Kernel.endpointReceiveDual epId t none st)),
+     ("sending", .BlockedSend, false, .blockedOnSend epId,
+       fun t st => kernelState (SeLe4n.Kernel.endpointSendDual epId t (.frame none false) st)),
+     ("calling", .BlockedCall, false, .blockedOnCall epId,
+       fun t st => kernelState (SeLe4n.Kernel.endpointCall epId t (.frame none false) st))]
+  for (name, ts, isRecv, blocked, block) in blocks do
+    match runAll carveScenario (threeThreads ++ [decodeCarve slotUtRetype endpointTag 963 slotOwnCnRW 15]) with
+    | .error e => assertBool s!"carving three threads and an endpoint succeeds (got {repr e})" false
+    | .ok st0 =>
+      let staged := [960, 961, 962].foldl (fun s oid => stageThreadState s oid ts) st0
+      let queued := [960, 961, 962].foldlM (fun s oid => block ⟨oid⟩ s) staged
+      match queued with
+      | .error e => assertBool s!"the carved threads' {name} on the carved endpoint blocks (got {repr e})" false
+      | .ok st => do
+        let queueOf (s : SystemState) := (s.getEndpoint? epId).map fun ep =>
+          if isRecv then ep.receiveQ else ep.sendQ
+        let blockedAt (s : SystemState) (oid : Nat) :=
+          (s.getTcb? ⟨oid⟩).map (·.ipcState) == some blocked
+        assertBool s!"setup: the three carved threads wait {name} on the carved endpoint in carve order"
+          (queueOf st == some { head := some ⟨960⟩, tail := some ⟨962⟩ } &&
+            blockedAt st 960 && blockedAt st 961 && blockedAt st 962)
+        match runAll st [decodeDelete 13] with
+        | .error e => assertBool s!"deleting the middle {name} thread's last capability succeeds (got {repr e})" false
+        | .ok st1 => do
+          assertBool s!"deleting a thread's last capability while it waits {name} mid-queue cancels it off the queue and retires it, its neighbours linked and still blocked"
+            (!storedAt st1 961 && !recordsChildAt st1 carveUt 961 &&
+              queueOf st1 == some { head := some ⟨960⟩, tail := some ⟨962⟩ } &&
+              (st1.getTcb? ⟨960⟩).map (·.queueNext) == some (some ⟨962⟩) &&
+              (match (st1.getTcb? ⟨962⟩).map (·.queuePPrev) with
+                | some (some (QueuePPrev.tcbNext p)) => p == ⟨960⟩
+                | _ => false) &&
+              blockedAt st1 960 && blockedAt st1 962)
+          match runAll st1 [decodeDelete 12] with
+          | .error e => assertBool s!"deleting the head {name} thread's last capability succeeds (got {repr e})" false
+          | .ok st2 => do
+            assertBool s!"deleting the head {name} thread's last capability retires it and leaves the tail alone at the queue"
+              (!storedAt st2 960 && queueOf st2 == some { head := some ⟨962⟩, tail := some ⟨962⟩ } &&
+                blockedAt st2 962)
+            match runAll st2 [decodeDelete 14] with
+            | .error e => assertBool s!"deleting the last {name} thread's last capability succeeds (got {repr e})" false
+            | .ok st3 =>
+              assertBool s!"deleting the last {name} thread's last capability retires it and empties the queue"
+                (!storedAt st3 962 && queueOf st3 == some {})
+  -- A thread waiting on a notification behind another is cancelled off the
+  -- queue just as its head is, wherever it waits: the middle waiter's delete,
+  -- then the tail's.
+  match runAll carveScenario (threeThreads ++ [decodeCarve slotUtRetype notificationTag 963 slotOwnCnRW 15]) with
+  | .error e => assertBool s!"carving three threads and a notification succeeds (got {repr e})" false
+  | .ok st0 =>
+    let staged := [960, 961, 962].foldl (fun s oid => stageThreadState s oid .BlockedNotif) st0
+    let queued := [960, 961, 962].foldlM (fun s oid =>
+      kernelState (SeLe4n.Kernel.notificationWait (SeLe4n.ObjId.ofNat 963) ⟨oid⟩ s)) staged
+    match queued with
+    | .error e => assertBool s!"the carved threads' waits on the carved notification block (got {repr e})" false
+    | .ok st => do
+      let endsOf (s : SystemState) := (s.getNotification? (SeLe4n.ObjId.ofNat 963)).map fun n =>
+        (n.waitHead, n.waitTail)
+      assertBool "setup: the three carved threads wait on the carved notification in carve order"
+        (endsOf st == some (some ⟨960⟩, some ⟨962⟩))
+      match runAll st [decodeDelete 13] with
+      | .error e => assertBool s!"deleting the middle waiter's last capability succeeds (got {repr e})" false
+      | .ok st1 => do
+        assertBool "deleting a mid-queue notification waiter's last capability cancels its wait and retires it, its neighbours linked"
+          (!storedAt st1 961 && !recordsChildAt st1 carveUt 961 &&
+            endsOf st1 == some (some ⟨960⟩, some ⟨962⟩) &&
+            (st1.getTcb? ⟨960⟩).map (·.ntfnNext) == some (some ⟨962⟩) &&
+            (st1.getTcb? ⟨962⟩).map (·.ntfnPrev) == some (some ⟨960⟩))
+        match runAll st1 [decodeDelete 14] with
+        | .error e => assertBool s!"deleting the tail waiter's last capability succeeds (got {repr e})" false
+        | .ok st2 =>
+          assertBool "deleting the tail notification waiter's last capability retires it, the head now the tail"
+            (!storedAt st2 962 && endsOf st2 == some (some ⟨960⟩, some ⟨960⟩) &&
+              (st2.getTcb? ⟨960⟩).map (·.ntfnNext) == some none)
 
 def runVSpaceCapabilityBindingChecks : IO Unit := do
   IO.println "===================================================="

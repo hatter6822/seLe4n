@@ -124,14 +124,23 @@ def FinaliseScUnbindStep (P : SystemState → Prop) : Prop :=
     s.getSchedContext? ⟨tcb.scBindingScCode - 1⟩ = some sc → sc.boundThreadCode = t.val + 1 →
     cancelDonationArmOnCore s t tcb = .ok s' → P s'
 
-/-- **The cancel step a thread's finalisation takes**: the head waiter of a
-notification leaves its queue, and is not woken (`cancelIpcBlocking`). -/
-def FinaliseCancelStep (P : SystemState → Prop) : Prop :=
+/-- **The notification cancel a thread's finalisation takes**: a waiter of a
+notification, wherever it waits in the queue, leaves it, and is not woken
+(`cancelIpcBlocking`). -/
+def FinaliseNotificationCancelStep (P : SystemState → Prop) : Prop :=
   ∀ (s : SystemState) (n : SeLe4n.ObjId) (t : SeLe4n.ThreadId) (tcb : TCB) (ntfn : Notification),
     P s → s.getTcb? t = some tcb → tcb.ipcState = .blockedOnNotification n →
-    s.getNotification? n = some ntfn → ntfn.waitHead = some t →
-    notificationWaiterCancellable s n t tcb = true →
+    s.getNotification? n = some ntfn → notificationWaiterCancellable s n t tcb = true →
     P (Lifecycle.Suspend.cancelIpcBlocking s t tcb)
+
+/-- **The endpoint cancel a thread's finalisation takes**: a thread blocked on
+an endpoint, wherever it waits in the queue, leaves it, and is not woken
+(`storeEndpointBlockedCancelled`). -/
+def FinaliseEndpointCancelStep (P : SystemState → Prop) : Prop :=
+  ∀ (s : SystemState) (e : SeLe4n.ObjId) (q : Bool) (t : SeLe4n.ThreadId) (ep : Endpoint)
+    (tcb : TCB), P s → s.getTcb? t = some tcb → s.getEndpoint? e = some ep →
+    endpointBlockedCancellable s e q t ep tcb = true →
+    P (storeEndpointBlockedCancelled s e q t ep tcb)
 
 /-- **The suspend step a thread's finalisation takes**: a ready thread that is
 not suspended and is no core's idle thread leaves the scheduler where the state
@@ -181,7 +190,8 @@ theorem threadOfOptCode_succ (t : SeLe4n.ThreadId) :
 
 /-- **A property the thread finalisation's steps keep holds after it.** -/
 theorem finaliseThread_closed (P : SystemState → Prop) (hUnbind : FinaliseUnbindStep P)
-    (hSc : FinaliseScUnbindStep P) (hCancel : FinaliseCancelStep P)
+    (hSc : FinaliseScUnbindStep P) (hCancel : FinaliseNotificationCancelStep P)
+    (hEndpoint : FinaliseEndpointCancelStep P)
     (hSuspend : FinaliseSuspendStep P) (hRelease : FinaliseReleaseStep P)
     (x : SeLe4n.ObjId) (st : SystemState) (h : P st) :
     P (finaliseThread x st) := by
@@ -211,17 +221,26 @@ theorem finaliseThread_closed (P : SystemState → Prop) (hUnbind : FinaliseUnbi
       unfold finaliseThreadCancel
       split
       · rename_i t hT
+        have hEp : ∀ e q, P (cancelEndpointBlocked s e q tid t) := by
+          intro e q
+          unfold cancelEndpointBlocked
+          split
+          · rename_i ep hE
+            split
+            · rename_i hG
+              exact hEndpoint s e q tid ep t h1 hT hE hG
+            · exact h1
+          · exact h1
         split
         · rename_i n hI
           split
           · rename_i ntfn hN
             split
             · rename_i hG
-              simp only [Bool.and_eq_true, beq_iff_eq] at hG
-              exact hCancel s n tid t ntfn h1 hT hI hN hG.1 hG.2
+              exact hCancel s n tid t ntfn h1 hT hI hN hG
             · exact h1
           · exact h1
-        · exact h1
+        all_goals first | exact hEp _ _ | exact h1
       · exact h1
     -- The suspend.
     have h3 : P (finaliseThreadSuspend
@@ -308,8 +327,8 @@ theorem finaliseFinalObject_closed (P : SystemState → Prop)
       s.getTcb? t = some tcb → notificationWaiterCancellable s notificationId t tcb = true →
       P (wakeCancelledWaiter (Lifecycle.Suspend.cancelIpcBlocking s t tcb) t))
     (hUnbind : FinaliseUnbindStep P) (hSc : FinaliseScUnbindStep P)
-    (hCancel : FinaliseCancelStep P) (hSuspend : FinaliseSuspendStep P)
-    (hRelease : FinaliseReleaseStep P)
+    (hCancel : FinaliseNotificationCancelStep P) (hEndpoint : FinaliseEndpointCancelStep P)
+    (hSuspend : FinaliseSuspendStep P) (hRelease : FinaliseReleaseStep P)
     (target : Nat) (st : SystemState) (h : P st) : P (finaliseFinalObject target st) := by
   unfold finaliseFinalObject
   split
@@ -321,7 +340,7 @@ theorem finaliseFinalObject_closed (P : SystemState → Prop)
         (cancelEndpointQueue_closed P _ false (hEp _ false) _ _ h)
     · exact cancelNotificationQueue_closed P _ (hNtfn _) _ _
         (unbindMaybeNotification_closed P _ (hUnbind _) st h)
-    · exact finaliseThread_closed P hUnbind hSc hCancel hSuspend hRelease _ st h
+    · exact finaliseThread_closed P hUnbind hSc hCancel hEndpoint hSuspend hRelease _ st h
     · exact finaliseSchedContext_closed P hSc _ st h
     · exact h
   · exact h
@@ -680,6 +699,62 @@ theorem storeEndpointWaiterCancelled (st : SystemState) (endpointId : SeLe4n.Obj
   have h2 := h1.trans (updateTcb _ t cancelledEndpointWaiterTcb h1.invExt)
   exact h2.trans (wakeCancelledWaiter _ t h2.invExt)
 
+/-- The removal of a waiter from anywhere in an endpoint queue, each write in
+its slot: the endpoint's ends, the neighbours' links and the waiter's. -/
+theorem storeQueueRemove (st : SystemState) (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
+    (tid : SeLe4n.ThreadId) (ep : Endpoint) (tcb : TCB) (hInv : st.objects.invExt) :
+    FinaliseFrame st (SeLe4n.Kernel.storeQueueRemove st endpointId isReceiveQ tid ep tcb) := by
+  have hHead : ∀ (s : SystemState) (c : Nat), s.objects.invExt →
+      FinaliseFrame s (s.modifyObject endpointId (headAdvancedEndpoint isReceiveQ c)) :=
+    fun s c hI => modifyObject s endpointId _ hI (fun o => by
+      cases o with
+      | endpoint e =>
+        right; simp only [headAdvancedEndpoint]
+        split <;> exact ⟨rfl, rfl, rfl, Or.inr (Or.inl rfl)⟩
+      | _ => exact Or.inl rfl)
+  have hEnds : ∀ (s : SystemState) (h t : Nat), s.objects.invExt →
+      FinaliseFrame s (s.modifyObject endpointId (endsSetEndpoint isReceiveQ h t)) :=
+    fun s h t hI => modifyObject s endpointId _ hI (fun o => by
+      cases o with
+      | endpoint e =>
+        right; simp only [endsSetEndpoint]
+        split <;> exact ⟨rfl, rfl, rfl, Or.inr (Or.inl rfl)⟩
+      | _ => exact Or.inl rfl)
+  have h1 : FinaliseFrame st (match tcb.queuePPrev with
+      | some .endpointHead =>
+        st.modifyObject endpointId (headAdvancedEndpoint isReceiveQ tcb.queueNextCode)
+      | some (.tcbNext p) => st.updateTcb p (queueUnlinkPredecessor tcb)
+      | none => st) := by
+    split
+    · exact hHead st _ hInv
+    · exact updateTcb st _ _ hInv
+    · exact .refl hInv
+  have hFin : ∀ (s2 : SystemState) (h t : Nat), FinaliseFrame st s2 →
+      FinaliseFrame st ((s2.modifyObject endpointId (endsSetEndpoint isReceiveQ h t)).updateTcb
+        tid tcbOffQueue) := fun s2 h t h2 =>
+    have h3 := h2.trans (hEnds s2 h t h2.invExt)
+    h3.trans (updateTcb _ tid tcbOffQueue h3.invExt)
+  have hNext : ∀ (s1 : SystemState), FinaliseFrame st s1 →
+      FinaliseFrame st (match tcb.queueNext with
+        | some n => s1.updateTcb n (queueUnlinkSuccessor tcb)
+        | none => s1) := by
+    intro s1 h1
+    split
+    · exact h1.trans (updateTcb s1 _ _ h1.invExt)
+    · exact h1
+  unfold SeLe4n.Kernel.storeQueueRemove
+  exact hFin _ _ _ (hNext _ h1)
+
+/-- A thread's endpoint cancel: the removal, then its IPC ended. -/
+theorem storeEndpointBlockedCancelled (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (isReceiveQ : Bool) (tid : SeLe4n.ThreadId) (ep : Endpoint) (tcb : TCB)
+    (hInv : st.objects.invExt) :
+    FinaliseFrame st
+      (SeLe4n.Kernel.storeEndpointBlockedCancelled st endpointId isReceiveQ tid ep tcb) := by
+  unfold SeLe4n.Kernel.storeEndpointBlockedCancelled
+  have h1 := storeQueueRemove st endpointId isReceiveQ tid ep tcb hInv
+  exact h1.trans (updateTcb _ tid cancelledEndpointWaiterTcb h1.invExt)
+
 /-- A notification waiter's cancel: it leaves the notification's queue and is
 restored, staged with the cancellation frame. -/
 theorem notificationCancel (st : SystemState) (t : SeLe4n.ThreadId) (tcb : TCB)
@@ -820,7 +895,9 @@ theorem finaliseFinalObject_frame (target : Nat) (st : SystemState) (hInv : st.o
       h1.trans (.wakeCancelledWaiter _ _ h1.invExt))
     (fun _ _ _ _ h _ _ _ _ => h.trans (.storeUnbindNotification _ _ _ h.invExt))
     (FinaliseFrame.scUnbindStep st)
-    (fun s n t tcb _ h _ hI _ _ _ => h.trans (FinaliseFrame.notificationCancel s t tcb n h.invExt hI))
+    (fun s n t tcb _ h _ hI _ _ => h.trans (FinaliseFrame.notificationCancel s t tcb n h.invExt hI))
+    (fun s e q t ep tcb h _ _ _ =>
+      h.trans (FinaliseFrame.storeEndpointBlockedCancelled s e q t ep tcb h.invExt))
     (fun s t _ h _ _ _ _ _ => h.trans (FinaliseFrame.suspend s t h.invExt))
     (fun s t h => h.trans (FinaliseFrame.releaseCores s t h.invExt))
     target st (.refl hInv)
@@ -865,13 +942,30 @@ theorem finaliseFinalObject_onlyObjectsSchedulerCoreHoldsDiffer (target : Nat) (
     have hR : SystemState.onlyObjectsSchedulerDiffer (removeFromNotificationWaitQueue s t) s := by
       rw [e]; rfl
     exact (hU _ _ _).trans hR
+  have hQR : ∀ (s : SystemState) (e : SeLe4n.ObjId) (q : Bool) (t : SeLe4n.ThreadId)
+      (ep : Endpoint) (tcb : TCB), SystemState.onlyObjectsSchedulerDiffer
+        (SeLe4n.Kernel.storeEndpointBlockedCancelled s e q t ep tcb) s := by
+    intro s e q t ep tcb
+    unfold SeLe4n.Kernel.storeEndpointBlockedCancelled SeLe4n.Kernel.storeQueueRemove
+    refine (hU _ _ _).trans ((hU _ _ _).trans ((hM _ _ _).trans ?_))
+    split
+    · refine (hU _ _ _).trans ?_
+      split
+      · exact hM _ _ _
+      · exact hU _ _ _
+      · rfl
+    · split
+      · exact hM _ _ _
+      · exact hU _ _ _
+      · rfl
   have hL : ∀ {s s' : SystemState}, SystemState.onlyObjectsSchedulerDiffer s' s →
       onlyObjectsSchedulerCoreHoldsDiffer s st → onlyObjectsSchedulerCoreHoldsDiffer s' st :=
     fun hX h => (onlyObjectsSchedulerCoreHoldsDiffer.of_onlyObjectsSchedulerDiffer hX).trans h
   refine finaliseFinalObject_closed (fun s => onlyObjectsSchedulerCoreHoldsDiffer s st)
     (fun _ _ s _ t _ h _ _ _ _ => ?_) (fun _ s _ t tcb h _ _ _ hC => ?_)
     (fun _ s _ t h _ _ _ _ => ?_) (fun s s' t tcb _ h _ hS' hO _ _ _ _ _ hOk => ?_)
-    (fun s n t tcb _ h _ hI _ _ _ => hL (hNc s t tcb n hI) h)
+    (fun s n t tcb _ h _ hI _ _ => hL (hNc s t tcb n hI) h)
+    (fun s e q t ep tcb h _ _ _ => hL (hQR s e q t ep tcb) h)
     (fun s t _ h _ _ _ _ _ => hL ((hU _ t _).trans (descheduleAtPlacement_onlyObjectsSchedulerDiffer s t)) h)
     (fun s t h => (onlyObjectsSchedulerCoreHoldsDiffer.releaseCores s t).trans h) target st
     (.refl st)

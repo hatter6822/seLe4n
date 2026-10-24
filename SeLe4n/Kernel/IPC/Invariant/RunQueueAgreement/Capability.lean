@@ -512,6 +512,62 @@ theorem storeEndpointWaiterCancelled_runQueueStage (st : SystemState)
   · exact ⟨cancelledEndpointWaiterTcb (tcbOffQueue tcb),
       by rw [SystemState.updateTcb_getTcb?_self _ _ _ hI1, hFr.head_tcb]; rfl, hW.1⟩
 
+/-- The guarded removal of a thread from an endpoint queue: endpoint stores and
+queue-link writes. -/
+theorem endpointQueueRemoveDual_runQueueStage {endpointId : SeLe4n.ObjId} {isReceiveQ : Bool}
+    {tid : SeLe4n.ThreadId} {st st' : SystemState}
+    (h : endpointQueueRemoveDual endpointId isReceiveQ tid st = .ok ((), st')) :
+    RunQueueStage st st' := by
+  refine RunQueueStage.of_inv fun hInv => ?_
+  cases endpointQueueRemoveDual_shape st st' endpointId isReceiveQ tid h with
+  | headLast ep tcb s1 s2 hEp _ _ _ _ _ _ hS1 hS2 hClear =>
+    exact ((storeObject_endpoint_runQueueStage hEp hS1).trans
+      (storeObject_endpoint_runQueueStage
+        (storeObject_objects_eq _ _ _ _ hInv hS1) hS2)).trans
+      (storeTcbQueueLinks_runQueueStage hClear)
+  | headMore ep tcb nextTcb nextTid s1 s2 s3 hEp _ _ _ _ _ _ hS1 _ hRelink hS2 hClear =>
+    have i1 := storeObject_preserves_objects_invExt _ _ _ _ hInv hS1
+    obtain ⟨_, hEp2⟩ := storeTcbQueueLinks_endpoint_forward _ _ _ _ _ _ _ _ i1 hRelink
+      (storeObject_objects_eq _ _ _ _ hInv hS1)
+    exact (((storeObject_endpoint_runQueueStage hEp hS1).trans
+      (storeTcbQueueLinks_runQueueStage hRelink)).trans
+      (storeObject_endpoint_runQueueStage hEp2 hS2)).trans
+      (storeTcbQueueLinks_runQueueStage hClear)
+  | midLast ep tcb prevTcb prevTid s1 s2 hEp _ _ _ _ _ _ _ _ _ hRelink hS hClear =>
+    obtain ⟨_, hEp1⟩ := storeTcbQueueLinks_endpoint_forward _ _ _ _ _ _ _ _ hInv hRelink hEp
+    exact ((storeTcbQueueLinks_runQueueStage hRelink).trans
+      (storeObject_endpoint_runQueueStage hEp1 hS)).trans
+      (storeTcbQueueLinks_runQueueStage hClear)
+  | midMore ep tcb prevTcb nextTcb prevTid nextTid s1 s2 s3 hEp _ _ _ _ _ _ _ _ _
+      hRelinkPrev _ hRelinkNext hS hClear =>
+    have i1 := storeTcbQueueLinks_preserves_objects_invExt _ _ _ _ _ _ hInv hRelinkPrev
+    obtain ⟨_, hEp1⟩ := storeTcbQueueLinks_endpoint_forward _ _ _ _ _ _ _ _ hInv hRelinkPrev hEp
+    obtain ⟨_, hEp2⟩ := storeTcbQueueLinks_endpoint_forward _ _ _ _ _ _ _ _ i1 hRelinkNext hEp1
+    exact (((storeTcbQueueLinks_runQueueStage hRelinkPrev).trans
+      (storeTcbQueueLinks_runQueueStage hRelinkNext)).trans
+      (storeObject_endpoint_runQueueStage hEp2 hS)).trans
+      (storeTcbQueueLinks_runQueueStage hClear)
+
+/-- **A thread's endpoint cancel is a stage**: the removal
+(`endpointQueueRemoveDual_runQueueStage`, through `queueRemove_inPlace`), then
+the thread's TCB rewritten with its run-queue links and its activity kept and its
+IPC state made `.ready`. -/
+theorem storeEndpointBlockedCancelled_runQueueStage (st : SystemState) (e : SeLe4n.ObjId)
+    (q : Bool) (t : SeLe4n.ThreadId) (ep : Endpoint) (tcb : TCB)
+    (hT : st.getTcb? t = some tcb) (hE : st.getEndpoint? e = some ep)
+    (hC : endpointBlockedCancellable st e q t ep tcb = true) :
+    RunQueueStage st (storeEndpointBlockedCancelled st e q t ep tcb) := by
+  obtain ⟨-, -, hG, -⟩ := endpointBlockedCancellable_parts hC
+  obtain ⟨hRem, -⟩ := queueRemove_inPlace st e q t ep tcb
+    ((SystemState.getEndpoint?_eq_some_iff st e ep).mp hE)
+    ((SystemState.getTcb?_eq_some_iff st t tcb).mp hT) hG
+  have hM : TCB.StateMono cancelledEndpointWaiterTcb := fun x =>
+    ⟨fun _ => TCB.ipcState_setIpcState
+      { x with pendingMessage := none, pendingReceiveReplyCode := 0 } .ready, id⟩
+  unfold storeEndpointBlockedCancelled
+  exact (endpointQueueRemoveDual_runQueueStage hRem).trans
+    (RunQueueStage.updateTcb _ t (f := cancelledEndpointWaiterTcb) (fun _ _ => rfl) hM)
+
 /-- **A notification waiter's cancel is a stage**: the cancellation
 (`cancelIpcBlocking_runQueueStage`) keeps the thread active
 (`cancelIpcBlocking_stateMono`) and moves no core's current thread, then the
@@ -564,7 +620,9 @@ theorem finaliseFinalObject_runQueueEntryStage (target : Nat) (st : SystemState)
       rw [hCode, Nat.add_sub_cancel] at hSpec
       exact h.trans (unbindNotification_runQueueStage hSpec).entry)
     (fun _ _ _ _ _ h _ _ _ _ _ _ _ _ hOk => h.trans (cancelDonationArmOnCore_runQueueStage hOk).entry)
-    (fun s _ t tcb _ h _ _ _ _ _ => h.trans (cancelIpcBlocking_runQueueStage s t tcb).entry)
+    (fun s _ t tcb _ h _ _ _ _ => h.trans (cancelIpcBlocking_runQueueStage s t tcb).entry)
+    (fun s e q t ep tcb h hT hE hC =>
+      h.trans (storeEndpointBlockedCancelled_runQueueStage s e q t ep tcb hT hE hC).entry)
     (fun s t tcb h hT hS hO _ hId =>
       h.trans (finaliseSuspend_runQueueEntryStage s t tcb hT hS hO hId))
     (fun s t h => h.trans (SystemState.RunQueueStage.of_frame

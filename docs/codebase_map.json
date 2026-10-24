@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "za/finalise-threads",
-      "commit_sha": "8d6b3c511f1efbcd96dcd40de141917fe70ce2be",
-      "tree_sha": "3f612d204f3b07b1a6264768c974e5273756c572",
-      "committed_at_utc": "2026-10-24T05:12:14+00:00"
+      "commit_sha": "f3e7377821178626e9ae47e6b33eb120380c170f",
+      "tree_sha": "af789f13547dd2f64e602f71dcc9b17a4cae949c",
+      "committed_at_utc": "2026-10-24T07:28:16+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "29418a4ed6acdeb87cfd477266f33ffa647e9856072be031e54e003abb8a16cb"
+    "source_digest": "ecab31ae1653f1f063739adeb585735d4f335cf826ee02e168ba6fceb0b34c8d"
   },
   "summary": {
-    "module_count": 521,
-    "declaration_count": 28841
+    "module_count": 523,
+    "declaration_count": 28897
   },
   "readme_sync": {
     "version": "0.36.135",
     "lean_toolchain": "v4.28.0",
-    "production_files": 451,
-    "production_loc": 500300,
+    "production_files": 453,
+    "production_loc": 502096,
     "test_files": 70,
-    "test_loc": 86650,
-    "proved_theorem_lemma_decls": 18135,
+    "test_loc": 86750,
+    "proved_theorem_lemma_decls": 18172,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -111095,6 +111095,410 @@
       ]
     },
     {
+      "module": "SeLe4n.Kernel.IPC.DualQueue.RemoveInPlace",
+      "path": "SeLe4n/Kernel/IPC/DualQueue/RemoveInPlace.lean",
+      "declaration_count": 21,
+      "declarations": [
+        {
+          "kind": "def",
+          "name": "removedEndCode",
+          "full_name": "SeLe4n.Kernel.removedEndCode",
+          "line": 36,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "headAdvancedEndpoint",
+          "full_name": "SeLe4n.Kernel.headAdvancedEndpoint",
+          "line": 42,
+          "called": [
+            "SeLe4n.Model.KernelObject"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "endsSetEndpoint",
+          "full_name": "SeLe4n.Kernel.endsSetEndpoint",
+          "line": 50,
+          "called": [
+            "SeLe4n.Model.KernelObject"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "SeLe4n.Model.Endpoint.headCodeOf",
+          "full_name": "SeLe4n.Model.Endpoint.headCodeOf",
+          "line": 58,
+          "called": [
+            "SeLe4n.Model.Endpoint"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "SeLe4n.Model.Endpoint.tailCodeOf",
+          "full_name": "SeLe4n.Model.Endpoint.tailCodeOf",
+          "line": 62,
+          "called": [
+            "SeLe4n.Model.Endpoint"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "storeQueueRemove",
+          "full_name": "SeLe4n.Kernel.storeQueueRemove",
+          "line": 70,
+          "called": [
+            "SeLe4n.Kernel.endsSetEndpoint",
+            "SeLe4n.Kernel.headAdvancedEndpoint",
+            "SeLe4n.Kernel.removedEndCode",
+            "SeLe4n.Kernel.tcbOffQueue",
+            "SeLe4n.Model.Endpoint",
+            "SeLe4n.Model.Endpoint.headCodeOf",
+            "SeLe4n.Model.Endpoint.tailCodeOf",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.modifyObject",
+            "SeLe4n.Model.SystemState.updateTcb",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.queueNext",
+            "SeLe4n.Model.TCB.queuePPrev",
+            "SeLe4n.Model.queueUnlinkPredecessor",
+            "SeLe4n.Model.queueUnlinkSuccessor",
+            "SeLe4n.ObjId",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "queueRemoveInPlace",
+          "full_name": "SeLe4n.Kernel.queueRemoveInPlace",
+          "line": 90,
+          "called": [
+            "SeLe4n.Kernel.RobinHood.RHTable.findsInPlace",
+            "SeLe4n.Model.Endpoint",
+            "SeLe4n.Model.Endpoint.receiveQ",
+            "SeLe4n.Model.Endpoint.sendQ",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getTcb?",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.queueNext",
+            "SeLe4n.Model.TCB.queuePPrev",
+            "SeLe4n.Model.TCB.queuePrev",
+            "SeLe4n.Model.dualQueueRemovalEnabled",
+            "SeLe4n.Model.queuePredecessorNamesSuccessor",
+            "SeLe4n.Model.storeLeavesIndexAndTypes",
+            "SeLe4n.ObjId",
+            "SeLe4n.ThreadId",
+            "SeLe4n.ThreadId.toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "blockedOnQueueSide",
+          "full_name": "SeLe4n.Kernel.blockedOnQueueSide",
+          "line": 116,
+          "called": [
+            "SeLe4n.Model.TCB",
+            "SeLe4n.ObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "blockedOnQueueSide_ipcState",
+          "full_name": "SeLe4n.Kernel.blockedOnQueueSide_ipcState",
+          "line": 123,
+          "called": [
+            "SeLe4n.Kernel.blockedOnQueueSide",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.ipcState",
+            "SeLe4n.Model.ThreadIpcState",
+            "SeLe4n.Model.ThreadIpcState.ofCodes",
+            "SeLe4n.ObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "optCode_removedBoundary",
+          "full_name": "SeLe4n.Kernel.optCode_removedBoundary",
+          "line": 146,
+          "called": [
+            "SeLe4n.Kernel.removedEndCode",
+            "SeLe4n.ThreadId",
+            "SeLe4n.ThreadId.ofOptCode",
+            "SeLe4n.ThreadId.optCode",
+            "SeLe4n.ThreadId.optCode_ofOptCode"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endsSetEndpoint_removed",
+          "full_name": "SeLe4n.Kernel.endsSetEndpoint_removed",
+          "line": 160,
+          "called": [
+            "SeLe4n.Kernel.endsSetEndpoint",
+            "SeLe4n.Kernel.optCode_removedBoundary",
+            "SeLe4n.Kernel.removedEndCode",
+            "SeLe4n.Model.Endpoint",
+            "SeLe4n.Model.Endpoint.headCodeOf",
+            "SeLe4n.Model.Endpoint.receiveQ",
+            "SeLe4n.Model.Endpoint.sendQ",
+            "SeLe4n.Model.Endpoint.tailCodeOf",
+            "SeLe4n.Model.Endpoint.withReceiveQ",
+            "SeLe4n.Model.Endpoint.withSendQ",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.optCode_queueNext",
+            "SeLe4n.Model.TCB.optCode_queuePrev",
+            "SeLe4n.Model.queueRemoveBoundary",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endsSetEndpoint_headAdvanced",
+          "full_name": "SeLe4n.Kernel.endsSetEndpoint_headAdvanced",
+          "line": 176,
+          "called": [
+            "SeLe4n.Kernel.endsSetEndpoint",
+            "SeLe4n.Kernel.headAdvancedEndpoint",
+            "SeLe4n.Model.KernelObject"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "headAdvancedEndpoint_eq",
+          "full_name": "SeLe4n.Kernel.headAdvancedEndpoint_eq",
+          "line": 183,
+          "called": [
+            "SeLe4n.Kernel.headAdvancedEndpoint",
+            "SeLe4n.Model.Endpoint",
+            "SeLe4n.Model.Endpoint.receiveQ",
+            "SeLe4n.Model.Endpoint.sendQ",
+            "SeLe4n.Model.Endpoint.withReceiveQ",
+            "SeLe4n.Model.Endpoint.withReceiveQ_head",
+            "SeLe4n.Model.Endpoint.withSendQ",
+            "SeLe4n.Model.Endpoint.withSendQ_head",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.optCode_queueNext",
+            "SeLe4n.Model.TCB.queueNext"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "tcbWithQueueLinks_predecessor",
+          "full_name": "SeLe4n.Kernel.tcbWithQueueLinks_predecessor",
+          "line": 194,
+          "called": [
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.optCode_queueNext",
+            "SeLe4n.Model.TCB.optCode_queuePPrev",
+            "SeLe4n.Model.TCB.optCode_queuePrev",
+            "SeLe4n.Model.TCB.queueNext",
+            "SeLe4n.Model.TCB.queuePPrev",
+            "SeLe4n.Model.TCB.queuePrev",
+            "SeLe4n.Model.queueUnlinkPredecessor",
+            "SeLe4n.Model.tcbWithQueueLinks"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "tcbWithQueueLinks_successor",
+          "full_name": "SeLe4n.Kernel.tcbWithQueueLinks_successor",
+          "line": 201,
+          "called": [
+            "SeLe4n.Model.QueuePPrev",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.optCode_queueNext",
+            "SeLe4n.Model.TCB.optCode_queuePPrev",
+            "SeLe4n.Model.TCB.optCode_queuePrev",
+            "SeLe4n.Model.TCB.queueNext",
+            "SeLe4n.Model.TCB.queuePPrev",
+            "SeLe4n.Model.TCB.queuePrev",
+            "SeLe4n.Model.queueUnlinkSuccessor",
+            "SeLe4n.Model.tcbWithQueueLinks"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "modifyObject_inPlace",
+          "full_name": "SeLe4n.Kernel.modifyObject_inPlace",
+          "line": 216,
+          "called": [
+            "SeLe4n.Kernel.RobinHood.RHTable.findsInPlace",
+            "SeLe4n.Kernel.RobinHood.RHTable.findsInPlace_insert_of_findsInPlace",
+            "SeLe4n.Kernel.RobinHood.RHTable.get?_insert_ne_of_findsInPlace",
+            "SeLe4n.Kernel.RobinHood.RHTable.get?_insert_self_of_findsInPlace",
+            "SeLe4n.Kernel.RobinHood.RHTable.insert",
+            "SeLe4n.Kernel.RobinHood.RHTable.modify_of_get?",
+            "SeLe4n.Kernel.storeLeavesIndexAndTypes_insert_inPlace",
+            "SeLe4n.Model.KernelObject",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.modifyObject",
+            "SeLe4n.Model.storeLeavesIndexAndTypes",
+            "SeLe4n.ObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "storeObject_endpoint_eq_modifyObject",
+          "full_name": "SeLe4n.Kernel.storeObject_endpoint_eq_modifyObject",
+          "line": 235,
+          "called": [
+            "SeLe4n.Kernel.RobinHood.RHTable.modify_of_get?",
+            "SeLe4n.Model.Endpoint",
+            "SeLe4n.Model.KernelObject",
+            "SeLe4n.Model.KernelObject.objectType",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.modifyObject",
+            "SeLe4n.Model.storeLeavesIndexAndTypes",
+            "SeLe4n.Model.storeObject",
+            "SeLe4n.Model.storeObject_eq_of_leaves",
+            "SeLe4n.ObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbQueueLinks_eq_updateTcb",
+          "full_name": "SeLe4n.Kernel.storeTcbQueueLinks_eq_updateTcb",
+          "line": 245,
+          "called": [
+            "SeLe4n.Kernel.modifyTcb_eq_updateTcb",
+            "SeLe4n.Kernel.storeTcbQueueLinks",
+            "SeLe4n.Model.QueuePPrev",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getTcb?",
+            "SeLe4n.Model.SystemState.updateTcb",
+            "SeLe4n.Model.SystemState.updateTcb_eq_of_some",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.storeLeavesIndexAndTypes",
+            "SeLe4n.Model.tcbWithQueueLinks",
+            "SeLe4n.ThreadId",
+            "SeLe4n.ThreadId.isReserved",
+            "SeLe4n.ThreadId.toObjId"
+          ]
+        },
+        {
+          "kind": "structure",
+          "name": "QueueRemoveFrame",
+          "full_name": "SeLe4n.Kernel.QueueRemoveFrame",
+          "line": 262,
+          "called": [
+            "SeLe4n.Kernel.tcbOffQueue",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getTcb?",
+            "SeLe4n.Model.SystemState.objectsKeepFinds",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.queueNext",
+            "SeLe4n.Model.TCB.queuePrev",
+            "SeLe4n.Model.storeLeavesIndexAndTypes",
+            "SeLe4n.ObjId",
+            "SeLe4n.ThreadId",
+            "SeLe4n.ThreadId.toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "queueRemove_finish",
+          "full_name": "SeLe4n.Kernel.queueRemove_finish",
+          "line": 273,
+          "called": [
+            "SeLe4n.Kernel.RobinHood.RHTable.findsInPlace",
+            "SeLe4n.Kernel.endsSetEndpoint",
+            "SeLe4n.Kernel.endsSetEndpoint_removed",
+            "SeLe4n.Kernel.modifyObject_inPlace",
+            "SeLe4n.Kernel.removedEndCode",
+            "SeLe4n.Kernel.storeObject_endpoint_eq_modifyObject",
+            "SeLe4n.Kernel.storeTcbQueueLinks",
+            "SeLe4n.Kernel.storeTcbQueueLinks_eq_updateTcb",
+            "SeLe4n.Kernel.tcbOffQueue",
+            "SeLe4n.Kernel.updateTcb_findsInPlace",
+            "SeLe4n.Kernel.updateTcb_get?_ne_of_findsInPlace",
+            "SeLe4n.Kernel.updateTcb_getTcb?_self_of_findsInPlace",
+            "SeLe4n.Kernel.updateTcb_storeLeaves",
+            "SeLe4n.Model.Endpoint",
+            "SeLe4n.Model.Endpoint.headCodeOf",
+            "SeLe4n.Model.Endpoint.receiveQ",
+            "SeLe4n.Model.Endpoint.sendQ",
+            "SeLe4n.Model.Endpoint.tailCodeOf",
+            "SeLe4n.Model.Endpoint.withReceiveQ",
+            "SeLe4n.Model.Endpoint.withSendQ",
+            "SeLe4n.Model.KernelObject",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getTcb?",
+            "SeLe4n.Model.SystemState.getTcb?_eq_some_iff",
+            "SeLe4n.Model.SystemState.modifyObject",
+            "SeLe4n.Model.SystemState.objectsKeepFinds",
+            "SeLe4n.Model.SystemState.updateTcb",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.queueRemoveBoundary",
+            "SeLe4n.Model.storeLeavesIndexAndTypes",
+            "SeLe4n.Model.storeObject",
+            "SeLe4n.ObjId",
+            "SeLe4n.ThreadId",
+            "SeLe4n.ThreadId.toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "queueRemove_inPlace",
+          "full_name": "SeLe4n.Kernel.queueRemove_inPlace",
+          "line": 320,
+          "called": [
+            "SeLe4n.Kernel.QueueRemoveFrame",
+            "SeLe4n.Kernel.RobinHood.RHTable.findsInPlace",
+            "SeLe4n.Kernel.endpointQueueRemoveDual",
+            "SeLe4n.Kernel.endsSetEndpoint",
+            "SeLe4n.Kernel.endsSetEndpoint_headAdvanced",
+            "SeLe4n.Kernel.headAdvancedEndpoint",
+            "SeLe4n.Kernel.headAdvancedEndpoint_eq",
+            "SeLe4n.Kernel.lookupTcb",
+            "SeLe4n.Kernel.modifyObject_inPlace",
+            "SeLe4n.Kernel.queueRemoveInPlace",
+            "SeLe4n.Kernel.queueRemove_finish",
+            "SeLe4n.Kernel.removedEndCode",
+            "SeLe4n.Kernel.storeObject_endpoint_eq_modifyObject",
+            "SeLe4n.Kernel.storeQueueRemove",
+            "SeLe4n.Kernel.storeTcbQueueLinks",
+            "SeLe4n.Kernel.storeTcbQueueLinks_eq_updateTcb",
+            "SeLe4n.Kernel.tcbOffQueue",
+            "SeLe4n.Kernel.tcbWithQueueLinks_predecessor",
+            "SeLe4n.Kernel.tcbWithQueueLinks_successor",
+            "SeLe4n.Kernel.updateTcb_findsInPlace",
+            "SeLe4n.Kernel.updateTcb_get?_ne_of_findsInPlace",
+            "SeLe4n.Kernel.updateTcb_storeLeaves",
+            "SeLe4n.Model.Endpoint",
+            "SeLe4n.Model.Endpoint.headCodeOf",
+            "SeLe4n.Model.Endpoint.receiveQ",
+            "SeLe4n.Model.Endpoint.sendQ",
+            "SeLe4n.Model.Endpoint.tailCodeOf",
+            "SeLe4n.Model.Endpoint.withReceiveQ",
+            "SeLe4n.Model.Endpoint.withSendQ",
+            "SeLe4n.Model.KernelError",
+            "SeLe4n.Model.KernelObject",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getObject?",
+            "SeLe4n.Model.SystemState.getTcb?",
+            "SeLe4n.Model.SystemState.getTcb?_eq_some_iff",
+            "SeLe4n.Model.SystemState.modifyObject",
+            "SeLe4n.Model.SystemState.updateTcb",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.queueNext",
+            "SeLe4n.Model.TCB.queuePPrev",
+            "SeLe4n.Model.TCB.queuePrev",
+            "SeLe4n.Model.dualQueueRemovalEnabled_guard",
+            "SeLe4n.Model.dualQueueRemovalGuard",
+            "SeLe4n.Model.queueRemoveBoundary",
+            "SeLe4n.Model.queueUnlinkPredecessor",
+            "SeLe4n.Model.queueUnlinkSuccessor",
+            "SeLe4n.Model.storeLeavesIndexAndTypes",
+            "SeLe4n.Model.storeObject",
+            "SeLe4n.ObjId",
+            "SeLe4n.ThreadId",
+            "SeLe4n.ThreadId.toObjId",
+            "SeLe4n.ThreadId.toObjId_injective"
+          ]
+        }
+      ]
+    },
+    {
       "module": "SeLe4n.Kernel.IPC.DualQueue.SenderMessage",
       "path": "SeLe4n/Kernel/IPC/DualQueue/SenderMessage.lean",
       "declaration_count": 18,
@@ -113806,7 +114210,7 @@
     {
       "module": "SeLe4n.Kernel.IPC.Invariant.CancelAllFrame",
       "path": "SeLe4n/Kernel/IPC/Invariant/CancelAllFrame.lean",
-      "declaration_count": 69,
+      "declaration_count": 72,
       "declarations": [
         {
           "kind": "theorem",
@@ -113885,14 +114289,13 @@
         },
         {
           "kind": "def",
-          "name": "FinaliseCancelStep",
-          "full_name": "SeLe4n.Kernel.FinaliseCancelStep",
-          "line": 129,
+          "name": "FinaliseNotificationCancelStep",
+          "full_name": "SeLe4n.Kernel.FinaliseNotificationCancelStep",
+          "line": 130,
           "called": [
             "SeLe4n.Kernel.Lifecycle.Suspend.cancelIpcBlocking",
             "SeLe4n.Kernel.notificationWaiterCancellable",
             "SeLe4n.Model.Notification",
-            "SeLe4n.Model.Notification.waitHead",
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getNotification?",
             "SeLe4n.Model.SystemState.getTcb?",
@@ -113904,9 +114307,26 @@
         },
         {
           "kind": "def",
+          "name": "FinaliseEndpointCancelStep",
+          "full_name": "SeLe4n.Kernel.FinaliseEndpointCancelStep",
+          "line": 139,
+          "called": [
+            "SeLe4n.Kernel.endpointBlockedCancellable",
+            "SeLe4n.Kernel.storeEndpointBlockedCancelled",
+            "SeLe4n.Model.Endpoint",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getEndpoint?",
+            "SeLe4n.Model.SystemState.getTcb?",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.ObjId",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "FinaliseSuspendStep",
           "full_name": "SeLe4n.Kernel.FinaliseSuspendStep",
-          "line": 139,
+          "line": 148,
           "called": [
             "SeLe4n.Kernel.descheduleAtPlacement",
             "SeLe4n.Kernel.isIdleThreadId",
@@ -113921,7 +114341,7 @@
           "kind": "def",
           "name": "FinaliseReleaseStep",
           "full_name": "SeLe4n.Kernel.FinaliseReleaseStep",
-          "line": 147,
+          "line": 156,
           "called": [
             "SeLe4n.Kernel.finaliseThreadReleaseCores",
             "SeLe4n.Model.SystemState",
@@ -113932,7 +114352,7 @@
           "kind": "def",
           "name": "FinaliseUnbindStep",
           "full_name": "SeLe4n.Kernel.FinaliseUnbindStep",
-          "line": 151,
+          "line": 160,
           "called": [
             "SeLe4n.Kernel.boundNotificationCodeOf",
             "SeLe4n.Kernel.storeUnbindNotification",
@@ -113949,7 +114369,7 @@
           "kind": "theorem",
           "name": "passiveServerIdleAllowed_of_codes",
           "full_name": "SeLe4n.Kernel.passiveServerIdleAllowed_of_codes",
-          "line": 161,
+          "line": 170,
           "called": [
             "SeLe4n.Kernel.ipcCodesIdleAllowed",
             "SeLe4n.Kernel.passiveServerIdleAllowed",
@@ -113962,7 +114382,7 @@
           "kind": "theorem",
           "name": "threadOfOptCode_succ",
           "full_name": "SeLe4n.Kernel.threadOfOptCode_succ",
-          "line": 177,
+          "line": 186,
           "called": [
             "SeLe4n.ThreadId",
             "SeLe4n.ThreadId.ofOptCode",
@@ -113973,13 +114393,15 @@
           "kind": "theorem",
           "name": "finaliseThread_closed",
           "full_name": "SeLe4n.Kernel.finaliseThread_closed",
-          "line": 183,
+          "line": 192,
           "called": [
-            "SeLe4n.Kernel.FinaliseCancelStep",
+            "SeLe4n.Kernel.FinaliseEndpointCancelStep",
+            "SeLe4n.Kernel.FinaliseNotificationCancelStep",
             "SeLe4n.Kernel.FinaliseReleaseStep",
             "SeLe4n.Kernel.FinaliseScUnbindStep",
             "SeLe4n.Kernel.FinaliseSuspendStep",
             "SeLe4n.Kernel.FinaliseUnbindStep",
+            "SeLe4n.Kernel.cancelEndpointBlocked",
             "SeLe4n.Kernel.finaliseThread",
             "SeLe4n.Kernel.finaliseThreadCancel",
             "SeLe4n.Kernel.finaliseThreadReleaseCores",
@@ -113999,7 +114421,7 @@
           "kind": "theorem",
           "name": "finaliseSchedContext_closed",
           "full_name": "SeLe4n.Kernel.finaliseSchedContext_closed",
-          "line": 265,
+          "line": 284,
           "called": [
             "SeLe4n.Kernel.FinaliseScUnbindStep",
             "SeLe4n.Kernel.finaliseSchedContext",
@@ -114016,9 +114438,10 @@
           "kind": "theorem",
           "name": "finaliseFinalObject_closed",
           "full_name": "SeLe4n.Kernel.finaliseFinalObject_closed",
-          "line": 299,
+          "line": 318,
           "called": [
-            "SeLe4n.Kernel.FinaliseCancelStep",
+            "SeLe4n.Kernel.FinaliseEndpointCancelStep",
+            "SeLe4n.Kernel.FinaliseNotificationCancelStep",
             "SeLe4n.Kernel.FinaliseReleaseStep",
             "SeLe4n.Kernel.FinaliseScUnbindStep",
             "SeLe4n.Kernel.FinaliseSuspendStep",
@@ -114052,7 +114475,7 @@
           "kind": "def",
           "name": "finaliseWritable",
           "full_name": "SeLe4n.Kernel.finaliseWritable",
-          "line": 335,
+          "line": 354,
           "called": [
             "SeLe4n.Model.KernelObject",
             "SeLe4n.Model.KernelObject.objectType"
@@ -114062,7 +114485,7 @@
           "kind": "theorem",
           "name": "finaliseWritable.untyped",
           "full_name": "SeLe4n.Kernel.finaliseWritable.untyped",
-          "line": 339,
+          "line": 358,
           "called": [
             "SeLe4n.Kernel.finaliseWritable",
             "SeLe4n.Model.KernelObject",
@@ -114074,7 +114497,7 @@
           "kind": "theorem",
           "name": "finaliseWritable.not_cnode",
           "full_name": "SeLe4n.Kernel.finaliseWritable.not_cnode",
-          "line": 343,
+          "line": 362,
           "called": [
             "SeLe4n.Kernel.finaliseWritable",
             "SeLe4n.Model.KernelObject",
@@ -114085,7 +114508,7 @@
           "kind": "theorem",
           "name": "finaliseWritable.not_vspaceRoot",
           "full_name": "SeLe4n.Kernel.finaliseWritable.not_vspaceRoot",
-          "line": 347,
+          "line": 366,
           "called": [
             "SeLe4n.Kernel.finaliseWritable",
             "SeLe4n.Model.KernelObject",
@@ -114096,7 +114519,7 @@
           "kind": "theorem",
           "name": "finaliseWritable_tcb",
           "full_name": "SeLe4n.Kernel.finaliseWritable_tcb",
-          "line": 351,
+          "line": 370,
           "called": [
             "SeLe4n.Kernel.finaliseWritable",
             "SeLe4n.Model.TCB"
@@ -114106,7 +114529,7 @@
           "kind": "theorem",
           "name": "finaliseWritable_schedContext",
           "full_name": "SeLe4n.Kernel.finaliseWritable_schedContext",
-          "line": 353,
+          "line": 372,
           "called": [
             "SeLe4n.Kernel.SchedContext",
             "SeLe4n.Kernel.finaliseWritable"
@@ -114116,7 +114539,7 @@
           "kind": "def",
           "name": "finaliseWrite",
           "full_name": "SeLe4n.Kernel.finaliseWrite",
-          "line": 360,
+          "line": 379,
           "called": [
             "SeLe4n.Kernel.finaliseWritable",
             "SeLe4n.Kernel.schedContextStackHead?",
@@ -114131,7 +114554,7 @@
           "kind": "theorem",
           "name": "refl",
           "full_name": "SeLe4n.Kernel.finaliseWrite.refl",
-          "line": 369,
+          "line": 388,
           "called": [
             "SeLe4n.Kernel.finaliseWrite",
             "SeLe4n.Model.SystemState"
@@ -114141,7 +114564,7 @@
           "kind": "theorem",
           "name": "trans",
           "full_name": "SeLe4n.Kernel.finaliseWrite.trans",
-          "line": 371,
+          "line": 390,
           "called": [
             "SeLe4n.Kernel.finaliseWrite",
             "SeLe4n.Model.SystemState"
@@ -114151,7 +114574,7 @@
           "kind": "theorem",
           "name": "kind",
           "full_name": "SeLe4n.Kernel.finaliseWrite.kind",
-          "line": 386,
+          "line": 405,
           "called": [
             "SeLe4n.Kernel.finaliseWritable",
             "SeLe4n.Kernel.finaliseWrite",
@@ -114163,7 +114586,7 @@
           "kind": "theorem",
           "name": "keeps",
           "full_name": "SeLe4n.Kernel.finaliseWrite.keeps",
-          "line": 395,
+          "line": 414,
           "called": [
             "SeLe4n.Kernel.finaliseWritable",
             "SeLe4n.Kernel.finaliseWrite",
@@ -114176,7 +114599,7 @@
           "kind": "theorem",
           "name": "keeps'",
           "full_name": "SeLe4n.Kernel.finaliseWrite.keeps'",
-          "line": 404,
+          "line": 423,
           "called": [
             "SeLe4n.Kernel.finaliseWritable",
             "SeLe4n.Kernel.finaliseWrite",
@@ -114189,7 +114612,7 @@
           "kind": "theorem",
           "name": "roots_iff",
           "full_name": "SeLe4n.Kernel.finaliseWrite.roots_iff",
-          "line": 413,
+          "line": 432,
           "called": [
             "SeLe4n.Kernel.finaliseWritable",
             "SeLe4n.Kernel.finaliseWrite",
@@ -114202,7 +114625,7 @@
           "kind": "theorem",
           "name": "of_kind_keeps",
           "full_name": "SeLe4n.Kernel.finaliseWrite.of_kind_keeps",
-          "line": 421,
+          "line": 440,
           "called": [
             "SeLe4n.Kernel.finaliseWritable",
             "SeLe4n.Kernel.finaliseWrite",
@@ -114217,7 +114640,7 @@
           "kind": "theorem",
           "name": "of_insert",
           "full_name": "SeLe4n.Kernel.finaliseWrite.of_insert",
-          "line": 436,
+          "line": 455,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne",
             "SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self",
@@ -114237,7 +114660,7 @@
           "kind": "theorem",
           "name": "of_agreeOffRunLinks",
           "full_name": "SeLe4n.Kernel.finaliseWrite.of_agreeOffRunLinks",
-          "line": 454,
+          "line": 473,
           "called": [
             "SeLe4n.Kernel.finaliseWritable_tcb",
             "SeLe4n.Kernel.finaliseWrite",
@@ -114253,7 +114676,7 @@
           "kind": "theorem",
           "name": "of_ntfnUnlinkReach",
           "full_name": "SeLe4n.Kernel.finaliseWrite.of_ntfnUnlinkReach",
-          "line": 469,
+          "line": 488,
           "called": [
             "SeLe4n.Kernel.finaliseWritable_tcb",
             "SeLe4n.Kernel.finaliseWrite",
@@ -114265,7 +114688,7 @@
           "kind": "def",
           "name": "onlyObjectsSchedulerCoreHoldsDiffer",
           "full_name": "SeLe4n.Kernel.onlyObjectsSchedulerCoreHoldsDiffer",
-          "line": 484,
+          "line": 503,
           "called": [
             "SeLe4n.MachineState",
             "SeLe4n.Model.SystemState"
@@ -114275,7 +114698,7 @@
           "kind": "theorem",
           "name": "refl",
           "full_name": "SeLe4n.Kernel.onlyObjectsSchedulerCoreHoldsDiffer.refl",
-          "line": 491,
+          "line": 510,
           "called": [
             "SeLe4n.Kernel.onlyObjectsSchedulerCoreHoldsDiffer",
             "SeLe4n.Model.SystemState"
@@ -114285,7 +114708,7 @@
           "kind": "theorem",
           "name": "trans",
           "full_name": "SeLe4n.Kernel.onlyObjectsSchedulerCoreHoldsDiffer.trans",
-          "line": 493,
+          "line": 512,
           "called": [
             "SeLe4n.Kernel.onlyObjectsSchedulerCoreHoldsDiffer",
             "SeLe4n.MachineState",
@@ -114296,7 +114719,7 @@
           "kind": "theorem",
           "name": "of_onlyObjectsSchedulerDiffer",
           "full_name": "SeLe4n.Kernel.onlyObjectsSchedulerCoreHoldsDiffer.of_onlyObjectsSchedulerDiffer",
-          "line": 501,
+          "line": 520,
           "called": [
             "SeLe4n.Kernel.onlyObjectsSchedulerCoreHoldsDiffer",
             "SeLe4n.Model.SystemState",
@@ -114307,7 +114730,7 @@
           "kind": "theorem",
           "name": "cdt",
           "full_name": "SeLe4n.Kernel.onlyObjectsSchedulerCoreHoldsDiffer.cdt",
-          "line": 507,
+          "line": 526,
           "called": [
             "SeLe4n.Kernel.onlyObjectsSchedulerCoreHoldsDiffer",
             "SeLe4n.Model.SystemState"
@@ -114317,7 +114740,7 @@
           "kind": "theorem",
           "name": "asidTable",
           "full_name": "SeLe4n.Kernel.onlyObjectsSchedulerCoreHoldsDiffer.asidTable",
-          "line": 511,
+          "line": 530,
           "called": [
             "SeLe4n.Kernel.onlyObjectsSchedulerCoreHoldsDiffer",
             "SeLe4n.Model.SystemState"
@@ -114327,7 +114750,7 @@
           "kind": "theorem",
           "name": "releaseCores",
           "full_name": "SeLe4n.Kernel.onlyObjectsSchedulerCoreHoldsDiffer.releaseCores",
-          "line": 516,
+          "line": 535,
           "called": [
             "SeLe4n.Kernel.finaliseThreadReleaseCores",
             "SeLe4n.Kernel.onlyObjectsSchedulerCoreHoldsDiffer",
@@ -114341,7 +114764,7 @@
           "kind": "structure",
           "name": "FinaliseFrame",
           "full_name": "SeLe4n.Kernel.FinaliseFrame",
-          "line": 527,
+          "line": 546,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.finaliseWrite",
@@ -114353,7 +114776,7 @@
           "kind": "theorem",
           "name": "refl",
           "full_name": "SeLe4n.Kernel.FinaliseFrame.refl",
-          "line": 534,
+          "line": 553,
           "called": [
             "SeLe4n.Kernel.FinaliseFrame",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -114364,7 +114787,7 @@
           "kind": "theorem",
           "name": "trans",
           "full_name": "SeLe4n.Kernel.FinaliseFrame.trans",
-          "line": 537,
+          "line": 556,
           "called": [
             "SeLe4n.Kernel.FinaliseFrame",
             "SeLe4n.Model.SystemState"
@@ -114374,7 +114797,7 @@
           "kind": "theorem",
           "name": "kind",
           "full_name": "SeLe4n.Kernel.FinaliseFrame.kind",
-          "line": 541,
+          "line": 560,
           "called": [
             "SeLe4n.Kernel.FinaliseFrame",
             "SeLe4n.Model.SystemState",
@@ -114385,7 +114808,7 @@
           "kind": "theorem",
           "name": "asidTable",
           "full_name": "SeLe4n.Kernel.FinaliseFrame.asidTable",
-          "line": 544,
+          "line": 563,
           "called": [
             "SeLe4n.Kernel.FinaliseFrame",
             "SeLe4n.Model.SystemState"
@@ -114395,7 +114818,7 @@
           "kind": "theorem",
           "name": "cdt",
           "full_name": "SeLe4n.Kernel.FinaliseFrame.cdt",
-          "line": 547,
+          "line": 566,
           "called": [
             "SeLe4n.Kernel.FinaliseFrame",
             "SeLe4n.Model.SystemState"
@@ -114405,7 +114828,7 @@
           "kind": "theorem",
           "name": "preserves_teardownWellFormed",
           "full_name": "SeLe4n.Kernel.FinaliseFrame.preserves_teardownWellFormed",
-          "line": 551,
+          "line": 570,
           "called": [
             "SeLe4n.Kernel.FinaliseFrame",
             "SeLe4n.Kernel.teardownWellFormed",
@@ -114418,7 +114841,7 @@
           "kind": "theorem",
           "name": "slotCapAt",
           "full_name": "SeLe4n.Kernel.FinaliseFrame.slotCapAt",
-          "line": 561,
+          "line": 580,
           "called": [
             "SeLe4n.Kernel.FinaliseFrame",
             "SeLe4n.Model.KernelObject.slots_eq_of_tcbSlots",
@@ -114431,7 +114854,7 @@
           "kind": "theorem",
           "name": "getUntyped?",
           "full_name": "SeLe4n.Kernel.FinaliseFrame.getUntyped?",
-          "line": 571,
+          "line": 590,
           "called": [
             "SeLe4n.Kernel.FinaliseFrame",
             "SeLe4n.Kernel.FinaliseFrame.kind",
@@ -114443,7 +114866,7 @@
           "kind": "theorem",
           "name": "updateTcb",
           "full_name": "SeLe4n.Kernel.FinaliseFrame.updateTcb",
-          "line": 585,
+          "line": 604,
           "called": [
             "SeLe4n.Kernel.FinaliseFrame",
             "SeLe4n.Kernel.FinaliseFrame.refl",
@@ -114465,7 +114888,7 @@
           "kind": "theorem",
           "name": "modifyObject",
           "full_name": "SeLe4n.Kernel.FinaliseFrame.modifyObject",
-          "line": 600,
+          "line": 619,
           "called": [
             "SeLe4n.Kernel.FinaliseFrame",
             "SeLe4n.Kernel.FinaliseFrame.refl",
@@ -114493,7 +114916,7 @@
           "kind": "theorem",
           "name": "enqueueRunnableOnCore",
           "full_name": "SeLe4n.Kernel.FinaliseFrame.enqueueRunnableOnCore",
-          "line": 627,
+          "line": 646,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.FinaliseFrame",
@@ -114522,7 +114945,7 @@
           "kind": "theorem",
           "name": "wakeCancelledWaiter",
           "full_name": "SeLe4n.Kernel.FinaliseFrame.wakeCancelledWaiter",
-          "line": 648,
+          "line": 667,
           "called": [
             "SeLe4n.Kernel.FinaliseFrame",
             "SeLe4n.Kernel.FinaliseFrame.enqueueRunnableOnCore",
@@ -114536,7 +114959,7 @@
           "kind": "theorem",
           "name": "storePopHead",
           "full_name": "SeLe4n.Kernel.FinaliseFrame.storePopHead",
-          "line": 653,
+          "line": 672,
           "called": [
             "SeLe4n.Kernel.FinaliseFrame",
             "SeLe4n.Kernel.FinaliseFrame.modifyObject",
@@ -114556,7 +114979,7 @@
           "kind": "theorem",
           "name": "storeEndpointWaiterCancelled",
           "full_name": "SeLe4n.Kernel.FinaliseFrame.storeEndpointWaiterCancelled",
-          "line": 674,
+          "line": 693,
           "called": [
             "SeLe4n.Kernel.FinaliseFrame",
             "SeLe4n.Kernel.FinaliseFrame.storePopHead",
@@ -114573,9 +114996,56 @@
         },
         {
           "kind": "theorem",
+          "name": "storeQueueRemove",
+          "full_name": "SeLe4n.Kernel.FinaliseFrame.storeQueueRemove",
+          "line": 704,
+          "called": [
+            "SeLe4n.Kernel.FinaliseFrame",
+            "SeLe4n.Kernel.FinaliseFrame.modifyObject",
+            "SeLe4n.Kernel.FinaliseFrame.refl",
+            "SeLe4n.Kernel.FinaliseFrame.trans",
+            "SeLe4n.Kernel.FinaliseFrame.updateTcb",
+            "SeLe4n.Kernel.RobinHood.RHTable.invExt",
+            "SeLe4n.Kernel.endsSetEndpoint",
+            "SeLe4n.Kernel.headAdvancedEndpoint",
+            "SeLe4n.Kernel.storeQueueRemove",
+            "SeLe4n.Kernel.tcbOffQueue",
+            "SeLe4n.Model.Endpoint",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.queueNext",
+            "SeLe4n.Model.TCB.queuePPrev",
+            "SeLe4n.Model.queueUnlinkPredecessor",
+            "SeLe4n.Model.queueUnlinkSuccessor",
+            "SeLe4n.ObjId",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "storeEndpointBlockedCancelled",
+          "full_name": "SeLe4n.Kernel.FinaliseFrame.storeEndpointBlockedCancelled",
+          "line": 749,
+          "called": [
+            "SeLe4n.Kernel.FinaliseFrame",
+            "SeLe4n.Kernel.FinaliseFrame.storeQueueRemove",
+            "SeLe4n.Kernel.FinaliseFrame.trans",
+            "SeLe4n.Kernel.FinaliseFrame.updateTcb",
+            "SeLe4n.Kernel.RobinHood.RHTable.invExt",
+            "SeLe4n.Kernel.cancelledEndpointWaiterTcb",
+            "SeLe4n.Kernel.storeEndpointBlockedCancelled",
+            "SeLe4n.Model.Endpoint",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.ObjId",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "notificationCancel",
           "full_name": "SeLe4n.Kernel.FinaliseFrame.notificationCancel",
-          "line": 685,
+          "line": 760,
           "called": [
             "SeLe4n.Kernel.FinaliseFrame",
             "SeLe4n.Kernel.FinaliseFrame.trans",
@@ -114598,7 +115068,7 @@
           "kind": "theorem",
           "name": "storeUnbindNotification",
           "full_name": "SeLe4n.Kernel.FinaliseFrame.storeUnbindNotification",
-          "line": 700,
+          "line": 775,
           "called": [
             "SeLe4n.Kernel.FinaliseFrame",
             "SeLe4n.Kernel.FinaliseFrame.modifyObject",
@@ -114615,7 +115085,7 @@
           "kind": "theorem",
           "name": "of_objects_eq",
           "full_name": "SeLe4n.Kernel.FinaliseFrame.of_objects_eq",
-          "line": 711,
+          "line": 786,
           "called": [
             "SeLe4n.Kernel.FinaliseFrame",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -114627,7 +115097,7 @@
           "kind": "theorem",
           "name": "updateSchedContext",
           "full_name": "SeLe4n.Kernel.FinaliseFrame.updateSchedContext",
-          "line": 716,
+          "line": 791,
           "called": [
             "SeLe4n.Kernel.FinaliseFrame",
             "SeLe4n.Kernel.FinaliseFrame.refl",
@@ -114649,7 +115119,7 @@
           "kind": "theorem",
           "name": "markKeyChangeFrom",
           "full_name": "SeLe4n.Kernel.FinaliseFrame.markKeyChangeFrom",
-          "line": 729,
+          "line": 804,
           "called": [
             "SeLe4n.Kernel.FinaliseFrame",
             "SeLe4n.Kernel.FinaliseFrame.of_objects_eq",
@@ -114665,7 +115135,7 @@
           "kind": "theorem",
           "name": "cancelBoundDonationOnCore",
           "full_name": "SeLe4n.Kernel.FinaliseFrame.cancelBoundDonationOnCore",
-          "line": 739,
+          "line": 814,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.FinaliseFrame",
@@ -114688,7 +115158,7 @@
           "kind": "theorem",
           "name": "descheduleAt",
           "full_name": "SeLe4n.Kernel.FinaliseFrame.descheduleAt",
-          "line": 760,
+          "line": 835,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.FinaliseFrame",
@@ -114707,7 +115177,7 @@
           "kind": "theorem",
           "name": "suspend",
           "full_name": "SeLe4n.Kernel.FinaliseFrame.suspend",
-          "line": 770,
+          "line": 845,
           "called": [
             "SeLe4n.Kernel.FinaliseFrame",
             "SeLe4n.Kernel.FinaliseFrame.descheduleAt",
@@ -114724,7 +115194,7 @@
           "kind": "theorem",
           "name": "releaseCores",
           "full_name": "SeLe4n.Kernel.FinaliseFrame.releaseCores",
-          "line": 777,
+          "line": 852,
           "called": [
             "SeLe4n.Kernel.FinaliseFrame",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -114739,7 +115209,7 @@
           "kind": "theorem",
           "name": "scUnbindStep",
           "full_name": "SeLe4n.Kernel.FinaliseFrame.scUnbindStep",
-          "line": 786,
+          "line": 861,
           "called": [
             "SeLe4n.Kernel.FinaliseFrame",
             "SeLe4n.Kernel.FinaliseFrame.cancelBoundDonationOnCore",
@@ -114753,7 +115223,7 @@
           "kind": "theorem",
           "name": "notificationWaiterCancellable_parts",
           "full_name": "SeLe4n.Kernel.notificationWaiterCancellable_parts",
-          "line": 796,
+          "line": 871,
           "called": [
             "SeLe4n.Kernel.cancelledWaiterWakeable",
             "SeLe4n.Kernel.notificationWaiterCancellable",
@@ -114771,7 +115241,7 @@
           "kind": "theorem",
           "name": "notificationWaiterCancellable_blocked",
           "full_name": "SeLe4n.Kernel.notificationWaiterCancellable_blocked",
-          "line": 807,
+          "line": 882,
           "called": [
             "SeLe4n.Kernel.notificationWaiterCancellable",
             "SeLe4n.Kernel.notificationWaiterCancellable_parts",
@@ -114786,13 +115256,14 @@
           "kind": "theorem",
           "name": "finaliseFinalObject_frame",
           "full_name": "SeLe4n.Kernel.finaliseFinalObject_frame",
-          "line": 813,
+          "line": 888,
           "called": [
             "SeLe4n.Kernel.FinaliseFrame",
             "SeLe4n.Kernel.FinaliseFrame.notificationCancel",
             "SeLe4n.Kernel.FinaliseFrame.refl",
             "SeLe4n.Kernel.FinaliseFrame.releaseCores",
             "SeLe4n.Kernel.FinaliseFrame.scUnbindStep",
+            "SeLe4n.Kernel.FinaliseFrame.storeEndpointBlockedCancelled",
             "SeLe4n.Kernel.FinaliseFrame.storeEndpointWaiterCancelled",
             "SeLe4n.Kernel.FinaliseFrame.storeUnbindNotification",
             "SeLe4n.Kernel.FinaliseFrame.suspend",
@@ -114809,7 +115280,7 @@
           "kind": "theorem",
           "name": "finaliseFinalObject_onlyObjectsSchedulerCoreHoldsDiffer",
           "full_name": "SeLe4n.Kernel.finaliseFinalObject_onlyObjectsSchedulerCoreHoldsDiffer",
-          "line": 830,
+          "line": 907,
           "called": [
             "SeLe4n.Kernel.Lifecycle.Suspend.cancelIpcBlocking",
             "SeLe4n.Kernel.Lifecycle.Suspend.restoreToReadyCancelled",
@@ -114830,10 +115301,13 @@
             "SeLe4n.Kernel.onlyObjectsSchedulerCoreHoldsDiffer.releaseCores",
             "SeLe4n.Kernel.removeFromNotificationWaitQueue",
             "SeLe4n.Kernel.removeFromNotificationWaitQueue_eq_objects",
+            "SeLe4n.Kernel.storeEndpointBlockedCancelled",
             "SeLe4n.Kernel.storeEndpointWaiterCancelled",
             "SeLe4n.Kernel.storePopHead",
+            "SeLe4n.Kernel.storeQueueRemove",
             "SeLe4n.Kernel.storeUnbindNotification",
             "SeLe4n.Kernel.wakeCancelledWaiter",
+            "SeLe4n.Model.Endpoint",
             "SeLe4n.Model.KernelObject",
             "SeLe4n.Model.SchedulerState.replenishQueueOnCore",
             "SeLe4n.Model.SchedulerState.setReplenishQueueOnCore",
@@ -114854,7 +115328,7 @@
           "kind": "theorem",
           "name": "finaliseFinalObject_cdt",
           "full_name": "SeLe4n.Kernel.finaliseFinalObject_cdt",
-          "line": 910,
+          "line": 1004,
           "called": [
             "SeLe4n.Kernel.finaliseFinalObject",
             "SeLe4n.Kernel.finaliseFinalObject_onlyObjectsSchedulerCoreHoldsDiffer",
@@ -114865,7 +115339,7 @@
           "kind": "theorem",
           "name": "finaliseFinalObject_preserves_teardownWellFormed",
           "full_name": "SeLe4n.Kernel.finaliseFinalObject_preserves_teardownWellFormed",
-          "line": 916,
+          "line": 1010,
           "called": [
             "SeLe4n.Kernel.finaliseFinalObject",
             "SeLe4n.Kernel.finaliseFinalObject_frame",
@@ -114878,7 +115352,7 @@
           "kind": "theorem",
           "name": "retireFinalisedObject_preserves_teardownWellFormed",
           "full_name": "SeLe4n.Kernel.retireFinalisedObject_preserves_teardownWellFormed",
-          "line": 925,
+          "line": 1019,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.finaliseFinalObject_preserves_teardownWellFormed",
@@ -114894,7 +115368,7 @@
     {
       "module": "SeLe4n.Kernel.IPC.Invariant.CancelAllPreservation",
       "path": "SeLe4n/Kernel/IPC/Invariant/CancelAllPreservation.lean",
-      "declaration_count": 15,
+      "declaration_count": 20,
       "declarations": [
         {
           "kind": "theorem",
@@ -114980,9 +115454,9 @@
         },
         {
           "kind": "theorem",
-          "name": "storeEndpointWaiterCancelled_preserves_ipcInvariantFull",
-          "full_name": "SeLe4n.Kernel.storeEndpointWaiterCancelled_preserves_ipcInvariantFull",
-          "line": 155,
+          "name": "cancelledEndpointWaiter_closes",
+          "full_name": "SeLe4n.Kernel.cancelledEndpointWaiter_closes",
+          "line": 154,
           "called": [
             "SeLe4n.Kernel.Architecture.cancelledIpcFrame",
             "SeLe4n.Kernel.Architecture.writeReturnFrameToTcb",
@@ -114991,46 +115465,29 @@
             "SeLe4n.Kernel.RobinHood.RHTable.insert",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.cancelledEndpointWaiterTcb",
-            "SeLe4n.Kernel.endpointQueuePopHead_establishes_ipcInvariantFullExceptMembership",
-            "SeLe4n.Kernel.endpointQueuePopHead_popped_no_incoming",
-            "SeLe4n.Kernel.endpointQueuePopHead_popped_not_head",
-            "SeLe4n.Kernel.endpointQueuePopHead_popped_not_tail",
-            "SeLe4n.Kernel.endpointQueuePopHead_preserves_objects_invExt",
-            "SeLe4n.Kernel.endpointWaitQueue",
-            "SeLe4n.Kernel.endpointWaiterCancellable",
-            "SeLe4n.Kernel.endpointWaiterCancellable_parts",
-            "SeLe4n.Kernel.enqueueRunnableOnCore_preserves_ipcInvariantFull",
             "SeLe4n.Kernel.ipcInvariantFull",
+            "SeLe4n.Kernel.ipcInvariantFullExceptMembership",
             "SeLe4n.Kernel.ipcInvariantFull_of_storeAgrees_of_scheduler_eq",
             "SeLe4n.Kernel.lookupTcb_of_objects_of_not_reserved",
             "SeLe4n.Kernel.modifyTcb",
             "SeLe4n.Kernel.objectStoreAgrees",
-            "SeLe4n.Kernel.popHead_inPlace",
-            "SeLe4n.Kernel.sendWakesInPlace",
-            "SeLe4n.Kernel.storeEndpointWaiterCancelled",
             "SeLe4n.Kernel.storeObject_objects_eq",
             "SeLe4n.Kernel.storeObject_objects_ne",
             "SeLe4n.Kernel.storeObject_scheduler_eq",
-            "SeLe4n.Kernel.storePopHead",
             "SeLe4n.Kernel.storeTcbReceiveComplete",
             "SeLe4n.Kernel.storeTcbReceiveComplete_closes_exceptMembership",
-            "SeLe4n.Kernel.tcbOffQueue",
             "SeLe4n.Kernel.writeReturnFrameToTcb_preserves_ipcInvariantFull",
             "SeLe4n.Model.Endpoint",
             "SeLe4n.Model.Endpoint.receiveQ",
             "SeLe4n.Model.Endpoint.sendQ",
+            "SeLe4n.Model.IntrusiveQueue",
             "SeLe4n.Model.SystemState",
-            "SeLe4n.Model.SystemState.getEndpoint?",
-            "SeLe4n.Model.SystemState.getEndpoint?_eq_some_iff",
             "SeLe4n.Model.SystemState.getTcb?",
             "SeLe4n.Model.SystemState.getTcb?_eq_some_iff",
             "SeLe4n.Model.SystemState.updateTcb",
             "SeLe4n.Model.SystemState.updateTcb_eq_of_some",
-            "SeLe4n.Model.SystemState.updateTcb_getTcb?_self",
-            "SeLe4n.Model.SystemState.updateTcb_preserves_objects_invExt",
             "SeLe4n.Model.TCB",
             "SeLe4n.Model.TCB.ipcState",
-            "SeLe4n.Model.TCB.ipcState_setIpcState",
             "SeLe4n.Model.TCB.queueNext",
             "SeLe4n.Model.TCB.setIpcState",
             "SeLe4n.Model.storeObject",
@@ -115043,9 +115500,53 @@
         },
         {
           "kind": "theorem",
+          "name": "storeEndpointWaiterCancelled_preserves_ipcInvariantFull",
+          "full_name": "SeLe4n.Kernel.storeEndpointWaiterCancelled_preserves_ipcInvariantFull",
+          "line": 227,
+          "called": [
+            "SeLe4n.Kernel.RobinHood.RHTable.invExt",
+            "SeLe4n.Kernel.cancelledEndpointWaiterTcb",
+            "SeLe4n.Kernel.cancelledEndpointWaiter_closes",
+            "SeLe4n.Kernel.endpointQueuePopHead_establishes_ipcInvariantFullExceptMembership",
+            "SeLe4n.Kernel.endpointQueuePopHead_popped_no_incoming",
+            "SeLe4n.Kernel.endpointQueuePopHead_popped_not_head",
+            "SeLe4n.Kernel.endpointQueuePopHead_popped_not_tail",
+            "SeLe4n.Kernel.endpointQueuePopHead_preserves_objects_invExt",
+            "SeLe4n.Kernel.endpointWaitQueue",
+            "SeLe4n.Kernel.endpointWaiterCancellable",
+            "SeLe4n.Kernel.endpointWaiterCancellable_parts",
+            "SeLe4n.Kernel.enqueueRunnableOnCore_preserves_ipcInvariantFull",
+            "SeLe4n.Kernel.ipcInvariantFull",
+            "SeLe4n.Kernel.popHead_inPlace",
+            "SeLe4n.Kernel.sendWakesInPlace",
+            "SeLe4n.Kernel.storeEndpointWaiterCancelled",
+            "SeLe4n.Kernel.storePopHead",
+            "SeLe4n.Kernel.tcbOffQueue",
+            "SeLe4n.Model.Endpoint",
+            "SeLe4n.Model.Endpoint.receiveQ",
+            "SeLe4n.Model.Endpoint.sendQ",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getEndpoint?",
+            "SeLe4n.Model.SystemState.getEndpoint?_eq_some_iff",
+            "SeLe4n.Model.SystemState.getTcb?",
+            "SeLe4n.Model.SystemState.getTcb?_eq_some_iff",
+            "SeLe4n.Model.SystemState.updateTcb",
+            "SeLe4n.Model.SystemState.updateTcb_getTcb?_self",
+            "SeLe4n.Model.SystemState.updateTcb_preserves_objects_invExt",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.ipcState",
+            "SeLe4n.Model.TCB.ipcState_setIpcState",
+            "SeLe4n.Model.TCB.queueNext",
+            "SeLe4n.ObjId",
+            "SeLe4n.ThreadId",
+            "SeLe4n.ThreadId.toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "notificationWaiterCancel_preserves_ipcInvariantFull",
           "full_name": "SeLe4n.Kernel.notificationWaiterCancel_preserves_ipcInvariantFull",
-          "line": 259,
+          "line": 284,
           "called": [
             "SeLe4n.Kernel.FinaliseFrame",
             "SeLe4n.Kernel.FinaliseFrame.notificationCancel",
@@ -115073,7 +115574,7 @@
           "kind": "theorem",
           "name": "storeUnbindNotification_preserves_ipcInvariantFull",
           "full_name": "SeLe4n.Kernel.storeUnbindNotification_preserves_ipcInvariantFull",
-          "line": 279,
+          "line": 304,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.boundNotificationCodeOf",
@@ -115091,7 +115592,7 @@
           "kind": "theorem",
           "name": "finaliseScUnbindStep_keepsIpcInvariantFull",
           "full_name": "SeLe4n.Kernel.finaliseScUnbindStep_keepsIpcInvariantFull",
-          "line": 293,
+          "line": 318,
           "called": [
             "SeLe4n.Kernel.FinaliseFrame",
             "SeLe4n.Kernel.FinaliseFrame.cancelBoundDonationOnCore",
@@ -115111,13 +115612,13 @@
         },
         {
           "kind": "theorem",
-          "name": "finaliseCancelStep_keepsIpcInvariantFull",
-          "full_name": "SeLe4n.Kernel.finaliseCancelStep_keepsIpcInvariantFull",
-          "line": 307,
+          "name": "finaliseNotificationCancelStep_keepsIpcInvariantFull",
+          "full_name": "SeLe4n.Kernel.finaliseNotificationCancelStep_keepsIpcInvariantFull",
+          "line": 333,
           "called": [
-            "SeLe4n.Kernel.FinaliseCancelStep",
             "SeLe4n.Kernel.FinaliseFrame",
             "SeLe4n.Kernel.FinaliseFrame.notificationCancel",
+            "SeLe4n.Kernel.FinaliseNotificationCancelStep",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.cancelIpcBlocking_notificationArm_preserves_ipcInvariantFull",
             "SeLe4n.Kernel.ipcInvariantFull",
@@ -115131,9 +115632,108 @@
         },
         {
           "kind": "theorem",
+          "name": "endpointBlockedCancellable_parts",
+          "full_name": "SeLe4n.Kernel.endpointBlockedCancellable_parts",
+          "line": 349,
+          "called": [
+            "SeLe4n.Kernel.blockedOnQueueSide",
+            "SeLe4n.Kernel.endpointBlockedCancellable",
+            "SeLe4n.Kernel.queueRemoveInPlace",
+            "SeLe4n.Model.Endpoint",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getTcb?",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.queueNext",
+            "SeLe4n.Model.TCB.queuePPrev",
+            "SeLe4n.ObjId",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueRemoveDual_removed_detached_side",
+          "full_name": "SeLe4n.Kernel.endpointQueueRemoveDual_removed_detached_side",
+          "line": 365,
+          "called": [
+            "SeLe4n.Kernel.RobinHood.RHTable.invExt",
+            "SeLe4n.Kernel.dualQueueSystemInvariant",
+            "SeLe4n.Kernel.endpointQueueRemoveDual",
+            "SeLe4n.Kernel.endpointQueueRemoveDual_removed_detached",
+            "SeLe4n.Kernel.endpointQueueRemoveDual_removed_no_incoming",
+            "SeLe4n.Kernel.endpointQueueRemoveDual_removed_not_boundary",
+            "SeLe4n.Kernel.endpointQueueTailBlockedConsistent",
+            "SeLe4n.Kernel.queueHeadBlockedConsistent",
+            "SeLe4n.Kernel.spliceQueue",
+            "SeLe4n.Kernel.spliceSideBlocked",
+            "SeLe4n.Kernel.tcbQueueLinkIntegrity",
+            "SeLe4n.Model.Endpoint",
+            "SeLe4n.Model.Endpoint.receiveQ",
+            "SeLe4n.Model.Endpoint.sendQ",
+            "SeLe4n.Model.IntrusiveQueue",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.ipcState",
+            "SeLe4n.Model.TCB.queueNext",
+            "SeLe4n.ObjId",
+            "SeLe4n.ThreadId",
+            "SeLe4n.ThreadId.toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "storeEndpointBlockedCancelled_preserves_ipcInvariantFull",
+          "full_name": "SeLe4n.Kernel.storeEndpointBlockedCancelled_preserves_ipcInvariantFull",
+          "line": 413,
+          "called": [
+            "SeLe4n.Kernel.RobinHood.RHTable.invExt",
+            "SeLe4n.Kernel.blockedOnQueueSide_ipcState",
+            "SeLe4n.Kernel.cancelledEndpointWaiter_closes",
+            "SeLe4n.Kernel.endpointBlockedCancellable",
+            "SeLe4n.Kernel.endpointBlockedCancellable_parts",
+            "SeLe4n.Kernel.endpointQueueRemoveDual_establishes_ipcInvariantFullExceptMembership",
+            "SeLe4n.Kernel.endpointQueueRemoveDual_preserves_objects_invExt",
+            "SeLe4n.Kernel.endpointQueueRemoveDual_removed_detached_side",
+            "SeLe4n.Kernel.getTcb?_of_lookupTcb",
+            "SeLe4n.Kernel.ipcInvariantFull",
+            "SeLe4n.Kernel.lookupTcb_of_objects_of_not_reserved",
+            "SeLe4n.Kernel.queueRemoveInPlace",
+            "SeLe4n.Kernel.queueRemove_inPlace",
+            "SeLe4n.Kernel.splicePredecessorBlocked",
+            "SeLe4n.Kernel.spliceSideBlocked",
+            "SeLe4n.Kernel.storeEndpointBlockedCancelled",
+            "SeLe4n.Kernel.storeQueueRemove",
+            "SeLe4n.Kernel.tcbOffQueue",
+            "SeLe4n.Model.Endpoint",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getEndpoint?",
+            "SeLe4n.Model.SystemState.getEndpoint?_eq_some_iff",
+            "SeLe4n.Model.SystemState.getTcb?",
+            "SeLe4n.Model.SystemState.getTcb?_eq_some_iff",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.ipcState",
+            "SeLe4n.ObjId",
+            "SeLe4n.ThreadId",
+            "SeLe4n.ThreadId.toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "finaliseEndpointCancelStep_keepsIpcInvariantFull",
+          "full_name": "SeLe4n.Kernel.finaliseEndpointCancelStep_keepsIpcInvariantFull",
+          "line": 453,
+          "called": [
+            "SeLe4n.Kernel.FinaliseEndpointCancelStep",
+            "SeLe4n.Kernel.FinaliseFrame",
+            "SeLe4n.Kernel.FinaliseFrame.storeEndpointBlockedCancelled",
+            "SeLe4n.Kernel.ipcInvariantFull",
+            "SeLe4n.Kernel.storeEndpointBlockedCancelled_preserves_ipcInvariantFull"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "inactiveMark_keepsIpcInvariantFull",
           "full_name": "SeLe4n.Kernel.inactiveMark_keepsIpcInvariantFull",
-          "line": 320,
+          "line": 461,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull",
@@ -115152,7 +115752,7 @@
           "kind": "theorem",
           "name": "finaliseSuspendStep_keepsIpcInvariantFull",
           "full_name": "SeLe4n.Kernel.finaliseSuspendStep_keepsIpcInvariantFull",
-          "line": 334,
+          "line": 475,
           "called": [
             "SeLe4n.Kernel.FinaliseFrame",
             "SeLe4n.Kernel.FinaliseFrame.descheduleAt",
@@ -115168,7 +115768,7 @@
           "kind": "theorem",
           "name": "finaliseReleaseStep_keepsIpcInvariantFull",
           "full_name": "SeLe4n.Kernel.finaliseReleaseStep_keepsIpcInvariantFull",
-          "line": 346,
+          "line": 487,
           "called": [
             "SeLe4n.Kernel.FinaliseFrame",
             "SeLe4n.Kernel.FinaliseFrame.releaseCores",
@@ -115183,7 +115783,7 @@
           "kind": "theorem",
           "name": "finaliseFinalObject_preserves_ipcInvariantFull",
           "full_name": "SeLe4n.Kernel.finaliseFinalObject_preserves_ipcInvariantFull",
-          "line": 360,
+          "line": 501,
           "called": [
             "SeLe4n.Kernel.FinaliseFrame",
             "SeLe4n.Kernel.FinaliseFrame.notificationCancel",
@@ -115192,9 +115792,10 @@
             "SeLe4n.Kernel.FinaliseFrame.trans",
             "SeLe4n.Kernel.FinaliseFrame.wakeCancelledWaiter",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
-            "SeLe4n.Kernel.finaliseCancelStep_keepsIpcInvariantFull",
+            "SeLe4n.Kernel.finaliseEndpointCancelStep_keepsIpcInvariantFull",
             "SeLe4n.Kernel.finaliseFinalObject",
             "SeLe4n.Kernel.finaliseFinalObject_closed",
+            "SeLe4n.Kernel.finaliseNotificationCancelStep_keepsIpcInvariantFull",
             "SeLe4n.Kernel.finaliseReleaseStep_keepsIpcInvariantFull",
             "SeLe4n.Kernel.finaliseScUnbindStep_keepsIpcInvariantFull",
             "SeLe4n.Kernel.finaliseSuspendStep_keepsIpcInvariantFull",
@@ -115210,7 +115811,7 @@
           "kind": "theorem",
           "name": "retireFinalisedObject_preserves_ipcInvariantFull",
           "full_name": "SeLe4n.Kernel.retireFinalisedObject_preserves_ipcInvariantFull",
-          "line": 384,
+          "line": 525,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -115226,7 +115827,7 @@
           "kind": "theorem",
           "name": "cspaceDeleteSlotFinalising_preserves_ipcInvariantFull",
           "full_name": "SeLe4n.Kernel.cspaceDeleteSlotFinalising_preserves_ipcInvariantFull",
-          "line": 399,
+          "line": 540,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -115245,7 +115846,7 @@
           "kind": "theorem",
           "name": "cspaceRevokeCdtFinalising_preserves_ipcInvariantFull",
           "full_name": "SeLe4n.Kernel.cspaceRevokeCdtFinalising_preserves_ipcInvariantFull",
-          "line": 412,
+          "line": 553,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -115263,13 +115864,13 @@
     {
       "module": "SeLe4n.Kernel.IPC.Invariant.CancelAllReachability",
       "path": "SeLe4n/Kernel/IPC/Invariant/CancelAllReachability.lean",
-      "declaration_count": 37,
+      "declaration_count": 45,
       "declarations": [
         {
           "kind": "theorem",
           "name": "modifyObject_objects_getElem",
           "full_name": "SeLe4n.Kernel.modifyObject_objects_getElem",
-          "line": 45,
+          "line": 46,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne",
             "SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self",
@@ -115287,7 +115888,7 @@
           "kind": "theorem",
           "name": "notificationWaiterConsistent_updateTcb_keeping",
           "full_name": "SeLe4n.Kernel.notificationWaiterConsistent_updateTcb_keeping",
-          "line": 67,
+          "line": 68,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.notificationWaiterConsistent",
@@ -115311,7 +115912,7 @@
           "kind": "theorem",
           "name": "timeoutBudgetFrame_updateTcb",
           "full_name": "SeLe4n.Kernel.timeoutBudgetFrame_updateTcb",
-          "line": 100,
+          "line": 101,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.timeoutBudgetFrame",
@@ -115331,7 +115932,7 @@
           "kind": "theorem",
           "name": "timeoutBudgetFrame_modifyObject_nonTcb",
           "full_name": "SeLe4n.Kernel.timeoutBudgetFrame_modifyObject_nonTcb",
-          "line": 117,
+          "line": 118,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.modifyObject_objects_getElem",
@@ -115346,7 +115947,7 @@
           "kind": "theorem",
           "name": "notificationWaiterConsistent_modifyObject_inert",
           "full_name": "SeLe4n.Kernel.notificationWaiterConsistent_modifyObject_inert",
-          "line": 136,
+          "line": 137,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.modifyObject_objects_getElem",
@@ -115362,7 +115963,7 @@
           "kind": "theorem",
           "name": "replyViews_updateTcb_eq_of",
           "full_name": "SeLe4n.Kernel.replyViews_updateTcb_eq_of",
-          "line": 176,
+          "line": 177,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.updateTcb_objects_self_of_tcb",
@@ -115385,7 +115986,7 @@
           "kind": "theorem",
           "name": "modifyObject_preserves_objects_invExt",
           "full_name": "SeLe4n.Kernel.modifyObject_preserves_objects_invExt",
-          "line": 192,
+          "line": 193,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.RobinHood.RHTable.modify",
@@ -115402,7 +116003,7 @@
           "kind": "theorem",
           "name": "storePopHead_preserves_notificationWaiterConsistent",
           "full_name": "SeLe4n.Kernel.storePopHead_preserves_notificationWaiterConsistent",
-          "line": 213,
+          "line": 214,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.modifyObject_preserves_objects_invExt",
@@ -115432,7 +116033,7 @@
           "kind": "theorem",
           "name": "storeEndpointWaiterCancelled_preserves_reachableParts",
           "full_name": "SeLe4n.Kernel.storeEndpointWaiterCancelled_preserves_reachableParts",
-          "line": 250,
+          "line": 251,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.cancelledEndpointWaiterTcb",
@@ -115489,10 +116090,137 @@
           ]
         },
         {
+          "kind": "def",
+          "name": "queueRemoveKeeps",
+          "full_name": "SeLe4n.Kernel.queueRemoveKeeps",
+          "line": 323,
+          "called": [
+            "SeLe4n.Kernel.RobinHood.RHTable.invExt",
+            "SeLe4n.Kernel.notificationWaiterConsistent",
+            "SeLe4n.Kernel.timeoutBudgetFrame",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.replyViews",
+            "SeLe4n.ObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "queueRemoveKeeps.updateTcb",
+          "full_name": "SeLe4n.Kernel.queueRemoveKeeps.updateTcb",
+          "line": 330,
+          "called": [
+            "SeLe4n.Kernel.notificationWaiterConsistent_updateTcb_keeping",
+            "SeLe4n.Kernel.queueRemoveKeeps",
+            "SeLe4n.Kernel.replyViews_updateTcb_eq_of",
+            "SeLe4n.Kernel.timeoutBudgetFrame_updateTcb",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getTcb?",
+            "SeLe4n.Model.SystemState.getTcb?_eq_some_iff",
+            "SeLe4n.Model.SystemState.updateTcb",
+            "SeLe4n.Model.SystemState.updateTcb_eq_self_of_none",
+            "SeLe4n.Model.SystemState.updateTcb_objects_ne",
+            "SeLe4n.Model.SystemState.updateTcb_preserves_objects_invExt",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.ipcState",
+            "SeLe4n.Model.TCB.ntfnNext",
+            "SeLe4n.Model.TCB.ntfnPrev",
+            "SeLe4n.Model.TCB.replyView",
+            "SeLe4n.ObjId",
+            "SeLe4n.ThreadId",
+            "SeLe4n.ThreadId.toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "queueRemoveKeeps.modifyObject",
+          "full_name": "SeLe4n.Kernel.queueRemoveKeeps.modifyObject",
+          "line": 353,
+          "called": [
+            "SeLe4n.Kernel.modifyObject_objects_getElem",
+            "SeLe4n.Kernel.modifyObject_preserves_objects_invExt",
+            "SeLe4n.Kernel.notificationWaiterConsistent_modifyObject_inert",
+            "SeLe4n.Kernel.queueRemoveKeeps",
+            "SeLe4n.Kernel.timeoutBudgetFrame_modifyObject_nonTcb",
+            "SeLe4n.Model.KernelObject",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getObject?",
+            "SeLe4n.Model.SystemState.modifyObject",
+            "SeLe4n.Model.SystemState.replyViews",
+            "SeLe4n.ObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "storeQueueRemove_keeps",
+          "full_name": "SeLe4n.Kernel.storeQueueRemove_keeps",
+          "line": 401,
+          "called": [
+            "SeLe4n.Kernel.RobinHood.RHTable.invExt",
+            "SeLe4n.Kernel.endsSetEndpoint",
+            "SeLe4n.Kernel.headAdvancedEndpoint",
+            "SeLe4n.Kernel.notificationWaiterConsistent",
+            "SeLe4n.Kernel.queueRemoveKeeps",
+            "SeLe4n.Kernel.storeQueueRemove",
+            "SeLe4n.Model.Endpoint",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.modifyObject",
+            "SeLe4n.Model.SystemState.updateTcb",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.queueNext",
+            "SeLe4n.Model.TCB.queuePPrev",
+            "SeLe4n.Model.queueUnlinkPredecessor",
+            "SeLe4n.Model.queueUnlinkSuccessor",
+            "SeLe4n.ObjId",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "storeEndpointBlockedCancelled_preserves_reachableParts",
+          "full_name": "SeLe4n.Kernel.storeEndpointBlockedCancelled_preserves_reachableParts",
+          "line": 439,
+          "called": [
+            "SeLe4n.Kernel.RobinHood.RHTable.invExt",
+            "SeLe4n.Kernel.blockedOnQueueSide_ipcState",
+            "SeLe4n.Kernel.cancelledEndpointWaiterTcb",
+            "SeLe4n.Kernel.endpointBlockedCancellable",
+            "SeLe4n.Kernel.endpointBlockedCancellable_parts",
+            "SeLe4n.Kernel.notificationWaiterConsistent",
+            "SeLe4n.Kernel.notificationWaiterConsistent_of_unblocked_tcb_write",
+            "SeLe4n.Kernel.queueRemove_inPlace",
+            "SeLe4n.Kernel.replyViews_updateTcb_eq_of",
+            "SeLe4n.Kernel.storeEndpointBlockedCancelled",
+            "SeLe4n.Kernel.storeQueueRemove",
+            "SeLe4n.Kernel.storeQueueRemove_keeps",
+            "SeLe4n.Kernel.tcbOffQueue",
+            "SeLe4n.Kernel.timeoutBudgetFrame",
+            "SeLe4n.Kernel.timeoutBudgetFrame_updateTcb",
+            "SeLe4n.Kernel.updateTcb_objects_self_of_tcb",
+            "SeLe4n.Model.Endpoint",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getEndpoint?",
+            "SeLe4n.Model.SystemState.getEndpoint?_eq_some_iff",
+            "SeLe4n.Model.SystemState.getTcb?",
+            "SeLe4n.Model.SystemState.getTcb?_eq_some_iff",
+            "SeLe4n.Model.SystemState.replyWaitersConsistent",
+            "SeLe4n.Model.SystemState.replyWaitersConsistent.of_views",
+            "SeLe4n.Model.SystemState.updateTcb_objects_ne",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.blockingServer?",
+            "SeLe4n.Model.TCB.blockingServer?_eq",
+            "SeLe4n.Model.TCB.ipcState",
+            "SeLe4n.Model.TCB.ipcState_setIpcState",
+            "SeLe4n.Model.TCB.replyView",
+            "SeLe4n.ObjId",
+            "SeLe4n.ThreadId",
+            "SeLe4n.ThreadId.toObjId"
+          ]
+        },
+        {
           "kind": "theorem",
           "name": "notificationWaiterConsistent_headDetached",
           "full_name": "SeLe4n.Kernel.notificationWaiterConsistent_headDetached",
-          "line": 330,
+          "line": 495,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne",
             "SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self",
@@ -115529,7 +116257,7 @@
           "kind": "theorem",
           "name": "cancelIpcBlocking_notificationHead_eq",
           "full_name": "SeLe4n.Kernel.cancelIpcBlocking_notificationHead_eq",
-          "line": 403,
+          "line": 568,
           "called": [
             "SeLe4n.Kernel.Architecture.cancelledIpcFrame",
             "SeLe4n.Kernel.Lifecycle.Suspend.cancelIpcBlocking",
@@ -115563,7 +116291,7 @@
           "kind": "theorem",
           "name": "timeoutBudgetFrame_of_ntfnUnlinkReach",
           "full_name": "SeLe4n.Kernel.timeoutBudgetFrame_of_ntfnUnlinkReach",
-          "line": 428,
+          "line": 593,
           "called": [
             "SeLe4n.Kernel.ntfnUnlinkReach",
             "SeLe4n.Kernel.timeoutBudgetFrame",
@@ -115572,19 +116300,65 @@
         },
         {
           "kind": "theorem",
+          "name": "storeNotificationBlockedCancelled_unlinked",
+          "full_name": "SeLe4n.Kernel.storeNotificationBlockedCancelled_unlinked",
+          "line": 608,
+          "called": [
+            "SeLe4n.Kernel.Architecture.cancelledIpcFrame",
+            "SeLe4n.Kernel.Lifecycle.Suspend.restoreToReadyCancelled",
+            "SeLe4n.Kernel.Lifecycle.Suspend.restoreToReadyStaging",
+            "SeLe4n.Kernel.RobinHood.RHTable.invExt",
+            "SeLe4n.Kernel.cancelledNotificationObject",
+            "SeLe4n.Kernel.clearNtfnLinks",
+            "SeLe4n.Kernel.modifyObject_objects_getElem",
+            "SeLe4n.Kernel.modifyObject_preserves_objects_invExt",
+            "SeLe4n.Kernel.storeNotificationBlockedCancelled",
+            "SeLe4n.Kernel.unlinkNtfnNeighbours",
+            "SeLe4n.Kernel.updateTcb_objects_self_of_tcb",
+            "SeLe4n.Model.Notification",
+            "SeLe4n.Model.Notification.waitHead",
+            "SeLe4n.Model.Notification.waitTail",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getTcb?",
+            "SeLe4n.Model.SystemState.getTcb?_eq_some_iff",
+            "SeLe4n.Model.SystemState.modifyObject",
+            "SeLe4n.Model.SystemState.updateTcb",
+            "SeLe4n.Model.SystemState.updateTcb_eq_self_of_none",
+            "SeLe4n.Model.SystemState.updateTcb_objects_ne",
+            "SeLe4n.Model.SystemState.updateTcb_preserves_objects_invExt",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.ipcState",
+            "SeLe4n.Model.TCB.ntfnNext",
+            "SeLe4n.Model.TCB.ntfnPrev",
+            "SeLe4n.Model.TCB.restoredToReady",
+            "SeLe4n.Model.TCB.withReturnFrame",
+            "SeLe4n.ObjId",
+            "SeLe4n.ThreadId",
+            "SeLe4n.ThreadId.ofOptCode_optCode",
+            "SeLe4n.ThreadId.optCode",
+            "SeLe4n.ThreadId.toObjId",
+            "SeLe4n.ThreadId.toObjId_injective"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "notificationCancel_preserves_reachableParts",
           "full_name": "SeLe4n.Kernel.notificationCancel_preserves_reachableParts",
-          "line": 442,
+          "line": 738,
           "called": [
             "SeLe4n.Kernel.Lifecycle.Suspend.cancelIpcBlocking",
             "SeLe4n.Kernel.Lifecycle.Suspend.restoreToReadyCancelled",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.cancelIpcBlocking_notificationHead_eq",
+            "SeLe4n.Kernel.cancelIpcBlocking_notification_inPlace",
             "SeLe4n.Kernel.cancelIpcBlocking_preserves_replyWaitersConsistent",
             "SeLe4n.Kernel.notificationWaiterConsistent",
             "SeLe4n.Kernel.notificationWaiterConsistent_headDetached",
+            "SeLe4n.Kernel.notificationWaiterConsistent_of_unlink",
+            "SeLe4n.Kernel.notificationWaiter_neighbours_distinct",
             "SeLe4n.Kernel.removeFromNotificationWaitQueue",
             "SeLe4n.Kernel.removeFromNotificationWaitQueue_reach",
+            "SeLe4n.Kernel.storeNotificationBlockedCancelled_unlinked",
             "SeLe4n.Kernel.timeoutBudgetFrame",
             "SeLe4n.Kernel.timeoutBudgetFrame_of_ntfnUnlinkReach",
             "SeLe4n.Kernel.timeoutBudgetFrame_updateTcb",
@@ -115598,15 +116372,19 @@
             "SeLe4n.Model.SystemState.replyWaitersConsistent",
             "SeLe4n.Model.TCB",
             "SeLe4n.Model.TCB.ipcState",
+            "SeLe4n.Model.TCB.ntfnNext",
+            "SeLe4n.Model.TCB.ntfnPrev",
             "SeLe4n.ObjId",
-            "SeLe4n.ThreadId"
+            "SeLe4n.ThreadId",
+            "SeLe4n.ThreadId.ofOptCode_optCode",
+            "SeLe4n.ThreadId.toObjId"
           ]
         },
         {
           "kind": "theorem",
           "name": "notificationWaiterCancel_preserves_reachableParts",
           "full_name": "SeLe4n.Kernel.notificationWaiterCancel_preserves_reachableParts",
-          "line": 470,
+          "line": 788,
           "called": [
             "SeLe4n.Kernel.FinaliseFrame",
             "SeLe4n.Kernel.FinaliseFrame.kind",
@@ -115630,7 +116408,6 @@
             "SeLe4n.Model.KernelObject",
             "SeLe4n.Model.KernelObject.objectType",
             "SeLe4n.Model.Notification",
-            "SeLe4n.Model.Notification.waitHead",
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.enqueueRunnableOnCore_replyViews_eq",
             "SeLe4n.Model.SystemState.getNotification?",
@@ -115653,7 +116430,7 @@
           "kind": "theorem",
           "name": "storeUnbindNotification_preserves_reachableParts",
           "full_name": "SeLe4n.Kernel.storeUnbindNotification_preserves_reachableParts",
-          "line": 518,
+          "line": 836,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.mapNotificationObject",
@@ -115690,7 +116467,7 @@
           "kind": "def",
           "name": "tcbReachFieldsKept",
           "full_name": "SeLe4n.Kernel.tcbReachFieldsKept",
-          "line": 572,
+          "line": 890,
           "called": [
             "SeLe4n.Model.TCB",
             "SeLe4n.Model.TCB.ipcState",
@@ -115703,7 +116480,7 @@
           "kind": "structure",
           "name": "ReachFieldFrame",
           "full_name": "SeLe4n.Kernel.ReachFieldFrame",
-          "line": 580,
+          "line": 898,
           "called": [
             "SeLe4n.Kernel.tcbReachFieldsKept",
             "SeLe4n.Model.Notification",
@@ -115716,7 +116493,7 @@
           "kind": "theorem",
           "name": "of_objects_eq",
           "full_name": "SeLe4n.Kernel.ReachFieldFrame.of_objects_eq",
-          "line": 590,
+          "line": 908,
           "called": [
             "SeLe4n.Kernel.ReachFieldFrame",
             "SeLe4n.Model.SystemState"
@@ -115726,7 +116503,7 @@
           "kind": "theorem",
           "name": "trans",
           "full_name": "SeLe4n.Kernel.ReachFieldFrame.trans",
-          "line": 595,
+          "line": 913,
           "called": [
             "SeLe4n.Kernel.ReachFieldFrame",
             "SeLe4n.Model.SystemState"
@@ -115736,7 +116513,7 @@
           "kind": "theorem",
           "name": "updateTcb",
           "full_name": "SeLe4n.Kernel.ReachFieldFrame.updateTcb",
-          "line": 608,
+          "line": 926,
           "called": [
             "SeLe4n.Kernel.ReachFieldFrame",
             "SeLe4n.Kernel.ReachFieldFrame.of_objects_eq",
@@ -115757,7 +116534,7 @@
           "kind": "theorem",
           "name": "updateSchedContext",
           "full_name": "SeLe4n.Kernel.ReachFieldFrame.updateSchedContext",
-          "line": 630,
+          "line": 948,
           "called": [
             "SeLe4n.Kernel.ReachFieldFrame",
             "SeLe4n.Kernel.ReachFieldFrame.of_objects_eq",
@@ -115779,7 +116556,7 @@
           "kind": "theorem",
           "name": "parts",
           "full_name": "SeLe4n.Kernel.ReachFieldFrame.parts",
-          "line": 659,
+          "line": 977,
           "called": [
             "SeLe4n.Kernel.ReachFieldFrame",
             "SeLe4n.Kernel.notificationWaiterConsistent",
@@ -115797,7 +116574,7 @@
           "kind": "theorem",
           "name": "of_agreeOffRunLinks",
           "full_name": "SeLe4n.Kernel.ReachFieldFrame.of_agreeOffRunLinks",
-          "line": 687,
+          "line": 1005,
           "called": [
             "SeLe4n.Kernel.ReachFieldFrame",
             "SeLe4n.Kernel.tcbReachFieldsKept",
@@ -115822,7 +116599,7 @@
           "kind": "theorem",
           "name": "descheduleAtPlacement",
           "full_name": "SeLe4n.Kernel.ReachFieldFrame.descheduleAtPlacement",
-          "line": 713,
+          "line": 1031,
           "called": [
             "SeLe4n.Kernel.ReachFieldFrame",
             "SeLe4n.Kernel.ReachFieldFrame.of_agreeOffRunLinks",
@@ -115838,7 +116615,7 @@
           "kind": "theorem",
           "name": "cancelBoundDonationOnCore_reachFieldFrame",
           "full_name": "SeLe4n.Kernel.cancelBoundDonationOnCore_reachFieldFrame",
-          "line": 725,
+          "line": 1043,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.FinaliseFrame",
@@ -115863,7 +116640,7 @@
           "kind": "theorem",
           "name": "finaliseWrite.donationChainFrame",
           "full_name": "SeLe4n.Kernel.finaliseWrite.donationChainFrame",
-          "line": 753,
+          "line": 1071,
           "called": [
             "SeLe4n.Kernel.finaliseWritable",
             "SeLe4n.Kernel.finaliseWrite",
@@ -115877,7 +116654,7 @@
           "kind": "def",
           "name": "finaliseStepInvariant",
           "full_name": "SeLe4n.Kernel.finaliseStepInvariant",
-          "line": 775,
+          "line": 1093,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.ipcInvariantFull",
@@ -115890,7 +116667,7 @@
           "kind": "theorem",
           "name": "of_ipcReachable",
           "full_name": "SeLe4n.Kernel.finaliseStepInvariant.of_ipcReachable",
-          "line": 781,
+          "line": 1099,
           "called": [
             "SeLe4n.Kernel.finaliseStepInvariant",
             "SeLe4n.Kernel.ipcReachable",
@@ -115901,7 +116678,7 @@
           "kind": "theorem",
           "name": "endpointCancel",
           "full_name": "SeLe4n.Kernel.finaliseStepInvariant.endpointCancel",
-          "line": 785,
+          "line": 1103,
           "called": [
             "SeLe4n.Kernel.FinaliseFrame",
             "SeLe4n.Kernel.FinaliseFrame.storeEndpointWaiterCancelled",
@@ -115926,7 +116703,7 @@
           "kind": "theorem",
           "name": "notificationCancel",
           "full_name": "SeLe4n.Kernel.finaliseStepInvariant.notificationCancel",
-          "line": 797,
+          "line": 1115,
           "called": [
             "SeLe4n.Kernel.FinaliseFrame",
             "SeLe4n.Kernel.FinaliseFrame.notificationCancel",
@@ -115941,7 +116718,6 @@
             "SeLe4n.Kernel.timeoutBudgetFrame",
             "SeLe4n.Kernel.wakeCancelledWaiter",
             "SeLe4n.Model.Notification",
-            "SeLe4n.Model.Notification.waitHead",
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getNotification?",
             "SeLe4n.Model.SystemState.getTcb?",
@@ -115954,7 +116730,7 @@
           "kind": "theorem",
           "name": "unbind",
           "full_name": "SeLe4n.Kernel.finaliseStepInvariant.unbind",
-          "line": 811,
+          "line": 1129,
           "called": [
             "SeLe4n.Kernel.FinaliseFrame",
             "SeLe4n.Kernel.FinaliseFrame.storeUnbindNotification",
@@ -115976,7 +116752,7 @@
           "kind": "theorem",
           "name": "scUnbind",
           "full_name": "SeLe4n.Kernel.finaliseStepInvariant.scUnbind",
-          "line": 822,
+          "line": 1140,
           "called": [
             "SeLe4n.Kernel.SchedContext",
             "SeLe4n.Kernel.cancelBoundDonationOnCore",
@@ -116001,16 +116777,15 @@
           "kind": "theorem",
           "name": "cancel",
           "full_name": "SeLe4n.Kernel.finaliseStepInvariant.cancel",
-          "line": 840,
+          "line": 1158,
           "called": [
             "SeLe4n.Kernel.Lifecycle.Suspend.cancelIpcBlocking",
-            "SeLe4n.Kernel.finaliseCancelStep_keepsIpcInvariantFull",
+            "SeLe4n.Kernel.finaliseNotificationCancelStep_keepsIpcInvariantFull",
             "SeLe4n.Kernel.finaliseStepInvariant",
             "SeLe4n.Kernel.notificationCancel_preserves_reachableParts",
             "SeLe4n.Kernel.notificationWaiterCancellable",
             "SeLe4n.Kernel.timeoutBudgetFrame",
             "SeLe4n.Model.Notification",
-            "SeLe4n.Model.Notification.waitHead",
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getNotification?",
             "SeLe4n.Model.SystemState.getTcb?",
@@ -116022,9 +116797,30 @@
         },
         {
           "kind": "theorem",
+          "name": "endpointBlockedCancel",
+          "full_name": "SeLe4n.Kernel.finaliseStepInvariant.endpointBlockedCancel",
+          "line": 1172,
+          "called": [
+            "SeLe4n.Kernel.endpointBlockedCancellable",
+            "SeLe4n.Kernel.finaliseEndpointCancelStep_keepsIpcInvariantFull",
+            "SeLe4n.Kernel.finaliseStepInvariant",
+            "SeLe4n.Kernel.storeEndpointBlockedCancelled",
+            "SeLe4n.Kernel.storeEndpointBlockedCancelled_preserves_reachableParts",
+            "SeLe4n.Kernel.timeoutBudgetFrame",
+            "SeLe4n.Model.Endpoint",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getEndpoint?",
+            "SeLe4n.Model.SystemState.getTcb?",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.ObjId",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "suspend",
           "full_name": "SeLe4n.Kernel.finaliseStepInvariant.suspend",
-          "line": 853,
+          "line": 1185,
           "called": [
             "SeLe4n.Kernel.FinaliseFrame",
             "SeLe4n.Kernel.FinaliseFrame.descheduleAt",
@@ -116048,7 +116844,7 @@
           "kind": "theorem",
           "name": "release",
           "full_name": "SeLe4n.Kernel.finaliseStepInvariant.release",
-          "line": 869,
+          "line": 1201,
           "called": [
             "SeLe4n.Kernel.ReachFieldFrame.of_objects_eq",
             "SeLe4n.Kernel.ReachFieldFrame.parts",
@@ -116064,9 +116860,23 @@
         },
         {
           "kind": "theorem",
+          "name": "timeoutBudget_isNone_of_ipcReachable",
+          "full_name": "SeLe4n.Kernel.timeoutBudget_isNone_of_ipcReachable",
+          "line": 1216,
+          "called": [
+            "SeLe4n.Kernel.ipcReachable",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getTcb?",
+            "SeLe4n.Model.SystemState.getTcb?_eq_some_iff",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "finaliseFinalObject_preserves_ipcReachable",
           "full_name": "SeLe4n.Kernel.finaliseFinalObject_preserves_ipcReachable",
-          "line": 884,
+          "line": 1226,
           "called": [
             "SeLe4n.Kernel.allTimeoutBudgetsNone_of_frame",
             "SeLe4n.Kernel.donationChainWellFormed_of_frame",
@@ -116085,7 +116895,7 @@
           "kind": "theorem",
           "name": "retireFinalisedObject_preserves_ipcReachable",
           "full_name": "SeLe4n.Kernel.retireFinalisedObject_preserves_ipcReachable",
-          "line": 919,
+          "line": 1264,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.finaliseFinalObject_preserves_ipcReachable",
@@ -136700,6 +137510,84 @@
       ]
     },
     {
+      "module": "SeLe4n.Kernel.IPC.Invariant.NotificationUnlink",
+      "path": "SeLe4n/Kernel/IPC/Invariant/NotificationUnlink.lean",
+      "declaration_count": 4,
+      "declarations": [
+        {
+          "kind": "theorem",
+          "name": "notificationQueueReaches_head",
+          "full_name": "SeLe4n.Kernel.notificationQueueReaches_head",
+          "line": 34,
+          "called": [
+            "SeLe4n.Kernel.notificationQueueReaches",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.ObjId",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationQueueReaches_noShortPrevCycle",
+          "full_name": "SeLe4n.Kernel.notificationQueueReaches_noShortPrevCycle",
+          "line": 45,
+          "called": [
+            "SeLe4n.Kernel.notificationQueueReaches",
+            "SeLe4n.Kernel.notificationQueueReaches_blocked",
+            "SeLe4n.Kernel.notificationWaiterConsistent",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.ObjId",
+            "SeLe4n.ThreadId",
+            "SeLe4n.ThreadId.toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationWaiter_neighbours_distinct",
+          "full_name": "SeLe4n.Kernel.notificationWaiter_neighbours_distinct",
+          "line": 73,
+          "called": [
+            "SeLe4n.Kernel.notificationQueueReaches_noShortPrevCycle",
+            "SeLe4n.Kernel.notificationWaiterConsistent",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.ipcState",
+            "SeLe4n.Model.TCB.ntfnNext",
+            "SeLe4n.Model.TCB.ntfnPrev",
+            "SeLe4n.ObjId",
+            "SeLe4n.ThreadId",
+            "SeLe4n.ThreadId.toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationWaiterConsistent_of_unlink",
+          "full_name": "SeLe4n.Kernel.notificationWaiterConsistent_of_unlink",
+          "line": 97,
+          "called": [
+            "SeLe4n.Kernel.notificationQueueReaches",
+            "SeLe4n.Kernel.notificationQueueReaches.transport",
+            "SeLe4n.Kernel.notificationQueueReaches_blocked",
+            "SeLe4n.Kernel.notificationQueueReaches_head",
+            "SeLe4n.Kernel.notificationWaiterConsistent",
+            "SeLe4n.Kernel.notificationWaiter_neighbours_distinct",
+            "SeLe4n.Model.Notification",
+            "SeLe4n.Model.Notification.waitHead",
+            "SeLe4n.Model.Notification.waitTail",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.ipcState",
+            "SeLe4n.Model.TCB.ntfnNext",
+            "SeLe4n.Model.TCB.ntfnPrev",
+            "SeLe4n.ObjId",
+            "SeLe4n.ThreadId",
+            "SeLe4n.ThreadId.toObjId",
+            "SeLe4n.ThreadId.toObjId_injective"
+          ]
+        }
+      ]
+    },
+    {
       "module": "SeLe4n.Kernel.IPC.Invariant.PerCore",
       "path": "SeLe4n/Kernel/IPC/Invariant/PerCore.lean",
       "declaration_count": 78,
@@ -146922,7 +147810,7 @@
     {
       "module": "SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.Capability",
       "path": "SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Capability.lean",
-      "declaration_count": 50,
+      "declaration_count": 52,
       "declarations": [
         {
           "kind": "theorem",
@@ -147652,9 +148540,56 @@
         },
         {
           "kind": "theorem",
+          "name": "endpointQueueRemoveDual_runQueueStage",
+          "full_name": "SeLe4n.Kernel.endpointQueueRemoveDual_runQueueStage",
+          "line": 517,
+          "called": [
+            "SeLe4n.Kernel.endpointQueueRemoveDual",
+            "SeLe4n.Kernel.storeObject_endpoint_runQueueStage",
+            "SeLe4n.Kernel.storeObject_objects_eq",
+            "SeLe4n.Kernel.storeTcbQueueLinks_endpoint_forward",
+            "SeLe4n.Kernel.storeTcbQueueLinks_preserves_objects_invExt",
+            "SeLe4n.Kernel.storeTcbQueueLinks_runQueueStage",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.RunQueueStage",
+            "SeLe4n.Model.SystemState.RunQueueStage.of_inv",
+            "SeLe4n.Model.storeObject_preserves_objects_invExt",
+            "SeLe4n.ObjId",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "storeEndpointBlockedCancelled_runQueueStage",
+          "full_name": "SeLe4n.Kernel.storeEndpointBlockedCancelled_runQueueStage",
+          "line": 555,
+          "called": [
+            "SeLe4n.Kernel.cancelledEndpointWaiterTcb",
+            "SeLe4n.Kernel.endpointBlockedCancellable",
+            "SeLe4n.Kernel.endpointBlockedCancellable_parts",
+            "SeLe4n.Kernel.endpointQueueRemoveDual_runQueueStage",
+            "SeLe4n.Kernel.queueRemove_inPlace",
+            "SeLe4n.Kernel.storeEndpointBlockedCancelled",
+            "SeLe4n.Model.Endpoint",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.RunQueueStage",
+            "SeLe4n.Model.SystemState.RunQueueStage.updateTcb",
+            "SeLe4n.Model.SystemState.getEndpoint?",
+            "SeLe4n.Model.SystemState.getEndpoint?_eq_some_iff",
+            "SeLe4n.Model.SystemState.getTcb?",
+            "SeLe4n.Model.SystemState.getTcb?_eq_some_iff",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.StateMono",
+            "SeLe4n.Model.TCB.ipcState_setIpcState",
+            "SeLe4n.ObjId",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "notificationWaiterCancel_runQueueStage",
           "full_name": "SeLe4n.Kernel.notificationWaiterCancel_runQueueStage",
-          "line": 519,
+          "line": 575,
           "called": [
             "SeLe4n.Kernel.Lifecycle.Suspend.cancelIpcBlocking",
             "SeLe4n.Kernel.Lifecycle.Suspend.cancelIpcBlocking_scheduler_eq",
@@ -147680,7 +148615,7 @@
           "kind": "theorem",
           "name": "finaliseSuspend_runQueueEntryStage",
           "full_name": "SeLe4n.Kernel.finaliseSuspend_runQueueEntryStage",
-          "line": 540,
+          "line": 596,
           "called": [
             "SeLe4n.Kernel.descheduleAtPlacedThenOffWrite_runQueueEntryStage",
             "SeLe4n.Kernel.descheduleAtPlacement",
@@ -147698,7 +148633,7 @@
           "kind": "theorem",
           "name": "finaliseFinalObject_runQueueEntryStage",
           "full_name": "SeLe4n.Kernel.finaliseFinalObject_runQueueEntryStage",
-          "line": 555,
+          "line": 611,
           "called": [
             "SeLe4n.Kernel.cancelDonationArmOnCore_runQueueStage",
             "SeLe4n.Kernel.cancelIpcBlocking_runQueueStage",
@@ -147708,6 +148643,7 @@
             "SeLe4n.Kernel.finaliseThreadReleaseCores_objects",
             "SeLe4n.Kernel.finaliseThreadReleaseCores_scheduler",
             "SeLe4n.Kernel.notificationWaiterCancel_runQueueStage",
+            "SeLe4n.Kernel.storeEndpointBlockedCancelled_runQueueStage",
             "SeLe4n.Kernel.storeEndpointWaiterCancelled_runQueueStage",
             "SeLe4n.Kernel.unbindNotification_of_inPlace",
             "SeLe4n.Kernel.unbindNotification_runQueueStage",
@@ -147721,7 +148657,7 @@
           "kind": "theorem",
           "name": "cspaceDeleteSlotFinalising_runQueueEntryStage",
           "full_name": "SeLe4n.Kernel.cspaceDeleteSlotFinalising_runQueueEntryStage",
-          "line": 576,
+          "line": 634,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -147739,7 +148675,7 @@
           "kind": "theorem",
           "name": "cspaceRevokeCdtFinalising_runQueueEntryStage",
           "full_name": "SeLe4n.Kernel.cspaceRevokeCdtFinalising_runQueueEntryStage",
-          "line": 586,
+          "line": 644,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -147755,7 +148691,7 @@
           "kind": "theorem",
           "name": "recordPhysicalWrites_runQueueStage'",
           "full_name": "SeLe4n.Kernel.recordPhysicalWrites_runQueueStage'",
-          "line": 596,
+          "line": 654,
           "called": [
             "SeLe4n.Kernel.Architecture.PhysicalWrite",
             "SeLe4n.Kernel.Architecture.recordPhysicalWrites",
@@ -147770,7 +148706,7 @@
           "kind": "theorem",
           "name": "pageTableMap_runQueueStage",
           "full_name": "SeLe4n.Kernel.pageTableMap_runQueueStage",
-          "line": 603,
+          "line": 661,
           "called": [
             "SeLe4n.Kernel.Architecture.pageTableMap",
             "SeLe4n.Kernel.Architecture.pageTableMap_ok",
@@ -147793,7 +148729,7 @@
           "kind": "theorem",
           "name": "pageTableUnmap_runQueueStage",
           "full_name": "SeLe4n.Kernel.pageTableUnmap_runQueueStage",
-          "line": 621,
+          "line": 679,
           "called": [
             "SeLe4n.Kernel.Architecture.pageTableUnmap",
             "SeLe4n.Kernel.Architecture.recordPhysicalWrites",
@@ -147818,7 +148754,7 @@
           "kind": "theorem",
           "name": "untypedRetypeObject_runQueueStage",
           "full_name": "SeLe4n.Kernel.untypedRetypeObject_runQueueStage",
-          "line": 662,
+          "line": 720,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.CarveRequest",
@@ -149345,7 +150281,7 @@
     {
       "module": "SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.Ipc",
       "path": "SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Ipc.lean",
-      "declaration_count": 37,
+      "declaration_count": 36,
       "declarations": [
         {
           "kind": "theorem",
@@ -149379,29 +150315,9 @@
         },
         {
           "kind": "theorem",
-          "name": "endpointQueueRemoveDual_runQueueStage",
-          "full_name": "SeLe4n.Kernel.endpointQueueRemoveDual_runQueueStage",
-          "line": 51,
-          "called": [
-            "SeLe4n.Kernel.endpointQueueRemoveDual",
-            "SeLe4n.Kernel.storeObject_endpoint_runQueueStage",
-            "SeLe4n.Kernel.storeObject_objects_eq",
-            "SeLe4n.Kernel.storeTcbQueueLinks_endpoint_forward",
-            "SeLe4n.Kernel.storeTcbQueueLinks_preserves_objects_invExt",
-            "SeLe4n.Kernel.storeTcbQueueLinks_runQueueStage",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.Model.SystemState.RunQueueStage",
-            "SeLe4n.Model.SystemState.RunQueueStage.of_inv",
-            "SeLe4n.Model.storeObject_preserves_objects_invExt",
-            "SeLe4n.ObjId",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "theorem",
           "name": "storeObject_notificationOver_runQueueStage",
           "full_name": "SeLe4n.Kernel.storeObject_notificationOver_runQueueStage",
-          "line": 89,
+          "line": 53,
           "called": [
             "SeLe4n.Model.Notification",
             "SeLe4n.Model.SystemState",
@@ -149418,7 +150334,7 @@
           "kind": "theorem",
           "name": "runQueueStage_of_ntfnLinksRewritten",
           "full_name": "SeLe4n.Kernel.runQueueStage_of_ntfnLinksRewritten",
-          "line": 105,
+          "line": 69,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.ntfnLinksRewritten",
@@ -149440,7 +150356,7 @@
           "kind": "theorem",
           "name": "detachNtfnHead_runQueueStage",
           "full_name": "SeLe4n.Kernel.detachNtfnHead_runQueueStage",
-          "line": 123,
+          "line": 87,
           "called": [
             "SeLe4n.Kernel.detachNtfnHead",
             "SeLe4n.Kernel.detachNtfnHead_linksRewritten",
@@ -149454,7 +150370,7 @@
           "kind": "theorem",
           "name": "blockedCurrentNowhere.boundTarget",
           "full_name": "SeLe4n.Kernel.blockedCurrentNowhere.boundTarget",
-          "line": 129,
+          "line": 93,
           "called": [
             "SeLe4n.Kernel.blockedCurrentNowhere",
             "SeLe4n.Kernel.boundDeliveryTarget?",
@@ -149469,7 +150385,7 @@
           "kind": "theorem",
           "name": "boundTarget_blockedAt",
           "full_name": "SeLe4n.Kernel.boundTarget_blockedAt",
-          "line": 144,
+          "line": 108,
           "called": [
             "SeLe4n.Kernel.blockedAt",
             "SeLe4n.Kernel.boundDeliveryTarget?",
@@ -149483,7 +150399,7 @@
           "kind": "theorem",
           "name": "notificationSignalOnCore_runQueueStage",
           "full_name": "SeLe4n.Kernel.notificationSignalOnCore_runQueueStage",
-          "line": 153,
+          "line": 117,
           "called": [
             "SeLe4n.Badge",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -149503,7 +150419,7 @@
           "kind": "theorem",
           "name": "notificationSignalBoundOnCore_runQueueStage",
           "full_name": "SeLe4n.Kernel.notificationSignalBoundOnCore_runQueueStage",
-          "line": 169,
+          "line": 133,
           "called": [
             "SeLe4n.Badge",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -149524,7 +150440,7 @@
           "kind": "theorem",
           "name": "spliceReplyFrameOutOrSelf_runQueueStage",
           "full_name": "SeLe4n.Kernel.spliceReplyFrameOutOrSelf_runQueueStage",
-          "line": 184,
+          "line": 148,
           "called": [
             "SeLe4n.Kernel.spliceReplyFrameOutOrSelf",
             "SeLe4n.Kernel.spliceReplyFrameOut_preserves_objects_invExt",
@@ -149543,7 +150459,7 @@
           "kind": "theorem",
           "name": "removeCallerReplyFrame_runQueueStage",
           "full_name": "SeLe4n.Kernel.removeCallerReplyFrame_runQueueStage",
-          "line": 199,
+          "line": 163,
           "called": [
             "SeLe4n.Kernel.consumeCallerReply_runQueueStage",
             "SeLe4n.Kernel.removeCallerReplyFrame",
@@ -149558,7 +150474,7 @@
           "kind": "theorem",
           "name": "storeTcbIpcStateAndMessage_fromTcb_runQueueStage",
           "full_name": "SeLe4n.Kernel.storeTcbIpcStateAndMessage_fromTcb_runQueueStage",
-          "line": 205,
+          "line": 169,
           "called": [
             "SeLe4n.Kernel.lookupTcb",
             "SeLe4n.Kernel.lookupTcb_some_objects",
@@ -149576,7 +150492,7 @@
           "kind": "theorem",
           "name": "storeTcbIpcStateAndMessage_fromTcb_scheduler_eq",
           "full_name": "SeLe4n.Kernel.storeTcbIpcStateAndMessage_fromTcb_scheduler_eq",
-          "line": 217,
+          "line": 181,
           "called": [
             "SeLe4n.Kernel.storeObject_scheduler_eq",
             "SeLe4n.Kernel.storeTcbIpcStateAndMessage_fromTcb",
@@ -149591,7 +150507,7 @@
           "kind": "theorem",
           "name": "notificationWait_block_runQueueEntryStage",
           "full_name": "SeLe4n.Kernel.notificationWait_block_runQueueEntryStage",
-          "line": 230,
+          "line": 194,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.currentOnCore_of_scheduler_eq",
@@ -149631,7 +150547,7 @@
           "kind": "theorem",
           "name": "notificationWaitOnCore_runQueueEntryStage",
           "full_name": "SeLe4n.Kernel.notificationWaitOnCore_runQueueEntryStage",
-          "line": 266,
+          "line": 230,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.isIdleThreadId",
@@ -149651,7 +150567,7 @@
           "kind": "theorem",
           "name": "blockedAt_of_blockedOnReply",
           "full_name": "SeLe4n.Kernel.blockedAt_of_blockedOnReply",
-          "line": 286,
+          "line": 250,
           "called": [
             "SeLe4n.Kernel.blockedAt",
             "SeLe4n.Kernel.getTcb?_of_lookupTcb",
@@ -149667,7 +150583,7 @@
           "kind": "theorem",
           "name": "endpointReplyOnCore_runQueueStage",
           "full_name": "SeLe4n.Kernel.endpointReplyOnCore_runQueueStage",
-          "line": 293,
+          "line": 257,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.blockedAt_of_blockedOnReply",
@@ -149688,7 +150604,7 @@
           "kind": "theorem",
           "name": "applyReplyDonationOnCore_runQueueStage",
           "full_name": "SeLe4n.Kernel.applyReplyDonationOnCore_runQueueStage",
-          "line": 312,
+          "line": 276,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.applyReplyDonationOnCore",
@@ -149706,7 +150622,7 @@
           "kind": "theorem",
           "name": "endpointReplyCrossCoreDispatch_runQueueStage",
           "full_name": "SeLe4n.Kernel.endpointReplyCrossCoreDispatch_runQueueStage",
-          "line": 326,
+          "line": 290,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.PriorityInheritance.propagatePipChainCrossCore_runQueueStage",
@@ -149726,7 +150642,7 @@
           "kind": "theorem",
           "name": "endpointReplyCrossCoreDispatchChecked_runQueueStage",
           "full_name": "SeLe4n.Kernel.endpointReplyCrossCoreDispatchChecked_runQueueStage",
-          "line": 344,
+          "line": 308,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
@@ -149744,7 +150660,7 @@
           "kind": "theorem",
           "name": "endpointReplyCrossCoreDispatch_ok_reply",
           "full_name": "SeLe4n.Kernel.endpointReplyCrossCoreDispatch_ok_reply",
-          "line": 354,
+          "line": 318,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.SgiKind",
@@ -149759,7 +150675,7 @@
           "kind": "theorem",
           "name": "faultReplyApplyOnCore_runQueueEntryStage",
           "full_name": "SeLe4n.Kernel.faultReplyApplyOnCore_runQueueEntryStage",
-          "line": 370,
+          "line": 334,
           "called": [
             "SeLe4n.Kernel.Architecture.FaultReplyOutcome",
             "SeLe4n.Kernel.faultAbandonCore",
@@ -149778,7 +150694,7 @@
           "kind": "theorem",
           "name": "faultReplyOnCore_runQueueEntryStage",
           "full_name": "SeLe4n.Kernel.faultReplyOnCore_runQueueEntryStage",
-          "line": 385,
+          "line": 349,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -149805,7 +150721,7 @@
           "kind": "theorem",
           "name": "replyTransferOnCore_runQueueEntryStage",
           "full_name": "SeLe4n.Kernel.replyTransferOnCore_runQueueEntryStage",
-          "line": 409,
+          "line": 373,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -149827,7 +150743,7 @@
           "kind": "theorem",
           "name": "replyTransferOnCoreChecked_runQueueEntryStage",
           "full_name": "SeLe4n.Kernel.replyTransferOnCoreChecked_runQueueEntryStage",
-          "line": 426,
+          "line": 390,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
@@ -149850,7 +150766,7 @@
           "kind": "theorem",
           "name": "stageWokenSendCompletion_runQueueStage",
           "full_name": "SeLe4n.Kernel.stageWokenSendCompletion_runQueueStage",
-          "line": 444,
+          "line": 408,
           "called": [
             "SeLe4n.Kernel.Architecture.stageWokenSendCompletion",
             "SeLe4n.Kernel.writeReturnFrameToTcb_runQueueStage",
@@ -149864,7 +150780,7 @@
           "kind": "theorem",
           "name": "applyRendezvousCallDonation_runQueueStage",
           "full_name": "SeLe4n.Kernel.applyRendezvousCallDonation_runQueueStage",
-          "line": 453,
+          "line": 417,
           "called": [
             "SeLe4n.Kernel.applyCallDonationOnCore_runQueueStage",
             "SeLe4n.Kernel.applyRendezvousCallDonation",
@@ -149877,7 +150793,7 @@
           "kind": "theorem",
           "name": "applyReceiveRendezvousHandoff_runQueueStage",
           "full_name": "SeLe4n.Kernel.applyReceiveRendezvousHandoff_runQueueStage",
-          "line": 461,
+          "line": 425,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.PriorityInheritance.propagatePipChainCrossCore_runQueueStage",
@@ -149895,7 +150811,7 @@
           "kind": "theorem",
           "name": "applyReceiveLegPipHandoff_runQueueStage",
           "full_name": "SeLe4n.Kernel.applyReceiveLegPipHandoff_runQueueStage",
-          "line": 478,
+          "line": 442,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.PriorityInheritance.propagatePipChainCrossCore_runQueueStage",
@@ -149911,7 +150827,7 @@
           "kind": "theorem",
           "name": "replyRecvPopDonation_runQueueStage",
           "full_name": "SeLe4n.Kernel.replyRecvPopDonation_runQueueStage",
-          "line": 487,
+          "line": 451,
           "called": [
             "SeLe4n.Kernel.migrateSchedContextReplenishment_runQueueStage",
             "SeLe4n.Kernel.replyRecvPopDonation",
@@ -149928,7 +150844,7 @@
           "kind": "theorem",
           "name": "replyRecvHolderDeschedule_runQueueStage",
           "full_name": "SeLe4n.Kernel.replyRecvHolderDeschedule_runQueueStage",
-          "line": 499,
+          "line": 463,
           "called": [
             "SeLe4n.Kernel.descheduleAt_runQueueStage",
             "SeLe4n.Kernel.replyRecvHolderDeschedule",
@@ -149942,7 +150858,7 @@
           "kind": "theorem",
           "name": "replyRecvPostReceiveDonation_runQueueStage",
           "full_name": "SeLe4n.Kernel.replyRecvPostReceiveDonation_runQueueStage",
-          "line": 506,
+          "line": 470,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.PriorityInheritance.propagatePipChainCrossCore_runQueueStage",
@@ -149960,7 +150876,7 @@
           "kind": "theorem",
           "name": "endpointReplyOnCore_currentOnCore",
           "full_name": "SeLe4n.Kernel.endpointReplyOnCore_currentOnCore",
-          "line": 525,
+          "line": 489,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.endpointReplyOnCore",
@@ -149979,7 +150895,7 @@
           "kind": "theorem",
           "name": "endpointReplyOnCore_preserves_queueHeadBlockedConsistent",
           "full_name": "SeLe4n.Kernel.endpointReplyOnCore_preserves_queueHeadBlockedConsistent",
-          "line": 542,
+          "line": 506,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.SgiKind",
@@ -150007,7 +150923,7 @@
           "kind": "theorem",
           "name": "replyRecvPopDonation_frame",
           "full_name": "SeLe4n.Kernel.replyRecvPopDonation_frame",
-          "line": 577,
+          "line": 541,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.migrateSchedContextReplenishment_objects",
@@ -150032,7 +150948,7 @@
           "kind": "theorem",
           "name": "endpointReplyRecvOnCore_runQueueEntryStage",
           "full_name": "SeLe4n.Kernel.endpointReplyRecvOnCore_runQueueEntryStage",
-          "line": 616,
+          "line": 580,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -169592,13 +170508,13 @@
     {
       "module": "SeLe4n.Kernel.IPC.Operations.CancelAll",
       "path": "SeLe4n/Kernel/IPC/Operations/CancelAll.lean",
-      "declaration_count": 60,
+      "declaration_count": 67,
       "declarations": [
         {
           "kind": "def",
           "name": "cancelledWaiterWakeable",
           "full_name": "SeLe4n.Kernel.cancelledWaiterWakeable",
-          "line": 70,
+          "line": 71,
           "called": [
             "SeLe4n.Kernel.runningOnSomeCore",
             "SeLe4n.Model.SystemState",
@@ -169610,7 +170526,7 @@
           "kind": "def",
           "name": "wakeCancelledWaiter",
           "full_name": "SeLe4n.Kernel.wakeCancelledWaiter",
-          "line": 75,
+          "line": 76,
           "called": [
             "SeLe4n.Kernel.determineTargetCore",
             "SeLe4n.Kernel.enqueueRunnableOnCore",
@@ -169622,7 +170538,7 @@
           "kind": "def",
           "name": "endpointWaitQueue",
           "full_name": "SeLe4n.Kernel.endpointWaitQueue",
-          "line": 83,
+          "line": 84,
           "called": [
             "SeLe4n.Model.Endpoint",
             "SeLe4n.Model.Endpoint.receiveQ",
@@ -169634,7 +170550,7 @@
           "kind": "def",
           "name": "cancelledEndpointWaiterTcb",
           "full_name": "SeLe4n.Kernel.cancelledEndpointWaiterTcb",
-          "line": 89,
+          "line": 90,
           "called": [
             "SeLe4n.Kernel.Architecture.cancelledIpcFrame",
             "SeLe4n.Model.TCB",
@@ -169646,7 +170562,7 @@
           "kind": "def",
           "name": "endpointWaiterCancellable",
           "full_name": "SeLe4n.Kernel.endpointWaiterCancellable",
-          "line": 98,
+          "line": 99,
           "called": [
             "SeLe4n.Kernel.cancelledWaiterWakeable",
             "SeLe4n.Kernel.sendWakesInPlace",
@@ -169661,7 +170577,7 @@
           "kind": "def",
           "name": "storeEndpointWaiterCancelled",
           "full_name": "SeLe4n.Kernel.storeEndpointWaiterCancelled",
-          "line": 107,
+          "line": 108,
           "called": [
             "SeLe4n.Kernel.cancelledEndpointWaiterTcb",
             "SeLe4n.Kernel.storePopHead",
@@ -169676,7 +170592,7 @@
           "kind": "def",
           "name": "cancelEndpointQueue",
           "full_name": "SeLe4n.Kernel.cancelEndpointQueue",
-          "line": 114,
+          "line": 115,
           "called": [
             "SeLe4n.Kernel.endpointWaitQueue",
             "SeLe4n.Kernel.endpointWaiterCancellable",
@@ -169691,7 +170607,7 @@
           "kind": "def",
           "name": "cancelAllIpc",
           "full_name": "SeLe4n.Kernel.cancelAllIpc",
-          "line": 133,
+          "line": 134,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable",
             "SeLe4n.Kernel.cancelEndpointQueue",
@@ -169703,7 +170619,7 @@
           "kind": "def",
           "name": "notificationWaiterCancellable",
           "full_name": "SeLe4n.Kernel.notificationWaiterCancellable",
-          "line": 146,
+          "line": 148,
           "called": [
             "SeLe4n.Kernel.cancelledWaiterWakeable",
             "SeLe4n.Model.SystemState",
@@ -169717,7 +170633,7 @@
           "kind": "def",
           "name": "cancelNotificationQueue",
           "full_name": "SeLe4n.Kernel.cancelNotificationQueue",
-          "line": 156,
+          "line": 158,
           "called": [
             "SeLe4n.Kernel.Lifecycle.Suspend.cancelIpcBlocking",
             "SeLe4n.Kernel.notificationWaiterCancellable",
@@ -169730,9 +170646,9 @@
         },
         {
           "kind": "def",
-          "name": "cancelPoppedObject",
-          "full_name": "SeLe4n.Kernel.cancelPoppedObject",
-          "line": 181,
+          "name": "cancelledNotificationObject",
+          "full_name": "SeLe4n.Kernel.cancelledNotificationObject",
+          "line": 184,
           "called": [
             "SeLe4n.Model.KernelObject",
             "SeLe4n.ThreadId",
@@ -169741,14 +170657,14 @@
         },
         {
           "kind": "def",
-          "name": "storeNotificationWaiterCancelled",
-          "full_name": "SeLe4n.Kernel.storeNotificationWaiterCancelled",
-          "line": 194,
+          "name": "storeNotificationBlockedCancelled",
+          "full_name": "SeLe4n.Kernel.storeNotificationBlockedCancelled",
+          "line": 203,
           "called": [
             "SeLe4n.Kernel.Lifecycle.Suspend.restoreToReadyCancelled",
-            "SeLe4n.Kernel.cancelPoppedObject",
-            "SeLe4n.Kernel.detachNtfnHead",
-            "SeLe4n.Kernel.wakeCancelledWaiter",
+            "SeLe4n.Kernel.cancelledNotificationObject",
+            "SeLe4n.Kernel.clearNtfnLinks",
+            "SeLe4n.Kernel.unlinkNtfnNeighbours",
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.modifyObject",
             "SeLe4n.ObjId",
@@ -169757,16 +170673,16 @@
         },
         {
           "kind": "theorem",
-          "name": "cancelIpcBlocking_notificationHead_inPlace",
-          "full_name": "SeLe4n.Kernel.cancelIpcBlocking_notificationHead_inPlace",
-          "line": 206,
+          "name": "cancelIpcBlocking_notification_inPlace",
+          "full_name": "SeLe4n.Kernel.cancelIpcBlocking_notification_inPlace",
+          "line": 217,
           "called": [
             "SeLe4n.Kernel.Lifecycle.Suspend.cancelIpcBlocking",
             "SeLe4n.Kernel.RobinHood.RHTable.get?",
             "SeLe4n.Kernel.RobinHood.RHTable.modify_of_get?",
+            "SeLe4n.Kernel.cancelledNotificationObject",
             "SeLe4n.Kernel.removeFromNotificationWaitQueue",
-            "SeLe4n.Kernel.storeNotificationWaiterCancelled",
-            "SeLe4n.Kernel.wakeCancelledWaiter",
+            "SeLe4n.Kernel.storeNotificationBlockedCancelled",
             "SeLe4n.Model.Notification",
             "SeLe4n.Model.Notification.waitHead",
             "SeLe4n.Model.SystemState",
@@ -169779,6 +170695,7 @@
             "SeLe4n.Model.TCB",
             "SeLe4n.Model.TCB.ipcState",
             "SeLe4n.Model.TCB.ntfnNext",
+            "SeLe4n.Model.TCB.ntfnPrev",
             "SeLe4n.ObjId",
             "SeLe4n.ThreadId"
           ]
@@ -169787,10 +170704,11 @@
           "kind": "def",
           "name": "cancelNotificationQueueImpl",
           "full_name": "SeLe4n.Kernel.cancelNotificationQueueImpl",
-          "line": 225,
+          "line": 236,
           "called": [
             "SeLe4n.Kernel.notificationWaiterCancellable",
-            "SeLe4n.Kernel.storeNotificationWaiterCancelled",
+            "SeLe4n.Kernel.storeNotificationBlockedCancelled",
+            "SeLe4n.Kernel.wakeCancelledWaiter",
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getNotification?",
             "SeLe4n.Model.SystemState.getTcb?",
@@ -169801,9 +170719,9 @@
           "kind": "theorem",
           "name": "cancelNotificationQueue_eq_impl",
           "full_name": "SeLe4n.Kernel.cancelNotificationQueue_eq_impl",
-          "line": 243,
+          "line": 256,
           "called": [
-            "SeLe4n.Kernel.cancelIpcBlocking_notificationHead_inPlace",
+            "SeLe4n.Kernel.cancelIpcBlocking_notification_inPlace",
             "SeLe4n.Kernel.cancelNotificationQueue",
             "SeLe4n.Kernel.cancelNotificationQueueImpl",
             "SeLe4n.Kernel.notificationWaiterCancellable"
@@ -169813,7 +170731,7 @@
           "kind": "def",
           "name": "cancelAllSignals",
           "full_name": "SeLe4n.Kernel.cancelAllSignals",
-          "line": 270,
+          "line": 284,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable",
             "SeLe4n.Kernel.cancelNotificationQueue",
@@ -169825,7 +170743,7 @@
           "kind": "def",
           "name": "unbindMaybeNotification",
           "full_name": "SeLe4n.Kernel.unbindMaybeNotification",
-          "line": 279,
+          "line": 293,
           "called": [
             "SeLe4n.Kernel.boundNotificationCodeOf",
             "SeLe4n.Kernel.storeUnbindNotification",
@@ -169839,14 +170757,14 @@
           "kind": "def",
           "name": "ipcCodesIdleAllowed",
           "full_name": "SeLe4n.Kernel.ipcCodesIdleAllowed",
-          "line": 298,
+          "line": 312,
           "called": []
         },
         {
           "kind": "def",
           "name": "originsNameNone",
           "full_name": "SeLe4n.Kernel.originsNameNone",
-          "line": 304,
+          "line": 318,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.fold",
             "SeLe4n.Model.SystemState",
@@ -169857,7 +170775,7 @@
           "kind": "theorem",
           "name": "schedContextBinding_of_codes'",
           "full_name": "SeLe4n.Kernel.schedContextBinding_of_codes'",
-          "line": 311,
+          "line": 325,
           "called": [
             "SeLe4n.Kernel.SchedContextBinding",
             "SeLe4n.Kernel.SchedContextBinding.ofCodes",
@@ -169867,13 +170785,91 @@
         },
         {
           "kind": "def",
+          "name": "endpointBlockedCancellable",
+          "full_name": "SeLe4n.Kernel.endpointBlockedCancellable",
+          "line": 343,
+          "called": [
+            "SeLe4n.Kernel.blockedOnQueueSide",
+            "SeLe4n.Kernel.queueRemoveInPlace",
+            "SeLe4n.Model.Endpoint",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getTcb?",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.queueNext",
+            "SeLe4n.Model.TCB.queuePPrev",
+            "SeLe4n.ObjId",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "storeEndpointBlockedCancelled",
+          "full_name": "SeLe4n.Kernel.storeEndpointBlockedCancelled",
+          "line": 362,
+          "called": [
+            "SeLe4n.Kernel.cancelledEndpointWaiterTcb",
+            "SeLe4n.Kernel.storeQueueRemove",
+            "SeLe4n.Model.Endpoint",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.updateTcb",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.ObjId",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "cancelEndpointBlocked",
+          "full_name": "SeLe4n.Kernel.cancelEndpointBlocked",
+          "line": 369,
+          "called": [
+            "SeLe4n.Kernel.endpointBlockedCancellable",
+            "SeLe4n.Kernel.storeEndpointBlockedCancelled",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getEndpoint?",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.ObjId",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "endpointCancelAdmitted",
+          "full_name": "SeLe4n.Kernel.endpointCancelAdmitted",
+          "line": 381,
+          "called": [
+            "SeLe4n.Kernel.endpointBlockedCancellable",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getEndpoint?",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.ObjId",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "threadIpcCancelAdmitted",
+          "full_name": "SeLe4n.Kernel.threadIpcCancelAdmitted",
+          "line": 395,
+          "called": [
+            "SeLe4n.Kernel.endpointCancelAdmitted",
+            "SeLe4n.Kernel.notificationWaiterCancellable",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getNotification?",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "threadFinaliseAdmitted",
           "full_name": "SeLe4n.Kernel.threadFinaliseAdmitted",
-          "line": 331,
+          "line": 428,
           "called": [
             "SeLe4n.Kernel.isIdleThreadId",
             "SeLe4n.Kernel.originsNameNone",
             "SeLe4n.Kernel.servicesNameNone",
+            "SeLe4n.Kernel.threadIpcCancelAdmitted",
             "SeLe4n.Kernel.unbindNotificationInPlace",
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getNotification?",
@@ -169887,9 +170883,10 @@
           "kind": "def",
           "name": "finaliseThreadCancel",
           "full_name": "SeLe4n.Kernel.finaliseThreadCancel",
-          "line": 363,
+          "line": 457,
           "called": [
             "SeLe4n.Kernel.Lifecycle.Suspend.cancelIpcBlocking",
+            "SeLe4n.Kernel.cancelEndpointBlocked",
             "SeLe4n.Kernel.notificationWaiterCancellable",
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getNotification?",
@@ -169899,9 +170896,35 @@
         },
         {
           "kind": "def",
+          "name": "finaliseThreadCancelImpl",
+          "full_name": "SeLe4n.Kernel.finaliseThreadCancelImpl",
+          "line": 478,
+          "called": [
+            "SeLe4n.Kernel.cancelEndpointBlocked",
+            "SeLe4n.Kernel.notificationWaiterCancellable",
+            "SeLe4n.Kernel.storeNotificationBlockedCancelled",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getNotification?",
+            "SeLe4n.Model.SystemState.getTcb?",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "finaliseThreadCancel_eq_impl",
+          "full_name": "SeLe4n.Kernel.finaliseThreadCancel_eq_impl",
+          "line": 496,
+          "called": [
+            "SeLe4n.Kernel.cancelIpcBlocking_notification_inPlace",
+            "SeLe4n.Kernel.finaliseThreadCancel",
+            "SeLe4n.Kernel.finaliseThreadCancelImpl"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "finaliseThreadSuspend",
           "full_name": "SeLe4n.Kernel.finaliseThreadSuspend",
-          "line": 389,
+          "line": 525,
           "called": [
             "SeLe4n.Kernel.descheduleAtPlacement",
             "SeLe4n.Kernel.isIdleThreadId",
@@ -169915,7 +170938,7 @@
           "kind": "def",
           "name": "finaliseThreadReleaseCores",
           "full_name": "SeLe4n.Kernel.finaliseThreadReleaseCores",
-          "line": 406,
+          "line": 542,
           "called": [
             "SeLe4n.MachineState.releaseThread",
             "SeLe4n.Model.SystemState",
@@ -169926,7 +170949,7 @@
           "kind": "theorem",
           "name": "finaliseThreadReleaseCores_objects",
           "full_name": "SeLe4n.Kernel.finaliseThreadReleaseCores_objects",
-          "line": 409,
+          "line": 545,
           "called": [
             "SeLe4n.Kernel.finaliseThreadReleaseCores",
             "SeLe4n.Model.SystemState",
@@ -169937,7 +170960,7 @@
           "kind": "theorem",
           "name": "finaliseThreadReleaseCores_scheduler",
           "full_name": "SeLe4n.Kernel.finaliseThreadReleaseCores_scheduler",
-          "line": 413,
+          "line": 549,
           "called": [
             "SeLe4n.Kernel.finaliseThreadReleaseCores",
             "SeLe4n.Model.SystemState",
@@ -169948,7 +170971,7 @@
           "kind": "theorem",
           "name": "finaliseThreadReleaseCores_machine",
           "full_name": "SeLe4n.Kernel.finaliseThreadReleaseCores_machine",
-          "line": 417,
+          "line": 553,
           "called": [
             "SeLe4n.Kernel.finaliseThreadReleaseCores",
             "SeLe4n.MachineState.releaseThread",
@@ -169960,7 +170983,7 @@
           "kind": "theorem",
           "name": "finaliseThreadReleaseCores_getTcb?",
           "full_name": "SeLe4n.Kernel.finaliseThreadReleaseCores_getTcb?",
-          "line": 421,
+          "line": 557,
           "called": [
             "SeLe4n.Kernel.finaliseThreadReleaseCores",
             "SeLe4n.Kernel.finaliseThreadReleaseCores_objects",
@@ -169973,7 +170996,7 @@
           "kind": "theorem",
           "name": "finaliseThreadReleaseCores_unheld",
           "full_name": "SeLe4n.Kernel.finaliseThreadReleaseCores_unheld",
-          "line": 427,
+          "line": 563,
           "called": [
             "SeLe4n.Kernel.finaliseThreadReleaseCores",
             "SeLe4n.Kernel.finaliseThreadReleaseCores_machine",
@@ -169988,7 +171011,7 @@
           "kind": "def",
           "name": "finaliseThreadUnbindNotification",
           "full_name": "SeLe4n.Kernel.finaliseThreadUnbindNotification",
-          "line": 435,
+          "line": 571,
           "called": [
             "SeLe4n.Kernel.boundNotificationCodeOf",
             "SeLe4n.Kernel.storeUnbindNotification",
@@ -170002,7 +171025,7 @@
           "kind": "def",
           "name": "finaliseThreadUnbindSchedContext",
           "full_name": "SeLe4n.Kernel.finaliseThreadUnbindSchedContext",
-          "line": 450,
+          "line": 586,
           "called": [
             "SeLe4n.Kernel.cancelDonationArmOnCore",
             "SeLe4n.Kernel.ipcCodesIdleAllowed",
@@ -170017,7 +171040,7 @@
           "kind": "def",
           "name": "finaliseThreadUnbindSchedContextImpl",
           "full_name": "SeLe4n.Kernel.finaliseThreadUnbindSchedContextImpl",
-          "line": 469,
+          "line": 605,
           "called": [
             "SeLe4n.Kernel.cancelBoundDonationPerform",
             "SeLe4n.Kernel.determineTargetCore",
@@ -170033,7 +171056,7 @@
           "kind": "theorem",
           "name": "finaliseThreadUnbindSchedContext_eq_impl",
           "full_name": "SeLe4n.Kernel.finaliseThreadUnbindSchedContext_eq_impl",
-          "line": 483,
+          "line": 619,
           "called": [
             "SeLe4n.Kernel.cancelBoundDonationOnCore_of_bound",
             "SeLe4n.Kernel.cancelDonationArmOnCore_of_bound",
@@ -170046,7 +171069,7 @@
           "kind": "def",
           "name": "finaliseThreadCleanup",
           "full_name": "SeLe4n.Kernel.finaliseThreadCleanup",
-          "line": 501,
+          "line": 637,
           "called": [
             "SeLe4n.Kernel.lifecyclePreRetypeCleanup",
             "SeLe4n.Kernel.threadRetirable",
@@ -170059,7 +171082,7 @@
           "kind": "def",
           "name": "schedContextFinaliseAdmitted",
           "full_name": "SeLe4n.Kernel.schedContextFinaliseAdmitted",
-          "line": 515,
+          "line": 651,
           "called": [
             "SeLe4n.Kernel.ipcCodesIdleAllowed",
             "SeLe4n.Kernel.threadHeldOnSomeCore",
@@ -170074,7 +171097,7 @@
           "kind": "def",
           "name": "finaliseSchedContextUnbind",
           "full_name": "SeLe4n.Kernel.finaliseSchedContextUnbind",
-          "line": 533,
+          "line": 669,
           "called": [
             "SeLe4n.Kernel.cancelDonationArmOnCore",
             "SeLe4n.Kernel.ipcCodesIdleAllowed",
@@ -170090,7 +171113,7 @@
           "kind": "def",
           "name": "finaliseSchedContextUnbindImpl",
           "full_name": "SeLe4n.Kernel.finaliseSchedContextUnbindImpl",
-          "line": 553,
+          "line": 689,
           "called": [
             "SeLe4n.Kernel.cancelBoundDonationPerform",
             "SeLe4n.Kernel.determineTargetCore",
@@ -170107,7 +171130,7 @@
           "kind": "theorem",
           "name": "finaliseSchedContextUnbind_eq_impl",
           "full_name": "SeLe4n.Kernel.finaliseSchedContextUnbind_eq_impl",
-          "line": 570,
+          "line": 706,
           "called": [
             "SeLe4n.Kernel.cancelBoundDonationOnCore_of_bound",
             "SeLe4n.Kernel.cancelDonationArmOnCore_of_bound",
@@ -170120,7 +171143,7 @@
           "kind": "def",
           "name": "finaliseSchedContextCleanup",
           "full_name": "SeLe4n.Kernel.finaliseSchedContextCleanup",
-          "line": 598,
+          "line": 734,
           "called": [
             "SeLe4n.Kernel.lifecyclePreRetypeCleanup",
             "SeLe4n.Model.SystemState",
@@ -170132,7 +171155,7 @@
           "kind": "theorem",
           "name": "threadOfOptCode_beq_some_false",
           "full_name": "SeLe4n.Kernel.threadOfOptCode_beq_some_false",
-          "line": 613,
+          "line": 749,
           "called": [
             "SeLe4n.Kernel.threadOfOptCode_eq_some",
             "SeLe4n.ThreadId",
@@ -170143,7 +171166,7 @@
           "kind": "theorem",
           "name": "removeRunnableFromAllCores_of_unoccupied",
           "full_name": "SeLe4n.Kernel.removeRunnableFromAllCores_of_unoccupied",
-          "line": 621,
+          "line": 757,
           "called": [
             "SeLe4n.Kernel.Concurrency.allCores",
             "SeLe4n.Kernel.removeRunnableFromAllCores",
@@ -170157,7 +171180,7 @@
           "kind": "theorem",
           "name": "threadRetirable_spec",
           "full_name": "SeLe4n.Kernel.threadRetirable_spec",
-          "line": 634,
+          "line": 770,
           "called": [
             "SeLe4n.Kernel.storeNamesThreadNone",
             "SeLe4n.Kernel.threadHeldOnSomeCore",
@@ -170173,7 +171196,7 @@
           "kind": "theorem",
           "name": "lifecyclePreRetypeCleanup_of_threadRetirable",
           "full_name": "SeLe4n.Kernel.lifecyclePreRetypeCleanup_of_threadRetirable",
-          "line": 650,
+          "line": 786,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.fold_and_true_of_get?",
             "SeLe4n.Kernel.RobinHood.RHTable.fold_preserves",
@@ -170231,7 +171254,7 @@
           "kind": "theorem",
           "name": "lifecyclePreRetypeCleanup_of_schedContextFree",
           "full_name": "SeLe4n.Kernel.lifecyclePreRetypeCleanup_of_schedContextFree",
-          "line": 755,
+          "line": 891,
           "called": [
             "SeLe4n.Kernel.SchedContext",
             "SeLe4n.Kernel.SchedContext.boundThread",
@@ -170245,7 +171268,7 @@
           "kind": "theorem",
           "name": "finaliseThreadCleanup_eq",
           "full_name": "SeLe4n.Kernel.finaliseThreadCleanup_eq",
-          "line": 766,
+          "line": 902,
           "called": [
             "SeLe4n.Kernel.finaliseThreadCleanup",
             "SeLe4n.Kernel.lifecyclePreRetypeCleanup_of_threadRetirable",
@@ -170257,7 +171280,7 @@
           "kind": "theorem",
           "name": "finaliseSchedContextCleanup_eq",
           "full_name": "SeLe4n.Kernel.finaliseSchedContextCleanup_eq",
-          "line": 781,
+          "line": 917,
           "called": [
             "SeLe4n.Kernel.finaliseSchedContextCleanup",
             "SeLe4n.Kernel.lifecyclePreRetypeCleanup_of_schedContextFree",
@@ -170269,7 +171292,7 @@
           "kind": "def",
           "name": "finaliseThreadCleanupImpl",
           "full_name": "SeLe4n.Kernel.finaliseThreadCleanupImpl",
-          "line": 796,
+          "line": 932,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.ObjId"
@@ -170279,7 +171302,7 @@
           "kind": "theorem",
           "name": "finaliseThreadCleanup_eq_impl",
           "full_name": "SeLe4n.Kernel.finaliseThreadCleanup_eq_impl",
-          "line": 798,
+          "line": 934,
           "called": [
             "SeLe4n.Kernel.finaliseThreadCleanup",
             "SeLe4n.Kernel.finaliseThreadCleanupImpl",
@@ -170290,7 +171313,7 @@
           "kind": "def",
           "name": "finaliseSchedContextCleanupImpl",
           "full_name": "SeLe4n.Kernel.finaliseSchedContextCleanupImpl",
-          "line": 804,
+          "line": 940,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.ObjId"
@@ -170300,7 +171323,7 @@
           "kind": "theorem",
           "name": "finaliseSchedContextCleanup_eq_impl",
           "full_name": "SeLe4n.Kernel.finaliseSchedContextCleanup_eq_impl",
-          "line": 807,
+          "line": 943,
           "called": [
             "SeLe4n.Kernel.finaliseSchedContextCleanup",
             "SeLe4n.Kernel.finaliseSchedContextCleanupImpl",
@@ -170311,7 +171334,7 @@
           "kind": "def",
           "name": "finaliseThread",
           "full_name": "SeLe4n.Kernel.finaliseThread",
-          "line": 824,
+          "line": 960,
           "called": [
             "SeLe4n.Kernel.finaliseThreadCancel",
             "SeLe4n.Kernel.finaliseThreadCleanup",
@@ -170329,7 +171352,7 @@
           "kind": "def",
           "name": "finaliseSchedContext",
           "full_name": "SeLe4n.Kernel.finaliseSchedContext",
-          "line": 838,
+          "line": 974,
           "called": [
             "SeLe4n.Kernel.finaliseSchedContextCleanup",
             "SeLe4n.Kernel.finaliseSchedContextUnbind",
@@ -170342,7 +171365,7 @@
           "kind": "theorem",
           "name": "finaliseThread_eq",
           "full_name": "SeLe4n.Kernel.finaliseThread_eq",
-          "line": 844,
+          "line": 980,
           "called": [
             "SeLe4n.Kernel.finaliseThread",
             "SeLe4n.Kernel.finaliseThreadCancel",
@@ -170360,7 +171383,7 @@
           "kind": "theorem",
           "name": "finaliseSchedContext_eq",
           "full_name": "SeLe4n.Kernel.finaliseSchedContext_eq",
-          "line": 857,
+          "line": 993,
           "called": [
             "SeLe4n.Kernel.finaliseSchedContext",
             "SeLe4n.Kernel.finaliseSchedContextCleanup_eq",
@@ -170374,7 +171397,7 @@
           "kind": "theorem",
           "name": "schedContextBinding_of_codes",
           "full_name": "SeLe4n.Kernel.schedContextBinding_of_codes",
-          "line": 863,
+          "line": 999,
           "called": [
             "SeLe4n.Kernel.SchedContextBinding",
             "SeLe4n.Kernel.SchedContextBinding.ofCodes",
@@ -170386,7 +171409,7 @@
           "kind": "theorem",
           "name": "cancelDonationArmOnCore_of_codes",
           "full_name": "SeLe4n.Kernel.cancelDonationArmOnCore_of_codes",
-          "line": 872,
+          "line": 1008,
           "called": [
             "SeLe4n.Kernel.cancelBoundDonationOnCore",
             "SeLe4n.Kernel.cancelDonationArmOnCore",
@@ -170402,7 +171425,7 @@
           "kind": "def",
           "name": "finaliseFinalObject",
           "full_name": "SeLe4n.Kernel.finaliseFinalObject",
-          "line": 893,
+          "line": 1029,
           "called": [
             "SeLe4n.Kernel.cancelAllIpc",
             "SeLe4n.Kernel.cancelAllSignals",
@@ -170420,7 +171443,7 @@
           "kind": "def",
           "name": "retireFinalisedObject",
           "full_name": "SeLe4n.Kernel.retireFinalisedObject",
-          "line": 908,
+          "line": 1044,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.finaliseFinalObject",
@@ -170432,7 +171455,7 @@
           "kind": "theorem",
           "name": "finaliseFinalObject_zero",
           "full_name": "SeLe4n.Kernel.finaliseFinalObject_zero",
-          "line": 912,
+          "line": 1048,
           "called": [
             "SeLe4n.Kernel.finaliseFinalObject",
             "SeLe4n.Model.SystemState"
@@ -170442,7 +171465,7 @@
           "kind": "theorem",
           "name": "retireFinalisedObject_zero",
           "full_name": "SeLe4n.Kernel.retireFinalisedObject_zero",
-          "line": 915,
+          "line": 1051,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.finaliseFinalObject_zero",
@@ -197552,13 +198575,13 @@
     {
       "module": "SeLe4n.Kernel.InformationFlow.Invariant.FinaliseProjection",
       "path": "SeLe4n/Kernel/InformationFlow/Invariant/FinaliseProjection.lean",
-      "declaration_count": 33,
+      "declaration_count": 37,
       "declarations": [
         {
           "kind": "def",
           "name": "hiddenObjectsWrite",
           "full_name": "SeLe4n.Kernel.hiddenObjectsWrite",
-          "line": 48,
+          "line": 50,
           "called": [
             "SeLe4n.Kernel.IfObserver",
             "SeLe4n.Kernel.LabelingContext",
@@ -197570,7 +198593,7 @@
           "kind": "theorem",
           "name": "projection",
           "full_name": "SeLe4n.Kernel.hiddenObjectsWrite.projection",
-          "line": 57,
+          "line": 59,
           "called": [
             "SeLe4n.Kernel.hiddenObjectsWrite",
             "SeLe4n.Kernel.projectObjects",
@@ -197584,7 +198607,7 @@
           "kind": "theorem",
           "name": "updateTcb",
           "full_name": "SeLe4n.Kernel.hiddenObjectsWrite.updateTcb",
-          "line": 65,
+          "line": 67,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.hiddenObjectsWrite",
@@ -197602,7 +198625,7 @@
           "kind": "theorem",
           "name": "modifyObject",
           "full_name": "SeLe4n.Kernel.hiddenObjectsWrite.modifyObject",
-          "line": 71,
+          "line": 73,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.hiddenObjectsWrite",
@@ -197618,7 +198641,7 @@
           "kind": "theorem",
           "name": "rewriteObject",
           "full_name": "SeLe4n.Kernel.hiddenObjectsWrite.rewriteObject",
-          "line": 77,
+          "line": 79,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.hiddenObjectsWrite",
@@ -197632,10 +198655,20 @@
           ]
         },
         {
+          "kind": "theorem",
+          "name": "trans",
+          "full_name": "SeLe4n.Kernel.hiddenObjectsWrite.trans",
+          "line": 87,
+          "called": [
+            "SeLe4n.Kernel.hiddenObjectsWrite",
+            "SeLe4n.Model.SystemState"
+          ]
+        },
+        {
           "kind": "def",
           "name": "waitsOn",
           "full_name": "SeLe4n.Kernel.waitsOn",
-          "line": 92,
+          "line": 99,
           "called": [
             "SeLe4n.Model.ThreadIpcState",
             "SeLe4n.ObjId"
@@ -197645,7 +198678,7 @@
           "kind": "def",
           "name": "waitersHidden",
           "full_name": "SeLe4n.Kernel.waitersHidden",
-          "line": 98,
+          "line": 105,
           "called": [
             "SeLe4n.Kernel.IfObserver",
             "SeLe4n.Kernel.LabelingContext",
@@ -197664,7 +198697,7 @@
           "kind": "def",
           "name": "waitFrame",
           "full_name": "SeLe4n.Kernel.waitFrame",
-          "line": 105,
+          "line": 112,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.TCB",
@@ -197677,7 +198710,7 @@
           "kind": "theorem",
           "name": "refl",
           "full_name": "SeLe4n.Kernel.waitFrame.refl",
-          "line": 112,
+          "line": 119,
           "called": [
             "SeLe4n.Kernel.waitFrame",
             "SeLe4n.Model.SystemState"
@@ -197687,7 +198720,7 @@
           "kind": "theorem",
           "name": "trans",
           "full_name": "SeLe4n.Kernel.waitFrame.trans",
-          "line": 114,
+          "line": 121,
           "called": [
             "SeLe4n.Kernel.waitFrame",
             "SeLe4n.Model.SystemState"
@@ -197697,7 +198730,7 @@
           "kind": "theorem",
           "name": "of_objectsAgreeOffRunLinks",
           "full_name": "SeLe4n.Kernel.waitFrame.of_objectsAgreeOffRunLinks",
-          "line": 122,
+          "line": 129,
           "called": [
             "SeLe4n.Kernel.waitFrame",
             "SeLe4n.Model.SystemState",
@@ -197708,7 +198741,7 @@
           "kind": "theorem",
           "name": "of_ntfnUnlinkReach",
           "full_name": "SeLe4n.Kernel.waitFrame.of_ntfnUnlinkReach",
-          "line": 128,
+          "line": 135,
           "called": [
             "SeLe4n.Kernel.ntfnUnlinkReach",
             "SeLe4n.Kernel.waitFrame",
@@ -197719,7 +198752,7 @@
           "kind": "theorem",
           "name": "updateTcb",
           "full_name": "SeLe4n.Kernel.waitFrame.updateTcb",
-          "line": 138,
+          "line": 145,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.updateTcb_objects_self_of_tcb",
@@ -197740,7 +198773,7 @@
           "kind": "theorem",
           "name": "modifyObject_nonTcb",
           "full_name": "SeLe4n.Kernel.waitFrame.modifyObject_nonTcb",
-          "line": 156,
+          "line": 163,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.modifyObject_objects_getElem",
@@ -197755,7 +198788,7 @@
           "kind": "theorem",
           "name": "waitersHidden",
           "full_name": "SeLe4n.Kernel.waitFrame.waitersHidden",
-          "line": 172,
+          "line": 179,
           "called": [
             "SeLe4n.Kernel.IfObserver",
             "SeLe4n.Kernel.LabelingContext",
@@ -197769,7 +198802,7 @@
           "kind": "theorem",
           "name": "storeEndpointWaiterCancelled_hidden",
           "full_name": "SeLe4n.Kernel.storeEndpointWaiterCancelled_hidden",
-          "line": 190,
+          "line": 197,
           "called": [
             "SeLe4n.Kernel.IfObserver",
             "SeLe4n.Kernel.LabelingContext",
@@ -197822,7 +198855,7 @@
           "kind": "theorem",
           "name": "cancelIpcBlocking_notificationHead_hidden",
           "full_name": "SeLe4n.Kernel.cancelIpcBlocking_notificationHead_hidden",
-          "line": 249,
+          "line": 256,
           "called": [
             "SeLe4n.Kernel.IfObserver",
             "SeLe4n.Kernel.LabelingContext",
@@ -197852,7 +198885,7 @@
           "kind": "theorem",
           "name": "notificationWaiterCancel_hidden",
           "full_name": "SeLe4n.Kernel.notificationWaiterCancel_hidden",
-          "line": 271,
+          "line": 278,
           "called": [
             "SeLe4n.Kernel.FinaliseFrame",
             "SeLe4n.Kernel.FinaliseFrame.kind",
@@ -197902,7 +198935,7 @@
           "kind": "theorem",
           "name": "storeUnbindNotification_hidden",
           "full_name": "SeLe4n.Kernel.storeUnbindNotification_hidden",
-          "line": 319,
+          "line": 326,
           "called": [
             "SeLe4n.Kernel.IfObserver",
             "SeLe4n.Kernel.LabelingContext",
@@ -197935,7 +198968,7 @@
           "kind": "theorem",
           "name": "cancelBoundDonationOnCore_hidden",
           "full_name": "SeLe4n.Kernel.cancelBoundDonationOnCore_hidden",
-          "line": 357,
+          "line": 364,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.IfObserver",
@@ -197963,7 +198996,7 @@
           "kind": "theorem",
           "name": "finaliseThreadUnbindNotification_hidden",
           "full_name": "SeLe4n.Kernel.finaliseThreadUnbindNotification_hidden",
-          "line": 385,
+          "line": 392,
           "called": [
             "SeLe4n.Kernel.IfObserver",
             "SeLe4n.Kernel.LabelingContext",
@@ -197985,6 +199018,9 @@
             "SeLe4n.Model.TCB",
             "SeLe4n.Model.TCB.ipcState",
             "SeLe4n.Model.TCB.ntfnNext",
+            "SeLe4n.Model.TCB.ntfnPrev",
+            "SeLe4n.Model.TCB.queueNext",
+            "SeLe4n.Model.TCB.queuePPrev",
             "SeLe4n.ObjId",
             "SeLe4n.ThreadId",
             "SeLe4n.ThreadId.toObjId"
@@ -197994,7 +199030,7 @@
           "kind": "theorem",
           "name": "finaliseThreadUnbindSchedContext_hidden",
           "full_name": "SeLe4n.Kernel.finaliseThreadUnbindSchedContext_hidden",
-          "line": 430,
+          "line": 438,
           "called": [
             "SeLe4n.Kernel.IfObserver",
             "SeLe4n.Kernel.LabelingContext",
@@ -198019,23 +199055,114 @@
         },
         {
           "kind": "theorem",
-          "name": "finaliseThreadCancel_hidden",
-          "full_name": "SeLe4n.Kernel.finaliseThreadCancel_hidden",
-          "line": 462,
+          "name": "unlinkNtfnNeighbours_hidden",
+          "full_name": "SeLe4n.Kernel.unlinkNtfnNeighbours_hidden",
+          "line": 470,
           "called": [
             "SeLe4n.Kernel.IfObserver",
             "SeLe4n.Kernel.LabelingContext",
-            "SeLe4n.Kernel.Lifecycle.Suspend.cancelIpcBlocking_preserves_objects_invExt",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
-            "SeLe4n.Kernel.cancelIpcBlocking_notificationHead_hidden",
+            "SeLe4n.Kernel.hiddenObjectsWrite",
+            "SeLe4n.Kernel.hiddenObjectsWrite.updateTcb",
+            "SeLe4n.Kernel.objectObservable",
+            "SeLe4n.Kernel.unlinkNtfnNeighbours",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.updateTcb",
+            "SeLe4n.Model.SystemState.updateTcb_preserves_objects_invExt",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.ThreadId",
+            "SeLe4n.ThreadId.optCode",
+            "SeLe4n.ThreadId.toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "storeNotificationBlockedCancelled_hidden",
+          "full_name": "SeLe4n.Kernel.storeNotificationBlockedCancelled_hidden",
+          "line": 501,
+          "called": [
+            "SeLe4n.Kernel.IfObserver",
+            "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.Lifecycle.Suspend.restoreToReadyCancelled",
+            "SeLe4n.Kernel.Lifecycle.Suspend.restoreToReadyStaging",
+            "SeLe4n.Kernel.RobinHood.RHTable.invExt",
+            "SeLe4n.Kernel.cancelledNotificationObject",
+            "SeLe4n.Kernel.clearNtfnLinks",
+            "SeLe4n.Kernel.hiddenObjectsWrite",
+            "SeLe4n.Kernel.hiddenObjectsWrite.modifyObject",
+            "SeLe4n.Kernel.hiddenObjectsWrite.updateTcb",
+            "SeLe4n.Kernel.modifyObject_preserves_objects_invExt",
+            "SeLe4n.Kernel.objectObservable",
+            "SeLe4n.Kernel.projectState",
+            "SeLe4n.Kernel.storeNotificationBlockedCancelled",
+            "SeLe4n.Kernel.unlinkNtfnNeighbours_hidden",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.modifyObject",
+            "SeLe4n.Model.SystemState.updateTcb_preserves_objects_invExt",
+            "SeLe4n.ObjId",
+            "SeLe4n.ThreadId",
+            "SeLe4n.ThreadId.toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "storeEndpointBlockedCancelled_hidden",
+          "full_name": "SeLe4n.Kernel.storeEndpointBlockedCancelled_hidden",
+          "line": 532,
+          "called": [
+            "SeLe4n.Kernel.IfObserver",
+            "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.RobinHood.RHTable.invExt",
+            "SeLe4n.Kernel.endpointBlockedCancellable",
+            "SeLe4n.Kernel.endpointBlockedCancellable_parts",
+            "SeLe4n.Kernel.endpointQueueRemoveDual_preserves_projection_and_invExt",
+            "SeLe4n.Kernel.endpointSpliceHigh",
+            "SeLe4n.Kernel.hiddenObjectsWrite.updateTcb",
+            "SeLe4n.Kernel.lookupTcb_some_objects",
+            "SeLe4n.Kernel.objectObservable",
+            "SeLe4n.Kernel.projectState",
+            "SeLe4n.Kernel.queueRemove_inPlace",
+            "SeLe4n.Kernel.storeEndpointBlockedCancelled",
+            "SeLe4n.Model.Endpoint",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getEndpoint?",
+            "SeLe4n.Model.SystemState.getEndpoint?_eq_some_iff",
+            "SeLe4n.Model.SystemState.getTcb?",
+            "SeLe4n.Model.SystemState.getTcb?_eq_some_iff",
+            "SeLe4n.Model.SystemState.updateTcb_preserves_objects_invExt",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.queueNext",
+            "SeLe4n.Model.TCB.queuePPrev",
+            "SeLe4n.ObjId",
+            "SeLe4n.ThreadId",
+            "SeLe4n.ThreadId.toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "finaliseThreadCancel_hidden",
+          "full_name": "SeLe4n.Kernel.finaliseThreadCancel_hidden",
+          "line": 559,
+          "called": [
+            "SeLe4n.Kernel.IfObserver",
+            "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.RobinHood.RHTable.invExt",
+            "SeLe4n.Kernel.cancelEndpointBlocked",
+            "SeLe4n.Kernel.cancelIpcBlocking_notification_inPlace",
             "SeLe4n.Kernel.finaliseThreadCancel",
             "SeLe4n.Kernel.objectObservable",
             "SeLe4n.Kernel.projectState",
+            "SeLe4n.Kernel.storeEndpointBlockedCancelled_hidden",
+            "SeLe4n.Kernel.storeNotificationBlockedCancelled_hidden",
+            "SeLe4n.Kernel.waitsOn",
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getTcb?",
             "SeLe4n.Model.TCB",
             "SeLe4n.Model.TCB.ipcState",
             "SeLe4n.Model.TCB.ntfnNext",
+            "SeLe4n.Model.TCB.ntfnPrev",
+            "SeLe4n.Model.TCB.queueNext",
+            "SeLe4n.Model.TCB.queuePPrev",
             "SeLe4n.ThreadId",
             "SeLe4n.ThreadId.toObjId"
           ]
@@ -198044,19 +199171,26 @@
           "kind": "theorem",
           "name": "finaliseThreadCancel_scBinding",
           "full_name": "SeLe4n.Kernel.finaliseThreadCancel_scBinding",
-          "line": 489,
+          "line": 604,
           "called": [
+            "SeLe4n.Kernel.Lifecycle.Suspend.cancelIpcBlocking",
+            "SeLe4n.Kernel.Lifecycle.Suspend.restoreToReadyCancelled",
+            "SeLe4n.Kernel.Lifecycle.Suspend.restoreToReadyStaging",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
-            "SeLe4n.Kernel.cancelIpcBlocking_notificationHead_eq",
-            "SeLe4n.Kernel.detachNtfnHead_linksRewritten",
+            "SeLe4n.Kernel.cancelEndpointBlocked",
+            "SeLe4n.Kernel.endpointBlockedCancellable_parts",
+            "SeLe4n.Kernel.endpointQueueRemoveDual_preserves_objects_invExt",
             "SeLe4n.Kernel.finaliseThreadCancel",
+            "SeLe4n.Kernel.queueRemove_inPlace",
+            "SeLe4n.Kernel.removeFromNotificationWaitQueue",
+            "SeLe4n.Kernel.removeFromNotificationWaitQueue_reach",
+            "SeLe4n.Kernel.storeEndpointBlockedCancelled",
             "SeLe4n.Model.SystemState",
-            "SeLe4n.Model.SystemState.getNotification?_eq_some_iff",
+            "SeLe4n.Model.SystemState.getEndpoint?_eq_some_iff",
             "SeLe4n.Model.SystemState.getTcb?",
             "SeLe4n.Model.SystemState.getTcb?_eq_some_iff",
             "SeLe4n.Model.SystemState.updateTcb_getTcb?_self",
             "SeLe4n.Model.TCB",
-            "SeLe4n.Model.TCB.ntfnNext",
             "SeLe4n.ThreadId",
             "SeLe4n.ThreadId.toObjId"
           ]
@@ -198065,7 +199199,7 @@
           "kind": "theorem",
           "name": "finaliseThreadSuspend_scBinding",
           "full_name": "SeLe4n.Kernel.finaliseThreadSuspend_scBinding",
-          "line": 524,
+          "line": 656,
           "called": [
             "SeLe4n.Kernel.FinaliseFrame",
             "SeLe4n.Kernel.FinaliseFrame.descheduleAt",
@@ -198090,7 +199224,7 @@
           "kind": "theorem",
           "name": "finaliseThreadSuspend_hidden",
           "full_name": "SeLe4n.Kernel.finaliseThreadSuspend_hidden",
-          "line": 545,
+          "line": 677,
           "called": [
             "SeLe4n.Kernel.FinaliseFrame",
             "SeLe4n.Kernel.FinaliseFrame.descheduleAt",
@@ -198114,7 +199248,7 @@
           "kind": "theorem",
           "name": "finaliseThreadReleaseCores_hidden",
           "full_name": "SeLe4n.Kernel.finaliseThreadReleaseCores_hidden",
-          "line": 562,
+          "line": 694,
           "called": [
             "SeLe4n.Kernel.IfObserver",
             "SeLe4n.Kernel.LabelingContext",
@@ -198131,12 +199265,13 @@
           "kind": "def",
           "name": "threadFinaliseHidden",
           "full_name": "SeLe4n.Kernel.threadFinaliseHidden",
-          "line": 576,
+          "line": 708,
           "called": [
             "SeLe4n.Kernel.IfObserver",
             "SeLe4n.Kernel.LabelingContext",
             "SeLe4n.Kernel.objectObservable",
             "SeLe4n.Kernel.threadObservable",
+            "SeLe4n.Kernel.waitsOn",
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getObject?",
             "SeLe4n.ObjId",
@@ -198148,7 +199283,7 @@
           "kind": "def",
           "name": "schedContextFinaliseHidden",
           "full_name": "SeLe4n.Kernel.schedContextFinaliseHidden",
-          "line": 589,
+          "line": 724,
           "called": [
             "SeLe4n.Kernel.IfObserver",
             "SeLe4n.Kernel.LabelingContext",
@@ -198164,7 +199299,7 @@
           "kind": "theorem",
           "name": "finaliseThread_hidden",
           "full_name": "SeLe4n.Kernel.finaliseThread_hidden",
-          "line": 597,
+          "line": 732,
           "called": [
             "SeLe4n.Kernel.FinaliseFrame",
             "SeLe4n.Kernel.FinaliseFrame.releaseCores",
@@ -198197,7 +199332,7 @@
           "kind": "theorem",
           "name": "finaliseSchedContext_hidden",
           "full_name": "SeLe4n.Kernel.finaliseSchedContext_hidden",
-          "line": 630,
+          "line": 766,
           "called": [
             "SeLe4n.Kernel.IfObserver",
             "SeLe4n.Kernel.LabelingContext",
@@ -198219,7 +199354,7 @@
           "kind": "theorem",
           "name": "finaliseFinalObject_preserves_projection",
           "full_name": "SeLe4n.Kernel.finaliseFinalObject_preserves_projection",
-          "line": 672,
+          "line": 808,
           "called": [
             "SeLe4n.Kernel.IfObserver",
             "SeLe4n.Kernel.LabelingContext",
@@ -198254,7 +199389,7 @@
           "kind": "theorem",
           "name": "retireFinalisedObject_preserves_projection",
           "full_name": "SeLe4n.Kernel.retireFinalisedObject_preserves_projection",
-          "line": 733,
+          "line": 869,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.IfObserver",
@@ -236865,7 +238000,7 @@
     {
       "module": "SeLe4n.Kernel.ReschedulePendingArms.Dispatch",
       "path": "SeLe4n/Kernel/ReschedulePendingArms/Dispatch.lean",
-      "declaration_count": 28,
+      "declaration_count": 29,
       "declarations": [
         {
           "kind": "theorem",
@@ -237190,9 +238325,36 @@
         },
         {
           "kind": "theorem",
+          "name": "storeEndpointBlockedCancelled_stepCovers",
+          "full_name": "SeLe4n.Kernel.storeEndpointBlockedCancelled_stepCovers",
+          "line": 337,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.RobinHood.RHTable.invExt",
+            "SeLe4n.Kernel.cancelledEndpointWaiterTcb",
+            "SeLe4n.Kernel.endpointBlockedCancellable",
+            "SeLe4n.Kernel.endpointBlockedCancellable_parts",
+            "SeLe4n.Kernel.endpointQueueRemoveDual_keyFrame",
+            "SeLe4n.Kernel.queueRemove_inPlace",
+            "SeLe4n.Kernel.stepCovers",
+            "SeLe4n.Kernel.storeEndpointBlockedCancelled",
+            "SeLe4n.Kernel.updateTcb_keyFrame",
+            "SeLe4n.Model.Endpoint",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getEndpoint?",
+            "SeLe4n.Model.SystemState.getEndpoint?_eq_some_iff",
+            "SeLe4n.Model.SystemState.getTcb?",
+            "SeLe4n.Model.SystemState.getTcb?_eq_some_iff",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.ObjId",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "notificationWaiterCancel_stepCovers",
           "full_name": "SeLe4n.Kernel.notificationWaiterCancel_stepCovers",
-          "line": 336,
+          "line": 354,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Lifecycle.Suspend.cancelIpcBlocking",
@@ -237213,7 +238375,7 @@
           "kind": "theorem",
           "name": "finaliseFinalObject_stepCovers",
           "full_name": "SeLe4n.Kernel.finaliseFinalObject_stepCovers",
-          "line": 352,
+          "line": 370,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.FinaliseFrame",
@@ -237239,6 +238401,7 @@
             "SeLe4n.Kernel.stepCovers_of_scheduler_eq",
             "SeLe4n.Kernel.stepCovers_refl",
             "SeLe4n.Kernel.stepCovers_trans",
+            "SeLe4n.Kernel.storeEndpointBlockedCancelled_stepCovers",
             "SeLe4n.Kernel.storeEndpointWaiterCancelled_stepCovers",
             "SeLe4n.Kernel.unbindNotification_keyFrame",
             "SeLe4n.Kernel.unbindNotification_of_inPlace",
@@ -237250,7 +238413,7 @@
           "kind": "theorem",
           "name": "cspaceDeleteSlotFinalising_stepCovers",
           "full_name": "SeLe4n.Kernel.cspaceDeleteSlotFinalising_stepCovers",
-          "line": 390,
+          "line": 410,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -237273,7 +238436,7 @@
           "kind": "theorem",
           "name": "cspaceRevokeCdtFinalising_stepCovers",
           "full_name": "SeLe4n.Kernel.cspaceRevokeCdtFinalising_stepCovers",
-          "line": 403,
+          "line": 423,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -237291,7 +238454,7 @@
           "kind": "theorem",
           "name": "dispatchCapabilityOnly_stepCovers",
           "full_name": "SeLe4n.Kernel.dispatchCapabilityOnly_stepCovers",
-          "line": 416,
+          "line": 436,
           "called": [
             "SeLe4n.Kernel.Architecture.vspaceUnifyInstructionPage_frame",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -237342,7 +238505,7 @@
           "kind": "theorem",
           "name": "stepCovers_of_pair_eq",
           "full_name": "SeLe4n.Kernel.stepCovers_of_pair_eq",
-          "line": 472,
+          "line": 492,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -237354,7 +238517,7 @@
           "kind": "theorem",
           "name": "stepCovers_clearStash_stage",
           "full_name": "SeLe4n.Kernel.stepCovers_clearStash_stage",
-          "line": 480,
+          "line": 500,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -237373,7 +238536,7 @@
           "kind": "theorem",
           "name": "keyFrame_trans_stage",
           "full_name": "SeLe4n.Kernel.keyFrame_trans_stage",
-          "line": 496,
+          "line": 516,
           "called": [
             "SeLe4n.Kernel.Architecture.stageWokenDelivery",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -237387,7 +238550,7 @@
           "kind": "theorem",
           "name": "dispatchWithCapChecked_stepCovers",
           "full_name": "SeLe4n.Kernel.dispatchWithCapChecked_stepCovers",
-          "line": 505,
+          "line": 525,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
@@ -237443,7 +238606,7 @@
           "kind": "theorem",
           "name": "syscallResolveCap_state",
           "full_name": "SeLe4n.Kernel.syscallResolveCap_state",
-          "line": 658,
+          "line": 678,
           "called": [
             "SeLe4n.Kernel.SyscallGate",
             "SeLe4n.Kernel.syscallResolveCap",
@@ -237455,7 +238618,7 @@
           "kind": "theorem",
           "name": "dispatchSyscallChecked_stepCovers",
           "full_name": "SeLe4n.Kernel.dispatchSyscallChecked_stepCovers",
-          "line": 667,
+          "line": 687,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
@@ -237482,7 +238645,7 @@
           "kind": "theorem",
           "name": "syscallEntryChecked_stepCovers",
           "full_name": "SeLe4n.Kernel.syscallEntryChecked_stepCovers",
-          "line": 713,
+          "line": 733,
           "called": [
             "SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_eq_setPerCoreTlb",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -440897,7 +442060,7 @@
     {
       "module": "tests.VSpaceCapabilityBindingSuite",
       "path": "tests/VSpaceCapabilityBindingSuite.lean",
-      "declaration_count": 135,
+      "declaration_count": 137,
       "declarations": [
         {
           "kind": "def",
@@ -442873,13 +444036,39 @@
         },
         {
           "kind": "def",
+          "name": "stageThreadState",
+          "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.stageThreadState",
+          "line": 2241,
+          "called": [
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.updateTcb",
+            "SeLe4n.Model.ThreadState"
+          ],
+          "private": true
+        },
+        {
+          "kind": "def",
+          "name": "kernelState",
+          "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.kernelState",
+          "line": 2245,
+          "called": [
+            "SeLe4n.Model.KernelError",
+            "SeLe4n.Model.SystemState"
+          ],
+          "private": true
+        },
+        {
+          "kind": "def",
           "name": "runThreadFinaliseChecks",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.runThreadFinaliseChecks",
-          "line": 2239,
+          "line": 2251,
           "called": [
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.bootCoreId",
+            "SeLe4n.Kernel.endpointCall",
+            "SeLe4n.Kernel.endpointReceiveDual",
+            "SeLe4n.Kernel.endpointSendDual",
             "SeLe4n.Kernel.enqueueRunnableOnCore",
             "SeLe4n.Kernel.finaliseFinalObject",
             "SeLe4n.Kernel.notificationWait",
@@ -442888,17 +444077,22 @@
             "SeLe4n.MachineState.fpOwnerOnCore",
             "SeLe4n.MachineState.residentOnCore",
             "SeLe4n.MachineState.setFpOwnerOnCore",
+            "SeLe4n.Model.KernelError",
+            "SeLe4n.Model.QueuePPrev",
             "SeLe4n.Model.SchedulerState.currentOnCore",
             "SeLe4n.Model.SchedulerState.reschedulePendingOnCore",
             "SeLe4n.Model.SchedulerState.setCurrentOnCore",
             "SeLe4n.Model.SyscallDecodeResult",
             "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getEndpoint?",
             "SeLe4n.Model.SystemState.getNotification?",
             "SeLe4n.Model.SystemState.getSchedContext?",
             "SeLe4n.Model.SystemState.getTcb?",
             "SeLe4n.Model.SystemState.getUntyped?",
             "SeLe4n.Model.SystemState.queuedOn",
             "SeLe4n.Model.SystemState.updateTcb",
+            "SeLe4n.Model.ThreadIpcState",
+            "SeLe4n.Model.ThreadState",
             "SeLe4n.ObjId.ofNat",
             "SeLe4n.Testing.VSpaceCapabilityBinding.assertBool",
             "SeLe4n.Testing.VSpaceCapabilityBinding.carveScenario",
@@ -442908,6 +444102,8 @@
             "SeLe4n.Testing.VSpaceCapabilityBinding.decodeCarve",
             "SeLe4n.Testing.VSpaceCapabilityBinding.decodeCopy",
             "SeLe4n.Testing.VSpaceCapabilityBinding.decodeDelete",
+            "SeLe4n.Testing.VSpaceCapabilityBinding.endpointTag",
+            "SeLe4n.Testing.VSpaceCapabilityBinding.kernelState",
             "SeLe4n.Testing.VSpaceCapabilityBinding.notificationTag",
             "SeLe4n.Testing.VSpaceCapabilityBinding.recordsChildAt",
             "SeLe4n.Testing.VSpaceCapabilityBinding.runAll",
@@ -442915,6 +444111,7 @@
             "SeLe4n.Testing.VSpaceCapabilityBinding.schedContextTag",
             "SeLe4n.Testing.VSpaceCapabilityBinding.slotOwnCnRW",
             "SeLe4n.Testing.VSpaceCapabilityBinding.slotUtRetype",
+            "SeLe4n.Testing.VSpaceCapabilityBinding.stageThreadState",
             "SeLe4n.Testing.VSpaceCapabilityBinding.storedAt",
             "SeLe4n.Testing.VSpaceCapabilityBinding.tcbTag",
             "SeLe4n.ThreadId"
@@ -442925,7 +444122,7 @@
           "kind": "def",
           "name": "runVSpaceCapabilityBindingChecks",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.runVSpaceCapabilityBindingChecks",
-          "line": 2419,
+          "line": 2519,
           "called": [
             "SeLe4n.Testing.VSpaceCapabilityBinding.runAlignmentChecks",
             "SeLe4n.Testing.VSpaceCapabilityBinding.runAuthorizedChecks",
@@ -442952,7 +444149,7 @@
           "kind": "def",
           "name": "main",
           "full_name": "main",
-          "line": 2447,
+          "line": 2547,
           "called": [
             "SeLe4n.Testing.VSpaceCapabilityBinding.runVSpaceCapabilityBindingChecks"
           ]
