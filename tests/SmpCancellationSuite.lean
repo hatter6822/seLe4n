@@ -2456,10 +2456,10 @@ private def stRunningHolderReclaim : SystemState :=
 the reclaim takes the holder it unbinds off the scheduler.**
 
 Three shapes, each with the retired reading computed beside the live one.  On the
-**blocked** holder the abort fires, and the two readings then part: the wake
-placed it on its home core's run queue, `.unbound`, where the chooser selects it
-at its legacy band on nobody's budget; the deschedule leaves it where the abort
-left it — parked, `.ready`, `.unbound`, recoverable by its own manager.  On the
+**blocked** holder no abort fires since `v0.36.136` (seL4's `schedContext_unbindTCB`
+leaves a blocked holder blocked): the holder is unbound and keeps waiting on its own
+call, on no slot, so the retired wake (whose trigger read the abort's `.ready`)
+places nothing either.  On the
 **queued** holder — the ordinary passive server, and the case the wake's guards
 never reached — the wake was the identity and the server stayed queued
 `.unbound`, which is the temporal-isolation break PR #897's review measured; the
@@ -2489,28 +2489,29 @@ private def runReclaimCompleteSuspendChecks : IO Unit := do
       && decide (determineTargetCore st victimTid = core1))
   assertBool "setup: the reservation's replenishment sits on the holder's home core"
     (replenishHolds st core2 scId && !replenishHolds st core1 scId)
-  -- (ii) The RETIRED G2: the abort fires, and the holder is left where the abort
-  -- put it.
+  -- (ii) The bare G2: since `v0.36.136` no abort fires (seL4's
+  -- `schedContext_unbindTCB` leaves a blocked holder blocked), so the holder is
+  -- unbound and still waiting on its own call.
   let retired := bareTeardownG2 st victimTid tcb
-  assertBool "the RETIRED bare teardown unblocks the holder — it is `.ready` and unbound"
-    (decide ((retired.getTcb? serverTid).map (·.ipcState) = some .ready)
+  assertBool "the bare teardown unbinds the holder and leaves it BLOCKED on its own call"
+    (decide ((retired.getTcb? serverTid).map (·.ipcState) = some (.blockedOnCall epId))
       && decide ((retired.getTcb? serverTid).map (·.schedContextBinding)
           = some SchedContextBinding.unbound))
-  assertBool "...and leaves it on NO run queue on any core, as the live reclaim now does deliberately"
+  assertBool "...and leaves it on NO run queue on any core, as the live reclaim does"
     (!runnableOnSomeCore retired serverTid && !runningOnSomeCore retired serverTid)
   assertBool "...and leaves the reservation's replenishment on the holder's home core"
     (replenishHolds retired core2 scId && !replenishHolds retired core1 scId)
   -- (iii) The LIVE G2 on the blocked holder: the migration, and a deschedule
-  -- that is the identity on a thread the abort left on no slot.
+  -- that is the identity on a thread blocked on no slot.
   let live := cancelIpcBlockingReclaimed victimTid tcb st
-  assertBool "the LIVE reclaim-complete teardown leaves the aborted holder PARKED: `.ready`, unbound, on no slot"
-    (decide ((live.getTcb? serverTid).map (·.ipcState) = some .ready)
+  assertBool "the LIVE reclaim-complete teardown leaves the blocked holder BLOCKED, unbound, on no slot"
+    (decide ((live.getTcb? serverTid).map (·.ipcState) = some (.blockedOnCall epId))
       && decide ((live.getTcb? serverTid).map (·.schedContextBinding)
           = some SchedContextBinding.unbound)
       && decide (placedCoreOf? live serverTid = none))
-  assertBool "...where the RETIRED wake placed it on its home core's run queue, unbudgeted"
-    ((retiredHolderWake st (cancelIpcBlockingMigrated victimTid tcb st) victimTid tcb
-      |>.queuedOn core2 serverTid))
+  assertBool "...and the RETIRED wake, whose trigger read the abort's `.ready`, places nothing"
+    (!((retiredHolderWake st (cancelIpcBlockingMigrated victimTid tcb st) victimTid tcb
+      |>.queuedOn core2 serverTid)))
   assertBool "...and migrates the reservation to the home of the thread it is now bound to"
     (replenishHolds live core1 scId && !replenishHolds live core2 scId)
   assertBool "...and names no core, since a parked holder is removed from nothing"
@@ -2660,9 +2661,12 @@ private def retiredBindPlacement (st : SystemState) (tid : SeLe4n.ThreadId) : Sy
 
 private def runBindPlacesParkedChecks : IO Unit := do
   IO.println "--- §3.26b WS-RR RR8.12 Cut B2: a bind places the parked holder ---"
-  let st := stStrandedHolderReclaim
+  let st := stQueuedHolderReclaim
   let tcb := victimTcb st
-  -- The reclaim parks the holder, which is `v0.35.158`'s own measurement.
+  -- The reclaim parks the holder, which is `v0.35.158`'s own measurement: the
+  -- queued holder is taken off its run queue.  (Since `v0.36.136` a holder
+  -- blocked on a call of its own is left blocked, as seL4 leaves it, so the
+  -- parked holder is the ready one.)
   let parked := (cancelIpcBlockingReclaimed victimTid tcb st).withObjectStored
     scIdOther.toObjId (.schedContext spareSc)
   assertBool "setup: the reclaim leaves the holder `.ready`, `.unbound` and on NO core"
@@ -2757,7 +2761,7 @@ private def retiredBindPlacesParkedThread (st : SystemState) (tid : SeLe4n.Threa
 
 private def runBindExhaustedReservationChecks : IO Unit := do
   IO.println "--- §3.26c PR #900 review: a bind does not place a thread on an exhausted reservation ---"
-  let st := stStrandedHolderReclaim
+  let st := stQueuedHolderReclaim
   let tcb := victimTcb st
   let parked :=
     ((cancelIpcBlockingReclaimed victimTid tcb st).withObjectStored auxTid.toObjId
