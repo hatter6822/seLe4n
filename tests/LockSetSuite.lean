@@ -1057,26 +1057,28 @@ private def runPerTransitionShapeChecks : IO Unit := do
   assertBool "cancelDonation size (.donated + the pop's three stack objects) = 7"
     (decide ((SeLe4n.Kernel.lockSet_cancelDonation ⟨3⟩ (some ⟨50⟩) (some ⟨7⟩)
               (some ⟨60⟩) (some ⟨61⟩) (some ⟨9⟩)).size = 7))
-  -- The widest teardown arm: a reply-arm victim owed a donation whose holder is
-  -- itself blocked, at reply-stack depth ≥ 3.
-  -- **WS-HP HP3.4** takes it to fifteen: the splice re-links the frame *below*
+  -- The widest teardown arm: a reply-arm victim owed a donation, at reply-stack
+  -- depth ≥ 3.
+  -- **WS-HP HP3.4** took it to fifteen: the splice re-links the frame *below*
   -- the cut as well as the one above it, so the removal contributes two members
   -- rather than one.  Both are `none` on every reachable reply arm owed a
   -- reclaim -- a caller owed one is the innermost live caller, so its frame has
-  -- nothing above it -- which is why the *reachable* reply-arm figure is still
-  -- ten while this union-over-arguments width grew.
-  assertBool "cancelIpcBlocking size (full: every member some) = 15"
+  -- nothing above it -- which is why the *reachable* reply-arm figure stays
+  -- below this union-over-arguments width.  `v0.36.136` takes it to twelve: the
+  -- reclaim no longer ends a blocked holder's call (seL4 leaves it blocked), so
+  -- the holder's endpoint and its two queue neighbours are not members.
+  assertBool "cancelIpcBlocking size (full: every member some) = 12"
     (decide ((SeLe4n.Kernel.lockSet_cancelIpcBlocking ⟨3⟩
               (some (ObjId.ofNat 20)) (some (ObjId.ofNat 30)) (some ⟨60⟩)
               (some ⟨50⟩) (some ⟨7⟩)
               (some ⟨61⟩) (some ⟨11⟩)
-              (some ⟨62⟩) (some ⟨63⟩) (some ⟨64⟩)).size = 15))
-  assertBool "…and dropping only the frame below the cut drops it to 14"
+              (some ⟨62⟩) (some ⟨63⟩) (some ⟨64⟩)).size = 12))
+  assertBool "…and dropping only the frame below the cut drops it to 11"
     (decide ((SeLe4n.Kernel.lockSet_cancelIpcBlocking ⟨3⟩
               (some (ObjId.ofNat 20)) (some (ObjId.ofNat 30)) (some ⟨60⟩)
               (some ⟨50⟩) (some ⟨7⟩)
               (some ⟨61⟩) (some ⟨11⟩)
-              (some ⟨62⟩) (some ⟨63⟩) none).size = 14))
+              (some ⟨62⟩) (some ⟨63⟩) none).size = 11))
   assertBool "…and the frame below the cut is declared WRITE"
     (decide ((replyLock ⟨64⟩, AccessMode.write)
       ∈ (SeLe4n.Kernel.lockSet_cancelIpcBlocking ⟨3⟩

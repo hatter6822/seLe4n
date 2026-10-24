@@ -339,6 +339,10 @@ reclaim ended the holder's IPC before returning the reservation
     the reclaim still takes off its run queue.  The applied reply-arm
     examples pass the arm's narrowed premises (`cancelDonationResolves`, the
     victim's own timeout budget).
+  - `lock_set_suite`: the widest `cancelIpcBlocking` footprint is now 12
+    members, and 11 without the frame below the cut (was 15 and 14).  The
+    reclaim no longer ends the holder's call, so the holder's endpoint and
+    its two queue neighbours are not members.
 
 ### Merge
 
