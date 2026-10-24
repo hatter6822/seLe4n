@@ -112,13 +112,18 @@ This is part 25 of the seL4 untyped reset.
   - Pins (`scripts/qemu_exerciser_lib.sh`): every new step reads 0 except
     the two carves (`untyped-retype-busy-reply`,
     `untyped-retype-stashed-reply`, 12, a reply's carve) and
-    `busy-reply-delete`, pinned at `(12, 12)`.  A `lean_alloc_small` caller
+    `busy-reply-delete`, pinned at `(11, 11)`.  A `lean_alloc_small` caller
     trace (QEMU under gdb, breakpoints armed only inside `finaliseFinalObject`)
-    puts 11 of its cells in the caller cancel `finaliseReply` reuses,
-    `cancelIpcBlocking`'s reply arm, the suspend's general path: the reply's
-    consumed rebuild and store (8), the reply-frame splice (1) and the
-    ready-staging restore (2); the last is the caller's server read back as an
-    option in `finaliseReply`.  `stashed-reply-delete` reads 0.
+    put 12 cells there: 11 in the caller cancel `finaliseReply` reuses,
+    `cancelIpcBlocking`'s reply arm, the suspend's general path (the reply's
+    consumed rebuild and store, 8; the reply-frame splice, 1; the
+    ready-staging restore, 2), and one in `finaliseReply`, the caller's server
+    read back as an option, which inlining `finaliseReplyRevert` matches away.
+    `stashed-reply-delete` reads 0.
+  - The remote-stall driver's step 2 is retried, as its step 1 is: on the
+    merged image a kernel entry step 1's poke raised met step 2's request
+    on core 2 before the exit gate ran, so the gate passed (the protocol's
+    other legal order) and the driver failed deterministically.
 
 ### Merge
 
@@ -138,7 +143,7 @@ This is part 25 of the seL4 untyped reset.
   final delete" (seL4's `reply_pop` and the loan return, which need the
   donated return's refusal decided first; owner ZA6.1).  The thread row's
   clause (3), a thread lending or borrowing a binding, now points at it.
-- Registered: "A busy reply's final delete allocates 12 cells" (owner ZA6.1).
+- Registered: "A busy reply's final delete allocates 11 cells" (owner ZA6.1).
 
 ### Documentation
 

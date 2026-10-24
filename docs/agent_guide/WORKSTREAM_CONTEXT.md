@@ -319,7 +319,7 @@ waiting caller's call cancelled through `cancelIpcBlocking`'s reply arm, its
 boost reverted and the caller suspended; a stash cleared in place) and a busy
 scheduling context (a ready holder dequeued, then unbound, then the reply stack
 unlinked), and an endpoint only a reply-blocked caller names is retired; the
-reply's caller cancel is the suspend's general path and allocates (12 cells,
+reply's caller cancel is the suspend's general path and allocates (11 cells,
 pinned).  A thread that is endpoint- or reply-blocked, donating or holding
 space-slot capabilities, a head reply or a caller lending a reservation, a
 context whose holder is blocked sending or calling, and an untyped that still

@@ -860,7 +860,9 @@ fn sgi_round_trip() -> bool {
 ///    (`note_kernel_entry`) is what ends the wait (`StallOutcome::Left`);
 /// 2. the secondary in the kernel, the stall requests and does not wait
 ///    (`NotAtUser`), and the secondary's own exit gate, run on it through the
-///    agent, then refuses its return to EL0;
+///    agent, then refuses its return to EL0 (retried, as step 1 is, when a
+///    kernel entry step 1 raised meets the request first and the gate
+///    passes);
 /// 3. on the Lean-linked image, the secondary's next kernel entry under the
 ///    kernel-entry lock (its reschedule) meets the request.
 ///
@@ -896,16 +898,28 @@ fn remote_stall() -> bool {
         if left {
             crate::kprintln!("[smp-test] remote-stall: core {core}: at user, poked, entered the kernel before the stall returned");
         }
-        let requested = crate::remote_stall::stall_if_changed_in(
-            &AT_USER,
-            &STALL_REQUESTED,
-            core,
-            true,
-            0,
-            poke,
-        );
-        let refused =
-            requested == StallOutcome::NotAtUser && command(core, COMMAND_EXIT_GATE, 0) == Some(0);
+        // Step 1's poke may still be in flight: the secondary's kernel entry
+        // it raises can meet step 2's request before the exit gate runs, and
+        // a met request lets the gate pass, which is the protocol too.  So
+        // step 2 is retried until the gate is what refused.
+        let mut refused = false;
+        for _ in 0..16 {
+            AT_USER[core].store(false, Ordering::SeqCst);
+            let requested = crate::remote_stall::stall_if_changed_in(
+                &AT_USER,
+                &STALL_REQUESTED,
+                core,
+                true,
+                0,
+                poke,
+            );
+            if requested == StallOutcome::NotAtUser
+                && command(core, COMMAND_EXIT_GATE, 0) == Some(0)
+            {
+                refused = true;
+                break;
+            }
+        }
         if refused {
             crate::kprintln!("[smp-test] remote-stall: core {core}: in the kernel, requested; its exit gate refused the return to user");
         }

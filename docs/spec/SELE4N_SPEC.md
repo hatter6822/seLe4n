@@ -5179,7 +5179,7 @@ reschedule coverage, the reply-stack write census
 projection (`finaliseReply_hidden`, `finaliseSchedContextDeschedule_hidden`)
 are kept over the new steps (`finaliseReply_closed`,
 `finaliseSchedContextDeschedule_closed`).  A stashed reply's delete allocates
-nothing (`stashed-reply-delete` reads 0); a busy reply's reads 12, every cell in
+nothing (`stashed-reply-delete` reads 0); a busy reply's reads 11, every cell in
 the caller cancel's general path (`busy-reply-delete`), registered for ZA6.1.
 
 ### 8.6.1 Carve Refusal Order (`v0.36.125`)

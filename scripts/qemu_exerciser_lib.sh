@@ -361,16 +361,16 @@ for driver in drivers:
             # WS-ZA ZA5.4 part 25: a busy reply's final delete cancels its
             # caller through cancelIpcBlocking's reply arm, the suspend's
             # general path (`docs/REGISTERED_DEBT.md`, "A busy reply's final
-            # delete allocates 12 cells", owned by ZA6.1), compiled as the
+            # delete allocates 11 cells", owned by ZA6.1), compiled as the
             # specification (a QEMU trace of lean_alloc_small's callers): the
             # caller's reply-link consume rebuilds and stores the reply
             # (`consumeCallerReplyLink`, `consumeCallerReply`, `consumeReply`,
             # `Reply.consumed`, `storeObjectImpl`: 8), the frame splice builds
             # one (`spliceReplyFrameOut`, 1), the restore rewrites the caller
             # with its cancellation frame (`restoreToReadyStaging`,
-            # `TCB.withReturnFrame`: 2), and the finalise reads the caller's
-            # server back as an option (`finaliseReply`, 1).
-            "busy-reply-delete": (12, 12),
+            # `TCB.withReturnFrame`: 2).  The finalise's own read of the
+            # caller's server is matched away (`finaliseReplyRevert` inlined).
+            "busy-reply-delete": (11, 11),
             "untyped-retype-sched-context": (14, 13), "untyped-retype-sc-thread": (14, 14),
             "vspace-unmap-first": (0, 0), "vspace-map-again": (0, 0),
             "vspace-unify-instruction": (4, 3),
