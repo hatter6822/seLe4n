@@ -116,9 +116,14 @@ pub const COMMAND_PROBE_ALL: u32 = 5;
 /// Remap this core's own window page to generation `arg` through a shootdown
 /// round; the result is the round's [`RoundOutcome::code`].
 pub const COMMAND_ROUND: u32 = 6;
-/// Run the remote-core stall's exit gate check on this core
-/// (`remote_stall::enter_user`) and clear the user flag it sets; the result is
-/// `1` when the gate would let the core return to EL0, `0` when it refuses.
+/// Request a remote-core stall of this core (`remote_stall::stall_if_changed_in`)
+/// and run its exit gate check (`remote_stall::enter_user`), clearing the user
+/// flag the gate sets.  Both run inside this core's agent handler, with its
+/// IRQs masked, so no kernel entry of this core (a reschedule or a tick, which
+/// meets and clears a request under the kernel-entry lock) can run between
+/// them.  The result is `0` when the request found the core in the kernel and
+/// the gate refused the return to EL0, `1` when the gate let it return, and
+/// `2` when the request did not find the core in the kernel.
 pub const COMMAND_EXIT_GATE: u32 = 7;
 
 /// One core's command slot: one cache line, written by the issuer (the boot
@@ -732,6 +737,17 @@ fn execute(core: usize, source_cpu: u8, command: u32, arg: u64) -> u64 {
             outcome.code()
         }
         COMMAND_EXIT_GATE => {
+            let requested = crate::remote_stall::stall_if_changed_in(
+                &crate::remote_stall::AT_USER,
+                &crate::remote_stall::STALL_REQUESTED,
+                core,
+                true,
+                0,
+                |_| {},
+            );
+            if requested != crate::remote_stall::StallOutcome::NotAtUser {
+                return 2;
+            }
             let allowed = crate::remote_stall::enter_user(core);
             // This core is in an interrupt handler, not at EL0.
             crate::remote_stall::note_kernel_entry();
@@ -859,8 +875,10 @@ fn sgi_round_trip() -> bool {
 ///    `.reschedule` SGI and waits; the secondary's interrupt entry
 ///    (`note_kernel_entry`) is what ends the wait (`StallOutcome::Left`);
 /// 2. the secondary in the kernel, the stall requests and does not wait
-///    (`NotAtUser`), and the secondary's own exit gate, run on it through the
-///    agent, then refuses its return to EL0;
+///    (`NotAtUser`), and the secondary's own exit gate then refuses its return
+///    to EL0.  Both run on the secondary in one agent command
+///    ([`COMMAND_EXIT_GATE`]), so no kernel entry of the secondary can meet
+///    the request between them;
 /// 3. on the Lean-linked image, the secondary's next kernel entry under the
 ///    kernel-entry lock (its reschedule) meets the request.
 ///
@@ -896,16 +914,10 @@ fn remote_stall() -> bool {
         if left {
             crate::kprintln!("[smp-test] remote-stall: core {core}: at user, poked, entered the kernel before the stall returned");
         }
-        let requested = crate::remote_stall::stall_if_changed_in(
-            &AT_USER,
-            &STALL_REQUESTED,
-            core,
-            true,
-            0,
-            poke,
-        );
-        let refused =
-            requested == StallOutcome::NotAtUser && command(core, COMMAND_EXIT_GATE, 0) == Some(0);
+        // The request and the gate run together on the secondary: a request
+        // made here could be met by a kernel entry of the secondary still in
+        // flight (step 1's reschedule, or a tick) before the gate ran.
+        let refused = command(core, COMMAND_EXIT_GATE, 0) == Some(0);
         if refused {
             crate::kprintln!("[smp-test] remote-stall: core {core}: in the kernel, requested; its exit gate refused the return to user");
         }
