@@ -2009,10 +2009,26 @@ private theorem witnessSt3_noStacks :
     · cases hSc
     · cases hSc
 
+/-- **WS-ZA ZA5.4 part 25**: the witness state lends no context, so every lent
+context is headed by its lender vacuously. -/
+private theorem witnessSt3_noLoans :
+    ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId)
+      (owner : SeLe4n.ThreadId), witnessSt3.objects[tid.toObjId]? = some (.tcb tcb) →
+      tcb.schedContextBinding ≠ .donated scId owner := by
+  intro tid tcb scId owner hLk
+  rw [witnessSt3_lookup] at hLk
+  split at hLk
+  · cases hLk
+  · split at hLk
+    · cases hLk
+      simp [witnessTcbBound, witnessTcbFresh]
+    · cases hLk
+
 private theorem witnessCapOnly :
     capabilityDispatchQuiescence witnessDecoded witnessCap witnessSt3 := by
   refine ⟨?_, ?_, ?_, ?_, ?_,
-    replyStackOuterCallerValid_of_no_stacks witnessSt3 witnessSt3_noStacks⟩
+    replyStackOuterCallerValid_of_no_stacks witnessSt3 witnessSt3_noStacks,
+    .of_no_loans witnessSt3_noLoans⟩
   · intro t tcb scId hLk hScId
     rw [witnessSt3_lookup] at hLk
     split at hLk
@@ -2173,7 +2189,8 @@ private theorem witnessCapOnlySignal :
     capabilityDispatchQuiescence witnessDecodedSignal witnessCapTcbObject
       witnessSt3 := by
   refine ⟨witnessCapOnly.bindingBidirectional, witnessCapOnly.queuedThreadsIdle,
-    ?_, ?_, ?_, witnessCapOnly.replyStacksSettleOnWaitingDonors⟩
+    ?_, ?_, ?_, witnessCapOnly.replyStacksSettleOnWaitingDonors,
+    witnessCapOnly.lentContextsHeadedByLender⟩
   · intro _ _ hSy _
     simp [witnessDecodedSignal] at hSy
   · intro scObj _ hTgt vScId hVal scX t tcbX hScLk
@@ -2344,7 +2361,8 @@ private theorem witnessCapOnlyEndpointOf (decoded : SyscallDecodeResult)
     (hRegs : decoded.msgRegs = #[]) :
     capabilityDispatchQuiescence decoded witnessCapEndpoint witnessSt3 := by
   refine ⟨witnessCapOnly.bindingBidirectional, witnessCapOnly.queuedThreadsIdle,
-    ?_, ?_, ?_, witnessCapOnly.replyStacksSettleOnWaitingDonors⟩
+    ?_, ?_, ?_, witnessCapOnly.replyStacksSettleOnWaitingDonors,
+    witnessCapOnly.lentContextsHeadedByLender⟩
   · intro _ _ _ hRes
     simp only [resolveSchedContextBindThread, decodeSchedContextBindArgs, hRegs,
       requireMsgReg, bind, Except.bind] at hRes
@@ -2526,7 +2544,8 @@ private def witnessGateMint : SyscallGate :=
 private theorem witnessCapOnlyMint :
     capabilityDispatchQuiescence witnessDecodedMint witnessCap witnessSt3 := by
   refine ⟨witnessCapOnly.bindingBidirectional, witnessCapOnly.queuedThreadsIdle,
-    ?_, ?_, ?_, witnessCapOnly.replyStacksSettleOnWaitingDonors⟩
+    ?_, ?_, ?_, witnessCapOnly.replyStacksSettleOnWaitingDonors,
+    witnessCapOnly.lentContextsHeadedByLender⟩
   · intro _ _ hSy _
     simp [witnessDecodedMint] at hSy
   · intro scObj _ hTgt
@@ -2582,7 +2601,8 @@ private theorem witnessCapOnlyDeclassifySignal :
     capabilityDispatchQuiescence witnessDecodedDeclassifySignal
       witnessCapTcbObject witnessSt3 := by
   refine ⟨witnessCapOnly.bindingBidirectional, witnessCapOnly.queuedThreadsIdle,
-    ?_, ?_, ?_, witnessCapOnly.replyStacksSettleOnWaitingDonors⟩
+    ?_, ?_, ?_, witnessCapOnly.replyStacksSettleOnWaitingDonors,
+    witnessCapOnly.lentContextsHeadedByLender⟩
   · intro _ _ hSy _
     simp [witnessDecodedDeclassifySignal] at hSy
   · intro scObj _ hTgt vScId hVal scX t tcbX hScLk
@@ -2805,7 +2825,12 @@ private theorem witnessCapOnlyReply :
     capabilityDispatchQuiescence witnessDecodedReply witnessCapReply
       witnessSt4 := by
   refine ⟨?_, ?_, ?_, ?_, ?_,
-    replyStackOuterCallerValid_of_no_stacks witnessSt4 witnessSt4_noStacks⟩
+    replyStackOuterCallerValid_of_no_stacks witnessSt4 witnessSt4_noStacks,
+    .of_no_loans fun tid tcb scId owner hLk => by
+      rw [witnessSt4_lookup] at hLk
+      split at hLk
+      · cases hLk
+      · exact witnessSt3_noLoans tid tcb scId owner hLk⟩
   · intro t tcb scId hLk hScId
     rw [witnessSt4_lookup] at hLk
     split at hLk
@@ -2891,7 +2916,8 @@ private def witnessGateBind : SyscallGate :=
 private theorem witnessCapOnlyBind :
     capabilityDispatchQuiescence witnessDecodedBind witnessCap witnessSt3 := by
   refine ⟨witnessCapOnly.bindingBidirectional, witnessCapOnly.queuedThreadsIdle,
-    ?_, ?_, ?_, witnessCapOnly.replyStacksSettleOnWaitingDonors⟩
+    ?_, ?_, ?_, witnessCapOnly.replyStacksSettleOnWaitingDonors,
+    witnessCapOnly.lentContextsHeadedByLender⟩
   · intro _ vThreadId _ _ s sTcb sc0 hLk
     rw [witnessSt3_lookup] at hLk
     split at hLk
@@ -2949,7 +2975,8 @@ private theorem witnessCapOnlyUnbind :
     capabilityDispatchQuiescence witnessDecodedUnbind witnessCapTcbObject
       witnessSt3 := by
   refine ⟨witnessCapOnly.bindingBidirectional, witnessCapOnly.queuedThreadsIdle,
-    ?_, ?_, ?_, witnessCapOnly.replyStacksSettleOnWaitingDonors⟩
+    ?_, ?_, ?_, witnessCapOnly.replyStacksSettleOnWaitingDonors,
+    witnessCapOnly.lentContextsHeadedByLender⟩
   · intro _ _ hSy _
     simp [witnessDecodedUnbind] at hSy
   · intro scObj _ hTgt vScId hVal scX t tcbX hScLk
@@ -3009,7 +3036,8 @@ private theorem witnessCapOnlySuspend :
     capabilityDispatchQuiescence witnessDecodedSuspend witnessCapTcbObject
       witnessSt3 := by
   refine ⟨witnessCapOnly.bindingBidirectional, witnessCapOnly.queuedThreadsIdle,
-    ?_, ?_, ?_, witnessCapOnly.replyStacksSettleOnWaitingDonors⟩
+    ?_, ?_, ?_, witnessCapOnly.replyStacksSettleOnWaitingDonors,
+    witnessCapOnly.lentContextsHeadedByLender⟩
   · intro _ _ hSy _
     simp [witnessDecodedSuspend] at hSy
   · intro scObj hSy hTgt

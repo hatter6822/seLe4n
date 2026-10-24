@@ -3189,6 +3189,16 @@ structure capabilityDispatchQuiescence (decoded : SyscallDecodeResult)
   decode does not. -/
   replyStacksSettleOnWaitingDonors : ∀ scId serverTid originalOwner,
     replyStackOuterCallerValid st scId serverTid originalOwner
+  /-- **WS-ZA ZA5.4 part 25**: every lent scheduling context is headed by its
+  lender's reply frame (seL4 MCS lends a context in the step that pushes the
+  lender's reply as its stack head).  A pre-state fact the finalising delete and
+  revocation read in place of a walk of the whole store: a reply heading no stack
+  has a caller that lends to no one (`replyCaller_lendsNone`).  The delete's own
+  steps keep it (`cspaceDeleteSlotFinalising_preserves_finaliseLoanBundle`), so
+  the revocation loop carries it from this one fact.  Stated, not derived: it is
+  one of the stated coherence hypotheses `docs/REGISTERED_DEBT.md` carries to
+  v1.0.0.  Vacuous on every state that lends no context. -/
+  lentContextsHeadedByLender : lentContextHeadsLenderFrame st
 
 /-- WS-RR RR3.23 (**the capability-only dispatch payoff**): every syscall
 `dispatchCapabilityOnly` routes preserves `ipcInvariantFull`, over the
@@ -3219,7 +3229,8 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
           simp only [hDec] at hStep
           split at hStep
           · cases hStep
-          exact cspaceDeleteSlotFinalising_preserves_ipcInvariantFull _ _ st st' hObjInv hInv hStep
+          exact cspaceDeleteSlotFinalising_preserves_ipcInvariantFull _ _ st st' hObjInv hInv
+            hPack.lentContextsHeadedByLender hStep
     all_goals try cases hStep
   case cspaceRevoke =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -3231,7 +3242,8 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
           simp only [hDec] at hStep
           split at hStep
           · cases hStep
-          exact cspaceRevokeCdtFinalising_preserves_ipcInvariantFull _ _ st st' hObjInv hInv hStep
+          exact cspaceRevokeCdtFinalising_preserves_ipcInvariantFull _ _ st st' hObjInv hInv
+            hPack.lentContextsHeadedByLender hStep
     all_goals try cases hStep
   case mintReplyCap =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep

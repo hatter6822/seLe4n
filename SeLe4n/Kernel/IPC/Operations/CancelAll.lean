@@ -1106,18 +1106,6 @@ theorem cancelDonationArmOnCore_of_codes (st : SystemState) (tid : SeLe4n.Thread
 -- §4b  A reply's finalisation
 -- ============================================================================
 
-/-- **Whether `o` is a thread holding a reservation lent by the thread whose
-code is `c`** (a `.donated _ owner` binding, `owner` coded `c`). -/
-@[inline] def objectHoldsLoanFrom (o : KernelObject) (c : Nat) : Bool :=
-  match o with
-  | .tcb t => t.scBindingScCode != 0 && t.scBindingOwnerCode == c
-  | _ => false
-
-/-- **No thread holds a reservation lent by the thread whose code is `c`**: the
-table walked once, in place, as `storeNamesNone` walks it. -/
-@[inline] def loansFromNone (st : SystemState) (c : Nat) : Bool :=
-  st.objects.fold true fun acc _ o => acc && !objectHoldsLoanFrom o c
-
 /-- **Whether a reply's stack link is the head of some context's stack.** -/
 @[inline] def replyStackLinkIsHead : Option ReplyStackLink → Bool
   | some (.head _) => true
@@ -1131,14 +1119,19 @@ is no stack's head, so no reservation goes back to the caller (seL4's
 on a final delete"); the caller is no reserved or idle thread and is on
 no run queue — a core's FP/SIMD or resident hold on it stays, as seL4 keeps a
 lazily saved context across `setThreadState Inactive` — is blocked on this reply, is linked into no
-endpoint queue, waits with no timeout budget, and lends its reservation to no
-one.  Each check reads the state the cancel then writes. -/
-@[inline] def replyCallerFinalisable (st : SystemState) (x : SeLe4n.ObjId) (r : Reply)
+endpoint queue, and waits with no timeout budget.  Each check reads the reply
+and the caller the cancel then writes, in `O(1)`.  The caller lends its
+reservation to no one, and no check walks the store for it: a thread lending a
+context finds its own reply heading that context's stack (seL4 MCS pushes the
+lender's reply as the head in the step that lends,
+`lentContextHeadsLenderFrame`), and this reply heads no stack
+(`replyCaller_lendsNone`). -/
+@[inline] def replyCallerFinalisable (x : SeLe4n.ObjId) (r : Reply)
     (c : SeLe4n.ThreadId) (t : TCB) : Bool :=
   !replyStackLinkIsHead r.next && !c.isReserved && !isIdleThreadId c &&
     t.runCoreCode == 0 && decide (4 ≤ t.ipcStateCode) &&
     t.replyObjectCode == x.val + 1 && t.queueNextCode == 0 && t.queuePrevCode == 0 &&
-    t.timeoutBudget.isNone && loansFromNone st r.callerCode
+    t.timeoutBudget.isNone
 
 /-- **A thread's reply stash, cleared.** -/
 @[inline] def TCB.stashCleared (t : TCB) : TCB := { t with pendingReceiveReplyCode := 0 }
@@ -1190,7 +1183,7 @@ def finaliseReply (x : SeLe4n.ObjId) (st : SystemState) : SystemState :=
       let c : SeLe4n.ThreadId := ⟨r.callerCode - 1⟩
       match st.getTcb? c with
       | some t =>
-        if replyCallerFinalisable st x r c t then
+        if replyCallerFinalisable x r c t then
           finaliseThreadSuspend
             (finaliseReplyRevert (Lifecycle.Suspend.cancelIpcBlocking st c t) t.blockingServer?) c
         else st

@@ -408,7 +408,7 @@ theorem finaliseFinalObject_stepCovers (e : CoreId) (target : Nat) (st : SystemS
       refine ⟨stepCovers_trans h.1 (stepCovers_of_scheduler_eq (keyInputsEq_of_objects_eq hO)
         (finaliseThreadReleaseCores_scheduler s t)), ?_⟩
       rw [hO]; exact h.2)
-    (fun s s1 x _ _ r h _ _ hR _ hS => by
+    (fun s s1 x _ _ r h _ _ hR _ hS _ _ _ _ => by
       have hI1 := storeObject_preserves_objects_invExt s s1 _ _ h.2 hS
       have hK1 : keyInputsEq s s1 := keyInputsEq_storeObject h.2 hS (by
         rw [(SystemState.getReply?_eq_some_iff _ _ _).mp hR]; rfl)

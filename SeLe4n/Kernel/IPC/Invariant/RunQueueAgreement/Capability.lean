@@ -663,7 +663,7 @@ theorem finaliseFinalObject_runQueueEntryStage (target : Nat) (st : SystemState)
       (finaliseThreadReleaseCores_objects s t)
       (by rw [finaliseThreadReleaseCores_scheduler]) (by rw [finaliseThreadReleaseCores_scheduler])
       (by rw [finaliseThreadReleaseCores_scheduler])).entry)
-    (fun _ s1 x _ _ _ h _ _ hR _ hS =>
+    (fun _ s1 x _ _ _ h _ _ hR _ hS _ _ _ _ =>
       h.trans ((storeObject_replyOver_runQueueStage hR hS).trans
         (updateSchedContext_runQueueStage s1 ⟨x.val⟩ _)).entry)
     (fun s _ _ c t h _ _ _ _ =>

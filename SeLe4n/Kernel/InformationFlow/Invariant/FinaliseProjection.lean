@@ -736,14 +736,6 @@ def schedContextFinaliseHidden (ctx : LabelingContext) (observer : IfObserver)
     objectObservable ctx observer (⟨sc.boundThreadCode - 1⟩ : SeLe4n.ThreadId).toObjId = false ∧
       threadObservable ctx observer ⟨sc.boundThreadCode - 1⟩ = false
 
-/-- The deschedule of a context's holder writes nothing off the run-queue links. -/
-theorem finaliseSchedContextDeschedule_objectsAgreeOffRunLinks (st : SystemState)
-    (x : SeLe4n.ObjId) :
-    (finaliseSchedContextDeschedule st x).objectsAgreeOffRunLinks st :=
-  finaliseSchedContextDeschedule_closed (fun s => s.objectsAgreeOffRunLinks st)
-    (fun s t _ h _ _ _ _ => (descheduleAtPlacement_objectsAgreeOffRunLinks s t).trans h) st x
-    (.refl st)
-
 /-- ...so what the context's finalisation writes stays hidden after it: the
 context in its slot is the pre-state's. -/
 theorem schedContextFinaliseHidden.deschedule {ctx : LabelingContext} {observer : IfObserver}
@@ -973,10 +965,8 @@ theorem finaliseReply_hidden (ctx : LabelingContext) (observer : IfObserver)
       · next t hT =>
         split
         · next hF =>
-          have hC : r.callerCode = (⟨r.callerCode - 1⟩ : SeLe4n.ThreadId).val + 1 := by
-            simp only [beq_iff_eq] at h0; show _ = _ - 1 + 1; omega
-          obtain ⟨-, -, -, -, ⟨ep, rt, hB⟩, -, -, -, -, -, hD⟩ :=
-            replyCallerFinalisable_parts hX hC hF
+          obtain ⟨-, -, -, -, ⟨ep, rt, hB⟩, -, -, -, -, hD⟩ :=
+            replyCallerFinalisable_parts hX hF
           have hHigh := hH.1 r hX (by simpa using h0)
           have hP1 := cancelIpcBlocking_blockedOnReply_preserves_projection ctx observer st
             ⟨r.callerCode - 1⟩ t ep rt hB hValid hHigh hInv hIdx hSet
@@ -1014,6 +1004,7 @@ notification is bound to.  Each walk step keeps the step invariant
 the projection; the unbind runs first, on the pre-state itself. -/
 theorem finaliseFinalObject_preserves_projection (ctx : LabelingContext) (observer : IfObserver)
     (target : Nat) {st : SystemState} (h : ipcReachable st)
+    (hLc : lentContextHeadsLenderFrame st)
     (hx : target ≠ 0 → objectObservable ctx observer (SeLe4n.ObjId.ofNat (target - 1)) = false)
     (hW : target ≠ 0 → waitersHidden ctx observer (SeLe4n.ObjId.ofNat (target - 1)) st)
     (hBd : target ≠ 0 → ∀ (ntfn : Notification) (t : SeLe4n.ThreadId),
@@ -1051,7 +1042,7 @@ theorem finaliseFinalObject_preserves_projection (ctx : LabelingContext) (observ
       have p := notificationWaiterCancel_hidden ctx observer s x n t tcb hP.1.2.1 hP.1.2.2.1 hX
         hP.2.1 hN hH hT hC
       ⟨r.1, p.2.waitersHidden hP.2.1, p.1.trans hP.2.2⟩)
-  have hP0 : P st := ⟨.of_ipcReachable h, hW h0, rfl⟩
+  have hP0 : P st := ⟨.of_ipcReachable h hLc, hW h0, rfl⟩
   split
   · split
     · exact (hEp true _ _ (hEp false _ _ hP0)).2.2
@@ -1083,7 +1074,7 @@ theorem finaliseFinalObject_preserves_projection (ctx : LabelingContext) (observ
 child, so the untypeds recording the object are the pre-state's. -/
 theorem retireFinalisedObject_preserves_projection (ctx : LabelingContext)
     (observer : IfObserver) (ec : CoreId) (target recorder : Nat) {st : SystemState}
-    (h : ipcReachable st)
+    (h : ipcReachable st) (hLc : lentContextHeadsLenderFrame st)
     (hx : target ≠ 0 → objectObservable ctx observer (SeLe4n.ObjId.ofNat (target - 1)) = false)
     (hW : target ≠ 0 → waitersHidden ctx observer (SeLe4n.ObjId.ofNat (target - 1)) st)
     (hBd : target ≠ 0 → ∀ (ntfn : Notification) (t : SeLe4n.ThreadId),
@@ -1110,7 +1101,7 @@ theorem retireFinalisedObject_preserves_projection (ctx : LabelingContext)
   unfold retireFinalisedObject
   rw [retireFinalObject_preserves_projection ctx observer ec target recorder hF.invExt hx
     (fun h0 w hw => hU h0 w (by unfold untypedRecordsChild at hw ⊢; rw [hUt] at hw; exact hw)) hR,
-    finaliseFinalObject_preserves_projection ctx observer target h hx hW hBd hTF hSF hRF hValid
+    finaliseFinalObject_preserves_projection ctx observer target h hLc hx hW hBd hTF hSF hRF hValid
       hIdx hSet hBlockingChainHigh]
 
 end SeLe4n.Kernel

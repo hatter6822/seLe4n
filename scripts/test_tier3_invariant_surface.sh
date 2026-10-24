@@ -4130,8 +4130,29 @@ run_negative_check "INVARIANT" rg -n '[^d]Object executingCore target recorder' 
 # The IPC bundle, the reachability bundle and the projection are each proven
 # preserved by the finalised retire, and the delete/revoke closures consume them.
 run_check "INVARIANT" rg -n '^theorem finaliseFinalObject_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllPreservation.lean
-run_check "INVARIANT" rg -n '^theorem retireFinalisedObject_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllPreservation.lean
+run_check "INVARIANT" rg -n '^theorem retireFinalisedObject_preserves_finaliseLoanBundle($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllPreservation.lean
 run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlotFinalising_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllPreservation.lean
+# v0.36.136 (part 25): the reply finalisation decides that its caller lends to
+# no one in O(1), from the delete's stated lent-context fact, not by walking the
+# store; the delete's every step keeps the fact (the frame's lent-context field,
+# the reply cancel, the unstack on a context its unbind left unbound, the
+# retire), and the delete and the revocation carry it through the loop.
+run_negative_check "INVARIANT" rg -n 'loansFromNone|objectHoldsLoanFrom' SeLe4n
+run_check "INVARIANT" rg -n '^def lentContextHeadsLenderFrame($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/LoanCoherence.lean
+run_check "INVARIANT" rg -n '^theorem lentContextHeadsLenderFrame\.of_loanWrite($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/LoanCoherence.lean
+run_check "INVARIANT" rg -n '^theorem lentContextHeadsLenderFrame\.of_loanWriteOff($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/LoanCoherence.lean
+run_check "INVARIANT" rg -n '^  loan : loanWrite st st.$' SeLe4n/Kernel/IPC/Invariant/CancelAllFrame.lean
+run_check "INVARIANT" rg -n '^theorem finaliseSchedContextUnbind_unbound($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllFrame.lean
+run_check "INVARIANT" rg -n '^theorem replyCaller_lendsNone($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseLoanCoherence.lean
+run_check "INVARIANT" rg -n '^theorem finaliseReplyStep_keepsLentContextHeads($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseLoanCoherence.lean
+run_check "INVARIANT" rg -n '^theorem finaliseUnstack_keepsLentContextHeads($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseLoanCoherence.lean
+run_check "INVARIANT" rg -n '^theorem retireFinalObject_keepsLentContextHeads($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseLoanCoherence.lean
+run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlot_keepsLentContextHeads($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseLoanCoherence.lean
+run_check "INVARIANT" rg -n '^theorem finaliseFinalObject_preserves_finaliseLoanBundle($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllPreservation.lean
+run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlotFinalising_preserves_finaliseLoanBundle($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllPreservation.lean
+run_check "INVARIANT" rg -n -U 'cspaceRevokeCdtFinalising_closed finaliseLoanBundle\n    \(fun c s s. hQ hD => cspaceDeleteSlotFinalising_preserves_finaliseLoanBundle' SeLe4n/Kernel/IPC/Invariant/CancelAllPreservation.lean
+run_check "INVARIANT" rg -n '^  lentContextsHeadedByLender : lentContextHeadsLenderFrame st$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n 'hPack\.lentContextsHeadedByLender hStep' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem finaliseFinalObject_closed($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllFrame.lean
 # v0.36.135: a thread is finalised as seL4's finaliseCap finalises it, only when
 # the pre-state admits it: notification unbind, IPC cancel, suspend (the

@@ -16,7 +16,8 @@ retire.
 - **After:** each is finalised and retired.
 - **Also:** a reply records the thread that stashed it, so the receive's
   stash check and the delete's unstash read one field instead of walking
-  the object table.
+  the object table.  And the reply finalisation no longer walks the table to
+  learn that the caller lends no reservation: it reads it off the reply.
 - **Still open** (debt rows): a reply heading a scheduling context's stack,
   where seL4's `reply_pop` hands a lent reservation back; and a scheduling
   context whose thread is blocked sending or calling, which this model's
@@ -42,7 +43,10 @@ This is part 25 of the seL4 untyped reset.
   - Checks before writes: `replyCallerFinalisable` reads, on the pre-state,
     that the reply heads no stack and that the caller is no reserved or idle
     thread, is on no run queue, is blocked on this reply, is linked into no
-    endpoint queue, holds no timeout budget and lends to no one.
+    endpoint queue and holds no timeout budget, each in `O(1)`.  That the
+    caller lends to no one is no longer a walk of the object table
+    (`loansFromNone` is removed); see "The delete reads the lender's frame"
+    below.
   - A core's FP/SIMD or resident hold on the caller does not refuse the
     finalise.  seL4 keeps a lazily saved context across
     `setThreadState Inactive`, and so does this cut.
@@ -171,6 +175,49 @@ This is part 25 of the seL4 untyped reset.
   write census registers the write as chain-neutral.
 - **QEMU.**  The receive and reply-receive pins stay at 0.
 
+### The delete reads the lender's frame, not the store
+
+seL4 MCS lends a caller's scheduling context in the same step that pushes the
+caller's reply as that context's stack head.  So a thread that lends a
+context finds its own reply heading it.  This cut states that as a fact,
+`lentContextHeadsLenderFrame` (`IPC/Invariant/LoanCoherence.lean`), and the
+reply finalisation reads it in place of the whole-store walk: the reply
+heads no stack, so its caller lends to no one (`replyCaller_lendsNone`).
+
+- **The decision.**  The fact is a pre-state fact of the capability-only
+  dispatch pack (`capabilityDispatchQuiescence.lentContextsHeadedByLender`),
+  and it is proved kept by every step the finalising delete runs, not
+  asserted of every reachable state.  It is scoped to the delete and revoke
+  loop: it is not a kernel-wide invariant.  It joins the stated coherence
+  hypotheses the v1.0.0 row of `docs/REGISTERED_DEBT.md` carries, beside
+  `redirectedOriginFrameCoherent`, `replyFrameHeadHolderDonation` and
+  `replyStackOuterCallerValid`: it holds on every reachable state by the
+  push's own writes, and no invariant entails it.  No new debt row.
+- **The frame.**  `FinaliseFrame` gains a lent-context field (`loanWrite`):
+  every key keeps its object, or a thread keeps its reply link and its loan
+  (or gives the loan up), or a reply that heads a stack still heads it.
+  Every step with a `FinaliseFrame` keeps the fact for free
+  (`lentContextHeadsLenderFrame.of_loanWrite`).
+- **The two steps that read it.**
+  - The reply cancel lets go of the caller's reply link
+    (`consumeCallerReply`).  It keeps the fact because the caller lends to
+    no one (`lentContextHeadsLenderFrame.of_loanWriteOff`,
+    `finaliseReplyStep_keepsLentContextHeads`).
+  - The unstack clears a stack head's upward link.  It runs on a context
+    its holder's unbind has just unbound, so no thread holds it on loan
+    (`finaliseSchedContextUnbind_unbound`, `donationOwnerValid`).  The
+    unstack step's closure hypothesis (`FinaliseUnstackStep`) now names the
+    admitted state the deschedule and unbind ran from.  No runtime check
+    was added: the admission plus the unbind always clear the binding.
+- **The loop.**  The slot delete, the page teardown and the retire keep it
+  too (the retire erases only a quiescent reply, which heads nothing).
+  `finaliseLoanBundle` (the IPC bundle, the table's well-formedness and the
+  fact) is carried through `cspaceDeleteSlotFinalising` and, by the loop's
+  own closure, through `cspaceRevokeCdtFinalising`.  The reachable-state
+  closure (`finaliseStepInvariant`) carries it as well.
+- **The admission fails closed.**  `replyCallerFinalisable` still refuses a
+  reply that heads a stack, which is the only reply whose caller can lend.
+
 ### Merge
 
 - Part 24 (#986) is merged in, with merge commits: its dequeue detach, the
@@ -194,6 +241,8 @@ This is part 25 of the seL4 untyped reset.
   donated return's refusal decided first; owner ZA6.1).  The thread row's
   clause (3), a thread lending or borrowing a binding, now points at it.
 - Registered: "A busy reply's final delete allocates 11 cells" (owner ZA6.1).
+- Extended: the v1.0.0 row on the stated coherence hypotheses (WS-HP) now
+  names `lentContextHeadsLenderFrame`, the delete's pre-state fact above.
 
 ### Documentation
 

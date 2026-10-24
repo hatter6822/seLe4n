@@ -325,7 +325,11 @@ pinned).  A reply records the thread that stashed it (`Reply.stasherCode`,
 seL4 MCS's `replyTCB`): every stash writes it and every reader re-checks the
 named thread (`SystemState.replyStashedAt`), so new code that stashes a reply
 must write the record, and new code that asks whether a reply is stashed reads
-it; `replyIsStashed`'s table scan is only the derived spec view.  A thread that is reply-blocked, holds a reply link, stash or
+it; `replyIsStashed`'s table scan is only the derived spec view.  The delete
+and revoke loop carries `lentContextHeadsLenderFrame` (a lent context heads its
+lender's reply stack) as a pre-state premise of the dispatch, so new code that
+lends a context, moves a reply stack's head or a thread's reply link, or adds a
+step to that loop must keep it (`loanWrite`, `finaliseLoanBundle`).  A thread that is reply-blocked, holds a reply link, stash or
 reply-waiter link, donates or holds space-slot capabilities, a head reply or a caller lending a reservation, a
 context whose holder is blocked sending or calling, and an untyped that still
 records a child, outlive their last capability until part 26 and ZA6.1
