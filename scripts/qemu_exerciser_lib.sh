@@ -31,7 +31,7 @@
 
 EXERCISER_MACHINE="virt,gic-version=2,virtualization=on"
 EXERCISER_SUMMARY="[smp-test] exercisers: "
-EXERCISER_DRIVERS=(sgi-round-trip kprintln-stress tlb-shootdown tlb-shootdown-stress per-core-stats heap-allocations-per-syscall)
+EXERCISER_DRIVERS=(sgi-round-trip kprintln-stress tlb-shootdown tlb-shootdown-stress per-core-stats heap-allocations-per-syscall remote-stall)
 
 # exerciser_parse_args "$@": `--lean-kernel` selects the Lean-linked image
 # (LEAN_KERNEL=1); any other argument is an error.
@@ -85,7 +85,8 @@ exerciser_boot() {
 # `tlb-shootdown-stress`, `per-core-stats` (WS-BP BP8.5; the Lean-linked image
 # only, since the reader and the verdict are the kernel's),
 # `heap-allocations-per-syscall` (WS-CV CV0.1; Lean-linked only, it measures a
-# syscall through the Lean kernel), or `all` for every
+# syscall through the Lean kernel), `remote-stall` (the remote-core stall's
+# protocol between the boot core and each secondary), or `all` for every
 # driver the image runs and the summary tally.  Records a failure per finding;
 # returns 1 on any.
 exerciser_check() {
@@ -125,6 +126,7 @@ every = ["sgi-round-trip", "kprintln-stress", "tlb-shootdown", "tlb-shootdown-st
 if lean:
     every.append("per-core-stats")
     every.append("heap-allocations-per-syscall")
+every.append("remote-stall")
 if "all" in drivers:
     drivers = every
     require(f"[smp-test] exercisers: {len(every)} passed, 0 failed")
@@ -203,6 +205,17 @@ for driver in drivers:
             sgis_by_core[core] = sgis
         if len(set(sgis_by_core.values())) != len(sgis_by_core):
             failures.append(f"per-core-stats: two cores report one SGI count ({sgis_by_core}), so a wrong slot could not be told from the right one")
+    elif driver == "remote-stall":
+        # The remote-core stall (seL4's remoteTCBStall): per secondary, the
+        # poke ended a wait on a core at user, and a core in the kernel was
+        # requested and its exit gate refused the return; on the Lean-linked
+        # image its next kernel entry also met the request.
+        require("[smp-test] remote-stall: every core left user mode before the stall returned")
+        for core in (1, 2, 3):
+            require(f"[smp-test] remote-stall: core {core}: at user, poked, entered the kernel before the stall returned")
+            require(f"[smp-test] remote-stall: core {core}: in the kernel, requested; its exit gate refused the return to user")
+            if lean:
+                require(f"[smp-test] remote-stall: core {core}: its next kernel entry met the request")
     elif driver == "heap-allocations-per-syscall":
         # WS-CV CV0.1, WS-ZA ZA4.1: a syscall allocates nothing.  Each round
         # trip runs twice on the boot core, its first call and its steady

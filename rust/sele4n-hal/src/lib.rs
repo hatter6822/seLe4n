@@ -298,6 +298,11 @@ pub mod ticket_lock;
 // a spin that discharges its own pending shootdown obligation — see the
 // module docstring for why an ordinary spin deadlocks.
 pub mod kernel_entry;
+// The remote-core stall (seL4's `remoteTCBStall`): a commit that changes what
+// another core runs waits until that core has left the thread at EL0.  Per-core
+// user and request flags, the initiator's wait and the exit gate's check; see
+// the module docstring for the ordering and deadlock argument.
+pub mod remote_stall;
 // WS-SM SM2.C.19: Rust RwLock implementation refining the Lean
 // operational spec at SeLe4n/Kernel/Concurrency/Locks/RwLock.lean.
 // Reader-writer lock with bit-packed atomic state (bit 63 = writer-held,

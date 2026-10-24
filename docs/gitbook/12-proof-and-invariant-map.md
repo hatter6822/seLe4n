@@ -122,7 +122,9 @@ IPC bundle and its reachable state (`finaliseFinalObject_preserves_ipcInvariantF
 `finaliseFinalObject_preserves_ipcReachable`); since `v0.36.135` a thread is
 unbound, has its notification wait cancelled and is suspended — taken off
 whichever core queues or runs it, the executing thread deleting its own last
-capability included, with every core's FP/SIMD and resident hold released —
+capability included, with every core's FP/SIMD and resident hold released and
+a remote core running it stalled until it has left it, as seL4's
+`remoteTCBStall` does (`stallChangedCores_eq`, `threadRetirable_currentNowhere`) —
 and a scheduling context is unbound from its thread, before the retire (`finaliseThread`,
 `finaliseSchedContext`, seL4's `finaliseCap`), through the destroy cleanup
 `lifecyclePreRetypeCleanup`, with the same bundles and the run-queue entry

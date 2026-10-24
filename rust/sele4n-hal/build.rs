@@ -120,6 +120,7 @@ fn main() {
     // the verified per-core timer tick and the `.reschedule` receiver
     // from the hardware IRQ path.
     scan_trap_s_irq_vector_redirect();
+    scan_trap_s_user_exit_gate();
 
     // WS-SM SM5.C.5 (reschedule receiver contract): verify the
     // `.reschedule` SGI seam is intact end to end on the Rust side —
@@ -1124,6 +1125,56 @@ fn scan_trap_s_irq_vector_redirect() {
                  to `handle_irq_per_core`."
             );
         }
+    }
+}
+
+/// The remote-core stall's exit gate: every return through `trap.S`'s
+/// `restore_context` must pass `trap::user_exit_gate` on its frame first, or a
+/// core could `eret` into a thread another core's commit took off it.  The
+/// relation checked is the order, per invocation: each `restore_context` line
+/// outside the macro's own definition is immediately preceded (ignoring blank
+/// lines) by `bl user_exit_gate`, which is preceded by `mov x0, sp`.  A
+/// `restore_context` reached any other way fails the build.
+fn scan_trap_s_user_exit_gate() {
+    let path = "src/trap.S";
+    println!("cargo:rerun-if-changed={path}");
+    let contents = match std::fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) => panic!("remote-stall scanner: failed to read {path}: {e}"),
+    };
+    let code = asm_code_view(&contents);
+    let lines: Vec<String> = code
+        .lines()
+        .map(|l| l.split_whitespace().collect::<Vec<_>>().join(" "))
+        .filter(|l| !l.is_empty())
+        .collect();
+    let mut in_macro = false;
+    let mut gated = 0usize;
+    for (i, line) in lines.iter().enumerate() {
+        if line.starts_with(".macro") {
+            in_macro = true;
+            continue;
+        }
+        if line.starts_with(".endm") {
+            in_macro = false;
+            continue;
+        }
+        if in_macro || line != "restore_context" {
+            continue;
+        }
+        let ok = i >= 2 && lines[i - 1] == "bl user_exit_gate" && lines[i - 2] == "mov x0, sp";
+        if !ok {
+            panic!(
+                "remote-stall regression: `{path}` reaches `restore_context` (code line {}) \
+                 without `mov x0, sp` / `bl user_exit_gate` immediately before it; a core \
+                 could `eret` into a thread another core's commit took off it",
+                i + 1
+            );
+        }
+        gated += 1;
+    }
+    if gated == 0 {
+        panic!("remote-stall scanner: `{path}` has no `restore_context` invocation to check");
     }
 }
 

@@ -4153,6 +4153,19 @@ run_check "INVARIANT" rg -n -U 'def finaliseThreadReleaseCores \(st : SystemStat
 run_check "INVARIANT" rg -n -U '@\[inline\] def MachineState\.releaseThread [^\n]*\n[^\n]*releaseThreadOnCores tid SeLe4n\.Kernel\.Concurrency\.allCores' SeLe4n/Machine.lean
 run_check "INVARIANT" rg -n '^theorem MachineState\.releaseThread_releases($|[ ({:\[\]])' SeLe4n/Machine.lean
 run_check "INVARIANT" rg -n '^theorem finaliseThreadReleaseCores_unheld($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+# The remote-core stall (seL4's remoteTCBStall): the syscall and suspend entries
+# check every other core against the committed current slots after their
+# commit and SGIs; the HAL waits for a changed core to leave EL0, every handler
+# clears the core's user flag first (the handler-prologue anchors below), and
+# trap.S gates every return (build.rs).
+run_check "INVARIANT" rg -n -U 'def syscallDispatchCrossCoreEntry [^\n]*(\n[^\n]*){0,80}\n  Concurrency\.fireRaisedReschedules rest\.1\n([ \t]*(--[^\n]*)?\n)*  Concurrency\.stallChangedCores committedCodes execCore\n' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n -U 'restoreAsidOnCore post execCore, post\.scheduler\.currentCode\), post\)' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '^def stallChangedCores \(codes : Vector Nat numCores\) \(execCore : CoreId\) : BaseIO Unit :=$' SeLe4n/Kernel/Concurrency/Runtime.lean
+run_check "INVARIANT" rg -n '^theorem stallChangedCores_eq($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Runtime.lean
+run_check "INVARIANT" rg -n '^theorem threadRetirable_currentNowhere($|[ ({:\[\]])' SeLe4n/Kernel/Capability/FinalRetire.lean
+run_check "INVARIANT" rg -n -U '@\[extern "ffi_stall_if_changed"\]\nopaque ffiStallIfChanged ' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n -U 'pub extern "C" fn ffi_stall_if_changed\(\n    core_id: u64,\n    committed_code: u64,\n\)' rust/sele4n-hal/src/ffi.rs
+run_check "INVARIANT" rg -n -U 'let _ticket = acquire_kernel_entry\(core_id\);\n([ \t]*(//[^\n]*)?\n)*    crate::remote_stall::clear_stall_request\(core_id\);\n    let out = f\(\);' rust/sele4n-hal/src/kernel_entry.rs
 run_negative_check "INVARIANT" rg -n -U 'def threadFinaliseAdmitted[^\n]*(\n([ \t][^\n]*)?){0,40}\n[^\n]*(threadHeldOnSomeCore|runCoreCode)' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 # v0.36.136: a scheduling context is finalised as seL4's finaliseCap finalises
 # it: its ready holder taken off the scheduler (schedContext_unbindTCB's
@@ -4597,8 +4610,8 @@ run_check "INVARIANT" rg -n '^      \(Concurrency\.saveCapturedTrapFrameAt st co
 run_check "INVARIANT" rg -n '^theorem saveTrapFrameOnCore_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TrapFrameSaveInvariant.lean
 run_check "INVARIANT" rg -n '^theorem saveTrapFrameOnCore_contextMatchesCurrentOnCore($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TrapFrameSaveInvariant.lean
 run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.Architecture\.TrapFrameSaveInvariant$' SeLe4n.lean
-run_check "INVARIANT" rg -n -U '^pub extern "C" fn handle_synchronous_exception\(frame: &mut TrapFrame\) \{\n    let esr = frame\.esr_el1;\n([ \t]*\n)*    let _in_flight = InFlightFrame::publish\(frame\);$' rust/sele4n-hal/src/trap.rs
-run_check "INVARIANT" rg -n -U '^pub extern "C" fn handle_irq_per_core\(frame: &mut TrapFrame\) \{\n([ \t]*\n)*    let _in_flight = InFlightFrame::publish\(frame\);$' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n -U '^pub extern "C" fn handle_synchronous_exception\(frame: &mut TrapFrame\) \{\n([ \t]*\n)*    crate::remote_stall::note_kernel_entry\(\);\n    let esr = frame\.esr_el1;\n([ \t]*\n)*    let _in_flight = InFlightFrame::publish\(frame\);$' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n -U '^pub extern "C" fn handle_irq_per_core\(frame: &mut TrapFrame\) \{\n([ \t]*\n)*    crate::remote_stall::note_kernel_entry\(\);\n([ \t]*\n)*    let _in_flight = InFlightFrame::publish\(frame\);$' rust/sele4n-hal/src/trap.rs
 run_check "INVARIANT" rg -n 'switching away then saves every register the thread trapped with' tests/SmpSwitchToThreadSuite.lean
 # WS-BP BP7.4 (v0.36.17): the caller's result is staged where a switch saves
 # from, before the local reschedule; every entry hands the HAL the context the
@@ -7963,7 +7976,7 @@ run_check "INVARIANT" rg -n -U '^  Concurrency\.releaseSwitchedFpOwner coreId\n 
 run_check "INVARIANT" rg -n -U '      \(st.\.drainedPhysicalWrites, st.\.pendingIcacheMaintenance\)\),\n      Architecture\.clearIcacheMaintenance \(Architecture\.clearPhysicalWrites st.\)\)\)\n  Platform\.FFI\.completePhysicalWrites r\.2\.2\.2\.1$' SeLe4n/Kernel/PerCoreTimerEntry.lean
 run_check "INVARIANT" rg -n -U '^  Concurrency\.fireCrossCoreSgis r\.1\.1\n  Platform\.FFI\.completeIcacheMaintenance r\.2\.2\.2\.2\n  Concurrency\.releaseSwitchedFpOwner coreId$' SeLe4n/Kernel/PerCoreTimerEntry.lean
 run_check "INVARIANT" rg -n -U '      \(st.\.drainedPhysicalWrites, st.\.pendingIcacheMaintenance\)\),\n      Architecture\.clearIcacheMaintenance \(Architecture\.clearPhysicalWrites st.\)\)\)\n  Platform\.FFI\.completePhysicalWrites record\.2\.2\.1\n  Platform\.FFI\.completeIcacheMaintenance record\.2\.2\.2$' SeLe4n/Kernel/PerCoreRescheduleEntry.lean
-run_check "INVARIANT" rg -n -U '    \(suspendThreadCrossCoreDrainedStep tid execCore\)\n  Platform\.FFI\.completePhysicalWrites result\.2\.1\n  Concurrency\.fireCrossCoreSgis result\.1\.2\n  Platform\.FFI\.completeIcacheMaintenance result\.2\.2$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n -U '    \(suspendThreadCrossCoreDrainedStep tid execCore\)\n  Platform\.FFI\.completePhysicalWrites result\.2\.1\n  Concurrency\.fireCrossCoreSgis result\.1\.2\n([ \t]*(--[^\n]*)?\n)*  Concurrency\.stallChangedCores result\.2\.2\.2 execCore\n  Platform\.FFI\.completeIcacheMaintenance result\.2\.2\.1$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n '^theorem suspendThreadCrossCoreDrainedStep_idle_refused($|[ ({:\[\]])' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n -U '^  Concurrency\.releaseSwitchedFpOwnerOnCore execCore\n([ \t]*\n)*  Platform\.FFI\.restoreTrapFrameParts restoreKind restoreContext restoreTableBase restoreAsid$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 # The FP routines keep an output section of their own in the linked image.
@@ -8352,7 +8365,7 @@ run_check "INVARIANT" rg -n -F -- 'if ticks + sgis > irqs:' scripts/qemu_exercis
 run_check "INVARIANT" rg -n -F -- 'if irqs == 0 or ticks == 0:' scripts/qemu_exerciser_lib.sh
 run_check "INVARIANT" rg -n -F -- 'if not all(b <= w <= a for b, w, a in zip(before, words, after)):' scripts/qemu_exerciser_lib.sh
 run_check "INVARIANT" rg -n -F -- 'if len(set(sgis_by_core.values())) != len(sgis_by_core):' scripts/qemu_exerciser_lib.sh
-run_check "INVARIANT" rg -n '^EXERCISER_DRIVERS=\(sgi-round-trip kprintln-stress tlb-shootdown tlb-shootdown-stress per-core-stats heap-allocations-per-syscall\)$' scripts/qemu_exerciser_lib.sh
+run_check "INVARIANT" rg -n '^EXERCISER_DRIVERS=\(sgi-round-trip kprintln-stress tlb-shootdown tlb-shootdown-stress per-core-stats heap-allocations-per-syscall remote-stall\)$' scripts/qemu_exerciser_lib.sh
 # The gate runs on the Lean-linked image alone and reports NOT RUN otherwise;
 # the Tier-4 runner runs it in that mode only, and the archive lane reaches it
 # through the all-driver gate's Lean run.
@@ -10774,7 +10787,7 @@ run_check "INVARIANT" rg -n '^theorem idleSlotsReserved_no_idle_references($|[ (
 # field.
 run_check "INVARIANT" rg -n 'if SeLe4n.Kernel.isIdleThreadId vtid.val then' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n -U '^  let result ← Platform\.FFI\.modifyGetKernelState\n    \(suspendThreadCrossCoreDrainedStep tid execCore\)$' SeLe4n/Kernel/SyscallDispatchEntry.lean
-run_check "INVARIANT" rg -n -U '^  let \(out, st.\) := suspendThreadCrossCoreStep tid execCore st\n  \(\(out, \(st.\.drainedPhysicalWrites, st.\.pendingIcacheMaintenance\)\),$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n -U '^  let \(out, st.\) := suspendThreadCrossCoreStep tid execCore st\n  \(\(out, \(st.\.drainedPhysicalWrites, st.\.pendingIcacheMaintenance,\n      st.\.scheduler\.currentCode\)\),$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n '^theorem suspendThreadCrossCoreStep_idle_refused($|[ ({:\[\]])' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n 'tcb.queueNext.isNone && tcb.queuePrev.isNone && tcb.queuePPrev.isNone &&' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '  \| .tcb tcb => tcbReferencesReservedIdleSlot tcb' SeLe4n/Platform/Boot.lean

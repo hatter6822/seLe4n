@@ -901,6 +901,49 @@ theorem fireRaisedReschedules_eq (m : SeLe4n.Model.PerCoreFlags) :
   simp only [List.map_map, Function.comp_def, List.map_id']
   exact allCores_nodup.filter _
 
+/-- **The remote-core stall over `cores`** (seL4's `remoteTCBStall`): each
+core but the executing one is checked against `codes`, the thread code the
+committed state runs on each core (`SchedulerState.currentCode`); a core the
+commit changed is made to leave the thread it ran before this returns
+(`Platform.FFI.ffiStallIfChanged`).  Recursion, so the runtime builds no list
+and no closure. -/
+def stallChangedOver (codes : Vector Nat numCores) (execCore : CoreId) :
+    List CoreId → BaseIO Unit
+  | [] => pure ()
+  | c :: cs => do
+      if c ≠ execCore then
+        Platform.FFI.ffiStallIfChanged c.val.toUInt64 (codes.get c).toUInt64
+      stallChangedOver codes execCore cs
+
+/-- **The remote-core stall**: every core but the executing one, in core
+order, checked against the committed state's current-thread codes `codes`.
+Run by each committing entry that can take a thread off another core, after
+its commit and its `.reschedule` SGIs and before it returns. -/
+def stallChangedCores (codes : Vector Nat numCores) (execCore : CoreId) : BaseIO Unit :=
+  stallChangedOver codes execCore allCores
+
+theorem stallChangedOver_eq (codes : Vector Nat numCores) (execCore : CoreId)
+    (cores : List CoreId) :
+    stallChangedOver codes execCore cores =
+      (cores.filter fun c => decide (c ≠ execCore)).forM fun c =>
+        Platform.FFI.ffiStallIfChanged c.val.toUInt64 (codes.get c).toUInt64 := by
+  induction cores with
+  | nil => rfl
+  | cons c cs ih =>
+    simp only [stallChangedOver, List.filter_cons, ih]
+    by_cases h : c = execCore
+    · simp only [h, ne_eq, not_true_eq_false, decide_false, if_false]
+      rfl
+    · simp [h]
+
+/-- **Every other core is checked**: the stall is one check per core but the
+executing one, each against the committed code for that core. -/
+theorem stallChangedCores_eq (codes : Vector Nat numCores) (execCore : CoreId) :
+    stallChangedCores codes execCore =
+      (allCores.filter fun c => decide (c ≠ execCore)).forM fun c =>
+        Platform.FFI.ffiStallIfChanged c.val.toUInt64 (codes.get c).toUInt64 :=
+  stallChangedOver_eq codes execCore allCores
+
 -- ============================================================================
 -- WS-SM SM7.A.3 — Shootdown acknowledgment-flag typed wrappers
 -- ============================================================================

@@ -814,7 +814,7 @@ def syscallDispatchCrossCoreEntry (syscallId : UInt32) : BaseIO UInt64 := do
   -- mailbox frame's words (`syscallDispatchCrossCoreBracketedStepWords`), so
   -- a value-returning syscall builds neither its outcome nor its frame.
   let ((tag, w0, w1, w2, w3, w4, w5, rest), restoreKind, restoreContext, restoreTableBase,
-      restoreAsid) ←
+      restoreAsid, committedCodes) ←
     Platform.FFI.modifyGetKernelState fun st =>
       let r := syscallDispatchCrossCoreBracketedStepWords ctx execCore syscallId trapped
         (Architecture.IpcBufferRead.syncUserWords
@@ -823,7 +823,7 @@ def syscallDispatchCrossCoreEntry (syscallId : UInt32) : BaseIO UInt64 := do
       ((r.1, Architecture.restoreCommitKindOnCore post execCore,
           Architecture.restoreContextOnCore post execCore,
           Architecture.restoreTableBaseOnCore post execCore,
-          Architecture.restoreAsidOnCore post execCore), post)
+          Architecture.restoreAsidOnCore post execCore, post.scheduler.currentCode), post)
   -- WS-RA (plan §3.3): publish the return frame into this core's mailbox
   -- immediately after the commit — `dispatch_svc` reads it back inside the
   -- same `with_kernel_entry` critical section.  A `blocks` outcome publishes
@@ -838,6 +838,11 @@ def syscallDispatchCrossCoreEntry (syscallId : UInt32) : BaseIO UInt64 := do
   -- and a carved page must be zero before anything can name it.
   Platform.FFI.completePhysicalWrites rest.2.2.2.2.2.1
   Concurrency.fireRaisedReschedules rest.1
+  -- The remote-core stall (seL4's `remoteTCBStall`): a core this commit took a
+  -- thread off — a final delete's finalisation or a suspend of a thread it was
+  -- running — has left that thread before the syscall returns, checked for
+  -- every other core against the committed state's current threads.
+  Concurrency.stallChangedCores committedCodes execCore
   -- WS-SM SM7.B: run the shootdown round(s) this commit posted (inert
   -- when the syscall touched no pending-shootdown queue).
   completeShootdownRounds rest.2.1 rest.2.2.1 rest.2.2.2.1.1
@@ -876,7 +881,8 @@ def syscallDispatchCrossCoreEntry (syscallId : UInt32) : BaseIO UInt64 := do
 the read-context / read-core / commit-dispatch / fire-SGIs / record-current /
 return-encoded driver.  Pins the body shape (atomic `modifyGetKernelState` over
 `syscallDispatchFromAbi`, then `fireRaisedReschedules` of the flags the step raised,
-then — **WS-RR RR7.26** — the HAL current-thread record of the value the same
+then the remote-core stall against the committed current slots
+(`Concurrency.stallChangedCores`), then — **WS-RR RR7.26** — the HAL current-thread record of the value the same
 atomic step read off the committed post-state) so a refactor that drops the SGI
 firing, the state commit or the record breaks this marker at elaboration;
 combined with `@[export]` (which the Rust extern resolves against) the seam
@@ -894,7 +900,7 @@ theorem syscallDispatchCrossCoreEntry_def (syscallId : UInt32) :
         let wordCount ← captureEntryWords execCore syscallId trapped.x0 msgInfo
         let wordBytes ← Platform.FFI.ffiEntryWordBuffer
         let ((tag, w0, w1, w2, w3, w4, w5, rest), restoreKind, restoreContext,
-            restoreTableBase, restoreAsid) ←
+            restoreTableBase, restoreAsid, committedCodes) ←
           Platform.FFI.modifyGetKernelState fun st =>
             let r := syscallDispatchCrossCoreBracketedStepWords ctx execCore syscallId trapped
               (Architecture.IpcBufferRead.syncUserWords
@@ -903,10 +909,11 @@ theorem syscallDispatchCrossCoreEntry_def (syscallId : UInt32) :
             ((r.1, Architecture.restoreCommitKindOnCore post execCore,
                 Architecture.restoreContextOnCore post execCore,
                 Architecture.restoreTableBaseOnCore post execCore,
-                Architecture.restoreAsidOnCore post execCore), post)
+                Architecture.restoreAsidOnCore post execCore, post.scheduler.currentCode), post)
         Platform.FFI.ffiSyscallReturnFrame w0 w1 w2 w3 w4 w5
         Platform.FFI.completePhysicalWrites rest.2.2.2.2.2.1
         Concurrency.fireRaisedReschedules rest.1
+        Concurrency.stallChangedCores committedCodes execCore
         completeShootdownRounds rest.2.1 rest.2.2.1 rest.2.2.2.1.1
           rest.2.2.2.1.2 execCore
         Platform.FFI.completeIcacheMaintenance rest.2.2.2.2.1
@@ -1108,17 +1115,20 @@ theorem suspendThreadCrossCoreStep_sentinel_refused (execCore : CoreId) (st : Sy
 
 /-- The cross-core suspend step with both hardware ledgers drained
 (`v0.36.39`): `suspendThreadCrossCoreStep`, then the recorded physical writes
-and instruction-cache operands read out and cleared in the same atomic step.
+and instruction-cache operands read out and cleared in the same atomic step,
+beside the committed current-thread codes the remote-core stall checks.
 Named rather than written as a lambda at the seam, so the seam still hands
 `modifyGetKernelState` a named pure step and a refused suspend is refused here
 exactly as there (`suspendThreadCrossCoreDrainedStep_idle_refused`). -/
 def suspendThreadCrossCoreDrainedStep (tid : UInt64) (execCore : CoreId)
     (st : SystemState) :
     ((UInt32 × List (CoreId × SgiKind)) ×
-      (Architecture.PhysicalWriteLedger × List Architecture.ICacheInvalidation))
+      (Architecture.PhysicalWriteLedger × List Architecture.ICacheInvalidation ×
+        Vector Nat Concurrency.numCores))
       × SystemState :=
   let (out, st') := suspendThreadCrossCoreStep tid execCore st
-  ((out, (st'.drainedPhysicalWrites, st'.pendingIcacheMaintenance)),
+  ((out, (st'.drainedPhysicalWrites, st'.pendingIcacheMaintenance,
+      st'.scheduler.currentCode)),
     Architecture.clearIcacheMaintenance (Architecture.clearPhysicalWrites st'))
 
 /-- The drained step refuses an idle thread as the bare step does, and the
@@ -1146,7 +1156,10 @@ def suspendThreadCrossCoreEntry (tid : UInt64) : BaseIO UInt32 := do
     (suspendThreadCrossCoreDrainedStep tid execCore)
   Platform.FFI.completePhysicalWrites result.2.1
   Concurrency.fireCrossCoreSgis result.1.2
-  Platform.FFI.completeIcacheMaintenance result.2.2
+  -- The remote-core stall: a suspended thread a remote core was running has
+  -- left it before the suspend returns (`Concurrency.stallChangedCores`).
+  Concurrency.stallChangedCores result.2.2.2 execCore
+  Platform.FFI.completeIcacheMaintenance result.2.2.1
   pure result.1.1
 
 -- ============================================================================

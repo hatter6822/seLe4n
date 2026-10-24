@@ -116,6 +116,10 @@ pub const COMMAND_PROBE_ALL: u32 = 5;
 /// Remap this core's own window page to generation `arg` through a shootdown
 /// round; the result is the round's [`RoundOutcome::code`].
 pub const COMMAND_ROUND: u32 = 6;
+/// Run the remote-core stall's exit gate check on this core
+/// (`remote_stall::enter_user`) and clear the user flag it sets; the result is
+/// `1` when the gate would let the core return to EL0, `0` when it refuses.
+pub const COMMAND_EXIT_GATE: u32 = 7;
 
 /// One core's command slot: one cache line, written by the issuer (the boot
 /// core, or a secondary acknowledging a ping into slot 0) and by the servicing
@@ -727,6 +731,12 @@ fn execute(core: usize, source_cpu: u8, command: u32, arg: u64) -> u64 {
             report_round("tlb-shootdown-stress", core, arg, round, outcome);
             outcome.code()
         }
+        COMMAND_EXIT_GATE => {
+            let allowed = crate::remote_stall::enter_user(core);
+            // This core is in an interrupt handler, not at EL0.
+            crate::remote_stall::note_kernel_entry();
+            u64::from(allowed)
+        }
         _ => u64::MAX,
     }
 }
@@ -842,6 +852,95 @@ fn sgi_round_trip() -> bool {
     pass
 }
 
+/// The remote-core stall (seL4's `remoteTCBStall`), driven between the boot
+/// core and each secondary through the real flags, SGI and handlers:
+///
+/// 1. the secondary marked at user, the boot core's stall pokes it with the
+///    `.reschedule` SGI and waits; the secondary's interrupt entry
+///    (`note_kernel_entry`) is what ends the wait (`StallOutcome::Left`);
+/// 2. the secondary in the kernel, the stall requests and does not wait
+///    (`NotAtUser`), and the secondary's own exit gate, run on it through the
+///    agent, then refuses its return to EL0;
+/// 3. on the Lean-linked image, the secondary's next kernel entry under the
+///    kernel-entry lock (its reschedule) meets the request.
+///
+/// A secondary's tick may end step 1's wait before the poke does, which is
+/// the protocol too (`NotAtUser`), so step 1 is retried until the poke is what
+/// ended it.  A wait that times out fails the driver.
+fn remote_stall() -> bool {
+    use crate::remote_stall::{StallOutcome, AT_USER, STALL_REQUESTED};
+    let poke = |target: usize| crate::gic::send_sgi(1u8 << target, crate::trap::RESCHEDULE_INTID);
+    let mut pass = true;
+    for core in 1..CORE_COUNT {
+        let mut left = false;
+        for _ in 0..16 {
+            AT_USER[core].store(true, Ordering::SeqCst);
+            let fuel = crate::remote_stall::STALL_WAIT_FUEL;
+            match crate::remote_stall::stall_if_changed_in(
+                &AT_USER,
+                &STALL_REQUESTED,
+                core,
+                true,
+                fuel,
+                poke,
+            ) {
+                StallOutcome::Left => {
+                    left = true;
+                    break;
+                }
+                StallOutcome::TimedOut => break,
+                StallOutcome::NotAtUser | StallOutcome::Unchanged => {}
+            }
+        }
+        AT_USER[core].store(false, Ordering::SeqCst);
+        if left {
+            crate::kprintln!("[smp-test] remote-stall: core {core}: at user, poked, entered the kernel before the stall returned");
+        }
+        let requested = crate::remote_stall::stall_if_changed_in(
+            &AT_USER,
+            &STALL_REQUESTED,
+            core,
+            true,
+            0,
+            poke,
+        );
+        let refused =
+            requested == StallOutcome::NotAtUser && command(core, COMMAND_EXIT_GATE, 0) == Some(0);
+        if refused {
+            crate::kprintln!("[smp-test] remote-stall: core {core}: in the kernel, requested; its exit gate refused the return to user");
+        }
+        let met = if cfg!(feature = "hw_target") {
+            poke(core);
+            let deadline = crate::timer::read_counter().saturating_add(command_timeout_ticks());
+            while STALL_REQUESTED[core].load(Ordering::SeqCst)
+                && crate::timer::read_counter() < deadline
+            {
+                core::hint::spin_loop();
+            }
+            let met = !STALL_REQUESTED[core].load(Ordering::SeqCst);
+            if met {
+                crate::kprintln!(
+                    "[smp-test] remote-stall: core {core}: its next kernel entry met the request"
+                );
+            }
+            met
+        } else {
+            true
+        };
+        crate::remote_stall::clear_stall_request(core);
+        if !(left && refused && met) {
+            pass = false;
+            crate::kprintln!("[smp-test] FAIL: remote-stall: core {core}: left {left}, refused {refused}, met {met}");
+        }
+    }
+    if pass {
+        crate::kprintln!(
+            "[smp-test] remote-stall: every core left user mode before the stall returned"
+        );
+    }
+    pass
+}
+
 /// How many lines each core prints under the console stress.
 pub const STRESS_LINES: u64 = 32;
 
@@ -953,7 +1052,7 @@ fn shootdown_stress() -> bool {
 
 /// How many drivers this image runs: the four of BP8.4 on every image, and
 /// the per-core counter check on the image that links the kernel (BP8.5).
-const DRIVER_COUNT: u32 = if cfg!(feature = "hw_target") { 5 } else { 4 };
+const DRIVER_COUNT: u32 = if cfg!(feature = "hw_target") { 7 } else { 5 };
 
 /// How long the boot core waits for every PE to become IRQ-serviceable: one
 /// second of the counter.
@@ -1015,6 +1114,9 @@ pub fn run_on_boot_core(smp_enabled: bool) {
     if let Some(ok) = heap_allocations_per_syscall() {
         tally("heap-allocations-per-syscall", ok);
     }
+    // The remote-core stall's protocol between the boot core and each
+    // secondary, last, so its extra SGIs reach no counter a driver above reads.
+    tally("remote-stall", remote_stall());
     crate::kprintln!("[smp-test] exercisers: {passed} passed, {failed} failed");
 }
 

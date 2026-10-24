@@ -181,6 +181,11 @@ __el0_sync_entry:
     save_context
     set_fault_stack
     bl      handle_synchronous_exception
+    // The remote-core stall's exit gate (`trap::user_exit_gate`): a return to
+    // EL0 marks the core at user, or takes the reschedule first when another
+    // core's commit changed what this core runs.
+    mov     x0, sp
+    bl      user_exit_gate
     restore_context
 
 // =========================================================================
@@ -198,6 +203,9 @@ __el0_irq_entry:
     save_context
     set_fault_stack
     bl      handle_irq_per_core
+    // The remote-core stall's exit gate, as above.
+    mov     x0, sp
+    bl      user_exit_gate
     restore_context
 
 // =========================================================================
@@ -238,6 +246,9 @@ __el1_sync_entry:
 __el1_irq_entry:
     save_context
     bl      handle_irq_per_core
+    // The remote-core stall's exit gate, as above.
+    mov     x0, sp
+    bl      user_exit_gate
     restore_context
 
 // =========================================================================

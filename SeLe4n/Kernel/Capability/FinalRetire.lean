@@ -1289,6 +1289,26 @@ theorem threadRetirable_parts {st : SystemState} {x : SeLe4n.ObjId}
       exact ⟨t, rfl, h.1.1.1.1.1, h.1.1.1.1.2, h.1.1.1.2, h.1.1.2, h.1.2, h.2⟩
     | _ => cases h
 
+/-- **A retired thread runs on no core**: the retire admits a thread only when
+no core's committed current slot names it, so a final delete of a thread another
+core was running retires it only once its finalisation has vacated that core's
+slot.  What the core's hardware still runs there is the remote-core stall's to
+settle before the delete returns (`Concurrency.stallChangedCores`, run by the
+syscall entry after its commit against these same current slots). -/
+theorem threadRetirable_currentNowhere {st : SystemState} {x : SeLe4n.ObjId}
+    (h : threadRetirable st x = true) (c : Concurrency.CoreId) :
+    st.scheduler.currentOnCore c ≠ some ⟨x.val⟩ := by
+  obtain ⟨t, -, hTid, -, -, hHeld, -, -⟩ := threadRetirable_parts h
+  intro hCur
+  have hId : t.tid = ⟨x.val⟩ := by cases hT : t.tid; simp_all
+  have hNot : threadCurrentOnSomeCore st t.tid = false := by
+    unfold threadHeldOnSomeCore at hHeld
+    simp only [Bool.or_eq_false_iff] at hHeld
+    exact hHeld.1.1
+  rw [hId] at hNot
+  have := (threadCurrentOnSomeCore_iff st ⟨x.val⟩).mpr ⟨c, hCur⟩
+  rw [hNot] at this; cases this
+
 /-- **What the retire scan reads of a scheduling context it admits.** -/
 theorem schedContextRetirable_parts {st : SystemState} {x : SeLe4n.ObjId}
     (h : schedContextRetirable st x = true) :

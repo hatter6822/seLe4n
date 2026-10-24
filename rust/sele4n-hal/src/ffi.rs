@@ -1083,6 +1083,49 @@ pub extern "C" fn ffi_per_core_current_thread(core_id: u64) -> u64 {
     PER_CPU_CURRENT_THREAD[core_id as usize].load(core::sync::atomic::Ordering::Relaxed)
 }
 
+/// The remote-core stall's check of one core (seL4's `remoteTCBStall`):
+/// called by every committing entry after its commit, under the kernel-entry
+/// lock, once per other core with the thread code (`0` none, `tid + 1`) the
+/// committed state runs there.  When that is not what the core last decided
+/// to run (its `PER_CPU_CURRENT_THREAD` record), the commit took a thread off
+/// it: the core is asked to reschedule before it next returns to EL0 and,
+/// when it is at EL0 now, poked with the `.reschedule` SGI and waited on
+/// until it has entered the kernel ([`crate::remote_stall`]).  The executing
+/// core and an out-of-range core are skipped.  A core that does not enter
+/// within the poll budget is wedged, and the system halts fail-closed.
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiStallIfChanged`.
+#[no_mangle]
+pub extern "C" fn ffi_stall_if_changed(
+    core_id: u64,
+    committed_code: u64,
+) -> crate::lean_runtime::Obj {
+    let executing = crate::per_cpu::current_core_id_from_tpidr();
+    if core_id != executing && core_id < PER_CPU_CURRENT_THREAD.len() as u64 {
+        let decided = crate::remote_stall::recorded_code(ffi_per_core_current_thread(core_id));
+        let outcome = crate::remote_stall::stall_if_changed_in(
+            &crate::remote_stall::AT_USER,
+            &crate::remote_stall::STALL_REQUESTED,
+            core_id as usize,
+            decided != committed_code,
+            crate::remote_stall::STALL_WAIT_FUEL,
+            |target| {
+                #[allow(clippy::cast_possible_truncation)]
+                crate::gic::send_sgi(1u8 << (target as u8), crate::trap::RESCHEDULE_INTID);
+            },
+        );
+        if outcome == crate::remote_stall::StallOutcome::TimedOut {
+            crate::kprintln!(
+                "[FATAL] remote stall: core {} did not leave user mode after its thread \
+                 was taken off it; halting fail-closed",
+                core_id
+            );
+            crate::gic::halt_all()
+        }
+    }
+    crate::lean_runtime::base_io_unit()
+}
+
 // ============================================================================
 // WS-SM SM2.D — Verified-lock FFI exports
 // ============================================================================

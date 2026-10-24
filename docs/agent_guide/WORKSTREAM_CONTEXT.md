@@ -307,7 +307,14 @@ not state-monotone).  A delete may therefore vacate any core's current slot,
 its own included: the syscall step's local successor choice and the
 reschedule interrupt the vacated core's flag raises take over, and a destroyed
 caller's return frame is written nowhere (`stageCallerReturnFor_destroyed`).
-Since part 25 (`v0.36.136`) it finalises a busy reply (`finaliseReply`: a
+**Standing constraint (the remote-core stall):** a committing entry that can
+take a thread off another core must run `Concurrency.stallChangedCores` against
+its committed current slots after its SGIs, as the syscall and cross-core
+suspend entries do, and every `restore_context` in `trap.S` passes
+`trap::user_exit_gate` (`build.rs` refuses one that does not); an exception
+handler clears the core's user flag (`remote_stall::note_kernel_entry`) before
+anything that can block.
+Since part 25 (`v0.36.136`) the finalising delete also finalises a busy reply (`finaliseReply`: a
 waiting caller's call cancelled through `cancelIpcBlocking`'s reply arm, its
 boost reverted and the caller suspended; a stash cleared in place) and a busy
 scheduling context (a ready holder dequeued, then unbound, then the reply stack
