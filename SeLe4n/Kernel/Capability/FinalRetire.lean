@@ -390,12 +390,18 @@ theorem slotRetireTarget_of_empty {st : SystemState} {cnode : SeLe4n.ObjId}
 -- ============================================================================
 
 /-- **Whether an IPC state, held as its two codes, names the object `x`**: a
-thread blocked on `x` as an endpoint (sending, receiving, calling or awaiting
-a reply through it) or as a notification.  On the codes, so no state is
-built (`ThreadIpcState.ofCodes`: state `0` is a send at object `o + 1`, every
-other state is on the object word itself). -/
+thread blocked on `x` as an endpoint (sending, receiving or calling) or as a
+notification.  A caller awaiting its reply (state `4` and above) names no
+object here: seL4's MCS caller is blocked on its reply object, which its reply
+link names, and the endpoint word its state keeps records the call and is read
+by no operation and no invariant, so the endpoint is freed when its last
+capability goes (seL4's `finaliseCap`).  On the codes, so no state is built
+(`ThreadIpcState.ofCodes`: state `0` is a send at object `o + 1`, the others
+below `4` are on the object word itself). -/
 @[inline] def ipcCodesName (objCode stateCode : Nat) (x : SeLe4n.ObjId) : Bool :=
-  if stateCode = 0 then objCode == x.val + 1 else objCode == x.val
+  if stateCode = 0 then objCode == x.val + 1
+  else if 4 ≤ stateCode then false
+  else objCode == x.val
 
 /-- **Whether an object names `x` by its id outside a slot**: a thread blocked
 on it (`ipcCodesName`), bound to it as its notification, or linked to it as
@@ -1438,13 +1444,12 @@ theorem threadQuiescent_queueNext {t : TCB} (h : threadQuiescent t = true) :
   unfold TCB.queueNext; rw [h1]; rfl
 
 /-- **What a thread that does not name `x` does not do**: it is not blocked on
-`x` in any state, not bound to it, and neither its reply link nor its stashed
-reply is `x`. -/
+`x` sending, receiving, calling or waiting, not bound to it, and neither its
+reply link nor its stashed reply is `x`. -/
 theorem objectNamesById_tcb {t : TCB} {x : SeLe4n.ObjId}
     (h : objectNamesById (.tcb t) x = false) :
     (t.ipcState ≠ .blockedOnSend x ∧ t.ipcState ≠ .blockedOnReceive x ∧
-      t.ipcState ≠ .blockedOnCall x ∧ t.ipcState ≠ .blockedOnNotification x ∧
-      ∀ w, t.ipcState ≠ .blockedOnReply x w) ∧
+      t.ipcState ≠ .blockedOnCall x ∧ t.ipcState ≠ .blockedOnNotification x) ∧
     t.boundNotification ≠ some x ∧
     (∀ rid, t.replyObject = some rid → rid.toObjId ≠ x) ∧
     (∀ rid, t.pendingReceiveReply = some rid → rid.toObjId ≠ x) := by
@@ -1467,8 +1472,7 @@ theorem objectNamesById_tcb {t : TCB} {x : SeLe4n.ObjId}
   refine ⟨⟨hSt _ (by simp [ipcCodesName, ThreadIpcState.objectCode, ThreadIpcState.stateCode]),
     hSt _ (by simp [ipcCodesName, ThreadIpcState.objectCode, ThreadIpcState.stateCode]),
     hSt _ (by simp [ipcCodesName, ThreadIpcState.objectCode, ThreadIpcState.stateCode]),
-    hSt _ (by simp [ipcCodesName, ThreadIpcState.objectCode, ThreadIpcState.stateCode]),
-    fun w => hSt _ (by simp [ipcCodesName, ThreadIpcState.objectCode, ThreadIpcState.stateCode])⟩,
+    hSt _ (by simp [ipcCodesName, ThreadIpcState.objectCode, ThreadIpcState.stateCode])⟩,
     fun e => ?_, fun rid hr hx => ?_, fun rid hr hx => ?_⟩
   · have := congrArg SeLe4n.ObjId.optCode e
     rw [SeLe4n.ObjId.optCode_ofOptCode] at this
@@ -2154,7 +2158,7 @@ theorem objectNamesById_of_blockedOnNotification {t : TCB} {x : SeLe4n.ObjId}
     (h : t.ipcState = .blockedOnNotification x) : objectNamesById (.tcb t) x = true := by
   cases hn : objectNamesById (.tcb t) x with
   | true => rfl
-  | false => exact absurd h (objectNamesById_tcb hn).1.2.2.2.1
+  | false => exact absurd h (objectNamesById_tcb hn).1.2.2.2
 
 /-- A reply names the frame below it by id. -/
 theorem objectNamesById_of_replyPrev {r : Reply} {p : SeLe4n.ReplyId}

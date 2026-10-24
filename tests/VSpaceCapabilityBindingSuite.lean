@@ -2324,6 +2324,127 @@ private def runThreadFinaliseChecks : IO Unit := do
     assertBool "deleting the executing thread's capability keeps the thread, current"
       (storedAt st carveOwner.toNat && st.scheduler.currentOnCore Concurrency.bootCoreId == some carveOwner)
 
+/-- The reply at `oid`, if one is stored there. -/
+private def replyAt (st : SystemState) (oid : Nat) : Option SeLe4n.Kernel.Reply :=
+  st.getReply? ⟨oid⟩
+
+/-- Stage the carved thread at `960` as a caller blocked, after a call on the
+endpoint at `ep`, on the carved reply at `rid`, whose server is `server?`: no
+syscall blocks a thread whose space slots are empty (their finalising delete is
+a later row), so the call's two writes are the kernel's own — the caller's
+`.blockedOnReply` state, then `linkCallerReply`'s two links. -/
+private def stageReplyCallerOn (st : SystemState) (ep rid : Nat)
+    (server? : Option SeLe4n.ThreadId) : Option SystemState :=
+  let st1 := st.updateTcb ⟨960⟩ fun t =>
+    { (t.setIpcState (.blockedOnReply (SeLe4n.ObjId.ofNat ep) server?)) with
+        threadState := .BlockedCall }
+  match SystemState.linkCallerReply ⟨960⟩ ⟨rid⟩ st1 with
+  | .ok ((), st2) => some st2
+  | .error _ => none
+
+/-- The caller at `960` staged on the reply at `961`, after a call on no
+endpoint the scenario carves. -/
+private def stageReplyCaller (st : SystemState) (server? : Option SeLe4n.ThreadId) :
+    Option SystemState :=
+  stageReplyCallerOn st 0 961 server?
+
+private def runReplyFinaliseChecks : IO Unit := do
+  IO.println "-- §5o the final capability's delete finalises a busy reply or a scheduling context's reply stack (WS-ZA ZA5.4 part 25)"
+  -- A reply whose caller still waits on it: its delete cancels the caller's
+  -- blocked call (seL4's `reply_remove` / `reply_unlink`), makes the caller
+  -- inactive and retires the reply.
+  for server? in [none, some (⟨962⟩ : SeLe4n.ThreadId)] do
+    match runAll carveScenario
+        [decodeCarve slotUtRetype tcbTag 960 slotOwnCnRW 12,
+         decodeCarve slotUtRetype replyTag 961 slotOwnCnRW 13,
+         decodeCarve slotUtRetype tcbTag 962 slotOwnCnRW 14] with
+    | .error e => assertBool s!"carving a caller, a reply and a server succeeds (got {repr e})" false
+    | .ok st0 =>
+      match stageReplyCaller st0 server? with
+      | none => assertBool "staging the carved caller's call on the carved reply succeeds" false
+      | some st => do
+        assertBool s!"setup: the carved reply's caller is the carved thread (server {repr server?})"
+          ((replyAt st 961).map (·.callerCode) == some 961 &&
+            (st.getTcb? ⟨960⟩).map (·.replyObjectCode) == some 962)
+        match runAll st [decodeDelete 13] with
+        | .error e => assertBool s!"deleting the busy reply's last capability succeeds (got {repr e})" false
+        | .ok st1 =>
+          assertBool s!"deleting a busy reply's last capability cancels its caller's call, makes the caller inactive and retires the reply (server {repr server?})"
+            (!storedAt st1 961 && !recordsChildAt st1 carveUt 961 && storedAt st1 960 &&
+              (st1.getTcb? ⟨960⟩).map (fun t =>
+                t.replyObjectCode == 0 && t.ipcStateCode == 0 && t.threadState == .Inactive) ==
+                some true)
+  -- A reply heading a scheduling context's stack is not finalised (seL4's
+  -- `reply_pop` hands the reservation back; `docs/REGISTERED_DEBT.md`): its
+  -- delete keeps the reply and its caller.
+  match runAll carveScenario
+      [decodeCarve slotUtRetype tcbTag 960 slotOwnCnRW 12,
+       decodeCarve slotUtRetype replyTag 961 slotOwnCnRW 13,
+       decodeCarve slotUtRetype schedContextTag 963 slotOwnCnRW 14] with
+  | .error e => assertBool s!"carving a caller, a reply and a context succeeds (got {repr e})" false
+  | .ok st0 =>
+    match stageReplyCaller st0 none with
+    | none => assertBool "staging the carved caller's call on the carved reply succeeds" false
+    | some st =>
+      match replyAt st 961 with
+      | none => assertBool "setup: the carved reply is stored" false
+      | some r =>
+        match SeLe4n.Model.storeObject (SeLe4n.ObjId.ofNat 961)
+            (.reply { r with next := some (.head ⟨963⟩) }) st with
+        | .error _ => assertBool "staging the reply as a stack head succeeds" false
+        | .ok ((), stH) =>
+          match runAll stH [decodeDelete 13] with
+          | .error e => assertBool s!"deleting the head reply's last capability succeeds (got {repr e})" false
+          | .ok st1 =>
+            assertBool "deleting a stack-heading reply's last capability keeps it and its caller"
+              (storedAt st1 961 && (replyAt st1 961).map (·.callerCode) == some 961)
+  -- A scheduling context heading a reply stack: its delete lets go of the
+  -- stack (seL4's `schedContext_unbindReply`: the head's upward link cleared)
+  -- and retires the context; the reply and its caller stay.
+  match runAll carveScenario
+      [decodeCarve slotUtRetype tcbTag 960 slotOwnCnRW 12,
+       decodeCarve slotUtRetype replyTag 961 slotOwnCnRW 13,
+       decodeCarve slotUtRetype schedContextTag 963 slotOwnCnRW 14] with
+  | .error e => assertBool s!"carving a caller, a reply and a context succeeds (got {repr e})" false
+  | .ok st0 =>
+    match stageReplyCaller st0 none with
+    | some st =>
+      match replyAt st 961 with
+      | none => assertBool "setup: the carved reply is stored" false
+      | some r =>
+        match SeLe4n.Model.storeObject (SeLe4n.ObjId.ofNat 961)
+            (.reply { r with next := some (.head ⟨963⟩) }) st with
+        | .error _ => assertBool "staging the reply as the context's stack head succeeds" false
+        | .ok ((), stH) => do
+          let stS := stH.updateSchedContext ⟨963⟩ fun sc => { sc with scReply := some ⟨961⟩ }
+          assertBool "setup: the carved context heads the carved reply's stack"
+            ((stS.getSchedContext? ⟨963⟩).map (·.scReply) == some (some ⟨961⟩))
+          match runAll stS [decodeDelete 14] with
+          | .error e => assertBool s!"deleting the stack-heading context's last capability succeeds (got {repr e})" false
+          | .ok st1 =>
+            assertBool "deleting a stack-heading context's last capability lets go of the stack and retires the context"
+              (!storedAt st1 963 && !recordsChildAt st1 carveUt 963 && storedAt st1 961 &&
+                (replyAt st1 961).map (fun r => r.next.isNone && r.callerCode == 961) == some true)
+    | none => assertBool "staging the carved caller's call on the carved reply succeeds" false
+  -- An endpoint a reply-blocked caller called through: the caller waits on its
+  -- reply object, not on the endpoint (seL4's MCS `BlockedOnReply`), so the
+  -- endpoint's last capability's delete retires it; the caller still waits.
+  match runAll carveScenario
+      [decodeCarve slotUtRetype tcbTag 960 slotOwnCnRW 12,
+       decodeCarve slotUtRetype replyTag 961 slotOwnCnRW 13,
+       decodeCarve slotUtRetype endpointTag 962 slotOwnCnRW 14] with
+  | .error e => assertBool s!"carving a caller, a reply and an endpoint succeeds (got {repr e})" false
+  | .ok st0 =>
+    match stageReplyCallerOn st0 962 961 none with
+    | none => assertBool "staging the carved caller's call through the carved endpoint succeeds" false
+    | some st =>
+      match runAll st [decodeDelete 14] with
+      | .error e => assertBool s!"deleting the called endpoint's last capability succeeds (got {repr e})" false
+      | .ok st1 =>
+        assertBool "deleting the last capability of an endpoint only a reply-blocked caller names retires it"
+          (!storedAt st1 962 && !recordsChildAt st1 carveUt 962 && storedAt st1 961 &&
+            (replyAt st1 961).map (·.callerCode) == some 961)
+
 def runVSpaceCapabilityBindingChecks : IO Unit := do
   IO.println "===================================================="
   IO.println "VSpace capability-binding suite (PR #845 review, P1)"
@@ -2346,6 +2467,7 @@ def runVSpaceCapabilityBindingChecks : IO Unit := do
   runFinalDeleteRetireChecks
   runPassiveRetireChecks
   runThreadFinaliseChecks
+  runReplyFinaliseChecks
   runAuthorizedChecks
   IO.println "===================================================="
   IO.println "All VSpace capability-binding checks PASS."
