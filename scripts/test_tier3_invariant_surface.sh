@@ -4112,7 +4112,14 @@ run_negative_check "INVARIANT" rg -n -U 'def threadFinaliseAdmitted[^\n]*(\n([ \
 run_check "INVARIANT" rg -n -U 'def finaliseSchedContext \(x : SeLe4n\.ObjId\) \(st : SystemState\) : SystemState :=\n  if schedContextFinaliseAdmitted st x then\n    finaliseSchedContextCleanup \(finaliseSchedContextUnstack\n      \(finaliseSchedContextUnbind \(finaliseSchedContextDeschedule st x\) x\) x\) x' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 run_check "INVARIANT" rg -n -U 'def finaliseSchedContextDeschedule [^\n]*(\n([ \t][^\n]*)?){0,9}\n          descheduleAtPlacement st tid' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 run_negative_check "INVARIANT" rg -n -U 'def schedContextFinaliseAdmitted[^\n]*(\n([ \t][^\n]*)?){0,20}\n[^\n]*threadHeldOnSomeCore' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
-run_check "INVARIANT" rg -n -U 'def finaliseReply [^\n]*(\n([ \t][^\n]*)?){0,8}\n          finaliseThreadSuspend\n            \(finaliseReplyRevert \(Lifecycle\.Suspend\.cancelIpcBlocking st c t\) t\.blockingServer\?\) c' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n -U 'def finaliseReply [^\n]*(\n([ \t][^\n]*)?){0,8}\n          finaliseThreadSuspend \(finaliseReplyRevert \(finaliseReplyCancel st r c t\) t\.blockingServer\?\) c' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+# v0.36.136: a reply heading a context's reply stack is popped first, as
+# reply_remove's head branch does it (reply_pop): the reclaimed cancel returns
+# the context to its caller.  The pop's refusal is decided on the pre-state.
+run_check "INVARIANT" rg -n -U 'def finaliseReplyCancel [^\n]*\n[^\n]*\n  if replyStackLinkIsHead r\.next then cancelIpcBlockingReclaimed c t st\n  else Lifecycle\.Suspend\.cancelIpcBlocking st c t' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n -U 'def replyCallerFinalisable [^\n]*(\n([ \t][^\n]*)?){0,20}replyHeadPopCommits' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+# The busy reply's finalise is compiled in place, through @[csimp].
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem finaliseReply_eq_impl : @finaliseReply = @finaliseReplyImpl' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 run_check "INVARIANT" rg -n '^theorem finaliseSchedContextDeschedule_closed($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllFrame.lean
 # A stashed reply is unlinked from its receiver in the receiver's slot
 # (reply_unlink), the stash re-checked before the write.

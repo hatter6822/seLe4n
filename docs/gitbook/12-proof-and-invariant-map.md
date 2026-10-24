@@ -131,7 +131,8 @@ and a scheduling context is unbound from its thread, before the retire (`finalis
 `lifecyclePreRetypeCleanup`, with the same bundles and the run-queue entry
 stage kept (`finaliseFinalObject_runQueueEntryStage`); since `v0.36.136` a reply
 a caller waits on is removed (`reply_remove`: the caller's call cancelled and
-the caller made inactive) and a stashed one unlinked, and a scheduling
+the caller made inactive, a reply heading a stack popped first as `reply_pop`
+does, the caller's context handed back) and a stashed one unlinked, and a scheduling
 context's ready holder is dequeued and its reply stack unlinked
 (`finaliseReply`, `finaliseSchedContextDeschedule`); any other busy kernel
 object still outlives its last capability until its kind's finalise lands

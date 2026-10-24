@@ -337,7 +337,7 @@ scheduling context's final delete leave such a holder blocked, and new IPC
 code must not reintroduce a scheduler read into `ipcInvariantFull` — a fact
 about the run queues belongs in the scheduler bundle (WS-CB CB1.12's
 `passiveThreadParked`).  A thread that is reply-blocked, holds a reply link, stash or
-reply-waiter link, donates or holds space-slot capabilities, a head reply or a caller lending a reservation,
+reply-waiter link, lends or borrows a reservation or holds space-slot capabilities,
 and an untyped that still records a child, outlive their last capability until part 26 and ZA6.1
 (`docs/REGISTERED_DEBT.md`).  The suspend of a thread blocked in IPC or
 holding a donated context is the one syscall arm left on the general path

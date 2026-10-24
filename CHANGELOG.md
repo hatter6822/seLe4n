@@ -22,8 +22,12 @@ retire.
   is finalised too.  seL4 unbinds such a holder and leaves it blocked; this
   model's passive-server invariant forbade that, so the invariant is retired
   (see "A thread may wait unbound" below).
-- **Still open** (debt row): a reply heading a scheduling context's stack,
-  where seL4's `reply_pop` hands a lent reservation back.
+- **And:** a reply heading a scheduling context's reply stack is popped
+  first, as seL4's `reply_pop` does it: the context its caller lent goes
+  back to the caller (see "The head reply is popped" below).
+- **Still open** (debt row): a thread's own final delete while it is blocked
+  on a reply, holds a reply link, or lends or borrows a reservation (seL4's
+  `reply_remove_tcb` and the borrower's return).
 
 This is part 25 of the seL4 untyped reset.
 
@@ -217,8 +221,47 @@ heads no stack, so its caller lends to no one (`replyCaller_lendsNone`).
   fact) is carried through `cspaceDeleteSlotFinalising` and, by the loop's
   own closure, through `cspaceRevokeCdtFinalising`.  The reachable-state
   closure (`finaliseStepInvariant`) carries it as well.
-- **The admission fails closed.**  `replyCallerFinalisable` still refuses a
-  reply that heads a stack, which is the only reply whose caller can lend.
+- **The admission no longer refuses a head reply.**  A reply that heads a
+  stack is the only reply whose caller can lend, and it is popped (next
+  section); for every other reply the caller lends to no one.
+
+### The head reply is popped (seL4's `reply_pop`)
+
+seL4 MCS's `reply_remove` pops a reply that heads a scheduling context's
+reply stack before it unlinks the caller: the context goes back to the
+caller.  This cut does the same.
+
+- **The transition.**  `finaliseReplyCancel` runs the cancel through
+  `cancelIpcBlockingReclaimed` on a head reply: the donated context is
+  returned to the caller (`returnDonatedSchedContext`), its replenishments
+  are moved to the caller's core, the thread it is taken from is taken off
+  its core, and the reply is unheaded.  Any other reply takes the plain
+  `cancelIpcBlocking` reply arm as before.
+- **Checks before writes.**  Whether the pop commits is decided on the
+  pre-state, in `O(1)` (`replyHeadPopCommits`, which reads the donated
+  return's own check `donatedReturnCommits`).  It refuses a caller that holds
+  a binding of its own, where seL4 would pop without donating.  A caller
+  that lent its context holds none (`donationOwnerValid`), so no reachable
+  state takes that refusal; the refusal keeps the reply and its caller.
+- **The proofs.**  The IPC bundle over the reclaimed cancel
+  (`finaliseReply_armPremises`, `ipcInvariantFull_of_objectsAgreeOffRunLinks`),
+  the donation chain (`returnDonationToCancelledCaller_preserves_donationChainWellFormed`,
+  `finaliseReplyReturn_replyUnheaded`), the reachable-state closure
+  (`finaliseStepInvariant.reply`), the run-queue entry stage and reschedule
+  coverage (`cancelIpcBlockingReclaimed_runQueueStage`,
+  `cancelIpcBlockingReclaimed_stepCovers`).
+- **The projection gains a premise.**  The descheduled holder is shown hidden
+  from the donation's own flow fact: `finaliseReply_hidden`,
+  `finaliseFinalObject_preserves_projection` and
+  `retireFinalisedObject_preserves_projection` take
+  `donationOwnerFlowsToHolder` (`descheduledHolderHigh_of_donationOwnerFlowsToHolder`).
+- **Tests.**  §5o witnesses the pop: the context back on its caller, the
+  caller `.Inactive` with no reply link, the holder unbound, the reply
+  retired; and a head reply whose pop would not commit, kept with its caller.
+- **QEMU.**  No head-reply scenario: the image runs two threads and one must
+  issue the delete, while a head reply's delete makes the caller inactive and
+  deschedules the holder, which stops both, in seL4 as here.  The suite
+  witnesses the pop instead (debt row below).
 
 ### A thread may wait unbound (seL4's unbind)
 
@@ -304,10 +347,15 @@ reclaim ended the holder's IPC before returning the reservation
   legacy reading of a holder left blocked unbound, and the closed rows on the
   holder abort's projection obligation and on the dispatch payoffs' premises
   record the retirement.
-- Registered: "A head reply and a lent reservation are not returned on a
-  final delete" (seL4's `reply_pop` and the loan return, which need the
-  donated return's refusal decided first; owner ZA6.1).  The thread row's
-  clause (3), a thread lending or borrowing a binding, now points at it.
+- Registered and narrowed: "A thread blocked on a reply, or lending or
+  borrowing a reservation, is not finalised on its own final delete"
+  (registered as "A head reply and a lent reservation are not returned on a
+  final delete"; the reply's half, `reply_pop`, landed in the same version;
+  owner ZA6.1).  The thread row's clauses (1) and (2) point at it.
+- Shrunk: "The suspend of a thread blocked in IPC or holding a donated
+  scheduling context takes the general path": the reply arm's return is
+  decided by `replyHeadPopCommits` before any write; the borrower's return
+  remains.
 - Registered: "A busy reply's final delete allocates 11 cells" (owner ZA6.1).
 - Extended: the v1.0.0 row on the stated coherence hypotheses (WS-HP) now
   names `lentContextHeadsLenderFrame`, the delete's pre-state fact above.
