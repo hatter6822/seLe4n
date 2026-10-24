@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "za/finalise-busy",
-      "commit_sha": "5020234dc53ec377491afd3d466a072ec3326050",
-      "tree_sha": "78fc420ca16c6baa38661d37eac0fb36cb172e6a",
-      "committed_at_utc": "2026-10-24T21:53:06+00:00"
+      "commit_sha": "4b5dc1a660075bf8ae2c9b7ed7f1338f82d539f2",
+      "tree_sha": "c1b48de03bd38f0c6820f9ffa39be4605f8b2e0f",
+      "committed_at_utc": "2026-10-24T21:59:39+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "6a38445488061ca385de33f176a4f0d33ef7953b1e5a55ea9640946a3b7e493c"
+    "source_digest": "a4612c210d031d506ad9265de55397d71e7cd027a7739c3712c7dd077b15f369"
   },
   "summary": {
     "module_count": 524,
@@ -27,7 +27,7 @@
     "version": "0.36.136",
     "lean_toolchain": "v4.28.0",
     "production_files": 454,
-    "production_loc": 499205,
+    "production_loc": 499207,
     "test_files": 70,
     "test_loc": 86744,
     "proved_theorem_lemma_decls": 18144,
@@ -170580,7 +170580,7 @@
           "kind": "def",
           "name": "consumeCallerReplyInPlace",
           "full_name": "SeLe4n.Kernel.consumeCallerReplyInPlace",
-          "line": 1279,
+          "line": 1281,
           "called": [
             "SeLe4n.Kernel.Reply.consumed",
             "SeLe4n.Model.SystemState",
@@ -170610,6 +170610,7 @@
             "SeLe4n.Model.SystemState.storeObject_reply_eq_storeReplyWith",
             "SeLe4n.Model.SystemState.storeObject_tcb_eq_storeTcbWith",
             "SeLe4n.Model.SystemState.storeReplyWith",
+            "SeLe4n.Model.SystemState.storeTcbWith",
             "SeLe4n.ReplyId",
             "SeLe4n.ThreadId"
           ]
@@ -170618,7 +170619,7 @@
           "kind": "def",
           "name": "cancelReplyArmInPlace",
           "full_name": "SeLe4n.Kernel.cancelReplyArmInPlace",
-          "line": 1328,
+          "line": 1330,
           "called": [
             "SeLe4n.Kernel.Lifecycle.Suspend.restoreToReadyCancelled",
             "SeLe4n.Kernel.consumeCallerReplyInPlace",
@@ -170633,7 +170634,7 @@
           "kind": "def",
           "name": "replyCallerServerCode",
           "full_name": "SeLe4n.Kernel.replyCallerServerCode",
-          "line": 1341,
+          "line": 1343,
           "called": [
             "SeLe4n.Model.TCB",
             "SeLe4n.Model.TCB.blockingServer?"
@@ -170643,7 +170644,7 @@
           "kind": "theorem",
           "name": "ofOptCode_replyCallerServerCode",
           "full_name": "SeLe4n.Kernel.ofOptCode_replyCallerServerCode",
-          "line": 1346,
+          "line": 1348,
           "called": [
             "SeLe4n.Kernel.replyCallerServerCode",
             "SeLe4n.Model.TCB",
@@ -170655,7 +170656,7 @@
           "kind": "theorem",
           "name": "cancelReplyArmInPlace_eq",
           "full_name": "SeLe4n.Kernel.cancelReplyArmInPlace_eq",
-          "line": 1351,
+          "line": 1353,
           "called": [
             "SeLe4n.Kernel.Lifecycle.Suspend.consumeReplyLink",
             "SeLe4n.Kernel.Lifecycle.Suspend.restoreToReadyCancelled",
@@ -170678,7 +170679,7 @@
           "kind": "def",
           "name": "finaliseReplyCancelSplice",
           "full_name": "SeLe4n.Kernel.finaliseReplyCancelSplice",
-          "line": 1369,
+          "line": 1371,
           "called": [
             "SeLe4n.Kernel.Lifecycle.Suspend.cancelIpcBlocking",
             "SeLe4n.Kernel.Lifecycle.Suspend.cancelledCallerDonation?",
@@ -170693,7 +170694,7 @@
           "kind": "theorem",
           "name": "finaliseReplyCancelSplice_eq",
           "full_name": "SeLe4n.Kernel.finaliseReplyCancelSplice_eq",
-          "line": 1378,
+          "line": 1380,
           "called": [
             "SeLe4n.Kernel.Lifecycle.Suspend.cancelIpcBlocking",
             "SeLe4n.Kernel.Lifecycle.Suspend.returnDonationToCancelledCaller",
@@ -170709,7 +170710,7 @@
           "kind": "def",
           "name": "finaliseReplyCaller",
           "full_name": "SeLe4n.Kernel.finaliseReplyCaller",
-          "line": 1400,
+          "line": 1402,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.cancelIpcBlockingReclaimed",
@@ -170729,7 +170730,7 @@
           "kind": "theorem",
           "name": "finaliseReplyCaller_eq",
           "full_name": "SeLe4n.Kernel.finaliseReplyCaller_eq",
-          "line": 1410,
+          "line": 1412,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Kernel.finaliseReplyCaller",
@@ -170748,7 +170749,7 @@
           "kind": "def",
           "name": "finaliseReplyImpl",
           "full_name": "SeLe4n.Kernel.finaliseReplyImpl",
-          "line": 1420,
+          "line": 1422,
           "called": [
             "SeLe4n.Kernel.finaliseReplyCaller",
             "SeLe4n.Kernel.finaliseReplyUnstash",
@@ -170764,7 +170765,7 @@
           "kind": "theorem",
           "name": "finaliseReply_eq_impl",
           "full_name": "SeLe4n.Kernel.finaliseReply_eq_impl",
-          "line": 1433,
+          "line": 1435,
           "called": [
             "SeLe4n.Kernel.finaliseReply",
             "SeLe4n.Kernel.finaliseReplyCaller_eq",
@@ -170775,7 +170776,7 @@
           "kind": "def",
           "name": "finaliseFinalObject",
           "full_name": "SeLe4n.Kernel.finaliseFinalObject",
-          "line": 1454,
+          "line": 1456,
           "called": [
             "SeLe4n.Kernel.cancelAllIpc",
             "SeLe4n.Kernel.cancelAllSignals",
@@ -170794,7 +170795,7 @@
           "kind": "def",
           "name": "retireFinalisedObject",
           "full_name": "SeLe4n.Kernel.retireFinalisedObject",
-          "line": 1470,
+          "line": 1472,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.finaliseFinalObject",
@@ -170806,7 +170807,7 @@
           "kind": "theorem",
           "name": "finaliseFinalObject_zero",
           "full_name": "SeLe4n.Kernel.finaliseFinalObject_zero",
-          "line": 1474,
+          "line": 1476,
           "called": [
             "SeLe4n.Kernel.finaliseFinalObject",
             "SeLe4n.Model.SystemState"
@@ -170816,7 +170817,7 @@
           "kind": "theorem",
           "name": "retireFinalisedObject_zero",
           "full_name": "SeLe4n.Kernel.retireFinalisedObject_zero",
-          "line": 1477,
+          "line": 1479,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.finaliseFinalObject_zero",

@@ -97,7 +97,7 @@ Lean-4-Beweissystem ermöglicht werden:
 |-------------|------|
 | **Version** | `0.36.136` |
 | **Lean-Toolchain** | `v4.28.0` |
-| **Produktions-LoC (Lean)** | 499.205 über 454 Dateien |
+| **Produktions-LoC (Lean)** | 499.207 über 454 Dateien |
 | **Test-LoC (Lean)** | 86.744 über 70 Testsuiten |
 | **Bewiesene Deklarationen** | 18.144 Theorem-/Lemma-Deklarationen (null sorry/axiom) |
 | **Rust-Crates** | 4 (`sele4n-types`, `sele4n-abi`, `sele4n-sys`, `sele4n-hal`) über 80 Quelldateien |

@@ -1275,13 +1275,13 @@ theorem spliceReplyFrameOutOrSelfInPlace_eq (st : SystemState) (rid : SeLe4n.Rep
 
 /-- **A caller's reply link consumed, as compiled**: the reply's consumed record
 and the caller's cleared link, each written in its slot (`storeReplyWith`,
-`storeTcbWith`) — the stores `consumeCallerReplyLink` makes. -/
+`storeTcbWith`) — the stores `consumeCallerReplyLink` makes.  `storeTcbWith`
+writes nothing to a slot holding no thread, as the link form's `getTcb?` arm
+does. -/
 @[inline] def consumeCallerReplyInPlace (st : SystemState) (c : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId) : SystemState :=
-  let st1 := st.storeReplyWith rid.toObjId Reply.consumed
-  match st1.objects[c.toObjId]? with
-  | some (.tcb _) => st1.storeTcbWith c.toObjId fun tcb => { tcb with replyObjectCode := 0 }
-  | _ => st1
+  (st.storeReplyWith rid.toObjId Reply.consumed).storeTcbWith c.toObjId
+    fun tcb => { tcb with replyObjectCode := 0 }
 
 theorem consumeCallerReplyInPlace_eq (st : SystemState) (c : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId) :
@@ -1312,6 +1312,7 @@ theorem consumeCallerReplyInPlace_eq (st : SystemState) (c : SeLe4n.ThreadId)
   | none =>
     have : st1.getTcb? c = none := by unfold SystemState.getTcb?; rw [ht]
     rw [this]
+    unfold SystemState.storeTcbWith; rw [ht]
   | some o =>
     cases o with
     | tcb t =>
@@ -1320,6 +1321,7 @@ theorem consumeCallerReplyInPlace_eq (st : SystemState) (c : SeLe4n.ThreadId)
     | _ =>
       have : st1.getTcb? c = none := by unfold SystemState.getTcb?; rw [ht]
       rw [this]
+      unfold SystemState.storeTcbWith; rw [ht]
 
 /-- **A reply-blocked caller's cancel with nothing to give back, as compiled**:
 the splice, the restore, the consume and the reply-waiter unlink of
