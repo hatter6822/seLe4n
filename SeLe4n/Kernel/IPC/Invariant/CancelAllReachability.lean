@@ -1321,13 +1321,13 @@ theorem suspend {s : SystemState} {t : SeLe4n.ThreadId} {tcb : TCB}
     (h : finaliseStepInvariant s) (hT : s.getTcb? t = some tcb) (hS : tcb.ipcStateCode = 0)
     (hO : tcb.ipcObjectCode = 0) (hI : tcb.threadState ≠ .Inactive)
     (hId : isIdleThreadId t = false) :
-    finaliseStepInvariant ((descheduleAtPlacement s t).updateTcb t finaliseSuspendMark) ∧
-      timeoutBudgetFrame s ((descheduleAtPlacement s t).updateTcb t finaliseSuspendMark) :=
+    finaliseStepInvariant ((descheduleAtPlacement s t).updateTcb t (fun t => { t with threadState := .Inactive })) ∧
+      timeoutBudgetFrame s ((descheduleAtPlacement s t).updateTcb t (fun t => { t with threadState := .Inactive })) :=
   have hF := finaliseSuspendStep_keepsIpcInvariantFull s t tcb ⟨h.1, h.2.1⟩ hT hS hO hI hId
   have hD := (FinaliseFrame.descheduleAt s t (placedCoreOf? s t) h.2.1).invExt
   have r := ((ReachFieldFrame.descheduleAtPlacement s t).trans
     (ReachFieldFrame.updateTcb (descheduleAtPlacement s t) t
-      (f := finaliseSuspendMark) hD
+      (f := fun t => { t with threadState := .Inactive }) hD
       (fun _ => ⟨rfl, rfl, rfl, rfl, rfl⟩))).parts h.2.2.1
   ⟨⟨hF.1, hF.2, r.1, SystemState.replyWaitersConsistent.of_views r.2.2 h.2.2.2.1,
     h.chain_of_frame (FinaliseFrame.suspend s t h.2.1)⟩, r.2.1⟩

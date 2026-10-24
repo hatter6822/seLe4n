@@ -541,12 +541,12 @@ theorem finaliseSuspend_runQueueEntryStage (st : SystemState) (t : SeLe4n.Thread
     (hT : st.getTcb? t = some tcb) (hS : tcb.ipcStateCode = 0) (hO : tcb.ipcObjectCode = 0)
     (hId : isIdleThreadId t = false) :
     SystemState.RunQueueEntryStage st
-      ((descheduleAtPlacement st t).updateTcb t finaliseSuspendMark) :=
+      ((descheduleAtPlacement st t).updateTcb t (fun t => { t with threadState := .Inactive })) :=
   descheduleAtPlacedThenOffWrite_runQueueEntryStage st t
     (fun _ x hx => by
       rw [hT] at hx; cases hx
       unfold TCB.ipcState; rw [hS, hO]; rfl)
-    hId finaliseSuspendMark_runLinkOn (fun _ h => h)
+    hId (fun _ _ => rfl) (fun _ h => h)
 
 /-- A scheduling context rewritten in its slot is a run-queue stage: it writes
 no thread and no scheduler field. -/

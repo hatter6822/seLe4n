@@ -2401,6 +2401,38 @@ private def runThreadFinaliseChecks : IO Unit := do
       (st1.scheduler.currentOnCore c0 == none && st1.machine.fpOwnerOnCore c0 == none &&
         st1.machine.residentOnCore c0 == none && st1.scheduler.reschedulePendingOnCore c0 &&
         SeLe4n.Kernel.threadRetirable st1 (SeLe4n.ObjId.ofNat 960))
+  -- A thread suspended while it shared a run queue with another is retired by
+  -- its last capability's delete: the dequeue the suspend runs clears the
+  -- thread's own run links with its core code (`TCB.detachRun`), so the
+  -- already-`.Inactive` thread is quiescent; the other thread stays queued.
+  match runAll carveScenario
+      [decodeCarve slotUtRetype tcbTag 960 slotOwnCnRW 12,
+       decodeCarve slotUtRetype tcbTag 961 slotOwnCnRW 13] with
+  | .error e => assertBool s!"carving two threads succeeds (got {repr e})" false
+  | .ok st0 => do
+    let c0 := Concurrency.bootCoreId
+    let ready := (st0.updateTcb ⟨960⟩ fun t => { t with threadState := .Ready }).updateTcb ⟨961⟩
+      fun t => { t with threadState := .Ready }
+    let shared := enqueueRunnableOnCore (enqueueRunnableOnCore ready c0 ⟨960⟩) c0 ⟨961⟩
+    assertBool "setup: the two carved threads share the executing core's run queue"
+      (shared.queuedOn c0 ⟨960⟩ && shared.queuedOn c0 ⟨961⟩ &&
+        (shared.getTcb? ⟨960⟩).map (·.runNextCode) == some 962)
+    let suspend : SyscallDecodeResult :=
+      { capAddr := SeLe4n.CPtr.ofNat 12, msgInfo := { length := 0, extraCaps := 0, label := 0 },
+        syscallId := .tcbSuspend, msgRegs := #[] }
+    match runAll shared [suspend] with
+    | .error e => assertBool s!"suspending the first queued thread succeeds (got {repr e})" false
+    | .ok stS => do
+      assertBool "the suspended thread is `.Inactive`, on no queue, and keeps no run link"
+        (((stS.getTcb? ⟨960⟩).map fun t => t.threadState == .Inactive && t.runCoreCode == 0 &&
+            t.runPrevCode == 0 && t.runNextCode == 0 && t.runBucketPrevCode == 0 &&
+            t.runBucketNextCode == 0) == some true && stS.queuedOn c0 ⟨961⟩)
+      match runAll stS [decodeDelete 12] with
+      | .error e => assertBool s!"deleting the suspended thread's last capability succeeds (got {repr e})" false
+      | .ok st1 =>
+        assertBool "deleting a suspended thread's last capability retires it, the other thread still queued"
+          (!storedAt st1 960 && !recordsChildAt st1 carveUt 960 && storedAt st1 961 &&
+            st1.queuedOn c0 ⟨961⟩)
 
 /-- The reply at `oid`, if one is stored there. -/
 private def replyAt (st : SystemState) (oid : Nat) : Option SeLe4n.Kernel.Reply :=
