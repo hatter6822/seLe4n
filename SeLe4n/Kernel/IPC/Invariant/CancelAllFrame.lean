@@ -148,6 +148,169 @@ def FinaliseUnbindStep (P : SystemState → Prop) : Prop :=
     unbindNotificationInPlace s t = true →
     P (storeUnbindNotification s t notificationId)
 
+/-- **The release step a scheduling context's finalisation takes**: the thread
+bound to the context — as its own or on loan — queued and held nowhere, in a
+state an unbound thread may idle in, unbound by the reservation arm's in-place
+unbind with its binding read as the context's own. -/
+def FinaliseScReleaseStep (P : SystemState → Prop) : Prop :=
+  ∀ (s s' : SystemState) (t : SeLe4n.ThreadId) (tcb : TCB) (sc : SchedContext)
+    (x : SeLe4n.ObjId), P s →
+    s.getTcb? t = some tcb → tcb.scBindingScCode = x.val + 1 →
+    tcb.runCoreCode = 0 → threadHeldOnSomeCore s t = false →
+    ipcCodesIdleAllowed tcb.ipcObjectCode tcb.ipcStateCode = true →
+    s.getSchedContext? ⟨x.val⟩ = some sc → sc.boundThreadCode = t.val + 1 →
+    cancelBoundDonationOnCore s t { tcb with scBindingOwnerCode := 0 }
+      (determineTargetCore s t) = .ok s' → P s'
+
+/-- **The unstack step a scheduling context's finalisation takes**: the head of
+the reply stack the context heads loses its upward link, then the context its
+head. -/
+def FinaliseUnstackStep (P : SystemState → Prop) : Prop :=
+  ∀ (s s1 : SystemState) (x : SeLe4n.ObjId) (sc : SchedContext) (rid : SeLe4n.ReplyId)
+    (r : Reply), P s →
+    s.getSchedContext? ⟨x.val⟩ = some sc → sc.scReply = some rid → s.getReply? rid = some r →
+    r.next = some (.head ⟨x.val⟩) →
+    storeObject rid.toObjId (.reply { r with next := none }) s = .ok ((), s1) →
+    P (s1.updateSchedContext ⟨x.val⟩ fun sc => { sc with scReply := none })
+
+/-- **The cancel step a reply's finalisation takes**: the reply's waiting caller,
+admitted by `replyCallerFinalisable`, cancelled, and the boost it lent its server
+reverted. -/
+def FinaliseReplyStep (P : SystemState → Prop) : Prop :=
+  ∀ (s : SystemState) (x : SeLe4n.ObjId) (r : Reply) (c : SeLe4n.ThreadId) (t : TCB), P s →
+    s.getObject? x = some (.reply r) → r.callerCode = c.val + 1 → s.getTcb? c = some t →
+    replyCallerFinalisable s x r c t = true →
+    P (finaliseReplyRevert (Lifecycle.Suspend.cancelIpcBlocking s c t) t.blockingServer?)
+
+/-- A thread whose owner code is already clear is its own owner-cleared view. -/
+theorem TCB.ownerCleared_of_zero {t : TCB} (h : t.scBindingOwnerCode = 0) :
+    ({ t with scBindingOwnerCode := 0 } : TCB) = t := by
+  cases t; cases h; rfl
+
+/-- **The release step covers the thread finalisation's unbind**: a `.bound`
+thread is its own owner-cleared view. -/
+theorem FinaliseScReleaseStep.scUnbind {P : SystemState → Prop} (h : FinaliseScReleaseStep P) :
+    FinaliseScUnbindStep P := by
+  intro s s' t tcb sc hP hT hS hO hR hH hA hSc hB hOk
+  rw [cancelDonationArmOnCore_of_codes s t hS hO] at hOk
+  refine h s s' t tcb sc ⟨tcb.scBindingScCode - 1⟩ hP hT (by show _ = _ - 1 + 1; omega) hR hH hA
+    hSc hB ?_
+  rw [TCB.ownerCleared_of_zero hO]; exact hOk
+
+/-- `replyStackLinkHeads` reads the head link naming the context. -/
+theorem replyStackLinkHeads_spec {x : SeLe4n.ObjId} {n : Option ReplyStackLink}
+    (h : replyStackLinkHeads x n = true) : n = some (.head ⟨x.val⟩) := by
+  rcases n with _ | (_ | ⟨v⟩)
+  · cases h
+  · cases h
+  · simp only [replyStackLinkHeads, beq_iff_eq] at h
+    obtain ⟨vv⟩ := v
+    simp only at h
+    subst h; rfl
+
+/-- **What the reply finalisation's check admits**, read off its codes: the
+reply heads no stack, the caller is no reserved or idle thread and is held and
+queued nowhere, is blocked on this reply and linked into no endpoint queue, has
+no timeout budget, lends no reservation, and so is owed none back. -/
+theorem replyCallerFinalisable_parts {st : SystemState} {x : SeLe4n.ObjId} {r : Reply}
+    {c : SeLe4n.ThreadId} {t : TCB} (hX : st.getObject? x = some (.reply r))
+    (hC : r.callerCode = c.val + 1)
+    (h : replyCallerFinalisable st x r c t = true) :
+    replyStackLinkIsHead r.next = false ∧ ¬ c.isReserved ∧ isIdleThreadId c = false ∧
+      threadHeldOnSomeCore st c = false ∧ t.runCoreCode = 0 ∧
+      (∃ ep rt, t.ipcState = .blockedOnReply ep rt) ∧ t.replyObject = some ⟨x.val⟩ ∧
+      t.queueNext = none ∧ t.queuePrev = none ∧ t.timeoutBudget = none ∧
+      (∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId),
+        st.objects[tid.toObjId]? = some (.tcb tcb) → tcb.schedContextBinding ≠ .donated scId c) ∧
+      Lifecycle.Suspend.cancelledCallerDonation? st c t = none := by
+  simp only [replyCallerFinalisable, Bool.and_eq_true, Bool.not_eq_true', decide_eq_true_eq,
+    beq_iff_eq, Option.isNone_iff_eq_none] at h
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hHd, hRes⟩, hId⟩, hHeld⟩, hRun⟩, hSt⟩, hRO⟩, hQN⟩, hQP⟩, hBud⟩, hL⟩ := h
+  have hIpc : ∃ ep rt, t.ipcState = .blockedOnReply ep rt := by
+    obtain ⟨k, hk⟩ : ∃ k, t.ipcStateCode = k + 4 := ⟨t.ipcStateCode - 4, by omega⟩
+    unfold TCB.ipcState ThreadIpcState.ofCodes
+    rw [hk]
+    exact ⟨_, _, rfl⟩
+  have hRO' : t.replyObject = some ⟨x.val⟩ := by
+    unfold TCB.replyObject; rw [hRO]; rfl
+  refine ⟨hHd, by simpa using hRes, hId, hHeld, hRun, hIpc, hRO', ?_, ?_, hBud, ?_, ?_⟩
+  · simp [TCB.queueNext, hQN, SeLe4n.ThreadId.ofOptCode]
+  · simp [TCB.queuePrev, hQP, SeLe4n.ThreadId.ofOptCode]
+  · intro tid tcb scId hO hD
+    have hf := RobinHood.RHTable.fold_and_true_of_get? st.objects
+      (fun _ o => !objectHoldsLoanFrom o r.callerCode) hL
+      (by rw [← RHTable_getElem?_eq_get?]; exact hO)
+    revert hD
+    unfold TCB.schedContextBinding SchedContextBinding.ofCodes
+    simp only [objectHoldsLoanFrom, Bool.not_eq_true', Bool.and_eq_false_iff, bne_eq_false_iff_eq,
+      beq_eq_false_iff_ne, ne_eq] at hf
+    cases hs : tcb.scBindingScCode with
+    | zero => intro hD; cases hD
+    | succ sv =>
+      cases ho : tcb.scBindingOwnerCode with
+      | zero => intro hD; cases hD
+      | succ ov =>
+        intro hD
+        simp only [SchedContextBinding.donated.injEq] at hD
+        rw [hs, ho] at hf
+        rcases hf with hf | hf
+        · omega
+        · apply hf; rw [hC, ← hD.2]
+  · obtain ⟨ep, rt, hB⟩ := hIpc
+    unfold Lifecycle.Suspend.cancelledCallerDonation?
+    rw [hB]
+    simp only [hRO']
+    apply replyFrameHeadHolder?_of_no_head
+    have hGR : st.getReply? ⟨x.val⟩ = some r := by
+      unfold SystemState.getReply?
+      rw [show (⟨x.val⟩ : SeLe4n.ReplyId).toObjId = x from rfl, ← SystemState.getObject?_eq_getElem,
+        hX]
+    unfold replyFrameHeadContext?
+    rw [hGR]
+    simp only
+    cases hN : r.next with
+    | none => rfl
+    | some l =>
+      cases l with
+      | frame _ => rfl
+      | head _ => rw [hN] at hHd; cases hHd
+
+/-- **The priority-inheritance walk writes only the object store and the
+scheduler.** -/
+theorem propagatePipChainCrossCore_onlyObjectsSchedulerDiffer :
+    ∀ (fuel : Nat) (st : SystemState) (s : SeLe4n.ThreadId) (ec : Concurrency.CoreId),
+      SystemState.onlyObjectsSchedulerDiffer
+        (PriorityInheritance.propagatePipChainCrossCore st s ec fuel).1 st
+  | 0, st, _, _ => by rw [PriorityInheritance.propagatePipChainCrossCore_zero]; exact .refl st
+  | n + 1, st, s, ec => by
+    rw [PriorityInheritance.propagatePipChainCrossCore_step]
+    simp only
+    have h1 : SystemState.onlyObjectsSchedulerDiffer
+        (PriorityInheritance.pipBoostWithWake st s ec).1 st := by
+      rw [PriorityInheritance.pipBoostWithWake_state]
+      exact PriorityInheritance.updatePipBoostOnCore_onlyObjectsSchedulerDiffer _ _ _
+    cases PriorityInheritance.blockingServer st s with
+    | none => exact h1
+    | some nx => exact (propagatePipChainCrossCore_onlyObjectsSchedulerDiffer n _ nx ec).trans h1
+
+/-- **A reply-blocked caller's cancel, with nothing to give back**: the donation
+return declines, so the arm is the splice, the restore, the consume and the
+unlink. -/
+theorem cancelIpcBlocking_replyArm_of_noDonation (st : SystemState) (c : SeLe4n.ThreadId)
+    (t : TCB) {ep : SeLe4n.ObjId} {rt : Option SeLe4n.ThreadId}
+    (hB : t.ipcState = .blockedOnReply ep rt)
+    (hD : Lifecycle.Suspend.cancelledCallerDonation? st c t = none) :
+    Lifecycle.Suspend.cancelIpcBlocking st c t =
+      SystemState.unlinkReplyWaiterOpt
+        (Lifecycle.Suspend.consumeReplyLink
+          (Lifecycle.Suspend.restoreToReadyCancelled (spliceThreadReplyFrameOut st t) c) c t)
+        c t.blockingServer? := by
+  have hR : Lifecycle.Suspend.returnDonationToCancelledCaller st c t = st := by
+    unfold Lifecycle.Suspend.returnDonationToCancelledCaller; rw [hD]
+  unfold Lifecycle.Suspend.cancelIpcBlocking
+  rw [hB]
+  simp only [hR]
+
 /-- **An IPC state `ipcCodesIdleAllowed` admits is one an unbound thread may
 idle in.** -/
 theorem passiveServerIdleAllowed_of_codes {tcb : TCB}
@@ -170,6 +333,76 @@ theorem threadOfOptCode_succ (t : SeLe4n.ThreadId) :
     SeLe4n.ThreadId.ofOptCode (t.val + 1) = some t := by
   have := SeLe4n.ThreadId.ofOptCode_optCode (some t)
   exact this
+
+/-- **A property the unstack keeps holds after it.** -/
+theorem finaliseSchedContextUnstack_closed (P : SystemState → Prop) (hUn : FinaliseUnstackStep P)
+    (x : SeLe4n.ObjId) (st : SystemState) (h : P st) : P (finaliseSchedContextUnstack st x) := by
+  unfold finaliseSchedContextUnstack
+  split
+  · rename_i sc hSc
+    split
+    · rename_i rid hR
+      split
+      · rename_i r hRr
+        split
+        · rename_i hH
+          split
+          · rename_i s1 hS
+            exact hUn st s1 x sc rid r h hSc hR hRr (replyStackLinkHeads_spec hH) hS
+          · exact h
+        · exact h
+      · exact h
+    · exact h
+  · exact h
+
+/-- **A property the release and the unstack keep holds after the
+scheduling-context finalisation.** -/
+theorem finaliseSchedContext_closed (P : SystemState → Prop) (hRel : FinaliseScReleaseStep P)
+    (hUn : FinaliseUnstackStep P) (x : SeLe4n.ObjId) (st : SystemState) (h : P st) :
+    P (finaliseSchedContext x st) := by
+  rw [finaliseSchedContext_eq]
+  split
+  · refine finaliseSchedContextUnstack_closed P hUn x _ ?_
+    unfold finaliseSchedContextUnbind
+    split
+    · rename_i sc hX
+      split
+      · exact h
+      · rename_i hB0
+        dsimp only
+        split
+        · rename_i t hT
+          split
+          · rename_i hG
+            simp only [Bool.and_eq_true, beq_iff_eq, Bool.not_eq_true'] at hG
+            obtain ⟨⟨⟨hS, hR⟩, hH⟩, hA⟩ := hG
+            split
+            · rename_i s' hOk
+              refine hRel st s' _ t sc x h hT hS hR hH hA ?_ ?_ hOk
+              · have hO : st.objects[x]? = some (.schedContext sc) := by rw [← hX]; simp
+                unfold SystemState.getSchedContext?
+                rw [show (⟨x.val⟩ : SeLe4n.SchedContextId).toObjId = x from rfl, hO]
+              · simp only [beq_iff_eq] at hB0
+                show _ = _ - 1 + 1; omega
+            · exact h
+          · exact h
+        · exact h
+    · exact h
+  · exact h
+
+/-- **A property the suspend keeps holds after `finaliseThreadSuspend`.** -/
+theorem finaliseThreadSuspend_closed (P : SystemState → Prop) (hSuspend : FinaliseSuspendStep P)
+    (s : SystemState) (tid : SeLe4n.ThreadId) (h : P s) : P (finaliseThreadSuspend s tid) := by
+  unfold finaliseThreadSuspend
+  split
+  · rename_i t hT
+    split
+    · rename_i hG
+      simp only [Bool.and_eq_true, beq_iff_eq, bne_iff_ne, ne_eq, Bool.not_eq_true'] at hG
+      obtain ⟨⟨⟨⟨⟨hS, hO⟩, hI⟩, hR⟩, hH⟩, hId⟩ := hG
+      exact hSuspend s tid t h hT hS hO hI hR hH hId
+    · exact h
+  · exact h
 
 /-- **A property the thread finalisation's steps keep holds after it.** -/
 theorem finaliseThread_closed (P : SystemState → Prop) (hUnbind : FinaliseUnbindStep P)
@@ -236,51 +469,30 @@ theorem finaliseThread_closed (P : SystemState → Prop) (hUnbind : FinaliseUnbi
         · exact h2
       · exact h2
     -- The suspend.
-    generalize finaliseThreadCancel _ tid = s at h3 ⊢
-    unfold finaliseThreadSuspend
-    split
-    · rename_i t hT
-      split
-      · rename_i hG
-        simp only [Bool.and_eq_true, beq_iff_eq, bne_iff_ne, ne_eq, Bool.not_eq_true'] at hG
-        obtain ⟨⟨⟨⟨⟨hS, hO⟩, hI⟩, hR⟩, hH⟩, hId⟩ := hG
-        exact hSuspend s tid t h3 hT hS hO hI hR hH hId
-      · exact h3
-    · exact h3
+    exact finaliseThreadSuspend_closed P hSuspend _ tid h3
   · exact h
 
-/-- **A property the reservation unbind keeps holds after the
-scheduling-context finalisation.** -/
-theorem finaliseSchedContext_closed (P : SystemState → Prop) (hSc : FinaliseScUnbindStep P)
-    (x : SeLe4n.ObjId) (st : SystemState) (h : P st) : P (finaliseSchedContext x st) := by
-  rw [finaliseSchedContext_eq]
+/-- **A property the reply cancel and the suspend keep holds after the reply
+finalisation.** -/
+theorem finaliseReply_closed (P : SystemState → Prop) (hRep : FinaliseReplyStep P)
+    (hSuspend : FinaliseSuspendStep P) (x : SeLe4n.ObjId) (st : SystemState) (h : P st) :
+    P (finaliseReply x st) := by
+  unfold finaliseReply
   split
-  · unfold finaliseSchedContextUnbind
+  · rename_i r hX
     split
-    · rename_i sc hX
-      split
-      · exact h
-      · rename_i hB0
-        dsimp only
-        split
-        · rename_i t hT
-          split
-          · rename_i hG
-            simp only [Bool.and_eq_true, beq_iff_eq, Bool.not_eq_true'] at hG
-            obtain ⟨⟨⟨⟨hS, hO⟩, hR⟩, hH⟩, hA⟩ := hG
-            split
-            · rename_i s' hOk
-              refine hSc st s' _ t sc h hT (by omega) hO hR hH hA ?_ ?_ hOk
-              · rw [hS, Nat.add_sub_cancel]
-                have hO : st.objects[x]? = some (.schedContext sc) := by rw [← hX]; simp
-                unfold SystemState.getSchedContext?
-                rw [show (⟨x.val⟩ : SeLe4n.SchedContextId).toObjId = x from rfl, hO]
-              · simp only [beq_iff_eq] at hB0
-                show _ = _ - 1 + 1; omega
-            · exact h
-          · exact h
-        · exact h
     · exact h
+    · rename_i h0
+      dsimp only
+      split
+      · rename_i t hT
+        split
+        · rename_i hG
+          refine finaliseThreadSuspend_closed P hSuspend _ _ (hRep st x r _ t h hX ?_ hT hG)
+          simp only [beq_iff_eq] at h0
+          show _ = _ - 1 + 1; omega
+        · exact h
+      · exact h
   · exact h
 
 /-- **A property every cancel, unbind and suspend keeps holds after the
@@ -296,8 +508,9 @@ theorem finaliseFinalObject_closed (P : SystemState → Prop)
       s.getNotification? notificationId = some n → n.waitHead = some t →
       s.getTcb? t = some tcb → notificationWaiterCancellable s notificationId t tcb = true →
       P (wakeCancelledWaiter (Lifecycle.Suspend.cancelIpcBlocking s t tcb) t))
-    (hUnbind : FinaliseUnbindStep P) (hSc : FinaliseScUnbindStep P)
+    (hUnbind : FinaliseUnbindStep P) (hRel : FinaliseScReleaseStep P)
     (hCancel : FinaliseCancelStep P) (hSuspend : FinaliseSuspendStep P)
+    (hUn : FinaliseUnstackStep P) (hRep : FinaliseReplyStep P)
     (target : Nat) (st : SystemState) (h : P st) : P (finaliseFinalObject target st) := by
   unfold finaliseFinalObject
   split
@@ -309,8 +522,9 @@ theorem finaliseFinalObject_closed (P : SystemState → Prop)
         (cancelEndpointQueue_closed P _ false (hEp _ false) _ _ h)
     · exact cancelNotificationQueue_closed P _ (hNtfn _) _ _
         (unbindMaybeNotification_closed P _ (hUnbind _) st h)
-    · exact finaliseThread_closed P hUnbind hSc hCancel hSuspend _ st h
-    · exact finaliseSchedContext_closed P hSc _ st h
+    · exact finaliseThread_closed P hUnbind hRel.scUnbind hCancel hSuspend _ st h
+    · exact finaliseSchedContext_closed P hRel hUn _ st h
+    · exact finaliseReply_closed P hRep hSuspend _ st h
     · exact h
   · exact h
 
@@ -524,6 +738,185 @@ theorem getUntyped? {st st' : SystemState} (h : FinaliseFrame st st') :
 end FinaliseFrame
 
 -- ============================================================================
+-- §2a  The write frame once reply links are let go
+-- ============================================================================
+
+/-- **An object a finalisation may write once it lets go of reply links**: a
+reply as well as what `finaliseWritable` admits. -/
+def finaliseWritableAny (o : KernelObject) : Prop :=
+  finaliseWritable o ∨ o.objectType = .reply
+
+theorem finaliseWritableAny.untyped {o : KernelObject} (h : finaliseWritableAny o) :
+    o.untyped? = none := by
+  rcases h with h | h
+  · exact h.untyped
+  · cases o <;> simp_all [KernelObject.objectType, KernelObject.untyped?]
+
+theorem finaliseWritableAny.not_cnode {o : KernelObject} (h : finaliseWritableAny o) :
+    o.objectType ≠ .cnode := by
+  rcases h with h | h
+  · exact h.not_cnode
+  · rw [h]; decide
+
+theorem finaliseWritableAny.not_vspaceRoot {o : KernelObject} (h : finaliseWritableAny o) :
+    o.objectType ≠ .vspaceRoot := by
+  rcases h with h | h
+  · exact h.not_vspaceRoot
+  · rw [h]; decide
+
+theorem finaliseWritableAny_reply (r : Reply) : finaliseWritableAny (.reply r) := Or.inr rfl
+
+/-- **What a finalisation writes, key by key, once it lets go of reply links**:
+each key keeps its object, or holds a thread, an endpoint, a notification, a
+scheduling context or a reply before and after, of the same kind and with the
+same capability slots.  A context's reply-stack head and a reply's links may
+move. -/
+def finaliseWriteAny (st st' : SystemState) : Prop :=
+  ∀ oid : SeLe4n.ObjId, st'.objects[oid]? = st.objects[oid]? ∨
+    ∃ pre post : KernelObject, st.objects[oid]? = some pre ∧ st'.objects[oid]? = some post ∧
+      post.objectType = pre.objectType ∧ post.tcbSlots = pre.tcbSlots ∧ finaliseWritableAny pre
+
+namespace finaliseWriteAny
+
+theorem refl (st : SystemState) : finaliseWriteAny st st := fun _ => Or.inl rfl
+
+theorem trans {a b c : SystemState} (h₁ : finaliseWriteAny a b) (h₂ : finaliseWriteAny b c) :
+    finaliseWriteAny a c := by
+  intro oid
+  rcases h₁ oid with e₁ | ⟨p₁, q₁, hp₁, hq₁, ht₁, hs₁, hw₁⟩
+  · rcases h₂ oid with e₂ | ⟨p₂, q₂, hp₂, hq₂, ht₂, hs₂, hw₂⟩
+    · exact Or.inl (e₂.trans e₁)
+    · exact Or.inr ⟨p₂, q₂, e₁ ▸ hp₂, hq₂, ht₂, hs₂, hw₂⟩
+  · rcases h₂ oid with e₂ | ⟨p₂, q₂, hp₂, hq₂, ht₂, hs₂, hw₂⟩
+    · exact Or.inr ⟨p₁, q₁, hp₁, e₂.trans hq₁, ht₁, hs₁, hw₁⟩
+    · rw [hq₁] at hp₂
+      cases hp₂
+      exact Or.inr ⟨p₁, q₂, hp₁, hq₂, ht₂.trans ht₁, hs₂.trans hs₁, hw₁⟩
+
+/-- A finalisation write is one that lets go of no reply link. -/
+theorem of_write {st st' : SystemState} (h : finaliseWrite st st') : finaliseWriteAny st st' := by
+  intro oid
+  rcases h oid with e | ⟨pre, post, hp, hq, ht, hs, -, hw⟩
+  · exact Or.inl e
+  · exact Or.inr ⟨pre, post, hp, hq, ht, hs, Or.inl hw⟩
+
+theorem kind {st st' : SystemState} (h : finaliseWriteAny st st') : kindPreservingWrite st st' := by
+  intro oid
+  rcases h oid with e | ⟨pre, post, hp, hq, ht, hs, hw⟩
+  · exact Or.inl e
+  · have hw' : finaliseWritableAny post := by
+      rcases hw with hw | hw
+      · exact Or.inl (by unfold finaliseWritable; rw [ht]; exact hw)
+      · exact Or.inr (ht.trans hw)
+    exact Or.inr ⟨pre, post, hp, hq, ht, ht ▸ hw.not_cnode, hs, by
+      rw [hw.untyped, hw'.untyped]⟩
+
+theorem keeps {st st' : SystemState} (h : finaliseWriteAny st st') {oid : SeLe4n.ObjId}
+    {o : KernelObject} (hO : st.objects[oid]? = some o) (hN : ¬ finaliseWritableAny o) :
+    st'.objects[oid]? = some o := by
+  rcases h oid with e | ⟨pre, post, hp, -, -, -, hw⟩
+  · rw [e]; exact hO
+  · rw [hO] at hp; cases hp; exact absurd hw hN
+
+theorem keeps' {st st' : SystemState} (h : finaliseWriteAny st st') {oid : SeLe4n.ObjId}
+    {o : KernelObject} (hO : st'.objects[oid]? = some o) (hN : ¬ finaliseWritableAny o) :
+    st.objects[oid]? = some o := by
+  rcases h oid with e | ⟨pre, post, hp, hq, ht, -, hw⟩
+  · rw [← e]; exact hO
+  · rw [hO] at hq; cases hq
+    refine absurd ?_ hN
+    rcases hw with hw | hw
+    · exact Or.inl (by unfold finaliseWritable; rw [ht]; exact hw)
+    · exact Or.inr (ht.trans hw)
+
+theorem roots_iff {st st' : SystemState} (h : finaliseWriteAny st st') (oid : SeLe4n.ObjId)
+    (r : VSpaceRoot) :
+    st'.objects[oid]? = some (.vspaceRoot r) ↔ st.objects[oid]? = some (.vspaceRoot r) := by
+  have hN : ¬ finaliseWritableAny (.vspaceRoot r) := fun hw => hw.not_vspaceRoot rfl
+  exact ⟨fun hO => h.keeps' hO hN, fun hO => h.keeps hO hN⟩
+
+/-- A store at a key holding a writable object, of its like. -/
+theorem of_insert {st st' : SystemState} {k : SeLe4n.ObjId} {o o' : KernelObject}
+    (hInv : st.objects.invExt) (hPre : st.objects[k]? = some o) (hW : finaliseWritableAny o)
+    (hT : o'.objectType = o.objectType) (hS : o'.tcbSlots = o.tcbSlots)
+    (hAt : st'.objects[k]? = some o')
+    (hNe : ∀ oid, oid ≠ k → st'.objects[oid]? = st.objects[oid]?) :
+    finaliseWriteAny st st' := by
+  intro oid
+  by_cases e : oid = k
+  · subst e; exact Or.inr ⟨o, o', hPre, hAt, hT, hS, hW⟩
+  · exact Or.inl (hNe oid e)
+
+end finaliseWriteAny
+
+/-- **What a finalisation's step leaves once it lets go of reply links**: the
+derivation tree and the ASID table kept, the object table well formed, and a
+write of `finaliseWriteAny`. -/
+structure FinaliseFrameAny (st st' : SystemState) : Prop where
+  cdt : st'.cdt = st.cdt
+  asidTable : st'.asidTable = st.asidTable
+  invExt : st'.objects.invExt
+  write : finaliseWriteAny st st'
+
+/-- A finalisation step's frame is one that lets go of no reply link. -/
+theorem FinaliseFrame.any {st st' : SystemState} (h : FinaliseFrame st st') :
+    FinaliseFrameAny st st' :=
+  ⟨h.cdt, h.asidTable, h.invExt, .of_write h.write⟩
+
+namespace FinaliseFrameAny
+
+theorem refl {st : SystemState} (hInv : st.objects.invExt) : FinaliseFrameAny st st :=
+  ⟨rfl, rfl, hInv, .refl st⟩
+
+theorem trans {a b c : SystemState} (h₁ : FinaliseFrameAny a b) (h₂ : FinaliseFrameAny b c) :
+    FinaliseFrameAny a c :=
+  ⟨h₂.cdt.trans h₁.cdt, h₂.asidTable.trans h₁.asidTable, h₂.invExt, h₁.write.trans h₂.write⟩
+
+theorem kind {st st' : SystemState} (h : FinaliseFrameAny st st') : kindPreservingWrite st st' :=
+  h.write.kind
+
+theorem preserves_teardownWellFormed {st st' : SystemState} (h : FinaliseFrameAny st st')
+    (hW : teardownWellFormed st) :
+    teardownWellFormed st' ∧ vspaceRootsShrink st st' := by
+  refine ⟨teardownWellFormed_of_roots_eq h.invExt h.asidTable
+    (h.write.roots_iff) hW, fun oid r' hR => ⟨r', (h.write.roots_iff oid r').1 hR, rfl,
+      fun _ _ hm => hm, fun _ _ he => he, fun _ hs => hs⟩⟩
+
+theorem slotCapAt {st st' : SystemState} (h : FinaliseFrameAny st st') (r : SlotRef) :
+    st'.slotCapAt r = st.slotCapAt r := by
+  rw [SystemState.slotCapAt_eq_bind, SystemState.slotCapAt_eq_bind]
+  rcases h.write r.cnode with e | ⟨pre, post, hp, hq, ht, hs, hw⟩
+  · rw [e]
+  · rw [hp, hq]
+    simp only [Option.bind_some,
+      (KernelObject.slots_eq_of_tcbSlots ht (ht ▸ hw.not_cnode) hs).1]
+
+theorem getUntyped? {st st' : SystemState} (h : FinaliseFrameAny st st') :
+    st'.getUntyped? = st.getUntyped? :=
+  funext fun o => by
+    rw [SystemState.getUntyped?_eq_bind, SystemState.getUntyped?_eq_bind]; exact h.kind.untyped o
+
+/-- **A store of a writable object's like at its own key** (no VSpace root). -/
+theorem storeObject {st st' : SystemState} {k : SeLe4n.ObjId} {o o' : KernelObject}
+    (hInv : st.objects.invExt) (hPre : st.objects[k]? = some o) (hW : finaliseWritableAny o)
+    (h : SeLe4n.Model.storeObject k o' st = .ok ((), st'))
+    (hT : o'.objectType = o.objectType) (hS : o'.tcbSlots = o.tcbSlots) : FinaliseFrameAny st st' := by
+  have hNR : ∀ r, o' ≠ .vspaceRoot r := by
+    intro r e; subst e
+    exact hW.not_vspaceRoot (by rw [← hT]; rfl)
+  have hOldNR : ∀ r, o ≠ .vspaceRoot r := by
+    intro r e; subst e; exact hW.not_vspaceRoot rfl
+  refine ⟨storeObject_cdt_eq st st' k o' h, ?_, storeObject_preserves_objects_invExt st st' k o' hInv h,
+    finaliseWriteAny.of_insert hInv hPre hW hT hS (storeObject_objects_eq st st' k o' hInv h)
+      (fun oid hne => storeObject_objects_ne st st' k oid o' hne hInv h)⟩
+  rw [storeObject_asidTable_non_vspaceRoot st st' k o' hNR h, hPre]
+  cases o with
+  | vspaceRoot r => exact absurd rfl (hOldNR r)
+  | _ => rfl
+
+end FinaliseFrameAny
+
+-- ============================================================================
 -- §3  Each step's frame
 -- ============================================================================
 
@@ -703,13 +1096,152 @@ theorem cancelBoundDonationOnCore {st st' : SystemState} {t : SeLe4n.ThreadId} {
     exact h3.trans (markKeyChangeFrom _ _ t h3.invExt)
   · cases h
 
-/-- The reservation-unbind step, as the closure asks it. -/
-theorem scUnbindStep (st : SystemState) : FinaliseScUnbindStep (FinaliseFrame st) := by
-  intro s s' t tcb _ h _ hS hO _ _ _ _ _ hOk
-  rw [cancelDonationArmOnCore_of_codes s t hS hO] at hOk
+/-- The release step, as the closure asks it. -/
+theorem releaseStep (st : SystemState) : FinaliseScReleaseStep (FinaliseFrame st) := by
+  intro s s' _ _ _ _ h _ _ _ _ _ _ _ hOk
   exact h.trans (cancelBoundDonationOnCore h.invExt hOk)
 
+/-- **The priority-inheritance walk**: boosts and run-queue moves, threads
+rewritten keeping their slots. -/
+theorem propagatePip (st : SystemState) (s : SeLe4n.ThreadId) (ec : Concurrency.CoreId)
+    (fuel : Nat) (hInv : st.objects.invExt) :
+    FinaliseFrame st (PriorityInheritance.propagatePipChainCrossCore st s ec fuel).1 := by
+  refine ⟨propagatePipChainCrossCore_onlyObjectsSchedulerDiffer fuel st s ec,
+    PriorityInheritance.propagatePipChainCrossCore_preserves_objects_invExt st s ec fuel hInv,
+    fun oid => ?_⟩
+  rcases PriorityInheritance.propagatePipChainCrossCore_objects_pointwise fuel st s ec hInv oid with
+    e | ⟨pre, post, hp, hq, hC, hL⟩
+  · exact Or.inl e
+  · exact Or.inr ⟨.tcb pre, .tcb post, hp, hq, rfl, by simp [KernelObject.tcbSlots, hC, hL], rfl,
+      finaliseWritable_tcb pre⟩
+
+/-- The revert of a finalised reply's caller's boost. -/
+theorem finaliseReplyRevert (st : SystemState) (server? : Option SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) : FinaliseFrame st (SeLe4n.Kernel.finaliseReplyRevert st server?) := by
+  cases server? with
+  | none => exact .refl hInv
+  | some s => exact propagatePip st s _ _ hInv
+
 end FinaliseFrame
+
+namespace FinaliseFrameAny
+
+/-- The splice of a reply off its stack: at most three replies rewritten. -/
+theorem spliceReplyFrameOutOrSelf (st : SystemState) (rid : SeLe4n.ReplyId)
+    (hInv : st.objects.invExt) :
+    FinaliseFrameAny st (SeLe4n.Kernel.spliceReplyFrameOutOrSelf st rid) := by
+  obtain ⟨m1, m2, h1, h2, h3⟩ := spliceReplyFrameOutOrSelf_store_cases st rid hInv
+  have step : ∀ {a b : SystemState}, a.objects.invExt →
+      (b = a ∨ ∃ (k : SeLe4n.ReplyId) (o o' : Reply), a.objects[k.toObjId]? = some (.reply o) ∧
+        SeLe4n.Model.storeObject k.toObjId (.reply o') a = .ok ((), b)) →
+      FinaliseFrameAny a b := by
+    intro a b hA h
+    rcases h with rfl | ⟨k, o, o', hO, hS⟩
+    · exact .refl hA
+    · exact storeObject hA hO (finaliseWritableAny_reply o) hS rfl rfl
+  have f1 := step hInv h1
+  have f2 := step f1.invExt h2
+  exact f1.trans (f2.trans (step f2.invExt h3))
+
+/-- A thread's reply frame spliced off its stack. -/
+theorem spliceThreadReplyFrameOut (st : SystemState) (t : TCB) (hInv : st.objects.invExt) :
+    FinaliseFrameAny st (SeLe4n.Kernel.spliceThreadReplyFrameOut st t) := by
+  unfold SeLe4n.Kernel.spliceThreadReplyFrameOut
+  cases t.replyObject with
+  | none => exact .refl hInv
+  | some rid => exact spliceReplyFrameOutOrSelf st rid hInv
+
+/-- The consume of a caller's reply link: the reply consumed, the caller's link
+cleared. -/
+theorem consumeCallerReply {st st' : SystemState} {c : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId}
+    (hInv : st.objects.invExt) (h : SystemState.consumeCallerReply c rid st = .ok ((), st')) :
+    FinaliseFrameAny st st' := by
+  unfold SystemState.consumeCallerReply at h
+  cases hC : SystemState.consumeReply rid st with
+  | error e => rw [hC] at h; cases h
+  | ok p =>
+    obtain ⟨⟨⟩, st1⟩ := p
+    rw [hC] at h
+    have f1 : FinaliseFrameAny st st1 := by
+      unfold SystemState.consumeReply at hC
+      cases hR : st.getReply? rid with
+      | none => rw [hR] at hC; cases hC; exact .refl hInv
+      | some r =>
+        rw [hR] at hC
+        exact storeObject hInv ((SystemState.getReply?_eq_some_iff _ _ _).mp hR)
+          (finaliseWritableAny_reply r) hC rfl rfl
+    simp only at h
+    cases hT : st1.getTcb? c with
+    | none => rw [hT] at h; cases h; exact f1
+    | some tcb =>
+      rw [hT] at h
+      exact f1.trans (storeObject f1.invExt ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT)
+        (Or.inl (finaliseWritable_tcb tcb)) h rfl rfl)
+
+theorem consumeReplyLink (st : SystemState) (c : SeLe4n.ThreadId) (t : TCB)
+    (hInv : st.objects.invExt) :
+    FinaliseFrameAny st (Lifecycle.Suspend.consumeReplyLink st c t) := by
+  unfold Lifecycle.Suspend.consumeReplyLink
+  split
+  · exact .refl hInv
+  · rename_i rid _
+    exact consumeCallerReply hInv (SystemState.consumeCallerReply_eq_link st c rid)
+
+/-- The unlink of a waiter from its server's reply-waiter queue. -/
+theorem unlinkReplyWaiterOpt (st : SystemState) (w : SeLe4n.ThreadId)
+    (s? : Option SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    FinaliseFrameAny st (st.unlinkReplyWaiterOpt w s?) := by
+  have e := SystemState.unlinkReplyWaiterOpt_eq_objects st w s?
+  exact ⟨by rw [e], by rw [e],
+    SystemState.unlinkReplyWaiterOpt_objects_invExt st w s? hInv,
+    .of_write (.of_agreeOffRunLinks (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks st w s?))⟩
+
+/-- **A reply-blocked caller's cancel, with nothing to give back**: the splice,
+the restore, the consume and the unlink (`cancelIpcBlocking`'s reply arm, its
+donation return declining). -/
+theorem replyCancel (st : SystemState) (c : SeLe4n.ThreadId) (t : TCB) {ep : SeLe4n.ObjId}
+    {rt : Option SeLe4n.ThreadId} (hInv : st.objects.invExt)
+    (hB : t.ipcState = .blockedOnReply ep rt)
+    (hD : Lifecycle.Suspend.cancelledCallerDonation? st c t = none) :
+    FinaliseFrameAny st (Lifecycle.Suspend.cancelIpcBlocking st c t) := by
+  rw [cancelIpcBlocking_replyArm_of_noDonation st c t hB hD]
+  have f1 := spliceThreadReplyFrameOut st t hInv
+  have f2 := f1.trans (show FinaliseFrameAny _ (Lifecycle.Suspend.restoreToReadyCancelled _ c) by
+    unfold Lifecycle.Suspend.restoreToReadyCancelled Lifecycle.Suspend.restoreToReadyStaging
+    exact (FinaliseFrame.updateTcb _ c _ f1.invExt).any)
+  have f3 := f2.trans (consumeReplyLink _ c t f2.invExt)
+  exact f3.trans (unlinkReplyWaiterOpt _ c _ f3.invExt)
+
+/-- **The unstack**: the head reply's upward link cleared, then the context's
+head. -/
+theorem unstack {s s1 : SystemState} {x : SeLe4n.ObjId}
+    {rid : SeLe4n.ReplyId} {r : Reply} (hInv : s.objects.invExt)
+    (hR : s.getReply? rid = some r)
+    (hS : SeLe4n.Model.storeObject rid.toObjId (.reply { r with next := none }) s = .ok ((), s1)) :
+    FinaliseFrameAny s (s1.updateSchedContext ⟨x.val⟩ fun sc => { sc with scReply := none }) := by
+  have f1 := storeObject hInv ((SystemState.getReply?_eq_some_iff _ _ _).mp hR)
+    (finaliseWritableAny_reply r) hS rfl rfl
+  refine f1.trans ?_
+  cases hG : s1.getSchedContext? ⟨x.val⟩ with
+  | none => rw [SystemState.updateSchedContext_eq_self_of_none hG]; exact .refl f1.invExt
+  | some y =>
+    rw [SystemState.updateSchedContext_eq_of_some hG]
+    have hI := f1.invExt
+    exact ⟨rfl, rfl, RHTable_insert_preserves_invExt _ _ _ hI,
+      finaliseWriteAny.of_insert (o' := .schedContext { y with scReply := none }) hI
+        ((SystemState.getSchedContext?_eq_some_iff _ _ _).mp hG)
+        (Or.inl (finaliseWritable_schedContext y)) rfl rfl
+        (by dsimp only; rw [RHTable_getElem?_eq_get?]
+            exact RobinHood.RHTable.getElem?_insert_self s1.objects _ _ hI)
+        (fun oid hne => RobinHood.RHTable.getElem?_insert_ne s1.objects _ oid _
+          (fun h => hne (eq_of_beq h).symm) hI)⟩
+
+/-- The unstack step, as the closure asks it. -/
+theorem unstackStep (st : SystemState) : FinaliseUnstackStep (FinaliseFrameAny st) := by
+  intro s s1 x sc rid r h _ _ hR _ hS
+  exact h.trans (unstack h.invExt hR hS)
+
+end FinaliseFrameAny
 
 /-- **What a notification waiter's cancel admits**: the waiter is no reserved
 thread, is blocked on the notification, is linked into no endpoint queue, and a
@@ -732,23 +1264,30 @@ theorem notificationWaiterCancellable_blocked {st : SystemState} {n : SeLe4n.Obj
 
 /-- **The finalisation's write frame.** -/
 theorem finaliseFinalObject_frame (target : Nat) (st : SystemState) (hInv : st.objects.invExt) :
-    FinaliseFrame st (finaliseFinalObject target st) :=
-  finaliseFinalObject_closed (FinaliseFrame st)
-    (fun _ _ _ _ _ _ h _ _ _ _ => h.trans (.storeEndpointWaiterCancelled _ _ _ _ _ h.invExt))
+    FinaliseFrameAny st (finaliseFinalObject target st) :=
+  finaliseFinalObject_closed (FinaliseFrameAny st)
+    (fun _ _ _ _ _ _ h _ _ _ _ => h.trans (FinaliseFrame.storeEndpointWaiterCancelled _ _ _ _ _ h.invExt).any)
     (fun _ s _ t tcb h _ _ _ hC =>
-      have h1 := h.trans (FinaliseFrame.notificationCancel s t tcb _ h.invExt
-        (notificationWaiterCancellable_blocked hC))
-      h1.trans (.wakeCancelledWaiter _ _ h1.invExt))
-    (fun _ _ _ _ h _ _ _ _ => h.trans (.storeUnbindNotification _ _ _ h.invExt))
-    (FinaliseFrame.scUnbindStep st)
-    (fun s n t tcb _ h _ hI _ _ _ => h.trans (FinaliseFrame.notificationCancel s t tcb n h.invExt hI))
-    (fun _ t _ h _ _ _ _ _ _ _ => h.trans (FinaliseFrame.updateTcb _ t _ h.invExt))
+      have h1 := FinaliseFrame.notificationCancel s t tcb _ h.invExt
+        (notificationWaiterCancellable_blocked hC)
+      h.trans (h1.trans (.wakeCancelledWaiter _ _ h1.invExt)).any)
+    (fun _ _ _ _ h _ _ _ _ => h.trans (FinaliseFrame.storeUnbindNotification _ _ _ h.invExt).any)
+    (fun s s' t tcb sc x h hT hS hR hH hA hSc hB hOk =>
+      h.trans (FinaliseFrame.releaseStep s s s' t tcb sc x (.refl h.invExt) hT hS hR hH hA hSc hB
+        hOk).any)
+    (fun s n t tcb _ h _ hI _ _ _ =>
+      h.trans (FinaliseFrame.notificationCancel s t tcb n h.invExt hI).any)
+    (fun _ t _ h _ _ _ _ _ _ _ => h.trans (FinaliseFrame.updateTcb _ t _ h.invExt).any)
+    (FinaliseFrameAny.unstackStep st)
+    (fun s x r c t h hX hC _ hG => by
+      obtain ⟨-, -, -, -, -, ⟨ep, rt, hB⟩, -, -, -, -, -, hD⟩ := replyCallerFinalisable_parts hX hC hG
+      have h1 := FinaliseFrameAny.replyCancel s c t h.invExt hB hD
+      exact h.trans (h1.trans (FinaliseFrame.finaliseReplyRevert _ _ h1.invExt).any))
     target st (.refl hInv)
 
-/-- **The finalisation writes only the object store and the scheduler**, on any
-state. -/
-theorem finaliseFinalObject_onlyObjectsSchedulerDiffer (target : Nat) (st : SystemState) :
-    SystemState.onlyObjectsSchedulerDiffer (finaliseFinalObject target st) st := by
+/-- **The finalisation keeps the derivation tree**, on any state. -/
+theorem finaliseFinalObject_cdt (target : Nat) (st : SystemState) :
+    (finaliseFinalObject target st).cdt = st.cdt := by
   have hU : ∀ (s : SystemState) (t : SeLe4n.ThreadId) (f : TCB → TCB),
       SystemState.onlyObjectsSchedulerDiffer (s.updateTcb t f) s := by
     intro s t f; unfold SystemState.updateTcb; split <;> rfl
@@ -785,47 +1324,89 @@ theorem finaliseFinalObject_onlyObjectsSchedulerDiffer (target : Nat) (st : Syst
     have hR : SystemState.onlyObjectsSchedulerDiffer (removeFromNotificationWaitQueue s t) s := by
       rw [e]; rfl
     exact (hU _ _ _).trans hR
-  refine finaliseFinalObject_closed (fun s => SystemState.onlyObjectsSchedulerDiffer s st)
-    (fun _ _ s _ t _ h _ _ _ _ => ?_) (fun _ s _ t tcb h _ _ _ hC => ?_)
-    (fun _ s _ t h _ _ _ _ => ?_) (fun s s' t tcb _ h _ hS' hO _ _ _ _ _ hOk => ?_)
-    (fun s n t tcb _ h _ hI _ _ _ => (hNc s t tcb n hI).trans h)
-    (fun s t _ h _ _ _ _ _ _ _ => (hU s t _).trans h) target st (.refl st)
+  have hC : ∀ {a b : SystemState}, SystemState.onlyObjectsSchedulerDiffer a b → a.cdt = b.cdt := by
+    intro a b e; unfold SystemState.onlyObjectsSchedulerDiffer at e; rw [e]
+  have hSt : ∀ {a b : SystemState} {k : SeLe4n.ObjId} {o : KernelObject},
+      SeLe4n.Model.storeObject k o a = .ok ((), b) → b.cdt = a.cdt :=
+    fun e => storeObject_cdt_eq _ _ _ _ e
+  refine finaliseFinalObject_closed (fun s => s.cdt = st.cdt)
+    (fun _ _ s _ t _ h _ _ _ _ => ?_) (fun _ s _ t tcb h _ _ _ hC' => ?_)
+    (fun _ s _ t h _ _ _ _ => ?_) (fun s s' t tcb _ x h _ _ _ _ _ _ _ hOk => ?_)
+    (fun s n t tcb _ h _ hI _ _ _ => (hC (hNc s t tcb n hI)).trans h)
+    (fun s t _ h _ _ _ _ _ _ _ => (hC (hU s t _)).trans h)
+    (fun s s1 x _ _ _ h _ _ _ _ hSt1 => ?_)
+    (fun s x r c t h hX hCc _ hG => ?_) target st rfl
   · unfold storeEndpointWaiterCancelled wakeCancelledWaiter
-    exact (enqueueRunnableOnCore_onlyObjectsSchedulerDiffer _ _ _).trans
-      ((hU _ _ _).trans ((hP _ _ _ _ _).trans h))
+    exact (hC ((enqueueRunnableOnCore_onlyObjectsSchedulerDiffer _ _ _).trans
+      ((hU _ _ _).trans (hP _ _ _ _ _)))).trans h
   · have hEq : Lifecycle.Suspend.cancelIpcBlocking s t tcb =
         Lifecycle.Suspend.restoreToReadyCancelled (removeFromNotificationWaitQueue s t) t := by
-      unfold Lifecycle.Suspend.cancelIpcBlocking; rw [notificationWaiterCancellable_blocked hC]
+      unfold Lifecycle.Suspend.cancelIpcBlocking; rw [notificationWaiterCancellable_blocked hC']
     unfold wakeCancelledWaiter
     rw [hEq]
     obtain ⟨objs, e⟩ := removeFromNotificationWaitQueue_eq_objects s t
     have hR : SystemState.onlyObjectsSchedulerDiffer (removeFromNotificationWaitQueue s t) s := by
       rw [e]; rfl
-    exact (enqueueRunnableOnCore_onlyObjectsSchedulerDiffer _ _ _).trans
-      ((hU _ _ _).trans (hR.trans h))
+    exact (hC ((enqueueRunnableOnCore_onlyObjectsSchedulerDiffer _ _ _).trans
+      ((hU _ _ _).trans hR))).trans h
   · unfold SeLe4n.Kernel.storeUnbindNotification
-    exact (hM _ _ _).trans ((hU _ _ _).trans h)
-  · rw [cancelDonationArmOnCore_of_codes s t hS' hO] at hOk
-    unfold cancelBoundDonationOnCore at hOk
+    exact (hC ((hM _ _ _).trans (hU _ _ _))).trans h
+  · unfold cancelBoundDonationOnCore at hOk
     split at hOk
     · rename_i scId _
       injection hOk with hOk; subst hOk
-      have h1 := (hS s scId
-        (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })).trans h
+      have h1 := hS s scId
+        (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })
       generalize s.updateSchedContext scId _ = s1 at h1 ⊢
       let c := determineTargetCore s t
       let sch := s1.scheduler.setReplenishQueueOnCore c
         (ReplenishQueue.remove (s1.scheduler.replenishQueueOnCore c) scId)
-      have h2 : SystemState.onlyObjectsSchedulerDiffer { s1 with scheduler := sch } st :=
+      have h2 : SystemState.onlyObjectsSchedulerDiffer { s1 with scheduler := sch } s :=
         SystemState.onlyObjectsSchedulerDiffer.trans
           (show SystemState.onlyObjectsSchedulerDiffer { s1 with scheduler := sch } s1 from rfl) h1
-      exact (hK _ _ _).trans ((hU _ _ _).trans h2)
+      exact (hC ((hK _ _ _).trans ((hU _ _ _).trans h2))).trans h
     · cases hOk
-
-theorem finaliseFinalObject_cdt (target : Nat) (st : SystemState) :
-    (finaliseFinalObject target st).cdt = st.cdt := by
-  have e := congrArg SystemState.cdt (finaliseFinalObject_onlyObjectsSchedulerDiffer target st)
-  exact e
+  · exact (hC (hS s1 _ _)).trans ((hSt hSt1).trans h)
+  · obtain ⟨-, -, -, -, -, ⟨ep, rt, hB⟩, -, -, -, -, -, hD⟩ := replyCallerFinalisable_parts hX hCc hG
+    have hRev : ∀ (a : SystemState) (sv : Option SeLe4n.ThreadId),
+        (finaliseReplyRevert a sv).cdt = a.cdt := by
+      intro a sv; cases sv with
+      | none => rfl
+      | some v => exact PriorityInheritance.propagatePipChainCrossCore_cdt _ a v _
+    rw [hRev, cancelIpcBlocking_replyArm_of_noDonation s c t hB hD]
+    have hCons : ∀ (a : SystemState), (Lifecycle.Suspend.consumeReplyLink a c t).cdt = a.cdt := by
+      intro a
+      unfold Lifecycle.Suspend.consumeReplyLink
+      split
+      · rfl
+      · rename_i rid _
+        have hE := SystemState.consumeCallerReply_eq_link a c rid
+        unfold SystemState.consumeCallerReply at hE
+        cases hR : SystemState.consumeReply rid a with
+        | error _ => rw [hR] at hE; cases hE
+        | ok p =>
+          obtain ⟨⟨⟩, a1⟩ := p
+          rw [hR] at hE
+          have h1 : a1.cdt = a.cdt := by
+            unfold SystemState.consumeReply at hR
+            split at hR
+            · exact hSt hR
+            · cases hR; rfl
+          simp only at hE
+          split at hE
+          · cases hE; exact h1
+          · exact (hSt hE).trans h1
+    have e := SystemState.unlinkReplyWaiterOpt_eq_objects
+      (Lifecycle.Suspend.consumeReplyLink
+        (Lifecycle.Suspend.restoreToReadyCancelled (spliceThreadReplyFrameOut s t) c) c t)
+      c t.blockingServer?
+    refine (show _ = _ by rw [e]).trans ((hCons _).trans ?_)
+    unfold Lifecycle.Suspend.restoreToReadyCancelled Lifecycle.Suspend.restoreToReadyStaging
+    rw [hC (hU _ _ _)]
+    unfold spliceThreadReplyFrameOut
+    split
+    · exact h
+    · exact (spliceReplyFrameOutOrSelf_cdt_eq _ _).trans h
 
 /-- **The finalisation keeps the teardown's well-formedness and shrinks no
 root.** -/
