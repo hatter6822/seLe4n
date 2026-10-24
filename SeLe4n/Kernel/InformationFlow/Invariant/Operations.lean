@@ -1796,6 +1796,108 @@ theorem endpointQueuePopHead_preserves_objectIndexSetComplete_and_invExt
                         hInv2 hS2 hC2 hFinal,
                       storeTcbQueueLinks_preserves_objectIndexSet_invExt _ _ headTid _ _ _ hS2 hFinal⟩
 
+/-- The enqueue is one endpoint store and at most two link stores, each of which
+keeps the object index complete and well-formed. -/
+theorem endpointQueueEnqueue_preserves_objectIndexSetComplete_and_invExt
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
+    (st st' : SystemState)
+    (hObjInv : st.objects.invExt)
+    (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hComplete : objectIndexSetComplete st)
+    (hStep : endpointQueueEnqueue endpointId isReceiveQ tid st = .ok st') :
+    objectIndexSetComplete st' ∧ st'.objectIndexSet.table.invExt := by
+  unfold endpointQueueEnqueue SystemState.getObject? at hStep
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ =>
+        simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep
+      cases hLookup : lookupTcb st tid with
+      | none => simp [hLookup] at hStep
+      | some tcb =>
+        simp only [hLookup] at hStep
+        by_cases hReady : tcb.ipcState ≠ .ready
+        · simp [hReady] at hStep
+        · by_cases hLinks : (tcb.queuePPrev.isSome || tcb.queuePrev.isSome || tcb.queueNext.isSome) = true
+          · simp [hReady, hLinks] at hStep
+          · rw [if_neg hReady, if_neg hLinks] at hStep
+            revert hStep
+            cases hTail : (if isReceiveQ then ep.receiveQ else ep.sendQ).tail with
+            | none =>
+              simp only []
+              cases hStore : storeObject endpointId _ st with
+              | error e => simp
+              | ok pair =>
+                obtain ⟨punit, stp⟩ := pair
+                cases punit
+                simp only []
+                intro hFinal
+                have hC1 := storeObject_preserves_objectIndexSetComplete st stp endpointId _
+                  hObjInv hObjSetInv hComplete hStore
+                have hS1 := storeObject_preserves_objectIndexSet_invExt st stp endpointId _
+                  hObjSetInv hStore
+                have hInv1 := storeObject_preserves_objects_invExt' st endpointId _ ((), stp)
+                  hObjInv hStore
+                exact ⟨storeTcbQueueLinks_preserves_objectIndexSetComplete _ _ tid _ _ _
+                    hInv1 hS1 hC1 hFinal,
+                  storeTcbQueueLinks_preserves_objectIndexSet_invExt _ _ tid _ _ _ hS1 hFinal⟩
+            | some tailTid =>
+              simp only []
+              cases hLookupTail : lookupTcb st tailTid with
+              | none => simp
+              | some tailTcb =>
+                simp only []
+                cases hStore : storeObject endpointId _ st with
+                | error e => simp
+                | ok pair =>
+                  obtain ⟨punit, stp⟩ := pair
+                  cases punit
+                  simp only []
+                  have hC1 := storeObject_preserves_objectIndexSetComplete st stp endpointId _
+                    hObjInv hObjSetInv hComplete hStore
+                  have hS1 := storeObject_preserves_objectIndexSet_invExt st stp endpointId _
+                    hObjSetInv hStore
+                  have hInv1 := storeObject_preserves_objects_invExt' st endpointId _ ((), stp)
+                    hObjInv hStore
+                  cases hLink : storeTcbQueueLinks stp tailTid tailTcb.queuePrev tailTcb.queuePPrev
+                      (some tid) with
+                  | error e => simp
+                  | ok st2 =>
+                    simp only []
+                    intro hFinal
+                    have hC2 := storeTcbQueueLinks_preserves_objectIndexSetComplete _ _ _ _ _ _
+                      hInv1 hS1 hC1 hLink
+                    have hS2 := storeTcbQueueLinks_preserves_objectIndexSet_invExt _ _ _ _ _ _
+                      hS1 hLink
+                    have hInv2 := storeTcbQueueLinks_preserves_objects_invExt _ _ _ _ _ _ hInv1 hLink
+                    exact ⟨storeTcbQueueLinks_preserves_objectIndexSetComplete _ _ tid _ _ _
+                        hInv2 hS2 hC2 hFinal,
+                      storeTcbQueueLinks_preserves_objectIndexSet_invExt _ _ tid _ _ _ hS2 hFinal⟩
+
+/-- The pre-receive donation cleanup is nothing or one resolved donation return,
+which keeps the object index complete and well-formed. -/
+theorem cleanupPreReceiveDonation_preserves_objectIndexSetComplete_and_invExt
+    (st : SystemState) (receiver : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hComplete : objectIndexSetComplete st) :
+    objectIndexSetComplete (cleanupPreReceiveDonation st receiver) ∧
+      (cleanupPreReceiveDonation st receiver).objectIndexSet.table.invExt := by
+  unfold cleanupPreReceiveDonation
+  split
+  · exact ⟨hComplete, hObjSetInv⟩
+  · split
+    · split
+      · exact ⟨hComplete, hObjSetInv⟩
+      · rename_i st' hRet
+        obtain ⟨_, _, hR⟩ := returnDonatedSchedContextResolved_ok_decompose hRet
+        exact ⟨returnDonatedSchedContext_preserves_objectIndexSetComplete _ _ _ _ _ _
+            hObjInv hObjSetInv hComplete hR,
+          returnDonatedSchedContext_preserves_objectIndexSet_invExt _ _ _ _ _ _ hObjSetInv hR⟩
+    · exact ⟨hComplete, hObjSetInv⟩
+
 /-- U4-B: endpointReceiveDual at a non-observable endpoint preserves projection.
 
     Two paths:
@@ -2029,16 +2131,27 @@ theorem endpointReceiveDual_preserves_projection
                   | true => rfl
                 rw [if_pos hValid] at hStep
                 cases hStash : storeObject receiver.toObjId
-                    (.tcb { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId }) st2 with
+                    (.tcb { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId })
+                    (st2.recordReplyStasher (SeLe4n.ReplyId.optCode replyId) receiver) with
                 | error e => simp [hStash] at hStep
                 | ok stashPair =>
                   obtain ⟨sunit, stStashed⟩ := stashPair
                   cases sunit
                   simp only [hStash, Except.ok.injEq, Prod.mk.injEq] at hStep
                   obtain ⟨_, hStEq⟩ := hStep; subst hStEq
+                  -- The record is projection-stable; it reads the index completeness
+                  -- the cleanup, the enqueue and the block carry forward.
+                  have hCS0 := cleanupPreReceiveDonation_preserves_objectIndexSetComplete_and_invExt
+                    st receiver hObjInv hObjSetInv hIdxComplete
+                  have hCS1 := endpointQueueEnqueue_preserves_objectIndexSetComplete_and_invExt
+                    endpointId true receiver _ st1 hObjInvClean hCS0.2 hCS0.1 hEnq
+                  have hC2 := storeTcbIpcStateAndMessage_preserves_objectIndexSetComplete st1 st2
+                    receiver _ _ hObjInv1 hCS1.2 hCS1.1 hIpc
                   rw [removeRunnable_preserves_projection ctx observer stStashed receiver hReceiverHigh,
-                      storeObject_preserves_projection ctx observer st2 stStashed receiver.toObjId _
-                        hReceiverObjHigh hObjInv2 hStash,
+                      storeObject_preserves_projection ctx observer _ stStashed receiver.toObjId _
+                        hReceiverObjHigh
+                        (SystemState.recordReplyStasher_objects_invExt _ _ _ hObjInv2) hStash,
+                      recordReplyStasher_preserves_projection ctx observer st2 _ receiver hC2 hObjInv2,
                       hProjTail]
 
 /-- WS-H9: endpointReply at non-observable target preserves projection.

@@ -1998,8 +1998,23 @@ theorem ipcInvariantFull_of_schedBindingRewrite
       · intro hx; exact absurd (Option.some.inj hx) (fun h => KernelObject.noConfusion h)
       · intro hx; exact absurd (Option.some.inj hx) (fun h => KernelObject.noConfusion h)
     · rw [hFrame oid hT hS]
+  have hRA : ∀ (rid : SeLe4n.ReplyId) (r : Reply),
+      (st').objects[rid.toObjId]? = some (.reply r) ↔ st.objects[rid.toObjId]? = some (.reply r) := by
+    intro rid r
+    by_cases hT : rid.toObjId = tid.toObjId
+    · rw [hT, hAtT, hPreT]
+      constructor
+      · intro hx; cases hx
+      · intro hx; cases hx
+    · by_cases hS : rid.toObjId = scId.toObjId
+      · rw [hS, hAtS, hPreS]
+        constructor
+        · intro hx; cases hx
+        · intro hx; cases hx
+      · rw [hFrame _ hT hS]
   have hAgree : donationReadAgreement st st' := by
-    refine ⟨?_, ?_, ?_, replyCallerAgree_of_objectAgree (fun rid r => ?_), ?_, ?_⟩
+    refine ⟨?_, ?_, ?_, replyCallerAgree_of_objectAgree hRA,
+      replyStasherAgree_of_objectAgree hRA, ?_, ?_⟩
     · intro oid tx hx
       obtain ⟨ty, hy, h1, h2, h3, h4, h5, h6, h7, h8, _⟩ := hBwd oid tx hx
       exact ⟨ty, hy, h1, pendingMessageReadAgrees_of_eq h2, h3, h4, h5, h6, h7, h8⟩
@@ -2027,17 +2042,6 @@ theorem ipcInvariantFull_of_schedBindingRewrite
           · intro hx; exact absurd (Option.some.inj hx).symm (hkS sc')
           · intro hx; exact absurd (Option.some.inj hx).symm (hkS sc)
         · rw [hFrame oid hT hS]
-    · by_cases hT : rid.toObjId = tid.toObjId
-      · rw [hT, hAtT, hPreT]
-        constructor
-        · intro hx; cases hx
-        · intro hx; cases hx
-      · by_cases hS : rid.toObjId = scId.toObjId
-        · rw [hS, hAtS, hPreS]
-          constructor
-          · intro hx; cases hx
-          · intro hx; cases hx
-        · rw [hFrame _ hT hS]
     · intro oid x hx
       by_cases hS : oid = scId.toObjId
       · exact ⟨sc', by rw [hS]; exact hAtS⟩
@@ -2683,9 +2687,19 @@ private theorem insertObjects_schedContextClear_preserves_ipcInvariantFull
       · intro hx; exact absurd (Option.some.inj hx) (fun hk => KernelObject.noConfusion hk)
       · intro hx; exact absurd (Option.some.inj hx) (fun hk => KernelObject.noConfusion hk)
     · rw [hNe oid h]
+  have hRA : ∀ (rid : SeLe4n.ReplyId) (r : Reply),
+      ({ st with objects := st.objects.insert scObj (.schedContext sc') }).objects[rid.toObjId]? = some (.reply r) ↔ st.objects[rid.toObjId]? = some (.reply r) := by
+    intro rid r
+    by_cases h : rid.toObjId = scObj
+    · rw [h, hAt, hPre]
+      constructor
+      · intro hx; cases hx
+      · intro hx; cases hx
+    · rw [hNe _ h]
   have hAgree : donationReadAgreement st
       { st with objects := st.objects.insert scObj (.schedContext sc') } := by
-    refine ⟨?_, ?_, ?_, replyCallerAgree_of_objectAgree (fun rid r => ?_), ?_, ?_⟩
+    refine ⟨?_, ?_, ?_, replyCallerAgree_of_objectAgree hRA,
+      replyStasherAgree_of_objectAgree hRA, ?_, ?_⟩
     · intro oid tx hx
       exact ⟨tx, (hTcbEq oid tx).mp hx, rfl, pendingMessageReadAgrees_refl _, rfl, rfl, rfl, rfl, rfl, rfl⟩
     · intro oid ty hy
@@ -2697,12 +2711,6 @@ private theorem insertObjects_schedContextClear_preserves_ipcInvariantFull
         · intro hx; exact absurd (Option.some.inj hx).symm (hkS sc')
         · intro hx; exact absurd (Option.some.inj hx).symm (hkS sc)
       · rw [hNe oid h]
-    · by_cases h : rid.toObjId = scObj
-      · rw [h, hAt, hPre]
-        constructor
-        · intro hx; cases hx
-        · intro hx; cases hx
-      · rw [hNe _ h]
     · intro oid x hx
       by_cases h : oid = scObj
       · exact ⟨sc', by rw [h]; exact hAt⟩

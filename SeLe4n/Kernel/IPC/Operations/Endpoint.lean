@@ -786,6 +786,80 @@ theorem updateTcb_storeLeaves {st : SystemState} {tid : SeLe4n.ThreadId}
   rw [SystemState.updateTcb_eq_of_some hT]
   exact storeLeavesIndexAndTypes_insert_inPlace hF (fun r h => by cases h) h
 
+/-- An `updateTcb` whose key is found in place leaves every in-place question,
+whether or not a thread is there to update. -/
+theorem updateTcb_findsInPlace_of_key {st : SystemState} {tid : SeLe4n.ThreadId}
+    (f : TCB → TCB) (hF : st.objects.findsInPlace tid.toObjId = true) (k : SeLe4n.ObjId) :
+    (st.updateTcb tid f).objects.findsInPlace k = st.objects.findsInPlace k := by
+  cases hT : st.getTcb? tid with
+  | none => rw [SystemState.updateTcb_eq_self_of_none hT]
+  | some _ => exact updateTcb_findsInPlace f hT hF k
+
+/-- **A Reply's slot, in place**: the Reply at `rk` is `r`, found where it
+stands, and a store to it changes only `objects` — what the blocking receive's
+stasher record needs to be written in its slot. -/
+def replySlotInPlace (st : SystemState) (rk : SeLe4n.ObjId) (r : Reply) : Prop :=
+  st.objects.findsInPlace rk = true ∧ storeLeavesIndexAndTypes st rk .reply = true ∧
+    st.objects[rk]? = some (.reply r)
+
+/-- An `updateTcb` whose key is found in place leaves a Reply's slot: it writes
+a thread, and the Reply's key holds none. -/
+theorem updateTcb_replySlotInPlace {st : SystemState} {tid : SeLe4n.ThreadId}
+    (f : TCB → TCB) (hF : st.objects.findsInPlace tid.toObjId = true)
+    {rk : SeLe4n.ObjId} {r : Reply} (h : replySlotInPlace st rk r) :
+    replySlotInPlace (st.updateTcb tid f) rk r := by
+  obtain ⟨h1, h2, h3⟩ := h
+  cases hT : st.getTcb? tid with
+  | none => rw [SystemState.updateTcb_eq_self_of_none hT]; exact ⟨h1, h2, h3⟩
+  | some t =>
+    have hNe : tid.toObjId ≠ rk := by
+      intro he
+      have hO := (SystemState.getTcb?_eq_some_iff _ _ _).mp hT
+      rw [he, h3] at hO; cases hO
+    exact ⟨(updateTcb_findsInPlace f hT hF rk).trans h1, updateTcb_storeLeaves f hT hF h2,
+      (updateTcb_get?_ne_of_findsInPlace f hT hF hNe).trans h3⟩
+
+/-- On a Reply's slot in place, recording its stasher is the one in-place
+insert of the Reply with that word set. -/
+theorem recordReplyStasher_eq_insert_of_slot {S : SystemState} {rid : SeLe4n.ReplyId}
+    {r : Reply} (h : replySlotInPlace S rid.toObjId r) (recv : SeLe4n.ThreadId) :
+    S.recordReplyStasher (rid.val + 1) recv =
+      { S with objects :=
+          S.objects.insert rid.toObjId (.reply { r with stasherCode := recv.val + 1 }) } := by
+  have h1 := SystemState.recordReplyStasher_of_reply S rid recv h.2.2
+  rw [storeObject_eq_of_leaves (by simpa only [KernelObject.objectType] using h.2.1)] at h1
+  injection h1 with h2
+  injection h2 with _ h3
+  exact h3.symm
+
+/-- **Recording a stasher in place leaves every thread's slot**: what a thread
+reads, every in-place answer and every store-locality answer, when the Reply
+it names (if any) stands in place. -/
+theorem recordReplyStasher_tcbSlotFrame {S : SystemState} {code : Nat}
+    {recv tid : SeLe4n.ThreadId} {t : TCB}
+    (hSlot : ∀ k, code = k + 1 → ∃ r, replySlotInPlace S (⟨k⟩ : SeLe4n.ReplyId).toObjId r)
+    (hT : S.getTcb? tid = some t) :
+    (S.recordReplyStasher code recv).getTcb? tid = some t ∧
+    (∀ k', (S.recordReplyStasher code recv).objects.findsInPlace k' = S.objects.findsInPlace k') ∧
+    (∀ {id : SeLe4n.ObjId} {ty : KernelObjectType}, storeLeavesIndexAndTypes S id ty = true →
+      storeLeavesIndexAndTypes (S.recordReplyStasher code recv) id ty = true) := by
+  rcases code with _ | k
+  · exact ⟨hT, fun _ => rfl, fun h => h⟩
+  · obtain ⟨r, hS⟩ := hSlot k rfl
+    have hE : S.recordReplyStasher (k + 1) recv = _ :=
+      recordReplyStasher_eq_insert_of_slot (rid := ⟨k⟩) hS recv
+    rw [hE]
+    have hNe : (⟨k⟩ : SeLe4n.ReplyId).toObjId ≠ tid.toObjId := by
+      intro he
+      have hO := (SystemState.getTcb?_eq_some_iff _ _ _).mp hT
+      rw [← he, hS.2.2] at hO; cases hO
+    refine ⟨?_, fun k' => ?_, fun h => ?_⟩
+    · rw [SystemState.getTcb?_eq_some_iff]
+      exact (SeLe4n.Kernel.RobinHood.RHTable.get?_insert_ne_of_findsInPlace _ _ hS.1 hNe).trans
+        ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT)
+    · exact SeLe4n.Kernel.RobinHood.RHTable.findsInPlace_insert_of_findsInPlace k' _ hS.1
+    · exact storeLeavesIndexAndTypes_insert_inPlace hS.1 (fun _ h => by cases h) h
+
 def storeTcbIpcState (st : SystemState) (tid : SeLe4n.ThreadId) (ipcState : ThreadIpcState) : Except KernelError SystemState :=
   modifyTcb st tid (fun tcb => (tcb.setIpcState ipcState))
 
@@ -3980,6 +4054,11 @@ theorem replyStackRewrite.trans {a b c : Reply}
 reply-freshness and stash invariants read. -/
 theorem replyStackRewrite.caller_eq {a b : Reply} (h : replyStackRewrite a b) :
     a.caller = b.caller := by obtain ⟨_, _, rfl⟩ := h; rfl
+
+/-- A rewritten Reply keeps its stasher record, which the stash clause of
+`pendingReceiveReplyWellFormed` reads. -/
+theorem replyStackRewrite.stasherCode_eq {a b : Reply} (h : replyStackRewrite a b) :
+    a.stasherCode = b.stasherCode := by obtain ⟨_, _, rfl⟩ := h; rfl
 
 /-- WS-OD OD3.2: a rewritten Reply keeps its identity. -/
 theorem replyStackRewrite.replyId_eq {a b : Reply} (h : replyStackRewrite a b) :

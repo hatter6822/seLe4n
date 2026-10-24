@@ -3848,8 +3848,10 @@ theorem timeoutStaging_preserves_ipcInvariantFull
           (by rw [← timeoutStagedTcb_pendingReceiveReply tcb]; exact hRid)
         exact this)
       (fun rid hRid t' tcb' hNe hT' hC => by
-        exact hNe (h.pendingReceiveReplyWellFormed.2 t' tid tcb' tcb rid hT' hPre hC
+        exact hNe (h.pendingReceiveReplyWellFormed.2.1 t' tid tcb' tcb rid hT' hPre hC
           (by rw [← timeoutStagedTcb_pendingReceiveReply tcb]; exact hRid)))
+      (fun rid hRid => h.pendingReceiveReplyWellFormed.2.2 tid tcb rid hPre
+        (by rw [← timeoutStagedTcb_pendingReceiveReply tcb]; exact hRid))
       hStore
   · intro epId ep tl tcbT hEp hT
     obtain ⟨t0, h0, hI, _, _, _, _⟩ := hBwd tl.toObjId tcbT hT

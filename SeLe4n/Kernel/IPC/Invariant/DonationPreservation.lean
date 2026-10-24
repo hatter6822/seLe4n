@@ -627,6 +627,12 @@ structure donationReadAgreement (st st' : SystemState) : Prop where
   replyCallerAgree : ∀ (rid : SeLe4n.ReplyId) (caller : Option SeLe4n.ThreadId),
     (∃ r : Reply, st'.objects[rid.toObjId]? = some (.reply r) ∧ r.caller = caller) ↔
     (∃ r : Reply, st.objects[rid.toObjId]? = some (.reply r) ∧ r.caller = caller)
+  /-- …and with the same stasher record, which the stash clause of
+  `pendingReceiveReplyWellFormed` reads; a stack rewrite keeps it
+  (`replyStackRewrite.stasherCode_eq`). -/
+  replyStasherAgree : ∀ (rid : SeLe4n.ReplyId) (k : Nat),
+    (∃ r : Reply, st'.objects[rid.toObjId]? = some (.reply r) ∧ r.stasherCode = k) ↔
+    (∃ r : Reply, st.objects[rid.toObjId]? = some (.reply r) ∧ r.stasherCode = k)
   /-- a SchedContext that existed still exists -/
   scExists : ∀ (oid : SeLe4n.ObjId) (sc : SchedContext),
     st.objects[oid]? = some (.schedContext sc) →
@@ -642,6 +648,7 @@ theorem refl (st : SystemState) : donationReadAgreement st st :=
   ⟨fun _ tx h => ⟨tx, h, rfl, pendingMessageReadAgrees_refl _, rfl, rfl, rfl, rfl, rfl, rfl⟩,
    fun _ ty h => ⟨ty, h, rfl, pendingMessageReadAgrees_refl _, rfl, rfl, rfl, rfl, rfl, rfl⟩,
    fun _ _ _ _ _ => Iff.rfl,
+   fun _ _ => Iff.rfl,
    fun _ _ => Iff.rfl,
    fun _ sc h => ⟨sc, h⟩,
    badgedSlotsBack.refl st⟩
@@ -666,6 +673,8 @@ theorem trans {st st' st'' : SystemState}
     (h2.otherKind oid k hk hsc hr).trans (h1.otherKind oid k hk hsc hr)
   replyCallerAgree := fun rid c =>
     (h2.replyCallerAgree rid c).trans (h1.replyCallerAgree rid c)
+  replyStasherAgree := fun rid k =>
+    (h2.replyStasherAgree rid k).trans (h1.replyStasherAgree rid k)
   scExists := by
     intro oid sc h
     obtain ⟨sc', h'⟩ := h1.scExists oid sc h
@@ -686,7 +695,7 @@ theorem donationReadAgreement_of_schedContextStore
   have hAt := storeObject_objects_eq st st' scKey _ hObjInv hStore
   have hNe : ∀ (oid : SeLe4n.ObjId), oid ≠ scKey → st'.objects[oid]? = st.objects[oid]? :=
     fun oid h => storeObject_objects_ne st st' scKey oid _ h hObjInv hStore
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro oid tx hx
     by_cases hEq : oid = scKey
     · rw [hEq, hAt] at hx; cases hx
@@ -706,6 +715,13 @@ theorem donationReadAgreement_of_schedContextStore
       · intro h; exact absurd (Option.some.inj h).symm (hsc scOld)
     · rw [hNe oid hEq]
   · intro rid c
+    by_cases hEq : rid.toObjId = scKey
+    · rw [hEq, hAt, hPre]
+      constructor
+      · rintro ⟨r, hr, _⟩; cases hr
+      · rintro ⟨r, hr, _⟩; cases hr
+    · rw [hNe _ hEq]
+  · intro rid k
     by_cases hEq : rid.toObjId = scKey
     · rw [hEq, hAt, hPre]
       constructor
@@ -743,7 +759,7 @@ theorem donationReadAgreement_of_tcbFieldUpdateAgree
       newTcb.spaceSlotCap sl = some c → c.badge = some b → oldTcb.spaceSlotCap sl = some c :=
       by intro _ _ _ h _; exact h) :
     donationReadAgreement st st' := by
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro oid tx hx
     by_cases hEq : oid = key
     · rw [hEq, hAt] at hx
@@ -773,6 +789,13 @@ theorem donationReadAgreement_of_tcbFieldUpdateAgree
       · intro h; exact absurd (Option.some.inj h).symm (hk oldTcb)
     · rw [hFrame oid hEq]
   · intro rid c
+    by_cases hEq : rid.toObjId = key
+    · rw [hEq, hAt, hPre]
+      constructor
+      · rintro ⟨r, hr, _⟩; cases hr
+      · rintro ⟨r, hr, _⟩; cases hr
+    · rw [hFrame _ hEq]
+  · intro rid k
     by_cases hEq : rid.toObjId = key
     · rw [hEq, hAt, hPre]
       constructor
@@ -837,6 +860,16 @@ theorem replyCallerAgree_of_objectAgree {st st' : SystemState}
   fun rid _ => ⟨fun ⟨r, hr, hc⟩ => ⟨r, (h rid r).mp hr, hc⟩,
                 fun ⟨r, hr, hc⟩ => ⟨r, (h rid r).mpr hr, hc⟩⟩
 
+/-- …and the stasher-level one. -/
+theorem replyStasherAgree_of_objectAgree {st st' : SystemState}
+    (h : ∀ (rid : SeLe4n.ReplyId) (r : Reply),
+      st'.objects[rid.toObjId]? = some (.reply r) ↔ st.objects[rid.toObjId]? = some (.reply r)) :
+    ∀ (rid : SeLe4n.ReplyId) (k : Nat),
+      (∃ r : Reply, st'.objects[rid.toObjId]? = some (.reply r) ∧ r.stasherCode = k) ↔
+      (∃ r : Reply, st.objects[rid.toObjId]? = some (.reply r) ∧ r.stasherCode = k) :=
+  fun rid _ => ⟨fun ⟨r, hr, hc⟩ => ⟨r, (h rid r).mp hr, hc⟩,
+                fun ⟨r, hr, hc⟩ => ⟨r, (h rid r).mpr hr, hc⟩⟩
+
 /-- WS-OD OD3.2: the donation return's reply-stack head clear establishes the read
 agreement.  It writes one Reply, resetting its stack links and leaving its
 `caller`, and touches no TCB and no SchedContext. -/
@@ -845,7 +878,7 @@ theorem donationReadAgreement_of_headClear
     (hObjInv : st.objects.invExt)
     (h : storeDonationHeadClear head? st = .ok st') :
     donationReadAgreement st st' := by
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · exact fun oid tx hx =>
       ⟨tx, storeDonationHeadClear_tcb_backward hObjInv h oid tx hx,
         rfl, pendingMessageReadAgrees_refl _, rfl, rfl, rfl, rfl, rfl, rfl⟩
@@ -861,6 +894,12 @@ theorem donationReadAgreement_of_headClear
                fun hc => absurd (Option.some.inj hc).symm (hr r)⟩
       · rw [storeObject_objects_ne st st' rid.toObjId oid _ hEq hObjInv hS]
   · intro rid' c
+    rcases storeDonationHeadClear_cases h with rfl | ⟨rid, r, _, hRead, hS⟩
+    · exact Iff.rfl
+    · by_cases hEq : rid'.toObjId = rid.toObjId
+      · rw [hEq, storeObject_objects_eq' st rid.toObjId _ _ hObjInv hS, hRead]; simp
+      · rw [storeObject_objects_ne st st' rid.toObjId rid'.toObjId _ hEq hObjInv hS]
+  · intro rid' k
     rcases storeDonationHeadClear_cases h with rfl | ⟨rid, r, _, hRead, hS⟩
     · exact Iff.rfl
     · by_cases hEq : rid'.toObjId = rid.toObjId
@@ -886,7 +925,7 @@ theorem donationReadAgreement_of_reHead
     (hObjInv : st.objects.invExt)
     (h : storeReplyReHead scId head? st = .ok st') :
     donationReadAgreement st st' := by
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · exact fun oid tx hx =>
       ⟨tx, storeReplyReHead_tcb_backward hObjInv h oid tx hx,
         rfl, pendingMessageReadAgrees_refl _, rfl, rfl, rfl, rfl, rfl, rfl⟩
@@ -902,6 +941,12 @@ theorem donationReadAgreement_of_reHead
                fun hc => absurd (Option.some.inj hc).symm (hr r)⟩
       · rw [storeObject_objects_ne st st' rid.toObjId oid _ hEq hObjInv hS]
   · intro rid' c
+    rcases storeReplyReHead_cases h with rfl | ⟨rid, r, _, hRead, hS⟩
+    · exact Iff.rfl
+    · by_cases hEq : rid'.toObjId = rid.toObjId
+      · rw [hEq, storeObject_objects_eq' st rid.toObjId _ _ hObjInv hS, hRead]; simp
+      · rw [storeObject_objects_ne st st' rid.toObjId rid'.toObjId _ hEq hObjInv hS]
+  · intro rid' k
     rcases storeReplyReHead_cases h with rfl | ⟨rid, r, _, hRead, hS⟩
     · exact Iff.rfl
     · by_cases hEq : rid'.toObjId = rid.toObjId
@@ -943,10 +988,10 @@ theorem donationReadAgreement_of_replyStackStore
     (hObjInv : st.objects.invExt)
     (hPre : st.getReply? rid = some r)
     (hS : storeObject rid.toObjId (.reply r') st = .ok ((), st'))
-    (hCaller : r'.caller = r.caller) :
+    (hCaller : r'.caller = r.caller) (hStasher : r'.stasherCode = r.stasherCode) :
     donationReadAgreement st st' := by
   have hRaw := (SystemState.getReply?_eq_some_iff st rid r).mp hPre
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · exact fun oid tx hx =>
       ⟨tx, (storeObject_replyAt_objects_tcb_iff st st' rid r _ hPre hObjInv hS oid tx).mp hx,
         rfl, pendingMessageReadAgrees_refl _, rfl, rfl, rfl, rfl, rfl, rfl⟩
@@ -963,6 +1008,11 @@ theorem donationReadAgreement_of_replyStackStore
     by_cases hEq : rid'.toObjId = rid.toObjId
     · rw [hEq, storeObject_objects_eq st st' rid.toObjId _ hObjInv hS, hRaw]
       simp [hCaller]
+    · rw [storeObject_objects_ne st st' rid.toObjId rid'.toObjId _ hEq hObjInv hS]
+  · intro rid' k
+    by_cases hEq : rid'.toObjId = rid.toObjId
+    · rw [hEq, storeObject_objects_eq st st' rid.toObjId _ hObjInv hS, hRaw]
+      simp [hStasher]
     · rw [storeObject_objects_ne st st' rid.toObjId rid'.toObjId _ hEq hObjInv hS]
   · intro oid sc hSc
     refine ⟨sc, ?_⟩
@@ -984,11 +1034,11 @@ theorem donationReadAgreement_of_framePush
     donationReadAgreement st st' := by
   obtain ⟨_, s1, hS1, hRest⟩ := storeDonationFramePush_cases h
   have a1 : donationReadAgreement st s1 :=
-    donationReadAgreement_of_replyStackStore hObjInv hPre hS1 rfl
+    donationReadAgreement_of_replyStackStore hObjInv hPre hS1 rfl rfl
   rcases hRest with ⟨_, rfl⟩ | ⟨old, oldR, _, hOldR, hS2⟩
   · exact a1
   · exact a1.trans (donationReadAgreement_of_replyStackStore
-      (storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1) hOldR hS2 rfl)
+      (storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1) hOldR hS2 rfl rfl)
 
 /-- WS-RR RR2.5: a state that shares an object store with one that agrees, agrees.
 `donationReadAgreement` reads nothing but `objects`, and the primitives' walk
@@ -1002,6 +1052,7 @@ theorem donationReadAgreement_of_objects_eq {st s s' : SystemState}
     exact ⟨tx, by rw [hObjs]; exact hx, rest⟩
   otherKind := fun oid k hk hsc hr => by rw [hObjs]; exact h.otherKind oid k hk hsc hr
   replyCallerAgree := fun rid c => by rw [hObjs]; exact h.replyCallerAgree rid c
+  replyStasherAgree := fun rid k => by rw [hObjs]; exact h.replyStasherAgree rid k
   scExists := fun oid sc hSc => by
     obtain ⟨sc', hSc'⟩ := h.scExists oid sc hSc
     exact ⟨sc', by rw [hObjs]; exact hSc'⟩
@@ -1107,7 +1158,7 @@ theorem ipcInvariantFull_of_donationReadAgreement_of_except
     (hPassiveIdle : passiveServerIdle st') (hBudgetTransfer : donationBudgetTransfer st')
     (hOwnerUnique : donationOwnerUnique st') :
     ipcInvariantFull st' := by
-  obtain ⟨hBwd, hFwd, hNT, hRC, hSC, hSlots⟩ := hAgree
+  obtain ⟨hBwd, hFwd, hNT, hRC, hRS, hSC, hSlots⟩ := hAgree
   -- The core driver reads a strictly narrower agreement than the one above.
   have hCore : ipcInvariantCore st' := by
     refine ipcInvariantCore_of_nonBindingAgreements st st'
@@ -1118,7 +1169,7 @@ theorem ipcInvariantFull_of_donationReadAgreement_of_except
       exact ⟨ty, h1, e1, e2, e3, e4, e5, e6⟩
     · obtain ⟨tx, h1, e1, e2, e3, e4, e5, e6, _, _⟩ := hFwd s ty h
       exact ⟨tx, h1, e1, e2, e3, e4, e5, e6⟩
-  refine ipcInvariantFull_of_core_replyCallerLinkage hCore ⟨⟨?_, ?_⟩, ?_⟩ ⟨?_, ?_⟩ hOwnerUnique
+  refine ipcInvariantFull_of_core_replyCallerLinkage hCore ⟨⟨?_, ?_⟩, ?_⟩ ⟨?_, ?_, ?_⟩ hOwnerUnique
     ?_ ?_
   -- 16a. replyCallerLinkageReciprocal, TCB → Reply.
   · intro tid tcb rid hTcb hReplyObj
@@ -1152,9 +1203,18 @@ theorem ipcInvariantFull_of_donationReadAgreement_of_except
     rw [getTcb?_eq_some_iff] at hTcb₁ hTcb₂
     obtain ⟨ty₁, hTy₁, _, _, _, _, _, _, _, hPRR₁⟩ := hBwd tid₁.toObjId tcb₁ hTcb₁
     obtain ⟨ty₂, hTy₂, _, _, _, _, _, _, _, hPRR₂⟩ := hBwd tid₂.toObjId tcb₂ hTcb₂
-    exact hInv.pendingReceiveReplyWellFormed.2 tid₁ tid₂ ty₁ ty₂ rid
+    exact hInv.pendingReceiveReplyWellFormed.2.1 tid₁ tid₂ ty₁ ty₂ rid
       ((getTcb?_eq_some_iff st tid₁ ty₁).mpr hTy₁)
       ((getTcb?_eq_some_iff st tid₂ ty₂).mpr hTy₂) (hPRR₁ ▸ hS₁) (hPRR₂ ▸ hS₂)
+  -- 17c. pendingReceiveReplyWellFormed, every stash is recorded on its Reply.
+  · intro tid tcb rid hTcb hStash
+    rw [getTcb?_eq_some_iff] at hTcb
+    obtain ⟨ty, hTy, _, _, _, _, _, _, _, hPRR⟩ := hBwd tid.toObjId tcb hTcb
+    obtain ⟨r, hR, hRec⟩ := hInv.pendingReceiveReplyWellFormed.2.2 tid ty rid
+      ((getTcb?_eq_some_iff st tid ty).mpr hTy) (hPRR ▸ hStash)
+    rw [getReply?_eq_some_iff] at hR
+    obtain ⟨r', hR', hRec'⟩ := (hRS rid r.stasherCode).mpr ⟨r, hR, rfl⟩
+    exact ⟨r', (getReply?_eq_some_iff _ rid r').mpr hR', hRec'.trans hRec⟩
   -- 19. endpointQueueTailBlockedConsistent.
   · intro epId ep tl tcb hEp hTcb
     have hEpPre := (hNT epId (.endpoint ep) (fun _ => by exact KernelObject.noConfusion)

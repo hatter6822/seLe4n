@@ -4185,7 +4185,9 @@ run_check "INVARIANT" rg -n -U 'def finaliseReply [^\n]*(\n([ \t][^\n]*)?){0,8}\
 run_check "INVARIANT" rg -n '^theorem finaliseSchedContextDeschedule_closed($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllFrame.lean
 # A stashed reply is unlinked from its receiver in the receiver's slot
 # (reply_unlink), the stash re-checked before the write.
-run_check "INVARIANT" rg -n -U 'def finaliseReplyUnstash [^\n]*(\n([ \t][^\n]*)?){0,6}\n      if t\.pendingReceiveReplyCode == x\.val \+ 1 then st\.updateTcb s TCB\.stashCleared' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n -U 'def finaliseReplyUnstash [^\n]*\n  match r\.stasherCode with\n  \| 0 => st\n  \| k \+ 1 =>\n    match st\.getTcb\? ⟨k⟩ with\n    \| some t =>\n      if t\.pendingReceiveReplyCode == x\.val \+ 1 then st\.updateTcb ⟨k⟩ TCB\.stashCleared' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+# The stasher is read off the Reply's record, not found by a table walk.
+run_negative_check "INVARIANT" rg -n 'replyStasherCode|objectStashesReply' SeLe4n
 run_check "INVARIANT" rg -n '^theorem finaliseReplyUnstash_closed($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllFrame.lean
 run_check "INVARIANT" rg -n '^theorem finaliseUnstashStep_keepsIpcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllPreservation.lean
 run_check "INVARIANT" rg -n '^theorem storeObject_stashCleared_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean

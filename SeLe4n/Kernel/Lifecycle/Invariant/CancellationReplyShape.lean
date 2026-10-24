@@ -2385,7 +2385,7 @@ theorem restoreToReadyStaging_pendingReceiveReplyWellFormed (st : SystemState)
     · exact (SystemState.getTcb?_eq_some_iff _ tid tcb').mpr h0
     · rw [restoredTcb_pendingReceiveReply] at hStash
       cases hStash
-  refine ⟨?_, ?_⟩
+  refine ⟨?_, ?_, ?_⟩
   · intro tid tcb' rid hTcb' hStash
     obtain ⟨hEp, r, hr, hrc⟩ := h.1 tid tcb' rid (hPull tid tcb' rid hTcb' hStash) hStash
     refine ⟨hEp, r, ?_, hrc⟩
@@ -2393,8 +2393,14 @@ theorem restoreToReadyStaging_pendingReceiveReplyWellFormed (st : SystemState)
       ((restoreToReadyStaging_nonTcb st v frame tcbV hInv hLookup rid.toObjId (.reply r)
         (by simp)).mpr ((SystemState.getReply?_eq_some_iff st rid r).mp hr))
   · intro tid₁ tid₂ tcb₁ tcb₂ rid h1 h2 hs1 hs2
-    exact h.2 tid₁ tid₂ tcb₁ tcb₂ rid (hPull tid₁ tcb₁ rid h1 hs1)
+    exact h.2.1 tid₁ tid₂ tcb₁ tcb₂ rid (hPull tid₁ tcb₁ rid h1 hs1)
       (hPull tid₂ tcb₂ rid h2 hs2) hs1 hs2
+  · intro tid tcb' rid hTcb' hStash
+    obtain ⟨r, hr, hrc⟩ := h.2.2 tid tcb' rid (hPull tid tcb' rid hTcb' hStash) hStash
+    refine ⟨r, ?_, hrc⟩
+    exact (SystemState.getReply?_eq_some_iff _ rid r).mpr
+      ((restoreToReadyStaging_nonTcb st v frame tcbV hInv hLookup rid.toObjId (.reply r)
+        (by simp)).mpr ((SystemState.getReply?_eq_some_iff st rid r).mp hr))
 
 /-- No `queueNext` edge in the restored state touches the restored thread: it
 points at nothing (the restore cleared its link) and nothing points at it (link

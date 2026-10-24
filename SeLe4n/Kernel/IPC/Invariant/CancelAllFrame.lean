@@ -547,9 +547,9 @@ theorem finaliseThread_closed (P : SystemState → Prop) (hUnbind : FinaliseUnbi
 
 /-- **A property the stash clear keeps holds after `finaliseReplyUnstash`.** -/
 theorem finaliseReplyUnstash_closed (P : SystemState → Prop) (hSt : FinaliseUnstashStep P)
-    (x : SeLe4n.ObjId) (st : SystemState) (h : P st) : P (finaliseReplyUnstash st x) := by
+    (x : SeLe4n.ObjId) (r : Reply) (st : SystemState) (h : P st) :
+    P (finaliseReplyUnstash st x r) := by
   unfold finaliseReplyUnstash
-  dsimp only
   split
   · exact h
   · split
@@ -570,7 +570,7 @@ theorem finaliseReply_closed (P : SystemState → Prop) (hRep : FinaliseReplySte
   split
   · rename_i r hX
     split
-    · exact finaliseReplyUnstash_closed P hSt x st h
+    · exact finaliseReplyUnstash_closed P hSt x r st h
     · rename_i h0
       dsimp only
       split

@@ -349,7 +349,7 @@ theorem finaliseUnstackStep_keepsIpcInvariantFull :
     FinaliseUnstackStep (fun s => ipcInvariantFull s ∧ s.objects.invExt) := by
   intro s s1 x _ rid r h _ _ hR _ hS
   have h1 := storeObject_reply_stackLinks_preserves_ipcInvariantFull (a' := { r with next := none }) h.2 h.1 hR
-    rfl hS
+    rfl rfl hS
   have hI1 := storeObject_preserves_objects_invExt s s1 _ _ h.2 hS
   cases hG : s1.getSchedContext? ⟨x.val⟩ with
   | none => rw [SystemState.updateSchedContext_eq_self_of_none hG]; exact ⟨h1, hI1⟩

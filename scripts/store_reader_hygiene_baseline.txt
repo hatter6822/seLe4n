@@ -392,7 +392,6 @@ STORE_READ_SPEC_SITE=SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecvInPlace.lean|o
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecvInPlace.lean|objects_updateTcb_ne|2
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecvInPlace.lean|replyRecvOnCore_blocks_delivered|4
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecvInPlace.lean|replyRecvOnCore_blocks_inPlace|4
-STORE_READ_SPEC_SITE=SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecvInPlace.lean|stashView_modifyObject|1
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecvInPlace.lean|storeReplyRendezvousReady_agree|2
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecvInPlace.lean|storeReplyRendezvousReady_caller|2
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecvInPlace.lean|storeReplyRendezvousReady_reply|2

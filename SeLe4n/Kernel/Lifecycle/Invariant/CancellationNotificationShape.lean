@@ -599,7 +599,7 @@ theorem purgedAndRestored_pendingReceiveReplyWellFormed
     · exact ⟨t0, (SystemState.getTcb?_eq_some_iff _ tid t0).mpr h0, hR⟩
     · rw [restoredTcb_pendingReceiveReply] at hStash
       cases hStash
-  refine ⟨?_, ?_⟩
+  refine ⟨?_, ?_, ?_⟩
   · intro tid tcb' rid hTcb' hStash
     obtain ⟨t0, hP, _, _, rfl⟩ := hPull tid tcb' rid hTcb' hStash
     obtain ⟨hEp, r, hr, hrc⟩ := h.1 tid t0 rid hP hStash
@@ -611,7 +611,15 @@ theorem purgedAndRestored_pendingReceiveReplyWellFormed
   · intro tid₁ tid₂ tcb₁ tcb₂ rid h1 h2 hs1 hs2
     obtain ⟨u1, hP1, _, _, rfl⟩ := hPull tid₁ tcb₁ rid h1 hs1
     obtain ⟨u2, hP2, _, _, rfl⟩ := hPull tid₂ tcb₂ rid h2 hs2
-    exact h.2 tid₁ tid₂ u1 u2 rid hP1 hP2 hs1 hs2
+    exact h.2.1 tid₁ tid₂ u1 u2 rid hP1 hP2 hs1 hs2
+  · intro tid tcb' rid hTcb' hStash
+    obtain ⟨t0, hP, _, _, rfl⟩ := hPull tid tcb' rid hTcb' hStash
+    obtain ⟨r, hr, hrc⟩ := h.2.2 tid t0 rid hP hStash
+    refine ⟨r, ?_, hrc⟩
+    exact (SystemState.getReply?_eq_some_iff (purgedAndRestored st v frame) rid r).mpr
+      ((purgedAndRestored_nonNotification st v frame tcbV hInv hLookup
+        rid.toObjId (.reply r) (by simp) (by simp)).mpr
+        ((SystemState.getReply?_eq_some_iff st rid r).mp hr))
 
 theorem purgedAndRestored_replyCallerLinkage
     (st : SystemState) (v : SeLe4n.ThreadId)

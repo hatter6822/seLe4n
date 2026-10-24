@@ -4086,26 +4086,187 @@ def replyIsStashed (st : SystemState) (rid : SeLe4n.ReplyId) : Bool :=
           | _ => false
       | _ => false
 
-/-- WS-ZA ZA4.7: the compiled `replyIsStashed`: the stash compared without
-building `some rid` (`replyIsStashed_eq_impl`). -/
-def replyIsStashedImpl (st : SystemState) (rid : SeLe4n.ReplyId) : Bool :=
-  st.objects.fold (init := false) fun acc _oid obj =>
-    acc || match obj with
-      | .tcb t =>
-          match t.ipcState with
-          | .blockedOnReceive _ => t.pendingReceiveReply.isEqSome rid
-          | _ => false
-      | _ => false
+/-- **Whether the thread a reply records as its stasher still stashes it**
+(`Reply.stasherCode`, seL4-MCS's `reply->replyTCB` for a `BlockedOnReceive`
+thread): the named thread is blocked receiving (`ipcStateCode = 1`) with this
+reply as its stash.  One field read and one TCB read, re-checked because the
+record is cleared lazily; under `pendingReceiveReplyWellFormed`'s record clause
+it is exactly `replyIsStashed` (`replyStashedAt_eq_replyIsStashed`). -/
+@[inline] def replyStashedAt (st : SystemState) (rid : SeLe4n.ReplyId) (r : SeLe4n.Kernel.Reply) : Bool :=
+  match r.stasherCode with
+  | 0 => false
+  | k + 1 =>
+    match st.objects[(⟨k⟩ : SeLe4n.ThreadId).toObjId]? with
+    | some (.tcb t) => t.ipcStateCode == 1 && t.pendingReceiveReplyCode == rid.val + 1
+    | _ => false
 
-@[csimp] theorem replyIsStashed_eq_impl : @replyIsStashed = @replyIsStashedImpl := by
-  funext st rid
-  unfold replyIsStashed replyIsStashedImpl
-  congr
-  funext acc _oid obj
-  rcases obj with t | _ | _ | _ | _ | _ | _ | _ | _ | _ <;> try rfl
-  simp only []
-  split <;> try rfl
-  cases t.pendingReceiveReply <;> simp [Option.isEqSome]
+/-- **The reply at `rid` records `receiver` as its stasher** — the write a stash
+makes beside the receiver's own (`receiveIPC`'s `reply->replyTCB = thread`); the
+identity when `replyCode` names no reply (`0`, a receive stashing none) or no
+Reply is stored there. -/
+def recordReplyStasher (st : SystemState) (replyCode : Nat) (receiver : SeLe4n.ThreadId) :
+    SystemState :=
+  match replyCode with
+  | 0 => st
+  | k + 1 =>
+    match st.objects[(⟨k⟩ : SeLe4n.ReplyId).toObjId]? with
+    | some (.reply r) =>
+      match storeObject (⟨k⟩ : SeLe4n.ReplyId).toObjId
+          (.reply { r with stasherCode := receiver.val + 1 }) st with
+      | .ok ((), st') => st'
+      | .error _ => st
+    | _ => st
+
+/-- **What `recordReplyStasher` does**: nothing, or the store of the Reply it
+names with that one word set. -/
+theorem recordReplyStasher_eq_or (st : SystemState) (code : Nat) (recv : SeLe4n.ThreadId) :
+    st.recordReplyStasher code recv = st ∨
+    ∃ (rid : SeLe4n.ReplyId) (r : SeLe4n.Kernel.Reply), code = rid.val + 1 ∧
+      st.objects[rid.toObjId]? = some (.reply r) ∧
+      storeObject rid.toObjId (.reply { r with stasherCode := recv.val + 1 }) st =
+        .ok ((), st.recordReplyStasher code recv) := by
+  unfold recordReplyStasher
+  rcases code with _ | k
+  · exact Or.inl rfl
+  · dsimp only
+    split
+    · next r hR =>
+      refine Or.inr ⟨⟨k⟩, r, rfl, hR, ?_⟩
+      cases h : storeObject (⟨k⟩ : SeLe4n.ReplyId).toObjId
+          (.reply { r with stasherCode := recv.val + 1 }) st with
+      | error e => unfold storeObject at h; cases h
+      | ok p => obtain ⟨⟨⟩, st'⟩ := p; rfl
+    · exact Or.inl rfl
+
+/-- On a present Reply the record is that Reply's store. -/
+theorem recordReplyStasher_of_reply (st : SystemState) (rid : SeLe4n.ReplyId)
+    (recv : SeLe4n.ThreadId) {r : SeLe4n.Kernel.Reply}
+    (hR : st.objects[rid.toObjId]? = some (.reply r)) :
+    storeObject rid.toObjId (.reply { r with stasherCode := recv.val + 1 }) st =
+      .ok ((), st.recordReplyStasher (rid.val + 1) recv) := by
+  unfold recordReplyStasher
+  dsimp only
+  rw [show (⟨rid.val⟩ : SeLe4n.ReplyId) = rid from rfl, hR]
+  dsimp only
+  cases h : storeObject rid.toObjId (.reply { r with stasherCode := recv.val + 1 }) st with
+  | error e => unfold storeObject at h; cases h
+  | ok p => obtain ⟨⟨⟩, st'⟩ := p; rfl
+
+/-- …so the Reply then names its stasher. -/
+theorem recordReplyStasher_recorded (st : SystemState) (rid : SeLe4n.ReplyId)
+    (recv : SeLe4n.ThreadId) (hObjInv : st.objects.invExt) {r : SeLe4n.Kernel.Reply}
+    (hR : st.objects[rid.toObjId]? = some (.reply r)) :
+    (st.recordReplyStasher (rid.val + 1) recv).objects[rid.toObjId]? =
+      some (.reply { r with stasherCode := recv.val + 1 }) :=
+  storeObject_objects_eq st _ _ _ hObjInv (recordReplyStasher_of_reply st rid recv hR)
+
+/-- The record writes no TCB: every thread reads the same. -/
+theorem recordReplyStasher_getTcb? (st : SystemState) (code : Nat) (recv : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt) (tid : SeLe4n.ThreadId) :
+    (st.recordReplyStasher code recv).getTcb? tid = st.getTcb? tid := by
+  rcases recordReplyStasher_eq_or st code recv with h | ⟨rid, r, _, hR, hS⟩
+  · rw [h]
+  · unfold getTcb?
+    by_cases hEq : tid.toObjId = rid.toObjId
+    · rw [hEq, storeObject_objects_eq st _ _ _ hObjInv hS, hR]
+    · rw [storeObject_objects_ne st _ _ _ _ hEq hObjInv hS]
+
+theorem recordReplyStasher_objects_invExt (st : SystemState) (code : Nat) (recv : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt) : (st.recordReplyStasher code recv).objects.invExt := by
+  rcases recordReplyStasher_eq_or st code recv with h | ⟨rid, r, _, _, hS⟩
+  · rw [h]; exact hObjInv
+  · exact storeObject_preserves_objects_invExt st _ _ _ hObjInv hS
+
+/-- …and every object that is no Reply stays where it is. -/
+theorem recordReplyStasher_getElem?_of_not_reply (st : SystemState) (code : Nat)
+    (recv : SeLe4n.ThreadId) (hObjInv : st.objects.invExt) {x : SeLe4n.ObjId}
+    (hX : ∀ r, st.objects[x]? ≠ some (.reply r)) :
+    (st.recordReplyStasher code recv).objects[x]? = st.objects[x]? := by
+  rcases recordReplyStasher_eq_or st code recv with h | ⟨rid, r, _, hR, hS⟩
+  · rw [h]
+  · have hNe : x ≠ rid.toObjId := fun e => hX r (e ▸ hR)
+    exact storeObject_objects_ne st _ _ _ _ hNe hObjInv hS
+
+/-- A thread's object is the same object across the record. -/
+theorem recordReplyStasher_getElem?_tcb_iff (st : SystemState) (code : Nat)
+    (recv : SeLe4n.ThreadId) (hObjInv : st.objects.invExt) {x : SeLe4n.ObjId} {t : TCB} :
+    (st.recordReplyStasher code recv).objects[x]? = some (.tcb t) ↔
+      st.objects[x]? = some (.tcb t) := by
+  rcases recordReplyStasher_eq_or st code recv with h | ⟨rid, r, _, hR, hS⟩
+  · rw [h]
+  · by_cases hEq : x = rid.toObjId
+    · subst hEq
+      rw [storeObject_objects_eq st _ _ _ hObjInv hS, hR]
+      constructor <;> intro h <;> cases h
+    · rw [storeObject_objects_ne st _ _ _ _ hEq hObjInv hS]
+
+/-- …and so does every object that is no Reply, read in either direction. -/
+theorem recordReplyStasher_getElem?_nonReply_iff (st : SystemState) (code : Nat)
+    (recv : SeLe4n.ThreadId) (hObjInv : st.objects.invExt) {x : SeLe4n.ObjId} {o : KernelObject}
+    (ho : ∀ r, o ≠ .reply r) :
+    (st.recordReplyStasher code recv).objects[x]? = some o ↔ st.objects[x]? = some o := by
+  rcases recordReplyStasher_eq_or st code recv with h | ⟨rid, r, _, hR, hS⟩
+  · rw [h]
+  · by_cases hEq : x = rid.toObjId
+    · subst hEq
+      rw [storeObject_objects_eq st _ _ _ hObjInv hS, hR]
+      constructor <;> intro h <;> (cases h; exact absurd rfl (ho _))
+    · rw [storeObject_objects_ne st _ _ _ _ hEq hObjInv hS]
+
+/-- The record moves a Reply's `stasherCode` and nothing else of it. -/
+theorem recordReplyStasher_getElem?_reply (st : SystemState) (code : Nat)
+    (recv : SeLe4n.ThreadId) (hObjInv : st.objects.invExt) {x : SeLe4n.ObjId}
+    {r' : SeLe4n.Kernel.Reply} (h : (st.recordReplyStasher code recv).objects[x]? = some (.reply r')) :
+    ∃ r, st.objects[x]? = some (.reply r) ∧ ∃ k, r' = { r with stasherCode := k } := by
+  rcases recordReplyStasher_eq_or st code recv with e | ⟨rid, r, _, hR, hS⟩
+  · rw [e] at h; exact ⟨r', h, r'.stasherCode, rfl⟩
+  · by_cases hEq : x = rid.toObjId
+    · subst hEq
+      rw [storeObject_objects_eq st _ _ _ hObjInv hS] at h
+      cases h; exact ⟨r, hR, _, rfl⟩
+    · rw [storeObject_objects_ne st _ _ _ _ hEq hObjInv hS] at h
+      exact ⟨r', h, r'.stasherCode, rfl⟩
+
+/-- …and every Reply stays a Reply, its other fields kept. -/
+theorem recordReplyStasher_getElem?_reply_fwd (st : SystemState) (code : Nat)
+    (recv : SeLe4n.ThreadId) (hObjInv : st.objects.invExt) {x : SeLe4n.ObjId}
+    {r : SeLe4n.Kernel.Reply} (h : st.objects[x]? = some (.reply r)) :
+    ∃ k, (st.recordReplyStasher code recv).objects[x]? = some (.reply { r with stasherCode := k }) := by
+  rcases recordReplyStasher_eq_or st code recv with e | ⟨rid, r0, _, hR, hS⟩
+  · rw [e]; exact ⟨r.stasherCode, by rw [h]⟩
+  · by_cases hEq : x = rid.toObjId
+    · subst hEq
+      rw [h] at hR; cases hR
+      exact ⟨_, storeObject_objects_eq st _ _ _ hObjInv hS⟩
+    · rw [storeObject_objects_ne st _ _ _ _ hEq hObjInv hS]
+      exact ⟨r.stasherCode, by rw [h]⟩
+
+/-- Naming no Reply, the record is the identity. -/
+theorem recordReplyStasher_of_not_reply (st : SystemState) (k : Nat) (recv : SeLe4n.ThreadId)
+    (h : ∀ r, st.objects[(⟨k⟩ : SeLe4n.ReplyId).toObjId]? ≠ some (.reply r)) :
+    st.recordReplyStasher (k + 1) recv = st := by
+  unfold recordReplyStasher
+  dsimp only
+  split
+  · next r hR => exact absurd hR (h r)
+  · rfl
+
+/-- The record writes no SchedContext: every context reads the same. -/
+theorem recordReplyStasher_getSchedContext? (st : SystemState) (code : Nat)
+    (recv : SeLe4n.ThreadId) (hObjInv : st.objects.invExt) (scId : SeLe4n.SchedContextId) :
+    (st.recordReplyStasher code recv).getSchedContext? scId = st.getSchedContext? scId := by
+  rcases recordReplyStasher_eq_or st code recv with h | ⟨rid, r, _, hR, hS⟩
+  · rw [h]
+  · unfold getSchedContext?
+    by_cases hEq : scId.toObjId = rid.toObjId
+    · rw [hEq, storeObject_objects_eq st _ _ _ hObjInv hS, hR]
+    · rw [storeObject_objects_ne st _ _ _ _ hEq hObjInv hS]
+
+theorem recordReplyStasher_scheduler (st : SystemState) (code : Nat) (recv : SeLe4n.ThreadId) :
+    (st.recordReplyStasher code recv).scheduler = st.scheduler := by
+  rcases recordReplyStasher_eq_or st code recv with h | ⟨rid, r, _, _, hS⟩
+  · rw [h]
+  · exact storeObject_scheduler_eq st _ _ _ hS
 
 /-- WS-SM SM6.D (PR #827 review #6): is a server-supplied reply object valid to
 *stash* on a blocked receiver?  A plain receive (`none`) clears any stale stash and
@@ -4129,7 +4290,7 @@ def replyStashValid (st : SystemState) (replyId : Option SeLe4n.ReplyId) : Bool 
   | none => true
   | some rid =>
       match st.getReply? rid with
-      | some r => r.isFree && !st.replyIsStashed rid
+      | some r => r.isFree && !st.replyStashedAt rid r
       | none => false
 
 /-- WS-SM SM6.D: `linkCallerReply` fails closed (`.replyCapInvalid`) on an
@@ -6122,6 +6283,67 @@ theorem storeObject_tcb_eq_storeTcbWith {st : SystemState} {id : SeLe4n.ObjId} {
     rfl
   · obtain ⟨st', hS⟩ := storeObject_isOk st id (.tcb (f t))
     rw [hS]
+
+/-- The object update a Reply update performs. -/
+@[inline] def mapReplyObject (f : SeLe4n.Kernel.Reply → SeLe4n.Kernel.Reply) : KernelObject → KernelObject
+  | .reply r => .reply (f r)
+  | o => o
+
+/-- **The store of `f` of the Reply at `id`, written in its slot**: the Reply
+form of `storeCNodeWith` (`storeObject_reply_eq_storeReplyWith`).  The identity
+when `id` holds no Reply. -/
+@[specialize] def storeReplyWith (st : SystemState) (id : SeLe4n.ObjId) (f : SeLe4n.Kernel.Reply → SeLe4n.Kernel.Reply) :
+    SystemState :=
+  match st.objects[id]? with
+  | some (.reply r) =>
+      if storeLeavesIndexAndTypes st id .reply then st.modifyObject id (mapReplyObject f)
+      else
+        match storeObject id (.reply (f r)) st with
+        | .ok ((), st') => st'
+        | .error _ => st
+  | _ => st
+
+theorem storeObject_reply_eq_storeReplyWith {st : SystemState} {id : SeLe4n.ObjId} {r : SeLe4n.Kernel.Reply}
+    (h : st.objects[id]? = some (.reply r)) (f : SeLe4n.Kernel.Reply → SeLe4n.Kernel.Reply) :
+    storeObject id (.reply (f r)) st = .ok ((), st.storeReplyWith id f) := by
+  unfold storeReplyWith
+  rw [h]
+  dsimp only
+  split
+  · next hL =>
+    rw [storeObject_eq_impl]
+    unfold storeObjectImpl modifyObject
+    rw [show (KernelObject.reply (f r)).objectType = .reply from rfl, if_pos hL,
+      RHTable.modify_of_get? h]
+    rfl
+  · obtain ⟨st', hS⟩ := storeObject_isOk st id (.reply (f r))
+    rw [hS]
+
+/-- **`recordReplyStasher` written in its slot**: the Reply's stasher word set
+by `storeReplyWith`, so a stash builds no Reply record. -/
+@[inline] def recordReplyStasherImpl (st : SystemState) (replyCode : Nat)
+    (receiver : SeLe4n.ThreadId) : SystemState :=
+  match replyCode with
+  | 0 => st
+  | k + 1 =>
+    st.storeReplyWith (⟨k⟩ : SeLe4n.ReplyId).toObjId
+      (fun (r : SeLe4n.Kernel.Reply) => { r with stasherCode := receiver.val + 1 })
+
+@[csimp] theorem recordReplyStasher_eq_impl : @recordReplyStasher = @recordReplyStasherImpl := by
+  funext st replyCode receiver
+  unfold recordReplyStasher recordReplyStasherImpl
+  cases replyCode with
+  | zero => rfl
+  | succ k =>
+    dsimp only
+    cases h : st.objects[(⟨k⟩ : SeLe4n.ReplyId).toObjId]? with
+    | none => unfold storeReplyWith; rw [h]
+    | some o =>
+      cases o with
+      | reply r =>
+        dsimp only
+        rw [storeObject_reply_eq_storeReplyWith h (fun (r : SeLe4n.Kernel.Reply) => { r with stasherCode := receiver.val + 1 })]
+      | _ => unfold storeReplyWith; rw [h]
 
 /-- WS-ZA ZA5.4: the object update a VSpace root update performs. -/
 @[inline] def mapVSpaceRootObject (f : VSpaceRoot → VSpaceRoot) : KernelObject → KernelObject

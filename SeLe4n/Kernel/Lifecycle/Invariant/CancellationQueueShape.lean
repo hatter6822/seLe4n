@@ -1974,7 +1974,7 @@ theorem sweptAndRestored_pendingReceiveReplyWellFormed
     · exact ⟨t0, (SystemState.getTcb?_eq_some_iff _ tid t0).mpr h0, hStash, rfl⟩
     · rw [restoredTcb_pendingReceiveReply] at hStash
       cases hStash
-  refine ⟨?_, ?_⟩
+  refine ⟨?_, ?_, ?_⟩
   · intro tid tcb' rid hTcb' hStash
     obtain ⟨t0, h0, hStash0, hIp⟩ := hPull tid tcb' rid hTcb' hStash
     obtain ⟨⟨ep, hEp⟩, r, hr, hrc⟩ := h.1 tid t0 rid h0 hStash0
@@ -1986,7 +1986,15 @@ theorem sweptAndRestored_pendingReceiveReplyWellFormed
   · intro tid₁ tid₂ tcb₁ tcb₂ rid h1 h2 hs1 hs2
     obtain ⟨t1, ht1, hst1, _⟩ := hPull tid₁ tcb₁ rid h1 hs1
     obtain ⟨t2, ht2, hst2, _⟩ := hPull tid₂ tcb₂ rid h2 hs2
-    exact h.2 tid₁ tid₂ t1 t2 rid ht1 ht2 hst1 hst2
+    exact h.2.1 tid₁ tid₂ t1 t2 rid ht1 ht2 hst1 hst2
+  · intro tid tcb' rid hTcb' hStash
+    obtain ⟨t0, h0, hStash0, _⟩ := hPull tid tcb' rid hTcb' hStash
+    obtain ⟨r, hr, hrs⟩ := h.2.2 tid t0 rid h0 hStash0
+    refine ⟨r, ?_, hrs⟩
+    exact (SystemState.getReply?_eq_some_iff (sweptAndRestored st v frame) rid r).mpr
+      ((sweptAndRestored_nonTcbNonEndpoint st v frame tcbV hInv hLink hAcyc hLookup
+        rid.toObjId (.reply r) (by simp) (by simp)).mpr
+        ((SystemState.getReply?_eq_some_iff st rid r).mp hr))
 
 /-- **WS-RR RR7.22 (residual)**: a queue head still carries the blocking state its
 side demands.

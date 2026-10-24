@@ -2422,4 +2422,65 @@ theorem RHTable.get?_resize_of_get? [BEq α] [Hashable α] [LawfulBEq α]
       omega)
     (by omega)
 
+/-- **A disjunction folded over a table from `false` holds exactly when some
+entry the table resolves satisfies it** -- the existential sibling of
+`fold_and_true_of_get?`, and the bridge from a whole-table scan to the lookup a
+recorded field answers in its place (`replyStashedAt_eq_replyIsStashed`).
+The forward direction needs `invExt`: an entry the fold visits is one `get?`
+returns. -/
+theorem RHTable.fold_or_false_iff {α β : Type} [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) (f : α → β → Bool) (hExt : t.invExt) :
+    t.fold false (fun acc k v => acc || f k v) = true ↔
+      ∃ k v, t.get? k = some v ∧ f k v = true := by
+  have hList : ∀ (l : List (Option (RHEntry α β))) (acc : Bool),
+      l.foldl (fun acc slot => match slot with
+        | none => acc | some e => acc || f e.key e.value) acc = true ↔
+      (acc = true ∨ ∃ e, some e ∈ l ∧ f e.key e.value = true) := by
+    intro l
+    induction l with
+    | nil => intro acc; simp
+    | cons hd tl ih =>
+      intro acc
+      simp only [List.foldl_cons]
+      cases hd with
+      | none =>
+        rw [ih]
+        constructor
+        · rintro (h | ⟨e, he, hf⟩)
+          · exact Or.inl h
+          · exact Or.inr ⟨e, List.mem_cons_of_mem _ he, hf⟩
+        · rintro (h | ⟨e, he, hf⟩)
+          · exact Or.inl h
+          · rcases List.mem_cons.mp he with he | he
+            · cases he
+            · exact Or.inr ⟨e, he, hf⟩
+      | some e0 =>
+        rw [ih, Bool.or_eq_true]
+        constructor
+        · rintro ((h | h) | ⟨e, he, hf⟩)
+          · exact Or.inl h
+          · exact Or.inr ⟨e0, List.mem_cons_self .., h⟩
+          · exact Or.inr ⟨e, List.mem_cons_of_mem _ he, hf⟩
+        · rintro (h | ⟨e, he, hf⟩)
+          · exact Or.inl (Or.inl h)
+          · rcases List.mem_cons.mp he with he | he
+            · cases he; exact Or.inl (Or.inr hf)
+            · exact Or.inr ⟨e, he, hf⟩
+  unfold RHTable.fold
+  rw [← Array.foldl_toList]
+  refine (hList _ false).trans ?_
+  constructor
+  · rintro (h | ⟨e, he, hf⟩)
+    · cases h
+    · obtain ⟨j, hj, hjE⟩ := List.getElem_of_mem he
+      have hjc : j < t.capacity := by rw [← t.hSlotsLen]; simpa using hj
+      have hSlot : t.slots[j]'(t.hSlotsLen ▸ hjc) = some e := by
+        simpa [Array.getElem_toList] using hjE
+      exact ⟨e.key, e.value, RHTable.slot_entry_implies_get t j hjc e hSlot hExt, hf⟩
+  · rintro ⟨k, v, hG, hf⟩
+    obtain ⟨p, hp, e, hSlot, hKey, hVal⟩ := RHTable.get_some_slot_entry t k v hG
+    refine Or.inr ⟨e, ?_, ?_⟩
+    · rw [← hSlot]; exact Array.getElem_mem_toList _
+    · rw [eq_of_beq hKey, hVal]; exact hf
+
 end SeLe4n.Kernel.RobinHood

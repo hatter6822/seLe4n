@@ -233,7 +233,7 @@ them to `replyRecvOnCore_blocks_delivered`. -/
         | none => false)
    | none => false) &&
   (match st.getReply? rid with
-   | some rp => rp.consumedIsFree && !st.replyIsStashed rid
+   | some rp => rp.consumedIsFree && !st.replyStashedAt rid rp
    | none => false)
 
 theorem replyRecvBlocksFast_spec {st : SystemState} {epId : SeLe4n.ObjId}
@@ -247,7 +247,7 @@ theorem replyRecvBlocksFast_spec {st : SystemState} {epId : SeLe4n.ObjId}
       st.objects[tid.toObjId]? = some (.tcb rt) ∧ receiveBlockAdmits rt = true ∧
       enqueuesInPlace st epId tid ep.receiveQ.tail = true ∧
       st.objects[rid.toObjId]? = some (.reply rp) ∧ rp.consumed.isFree = true ∧
-      st.replyIsStashed rid = false ∧ receiveQueueTailCode st epId = ep.recvTailCode := by
+      st.replyStashedAt rid rp = false ∧ receiveQueueTailCode st epId = ep.recvTailCode := by
   unfold replyRecvBlocksFast at h
   simp only [Bool.and_eq_true] at h
   obtain ⟨⟨⟨hNe, hC⟩, hE⟩, hRp⟩ := h
