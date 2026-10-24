@@ -551,9 +551,39 @@ theorem finaliseSuspend_runQueueEntryStage (st : SystemState) (t : SeLe4n.Thread
   · rw [hT] at hx; cases hx
     exact Or.inl (by unfold TCB.ipcState; rw [hS, hO]; rfl)
 
+/-- A scheduling context rewritten in its slot is a run-queue stage: it writes
+no thread and no scheduler field. -/
+theorem updateSchedContext_runQueueStage (st : SystemState) (scId : SeLe4n.SchedContextId)
+    (f : SchedContext → SchedContext) :
+    SystemState.RunQueueStage st (st.updateSchedContext scId f) := by
+  have hU := SystemState.updateSchedContext_scheduler st scId f
+  apply SystemState.RunQueueStage.of_placement
+  · exact fun hInv => SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hInv
+  · show (st.updateSchedContext scId _).scheduler.runQueue = _
+    rw [hU]
+  · show (st.updateSchedContext scId _).scheduler.runQueueEnds = _
+    rw [hU]
+  · intro hInv x
+    exact congrArg (Option.map TCB.placement)
+      (SystemState.updateSchedContext_getTcb? st scId _ hInv x)
+  · exact fun hInv => SystemState.StateMono.of_getTcb
+      (SystemState.updateSchedContext_getTcb? st scId _ hInv)
+  · show (st.updateSchedContext scId _).scheduler.currentCode = _
+    rw [hU]
+
+/-- The revert of a finalised reply's caller's boost is a run-queue stage
+(`propagatePipChainCrossCore_runQueueStage`). -/
+theorem finaliseReplyRevert_runQueueStage (st : SystemState) (server? : Option SeLe4n.ThreadId) :
+    SystemState.RunQueueStage st (finaliseReplyRevert st server?) := by
+  cases server? with
+  | none => exact .refl st
+  | some s => exact PriorityInheritance.propagatePipChainCrossCore_runQueueStage st s _ _
+
 /-- **The finalisation is a kernel entry's worth of run-queue steps**, every
 step of it (`finaliseFinalObject_closed`): each cancel's and each unbind's
-stage, and a finalised thread's suspend (`finaliseSuspend_runQueueEntryStage`). -/
+stage, a context's reply-stack unlink (a reply and a context rewritten), a
+reply's caller cancel with its boost reverted, and a finalised thread's suspend
+(`finaliseSuspend_runQueueEntryStage`). -/
 theorem finaliseFinalObject_runQueueEntryStage (target : Nat) (st : SystemState) :
     SystemState.RunQueueEntryStage st (finaliseFinalObject target st) :=
   finaliseFinalObject_closed (SystemState.RunQueueEntryStage st)
@@ -565,10 +595,17 @@ theorem finaliseFinalObject_runQueueEntryStage (target : Nat) (st : SystemState)
       have hSpec := unbindNotification_of_inPlace s t hIn
       rw [hCode, Nat.add_sub_cancel] at hSpec
       exact h.trans (unbindNotification_runQueueStage hSpec).entry)
-    (fun _ _ _ _ _ h _ _ _ _ _ _ _ _ hOk => h.trans (cancelDonationArmOnCore_runQueueStage hOk).entry)
+    (fun _ _ _ _ _ _ h _ _ _ _ _ _ _ hOk =>
+      h.trans (cancelBoundDonationOnCore_runQueueStage hOk).entry)
     (fun s _ t tcb _ h _ _ _ _ _ => h.trans (cancelIpcBlocking_runQueueStage s t tcb).entry)
     (fun s t tcb h hT hS hO _ hR hH hId =>
       h.trans (finaliseSuspend_runQueueEntryStage s t tcb hT hS hO hR hH hId))
+    (fun _ s1 x _ _ _ h _ _ hR _ hS =>
+      h.trans ((storeObject_replyOver_runQueueStage hR hS).trans
+        (updateSchedContext_runQueueStage s1 ⟨x.val⟩ _)).entry)
+    (fun s _ _ c t h _ _ _ _ =>
+      h.trans ((cancelIpcBlocking_runQueueStage s c t).trans
+        (finaliseReplyRevert_runQueueStage _ _)).entry)
     target st ⟨SystemState.RunQueueLinkStage.refl st, fun _ _ _ d => d⟩
 
 theorem cspaceDeleteSlotFinalising_runQueueEntryStage {ec : Concurrency.CoreId}

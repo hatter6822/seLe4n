@@ -355,6 +355,35 @@ theorem finaliseSchedContextUnstack_closed (P : SystemState → Prop) (hUn : Fin
     · exact h
   · exact h
 
+/-- **A property the release keeps holds after `finaliseSchedContextUnbind`.** -/
+theorem finaliseSchedContextUnbind_closed (P : SystemState → Prop) (hRel : FinaliseScReleaseStep P)
+    (st : SystemState) (x : SeLe4n.ObjId) (h : P st) : P (finaliseSchedContextUnbind st x) := by
+  unfold finaliseSchedContextUnbind
+  split
+  · rename_i sc hX
+    split
+    · exact h
+    · rename_i hB0
+      dsimp only
+      split
+      · rename_i t hT
+        split
+        · rename_i hG
+          simp only [Bool.and_eq_true, beq_iff_eq, Bool.not_eq_true'] at hG
+          obtain ⟨⟨⟨hS, hR⟩, hH⟩, hA⟩ := hG
+          split
+          · rename_i s' hOk
+            refine hRel st s' _ t sc x h hT hS hR hH hA ?_ ?_ hOk
+            · have hO : st.objects[x]? = some (.schedContext sc) := by rw [← hX]; simp
+              unfold SystemState.getSchedContext?
+              rw [show (⟨x.val⟩ : SeLe4n.SchedContextId).toObjId = x from rfl, hO]
+            · simp only [beq_iff_eq] at hB0
+              show _ = _ - 1 + 1; omega
+          · exact h
+        · exact h
+      · exact h
+  · exact h
+
 /-- **A property the release and the unstack keep holds after the
 scheduling-context finalisation.** -/
 theorem finaliseSchedContext_closed (P : SystemState → Prop) (hRel : FinaliseScReleaseStep P)
@@ -362,32 +391,7 @@ theorem finaliseSchedContext_closed (P : SystemState → Prop) (hRel : FinaliseS
     P (finaliseSchedContext x st) := by
   rw [finaliseSchedContext_eq]
   split
-  · refine finaliseSchedContextUnstack_closed P hUn x _ ?_
-    unfold finaliseSchedContextUnbind
-    split
-    · rename_i sc hX
-      split
-      · exact h
-      · rename_i hB0
-        dsimp only
-        split
-        · rename_i t hT
-          split
-          · rename_i hG
-            simp only [Bool.and_eq_true, beq_iff_eq, Bool.not_eq_true'] at hG
-            obtain ⟨⟨⟨hS, hR⟩, hH⟩, hA⟩ := hG
-            split
-            · rename_i s' hOk
-              refine hRel st s' _ t sc x h hT hS hR hH hA ?_ ?_ hOk
-              · have hO : st.objects[x]? = some (.schedContext sc) := by rw [← hX]; simp
-                unfold SystemState.getSchedContext?
-                rw [show (⟨x.val⟩ : SeLe4n.SchedContextId).toObjId = x from rfl, hO]
-              · simp only [beq_iff_eq] at hB0
-                show _ = _ - 1 + 1; omega
-            · exact h
-          · exact h
-        · exact h
-    · exact h
+  · exact finaliseSchedContextUnstack_closed P hUn x _ (finaliseSchedContextUnbind_closed P hRel st x h)
   · exact h
 
 /-- **A property the suspend keeps holds after `finaliseThreadSuspend`.** -/

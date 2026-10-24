@@ -5364,20 +5364,25 @@ private theorem suspendRescheduleOnCore_preserves_ipcInvariantFull
     · cases hStep
       exact hInv
 
-/-- The bound-donation cancel: SC clear, replenish drop, index drop, victim
-unbind — the §11 unbind-direction rewrite under a replenish-only scheduler
-change. -/
-theorem cancelBoundDonationOnCore_preserves_ipcInvariantFull
-    (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) (rqCore : CoreId)
+/-- The bound-donation cancel, read through a **view** of the thread: the
+binding the cancel matches on is `tcbV`'s, while the TCB it rewrites is the
+stored `tcb` (the cancel writes through `updateTcb`, never the view).  The
+final-delete unbind passes the stored TCB with its owner code cleared, so a
+`.donated` holder is unbound by the same transition as a `.bound` one
+(seL4 `schedContext_unbindTCB` on a lent context).  SC clear, replenish drop,
+index drop, victim unbind — the §11 unbind-direction rewrite under a
+replenish-only scheduler change. -/
+theorem cancelBoundDonationOnCore_view_preserves_ipcInvariantFull
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb tcbV : TCB) (rqCore : CoreId)
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
     (hStored : st.objects[tid.toObjId]? = some (.tcb tcb))
     (hAllowed : passiveServerIdleAllowed tcb.ipcState)
-    (hBack : ∀ scId, tcb.schedContextBinding = .bound scId → ∃ sc : SchedContext,
+    (hBack : ∀ scId, tcbV.schedContextBinding = .bound scId → ∃ sc : SchedContext,
       st.objects[scId.toObjId]? = some (.schedContext sc) ∧ sc.boundThread = some tid)
-    (hStep : cancelBoundDonationOnCore st tid tcb rqCore = .ok st') :
+    (hStep : cancelBoundDonationOnCore st tid tcbV rqCore = .ok st') :
     ipcInvariantFull st' := by
   unfold cancelBoundDonationOnCore at hStep
-  cases hB : tcb.schedContextBinding with
+  cases hB : tcbV.schedContextBinding with
   | unbound => rw [hB] at hStep; cases hStep
   | donated scId owner => rw [hB] at hStep; cases hStep
   | bound scId =>
@@ -5442,6 +5447,21 @@ theorem cancelBoundDonationOnCore_preserves_ipcInvariantFull
             cases hT
           · rw [show ((st.objects.insert scId.toObjId (KernelObject.schedContext { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })).insert tid.toObjId (KernelObject.tcb { tcb with scBindingScCode := 0, scBindingOwnerCode := 0 }))[t.toObjId]? = st.objects[t.toObjId]? from by simp only [RHTable_getElem?_eq_get?]; rw [RobinHood.RHTable.getElem?_insert_ne _ tid.toObjId t.toObjId _ (by simp; exact fun h => hTv (SeLe4n.ThreadId.toObjId_injective t tid h.symm)) hObjInv1]; rw [RobinHood.RHTable.getElem?_insert_ne _ scId.toObjId t.toObjId _ (by simp; exact fun h => hTs h.symm) hObjInv]] at hT
             exact ⟨tcb', hT, hUnb, hNQ, hNC, rfl⟩
+
+/-- The bound-donation cancel on the stored TCB itself
+(`cancelBoundDonationOnCore_view_preserves_ipcInvariantFull` with the view the
+TCB). -/
+theorem cancelBoundDonationOnCore_preserves_ipcInvariantFull
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) (rqCore : CoreId)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hStored : st.objects[tid.toObjId]? = some (.tcb tcb))
+    (hAllowed : passiveServerIdleAllowed tcb.ipcState)
+    (hBack : ∀ scId, tcb.schedContextBinding = .bound scId → ∃ sc : SchedContext,
+      st.objects[scId.toObjId]? = some (.schedContext sc) ∧ sc.boundThread = some tid)
+    (hStep : cancelBoundDonationOnCore st tid tcb rqCore = .ok st') :
+    ipcInvariantFull st' :=
+  cancelBoundDonationOnCore_view_preserves_ipcInvariantFull st st' tid tcb tcb rqCore hObjInv
+    hInv hStored hAllowed hBack hStep
 
 /-- The donated-donation cancel: the verified donation return plus the
 replenishment migration. -/

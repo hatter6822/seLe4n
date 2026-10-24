@@ -24,6 +24,14 @@ flags they write are outside the projection.  When the observer sees none of the
 objects (`threadFinaliseHidden`, `schedContextFinaliseHidden`), the projection is
 unchanged (`finaliseThread_hidden`, `finaliseSchedContext_hidden`).
 
+WS-ZA ZA5.4 part 25: a scheduling context's finalisation also releases a holder
+it lends to and unlinks the head of its reply stack, a stack link the projection
+strips; a reply's (`finaliseReply`) cancels its waiting caller, reverts the boost
+the caller lent along its blocking chain, and suspends it.  When the caller is
+hidden (`replyFinaliseHidden`) and the blocking chain of a hidden thread is
+hidden (`hBlockingChainHigh`), the projection is unchanged
+(`finaliseReply_hidden`).
+
 * **Which threads wait.**  The hypothesis names the threads that wait on the
   object in the pre-state (`waitersHidden`).  Every step leaves each thread
   `.ready` or in the blocking state it had (`waitFrame`), so a thread that waits
@@ -542,41 +550,172 @@ theorem finaliseThread_hidden (ctx : LabelingContext) (observer : IfObserver)
     rw [finaliseThreadSuspend_hidden ctx observer _ ⟨x.val⟩ hI3 hX, hP3, hP2, hP1]
   · rfl
 
+namespace hiddenObjectsWrite
+
+variable {ctx : LabelingContext} {observer : IfObserver}
+
+/-- A scheduling context rewritten in its hidden slot. -/
+theorem updateSchedContext (s : SystemState) (scId : SeLe4n.SchedContextId)
+    (f : SchedContext → SchedContext) (hInv : s.objects.invExt)
+    (hX : objectObservable ctx observer scId.toObjId = false) :
+    hiddenObjectsWrite ctx observer s (s.updateSchedContext scId f) :=
+  ⟨SystemState.updateSchedContext_eq_objects_update _ _ _, fun k hk =>
+    SystemState.updateSchedContext_objects_ne _ _ _ k
+      (fun e => by rw [← e, hX] at hk; cases hk) hInv⟩
+
+end hiddenObjectsWrite
+
+/-- **A scheduling context's release of its holder is invisible** when the
+context and the thread bound to it are hidden: the reservation unbind on the
+holder's owner-cleared view (`cancelBoundDonationOnCore_hidden`). -/
+theorem finaliseSchedContextUnbind_hidden (ctx : LabelingContext) (observer : IfObserver)
+    {st : SystemState} {x : SeLe4n.ObjId} (hInv : st.objects.invExt)
+    (hX : objectObservable ctx observer x = false)
+    (hH : schedContextFinaliseHidden ctx observer st x) :
+    projectState ctx observer (finaliseSchedContextUnbind st x) = projectState ctx observer st := by
+  unfold finaliseSchedContextUnbind
+  split
+  · next sc hO =>
+    split
+    · rfl
+    · next h0 =>
+      dsimp only
+      split
+      · next t hT =>
+        split
+        · next hG =>
+          simp only [Bool.and_eq_true, beq_iff_eq] at hG
+          split
+          · next st' hOk =>
+            exact cancelBoundDonationOnCore_hidden ctx observer hInv
+              (schedContextBinding_ownerCleared hG.1.1.1) hX (hH sc hO (by simpa using h0)) hOk
+          · rfl
+        · rfl
+      · rfl
+  · rfl
+
+/-- **A scheduling context's reply-stack unlink is invisible** when the context
+is hidden: the head reply's upward link is a stack link, which the projection
+strips (`projectKernelObject_reply_next_invariant`), and the context's head is
+written in its hidden slot. -/
+theorem finaliseSchedContextUnstack_hidden (ctx : LabelingContext) (observer : IfObserver)
+    {s : SystemState} {x : SeLe4n.ObjId} (hInv : s.objects.invExt)
+    (hX : objectObservable ctx observer x = false)
+    (hIdx : ∀ (rid : SeLe4n.ReplyId) (r : Reply), s.getReply? rid = some r →
+      s.objectIndexSet.contains rid.toObjId = true) :
+    projectState ctx observer (finaliseSchedContextUnstack s x) = projectState ctx observer s := by
+  unfold finaliseSchedContextUnstack
+  split
+  · split
+    · next rid _ =>
+      split
+      · next r hR =>
+        split
+        · split
+          · next s1 hS =>
+            have hI1 := storeObject_preserves_objects_invExt s s1 _ _ hInv hS
+            rw [(hiddenObjectsWrite.updateSchedContext s1 ⟨x.val⟩ _ hI1 hX).projection]
+            exact storeObject_projectionStable_preserves_projection ctx observer s s1 _ _ (.reply r)
+              ((SystemState.getReply?_eq_some_iff _ _ _).mp hR)
+              (projectKernelObject_reply_next_invariant ctx observer r none) (hIdx rid r hR) hInv hS
+          · rfl
+        · rfl
+      · rfl
+    · rfl
+  · rfl
+
 /-- **A scheduling context's finalisation is invisible** when the context and
-the thread bound to it are hidden: the unbind is the thread's reservation unbind
-(`cancelBoundDonationOnCore_hidden`), and the destroy cleanup is the identity on
-the finalised context (`finaliseSchedContext_eq`). -/
+the thread bound to it are hidden: the release (`finaliseSchedContextUnbind_hidden`),
+the reply-stack unlink (`finaliseSchedContextUnstack_hidden`, at the replies the
+pre-state indexes — the release writes a thread and a context only, and no
+index), and the destroy cleanup, the identity on the finalised context
+(`finaliseSchedContext_eq`). -/
 theorem finaliseSchedContext_hidden (ctx : LabelingContext) (observer : IfObserver)
     {st : SystemState} {x : SeLe4n.ObjId} (hInv : st.objects.invExt)
+    (hIdx : SeLe4n.Model.objectIndexSetComplete st)
     (hX : objectObservable ctx observer x = false)
     (hH : schedContextFinaliseHidden ctx observer st x) :
     projectState ctx observer (finaliseSchedContext x st) = projectState ctx observer st := by
   rw [finaliseSchedContext_eq]
   split
-  · unfold finaliseSchedContextUnbind
+  · have hF : FinaliseFrame st (finaliseSchedContextUnbind st x) := by
+      refine finaliseSchedContextUnbind_closed (FinaliseFrame st) ?_ st x (.refl hInv)
+      exact FinaliseFrame.releaseStep st
+    have hSet : (finaliseSchedContextUnbind st x).objectIndexSet = st.objectIndexSet := by
+      rw [hF.rest]
+    refine (finaliseSchedContextUnstack_hidden ctx observer hF.invExt hX
+      (fun rid r hR => ?_)).trans (finaliseSchedContextUnbind_hidden ctx observer hInv hX hH)
+    rw [hSet]
+    refine hIdx _ (fun e => ?_)
+    have hR' := (SystemState.getReply?_eq_some_iff _ _ _).mp hR
+    rcases hF.write rid.toObjId with h | ⟨pre, _, hp, _⟩
+    · rw [h, e] at hR'; cases hR'
+    · rw [hp] at e; cases e
+  · rfl
+
+/-- **What a reply's finalisation writes, besides the reply**: the caller waiting
+on it — hidden.  The cancel's other writes are stack links and reply-waiter
+links, which the projection strips, and the boost revert's are threads on the
+caller's blocking chain, which `hBlockingChainHigh` puts out of sight. -/
+def replyFinaliseHidden (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (x : SeLe4n.ObjId) : Prop :=
+  ∀ r, st.getObject? x = some (.reply r) → r.callerCode ≠ 0 →
+    threadObservable ctx observer (⟨r.callerCode - 1⟩ : SeLe4n.ThreadId) = false
+
+/-- **A reply's finalisation is invisible** when the caller waiting on it is
+hidden: the cancel's reply arm with no donation to return
+(`cancelIpcBlocking_blockedOnReply_preserves_projection`), the boost revert along
+the caller's blocking chain (`propagatePipChainCrossCore_preserves_projection`),
+and the caller's suspend (`finaliseThreadSuspend_hidden`). -/
+theorem finaliseReply_hidden (ctx : LabelingContext) (observer : IfObserver)
+    {st : SystemState} {x : SeLe4n.ObjId} (hInv : st.objects.invExt)
+    (hValid : LabelingContextValid ctx)
+    (hIdx : SeLe4n.Model.objectIndexSetComplete st) (hSet : st.objectIndexSet.table.invExt)
+    (hBlockingChainHigh : ∀ (s : SystemState) (t server : SeLe4n.ThreadId),
+      threadObservable ctx observer t = false →
+      PriorityInheritance.blockingServer s t = some server →
+      threadObservable ctx observer server = false)
+    (hH : replyFinaliseHidden ctx observer st x) :
+    projectState ctx observer (finaliseReply x st) = projectState ctx observer st := by
+  unfold finaliseReply
+  split
+  · next r hX =>
     split
-    · next sc hO =>
-      split
-      · rfl
-      · next h0 =>
-        dsimp only
-        split
-        · next t hT =>
-          split
-          · next hG =>
-            simp only [Bool.and_eq_true, beq_iff_eq] at hG
-            obtain ⟨⟨⟨⟨hS, hOw⟩, -⟩, -⟩, -⟩ := hG
-            split
-            · next st' hOk =>
-              have hS0 : t.scBindingScCode ≠ 0 := by omega
-              rw [cancelDonationArmOnCore_of_codes st _ hS0 hOw] at hOk
-              refine cancelBoundDonationOnCore_hidden ctx observer hInv
-                (schedContextBinding_of_codes hS0 hOw) ?_ (hH sc hO (by simpa using h0)) hOk
-              rw [hS, Nat.add_sub_cancel]; exact hX
-            · rfl
-          · rfl
-        · rfl
     · rfl
+    · next h0 =>
+      dsimp only
+      split
+      · next t hT =>
+        split
+        · next hF =>
+          have hC : r.callerCode = (⟨r.callerCode - 1⟩ : SeLe4n.ThreadId).val + 1 := by
+            simp only [beq_iff_eq] at h0; show _ = _ - 1 + 1; omega
+          obtain ⟨-, -, -, -, -, ⟨ep, rt, hB⟩, -, -, -, -, -, hD⟩ :=
+            replyCallerFinalisable_parts hX hC hF
+          have hHigh := hH r hX (by simpa using h0)
+          have hP1 := cancelIpcBlocking_blockedOnReply_preserves_projection ctx observer st
+            ⟨r.callerCode - 1⟩ t ep rt hB hValid hHigh hInv hIdx hSet
+            (fun scId holder e => by rw [hD] at e; cases e)
+          have hI1 := Lifecycle.Suspend.cancelIpcBlocking_preserves_objects_invExt st
+            ⟨r.callerCode - 1⟩ t hInv
+          have hRev : projectState ctx observer
+              (finaliseReplyRevert (Lifecycle.Suspend.cancelIpcBlocking st ⟨r.callerCode - 1⟩ t)
+                t.blockingServer?) =
+              projectState ctx observer
+                (Lifecycle.Suspend.cancelIpcBlocking st ⟨r.callerCode - 1⟩ t) := by
+            unfold finaliseReplyRevert
+            cases hS : t.blockingServer? with
+            | none => rfl
+            | some sv =>
+              exact propagatePipChainCrossCore_preserves_projection ctx observer
+                (hValid.coherenceImpliesObjectHigh observer) hBlockingChainHigh _ sv _ _
+                (hBlockingChainHigh st _ sv hHigh (by
+                  unfold PriorityInheritance.blockingServer; rw [hT]; exact hS)) hI1
+          rw [finaliseThreadSuspend_hidden ctx observer _ _
+            (FinaliseFrame.finaliseReplyRevert _ _ hI1).invExt
+            (hValid.coherenceImpliesObjectHigh observer _ hHigh), hRev, hP1]
+        · rfl
+      · rfl
   · rfl
 
 -- ============================================================================
@@ -597,14 +736,21 @@ theorem finaliseFinalObject_preserves_projection (ctx : LabelingContext) (observ
       ntfn.boundTCB = some t → objectObservable ctx observer t.toObjId = false)
     (hTF : target ≠ 0 → threadFinaliseHidden ctx observer st (SeLe4n.ObjId.ofNat (target - 1)))
     (hSF : target ≠ 0 →
-      schedContextFinaliseHidden ctx observer st (SeLe4n.ObjId.ofNat (target - 1))) :
+      schedContextFinaliseHidden ctx observer st (SeLe4n.ObjId.ofNat (target - 1)))
+    (hRF : target ≠ 0 → replyFinaliseHidden ctx observer st (SeLe4n.ObjId.ofNat (target - 1)))
+    (hValid : LabelingContextValid ctx)
+    (hIdx : SeLe4n.Model.objectIndexSetComplete st) (hSet : st.objectIndexSet.table.invExt)
+    (hBlockingChainHigh : ∀ (s : SystemState) (t server : SeLe4n.ThreadId),
+      threadObservable ctx observer t = false →
+      PriorityInheritance.blockingServer s t = some server →
+      threadObservable ctx observer server = false) :
     projectState ctx observer (finaliseFinalObject target st) = projectState ctx observer st := by
   unfold finaliseFinalObject
   split
   · rfl
   next h0 =>
   dsimp only
-  generalize SeLe4n.ObjId.ofNat (target - 1) = x at hx hW hBd hTF hSF ⊢
+  generalize SeLe4n.ObjId.ofNat (target - 1) = x at hx hW hBd hTF hSF hRF ⊢
   have hX := hx h0
   let P : SystemState → Prop := fun s => finaliseStepInvariant s ∧
     waitersHidden ctx observer x s ∧ projectState ctx observer s = projectState ctx observer st
@@ -641,7 +787,8 @@ theorem finaliseFinalObject_preserves_projection (ctx : LabelingContext) (observ
         · exact hP0
       · exact hP0
     · exact finaliseThread_hidden ctx observer h.2.1 hX (hTF h0)
-    · exact finaliseSchedContext_hidden ctx observer h.2.1 hX (hSF h0)
+    · exact finaliseSchedContext_hidden ctx observer h.2.1 hIdx hX (hSF h0)
+    · exact finaliseReply_hidden ctx observer h.2.1 hValid hIdx hSet hBlockingChainHigh (hRF h0)
     · rfl
   · rfl
 
@@ -660,6 +807,13 @@ theorem retireFinalisedObject_preserves_projection (ctx : LabelingContext)
     (hTF : target ≠ 0 → threadFinaliseHidden ctx observer st (SeLe4n.ObjId.ofNat (target - 1)))
     (hSF : target ≠ 0 →
       schedContextFinaliseHidden ctx observer st (SeLe4n.ObjId.ofNat (target - 1)))
+    (hRF : target ≠ 0 → replyFinaliseHidden ctx observer st (SeLe4n.ObjId.ofNat (target - 1)))
+    (hValid : LabelingContextValid ctx)
+    (hIdx : SeLe4n.Model.objectIndexSetComplete st) (hSet : st.objectIndexSet.table.invExt)
+    (hBlockingChainHigh : ∀ (s : SystemState) (t server : SeLe4n.ThreadId),
+      threadObservable ctx observer t = false →
+      PriorityInheritance.blockingServer s t = some server →
+      threadObservable ctx observer server = false)
     (hU : target ≠ 0 → ∀ w, untypedRecordsChild st w (SeLe4n.ObjId.ofNat (target - 1)) = true →
       objectObservable ctx observer w = false)
     (hR : recorder ≠ 0 →
@@ -671,6 +825,7 @@ theorem retireFinalisedObject_preserves_projection (ctx : LabelingContext)
   unfold retireFinalisedObject
   rw [retireFinalObject_preserves_projection ctx observer ec target recorder hF.invExt hx
     (fun h0 w hw => hU h0 w (by unfold untypedRecordsChild at hw ⊢; rw [hUt] at hw; exact hw)) hR,
-    finaliseFinalObject_preserves_projection ctx observer target h hx hW hBd hTF hSF]
+    finaliseFinalObject_preserves_projection ctx observer target h hx hW hBd hTF hSF hRF hValid
+      hIdx hSet hBlockingChainHigh]
 
 end SeLe4n.Kernel

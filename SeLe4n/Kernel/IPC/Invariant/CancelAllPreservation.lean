@@ -286,21 +286,77 @@ theorem storeUnbindNotification_preserves_ipcInvariantFull
   rw [hCode, Nat.add_sub_cancel] at hSpec
   exact unbindNotification_preserves_ipcInvariantFull _ _ _ hObjInv hInv hSpec
 
-/-- **A thread's or a context's reservation unbind keeps the bundle**: the
-per-core unbind (`cancelBoundDonationOnCore_preserves_ipcInvariantFull`), on a
-thread whose context is bound back to it and whose IPC state an unbound thread
-may idle in. -/
-theorem finaliseScUnbindStep_keepsIpcInvariantFull :
-    FinaliseScUnbindStep (fun s => ipcInvariantFull s ∧ s.objects.invExt) := by
-  intro s s' t tcb sc h hT hS hO _ _ hA hSc hB hOk
-  rw [cancelDonationArmOnCore_of_codes s t hS hO] at hOk
-  refine ⟨cancelBoundDonationOnCore_preserves_ipcInvariantFull s s' t tcb _ h.2 h.1
+/-- **A context's release of its holder keeps the bundle**: the per-core unbind
+read through the owner-cleared view
+(`cancelBoundDonationOnCore_view_preserves_ipcInvariantFull`), on a thread whose
+context — its own or on loan — is bound back to it and whose IPC state an
+unbound thread may idle in.  The thread finalisation's unbind is the case of a
+`.bound` holder (`FinaliseScReleaseStep.scUnbind`). -/
+theorem finaliseScReleaseStep_keepsIpcInvariantFull :
+    FinaliseScReleaseStep (fun s => ipcInvariantFull s ∧ s.objects.invExt) := by
+  intro s s' t tcb sc x h hT hS _ _ hA hSc hB hOk
+  refine ⟨cancelBoundDonationOnCore_view_preserves_ipcInvariantFull s s' t tcb _ _ h.2 h.1
     ((SystemState.getTcb?_eq_some_iff s t tcb).mp hT) (passiveServerIdleAllowed_of_codes hA)
     (fun scId hb => ?_) hOk, (FinaliseFrame.cancelBoundDonationOnCore h.2 hOk).invExt⟩
-  rw [schedContextBinding_of_codes hS hO] at hb
+  rw [schedContextBinding_ownerCleared hS] at hb
   cases hb
   refine ⟨sc, (SystemState.getSchedContext?_eq_some_iff s _ sc).mp hSc, ?_⟩
   unfold SchedContext.boundThread; rw [hB]; exact threadOfOptCode_succ t
+
+/-- **A context's reply-stack unlink keeps the bundle**: the head reply's
+upward link is a stack link, not its caller
+(`storeObject_reply_stackLinks_preserves_ipcInvariantFull`), and the context's
+head is content the bundle does not read
+(`insertObjects_schedContextContentUpdate_preserves_ipcInvariantFull`). -/
+theorem finaliseUnstackStep_keepsIpcInvariantFull :
+    FinaliseUnstackStep (fun s => ipcInvariantFull s ∧ s.objects.invExt) := by
+  intro s s1 x _ rid r h _ _ hR _ hS
+  have h1 := storeObject_reply_stackLinks_preserves_ipcInvariantFull (a' := { r with next := none }) h.2 h.1 hR
+    rfl hS
+  have hI1 := storeObject_preserves_objects_invExt s s1 _ _ h.2 hS
+  cases hG : s1.getSchedContext? ⟨x.val⟩ with
+  | none => rw [SystemState.updateSchedContext_eq_self_of_none hG]; exact ⟨h1, hI1⟩
+  | some y =>
+    rw [SystemState.updateSchedContext_eq_of_some hG]
+    exact ⟨insertObjects_schedContextContentUpdate_preserves_ipcInvariantFull s1 _ y _ hI1 h1
+      ((SystemState.getSchedContext?_eq_some_iff _ _ _).mp hG) rfl,
+      RHTable_insert_preserves_invExt _ _ _ hI1⟩
+
+/-- **A reply's caller cancel keeps the bundle**: the reply arm of the cancel
+with no donation to return — the splice
+(`spliceThreadReplyFrameOut_preserves_ipcInvariantFull`), the restore and
+teardown pair (`restoredAndConsumed_preserves_ipcInvariantFull`, at a caller
+holding no timeout budget, linked into no queue and lending to no thread) — then
+the revert of the boost it lent its server
+(`propagatePipChainCrossCore_preserves_ipcInvariantFull`). -/
+theorem finaliseReplyStep_keepsIpcInvariantFull :
+    FinaliseReplyStep (fun s => ipcInvariantFull s ∧ s.objects.invExt) := by
+  intro s x r c t h hX hC hT hF
+  obtain ⟨-, hNotRes, -, -, -, ⟨ep, rt, hB⟩, -, hN, hP, hBud, hNoLoan, hD⟩ :=
+    replyCallerFinalisable_parts hX hC hF
+  have hTo := (SystemState.getTcb?_eq_some_iff s c t).mp hT
+  have hRet : Lifecycle.Suspend.returnDonationToCancelledCaller s c t = s := by
+    unfold Lifecycle.Suspend.returnDonationToCancelledCaller; rw [hD]
+  have hEq := cancelIpcBlocking_reply_arm_eq s c t ep rt hB
+  rw [hRet] at hEq
+  have hInvS := spliceThreadReplyFrameOut_preserves_objects_invExt s t h.2
+  have hBundleS := spliceThreadReplyFrameOut_preserves_ipcInvariantFull s t h.2 h.1
+  have hAtS := spliceThreadReplyFrameOut_tcb_eq s t h.2 c.toObjId t hTo
+  have hLkS : lookupTcb (spliceThreadReplyFrameOut s t) c = some t :=
+    lookupTcb_of_objects_of_not_reserved _ c t hAtS hNotRes
+  have hOffS : sweptThreadOffQueueChains (spliceThreadReplyFrameOut s t) c := by
+    intro tcbX hX; rw [hLkS] at hX; cases hX; exact ⟨hP, hN⟩
+  have h1 : ipcInvariantFull (Lifecycle.Suspend.cancelIpcBlocking s c t) := by
+    rw [hEq]
+    exact restoredAndConsumed_preserves_ipcInvariantFull _ c t _ ep rt hInvS hLkS hB hBundleS hBud
+      hOffS (fun tid tcb scId hA => hNoLoan tid tcb scId
+        (spliceThreadReplyFrameOut_tcb_backward s t h.2 tid.toObjId tcb hA))
+  have hI1 := (FinaliseFrameAny.replyCancel s c t h.2 hB hD).invExt
+  cases hSv : t.blockingServer? with
+  | none => exact ⟨h1, hI1⟩
+  | some sv =>
+    exact ⟨propagatePipChainCrossCore_preserves_ipcInvariantFull _ sv _ _ hI1 h1,
+      (FinaliseFrame.propagatePip _ sv _ _ hI1).invExt⟩
 
 /-- **A thread's notification cancel, without the wake, keeps the bundle**
 (`cancelIpcBlocking_notificationArm_preserves_ipcInvariantFull`). -/
@@ -349,8 +405,9 @@ theorem finaliseFinalObject_preserves_ipcInvariantFull (target : Nat) (st : Syst
     (fun n s _ t h _ _ hCode hIn =>
       ⟨storeUnbindNotification_preserves_ipcInvariantFull s n t h.2 h.1 hCode hIn,
         (FinaliseFrame.storeUnbindNotification s t n h.2).invExt⟩)
-    finaliseScUnbindStep_keepsIpcInvariantFull finaliseCancelStep_keepsIpcInvariantFull
-    finaliseSuspendStep_keepsIpcInvariantFull
+    finaliseScReleaseStep_keepsIpcInvariantFull finaliseCancelStep_keepsIpcInvariantFull
+    finaliseSuspendStep_keepsIpcInvariantFull finaliseUnstackStep_keepsIpcInvariantFull
+    finaliseReplyStep_keepsIpcInvariantFull
     target st ⟨hInv, hObjInv⟩).1
 
 /-- **The retire after the finalisation keeps the IPC bundle**: the

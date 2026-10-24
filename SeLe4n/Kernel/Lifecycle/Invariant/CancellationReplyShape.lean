@@ -2680,14 +2680,40 @@ theorem restoreToReadyStaging_replyCallerLinkageExcept (st : SystemState)
     · rw [restoredTcb_ipcState] at hBlk
       cases hBlk
 
+/-- **The restore keeps the timeout-budget discipline** of a victim that holds no
+timeout budget: every other thread keeps its TCB, the victim's budget stays
+`none` (`restoreToReadyStaging_timeoutBudgetFrame`), and no scheduling context
+moves (`restoreToReadyStaging_nonTcb`).  This is the per-victim form of
+`blockedThreadTimeoutConsistent_of_frame` under `allTimeoutBudgetsNone`, so the
+restore's bundle carriage asks nothing of any *other* thread's budget. -/
+theorem restoreToReadyStaging_blockedThreadTimeoutConsistent (st : SystemState)
+    (v : SeLe4n.ThreadId) (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
+    (hInv : st.objects.invExt) (hLookup : lookupTcb st v = some tcbV)
+    (hVBudget : tcbV.timeoutBudget = none) (h : blockedThreadTimeoutConsistent st) :
+    blockedThreadTimeoutConsistent (Lifecycle.Suspend.restoreToReadyStaging st v frame) := by
+  refine blockedThreadTimeoutConsistent_of_rewrites h (fun t tcb' scId hT hB => ?_)
+    (fun o sc hO => ⟨sc, (restoreToReadyStaging_nonTcb st v frame tcbV hInv hLookup o _
+      (fun _ e => by cases e)).mpr hO⟩)
+  rcases restoreToReadyStaging_tcb_pullback st v frame tcbV hInv hLookup t.toObjId tcb' hT with
+    ⟨_, h0⟩ | ⟨hk, -⟩
+  · exact ⟨tcb', h0, hB, rfl⟩
+  · obtain ⟨tcb0, h0, hEq⟩ := restoreToReadyStaging_timeoutBudgetFrame st v frame tcbV hInv
+      hLookup t tcb' hT
+    rw [hk, lookupTcb_some_objects st v tcbV hLookup] at h0
+    cases h0
+    rw [← hEq, hVBudget] at hB
+    cases hB
+
 /-- **WS-RR RR8.7 — the restore's keystone**: the unblock-and-stage rewrite
 establishes `ipcInvariantFull` with the reply linkage relaxed at the thread it
 wakes.
 
 Four hypotheses beyond the bundle, and each is a fact about a different way the
-step could break a conjunct.  `hAllBudgetsNone` is the one both other cancellation
-arms take, for the same reason: the timeout conjunct says a budget-carrying thread
-is blocked and this step makes one `.ready`.  `hOff` is the queue-coherence fact —
+step could break a conjunct.  `hVBudget` — the woken thread holds no timeout
+budget — is the timeout conjunct's: it says a budget-carrying thread is blocked,
+and this step makes one `.ready`; only the woken thread's budget is asked for, so
+a caller holding the system-wide `allTimeoutBudgetsNone` reads it off at the
+victim.  `hOff` is the queue-coherence fact —
 the step clears the woken thread's links with nothing to repair a neighbour, and
 `ipcInvariantFull` carries no connectivity.  `hNotOwner` is what the reclaim
 establishes.  And the blocking state is what puts the thread off every endpoint
@@ -2702,13 +2728,13 @@ theorem restoreToReadyStaging_establishes_ipcInvariantFullExceptReplyLinkage
     (hInv : st.objects.invExt) (hLookup : lookupTcb st v = some tcbV)
     (hBlocked : tcbV.ipcState = .blockedOnReply epV rtV)
     (hBundle : ipcInvariantFull st)
-    (hAllBudgetsNone : allTimeoutBudgetsNone st)
+    (hVBudget : tcbV.timeoutBudget = none)
     (hOff : sweptThreadOffQueueChains st v)
     (hNotOwner : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId),
       st.objects[tid.toObjId]? = some (.tcb tcb) → tcb.schedContextBinding ≠ .donated scId v) :
     ipcInvariantFullExceptReplyLinkage
       (Lifecycle.Suspend.restoreToReadyStaging st v frame) v := by
-  obtain ⟨hIpc, hDual, hBnd, hBadge, hBlkMsg, hNoDup, hMem, hQNB, hQHB, _hTimeout,
+  obtain ⟨hIpc, hDual, hBnd, hBadge, hBlkMsg, hNoDup, hMem, hQNB, hQHB, hTimeout,
     hDonAcyc, hDonOwner, hPassive, hDonBudget, hBlkReply, hReplyLink, hStash,
     hDonUnique, hTailBlk, hTgt⟩ := hBundle
   have hLink : tcbQueueLinkIntegrity st := hDual.2.1
@@ -2733,8 +2759,8 @@ theorem restoreToReadyStaging_establishes_ipcInvariantFullExceptReplyLinkage
       hOff hQNB,
     restoreToReadyStaging_queueHeadBlockedConsistent st v frame tcbV epV rtV hInv hLookup
       hBlocked hQHB hTailBlk,
-    blockedThreadTimeoutConsistent_of_frame
-      (restoreToReadyStaging_timeoutBudgetFrame st v frame tcbV hInv hLookup) hAllBudgetsNone,
+    restoreToReadyStaging_blockedThreadTimeoutConsistent st v frame tcbV hInv hLookup hVBudget
+      hTimeout,
     restoreToReadyStaging_donationChainAcyclic st v frame hInv hDonAcyc,
     restoreToReadyStaging_donationOwnerValid st v frame tcbV hInv hLookup hNotOwner hDonOwner,
     passiveServerIdle_of_frame
@@ -2833,7 +2859,7 @@ theorem restoredAndConsumed_preserves_ipcInvariantFull (st : SystemState)
     (hInv : st.objects.invExt) (hLookup : lookupTcb st v = some tcbV)
     (hBlocked : tcbV.ipcState = .blockedOnReply epV rtV)
     (hBundle : ipcInvariantFull st)
-    (hAllBudgetsNone : allTimeoutBudgetsNone st)
+    (hVBudget : tcbV.timeoutBudget = none)
     (hOff : sweptThreadOffQueueChains st v)
     (hNotOwner : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId),
       st.objects[tid.toObjId]? = some (.tcb tcb) → tcb.schedContextBinding ≠ .donated scId v) :
@@ -2853,7 +2879,7 @@ theorem restoredAndConsumed_preserves_ipcInvariantFull (st : SystemState)
     (restoredTcb_replyObject tcbV frame)
     (fun ep rt => by rw [restoredTcb_ipcState]; intro hc; cases hc)
     (restoreToReadyStaging_establishes_ipcInvariantFullExceptReplyLinkage st v frame tcbV
-      epV rtV hInv hLookup hBlocked hBundle hAllBudgetsNone hOff hNotOwner)
+      epV rtV hInv hLookup hBlocked hBundle hVBudget hOff hNotOwner)
 
 
 -- ============================================================================
@@ -3403,6 +3429,7 @@ theorem cancelIpcBlocking_replyArm_preserves_ipcInvariantFull
   rw [cancelIpcBlocking_reply_arm_eq st v tcbV epV rtV hBlocked,
     restoredAndConsumed_congr _ v tcbV tcbR _ (by rw [hEqR]) (by rw [hEqR] <;> rfl)]
   exact restoredAndConsumed_preserves_ipcInvariantFull _ v tcbR _ epV rtV hInvS hLkS
-    (by rw [hEqR]; exact hBlocked) hBundleS hBudgetsS hOffS hNotOwnerS
+    (by rw [hEqR]; exact hBlocked) hBundleS
+    (hBudgetsS v tcbR (lookupTcb_some_objects _ v tcbR hLkS)) hOffS hNotOwnerS
 
 end SeLe4n.Kernel
