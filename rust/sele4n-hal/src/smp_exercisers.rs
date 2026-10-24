@@ -2085,7 +2085,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 6] = [
             "untyped-retype-sched-context",
             UNTYPED_RETYPE,
             UNTYPED_CAP,
-            [SCHED_CONTEXT_TYPE, THREAD_CHILD_IDS[2], CNODE_CAP, MINT_SLOT],
+            [
+                SCHED_CONTEXT_TYPE,
+                THREAD_CHILD_IDS[2],
+                CNODE_CAP,
+                MINT_SLOT,
+            ],
         ),
         invocation(
             "untyped-retype-sc-thread",

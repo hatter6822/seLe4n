@@ -376,6 +376,8 @@ def chainNeutralConstructors : List (Name × String) :=
       "`{ sc with boundThread := none, isActive := false }` and the TCB's `schedContextBinding`; the binding graph, not the stack")
   , (`SeLe4n.Kernel.cancelBoundDonationOnCore,
       "the per-core spelling of the same binding cancel; same reason")
+  , (`SeLe4n.Kernel.cancelBoundDonationPerform,
+      "the in-place state of the same per-core binding cancel (`cancelBoundDonationOnCore_of_bound`): `{ sc with boundThreadCode := 0, isActive := false, donationOrigin := none }`; `scReply` is untouched")
   , (`SeLe4n.Kernel.Lifecycle.Suspend.suspendThread,
       "composes `consumeReplyLink`, which is registered; writes no chain field in its own body (its direct store is `updateTcb`, which the frontier reaches since v0.35.66 — the entry left this list at v0.35.64, when the frontier did not, and that gap was the fail-open direction)")
   , (`SeLe4n.Kernel.Lifecycle.Suspend.suspendThreadOnCore,
