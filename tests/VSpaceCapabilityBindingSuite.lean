@@ -2992,6 +2992,48 @@ private def runContextlessStackChecks : IO Unit := do
           assertBool "deleting a contextless stack top's last capability retires it"
             (!storedAt st1 965 && !recordsChildAt st1 carveUt 965)
 
+/-- A three-reply stack whose middle reply loses its last capability: the
+removal splices it out (the frame above links down to the frame below, which
+links back up), so the stack stays whole and the removed reply is retired.
+With `runContextlessStackChecks` this runs both writing arms of the compiled
+splice (`spliceReplyFrameStoresInPlace`, `severReplyFrameBelowStoresInPlace`)
+through the final delete's `@[csimp]` form. -/
+private def runMiddleReplyFinaliseChecks : IO Unit := do
+  IO.println "-- §5o a reply stack's middle reply is spliced out and retired on its final delete (WS-ZA ZA5.4 part 25)"
+  match runAll carveScenario
+      [decodeCarve slotUtRetype tcbTag 960 slotOwnCnRW 11,
+       decodeCarve slotUtRetype replyTag 961 slotOwnCnRW 12,
+       decodeCarve slotUtRetype schedContextTag 963 slotOwnCnRW 13,
+       decodeCarve slotUtRetype tcbTag 964 slotOwnCnRW 14,
+       decodeCarve slotUtRetype replyTag 965 slotOwnCnRW 15,
+       decodeCarve slotUtRetype tcbTag 966 slotOwnCnRW 9,
+       decodeCarve slotUtRetype replyTag 967 slotOwnCnRW 10] with
+  | .error e => assertBool s!"carving three callers, three replies and a context succeeds (got {repr e})" false
+  | .ok st0 =>
+    let staged : Option SystemState := do
+      let s1 ← stageCallerOn st0 960 0 961 none
+      let s2 ← stageCallerOn s1 964 0 965 none
+      let s3 ← stageCallerOn s2 966 0 967 none
+      let s4 ← restageReply s3 961 fun r => { r with next := some (.frame ⟨965⟩) }
+      let s5 ← restageReply s4 965 fun r =>
+        { r with prev := some ⟨961⟩, next := some (.frame ⟨967⟩) }
+      let s6 ← restageReply s5 967 fun r => { r with prev := some ⟨965⟩, next := some (.head ⟨963⟩) }
+      pure (s6.updateSchedContext ⟨963⟩ fun sc => { sc with scReply := some ⟨967⟩ })
+    match staged with
+    | none => assertBool "staging the three-reply stack succeeds" false
+    | some st =>
+      match runAll st [decodeDelete 15] with
+      | .error e => assertBool s!"deleting the middle reply's last capability succeeds (got {repr e})" false
+      | .ok st1 =>
+        assertBool "deleting a middle reply's last capability ends its caller"
+          (waiterEnded st1 964)
+        assertBool "the frames either side of the removed reply link to each other"
+          ((replyAt st1 961).map (·.next == some (.frame ⟨967⟩)) == some true &&
+            (replyAt st1 967).map (fun r => r.prev == some ⟨961⟩ &&
+              r.next == some (.head ⟨963⟩)) == some true)
+        assertBool "deleting a middle reply's last capability retires it"
+          (!storedAt st1 965 && !recordsChildAt st1 carveUt 965)
+
 def runVSpaceCapabilityBindingChecks : IO Unit := do
   IO.println "===================================================="
   IO.println "VSpace capability-binding suite (PR #845 review, P1)"
@@ -3017,6 +3059,7 @@ def runVSpaceCapabilityBindingChecks : IO Unit := do
   runReplyFinaliseChecks
   runReplyWaiterFinaliseChecks
   runContextlessStackChecks
+  runMiddleReplyFinaliseChecks
   runAuthorizedChecks
   IO.println "===================================================="
   IO.println "All VSpace capability-binding checks PASS."

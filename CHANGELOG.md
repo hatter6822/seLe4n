@@ -428,8 +428,25 @@ reclaim ended the holder's IPC before returning the reservation
   `prev` (`severReplyFrameBelowStores`).  The frame below is then the new top.
   - Mirrored in the in-place splice (`spliceReplyFrameOutOrSelfInPlace`, its
     `@[csimp]` equality kept) and on the frozen surface
-    (`frozenSeverReplyFrameBelowStores`); both new store steps are registered
+    (`frozenSeverReplyFrameBelowStores`); the new store steps are registered
     in the reply-stack write census.
+  - **Both writing arms of the compiled splice are in place**: the cut
+    (`severReplyFrameBelowStoresInPlace`) and the pre-existing frame-above
+    splice (`spliceReplyFrameStoresInPlace`) write each link in its slot
+    (`storeReplyWith`) instead of running the specification's stores, which
+    rebuilt each Reply record.  Each later write reads its key where the
+    earlier ones left it, which is its pre-state record when the earlier keys
+    are found in place (`findsInPlace`, checked first; otherwise the
+    specification's stores run), and each is proven equal to its
+    specification (`…InPlace_eq`).
+  - **No QEMU scenario reaches either arm**: both need a reply stack two deep,
+    and the image's two threads cannot build one (a caller blocked on its
+    reply cannot be called).  ZA6.1's third thread is the existing debt row.
+    Instead the suite runs both arms through the final delete's compiled
+    `@[csimp]` form: `runContextlessStackChecks` (the cut) and
+    `runMiddleReplyFinaliseChecks` (a three-reply stack's middle reply
+    deleted: the frames either side link to each other and the reply is
+    retired).
   - Footprints: `replyFrameBelow?` is the frame's `prev` unless the frame heads
     a stack, so the cut's write is declared
     (`severFrameBelow_mem_answeredReplyFrameBelow?`,

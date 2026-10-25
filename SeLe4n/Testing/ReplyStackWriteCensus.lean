@@ -817,8 +817,15 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
     -- The compiled forms a final delete runs (`@[csimp]` through
     -- `finaliseReply_eq_impl`): each equals its spec form, and states the
     -- chain through that equality.
-  , (`SeLe4n.Kernel.spliceReplyFrameOutOrSelfInPlace,
-      .states [`SeLe4n.Kernel.spliceReplyFrameOutOrSelfInPlace_preserves_donationChainWellFormed])
+    -- The compiled splice writes through its two compiled store steps, each
+    -- proven equal to the specification's (`spliceReplyFrameStoresInPlace_eq`,
+    -- `severReplyFrameBelowStoresInPlace_eq`), so each mirrors that step; the
+    -- fold over them states the chain through `spliceReplyFrameOutOrSelfInPlace_eq`
+    -- (`spliceReplyFrameOutOrSelfInPlace_preserves_donationChainWellFormed`).
+  , (`SeLe4n.Kernel.spliceReplyFrameStoresInPlace,
+      .mirrors `SeLe4n.Kernel.spliceReplyFrameStores)
+  , (`SeLe4n.Kernel.severReplyFrameBelowStoresInPlace,
+      .mirrors `SeLe4n.Kernel.severReplyFrameBelowStores)
   , (`SeLe4n.Kernel.consumeCallerReplyInPlace,
       .states [`SeLe4n.Kernel.consumeCallerReplyInPlace_preserves_donationChainWellFormed])
   , (`SeLe4n.Kernel.spliceThreadReplyFrameOut,
