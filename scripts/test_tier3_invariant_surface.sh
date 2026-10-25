@@ -4090,6 +4090,25 @@ run_check "INVARIANT" rg -n '^theorem lenderEndable_of_admitted($|[ ({:\[\]])' S
 run_check "INVARIANT" rg -n '^theorem finaliseThreadEndWaiters_returnLoan_endsAll($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseWaiterCompletion.lean
 run_check "INVARIANT" rg -n '^theorem finaliseThreadEndWaiters_returnLoan_endsAll_of_admitted($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseWaiterCompletion.lean
 run_check "INVARIANT" rg -n '^theorem spliceUnframed($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseWaiterCompletion.lean
+# A finalised object's own record is retirable: the context's released, the
+# thread's quiesced (every field the retire's link guard reads, the space slots
+# aside), each step's effect on the thread read off the invariant it carries.
+run_check "INVARIANT" rg -n '^def tcbProjKept($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseThreadFrames.lean
+run_check "INVARIANT" rg -n '^def runCodeBounded($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseThreadFrames.lean
+run_check "INVARIANT" rg -n '^def finaliseCarried($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseThreadFrames.lean
+run_check "INVARIANT" rg -n '^theorem finaliseThreadUnbindNotification_self($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseThreadFrames.lean
+run_check "INVARIANT" rg -n '^theorem finaliseThreadCancel_quiets($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseThreadFrames.lean
+run_check "INVARIANT" rg -n '^theorem finaliseThreadSuspend_quiets($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseThreadFrames.lean
+run_check "INVARIANT" rg -n '^theorem readyThread_unlinked($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseThreadFrames.lean
+run_check "INVARIANT" rg -n '^theorem finaliseThreadUnbindSchedContext_self($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseThreadFrames.lean
+run_check "INVARIANT" rg -n '^theorem finaliseThreadSuspend_servers($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseThreadFrames.lean
+run_check "INVARIANT" rg -n '^theorem noWaiter_of_servers($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseThreadFrames.lean
+run_check "INVARIANT" rg -n '^def schedContextRecordReleased($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseRetirable.lean
+run_check "INVARIANT" rg -n '^def threadRecordQuiesced($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseRetirable.lean
+run_check "INVARIANT" rg -n '^theorem finaliseSchedContext_releases($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseRetirable.lean
+run_check "INVARIANT" rg -n '^theorem finaliseThread_quiesces($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseRetirable.lean
+run_check "INVARIANT" rg -n '^    threadRecordQuiesced \(finaliseThread x st\) x := by$' SeLe4n/Kernel/IPC/Invariant/FinaliseRetirable.lean
+run_check "INVARIANT" rg -n 't\.tid\.val = x\.val ∧ threadLinksQuiescent t = true ∧' SeLe4n/Kernel/IPC/Invariant/FinaliseRetirable.lean
 # A contextless stack top (the head a context's unstack leaves, no `next`) is cut
 # from the frame below, seL4's `reply_remove` `prev->replyNext = 0`: in the
 # specification's removal, the in-place splice and the frozen removal alike, so

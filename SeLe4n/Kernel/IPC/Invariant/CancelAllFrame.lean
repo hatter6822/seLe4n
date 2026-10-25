@@ -746,6 +746,84 @@ theorem finaliseThreadEndWaiters_closed (P : SystemState → Prop) (hRep : Final
   · exact finaliseReplyWaiters_closed P hRep hSuspend x _ s h
   · exact h
 
+/-- **A property the notification unbind keeps holds after
+`finaliseThreadUnbindNotification`.** -/
+theorem finaliseThreadUnbindNotification_closed (P : SystemState → Prop)
+    (hUnbind : FinaliseUnbindStep P) (st : SystemState) (tid : SeLe4n.ThreadId) (h : P st) :
+    P (finaliseThreadUnbindNotification st tid) := by
+  unfold finaliseThreadUnbindNotification
+  dsimp only
+  split
+  · exact h
+  · rename_i hc
+    split
+    · rename_i n hN
+      split
+      · rename_i hB
+        simp only [Bool.and_eq_true, beq_iff_eq] at hB hc
+        refine hUnbind _ st n tid h hN ?_ ?_ hB.2
+        · unfold Notification.boundTCB; rw [hB.1]; exact threadOfOptCode_succ tid
+        · simp only [SeLe4n.ObjId.val]; omega
+      · exact h
+    · exact h
+
+/-- **A property the notification and endpoint cancels and the reply cancel keep
+holds after `finaliseThreadCancel`.** -/
+theorem finaliseThreadCancel_closed (P : SystemState → Prop)
+    (hCancel : FinaliseNotificationCancelStep P) (hEndpoint : FinaliseEndpointCancelStep P)
+    (hRep : FinaliseReplyStep P) (s : SystemState) (tid : SeLe4n.ThreadId) (h1 : P s) :
+    P (finaliseThreadCancel s tid) := by
+  unfold finaliseThreadCancel
+  split
+  · rename_i t hT
+    have hEp : ∀ e q, P (cancelEndpointBlocked s e q tid t) := by
+      intro e q
+      unfold cancelEndpointBlocked
+      split
+      · rename_i ep hE
+        split
+        · rename_i hG
+          exact hEndpoint s e q tid ep t h1 hT hE hG
+        · exact h1
+      · exact h1
+    split
+    · rename_i n hI
+      split
+      · rename_i ntfn hN
+        split
+        · rename_i hG
+          exact hCancel s n tid t ntfn h1 hT hI hN hG
+        · exact h1
+      · exact h1
+    all_goals first
+      | exact hEp _ _
+      | exact finaliseReplyCallerCancel_closed P hRep s tid t h1 hT
+      | exact h1
+  · exact h1
+
+/-- **A property the reservation unbind keeps holds after
+`finaliseThreadUnbindSchedContext`.** -/
+theorem finaliseThreadUnbindSchedContext_closed (P : SystemState → Prop)
+    (hSc : FinaliseScUnbindStep P) (s : SystemState) (tid : SeLe4n.ThreadId) (h4 : P s) :
+    P (finaliseThreadUnbindSchedContext s tid) := by
+  unfold finaliseThreadUnbindSchedContext
+  split
+  · rename_i t hT
+    cases hM : s.getSchedContext? ⟨t.scBindingScCode - 1⟩ with
+    | none => simp only [hM, Bool.and_false, Bool.false_eq_true, ↓reduceIte]; exact h4
+    | some sc =>
+      simp only [hM]
+      split
+      · rename_i hG
+        simp only [Bool.and_eq_true, bne_iff_ne, ne_eq, beq_iff_eq, Bool.not_eq_true'] at hG
+        obtain ⟨⟨⟨⟨hS, hO⟩, hR⟩, hH⟩, hM'⟩ := hG
+        split
+        · rename_i s' hOk
+          exact hSc s s' tid t sc h4 hT hS hO hR hH hM hM' hOk
+        · exact h4
+      · exact h4
+  · exact h4
+
 /-- **A property the thread finalisation's steps keep holds after it.** -/
 theorem finaliseThread_closed (P : SystemState → Prop) (hUnbind : FinaliseUnbindStep P)
     (hSc : FinaliseScUnbindStep P) (hCancel : FinaliseNotificationCancelStep P)
@@ -756,79 +834,12 @@ theorem finaliseThread_closed (P : SystemState → Prop) (hUnbind : FinaliseUnbi
     P (finaliseThread x st) := by
   rw [finaliseThread_eq]
   split
-  · generalize hTid : (⟨x.val⟩ : SeLe4n.ThreadId) = tid
-    -- The notification unbind.
-    have h1 : P (finaliseThreadUnbindNotification st tid) := by
-      unfold finaliseThreadUnbindNotification
-      dsimp only
-      split
-      · exact h
-      · rename_i hc
-        split
-        · rename_i n hN
-          split
-          · rename_i hB
-            simp only [Bool.and_eq_true, beq_iff_eq] at hB hc
-            refine hUnbind _ st n tid h hN ?_ ?_ hB.2
-            · unfold Notification.boundTCB; rw [hB.1]; exact threadOfOptCode_succ tid
-            · simp only [SeLe4n.ObjId.val]; omega
-          · exact h
-        · exact h
-    -- The cancel.
-    have h2 : P (finaliseThreadCancel (finaliseThreadUnbindNotification st tid) tid) := by
-      generalize finaliseThreadUnbindNotification st tid = s at h1 ⊢
-      unfold finaliseThreadCancel
-      split
-      · rename_i t hT
-        have hEp : ∀ e q, P (cancelEndpointBlocked s e q tid t) := by
-          intro e q
-          unfold cancelEndpointBlocked
-          split
-          · rename_i ep hE
-            split
-            · rename_i hG
-              exact hEndpoint s e q tid ep t h1 hT hE hG
-            · exact h1
-          · exact h1
-        split
-        · rename_i n hI
-          split
-          · rename_i ntfn hN
-            split
-            · rename_i hG
-              exact hCancel s n tid t ntfn h1 hT hI hN hG
-            · exact h1
-          · exact h1
-        all_goals first
-          | exact hEp _ _
-          | exact finaliseReplyCallerCancel_closed P hRep s tid t h1 hT
-          | exact h1
-      · exact h1
-    -- The loan return, the waiters' end, then the suspend.
-    have h3 := finaliseThreadSuspend_closed P hSuspend _ tid
-      (finaliseThreadEndWaiters_closed P hRep hSuspend _ tid
-        (finaliseThreadReturnLoan_closed P hRep hSuspend _ tid h2))
-    -- The release.
-    have h4 := hRelease _ tid h3
-    -- The reservation unbind.
-    generalize finaliseThreadReleaseCores _ tid = s at h4 ⊢
-    unfold finaliseThreadUnbindSchedContext
-    split
-    · rename_i t hT
-      cases hM : s.getSchedContext? ⟨t.scBindingScCode - 1⟩ with
-      | none => simp only [hM, Bool.and_false, Bool.false_eq_true, ↓reduceIte]; exact h4
-      | some sc =>
-        simp only [hM]
-        split
-        · rename_i hG
-          simp only [Bool.and_eq_true, bne_iff_ne, ne_eq, beq_iff_eq, Bool.not_eq_true'] at hG
-          obtain ⟨⟨⟨⟨hS, hO⟩, hR⟩, hH⟩, hM'⟩ := hG
-          split
-          · rename_i s' hOk
-            exact hSc s s' tid t sc h4 hT hS hO hR hH hM hM' hOk
-          · exact h4
-        · exact h4
-    · exact h4
+  · exact finaliseThreadUnbindSchedContext_closed P hSc _ _ (hRelease _ _
+      (finaliseThreadSuspend_closed P hSuspend _ _
+        (finaliseThreadEndWaiters_closed P hRep hSuspend _ _
+          (finaliseThreadReturnLoan_closed P hRep hSuspend _ _
+            (finaliseThreadCancel_closed P hCancel hEndpoint hRep _ _
+              (finaliseThreadUnbindNotification_closed P hUnbind _ _ h))))))
   · exact h
 
 /-- **A property the stash clear keeps holds after `finaliseReplyUnstash`.** -/
@@ -1942,6 +1953,49 @@ theorem notificationWaiterCancellable_blocked {st : SystemState} {n : SeLe4n.Obj
     tcb.ipcState = .blockedOnNotification n :=
   (notificationWaiterCancellable_parts h).2.1
 
+namespace FinaliseFrameAny
+
+/-- The notification unbind, as the closure asks it. -/
+theorem unbindStep (st : SystemState) : FinaliseUnbindStep (FinaliseFrameAny st) :=
+  fun _ _ _ _ h _ _ _ _ => h.trans (FinaliseFrame.storeUnbindNotification _ _ _ h.invExt).any
+
+/-- A context's deschedule of its holder, as the closure asks it. -/
+theorem scDescheduleStep (st : SystemState) : FinaliseScDescheduleStep (FinaliseFrameAny st) :=
+  fun s t _ h _ _ _ _ => h.trans (FinaliseFrame.descheduleAt s t _ h.invExt).any
+
+/-- A context's release of its holder, as the closure asks it. -/
+theorem scReleaseStep (st : SystemState) : FinaliseScReleaseStep (FinaliseFrameAny st) :=
+  fun s s' t tcb sc x h hT hS hSc hB hOk =>
+    h.trans (FinaliseFrame.releaseStep s s s' t tcb sc x (.refl h.invExt) hT hS hSc hB hOk).any
+
+/-- A thread's notification cancel, as the closure asks it. -/
+theorem notificationCancelStep (st : SystemState) :
+    FinaliseNotificationCancelStep (FinaliseFrameAny st) :=
+  fun s n t tcb _ h _ hI _ _ => h.trans (FinaliseFrame.notificationCancel s t tcb n h.invExt hI).any
+
+/-- A thread's endpoint cancel, as the closure asks it. -/
+theorem endpointCancelStep (st : SystemState) : FinaliseEndpointCancelStep (FinaliseFrameAny st) :=
+  fun s e q t ep tcb h _ _ _ =>
+    h.trans (FinaliseFrame.storeEndpointBlockedCancelled s e q t ep tcb h.invExt).any
+
+/-- A finalised thread's suspend, as the closure asks it. -/
+theorem suspendStep (st : SystemState) : FinaliseSuspendStep (FinaliseFrameAny st) :=
+  fun s t _ h _ _ _ _ _ => h.trans (FinaliseFrame.suspend s t h.invExt).any
+
+/-- The release of the cores' holds, as the closure asks it. -/
+theorem releaseStep (st : SystemState) : FinaliseReleaseStep (FinaliseFrameAny st) :=
+  fun s t h => h.trans (FinaliseFrame.releaseCores s t h.invExt).any
+
+/-- A reply-blocked caller's cancel with its boost reverted, as the closure asks
+it. -/
+theorem replyStep (st : SystemState) : FinaliseReplyStep (FinaliseFrameAny st) := by
+  intro s x r c t h hX hC _ hG
+  obtain ⟨-, -, -, -, ⟨ep, rt, hB⟩, -, -, -, -⟩ := replyCallerFinalisable_parts hG
+  have h1 := FinaliseFrameAny.cancelIpcBlockingReclaimed s c t h.invExt hB
+  exact h.trans (h1.trans (FinaliseFrame.finaliseReplyRevert _ _ h1.invExt).any)
+
+end FinaliseFrameAny
+
 /-- **The finalisation's write frame.** -/
 theorem finaliseFinalObject_frame (target : Nat) (st : SystemState) (hInv : st.objects.invExt) :
     FinaliseFrameAny st (finaliseFinalObject target st) :=
@@ -1951,22 +2005,11 @@ theorem finaliseFinalObject_frame (target : Nat) (st : SystemState) (hInv : st.o
       have h1 := FinaliseFrame.notificationCancel s t tcb _ h.invExt
         (notificationWaiterCancellable_blocked hC)
       h.trans (h1.trans (.wakeCancelledWaiter _ _ h1.invExt)).any)
-    (fun _ _ _ _ h _ _ _ _ => h.trans (FinaliseFrame.storeUnbindNotification _ _ _ h.invExt).any)
-    (fun s t _ h _ _ _ _ => h.trans (FinaliseFrame.descheduleAt s t _ h.invExt).any)
-    (fun s s' t tcb sc x h hT hS hSc hB hOk =>
-      h.trans (FinaliseFrame.releaseStep s s s' t tcb sc x (.refl h.invExt) hT hS hSc hB
-        hOk).any)
-    (fun s n t tcb _ h _ hI _ _ =>
-      h.trans (FinaliseFrame.notificationCancel s t tcb n h.invExt hI).any)
-    (fun s e q t ep tcb h _ _ _ =>
-      h.trans (FinaliseFrame.storeEndpointBlockedCancelled s e q t ep tcb h.invExt).any)
-    (fun s t _ h _ _ _ _ _ => h.trans (FinaliseFrame.suspend s t h.invExt).any)
-    (fun s t h => h.trans (FinaliseFrame.releaseCores s t h.invExt).any)
-    (FinaliseFrameAny.unstackStep st)
-    (fun s x r c t h hX hC _ hG => by
-      obtain ⟨-, -, -, -, ⟨ep, rt, hB⟩, -, -, -, -⟩ := replyCallerFinalisable_parts hG
-      have h1 := FinaliseFrameAny.cancelIpcBlockingReclaimed s c t h.invExt hB
-      exact h.trans (h1.trans (FinaliseFrame.finaliseReplyRevert _ _ h1.invExt).any))
+    (FinaliseFrameAny.unbindStep st) (FinaliseFrameAny.scDescheduleStep st)
+    (FinaliseFrameAny.scReleaseStep st) (FinaliseFrameAny.notificationCancelStep st)
+    (FinaliseFrameAny.endpointCancelStep st) (FinaliseFrameAny.suspendStep st)
+    (FinaliseFrameAny.releaseStep st) (FinaliseFrameAny.unstackStep st)
+    (FinaliseFrameAny.replyStep st)
     (fun s _ _ tid _ h _ _ e => e ▸ h.trans (FinaliseFrame.updateTcb s tid _ h.invExt).any)
     target st (.refl hInv)
 

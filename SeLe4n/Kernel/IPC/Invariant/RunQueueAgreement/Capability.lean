@@ -632,6 +632,50 @@ theorem finaliseReplyRevert_runQueueStage (st : SystemState) (server? : Option S
   | none => exact .refl st
   | some s => exact PriorityInheritance.propagatePipChainCrossCore_runQueueStage st s _ _
 
+/-- The finalisation's notification unbind is a run-queue stage. -/
+theorem finaliseUnbindStep_runQueueEntryStage (st : SystemState) :
+    FinaliseUnbindStep (SystemState.RunQueueEntryStage st) :=
+  fun n s _ t h _ _ hCode hIn => by
+    have hSpec := unbindNotification_of_inPlace s t hIn
+    rw [hCode, Nat.add_sub_cancel] at hSpec
+    exact h.trans (unbindNotification_runQueueStage hSpec).entry
+
+/-- The finalisation's notification cancel is a run-queue stage. -/
+theorem finaliseNotificationCancelStep_runQueueEntryStage (st : SystemState) :
+    FinaliseNotificationCancelStep (SystemState.RunQueueEntryStage st) :=
+  fun s _ t tcb _ h _ _ _ _ => h.trans (cancelIpcBlocking_runQueueStage s t tcb).entry
+
+/-- The finalisation's endpoint cancel is a run-queue stage. -/
+theorem finaliseEndpointCancelStep_runQueueEntryStage (st : SystemState) :
+    FinaliseEndpointCancelStep (SystemState.RunQueueEntryStage st) :=
+  fun s e q t ep tcb h hT hE hC =>
+    h.trans (storeEndpointBlockedCancelled_runQueueStage s e q t ep tcb hT hE hC).entry
+
+/-- The finalisation's suspend is a kernel entry's worth of run-queue steps. -/
+theorem finaliseSuspendStep_runQueueEntryStage (st : SystemState) :
+    FinaliseSuspendStep (SystemState.RunQueueEntryStage st) :=
+  fun s t tcb h hT hS hO _ hId => h.trans (finaliseSuspend_runQueueEntryStage s t tcb hT hS hO hId)
+
+/-- The release of the cores' holds writes no object and no queue. -/
+theorem finaliseReleaseStep_runQueueEntryStage (st : SystemState) :
+    FinaliseReleaseStep (SystemState.RunQueueEntryStage st) :=
+  fun s t h => h.trans (SystemState.RunQueueStage.of_frame
+    (finaliseThreadReleaseCores_objects s t)
+    (by rw [finaliseThreadReleaseCores_scheduler]) (by rw [finaliseThreadReleaseCores_scheduler])
+    (by rw [finaliseThreadReleaseCores_scheduler])).entry
+
+/-- A context's release of its thread is a run-queue stage. -/
+theorem finaliseScReleaseStep_runQueueEntryStage (st : SystemState) :
+    FinaliseScReleaseStep (SystemState.RunQueueEntryStage st) :=
+  fun _ _ _ _ _ _ h _ _ _ _ hOk => h.trans (cancelBoundDonationOnCore_runQueueStage hOk).entry
+
+/-- A reply-blocked caller's cancel with its boost reverted is a run-queue stage. -/
+theorem finaliseReplyStep_runQueueEntryStage (st : SystemState) :
+    FinaliseReplyStep (SystemState.RunQueueEntryStage st) :=
+  fun s _ _ c t h _ _ _ _ =>
+    h.trans ((cancelIpcBlockingReclaimed_runQueueStage s c t).trans
+      (finaliseReplyRevert_runQueueStage _ _)).entry
+
 /-- **The finalisation is a kernel entry's worth of run-queue steps**, every
 step of it (`finaliseFinalObject_closed`): each cancel's and each unbind's
 stage, a context's dequeue of its holder (`descheduleAt_runQueueStage`), a
@@ -649,28 +693,17 @@ theorem finaliseFinalObject_runQueueEntryStage (target : Nat) (st : SystemState)
       h.trans (storeEndpointWaiterCancelled_runQueueStage s e q ep t tcb hE hH hT hC).entry)
     (fun n s _ t tcb h _ _ hT hC =>
       h.trans (notificationWaiterCancel_runQueueStage s n t tcb hT hC).entry)
-    (fun n s _ t h _ _ hCode hIn => by
-      have hSpec := unbindNotification_of_inPlace s t hIn
-      rw [hCode, Nat.add_sub_cancel] at hSpec
-      exact h.trans (unbindNotification_runQueueStage hSpec).entry)
+    (finaliseUnbindStep_runQueueEntryStage st)
     (fun s t _ h _ _ _ _ => h.trans (descheduleAt_runQueueStage s t _).entry)
-    (fun _ _ _ _ _ _ h _ _ _ _ hOk =>
-      h.trans (cancelBoundDonationOnCore_runQueueStage hOk).entry)
-    (fun s _ t tcb _ h _ _ _ _ => h.trans (cancelIpcBlocking_runQueueStage s t tcb).entry)
-    (fun s e q t ep tcb h hT hE hC =>
-      h.trans (storeEndpointBlockedCancelled_runQueueStage s e q t ep tcb hT hE hC).entry)
-    (fun s t tcb h hT hS hO _ hId =>
-      h.trans (finaliseSuspend_runQueueEntryStage s t tcb hT hS hO hId))
-    (fun s t h => h.trans (SystemState.RunQueueStage.of_frame
-      (finaliseThreadReleaseCores_objects s t)
-      (by rw [finaliseThreadReleaseCores_scheduler]) (by rw [finaliseThreadReleaseCores_scheduler])
-      (by rw [finaliseThreadReleaseCores_scheduler])).entry)
+    (finaliseScReleaseStep_runQueueEntryStage st)
+    (finaliseNotificationCancelStep_runQueueEntryStage st)
+    (finaliseEndpointCancelStep_runQueueEntryStage st)
+    (finaliseSuspendStep_runQueueEntryStage st)
+    (finaliseReleaseStep_runQueueEntryStage st)
     (fun _ s1 x _ _ _ h _ _ hR _ hS _ _ _ _ =>
       h.trans ((storeObject_replyOver_runQueueStage hR hS).trans
         (updateSchedContext_runQueueStage s1 ⟨x.val⟩ _)).entry)
-    (fun s _ _ c t h _ _ _ _ =>
-      h.trans ((cancelIpcBlockingReclaimed_runQueueStage s c t).trans
-        (finaliseReplyRevert_runQueueStage _ _)).entry)
+    (finaliseReplyStep_runQueueEntryStage st)
     (fun s _ _ tid _ h _ _ e => e ▸ h.trans
       (RunQueueStage.updateTcb s tid (f := TCB.stashCleared) (fun _ _ => rfl)).entry)
     target st ⟨SystemState.RunQueueLinkStage.refl st, fun _ _ _ d => d⟩
