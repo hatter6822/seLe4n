@@ -525,8 +525,13 @@ theorem spliceReplyFrameOutOrSelf_preserves_objectIndexSet_invExt (st : SystemSt
     (spliceReplyFrameOutOrSelf st rid).objectIndexSet.table.invExt := by
   rcases spliceReplyFrameOutOrSelf_cases st rid with h | h
   · rw [h]; exact hSet
-  · rcases spliceReplyFrameOut_cases h with hEq | ⟨r, above, a, _, _, hA, _, hS⟩
+  · rcases spliceReplyFrameOut_cases h with hEq | ⟨r, above, a, _, _, hA, _, hS⟩ |
+        ⟨r, below, b, _, _, _, _, _, hS⟩
     · rw [hEq]; exact hSet
+    rotate_left
+    · obtain ⟨s1, hS1, hS2⟩ := severReplyFrameBelowStores_cases hS
+      exact SeLe4n.Model.storeObject_preserves_objectIndexSet_invExt s1 _ _ _
+        (SeLe4n.Model.storeObject_preserves_objectIndexSet_invExt st s1 _ _ hSet hS1) hS2
     · rcases spliceReplyFrameStores_cases hS with ⟨_, hS1⟩ |
         ⟨below, b, s1, s2, hBelow, hS1, hS2, hS3⟩
       · exact SeLe4n.Model.storeObject_preserves_objectIndexSet_invExt st _ _ _ hSet hS1

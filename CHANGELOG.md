@@ -71,6 +71,16 @@ seL4's Zombie, and is deleted last.
   `space-cnode-cap-delete`.  The carves and the space set are pinned at their
   measured readings (see `scripts/qemu_exerciser_lib.sh`).
 
+### Merge
+
+- Part 25's review fixes (`backup/za54-part25` at `26aa9cdf`) are merged in
+  with a merge commit.  The splice cuts a contextless stack top from the
+  frame below (`severReplyFrameBelowStores`), with its sever and frame-above
+  arms written in place, and `threadFinaliseAdmitted` admits the lender's
+  origin (`replyPopClearedOrigin?`).  This part's change to
+  `threadFinaliseAdmitted` (the space-slot conjuncts dropped) sits beside
+  theirs.
+
 ### Debt (`docs/REGISTERED_DEBT.md`)
 
 - Closed: "A thread a final delete cannot finalise outlives its last
@@ -506,6 +516,65 @@ reclaim ended the holder's IPC before returning the reservation
     members, and 11 without the frame below the cut (was 15 and 14).  The
     reclaim no longer ends the holder's call, so the holder's endpoint and
     its two queue neighbours are not members.
+
+### Review fixes (#987)
+
+- **A contextless stack top is cut from the frame below** (seL4's
+  `reply_remove`, `if (prev_ptr) prev->replyNext = 0`).
+  `finaliseSchedContextUnstack` clears only the stack head's upward link, so
+  on a stack of two or more replies the old head is left with no `next` while
+  the frame below still names it.  Before, a later final delete of that head
+  cleared the head's own links and nothing else, so the frame below kept
+  naming it and the retire's `storeNamesNone` refused the reply for good.
+  `spliceReplyFrameOut` gains the arm: a frame with no `next` whose `prev`
+  names a frame linking up to it clears that frame's `next` and its own
+  `prev` (`severReplyFrameBelowStores`).  The frame below is then the new top.
+  - Mirrored in the in-place splice (`spliceReplyFrameOutOrSelfInPlace`, its
+    `@[csimp]` equality kept) and on the frozen surface
+    (`frozenSeverReplyFrameBelowStores`); the new store steps are registered
+    in the reply-stack write census.
+  - **Both writing arms of the compiled splice are in place**: the cut
+    (`severReplyFrameBelowStoresInPlace`) and the pre-existing frame-above
+    splice (`spliceReplyFrameStoresInPlace`) write each link in its slot
+    (`storeReplyWith`) instead of running the specification's stores, which
+    rebuilt each Reply record.  Each later write reads its key where the
+    earlier ones left it, which is its pre-state record when the earlier keys
+    are found in place (`findsInPlace`, checked first; otherwise the
+    specification's stores run), and each is proven equal to its
+    specification (`…InPlace_eq`).
+  - **No QEMU scenario reaches either arm**: both need a reply stack two deep,
+    and the image's two threads cannot build one (a caller blocked on its
+    reply cannot be called).  ZA6.1's third thread is the existing debt row.
+    Instead the suite runs both arms through the final delete's compiled
+    `@[csimp]` form: `runContextlessStackChecks` (the cut) and
+    `runMiddleReplyFinaliseChecks` (a three-reply stack's middle reply
+    deleted: the frames either side link to each other and the reply is
+    retired).
+  - Footprints: `replyFrameBelow?` is the frame's `prev` unless the frame heads
+    a stack, so the cut's write is declared
+    (`severFrameBelow_mem_answeredReplyFrameBelow?`,
+    `severFrameBelow_mem_cancelSplicedFrameBelow?`).  The two "no frame above
+    means no frame below" lemmas are removed, being false now; no bound
+    changes, since the arm writes fewer objects than a middle removal.
+  - Proofs carried: the donation chain, the unreferenced-after-splice fact,
+    the IPC bundle transport, the reply views, the loan write, the projection
+    and index-set completeness, the off-scheduler congruence (a three-way
+    `spliceReplyFrameOutOrSelf_decision`), and the waiter walk
+    (`WaiterFrame.spliceUnframed`: the cut writes the waiter's own reply and a
+    frame below that heads no stack top).
+  - The in-place reply now also asks that the answered reply has no `prev`
+    (`replyWakesInPlace`), as its docstring already said; otherwise the
+    specification's reply runs.
+  - Test: `runContextlessStackChecks` unstacks a two-reply stack by the
+    context's delete, then deletes the old head's last capability; its caller
+    ends, the frame below has no `next`, and the reply is retired.
+- **The lender's recorded origin no longer refuses its own delete.**  A first
+  donation records the lender as the context's `donationOrigin`, and
+  `threadFinaliseAdmitted`'s `originsNameNone` refused any context naming the
+  thread.  The lender's own pop clears that record (its reply heads the
+  context with nothing below), so the admission now accepts that one context,
+  decided on the pre-state (`replyPopClearedOrigin?`).  The suite's lender
+  stagings record the origin as `donateSchedContext` does.
 
 ### Merge
 

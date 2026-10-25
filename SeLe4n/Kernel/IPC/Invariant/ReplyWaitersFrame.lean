@@ -317,9 +317,12 @@ theorem spliceReplyFrameStores_replyViews_eq {st st' : SystemState} {rid above :
 theorem spliceReplyFrameOut_replyViews_eq {st st' : SystemState} {rid : ReplyId}
     (hInv : st.objects.invExt) (h : spliceReplyFrameOut st rid = .ok st') :
     st'.replyViews = st.replyViews := by
-  rcases spliceReplyFrameOut_cases h with rfl | ⟨_, _, _, hR, _, hA, _, hS⟩
+  rcases spliceReplyFrameOut_cases h with rfl | ⟨_, _, _, hR, _, hA, _, hS⟩ |
+      ⟨_, _, _, hR, hN, _, hB, hBn, hS⟩
   · rfl
   · exact spliceReplyFrameStores_replyViews_eq hInv hR hA hS
+  · exact severReplyFrameBelowStores_transport (P := fun s => s.replyViews = st.replyViews)
+      (fun hOI hP hA _ _ hS => (replyViews_storeReply_eq hOI hA hS).trans hP) hInv rfl hR hN hB hBn hS
 
 theorem spliceReplyFrameOutOrSelf_replyViews_eq (st : SystemState) (rid : ReplyId)
     (hInv : st.objects.invExt) : (spliceReplyFrameOutOrSelf st rid).replyViews = st.replyViews := by

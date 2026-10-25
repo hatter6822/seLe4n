@@ -1196,12 +1196,14 @@ Reply the removal writes; declared at HP3 ahead of HP6.3 (`v0.35.45`), the cut
 that made the cancellation's removal a splice.
 
 Derived from `cancelSplicedFrameAbove?`'s own two inputs -- the reply arm and the
-victim's `replyObject` -- composed with `replyFrameBelow?`, which is itself
-`replyFrameAbove?` plus the cut frame's `prev`.  So "is this a splice at all" is
-answered once for the footprint, the splice resolver and the operation.
+victim's `replyObject` -- composed with `replyFrameBelow?`, the cut frame's `prev`
+unless it heads a stack.  So "which frame below can the removal write" is answered
+once for the footprint, the splice resolver and the operation.
 
-`none` on every arm but the reply arm, `none` for a head frame (a head is popped,
-never spliced) and `none` for a frame with nothing above it. -/
+`none` on every arm but the reply arm and `none` for a head frame (a head is
+popped, never spliced).  A frame with nothing above it declares its `prev` too:
+since `v0.36.136` the removal of a contextless stack top severs the frame below
+(`severReplyFrameBelowStores`), so that write is declared. -/
 def cancelSplicedFrameBelow? (st : SystemState) (tcb : TCB) : Option SeLe4n.ReplyId :=
   match tcb.ipcState with
   | .blockedOnReply _ _ => tcb.replyObject.bind (replyFrameBelow? st)
@@ -1243,8 +1245,8 @@ theorem cancelSplicedFrameAbove?_of_donation (st : SystemState)
   -- to the resolved donation.
   | _ => rfl
 
-/-- **WS-HP HP5.4**: and so is the splice's frame below, which composes the same
-`replyFrameAbove?` (`replyFrameBelow?_of_headContext`).  Stated beside its sibling
+/-- **WS-HP HP5.4**: and so is the splice's frame below, which a head never
+declares (`replyFrameBelow?_of_headContext`).  Stated beside its sibling
 rather than derived from it, because the two members read different fields and a
 consumer of one should not have to unfold the other. -/
 theorem cancelSplicedFrameBelow?_of_donation (st : SystemState)
@@ -1283,24 +1285,6 @@ theorem cancelSplicedFrameBelow?_of_donation (st : SystemState)
   unfold cancelSplicedFrameBelow?
   cases hIp : tcb.ipcState <;> simp_all
 
-/-- **WS-HP HP3.1**: and no frame above means no frame below -- the exclusion that
-keeps the cancellation's reply-arm bound where it was, and which needs no
-invariant: the splice's member is declared only on a *mid-stack* removal. -/
-@[simp] theorem cancelSplicedFrameBelow?_of_no_frameAbove (st : SystemState) (tcb : TCB)
-    (h : cancelSplicedFrameAbove? st tcb = none) :
-    cancelSplicedFrameBelow? st tcb = none := by
-  unfold cancelSplicedFrameBelow?
-  unfold cancelSplicedFrameAbove? at h
-  cases hIp : tcb.ipcState with
-  | blockedOnReply ep rt =>
-    rw [hIp] at h
-    cases hRO : tcb.replyObject with
-    | none => rfl
-    | some rid =>
-      rw [hRO] at h
-      exact replyFrameBelow?_of_no_frame_above st rid h
-  | _ => rfl
-
 /-- **WS-HP HP6.6: the cancellation path's lifting of the containment** -- the
 frame the victim's removal splices below the cut is the one this arm's footprint
 declares.
@@ -1323,6 +1307,19 @@ theorem spliceFrameBelow?_mem_cancelSplicedFrameBelow? (st : SystemState) (tcb :
   unfold cancelSplicedFrameBelow?
   rw [hIp, hRO]
   exact spliceFrameBelow?_mem_replyFrameBelow? hR hAbove h
+
+/-- **...and the sever arm's lifting**: the frame below a victim's contextless
+stack top, which the removal cuts from it, is the member this arm's footprint
+declares. -/
+theorem severFrameBelow_mem_cancelSplicedFrameBelow? (st : SystemState) (tcb : TCB)
+    (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId) (rid below : SeLe4n.ReplyId) (r : Reply)
+    (hIp : tcb.ipcState = .blockedOnReply ep rt)
+    (hRO : tcb.replyObject = some rid)
+    (hR : st.getReply? rid = some r) (hNext : r.next = none) (hPrev : r.prev = some below) :
+    cancelSplicedFrameBelow? st tcb = some below := by
+  unfold cancelSplicedFrameBelow?
+  rw [hIp, hRO]
+  exact severFrameBelow_mem_replyFrameBelow? hR hNext hPrev
 
 /-- WS-OD (`v0.35.4`): the endpoint arms splice nothing. -/
 @[simp] theorem cancelSplicedFrameAbove?_of_blockedEndpoint (st : SystemState) (tcb : TCB)

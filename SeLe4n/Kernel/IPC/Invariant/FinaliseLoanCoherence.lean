@@ -73,7 +73,7 @@ theorem loanWrite.of_spliceReplyFrameOutOrSelf (st : SystemState) (rid : SeLe4n.
     rw [SystemState.getReply?_eq_some_iff,
       show (⟨oid.val⟩ : SeLe4n.ReplyId).toObjId = oid from rfl, hr] at hp
     cases hp
-    rcases hN with e | ⟨a, b, ha, -⟩
+    rcases hN with e | ⟨a, ha, -⟩
     · exact ⟨r', rfl, e.trans hn⟩
     · rw [hn] at ha; cases ha
 

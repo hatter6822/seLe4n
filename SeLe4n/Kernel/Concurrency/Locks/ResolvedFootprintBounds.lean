@@ -518,10 +518,11 @@ holder blocked sending or calling where it is, unbound, as seL4 MCS does.
 Stated parametrically so the resolved bound below composes it rather than
 re-running the arithmetic.  The reachable figure is **seven** (ten until
 `v0.36.136`, unmoved by HP3.1): the reclaimed head is the
-consumed reply on every reachable state, and a caller with a frame above its own
-is owed no reclaim — so on a reachable reply arm the detached frame *and* the
-frame below it are both `none`, which is the exclusion
-`cancelSplicedFrameBelow?_of_no_frameAbove` states at the resolver. -/
+consumed reply on every reachable state, and the reclaim resolves only for a
+victim whose own frame heads a stack — so on a reply arm that reclaims, the
+detached frame *and* the frame below it are both `none`, which is the exclusion
+`cancelSplicedFrameAbove?_of_donation` and `cancelSplicedFrameBelow?_of_donation`
+state at the resolver. -/
 theorem lockSet_cancelIpcBlocking_reply_size_le (victimTid : SeLe4n.ThreadId)
     (consumedReplyId : Option SeLe4n.ReplyId)
     (returnedDonationSc : Option SeLe4n.SchedContextId)
@@ -639,15 +640,15 @@ the victim's own queue links on the arm that unlinks it (endpoint, notification,
 or a reply arm with a recorded server) and `(none, none)` otherwise;
 `tcb.blockingServer?` answers `some` only on the reply arm; and
 `cancelSplicedFrameAbove?` and `cancelSplicedFrameBelow?` are both reply-arm
-members, the second derived from the first's resolver.
+members, read off the victim's own reply frame.
 
 Arm by arm: the reply arm is `1 + 9 + 3 = 13`, the endpoint arm `1 + 3 = 4`, the
 notification arm `1 + 3 = 4`, and `.ready` is the victim's TCB alone.  The
 **reachable** reply-arm figure is seven — OD3.7's ten less the three holder
 members: the reclaimed head is the consumed reply on every reachable state (they
-merge by key), and a caller with a frame above its own is a middle caller, which
-no reclaim is resolved for — so on a reachable state the detached frame and the
-frame below the cut are *both* `none`.  A declared bound is the union over all
+merge by key), and a reclaim resolves only for a victim whose frame heads a
+stack, which declares neither splice member — so where the reclaim fires the
+detached frame and the frame below the cut are *both* `none`.  A declared bound is the union over all
 argument values, and it is stated as such. -/
 theorem lockSet_cancelIpcBlockingOnCore_size_le_thirteen (st : SystemState)
     (victimTid : SeLe4n.ThreadId) :
