@@ -2561,14 +2561,35 @@ endpoint at `ep`, on the carved reply at `rid`, whose server is `server?`: no
 syscall blocks a thread whose space slots are empty (their finalising delete is
 a later row), so the call's two writes are the kernel's own — the caller's
 `.blockedOnReply` state, then `linkCallerReply`'s two links. -/
-private def stageReplyCallerOn (st : SystemState) (ep rid : Nat)
+private def stageCallerOn (st : SystemState) (caller ep rid : Nat)
     (server? : Option SeLe4n.ThreadId) : Option SystemState :=
-  let st1 := st.updateTcb ⟨960⟩ fun t =>
+  let st1 := st.updateTcb ⟨caller⟩ fun t =>
     { (t.setIpcState (.blockedOnReply (SeLe4n.ObjId.ofNat ep) server?)) with
         threadState := .BlockedCall }
-  match SystemState.linkCallerReply ⟨960⟩ ⟨rid⟩ st1 with
+  match SystemState.linkCallerReply ⟨caller⟩ ⟨rid⟩ st1 with
   | .ok ((), st2) => some st2
   | .error _ => none
+
+/-- `stageCallerOn` for the carved caller at `960`. -/
+private def stageReplyCallerOn (st : SystemState) (ep rid : Nat)
+    (server? : Option SeLe4n.ThreadId) : Option SystemState :=
+  stageCallerOn st 960 ep rid server?
+
+/-- The callers `(caller, reply)` each staged on its reply with the server
+`sv`, each joining `sv`'s reply-waiter queue as its call makes it. -/
+private def stageWaitersOn (st : SystemState) (sv : SeLe4n.ThreadId) :
+    List (Nat × Nat) → Option SystemState
+  | [] => some st
+  | (c, r) :: rest =>
+    match stageCallerOn st c 0 r (some sv) with
+    | some st1 => stageWaitersOn (SystemState.linkReplyWaiter st1 ⟨c⟩ sv) sv rest
+    | none => none
+
+/-- The caller at `oid` ended as `reply_remove` ends it: `.Inactive`, holding
+no reply, and on no server's queue. -/
+private def waiterEnded (st : SystemState) (oid : Nat) : Bool :=
+  (st.getTcb? ⟨oid⟩).map (fun t => t.threadState == .Inactive && t.replyObjectCode == 0 &&
+    t.ipcStateCode == 0 && t.replyWaiterNextCode == 0 && t.replyWaiterPrevCode == 0) == some true
 
 /-- The caller at `960` staged on the reply at `961`, after a call on no
 endpoint the scenario carves. -/
@@ -2850,6 +2871,77 @@ private def runReplyFinaliseChecks : IO Unit := do
           (!storedAt st1 962 && !recordsChildAt st1 carveUt 962 && storedAt st1 961 &&
             (replyAt st1 961).map (·.callerCode) == some 961)
 
+/-- A server's delete ends every caller waiting on it.  seL4 keeps the callers
+blocked until their reply objects go; here reply authority is tied to the
+server, so the server's delete removes each caller's reply then — each caller
+ended as `reply_remove` ends it (popped or unlinked, then `.Inactive`), its
+reply linked to no caller. -/
+private def runReplyWaiterFinaliseChecks : IO Unit := do
+  IO.println "-- §5o a server's delete ends every caller waiting on it (WS-ZA ZA5.4 part 25)"
+  -- A borrowing server: the lender at `960` (reply `961`, heading the lent
+  -- context `963`'s stack) and one more waiter at `964` (reply `965`).  The
+  -- lender's reply is popped first, its context back to it before the server's
+  -- suspend (seL4's order), then the plain waiter is unlinked.
+  match runAll carveScenario
+      [decodeCarve slotUtRetype tcbTag 960 slotOwnCnRW 10,
+       decodeCarve slotUtRetype replyTag 961 slotOwnCnRW 11,
+       decodeCarve slotUtRetype tcbTag 962 slotOwnCnRW 12,
+       decodeCarve slotUtRetype schedContextTag 963 slotOwnCnRW 13,
+       decodeCarve slotUtRetype tcbTag 964 slotOwnCnRW 14,
+       decodeCarve slotUtRetype replyTag 965 slotOwnCnRW 15] with
+  | .error e => assertBool s!"carving a lender, a server, a context and a second waiter succeeds (got {repr e})" false
+  | .ok st0 =>
+    match stageWaitersOn st0 ⟨962⟩ [(960, 961), (964, 965)] with
+    | none => assertBool "staging both callers on the carved server succeeds" false
+    | some st =>
+      match replyAt st 961 with
+      | none => assertBool "setup: the lender's reply is stored" false
+      | some r =>
+        match SeLe4n.Model.storeObject (SeLe4n.ObjId.ofNat 961)
+            (.reply { r with next := some (.head ⟨963⟩) }) st with
+        | .error _ => assertBool "staging the lender's reply as the lent context's stack head succeeds" false
+        | .ok ((), stH) => do
+          let stL := (stH.updateSchedContext ⟨963⟩ fun sc =>
+              { sc with scReply := some ⟨961⟩, boundThreadCode := 963 }).updateTcb ⟨962⟩ fun t =>
+            { t with scBindingScCode := 964, scBindingOwnerCode := 961 }
+          assertBool "setup: the server borrows the lender's context and has two waiters"
+            ((stL.getTcb? ⟨962⟩).map (fun t => t.schedContextBinding == .donated ⟨963⟩ ⟨960⟩ &&
+              t.replyWaitersCount == 2) == some true)
+          match runAll stL [decodeDelete 12] with
+          | .error e => assertBool s!"deleting the borrowing server's last capability succeeds (got {repr e})" false
+          | .ok st1 =>
+            assertBool "deleting a borrowing server ends its lender and its other waiter, the lender's context back to it, and retires the server"
+              (!storedAt st1 962 && !recordsChildAt st1 carveUt 962 &&
+                waiterEnded st1 960 && waiterEnded st1 964 &&
+                (st1.getTcb? ⟨960⟩).map (·.schedContextBinding) == some (.bound ⟨963⟩) &&
+                (st1.getSchedContext? ⟨963⟩).map (fun sc => sc.scReply.isNone && sc.boundThreadCode == 961) ==
+                  some true &&
+                (replyAt st1 961).map (fun r => r.next.isNone && r.callerCode == 0) == some true &&
+                (replyAt st1 965).map (·.callerCode) == some 0)
+  -- A server holding no loan, with two waiters: its delete unlinks both.
+  match runAll carveScenario
+      [decodeCarve slotUtRetype tcbTag 960 slotOwnCnRW 11,
+       decodeCarve slotUtRetype replyTag 961 slotOwnCnRW 12,
+       decodeCarve slotUtRetype tcbTag 962 slotOwnCnRW 13,
+       decodeCarve slotUtRetype tcbTag 963 slotOwnCnRW 14,
+       decodeCarve slotUtRetype replyTag 964 slotOwnCnRW 15] with
+  | .error e => assertBool s!"carving two callers, their replies and a server succeeds (got {repr e})" false
+  | .ok st0 =>
+    match stageWaitersOn st0 ⟨962⟩ [(960, 961), (963, 964)] with
+    | none => assertBool "staging both callers on the carved server succeeds" false
+    | some st => do
+      assertBool "setup: the server holds no loan and has two waiters"
+        ((st.getTcb? ⟨962⟩).map (fun t => t.schedContextBinding == .unbound &&
+          t.replyWaitersCount == 2) == some true)
+      match runAll st [decodeDelete 13] with
+      | .error e => assertBool s!"deleting the server's last capability succeeds (got {repr e})" false
+      | .ok st1 =>
+        assertBool "deleting a server with two waiters ends both and retires the server, each reply linked to no caller"
+          (!storedAt st1 962 && !recordsChildAt st1 carveUt 962 &&
+            waiterEnded st1 960 && waiterEnded st1 963 &&
+            (replyAt st1 961).map (·.callerCode) == some 0 &&
+            (replyAt st1 964).map (·.callerCode) == some 0)
+
 def runVSpaceCapabilityBindingChecks : IO Unit := do
   IO.println "===================================================="
   IO.println "VSpace capability-binding suite (PR #845 review, P1)"
@@ -2873,6 +2965,7 @@ def runVSpaceCapabilityBindingChecks : IO Unit := do
   runPassiveRetireChecks
   runThreadFinaliseChecks
   runReplyFinaliseChecks
+  runReplyWaiterFinaliseChecks
   runAuthorizedChecks
   IO.println "===================================================="
   IO.println "All VSpace capability-binding checks PASS."
