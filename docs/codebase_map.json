@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "za/cnode-zombie",
-      "commit_sha": "c9337f49b938f74361d5a31754afe31a5d424a94",
-      "tree_sha": "995a8dd2e25aeb5e7362a2231e0cd91f48c07401",
-      "committed_at_utc": "2026-10-25T07:34:51+00:00"
+      "commit_sha": "1804e1735bfef50049f72be303894f6b45ffbce4",
+      "tree_sha": "3e4fc53ae6bc8bbb49d4b7b3411a628e515f8f59",
+      "committed_at_utc": "2026-10-25T08:16:39+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "d067017d14f699fe2019304ce947d3a9952f3a636789f6976d878c09730dd256"
+    "source_digest": "69139933df33726bfb552f837587fff51252c9c129b55735cbb53c0e5444e3c6"
   },
   "summary": {
     "module_count": 526,
@@ -29,7 +29,7 @@
     "production_files": 456,
     "production_loc": 503819,
     "test_files": 70,
-    "test_loc": 87112,
+    "test_loc": 87114,
     "proved_theorem_lemma_decls": 18325,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -446895,9 +446895,79 @@
         },
         {
           "kind": "def",
+          "name": "restageReply",
+          "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.restageReply",
+          "line": 2946,
+          "called": [
+            "SeLe4n.Kernel.Reply",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.storeObject",
+            "SeLe4n.ObjId.ofNat",
+            "SeLe4n.Testing.VSpaceCapabilityBinding.replyAt"
+          ],
+          "private": true
+        },
+        {
+          "kind": "def",
+          "name": "runContextlessStackChecks",
+          "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.runContextlessStackChecks",
+          "line": 2959,
+          "called": [
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.updateSchedContext",
+            "SeLe4n.Testing.VSpaceCapabilityBinding.assertBool",
+            "SeLe4n.Testing.VSpaceCapabilityBinding.carveScenario",
+            "SeLe4n.Testing.VSpaceCapabilityBinding.carveUt",
+            "SeLe4n.Testing.VSpaceCapabilityBinding.decodeCarve",
+            "SeLe4n.Testing.VSpaceCapabilityBinding.decodeDelete",
+            "SeLe4n.Testing.VSpaceCapabilityBinding.recordsChildAt",
+            "SeLe4n.Testing.VSpaceCapabilityBinding.replyAt",
+            "SeLe4n.Testing.VSpaceCapabilityBinding.replyTag",
+            "SeLe4n.Testing.VSpaceCapabilityBinding.restageReply",
+            "SeLe4n.Testing.VSpaceCapabilityBinding.runAll",
+            "SeLe4n.Testing.VSpaceCapabilityBinding.schedContextTag",
+            "SeLe4n.Testing.VSpaceCapabilityBinding.slotOwnCnRW",
+            "SeLe4n.Testing.VSpaceCapabilityBinding.slotUtRetype",
+            "SeLe4n.Testing.VSpaceCapabilityBinding.stageCallerOn",
+            "SeLe4n.Testing.VSpaceCapabilityBinding.storedAt",
+            "SeLe4n.Testing.VSpaceCapabilityBinding.tcbTag",
+            "SeLe4n.Testing.VSpaceCapabilityBinding.waiterEnded"
+          ],
+          "private": true
+        },
+        {
+          "kind": "def",
+          "name": "runMiddleReplyFinaliseChecks",
+          "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.runMiddleReplyFinaliseChecks",
+          "line": 3000,
+          "called": [
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.updateSchedContext",
+            "SeLe4n.Testing.VSpaceCapabilityBinding.assertBool",
+            "SeLe4n.Testing.VSpaceCapabilityBinding.carveScenario",
+            "SeLe4n.Testing.VSpaceCapabilityBinding.carveUt",
+            "SeLe4n.Testing.VSpaceCapabilityBinding.decodeCarve",
+            "SeLe4n.Testing.VSpaceCapabilityBinding.decodeDelete",
+            "SeLe4n.Testing.VSpaceCapabilityBinding.recordsChildAt",
+            "SeLe4n.Testing.VSpaceCapabilityBinding.replyAt",
+            "SeLe4n.Testing.VSpaceCapabilityBinding.replyTag",
+            "SeLe4n.Testing.VSpaceCapabilityBinding.restageReply",
+            "SeLe4n.Testing.VSpaceCapabilityBinding.runAll",
+            "SeLe4n.Testing.VSpaceCapabilityBinding.schedContextTag",
+            "SeLe4n.Testing.VSpaceCapabilityBinding.slotOwnCnRW",
+            "SeLe4n.Testing.VSpaceCapabilityBinding.slotUtRetype",
+            "SeLe4n.Testing.VSpaceCapabilityBinding.stageCallerOn",
+            "SeLe4n.Testing.VSpaceCapabilityBinding.storedAt",
+            "SeLe4n.Testing.VSpaceCapabilityBinding.tcbTag",
+            "SeLe4n.Testing.VSpaceCapabilityBinding.waiterEnded"
+          ],
+          "private": true
+        },
+        {
+          "kind": "def",
           "name": "ownSlotHolds",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.ownSlotHolds",
-          "line": 2950,
+          "line": 3044,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.lookupSlotCap",
@@ -446910,7 +446980,7 @@
           "kind": "def",
           "name": "runZombieDeleteChecks",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.runZombieDeleteChecks",
-          "line": 2953,
+          "line": 3047,
           "called": [
             "SeLe4n.Kernel.Concurrency.bootCoreId",
             "SeLe4n.Kernel.DeclassificationTaint.contains",
@@ -446952,79 +447022,9 @@
         },
         {
           "kind": "def",
-          "name": "restageReply",
-          "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.restageReply",
-          "line": 3026,
-          "called": [
-            "SeLe4n.Kernel.Reply",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.Model.storeObject",
-            "SeLe4n.ObjId.ofNat",
-            "SeLe4n.Testing.VSpaceCapabilityBinding.replyAt"
-          ],
-          "private": true
-        },
-        {
-          "kind": "def",
-          "name": "runContextlessStackChecks",
-          "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.runContextlessStackChecks",
-          "line": 3039,
-          "called": [
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.Model.SystemState.updateSchedContext",
-            "SeLe4n.Testing.VSpaceCapabilityBinding.assertBool",
-            "SeLe4n.Testing.VSpaceCapabilityBinding.carveScenario",
-            "SeLe4n.Testing.VSpaceCapabilityBinding.carveUt",
-            "SeLe4n.Testing.VSpaceCapabilityBinding.decodeCarve",
-            "SeLe4n.Testing.VSpaceCapabilityBinding.decodeDelete",
-            "SeLe4n.Testing.VSpaceCapabilityBinding.recordsChildAt",
-            "SeLe4n.Testing.VSpaceCapabilityBinding.replyAt",
-            "SeLe4n.Testing.VSpaceCapabilityBinding.replyTag",
-            "SeLe4n.Testing.VSpaceCapabilityBinding.restageReply",
-            "SeLe4n.Testing.VSpaceCapabilityBinding.runAll",
-            "SeLe4n.Testing.VSpaceCapabilityBinding.schedContextTag",
-            "SeLe4n.Testing.VSpaceCapabilityBinding.slotOwnCnRW",
-            "SeLe4n.Testing.VSpaceCapabilityBinding.slotUtRetype",
-            "SeLe4n.Testing.VSpaceCapabilityBinding.stageCallerOn",
-            "SeLe4n.Testing.VSpaceCapabilityBinding.storedAt",
-            "SeLe4n.Testing.VSpaceCapabilityBinding.tcbTag",
-            "SeLe4n.Testing.VSpaceCapabilityBinding.waiterEnded"
-          ],
-          "private": true
-        },
-        {
-          "kind": "def",
-          "name": "runMiddleReplyFinaliseChecks",
-          "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.runMiddleReplyFinaliseChecks",
-          "line": 3080,
-          "called": [
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.Model.SystemState.updateSchedContext",
-            "SeLe4n.Testing.VSpaceCapabilityBinding.assertBool",
-            "SeLe4n.Testing.VSpaceCapabilityBinding.carveScenario",
-            "SeLe4n.Testing.VSpaceCapabilityBinding.carveUt",
-            "SeLe4n.Testing.VSpaceCapabilityBinding.decodeCarve",
-            "SeLe4n.Testing.VSpaceCapabilityBinding.decodeDelete",
-            "SeLe4n.Testing.VSpaceCapabilityBinding.recordsChildAt",
-            "SeLe4n.Testing.VSpaceCapabilityBinding.replyAt",
-            "SeLe4n.Testing.VSpaceCapabilityBinding.replyTag",
-            "SeLe4n.Testing.VSpaceCapabilityBinding.restageReply",
-            "SeLe4n.Testing.VSpaceCapabilityBinding.runAll",
-            "SeLe4n.Testing.VSpaceCapabilityBinding.schedContextTag",
-            "SeLe4n.Testing.VSpaceCapabilityBinding.slotOwnCnRW",
-            "SeLe4n.Testing.VSpaceCapabilityBinding.slotUtRetype",
-            "SeLe4n.Testing.VSpaceCapabilityBinding.stageCallerOn",
-            "SeLe4n.Testing.VSpaceCapabilityBinding.storedAt",
-            "SeLe4n.Testing.VSpaceCapabilityBinding.tcbTag",
-            "SeLe4n.Testing.VSpaceCapabilityBinding.waiterEnded"
-          ],
-          "private": true
-        },
-        {
-          "kind": "def",
           "name": "runVSpaceCapabilityBindingChecks",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.runVSpaceCapabilityBindingChecks",
-          "line": 3117,
+          "line": 3119,
           "called": [
             "SeLe4n.Testing.VSpaceCapabilityBinding.runAlignmentChecks",
             "SeLe4n.Testing.VSpaceCapabilityBinding.runAuthorizedChecks",
@@ -447056,7 +447056,7 @@
           "kind": "def",
           "name": "main",
           "full_name": "main",
-          "line": 3150,
+          "line": 3152,
           "called": [
             "SeLe4n.Testing.VSpaceCapabilityBinding.runVSpaceCapabilityBindingChecks"
           ]
