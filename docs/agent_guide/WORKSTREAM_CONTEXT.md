@@ -336,10 +336,16 @@ or calling while unbound (seL4's `schedContext_unbindTCB`), the reclaim and a
 scheduling context's final delete leave such a holder blocked, and new IPC
 code must not reintroduce a scheduler read into `ipcInvariantFull` — a fact
 about the run queues belongs in the scheduler bundle (WS-CB CB1.12's
-`passiveThreadParked`).  A thread that is reply-blocked, holds a reply link, stash or
-reply-waiter link, lends or borrows a reservation or holds space-slot capabilities,
-and an untyped that still records a child, outlive their last capability until part 26 and ZA6.1
-(`docs/REGISTERED_DEBT.md`).  The suspend of a thread blocked in IPC or
+`passiveThreadParked`).  A thread's own final delete removes its replies too:
+a reply-blocked thread's reply is removed (`finaliseReplyCallerCancel`), a
+borrowed context goes back by its lender's pop before the suspend
+(`finaliseThreadReturnLoan`), and every caller waiting on the thread is ended
+(`finaliseThreadEndWaiters`, bounded by the thread's count).  New code that
+changes what a waiter's end reads or writes must keep the pre-state admission
+(`replyWaitersAdmitted`) reading exactly what the walk re-reads, and keep
+`finaliseThreadEndWaiters_returnLoan_endsAll_of_admitted` proved.  A thread
+that holds space-slot capabilities, and an untyped that still records a child,
+outlive their last capability until part 26 (`docs/REGISTERED_DEBT.md`).  The suspend of a thread blocked in IPC or
 holding a donated context is the one syscall arm left on the general path
 (ZA6.1).  ZA6 covers the other
 entries and makes the rule standing.  Plan:

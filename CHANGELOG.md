@@ -25,9 +25,10 @@ retire.
 - **And:** a reply heading a scheduling context's reply stack is popped
   first, as seL4's `reply_pop` does it: the context its caller lent goes
   back to the caller (see "The head reply is popped" below).
-- **Still open** (debt row): a thread's own final delete while it is blocked
-  on a reply, holds a reply link, or lends or borrows a reservation (seL4's
-  `reply_remove_tcb` and the borrower's return).
+- **And:** a thread's own final delete now finalises it while it is blocked
+  on a reply, lends or borrows a reservation, or has callers waiting on it
+  (seL4's `reply_remove_tcb`, the borrower's return, and `reply_remove` for
+  each waiter; see "A thread's delete removes its replies" below).
 
 This is part 25 of the seL4 untyped reset.
 
@@ -271,6 +272,75 @@ caller.  This cut does the same.
   deschedules the holder, which stops both, in seL4 as here.  The suite
   witnesses the pop instead (debt row below).
 
+### A thread's delete removes its replies
+
+A thread's final delete no longer refuses a thread blocked on a reply, a
+thread lending or borrowing a reservation, or a thread that callers wait on.
+
+- **A reply-blocked thread** (`finaliseThreadCancel`'s reply arm).  It is
+  admitted when the reply cancel admits it (`replyCallerCancelAdmitted`), and
+  its cancel is the reply finalisation's own (`finaliseReplyCallerCancel`,
+  seL4's `reply_remove_tcb`).  A head reply is popped, so a thread that lent
+  its context gets it back before the suspend, and the reservation unbind then
+  releases the context with the thread.  Any other reply is spliced out.  The
+  compiled form runs the in-place splice (`@[csimp]`
+  `finaliseReplyCallerCancel_eq_impl`, declared before its consumer).
+- **A borrower** (`finaliseThreadReturnLoan`).  A thread holding a context on
+  loan returns it by its lender's own pop, in seL4's order, before the
+  suspend.  The lender is ended as `reply_remove` ends it
+  (`finaliseReplyWaiter`).
+- **A server with waiters** (`finaliseThreadEndWaiters`,
+  `finaliseReplyWaiters`).  Every other caller waiting on the thread is ended
+  as `reply_remove` ends it: the reply cancel (off the server's queue, its
+  boost reverted), then the suspend, `.Inactive`.  seL4 keeps the callers
+  blocked until their reply objects go. Here, reply authority is tied to the
+  server, so the server's delete removes each caller's reply then.  The walk
+  follows the server's live queue head and is bounded by the server's own
+  `replyWaitersCount`; it allocates nothing.  The `replyWaitersHeadCode != 0`
+  refusal is lifted.
+- **Checks before writes.**  `replyWaitersAdmitted` reads every waiter on the
+  pre-state, following the waiters' own links for the server's count: the
+  lender is endable, the server's own reply, when it lends onward, heads no
+  stack, and every other waiter is endable with its reply on no stack.
+- **The walk never refuses midway.**  On a state carrying the finalisation's
+  step invariant that the admission admits, the loan return and the walk
+  leave no thread waiting on the server
+  (`finaliseThreadEndWaiters_returnLoan_endsAll_of_admitted`, new module
+  `IPC/Invariant/FinaliseWaiterCompletion.lean`, staged with
+  `CancelAllReachability`).  The lender goes first, and its pop keeps every
+  plain waiter's guard (`finaliseReplyWaiter_unframed`: the pop writes the
+  context, the two binding codes, the stack's head and the frame below it,
+  none of which a plain waiter's guard reads).  Each plain waiter's end keeps
+  every other (`finaliseReplyWaiter_plain`) and shortens the queue by one
+  (`finaliseReplyWaiters_endsAll`).  The theorem is stated on the state the
+  loan return runs on; the finalisation reads the admission before the
+  thread's own notification unbind and cancel, and, as for every other
+  finalise step, each step re-reads its own guard.
+- **The head pop's recipient check refuses no reachable state.**
+  `donatedReturnCommits` asks that the caller a head reply's context goes back
+  to holds no binding; `donationOwnerValid` makes every lender `.unbound`
+  (`donationRecipientAcceptable_of_donationOwnerValid`).  The conjunct stays in
+  the check, which reads what the pop reads.
+- **Proofs.**  The new steps are the reply and suspend steps every bundle
+  already carries (`finaliseReplyCallerCancel_closed`,
+  `finaliseReplyWaiter_closed`, `finaliseFinalObject_closed`): the IPC bundle,
+  the reachable state, the run-queue entry stage, the reply-stack write
+  census, the loan coherence and the cross-core footprints.  The projection
+  proof covers each step (`finaliseReplyCallerCancel_hidden`,
+  `waiterEndKeeps`), with `threadFinaliseHidden` naming the context a head
+  reply heads.
+- **Tests.**  `tests/VSpaceCapabilityBindingSuite.lean` deletes, by their own
+  last capability: a reply-blocked caller with no server and one queued on its
+  server; a caller lending its context to its server; a receiver with a reply
+  stashed (`runReplyFinaliseChecks`); a borrowing server deleted with its
+  lender and one more waiter, and a server holding no loan deleted with two
+  waiters (`runReplyWaiterFinaliseChecks`).  Every waiter ends `.Inactive`,
+  holding no reply and on no queue, the lender has its context back, and the
+  server is retired.
+- **QEMU.**  The thread deletes the image runs keep their pins.  No scenario
+  deletes a server with waiters: as for the head reply, the image's two
+  threads cannot both wait and issue the delete (debt row below).
+
 ### A thread may wait unbound (seL4's unbind)
 
 seL4's `schedContext_unbindTCB` unbinds a thread whatever it is waiting on,
@@ -365,11 +435,13 @@ reclaim ended the holder's IPC before returning the reservation
   legacy reading of a holder left blocked unbound, and the closed rows on the
   holder abort's projection obligation and on the dispatch payoffs' premises
   record the retirement.
-- Registered and narrowed: "A thread blocked on a reply, or lending or
+- Registered and closed: "A thread blocked on a reply, or lending or
   borrowing a reservation, is not finalised on its own final delete"
   (registered as "A head reply and a lent reservation are not returned on a
-  final delete"; the reply's half, `reply_pop`, landed in the same version;
-  owner ZA6.1).  The thread row's clauses (1) and (2) point at it.
+  final delete"; the reply's half, `reply_pop`, and the thread's half both
+  landed in this version).
+- Narrowed: "A thread a final delete cannot finalise outlives its last
+  capability" now names only clause (3), the space slots (row 26).
 - Shrunk: "The suspend of a thread blocked in IPC or holding a donated
   scheduling context takes the general path": the reply arm's return is
   decided by `replyHeadPopCommits` before any write; the borrower's return

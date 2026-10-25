@@ -134,7 +134,10 @@ a caller waits on is removed (`reply_remove`: the caller's call cancelled and
 the caller made inactive, a reply heading a stack popped first as `reply_pop`
 does, the caller's context handed back) and a stashed one unlinked, and a scheduling
 context's ready holder is dequeued and its reply stack unlinked
-(`finaliseReply`, `finaliseSchedContextDeschedule`); any other busy kernel
+(`finaliseReply`, `finaliseSchedContextDeschedule`), and a thread's own
+delete removes its replies, returns a borrowed context to its lender and ends
+every caller waiting on it (`finaliseThreadReturnLoan`,
+`finaliseThreadEndWaiters`); any other busy kernel
 object still outlives its last capability until its kind's finalise lands
 ([`SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) §8.6).  Every slot write keeps the bundle,
 the untyped carve included (`untypedRetypeObject_preserves_capabilityInvariantBundle`;
