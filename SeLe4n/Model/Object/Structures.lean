@@ -1324,6 +1324,28 @@ changes nothing. -/
     Nat :=
   if SlotOccupancy.occupied cells i then SlotOccupancy.unlinkHead occ head i else head
 
+/-- Whether slot `i` holds a capability, out of line: the compiled writers read
+it before they write the slot array, so the write is in place, and the read
+adds no branch to the writer, so the writer still rebuilds its CNode in place. -/
+@[noinline] def occupiedAt (cells : Array (Option Capability)) (i : Nat) : Bool :=
+  SlotOccupancy.occupied cells i
+
+/-- `fillOcc` and `fillHead` on the slot's occupancy read beforehand (`w`), as
+the compiled writers take them, out of line for the same reason. -/
+@[noinline] def fillOccOf (w : Bool) (occ : Array Nat) (head i : Nat) : Array Nat :=
+  if w then occ else SlotOccupancy.linkWords occ head i
+
+@[noinline] def fillHeadOf (w : Bool) (head i : Nat) : Nat := if w then head else i + 1
+
+/-- `emptyOcc` and `emptyHead` on the slot's occupancy read beforehand (`w`):
+the head is read off the links before they are unlinked, so the unlink is in
+place. -/
+@[noinline] def emptyOccOf (w : Bool) (occ : Array Nat) (i : Nat) : Array Nat :=
+  if w then SlotOccupancy.unlinkWords occ i else occ
+
+@[noinline] def emptyHeadOf (w : Bool) (occ : Array Nat) (head i : Nat) : Nat :=
+  if w then SlotOccupancy.unlinkHead occ head i else head
+
 theorem size_fillOcc (cells : Array (Option Capability)) (occ : Array Nat) (head i : Nat) :
     (fillOcc cells occ head i).size = occ.size := by
   unfold fillOcc; split
@@ -1456,6 +1478,7 @@ a caller passes it as a literal, so it is built only there. -/
     (build : Unit → Capability) (hbuild : build () = cap)
     (h : slot.toNat < node.cells.size) (a : Array (Option Capability)) : CNode :=
   let i := slot.toNat
+  let w := occupiedAt node.cells i
   if ha : i < a.size then
     let o := a[i]
     let a' := a.set i none ha
@@ -1468,9 +1491,9 @@ a caller passes it as a literal, so it is built only there. -/
         cells := node.cells.set i (some cell) h
         cells_size := by rw [Array.size_set]; exact node.cells_size
         slots_agree := by rw [hc]; exact insert_slots_agree node slot cap h
-        occ := fillOcc node.cells node.occ node.occHead i
-        occ_size := by rw [size_fillOcc]; exact node.occ_size
-        occHead := fillHead node.cells node.occHead i
+        occ := fillOccOf w node.occ node.occHead i
+        occ_size := (size_fillOcc node.cells node.occ node.occHead i).trans node.occ_size
+        occHead := fillHeadOf w node.occHead i
         occ_agree := occ_agree_fill node i h _ rfl
         spare := Squash.mk a' }
     | none =>
@@ -1479,9 +1502,9 @@ a caller passes it as a literal, so it is built only there. -/
         cells := node.cells.set i (some (build ())) h
         cells_size := by rw [Array.size_set]; exact node.cells_size
         slots_agree := by rw [hbuild]; exact insert_slots_agree node slot cap h
-        occ := fillOcc node.cells node.occ node.occHead i
-        occ_size := by rw [size_fillOcc]; exact node.occ_size
-        occHead := fillHead node.cells node.occHead i
+        occ := fillOccOf w node.occ node.occHead i
+        occ_size := (size_fillOcc node.cells node.occ node.occHead i).trans node.occ_size
+        occHead := fillHeadOf w node.occHead i
         occ_agree := occ_agree_fill node i h _ rfl
         spare := Squash.mk a' }
   else
@@ -1490,9 +1513,9 @@ a caller passes it as a literal, so it is built only there. -/
       cells := node.cells.set i (some (build ())) h
       cells_size := by rw [Array.size_set]; exact node.cells_size
       slots_agree := by rw [hbuild]; exact insert_slots_agree node slot cap h
-      occ := fillOcc node.cells node.occ node.occHead i
-      occ_size := by rw [size_fillOcc]; exact node.occ_size
-      occHead := fillHead node.cells node.occHead i
+      occ := fillOccOf w node.occ node.occHead i
+      occ_size := (size_fillOcc node.cells node.occ node.occHead i).trans node.occ_size
+      occHead := fillHeadOf w node.occHead i
       occ_agree := occ_agree_fill node i h _ rfl
       spare := Squash.mk a }
 
@@ -1850,14 +1873,16 @@ def removeImpl (node : CNode) (slot : SeLe4n.Slot) : CNode :=
     let o := node.cells[slot.toNat]
     have hs : node.cells.set slot.toNat none h = node.cells.setIfInBounds slot.toNat none := by
       simp [Array.setIfInBounds, h]
+    let w := occupiedAt node.cells slot.toNat
+    let head := emptyHeadOf w node.occ node.occHead slot.toNat
     { node with
       slotsGhost := node.slotsGhost.map (·.erase slot)
       cells := node.cells.set slot.toNat none h
       cells_size := by rw [hs]; exact (node.remove slot).cells_size
       slots_agree := by rw [hs]; exact (node.remove slot).slots_agree
-      occ := emptyOcc node.cells node.occ slot.toNat
-      occ_size := by rw [size_emptyOcc]; exact node.occ_size
-      occHead := emptyHead node.cells node.occ node.occHead slot.toNat
+      occ := emptyOccOf w node.occ slot.toNat
+      occ_size := (size_emptyOcc node.cells node.occ slot.toNat).trans node.occ_size
+      occHead := head
       occ_agree := by rw [hs]; exact occ_agree_empty node slot.toNat
       spare := node.spare.keep slot.toNat o }
   else node.remove slot
