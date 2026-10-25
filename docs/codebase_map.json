@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "za/cnode-zombie",
-      "commit_sha": "352efb02d21bff45e1376de77cc203f23c8ca29c",
-      "tree_sha": "8b3e0ec13d5272c1364388124b8d5bef6c175dd1",
-      "committed_at_utc": "2026-10-25T18:26:34+00:00"
+      "branch": "za/cnode-zombie-merge",
+      "commit_sha": "8762255d6cf54808fc25a3f1d707c2b2148360c9",
+      "tree_sha": "a2a56663f587002a3b499269828538b10d6a2bb1",
+      "committed_at_utc": "2026-10-25T18:47:12+00:00"
     }
   },
   "source_sync": {
