@@ -4079,6 +4079,16 @@ run_check "INVARIANT" rg -n -U 'def finaliseThread \(x : SeLe4n\.ObjId\) \(st : 
 run_check "INVARIANT" rg -n -U 'def finaliseReplyWaiters \(x : SeLe4n\.ThreadId\) : Nat → SystemState → SystemState\n  \| 0, st => st\n  \| fuel \+ 1, st =>\n    match st\.getTcb\? x with\n    \| some tx =>\n      match tx\.replyWaitersHeadCode with' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 run_check "INVARIANT" rg -n -U '\| some tx => finaliseReplyWaiters x tx\.replyWaitersCount st' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 run_negative_check "INVARIANT" rg -n 't\.replyWaitersHeadCode == 0 && t\.timeoutBudget\.isNone' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+# On a state its admission reads, the loan return and the walk end every waiter:
+# neither refuses midway.
+run_check "INVARIANT" rg -n '^theorem finaliseReplyWaiters_endsAll($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseWaiterCompletion.lean
+run_check "INVARIANT" rg -n '^theorem finaliseReplyWaiter_plain($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseWaiterCompletion.lean
+run_check "INVARIANT" rg -n '^theorem finaliseReplyWaiter_unframed($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseWaiterCompletion.lean
+run_check "INVARIANT" rg -n '^theorem returnDonated_replyUnframed($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseWaiterCompletion.lean
+run_check "INVARIANT" rg -n '^theorem replyWaitersEndableFrom_plain($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseWaiterCompletion.lean
+run_check "INVARIANT" rg -n '^theorem lenderEndable_of_admitted($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseWaiterCompletion.lean
+run_check "INVARIANT" rg -n '^theorem finaliseThreadEndWaiters_returnLoan_endsAll($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseWaiterCompletion.lean
+run_check "INVARIANT" rg -n '^theorem finaliseThreadEndWaiters_returnLoan_endsAll_of_admitted($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseWaiterCompletion.lean
 run_check "INVARIANT" rg -n -U 'def finaliseThreadSuspend [^\n]*\n  match st\.getTcb\? tid with\n  \| some t =>\n    if t\.ipcStateCode == 0 && t\.ipcObjectCode == 0 &&\n        \(t\.threadState != \.Inactive \|\| t\.pendingMessage\.isSome\) && !isIdleThreadId tid then\n      \(descheduleAtPlacement st tid\)\.updateTcb tid finalisedSuspendMark' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 # A finalised thread's message dies with it, as the suspend syscall drops it.
 run_check "INVARIANT" rg -n -U '@\[inline\] def finalisedSuspendMark \(t : TCB\) : TCB :=\n  \{ t with threadState := \.Inactive, pendingMessage := none \}' SeLe4n/Kernel/IPC/Operations/CancelAll.lean

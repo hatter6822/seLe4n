@@ -579,6 +579,10 @@ import SeLe4n.Kernel.IPC.Invariant.Reachability
 -- nor any thread waiting on it or bound to it.  Staged with `Reachability`.
 import SeLe4n.Kernel.IPC.Invariant.CancelAllReachability
 import SeLe4n.Kernel.InformationFlow.Invariant.FinaliseProjection
+-- WS-ZA ZA5.4 part 25: a finalised thread's loan return and reply-waiter walk
+-- end every caller waiting on it on a state its admission reads
+-- (`finaliseThreadEndWaiters_returnLoan_endsAll_of_admitted`).
+import SeLe4n.Kernel.IPC.Invariant.FinaliseWaiterCompletion
 -- WS-SM SM8.A: the per-core observable state — the SMP information-flow
 -- observer `(c, L)` (plan Definition 3.1.1) and the state it observes
 -- (`ObservableState.onCore`, Definition 3.2.1), layered on the SM4.D
