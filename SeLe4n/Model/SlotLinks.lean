@@ -229,6 +229,19 @@ variable {st st' : SystemState} {oid : SeLe4n.ObjId}
 theorem of_eq (h : st'.objects[oid]? = st.objects[oid]?) :
     objectAgreesOffDerivationMetadataAt st' st oid := .inl h
 
+/-- The objects at the key hold the same notification-binding codes: a CNode
+holds none, and a thread differs only in its derivation links. -/
+theorem bindingCodes (h : objectAgreesOffDerivationMetadataAt st' st oid) :
+    (st'.objects[oid]?).map KernelObject.bindingCodes =
+      (st.objects[oid]?).map KernelObject.bindingCodes := by
+  rcases h with e | ⟨_, _, ha, hb, _⟩ | ⟨t, t', ha, hb, hw⟩
+  · rw [e]
+  · rw [ha, hb]; rfl
+  · rw [ha, hb]
+    simp only [Option.map_some, KernelObject.bindingCodes, Option.some.injEq, Prod.mk.injEq,
+      and_true]
+    have e := congrArg (fun x : TCB => x.boundNotificationCode) hw; exact e
+
 /-- Agreement off the links is agreement off the metadata. -/
 theorem of_links (h : objectAgreesOffDerivationLinksAt st' st oid) :
     objectAgreesOffDerivationMetadataAt st' st oid := by

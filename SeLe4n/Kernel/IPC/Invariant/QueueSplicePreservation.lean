@@ -636,6 +636,23 @@ theorem endpointQueueRemoveDual_sameSchedContextBindings
       hP.trans (storeTcbQueueLinks_sameSchedContextBindings s s' t qp qpp qn hInvS hStore))
     hObjInv hStep (sameSchedContextBindings.refl st)
 
+/-- The splice is a kind-preserving write: it rewrites one endpoint and the
+queue links of up to three threads, none of which moves a binding code. -/
+theorem endpointQueueRemoveDual_kindPreservingWrite
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
+    (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointQueueRemoveDual endpointId isReceiveQ tid st = .ok ((), st')) :
+    kindPreservingWrite st st' :=
+  endpointQueueRemoveDual_carry (P := fun s => kindPreservingWrite st s)
+    endpointId isReceiveQ tid st st'
+    (fun _ _ _ _ hEpOld hInvS hStore hP =>
+      hP.trans (storeObject_kindPreservingWrite hInvS hStore hEpOld rfl
+        (by simp [KernelObject.objectType])))
+    (fun _ _ _ _ _ _ hInvS hStore hP =>
+      hP.trans (storeTcbQueueLinks_kindPreservingWrite hInvS hStore))
+    hObjInv hStep (kindPreservingWrite.refl st)
+
 /-- WS-RR RR7.22: the splice frames the donation-owner reading. -/
 theorem endpointQueueRemoveDual_donationOwnerFrame
     (st st' : SystemState) (endpointId : SeLe4n.ObjId)
@@ -2254,7 +2271,7 @@ def ipcInvariantFullExceptMembership (st : SystemState) (ex : SeLe4n.ThreadId) :
   blockedOnReplyHasTarget st ∧ replyCallerLinkage st ∧
   pendingReceiveReplyWellFormed st ∧ donationOwnerUnique st ∧
   endpointQueueTailBlockedConsistent st ∧
-  queueNextTargetBlocked st
+  queueNextTargetBlocked st ∧ notificationBindingReciprocal st
 
 /-- WS-RR RR7.22 — **the capstone finding 4 asks for.**
 
@@ -2263,7 +2280,7 @@ membership conjunct relaxed at the removed thread, under one stated hypothesis:
 `splicePredecessorBlocked`, which the bundle genuinely does not entail (see its
 docstring) and which is vacuous whenever the removed thread is the queue head.
 
-Nineteen conjuncts come out unconditional.  The twentieth is relaxed rather
+Twenty conjuncts come out unconditional.  The membership one is relaxed rather
 than assumed, which is what makes this statement true of the state the
 operation actually produces. -/
 theorem endpointQueueRemoveDual_establishes_ipcInvariantFullExceptMembership
@@ -2316,7 +2333,10 @@ theorem endpointQueueRemoveDual_establishes_ipcInvariantFullExceptMembership
     endpointQueueRemoveDual_preserves_endpointQueueTailBlockedConsistent st st' endpointId
       isReceiveQ tid hObjInv hStep hInv.endpointQueueTailBlockedConsistent hPred,
     endpointQueueRemoveDual_preserves_queueNextTargetBlocked st st' endpointId isReceiveQ
-      tid hObjInv hStep hInv.queueNextTargetBlocked⟩
+      tid hObjInv hStep hInv.queueNextTargetBlocked,
+    notificationBindingReciprocal.of_kindPreservingWrite
+      (endpointQueueRemoveDual_kindPreservingWrite st st' endpointId isReceiveQ tid
+        hObjInv hStep) hInv.notificationBindingReciprocal⟩
 
 
 -- ============================================================================
@@ -2421,7 +2441,7 @@ re-run that two-step argument.
 
 Together with `endpointQueueRemoveDual_establishes_ipcInvariantFullExceptMembership`
 this closes the pair: splice relaxes at `tid`, store restores at `tid`, and the
-nineteen conjuncts hold of the composite's post-state. -/
+twenty conjuncts hold of the composite's post-state. -/
 theorem storeTcbReceiveComplete_closes_exceptMembership
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (msg : Option IpcMessage)
     (hObjInv : st.objects.invExt)
@@ -2443,7 +2463,7 @@ theorem storeTcbReceiveComplete_closes_exceptMembership
     ipcInvariantFull st' := by
   obtain ⟨hIpc, hDual, hBounded, hBadge, hPend, hNoDup, hMemExcept, hQNB, hQHB,
     hTimeout, _hAcyc, hOwnerValid, hBudget, hReplyTarget, hReplyLink,
-    hStash, hUnique, hTail, hQNT⟩ := hExcept
+    hStash, hUnique, hTail, hQNT, hNBR⟩ := hExcept
   -- `tid` carries no reply object: a `replyObject` forces a reciprocal `caller`
   -- back-link, and the backward clause makes that caller `.blockedOnReply` —
   -- which `hNotReply` denies.
@@ -2495,7 +2515,9 @@ theorem storeTcbReceiveComplete_closes_exceptMembership
     storeTcbReceiveComplete_preserves_endpointQueueTailBlockedConsistent st st' tid msg hTail
       hObjInv hStep hNotTail,
     storeTcbReceiveComplete_preserves_queueNextTargetBlocked st st' tid msg hQNT hObjInv hStep
-      hNoIncoming⟩
+      hNoIncoming,
+    notificationBindingReciprocal.of_kindPreservingWrite
+      (storeTcbReceiveComplete_kindPreservingWrite hObjInv hStep) hNBR⟩
 
 -- ============================================================================
 -- §8  WS-RR RR7.22 (residual) — the removed thread is detached
@@ -2841,6 +2863,12 @@ theorem ipcStateQueueMembershipConsistentExcept_of_storeAgrees {st st' : SystemS
   | .blockedOnNotification _ => trivial
   | .blockedOnReply _ _ => trivial
 
+/-- Notification binding reciprocity reads the object store only. -/
+theorem notificationBindingReciprocal_of_storeAgrees {st st' : SystemState}
+    (hA : objectStoreAgrees st st')
+    (h : notificationBindingReciprocal st) : notificationBindingReciprocal st' :=
+  notificationBindingReciprocal.of_codes (.of_getElem_eq hA) h
+
 /-- WS-OD OD1.3: **the whole bundle transfers across pointwise store
 agreement.**  Every conjunct reads the object store and nothing else, so the
 scheduler may differ. -/
@@ -2867,7 +2895,8 @@ theorem ipcInvariantFull_of_storeAgrees {st st' : SystemState}
    donationOwnerUnique_of_storeAgrees hA h.donationOwnerUnique,
    endpointQueueTailBlockedConsistent_of_storeAgrees hA
      h.endpointQueueTailBlockedConsistent,
-   queueNextTargetBlocked_of_storeAgrees hA h.queueNextTargetBlocked⟩
+   queueNextTargetBlocked_of_storeAgrees hA h.queueNextTargetBlocked,
+   notificationBindingReciprocal_of_storeAgrees hA h.notificationBindingReciprocal⟩
 
 /-- WS-OD OD1.3: the splice's relaxed bundle transfers the same way. -/
 theorem ipcInvariantFullExceptMembership_of_storeAgrees
@@ -2894,7 +2923,8 @@ theorem ipcInvariantFullExceptMembership_of_storeAgrees
    donationOwnerUnique_of_storeAgrees hA h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
    endpointQueueTailBlockedConsistent_of_storeAgrees hA
      h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
-   queueNextTargetBlocked_of_storeAgrees hA h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2⟩
+   queueNextTargetBlocked_of_storeAgrees hA h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+   notificationBindingReciprocal_of_storeAgrees hA h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2⟩
 
 -- ============================================================================
 -- §18  WS-OD OD1.3 — the two endpoint-queue removals agree
@@ -3709,7 +3739,7 @@ theorem timeoutStaging_preserves_ipcInvariantFull
     donationBudgetTransfer_of_sameSchedContextBindings hSame h.donationBudgetTransfer,
     ?_, ?_, ?_,
     donationOwnerUnique_of_sameSchedContextBindings hSame h.donationOwnerUnique,
-    ?_, ?_⟩
+    ?_, ?_, ?_⟩
   · exact storeObject_preserves_ipcInvariant_of_ne_notification st st' tid.toObjId _
       (fun _ => by simp) h.ipcInvariant hObjInv hStore
   · exact storeObject_tcb_preserves_dualQueueSystemInvariant_of_queueAgree st st' tid.toObjId
@@ -3790,5 +3820,9 @@ theorem timeoutStaging_preserves_ipcInvariantFull
     obtain ⟨b0, hB0, hIB, _, _, _, _⟩ := hBwd b.toObjId tB hB
     rw [hIA, hIB]
     exact h.queueNextTargetBlocked a b a0 b0 hA0 hB0 (hNA ▸ hN)
+  · exact notificationBindingReciprocal.of_codes
+      (sameNotificationBindings.of_storeObject_tcb (t' := timeoutStagedTcb tcb) hObjInv hRaw
+        rfl hStore)
+      h.notificationBindingReciprocal
 
 end SeLe4n.Kernel

@@ -1026,7 +1026,8 @@ theorem trans {a b c : SystemState} (h₁ : finaliseWrite a b) (h₂ : finaliseW
 
 /-- A finalisation write is kind-preserving: what it writes is no CNode, and
 keeps its untyped record (none). -/
-theorem kind {st st' : SystemState} (h : finaliseWrite st st') : kindPreservingWrite st st' := by
+theorem kind {st st' : SystemState} (h : finaliseWrite st st') :
+    kindPreservingWriteUpToBindings st st' := by
   intro oid
   rcases h oid with e | ⟨pre, post, hp, hq, ht, hs, -, hw⟩
   · exact Or.inl e
@@ -1194,7 +1195,8 @@ theorem trans {a b c : SystemState} (h₁ : FinaliseFrame a b) (h₂ : FinaliseF
     FinaliseFrame a c :=
   ⟨h₂.rest.trans h₁.rest, h₂.invExt, h₁.write.trans h₂.write, h₁.loan.trans h₂.loan⟩
 
-theorem kind {st st' : SystemState} (h : FinaliseFrame st st') : kindPreservingWrite st st' :=
+theorem kind {st st' : SystemState} (h : FinaliseFrame st st') :
+    kindPreservingWriteUpToBindings st st' :=
   h.write.kind
 
 theorem asidTable {st st' : SystemState} (h : FinaliseFrame st st') :
@@ -1294,7 +1296,8 @@ theorem of_write {st st' : SystemState} (h : finaliseWrite st st') : finaliseWri
   · exact Or.inl e
   · exact Or.inr ⟨pre, post, hp, hq, ht, hs, Or.inl hw⟩
 
-theorem kind {st st' : SystemState} (h : finaliseWriteAny st st') : kindPreservingWrite st st' := by
+theorem kind {st st' : SystemState} (h : finaliseWriteAny st st') :
+    kindPreservingWriteUpToBindings st st' := by
   intro oid
   rcases h oid with e | ⟨pre, post, hp, hq, ht, hs, hw⟩
   · exact Or.inl e
@@ -1366,7 +1369,7 @@ theorem trans {a b c : SystemState} (h₁ : FinaliseFrameAny a b) (h₂ : Finali
     FinaliseFrameAny a c :=
   ⟨h₂.cdt.trans h₁.cdt, h₂.asidTable.trans h₁.asidTable, h₂.invExt, h₁.write.trans h₂.write⟩
 
-theorem kind {st st' : SystemState} (h : FinaliseFrameAny st st') : kindPreservingWrite st st' :=
+theorem kind {st st' : SystemState} (h : FinaliseFrameAny st st') : kindPreservingWriteUpToBindings st st' :=
   h.write.kind
 
 theorem preserves_teardownWellFormed {st st' : SystemState} (h : FinaliseFrameAny st st')
@@ -1708,14 +1711,14 @@ theorem propagatePip (st : SystemState) (s : SeLe4n.ThreadId) (ec : Concurrency.
     PriorityInheritance.propagatePipChainCrossCore_preserves_objects_invExt st s ec fuel hInv,
     fun oid => ?_, fun oid => ?_⟩
   · rcases PriorityInheritance.propagatePipChainCrossCore_objects_pointwise fuel st s ec hInv oid with
-      e | ⟨pre, post, hp, hq, hC, hL⟩
+      e | ⟨pre, post, hp, hq, hC, hL, -⟩
     · exact Or.inl e
     · exact Or.inr ⟨.tcb pre, .tcb post, hp, hq, rfl, by simp [KernelObject.tcbSlots, hC, hL], rfl,
         finaliseWritable_tcb pre⟩
   · -- The walk rewrites threads only, their pip boost and run links: reply
     -- links and loans are kept.
     rcases PriorityInheritance.propagatePipChainCrossCore_objects_pointwise fuel st s ec hInv oid with
-      e | ⟨pre, post, hp, hq, -, -⟩
+      e | ⟨pre, post, hp, hq, -, -, -⟩
     · exact Or.inl e
     · obtain ⟨ty, p, hy, hE⟩ := PriorityInheritance.propagatePipChainCrossCore_tcb_backward st s ec
         fuel hInv ⟨oid.val⟩ post hq

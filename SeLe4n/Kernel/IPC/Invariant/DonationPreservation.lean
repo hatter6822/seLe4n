@@ -605,6 +605,9 @@ structure donationReadAgreement (st st' : SystemState) : Prop where
   /-- every badged post-state slot capability sat in that slot before (the
   slot contents `capabilityBadgesWellFormed` reads) -/
   slotsBack : badgedSlotsBack st st'
+  /-- every slot holds the same notification-binding codes, which
+  `notificationBindingReciprocal` reads -/
+  bindingCodes : sameNotificationBindings st st'
 
 namespace donationReadAgreement
 
@@ -616,7 +619,8 @@ theorem refl (st : SystemState) : donationReadAgreement st st :=
    fun _ _ => Iff.rfl,
    fun _ _ => Iff.rfl,
    fun _ sc h => ⟨sc, h⟩,
-   badgedSlotsBack.refl st⟩
+   badgedSlotsBack.refl st,
+   sameNotificationBindings.refl st⟩
 
 /-- Transitivity — chain two donation stores. -/
 theorem trans {st st' st'' : SystemState}
@@ -645,6 +649,7 @@ theorem trans {st st' st'' : SystemState}
     obtain ⟨sc', h'⟩ := h1.scExists oid sc h
     exact h2.scExists oid sc' h'
   slotsBack := h1.slotsBack.trans h2.slotsBack
+  bindingCodes := h1.bindingCodes.trans h2.bindingCodes
 
 end donationReadAgreement
 
@@ -660,7 +665,7 @@ theorem donationReadAgreement_of_schedContextStore
   have hAt := storeObject_objects_eq st st' scKey _ hObjInv hStore
   have hNe : ∀ (oid : SeLe4n.ObjId), oid ≠ scKey → st'.objects[oid]? = st.objects[oid]? :=
     fun oid h => storeObject_objects_ne st st' scKey oid _ h hObjInv hStore
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro oid tx hx
     by_cases hEq : oid = scKey
     · rw [hEq, hAt] at hx; cases hx
@@ -699,6 +704,7 @@ theorem donationReadAgreement_of_schedContextStore
     · exact ⟨sc, by rw [hNe oid hEq]; exact h⟩
   · exact badgedSlotsBack.of_slotCap_back
       (slotCap_back_of_storeObject hObjInv hPre hStore (funext fun _ => rfl))
+  · exact sameNotificationBindings.of_storeObject hObjInv hStore (by rw [hPre]; rfl)
 
 /-- WS-RR RR2.5: the general TCB-field-update constructor — a state that rewrites
 one TCB, leaving every field the fifteen binding-free conjuncts read intact and
@@ -722,9 +728,10 @@ theorem donationReadAgreement_of_tcbFieldUpdateAgree
     (hStash : newTcb.pendingReceiveReply = oldTcb.pendingReceiveReply)
     (hSlots : ∀ (sl : SeLe4n.Slot) (c : Capability) (b : SeLe4n.Badge),
       newTcb.spaceSlotCap sl = some c → c.badge = some b → oldTcb.spaceSlotCap sl = some c :=
-      by intro _ _ _ h _; exact h) :
+      by intro _ _ _ h _; exact h)
+    (hBnc : newTcb.boundNotificationCode = oldTcb.boundNotificationCode := by rfl) :
     donationReadAgreement st st' := by
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro oid tx hx
     by_cases hEq : oid = key
     · rw [hEq, hAt] at hx
@@ -776,6 +783,11 @@ theorem donationReadAgreement_of_tcbFieldUpdateAgree
     · rw [hEq, hAt] at h; cases h
       exact ⟨.tcb oldTcb, by rw [hEq]; exact hPre, hSlots sl c b hL hB⟩
     · rw [hFrame oid hEq] at h; exact ⟨o', h, hL⟩
+  · intro oid
+    by_cases hEq : oid = key
+    · rw [hEq, hAt, hPre]
+      simp only [notificationBindingCodes, KernelObject.bindingCodes, hBnc]
+    · rw [hFrame oid hEq]
 
 /-- The equality instance of the constructor above. -/
 theorem donationReadAgreement_of_tcbFieldUpdate
@@ -793,10 +805,11 @@ theorem donationReadAgreement_of_tcbFieldUpdate
     (hStash : newTcb.pendingReceiveReply = oldTcb.pendingReceiveReply)
     (hSlots : ∀ (sl : SeLe4n.Slot) (c : Capability) (b : SeLe4n.Badge),
       newTcb.spaceSlotCap sl = some c → c.badge = some b → oldTcb.spaceSlotCap sl = some c :=
-      by intro _ _ _ h _; exact h) :
+      by intro _ _ _ h _; exact h)
+    (hBnc : newTcb.boundNotificationCode = oldTcb.boundNotificationCode := by rfl) :
     donationReadAgreement st st' :=
   donationReadAgreement_of_tcbFieldUpdateAgree st st' key oldTcb newTcb hPre hAt hFrame hIpc
-    (pendingMessageReadAgrees_of_eq hMsg) hNext hPrev hPPrev hBudget hReply hStash hSlots
+    (pendingMessageReadAgrees_of_eq hMsg) hNext hPrev hPPrev hBudget hReply hStash hSlots hBnc
 
 /-- WS-RR RR2.5: a `storeObject` replacing one TCB with another that differs
 **only** in `schedContextBinding` establishes the read agreement. -/
@@ -846,7 +859,7 @@ theorem donationReadAgreement_of_headClear
     (hObjInv : st.objects.invExt)
     (h : storeDonationHeadClear head? st = .ok st') :
     donationReadAgreement st st' := by
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · exact fun oid tx hx =>
       ⟨tx, storeDonationHeadClear_tcb_backward hObjInv h oid tx hx,
         rfl, pendingMessageReadAgrees_refl _, rfl, rfl, rfl, rfl, rfl, rfl⟩
@@ -884,6 +897,9 @@ theorem donationReadAgreement_of_headClear
     · exact fun _ o _ _ _ h hL _ => ⟨o, h, hL⟩
     · exact badgedSlotsBack.of_slotCap_back
         (slotCap_back_of_storeObject hObjInv hRead hS (funext fun _ => rfl))
+  · rcases storeDonationHeadClear_cases h with rfl | ⟨rid, r, _, hRead, hS⟩
+    · exact sameNotificationBindings.refl _
+    · exact sameNotificationBindings.of_storeObject hObjInv hS (by rw [hRead]; rfl)
 
 /-- `v0.35.4`: the pop's second write — re-heading the frame below the popped one
 — establishes the read agreement for the same reason the unlink does: one Reply
@@ -893,7 +909,7 @@ theorem donationReadAgreement_of_reHead
     (hObjInv : st.objects.invExt)
     (h : storeReplyReHead scId head? st = .ok st') :
     donationReadAgreement st st' := by
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · exact fun oid tx hx =>
       ⟨tx, storeReplyReHead_tcb_backward hObjInv h oid tx hx,
         rfl, pendingMessageReadAgrees_refl _, rfl, rfl, rfl, rfl, rfl, rfl⟩
@@ -931,6 +947,9 @@ theorem donationReadAgreement_of_reHead
     · exact fun _ o _ _ _ h hL _ => ⟨o, h, hL⟩
     · exact badgedSlotsBack.of_slotCap_back
         (slotCap_back_of_storeObject hObjInv hRead hS (funext fun _ => rfl))
+  · rcases storeReplyReHead_cases h with rfl | ⟨rid, r, _, hRead, hS⟩
+    · exact sameNotificationBindings.refl _
+    · exact sameNotificationBindings.of_storeObject hObjInv hS (by rw [hRead]; rfl)
 
 /-- `v0.35.4`: the whole pop — the unlink and the re-head — establishes the read
 agreement, composed from its two stores.  At `none` it is the identity, which the
@@ -959,7 +978,7 @@ theorem donationReadAgreement_of_replyStackStore
     (hCaller : r'.caller = r.caller) (hStasher : r'.stasherCode = r.stasherCode) :
     donationReadAgreement st st' := by
   have hRaw := (SystemState.getReply?_eq_some_iff st rid r).mp hPre
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · exact fun oid tx hx =>
       ⟨tx, (storeObject_replyAt_objects_tcb_iff st st' rid r _ hPre hObjInv hS oid tx).mp hx,
         rfl, pendingMessageReadAgrees_refl _, rfl, rfl, rfl, rfl, rfl, rfl⟩
@@ -989,6 +1008,7 @@ theorem donationReadAgreement_of_replyStackStore
     · rw [storeObject_objects_ne st st' rid.toObjId oid _ hEq hObjInv hS]; exact hSc
   · exact badgedSlotsBack.of_slotCap_back
       (slotCap_back_of_storeObject hObjInv hRaw hS (funext fun _ => rfl))
+  · exact sameNotificationBindings.of_storeObject hObjInv hS (by rw [hRaw]; rfl)
 
 /-- `v0.35.4`: **the donation push's two Reply writes establish the read
 agreement** — the pushed frame's and, when there is one, the old head's, each a
@@ -1025,6 +1045,7 @@ theorem donationReadAgreement_of_objects_eq {st s s' : SystemState}
     obtain ⟨sc', hSc'⟩ := h.scExists oid sc hSc
     exact ⟨sc', by rw [hObjs]; exact hSc'⟩
   slotsBack := fun oid o' sl c b h' => h.slotsBack oid o' sl c b (by rw [← hObjs]; exact h')
+  bindingCodes := fun k => by rw [hObjs]; exact h.bindingCodes k
 
 /-- WS-RR RR2.5: `donateSchedContext` establishes the read agreement — its three
 stores are one SchedContext rebinding and two binding-only TCB updates, and the
@@ -1126,7 +1147,7 @@ theorem ipcInvariantFull_of_donationReadAgreement_of_except
     (hBudgetTransfer : donationBudgetTransfer st')
     (hOwnerUnique : donationOwnerUnique st') :
     ipcInvariantFull st' := by
-  obtain ⟨hBwd, hFwd, hNT, hRC, hRS, hSC, hSlots⟩ := hAgree
+  obtain ⟨hBwd, hFwd, hNT, hRC, hRS, hSC, hSlots, hCodes⟩ := hAgree
   -- The core driver reads a strictly narrower agreement than the one above.
   have hCore : ipcInvariantCore st' := by
     refine ipcInvariantCore_of_nonBindingAgreements st st'
@@ -1138,7 +1159,7 @@ theorem ipcInvariantFull_of_donationReadAgreement_of_except
     · obtain ⟨tx, h1, e1, e2, e3, e4, e5, e6, _, _⟩ := hFwd s ty h
       exact ⟨tx, h1, e1, e2, e3, e4, e5, e6⟩
   refine ipcInvariantFull_of_core_replyCallerLinkage hCore ⟨⟨?_, ?_⟩, ?_⟩ ⟨?_, ?_, ?_⟩ hOwnerUnique
-    ?_ ?_
+    ?_ ?_ (.of_codes hCodes hInv.notificationBindingReciprocal)
   -- 16a. replyCallerLinkageReciprocal, TCB → Reply.
   · intro tid tcb rid hTcb hReplyObj
     obtain ⟨ty, hTy, _, _, _, _, _, _, hRO, _⟩ := hBwd tid.toObjId tcb hTcb
@@ -1246,10 +1267,11 @@ theorem ipcInvariantFull_of_tcbFieldUpdateAgree
     (hBind : newTcb.schedContextBinding = oldTcb.schedContextBinding)
     (hSlots : ∀ (sl : SeLe4n.Slot) (c : Capability) (b : SeLe4n.Badge),
       newTcb.spaceSlotCap sl = some c → c.badge = some b → oldTcb.spaceSlotCap sl = some c :=
-      by intro _ _ _ h _; exact h) :
+      by intro _ _ _ h _; exact h)
+    (hBnc : newTcb.boundNotificationCode = oldTcb.boundNotificationCode := by rfl) :
     ipcInvariantFull st' := by
   have hAgree := donationReadAgreement_of_tcbFieldUpdateAgree st st' key oldTcb newTcb hPre hAt
-    hFrame hIpc hMsg hNext hPrev hPPrev hBudget hReply hStash hSlots
+    hFrame hIpc hMsg hNext hPrev hPPrev hBudget hReply hStash hSlots hBnc
   -- Backward transport of a post-state TCB, *with* its binding.
   have hBwd : ∀ (oid : SeLe4n.ObjId) (tx : TCB), st'.objects[oid]? = some (.tcb tx) →
       ∃ ty, st.objects[oid]? = some (.tcb ty) ∧ tx.ipcState = ty.ipcState ∧
@@ -1321,11 +1343,12 @@ theorem ipcInvariantFull_of_tcbFieldUpdate
     (hBind : newTcb.schedContextBinding = oldTcb.schedContextBinding)
     (hSlots : ∀ (sl : SeLe4n.Slot) (c : Capability) (b : SeLe4n.Badge),
       newTcb.spaceSlotCap sl = some c → c.badge = some b → oldTcb.spaceSlotCap sl = some c :=
-      by intro _ _ _ h _; exact h) :
+      by intro _ _ _ h _; exact h)
+    (hBnc : newTcb.boundNotificationCode = oldTcb.boundNotificationCode := by rfl) :
     ipcInvariantFull st' :=
   ipcInvariantFull_of_tcbFieldUpdateAgree st st' key oldTcb newTcb hInv hPre hAt hFrame hIpc
     (pendingMessageReadAgrees_of_eq hMsg) hNext hPrev hPPrev hBudget hReply hStash hBind
-    hSlots
+    hSlots hBnc
 
 /-- WS-ZA ZA4.4: a write of one thread's notification-queue links preserves the
 whole bundle: no conjunct reads those links. -/

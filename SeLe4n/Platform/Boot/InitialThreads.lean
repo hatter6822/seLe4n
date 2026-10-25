@@ -232,6 +232,47 @@ theorem startInitialThreadOnCore_replyLinkCodes (st : SystemState)
         ((SystemState.getTcb?_eq_some_iff _ _ _).mp h) rfl j
   · exact hU j
 
+/-- WS-ZA ZA5.4 part 27: overwriting a TCB with one of the same
+bound-notification code keeps every slot's binding codes. -/
+theorem sameNotificationBindings_insert_tcb (st : SystemState) (hInv : st.objects.invExt)
+    {k : SeLe4n.ObjId} {t t' : TCB} (hOld : st.objects[k]? = some (.tcb t))
+    (hc : t'.boundNotificationCode = t.boundNotificationCode) :
+    sameNotificationBindings st { st with objects := st.objects.insert k (.tcb t') } := by
+  intro j
+  by_cases h : k = j
+  · subst h
+    show notificationBindingCodes ((st.objects.insert k _).get? k) = _
+    rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self _ _ _ hInv, hOld]
+    simp only [notificationBindingCodes, KernelObject.bindingCodes, hc]
+  · show notificationBindingCodes ((st.objects.insert k _).get? j) = _
+    rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne _ _ _ _ (by simpa using h) hInv]; rfl
+
+/-- WS-ZA ZA5.4 part 27: the start keeps every slot's notification-binding
+codes — it writes the thread's state, its IPC state and its run links. -/
+theorem startInitialThreadOnCore_sameNotificationBindings (st : SystemState)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    sameNotificationBindings st (startInitialThreadOnCore st tid) := by
+  have hU : sameNotificationBindings st
+      (st.updateTcb tid fun t => { t with threadState := .Ready }) := by
+    cases hT : st.getTcb? tid with
+    | none => rw [SystemState.updateTcb_eq_self_of_none hT]; exact .refl _
+    | some t =>
+      rw [SystemState.updateTcb_eq_of_some hT]
+      exact sameNotificationBindings_insert_tcb st hInv (t' := { t with threadState := .Ready })
+        ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) rfl
+  have hInv1 := SystemState.updateTcb_preserves_objects_invExt st tid
+    (fun t => { t with threadState := .Ready }) hInv
+  unfold startInitialThreadOnCore enqueueRunnableOnCore
+  generalize st.updateTcb tid (fun t => { t with threadState := .Ready }) = s1 at hU hInv1
+  split
+  · rename_i tcb h _
+    split
+    · exact hU
+    · refine hU.trans ((sameNotificationBindings_insert_tcb s1 hInv1
+        (t' := tcb.setIpcState .ready) ((SystemState.getTcb?_eq_some_iff _ _ _).mp h) rfl).trans
+        (.of_objectsAgreeOffRunLinks (SystemState.runEnqueueAdmitted_objectsAgreeOffRunLinks _ _ _ _)))
+  · exact hU
+
 /-- **WS-BP BP7.11**: **a start keeps the boot shape.**  The written TCB was
 boot-shaped and the start moves only its flag and its IPC state to `.ready`;
 nothing else in the object store moves, so the ASID table, the untypeds and
@@ -242,9 +283,10 @@ theorem startInitialThread_preserves_bootStartShape (ist : IntermediateState)
     (tid : SeLe4n.ThreadId) (hStart : initialThreadStartable ist.state tid = true)
     (h : bootStartShape ist) : bootStartShape (startInitialThread ist tid) := by
   have hInv := ist.hAllTables.1.1
-  obtain ⟨hShape, hFields, hAsid, hUntyped, ⟨rq, re, rp, hSch⟩, hRun, hQueue⟩ := h
+  obtain ⟨hShape, hFields, hAsid, hUntyped, ⟨rq, re, rp, hSch⟩, hRun, hQueue, hBindings⟩ := h
   have hFrame := startInitialThreadOnCore_frame ist.state tid
-  refine ⟨?_, ?_, ?_, ?_, ?_, startInitialThreadOnCore_runQueueRefined ist.state tid hInv hRun, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, startInitialThreadOnCore_runQueueRefined ist.state tid hInv hRun, ?_,
+    .of_codes (startInitialThreadOnCore_sameNotificationBindings ist.state tid hInv) hBindings⟩
   · intro oid obj hObj
     rcases startInitialThreadOnCore_objects_cases ist.state tid hInv oid obj hObj with
       hB | ⟨t, t', hT, rfl, he⟩

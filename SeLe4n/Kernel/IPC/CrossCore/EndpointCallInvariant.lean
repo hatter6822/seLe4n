@@ -2518,7 +2518,10 @@ theorem endpointCallOnCore_preserves_ipcInvariantFull
     -- invisible off run-queue links), and the block leg is the fused enqueue+`.blockedOnCall` keystone.
     endpointCallOnCore_preserves_queueNextTargetBlocked endpointId caller payload executingCore st
       hInv.queueNextTargetBlocked hInv.2.1 hInv.endpointQueueTailBlockedConsistent hObjInv hCallerReady
-      hFreshCaller hSendTailFresh⟩
+      hFreshCaller hSendTailFresh,
+    notificationBindingReciprocal.of_kindPreservingWrite
+      (endpointCallOnCore_kindPreservingWrite endpointId caller payload executingCore st hObjInv)
+      hInv.notificationBindingReciprocal⟩
 
 -- ============================================================================
 -- WS-SM SM6.D: per-core IPC bundle preservation for the cross-core call

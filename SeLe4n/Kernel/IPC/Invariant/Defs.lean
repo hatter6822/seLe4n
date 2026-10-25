@@ -4376,7 +4376,7 @@ cut-off part keeps stale ones, see the section docstring) and any completeness
 clause over a per-frame context field — a frame below the head does not know its
 context, which is exactly what makes the splice `O(1)`.
 
-**Not a conjunct of `ipcInvariantFull`.**  That bundle has exactly nineteen
+**Not a conjunct of `ipcInvariantFull`.**  That bundle has exactly twenty
 conjuncts and a family of theorems whose size a Tier-0 gate holds equal to the
 prose that quotes it; widening it is a change of a different size.  This
 predicate joins `ipcReachable` and the two dispatch quiescence packs instead —
@@ -5953,6 +5953,309 @@ theorem donationOwnerValidExcept_of_frames
   | inr hi => exact Or.inr ⟨ep, rt, hi.trans hReply⟩
 
 -- ============================================================================
+-- Notification binding reciprocity
+-- ============================================================================
+
+/-- **The two notification-binding codes a slot holds**: a thread's
+bound-notification code (`TCB.boundNotificationCode`) and a notification's
+bound-thread code (`Notification.boundTCBCode`), each `id + 1` or `0`; every
+other kind, and an empty slot, holds neither (`KernelObject.bindingCodes`).  The
+reciprocity below reads a slot through this view alone, so a write that keeps a
+slot's view keeps the invariant. -/
+@[inline] def notificationBindingCodes : Option KernelObject → Nat × Nat
+  | some o => o.bindingCodes
+  | none => (0, 0)
+
+/-- **Notification binding reciprocity**: a thread bound to a notification is
+named back by it, and a notification bound to a thread is named back by it —
+seL4's `tcbBoundNotification` / `ntfnBoundTCB` pair, which `bindNotification`
+writes as one fact on the two ends and `unbindNotification` clears as one.
+Stated over the slots' binding views (`notificationBindingCodes`): a nonzero
+code names a slot whose opposite code is this slot's id plus one, so the named
+slot is the opposite kind. -/
+def notificationBindingReciprocal (st : SystemState) : Prop :=
+  ∀ k : SeLe4n.ObjId,
+    (∀ c : Nat, (notificationBindingCodes st.objects[k]?).1 = c + 1 →
+      (notificationBindingCodes st.objects[(⟨c⟩ : SeLe4n.ObjId)]?).2 = k.val + 1) ∧
+    (∀ c : Nat, (notificationBindingCodes st.objects[k]?).2 = c + 1 →
+      (notificationBindingCodes st.objects[(⟨c⟩ : SeLe4n.ObjId)]?).1 = k.val + 1)
+
+/-- **Two states hold the same notification-binding codes at every slot** — the
+frame `notificationBindingReciprocal` reads.  Every transition that writes neither
+a thread's bound-notification code nor a notification's bound-thread code, and
+neither creates nor deletes an object holding one, keeps it; a bind, an unbind
+and a final delete are the writers that leave it. -/
+def sameNotificationBindings (st st' : SystemState) : Prop :=
+  ∀ k : SeLe4n.ObjId,
+    notificationBindingCodes st'.objects[k]? = notificationBindingCodes st.objects[k]?
+
+namespace sameNotificationBindings
+
+theorem refl (st : SystemState) : sameNotificationBindings st st := fun _ => rfl
+
+theorem trans {st st' st'' : SystemState}
+    (h1 : sameNotificationBindings st st') (h2 : sameNotificationBindings st' st'') :
+    sameNotificationBindings st st'' := fun k => (h2 k).trans (h1 k)
+
+theorem of_getElem_eq {st st' : SystemState}
+    (h : ∀ k : SeLe4n.ObjId, st'.objects[k]? = st.objects[k]?) :
+    sameNotificationBindings st st' := fun k => by rw [h k]
+
+theorem of_objects_eq {st st' : SystemState} (h : st'.objects = st.objects) :
+    sameNotificationBindings st st' := fun k => by rw [h]
+
+/-- Stores whose slots map to the same model-level codes (`KernelObject.bindingCodes`). -/
+theorem of_map_bindingCodes {st st' : SystemState}
+    (h : ∀ k : SeLe4n.ObjId, (st'.objects[k]?).map KernelObject.bindingCodes =
+      (st.objects[k]?).map KernelObject.bindingCodes) :
+    sameNotificationBindings st st' := by
+  intro k
+  have hk := h k
+  cases h1 : st'.objects[k]? <;> cases h2 : st.objects[k]? <;>
+    simp only [h1, h2, Option.map_some, Option.map_none, Option.some.injEq,
+      reduceCtorEq] at hk <;>
+    simp only [notificationBindingCodes, hk]
+
+/-- A kind-preserving write keeps every slot's codes: it is the frame every IPC
+and scheduler chain step is built from. -/
+theorem of_kindPreservingWrite {st st' : SystemState} (h : kindPreservingWrite st st') :
+    sameNotificationBindings st st' :=
+  of_map_bindingCodes h.bindingCodes
+
+/-- One `storeObject` whose object holds the codes the slot held. -/
+theorem of_storeObject {st st' : SystemState} {id : SeLe4n.ObjId} {obj : KernelObject}
+    (hObjInv : st.objects.invExt)
+    (hStore : storeObject id obj st = .ok ((), st'))
+    (hC : notificationBindingCodes (some obj) = notificationBindingCodes st.objects[id]?) :
+    sameNotificationBindings st st' := by
+  intro k
+  by_cases hk : k = id
+  · subst hk; rw [storeObject_objects_eq st st' k obj hObjInv hStore]; exact hC
+  · rw [storeObject_objects_ne st st' id k obj hk hObjInv hStore]
+
+/-- A thread store keeping the thread's bound-notification code. -/
+theorem of_storeObject_tcb {st st' : SystemState} {id : SeLe4n.ObjId} {t t' : TCB}
+    (hObjInv : st.objects.invExt)
+    (hOrig : st.objects[id]? = some (.tcb t))
+    (hB : t'.boundNotificationCode = t.boundNotificationCode)
+    (hStore : storeObject id (.tcb t') st = .ok ((), st')) :
+    sameNotificationBindings st st' :=
+  of_storeObject hObjInv hStore (by rw [hOrig]; simp only [notificationBindingCodes, KernelObject.bindingCodes, hB])
+
+/-- A notification store keeping the notification's bound-thread code. -/
+theorem of_storeObject_notification {st st' : SystemState} {id : SeLe4n.ObjId}
+    {n n' : Notification}
+    (hObjInv : st.objects.invExt)
+    (hOrig : st.objects[id]? = some (.notification n))
+    (hB : n'.boundTCBCode = n.boundTCBCode)
+    (hStore : storeObject id (.notification n') st = .ok ((), st')) :
+    sameNotificationBindings st st' :=
+  of_storeObject hObjInv hStore (by rw [hOrig]; simp only [notificationBindingCodes, KernelObject.bindingCodes, hB])
+
+/-- A store over a slot that held no binding, of an object that holds none. -/
+theorem of_storeObject_unbound {st st' : SystemState} {id : SeLe4n.ObjId}
+    {obj : KernelObject}
+    (hObjInv : st.objects.invExt)
+    (hOld : notificationBindingCodes st.objects[id]? = (0, 0))
+    (hNew : notificationBindingCodes (some obj) = (0, 0))
+    (hStore : storeObject id obj st = .ok ((), st')) :
+    sameNotificationBindings st st' :=
+  of_storeObject hObjInv hStore (hNew.trans hOld.symm)
+
+/-- An endpoint store over an endpoint. -/
+theorem of_storeObject_endpoint {st st' : SystemState} {id : SeLe4n.ObjId}
+    {ep ep' : Endpoint}
+    (hObjInv : st.objects.invExt)
+    (hOrig : st.objects[id]? = some (.endpoint ep))
+    (hStore : storeObject id (.endpoint ep') st = .ok ((), st')) :
+    sameNotificationBindings st st' :=
+  of_storeObject_unbound hObjInv (by rw [hOrig]; rfl) rfl hStore
+
+/-- A reply store over a reply. -/
+theorem of_storeObject_reply {st st' : SystemState} {id : SeLe4n.ObjId}
+    {r r' : SeLe4n.Kernel.Reply}
+    (hObjInv : st.objects.invExt)
+    (hOrig : st.objects[id]? = some (.reply r))
+    (hStore : storeObject id (.reply r') st = .ok ((), st')) :
+    sameNotificationBindings st st' :=
+  of_storeObject_unbound hObjInv (by rw [hOrig]; rfl) rfl hStore
+
+/-- A SchedContext store over a SchedContext. -/
+theorem of_storeObject_schedContext {st st' : SystemState} {id : SeLe4n.ObjId}
+    {sc sc' : SeLe4n.Kernel.SchedContext}
+    (hObjInv : st.objects.invExt)
+    (hOrig : st.objects[id]? = some (.schedContext sc))
+    (hStore : storeObject id (.schedContext sc') st = .ok ((), st')) :
+    sameNotificationBindings st st' :=
+  of_storeObject_unbound hObjInv (by rw [hOrig]; rfl) rfl hStore
+
+end sameNotificationBindings
+
+namespace notificationBindingReciprocal
+
+/-- **The frame**: states whose slots hold the same binding views. -/
+theorem of_codes {st st' : SystemState}
+    (h : sameNotificationBindings st st')
+    (hR : notificationBindingReciprocal st) : notificationBindingReciprocal st' := by
+  intro k
+  refine ⟨fun c hc => ?_, fun c hc => ?_⟩
+  · rw [h ⟨c⟩]; exact (hR k).1 c (by rw [← h k]; exact hc)
+  · rw [h ⟨c⟩]; exact (hR k).2 c (by rw [← h k]; exact hc)
+
+/-- An empty store is reciprocal. -/
+theorem of_objects_none {st : SystemState} (h : ∀ k : SeLe4n.ObjId, st.objects[k]? = none) :
+    notificationBindingReciprocal st := fun k => by
+  rw [h k]
+  exact ⟨fun c hc => absurd hc (by simp [notificationBindingCodes]),
+    fun c hc => absurd hc (by simp [notificationBindingCodes])⟩
+
+/-- Every kind-preserving chain step keeps the reciprocity. -/
+theorem of_kindPreservingWrite {st st' : SystemState} (h : kindPreservingWrite st st')
+    (hR : notificationBindingReciprocal st) : notificationBindingReciprocal st' :=
+  of_codes (.of_kindPreservingWrite h) hR
+
+/-- A thread's bound notification is a notification that names it back. -/
+theorem tcb {st : SystemState} (h : notificationBindingReciprocal st)
+    {k : SeLe4n.ObjId} {t : TCB} {c : Nat}
+    (hT : st.objects[k]? = some (.tcb t)) (hc : t.boundNotificationCode = c + 1) :
+    ∃ n : Notification, st.objects[(⟨c⟩ : SeLe4n.ObjId)]? = some (.notification n) ∧
+      n.boundTCBCode = k.val + 1 := by
+  have hB := (h k).1 c (by rw [hT]; exact hc)
+  revert hB
+  cases hO : st.objects[(⟨c⟩ : SeLe4n.ObjId)]? with
+  | none => intro hB; simp [notificationBindingCodes, KernelObject.bindingCodes] at hB
+  | some o =>
+    cases o <;> intro hB <;> simp [notificationBindingCodes, KernelObject.bindingCodes] at hB
+    exact ⟨_, rfl, hB⟩
+
+/-- A notification's bound thread is a thread that names it back. -/
+theorem notification {st : SystemState} (h : notificationBindingReciprocal st)
+    {k : SeLe4n.ObjId} {n : Notification} {c : Nat}
+    (hN : st.objects[k]? = some (.notification n)) (hc : n.boundTCBCode = c + 1) :
+    ∃ t : TCB, st.objects[(⟨c⟩ : SeLe4n.ObjId)]? = some (.tcb t) ∧
+      t.boundNotificationCode = k.val + 1 := by
+  have hB := (h k).2 c (by rw [hN]; exact hc)
+  revert hB
+  cases hO : st.objects[(⟨c⟩ : SeLe4n.ObjId)]? with
+  | none => intro hB; simp [notificationBindingCodes, KernelObject.bindingCodes] at hB
+  | some o =>
+    cases o <;> intro hB <;> simp [notificationBindingCodes, KernelObject.bindingCodes] at hB
+    exact ⟨_, rfl, hB⟩
+
+/-- **One write that keeps its slot's binding view** keeps every slot's. -/
+theorem codes_of_single_write {st st' : SystemState} {x : SeLe4n.ObjId}
+    {o : Option KernelObject}
+    (hAt : st'.objects[x]? = o)
+    (hNe : ∀ k : SeLe4n.ObjId, k ≠ x → st'.objects[k]? = st.objects[k]?)
+    (hC : notificationBindingCodes o = notificationBindingCodes st.objects[x]?) :
+    ∀ k : SeLe4n.ObjId,
+      notificationBindingCodes st'.objects[k]? = notificationBindingCodes st.objects[k]? := by
+  intro k
+  by_cases hk : k = x
+  · subst hk; rw [hAt]; exact hC
+  · rw [hNe k hk]
+
+/-- **Two stores that agree on every bound slot**: a slot that holds a binding
+code in either holds the same codes in both.  An unbound slot may change freely —
+an object stored or erased there, an idle thread or a boot root installed —
+since a reciprocal store names no unbound slot. -/
+theorem of_boundCodes_agree {st st' : SystemState}
+    (hR : notificationBindingReciprocal st)
+    (hBack : ∀ k : SeLe4n.ObjId, notificationBindingCodes st'.objects[k]? ≠ (0, 0) →
+      notificationBindingCodes st'.objects[k]? = notificationBindingCodes st.objects[k]?)
+    (hFwd : ∀ k : SeLe4n.ObjId, notificationBindingCodes st.objects[k]? ≠ (0, 0) →
+      notificationBindingCodes st'.objects[k]? = notificationBindingCodes st.objects[k]?) :
+    notificationBindingReciprocal st' := by
+  intro k
+  refine ⟨fun c hc => ?_, fun c hc => ?_⟩
+  · have hk := hBack k (fun h => by rw [h] at hc; exact absurd hc (by simp))
+    have hB := (hR k).1 c (hk ▸ hc)
+    rw [hFwd _ (fun h => by rw [h] at hB; exact absurd hB (by simp))]; exact hB
+  · have hk := hBack k (fun h => by rw [h] at hc; exact absurd hc (by simp))
+    have hB := (hR k).2 c (hk ▸ hc)
+    rw [hFwd _ (fun h => by rw [h] at hB; exact absurd hB (by simp))]; exact hB
+
+/-- **A bind keeps the reciprocity**: a thread slot `t` and a notification slot
+`n`, both unbound, are written to name each other, and every other slot keeps
+its codes.  No other slot named either of them, since each was unbound and the
+pre-state is reciprocal. -/
+theorem of_bindCodes {st st' : SystemState} {t n : SeLe4n.ObjId}
+    (hR : notificationBindingReciprocal st) (hTN : t ≠ n)
+    (hT : notificationBindingCodes st.objects[t]? = (0, 0))
+    (hN : notificationBindingCodes st.objects[n]? = (0, 0))
+    (hT' : notificationBindingCodes st'.objects[t]? = (n.val + 1, 0))
+    (hN' : notificationBindingCodes st'.objects[n]? = (0, t.val + 1))
+    (hO : ∀ k : SeLe4n.ObjId, k ≠ t → k ≠ n →
+      notificationBindingCodes st'.objects[k]? = notificationBindingCodes st.objects[k]?) :
+    notificationBindingReciprocal st' := by
+  intro k
+  by_cases hkt : k = t
+  · subst hkt
+    refine ⟨fun c hc => ?_, fun c hc => ?_⟩
+    · rw [hT'] at hc
+      have hcn : (⟨c⟩ : SeLe4n.ObjId) = n := SeLe4n.ObjId.ext (by simp at hc; simp; omega)
+      rw [hcn, hN']
+    · rw [hT'] at hc; exact absurd hc (by simp)
+  by_cases hkn : k = n
+  · subst hkn
+    refine ⟨fun c hc => ?_, fun c hc => ?_⟩
+    · rw [hN'] at hc; exact absurd hc (by simp)
+    · rw [hN'] at hc
+      have hct : (⟨c⟩ : SeLe4n.ObjId) = t := SeLe4n.ObjId.ext (by simp at hc; simp; omega)
+      rw [hct, hT']
+  · rw [hO k hkt hkn]
+    refine ⟨fun c hc => ?_, fun c hc => ?_⟩
+    · have hB := (hR k).1 c hc
+      by_cases hct : (⟨c⟩ : SeLe4n.ObjId) = t
+      · rw [hct, hT] at hB; exact absurd hB (by simp)
+      by_cases hcn : (⟨c⟩ : SeLe4n.ObjId) = n
+      · rw [hcn, hN] at hB; exact absurd hB (by simp)
+      rw [hO _ hct hcn]; exact hB
+    · have hB := (hR k).2 c hc
+      by_cases hct : (⟨c⟩ : SeLe4n.ObjId) = t
+      · rw [hct, hT] at hB; exact absurd hB (by simp)
+      by_cases hcn : (⟨c⟩ : SeLe4n.ObjId) = n
+      · rw [hcn, hN] at hB; exact absurd hB (by simp)
+      rw [hO _ hct hcn]; exact hB
+
+/-- **An unbind keeps the reciprocity**: a thread slot `t` and the notification
+slot `n` it is bound to are both cleared, and every other slot keeps its codes.
+No other slot named either of them: the pre-state's reciprocal pair is the only
+one through `t` and `n`. -/
+theorem of_unbindCodes {st st' : SystemState} {t n : SeLe4n.ObjId}
+    (hR : notificationBindingReciprocal st)
+    (hT : notificationBindingCodes st.objects[t]? = (n.val + 1, 0))
+    (hN : notificationBindingCodes st.objects[n]? = (0, t.val + 1))
+    (hT' : notificationBindingCodes st'.objects[t]? = (0, 0))
+    (hN' : notificationBindingCodes st'.objects[n]? = (0, 0))
+    (hO : ∀ k : SeLe4n.ObjId, k ≠ t → k ≠ n →
+      notificationBindingCodes st'.objects[k]? = notificationBindingCodes st.objects[k]?) :
+    notificationBindingReciprocal st' := by
+  intro k
+  by_cases hkt : k = t
+  · subst hkt; rw [hT']; exact ⟨fun c hc => absurd hc (by simp), fun c hc => absurd hc (by simp)⟩
+  by_cases hkn : k = n
+  · subst hkn; rw [hN']; exact ⟨fun c hc => absurd hc (by simp), fun c hc => absurd hc (by simp)⟩
+  rw [hO k hkt hkn]
+  refine ⟨fun c hc => ?_, fun c hc => ?_⟩
+  · have hB := (hR k).1 c hc
+    by_cases hct : (⟨c⟩ : SeLe4n.ObjId) = t
+    · rw [hct, hT] at hB; exact absurd hB (by simp)
+    by_cases hcn : (⟨c⟩ : SeLe4n.ObjId) = n
+    · rw [hcn, hN] at hB
+      exact absurd (SeLe4n.ObjId.ext (by simp at hB; omega)) hkt
+    rw [hO _ hct hcn]; exact hB
+  · have hB := (hR k).2 c hc
+    by_cases hct : (⟨c⟩ : SeLe4n.ObjId) = t
+    · rw [hct, hT] at hB
+      exact absurd (SeLe4n.ObjId.ext (by simp at hB; omega)) hkn
+    by_cases hcn : (⟨c⟩ : SeLe4n.ObjId) = n
+    · rw [hcn, hN] at hB; exact absurd hB (by simp)
+    rw [hO _ hct hcn]; exact hB
+
+end notificationBindingReciprocal
+
+-- ============================================================================
 -- Full IPC invariant bundle
 -- ============================================================================
 
@@ -5980,7 +6283,7 @@ def ipcInvariantCore (st : SystemState) : Prop :=
   donationBudgetTransfer st ∧
   blockedOnReplyHasTarget st
 
-/-- WS-SM SM6.D (PR #822 review): the full IPC invariant — **nineteen conjuncts**:
+/-- WS-SM SM6.D (PR #822 review): the full IPC invariant — **twenty conjuncts**:
 the 14 structural conjuncts (`ipcInvariantCore`) **plus** the bidirectional
 `replyCallerLinkage` (15th) tying every `TCB.replyObject` to a reciprocating
 `Reply.caller`, **plus** the `pendingReceiveReplyWellFormed` server-first stash
@@ -5988,7 +6291,10 @@ conjunct (16th, PR #822 review 6J9Kjg/6J9Kp6) tying every
 `TCB.pendingReceiveReply` to a still-`.blockedOnReceive` server holding a free
 existing Reply, **plus** the reply-object hardening trio added during the
 SM6.D deep audits (`donationOwnerUnique` 17th,
-`endpointQueueTailBlockedConsistent` 18th, `queueNextTargetBlocked` 19th).
+`endpointQueueTailBlockedConsistent` 18th, `queueNextTargetBlocked` 19th),
+**plus** notification binding reciprocity (`notificationBindingReciprocal`,
+20th), which lets a final delete read a thread's or a notification's own
+binding code instead of scanning the object table for the other end.
 The core is split out so the reply-store building blocks (`storeObject_reply` /
 `storeObject_tcb_replyObject`) — whose *intermediate* state legitimately breaks the
 reciprocal link — can be sequenced through the core before `linkCallerReply` /
@@ -6004,7 +6310,7 @@ def ipcInvariantFull (st : SystemState) : Prop :=
   blockedOnReplyHasTarget st ∧ replyCallerLinkage st ∧
   pendingReceiveReplyWellFormed st ∧ donationOwnerUnique st ∧
   endpointQueueTailBlockedConsistent st ∧
-  queueNextTargetBlocked st
+  queueNextTargetBlocked st ∧ notificationBindingReciprocal st
 
 
 -- ============================================================================
@@ -6023,7 +6329,7 @@ two endpoint-queue removals (`endpointQueueRemove_agrees_with_dual`), whose
 head branches write the endpoint a different number of times in a different
 order.
 
-Nothing in `ipcInvariantFull` can tell the two apart: every one of its nineteen
+Nothing in `ipcInvariantFull` can tell the two apart: every one of its twenty
 conjuncts reads the store through `getElem?` and nothing else, so no frame of
 the bundle names the scheduler.
 
@@ -6031,7 +6337,7 @@ The family below is the pointwise counterpart of the `_of_objects_eq` frames.
 Four of those (`endpointQueueNoDup`, `ipcStateQueueMembershipConsistent`,
 `queueNextBlockingConsistent`, `queueNextTargetBlocked`) already took a
 pointwise hypothesis under the equality name; the rest took the equality.  A
-`_of_storeAgrees` wrapper exists for all nineteen so a caller need not know which
+`_of_storeAgrees` wrapper exists for all twenty so a caller need not know which
 was which. -/
 def objectStoreAgrees (st st' : SystemState) : Prop :=
   ∀ k : SeLe4n.ObjId, st'.objects[k]? = st.objects[k]?
@@ -6252,7 +6558,7 @@ thread — the honest post-state of a **bare** reply delivery.
 The reply wakes the answered caller before the donated SchedContext is handed
 back (see `donationOwnerValidExcept` for why that ordering is deliberate), so on
 the donating path no state between the two steps satisfies `ipcInvariantFull`.
-This is what such a state does satisfy: eighteen conjuncts unchanged, and
+This is what such a state does satisfy: nineteen conjuncts unchanged, and
 `donationOwnerValid` relaxed exactly at the woken caller.
 
 `donationChainAcyclic` is kept at full strength — it follows from the relaxed form
@@ -6275,7 +6581,7 @@ def ipcInvariantFullExceptDonationOwner (st : SystemState) (woken : SeLe4n.Threa
   blockedOnReplyHasTarget st ∧ replyCallerLinkage st ∧
   pendingReceiveReplyWellFormed st ∧ donationOwnerUnique st ∧
   endpointQueueTailBlockedConsistent st ∧
-  queueNextTargetBlocked st
+  queueNextTargetBlocked st ∧ notificationBindingReciprocal st
 
 /-- WS-RR RR3.12: the full bundle relaxes at every thread. -/
 theorem ipcInvariantFullExceptDonationOwner_of_full {st : SystemState}
@@ -6434,7 +6740,7 @@ def ipcInvariantFullExceptReplyLinkage (st : SystemState) (woken : SeLe4n.Thread
   blockedOnReplyHasTarget st ∧ replyCallerLinkageExcept st woken ∧
   pendingReceiveReplyWellFormed st ∧ donationOwnerUnique st ∧
   endpointQueueTailBlockedConsistent st ∧
-  queueNextTargetBlocked st
+  queueNextTargetBlocked st ∧ notificationBindingReciprocal st
 
 /-- **WS-RR RR8.7: the superseded hypothesis set was contradictory, and this is
 the pin that it must not come back.**
@@ -6515,7 +6821,12 @@ theorem ipcInvariantFullExceptReplyLinkage.endpointQueueTailBlockedConsistent
 theorem ipcInvariantFullExceptReplyLinkage.queueNextTargetBlocked {st : SystemState}
     {woken : SeLe4n.ThreadId} (h : ipcInvariantFullExceptReplyLinkage st woken) :
     _root_.SeLe4n.Kernel.queueNextTargetBlocked st :=
-  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+
+theorem ipcInvariantFullExceptReplyLinkage.notificationBindingReciprocal {st : SystemState}
+    {woken : SeLe4n.ThreadId} (h : ipcInvariantFullExceptReplyLinkage st woken) :
+    _root_.SeLe4n.Kernel.notificationBindingReciprocal st :=
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
 
 /-- WS-RR RR3.12: the relaxed bundle's own `donationOwnerValidExcept` projection. -/
 theorem ipcInvariantFullExceptDonationOwner.donationOwnerValidExcept
@@ -6584,7 +6895,10 @@ theorem ipcInvariantFullExceptDonationOwner.endpointQueueTailBlockedConsistent {
     _root_.SeLe4n.Kernel.endpointQueueTailBlockedConsistent st := h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
 theorem ipcInvariantFullExceptDonationOwner.queueNextTargetBlocked {st : SystemState}
     {woken : SeLe4n.ThreadId} (h : ipcInvariantFullExceptDonationOwner st woken) :
-    _root_.SeLe4n.Kernel.queueNextTargetBlocked st := h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
+    _root_.SeLe4n.Kernel.queueNextTargetBlocked st := h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+theorem ipcInvariantFullExceptDonationOwner.notificationBindingReciprocal {st : SystemState}
+    {woken : SeLe4n.ThreadId} (h : ipcInvariantFullExceptDonationOwner st woken) :
+    _root_.SeLe4n.Kernel.notificationBindingReciprocal st := h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
 
 /-- WS-SM SM6.D (PR #822 review): the structural core is exactly the first 15
 conjuncts of `ipcInvariantFull`. -/
@@ -6605,35 +6919,35 @@ theorem ipcInvariantFull_of_core_replyCallerLinkage {st : SystemState}
     (hCore : ipcInvariantCore st) (hLink : replyCallerLinkage st)
     (hPRR : pendingReceiveReplyWellFormed st) (hUnique : donationOwnerUnique st)
     (hTail : endpointQueueTailBlockedConsistent st)
-    (hQNTB : queueNextTargetBlocked st) :
+    (hQNTB : queueNextTargetBlocked st) (hNBR : notificationBindingReciprocal st) :
     ipcInvariantFull st :=
   ⟨hCore.1, hCore.2.1, hCore.2.2.1, hCore.2.2.2.1, hCore.2.2.2.2.1,
    hCore.2.2.2.2.2.1, hCore.2.2.2.2.2.2.1, hCore.2.2.2.2.2.2.2.1,
    hCore.2.2.2.2.2.2.2.2.1, hCore.2.2.2.2.2.2.2.2.2.1,
    hCore.2.2.2.2.2.2.2.2.2.2.1, hCore.2.2.2.2.2.2.2.2.2.2.2.1,
    hCore.2.2.2.2.2.2.2.2.2.2.2.2.1,
-   hCore.2.2.2.2.2.2.2.2.2.2.2.2.2, hLink, hPRR, hUnique, hTail, hQNTB⟩
+   hCore.2.2.2.2.2.2.2.2.2.2.2.2.2, hLink, hPRR, hUnique, hTail, hQNTB, hNBR⟩
 
 /-- **WS-RR RR8.16: the relaxed bundle's assembler**, the sibling of
 `ipcInvariantFull_of_core_replyCallerLinkage` one strength down.
 
 The two differ in their second argument and nowhere else, which is the statement
 that the relaxation is confined to the reciprocal pair: a step that carries the
-other eighteen conjuncts carries them for both bundles, so the reply-stack
+other nineteen conjuncts carries them for both bundles, so the reply-stack
 writers prove those once and assemble twice. -/
 theorem ipcInvariantFullExceptReplyLinkage_of_core_replyCallerLinkageExcept
     {st : SystemState} {woken : SeLe4n.ThreadId}
     (hCore : ipcInvariantCore st) (hLink : replyCallerLinkageExcept st woken)
     (hPRR : pendingReceiveReplyWellFormed st) (hUnique : donationOwnerUnique st)
     (hTail : endpointQueueTailBlockedConsistent st)
-    (hQNTB : queueNextTargetBlocked st) :
+    (hQNTB : queueNextTargetBlocked st) (hNBR : notificationBindingReciprocal st) :
     ipcInvariantFullExceptReplyLinkage st woken :=
   ⟨hCore.1, hCore.2.1, hCore.2.2.1, hCore.2.2.2.1, hCore.2.2.2.2.1,
    hCore.2.2.2.2.2.1, hCore.2.2.2.2.2.2.1, hCore.2.2.2.2.2.2.2.1,
    hCore.2.2.2.2.2.2.2.2.1, hCore.2.2.2.2.2.2.2.2.2.1,
    hCore.2.2.2.2.2.2.2.2.2.2.1, hCore.2.2.2.2.2.2.2.2.2.2.2.1,
    hCore.2.2.2.2.2.2.2.2.2.2.2.2.1,
-   hCore.2.2.2.2.2.2.2.2.2.2.2.2.2, hLink, hPRR, hUnique, hTail, hQNTB⟩
+   hCore.2.2.2.2.2.2.2.2.2.2.2.2.2, hLink, hPRR, hUnique, hTail, hQNTB, hNBR⟩
 
 -- ============================================================================
 -- AN3-B (IPC-M01 / Theme 4.2): Named-projection refactor for ipcInvariantFull.
@@ -6641,10 +6955,10 @@ theorem ipcInvariantFullExceptReplyLinkage_of_core_replyCallerLinkageExcept
 -- The legacy tuple form above is preserved as the primary definition so
 -- every existing consumer that destructures `ipcInvariantFull` via tuple
 -- projections continues to typecheck.  The block below layers a named
--- `structure IpcInvariantFull` over the same conjuncts (nineteen since
--- v0.36.136: 14 structural — `uniqueWaiters` and `passiveServerIdle` retired — plus
+-- `structure IpcInvariantFull` over the same conjuncts (twenty since
+-- v0.36.140: 14 structural — `uniqueWaiters` and `passiveServerIdle` retired — plus
 -- the reply-linkage/stash/hardening quintet added through the SM6.D
--- reply-object audits), a
+-- reply-object audits, plus notification binding reciprocity), a
 -- bidirectional `ipcInvariantFull_iff_IpcInvariantFull` bridge, and
 -- per-field projection theorems (installed as `@[simp]`) so callers
 -- can write `hInv.donationOwnerValid` (or any other conjunct name) in
@@ -6661,7 +6975,7 @@ theorem ipcInvariantFullExceptReplyLinkage_of_core_replyCallerLinkageExcept
 
 /-- AN3-B.1: Named-field counterpart of `ipcInvariantFull`.
 
-All 19 fields mirror the conjuncts of the tuple form, one-for-one in
+All 20 fields mirror the conjuncts of the tuple form, one-for-one in
 declaration order (`uniqueWaiters` was retired in the WS-RC R4.C.7
 close-out, and `passiveServerIdle` at `v0.36.136`). The bidirectional bridge
 `ipcInvariantFull_iff_IpcInvariantFull` establishes that the two Prop-level
@@ -6689,6 +7003,7 @@ structure IpcInvariantFull (st : SystemState) : Prop where
   donationOwnerUnique : donationOwnerUnique st
   endpointQueueTailBlockedConsistent : endpointQueueTailBlockedConsistent st
   queueNextTargetBlocked : queueNextTargetBlocked st
+  notificationBindingReciprocal : notificationBindingReciprocal st
 
 namespace ipcInvariantFull
 
@@ -6793,7 +7108,12 @@ elaborator. -/
 @[simp] theorem queueNextTargetBlocked {st : SystemState}
     (h : ipcInvariantFull st) :
     _root_.SeLe4n.Kernel.queueNextTargetBlocked st :=
-  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+
+@[simp] theorem notificationBindingReciprocal {st : SystemState}
+    (h : ipcInvariantFull st) :
+    _root_.SeLe4n.Kernel.notificationBindingReciprocal st :=
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
 
 end ipcInvariantFull
 
@@ -6916,7 +7236,8 @@ theorem ipcInvariantFull_iff_IpcInvariantFull (st : SystemState) :
            h.donationBudgetTransfer,
            h.blockedOnReplyHasTarget, h.replyCallerLinkage,
            h.pendingReceiveReplyWellFormed, h.donationOwnerUnique,
-           h.endpointQueueTailBlockedConsistent, h.queueNextTargetBlocked⟩
+           h.endpointQueueTailBlockedConsistent, h.queueNextTargetBlocked,
+           h.notificationBindingReciprocal⟩
   · intro h
     exact ⟨h.ipcInvariant, h.dualQueueSystemInvariant,
            h.allPendingMessagesBounded, h.badgeWellFormed,
@@ -6928,7 +7249,8 @@ theorem ipcInvariantFull_iff_IpcInvariantFull (st : SystemState) :
            h.donationBudgetTransfer,
            h.blockedOnReplyHasTarget, h.replyCallerLinkage,
            h.pendingReceiveReplyWellFormed, h.donationOwnerUnique,
-           h.endpointQueueTailBlockedConsistent, h.queueNextTargetBlocked⟩
+           h.endpointQueueTailBlockedConsistent, h.queueNextTargetBlocked,
+           h.notificationBindingReciprocal⟩
 
 /-- AN3-B.1: forward direction of the bridge, as a convenience coercion.
 Used by callers that prefer the named-field form. -/

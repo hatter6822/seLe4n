@@ -396,7 +396,7 @@ kind and slots, and no edge (`finaliseFinalObject_frame`). -/
 theorem finaliseFinalObject_preserves_capabilityInvariantBundle (target : Nat) (st : SystemState)
     (h : capabilityInvariantBundle st) : capabilityInvariantBundle (finaliseFinalObject target st) :=
   have hFr := finaliseFinalObject_frame target st h.2.2.2.2.1
-  capabilityInvariantBundle_of_kindPreserving h hFr.cdt hFr.invExt hFr.kind
+  capabilityInvariantBundle_of_kindPreservingUpToBindings h hFr.cdt hFr.invExt hFr.kind
 
 /-- **The finalising delete keeps the capability invariants**: the delete keeps
 them (`cspaceDeleteSlot_preserves_capabilityInvariantBundle`), the teardown

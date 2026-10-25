@@ -1794,9 +1794,10 @@ theorem ipcInvariantFull_compositional
     (hPRR : pendingReceiveReplyWellFormed st)
     (hUnique : donationOwnerUnique st)
     (hEQTB : endpointQueueTailBlockedConsistent st)
-    (hQNTB : queueNextTargetBlocked st) :
+    (hQNTB : queueNextTargetBlocked st)
+    (hNBR : notificationBindingReciprocal st) :
     ipcInvariantFull st :=
-  ⟨hIpc, hDual, hBounded, hBadge, hWtpmn, hNoDup, hQMC, hQNBC, hQHBC, hBlockedTimeout, hDCA, hDOV, hDBT, hBRT, hRCL, hPRR, hUnique, hEQTB, hQNTB⟩
+  ⟨hIpc, hDual, hBounded, hBadge, hWtpmn, hNoDup, hQMC, hQNBC, hQHBC, hBlockedTimeout, hDCA, hDOV, hDBT, hBRT, hRCL, hPRR, hUnique, hEQTB, hQNTB, hNBR⟩
 
 -- ============================================================================
 -- T4-E/F (M-IPC-3): WithCaps wrappers preserve ipcInvariantFull
@@ -8689,6 +8690,31 @@ theorem ipcUnwrapCaps_sameSchedContextBindings
   fun y tcY hY => ((ipcUnwrapCaps_tcb_backward caps receiverRoot slotBase grantRight
     st st' summary y.toObjId tcY hObjInv hStep hY).elim fun t0 ⟨h0, hw⟩ => ⟨t0, h0, TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) rfl⟩)
 
+
+open SeLe4n.Model.SystemState in
+/-- `ipcUnwrapCaps` keeps every slot's notification-binding codes: it writes the
+receiver's root CNode only, and a thread's derivation links at most. -/
+theorem ipcUnwrapCaps_sameNotificationBindings
+    (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
+    (slotBase : SeLe4n.Slot) (grantRight : Bool)
+    (st st' : SystemState) (summary : CapTransferSummary)
+    (hObjInv : st.objects.invExt)
+    (hStep : ipcUnwrapCaps caps receiverRoot slotBase grantRight st = .ok (summary, st')) :
+    sameNotificationBindings st st' := by
+  apply sameNotificationBindings.of_map_bindingCodes
+  intro k
+  by_cases hk : k = receiverRoot
+  · subst hk
+    rcases ipcUnwrapCaps_objects_at_root_orig_or_cnode caps k slotBase grantRight st st' summary
+      hObjInv hStep with e | ⟨cn', hc⟩
+    · rw [e]
+    · cases hC : st.getCNode? k with
+      | none =>
+        rw [ipcUnwrapCaps_state_eq_of_root_not_cnode caps k slotBase grantRight st st' summary
+          hC hStep]
+      | some cn => rw [hc, (getCNode?_eq_some_iff st k cn).mp hC]; rfl
+  · exact (ipcUnwrapCaps_preserves_objects_ne caps receiverRoot slotBase grantRight st st' summary
+      k hk hObjInv hStep).bindingCodes
 open SeLe4n.Model.SystemState in
 /-- **WS-RM (`v0.35.6`)**: the removal's frame — the splice's composed with the
 consume's. -/
@@ -9059,6 +9085,84 @@ theorem endpointReceiveDual_sameSchedContextBindings_of_rendezvous
               (ensureRunnable st2 pair.1) st4 receiver .ready _ hObjInvEns hPend)
         | error _ => simp
 
+
+open SeLe4n.Model.SystemState in
+/-- The receive's rendezvous leg is a `kindPreservingWrite`. -/
+theorem endpointReceiveDual_kindPreservingWrite_of_rendezvous
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
+    (receiver senderId : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
+    (ep : Endpoint) (sender : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = some sender)
+    (hStep : endpointReceiveDual endpointId receiver replyId st = .ok (senderId, st')) :
+    kindPreservingWrite st st' := by
+  have hObj : st.objects[endpointId]? = some (.endpoint ep) :=
+    (getEndpoint?_eq_some_iff st endpointId ep).mp hEp
+  unfold endpointReceiveDual SystemState.getObject? at hStep
+  simp only [hObj, hHead] at hStep
+  cases hPop : endpointQueuePopHead endpointId false st with
+  | error e => simp [hPop] at hStep
+  | ok pair =>
+    simp only [hPop] at hStep
+    have hObjInvPop : pair.2.2.objects.invExt :=
+      endpointQueuePopHead_preserves_objects_invExt endpointId false st pair.2.2 pair.1 pair.2.1
+        hObjInv hPop
+    have hS1 : kindPreservingWrite st pair.2.2 :=
+      endpointQueuePopHead_kindPreservingWrite hObjInv hPop
+    cases hSenderIpc : pair.2.1.ipcState with
+    | blockedOnCall _ =>
+      simp only [hSenderIpc, ite_true] at hStep
+      cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1
+          (.blockedOnReply endpointId (some receiver)) none with
+      | error e => simp [hMsg] at hStep
+      | ok st2 =>
+        simp only [hMsg] at hStep
+        have hObjInvMsg : st2.objects.invExt :=
+          storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2.2 st2 pair.1 _ none
+            hObjInvPop hMsg
+        have hS2 : kindPreservingWrite st st2 :=
+          hS1.trans (storeTcbIpcStateAndMessage_kindPreservingWrite hObjInvPop hMsg)
+        cases hReplyId : replyId with
+        | none => simp [hReplyId] at hStep
+        | some rid =>
+          simp only [hReplyId] at hStep
+          cases hLink : SystemState.linkCallerReply pair.1 rid st2 with
+          | error e => simp [hLink] at hStep
+          | ok pLink =>
+            obtain ⟨_, stLinked⟩ := pLink
+            simp only [hLink] at hStep
+            have hObjInvLink : stLinked.objects.invExt :=
+              linkCallerReply_preserves_objects_invExt st2 stLinked pair.1 rid hObjInvMsg hLink
+            have hS3 : kindPreservingWrite st stLinked :=
+              hS2.trans (SystemState.linkCallerReply_kindPreservingWrite st2 stLinked pair.1 rid hObjInvMsg hLink)
+            revert hStep
+            cases hPend : storeTcbIpcStateAndMessage stLinked receiver .ready _ with
+            | ok st4 =>
+              exact fun h => (Prod.mk.inj (Except.ok.inj h)).2 ▸
+                hS3.trans (storeTcbIpcStateAndMessage_kindPreservingWrite hObjInvLink hPend)
+            | error _ => simp
+    | ready | blockedOnSend _ | blockedOnReceive _ | blockedOnNotification _ | blockedOnReply _ _ =>
+      simp only [hSenderIpc] at hStep
+      cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready none with
+      | error e => simp [hMsg] at hStep
+      | ok st2 =>
+        simp only [hMsg] at hStep
+        have hObjInvMsg : st2.objects.invExt :=
+          storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2.2 st2 pair.1 _ none
+            hObjInvPop hMsg
+        have hS2 : kindPreservingWrite st st2 :=
+          hS1.trans (storeTcbIpcStateAndMessage_kindPreservingWrite hObjInvPop hMsg)
+        have hObjInvEns : (ensureRunnable st2 pair.1).objects.invExt := by
+          exact ensureRunnable_objects_invExt _ _ (by assumption)
+        have hS3 : kindPreservingWrite st (ensureRunnable st2 pair.1) :=
+          hS2.trans ((SystemState.objectsAgreeOffRunLinks.kindPreserving (ensureRunnable_objectsAgreeOffRunLinks st2 pair.1)))
+        revert hStep
+        cases hPend : storeTcbIpcStateAndMessage (ensureRunnable st2 pair.1) receiver .ready _ with
+        | ok st4 =>
+          exact fun h => (Prod.mk.inj (Except.ok.inj h)).2 ▸
+            hS3.trans (storeTcbIpcStateAndMessage_kindPreservingWrite hObjInvEns hPend)
+        | error _ => simp
+
 open SeLe4n.Model.SystemState in
 /-- **WS-RR RR8.12 Cut C1 (register row 55): the receive leg's binding frame, on the
 block path — stated from the state the pre-receive cleanup leaves.**
@@ -9146,6 +9250,111 @@ theorem endpointReceiveDual_sameSchedContextBindings_of_blocked
             exact hS3.trans (sameSchedContextBindings.of_objectsAgreeOffRunLinks
               (removeRunnable_objectsAgreeOffRunLinks stStashed receiver))
 
+
+open SeLe4n.Model.SystemState in
+/-- The receive's block leg is a `kindPreservingWrite` from the state the pre-receive
+cleanup leaves. -/
+theorem endpointReceiveDual_kindPreservingWrite_of_blocked
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
+    (receiver senderId : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
+    (ep : Endpoint)
+    (hObjInv : st.objects.invExt)
+    (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = none)
+    (hStep : endpointReceiveDual endpointId receiver replyId st = .ok (senderId, st')) :
+    kindPreservingWrite (cleanupPreReceiveDonation st receiver) st' := by
+  have hObj : st.objects[endpointId]? = some (.endpoint ep) :=
+    (getEndpoint?_eq_some_iff st endpointId ep).mp hEp
+  unfold endpointReceiveDual SystemState.getObject? at hStep
+  simp only [hObj, hHead] at hStep
+  cases hChecked : cleanupPreReceiveDonationChecked st receiver with
+  | error _ => simp [hChecked] at hStep
+  | ok stClean =>
+    have hBridge : stClean = cleanupPreReceiveDonation st receiver :=
+      (cleanupPreReceiveDonationChecked_ok_eq_cleanup st stClean receiver hChecked).symm
+    simp only [hChecked] at hStep
+    rw [hBridge] at hStep
+    have hObjInvClean := cleanupPreReceiveDonation_preserves_objects_invExt st receiver hObjInv
+    cases hEnq : endpointQueueEnqueue endpointId true receiver
+        (cleanupPreReceiveDonation st receiver) with
+    | error e => simp [hEnq] at hStep
+    | ok st1 =>
+      simp only [hEnq] at hStep
+      have hObjInvEnq : st1.objects.invExt :=
+        endpointQueueEnqueue_preserves_objects_invExt endpointId true receiver
+          (cleanupPreReceiveDonation st receiver) st1 hObjInvClean hEnq
+      have hS1 : kindPreservingWrite (cleanupPreReceiveDonation st receiver) st1 :=
+        endpointQueueEnqueue_kindPreservingWrite hObjInvClean hEnq
+      cases hIpc : storeTcbIpcStateAndMessage st1 receiver (.blockedOnReceive endpointId) none with
+      | error e => simp [hIpc] at hStep
+      | ok st2 =>
+        simp only [hIpc] at hStep
+        have hObjInv2 : st2.objects.invExt :=
+          storeTcbIpcStateAndMessage_preserves_objects_invExt st1 st2 receiver _ _ hObjInvEnq hIpc
+        have hS2 : kindPreservingWrite (cleanupPreReceiveDonation st receiver) st2 :=
+          hS1.trans (storeTcbIpcStateAndMessage_kindPreservingWrite hObjInvEnq hIpc)
+        cases hGetR : st2.getTcb? receiver with
+        | none =>
+          simp only [hGetR, Except.ok.injEq, Prod.mk.injEq] at hStep
+          obtain ⟨_, hEq⟩ := hStep; subst hEq
+          exact hS2.trans ((SystemState.objectsAgreeOffRunLinks.kindPreserving (removeRunnable_objectsAgreeOffRunLinks st2 receiver)))
+        | some rTcb =>
+          simp only [hGetR] at hStep
+          -- WS-SM SM6.D (PR #827 review #6): the `.ok` outcome forces the stash guard
+          -- true; strip it to recover the pre-guard store reduction.
+          have hValid : st.replyStashValid replyId = true := by
+            cases hb : st.replyStashValid replyId with
+            | false => simp [hb] at hStep
+            | true => rfl
+          rw [if_pos hValid] at hStep
+          have hObjInv2r := SystemState.recordReplyStasher_objects_invExt st2
+            (SeLe4n.ReplyId.optCode replyId) receiver hObjInv2
+          cases hStash : storeObject receiver.toObjId
+              (.tcb { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId }) (st2.recordReplyStasher (SeLe4n.ReplyId.optCode replyId) receiver) with
+          | error e => simp [hStash] at hStep
+          | ok pStash =>
+            obtain ⟨_, stStashed⟩ := pStash
+            simp only [hStash, Except.ok.injEq, Prod.mk.injEq] at hStep
+            obtain ⟨_, hEq⟩ := hStep; subst hEq
+            have hRecvObj : st2.objects[receiver.toObjId]? = some (.tcb rTcb) :=
+              (getTcb?_eq_some_iff st2 receiver rTcb).mp hGetR
+            have hRecvObjR := (SystemState.recordReplyStasher_getElem?_tcb_iff st2
+              (SeLe4n.ReplyId.optCode replyId) receiver hObjInv2).mpr hRecvObj
+            have hS3 : kindPreservingWrite (cleanupPreReceiveDonation st receiver) stStashed :=
+              hS2.trans ((SystemState.recordReplyStasher_kindPreservingWrite st2 _ receiver
+                hObjInv2).trans
+                (storeObject_kindPreservingWrite hObjInv2r hStash hRecvObjR rfl
+                  (by simp [KernelObject.objectType])))
+            exact hS3.trans ((SystemState.objectsAgreeOffRunLinks.kindPreserving (removeRunnable_objectsAgreeOffRunLinks stStashed receiver)))
+
+
+open SeLe4n.Model.SystemState in
+/-- **`endpointReceiveDual` is a `kindPreservingWrite`**: the rendezvous leg is one,
+and the block leg is one from the cleanup's state, which is itself one
+(`cleanupPreReceiveDonation_kindPreservingWrite`). -/
+theorem endpointReceiveDual_kindPreservingWrite
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
+    (receiver senderId : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointReceiveDual endpointId receiver replyId st = .ok (senderId, st')) :
+    kindPreservingWrite st st' := by
+  have hStep' := hStep
+  unfold endpointReceiveDual SystemState.getObject? at hStep'
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at hStep'
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ =>
+        simp [hObj] at hStep'
+    | endpoint ep =>
+      have hEp : st.getEndpoint? endpointId = some ep :=
+        (getEndpoint?_eq_some_iff st endpointId ep).mpr hObj
+      cases hHead : ep.sendQ.head with
+      | some sender =>
+        exact endpointReceiveDual_kindPreservingWrite_of_rendezvous st st' endpointId receiver
+          senderId replyId ep sender hObjInv hEp hHead hStep
+      | none =>
+        exact (cleanupPreReceiveDonation_kindPreservingWrite st receiver hObjInv).trans
+          (endpointReceiveDual_kindPreservingWrite_of_blocked st st' endpointId receiver senderId
+            replyId ep hObjInv hEp hHead hStep)
 open SeLe4n.Model.SystemState in
 /-- D6: `endpointReceiveDual` preserves `donationBudgetTransfer`.  The rendezvous path
 is a binding frame (`endpointReceiveDual_sameSchedContextBindings_of_rendezvous`); the
@@ -10008,6 +10217,69 @@ theorem endpointCall_sameSchedContextBindings
             have hS2 := storeTcbIpcStateAndMessage_sameSchedContextBindings st1 st2 caller (.blockedOnCall endpointId) none hObjInv1 hMsg
             exact (hS1.trans hS2).trans (((sameSchedContextBindings.of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st2 caller)).trans (sameSchedContextBindings.of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _))))
 
+
+open SeLe4n.Model.SystemState in
+/-- `endpointCall` is a `kindPreservingWrite`, by the same chain as its binding frame. -/
+theorem endpointCall_kindPreservingWrite
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
+    (caller : SeLe4n.ThreadId) (payload : SendPayload)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointCall endpointId caller payload st = .ok ((), st')) :
+    kindPreservingWrite st st' := by
+  unfold endpointCall SystemState.getObject? at hStep
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ =>
+        simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep
+      cases hHead : ep.receiveQ.head with
+      | some _ =>
+        cases hPop : endpointQueuePopHead endpointId true st with
+        | error e => simp [hHead, hPop] at hStep
+        | ok pair =>
+          simp only [hHead, hPop] at hStep
+          have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2 pair.1 _ hObjInv hPop
+          have hS1 := endpointQueuePopHead_kindPreservingWrite hObjInv hPop
+          cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready (some (sendPayloadMessage st caller payload)) with
+          | error e => simp [hMsg] at hStep
+          | ok st2 =>
+            simp only [hMsg] at hStep
+            have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2.2 st2 pair.1 _ _ hObjInv1 hMsg
+            have hS2 := storeTcbIpcStateAndMessage_kindPreservingWrite hObjInv1 hMsg
+            have hObjInvEns : (ensureRunnable st2 pair.1).objects.invExt := ensureRunnable_objects_invExt _ _ (by assumption)
+            have hS3 := (SystemState.objectsAgreeOffRunLinks.kindPreserving (ensureRunnable_objectsAgreeOffRunLinks st2 pair.1))
+            cases hIpc : storeTcbIpcStateAndMessage (ensureRunnable st2 pair.1) caller (.blockedOnReply endpointId (some pair.1)) none with
+            | error e => simp [hIpc] at hStep
+            | ok st4 =>
+              simp only [hIpc] at hStep
+              have hObjInv4 := storeTcbIpcStateAndMessage_preserves_objects_invExt (ensureRunnable st2 pair.1) st4 caller _ _ hObjInvEns hIpc
+              have hS4 := storeTcbIpcStateAndMessage_kindPreservingWrite hObjInvEns hIpc
+              cases hLink : SystemState.linkServerStashedReply caller pair.1 st4 with
+              | error e => simp [hLink] at hStep
+              | ok pL =>
+                obtain ⟨_, st5⟩ := pL
+                simp only [hLink, Except.ok.injEq, Prod.mk.injEq] at hStep
+                obtain ⟨_, hEq⟩ := hStep; subst hEq
+                have hS5 := SystemState.linkServerStashedReply_kindPreservingWrite st4 st5 caller pair.1 hObjInv4 hLink
+                exact ((((hS1.trans hS2).trans hS3).trans hS4).trans hS5).trans
+                  ((SystemState.objectsAgreeOffRunLinks.kindPreserving (removeRunnable_objectsAgreeOffRunLinks st5 caller)))
+      | none =>
+        cases hEnq : endpointQueueEnqueue endpointId false caller st with
+        | error e => simp [hHead, hEnq] at hStep
+        | ok st1 =>
+          simp only [hHead, hEnq] at hStep
+          have hObjInv1 := endpointQueueEnqueue_preserves_objects_invExt endpointId false caller st st1 hObjInv hEnq
+          have hS1 := endpointQueueEnqueue_kindPreservingWrite hObjInv hEnq
+          cases hMsg : storeTcbIpcStateAndMessage st1 caller (.blockedOnCall endpointId) none with
+          | error e => simp [hMsg] at hStep
+          | ok st2 =>
+            simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+            obtain ⟨_, hEq⟩ := hStep; subst hEq
+            have hS2 := storeTcbIpcStateAndMessage_kindPreservingWrite hObjInv1 hMsg
+            exact (hS1.trans hS2).trans ((((SystemState.objectsAgreeOffRunLinks.kindPreserving (removeRunnable_objectsAgreeOffRunLinks st2 caller))).trans ((SystemState.objectsAgreeOffRunLinks.kindPreserving (recordSendCap_objectsAgreeOffRunLinks _ _ _ _)))))
+
 open SeLe4n.Model.SystemState in
 /-- D6: `endpointCall` frames the SchedContext/owner side forward. Rendezvous: pop the receiver
 (queue-link) + wake it `.ready` + reschedule + block the caller `.blockedOnReply` + link the
@@ -10252,6 +10524,61 @@ theorem endpointSendDual_sameSchedContextBindings
             obtain ⟨_, hEq⟩ := hStep; subst hEq
             exact (hS1.trans (storeTcbIpcStateAndMessage_sameSchedContextBindings st1 st2 sender (.blockedOnSend endpointId) none hObjInv1 hMsg)).trans
               (((sameSchedContextBindings.of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st2 sender)).trans (sameSchedContextBindings.of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _))))
+
+
+open SeLe4n.Model.SystemState in
+/-- `endpointSendDual` is a `kindPreservingWrite`: every store it makes is a queue or
+`ipcState` rewrite of an object of the same kind, and the run-queue writes are
+link-only. -/
+theorem endpointSendDual_kindPreservingWrite
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId) (payload : SendPayload)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointSendDual endpointId sender payload st = .ok ((), st')) :
+    kindPreservingWrite st st' := by
+  unfold endpointSendDual SystemState.getObject? at hStep
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ =>
+        simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep
+      cases hHead : ep.receiveQ.head with
+      | some _ =>
+        -- PR #873 round 17: the rendezvous arm resolves the sender before
+        -- popping. It never did, so a send naming a nonexistent thread
+        -- delivered anyway and the receiver held a message attributed to it.
+        cases hSnd : st.getTcb? sender with
+        | none => simp [hHead, hSnd] at hStep
+        | some _ =>
+        cases hPop : endpointQueuePopHead endpointId true st with
+        | error e => simp [hSnd, hHead, hPop] at hStep
+        | ok pair =>
+          simp only [hSnd, hHead, hPop] at hStep
+          have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2 pair.1 _ hObjInv hPop
+          have hS1 := endpointQueuePopHead_kindPreservingWrite hObjInv hPop
+          cases hMsg : storeTcbReceiveComplete pair.2.2 pair.1 (some (sendPayloadMessage st sender payload)) with
+          | error e => simp [hMsg] at hStep
+          | ok st2 =>
+            simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+            obtain ⟨_, hEq⟩ := hStep; subst hEq
+            exact (hS1.trans (storeTcbReceiveComplete_kindPreservingWrite hObjInv1 hMsg)).trans
+              ((SystemState.objectsAgreeOffRunLinks.kindPreserving (ensureRunnable_objectsAgreeOffRunLinks st2 pair.1)))
+      | none =>
+        cases hEnq : endpointQueueEnqueue endpointId false sender st with
+        | error e => simp [hHead, hEnq] at hStep
+        | ok st1 =>
+          simp only [hHead, hEnq] at hStep
+          have hObjInv1 := endpointQueueEnqueue_preserves_objects_invExt endpointId false sender st st1 hObjInv hEnq
+          have hS1 := endpointQueueEnqueue_kindPreservingWrite hObjInv hEnq
+          cases hMsg : storeTcbIpcStateAndMessage st1 sender (.blockedOnSend endpointId) none with
+          | error e => simp [hMsg] at hStep
+          | ok st2 =>
+            simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+            obtain ⟨_, hEq⟩ := hStep; subst hEq
+            exact (hS1.trans (storeTcbIpcStateAndMessage_kindPreservingWrite hObjInv1 hMsg)).trans
+              ((((SystemState.objectsAgreeOffRunLinks.kindPreserving (removeRunnable_objectsAgreeOffRunLinks st2 sender))).trans ((SystemState.objectsAgreeOffRunLinks.kindPreserving (recordSendCap_objectsAgreeOffRunLinks _ _ _ _)))))
 
 open SeLe4n.Model.SystemState in
 /-- D6: `endpointSendDual` frames the SchedContext/owner side forward. Rendezvous: pop the
@@ -10838,6 +11165,59 @@ theorem notificationWaitPark_sameSchedContextBindings
   · contradiction
   · contradiction
 
+
+open SeLe4n.Model.SystemState in
+/-- `notificationWaitPark` is a `kindPreservingWrite`, by the same chain as its binding frame. -/
+theorem notificationWaitPark_kindPreservingWrite
+    (st st' : SystemState) (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
+    (badge : Option SeLe4n.Badge)
+    (hObjInv : st.objects.invExt)
+    (hStep : notificationWaitPark notificationId waiter st = .ok (badge, st')) :
+    kindPreservingWrite st st' := by
+  simp only [notificationWaitPark, SystemState.getObject?] at hStep
+  split at hStep
+  · rename_i ntfn hObj
+    split at hStep
+    · split at hStep
+      next => contradiction
+      next st1 hSO =>
+        have hS1 := storeObject_kindPreservingWrite hObjInv hSO hObj rfl
+          (by simp [KernelObject.objectType])
+        have hObjInv1 := storeObject_preserves_objects_invExt st st1 notificationId _ hObjInv hSO
+        split at hStep
+        next => contradiction
+        next st2 hSI =>
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+          obtain ⟨_, rfl⟩ := hStep
+          exact hS1.trans (storeTcbIpcState_kindPreservingWrite hObjInv1 hSI)
+    · split at hStep
+      · contradiction
+      · rename_i waiterTcb hLookup
+        split at hStep
+        · contradiction
+        · split at hStep
+          next => contradiction
+          next st1 hSO =>
+            have hS1 := storeObject_kindPreservingWrite hObjInv hSO hObj rfl
+              (by simp [KernelObject.objectType])
+            have hObjInv1 := storeObject_preserves_objects_invExt st st1 notificationId _ hObjInv hSO
+            have hWaiterObj : st.objects[waiter.toObjId]? = some (.tcb waiterTcb) :=
+              lookupTcb_some_objects st waiter waiterTcb hLookup
+            have hNeWN : waiter.toObjId ≠ notificationId := by
+              intro h; rw [h, hObj] at hWaiterObj; simp at hWaiterObj
+            have hOrig1 : st1.objects[waiter.toObjId]? = some (.tcb waiterTcb) := by
+              rw [storeObject_objects_ne st st1 notificationId waiter.toObjId _ hNeWN hObjInv hSO]
+              exact hWaiterObj
+            split at hStep
+            next => contradiction
+            next st2 hSI =>
+              simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+              obtain ⟨_, rfl⟩ := hStep
+              exact (hS1.trans (storeTcbIpcStateAndMessage_fromTcb_kindPreservingWrite hObjInv1 hOrig1 hSI)).trans
+                ((SystemState.objectsAgreeOffRunLinks.kindPreserving (removeRunnable_objectsAgreeOffRunLinks st2 waiter)))
+  · contradiction
+  · contradiction
+
 open SeLe4n.Model.SystemState in
 /-- D6: `notificationWait` frames the SchedContext/owner side forward. It stores the
 notification object (non-Sc/non-TCB) and rewrites only the `waiter` TCB (to `.ready` on the
@@ -10959,6 +11339,44 @@ theorem notificationSignal_sameSchedContextBindings
       all_goals
         exact storeObject_nonTcb_sameSchedContextBindings
           st st' notificationId (.notification _) (fun tcb => by simp) hObjInv hStep
+  · contradiction
+  · contradiction
+
+
+open SeLe4n.Model.SystemState in
+/-- `notificationSignal` is a `kindPreservingWrite`: a notification rewritten as a
+notification keeping its bound thread, a waiter's `ipcState`, and link-only writes. -/
+theorem notificationSignal_kindPreservingWrite
+    (st st' : SystemState) (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
+    (hObjInv : st.objects.invExt)
+    (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
+    kindPreservingWrite st st' := by
+  simp only [notificationSignal, SystemState.getObject?] at hStep
+  split at hStep
+  · rename_i ntfn hObj
+    cases hWaiters : ntfn.waitHead with
+    | some waiter =>
+      simp only [hWaiters] at hStep
+      split at hStep
+      next => contradiction
+      next st1 hSO =>
+        have hS1 := storeObject_kindPreservingWrite hObjInv hSO hObj rfl
+          (by simp [KernelObject.objectType])
+        have hObjInv1 := storeObject_preserves_objects_invExt st st1 notificationId _ hObjInv hSO
+        split at hStep
+        next => contradiction
+        next st2 hSM =>
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+          obtain ⟨_, rfl⟩ := hStep
+          exact (hS1.trans (storeTcbIpcStateAndMessage_kindPreservingWrite hObjInv1 hSM)).trans
+            (((ntfnLinksRewritten.kindPreserving (detachNtfnHead_linksRewritten _ _ _ (storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _ hObjInv1 hSM)))).trans
+              ((SystemState.objectsAgreeOffRunLinks.kindPreserving (ensureRunnable_objectsAgreeOffRunLinks _ waiter))))
+    | none =>
+      simp only [hWaiters] at hStep
+      split at hStep
+      all_goals
+        exact storeObject_kindPreservingWrite hObjInv hStep hObj rfl
+          (by simp [KernelObject.objectType])
   · contradiction
   · contradiction
 
@@ -11782,6 +12200,133 @@ theorem endpointReply_sameSchedContextBindings
               exact hMid.trans (removeCallerReplyFrame_sameSchedContextBindings _ _ target rid hObjInvMid hStep)
         · simp at hStep
 
+
+open SeLe4n.Model.SystemState in
+/-- `endpointReply` is a `kindPreservingWrite`: the delivery store, a link-only wake and
+the reply-frame removal. -/
+theorem endpointReply_kindPreservingWrite
+    (st st' : SystemState) (replier target : SeLe4n.ThreadId) (msg : IpcMessage)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointReply replier target msg st = .ok ((), st')) :
+    kindPreservingWrite st st' := by
+  unfold endpointReply at hStep
+  simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  cases hLookup : lookupTcb st target with
+  | none => simp [hLookup] at hStep
+  | some tcb =>
+    simp only [hLookup] at hStep
+    rw [storeTcbIpcStateAndMessage_fromTcb_eq hLookup] at hStep
+    cases hIpc : tcb.ipcState with
+    | ready => simp [hIpc] at hStep
+    | blockedOnSend _ => simp [hIpc] at hStep
+    | blockedOnReceive _ => simp [hIpc] at hStep
+    | blockedOnNotification _ => simp [hIpc] at hStep
+    | blockedOnCall _ => simp [hIpc] at hStep
+    | blockedOnReply epId replyTarget =>
+      simp only [hIpc] at hStep
+      cases replyTarget with
+      | none => simp at hStep
+      | some expected =>
+        simp only at hStep
+        split at hStep
+        · cases hMsg : storeTcbIpcStateAndMessage st target .ready (some msg) with
+          | error e => simp [hMsg] at hStep
+          | ok st'' =>
+            simp only [hMsg] at hStep
+            have hMid : kindPreservingWrite st (ensureRunnable st'' target) :=
+              (storeTcbIpcStateAndMessage_kindPreservingWrite hObjInv hMsg).trans
+                ((SystemState.objectsAgreeOffRunLinks.kindPreserving (ensureRunnable_objectsAgreeOffRunLinks st'' target)))
+            have hObjInvMid : (ensureRunnable st'' target).objects.invExt := by
+              apply ensureRunnable_objects_invExt
+              exact storeTcbIpcStateAndMessage_preserves_objects_invExt st st'' target .ready (some msg) hObjInv hMsg
+            -- PR #827 #3 fold: peel the atomic consume (no-op when unlinked).
+            cases hRO : tcb.replyObject with
+            | none =>
+              simp only [hRO, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+              rw [← hStep]; exact hMid
+            | some rid =>
+              simp only [hRO] at hStep
+              exact hMid.trans (removeCallerReplyFrame_kindPreservingWrite _ _ target rid hObjInvMid hStep)
+        · simp at hStep
+
+
+open SeLe4n.Model.SystemState in
+/-- **`endpointReplyRecv` is a `kindPreservingWrite`**: the reply leg's delivery
+store, link-only wake and reply-frame removal, then the receive. -/
+theorem endpointReplyRecv_kindPreservingWrite
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
+    (receiver replyTarget : SeLe4n.ThreadId) (msg : IpcMessage)
+    (replyId : Option SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointReplyRecv endpointId receiver replyTarget msg replyId st = .ok ((), st')) :
+    kindPreservingWrite st st' := by
+  unfold endpointReplyRecv at hStep
+  simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  cases hLookup : lookupTcb st replyTarget with
+  | none => simp [hLookup] at hStep
+  | some tcb =>
+    simp only [hLookup] at hStep
+    rw [storeTcbIpcStateAndMessage_fromTcb_eq hLookup] at hStep
+    cases hIpc : tcb.ipcState with
+    | ready => simp [hIpc] at hStep
+    | blockedOnSend _ => simp [hIpc] at hStep
+    | blockedOnReceive _ => simp [hIpc] at hStep
+    | blockedOnNotification _ => simp [hIpc] at hStep
+    | blockedOnCall _ => simp [hIpc] at hStep
+    | blockedOnReply epId expectedReplier =>
+      simp only [hIpc] at hStep
+      cases expectedReplier with
+      | none => simp at hStep
+      | some expected =>
+        simp only at hStep
+        split at hStep
+        · revert hStep
+          cases hMsg : storeTcbIpcStateAndMessage st replyTarget .ready (some msg) with
+          | error e => simp
+          | ok stReplied =>
+            simp only []
+            have hObjInvR := storeTcbIpcStateAndMessage_preserves_objects_invExt st stReplied
+              replyTarget _ _ hObjInv hMsg
+            have hF1 := (storeTcbIpcStateAndMessage_kindPreservingWrite hObjInv hMsg).trans
+              (SystemState.objectsAgreeOffRunLinks.kindPreserving
+                (ensureRunnable_objectsAgreeOffRunLinks stReplied replyTarget))
+            have hObjInvE : (ensureRunnable stReplied replyTarget).objects.invExt :=
+              ensureRunnable_objects_invExt _ _ (by assumption)
+            cases hRO : tcb.replyObject with
+            | none =>
+              simp only []
+              cases hRecv : endpointReceiveDual endpointId receiver replyId
+                  (ensureRunnable stReplied replyTarget) with
+              | error e => simp
+              | ok pair =>
+                intro hStep
+                simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+                obtain ⟨_, rfl⟩ := hStep
+                exact hF1.trans (endpointReceiveDual_kindPreservingWrite
+                  (ensureRunnable stReplied replyTarget) pair.2 endpointId receiver pair.1 replyId
+                  hObjInvE hRecv)
+            | some rid =>
+              cases hCons : removeCallerReplyFrame replyTarget rid
+                  (ensureRunnable stReplied replyTarget) with
+              | error e => simp [hCons]
+              | ok p3 =>
+                obtain ⟨⟨⟩, st3⟩ := p3
+                simp only [hCons]
+                have hObjInv3 := removeCallerReplyFrame_preserves_objects_invExt _ _ replyTarget
+                  rid hObjInvE hCons
+                have hF13 := hF1.trans (removeCallerReplyFrame_kindPreservingWrite _ _ replyTarget
+                  rid hObjInvE hCons)
+                cases hRecv : endpointReceiveDual endpointId receiver replyId st3 with
+                | error e => simp
+                | ok pair =>
+                  intro hStep
+                  simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+                  obtain ⟨_, rfl⟩ := hStep
+                  exact hF13.trans (endpointReceiveDual_kindPreservingWrite st3 pair.2 endpointId
+                    receiver pair.1 replyId hObjInv3 hRecv)
+        · simp at hStep
 open SeLe4n.Model.SystemState in
 /-- WS-RR RR3.12: a `storeObject` that rewrites a single TCB, keeping its
 `schedContextBinding`, frames the donation-owner side **relaxed at that thread**.
@@ -14319,6 +14864,8 @@ theorem linkCallerReply_preserves_ipcInvariantFull
     -- IPC de-threading D4 Slice 2c (Finding F-2): qNTB likewise established from the *pre-state*
     -- (`hQNTBPre`) — the reply/`replyObject` stores touch neither `queueNext` nor `ipcState`.
     (hQNTBPre : queueNextTargetBlocked st)
+    -- The reply and `replyObject` stores are kind-preserving and write no binding code.
+    (hNBRPre : notificationBindingReciprocal st)
     (hStep : linkCallerReply caller rid st = .ok ((), st')) :
     ipcInvariantFull st' := by
   refine ipcInvariantFull_of_core_replyCallerLinkage ?core ?link
@@ -14330,6 +14877,8 @@ theorem linkCallerReply_preserves_ipcInvariantFull
       hTailPre hStep)
     (linkCallerReply_preserves_queueNextTargetBlocked st st' caller rid hObjInv
       hQNTBPre hStep)
+    (notificationBindingReciprocal.of_kindPreservingWrite
+      (SystemState.linkCallerReply_kindPreservingWrite st st' caller rid hObjInv hStep) hNBRPre)
   case link =>
     exact linkCallerReply_establishes_replyCallerLinkage st st' caller rid
       hRecip hObjInv hCallerBlk hThirdExc hStep
@@ -14435,6 +14984,9 @@ theorem consumeCallerReply_establishes_ipcInvariantFull_of_exceptReplyLinkage
     -- IPC de-threading D4 Slice 2c (Finding F-2): qNTB likewise established from the pre-state.
     (consumeCallerReply_preserves_queueNextTargetBlocked st st' caller rid hObjInv
       hInv.queueNextTargetBlocked hStep)
+    (notificationBindingReciprocal.of_kindPreservingWrite
+      (SystemState.consumeCallerReply_kindPreservingWrite st st' caller rid hObjInv hStep)
+      hInv.notificationBindingReciprocal)
   case core =>
     unfold consumeCallerReply at hStep
     cases hCons : consumeReply rid st with
@@ -14545,6 +15097,9 @@ theorem storeObject_reply_stackLinks_preserves_ipcInvariantFull
       (storeObject_reply_caller_replyLinkageFrame st st' above a a'
         ((getReply?_eq_some_iff _ _ _).mp hA) hCaller hObjInv hS)
       hInv.replyCallerLinkage.1, hBlkHas⟩ hPRR hUnique hTail hQNTB
+    (notificationBindingReciprocal.of_codes
+      (.of_storeObject_reply hObjInv ((getReply?_eq_some_iff _ _ _).mp hA) hS)
+      hInv.notificationBindingReciprocal)
 
 open SeLe4n.Model.SystemState in
 /-- **WS-RR RR8.16: and the same store carries the bundle relaxed at a woken
@@ -14574,6 +15129,9 @@ theorem storeObject_reply_stackLinks_preserves_ipcInvariantFullExceptReplyLinkag
       (storeObject_reply_caller_replyLinkageFrame st st' above a a'
         ((getReply?_eq_some_iff _ _ _).mp hA) hCaller hObjInv hS)
       hInv.replyCallerLinkageExcept.1, hBlkHas⟩ hPRR hUnique hTail hQNTB
+    (notificationBindingReciprocal.of_codes
+      (.of_storeObject_reply hObjInv ((getReply?_eq_some_iff _ _ _).mp hA) hS)
+      hInv.notificationBindingReciprocal)
 
 open SeLe4n.Model.SystemState in
 /-- **WS-RR RR8.16: the splice's store chain, once, for any predicate a
@@ -17861,6 +18419,37 @@ theorem endpointSendDualWithCaps_preserves_queueNextTargetBlocked
     · exact hMidR
     · exact ipcUnwrapCaps_preserves_queueNextTargetBlocked _ recvRoot receiverSlotBase _ stR _ _ (hO ▸ hObjInvMid) hMidR hU
 
+
+open SeLe4n.Model.SystemState in
+/-- `endpointSendDualWithCaps` keeps the notification binding reciprocity: the
+send is a `kindPreservingWrite`, and the capability transfer writes CNodes only. -/
+theorem endpointSendDualWithCaps_preserves_notificationBindingReciprocal
+    (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
+    (payload : SendPayload)
+    (receiverSlotBase : SeLe4n.Slot)
+    (st st' : SystemState) (summary : CapTransferSummary)
+    (hNBR : notificationBindingReciprocal st)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointSendDualWithCaps endpointId sender payload
+             receiverSlotBase st = .ok (summary, st')) :
+    notificationBindingReciprocal st' := by
+  have hStepW := hStep
+  simp only [endpointSendDualWithCaps] at hStep
+  cases hSend : endpointSendDual endpointId sender payload st with
+  | error e => simp [hSend] at hStep
+  | ok pair =>
+    rcases pair with ⟨_, stMid⟩
+    have hMid := notificationBindingReciprocal.of_kindPreservingWrite
+      (endpointSendDual_kindPreservingWrite st stMid endpointId sender payload hObjInv hSend) hNBR
+    have hObjInvMid := endpointSendDual_preserves_objects_invExt st stMid endpointId sender payload hObjInv hSend
+    obtain ⟨recvRoot, hT⟩ := endpointSendDualWithCaps_transfer_of hSend hStepW
+    obtain ⟨stR, caps, hO, hS, _, hOr⟩ := receiveTransferCaps_frame hT
+    have hMidR := notificationBindingReciprocal.of_codes (.of_objects_eq hO) hMid
+    rcases hOr with rfl | hU
+    · exact hMidR
+    · exact notificationBindingReciprocal.of_codes
+        (ipcUnwrapCaps_sameNotificationBindings _ recvRoot receiverSlotBase _ stR _ _
+          (hO ▸ hObjInvMid) hU) hMidR
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D4 Slice 2c: `endpointReceiveDual` **establishes** `queueHeadBlockedConsistent`
 from the pre-state (de-threads `hQHBC'`). Rendezvous (pop sendQ) — Call sub-path: pop core + the
@@ -18414,6 +19003,47 @@ theorem endpointReceiveDualWithCaps_preserves_queueNextTargetBlocked
       · exact hMidR
       · exact ipcUnwrapCaps_preserves_queueNextTargetBlocked _ receiverCspaceRoot receiverSlotBase _ stR _ _ (hO ▸ hObjInvMid) hMidR hU
 
+
+open SeLe4n.Model.SystemState in
+/-- `endpointReceiveDualWithCaps` keeps the notification binding reciprocity. -/
+theorem endpointReceiveDualWithCaps_preserves_notificationBindingReciprocal
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId)
+    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (st st' : SystemState) (senderId : SeLe4n.ThreadId) (summary : CapTransferSummary)
+    (hNBR : notificationBindingReciprocal st)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointReceiveDualWithCaps endpointId receiver replyId
+             receiverCspaceRoot receiverSlotBase st = .ok ((senderId, summary), st')) :
+    notificationBindingReciprocal st' := by
+  simp only [endpointReceiveDualWithCaps] at hStep
+  cases hRecv : endpointReceiveDual endpointId receiver replyId st with
+  | error e => simp [hRecv] at hStep
+  | ok pair =>
+    rcases pair with ⟨sid, stMid⟩
+    have hMid := notificationBindingReciprocal.of_kindPreservingWrite
+      (endpointReceiveDual_kindPreservingWrite st stMid endpointId receiver sid replyId hObjInv hRecv)
+      hNBR
+    have hObjInvMid := endpointReceiveDual_preserves_objects_invExt st stMid endpointId receiver sid replyId hObjInv hRecv
+    simp [hRecv] at hStep
+    cases hRv : receiveRendezvousSender? st endpointId with
+    | none => simp [hRv] at hStep; obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hMid
+    | some _ =>
+    simp [hRv] at hStep
+    cases hT : receiveTransferCaps (receiveCapRequest st endpointId) receiverCspaceRoot
+        receiverSlotBase stMid with
+    | error e => simp [hT] at hStep
+    | ok pT =>
+      obtain ⟨sT, stT⟩ := pT
+      simp only [hT, Except.ok.injEq, Prod.mk.injEq] at hStep
+      obtain ⟨⟨_, _⟩, rfl⟩ := hStep
+      obtain ⟨stR, caps, hO, hS, _, hOr⟩ := receiveTransferCaps_frame hT
+      have hMidR := notificationBindingReciprocal.of_codes (.of_objects_eq hO) hMid
+      rcases hOr with rfl | hU
+      · exact hMidR
+      · exact notificationBindingReciprocal.of_codes
+          (ipcUnwrapCaps_sameNotificationBindings _ receiverCspaceRoot receiverSlotBase _ stR _ _
+            (hO ▸ hObjInvMid) hU) hMidR
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D4 Slice 2c: `endpointReplyRecv` **establishes** `queueHeadBlockedConsistent`
 from the pre-state. Composes the reply phase (`storeTcbIpcStateAndMessage replyTarget .ready` +
@@ -19145,6 +19775,36 @@ theorem endpointCallWithCaps_preserves_queueNextTargetBlocked
     · exact hMidR
     · exact ipcUnwrapCaps_preserves_queueNextTargetBlocked _ recvRoot receiverSlotBase _ stR _ _ (hO ▸ hObjInvMid) hMidR hU
 
+
+open SeLe4n.Model.SystemState in
+/-- `endpointCallWithCaps` keeps the notification binding reciprocity. -/
+theorem endpointCallWithCaps_preserves_notificationBindingReciprocal
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
+    (payload : SendPayload)
+    (receiverSlotBase : SeLe4n.Slot)
+    (st st' : SystemState) (summary : CapTransferSummary)
+    (hNBR : notificationBindingReciprocal st)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointCallWithCaps endpointId caller payload
+             receiverSlotBase st = .ok (summary, st')) :
+    notificationBindingReciprocal st' := by
+  have hStepW := hStep
+  simp only [endpointCallWithCaps] at hStep
+  cases hCall : endpointCall endpointId caller payload st with
+  | error e => simp [hCall] at hStep
+  | ok pair =>
+    rcases pair with ⟨_, stMid⟩
+    have hMid := notificationBindingReciprocal.of_kindPreservingWrite
+      (endpointCall_kindPreservingWrite st stMid endpointId caller payload hObjInv hCall) hNBR
+    have hObjInvMid := endpointCall_preserves_objects_invExt st stMid endpointId caller payload hObjInv hCall
+    obtain ⟨recvRoot, hT⟩ := endpointCallWithCaps_transfer_of hCall hStepW
+    obtain ⟨stR, caps, hO, hS, _, hOr⟩ := receiveTransferCaps_frame hT
+    have hMidR := notificationBindingReciprocal.of_codes (.of_objects_eq hO) hMid
+    rcases hOr with rfl | hU
+    · exact hMidR
+    · exact notificationBindingReciprocal.of_codes
+        (ipcUnwrapCaps_sameNotificationBindings _ recvRoot receiverSlotBase _ stR _ _
+          (hO ▸ hObjInvMid) hU) hMidR
 open SeLe4n.Model.SystemState in
 
 /-- IPC de-threading D2 (de-threaded): `endpointReceiveDual` preserves `ipcInvariantFull`,
@@ -19244,7 +19904,10 @@ theorem endpointReceiveDual_preserves_ipcInvariantFull
    -- is the fused enqueue+block-store keystone.
    endpointReceiveDual_preserves_queueNextTargetBlocked endpointId receiver replyId st st' senderId
      hInv.queueNextTargetBlocked hInv.2.1 hInv.endpointQueueTailBlockedConsistent hObjInv hReceiverReady
-     hFreshReceiver hRecvTailFresh hStep⟩
+     hFreshReceiver hRecvTailFresh hStep,
+   notificationBindingReciprocal.of_kindPreservingWrite
+     (endpointReceiveDual_kindPreservingWrite st st' endpointId receiver senderId replyId hObjInv
+       hStep) hInv.notificationBindingReciprocal⟩
 
 /-- IPC de-threading D2 (de-threaded): `endpointCall` preserves `ipcInvariantFull`,
 **establishing** the `replyCallerLinkage` third clause rather than threading it.
@@ -19340,7 +20003,10 @@ theorem endpointCall_preserves_ipcInvariantFull
    -- is the fused enqueue+`.blockedOnCall` keystone.
    endpointCall_preserves_queueNextTargetBlocked st st' endpointId caller payload
      hInv.queueNextTargetBlocked hInv.2.1 hInv.endpointQueueTailBlockedConsistent hObjInv hCallerReady
-     hFreshCaller hSendTailFresh hStep⟩
+     hFreshCaller hSendTailFresh hStep,
+   notificationBindingReciprocal.of_kindPreservingWrite
+     (endpointCall_kindPreservingWrite st st' endpointId caller payload hObjInv hStep)
+     hInv.notificationBindingReciprocal⟩
 
 /-- IPC de-threading D2 (de-threaded): `endpointSendDual` preserves `ipcInvariantFull`,
 *preserving* the `replyCallerLinkage` third clause (framed — `endpointSendDual` never
@@ -19431,7 +20097,10 @@ theorem endpointSendDual_preserves_ipcInvariantFull
    -- is the enqueue+block-store keystone.
    endpointSendDual_preserves_queueNextTargetBlocked st st' endpointId sender payload
      hInv.queueNextTargetBlocked hInv.endpointQueueTailBlockedConsistent hInv.2.1 hObjInv
-     hFreshSender hSendTailFresh hStep⟩
+     hFreshSender hSendTailFresh hStep,
+   notificationBindingReciprocal.of_kindPreservingWrite
+     (endpointSendDual_kindPreservingWrite st st' endpointId sender payload hObjInv hStep)
+     hInv.notificationBindingReciprocal⟩
 
 /-- IPC de-threading D2 (de-threaded): `notificationSignal` preserves `ipcInvariantFull`,
 *preserving* the `replyCallerLinkage` third clause (framed) rather than threading it.
@@ -19492,7 +20161,10 @@ theorem notificationSignal_preserves_ipcInvariantFull
    -- notification store frames qNTB; the woken `.blockedOnNotification` head waiter carries no
    -- blocked incoming link, so the `.ready` wake preserves qNTB.
    notificationSignal_preserves_queueNextTargetBlocked st st' notificationId badge
-     hObjInv hInv.queueNextTargetBlocked hNWC hStep⟩
+     hObjInv hInv.queueNextTargetBlocked hNWC hStep,
+   notificationBindingReciprocal.of_kindPreservingWrite
+     (notificationSignal_kindPreservingWrite st st' notificationId badge hObjInv hStep)
+     hInv.notificationBindingReciprocal⟩
 
 /-- IPC de-threading D2 (de-threaded): `notificationWait` preserves `ipcInvariantFull`,
 *preserving* the `replyCallerLinkage` third clause (framed) rather than threading it.
@@ -19566,7 +20238,10 @@ theorem notificationWaitPark_preserves_ipcInvariantFull
    -- waiter is woken `.ready` or blocked `.blockedOnNotification` (both non-queue-blocking), and the
    -- running waiter carries no blocked incoming link.
    notificationWaitPark_preserves_queueNextTargetBlocked st st' notificationId waiter result
-     hObjInv hInv.queueNextTargetBlocked hWaiterReady hStep⟩
+     hObjInv hInv.queueNextTargetBlocked hWaiterReady hStep,
+   notificationBindingReciprocal.of_kindPreservingWrite
+     (notificationWaitPark_kindPreservingWrite st st' notificationId waiter result hObjInv hStep)
+     hInv.notificationBindingReciprocal⟩
 
 -- ============================================================================
 -- WS-SM SM6.D reply-fold (PR #827 review #3): folded `endpointReply*` peels
@@ -20993,7 +21668,10 @@ theorem endpointReply_preserves_ipcInvariantFullExceptDonationOwner
    -- IPC de-threading D4 Slice 2c: queueNextTargetBlocked **established** from the pre-state — the
    -- reply wakes the `.blockedOnReply` target to `.ready` (no blocked thread links to it).
    endpointReply_preserves_queueNextTargetBlocked st st' replier target msg hObjInv
-     hInv.queueNextTargetBlocked hStep⟩
+     hInv.queueNextTargetBlocked hStep,
+   notificationBindingReciprocal.of_kindPreservingWrite
+     (endpointReply_kindPreservingWrite st st' replier target msg hObjInv hStep)
+     hInv.notificationBindingReciprocal⟩
 
 open SeLe4n.Model.SystemState in
 /-- WS-RR RR3.12: `endpointReply` **establishes** the full `donationOwnerValid` on a
@@ -21282,7 +21960,10 @@ theorem endpointReplyRecv_preserves_ipcInvariantFull
    -- reply phase frames qNTB (`.ready`-wake of `.blockedOnReply`), the receive-leg qNTB establisher
    -- discharges via the pop frame and no-incoming stores.
    endpointReplyRecv_preserves_queueNextTargetBlocked endpointId receiver replyTarget msg replyId
-     st st' hInv hObjInv hReceiverReady hFreshReceiver hRecvTailFresh hStep⟩
+     st st' hInv hObjInv hReceiverReady hFreshReceiver hRecvTailFresh hStep,
+   notificationBindingReciprocal.of_kindPreservingWrite
+     (endpointReplyRecv_kindPreservingWrite st st' endpointId receiver replyTarget msg replyId
+       hObjInv hStep) hInv.notificationBindingReciprocal⟩
 
 -- ============================================================================
 -- IPC de-threading D8: `*WithCaps` wiring establishers for the cap-transfer-touched
@@ -21982,7 +22663,9 @@ theorem endpointSendDualWithCaps_preserves_ipcInvariantFull
    -- (base send establish + the cap-transfer frame).
    endpointSendDualWithCaps_preserves_queueNextTargetBlocked endpointId sender payload
      receiverSlotBase st st' summary hInv.queueNextTargetBlocked
-     hInv.endpointQueueTailBlockedConsistent hInv.2.1 hObjInv hFreshSender hSendTailFresh hStep⟩
+     hInv.endpointQueueTailBlockedConsistent hInv.2.1 hObjInv hFreshSender hSendTailFresh hStep,
+   endpointSendDualWithCaps_preserves_notificationBindingReciprocal endpointId sender payload
+     receiverSlotBase st st' summary hInv.notificationBindingReciprocal hObjInv hStep⟩
 
 /-- IPC de-threading D2 (de-threaded): `endpointReceiveDualWithCaps` preserves
 `ipcInvariantFull`, **establishing** the `replyCallerLinkage` third clause (via the base
@@ -22091,7 +22774,10 @@ theorem endpointReceiveDualWithCaps_preserves_ipcInvariantFull
    -- (base receive establish + the cap-transfer frame).
    endpointReceiveDualWithCaps_preserves_queueNextTargetBlocked endpointId receiver replyId receiverCspaceRoot receiverSlotBase st st' senderId summary
      hInv.queueNextTargetBlocked hInv.2.1 hInv.endpointQueueTailBlockedConsistent hObjInv hReceiverReady
-     hFreshReceiver hRecvTailFresh hStep⟩
+     hFreshReceiver hRecvTailFresh hStep,
+   endpointReceiveDualWithCaps_preserves_notificationBindingReciprocal endpointId receiver replyId
+     receiverCspaceRoot receiverSlotBase st st' senderId summary hInv.notificationBindingReciprocal
+     hObjInv hStep⟩
 
 /-- IPC de-threading D2 (de-threaded): `endpointCallWithCaps` preserves `ipcInvariantFull`,
 **establishing** the `replyCallerLinkage` third clause (via the base call establish + the
@@ -22202,6 +22888,8 @@ theorem endpointCallWithCaps_preserves_ipcInvariantFull
    -- (base call establish + the cap-transfer frame).
    endpointCallWithCaps_preserves_queueNextTargetBlocked endpointId caller payload
      receiverSlotBase st st' summary hInv.queueNextTargetBlocked hInv.2.1
-     hInv.endpointQueueTailBlockedConsistent hObjInv hCallerReady hFreshCaller hSendTailFresh hStep⟩
+     hInv.endpointQueueTailBlockedConsistent hObjInv hCallerReady hFreshCaller hSendTailFresh hStep,
+   endpointCallWithCaps_preserves_notificationBindingReciprocal endpointId caller payload
+     receiverSlotBase st st' summary hInv.notificationBindingReciprocal hObjInv hStep⟩
 
 end SeLe4n.Kernel

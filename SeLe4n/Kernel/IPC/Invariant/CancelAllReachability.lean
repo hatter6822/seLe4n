@@ -1296,11 +1296,11 @@ theorem propagatePip (st : SystemState) (s : SeLe4n.ThreadId) (ec : Concurrency.
   refine ⟨fun k n => ⟨PriorityInheritance.propagatePipChainCrossCore_notification_backward st s ec
     fuel hInv k n, fun hk => ?_⟩, fun k ty hy => ?_, hBack⟩
   · rcases PriorityInheritance.propagatePipChainCrossCore_objects_pointwise fuel st s ec hInv k with
-      e | ⟨pre, -, hp, -, -, -⟩
+      e | ⟨pre, -, hp, -, -, -, -⟩
     · rw [e]; exact hk
     · rw [hp] at hk; cases hk
   · rcases PriorityInheritance.propagatePipChainCrossCore_objects_pointwise fuel st s ec hInv k with
-      e | ⟨pre, post, hp, hq, -, -⟩
+      e | ⟨pre, post, hp, hq, -, -, -⟩
     · exact ⟨ty, by rw [e]; exact hy, .refl ty⟩
     · rw [hp] at hy; cases hy
       obtain ⟨ty', hy', r⟩ := hBack k post hq

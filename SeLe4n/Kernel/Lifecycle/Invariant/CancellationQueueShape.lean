@@ -1496,6 +1496,54 @@ theorem sweptAndRestored_endpoint_forward
   rw [hx] at hS hR
   exact ⟨ep, hPost, hS, hR⟩
 
+/-- The composite moves no notification-binding code: it rewrites queue links,
+endpoint heads and tails, and the victim's IPC state and frame. -/
+theorem sweptAndRestored_sameNotificationBindings
+    (st : SystemState) (v : SeLe4n.ThreadId)
+    (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
+    (hInv : st.objects.invExt) (hLink : tcbQueueLinkIntegrity st)
+    (hAcyc : tcbQueueChainAcyclic st) (hLookup : lookupTcb st v = some tcbV) :
+    sameNotificationBindings st (sweptAndRestored st v frame) := by
+  intro k
+  cases hPost : (sweptAndRestored st v frame).objects[k]? with
+  | some o =>
+    cases o with
+    | tcb tA =>
+      obtain ⟨t0, h0, hc⟩ :=
+        sweptAndRestored_tcb_pullback st v frame tcbV hInv hLink hAcyc hLookup k tA hPost
+      rw [h0]
+      rcases hc with ⟨_, qp, qpp, qn, np, nn, rfl⟩ | ⟨_, rfl⟩
+      · rfl
+      · cases frame <;> rfl
+    | endpoint e =>
+      obtain ⟨ep0, h0, -⟩ :=
+        sweptAndRestored_endpoint_queues st v frame tcbV hInv hLink hAcyc hLookup k e hPost
+      rw [h0]; rfl
+    | _ =>
+      rw [(sweptAndRestored_nonTcbNonEndpoint st v frame tcbV hInv hLink hAcyc hLookup k _
+        (fun _ h => KernelObject.noConfusion h) (fun _ h => KernelObject.noConfusion h)).mp hPost]
+  | none =>
+    cases hPre : st.objects[k]? with
+    | none => rfl
+    | some o =>
+      exfalso
+      cases o with
+      | tcb t0 =>
+        by_cases hkv : k = v.toObjId
+        · subst hkv
+          rw [sweptAndRestored_victim_tcb st v frame tcbV hInv hLink hAcyc hLookup] at hPost
+          cases hPost
+        · obtain ⟨t', h', -⟩ := sweptAndRestored_tcb_forward st v frame hInv k t0 hkv hPre
+          rw [hPost] at h'; cases h'
+      | endpoint e =>
+        obtain ⟨ep, h', -⟩ :=
+          sweptAndRestored_endpoint_forward st v frame tcbV hInv hLink hAcyc hLookup k e hPre
+        rw [hPost] at h'; cases h'
+      | _ =>
+        have h' := (sweptAndRestored_nonTcbNonEndpoint st v frame tcbV hInv hLink hAcyc hLookup k
+          _ (fun _ h => KernelObject.noConfusion h) (fun _ h => KernelObject.noConfusion h)).mpr hPre
+        rw [hPost] at h'; cases h'
+
 /-- **WS-RR RR7.22 (residual)**: a blocked thread's membership witness survives
 the sweep, per queue.
 
@@ -2129,7 +2177,7 @@ theorem sweptAndRestored_preserves_ipcInvariantFull
     ipcInvariantFull (sweptAndRestored st v frame) := by
   obtain ⟨hIpc, hDual, hBnd, hBadge, hBlkMsg, hNoDup, hMem, hQNB, hQHB, hTimeout,
     hDonAcyc, hDonOwner, hDonBudget, hBlkReply, hReplyLink, hStash,
-    hDonUnique, hTailBlk, hTgt⟩ := hBundle
+    hDonUnique, hTailBlk, hTgt, hNBR⟩ := hBundle
   have hLink : tcbQueueLinkIntegrity st := hDual.2.1
   have hAcyc : tcbQueueChainAcyclic st := hDual.chainAcyclic
   have hBind := sweptAndRestored_sameSchedContextBindings st v frame tcbV hInv hLink hAcyc hLookup
@@ -2159,7 +2207,9 @@ theorem sweptAndRestored_preserves_ipcInvariantFull
     donationOwnerUnique_of_sameSchedContextBindings hBind hDonUnique,
     sweptAndRestored_endpointQueueTailBlockedConsistent st v frame tcbV hInv hLink hAcyc hLookup
       hTailBlk hCoh.predecessorBlocked,
-    sweptAndRestored_queueNextTargetBlocked st v frame tcbV hInv hLink hAcyc hLookup hTgt⟩
+    sweptAndRestored_queueNextTargetBlocked st v frame tcbV hInv hLink hAcyc hLookup hTgt,
+    notificationBindingReciprocal.of_codes
+      (sweptAndRestored_sameNotificationBindings st v frame tcbV hInv hLink hAcyc hLookup) hNBR⟩
 
 -- ============================================================================
 -- §13  The live operation: `cancelIpcBlocking`'s endpoint arm

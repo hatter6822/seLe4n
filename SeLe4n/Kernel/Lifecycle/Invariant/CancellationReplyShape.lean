@@ -206,6 +206,23 @@ theorem cancelDonationStackValid_of_no_stacks (st : SystemState)
   fun scId holder _ =>
     replyStackOuterCallerValid_of_no_stacks _ hNoHeads scId holder v
 
+/-- The restore moves no notification-binding code: it rewrites one thread's
+IPC state, queue links and frame. -/
+theorem restoreToReadyStaging_sameNotificationBindings (st : SystemState)
+    (tid : SeLe4n.ThreadId) (frame : Option Architecture.SyscallReturnFrame)
+    (hInv : st.objects.invExt) :
+    sameNotificationBindings st (Lifecycle.Suspend.restoreToReadyStaging st tid frame) := by
+  intro k
+  by_cases hk : k = tid.toObjId
+  · subst hk
+    cases hT : st.getTcb? tid with
+    | none => rw [Lifecycle.Suspend.restoreToReadyStaging_eq_self_of_getTcb?_none st tid frame hT]
+    | some t =>
+      rw [restoreToReadyStaging_objects_self st tid frame t hInv hT,
+        (SystemState.getTcb?_eq_some_iff st tid t).mp hT]
+      cases frame <;> rfl
+  · rw [restoreToReadyStaging_objects_ne st tid frame k hInv hk]
+
 /-- **WS-RR RR7.22 (residual, remediation) / WS-HP HP5.2**: after the reclaim no
 thread holds a SchedContext donated by the cancelled caller.
 
@@ -2506,7 +2523,7 @@ theorem restoreToReadyStaging_establishes_ipcInvariantFullExceptReplyLinkage
       (Lifecycle.Suspend.restoreToReadyStaging st v frame) v := by
   obtain ⟨hIpc, hDual, hBnd, hBadge, hBlkMsg, hNoDup, hMem, hQNB, hQHB, hTimeout,
     hDonAcyc, hDonOwner, hDonBudget, hBlkReply, hReplyLink, hStash,
-    hDonUnique, hTailBlk, hTgt⟩ := hBundle
+    hDonUnique, hTailBlk, hTgt, hNBR⟩ := hBundle
   have hLink : tcbQueueLinkIntegrity st := hDual.2.1
   have hBind := restoreToReadyStaging_sameSchedContextBindings st v frame hInv
   exact ⟨Lifecycle.Suspend.restoreToReadyStaging_preserves_ipcInvariant st v frame hInv hIpc,
@@ -2540,7 +2557,9 @@ theorem restoreToReadyStaging_establishes_ipcInvariantFullExceptReplyLinkage
     donationOwnerUnique_of_sameSchedContextBindings hBind hDonUnique,
     restoreToReadyStaging_endpointQueueTailBlockedConsistent st v frame tcbV epV rtV hInv
       hLookup hBlocked hQHB hTailBlk,
-    restoreToReadyStaging_queueNextTargetBlocked st v frame tcbV hInv hLookup hLink hOff hTgt⟩
+    restoreToReadyStaging_queueNextTargetBlocked st v frame tcbV hInv hLookup hLink hOff hTgt,
+    notificationBindingReciprocal.of_codes
+      (restoreToReadyStaging_sameNotificationBindings st v frame hInv) hNBR⟩
 
 /-- **WS-RR RR8.7 — the teardown closes the relaxation it was opened for.**
 

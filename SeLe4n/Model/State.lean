@@ -2858,6 +2858,52 @@ theorem storeObject_cdt_eq
 -- It lives in the model, upstream of both invariants, because it is a relation
 -- between two object stores and mentions neither.
 
+/-- **`kindPreservingWrite` without its binding-code clause**: at every key the
+store is unchanged or holds an object of the same non-`cnode` kind with the same
+space slots and untyped record.  What the capability bundle reads, and what a
+finalisation step is: the finalisation's notification unbind writes the binding
+codes on both ends, which no chain step of `kindPreservingWrite` does. -/
+def kindPreservingWriteUpToBindings (st st' : SystemState) : Prop :=
+  ∀ oid : SeLe4n.ObjId, st'.objects[oid]? = st.objects[oid]? ∨
+    ∃ pre post : KernelObject,
+      st.objects[oid]? = some pre ∧ st'.objects[oid]? = some post ∧
+      post.objectType = pre.objectType ∧ post.objectType ≠ KernelObjectType.cnode ∧
+      post.tcbSlots = pre.tcbSlots ∧ post.untyped? = pre.untyped?
+
+namespace kindPreservingWriteUpToBindings
+
+theorem tcbSlots {st st' : SystemState} (h : kindPreservingWriteUpToBindings st st')
+    (oid : SeLe4n.ObjId) :
+    (st'.objects[oid]?).bind KernelObject.tcbSlots = (st.objects[oid]?).bind KernelObject.tcbSlots := by
+  rcases h oid with e | ⟨_, _, hp, hq, _, _, hs, -⟩
+  · rw [e]
+  · rw [hp, hq]; exact hs
+
+theorem untyped {st st' : SystemState} (h : kindPreservingWriteUpToBindings st st')
+    (oid : SeLe4n.ObjId) :
+    (st'.objects[oid]?).bind KernelObject.untyped? = (st.objects[oid]?).bind KernelObject.untyped? := by
+  rcases h oid with e | ⟨_, _, hp, hq, _, _, _, hu⟩
+  · rw [e]
+  · rw [hp, hq]; exact hu
+
+theorem slotCap_back {st st' : SystemState} (h : kindPreservingWriteUpToBindings st st')
+    {oid : SeLe4n.ObjId} {o' : KernelObject} (hO : st'.objects[oid]? = some o') :
+    ∃ o, st.objects[oid]? = some o ∧ o'.slotCap = o.slotCap := by
+  rcases h oid with e | ⟨pre, post, hp, hq, ht, hn, hs, -⟩
+  · exact ⟨o', e ▸ hO, rfl⟩
+  · rw [hq] at hO; cases hO
+    exact ⟨pre, hp, (KernelObject.slots_eq_of_tcbSlots ht hn hs).1⟩
+
+theorem slotCap_fwd {st st' : SystemState} (h : kindPreservingWriteUpToBindings st st')
+    {oid : SeLe4n.ObjId} {o : KernelObject} (hO : st.objects[oid]? = some o) :
+    ∃ o', st'.objects[oid]? = some o' ∧ o'.slotCap = o.slotCap := by
+  rcases h oid with e | ⟨pre, post, hp, hq, ht, hn, hs, -⟩
+  · exact ⟨o, e.trans hO, rfl⟩
+  · rw [hp] at hO; cases hO
+    exact ⟨post, hq, (KernelObject.slots_eq_of_tcbSlots ht hn hs).1⟩
+
+end kindPreservingWriteUpToBindings
+
 /-- WS-RR RR8.16 (`v0.35.199`): **at every key, the store is unchanged or holds
 an object of the same kind, and that kind is not `cnode`.**
 
@@ -2870,13 +2916,19 @@ it per step.
 WS-ZA ZA5.4 part 19: a rewrite also keeps the object's untyped record
 (`KernelObject.untyped?`), which the capability bundle's untyped facts read — an
 untyped's region bounds its capabilities' free indices, and its child list is
-what was carved from it.  No IPC or scheduler step writes an untyped. -/
+what was carved from it.  No IPC or scheduler step writes an untyped.
+
+A rewrite also keeps the object's notification-binding codes
+(`KernelObject.bindingCodes`), which the notification binding reciprocity reads:
+only a bind, an unbind and a final delete write them, and none of those is a
+kind-preserving chain step. -/
 def kindPreservingWrite (st st' : SystemState) : Prop :=
   ∀ oid : SeLe4n.ObjId, st'.objects[oid]? = st.objects[oid]? ∨
     ∃ pre post : KernelObject,
       st.objects[oid]? = some pre ∧ st'.objects[oid]? = some post ∧
       post.objectType = pre.objectType ∧ post.objectType ≠ KernelObjectType.cnode ∧
-      post.tcbSlots = pre.tcbSlots ∧ post.untyped? = pre.untyped?
+      post.tcbSlots = pre.tcbSlots ∧ post.untyped? = pre.untyped? ∧
+      post.bindingCodes = pre.bindingCodes
 
 namespace kindPreservingWrite
 
@@ -2886,48 +2938,52 @@ theorem trans {st st' st'' : SystemState}
     (h₁ : kindPreservingWrite st st') (h₂ : kindPreservingWrite st' st'') :
     kindPreservingWrite st st'' := by
   intro oid
-  rcases h₁ oid with e₁ | ⟨p₁, q₁, hp₁, hq₁, ht₁, hn₁, hs₁, hu₁⟩
-  · rcases h₂ oid with e₂ | ⟨p₂, q₂, hp₂, hq₂, ht₂, hn₂, hs₂, hu₂⟩
+  rcases h₁ oid with e₁ | ⟨p₁, q₁, hp₁, hq₁, ht₁, hn₁, hs₁, hu₁, hb₁⟩
+  · rcases h₂ oid with e₂ | ⟨p₂, q₂, hp₂, hq₂, ht₂, hn₂, hs₂, hu₂, hb₂⟩
     · exact Or.inl (e₂.trans e₁)
-    · exact Or.inr ⟨p₂, q₂, e₁ ▸ hp₂, hq₂, ht₂, hn₂, hs₂, hu₂⟩
-  · rcases h₂ oid with e₂ | ⟨p₂, q₂, hp₂, hq₂, ht₂, hn₂, hs₂, hu₂⟩
-    · exact Or.inr ⟨p₁, q₁, hp₁, e₂.trans hq₁, ht₁, hn₁, hs₁, hu₁⟩
+    · exact Or.inr ⟨p₂, q₂, e₁ ▸ hp₂, hq₂, ht₂, hn₂, hs₂, hu₂, hb₂⟩
+  · rcases h₂ oid with e₂ | ⟨p₂, q₂, hp₂, hq₂, ht₂, hn₂, hs₂, hu₂, hb₂⟩
+    · exact Or.inr ⟨p₁, q₁, hp₁, e₂.trans hq₁, ht₁, hn₁, hs₁, hu₁, hb₁⟩
     · rw [hq₁] at hp₂
       cases hp₂
-      exact Or.inr ⟨p₁, q₂, hp₁, hq₂, ht₂.trans ht₁, hn₂, hs₂.trans hs₁, hu₂.trans hu₁⟩
+      exact Or.inr ⟨p₁, q₂, hp₁, hq₂, ht₂.trans ht₁, hn₂, hs₂.trans hs₁, hu₂.trans hu₁,
+        hb₂.trans hb₁⟩
+
+/-- Forgetting the binding codes. -/
+theorem upToBindings {st st' : SystemState} (h : kindPreservingWrite st st') :
+    kindPreservingWriteUpToBindings st st' := fun oid =>
+  (h oid).imp id fun ⟨pre, post, hp, hq, ht, hn, hs, hu, _⟩ => ⟨pre, post, hp, hq, ht, hn, hs, hu⟩
 
 /-- A kind-preserving write keeps every thread's slots, key by key. -/
 theorem tcbSlots {st st' : SystemState} (h : kindPreservingWrite st st') (oid : SeLe4n.ObjId) :
-    (st'.objects[oid]?).bind KernelObject.tcbSlots = (st.objects[oid]?).bind KernelObject.tcbSlots := by
-  rcases h oid with e | ⟨_, _, hp, hq, _, _, hs, -⟩
-  · rw [e]
-  · rw [hp, hq]; exact hs
+    (st'.objects[oid]?).bind KernelObject.tcbSlots = (st.objects[oid]?).bind KernelObject.tcbSlots :=
+  h.upToBindings.tcbSlots oid
 
 /-- A kind-preserving write keeps every untyped record, key by key. -/
 theorem untyped {st st' : SystemState} (h : kindPreservingWrite st st') (oid : SeLe4n.ObjId) :
-    (st'.objects[oid]?).bind KernelObject.untyped? = (st.objects[oid]?).bind KernelObject.untyped? := by
-  rcases h oid with e | ⟨_, _, hp, hq, _, _, _, hu⟩
+    (st'.objects[oid]?).bind KernelObject.untyped? = (st.objects[oid]?).bind KernelObject.untyped? :=
+  h.upToBindings.untyped oid
+
+/-- A kind-preserving write keeps every slot's binding codes, key by key. -/
+theorem bindingCodes {st st' : SystemState} (h : kindPreservingWrite st st') (oid : SeLe4n.ObjId) :
+    (st'.objects[oid]?).map KernelObject.bindingCodes =
+      (st.objects[oid]?).map KernelObject.bindingCodes := by
+  rcases h oid with e | ⟨_, _, hp, hq, _, _, _, _, hb⟩
   · rw [e]
-  · rw [hp, hq]; exact hu
+  · rw [hp, hq]; simp only [Option.map_some, hb]
 
 /-- A kind-preserving write keeps every slot, key by key: a post-state object
 holds the slots of the pre-state object at its key. -/
 theorem slotCap_back {st st' : SystemState} (h : kindPreservingWrite st st') {oid : SeLe4n.ObjId}
     {o' : KernelObject} (hO : st'.objects[oid]? = some o') :
-    ∃ o, st.objects[oid]? = some o ∧ o'.slotCap = o.slotCap := by
-  rcases h oid with e | ⟨pre, post, hp, hq, ht, hn, hs, -⟩
-  · exact ⟨o', e ▸ hO, rfl⟩
-  · rw [hq] at hO; cases hO
-    exact ⟨pre, hp, (KernelObject.slots_eq_of_tcbSlots ht hn hs).1⟩
+    ∃ o, st.objects[oid]? = some o ∧ o'.slotCap = o.slotCap :=
+  h.upToBindings.slotCap_back hO
 
 /-- ...and forward. -/
 theorem slotCap_fwd {st st' : SystemState} (h : kindPreservingWrite st st') {oid : SeLe4n.ObjId}
     {o : KernelObject} (hO : st.objects[oid]? = some o) :
-    ∃ o', st'.objects[oid]? = some o' ∧ o'.slotCap = o.slotCap := by
-  rcases h oid with e | ⟨pre, post, hp, hq, ht, hn, hs, -⟩
-  · exact ⟨o, e.trans hO, rfl⟩
-  · rw [hp] at hO; cases hO
-    exact ⟨post, hq, (KernelObject.slots_eq_of_tcbSlots ht hn hs).1⟩
+    ∃ o', st'.objects[oid]? = some o' ∧ o'.slotCap = o.slotCap :=
+  h.upToBindings.slotCap_fwd hO
 
 /-- WS-RR RR8.16 (`v0.35.199`): the degenerate instance — a step that writes no
 object at all. -/
@@ -2947,8 +3003,29 @@ theorem storeObject_kindPreservingWrite
     (hKind : obj.objectType = pre.objectType)
     (hNotCnode : obj.objectType ≠ KernelObjectType.cnode)
     (hSlots : obj.tcbSlots = pre.tcbSlots := by rfl)
-    (hUntyped : obj.untyped? = pre.untyped? := by rfl) :
+    (hUntyped : obj.untyped? = pre.untyped? := by rfl)
+    (hBindings : obj.bindingCodes = pre.bindingCodes := by rfl) :
     kindPreservingWrite st st' := by
+  intro k
+  by_cases hEq : k = oid
+  · subst hEq
+    exact Or.inr ⟨pre, obj, hPre,
+      storeObject_objects_eq st st' k obj hObjInv hStore, hKind, hNotCnode, hSlots, hUntyped,
+      hBindings⟩
+  · exact Or.inl (storeObject_objects_ne st st' oid k obj hEq hObjInv hStore)
+
+/-- A kind-preserving `storeObject` that may move the binding codes: the
+capability-side frame of the bind and unbind stores. -/
+theorem storeObject_kindPreservingWriteUpToBindings
+    {st st' : SystemState} {oid : SeLe4n.ObjId} {obj pre : KernelObject}
+    (hObjInv : st.objects.invExt)
+    (hStore : storeObject oid obj st = .ok ((), st'))
+    (hPre : st.objects[oid]? = some pre)
+    (hKind : obj.objectType = pre.objectType)
+    (hNotCnode : obj.objectType ≠ KernelObjectType.cnode)
+    (hSlots : obj.tcbSlots = pre.tcbSlots := by rfl)
+    (hUntyped : obj.untyped? = pre.untyped? := by rfl) :
+    kindPreservingWriteUpToBindings st st' := by
   intro k
   by_cases hEq : k = oid
   · subst hEq
@@ -4928,6 +5005,16 @@ theorem consumeCallerReply_kindPreservingWrite (st st' : SystemState)
         ((getTcb?_eq_some_iff st1 caller tcb).mp hT) rfl
         (by simp [KernelObject.objectType]))
 
+/-- The stash's Reply record (`recordReplyStasher`) is a `kindPreservingWrite`:
+nothing, or a Reply rewritten as a Reply. -/
+theorem recordReplyStasher_kindPreservingWrite (st : SystemState) (code : Nat)
+    (recv : SeLe4n.ThreadId) (hObjInv : st.objects.invExt) :
+    kindPreservingWrite st (st.recordReplyStasher code recv) := by
+  rcases recordReplyStasher_eq_or st code recv with h | ⟨_, r, _, hR, hS⟩
+  · rw [h]; exact kindPreservingWrite.refl st
+  · exact storeObject_kindPreservingWrite hObjInv hS hR rfl
+      (by simp [KernelObject.objectType])
+
 /-- WS-SM SM6.D (PR #827 #3 fold): `consumeReply` leaves the scheduler untouched
 (object-store writes only). -/
 theorem consumeReply_scheduler_eq (st st' : SystemState) (rid : SeLe4n.ReplyId)
@@ -5935,7 +6022,8 @@ primitive, beside the primitive. -/
 theorem rewriteObject_kindPreservingWrite (st : SystemState) (id : SeLe4n.ObjId)
     (new : KernelObject) (h : st.rewriteAdmissible id new) (hInv : st.objects.invExt)
     (hSlots : ∀ old, st.objects[id]? = some old → new.tcbSlots = old.tcbSlots)
-    (hUntyped : ∀ old, st.objects[id]? = some old → new.untyped? = old.untyped?) :
+    (hUntyped : ∀ old, st.objects[id]? = some old → new.untyped? = old.untyped?)
+    (hBindings : ∀ old, st.objects[id]? = some old → new.bindingCodes = old.bindingCodes) :
     kindPreservingWrite st (st.rewriteObject id new h) := by
   intro k
   by_cases hEq : id = k
@@ -5943,7 +6031,7 @@ theorem rewriteObject_kindPreservingWrite (st : SystemState) (id : SeLe4n.ObjId)
     have hAdm := h
     obtain ⟨pre, hPre, hKind, hNeutral⟩ := hAdm
     refine Or.inr ⟨pre, new, hPre, rewriteObject_objects_self st id new h hInv,
-      hKind.symm, ?_, hSlots pre hPre, hUntyped pre hPre⟩
+      hKind.symm, ?_, hSlots pre hPre, hUntyped pre hPre, hBindings pre hPre⟩
     intro hCn
     rw [hCn] at hNeutral
     exact absurd hNeutral (by simp [KernelObjectType.rewriteNeutral])
@@ -5953,12 +6041,15 @@ theorem rewriteObject_kindPreservingWrite (st : SystemState) (id : SeLe4n.ObjId)
 `kindPreservingWrite`. -/
 theorem rewriteObject_tcb_kindPreservingWrite {st : SystemState} {tid : SeLe4n.ThreadId}
     {t : TCB} (h : st.getTcb? tid = some t) (t' : TCB) (hInv : st.objects.invExt)
-    (hS : t'.spaceCells = t.spaceCells ∧ t'.spaceLinks = t.spaceLinks) :
+    (hS : t'.spaceCells = t.spaceCells ∧ t'.spaceLinks = t.spaceLinks ∧
+      t'.boundNotificationCode = t.boundNotificationCode) :
     kindPreservingWrite st (st.rewriteObject tid.toObjId (.tcb t') (rewriteAdmissible_tcb h t')) :=
   rewriteObject_kindPreservingWrite _ _ _ _ hInv (fun old hOld => by
     rw [(getTcb?_eq_some_iff st tid t).mp h] at hOld; cases hOld
-    simp only [KernelObject.tcbSlots, hS.1, hS.2]) fun old hOld => by
-    rw [(getTcb?_eq_some_iff st tid t).mp h] at hOld; cases hOld; rfl
+    simp only [KernelObject.tcbSlots, hS.1, hS.2.1]) (fun old hOld => by
+    rw [(getTcb?_eq_some_iff st tid t).mp h] at hOld; cases hOld; rfl) fun old hOld => by
+    rw [(getTcb?_eq_some_iff st tid t).mp h] at hOld; cases hOld
+    simp only [KernelObject.bindingCodes, hS.2.2]
 
 -- The bookkeeping, unconditionally.
 
@@ -6647,16 +6738,20 @@ store — is `updateTcb`, so each reaches both invariant bundles through this
 lemma rather than re-deriving the rewrite's admissibility at its own site. -/
 theorem updateTcb_kindPreservingWrite (st : SystemState) (tid : SeLe4n.ThreadId)
     (f : TCB → TCB) (hInv : st.objects.invExt)
-    (hf : ∀ t, (f t).spaceCells = t.spaceCells ∧ (f t).spaceLinks = t.spaceLinks := by
-      intro _; exact ⟨rfl, rfl⟩) :
+    (hf : ∀ t, (f t).spaceCells = t.spaceCells ∧ (f t).spaceLinks = t.spaceLinks ∧
+      (f t).boundNotificationCode = t.boundNotificationCode := by
+      intro _; exact ⟨rfl, rfl, rfl⟩) :
     kindPreservingWrite st (st.updateTcb tid f) := by
   unfold updateTcb
   split
   · next t h _ =>
-    refine rewriteObject_kindPreservingWrite _ _ _ _ hInv (fun old hOld => ?_) fun old hOld => ?_
+    refine rewriteObject_kindPreservingWrite _ _ _ _ hInv (fun old hOld => ?_)
+      (fun old hOld => ?_) fun old hOld => ?_
     · rw [(getTcb?_eq_some_iff st tid t).mp h] at hOld; cases hOld
-      simp only [KernelObject.tcbSlots, (hf t).1, (hf t).2]
+      simp only [KernelObject.tcbSlots, (hf t).1, (hf t).2.1]
     · rw [(getTcb?_eq_some_iff st tid t).mp h] at hOld; cases hOld; rfl
+    · rw [(getTcb?_eq_some_iff st tid t).mp h] at hOld; cases hOld
+      simp only [KernelObject.bindingCodes, (hf t).2.2]
   · exact kindPreservingWrite.refl st
 
 theorem updateTcb_preserves_objects_invExt (st : SystemState) (tid : SeLe4n.ThreadId)

@@ -65,7 +65,7 @@ theorem endpointQueuePopHead_establishes_ipcInvariantFullExceptMembership
     ipcInvariantFullExceptMembership st' tid := by
   obtain ⟨hIpc, hDual, hBnd, hBadge, hPend, hNoDup, hMem, hQNB, hQHB, hTimeout,
     _hAcyc, hOwner, hBudget, hReplyTarget, hReplyLink, hStash, hUnique, hTail,
-    hQNT⟩ := hInv
+    hQNT, hNBR⟩ := hInv
   have hDual' := endpointQueuePopHead_preserves_dualQueueSystemInvariant endpointId isReceiveQ
     st st' tid hObjInv hStep hDual
   have hHeadBlocked : if isReceiveQ
@@ -126,7 +126,8 @@ theorem endpointQueuePopHead_establishes_ipcInvariantFullExceptMembership
     endpointQueuePopHead_preserves_endpointQueueTailBlockedConsistent endpointId isReceiveQ st
       st' tid headTcb hObjInv hTail hStep,
     endpointQueuePopHead_preserves_queueNextTargetBlocked endpointId isReceiveQ st st' tid
-      headTcb hObjInv hQNT hStep⟩
+      headTcb hObjInv hQNT hStep,
+    notificationBindingReciprocal.of_kindPreservingWrite hKind hNBR⟩
 
 -- ============================================================================
 -- §2  An endpoint waiter's cancel

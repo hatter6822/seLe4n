@@ -1105,6 +1105,15 @@ theorem ntfnLinksRewritten.field_fwd {α : Type} {st s : SystemState}
   obtain ⟨t', ht, ⟨np, nn, rfl⟩⟩ := h.tcb_fwd hT
   exact ⟨_, ht, hf t np nn⟩
 
+/-- A notification-link rewrite is a `kindPreservingWrite`: each key holds
+what it held, or a thread with only its two notification links rewritten. -/
+theorem ntfnLinksRewritten.kindPreserving {st s : SystemState} (h : ntfnLinksRewritten st s) :
+    kindPreservingWrite st s := by
+  intro k
+  rcases h.2.2 k with e | ⟨t, t', ht, ht', np, nn, rfl⟩
+  · exact Or.inl e
+  · exact Or.inr ⟨.tcb t, .tcb _, ht, ht', rfl, by simp [KernelObject.objectType], rfl, rfl, rfl⟩
+
 theorem ntfnLinksRewritten_unlinkNtfnNeighbours {st s : SystemState}
     (h : ntfnLinksRewritten st s) (prev next : Option SeLe4n.ThreadId) :
     ntfnLinksRewritten st (unlinkNtfnNeighbours s prev next) := by
@@ -1367,13 +1376,15 @@ theorem modifyTcb_notification_backward {st st' : SystemState} {tid : SeLe4n.Thr
 `storeObject` of a `.tcb` at a key the lookup resolved to a TCB. -/
 theorem modifyTcb_kindPreservingWrite {st st' : SystemState} {tid : SeLe4n.ThreadId}
     {f : TCB → TCB} (hObjInv : st.objects.invExt) (h : modifyTcb st tid f = .ok st')
-    (hf : ∀ t, (f t).spaceCells = t.spaceCells ∧ (f t).spaceLinks = t.spaceLinks := by
-      intro _; exact ⟨rfl, rfl⟩) :
+    (hf : ∀ t, (f t).spaceCells = t.spaceCells ∧ (f t).spaceLinks = t.spaceLinks ∧
+      (f t).boundNotificationCode = t.boundNotificationCode := by
+      intro _; exact ⟨rfl, rfl, rfl⟩) :
     kindPreservingWrite st st' := by
   obtain ⟨tcb, hLk, hS⟩ := modifyTcb_ok_decompose h
   exact storeObject_kindPreservingWrite hObjInv hS
     (lookupTcb_some_objects st tid tcb hLk) rfl (by simp [KernelObject.objectType])
-    (by simp only [KernelObject.tcbSlots, (hf tcb).1, (hf tcb).2])
+    (by simp only [KernelObject.tcbSlots, (hf tcb).1, (hf tcb).2.1]) rfl
+    (by simp only [KernelObject.bindingCodes, (hf tcb).2.2])
 
 /-- **Audit IPC-5**: ...and it writes neither CDT table. -/
 theorem modifyTcb_cdt_eq {st st' : SystemState} {tid : SeLe4n.ThreadId}
@@ -1453,8 +1464,9 @@ theorem modifyTcbOpt_notification_backward {st st' : SystemState}
 theorem modifyTcbOpt_kindPreservingWrite {st st' : SystemState}
     {t? : Option SeLe4n.ThreadId} {f : TCB → TCB}
     (hObjInv : st.objects.invExt) (h : modifyTcbOpt st t? f = .ok st')
-    (hf : ∀ t, (f t).spaceCells = t.spaceCells ∧ (f t).spaceLinks = t.spaceLinks := by
-      intro _; exact ⟨rfl, rfl⟩) :
+    (hf : ∀ t, (f t).spaceCells = t.spaceCells ∧ (f t).spaceLinks = t.spaceLinks ∧
+      (f t).boundNotificationCode = t.boundNotificationCode := by
+      intro _; exact ⟨rfl, rfl, rfl⟩) :
     kindPreservingWrite st st' := by
   rcases modifyTcbOpt_ok_cases h with ⟨_, rfl⟩ | ⟨_, _, h⟩
   · exact kindPreservingWrite.refl _
@@ -1479,6 +1491,14 @@ theorem storeTcbIpcStateAndMessage_kindPreservingWrite
     {ipcState : ThreadIpcState} {msg : Option IpcMessage}
     (hObjInv : st.objects.invExt)
     (hStore : storeTcbIpcStateAndMessage st tid ipcState msg = .ok st') :
+    kindPreservingWrite st st' :=
+  modifyTcb_kindPreservingWrite hObjInv hStore
+
+/-- The `ipcState` store is a `kindPreservingWrite`. -/
+theorem storeTcbIpcState_kindPreservingWrite
+    {st st' : SystemState} {tid : SeLe4n.ThreadId} {ipcState : ThreadIpcState}
+    (hObjInv : st.objects.invExt)
+    (hStore : storeTcbIpcState st tid ipcState = .ok st') :
     kindPreservingWrite st st' :=
   modifyTcb_kindPreservingWrite hObjInv hStore
 
@@ -1559,6 +1579,14 @@ def storeTcbReceiveComplete (st : SystemState) (tid : SeLe4n.ThreadId)
     (msg : Option IpcMessage) : Except KernelError SystemState :=
   modifyTcb st tid
     (fun tcb => (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReplyCode := 0 } .ready))
+
+/-- The receive-completing store is a `kindPreservingWrite`. -/
+theorem storeTcbReceiveComplete_kindPreservingWrite
+    {st st' : SystemState} {tid : SeLe4n.ThreadId} {msg : Option IpcMessage}
+    (hObjInv : st.objects.invExt)
+    (hStore : storeTcbReceiveComplete st tid msg = .ok st') :
+    kindPreservingWrite st st' :=
+  modifyTcb_kindPreservingWrite hObjInv hStore
 
 /-- WS-L1: `lookupTcb` is preserved when `storeObject` targets a notification
 (different ObjId from any TCB). Used to justify `_fromTcb` usage after an
@@ -4719,7 +4747,7 @@ theorem storeDonationHeadPop_kindPreservingWrite
   by_cases hRep : ∃ r : Reply, st.objects[k]? = some (.reply r)
   · obtain ⟨r, hr⟩ := hRep
     obtain ⟨r', hr', _⟩ := storeDonationHeadPop_reply_rewrite hObjInv h k r hr
-    exact Or.inr ⟨.reply r, .reply r', hr, hr', rfl, by simp [KernelObject.objectType, KernelObject.untyped?]⟩
+    exact Or.inr ⟨.reply r, .reply r', hr, hr', rfl, by simp [KernelObject.objectType, KernelObject.untyped?, KernelObject.bindingCodes]⟩
   · exact Or.inl (storeDonationHeadPop_non_reply_eq hObjInv h k (fun r hr => hRep ⟨r, hr⟩))
 
 /-- A non-Reply found after the pop was there before it. -/
@@ -6903,7 +6931,7 @@ theorem spliceReplyFrameOutOrSelf_kindPreservingWrite (st : SystemState)
   intro k
   rcases spliceReplyFrameOutOrSelf_objects_rewrite st rid hObjInv k with h | ⟨r, r', hr, hr', _⟩
   · exact Or.inl h
-  · exact Or.inr ⟨.reply r, .reply r', hr, hr', rfl, by simp [KernelObject.objectType, KernelObject.untyped?]⟩
+  · exact Or.inr ⟨.reply r, .reply r', hr, hr', rfl, by simp [KernelObject.objectType, KernelObject.untyped?, KernelObject.bindingCodes]⟩
 
 /-- **WS-RR RR8.16** (`v0.35.199`): and so is the removal — the splice above, then
 the consume, which writes a Reply for a Reply and a TCB for a TCB.
@@ -9030,6 +9058,22 @@ theorem returnDonatedSchedContext_kindPreservingWrite
   have hLast : kindPreservingWrite s4 st' :=
     kindPreservingWrite.of_objects_eq (by rw [hEq])
   exact ((((hW1.trans hW2).trans hW3).trans hW4).trans hLast)
+
+/-- The pre-receive cleanup is a `kindPreservingWrite`: nothing, or the resolved
+donation return. -/
+theorem cleanupPreReceiveDonation_kindPreservingWrite (st : SystemState)
+    (receiver : SeLe4n.ThreadId) (hObjInv : st.objects.invExt) :
+    kindPreservingWrite st (cleanupPreReceiveDonation st receiver) := by
+  unfold cleanupPreReceiveDonation
+  split
+  · exact kindPreservingWrite.refl st
+  · split
+    · split
+      · exact kindPreservingWrite.refl st
+      · next st' hR =>
+        exact returnDonatedSchedContextResolved_lift hR fun _ _ h =>
+          returnDonatedSchedContext_kindPreservingWrite hObjInv h
+    · exact kindPreservingWrite.refl st
 
 /-- WS-RR RR8.16 (`v0.35.199`): the donation return writes no CDT table.
 

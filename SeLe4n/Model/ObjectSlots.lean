@@ -437,6 +437,21 @@ def untyped? (o : KernelObject) : Option UntypedObject :=
   | .untyped u => some u
   | _ => none
 
+/-- The notification-binding codes an object holds: a thread's bound-notification
+code and a notification's bound-thread code, each `id + 1` or `0`; every other
+kind holds neither.  The part of the store the notification binding reciprocity
+reads. -/
+@[inline] def bindingCodes (o : KernelObject) : Nat × Nat :=
+  match o with
+  | .tcb t => (t.boundNotificationCode, 0)
+  | .notification n => (0, n.boundTCBCode)
+  | _ => (0, 0)
+
+/-- Clearing an object's derivation links keeps its binding codes. -/
+@[simp] theorem bindingCodes_withoutLinks (o : KernelObject) :
+    o.withoutLinks.bindingCodes = o.bindingCodes := by
+  cases o <;> rfl
+
 /-- Clearing an object's derivation links keeps its untyped record. -/
 @[simp] theorem untyped?_withoutLinks (o : KernelObject) : o.withoutLinks.untyped? = o.untyped? := by
   cases o <;> rfl

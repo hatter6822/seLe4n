@@ -204,11 +204,17 @@ theorem objectsAgreeOffDerivationLinks.present {st st' : SystemState}
   | some _ => rw [h1] at e; cases e
 
 /-- A kind-preserving write keeps every object in the store. -/
-theorem kindPreservingWrite.present {st st' : SystemState} (h : kindPreservingWrite st st')
+theorem kindPreservingWriteUpToBindings.present {st st' : SystemState}
+    (h : kindPreservingWriteUpToBindings st st')
     (o : SeLe4n.ObjId) (hp : st.objectPresent o) : st'.objectPresent o := by
   rcases h o with e | ⟨_, _, _, hq, _⟩
   · rw [objectPresent, e]; exact hp
   · rw [objectPresent, hq]; exact Option.some_ne_none _
+
+/-- A kind-preserving write keeps every object in the store. -/
+theorem kindPreservingWrite.present {st st' : SystemState} (h : kindPreservingWrite st st')
+    (o : SeLe4n.ObjId) (hp : st.objectPresent o) : st'.objectPresent o :=
+  kindPreservingWriteUpToBindings.present h.upToBindings o hp
 
 /-- Link writes keep every slot's capability. -/
 theorem SlotTreeFrame.of_agree {st st' : SystemState} (hA : objectsAgreeOffDerivationLinks st' st)
