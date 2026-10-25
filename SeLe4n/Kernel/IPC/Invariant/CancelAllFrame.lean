@@ -639,11 +639,30 @@ theorem finaliseThreadSuspend_closed (P : SystemState → Prop) (hSuspend : Fina
     · exact h
   · exact h
 
+/-- **A property the reply cancel keeps holds after a reply-blocked caller's
+cancel** (`finaliseReplyCallerCancel`): the reply finalisation's own step, at the
+reply the caller waits on. -/
+theorem finaliseReplyCallerCancel_closed (P : SystemState → Prop) (hRep : FinaliseReplyStep P)
+    (s : SystemState) (c : SeLe4n.ThreadId) (t : TCB) (h : P s) (hT : s.getTcb? c = some t) :
+    P (finaliseReplyCallerCancel s c t) := by
+  unfold finaliseReplyCallerCancel
+  split
+  · rename_i r hX
+    split
+    · rename_i hG
+      simp only [Bool.and_eq_true, beq_iff_eq] at hG
+      obtain ⟨⟨hC, hF⟩, -⟩ := hG
+      rw [finaliseReplyCancel_eq hX hF]
+      exact hRep s _ r c t h hX hC hT hF
+    · exact h
+  · exact h
+
 /-- **A property the thread finalisation's steps keep holds after it.** -/
 theorem finaliseThread_closed (P : SystemState → Prop) (hUnbind : FinaliseUnbindStep P)
     (hSc : FinaliseScUnbindStep P) (hCancel : FinaliseNotificationCancelStep P)
     (hEndpoint : FinaliseEndpointCancelStep P)
     (hSuspend : FinaliseSuspendStep P) (hRelease : FinaliseReleaseStep P)
+    (hRep : FinaliseReplyStep P)
     (x : SeLe4n.ObjId) (st : SystemState) (h : P st) :
     P (finaliseThread x st) := by
   rw [finaliseThread_eq]
@@ -691,7 +710,10 @@ theorem finaliseThread_closed (P : SystemState → Prop) (hUnbind : FinaliseUnbi
               exact hCancel s n tid t ntfn h1 hT hI hN hG
             · exact h1
           · exact h1
-        all_goals first | exact hEp _ _ | exact h1
+        all_goals first
+          | exact hEp _ _
+          | exact finaliseReplyCallerCancel_closed P hRep s tid t h1 hT
+          | exact h1
       · exact h1
     -- The suspend.
     have h3 : P (finaliseThreadSuspend
@@ -840,7 +862,8 @@ theorem finaliseFinalObject_closed (P : SystemState → Prop)
         (cancelEndpointQueue_closed P _ false (hEp _ false) _ _ h)
     · exact cancelNotificationQueue_closed P _ (hNtfn _) _ _
         (unbindMaybeNotification_closed P _ (hUnbind _) st h)
-    · exact finaliseThread_closed P hUnbind hRel.scUnbind hCancel hEndpoint hSuspend hRelease _ st h
+    · exact finaliseThread_closed P hUnbind hRel.scUnbind hCancel hEndpoint hSuspend hRelease hRep
+        _ st h
     · exact finaliseSchedContext_closed P hDes hRel hUn _ st h
     · exact finaliseReply_closed P hRep hSuspend hSt _ st h
     · exact h
