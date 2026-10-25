@@ -390,6 +390,19 @@ theorem cspaceDeleteSlotFinalising_crossCoreNonInterference
   crossCoreNonInterference_ofCores ctx observer hne
     (cspaceDeleteSlotFinalising_confinedToCores executingCore addr st st' hStep) hShared
 
+/-- WS-ZA ZA5.4 part 26 (**the live `.cspaceDelete` arm, the zombie delete,
+cross-core**): invisible on every core outside `cspaceDeleteSlotFinalisingCores`
+(`cspaceDeleteSlotZombie_confinedToCores`). -/
+theorem cspaceDeleteSlotZombie_crossCoreNonInterference
+    (ctx : LabelingContext) (observer : IfObserver) (executingCore : CoreId)
+    (addr : CSpaceAddr) (st st' : SystemState) (c : CoreId)
+    (hStep : cspaceDeleteSlotZombie executingCore addr st = .ok ((), st'))
+    (hne : c ∉ cspaceDeleteSlotFinalisingCores st addr)
+    (hShared : sharedViewUnchanged ctx observer st st') :
+    projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
+  crossCoreNonInterference_ofCores ctx observer hne
+    (cspaceDeleteSlotZombie_confinedToCores executingCore addr st st' hStep) hShared
+
 /-- WS-BP BP7.1 (`v0.36.7`), WS-ZA ZA5.4 part 23 (**the live `.cspaceRevoke`
 arm, cross-core**): each delete of a finalising revocation may wake the waiters
 of an endpoint or notification whose final capability it destroys, on their
@@ -1346,7 +1359,7 @@ def crossCoreNiTheorem : CrossCoreTransition → String
   | .vspaceUnmapDispatch =>
       niName! vspaceUnmapPageWithShootdownAndIcacheBroadcast_crossCoreNonInterference
   | .untypedResetDispatch => niName! untypedResetFromCap_crossCoreNonInterference
-  | .cspaceDeleteDispatch => niName! cspaceDeleteSlotFinalising_crossCoreNonInterference
+  | .cspaceDeleteDispatch => niName! cspaceDeleteSlotZombie_crossCoreNonInterference
   | .cspaceRevokeDispatch => niName! cspaceRevokeCdtFinalising_crossCoreNonInterference
   | .untypedRetypeDispatch => niName! untypedRetypeFromCap_crossCoreNonInterference
   | .tcbSetSpaceDispatch => niName! copyThreadSpaces_crossCoreNonInterference

@@ -631,10 +631,13 @@ theorem schedLockSet_capabilityDestroyOnCore_coversWrites (st st' : SystemState)
     (fun d hd => absurd (Concurrency.mem_allCores d) hd)
     (fun d hd => absurd (Concurrency.mem_allCores d) hd)
 
-theorem schedLockSet_cspaceDeleteSlotFinalising_coversWrites (ec : CoreId) (addr : CSpaceAddr)
+/-- **The zombie delete's footprint covers its writes**: each of its steps is a
+finalising delete or a finalisation, and the footprint names every
+scheduler-domain lock. -/
+theorem schedLockSet_cspaceDeleteSlotZombie_coversWrites (ec : CoreId) (addr : CSpaceAddr)
     (st st' : SystemState) (S : LockSet)
     (hS : LockSet.ofList? schedLockSet_capabilityDestroyOnCore = some S)
-    (_h : cspaceDeleteSlotFinalising ec addr st = .ok ((), st')) :
+    (_h : cspaceDeleteSlotZombie ec addr st = .ok ((), st')) :
     footprintCoversWrites S st st' :=
   schedLockSet_capabilityDestroyOnCore_coversWrites st st' S hS
 

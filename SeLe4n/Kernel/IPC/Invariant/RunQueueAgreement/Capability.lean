@@ -691,6 +691,16 @@ theorem cspaceRevokeCdtFinalising_runQueueEntryStage {ec : Concurrency.CoreId}
     SystemState.RunQueueEntryStage st st' :=
   cspaceRevokeCdtFinalising_closed (SystemState.RunQueueEntryStage st)
     (fun _ _ _ hQ hD => hQ.trans (cspaceDeleteSlotFinalising_runQueueEntryStage hD))
+    (fun d s hQ => hQ.trans (finaliseFinalObject_runQueueEntryStage d s))
+    ⟨SystemState.RunQueueLinkStage.refl st, fun _ _ _ d => d⟩ h
+
+theorem cspaceDeleteSlotZombie_runQueueEntryStage {ec : Concurrency.CoreId}
+    {addr : CSpaceAddr} {st st' : SystemState}
+    (h : cspaceDeleteSlotZombie ec addr st = .ok ((), st')) :
+    SystemState.RunQueueEntryStage st st' :=
+  cspaceDeleteSlotZombie_closed (SystemState.RunQueueEntryStage st)
+    (fun _ _ _ hQ hD => hQ.trans (cspaceDeleteSlotFinalising_runQueueEntryStage hD))
+    (fun d s hQ => hQ.trans (finaliseFinalObject_runQueueEntryStage d s))
     ⟨SystemState.RunQueueLinkStage.refl st, fun _ _ _ d => d⟩ h
 
 /-! ### Page tables and the untyped carve -/

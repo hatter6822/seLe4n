@@ -218,7 +218,7 @@ def enforcementBoundary : List EnforcementClass :=
   -- `cspaceRevokeCdt` entry left with the general revocation it named, at
   -- WS-ZA ZA5.3 part 8, `v0.36.111`: the revoke arm's live transition is the
   -- finalising loop below.)
-  , .capabilityOnly "cspaceDeleteSlotFinalising"
+  , .capabilityOnly "cspaceDeleteSlotZombie"
   , .capabilityOnly "cspaceRevokeCdtFinalising"
   -- **WS-BP BP7.1 (`v0.36.5`)**: the untyped carve, named at the transition the
   -- live `.untypedRetype` arm calls — the decode, the two slot resolutions and
@@ -397,7 +397,7 @@ def syscallIdToEnforcementName : SyscallId → String
   | .cspaceMint => "cspaceMintChecked"
   | .cspaceCopy => "cspaceCopyChecked"
   | .cspaceMove => "cspaceMoveChecked"
-  | .cspaceDelete => "cspaceDeleteSlotFinalising"
+  | .cspaceDelete => "cspaceDeleteSlotZombie"
   | .cspaceRevoke => "cspaceRevokeCdtFinalising"
   | .untypedRetype => "untypedRetypeFromCap"
   | .untypedReset => "untypedResetFromCap"

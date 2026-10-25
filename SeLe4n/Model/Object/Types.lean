@@ -16,6 +16,7 @@ import SeLe4n.Kernel.RobinHood
 import SeLe4n.Kernel.SchedContext.Types
 import SeLe4n.Model.Object.UniqueSlotMap
 import SeLe4n.Model.Erased
+import SeLe4n.Model.Object.SlotOccupancy
 
 namespace SeLe4n.Model
 
@@ -3390,6 +3391,19 @@ structure CNode where
   records, so a link is written in place and no entry is shared. -/
   links      : Array Nat
   links_size : links.size = slotLinkWords * 2 ^ radixWidth
+  /-- WS-ZA ZA5.4 part 26: **the occupied slots, linked through the slots**:
+  two words per slot, its next and its previous occupied slot (`0` for none,
+  `j + 1` for slot `j`), written in place when a slot is filled or emptied, so
+  a walk of the occupied slots (the zombie loop of a final delete) visits no
+  empty slot and nothing is allocated (`SlotOccupancy`). -/
+  occ        : Array Nat
+  occ_size   : occ.size = 2 * 2 ^ radixWidth
+  /-- WS-ZA ZA5.4 part 26: the first occupied slot's code (`0` for none). -/
+  occHead    : Nat
+  /-- WS-ZA ZA5.4 part 26: **the links list exactly the occupied slots**, each
+  once, from the head (`SlotOccupancy.Encodes`); the list itself is a ghost
+  (`CNode.occupiedList`). -/
+  occ_agree  : ∃ L, SlotOccupancy.Encodes cells occ occHead L
   /-- WS-ZA ZA5.3 part 6: the records the slots keep while empty. -/
   spare      : SpareCells
   deriving Repr
@@ -3419,6 +3433,12 @@ def CNode.ofSlots (depth guardWidth guardValue radixWidth : Nat)
   cells_size := slotArrayOf_size _ _
   links := Array.replicate (slotLinkWords * 2 ^ radixWidth) 0
   links_size := Array.size_replicate
+  occ := SlotOccupancy.buildWords (slotArrayOf radixWidth m) (slotArrayOf radixWidth m).size
+    (Array.replicate (2 * 2 ^ radixWidth) 0) 0
+  occ_size := by rw [SlotOccupancy.size_buildWords, Array.size_replicate]
+  occHead := SlotOccupancy.buildHead (slotArrayOf radixWidth m) (slotArrayOf radixWidth m).size 0
+  occ_agree := SlotOccupancy.build_encodes _ _
+    (by rw [Array.size_replicate, slotArrayOf_size])
   spare := Squash.mk (spareCellsFor radixWidth)
   slots_agree := fun s => by
     rw [SeLe4n.Erased.out_mk, SeLe4n.UniqueSlotMap.get?_filter]

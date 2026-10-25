@@ -812,7 +812,8 @@ into no reply-waiter queue and holds no reply link; it holds no timeout budget;
 a context it holds on loan goes back to its lender by the lender's own pop, and
 every other caller waiting on it for a reply is ended as `reply_remove` ends it
 (`replyWaitersAdmitted`, which reads each of them on this state);
-its space slots are empty (their finalising delete is a later cut's); a bound
+its space slots may hold capabilities, which the zombie loop deletes after
+the finalisation, by the finalising delete (`zombiePasses`); a bound
 notification and a bound scheduling context are bound back to it; and nothing
 else names it as a reservation's origin or as a service's owner.  Each step
 below re-reads its own guard, so a state outside this set is left as it is and
@@ -825,7 +826,6 @@ the retire then refuses the thread. -/
     (decide (4 ≤ t.ipcStateCode) ||
       t.replyWaiterNextCode == 0 && t.replyWaiterPrevCode == 0 && t.replyObjectCode == 0) &&
     t.timeoutBudget.isNone && replyWaitersAdmitted st tid t &&
-    t.spaceCells[0].isNone && t.spaceCells[1].isNone &&
     threadIpcCancelAdmitted st tid t &&
     (t.boundNotificationCode == 0 ||
       ((match st.getNotification? ⟨t.boundNotificationCode - 1⟩ with

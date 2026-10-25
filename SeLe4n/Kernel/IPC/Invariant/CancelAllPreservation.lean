@@ -810,6 +810,21 @@ theorem cspaceRevokeCdtFinalising_preserves_ipcInvariantFull
     ipcInvariantFull st' :=
   (cspaceRevokeCdtFinalising_closed finaliseLoanBundle
     (fun c s s' hQ hD => cspaceDeleteSlotFinalising_preserves_finaliseLoanBundle ec c s s' hQ hD)
+    (fun d s hQ => finaliseFinalObject_preserves_finaliseLoanBundle d s hQ)
+    ⟨hInv, hObjInv, hW⟩ hStep).1
+
+/-- `.cspaceDelete`: the zombie delete preserves the IPC bundle — a chain of
+finalising deletes and finalisations (`cspaceDeleteSlotZombie_closed`), each
+carrying the bundle the delete carries. -/
+theorem cspaceDeleteSlotZombie_preserves_ipcInvariantFull
+    (ec : Concurrency.CoreId) (addr : CSpaceAddr) (st st' : SystemState)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hW : lentContextHeadsLenderFrame st)
+    (hStep : cspaceDeleteSlotZombie ec addr st = .ok ((), st')) :
+    ipcInvariantFull st' :=
+  (cspaceDeleteSlotZombie_closed finaliseLoanBundle
+    (fun c s s' hQ hD => cspaceDeleteSlotFinalising_preserves_finaliseLoanBundle ec c s s' hQ hD)
+    (fun d s hQ => finaliseFinalObject_preserves_finaliseLoanBundle d s hQ)
     ⟨hInv, hObjInv, hW⟩ hStep).1
 
 

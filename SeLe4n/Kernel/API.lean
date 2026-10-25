@@ -2623,7 +2623,7 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
             -- `cteDelete` → `finaliseCap`: a frame capability's recorded
             -- mapping is removed with it, through the `.vspaceUnmap` arm's own
             -- transition, the invoking thread's core initiating the shootdown.
-            cspaceDeleteSlotFinalising executingCore addr st
+            cspaceDeleteSlotZombie executingCore addr st
     | _ => fun _ => .error .invalidCapability
   -- **WS-RR RR8.16 (`v0.35.190`)**: `seL4_CNode_Revoke`, the arm the
   -- revocation family had never had.
@@ -3218,7 +3218,7 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
           simp only [hDec] at hStep
           split at hStep
           · cases hStep
-          exact cspaceDeleteSlotFinalising_preserves_ipcInvariantFull _ _ st st' hObjInv hInv
+          exact cspaceDeleteSlotZombie_preserves_ipcInvariantFull _ _ st st' hObjInv hInv
             hPack.lentContextsHeadedByLender hStep
     all_goals try cases hStep
   case cspaceRevoke =>
@@ -5586,7 +5586,7 @@ theorem dispatchWithCap_cspaceDelete_delegates
     (hDecode : decodeCSpaceDeleteArgs decoded = .ok args) :
     dispatchWithCap decoded tid executingCore gate cap st =
       if !cnodeInvoked cnodeId st then .error .objectNotFound else
-        cspaceDeleteSlotFinalising executingCore
+        cspaceDeleteSlotZombie executingCore
           { cnode := cnodeId, slot := args.targetSlot } st := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode]
 
@@ -8084,7 +8084,7 @@ def syscallDelegates : SyscallId → Prop
         decodeCSpaceDeleteArgs decoded = .ok args →
         dispatchWithCap decoded tid executingCore gate cap st =
           if !cnodeInvoked cnodeId st then .error .objectNotFound else
-            cspaceDeleteSlotFinalising executingCore
+            cspaceDeleteSlotZombie executingCore
               { cnode := cnodeId, slot := args.targetSlot } st
   | .cspaceRevoke =>
       ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)

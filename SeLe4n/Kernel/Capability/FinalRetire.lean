@@ -453,13 +453,14 @@ on its last capability has nothing to cancel: an endpoint whose two queues are
 empty (`cancelAllIPC` wakes nobody); a notification with no waiter and no bound
 thread (`unbindMaybeNotification` and `cancelAllSignals` do nothing); a reply
 with no caller and no stack link (`reply_remove` does nothing); a CNode whose
-every slot is empty (the zombie loop deletes nothing). -/
+every slot is empty (the zombie loop deletes nothing), read as its occupancy
+links heading nowhere (`CNode.occHead`), one word. -/
 @[inline] def passiveObjectQuiescent (st : SystemState) (x : SeLe4n.ObjId) : Bool :=
   match st.getObject? x with
   | some (.endpoint ep) => ep.sendHeadCode == 0 && ep.recvHeadCode == 0
   | some (.notification n) => n.waitHeadCode == 0 && n.boundTCBCode == 0
   | some (.reply r) => r.callerCode == 0 && r.prev.isNone && r.next.isNone
-  | some (.cnode cn) => cn.cells.all (·.isNone)
+  | some (.cnode cn) => cn.occHead == 0
   | _ => false
 
 /-- **Whether a final delete retires the passive object at `x`**: it is
@@ -510,13 +511,14 @@ place, as `storeNamesNone` walks it. -/
 @[inline] def storeNamesThreadNone (st : SystemState) (c : Nat) : Bool :=
   st.objects.fold true fun acc _ o => acc && !objectNamesThread o c
 
-/-- **Whether a thread's own record is quiescent**, so seL4's `suspend` has
-nothing left to do and nothing it holds names another object: `.Inactive` and
-`.ready`, with no pending message, no stashed or awaited reply, no timeout
-budget; linked into no endpoint, notification, run or reply-waiter queue and
-heading none; bound to no notification and to no scheduling context; and its
-two space slots empty. -/
-@[inline] def threadQuiescent (t : TCB) : Bool :=
+/-- **Whether a thread's own record is quiescent but for its space slots**, so
+seL4's `suspend` has nothing left to do and nothing it holds names another
+object: `.Inactive` and `.ready`, with no pending message, no stashed or
+awaited reply, no timeout budget; linked into no endpoint, notification, run or
+reply-waiter queue and heading none; bound to no notification and to no
+scheduling context.  What a thread's finalisation leaves, before the zombie
+loop deletes its space slots. -/
+@[inline] def threadLinksQuiescent (t : TCB) : Bool :=
   t.threadState == .Inactive && t.ipcStateCode == 0 && t.ipcObjectCode == 0 &&
     t.pendingMessage.isNone && t.queueNextCode == 0 && t.queuePrevCode == 0 &&
     t.queuePPrevCode == 0 && t.ntfnNextCode == 0 && t.ntfnPrevCode == 0 && t.runCoreCode == 0 &&
@@ -524,7 +526,12 @@ two space slots empty. -/
     t.runBucketPrevCode == 0 && t.replyWaiterNextCode == 0 && t.replyWaiterPrevCode == 0 &&
     t.replyWaitersHeadCode == 0 && t.scBindingScCode == 0 && t.scBindingOwnerCode == 0 &&
     t.boundNotificationCode == 0 && t.replyObjectCode == 0 && t.pendingReceiveReplyCode == 0 &&
-    t.timeoutBudget.isNone && t.spaceCells[0].isNone && t.spaceCells[1].isNone
+    t.timeoutBudget.isNone
+
+/-- **Whether a thread's own record is quiescent**: quiescent but for its space
+slots (`threadLinksQuiescent`), and its two space slots empty. -/
+@[inline] def threadQuiescent (t : TCB) : Bool :=
+  threadLinksQuiescent t && t.spaceCells[0].isNone && t.spaceCells[1].isNone
 
 /-- **Whether a final delete retires the thread at `x`**: the thread stored
 under its own id, no core's idle thread, quiescent (`threadQuiescent`), held by
@@ -640,15 +647,36 @@ slot. -/
 @[inline] def unrecordChild (st : SystemState) (w x : SeLe4n.ObjId) : SystemState :=
   st.storeUntypedWith w fun U => { U with children := childListErase U.children x }
 
+/-- **The declassification provenance of `x` forgotten** (`TaintTable.clearAt`):
+a removed object's id leaves the taint table with it, so a later carve at that
+id starts with none (seL4 has no such table; the clear is what keeps the model's
+detector from reporting a link through a destroyed object). -/
+@[inline] def withTaintCleared (st : SystemState) (x : SeLe4n.ObjId) : SystemState :=
+  { st with declassificationTaint := st.declassificationTaint.clearAt x }
+
+@[simp] theorem withTaintCleared_objects (st : SystemState) (x : SeLe4n.ObjId) :
+    (withTaintCleared st x).objects = st.objects := rfl
+@[simp] theorem withTaintCleared_scheduler (st : SystemState) (x : SeLe4n.ObjId) :
+    (withTaintCleared st x).scheduler = st.scheduler := rfl
+@[simp] theorem withTaintCleared_machine (st : SystemState) (x : SeLe4n.ObjId) :
+    (withTaintCleared st x).machine = st.machine := rfl
+@[simp] theorem withTaintCleared_cdt (st : SystemState) (x : SeLe4n.ObjId) :
+    (withTaintCleared st x).cdt = st.cdt := rfl
+@[simp] theorem withTaintCleared_asidTable (st : SystemState) (x : SeLe4n.ObjId) :
+    (withTaintCleared st x).asidTable = st.asidTable := rfl
+@[simp] theorem withTaintCleared_declassificationTaint (st : SystemState) (x : SeLe4n.ObjId) :
+    (withTaintCleared st x).declassificationTaint = st.declassificationTaint.clearAt x := rfl
+
 /-- **The retire after the passive erase**: `x` leaves the child list of its
 recorder (`recorder`, a word as `slotRetireRecorder` reads it), a carved `x`
-leaves the store, and a root's ASID gets its acknowledged round. -/
+leaves the store, a root's ASID gets its acknowledged round, and `x`'s
+declassification provenance is cleared (`withTaintCleared`). -/
 def retireRecordedObject (executingCore : Concurrency.CoreId) (recorder : Nat) (x : SeLe4n.ObjId)
     (st : SystemState) : SystemState :=
   let st1 := if recorder = 0 then st else unrecordChild st (SeLe4n.ObjId.ofNat (recorder - 1)) x
   match st1.getVSpaceRoot? x with
-  | some root => retypeAsidRoundStep executingCore root.asid (retireCarvedObject st1 x)
-  | none => retireCarvedObject st1 x
+  | some root => withTaintCleared (retypeAsidRoundStep executingCore root.asid (retireCarvedObject st1 x)) x
+  | none => withTaintCleared (retireCarvedObject st1 x) x
 
 /-- **Retire what a final delete destroyed** (`target`, `recorder`: the words
 `slotRetireTarget` and `slotRetireRecorder` read before the slot was emptied):
@@ -999,8 +1027,10 @@ theorem retireRecordedObject_frame (ec : Concurrency.CoreId) (recorder : Nat) (x
       fun oid => ?_⟩
     rw [hO]; exact hW oid
   split
-  · exact hAll _ (retypeAsidRoundStep_objects _ _ _) (retypeAsidRoundStep_scheduler _ _ _)
-      (retypeAsidRoundStep_machine _ _ _) (retypeAsidRoundStep_cdt _ _ _)
+  · exact hAll _ ((withTaintCleared_objects _ _).trans (retypeAsidRoundStep_objects _ _ _))
+      ((withTaintCleared_scheduler _ _).trans (retypeAsidRoundStep_scheduler _ _ _))
+      ((withTaintCleared_machine _ _).trans (retypeAsidRoundStep_machine _ _ _))
+      ((withTaintCleared_cdt _ _).trans (retypeAsidRoundStep_cdt _ _ _))
   · exact hAll _ rfl rfl rfl rfl
 
 /-- **The retire's frame**: the table keeps its invariant; the scheduler, the
@@ -1165,9 +1195,11 @@ theorem retireRecordedObject_unrecorded (ec : Concurrency.CoreId) (recorder : Na
       exact h1 u U' hu
   split
   · intro u U' hu
-    rw [retypeAsidRoundStep_objects] at hu
+    rw [withTaintCleared_objects, retypeAsidRoundStep_objects] at hu
     exact hR u U' hu
-  · exact hR
+  · intro u U' hu
+    rw [withTaintCleared_objects] at hu
+    exact hR u U' hu
 
 /-- **After the retire no untyped records its target**, when the recorder word
 answers truly and at most one untyped recorded the target — or the retire
@@ -1248,15 +1280,21 @@ theorem finalRetireAdmitted.schedulingRetirable {st : SystemState} {x : SeLe4n.O
   simp only [Bool.not_true, Bool.false_or, Bool.and_eq_true] at h
   exact h.2
 
-/-- An empty slot array answers every lookup empty. -/
-theorem CNode.lookup_none_of_cells_empty {cn : CNode} (h : cn.cells.all (·.isNone) = true)
+/-- A CNode whose occupancy links head nowhere answers every lookup empty
+(`CNode.occ_agree`). -/
+theorem CNode.lookup_none_of_occHead_zero {cn : CNode} (h : (cn.occHead == 0) = true)
     (s : SeLe4n.Slot) : cn.lookup s = none := by
+  obtain ⟨L, hE⟩ := cn.occ_agree
+  have h0 : cn.occHead = 0 := by simpa using h
+  rw [h0] at hE
+  have hN := hE.none_of_head_zero s.toNat
   rw [CNode.lookup_eq_lookupCells]
   unfold CNode.lookupCells slotArrayGet
   split
   · next hs =>
-    have := (Array.all_eq_true.mp h) s.toNat hs
-    simpa using this
+    unfold SlotOccupancy.occupied at hN
+    rw [Array.getD_eq_getD_getElem?, Array.getElem?_eq_getElem hs] at hN
+    simpa using hN
   · rfl
 
 /-- **A quiescent passive object holds no capability**: only a CNode has slots
@@ -1267,7 +1305,7 @@ theorem passiveObjectQuiescent.slotCap {st : SystemState} {x : SeLe4n.ObjId}
   unfold passiveObjectQuiescent SystemState.getObject? at h
   rw [hO] at h
   cases o with
-  | cnode cn => exact CNode.lookup_none_of_cells_empty h s
+  | cnode cn => exact CNode.lookup_none_of_occHead_zero h s
   | _ => first | rfl | (simp at h)
 
 /-- **What the retire scan reads of a thread it admits**: the thread stored
@@ -1350,7 +1388,7 @@ theorem schedulingObjectRetirable_schedContext {st : SystemState} {x : SeLe4n.Ob
 /-- **A quiescent thread holds no capability**: both space slots are empty. -/
 theorem threadQuiescent.slotCap {t : TCB} (h : threadQuiescent t = true) (s : SeLe4n.Slot) :
     (KernelObject.tcb t).slotCap s = none := by
-  unfold threadQuiescent at h
+  unfold threadQuiescent threadLinksQuiescent at h
   simp only [Bool.and_eq_true, Option.isNone_iff_eq_none] at h
   have h0 := h.1
   have h1 := h.2
@@ -1447,7 +1485,7 @@ theorem threadQuiescent_codes {t : TCB} (h : threadQuiescent t = true) :
     t.replyWaitersHeadCode = 0 ∧ t.scBindingScCode = 0 ∧ t.scBindingOwnerCode = 0 ∧
     t.boundNotificationCode = 0 ∧ t.replyObjectCode = 0 ∧ t.pendingReceiveReplyCode = 0 ∧
     t.timeoutBudget = none ∧ t.spaceCells[0] = none ∧ t.spaceCells[1] = none := by
-  unfold threadQuiescent at h
+  unfold threadQuiescent threadLinksQuiescent at h
   simp only [Bool.and_eq_true, beq_iff_eq, Option.isNone_iff_eq_none, and_assoc] at h
   exact h
 
@@ -1842,13 +1880,18 @@ theorem retireRecordedObject_preserves_teardownWellFormed (ec : Concurrency.Core
   obtain ⟨hW1, hS1', hRoom1⟩ := h1 st1 hS1.symm
   obtain ⟨hW2, hS2⟩ := retireCarvedObject_preserves_teardownWellFormed st1 x hW1 hRoom1
   split
-  · refine ⟨teardownWellFormed_of_tables_eq (retypeAsidRoundStep_objects _ _ _)
-      (retypeAsidRoundStep_asidTable _ _ _) hW2, ?_⟩
+  · refine ⟨teardownWellFormed_of_tables_eq
+      ((withTaintCleared_objects _ _).trans (retypeAsidRoundStep_objects _ _ _))
+      ((withTaintCleared_asidTable _ _).trans (retypeAsidRoundStep_asidTable _ _ _)) hW2, ?_⟩
     refine hS1'.trans (hS2.trans ?_)
     intro oid r' h'
-    rw [retypeAsidRoundStep_objects] at h'
+    rw [withTaintCleared_objects, retypeAsidRoundStep_objects] at h'
     exact ⟨r', h', rfl, fun _ _ hm => hm, fun _ _ he => he, fun _ hs => hs⟩
-  · exact ⟨hW2, hS1'.trans hS2⟩
+  · refine ⟨teardownWellFormed_of_tables_eq (withTaintCleared_objects _ _)
+      (withTaintCleared_asidTable _ _) hW2, hS1'.trans (hS2.trans ?_)⟩
+    intro oid r' h'
+    rw [withTaintCleared_objects] at h'
+    exact ⟨r', h', rfl, fun _ _ hm => hm, fun _ _ he => he, fun _ hs => hs⟩
 
 /-- **The passive erase keeps the teardown's state well formed and keeps every
 root**: a passive object is no root, and the ASID table is not written. -/
@@ -1926,10 +1969,40 @@ theorem retireRecordedObject_fields (ec : Concurrency.CoreId) (recorder : Nat) (
       else unrecordChild st (SeLe4n.ObjId.ofNat (recorder - 1)) x) = st1 at h1
   obtain ⟨s2, m2, c2⟩ := retireCarvedObject_scheduler_machine_cdt st1 x
   split
-  · rw [retypeAsidRoundStep_cdt, retypeAsidRoundStep_scheduler, retypeAsidRoundStep_machine,
+  · rw [withTaintCleared_cdt, withTaintCleared_scheduler, withTaintCleared_machine,
+      retypeAsidRoundStep_cdt, retypeAsidRoundStep_scheduler, retypeAsidRoundStep_machine,
       c2, s2, m2]
     exact h1
-  · rw [c2, s2, m2]; exact h1
+  · rw [withTaintCleared_cdt, withTaintCleared_scheduler, withTaintCleared_machine, c2, s2, m2]
+    exact h1
+
+/-- **The recorded retire forgets the retired object's declassification
+provenance**: the id it frees carries no taint afterwards, so an object a later
+carve puts at it inherits none (`withTaintCleared`). -/
+theorem retireRecordedObject_taint_cleared (ec : Concurrency.CoreId) (recorder : Nat)
+    (x : SeLe4n.ObjId) (st : SystemState) :
+    (retireRecordedObject ec recorder x st).declassificationTaint x =
+      DeclassificationTaint.empty := by
+  unfold retireRecordedObject
+  dsimp only
+  split <;> exact TaintTable.clearAt_self _ _
+
+/-- **A retire either writes nothing or clears its target's taint**: when it
+retires, the id it frees carries no declassification provenance. -/
+theorem retireFinalObject_taint_cleared (ec : Concurrency.CoreId) (target recorder : Nat)
+    (st : SystemState) :
+    retireFinalObject ec target recorder st = st ∨
+      (retireFinalObject ec target recorder st).declassificationTaint
+        (SeLe4n.ObjId.ofNat (target - 1)) = DeclassificationTaint.empty := by
+  unfold retireFinalObject
+  split
+  · exact .inl rfl
+  · split
+    · dsimp only
+      split
+      · exact .inr (retireRecordedObject_taint_cleared _ _ _ _)
+      · exact .inl rfl
+    · exact .inl rfl
 
 /-- **The retire writes no derivation edge, no scheduler and no machine
 state.** -/

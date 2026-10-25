@@ -190,7 +190,7 @@ theorem dispatchCapabilityOnly_runQueueEntryStage
           simp only [hDec] at hStep
           split at hStep
           · cases hStep
-          exact cspaceDeleteSlotFinalising_runQueueEntryStage hStep
+          exact cspaceDeleteSlotZombie_runQueueEntryStage hStep
     all_goals try cases hStep
   case cspaceRevoke =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep

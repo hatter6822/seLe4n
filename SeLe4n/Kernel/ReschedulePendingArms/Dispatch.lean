@@ -457,6 +457,18 @@ theorem cspaceRevokeCdtFinalising_stepCovers (e ec : CoreId) (addr : CSpaceAddr)
     stepCovers e st st' ∧ st'.objects.invExt :=
   cspaceRevokeCdtFinalising_closed (fun s => stepCovers e st s ∧ s.objects.invExt)
     (fun c s s' hQ hD => stepCoversInv_trans hQ.1 (cspaceDeleteSlotFinalising_stepCovers e ec c s s' hQ.2 hD))
+    (fun d s hQ => stepCoversInv_trans hQ.1 (finaliseFinalObject_stepCovers e d s hQ.2))
+    ⟨stepCovers_refl e st, hInv⟩ hStep
+
+/-- WS-ZA ZA5.4 part 26: **the zombie delete covers**, one finalising delete or
+finalisation at a time. -/
+theorem cspaceDeleteSlotZombie_stepCovers (e ec : CoreId) (addr : CSpaceAddr)
+    (st st' : SystemState) (hInv : st.objects.invExt)
+    (hStep : cspaceDeleteSlotZombie ec addr st = .ok ((), st')) :
+    stepCovers e st st' ∧ st'.objects.invExt :=
+  cspaceDeleteSlotZombie_closed (fun s => stepCovers e st s ∧ s.objects.invExt)
+    (fun c s s' hQ hD => stepCoversInv_trans hQ.1 (cspaceDeleteSlotFinalising_stepCovers e ec c s s' hQ.2 hD))
+    (fun d s hQ => stepCoversInv_trans hQ.1 (finaliseFinalObject_stepCovers e d s hQ.2))
     ⟨stepCovers_refl e st, hInv⟩ hStep
 
 /-! ### The capability-only arms -/
@@ -479,7 +491,7 @@ theorem dispatchCapabilityOnly_stepCovers {decoded : SyscallDecodeResult} {cap :
   all_goals (repeat' split at h)
   all_goals first | (cases h; done) | skip
   all_goals try first
-    | exact cspaceDeleteSlotFinalising_stepCovers _ _ _ _ _ hInv h
+    | exact cspaceDeleteSlotZombie_stepCovers _ _ _ _ _ hInv h
     | exact cspaceRevokeCdtFinalising_stepCovers _ _ _ _ _ hInv h
     | exact (mintReplyCapWithCdt_keyFrame _ _ _ _ hInv h).stepCoversInv
     | exact (untypedResetFromCap_keyFrame _ _ _ _ _ _ hInv h).stepCoversInv

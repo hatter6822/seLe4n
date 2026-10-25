@@ -90,7 +90,7 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
         | .ok args =>
             if !cnodeInvoked cnodeId st then .error .objectNotFound else
             let addr : CSpaceAddr := { cnode := cnodeId, slot := args.targetSlot }
-            cspaceDeleteSlotFinalising executingCore addr st
+            cspaceDeleteSlotZombie executingCore addr st
     | _ => .error .invalidCapability
   | .cspaceRevoke =>
     match cap.target with
@@ -701,7 +701,7 @@ the write alone.  An arm whose checks refuse, and every arm not yet split, is
       | .ok args =>
         let addr : CSpaceAddr := { cnode := cnodeId, slot := args.targetSlot }
         RefusalCarrying.ofChecked (cnodeInvoked addr.cnode st)
-          (fun st => cspaceDeleteFinalisingPerformAt executingCore cnodeId args.targetSlot st)
+          (fun st => zombieDeleteAt executingCore cnodeId args.targetSlot st)
           (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
     | _ => .error (.invalidCapability, st)
   | .cspaceRevoke =>
@@ -1158,7 +1158,7 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
         have hF : cspaceDeleteFinalisingAdmitted { cnode := cnodeId, slot := args.targetSlot } st =
             true := cspaceDeleteFinalisingAdmitted_of_cnodeInvoked hA
         simp only [dispatchInvocationBy, hD, hA, Bool.not_true, Bool.false_eq_true, ↓reduceIte,
-          cspaceDeleteSlotFinalising_of_slotHolder hF]
+          cspaceDeleteSlotZombie_of_admitted hF]
     all_goals rfl
   case cspaceRevoke =>
     cases target

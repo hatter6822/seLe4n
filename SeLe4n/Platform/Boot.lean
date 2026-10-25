@@ -821,9 +821,11 @@ def notificationReferencesReservedIdleSlot (notif : Notification) : Bool :=
     (`capTargetsReservedIdleObject`). -/
 def cnodeReferencesReservedIdleSlot (cn : CNode) : Bool :=
   match cn with
-  -- The derivation links name slots of CNodes, never an idle object; the spare
-  -- records are no slot's capability (`SpareCells`: logically one value).
-  | ⟨_depth, _guardWidth, _guardValue, _radixWidth, _slotsGhost, _cells, _, _, _links, _, _spare⟩ =>
+  -- The derivation links name slots of CNodes, never an idle object, and so do
+  -- the occupancy links; the spare records are no slot's capability
+  -- (`SpareCells`: logically one value).
+  | ⟨_depth, _guardWidth, _guardValue, _radixWidth, _slotsGhost, _cells, _, _, _links, _, _occ, _,
+      _occHead, _, _spare⟩ =>
     !(cn.allCells fun _ cap => !SeLe4n.Kernel.capTargetsReservedIdleObject cap)
 
 /-- PR #889 review round 8: every field of a boot **TCB** that can hold an
@@ -1829,8 +1831,10 @@ def bootSafeCapCheck (cap : Capability) : Bool :=
     the slot map (`CNode.allSlots_eq_allCells`). -/
 def bootSafeCnodeCheck (cn : CNode) : Bool :=
   match cn with
-  -- The spare records are no slot's capability (`SpareCells`: logically one value).
-  | ⟨_depth, _guardWidth, _guardValue, _radixWidth, _slotsGhost, _cells, _, _, _links, _, _spare⟩ =>
+  -- The spare records are no slot's capability (`SpareCells`: logically one value);
+  -- the occupancy links name slots of this CNode alone.
+  | ⟨_depth, _guardWidth, _guardValue, _radixWidth, _slotsGhost, _cells, _, _, _links, _, _occ, _,
+      _occHead, _, _spare⟩ =>
     decide (cn.depth ≤ maxCSpaceDepth) &&
     decide (cn.bitsConsumed > 0 → cn.bitsConsumed ≤ cn.depth ∧ 0 < cn.bitsConsumed ∧ cn.guardBounded) &&
     cn.allCells (fun _ cap => bootSafeCapCheck cap) &&

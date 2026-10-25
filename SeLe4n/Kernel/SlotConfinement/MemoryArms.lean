@@ -447,6 +447,21 @@ theorem cspaceDeleteSlotFinalising_confinedToCores
       (cspaceDeleteSlotFinalising_framed executingCore addr st st' hStep ‹_›)
   · exact observableSlotsConfinedToCores_allCores st st'
 
+/-- WS-ZA ZA5.4 part 26: **the live `.cspaceDelete` arm, the zombie delete,
+writes only the cores `cspaceDeleteSlotFinalisingCores` names**: when its slot
+retires nothing it is the one finalising delete
+(`cspaceDeleteSlotZombie_of_target_zero`); otherwise every core is named. -/
+theorem cspaceDeleteSlotZombie_confinedToCores
+    (executingCore : CoreId) (addr : CSpaceAddr) (st st' : SystemState)
+    (hStep : cspaceDeleteSlotZombie executingCore addr st = .ok ((), st')) :
+    observableSlotsConfinedToCores st st' (cspaceDeleteSlotFinalisingCores st addr) := by
+  by_cases h0 : slotRetireTarget st addr.cnode addr.slot = 0
+  · rw [cspaceDeleteSlotZombie_of_target_zero h0] at hStep
+    exact cspaceDeleteSlotFinalising_confinedToCores executingCore addr st st' hStep
+  · unfold cspaceDeleteSlotFinalisingCores
+    rw [if_neg h0]
+    exact observableSlotsConfinedToCores_allCores st st'
+
 /-- WS-BP BP7.1 (`v0.36.7`), WS-ZA ZA5.4 part 23: **the live `.cspaceRevoke`
 arm.**  Each delete of the revocation may destroy a final capability, whose
 finalisation wakes the waiters it cancels on their own cores, so the revocation

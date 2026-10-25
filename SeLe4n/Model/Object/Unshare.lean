@@ -132,6 +132,12 @@ def KernelObject.unshareImpl : KernelObject → KernelObject
         rw [h, Array.map_id]; exact c.slots_agree
       links := c.links.map opaqueId
       links_size := by rw [Array.size_map]; exact c.links_size
+      occ := c.occ.map opaqueId
+      occ_size := by rw [Array.size_map]; exact c.occ_size
+      occ_agree := by
+        have h : unshareSlotCell = id := funext unshareSlotCell_eq
+        have h' : (opaqueId : Nat → Nat) = id := rfl
+        rw [h, h', Array.map_id, Array.map_id]; exact c.occ_agree
       spare := Quot.lift (fun a => Squash.mk (a.map unshareSpareCell))
         (fun _ _ _ => Subsingleton.elim _ _) c.spare }
   | .vspaceRoot v => .vspaceRoot { v with
@@ -161,7 +167,7 @@ def KernelObject.unshareImpl : KernelObject → KernelObject
     have hC : unshareSlotCell = id := funext unshareSlotCell_eq
     simp only [KernelObject.unshare, KernelObject.unshareImpl, hC, hId, hIdN, Array.map_id, opaqueId,
       KernelObject.cnode.injEq]
-    exact CNode.ext_of_fields rfl rfl rfl rfl rfl rfl rfl
+    exact CNode.ext_of_fields rfl rfl rfl rfl rfl rfl rfl rfl rfl
   case vspaceRoot v =>
     simp only [KernelObject.unshare, KernelObject.unshareImpl, opaqueId, RHTable.unshare,
       KernelObject.vspaceRoot.injEq]

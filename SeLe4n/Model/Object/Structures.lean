@@ -1300,6 +1300,102 @@ theorem mem_occupiedSlots_of_lookup {node : CNode} {s : SeLe4n.Slot} {c : Capabi
       rw [hs] at hc'; cases hc'; exact List.mem_cons_self ..)
     (fun _ _ _ _ _ _ hR c' hc' => List.mem_cons_of_mem _ (hR c' hc'))).2 s c h c h
 
+/-- WS-ZA ZA5.4 part 26: **the occupancy links once slot `i` is filled**: a slot
+that was empty is linked in at the head (`SlotOccupancy.linkWords`); one that
+held a capability keeps its place.  Reads the slot array and the words only, so
+a write that rebuilds the CNode in place keeps its link array in place too. -/
+@[inline] def fillOcc (cells : Array (Option Capability)) (occ : Array Nat) (head i : Nat) :
+    Array Nat :=
+  if SlotOccupancy.occupied cells i then occ else SlotOccupancy.linkWords occ head i
+
+/-- WS-ZA ZA5.4 part 26: the head word once slot `i` is filled. -/
+@[inline] def fillHead (cells : Array (Option Capability)) (head i : Nat) : Nat :=
+  if SlotOccupancy.occupied cells i then head else i + 1
+
+/-- WS-ZA ZA5.4 part 26: **the occupancy links once slot `i` is emptied**: a slot
+that held a capability is unlinked (`SlotOccupancy.unlinkWords`); an empty one
+changes nothing. -/
+@[inline] def emptyOcc (cells : Array (Option Capability)) (occ : Array Nat) (i : Nat) :
+    Array Nat :=
+  if SlotOccupancy.occupied cells i then SlotOccupancy.unlinkWords occ i else occ
+
+/-- WS-ZA ZA5.4 part 26: the head word once slot `i` is emptied. -/
+@[inline] def emptyHead (cells : Array (Option Capability)) (occ : Array Nat) (head i : Nat) :
+    Nat :=
+  if SlotOccupancy.occupied cells i then SlotOccupancy.unlinkHead occ head i else head
+
+theorem size_fillOcc (cells : Array (Option Capability)) (occ : Array Nat) (head i : Nat) :
+    (fillOcc cells occ head i).size = occ.size := by
+  unfold fillOcc; split
+  · rfl
+  · exact SlotOccupancy.size_linkWords _ _ _
+
+theorem size_emptyOcc (cells : Array (Option Capability)) (occ : Array Nat) (i : Nat) :
+    (emptyOcc cells occ i).size = occ.size := by
+  unfold emptyOcc; split
+  · exact SlotOccupancy.size_unlinkWords _ _
+  · rfl
+
+theorem occupied_set (cells : Array (Option Capability)) (i : Nat) (v : Option Capability)
+    (h : i < cells.size) (j : Nat) :
+    SlotOccupancy.occupied (cells.set i v h) j =
+      if j = i then v.isSome else SlotOccupancy.occupied cells j := by
+  unfold SlotOccupancy.occupied
+  rw [Array.getD_eq_getD_getElem?, Array.getD_eq_getD_getElem?, Array.getElem?_set]
+  by_cases e : i = j
+  · subst e; simp [h]
+  · simp [e, Ne.symm e]
+
+theorem occupied_setIfInBounds (cells : Array (Option Capability)) (i : Nat)
+    (v : Option Capability) (j : Nat) :
+    SlotOccupancy.occupied (cells.setIfInBounds i v) j =
+      if j = i ∧ i < cells.size then v.isSome else SlotOccupancy.occupied cells j := by
+  unfold SlotOccupancy.occupied
+  rw [Array.getD_eq_getD_getElem?, Array.getD_eq_getD_getElem?, Array.getElem?_setIfInBounds]
+  by_cases e : i = j
+  · subst e
+    by_cases h : i < cells.size
+    · simp [h]
+    · simp [h, Array.getElem?_eq_none (Nat.le_of_not_lt h)]
+  · simp [e, Ne.symm e]
+
+/-- WS-ZA ZA5.4 part 26: **filling slot `i` keeps the occupancy links agreeing**. -/
+theorem occ_agree_fill (node : CNode) (i : Nat) (h : i < node.cells.size) (v : Option Capability)
+    (hv : v.isSome = true) :
+    ∃ L, SlotOccupancy.Encodes (node.cells.set i v h) (fillOcc node.cells node.occ node.occHead i)
+      (fillHead node.cells node.occHead i) L := by
+  obtain ⟨L, hL⟩ := node.occ_agree
+  unfold fillOcc fillHead
+  split
+  · next ho =>
+    exact ⟨L, hL.congr (fun j => by
+      rw [occupied_set]; split
+      · next e => subst e; rw [hv, ho]
+      · rfl)⟩
+  · next ho =>
+    refine ⟨i :: L, hL.link (by simpa using ho) ?_ (fun j => ?_)⟩
+    · rw [Array.size_set, node.occ_size, node.cells_size]
+    · rw [occupied_set]; by_cases e : j = i <;> simp [e, hv]
+
+/-- WS-ZA ZA5.4 part 26: **emptying slot `i` keeps the occupancy links agreeing**. -/
+theorem occ_agree_empty (node : CNode) (i : Nat) :
+    ∃ L, SlotOccupancy.Encodes (node.cells.setIfInBounds i none)
+      (emptyOcc node.cells node.occ i) (emptyHead node.cells node.occ node.occHead i) L := by
+  obtain ⟨L, hL⟩ := node.occ_agree
+  unfold emptyOcc emptyHead
+  split
+  · next ho =>
+    refine ⟨L.erase i, hL.unlink ho (by rw [node.occ_size, node.cells_size]) (fun j => ?_)⟩
+    rw [occupied_setIfInBounds]
+    by_cases e : j = i
+    · subst e; simp [SlotOccupancy.occupied_lt ho]
+    · simp [e]
+  · next ho =>
+    exact ⟨L, hL.congr (fun j => by
+      rw [occupied_setIfInBounds]; split
+      · next e => obtain ⟨rfl, -⟩ := e; simpa using ho
+      · rfl)⟩
+
 /-- WS-G5/F-P03: O(1) amortized slot insert via `RHTable.insert`.
 RHTable key uniqueness (noDupKeys invariant) ensures the old entry for `slot` is replaced.
 
@@ -1319,16 +1415,21 @@ def insert (node : CNode) (slot : SeLe4n.Slot) (cap : Capability) : CNode :=
         · subst e; simp
         · have : s.toNat ≠ slot.toNat := fun h' => e (by
             cases slot; cases s; simp_all [SeLe4n.Slot.toNat])
-          simp [e, this] }
+          simp [e, this]
+      occ := fillOcc node.cells node.occ node.occHead slot.toNat
+      occ_size := by rw [size_fillOcc]; exact node.occ_size
+      occHead := fillHead node.cells node.occHead slot.toNat
+      occ_agree := occ_agree_fill node slot.toNat h (some cap) rfl }
   else node
 
 /-- WS-ZA ZA5.3 part 6: two CNodes that agree on every field but their spare
 records are equal; the spares are logically one value. -/
 theorem ext_of_fields {a b : CNode} (h1 : a.depth = b.depth) (h2 : a.guardWidth = b.guardWidth)
     (h3 : a.guardValue = b.guardValue) (h4 : a.radixWidth = b.radixWidth)
-    (h5 : a.slotsGhost = b.slotsGhost) (h6 : a.cells = b.cells) (h7 : a.links = b.links) :
+    (h5 : a.slotsGhost = b.slotsGhost) (h6 : a.cells = b.cells) (h7 : a.links = b.links)
+    (h8 : a.occ = b.occ) (h9 : a.occHead = b.occHead) :
     a = b := by
-  cases a; cases b; simp only at h1 h2 h3 h4 h5 h6 h7; subst h1 h2 h3 h4 h5 h6 h7
+  cases a; cases b; simp only at h1 h2 h3 h4 h5 h6 h7 h8 h9; subst h1 h2 h3 h4 h5 h6 h7 h8 h9
   congr; exact Subsingleton.elim _ _
 
 /-- The slot map with `cap` at `slot` agrees with the slot array holding it
@@ -1367,6 +1468,10 @@ a caller passes it as a literal, so it is built only there. -/
         cells := node.cells.set i (some cell) h
         cells_size := by rw [Array.size_set]; exact node.cells_size
         slots_agree := by rw [hc]; exact insert_slots_agree node slot cap h
+        occ := fillOcc node.cells node.occ node.occHead i
+        occ_size := by rw [size_fillOcc]; exact node.occ_size
+        occHead := fillHead node.cells node.occHead i
+        occ_agree := occ_agree_fill node i h _ rfl
         spare := Squash.mk a' }
     | none =>
       { node with
@@ -1374,6 +1479,10 @@ a caller passes it as a literal, so it is built only there. -/
         cells := node.cells.set i (some (build ())) h
         cells_size := by rw [Array.size_set]; exact node.cells_size
         slots_agree := by rw [hbuild]; exact insert_slots_agree node slot cap h
+        occ := fillOcc node.cells node.occ node.occHead i
+        occ_size := by rw [size_fillOcc]; exact node.occ_size
+        occHead := fillHead node.cells node.occHead i
+        occ_agree := occ_agree_fill node i h _ rfl
         spare := Squash.mk a' }
   else
     { node with
@@ -1381,6 +1490,10 @@ a caller passes it as a literal, so it is built only there. -/
       cells := node.cells.set i (some (build ())) h
       cells_size := by rw [Array.size_set]; exact node.cells_size
       slots_agree := by rw [hbuild]; exact insert_slots_agree node slot cap h
+      occ := fillOcc node.cells node.occ node.occHead i
+      occ_size := by rw [size_fillOcc]; exact node.occ_size
+      occHead := fillHead node.cells node.occHead i
+      occ_agree := occ_agree_fill node i h _ rfl
       spare := Squash.mk a }
 
 theorem insertCellWith_eq (node : CNode) (slot : SeLe4n.Slot) (cap : Capability)
@@ -1392,9 +1505,9 @@ theorem insertCellWith_eq (node : CNode) (slot : SeLe4n.Slot) (cap : Capability)
   simp only [h, dite_true]
   split
   · split
-    · next r _ => exact ext_of_fields rfl rfl rfl rfl rfl (by simp only [hfill r]) rfl
-    · exact ext_of_fields rfl rfl rfl rfl rfl (by simp only [hbuild]) rfl
-  · exact ext_of_fields rfl rfl rfl rfl rfl (by simp only [hbuild]) rfl
+    · next r _ => exact ext_of_fields rfl rfl rfl rfl rfl (by simp only [hfill r]) rfl rfl rfl
+    · exact ext_of_fields rfl rfl rfl rfl rfl (by simp only [hbuild]) rfl rfl rfl
+  · exact ext_of_fields rfl rfl rfl rfl rfl (by simp only [hbuild]) rfl rfl rfl
 
 /-- `insertCellWith` writing `cap`'s fields over the record
 (`Capability.overwrite`); the stored capability is `cap`'s fields, so a caller
@@ -1497,6 +1610,17 @@ theorem slotArrayGet_modify (cells : Array (Option Capability)) (i : Nat)
   · subst hs; by_cases h : s.toNat < cells.size <;> simp [h, Array.getElem_modify, hf]
   · by_cases h : s.toNat < cells.size <;> simp [h, hs, Array.getElem_modify, Ne.symm hs]
 
+/-- WS-ZA ZA5.4 part 26: a rewrite of one entry that keeps it occupied or empty
+keeps every slot's occupancy. -/
+theorem occupied_modify (cells : Array (Option Capability)) (i : Nat)
+    (f : Option Capability → Option Capability) (hf : ∀ o, (f o).isSome = o.isSome) (j : Nat) :
+    SlotOccupancy.occupied (cells.modify i f) j = SlotOccupancy.occupied cells j := by
+  unfold SlotOccupancy.occupied
+  rw [Array.getD_eq_getD_getElem?, Array.getD_eq_getD_getElem?, Array.getElem?_modify]
+  by_cases e : i = j
+  · subst e; cases cells[i]? <;> simp [hf]
+  · simp [e]
+
 /-- WS-BP BP7.1: **the CNode with slot `slot`'s capability recording mapping
 `m`** (`cspaceRecordFrameMapping`'s write); a slot holding nothing is left as
 it is. -/
@@ -1541,7 +1665,10 @@ def recordMappingCells (node : CNode) (slot : SeLe4n.Slot) (asid : SeLe4n.ASID)
         rw [SeLe4n.UniqueSlotMap.get?_insert]
         by_cases hs : s = slot
         · subst hs; simp [hg, cellWithMapping]
-        · simp [hs, hst, Ne.symm hs] }
+        · simp [hs, hst, Ne.symm hs]
+    occ_agree := by
+      obtain ⟨L, hL⟩ := node.occ_agree
+      exact ⟨L, hL.congr (occupied_modify _ _ _ (fun o => by cases o <;> rfl))⟩ }
 
 theorem recordMappingCells_eq (node : CNode) (slot : SeLe4n.Slot) (asid : SeLe4n.ASID)
     (vaddr : SeLe4n.VAddr) (epoch : Nat) :
@@ -1554,7 +1681,7 @@ theorem recordMappingCells_eq (node : CNode) (slot : SeLe4n.Slot) (asid : SeLe4n
   | none =>
     dsimp only
     rw [hL', hA] at hL
-    refine ext_of_fields rfl rfl rfl rfl ?_ ?_ rfl
+    refine ext_of_fields rfl rfl rfl rfl ?_ ?_ rfl rfl rfl
     · apply SeLe4n.Erased.ext
       show (node.slotsGhost.map _).out = _
       rw [SeLe4n.Erased.out_map]; unfold slotsWithMapping
@@ -1579,6 +1706,8 @@ theorem recordMappingCells_eq (node : CNode) (slot : SeLe4n.Slot) (asid : SeLe4n
       · exact absurd hL (by simp)
     simp only [hB, dite_true] at hL ⊢
     refine ext_of_fields rfl rfl rfl rfl ?_ ?_ rfl
+      (by show node.occ = fillOcc _ _ _ _; unfold fillOcc; rw [if_pos (by simp [SlotOccupancy.occupied, Array.getD_eq_getD_getElem?, hB, hL])])
+      (by show node.occHead = fillHead _ _ _; unfold fillHead; rw [if_pos (by simp [SlotOccupancy.occupied, Array.getD_eq_getD_getElem?, hB, hL])])
     · apply SeLe4n.Erased.ext
       show (node.slotsGhost.map _).out = (node.slotsGhost.map _).out
       rw [SeLe4n.Erased.out_map, SeLe4n.Erased.out_map]; unfold slotsWithMapping
@@ -1634,7 +1763,10 @@ def setFreeIndexCells (node : CNode) (slot : SeLe4n.Slot) (idx : Nat) : CNode :=
         rw [SeLe4n.UniqueSlotMap.get?_insert]
         by_cases hs : s = slot
         · subst hs; simp [hg, cellWithFreeIndex]
-        · simp [hs, hst, Ne.symm hs] }
+        · simp [hs, hst, Ne.symm hs]
+    occ_agree := by
+      obtain ⟨L, hL⟩ := node.occ_agree
+      exact ⟨L, hL.congr (occupied_modify _ _ _ (fun o => by cases o <;> rfl))⟩ }
 
 theorem setFreeIndexCells_eq (node : CNode) (slot : SeLe4n.Slot) (idx : Nat) :
     node.setFreeIndexCells slot idx = node.setFreeIndex slot idx := by
@@ -1646,7 +1778,7 @@ theorem setFreeIndexCells_eq (node : CNode) (slot : SeLe4n.Slot) (idx : Nat) :
   | none =>
     dsimp only
     rw [hL', hA] at hL
-    refine ext_of_fields rfl rfl rfl rfl ?_ ?_ rfl
+    refine ext_of_fields rfl rfl rfl rfl ?_ ?_ rfl rfl rfl
     · apply SeLe4n.Erased.ext
       show (node.slotsGhost.map _).out = _
       rw [SeLe4n.Erased.out_map]; unfold slotsWithFreeIndex
@@ -1671,6 +1803,8 @@ theorem setFreeIndexCells_eq (node : CNode) (slot : SeLe4n.Slot) (idx : Nat) :
       · exact absurd hL (by simp)
     simp only [hB, dite_true] at hL ⊢
     refine ext_of_fields rfl rfl rfl rfl ?_ ?_ rfl
+      (by show node.occ = fillOcc _ _ _ _; unfold fillOcc; rw [if_pos (by simp [SlotOccupancy.occupied, Array.getD_eq_getD_getElem?, hB, hL])])
+      (by show node.occHead = fillHead _ _ _; unfold fillHead; rw [if_pos (by simp [SlotOccupancy.occupied, Array.getD_eq_getD_getElem?, hB, hL])])
     · apply SeLe4n.Erased.ext
       show (node.slotsGhost.map _).out = (node.slotsGhost.map _).out
       rw [SeLe4n.Erased.out_map, SeLe4n.Erased.out_map]; unfold slotsWithFreeIndex
@@ -1702,7 +1836,11 @@ def remove (node : CNode) (slot : SeLe4n.Slot) : CNode :=
       · subst e; simp
       · have : s.toNat ≠ slot.toNat := fun h' => e (by
           cases slot; cases s; simp_all [SeLe4n.Slot.toNat])
-        simp [e, this] }
+        simp [e, this]
+    occ := emptyOcc node.cells node.occ slot.toNat
+    occ_size := by rw [size_emptyOcc]; exact node.occ_size
+    occHead := emptyHead node.cells node.occ node.occHead slot.toNat
+    occ_agree := occ_agree_empty node slot.toNat }
 
 /-- WS-ZA ZA5.3 part 6: **`remove` as compiled** — the slot's cell is kept as
 its spare record (`SpareCells.keep`), so the next capability written there
@@ -1717,6 +1855,10 @@ def removeImpl (node : CNode) (slot : SeLe4n.Slot) : CNode :=
       cells := node.cells.set slot.toNat none h
       cells_size := by rw [hs]; exact (node.remove slot).cells_size
       slots_agree := by rw [hs]; exact (node.remove slot).slots_agree
+      occ := emptyOcc node.cells node.occ slot.toNat
+      occ_size := by rw [size_emptyOcc]; exact node.occ_size
+      occHead := emptyHead node.cells node.occ node.occHead slot.toNat
+      occ_agree := by rw [hs]; exact occ_agree_empty node slot.toNat
       spare := node.spare.keep slot.toNat o }
   else node.remove slot
 
@@ -1724,7 +1866,8 @@ def removeImpl (node : CNode) (slot : SeLe4n.Slot) : CNode :=
   funext node slot
   unfold removeImpl
   split
-  · next h => exact ext_of_fields rfl rfl rfl rfl rfl (by simp [remove, Array.setIfInBounds, h]) rfl
+  · next h =>
+    exact ext_of_fields rfl rfl rfl rfl rfl (by simp [remove, Array.setIfInBounds, h]) rfl rfl rfl
   · rfl
 
 /-- WS-ZA ZA5.3: a removal erases the slot from the ghost map. -/
@@ -1881,6 +2024,17 @@ def filterSlots (node : CNode) (f : SeLe4n.Slot → Capability → Bool) : CNode
       by_cases h : s.toNat < node.cells.size
       · simp only [h, if_true]; rfl
       · simp [slotArrayGet, h]
+    occ := SlotOccupancy.buildWords (node.cells.mapIdx fun i e => e.filter (f (SeLe4n.Slot.ofNat i)))
+      node.cells.size (Array.replicate (2 * 2 ^ node.radixWidth) 0) 0
+    occ_size := by rw [SlotOccupancy.size_buildWords, Array.size_replicate]
+    occHead := SlotOccupancy.buildHead (node.cells.mapIdx fun i e => e.filter (f (SeLe4n.Slot.ofNat i)))
+      node.cells.size 0
+    occ_agree := by
+      have := SlotOccupancy.build_encodes
+        (node.cells.mapIdx fun i e => e.filter (f (SeLe4n.Slot.ofNat i)))
+        (Array.replicate (2 * 2 ^ node.radixWidth) 0)
+        (by rw [Array.size_replicate, Array.size_mapIdx, node.cells_size])
+      rwa [Array.size_mapIdx] at this
     spare := node.spare.keepFiltered node.cells (fun i => f (SeLe4n.Slot.ofNat i)) }
 
 /-- WS-ZA ZA5.3 part 4: the CNode with every derivation link cleared.  The

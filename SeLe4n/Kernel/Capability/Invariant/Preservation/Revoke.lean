@@ -372,6 +372,14 @@ theorem cspaceDeleteSlot_slots {addr : CSpaceAddr} {st st' : SystemState}
   exact ⟨(hF.slotCapAt addr).trans hSelf, fun r hr => (hF.slotCapAt r).trans (hOther r hr),
     hF.untyped.trans hUC⟩
 
+/-- **The finalisation keeps the capability invariants**: it writes threads,
+endpoints, notifications, replies and scheduling contexts only, each keeping its
+kind and slots, and no edge (`finaliseFinalObject_frame`). -/
+theorem finaliseFinalObject_preserves_capabilityInvariantBundle (target : Nat) (st : SystemState)
+    (h : capabilityInvariantBundle st) : capabilityInvariantBundle (finaliseFinalObject target st) :=
+  have hFr := finaliseFinalObject_frame target st h.2.2.2.2.1
+  capabilityInvariantBundle_of_kindPreserving h hFr.cdt hFr.invExt hFr.kind
+
 /-- **The finalising delete keeps the capability invariants**: the delete keeps
 them (`cspaceDeleteSlot_preserves_capabilityInvariantBundle`), the teardown
 after it writes neither the tree nor any slot
@@ -395,7 +403,8 @@ theorem cspaceDeleteSlotFinalising_preserves_capabilityInvariantBundle
   -- keeping its kind and slots (`FinaliseFrame`).
   have hFr := finaliseFinalObject_frame (slotRetireTarget st addr.cnode addr.slot) st2
     h2.2.2.2.2.1
-  have h3 := capabilityInvariantBundle_of_kindPreserving h2 hFr.cdt hFr.invExt hFr.kind
+  have h3 := finaliseFinalObject_preserves_capabilityInvariantBundle
+    (slotRetireTarget st addr.cnode addr.slot) st2 h2
   refine retireFinalObject_preserves_capabilityInvariantBundle ec _ _ _ h3
     (fun hT r hr => ?_) (fun hT => ?_)
   · obtain ⟨c, hc, ht, hFin⟩ := slotRetireTarget_spec hInv hT
@@ -427,6 +436,19 @@ theorem cspaceRevokeCdtFinalising_preserves_capabilityInvariantBundle
     capabilityInvariantBundle st' :=
   cspaceRevokeCdtFinalising_closed capabilityInvariantBundle
     (fun c s s' hs hD => cspaceDeleteSlotFinalising_preserves_capabilityInvariantBundle ec c s s' hs hD)
+    (fun d s hs => finaliseFinalObject_preserves_capabilityInvariantBundle d s hs)
+    hInv h
+
+/-- **The zombie delete keeps the capability invariants**: it is a chain of
+finalising deletes and finalisations (`cspaceDeleteSlotZombie_closed`). -/
+theorem cspaceDeleteSlotZombie_preserves_capabilityInvariantBundle
+    (ec : Concurrency.CoreId) (addr : CSpaceAddr) (st st' : SystemState)
+    (hInv : capabilityInvariantBundle st)
+    (h : cspaceDeleteSlotZombie ec addr st = .ok ((), st')) :
+    capabilityInvariantBundle st' :=
+  cspaceDeleteSlotZombie_closed capabilityInvariantBundle
+    (fun c s s' hs hD => cspaceDeleteSlotFinalising_preserves_capabilityInvariantBundle ec c s s' hs hD)
+    (fun d s hs => finaliseFinalObject_preserves_capabilityInvariantBundle d s hs)
     hInv h
 
 -- ============================================================================
@@ -504,13 +526,250 @@ theorem slotLinkAt_eq_decodeLink (st : SystemState) (o : SeLe4n.ObjId) (s : SeLe
   | none => simp [decodeLink]
   | some ob => exact KernelObject.linkAt_eq_decode ob s f
 
+/-- **A splice keeps every edge clear of the spliced slot.** -/
+theorem spliceEdgesFrom_keeps (node : SlotRef) (kids : List CapDerivationEdge)
+    {e : CapDerivationEdge} (hp : e.parent ≠ node) (hc : e.child ≠ node) :
+    ∀ l : List CapDerivationEdge, e ∈ l → e ∈ CapDerivationTree.spliceEdgesFrom node kids l
+  | [], h => absurd h List.not_mem_nil
+  | a :: l, h => by
+    unfold CapDerivationTree.spliceEdgesFrom
+    by_cases ha : a.child = node
+    · rw [if_pos ha]
+      rcases List.mem_cons.1 h with rfl | h
+      · exact absurd ha hc
+      · apply List.mem_append_right
+        unfold CapDerivationTree.withoutNodeEdges
+        exact List.mem_filter.2 ⟨h, by
+          simp [CapDerivationEdge.isParentOf, CapDerivationEdge.isChildOf, hp, hc]⟩
+    · rw [if_neg ha]
+      by_cases hb : a.parent = node
+      · rw [if_pos hb]
+        rcases List.mem_cons.1 h with rfl | h
+        · exact absurd hb hp
+        · exact spliceEdgesFrom_keeps node kids hp hc l h
+      · rw [if_neg hb]
+        rcases List.mem_cons.1 h with rfl | h
+        · exact List.mem_cons_self ..
+        · exact List.mem_cons_of_mem _ (spliceEdgesFrom_keeps node kids hp hc l h)
+
+/-- **A slot no edge names stays unnamed by a splice**: the edges it re-makes
+take a parent and the children from edges already there. -/
+theorem spliceEdgesFrom_avoid (node : SlotRef) (kids : List CapDerivationEdge) (a : SlotRef)
+    (hk : ∀ e ∈ kids, e.child ≠ a) :
+    ∀ l : List CapDerivationEdge, (∀ e ∈ l, e.parent ≠ a ∧ e.child ≠ a) →
+      ∀ e ∈ CapDerivationTree.spliceEdgesFrom node kids l, e.parent ≠ a ∧ e.child ≠ a
+  | [], _ => by simp [CapDerivationTree.spliceEdgesFrom]
+  | b :: l, h => by
+    have hb := h b (List.mem_cons_self ..)
+    have hl := fun e he => h e (List.mem_cons_of_mem b he)
+    unfold CapDerivationTree.spliceEdgesFrom
+    split
+    · intro e he
+      rcases List.mem_append.1 he with he | he
+      · unfold CapDerivationTree.reparentEdges at he
+        obtain ⟨k, hk', rfl⟩ := List.mem_map.1 he
+        exact ⟨hb.1, hk k hk'⟩
+      · unfold CapDerivationTree.withoutNodeEdges at he
+        exact hl e (List.mem_filter.1 he).1
+    · split
+      · exact spliceEdgesFrom_avoid node kids a hk l hl
+      · intro e he
+        rcases List.mem_cons.1 he with rfl | he
+        · exact hb
+        · exact spliceEdgesFrom_avoid node kids a hk l hl e he
+
+/-- **A spliced slot is named by no edge after**, in a tree with no edge from a
+slot to itself. -/
+theorem spliceEdgesFrom_avoid_self (node : SlotRef) (kids : List CapDerivationEdge)
+    (hk : ∀ e ∈ kids, e.child ≠ node) :
+    ∀ l : List CapDerivationEdge, (∀ e ∈ l, e.parent ≠ e.child) →
+      ∀ e ∈ CapDerivationTree.spliceEdgesFrom node kids l, e.parent ≠ node ∧ e.child ≠ node
+  | [], _ => by simp [CapDerivationTree.spliceEdgesFrom]
+  | b :: l, h => by
+    have hb := h b (List.mem_cons_self ..)
+    have hl := fun e he => h e (List.mem_cons_of_mem b he)
+    unfold CapDerivationTree.spliceEdgesFrom
+    split
+    · next hc =>
+      intro e he
+      rcases List.mem_append.1 he with he | he
+      · unfold CapDerivationTree.reparentEdges at he
+        obtain ⟨k, hk', rfl⟩ := List.mem_map.1 he
+        exact ⟨fun e => hb (e.trans hc.symm), hk k hk'⟩
+      · unfold CapDerivationTree.withoutNodeEdges at he
+        have := (List.mem_filter.1 he).2
+        simp [CapDerivationEdge.isParentOf, CapDerivationEdge.isChildOf] at this
+        exact this
+    · next hc =>
+      split
+      · exact spliceEdgesFrom_avoid_self node kids hk l hl
+      · next hp =>
+        intro e he
+        rcases List.mem_cons.1 he with rfl | he
+        · exact ⟨hp, hc⟩
+        · exact spliceEdgesFrom_avoid_self node kids hk l hl e he
+
+/-- **Whether no edge of the tree names the slot `a`.** -/
+def CdtAvoids (cdt : CapDerivationTree) (a : SlotRef) : Prop :=
+  ∀ e ∈ cdt.edges, e.parent ≠ a ∧ e.child ≠ a
+
+theorem CdtAvoids.splice {cdt : CapDerivationTree} {a : SlotRef} (h : CdtAvoids cdt a)
+    (node : SlotRef) : CdtAvoids (cdt.spliceNode node) a := by
+  unfold CdtAvoids
+  rw [CapDerivationTree.spliceNode_edges_eq]
+  exact spliceEdgesFrom_avoid node _ a
+    (fun e he => (h e (List.mem_filter.1 he).1).2) _ h
+
+theorem CdtAvoids.of_splice_self {cdt : CapDerivationTree} (hWF : cdt.edgeWellFounded)
+    (node : SlotRef) : CdtAvoids (cdt.spliceNode node) node := by
+  unfold CdtAvoids
+  rw [CapDerivationTree.spliceNode_edges_eq]
+  refine spliceEdgesFrom_avoid_self node _ (fun e he => ?_) _
+    (fun e he => CapDerivationTree.edgeWellFounded_no_self_edge hWF he)
+  have hm := List.mem_filter.1 he
+  have hp : e.parent = node := by simpa [CapDerivationEdge.isParentOf] using hm.2
+  exact fun hc => CapDerivationTree.edgeWellFounded_no_self_edge hWF hm.1 (hp.trans hc.symm)
+
+theorem CdtAvoids.childless {cdt : CapDerivationTree} {a : SlotRef} (h : CdtAvoids cdt a) :
+    cdt.childrenOf a = [] := by
+  unfold CapDerivationTree.childrenOf
+  rw [List.map_eq_nil_iff, List.filter_eq_nil_iff]
+  intro e he
+  simpa [CapDerivationEdge.isParentOf] using (h e he).1
+
+theorem mem_childrenOf_iff {cdt : CapDerivationTree} {p c : SlotRef} :
+    c ∈ cdt.childrenOf p ↔ ∃ e ∈ cdt.edges, e.parent = p ∧ e.child = c := by
+  unfold CapDerivationTree.childrenOf
+  simp only [List.mem_map, List.mem_filter, CapDerivationEdge.isParentOf, decide_eq_true_eq]
+  constructor
+  · rintro ⟨e, ⟨he, hp⟩, hc⟩; exact ⟨e, he, hp, hc⟩
+  · rintro ⟨e, he, hp, hc⟩; exact ⟨e, ⟨he, hp⟩, hc⟩
+
+/-- **A splice of any other slot keeps a child its parent's**. -/
+theorem mem_childrenOf_splice {cdt : CapDerivationTree} {p c x : SlotRef}
+    (h : c ∈ cdt.childrenOf p) (hp : x ≠ p) (hc : x ≠ c) : c ∈ (cdt.spliceNode x).childrenOf p := by
+  obtain ⟨e, he, rfl, rfl⟩ := mem_childrenOf_iff.1 h
+  refine mem_childrenOf_iff.2 ⟨e, ?_, rfl, rfl⟩
+  rw [CapDerivationTree.spliceNode_edges_eq]
+  exact spliceEdgesFrom_keeps x _ (Ne.symm hp) (Ne.symm hc) _ he
+
+/-- **What the revocation's progress reads along a delete's chain**: the
+capability invariants hold, the tree has at most `E` edges, and either the
+child `c` is still a child of the source `src`, or the tree has lost an edge, or
+no edge names the source any more. -/
+def RevokeProgress (src c : SlotRef) (E : Nat) (s : SystemState) : Prop :=
+  capabilityInvariantBundle s ∧ s.cdt.edges.length ≤ E ∧
+    (c ∈ s.cdt.childrenOf src ∨ s.cdt.edges.length < E ∨ CdtAvoids s.cdt src)
+
+/-- **A finalising delete keeps the progress**, and makes it strict when it
+deletes the child. -/
+theorem RevokeProgress.step {src c : SlotRef} {E : Nat} {ec : Concurrency.CoreId}
+    {x : CSpaceAddr} {s s' : SystemState} (h : RevokeProgress src c E s)
+    (hD : cspaceDeleteSlotFinalising ec x s = .ok ((), s')) :
+    RevokeProgress src c E s' ∧ (x = c → s'.cdt.edges.length < E ∨ CdtAvoids s'.cdt src) := by
+  obtain ⟨hInv, hLe, hOr⟩ := h
+  have hInv' := cspaceDeleteSlotFinalising_preserves_capabilityInvariantBundle ec x s s' hInv hD
+  have hCdt := cspaceDeleteSlotFinalising_ok_cdt hD
+  have hLe' : s'.cdt.edges.length ≤ s.cdt.edges.length := by
+    rw [hCdt, CapDerivationTree.spliceNode_edges_eq]; exact CapDerivationTree.spliceEdges_length_le _ _
+  have hStrict : c ∈ s.cdt.childrenOf src → x = c → s'.cdt.edges.length < E := fun hm hx => by
+    have := spliceNode_edges_length_lt hInv.2.2.1 hm
+    rw [← hx, ← hCdt] at this; omega
+  refine ⟨⟨hInv', by omega, ?_⟩, fun hx => ?_⟩
+  · rcases hOr with hm | hl | ha
+    · by_cases hxc : x = c
+      · exact .inr (.inl (hStrict hm hxc))
+      · by_cases hxs : x = src
+        · subst hxs; rw [hCdt]; exact .inr (.inr (CdtAvoids.of_splice_self hInv.2.2.1 _))
+        · rw [hCdt]; exact .inl (mem_childrenOf_splice hm hxs hxc)
+    · exact .inr (.inl (by omega))
+    · rw [hCdt]; exact .inr (.inr (ha.splice x))
+  · rcases hOr with hm | hl | ha
+    · exact .inl (hStrict hm hx)
+    · exact .inl (by omega)
+    · rw [hCdt]; exact .inr (ha.splice x)
+
+/-- **A finalisation keeps the progress**: it writes no edge. -/
+theorem RevokeProgress.finalise {src c : SlotRef} {E : Nat} {s : SystemState} (target : Nat)
+    (h : RevokeProgress src c E s) : RevokeProgress src c E (finaliseFinalObject target s) := by
+  obtain ⟨hInv, hLe, hOr⟩ := h
+  refine ⟨finaliseFinalObject_preserves_capabilityInvariantBundle target s hInv, ?_, ?_⟩ <;>
+    rw [finaliseFinalObject_cdt]
+  · exact hLe
+  · exact hOr
+
+/-- **A source no edge names stays childless** through any chain of finalising
+deletes and finalisations. -/
+theorem FinalisingDeleteChain.avoids {ec : Concurrency.CoreId} {src : SlotRef}
+    {st st' : SystemState} (hC : FinalisingDeleteChain ec st st') (h : CdtAvoids st.cdt src) :
+    CdtAvoids st'.cdt src :=
+  hC.closed (fun s => CdtAvoids s.cdt src)
+    (fun x s s' hs hD => by
+      show CdtAvoids s'.cdt src
+      rw [cspaceDeleteSlotFinalising_ok_cdt hD]; exact hs.splice x)
+    (fun d s hs => by
+      show CdtAvoids (finaliseFinalObject d s).cdt src
+      rw [finaliseFinalObject_cdt]; exact hs) h
+
+/-- **A slot the tree names holds a capability, so its delete is admitted**. -/
+theorem cspaceDeleteFinalisingAdmitted_of_child {st : SystemState} {p c : SlotRef}
+    (hInv : capabilityInvariantBundle st) (hm : c ∈ st.cdt.childrenOf p) :
+    cspaceDeleteFinalisingAdmitted c st = true := by
+  have hMent : st.cdt.mentions c := by
+    obtain ⟨e, he, -, hc⟩ := mem_childrenOf_iff.1 hm
+    exact .inl ⟨e, he, .inr hc⟩
+  obtain ⟨o, hO, hL⟩ := hInv.2.1 _ hMent
+  unfold cspaceDeleteFinalisingAdmitted SystemState.getObject?
+  rw [hO]
+  exact KernelObject.hasSlot_holdsSlots (KernelObject.hasSlot_of_slotCap hL)
+
+/-- **One zombie delete of a child of the source makes progress**: the tree
+loses an edge, or no edge names the source any more.  Every step of the chain
+keeps `RevokeProgress`; the last deletes the child, which on a state the
+capability invariants hold in is admitted while it is still the source's
+child. -/
+theorem zombieDeleteAt_revokeProgress (ec : Concurrency.CoreId) {src : SlotRef}
+    {cn : SeLe4n.ObjId} {sl : SeLe4n.Slot} {st : SystemState}
+    (hInv : capabilityInvariantBundle st) (hm : ⟨cn, sl⟩ ∈ st.cdt.childrenOf src) :
+    capabilityInvariantBundle (zombieDeleteAt ec cn sl st) ∧
+      ((zombieDeleteAt ec cn sl st).cdt.edges.length < st.cdt.edges.length ∨
+        CdtAvoids (zombieDeleteAt ec cn sl st).cdt src) := by
+  have hAdm := cspaceDeleteFinalisingAdmitted_of_child hInv hm
+  have h0 : RevokeProgress src ⟨cn, sl⟩ st.cdt.edges.length st := ⟨hInv, Nat.le_refl _, .inl hm⟩
+  -- the child's own delete, from a state with progress
+  have hLast : ∀ s, RevokeProgress src ⟨cn, sl⟩ st.cdt.edges.length s →
+      capabilityInvariantBundle (zombieDeleteSlot ec cn sl s) ∧
+        ((zombieDeleteSlot ec cn sl s).cdt.edges.length < st.cdt.edges.length ∨
+          CdtAvoids (zombieDeleteSlot ec cn sl s).cdt src) := by
+    intro s hP
+    unfold zombieDeleteSlot
+    split
+    · next hA =>
+      have hD := cspaceDeleteSlotFinalising_of_slotHolder (ec := ec) hA
+      obtain ⟨hP', hS⟩ := hP.step hD
+      exact ⟨hP'.1, hS rfl⟩
+    · next hA =>
+      obtain ⟨hI, -, hOr⟩ := hP
+      rcases hOr with hm' | hl | ha
+      · exact absurd (cspaceDeleteFinalisingAdmitted_of_child hI hm') hA
+      · exact ⟨hI, .inl hl⟩
+      · exact ⟨hI, .inr ha⟩
+  rcases zombieDeleteAt_cases ec cn sl st with ⟨hD, e⟩ | ⟨n, -, hR, e⟩
+  · rw [e]
+    have hStep := cspaceDeleteSlotFinalising_of_admitted (ec := ec) hD
+    obtain ⟨hP', hS⟩ := h0.step hStep
+    exact ⟨hP'.1, hS rfl⟩
+  · rw [e]
+    exact hLast _ (hR.chain.closed (RevokeProgress src ⟨cn, sl⟩ st.cdt.edges.length)
+      (fun _ _ _ hs hD => (hs.step hD).1) (fun d _ hs => hs.finalise d) h0)
+
 /-- **On a state the bundle holds in, the loop empties the source of children**
 when its fuel exceeds the tree's edges.  The source's first-child link is the
 head of its children (`cdtLinksAgree`); a child is in the tree, so its CNode is
 a slot of a live object (`cdtCompleteness`) and its delete is admitted, never
-the loop's stop;
-each delete keeps the bundle and splices one edge out
-(`spliceNode_edges_length_lt`), so the fuel never runs out first. -/
+the loop's stop; each child's zombie delete keeps the bundle and either takes an
+edge out of the tree or leaves the source named by no edge, and so childless for
+good (`zombieDeleteAt_revokeProgress`), so the fuel never runs out first. -/
 theorem revokeFirstChildLoop_childless (ec : Concurrency.CoreId) (cnode : SeLe4n.ObjId)
     (slot : SeLe4n.Slot) :
     ∀ (n : Nat) (st : SystemState), capabilityInvariantBundle st →
@@ -542,11 +801,10 @@ theorem revokeFirstChildLoop_childless (ec : Concurrency.CoreId) (cnode : SeLe4n
         rw [hO]
         exact KernelObject.hasSlot_holdsSlots (KernelObject.hasSlot_of_slotCap hL)
       rw [if_pos hAdm]
-      have hD := cspaceDeleteSlotFinalising_of_slotHolder (ec := ec) hAdm
-      have hInv2 := cspaceDeleteSlotFinalising_preserves_capabilityInvariantBundle ec _ st _ hInv hD
-      have hLt := spliceNode_edges_length_lt hInv.2.2.1 hMem
-      rw [← cspaceDeleteSlotFinalising_ok_cdt hD] at hLt
-      exact revokeFirstChildLoop_childless ec cnode slot n _ hInv2 (by omega)
+      obtain ⟨hInv2, hProg⟩ := zombieDeleteAt_revokeProgress ec hInv hMem
+      rcases hProg with hLt | hAv
+      · exact revokeFirstChildLoop_childless ec cnode slot n _ hInv2 (by omega)
+      · exact ((revokeFirstChildLoop_chain ec cnode slot n _).avoids hAv).childless
 
 /-- **The revocation is complete**: on a state the capability invariants hold
 in, a successful revocation leaves its source with no children, as seL4's
