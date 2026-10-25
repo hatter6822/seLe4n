@@ -557,7 +557,9 @@ theorem donateSchedContext_stepCovers (e : CoreId) {st st' : SystemState}
             | some clientTcb =>
               simp only []
               cases hS3 : storeObject clientTid.toObjId
-                  (.tcb { clientTcb with scBindingScCode := 0, scBindingOwnerCode := 0 }) s2 with
+                  (.tcb { clientTcb with
+                    scBindingScCode := 0, scBindingOwnerCode := 0,
+                    originScCode := donorOriginCode donorTcb clientScId clientTcb.originScCode }) s2 with
               | error _ => intro h; cases h
               | ok p3 =>
                 obtain ⟨⟨⟩, s3⟩ := p3

@@ -194,7 +194,7 @@ theorem donateSchedContext_replyViews_eq {st st' : SystemState}
     (hInv : st.objects.invExt) (h : donateSchedContext st client server scId = .ok st') :
     st'.replyViews = st.replyViews :=
   replyViews_eq_of_getTcb_map
-    (donateSchedContext_getTcb?_map_eq TCB.replyView (fun _ _ _ => rfl) st st' client server
+    (donateSchedContext_getTcb?_map_eq TCB.replyView (fun _ _ _ _ => rfl) st st' client server
       scId hInv h)
 
 theorem applyCallDonation_replyViews_eq {st st' : SystemState}

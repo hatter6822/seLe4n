@@ -2457,15 +2457,22 @@ run_check "INVARIANT" rg -n '^@\[inline\] def donationFirstPush' SeLe4n/Kernel/I
 # at the pop, never asserted by the invariant; a conjunct would be false on the
 # removal states this phase exists for.
 run_negative_check "INVARIANT" bash -lc 'rg -n "donationOrigin" SeLe4n/Kernel/IPC/Invariant/Defs.lean | rg -n "donationChainWellFormed|prevLinkReciprocal|headTerminates"'
-# The id-reuse closure, and that it runs on the destroy path rather than beside the
-# donation return: a stale origin is a dangling reference to a destroyed thread,
-# which is what the reference scrub is for.
-run_check "INVARIANT" rg -n '^def clearDonationOriginReferences($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "^def cleanupTcbReferences[^\n]*(\n([ \t][^\n]*)?)*clearDonationOriginReferences st tid" SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean'
-# ...and the detachment pack carries the obligation the scrub makes safe.  NOT
-# implied by its neighbours: a thread that lent its reservation and had its frame
-# removed is still the recorded origin while it is suspended and destroyed.
-run_check "INVARIANT" bash -lc 'rg -n "tcbNotDonationOrigin :" SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean'
+# The id-reuse closure is structural: an origin counts only while its thread's
+# back-link names the context, the donor's first push writes that back-link, and
+# a thread made at a reused id starts with none.  Live resolver, frozen mirror,
+# and the donor store record.
+run_check "INVARIANT" rg -n 'if originTcb\.originScCode == scId\.val \+ 1 &&' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n 'if originTcb\.originScCode == scId\.val \+ 1 && frozenDonationRecipientAcceptable st origin' SeLe4n/Kernel/FrozenOps/Core.lean
+run_check "INVARIANT" rg -n '^@\[inline\] def donorOriginCode \(donorTcb : TCB\) \(scId : SeLe4n\.SchedContextId\)' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^def donateSchedContext[^\n]*(\n([ \t][^\n]*)?)*originScCode := donorOriginCode donorTcb clientScId clientTcb\.originScCode \}" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+# ...and the back-link check changes no meaning where the old reading was
+# meaningful: on a back-linked origin both resolvers equal their unchecked form.
+run_check "INVARIANT" rg -n '^theorem donationOriginRecipient\?_eq_of_originBackLinked($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem frozenDonationOriginRecipient\?_eq_of_originBackLinked($|[ ({:\[\]])' SeLe4n/Kernel/FrozenOps/Core.lean
+run_check "INVARIANT" rg -n '^theorem donationOriginCounted_holds($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+# NEGATIVE: so the destroy path reads no context's origin to find the thread --
+# no sweep of the object table for origins naming it.
+run_negative_check "INVARIANT" rg -n 'donationOrigin == some' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
 
 # **WS-HP HP10.6**: the FOOTPRINT member the arm HP10.7 flips will write, declared
 # one row before the code -- a footprint that omits a written object is false, so
@@ -2513,7 +2520,7 @@ run_check "INVARIANT" rg -n 'the redirect costs the reachable footprint nothing:
 # both are pinned in the resolver's own body.  (Since `v0.35.157` the second
 # conjunct asks the bind's own admissibility of the origin -- see the HP10.7
 # block below for what it reads and what it refuses.)
-run_check "INVARIANT" bash -lc 'rg -U -n "^def donationOriginRecipient\?[^\n]*(\n([ \t][^\n]*)?)*if donationRecipientAcceptable st origin && donationOriginRebindable st origin then" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def donationOriginRecipient\?[^\n]*(\n([ \t][^\n]*)?)*if originTcb\.originScCode == scId\.val \+ 1 &&\n[ \t]*donationRecipientAcceptable st origin && donationOriginRebindable st origin then" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
 # NEGATIVE: and the single-guard spelling must not come back.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def donationOriginRecipient\?[^\n]*(\n([ \t][^\n]*)?)*if donationRecipientAcceptable st origin then some origin else none" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
 # `v0.35.61` (the post-landing audit): a candidate is a thread that RESOLVES.
@@ -3270,14 +3277,6 @@ run_negative_check "INVARIANT" rg -n 'tcbStoreOrIdentity_ipcInvariantStage' SeLe
 # dispatch payoff's suspend-clear bundle.
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem suspendInactiveStore_confinedToCores \(s : SystemState\) \(tid : SeLe4n\.ThreadId\) :\n    observableSlotsConfinedToCores s\n      \(s\.updateTcb tid fun t => \{ t with threadState := \.Inactive \}\) \[\] :=" SeLe4n/Kernel/SlotConfinement/IpcArms.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^private theorem suspendClearStore_preserves_ipcInvariantFull[^\n]*(\n([ \t][^\n]*)?)*    ipcInvariantFull \(\(Lifecycle\.Suspend\.clearPendingState stR2 tid\)\.updateTcb tid fun t => \{ t with threadState := \.Inactive \}\) ∧\n    \(\(Lifecycle\.Suspend\.clearPendingState stR2 tid\)\.updateTcb tid fun t => \{ t with threadState := \.Inactive \}\)\.objects\.invExt := by" SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean'
-# The origin scrub: the guard outside, the typed rewrite on the enumerated key
-# inside, the untouched accumulator on the other arm.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def clearDonationOriginReferences[^\n]*(\n([ \t][^\n]*)?)*      if sc\.donationOrigin == some tid then(\n([ \t][^\n]*)?)*        acc\.updateSchedContext \(SchedContextId\.ofObjId oid\) fun s =>\n          \{ s with donationOrigin := none \}\n      else acc" SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean'
-# NEGATIVE: the scrub inserts nothing raw, and no conditional opens after the
-# rewrite's lambda does -- a guard folded into the lambda rewrites every
-# context the fold visits, unchanged records included.
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def clearDonationOriginReferences[^\n]*(\n([ \t][^\n]*)?)*objects\.insert" SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean'
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def clearDonationOriginReferences[^\n]*(\n([ \t][^\n]*)?)*acc\.updateSchedContext \(SchedContextId\.ofObjId oid\) fun s =>(\n([ \t][^\n]*)?)*if " SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean'
 
 # ============================================================================
 # v0.35.73 -- the seven inhabitation witnesses are the store and the rewrite
@@ -4135,10 +4134,10 @@ run_check "INVARIANT" rg -n '^theorem severReplyFrameBelowStores_transport($|[ (
 run_check "INVARIANT" rg -n '^  , `SeLe4n\.Kernel\.severReplyFrameBelowStores$' SeLe4n/Testing/ReplyStackWriteCensus.lean
 # The in-place reply runs only on a reply with no frame below to cut.
 run_check "INVARIANT" rg -n -U '   \| some rp => rp\.next\.isNone && rp\.prev\.isNone\n   \| none => false\)' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInPlace.lean
-# The lender's own pop clears the origin its first donation recorded, so the
-# thread admission accepts that one origin, decided on the pre-state.
-run_check "INVARIANT" rg -n 'originsNameNone st \(x\.val \+ 1\) \(replyPopClearedOrigin\? st t\) && servicesNameNone st x' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
-run_check "INVARIANT" rg -n -U '    \| some \(\.reply r\) =>\n      match r\.next, r\.prev with\n      \| some \(\.head s\), none => some s' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+# The thread admission's last clause is the binding's own reciprocity; it
+# scans no other object for origins naming the thread.
+run_check "INVARIANT" rg -n -U '    \(t\.scBindingScCode == 0 \|\|\n      match st\.getSchedContext\? ⟨t\.scBindingScCode - 1⟩ with\n      \| some sc => sc\.boundThreadCode == x\.val \+ 1\n      \| none => false\)\n  \| _ => false' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_negative_check "INVARIANT" rg -n 'originsNameNone|replyPopClearedOrigin' SeLe4n/
 run_check "INVARIANT" rg -n -U '^  runReplyWaiterFinaliseChecks\n  runContextlessStackChecks$' tests/VSpaceCapabilityBindingSuite.lean
 run_check "INVARIANT" rg -n -U 'def finaliseThreadSuspend [^\n]*\n  match st\.getTcb\? tid with\n  \| some t =>\n    if t\.ipcStateCode == 0 && t\.ipcObjectCode == 0 &&\n        \(t\.threadState != \.Inactive \|\| t\.pendingMessage\.isSome\) && !isIdleThreadId tid then\n      \(descheduleAtPlacement st tid\)\.updateTcb tid finalisedSuspendMark' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 # A finalised thread's message dies with it, as the suspend syscall drops it.
@@ -12022,14 +12021,6 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def lifecyclePreRetypeCleanup[^\n]*(\
 # It keeps every token of the guard and differs only in what follows the `else`.
 # Mutation: restore `else .ok st`.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "if sc\.scReply\.isSome then \.error \.revocationRequired\n *else \.ok st" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
-# The sweep that follows the release reads the objects it rewrites, so it needs a
-# read frame: the origin scrub preserves `invExt`, every TCB lookup and every
-# SchedContext's `boundThread` -- derived once, through `RHTable.fold_preserves`
-# over the conjunction, rather than three folds.
-run_check "INVARIANT" rg -n '^theorem clearDonationOriginReferences_preserves_objects_invExt \(' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
-run_check "INVARIANT" rg -n '^theorem clearDonationOriginReferences_getTcb\?_eq \(' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
-run_check "INVARIANT" rg -n '^theorem clearDonationOriginReferences_boundThread_eq \(' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "^private theorem clearDonationOriginReferences_read_frame[^\n]*(\n([ \t][^\n]*)?)*RHTable\.fold_preserves" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
 # The two frames the transfer lemma's sub-goals consume, each stated at the
 # primitive it is about rather than at the caller that first needed it.
 run_check "INVARIANT" rg -n '^theorem purgeReplenishmentFromAllCores_entries_subset \(' SeLe4n/Kernel/SchedContext/Operations.lean
@@ -12098,14 +12089,9 @@ run_check "INVARIANT" rg -n '^theorem cleanupTcbReferences_boundThread_frame \('
 run_check "INVARIANT" rg -n '^theorem cleanupTcbReferences_affinity_frame \(' SeLe4n/Kernel/Lifecycle/Invariant/CleanupReservation.lean
 run_check "INVARIANT" rg -n '^theorem cleanupTcbReferences_determineTargetCore_eq \(' SeLe4n/Kernel/Lifecycle/Invariant/CleanupReservation.lean
 run_check "INVARIANT" rg -n '^theorem cleanupTcbReferences_preserves_replenishQueueAffinityConsistent_smp$' SeLe4n/Kernel/Lifecycle/Invariant/CleanupReservation.lean
-# RELATION: the sweep frames the `boundThread` PROJECTION, not `getSchedContext?`
-# -- its last step (`clearDonationOriginReferences`) genuinely rewrites scheduling
-# contexts, and the invariant reads only the field it leaves alone.  Mutation:
-# state the conclusion as a `getSchedContext?` equality.
+# RELATION: the sweep frames the `boundThread` PROJECTION, the field the
+# invariant reads.  Mutation: state the conclusion over another projection.
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem cleanupTcbReferences_boundThread_frame[^\n]*(\n([ \t][^\n]*)?)*\(\(cleanupTcbReferences st tid\)\.getSchedContext\? scId\)\.map \(·\.boundThread\)\n *= \(st\.getSchedContext\? scId\)\.map \(·\.boundThread\)" SeLe4n/Kernel/Lifecycle/Invariant/CleanupReservation.lean'
-# NEGATIVE: and the equality itself must not be claimed anywhere -- it is FALSE,
-# for the reason above.  Mutation: add a `cleanupTcbReferences_getSchedContext?_eq`.
-run_negative_check "INVARIANT" rg -n 'cleanupTcbReferences_getSchedContext\?_eq' SeLe4n/
 # The `.tcb` arm's two steps as one lemma, so the composite's six arms are one
 # `exact` each and the suspend's G2/G3 pair has something to cite.
 run_check "INVARIANT" rg -n '^theorem cleanupTcbReferences_after_donationArm_preserves_replenishQueueAffinityConsistent_smp$' SeLe4n/Kernel/Lifecycle/Invariant/CleanupReservation.lean
@@ -17676,7 +17662,7 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "ipcState := \.blockedOnReply 
 # TCB is ONE definition rather than the store's plus two local re-spellings.
 run_check "INVARIANT" bash -lc 'rg -U -n "\|>\.withObject pushOuter\.toObjId[^\n]*(\n([ \t][^\n]*)?)*replyObjectCode := SeLe4n.ReplyId.optCode \(some pushOuterReply\)" tests/SmpIpcSuite.lean'
 run_check "INVARIANT" rg -n '^private def pushOuterBlockedTcb($|[ ({:\[\]])' tests/SmpIpcSuite.lean
-run_check "INVARIANT" rg -n '^private def replyRemovalOuterTcb : TCB := pushOuterBlockedTcb' tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -n -U '^private def replyRemovalOuterTcb : TCB :=\n  \{ pushOuterBlockedTcb with originScCode := pushSc\.val \+ 1 \}' tests/SmpIpcSuite.lean
 # ...and the declining half runs on the state the LIVE push produces, not on a
 # hand-shaped `.unbound` donor: the mutation that made the pair vacuous was passing
 # a TCB with no reply object to both halves.
@@ -20199,8 +20185,8 @@ run_check "INVARIANT" bash -lc 'rg -U -n "let poppedFrom \(st : SystemState\) : 
 # different threads, or the pop's step 4 overwrites its own step 3), with the
 # re-called client `.unbound`, reply-blocked on its NEXT call, its frame on no
 # stack -- which is exactly the shape the proxy refused.
-run_check "INVARIANT" bash -lc 'rg -U -n "let recalledClient : TCB :=[^\n]*(\n([ \t][^\n]*)?)*\(\.blockedOnReply \(SeLe4n\.ObjId\.ofNat 97\) \(some pushServer\)\)" tests/SmpIpcSuite.lean'
-run_check "INVARIANT" rg -F -n '  let stRedirect : SystemState := withFreshFrame (redirectStore recalledClient)' tests/SmpIpcSuite.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^private def recalledOriginClient : TCB :=[^\n]*(\n([ \t][^\n]*)?)*\(\.blockedOnReply \(SeLe4n\.ObjId\.ofNat 97\) \(some pushServer\)\)" tests/SmpIpcSuite.lean'
+run_check "INVARIANT" rg -F -n '  let stRedirect : SystemState := withRecalledFrame (originRedirectStore recalledOriginClient)' tests/SmpIpcSuite.lean
 # The retired reading lives in the witness that refutes it, and nowhere else --
 # computed beside the live guard so the assertions are known to discriminate.
 run_check "INVARIANT" rg -n '^private def retiredProxyRebindable ' tests/SmpIpcSuite.lean

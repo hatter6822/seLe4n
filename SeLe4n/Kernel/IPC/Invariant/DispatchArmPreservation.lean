@@ -2926,20 +2926,6 @@ structure retypeTargetDetached (st : SystemState) (target : SeLe4n.ObjId) : Prop
     ∀ scId, t.schedContextBinding ≠ .bound scId
   tcbNotWaiter : ∀ t : TCB, st.objects[target]? = some (.tcb t) →
     ∀ oid : SeLe4n.ObjId, t.ipcState ≠ .blockedOnNotification oid
-  /-- **WS-HP HP10.5**: no scheduling context records this thread as the origin of
-      a reservation on loan.
-
-      This clause is **not** implied by the others, and it must not be: a thread
-      that lent its reservation and then had its reply frame removed keeps being
-      the recorded origin while it is itself suspended and destroyed, which is
-      precisely the state `clearDonationOriginReferences` exists for.  So it is a
-      genuine caller obligation in the same class as the pack's `notSc` and
-      `tcbNotDonated` — the seL4 revoke-and-suspend-before-retype contract, one
-      field further — and the runtime sweep is what makes a *violation* safe
-      rather than what makes this clause redundant. -/
-  tcbNotDonationOrigin : ∀ t : TCB, st.objects[target]? = some (.tcb t) →
-    ∀ (oid : SeLe4n.ObjId) (sc : SchedContext), st.objects[oid]? = some (.schedContext sc) →
-    sc.donationOrigin ≠ some t.tid
   /-- The thread is on no core: out of every core's abstract queue, its own
       run-queue links name no core (WS-ZA ZA4.5: what the destroy sweep reads),
       and no core runs it. -/
@@ -3825,7 +3811,7 @@ theorem retypeTargetDetached_of_absent {st : SystemState} {target : SeLe4n.ObjId
   refine ⟨fun sc => hNo _, fun t h => absurd h (hNo _), fun t h => absurd h (hNo _),
     fun t h => absurd h (hNo _), fun t h => absurd h (hNo _), fun t h => absurd h (hNo _),
     fun t h => absurd h (hNo _), fun t h => absurd h (hNo _), fun t h => absurd h (hNo _),
-    fun t h => absurd h (hNo _), fun t h => absurd h (hNo _),
+    fun t h => absurd h (hNo _),
     fun t h => absurd h (hNo _), fun t h => absurd h (hNo _), ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro tid tcb hT
     have hM := hInv.ipcStateQueueMembershipConsistent tid tcb hT
@@ -4275,35 +4261,6 @@ private theorem removeFromNotificationWaitQueue_id_of_no_waits
     | blockedOnNotification oid => exact absurd hS (hNoWait tcb hT oid)
     | _ => rfl
 
-/-- **WS-HP HP10.5**: the reservation-origin scrub is the identity when no
-scheduling context records this thread as an origin — the pack's
-`tcbNotDonationOrigin`.
-
-The sibling of `removeFromNotificationWaitQueue_id_of_no_waits` above, in the
-same shape and for the same reason: `cleanupTcbReferences` is claimed to be an
-identity under the detachment pack, and a fold that rewrites nothing must be shown
-to rewrite nothing rather than assumed to. -/
-private theorem clearDonationOriginReferences_id_of_no_origin
-    (st : SystemState) (tid : SeLe4n.ThreadId)
-    (hObjInv : st.objects.invExt)
-    (hNoOrigin : ∀ (oid : SeLe4n.ObjId) (sc : SchedContext),
-      st.objects[oid]? = some (.schedContext sc) → sc.donationOrigin ≠ some tid) :
-    clearDonationOriginReferences st tid = st := by
-  unfold clearDonationOriginReferences
-  exact RobinHood.RHTable.fold_preserves_of_lookup st.objects st _ (· = st) hObjInv rfl
-    (fun acc oid obj hGet hAcc => by
-      rw [hAcc]
-      cases obj with
-      | schedContext sc =>
-          have hS : st.objects[oid]? = some (.schedContext sc) := by
-            rw [RHTable_getElem?_eq_get?]; exact hGet
-          have hC : (sc.donationOrigin == some tid) = false := by
-            simp [hNoOrigin oid sc hS]
-          simp only [hC]
-          rfl
-      | tcb _ | endpoint _ | cnode _ | vspaceRoot _ | untyped _
-      | notification _ | reply _ | frame _ | pageTable _ => rfl)
-
 -- `v0.35.164`: `cleanupDonatedSchedContext_ok_of_not_donated` is gone — the
 -- pipeline's first step is `cancelDonationArmOnCore`, which dispatches on the
 -- target's own binding, so the pack's two clauses reduce it to the identity
@@ -4347,17 +4304,12 @@ private theorem cleanupTcbReferences_id_of_detached
             | exact hDet.notHead oid ep tcb.tid hEp (Or.inr hBad) hSelf
             | exact hDet.notTail oid ep tcb.tid hEp (Or.inl hBad) hSelf
             | exact hDet.notTail oid ep tcb.tid hEp (Or.inr hBad) hSelf)]
-  rw [removeFromNotificationWaitQueue_id_of_no_waits stX tcb.tid
+  exact removeFromNotificationWaitQueue_id_of_no_waits stX tcb.tid
     (fun tcbX hLk => by
       have hRaw := (SystemState.getTcb?_eq_some_iff stX tcb.tid tcbX).mp hLk
       rw [hO, hDet.tcbSelfId tcb hObj, hObj] at hRaw
       cases hRaw
-      exact hDet.tcbNotWaiter _ hObj)]
-  -- **WS-HP HP10.5**: and the origin scrub, from the pack's own clause.
-  exact clearDonationOriginReferences_id_of_no_origin stX tcb.tid (hO ▸ hObjInv)
-    (fun oid sc hS => by
-      rw [hO] at hS
-      exact hDet.tcbNotDonationOrigin tcb hObj oid sc hS)
+      exact hDet.tcbNotWaiter _ hObj)
 
 /-- Under the detachment pack a successful pre-retype cleanup changes neither
 the object store nor the scheduler, up to derivation-link words: the sweeps are

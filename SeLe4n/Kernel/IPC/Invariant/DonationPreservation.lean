@@ -66,7 +66,9 @@ theorem donateSchedContext_getTcb?_char
     (hObjInv : st.objects.invExt) (hNe : clientTid ≠ serverTid)
     (h : donateSchedContext st clientTid serverTid clientScId = .ok st') :
     (∃ clientTcb, st.getTcb? clientTid = some clientTcb ∧
-        st'.getTcb? clientTid = some { clientTcb with scBindingScCode := 0, scBindingOwnerCode := 0 }) ∧
+        st'.getTcb? clientTid = some { clientTcb with
+          scBindingScCode := 0, scBindingOwnerCode := 0,
+          originScCode := donorOriginCode clientTcb clientScId clientTcb.originScCode }) ∧
     (∃ serverTcb, st.getTcb? serverTid = some serverTcb ∧
         st'.getTcb? serverTid = some
           { serverTcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated clientScId clientTid), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated clientScId clientTid) }) ∧
@@ -76,7 +78,7 @@ theorem donateSchedContext_getTcb?_char
   -- reading crosses them unchanged and only the two binding stores move
   -- anything.
   obtain ⟨sc, donorTcb, clientTcb, serverTcb, pushRid, pushReply, s1, s2, s3, s4,
-      hObj, _, _, hFrame, hS1, hS2, hLC, hS3, hLS, hS4, hEq⟩ :=
+      hObj, _, hDonor, hFrame, hS1, hS2, hLC, hS3, hLS, hS4, hEq⟩ :=
     donateSchedContext_ok_storeChain st st' clientTid serverTid clientScId h
   have hInv1 : s1.objects.invExt := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
   have hInv2 : s2.objects.invExt := storeDonationFramePush_preserves_objects_invExt hInv1 hS2
@@ -110,7 +112,12 @@ theorem donateSchedContext_getTcb?_char
     getTcb?_of_lookupTcb s3 serverTid serverTcb hLS
   have hNeCS : clientTid.toObjId ≠ serverTid.toObjId := fun he =>
     hNe (SeLe4n.ThreadId.toObjId_injective _ _ he)
-  refine ⟨⟨clientTcb, ?_, ?_⟩, ⟨serverTcb, ?_, ?_⟩, ?_⟩
+  -- The donor the push read is the thread the binding store rewrites: the two
+  -- non-TCB stores between them leave every TCB reading as it was.
+  obtain rfl : donorTcb = clientTcb := Option.some.inj
+    ((getTcb?_of_lookupTcb st clientTid donorTcb hDonor).symm.trans
+      ((hCross clientTid).symm.trans hClient2))
+  refine ⟨⟨donorTcb, ?_, ?_⟩, ⟨serverTcb, ?_, ?_⟩, ?_⟩
   · rw [← hCross clientTid]; exact hClient2
   · rw [hFinal, storeObject_getTcb?_ne s3 s4 serverTid.toObjId _ clientTid hNeCS hInv3 hS4]
     exact storeObject_getTcb?_self s2 s3 clientTid _ hInv2 hS3
@@ -318,11 +325,11 @@ theorem applyCallDonation_preserves_donationOwnerValid
       refine ⟨⟨scPost, (getSchedContext?_eq_some_iff st' scId scPost).mp hScPost,
         by rw [hTidR]; exact hScPostBound⟩, ?_⟩
       obtain ⟨ep, rt, hIpc⟩ := hCallerBlockedOnReply cTcb hCPre
-      exact ⟨{ cTcb with scBindingScCode := 0, scBindingOwnerCode := 0 },
+      exact ⟨{ cTcb with scBindingScCode := 0, scBindingOwnerCode := 0, originScCode := donorOriginCode cTcb scId cTcb.originScCode },
         (getTcb?_eq_some_iff st' callerVtid.val _).mp hCPost, rfl, ⟨ep, rt, hIpc⟩⟩
     · by_cases hTidC : tid = callerVtid.val
       · -- The donor is left `.unbound`, so it is not a donation.
-        have hEq : tcb' = { cTcb with scBindingScCode := 0, scBindingOwnerCode := 0 } := by
+        have hEq : tcb' = { cTcb with scBindingScCode := 0, scBindingOwnerCode := 0, originScCode := donorOriginCode cTcb scId cTcb.originScCode } := by
           have hx := hCPost.symm.trans
             ((getTcb?_eq_some_iff st' callerVtid.val tcb').mpr (hTidC ▸ hTcb'))
           exact (Option.some.inj hx).symm
@@ -380,7 +387,7 @@ theorem applyCallDonation_donating_char
       st.getTcb? callerVtid.val = some cTcb ∧
       cTcb.schedContextBinding.scId? = some scId ∧
       st.getTcb? receiverVtid.val = some rTcb ∧ rTcb.schedContextBinding = .unbound ∧
-      st'.getTcb? callerVtid.val = some { cTcb with scBindingScCode := 0, scBindingOwnerCode := 0 } ∧
+      st'.getTcb? callerVtid.val = some { cTcb with scBindingScCode := 0, scBindingOwnerCode := 0, originScCode := donorOriginCode cTcb scId cTcb.originScCode } ∧
       st'.getTcb? receiverVtid.val =
         some { rTcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated scId callerVtid.val), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated scId callerVtid.val) } ∧
       (∀ tid, tid ≠ callerVtid.val → tid ≠ receiverVtid.val →
@@ -428,7 +435,7 @@ theorem applyCallDonation_donating_binding
     applyCallDonation_donating_char st st' callerVtid receiverVtid scId hObjInv hSc h
   by_cases hCid : tid = callerVtid.val
   · rw [hCid] at hTcb'
-    have hEq : { cTcb with scBindingScCode := 0, scBindingOwnerCode := 0 } = tcb' :=
+    have hEq : { cTcb with scBindingScCode := 0, scBindingOwnerCode := 0, originScCode := donorOriginCode cTcb scId cTcb.originScCode } = tcb' :=
       Option.some.inj (hCPost.symm.trans hTcb')
     exact Or.inl ⟨hCid, by rw [← hEq]; simp [TCB.schedContextBinding]⟩
   · by_cases hRid : tid = receiverVtid.val
@@ -795,10 +802,13 @@ theorem donationReadAgreement_of_tcbFieldUpdate
 **only** in `schedContextBinding` establishes the read agreement. -/
 theorem donationReadAgreement_of_tcbBindingStore
     (st st' : SystemState) (tcbKey : SeLe4n.ObjId) (oldTcb : TCB)
-    (b : SchedContextBinding)
+    (b : SchedContextBinding) (g : Nat)
     (hPre : st.objects[tcbKey]? = some (.tcb oldTcb))
     (hObjInv : st.objects.invExt)
-    (hStore : storeObject tcbKey (.tcb { oldTcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (b), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (b) }) st
+    (hStore : storeObject tcbKey (.tcb { oldTcb with
+        scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (b),
+        scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (b),
+        originScCode := g }) st
       = .ok ((), st')) :
     donationReadAgreement st st' :=
   donationReadAgreement_of_tcbFieldUpdate st st' tcbKey oldTcb _ hPre
@@ -1051,11 +1061,11 @@ theorem donateSchedContext_donationReadAgreement
   have a2 : donationReadAgreement s1 s2 :=
     donationReadAgreement_of_framePush hInv1 hRep1 hS2
   have a3 : donationReadAgreement s2 s3 :=
-    donationReadAgreement_of_tcbBindingStore s2 s3 clientTid.toObjId clientTcb .unbound
+    donationReadAgreement_of_tcbBindingStore s2 s3 clientTid.toObjId clientTcb .unbound _
       (lookupTcb_some_objects s2 clientTid clientTcb hLC) hInv2 hS3
   have a4 : donationReadAgreement s3 s4 :=
     donationReadAgreement_of_tcbBindingStore s3 s4 serverTid.toObjId serverTcb
-      (.donated clientScId clientTid)
+      (.donated clientScId clientTid) serverTcb.originScCode
       (lookupTcb_some_objects s3 serverTid serverTcb hLS) hInv3 hS4
   exact donationReadAgreement_of_objects_eq (by rw [hEq])
     (((a1.trans a2).trans a3).trans a4)
@@ -1084,11 +1094,11 @@ theorem returnDonatedSchedContext_donationReadAgreement
     donationReadAgreement_of_headPop hInv1 hClear
   have a3 : donationReadAgreement s2 s3 :=
     donationReadAgreement_of_tcbBindingStore s2 s3 originalOwner.toObjId ownerTcb
-      (donationReturnBinding scId newOwner?)
+      (donationReturnBinding scId newOwner?) ownerTcb.originScCode
       (lookupTcb_some_objects s2 originalOwner ownerTcb hL1) hInv2 hS3
   have a4 : donationReadAgreement s3 s4 :=
     donationReadAgreement_of_tcbBindingStore s3 s4 serverTid.toObjId serverTcb .unbound
-      (lookupTcb_some_objects s3 serverTid serverTcb hL2) hInv3 hS4
+      serverTcb.originScCode (lookupTcb_some_objects s3 serverTid serverTcb hL2) hInv3 hS4
   exact donationReadAgreement_of_objects_eq (by rw [hEq])
     (((a1.trans a2).trans a3).trans a4)
 
@@ -3895,9 +3905,12 @@ theorem donationAccountingPreserved_atCallDepthTwo
     -- is total on an absent caller), and since `v0.35.61` the resolver names only
     -- a thread it can resolve, so a payoff stated for an origin with no TCB would
     -- be stating the fallback.  Its rebindability is DERIVED below (`v0.35.157`):
-    -- the removal took its frame off the stack.
+    -- the removal took its frame off the stack.  Its back-link names the context,
+    -- as the first push that recorded it wrote it (`donorOriginCode`): the origin
+    -- counts only then (`donationOriginCounted`).
     (hAcceptable : donationRecipientAcceptable st' origin = true)
     (originTcb : TCB) (hOriginTcb : lookupTcb st' origin = some originTcb)
+    (hBack : originTcb.originScCode = scId.val + 1)
     -- The pop the in-order reply that follows performs, through the reply path's
     -- own recipient resolution.
     (hPop : returnDonatedSchedContextResolved st' serverTid scId
@@ -3935,7 +3948,7 @@ theorem donationAccountingPreserved_atCallDepthTwo
   -- ...so the resolver answers the recorded origin.
   have hResolver : donationOriginRecipient? st' scId = some origin :=
     (donationOriginRecipient?_eq_some_iff st' scId origin).mpr
-      ⟨hOuter', ⟨sc, hSc', hOrigin⟩, hAcceptable, hRebindable, originTcb, hOriginTcb⟩
+      ⟨hOuter', ⟨sc, hSc', hOrigin⟩, hAcceptable, hRebindable, originTcb, hOriginTcb, hBack⟩
   have hRecip : replyDonationRecipient st' scId answeredCaller = origin :=
     replyDonationRecipient_eq_origin st' hResolver
   refine ⟨hOuter', hRecip, ?_⟩

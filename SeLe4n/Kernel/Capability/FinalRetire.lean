@@ -2820,8 +2820,8 @@ private theorem slots_foldl_preserves_of_and {α β γ : Type} (p : α → β �
 /-- **A sweep over a table that a passing scan bounds**: a property the sweep's
 body keeps at every entry the scan accepts holds after the sweep.  The scan and
 the sweep visit the same slots, so this needs no `invExt` — what lets a
-runtime check over the store (`storeNamesThreadNone`) prove that a sweep over
-the same store (`clearDonationOriginReferences`) has nothing to do. -/
+runtime check over the store prove that a sweep over the same store has
+nothing to do. -/
 theorem RobinHood.RHTable.fold_preserves_of_fold_and {α β γ : Type} [BEq α] [Hashable α]
     [LawfulBEq α] (t : RobinHood.RHTable α β) (p : α → β → Bool)
     (hFold : t.fold true (fun acc k v => acc && p k v) = true)

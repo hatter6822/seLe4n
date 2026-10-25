@@ -237,81 +237,13 @@ theorem removeFromNotificationWaitQueue_tlbShootdown_eq
   obtain ⟨_, h⟩ := removeFromNotificationWaitQueue_eq_objects st tid
   rw [h]
 
-/-- **WS-HP HP10.5**: the reservation-origin scrub touches `objects` and nothing
-else — the frames `cleanupTcbReferences`'s own proofs rewrite through.
-
-One `fold_preserves` per component, in the shape
-`removeFromNotificationWaitQueue_preserves` uses, because the sweep is the same
-kind of fold: it rewrites only the SchedContexts whose origin names the victim and
-returns the accumulator untouched everywhere else. -/
-theorem clearDonationOriginReferences_preserves
-    (st : SystemState) (tid : SeLe4n.ThreadId) :
-    (clearDonationOriginReferences st tid).scheduler = st.scheduler ∧
-    (clearDonationOriginReferences st tid).lifecycle = st.lifecycle ∧
-    (clearDonationOriginReferences st tid).serviceRegistry = st.serviceRegistry := by
-  unfold clearDonationOriginReferences
-  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves st.objects st _
-    (fun acc => acc.scheduler = st.scheduler ∧ acc.lifecycle = st.lifecycle ∧
-      acc.serviceRegistry = st.serviceRegistry)
-    ⟨rfl, rfl, rfl⟩
-    (fun acc _ _ hAcc => by
-      split <;> first
-        | exact hAcc
-        | (split <;> first
-            | exact hAcc
-            | (rw [SystemState.updateSchedContext_eq_objects_update]; exact hAcc)))
-
-theorem clearDonationOriginReferences_scheduler_eq
-    (st : SystemState) (tid : SeLe4n.ThreadId) :
-    (clearDonationOriginReferences st tid).scheduler = st.scheduler :=
-  (clearDonationOriginReferences_preserves st tid).1
-
-theorem clearDonationOriginReferences_lifecycle_eq
-    (st : SystemState) (tid : SeLe4n.ThreadId) :
-    (clearDonationOriginReferences st tid).lifecycle = st.lifecycle :=
-  (clearDonationOriginReferences_preserves st tid).2.1
-
-theorem clearDonationOriginReferences_serviceRegistry_eq
-    (st : SystemState) (tid : SeLe4n.ThreadId) :
-    (clearDonationOriginReferences st tid).serviceRegistry = st.serviceRegistry :=
-  (clearDonationOriginReferences_preserves st tid).2.2
-
-theorem clearDonationOriginReferences_machine_eq
-    (st : SystemState) (tid : SeLe4n.ThreadId) :
-    (clearDonationOriginReferences st tid).machine = st.machine := by
-  unfold clearDonationOriginReferences
-  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves st.objects st _
-    (fun acc => acc.machine = st.machine)
-    rfl
-    (fun acc _ _ hAcc => by
-      split <;> first
-        | exact hAcc
-        | (split <;> first
-            | exact hAcc
-            | (rw [SystemState.updateSchedContext_eq_objects_update]; exact hAcc)))
-
-theorem clearDonationOriginReferences_tlbShootdown_eq
-    (st : SystemState) (tid : SeLe4n.ThreadId) :
-    (clearDonationOriginReferences st tid).tlbShootdown = st.tlbShootdown := by
-  unfold clearDonationOriginReferences
-  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves st.objects st _
-    (fun acc => acc.tlbShootdown = st.tlbShootdown)
-    rfl
-    (fun acc _ _ hAcc => by
-      split <;> first
-        | exact hAcc
-        | (split <;> first
-            | exact hAcc
-            | (rw [SystemState.updateSchedContext_eq_objects_update]; exact hAcc)))
-
 /-- WS-SM SM7.B: the composed TCB reference scrub only modifies scheduler
 and `objects` — the TLB-shootdown state is framed. -/
 theorem cleanupTcbReferences_tlbShootdown_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) :
     (cleanupTcbReferences st tid).tlbShootdown = st.tlbShootdown := by
   unfold cleanupTcbReferences
-  rw [clearDonationOriginReferences_tlbShootdown_eq,
-      removeFromNotificationWaitQueue_tlbShootdown_eq,
+  rw [removeFromNotificationWaitQueue_tlbShootdown_eq,
       removeFromAllEndpointQueues_tlbShootdown_eq]
   -- Via the sweep's own frame.  Reducing through `removeRunnableFromAllCores`
   -- here would have to whnf the per-core guard at every core.
@@ -1690,75 +1622,6 @@ theorem cancelDonationArmOnCore_preserves_replenishQueueAffinityConsistent_smp
   · exact cancelDonatedDonationOnCore_preserves_replenishQueueAffinityConsistent_smp
       _ _ _ _ hTcb hInv hCons h
 
-/-- **`v0.35.165`: the origin scrub's READ frame** — the three readings the
-replenish-affinity invariant makes.
-
-`clearDonationOriginReferences` rewrites one field of some scheduling contexts,
-so `getSchedContext?` genuinely moves and the whole-record frames above cannot
-carry the invariant.  What it does not move is the **projection** the invariant
-reads (`boundThread`), every TCB (so every thread's home core), and the table's
-extension invariant — which is what
-`replenishQueueAffinityConsistentOnCore_transfer` asks for, and why it asks for
-the projection rather than the record.
-
-One `fold_preserves` over the conjunction, because the step needs the
-accumulator's `invExt` to read the typed rewrite back at all. -/
-private theorem clearDonationOriginReferences_read_frame (st : SystemState)
-    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
-    (clearDonationOriginReferences st tid).objects.invExt
-    ∧ (∀ t, (clearDonationOriginReferences st tid).getTcb? t = st.getTcb? t)
-    ∧ (∀ scId, ((clearDonationOriginReferences st tid).getSchedContext? scId).map
-          (·.boundThread)
-        = (st.getSchedContext? scId).map (·.boundThread)) := by
-  unfold clearDonationOriginReferences
-  refine SeLe4n.Kernel.RobinHood.RHTable.fold_preserves st.objects st _
-    (fun acc => acc.objects.invExt
-      ∧ (∀ t, acc.getTcb? t = st.getTcb? t)
-      ∧ (∀ scId, (acc.getSchedContext? scId).map (·.boundThread)
-          = (st.getSchedContext? scId).map (·.boundThread)))
-    ⟨hInv, fun _ => rfl, fun _ => rfl⟩ ?_
-  intro acc oid obj hAcc
-  obtain ⟨hAccInv, hAccTcb, hAccSc⟩ := hAcc
-  split
-  · split
-    · refine ⟨SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hAccInv, ?_, ?_⟩
-      · intro t
-        rw [SystemState.updateSchedContext_getTcb? acc _ _ hAccInv t]
-        exact hAccTcb t
-      · intro scId
-        by_cases hk : scId.toObjId = (SeLe4n.SchedContextId.ofObjId oid).toObjId
-        · have hEq : scId = SeLe4n.SchedContextId.ofObjId oid :=
-            SeLe4n.SchedContextId.toObjId_injective _ _ hk
-          rw [hEq, SystemState.updateSchedContext_getSchedContext?_self acc _ _ hAccInv,
-            ← hAccSc (SeLe4n.SchedContextId.ofObjId oid)]
-          cases acc.getSchedContext? (SeLe4n.SchedContextId.ofObjId oid) <;> rfl
-        · rw [SystemState.updateSchedContext_getSchedContext?_ne acc _ _ hAccInv scId
-            (fun hEq => hk hEq.symm)]
-          exact hAccSc scId
-    · exact ⟨hAccInv, hAccTcb, hAccSc⟩
-  · exact ⟨hAccInv, hAccTcb, hAccSc⟩
-
-/-- `v0.35.165`: the origin scrub keeps the object table's extension invariant. -/
-theorem clearDonationOriginReferences_preserves_objects_invExt (st : SystemState)
-    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
-    (clearDonationOriginReferences st tid).objects.invExt :=
-  (clearDonationOriginReferences_read_frame st tid hInv).1
-
-/-- `v0.35.165`: the origin scrub writes no TCB, so every thread's home core is
-the pre-state's. -/
-theorem clearDonationOriginReferences_getTcb?_eq (st : SystemState)
-    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) (t : SeLe4n.ThreadId) :
-    (clearDonationOriginReferences st tid).getTcb? t = st.getTcb? t :=
-  (clearDonationOriginReferences_read_frame st tid hInv).2.1 t
-
-/-- `v0.35.165`: the origin scrub moves no scheduling context's `boundThread` —
-the projection the replenish-affinity invariant reads. -/
-theorem clearDonationOriginReferences_boundThread_eq (st : SystemState)
-    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) (scId : SeLe4n.SchedContextId) :
-    ((clearDonationOriginReferences st tid).getSchedContext? scId).map (·.boundThread)
-      = (st.getSchedContext? scId).map (·.boundThread) :=
-  (clearDonationOriginReferences_read_frame st tid hInv).2.2 scId
-
 /-- **`v0.35.165`: the binding release leaves the replenish queues where the
 bound threads are.**
 
@@ -1848,8 +1711,7 @@ theorem cleanupTcbReferences_removes_from_runnable
     (st : SystemState) (tid : SeLe4n.ThreadId) (hR : st.runQueueRefined) :
     ¬(tid ∈ ((cleanupTcbReferences st tid).scheduler.runQueueOnCore bootCoreId)) := by
   unfold cleanupTcbReferences
-  rw [clearDonationOriginReferences_scheduler_eq,
-      removeFromNotificationWaitQueue_scheduler_eq]
+  rw [removeFromNotificationWaitQueue_scheduler_eq]
   rw [removeFromAllEndpointQueues_scheduler_eq]
   exact removeRunnableFromAllCores_not_mem st tid bootCoreId hR
 
@@ -1858,8 +1720,7 @@ theorem cleanupTcbReferences_lifecycle_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) :
     (cleanupTcbReferences st tid).lifecycle = st.lifecycle := by
   unfold cleanupTcbReferences
-  rw [clearDonationOriginReferences_lifecycle_eq,
-      removeFromNotificationWaitQueue_lifecycle_eq,
+  rw [removeFromNotificationWaitQueue_lifecycle_eq,
     removeFromAllEndpointQueues_lifecycle_eq (removeRunnableFromAllCores st tid) tid]
   exact removeRunnableFromAllCores_lifecycle st tid
 
@@ -2307,8 +2168,7 @@ theorem cleanupTcbReferences_flat_subset
     (h : x ∈ ((cleanupTcbReferences st tid).scheduler.runQueueOnCore bootCoreId).toList) :
     x ∈ (st.scheduler.runQueueOnCore bootCoreId).toList := by
   unfold cleanupTcbReferences at h
-  rw [clearDonationOriginReferences_scheduler_eq,
-      removeFromNotificationWaitQueue_scheduler_eq] at h
+  rw [removeFromNotificationWaitQueue_scheduler_eq] at h
   rw [removeFromAllEndpointQueues_scheduler_eq] at h
   exact removeRunnableFromAllCores_toList_subset st tid x bootCoreId h
 
@@ -2337,8 +2197,7 @@ theorem cleanupTcbReferences_scheduler_eq_removeRunnableFromAllCores
     (cleanupTcbReferences st tid).scheduler
       = (removeRunnableFromAllCores st tid).scheduler := by
   unfold cleanupTcbReferences
-  rw [clearDonationOriginReferences_scheduler_eq,
-      removeFromNotificationWaitQueue_scheduler_eq]
+  rw [removeFromNotificationWaitQueue_scheduler_eq]
   exact removeFromAllEndpointQueues_scheduler_eq (removeRunnableFromAllCores st tid) tid
 
 /-- **WS-SM SM8.B (PR #861 review round 40): the destroyed-remote-current case
@@ -2375,8 +2234,7 @@ theorem cleanupTcbReferences_machine_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) :
     (cleanupTcbReferences st tid).machine = st.machine := by
   unfold cleanupTcbReferences
-  rw [clearDonationOriginReferences_machine_eq,
-      removeFromNotificationWaitQueue_machine_eq,
+  rw [removeFromNotificationWaitQueue_machine_eq,
       removeFromAllEndpointQueues_machine_eq, removeRunnableFromAllCores_machine]
 
 /-- Pre-retype cleanup flat list subset: any element in the post-cleanup flat

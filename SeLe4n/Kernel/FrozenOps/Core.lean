@@ -1254,12 +1254,54 @@ def frozenDonationOriginRecipient? (st : FrozenSystemState)
     | some origin =>
       match frozenLookupTcb st origin with
       | none => none
-      | some _ =>
-        if frozenDonationRecipientAcceptable st origin
+      | some originTcb =>
+        -- The origin counts only while its thread names this context back, as
+        -- the live resolver asks.
+        if originTcb.originScCode == scId.val + 1 && frozenDonationRecipientAcceptable st origin
             && frozenDonationOriginRebindable st origin then
           some origin
         else none
   | _ => none
+
+/-- **The frozen mirror's back-link check changes no answer where the recorded
+origin still names its context back** (`donationOriginRecipient?_eq_of_originBackLinked`'s
+counterpart): on such a state the resolver is the reading it was before the
+check, verbatim. -/
+theorem frozenDonationOriginRecipient?_eq_of_originBackLinked (st : FrozenSystemState)
+    (scId : SeLe4n.SchedContextId)
+    (hBack : ∀ sc o tcb, st.getSchedContext? scId = some sc → sc.donationOrigin = some o →
+      frozenLookupTcb st o = some tcb → tcb.originScCode = scId.val + 1) :
+    frozenDonationOriginRecipient? st scId =
+      match frozenReplyStackOuterCaller? st scId with
+      | .ok none =>
+        match (st.getSchedContext? scId).bind (·.donationOrigin) with
+        | none => none
+        | some origin =>
+          match frozenLookupTcb st origin with
+          | none => none
+          | some _ =>
+            if frozenDonationRecipientAcceptable st origin
+                && frozenDonationOriginRebindable st origin then
+              some origin
+            else none
+      | _ => none := by
+  unfold frozenDonationOriginRecipient?
+  split
+  · cases hSc : st.getSchedContext? scId with
+    | none => rfl
+    | some sc =>
+      simp only [Option.bind_some]
+      cases hO : sc.donationOrigin with
+      | none => rfl
+      | some o =>
+        dsimp only
+        cases hT : frozenLookupTcb st o with
+        | none => rfl
+        | some t =>
+          dsimp only
+          rw [hBack sc o t hSc hO hT]
+          simp
+  · rfl
 
 /-- **WS-HP HP10.8, frozen mirror**: which thread a reply's pop hands the
 reservation to.

@@ -311,40 +311,6 @@ def unbindMaybeNotification (notificationId : SeLe4n.ObjId) (st : SystemState) :
 -- §4  A thread's and a scheduling context's finalisation
 -- ============================================================================
 
-/-- **No scheduling context records `c` as the origin of a reservation on loan**
-(`c` a thread's id plus one), but the context `cleared?` the thread's own
-finalisation hands back to it (`replyPopClearedOrigin?`): the scan
-`clearDonationOriginReferences` would otherwise have work to do, which a thread
-being finalised may not leave it. -/
-@[inline] def originsNameNone (st : SystemState) (c : Nat)
-    (cleared? : Option SeLe4n.SchedContextId) : Bool :=
-  st.objects.fold true fun acc k o => acc && match o with
-    | .schedContext sc =>
-      SeLe4n.ThreadId.optCode sc.donationOrigin != c ||
-        match cleared? with
-        | some s => k == s.toObjId
-        | none => false
-    | _ => true
-
-/-- **The context a reply-blocked thread's own cancel hands back to it at the
-bottom of its stack** (`t`, its TCB): its reply heads the stack of `s` and has
-no frame below it, so the pop (`reply_pop`, through
-`finaliseReplyCallerCancel`) returns `s` to the thread with no outer caller,
-which clears the reservation's recorded origin (`donationReturnSchedContext`,
-its bottom arm).  The finalisation's cancel runs that pop when its own guard
-(`replyCallerCancelAdmitted`) admits it, so the origin it would clear is no
-reason to refuse the thread.  `O(1)` reads: the reply. -/
-@[inline] def replyPopClearedOrigin? (st : SystemState) (t : TCB) :
-    Option SeLe4n.SchedContextId :=
-  if 4 ≤ t.ipcStateCode then
-    match st.getObject? ⟨t.replyObjectCode - 1⟩ with
-    | some (.reply r) =>
-      match r.next, r.prev with
-      | some (.head s), none => some s
-      | _, _ => none
-    | _ => none
-  else none
-
 /-- A thread whose binding codes name a context and no owner is `.bound` to it
 (stated here, ahead of the compiled unbinds that read it). -/
 theorem schedContextBinding_of_codes' {tcb : TCB} (hS : tcb.scBindingScCode ≠ 0)
@@ -980,10 +946,11 @@ every other caller waiting on it for a reply is ended as `reply_remove` ends it
 (`replyWaitersAdmitted`, which reads each of them on this state);
 its space slots may hold capabilities, which the zombie loop deletes after
 the finalisation, by the finalising delete (`zombiePasses`); a bound
-notification and a bound scheduling context are bound back to it; and nothing
-names it as a reservation's origin, but the context its own reply's pop hands
-back to it, which clears that origin (`replyPopClearedOrigin?`), nor as a
-service's owner.  Each step
+notification and a bound scheduling context are bound back to it.  A context
+that records it as a reservation's origin is no reason to refuse it: that origin
+counts only while the thread's own back-link names the context
+(`donationOriginRecipient?`), so the thread's record leaving with it ends the
+origin.  Each step
 below re-reads its own guard, so a state outside this set is left as it is and
 the retire then refuses the thread. -/
 @[inline] def threadFinaliseAdmitted (st : SystemState) (x : SeLe4n.ObjId) : Bool :=
@@ -1002,8 +969,7 @@ the retire then refuses the thread. -/
     (t.scBindingScCode == 0 ||
       match st.getSchedContext? ⟨t.scBindingScCode - 1⟩ with
       | some sc => sc.boundThreadCode == x.val + 1
-      | none => false) &&
-    originsNameNone st (x.val + 1) (replyPopClearedOrigin? st t) && servicesNameNone st x
+      | none => false)
   | _ => false
 
 /-- **Cancel the blocked IPC of a thread being finalised** (seL4's `suspend` →
@@ -1556,26 +1522,9 @@ theorem lifecyclePreRetypeCleanup_of_threadRetirable {st : SystemState} {x : SeL
   have hNtfn : removeFromNotificationWaitQueue st t.tid = st := by
     unfold removeFromNotificationWaitQueue
     rw [hGet]; dsimp only; rw [threadQuiescent_ipcState hQ]
-  -- The origin sweep: no context names the thread as its reservation's origin.
-  have hOrig : clearDonationOriginReferences st t.tid = st := by
-    unfold clearDonationOriginReferences
-    refine RobinHood.RHTable.fold_preserves_of_fold_and st.objects
-      (fun _ o => !objectNamesThread o (x.val + 1)) hNames st _ (· = st) rfl
-      (fun acc k v hv hacc => ?_)
-    subst acc
-    cases v with
-    | schedContext sc =>
-      simp only [objectNamesThread, Bool.not_or, Bool.and_eq_true, Bool.not_eq_true',
-        beq_eq_false_iff_ne] at hv
-      dsimp only
-      rw [if_neg]
-      intro hb
-      have := congrArg SeLe4n.ThreadId.optCode (beq_iff_eq.mp hb)
-      exact hv.2 (by rw [this]; exact hCode)
-    | _ => rfl
   have hClean : cleanupTcbReferences st t.tid = st := by
     unfold cleanupTcbReferences
-    simp only [hRun, hEp, hNtfn, hOrig]
+    simp only [hRun, hEp, hNtfn]
   -- The space slots: both empty, so neither is spliced.
   have hDet : detachTcbSlots st x = st := by
     refine detachTcbSlots_of_empty ?_ ?_

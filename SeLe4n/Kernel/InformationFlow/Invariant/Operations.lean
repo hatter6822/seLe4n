@@ -3157,7 +3157,7 @@ private theorem donateSchedContext_preserves_projection
     ((SystemState.getReply?_eq_some_iff _ _ _).mpr hRep1) hS2
   have hP3 := storeObject_projectionStable_preserves_projection ctx observer s2 s3
     clientTid.toObjId _ (.tcb clientTcb) (lookupTcb_some_objects s2 clientTid clientTcb hL1)
-    (projectKernelObject_tcb_schedContextBinding_invariant ctx observer clientTcb _ _)
+    (projectKernelObject_tcb_donorStore_invariant ctx observer clientTcb _ _ _)
     (hC2 clientTid.toObjId (by
       rw [lookupTcb_some_objects s2 clientTid clientTcb hL1]; intro hx; cases hx))
     hInv2 hS3

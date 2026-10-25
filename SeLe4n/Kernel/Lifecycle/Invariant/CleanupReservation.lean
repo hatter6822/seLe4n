@@ -77,7 +77,6 @@ theorem cleanupTcbReferences_preserves_objects_invExt (st : SystemState)
     (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
     (cleanupTcbReferences st tid).objects.invExt := by
   unfold cleanupTcbReferences
-  refine clearDonationOriginReferences_preserves_objects_invExt _ tid ?_
   refine removeFromNotificationWaitQueue_preserves_objects_invExt _ tid ?_
   refine removeFromAllEndpointQueues_preserves_objects_invExt _ tid ?_
   exact removeRunnableFromAllCores_objects_invExt st tid hInv
@@ -97,11 +96,9 @@ theorem cleanupTcbReferences_replenishQueueOnCore (st : SystemState)
 /-- `v0.35.166`: the reference sweep moves no scheduling context's bound thread.
 
 The run-queue removal writes no object; the endpoint sweep writes endpoints and
-queue links; the notification purge writes notifications; and the origin scrub
-writes `SchedContext.donationOrigin` and nothing else — which is why this is the
-`boundThread` *projection* rather than a `getSchedContext?` equality: the scrub
-genuinely rewrites scheduling contexts, and the invariant reads only the field it
-leaves alone. -/
+queue links; and the notification purge writes notifications, so no scheduling
+context moves at all.  It is stated as the `boundThread` projection the
+replenish-affinity invariant reads. -/
 theorem cleanupTcbReferences_boundThread_frame (st : SystemState)
     (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) (scId : SeLe4n.SchedContextId) :
     ((cleanupTcbReferences st tid).getSchedContext? scId).map (·.boundThread)
@@ -110,15 +107,11 @@ theorem cleanupTcbReferences_boundThread_frame (st : SystemState)
     exact removeRunnableFromAllCores_objects_invExt st tid hInv
   have h1 : (removeFromAllEndpointQueues (removeRunnableFromAllCores st tid) tid).objects.invExt :=
     removeFromAllEndpointQueues_preserves_objects_invExt _ tid h0
-  have h2 : (removeFromNotificationWaitQueue
-      (removeFromAllEndpointQueues (removeRunnableFromAllCores st tid) tid) tid).objects.invExt :=
-    removeFromNotificationWaitQueue_preserves_objects_invExt _ tid h1
   have hRun : (removeRunnableFromAllCores st tid).getSchedContext? scId
       = st.getSchedContext? scId :=
     (removeRunnableFromAllCores_objectsAgreeOffRunLinks st tid).getSchedContext? scId
   unfold cleanupTcbReferences
-  rw [clearDonationOriginReferences_boundThread_eq _ tid h2 scId,
-    removeFromNotificationWaitQueue_getSchedContext?_eq _ tid h1 scId,
+  rw [removeFromNotificationWaitQueue_getSchedContext?_eq _ tid h1 scId,
     removeFromAllEndpointQueues_getSchedContext?_eq _ tid h0 scId, hRun]
 
 /-- **`v0.35.183` (register row 63): the reference sweep moves no thread's
@@ -127,7 +120,7 @@ scheduling-context binding.**
 The `boundThread` frame's partner, over the other projection
 `schedContextBindingConsistent` reads.  The run-queue removal writes no object;
 the endpoint sweep's TCB writes are the splice's, which rewrite queue links only;
-the notification purge and the origin scrub frame `getTcb?` outright. -/
+the notification purge frames `getTcb?` outright. -/
 theorem cleanupTcbReferences_binding_frame (st : SystemState)
     (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) (x : SeLe4n.ThreadId) :
     ((cleanupTcbReferences st tid).getTcb? x).map (·.schedContextBinding)
@@ -137,9 +130,7 @@ theorem cleanupTcbReferences_binding_frame (st : SystemState)
   have h1 : (removeFromAllEndpointQueues (removeRunnableFromAllCores st tid) tid).objects.invExt :=
     removeFromAllEndpointQueues_preserves_objects_invExt _ tid h0
   unfold cleanupTcbReferences
-  rw [clearDonationOriginReferences_getTcb?_eq _ tid
-      (removeFromNotificationWaitQueue_preserves_objects_invExt _ tid h1),
-    removeFromNotificationWaitQueue_tcbField_frame (·.schedContextBinding)
+  rw [removeFromNotificationWaitQueue_tcbField_frame (·.schedContextBinding)
       (fun _ _ _ _ _ _ => rfl) _ tid h1 x,
     removeFromAllEndpointQueues_binding_frame _ tid h0,
     TCB.map_proj_eq_of_map_withoutRunLinks_eq (·.schedContextBinding)
@@ -175,9 +166,7 @@ theorem cleanupTcbReferences_affinity_frame (st : SystemState)
   have h1 : (removeFromAllEndpointQueues (removeRunnableFromAllCores st tid) tid).objects.invExt :=
     removeFromAllEndpointQueues_preserves_objects_invExt _ tid h0
   unfold cleanupTcbReferences
-  rw [clearDonationOriginReferences_getTcb?_eq _ tid
-      (removeFromNotificationWaitQueue_preserves_objects_invExt _ tid h1),
-    removeFromNotificationWaitQueue_tcbField_frame (·.cpuAffinity)
+  rw [removeFromNotificationWaitQueue_tcbField_frame (·.cpuAffinity)
       (fun _ _ _ _ _ _ => rfl) _ tid h1 x,
     TCB.map_cpuAffinity_of_placement (removeFromAllEndpointQueues_placement_frame _ tid h0 x),
     TCB.map_proj_eq_of_map_withoutRunLinks_eq (·.cpuAffinity)

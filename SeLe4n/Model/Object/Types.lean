@@ -1602,19 +1602,21 @@ structure TCB where
       send or call that blocks.  seL4 decides the same question at the
       rendezvous from `tcbFault`. -/
   ipcFaultSend : Bool := false
-  /-- **The scheduling context this thread is the recorded origin of**, as a
+  /-- **The scheduling context this thread is the counted origin of**, as a
       scalar code (`k + 1` for the context `⟨k⟩`, `0` for none): written by the
       first push of a donation, when the donor lends the context it owns and the
       context records it as the reservation's origin
-      (`SchedContext.donationOrigin`).  Only that direction is an invariant
-      (`donationOriginRecorded`: every recorded origin is recorded on its
-      thread), so the code is cleared lazily, as `Reply.stasherCode` is: a
-      context whose origin is cleared on its own side leaves the thread naming
-      it, and every reader re-checks the named context's origin
-      (`SystemState.originRecordedAt`).  It is what lets a thread's finalise
-      clear the origin it is named as in place, and the retire ask whether any
-      context names the thread by reading the thread alone.  A carved thread
-      starts at `0`. -/
+      (`SchedContext.donationOrigin`).  The origin a context records **counts**
+      only while this code names that context back (the
+      check `donationOriginRecipient?` makes, `donationOriginCounted`), so the two ends validate each other and
+      neither is cleared for the other's sake: a context whose origin is
+      cleared on its own side leaves this code naming it, which then counts for
+      nothing, and a thread that makes a second first push moves the code, so
+      the context it lent before keeps a superseded origin that counts for
+      nothing either -- one bounded field per context, never growing state --
+      and settles as seL4's `reply_pop` settles it.  A carved thread starts at
+      `0`, so an id reused after a thread is destroyed is the origin of no
+      context, whatever a context still records.  -/
   originScCode : Nat := 0
   /-- WS-ZA ZA5.4 part 26: **the records the two space slots keep while
       empty**, as a CNode's slots keep theirs (`CNode.spare`): entry `i` is

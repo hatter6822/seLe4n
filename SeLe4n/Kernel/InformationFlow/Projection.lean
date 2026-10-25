@@ -623,6 +623,17 @@ theorem projectKernelObject_tcb_schedContextBinding_invariant
       = projectKernelObject ctx observer (.tcb t) := by
   simp [projectKernelObject]
 
+/-- The projection is likewise invariant under the donor's origin back-link
+(`TCB.originScCode`), the third field the donation's donor store writes: the
+`.tcb` arm strips it with the binding. -/
+theorem projectKernelObject_tcb_donorStore_invariant
+    (ctx : LabelingContext) (observer : IfObserver) (t : TCB)
+    (c o g : Nat) :
+    projectKernelObject ctx observer
+        (.tcb { t with scBindingScCode := c, scBindingOwnerCode := o, originScCode := g })
+      = projectKernelObject ctx observer (.tcb t) := by
+  simp [projectKernelObject]
+
 /-- **WS-RR RR7.22 (residual, remediation)**: the projection is invariant under a
 SchedContext's bound thread — the other half of the donation hand-off's write
 set, stripped for the same reason. -/
