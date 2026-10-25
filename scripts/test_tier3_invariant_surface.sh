@@ -4313,6 +4313,11 @@ run_check "INVARIANT" rg -n -U 'def cspaceRevokeCdtFinalising[^\n]*\n[^\n]*\n  f
 # v0.36.111: every revoke is seL4's cteRevoke, a run of finalising deletes; the
 # general revocation's batch teardown is gone.
 run_check "INVARIANT" rg -n -U '      if cspaceDeleteFinalisingAdmitted \{ cnode := cc, slot := cs \} st then\n        revokeFirstChildLoop executingCore cnode slot n \(zombieDeleteAt executingCore cc cs st\)' SeLe4n/Kernel/Capability/FrameFinalise.lean
+# v0.36.137: a compiled slot writer reads the slot's occupancy before it
+# writes the slot array, out of line, so both stay in place.
+run_check "INVARIANT" rg -n -U '  let i := slot\.toNat\n  let w := occupiedAt node\.cells i\n  if ha : i < a\.size then' SeLe4n/Model/Object/Structures.lean
+run_check "INVARIANT" rg -n -U '    let w := occupiedAt node\.cells slot\.toNat\n    let head := emptyHeadOf w node\.occ node\.occHead slot\.toNat' SeLe4n/Model/Object/Structures.lean
+run_check "INVARIANT" rg -n '^@\[noinline\] def occupiedAt \(cells : Array \(Option Capability\)\) \(i : Nat\) : Bool :=$' SeLe4n/Model/Object/Structures.lean
 # v0.36.137: the zombie loop's bound, stated in its theorem, and its one
 # choice of the next slot, which every pass reads.
 run_check "INVARIANT" rg -n -U '    ∃ n, n ≤ zombieFuel st \+ 1 ∧ ZombieRun ec n st \(zombieDeleteAt ec cnode slot st\)' SeLe4n/Kernel/Capability/FrameFinalise.lean
