@@ -799,7 +799,7 @@ theorem objectIdsUnique_empty : objectIdsUnique [] = true := by
     be classified. -/
 def endpointReferencesReservedIdleSlot (ep : Endpoint) : Bool :=
   match ep with
-  | ⟨_sendHead, _sendTail, _recvHead, _recvTail⟩ =>
+  | ⟨_sendHead, _sendTail, _recvHead, _recvTail, _serviceCode⟩ =>
     ep.sendQ.head.any SeLe4n.Kernel.isIdleThreadId ||
     ep.sendQ.tail.any SeLe4n.Kernel.isIdleThreadId ||
     ep.receiveQ.head.any SeLe4n.Kernel.isIdleThreadId ||
@@ -812,7 +812,8 @@ def endpointReferencesReservedIdleSlot (ep : Endpoint) : Bool :=
     and no capability can reach the idle TCB to clear it. -/
 def notificationReferencesReservedIdleSlot (notif : Notification) : Bool :=
   match notif with
-  | ⟨_state, waitHeadCode, waitTailCode, _hasPendingBadge, _pendingWord, _cleared, boundTCBCode⟩ =>
+  | ⟨_state, waitHeadCode, waitTailCode, _hasPendingBadge, _pendingWord, _cleared, boundTCBCode,
+      _irqBound⟩ =>
     (SeLe4n.ThreadId.ofOptCode waitHeadCode).any SeLe4n.Kernel.isIdleThreadId ||
     (SeLe4n.ThreadId.ofOptCode waitTailCode).any SeLe4n.Kernel.isIdleThreadId ||
     (SeLe4n.ThreadId.ofOptCode boundTCBCode).any SeLe4n.Kernel.isIdleThreadId
@@ -874,7 +875,7 @@ def tcbReferencesReservedIdleSlot (tcb : TCB) : Bool :=
      pendingReceiveReplyCode, _pendingFault, _fpContext, ntfnPrevCode, ntfnNextCode,
      _runCoreCode, _runPrio, _runPrevCode, _runNextCode, _runBucketPrevCode, _runBucketNextCode,
      replyWaiterPrevCode, replyWaiterNextCode, replyWaitersHeadCode, _replyWaitersCount, _ipcStateCode,
-     _ipcBadge, _ipcBadged, _ipcCanGrant, _ipcFaultSend,
+     _ipcBadge, _ipcBadged, _ipcCanGrant, _ipcFaultSend, _originScCode,
      -- The space slots' spare records are no slot's capability (`SpareCells`).
      _spaceSpare⟩ =>
     SeLe4n.Kernel.isIdleThreadId tid ||
@@ -1767,7 +1768,7 @@ a new `VSpaceRoot` field is that checker's to classify, in its own module. -/
 /-- A boot **endpoint** is inert: both intrusive queues empty. -/
 def bootSafeEndpointCheck (ep : Endpoint) : Bool :=
   match ep with
-  | ⟨_sendHead, _sendTail, _recvHead, _recvTail⟩ =>
+  | ⟨_sendHead, _sendTail, _recvHead, _recvTail, _serviceCode⟩ =>
     ep.sendQ.head.isNone && ep.sendQ.tail.isNone &&
     ep.receiveQ.head.isNone && ep.receiveQ.tail.isNone
 
@@ -1782,7 +1783,8 @@ def bootSafeEndpointCheck (ep : Endpoint) : Bool :=
     reservation's `notificationReferencesReservedIdleSlot`. -/
 def bootSafeNotificationCheck (notif : Notification) : Bool :=
   match notif with
-  | ⟨_state, _waitHeadCode, _waitTailCode, _hasPendingBadge, _pendingWord, _cleared, _boundTCBCode⟩ =>
+  | ⟨_state, _waitHeadCode, _waitTailCode, _hasPendingBadge, _pendingWord, _cleared, _boundTCBCode,
+      _irqBound⟩ =>
     decide (notif.state = .idle) && notif.waitHead.isNone && notif.waitTail.isNone &&
     notif.pendingBadge.isNone
 
@@ -1914,7 +1916,7 @@ def bootSafeTcbCheck (tcb : TCB) : Bool :=
      _pendingReceiveReply, _pendingFault, _fpContext, _ntfnPrevCode, _ntfnNextCode,
      _runCoreCode, _runPrio, _runPrevCode, _runNextCode, _runBucketPrevCode, _runBucketNextCode,
      _replyWaiterPrevCode, _replyWaiterNextCode, _replyWaitersHeadCode, _replyWaitersCount, _ipcStateCode,
-     _ipcBadge, _ipcBadged, _ipcCanGrant, _ipcFaultSend,
+     _ipcBadge, _ipcBadged, _ipcCanGrant, _ipcFaultSend, _originScCode,
      -- The space slots' spare records are no slot's capability (`SpareCells`).
      _spaceSpare⟩ =>
     tcb.pendingMessage.isNone && decide (tcb.ipcState = .ready) &&
@@ -4126,7 +4128,7 @@ def tcbAffinityDeclared (cores : List SeLe4n.Kernel.Concurrency.CoreId) (tcb : T
      _pendingReceiveReply, _pendingFault, _fpContext, _ntfnPrevCode, _ntfnNextCode,
      _runCoreCode, _runPrio, _runPrevCode, _runNextCode, _runBucketPrevCode, _runBucketNextCode,
      _replyWaiterPrevCode, _replyWaiterNextCode, _replyWaitersHeadCode, _replyWaitersCount, _ipcStateCode,
-     _ipcBadge, _ipcBadged, _ipcCanGrant, _ipcFaultSend,
+     _ipcBadge, _ipcBadged, _ipcCanGrant, _ipcFaultSend, _originScCode,
      -- The space slots' spare records are no slot's capability (`SpareCells`).
      _spaceSpare⟩ =>
     match tcb.cpuAffinity with
