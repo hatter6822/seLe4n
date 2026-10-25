@@ -4619,6 +4619,56 @@ private def runZombieFuelExhaustedChecks : IO Unit := do
     IO.println "positive check passed [a space change deletes its old root through the zombie loop]"
   IO.println "all zombie fuel-exhaustion checks passed"
 
+/-- **A final delete of an untyped with children splices it out**, as seL4's
+derivation tree does: untyped 30 records untyped 31 at offset 0x1000, and 31
+records endpoint 32 at 0 and untyped 33 at 0x200.  Deleting the last capability
+to 31 retires it; 30 then records 32 and 33 at 0x1000 and 0x1200, and 33 names
+30 as its parent. -/
+private def runUntypedRetireSpliceChecks : IO Unit := do
+  let cnId : SeLe4n.ObjId := ⟨10⟩
+  let u0 : SeLe4n.ObjId := ⟨30⟩
+  let u1 : SeLe4n.ObjId := ⟨31⟩
+  let epId : SeLe4n.ObjId := ⟨32⟩
+  let u2 : SeLe4n.ObjId := ⟨33⟩
+  let rw : AccessRightSet := AccessRightSet.ofList [.read, .write, .grant]
+  let st : SystemState :=
+    (BootstrapBuilder.empty
+      |>.withObject cnId (.cnode (CNode.ofList 0 0 0 3
+          [(SeLe4n.Slot.ofNat 0, { target := .object u1, rights := rw })]))
+      |>.withObject u0 (.untyped {
+          regionBase := (SeLe4n.PAddr.ofNat 0x100000)
+          regionSize := 0x4000
+          children := [{ objId := u1, offset := 0x1000, size := 0x1000 }] })
+      |>.withObject u1 (.untyped {
+          regionBase := (SeLe4n.PAddr.ofNat 0x101000)
+          regionSize := 0x1000
+          parent := some u0
+          children := [{ objId := epId, offset := 0, size := 0x100 },
+            { objId := u2, offset := 0x200, size := 0x200 }] })
+      |>.withObject epId (.endpoint {})
+      |>.withObject u2 (.untyped {
+          regionBase := (SeLe4n.PAddr.ofNat 0x101200)
+          regionSize := 0x200
+          parent := some u1 })
+      |>.buildChecked)
+  let addr : SeLe4n.Kernel.CSpaceAddr := { cnode := cnId, slot := SeLe4n.Slot.ofNat 0 }
+  unless SeLe4n.Kernel.slotRetireTarget st cnId addr.slot == u1.toNat + 1 &&
+      SeLe4n.Kernel.slotRetireRecorder st cnId addr.slot == u0.toNat + 1 do
+    throw <| IO.userError "the final capability to untyped 31 must retire it, recorded by 30"
+  match SeLe4n.Kernel.cspaceDeleteSlotFinalising bootCoreId addr st with
+  | .error e => throw <| IO.userError s!"the final delete of untyped 31 must succeed, got {repr e}"
+  | .ok ((), st') =>
+    let kids := match st'.getUntyped? u0 with
+      | some U => U.children.map fun c => (c.objId, c.offset)
+      | none => []
+    unless (st'.getObject? u1).isNone && (st'.getObject? epId).isSome &&
+        kids == [(epId, 0x1000), (u2, 0x1200)] do
+      throw <| IO.userError
+        s!"the recorder must adopt the retired untyped's children, rebased; got {repr kids}"
+    unless (st'.getUntyped? u2).map (·.parent) == some (some u0) do
+      throw <| IO.userError "the adopted child untyped must name the recorder as its parent"
+  IO.println "positive check passed [a final untyped delete splices its children into the recorder]"
+
 end SeLe4n.Testing
 
 def main : IO Unit := do
@@ -4650,3 +4700,4 @@ def main : IO Unit := do
   SeLe4n.Testing.runR5EOrphanedSchedContextChecks
   SeLe4n.Testing.runWSRR8CSpaceSlotRangeChecks
   SeLe4n.Testing.runZombieFuelExhaustedChecks
+  SeLe4n.Testing.runUntypedRetireSpliceChecks

@@ -5397,8 +5397,9 @@ theorem threadSlotCopied_preserves_projection (ctx : LabelingContext) (observer 
     exact hD
 
 /-- **A final-delete retire is invisible to an observer it hides the target,
-every untyped recording it, and the recorder from**: it writes only the
-target's key and its recorders' child lists, filters the target out of the
+every untyped recording it, every child it records, and the recorder from**:
+it writes only the target's key and the child lists of its recorders and of
+the untypeds it records (the splice re-parents them), filters the target out of the
 object index, and otherwise writes the address-space and TLB tables the
 projection omits (`retireFinalObject_objects_of_excluded`,
 `retireFinalObject_tables`, `retireFinalObject_fields`). -/
@@ -5408,13 +5409,15 @@ theorem retireFinalObject_preserves_projection (ctx : LabelingContext) (observer
     (hx : target ≠ 0 → objectObservable ctx observer (SeLe4n.ObjId.ofNat (target - 1)) = false)
     (hU : target ≠ 0 → ∀ w, untypedRecordsChild st w (SeLe4n.ObjId.ofNat (target - 1)) = true →
       objectObservable ctx observer w = false)
+    (hK : target ≠ 0 → ∀ y, untypedRecordsChild st (SeLe4n.ObjId.ofNat (target - 1)) y = true →
+      objectObservable ctx observer y = false)
     (hR : recorder ≠ 0 →
       objectObservable ctx observer (SeLe4n.ObjId.ofNat (recorder - 1)) = false) :
     projectState ctx observer (retireFinalObject ec target recorder st) =
       projectState ctx observer st := by
   obtain ⟨-, hS, hM⟩ := retireFinalObject_fields ec target recorder st
-  obtain ⟨hSv, hIrq, hIdx⟩ := retireFinalObject_tables ec target recorder st _ hx hR
-  have hO := retireFinalObject_objects_of_excluded ec target recorder st hObjInv _ hx hU
+  obtain ⟨hSv, hIrq, hIdx⟩ := retireFinalObject_tables ec target recorder st hObjInv _ hx hR hK
+  have hO := retireFinalObject_objects_of_excluded ec target recorder st hObjInv _ hx hU hK
   generalize retireFinalObject ec target recorder st = s at hS hM hSv hIrq hIdx hO
   have hPO : projectObjects ctx observer s = projectObjects ctx observer st := by
     funext o
@@ -5446,7 +5449,8 @@ theorem threadSlotSet_preserves_projection (ctx : LabelingContext) (observer : I
     (hObjInv : st.objects.invExt) (hT : st.getTcb? tid = some t) (slot : SeLe4n.Slot)
     (hHid : ∀ c o, st.slotCapAt ⟨tid.toObjId, slot⟩ = some c → c.namedObject = some o →
       objectObservable ctx observer o = false ∧
-        ∀ w, untypedRecordsChild st w o = true → objectObservable ctx observer w = false)
+        (∀ w, untypedRecordsChild st w o = true → objectObservable ctx observer w = false) ∧
+        ∀ y, untypedRecordsChild st o y = true → objectObservable ctx observer y = false)
     (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) :
     projectState ctx observer (threadSlotSet ec st tid slot srcCNode srcSlot rights) =
       projectState ctx observer st := by
@@ -5458,9 +5462,12 @@ theorem threadSlotSet_preserves_projection (ctx : LabelingContext) (observer : I
   have hNamed : slotRetireTarget st tid.toObjId slot ≠ 0 →
       objectObservable ctx observer
           (SeLe4n.ObjId.ofNat (slotRetireTarget st tid.toObjId slot - 1)) = false ∧
-        ∀ w, untypedRecordsChild st w
+        (∀ w, untypedRecordsChild st w
             (SeLe4n.ObjId.ofNat (slotRetireTarget st tid.toObjId slot - 1)) = true →
-          objectObservable ctx observer w = false := by
+          objectObservable ctx observer w = false) ∧
+        ∀ y, untypedRecordsChild st
+            (SeLe4n.ObjId.ofNat (slotRetireTarget st tid.toObjId slot - 1)) y = true →
+          objectObservable ctx observer y = false := by
     intro h0
     obtain ⟨c, hc, hn, -⟩ := slotRetireTarget_names h0
     exact hHid c _ hc hn
@@ -5468,7 +5475,8 @@ theorem threadSlotSet_preserves_projection (ctx : LabelingContext) (observer : I
   dsimp only
   rw [retireFinalObject_preserves_projection ctx observer ec _ _ hI
     (fun h0 => (hNamed h0).1)
-    (fun h0 w hw => (hNamed h0).2 w (by rw [← hRec]; exact hw))
+    (fun h0 w hw => (hNamed h0).2.1 w (by rw [← hRec]; exact hw))
+    (fun h0 y hy => (hNamed h0).2.2 y (by rw [← hRec]; exact hy))
     (fun hr => ?_)]
   · exact threadSlotCopied_preserves_projection ctx observer hHigh hObjInv hT _ _ _ _
   · unfold recorderFor at hr ⊢
@@ -5476,7 +5484,7 @@ theorem threadSlotSet_preserves_projection (ctx : LabelingContext) (observer : I
     · exact absurd rfl hr
     · next h0 =>
       rw [if_neg h0]
-      exact (hNamed h0).2 _ ((recorderWord_spec st _ _ _ hObjInv).1 hr)
+      exact (hNamed h0).2.1 _ ((recorderWord_spec st _ _ _ hObjInv).1 hr)
 
 /-- **Setting a hidden thread's space is invisible when what it retires is
 hidden**: each of its two slot sets is (`threadSlotSet_preserves_projection`),
@@ -5491,7 +5499,8 @@ theorem copyThreadSpaces_preserves_projection (ctx : LabelingContext) (observer 
     (hHid : ∀ s : SeLe4n.Slot, s.toNat < 2 → ∀ c o,
       st.slotCapAt ⟨vtid.val.toObjId, s⟩ = some c → c.namedObject = some o →
         objectObservable ctx observer o = false ∧
-          ∀ w, untypedRecordsChild st w o = true → objectObservable ctx observer w = false)
+          (∀ w, untypedRecordsChild st w o = true → objectObservable ctx observer w = false) ∧
+          ∀ y, untypedRecordsChild st o y = true → objectObservable ctx observer y = false)
     (hStep : copyThreadSpaces ec st vtid cnSrc vrSrc = .ok st') :
     projectState ctx observer st' = projectState ctx observer st := by
   obtain ⟨tcb, hT, -, -, hCn, -, rfl⟩ := copyThreadSpaces_ok hStep
@@ -5513,17 +5522,39 @@ theorem copyThreadSpaces_preserves_projection (ctx : LabelingContext) (observer 
     rw [← hS1']; exact retireFinalObject_getTcb?_of_slotCap _ _ _ _ hI1 hT1' hF1
   have hHid2 : ∀ c o, st1.slotCapAt ⟨vtid.val.toObjId, TCB.vspaceRootSlot⟩ = some c →
       c.namedObject = some o → objectObservable ctx observer o = false ∧
-        ∀ w, untypedRecordsChild st1 w o = true → objectObservable ctx observer w = false := by
+        (∀ w, untypedRecordsChild st1 w o = true → objectObservable ctx observer w = false) ∧
+        ∀ y, untypedRecordsChild st1 o y = true → objectObservable ctx observer y = false := by
     intro c o hc hn
     rw [← hS1', retireFinalObject_slotCapAt _ _ _ _ hI1,
       threadSlotCopied_slotCapAt hObjInv hT (by decide), if_neg (fun h => absurd h.2
         (show TCB.vspaceRootSlot ≠ TCB.cspaceRootSlot by decide))] at hc
-    obtain ⟨hob, hw⟩ := hHid TCB.vspaceRootSlot (by decide) c o hc hn
-    refine ⟨hob, fun w hr => hw w ?_⟩
-    rw [← hS1'] at hr
-    have hr' := retireFinalObject_untypedRecordsChild _ _ _ _ hI1 hr
-    unfold untypedRecordsChild at hr' ⊢
-    rw [hUt] at hr'; exact hr'
+    obtain ⟨hob, hw, hy⟩ := hHid TCB.vspaceRootSlot (by decide) c o hc hn
+    have hRec : ∀ a b, untypedRecordsChild
+        (threadSlotCopied st vtid.val TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot
+          TCB.cspaceRootRights) a b = untypedRecordsChild st a b := by
+      intro a b; unfold untypedRecordsChild; rw [hUt]
+    -- A record the retire made is a splice through the CSpace slot's old
+    -- target, which that slot names, so its recorder and children are hidden.
+    have hSplice : ∀ a b, untypedRecordsChild st1 a b = true →
+        untypedRecordsChild st a b = true ∨
+          (objectObservable ctx observer a = false ∧ objectObservable ctx observer b = false) := by
+      intro a b hr
+      rw [← hS1'] at hr
+      by_cases h0 : slotRetireTarget st vtid.val.toObjId TCB.cspaceRootSlot = 0
+      · rw [h0, retireFinalObject_zero, hRec] at hr; exact .inl hr
+      rcases retireFinalObject_untypedRecordsChild _ _ _ _ hI1 hr with hr' | ⟨ha, hb⟩
+      · rw [hRec] at hr'; exact .inl hr'
+      · rw [hRec] at ha hb
+        obtain ⟨c1, hc1, hn1, -⟩ := slotRetireTarget_names h0
+        obtain ⟨-, hw1, hy1⟩ := hHid TCB.cspaceRootSlot (by decide) c1 _ hc1 hn1
+        exact .inr ⟨hw1 a ha, hy1 b hb⟩
+    refine ⟨hob, fun w hr => ?_, fun y hr => ?_⟩
+    · rcases hSplice w o hr with h | h
+      · exact hw w h
+      · exact h.1
+    · rcases hSplice o y hr with h | h
+      · exact hy y h
+      · exact h.2
   unfold copyThreadSpacesPerform
   rw [hS1]
   exact (threadSlotSet_preserves_projection ctx observer ec hHigh hI2 hT2 _ hHid2 _ _ _).trans

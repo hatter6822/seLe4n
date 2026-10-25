@@ -385,15 +385,18 @@ for driver in drivers:
             # them the whole-store reset); 10 of the 30 are the free-index
             # rewind, copied because the reset still refuses after it writes,
             # so its dispatch keeps the pre-state alive (docs/REGISTERED_DEBT.md
-            # §C, "The reset's rewind costs 10 heap cells"; part 27 reads 0).
+            # §C, "The reset's rewind costs 10 heap cells"; part 28 reads 0).
             # WS-ZA ZA5.4 part 26: the populated CNode's carve (a CNode's 30)
             # and the endpoint's into its slot (an endpoint's 11), the spaced
             # thread's carve (a thread's 14) and its CNode root's into the
-            # move slot (31, measured: one more than into the frame slot),
-            # and the carved thread's first space set (6, measured: the thread
-            # takes two capabilities it has no records for).
+            # move slot (a CNode's 30: the slot's spare record last held a
+            # reply capability, whose target cell `CapTarget.objectOver`
+            # rewrites in place, the two constructors being one size), and
+            # the carved thread's first space set (6, traced: the copies of
+            # the thread's shared default `spaceCells` and `spaceLinks`, and
+            # a record and its `some` cell for each of the two slots).
             "untyped-retype-populated-cnode": (30, 30), "untyped-retype-into-cnode": (11, 11),
-            "untyped-retype-spaced-tcb": (14, 14), "untyped-retype-space-cnode": (31, 31),
+            "untyped-retype-spaced-tcb": (14, 14), "untyped-retype-space-cnode": (30, 30),
             "set-carved-tcb-space": (6, 6),
             "untyped-reset": (30, 30),
         })

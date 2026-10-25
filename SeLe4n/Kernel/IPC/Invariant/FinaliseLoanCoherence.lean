@@ -567,14 +567,14 @@ theorem lentContextHeadsLenderFrame.of_finalRetireWrite {st st' : SystemState} {
   have back : ∀ (k : SeLe4n.ObjId) (tx : TCB), st'.objects[k]? = some (.tcb tx) →
       st.objects[k]? = some (.tcb tx) := by
     intro k tx hk
-    rcases F k with e | ⟨-, -, hn⟩ | ⟨U, -, hU'⟩
+    rcases F k with e | ⟨-, -, hn⟩ | ⟨U, U', -, -, hU', -⟩
     · rw [← e]; exact hk
     · rw [hn] at hk; cases hk
     · rw [hU'] at hk; cases hk
   intro holder ht scId owner ot hH hB hO
   obtain ⟨rid, r, hRO, hR, hN⟩ := hW holder ht scId owner ot (back _ _ hH) hB (back _ _ hO)
   refine ⟨rid, r, hRO, ?_, hN⟩
-  rcases F rid.toObjId with e | ⟨hx, -, -⟩ | ⟨U, hU, -⟩
+  rcases F rid.toObjId with e | ⟨hx, -, -⟩ | ⟨U, U', -, hU, -, -⟩
   · rw [e]; exact hR
   · rw [hx] at hR; rw [hX r hR] at hN; cases hN
   · rw [hR] at hU; cases hU

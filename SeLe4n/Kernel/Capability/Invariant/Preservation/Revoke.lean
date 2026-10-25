@@ -198,18 +198,20 @@ theorem retireFinalObject_preserves_capabilityInvariantBundle (ec : Concurrency.
   · rw [hE]; exact h
   rcases retireFinalObject_admitted ec target recorder st with hE | hAdm
   · rw [hE]; exact h
-  generalize hX : SeLe4n.ObjId.ofNat (target - 1) = x at hUn hNamed hAdm
+  rcases retireFinalObject_target_gone ec target recorder st h.2.2.2.2.1 with hE | hGone
+  · rw [hE]; exact h
+  generalize hX : SeLe4n.ObjId.ofNat (target - 1) = x at hUn hNamed hAdm hGone
   have hx := hNamed hT
   obtain ⟨hI', -, -, hCdt, hW⟩ := retireFinalObject_frame ec target recorder st h.2.2.2.2.1
   rw [hX] at hW
-  generalize retireFinalObject ec target recorder st = st' at hUn hI' hCdt hW ⊢
+  generalize retireFinalObject ec target recorder st = st' at hUn hI' hCdt hW hGone ⊢
   -- every key the retire changes holds no capability on either side, and
   -- after it is absent or an untyped
   have hKey : ∀ oid : SeLe4n.ObjId, st'.objects[oid]? = st.objects[oid]? ∨
       ((∀ o, st.objects[oid]? = some o → ∀ s, o.slotCap s = none) ∧
         (st'.objects[oid]? = none ∨ ∃ U, st'.objects[oid]? = some (.untyped U))) := by
     intro oid
-    rcases hW oid with e | ⟨hxo, hcp, hn⟩ | ⟨U, hU, hU'⟩
+    rcases hW oid with e | ⟨hxo, hcp, hn⟩ | ⟨U, U', -, hU, hU', -⟩
     · exact .inl e
     · refine .inr ⟨fun o hO s => ?_, .inl hn⟩
       rcases hcp with (⟨f, hf⟩ | ⟨u, hu⟩ | ⟨r, hr⟩ | ⟨p, hp⟩) | hp
@@ -270,7 +272,7 @@ theorem retireFinalObject_preserves_capabilityInvariantBundle (ec : Concurrency.
       have hR := h.2.2.2.2.2.1 oid o slot cap rid hO
         (by rw [← SystemState.slotCapAt_of_object (r := ⟨oid, slot⟩) hO]; exact hS) hTg
       unfold SystemState.getReply? at hR ⊢
-      rcases hW rid.toObjId with e | ⟨hxo, -, -⟩ | ⟨U, hU, -⟩
+      rcases hW rid.toObjId with e | ⟨hxo, -, -⟩ | ⟨U, -, -, hU, -⟩
       · rwa [e]
       · exact absurd ⟨cap, hS, by unfold Capability.namedObject; rw [hTg]; exact congrArg some hxo⟩ (hx ⟨oid, slot⟩)
       · rw [hU] at hR; exact absurd rfl hR
@@ -283,21 +285,34 @@ theorem retireFinalObject_preserves_capabilityInvariantBundle (ec : Concurrency.
       · rw [SystemState.slotLinkAt_def, hn]
       · rw [SystemState.slotLinkAt_def, hU]; rfl
   refine ⟨cspaceLookupSound_holds st', hComp', ?_, fun oid cn hC => h.2.2.2.1 oid cn (hCnB oid cn hC),
-    hI', hRCPV', hL, (hShape.retire hx (fun o hp ho => ?_) (fun u U' hu => ?_)).of_readers
+    hI', hRCPV', hL, (hShape.retire hx (fun o hp ho => ?_) (fun u U' hu => ?_) ?_).of_readers
       hCdt hCap (fun _ hp => hp) rfl⟩
   · have hA := h.2.2.1; unfold cdtAcyclicity at hA ⊢; rw [hCdt]; exact hA
-  · rcases hW o with e | ⟨he, -, -⟩ | ⟨U, -, hU'⟩
+  · rcases hW o with e | ⟨he, -, -⟩ | ⟨U, U', -, -, hU', -⟩
     · show st'.objects[o]? ≠ none; rw [e]; exact hp
     · exact absurd he ho
     · show st'.objects[o]? ≠ none; rw [hU']; exact Option.some_ne_none _
   · have hu' := (SystemState.getUntyped?_eq_some_iff st' u U').mp hu
-    rcases hW u with e | ⟨-, -, hn⟩ | ⟨U, hU, hU'⟩
+    rcases hW u with e | ⟨-, -, hn⟩ | ⟨U, U'', -, hU, hU', -, hSz, -, hch, -⟩
     · refine ⟨U', (SystemState.getUntyped?_eq_some_iff st u U').mpr (e ▸ hu'), rfl,
-        fun ch hch => ⟨hch, hUn u U' hu' ch hch⟩⟩
+        fun ch hc => ⟨hUn u U' hu' ch hc, .inl ⟨ch, hc, rfl⟩⟩⟩
     · rw [hn] at hu'; cases hu'
-    · rw [hU'] at hu'; cases hu'
-      exact ⟨U, (SystemState.getUntyped?_eq_some_iff st u U).mpr hU, rfl,
-        fun ch hch => mem_childListErase.mp hch⟩
+    · have e2 : U'' = U' := by rw [hU'] at hu'; simpa using hu'
+      subst e2
+      have hu0 := (SystemState.getUntyped?_eq_some_iff st u U).mpr hU
+      refine ⟨U, hu0, hSz, fun ch hc => ⟨hUn u U'' hU' ch hc, ?_⟩⟩
+      rcases hch with e | e
+      · rw [e] at hc; exact .inl ⟨ch, hc, rfl⟩
+      · rw [e] at hc
+        rcases (mem_childListAdopt hc).2 with hm | ⟨hr, c0, hc0, he⟩
+        · exact .inl ⟨ch, hm, rfl⟩
+        · refine .inr ⟨⟨U, hu0, (childListRecords_iff _ _).mp hr⟩, ?_⟩
+          have := mem_retiredChildren hc0
+          rw [he] at this
+          exact (untypedRecordsChild_iff st _ _).mp this
+  · cases hg : st'.getUntyped? x with
+    | none => rfl
+    | some X' => exact absurd ((SystemState.getUntyped?_eq_some_iff st' x X').mp hg) (hGone X')
 
 theorem objId_ofNat_succ_sub_one (x : SeLe4n.ObjId) : SeLe4n.ObjId.ofNat (x.val + 1 - 1) = x := by
   simp [SeLe4n.ObjId.ofNat]

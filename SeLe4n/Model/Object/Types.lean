@@ -1227,11 +1227,14 @@ record.  Equal to the capability of those fields (`overwrite_eq`). -/
 @[noinline] def CapTarget.ofObject (id : SeLe4n.ObjId) : CapTarget := .object id
 
 /-- WS-ZA ZA5.4: the target naming object `id`, written over `t` when `t` already
-names an object.  Out of line, with a distinct second arm, so the first arm
-keeps its reuse of `t`'s cell. -/
+names an object or a reply (a constructor of one field, the same cell size, so
+the compiler reuses `t`'s cell for the new one: a slot whose last capability was
+a reply capability is carved into in place).  Out of line, with a distinct
+fallback arm, so the first two keep their reuse of `t`'s cell. -/
 @[noinline] def CapTarget.objectOver (t : CapTarget) (id : SeLe4n.ObjId) : CapTarget :=
   match t with
   | .object _ => .object id
+  | .replyCap _ => .object id
   | _ => CapTarget.ofObject id
 
 /-- WS-ZA ZA5.4: `rights`, kept as the record's own `rr` when equal.  Out of line,

@@ -917,7 +917,7 @@ theorem retireFinalObject_replyViews (ec : Concurrency.CoreId) (target recorder 
       | tcb t =>
         exfalso
         rcases (retireFinalObject_frame ec target recorder st hObjInv).2.2.2.2 k with
-          e | ⟨-, -, hn'⟩ | ⟨U', hU0, -⟩
+          e | ⟨-, -, hn'⟩ | ⟨U', -, -, hU0, -, -⟩
         · rw [e, hk] at hU; cases hU
         · rw [hn'] at hU; cases hU
         · rw [hk] at hU0; cases hU0
