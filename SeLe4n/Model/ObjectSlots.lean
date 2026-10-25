@@ -26,8 +26,11 @@ namespace SeLe4n.Model
 
 namespace TCB
 
-/-- The capability a thread's space slot `s` holds; slots 0 and 1 only. -/
-@[inline] def spaceSlotCap (t : TCB) (s : SeLe4n.Slot) : Option Capability :=
+/-- The capability a thread's space slot `s` holds; slots 0 and 1 only.  Out
+of line, so its bound check is no branch of its caller: a caller that rebuilds
+the thread after reading a slot (`removeSpaceCapImpl`) rebuilds it over the old
+thread's cell when that is unshared. -/
+@[noinline] def spaceSlotCap (t : TCB) (s : SeLe4n.Slot) : Option Capability :=
   if h : s.toNat < 2 then t.spaceCells[s.toNat] else none
 
 /-- The object word of link `f` of the thread's space slot `s` (0 past slot 1). -/
@@ -60,6 +63,20 @@ def withoutLinks (t : TCB) : TCB :=
 /-- The thread with its space slot `s` holding `cap` (the identity past slot 1). -/
 @[inline] def insertSpaceCap (t : TCB) (s : SeLe4n.Slot) (cap : Capability) : TCB :=
   { t with spaceCells := t.spaceCells.setIfInBounds s.toNat (some cap) }
+
+/-- WS-ZA ZA5.4 part 26: `removeSpaceCap` as compiled: the slot's cell, read
+before the slot is written, is kept as the slot's spare record
+(`TCB.spaceSpare`, `SpareCells.keep`), so the next capability written there
+overwrites it in place (`removeSpaceCap_eq_impl`). -/
+@[inline] def removeSpaceCapImpl (t : TCB) (s : SeLe4n.Slot) : TCB :=
+  let o := t.spaceSlotCap s
+  { t with
+    spaceCells := t.spaceCells.setIfInBounds s.toNat none
+    spaceSpare := t.spaceSpare.keep s.toNat o }
+
+@[csimp] theorem removeSpaceCap_eq_impl : @removeSpaceCap = @removeSpaceCapImpl := by
+  funext t s
+  exact (TCB.with_spaceSpare (t.removeSpaceCap s) _).symm
 
 @[simp] theorem withoutLinks_spaceCells (t : TCB) : t.withoutLinks.spaceCells = t.spaceCells := rfl
 @[simp] theorem withoutLinks_withoutLinks (t : TCB) : t.withoutLinks.withoutLinks = t.withoutLinks := rfl

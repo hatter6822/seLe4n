@@ -354,9 +354,17 @@ slot is chosen only by `zombieNextSlot` (most recently filled first, Adam's
 decision of 2026-10-25), so new code that fills or empties a CNode slot must
 keep its occupancy links (`CNode.occ`, `occHead`, `occ_agree`) in step; and a
 transition that removes an object clears its declassification provenance
-(`withTaintCleared`).  An untyped that still records a child still outlives its
-last capability, the retire still walks the table, and the finalise's
-retirability is not yet proven: row 27 (`docs/REGISTERED_DEBT.md`).  The suspend of a thread blocked in IPC or
+(`withTaintCleared`).  A final delete keeps its slot when the passes run out
+of fuel, the passes' deletes persisting for a retry (`zombieDeleteAtFuel`), so
+a caller must treat an occupied slot after a delete as a preempted delete, not
+a refusal.  Set-space deletes each old root through the same loop
+(`copyThreadSpacesZombie`).  An untyped retired with children is spliced out:
+its recorder adopts them and each child untyped names the recorder as its
+parent (`retireUnrecord`), so new code that reads an untyped's parent or child
+list must not assume either survives the retire of a neighbour.  The retire
+still walks the object table, and the finalise's admission is not yet carried
+across its steps (each step re-checks): plan row 27
+(`docs/REGISTERED_DEBT.md`).  The suspend of a thread blocked in IPC or
 holding a donated context is the one syscall arm left on the general path
 (ZA6.1).  ZA6 covers the other
 entries and makes the rule standing.  Plan:

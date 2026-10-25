@@ -1266,7 +1266,11 @@ its writes. -/
 /-- **The destroy cleanup of a finalised thread** (`lifecyclePreRetypeCleanup`'s
 thread arm): run once the thread is retirable — quiescent, held by no core and
 named by no object — so its reference sweeps find nothing and only its two
-space slots leave the derivation tree. -/
+space slots leave the derivation tree.  Its guard, `threadRetirable`, walks the
+object table (`storeNamesThreadNone`); that walk is acceptable here because it
+is the specification's alone: the cleanup is proven the identity
+(`finaliseThreadCleanup_eq`) and compiled as it (`finaliseThreadCleanup_eq_impl`),
+so the kernel never runs it. -/
 def finaliseThreadCleanup (st : SystemState) (x : SeLe4n.ObjId) : SystemState :=
   if threadRetirable st x && x.val != 0 then
     match st.getObject? x with

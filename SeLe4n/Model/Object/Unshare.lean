@@ -27,6 +27,11 @@ through it is a fresh cell when the record was shared (the compiler turns a
 record rebuilt from its own projections back into the record itself). -/
 @[noinline] def opaqueId {α : Type _} (a : α) : α := a
 
+/-- `opaqueId` on a machine word, which passes the word unboxed: a register
+record rebuilt through `opaqueId` would box the word, one allocation, to pass
+it. -/
+@[noinline] def opaqueWord (w : UInt64) : UInt64 := w
+
 /-- The identity: a table whose slot array is copied when shared. -/
 def _root_.SeLe4n.Kernel.RobinHood.RHTable.unshare {α β : Type} (t : RHTable α β) : RHTable α β := t
 
@@ -53,11 +58,22 @@ def KernelObject.unshare (o : KernelObject) : KernelObject := o
 
 @[simp] theorem KernelObject.unshare_eq (o : KernelObject) : o.unshare = o := rfl
 
-/-- A CNode's spare record, rebuilt when shared so each slot owns its own
-(WS-ZA ZA5.3 part 6). -/
+/-- A capability's object target, rebuilt when shared, so a record written
+over in place (`Capability.overwriteObject`) owns the target cell it rewrites
+(WS-ZA ZA5.4 part 26).  Every other target is passed through. -/
+@[inline] def unshareTarget (t : CapTarget) : CapTarget :=
+  match t with
+  | .object id => .object (opaqueId id)
+  | t => t
+
+theorem unshareTarget_eq (t : CapTarget) : unshareTarget t = t := by
+  cases t <;> rfl
+
+/-- A CNode's or a thread's spare record, rebuilt when shared so each slot owns
+its own, and its object target (WS-ZA ZA5.3 part 6, ZA5.4 part 26). -/
 @[inline] def unshareSpareCell (o : Option Capability) : Option Capability :=
   match o with
-  | some r => some { r with rights := opaqueId r.rights }
+  | some r => some { r with rights := opaqueId r.rights, target := unshareTarget r.target }
   | none => none
 
 /-- A CNode's slot cell, rebuilt when shared so the CNode owns its `some` and its
@@ -75,18 +91,18 @@ theorem unshareSlotCell_eq (o : Option Capability) : unshareSlotCell o = o := by
   | none => rfl
   | some r => simp only [unshareSlotCell, opaqueId]
 
-/-- A thread's space slot, rebuilt when shared so the thread owns its `some` and
-its capability record (`spaceCellOver`, setting the thread's space, writes both
-in place). -/
+/-- A thread's space slot, rebuilt when shared so the thread owns its `some`,
+its capability record and the record's object target (setting the thread's
+space keeps the record and writes all three in place, `TCB.spaceCellFilled`). -/
 @[inline] def unshareSpaceCell (o : Option Capability) : Option Capability :=
   match o with
-  | some r => some { r with rights := opaqueId r.rights }
+  | some r => some { r with rights := opaqueId r.rights, target := unshareTarget r.target }
   | none => none
 
 theorem unshareSpaceCell_eq (o : Option Capability) : unshareSpaceCell o = o := by
   cases o with
   | none => rfl
-  | some r => simp only [unshareSpaceCell, opaqueId]
+  | some r => simp only [unshareSpaceCell, opaqueId, unshareTarget_eq]
 
 /-- A VSpace root's spare mapping cell, rebuilt when shared so the root owns
 its `some`, its entry and the entry's value pair (WS-ZA ZA5.4). -/
@@ -111,7 +127,7 @@ cell and its slot record (WS-ZA ZA5.4). -/
 
 /-- `KernelObject.unshare` as compiled.  Each record is rebuilt with one field
 passed through `opaqueId`, so a shared record is copied and an exclusive one
-written in place; a thread's register file, a CNode's slot array and its slot
+written in place; a thread's register file and spare space cells, a CNode's slot array and its slot
 records, a VSpace root's mapping and epoch tables and their spare cells, and a
 page table's slot
 cell, are rebuilt the same way. -/
@@ -120,7 +136,9 @@ def KernelObject.unshareImpl : KernelObject → KernelObject
       tid := opaqueId t.tid
       spaceCells := t.spaceCells.map unshareSpaceCell
       spaceLinks := t.spaceLinks.map opaqueId
-      registerContext := { t.registerContext with x0 := opaqueId t.registerContext.x0 } }
+      registerContext := { t.registerContext with x0 := opaqueWord t.registerContext.x0 }
+      spaceSpare := Quot.lift (fun a => Squash.mk (a.map unshareSpareCell))
+        (fun _ _ _ => Subsingleton.elim _ _) t.spaceSpare }
   | .endpoint e => .endpoint { e with sendHeadCode := opaqueId e.sendHeadCode }
   | .notification n => .notification { n with state := opaqueId n.state }
   | .cnode c => .cnode { c with
@@ -179,7 +197,9 @@ def KernelObject.unshareImpl : KernelObject → KernelObject
       PageTableObject.with_slotCell]
   case tcb t =>
     have hS : unshareSpaceCell = id := funext unshareSpaceCell_eq
-    simp only [KernelObject.unshare, KernelObject.unshareImpl, hS, hIdN, Vector.map_id, opaqueId]
+    simp only [KernelObject.unshare, KernelObject.unshareImpl, hS, hIdN, Vector.map_id, opaqueId,
+      KernelObject.tcb.injEq]
+    exact (TCB.with_spaceSpare t _).symm
   all_goals
     simp only [KernelObject.unshare, KernelObject.unshareImpl, hId, hIdN, Array.map_id, opaqueId,
       RHTable.unshare]

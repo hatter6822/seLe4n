@@ -5301,12 +5301,38 @@ write cover and cross-core non-interference are proven for the zombie delete
 the freed id's declassification provenance (`withTaintCleared` in
 `retireRecordedObject`, `retireFinalObject_taint_cleared`), so an object carved
 at the id later inherits no stale tag; the reset's removal does not yet
-(`docs/REGISTERED_DEBT.md`).  Still open and carried to row 27: an untyped
-that records a child is not retired, the retire still walks the table
-(`storeNamesNone`), and the finalise's retirability theorems are not stated.
-Exerciser: `populated-cnode-delete`, `space-cnode-cap-delete` and
-`spaced-tcb-delete` read 0 heap cells.  A CNode's carve reads 30, its
-occupancy link array being one cell of its own.  The compiled slot writers
+(`docs/REGISTERED_DEBT.md`).  **Out of fuel:** when the passes end with the
+root slot still non-leaf, the root delete makes no write
+(`zombieDeleteAtFuel`): the passes' deletes persist and the slot keeps its
+capability, so a retry continues from the slot state, as seL4's preempted
+`cteDelete` does, and a revoke that keeps a child stops with `.ok`.  That the
+fuel always suffices on a reachable state is not yet proven
+(`docs/REGISTERED_DEBT.md`, plan row 27).  **Set-space** deletes each old root
+through the same loop (`copyThreadSpacesZombie`), so a thread's last
+capability to its old CSpace root CNode empties and retires it; set-space is a
+remote writer, in the capability-destroy footprint group.  **An untyped with
+children** is retired by seL4's derivation splice (`retireUnrecord`): each
+child untyped the retired one records names the recorder as its parent
+(`reparentChildren`), and the recorder records the retired untyped's children
+in place of its record, each offset rebased onto that record's
+(`childListAdopt`); with no recorder the children are recorded by none.
+`TreeShapeOver.retire` is stated over the splice, and the projection theorem
+asks that the children are hidden too.  **The finalisations' end states:** a
+thread's finalisation leaves it stored under its own id, quiescent but for its
+space slots and held by no core (`finaliseThread_quiesces`, given
+`runCodeBounded` and `currentDequeuedUnique`), and a scheduling context's
+releases its record (`finaliseSchedContext_releases`), each stated on the
+states where its steps run.  The thread retire reads no masked run-queue
+neighbour code (the dequeue still clears them, `TCB.detachRun`).  Still open,
+plan row 27: the retire walks the object table (`storeNamesNone` and its thread
+and scheduling-context forms), and the finalise's admission is not carried
+across its own steps; each step and the retire re-check their guards.
+Exerciser: `populated-cnode-delete`, `space-cnode-cap-delete`,
+`spaced-tcb-delete`, `tcb-set-space` and `set-carved-tcb-space` read 0 heap
+cells: a thread's space-slot delete keeps the slot's cell as its spare record
+(`TCB.spaceSpare`), and a space set writes over it.  A thread's carve reads 24,
+making its space slots' cells as seL4 makes a TCB's CTEs at the retype.  A
+CNode's carve reads 30, its occupancy link array being one cell of its own.  The compiled slot writers
 (`insertCellWith`, `removeImpl`) read the slot's occupancy, and the head,
 before they write, through out-of-line reads (`occupiedAt`, `fillOccOf`,
 `emptyHeadOf`), so the slot array and the CNode are still written in place.
@@ -5789,7 +5815,7 @@ seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
   (`untypedResetFromCap`) and first refuses (`.revocationRequired`) while that
   slot has a derivation child, seL4's per-slot `ensureNoChildren`
   (`untypedResetFromCap_ok`); the store-wide check stays beside it until the
-  reset is restated as seL4's (WS-ZA ZA5.4 part 27, `docs/REGISTERED_DEBT.md`).
+  reset is restated as seL4's (WS-ZA ZA5.4 part 28, `docs/REGISTERED_DEBT.md`).
   Then every
   mapping of a page meeting the region is removed through the `.vspaceUnmap`
   arm's own transition — TLB flush, shootdown round, initiator drain,

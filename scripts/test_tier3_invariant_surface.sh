@@ -4268,6 +4268,28 @@ run_check "INVARIANT" rg -n -U '@\[csimp\] theorem cancelNotificationQueue_eq_im
 # the compiler may not hoist into a shared constant.
 run_check "INVARIANT" rg -n -U '  \| \.endpoint => \(KernelObject\.endpoint \(Endpoint\.ofQueues \{\} \{\}\)\)\.unshareFresh\n  \| \.notification =>\n      \(KernelObject\.notification \(\{ state := \.idle \} : Notification\)\)\.unshareFresh' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n -U '@\[csimp\] theorem CarveRequest\.object_eq_impl :\n    @CarveRequest\.object = @CarveRequest\.objectImpl' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+# v0.36.137: a carved thread's space slots, their links and their spare records
+# are its own cells, made at the carve, so its first space set writes in place.
+run_check "INVARIANT" rg -n -U '  \| \.tcb dom core => \(KernelObject\.tcb \(carvedTcb childId dom core\)\)\.unshareFresh\n' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n -U 'def carvedTcb [^\n]*(\n([ \t][^\n]*)?){0,10}\n    spaceSpare := Squash\.mk carvedTcbSpareCells \}' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n -U '      spaceSpare := Quot\.lift \(fun a => Squash\.mk \(a\.map unshareSpareCell\)\)\n        \(fun _ _ _ => Subsingleton\.elim _ _\) t\.spaceSpare \}' SeLe4n/Model/Object/Unshare.lean
+# A thread slot's delete keeps its cell as the slot's spare, and the set writes
+# over that spare.
+run_check "INVARIANT" rg -n -U '@\[csimp\] theorem removeSpaceCap_eq_impl : @removeSpaceCap = @removeSpaceCapImpl' SeLe4n/Model/ObjectSlots.lean
+run_check "INVARIANT" rg -n -U '  let o := t\.spaceSlotCap s\n  \{ t with\n    spaceCells := t\.spaceCells\.setIfInBounds s\.toNat none\n    spaceSpare := t\.spaceSpare\.keep s\.toNat o \}' SeLe4n/Model/ObjectSlots.lean
+# The slot read is out of line, so the thread is rebuilt in its own cell.
+run_check "INVARIANT" rg -n '^@\[noinline\] def spaceSlotCap ' SeLe4n/Model/ObjectSlots.lean
+# The set reads the spare record, takes it out of the spares, then writes the
+# capability and its object target over it, before the one rebuild.
+run_check "INVARIANT" rg -n -U '  let o := spareRecordAt a i\n  let a. := a\.setIfInBounds i none\n  let c := capabilityCellOver o target rights\n  \{ t with spaceCells := t\.spaceCells\.setIfInBounds i c, spaceSpare := Squash\.mk a. \}' SeLe4n/Kernel/Lifecycle/Operations/SetSpace.lean
+run_check "INVARIANT" rg -n '^  \| \.object id, some r => some \(r\.overwriteObject id rights\)$' SeLe4n/Kernel/Lifecycle/Operations/SetSpace.lean
+# A spare or space record owns its object target; a register word is passed
+# unboxed.
+run_check "INVARIANT" rg -n -c '^  \| some r => some \{ r with rights := opaqueId r\.rights, target := unshareTarget r\.target \}$' SeLe4n/Model/Object/Unshare.lean
+run_check "INVARIANT" rg -n 'registerContext := \{ t\.registerContext with x0 := opaqueWord t\.registerContext\.x0 \}' SeLe4n/Model/Object/Unshare.lean
+run_check "INVARIANT" rg -n -U '  st\.updateTcb tid fun t => t\.spaceCellFilled slot target rights' SeLe4n/Kernel/Lifecycle/Operations/SetSpace.lean
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem threadSlotCopied_eq_impl ' SeLe4n/Kernel/Lifecycle/Operations/SetSpace.lean
+run_negative_check "INVARIANT" rg -n 'spaceCellOver|threadSpaceCell ' SeLe4n
 run_check "INVARIANT" rg -n -U '@\[noinline, never_extract\] def KernelObject\.unshareFresh \(o : KernelObject\) : KernelObject :=\n  o\.unshare' SeLe4n/Model/Object/Unshare.lean
 run_check "INVARIANT" rg -n -U 'def slotRetireTarget[^\n]*(\n([ \t][^\n]*)?){0,4}\n    \| \.object x => if retirableKind st x && st\.capIsFinal cnode slot then x\.val \+ 1 else 0' SeLe4n/Kernel/Capability/FinalRetire.lean
 run_check "INVARIANT" rg -n -U 'def retirableKind[^\n]*\n  match st\.getObjectType\? x with\n  \| some \.frame \| some \.pageTable \| some \.vspaceRoot => true\n  \| some \.endpoint \| some \.notification \| some \.reply \| some \.cnode => true\n  \| some \.tcb \| some \.schedContext => true\n  \| some \.untyped => true\n  \| _ => false' SeLe4n/Kernel/Capability/FinalRetire.lean
