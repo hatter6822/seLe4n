@@ -5305,7 +5305,11 @@ at the id later inherits no stale tag; the reset's removal does not yet
 that records a child is not retired, the retire still walks the table
 (`storeNamesNone`), and the finalise's retirability theorems are not stated.
 Exerciser: `populated-cnode-delete`, `space-cnode-cap-delete` and
-`spaced-tcb-delete` read 0 heap cells.
+`spaced-tcb-delete` read 0 heap cells.  A CNode's carve reads 30, its
+occupancy link array being one cell of its own.  The compiled slot writers
+(`insertCellWith`, `removeImpl`) read the slot's occupancy, and the head,
+before they write, through out-of-line reads (`occupiedAt`, `fillOccOf`,
+`emptyHeadOf`), so the slot array and the CNode are still written in place.
 
 ### 8.6.1 Carve Refusal Order (`v0.36.125`)
 

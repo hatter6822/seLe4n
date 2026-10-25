@@ -349,7 +349,9 @@ for driver in drivers:
             "untyped-retype-busy-endpoint": (12, 11),
             "untyped-retype-busy-notification": (11, 11),
             "untyped-retype-bound-notification": (11, 11),
-            "untyped-retype-reply": (12, 12), "untyped-retype-cnode": (29, 29),
+            # Since v0.36.137 a CNode carries its occupancy link array
+            # (`CNode.occ`), one cell of its own: 30.
+            "untyped-retype-reply": (12, 12), "untyped-retype-cnode": (30, 30),
             # WS-ZA ZA5.4 part 25: the busy and the stashed reply's carves,
             # at the passive reply's id once that reply is retired.
             "untyped-retype-busy-reply": (12, 12), "untyped-retype-stashed-reply": (12, 12),
@@ -384,12 +386,15 @@ for driver in drivers:
             # rewind, copied because the reset still refuses after it writes,
             # so its dispatch keeps the pre-state alive (docs/REGISTERED_DEBT.md
             # §C, "The reset's rewind costs 10 heap cells"; part 27 reads 0).
-            # WS-ZA ZA5.4 part 26: the populated CNode's carve and the
-            # endpoint's into its slot, the spaced thread's and its CNode
-            # root's carves, and the space set.
-            "untyped-retype-populated-cnode": (29, 29), "untyped-retype-into-cnode": (11, 11),
-            "untyped-retype-spaced-tcb": (14, 14), "untyped-retype-space-cnode": (29, 29),
-            "set-carved-tcb-space": (0, 0),
+            # WS-ZA ZA5.4 part 26: the populated CNode's carve (a CNode's 30)
+            # and the endpoint's into its slot (an endpoint's 11), the spaced
+            # thread's carve (a thread's 14) and its CNode root's into the
+            # move slot (31, measured: one more than into the frame slot),
+            # and the carved thread's first space set (6, measured: the thread
+            # takes two capabilities it has no records for).
+            "untyped-retype-populated-cnode": (30, 30), "untyped-retype-into-cnode": (11, 11),
+            "untyped-retype-spaced-tcb": (14, 14), "untyped-retype-space-cnode": (31, 31),
+            "set-carved-tcb-space": (6, 6),
             "untyped-reset": (30, 30),
         })
         expected = set(pinned)

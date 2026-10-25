@@ -68,8 +68,18 @@ seL4's Zombie, and is deleted last.
 - The heap exerciser deletes a populated CNode (`populated-cnode-delete`) and
   a thread holding the last capability to its CSpace root
   (`spaced-tcb-delete`).  Both read 0 heap cells, as does
-  `space-cnode-cap-delete`.  The carves and the space set are pinned at their
-  measured readings (see `scripts/qemu_exerciser_lib.sh`).
+  `space-cnode-cap-delete`.  The new carves and the space set are pinned at
+  their measured readings: 30, 11, 14 and 31 for the carves, and 6 for the
+  carved thread's first space set (see `scripts/qemu_exerciser_lib.sh`).
+- A CNode carve now reads 30, not 29 (`untyped-retype-cnode`).  The extra
+  cell is the CNode's own occupancy link array.
+- The compiled slot writers (`insertCellWith`, `removeImpl`) read the slot's
+  occupancy before writing the slot array, and read the head before unlinking.
+  Each read is out of line (`occupiedAt`, `fillOccOf`, `emptyHeadOf`), so the
+  writer keeps rebuilding its CNode in place.  A first build read the
+  occupancy after the write: the slot array was copied, every copy, move,
+  mint and delete read 1, and every carve read 2 more.  The fix brings every
+  other pin back to its value from before this part.
 
 ### Merge
 
