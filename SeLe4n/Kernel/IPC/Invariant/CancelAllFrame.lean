@@ -376,6 +376,30 @@ theorem replyHeadPop_commits {st : SystemState} {c : SeLe4n.ThreadId} {t : TCB}
   rw [hD, hT]
   simp only [hOk]
 
+/-- **A head reply's pop never refuses for the caller's own binding on a
+reachable state**: the pop's `donationRecipientAcceptable` conjunct of
+`donatedReturnCommits` asks that the caller the context goes back to holds no
+binding, and `donationOwnerValid` makes the owner a `.donated` holder names
+`.unbound`.  The conjunct stays in the check, since the shared pop
+(`returnDonatedSchedContext`) refuses there on an arbitrary state too, so the
+check reads exactly what the pop does before any write; on a state the kernel
+reaches it always passes, and the finalise refuses no thread or reply for it. -/
+theorem donationRecipientAcceptable_of_donationOwnerValid {st : SystemState}
+    {hd c : SeLe4n.ThreadId} {ht : TCB} {s : SeLe4n.SchedContextId}
+    (hOV : donationOwnerValid st) (hT : st.getTcb? hd = some ht)
+    (hB : ht.schedContextBinding = .donated s c) :
+    donationRecipientAcceptable st c = true := by
+  obtain ⟨-, ownerTcb, hO, hU, -⟩ :=
+    hOV hd ht s c ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hB
+  unfold donationRecipientAcceptable
+  cases hL : lookupTcb st c with
+  | none => rfl
+  | some tcb =>
+    rw [lookupTcb_some_objects st c tcb hL] at hO
+    cases hO
+    show (ownerTcb.schedContextBinding == .unbound) = true
+    rw [hU]; rfl
+
 /-- **The cancel a finalised reply runs is the reclaim**: a head reply's pop is
 `cancelIpcBlockingReclaimed` itself, and a reply heading no stack hands nothing
 back, where the reclaim is the bare cancel
