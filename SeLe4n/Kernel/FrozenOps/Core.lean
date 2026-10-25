@@ -857,6 +857,15 @@ def frozenSpliceReplyFrameStores (st : FrozenSystemState) (rid above : SeLe4n.Re
       | .ok st2 =>
         frozenWithObjectStored st2 rid.toObjId (.reply { r with prev := none })
 
+/-- **Frozen mirror of `severReplyFrameBelowStores`**: the cut of a contextless
+stack top from the frame below -- that frame's `next` cleared, then the cut
+frame's `prev` -- in the order the live cut writes them. -/
+def frozenSeverReplyFrameBelowStores (st : FrozenSystemState) (rid below : SeLe4n.ReplyId)
+    (r b : SeLe4n.Kernel.Reply) : Except KernelError FrozenSystemState :=
+  match frozenWithObjectStored st below.toObjId (.reply { b with next := none }) with
+  | .error e => .error e
+  | .ok st1 => frozenWithObjectStored st1 rid.toObjId (.reply { r with prev := none })
+
 /-- **WS-HP HP8, frozen mirror**: splice the frame `rid` out of its reply stack.
 
 `spliceReplyFrameOut`'s counterpart, and the frozen surface's whole reason for
@@ -872,8 +881,10 @@ one: a `frozenDetach…` beside a live `splice…` reads as the *schedule* (this
 surface still severs, HP8 is the cut that changes it) where a `frozenSplice…`
 whose body severs reads as a drift.  The name and the body move together.
 
-Clause for clause with the live removal: no Reply at `rid`, and a frame that
-heads a context or sits at the top, are the identity; an upward `.frame` link
+Clause for clause with the live removal: no Reply at `rid`, a frame that heads a
+context, and a top whose frame below does not link up to it, are the identity; a
+contextless top whose frame below still links up to it is cut from that frame
+(`frozenSeverReplyFrameBelowStores`, the live `severReplyFrameBelowStores`); an upward `.frame` link
 whose target is missing is `.objectNotFound`; and a target that does **not**
 reciprocate is `.invalidArgument` rather than a write, which is what confines
 the stores to the genuine frame above.  So the refusal set is unchanged from
@@ -890,7 +901,16 @@ def frozenSpliceReplyFrameOut (st : FrozenSystemState) (rid : SeLe4n.ReplyId) :
       | some a =>
         if a.prev != some rid then .error .invalidArgument
         else frozenSpliceReplyFrameStores st rid above r a
-    | _ => .ok st
+    | some (.head _) => .ok st
+    | none =>
+      match r.prev with
+      | none => .ok st
+      | some below =>
+        match st.getReply? below with
+        | none => .ok st
+        | some b =>
+          if b.next != some (.frame rid) then .ok st
+          else frozenSeverReplyFrameBelowStores st rid below r b
 
 /-- **WS-HP HP8, frozen mirror**: the removal folded to the identity on refusal.
 

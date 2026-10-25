@@ -865,13 +865,6 @@ theorem runEnqueueAdmitted_queuedOn (st : SystemState) (c : CoreId) (t : SeLe4n.
       simp only [h]
 
 
-/-- Core `c`'s current thread may go back on `c`'s queue: it is queued on no
-other core (seL4's `ct_not_in_q` at the preemption point). A preemption puts
-the outgoing thread back on its own core, and that requeue lands only under
-this premise. -/
-def currentRequeueAdmitted (st : SystemState) (c : CoreId) : Prop :=
-  ∀ t, st.scheduler.currentOnCore c = some t → st.runEnqueueAdmits c t = true
-
 /-- A thread on no queue other than `c`'s is admitted. -/
 theorem runEnqueueAdmits_of_refined {st : SystemState} {c : CoreId} {t : SeLe4n.ThreadId}
     (hR : st.runQueueRefined) (hT : (st.getTcb? t).isSome)
@@ -1007,99 +1000,6 @@ theorem runEnqueueOnCore_queuedOn_somewhere {st : SystemState} {c : CoreId}
     show tcb.runCoreCode = tcb.runCoreCode - 1 + 1
     omega
   · exact ⟨c, by rw [runEnqueueOnCore_queuedOn, if_pos ⟨rfl, hA⟩]; simp⟩
-
-/-- A step that, for core `c`'s current thread afterwards, kept it current there,
-kept its TCB, and gave it no new place on another core's queue.  Core `c`'s
-current thread stays admitted for the requeue at `c`'s preemption across such a
-step (`currentRequeueAdmitted.transport`); the steps compose (`trans`), so a
-transition's frame is its steps'. -/
-def CurrentPlacementFrame (c : CoreId) (st st' : SystemState) : Prop :=
-  ∀ y, st'.scheduler.currentOnCore c = some y →
-    st.scheduler.currentOnCore c = some y ∧
-    ((st.getTcb? y).isSome → (st'.getTcb? y).isSome) ∧
-    ∀ c', c' ≠ c → st'.queuedOn c' y = true → st.queuedOn c' y = true
-
-theorem CurrentPlacementFrame.refl (c : CoreId) (st : SystemState) :
-    CurrentPlacementFrame c st st := fun _ h => ⟨h, id, fun _ _ => id⟩
-
-theorem CurrentPlacementFrame.trans {c : CoreId} {s1 s2 s3 : SystemState}
-    (hFirst : CurrentPlacementFrame c s1 s2) (hSecond : CurrentPlacementFrame c s2 s3) :
-    CurrentPlacementFrame c s1 s3 := by
-  intro y hy
-  obtain ⟨h2, hT23, hQ23⟩ := hSecond y hy
-  obtain ⟨h1, hT12, hQ12⟩ := hFirst y h2
-  exact ⟨h1, fun h => hT23 (hT12 h), fun c' hne hm => hQ12 c' hne (hQ23 c' hne hm)⟩
-
-/-- A step that keeps every thread's run-queue core and core `c`'s current slot. -/
-theorem CurrentPlacementFrame.of_parts {c : CoreId} {st st' : SystemState}
-    (hC : st'.scheduler.currentOnCore c = st.scheduler.currentOnCore c)
-    (hQ : RunCoresAgree st' st) :
-    CurrentPlacementFrame c st st' := by
-  intro y hy
-  refine ⟨hC ▸ hy, fun h => ?_, fun c' _ hm => by rw [← hQ.queuedOn c' y]; exact hm⟩
-  have := congrArg Option.isSome (hQ y)
-  simp only [Option.isSome_map] at this
-  rw [this]; exact h
-
-/-- A step that keeps the objects and core `c`'s current slot. -/
-theorem CurrentPlacementFrame.of_frame {c : CoreId} {st st' : SystemState}
-    (hO : st'.objects = st.objects)
-    (hC : st'.scheduler.currentOnCore c = st.scheduler.currentOnCore c) :
-    CurrentPlacementFrame c st st' :=
-  CurrentPlacementFrame.of_parts hC (RunCoresAgree.of_objects hO)
-
-/-- A TCB rewritten over a TCB with the same run-queue core, with the scheduler
-untouched. -/
-theorem CurrentPlacementFrame.rewriteObject_tcb (c : CoreId) {st : SystemState}
-    {tid : SeLe4n.ThreadId} {t : TCB} (h : st.rewriteAdmissible tid.toObjId (.tcb t))
-    (hInv : st.objects.invExt)
-    (hc : ∀ t0, st.getTcb? tid = some t0 → t.runCoreCode = t0.runCoreCode) :
-    CurrentPlacementFrame c st (st.rewriteObject tid.toObjId (.tcb t) h) := by
-  refine CurrentPlacementFrame.of_parts (by rw [rewriteObject_scheduler]) (fun y => ?_)
-  by_cases hyt : y = tid
-  · subst hyt
-    rw [rewriteObject_tcb_getTcb?_self _ _ _ _ hInv]
-    obtain ⟨o, ho, hk, -⟩ := h
-    cases o with
-    | tcb t0 =>
-      rw [(getTcb?_eq_some_iff st y t0).mpr ho]
-      simp [hc t0 ((getTcb?_eq_some_iff st y t0).mpr ho)]
-    | _ => cases hk
-  · rw [rewriteObject_getTcb?_ne _ _ _ h hInv y
-      (fun e => hyt (SeLe4n.ThreadId.toObjId_injective _ _ e).symm)]
-
-/-- A typed TCB read-modify-write keeping the run-queue core, with the scheduler
-untouched. -/
-theorem CurrentPlacementFrame.updateTcb (c : CoreId) (st : SystemState) (tid : SeLe4n.ThreadId)
-    (f : TCB → TCB) (hf : ∀ x, (f x).runCoreCode = x.runCoreCode) (hInv : st.objects.invExt) :
-    CurrentPlacementFrame c st (st.updateTcb tid f) :=
-  CurrentPlacementFrame.of_parts (by rw [updateTcb_scheduler]) (updateTcb_runCoreCode st tid f hf hInv)
-
-/-- A SchedContext rewritten over a SchedContext, with the scheduler untouched. -/
-theorem CurrentPlacementFrame.rewriteObject_schedContext (c : CoreId) {st : SystemState}
-    {k : SeLe4n.ObjId} {sc : SchedContext} (h : st.rewriteAdmissible k (.schedContext sc))
-    (hInv : st.objects.invExt) :
-    CurrentPlacementFrame c st (st.rewriteObject k (.schedContext sc) h) :=
-  CurrentPlacementFrame.of_parts (by rw [rewriteObject_scheduler])
-    (fun y => by rw [rewriteObject_schedContext_getTcb? _ _ _ _ hInv])
-
-/-- Across a current-placement frame, core `c`'s current thread stays admitted
-for its requeue at `c`: its links name no other core afterwards, because they
-named none before. -/
-theorem currentRequeueAdmitted.transport {c : CoreId} {st st' : SystemState}
-    (hF : CurrentPlacementFrame c st st') (h : st.currentRequeueAdmitted c) :
-    st'.currentRequeueAdmitted c := by
-  intro y hy
-  obtain ⟨hy0, hT, hQ⟩ := hF y hy
-  have hA := h y hy0
-  have hT0 := runEnqueueAdmits_isSome hA
-  have hI := runEnqueueAdmits_not_idle hA
-  refine (runEnqueueAdmits_iff (hT hT0) hI).mpr fun c' hne => ?_
-  cases hc : st'.queuedOn c' y with
-  | false => rfl
-  | true =>
-    have h1 := (runEnqueueAdmits_iff hT0 hI).mp hA c' hne
-    rw [hQ c' hne hc] at h1; cases h1
 
 /-- An admitted enqueue on `c` leaves `t` admitted on `c`: it is on `c`'s
 queue now, or was already. -/
@@ -2366,35 +2266,6 @@ theorem currentDequeuedUnique.except {st : SystemState} (h : st.currentDequeuedU
   ⟨fun c t ht => ⟨fun c' hq => absurd ((h.current c t ht).1 c' hq).1 (fun h => by cases h),
     (h.current c t ht).2.1, .inr (h.runnable ht)⟩,
     h.idleOff, h.idleHome, h.queuedRunnable, h.coherent, h.idleRunnable, h.currentActive⟩
-
-/-- Between scheduling points a thread runs on one core alone. -/
-theorem currentDequeuedUnique.currentUnique {st : SystemState} (h : st.currentDequeuedUnique)
-    (c c' : CoreId) (t : SeLe4n.ThreadId) (ht : st.scheduler.currentOnCore c = some t)
-    (ht' : st.scheduler.currentOnCore c' = some t) : c' = c :=
-  (h.current c t ht).2.1 c' ht'
-
-/-- **seL4's `ct_not_in_q` at a preemption**: between scheduling points a
-core's current thread, when it is no idle thread, may go back on that core's
-queue — it is on no queue at all. -/
-theorem currentDequeuedUnique.currentRequeueAdmitted {st : SystemState} {c : CoreId}
-    (h : st.currentDequeuedUnique)
-    (hNI : ∀ t, st.scheduler.currentOnCore c = some t → Kernel.isIdleThreadId t = false) :
-    st.currentRequeueAdmitted c := by
-  intro t ht
-  obtain ⟨tcb, hT, -⟩ := h.currentActive c t ht
-  unfold runEnqueueAdmits runLinksAdmit
-  rw [hNI t ht, hT, Bool.not_false, Bool.true_and]
-  by_cases h0 : tcb.runCoreCode = 0
-  · simp [h0]
-  · obtain ⟨k, hk⟩ := Nat.exists_eq_succ_of_ne_zero h0
-    by_cases hlt : k < Concurrency.numCores
-    · exfalso
-      have hq := h.not_queued ht ⟨k, hlt⟩
-      unfold queuedOn at hq
-      rw [hT] at hq
-      simp [hk] at hq
-    · simp only [hk, Bool.or_eq_true, beq_iff_eq, decide_eq_true_eq]
-      omega
 
 /-- A step that empties or keeps every current slot, takes no current thread
 and no idle thread onto a queue, queues only runnable threads and keeps the

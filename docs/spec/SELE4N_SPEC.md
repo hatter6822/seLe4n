@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.135` (`lakefile.toml`) |
+| **Package version** | `0.36.136` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 502,133 across 453 Lean files |
-| **Test LoC** | 86,768 across 70 Lean test suites |
-| **Proved declarations** | 18,172 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 502,299 across 455 Lean files |
+| **Test LoC** | 87,031 across 70 Lean test suites |
+| **Proved declarations** | 18,241 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits) |
 | **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2), and **BP4.1/BP4.2 (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type)** at v0.36.2 (§6.2.9), and **BP4.3/BP4.4 (the firmware's device tree reaching Lean, and the entry booting the deployment on the variant it describes)** at v0.36.2 (§6.2.10), and **BP4.5 (the image's loaded bytes cleaned to the Point of Unification before any thread can fetch)** at v0.36.2 (§6.2.11), and **BP4.6 (the verified board's RAM outside the kernel's extent mapped, and the boot map sealed before any secondary is released)** and **BP4.7 (that RAM handed to the root task as untypeds)** at v0.36.2 (§6.2.12), and **BP5.1 (the kernel image, a bare-metal binary entered at `_start` under `link.ld`)** and **BP5.2 (the Lean kernel linked into it, under `--gc-sections` from the archive lane's roots)** and **BP5.3 (the firmware's boot files, `kernel8.img` and `config.txt`, cut from that image and checked against it)** and **BP5.4 (its size and section map published with every CI run)** at v0.36.2 (§6.2.13), and **BP5.5 (the firmware's EL2 entry dropped to EL1, with the PSCI conduit following the entry level)** at v0.36.2 (§6.2.15), and **BP6 (every PE marks itself ready after its own per-PE runtime handshake and before it unmasks IRQs, and the boot halts unless every declared PE serves the kernel)** at v0.36.2 (§6.2.16), and **BP7.10 (the first gigabyte's RAM read off the firmware's account, and the constant boot map shrunk to the kernel's reserved extent)** at v0.36.3 (§6.2.17), and **BP7.1 slices 1–3 (frame capabilities, the untyped carve that mints them, and the untyped reset that returns their memory)** at v0.36.4, v0.36.5 and v0.36.6, slice 4a (child untypeds and subtree resets) at v0.36.8, the in-place VSpace-root refusal at v0.36.9, and slice 4b's VSpace-root carve at v0.36.10, `.tcbSetSpace` (a thread runs in a carved address space) at v0.36.11, intermediate page tables at v0.36.12, and every configured address space owning a table page at v0.36.13, which completes BP7.1 (§8.10.2a); BP7.2's user window and 16-bit hardware ASIDs at v0.36.14 and its physical-write ledger and translation install at v0.36.15; BP7.3–BP7.9 at v0.36.16–v0.36.22 (the whole trap frame saved, per-core restore staging, unblock-frame delivery, the live context restore, the delivered declassified badge, overflow message registers, lazily switched FP/SIMD state); and BP7.11 (the boot starts both initial threads, one per domain) at v0.36.23, which completes BP7; BP8.1's first slice (the image built for QEMU's `virt` — its device map from `src/board.rs`, its link script derived from `link.ld`, an arm64 Image header on `_start` — booted there at EL1 and at EL2 by `scripts/test_qemu.sh`) at v0.36.24, and its second (the Lean `virt` binding `SeLe4n/Platform/QemuVirt/` — its board check the RPi5 bridge's own coverage predicates, the RPi5 deployment's layout on it with every boot gate decided, and its own boot entry `lean_kernel_main_qemu_virt`, held by the boot-entry contract's table to its own approved call) at v0.36.25, and its third (the Lean-linked image booted by `scripts/test_qemu.sh --lean-kernel` on four PEs at EL1 and EL2 to every core's first idle dispatch, on every PR — §6.2.18) at v0.36.26, completing BP8.1, and BP8.2 (the four-PE bring-up gate, executed on every PR — §6.2.18) at v0.36.27. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -3585,8 +3585,10 @@ Hardware-mode kernel state lives in two `IO.Ref` cells:
   (`bootFromPlatformCheckedWithIdleThreads_currentDequeuedUnique`) and
   for the started boot, every initial-thread start being a run-queue
   stage (`bootFromPlatformCheckedStartedFor_allCores_currentDequeuedUnique`).
-  Every kernel entry carries it (`RunQueueEntryStage`), so the dispatch
-  payoffs take it in place of bare premises.
+  Every kernel entry carries it (`RunQueueEntryStage`).  Since `v0.36.136`
+  the IPC dispatch payoffs need neither it nor a bare premise: no IPC
+  bundle conjunct reads the scheduler, so a requeue of the current thread
+  has nothing in the bundle to re-establish.
   `bootAndInitialisePlatform platform config` is the same entry under
   the platform binding's own labeling (§6.7).
 - `kernelLabelingContextRef : IO.Ref LabelingContext` — the
@@ -5029,7 +5031,8 @@ message or stashed reply and the `.ipcCancelled` frame staged
 `Restart`, so it reissues its system call; this model's answer to a cancelled
 IPC is the `.ipcCancelled` frame, the one `cancelIpcBlocking` already gives.
 
-The finalisation keeps the IPC bundle (`finaliseFinalObject_preserves_ipcInvariantFull`,
+The finalisation keeps the IPC bundle, given that a lent context heads its
+lender's reply stack (`finaliseFinalObject_preserves_ipcInvariantFull`,
 each step by `storeEndpointWaiterCancelled_preserves_ipcInvariantFull`,
 `notificationWaiterCancel_preserves_ipcInvariantFull` and
 `storeUnbindNotification_preserves_ipcInvariantFull`), the reachable IPC state
@@ -5129,8 +5132,7 @@ binding and occupied space slots (part 26) are refused; the timeout-budget
 check refuses no reachable thread (`timeoutBudget_isNone_of_ipcReachable`), and
 a message delivered to the thread and not yet read is dropped by the suspend's
 mark (`finalisedSuspendMark`), as the suspend syscall's `clearPendingState`
-drops it.  A
-scheduling context is refused with a reply stack, a loan or a busy thread.  A
+drops it.  A scheduling context's refusals are narrowed by part 25 below.  A
 refused object is not finalised and the retire keeps it
 (`docs/REGISTERED_DEBT.md`).  On a finalised object the cleanup is proven to be
 the identity (`finaliseThreadCleanup_eq`, `finaliseSchedContextCleanup_eq`), so
@@ -5150,6 +5152,111 @@ the objects' cells in place, the per-core held tests compile to structural
 recursions, and the scheduling-context unbind compiles to
 `cancelBoundDonationPerform`, which reads the thread's old key before its first
 write.  A thread's carve reads 14 and a scheduling context's 13.
+
+**Busy reply and scheduling-context finalisation** (`v0.36.136`).  On the final
+capability to a reply, `finaliseFinalObject` runs `finaliseReply`, seL4 MCS's
+`finaliseCap` on a reply.  A reply a caller waits on is removed as
+`reply_remove`'s non-head branch removes it: the caller's blocked call is
+cancelled through `cancelIpcBlocking`'s reply arm (the reply leaves its stack,
+the caller is restored with its cancellation frame, both reply links are
+cleared and the caller leaves its server's reply-waiter queue, so no waiter
+names a server through a destroyed reply), the priority boost the caller lent
+its server is reverted (`finaliseReplyRevert`), and the caller is made
+`.Inactive` through the thread finalise's suspend, not woken.  A core's FP/SIMD
+or resident hold on the caller stays, as seL4 keeps a lazily saved context
+across `setThreadState Inactive`.  A reply a blocked receiver has stashed is
+unlinked from it, seL4's `reply_unlink` (`finaliseReplyUnstash`): the stasher,
+read off the reply's own record (`Reply.stasherCode`, seL4 MCS's `replyTCB`)
+and checked again, has its stash cleared in its slot and keeps waiting.  Every
+stash writes that record (`recordReplyStasher`) and every reader re-checks the
+thread it names (`SystemState.replyStashedAt`), so the receive's admission and
+the retype's stash check read one field too; `pendingReceiveReplyWellFormed`'s
+record clause makes the answer the table scan's
+(`replyStashedAt_eq_replyIsStashed`).  `replyCallerFinalisable` reads the
+whole admission on the pre-state: the reply heads no context's reply stack, and
+its caller is no reserved or idle thread, is on no run queue, is blocked on
+this reply, is linked into no endpoint queue and has no timeout budget.  A reply
+heading a context's reply stack is popped first, as `reply_remove`'s head branch
+does it (`reply_pop`): the context goes back to the caller with its
+replenishments on the caller's core, the thread it is taken from leaves its core,
+and the reply is unheaded (`finaliseReplyCancel`, `cancelIpcBlockingReclaimed`).
+Whether the pop commits is decided on the pre-state, before any write
+(`replyHeadPopCommits`, which reads the donated return's own check
+`donatedReturnCommits`); it refuses a caller that holds a binding of its own,
+which no reachable state gives, since a lender holds none (`donationOwnerValid`).
+The projection keeps the descheduled holder hidden from the donation's own flow
+fact (`donationOwnerFlowsToHolder`, a premise `finaliseReply_hidden` now
+carries).  For a reply heading no stack, that the caller lends to no one is not
+read: a lent context heads its lender's own
+reply stack (`lentContextHeadsLenderFrame`), the caller's top reply is this
+one, and this reply heads no stack (`replyCaller_lendsNone`).  The delete
+carries that fact as a pre-state premise of the dispatch
+(`capabilityDispatchQuiescence.lentContextsHeadedByLender`), and every step of
+the delete and revoke loop keeps it (`finaliseLoanBundle`,
+`cspaceDeleteSlotFinalising_preserves_finaliseLoanBundle`), so the admission
+walks no table.  A scheduling context's finalise now runs, in `finaliseCap`'s order,
+`finaliseSchedContextDeschedule` (a ready holder leaves its run queue or the
+core running it, seL4's `schedContext_unbindTCB` → `tcbSchedDequeue`; the core
+reschedules), the unbind (`schedContext_unbindAllTCBs`, a context held as its
+own or on loan), and `finaliseSchedContextUnstack` (`schedContext_unbindReply`:
+the stack head's upward link and the context's head are cleared, the frames
+below keep their callers).  The old head is then a *contextless stack top*: no
+`next`, while the frame below still links up to it.  Its later removal cuts it
+from that frame, as `reply_remove`'s `if (prev_ptr) prev->replyNext = 0` does
+(`severReplyFrameBelowStores`, the fourth arm of `spliceReplyFrameOut`, mirrored
+on the frozen surface and in the in-place splice, whose cut and frame-above
+splice write each link in its slot: `severReplyFrameBelowStoresInPlace`,
+`spliceReplyFrameStoresInPlace`), so the removed reply is named
+by no other object and is retired, and the frame below becomes the new top.  The
+footprints declare the frame below on that arm too (`replyFrameBelow?` is the
+frame's `prev` unless it heads a stack).  A thread whose top reply heads a
+context it lent from the bottom of the stack is the context's recorded origin;
+its own delete's pop clears that record, so the admission accepts that one
+origin (`replyPopClearedOrigin?` in `threadFinaliseAdmitted`) rather than
+refusing the real lender.  `schedContext_completeYieldTo` has nothing to do:
+the model keeps no yield-to link.  Where they differ, the finalise follows seL4
+rather than the live unbind syscall: that syscall leaves its thread queued at
+its legacy priority, the finalise dequeues it.  A caller blocked on its reply
+is blocked on the reply object, so an endpoint only a reply-blocked caller
+names is no longer kept by the retire's names-by-id check.  A thread's own
+final delete now handles its replies too.  A thread blocked on a reply is
+admitted when the reply cancel admits it (`replyCallerCancelAdmitted`), and its
+cancel is the reply finalisation's own (`finaliseReplyCallerCancel`, seL4's
+`reply_remove_tcb`): a head reply is popped and the context the thread lent comes
+back to it; any other reply is spliced out.  A thread borrowing a context returns
+it by its lender's own pop, before the suspend, in seL4's order
+(`finaliseThreadReturnLoan`).  Every other caller waiting on the thread is then
+ended as `reply_remove` ends it: the reply cancel, then the suspend, `.Inactive`
+(`finaliseThreadEndWaiters`, a walk following the thread's live queue head,
+bounded by its own `replyWaitersCount`, in place).  seL4 keeps the callers
+blocked until their reply objects go. Here, reply authority is tied to the
+server, so the server's delete removes each caller's reply then.  The admission
+reads every waiter on the pre-state (`replyWaitersAdmitted`): the lender is
+endable, the thread's own reply, when it lends onward, heads no stack, and every
+other waiter is endable with its reply on no stack.  On a state carrying the
+finalisation's step invariant that the admission admits, neither the loan
+return nor the walk refuses midway
+(`finaliseThreadEndWaiters_returnLoan_endsAll_of_admitted`); the lender's pop
+keeps the plain waiters' guards (`finaliseReplyWaiter_unframed`).  The head
+pop's recipient check refuses no reachable state
+(`donationRecipientAcceptable_of_donationOwnerValid`).  A context whose holder is blocked sending or calling is finalised
+seL4's way: the holder is unbound and keeps waiting, its IPC unended, as
+`schedContext_unbindTCB` leaves it — `v0.36.136` retired `passiveServerIdle`,
+the IPC conjunct that forbade an unbound sender or caller, rather than restating
+it, since seL4 states no such invariant.  The IPC bundle, the reachable
+state (reply waiters, PIP, donation chain), the run-queue entry stage,
+reschedule coverage, the reply-stack write census
+(`finaliseSchedContextUnstack_preserves_donationChainWellFormed`) and the
+projection (`finaliseReply_hidden`, `finaliseSchedContextDeschedule_hidden`)
+are kept over the new steps (`finaliseReply_closed`,
+`finaliseSchedContextDeschedule_closed`).  Neither delete allocates: the busy
+reply's finalise is compiled in place (`finaliseReply_eq_impl`, an `@[csimp]`
+form that reads the caller's codes before any write and stores the splice, the
+consumed reply and the caller's cleared link in their slots), so
+`busy-reply-delete` and `stashed-reply-delete` read 0.  The thread deletes the
+image runs keep their pins; no scenario deletes a head reply or a server with
+waiters, since each such delete stops both of the image's threads
+(`docs/REGISTERED_DEBT.md`), and the suite witnesses both.
 
 ### 8.6.1 Carve Refusal Order (`v0.36.125`)
 
@@ -6967,8 +7074,8 @@ disciplines — so `ipcInvariantFull` across a syscall is machine-checked
 in `docs/REGISTERED_DEBT.md`.  The `.reply` arm's own confinement is
 **retired** at `v0.35.195` (WS-RR RR8.16): RR4.14 held the payoff to *unfaulted*
 callers because the seam is seL4's `doReplyTransfer` and the fault branch's
-abandon arm needs the answered thread `passiveServerIdleAllowed` at the
-**post**-state, which the de-threading discipline forbids threading.
+abandon arm needed the answered thread `passiveServerIdleAllowed` (retired at
+`v0.36.136`) at the **post**-state, which the de-threading discipline forbids threading.
 `endpointReplyCrossCoreDispatch_ok_target_ready` reads that off the dispatch's
 own outcome, so the arm case-splits on `threadHasPendingFault` and covers both
 branches — the donating one included, which
@@ -6995,29 +7102,21 @@ by the intrusive notification queue's links, `notificationWaiterConsistent`):
   and `returnDonatedSchedContext` upgrades it back to the full form.  A bundle
   theorem must not assume `donationOwnerValid` of such a state: it would be
   vacuous rather than conditional.
-- `passiveServerIdle`: unbound non-runnable threads are
-  ready/receiving/blocked-on-reply (a donor awaiting the reply that returns
-  its SchedContext).  **Preserved by `cancelIpcBlocking` on every arm** since
-  `v0.34.105` (WS-OD OD1.5).  It was not before: the reply arm's reclaim hands
-  a donated SchedContext back and thereby makes its holder `.unbound`, and a
-  holder that had Called an endpoint with no receiver waiting was left
-  `.blockedOnCall` — which this conjunct forbids, reachable at depth 1 with no
-  donation chain.  The reclaim now ends that holder's outstanding send or call
-  first (`abortHolderPendingIpc`, seL4-MCS's timeout semantics: the budget the
-  operation was issued on has been revoked), and the abort's reach is exactly
-  those two states — a holder in any state the conjunct permits is left
-  untouched.  **And the cross-core composite places the holder it unblocks**
-  since `v0.34.108` (WS-OD OD1.7): satisfying the conjunct is not the same as
-  being schedulable, and the abort alone left the holder `.ready` on no run
-  queue with every recovery path closed — `.tcbResume` demands `.Inactive`,
-  `schedContextBind` re-buckets only an already-queued thread, and
-  `chooseThreadOnCore` never scans ready TCBs — so the server was stranded
-  permanently.  `cancelIpcBlockingOnCore` enqueues it on its **home** core,
-  which is neither necessarily the victim's nor the executing core; the declared
-  scheduler footprint names that core's run-queue write lock, and the composite's
-  per-core run-queue locality clause excludes it.  **That placement is retired at
-  `v0.35.158`** — the reclaim deschedules the holder it unbinds; see the
-  paragraph on it below.
+- `passiveServerIdle` — **retired at `v0.36.136`** (WS-ZA ZA5.4 part 25).  It
+  stated that an unbound thread off every run queue is ready, receiving or
+  blocked on a reply, and so forbade an unbound thread blocked sending or
+  calling.  seL4 has no such invariant: `schedContext_unbindTCB` unbinds a
+  thread whatever it waits on and leaves its IPC alone, and the thread runs
+  again only once a context is bound or donated to it.  The conjunct was also
+  the bundle's one scheduler reader.  Its retirement takes with it the
+  cancellation reclaim's holder abort (`abortHolderPendingIpc`, `v0.34.104`):
+  the reclaim now returns the reservation and leaves the holder blocked and
+  queued, as seL4 does; the final delete of a scheduling context whose holder
+  is blocked sending or calling finalises it the same way; and no IPC bundle
+  conjunct reads the scheduler, so every IPC-bundle proof frames scheduler
+  writes for free.  Under the single `.unbound`, such a holder becomes a legacy
+  time-sliced thread when its IPC later completes; the passive/legacy split
+  (WS-CB CB1.12) parks it instead, under a scheduler-bundle invariant.
 
   **And the live `.tcbSuspend` performs that wake only since `v0.35.90`** (WS-RR
   RR8.12, second cut).  `cancelIpcBlockingOnCore` has no production caller: the
@@ -7062,8 +7161,8 @@ by the intrusive notification queue's links, `notificationWaiterConsistent`):
   `timerTickBudgetOnCore`'s refills `configDefaultTimeSlice` forever), so an
   ordinary `.tcbSuspend` of a *client* — authority over the client, none over the
   server — handed the server the CPU on nobody's budget, outside CBS admission
-  entirely, and `passiveServerIdle` could not see it because its antecedent is
-  *not queued*.  Every other donation pop in the tree already took the
+  entirely, and `passiveServerIdle` (retired at `v0.36.136`) could not see it
+  because its antecedent was *not queued*.  Every other donation pop in the tree already took the
   MCS-passive reading (`applyReplyDonation`, `applyReplyDonationOnCore`,
   `replyRecvHolderDeschedule`; seL4-MCS's `schedContext_donate`, read at
   `13.0.0`, dequeues the previous holder), and the reclaim was the one outlier.
@@ -8426,9 +8525,8 @@ Six properties of the surface this leaves.
 3. **A resolved holder may resolve to no TCB.**  `SchedContext.boundThread` is
    tied to no stored TCB by any invariant, unlike a thread read out of a stored
    binding.  What rules the case out is the pop **declining**
-   (`returnDonatedSchedContext_ok_server_not_reserved`), with
-   `abortHolderPendingIpc_eq_self_of_lookup_none` the frame a consumer needs to
-   act on that.
+   (`returnDonatedSchedContext_ok_server_not_reserved`); since `v0.36.136` the
+   reclaim runs no holder abort, so nothing further acts on the holder.
 
 4. **`returnDonatedSchedContext_ok_under_invariants` became an instance.**  The
    general form `_ok_of_boundAndRecipient` takes the context, its bound thread and

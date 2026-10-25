@@ -7,7 +7,7 @@ import SeLe4n.Kernel.IPC.Operations.Timeout
 `abortPendingIpcOnEndpoint` (`IPC/Operations/Timeout.lean`) is the object-only
 prefix of `timeoutThread`: an endpoint-queue splice followed by one TCB rewrite.
 This module is its `ipcInvariantFull` carriage, and it is a *composition* rather
-than a fresh twenty-conjunct proof:
+than a fresh nineteen-conjunct proof:
 
 * the splice's half comes from
   `endpointQueueRemove_establishes_ipcInvariantFullExceptMembership`
@@ -69,11 +69,9 @@ hypotheses: `endpointQueueRemove` refuses a key that does not hold an endpoint o
 a thread that is not a TCB, and the timeout rewrite refuses a thread the splice
 lost — which it does not, since the splice writes queue links.
 
-Consumed by the cancellation reclaim, where the endpoint comes from
-`ipcStateQueueMembershipConsistent`: a thread blocked sending or calling names an
-endpoint that exists.  Without this the reclaim's `passiveServerIdle` result
-would have to admit a refused abort, which leaves the holder blocked — the very
-state being closed. -/
+A caller supplies the endpoint from `ipcStateQueueMembershipConsistent`: a
+thread blocked sending or calling names an endpoint that exists, so a
+well-formed state never sees the abort refuse. -/
 theorem abortPendingIpcOnEndpoint_ok
     {st : SystemState} {epId : SeLe4n.ObjId} {isReceiveQ : Bool} {tid : SeLe4n.ThreadId}
     {ep : Endpoint} {tcb : TCB}
@@ -146,7 +144,7 @@ theorem endpointQueueRemove_timeoutBudgetFrame
 /-- **WS-OD OD1.3 — the abort's object-only prefix carries the whole bundle.**
 
 `abortPendingIpcOnEndpoint` is the splice followed by one TCB rewrite, and this
-composes the two halves rather than re-proving twenty conjuncts:
+composes the two halves rather than re-proving nineteen conjuncts:
 
 * the splice leaves `ipcInvariantFullExceptMembership` at the removed thread
   (`endpointQueueRemove_establishes_ipcInvariantFullExceptMembership` — itself
@@ -252,11 +250,7 @@ theorem abortPendingIpcOnEndpoint_preserves_ipcInvariantFull
     · rw [storeObject_objects_ne st1 st' tid.toObjId k _ hk hI1 hStore,
         storeObject_objects_ne sRc sStage tid.toObjId k _ hk hIRc hStage,
         storeObject_objects_ne st1 sRc tid.toObjId k _ hk hI1 hStoreRc]
-  have hSched2 : st'.scheduler = sStage.scheduler := by
-    rw [storeObject_scheduler_eq st1 st' tid.toObjId _ hStore,
-      storeObject_scheduler_eq sRc sStage tid.toObjId _ hStage,
-      storeObject_scheduler_eq st1 sRc tid.toObjId _ hStoreRc]
-  exact ipcInvariantFull_of_storeAgrees_of_scheduler_eq hAgree2 hSched2 hFullStage
+  exact ipcInvariantFull_of_storeAgrees hAgree2 hFullStage
 
 open SeLe4n.Model.SystemState in
 /-- **WS-RR RR8.7: the abort keeps every timeout budget `none`.**
@@ -291,8 +285,8 @@ theorem abortPendingIpcOnEndpoint_preserves_allTimeoutBudgetsNone
 
 Its splice half leaves the registry literally unchanged
 (`endpointQueueRemove_objectIndexSet_eq`) and its store half extends it through
-`storeObject`, which preserves it.  Needed by the cancellation reclaim's
-information-flow argument, whose store chain runs on the *aborted* state. -/
+`storeObject`, which preserves it.  An information-flow argument whose store
+chain runs on the *aborted* state reads it. -/
 theorem abortPendingIpcOnEndpoint_preserves_objectIndexSet_invExt
     (epId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
     (st st' : SystemState) (hObjSetInv : st.objectIndexSet.table.invExt)
@@ -328,9 +322,7 @@ theorem abortPendingIpcOnEndpoint_preserves_objectIndexSetComplete
 
 The operation's whole point, stated at the one key it rewrites: the thread is
 taken off its endpoint queue and its blocking state is cleared, so nothing about
-it is `.blockedOnSend` or `.blockedOnCall` any more.  The cancellation reclaim
-reads this to know the holder it unbinds is in a state `passiveServerIdle`
-permits. -/
+it is `.blockedOnSend` or `.blockedOnCall` any more. -/
 theorem abortPendingIpcOnEndpoint_aborted_ipcState
     {st st' : SystemState} {epId : SeLe4n.ObjId} {isReceiveQ : Bool} {tid : SeLe4n.ThreadId}
     (hInv : st.objects.invExt)
@@ -346,48 +338,6 @@ theorem abortPendingIpcOnEndpoint_aborted_ipcState
   rw [← hEqT]
   simp [TCB.withReturnFrame]
 
-/-- WS-OD OD1.5: **the abort frames `passiveServerIdle`.**
-
-The aborted thread is the only one whose `ipcState` moves, and it moves to
-`.ready` — an allowed passive state, so the frame's own
-`¬ passiveServerIdleAllowed` filter excludes it before the pullback is asked for
-anything.  Every other thread keeps both fields: the splice writes queue links
-(`endpointQueueRemove_getTcb_backward_upToField` at the pair) and the timeout
-rewrite lands at one key.
-
-This is the whole point of ending the holder's IPC rather than only unbinding it:
-without the rewrite the holder would still be `.blockedOnCall` in the post-state,
-in the non-allowed half, and the pullback would have to produce an `.unbound`
-pre-state holder that does not exist. -/
-theorem abortPendingIpcOnEndpoint_passiveServerIdleFrame
-    {st st' : SystemState} {epId : SeLe4n.ObjId} {isReceiveQ : Bool} {tid : SeLe4n.ThreadId}
-    (hInv : st.objects.invExt)
-    (hStep : abortPendingIpcOnEndpoint epId isReceiveQ tid st = .ok st') :
-    passiveServerIdleFrame st st' := by
-  obtain ⟨st1, tcb1, hRem, hT1, hStore⟩ := abortPendingIpcOnEndpoint_shape hStep
-  have hI1 : st1.objects.invExt :=
-    endpointQueueRemove_preserves_objects_invExt epId isReceiveQ tid st st1 hInv hRem
-  refine passiveServerIdleFrame_of_backward_of_not_allowed ?_
-    (by rw [abortPendingIpcOnEndpoint_scheduler_eq epId isReceiveQ tid st st' hStep])
-  intro a tcb' hPostT _ hNA
-  have hPost := (SystemState.getTcb?_eq_some_iff st' a tcb').mp hPostT
-  by_cases hEq : a.toObjId = tid.toObjId
-  · -- the aborted thread: the rewrite makes it `.ready`, which the filter admits
-    exfalso
-    apply hNA
-    rw [hEq, storeObject_objects_eq st1 st' tid.toObjId _ hI1 hStore] at hPost
-    have hEqT : _ = tcb' := KernelObject.tcb.inj (Option.some.inj hPost)
-    rw [← hEqT]
-    exact Or.inl (by simp [TCB.withReturnFrame])
-  · -- every other thread: both fields survive the splice and the single store
-    rw [storeObject_objects_ne st1 st' tid.toObjId a.toObjId _ hEq hI1 hStore] at hPost
-    obtain ⟨t0, h0, hf⟩ :=
-      endpointQueueRemove_getTcb_backward_upToField
-        (fun t => (t.ipcState, t.schedContextBinding)) (fun _ _ _ _ => rfl)
-        epId isReceiveQ tid st st1 hInv hRem a.toObjId tcb' hPost
-    exact ⟨t0, (SystemState.getTcb?_eq_some_iff st a t0).mpr h0,
-      congrArg Prod.fst hf, congrArg Prod.snd hf⟩
-
 /-- WS-OD OD1.4: **the abort carries `donationOwnerValid`**, given that the
 aborted thread is not itself the owner of any donation.
 
@@ -399,10 +349,8 @@ substantive write moves the aborted thread to `.ready`.  Every other thread's
 either direction (`_schedContext_forward`).
 
 It is stated as "the aborted thread holds a binding" rather than as "the aborted
-thread owns no donation" because that is the form the cancellation reclaim
-supplies for free: the thread it aborts is the *holder* of the cancelled
-caller's donation, so its binding is `.donated`, and `donationOwnerValid`'s own
-second clause puts every owner at `.unbound`. -/
+thread owns no donation" because the first implies the second:
+`donationOwnerValid`'s own second clause puts every owner at `.unbound`. -/
 theorem abortPendingIpcOnEndpoint_preserves_donationOwnerValid
     (epId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
     (st st' : SystemState) (hInv : st.objects.invExt)

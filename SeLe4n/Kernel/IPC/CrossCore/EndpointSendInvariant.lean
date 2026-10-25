@@ -38,8 +38,6 @@ transcribing the 2805-line call-side invariant module:
   receiver) and `removeRunnableOnCore` vs `removeRunnable` (scheduler-only).
   This is the `endpointReceiveDualOnCore_post_agrees` pattern the register's
   remediation note pointed at.
-* §2 — the per-core `passiveServerIdle` frame, the one conjunct that reads the
-  scheduler and so does *not* transport across an off-scheduler agreement.
 * §3 — the bundle itself, and §4 its per-core form, both composed from the
   single-core `endpointSendDual_preserves_ipcInvariantFull` through
   `ipcInvariantFull_of_getElem_eq`.
@@ -127,99 +125,6 @@ theorem endpointSendDualOnCore_post_agrees
                 (recordSendCap_offSchedulerAgrees _ _ _ _)))
 
 -- ============================================================================
--- §2 RR2.15 — the per-core `passiveServerIdle` frame
--- ============================================================================
-
-open SeLe4n.Model.SystemState in
-/-- WS-RR RR2.15: the cross-core send frames every core's `passiveServerIdle`
-reading. Mirrors `endpointSendDual_passiveServerIdleFrameOnCore` step for step,
-with the two per-core scheduling steps substituted: the rendezvous wake is
-lookup-invisible on the just-stored `.ready` receiver, and the block-path
-deschedule only removes the sender from its own core's queue.
-
-The one substantive obligation is the same as the single-core proof's: the
-thread the send drives into `.blockedOnSend` — a state `passiveServerIdle`
-forbids for an unbound descheduled thread — is the running sender, which holds a
-SchedContext (`hSenderNotUnbound`) and is therefore not unbound. -/
-theorem endpointSendDualOnCore_passiveServerIdleFrameOnCore
-    (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) (payload : SendPayload)
-    (executingCore : CoreId) (st : SystemState) (c : CoreId)
-    (hObjInv : st.objects.invExt)
-    (hSenderNotUnbound : ∀ (tcb : TCB), st.getTcb? sender = some tcb →
-        tcb.schedContextBinding ≠ .unbound) :
-    passiveServerIdleFrameOnCore st
-      (endpointSendDualOnCore endpointId sender payload executingCore st).1 c := by
-  unfold endpointSendDualOnCore
-  cases hEp : st.getEndpoint? endpointId with
-  | none =>
-    simp only
-    split <;> exact passiveServerIdleFrameOnCore.refl st
-  | some ep =>
-    simp only
-    cases hHead : ep.receiveQ.head with
-    | some receiver =>
-      simp only
-      cases hSnd : st.getTcb? sender with
-      | none => simp only; exact passiveServerIdleFrameOnCore.refl st
-      | some senderTcb =>
-        simp only
-        cases hPop : endpointQueuePopHead endpointId true st with
-        | error e => simp only; exact passiveServerIdleFrameOnCore.refl st
-        | ok popRes =>
-          obtain ⟨popped, poppedTcb, st1⟩ := popRes
-          simp only
-          have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId true
-            st st1 popped poppedTcb hObjInv hPop
-          have hF1 := endpointQueuePopHead_passiveServerIdleFrameOnCore (c := c) endpointId
-            true st st1 popped poppedTcb hObjInv hPop
-          cases hStore : storeTcbReceiveComplete st1 popped (some (sendPayloadMessage st sender payload)) with
-          | error e => simp only; exact passiveServerIdleFrameOnCore.refl st
-          | ok st2 =>
-            simp only
-            have hObjInv2 := storeTcbReceiveComplete_preserves_objects_invExt st1 st2 popped
-              (some (sendPayloadMessage st sender payload)) hObjInv1 hStore
-            obtain ⟨rt, hRtGet, hRtReady⟩ :=
-              storeTcbReceiveComplete_getTcb?_ipcState st1 st2 popped (some (sendPayloadMessage st sender payload)) hObjInv1 hStore
-            exact (hF1.trans (storeTcbReceiveComplete_passiveServerIdleFrameOnCore st1 st2
-              popped (some (sendPayloadMessage st sender payload)) hObjInv1 hStore)).trans
-              (wakeThread_passiveServerIdleFrameOnCore_of_ready st2 popped executingCore rt
-                hRtGet hRtReady hObjInv2)
-    | none =>
-      simp only
-      cases hEnq : endpointQueueEnqueue endpointId false sender st with
-      | error e => simp only; exact passiveServerIdleFrameOnCore.refl st
-      | ok st1 =>
-        simp only
-        have hObjInv1 := endpointQueueEnqueue_preserves_objects_invExt endpointId false sender
-          st st1 hObjInv hEnq
-        have hF1 := endpointQueueEnqueue_passiveServerIdleFrameOnCore (c := c) endpointId
-          false sender st st1 hObjInv hEnq
-        cases hStore : storeTcbIpcStateAndMessage st1 sender (.blockedOnSend endpointId)
-            none with
-        | error e => simp only; exact passiveServerIdleFrameOnCore.refl st
-        | ok st2 =>
-          simp only
-          refine (hF1.trans (storeTcbIpcStateAndMessage_passiveServerIdleFrameOnCore st1 st2
-            sender (.blockedOnSend endpointId) none
-            (Or.inr (fun tcb hTcb => ?_)) hObjInv1 hStore)).trans
-            (removeRunnableOnCore_passiveServerIdleFrameOnCore st2 sender executingCore
-              (fun tcb hTcb => Or.inl ?_))
-            |>.trans (passiveServerIdleFrameOnCore.of_objectsAgreeOffRunLinks
-              (recordSendCap_objectsAgreeOffRunLinks _ _ _ _) (recordSendCap_scheduler _ _ _ _))
-          · obtain ⟨tcb0, hTcb0, hBindEq⟩ := endpointQueueEnqueue_sameSchedContextBindings
-              endpointId false sender st st1 hObjInv hEnq sender tcb
-              ((getTcb?_eq_some_iff st1 sender tcb).mp hTcb)
-            exact hBindEq ▸ hSenderNotUnbound tcb0
-              ((getTcb?_eq_some_iff st sender tcb0).mpr hTcb0)
-          · obtain ⟨tcb1, hTcb1, hBindEq1⟩ := storeTcbIpcStateAndMessage_sameSchedContextBindings
-              st1 st2 sender (.blockedOnSend endpointId) none hObjInv1 hStore sender tcb
-              ((getTcb?_eq_some_iff st2 sender tcb).mp hTcb)
-            obtain ⟨tcb0, hTcb0, hBindEq0⟩ := endpointQueueEnqueue_sameSchedContextBindings
-              endpointId false sender st st1 hObjInv hEnq sender tcb1 hTcb1
-            exact hBindEq1 ▸ hBindEq0 ▸ hSenderNotUnbound tcb0
-              ((getTcb?_eq_some_iff st sender tcb0).mpr hTcb0)
-
--- ============================================================================
 -- §3 RR2.14 — object-store invariant preservation
 -- ============================================================================
 
@@ -279,7 +184,7 @@ theorem endpointSendDualOnCore_preserves_objects_invExt
 
 open SeLe4n.Model.SystemState in
 /-- **WS-RR RR2.14 (audit blocker 3)**: the cross-core send preserves the
-**whole twenty-conjunct** IPC invariant bundle, unconditionally over
+**whole nineteen-conjunct** IPC invariant bundle, unconditionally over
 success/failure.
 
 Hypotheses mirror `endpointSendDual_preserves_ipcInvariantFull` exactly, with
@@ -288,10 +193,9 @@ the two threaded post-state conjuncts (`blockedThreadsPendingMessageConsistent`,
 two the single-core theorem threads, and the two WS-RR RR3 is chartered to
 de-thread across the whole surface. Nothing new is threaded here.
 
-The proof is the agreement dichotomy plus one scheduler-sensitive conjunct: the
-nineteen object-reading conjuncts transport across the off-scheduler agreement
-(`ipcInvariantFull_of_getElem_eq`), and `passiveServerIdle` is supplied at the
-per-core post-state from §2's frame. -/
+The proof is the agreement dichotomy: every conjunct reads only the object
+store, so the bundle transports across the off-scheduler agreement
+(`ipcInvariantFull_of_getElem_eq`). -/
 theorem endpointSendDualOnCore_preserves_ipcInvariantFull
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) (payload : SendPayload)
     (executingCore : CoreId) (st : SystemState)
@@ -320,17 +224,10 @@ theorem endpointSendDualOnCore_preserves_ipcInvariantFull
     ipcInvariantFull (endpointSendDualOnCore endpointId sender payload executingCore st).1 := by
   have hSenderNotUnboundT : ∀ (tcb : TCB), st.getTcb? sender = some tcb →
       tcb.schedContextBinding ≠ .unbound := hSenderNotUnbound
-  have hPsi' : passiveServerIdle
-      (endpointSendDualOnCore endpointId sender payload executingCore st).1 :=
-    (passiveServerIdle_perCore_bootCore_iff _).mp
-      (passiveServerIdle_perCore_of_frameOnCore
-        (endpointSendDualOnCore_passiveServerIdleFrameOnCore endpointId sender payload executingCore
-          st bootCoreId hObjInv hSenderNotUnboundT)
-        ((passiveServerIdle_perCore_bootCore_iff st).mpr hInv.passiveServerIdle))
   rcases endpointSendDualOnCore_post_agrees endpointId sender payload executingCore st hObjInv with
     hPre | ⟨r1, hStep1, hAgree⟩
   · rw [hPre]; exact hInv
-  · exact ipcInvariantFull_of_objectsAgreeOffRunLinks hAgree.objects hPsi'
+  · exact ipcInvariantFull_of_objectsAgreeOffRunLinks hAgree.objects
       (endpointSendDual_preserves_ipcInvariantFull st r1 endpointId sender payload hInv hObjInv
         hAllBudgetsNone
         hFreshSender hSendTailFresh hSenderNotRecv
@@ -373,11 +270,6 @@ theorem endpointSendDualOnCore_preserves_ipcInvariantFull_perCore
     (endpointSendDualOnCore_preserves_ipcInvariantFull endpointId sender payload executingCore st
       (ipcInvariantFull_of_smp hInv) hObjInv hAllBudgetsNone hFreshSender
       hSendTailFresh hSenderNotRecv hSenderNotReply hSenderNotUnbound)
-    (passiveServerIdle_perCore_of_frameOnCore
-      (endpointSendDualOnCore_passiveServerIdleFrameOnCore endpointId sender payload executingCore
-        st c hObjInv
-        hSenderNotUnbound)
-      (hInv c).passiveServerIdle)
 
 -- ============================================================================
 -- §5 RR2.14 / RR2.15 — the capability-carrying live `.send` arm
@@ -446,52 +338,11 @@ theorem endpointSendDualWithCapsOnCore_preserves_ipcInvariantFull
         | exact hBare
         | (rename_i hT
            obtain ⟨stR, caps, hO, hS, hCaps, hOr⟩ := receiveTransferCaps_frame hT
-           have hR : ipcInvariantFull stR := ipcInvariantFull_of_objects_scheduler_eq hO hS hBare
+           have hR : ipcInvariantFull stR := ipcInvariantFull_of_objects_eq hO hBare
            rcases hOr with rfl | hU
            · exact hR
            · exact ipcUnwrapCaps_preserves_ipcInvariantFull _ _ receiverSlotBase _ stR _ _ hR
                (hO ▸ hBareInv) (fun i c hc b hb => hCaps hBare.badgeWellFormed.2 i c hc b hb) hU)
-
-open SeLe4n.Model.SystemState in
-/-- WS-RR RR2.14: the capability-carrying cross-core send frames every core's
-`passiveServerIdle` reading — §2's frame for the bare send, then the
-capability transfer's own (`receiveTransferCaps_frame`, then
-`ipcUnwrapCaps_passiveServerIdleFrameOnCore`; the transfer writes no TCB at all). -/
-theorem endpointSendDualWithCapsOnCore_passiveServerIdleFrameOnCore
-    (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) (payload : SendPayload)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState) (c : CoreId)
-    (hObjInv : st.objects.invExt)
-    (hSenderNotUnbound : ∀ (tcb : TCB), st.getTcb? sender = some tcb →
-        tcb.schedContextBinding ≠ .unbound) :
-    passiveServerIdleFrameOnCore st
-      (endpointSendDualWithCapsOnCore endpointId sender payload
-        receiverSlotBase executingCore st).1 c := by
-  have hBare := endpointSendDualOnCore_passiveServerIdleFrameOnCore endpointId sender
-    payload executingCore st c hObjInv
-    hSenderNotUnbound
-  have hBareInv := endpointSendDualOnCore_preserves_objects_invExt endpointId sender
-    payload executingCore st hObjInv
-  unfold endpointSendDualWithCapsOnCore
-  cases hSend : endpointSendDualOnCore endpointId sender
-      payload executingCore st with
-  | mk stSend res =>
-    rw [hSend] at hBare hBareInv
-    cases res with
-    | error e => exact hBare
-    | ok sgi =>
-      simp only
-      repeat' split
-      all_goals first
-        | exact hBare
-        | (rename_i hT
-           obtain ⟨stR, caps, hO, hS, _, hOr⟩ := receiveTransferCaps_frame hT
-           have hR : passiveServerIdleFrameOnCore st stR c :=
-             hBare.trans (passiveServerIdleFrameOnCore.of_objectsAgreeOffRunLinks
-               (fun _ => by rw [hO]) hS)
-           rcases hOr with rfl | hU
-           · exact hR
-           · exact hR.trans (ipcUnwrapCaps_passiveServerIdleFrameOnCore _
-               _ receiverSlotBase _ stR _ _ (hO ▸ hBareInv) hU))
 
 open SeLe4n.Model.SystemState in
 /-- **WS-RR RR2.15 (the live arm, per core)**: `endpointSendDualWithCapsOnCore`
@@ -532,10 +383,5 @@ theorem endpointSendDualWithCapsOnCore_preserves_ipcInvariantFull_perCore
       receiverSlotBase executingCore st
       (ipcInvariantFull_of_smp hInv) hObjInv hAllBudgetsNone
       hFreshSender hSendTailFresh hSenderNotRecv hSenderNotReply hSenderNotUnbound)
-    (passiveServerIdle_perCore_of_frameOnCore
-      (endpointSendDualWithCapsOnCore_passiveServerIdleFrameOnCore endpointId sender payload
-        receiverSlotBase executingCore st c hObjInv
-        hSenderNotUnbound)
-      (hInv c).passiveServerIdle)
 
 end SeLe4n.Kernel

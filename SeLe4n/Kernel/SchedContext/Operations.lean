@@ -2071,24 +2071,6 @@ theorem schedContextUnbindQueueStage_runQueueStage (st0 : SystemState)
         (SystemState.RunQueueStage.markReschedulePendingOnCore _ home)
     · exact .refl _
 
-/-- The unbind's run-queue stage is a current-placement frame for a core whose
-current thread is not the one it places. -/
-theorem schedContextUnbindQueueStage_currentPlacementFrame (st0 : SystemState)
-    (home : Concurrency.CoreId) (tid : SeLe4n.ThreadId) (prio : SeLe4n.Priority) (wasCurrent : Bool)
-    (c : Concurrency.CoreId) (hNe : wasCurrent = true → st0.scheduler.currentOnCore c ≠ some tid) :
-    SystemState.CurrentPlacementFrame c st0
-      (schedContextUnbindQueueStage st0 home tid prio wasCurrent) := by
-  unfold schedContextUnbindQueueStage
-  split
-  · rename_i hMem
-    exact SystemState.CurrentPlacementFrame.runRequeueOnCore _ _ _ _ _ hMem
-  · split
-    · rename_i hW
-      exact (SystemState.CurrentPlacementFrame.runEnqueueOnCore _ _ _ _ _ (hNe hW)).trans
-        (SystemState.CurrentPlacementFrame.of_frame rfl
-          (by simp [SystemState.markReschedulePendingOnCore]))
-    · exact .refl _ _
-
 /-- The unbind keeps the run queues in agreement with the links: the current
 slot and the flag are not read by it, the two object writes move no link, and
 the queue stage is one (`schedContextUnbindQueueStage_runQueueStage`). -/
@@ -2196,82 +2178,6 @@ theorem schedContextUnbind_runQueueEntryStage (vScId : SeLe4n.ValidObjId) (st st
         exact SystemState.RunQueueStage.insert rfl rfl rfl
           (fun c => by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
           (SystemState.objStateMono_nonTcb (by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl) rfl)
-  · contradiction
-
-/-- The unbind is a current-placement frame for any core whose current thread is
-current nowhere else: it clears the unbound thread's core, and places that
-thread on its home only when it was current, so never a thread still current on
-`c`. -/
-theorem schedContextUnbind_currentPlacementFrame (vScId : SeLe4n.ValidObjId) (st st' : SystemState)
-    (c : Concurrency.CoreId) (hInv : st.objects.invExt)
-    (hU : ∀ c' t, st.scheduler.currentOnCore c = some t → st.scheduler.currentOnCore c' = some t →
-      c' = c)
-    (hStep : schedContextUnbind vScId st = .ok ((), st')) :
-    SystemState.CurrentPlacementFrame c st st' := by
-  unfold schedContextUnbind at hStep
-  split at hStep
-  · rename_i sc hSc _
-    split at hStep
-    · contradiction
-    · rename_i tid hBound
-      split at hStep
-      · rename_i tcb hTcb
-        dsimp only [] at hStep
-        split at hStep
-        · contradiction
-        · cases hStep
-          refine SystemState.CurrentPlacementFrame.trans ?_
-            (markKeyChangeFor_currentPlacementFrame _ _ _ c)
-          refine SystemState.CurrentPlacementFrame.trans (s2 := schedContextUnbindQueueStage _ _ _ _ _)
-            ?_ (SystemState.CurrentPlacementFrame.of_frame rfl
-              (purgeReplenishmentOnCore_currentOnCore _ _ _ c))
-          refine SystemState.CurrentPlacementFrame.trans (s2 := SystemState.updateTcb _ _ _) ?_
-            (schedContextUnbindQueueStage_currentPlacementFrame _ _ _ _ _ c ?hNe)
-          case hNe =>
-            intro hW hcur
-            simp only [SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler] at hcur
-            cases hRC : runningCoreOf? st tid with
-            | none => simp [hRC] at hW
-            | some r =>
-              have hCurR : st.scheduler.currentOnCore r = some tid := by
-                have := List.find?_some hRC
-                simpa using this
-              simp only [hRC] at hcur
-              by_cases hrc : r = c
-              · subst hrc
-                simp at hcur
-              · rw [SchedulerState.markReschedulePendingOnCore_currentOnCore,
-                  SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ hrc] at hcur
-                exact hrc (hU r tid hcur hCurR)
-          have hInv1 : ({ st with scheduler := match runningCoreOf? st tid with
-              | some r => (st.scheduler.setCurrentOnCore r none).markReschedulePendingOnCore r
-              | none => st.scheduler } : SystemState).objects.invExt := hInv
-          refine SystemState.CurrentPlacementFrame.trans (s2 := SystemState.rewriteObject _ _ _ _) ?_
-            (SystemState.CurrentPlacementFrame.updateTcb c _ _ _ (fun _ => rfl)
-              (SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hInv1))
-          refine SystemState.CurrentPlacementFrame.trans
-            (s2 := { st with scheduler := match runningCoreOf? st tid with
-              | some r => (st.scheduler.setCurrentOnCore r none).markReschedulePendingOnCore r
-              | none => st.scheduler }) ?_
-            (SystemState.CurrentPlacementFrame.rewriteObject_schedContext c _ hInv1)
-          intro y hy
-          refine ⟨?_, id, fun c' _ hm => ?_⟩
-          · revert hy
-            split
-            · rename_i r _
-              intro hy
-              by_cases hrc : r = c
-              · subst hrc; simp at hy
-              · rwa [SchedulerState.markReschedulePendingOnCore_currentOnCore,
-                  SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ hrc] at hy
-            · exact id
-          · exact hm
-      · dsimp only [] at hStep
-        cases hStep
-        refine SystemState.CurrentPlacementFrame.trans ?_ (SystemState.CurrentPlacementFrame.of_frame
-          (purgeReplenishmentFromAllCores_frame (·.objects) _ (fun _ _ => rfl) _)
-          (purgeReplenishmentFromAllCores_currentOnCore _ _ c))
-        exact SystemState.CurrentPlacementFrame.rewriteObject_schedContext c _ hInv
   · contradiction
 
 end SeLe4n.Kernel.SchedContextOps

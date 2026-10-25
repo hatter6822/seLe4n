@@ -650,41 +650,6 @@ theorem cancelledCallerDonation?_eq_answeredFrameHeadContext?
   simp only [Option.bind_some]
   cases hRO : tcb.replyObject <;> rfl
 
-/-- **WS-OD OD1.4**: the holder's outstanding send or call, ended.
-
-The reclaim below takes the donated SchedContext back, which leaves the holder
-`.unbound`.  A thread that is `.unbound`, descheduled and `.blockedOnSend` /
-`.blockedOnCall` is exactly what `passiveServerIdle` forbids — and rightly:
-those two states are the ones whose *timeout* needs a SchedContext to charge.
-So the reclaim ends the operation the revoked budget was issued on, which is
-what a timeout means in MCS: the operation fails with `.ipcTimeout` and the
-thread becomes `.ready`.
-
-`.blockedOnReceive` is deliberately **not** ended.  An unbound thread waiting to
-receive is a passive server between requests — the state the conjunct permits
-and the whole donation mechanism exists to support.  Ending it would destroy the
-very pattern this workstream is here to make work.
-
-The prefix is `abortPendingIpcOnEndpoint` (WS-OD OD1.2), the splice-and-clear
-half of `timeoutThread` with the two scheduler writes left out:
-`cancelIpcBlocking_scheduler_eq` has four consumers and must stay true, so the
-wake and the priority-inheritance revert are not part of this.  The holder is on
-the endpoint's **send** queue in both arms, which is why `isReceiveQ` is
-`false`.
-
-A refused abort is the identity, and the caller then discards it entirely — see
-`returnDonationToCancelledCaller`, which is all-or-nothing. -/
-def abortHolderPendingIpc (st : SystemState) (holder : SeLe4n.ThreadId) : SystemState :=
-  match lookupTcb st holder with
-  | none => st
-  | some holderTcb =>
-    match holderTcb.ipcState with
-    | .blockedOnSend epId | .blockedOnCall epId =>
-      match abortPendingIpcOnEndpoint epId false holder st with
-      | .ok st' => st'
-      | .error _ => st
-    | _ => st
-
 /-- **WS-RR RR7.22 (residual, remediation)**: the SchedContext a cancelled caller
 donated on its `Call`, handed back to it.
 
@@ -767,30 +732,16 @@ def returnDonationToCancelledCaller (st : SystemState) (tid : SeLe4n.ThreadId)
   -- `cancelledCallerDonation?` resolves through the **holder**, so it can answer
   -- `some` in that case.  Behaviourally this changes nothing (the return failed
   -- at its own caller lookup and the arm declined); what it buys is that the
-  -- abort below never runs for a reclaim that cannot happen, which is what keeps
+  -- arm is decided before any write, which is what keeps
   -- `returnDonationToCancelledCaller_eq_self_of_getTcb?_none` true.
   | some (scId, holder), some _ =>
-    -- WS-OD OD1.4: end the holder's outstanding send/call **before** the
-    -- return, not after.  With the return first the intermediate state has the
-    -- holder `.unbound` while still blocked on a call — the very violation
-    -- being closed; with the abort first every intermediate state satisfies
-    -- `passiveServerIdle`, because a `.donated` holder is outside its reach.
-    -- The donation is resolved once, above, and the resolution survives the
-    -- abort because the abort writes no `schedContextBinding`.
-    -- WS-OD OD4.4: the new owner is resolved off the context's reply stack on
-    -- the **post-abort** state, which is the pop's own pre-state.  That is the
-    -- same answer the pre-abort state gives, because the abort writes no Reply
-    -- at all (`abortHolderPendingIpc_unwritten_kind_backward`) — a fact strictly
-    -- stronger than `donationChainFrame`, which is what this needs: the resolver
-    -- reads `Reply.caller`, and that field is deliberately outside the frame.
-    match returnDonatedSchedContextResolved (abortHolderPendingIpc st holder) holder scId tid with
+    -- The holder keeps whatever it waits on.  A holder blocked sending or
+    -- calling stays blocked with no reservation, as seL4 MCS's
+    -- `schedContext_unbindTCB` leaves it (`v0.36.136`: the abort that ended its
+    -- operation is retired with the invariant that forbade an unbound sender).
+    -- WS-OD OD4.4: the new owner is resolved off the context's reply stack.
+    match returnDonatedSchedContextResolved st holder scId tid with
     | .ok st' => st'
-    -- All-or-nothing: the abort is discarded too.  `cancelledCallerDonation?`
-    -- resolves through the *holder*, so it can answer `some` for a caller with
-    -- no TCB, and the return then fails at the caller lookup — committing the
-    -- abort there would end a live server's IPC for a reclaim that did not
-    -- happen, and would falsify
-    -- `returnDonationToCancelledCaller_eq_self_of_getTcb?_none`.
     | .error _ => st
   | _, _ => st
 
@@ -1158,62 +1109,6 @@ current thread of every core is the plain teardown's. -/
     exact (migrateSchedContextReplenishment_runQueue_current_eq _ scId _ _ c).2
   · rfl
 
-/-- **WS-OD OD1.5**: the endpoint the reclaim's abort prefix splices — the
-holder's, resolved from **`st`** rather than from a supplied TCB.
-
-Every other resolver in this family takes the victim's `TCB`, because the victim
-is the operation's argument.  The holder is not: it is *resolved* by
-`cancelledCallerDonation?` — since WS-HP HP5.1, out of the context the victim's own
-reply frame heads — so its footprint members have to be read out of the state too.  That asymmetry is real
-and is why this pair takes `Option ThreadId` — `none` on every arm but a reply
-arm whose caller had donated.
-
-`some ep` exactly when the abort runs, which is `abortHolderPendingIpc`'s own
-guard: a holder blocked sending or calling.  Every other holder is left untouched
-(`abortHolderPendingIpc_eq_self_of_allowed`), so naming its endpoint would be a
-lock acquired for a write that never happens. -/
-def cancelHolderBlockedEndpoint? (st : SystemState)
-    (holder? : Option SeLe4n.ThreadId) : Option SeLe4n.ObjId :=
-  match holder? with
-  | none => none
-  | some holder =>
-    match st.getTcb? holder with
-    | none => none
-    | some t =>
-      match t.ipcState with
-      | .blockedOnSend ep | .blockedOnCall ep => some ep
-      | _ => none
-
-/-- **WS-OD OD1.5**: the queue-neighbour TCBs the reclaim's abort prefix
-relinks — the *holder's* `queuePrev` / `queueNext`.
-
-The abort is `endpointQueueRemove`, so it patches the predecessor's `queueNext`
-and the successor's `queuePrev` exactly as the victim's own splice does; both
-neighbours are write-footprint members.  Gated on the same guard as
-`cancelHolderBlockedEndpoint?`, and for the same reason: a holder the abort
-leaves alone has no neighbours to relink. -/
-def cancelHolderSpliceNeighbors? (st : SystemState)
-    (holder? : Option SeLe4n.ThreadId) :
-    Option SeLe4n.ThreadId × Option SeLe4n.ThreadId :=
-  match holder? with
-  | none => (none, none)
-  | some holder =>
-    match st.getTcb? holder with
-    | none => (none, none)
-    | some t =>
-      match t.ipcState with
-      | .blockedOnSend _ | .blockedOnCall _ => (t.queuePrev, t.queueNext)
-      | _ => (none, none)
-
-/-- WS-OD OD1.5: with no donation resolved there is no holder, so no abort, so
-no endpoint. -/
-@[simp] theorem cancelHolderBlockedEndpoint?_none (st : SystemState) :
-    cancelHolderBlockedEndpoint? st none = none := rfl
-
-/-- WS-OD OD1.5: and no neighbours to relink. -/
-@[simp] theorem cancelHolderSpliceNeighbors?_none (st : SystemState) :
-    cancelHolderSpliceNeighbors? st none = (none, none) := rfl
-
 /-- **`v0.35.158`: the holder the reclaim UNBOUND — `some holder` exactly when
 this teardown took the victim's reservation away from it.**
 
@@ -1247,11 +1142,10 @@ seL4-MCS's `schedContext_donate` (read at `13.0.0`) dequeues the previous holder
 (`tcbSchedDequeue(from); from->tcbSchedContext = NULL`).  The reclaim was the one
 deliberate outlier; this is it agreeing with the other four.
 
-**What the holder is left with.**  `.ready`, `.unbound`, on no scheduler slot,
-with the `.ipcTimeout` frame the abort staged (WS-RR RR7.14) still in its
-register context — delivered the first time it is dispatched, which is the first
-time it holds a reservation to be dispatched on.  Its own manager recovers it:
-a `.tcbSuspend` followed by a `.tcbResume` (the resume enqueues it), or a
+**What the holder is left with.**  Its IPC state as it was, `.unbound`, on no
+scheduler slot, as seL4 MCS's `schedContext_unbindTCB` leaves it (`v0.36.136`
+retired the abort that ended a holder's operation).  Its own manager recovers
+it: a `.tcbSuspend` followed by a `.tcbResume` (the resume enqueues it), or a
 `schedContextBind` that places it (seL4-MCS's `schedContext_bindTCB` ends in
 `SCHED_ENQUEUE` when the thread is schedulable; this kernel's bind re-buckets only
 an already-queued thread, which `docs/REGISTERED_DEBT.md` records as the
@@ -1259,14 +1153,13 @@ divergence to close once `.schedContextBind` declares its scheduler footprint).
 What no ordinary client suspension can do any more is hand a server the CPU on
 nobody's budget.
 
-**Three states, one reading.**  A holder blocked sending or calling is aborted
-to `.ready` and is on no slot, so the deschedule is the identity there — the
-thread is parked already.  A holder blocked in receive or on a notification is
-left blocked by the abort, off every slot, identity again.  A holder that is
-**queued or running** on the donated context — the ordinary passive server
-servicing the request whose client is being suspended — is the case the wake
-never touched and the case that ran unbudgeted: it is taken off its placement,
-which is the step the reply path performs on the server it unbinds. -/
+**Three states, one reading.**  A holder blocked — sending, calling, receiving
+or on a notification — is on no slot, so the deschedule is the identity there:
+the thread is parked already.  A holder that is **queued or running** on the
+donated context — the ordinary passive server servicing the request whose
+client is being suspended — is the case that would run unbudgeted: it is taken
+off its placement, which is the step the reply path performs on the server it
+unbinds. -/
 def cancelUnboundHolder? (stPre stPost : SystemState) (victim : SeLe4n.ThreadId)
     (tcb : TCB) : Option SeLe4n.ThreadId :=
   match Lifecycle.Suspend.cancelledCallerDonation? stPre victim tcb with
@@ -1285,8 +1178,9 @@ taken off the scheduler slot the post-teardown state places it on.
 `descheduleAtPlacement`, the one step this tree has for "take a thread the state
 resolved off the scheduler" (PR #895 review round 11): it resolves the placement
 itself, so no caller can hand it a proxy for the core, and it is the identity on
-a thread placed nowhere — which is every holder the abort unblocked, since a
-blocked thread sits on no run queue and no current slot.  The step reads the
+a thread placed nowhere — which is every holder left blocked sending or calling
+(seL4's unbind does not end that IPC), since a blocked thread sits on no run
+queue and no current slot.  The step reads the
 **post**-teardown state for the placement, which is the pre-state's: the
 teardown writes no scheduler slot (`cancelIpcBlocking_scheduler_eq`) and the
 migration writes only replenish queues.

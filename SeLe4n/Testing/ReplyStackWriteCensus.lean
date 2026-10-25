@@ -131,6 +131,10 @@ def chainWritePrimitives : List Name :=
     -- performs the writes with none of `spliceReplyFrameOut`'s resolution or
     -- validation, so a transition reaching for it directly is a site.
   , `SeLe4n.Kernel.spliceReplyFrameStores
+    -- The cut of a contextless stack top from the frame below (`v0.36.136`,
+    -- seL4's `reply_remove` `prev->replyNext = 0`): that frame's `next` and the
+    -- cut frame's `prev`, a primitive for the store step's reason.
+  , `SeLe4n.Kernel.severReplyFrameBelowStores
   , `SeLe4n.Kernel.spliceReplyFrameOut
   , `SeLe4n.Kernel.spliceReplyFrameOutOrSelf
     -- ...and the frozen surface's counterparts, which write the same field of
@@ -140,6 +144,7 @@ def chainWritePrimitives : List Name :=
     -- beside the two it composes, exactly as the live `spliceReplyFrameStores`
     -- is.
   , `SeLe4n.Kernel.FrozenOps.frozenSpliceReplyFrameStores
+  , `SeLe4n.Kernel.FrozenOps.frozenSeverReplyFrameBelowStores
   , `SeLe4n.Kernel.FrozenOps.frozenSpliceReplyFrameOut
   , `SeLe4n.Kernel.FrozenOps.frozenSpliceReplyFrameOutOrSelf
     -- The push: the new head's two links, and the old head's `next`.
@@ -278,6 +283,23 @@ def chainNeutralConstructors : List (Name × String) :=
     -- indistinguishable from one re-heading a stack until somebody says which.
   , (`SeLe4n.Kernel.clearDonationOriginReferences,
       "`{ sc with donationOrigin := none }` on the destroy path; `scReply` is untouched by the update")
+    -- WS-ZA ZA5.4 part 25: the finalisation's unstack-step predicate.  A
+    -- `Prop` over the two writes `finaliseSchedContextUnstack` makes (it states
+    -- what a predicate survives across them), so it stores nothing: the write
+    -- is the operation's, registered below with its chain result.
+  , (`SeLe4n.Kernel.FinaliseUnstackStep,
+      "a step predicate (`Prop`) naming the unstack's two writes in a hypothesis; it builds no state, and the write it describes is `finaliseSchedContextUnstack`'s, registered with its chain result")
+    -- WS-ZA ZA5.4 part 25: the reply's stasher record (seL4 MCS's
+    -- `reply->replyTCB`).  `{ r with stasherCode := _ }` and nothing else, so
+    -- `prev`, `next` and `caller` keep the values read: the spec record, its
+    -- in-place compiled form, and the register-path receive block that writes
+    -- it in place beside the receiver's own stash.
+  , (`SeLe4n.Model.SystemState.recordReplyStasher,
+      "`{ r with stasherCode := _ }` on the stashed Reply; `prev`, `next` and `caller` are not in the assignment list")
+  , (`SeLe4n.Model.SystemState.recordReplyStasherImpl,
+      "the in-place form of `recordReplyStasher` (`@[csimp]`): `{ r with stasherCode := _ }` through `storeReplyWith`; no chain field")
+  , (`SeLe4n.Kernel.storeReceiveBlock,
+      "the register-path receive block: the endpoint enqueue, the receiver's block, and the Reply's `{ r with stasherCode := _ }` (`storeReplyStasher`); no chain field")
   , (`SeLe4n.Kernel.FrozenOps.frozenSchedContextUnbind,
       "`{ sc with boundThread := none, isActive := false }`; `scReply` is untouched")
     -- `v0.35.99`: `frozenSetPriority` LEFT this list, and that is the
@@ -750,6 +772,8 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
     -- closure check follows.
   , (`SeLe4n.Kernel.FrozenOps.frozenSpliceReplyFrameStores,
       .mirrors `SeLe4n.Kernel.spliceReplyFrameStores)
+  , (`SeLe4n.Kernel.FrozenOps.frozenSeverReplyFrameBelowStores,
+      .mirrors `SeLe4n.Kernel.severReplyFrameBelowStores)
   , (`SeLe4n.Kernel.FrozenOps.frozenSpliceReplyFrameOut,
       .mirrors `SeLe4n.Kernel.spliceReplyFrameOut)
   , (`SeLe4n.Kernel.FrozenOps.frozenSpliceReplyFrameOutOrSelf,
@@ -781,10 +805,29 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
     -- result is stated.
   , (`SeLe4n.Kernel.spliceReplyFrameStores,
       .halfStep `SeLe4n.Kernel.spliceReplyFrameOut)
+    -- The cut from below is a half-step for the same reason: given only the two
+    -- records, nothing says the frame below links up to the cut frame or that
+    -- the cut frame heads nothing, which is the resolution the operation adds.
+  , (`SeLe4n.Kernel.severReplyFrameBelowStores,
+      .halfStep `SeLe4n.Kernel.spliceReplyFrameOut)
   , (`SeLe4n.Kernel.spliceReplyFrameOut,
       .states [`SeLe4n.Kernel.spliceReplyFrameOut_preserves_donationChainWellFormed])
   , (`SeLe4n.Kernel.spliceReplyFrameOutOrSelf,
       .states [`SeLe4n.Kernel.spliceReplyFrameOutOrSelf_preserves_donationChainWellFormed])
+    -- The compiled forms a final delete runs (`@[csimp]` through
+    -- `finaliseReply_eq_impl`): each equals its spec form, and states the
+    -- chain through that equality.
+    -- The compiled splice writes through its two compiled store steps, each
+    -- proven equal to the specification's (`spliceReplyFrameStoresInPlace_eq`,
+    -- `severReplyFrameBelowStoresInPlace_eq`), so each mirrors that step; the
+    -- fold over them states the chain through `spliceReplyFrameOutOrSelfInPlace_eq`
+    -- (`spliceReplyFrameOutOrSelfInPlace_preserves_donationChainWellFormed`).
+  , (`SeLe4n.Kernel.spliceReplyFrameStoresInPlace,
+      .mirrors `SeLe4n.Kernel.spliceReplyFrameStores)
+  , (`SeLe4n.Kernel.severReplyFrameBelowStoresInPlace,
+      .mirrors `SeLe4n.Kernel.severReplyFrameBelowStores)
+  , (`SeLe4n.Kernel.consumeCallerReplyInPlace,
+      .states [`SeLe4n.Kernel.consumeCallerReplyInPlace_preserves_donationChainWellFormed])
   , (`SeLe4n.Kernel.spliceThreadReplyFrameOut,
       .states [`SeLe4n.Kernel.spliceThreadReplyFrameOut_preserves_donationChainWellFormed])
     -- The cancellation path's teardown: the projection above under the victim's
@@ -793,6 +836,11 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
     -- chain proof; it is a corollary now.
   , (`SeLe4n.Kernel.Lifecycle.Suspend.consumeReplyLink,
       .states [`SeLe4n.Kernel.consumeReplyLink_preserves_donationChainWellFormed])
+    -- WS-ZA ZA5.4 part 25: a finalised scheduling context lets go of the
+    -- stack it heads (seL4's `schedContext_unbindReply`): the head's upward
+    -- link cleared, then the context's head.
+  , (`SeLe4n.Kernel.finaliseSchedContextUnstack,
+      .states [`SeLe4n.Kernel.finaliseSchedContextUnstack_preserves_donationChainWellFormed])
     -- The push's second store: the new head's links and the old head's `next`.
     -- Between the two stores the context's head names a frame that does not yet
     -- answer it, so the chain is broken by construction here.

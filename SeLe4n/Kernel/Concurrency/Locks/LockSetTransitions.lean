@@ -5439,9 +5439,8 @@ theorem lockSet_consistent_base_plus_seven_opts
     (lockSet_consistent_base_plus_six_opts base opt₁ opt₂ opt₃ opt₄ opt₅ opt₆ permitted
       hBase hOpt₁ hOpt₂ hOpt₃ hOpt₄ hOpt₅ hOpt₆) hOpt₇
 
-/-- WS-OD OD1.5 builder: combine with eight optional extensions — the arity the
-state-resolved cancellation footprint reaches once the reclaim's abort prefix
-declares the holder's endpoint and its two queue neighbours. -/
+/-- WS-OD OD1.5 builder: combine with eight optional extensions — the arity
+`lockSet_endpointCall` reaches (`lockSet_consistent_call`). -/
 theorem lockSet_consistent_base_plus_eight_opts
     (base : List (LockKey × AccessMode))
     (opt₁ opt₂ opt₃ opt₄ opt₅ opt₆ opt₇ opt₈ : Option (LockKey × AccessMode))

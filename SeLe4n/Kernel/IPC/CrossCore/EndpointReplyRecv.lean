@@ -242,10 +242,8 @@ def replyRecvPostReceiveDonation (tid recordedServer : SeLe4n.ThreadId)
             -- two differ the holder receives nothing here, and the pop has already
             -- made it `.unbound` — so leaving it queued would run it at its legacy
             -- TCB priority charged to no reservation, which is WS-OD OD3.6's
-            -- defect on the delegated path.  `passiveServerIdle` cannot see it:
-            -- that conjunct is conditioned on the thread already being
-            -- descheduled, so an unbound thread that is still queued satisfies it
-            -- vacuously.
+            -- defect on the delegated path.  No IPC bundle conjunct reads the
+            -- scheduler, so only this deschedule keeps it off the run queue.
             --
             -- The deschedule runs on the PRE-donation state, because it is a
             -- consequence of the pop rather than of the new donation, and

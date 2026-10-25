@@ -2558,6 +2558,114 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 6] = [
     ],
 ];
 
+/// **WS-ZA ZA5.4 part 25: the final delete of a reply whose caller still waits
+/// on it**, run as the root task once the partner is suspended (so the roles
+/// are fixed): a reply carved, a reply capability minted from it into the mint
+/// slot, a receive through that capability that blocks, the partner's call
+/// that wakes the root task holding the reply and blocks for the answer, the
+/// minted capability's delete (not final), then the carved one's, which
+/// cancels the partner's call (seL4's `reply_remove`), makes it `.Inactive`
+/// and retires the reply.  The partner ends where the suspend left it.
+#[cfg(feature = "hw_target")]
+const BUSY_REPLY_SCENARIO: [RoundTrip; 6] = [
+    invocation(
+        "untyped-retype-busy-reply",
+        UNTYPED_RETYPE,
+        UNTYPED_CAP,
+        [REPLY_TYPE, PASSIVE_CHILD_IDS[2], CNODE_CAP, FRAME_SLOT],
+    ),
+    partner_step(
+        "mint-busy-reply-cap",
+        MINT_REPLY_CAP,
+        CNODE_CAP,
+        2,
+        [FRAME_SLOT, MINT_SLOT],
+        false,
+    ),
+    partner_step(
+        "receive-with-carved-reply",
+        RECEIVE,
+        ENDPOINT_CAP,
+        1,
+        [MINT_CAP, 0],
+        true,
+    ),
+    partner_step(
+        "call-to-carved-reply",
+        CALL,
+        ENDPOINT_CAP,
+        1,
+        [0x66, 0],
+        true,
+    ),
+    invocation(
+        "busy-reply-cap-delete",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [MINT_SLOT, 0, 0, 0],
+    ),
+    invocation(
+        "busy-reply-delete",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [FRAME_SLOT, 0, 0, 0],
+    ),
+];
+
+/// **WS-ZA ZA5.4 part 25: the final delete of a reply a blocked receiver has
+/// stashed**, run as the root task with the partner resumed: a reply carved, a
+/// reply capability minted from it into the mint slot, a receive through that
+/// capability that blocks holding the reply stashed, then, as the partner, the
+/// minted capability's delete (not final) and the carved one's, which clears
+/// the root task's stash (seL4's `reply_unlink`) and retires the reply, and a
+/// send that finds the root task still waiting and continues.  The partner is
+/// then suspended, unmeasured.
+#[cfg(feature = "hw_target")]
+const STASHED_REPLY_SCENARIO: [RoundTrip; 6] = [
+    invocation(
+        "untyped-retype-stashed-reply",
+        UNTYPED_RETYPE,
+        UNTYPED_CAP,
+        [REPLY_TYPE, PASSIVE_CHILD_IDS[2], CNODE_CAP, FRAME_SLOT],
+    ),
+    partner_step(
+        "mint-stashed-reply-cap",
+        MINT_REPLY_CAP,
+        CNODE_CAP,
+        2,
+        [FRAME_SLOT, MINT_SLOT],
+        false,
+    ),
+    partner_step(
+        "receive-stashing-reply",
+        RECEIVE,
+        ENDPOINT_CAP,
+        1,
+        [MINT_CAP, 0],
+        true,
+    ),
+    invocation(
+        "stashed-reply-cap-delete",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [MINT_SLOT, 0, 0, 0],
+    ),
+    invocation(
+        "stashed-reply-delete",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [FRAME_SLOT, 0, 0, 0],
+    ),
+    partner_step(
+        "send-to-unstashed-receiver",
+        SEND,
+        ENDPOINT_CAP,
+        1,
+        [0x77, 0],
+        false,
+    ),
+];
+
 /// The partner scenarios' setup, issued once and not measured: the partner
 /// thread resumed onto core 0's run queue, the reply capability minted from
 /// the reply object into its free slot, and the badged endpoint capability
@@ -2710,6 +2818,36 @@ fn heap_allocations_per_syscall() -> Option<bool> {
         "the badged endpoint capability was not deleted",
     ) {
         return Some(false);
+    }
+    // The busy reply's final delete, run twice as the root task: the partner
+    // resumed (unmeasured) each time, and inactive again after the delete;
+    // then the stashed reply's, the partner resumed and suspended around it.
+    for first in [true, false] {
+        if !unmeasured(&PARTNER_SETUP[0], "the partner was not resumed") {
+            return Some(false);
+        }
+        let which = if first { " (first call)" } else { "" };
+        for step in BUSY_REPLY_SCENARIO.iter() {
+            if heap_allocations_round_trip(step, which) != Some(true) {
+                return Some(false);
+            }
+        }
+        // The stashed reply's final delete: the partner resumed again, and
+        // suspending itself after its send leaves the root task current.
+        if !unmeasured(&PARTNER_SETUP[0], "the partner was not resumed") {
+            return Some(false);
+        }
+        for step in STASHED_REPLY_SCENARIO.iter() {
+            if heap_allocations_round_trip(step, which) != Some(true) {
+                return Some(false);
+            }
+        }
+        if let Dispatched::Failed = dispatch_round_trip(&suspend).0 {
+            crate::kprintln!(
+                "[smp-test] FAIL: heap-allocations-per-syscall: suspend-partner: the partner was not suspended"
+            );
+            return Some(false);
+        }
     }
     for scenario in INVOCATION_SCENARIOS.iter() {
         for first in [true, false] {

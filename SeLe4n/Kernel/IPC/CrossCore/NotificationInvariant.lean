@@ -34,7 +34,7 @@ disturb it.  The notification-store / TCB-store steps reuse the single-core
 per-step preservation lemmas verbatim.
 
 **WS-SM SM6.D closure** (§3–§6): the cross-core transitions preserve the
-**whole twenty-conjunct bundle** and every core's per-core view of it —
+**whole nineteen-conjunct bundle** and every core's per-core view of it —
 `notificationSignalOnCore_preserves_ipcInvariantFull{,_perCore}` /
 `notificationWaitOnCore_preserves_ipcInvariantFull{,_perCore}`.  The proof
 lever is the off-scheduler agreement dichotomy (§4): a cross-core transition
@@ -43,8 +43,7 @@ its single-core counterpart and diverges only in the final scheduler placement
 (`wakeThread`/`removeRunnableOnCore` for `ensureRunnable`/`removeRunnable`) —
 so the single-core whole-bundle theorem carries across the
 `OffSchedulerAgrees` relation via the lookup congruences
-(`IPC/Invariant/LookupCongruence.lean`), and the one scheduler-reading
-conjunct (`passiveServerIdle`) rides the §3 per-core frames.
+(`IPC/Invariant/LookupCongruence.lean`); no conjunct reads the scheduler.
 -/
 
 namespace SeLe4n.Kernel
@@ -265,139 +264,6 @@ theorem notificationWaitOnCore_preserves_ipcInvariant
                   (removeRunnableOnCore_objectsAgreeOffRunLinks st'' waiter executingCore) hInv3
 
 -- ============================================================================
--- §3  SM6.D: per-core passive-server frames for the cross-core transitions
--- ============================================================================
-
-open SeLe4n.Model.SystemState in
-/-- WS-SM SM6.D: `notificationSignalOnCore` frames every core's
-`passiveServerIdle` slice, unconditionally over success/failure (error paths
-return the pre-state).  The head waiter is woken `.ready` (an allowed passive
-state) and its cross-core wake only *adds* it to its home core's run queue;
-the no-waiter branch only rewrites the notification object. -/
-theorem notificationSignalOnCore_passiveServerIdleFrameOnCore
-    (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) (executingCore : CoreId)
-    (st : SystemState) (c : CoreId) (hObjInv : st.objects.invExt) :
-    passiveServerIdleFrameOnCore st
-      (notificationSignalOnCore notificationId badge executingCore st).1 c := by
-  unfold notificationSignalOnCore
-  cases hObjN : st.getNotification? notificationId with
-  | none => simp only; split <;> exact passiveServerIdleFrameOnCore.refl st
-  | some ntfn =>
-    simp only
-    cases hWaiters : ntfn.waitHead with
-    | none =>
-      simp only
-      cases hStore : storeObject notificationId _ st with
-      | error e => simp only; exact passiveServerIdleFrameOnCore.refl st
-      | ok pair =>
-        simp only
-        exact storeObject_oldNonTcb_passiveServerIdleFrameOnCore st pair.2
-          notificationId (.notification _) (fun _ => by simp) hObjInv hStore
-    | some waiter =>
-      simp only
-      cases hStore : storeObject notificationId _ st with
-      | error e => simp only; exact passiveServerIdleFrameOnCore.refl st
-      | ok pair =>
-        simp only
-        have hF1 := storeObject_oldNonTcb_passiveServerIdleFrameOnCore (c := c) st pair.2
-          notificationId (.notification _) (fun _ => by simp) hObjInv hStore
-        have hObjInv1 := storeObject_preserves_objects_invExt' st notificationId _ pair hObjInv hStore
-        cases hTcb : storeTcbIpcStateAndMessage pair.2 waiter .ready
-            (some { IpcMessage.empty with badge := some badge }) with
-        | error e => simp only; exact passiveServerIdleFrameOnCore.refl st
-        | ok st2 =>
-          simp only
-          have hF2 := storeTcbIpcStateAndMessage_passiveServerIdleFrameOnCore (c := c) pair.2 st2
-            waiter .ready _ (Or.inl (Or.inl rfl)) hObjInv1 hTcb
-          have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2 st2 waiter _ _
-            hObjInv1 hTcb
-          obtain ⟨tr, hTrGet, hTrReady⟩ :=
-            storeTcbIpcStateAndMessage_getTcb?_ipcState pair.2 st2 waiter .ready _ hObjInv1 hTcb
-          have hD := detachNtfnHead_linksRewritten st2 waiter (ntfnSuccessor? st waiter) hObjInv2
-          obtain ⟨tr3, hTrGet3, ⟨_, _, rfl⟩⟩ := hD.getTcb?_fwd hTrGet
-          show passiveServerIdleFrameOnCore st (wakeThread _ waiter executingCore).1 c
-          exact (hF1.trans hF2).trans
-            ((passiveServerIdleFrameOnCore.of_ntfnLinksRewritten hD).trans
-              (wakeThread_passiveServerIdleFrameOnCore_of_ready _ waiter executingCore _
-                hTrGet3 hTrReady hD.2.1))
-
-open SeLe4n.Model.SystemState in
-/-- WS-SM SM6.D: `notificationWaitOnCore` frames every core's
-`passiveServerIdle` slice, unconditionally over success/failure.  The deliver
-branch wakes the waiter `.ready`; the block branch sets it
-`.blockedOnNotification` (both allowed passive states) and deschedules it on
-its own core — the per-core dequeue's pullback filter excludes exactly that
-thread. -/
-theorem notificationWaitOnCore_passiveServerIdleFrameOnCore
-    (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId) (executingCore : CoreId)
-    (st : SystemState) (c : CoreId) (hObjInv : st.objects.invExt) :
-    passiveServerIdleFrameOnCore st
-      (notificationWaitOnCore notificationId waiter executingCore st).1 c := by
-  unfold notificationWaitOnCore
-  cases hObjN : st.getNotification? notificationId with
-  | none => simp only; split <;> exact passiveServerIdleFrameOnCore.refl st
-  | some ntfn =>
-    simp only
-    cases hBadge : ntfn.pendingBadge with
-    | some badge =>
-      simp only
-      cases hStore : storeObject notificationId _ st with
-      | error e => simp only; exact passiveServerIdleFrameOnCore.refl st
-      | ok pair =>
-        simp only
-        have hF1 := storeObject_oldNonTcb_passiveServerIdleFrameOnCore (c := c) st pair.2
-          notificationId (.notification _) (fun _ => by simp) hObjInv hStore
-        have hObjInv1 := storeObject_preserves_objects_invExt' st notificationId _ pair hObjInv hStore
-        cases hTcb : storeTcbIpcState pair.2 waiter .ready with
-        | error e => simp only; exact passiveServerIdleFrameOnCore.refl st
-        | ok st2 =>
-          simp only
-          exact hF1.trans (storeTcbIpcState_passiveServerIdleFrameOnCore (c := c) pair.2 st2
-            waiter .ready (Or.inl (Or.inl rfl)) hObjInv1 hTcb)
-    | none =>
-      simp only
-      cases hLk : lookupTcb st waiter with
-      | none => simp only; exact passiveServerIdleFrameOnCore.refl st
-      | some tcb =>
-        simp only
-        split
-        · exact passiveServerIdleFrameOnCore.refl st
-        · cases hStore : storeObject notificationId _ st with
-          | error e => simp only; exact passiveServerIdleFrameOnCore.refl st
-          | ok pair =>
-            simp only
-            have hF1 := storeObject_oldNonTcb_passiveServerIdleFrameOnCore (c := c) st pair.2
-              notificationId (.notification _) (fun _ => by simp) hObjInv hStore
-            have hObjInv1 := storeObject_preserves_objects_invExt' st notificationId _ pair hObjInv hStore
-            have hObjRaw : st.objects[notificationId]? = some (.notification ntfn) :=
-              (SystemState.getNotification?_eq_some_iff st notificationId ntfn).mp hObjN
-            have hLk' := lookupTcb_preserved_by_storeObject_notification hLk hObjRaw hObjInv hStore
-            cases hTcb : storeTcbIpcStateAndMessage_fromTcb pair.2 waiter tcb
-                (.blockedOnNotification notificationId) none with
-            | error e => simp only; exact passiveServerIdleFrameOnCore.refl st
-            | ok st2 =>
-              simp only
-              rw [storeTcbIpcStateAndMessage_fromTcb_eq hLk'] at hTcb
-              have hObj2 := storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2 st2 waiter _ _
-                hObjInv1 hTcb
-              cases hLink : linkNtfnWaiter st2 waiter ntfn.waitTail with
-              | error e => simp only; exact passiveServerIdleFrameOnCore.refl st
-              | ok st'' =>
-                simp only
-                show passiveServerIdleFrameOnCore st (removeRunnableOnCore st'' waiter executingCore) c
-                refine ((hF1.trans (storeTcbIpcStateAndMessage_passiveServerIdleFrameOnCore (c := c)
-                    pair.2 st2 waiter (.blockedOnNotification notificationId) none
-                    (Or.inl (Or.inr (Or.inl ⟨notificationId, Or.inr rfl⟩))) hObjInv1 hTcb)).trans
-                    (linkNtfnWaiter_passiveServerIdleFrameOnCore hObj2 hLink)).trans
-                  (removeRunnableOnCore_passiveServerIdleFrameOnCore st'' waiter executingCore
-                    (fun tcb' hTcb' => Or.inr ?_))
-                obtain ⟨ty, hy, np, nn, rfl⟩ := linkNtfnWaiter_tcb_backward hObj2 hLink
-                  waiter.toObjId tcb' ((getTcb?_eq_some_iff st'' waiter tcb').mp hTcb')
-                show ty.ipcState = _ ∨ _
-                rw [storeTcbIpcStateAndMessage_ipcState_eq pair.2 st2 waiter _ _ hObjInv1 hTcb ty hy]
-                exact Or.inr (Or.inl ⟨notificationId, Or.inr rfl⟩)
-
--- ============================================================================
 -- §4  SM6.D: cross-core / single-core off-scheduler agreement dichotomies
 -- ============================================================================
 
@@ -562,11 +428,10 @@ theorem notificationWaitOnCore_post_agrees
 
 open SeLe4n.Model.SystemState in
 /-- WS-SM SM6.D (SM6.B closure): the cross-core notification signal preserves
-the **whole twenty-conjunct bundle**, unconditionally over success/failure
-(error paths return the pre-state).  Nineteen lookup-only conjuncts ride the
-single-core whole-bundle theorem across the §4 agreement dichotomy; the
-scheduler-reading `passiveServerIdle` rides the §3 per-core frame at the boot
-core.  Hypotheses mirror `notificationSignal_preserves_ipcInvariantFull`, with
+the **whole nineteen-conjunct bundle**, unconditionally over success/failure
+(error paths return the pre-state).  Every conjunct is lookup-only, so the
+bundle rides the single-core whole-bundle theorem across the §4 agreement
+dichotomy.  Hypotheses mirror `notificationSignal_preserves_ipcInvariantFull`, with
 the threaded post-state facts stated at the cross-core post-state. -/
 theorem notificationSignalOnCore_preserves_ipcInvariantFull
     (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) (executingCore : CoreId)
@@ -576,22 +441,16 @@ theorem notificationSignalOnCore_preserves_ipcInvariantFull
     (hNWC : notificationWaiterConsistent st)
     (hAllBudgetsNone : allTimeoutBudgetsNone st) :
     ipcInvariantFull (notificationSignalOnCore notificationId badge executingCore st).1 := by
-  have hPsi' : passiveServerIdle (notificationSignalOnCore notificationId badge executingCore st).1 :=
-    (passiveServerIdle_perCore_bootCore_iff _).mp
-      (passiveServerIdle_perCore_of_frameOnCore
-        (notificationSignalOnCore_passiveServerIdleFrameOnCore notificationId badge executingCore
-          st bootCoreId hObjInv)
-        ((passiveServerIdle_perCore_bootCore_iff st).mpr hInv.passiveServerIdle))
   rcases notificationSignalOnCore_post_agrees notificationId badge executingCore st hObjInv with
     hPre | ⟨r1, hStep1, hAgree⟩
   · rw [hPre]; exact hInv
-  · exact ipcInvariantFull_of_objectsAgreeOffRunLinks hAgree.objects hPsi'
+  · exact ipcInvariantFull_of_objectsAgreeOffRunLinks hAgree.objects
       (notificationSignal_preserves_ipcInvariantFull st r1 notificationId badge hInv hObjInv
         hNWC hAllBudgetsNone hStep1)
 
 open SeLe4n.Model.SystemState in
 /-- WS-SM SM6.D (SM6.B closure): the cross-core notification wait preserves
-the **whole twenty-conjunct bundle**, unconditionally over success/failure.
+the **whole nineteen-conjunct bundle**, unconditionally over success/failure.
 Hypotheses mirror `notificationWait_preserves_ipcInvariantFull`, with TCB
 lookups routed through the typed `getTcb?` and the threaded post-state facts
 stated at the cross-core post-state. -/
@@ -608,16 +467,10 @@ theorem notificationWaitOnCore_preserves_ipcInvariantFull
     (hWaiterReady : ∀ (tcb : TCB), st.getTcb? waiter = some tcb →
         tcb.ipcState = .ready) :
     ipcInvariantFull (notificationWaitOnCore notificationId waiter executingCore st).1 := by
-  have hPsi' : passiveServerIdle (notificationWaitOnCore notificationId waiter executingCore st).1 :=
-    (passiveServerIdle_perCore_bootCore_iff _).mp
-      (passiveServerIdle_perCore_of_frameOnCore
-        (notificationWaitOnCore_passiveServerIdleFrameOnCore notificationId waiter executingCore
-          st bootCoreId hObjInv)
-        ((passiveServerIdle_perCore_bootCore_iff st).mpr hInv.passiveServerIdle))
   rcases notificationWaitOnCore_post_agrees notificationId waiter executingCore st hObjInv with
     hPre | ⟨r1, result, hStep1, hAgree⟩
   · rw [hPre]; exact hInv
-  · exact ipcInvariantFull_of_objectsAgreeOffRunLinks hAgree.objects hPsi'
+  · exact ipcInvariantFull_of_objectsAgreeOffRunLinks hAgree.objects
       (notificationWait_preserves_ipcInvariantFull st r1 notificationId waiter result hInv hObjInv
         hWaiterNotRecv
         (fun tcb hRaw => hWaiterNotReply tcb ((getTcb?_eq_some_iff st waiter tcb).mpr hRaw))
@@ -646,10 +499,6 @@ theorem notificationSignalOnCore_preserves_ipcInvariantFull_perCore
   ipcInvariantFull_perCore_of_full
     (notificationSignalOnCore_preserves_ipcInvariantFull notificationId badge executingCore st
       (ipcInvariantFull_of_smp hInv) hObjInv hNWC hAllBudgetsNone)
-    (passiveServerIdle_perCore_of_frameOnCore
-      (notificationSignalOnCore_passiveServerIdleFrameOnCore notificationId badge executingCore
-        st c hObjInv)
-      (hInv c).passiveServerIdle)
 
 open SeLe4n.Model.SystemState in
 /-- WS-SM SM6.D flagship (cross-core wait): `notificationWaitOnCore` preserves
@@ -673,10 +522,6 @@ theorem notificationWaitOnCore_preserves_ipcInvariantFull_perCore
     (notificationWaitOnCore_preserves_ipcInvariantFull notificationId waiter executingCore st
       (ipcInvariantFull_of_smp hInv) hObjInv hWaiterNotRecv hWaiterNotReply
       hAllBudgetsNone hWaiterReady)
-    (passiveServerIdle_perCore_of_frameOnCore
-      (notificationWaitOnCore_passiveServerIdleFrameOnCore notificationId waiter executingCore
-        st c hObjInv)
-      (hInv c).passiveServerIdle)
 
 -- ============================================================================
 -- WS-RR RR7.4: observer atomicity for the notification pair

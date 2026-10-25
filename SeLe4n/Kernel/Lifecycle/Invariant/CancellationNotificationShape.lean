@@ -420,19 +420,6 @@ theorem purgedAndRestored_timeoutBudgetFrame
   · exact ⟨tcbV, by rw [hk]; exact lookupTcb_some_objects st v tcbV hLookup,
       by rw [restoredTcb_eq]⟩
 
-theorem purgedAndRestored_passiveServerIdleFrame
-    (st : SystemState) (v : SeLe4n.ThreadId)
-    (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
-    (hInv : st.objects.invExt) (hLookup : lookupTcb st v = some tcbV) :
-    passiveServerIdleFrame st (purgedAndRestored st v frame) := by
-  have hSched := purgedAndRestored_scheduler_eq st v frame
-  refine ⟨fun tid tcb' hTcb' hUnbound hNotQ hNotCur hNA => ?_⟩
-  rcases purgedAndRestored_tcb_pullback st v frame tcbV hInv hLookup tid.toObjId tcb' hTcb' with
-    ⟨_, t0, h0, _, _, rfl⟩ | ⟨_, t1, ⟨_, _, rfl⟩, rfl⟩
-  · exact ⟨t0, h0, hUnbound, by rw [hSched] at hNotQ; exact hNotQ,
-      by rw [hSched] at hNotCur; exact hNotCur, rfl⟩
-  · exact absurd (by rw [restoredTcb_ipcState]; exact Or.inl rfl) hNA
-
 theorem purgedAndRestored_donationOwnerFrame
     (st : SystemState) (v : SeLe4n.ThreadId)
     (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
@@ -599,7 +586,7 @@ theorem purgedAndRestored_pendingReceiveReplyWellFormed
     · exact ⟨t0, (SystemState.getTcb?_eq_some_iff _ tid t0).mpr h0, hR⟩
     · rw [restoredTcb_pendingReceiveReply] at hStash
       cases hStash
-  refine ⟨?_, ?_⟩
+  refine ⟨?_, ?_, ?_⟩
   · intro tid tcb' rid hTcb' hStash
     obtain ⟨t0, hP, _, _, rfl⟩ := hPull tid tcb' rid hTcb' hStash
     obtain ⟨hEp, r, hr, hrc⟩ := h.1 tid t0 rid hP hStash
@@ -611,7 +598,15 @@ theorem purgedAndRestored_pendingReceiveReplyWellFormed
   · intro tid₁ tid₂ tcb₁ tcb₂ rid h1 h2 hs1 hs2
     obtain ⟨u1, hP1, _, _, rfl⟩ := hPull tid₁ tcb₁ rid h1 hs1
     obtain ⟨u2, hP2, _, _, rfl⟩ := hPull tid₂ tcb₂ rid h2 hs2
-    exact h.2 tid₁ tid₂ u1 u2 rid hP1 hP2 hs1 hs2
+    exact h.2.1 tid₁ tid₂ u1 u2 rid hP1 hP2 hs1 hs2
+  · intro tid tcb' rid hTcb' hStash
+    obtain ⟨t0, hP, _, _, rfl⟩ := hPull tid tcb' rid hTcb' hStash
+    obtain ⟨r, hr, hrc⟩ := h.2.2 tid t0 rid hP hStash
+    refine ⟨r, ?_, hrc⟩
+    exact (SystemState.getReply?_eq_some_iff (purgedAndRestored st v frame) rid r).mpr
+      ((purgedAndRestored_nonNotification st v frame tcbV hInv hLookup
+        rid.toObjId (.reply r) (by simp) (by simp)).mpr
+        ((SystemState.getReply?_eq_some_iff st rid r).mp hr))
 
 theorem purgedAndRestored_replyCallerLinkage
     (st : SystemState) (v : SeLe4n.ThreadId)
@@ -903,7 +898,7 @@ theorem purgedAndRestored_preserves_ipcInvariantFull
     (hOff : sweptThreadOffQueueChains st v) :
     ipcInvariantFull (purgedAndRestored st v frame) := by
   obtain ⟨hIpc, hDual, hBnd, hBadge, hBlkMsg, hNoDup, hMem, hQNB, hQHB, hTimeout,
-    hDonAcyc, hDonOwner, hPassive, hDonBudget, hBlkReply, hReplyLink, hStash,
+    hDonAcyc, hDonOwner, hDonBudget, hBlkReply, hReplyLink, hStash,
     hDonUnique, hTailBlk, hTgt⟩ := hBundle
   have hLink : tcbQueueLinkIntegrity st := hDual.2.1
   have hNotReply : ∀ ep rt, tcbV.ipcState ≠ .blockedOnReply ep rt := by
@@ -951,8 +946,6 @@ theorem purgedAndRestored_preserves_ipcInvariantFull
     purgedAndRestored_donationChainAcyclic st v frame tcbV hInv hLookup hDonAcyc,
     donationOwnerValid_of_frames hBind
       (purgedAndRestored_donationOwnerFrame st v frame tcbV hInv hLookup hNotReply) hDonOwner,
-    passiveServerIdle_of_frame
-      (purgedAndRestored_passiveServerIdleFrame st v frame tcbV hInv hLookup) hPassive,
     donationBudgetTransfer_of_sameSchedContextBindings hBind hDonBudget,
     purgedAndRestored_blockedOnReplyHasTarget st v frame tcbV hInv hLookup hBlkReply,
     purgedAndRestored_replyCallerLinkage st v frame tcbV hInv hLookup hNotReply hReplyLink,

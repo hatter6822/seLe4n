@@ -2421,17 +2421,15 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
       | .error _ => false
     IO.println s!"[SCO-020a] successor pprev inherited={succPPrev} dual_dequeue_ok={succDequeues}"
 
-  -- SCO-020b (WS-OD OD1.4/OD1.5): **the cancellation reclaim ends the holder's
-  -- outstanding call before it takes the donation back.**  A server that Called
-  -- an endpoint with no receiver waiting blocks `.blockedOnCall` while still
-  -- holding the caller's donated SchedContext; cancelling the caller then
-  -- unbinds it.  Before OD1.4 that left the holder `.unbound` **and** still
-  -- `.blockedOnCall`, which `passiveServerIdle` forbids — reachable at depth 1
-  -- with no donation chain at all.  The abort prefix moves it to `.ready` and
-  -- splices it off its endpoint, so the state the reclaim leaves satisfies the
-  -- conjunct.  Executed rather than asserted: the theorem
-  -- (`cancelIpcBlocking_preserves_passiveServerIdle`) says it holds, this says
-  -- the live operation does it.
+  -- SCO-020b (`v0.36.136`; WS-OD OD1.4 aborted the holder until then): **the
+  -- cancellation reclaim takes the donation back and leaves the holder waiting
+  -- where it waits.**  A server that Called an endpoint with no receiver waiting
+  -- blocks `.blockedOnCall` while still holding the caller's donated
+  -- SchedContext; cancelling the caller unbinds it.  seL4 MCS does exactly this
+  -- (`schedContext_donate` and `schedContext_unbindTCB` free no sender): the
+  -- holder stays `.blockedOnCall`, still queued on its endpoint, `.unbound` —
+  -- legal, since no conjunct of the bundle forbids an unbound waiter — and the
+  -- caller is rebound to its own context.
   --
   -- **WS-HP HP5 (fixture correction).**  The three scenarios below carry a
   -- `.donated` binding, and until HP5 that was the whole of what the reclaim's
@@ -2478,8 +2476,8 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
       |>.withObjectStored vTid.toObjId (.tcb victimTcb)
       |>.withObjectStored hTid.toObjId (.tcb holderTcb)
   let stAfter := SeLe4n.Kernel.Lifecycle.Suspend.cancelIpcBlocking stR vTid victimTcb
-  let holderIdle := match stAfter.getTcb? hTid with
-    | some t => t.ipcState == ThreadIpcState.ready
+  let holderWaits := match stAfter.getTcb? hTid with
+    | some t => t.ipcState == ThreadIpcState.blockedOnCall epH
     | none => false
   let holderUnbound := match stAfter.getTcb? hTid with
     | some t => t.schedContextBinding == SeLe4n.Kernel.SchedContextBinding.unbound
@@ -2487,19 +2485,16 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   let victimRebound := match stAfter.getTcb? vTid with
     | some t => t.schedContextBinding == SeLe4n.Kernel.SchedContextBinding.bound scH
     | none => false
-  let holderOffQueue := match stAfter.getEndpoint? epH with
-    | some e => e.sendQ.head == none && e.sendQ.tail == none
+  let holderQueued := match stAfter.getEndpoint? epH with
+    | some e => e.sendQ.head == some hTid && e.sendQ.tail == some hTid
     | none => false
-  IO.println s!"[SCO-020b] reclaim holder_ready={holderIdle} holder_unbound={holderUnbound} caller_rebound={victimRebound} holder_spliced={holderOffQueue}"
+  IO.println s!"[SCO-020b] reclaim holder_waits={holderWaits} holder_unbound={holderUnbound} caller_rebound={victimRebound} holder_queued={holderQueued}"
 
-  -- SCO-020c (WS-OD OD1.5): **and the abort's reach is exactly the two states
-  -- `passiveServerIdle` forbids.**  The same reclaim, with the holder blocked on
-  -- *receive* instead — a passive server waiting for its next client, which the
-  -- conjunct permits — leaves the holder's `ipcState` and its endpoint queue bit
-  -- for bit as they were, while still handing the donation back.  This is the
-  -- executed half of `abortHolderPendingIpc_eq_self_of_allowed`, and it is what
-  -- makes SCO-020b above a discriminating check rather than one that would read
-  -- `true` however the reclaim were written.
+  -- SCO-020c (WS-OD OD1.5): **and the same holds of a holder blocked on
+  -- receive.**  The same reclaim, with the holder a passive server waiting for
+  -- its next client, leaves the holder's `ipcState` and its endpoint queue bit
+  -- for bit as they were, while still handing the donation back: the reclaim's
+  -- writes are the context and the two bindings, whatever the holder waits on.
   let holderRecvTcb : TCB := (holderTcb.setIpcState (.blockedOnReceive epH))
   let epRecv : Endpoint := (Endpoint.ofQueues {} { head := some hTid, tail := some hTid })
   let stRecv := stR.withObjectStored epH (.endpoint epRecv)
@@ -2514,12 +2509,11 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   let recvQueueUntouched := match stRecvAfter.getEndpoint? epH with
     | some e => e.receiveQ.head == some hTid && e.receiveQ.tail == some hTid
     | none => false
-  IO.println s!"[SCO-020c] reclaim allowed_holder untouched={recvHolderUntouched} unbound={recvHolderUnbound} queue_intact={recvQueueUntouched}"
+  IO.println s!"[SCO-020c] reclaim receiving_holder untouched={recvHolderUntouched} unbound={recvHolderUnbound} queue_intact={recvQueueUntouched}"
 
   -- SCO-020d (`v0.35.158`; WS-OD OD1.7 until then): **and the reclaim takes the
-  -- holder it unbound OFF the scheduler.**  SCO-020b shows the abort ends the
-  -- holder's call, leaving it `.ready`, `.unbound` and spliced off its endpoint;
-  -- OD1.7 then placed it on its home core's run queue, where an unbound thread
+  -- holder it unbound OFF the scheduler.**  OD1.7 placed a holder the abort had
+  -- unblocked on its home core's run queue, where an unbound thread
   -- runs at its legacy TCB band charged to no reservation — the temporal-isolation
   -- break PR #897's review measured on the live suspend.  The reclaim's scheduler
   -- step is now the deschedule every other donation pop performs.  On THIS
@@ -2542,8 +2536,7 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   -- SCO-020e (`v0.35.158`): **the queued holder — the case the wake never
   -- touched.**  The same reclaim with the holder `.ready` and QUEUED on core 1
   -- while holding the victim's donated reservation: the ordinary passive server
-  -- servicing a request when its client is suspended.  The abort is inert, the
-  -- pop unbinds the server, and the deschedule takes it off core 1's run queue —
+  -- servicing a request when its client is suspended.  The pop unbinds the server, and the deschedule takes it off core 1's run queue —
   -- where OD1.7's wake, whose guards declined a queued thread, left it running
   -- `.unbound` on nobody's budget.  The resolver names the core the step wrote.
   let holderReady : TCB := (TCB.setIpcState { holderPinned with queuePPrevCode := 0 } .ready)

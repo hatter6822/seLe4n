@@ -1175,26 +1175,6 @@ theorem sweptAndRestored_timeoutBudgetFrame
   · rfl
   · rw [restoredTcb_eq]
 
-/-- The composite frames the passive-server-idle reading.
-
-The swept thread is the only thread whose `ipcState` moves, and it moves to
-`.ready`, which `passiveServerIdleAllowed` admits — so the frame's pullback,
-which fires only on threads in a **non**-allowed state, never reaches it. -/
-theorem sweptAndRestored_passiveServerIdleFrame
-    (st : SystemState) (v : SeLe4n.ThreadId)
-    (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
-    (hInv : st.objects.invExt) (hLink : tcbQueueLinkIntegrity st)
-    (hAcyc : tcbQueueChainAcyclic st) (hLookup : lookupTcb st v = some tcbV) :
-    passiveServerIdleFrame st (sweptAndRestored st v frame) := by
-  have hSched := sweptAndRestored_scheduler_eq st v frame
-  refine ⟨fun tid tcb' hTcb' hUnbound hNotQ hNotCur hNA => ?_⟩
-  obtain ⟨t0, h0, hcase⟩ :=
-    sweptAndRestored_tcb_pullback st v frame tcbV hInv hLink hAcyc hLookup tid.toObjId tcb' hTcb'
-  rcases hcase with ⟨_, qp, qpp, qn, np, nn, rfl⟩ | ⟨_, rfl⟩
-  · exact ⟨t0, h0, hUnbound, by rw [hSched] at hNotQ; exact hNotQ,
-      by rw [hSched] at hNotCur; exact hNotCur, rfl⟩
-  · exact absurd (by rw [restoredTcb_ipcState]; exact Or.inl rfl) hNA
-
 /-- The composite frames the donation-owner reading, given that the swept thread
 is not itself a donation owner — which the blocked-on-endpoint arm supplies,
 since an owner is `.blockedOnReply`. -/
@@ -1974,7 +1954,7 @@ theorem sweptAndRestored_pendingReceiveReplyWellFormed
     · exact ⟨t0, (SystemState.getTcb?_eq_some_iff _ tid t0).mpr h0, hStash, rfl⟩
     · rw [restoredTcb_pendingReceiveReply] at hStash
       cases hStash
-  refine ⟨?_, ?_⟩
+  refine ⟨?_, ?_, ?_⟩
   · intro tid tcb' rid hTcb' hStash
     obtain ⟨t0, h0, hStash0, hIp⟩ := hPull tid tcb' rid hTcb' hStash
     obtain ⟨⟨ep, hEp⟩, r, hr, hrc⟩ := h.1 tid t0 rid h0 hStash0
@@ -1986,7 +1966,15 @@ theorem sweptAndRestored_pendingReceiveReplyWellFormed
   · intro tid₁ tid₂ tcb₁ tcb₂ rid h1 h2 hs1 hs2
     obtain ⟨t1, ht1, hst1, _⟩ := hPull tid₁ tcb₁ rid h1 hs1
     obtain ⟨t2, ht2, hst2, _⟩ := hPull tid₂ tcb₂ rid h2 hs2
-    exact h.2 tid₁ tid₂ t1 t2 rid ht1 ht2 hst1 hst2
+    exact h.2.1 tid₁ tid₂ t1 t2 rid ht1 ht2 hst1 hst2
+  · intro tid tcb' rid hTcb' hStash
+    obtain ⟨t0, h0, hStash0, _⟩ := hPull tid tcb' rid hTcb' hStash
+    obtain ⟨r, hr, hrs⟩ := h.2.2 tid t0 rid h0 hStash0
+    refine ⟨r, ?_, hrs⟩
+    exact (SystemState.getReply?_eq_some_iff (sweptAndRestored st v frame) rid r).mpr
+      ((sweptAndRestored_nonTcbNonEndpoint st v frame tcbV hInv hLink hAcyc hLookup
+        rid.toObjId (.reply r) (by simp) (by simp)).mpr
+        ((SystemState.getReply?_eq_some_iff st rid r).mp hr))
 
 /-- **WS-RR RR7.22 (residual)**: a queue head still carries the blocking state its
 side demands.
@@ -2140,7 +2128,7 @@ theorem sweptAndRestored_preserves_ipcInvariantFull
     (hCoh : sweptThreadQueueCoherent st v) :
     ipcInvariantFull (sweptAndRestored st v frame) := by
   obtain ⟨hIpc, hDual, hBnd, hBadge, hBlkMsg, hNoDup, hMem, hQNB, hQHB, hTimeout,
-    hDonAcyc, hDonOwner, hPassive, hDonBudget, hBlkReply, hReplyLink, hStash,
+    hDonAcyc, hDonOwner, hDonBudget, hBlkReply, hReplyLink, hStash,
     hDonUnique, hTailBlk, hTgt⟩ := hBundle
   have hLink : tcbQueueLinkIntegrity st := hDual.2.1
   have hAcyc : tcbQueueChainAcyclic st := hDual.chainAcyclic
@@ -2163,8 +2151,6 @@ theorem sweptAndRestored_preserves_ipcInvariantFull
     donationOwnerValid_of_frames hBind
       (sweptAndRestored_donationOwnerFrame st v frame tcbV hInv hLink hAcyc hLookup hNotReply)
       hDonOwner,
-    passiveServerIdle_of_frame
-      (sweptAndRestored_passiveServerIdleFrame st v frame tcbV hInv hLink hAcyc hLookup) hPassive,
     donationBudgetTransfer_of_sameSchedContextBindings hBind hDonBudget,
     sweptAndRestored_blockedOnReplyHasTarget st v frame tcbV hInv hLink hAcyc hLookup hBlkReply,
     sweptAndRestored_replyCallerLinkage st v frame tcbV hInv hLink hAcyc hLookup hNotReply

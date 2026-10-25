@@ -361,12 +361,17 @@ theorem notificationWaiterCancel_stepCovers (e : CoreId) (st : SystemState)
 
 /-- WS-ZA ZA5.4 parts 23–24: **the finalisation covers**, every step of it
 (`finaliseFinalObject_closed`): each cancel's, the notification unbind's
-(`unbindNotification_keyFrame`, through `unbindNotification_of_inPlace`), the
+(`unbindNotification_keyFrame`, through `unbindNotification_of_inPlace`), a
+context's dequeue of its holder (`descheduleAtPlacement_stepCovers`), the
 reservation unbind's (`cancelBoundDonationOnCore_stepCovers`), the suspend — the
 deschedule wherever the thread is placed (`descheduleAtPlacement_stepCovers`),
-then a mark that writes no key field (`updateTcb_keyFrame`) — and the release
-of the cores' holds on the thread, which writes no object and no scheduler
-field. -/
+then a mark that writes no key field (`updateTcb_keyFrame`) — the release of the
+cores' holds on the thread, which writes no object and no scheduler field, a
+context's reply-stack unlink (a reply and a context's head, neither a key
+input), a reply's caller cancel — a head reply's with its loan returned and its
+holder descheduled (`cancelIpcBlockingReclaimed_stepCovers`) — with its boost
+reverted (`propagatePipChainCrossCore_stepCovers`), and a stashed reply's unlink, a stash
+that is no key input (`updateTcb_keyFrame`). -/
 theorem finaliseFinalObject_stepCovers (e : CoreId) (target : Nat) (st : SystemState)
     (hInv : st.objects.invExt) :
     stepCovers e st (finaliseFinalObject target st) ∧ (finaliseFinalObject target st).objects.invExt :=
@@ -385,9 +390,11 @@ theorem finaliseFinalObject_stepCovers (e : CoreId) (target : Nat) (st : SystemS
       have hSpec := unbindNotification_of_inPlace s t hIn
       rw [hCode, Nat.add_sub_cancel] at hSpec
       exact stepCoversInv_trans h.1 (unbindNotification_keyFrame _ _ _ h.2 hSpec).stepCoversInv)
-    (fun s _ t tcb _ h _ hS hO _ _ _ _ _ hOk => by
-      rw [cancelDonationArmOnCore_of_codes s t hS hO] at hOk
-      exact stepCoversInv_trans h.1 (cancelBoundDonationOnCore_stepCovers e h.2 hOk))
+    (fun s t _ h _ _ _ _ =>
+      have d := descheduleAtPlacement_stepCovers e s t h.2
+      ⟨stepCovers_trans h.1 d.1, d.2⟩)
+    (fun _ _ _ _ _ _ h _ _ _ _ hOk =>
+      stepCoversInv_trans h.1 (cancelBoundDonationOnCore_stepCovers e h.2 hOk))
     (fun s _ t tcb _ h _ _ _ _ =>
       ⟨stepCovers_trans h.1 (cancelIpcBlocking_stepCovers e s t tcb h.2),
         Lifecycle.Suspend.cancelIpcBlocking_preserves_objects_invExt s t tcb h.2⟩)
@@ -402,6 +409,30 @@ theorem finaliseFinalObject_stepCovers (e : CoreId) (target : Nat) (st : SystemS
       refine ⟨stepCovers_trans h.1 (stepCovers_of_scheduler_eq (keyInputsEq_of_objects_eq hO)
         (finaliseThreadReleaseCores_scheduler s t)), ?_⟩
       rw [hO]; exact h.2)
+    (fun s s1 x _ _ r h _ _ hR _ hS _ _ _ _ => by
+      have hI1 := storeObject_preserves_objects_invExt s s1 _ _ h.2 hS
+      have hK1 : keyInputsEq s s1 := keyInputsEq_storeObject h.2 hS (by
+        rw [(SystemState.getReply?_eq_some_iff _ _ _).mp hR]; rfl)
+      have hK2 : keyInputsEq s1 (s1.updateSchedContext ⟨x.val⟩ fun sc => { sc with scReply := none }) :=
+        keyInputsEq_updateSchedContext hI1 (fun _ => rfl)
+      have hSch : (s1.updateSchedContext ⟨x.val⟩ fun sc => { sc with scReply := none }).scheduler =
+          s.scheduler := by
+        rw [SystemState.updateSchedContext_scheduler, storeObject_scheduler_eq s s1 _ _ hS]
+      exact ⟨stepCovers_trans h.1 (stepCovers_of_keys_sched (keyInputsEq_trans hK1 hK2) hSch),
+        SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hI1⟩)
+    (fun s _ _ c t h _ _ _ _ => by
+      have h1 := stepCovers_trans h.1 (cancelIpcBlockingReclaimed_stepCovers e s c t h.2)
+      have hI1 := cancelIpcBlockingReclaimed_objects_invExt c t s
+        (Lifecycle.Suspend.cancelIpcBlocking_preserves_objects_invExt s c t h.2)
+      unfold finaliseReplyRevert
+      cases t.blockingServer? with
+      | none => exact ⟨h1, hI1⟩
+      | some sv =>
+        exact ⟨stepCovers_trans h1 (propagatePipChainCrossCore_stepCovers e _ _ _ sv hI1).1,
+          (propagatePipChainCrossCore_stepCovers e _ _ _ sv hI1).2⟩)
+    (fun s _ _ tid _ h _ _ e => e ▸
+      stepCoversInv_trans h.1 (updateTcb_keyFrame s tid (f := TCB.stashCleared) (fun _ => rfl)
+        h.2).stepCoversInv)
     target st ⟨stepCovers_refl e st, hInv⟩
 
 /-- WS-ZA ZA5.4 part 23: **the finalising delete covers**: the delete and the

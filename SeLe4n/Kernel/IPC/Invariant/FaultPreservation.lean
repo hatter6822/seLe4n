@@ -42,9 +42,9 @@ writes are:
 
 Every one of them therefore goes through the one-TCB-rewrite lever
 (`insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull`), whose nine
-field-agreement obligations all discharge by `rfl`. The run-queue removal is
-handled by the same lever's passive-server frame, which reads the scheduler
-only through `passiveServerIdleFrame`.
+field-agreement obligations all discharge by `rfl`. The run-queue removal
+transports because no conjunct reads the scheduler: it agrees with its
+pre-state off the run links (`ipcInvariantFull_of_objectsAgreeOffRunLinks`).
 -/
 
 namespace SeLe4n.Kernel
@@ -76,30 +76,14 @@ theorem recordPendingFault_preserves_ipcInvariantFull
         rfl rfl rfl rfl rfl rfl rfl rfl rfl
 
 /-- WS-RR RR4.9/RR4.17: the deschedule half of the fail-closed dispositions
-preserves the bundle.
-
-`removeRunnableOnCore` leaves the object map untouched, so nineteen conjuncts
-transport by lookup congruence; the twentieth, `passiveServerIdle`, is the one
-a *removal* can perturb — descheduling a thread adds it to the "passive" set
-the invariant constrains — and it transports through the SM6.D removal frame
-under `hAllowed`.
-
-`hAllowed` is a pre-state fact and dischargeable: a **faulting thread is
-running**, hence `.ready`, hence in `passiveServerIdleAllowed`
-(`faultSuspendOnCore_preserves_ipcInvariantFull_of_ready`). It is stated in
-this general form because the abandon path reaches it from a woken (also
-`.ready`) thread by the same argument. -/
+preserves the bundle.  `removeRunnableOnCore` agrees with its pre-state off
+the run links, and no conjunct reads the scheduler, so the whole bundle
+transports with no side condition on the descheduled thread. -/
 private theorem removeRunnableOnCore_preserves_bundle
     (st : SystemState) (tid : SeLe4n.ThreadId) (c : CoreId)
-    (hAllowed : ∀ tcb : TCB, st.getTcb? tid = some tcb →
-      tcb.schedContextBinding ≠ .unbound ∨ passiveServerIdleAllowed tcb.ipcState)
     (hInv : ipcInvariantFull st) :
     ipcInvariantFull (removeRunnableOnCore st tid c) :=
   ipcInvariantFull_of_objectsAgreeOffRunLinks (removeRunnableOnCore_objectsAgreeOffRunLinks st tid c)
-    (passiveServerIdle_of_frame
-      (removeRunnableOnCore_passiveServerIdleFrame st tid c
-        (fun tcb hTcb => hAllowed tcb ((SystemState.getTcb?_eq_some_iff st tid tcb).mpr hTcb)))
-      hInv.passiveServerIdle)
     hInv
 
 /-- WS-RR RR4.9/RR4.17: **the fail-closed suspend preserves the bundle.**
@@ -114,12 +98,10 @@ cannot see. -/
 theorem faultSuspendOnCore_preserves_ipcInvariantFull
     (st : SystemState) (tid : SeLe4n.ThreadId) (c : CoreId)
     (hObjInv : st.objects.invExt)
-    (hAllowed : ∀ tcb : TCB, st.getTcb? tid = some tcb →
-      tcb.schedContextBinding ≠ .unbound ∨ passiveServerIdleAllowed tcb.ipcState)
     (hInv : ipcInvariantFull st) :
     ipcInvariantFull (faultSuspendOnCore st tid c) := by
   have hInvR : ipcInvariantFull (removeRunnableOnCore st tid c) :=
-    removeRunnableOnCore_preserves_bundle st tid c hAllowed hInv
+    removeRunnableOnCore_preserves_bundle st tid c hInv
   unfold faultSuspendOnCore
   cases hT : (removeRunnableOnCore st tid c).getTcb? tid with
   | none => rw [SystemState.updateTcb_eq_self_of_none hT]; exact hInvR
@@ -131,32 +113,16 @@ theorem faultSuspendOnCore_preserves_ipcInvariantFull
           ((SystemState.getTcb?_eq_some_iff _ tid tcb).mp hT)
           rfl rfl rfl rfl rfl rfl rfl rfl rfl
 
-/-- WS-RR RR4.9: the dischargeable form — a **running** thread is `.ready`,
-which is a `passiveServerIdleAllowed` state, so a fault suspension of the
-thread that just faulted needs no side condition beyond what the trap path
-already knows. -/
-theorem faultSuspendOnCore_preserves_ipcInvariantFull_of_ready
-    (st : SystemState) (tid : SeLe4n.ThreadId) (c : CoreId)
-    (hObjInv : st.objects.invExt)
-    (hReady : ∀ tcb : TCB, st.getTcb? tid = some tcb →
-      tcb.ipcState = .ready)
-    (hInv : ipcInvariantFull st) :
-    ipcInvariantFull (faultSuspendOnCore st tid c) :=
-  faultSuspendOnCore_preserves_ipcInvariantFull st tid c hObjInv
-    (fun tcb hTcb => Or.inr (Or.inl (hReady tcb hTcb))) hInv
-
 /-- WS-RR RR4.18: the reply-declined disposition preserves the bundle — it
 adds only the `pendingFault` clear to the suspend's writes, and that field is
 read by no conjunct either. -/
 theorem faultAbandonOnCore_preserves_ipcInvariantFull
     (st : SystemState) (tid : SeLe4n.ThreadId) (c : CoreId)
     (hObjInv : st.objects.invExt)
-    (hAllowed : ∀ tcb : TCB, st.getTcb? tid = some tcb →
-      tcb.schedContextBinding ≠ .unbound ∨ passiveServerIdleAllowed tcb.ipcState)
     (hInv : ipcInvariantFull st) :
     ipcInvariantFull (faultAbandonOnCore st tid c) := by
   have hInvR : ipcInvariantFull (removeRunnableOnCore st tid c) :=
-    removeRunnableOnCore_preserves_bundle st tid c hAllowed hInv
+    removeRunnableOnCore_preserves_bundle st tid c hInv
   unfold faultAbandonOnCore
   cases hT : (removeRunnableOnCore st tid c).getTcb? tid with
   | none => rw [SystemState.updateTcb_eq_self_of_none hT]; exact hInvR
@@ -167,18 +133,6 @@ theorem faultAbandonOnCore_preserves_ipcInvariantFull
           { tcb with threadState := .Inactive, pendingFault := none } (removeRunnableOnCore_objects_invExt st tid c hObjInv) hInvR
           ((SystemState.getTcb?_eq_some_iff _ tid tcb).mp hT)
           rfl rfl rfl rfl rfl rfl rfl rfl rfl
-
-/-- WS-RR RR4.18: the dischargeable form — the thread a reply abandons was
-woken `.ready` by that reply. -/
-theorem faultAbandonOnCore_preserves_ipcInvariantFull_of_ready
-    (st : SystemState) (tid : SeLe4n.ThreadId) (c : CoreId)
-    (hObjInv : st.objects.invExt)
-    (hReady : ∀ tcb : TCB, st.getTcb? tid = some tcb →
-      tcb.ipcState = .ready)
-    (hInv : ipcInvariantFull st) :
-    ipcInvariantFull (faultAbandonOnCore st tid c) :=
-  faultAbandonOnCore_preserves_ipcInvariantFull st tid c hObjInv
-    (fun tcb hTcb => Or.inr (Or.inl (hReady tcb hTcb))) hInv
 
 /-- WS-RR RR4.16/RR4.18: **installing a restart frame preserves the bundle.**
 
@@ -240,8 +194,7 @@ Every hypothesis is a **pre-state** fact about the faulting thread and the
 endpoints, in the RR3 de-threaded style: nothing is threaded on a post-state.
 `hCallerReady` is the running-thread fact the trap path knows by construction
 (a thread that faults was executing), and it discharges `hCallerNotRecv` and
-`hCallerNotReply` on the spot; `hCallerNotUnbound` is the SchedContext a
-running thread necessarily holds. -/
+`hCallerNotReply` on the spot. -/
 theorem faultDeliverOnCore_preserves_ipcInvariantFull
     (st : SystemState) (tid : SeLe4n.ThreadId) (f : Fault) (ctx : FaultContext)
     (c : CoreId)
@@ -261,8 +214,6 @@ theorem faultDeliverOnCore_preserves_ipcInvariantFull
           ep'.sendQ.tail ≠ some tailTid ∧ ep'.receiveQ.tail ≠ some tailTid) ∧
         (epId' = epId → ep'.receiveQ.tail ≠ some tailTid))
     (hCallerReady : ∀ (tcb : TCB), st.getTcb? tid = some tcb → tcb.ipcState = .ready)
-    (hCallerNotUnbound : ∀ (tcb : TCB), st.getTcb? tid = some tcb →
-      tcb.schedContextBinding ≠ .unbound)
     (hNotSelf : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint) (receiverTid : SeLe4n.ThreadId),
       st.getEndpoint? epId = some ep → ep.receiveQ.head = some receiverTid →
       tid ≠ receiverTid) :
@@ -277,13 +228,12 @@ theorem faultDeliverOnCore_preserves_ipcInvariantFull
   · simp only [faultDeliverOnCore, hRes]
     exact recordPendingFault_preserves_ipcInvariantFull _ tid _
       (faultSuspendOnCore_preserves_objects_invExt st tid c hObjInv)
-      (faultSuspendOnCore_preserves_ipcInvariantFull_of_ready st tid c hObjInv
-        hCallerReady hInv)
+      (faultSuspendOnCore_preserves_ipcInvariantFull st tid c hObjInv hInv)
   · have hCall := endpointCallCrossCoreDispatch_preserves_ipcInvariantFull tgt.endpoint tid
       (SendPayload.fault f ctx tgt.cap.badge) (SeLe4n.Slot.ofNat 0)
       c st hInv hObjInv hAllBudgetsNone
       hFreshCaller (hSendTailFresh tgt.endpoint) hNotRecv hCallerReady hNotReply
-      hCallerNotUnbound (fun ep r hEp hHead => hNotSelf tgt.endpoint ep r hEp hHead)
+      (fun ep r hEp hHead => hNotSelf tgt.endpoint ep r hEp hHead)
     have hCallObj := endpointCallCrossCoreDispatch_preserves_objects_invExt tgt.endpoint tid
       (SendPayload.fault f ctx tgt.cap.badge) (SeLe4n.Slot.ofNat 0)
       c st hObjInv
@@ -296,8 +246,7 @@ theorem faultDeliverOnCore_preserves_ipcInvariantFull
         simp only [faultDeliverOnCore, hRes, hStep]
         exact recordPendingFault_preserves_ipcInvariantFull _ tid _
           (faultSuspendOnCore_preserves_objects_invExt st tid c hObjInv)
-          (faultSuspendOnCore_preserves_ipcInvariantFull_of_ready st tid c hObjInv
-            hCallerReady hInv)
+          (faultSuspendOnCore_preserves_ipcInvariantFull st tid c hObjInv hInv)
     | ok r =>
         obtain ⟨summary, sgi?⟩ := r
         simp only [faultDeliverOnCore, hRes, hStep]
@@ -338,7 +287,8 @@ theorem faultDeliverOnCore_preserves_objects_invExt
 The arm `Kernel/FaultEntry.lean` actually calls. It needs no hypothesis the
 unchecked delivery does not: a permitted flow *is* the unchecked delivery
 (`faultDeliverOnCoreChecked_flow_allowed`), and a denied one is the RR4.9
-suspend, which the `_of_ready` corollary already covers from `hCallerReady`.
+suspend, which `faultSuspendOnCore_preserves_ipcInvariantFull` covers
+unconditionally.
 So gating the live entry costs the invariant surface nothing — the property
 that let the gate be added without reopening RR4.17. -/
 theorem faultDeliverOnCoreChecked_preserves_ipcInvariantFull
@@ -360,8 +310,6 @@ theorem faultDeliverOnCoreChecked_preserves_ipcInvariantFull
           ep'.sendQ.tail ≠ some tailTid ∧ ep'.receiveQ.tail ≠ some tailTid) ∧
         (epId' = epId → ep'.receiveQ.tail ≠ some tailTid))
     (hCallerReady : ∀ (tcb : TCB), st.getTcb? tid = some tcb → tcb.ipcState = .ready)
-    (hCallerNotUnbound : ∀ (tcb : TCB), st.getTcb? tid = some tcb →
-      tcb.schedContextBinding ≠ .unbound)
     (hNotSelf : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint) (receiverTid : SeLe4n.ThreadId),
       st.getEndpoint? epId = some ep → ep.receiveQ.head = some receiverTid →
       tid ≠ receiverTid) :
@@ -370,8 +318,7 @@ theorem faultDeliverOnCoreChecked_preserves_ipcInvariantFull
       (recordPendingFault (faultSuspendOnCore st tid c) tid { fault := f, context := ctx }) :=
     recordPendingFault_preserves_ipcInvariantFull _ tid _
       (faultSuspendOnCore_preserves_objects_invExt st tid c hObjInv)
-      (faultSuspendOnCore_preserves_ipcInvariantFull_of_ready st tid c hObjInv
-        hCallerReady hInv)
+      (faultSuspendOnCore_preserves_ipcInvariantFull st tid c hObjInv hInv)
   unfold faultDeliverOnCoreChecked
   cases hRes : resolveFaultHandler st tid with
   | error e => simpa only [hRes] using hSusp
@@ -380,7 +327,7 @@ theorem faultDeliverOnCoreChecked_preserves_ipcInvariantFull
           (lctx.endpointLabelOf tgt.endpoint) = true
       · simp only [hGate, if_true]
         exact faultDeliverOnCore_preserves_ipcInvariantFull st tid f ctx c hInv hObjInv
-          hAllBudgetsNone hFreshCaller hSendTailFresh hCallerReady hCallerNotUnbound hNotSelf
+          hAllBudgetsNone hFreshCaller hSendTailFresh hCallerReady hNotSelf
       · simp only [Bool.not_eq_true] at hGate
         simpa only [hRes, hGate, Bool.false_eq_true, if_false] using hSusp
 
@@ -432,21 +379,9 @@ instead — the same five pre-state-computable conditions the live `.reply` arm'
 own dispatch payoff already carries, at `IpcMessage.empty` — and the confinement is
 gone rather than restated.
 
-**WS-RR RR8.16 (`v0.35.195`): the abandon arm's idle-state side condition is
-DERIVED, not carried.**  It used to be a hypothesis (`hTargetIdleAllowed`), a
-post-reply fact about the dispatch's own output, and the docstring said in prose
-why it holds: *the reply wakes its target `.ready`, and `.ready` is a
-`passiveServerIdleAllowed` state*.  A sentence is not a discharge, and the
-hypothesis was consumed on the `.ok` branch alone — so nothing weaker was ever
-being asked for, and
-`endpointReplyCrossCoreDispatch_ok_target_ready` reads the same fact off the
-**outcome**, which is what retires it.  Closing this is what lets the staged
-dispatch payoff's `.reply` arm cover a faulted caller at all: a caller could not
-discharge a post-state hypothesis without threading one, which is what the RR3
-de-threading gate forbids.
-
-The condition binds only on the abandon arm, where the thread is descheduled —
-the restart arm writes no scheduler slot at all. -/
+The abandon arm deschedules the woken thread, and that needs no side condition:
+no conjunct reads the scheduler, so a deschedule transports the bundle whatever
+the thread's IPC state. -/
 theorem faultReplyOnCore_preserves_ipcInvariantFull
     (replier faulted : SeLe4n.ThreadId) (mi : MessageInfo)
     (regs : Array SeLe4n.RegValue) (c : CoreId) (st : SystemState)
@@ -468,15 +403,6 @@ theorem faultReplyOnCore_preserves_ipcInvariantFull
     (hHolderDonation : ∀ rid : SeLe4n.ReplyId, answeredReplyObject? st faulted = some rid →
       replyFrameHeadHolderDonation
         (endpointReplyOnCore replier faulted IpcMessage.empty c st).1 rid faulted)
-    (hHolderIdleAllowed : ∀ (rid : SeLe4n.ReplyId) (scId : SeLe4n.SchedContextId)
-        (holder : SeLe4n.ThreadId),
-      answeredReplyObject? st faulted = some rid →
-      replyFrameHeadHolder?
-          (endpointReplyOnCore replier faulted IpcMessage.empty c st).1 rid
-            = some (scId, holder) →
-      ∀ tcb, (endpointReplyOnCore replier faulted IpcMessage.empty c st).1.getTcb? holder
-          = some tcb →
-        passiveServerIdleAllowed tcb.ipcState)
     -- **WS-OD OD4.4**: the reply's donation return resolves its new owner from
     -- the context's reply stack; this is the obligation that resolution carries,
     -- stated at the state the pop runs at (the reply leg commits first).
@@ -498,7 +424,7 @@ theorem faultReplyOnCore_preserves_ipcInvariantFull
       | some tf =>
           have hRep := endpointReplyCrossCoreDispatch_establishes_ipcInvariantFull replier
             faulted IpcMessage.empty c st hInv hObjInv hDonationReturned hHolderDonation
-            hAllBudgetsNone hHolderIdleAllowed hStackValid hOriginCoherent
+            hAllBudgetsNone hStackValid hOriginCoherent
           have hRepObj := endpointReplyCrossCoreDispatch_preserves_objects_invExt replier
             faulted IpcMessage.empty c st hObjInv
           rcases hStep : endpointReplyCrossCoreDispatch replier faulted IpcMessage.empty c st
@@ -508,17 +434,6 @@ theorem faultReplyOnCore_preserves_ipcInvariantFull
           cases res with
           | error e => simpa only [faultReplyOnCore, hTcb, hFault, hStep] using hInv
           | ok sgi? =>
-              -- **WS-RR RR8.16**: the abandon arm's idle-state obligation, read
-              -- off the dispatch's own `.ok` outcome rather than carried.
-              have hAbandonIdleAllowed : ∀ u : TCB, stR.getTcb? faulted = some u →
-                  u.schedContextBinding ≠ .unbound ∨ passiveServerIdleAllowed u.ipcState := by
-                intro u hU
-                refine Or.inr ?_
-                have hReady : u.ipcState = .ready :=
-                  endpointReplyCrossCoreDispatch_ok_target_ready replier faulted
-                    IpcMessage.empty c st hObjInv (by rw [hStep]) (by rw [hStep]; exact hU)
-                rw [hReady]
-                exact Or.inl rfl
               simp only [faultReplyOnCore, hTcb, hFault, hStep, faultReplyApplyOnCore]
               cases hOut : decodeFaultReply tf.fault tf.context mi regs with
               | restart frame =>
@@ -527,7 +442,7 @@ theorem faultReplyOnCore_preserves_ipcInvariantFull
               | abandon =>
                   simpa only [hOut] using
                     faultAbandonOnCore_preserves_ipcInvariantFull stR faulted
-                      (faultAbandonCore stR faulted) hRepObj hAbandonIdleAllowed hRep
+                      (faultAbandonCore stR faulted) hRepObj hRep
 
 /-- WS-RR RR4.18: and the reply preserves the object-store invariant. -/
 theorem faultReplyOnCore_preserves_objects_invExt

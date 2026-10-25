@@ -129,7 +129,15 @@ a remote core running it stalled until it has left it, as seL4's
 and a scheduling context is unbound from its thread, before the retire (`finaliseThread`,
 `finaliseSchedContext`, seL4's `finaliseCap`), through the destroy cleanup
 `lifecyclePreRetypeCleanup`, with the same bundles and the run-queue entry
-stage kept (`finaliseFinalObject_runQueueEntryStage`); any other busy kernel
+stage kept (`finaliseFinalObject_runQueueEntryStage`); since `v0.36.136` a reply
+a caller waits on is removed (`reply_remove`: the caller's call cancelled and
+the caller made inactive, a reply heading a stack popped first as `reply_pop`
+does, the caller's context handed back) and a stashed one unlinked, and a scheduling
+context's ready holder is dequeued and its reply stack unlinked
+(`finaliseReply`, `finaliseSchedContextDeschedule`), and a thread's own
+delete removes its replies, returns a borrowed context to its lender and ends
+every caller waiting on it (`finaliseThreadReturnLoan`,
+`finaliseThreadEndWaiters`); any other busy kernel
 object still outlives its last capability until its kind's finalise lands
 ([`SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) §8.6).  Every slot write keeps the bundle,
 the untyped carve included (`untypedRetypeObject_preserves_capabilityInvariantBundle`;
@@ -168,7 +176,7 @@ invariant in the representation when you can.
 | Queue structure | `dualQueueSystemInvariant`, `endpointQueueNoDup`, `ipcStateQueueMembershipConsistent`, `queueNextBlockingConsistent`, `queueHeadBlockedConsistent`, `endpointQueueTailBlockedConsistent`, `queueNextTargetBlocked` |
 | Blocked-thread coherence | `blockedThreadsPendingMessageConsistent`, `blockedThreadTimeoutConsistent`, `blockedOnReplyHasTarget`, `pendingReceiveReplyWellFormed` |
 | Reply linkage | `replyCallerLinkage` |
-| SchedContext donation | `donationChainAcyclic`, `donationOwnerValid`, `donationOwnerUnique`, `donationBudgetTransfer`, `passiveServerIdle` |
+| SchedContext donation | `donationChainAcyclic`, `donationOwnerValid`, `donationOwnerUnique`, `donationBudgetTransfer` |
 
 **The bundle is de-threaded end to end.** No theorem in the
 `*_preserves_ipcInvariantFull*` / `*_establishes_ipcInvariantFull*` family binds

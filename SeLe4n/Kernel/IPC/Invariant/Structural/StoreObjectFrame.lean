@@ -575,19 +575,25 @@ theorem endpointReceiveDual_preserves_dualQueueSystemInvariant
                   | true => rfl
                 rw [if_pos hValid] at hStep
                 cases hStash : storeObject receiver.toObjId
-                    (.tcb { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId }) st2 with
+                    (.tcb { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId })
+                    (st2.recordReplyStasher (SeLe4n.ReplyId.optCode replyId) receiver) with
                 | error e => simp [hStash] at hStep
                 | ok pStash =>
                   obtain ⟨_, stStashed⟩ := pStash
                   simp only [hStash, Except.ok.injEq, Prod.mk.injEq] at hStep
                   obtain ⟨-, rfl⟩ := hStep
-                  have hTcbPre : st2.objects[receiver.toObjId]? = some (.tcb rTcb) :=
-                    (SystemState.getTcb?_eq_some_iff st2 receiver rTcb).mp hGetR
+                  have hTcbPre : (st2.recordReplyStasher (SeLe4n.ReplyId.optCode replyId)
+                      receiver).objects[receiver.toObjId]? = some (.tcb rTcb) :=
+                    (SystemState.recordReplyStasher_getElem?_tcb_iff _ _ _ hObjInv2).mpr
+                      ((SystemState.getTcb?_eq_some_iff st2 receiver rTcb).mp hGetR)
                   exact removeRunnable_preserves_dualQueueSystemInvariant _ _
                     (storeObject_tcb_preserves_dualQueueSystemInvariant_of_queueAgree
-                      st2 stStashed receiver.toObjId rTcb
+                      _ stStashed receiver.toObjId rTcb
                       { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId } rfl rfl rfl
-                      hTcbPre hObjInv2 hStash hInv2)
+                      hTcbPre (SystemState.recordReplyStasher_objects_invExt _ _ _ hObjInv2) hStash
+                      (recordReplyStasher_of_store hInv2 (fun _ _ _ hR hS =>
+                        storeObject_reply_preserves_dualQueueSystemInvariant _ _ _ _ hObjInv2 hS
+                          (Or.inl ⟨_, hR⟩) hInv2)))
 
 /-- WS-H12a: endpointReplyRecv preserves dualQueueSystemInvariant.
 Chains storeTcbIpcStateAndMessage + ensureRunnable + endpointReceiveDual preservation.
@@ -2433,7 +2439,8 @@ theorem endpointReceiveDual_preserves_pendingMessagesSatisfy
                   | true => rfl
                 rw [if_pos hValid] at hStep
                 cases hStash : storeObject receiver.toObjId
-                    (.tcb { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId }) st2 with
+                    (.tcb { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId })
+                    (st2.recordReplyStasher (SeLe4n.ReplyId.optCode replyId) receiver) with
                 | error e => simp [hStash] at hStep
                 | ok pStash =>
                   obtain ⟨_, stStashed⟩ := pStash
@@ -2441,15 +2448,19 @@ theorem endpointReceiveDual_preserves_pendingMessagesSatisfy
                   obtain ⟨_, hEq⟩ := hStep; subst hEq
                   have hTcbPre : st2.objects[receiver.toObjId]? = some (.tcb rTcb) :=
                     (SystemState.getTcb?_eq_some_iff st2 receiver rTcb).mp hGetR
+                  have hObjInv2r := SystemState.recordReplyStasher_objects_invExt st2
+                    (SeLe4n.ReplyId.optCode replyId) receiver hObjInv2
                   -- The stash store leaves `pendingMessage` unchanged.
                   have hInv3 : pendingMessagesSatisfy P stStashed := by
                     intro t tcb' m hObjT hPend
                     by_cases hEqT : t.toObjId = receiver.toObjId
-                    · rw [hEqT, storeObject_objects_eq st2 stStashed receiver.toObjId _ hObjInv2 hStash] at hObjT
+                    · rw [hEqT, storeObject_objects_eq _ stStashed receiver.toObjId _ hObjInv2r hStash] at hObjT
                       cases hObjT
                       exact hInv2 t rTcb m (by rw [hEqT]; exact hTcbPre) (by simpa using hPend)
                     · have hObjPre : st2.objects[t.toObjId]? = some (.tcb tcb') := by
-                        rwa [storeObject_objects_ne st2 stStashed receiver.toObjId t.toObjId _ hEqT hObjInv2 hStash] at hObjT
+                        rw [storeObject_objects_ne _ stStashed receiver.toObjId t.toObjId _ hEqT hObjInv2r hStash,
+                          SystemState.recordReplyStasher_getElem?_tcb_iff _ _ _ hObjInv2] at hObjT
+                        exact hObjT
                       exact hInv2 t tcb' m hObjPre hPend
                   exact removeRunnable_preserves_pendingMessagesSatisfy stStashed receiver hInv3
 
@@ -2586,19 +2597,31 @@ theorem endpointReceiveDual_preserves_badgeWellFormed
                   | true => rfl
                 rw [if_pos hValid] at hStep
                 cases hStash : storeObject receiver.toObjId
-                    (.tcb { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId }) st2 with
+                    (.tcb { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId })
+                    (st2.recordReplyStasher (SeLe4n.ReplyId.optCode replyId) receiver) with
                 | error e => simp [hStash] at hStep
                 | ok pStash =>
                   obtain ⟨_, stStashed⟩ := pStash
                   simp only [hStash, Except.ok.injEq, Prod.mk.injEq] at hStep
                   obtain ⟨_, hEq⟩ := hStep; subst hEq
                   obtain ⟨hNtfn, hCap⟩ := hInv2
+                  have hObjInv2r := SystemState.recordReplyStasher_objects_invExt st2
+                    (SeLe4n.ReplyId.optCode replyId) receiver hObjInv2
+                  have hNtfnR := recordReplyStasher_of_store (code := SeLe4n.ReplyId.optCode replyId)
+                    (recv := receiver) hNtfn (fun _ _ _ _ hS =>
+                      storeObject_nonNotification_preserves_notificationBadgesWellFormed
+                        _ _ _ _ hNtfn hObjInv2 hS (fun ntfn h => by cases h))
+                  have hCapR := recordReplyStasher_of_store (code := SeLe4n.ReplyId.optCode replyId)
+                    (recv := receiver) hCap (fun _ r _ hR hS =>
+                      storeObject_preserves_capabilityBadgesWellFormed _ _ _ _ hCap hObjInv2 hS
+                        (fun s c h => ⟨_, hR, by simpa [KernelObject.slotCap] using h⟩))
                   exact removeRunnable_preserves_badgeWellFormed stStashed receiver
                     ⟨storeObject_nonNotification_preserves_notificationBadgesWellFormed
-                       st2 stStashed receiver.toObjId _ hNtfn hObjInv2 hStash (fun ntfn h => by cases h),
+                       _ stStashed receiver.toObjId _ hNtfnR hObjInv2r hStash (fun ntfn h => by cases h),
                      storeObject_preserves_capabilityBadgesWellFormed
-                       st2 stStashed receiver.toObjId _ hCap hObjInv2 hStash
-                       (fun _ _ h => ⟨_, (SystemState.getTcb?_eq_some_iff _ _ _).mp hGetR, h⟩)⟩
+                       _ stStashed receiver.toObjId _ hCapR hObjInv2r hStash
+                       (fun _ _ h => ⟨_, (SystemState.recordReplyStasher_getElem?_tcb_iff _ _ _ hObjInv2).mpr
+                         ((SystemState.getTcb?_eq_some_iff _ _ _).mp hGetR), h⟩)⟩
 
 /-- U4-K: endpointCall preserves allPendingMessagesBounded.
 Path A: PopHead + storeTcbIpcStateAndMessage(receiver, msg) + ensureRunnable +

@@ -443,7 +443,7 @@ def resolveRecvReplyId (gate : SyscallGate) (decoded : SyscallDecodeResult)
               -- in-use treatment.  Explicit-MR0 failure is fail-closed before receive.
               match st.getReply? rid with
               | some r =>
-                  if r.caller.isNone && !st.replyIsStashed rid then .ok (some rid)
+                  if r.caller.isNone && !st.replyStashedAt rid r then .ok (some rid)
                   else .error .replyCapInvalid
               | none => .error .replyCapInvalid
 
@@ -556,85 +556,6 @@ theorem clearWokenReceiverStash_machine_eq
 -- ============================================================================
 
 open SeLe4n.Model.SystemState in
-/-- WS-RR RR2.16 (helper): a TCB store that leaves `replyObject` and `ipcState`
-alone preserves the bidirectional reply linkage.  Neither clause can move: the
-forward clause reads the stored thread's `replyObject` (unchanged) and the Reply
-object (a different key, so untouched), and the backward clause reads the Reply
-and then the thread's `replyObject` and `ipcState` (both unchanged).
-
-The reply-linkage counterpart of
-`storeObject_tcb_preserveIpc_preserves_endpointQueueTailBlockedConsistent`; it
-did not exist because until RR2.16 no bundle needed a *stash-only* TCB store to
-carry the linkage. -/
-theorem storeObject_tcb_preserveReplyLinkFields_preserves_replyCallerLinkage
-    (st st' : SystemState) (tid₀ : SeLe4n.ThreadId) (oldTcb newTcb : TCB)
-    (hObjInv : st.objects.invExt)
-    (hOld : st.getTcb? tid₀ = some oldTcb)
-    (hSameReply : newTcb.replyObject = oldTcb.replyObject)
-    (hSameIpc : newTcb.ipcState = oldTcb.ipcState)
-    (hInv : replyCallerLinkage st)
-    (hStore : storeObject tid₀.toObjId (.tcb newTcb) st = .ok ((), st')) :
-    replyCallerLinkage st' := by
-  have hEqAt := storeObject_objects_eq st st' tid₀.toObjId (.tcb newTcb) hObjInv hStore
-  have hOldRaw := (getTcb?_eq_some_iff st tid₀ oldTcb).mp hOld
-  have hFrame : ∀ x, x ≠ tid₀.toObjId → st'.objects[x]? = st.objects[x]? :=
-    fun x hNe => storeObject_objects_ne st st' tid₀.toObjId x (.tcb newTcb) hNe hObjInv hStore
-  -- Every post-state TCB has a pre-state twin agreeing on `replyObject` / `ipcState`.
-  have hBack : ∀ (t : SeLe4n.ThreadId) (tcbT : TCB),
-      st'.getTcb? t = some tcbT →
-      ∃ tcbT', st.getTcb? t = some tcbT' ∧
-        tcbT'.replyObject = tcbT.replyObject ∧ tcbT'.ipcState = tcbT.ipcState := by
-    intro t tcbT hTt
-    have hT := (getTcb?_eq_some_iff st' t tcbT).mp hTt
-    by_cases hEq : t.toObjId = tid₀.toObjId
-    · rw [hEq, hEqAt] at hT
-      obtain rfl : newTcb = tcbT := by
-        simpa only [Option.some.injEq, KernelObject.tcb.injEq] using hT
-      exact ⟨oldTcb, by rw [getTcb?_eq_some_iff, hEq]; exact hOldRaw,
-        hSameReply.symm, hSameIpc.symm⟩
-    · rw [hFrame t.toObjId hEq] at hT
-      exact ⟨tcbT, (getTcb?_eq_some_iff st t tcbT).mpr hT, rfl, rfl⟩
-  -- And every pre-state TCB has a post-state twin agreeing on the same two fields.
-  have hFwd : ∀ (t : SeLe4n.ThreadId) (tcbT : TCB),
-      st.getTcb? t = some tcbT →
-      ∃ tcbT', st'.getTcb? t = some tcbT' ∧
-        tcbT'.replyObject = tcbT.replyObject ∧ tcbT'.ipcState = tcbT.ipcState := by
-    intro t tcbT hTt
-    have hT := (getTcb?_eq_some_iff st t tcbT).mp hTt
-    by_cases hEq : t.toObjId = tid₀.toObjId
-    · rw [hEq] at hT
-      obtain rfl : oldTcb = tcbT := by
-        simpa only [Option.some.injEq, KernelObject.tcb.injEq] using hOldRaw.symm.trans hT
-      exact ⟨newTcb, by rw [getTcb?_eq_some_iff, hEq]; exact hEqAt, hSameReply, hSameIpc⟩
-    · exact ⟨tcbT, by rw [getTcb?_eq_some_iff, hFrame t.toObjId hEq]; exact hT, rfl, rfl⟩
-  -- Reply objects live at a different key from the stored TCB, so they read through.
-  have hReplyFrame : ∀ (rid : SeLe4n.ReplyId) (r : Reply),
-      st'.objects[rid.toObjId]? = some (.reply r) ↔ st.objects[rid.toObjId]? = some (.reply r) := by
-    intro rid r
-    by_cases hEq : rid.toObjId = tid₀.toObjId
-    · rw [hEq, hEqAt, hOldRaw]
-      constructor <;> (intro h; cases h)
-    · rw [hFrame rid.toObjId hEq]
-  refine ⟨⟨?_, ?_⟩, ?_⟩
-  · intro tid tcb rid hTcb' hRO
-    obtain ⟨tcb0, hTcb0, hRO0, _⟩ := hBack tid tcb ((getTcb?_eq_some_iff st' tid tcb).mpr hTcb')
-    obtain ⟨r, hr, hrc⟩ := hInv.1.1 tid tcb0 rid ((getTcb?_eq_some_iff st tid tcb0).mp hTcb0)
-      (hRO0.trans hRO)
-    exact ⟨r, (hReplyFrame rid r).mpr hr, hrc⟩
-  · intro rid r tid hr' hrc
-    obtain ⟨tcb0, hTcb0, hRO0, hBlk0⟩ := hInv.1.2 rid r tid ((hReplyFrame rid r).mp hr') hrc
-    obtain ⟨tcb', hTcb', hROeq, hIpcEq⟩ :=
-      hFwd tid tcb0 ((getTcb?_eq_some_iff st tid tcb0).mpr hTcb0)
-    obtain ⟨ep, rt, hIpc⟩ := hBlk0
-    exact ⟨tcb', (getTcb?_eq_some_iff st' tid tcb').mp hTcb', hROeq.trans hRO0,
-      ⟨ep, rt, hIpcEq.trans hIpc⟩⟩
-  · intro tid tcb ep rt hTcb' hBlk
-    obtain ⟨tcb0, hTcb0, hRO0, hIpc0⟩ := hBack tid tcb ((getTcb?_eq_some_iff st' tid tcb).mpr hTcb')
-    obtain ⟨rid, hRid⟩ := hInv.2 tid tcb0 ep rt ((getTcb?_eq_some_iff st tid tcb0).mp hTcb0)
-      (hIpc0.trans hBlk)
-    exact ⟨rid, hRO0 ▸ hRid⟩
-
-open SeLe4n.Model.SystemState in
 /-- **WS-RR RR2.16**: `clearWokenReceiverStash` — the dispatch-level
 post-processing step the live `.send`, `.signal` and `.declassifySignal` arms run
 after their transition — preserves the whole IPC invariant bundle.
@@ -642,7 +563,7 @@ after their transition — preserves the whole IPC invariant bundle.
 Every arm but one returns the state untouched.  The one that stores writes a
 single TCB differing only in `pendingReceiveReply := none`, and:
 
-* the fifteen structural conjuncts read no `pendingReceiveReply`
+* the fourteen structural conjuncts read no `pendingReceiveReply`
   (`storeObject_tcb_pendingReceiveReply_preserves_ipcInvariantCore`);
 * the reply linkage reads `replyObject` and `ipcState`, both unchanged;
 * `pendingReceiveReplyWellFormed` — the one conjunct that *does* read the field —
@@ -651,7 +572,7 @@ single TCB differing only in `pendingReceiveReply := none`, and:
   they are vacuous.  Clearing a stash can only discharge obligations, never
   create one, which is precisely why the clear was introduced (a woken server
   leaving `.blockedOnReceive` with a live stash violates the conjunct);
-* the donation quartet's binding half is framed, and the tail/queue-target
+* the donation trio's binding half is framed, and the tail/queue-target
   conjuncts are framed by the unchanged `ipcState` / `queueNext`.
 
 Unconditional in the post-state: nothing here is threaded. -/
@@ -677,28 +598,8 @@ theorem clearWokenReceiverStash_preserves_ipcInvariantFull
         rw [hStash] at hStep
         obtain ⟨u, st'⟩ := pair
         cases u
-        have hRaw :=
-          (getTcb?_eq_some_iff st receiver rTcb).mp hTcb
-        exact ipcInvariantFull_of_core_replyCallerLinkage
-          (storeObject_tcb_pendingReceiveReply_preserves_ipcInvariantCore st st'
-            receiver.toObjId rTcb none hInv.toCore hObjInv hRaw hStep)
-          (storeObject_tcb_preserveReplyLinkFields_preserves_replyCallerLinkage st st'
-            receiver rTcb { rTcb with pendingReceiveReplyCode := 0 } hObjInv hTcb rfl rfl
-            hInv.replyCallerLinkage hStep)
-          (storeObject_tcb_preserves_pendingReceiveReplyWellFormed st st' receiver rTcb
-            { rTcb with pendingReceiveReplyCode := 0 } hObjInv hTcb
-            hInv.pendingReceiveReplyWellFormed
-            (fun rid' h => by cases h) (fun rid' h => by cases h) hStep)
-          (donationOwnerUnique_of_sameSchedContextBindings
-            (storeObject_modifiedTcb_sameSchedContextBindings st st' receiver.toObjId rTcb
-              { rTcb with pendingReceiveReplyCode := 0 } hRaw rfl hObjInv hStep)
-            hInv.donationOwnerUnique)
-          (storeObject_tcb_preserveIpc_preserves_endpointQueueTailBlockedConsistent st st'
-            receiver rTcb { rTcb with pendingReceiveReplyCode := 0 } hObjInv hRaw rfl
-            hInv.endpointQueueTailBlockedConsistent hStep)
-          (storeObject_tcb_preserveIpcAndQueueNext_preserves_queueNextTargetBlocked st st'
-            receiver rTcb { rTcb with pendingReceiveReplyCode := 0 } hObjInv hRaw rfl rfl
-            hInv.queueNextTargetBlocked hStep)
+        exact storeObject_stashCleared_preserves_ipcInvariantFull st st' receiver rTcb hObjInv
+          hInv hTcb hStep
 
 /-- WS-RR RR2.16: `clearWokenReceiverStash` preserves the Robin Hood object-store
 invariant — every arm is the identity or a single `storeObject`. -/
@@ -3246,7 +3147,6 @@ so the payoff theorem below carries no post-state obligation. -/
 structure capabilityDispatchQuiescence (decoded : SyscallDecodeResult)
     (cap : Capability) (st : SystemState) : Prop where
   bindingBidirectional : schedContextBindingBidirectional st
-  queuedThreadsIdle : unboundQueuedThreadsIdleAllowed st
   /-- **`v0.35.204`**: keyed to the resolver the arm binds through, quantified
   over the caller — the pack carries no caller, and a fact about *every* thread
   any caller's CSpace resolves MR0 to is a pre-state fact all the same. -/
@@ -3258,14 +3158,6 @@ structure capabilityDispatchQuiescence (decoded : SyscallDecodeResult)
     ∀ (s : SeLe4n.ThreadId) (sTcb : TCB) (sc0 : SeLe4n.SchedContextId),
       st.objects[s.toObjId]? = some (.tcb sTcb) →
       sTcb.schedContextBinding ≠ .donated sc0 vThreadId.val
-  unbindBoundThreadPassive : ∀ (scObj : SeLe4n.ObjId),
-    decoded.syscallId = .schedContextUnbind → cap.target = .object scObj →
-    ∀ vScId, validateObjIdArg scObj = .ok vScId →
-    ∀ (scX : SeLe4n.Kernel.SchedContext) (t : SeLe4n.ThreadId) (tcbX : TCB),
-      st.objects[(SchedContextId.ofObjId vScId.val).toObjId]? = some (.schedContext scX) →
-      scX.boundThread = some t →
-      st.objects[t.toObjId]? = some (.tcb tcbX) →
-      passiveServerIdleAllowed tcbX.ipcState
   targetThreadQuiescent : ∀ (objId : SeLe4n.ObjId),
     decoded.syscallId = .tcbSuspend ∨ decoded.syscallId = .tcbResume →
     cap.target = .object objId →
@@ -3288,6 +3180,16 @@ structure capabilityDispatchQuiescence (decoded : SyscallDecodeResult)
   decode does not. -/
   replyStacksSettleOnWaitingDonors : ∀ scId serverTid originalOwner,
     replyStackOuterCallerValid st scId serverTid originalOwner
+  /-- **WS-ZA ZA5.4 part 25**: every lent scheduling context is headed by its
+  lender's reply frame (seL4 MCS lends a context in the step that pushes the
+  lender's reply as its stack head).  A pre-state fact the finalising delete and
+  revocation read in place of a walk of the whole store: a reply heading no stack
+  has a caller that lends to no one (`replyCaller_lendsNone`).  The delete's own
+  steps keep it (`cspaceDeleteSlotFinalising_preserves_finaliseLoanBundle`), so
+  the revocation loop carries it from this one fact.  Stated, not derived: it is
+  one of the stated coherence hypotheses `docs/REGISTERED_DEBT.md` carries to
+  v1.0.0.  Vacuous on every state that lends no context. -/
+  lentContextsHeadedByLender : lentContextHeadsLenderFrame st
 
 /-- WS-RR RR3.23 (**the capability-only dispatch payoff**): every syscall
 `dispatchCapabilityOnly` routes preserves `ipcInvariantFull`, over the
@@ -3301,9 +3203,7 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
     (hObjInv : st.objects.invExt)
     (hInv : ipcInvariantFull st)
     (hPack : capabilityDispatchQuiescence decoded cap st)
-    (hR : st.runQueueRefined) (hAdm : st.currentRequeueAdmitted executingCore)
-    (hU : ∀ c' t, st.scheduler.currentOnCore executingCore = some t →
-      st.scheduler.currentOnCore c' = some t → c' = executingCore)
+    (hR : st.runQueueRefined)
     (hStep : k st = .ok ((), st')) :
     ipcInvariantFull st' := by
   unfold dispatchCapabilityOnly at hArm
@@ -3318,7 +3218,8 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
           simp only [hDec] at hStep
           split at hStep
           · cases hStep
-          exact cspaceDeleteSlotFinalising_preserves_ipcInvariantFull _ _ st st' hObjInv hInv hStep
+          exact cspaceDeleteSlotFinalising_preserves_ipcInvariantFull _ _ st st' hObjInv hInv
+            hPack.lentContextsHeadedByLender hStep
     all_goals try cases hStep
   case cspaceRevoke =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -3330,7 +3231,8 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
           simp only [hDec] at hStep
           split at hStep
           · cases hStep
-          exact cspaceRevokeCdtFinalising_preserves_ipcInvariantFull _ _ st st' hObjInv hInv hStep
+          exact cspaceRevokeCdtFinalising_preserves_ipcInvariantFull _ _ st st' hObjInv hInv
+            hPack.lentContextsHeadedByLender hStep
     all_goals try cases hStep
   case mintReplyCap =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -3479,8 +3381,7 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
                   cases hStep
                   exact schedContextUnbindOnCore_preserves_ipcInvariantFull st st' vScId _
                     sgiU hObjInv hInv
-                    (hPack.unbindBoundThreadPassive scId hSy hTgt vScId hVal)
-                    hR hAdm hU hUn
+                    hR hUn
     all_goals try cases hStep
   case tcbBindNotification =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -3545,7 +3446,7 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
                   exact suspendThreadOnCore_preserves_ipcInvariantFull st st' vtid _ sgiU
                     hObjInv (hPack.targetThreadQuiescent objId (Or.inl hSy) hTgt vtid hVal)
                     hPack.bindingBidirectional hInv
-                    hPack.replyStacksSettleOnWaitingDonors hR hAdm hSus
+                    hPack.replyStacksSettleOnWaitingDonors hSus
     all_goals try cases hStep
   case tcbResume =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -3572,8 +3473,7 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
                 (retirePendingFaultForResume_preserves_objects_invExt st _ hObjInv)
                 (threadIpcFieldsQuiescent_retirePendingFaultForResume st _ hObjInv
                   (hPack.targetThreadQuiescent objId (Or.inr hSy) hTgt vtid hVal))
-                (retirePendingFaultForResume_preserves_ipcInvariantFull st _ hObjInv hInv)
-                (retirePendingFaultForResume_currentRequeueAdmitted st _ _ hObjInv hAdm) hRes
+                (retirePendingFaultForResume_preserves_ipcInvariantFull st _ hObjInv hInv) hRes
     all_goals try cases hStep
   case tcbSetPriority =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -3600,7 +3500,7 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
                       simp only [hSet] at hStep
                       cases hStep
                       exact setPriorityOnCore_preserves_ipcInvariantFull st st' vCallerTid
-                        vTargetTid _ _ sgiU hObjInv hInv hAdm hSet
+                        vTargetTid _ _ sgiU hObjInv hInv hSet
     all_goals try cases hStep
   case tcbSetMCPriority =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -3627,7 +3527,7 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
                       simp only [hSet] at hStep
                       cases hStep
                       exact setMCPriorityOnCore_preserves_ipcInvariantFull st st' vCallerTid
-                        vTargetTid _ _ sgiU hObjInv hInv hAdm hSet
+                        vTargetTid _ _ sgiU hObjInv hInv hSet
     all_goals try cases hStep
   case tcbSetIPCBuffer =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -3674,7 +3574,7 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
                       simp only [hSet] at hStep
                       cases hStep
                       exact setThreadCpuAffinityOnCore_preserves_ipcInvariantFull st st'
-                        vtid affinity _ sgiU hObjInv hInv hPack.queuedThreadsIdle hSet
+                        vtid affinity _ sgiU hObjInv hInv hSet
     all_goals try cases hStep
   case tcbSetFaultHandler =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep

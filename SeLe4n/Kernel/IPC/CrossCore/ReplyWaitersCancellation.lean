@@ -110,26 +110,6 @@ theorem spliceThreadReplyFrameOut_replyViews_eq (st : SystemState) (tcb : TCB)
   · rfl
   · exact spliceReplyFrameOutOrSelf_replyViews_eq _ _ hInv
 
-/-- The holder's abort ends a send or call, which waits on no server. -/
-theorem abortHolderPendingIpc_replyViews_eq (st : SystemState) (holder : SeLe4n.ThreadId)
-    (hInv : st.objects.invExt) : (abortHolderPendingIpc st holder).replyViews = st.replyViews := by
-  unfold abortHolderPendingIpc
-  split
-  · rfl
-  · rename_i htcb hL
-    split
-    all_goals first
-      | rfl
-      | (split
-         · rename_i st' hA
-           obtain ⟨v, hW, hV, hSrv⟩ := abortPendingIpcOnEndpoint_replyViews hInv hA
-           rw [hV]
-           refine ReplyViews.setServer_of_server (fun v' hv' => ?_)
-           rw [hW] at hv'; cases hv'
-           rw [← hSrv]; unfold timeoutBlockingServerOf?; rw [hL]; unfold timeoutBlockingServer?
-           simp_all
-         · rfl)
-
 theorem returnDonationToCancelledCaller_replyViews_eq (st : SystemState) (tid : SeLe4n.ThreadId)
     (tcb : TCB) (hInv : st.objects.invExt) :
     (returnDonationToCancelledCaller st tid tcb).replyViews = st.replyViews := by
@@ -138,9 +118,7 @@ theorem returnDonationToCancelledCaller_replyViews_eq (st : SystemState) (tid : 
   · rename_i scId holder _ _ _
     split
     · rename_i st' hR
-      exact (returnDonatedSchedContextResolved_replyViews_eq
-        (abortHolderPendingIpc_preserves_objects_invExt st holder hInv) hR).trans
-        (abortHolderPendingIpc_replyViews_eq st holder hInv)
+      exact returnDonatedSchedContextResolved_replyViews_eq hInv hR
     · rfl
   · rfl
 

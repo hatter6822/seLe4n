@@ -1709,8 +1709,8 @@ private def runFaultDonationChecks : IO Unit := do
       -- An **unknown syscall**, so the handler's reply LABEL decides between a
       -- restart and an abandon and both arms are reachable from one state.  The
       -- abandon is the arm this cut is about: it deschedules the answered thread,
-      -- so `passiveServerIdle` has to be re-established at it, which is the
-      -- obligation `endpointReplyCrossCoreDispatch_ok_target_ready` now discharges.
+      -- whose run-queue entry stage reads its state, which is the obligation
+      -- `endpointReplyCrossCoreDispatch_ok_target_ready` discharges.
       let (afterFault, resD) :=
         faultDeliverOnCore afterRecv faulter (.unknownSyscall 0x2A) fctx c0
       assertBool "the fault is delivered to the waiting handler"
@@ -1750,7 +1750,7 @@ private def runFaultDonationChecks : IO Unit := do
       | .ok (_, stA) =>
           assertBool "the live .reply dispatch abandons a faulted caller that had donated"
             (pendingFaultOf stA faulter == none && threadStateOf stA faulter == some .Inactive)
-          assertBool "…taking it off every core, which is the write the idle-state obligation guards"
+          assertBool "…taking it off every core, which is the write the run-queue entry stage records"
             (!dispatchableOn stA faulter c0 && !dispatchableOn stA faulter c1)
           assertBool "…and the reservation is still returned to the thread that owns it"
             (bindingOf stA faulter == some (.bound scFaulter))

@@ -90,6 +90,16 @@ structure Reply where
   callerCode : Nat                          := 0
   prev      : Option SeLe4n.ReplyId        := none
   next      : Option ReplyStackLink         := none
+  /-- **The receiver that stashed this reply last**, as a scalar code
+  (`SeLe4n.ThreadId.optCode`: `k + 1` for the thread `⟨k⟩`, `0` for none) —
+  seL4-MCS's `reply->replyTCB` while a receiver is `BlockedOnReceive` with this
+  reply named (`receiveIPC`).  Every stash writes it; a stash cleared on the
+  receiver's side leaves it as it is, so it is cleared lazily, and every reader
+  checks the named receiver's own stash before trusting it
+  (`SystemState.replyStashedAt`).  What makes that check exact is
+  `pendingReceiveReplyWellFormed`'s third clause: every stash is recorded here.
+  A carved Reply starts at `0`. -/
+  stasherCode : Nat                         := 0
   /-- WS-ZA ZA5.3 part 6: the target every reply capability to this object
   carries, built once with the object (`capTarget_eq`), so a reply-capability
   mint shares it instead of building one (`CapTarget.ofReplyObject`). -/
@@ -106,8 +116,8 @@ Written as `callerCode := SeLe4n.ThreadId.optCode c`. -/
   SeLe4n.ThreadId.ofOptCode r.callerCode
 
 @[simp] theorem caller_mk (rid : SeLe4n.ReplyId) (c : Nat) (p : Option SeLe4n.ReplyId)
-    (n : Option ReplyStackLink) (t : SeLe4n.Model.CapTarget) (ht : t = .replyCap rid) :
-    (Reply.mk rid c p n t ht).caller = SeLe4n.ThreadId.ofOptCode c :=
+    (n : Option ReplyStackLink) (s : Nat) (t : SeLe4n.Model.CapTarget) (ht : t = .replyCap rid) :
+    (Reply.mk rid c p n s t ht).caller = SeLe4n.ThreadId.ofOptCode c :=
   rfl
 
 /-- Default Reply: the given id, no caller, no stack links, lock unheld.  Used by
@@ -123,7 +133,7 @@ instances so `BEq KernelObject`'s `.reply` arm has a comparator. -/
 instance : BEq Reply where
   beq a b :=
     a.replyId == b.replyId && a.caller == b.caller &&
-    a.prev == b.prev && a.next == b.next
+    a.prev == b.prev && a.next == b.next && a.stasherCode == b.stasherCode
 
 /-- WS-OD (`v0.35.4`): **a Reply is on a stack iff it carries a stack link**,
 and **an unlinked Reply is off every stack** — the object-local half of the
@@ -251,6 +261,9 @@ def consumed (r : Reply) : Reply :=
   unfold consumed; split <;> rfl
 
 @[simp] theorem consumed_replyId (r : Reply) : r.consumed.replyId = r.replyId := by
+  unfold consumed; split <;> rfl
+
+@[simp] theorem consumed_stasherCode (r : Reply) : r.consumed.stasherCode = r.stasherCode := by
   unfold consumed; split <;> rfl
 
 /-- Whether the reply is free once consumed (`consumedIsFree_eq`), read off its

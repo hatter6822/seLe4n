@@ -766,10 +766,63 @@ theorem notificationQueueWellFormed_waitHead_of_pendingBadge {ntfn : Notificatio
   unfold notificationQueueWellFormed at hWF
   cases hs : ntfn.state <;> rw [hs] at hWF <;> simp_all
 
+/-- **The notification-blocking frame**: notifications unchanged, and every TCB,
+read in either direction, keeps both notification-queue links and is blocked on
+the same notifications.  The queues read a thread's IPC state only through
+"blocked on this notification", so a step may move a thread between states the
+queues do not name — a reply-blocked caller made `.ready` — and keep them
+consistent whichever threads it writes. -/
+theorem notificationWaiterConsistent_of_ntfnBlockFrame {st st' : SystemState}
+    (hInv : notificationWaiterConsistent st)
+    (hNtfnBack : ∀ (k : SeLe4n.ObjId) (n : Notification),
+      st'.objects[k]? = some (.notification n) → st.objects[k]? = some (.notification n))
+    (hNtfnFwd : ∀ (k : SeLe4n.ObjId) (n : Notification),
+      st.objects[k]? = some (.notification n) → st'.objects[k]? = some (.notification n))
+    (hFwd : ∀ (k : SeLe4n.ObjId) (ty : TCB), st.objects[k]? = some (.tcb ty) →
+      ∃ tx, st'.objects[k]? = some (.tcb tx) ∧
+        (∀ o, tx.ipcState = .blockedOnNotification o ↔ ty.ipcState = .blockedOnNotification o) ∧
+        tx.ntfnPrev = ty.ntfnPrev ∧ tx.ntfnNext = ty.ntfnNext)
+    (hBwd : ∀ (k : SeLe4n.ObjId) (tx : TCB), st'.objects[k]? = some (.tcb tx) →
+      ∃ ty, st.objects[k]? = some (.tcb ty) ∧
+        (∀ o, tx.ipcState = .blockedOnNotification o ↔ ty.ipcState = .blockedOnNotification o) ∧
+        tx.ntfnPrev = ty.ntfnPrev ∧ tx.ntfnNext = ty.ntfnNext) :
+    notificationWaiterConsistent st' := by
+  refine ⟨fun oid n hPn => ?_, fun tid tcb oid hPt hB => ?_, fun tid tcb oid hPt hB => ?_,
+    fun oid n hd tcb hPn hHd hPt => ?_, fun tid tcb hPt hNB => ?_⟩
+  · obtain ⟨hIff, hH, hT⟩ := hInv.1 oid n (hNtfnBack oid n hPn)
+    refine ⟨hIff, fun h hh => ?_, fun t ht => ?_⟩
+    · obtain ⟨ty, hy, hb⟩ := hH h hh
+      obtain ⟨tx, hx, hI, _, _⟩ := hFwd _ ty hy
+      exact ⟨tx, hx, (hI _).mpr hb⟩
+    · obtain ⟨ty, hy, hb, hn⟩ := hT t ht
+      obtain ⟨tx, hx, hI, _, hN⟩ := hFwd _ ty hy
+      exact ⟨tx, hx, (hI _).mpr hb, hN.trans hn⟩
+  · obtain ⟨ty, hy, hI, hP, hN⟩ := hBwd _ tcb hPt
+    obtain ⟨n0, hN0, hPrev, hTail, hNext⟩ := hInv.2.1 tid ty oid hy ((hI _).mp hB)
+    refine ⟨n0, hNtfnFwd oid n0 hN0, ?_, fun hn => hTail (hN ▸ hn), fun b hb => ?_⟩
+    · rcases hPrev with hh | ⟨a, ta, ha, hTa, hBa, hNa⟩
+      · exact Or.inl hh
+      · obtain ⟨ta', hA', hAI, _, hAN⟩ := hFwd _ ta hTa
+        exact Or.inr ⟨a, ta', hP ▸ ha, hA', (hAI _).mpr hBa, hAN.trans hNa⟩
+    · obtain ⟨hne, tb, hTb, hBb, hPb⟩ := hNext b (hN ▸ hb)
+      obtain ⟨tb', hB', hBI, hBP, _⟩ := hFwd _ tb hTb
+      exact ⟨hne, tb', hB', (hBI _).mpr hBb, hBP.trans hPb⟩
+  · obtain ⟨ty, hy, hI, _, _⟩ := hBwd _ tcb hPt
+    refine (hInv.2.2.1 tid ty oid hy ((hI _).mp hB)).transport
+      (fun _ _ hN1 hH1 => .head (hNtfnFwd _ _ hN1) hH1) (fun _ _ ta _ hTa hNx hRa' => ?_)
+    obtain ⟨tx, hx, _, _, hN⟩ := hFwd _ ta hTa
+    exact .next hRa' hx (hN.trans hNx)
+  · obtain ⟨ty, hy, _, hP, _⟩ := hBwd _ tcb hPt
+    exact hP.trans (hInv.headNoPrev (hNtfnBack oid n hPn) hHd hy)
+  · obtain ⟨ty, hy, hI, hP, hN⟩ := hBwd _ tcb hPt
+    obtain ⟨hP0, hN0⟩ := hInv.unqueuedNoLinks hy (fun o e => hNB o ((hI o).mpr e))
+    exact ⟨hP.trans hP0, hN.trans hN0⟩
+
 /-- The field frame: notifications unchanged, and every TCB, read in either
 direction, keeps its IPC state and both queue links.  A step that rewrites only
 fields the queues do not read (a reply link, a scheduling binding) keeps them
-consistent whichever threads it writes. -/
+consistent whichever threads it writes
+(`notificationWaiterConsistent_of_ntfnBlockFrame`, the IPC state kept outright). -/
 theorem notificationWaiterConsistent_of_tcbLinkFrame {st st' : SystemState}
     (hInv : notificationWaiterConsistent st)
     (hNtfnBack : ∀ (k : SeLe4n.ObjId) (n : Notification),
@@ -782,37 +835,12 @@ theorem notificationWaiterConsistent_of_tcbLinkFrame {st st' : SystemState}
     (hBwd : ∀ (k : SeLe4n.ObjId) (tx : TCB), st'.objects[k]? = some (.tcb tx) →
       ∃ ty, st.objects[k]? = some (.tcb ty) ∧ tx.ipcState = ty.ipcState ∧
         tx.ntfnPrev = ty.ntfnPrev ∧ tx.ntfnNext = ty.ntfnNext) :
-    notificationWaiterConsistent st' := by
-  refine ⟨fun oid n hPn => ?_, fun tid tcb oid hPt hB => ?_, fun tid tcb oid hPt hB => ?_,
-    fun oid n hd tcb hPn hHd hPt => ?_, fun tid tcb hPt hNB => ?_⟩
-  · obtain ⟨hIff, hH, hT⟩ := hInv.1 oid n (hNtfnBack oid n hPn)
-    refine ⟨hIff, fun h hh => ?_, fun t ht => ?_⟩
-    · obtain ⟨ty, hy, hb⟩ := hH h hh
-      obtain ⟨tx, hx, hI, _, _⟩ := hFwd _ ty hy
-      exact ⟨tx, hx, hI.trans hb⟩
-    · obtain ⟨ty, hy, hb, hn⟩ := hT t ht
-      obtain ⟨tx, hx, hI, _, hN⟩ := hFwd _ ty hy
-      exact ⟨tx, hx, hI.trans hb, hN.trans hn⟩
-  · obtain ⟨ty, hy, hI, hP, hN⟩ := hBwd _ tcb hPt
-    obtain ⟨n0, hN0, hPrev, hTail, hNext⟩ := hInv.2.1 tid ty oid hy (hI ▸ hB)
-    refine ⟨n0, hNtfnFwd oid n0 hN0, ?_, fun hn => hTail (hN ▸ hn), fun b hb => ?_⟩
-    · rcases hPrev with hh | ⟨a, ta, ha, hTa, hBa, hNa⟩
-      · exact Or.inl hh
-      · obtain ⟨ta', hA', hAI, _, hAN⟩ := hFwd _ ta hTa
-        exact Or.inr ⟨a, ta', hP ▸ ha, hA', hAI.trans hBa, hAN.trans hNa⟩
-    · obtain ⟨hne, tb, hTb, hBb, hPb⟩ := hNext b (hN ▸ hb)
-      obtain ⟨tb', hB', hBI, hBP, _⟩ := hFwd _ tb hTb
-      exact ⟨hne, tb', hB', hBI.trans hBb, hBP.trans hPb⟩
-  · obtain ⟨ty, hy, hI, _, _⟩ := hBwd _ tcb hPt
-    refine (hInv.2.2.1 tid ty oid hy (hI ▸ hB)).transport
-      (fun _ _ hN1 hH1 => .head (hNtfnFwd _ _ hN1) hH1) (fun _ _ ta _ hTa hNx hRa' => ?_)
-    obtain ⟨tx, hx, _, _, hN⟩ := hFwd _ ta hTa
-    exact .next hRa' hx (hN.trans hNx)
-  · obtain ⟨ty, hy, _, hP, _⟩ := hBwd _ tcb hPt
-    exact hP.trans (hInv.headNoPrev (hNtfnBack oid n hPn) hHd hy)
-  · obtain ⟨ty, hy, hI, hP, hN⟩ := hBwd _ tcb hPt
-    obtain ⟨hP0, hN0⟩ := hInv.unqueuedNoLinks hy (fun o e => hNB o (hI.trans e))
-    exact ⟨hP.trans hP0, hN.trans hN0⟩
+    notificationWaiterConsistent st' :=
+  notificationWaiterConsistent_of_ntfnBlockFrame hInv hNtfnBack hNtfnFwd
+    (fun k ty hy => let ⟨tx, hx, hI, hP, hN⟩ := hFwd k ty hy
+      ⟨tx, hx, fun _ => by rw [hI], hP, hN⟩)
+    (fun k tx hx => let ⟨ty, hy, hI, hP, hN⟩ := hBwd k tx hx
+      ⟨ty, hy, fun _ => by rw [hI], hP, hN⟩)
 
 
 /-- The queues read the object store and nothing else. -/

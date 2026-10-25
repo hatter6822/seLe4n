@@ -1698,6 +1698,16 @@ theorem storeObject_preservesFieldsOutside_ipc
   preservesFieldsOutside_mono (fun _ hf => List.mem_append_left _ hf)
     (storeObject_preservesFieldsOutside id obj st st' hStep)
 
+/-- Recording a Reply's stasher is nothing or one `storeObject` of that Reply,
+so it writes no field the endpoint write set omits. -/
+theorem recordReplyStasher_preservesFieldsOutside_ipc
+    (st : SystemState) (code : Nat) (recv : SeLe4n.ThreadId) :
+    preservesFieldsOutside ipcEndpointOp_modifiedFields st
+      (st.recordReplyStasher code recv) := by
+  rcases SystemState.recordReplyStasher_eq_or st code recv with h | ⟨_, _, _, _, hS⟩
+  · rw [h]; exact preservesFieldsOutside_refl _ _
+  · exact storeObject_preservesFieldsOutside_ipc _ _ _ _ hS
+
 /-- WS-OD OD3.2: the donation return's reply-stack head clear is at most one
 `storeObject`, so it writes no field the endpoint write set omits. -/
 theorem storeDonationHeadClear_preservesFieldsOutside_ipc
@@ -2069,8 +2079,10 @@ theorem endpointReceiveDual_preservesFieldsOutside
                   subst hEq
                   exact preservesFieldsOutside_trans hPre
                     (preservesFieldsOutside_trans
-                      (storeObject_preservesFieldsOutside_ipc _ _ _ _ hStash)
-                      (removeRunnable_preservesFieldsOutside _ _))
+                      (recordReplyStasher_preservesFieldsOutside_ipc _ _ _)
+                      (preservesFieldsOutside_trans
+                        (storeObject_preservesFieldsOutside_ipc _ _ _ _ hStash)
+                        (removeRunnable_preservesFieldsOutside _ _)))
               · cases hStep
   · cases hStep
   · cases hStep

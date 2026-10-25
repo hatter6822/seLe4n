@@ -31,7 +31,7 @@ eighteen-conjunct proof.
 
 ## Nothing is threaded
 
-All twenty conjuncts are **established** from the pre-state — including
+All nineteen conjuncts are **established** from the pre-state — including
 `blockedThreadsPendingMessageConsistent` and both halves of `replyCallerLinkage`,
 which the single-core WithCaps bundles thread, because the transfer touches no
 TCB and no Reply object at all.
@@ -93,7 +93,7 @@ theorem ipcUnwrapCaps_preserves_blockedThreadTimeoutConsistent
 
 /-- **WS-RR RR2.14 / RR2.6: the capability transfer preserves `ipcInvariantFull`.**
 
-All twenty conjuncts are established from the pre-state.  The two that a first
+All nineteen conjuncts are established from the pre-state.  The two that a first
 cut threaded — `dualQueueSystemInvariant` and `badgeWellFormed` — already had
 their own preservation theorems in the tree
 (`ipcUnwrapCaps_preserves_dualQueueSystemInvariant`,
@@ -116,7 +116,7 @@ vacuous on their own success path.  The transfer's own frame now covers the
 non-CNode case directly (`ipcUnwrapCaps_state_eq_of_root_not_cnode`: it writes
 nothing there), so nothing needs to be assumed.
 
-The donation quartet falls out of the two donation frames: the transfer writes no
+The donation trio falls out of the two donation frames: the transfer writes no
 TCB, so `sameSchedContextBindings` holds outright, and `donationOwnerFrame`
 carries the SchedContext and owner readings forward. -/
 theorem ipcUnwrapCaps_preserves_ipcInvariantFull
@@ -161,10 +161,6 @@ theorem ipcUnwrapCaps_preserves_ipcInvariantFull
     ipcUnwrapCaps_preserves_blockedThreadTimeoutConsistent caps receiverRoot slotBase
       grantRight st st' summary hObjInv hInv.blockedThreadTimeoutConsistent hStep,
     donationOwnerValid_implies_donationChainAcyclic st' hDOV', hDOV',
-    passiveServerIdle_of_frame
-      (ipcUnwrapCaps_passiveServerIdleFrame caps receiverRoot slotBase grantRight
-        st st' summary hObjInv hStep)
-      hInv.passiveServerIdle,
     donationBudgetTransfer_of_sameSchedContextBindings hSame hInv.donationBudgetTransfer,
     ipcUnwrapCaps_preserves_blockedOnReplyHasTarget caps receiverRoot slotBase
       grantRight st st' summary hObjInv hInv.blockedOnReplyHasTarget hStep,

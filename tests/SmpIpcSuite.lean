@@ -1153,9 +1153,8 @@ private def runDonationMigrationChecks : IO Unit := do
       -- the recorded server received nothing — while the pop had already made
       -- the server `.unbound`.  Left on its run queue it would be selected at
       -- its legacy TCB priority and charged to no reservation, which is WS-OD
-      -- OD3.6's defect on the delegated path.  `passiveServerIdle` structurally
-      -- cannot see it: that conjunct is conditioned on the thread already being
-      -- descheduled, so an unbound thread still queued satisfies it vacuously.
+      -- OD3.6's defect on the delegated path.  No IPC bundle conjunct reads the
+      -- scheduler, so only the run-queue check below can see it.
       assertBool "pre: the recorded server is queued on its own core 1"
         ((stCallQ.queuedOn c1 donServer))
       -- **PR #895 review round 10**: and it is QUEUED rather than current, which

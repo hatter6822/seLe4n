@@ -431,7 +431,7 @@ private def runRendezvousChecks : IO Unit := do
 #check @ipcInvariantFull_perCore_of_full
 #check @ipcInvariantFull_of_smp
 #check @ipcInvariantCore_of_smp
-#check @ipcInvariantFull_smp_iff_full_and_passive_smp
+#check @ipcInvariantFull_smp_iff_full
 #check @default_ipcInvariantFull_perCore
 #check @default_ipcInvariantFull_smp
 #check @threadHomeCore
@@ -454,18 +454,13 @@ private def runRendezvousChecks : IO Unit := do
 #check @notificationSignal_preserves_ipcInvariantFull_perCore
 #check @notificationWait_preserves_ipcInvariantFull_perCore
 #check @endpointCallOnCore_preserves_ipcInvariantFull_perCore
-#check @endpointCallOnCore_preserves_passiveServerIdle_perCore
 -- SM6.D.2 per-core passive-server frame machinery:
-#check @passiveServerIdleFrameOnCore
-#check @passiveServerIdle_perCore_of_frameOnCore
-#check @endpointCallOnCore_passiveServerIdleFrameOnCore
 -- SM6.D completion — the lookup-congruence transfer layer:
 #check @ipcInvariantFull_of_getElem_eq
 #check @OffSchedulerAgrees
 #check @wakeThread_offSchedulerAgrees_of_ready
 #check @storeTcbIpcStateAndMessage_offSchedulerAgrees
 #check @consumeCallerReply_offSchedulerAgrees
-#check @passiveServerIdleFrameOnCore_boot_iff
 -- SM6.D completion — cross-core (OnCore) whole-bundle closures + flagships:
 #check @notificationSignalOnCore_post_agrees
 #check @notificationWaitOnCore_post_agrees
@@ -511,7 +506,6 @@ private def runRendezvousChecks : IO Unit := do
 #check @sendTailCrossQueueFresh
 #check @recvTailCrossQueueFresh
 -- SM6.D completion — the capability-carrying (WithCaps) trio:
-#check @ipcUnwrapCaps_passiveServerIdleFrameOnCore
 #check @endpointSendDualWithCaps_preserves_ipcInvariantFull_perCore
 #check @endpointReceiveDualWithCaps_preserves_ipcInvariantFull_perCore
 #check @endpointCallWithCaps_preserves_ipcInvariantFull_perCore
@@ -587,15 +581,14 @@ private def runRendezvousChecks : IO Unit := do
 #check @syscallDispatchQuiescence_inhabited_mint
 #check @syscallDispatchQuiescence_inhabited_reply
 #check @syscallDispatchQuiescence_inhabited_bind
-#check @syscallDispatchQuiescence_inhabited_unbind
 #check @syscallDispatchQuiescence_inhabited_suspend
 #check @checkedSyscallDispatchQuiescence_inhabited_declassifySignal
 
 /-- SM6.D.1 exact decomposition: the ∀-core bundle is equivalent to the global
 bundle plus the per-core passive-idle slices — nothing is weakened. -/
 example (st : SystemState) :
-    ipcInvariantFull_smp st ↔ ipcInvariantFull st ∧ passiveServerIdle_smp st :=
-  ipcInvariantFull_smp_iff_full_and_passive_smp st
+    ipcInvariantFull_smp st ↔ ipcInvariantFull st :=
+  ipcInvariantFull_smp_iff_full st
 
 /-- SM6.D.3 exactness: the ∀-core queue-membership slices recover exactly the
 global conjunct. -/
@@ -638,7 +631,7 @@ example (st : SystemState) (ntfnId : SeLe4n.ObjId) (badge : SeLe4n.Badge) (ec c 
     hNWC hAllBudgetsNone c
 
 /-- SM6.D completion (representative): the **cross-core** reply preserves the
-whole twenty-conjunct bundle for any reply-cap holder (delegated authority
+whole nineteen-conjunct bundle for any reply-cap holder (delegated authority
 included — the recorded server's single-core effect carries across the
 off-scheduler agreement dichotomy). -/
 example (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (ec : CoreId)
@@ -852,7 +845,7 @@ example (st : SystemState) (endpointId : SeLe4n.ObjId) (hInv : ipcInvariantFull 
     hInv.endpointQueueTailBlockedConsistent
 
 /-- WS-RR RR3.12 (payoff): the **live** cross-core `.reply` dispatch preserves the
-whole twenty-conjunct bundle on the *donating* path — the seL4-MCS path the previous
+whole nineteen-conjunct bundle on the *donating* path — the seL4-MCS path the previous
 statement was vacuous on. Nothing about the result is assumed: `hDonationReturned`
 says only that whatever the answered caller donated is what this reply's answered
 *frame* heads, a fact about the pre-state and the operation's arguments.
@@ -875,13 +868,6 @@ example (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (ec : CoreId)
     (hHolderDonation : ∀ rid : SeLe4n.ReplyId, answeredReplyObject? st target = some rid →
       replyFrameHeadHolderDonation (endpointReplyOnCore replier target msg ec st).1 rid target)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
-    (hHolderIdleAllowed : ∀ (rid : SeLe4n.ReplyId) (scId : SeLe4n.SchedContextId)
-        (holder : SeLe4n.ThreadId),
-      answeredReplyObject? st target = some rid →
-      replyFrameHeadHolder? (endpointReplyOnCore replier target msg ec st).1 rid
-          = some (scId, holder) →
-      ∀ tcb, (endpointReplyOnCore replier target msg ec st).1.getTcb? holder = some tcb →
-        passiveServerIdleAllowed tcb.ipcState)
     -- **WS-OD OD4.4**: the donation return resolves its new owner off the
     -- context's reply stack, so the chain's shape at the state that return runs
     -- on — the post-reply-leg store — is an obligation of the composite.  Stated
@@ -897,7 +883,7 @@ example (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (ec : CoreId)
         rid target) :
     ipcInvariantFull (endpointReplyCrossCoreDispatch replier target msg ec st).1 :=
   endpointReplyCrossCoreDispatch_establishes_ipcInvariantFull replier target msg ec st hInv
-    hObjInv hDonationReturned hHolderDonation hAllBudgetsNone hHolderIdleAllowed hStackValid
+    hObjInv hDonationReturned hHolderDonation hAllBudgetsNone hStackValid
     hOriginCoherent
 
 /-- WS-RR RR3.12: the donation return **upgrades** the relaxed invariant back to the

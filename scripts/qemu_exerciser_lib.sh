@@ -292,7 +292,22 @@ for driver in drivers:
             "inactive-tcb-delete", "bind-carved-tcb", "bound-tcb-delete",
             "bind-carved-sched-context", "bound-sched-context-delete",
             "unbound-tcb-delete", "resume-shared-tcb", "suspend-queued-tcb",
-            "suspended-tcb-delete", "queued-tcb-delete")}
+            "suspended-tcb-delete", "queued-tcb-delete",
+            # WS-ZA ZA5.4 part 25: a carved reply's minted capability received
+            # through and the partner's call that blocks on it, the minted
+            # capability's delete; and a carved reply stashed by a blocked
+            # receive, both its capabilities deleted by the partner: the final
+            # delete clears the receiver's stash in its own TCB and retires
+            # the reply, and the partner's send then finds the receiver waiting.
+            # The busy reply's final delete cancels its caller in place: the
+            # finalise reads the caller's codes before any write and stores
+            # the splice, the consumed reply and the caller's cleared link in
+            # their slots (`finaliseReply_eq_impl`, an @[csimp] over the
+            # specification's `cancelIpcBlocking` reply arm).
+            "mint-busy-reply-cap", "receive-with-carved-reply", "call-to-carved-reply",
+            "busy-reply-cap-delete", "busy-reply-delete",
+            "mint-stashed-reply-cap", "receive-stashing-reply", "stashed-reply-cap-delete",
+            "stashed-reply-delete", "send-to-unstashed-receiver")}
         # WS-ZA ZA5.1: the memory invocations' readings today, each the
         # operation's own cells (object writes, the store's copy); the rows
         # that bring them to zero lower these pins.
@@ -328,6 +343,9 @@ for driver in drivers:
             "untyped-retype-busy-notification": (11, 11),
             "untyped-retype-bound-notification": (11, 11),
             "untyped-retype-reply": (12, 12), "untyped-retype-cnode": (29, 29),
+            # WS-ZA ZA5.4 part 25: the busy and the stashed reply's carves,
+            # at the passive reply's id once that reply is retired.
+            "untyped-retype-busy-reply": (12, 12), "untyped-retype-stashed-reply": (12, 12),
             # WS-ZA ZA5.4 part 24: a thread's and a scheduling context's carve
             # (same trace).  Past the store's 9, a thread adds its TCB cell and
             # two 16-byte cells built with it (`CarveRequest.objectImpl`, 3)

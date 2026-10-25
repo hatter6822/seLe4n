@@ -104,7 +104,6 @@ open SeLe4n.Testing
 -- placement.  Pinned beside the bridge because a reader who sees only the new name
 -- cannot tell whether the hypothesis was earned or assumed.
 #check @placedCoreOf?_congr_of_scheduler_eq
-#check @descheduleAtPlacement_passiveServerIdleFrame
 #check @lockSet_endpointReply_donation_extension
 -- WS-SM SM6.D (PR #822 review): the reply donation return was keyed on the RECORDED
 -- SERVER (the caller's `blockedOnReply` server, who holds the donated SC), not the

@@ -555,12 +555,10 @@ SM5.H replenishment migration:
   `hStackValid` supplies through `donationReturnOuterValid_of_stackValid`
   (WS-OD OD3.4 -- the pop validates what it hands out, and OD4.3 removed the
   `hBottom` condition that used to confine it to depth 1);
-* `passiveServerIdle` needs the holder's own `ipcState` to be one the predicate
-  permits, which is `hHolderIdleAllowed`;
 * the migration writes only `schedContexts` and the replenishment queue, so it
-  is a `descheduleFrame` over an unchanged object store.
+  leaves the object store unchanged.
 
-**WS-HP HP4.5**: both pre-state conditions are quantified over the head-driven
+**WS-HP HP4.5**: the pre-state condition is quantified over the head-driven
 trigger, exactly as the `.reply` arm's are -- the thread the pop unbinds is read
 off `SchedContext.boundThread` rather than supplied, so an unconditional fact
 about the operation's argument would be a fact about the wrong thread.
@@ -575,9 +573,6 @@ theorem replyRecvPopDonation_preserves_ipcInvariantFull
     (hObjInv : st.objects.invExt)
     (hInv : ipcInvariantFull st)
     (hHolderDonation : replyFrameHeadHolderDonation st rid target)
-    (hHolderIdleAllowed : ∀ scId holder,
-        replyFrameHeadHolder? st rid = some (scId, holder) →
-        ∀ tcb, st.getTcb? holder = some tcb → passiveServerIdleAllowed tcb.ipcState)
     -- **WS-OD OD4.4**: the return resolves its new owner from the context's reply
     -- stack; this is the obligation that resolution carries.
     (hStackValid : ∀ scId serverTid originalOwner,
@@ -624,11 +619,6 @@ theorem replyRecvPopDonation_preserves_ipcInvariantFull
               rw [hHEq]; exact hPopN
             have hRetWV : replyDonationReturn? st holderV.val = some (oldScId, target) := by
               rw [hHEq]; exact hRetW
-            have hIdleV : ∀ tcb, st.getTcb? holderV.val = some tcb →
-                passiveServerIdleAllowed tcb.ipcState := by
-              intro tcb hTcb
-              rw [hHEq] at hTcb
-              exact hHolderIdleAllowed oldScId holder hHead tcb hTcb
             -- **WS-HP HP10.7**: three cases, as in the `.reply` spine — no origin,
             -- an origin that *is* the answered caller, and a distinct origin, the
             -- last taking the generalised bundle under the redirect's own guard.
@@ -636,7 +626,7 @@ theorem replyRecvPopDonation_preserves_ipcInvariantFull
               by_cases hNoOrigin : donationOriginRecipient? st oldScId = none
               · rw [replyDonationRecipient_eq_of_no_origin st oldScId target hNoOrigin] at hRetV
                 exact returnDonatedSchedContext_preserves_ipcInvariantFull st st1' holderV oldScId
-                  target hObjInv hInv hRetWV hIdleV n
+                  target hObjInv hInv hRetWV n
                   (donationReturnOuterValid_of_stackValid
                     (hStackValid oldScId holderV.val target) hResN) hRetV
               · obtain ⟨o, hOrigin⟩ : ∃ o, donationOriginRecipient? st oldScId = some o := by
@@ -648,7 +638,7 @@ theorem replyRecvPopDonation_preserves_ipcInvariantFull
                 by_cases hSame : o = target
                 · rw [hRecipEq, hSame] at hRetV
                   exact returnDonatedSchedContext_preserves_ipcInvariantFull st st1' holderV oldScId
-                    target hObjInv hInv hRetWV hIdleV n
+                    target hObjInv hInv hRetWV n
                     (donationReturnOuterValid_of_stackValid
                       (hStackValid oldScId holderV.val target) hResN) hRetV
                 · rw [hRecipEq] at hRetV
@@ -659,7 +649,7 @@ theorem replyRecvPopDonation_preserves_ipcInvariantFull
                       (hOriginCoherent oldScId holder o hHead hOrigin hSame)
                       (donationOriginRecipient?_resolves st hOrigin)
                       (donationOriginRecipient?_rebindable st hOrigin))
-                    hIdleV n
+                    n
                     (donationReturnOuterValid_of_stackValid
                       (hStackValid oldScId holderV.val o) hResN) hRetV
             -- The migration is invisible to every bundle reading.
@@ -668,15 +658,10 @@ theorem replyRecvPopDonation_preserves_ipcInvariantFull
                 (determineTargetCore st (replyDonationRecipient st oldScId target))).objects
                   = st1'.objects :=
               migrateSchedContextReplenishment_objects st1' oldScId _ _
-            have hRqM := migrateSchedContextReplenishment_runQueue_current_eq st1' oldScId
-              (determineTargetCore st holder)
-                (determineTargetCore st (replyDonationRecipient st oldScId target))
-              Concurrency.bootCoreId
             have hInvM : ipcInvariantFull (migrateSchedContextReplenishment st1' oldScId
                 (determineTargetCore st holder)
                 (determineTargetCore st (replyDonationRecipient st oldScId target))) :=
-              ipcInvariantFull_of_descheduleFrame st1' _ hInv1' (.of_objects_eq hObjsM)
-                (passiveServerIdleFrame.of_objects_scheduler_eq hObjsM hRqM.1 hRqM.2)
+              ipcInvariantFull_of_objects_eq hObjsM hInv1'
             exact h.2 ▸ hInvM
 
 @[simp] theorem replyRecvPostPopState_eq_of_ok (rid : SeLe4n.ReplyId)
@@ -714,32 +699,20 @@ The second half of the split.  Three arms, each a result that already exists:
   arm branches on (`rendezvousDequeuedCall_blockedOnReply`), so the six-way
   `ipcState` case split collapses to the `Bool` the operation reads;
 * a context was returned and nothing rendezvoused -- the **holder** is
-  descheduled and then the recorded server is walked, and the deschedule is a
-  `descheduleFrame` whose `passiveServerIdle` side condition is exactly
-  `hHolderIdleAllowed`.
+  descheduled and then the recorded server is walked, and the deschedule writes
+  only run-queue links.
 
 `hReceiverNotOwner` is stated at *this* step's pre-state (the receive leg's
 committed state), not at the reply leg's: the pop no longer runs between them,
 so there is nothing to transport it across, and the fused statement's
 `hReceiverNotAwaitingReply` -- which existed only to carry it through the pop's
-binding trichotomy -- has no subject here.
-
-**`hHolderIdleAllowed` is conditioned on the arm selector** (PR #897 review).  It
-was `hServerIdleAllowed`, stated unconditionally at `recordedServer` -- the thread
-the step used to deschedule.  Both arms deschedule the holder now, and the holder
-exists only on the `some` arm, so the obligation is stated exactly where it
-arises: given the pair the pop returned, the thread it names is in a state
-`passiveServerIdle` permits.  On the `none` arm nothing is descheduled and the
-hypothesis has no premise to discharge. -/
+binding trichotomy -- has no subject here. -/
 theorem replyRecvPostReceiveDonation_preserves_ipcInvariantFull
     (tid recordedServer nextThread : SeLe4n.ThreadId) (serverCore : Concurrency.CoreId)
     (returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId))
     (st st' : SystemState) (u : Unit)
     (hObjInv : st.objects.invExt)
     (hInv : ipcInvariantFull st)
-    (hHolderIdleAllowed : ∀ (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId),
-        returned? = some (scId, holder) →
-        ∀ tcb, st.getTcb? holder = some tcb → passiveServerIdleAllowed tcb.ipcState)
     (hReceiverNotOwner : ∀ (tid' : SeLe4n.ThreadId) (tcb : TCB)
         (scId : SeLe4n.SchedContextId),
         st.getTcb? tid' = some tcb → tcb.schedContextBinding ≠ .donated scId tid)
@@ -754,8 +727,6 @@ theorem replyRecvPostReceiveDonation_preserves_ipcInvariantFull
         serverCore _ hObjInv hInv
   | some pair =>
     obtain ⟨scIdP, holder⟩ := pair
-    have hIdle : ∀ tcb, st.getTcb? holder = some tcb →
-        passiveServerIdleAllowed tcb.ipcState := hHolderIdleAllowed scIdP holder rfl
     simp only [] at h
     cases hCall : rendezvousDequeuedCall st nextThread with
     | false =>
@@ -764,18 +735,9 @@ theorem replyRecvPostReceiveDonation_preserves_ipcInvariantFull
         -- Both arms run `descheduleAtPlacement` now, so this branch splits on
         -- the resolver exactly as the Call arm below does (round 11) -- and on
         -- the HOLDER, which is the thread the pop unbound (PR #897 review).
-        have hDesched : ipcInvariantFull (descheduleAtPlacement st holder) := by
-          unfold descheduleAtPlacement descheduleAt
-          split
-          · rename_i c _
-            refine ipcInvariantFull_of_descheduleFrame _ _ hInv
-              (removeRunnableOnCore_objectsAgreeOffRunLinks _ _ _)
-              (removeRunnableOnCore_passiveServerIdleFrame _ holder c ?_)
-            intro tcb hTcb
-            right
-            exact hIdle tcb
-              ((SystemState.getTcb?_eq_some_iff _ holder tcb).mpr hTcb)
-          · exact hInv
+        have hDesched : ipcInvariantFull (descheduleAtPlacement st holder) :=
+          ipcInvariantFull_of_objectsAgreeOffRunLinks
+            (descheduleAtPlacement_objectsAgreeOffRunLinks _ _) hInv
         have hDeschedInvExt : (descheduleAtPlacement st holder).objects.invExt :=
           descheduleAtPlacement_preserves_objects_invExt st holder hObjInv
         exact h.2 ▸ propagatePipChainCrossCore_preserves_ipcInvariantFull _ recordedServer
@@ -784,8 +746,7 @@ theorem replyRecvPostReceiveDonation_preserves_ipcInvariantFull
         rw [hCall] at h; simp only [if_true] at h
         -- The deschedule runs first on this arm.  It writes no object, so the
         -- donation's object-level hypotheses transport verbatim; what it does
-        -- write is the run queue, which is the `descheduleFrame` the false arm
-        -- below already discharges from `hServerIdleAllowed`.
+        -- write is the run queue, which no conjunct reads.
         have hA : (replyRecvHolderDeschedule tid holder st).objectsAgreeOffRunLinks st := by
           unfold replyRecvHolderDeschedule
           split
@@ -796,21 +757,8 @@ theorem replyRecvPostReceiveDonation_preserves_ipcInvariantFull
           split
           · exact hObjInv
           · exact descheduleAtPlacement_preserves_objects_invExt _ _ hObjInv
-        have hSInv : ipcInvariantFull
-            (replyRecvHolderDeschedule tid holder st) := by
-          unfold replyRecvHolderDeschedule descheduleAtPlacement descheduleAt
-          split
-          · exact hInv
-          · split
-            · rename_i c _
-              refine ipcInvariantFull_of_descheduleFrame _ _ hInv
-                (removeRunnableOnCore_objectsAgreeOffRunLinks _ _ _)
-                (removeRunnableOnCore_passiveServerIdleFrame _ holder c ?_)
-              intro tcb hTcb
-              right
-              exact hIdle tcb
-                ((SystemState.getTcb?_eq_some_iff _ holder tcb).mpr hTcb)
-            · exact hInv
+        have hSInv : ipcInvariantFull (replyRecvHolderDeschedule tid holder st) :=
+          ipcInvariantFull_of_objectsAgreeOffRunLinks hA hInv
         have hSNotOwner : ∀ (tid' : SeLe4n.ThreadId) (tcb : TCB)
             (scId : SeLe4n.SchedContextId),
             (replyRecvHolderDeschedule tid holder st).getTcb? tid'

@@ -883,6 +883,17 @@ theorem storeObject_reply_preserves_dualQueueSystemInvariant
 
 -- ---- Derived frame lemmas for storeTcbIpcState, storeTcbIpcStateAndMessage, storeTcbPendingMessage ----
 
+
+/-- Recording a Reply's stasher preserves `dualQueueSystemInvariant`: it is
+nothing or one Reply stored over a Reply. -/
+theorem recordReplyStasher_preserves_dualQueueSystemInvariant
+    (st : SystemState) (code : Nat) (recv : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt) (hInv : dualQueueSystemInvariant st) :
+    dualQueueSystemInvariant (st.recordReplyStasher code recv) := by
+  rcases SystemState.recordReplyStasher_eq_or st code recv with h | ⟨_, r, _, hR, hS⟩
+  · rw [h]; exact hInv
+  · exact storeObject_reply_preserves_dualQueueSystemInvariant _ _ _ _ hObjInv hS
+      (Or.inl ⟨r, hR⟩) hInv
 /-- WS-H5: storeTcbIpcState preserves dualQueueSystemInvariant.
 storeTcbIpcState uses { tcb with ipcState := ipc }, preserving queue links. -/
 theorem storeTcbIpcState_preserves_dualQueueSystemInvariant

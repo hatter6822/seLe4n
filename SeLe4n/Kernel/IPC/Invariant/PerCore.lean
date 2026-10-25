@@ -25,7 +25,7 @@ The migration is **additive and soundness-preserving**, exactly as the
 SM4.C scheduler-invariant migration: every per-core form at `bootCoreId`
 is *equivalent* to the existing single-core predicate (the §2 boot-core
 bridges), so the live IPC invariant surface (`ipcSchedulerContractPredicates`,
-`currentThreadDequeueCoherent`, `passiveServerIdle`, and the hundreds of
+`currentThreadDequeueCoherent`, and the hundreds of
 preservation theorems that consume them) is untouched and stays green.
 SM4.D strictly *adds* the per-core layer SM5's per-core scheduler consumes.
 
@@ -155,22 +155,6 @@ def currentNotOnNotificationWaitList_perCore (st : SystemState) (c : CoreId) : P
       st.getNotification? oid = some ntfn →
       tid ∉ ntfn.queueEnds
 
-/-- SM4.D: per-core form of `passiveServerIdle`.  An unbound thread that is
-not in core `c`'s run queue and not core `c`'s current thread is either
-ready, blocked-on-receive/notification (a passive server), or blocked-on-reply
-(Finding F-3: a donor that gave up its SchedContext during a Call and awaits
-the reply).  Kept in lock-step with the single-core `passiveServerIdle`. -/
-def passiveServerIdle_perCore (st : SystemState) (c : CoreId) : Prop :=
-  ∀ (tid : SeLe4n.ThreadId) (tcb : TCB),
-    st.getTcb? tid = some tcb →
-    tcb.schedContextBinding = .unbound →
-    tid ∉ (st.scheduler.runQueueOnCore c) →
-    (st.scheduler.currentOnCore c) ≠ some tid →
-    (tcb.ipcState = .ready ∨
-     (∃ epId, tcb.ipcState = .blockedOnReceive epId ∨
-              tcb.ipcState = .blockedOnNotification epId) ∨
-     ∃ epId replyTarget, tcb.ipcState = .blockedOnReply epId replyTarget)
-
 -- ----------------------------------------------------------------------------
 -- §1.1  Per-core aggregate predicates
 -- ----------------------------------------------------------------------------
@@ -252,11 +236,6 @@ theorem currentNotOnNotificationWaitList_perCore_bootCore_iff (st : SystemState)
   cases st.scheduler.currentOnCore bootCoreId with
   | none => exact Iff.rfl
   | some tid => simp only [SystemState.getNotification?_eq_some_iff]
-
-theorem passiveServerIdle_perCore_bootCore_iff (st : SystemState) :
-    passiveServerIdle_perCore st bootCoreId ↔ passiveServerIdle st := by
-  unfold passiveServerIdle_perCore passiveServerIdle
-  simp only [SystemState.getTcb?_eq_some_iff]
 
 /-- SM4.D: the per-core IPC scheduler-contract aggregate at `bootCoreId`
 is the single-core `ipcSchedulerContractPredicates` (each conjunct via
@@ -367,14 +346,6 @@ theorem currentNotOnNotificationWaitList_perCore_frame {st st' : SystemState} {c
   | none => exact Iff.rfl
   | some tid => simp only [getNotification?_congr_objects hObj]
 
-theorem passiveServerIdle_perCore_frame {st st' : SystemState} {c : CoreId}
-    (hObj : st'.objects = st.objects)
-    (hRQ : st'.scheduler.runQueueOnCore c = st.scheduler.runQueueOnCore c)
-    (hCur : st'.scheduler.currentOnCore c = st.scheduler.currentOnCore c) :
-    passiveServerIdle_perCore st' c ↔ passiveServerIdle_perCore st c := by
-  unfold passiveServerIdle_perCore
-  simp only [getTcb?_congr_objects hObj, hRQ, hCur]
-
 -- ============================================================================
 -- §4  Default-state: every core satisfies the per-core invariant at boot
 -- ============================================================================
@@ -453,12 +424,6 @@ theorem default_currentNotOnNotificationWaitList_perCore (c : CoreId) :
     currentNotOnNotificationWaitList_perCore (default : SystemState) c := by
   simp only [currentNotOnNotificationWaitList_perCore, default_currentOnCore_none c]
 
-theorem default_passiveServerIdle_perCore (c : CoreId) :
-    passiveServerIdle_perCore (default : SystemState) c := by
-  intro tid tcb hTcb _ _ _
-  rw [default_getTcb?_none] at hTcb
-  exact absurd hTcb (by simp)
-
 theorem default_ipcSchedulerContractPredicates_perCore (c : CoreId) :
     ipcSchedulerContractPredicates_perCore (default : SystemState) c :=
   ⟨default_runnableThreadIpcReady_perCore c, default_blockedOnSendNotRunnable_perCore c,
@@ -489,11 +454,6 @@ def ipcSchedulerContractPredicates_smp (st : SystemState) : Prop :=
 def currentThreadDequeueCoherent_smp (st : SystemState) : Prop :=
   ∀ c : CoreId, currentThreadDequeueCoherent_perCore st c
 
-/-- SM4.D: system-wide SMP form of `passiveServerIdle` (an unbound thread
-not scheduled on any core is passive). -/
-def passiveServerIdle_smp (st : SystemState) : Prop :=
-  ∀ c : CoreId, passiveServerIdle_perCore st c
-
 theorem ipcSchedulerContractPredicates_smp_aggregateForall (st : SystemState) :
     (∀ c : CoreId, ipcSchedulerContractPredicates_perCore st c) ↔
       ipcSchedulerContractPredicates_smp st := Iff.rfl
@@ -502,9 +462,6 @@ theorem currentThreadDequeueCoherent_smp_aggregateForall (st : SystemState) :
     (∀ c : CoreId, currentThreadDequeueCoherent_perCore st c) ↔
       currentThreadDequeueCoherent_smp st := Iff.rfl
 
-theorem passiveServerIdle_smp_aggregateForall (st : SystemState) :
-    (∀ c : CoreId, passiveServerIdle_perCore st c) ↔ passiveServerIdle_smp st := Iff.rfl
-
 theorem ipcSchedulerContractPredicates_smp_at (st : SystemState) (c : CoreId)
     (h : ipcSchedulerContractPredicates_smp st) :
     ipcSchedulerContractPredicates_perCore st c := h c
@@ -512,9 +469,6 @@ theorem ipcSchedulerContractPredicates_smp_at (st : SystemState) (c : CoreId)
 theorem currentThreadDequeueCoherent_smp_at (st : SystemState) (c : CoreId)
     (h : currentThreadDequeueCoherent_smp st) :
     currentThreadDequeueCoherent_perCore st c := h c
-
-theorem passiveServerIdle_smp_at (st : SystemState) (c : CoreId)
-    (h : passiveServerIdle_smp st) : passiveServerIdle_perCore st c := h c
 
 /-- SM4.D: the SMP IPC scheduler-contract implies the live single-core
 `ipcSchedulerContractPredicates` (instantiate at `bootCoreId` + bridge). -/
@@ -526,36 +480,6 @@ theorem currentThreadDequeueCoherent_smp_to_singleCore (st : SystemState)
     (h : currentThreadDequeueCoherent_smp st) : currentThreadDequeueCoherent st :=
   (currentThreadDequeueCoherent_perCore_bootCore_iff st).mp (h bootCoreId)
 
-theorem passiveServerIdle_smp_to_singleCore (st : SystemState)
-    (h : passiveServerIdle_smp st) : passiveServerIdle st :=
-  (passiveServerIdle_perCore_bootCore_iff st).mp (h bootCoreId)
-
-/-- SM4.D: the natural SMP reading of `passiveServerIdle_smp` proved as a
-theorem.  An unbound thread that is scheduled on **no** core — not in any
-core's run queue, not current on any core — is in a passive state
-(`ready` / `blockedOnReceive` / `blockedOnNotification` / `blockedOnReply`).
-
-`passiveServerIdle_smp` (the per-core conjunction `∀ c, passiveServerIdle_perCore`)
-is *stronger* than this statement — each core's slice independently
-constrains threads under weaker per-core hypotheses — so the natural
-"not scheduled anywhere" reading is a genuine consequence, derived here by
-instantiating the conjunction at `bootCoreId`.  This makes the documented
-intuition a machine-checked theorem rather than prose.  (Finding F-3: the
-passive states now include `.blockedOnReply` — a donor that gave up its
-SchedContext during a Call and is descheduled while awaiting the reply.) -/
-theorem passiveServerIdle_smp_not_scheduled_anywhere {st : SystemState}
-    (h : passiveServerIdle_smp st)
-    (tid : SeLe4n.ThreadId) (tcb : TCB)
-    (hTcb : st.getTcb? tid = some tcb)
-    (hUnbound : tcb.schedContextBinding = .unbound)
-    (hNoQueue : ∀ c : CoreId, tid ∉ (st.scheduler.runQueueOnCore c))
-    (hNoCurrent : ∀ c : CoreId, st.scheduler.currentOnCore c ≠ some tid) :
-    tcb.ipcState = .ready ∨
-      (∃ epId, tcb.ipcState = .blockedOnReceive epId ∨
-               tcb.ipcState = .blockedOnNotification epId) ∨
-      ∃ epId replyTarget, tcb.ipcState = .blockedOnReply epId replyTarget :=
-  h bootCoreId tid tcb hTcb hUnbound (hNoQueue bootCoreId) (hNoCurrent bootCoreId)
-
 theorem default_ipcSchedulerContractPredicates_smp :
     ipcSchedulerContractPredicates_smp (default : SystemState) :=
   fun c => default_ipcSchedulerContractPredicates_perCore c
@@ -563,10 +487,6 @@ theorem default_ipcSchedulerContractPredicates_smp :
 theorem default_currentThreadDequeueCoherent_smp :
     currentThreadDequeueCoherent_smp (default : SystemState) :=
   fun c => default_currentThreadDequeueCoherent_perCore c
-
-theorem default_passiveServerIdle_smp :
-    passiveServerIdle_smp (default : SystemState) :=
-  fun c => default_passiveServerIdle_perCore c
 
 -- Per-conjunct projections from the per-core aggregates (cheap accessors).
 

@@ -315,10 +315,37 @@ suspend entries do, and every `restore_context` in `trap.S` passes
 `trap::user_exit_gate` (`build.rs` refuses one that does not); an exception
 handler clears the core's user flag (`remote_stall::note_kernel_entry`) before
 anything that can block.
-A thread that is reply-blocked, holds a reply link, stash or reply-waiter
-link, donates, or holds space-slot capabilities, a busy reply or scheduling
-context, and an untyped that still records a child, outlive their last
-capability until parts 25–26 (`docs/REGISTERED_DEBT.md`).  The suspend of a thread blocked in IPC or
+Since part 25 (`v0.36.136`) the finalising delete also finalises a busy reply (`finaliseReply`: a
+waiting caller's call cancelled through `cancelIpcBlocking`'s reply arm, its
+boost reverted and the caller suspended; a stash cleared in place) and a busy
+scheduling context (a ready holder dequeued, then unbound, then the reply stack
+unlinked), and an endpoint only a reply-blocked caller names is retired; the
+reply's caller cancel is compiled in place (`finaliseReply_eq_impl`) and reads
+0, and a reply heading a stack is popped first (`reply_pop`).  A reply records the thread that stashed it (`Reply.stasherCode`,
+seL4 MCS's `replyTCB`): every stash writes it and every reader re-checks the
+named thread (`SystemState.replyStashedAt`), so new code that stashes a reply
+must write the record, and new code that asks whether a reply is stashed reads
+it; `replyIsStashed`'s table scan is only the derived spec view.  The delete
+and revoke loop carries `lentContextHeadsLenderFrame` (a lent context heads its
+lender's reply stack) as a pre-state premise of the dispatch, so new code that
+lends a context, moves a reply stack's head or a thread's reply link, or adds a
+step to that loop must keep it (`loanWrite`, `finaliseLoanBundle`).  No IPC
+bundle conjunct reads the scheduler: part 25 retired `passiveServerIdle` and
+the cancellation reclaim's holder abort, so a thread may wait blocked sending
+or calling while unbound (seL4's `schedContext_unbindTCB`), the reclaim and a
+scheduling context's final delete leave such a holder blocked, and new IPC
+code must not reintroduce a scheduler read into `ipcInvariantFull` — a fact
+about the run queues belongs in the scheduler bundle (WS-CB CB1.12's
+`passiveThreadParked`).  A thread's own final delete removes its replies too:
+a reply-blocked thread's reply is removed (`finaliseReplyCallerCancel`), a
+borrowed context goes back by its lender's pop before the suspend
+(`finaliseThreadReturnLoan`), and every caller waiting on the thread is ended
+(`finaliseThreadEndWaiters`, bounded by the thread's count).  New code that
+changes what a waiter's end reads or writes must keep the pre-state admission
+(`replyWaitersAdmitted`) reading exactly what the walk re-reads, and keep
+`finaliseThreadEndWaiters_returnLoan_endsAll_of_admitted` proved.  A thread
+that holds space-slot capabilities, and an untyped that still records a child,
+outlive their last capability until part 26 (`docs/REGISTERED_DEBT.md`).  The suspend of a thread blocked in IPC or
 holding a donated context is the one syscall arm left on the general path
 (ZA6.1).  ZA6 covers the other
 entries and makes the rule standing.  Plan:
@@ -3829,7 +3856,7 @@ code may assume:
   which were the one member of the family that did not.  The widest arm is the
   reply arm, at **eight** after OD3.5 and **ten** since OD3.7
   (`lockSet_cancelIpcBlockingOnCore_size_le_ten` then; the live bound is
-  `lockSet_cancelIpcBlockingOnCore_size_le_sixteen`); the endpoint arm is four and
+  `lockSet_cancelIpcBlockingOnCore_size_le_thirteen`); the endpoint arm is four and
   the notification arm two.  Before the OD3.5 split the reply arm declared two
   TCB write locks for a splice it does not perform, which also put it at ten —
   the same number for the opposite reason, so read the theorem rather than the

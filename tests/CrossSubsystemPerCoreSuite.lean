@@ -55,30 +55,23 @@ open SeLe4n.Kernel.Concurrency
 #check @currentThreadIpcReady_perCore
 #check @currentNotEndpointQueueHead_perCore
 #check @currentNotOnNotificationWaitList_perCore
-#check @passiveServerIdle_perCore
 #check @ipcSchedulerContractPredicates_perCore
 #check @currentThreadDequeueCoherent_perCore
 #check @runnableThreadIpcReady_perCore_bootCore_iff
-#check @passiveServerIdle_perCore_bootCore_iff
 #check @ipcSchedulerContractPredicates_perCore_bootCore_iff
 #check @currentThreadDequeueCoherent_perCore_bootCore_iff
 #check @runnableThreadIpcReady_perCore_frame
 #check @currentThreadIpcReady_perCore_frame
-#check @passiveServerIdle_perCore_frame
 #check @default_ipcSchedulerContractPredicates_perCore
 #check @default_currentThreadDequeueCoherent_perCore
-#check @default_passiveServerIdle_perCore
 -- §1.2  IPC SMP aggregates + extractors
 #check @ipcSchedulerContractPredicates_smp
 #check @currentThreadDequeueCoherent_smp
-#check @passiveServerIdle_smp
 #check @ipcSchedulerContractPredicates_smp_at
 #check @ipcSchedulerContractPredicates_smp_to_singleCore
 #check @currentThreadDequeueCoherent_smp_to_singleCore
-#check @passiveServerIdle_smp_to_singleCore
 #check @default_ipcSchedulerContractPredicates_smp
 #check @default_currentThreadDequeueCoherent_smp
-#check @default_passiveServerIdle_smp
 #check @ipcSchedulerContractPredicates_perCore_to_runnableThreadIpcReady
 #check @currentThreadDequeueCoherent_perCore_to_currentThreadIpcReady
 -- §1.3  Capability per-core
@@ -128,11 +121,8 @@ open SeLe4n.Kernel.Concurrency
 #check @crossSubsystemSchedulerContract_smp_at
 #check @default_crossSubsystemSchedulerContract_perCore
 #check @default_crossSubsystemSchedulerContract_smp
-#check @crossSubsystemSchedulerContract_perCore_to_passiveServerIdle
 #check @crossSubsystemSchedulerContract_perCore_to_registerDecodeConsistent
--- §1.7  Audit-pass-1 additions: passiveServerIdle natural-SMP theorem,
--- per-core low-equivalence (SM4.D.13 NI substrate), full SMP cleanup-hook.
-#check @passiveServerIdle_smp_not_scheduled_anywhere
+-- §1.7  Audit-pass-1 additions: per-core low-equivalence (SM4.D.13 NI substrate), full SMP cleanup-hook.
 #check @lowEquivalentOnCore
 #check @lowEquivalentOnCore_bootCore
 #check @lowEquivalentOnCore_refl
@@ -156,11 +146,6 @@ open SeLe4n.Kernel.Concurrency
 #check @registerDecodeConsistent_smp_of_singleCore_and_idle
 #check @schedContextRunQueueConsistent_smp_of_singleCore_and_idle
 #check @cleanupNoStaleSchedRef_smp_of_singleCore_and_idle
-#check @passiveServerIdle_scheduledNowhere
-#check @passiveServerIdle_scheduledNowhere_of_singleCore
-#check @passiveServerIdle_smp_to_scheduledNowhere
-#check @passiveServerIdle_scheduledNowhere_of_ipcInvariantFull
-#check @default_passiveServerIdle_scheduledNowhere
 #check @endpointSendDual_preserves_ipcSchedulerContractPredicates_smp
 #check @endpointReceiveDual_preserves_ipcSchedulerContractPredicates_smp
 #check @endpointCall_preserves_ipcSchedulerContractPredicates_smp
@@ -192,13 +177,10 @@ example (c : CoreId) : ipcSchedulerContractPredicates_perCore (default : SystemS
   default_ipcSchedulerContractPredicates_perCore c
 example : ipcSchedulerContractPredicates_smp (default : SystemState) :=
   default_ipcSchedulerContractPredicates_smp
-example : passiveServerIdle_smp (default : SystemState) := default_passiveServerIdle_smp
 example (st : SystemState) :
     ipcSchedulerContractPredicates_perCore st bootCoreId ↔
       ipcSchedulerContractPredicates st :=
   ipcSchedulerContractPredicates_perCore_bootCore_iff st
-example (st : SystemState) (h : passiveServerIdle_smp st) : passiveServerIdle st :=
-  passiveServerIdle_smp_to_singleCore st h
 -- IPC frame with rfl hypotheses (a no-op write preserves the predicate).
 example (st : SystemState) (c : CoreId) :
     runnableThreadIpcReady_perCore st c ↔ runnableThreadIpcReady_perCore st c :=
@@ -234,18 +216,6 @@ example (ctx : LabelingContext) (observer : IfObserver) (s₁ s₂ : SystemState
 example (st : SystemState) (target : SeLe4n.ObjId) (h : cleanupHookDischarged_smp st target) :
     cleanupHookDischarged st target :=
   cleanupHookDischarged_smp_to_singleCore st target h
--- IPC: passiveServerIdle natural-SMP "not scheduled anywhere ⟹ passive".
--- (Finding F-3: the passive states now include `.blockedOnReply` — a donor.)
-example (st : SystemState) (h : passiveServerIdle_smp st) (tid : SeLe4n.ThreadId) (tcb : TCB)
-    (hTcb : st.getTcb? tid = some tcb) (hUnbound : tcb.schedContextBinding = .unbound)
-    (hNoQueue : ∀ c : CoreId, tid ∉ (st.scheduler.runQueueOnCore c))
-    (hNoCurrent : ∀ c : CoreId, st.scheduler.currentOnCore c ≠ some tid) :
-    tcb.ipcState = .ready ∨
-      (∃ epId, tcb.ipcState = .blockedOnReceive epId ∨
-               tcb.ipcState = .blockedOnNotification epId) ∨
-      ∃ epId replyTarget, tcb.ipcState = .blockedOnReply epId replyTarget :=
-  passiveServerIdle_smp_not_scheduled_anywhere h tid tcb hTcb hUnbound hNoQueue hNoCurrent
-
 -- CrossSubsystem capstone: per-core master invariant + contract bundle.
 example (c : CoreId) : crossSubsystemInvariant_perCore (default : SystemState) c :=
   default_crossSubsystemInvariant_perCore c
@@ -256,7 +226,7 @@ example (st : SystemState) (h : crossSubsystemInvariant_smp st) : crossSubsystem
 example (st : SystemState) :
     crossSubsystemSchedulerContract_perCore st bootCoreId ↔
       (ipcSchedulerContractPredicates st ∧ currentThreadDequeueCoherent st ∧
-       passiveServerIdle st ∧ Architecture.registerDecodeConsistent st ∧
+       Architecture.registerDecodeConsistent st ∧
        schedContextRunQueueConsistent st) :=
   crossSubsystemSchedulerContract_perCore_bootCore_iff st
 
@@ -291,11 +261,6 @@ private def runIpcChecks : IO Unit := do
     (allCores.all (fun c =>
       have _h : currentThreadDequeueCoherent_perCore (default : SystemState) c :=
         default_currentThreadDequeueCoherent_perCore c
-      true))
-  assertBool "default_passiveServerIdle_perCore applies on every core"
-    (allCores.all (fun c =>
-      have _h : passiveServerIdle_perCore (default : SystemState) c :=
-        default_passiveServerIdle_perCore c
       true))
   assertBool "ipcSchedulerContractPredicates_smp_at extracts every core"
     (allCores.all (fun c =>
@@ -471,11 +436,6 @@ private def runPreservationChecks : IO Unit := do
           have h : (default : SystemState).scheduler.runQueueOnCore c = RunQueue.empty :=
             (default_state_perCoreInitialized c).2.1
           rw [h, RunQueue.toList_empty])
-     true)
-  -- passiveServerIdle natural-SMP form: both lift routes apply on default.
-  assertBool "passiveServerIdle_scheduledNowhere holds on default (both routes)"
-    (have _h : passiveServerIdle_scheduledNowhere (default : SystemState) :=
-      default_passiveServerIdle_scheduledNowhere
      true)
 
 /-- §3.8  Non-vacuous, value-level projection checks on a *populated*

@@ -17,14 +17,13 @@ import SeLe4n.Kernel.IPC.CrossCore.EndpointCall
 /-!
 # WS-SM SM6.D — Pointwise-lookup congruence for the IPC invariant surface
 
-Every conjunct of `ipcInvariantFull` except the scheduler-reading
-`passiveServerIdle` reads the system state **only** through `objects[·]?`
-lookups.  This module makes that observation a reusable theorem family:
+Every conjunct of `ipcInvariantFull` reads the system state **only** through
+`objects[·]?` lookups (`v0.36.136` retired the one that read the scheduler).  This module makes that observation a reusable theorem family:
 
 * **§1** — per-conjunct transports `X_of_getElem_eq`: two states whose
   object lookups agree pointwise satisfy each conjunct interchangeably,
-  assembled into `ipcInvariantFull_of_getElem_eq` (all twenty conjuncts,
-  the passive slice supplied for the target state).  Pointwise (rather
+  assembled into `ipcInvariantFull_of_getElem_eq` (all nineteen
+  conjuncts).  Pointwise (rather
   than structural `objects`-equality) matters because the cross-core wake
   (`enqueueRunnableOnCore`) re-inserts the woken TCB with an identical
   value: every lookup is unchanged while the Robin-Hood array
@@ -407,6 +406,29 @@ theorem storeObject_offSchedulerAgrees_of_agree {s1 s2 r1 r2 : SystemState}
         | tcb t => obtain ⟨t', h', _⟩ := hRel.objects.get_tcb e; rw [h']
         | _ => rw [hRel.objects.get_of_not_tcb (fun _ e => KernelObject.noConfusion e) e]
 
+
+/-- Recording a Reply's stasher keeps two states that agree off the scheduler in
+agreement: a Reply is the same object in both, so both record it or neither
+does. -/
+theorem recordReplyStasher_offSchedulerAgrees {s1 s2 : SystemState} (code : Nat)
+    (recv : SeLe4n.ThreadId) (hRel : OffSchedulerAgrees s1 s2)
+    (hInv1 : s1.objects.invExt) (hInv2 : s2.objects.invExt) :
+    OffSchedulerAgrees (s1.recordReplyStasher code recv) (s2.recordReplyStasher code recv) := by
+  rcases code with _ | k
+  · exact hRel
+  · by_cases hR : ∃ r, s1.objects[(⟨k⟩ : SeLe4n.ReplyId).toObjId]? = some (.reply r)
+    · obtain ⟨r, e1⟩ := hR
+      have e2 := hRel.objects.get_of_not_tcb (fun _ h => by cases h) e1
+      exact storeObject_offSchedulerAgrees_of_agree _ rfl hRel hInv1 hInv2
+        (SystemState.recordReplyStasher_of_reply s1 ⟨k⟩ recv e1)
+        (SystemState.recordReplyStasher_of_reply s2 ⟨k⟩ recv e2)
+    · have h1 : ∀ r, s1.objects[(⟨k⟩ : SeLe4n.ReplyId).toObjId]? ≠ some (.reply r) :=
+        fun r e => hR ⟨r, e⟩
+      have h2 : ∀ r, s2.objects[(⟨k⟩ : SeLe4n.ReplyId).toObjId]? ≠ some (.reply r) :=
+        fun r e => h1 r (hRel.objects.get_of_not_tcb' (fun _ h => by cases h) e)
+      rw [SystemState.recordReplyStasher_of_not_reply _ _ _ h1,
+        SystemState.recordReplyStasher_of_not_reply _ _ _ h2]
+      exact hRel
 /-- SM6.D step congruence: `storeObject` of one object maps
 off-scheduler-agreeing inputs to off-scheduler-agreeing outputs. -/
 theorem storeObject_offSchedulerAgrees {s1 s2 r1 r2 : SystemState}
@@ -706,9 +728,11 @@ theorem spliceReplyFrameOutOrSelf_offSchedulerAgrees {s1 s2 : SystemState}
   have hGR : ∀ q, s2.getReply? q = s1.getReply? q :=
     fun q => hRel.objects.getReply? q
   rcases spliceReplyFrameOutOrSelf_decision s1 rid with
-    ⟨r1, above, a, hR1, hN1, hA1, hP1, hS1⟩ | ⟨hId1, hNo1⟩
+    ⟨r1, above, a, hR1, hN1, hA1, hP1, hS1⟩ |
+      ⟨r1, below, b, hR1, hN1, hPv1, hB1, hBn1, hS1⟩ | ⟨hId1, hNo1, hNoS1⟩
   · rcases spliceReplyFrameOutOrSelf_decision s2 rid with
-      ⟨r2, above', a', hR2, hN2, hA2, _hP2, hS2⟩ | ⟨_, hNo2⟩
+      ⟨r2, above', a', hR2, hN2, hA2, _hP2, hS2⟩ |
+        ⟨r2, _, _, hR2, hN2, _, _, _, _⟩ | ⟨_, hNo2, _⟩
     · have hRe : r2 = r1 := Option.some.inj (hR2.symm.trans ((hGR rid).trans hR1))
       subst hRe
       have hAb : above = above' := ReplyStackLink.frame.inj (Option.some.inj (hN1.symm.trans hN2))
@@ -716,11 +740,33 @@ theorem spliceReplyFrameOutOrSelf_offSchedulerAgrees {s1 s2 : SystemState}
       have hAe : a' = a := Option.some.inj (hA2.symm.trans ((hGR above).trans hA1))
       subst hAe
       exact spliceReplyFrameStores_offSchedulerAgrees hRel hInv1 hInv2 hS1 hS2
+    · have hRe : r2 = r1 := Option.some.inj (hR2.symm.trans ((hGR rid).trans hR1))
+      subst hRe; rw [hN1] at hN2; cases hN2
     · exact absurd hP1 (hNo2 r1 above a ((hGR rid).trans hR1) hN1 ((hGR above).trans hA1))
   · rcases spliceReplyFrameOutOrSelf_decision s2 rid with
-      ⟨r2, above, a, hR2, hN2, hA2, hP2, _⟩ | ⟨hId2, _⟩
+      ⟨r2, _, _, hR2, hN2, _, _, _⟩ |
+        ⟨r2, below', b', hR2, hN2, hPv2, hB2, _, hS2⟩ | ⟨_, _, hNoS2⟩
+    · have hRe : r2 = r1 := Option.some.inj (hR2.symm.trans ((hGR rid).trans hR1))
+      subst hRe; rw [hN1] at hN2; cases hN2
+    · have hRe : r2 = r1 := Option.some.inj (hR2.symm.trans ((hGR rid).trans hR1))
+      subst hRe
+      rw [hPv1] at hPv2; cases hPv2
+      have hBe : b' = b := Option.some.inj (hB2.symm.trans ((hGR below).trans hB1))
+      subst hBe
+      obtain ⟨m1, hSa1, hSb1⟩ := severReplyFrameBelowStores_cases hS1
+      obtain ⟨m2, hSa2, hSb2⟩ := severReplyFrameBelowStores_cases hS2
+      exact storeObject_offSchedulerAgrees _ _
+        (storeObject_offSchedulerAgrees _ _ hRel hInv1 hInv2 hSa1 hSa2)
+        (SeLe4n.Model.storeObject_preserves_objects_invExt s1 m1 _ _ hInv1 hSa1)
+        (SeLe4n.Model.storeObject_preserves_objects_invExt s2 m2 _ _ hInv2 hSa2) hSb1 hSb2
+    · exact absurd hBn1 (hNoS2 r1 below b ((hGR rid).trans hR1) hN1 hPv1 ((hGR below).trans hB1))
+  · rcases spliceReplyFrameOutOrSelf_decision s2 rid with
+      ⟨r2, above, a, hR2, hN2, hA2, hP2, _⟩ |
+        ⟨r2, below, b, hR2, hN2, hPv2, hB2, hBn2, _⟩ | ⟨hId2, _, _⟩
     · exact absurd hP2 (hNo1 r2 above a ((hGR rid).symm.trans hR2) hN2
         ((hGR above).symm.trans hA2))
+    · exact absurd hBn2 (hNoS1 r2 below b ((hGR rid).symm.trans hR2) hN2 hPv2
+        ((hGR below).symm.trans hB2))
     · rw [hId1, hId2]; exact hRel
 
 open SeLe4n.Model.SystemState in
@@ -1426,7 +1472,8 @@ theorem pendingReceiveReplyWellFormed_of_readViewAgreement {s1 s2 : SystemState}
     (hView : ipcReadViewAgreement s1 s2)
     (h : pendingReceiveReplyWellFormed s1) : pendingReceiveReplyWellFormed s2 := by
   refine ⟨fun tid tcb rid hTcb hStash => ?_,
-          fun tid₁ tid₂ tcb₁ tcb₂ rid h1 h2 hS1 hS2 => ?_⟩
+          fun tid₁ tid₂ tcb₁ tcb₂ rid h1 h2 hS1 hS2 => ?_,
+          fun tid tcb rid hTcb hStash => ?_⟩
   · rw [SystemState.getTcb?_eq_some_iff] at hTcb
     run_links_back hView at tcb hTcb
     rw [← SystemState.getTcb?_eq_some_iff] at hTcb
@@ -1435,7 +1482,12 @@ theorem pendingReceiveReplyWellFormed_of_readViewAgreement {s1 s2 : SystemState}
   · rw [SystemState.getTcb?_eq_some_iff] at h1 h2
     run_links_back hView at tcb₁ h1; run_links_back hView at tcb₂ h2
     rw [← SystemState.getTcb?_eq_some_iff] at h1 h2
-    exact h.2 tid₁ tid₂ tcb₁ tcb₂ rid h1 h2 hS1 hS2
+    exact h.2.1 tid₁ tid₂ tcb₁ tcb₂ rid h1 h2 hS1 hS2
+  · rw [SystemState.getTcb?_eq_some_iff] at hTcb
+    run_links_back hView at tcb hTcb
+    rw [← SystemState.getTcb?_eq_some_iff] at hTcb
+    obtain ⟨r, hR, hS⟩ := h.2.2 tid tcb rid hTcb hStash
+    exact ⟨r, (hView.getReply?_iff _ _).mpr hR, hS⟩
 
 /-- Read-view transport of `donationOwnerUnique`. -/
 theorem donationOwnerUnique_of_readViewAgreement {s1 s2 : SystemState}
@@ -1463,15 +1515,13 @@ theorem queueNextTargetBlocked_of_readViewAgreement {s1 s2 : SystemState}
   exact h a b tcbA tcbB hA hB hNext
 
 /-- **The read-view master transport**: two states agreeing on every object
-kind the bundle reads satisfy the eighteen CNode-free object conjuncts
-interchangeably; the one scheduler-reading conjunct (`passiveServerIdle`) and
-the one CNode-reading clause (`capabilityBadgesWellFormed`) are supplied for
-the target state.  This is the lever that carries the whole bundle across the
+kind the bundle reads satisfy the eighteen CNode-free conjuncts
+interchangeably; the one CNode-reading clause (`capabilityBadgesWellFormed`) is
+supplied for the target state.  This is the lever that carries the whole bundle across the
 capability, VSpace and untyped-scrub dispatch arms, whose writes the bundle
 never reads. -/
 theorem ipcInvariantFull_of_readViewAgreement {s1 s2 : SystemState}
     (hView : ipcReadViewAgreement s1 s2)
-    (hPsi2 : passiveServerIdle s2)
     (hCapBadges : capabilityBadgesWellFormed s2)
     (h : ipcInvariantFull s1) : ipcInvariantFull s2 :=
   ⟨ipcInvariant_of_readViewAgreement hView h.ipcInvariant,
@@ -1488,7 +1538,6 @@ theorem ipcInvariantFull_of_readViewAgreement {s1 s2 : SystemState}
    blockedThreadTimeoutConsistent_of_readViewAgreement hView h.blockedThreadTimeoutConsistent,
    donationChainAcyclic_of_readViewAgreement hView h.donationChainAcyclic,
    donationOwnerValid_of_readViewAgreement hView h.donationOwnerValid,
-   hPsi2,
    donationBudgetTransfer_of_readViewAgreement hView h.donationBudgetTransfer,
    blockedOnReplyHasTarget_of_readViewAgreement hView h.blockedOnReplyHasTarget,
    replyCallerLinkage_of_readViewAgreement hView h.replyCallerLinkage,
@@ -1509,23 +1558,19 @@ theorem capabilityBadgesWellFormed_of_objectsAgreeOffRunLinks {s1 s2 : SystemSta
 
 /-- WS-SM SM6.D, restated for WS-ZA ZA4.5: **the whole-bundle transport** —
 two states whose object stores agree off the run-queue links satisfy the
-nineteen object-reading conjuncts of `ipcInvariantFull` interchangeably; the
-one scheduler-reading conjunct (`passiveServerIdle`) is supplied for the
-target state.  This is the lever that carries the single-core whole-bundle
+nineteen conjuncts of `ipcInvariantFull` interchangeably.  This is the lever that carries the single-core whole-bundle
 theorems across the cross-core wake, whose run-queue placement differs. -/
 theorem ipcInvariantFull_of_objectsAgreeOffRunLinks {s1 s2 : SystemState}
     (hA : s2.objectsAgreeOffRunLinks s1)
-    (hPsi2 : passiveServerIdle s2)
     (h : ipcInvariantFull s1) : ipcInvariantFull s2 :=
-  ipcInvariantFull_of_readViewAgreement (.of_objectsAgreeOffRunLinks hA) hPsi2
+  ipcInvariantFull_of_readViewAgreement (.of_objectsAgreeOffRunLinks hA)
     (capabilityBadgesWellFormed_of_objectsAgreeOffRunLinks hA h.badgeWellFormed.2) h
 
 /-- The same for pointwise-equal lookups. -/
 theorem ipcInvariantFull_of_getElem_eq {s1 s2 : SystemState}
     (hEq : ∀ oid : SeLe4n.ObjId, s2.objects[oid]? = s1.objects[oid]?)
-    (hPsi2 : passiveServerIdle s2)
     (h : ipcInvariantFull s1) : ipcInvariantFull s2 :=
-  ipcInvariantFull_of_objectsAgreeOffRunLinks (.of_getElem_eq hEq) hPsi2 h
+  ipcInvariantFull_of_objectsAgreeOffRunLinks (.of_getElem_eq hEq) h
 
 /-- WS-RR RR3.12: read-view transport of the relaxed donation-owner invariant. -/
 theorem donationOwnerValidExcept_of_readViewAgreement {s1 s2 : SystemState}
@@ -1546,7 +1591,6 @@ does for the full one. -/
 theorem ipcInvariantFullExceptDonationOwner_of_objectsAgreeOffRunLinks {s1 s2 : SystemState}
     {woken : SeLe4n.ThreadId}
     (hA : s2.objectsAgreeOffRunLinks s1)
-    (hPsi2 : passiveServerIdle s2)
     (h : ipcInvariantFullExceptDonationOwner s1 woken) :
     ipcInvariantFullExceptDonationOwner s2 woken := by
   have hView : ipcReadViewAgreement s1 s2 := .of_objectsAgreeOffRunLinks hA
@@ -1562,28 +1606,23 @@ theorem ipcInvariantFullExceptDonationOwner_of_objectsAgreeOffRunLinks {s1 s2 : 
    blockedThreadTimeoutConsistent_of_readViewAgreement hView h.2.2.2.2.2.2.2.2.2.1,
    donationChainAcyclic_of_readViewAgreement hView h.2.2.2.2.2.2.2.2.2.2.1,
    donationOwnerValidExcept_of_readViewAgreement hView h.donationOwnerValidExcept,
-   hPsi2,
-   donationBudgetTransfer_of_readViewAgreement hView h.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
-   blockedOnReplyHasTarget_of_readViewAgreement hView h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
-   replyCallerLinkage_of_readViewAgreement hView h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+   donationBudgetTransfer_of_readViewAgreement hView h.2.2.2.2.2.2.2.2.2.2.2.2.1,
+   blockedOnReplyHasTarget_of_readViewAgreement hView h.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+   replyCallerLinkage_of_readViewAgreement hView h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
    pendingReceiveReplyWellFormed_of_readViewAgreement hView
-     h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+     h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
    donationOwnerUnique_of_readViewAgreement hView h.donationOwnerUnique,
    endpointQueueTailBlockedConsistent_of_readViewAgreement hView
-     h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
-   queueNextTargetBlocked_of_readViewAgreement hView h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2⟩
+     h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+   queueNextTargetBlocked_of_readViewAgreement hView h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2⟩
 
 /-- The transition frame nearly every capability-only dispatch arm induces:
-objects and scheduler both untouched.  `ipcInvariantFull` transports whole. -/
-theorem ipcInvariantFull_of_objects_scheduler_eq {st st' : SystemState}
+objects untouched.  `ipcInvariantFull` reads nothing else, so it transports
+whole. -/
+theorem ipcInvariantFull_of_objects_eq {st st' : SystemState}
     (hObjs : st'.objects = st.objects)
-    (hSched : st'.scheduler = st.scheduler)
     (h : ipcInvariantFull st) : ipcInvariantFull st' :=
   ipcInvariantFull_of_getElem_eq (fun _ => by rw [hObjs])
-    (passiveServerIdle_of_frame
-      (passiveServerIdleFrame.of_objects_scheduler_eq hObjs
-        (by rw [hSched]) (by rw [hSched]))
-      h.passiveServerIdle)
     h
 
 end SeLe4n.Kernel

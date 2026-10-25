@@ -308,8 +308,8 @@ theorem returnDonatedSchedContext_server_unbound
 -- - scheduler.runQueue, scheduler.current (scheduler state)
 -- - objects (endpoint queue metadata)
 --
--- Therefore, all four donation invariants (donationChainAcyclic,
--- donationOwnerValid, passiveServerIdle, donationBudgetTransfer) are
+-- Therefore, all three donation invariants (donationChainAcyclic,
+-- donationOwnerValid, donationBudgetTransfer) are
 -- preserved through core IPC operations by field-disjointness (frame property).
 --
 -- The donation invariants only need explicit preservation proofs for

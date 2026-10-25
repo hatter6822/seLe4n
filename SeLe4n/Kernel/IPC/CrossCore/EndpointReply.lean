@@ -625,8 +625,10 @@ def endpointReceiveDualOnCore (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.Thr
                         -- post-block receiver self-reserves its own stale `rid` in
                         -- `replyIsStashed`, which would falsely reject a legitimate re-stash.
                         if st.replyStashValid replyId then
+                          -- The reply records its stasher first, then the receiver stashes it.
                           match storeObject receiver.toObjId
-                              (.tcb { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId }) st'' with
+                              (.tcb { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId })
+                              (st''.recordReplyStasher (SeLe4n.ReplyId.optCode replyId) receiver) with
                           | .error e => (st, .error e)
                           | .ok ((), stStashed) =>
                               (removeRunnableOnCore stStashed receiver executingCore, .ok (receiver, none))
@@ -641,12 +643,24 @@ def endpointReceiveDualOnCore (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.Thr
       if (st.getObject? endpointId).isSome then (st, .error .invalidCapability)
       else (st, .error .objectNotFound)
 
+/-- **The stasher record writes the Reply in its slot**: when the receive
+stashes a reply (`replyCode` is `k + 1`), the Reply's key is found where it
+stands and a store to it changes only `objects`. -/
+@[inline] def replyRecordsInPlace (st : SystemState) (replyCode : Nat) : Bool :=
+  match replyCode with
+  | 0 => true
+  | k + 1 =>
+      st.objects.findsInPlace (⟨k⟩ : SeLe4n.ReplyId).toObjId &&
+      storeLeavesIndexAndTypes st (⟨k⟩ : SeLe4n.ReplyId).toObjId .reply
+
 /-- WS-ZA ZA4.7: **a blocking receive writes only its slots** — the enqueue's
-(`enqueuesInPlace`) and the reply object it stashes admissible. -/
+(`enqueuesInPlace`), the reply object it stashes admissible, and that Reply's
+stasher record in its slot (`replyRecordsInPlace`). -/
 @[inline] def receiveBlocksInPlace (st : SystemState) (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (tail? : Option SeLe4n.ThreadId)
     (replyId : Option SeLe4n.ReplyId) : Bool :=
-  enqueuesInPlace st endpointId receiver tail? && st.replyStashValid replyId
+  enqueuesInPlace st endpointId receiver tail? && st.replyStashValid replyId &&
+    replyRecordsInPlace st (SeLe4n.ReplyId.optCode replyId)
 
 /-- `SystemState.replyStashValid` asked of the reply object's **code**
 (`replyStashValidCode_eq`), so no `some` cell is built for it. -/
@@ -656,7 +670,7 @@ def endpointReceiveDualOnCore (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.Thr
   | k + 1 =>
       let rid : SeLe4n.ReplyId := ⟨k⟩
       match st.getReply? rid with
-      | some r => r.isFree && !st.replyIsStashed rid
+      | some r => r.isFree && !st.replyStashedAt rid r
       | none => false
 
 theorem replyStashValidCode_eq (st : SystemState) (replyCode : Nat) :
@@ -669,7 +683,8 @@ reply object's code, as the compiled guard reads them: each is decoded by a
 match, so no `some` cell is built for either (WS-ZA ZA4.7). -/
 @[inline] def receiveBlocksInPlaceCode (st : SystemState) (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (tailCode : Nat) (replyCode : Nat) : Bool :=
-  enqueuesInPlaceCode st endpointId receiver tailCode && replyStashValidCode st replyCode
+  enqueuesInPlaceCode st endpointId receiver tailCode && replyStashValidCode st replyCode &&
+    replyRecordsInPlace st replyCode
 
 theorem receiveBlocksInPlaceCode_eq (st : SystemState) (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (tailCode replyCode : Nat) :
@@ -677,7 +692,7 @@ theorem receiveBlocksInPlaceCode_eq (st : SystemState) (endpointId : SeLe4n.ObjI
       receiveBlocksInPlace st endpointId receiver (SeLe4n.ThreadId.ofOptCode tailCode)
         (SeLe4n.ReplyId.ofOptCode replyCode) := by
   unfold receiveBlocksInPlaceCode receiveBlocksInPlace
-  rw [replyStashValidCode_eq, enqueuesInPlaceCode_eq]
+  rw [replyStashValidCode_eq, enqueuesInPlaceCode_eq, SeLe4n.ReplyId.optCode_ofOptCode]
 
 /-- WS-ZA ZA4.7: the receiver may block: it may be enqueued (`enqueueAdmits`)
 and holds no loaned scheduling context to return first. -/
@@ -705,16 +720,82 @@ theorem receiveEnqueue_inPlace_eq (st : SystemState) (endpointId : SeLe4n.ObjId)
         receiver.toObjId .tcb = true := by
   simp only [receiveBlocksInPlace, Bool.and_eq_true] at hG
   simp only [receiveBlockAdmits, Bool.and_eq_true] at hA
-  exact endpointEnqueue_inPlace_eq st endpointId ep true receiver rt _ hE rfl hR hA.1 hG.1
+  exact endpointEnqueue_inPlace_eq st endpointId ep true receiver rt _ hE rfl hR hA.1 hG.1.1
+
+/-- **The stashed Reply stands in its slot after the enqueue and the block**: the
+guard names it present (`replyStashValid`) and in place (`replyRecordsInPlace`),
+and the enqueue and the receiver's block write only thread and endpoint slots. -/
+theorem receiveBlock_replySlotInPlace (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (ep : Endpoint) (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
+    (f : TCB → TCB)
+    (hE : st.objects[endpointId]? = some (.endpoint ep))
+    (hFR : (storeEndpointEnqueue st endpointId true receiver ep.receiveQ.tail).objects.findsInPlace
+        receiver.toObjId = true)
+    (hG : receiveBlocksInPlace st endpointId receiver ep.receiveQ.tail replyId = true) :
+    ∀ k, SeLe4n.ReplyId.optCode replyId = k + 1 → ∃ r, replySlotInPlace
+      ((storeEndpointEnqueue st endpointId true receiver ep.receiveQ.tail).updateTcb receiver f)
+      (⟨k⟩ : SeLe4n.ReplyId).toObjId r := by
+  intro k hk
+  simp only [receiveBlocksInPlace, Bool.and_eq_true] at hG
+  obtain ⟨⟨hEnq, hV⟩, hRec⟩ := hG
+  cases replyId with
+  | none => cases hk
+  | some rid =>
+    have hk' : rid = ⟨k⟩ := by
+      cases rid; simp only [SeLe4n.ReplyId.optCode, Nat.add_right_cancel_iff] at hk; rw [hk]
+    subst hk'
+    rw [hk] at hRec
+    simp only [replyRecordsInPlace, Bool.and_eq_true] at hRec
+    simp only [SystemState.replyStashValid] at hV
+    revert hV
+    cases hR : st.getReply? ⟨k⟩ with
+    | none => intro h; cases h
+    | some r =>
+      intro _
+      refine ⟨r, updateTcb_replySlotInPlace f hFR
+        (storeEndpointEnqueue_replySlotInPlace st endpointId ep true receiver _ hE hEnq
+          ⟨hRec.1, hRec.2, (SystemState.getReply?_eq_some_iff _ _ _).mp hR⟩)⟩
+
+/-- The Reply object with its stasher word set to `receiver`; every other
+object as it is. -/
+@[inline] def replyStasherObject (receiver : SeLe4n.ThreadId) : KernelObject → KernelObject
+  | .reply r => .reply { r with stasherCode := receiver.val + 1 }
+  | o => o
+
+/-- **The stasher record written in its slot**: the Reply `replyCode` names
+updated where it stands (`modifyObject`); nothing when it names none. Under the
+blocking receive's guard it is `SystemState.recordReplyStasher`
+(`storeReplyStasher_eq_record`). -/
+@[inline] def storeReplyStasher (st : SystemState) (replyCode : Nat)
+    (receiver : SeLe4n.ThreadId) : SystemState :=
+  match replyCode with
+  | 0 => st
+  | k + 1 => st.modifyObject (⟨k⟩ : SeLe4n.ReplyId).toObjId (replyStasherObject receiver)
+
+theorem storeReplyStasher_eq_record {S : SystemState} {code : Nat} (recv : SeLe4n.ThreadId)
+    (hSlot : ∀ k, code = k + 1 → ∃ r, replySlotInPlace S (⟨k⟩ : SeLe4n.ReplyId).toObjId r) :
+    storeReplyStasher S code recv = S.recordReplyStasher code recv := by
+  rcases code with _ | k
+  · rfl
+  · obtain ⟨r, hS⟩ := hSlot k rfl
+    have hE : S.recordReplyStasher (k + 1) recv = _ :=
+      recordReplyStasher_eq_insert_of_slot (rid := ⟨k⟩) hS recv
+    rw [hE]
+    unfold storeReplyStasher SystemState.modifyObject
+    dsimp only
+    rw [SeLe4n.Kernel.RobinHood.RHTable.modify_of_get? hS.2.2]
+    rfl
 
 /-- WS-ZA ZA4.7: the blocking receive's writes, each in its slot: the enqueue,
-then the receiver blocked with no message and the reply object it stashes.
+then the receiver blocked with no message, the reply object it names recording it
+as its stasher (`storeReplyStasher`), and the receiver stashing that reply.
 Compiled as its own function so each update is specialised in. -/
 @[noinline] def storeReceiveBlock (st : SystemState) (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (tailCode replyCode : Nat) : SystemState :=
-  ((storeEndpointEnqueue st endpointId true receiver (ThreadId.ofOptCode tailCode)).updateTcb receiver
-      (fun t => (TCB.setIpcState { t with pendingMessage := none } (.blockedOnReceive endpointId)))).updateTcb
-    receiver (fun t => { t with pendingReceiveReplyCode := replyCode })
+  (storeReplyStasher ((storeEndpointEnqueue st endpointId true receiver
+      (ThreadId.ofOptCode tailCode)).updateTcb receiver
+      (fun t => (TCB.setIpcState { t with pendingMessage := none } (.blockedOnReceive endpointId))))
+    replyCode receiver).updateTcb receiver (fun t => { t with pendingReceiveReplyCode := replyCode })
 
 /-- WS-ZA ZA4.7: the guarded blocking receive is the specification's block
 path. -/
@@ -732,8 +813,11 @@ theorem receiveBlock_inPlace_eq (st : SystemState) (endpointId : SeLe4n.ObjId)
         receiver executingCore, .ok (receiver, none)) := by
   obtain ⟨hEnq, hT, hF, hL⟩ := receiveEnqueue_inPlace_eq st endpointId ep receiver rt replyId
     hE hR hA hG
+  have hSlot := receiveBlock_replySlotInPlace st endpointId ep receiver replyId
+    (fun t : TCB => (TCB.setIpcState { t with pendingMessage := none } (.blockedOnReceive endpointId)))
+    hE hF hG
   simp only [receiveBlocksInPlace, enqueuesInPlace, Bool.and_eq_true, Bool.not_eq_true'] at hG
-  obtain ⟨⟨⟨⟨⟨⟨hRes, _⟩, _⟩, _⟩, _⟩, _⟩, hV⟩ := hG
+  obtain ⟨⟨⟨⟨⟨⟨⟨hRes, _⟩, _⟩, _⟩, _⟩, _⟩, hV⟩, _⟩ := hG
   have hNoDon : preReceiveDonation? st receiver = none := by
     have hLook : lookupTcb st receiver = some rt := by
       simp only [lookupTcb, hRes, Bool.false_eq_true, ↓reduceIte]
@@ -748,7 +832,7 @@ theorem receiveBlock_inPlace_eq (st : SystemState) (endpointId : SeLe4n.ObjId)
   rw [Endpoint.ofOptCode_recvTailCode]
   simp only [(SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hE, hS,
     cleanupPreReceiveDonationMigrated_of_no_donation st receiver hNoDon, hEnq]
-  generalize storeEndpointEnqueue st endpointId true receiver ep.receiveQ.tail = S at hT hF hL ⊢
+  generalize storeEndpointEnqueue st endpointId true receiver ep.receiveQ.tail = S at hT hF hL hSlot ⊢
   let g2 := fun t : TCB => (TCB.setIpcState { t with pendingMessage := none } (.blockedOnReceive endpointId))
   have h1 : storeTcbIpcStateAndMessage S receiver (.blockedOnReceive endpointId) none =
       .ok (S.updateTcb receiver g2) := modifyTcb_eq_updateTcb _ hRes hT hL
@@ -759,8 +843,9 @@ theorem receiveBlock_inPlace_eq (st : SystemState) (endpointId : SeLe4n.ObjId)
   simp only [hV, ↓reduceIte]
   have hL2 : storeLeavesIndexAndTypes (S.updateTcb receiver g2) receiver.toObjId .tcb = true :=
     updateTcb_storeLeaves g2 hT hF hL
-  rw [storeObject_eq_of_leaves (by simpa only [KernelObject.objectType] using hL2),
-    SystemState.updateTcb_eq_of_some hT2]
+  obtain ⟨hT3, _, hL3⟩ := recordReplyStasher_tcbSlotFrame (recv := receiver) hSlot hT2
+  rw [storeObject_eq_of_leaves (by simpa only [KernelObject.objectType] using hL3 hL2),
+    storeReplyStasher_eq_record receiver hSlot, SystemState.updateTcb_eq_of_some hT3]
 
 /-- WS-ZA ZA4.7: the receiver a guarded blocking receive leaves is blocked on
 the endpoint. -/
@@ -777,15 +862,21 @@ theorem receiveBlock_receiver_blocked (st : SystemState) (endpointId : SeLe4n.Ob
       t.ipcState = .blockedOnReceive endpointId := by
   obtain ⟨_, hT, hF, _⟩ := receiveEnqueue_inPlace_eq st endpointId ep receiver rt replyId
     hE hR hA hG
+  have hSlot := receiveBlock_replySlotInPlace st endpointId ep receiver replyId
+    (fun t : TCB => (TCB.setIpcState { t with pendingMessage := none } (.blockedOnReceive endpointId)))
+    hE hF hG
   unfold storeReceiveBlock
   rw [Endpoint.ofOptCode_recvTailCode]
-  generalize storeEndpointEnqueue st endpointId true receiver ep.receiveQ.tail = S at hT hF ⊢
+  generalize storeEndpointEnqueue st endpointId true receiver ep.receiveQ.tail = S at hT hF hSlot ⊢
   let g2 := fun t : TCB => (TCB.setIpcState { t with pendingMessage := none } (.blockedOnReceive endpointId))
   have hT2 := updateTcb_getTcb?_self_of_findsInPlace g2 hT hF
   have hF2 : (S.updateTcb receiver g2).objects.findsInPlace receiver.toObjId = true := by
     rw [updateTcb_findsInPlace g2 hT hF]; exact hF
+  rw [storeReplyStasher_eq_record receiver hSlot]
+  obtain ⟨hT2', hF2', _⟩ := recordReplyStasher_tcbSlotFrame (recv := receiver) hSlot hT2
   have hT3 := updateTcb_getTcb?_self_of_findsInPlace
-    (fun t : TCB => { t with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId }) hT2 hF2
+    (fun t : TCB => { t with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId }) hT2'
+    ((hF2' _).trans hF2)
   obtain ⟨t', h', e⟩ := (removeRunnableOnCore_objectsAgreeOffRunLinks _ receiver
     executingCore).getTcb?_some hT3
   refine ⟨t', h', ?_⟩
@@ -1083,23 +1174,6 @@ theorem answeredReplyFrameBelow?_eq (st : SystemState) (target : SeLe4n.ThreadId
     answeredReplyFrameBelow? st target = replyFrameBelow? st rid := by
   unfold answeredReplyFrameBelow?; rw [h]; rfl
 
-/-- **WS-HP HP3.1: no frame above means no frame below** -- the resolver-level
-exclusion, which needs no coherence fact: the frame below is declared only on a
-*mid-stack* removal, and a frame with nothing above it is not one.  This is what
-keeps the reachable `.replyRecv` bound at eighteen where the declared ceiling
-grows. -/
-@[simp] theorem answeredReplyFrameBelow?_of_no_frameAbove (st : SystemState)
-    (target : SeLe4n.ThreadId) (h : answeredReplyFrameAbove? st target = none) :
-    answeredReplyFrameBelow? st target = none := by
-  unfold answeredReplyFrameBelow?
-  unfold answeredReplyFrameAbove? at h
-  cases hRid : answeredReplyObject? st target with
-  | none => rfl
-  | some rid =>
-    have hRid' : (st.getTcb? target).bind (·.replyObject) = some rid := hRid
-    rw [hRid'] at h
-    exact replyFrameBelow?_of_no_frame_above st rid h
-
 /-- **WS-HP HP6.6: the reply path's lifting of the containment** -- the frame the
 removal's splice writes below the cut is the one this arm's footprint declares.
 
@@ -1121,6 +1195,16 @@ theorem spliceFrameBelow?_mem_answeredReplyFrameBelow? (st : SystemState)
   refine spliceFrameBelow?_mem_replyFrameBelow? hR ?_ h
   rw [answeredReplyFrameAbove?_eq_bind, hRid] at hAbove
   exact hAbove
+
+/-- **...and the sever arm's lifting**: the frame below a contextless stack top,
+which the removal cuts from it, is the member this arm's footprint declares. -/
+theorem severFrameBelow_mem_answeredReplyFrameBelow? (st : SystemState)
+    (target : SeLe4n.ThreadId) (rid below : SeLe4n.ReplyId) (r : Reply)
+    (hRid : answeredReplyObject? st target = some rid)
+    (hR : st.getReply? rid = some r) (hNext : r.next = none) (hPrev : r.prev = some below) :
+    answeredReplyFrameBelow? st target = some below := by
+  rw [answeredReplyFrameBelow?_eq st target rid hRid]
+  exact severFrameBelow_mem_replyFrameBelow? hR hNext hPrev
 
 /-- **WS-HP HP1.2: the pop's trigger and the splice's member are mutually
 exclusive.**  A frame with a frame above it heads nothing, so no reply both pops a
@@ -2277,10 +2361,10 @@ theorem endpointReplyOnCore_ok_decompose
 `.ready`.
 
 The fact the fault reply's abandon arm needs, and the one its own docstring had
-been asserting in prose since WS-RR RR4.18: `.ready` is a
-`passiveServerIdleAllowed` state, so the abandon's idle-state obligation is a
-consequence of the reply having succeeded rather than a hypothesis a caller must
-carry.  Composed from the SM6.C.6 delivery result over the decomposition above,
+been asserting in prose since WS-RR RR4.18: the abandon's run-queue entry stage
+(`faultReplyApplyOnCore_runQueueEntryStage`) reads the target's state, so its
+obligation is a consequence of the reply having succeeded rather than a
+hypothesis a caller must carry.  Composed from the SM6.C.6 delivery result over the decomposition above,
 so it states nothing the delivery lemma does not already prove — what is new is
 that it is keyed on the **outcome** instead of on the preconditions. -/
 theorem endpointReplyOnCore_ok_target_ready
@@ -2927,12 +3011,14 @@ rates worse than a wide one — so the member is declared here, one phase before
 the code that writes it, which is the plan's own numbering rule (a transition
 goes live only after the proofs that cover it).
 
-The resolver is `answeredReplyFrameBelow?`, which asks
-`answeredReplyFrameAbove?` first: a frame with nothing above it is not being
-removed from the middle of anything, so it declares no below-member and the
-*reachable* footprint does not widen.  That is why HP3.2 moved the
-unconditional `.replyRecv` bound (19 → 20) and left the two reachable ones at
-eighteen and seventeen. -/
+The resolver is `answeredReplyFrameBelow?`: the answered frame's `prev` unless
+it heads a stack.  Since `v0.36.136` it is declared for a frame with nothing above
+it too, because the removal of a contextless stack top severs the frame below
+(`severFrameBelow_mem_answeredReplyFrameBelow?`); that arm writes the cut frame
+and the frame below and no frame above, so it is inside the mid-stack splice's
+members and the *reachable* footprint does not widen.  That is why HP3.2 moved
+the unconditional `.replyRecv` bound (19 → 20) and left the two reachable ones
+at eighteen and seventeen. -/
 theorem lockSet_endpointReplyOnCore_covers_splicedFrameBelow
     (st : SystemState) (replier : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
     (target : SeLe4n.ThreadId) (below : SeLe4n.ReplyId)
@@ -3136,8 +3222,7 @@ theorem endpointReplyOnCore_replay_rejected
     (hIpc : tcb.ipcState = .blockedOnReply ep (some expected))
     (hStore : storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) = .ok st')
     (hObjInv : st.objects.invExt)
-    (hSz1' : ¬ msg2.registers.size > maxMessageRegisters)
-    :
+    (hSz1' : ¬ msg2.registers.size > maxMessageRegisters) :
     (endpointReplyOnCore replier2 target msg2 executingCore2
         (endpointReplyOnCore replier target msg executingCore st).1).2 = .error .replyCapInvalid := by
   obtain ⟨t, hGet, hReady, _⟩ :=
@@ -3551,13 +3636,14 @@ theorem endpointReceiveDualOnCore_preserves_objects_invExt
               simp only
               split
               · cases hStash : storeObject receiver.toObjId
-                    (.tcb { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId }) st2 with
+                    (.tcb { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId })
+                    (st2.recordReplyStasher (SeLe4n.ReplyId.optCode replyId) receiver) with
                 | error e => simp only; exact hObjInv
                 | ok pStash =>
                   obtain ⟨⟨⟩, stStashed⟩ := pStash
                   exact removeRunnableOnCore_objects_invExt _ _ _
-                    (storeObject_preserves_objects_invExt st2 stStashed receiver.toObjId _
-                      hObjInv2 hStash)
+                    (storeObject_preserves_objects_invExt _ stStashed receiver.toObjId _
+                      (SystemState.recordReplyStasher_objects_invExt _ _ _ hObjInv2) hStash)
               · exact hObjInv
 
 /-- **WS-RR RR8.12 (frame)**: a cross-core receive that **rendezvouses** moves no
@@ -4126,7 +4212,7 @@ theorem endpointReceiveDualOnCore_replenishQueueOnCore_of_blocked (epId : SeLe4n
               obtain ⟨hEq, -⟩ := hStep
               subst hEq
               simp only [removeRunnableOnCore_replenishQueueOnCore,
-                storeObject_scheduler_eq st2 st3 _ _ hStash, hChain]
+                storeObject_scheduler_eq _ st3 _ _ hStash, SystemState.recordReplyStasher_scheduler, hChain]
           · simp at hStep
 
 /-- **`v0.35.161` (frame)**: and a cross-core receive that blocks holding **no** loan
@@ -4162,7 +4248,7 @@ theorem endpointReceiveDualOnCore_replenishQueueOnCore_of_no_donation (epId : Se
           · rfl
           · next _ st3 hStash =>
             simp only [removeRunnableOnCore_replenishQueueOnCore,
-              storeObject_scheduler_eq st2 st3 _ _ hStash, hChain]
+              storeObject_scheduler_eq _ st3 _ _ hStash, SystemState.recordReplyStasher_scheduler, hChain]
         · rfl
 
 /-- **`v0.35.161` (frame)**: the caps-carrying form the live `.receive` arm runs writes
@@ -4471,19 +4557,35 @@ theorem endpointReceiveDualOnCore_preserves_replenishQueueAffinityConsistent_smp
               simp only []
               split
               · cases hStash : storeObject receiver.toObjId
-                    (.tcb { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId }) st2 with
+                    (.tcb { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId })
+                    (st2.recordReplyStasher (SeLe4n.ReplyId.optCode replyId) receiver) with
                 | error e => exact hCons
                 | ok pStash =>
                   obtain ⟨⟨⟩, st3⟩ := pStash
                   simp only []
+                  -- The stasher record writes one Reply: no replenish queue, no
+                  -- SchedContext and no thread's home core.
+                  have hInvR := SystemState.recordReplyStasher_objects_invExt st2
+                    (SeLe4n.ReplyId.optCode replyId) receiver hInv2
+                  have hTcbR : (st2.recordReplyStasher (SeLe4n.ReplyId.optCode replyId)
+                      receiver).getTcb? receiver = some rTcb := by
+                    rw [SystemState.recordReplyStasher_getTcb? _ _ _ hInv2]; exact hTcb
+                  have hConsR : replenishQueueAffinityConsistent_smp
+                      (st2.recordReplyStasher (SeLe4n.ReplyId.optCode replyId) receiver) :=
+                    (replenishQueueAffinityConsistent_smp_congr
+                      (fun c => by rw [SystemState.recordReplyStasher_scheduler])
+                      (fun scId => SystemState.recordReplyStasher_getSchedContext? _ _ _ hInv2 scId)
+                      (fun tid => by
+                        unfold determineTargetCore
+                        rw [SystemState.recordReplyStasher_getTcb? _ _ _ hInv2])).mpr hCons2
                   have hCons3 : replenishQueueAffinityConsistent_smp st3 :=
                     (replenishQueueAffinityConsistent_smp_congr
-                      (fun c => by rw [storeObject_scheduler_eq st2 st3 _ _ hStash])
-                      (fun scId => storeObject_tcb_getSchedContext?_eq st2 st3 receiver rTcb _
-                        scId hTcb hInv2 hStash)
-                      (fun tid => storeObject_tcb_determineTargetCore_eq st2 st3 receiver rTcb
-                        { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId } tid hTcb rfl hInv2
-                        hStash)).mpr hCons2
+                      (fun c => by rw [storeObject_scheduler_eq _ st3 _ _ hStash])
+                      (fun scId => storeObject_tcb_getSchedContext?_eq _ st3 receiver rTcb _
+                        scId hTcbR hInvR hStash)
+                      (fun tid => storeObject_tcb_determineTargetCore_eq _ st3 receiver rTcb
+                        { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId } tid hTcbR rfl hInvR
+                        hStash)).mpr hConsR
                   exact removeRunnableOnCore_preserves_replenishQueueAffinityConsistent_smp st3
                     receiver executingCore hCons3
               · exact hCons

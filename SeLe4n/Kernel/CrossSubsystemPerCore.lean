@@ -33,8 +33,8 @@ per-core layer, and assembles:
 
 2. **`crossSubsystemSchedulerContract_perCore`** — the SM4.D bundle of
    *every* cross-subsystem scheduler-reading invariant in per-core form:
-   the IPC scheduler contract + dequeue coherence + passive-server
-   idleness (`IPC.Invariant.PerCore`), the architecture register-decode
+   the IPC scheduler contract + dequeue coherence
+   (`IPC.Invariant.PerCore`), the architecture register-decode
    consistency (`Architecture.InvariantPerCore`), and the SchedContext↔
    run-queue consistency (`Scheduler.Invariant.PerCore`).  Together with
    the `∀ c` SMP form and the boot-core bridge it is the single per-core
@@ -123,8 +123,8 @@ theorem default_crossSubsystemInvariant_smp :
 -- ============================================================================
 --
 -- Bundles every cross-subsystem scheduler-reading invariant in per-core
--- form: the IPC scheduler contract, dequeue-on-dispatch coherence, and
--- passive-server idleness (SM4.D, IPC); architecture register-decode
+-- form: the IPC scheduler contract and dequeue-on-dispatch coherence (SM4.D,
+-- IPC); architecture register-decode
 -- consistency (SM4.D, Architecture); and SchedContext↔run-queue
 -- consistency (SM4.C, Scheduler).  This is the single per-core surface
 -- SM5's per-core scheduler consumes for cross-subsystem coherence.
@@ -133,23 +133,21 @@ theorem default_crossSubsystemInvariant_smp :
 def crossSubsystemSchedulerContract_perCore (st : SystemState) (c : CoreId) : Prop :=
   ipcSchedulerContractPredicates_perCore st c ∧
   currentThreadDequeueCoherent_perCore st c ∧
-  passiveServerIdle_perCore st c ∧
   Architecture.registerDecodeConsistent_perCore st c ∧
   schedContextRunQueueConsistent_perCore st c
 
 /-- SM4.D: the contract bundle at `bootCoreId` is the conjunction of the
-five live single-core invariants (each conjunct via its boot-core bridge). -/
+four live single-core invariants (each conjunct via its boot-core bridge). -/
 theorem crossSubsystemSchedulerContract_perCore_bootCore_iff (st : SystemState) :
     crossSubsystemSchedulerContract_perCore st bootCoreId ↔
       (ipcSchedulerContractPredicates st ∧ currentThreadDequeueCoherent st ∧
-       passiveServerIdle st ∧ Architecture.registerDecodeConsistent st ∧
+       Architecture.registerDecodeConsistent st ∧
        schedContextRunQueueConsistent st) := by
   unfold crossSubsystemSchedulerContract_perCore
   exact and_congr (ipcSchedulerContractPredicates_perCore_bootCore_iff st)
     (and_congr (currentThreadDequeueCoherent_perCore_bootCore_iff st)
-      (and_congr (passiveServerIdle_perCore_bootCore_iff st)
-        (and_congr (Architecture.registerDecodeConsistent_perCore_bootCore_iff st)
-          (schedContextRunQueueConsistent_perCore_bootCore_iff st))))
+      (and_congr (Architecture.registerDecodeConsistent_perCore_bootCore_iff st)
+        (schedContextRunQueueConsistent_perCore_bootCore_iff st)))
 
 /-- SM4.D: system-wide SMP form of the cross-subsystem scheduler contract. -/
 def crossSubsystemSchedulerContract_smp (st : SystemState) : Prop :=
@@ -173,23 +171,18 @@ theorem crossSubsystemSchedulerContract_perCore_to_currentThreadDequeueCoherent
     {st : SystemState} {c : CoreId} (h : crossSubsystemSchedulerContract_perCore st c) :
     currentThreadDequeueCoherent_perCore st c := h.2.1
 
-theorem crossSubsystemSchedulerContract_perCore_to_passiveServerIdle
-    {st : SystemState} {c : CoreId} (h : crossSubsystemSchedulerContract_perCore st c) :
-    passiveServerIdle_perCore st c := h.2.2.1
-
 theorem crossSubsystemSchedulerContract_perCore_to_registerDecodeConsistent
     {st : SystemState} {c : CoreId} (h : crossSubsystemSchedulerContract_perCore st c) :
-    Architecture.registerDecodeConsistent_perCore st c := h.2.2.2.1
+    Architecture.registerDecodeConsistent_perCore st c := h.2.2.1
 
 theorem crossSubsystemSchedulerContract_perCore_to_schedContextRunQueueConsistent
     {st : SystemState} {c : CoreId} (h : crossSubsystemSchedulerContract_perCore st c) :
-    schedContextRunQueueConsistent_perCore st c := h.2.2.2.2
+    schedContextRunQueueConsistent_perCore st c := h.2.2.2
 
 theorem default_crossSubsystemSchedulerContract_perCore (c : CoreId) :
     crossSubsystemSchedulerContract_perCore (default : SystemState) c :=
   ⟨default_ipcSchedulerContractPredicates_perCore c,
    default_currentThreadDequeueCoherent_perCore c,
-   default_passiveServerIdle_perCore c,
    Architecture.default_registerDecodeConsistent_perCore c,
    default_schedContextRunQueueConsistent_perCore c⟩
 

@@ -1028,7 +1028,7 @@ alone, with the gate the caller's own CSpace gives
       | .ok rid =>
           match st.getReply? rid with
           | some r =>
-              if r.caller.isNone && !st.replyIsStashed rid then .ok (some rid)
+              if r.caller.isNone && !st.replyStashedAt rid r then .ok (some rid)
               else .error .replyCapInvalid
           | none => .error .replyCapInvalid
 
@@ -1068,7 +1068,7 @@ a refusal to `onErr`, so no `Except` or `some` cell is built. -/
         | .replyCap rid =>
             match st.getReply? rid with
             | some r =>
-                if r.caller.isNone && !st.replyIsStashed rid then onOk (rid.val + 1)
+                if r.caller.isNone && !st.replyStashedAt rid r then onOk (rid.val + 1)
                 else onErr .replyCapInvalid
             | none => onErr .replyCapInvalid
         | _ => onErr .invalidCapability
@@ -1296,7 +1296,7 @@ theorem endpointReceiveCheckedArmR_eq (ctx : LabelingContext)
                   split
                   · next hRes =>
                     simp only [receiveBlocksInPlace, enqueuesInPlace, Bool.and_eq_true, Bool.not_eq_true'] at hG
-                    rw [hG.1.1.1.1.1.1] at hRes; cases hRes
+                    rw [hG.1.1.1.1.1.1.1] at hRes; cases hRes
                   · exact hT]
                 simp only [hB]
               rw [applyReceiveRendezvousHandoff_of_no_call _ _ _ _ hNoCall]

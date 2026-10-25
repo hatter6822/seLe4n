@@ -54,7 +54,7 @@ stack and below no frame. -/
   st.objects.findsInPlace rid.toObjId &&
   ct.pendingFault.isNone &&
   (match st.getReply? rid with
-   | some rp => rp.next.isNone
+   | some rp => rp.next.isNone && rp.prev.isNone
    | none => false)
 
 /-- The reply's writes up to the priority walk, each in its slot: the caller
@@ -93,11 +93,13 @@ theorem replyOnCore_inPlace (st : SystemState) (replier c server : SeLe4n.Thread
       replyFrameHeadHolder? (storeReplyRendezvous st c server rid msg) rid = none := by
   simp only [replyWakesInPlace, Bool.and_eq_true, Bool.not_eq_true'] at hG
   obtain ⟨⟨⟨⟨⟨⟨hCRes, hLC⟩, hFC⟩, hLR⟩, hFR⟩, _⟩, hRp⟩ := hG
-  obtain ⟨rp, hRo, hNext⟩ : ∃ rp, st.objects[rid.toObjId]? = some (.reply rp) ∧
-      rp.next = none := by
+  obtain ⟨rp, hRo, hNext, hPrev⟩ : ∃ rp, st.objects[rid.toObjId]? = some (.reply rp) ∧
+      rp.next = none ∧ rp.prev = none := by
     split at hRp
     · next rp hRo =>
-      exact ⟨rp, (SystemState.getReply?_eq_some_iff _ _ _).mp hRo, Option.isNone_iff_eq_none.mp hRp⟩
+      rw [Bool.and_eq_true] at hRp
+      exact ⟨rp, (SystemState.getReply?_eq_some_iff _ _ _).mp hRo,
+        Option.isNone_iff_eq_none.mp hRp.1, Option.isNone_iff_eq_none.mp hRp.2⟩
     · cases hRp
   have hNeCQ : c.toObjId ≠ rid.toObjId := fun h => by rw [h, hRo] at hT; cases hT
   have hNeQC : rid.toObjId ≠ c.toObjId := fun h => hNeCQ h.symm
@@ -140,7 +142,7 @@ theorem replyOnCore_inPlace (st : SystemState) (replier c server : SeLe4n.Thread
   have hRp2 : S2.getReply? rid = some rp := (SystemState.getReply?_eq_some_iff _ _ _).mpr hO2q
   have hSp : spliceReplyFrameOutOrSelf S2 rid = S2 := by
     unfold spliceReplyFrameOutOrSelf
-    rw [spliceReplyFrameOut_of_no_frame_above S2 rid rp hRp2 hNext]
+    rw [spliceReplyFrameOut_of_no_frame_above S2 rid rp hRp2 hNext hPrev]
   have hS3 : S2.modifyObject rid.toObjId replyConsumedObject =
       { S2 with objects := (S2.objects.insert rid.toObjId (.reply rp.consumed)) } := by
     unfold SystemState.modifyObject
@@ -235,7 +237,8 @@ theorem replyTransferChecked_inPlace (ctx : LabelingContext) (st : SystemState)
   rfl
 
 /-- **The in-place reply keeps the donation chain.**  Its reply object heads no
-frame (`replyWakesInPlace` asks `next = none`), so the specification's reply
+frame (`replyWakesInPlace` asks `next = none`, and `prev = none` so the
+removal has no frame below to sever either), so the specification's reply
 takes the chain-preserving case of `endpointReplyOnCore_donationChain_cases`,
 and the in-place store is that state (`replyOnCore_inPlace`). -/
 theorem storeReplyRendezvous_preserves_donationChainWellFormed (st : SystemState)
@@ -261,7 +264,7 @@ theorem storeReplyRendezvous_preserves_donationChainWellFormed (st : SystemState
     simp only [replyWakesInPlace, Bool.and_eq_true] at hG
     have hRp := hG.2
     rw [hR] at hRp
-    simp only [Option.isNone_iff_eq_none] at hRp
-    rw [hRp] at hNext; cases hNext
+    simp only [Bool.and_eq_true, Option.isNone_iff_eq_none] at hRp
+    rw [hRp.1] at hNext; cases hNext
 
 end SeLe4n.Kernel

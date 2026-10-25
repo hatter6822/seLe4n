@@ -287,8 +287,12 @@ theorem endpointReceiveDualOnCore_runQueueEntryStage (endpointId : SeLe4n.ObjId)
                 · exact (RunQueueStage.refl _).entry
                 · rename_i st3 hS3
                   exact pre.blockThenDeschedule hS2
-                    (storeObject_tcbOver_runQueueStage hT hS3 (fun _ => rfl)) hC1
-                    (currentOnCore_of_scheduler_eq (storeObject_scheduler_eq _ _ _ _ hS3) hC2) hNI
+                    (RunQueueStage.of_invExt fun hI => (recordReplyStasher_runQueueStage _ _ _).trans
+                      (storeObject_tcbOver_runQueueStage (old := rTcb)
+                        (by rw [SystemState.recordReplyStasher_getTcb? _ _ _ hI]; exact hT) hS3
+                        (fun _ => rfl))) hC1
+                    (currentOnCore_of_scheduler_eq ((storeObject_scheduler_eq _ _ _ _ hS3).trans
+                      (SystemState.recordReplyStasher_scheduler _ _ _)) hC2) hNI
               · exact (RunQueueStage.refl _).entry
   · split <;> exact (RunQueueStage.refl _).entry
 

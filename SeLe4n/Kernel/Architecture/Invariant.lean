@@ -572,10 +572,6 @@ private theorem default_donationOwnerUnique :
     donationOwnerUnique (default : SystemState) := by
   intro _ _ _ _ _ _ _ h _ _ _; exact default_objects_absurd h
 
-private theorem default_passiveServerIdle :
-    passiveServerIdle (default : SystemState) := by
-  intro _ _ h; exact default_objects_absurd h
-
 private theorem default_donationBudgetTransfer :
     donationBudgetTransfer (default : SystemState) := by
   intro _ _ _ _ _ h; exact default_objects_absurd h
@@ -594,7 +590,7 @@ private theorem default_replyCallerLinkage :
 
 private theorem default_pendingReceiveReplyWellFormed :
     pendingReceiveReplyWellFormed (default : SystemState) := by
-  refine ⟨?_, ?_⟩
+  refine ⟨?_, ?_, ?_⟩
   · intro tid tcb rid h _
     unfold SystemState.getTcb? at h
     rw [default_objects_none] at h
@@ -603,6 +599,10 @@ private theorem default_pendingReceiveReplyWellFormed :
     unfold SystemState.getTcb? at h₁
     rw [default_objects_none] at h₁
     simp at h₁
+  · intro tid tcb rid h _
+    unfold SystemState.getTcb? at h
+    rw [default_objects_none] at h
+    simp at h
 
 /-- WS-RR RR3.13: the boot state satisfies the whole IPC bundle.  Public because
 it is the base case the reachability bundle
@@ -615,8 +615,7 @@ theorem default_ipcInvariantFull :
    default_endpointQueueNoDup, default_ipcStateQueueMembershipConsistent,
    default_queueNextBlockingConsistent, default_queueHeadBlockedConsistent,
    default_blockedThreadTimeoutConsistent,
-   default_donationChainAcyclic, default_donationOwnerValid,
-   default_passiveServerIdle, default_donationBudgetTransfer,
+   default_donationChainAcyclic, default_donationOwnerValid, default_donationBudgetTransfer,
    default_blockedOnReplyHasTarget, default_replyCallerLinkage,
    default_pendingReceiveReplyWellFormed, default_donationOwnerUnique,
    default_endpointQueueTailBlockedConsistent, default_queueNextTargetBlocked⟩
@@ -897,12 +896,12 @@ private theorem advanceTimerState_preserves_ipcInvariantFull
     (hIpc : ipcInvariantFull st) :
     ipcInvariantFull (advanceTimerState ticks st) := by
   -- WS-RC R4.C.7: ipcInvariantFull bundle dropped uniqueWaiters (15 conjuncts now).
-  obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, h12, h13, h14, h16, h17, h18, h19, h20, h21⟩ := hIpc
+  obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, h12, h14, h16, h17, h18, h19, h20, h21⟩ := hIpc
   have hObjs : (advanceTimerState ticks st).objects = st.objects := by
     unfold advanceTimerState; rfl
   have hLk : ∀ (x : SeLe4n.ObjId), (advanceTimerState ticks st).objects[x]? = st.objects[x]? := by
     intro x; exact congrArg (·.get? x) hObjs
-  refine ⟨by exact h1, ?_, by exact h3, by exact h4, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨by exact h1, ?_, by exact h3, by exact h4, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   -- dualQueueSystemInvariant
   · obtain ⟨hEp, hLink, hAcyc, hPPair, hHD⟩ := h2
     refine ⟨fun epId ep hObj => hEp epId ep (hObjs ▸ hObj),
@@ -934,9 +933,6 @@ private theorem advanceTimerState_preserves_ipcInvariantFull
   · intro tid tcb scId owner hObj hBinding
     have ⟨hSc, hOwner⟩ := h12 tid tcb scId owner (hObjs ▸ hObj) hBinding
     exact ⟨hSc.imp fun sc hSc => hObjs ▸ hSc, hOwner.imp fun ownerTcb ⟨hO, hEp⟩ => ⟨hObjs ▸ hO, hEp⟩⟩
-  -- Z7: passiveServerIdle
-  · intro tid tcb hObj hUnbound hNotInRQ hNotCurr
-    exact h13 tid tcb (hObjs ▸ hObj) hUnbound hNotInRQ hNotCurr
   -- Z7: donationBudgetTransfer
   · intro tid1 tid2 tcb1 tcb2 scId h1Obj h2Obj hNe hB1 hB2
     exact h14 tid1 tid2 tcb1 tcb2 scId (hObjs ▸ h1Obj) (hObjs ▸ h2Obj) hNe hB1 hB2
@@ -1011,16 +1007,16 @@ an `iff`.  A `perCoreTlb` write can of course break that conjunct — proving it
 still holds is the writer's obligation, and the point of this lemma is that it
 is the writer's *only* obligation. -/
 
-/-- The twenty-conjunct IPC bundle transports across a `perCoreTlb` write. -/
+/-- The nineteen-conjunct IPC bundle transports across a `perCoreTlb` write. -/
 private theorem ipcInvariantFull_setPerCoreTlb {st : SystemState}
     {t : Vector TlbState Concurrency.numCores} (h : ipcInvariantFull st) :
     ipcInvariantFull { st with perCoreTlb := t } := by
   obtain ⟨c1, c2, c3, c4, c5, c6, c7, c8, c9, c10,
-          c11, c12, c13, c14, c15, c16, c17, c18, c19, c20⟩ := h
+          c11, c12, c14, c15, c16, c17, c18, c19, c20⟩ := h
   exact ⟨c1, dualQueueSystemInvariant_of_readViewAgreement (s1 := st)
            (s2 := { st with perCoreTlb := t }) (.of_getElem_eq (fun _ => rfl)) c2,
          c3, c4, c5, c6, c7, c8, c9, c10,
-         c11, c12, c13, c14, c15, c16, c17, c18, c19, c20⟩
+         c11, c12, c14, c15, c16, c17, c18, c19, c20⟩
 
 /-- The service graph transports: acyclicity rides the inductive-path
     congruence, the count bound is definitional. -/
@@ -1067,12 +1063,12 @@ private theorem ipcInvariantFull_setDeclassificationAuditLog {st : SystemState}
     ipcInvariantFull
       { st with declassificationAuditLog := log, declassificationAuditEpoch := epoch } := by
   obtain ⟨c1, c2, c3, c4, c5, c6, c7, c8, c9, c10,
-          c11, c12, c13, c14, c15, c16, c17, c18, c19, c20⟩ := h
+          c11, c12, c14, c15, c16, c17, c18, c19, c20⟩ := h
   exact ⟨c1, dualQueueSystemInvariant_of_readViewAgreement (s1 := st)
            (s2 := { st with declassificationAuditLog := log,
                             declassificationAuditEpoch := epoch }) (.of_getElem_eq (fun _ => rfl)) c2,
          c3, c4, c5, c6, c7, c8, c9, c10,
-         c11, c12, c13, c14, c15, c16, c17, c18, c19, c20⟩
+         c11, c12, c14, c15, c16, c17, c18, c19, c20⟩
 
 private theorem serviceGraphInvariant_setDeclassificationAuditLog {st : SystemState}
     {log : SeLe4n.Kernel.DeclassificationAuditLog} {epoch : Nat}
@@ -1167,11 +1163,11 @@ private theorem ipcInvariantFull_setDeclassificationRefusals {st : SystemState}
     {L : SeLe4n.Kernel.RefusalLedger} (h : ipcInvariantFull st) :
     ipcInvariantFull { st with declassificationRefusals := L } := by
   obtain ⟨c1, c2, c3, c4, c5, c6, c7, c8, c9, c10,
-          c11, c12, c13, c14, c15, c16, c17, c18, c19, c20⟩ := h
+          c11, c12, c14, c15, c16, c17, c18, c19, c20⟩ := h
   exact ⟨c1, dualQueueSystemInvariant_of_readViewAgreement (s1 := st)
            (s2 := { st with declassificationRefusals := L }) (.of_getElem_eq (fun _ => rfl)) c2,
          c3, c4, c5, c6, c7, c8, c9, c10,
-         c11, c12, c13, c14, c15, c16, c17, c18, c19, c20⟩
+         c11, c12, c14, c15, c16, c17, c18, c19, c20⟩
 
 private theorem serviceGraphInvariant_setDeclassificationRefusals {st : SystemState}
     {L : SeLe4n.Kernel.RefusalLedger} (h : serviceGraphInvariant st) :
@@ -1242,11 +1238,11 @@ private theorem ipcInvariantFull_setDeclassificationTaint {st : SystemState}
     {T : SeLe4n.Kernel.TaintTable} (h : ipcInvariantFull st) :
     ipcInvariantFull { st with declassificationTaint := T } := by
   obtain ⟨c1, c2, c3, c4, c5, c6, c7, c8, c9, c10,
-          c11, c12, c13, c14, c15, c16, c17, c18, c19, c20⟩ := h
+          c11, c12, c14, c15, c16, c17, c18, c19, c20⟩ := h
   exact ⟨c1, dualQueueSystemInvariant_of_readViewAgreement (s1 := st)
            (s2 := { st with declassificationTaint := T }) (.of_getElem_eq (fun _ => rfl)) c2,
          c3, c4, c5, c6, c7, c8, c9, c10,
-         c11, c12, c13, c14, c15, c16, c17, c18, c19, c20⟩
+         c11, c12, c14, c15, c16, c17, c18, c19, c20⟩
 
 private theorem serviceGraphInvariant_setDeclassificationTaint {st : SystemState}
     {T : SeLe4n.Kernel.TaintTable}
@@ -1407,8 +1403,8 @@ private theorem writeRegisterState_preserves_ipcInvariantFull
   have hLk : ∀ (x : SeLe4n.ObjId),
       (writeRegisterState reg value st).objects[x]? = st.objects[x]? := fun x => congrArg (·.get? x) hObjs
   -- WS-RC R4.C.7: ipcInvariantFull bundle dropped uniqueWaiters (15 conjuncts now).
-  obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, h12, h13, h14, h16, h17, h18, h19, h20, h21⟩ := hIpc
-  refine ⟨by exact h1, ?_, by exact h3, by exact h4, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, h12, h14, h16, h17, h18, h19, h20, h21⟩ := hIpc
+  refine ⟨by exact h1, ?_, by exact h3, by exact h4, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · obtain ⟨hEp, hLink, hAcyc, hPPair, hHD⟩ := h2
     exact ⟨fun epId ep hObj => hEp epId ep (hObjs ▸ hObj),
            ⟨fun a tcbA hA b hN => (hLink.1 a tcbA (hObjs ▸ hA) b hN).imp
@@ -1430,7 +1426,6 @@ private theorem writeRegisterState_preserves_ipcInvariantFull
   · intro tid tcb scId owner hObj hBinding
     have ⟨hSc, hOwner⟩ := h12 tid tcb scId owner (hObjs ▸ hObj) hBinding
     exact ⟨hSc.imp fun sc hSc => hObjs ▸ hSc, hOwner.imp fun ownerTcb ⟨hO, hEp⟩ => ⟨hObjs ▸ hO, hEp⟩⟩
-  · intro tid tcb hObj hUnbound hNotInRQ hNotCurr; exact h13 tid tcb (hObjs ▸ hObj) hUnbound hNotInRQ hNotCurr
   · intro t1 t2 tc1 tc2 scId h1O h2O hNe hB1 hB2
     exact h14 t1 t2 tc1 tc2 scId (hObjs ▸ h1O) (hObjs ▸ h2O) hNe hB1 hB2
   -- AJ1-B: blockedOnReplyHasTarget
@@ -1536,23 +1531,19 @@ theorem writeRegisterState_preserves_proofLayerInvariantBundle
 -- ============================================================================
 
 /-- AG7-D: `ipcInvariantFull` is preserved through `contextSwitchState`.
-    All 16 conjuncts depend only on `st.objects` except `passiveServerIdle`
-    which also references `scheduler.current` and `scheduler.runQueue`.
-    `passiveServerIdle` transfers because the old current thread (if any) has
-    `ipcState = .ready` (from `currentThreadIpcReady`), satisfying the
-    conclusion directly. -/
+    Every conjunct reads only `st.objects`, which the context switch leaves
+    unchanged. -/
 private theorem contextSwitchState_preserves_ipcInvariantFull
     (newTid : SeLe4n.ThreadId) (newRegs : SeLe4n.RegisterFile) (st : SystemState)
-    (hIpc : ipcInvariantFull st)
-    (hCurIpc : currentThreadIpcReady st) :
+    (hIpc : ipcInvariantFull st) :
     ipcInvariantFull (contextSwitchState newTid newRegs st) := by
   have hObjs : (contextSwitchState newTid newRegs st).objects = st.objects := rfl
   have hLk : ∀ (x : SeLe4n.ObjId),
       (contextSwitchState newTid newRegs st).objects[x]? = st.objects[x]? :=
     fun x => congrArg (·.get? x) hObjs
   -- WS-RC R4.C.7: ipcInvariantFull bundle dropped uniqueWaiters (15 conjuncts now).
-  obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, h12, h13, h14, h16, h17, h18, h19, h20, h21⟩ := hIpc
-  refine ⟨by exact h1, ?_, by exact h3, by exact h4, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, h12, h14, h16, h17, h18, h19, h20, h21⟩ := hIpc
+  refine ⟨by exact h1, ?_, by exact h3, by exact h4, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · obtain ⟨hEp, hLink, hAcyc, hPPair, hHD⟩ := h2
     exact ⟨fun epId ep hObj => hEp epId ep (hObjs ▸ hObj),
            ⟨fun a tcbA hA b hN => (hLink.1 a tcbA (hObjs ▸ hA) b hN).imp
@@ -1575,17 +1566,6 @@ private theorem contextSwitchState_preserves_ipcInvariantFull
     have ⟨hSc, hOwner⟩ := h12 tid tcb scId owner (hObjs ▸ hObj) hBinding
     exact ⟨hSc.imp fun sc hSc => hObjs ▸ hSc,
            hOwner.imp fun ownerTcb ⟨hO, hEp⟩ => ⟨hObjs ▸ hO, hEp⟩⟩
-  -- passiveServerIdle: scheduler.current changes from old to some newTid
-  · intro tid tcb hObj hUnbound hNotInRQ hNotCurr
-    -- hNotCurr : ((contextSwitchState ...).scheduler.currentOnCore bootCoreId) ≠ some tid
-    -- i.e., some newTid ≠ some tid
-    -- Case split on whether tid was the old current thread
-    by_cases hOld : (st.scheduler.currentOnCore bootCoreId) = some tid
-    · -- tid was old current; currentThreadIpcReady gives ipcState = .ready
-      simp [currentThreadIpcReady, hOld] at hCurIpc
-      exact Or.inl (hCurIpc tcb (hObjs ▸ hObj))
-    · -- tid was not old current; transfer from pre-state passiveServerIdle
-      exact h13 tid tcb (hObjs ▸ hObj) hUnbound hNotInRQ hOld
   · intro t1 t2 tc1 tc2 scId h1O h2O hNe hB1 hB2
     exact h14 t1 t2 tc1 tc2 scId (hObjs ▸ h1O) (hObjs ▸ h2O) hNe hB1 hB2
   -- AJ1-B: blockedOnReplyHasTarget
@@ -1649,8 +1629,6 @@ theorem contextSwitchState_preserves_proofLayerInvariantBundle
   obtain ⟨hSched, hCap, hIpc, hCoupling, hLife, hSvc, hVsp, hCross, hTlb, hExt, hNWC, hPB, hPCT⟩ := hInv
   -- contextSwitchState changes machine.regs and scheduler.current; objects unchanged
   have hObjs : (contextSwitchState newTid newRegs st).objects = st.objects := rfl
-  -- Extract currentThreadIpcReady from the coupling bundle (needed for passiveServerIdle)
-  have hCurIpcReady : currentThreadIpcReady st := hCoupling.2.2.2.1
   -- contextMatchesCurrent for the post-state: directly from BEq hypothesis
   have hCtxPost : contextMatchesCurrent (contextSwitchState newTid newRegs st) := by
     simp [contextMatchesCurrent, contextSwitchState, SchedulerState.setCurrentOnCore_currentOnCore_self, hLookup]; exact beq_iff_eq.mp hRegs
@@ -1723,14 +1701,14 @@ theorem contextSwitchState_preserves_proofLayerInvariantBundle
         (st.scheduler.setCurrentOnCore bootCoreId (some newTid)) := by
       unfold queueCurrentConsistent; simp; exact hNotRunnable
     exact ⟨⟨hQCC, hUniq, hValidPost⟩, hC,
-           contextSwitchState_preserves_ipcInvariantFull newTid newRegs st hI hCurIpcReady⟩
+           contextSwitchState_preserves_ipcInvariantFull newTid newRegs st hI⟩
   -- 4. ipcSchedulerCouplingInvariantBundle: rebuild with new current-thread predicates
   · obtain ⟨⟨⟨_, hUniq, _⟩, hC, hI⟩, hCoh, _, _⟩ := hCoupling
     have hQCC : queueCurrentConsistent
         (st.scheduler.setCurrentOnCore bootCoreId (some newTid)) := by
       unfold queueCurrentConsistent; simp; exact hNotRunnable
     exact ⟨⟨⟨hQCC, hUniq, hValidPost⟩, hC,
-            contextSwitchState_preserves_ipcInvariantFull newTid newRegs st hI hCurIpcReady⟩,
+            contextSwitchState_preserves_ipcInvariantFull newTid newRegs st hI⟩,
            hCoh, hCtxPost, ⟨hIpcReadyPost, hNotEpHead, hNotNtfnWait⟩⟩
   -- 6. serviceLifecycleCapabilityInvariantBundle
   · obtain ⟨hP, hL, hC, hR⟩ := hSvc

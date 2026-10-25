@@ -38,8 +38,8 @@ open SeLe4n.Model
 
 /-- WS-OD OD1.2: the server whose priority-inheritance boost must be recomputed
 once `tid` leaves the blocking graph — `some` exactly when `tid` was waiting on a
-reply from it.  Named rather than inlined because the timeout reads it and the
-`passiveServerIdle` abort does not, and a second spelling is how the two drift.
+reply from it.  Named rather than inlined so the timeout and its proofs read one
+spelling, since a second spelling is how the two drift.
 
 Reading it from the **pre**-state is sound: `endpointQueueRemove` writes queue
 links only, so the removed thread's `ipcState` is the same before and after. -/

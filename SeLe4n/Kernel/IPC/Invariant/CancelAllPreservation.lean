@@ -4,6 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -/
 import SeLe4n.Kernel.IPC.Invariant.DispatchArmPreservation
 import SeLe4n.Kernel.IPC.Invariant.CancelAllFrame
+import SeLe4n.Kernel.IPC.Invariant.FinaliseLoanCoherence
 import SeLe4n.Kernel.Lifecycle.Invariant.CancellationNotificationShape
 import SeLe4n.Kernel.IPC.Invariant.CancellationBundle
 
@@ -63,7 +64,7 @@ theorem endpointQueuePopHead_establishes_ipcInvariantFullExceptMembership
     (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (tid, headTcb, st')) :
     ipcInvariantFullExceptMembership st' tid := by
   obtain ⟨hIpc, hDual, hBnd, hBadge, hPend, hNoDup, hMem, hQNB, hQHB, hTimeout,
-    _hAcyc, hOwner, hPassive, hBudget, hReplyTarget, hReplyLink, hStash, hUnique, hTail,
+    _hAcyc, hOwner, hBudget, hReplyTarget, hReplyLink, hStash, hUnique, hTail,
     hQNT⟩ := hInv
   have hDual' := endpointQueuePopHead_preserves_dualQueueSystemInvariant endpointId isReceiveQ
     st st' tid hObjInv hStep hDual
@@ -111,9 +112,6 @@ theorem endpointQueuePopHead_establishes_ipcInvariantFullExceptMembership
     hTimeout',
     donationOwnerValid_implies_donationChainAcyclic st' hOwner',
     hOwner',
-    passiveServerIdle_of_frame
-      (endpointQueuePopHead_passiveServerIdleFrame endpointId isReceiveQ st st' tid headTcb
-        hObjInv hStep) hPassive,
     donationBudgetTransfer_of_sameSchedContextBindings hSame hBudget,
     endpointQueuePopHead_preserves_blockedOnReplyHasTarget endpointId isReceiveQ st st' tid
       headTcb hObjInv hReplyTarget hStep,
@@ -207,12 +205,7 @@ theorem cancelledEndpointWaiter_closes (s1 : SystemState) (t : SeLe4n.ThreadId) 
         RobinHood.RHTable.getElem?_insert_ne _ _ _ _ (by simp [hne]) hIRc,
         ← RHTable_getElem?_eq_get?, ← RHTable_getElem?_eq_get?,
         storeObject_objects_ne s1 sRc t.toObjId k _ hk hI1 hStoreRc]
-  have hSched : (s1.updateTcb t cancelledEndpointWaiterTcb).scheduler =
-      (Architecture.writeReturnFrameToTcb sRc t Architecture.cancelledIpcFrame).scheduler := by
-    unfold Architecture.writeReturnFrameToTcb
-    rw [SystemState.updateTcb_eq_of_some hG1, SystemState.updateTcb_eq_of_some hRcG]
-    exact (storeObject_scheduler_eq s1 sRc t.toObjId _ hStoreRc).symm
-  exact ipcInvariantFull_of_storeAgrees_of_scheduler_eq hAgree hSched hFullStage
+  exact ipcInvariantFull_of_storeAgrees hAgree hFullStage
 
 /-- **An endpoint waiter's cancel keeps the bundle.**  The pop relaxes it at the
 waiter (`endpointQueuePopHead_establishes_ipcInvariantFullExceptMembership`) and
@@ -311,21 +304,206 @@ theorem storeUnbindNotification_preserves_ipcInvariantFull
   rw [hCode, Nat.add_sub_cancel] at hSpec
   exact unbindNotification_preserves_ipcInvariantFull _ _ _ hObjInv hInv hSpec
 
-/-- **A thread's or a context's reservation unbind keeps the bundle**: the
-per-core unbind (`cancelBoundDonationOnCore_preserves_ipcInvariantFull`), on a
-thread whose context is bound back to it and whose IPC state an unbound thread
-may idle in. -/
-theorem finaliseScUnbindStep_keepsIpcInvariantFull :
-    FinaliseScUnbindStep (fun s => ipcInvariantFull s ∧ s.objects.invExt) := by
-  intro s s' t tcb sc h hT hS hO _ _ hA hSc hB hOk
-  rw [cancelDonationArmOnCore_of_codes s t hS hO] at hOk
-  refine ⟨cancelBoundDonationOnCore_preserves_ipcInvariantFull s s' t tcb _ h.2 h.1
-    ((SystemState.getTcb?_eq_some_iff s t tcb).mp hT) (passiveServerIdleAllowed_of_codes hA)
+/-- **A context's release of its holder keeps the bundle**: the per-core unbind
+read through the owner-cleared view
+(`cancelBoundDonationOnCore_view_preserves_ipcInvariantFull`), on a thread whose
+context — its own or on loan — is bound back to it.  The thread finalisation's unbind is the case of a
+`.bound` holder (`FinaliseScReleaseStep.scUnbind`). -/
+theorem finaliseScReleaseStep_keepsIpcInvariantFull :
+    FinaliseScReleaseStep (fun s => ipcInvariantFull s ∧ s.objects.invExt) := by
+  intro s s' t tcb sc x h hT hS hSc hB hOk
+  refine ⟨cancelBoundDonationOnCore_view_preserves_ipcInvariantFull s s' t tcb _ _ h.2 h.1
+    ((SystemState.getTcb?_eq_some_iff s t tcb).mp hT)
     (fun scId hb => ?_) hOk, (FinaliseFrame.cancelBoundDonationOnCore h.2 hOk).invExt⟩
-  rw [schedContextBinding_of_codes hS hO] at hb
+  rw [schedContextBinding_ownerCleared hS] at hb
   cases hb
   refine ⟨sc, (SystemState.getSchedContext?_eq_some_iff s _ sc).mp hSc, ?_⟩
   unfold SchedContext.boundThread; rw [hB]; exact threadOfOptCode_succ t
+
+/-- **A context's deschedule of its holder keeps the bundle**: the dequeue
+(`descheduleAt_preserves_ipcInvariantFull`) writes only run-queue links. -/
+theorem finaliseScDescheduleStep_keepsIpcInvariantFull :
+    FinaliseScDescheduleStep (fun s => ipcInvariantFull s ∧ s.objects.invExt) := by
+  intro s t _ h _ _ _ _
+  exact ⟨descheduleAt_preserves_ipcInvariantFull s t _ h.1,
+    (FinaliseFrame.descheduleAt s t _ h.2).invExt⟩
+
+/-- **A context's reply-stack unlink keeps the bundle**: the head reply's
+upward link is a stack link, not its caller
+(`storeObject_reply_stackLinks_preserves_ipcInvariantFull`), and the context's
+head is content the bundle does not read
+(`insertObjects_schedContextContentUpdate_preserves_ipcInvariantFull`). -/
+theorem finaliseUnstackStep_keepsIpcInvariantFull :
+    FinaliseUnstackStep (fun s => ipcInvariantFull s ∧ s.objects.invExt) := by
+  intro s s1 x _ rid r h _ _ hR _ hS _ _ _ _
+  have h1 := storeObject_reply_stackLinks_preserves_ipcInvariantFull (a' := { r with next := none }) h.2 h.1 hR
+    rfl rfl hS
+  have hI1 := storeObject_preserves_objects_invExt s s1 _ _ h.2 hS
+  cases hG : s1.getSchedContext? ⟨x.val⟩ with
+  | none => rw [SystemState.updateSchedContext_eq_self_of_none hG]; exact ⟨h1, hI1⟩
+  | some y =>
+    rw [SystemState.updateSchedContext_eq_of_some hG]
+    exact ⟨insertObjects_schedContextContentUpdate_preserves_ipcInvariantFull s1 _ y _ hI1 h1
+      ((SystemState.getSchedContext?_eq_some_iff _ _ _).mp hG) rfl,
+      RHTable_insert_preserves_invExt _ _ _ hI1⟩
+
+/-- **A thread's stash cleared in place keeps the bundle**: the in-place rewrite
+agrees, object for object and on the scheduler, with the store of the cleared
+thread (`storeObject_stashCleared_preserves_ipcInvariantFull`). -/
+theorem updateTcb_stashCleared_preserves_ipcInvariantFull (s : SystemState)
+    (tid : SeLe4n.ThreadId) (t : TCB) (hInv : s.objects.invExt) (hFull : ipcInvariantFull s)
+    (hT : s.getTcb? tid = some t) :
+    ipcInvariantFull (s.updateTcb tid TCB.stashCleared) := by
+  obtain ⟨s1, hS⟩ : ∃ s1, storeObject tid.toObjId (.tcb (TCB.stashCleared t)) s = .ok ((), s1) :=
+    ⟨_, rfl⟩
+  have h1 := storeObject_stashCleared_preserves_ipcInvariantFull s s1 tid t hInv hFull hT hS
+  rw [SystemState.updateTcb_eq_of_some hT]
+  refine ipcInvariantFull_of_storeAgrees (fun k => ?_) h1
+  show (s.objects.insert tid.toObjId _)[k]? = s1.objects[k]?
+  by_cases hk : k = tid.toObjId
+  · subst hk
+    rw [storeObject_objects_eq s s1 _ _ hInv hS, RHTable_getElem?_eq_get?,
+      RobinHood.RHTable.getElem?_insert_self _ _ _ hInv]
+  · have hne : (tid.toObjId == k) = false := by simp [Ne.symm hk]
+    rw [storeObject_objects_ne s s1 _ k _ hk hInv hS, RHTable_getElem?_eq_get?,
+      RobinHood.RHTable.getElem?_insert_ne _ _ _ _ (by simp [hne]) hInv,
+      ← RHTable_getElem?_eq_get?]
+
+/-- **A stashed reply's unlink keeps the bundle**: the receiver's stash cleared
+in its slot (`updateTcb_stashCleared_preserves_ipcInvariantFull`). -/
+theorem finaliseUnstashStep_keepsIpcInvariantFull :
+    FinaliseUnstashStep (fun s => ipcInvariantFull s ∧ s.objects.invExt) := by
+  intro s s1 _ tid t h hT _ e
+  subst e
+  exact ⟨updateTcb_stashCleared_preserves_ipcInvariantFull s tid t h.2 h.1 hT,
+    SystemState.updateTcb_preserves_objects_invExt _ _ _ h.2⟩
+
+/-- **The bundle the finalising delete carries**: the IPC bundle, the object
+table's well-formedness, and the delete's stated lent-context fact
+(`lentContextHeadsLenderFrame`), which the reply cancel reads. -/
+def finaliseLoanBundle (s : SystemState) : Prop :=
+  ipcInvariantFull s ∧ s.objects.invExt ∧ lentContextHeadsLenderFrame s
+
+/-- **What a finalised reply's cancel owes the reply arm**, on the delete's
+bundle: the reply-stack resolution answers, the head is held on loan from the
+caller, the caller's one loan is that head, and the outer caller is a waiting
+donor that nobody holds a loan from.  A reply heading no stack owes nothing:
+its caller lends to no one (`replyCaller_lendsNone`).  A head reply's admission
+read the first two (`donatedReturnCommits`, the holder's binding codes); the
+third is `donationOwnerUnique`; and a loan from the outer caller would make the
+outer caller's frame a head (`lentContextHeadsLenderFrame`), where the reply
+stack reads a frame link (`replyStackOuterCaller?_ok_some`, `replyCallerLinkage`). -/
+theorem finaliseReply_armPremises {s : SystemState} {x : SeLe4n.ObjId} {r : Reply}
+    {c : SeLe4n.ThreadId} {t : TCB} (hInv : s.objects.invExt) (hFull : ipcInvariantFull s)
+    (hW : lentContextHeadsLenderFrame s) (hX : s.getObject? x = some (.reply r))
+    (hT : s.getTcb? c = some t) (hF : replyCallerFinalisable s x r c t = true) :
+    cancelDonationResolves s c t ∧
+      (∀ rid, t.replyObject = some rid → replyFrameHeadHolderDonation s rid c) ∧
+      donatedContextIsOwnerFrameHead s c ∧ cancelDonationStackValid s c t := by
+  obtain ⟨-, hNotRes, -, -, ⟨ep, rt, hB⟩, hRO, -, -, -⟩ := replyCallerFinalisable_parts hF
+  have hTo := (SystemState.getTcb?_eq_some_iff s c t).mp hT
+  have hLk : lookupTcb s c = some t := lookupTcb_of_objects_of_not_reserved s c t hTo hNotRes
+  have hDonEq : Lifecycle.Suspend.cancelledCallerDonation? s c t =
+      replyFrameHeadHolder? s ⟨x.val⟩ := by
+    unfold Lifecycle.Suspend.cancelledCallerDonation?
+    rw [hB]
+    simp only [hRO]
+  rcases replyCallerFinalisable_cases hX hF with ⟨hHd, hD⟩ |
+    ⟨sd, sc, hd, htd, -, hSc, -, hBt, hTd, hBd, hC, hD⟩
+  · have hNo := replyCaller_lendsNone hW hX hT hHd hRO
+    refine ⟨fun _ _ e => (by rw [hD] at e; cases e), fun rid e => ?_,
+      fun _ _ holder ht sd hH hBd => absurd hBd (hNo holder ht sd hH),
+      fun _ _ e => (by rw [hD] at e; cases e)⟩
+    rw [hRO] at e
+    cases e
+    exact replyFrameHeadHolderDonation_of_no_head _ _ _ (hDonEq.symm.trans hD)
+  · obtain ⟨n, -, hResN, -, -⟩ := replyHeadPop_commits hInv hT hD hC
+    have hC' := hC
+    unfold donatedReturnCommits at hC'
+    rw [hResN, hSc] at hC'
+    simp only [Bool.and_eq_true] at hC'
+    obtain ⟨⟨⟨⟨-, hOut⟩, -⟩, -⟩, hSv⟩ := hC'
+    have hTdO := (SystemState.getTcb?_eq_some_iff _ _ _).mp hTd
+    have hLkd : lookupTcb s hd = some htd := by
+      obtain ⟨t', ht'⟩ := Option.isSome_iff_exists.mp hSv
+      rw [ht']
+      have := lookupTcb_some_objects s hd t' ht'
+      rw [hTdO] at this
+      rw [KernelObject.tcb.inj (Option.some.inj this)]
+    refine ⟨fun sd' hd' e _ _ => ?_, fun rid e => ?_, fun ot hLkc holder ht sd' hH hBd' => ?_,
+      fun sd' hd' e n' hRes' => ?_⟩
+    · rw [hD] at e
+      obtain ⟨e1, -⟩ := Prod.mk.inj (Option.some.inj e)
+      exact ⟨n, e1 ▸ hResN⟩
+    · rw [hRO] at e
+      cases e
+      intro sd' hd' e'
+      rw [← hDonEq, hD] at e'
+      obtain ⟨e1, e2⟩ := Prod.mk.inj (Option.some.inj e')
+      subst e1 e2
+      unfold replyDonationReturn?
+      rw [hLkd]
+      simp only [hBd]
+    · have eH : holder = hd := hFull.donationOwnerUnique holder hd ht htd sd' sd c hH hTdO hBd' hBd
+      subst eH
+      have eT : ht = htd := KernelObject.tcb.inj (Option.some.inj (hH.symm.trans hTdO))
+      subst eT
+      rw [hBd] at hBd'
+      have eS : sd = sd' := (SchedContextBinding.donated.inj hBd').1
+      subst eS
+      have eO : ot = t := Option.some.inj (hLkc.symm.trans hLk)
+      subst eO
+      exact ⟨by rw [← Lifecycle.Suspend.cancelledCallerDonation?_eq_answeredFrameHeadContext? s c ot
+        hLkc ep rt hB, hD], hLkd⟩
+    · rw [hD] at e
+      obtain ⟨e1, e2⟩ := Prod.mk.inj (Option.some.inj e)
+      subst e1 e2
+      rw [hResN] at hRes'
+      have eN : n = n' := Except.ok.inj hRes'
+      subst eN
+      refine ⟨hOut, fun outer hn tid tcb scIdx hTid hBindO => ?_⟩
+      subst hn
+      obtain ⟨-, ridH, -, below, b, -, -, -, hBelow, hBN, hBC⟩ :=
+        replyStackOuterCaller?_ok_some s sd outer hResN
+      have hBo := (SystemState.getReply?_eq_some_iff _ _ _).mp hBelow
+      obtain ⟨tcbO, hTO, hROO, -⟩ := hFull.replyCallerLinkage.1.2 below b outer hBo hBC
+      obtain ⟨rid', r', hRO', hR', hN'⟩ := hW tid tcb scIdx outer tcbO hTid hBindO hTO
+      rw [hROO] at hRO'
+      cases hRO'
+      rw [hBo] at hR'
+      have eB : b = r' := KernelObject.reply.inj (Option.some.inj hR')
+      rw [← eB, hBN] at hN'
+      cases hN'
+
+/-- **A reply's caller cancel keeps the bundle**: the reply arm of the cancel
+(`cancelIpcBlocking_replyArm_preserves_ipcInvariantFull`, its premises from the
+admission: `finaliseReply_armPremises`), carried across the head reply's
+replenishment migration and holder deschedule, which agree with the cancel off
+the run links (`cancelIpcBlockingReclaimed_objectsAgreeOffRunLinks`), then the
+revert of the boost it lent its server
+(`propagatePipChainCrossCore_preserves_ipcInvariantFull`); and the lent-context
+fact itself (`finaliseReplyStep_keepsLentContextHeads`). -/
+theorem finaliseReplyStep_keepsIpcInvariantFull : FinaliseReplyStep finaliseLoanBundle := by
+  intro s x r c t h hX _ hT hF
+  obtain ⟨-, hNotRes, -, -, ⟨ep, rt, hB⟩, -, hN, hP, hBud⟩ := replyCallerFinalisable_parts hF
+  obtain ⟨hResolves, hOwed, hHolder, hStack⟩ :=
+    finaliseReply_armPremises h.2.1 h.1 h.2.2 hX hT hF
+  have hW' := finaliseReplyStep_keepsLentContextHeads h.2.1 h.1 h.2.2 hX hT hF
+  have hTo := (SystemState.getTcb?_eq_some_iff s c t).mp hT
+  have hLk : lookupTcb s c = some t := lookupTcb_of_objects_of_not_reserved s c t hTo hNotRes
+  have hOff : sweptThreadOffQueueChains s c := by
+    intro tcbX e; rw [hLk] at e; cases e; exact ⟨hP, hN⟩
+  have h0 := cancelIpcBlocking_replyArm_preserves_ipcInvariantFull s c t ep rt h.2.1 hLk hB h.1
+    hResolves hBud hOff hOwed hHolder hStack
+  have h1 := ipcInvariantFull_of_objectsAgreeOffRunLinks
+    (cancelIpcBlockingReclaimed_objectsAgreeOffRunLinks c t s) h0
+  have hI1 := (FinaliseFrameAny.cancelIpcBlockingReclaimed s c t h.2.1 hB).invExt
+  revert hW'
+  cases hSv : t.blockingServer? with
+  | none => exact fun hW' => ⟨h1, hI1, hW'⟩
+  | some sv =>
+    exact fun hW' => ⟨propagatePipChainCrossCore_preserves_ipcInvariantFull _ sv _ _ hI1 h1,
+      (FinaliseFrame.propagatePip _ sv _ _ hI1).invExt, hW'⟩
 
 /-- **A thread's notification cancel, without the wake, keeps the bundle**
 (`cancelIpcBlocking_notificationArm_preserves_ipcInvariantFull`), wherever the
@@ -439,7 +617,7 @@ theorem storeEndpointBlockedCancelled_preserves_ipcInvariantFull
   have hT1 : s1.objects[t.toObjId]? = some (.tcb (tcbOffQueue tcb)) :=
     (SystemState.getTcb?_eq_some_iff _ _ _).mp hFr.removed_tcb
   have hEx' := hEx
-  obtain ⟨-, hDual1, -, -, -, -, -, -, hQHB1, -, -, -, -, -, -, -, -, -, hQTB1, -⟩ := hEx'
+  obtain ⟨-, hDual1, -, -, -, -, -, -, hQHB1, -, -, -, -, -, -, -, -, hQTB1, -⟩ := hEx'
   obtain ⟨hNotHead, hNotTail, hNoInc⟩ := endpointQueueRemoveDual_removed_detached_side st s1 e q
     t hObjInv hInv.dualQueueSystemInvariant hRem _ hT1 hSideS hQHB1 hQTB1 hDual1.2.1
   refine cancelledEndpointWaiter_closes s1 t (tcbOffQueue tcb) hI1 hNotRes hT1 hNoBudget
@@ -480,7 +658,7 @@ theorem finalisedSuspendMark_keepsIpcInvariantFull (s : SystemState) (t : SeLe4n
       rw [hReady tcb hT]; exact pendingMessageReadAgrees_ready_none _
     exact ⟨ipcInvariantFull_of_tcbFieldUpdateAgree s _ t.toObjId tcb (finalisedSuspendMark tcb)
         h.1 hPre hAt hFrame rfl hMsg rfl rfl rfl rfl rfl rfl rfl
-        (passiveServerIdleFrame_of_tcbFieldUpdate t.toObjId tcb _ hPre hAt hFrame rfl rfl hSched),
+        ,
       SystemState.updateTcb_preserves_objects_invExt s t _ h.2⟩
 
 /-- **The suspend keeps the bundle**: the deschedule of a ready thread
@@ -499,7 +677,7 @@ theorem finaliseSuspendStep_keepsIpcInvariantFull :
     run_links_back (descheduleAtPlacement_objectsAgreeOffRunLinks s t) at x hxo
     exact hReady x ((SystemState.getTcb?_eq_some_iff _ _ _).mpr hxo)
   exact finalisedSuspendMark_keepsIpcInvariantFull _ t
-    ⟨descheduleAt_preserves_ipcInvariantFull s t _ hReady h.1,
+    ⟨descheduleAt_preserves_ipcInvariantFull s t _ h.1,
       (FinaliseFrame.descheduleAt s t _ h.2).invExt⟩ hReadyD
 
 /-- **The release keeps the bundle**: it writes neither the objects nor the
@@ -507,78 +685,132 @@ scheduler. -/
 theorem finaliseReleaseStep_keepsIpcInvariantFull :
     FinaliseReleaseStep (fun s => ipcInvariantFull s ∧ s.objects.invExt) := by
   intro s t h
-  refine ⟨ipcInvariantFull_of_storeAgrees_of_scheduler_eq (fun k => ?_)
-    (finaliseThreadReleaseCores_scheduler s t) h.1, (FinaliseFrame.releaseCores s t h.2).invExt⟩
+  refine ⟨ipcInvariantFull_of_storeAgrees (fun k => ?_) h.1,
+    (FinaliseFrame.releaseCores s t h.2).invExt⟩
   rw [finaliseThreadReleaseCores_objects]
 
 -- ============================================================================
 -- §4  The finalisation
 -- ============================================================================
 
-/-- **The finalisation keeps the IPC bundle**, every step of it
-(`finaliseFinalObject_closed`), with the object table's well-formedness carried
-alongside. -/
-theorem finaliseFinalObject_preserves_ipcInvariantFull (target : Nat) (st : SystemState)
-    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st) :
-    ipcInvariantFull (finaliseFinalObject target st) :=
-  (finaliseFinalObject_closed (fun s => ipcInvariantFull s ∧ s.objects.invExt)
-    (fun e q s ep t tcb h hE hH hT hC =>
-      ⟨storeEndpointWaiterCancelled_preserves_ipcInvariantFull s e q ep t tcb h.2 h.1 hE hH hT hC,
-        (FinaliseFrame.storeEndpointWaiterCancelled s e q t _ h.2).invExt⟩)
-    (fun n s _ t tcb h _ _ hT hC =>
-      ⟨notificationWaiterCancel_preserves_ipcInvariantFull s n t tcb h.2 h.1 hT hC,
-        ((FinaliseFrame.notificationCancel s t tcb n h.2
-          (notificationWaiterCancellable_blocked hC)).trans
-          (FinaliseFrame.wakeCancelledWaiter _ t
-            (FinaliseFrame.notificationCancel s t tcb n h.2
-              (notificationWaiterCancellable_blocked hC)).invExt)).invExt⟩)
-    (fun n s _ t h _ _ hCode hIn =>
-      ⟨storeUnbindNotification_preserves_ipcInvariantFull s n t h.2 h.1 hCode hIn,
-        (FinaliseFrame.storeUnbindNotification s t n h.2).invExt⟩)
-    finaliseScUnbindStep_keepsIpcInvariantFull finaliseNotificationCancelStep_keepsIpcInvariantFull
-    finaliseEndpointCancelStep_keepsIpcInvariantFull finaliseSuspendStep_keepsIpcInvariantFull finaliseReleaseStep_keepsIpcInvariantFull
-    target st ⟨hInv, hObjInv⟩).1
+/-- A step whose frame is a `FinaliseFrame` keeps the bundle the delete carries
+once it keeps the IPC bundle: the frame keeps the table well formed and every
+lent context headed by its lender. -/
+theorem finaliseLoanBundle.of_frame {s s' : SystemState} (h : finaliseLoanBundle s)
+    (hI : ipcInvariantFull s') (F : FinaliseFrame s s') : finaliseLoanBundle s' :=
+  ⟨hI, F.invExt, h.2.2.of_loanWrite F.loan⟩
 
-/-- **The retire after the finalisation keeps the IPC bundle**: the
-finalisation's (`finaliseFinalObject_preserves_ipcInvariantFull`), then the
-retire's (`retireFinalObject_preserves_ipcInvariantFull`). -/
-theorem retireFinalisedObject_preserves_ipcInvariantFull (ec : Concurrency.CoreId)
-    (target recorder : Nat) (st : SystemState) (hObjInv : st.objects.invExt)
-    (hInv : ipcInvariantFull st) :
-    ipcInvariantFull (retireFinalisedObject ec target recorder st) ∧
-      (retireFinalisedObject ec target recorder st).objects.invExt :=
-  retireFinalObject_preserves_ipcInvariantFull ec target recorder _
-    (finaliseFinalObject_frame target st hObjInv).invExt
-    (finaliseFinalObject_preserves_ipcInvariantFull target st hObjInv hInv)
+/-- **The finalisation keeps the bundle the delete carries**, every step of it
+(`finaliseFinalObject_closed`): each step's IPC theorem, its frame for the
+table and the lent-context fact, and the two steps that read the fact — the
+unstack (`finaliseUnstack_keepsLentContextHeads`, on a context its holder's
+unbind left bound to no thread, `finaliseSchedContextUnbind_unbound`) and the
+reply cancel (`finaliseReplyStep_keepsIpcInvariantFull`). -/
+theorem finaliseFinalObject_preserves_finaliseLoanBundle (target : Nat) (st : SystemState)
+    (h : finaliseLoanBundle st) : finaliseLoanBundle (finaliseFinalObject target st) :=
+  finaliseFinalObject_closed finaliseLoanBundle
+    (fun e q s ep t tcb h hE hH hT hC =>
+      h.of_frame (storeEndpointWaiterCancelled_preserves_ipcInvariantFull s e q ep t tcb h.2.1 h.1
+        hE hH hT hC) (FinaliseFrame.storeEndpointWaiterCancelled s e q t _ h.2.1))
+    (fun n s _ t tcb h _ _ hT hC =>
+      have F := FinaliseFrame.notificationCancel s t tcb n h.2.1
+        (notificationWaiterCancellable_blocked hC)
+      h.of_frame (notificationWaiterCancel_preserves_ipcInvariantFull s n t tcb h.2.1 h.1 hT hC)
+        (F.trans (FinaliseFrame.wakeCancelledWaiter _ t F.invExt)))
+    (fun n s _ t h _ _ hCode hIn =>
+      h.of_frame (storeUnbindNotification_preserves_ipcInvariantFull s n t h.2.1 h.1 hCode hIn)
+        (FinaliseFrame.storeUnbindNotification s t n h.2.1))
+    (fun s t tcb h hT hS hO hId =>
+      h.of_frame (finaliseScDescheduleStep_keepsIpcInvariantFull s t tcb ⟨h.1, h.2.1⟩ hT hS hO hId).1
+        (FinaliseFrame.descheduleAt s t _ h.2.1))
+    (fun s s' t tcb sc x h hT hS hSc hB hOk =>
+      h.of_frame (finaliseScReleaseStep_keepsIpcInvariantFull s s' t tcb sc x ⟨h.1, h.2.1⟩ hT hS
+        hSc hB hOk).1 (FinaliseFrame.cancelBoundDonationOnCore h.2.1 hOk))
+    (fun s n t tcb nt h hT hI hN hC =>
+      h.of_frame (finaliseNotificationCancelStep_keepsIpcInvariantFull s n t tcb nt ⟨h.1, h.2.1⟩ hT
+        hI hN hC).1 (FinaliseFrame.notificationCancel s t tcb n h.2.1 hI))
+    (fun s e q t ep tcb h hT hE hC =>
+      h.of_frame (finaliseEndpointCancelStep_keepsIpcInvariantFull s e q t ep tcb ⟨h.1, h.2.1⟩ hT hE
+        hC).1 (FinaliseFrame.storeEndpointBlockedCancelled s e q t ep tcb h.2.1))
+    (fun s t tcb h hT hS hO hI hId =>
+      h.of_frame (finaliseSuspendStep_keepsIpcInvariantFull s t tcb ⟨h.1, h.2.1⟩ hT hS hO hI hId).1
+        (FinaliseFrame.suspend s t h.2.1))
+    (fun s t h =>
+      h.of_frame (finaliseReleaseStep_keepsIpcInvariantFull s t ⟨h.1, h.2.1⟩).1
+        (FinaliseFrame.releaseCores s t h.2.1))
+    (fun s s1 x sc rid r h hSc hRep hR hN hS s₀ h₀ hA hS₀ =>
+      have hI := finaliseUnstackStep_keepsIpcInvariantFull s s1 x sc rid r ⟨h.1, h.2.1⟩ hSc hRep hR
+        hN hS s₀ ⟨h₀.1, h₀.2.1⟩ hA hS₀
+      ⟨hI.1, hI.2, finaliseUnstack_keepsLentContextHeads h.2.1 h.1.donationOwnerValid h.2.2 hSc
+        (finaliseSchedContextUnbind_unbound h₀.2.1 hA (hS₀ ▸ hSc)) hR hN hS⟩)
+    finaliseReplyStep_keepsIpcInvariantFull
+    (fun s s1 x tid t h hT hC e =>
+      have hI := finaliseUnstashStep_keepsIpcInvariantFull s s1 x tid t ⟨h.1, h.2.1⟩ hT hC e
+      ⟨hI.1, hI.2, h.2.2.of_loanWrite (e ▸ (FinaliseFrame.updateTcb s tid _ h.2.1).loan)⟩)
+    target st h
+
+/-- **The finalisation keeps the IPC bundle**, on a state where every lent
+context is headed by its lender (`finaliseFinalObject_preserves_finaliseLoanBundle`). -/
+theorem finaliseFinalObject_preserves_ipcInvariantFull (target : Nat) (st : SystemState)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hW : lentContextHeadsLenderFrame st) :
+    ipcInvariantFull (finaliseFinalObject target st) :=
+  (finaliseFinalObject_preserves_finaliseLoanBundle target st ⟨hInv, hObjInv, hW⟩).1
+
+/-- **The retire after the finalisation keeps the bundle the delete carries**:
+the finalisation's (`finaliseFinalObject_preserves_finaliseLoanBundle`), then
+the retire's (`retireFinalObject_preserves_ipcInvariantFull`,
+`retireFinalObject_keepsLentContextHeads`). -/
+theorem retireFinalisedObject_preserves_finaliseLoanBundle (ec : Concurrency.CoreId)
+    (target recorder : Nat) (st : SystemState) (h : finaliseLoanBundle st) :
+    finaliseLoanBundle (retireFinalisedObject ec target recorder st) := by
+  have h1 := finaliseFinalObject_preserves_finaliseLoanBundle target st h
+  have h2 := retireFinalObject_preserves_ipcInvariantFull ec target recorder _ h1.2.1 h1.1
+  exact ⟨h2.1, h2.2, retireFinalObject_keepsLentContextHeads ec target recorder _ h1.2.1 h1.2.2⟩
 
 -- ============================================================================
 -- §5  The finalising delete and revocation
 -- ============================================================================
 
-/-- `.cspaceDelete`: the finalising delete preserves the bundle — the delete's
-own theorem, then the teardown's, then the finalisation's and the retire's. -/
+/-- `.cspaceDelete`: the finalising delete keeps the bundle it carries — the
+delete's own theorems, then the teardown's, then the finalisation's and the
+retire's. -/
+theorem cspaceDeleteSlotFinalising_preserves_finaliseLoanBundle
+    (ec : Concurrency.CoreId) (addr : CSpaceAddr) (st st' : SystemState)
+    (h : finaliseLoanBundle st)
+    (hStep : cspaceDeleteSlotFinalising ec addr st = .ok ((), st')) :
+    finaliseLoanBundle st' := by
+  obtain ⟨st1, st2, hD, hF, rfl⟩ := cspaceDeleteSlotFinalising_ok ec addr st st' hStep
+  have hI1 := cspaceDeleteSlot_preserves_objects_invExt st st1 addr h.2.1 hD
+  have h2 := finaliseDestroyedCapabilities_preserves_ipcInvariantFull ec _ _ st1 st2 hI1
+    (cspaceDeleteSlot_preserves_ipcInvariantFull st st1 addr h.2.1 h.1 hD) hF
+  exact retireFinalisedObject_preserves_finaliseLoanBundle ec _ _ st2 ⟨h2.1, h2.2,
+    finaliseDestroyedCapabilities_keepsLentContextHeads ec _ _ st1 st2 hI1
+      (cspaceDeleteSlot_keepsLentContextHeads st st1 addr h.2.1 h.2.2 hD) hF⟩
+
+/-- `.cspaceDelete`: the finalising delete preserves the IPC bundle, on a state
+where every lent context is headed by its lender. -/
 theorem cspaceDeleteSlotFinalising_preserves_ipcInvariantFull
     (ec : Concurrency.CoreId) (addr : CSpaceAddr) (st st' : SystemState)
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hW : lentContextHeadsLenderFrame st)
     (hStep : cspaceDeleteSlotFinalising ec addr st = .ok ((), st')) :
-    ipcInvariantFull st' := by
-  obtain ⟨st1, st2, hD, hF, rfl⟩ := cspaceDeleteSlotFinalising_ok ec addr st st' hStep
-  have h2 := finaliseDestroyedCapabilities_preserves_ipcInvariantFull ec _ _ st1 st2
-    (cspaceDeleteSlot_preserves_objects_invExt st st1 addr hObjInv hD)
-    (cspaceDeleteSlot_preserves_ipcInvariantFull st st1 addr hObjInv hInv hD) hF
-  exact (retireFinalisedObject_preserves_ipcInvariantFull ec _ _ st2 h2.2 h2.1).1
+    ipcInvariantFull st' :=
+  (cspaceDeleteSlotFinalising_preserves_finaliseLoanBundle ec addr st st' ⟨hInv, hObjInv, hW⟩
+    hStep).1
 
-/-- `.cspaceRevoke`: the finalising revocation preserves the bundle — the
-revocation's own theorem at the state it reaches, then the teardown's. -/
+/-- `.cspaceRevoke`: the finalising revocation preserves the IPC bundle — the
+revocation's own theorem at the state it reaches, carrying the bundle the
+delete carries through every delete it runs. -/
 theorem cspaceRevokeCdtFinalising_preserves_ipcInvariantFull
     (ec : Concurrency.CoreId) (addr : CSpaceAddr) (st st' : SystemState)
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hW : lentContextHeadsLenderFrame st)
     (hStep : cspaceRevokeCdtFinalising ec addr st = .ok ((), st')) :
-    ipcInvariantFull st' := by
-  refine (cspaceRevokeCdtFinalising_closed (fun s => ipcInvariantFull s ∧ s.objects.invExt)
-    (fun c s s' hQ hD => ⟨cspaceDeleteSlotFinalising_preserves_ipcInvariantFull ec c s s'
-      hQ.2 hQ.1 hD, cspaceDeleteSlotFinalising_preserves_objects_invExt ec c s s' hQ.2 hD⟩)
-    ⟨hInv, hObjInv⟩ hStep).1
+    ipcInvariantFull st' :=
+  (cspaceRevokeCdtFinalising_closed finaliseLoanBundle
+    (fun c s s' hQ hD => cspaceDeleteSlotFinalising_preserves_finaliseLoanBundle ec c s s' hQ hD)
+    ⟨hInv, hObjInv, hW⟩ hStep).1
 
 
 end SeLe4n.Kernel

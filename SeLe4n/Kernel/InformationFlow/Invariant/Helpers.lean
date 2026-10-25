@@ -676,6 +676,24 @@ theorem storeDonationHeadClear_preserves_projection
       (hIdxComplete rid.toObjId (by rw [hRead]; intro hx; cases hx))
       hObjInv hS
 
+/-- **Recording a Reply's stasher is invisible to every observer.**  It is
+nothing or one store of the Reply with its `stasherCode` set, which
+`projectKernelObject` erases, so it is projection-stable whether or not the
+Reply is low-visible. -/
+theorem recordReplyStasher_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (code : Nat) (recv : SeLe4n.ThreadId)
+    (hIdxComplete : ∀ oid, st.objects[oid]? ≠ none → st.objectIndexSet.contains oid = true)
+    (hObjInv : st.objects.invExt) :
+    projectState ctx observer (st.recordReplyStasher code recv) = projectState ctx observer st := by
+  rcases SystemState.recordReplyStasher_eq_or st code recv with h | ⟨rid, r, _, hRead, hS⟩
+  · rw [h]
+  · exact storeObject_projectionStable_preserves_projection ctx observer st _ rid.toObjId
+      _ (.reply r) hRead
+      (projectKernelObject_reply_stasher_invariant ctx observer r _)
+      (hIdxComplete rid.toObjId (by rw [hRead]; intro hx; cases hx))
+      hObjInv hS
+
 /-- `v0.35.4`: the pop's re-head of the frame below preserves the projection for
 the same reason — it writes a Reply's `next`, which `projectKernelObject` strips. -/
 theorem storeReplyReHead_preserves_projection
@@ -765,8 +783,31 @@ theorem spliceReplyFrameOut_preserves_projection
     (hObjInv : st.objects.invExt)
     (h : spliceReplyFrameOut st rid = .ok st') :
     projectState ctx observer st' = projectState ctx observer st := by
-  rcases spliceReplyFrameOut_cases h with rfl | ⟨r, above, a, hR, hN, hA, hP, hS⟩
+  rcases spliceReplyFrameOut_cases h with rfl | ⟨r, above, a, hR, hN, hA, hP, hS⟩ |
+      ⟨r, below, b, hR, hN, _, hB, hBn, hS⟩
   · rfl
+  rotate_left
+  · -- The cut from the frame below: its `next`, then the cut frame's `prev`.
+    obtain ⟨s1, hS1, hS2⟩ := severReplyFrameBelowStores_cases hS
+    have hBObj := (SystemState.getReply?_eq_some_iff _ _ _).mp hB
+    have hP1 : projectState ctx observer s1 = projectState ctx observer st :=
+      storeObject_projectionStable_preserves_projection ctx observer st s1 below.toObjId
+        _ (.reply b) hBObj
+        (projectKernelObject_reply_next_invariant ctx observer b none)
+        (hIdxComplete below.toObjId (by rw [hBObj]; intro hx; cases hx))
+        hObjInv hS1
+    have hInv1 := SeLe4n.Model.storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
+    have hC1 := SeLe4n.Model.storeObject_preserves_objectIndexSetComplete st s1 _ _ hObjInv
+      hSetInv hIdxComplete hS1
+    have hRObj1 : s1.objects[rid.toObjId]? = some (.reply r) := by
+      rw [SeLe4n.Model.storeObject_objects_ne st s1 below.toObjId rid.toObjId _
+        (fun e => severReplyFrameBelow_ne hR hN hB hBn e.symm) hObjInv hS1]
+      exact (SystemState.getReply?_eq_some_iff _ _ _).mp hR
+    rw [storeObject_projectionStable_preserves_projection ctx observer s1 st' rid.toObjId
+      _ (.reply r) hRObj1
+      (projectKernelObject_reply_prev_invariant ctx observer r none)
+      (hC1 rid.toObjId (by rw [hRObj1]; intro hx; cases hx))
+      hInv1 hS2, hP1]
   · have hAObj := (SystemState.getReply?_eq_some_iff _ _ _).mp hA
     rcases spliceReplyFrameStores_cases hS with ⟨_, hS1⟩ |
       ⟨below, b, s1, s2, hBelow, hS1, hS2, hS3⟩
@@ -949,8 +990,17 @@ theorem spliceReplyFrameOutOrSelf_preserves_objectIndexSetComplete
     SeLe4n.Model.objectIndexSetComplete (spliceReplyFrameOutOrSelf st rid) := by
   rcases spliceReplyFrameOutOrSelf_cases st rid with h | h
   · rw [h]; exact hIdxComplete
-  · rcases spliceReplyFrameOut_cases h with hEq | ⟨r, above, a, _, _, hA, _, hS⟩
+  · rcases spliceReplyFrameOut_cases h with hEq | ⟨r, above, a, _, _, hA, _, hS⟩ |
+        ⟨r, below, b, _, _, _, _, _, hS⟩
     · rw [hEq]; exact hIdxComplete
+    rotate_left
+    · obtain ⟨s1, hS1, hS2⟩ := severReplyFrameBelowStores_cases hS
+      have hInv1 := SeLe4n.Model.storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
+      have hSetInv1 := SeLe4n.Model.storeObject_preserves_objectIndexSet_invExt st s1 _ _
+        hObjSetInv hS1
+      exact storeObject_preserves_objectIndexSetComplete s1 _ rid.toObjId _ hInv1 hSetInv1
+        (storeObject_preserves_objectIndexSetComplete st s1 below.toObjId _ hObjInv
+          hObjSetInv hIdxComplete hS1) hS2
     · rcases spliceReplyFrameStores_cases hS with ⟨_, hS1⟩ |
         ⟨below, b, s1, s2, hBelow, hS1, hS2, hS3⟩
       · exact storeObject_preserves_objectIndexSetComplete st _ above.toObjId _ hObjInv
