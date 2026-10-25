@@ -728,9 +728,11 @@ theorem spliceReplyFrameOutOrSelf_offSchedulerAgrees {s1 s2 : SystemState}
   have hGR : ∀ q, s2.getReply? q = s1.getReply? q :=
     fun q => hRel.objects.getReply? q
   rcases spliceReplyFrameOutOrSelf_decision s1 rid with
-    ⟨r1, above, a, hR1, hN1, hA1, hP1, hS1⟩ | ⟨hId1, hNo1⟩
+    ⟨r1, above, a, hR1, hN1, hA1, hP1, hS1⟩ |
+      ⟨r1, below, b, hR1, hN1, hPv1, hB1, hBn1, hS1⟩ | ⟨hId1, hNo1, hNoS1⟩
   · rcases spliceReplyFrameOutOrSelf_decision s2 rid with
-      ⟨r2, above', a', hR2, hN2, hA2, _hP2, hS2⟩ | ⟨_, hNo2⟩
+      ⟨r2, above', a', hR2, hN2, hA2, _hP2, hS2⟩ |
+        ⟨r2, _, _, hR2, hN2, _, _, _, _⟩ | ⟨_, hNo2, _⟩
     · have hRe : r2 = r1 := Option.some.inj (hR2.symm.trans ((hGR rid).trans hR1))
       subst hRe
       have hAb : above = above' := ReplyStackLink.frame.inj (Option.some.inj (hN1.symm.trans hN2))
@@ -738,11 +740,33 @@ theorem spliceReplyFrameOutOrSelf_offSchedulerAgrees {s1 s2 : SystemState}
       have hAe : a' = a := Option.some.inj (hA2.symm.trans ((hGR above).trans hA1))
       subst hAe
       exact spliceReplyFrameStores_offSchedulerAgrees hRel hInv1 hInv2 hS1 hS2
+    · have hRe : r2 = r1 := Option.some.inj (hR2.symm.trans ((hGR rid).trans hR1))
+      subst hRe; rw [hN1] at hN2; cases hN2
     · exact absurd hP1 (hNo2 r1 above a ((hGR rid).trans hR1) hN1 ((hGR above).trans hA1))
   · rcases spliceReplyFrameOutOrSelf_decision s2 rid with
-      ⟨r2, above, a, hR2, hN2, hA2, hP2, _⟩ | ⟨hId2, _⟩
+      ⟨r2, _, _, hR2, hN2, _, _, _⟩ |
+        ⟨r2, below', b', hR2, hN2, hPv2, hB2, _, hS2⟩ | ⟨_, _, hNoS2⟩
+    · have hRe : r2 = r1 := Option.some.inj (hR2.symm.trans ((hGR rid).trans hR1))
+      subst hRe; rw [hN1] at hN2; cases hN2
+    · have hRe : r2 = r1 := Option.some.inj (hR2.symm.trans ((hGR rid).trans hR1))
+      subst hRe
+      rw [hPv1] at hPv2; cases hPv2
+      have hBe : b' = b := Option.some.inj (hB2.symm.trans ((hGR below).trans hB1))
+      subst hBe
+      obtain ⟨m1, hSa1, hSb1⟩ := severReplyFrameBelowStores_cases hS1
+      obtain ⟨m2, hSa2, hSb2⟩ := severReplyFrameBelowStores_cases hS2
+      exact storeObject_offSchedulerAgrees _ _
+        (storeObject_offSchedulerAgrees _ _ hRel hInv1 hInv2 hSa1 hSa2)
+        (SeLe4n.Model.storeObject_preserves_objects_invExt s1 m1 _ _ hInv1 hSa1)
+        (SeLe4n.Model.storeObject_preserves_objects_invExt s2 m2 _ _ hInv2 hSa2) hSb1 hSb2
+    · exact absurd hBn1 (hNoS2 r1 below b ((hGR rid).trans hR1) hN1 hPv1 ((hGR below).trans hB1))
+  · rcases spliceReplyFrameOutOrSelf_decision s2 rid with
+      ⟨r2, above, a, hR2, hN2, hA2, hP2, _⟩ |
+        ⟨r2, below, b, hR2, hN2, hPv2, hB2, hBn2, _⟩ | ⟨hId2, _, _⟩
     · exact absurd hP2 (hNo1 r2 above a ((hGR rid).symm.trans hR2) hN2
         ((hGR above).symm.trans hA2))
+    · exact absurd hBn2 (hNoS1 r2 below b ((hGR rid).symm.trans hR2) hN2 hPv2
+        ((hGR below).symm.trans hB2))
     · rw [hId1, hId2]; exact hRel
 
 open SeLe4n.Model.SystemState in

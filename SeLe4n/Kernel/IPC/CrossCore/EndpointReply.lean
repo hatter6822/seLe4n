@@ -1174,23 +1174,6 @@ theorem answeredReplyFrameBelow?_eq (st : SystemState) (target : SeLe4n.ThreadId
     answeredReplyFrameBelow? st target = replyFrameBelow? st rid := by
   unfold answeredReplyFrameBelow?; rw [h]; rfl
 
-/-- **WS-HP HP3.1: no frame above means no frame below** -- the resolver-level
-exclusion, which needs no coherence fact: the frame below is declared only on a
-*mid-stack* removal, and a frame with nothing above it is not one.  This is what
-keeps the reachable `.replyRecv` bound at eighteen where the declared ceiling
-grows. -/
-@[simp] theorem answeredReplyFrameBelow?_of_no_frameAbove (st : SystemState)
-    (target : SeLe4n.ThreadId) (h : answeredReplyFrameAbove? st target = none) :
-    answeredReplyFrameBelow? st target = none := by
-  unfold answeredReplyFrameBelow?
-  unfold answeredReplyFrameAbove? at h
-  cases hRid : answeredReplyObject? st target with
-  | none => rfl
-  | some rid =>
-    have hRid' : (st.getTcb? target).bind (·.replyObject) = some rid := hRid
-    rw [hRid'] at h
-    exact replyFrameBelow?_of_no_frame_above st rid h
-
 /-- **WS-HP HP6.6: the reply path's lifting of the containment** -- the frame the
 removal's splice writes below the cut is the one this arm's footprint declares.
 
@@ -1212,6 +1195,16 @@ theorem spliceFrameBelow?_mem_answeredReplyFrameBelow? (st : SystemState)
   refine spliceFrameBelow?_mem_replyFrameBelow? hR ?_ h
   rw [answeredReplyFrameAbove?_eq_bind, hRid] at hAbove
   exact hAbove
+
+/-- **...and the sever arm's lifting**: the frame below a contextless stack top,
+which the removal cuts from it, is the member this arm's footprint declares. -/
+theorem severFrameBelow_mem_answeredReplyFrameBelow? (st : SystemState)
+    (target : SeLe4n.ThreadId) (rid below : SeLe4n.ReplyId) (r : Reply)
+    (hRid : answeredReplyObject? st target = some rid)
+    (hR : st.getReply? rid = some r) (hNext : r.next = none) (hPrev : r.prev = some below) :
+    answeredReplyFrameBelow? st target = some below := by
+  rw [answeredReplyFrameBelow?_eq st target rid hRid]
+  exact severFrameBelow_mem_replyFrameBelow? hR hNext hPrev
 
 /-- **WS-HP HP1.2: the pop's trigger and the splice's member are mutually
 exclusive.**  A frame with a frame above it heads nothing, so no reply both pops a
@@ -3018,12 +3011,14 @@ rates worse than a wide one — so the member is declared here, one phase before
 the code that writes it, which is the plan's own numbering rule (a transition
 goes live only after the proofs that cover it).
 
-The resolver is `answeredReplyFrameBelow?`, which asks
-`answeredReplyFrameAbove?` first: a frame with nothing above it is not being
-removed from the middle of anything, so it declares no below-member and the
-*reachable* footprint does not widen.  That is why HP3.2 moved the
-unconditional `.replyRecv` bound (19 → 20) and left the two reachable ones at
-eighteen and seventeen. -/
+The resolver is `answeredReplyFrameBelow?`: the answered frame's `prev` unless
+it heads a stack.  Since `v0.36.136` it is declared for a frame with nothing above
+it too, because the removal of a contextless stack top severs the frame below
+(`severFrameBelow_mem_answeredReplyFrameBelow?`); that arm writes the cut frame
+and the frame below and no frame above, so it is inside the mid-stack splice's
+members and the *reachable* footprint does not widen.  That is why HP3.2 moved
+the unconditional `.replyRecv` bound (19 → 20) and left the two reachable ones
+at eighteen and seventeen. -/
 theorem lockSet_endpointReplyOnCore_covers_splicedFrameBelow
     (st : SystemState) (replier : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
     (target : SeLe4n.ThreadId) (below : SeLe4n.ReplyId)

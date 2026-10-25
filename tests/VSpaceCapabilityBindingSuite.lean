@@ -2689,11 +2689,12 @@ private def runReplyFinaliseChecks : IO Unit := do
             (.reply { r with next := some (.head ⟨963⟩) }) st with
         | .error _ => assertBool "staging the reply as the lent context's stack head succeeds" false
         | .ok ((), stH) => do
-          -- The loan as a call's donation makes it: the context names the reply
-          -- as its head and the server as its holder, which holds it on loan
-          -- from the caller.
+          -- The loan as a call's first donation makes it (`donateSchedContext`):
+          -- the context names the reply as its head, the server as its holder
+          -- and the caller as the reservation's origin; the server holds it on
+          -- loan from the caller.
           let stL := (stH.updateSchedContext ⟨963⟩ fun sc =>
-              { sc with scReply := some ⟨961⟩, boundThreadCode := 963 }).updateTcb ⟨962⟩ fun t =>
+              { sc with scReply := some ⟨961⟩, boundThreadCode := 963, donationOrigin := some ⟨960⟩ }).updateTcb ⟨962⟩ fun t =>
             { t with scBindingScCode := 964, scBindingOwnerCode := 961 }
           assertBool "setup: the server holds the context on loan from the caller, and the reply heads its stack"
             ((stL.getSchedContext? ⟨963⟩).map (fun sc => sc.scReply == some ⟨961⟩ && sc.boundThreadCode == 963) == some true &&
@@ -2763,7 +2764,7 @@ private def runReplyFinaliseChecks : IO Unit := do
         | .error _ => assertBool "staging the reply as the lent context's stack head succeeds" false
         | .ok ((), stH) => do
           let stL := (stH.updateSchedContext ⟨963⟩ fun sc =>
-              { sc with scReply := some ⟨961⟩, boundThreadCode := 963 }).updateTcb ⟨962⟩ fun t =>
+              { sc with scReply := some ⟨961⟩, boundThreadCode := 963, donationOrigin := some ⟨960⟩ }).updateTcb ⟨962⟩ fun t =>
             { t with scBindingScCode := 964, scBindingOwnerCode := 961 }
           assertBool "setup: the server holds the caller's context on loan, and the caller's reply heads its stack"
             ((stL.getTcb? ⟨962⟩).map (·.schedContextBinding) == some (.donated ⟨963⟩ ⟨960⟩) &&
@@ -2902,7 +2903,7 @@ private def runReplyWaiterFinaliseChecks : IO Unit := do
         | .error _ => assertBool "staging the lender's reply as the lent context's stack head succeeds" false
         | .ok ((), stH) => do
           let stL := (stH.updateSchedContext ⟨963⟩ fun sc =>
-              { sc with scReply := some ⟨961⟩, boundThreadCode := 963 }).updateTcb ⟨962⟩ fun t =>
+              { sc with scReply := some ⟨961⟩, boundThreadCode := 963, donationOrigin := some ⟨960⟩ }).updateTcb ⟨962⟩ fun t =>
             { t with scBindingScCode := 964, scBindingOwnerCode := 961 }
           assertBool "setup: the server borrows the lender's context and has two waiters"
             ((stL.getTcb? ⟨962⟩).map (fun t => t.schedContextBinding == .donated ⟨963⟩ ⟨960⟩ &&
@@ -2942,6 +2943,55 @@ private def runReplyWaiterFinaliseChecks : IO Unit := do
             (replyAt st1 961).map (·.callerCode) == some 0 &&
             (replyAt st1 964).map (·.callerCode) == some 0)
 
+/-- The reply at `oid` rewritten by `f`, through the store. -/
+private def restageReply (st : SystemState) (oid : Nat) (f : SeLe4n.Kernel.Reply → SeLe4n.Kernel.Reply) :
+    Option SystemState :=
+  match replyAt st oid with
+  | none => none
+  | some r =>
+    match SeLe4n.Model.storeObject (SeLe4n.ObjId.ofNat oid) (.reply (f r)) st with
+    | .ok ((), st1) => some st1
+    | .error _ => none
+
+/-- A two-reply stack whose context is deleted, then its old head's last
+capability: the head's removal clears the frame below's upward link (seL4's
+`reply_remove`: `prev->replyNext = 0`), so nothing names the consumed reply
+and it is retired. -/
+private def runContextlessStackChecks : IO Unit := do
+  IO.println "-- §5o a contextless stack's top reply is retired on its final delete (WS-ZA ZA5.4 part 25)"
+  match runAll carveScenario
+      [decodeCarve slotUtRetype tcbTag 960 slotOwnCnRW 11,
+       decodeCarve slotUtRetype replyTag 961 slotOwnCnRW 12,
+       decodeCarve slotUtRetype schedContextTag 963 slotOwnCnRW 13,
+       decodeCarve slotUtRetype tcbTag 964 slotOwnCnRW 14,
+       decodeCarve slotUtRetype replyTag 965 slotOwnCnRW 15] with
+  | .error e => assertBool s!"carving two callers, two replies and a context succeeds (got {repr e})" false
+  | .ok st0 =>
+    let staged : Option SystemState := do
+      let s1 ← stageCallerOn st0 960 0 961 none
+      let s2 ← stageCallerOn s1 964 0 965 none
+      let s3 ← restageReply s2 961 fun r => { r with next := some (.frame ⟨965⟩) }
+      let s4 ← restageReply s3 965 fun r => { r with prev := some ⟨961⟩, next := some (.head ⟨963⟩) }
+      pure (s4.updateSchedContext ⟨963⟩ fun sc => { sc with scReply := some ⟨965⟩ })
+    match staged with
+    | none => assertBool "staging the two-reply stack succeeds" false
+    | some st =>
+      match runAll st [decodeDelete 13] with
+      | .error e => assertBool s!"deleting the stack's context succeeds (got {repr e})" false
+      | .ok stU =>
+        assertBool "setup: the context is retired and the old head links up to nothing"
+          (!storedAt stU 963 && (replyAt stU 965).map (·.next.isNone) == some true &&
+            (replyAt stU 961).map (·.next == some (.frame ⟨965⟩)) == some true)
+        match runAll stU [decodeDelete 15] with
+        | .error e => assertBool s!"deleting the old head's last capability succeeds (got {repr e})" false
+        | .ok st1 =>
+          assertBool "deleting a contextless stack top's last capability ends its caller"
+            (waiterEnded st1 964)
+          assertBool "the frame below the removed top links up to nothing and keeps its caller"
+            ((replyAt st1 961).map (fun r => r.next.isNone && r.callerCode == 961) == some true)
+          assertBool "deleting a contextless stack top's last capability retires it"
+            (!storedAt st1 965 && !recordsChildAt st1 carveUt 965)
+
 def runVSpaceCapabilityBindingChecks : IO Unit := do
   IO.println "===================================================="
   IO.println "VSpace capability-binding suite (PR #845 review, P1)"
@@ -2966,6 +3016,7 @@ def runVSpaceCapabilityBindingChecks : IO Unit := do
   runThreadFinaliseChecks
   runReplyFinaliseChecks
   runReplyWaiterFinaliseChecks
+  runContextlessStackChecks
   runAuthorizedChecks
   IO.println "===================================================="
   IO.println "All VSpace capability-binding checks PASS."

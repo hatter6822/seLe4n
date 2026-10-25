@@ -4089,6 +4089,28 @@ run_check "INVARIANT" rg -n '^theorem replyWaitersEndableFrom_plain($|[ ({:\[\]]
 run_check "INVARIANT" rg -n '^theorem lenderEndable_of_admitted($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseWaiterCompletion.lean
 run_check "INVARIANT" rg -n '^theorem finaliseThreadEndWaiters_returnLoan_endsAll($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseWaiterCompletion.lean
 run_check "INVARIANT" rg -n '^theorem finaliseThreadEndWaiters_returnLoan_endsAll_of_admitted($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseWaiterCompletion.lean
+run_check "INVARIANT" rg -n '^theorem spliceUnframed($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseWaiterCompletion.lean
+# A contextless stack top (the head a context's unstack leaves, no `next`) is cut
+# from the frame below, seL4's `reply_remove` `prev->replyNext = 0`: in the
+# specification's removal, the in-place splice and the frozen removal alike, so
+# the removed reply is named by no other object and is retired.
+run_check "INVARIANT" rg -n -U 'def severReplyFrameBelowStores \(st : SystemState\) \(rid below : SeLe4n\.ReplyId\)\n    \(r b : Reply\) : Except KernelError SystemState :=\n  match storeObject below\.toObjId \(\.reply \{ b with next := none \}\) st with\n  \| \.error e => \.error e\n  \| \.ok \(\(\), s1\) =>\n    match storeObject rid\.toObjId \(\.reply \{ r with prev := none \}\) s1 with' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n -U '    \| some \(\.head _\) => \.ok st\n    \| none =>\n      match r\.prev with\n      \| none => \.ok st\n      \| some below =>\n        match st\.getReply\? below with\n        \| none => \.ok st\n        \| some b =>\n          if b\.next != some \(\.frame rid\) then \.ok st\n          else severReplyFrameBelowStores st rid below r b' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n -U '          if b\.next != some \(\.frame rid\) then st\n          else\n            match severReplyFrameBelowStores st rid below r b with' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n -U '          if b\.next != some \(\.frame rid\) then \.ok st\n          else frozenSeverReplyFrameBelowStores st rid below r b' SeLe4n/Kernel/FrozenOps/Core.lean
+run_check "INVARIANT" rg -n -U 'def replyFrameBelow\? \(st : SystemState\) \(rid : SeLe4n\.ReplyId\) : Option SeLe4n\.ReplyId :=\n  match st\.getReply\? rid with\n  \| none => none\n  \| some r =>\n    match r\.next with\n    \| some \(\.head _\) => none\n    \| _ => r\.prev' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem severFrameBelow_mem_replyFrameBelow\?($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem severFrameBelow_mem_answeredReplyFrameBelow\?($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem severFrameBelow_mem_cancelSplicedFrameBelow\?($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem severReplyFrameBelowStores_transport($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^  , `SeLe4n\.Kernel\.severReplyFrameBelowStores$' SeLe4n/Testing/ReplyStackWriteCensus.lean
+# The in-place reply runs only on a reply with no frame below to cut.
+run_check "INVARIANT" rg -n -U '   \| some rp => rp\.next\.isNone && rp\.prev\.isNone\n   \| none => false\)' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInPlace.lean
+# The lender's own pop clears the origin its first donation recorded, so the
+# thread admission accepts that one origin, decided on the pre-state.
+run_check "INVARIANT" rg -n 'originsNameNone st \(x\.val \+ 1\) \(replyPopClearedOrigin\? st t\) && servicesNameNone st x' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n -U '    \| some \(\.reply r\) =>\n      match r\.next, r\.prev with\n      \| some \(\.head s\), none => some s' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n -U '^  runReplyWaiterFinaliseChecks\n  runContextlessStackChecks$' tests/VSpaceCapabilityBindingSuite.lean
 run_check "INVARIANT" rg -n -U 'def finaliseThreadSuspend [^\n]*\n  match st\.getTcb\? tid with\n  \| some t =>\n    if t\.ipcStateCode == 0 && t\.ipcObjectCode == 0 &&\n        \(t\.threadState != \.Inactive \|\| t\.pendingMessage\.isSome\) && !isIdleThreadId tid then\n      \(descheduleAtPlacement st tid\)\.updateTcb tid finalisedSuspendMark' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 # A finalised thread's message dies with it, as the suspend syscall drops it.
 run_check "INVARIANT" rg -n -U '@\[inline\] def finalisedSuspendMark \(t : TCB\) : TCB :=\n  \{ t with threadState := \.Inactive, pendingMessage := none \}' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
@@ -17079,15 +17101,18 @@ run_check "INVARIANT" bash -lc 'rg -U -n "@\[inline\] def isFree[^\n]*(\n([ \t][
 # That is this project's rule that a transition goes live only after the proofs
 # that cover it, enforced by a gate rather than by a reviewer.
 
-# (1) The frame *below* is resolved through the frame *above*, not read off
-# `Reply.prev` directly: a frame with nothing above it is not being removed from
-# the middle of anything, so it declares no below-member and the reachable
-# footprint does not widen.  One resolver, so the footprint and the operation
-# cannot disagree about which frames a removal re-links.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def replyFrameBelow\?[^\n]*(\n([ \t][^\n]*)?)*match replyFrameAbove\? st rid with" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
-run_check "INVARIANT" rg -n '^@\[simp\] theorem replyFrameBelow\?_of_no_frame_above' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
-# NEGATIVE: it must not read the link directly.  That spelling is `some` for the
-# bottom frame of any stack, which would put a write lock on a Reply no removal
+# (1) The frame *below* is the cut frame's `prev` unless the frame heads a stack:
+# a head is popped, never spliced, so it declares no below-member.  Since
+# `v0.36.136` a frame with nothing above it declares its `prev` too, because the
+# removal of a contextless stack top cuts the frame below
+# (`severReplyFrameBelowStores`); that arm writes fewer objects than a middle
+# removal, so the reachable footprint does not widen.  One resolver, so the
+# footprint and the operation cannot disagree about which frames a removal
+# re-links.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def replyFrameBelow\?[^\n]*(\n([ \t][^\n]*)?)*    \| some \(\.head _\) => none" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+run_check "INVARIANT" rg -n '^theorem replyFrameBelow\?_of_head' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+# NEGATIVE: it must not read the link unconditionally.  That spelling is `some`
+# for a stack head too, which would put a write lock on a Reply no removal
 # touches -- and would move the reachable `.replyRecv` bound HP3.2 keeps at 18.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def replyFrameBelow\?[^\n]*(\n([ \t][^\n]*)?)*:= \(st\.getReply\? rid\)\.bind" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
 

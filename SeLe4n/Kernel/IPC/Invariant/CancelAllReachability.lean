@@ -1849,10 +1849,17 @@ theorem reply {s : SystemState} {x : SeLe4n.ObjId} {r : Reply} {c : SeLe4n.Threa
         exact hNotHeadPre sc (by rw [← hrq]; exact e)
       · rw [hRO] at hr0; cases hr0
         rw [← hS1] at hq1
-        rcases spliceReplyFrameOut_cases e1 with e2 | ⟨r1, above, a1, hR1, hN1, hA1, hP1, hSt⟩
+        rcases spliceReplyFrameOut_cases e1 with e2 | ⟨r1, above, a1, hR1, hN1, hA1, hP1, hSt⟩ |
+            ⟨r1, below, b1, hR1, hN1, _, hB1, hBn1, hSt⟩
         · rw [e2, hRid, hPreR] at hq1
           have hrq : rq = rR := by cases hq1; rfl
           exact hNotHeadPre sc (by rw [← hrq]; exact e)
+        rotate_left
+        · -- The cut from below keeps the cut frame's `next`, which is `none`.
+          obtain ⟨-, hRv, -⟩ := severReplyFrameBelowStores_values g0.invExt hR1 hN1 hB1 hBn1 hSt
+          rw [(SystemState.getReply?_eq_some_iff _ _ _).mpr hq1] at hRv
+          cases hRv
+          exact absurd e (by simp [hN1])
         · obtain ⟨rp, hrp, -, hnx⟩ := spliceReplyFrameStores_reply_caller_and_headLink g0.invExt
             hR1 hN1 hA1 hP1 hSt _ rq ((SystemState.getReply?_eq_some_iff _ _ _).mpr hq1)
           rw [(SystemState.getReply?_eq_some_iff _ _ _).mpr hPreR] at hrp

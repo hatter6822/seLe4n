@@ -312,12 +312,38 @@ def unbindMaybeNotification (notificationId : SeLe4n.ObjId) (st : SystemState) :
 -- ============================================================================
 
 /-- **No scheduling context records `c` as the origin of a reservation on loan**
-(`c` a thread's id plus one): the scan `clearDonationOriginReferences` would
-otherwise have work to do, which a thread being finalised may not leave it. -/
-@[inline] def originsNameNone (st : SystemState) (c : Nat) : Bool :=
-  st.objects.fold true fun acc _ o => acc && match o with
-    | .schedContext sc => SeLe4n.ThreadId.optCode sc.donationOrigin != c
+(`c` a thread's id plus one), but the context `cleared?` the thread's own
+finalisation hands back to it (`replyPopClearedOrigin?`): the scan
+`clearDonationOriginReferences` would otherwise have work to do, which a thread
+being finalised may not leave it. -/
+@[inline] def originsNameNone (st : SystemState) (c : Nat)
+    (cleared? : Option SeLe4n.SchedContextId) : Bool :=
+  st.objects.fold true fun acc k o => acc && match o with
+    | .schedContext sc =>
+      SeLe4n.ThreadId.optCode sc.donationOrigin != c ||
+        match cleared? with
+        | some s => k == s.toObjId
+        | none => false
     | _ => true
+
+/-- **The context a reply-blocked thread's own cancel hands back to it at the
+bottom of its stack** (`t`, its TCB): its reply heads the stack of `s` and has
+no frame below it, so the pop (`reply_pop`, through
+`finaliseReplyCallerCancel`) returns `s` to the thread with no outer caller,
+which clears the reservation's recorded origin (`donationReturnSchedContext`,
+its bottom arm).  The finalisation's cancel runs that pop when its own guard
+(`replyCallerCancelAdmitted`) admits it, so the origin it would clear is no
+reason to refuse the thread.  `O(1)` reads: the reply. -/
+@[inline] def replyPopClearedOrigin? (st : SystemState) (t : TCB) :
+    Option SeLe4n.SchedContextId :=
+  if 4 ≤ t.ipcStateCode then
+    match st.getObject? ⟨t.replyObjectCode - 1⟩ with
+    | some (.reply r) =>
+      match r.next, r.prev with
+      | some (.head s), none => some s
+      | _, _ => none
+    | _ => none
+  else none
 
 /-- A thread whose binding codes name a context and no owner is `.bound` to it
 (stated here, ahead of the compiled unbinds that read it). -/
@@ -521,8 +547,9 @@ def finaliseReplyCallerCancel (st : SystemState) (c : SeLe4n.ThreadId) (t : TCB)
 
 /-- **The splice of a reply heading no stack, as compiled**: the same reads and
 the same stores as `spliceReplyFrameOutOrSelf`, with no `Except` cell on the
-arms that write nothing (a reply linked to no frame above, the busy reply's
-case). -/
+arms that write nothing (a reply linked to no frame either way, the busy reply's
+case); the frame-above splice and the cut from the frame below each run the
+specification's own composed store step. -/
 @[inline] def spliceReplyFrameOutOrSelfInPlace (st : SystemState) (rid : SeLe4n.ReplyId) :
     SystemState :=
   match st.getReply? rid with
@@ -538,7 +565,19 @@ case). -/
           match spliceReplyFrameStores st rid above r a with
           | .ok st' => st'
           | .error _ => st
-    | _ => st
+    | some (.head _) => st
+    | none =>
+      match r.prev with
+      | none => st
+      | some below =>
+        match st.getReply? below with
+        | none => st
+        | some b =>
+          if b.next != some (.frame rid) then st
+          else
+            match severReplyFrameBelowStores st rid below r b with
+            | .ok st' => st'
+            | .error _ => st
 
 theorem spliceReplyFrameOutOrSelfInPlace_eq (st : SystemState) (rid : SeLe4n.ReplyId) :
     spliceReplyFrameOutOrSelfInPlace st rid = spliceReplyFrameOutOrSelf st rid := by
@@ -548,7 +587,20 @@ theorem spliceReplyFrameOutOrSelfInPlace_eq (st : SystemState) (rid : SeLe4n.Rep
   | some r =>
     dsimp only
     cases r.next with
-    | none => rfl
+    | none =>
+      dsimp only
+      cases r.prev with
+      | none => rfl
+      | some below =>
+        dsimp only
+        cases st.getReply? below with
+        | none => rfl
+        | some b =>
+          dsimp only
+          by_cases hB : (b.next != some (.frame rid)) = true
+          · simp only [hB, ↓reduceIte]
+          · simp only [hB, Bool.false_eq_true, ↓reduceIte]
+            cases severReplyFrameBelowStores st rid below r b <;> rfl
     | some l =>
       cases l with
       | head _ => rfl
@@ -814,7 +866,9 @@ every other caller waiting on it for a reply is ended as `reply_remove` ends it
 (`replyWaitersAdmitted`, which reads each of them on this state);
 its space slots are empty (their finalising delete is a later cut's); a bound
 notification and a bound scheduling context are bound back to it; and nothing
-else names it as a reservation's origin or as a service's owner.  Each step
+names it as a reservation's origin, but the context its own reply's pop hands
+back to it, which clears that origin (`replyPopClearedOrigin?`), nor as a
+service's owner.  Each step
 below re-reads its own guard, so a state outside this set is left as it is and
 the retire then refuses the thread. -/
 @[inline] def threadFinaliseAdmitted (st : SystemState) (x : SeLe4n.ObjId) : Bool :=
@@ -835,7 +889,7 @@ the retire then refuses the thread. -/
       match st.getSchedContext? ⟨t.scBindingScCode - 1⟩ with
       | some sc => sc.boundThreadCode == x.val + 1
       | none => false) &&
-    originsNameNone st (x.val + 1) && servicesNameNone st x
+    originsNameNone st (x.val + 1) (replyPopClearedOrigin? st t) && servicesNameNone st x
   | _ => false
 
 /-- **Cancel the blocked IPC of a thread being finalised** (seL4's `suspend` →

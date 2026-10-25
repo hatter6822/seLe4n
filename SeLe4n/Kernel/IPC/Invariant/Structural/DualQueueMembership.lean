@@ -14599,8 +14599,11 @@ theorem spliceReplyFrameOut_transport {P : SystemState → Prop}
     (hObjInv : st.objects.invExt) (hP : P st)
     (h : spliceReplyFrameOut st rid = .ok st') :
     P st' := by
-  rcases spliceReplyFrameOut_cases h with rfl | ⟨r, above, a, hR, hN, hA, hP', hS⟩
+  rcases spliceReplyFrameOut_cases h with rfl | ⟨r, above, a, hR, hN, hA, hP', hS⟩ |
+      ⟨r, below, b, hR, hN, _, hB, hBn, hS⟩
   · exact hP
+  rotate_left
+  · exact severReplyFrameBelowStores_transport hStore hObjInv hP hR hN hB hBn hS
   · rcases spliceReplyFrameStores_cases hS with
       ⟨_, hS1⟩ | ⟨below, b, s1, s2, hBelow, hS1, hS2, hS3⟩
     · exact hStore (x' := { a with prev := none }) hObjInv hP hA rfl rfl hS1

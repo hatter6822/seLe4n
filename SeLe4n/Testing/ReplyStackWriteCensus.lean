@@ -131,6 +131,10 @@ def chainWritePrimitives : List Name :=
     -- performs the writes with none of `spliceReplyFrameOut`'s resolution or
     -- validation, so a transition reaching for it directly is a site.
   , `SeLe4n.Kernel.spliceReplyFrameStores
+    -- The cut of a contextless stack top from the frame below (`v0.36.136`,
+    -- seL4's `reply_remove` `prev->replyNext = 0`): that frame's `next` and the
+    -- cut frame's `prev`, a primitive for the store step's reason.
+  , `SeLe4n.Kernel.severReplyFrameBelowStores
   , `SeLe4n.Kernel.spliceReplyFrameOut
   , `SeLe4n.Kernel.spliceReplyFrameOutOrSelf
     -- ...and the frozen surface's counterparts, which write the same field of
@@ -140,6 +144,7 @@ def chainWritePrimitives : List Name :=
     -- beside the two it composes, exactly as the live `spliceReplyFrameStores`
     -- is.
   , `SeLe4n.Kernel.FrozenOps.frozenSpliceReplyFrameStores
+  , `SeLe4n.Kernel.FrozenOps.frozenSeverReplyFrameBelowStores
   , `SeLe4n.Kernel.FrozenOps.frozenSpliceReplyFrameOut
   , `SeLe4n.Kernel.FrozenOps.frozenSpliceReplyFrameOutOrSelf
     -- The push: the new head's two links, and the old head's `next`.
@@ -767,6 +772,8 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
     -- closure check follows.
   , (`SeLe4n.Kernel.FrozenOps.frozenSpliceReplyFrameStores,
       .mirrors `SeLe4n.Kernel.spliceReplyFrameStores)
+  , (`SeLe4n.Kernel.FrozenOps.frozenSeverReplyFrameBelowStores,
+      .mirrors `SeLe4n.Kernel.severReplyFrameBelowStores)
   , (`SeLe4n.Kernel.FrozenOps.frozenSpliceReplyFrameOut,
       .mirrors `SeLe4n.Kernel.spliceReplyFrameOut)
   , (`SeLe4n.Kernel.FrozenOps.frozenSpliceReplyFrameOutOrSelf,
@@ -797,6 +804,11 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
     -- resolution is exactly what the operation adds, and it is where the chain
     -- result is stated.
   , (`SeLe4n.Kernel.spliceReplyFrameStores,
+      .halfStep `SeLe4n.Kernel.spliceReplyFrameOut)
+    -- The cut from below is a half-step for the same reason: given only the two
+    -- records, nothing says the frame below links up to the cut frame or that
+    -- the cut frame heads nothing, which is the resolution the operation adds.
+  , (`SeLe4n.Kernel.severReplyFrameBelowStores,
       .halfStep `SeLe4n.Kernel.spliceReplyFrameOut)
   , (`SeLe4n.Kernel.spliceReplyFrameOut,
       .states [`SeLe4n.Kernel.spliceReplyFrameOut_preserves_donationChainWellFormed])
