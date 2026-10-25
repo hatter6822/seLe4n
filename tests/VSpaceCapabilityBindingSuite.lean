@@ -2687,6 +2687,98 @@ private def runReplyFinaliseChecks : IO Unit := do
                   t.schedContextBinding == .bound ⟨963⟩ && t.replyObjectCode == 0 &&
                     t.threadState == .Inactive) == some true &&
                 (st1.getTcb? ⟨962⟩).map (·.schedContextBinding) == some .unbound)
+  -- A thread blocked on a reply, holding the reply link: its own delete
+  -- removes the reply as seL4's `reply_remove_tcb` does — the call cancelled,
+  -- the reply unlinked from it — then suspends and retires it; the reply stays,
+  -- linked to no caller.
+  for server? in [none, some (⟨962⟩ : SeLe4n.ThreadId)] do
+    match runAll carveScenario
+        [decodeCarve slotUtRetype tcbTag 960 slotOwnCnRW 12,
+         decodeCarve slotUtRetype replyTag 961 slotOwnCnRW 13,
+         decodeCarve slotUtRetype tcbTag 962 slotOwnCnRW 14] with
+    | .error e => assertBool s!"carving a caller, a reply and a server succeeds (got {repr e})" false
+    | .ok st0 =>
+      -- With a server, the caller joins its reply-waiter queue as the call
+      -- makes it (`linkReplyWaiter`).
+      match (stageReplyCaller st0 server?).map fun s =>
+          match server? with
+          | some sv => SystemState.linkReplyWaiter s ⟨960⟩ sv
+          | none => s with
+      | none => assertBool "staging the carved caller's call on the carved reply succeeds" false
+      | some st => do
+        assertBool s!"setup: the carved caller is blocked on the carved reply and holds its link (server {repr server?})"
+          ((st.getTcb? ⟨960⟩).map (fun t => t.replyObjectCode == 962 && decide (4 ≤ t.ipcStateCode)) ==
+            some true &&
+            (server?.isNone || (st.getTcb? ⟨962⟩).map (·.replyWaitersHeadCode) == some 961))
+        match runAll st [decodeDelete 12] with
+        | .error e => assertBool s!"deleting the reply-blocked caller's last capability succeeds (got {repr e})" false
+        | .ok st1 =>
+          assertBool s!"deleting a reply-blocked caller's last capability removes its reply and retires it, the reply linked to no caller (server {repr server?})"
+            (!storedAt st1 960 && !recordsChildAt st1 carveUt 960 && storedAt st1 961 &&
+              (replyAt st1 961).map (·.callerCode) == some 0 && storedAt st1 962 &&
+              (st1.getTcb? ⟨962⟩).map (fun t => t.replyWaitersHeadCode == 0 && t.replyWaitersCount == 0) ==
+                some true)
+  -- A reply-blocked caller lending its context to its server, its reply heading
+  -- the context's stack: its delete pops the reply (seL4's `reply_remove_tcb` →
+  -- `reply_remove` head branch, `reply_pop`) — the context back to the caller,
+  -- the server holding none — then releases the context with the caller
+  -- (`unbindFromSC`) and retires the caller; the reply heads no stack and is
+  -- linked to no caller.
+  match runAll carveScenario
+      [decodeCarve slotUtRetype tcbTag 960 slotOwnCnRW 12,
+       decodeCarve slotUtRetype replyTag 961 slotOwnCnRW 13,
+       decodeCarve slotUtRetype tcbTag 962 slotOwnCnRW 14,
+       decodeCarve slotUtRetype schedContextTag 963 slotOwnCnRW 15] with
+  | .error e => assertBool s!"carving a caller, a reply, a server and a context succeeds (got {repr e})" false
+  | .ok st0 =>
+    match stageReplyCaller st0 (some ⟨962⟩) with
+    | none => assertBool "staging the carved caller's call on the carved reply succeeds" false
+    | some st =>
+      match replyAt st 961 with
+      | none => assertBool "setup: the carved reply is stored" false
+      | some r =>
+        match SeLe4n.Model.storeObject (SeLe4n.ObjId.ofNat 961)
+            (.reply { r with next := some (.head ⟨963⟩) }) st with
+        | .error _ => assertBool "staging the reply as the lent context's stack head succeeds" false
+        | .ok ((), stH) => do
+          let stL := (stH.updateSchedContext ⟨963⟩ fun sc =>
+              { sc with scReply := some ⟨961⟩, boundThreadCode := 963 }).updateTcb ⟨962⟩ fun t =>
+            { t with scBindingScCode := 964, scBindingOwnerCode := 961 }
+          assertBool "setup: the server holds the caller's context on loan, and the caller's reply heads its stack"
+            ((stL.getTcb? ⟨962⟩).map (·.schedContextBinding) == some (.donated ⟨963⟩ ⟨960⟩) &&
+              (stL.getTcb? ⟨960⟩).map (·.replyObjectCode) == some 962)
+          match runAll stL [decodeDelete 12] with
+          | .error e => assertBool s!"deleting the lending caller's last capability succeeds (got {repr e})" false
+          | .ok st1 =>
+            assertBool "deleting a lending caller's last capability takes its context back, releases it and retires the caller"
+              (!storedAt st1 960 && !recordsChildAt st1 carveUt 960 &&
+                (st1.getSchedContext? ⟨963⟩).map (fun sc => sc.scReply.isNone && sc.boundThreadCode == 0) == some true &&
+                (st1.getTcb? ⟨962⟩).map (·.schedContextBinding) == some .unbound &&
+                (replyAt st1 961).map (fun r => r.next.isNone && r.callerCode == 0) == some true)
+  -- A receiver waiting on an endpoint with a reply stashed for the call it
+  -- waits for: its own delete cancels the receive (seL4's `suspend` →
+  -- `cancelIPC`, `reply_unlink` on the stash) and retires it; the reply stays,
+  -- stashed by no thread.
+  match runAll carveScenario
+      [decodeCarve slotUtRetype tcbTag 960 slotOwnCnRW 12,
+       decodeCarve slotUtRetype replyTag 961 slotOwnCnRW 13,
+       decodeCarve slotUtRetype endpointTag 962 slotOwnCnRW 14] with
+  | .error e => assertBool s!"carving a receiver, a reply and an endpoint succeeds (got {repr e})" false
+  | .ok st0 =>
+    match kernelState (SeLe4n.Kernel.endpointReceiveDual (SeLe4n.ObjId.ofNat 962) ⟨960⟩
+        (some ⟨961⟩) (stageThreadState st0 960 .BlockedRecv)) with
+    | .error e => assertBool s!"the carved receiver's receive with a reply blocks (got {repr e})" false
+    | .ok st => do
+      assertBool "setup: the carved receiver waits on the carved endpoint with the carved reply stashed"
+        ((st.getTcb? ⟨960⟩).map (fun t => t.pendingReceiveReplyCode == 962 && t.ipcStateCode == 1) ==
+          some true && SystemState.replyIsStashed st ⟨961⟩)
+      match runAll st [decodeDelete 12] with
+      | .error e => assertBool s!"deleting the stashing receiver's last capability succeeds (got {repr e})" false
+      | .ok st1 =>
+        assertBool "deleting a stashing receiver's last capability cancels its receive and retires it, the reply stashed by no thread"
+          (!storedAt st1 960 && !recordsChildAt st1 carveUt 960 && storedAt st1 961 &&
+            !SystemState.replyIsStashed st1 ⟨961⟩ &&
+            (st1.getEndpoint? (SeLe4n.ObjId.ofNat 962)).map (·.receiveQ) == some {})
   -- A reply heading a stack whose pop would not commit — here the context does
   -- not name it back as its head, nor any thread as its holder — is not
   -- finalised: checks before writes, its delete keeps the reply and its caller.
