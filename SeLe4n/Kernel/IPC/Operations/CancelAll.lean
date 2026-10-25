@@ -1489,7 +1489,7 @@ theorem lifecyclePreRetypeCleanup_of_threadRetirable {st : SystemState} {x : SeL
     (hRes : x.val ≠ 0) :
     lifecyclePreRetypeCleanup st x (.tcb t) (.tcb t) = .ok st := by
   obtain ⟨hTid, hQ, hHeld, hNames⟩ := threadRetirable_spec hT hR
-  obtain ⟨-, hIS, hIO, -, hQN, hQP, -, -, -, hRC, -, -, -, -, -, -, hWH, hSC, hSO, -, hRO, -,
+  obtain ⟨-, hIS, hIO, -, hQN, hQP, -, -, -, hRC, -, -, hWH, hSC, hSO, -, hRO, -,
     -, hS0, hS1⟩ := threadQuiescent_codes hQ
   have hX : t.tid.toObjId = x := by rw [hTid]; rfl
   have hObj : st.objects[x]? = some (.tcb t) := by rw [← hT]; simp

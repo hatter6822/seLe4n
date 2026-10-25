@@ -517,13 +517,16 @@ object: `.Inactive` and `.ready`, with no pending message, no stashed or
 awaited reply, no timeout budget; linked into no endpoint, notification, run or
 reply-waiter queue and heading none; bound to no notification and to no
 scheduling context.  What a thread's finalisation leaves, before the zombie
-loop deletes its space slots. -/
+loop deletes its space slots.  Of the run-queue fields only the core code is
+read: a thread whose core code is zero is on no core's queue, and its four
+neighbour codes are then masked by every reader (`TCB.runLinkOn`,
+`runMaxCodeWalk`, the compiled dequeue), so no invariant holds them at zero and
+the guard does not read them; the retire erases the record with them. -/
 @[inline] def threadLinksQuiescent (t : TCB) : Bool :=
   t.threadState == .Inactive && t.ipcStateCode == 0 && t.ipcObjectCode == 0 &&
     t.pendingMessage.isNone && t.queueNextCode == 0 && t.queuePrevCode == 0 &&
     t.queuePPrevCode == 0 && t.ntfnNextCode == 0 && t.ntfnPrevCode == 0 && t.runCoreCode == 0 &&
-    t.runNextCode == 0 && t.runPrevCode == 0 && t.runBucketNextCode == 0 &&
-    t.runBucketPrevCode == 0 && t.replyWaiterNextCode == 0 && t.replyWaiterPrevCode == 0 &&
+    t.replyWaiterNextCode == 0 && t.replyWaiterPrevCode == 0 &&
     t.replyWaitersHeadCode == 0 && t.scBindingScCode == 0 && t.scBindingOwnerCode == 0 &&
     t.boundNotificationCode == 0 && t.replyObjectCode == 0 && t.pendingReceiveReplyCode == 0 &&
     t.timeoutBudget.isNone
@@ -1480,8 +1483,7 @@ theorem threadQuiescent_codes {t : TCB} (h : threadQuiescent t = true) :
     t.threadState = .Inactive ∧ t.ipcStateCode = 0 ∧ t.ipcObjectCode = 0 ∧
     t.pendingMessage = none ∧ t.queueNextCode = 0 ∧ t.queuePrevCode = 0 ∧
     t.queuePPrevCode = 0 ∧ t.ntfnNextCode = 0 ∧ t.ntfnPrevCode = 0 ∧ t.runCoreCode = 0 ∧
-    t.runNextCode = 0 ∧ t.runPrevCode = 0 ∧ t.runBucketNextCode = 0 ∧
-    t.runBucketPrevCode = 0 ∧ t.replyWaiterNextCode = 0 ∧ t.replyWaiterPrevCode = 0 ∧
+    t.replyWaiterNextCode = 0 ∧ t.replyWaiterPrevCode = 0 ∧
     t.replyWaitersHeadCode = 0 ∧ t.scBindingScCode = 0 ∧ t.scBindingOwnerCode = 0 ∧
     t.boundNotificationCode = 0 ∧ t.replyObjectCode = 0 ∧ t.pendingReceiveReplyCode = 0 ∧
     t.timeoutBudget = none ∧ t.spaceCells[0] = none ∧ t.spaceCells[1] = none := by

@@ -907,7 +907,7 @@ theorem retireFinalObject_replyViews (ec : Concurrency.CoreId) (target recorder 
         obtain ⟨t', hT', -, -, hQ, -⟩ := threadRetirable_parts (hNT t hk)
         rw [hk] at hT'; cases hT'
         refine .inr ⟨by rw [hn]; rfl, t.replyView, rfl, threadQuiescent_blockingServer hQ, ?_⟩
-        obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, h0, -⟩ := threadQuiescent_codes hQ
+        obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, h0, -⟩ := threadQuiescent_codes hQ
         exact h0
       | _ => rw [hn]; exact .inl rfl
   · rw [hU]
