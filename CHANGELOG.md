@@ -1,3 +1,96 @@
+## v0.36.137 — WS-ZA ZA5.4 part 26: the zombie loop and the thread's space-slot deletes
+
+A final delete of a capability whose object still holds capabilities now
+empties that object first, as seL4's `finaliseSlot` loop does.  This covers
+a CNode with occupied slots and a thread with capabilities in its space
+slots.  The deleted slot keeps its capability while the loop runs, like
+seL4's Zombie, and is deleted last.
+
+- **Before:** a CNode was retired only when every slot was already empty;
+  a populated CNode outlived its last capability.  A thread holding space-slot
+  capabilities was refused by the finalise.  That covers every thread that can
+  make a syscall, so a thread could not delete its own last capability end to
+  end.
+- **After:** a populated CNode's final delete deletes each slot through the
+  finalising delete, one level down at a time, then retires the CNode.  A
+  thread's final delete finalises it, deletes its two space slots, and retires
+  it.  This includes the executing thread deleting its own last capability.
+- **And:** the retire clears the freed id's declassification provenance, so
+  an object carved later at that id inherits no stale tag.
+
+### The loop
+
+- `zombieDeleteAt` (`Capability/FrameFinalise.lean`) runs the passes, then
+  deletes the slot itself.  The delete syscall (`cspaceDeleteSlotZombie`)
+  goes through it, and so does every revoke child (`revokeFirstChildLoop`).
+  A delete that finalises and retires nothing keeps the in-place fast path.
+- Each pass (`zombieDescend`) starts again from the slot.  It walks down to
+  the deepest object holding capabilities, then either deletes that object's
+  slots (`zombieEmptyObject`) or finalises a thread it reaches
+  (`zombieFinaliseAt`).  Nothing is carried between passes, so a preemption
+  point can sit between any two of them.
+- **The bound** is stated in `zombieDeleteAt_run` and in `zombieFuel`'s
+  docstring.  A delete runs at most `zombieFuel st + 1` passes, where
+  `zombieFuel st = 3 · objects.size + 2`, and each pass is a
+  `FinalisingDeleteChain`.  If the fuel ran out, the slot would still be
+  deleted after the passes.
+- **Slot order, Adam's decision** (card, 2026-10-25, "list order"): the
+  loop deletes a CNode's slots most recently filled first.  It follows the
+  CNode's new occupancy links (`SlotOccupancy`, `CNode.occHead`), so the next
+  slot is read, not scanned for.  seL4 goes from the highest slot index down.
+  The order is chosen in one function, `zombieNextSlot`, which every pass
+  reads.  A thread's slots go CSpace root first, then VSpace root.
+- Revoke still ends childless.  `RevokeProgress` shows that each zombie
+  delete of a child either strictly shrinks the derivation edges, or leaves
+  the source named by no edge (`zombieDeleteAt_revokeProgress`).
+
+### Proof surface
+
+- `FinalisingDeleteChain` gains a `finalise` step, plus `.trans`; `.closed`
+  takes the finalise's preservation.  The capability bundle, the IPC bundle,
+  the run-queue entry stage, reschedule coverage, slot confinement, the
+  sched-lock write cover and cross-core non-interference are re-proven for
+  `cspaceDeleteSlotZombie`.
+- `threadFinaliseAdmitted` drops its space-slot conjuncts.  `threadQuiescent`
+  is now `threadLinksQuiescent` plus the two empty space slots.
+- `passiveObjectQuiescent` reads a CNode's occupancy head, not its slots.
+- `withTaintCleared` wraps both arms of `retireRecordedObject`.  The witnesses
+  are `retireRecordedObject_taint_cleared` and
+  `retireFinalObject_taint_cleared`.
+
+### Tests and exerciser
+
+- `vspace_capability_binding_suite` §5p covers four cases: a populated
+  CNode's delete retires the endpoint it held and the CNode; the retire clears
+  the endpoint's taint; a thread holding the last capability to its CNode root
+  is retired together with that CNode; and the self-delete runs end to end
+  through the syscall.
+- The heap exerciser deletes a populated CNode (`populated-cnode-delete`) and
+  a thread holding the last capability to its CSpace root
+  (`spaced-tcb-delete`).  Both read 0 heap cells, as does
+  `space-cnode-cap-delete`.  The carves and the space set are pinned at their
+  measured readings (see `scripts/qemu_exerciser_lib.sh`).
+
+### Debt (`docs/REGISTERED_DEBT.md`)
+
+- Closed: "A thread a final delete cannot finalise outlives its last
+  capability".  Clause (3), the space slots, is the zombie loop above.
+- Narrowed: "A destroyed object's declassification provenance is not
+  cleared".  The delete and revoke retire now clears it.  The reset's
+  removal does not yet, and that is moved to part 27, which restates the
+  reset.
+- Not done in this part, re-targeted to part 27: "A passive object's final
+  delete scans the object table" (the retire still walks the table), "The
+  finalise's admission is not proven to make the retire accept"
+  (`finaliseThread_retirable`, `finaliseSchedContext_retirable`), and the
+  untyped that still records a child (part 21's restriction stays).
+
+### Documentation
+
+- `SELE4N_SPEC.md` §8.6, `CLAIM_EVIDENCE_INDEX.md`, the plan's row 26,
+  `WORKSTREAM_CONTEXT.md`, GitBook chapter 12, the debt register, and the
+  synchronised metrics and codebase map.
+
 ## v0.36.136 — WS-ZA ZA5.4 part 25: a final delete finalises a busy reply and a busy scheduling context
 
 A delete or revoke that destroys the final capability to a reply now

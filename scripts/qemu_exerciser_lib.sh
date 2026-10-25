@@ -307,7 +307,14 @@ for driver in drivers:
             "mint-busy-reply-cap", "receive-with-carved-reply", "call-to-carved-reply",
             "busy-reply-cap-delete", "busy-reply-delete",
             "mint-stashed-reply-cap", "receive-stashing-reply", "stashed-reply-cap-delete",
-            "stashed-reply-delete", "send-to-unstashed-receiver")}
+            "stashed-reply-delete", "send-to-unstashed-receiver",
+            # WS-ZA ZA5.4 part 26: a carved CNode holding an endpoint's only
+            # capability, deleted: the loop deletes the endpoint's slot, which
+            # retires it, and then retires the CNode; a carved thread holding
+            # the last capability to its CNode root, deleted: the loop deletes
+            # its space slots after the finalisation, retiring the CNode, and
+            # retires the thread.  Each delete writes in place.
+            "populated-cnode-delete", "space-cnode-cap-delete", "spaced-tcb-delete")}
         # WS-ZA ZA5.1: the memory invocations' readings today, each the
         # operation's own cells (object writes, the store's copy); the rows
         # that bring them to zero lower these pins.
@@ -377,6 +384,12 @@ for driver in drivers:
             # rewind, copied because the reset still refuses after it writes,
             # so its dispatch keeps the pre-state alive (docs/REGISTERED_DEBT.md
             # §C, "The reset's rewind costs 10 heap cells"; part 27 reads 0).
+            # WS-ZA ZA5.4 part 26: the populated CNode's carve and the
+            # endpoint's into its slot, the spaced thread's and its CNode
+            # root's carves, and the space set.
+            "untyped-retype-populated-cnode": (29, 29), "untyped-retype-into-cnode": (11, 11),
+            "untyped-retype-spaced-tcb": (14, 14), "untyped-retype-space-cnode": (29, 29),
+            "set-carved-tcb-space": (0, 0),
             "untyped-reset": (30, 30),
         })
         expected = set(pinned)

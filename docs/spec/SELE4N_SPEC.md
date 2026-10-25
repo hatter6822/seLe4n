@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.136` (`lakefile.toml`) |
+| **Package version** | `0.36.137` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 501,507 across 455 Lean files |
 | **Test LoC** | 86,937 across 70 Lean test suites |
@@ -5244,6 +5244,55 @@ consumed reply and the caller's cleared link in their slots), so
 image runs keep their pins; no scenario deletes a head reply or a server with
 waiters, since each such delete stops both of the image's threads
 (`docs/REGISTERED_DEBT.md`), and the suite witnesses both.
+
+**The zombie loop and the thread's space-slot deletes** (`v0.36.137`).  A final
+delete of a capability whose object still holds capabilities empties that
+object first, as seL4's `finaliseSlot` loop does: `zombieDeleteAt`
+(`Capability/FrameFinalise.lean`), which the delete syscall
+(`cspaceDeleteSlotZombie`) and every revoke child (`revokeFirstChildLoop`) run.
+A delete that finalises and retires nothing keeps the in-place fast path.
+Otherwise the loop runs passes (`zombiePasses`), each starting again from the
+slot: it descends through the capabilities to the deepest object that holds
+any (`zombieDescend`, `zombieSlotClass`), and there either deletes that
+object's slots through the finalising delete (`zombieEmptyObject`) or
+finalises a thread it reaches (`zombieFinaliseAt`, `finaliseFinalObject`), whose
+space slots a later pass deletes.  The slot keeps its capability while the
+passes run, as seL4's Zombie does, and nothing is carried from one pass to the
+next, so a preemption point fits between passes; the slot is deleted last.
+**The bound:** `zombieDeleteAt_run` states at most `zombieFuel st + 1` passes,
+where `zombieFuel st = 3 · objects.size + 2` (each pass but the last empties an
+object or finalises a thread, each at most once), each pass a
+`FinalisingDeleteChain`, which gains a `finalise` step.  **The order:** a CNode
+carries occupancy links (`SlotOccupancy`: `CNode.occ`, `occHead`, `occ_agree`),
+so the next slot is read off the head rather than scanned for, and the loop
+deletes a CNode's slots most recently filled first.  seL4 goes from the
+highest slot index down.  Adam decided for list order on the ZA5.4 thread
+(card, 2026-10-25); the choice lives in one function, `zombieNextSlot`.  A
+thread's slots go CSpace root first, then VSpace root.  `threadFinaliseAdmitted`
+no longer asks that the space slots are empty: the thread is finalised and the
+loop then deletes them, so the executing thread's delete of its own last
+capability runs end to end.  The quiescence test splits accordingly
+(`threadQuiescent` is `threadLinksQuiescent` and both space slots empty), and a
+CNode's quiescence reads its occupancy head.  Revoke still ends childless:
+each zombie delete of a child either strictly shrinks the derivation edges or
+leaves the source named by no edge (`RevokeProgress`,
+`zombieDeleteAt_revokeProgress`).  The capability bundle, the IPC bundle, the
+run-queue entry stage, reschedule coverage, slot confinement, the sched-lock
+write cover and cross-core non-interference are proven for the zombie delete
+(`cspaceDeleteSlotZombie_preserves_capabilityInvariantBundle`,
+`cspaceDeleteSlotZombie_preserves_ipcInvariantFull`,
+`cspaceDeleteSlotZombie_runQueueEntryStage`, `cspaceDeleteSlotZombie_stepCovers`,
+`cspaceDeleteSlotZombie_confinedToCores`,
+`schedLockSet_cspaceDeleteSlotZombie_coversWrites`,
+`cspaceDeleteSlotZombie_crossCoreNonInterference`).  The retire also clears
+the freed id's declassification provenance (`withTaintCleared` in
+`retireRecordedObject`, `retireFinalObject_taint_cleared`), so an object carved
+at the id later inherits no stale tag; the reset's removal does not yet
+(`docs/REGISTERED_DEBT.md`).  Still open and carried to row 27: an untyped
+that records a child is not retired, the retire still walks the table
+(`storeNamesNone`), and the finalise's retirability theorems are not stated.
+Exerciser: `populated-cnode-delete`, `space-cnode-cap-delete` and
+`spaced-tcb-delete` read 0 heap cells.
 
 ### 8.6.1 Carve Refusal Order (`v0.36.125`)
 
