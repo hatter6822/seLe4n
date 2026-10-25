@@ -4072,7 +4072,13 @@ run_check "INVARIANT" rg -n '^theorem finaliseFinalObject_closed($|[ ({:\[\]])' 
 # destroy cleanup.  A held or executing thread is finalised, not refused: the
 # admission no longer reads the core holds.  The cleanup is proven the identity
 # on the finalised object and compiled away, so the spec keeps it.
-run_check "INVARIANT" rg -n -U 'def finaliseThread \(x : SeLe4n\.ObjId\) \(st : SystemState\) : SystemState :=\n  if threadFinaliseAdmitted st x then\n[^\n]*\n    finaliseThreadCleanup\n      \(finaliseThreadUnbindSchedContext\n        \(finaliseThreadReleaseCores\n          \(finaliseThreadSuspend\n            \(finaliseThreadCancel\n              \(finaliseThreadUnbindNotification st tid\) tid\) tid\) tid\) tid\) x' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n -U 'def finaliseThread \(x : SeLe4n\.ObjId\) \(st : SystemState\) : SystemState :=\n  if threadFinaliseAdmitted st x then\n[^\n]*\n    finaliseThreadCleanup\n      \(finaliseThreadUnbindSchedContext\n        \(finaliseThreadReleaseCores\n          \(finaliseThreadSuspend\n            \(finaliseThreadEndWaiters\n              \(finaliseThreadReturnLoan\n                \(finaliseThreadCancel\n                  \(finaliseThreadUnbindNotification st tid\) tid\) tid\) tid\) tid\) tid\) tid\) x' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+# The server's waiters are ended as reply_remove ends them, the lender first
+# (its context returned before the suspend), then the plain waiters head first,
+# fuel the server's own count; each step follows the server's live head.
+run_check "INVARIANT" rg -n -U 'def finaliseReplyWaiters \(x : SeLe4n\.ThreadId\) : Nat → SystemState → SystemState\n  \| 0, st => st\n  \| fuel \+ 1, st =>\n    match st\.getTcb\? x with\n    \| some tx =>\n      match tx\.replyWaitersHeadCode with' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n -U '\| some tx => finaliseReplyWaiters x tx\.replyWaitersCount st' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_negative_check "INVARIANT" rg -n 't\.replyWaitersHeadCode == 0 && t\.timeoutBudget\.isNone' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 run_check "INVARIANT" rg -n -U 'def finaliseThreadSuspend [^\n]*\n  match st\.getTcb\? tid with\n  \| some t =>\n    if t\.ipcStateCode == 0 && t\.ipcObjectCode == 0 &&\n        \(t\.threadState != \.Inactive \|\| t\.pendingMessage\.isSome\) && !isIdleThreadId tid then\n      \(descheduleAtPlacement st tid\)\.updateTcb tid finalisedSuspendMark' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 # A finalised thread's message dies with it, as the suspend syscall drops it.
 run_check "INVARIANT" rg -n -U '@\[inline\] def finalisedSuspendMark \(t : TCB\) : TCB :=\n  \{ t with threadState := \.Inactive, pendingMessage := none \}' SeLe4n/Kernel/IPC/Operations/CancelAll.lean

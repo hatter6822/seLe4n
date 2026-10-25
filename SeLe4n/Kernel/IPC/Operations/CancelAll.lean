@@ -748,6 +748,56 @@ stash; or blocked on a reply, which the reply cancel admits
   | 3 => endpointCancelAdmitted st ⟨t.ipcObjectCode⟩ false tid t
   | _ => replyCallerCancelAdmitted st tid t
 
+/-- **Whether the caller `w` (its TCB `t`) waiting on the server `x` may be
+ended** as `reply_remove` ends it (`finaliseReplyWaiter`): it is another thread
+than `x`, reply-blocked on `x`, and its reply's cancel is admitted
+(`replyCallerCancelAdmitted`).  Each read is `O(1)`. -/
+@[inline] def replyWaiterEndable (st : SystemState) (x w : SeLe4n.ThreadId) (t : TCB) : Bool :=
+  w.val != x.val && replyCallerServerCode t == x.val + 1 && replyCallerCancelAdmitted st w t
+
+/-- **Whether the reply a thread `t` waits on sits on no reply stack**: the reply
+its reply code names is stored and links up to nothing, so its cancel is a
+splice with nothing to hand back and touches no other reply. -/
+@[inline] def replyCallerReplyUnstacked (st : SystemState) (t : TCB) : Bool :=
+  match st.getObject? ⟨t.replyObjectCode - 1⟩ with
+  | some (.reply r) => r.next.isNone
+  | _ => false
+
+/-- **Whether the waiters of the server `x`, from the one whose code is `k` on,
+may each be ended**, read on the pre-state by following the waiters' own links
+(`replyWaiterNextCode`), at most `fuel` of them: each waiter but the lender
+(`lenderCode`, whose pop the loan return makes, `finaliseThreadReturnLoan`) is
+endable and waits on a reply on no stack, and the queue ends within the fuel.
+Each waiter costs `O(1)` reads. -/
+def replyWaitersEndableFrom (st : SystemState) (x : SeLe4n.ThreadId) (lenderCode : Nat) :
+    Nat → Nat → Bool
+  | _, 0 => true
+  | 0, _ + 1 => false
+  | fuel + 1, k + 1 =>
+    match st.getTcb? ⟨k⟩ with
+    | some t =>
+      (k + 1 == lenderCode || replyWaiterEndable st x ⟨k⟩ t && replyCallerReplyUnstacked st t) &&
+        replyWaitersEndableFrom st x lenderCode fuel t.replyWaiterNextCode
+    | none => false
+
+/-- **Whether a finalised thread's loan and reply waiters may be ended**, read on
+the pre-state before any write.  A thread `x` holding a context on loan
+(`.donated s L`, its owner code naming `L`) returns it to its lender `L` by `L`'s
+own pop (`finaliseThreadReturnLoan`): `L` is endable as `x`'s waiter, and `x`'s
+own reply, when it waits on one, sits on no stack, so `x`'s cancel leaves `L`'s
+pop as it is read here.  Every other waiter of `x`, followed from `x`'s queue
+head for `x`'s count (`replyWaitersEndableFrom`), is endable and waits on a
+reply on no stack, so no waiter's end touches another's reads. -/
+@[inline] def replyWaitersAdmitted (st : SystemState) (x : SeLe4n.ThreadId) (t : TCB) : Bool :=
+  (match t.scBindingOwnerCode with
+   | 0 => true
+   | o + 1 =>
+     (t.replyObjectCode == 0 || replyCallerReplyUnstacked st t) &&
+       match st.getTcb? ⟨o⟩ with
+       | some tl => replyWaiterEndable st x ⟨o⟩ tl
+       | none => false) &&
+    replyWaitersEndableFrom st x t.scBindingOwnerCode t.replyWaitersCount t.replyWaitersHeadCode
+
 /-- **Whether a final delete may finalise the thread at `x`**, read on the
 pre-state before any write.  The thread is stored under its own id and is no
 reserved or idle thread; its IPC state is one the cancel ends
@@ -758,8 +808,10 @@ blocked receiving, sending or calling on an endpoint, wherever it waits in that
 queue, or blocked on a reply, whose cancel removes the reply as the reply's own
 finalisation does (seL4's `reply_remove_tcb`; a head reply popped, so a thread
 that lent its context gets it back); a thread not blocked on a reply is linked
-into no reply-waiter queue and holds no reply link; it holds no timeout budget,
-no thread waits on it for a reply and it borrows no reservation;
+into no reply-waiter queue and holds no reply link; it holds no timeout budget;
+a context it holds on loan goes back to its lender by the lender's own pop, and
+every other caller waiting on it for a reply is ended as `reply_remove` ends it
+(`replyWaitersAdmitted`, which reads each of them on this state);
 its space slots are empty (their finalising delete is a later cut's); a bound
 notification and a bound scheduling context are bound back to it; and nothing
 else names it as a reservation's origin or as a service's owner.  Each step
@@ -772,7 +824,7 @@ the retire then refuses the thread. -/
     t.tid.val == x.val && !tid.isReserved && !isIdleThreadId tid &&
     (decide (4 ≤ t.ipcStateCode) ||
       t.replyWaiterNextCode == 0 && t.replyWaiterPrevCode == 0 && t.replyObjectCode == 0) &&
-    t.replyWaitersHeadCode == 0 && t.timeoutBudget.isNone && t.scBindingOwnerCode == 0 &&
+    t.timeoutBudget.isNone && replyWaitersAdmitted st tid t &&
     t.spaceCells[0].isNone && t.spaceCells[1].isNone &&
     threadIpcCancelAdmitted st tid t &&
     (t.boundNotificationCode == 0 ||
@@ -886,6 +938,62 @@ def finaliseThreadSuspend (st : SystemState) (tid : SeLe4n.ThreadId) : SystemSta
         (t.threadState != .Inactive || t.pendingMessage.isSome) && !isIdleThreadId tid then
       (descheduleAtPlacement st tid).updateTcb tid finalisedSuspendMark
     else st
+  | none => st
+
+/-- **End a caller `w` (its TCB `t`) waiting on a reply**, as `reply_remove`
+ends it: the reply cancel (`finaliseReplyCallerCancel`: a head reply popped, the
+context handed back to `w`; any other reply spliced out; `w` off its server's
+reply-waiter queue; the boost `w` lent its server reverted), then the suspend
+(`finaliseThreadSuspend`, `.Inactive`).  The step the reply's own finalisation
+takes for its caller (`finaliseReply`). -/
+@[inline] def finaliseReplyWaiter (st : SystemState) (w : SeLe4n.ThreadId) (t : TCB) :
+    SystemState :=
+  finaliseThreadSuspend (finaliseReplyCallerCancel st w t) w
+
+/-- **Return the context a finalised thread `x` holds on loan** (seL4's
+`reply_remove` of its lender's reply, the pop handing the context back): the
+lender `L` its binding names (`.donated s L`, its owner code) is ended
+(`finaliseReplyWaiter`), so the pop takes the context from `x` and binds it to
+`L`, before `x`'s suspend, when `L` is endable as `x`'s waiter
+(`replyWaiterEndable`).  `O(1)` reads, then the step's own. -/
+def finaliseThreadReturnLoan (st : SystemState) (x : SeLe4n.ThreadId) : SystemState :=
+  match st.getTcb? x with
+  | some tx =>
+    match tx.scBindingOwnerCode with
+    | 0 => st
+    | o + 1 =>
+      match st.getTcb? ⟨o⟩ with
+      | some tl => if replyWaiterEndable st x ⟨o⟩ tl then finaliseReplyWaiter st ⟨o⟩ tl else st
+      | none => st
+  | none => st
+
+/-- **End the callers waiting on the server `x`**, head first, at most `fuel` of
+them: each, endable as `x`'s waiter (`replyWaiterEndable`), is ended as
+`reply_remove` ends it (`finaliseReplyWaiter`), which takes it off `x`'s queue,
+so the walk follows `x`'s own head.  A waiter the guard refuses ends the walk;
+the pre-state admission (`replyWaitersAdmitted`) reads every waiter, so none is
+refused on a state it admits. -/
+def finaliseReplyWaiters (x : SeLe4n.ThreadId) : Nat → SystemState → SystemState
+  | 0, st => st
+  | fuel + 1, st =>
+    match st.getTcb? x with
+    | some tx =>
+      match tx.replyWaitersHeadCode with
+      | 0 => st
+      | k + 1 =>
+        match st.getTcb? ⟨k⟩ with
+        | some t =>
+          if replyWaiterEndable st x ⟨k⟩ t then
+            finaliseReplyWaiters x fuel (finaliseReplyWaiter st ⟨k⟩ t)
+          else st
+        | none => st
+    | none => st
+
+/-- **End every caller waiting on a finalised thread `x`** (`finaliseReplyWaiters`,
+with the fuel `x`'s own count). -/
+@[inline] def finaliseThreadEndWaiters (st : SystemState) (x : SeLe4n.ThreadId) : SystemState :=
+  match st.getTcb? x with
+  | some tx => finaliseReplyWaiters x tx.replyWaitersCount st
   | none => st
 
 /-- **Release every core's hold on a thread being finalised** (seL4's
@@ -1373,9 +1481,15 @@ so the store scans its guard and sweeps would make are not run
 -- their compiled code takes the compiled cleanups.
 
 /-- **seL4's `finaliseCap` on the final capability to a thread**: unbound from
-its notification (`unbindNotification`); suspended (`suspend`: its blocked IPC
-cancelled, then `.Inactive` and off the scheduler, a core it ran on made to
-choose another thread); released by every core (`fpuThreadDelete`, and the
+its notification (`unbindNotification`); its blocked IPC cancelled (`suspend` →
+`cancelIPC`, a reply removed as `reply_remove_tcb` removes it); a context it
+holds on loan handed back to its lender by the lender's pop
+(`finaliseThreadReturnLoan`), before its suspend as in seL4; every caller
+waiting on it for a reply ended as `reply_remove` ends it
+(`finaliseThreadEndWaiters`: seL4 keeps those callers blocked until their reply
+objects go, and here reply authority is tied to the server, so the server's
+delete removes each caller's reply then); suspended (`.Inactive` and off the
+scheduler, a core it ran on made to choose another thread); released by every core (`fpuThreadDelete`, and the
 residency record); unbound from its scheduling context (`schedContext_unbindTCB`,
 whose own dequeue the suspend has made); then the destroy cleanup.  seL4 runs the
 context unbind before the suspend, and the cut runs it after, so the unbind finds
@@ -1389,8 +1503,10 @@ def finaliseThread (x : SeLe4n.ObjId) (st : SystemState) : SystemState :=
       (finaliseThreadUnbindSchedContext
         (finaliseThreadReleaseCores
           (finaliseThreadSuspend
-            (finaliseThreadCancel
-              (finaliseThreadUnbindNotification st tid) tid) tid) tid) tid) x
+            (finaliseThreadEndWaiters
+              (finaliseThreadReturnLoan
+                (finaliseThreadCancel
+                  (finaliseThreadUnbindNotification st tid) tid) tid) tid) tid) tid) tid) x
   else st
 
 /-- **seL4's `finaliseCap` on the final capability to a scheduling context**:
@@ -1414,8 +1530,11 @@ theorem finaliseThread_eq (x : SeLe4n.ObjId) (st : SystemState) :
         finaliseThreadUnbindSchedContext
           (finaliseThreadReleaseCores
             (finaliseThreadSuspend
-              (finaliseThreadCancel
-                (finaliseThreadUnbindNotification st ⟨x.val⟩) ⟨x.val⟩) ⟨x.val⟩) ⟨x.val⟩) ⟨x.val⟩
+              (finaliseThreadEndWaiters
+                (finaliseThreadReturnLoan
+                  (finaliseThreadCancel
+                    (finaliseThreadUnbindNotification st ⟨x.val⟩) ⟨x.val⟩) ⟨x.val⟩) ⟨x.val⟩)
+              ⟨x.val⟩) ⟨x.val⟩) ⟨x.val⟩
       else st := by
   unfold finaliseThread; rw [finaliseThreadCleanup_eq]
 

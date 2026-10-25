@@ -681,6 +681,58 @@ theorem finaliseReplyCallerCancel_closed (P : SystemState → Prop) (hRep : Fina
     · exact h
   · exact h
 
+/-- **A property the reply cancel and the suspend keep holds after a waiter's
+end** (`finaliseReplyWaiter`). -/
+theorem finaliseReplyWaiter_closed (P : SystemState → Prop) (hRep : FinaliseReplyStep P)
+    (hSuspend : FinaliseSuspendStep P) (s : SystemState) (w : SeLe4n.ThreadId) (t : TCB)
+    (h : P s) (hT : s.getTcb? w = some t) : P (finaliseReplyWaiter s w t) :=
+  finaliseThreadSuspend_closed P hSuspend _ w (finaliseReplyCallerCancel_closed P hRep s w t h hT)
+
+/-- ...so after the loan return (`finaliseThreadReturnLoan`). -/
+theorem finaliseThreadReturnLoan_closed (P : SystemState → Prop) (hRep : FinaliseReplyStep P)
+    (hSuspend : FinaliseSuspendStep P) (s : SystemState) (x : SeLe4n.ThreadId) (h : P s) :
+    P (finaliseThreadReturnLoan s x) := by
+  unfold finaliseThreadReturnLoan
+  split
+  · split
+    · exact h
+    · split
+      · rename_i tl hT
+        split
+        · exact finaliseReplyWaiter_closed P hRep hSuspend s _ tl h hT
+        · exact h
+      · exact h
+  · exact h
+
+/-- ...and after the walk over a server's waiters (`finaliseReplyWaiters`), by
+induction on the fuel. -/
+theorem finaliseReplyWaiters_closed (P : SystemState → Prop) (hRep : FinaliseReplyStep P)
+    (hSuspend : FinaliseSuspendStep P) (x : SeLe4n.ThreadId) :
+    ∀ (fuel : Nat) (s : SystemState), P s → P (finaliseReplyWaiters x fuel s)
+  | 0, s, h => h
+  | fuel + 1, s, h => by
+    unfold finaliseReplyWaiters
+    split
+    · split
+      · exact h
+      · split
+        · rename_i t hT
+          split
+          · exact finaliseReplyWaiters_closed P hRep hSuspend x fuel _
+              (finaliseReplyWaiter_closed P hRep hSuspend s _ t h hT)
+          · exact h
+        · exact h
+    · exact h
+
+/-- ...so after `finaliseThreadEndWaiters`. -/
+theorem finaliseThreadEndWaiters_closed (P : SystemState → Prop) (hRep : FinaliseReplyStep P)
+    (hSuspend : FinaliseSuspendStep P) (s : SystemState) (x : SeLe4n.ThreadId) (h : P s) :
+    P (finaliseThreadEndWaiters s x) := by
+  unfold finaliseThreadEndWaiters
+  split
+  · exact finaliseReplyWaiters_closed P hRep hSuspend x _ s h
+  · exact h
+
 /-- **A property the thread finalisation's steps keep holds after it.** -/
 theorem finaliseThread_closed (P : SystemState → Prop) (hUnbind : FinaliseUnbindStep P)
     (hSc : FinaliseScUnbindStep P) (hCancel : FinaliseNotificationCancelStep P)
@@ -739,10 +791,10 @@ theorem finaliseThread_closed (P : SystemState → Prop) (hUnbind : FinaliseUnbi
           | exact finaliseReplyCallerCancel_closed P hRep s tid t h1 hT
           | exact h1
       · exact h1
-    -- The suspend.
-    have h3 : P (finaliseThreadSuspend
-        (finaliseThreadCancel (finaliseThreadUnbindNotification st tid) tid) tid) :=
-      finaliseThreadSuspend_closed P hSuspend _ tid h2
+    -- The loan return, the waiters' end, then the suspend.
+    have h3 := finaliseThreadSuspend_closed P hSuspend _ tid
+      (finaliseThreadEndWaiters_closed P hRep hSuspend _ tid
+        (finaliseThreadReturnLoan_closed P hRep hSuspend _ tid h2))
     -- The release.
     have h4 := hRelease _ tid h3
     -- The reservation unbind.
