@@ -12,10 +12,10 @@ cell (this plan's) and the entry's record of the committed current thread; at
 > maintainer on 2026-10-07 ("get the allocation number down to 0").
 > Runs beside WS-CV: WS-CV keeps the register-context sites its plan already
 > owns (`CONTEXT_BY_VALUE_PLAN.md` §1.1, first table); this plan owns every
-> other site and the three entries WS-CV keeps.  Before WS-CB.
+> other site and the three entries WS-CV's CV4.5 would have kept (ZA3).  Before WS-CB.
 > **Audited cut**: `v0.36.71` (`93f76643`), from which every figure and
 > `file:line` below was read; a row re-reads what it depends on when it starts.
-> **Phases**: ZA1..ZA4 in execution order; the rows are §4.  **Prefix**: `ZA`
+> **Phases**: ZA1..ZA6 in execution order; the rows are §4.  **Prefix**: `ZA`
 > (`za<digit>` matches nothing under `SeLe4n/`, `tests/`, `rust/`, `scripts/`
 > at the audited cut).
 
@@ -79,11 +79,14 @@ Five root causes.  Each site is listed once, with the row that removes it.
 | `registerFileOfTrapContext` 1, `trapContextOfRegisterFile` 1 | the two `TrapContext` ↔ `RegisterFile` conversions | CV2.1 |
 | `overflowWordsOrFaulted` 1 | the overflow read's result | CV4.3 |
 | `saveTrapFrameOnCore` 3, `restartAtSvc` 1, `setGprOfByte` 1, `RegisterFile.stageReturnFrame` 2, `TCB.withReturnFrame` 1, `writeReturnFrameToTcb` 1, `stageCallerReturnFor` 1 (an `instDecidableEqThreadId` closure) | TCB, register-file and state copies taken because the object is shared between the TCB and the core bank | CV4.4 |
-| `syscallDispatchCrossCoreStep` 8, `threadTranslationOperands` 6, `fpLiveFor` 2, `restoreTargetOnCore` 2, `shootdownRoundWindowFrom` 1, `readReturnFrame` 1 | the step's nested result tuple and the restore operands; `restoreTargetOnCore` runs **twice** per syscall | CV4.5 |
+| `syscallDispatchCrossCoreStep` 8, `threadTranslationOperands` 6, `fpLiveFor` 2, `restoreTargetOnCore` 2, `shootdownRoundWindowFrom` 1, `readReturnFrame` 1 | the step's nested result tuple and the restore operands; `restoreTargetOnCore` runs **twice** per syscall | ZA3.1 (planned for CV4.5) |
 
-After CV4.5 the CV plan keeps three entries by name (its §1.1): the commit
-record, the `modifyGet` pair and the optional `KernelObject` re-wrap.  ZA3
-removes them.
+The CV plan's CV4.5 row named three entries it would keep: a commit record,
+the `modifyGet` pair and the optional `KernelObject` re-wrap.  They are this
+plan's (ZA3), which removes all three with no commit record.  At `v0.36.75`
+every site of this table reads 0 on the signal round trip: CV2.1, CV3.1 and
+the save-and-stage half of CV4.4 removed the context sites, and this plan's
+rows the rest (§1).
 
 ### 2.2 Owned by this plan (62 sites)
 
@@ -164,14 +167,14 @@ Five rules.  Every row applies them to its own sites; none adds a gate.
   scalar, or nothing.  A lookup its caller immediately matches is written in
   continuation form (`@[specialize]` over the success and failure
   continuations) so the `Option`/`Except`/record it would build cancels at the
-  call site; what the step must report back is written into the state and read
-  after the commit (ZA3.1).
+  call site; what the step must report back is read off the committed state as
+  words inside the atomic step (ZA3.1).
 - **D3 Compare without constructing.**  `x == some y` becomes a `match`;
   equality of typed identifiers compares their `.toNat`, with no instance
   closure.
 - **D4 One question, one computation.**  The operand is resolved once and its
-  slot reference handed to the taint plan; the restore target is computed
-  once (CV4.5).
+  slot reference handed to the taint plan; the restore target is read
+  once, off the committed state (ZA3.1).
 - **D5 Specification unchanged, implementation proven equal.**  Each faster
   function is registered with `@[csimp]` against the specification function
   it replaces, with the equality proved; theorems keep citing the
@@ -205,16 +208,18 @@ archive and recorded, every tier its files reach green.
 | ZA2.4 | **Taint without values**: the plan's edges applied by a function of the syscall class and the resolved reference instead of a list; the state rebuilt only when the taint table changes (`applySyscallTaint` returns `post` itself when no edge source and no origin carries a tag, proved); the equality closure removed by D3 | `InformationFlow/TaintPropagation.lean`, `InformationFlow/Taint.lean` |
 | ZA2.5 | **Report through the state**: `ipcBufferWalkPlan` for a message with no overflow words and `syscallReturnOutcome`'s `.returns` value (D2) | `Architecture/IpcBufferTlbFill.lean`, `Platform/FFI.lean` |
 
-WS-CV's rows CV1.2 through CV4.5 run here, as its plan orders them; they
-remove §2.1's 55 sites.  ZA3 consumes CV4.5.
+ZA3 uses only what had landed by `v0.36.74`: ZA1, ZA2 and WS-CV's CV2.1,
+CV3.1 and the save-and-stage half of CV4.4.  It consumes no later WS-CV row.
 
-### ZA3 — the entries WS-CV keeps (consumes CV4.5)
+### ZA3 — the syscall entry's commit allocates nothing
 
 | Row | Work | Files |
 |---|---|---|
-| ZA3.1 | **The commit record is written into the state.**  The step's report (outcome, return words, restore kind, `tableBase`, `asid`, `fpLive`, shootdown window, SGI and maintenance lists) becomes a per-core field of the kernel state the step overwrites in place; the HAL reads it after the commit through scalar `@[export]` getters that borrow the state and allocate nothing; CV4.5's record and `commit_restore_eq_restoreTargetOnCore` restated over the field.  At `v0.36.75` the syscall entry needs no field: its restore target crosses the inlined commit as four words read off the committed state (`restoreCommitKindOnCore` and its siblings, each proven equal to the field of `restoreTargetOnCore`) and its unit-shape outcome is a static, which reads 0; the timer, reschedule, fault and secondary entries still pass the `RestoreTarget` record and take the same form here | `SyscallDispatchEntry.lean`, `Model/State.lean`, `Platform/FFI.lean`, `rust/sele4n-hal/src/ffi.rs`, `rust/sele4n-lean-boundary/tests/layout.rs` |
-| ZA3.2 | **No pair at the entry.**  With ZA3.1 the step returns the state alone; `modifyGetKernelState` (`FFI.lean:1124`) is `@[inline]` and the entry specialised over its step (CV3.1), so the `(result, state)` pair cancels; the generated C of `lean_syscall_dispatch_cross_core` read for it | `Platform/FFI.lean`, `SyscallDispatchEntry.lean` |
-| ZA3.3 | **The re-wrap never fires**: with ZA1.2's `RHTable.modify` under CV4.4's `modifyTcbExclusive`, the `KernelObject` cell is exclusive on every continuing path; the generated C read to confirm the fresh branch is unreachable there | `Model/State.lean` |
+| ZA3.1 | **The commit crosses as words.**  The step builds no report record.  Inside the atomic step the entry reads the restore target's parts off the committed state: `restoreCommitKindOnCore`, `restoreContextOnCore`, `restoreTableBaseOnCore` and `restoreAsidOnCore`, each proven equal to its field of `restoreTargetOnCore` (`restoreCommitKindOnCore_eq` and its siblings). `syscallDispatchCrossCoreStep_restoreTarget` says the target the step reports is that state's, and `restoreTrapFrameParts` stages and commits from the parts (`restoreTrapFrameParts_eq`).  A unit-shape outcome is a static (ZA2.5).  Neither a per-core report field nor a commit record is needed: each would be a value the step builds and the HAL reads back, where the words cross the inlined commit as unboxed locals.  Landed at `v0.36.75` | `SyscallDispatchEntry.lean`, `SyscallDispatchStep.lean`, `Architecture/ContextRestore.lean`, `Platform/FFI.lean` |
+| ZA3.2 | **No pair at the entry.**  `modifyGetKernelState` (`Platform/FFI.lean`) is `@[inline]` and the entry is specialised over its step (CV3.1), so the `(result, state)` pair and the action closure cancel.  The generated C of `lean_syscall_dispatch_cross_core` (`SyscallDispatchEntry.c`) contains no `lean_alloc_ctor`, `lean_alloc_closure` or `lean_box_uint64`.  Landed at `v0.36.75`; the generated C re-read at `v0.36.136` | `Platform/FFI.lean`, `SyscallDispatchEntry.lean` |
+| ZA3.3 | **The re-wrap never fires.**  The save and the stage write the caller's TCB in its slot (`saveCapturedFrameImpl` through `SystemState.modifyObject`, `stageCurrentCallerReturn` through `updateTcb`, both compiled through ZA1.6's swap-out `RHTable.modify`). So the `KernelObject` cell is exclusive on the continuing path and its fresh branch does not run; every continuing scenario reads 0 (§1).  CV4.4's take-from-both-holders `modifyTcbExclusive` is not needed for it.  Landed at `v0.36.75` | `Model/State.lean`, `Architecture/TrapFrameSave.lean`, `Architecture/ContextRestore.lean` |
+
+The other entries still hand a `RestoreTarget` record across their commit: the timer tick (`PerCoreTimerEntry.lean`), the reschedule SGI (`PerCoreRescheduleEntry.lean`), the fault entries (`FaultEntry.lean`) and the secondary core's entry (`SecondaryEntry.lean`).  ZA6.1 gives them ZA3.1's form.
 
 ### ZA4 — coverage and closure
 
@@ -260,7 +265,7 @@ lowers its pin; ZA6.2 makes every pin zero.
 
 | Row | Work | Files |
 |---|---|---|
-| ZA6.1 | **Every other kernel entry.**  Decision (2026-10-11): the zero rule covers every entry, not only syscalls.  The timer tick, the IRQ entry and the fault entry take ZA3.1's form; the exerciser drives each, the fault entry with a capability fault at an address `≥ 2^63` among its scenarios, and reads it to zero.  It also takes the one syscall arm ZA5.2 leaves on the general path, the suspend of a thread blocked in IPC or holding a donated scheduling context (`docs/REGISTERED_DEBT.md`): the suspend becomes total, as seL4's `suspend` is, the donated return's refusal decided before the teardown and the post-teardown binding read through a check the entry can ask, so both arms run checks first (the reply arm's return has a pre-state check since `v0.36.136`, `replyHeadPopCommits`, which the reply finalisation reads before any write; the borrower's return remains); the exerciser suspends a blocked partner and reads it to zero.  The exerciser also gains a third thread, so a head reply's final delete, which stops its caller and the context's holder, gains its `head-reply-delete` step, and a thread's final delete with callers waiting on it its `waited-server-delete` step (`docs/REGISTERED_DEBT.md`, "A head reply's final delete has no QEMU scenario") | `SyscallDispatchEntry.lean`, `Platform/FFI.lean`, `IPC/CrossCore/Cancellation.lean`, `rust/sele4n-hal/src/ffi.rs`, `smp_exercisers.rs` |
+| ZA6.1 | **Every other kernel entry.**  Decision (2026-10-11): the zero rule covers every entry, not only syscalls.  The timer tick, the reschedule SGI, the IRQ entry, the fault entries and the secondary core's entry take ZA3.1's form: each reads its restore target's parts off the committed state as words, so no `RestoreTarget` record crosses its commit; the exerciser drives each, the fault entry with a capability fault at an address `≥ 2^63` among its scenarios, and reads it to zero.  It also takes the one syscall arm ZA5.2 leaves on the general path, the suspend of a thread blocked in IPC or holding a donated scheduling context (`docs/REGISTERED_DEBT.md`): the suspend becomes total, as seL4's `suspend` is, the donated return's refusal decided before the teardown and the post-teardown binding read through a check the entry can ask, so both arms run checks first (the reply arm's return has a pre-state check since `v0.36.136`, `replyHeadPopCommits`, which the reply finalisation reads before any write; the borrower's return remains); the exerciser suspends a blocked partner and reads it to zero.  The exerciser also gains a third thread, so a head reply's final delete, which stops its caller and the context's holder, gains its `head-reply-delete` step, and a thread's final delete with callers waiting on it its `waited-server-delete` step (`docs/REGISTERED_DEBT.md`, "A head reply's final delete has no QEMU scenario") | `SyscallDispatchEntry.lean`, `PerCoreTimerEntry.lean`, `PerCoreRescheduleEntry.lean`, `FaultEntry.lean`, `SecondaryEntry.lean`, `Platform/FFI.lean`, `IPC/CrossCore/Cancellation.lean`, `rust/sele4n-hal/src/ffi.rs`, `smp_exercisers.rs` |
 | ZA6.2 | **The rule is enforced**: every pin is zero, the exerciser fails on a non-zero delta for every scenario and every entry, and `CLAUDE.md` gains the standing rule that a kernel entry allocates nothing | `smp_exercisers.rs`, `scripts/qemu_exerciser_lib.sh`, `CLAUDE.md` |
 | ZA6.3 | Closure: the reading recorded in `CHANGELOG.md`, `WORKSTREAM_CONTEXT.md` section moved to the closed-workstream file, this plan archived | docs |
 

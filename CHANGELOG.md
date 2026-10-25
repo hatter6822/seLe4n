@@ -1,3 +1,27 @@
+## v0.36.137 — WS-ZA ZA3 stands in the zero-allocation plan
+
+Documentation only; no code changes.
+
+- **ZA3 is this plan's own phase.**  `ZERO_ALLOCATION_SYSCALL_PLAN.md` no
+  longer makes ZA3 consume WS-CV's CV4.5.  ZA3 now records what landed at
+  `v0.36.75`:
+  - ZA3.1: the syscall entry reads its restore target's parts off the
+    committed state as words, with no report record and no per-core field;
+  - ZA3.2: the entry's `(result, state)` pair cancels.  The generated C of
+    `lean_syscall_dispatch_cross_core` was re-read at `v0.36.136` and holds no
+    `lean_alloc_ctor`, `lean_alloc_closure` or `lean_box_uint64`;
+  - ZA3.3: the `KernelObject` re-wrap never fires.  The save and the stage
+    write the TCB in its slot through ZA1.6's `RHTable.modify`, without CV4.4's
+    `modifyTcbExclusive`.
+- **The other entries' commit form is ZA6.1's.**  The timer tick, the
+  reschedule SGI, the fault entries and the secondary core's entry still hand
+  a `RestoreTarget` record across their commit.  ZA6.1 now names each of them.
+- **WS-CV's CV4.5 is landed in WS-ZA.**  `CONTEXT_BY_VALUE_PLAN.md` records
+  that CV4.5 landed through ZA3, with no `SyscallCommit` record.  The record
+  is not taken: it would cost one allocation per syscall where the words cost
+  none.  Its §1.1 cells, its §7 anchor count and `REGISTERED_DEBT.md`'s two
+  citations now say so.
+
 ## v0.36.136 — WS-ZA ZA5.4 part 25: a final delete finalises a busy reply and a busy scheduling context
 
 A delete or revoke that destroys the final capability to a reply now
