@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "za/cnode-zombie",
-      "commit_sha": "83f99c25fd2f9e3bf3c8f85489eead8a44399699",
-      "tree_sha": "4760358b4cfe96c9d2f786672aab31d80ba41148",
-      "committed_at_utc": "2026-10-25T17:14:30+00:00"
+      "commit_sha": "a6ee94348deeb81cc6039f6d654743c90b5b3097",
+      "tree_sha": "1640b903de75b5d83adcfacbb74a64628dfa837d",
+      "committed_at_utc": "2026-10-25T18:25:54+00:00"
     }
   },
   "source_sync": {
@@ -17,19 +17,19 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "97e62265578b192f2b391f49201cbcc8b991481c37114bd5bff3fb5933a327d2"
+    "source_digest": "8cabd7503b1f77a085dc7c76d9bfffe15142acf29cef96d62aa3bda28ea4adcd"
   },
   "summary": {
     "module_count": 528,
-    "declaration_count": 29274
+    "declaration_count": 29273
   },
   "readme_sync": {
     "version": "0.36.137",
     "lean_toolchain": "v4.28.0",
     "production_files": 458,
-    "production_loc": 506203,
+    "production_loc": 506208,
     "test_files": 70,
-    "test_loc": 87276,
+    "test_loc": 87273,
     "proved_theorem_lemma_decls": 18430,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -384367,7 +384367,7 @@
           "kind": "def",
           "name": "nonExecutedTransitionsPrivate",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.nonExecutedTransitionsPrivate",
-          "line": 1249,
+          "line": 1254,
           "called": [
             "SeLe4n.Testing.ReplyStackWriteCensus.privateIn"
           ]
@@ -384376,7 +384376,7 @@
           "kind": "def",
           "name": "nonExecutedTransitions",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.nonExecutedTransitions",
-          "line": 1292,
+          "line": 1297,
           "called": [
             "SeLe4n.Testing.KernelTransitionReachabilityCensus.nonExecutedTransitionsPlain",
             "SeLe4n.Testing.KernelTransitionReachabilityCensus.nonExecutedTransitionsPrivate"
@@ -384386,21 +384386,21 @@
           "kind": "def",
           "name": "standsBesideLive",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.standsBesideLive",
-          "line": 1318,
+          "line": 1323,
           "called": []
         },
         {
           "kind": "def",
           "name": "reconciliationViolations",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.reconciliationViolations",
-          "line": 1342,
+          "line": 1347,
           "called": []
         },
         {
           "kind": "def",
           "name": "pinSides",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinSides",
-          "line": 1375,
+          "line": 1380,
           "called": [
             "SeLe4n.Testing.ReplyStackWriteCensus.conclusionOf"
           ]
@@ -384409,7 +384409,7 @@
           "kind": "def",
           "name": "pinRelatesPrograms",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinRelatesPrograms",
-          "line": 1407,
+          "line": 1412,
           "called": [
             "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinSides"
           ]
@@ -384418,7 +384418,7 @@
           "kind": "def",
           "name": "pinViolations",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinViolations",
-          "line": 1420,
+          "line": 1425,
           "called": [
             "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinRelatesPrograms"
           ]
@@ -384427,7 +384427,7 @@
           "kind": "theorem",
           "name": "pinWitnessConjunctionOfReflexivity",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinWitnessConjunctionOfReflexivity",
-          "line": 1460,
+          "line": 1465,
           "called": [
             "SeLe4n.Kernel.cancelIpcBlockingOnCore",
             "SeLe4n.Kernel.cancelIpcBlockingReclaimed"
@@ -384437,7 +384437,7 @@
           "kind": "theorem",
           "name": "pinWitnessReflexiveOverBoth",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinWitnessReflexiveOverBoth",
-          "line": 1468,
+          "line": 1473,
           "called": [
             "SeLe4n.Kernel.cancelIpcBlockingOnCore",
             "SeLe4n.Kernel.cancelIpcBlockingReclaimed"
@@ -384447,7 +384447,7 @@
           "kind": "theorem",
           "name": "pinWitnessBothOnOneSide",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinWitnessBothOnOneSide",
-          "line": 1475,
+          "line": 1480,
           "called": [
             "SeLe4n.Kernel.cancelIpcBlockingOnCore",
             "SeLe4n.Kernel.cancelIpcBlockingReclaimed"
@@ -384457,7 +384457,7 @@
           "kind": "def",
           "name": "pinCheckWitnesses",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinCheckWitnesses",
-          "line": 1480,
+          "line": 1485,
           "called": [
             "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinWitnessBothOnOneSide",
             "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinWitnessConjunctionOfReflexivity",
@@ -384468,7 +384468,7 @@
           "kind": "def",
           "name": "pinCheckWitnessViolations",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinCheckWitnessViolations",
-          "line": 1492,
+          "line": 1497,
           "called": [
             "SeLe4n.Testing.KernelTransitionReachabilityCensus.carrierFixpointRefusalViolations",
             "SeLe4n.Testing.KernelTransitionReachabilityCensus.committingExports",
@@ -446973,7 +446973,7 @@
     {
       "module": "tests.VSpaceCapabilityBindingSuite",
       "path": "tests/VSpaceCapabilityBindingSuite.lean",
-      "declaration_count": 150,
+      "declaration_count": 149,
       "declarations": [
         {
           "kind": "def",
@@ -448013,21 +448013,9 @@
         },
         {
           "kind": "def",
-          "name": "retiredFramesOnlyRetirable",
-          "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.retiredFramesOnlyRetirable",
-          "line": 966,
-          "called": [
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.Model.SystemState.getFrame?",
-            "SeLe4n.Model.UntypedObject"
-          ],
-          "private": true
-        },
-        {
-          "kind": "def",
           "name": "runChildUntypedChecks",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.runChildUntypedChecks",
-          "line": 969,
+          "line": 963,
           "called": [
             "SeLe4n.Kernel.Concurrency.bootCoreId",
             "SeLe4n.Kernel.untypedCapability",
@@ -448055,7 +448043,6 @@
             "SeLe4n.Testing.VSpaceCapabilityBinding.freeIndexAt",
             "SeLe4n.Testing.VSpaceCapabilityBinding.mappedPaddr",
             "SeLe4n.Testing.VSpaceCapabilityBinding.permsRWUC",
-            "SeLe4n.Testing.VSpaceCapabilityBinding.retiredFramesOnlyRetirable",
             "SeLe4n.Testing.VSpaceCapabilityBinding.runAll",
             "SeLe4n.Testing.VSpaceCapabilityBinding.slotDevUt",
             "SeLe4n.Testing.VSpaceCapabilityBinding.slotOwnCnRW",
@@ -448072,7 +448059,7 @@
           "kind": "def",
           "name": "decodeDelete",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.decodeDelete",
-          "line": 1082,
+          "line": 1077,
           "called": [
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.Model.SyscallDecodeResult",
@@ -448085,7 +448072,7 @@
           "kind": "def",
           "name": "decodeOwnUnmap",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.decodeOwnUnmap",
-          "line": 1090,
+          "line": 1085,
           "called": [
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.Model.SyscallDecodeResult",
@@ -448099,7 +448086,7 @@
           "kind": "def",
           "name": "recordAt",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.recordAt",
-          "line": 1097,
+          "line": 1092,
           "called": [
             "SeLe4n.Model.FrameMapping",
             "SeLe4n.Model.SystemState",
@@ -448113,7 +448100,7 @@
           "kind": "def",
           "name": "recordLive",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.recordLive",
-          "line": 1102,
+          "line": 1097,
           "called": [
             "SeLe4n.Kernel.capabilityMappingLive",
             "SeLe4n.Model.SystemState",
@@ -448127,7 +448114,7 @@
           "kind": "def",
           "name": "retiredRecordLive",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.retiredRecordLive",
-          "line": 1110,
+          "line": 1105,
           "called": [
             "SeLe4n.Kernel.capabilityMappedPage",
             "SeLe4n.Kernel.mappedPageLive",
@@ -448142,7 +448129,7 @@
           "kind": "def",
           "name": "vspaceRootTag",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.vspaceRootTag",
-          "line": 1123,
+          "line": 1118,
           "called": [],
           "private": true
         },
@@ -448150,7 +448137,7 @@
           "kind": "def",
           "name": "decodeMapVia",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.decodeMapVia",
-          "line": 1126,
+          "line": 1121,
           "called": [
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.Model.SyscallDecodeResult",
@@ -448163,7 +448150,7 @@
           "kind": "def",
           "name": "rootAt",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.rootAt",
-          "line": 1134,
+          "line": 1129,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getVSpaceRoot?",
@@ -448176,7 +448163,7 @@
           "kind": "def",
           "name": "restoreObjects",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.restoreObjects",
-          "line": 1138,
+          "line": 1133,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.storeObject",
@@ -448188,7 +448175,7 @@
           "kind": "def",
           "name": "runCarvedRootChecks",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.runCarvedRootChecks",
-          "line": 1146,
+          "line": 1141,
           "called": [
             "SeLe4n.ASID.ofNat",
             "SeLe4n.Kernel.Architecture.encodeAsidInvalidation",
@@ -448235,7 +448222,7 @@
           "kind": "def",
           "name": "runFrameFinaliseChecks",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.runFrameFinaliseChecks",
-          "line": 1245,
+          "line": 1240,
           "called": [
             "SeLe4n.Kernel.Concurrency.bootCoreId",
             "SeLe4n.Kernel.cspaceDeleteSlot",
@@ -448285,7 +448272,7 @@
           "kind": "def",
           "name": "runAuthorizedChecks",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.runAuthorizedChecks",
-          "line": 1383,
+          "line": 1378,
           "called": [
             "SeLe4n.Kernel.Architecture.ICacheInvalidation",
             "SeLe4n.Kernel.Concurrency.bootCoreId",
@@ -448312,7 +448299,7 @@
           "kind": "def",
           "name": "spaceWorker",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.spaceWorker",
-          "line": 1434,
+          "line": 1429,
           "called": [
             "SeLe4n.ThreadId"
           ],
@@ -448322,7 +448309,7 @@
           "kind": "def",
           "name": "slotWorkerTcb",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.slotWorkerTcb",
-          "line": 1435,
+          "line": 1430,
           "called": [],
           "private": true
         },
@@ -448330,7 +448317,7 @@
           "kind": "def",
           "name": "slotOwnerTcb",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.slotOwnerTcb",
-          "line": 1436,
+          "line": 1431,
           "called": [],
           "private": true
         },
@@ -448338,7 +448325,7 @@
           "kind": "def",
           "name": "spaceScenario",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.spaceScenario",
-          "line": 1445,
+          "line": 1440,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getCNode?",
@@ -448361,7 +448348,7 @@
           "kind": "def",
           "name": "decodeSetSpace",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.decodeSetSpace",
-          "line": 1465,
+          "line": 1460,
           "called": [
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.Model.SyscallDecodeResult",
@@ -448373,7 +448360,7 @@
           "kind": "def",
           "name": "flagOnlySuspended",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.flagOnlySuspended",
-          "line": 1473,
+          "line": 1468,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getTcb?",
@@ -448385,7 +448372,7 @@
           "kind": "def",
           "name": "rootsOf",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.rootsOf",
-          "line": 1479,
+          "line": 1474,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getTcb?",
@@ -448398,7 +448385,7 @@
           "kind": "def",
           "name": "spaceSlotEmpty",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.spaceSlotEmpty",
-          "line": 1483,
+          "line": 1478,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getTcb?",
@@ -448411,7 +448398,7 @@
           "kind": "def",
           "name": "runSetSpaceChecks",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.runSetSpaceChecks",
-          "line": 1488,
+          "line": 1483,
           "called": [
             "SeLe4n.Kernel.Concurrency.bootCoreId",
             "SeLe4n.Model.KernelError",
@@ -448454,7 +448441,7 @@
           "kind": "def",
           "name": "pageTableTag",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.pageTableTag",
-          "line": 1562,
+          "line": 1557,
           "called": [],
           "private": true
         },
@@ -448462,7 +448449,7 @@
           "kind": "def",
           "name": "tableScenario",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.tableScenario",
-          "line": 1567,
+          "line": 1562,
           "called": [
             "SeLe4n.Model.CNode",
             "SeLe4n.Model.CNode.occupiedSlots",
@@ -448481,7 +448468,7 @@
           "kind": "def",
           "name": "decodeTableMap",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.decodeTableMap",
-          "line": 1587,
+          "line": 1582,
           "called": [
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.Model.SyscallDecodeResult",
@@ -448494,7 +448481,7 @@
           "kind": "def",
           "name": "decodeRawMapVia",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.decodeRawMapVia",
-          "line": 1596,
+          "line": 1591,
           "called": [
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.Model.SyscallDecodeResult",
@@ -448506,7 +448493,7 @@
           "kind": "def",
           "name": "decodeRawTableMap",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.decodeRawTableMap",
-          "line": 1604,
+          "line": 1599,
           "called": [
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.Model.SyscallDecodeResult",
@@ -448518,7 +448505,7 @@
           "kind": "def",
           "name": "decodeTableUnmap",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.decodeTableUnmap",
-          "line": 1611,
+          "line": 1606,
           "called": [
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.Model.SyscallDecodeResult"
@@ -448529,7 +448516,7 @@
           "kind": "def",
           "name": "decodeUnmapVia",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.decodeUnmapVia",
-          "line": 1618,
+          "line": 1613,
           "called": [
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.Model.SyscallDecodeResult",
@@ -448542,7 +448529,7 @@
           "kind": "def",
           "name": "installOf",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.installOf",
-          "line": 1625,
+          "line": 1620,
           "called": [
             "SeLe4n.Model.PageTableInstall",
             "SeLe4n.Model.SystemState",
@@ -448555,7 +448542,7 @@
           "kind": "def",
           "name": "retiredInstallsClosed",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.retiredInstallsClosed",
-          "line": 1631,
+          "line": 1626,
           "called": [
             "SeLe4n.Kernel.Architecture.pageTableInstallLive",
             "SeLe4n.Model.SystemState",
@@ -448569,7 +448556,7 @@
           "kind": "def",
           "name": "withStraySlot",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.withStraySlot",
-          "line": 1646,
+          "line": 1641,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.insert",
             "SeLe4n.Model.PageTableSlot",
@@ -448584,7 +448571,7 @@
           "kind": "def",
           "name": "slotsOf",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.slotsOf",
-          "line": 1656,
+          "line": 1651,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Testing.VSpaceCapabilityBinding.rootAt"
@@ -448595,7 +448582,7 @@
           "kind": "def",
           "name": "runPageTableChecks",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.runPageTableChecks",
-          "line": 1659,
+          "line": 1654,
           "called": [
             "SeLe4n.ASID.ofNat",
             "SeLe4n.Kernel.Architecture.cnodeHoldsInstalledPageTableCap",
@@ -448664,7 +448651,7 @@
           "kind": "def",
           "name": "recordedBy",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.recordedBy",
-          "line": 1903,
+          "line": 1898,
           "called": [
             "SeLe4n.Kernel.Architecture.PhysicalWrite",
             "SeLe4n.Model.SystemState",
@@ -448676,7 +448663,7 @@
           "kind": "def",
           "name": "store",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.store",
-          "line": 1906,
+          "line": 1901,
           "called": [
             "SeLe4n.Kernel.Architecture.PhysicalWrite",
             "SeLe4n.PAddr.ofNat"
@@ -448687,7 +448674,7 @@
           "kind": "def",
           "name": "tstore",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.tstore",
-          "line": 1910,
+          "line": 1905,
           "called": [
             "SeLe4n.Kernel.Architecture.PhysicalWrite",
             "SeLe4n.PAddr.ofNat"
@@ -448698,7 +448685,7 @@
           "kind": "def",
           "name": "zero",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.zero",
-          "line": 1913,
+          "line": 1908,
           "called": [
             "SeLe4n.Kernel.Architecture.PhysicalWrite",
             "SeLe4n.PAddr.ofNat"
@@ -448709,7 +448696,7 @@
           "kind": "def",
           "name": "tableDesc",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.tableDesc",
-          "line": 1918,
+          "line": 1913,
           "called": [],
           "private": true
         },
@@ -448717,7 +448704,7 @@
           "kind": "def",
           "name": "runPhysicalWriteChecks",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.runPhysicalWriteChecks",
-          "line": 1920,
+          "line": 1915,
           "called": [
             "SeLe4n.ASID.ofNat",
             "SeLe4n.ASID.toNat",
@@ -448768,7 +448755,7 @@
           "kind": "def",
           "name": "recordsChildAt",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.recordsChildAt",
-          "line": 2044,
+          "line": 2039,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getUntyped?",
@@ -448781,7 +448768,7 @@
           "kind": "def",
           "name": "runFinalDeleteRetireChecks",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.runFinalDeleteRetireChecks",
-          "line": 2049,
+          "line": 2044,
           "called": [
             "SeLe4n.ASID.ofNat",
             "SeLe4n.Kernel.Architecture.encodeAsidInvalidation",
@@ -448817,7 +448804,7 @@
           "kind": "def",
           "name": "endpointTag",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.endpointTag",
-          "line": 2127,
+          "line": 2124,
           "called": [],
           "private": true
         },
@@ -448825,7 +448812,7 @@
           "kind": "def",
           "name": "notificationTag",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.notificationTag",
-          "line": 2128,
+          "line": 2125,
           "called": [],
           "private": true
         },
@@ -448833,7 +448820,7 @@
           "kind": "def",
           "name": "replyTag",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.replyTag",
-          "line": 2129,
+          "line": 2126,
           "called": [],
           "private": true
         },
@@ -448841,7 +448828,7 @@
           "kind": "def",
           "name": "cnodeTagOfRadix",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.cnodeTagOfRadix",
-          "line": 2131,
+          "line": 2128,
           "called": [],
           "private": true
         },
@@ -448849,7 +448836,7 @@
           "kind": "def",
           "name": "decodeBindNotification",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.decodeBindNotification",
-          "line": 2135,
+          "line": 2132,
           "called": [
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.Model.SyscallDecodeResult",
@@ -448861,7 +448848,7 @@
           "kind": "def",
           "name": "storedAt",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.storedAt",
-          "line": 2142,
+          "line": 2139,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.ObjId.ofNat"
@@ -448872,7 +448859,7 @@
           "kind": "def",
           "name": "runPassiveRetireChecks",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.runPassiveRetireChecks",
-          "line": 2145,
+          "line": 2142,
           "called": [
             "SeLe4n.ASID.ofNat",
             "SeLe4n.Kernel.cspaceDeleteSlot",
@@ -448912,7 +448899,7 @@
           "kind": "def",
           "name": "tcbTag",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.tcbTag",
-          "line": 2221,
+          "line": 2218,
           "called": [],
           "private": true
         },
@@ -448920,7 +448907,7 @@
           "kind": "def",
           "name": "schedContextTag",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.schedContextTag",
-          "line": 2224,
+          "line": 2221,
           "called": [],
           "private": true
         },
@@ -448928,7 +448915,7 @@
           "kind": "def",
           "name": "decodeBindSchedContext",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.decodeBindSchedContext",
-          "line": 2228,
+          "line": 2225,
           "called": [
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.Model.SyscallDecodeResult",
@@ -448940,7 +448927,7 @@
           "kind": "def",
           "name": "scCodeOf",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.scCodeOf",
-          "line": 2236,
+          "line": 2233,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getTcb?"
@@ -448951,7 +448938,7 @@
           "kind": "def",
           "name": "stageThreadState",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.stageThreadState",
-          "line": 2241,
+          "line": 2238,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.updateTcb",
@@ -448963,7 +448950,7 @@
           "kind": "def",
           "name": "kernelState",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.kernelState",
-          "line": 2245,
+          "line": 2242,
           "called": [
             "SeLe4n.Model.KernelError",
             "SeLe4n.Model.SystemState"
@@ -448974,7 +448961,7 @@
           "kind": "def",
           "name": "runThreadFinaliseChecks",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.runThreadFinaliseChecks",
-          "line": 2251,
+          "line": 2248,
           "called": [
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -449037,7 +449024,7 @@
           "kind": "def",
           "name": "replyAt",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.replyAt",
-          "line": 2555,
+          "line": 2552,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Model.SystemState",
@@ -449049,7 +449036,7 @@
           "kind": "def",
           "name": "stageCallerOn",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.stageCallerOn",
-          "line": 2563,
+          "line": 2560,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.linkCallerReply",
@@ -449063,7 +449050,7 @@
           "kind": "def",
           "name": "stageReplyCallerOn",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.stageReplyCallerOn",
-          "line": 2573,
+          "line": 2570,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Testing.VSpaceCapabilityBinding.stageCallerOn",
@@ -449075,7 +449062,7 @@
           "kind": "def",
           "name": "stageWaitersOn",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.stageWaitersOn",
-          "line": 2579,
+          "line": 2576,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.linkReplyWaiter",
@@ -449088,7 +449075,7 @@
           "kind": "def",
           "name": "waiterEnded",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.waiterEnded",
-          "line": 2589,
+          "line": 2586,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getTcb?"
@@ -449099,7 +449086,7 @@
           "kind": "def",
           "name": "stageReplyCaller",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.stageReplyCaller",
-          "line": 2595,
+          "line": 2592,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Testing.VSpaceCapabilityBinding.stageReplyCallerOn",
@@ -449111,7 +449098,7 @@
           "kind": "def",
           "name": "runReplyFinaliseChecks",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.runReplyFinaliseChecks",
-          "line": 2599,
+          "line": 2596,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.endpointReceiveDual",
@@ -449157,7 +449144,7 @@
           "kind": "def",
           "name": "runReplyWaiterFinaliseChecks",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.runReplyWaiterFinaliseChecks",
-          "line": 2879,
+          "line": 2876,
           "called": [
             "SeLe4n.Model.storeObject",
             "SeLe4n.ObjId.ofNat",
@@ -449184,7 +449171,7 @@
           "kind": "def",
           "name": "restageReply",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.restageReply",
-          "line": 2946,
+          "line": 2943,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Model.SystemState",
@@ -449198,7 +449185,7 @@
           "kind": "def",
           "name": "runContextlessStackChecks",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.runContextlessStackChecks",
-          "line": 2959,
+          "line": 2956,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.updateSchedContext",
@@ -449226,7 +449213,7 @@
           "kind": "def",
           "name": "runMiddleReplyFinaliseChecks",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.runMiddleReplyFinaliseChecks",
-          "line": 3000,
+          "line": 2997,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.updateSchedContext",
@@ -449254,7 +449241,7 @@
           "kind": "def",
           "name": "ownSlotHolds",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.ownSlotHolds",
-          "line": 3044,
+          "line": 3041,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.lookupSlotCap",
@@ -449267,7 +449254,7 @@
           "kind": "def",
           "name": "runZombieDeleteChecks",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.runZombieDeleteChecks",
-          "line": 3047,
+          "line": 3044,
           "called": [
             "SeLe4n.Kernel.Concurrency.bootCoreId",
             "SeLe4n.Kernel.DeclassificationTaint.contains",
@@ -449311,7 +449298,7 @@
           "kind": "def",
           "name": "runVSpaceCapabilityBindingChecks",
           "full_name": "SeLe4n.Testing.VSpaceCapabilityBinding.runVSpaceCapabilityBindingChecks",
-          "line": 3119,
+          "line": 3116,
           "called": [
             "SeLe4n.Testing.VSpaceCapabilityBinding.runAlignmentChecks",
             "SeLe4n.Testing.VSpaceCapabilityBinding.runAuthorizedChecks",
@@ -449343,7 +449330,7 @@
           "kind": "def",
           "name": "main",
           "full_name": "main",
-          "line": 3152,
+          "line": 3149,
           "called": [
             "SeLe4n.Testing.VSpaceCapabilityBinding.runVSpaceCapabilityBindingChecks"
           ]
