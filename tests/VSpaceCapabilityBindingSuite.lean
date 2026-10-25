@@ -960,12 +960,6 @@ private def runResetChecks : IO Unit := do
 /-- The untyped tag with a size in MR0's upper bits. -/
 private def untypedTagOfSize (sizeBits : Nat) : Nat := 5 + sizeBits * 256
 
-/-- The RETIRED reset guard (`v0.36.6`–`v0.36.7`): every **direct** child must be
-a frame.  Spelled here and nowhere else, so the witness below can show the state
-it would refuse forever. -/
-private def retiredFramesOnlyRetirable (st : SystemState) (ut : UntypedObject) : Bool :=
-  ut.children.all fun c => (st.getFrame? c.objId).isSome
-
 private def runChildUntypedChecks : IO Unit := do
   IO.println "-- §5g `.untypedRetype` carves child untypeds, and a reset returns the subtree (WS-BP BP7.1)"
   let st := carveScenario
@@ -1032,16 +1026,17 @@ private def runChildUntypedChecks : IO Unit := do
             == none &&
            SystemState.lookupSlotCap stRev { cnode := carveCn, slot := SeLe4n.Slot.ofNat 13 }
             == none)
-        -- THE RETIRED GUARD.  The parent's only child is an untyped, so the
-        -- frames-only reset refuses — and no capability to the child remains, so
-        -- nothing can ever reset the child first: the parent's memory would be
-        -- stranded for good.
-        assertBool "RETIRED: the frames-only reset guard refuses this state"
-          (match stRev.getUntyped? carveUt with
-            | some ut => !retiredFramesOnlyRetirable stRev ut
-            | none => false)
+        -- The revocation deleted the child untyped's last capability, so the
+        -- final delete retired the child with it (WS-ZA ZA5.4 part 26: an
+        -- untyped is retired and spliced out of the derivation tree), the
+        -- grandchild frame having been retired with its own capability: the
+        -- parent records no child, and no memory is stranded.
+        assertBool "the revocation retires the child untyped and the grandchild frame"
+          ((stRev.objects[SeLe4n.ObjId.ofNat 970]?).isNone &&
+           (stRev.objects[SeLe4n.ObjId.ofNat 971]?).isNone &&
+           (stRev.getUntyped? carveUt).map (·.children.length) == some 0)
         match dispatchSyscallAsCurrent (decodeReset slotUtRetype) carveOwner Concurrency.bootCoreId stRev with
-        | .error e => assertBool s!"the parent's reset retires the subtree (got {repr e})" false
+        | .error e => assertBool s!"the parent's reset succeeds (got {repr e})" false
         | .ok ((), stReset) => do
           assertBool "the child untyped and the grandchild frame are both retired"
             ((stReset.objects[SeLe4n.ObjId.ofNat 970]?).isNone &&
@@ -2087,8 +2082,9 @@ private def runFinalDeleteRetireChecks : IO Unit := do
         ((rootAt st1 980).isNone && st1.asidTable[one]? == none && !recordsChildAt st1 carveUt 980)
       assertBool "and its ASID gets an acknowledged .aside1 round"
         ((Architecture.shootdownPostedOps st st1).contains (Architecture.encodeAsidInvalidation one))
-  -- A child untyped that still records a frame stays when its capability goes;
-  -- the frame goes with its own.
+  -- A child untyped that still records a frame goes with its capability,
+  -- spliced out of the derivation tree (WS-ZA ZA5.4 part 26): its parent
+  -- records the frame in its place, and the frame goes with its own.
   match runAll carveScenario
       [decodeCarve slotUtRetype (untypedTagOfSize 12) 970 slotOwnCnRW 12,
        decodeCarve 12 frameTag 971 slotOwnCnRW 13] with
@@ -2097,13 +2093,14 @@ private def runFinalDeleteRetireChecks : IO Unit := do
     match runAll st [decodeDelete 12] with
     | .error e => assertBool s!"deleting the child untyped's capability succeeds (got {repr e})" false
     | .ok st1 => do
-      assertBool "an untyped recording a child is not retired with its capability"
-        ((st1.getUntyped? (SeLe4n.ObjId.ofNat 970)).isSome && recordsChildAt st1 (SeLe4n.ObjId.ofNat 970) 971)
+      assertBool "an untyped recording a child is retired with its capability, its parent adopting the child"
+        ((st1.objects[SeLe4n.ObjId.ofNat 970]?).isNone && !recordsChildAt st1 carveUt 970 &&
+         recordsChildAt st1 carveUt 971 && (frameAt st1 971).isSome)
       match runAll st1 [decodeDelete 13] with
       | .error e => assertBool s!"deleting the frame's capability succeeds (got {repr e})" false
       | .ok st2 =>
-        assertBool "the frame is retired from the child untyped's list"
-          ((frameAt st2 971).isNone && !recordsChildAt st2 (SeLe4n.ObjId.ofNat 970) 971)
+        assertBool "the frame is retired from the adopting parent's list"
+          ((frameAt st2 971).isNone && !recordsChildAt st2 carveUt 971)
   -- An empty child untyped goes with its last capability.
   match runAll carveScenario
       [decodeCarve slotUtRetype (untypedTagOfSize 12) 970 slotOwnCnRW 12, decodeDelete 12] with

@@ -90,6 +90,16 @@ seL4's Zombie, and is deleted last.
   30 records 31 at 0x1000, 31 records an endpoint at 0 and untyped 33 at
   0x200; deleting the last capability to 31 leaves 30 recording both at
   0x1000 and 0x1200, and 33 naming 30 as its parent.
+- `vspace_capability_binding_suite` §5g and the retire checks now witness the
+  splice end to end: revoking a parent capability retires the child untyped
+  and its frame with their capabilities, and deleting a child untyped's last
+  capability while its frame lives retires the untyped, its parent recording
+  the frame.  Both replaced checks witnessed the refusal the splice removes;
+  the retired frames-only guard's test-only spelling goes with the first.
+- The kernel-transition reachability census records the two names for the
+  states a thread's finalisation reaches part way
+  (`finaliseThreadAfterCancel`, `finaliseThreadAfterRelease`), which its
+  end-state theorems are stated on and no seam runs.
 
 ### The finalisations' end states
 
