@@ -273,8 +273,11 @@ def enforcementBoundary : List EnforcementClass :=
   -- capabilities to the two roots (`resolveSetSpace`: `.grant`+`.write` on the
   -- CNode, `.write` on the VSpace root), and the write touches one suspended
   -- TCB's two space slots and the derivation links of those slots, their
-  -- sources and neighbours — no data crosses a label boundary.
-  , .capabilityOnly "copyThreadSpaces"
+  -- sources and neighbours — no data crosses a label boundary.  WS-ZA ZA5.4
+  -- part 26: named at the transition the live arm calls, which deletes an old
+  -- CSpace root that is the last capability to a populated CNode through the
+  -- zombie loop first, under the same authority as the delete's.
+  , .capabilityOnly "copyThreadSpacesZombie"
   -- **WS-BP BP7.1 (`v0.36.12`)**: intermediate page tables.  Capability-only:
   -- the authority is the table capability's write right plus, for the install,
   -- the caller's own `.write` capability to the address space — and what moves
@@ -419,7 +422,7 @@ def syscallIdToEnforcementName : SyscallId → String
   | .tcbSetIPCBuffer => "setIPCBuffer"
   | .tcbSetAffinity => "setThreadCpuAffinity"
   | .tcbSetFaultHandler => "setThreadFaultHandlerOp"
-  | .tcbSetSpace => "copyThreadSpaces"
+  | .tcbSetSpace => "copyThreadSpacesZombie"
   | .pageTableMap => "pageTableMap"
   | .pageTableUnmap => "pageTableUnmap"
   | .yield => "yieldOnCore"

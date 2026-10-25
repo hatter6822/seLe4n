@@ -4250,10 +4250,11 @@ run_check "INVARIANT" rg -n '^theorem finaliseFinalObject_preserves_ipcReachable
 run_check "INVARIANT" rg -n '^theorem retireFinalisedObject_preserves_ipcReachable($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllReachability.lean
 run_check "INVARIANT" rg -n '^theorem finaliseFinalObject_preserves_projection($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/FinaliseProjection.lean
 run_check "INVARIANT" rg -n '^theorem retireFinalisedObject_preserves_projection($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/FinaliseProjection.lean
-# Delete and revoke now write remote run queues (a cancelled waiter is woken on
-# its own core), so both DECLARE a scheduler footprint, and the seam proves it
+# Delete, revoke and set-space now write remote run queues (a cancelled waiter
+# is woken on its own core; set-space deletes its old roots through the zombie
+# loop), so all three DECLARE a scheduler footprint, and the seam proves it
 # covers their writes.
-run_check "INVARIANT" rg -n -U '  \| \.cspaceDelete \| \.cspaceRevoke =>\n      LockSet\.ofList\? schedLockSet_capabilityDestroyOnCore' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n -U '  \| \.cspaceDelete \| \.cspaceRevoke \| \.tcbSetSpace =>\n      LockSet\.ofList\? schedLockSet_capabilityDestroyOnCore' SeLe4n/Kernel/SyscallSchedFootprint.lean
 run_check "INVARIANT" rg -n '^theorem schedLockSet_cspaceDeleteSlotZombie_coversWrites($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedContainment.lean
 run_check "INVARIANT" rg -n '^theorem schedLockSet_cspaceRevokeCdtFinalising_coversWrites($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedContainment.lean
 # The notification step is compiled as its in-place writes, and the walk that
@@ -4331,7 +4332,7 @@ run_check "INVARIANT" rg -n -U 'def backshiftLoopImpl[^\n]*(\n([ \t][^\n]*)?){0,
 run_check "INVARIANT" rg -n -U 'def cspaceRevokeCdtFinalising[^\n]*\n[^\n]*\n  fun st =>\n    match SystemState\.lookupSlotCap st addr with\n    \| some _ => \.ok \(\(\), cspaceRevokePerformAt executingCore addr\.cnode addr\.slot st\)' SeLe4n/Kernel/Capability/FrameFinalise.lean
 # v0.36.111: every revoke is seL4's cteRevoke, a run of finalising deletes; the
 # general revocation's batch teardown is gone.
-run_check "INVARIANT" rg -n -U '      if cspaceDeleteFinalisingAdmitted \{ cnode := cc, slot := cs \} st then\n        revokeFirstChildLoop executingCore cnode slot n \(zombieDeleteAt executingCore cc cs st\)' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n -U '      if cspaceDeleteFinalisingAdmitted \{ cnode := cc, slot := cs \} st then\n        let s := zombieDeleteAt executingCore cc cs st\n        if zombieSlotClass s cc cs cc cs = 0 then revokeFirstChildLoop executingCore cnode slot n s\n        else s' SeLe4n/Kernel/Capability/FrameFinalise.lean
 # v0.36.137: a compiled slot writer reads the slot's occupancy before it
 # writes the slot array, out of line, so both stay in place.
 run_check "INVARIANT" rg -n -U '  let i := slot\.toNat\n  let w := occupiedAt node\.cells i\n  if ha : i < a\.size then' SeLe4n/Model/Object/Structures.lean
@@ -4429,6 +4430,20 @@ run_check "INVARIANT" rg -n '^theorem threadSlotSet_runQueueStage ' SeLe4n/Kerne
 run_check "INVARIANT" rg -n '^theorem copyThreadSpaces_runQueueStage ' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Capability.lean
 run_check "INVARIANT" rg -n '^theorem threadSlotSet_stepCovers ' SeLe4n/Kernel/ReschedulePendingArms/Dispatch.lean
 run_check "INVARIANT" rg -n '^theorem copyThreadSpaces_stepCovers ' SeLe4n/Kernel/ReschedulePendingArms/Dispatch.lean
+# WS-ZA ZA5.4 part 26: the live arm deletes an old CSpace root that is the last
+# capability to a populated CNode through the zombie loop, then asks the checks
+# again of the state the passes leave before it sets the slots.
+run_check "INVARIANT" rg -n '^theorem copyThreadSpacesZombie_stepCovers ' SeLe4n/Kernel/ReschedulePendingArms/Dispatch.lean
+run_check "INVARIANT" rg -n '^theorem copyThreadSpacesZombie_runQueueEntryStage ' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Capability.lean
+run_check "INVARIANT" rg -n '^theorem copyThreadSpacesZombie_preserves_ipcInvariantFull ' SeLe4n/Kernel/IPC/Invariant/CancelAllPreservation.lean
+run_check "INVARIANT" rg -n '^theorem copyThreadSpacesZombie_preserves_capabilityInvariantBundle ' SeLe4n/Kernel/Capability/Invariant/Preservation/ThreadSpaceCopy.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_copyThreadSpacesZombie_coversWrites ' SeLe4n/Kernel/SyscallSchedContainment.lean
+run_check "INVARIANT" rg -n '^theorem copyThreadSpacesZombie_cases ' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n '^theorem copyThreadSpacesZombie_closed ' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n -U '^def copyThreadSpacesZombie [^\n]*\n[^\n]*\n  if copyThreadSpacesAdmitted st vtid cnSrc vrSrc then\n    \.ok \(copyThreadSpacesZombiePerform ' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n -U '  let s := zombiePasses executingCore vtid\.val\.toObjId TCB\.cspaceRootSlot \(zombieFuel st\) st\n  if zombieSlotClass s vtid\.val\.toObjId TCB\.cspaceRootSlot vtid\.val\.toObjId TCB\.cspaceRootSlot = 0 &&\n      copyThreadSpacesAdmitted s vtid cnSrc vrSrc then' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n -U '^def zombieDeleteAtFuel [^\n]*(\n[^\n]*){0,2}\n  let s := zombiePasses executingCore cnode slot fuel st\n  if zombieSlotClass s cnode slot cnode slot = 0 then zombieDeleteSlot executingCore cnode slot s\n  else s$' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n '^theorem zombieDeleteAtFuel_kept_or_deleted ' SeLe4n/Kernel/Capability/FrameFinalise.lean
 run_check "INVARIANT" rg -n '^theorem retireFinalObject_preserves_projection ' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
 run_check "INVARIANT" rg -n '^theorem threadSlotSet_preserves_projection ' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
 run_check "INVARIANT" rg -n -U 'theorem copyThreadSpaces_preserves_projection [^\n]*(\n([ \t][^\n]*)?){0,4}\n    \(hHid : ∀ s : SeLe4n\.Slot, s\.toNat < 2 → ∀ c o,' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
@@ -4447,8 +4462,8 @@ run_check "INVARIANT" rg -n '^theorem resolveSetSpace_ok_authorised($|[ ({:\[\]]
 run_check "INVARIANT" rg -n '^theorem resolveCallerCapObject_ok($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem resolveCallerCapSlot_ok($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U 'def resolveSetSpace [^\n]*(\n([ \t][^\n]*)?)*  match resolveCallerCapSlot callerTid args\.cspaceRoot \.grant st with(\n([ \t][^\n]*)?)*    if !cnCap\.hasRight \.write then \.error \.illegalAuthority(\n([ \t][^\n]*)?)*      match resolveCallerCapSlot callerTid args\.vspaceRoot \.write st with' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n -U '  \| \.tcbSetSpace =>\n    some <\| match cap\.target with(\n([ \t][^\n]*)?)*            match resolveSetSpace tid args st with(\n([ \t][^\n]*)?)*                match copyThreadSpaces executingCore st vtid cnSrc vrSrc with' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n -U 'case tcbSetSpace =>(\n([ \t][^\n]*)?)*                      exact copyThreadSpaces_preserves_ipcInvariantFull' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U '  \| \.tcbSetSpace =>\n    some <\| match cap\.target with(\n([ \t][^\n]*)?)*            match resolveSetSpace tid args st with(\n([ \t][^\n]*)?)*                match copyThreadSpacesZombie executingCore st vtid cnSrc vrSrc with' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'case tcbSetSpace =>(\n([ \t][^\n]*)?)*                      exact copyThreadSpacesZombie_preserves_ipcInvariantFull' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^  \| \.tcbSetSpace           => 38$' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n '^  \| \.tcbSetSpace           => \.write$' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_tcbSetSpace_size_le($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
@@ -6822,11 +6837,16 @@ run_check "INVARIANT" rg -n '^theorem endpointReceiveDualOnCore_crossCoreNonInte
 run_negative_check "INVARIANT" rg -n '^def endpointReplyRecvWriteSet($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem crossCoreNiTheorem_count : CrossCoreTransition\.all\.length = 34' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 # WS-ZA ZA5.4 part 22: the space change takes the executing core for its retire,
-# so it is a cross-core inventory entry: delegation-backed, and writing no core.
-run_check "INVARIANT" rg -n '^  \| \.tcbSetSpaceDispatch => niName! copyThreadSpaces_crossCoreNonInterference$' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+# so it is a cross-core inventory entry, delegation-backed; part 26: through the
+# zombie delete, which may write every core.
+run_check "INVARIANT" rg -n '^  \| \.tcbSetSpaceDispatch => niName! copyThreadSpacesZombie_crossCoreNonInterference$' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^  \| \.tcbSetSpaceDispatch => true$' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^  \| \.tcbSetSpaceDispatch => \.delegationProof \.tcbSetSpace syscallDelegates_tcbSetSpace$' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem copyThreadSpaces_crossCoreNonInterference$' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem copyThreadSpacesZombie_crossCoreNonInterference$' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_negative_check "INVARIANT" rg -n '^theorem copyThreadSpaces_crossCoreNonInterference($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem copyThreadSpaces_confinedToCores ' SeLe4n/Kernel/SlotConfinement/MemoryArms.lean
+run_check "INVARIANT" rg -n '^theorem copyThreadSpacesZombie_confinedToCores ' SeLe4n/Kernel/SlotConfinement/MemoryArms.lean
+run_check "INVARIANT" rg -n '^def copyThreadSpacesZombieCores ' SeLe4n/Kernel/SlotConfinement/MemoryArms.lean
 run_check "INVARIANT" rg -n '^theorem syscallDelegates_tcbSetSpace : syscallDelegates \.tcbSetSpace' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem dispatchWithCap_tcbSetSpace_delegates$' SeLe4n/Kernel/API.lean
 # Round 14: all three SchedContext arms this cut made remote writers are audited.

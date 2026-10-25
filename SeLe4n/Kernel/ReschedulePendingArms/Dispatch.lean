@@ -471,6 +471,20 @@ theorem cspaceDeleteSlotZombie_stepCovers (e ec : CoreId) (addr : CSpaceAddr)
     (fun d s hQ => stepCoversInv_trans hQ.1 (finaliseFinalObject_stepCovers e d s hQ.2))
     ⟨stepCovers_refl e st, hInv⟩ hStep
 
+/-- WS-ZA ZA5.4 part 26: **the space change through the zombie delete covers**,
+one finalising delete or finalisation at a time, then the plain space change
+(`copyThreadSpaces_stepCovers`). -/
+theorem copyThreadSpacesZombie_stepCovers (e ec : CoreId) (st st' : SystemState)
+    (vtid : SeLe4n.ValidThreadId) (cnSrc vrSrc : CSpaceAddr) (hInv : st.objects.invExt)
+    (hStep : copyThreadSpacesZombie ec st vtid cnSrc vrSrc = .ok st') :
+    stepCovers e st st' ∧ st'.objects.invExt :=
+  copyThreadSpacesZombie_closed (fun s => stepCovers e st s ∧ s.objects.invExt)
+    (fun c s s' hQ hD => stepCoversInv_trans hQ.1 (cspaceDeleteSlotFinalising_stepCovers e ec c s s' hQ.2 hD))
+    (fun d s hQ => stepCoversInv_trans hQ.1 (finaliseFinalObject_stepCovers e d s hQ.2))
+    (fun s s' hQ hS => stepCoversInv_trans hQ.1
+      (copyThreadSpaces_stepCovers e ec s s' vtid cnSrc vrSrc hQ.2 hS))
+    ⟨stepCovers_refl e st, hInv⟩ hStep
+
 /-! ### The capability-only arms -/
 
 /-- **Every arm `dispatchCapabilityOnly` routes covers**, on the executing core,
@@ -523,7 +537,7 @@ theorem dispatchCapabilityOnly_stepCovers {decoded : SyscallDecodeResult} {cap :
         | exact (setThreadCpuAffinityOnCore_stepCovers _ _ _ _ _ _ hInv hU)
         | exact (setIPCBufferOp_keyFrame _ _ _ _ hInv hU).stepCoversInv
         | exact (setThreadFaultHandlerOp_keyFrame _ _ _ _ hInv hU).stepCoversInv
-        | exact copyThreadSpaces_stepCovers _ _ _ _ _ _ _ hInv hU)
+        | exact copyThreadSpacesZombie_stepCovers _ _ _ _ _ _ _ hInv hU)
   all_goals
     obtain ⟨_, _, _, _, _, _, _, _, _, hU⟩ := untypedRetypeFromCap_ok _ _ _ _ _ _ h
     exact untypedRetypeObject_stepCovers ec hInv hBi hPlaced hU

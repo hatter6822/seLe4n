@@ -343,7 +343,7 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
             match resolveSetSpace tid args st with
             | .error e => .error e
             | .ok (cnSrc, vrSrc) =>
-                match copyThreadSpaces executingCore st vtid cnSrc vrSrc with
+                match copyThreadSpacesZombie executingCore st vtid cnSrc vrSrc with
                 | .ok st' => .ok ((), st')
                 | .error e => .error e
     | _ => .error .invalidCapability
@@ -571,7 +571,7 @@ the write alone.  An arm whose checks refuse, and every arm not yet split, is
           resolveSetSpaceK tid args st (fun e => .error (e, st)) (fun cnC cnS vrC vrS =>
             RefusalCarrying.ofChecked
               (copyThreadSpacesAdmitted st vtid { cnode := cnC, slot := cnS } { cnode := vrC, slot := vrS })
-              (fun st => copyThreadSpacesPerform executingCore st vtid.val cnC cnS vrC vrS)
+              (fun st => copyThreadSpacesZombiePerform executingCore st vtid cnC cnS vrC vrS)
               (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st)
     | _ => .error (.invalidCapability, st)
   | .schedContextBind =>
@@ -971,7 +971,7 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
             try dsimp only
             apply RefusalCarrying.ofChecked_eq
             intro hA
-            simp only [dispatchInvocationBy, hD, hT, hR, copyThreadSpaces_of_admitted hA]
+            simp only [dispatchInvocationBy, hD, hT, hR, copyThreadSpacesZombie_of_admitted hA]
     all_goals rfl
   case schedContextBind =>
     cases target

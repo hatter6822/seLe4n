@@ -3115,7 +3115,7 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
             match resolveSetSpace tid args st with
             | .error e => .error e
             | .ok (cnSrc, vrSrc) =>
-                match copyThreadSpaces executingCore st vtid cnSrc vrSrc with
+                match copyThreadSpacesZombie executingCore st vtid cnSrc vrSrc with
                 | .ok st' => .ok ((), st')
                 | .error e => .error e
     | _ => fun _ => .error .invalidCapability
@@ -3613,13 +3613,13 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
               | ok p =>
                   obtain ⟨cn, vr⟩ := p
                   simp only [hR] at hStep
-                  cases hSet : copyThreadSpaces executingCore st vtid cn vr with
+                  cases hSet : copyThreadSpacesZombie executingCore st vtid cn vr with
                   | error e => simp only [hSet] at hStep; cases hStep
                   | ok stU =>
                       simp only [hSet] at hStep
                       cases hStep
-                      exact copyThreadSpaces_preserves_ipcInvariantFull executingCore st st' vtid cn vr
-                        hObjInv hInv hSet
+                      exact copyThreadSpacesZombie_preserves_ipcInvariantFull executingCore st st'
+                        vtid cn vr hObjInv hInv hPack.lentContextsHeadedByLender hSet
     all_goals try cases hStep
   case pageTableMap =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -7636,7 +7636,7 @@ theorem dispatchWithCap_tcbSetSpace_delegates
     (hValid : validateThreadIdArg (SeLe4n.ThreadId.ofNat objId.toNat) = .ok vtid)
     (hResolve : resolveSetSpace tid args st = .ok (cnSrc, vrSrc)) :
     dispatchWithCap decoded tid executingCore gate cap st =
-      (match copyThreadSpaces executingCore st vtid cnSrc vrSrc with
+      (match copyThreadSpacesZombie executingCore st vtid cnSrc vrSrc with
        | .ok st' => .ok ((), st')
        | .error e => .error e) := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode, hValid, hResolve]
@@ -8110,7 +8110,7 @@ def syscallDelegates : SyscallId → Prop
         validateThreadIdArg (SeLe4n.ThreadId.ofNat objId.toNat) = .ok vtid →
         resolveSetSpace tid args st = .ok (cnSrc, vrSrc) →
         dispatchWithCap decoded tid executingCore gate cap st =
-          (match copyThreadSpaces executingCore st vtid cnSrc vrSrc with
+          (match copyThreadSpacesZombie executingCore st vtid cnSrc vrSrc with
            | .ok st' => .ok ((), st')
            | .error e => .error e)
   -- WS-ZA ZA4.3: the capability-free yield.  Both dispatchers run it from the

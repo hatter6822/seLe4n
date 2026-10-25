@@ -4513,6 +4513,112 @@ private def runWSRR8CSpaceSlotRangeChecks : IO Unit := do
 
   IO.println "all WS-RR RR8.16 CSpace slot-range checks passed"
 
+
+/-- **A zombie delete out of fuel keeps its slot** (WS-ZA ZA5.4 part 26): CNode
+10's slot 0 holds the last capability to CNode 11, whose slot 2 names endpoint
+12 and slot 3 names CNode 15, which names endpoint 13.  With no passes (fuel 0)
+the root slot's class is nonzero, so the delete keeps the slot and writes
+nothing; after one pass CNode 11 still holds a capability, so the slot is still
+kept; with the bound the
+kernel gives it (`zombieDeleteAt`), the passes empty CNode 11 and the slot is
+deleted.  A caller seeing the kept slot occupied retries, and the retry
+continues from where the passes stopped. -/
+private def runZombieFuelExhaustedChecks : IO Unit := do
+  let rootId : SeLe4n.ObjId := ⟨10⟩
+  let innerId : SeLe4n.ObjId := ⟨11⟩
+  let epId : SeLe4n.ObjId := ⟨12⟩
+  let ep2Id : SeLe4n.ObjId := ⟨13⟩
+  let deepId : SeLe4n.ObjId := ⟨15⟩
+  let rw : AccessRightSet := AccessRightSet.ofList [.read, .write, .grant]
+  let st : SystemState :=
+    (BootstrapBuilder.empty
+      |>.withObject rootId (.cnode (CNode.ofList 0 0 0 3
+          [(SeLe4n.Slot.ofNat 0, { target := .object innerId, rights := rw })]))
+      |>.withObject innerId (.cnode (CNode.ofList 0 0 0 3
+          [(SeLe4n.Slot.ofNat 2, { target := .object epId, rights := rw }),
+           (SeLe4n.Slot.ofNat 3, { target := .object deepId, rights := rw })]))
+      |>.withObject deepId (.cnode (CNode.ofList 0 0 0 3
+          [(SeLe4n.Slot.ofNat 0, { target := .object ep2Id, rights := rw })]))
+      |>.withObject epId (.endpoint {})
+      |>.withObject ep2Id (.endpoint {})
+      |>.buildChecked)
+  let root : SeLe4n.Kernel.CSpaceAddr := { cnode := rootId, slot := SeLe4n.Slot.ofNat 0 }
+  let inner : SeLe4n.Kernel.CSpaceAddr := { cnode := innerId, slot := SeLe4n.Slot.ofNat 2 }
+  unless SeLe4n.Kernel.zombieSlotClass st rootId root.slot rootId root.slot != 0 do
+    throw <| IO.userError "the fixture's root slot must name a CNode holding a capability"
+  -- Out of fuel: the slot is kept and nothing is written.
+  let kept := SeLe4n.Kernel.zombieDeleteAtFuel bootCoreId rootId root.slot 0 st
+  unless (kept.slotCapAt root).isSome && (kept.slotCapAt inner).isSome &&
+      (kept.getObject? innerId).isSome do
+    throw <| IO.userError "a zombie delete out of fuel must keep its slot and write nothing"
+  IO.println "negative check passed [a zombie delete with no fuel keeps its occupied slot]"
+  -- One pass deletes one of the inner CNode's two leaves; the root slot is
+  -- kept, still occupied, for the retry.
+  let one := SeLe4n.Kernel.zombieDeleteAtFuel bootCoreId rootId root.slot 1 st
+  unless (one.slotCapAt root).isSome && (one.getObject? innerId).isSome &&
+      SeLe4n.Kernel.zombieSlotClass one rootId root.slot rootId root.slot != 0 do
+    throw <| IO.userError "one pass must leave the root slot occupied and non-leaf"
+  IO.println "negative check passed [a zombie delete out of fuel after one pass keeps its slot]"
+  -- The retry, from the kept state, finishes the delete.
+  let retried := SeLe4n.Kernel.zombieDeleteAt bootCoreId rootId root.slot one
+  unless (retried.slotCapAt root).isNone && (retried.getObject? innerId).isNone &&
+      (retried.getObject? deepId).isNone do
+    throw <| IO.userError "the retry must delete the kept slot and retire the inner CNode"
+  -- With the kernel's bound, one call does it all.
+  let full := SeLe4n.Kernel.zombieDeleteAt bootCoreId rootId root.slot st
+  unless (full.slotCapAt root).isNone && (full.getObject? innerId).isNone &&
+      (full.getObject? deepId).isNone do
+    throw <| IO.userError "the zombie delete with its bound must delete the slot and retire the CNode"
+  -- A space change whose old CSpace root is the last capability to CNode 11
+  -- deletes it through the zombie loop: CNode 11 is emptied and retired, and
+  -- the thread names the new root.  The VSpace root's old capability is a copy
+  -- of CNode 10's slot 1, so it is not final and nothing else is retired.
+  let tId : SeLe4n.ObjId := ⟨6⟩
+  let newCn : SeLe4n.ObjId := ⟨14⟩
+  let vsId : SeLe4n.ObjId := ⟨20⟩
+  let stS : SystemState :=
+    ((BootstrapBuilder.empty
+      |>.withObject rootId (.cnode (CNode.ofList 0 0 0 3
+          [(SeLe4n.Slot.ofNat 0, { target := .object newCn, rights := rw }),
+           (SeLe4n.Slot.ofNat 1, { target := .object vsId, rights := rw })]))
+      |>.withObject innerId (.cnode (CNode.ofList 0 0 0 3
+          [(SeLe4n.Slot.ofNat 2, { target := .object epId, rights := rw })]))
+      |>.withObject epId (.endpoint {})
+      |>.withObject newCn (.cnode (CNode.ofList 0 0 0 3 []))
+      |>.withObject vsId (.vspaceRoot { asid := asidPrimary, mappings := {} })
+      |>.withObject tId (.tcb {
+          tid := ⟨6⟩
+          priority := ⟨40⟩
+          domain := ⟨0⟩
+          threadState := .Inactive
+          spaceCells := SeLe4n.Model.TCB.spaceCellsOf innerId vsId
+          ipcBuffer := (SeLe4n.VAddr.ofNat 4096)
+        })
+      |>.buildChecked).withDerivationEdges
+        [({ cnode := rootId, slot := SeLe4n.Slot.ofNat 1 },
+          { cnode := tId, slot := SeLe4n.Slot.ofNat 1 }, .copy)])
+  let cnSrc : SeLe4n.Kernel.CSpaceAddr := { cnode := rootId, slot := SeLe4n.Slot.ofNat 0 }
+  let vrSrc : SeLe4n.Kernel.CSpaceAddr := { cnode := rootId, slot := SeLe4n.Slot.ofNat 1 }
+  match SeLe4n.Kernel.validateThreadIdArg (SeLe4n.ThreadId.ofNat 6) with
+  | .error _ => throw <| IO.userError "thread 6 must validate"
+  | .ok vtid =>
+    unless SeLe4n.Kernel.zombieSlotClass stS tId SeLe4n.Model.TCB.cspaceRootSlot tId
+        SeLe4n.Model.TCB.cspaceRootSlot != 0 do
+      throw <| IO.userError "the thread's old CSpace root must name a CNode holding a capability"
+    match SeLe4n.Kernel.copyThreadSpacesZombie bootCoreId stS vtid cnSrc vrSrc with
+    | .error e => throw <| IO.userError s!"the space change must succeed, got {repr e}"
+    | .ok stS' =>
+      match stS'.getTcb? ⟨6⟩ with
+      | none => throw <| IO.userError "the thread must survive its space change"
+      | some t =>
+        unless t.cspaceRoot == newCn && t.vspaceRoot == vsId &&
+            (stS'.getObject? innerId).isNone && (stS'.getObject? epId).isNone &&
+            (stS'.getObject? vsId).isSome do
+          throw <| IO.userError
+            "the space change must empty and retire the old CSpace root and name the new one"
+    IO.println "positive check passed [a space change deletes its old root through the zombie loop]"
+  IO.println "all zombie fuel-exhaustion checks passed"
+
 end SeLe4n.Testing
 
 def main : IO Unit := do
@@ -4543,3 +4649,4 @@ def main : IO Unit := do
   SeLe4n.Testing.runR1IpcCallPathSymmetryChecks
   SeLe4n.Testing.runR5EOrphanedSchedContextChecks
   SeLe4n.Testing.runWSRR8CSpaceSlotRangeChecks
+  SeLe4n.Testing.runZombieFuelExhaustedChecks

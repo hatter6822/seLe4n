@@ -727,6 +727,19 @@ theorem cspaceRevokeCdtFinalising_runQueueEntryStage {ec : Concurrency.CoreId}
     (fun d s hQ => hQ.trans (finaliseFinalObject_runQueueEntryStage d s))
     ⟨SystemState.RunQueueLinkStage.refl st, fun _ _ _ d => d⟩ h
 
+/-- `.tcbSetSpace` through the zombie delete keeps the run queues in agreement:
+the loop's passes are finalising deletes and finalisations, and the plain space
+change after them is a run-queue stage (`copyThreadSpaces_runQueueStage`). -/
+theorem copyThreadSpacesZombie_runQueueEntryStage {ec : Concurrency.CoreId}
+    {st st' : SystemState} {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr}
+    (h : copyThreadSpacesZombie ec st vtid cnSrc vrSrc = .ok st') :
+    SystemState.RunQueueEntryStage st st' :=
+  copyThreadSpacesZombie_closed (SystemState.RunQueueEntryStage st)
+    (fun _ _ _ hQ hD => hQ.trans (cspaceDeleteSlotFinalising_runQueueEntryStage hD))
+    (fun d s hQ => hQ.trans (finaliseFinalObject_runQueueEntryStage d s))
+    (fun _ _ hQ hS => hQ.trans (RunQueueStage.entry (copyThreadSpaces_runQueueStage hS)))
+    ⟨SystemState.RunQueueLinkStage.refl st, fun _ _ _ d => d⟩ h
+
 theorem cspaceDeleteSlotZombie_runQueueEntryStage {ec : Concurrency.CoreId}
     {addr : CSpaceAddr} {st st' : SystemState}
     (h : cspaceDeleteSlotZombie ec addr st = .ok ((), st')) :
