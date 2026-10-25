@@ -5209,11 +5209,11 @@ splice write each link in its slot: `severReplyFrameBelowStoresInPlace`,
 `spliceReplyFrameStoresInPlace`), so the removed reply is named
 by no other object and is retired, and the frame below becomes the new top.  The
 footprints declare the frame below on that arm too (`replyFrameBelow?` is the
-frame's `prev` unless it heads a stack).  A thread whose top reply heads a
-context it lent from the bottom of the stack is the context's recorded origin;
-its own delete's pop clears that record, so the admission accepts that one
-origin (`replyPopClearedOrigin?` in `threadFinaliseAdmitted`) rather than
-refusing the real lender.  `schedContext_completeYieldTo` has nothing to do:
+frame's `prev` unless it heads a stack).  A thread that lent a context from the bottom of a
+stack is that context's recorded origin, and the record counts only while the
+thread's own back-link (`TCB.originScCode`) names the context, so the thread's
+delete writes no context on its behalf and the admission scans no other object
+for origins naming it.  `schedContext_completeYieldTo` has nothing to do:
 the model keeps no yield-to link.  Where they differ, the finalise follows seL4
 rather than the live unbind syscall: that syscall leaves its thread queued at
 its legacy priority, the finalise dequeues it.  A caller blocked on its reply
@@ -5307,7 +5307,7 @@ root slot still non-leaf, the root delete makes no write
 capability, so a retry continues from the slot state, as seL4's preempted
 `cteDelete` does, and a revoke that keeps a child stops with `.ok`.  That the
 fuel always suffices on a reachable state is not yet proven
-(`docs/REGISTERED_DEBT.md`, plan row 27).  **Set-space** deletes each old root
+(`docs/REGISTERED_DEBT.md`, plan row 29).  **Set-space** deletes each old root
 through the same loop (`copyThreadSpacesZombie`), so a thread's last
 capability to its old CSpace root CNode empties and retires it; set-space is a
 remote writer, in the capability-destroy footprint group.  **An untyped with
@@ -5323,10 +5323,11 @@ space slots and held by no core (`finaliseThread_quiesces`, given
 `runCodeBounded` and `currentDequeuedUnique`), and a scheduling context's
 releases its record (`finaliseSchedContext_releases`), each stated on the
 states where its steps run.  The thread retire reads no masked run-queue
-neighbour code (the dequeue still clears them, `TCB.detachRun`).  Still open,
-plan row 27: the retire walks the object table (`storeNamesNone` and its thread
-and scheduling-context forms), and the finalise's admission is not carried
-across its own steps; each step and the retire re-check their guards.
+neighbour code (the dequeue still clears them, `TCB.detachRun`).  Still open:
+the retire walks the service registry, the interrupt-handler table and the
+service graph for references by id (plan row 28), and the finalise's admission
+is not carried across its own steps (plan row 29); each step and the retire
+re-check their guards.
 Exerciser: `populated-cnode-delete`, `space-cnode-cap-delete`,
 `spaced-tcb-delete`, `tcb-set-space` and `set-carved-tcb-space` read 0 heap
 cells: a thread's space-slot delete keeps the slot's cell as its spare record
@@ -5815,7 +5816,7 @@ seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
   (`untypedResetFromCap`) and first refuses (`.revocationRequired`) while that
   slot has a derivation child, seL4's per-slot `ensureNoChildren`
   (`untypedResetFromCap_ok`); the store-wide check stays beside it until the
-  reset is restated as seL4's (WS-ZA ZA5.4 part 28, `docs/REGISTERED_DEBT.md`).
+  reset is restated as seL4's (WS-ZA ZA5.4 part 30, `docs/REGISTERED_DEBT.md`).
   Then every
   mapping of a page meeting the region is removed through the `.vspaceUnmap`
   arm's own transition — TLB flush, shootdown round, initiator drain,
@@ -8923,9 +8924,9 @@ TCB (their `_of_none` arms exist so the *operation's* argument keeps its own
 error code), so as first landed a stale origin naming no thread was answered as a
 candidate and the pop's own lookup refused the reply with `.objectNotFound` — a
 refusal on the one shape the redirect exists to make a fallback.  Unreachable
-today, because objects are never erased and `clearDonationOriginReferences`
-clears the field when the thread it names is retyped, and closed on both surfaces
-anyway: `donationOriginRecipient?_eq_some_iff` carries resolution as its fourth
+today, because an origin counts only while the thread it names carries the
+back-link (`TCB.originScCode`) the donor's first push writes, and a thread made
+at a reused id starts with none, and closed on both surfaces anyway: `donationOriginRecipient?_eq_some_iff` carries resolution as its fourth
 fact, `replyDonationRecipient_resolves` says the pop's recipient resolves whenever
 the answered caller does, `donationAccountingPreserved_atCallDepthTwo` takes the
 origin's existence at the post-removal state as its third hypothesis, the frozen

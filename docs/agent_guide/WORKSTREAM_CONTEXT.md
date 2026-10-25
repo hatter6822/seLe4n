@@ -362,9 +362,10 @@ a refusal.  Set-space deletes each old root through the same loop
 its recorder adopts them and each child untyped names the recorder as its
 parent (`retireUnrecord`), so new code that reads an untyped's parent or child
 list must not assume either survives the retire of a neighbour.  The retire
-still walks the object table, and the finalise's admission is not yet carried
-across its steps (each step re-checks): plan row 27
-(`docs/REGISTERED_DEBT.md`).  The suspend of a thread blocked in IPC or
+reads the object's own links for every reference held in an object; it still
+walks the service registry, the interrupt-handler table and the service graph
+(plan row 28), and the finalise's admission is not yet carried across its steps
+(each step re-checks; plan row 29, `docs/REGISTERED_DEBT.md`).  The suspend of a thread blocked in IPC or
 holding a donated context is the one syscall arm left on the general path
 (ZA6.1).  ZA6 covers the other
 entries and makes the rule standing.  Plan:
@@ -4772,10 +4773,10 @@ code may assume:
   `CancellationNotificationShape` — the only layer that sees every frame it
   composes, and imported by nothing that would close a cycle — and which the
   library root imports, since a module outside every root is outside every
-  census's derived domain.  (3) **The sweep frames `boundThread`, not
-  `getSchedContext?`**: its last step (`clearDonationOriginReferences`) genuinely
-  rewrites scheduling contexts, and the invariant reads only the field it leaves
-  alone, so `cleanupTcbReferences_boundThread_frame` is the projection and
+  census's derived domain.  (3) **The sweep frames `boundThread`**, the field
+  the invariant reads (since `v0.36.140` the sweep writes no scheduling context
+  at all: the origin scrub it ended with was retired for the origin's back-link),
+  so `cleanupTcbReferences_boundThread_frame` is the projection and
   `replenishQueueAffinityConsistentOnCore_transfer` is what consumes it.  (4)
   **The composite takes no detachment pack**, so it covers exactly the states on
   which the runtime arms do the work — under `retypeTargetDetached` the whole
