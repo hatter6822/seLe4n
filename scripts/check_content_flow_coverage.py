@@ -119,6 +119,10 @@ DECLARED_TAINT_WRITERS = {
     "SeLe4n.Kernel.sendTaintStep",
     "SeLe4n.Kernel.receiveTaintStep",
     "SeLe4n.Kernel.replyRecvTaintStep",
+    # WS-ZA ZA5.4 part 26: the final-delete retire forgets the freed id's
+    # provenance (`retireFinalObject_taint_cleared`), a clear, never a join,
+    # so it can only drop a tag of an object that no longer exists.
+    "SeLe4n.Kernel.withTaintCleared",
 }
 
 # **`v0.35.60`: the FROZEN propagation surface, as mirrors.**
@@ -183,6 +187,9 @@ DECLARED_TAINT_CONSUMERS = {
     "SeLe4n.Kernel.receiveOperandArmThenTaintR",
     "SeLe4n.Kernel.replyOperandArmThenTaintR",
     "SeLe4n.Kernel.replyRecvOperandArmThenTaintR",
+    # WS-ZA ZA5.4 part 26: the recorded retire, the one caller of the retire's
+    # clear (`withTaintCleared`, declared above), applied to the id it frees.
+    "SeLe4n.Kernel.retireRecordedObject",
     "SeLe4n.Kernel.TaintTable.empty",
     # PR #873 round 16: the builder's provenance seed.  The one-writer rule
     # governs the **propagation** surface -- within a running system only
@@ -212,6 +219,8 @@ DECLARED_FIELD_WRITERS = {
     "SeLe4n.Kernel.waitTaintStepOfCap",
     "SeLe4n.Kernel.sendTaintStep",
     "SeLe4n.Kernel.receiveTaintStep",
+    # The retire's clear of the freed id (see `DECLARED_TAINT_WRITERS`).
+    "SeLe4n.Kernel.withTaintCleared",
 }
 
 CONTENT_CHANNELS = [

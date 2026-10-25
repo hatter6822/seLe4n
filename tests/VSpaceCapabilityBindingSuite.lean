@@ -2942,86 +2942,6 @@ private def runReplyWaiterFinaliseChecks : IO Unit := do
             (replyAt st1 961).map (·.callerCode) == some 0 &&
             (replyAt st1 964).map (·.callerCode) == some 0)
 
--- §5p  WS-ZA ZA5.4 part 26 — the zombie loop empties what a final delete
--- destroys
--- ============================================================================
-
-/-- Does the owner's root hold a capability at `slot`? -/
-private def ownSlotHolds (st : SystemState) (slot : Nat) : Bool :=
-  (SystemState.lookupSlotCap st { cnode := carveCn, slot := SeLe4n.Slot.ofNat slot }).isSome
-
-private def runZombieDeleteChecks : IO Unit := do
-  IO.println "-- §5p a final delete empties a populated CNode and a thread's spaces (WS-ZA ZA5.4 part 26)"
-  -- A carved CNode holding an endpoint's only capability: the CNode's last
-  -- capability's delete deletes the endpoint's slot first (the endpoint is
-  -- retired), then retires the emptied CNode.
-  match runAll carveScenario
-      [decodeCarve slotUtRetype (cnodeTagOfRadix 2) 970 slotOwnCnRW 12,
-       decodeCarve slotUtRetype endpointTag 971 12 0] with
-  | .error e => assertBool s!"carving a CNode and an endpoint into it succeeds (got {repr e})" false
-  | .ok st => do
-    assertBool "setup: the carved CNode holds the endpoint's capability"
-      (storedAt st 970 && storedAt st 971 &&
-        (SystemState.lookupSlotCap st { cnode := SeLe4n.ObjId.ofNat 970, slot := SeLe4n.Slot.ofNat 0 }).isSome)
-    -- The endpoint carries declassification provenance, which its retire
-    -- forgets, so a later carve at its id inherits none.
-    let ep := SeLe4n.ObjId.ofNat 971
-    let tainted : SystemState :=
-      { st with declassificationTaint :=
-          st.declassificationTaint.set ep (SeLe4n.Kernel.DeclassificationTaint.singleton 3) }
-    assertBool "setup: the endpoint carries a declassification tag"
-      ((tainted.declassificationTaint ep).contains 3)
-    match runAll tainted [decodeDelete 12] with
-    | .error e => assertBool s!"deleting the populated CNode's last capability succeeds (got {repr e})" false
-    | .ok st1 => do
-      assertBool "deleting a populated CNode's last capability retires the endpoint it held and the CNode"
-        (!storedAt st1 970 && !storedAt st1 971 && !recordsChildAt st1 carveUt 970 &&
-          !recordsChildAt st1 carveUt 971 && !ownSlotHolds st1 12)
-      assertBool "the retire clears the endpoint's declassification provenance"
-        (!(st1.declassificationTaint ep).contains 3)
-  -- A carved thread holding the last capability to a carved CNode, its CSpace
-  -- root: the thread's last capability's delete finalises it, then deletes its
-  -- space slots, which retires the CNode; the boot VSpace root, named by
-  -- another slot, stays.
-  match runAll carveScenario
-      [decodeCarve slotUtRetype tcbTag 960 slotOwnCnRW 12,
-       decodeCarve slotUtRetype (cnodeTagOfRadix 2) 970 slotOwnCnRW 13,
-       decodeSetSpace 12 13 slotOwnVsp,
-       decodeDelete 13] with
-  | .error e => assertBool s!"carving a thread and a CNode, setting its spaces and deleting the CNode's other capability succeeds (got {repr e})" false
-  | .ok st => do
-    assertBool "setup: the thread's CSpace slot holds the carved CNode's last capability"
-      (storedAt st 970 && !ownSlotHolds st 13 &&
-        ((st.getTcb? ⟨960⟩).map (·.spaceCells[0]!.isSome) == some true))
-    match runAll st [decodeDelete 12] with
-    | .error e => assertBool s!"deleting the spaced thread's last capability succeeds (got {repr e})" false
-    | .ok st1 =>
-      assertBool "deleting a thread holding its spaces retires the thread and the CNode only it held, and keeps the boot root"
-        (!storedAt st1 960 && !storedAt st1 970 && !recordsChildAt st1 carveUt 960 &&
-          !recordsChildAt st1 carveUt 970 && storedAt st1 carveVsp.toNat)
-  -- The self-delete end to end: a carved thread given the owner's spaces,
-  -- current on the executing core, deletes its own last capability through
-  -- the syscall.  The finalisation vacates the core and flags it; the loop
-  -- deletes the thread's space slots (copies, so nothing they name is
-  -- retired), and the thread is retired.
-  match runAll carveScenario
-      [decodeCarve slotUtRetype tcbTag 960 slotOwnCnRW 12,
-       decodeSetSpace 12 slotOwnCnGrant slotOwnVsp] with
-  | .error e => assertBool s!"carving a thread and giving it the owner's spaces succeeds (got {repr e})" false
-  | .ok st0 =>
-    let tid : SeLe4n.ThreadId := ⟨960⟩
-    let c0 := Concurrency.bootCoreId
-    let running := st0.updateTcb tid fun t => { t with threadState := .Ready }
-    let own : SystemState :=
-      { running with scheduler := running.scheduler.setCurrentOnCore c0 (some tid) }
-    match dispatchSyscallAsCurrent (decodeDelete 12) tid c0 own with
-    | .error e => assertBool s!"the executing thread's delete of its own last capability succeeds (got {repr e})" false
-    | .ok ((), st1) =>
-      assertBool "a thread deleting its own last capability is retired, its core vacated and flagged, the spaces it named kept"
-        (!storedAt st1 960 && !recordsChildAt st1 carveUt 960 &&
-          st1.scheduler.currentOnCore c0 == none && st1.scheduler.reschedulePendingOnCore c0 &&
-          storedAt st1 carveCn.toNat && storedAt st1 carveVsp.toNat)
-=======
 /-- The reply at `oid` rewritten by `f`, through the store. -/
 private def restageReply (st : SystemState) (oid : Nat) (f : SeLe4n.Kernel.Reply → SeLe4n.Kernel.Reply) :
     Option SystemState :=
@@ -3114,6 +3034,88 @@ private def runMiddleReplyFinaliseChecks : IO Unit := do
           (!storedAt st1 965 && !recordsChildAt st1 carveUt 965)
 
 -- =====================================================================
+
+-- ============================================================================
+-- §5p  WS-ZA ZA5.4 part 26 — the zombie loop empties what a final delete
+-- destroys
+-- ============================================================================
+
+/-- Does the owner's root hold a capability at `slot`? -/
+private def ownSlotHolds (st : SystemState) (slot : Nat) : Bool :=
+  (SystemState.lookupSlotCap st { cnode := carveCn, slot := SeLe4n.Slot.ofNat slot }).isSome
+
+private def runZombieDeleteChecks : IO Unit := do
+  IO.println "-- §5p a final delete empties a populated CNode and a thread's spaces (WS-ZA ZA5.4 part 26)"
+  -- A carved CNode holding an endpoint's only capability: the CNode's last
+  -- capability's delete deletes the endpoint's slot first (the endpoint is
+  -- retired), then retires the emptied CNode.
+  match runAll carveScenario
+      [decodeCarve slotUtRetype (cnodeTagOfRadix 2) 970 slotOwnCnRW 12,
+       decodeCarve slotUtRetype endpointTag 971 12 0] with
+  | .error e => assertBool s!"carving a CNode and an endpoint into it succeeds (got {repr e})" false
+  | .ok st => do
+    assertBool "setup: the carved CNode holds the endpoint's capability"
+      (storedAt st 970 && storedAt st 971 &&
+        (SystemState.lookupSlotCap st { cnode := SeLe4n.ObjId.ofNat 970, slot := SeLe4n.Slot.ofNat 0 }).isSome)
+    -- The endpoint carries declassification provenance, which its retire
+    -- forgets, so a later carve at its id inherits none.
+    let ep := SeLe4n.ObjId.ofNat 971
+    let tainted : SystemState :=
+      { st with declassificationTaint :=
+          st.declassificationTaint.set ep (SeLe4n.Kernel.DeclassificationTaint.singleton 3) }
+    assertBool "setup: the endpoint carries a declassification tag"
+      ((tainted.declassificationTaint ep).contains 3)
+    match runAll tainted [decodeDelete 12] with
+    | .error e => assertBool s!"deleting the populated CNode's last capability succeeds (got {repr e})" false
+    | .ok st1 => do
+      assertBool "deleting a populated CNode's last capability retires the endpoint it held and the CNode"
+        (!storedAt st1 970 && !storedAt st1 971 && !recordsChildAt st1 carveUt 970 &&
+          !recordsChildAt st1 carveUt 971 && !ownSlotHolds st1 12)
+      assertBool "the retire clears the endpoint's declassification provenance"
+        (!(st1.declassificationTaint ep).contains 3)
+  -- A carved thread holding the last capability to a carved CNode, its CSpace
+  -- root: the thread's last capability's delete finalises it, then deletes its
+  -- space slots, which retires the CNode; the boot VSpace root, named by
+  -- another slot, stays.
+  match runAll carveScenario
+      [decodeCarve slotUtRetype tcbTag 960 slotOwnCnRW 12,
+       decodeCarve slotUtRetype (cnodeTagOfRadix 2) 970 slotOwnCnRW 13,
+       decodeSetSpace 12 13 slotOwnVsp,
+       decodeDelete 13] with
+  | .error e => assertBool s!"carving a thread and a CNode, setting its spaces and deleting the CNode's other capability succeeds (got {repr e})" false
+  | .ok st => do
+    assertBool "setup: the thread's CSpace slot holds the carved CNode's last capability"
+      (storedAt st 970 && !ownSlotHolds st 13 &&
+        ((st.getTcb? ⟨960⟩).map (·.spaceCells[0]!.isSome) == some true))
+    match runAll st [decodeDelete 12] with
+    | .error e => assertBool s!"deleting the spaced thread's last capability succeeds (got {repr e})" false
+    | .ok st1 =>
+      assertBool "deleting a thread holding its spaces retires the thread and the CNode only it held, and keeps the boot root"
+        (!storedAt st1 960 && !storedAt st1 970 && !recordsChildAt st1 carveUt 960 &&
+          !recordsChildAt st1 carveUt 970 && storedAt st1 carveVsp.toNat)
+  -- The self-delete end to end: a carved thread given the owner's spaces,
+  -- current on the executing core, deletes its own last capability through
+  -- the syscall.  The finalisation vacates the core and flags it; the loop
+  -- deletes the thread's space slots (copies, so nothing they name is
+  -- retired), and the thread is retired.
+  match runAll carveScenario
+      [decodeCarve slotUtRetype tcbTag 960 slotOwnCnRW 12,
+       decodeSetSpace 12 slotOwnCnGrant slotOwnVsp] with
+  | .error e => assertBool s!"carving a thread and giving it the owner's spaces succeeds (got {repr e})" false
+  | .ok st0 =>
+    let tid : SeLe4n.ThreadId := ⟨960⟩
+    let c0 := Concurrency.bootCoreId
+    let running := st0.updateTcb tid fun t => { t with threadState := .Ready }
+    let own : SystemState :=
+      { running with scheduler := running.scheduler.setCurrentOnCore c0 (some tid) }
+    match dispatchSyscallAsCurrent (decodeDelete 12) tid c0 own with
+    | .error e => assertBool s!"the executing thread's delete of its own last capability succeeds (got {repr e})" false
+    | .ok ((), st1) =>
+      assertBool "a thread deleting its own last capability is retired, its core vacated and flagged, the spaces it named kept"
+        (!storedAt st1 960 && !recordsChildAt st1 carveUt 960 &&
+          st1.scheduler.currentOnCore c0 == none && st1.scheduler.reschedulePendingOnCore c0 &&
+          storedAt st1 carveCn.toNat && storedAt st1 carveVsp.toNat)
+
 def runVSpaceCapabilityBindingChecks : IO Unit := do
   IO.println "===================================================="
   IO.println "VSpace capability-binding suite (PR #845 review, P1)"
