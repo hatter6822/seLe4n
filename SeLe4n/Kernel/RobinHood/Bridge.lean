@@ -1353,4 +1353,45 @@ theorem RHTable.size_le_length_of_keys_mem [BEq α] [Hashable α] [LawfulBEq α]
     have := List.length_pos_of_mem (hKeys _ _ (RHTable.slot_entry_implies_get t j hjCap e hSlot hExt))
     omega
 
+/-- **A duplicate-free list inside another is no longer than it**: each step
+removes its head's one occurrence from the outer list. -/
+theorem List.length_le_of_nodup_subset {γ : Type} [BEq γ] [LawfulBEq γ] :
+    ∀ {l m : List γ}, l.Nodup → (∀ a ∈ l, a ∈ m) → l.length ≤ m.length
+  | [], _, _, _ => Nat.zero_le _
+  | a :: l, m, hN, hS => by
+    have hA : a ∈ m := hS a (List.mem_cons_self ..)
+    have hNd := List.nodup_cons.mp hN
+    have ih := List.length_le_of_nodup_subset (m := m.erase a) hNd.2 (fun b hb =>
+      (List.mem_erase_of_ne (fun (e : b = a) => hNd.1 (e ▸ hb))).mpr (hS b (List.mem_cons_of_mem _ hb)))
+    rw [List.length_erase_of_mem hA] at ih
+    have := List.length_pos_of_mem hA
+    simp only [List.length_cons]; omega
+
+/-- **A table holds at least as many entries as any duplicate-free list of keys
+it resolves** (pigeonhole): each present key sits in an occupied slot of its
+own, and the occupied slots number `size`.  What bounds a chain of distinct
+keys a walk through the table can follow. -/
+theorem RHTable.length_le_size_of_nodup_present [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) (hExt : t.invExt) (L : List α) (hL : L.Nodup)
+    (hP : ∀ k ∈ L, t.get? k ≠ none) : L.length ≤ t.size := by
+  let S := t.slots.toList.filterMap (fun o => o.map (·.key))
+  have hSub : ∀ k ∈ L, k ∈ S := by
+    intro k hk
+    cases hG : t.get? k with
+    | none => exact absurd hG (hP k hk)
+    | some v =>
+      obtain ⟨p, hp, e, hSlot, hKey, -⟩ := t.get_some_slot_entry k v hG
+      refine List.mem_filterMap.mpr ⟨some e, ?_, by simp [eq_of_beq hKey]⟩
+      rw [← hSlot]; exact Array.getElem_mem_toList _
+  have hLen : S.length = t.size := by
+    rw [hExt.1.sizeCount]
+    unfold countOccupied
+    show (t.slots.toList.filterMap (fun o => o.map (·.key))).length = _
+    generalize t.slots.toList = xs
+    induction xs with
+    | nil => rfl
+    | cons o xs ih => cases o <;> simp [ih]
+  rw [← hLen]
+  exact List.length_le_of_nodup_subset hL hSub
+
 end SeLe4n.Kernel.RobinHood
