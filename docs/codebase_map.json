@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "za/cnode-zombie",
-      "commit_sha": "a6ee94348deeb81cc6039f6d654743c90b5b3097",
-      "tree_sha": "1640b903de75b5d83adcfacbb74a64628dfa837d",
-      "committed_at_utc": "2026-10-25T18:25:54+00:00"
+      "commit_sha": "352efb02d21bff45e1376de77cc203f23c8ca29c",
+      "tree_sha": "8b3e0ec13d5272c1364388124b8d5bef6c175dd1",
+      "committed_at_utc": "2026-10-25T18:26:34+00:00"
     }
   },
   "source_sync": {
@@ -17,14 +17,14 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "8cabd7503b1f77a085dc7c76d9bfffe15142acf29cef96d62aa3bda28ea4adcd"
+    "source_digest": "65a732b4ec59fe45c6ca244416d3203a979388d80ef381610b0183e7f1607e46"
   },
   "summary": {
     "module_count": 528,
     "declaration_count": 29273
   },
   "readme_sync": {
-    "version": "0.36.137",
+    "version": "0.36.139",
     "lean_toolchain": "v4.28.0",
     "production_files": 458,
     "production_loc": 506208,

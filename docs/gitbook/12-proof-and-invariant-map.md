@@ -137,7 +137,7 @@ context's ready holder is dequeued and its reply stack unlinked
 (`finaliseReply`, `finaliseSchedContextDeschedule`), and a thread's own
 delete removes its replies, returns a borrowed context to its lender and ends
 every caller waiting on it (`finaliseThreadReturnLoan`,
-`finaliseThreadEndWaiters`); since `v0.36.137` an object that still holds
+`finaliseThreadEndWaiters`); since `v0.36.139` an object that still holds
 capabilities — a populated CNode, a thread with space-slot capabilities — is
 emptied first by seL4's zombie loop (`zombieDeleteAt`, bounded by
 `zombieDeleteAt_run`), so a thread's delete of its own last capability runs end

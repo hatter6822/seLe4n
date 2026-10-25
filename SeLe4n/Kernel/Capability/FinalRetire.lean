@@ -57,7 +57,7 @@ object from a list that records it shrinks the "carved from" relation and
 leaves every other record, so `childLive`, `childUnique` and `carvedBelow`
 hold after the retire (`TreeShapeOver.retire`).
 
-**An untyped that still records children** (part 26, `v0.36.137`) is retired
+**An untyped that still records children** (part 26, `v0.36.139`) is retired
 like any other, its children handed to its recorder as seL4's mapping database
 splices a deleted node's children into its parent: the recorder records each
 child in place of the untyped, its offset rebased onto the untyped's

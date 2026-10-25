@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.137` (`lakefile.toml`) |
+| **Package version** | `0.36.139` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 506,208 across 458 Lean files |
 | **Test LoC** | 87,273 across 70 Lean test suites |
@@ -5258,7 +5258,7 @@ image runs keep their pins; no scenario deletes a head reply or a server with
 waiters, since each such delete stops both of the image's threads
 (`docs/REGISTERED_DEBT.md`), and the suite witnesses both.
 
-**The zombie loop and the thread's space-slot deletes** (`v0.36.137`).  A final
+**The zombie loop and the thread's space-slot deletes** (`v0.36.139`).  A final
 delete of a capability whose object still holds capabilities empties that
 object first, as seL4's `finaliseSlot` loop does: `zombieDeleteAt`
 (`Capability/FrameFinalise.lean`), which the delete syscall

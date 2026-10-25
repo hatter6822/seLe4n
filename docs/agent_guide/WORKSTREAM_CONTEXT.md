@@ -344,7 +344,7 @@ borrowed context goes back by its lender's pop before the suspend
 changes what a waiter's end reads or writes must keep the pre-state admission
 (`replyWaitersAdmitted`) reading exactly what the walk re-reads, and keep
 `finaliseThreadEndWaiters_returnLoan_endsAll_of_admitted` proved.  Since part
-26 (`v0.36.137`) a final delete runs the zombie loop (`zombieDeleteAt`,
+26 (`v0.36.139`) a final delete runs the zombie loop (`zombieDeleteAt`,
 `Capability/FrameFinalise.lean`): an object that still holds capabilities (a
 populated CNode, a thread with space-slot capabilities) is emptied first, pass
 by pass, through the finalising delete, and the slot is deleted last.  **Standing

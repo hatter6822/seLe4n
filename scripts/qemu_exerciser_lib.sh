@@ -357,7 +357,7 @@ for driver in drivers:
             "untyped-retype-busy-endpoint": (11, 11),
             "untyped-retype-busy-notification": (11, 11),
             "untyped-retype-bound-notification": (11, 11),
-            # Since v0.36.137 a CNode carries its occupancy link array
+            # Since v0.36.139 a CNode carries its occupancy link array
             # (`CNode.occ`), one cell of its own: 30.
             "untyped-retype-reply": (12, 12), "untyped-retype-cnode": (30, 30),
             # WS-ZA ZA5.4 part 25: the busy and the stashed reply's carves,
