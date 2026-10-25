@@ -555,13 +555,15 @@ the admission names a holder bound back to it, the deschedule keeps the
 binding, and the in-place unbind of the holder read
 as the context's own (`cancelBoundDonationOnCore` on a `.bound` view) always
 runs and clears the context's binding.  So the unstack that follows runs on a
-context no thread holds, as its own or on loan. -/
-theorem finaliseSchedContextUnbind_unbound {st : SystemState} {x : SeLe4n.ObjId}
+context no thread holds, as its own or on loan, and lent from no one: an
+admitted context bound to nothing records no lender, and the unbind clears the
+lender with the binding. -/
+theorem finaliseSchedContextUnbind_released {st : SystemState} {x : SeLe4n.ObjId}
     (hInv : st.objects.invExt) (hA : schedContextFinaliseAdmitted st x = true)
     {sc : SchedContext}
     (hSc : (finaliseSchedContextUnbind (finaliseSchedContextDeschedule st x) x).getSchedContext?
       ⟨x.val⟩ = some sc) :
-    sc.boundThreadCode = 0 := by
+    sc.boundThreadCode = 0 ∧ sc.donationOrigin = none := by
   have hD := finaliseSchedContextDeschedule_objectsAgreeOffRunLinks st x
   have hInv1 : (finaliseSchedContextDeschedule st x).objects.invExt :=
     finaliseSchedContextDeschedule_closed (fun s => s.objects.invExt)
@@ -590,7 +592,8 @@ theorem finaliseSchedContextUnbind_unbound {st : SystemState} {x : SeLe4n.ObjId}
   · rw [if_pos (by rw [hb]; rfl)] at hSc
     rw [SystemState.getSchedContext?_eq_some_iff] at hSc
     rw [show (⟨x.val⟩ : SeLe4n.SchedContextId).toObjId = x from rfl, hO1] at hSc
-    cases hSc; exact hb
+    rw [if_pos (by rw [hb]; rfl)] at hB
+    cases hSc; exact ⟨hb, Option.isNone_iff_eq_none.mp hB⟩
   rw [if_neg (by simpa using hb)] at hSc
   rw [if_neg (by simpa using hb)] at hB
   try dsimp only at hSc
@@ -633,7 +636,17 @@ theorem finaliseSchedContextUnbind_unbound {st : SystemState} {x : SeLe4n.ObjId}
   dsimp only at hSc
   rw [show (⟨x.val⟩ : SeLe4n.SchedContextId).toObjId = x from rfl,
     RHTable_getElem?_eq_get?, RobinHood.RHTable.getElem?_insert_self _ _ _ hInv1] at hSc
-  cases hSc; rfl
+  cases hSc; exact ⟨rfl, rfl⟩
+
+/-- **An admitted context is bound to no thread once its holder is unbound**
+(`finaliseSchedContextUnbind_released`). -/
+theorem finaliseSchedContextUnbind_unbound {st : SystemState} {x : SeLe4n.ObjId}
+    (hInv : st.objects.invExt) (hA : schedContextFinaliseAdmitted st x = true)
+    {sc : SchedContext}
+    (hSc : (finaliseSchedContextUnbind (finaliseSchedContextDeschedule st x) x).getSchedContext?
+      ⟨x.val⟩ = some sc) :
+    sc.boundThreadCode = 0 :=
+  (finaliseSchedContextUnbind_released hInv hA hSc).1
 
 /-- **A property the deschedule, the release and the unstack keep holds after
 the scheduling-context finalisation.** -/
