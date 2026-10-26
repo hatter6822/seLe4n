@@ -2006,6 +2006,32 @@ theorem replyStashedAt_eq_replyIsStashed {st : SystemState}
     | _ => simp at hP
 
 
+/-- **A stash is live on its reply's own record**: a receiver stashing `rid`
+is the stasher the reply records (`pendingReceiveReplyWellFormed`'s record
+clause), blocked receiving with it, so the reply's one-field test answers that it
+is stashed (`SystemState.replyStashedAt`).  What lets the final-delete retire
+read a reply's stash off the reply. -/
+theorem pendingReceiveReplyWellFormed.stashedAt {st : SystemState}
+    (h : pendingReceiveReplyWellFormed st) {tid : SeLe4n.ThreadId} {tcb : TCB}
+    {rid : SeLe4n.ReplyId} (hT : st.objects[tid.toObjId]? = some (.tcb tcb))
+    (hP : tcb.pendingReceiveReply = some rid) :
+    ∃ r, st.objects[rid.toObjId]? = some (.reply r) ∧ st.replyStashedAt rid r = true := by
+  have hG : st.getTcb? tid = some tcb := (SystemState.getTcb?_eq_some_iff st tid tcb).mpr hT
+  obtain ⟨⟨ep, hB⟩, -⟩ := h.1 tid tcb rid hG hP
+  obtain ⟨r, hR, hS⟩ := h.2.2 tid tcb rid hG hP
+  refine ⟨r, (SystemState.getReply?_eq_some_iff st rid r).mp hR, ?_⟩
+  have hs : tcb.ipcStateCode = 1 := by
+    have := congrArg ThreadIpcState.stateCode hB
+    unfold TCB.ipcState at this; rw [ThreadIpcState.stateCode_ofCodes] at this; exact this
+  have hp : tcb.pendingReceiveReplyCode = rid.val + 1 := by
+    have := congrArg SeLe4n.ReplyId.optCode hP
+    unfold TCB.pendingReceiveReply at this
+    rw [SeLe4n.ReplyId.optCode_ofOptCode] at this; exact this
+  unfold SystemState.replyStashedAt
+  rw [hS]
+  have hG' : st.getTcb? ⟨tid.val⟩ = some tcb := hG
+  simp [hG', hs, hp]
+
 /-- WS-SM SM6.E: `ipcInvariant` reads only the object store, so any
 transition that leaves the object store unchanged frames it (the cross-core
 deschedule, the replenishment migration, per-core scheduler-queue edits). -/
