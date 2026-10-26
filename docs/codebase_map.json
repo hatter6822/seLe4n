@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "za/sc-retire-own-links",
-      "commit_sha": "662e1ce3d09401606d0b4b0d76ab71d2b760a603",
-      "tree_sha": "406218052aedca2cbb6472c3557720e7b937197a",
-      "committed_at_utc": "2026-10-26T10:14:03+00:00"
+      "commit_sha": "ee590c29316be72bddf3c9199e69daae7fa859bd",
+      "tree_sha": "fbcee98762f3447f71e7e694b6bc3d8177282046",
+      "committed_at_utc": "2026-10-26T10:37:01+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "5f144e44ddbfd8e27446171baa1f14042afa8f76dde3f8db3f0dbe0dd39f5649"
+    "source_digest": "4efca7c5918490c6209391649a1c25c0781139581f8ae9ff46ada4b8c06f8a03"
   },
   "summary": {
-    "module_count": 529,
-    "declaration_count": 29555
+    "module_count": 530,
+    "declaration_count": 29598
   },
   "readme_sync": {
     "version": "0.36.142",
     "lean_toolchain": "v4.28.0",
-    "production_files": 459,
-    "production_loc": 512980,
+    "production_files": 460,
+    "production_loc": 513422,
     "test_files": 70,
     "test_loc": 87543,
-    "proved_theorem_lemma_decls": 18688,
+    "proved_theorem_lemma_decls": 18726,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -128095,6 +128095,677 @@
           "line": 9166,
           "called": [
             "SeLe4n.Kernel.cleanupPreReceiveDonationChecked_never_errors_under_ipcInvariantFull"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.IPC.Invariant.DeleteReachability",
+      "path": "SeLe4n/Kernel/IPC/Invariant/DeleteReachability.lean",
+      "declaration_count": 43,
+      "declarations": [
+        {
+          "kind": "inductive",
+          "name": "ReachLinkView",
+          "full_name": "SeLe4n.Kernel.ReachLinkView",
+          "line": 45,
+          "called": [
+            "SeLe4n.Kernel.Reply",
+            "SeLe4n.Kernel.RunQueueLink",
+            "SeLe4n.Model.Notification",
+            "SeLe4n.Model.ReplyView",
+            "SeLe4n.Model.ThreadIpcState",
+            "SeLe4n.ReplyId",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "reachLinkViewOf",
+          "full_name": "SeLe4n.Kernel.reachLinkViewOf",
+          "line": 53,
+          "called": [
+            "SeLe4n.Kernel.ReachLinkView",
+            "SeLe4n.Model.KernelObject",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.ipcState",
+            "SeLe4n.Model.TCB.ntfnNext",
+            "SeLe4n.Model.TCB.ntfnPrev",
+            "SeLe4n.Model.TCB.replyView",
+            "SeLe4n.Model.TCB.runLink"
+          ]
+        },
+        {
+          "kind": "structure",
+          "name": "ReachLinkFrame",
+          "full_name": "SeLe4n.Kernel.ReachLinkFrame",
+          "line": 63,
+          "called": [
+            "SeLe4n.Kernel.reachLinkViewOf",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.ObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "reachQueueInvariant",
+          "full_name": "SeLe4n.Kernel.reachQueueInvariant",
+          "line": 69,
+          "called": [
+            "SeLe4n.Kernel.donationChainWellFormed",
+            "SeLe4n.Kernel.notificationWaiterConsistent",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.replyWaitersConsistent",
+            "SeLe4n.Model.SystemState.runQueueRefined"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "refl",
+          "full_name": "SeLe4n.Kernel.ReachLinkFrame.refl",
+          "line": 75,
+          "called": [
+            "SeLe4n.Kernel.ReachLinkFrame",
+            "SeLe4n.Model.SystemState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "trans",
+          "full_name": "SeLe4n.Kernel.ReachLinkFrame.trans",
+          "line": 77,
+          "called": [
+            "SeLe4n.Kernel.ReachLinkFrame",
+            "SeLe4n.Model.SystemState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "reachLinkViewOf_eq_tcb",
+          "full_name": "SeLe4n.Kernel.reachLinkViewOf_eq_tcb",
+          "line": 87,
+          "called": [
+            "SeLe4n.Kernel.ReachLinkView",
+            "SeLe4n.Kernel.RunQueueLink",
+            "SeLe4n.Kernel.reachLinkViewOf",
+            "SeLe4n.Model.KernelObject",
+            "SeLe4n.Model.ReplyView",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.ipcState",
+            "SeLe4n.Model.TCB.ntfnNext",
+            "SeLe4n.Model.TCB.ntfnPrev",
+            "SeLe4n.Model.TCB.replyView",
+            "SeLe4n.Model.TCB.runLink",
+            "SeLe4n.Model.ThreadIpcState",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "reachLinkViewOf_eq_notification",
+          "full_name": "SeLe4n.Kernel.reachLinkViewOf_eq_notification",
+          "line": 97,
+          "called": [
+            "SeLe4n.Kernel.ReachLinkView",
+            "SeLe4n.Kernel.reachLinkViewOf",
+            "SeLe4n.Model.KernelObject",
+            "SeLe4n.Model.Notification"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "reachLinkViewOf_eq_reply",
+          "full_name": "SeLe4n.Kernel.reachLinkViewOf_eq_reply",
+          "line": 104,
+          "called": [
+            "SeLe4n.Kernel.ReachLinkView",
+            "SeLe4n.Kernel.Reply",
+            "SeLe4n.Kernel.reachLinkViewOf",
+            "SeLe4n.Model.KernelObject"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "replyStackLinks?_of_view",
+          "full_name": "SeLe4n.Kernel.replyStackLinks?_of_view",
+          "line": 111,
+          "called": [
+            "SeLe4n.Kernel.reachLinkViewOf",
+            "SeLe4n.Kernel.replyStackLinks?",
+            "SeLe4n.Model.KernelObject"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedContextStackHead?_of_view",
+          "full_name": "SeLe4n.Kernel.schedContextStackHead?_of_view",
+          "line": 118,
+          "called": [
+            "SeLe4n.Kernel.reachLinkViewOf",
+            "SeLe4n.Kernel.schedContextStackHead?",
+            "SeLe4n.Model.KernelObject"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "objReplyView_of_view",
+          "full_name": "SeLe4n.Kernel.objReplyView_of_view",
+          "line": 125,
+          "called": [
+            "SeLe4n.Kernel.reachLinkViewOf",
+            "SeLe4n.Model.KernelObject",
+            "SeLe4n.Model.objReplyView"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "tcb_fwd",
+          "full_name": "SeLe4n.Kernel.ReachLinkFrame.tcb_fwd",
+          "line": 135,
+          "called": [
+            "SeLe4n.Kernel.ReachLinkFrame",
+            "SeLe4n.Kernel.ReachLinkFrame.trans",
+            "SeLe4n.Kernel.reachLinkViewOf_eq_tcb",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.ipcState",
+            "SeLe4n.Model.TCB.ntfnNext",
+            "SeLe4n.Model.TCB.ntfnPrev",
+            "SeLe4n.Model.TCB.replyView",
+            "SeLe4n.Model.TCB.runLink",
+            "SeLe4n.ObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "tcb_bwd",
+          "full_name": "SeLe4n.Kernel.ReachLinkFrame.tcb_bwd",
+          "line": 142,
+          "called": [
+            "SeLe4n.Kernel.ReachLinkFrame",
+            "SeLe4n.Kernel.reachLinkViewOf_eq_tcb",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.ipcState",
+            "SeLe4n.Model.TCB.ntfnNext",
+            "SeLe4n.Model.TCB.ntfnPrev",
+            "SeLe4n.Model.TCB.replyView",
+            "SeLe4n.Model.TCB.runLink",
+            "SeLe4n.ObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "runLinkOn",
+          "full_name": "SeLe4n.Kernel.ReachLinkFrame.runLinkOn",
+          "line": 149,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.ReachLinkFrame",
+            "SeLe4n.Kernel.ReachLinkFrame.tcb_bwd",
+            "SeLe4n.Kernel.ReachLinkFrame.tcb_fwd",
+            "SeLe4n.Model.SystemState.getTcb?",
+            "SeLe4n.Model.SystemState.getTcb?_eq_some_iff",
+            "SeLe4n.Model.SystemState.runLinkOn",
+            "SeLe4n.Model.TCB.runLinkOn",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "replyViews",
+          "full_name": "SeLe4n.Kernel.ReachLinkFrame.replyViews",
+          "line": 166,
+          "called": [
+            "SeLe4n.Kernel.ReachLinkFrame",
+            "SeLe4n.Kernel.objReplyView_of_view",
+            "SeLe4n.Model.SystemState.getObject?_eq_getElem",
+            "SeLe4n.Model.SystemState.replyViews"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "donationChainFrame",
+          "full_name": "SeLe4n.Kernel.ReachLinkFrame.donationChainFrame",
+          "line": 172,
+          "called": [
+            "SeLe4n.Kernel.ReachLinkFrame",
+            "SeLe4n.Kernel.donationChainFrame",
+            "SeLe4n.Kernel.reachLinkViewOf_eq_reply",
+            "SeLe4n.Kernel.replyStackLinks?_of_view",
+            "SeLe4n.Kernel.schedContextStackHead?_of_view"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "preserves",
+          "full_name": "SeLe4n.Kernel.ReachLinkFrame.preserves",
+          "line": 180,
+          "called": [
+            "SeLe4n.Kernel.ReachLinkFrame",
+            "SeLe4n.Kernel.ReachLinkFrame.donationChainFrame",
+            "SeLe4n.Kernel.ReachLinkFrame.tcb_bwd",
+            "SeLe4n.Kernel.ReachLinkFrame.tcb_fwd",
+            "SeLe4n.Kernel.ReachLinkFrame.trans",
+            "SeLe4n.Kernel.donationChainWellFormed_of_frame",
+            "SeLe4n.Kernel.notificationWaiterConsistent_of_tcbLinkFrame",
+            "SeLe4n.Kernel.reachLinkViewOf_eq_notification",
+            "SeLe4n.Kernel.reachQueueInvariant",
+            "SeLe4n.Model.SystemState.replyWaitersConsistent.of_views",
+            "SeLe4n.Model.SystemState.runQueueRefined_of_frame"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "reachLinkViewOf_withoutLinks",
+          "full_name": "SeLe4n.Kernel.reachLinkViewOf_withoutLinks",
+          "line": 200,
+          "called": [
+            "SeLe4n.Kernel.reachLinkViewOf",
+            "SeLe4n.Model.KernelObject",
+            "SeLe4n.Model.KernelObject.withoutLinks"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "of_objects_eq",
+          "full_name": "SeLe4n.Kernel.ReachLinkFrame.of_objects_eq",
+          "line": 207,
+          "called": [
+            "SeLe4n.Kernel.ReachLinkFrame",
+            "SeLe4n.Model.SystemState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "of_agreeOffDerivationLinks",
+          "full_name": "SeLe4n.Kernel.ReachLinkFrame.of_agreeOffDerivationLinks",
+          "line": 212,
+          "called": [
+            "SeLe4n.Kernel.ReachLinkFrame",
+            "SeLe4n.Kernel.proj_eq_of_map_eq",
+            "SeLe4n.Kernel.reachLinkViewOf_withoutLinks",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.objectsAgreeOffDerivationLinks"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "of_insert",
+          "full_name": "SeLe4n.Kernel.ReachLinkFrame.of_insert",
+          "line": 218,
+          "called": [
+            "SeLe4n.Kernel.ReachLinkFrame",
+            "SeLe4n.Kernel.RobinHood.RHTable.insert",
+            "SeLe4n.Kernel.RobinHood.RHTable.invExt",
+            "SeLe4n.Kernel.proj_insert_eq",
+            "SeLe4n.Kernel.reachLinkViewOf",
+            "SeLe4n.Model.KernelObject",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.ObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "storeObject",
+          "full_name": "SeLe4n.Kernel.ReachLinkFrame.storeObject",
+          "line": 224,
+          "called": [
+            "SeLe4n.Kernel.ReachLinkFrame",
+            "SeLe4n.Kernel.RobinHood.RHTable.invExt",
+            "SeLe4n.Kernel.reachLinkViewOf",
+            "SeLe4n.Kernel.storeObject_objects_eq",
+            "SeLe4n.Kernel.storeObject_objects_ne",
+            "SeLe4n.Kernel.storeObject_scheduler_eq",
+            "SeLe4n.Model.KernelObject",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.storeObject",
+            "SeLe4n.ObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "updateTcb",
+          "full_name": "SeLe4n.Kernel.ReachLinkFrame.updateTcb",
+          "line": 233,
+          "called": [
+            "SeLe4n.Kernel.ReachLinkFrame",
+            "SeLe4n.Kernel.ReachLinkFrame.of_insert",
+            "SeLe4n.Kernel.ReachLinkFrame.refl",
+            "SeLe4n.Kernel.RobinHood.RHTable.invExt",
+            "SeLe4n.Kernel.reachLinkViewOf",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getTcb?",
+            "SeLe4n.Model.SystemState.getTcb?_eq_some_iff",
+            "SeLe4n.Model.SystemState.updateTcb_eq_of_some",
+            "SeLe4n.Model.SystemState.updateTcb_eq_self_of_none",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "linkReach",
+          "full_name": "SeLe4n.Kernel.ReachLinkFrame.linkReach",
+          "line": 244,
+          "called": [
+            "SeLe4n.Kernel.ReachLinkFrame",
+            "SeLe4n.Kernel.ReachLinkFrame.of_agreeOffDerivationLinks",
+            "SeLe4n.Kernel.RobinHood.RHTable.invExt",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.linkReach",
+            "SeLe4n.Model.SystemState.linkReach.agree",
+            "SeLe4n.Model.SystemState.linkReach.fields"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cdtAddChild",
+          "full_name": "SeLe4n.Kernel.ReachLinkFrame.cdtAddChild",
+          "line": 249,
+          "called": [
+            "SeLe4n.Kernel.ReachLinkFrame",
+            "SeLe4n.Kernel.ReachLinkFrame.linkReach",
+            "SeLe4n.Kernel.ReachLinkFrame.of_objects_eq",
+            "SeLe4n.Kernel.ReachLinkFrame.trans",
+            "SeLe4n.Kernel.RobinHood.RHTable.invExt",
+            "SeLe4n.Model.CapDerivationTree.addEdge",
+            "SeLe4n.Model.DerivationOp",
+            "SeLe4n.Model.SlotRef",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.cdtAddChild_reach"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "spliceDeletedCdtNode",
+          "full_name": "SeLe4n.Kernel.ReachLinkFrame.spliceDeletedCdtNode",
+          "line": 255,
+          "called": [
+            "SeLe4n.Kernel.ReachLinkFrame",
+            "SeLe4n.Kernel.ReachLinkFrame.of_agreeOffDerivationLinks",
+            "SeLe4n.Kernel.RobinHood.RHTable.invExt",
+            "SeLe4n.Kernel.spliceDeletedCdtNode",
+            "SeLe4n.Kernel.spliceDeletedCdtNode_agree",
+            "SeLe4n.Kernel.spliceDeletedCdtNode_scheduler",
+            "SeLe4n.Model.SlotRef",
+            "SeLe4n.Model.SystemState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceDeleteSlot",
+          "full_name": "SeLe4n.Kernel.ReachLinkFrame.cspaceDeleteSlot",
+          "line": 262,
+          "called": [
+            "SeLe4n.Kernel.CSpaceAddr",
+            "SeLe4n.Kernel.ReachLinkFrame",
+            "SeLe4n.Kernel.ReachLinkFrame.spliceDeletedCdtNode",
+            "SeLe4n.Kernel.ReachLinkFrame.storeObject",
+            "SeLe4n.Kernel.ReachLinkFrame.trans",
+            "SeLe4n.Kernel.RobinHood.RHTable.invExt",
+            "SeLe4n.Kernel.cspaceDeleteSlot",
+            "SeLe4n.Kernel.cspaceDeleteSlotCore_invExt",
+            "SeLe4n.Kernel.cspaceDeleteSlot_ok_decompose",
+            "SeLe4n.Model.SystemState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "finaliseDestroyedCapabilities",
+          "full_name": "SeLe4n.Kernel.ReachLinkFrame.finaliseDestroyedCapabilities",
+          "line": 271,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.ReachLinkFrame",
+            "SeLe4n.Kernel.RobinHood.RHTable.invExt",
+            "SeLe4n.Kernel.finaliseDestroyedCapabilities",
+            "SeLe4n.Kernel.finaliseDestroyedCapabilities_ok_frame",
+            "SeLe4n.Model.MappedPage",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.ObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "threadSlotCopied",
+          "full_name": "SeLe4n.Kernel.ReachLinkFrame.threadSlotCopied",
+          "line": 283,
+          "called": [
+            "SeLe4n.Kernel.ReachLinkFrame",
+            "SeLe4n.Kernel.ReachLinkFrame.cdtAddChild",
+            "SeLe4n.Kernel.ReachLinkFrame.cspaceDeleteSlot",
+            "SeLe4n.Kernel.ReachLinkFrame.trans",
+            "SeLe4n.Kernel.ReachLinkFrame.updateTcb",
+            "SeLe4n.Kernel.RobinHood.RHTable.invExt",
+            "SeLe4n.Kernel.copyIntoThreadSlot_delete",
+            "SeLe4n.Kernel.threadSlotCopied",
+            "SeLe4n.Kernel.threadSlotDeleted_tcb",
+            "SeLe4n.Model.AccessRightSet",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getTcb?",
+            "SeLe4n.Model.SystemState.updateTcb_preserves_objects_invExt",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.insertSpaceCap",
+            "SeLe4n.Model.TCB.spaceCopyOf",
+            "SeLe4n.ObjId",
+            "SeLe4n.Slot",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "reachableDeleteBundle",
+          "full_name": "SeLe4n.Kernel.reachableDeleteBundle",
+          "line": 305,
+          "called": [
+            "SeLe4n.Kernel.finalisingDeleteBundle",
+            "SeLe4n.Kernel.ipcReachable",
+            "SeLe4n.Model.SystemState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ipcReachable_of_bundle",
+          "full_name": "SeLe4n.Kernel.ipcReachable_of_bundle",
+          "line": 309,
+          "called": [
+            "SeLe4n.Kernel.finalisingDeleteBundle",
+            "SeLe4n.Kernel.ipcReachable",
+            "SeLe4n.Kernel.reachQueueInvariant",
+            "SeLe4n.Model.SystemState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ipcReachable.reachQueueInvariant",
+          "full_name": "SeLe4n.Kernel.ipcReachable.reachQueueInvariant",
+          "line": 313,
+          "called": [
+            "SeLe4n.Kernel.ipcReachable",
+            "SeLe4n.Model.SystemState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "finaliseFinalObject_preserves_reachableDeleteBundle",
+          "full_name": "SeLe4n.Kernel.finaliseFinalObject_preserves_reachableDeleteBundle",
+          "line": 317,
+          "called": [
+            "SeLe4n.Kernel.finaliseFinalObject",
+            "SeLe4n.Kernel.finaliseFinalObject_preserves_finalisingDeleteBundle",
+            "SeLe4n.Kernel.finaliseFinalObject_preserves_ipcReachable",
+            "SeLe4n.Kernel.reachableDeleteBundle",
+            "SeLe4n.Model.SystemState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "retireFinalisedObject_preserves_reachableDeleteBundle",
+          "full_name": "SeLe4n.Kernel.retireFinalisedObject_preserves_reachableDeleteBundle",
+          "line": 324,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.reachableDeleteBundle",
+            "SeLe4n.Kernel.retireFinalisedObject",
+            "SeLe4n.Kernel.retireFinalisedObject_preserves_finalisingDeleteBundle",
+            "SeLe4n.Kernel.retireFinalisedObject_preserves_ipcReachable",
+            "SeLe4n.Model.SystemState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceDeleteSlotTeardown_preserves_reachableDeleteBundle",
+          "full_name": "SeLe4n.Kernel.cspaceDeleteSlotTeardown_preserves_reachableDeleteBundle",
+          "line": 332,
+          "called": [
+            "SeLe4n.Kernel.CSpaceAddr",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.ReachLinkFrame.cspaceDeleteSlot",
+            "SeLe4n.Kernel.ReachLinkFrame.finaliseDestroyedCapabilities",
+            "SeLe4n.Kernel.ReachLinkFrame.preserves",
+            "SeLe4n.Kernel.ReachLinkFrame.trans",
+            "SeLe4n.Kernel.cspaceDeleteSlot",
+            "SeLe4n.Kernel.cspaceDeleteSlotTeardown_preserves_finalisingDeleteBundle",
+            "SeLe4n.Kernel.cspaceDeleteSlot_preserves_objects_invExt",
+            "SeLe4n.Kernel.finaliseDestroyedCapabilities",
+            "SeLe4n.Kernel.ipcReachable_of_bundle",
+            "SeLe4n.Kernel.reachableDeleteBundle",
+            "SeLe4n.Model.MappedPage",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.ObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceDeleteSlotFinalising_preserves_reachableDeleteBundle",
+          "full_name": "SeLe4n.Kernel.cspaceDeleteSlotFinalising_preserves_reachableDeleteBundle",
+          "line": 346,
+          "called": [
+            "SeLe4n.Kernel.CSpaceAddr",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.cspaceDeleteSlotFinalising",
+            "SeLe4n.Kernel.cspaceDeleteSlotFinalising_ok",
+            "SeLe4n.Kernel.cspaceDeleteSlotTeardown_preserves_reachableDeleteBundle",
+            "SeLe4n.Kernel.reachableDeleteBundle",
+            "SeLe4n.Kernel.retireFinalisedObject_preserves_reachableDeleteBundle",
+            "SeLe4n.Model.SystemState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceRevokeCdtFinalising_preserves_reachableDeleteBundle",
+          "full_name": "SeLe4n.Kernel.cspaceRevokeCdtFinalising_preserves_reachableDeleteBundle",
+          "line": 356,
+          "called": [
+            "SeLe4n.Kernel.CSpaceAddr",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.cspaceDeleteSlotFinalising_preserves_reachableDeleteBundle",
+            "SeLe4n.Kernel.cspaceRevokeCdtFinalising",
+            "SeLe4n.Kernel.cspaceRevokeCdtFinalising_closed",
+            "SeLe4n.Kernel.finaliseFinalObject_preserves_reachableDeleteBundle",
+            "SeLe4n.Kernel.reachableDeleteBundle",
+            "SeLe4n.Model.SystemState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceDeleteSlotZombie_preserves_reachableDeleteBundle",
+          "full_name": "SeLe4n.Kernel.cspaceDeleteSlotZombie_preserves_reachableDeleteBundle",
+          "line": 367,
+          "called": [
+            "SeLe4n.Kernel.CSpaceAddr",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.cspaceDeleteSlotFinalising_preserves_reachableDeleteBundle",
+            "SeLe4n.Kernel.cspaceDeleteSlotZombie",
+            "SeLe4n.Kernel.cspaceDeleteSlotZombie_closed",
+            "SeLe4n.Kernel.finaliseFinalObject_preserves_reachableDeleteBundle",
+            "SeLe4n.Kernel.reachableDeleteBundle",
+            "SeLe4n.Model.SystemState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "threadSlotCopied_preserves_ipcReachable",
+          "full_name": "SeLe4n.Kernel.threadSlotCopied_preserves_ipcReachable",
+          "line": 383,
+          "called": [
+            "SeLe4n.Kernel.ReachLinkFrame.threadSlotCopied",
+            "SeLe4n.Kernel.SchedLinkFrame",
+            "SeLe4n.Kernel.SchedLinkFrame.threadSlotCopied",
+            "SeLe4n.Kernel.allTimeoutBudgetsNone_of_aux",
+            "SeLe4n.Kernel.ipcReachable",
+            "SeLe4n.Kernel.threadSlotCopied",
+            "SeLe4n.Kernel.threadSlotCopied_preserves_ipcInvariantFull",
+            "SeLe4n.Kernel.threadSlotCopied_tcb",
+            "SeLe4n.Model.AccessRightSet",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getTcb?",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.ObjId",
+            "SeLe4n.Slot",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "threadSlotSet_preserves_ipcReachable",
+          "full_name": "SeLe4n.Kernel.threadSlotSet_preserves_ipcReachable",
+          "line": 397,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.ipcReachable",
+            "SeLe4n.Kernel.retireFinalObject_preserves_ipcReachable",
+            "SeLe4n.Kernel.threadSlotCopied_preserves_ipcReachable",
+            "SeLe4n.Kernel.threadSlotSet",
+            "SeLe4n.Model.AccessRightSet",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getTcb?",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.ObjId",
+            "SeLe4n.Slot",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "copyThreadSpaces_preserves_ipcReachable",
+          "full_name": "SeLe4n.Kernel.copyThreadSpaces_preserves_ipcReachable",
+          "line": 407,
+          "called": [
+            "SeLe4n.Kernel.CSpaceAddr",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.copyThreadSpaces",
+            "SeLe4n.Kernel.copyThreadSpaces_ok",
+            "SeLe4n.Kernel.cspaceRootSourceAdmitted_spec",
+            "SeLe4n.Kernel.ipcReachable",
+            "SeLe4n.Kernel.threadSlotSet_getTcb?",
+            "SeLe4n.Kernel.threadSlotSet_preserves_ipcReachable",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.TCB.cspaceRootRights",
+            "SeLe4n.Model.TCB.cspaceRootSlot",
+            "SeLe4n.ValidThreadId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "copyThreadSpacesZombie_preserves_ipcReachable",
+          "full_name": "SeLe4n.Kernel.copyThreadSpacesZombie_preserves_ipcReachable",
+          "line": 421,
+          "called": [
+            "SeLe4n.Kernel.CSpaceAddr",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.ZombieRun",
+            "SeLe4n.Kernel.ZombieRun.chain",
+            "SeLe4n.Kernel.copyThreadSpaces",
+            "SeLe4n.Kernel.copyThreadSpacesZombie",
+            "SeLe4n.Kernel.copyThreadSpaces_preserves_ipcReachable",
+            "SeLe4n.Kernel.copyThreadSpaces_preserves_schedContextLinkInvariant",
+            "SeLe4n.Kernel.cspaceDeleteSlotFinalising_preserves_reachableDeleteBundle",
+            "SeLe4n.Kernel.finaliseFinalObject_preserves_reachableDeleteBundle",
+            "SeLe4n.Kernel.ipcReachable",
+            "SeLe4n.Kernel.reachableDeleteBundle",
+            "SeLe4n.Kernel.schedContextLinkInvariant",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.ValidThreadId"
           ]
         }
       ]
@@ -382505,7 +383176,7 @@
           "kind": "def",
           "name": "stagedBuildAnchor",
           "full_name": "SeLe4n.Platform.Staged.stagedBuildAnchor",
-          "line": 705,
+          "line": 709,
           "called": []
         }
       ]
