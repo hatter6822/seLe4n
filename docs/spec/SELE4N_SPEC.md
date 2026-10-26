@@ -51,7 +51,7 @@ enforcement, and scheduling.
 |-----------|-------|
 | **Package version** | `0.36.143` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 514,134 across 461 Lean files |
+| **Production LoC** | 514,135 across 461 Lean files |
 | **Test LoC** | 87,597 across 70 Lean test suites |
 | **Proved declarations** | 18,775 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
@@ -5338,7 +5338,7 @@ root slot still non-leaf, the root delete makes no write
 capability, so a retry continues from the slot state, as seL4's preempted
 `cteDelete` does, and a revoke that keeps a child stops with `.ok`.  That the
 fuel always suffices on a reachable state is not yet proven
-(`docs/REGISTERED_DEBT.md`, plan row 31).  **Set-space** deletes each old root
+(`docs/REGISTERED_DEBT.md`, plan row 32).  **Set-space** deletes each old root
 through the same loop (`copyThreadSpacesZombie`), so a thread's last
 capability to its old CSpace root CNode empties and retires it; set-space is a
 remote writer, in the capability-destroy footprint group.  **An untyped with
@@ -5365,7 +5365,7 @@ reads** (`v0.36.141`, plan row 28): the passive kinds and the thread are
 retired on their own fields, as described above.  **The scheduling
 context's own-link read** (`v0.36.142`, plan row 29): a context is retired on
 its own links, the scheduling links that answer every other reference to it
-carried along the delete chain, as described above.  **The table back-references** (`v0.36.143`, plan row 30 part 1): the three
+carried along the delete chain, as described above.  **The table back-references** (`v0.36.143`, plan row 30): the three
 tables that name objects by id outside every slot are answered by the objects
 they name — an endpoint records its registration's code (`Endpoint.serviceCode`,
 written by `registerService`, cleared by `revokeService`), a notification
@@ -5376,8 +5376,8 @@ would come up violating it (`bootSafeEndpointCheck`,
 `irqHandlersAndNotificationsReciprocal`).  Still open: the invariant is not yet
 carried by every syscall, so the retire still
 walks the service registry, the interrupt-handler table and the service graph
-(plan row 30 part 2), and
-the finalise's admission is not carried across its own steps (plan row 31);
+(plan row 31), and
+the finalise's admission is not carried across its own steps (plan row 32);
 each step and the retire re-check their guards.
 Exerciser: `populated-cnode-delete`, `space-cnode-cap-delete`,
 `spaced-tcb-delete`, `tcb-set-space` and `set-carved-tcb-space` read 0 heap
@@ -5867,7 +5867,7 @@ seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
   (`untypedResetFromCap`) and first refuses (`.revocationRequired`) while that
   slot has a derivation child, seL4's per-slot `ensureNoChildren`
   (`untypedResetFromCap_ok`); the store-wide check stays beside it until the
-  reset is restated as seL4's (WS-ZA ZA5.4 part 32, `docs/REGISTERED_DEBT.md`).
+  reset is restated as seL4's (WS-ZA ZA5.4 part 33, `docs/REGISTERED_DEBT.md`).
   Then every
   mapping of a page meeting the region is removed through the `.vspaceUnmap`
   arm's own transition — TLB flush, shootdown round, initiator drain,

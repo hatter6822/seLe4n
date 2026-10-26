@@ -222,7 +222,7 @@ waiters' admission on the state the cancel leaves (`hWait`), and the context
 unbind's binding clause on the state the release leaves (`hBind`).  That the
 pre-state admission carries to those states — so no step's guard refuses after
 an earlier step has written, which is what proves checks-before-writes for the
-thread finalisation — is `docs/planning/UNTYPED_RESET_PLAN.md` row 31; today
+thread finalisation — is `docs/planning/UNTYPED_RESET_PLAN.md` row 32; today
 each step and the retire re-check their own guards.
 
 The steps: the unbind clears the bound-notification code

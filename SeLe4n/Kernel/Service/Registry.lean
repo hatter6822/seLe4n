@@ -102,8 +102,8 @@ the fold returns the one registration, or none.
 
 WS-ZA ZA5.4 part 30: the endpoint now records its registration's code, so this
 fold is the registry's last O(registry) read on a lookup path.  Replacing it
-with the endpoint's own field needs the invariant at the call site, which part
-2 carries. -/
+with the endpoint's own field needs the invariant at the call site, which
+`docs/planning/UNTYPED_RESET_PLAN.md` row 31 (WS-ZA ZA5.4 part 31) carries. -/
 def lookupServiceByCap (epId : SeLe4n.ObjId) : Kernel ServiceRegistration :=
   fun st =>
     let result := st.serviceRegistry.fold (init := none) fun acc _ reg =>

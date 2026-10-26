@@ -39,7 +39,8 @@ consumer theorem that makes the back-links worth recording.
 
 The final delete still walks the tables: switching its guard to
 `tableBackLinksClear` needs `tableReferencesRecorded` carried through every
-kernel entry, which is the second half of this work and is not landed here. -/
+kernel entry, which is `docs/planning/UNTYPED_RESET_PLAN.md` row 31 (WS-ZA ZA5.4
+part 31) and is not landed here. -/
 
 namespace SeLe4n.Kernel.RobinHood
 

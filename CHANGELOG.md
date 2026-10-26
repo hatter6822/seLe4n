@@ -1,4 +1,4 @@
-## v0.36.143 — WS-ZA ZA5.4 part 30 (part 1): the table back-references
+## v0.36.143 — WS-ZA ZA5.4 part 30: the table back-references recorded
 
 Three tables of the state name kernel objects by id from outside every slot:
 the service registry, the interrupt-handler table and the service graph.  A
@@ -80,15 +80,24 @@ names, as seL4's objects answer the references to them.
   two writers' preservation, the two derivations, the deleted fold, the
   `kindPreservingWrite` conjunct and both boot gates.
 
-### Still open (plan row 30 part 2)
+### The split: a new row 31, the later rows renumbered
 
-The invariant is not yet carried by every syscall and kernel entry, so the
-retire still walks the three tables and `registryNamesNone`,
-`irqHandlersNameNone` and `servicesNameNone` are kept.  Also open: the boot's
-establishment theorem and shapes, and the delete chain's bundles.
-`docs/REGISTERED_DEBT.md` row 21 (the service-graph invariant under
-interleaving) is untouched and stays open.  No row is inserted and nothing is
-renumbered: the remainder is row 30's part 2.
+The plan's row 30 is now what landed here.  The remainder is a new row 31,
+"The table back-references read": the invariant established at boot (the
+establishment theorem and the boot shapes) and carried by every syscall and
+kernel entry and along the delete chain (`finalisingDeleteBundle`,
+`reachableDeleteBundle`), then the retire's guard switched to the back-links,
+deleting `registryNamesNone`, `irqHandlersNameNone` and `servicesNameNone`;
+`lookupServiceByCap` reading the recorded code; and the endpoint arm of
+`cleanupEndpointServiceRegistrations` deleted or justified.  Row 31 now owns
+the registry and service-graph conjuncts of `docs/REGISTERED_DEBT.md` §C.1
+row 21 (`crossSubsystemInvariant` under interleaving), which stays open.  The
+finalise's admission carriage and the zombie fuel become row 32 and the seL4
+reset row 33; every citation of the old numbering is swept — the plan, the
+debt register, `WORKSTREAM_CONTEXT.md`, `ZERO_ALLOCATION_SYSCALL_PLAN.md`, the
+spec, the claim index, GitBook chapter 12, and the source comments that cite
+them (the comment in `scripts/qemu_exerciser_lib.sh` included; no pin
+changes).
 
 ## v0.36.142 — WS-ZA ZA5.4 part 29: the scheduling context's retire reads its own links
 

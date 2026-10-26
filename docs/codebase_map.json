@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "za/table-back-refs",
-      "commit_sha": "4779fda4c198f7fdbc9e3ede1c302fb33674cb3d",
-      "tree_sha": "7abebaf5d158de509ae4ccd709062e16f33e23e5",
-      "committed_at_utc": "2026-10-26T15:45:02+00:00"
+      "commit_sha": "40b10f63786d2ec31c788551e43079bf3461fe93",
+      "tree_sha": "aab9fbc3ee9b00813101e714ab7c1a2a80354f22",
+      "committed_at_utc": "2026-10-26T15:46:33+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "36061e978d1f0890b7574506ac6d52d9244bf0680c5e0b23432c89914d915eab"
+    "source_digest": "418b25bfecab77528691444fe758b6315307ccb714881086184cfc4dfd8981d0"
   },
   "summary": {
     "module_count": 531,
@@ -27,7 +27,7 @@
     "version": "0.36.143",
     "lean_toolchain": "v4.28.0",
     "production_files": 461,
-    "production_loc": 514134,
+    "production_loc": 514135,
     "test_files": 70,
     "test_loc": 87597,
     "proved_theorem_lemma_decls": 18775,
@@ -363359,7 +363359,7 @@
           "kind": "def",
           "name": "RHTable.slotsEmpty",
           "full_name": "SeLe4n.Kernel.RobinHood.RHTable.slotsEmpty",
-          "line": 49,
+          "line": 50,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable"
           ]
@@ -363368,7 +363368,7 @@
           "kind": "theorem",
           "name": "getLoop_of_slotsEmpty",
           "full_name": "SeLe4n.Kernel.RobinHood.getLoop_of_slotsEmpty",
-          "line": 52,
+          "line": 53,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHEntry",
             "SeLe4n.Kernel.RobinHood.getLoop"
@@ -363378,7 +363378,7 @@
           "kind": "theorem",
           "name": "findLoop_of_slotsEmpty",
           "full_name": "SeLe4n.Kernel.RobinHood.findLoop_of_slotsEmpty",
-          "line": 60,
+          "line": 61,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHEntry",
             "SeLe4n.Kernel.RobinHood.findLoop"
@@ -363388,7 +363388,7 @@
           "kind": "theorem",
           "name": "RHTable.get?_of_slotsEmpty",
           "full_name": "SeLe4n.Kernel.RobinHood.RHTable.get?_of_slotsEmpty",
-          "line": 69,
+          "line": 70,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable",
             "SeLe4n.Kernel.RobinHood.RHTable.get?",
@@ -363400,7 +363400,7 @@
           "kind": "theorem",
           "name": "RHTable.erase_of_slotsEmpty",
           "full_name": "SeLe4n.Kernel.RobinHood.RHTable.erase_of_slotsEmpty",
-          "line": 74,
+          "line": 75,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable",
             "SeLe4n.Kernel.RobinHood.RHTable.erase",
@@ -363412,7 +363412,7 @@
           "kind": "theorem",
           "name": "RHTable.fold_of_slotsEmpty",
           "full_name": "SeLe4n.Kernel.RobinHood.RHTable.fold_of_slotsEmpty",
-          "line": 80,
+          "line": 81,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable",
             "SeLe4n.Kernel.RobinHood.RHTable.fold",
@@ -363424,7 +363424,7 @@
           "kind": "theorem",
           "name": "RHTable.empty_slotsEmpty",
           "full_name": "SeLe4n.Kernel.RobinHood.RHTable.empty_slotsEmpty",
-          "line": 97,
+          "line": 98,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable",
             "SeLe4n.Kernel.RobinHood.RHTable.empty",
@@ -363435,7 +363435,7 @@
           "kind": "def",
           "name": "objTableBackLinks",
           "full_name": "SeLe4n.Model.objTableBackLinks",
-          "line": 108,
+          "line": 109,
           "called": [
             "SeLe4n.Model.KernelObject",
             "SeLe4n.Model.KernelObject.tableBackLinks"
@@ -363445,7 +363445,7 @@
           "kind": "theorem",
           "name": "objTableBackLinks_none",
           "full_name": "SeLe4n.Model.objTableBackLinks_none",
-          "line": 112,
+          "line": 113,
           "called": [
             "SeLe4n.Model.objTableBackLinks"
           ]
@@ -363454,7 +363454,7 @@
           "kind": "theorem",
           "name": "objTableBackLinks_some",
           "full_name": "SeLe4n.Model.objTableBackLinks_some",
-          "line": 114,
+          "line": 115,
           "called": [
             "SeLe4n.Model.KernelObject",
             "SeLe4n.Model.KernelObject.tableBackLinks",
@@ -363465,7 +363465,7 @@
           "kind": "theorem",
           "name": "objTableBackLinks_eq_map",
           "full_name": "SeLe4n.Model.objTableBackLinks_eq_map",
-          "line": 118,
+          "line": 119,
           "called": [
             "SeLe4n.Model.KernelObject",
             "SeLe4n.Model.KernelObject.tableBackLinks",
@@ -363476,7 +363476,7 @@
           "kind": "def",
           "name": "SystemState.referenceTables",
           "full_name": "SeLe4n.Model.SystemState.referenceTables",
-          "line": 123,
+          "line": 124,
           "called": [
             "SeLe4n.Irq",
             "SeLe4n.Kernel.RobinHood.RHTable",
@@ -363491,7 +363491,7 @@
           "kind": "structure",
           "name": "SystemState.tableReferencesRecorded",
           "full_name": "SeLe4n.Model.SystemState.tableReferencesRecorded",
-          "line": 137,
+          "line": 138,
           "called": [
             "SeLe4n.Irq",
             "SeLe4n.Kernel.RobinHood.RHTable.invExtK",
@@ -363508,7 +363508,7 @@
           "kind": "theorem",
           "name": "objTableBackLinks_code_succ",
           "full_name": "SeLe4n.Model.objTableBackLinks_code_succ",
-          "line": 157,
+          "line": 158,
           "called": [
             "SeLe4n.Model.KernelObject",
             "SeLe4n.Model.objTableBackLinks"
@@ -363518,7 +363518,7 @@
           "kind": "theorem",
           "name": "SystemState.tableReferencesRecorded.notTargeted",
           "full_name": "SeLe4n.Model.SystemState.tableReferencesRecorded.notTargeted",
-          "line": 166,
+          "line": 167,
           "called": [
             "SeLe4n.Model.Capability",
             "SeLe4n.Model.Endpoint",
@@ -363535,7 +363535,7 @@
           "kind": "def",
           "name": "SystemState.TableReferenceFrame",
           "full_name": "SeLe4n.Model.SystemState.TableReferenceFrame",
-          "line": 180,
+          "line": 181,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.referenceTables",
@@ -363547,7 +363547,7 @@
           "kind": "theorem",
           "name": "of_kindPreservingWrite",
           "full_name": "SeLe4n.Model.SystemState.TableReferenceFrame.of_kindPreservingWrite",
-          "line": 188,
+          "line": 189,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.TableReferenceFrame",
@@ -363560,7 +363560,7 @@
           "kind": "theorem",
           "name": "preserves",
           "full_name": "SeLe4n.Model.SystemState.TableReferenceFrame.preserves",
-          "line": 194,
+          "line": 195,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.TableReferenceFrame",
@@ -363572,7 +363572,7 @@
           "kind": "def",
           "name": "SystemState.tableBackLinksClear",
           "full_name": "SeLe4n.Model.SystemState.tableBackLinksClear",
-          "line": 217,
+          "line": 218,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getObject?",
@@ -363583,7 +363583,7 @@
           "kind": "theorem",
           "name": "SystemState.tableBackLinksClear_iff",
           "full_name": "SeLe4n.Model.SystemState.tableBackLinksClear_iff",
-          "line": 223,
+          "line": 224,
           "called": [
             "SeLe4n.Model.KernelObject.tableBackLinks",
             "SeLe4n.Model.SystemState",
@@ -363597,7 +363597,7 @@
           "kind": "theorem",
           "name": "SystemState.tableBackLinksClear.namedByNone",
           "full_name": "SeLe4n.Model.SystemState.tableBackLinksClear.namedByNone",
-          "line": 234,
+          "line": 235,
           "called": [
             "SeLe4n.Irq",
             "SeLe4n.Kernel.RobinHood.RHTable.get?_of_slotsEmpty",
@@ -363615,7 +363615,7 @@
           "kind": "theorem",
           "name": "SystemState.default_tableReferencesRecorded",
           "full_name": "SeLe4n.Model.SystemState.default_tableReferencesRecorded",
-          "line": 254,
+          "line": 255,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK",
             "SeLe4n.Kernel.RobinHood.RHTable.empty_slotsEmpty",

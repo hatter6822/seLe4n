@@ -158,7 +158,7 @@ a notification records the interrupt handler that names it, and the service grap
 holds no entry, stated as one invariant (`SystemState.tableReferencesRecorded`,
 `Model/TableReferences.lean`) and refused at boot otherwise — though the retire
 still walks those three tables until the invariant is carried by every syscall
-(`docs/planning/UNTYPED_RESET_PLAN.md` row 30);
+(`docs/planning/UNTYPED_RESET_PLAN.md` row 31);
 any other busy kernel
 object still outlives its last capability until its kind's finalise lands
 ([`SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) §8.6).  Every slot write keeps the bundle,
