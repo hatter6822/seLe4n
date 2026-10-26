@@ -400,7 +400,7 @@ for driver in drivers:
             # them the whole-store reset); 10 of the 30 are the free-index
             # rewind, copied because the reset still refuses after it writes,
             # so its dispatch keeps the pre-state alive (docs/REGISTERED_DEBT.md
-            # §C, "The reset's rewind costs 10 heap cells"; part 33 reads 0).
+            # §C, "The reset's rewind costs 10 heap cells"; part 34 reads 0).
             # WS-ZA ZA5.4 part 26: the populated CNode's carve (a CNode's 30)
             # and the endpoint's into its slot (an endpoint's 11), the spaced
             # thread's carve (a thread's 24) and its CNode root's into the
