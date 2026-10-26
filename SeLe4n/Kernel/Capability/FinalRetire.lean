@@ -633,7 +633,9 @@ outlives its last capability. -/
 
 /-- **Whether an object names the scheduling context whose code is `c`**
 (`c = s.val + 1`) by id: a thread bound to it, lent it, or holding it as its
-timeout budget; a reply whose stack it heads. -/
+timeout budget; a reply whose stack it heads.  The retire guard does not ask it:
+on the states the delete chain carries, no object names an admitted context
+(`schedContextRetirable.tcbNamesNone`, `schedContextRetirable.namedByNone`). -/
 @[inline] def objectNamesSchedContext (o : KernelObject) (c : Nat) : Bool :=
   match o with
   | .tcb t =>
@@ -641,39 +643,20 @@ timeout budget; a reply whose stack it heads. -/
   | .reply r => match r.next with | some (.head s) => s.val + 1 == c | _ => false
   | _ => false
 
-/-- **No object names the scheduling context whose code is `c`.** -/
-@[inline] def storeNamesSchedContextNone (st : SystemState) (c : Nat) : Bool :=
-  st.objects.fold true fun acc _ o => acc && !objectNamesSchedContext o c
-
-/-- **No entry of a replenishment list is for the context `s`**: the list walked
-in place. -/
-def replenishEntriesNameNone : List (SeLe4n.SchedContextId × Nat) → SeLe4n.SchedContextId → Bool
-  | [], _ => true
-  | e :: rest, s => e.1 != s && replenishEntriesNameNone rest s
-
-/-- **No replenishment queue of the cores `cs` holds an entry for the context
-`s`**, by structural recursion over the cores: a `List.all` over a lambda that
-captures the state is a closure, which the compiler hoists to the head of every
-retire whatever the object's kind. -/
-def replenishQueuesOnNameNone (st : SystemState) (s : SeLe4n.SchedContextId) :
-    List SeLe4n.Kernel.Concurrency.CoreId → Bool
-  | [] => true
-  | c :: cs => replenishEntriesNameNone (st.scheduler.replenishQueueOnCore c).entries s &&
-      replenishQueuesOnNameNone st s cs
-
-/-- **No core's replenishment queue holds an entry for the context `s`.** -/
-@[inline] def replenishQueuesNameNone (st : SystemState) (s : SeLe4n.SchedContextId) : Bool :=
-  replenishQueuesOnNameNone st s SeLe4n.Kernel.Concurrency.allCores
-
-/-- **Whether a final delete retires the scheduling context at `x`**: bound to
-no thread, lent from none, heading no reply stack, named by no object
-(`storeNamesSchedContextNone`) and queued for replenishment on no core.  The
-finalisation (`finaliseSchedulingObject`) is what brings a context here. -/
+/-- **Whether a final delete retires the scheduling context at `x`**, on the
+context's own links — the links seL4's `finaliseCap` clears a scheduling
+context through (`scTCB`, `scReply`): bound to no thread, lent from none and
+heading no reply stack.  Nothing outside the context is walked.  What makes these the whole
+truth is the scheduling links the delete chain carries
+(`schedContextLinkInvariant`): a thread bound to a context, as its own or on
+loan, is named by it back, no thread holds a timeout budget, and every context a
+replenishment queue holds is bound — so no object names an admitted context
+(`schedContextRetirable.namedByNone`) and no core queues it.  The finalisation
+(`finaliseSchedulingObject`) is what brings a context here. -/
 @[inline] def schedContextRetirable (st : SystemState) (x : SeLe4n.ObjId) : Bool :=
   match st.getObject? x with
   | some (.schedContext sc) =>
-    sc.boundThreadCode == 0 && sc.donationOrigin.isNone && sc.scReply.isNone &&
-      storeNamesSchedContextNone st (x.val + 1) && replenishQueuesNameNone st ⟨x.val⟩
+    sc.boundThreadCode == 0 && sc.donationOrigin.isNone && sc.scReply.isNone
   | _ => false
 
 /-- **Whether a final delete retires the thread or the scheduling context at
@@ -1852,9 +1835,7 @@ theorem threadRetirable_currentNowhere {st : SystemState} {x : SeLe4n.ObjId}
 theorem schedContextRetirable_parts {st : SystemState} {x : SeLe4n.ObjId}
     (h : schedContextRetirable st x = true) :
     ∃ sc, st.objects[x]? = some (.schedContext sc) ∧ sc.boundThreadCode = 0 ∧
-      sc.donationOrigin = none ∧ sc.scReply = none ∧
-      storeNamesSchedContextNone st (x.val + 1) = true ∧
-      replenishQueuesNameNone st ⟨x.val⟩ = true := by
+      sc.donationOrigin = none ∧ sc.scReply = none := by
   unfold schedContextRetirable SystemState.getObject? at h
   cases hO : st.objects[x]? with
   | none => rw [hO] at h; cases h
@@ -1863,7 +1844,7 @@ theorem schedContextRetirable_parts {st : SystemState} {x : SeLe4n.ObjId}
     cases o with
     | schedContext sc =>
       simp only [Bool.and_eq_true, beq_iff_eq, Option.isNone_iff_eq_none] at h
-      exact ⟨sc, rfl, h.1.1.1.1, h.1.1.1.2, h.1.1.2, h.1.2, h.2⟩
+      exact ⟨sc, rfl, h.1.1, h.1.2, h.2⟩
     | _ => cases h
 
 /-- A thread the scan admits is the one `threadRetirable` reads. -/
@@ -1940,15 +1921,6 @@ theorem retireFinalObject_touched (ec : Concurrency.CoreId) (target recorder : N
   · subst hx
     exact .inr (.inr ⟨hn, hS,
       finalRetireAdmitted.schedulingRetirable hAdm ((schedulingKindAt_iff st _).mpr hS)⟩)
-
-/-- **The scheduling-context scan answers per object.** -/
-theorem storeNamesSchedContextNone_spec {st : SystemState} {c : Nat}
-    (h : storeNamesSchedContextNone st c = true)
-    {oid : SeLe4n.ObjId} {o : KernelObject} (hO : st.objects[oid]? = some o) :
-    objectNamesSchedContext o c = false := by
-  have := SeLe4n.Kernel.RobinHood.RHTable.fold_and_true_of_get? st.objects
-    (fun _ o => !objectNamesSchedContext o c) h hO
-  simpa using this
 
 /-- **What a quiescent thread's codes are**, flattened in the order
 `threadQuiescent` reads them. -/
@@ -2653,17 +2625,6 @@ theorem retireFinalObject_tcb_kept_or_quiescent (ec : Concurrency.CoreId) (targe
   · obtain ⟨t', hT', hId, hIdle, hQ, hH, -⟩ := threadRetirable_parts hR
     rw [h] at hT'; cases hT'
     exact .inr ⟨hn, hId, hIdle, hQ, hH⟩
-
-/-- **A scheduling context some object names is not retired.** -/
-theorem schedContextRetirable_false_of_named {st : SystemState} {x k : SeLe4n.ObjId}
-    {o : KernelObject} (hK : st.objects[k]? = some o)
-    (hN : objectNamesSchedContext o (x.val + 1) = true) :
-    schedContextRetirable st x = false := by
-  cases hR : schedContextRetirable st x with
-  | false => rfl
-  | true =>
-    obtain ⟨-, -, -, -, -, hS, -⟩ := schedContextRetirable_parts hR
-    rw [storeNamesSchedContextNone_spec hS hK] at hN; cases hN
 
 /-- A quiescent thread waits on no server. -/
 theorem threadQuiescent_blockingServer {t : TCB} (h : threadQuiescent t = true) :

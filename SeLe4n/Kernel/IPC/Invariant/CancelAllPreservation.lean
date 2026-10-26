@@ -768,6 +768,22 @@ context retire reads its own links against (`schedContextLinkInvariant`). -/
 def finalisingDeleteBundle (s : SystemState) : Prop :=
   finaliseLoanBundle s ∧ schedContextLinkInvariant s
 
+/-- The thread-side half of the binding pair, on the bundle the delete carries
+(`schedContextBindingBidirectional_of_consistent`). -/
+theorem finalisingDeleteBundle.bidirectional {s : SystemState} (h : finalisingDeleteBundle s) :
+    schedContextBindingBidirectional s :=
+  schedContextBindingBidirectional_of_consistent h.2.binding h.1.1.donationOwnerValid
+
+/-- The bundle reads the objects and the scheduler alone. -/
+theorem finalisingDeleteBundle.of_objects_scheduler_eq {s s' : SystemState}
+    (hO : s'.objects = s.objects) (hS : s'.scheduler = s.scheduler)
+    (h : finalisingDeleteBundle s) : finalisingDeleteBundle s' := by
+  refine ⟨⟨ipcInvariantFull_of_objects_eq hO h.1.1, by rw [hO]; exact h.1.2.1, ?_⟩,
+    (SchedLinkFrame.of_objects_eq hO fun _ => by rw [hS]).preserves h.2⟩
+  have := h.1.2.2
+  unfold lentContextHeadsLenderFrame at this ⊢
+  rw [hO]; exact this
+
 /-- **The finalisation keeps the bundle the delete carries**: its own bundle
 (`finaliseFinalObject_preserves_finaliseLoanBundle`) and the scheduling links
 (`finaliseFinalObject_preserves_schedContextLinkInvariant`). -/
@@ -786,12 +802,29 @@ theorem retireFinalisedObject_preserves_finalisingDeleteBundle (ec : Concurrency
     finalisingDeleteBundle (retireFinalisedObject ec target recorder st) := by
   obtain ⟨h1, hL⟩ := finaliseFinalObject_preserves_finalisingDeleteBundle target st h
   have h2 := retireFinalObject_preserves_ipcInvariantFull ec target recorder _ h1.2.1 h1.1
+    hL.budgets
   exact ⟨⟨h2.1, h2.2, retireFinalObject_keepsLentContextHeads ec target recorder _ h1.2.1 h1.2.2⟩,
     retireFinalObject_preserves_schedContextLinkInvariant ec target recorder _ h1.2.1 hL⟩
 
 -- ============================================================================
 -- §5  The finalising delete and revocation
 -- ============================================================================
+
+/-- **The slot delete and the page teardown keep the bundle the delete
+carries** — the state the finalisation then runs on. -/
+theorem cspaceDeleteSlotTeardown_preserves_finalisingDeleteBundle {ec : Concurrency.CoreId}
+    {addr : CSpaceAddr} {named : List SeLe4n.ObjId} {pages : List MappedPage}
+    {st st1 st2 : SystemState} (h : finalisingDeleteBundle st)
+    (hD : cspaceDeleteSlot addr st = .ok ((), st1))
+    (hF : finaliseDestroyedCapabilities ec named pages st1 = .ok ((), st2)) :
+    finalisingDeleteBundle st2 := by
+  have hI1 := cspaceDeleteSlot_preserves_objects_invExt st st1 addr h.1.2.1 hD
+  have h2 := finaliseDestroyedCapabilities_preserves_ipcInvariantFull ec _ _ st1 st2 hI1
+    (cspaceDeleteSlot_preserves_ipcInvariantFull st st1 addr h.1.2.1 h.1.1 hD) hF
+  exact ⟨⟨h2.1, h2.2, finaliseDestroyedCapabilities_keepsLentContextHeads ec _ _ st1 st2 hI1
+      (cspaceDeleteSlot_keepsLentContextHeads st st1 addr h.1.2.1 h.1.2.2 hD) hF⟩,
+    finaliseDestroyedCapabilities_preserves_schedContextLinkInvariant hI1
+      (cspaceDeleteSlot_preserves_schedContextLinkInvariant h.1.2.1 h.2 hD) hF⟩
 
 /-- `.cspaceDelete`: the finalising delete keeps the bundle it carries — the
 delete's own theorems, then the teardown's, then the finalisation's and the
@@ -802,14 +835,8 @@ theorem cspaceDeleteSlotFinalising_preserves_finalisingDeleteBundle
     (hStep : cspaceDeleteSlotFinalising ec addr st = .ok ((), st')) :
     finalisingDeleteBundle st' := by
   obtain ⟨st1, st2, hD, hF, rfl⟩ := cspaceDeleteSlotFinalising_ok ec addr st st' hStep
-  have hI1 := cspaceDeleteSlot_preserves_objects_invExt st st1 addr h.1.2.1 hD
-  have h2 := finaliseDestroyedCapabilities_preserves_ipcInvariantFull ec _ _ st1 st2 hI1
-    (cspaceDeleteSlot_preserves_ipcInvariantFull st st1 addr h.1.2.1 h.1.1 hD) hF
-  exact retireFinalisedObject_preserves_finalisingDeleteBundle ec _ _ st2 ⟨⟨h2.1, h2.2,
-    finaliseDestroyedCapabilities_keepsLentContextHeads ec _ _ st1 st2 hI1
-      (cspaceDeleteSlot_keepsLentContextHeads st st1 addr h.1.2.1 h.1.2.2 hD) hF⟩,
-    finaliseDestroyedCapabilities_preserves_schedContextLinkInvariant hI1
-      (cspaceDeleteSlot_preserves_schedContextLinkInvariant h.1.2.1 h.2 hD) hF⟩
+  exact retireFinalisedObject_preserves_finalisingDeleteBundle ec _ _ st2
+    (cspaceDeleteSlotTeardown_preserves_finalisingDeleteBundle h hD hF)
 
 /-- `.cspaceDelete`: the finalising delete preserves the IPC bundle, on a state
 where every lent context is headed by its lender and the scheduling links hold. -/
@@ -860,10 +887,12 @@ theorem copyThreadSpacesZombie_preserves_ipcInvariantFull (ec : Concurrency.Core
       (fun d s hQ => finaliseFinalObject_preserves_finalisingDeleteBundle d s hQ)
       ⟨⟨hInv, hObjInv, hW⟩, hL⟩
   rcases copyThreadSpacesZombie_cases hStep with h1 | ⟨n, s, hR, rfl | h2⟩
-  · exact copyThreadSpaces_preserves_ipcInvariantFull ec st st' vtid cnSrc vrSrc hObjInv hInv h1
+  · exact copyThreadSpaces_preserves_ipcInvariantFull ec st st' vtid cnSrc vrSrc hObjInv hInv
+      hL.budgets h1
   · exact (hChain n _ hR).1.1
-  · obtain ⟨⟨hI, hO, -⟩, -⟩ := hChain n s hR
-    exact copyThreadSpaces_preserves_ipcInvariantFull ec s st' vtid cnSrc vrSrc hO hI h2
+  · obtain ⟨⟨hI, hO, -⟩, hL'⟩ := hChain n s hR
+    exact copyThreadSpaces_preserves_ipcInvariantFull ec s st' vtid cnSrc vrSrc hO hI
+      hL'.budgets h2
 
 /-- `.cspaceDelete`: the zombie delete keeps the bundle the delete carries — a
 chain of finalising deletes and finalisations (`cspaceDeleteSlotZombie_closed`). -/

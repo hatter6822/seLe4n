@@ -4347,6 +4347,26 @@ run_check "INVARIANT" rg -n -U 'def passiveObjectRetirable[^\n]*\n  passiveObjec
 run_check "INVARIANT" rg -n -U '  \| some \(\.reply r\) =>\n    r\.callerCode == 0 && !st\.replyStashedAt ⟨x\.val⟩ r && r\.prev\.isNone && r\.next\.isNone' SeLe4n/Kernel/Capability/FinalRetire.lean
 run_check "INVARIANT" rg -n -U '    t\.tid\.val == x\.val && !isIdleThreadId t\.tid && threadQuiescent t &&\n      !threadHeldOnSomeCore st t\.tid && servicesNameNone st x' SeLe4n/Kernel/Capability/FinalRetire.lean
 run_negative_check "INVARIANT" rg -n 'storeNamesNone|storeNamesThreadNone' SeLe4n
+# v0.36.142 (part 29): a scheduling context is retired on its own links (seL4's
+# scTCB and scReply), with no walk of the object table or the replenishment
+# queues; the scheduling links that make those the whole truth are carried along
+# the whole delete chain, and an admitted context is proven named by none.
+run_check "INVARIANT" rg -n -U '  \| some \(\.schedContext sc\) =>\n    sc\.boundThreadCode == 0 && sc\.donationOrigin\.isNone && sc\.scReply\.isNone\n  \| _ => false' SeLe4n/Kernel/Capability/FinalRetire.lean
+run_negative_check "INVARIANT" rg -n 'storeNamesSchedContextNone|replenishQueuesNameNone|replenishQueuesOnNameNone|replenishEntriesNameNone|schedContextRetirable_false_of_named' SeLe4n
+run_check "INVARIANT" rg -n '^structure schedContextLinkInvariant($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/SchedLinkFrame.lean
+run_check "INVARIANT" rg -n '^theorem finaliseFinalObject_preserves_schedContextLinkInvariant($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/SchedLinkFrame.lean
+run_check "INVARIANT" rg -n '^theorem retireFinalObject_preserves_replenishQueueEntriesBound_smp($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/SchedLinkFrame.lean
+run_check "INVARIANT" rg -n '^theorem retireFinalObject_preserves_schedContextLinkInvariant($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/SchedLinkFrame.lean
+run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlot_preserves_schedContextLinkInvariant($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/SchedLinkFrame.lean
+run_check "INVARIANT" rg -n '^theorem finaliseDestroyedCapabilities_preserves_schedContextLinkInvariant($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/SchedLinkFrame.lean
+run_check "INVARIANT" rg -n '^theorem copyThreadSpaces_preserves_schedContextLinkInvariant($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/SchedLinkFrame.lean
+run_check "INVARIANT" rg -n '^def finalisingDeleteBundle \(s : SystemState\) : Prop :=$' SeLe4n/Kernel/IPC/Invariant/CancelAllPreservation.lean
+run_check "INVARIANT" rg -n -U 'cspaceDeleteSlotZombie_closed finalisingDeleteBundle\n    \(fun c s s. hQ hD => cspaceDeleteSlotFinalising_preserves_finalisingDeleteBundle' SeLe4n/Kernel/IPC/Invariant/CancelAllPreservation.lean
+run_check "INVARIANT" rg -n '^  schedContextLinks : schedContextLinkInvariant st$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem schedContextRetirable\.tcbNamesNone($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
+run_check "INVARIANT" rg -n 'schedContextRetirable_false_of_tcbNamed hL\.binding hI\.donationOwnerValid hL\.budgets' SeLe4n/Kernel/ReschedulePendingArms/Dispatch.lean
+run_check "INVARIANT" rg -n '^theorem schedContextRetirable\.namedByNone($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Reachability.lean
+run_check "INVARIANT" rg -n '^theorem schedContextRetirable\.replenishQueuedNowhere($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Reachability.lean
 run_check "INVARIANT" rg -n -U 'def finalRetireAdmitted[^\n]*\n  \(!passiveKindAt st x \|\| passiveObjectRetirable st x\) &&\n    \(!schedulingKindAt st x \|\| schedulingObjectRetirable st x\)' SeLe4n/Kernel/Capability/FinalRetire.lean
 # The passive erase runs through the registered erase primitives (no raw
 # object-table write of its own), and its record form is a theorem.
@@ -4485,7 +4505,7 @@ run_check "INVARIANT" rg -n '^theorem copyIntoThreadSlot_delete($|[ ({:\[\]])' S
 run_check "INVARIANT" rg -n '^theorem copyThreadSpaces_ok($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/SetSpace.lean
 run_check "INVARIANT" rg -n '^theorem copyThreadSpaces_ok_tcb($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/SetSpace.lean
 run_check "INVARIANT" rg -n '^theorem copyThreadSpaces_refuses_active($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/SetSpace.lean
-run_check "INVARIANT" rg -n '^theorem copyThreadSpaces_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
+run_check "INVARIANT" rg -n '^theorem copyThreadSpaces_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/SchedLinkFrame.lean
 run_check "INVARIANT" rg -n '^theorem copyThreadSpaces_preserves_capabilityInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/ThreadSpaceCopy.lean
 run_check "INVARIANT" rg -n '^theorem copyThreadSpaces_preserves_projection($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
 # WS-ZA ZA5.4 part 22: each space slot is set through the finalising retire.
@@ -4493,7 +4513,7 @@ run_check "INVARIANT" rg -n -U 'def threadSlotSet [^\n]*(\n([ \t][^\n]*)?){0,3}\
 run_check "INVARIANT" rg -n -U 'def copyThreadSpacesPerform [^\n]*(\n([ \t][^\n]*)?){0,3}\n  threadSlotSet executingCore\n    \(threadSlotSet executingCore st tid TCB\.cspaceRootSlot cnCNode cnSlot TCB\.cspaceRootRights\)\n    tid TCB\.vspaceRootSlot vrCNode vrSlot TCB\.vspaceRootRights' SeLe4n/Kernel/Lifecycle/Operations/SetSpace.lean
 run_negative_check "INVARIANT" rg -n 'threadSlotCopied \(threadSlotCopied' SeLe4n
 run_check "INVARIANT" rg -n '^theorem threadSlotSet_preserves_capabilityInvariantBundle ' SeLe4n/Kernel/Capability/Invariant/Preservation/ThreadSpaceCopy.lean
-run_check "INVARIANT" rg -n '^theorem threadSlotSet_preserves_ipcInvariantFull ' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
+run_check "INVARIANT" rg -n '^theorem threadSlotSet_preserves_ipcInvariantFull ' SeLe4n/Kernel/IPC/Invariant/SchedLinkFrame.lean
 run_check "INVARIANT" rg -n '^theorem threadSlotSet_runQueueStage ' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Capability.lean
 run_check "INVARIANT" rg -n '^theorem copyThreadSpaces_runQueueStage ' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Capability.lean
 run_check "INVARIANT" rg -n '^theorem threadSlotSet_stepCovers ' SeLe4n/Kernel/ReschedulePendingArms/Dispatch.lean

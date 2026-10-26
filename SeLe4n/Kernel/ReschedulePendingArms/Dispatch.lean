@@ -111,9 +111,12 @@ theorem SchedContextBinding.scCode_of_scId? {b : SchedContextBinding} {sc : SeLe
 
 /-- **The retire keeps the key of every thread it keeps**: the thread's own
 fields are untouched, and the scheduling context its binding names is named by
-it, so the retire guard refuses that context and it stays. -/
+it, so — the binding pair, the loan record and the budgets holding — the retire
+guard refuses that context (`schedContextRetirable_false_of_tcbNamed`) and it
+stays. -/
 theorem retireFinalObject_schedKeyView (ec : CoreId) (target recorder : Nat) (st : SystemState)
-    (hObjInv : st.objects.invExt) {t : SeLe4n.ThreadId} {x : TCB}
+    (hObjInv : st.objects.invExt) (hI : ipcInvariantFull st) (hL : schedContextLinkInvariant st)
+    {t : SeLe4n.ThreadId} {x : TCB}
     (hx : (retireFinalObject ec target recorder st).getTcb? t = some x) :
     schedKeyView (retireFinalObject ec target recorder st) t = schedKeyView st t := by
   have hp := (SystemState.getTcb?_eq_some_iff _ t x).mp hx
@@ -134,7 +137,8 @@ theorem retireFinalObject_schedKeyView (ec : CoreId) (target recorder : Nat) (st
         simp only [objectNamesSchedContext, Bool.or_eq_true, beq_iff_eq]
         exact .inl hc
       rw [retireFinalObject_schedContext ec target recorder st hObjInv hS
-        (schedContextRetirable_false_of_named hk hN)]
+        (schedContextRetirable_false_of_tcbNamed hL.binding hI.donationOwnerValid hL.budgets
+          hk hN)]
     | _ =>
       cases hP : (retireFinalObject ec target recorder st).objects[sc.toObjId]? with
       | none => rfl
@@ -160,7 +164,7 @@ moves, and every thread it keeps keeps its key
 (`retireFinalObject_schedKeyView`); the thread it erases is queued nowhere and
 claims nothing afterwards. -/
 theorem retireFinalObject_stepCovers (e ec : CoreId) (target recorder : Nat) (st : SystemState)
-    (hObjInv : st.objects.invExt) :
+    (hObjInv : st.objects.invExt) (hI : ipcInvariantFull st) (hL : schedContextLinkInvariant st) :
     stepCovers e st (retireFinalObject ec target recorder st) ∧
       (retireFinalObject ec target recorder st).objects.invExt := by
   have hS := (retireFinalObject_fields ec target recorder st).2.1
@@ -174,7 +178,7 @@ theorem retireFinalObject_stepCovers (e ec : CoreId) (target recorder : Nat) (st
     unfold schedKeyView at hq
     cases hx : (retireFinalObject ec target recorder st).getTcb? t with
     | none => rw [hx] at hq; cases hq
-    | some x => exact retireFinalObject_schedKeyView ec target recorder st hObjInv hx
+    | some x => exact retireFinalObject_schedKeyView ec target recorder st hObjInv hI hL hx
   refine ⟨⟨fun c _ => .inr ⟨fun t ht => ⟨(hQ c t) ▸ ht, ?_⟩, by rw [hS],
       fun t _ kq hq => ⟨kq, ((hView t kq hq).symm.trans hq), Nat.le_refl _, Nat.le_refl _, rfl⟩⟩,
     reschedulePendingMonotone_of_scheduler_eq hS⟩,
@@ -182,13 +186,14 @@ theorem retireFinalObject_stepCovers (e ec : CoreId) (target recorder : Nat) (st
   unfold SystemState.queuedOn at ht
   cases hx : (retireFinalObject ec target recorder st).getTcb? t with
   | none => rw [hx] at ht; cases ht
-  | some x => exact (retireFinalObject_schedKeyView ec target recorder st hObjInv hx).symm
+  | some x => exact (retireFinalObject_schedKeyView ec target recorder st hObjInv hI hL hx).symm
 
 /-- A thread space slot's set covers: the copy moves no key input, and the
 retire of what the old capability took with it covers
 (`retireFinalObject_stepCovers`). -/
 theorem threadSlotSet_stepCovers (e ec : CoreId) {st : SystemState} {tid : SeLe4n.ThreadId}
-    {t : TCB} (hObjInv : st.objects.invExt) (hT : st.getTcb? tid = some t) (slot : SeLe4n.Slot)
+    {t : TCB} (hObjInv : st.objects.invExt) (hI : ipcInvariantFull st)
+    (hL : schedContextLinkInvariant st) (hT : st.getTcb? tid = some t) (slot : SeLe4n.Slot)
     (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) :
     stepCovers e st (threadSlotSet ec st tid slot srcCNode srcSlot rights) ∧
       (threadSlotSet ec st tid slot srcCNode srcSlot rights).objects.invExt := by
@@ -196,10 +201,13 @@ theorem threadSlotSet_stepCovers (e ec : CoreId) {st : SystemState} {tid : SeLe4
   exact stepCoversInv_trans
     (threadSlotCopied_keyFrame hObjInv hT slot srcCNode srcSlot rights).stepCovers
     (retireFinalObject_stepCovers e ec _ _ _
-      (threadSlotCopied_tcb hObjInv hT slot srcCNode srcSlot rights).2)
+      (threadSlotCopied_tcb hObjInv hT slot srcCNode srcSlot rights).2
+      (threadSlotCopied_preserves_ipcInvariantFull hObjInv hI hT slot srcCNode srcSlot rights)
+      ((SchedLinkFrame.threadSlotCopied hObjInv hT slot srcCNode srcSlot rights).preserves hL))
 
 theorem copyThreadSpaces_stepCovers (e ec : CoreId) (st st' : SystemState)
     (vtid : SeLe4n.ValidThreadId) (cnSrc vrSrc : CSpaceAddr) (hObjInv : st.objects.invExt)
+    (hI : ipcInvariantFull st) (hL : schedContextLinkInvariant st)
     (hStep : copyThreadSpaces ec st vtid cnSrc vrSrc = .ok st') :
     stepCovers e st st' ∧ st'.objects.invExt := by
   obtain ⟨tcb, hT, -, -, hCn, -, rfl⟩ := copyThreadSpaces_ok hStep
@@ -213,8 +221,10 @@ theorem copyThreadSpaces_stepCovers (e ec : CoreId) (st st' : SystemState)
     unfold threadSlotSet
     exact (retireFinalObject_frame ec _ _ _ (threadSlotCopied_tcb hObjInv hT TCB.cspaceRootSlot
       cnSrc.cnode cnSrc.slot TCB.cspaceRootRights).2).1
-  exact stepCoversInv_trans (threadSlotSet_stepCovers e ec hObjInv hT _ _ _ _).1
-    (threadSlotSet_stepCovers e ec hI1 hT1' _ _ _ _)
+  exact stepCoversInv_trans (threadSlotSet_stepCovers e ec hObjInv hI hL hT _ _ _ _).1
+    (threadSlotSet_stepCovers e ec hI1
+      (threadSlotSet_preserves_ipcInvariantFull ec hObjInv hI hL.budgets hT _ _ _ _).1
+      (threadSlotSet_preserves_schedContextLinkInvariant ec hObjInv hL hT _ _ _ _) hT1' _ _ _ _)
 
 /-! ### Retype -/
 
@@ -439,63 +449,89 @@ theorem finaliseFinalObject_stepCovers (e : CoreId) (target : Nat) (st : SystemS
 page teardown move no key input and no scheduler field, the finalisation covers
 (`finaliseFinalObject_stepCovers`), and so does the retire. -/
 theorem cspaceDeleteSlotFinalising_stepCovers (e ec : CoreId) (addr : CSpaceAddr)
-    (st st' : SystemState) (hInv : st.objects.invExt)
+    (st st' : SystemState) (hB : finalisingDeleteBundle st)
     (hStep : cspaceDeleteSlotFinalising ec addr st = .ok ((), st')) :
     stepCovers e st st' ∧ st'.objects.invExt := by
   obtain ⟨st1, st2, hD, hF, rfl⟩ := cspaceDeleteSlotFinalising_ok ec addr st st' hStep
-  have h1 : capabilityKeyFrame st st1 := cspaceDeleteSlot_keyInputsEq st st1 addr hInv hD
+  have h1 : capabilityKeyFrame st st1 := cspaceDeleteSlot_keyInputsEq st st1 addr hB.1.2.1 hD
   have h2 := h1.trans (finaliseDestroyedCapabilities_keyFrame ec _ _ st1 st2 h1.2.2 hF)
   have h3 := finaliseFinalObject_stepCovers e (slotRetireTarget st addr.cnode addr.slot) st2 h2.2.2
+  have hB3 := finaliseFinalObject_preserves_finalisingDeleteBundle
+    (slotRetireTarget st addr.cnode addr.slot) st2
+    (cspaceDeleteSlotTeardown_preserves_finalisingDeleteBundle hB hD hF)
   exact stepCoversInv_trans (stepCovers_trans h2.stepCovers h3.1)
-    (retireFinalObject_stepCovers e ec _ _ _ h3.2)
+    (retireFinalObject_stepCovers e ec _ _ _ h3.2 hB3.1.1 hB3.2)
+
+/-- What the delete loops carry: coverage from the start state, and the bundle
+the delete carries. -/
+def coversWithDeleteBundle (e : CoreId) (st s : SystemState) : Prop :=
+  stepCovers e st s ∧ finalisingDeleteBundle s
+
+/-- A finalising delete inside a loop extends the coverage and keeps the bundle. -/
+theorem coversWithDeleteBundle.delete {e ec : CoreId} {st s s' : SystemState} {c : CSpaceAddr}
+    (hQ : coversWithDeleteBundle e st s) (hD : cspaceDeleteSlotFinalising ec c s = .ok ((), s')) :
+    coversWithDeleteBundle e st s' :=
+  ⟨stepCovers_trans hQ.1 (cspaceDeleteSlotFinalising_stepCovers e ec c s s' hQ.2 hD).1,
+    cspaceDeleteSlotFinalising_preserves_finalisingDeleteBundle ec c s s' hQ.2 hD⟩
+
+/-- A finalisation inside a loop extends the coverage and keeps the bundle. -/
+theorem coversWithDeleteBundle.finalise {e : CoreId} {st s : SystemState} (d : Nat)
+    (hQ : coversWithDeleteBundle e st s) : coversWithDeleteBundle e st (finaliseFinalObject d s) :=
+  ⟨stepCovers_trans hQ.1 (finaliseFinalObject_stepCovers e d s hQ.2.1.2.1).1,
+    finaliseFinalObject_preserves_finalisingDeleteBundle d s hQ.2⟩
 
 /-- WS-ZA ZA5.4 part 23: **the finalising revocation covers**, one finalising
 delete at a time. -/
 theorem cspaceRevokeCdtFinalising_stepCovers (e ec : CoreId) (addr : CSpaceAddr)
-    (st st' : SystemState) (hInv : st.objects.invExt)
+    (st st' : SystemState) (hB : finalisingDeleteBundle st)
     (hStep : cspaceRevokeCdtFinalising ec addr st = .ok ((), st')) :
     stepCovers e st st' ∧ st'.objects.invExt :=
-  cspaceRevokeCdtFinalising_closed (fun s => stepCovers e st s ∧ s.objects.invExt)
-    (fun c s s' hQ hD => stepCoversInv_trans hQ.1 (cspaceDeleteSlotFinalising_stepCovers e ec c s s' hQ.2 hD))
-    (fun d s hQ => stepCoversInv_trans hQ.1 (finaliseFinalObject_stepCovers e d s hQ.2))
-    ⟨stepCovers_refl e st, hInv⟩ hStep
+  have h := cspaceRevokeCdtFinalising_closed (coversWithDeleteBundle e st)
+    (fun _ _ _ hQ hD => hQ.delete hD) (fun d _ hQ => hQ.finalise d)
+    ⟨stepCovers_refl e st, hB⟩ hStep
+  ⟨h.1, h.2.1.2.1⟩
 
 /-- WS-ZA ZA5.4 part 26: **the zombie delete covers**, one finalising delete or
 finalisation at a time. -/
 theorem cspaceDeleteSlotZombie_stepCovers (e ec : CoreId) (addr : CSpaceAddr)
-    (st st' : SystemState) (hInv : st.objects.invExt)
+    (st st' : SystemState) (hB : finalisingDeleteBundle st)
     (hStep : cspaceDeleteSlotZombie ec addr st = .ok ((), st')) :
     stepCovers e st st' ∧ st'.objects.invExt :=
-  cspaceDeleteSlotZombie_closed (fun s => stepCovers e st s ∧ s.objects.invExt)
-    (fun c s s' hQ hD => stepCoversInv_trans hQ.1 (cspaceDeleteSlotFinalising_stepCovers e ec c s s' hQ.2 hD))
-    (fun d s hQ => stepCoversInv_trans hQ.1 (finaliseFinalObject_stepCovers e d s hQ.2))
-    ⟨stepCovers_refl e st, hInv⟩ hStep
+  have h := cspaceDeleteSlotZombie_closed (coversWithDeleteBundle e st)
+    (fun _ _ _ hQ hD => hQ.delete hD) (fun d _ hQ => hQ.finalise d)
+    ⟨stepCovers_refl e st, hB⟩ hStep
+  ⟨h.1, h.2.1.2.1⟩
 
 /-- WS-ZA ZA5.4 part 26: **the space change through the zombie delete covers**,
 one finalising delete or finalisation at a time, then the plain space change
 (`copyThreadSpaces_stepCovers`). -/
 theorem copyThreadSpacesZombie_stepCovers (e ec : CoreId) (st st' : SystemState)
-    (vtid : SeLe4n.ValidThreadId) (cnSrc vrSrc : CSpaceAddr) (hInv : st.objects.invExt)
+    (vtid : SeLe4n.ValidThreadId) (cnSrc vrSrc : CSpaceAddr) (hB : finalisingDeleteBundle st)
     (hStep : copyThreadSpacesZombie ec st vtid cnSrc vrSrc = .ok st') :
-    stepCovers e st st' ∧ st'.objects.invExt :=
-  copyThreadSpacesZombie_closed (fun s => stepCovers e st s ∧ s.objects.invExt)
-    (fun c s s' hQ hD => stepCoversInv_trans hQ.1 (cspaceDeleteSlotFinalising_stepCovers e ec c s s' hQ.2 hD))
-    (fun d s hQ => stepCoversInv_trans hQ.1 (finaliseFinalObject_stepCovers e d s hQ.2))
-    (fun s s' hQ hS => stepCoversInv_trans hQ.1
-      (copyThreadSpaces_stepCovers e ec s s' vtid cnSrc vrSrc hQ.2 hS))
-    ⟨stepCovers_refl e st, hInv⟩ hStep
+    stepCovers e st st' ∧ st'.objects.invExt := by
+  rcases copyThreadSpacesZombie_cases hStep with h1 | ⟨n, s, hR, rfl | h2⟩
+  · exact copyThreadSpaces_stepCovers e ec st st' vtid cnSrc vrSrc hB.1.2.1 hB.1.1 hB.2 h1
+  · have h := hR.chain.closed (coversWithDeleteBundle e st)
+      (fun _ _ _ hQ hD => hQ.delete hD) (fun d _ hQ => hQ.finalise d) ⟨stepCovers_refl e st, hB⟩
+    exact ⟨h.1, h.2.1.2.1⟩
+  · have h := hR.chain.closed (coversWithDeleteBundle e st)
+      (fun _ _ _ hQ hD => hQ.delete hD) (fun d _ hQ => hQ.finalise d) ⟨stepCovers_refl e st, hB⟩
+    exact stepCoversInv_trans h.1
+      (copyThreadSpaces_stepCovers e ec s st' vtid cnSrc vrSrc h.2.1.2.1 h.2.1.1 h.2.2 h2)
 
 /-! ### The capability-only arms -/
 
 /-- **Every arm `dispatchCapabilityOnly` routes covers**, on the executing core,
-under the binding reciprocity and the placement facts — pre-state facts the
-dispatch's invariant payoff consumes. -/
+under the bundle the finalising delete carries (`finalisingDeleteBundle`, from
+which the binding reciprocity follows) and the placement facts — pre-state facts
+the dispatch's invariant payoff consumes. -/
 theorem dispatchCapabilityOnly_stepCovers {decoded : SyscallDecodeResult} {cap : Capability}
     {tid : SeLe4n.ThreadId} {ec : CoreId} {k : Kernel Unit} {st st' : SystemState}
-    (hInv : st.objects.invExt) (hBi : schedContextBindingBidirectional st)
+    (hInv : st.objects.invExt) (hB : finalisingDeleteBundle st)
     (hPlaced : placedThreadsHaveTcbs st)
     (hK : dispatchCapabilityOnly decoded cap tid ec = some k)
     (h : k st = .ok ((), st')) : stepCovers ec st st' ∧ st'.objects.invExt := by
+  have hBi := hB.bidirectional
   unfold dispatchCapabilityOnly at hK
   cases hId : decoded.syscallId <;> rw [hId] at hK <;> simp only [Option.some.injEq,
     reduceCtorEq] at hK
@@ -505,8 +541,8 @@ theorem dispatchCapabilityOnly_stepCovers {decoded : SyscallDecodeResult} {cap :
   all_goals (repeat' split at h)
   all_goals first | (cases h; done) | skip
   all_goals try first
-    | exact cspaceDeleteSlotZombie_stepCovers _ _ _ _ _ hInv h
-    | exact cspaceRevokeCdtFinalising_stepCovers _ _ _ _ _ hInv h
+    | exact cspaceDeleteSlotZombie_stepCovers _ _ _ _ _ hB h
+    | exact cspaceRevokeCdtFinalising_stepCovers _ _ _ _ _ hB h
     | exact (mintReplyCapWithCdt_keyFrame _ _ _ _ hInv h).stepCoversInv
     | exact (untypedResetFromCap_keyFrame _ _ _ _ _ _ hInv h).stepCoversInv
     | exact (vspaceMapFromFrameCap_keyFrame _ _ _ _ _ hInv h).stepCoversInv
@@ -537,7 +573,7 @@ theorem dispatchCapabilityOnly_stepCovers {decoded : SyscallDecodeResult} {cap :
         | exact (setThreadCpuAffinityOnCore_stepCovers _ _ _ _ _ _ hInv hU)
         | exact (setIPCBufferOp_keyFrame _ _ _ _ hInv hU).stepCoversInv
         | exact (setThreadFaultHandlerOp_keyFrame _ _ _ _ hInv hU).stepCoversInv
-        | exact copyThreadSpacesZombie_stepCovers _ _ _ _ _ _ _ hInv hU)
+        | exact copyThreadSpacesZombie_stepCovers _ _ _ _ _ _ _ hB hU)
   all_goals
     obtain ⟨_, _, _, _, _, _, _, _, _, hU⟩ := untypedRetypeFromCap_ok _ _ _ _ _ _ h
     exact untypedRetypeObject_stepCovers ec hInv hBi hPlaced hU
@@ -582,13 +618,13 @@ the capability-only arms it delegates included. -/
 theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
     {decoded : SyscallDecodeResult} {tid : SeLe4n.ThreadId}
     {gate : SyscallGate} {cap : Capability} {st st' : SystemState} (hInv : st.objects.invExt)
-    (hBi : schedContextBindingBidirectional st)
+    (hB : finalisingDeleteBundle st)
     (hPlaced : placedThreadsHaveTcbs st)
     (h : dispatchWithCapChecked ctx decoded tid e gate cap st = .ok ((), st')) :
     stepCovers e st st' ∧ st'.objects.invExt := by
   unfold dispatchWithCapChecked at h
   cases hC : dispatchCapabilityOnly decoded cap tid e with
-  | some k => rw [hC] at h; exact dispatchCapabilityOnly_stepCovers hInv hBi hPlaced hC h
+  | some k => rw [hC] at h; exact dispatchCapabilityOnly_stepCovers hInv hB hPlaced hC h
   | none =>
   rw [hC] at h
   dsimp only at h
@@ -744,7 +780,7 @@ ledger alone. -/
 theorem dispatchSyscallChecked_stepCovers {ctx : LabelingContext}
     {decoded : SyscallDecodeResult} {tid : SeLe4n.ThreadId} {e : CoreId}
     {st st' : SystemState} (hInv : st.objects.invExt)
-    (hBi : schedContextBindingBidirectional st)
+    (hB : finalisingDeleteBundle st)
     (hPlaced : placedThreadsHaveTcbs st)
     (h : dispatchSyscallChecked ctx decoded tid e st = .ok ((), st')) :
     stepCovers e st st' ∧ st'.objects.invExt := by
@@ -758,7 +794,7 @@ theorem dispatchSyscallChecked_stepCovers {ctx : LabelingContext}
     · cases h
     · rename_i hYieldOk
       cases h
-      exact yieldOnCore_stepCovers st _ e hInv hBi hYieldOk
+      exact yieldOnCore_stepCovers st _ e hInv hB.bidirectional hYieldOk
   simp only [hY, ↓reduceIte] at h
   split at h <;> try (cases h; done)
   split at h <;> try (cases h; done)
@@ -777,20 +813,20 @@ theorem dispatchSyscallChecked_stepCovers {ctx : LabelingContext}
     · cases hD
     · rename_i cap s1 hR
       cases syscallLookupCap_preserves_state _ _ _ _ hR
-      exact dispatchWithCapChecked_stepCovers e hInv hBi hPlaced hD
+      exact dispatchWithCapChecked_stepCovers e hInv hB hPlaced hD
   · unfold syscallInvokeResolved at hD
     split at hD
     · cases hD
     · rename_i cap s1 hR
       cases syscallResolveCap_state hR
-      exact dispatchWithCapChecked_stepCovers e hInv hBi hPlaced hD
+      exact dispatchWithCapChecked_stepCovers e hInv hB hPlaced hD
 
 /-- **The checked syscall entry covers** on the executing core: the register
 read and the decode read, and the IPC-buffer fill writes one core's TLB. -/
 theorem syscallEntryChecked_stepCovers {ctx : LabelingContext}
     {layout : SeLe4n.SyscallRegisterLayout} {e : CoreId} {regCount : Nat}
     {st st' : SystemState} (hInv : st.objects.invExt)
-    (hBi : schedContextBindingBidirectional st) (hPlaced : placedThreadsHaveTcbs st)
+    (hB : finalisingDeleteBundle st) (hPlaced : placedThreadsHaveTcbs st)
     (h : syscallEntryChecked ctx layout e regCount st = .ok ((), st')) :
     stepCovers e st st' ∧ st'.objects.invExt := by
   unfold syscallEntryChecked at h
@@ -809,7 +845,8 @@ theorem syscallEntryChecked_stepCovers {ctx : LabelingContext}
   obtain ⟨t, ht⟩ := Architecture.tlbFillIpcBufferOnCore_eq_setPerCoreTlb st e tid
     decoded.overflowCount
   rw [ht] at h
-  exact dispatchSyscallChecked_stepCovers (st := { st with perCoreTlb := t }) hInv hBi hPlaced
+  exact dispatchSyscallChecked_stepCovers (st := { st with perCoreTlb := t }) hInv
+    (finalisingDeleteBundle.of_objects_scheduler_eq (s := st) rfl rfl hB) hPlaced
     h
 
 end SeLe4n.Kernel

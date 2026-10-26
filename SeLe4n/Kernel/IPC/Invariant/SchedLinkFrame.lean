@@ -213,16 +213,6 @@ theorem schedContextBindingConsistent_of_binding (hB : bindingLinksAgree st st')
     obtain ⟨t', ht', e'⟩ := hB.symm.tcb_back ht
     exact ⟨t', ht', e' ▸ hb'⟩
 
-/-- The thread-side half of the binding pair holds after a step that keeps every
-binding. -/
-theorem schedContextBindingBidirectional_of_binding (hB : bindingLinksAgree st st')
-    (h : schedContextBindingBidirectional st) : schedContextBindingBidirectional st' := by
-  intro t tcb scId hT hs
-  obtain ⟨u, hu, e⟩ := hB.tcb_back hT
-  obtain ⟨s, hS, hst⟩ := h t u scId hu (by rw [e]; exact hs)
-  obtain ⟨s', hS', e'⟩ := hB.symm.sc_back hS
-  exact ⟨s', hS', e'.trans hst⟩
-
 /-- Every queued context is bound after a step that keeps every binding and
 every replenishment queue. -/
 theorem replenishQueueEntriesBound_smp_of_frame (hB : bindingLinksAgree st st')
@@ -250,11 +240,6 @@ end transfer
 
 namespace SchedLinkFrame
 
-theorem bindingAgree {st st' : SystemState} (h : SchedLinkFrame st st') :
-    bindingLinksAgree st st' := h.binding
-
-theorem auxAgree {st st' : SystemState} (h : SchedLinkFrame st st') : schedAuxAgree st st' := h.aux
-
 /-- **A frame step keeps every scheduling-link invariant.** -/
 theorem preserves {st st' : SystemState} (h : SchedLinkFrame st st')
     (hI : schedContextLinkInvariant st) : schedContextLinkInvariant st' :=
@@ -262,11 +247,6 @@ theorem preserves {st st' : SystemState} (h : SchedLinkFrame st st')
     schedContextBindingConsistent_of_binding h.binding hI.binding,
     replenishQueueEntriesBound_smp_of_frame h.binding h.replenish hI.replenishBound,
     replenishQueueAffinityConsistent_smp_of_frame h.binding h.aux h.replenish hI.replenishAffinity⟩
-
-/-- **...and the thread-side half of the binding pair.** -/
-theorem preserves_bidirectional {st st' : SystemState} (h : SchedLinkFrame st st')
-    (hI : schedContextBindingBidirectional st) : schedContextBindingBidirectional st' :=
-  schedContextBindingBidirectional_of_binding h.binding hI
 
 end SchedLinkFrame
 
@@ -742,8 +722,6 @@ end SchedLinkFrame
 
 namespace schedAuxAgree
 
-theorem refl (st : SystemState) : schedAuxAgree st st := fun _ => rfl
-
 theorem trans {a b c : SystemState} (h₁ : schedAuxAgree a b) (h₂ : schedAuxAgree b c) :
     schedAuxAgree a c := fun o => (h₂ o).trans (h₁ o)
 
@@ -756,7 +734,7 @@ theorem updateTcb (st : SystemState) (t : SeLe4n.ThreadId) (f : TCB → TCB)
     (hf : ∀ x, (f x).timeoutBudget = x.timeoutBudget ∧ (f x).cpuAffinity = x.cpuAffinity) :
     schedAuxAgree st (st.updateTcb t f) := by
   cases hG : st.getTcb? t with
-  | none => rw [SystemState.updateTcb_eq_self_of_none hG]; exact refl st
+  | none => rw [SystemState.updateTcb_eq_self_of_none hG]; exact fun _ => rfl
   | some x =>
     rw [SystemState.updateTcb_eq_of_some hG]
     have hPre := (SystemState.getTcb?_eq_some_iff st t x).mp hG
@@ -767,24 +745,13 @@ theorem updateSchedContext (st : SystemState) (s : SeLe4n.SchedContextId)
     (f : SchedContext → SchedContext) (hInv : st.objects.invExt) :
     schedAuxAgree st (st.updateSchedContext s f) := by
   cases hG : st.getSchedContext? s with
-  | none => rw [SystemState.updateSchedContext_eq_self_of_none hG]; exact refl st
+  | none => rw [SystemState.updateSchedContext_eq_self_of_none hG]; exact fun _ => rfl
   | some x =>
     rw [SystemState.updateSchedContext_eq_of_some hG]
     have hPre := (SystemState.getSchedContext?_eq_some_iff st s x).mp hG
     exact proj_insert_eq _ hInv (by rw [hPre]; rfl)
 
 end schedAuxAgree
-
-/-- A binding read off its codes names the context its context word names. -/
-theorem TCB.scBindingScCode_of_names {t : TCB} {s : SeLe4n.SchedContextId}
-    (h : t.schedContextBinding.scId? = some s) : t.scBindingScCode = s.val + 1 := by
-  unfold TCB.schedContextBinding at h
-  generalize t.scBindingScCode = c at h ⊢
-  generalize t.scBindingOwnerCode = o at h
-  cases c with
-  | zero => cases h
-  | succ c => cases o <;> (simp only [SchedContextBinding.ofCodes, SchedContextBinding.scId?,
-      Option.some.injEq] at h; subst h; rfl)
 
 /-- **The release keeps every scheduling-link invariant**: the context's
 bound-thread code and the thread's binding codes are cleared together, so no
@@ -1133,14 +1100,6 @@ theorem finaliseFinalObject_preserves_schedContextLinkInvariant (target : Nat) (
 -- §9  The retire
 -- ============================================================================
 
-/-- A context the retire guard admits is bound to no thread. -/
-theorem schedContextRetirable_boundThread {st : SystemState} {x : SeLe4n.ObjId}
-    {sc : SchedContext} (h : schedContextRetirable st x = true)
-    (hS : st.objects[x]? = some (.schedContext sc)) : sc.boundThread = none := by
-  obtain ⟨sc', hS', hB0, _⟩ := schedContextRetirable_parts h
-  rw [hS] at hS'; cases hS'
-  simp only [SchedContext.boundThread, hB0]; rfl
-
 /-- A context after the retire is the context before it. -/
 theorem retireFinalObject_schedContext_back (ec : CoreId) (target recorder : Nat)
     (st : SystemState) (hInv : st.objects.invExt) {o : SeLe4n.ObjId} {sc : SchedContext}
@@ -1318,6 +1277,55 @@ theorem threadSlotSet_preserves_schedContextLinkInvariant (ec : CoreId) {st : Sy
     (threadSlotCopied_tcb hInv hT slot srcCNode srcSlot rights).2
     ((SchedLinkFrame.threadSlotCopied hInv hT slot srcCNode srcSlot rights).preserves h)
 
+/-- **A thread space slot's set keeps every thread's budget clear**: the copy
+writes no budget, and a thread the retire keeps is a thread of the copy. -/
+theorem threadSlotSet_preserves_allTimeoutBudgetsNone (ec : CoreId) {st : SystemState}
+    {tid : SeLe4n.ThreadId} {t : TCB} (hInv : st.objects.invExt)
+    (hBudgets : allTimeoutBudgetsNone st) (hT : st.getTcb? tid = some t) (slot : SeLe4n.Slot)
+    (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) :
+    allTimeoutBudgetsNone (threadSlotSet ec st tid slot srcCNode srcSlot rights) := by
+  unfold threadSlotSet
+  intro tid' tcb hT'
+  exact allTimeoutBudgetsNone_of_aux (SchedLinkFrame.threadSlotCopied hInv hT slot srcCNode
+    srcSlot rights).aux hBudgets tid' tcb (retireFinalObject_tcb_back ec _ _ _
+      (threadSlotCopied_tcb hInv hT slot srcCNode srcSlot rights).2 hT')
+
+/-- **A thread space slot's set preserves the IPC bundle**: the copy does
+(`threadSlotCopied_preserves_ipcInvariantFull`), and so does the retire after it
+(`retireFinalObject_preserves_ipcInvariantFull`), on the copy's budgets, which
+are the pre-state's. -/
+theorem threadSlotSet_preserves_ipcInvariantFull (ec : CoreId) {st : SystemState}
+    {tid : SeLe4n.ThreadId} {t : TCB} (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hBudgets : allTimeoutBudgetsNone st) (hT : st.getTcb? tid = some t) (slot : SeLe4n.Slot)
+    (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) :
+    ipcInvariantFull (threadSlotSet ec st tid slot srcCNode srcSlot rights) ∧
+      (threadSlotSet ec st tid slot srcCNode srcSlot rights).objects.invExt := by
+  unfold threadSlotSet
+  exact retireFinalObject_preserves_ipcInvariantFull ec _ _ _
+    (threadSlotCopied_tcb hObjInv hT slot srcCNode srcSlot rights).2
+    (threadSlotCopied_preserves_ipcInvariantFull hObjInv hInv hT slot srcCNode srcSlot rights)
+    (allTimeoutBudgetsNone_of_aux
+      (SchedLinkFrame.threadSlotCopied hObjInv hT slot srcCNode srcSlot rights).aux hBudgets)
+
+/-- **WS-BP BP7.1 (`v0.36.11`)**: a space change preserves the IPC bundle — each
+slot set does (`threadSlotSet_preserves_ipcInvariantFull`). -/
+theorem copyThreadSpaces_preserves_ipcInvariantFull (ec : CoreId)
+    (st st' : SystemState) (vtid : SeLe4n.ValidThreadId) (cnSrc vrSrc : CSpaceAddr)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hBudgets : allTimeoutBudgetsNone st)
+    (hStep : copyThreadSpaces ec st vtid cnSrc vrSrc = .ok st') :
+    ipcInvariantFull st' := by
+  obtain ⟨tcb, hT, -, -, hCn, -, rfl⟩ := copyThreadSpaces_ok hStep
+  obtain ⟨cnCap, -, hCL, -⟩ := cspaceRootSourceAdmitted_spec hCn
+  obtain ⟨t1, hT1'⟩ := Option.isSome_iff_exists.mp
+    (threadSlotSet_getTcb? ec hObjInv hT (slot := TCB.cspaceRootSlot) (by decide)
+      cnSrc.cnode cnSrc.slot TCB.cspaceRootRights hCL)
+  obtain ⟨h1, hI1⟩ := threadSlotSet_preserves_ipcInvariantFull ec hObjInv hInv hBudgets hT
+    TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot TCB.cspaceRootRights
+  exact (threadSlotSet_preserves_ipcInvariantFull ec hI1 h1
+    (threadSlotSet_preserves_allTimeoutBudgetsNone ec hObjInv hBudgets hT _ _ _ _) hT1'
+    _ _ _ _).1
+
 /-- **A space change keeps every scheduling-link invariant** — each slot set
 does (`threadSlotSet_preserves_schedContextLinkInvariant`). -/
 theorem copyThreadSpaces_preserves_schedContextLinkInvariant (ec : CoreId)
@@ -1337,19 +1345,5 @@ theorem copyThreadSpaces_preserves_schedContextLinkInvariant (ec : CoreId)
       cnSrc.cnode cnSrc.slot TCB.cspaceRootRights).2).1
   exact threadSlotSet_preserves_schedContextLinkInvariant ec hI1
     (threadSlotSet_preserves_schedContextLinkInvariant ec hInv h hT _ _ _ _) hT1' _ _ _ _
-
-/-- **The thread-side half of the binding pair is a consequence**: a thread's
-own context names it by the binding pair, and a context lent to it names it by
-the loan record (`donationOwnerValid`). -/
-theorem schedContextBindingBidirectional_of_consistent {st : SystemState}
-    (hC : schedContextBindingConsistent st) (hD : donationOwnerValid st) :
-    schedContextBindingBidirectional st := by
-  intro t tcb scId hT hs
-  cases hb : tcb.schedContextBinding with
-  | unbound => rw [hb] at hs; cases hs
-  | bound s =>
-    rw [hb] at hs; cases hs; exact hC.1 t tcb hT _ hb
-  | donated s o =>
-    rw [hb] at hs; cases hs; exact (hD t tcb _ o hT hb).1
 
 end SeLe4n.Kernel

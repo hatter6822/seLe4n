@@ -969,7 +969,7 @@ theorem retireFinalObject_preserves_ipcReachable (ec : Concurrency.CoreId)
     ipcReachable (retireFinalObject ec target recorder st) := by
   have hObjInv := h.objects_invExt
   obtain ⟨hI, hE⟩ := retireFinalObject_preserves_ipcInvariantFull ec target recorder st hObjInv
-    h.ipcInvariantFull
+    h.ipcInvariantFull h.allTimeoutBudgetsNone
   have hS := (retireFinalObject_fields ec target recorder st).2.1
   refine ⟨hI, hE, fun tid tcb hT => h.allTimeoutBudgetsNone tid tcb
       (retireFinalObject_tcb_back ec target recorder st hObjInv hT),
@@ -1351,5 +1351,58 @@ theorem threadRetirable.namedByNone {st : SystemState} (h : ipcReachable st)
       rcases hb with hb | ⟨_, hb⟩ <;> cases hb
     simp only [objectNamesThread, g]
   | _ => rfl
+
+/-- **No object names a scheduling context the retire admits**
+(`objectNamesSchedContext`), under the reachable invariants and the binding
+pair, though the guard reads the context's own links alone.  A thread bound to
+it, as its own or on loan, or holding it as its timeout budget, is answered by
+`schedContextRetirable.tcbNamesNone`; a reply heading its stack by the context's
+own head link (`donationChainWellFormed.headLinkResolves`), which it has none
+of. -/
+theorem schedContextRetirable.namedByNone {st : SystemState} (h : ipcReachable st)
+    (hBind : schedContextBindingConsistent st) {x : SeLe4n.ObjId}
+    (hR : schedContextRetirable st x = true)
+    {k : SeLe4n.ObjId} {o : KernelObject} (hK : st.objects[k]? = some o) :
+    objectNamesSchedContext o (x.val + 1) = false := by
+  obtain ⟨sc, hS, -, -, hRep⟩ := schedContextRetirable_parts hR
+  cases o with
+  | tcb t =>
+    exact schedContextRetirable.tcbNamesNone hR hBind h.ipcInvariantFull.donationOwnerValid
+      h.allTimeoutBudgetsNone hK
+  | reply r =>
+    simp only [objectNamesSchedContext]
+    cases hn : r.next with
+    | none => rfl
+    | some l =>
+      cases l with
+      | frame _ => rfl
+      | head s =>
+        cases hx : (s.val + 1 == x.val + 1) with
+        | false => exact hx
+        | true =>
+          have hs : s.toObjId = x := by
+            have e : s.val = x.val := by have := beq_iff_eq.mp hx; omega
+            show (⟨s.val⟩ : SeLe4n.ObjId) = x
+            rw [e]
+          obtain ⟨sc', hS', hH⟩ := h.donationChainWellFormed.headLinkResolves
+            (SeLe4n.ReplyId.ofObjId k) r s hK hn
+          rw [hs, hS] at hS'; cases hS'
+          rw [hRep] at hH; cases hH
+  | _ => rfl
+
+/-- **No core queues a replenishment for a context the retire admits**: every
+queued context is bound (`replenishQueueEntriesBound_smp`), and an admitted one
+is bound to no thread. -/
+theorem schedContextRetirable.replenishQueuedNowhere {st : SystemState}
+    (hQ : replenishQueueEntriesBound_smp st) {x : SeLe4n.ObjId}
+    (hR : schedContextRetirable st x = true) (c : Concurrency.CoreId) (n : Nat) :
+    (⟨x.val⟩, n) ∉ (st.scheduler.replenishQueueOnCore c).entries := by
+  intro hMem
+  obtain ⟨sc, hS, -⟩ := schedContextRetirable_parts hR
+  obtain ⟨sc', hS', tid, hb⟩ := hQ c _ n hMem
+  have hS'' := (SystemState.getSchedContext?_eq_some_iff _ _ _).mp hS'
+  have hx : (⟨x.val⟩ : SeLe4n.SchedContextId).toObjId = x := rfl
+  rw [hx, hS] at hS''; cases hS''
+  rw [schedContextRetirable_boundThread hR hS] at hb; cases hb
 
 end SeLe4n.Kernel
