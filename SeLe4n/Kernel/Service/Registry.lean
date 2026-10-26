@@ -46,14 +46,6 @@ def registerInterface (spec : InterfaceSpec) : Kernel Unit :=
       .ok ((), { st with
         interfaceRegistry := st.interfaceRegistry.insert spec.ifaceId spec })
 
-/-- AE5-B helper: Check if any existing service registration targets the given endpoint.
-    Public for use in `Registry/Invariant.lean` preservation proofs. -/
-def hasEndpointRegistered (st : SystemState) (epId : SeLe4n.ObjId) : Bool :=
-  st.serviceRegistry.fold false fun acc _ entry =>
-    acc || match entry.endpointCap.target with
-           | .object id => id == epId
-           | _ => false
-
 /-- Register a service with capability-mediated binding.
 Checks (ordered for defense-in-depth — validate target before authority):
 1. Service not already registered (`illegalState`)
@@ -61,7 +53,10 @@ Checks (ordered for defense-in-depth — validate target before authority):
 3. Endpoint capability target resolves to an existing object (`invalidCapability`)
 4. R4-C.2 (L-09): Target object must be an endpoint (`invalidCapability`)
 5. R4-C.1 (M-14): Endpoint capability must have Write right (`illegalAuthority`)
-6. AE5-B (U-20): No existing service already targets this endpoint (`illegalState`)
+6. AE5-B (U-20): No existing service already targets this endpoint (`illegalState`),
+   read off the endpoint's own record of its registration (`Endpoint.serviceCode`,
+   WS-ZA ZA5.4 part 30), which `SystemState.tableReferencesRecorded` holds equal
+   to the registry's — one field, where the check walked the registry.
 -/
 def registerService (reg : ServiceRegistration) : Kernel Unit :=
   fun st =>
@@ -81,7 +76,7 @@ def registerService (reg : ServiceRegistration) : Kernel Unit :=
           if !Capability.hasRight reg.endpointCap .write then
             .error .illegalAuthority
           -- AE5-B (U-20): Reject duplicate endpoint registration
-          else if hasEndpointRegistered st epId then
+          else if ep.serviceCode != 0 then
             .error .illegalState
           else
             -- WS-ZA ZA5.4 part 30: the registration is recorded on its
@@ -400,7 +395,7 @@ theorem registerService_ok {reg : ServiceRegistration} {st st' : SystemState}
     ∃ epId ep, reg.endpointCap.target = .object epId ∧
       st.objects[epId]? = some (.endpoint ep) ∧
       st.serviceRegistry[reg.sid]? = none ∧
-      hasEndpointRegistered st epId = false ∧
+      ep.serviceCode = 0 ∧
       st' = { st with
         objects := st.objects.insert epId (.endpoint { ep with serviceCode := reg.sid.val + 1 })
         serviceRegistry := st.serviceRegistry.insert reg.sid reg } := by
