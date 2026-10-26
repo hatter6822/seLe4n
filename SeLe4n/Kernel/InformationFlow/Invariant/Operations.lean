@@ -5036,9 +5036,9 @@ theorem revokeService_preserves_projection
   have hObj := projectObjects_of_serviceCodeRewrite ctx observer
     (SeLe4n.Kernel.revokeService_serviceCodeRewrite hStep) hObjInv
   obtain ⟨reg, _, rfl⟩ := SeLe4n.Kernel.revokeService_ok hStep
-  -- st' = removeDependenciesOf (clearEndpointServiceCode { st with
-  -- serviceRegistry := erase } ..) sid: every other projected component is
-  -- read from a field neither step writes.
+  -- st' = clearEndpointServiceCode { st with serviceRegistry := erase } ..:
+  -- every other projected component is read from a field neither write
+  -- touches.
   rw [SeLe4n.Kernel.clearEndpointServiceCode_eq_withObjects] at hObj hPresence hRegistry ⊢
   simp only [projectState]
   congr 1 <;>
@@ -5050,8 +5050,7 @@ theorem revokeService_preserves_projection
                     projectActiveDomain, projectIrqHandlers, projectObjectIndex,
                     projectDomainTimeRemaining, projectDomainSchedule,
                     projectDomainScheduleIndex, projectMachineRegs,
-                    projectMemory, SchedulerState.runnable,
-                    SeLe4n.Kernel.removeDependenciesOf]; rfl)
+                    projectMemory, SchedulerState.runnable]; rfl)
       | rfl)
 
 -- ============================================================================

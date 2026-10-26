@@ -5817,11 +5817,6 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
   have hAllTables := ist.hAllTables
   have hBS := hShape
   have h1 := hSched
-  -- lookupService returns none (services empty)
-  have hLookupSvcNone : ∀ sid,
-      lookupService ist.state sid = none := by
-    intro sid; unfold lookupService; rw [hSvc]
-    exact RHTable_get?_empty 16 (by omega)
   -- 2. capabilityInvariantBundle
   have hCapBundle : capabilityInvariantBundle ist.state := by
     -- The per-CNode `slotsUnique` and slot-count invariants are carried
@@ -6057,22 +6052,14 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
       · unfold currentThreadIpcReady; rw [hCur]; trivial
       · unfold currentNotEndpointQueueHead; rw [hCur]; trivial
       · unfold currentNotOnNotificationWaitList; rw [hCur]; trivial
-  -- 6. serviceLifecycleCapabilityInvariantBundle
-  have hServiceBundle : serviceLifecycleCapabilityInvariantBundle
-      ist.state := by
-    apply serviceLifecycleCapabilityInvariantBundle_of_components
-    · -- servicePolicySurfaceInvariant (services empty → vacuous)
-      intro sid svc hLookupSvc
-      rw [hLookupSvcNone] at hLookupSvc; exact absurd hLookupSvc (by simp)
-    · exact hLifeBundle
-    · exact hCapBundle
-    · -- registryInvariant (serviceRegistry empty → vacuous)
-      constructor <;> {
-        intro sid reg hLookup; rw [hSvcR] at hLookup
-        have : (default : SystemState).serviceRegistry[sid]? = none := by
-          simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
-        rw [this] at hLookup; exact absurd hLookup (by simp)
-      }
+  -- 6. registryInvariant (serviceRegistry empty → vacuous)
+  have hServiceBundle : registryInvariant ist.state := by
+    constructor <;> {
+      intro sid reg hLookup; rw [hSvcR] at hLookup
+      have : (default : SystemState).serviceRegistry[sid]? = none := by
+        simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
+      rw [this] at hLookup; exact absurd hLookup (by simp)
+    }
   -- 7. vspaceInvariantBundle (WS-BP BP3.5): the ASID half is the table's
   -- consistency — two roots on one ASID would be registered at one key, so the
   -- table's completeness names them the same object — and the three
@@ -6100,9 +6087,9 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
       obtain ⟨hLt, hCap, hVac⟩ := ((hBS oid _ hObj).2.2.2.2.1 root rfl).2
       exact ⟨⟨ist.hPerObjectMappings oid root hObj, hLt, hCap⟩,
         SeLe4n.Kernel.RobinHood.RHTable.vacant_invExtK _ hVac⟩
-  -- 8. crossSubsystemInvariant (Z9-D + AE5-C + AF1-B + AM4-A + AK8-A: 12 predicates)
+  -- 8. crossSubsystemInvariant (Z9-D + AE5-C + AF1-B + AM4-A + AK8-A: 10 predicates)
   have hCrossBundle : crossSubsystemInvariant ist.state := by
-    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     · -- registryEndpointValid
       intro sid reg hLookup; rw [hSvcR] at hLookup
       have : (default : SystemState).serviceRegistry[sid]? = none := by
@@ -6111,11 +6098,6 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
     · -- AE5-C: registryInterfaceValid
       intro sid reg hLookup; rw [hSvcR] at hLookup
       have : (default : SystemState).serviceRegistry[sid]? = none := by
-        simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
-      rw [this] at hLookup; exact absurd hLookup (by simp)
-    · -- registryDependencyConsistent
-      intro sid entry hLookup; rw [hSvc] at hLookup
-      have : (default : SystemState).services[sid]? = none := by
         simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
       rw [this] at hLookup; exact absurd hLookup (by simp)
     · -- noStaleEndpointQueueReferences
@@ -6137,22 +6119,6 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
       have hNtfn := (hBS oid _ hObj).2.1 notif rfl
       rw [Notification.mem_queueEnds, hNtfn.2.1, hNtfn.2.2.1] at hMem
       simp at hMem
-    · -- serviceGraphInvariant
-      constructor
-      · -- serviceDependencyAcyclic
-        intro sid hPath
-        cases hPath with
-        | single h =>
-          obtain ⟨svc, hL, _⟩ := h
-          rw [hLookupSvcNone] at hL; exact absurd hL (by simp)
-        | cons h _ =>
-          obtain ⟨svc, hL, _⟩ := h
-          rw [hLookupSvcNone] at hL; exact absurd hL (by simp)
-      · -- serviceCountBounded
-        refine ⟨[], ⟨List.nodup_nil, ?_, ?_⟩, ?_⟩
-        · intro sid hLookup; exact absurd (hLookupSvcNone sid) hLookup
-        · intro sid hMem; contradiction
-        · simp [serviceBfsFuel]
     · -- Z9-A: schedContextStoreConsistent — all TCBs have .unbound binding at boot
       intro tid tcb hObj scId hBinding
       have hTcbProps := (hBS tid.toObjId _ hObj).2.2.2.1 tcb rfl

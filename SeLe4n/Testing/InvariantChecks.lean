@@ -363,17 +363,6 @@ private def lifecycleMetadataChecks (objectIds : List SeLe4n.ObjId) (st : System
         (s!"lifecycle objectType metadata consistent: oid={oid}", metaTy == obj.objectType) :: acc
     | _, _ => acc) []
 
-/-- M-11 Service graph acyclicity: no service has a dependency path back to itself.
-Uses bounded DFS (WS-G8) from each direct dependency back to the service under test. -/
-private def serviceGraphAcyclicityChecks (serviceIds : List ServiceId) (st : SystemState) (fuel : Nat) : List (String × Bool) :=
-  serviceIds.map fun sid =>
-    let deps := match lookupService st sid with
-      | some svc => svc.dependencies
-      | none => []
-    let hasCycle := deps.any fun dep =>
-      SeLe4n.Kernel.serviceHasPathTo st dep sid fuel
-    (s!"service graph acyclic: sid={sid}", !hasCycle)
-
 /-- M-11 VSpace ASID uniqueness: no two VSpace root objects share the same ASID. -/
 private def vspaceAsidUniquenessChecks (objectIds : List SeLe4n.ObjId) (st : SystemState) : List (String × Bool) :=
   let roots : List (SeLe4n.ObjId × SeLe4n.ASID) := objectIds.filterMap fun oid =>
@@ -744,8 +733,8 @@ private def cdtLinksConsistentCheck (st : SystemState) : List (String × Bool) :
    ("cdt child chains list each parent's children", parents.all listsChildren),
    ("cdt edge bound covers the slot links", edges.length ≤ st.cdt.edgeBound)]
 
-def stateInvariantChecksFor (objectIds : List SeLe4n.ObjId) (st : SystemState)
-    (serviceIds : List ServiceId := []) : List (String × Bool) :=
+def stateInvariantChecksFor (objectIds : List SeLe4n.ObjId) (st : SystemState) :
+    List (String × Bool) :=
   let schedulerChecks : List (String × Bool) :=
     [ ("scheduler queue/current consistency", schedulerQueueCurrentConsistentB st)
     , ("scheduler runnable queue uniqueness", schedulerRunQueueUniqueB st)
@@ -775,13 +764,11 @@ def stateInvariantChecksFor (objectIds : List SeLe4n.ObjId) (st : SystemState)
           | some ntfn =>
               (s!"notification queue/state invariant: oid={oid}", notificationQueueWellFormedB ntfn) :: acc
           | none => acc) []
-  let fuel := objectIds.length + 256
   schedulerChecks ++ runnableChecks ++ endpointAndNotificationChecks
     ++ cspaceSlotCoherencyChecks objectIds st
     ++ cspaceSlotAddressableChecks objectIds st
     ++ capabilityRightsStructuralChecks objectIds st
     ++ lifecycleMetadataChecks objectIds st
-    ++ serviceGraphAcyclicityChecks serviceIds st fuel
     ++ vspaceAsidUniquenessChecks objectIds st
     ++ asidTableConsistencyChecks objectIds st
     ++ untypedFreeIndexChecks objectIds st
@@ -829,12 +816,12 @@ private def failedChecks (checks : List (String × Bool)) : List String :=
 
 NOTE: Validates inference self-consistency (idempotency of `syncThreadStates`),
 not operational drift.  See V8-G7 design note at `threadStateConsistentChecks`. -/
-def assertStateInvariantsFor (label : String) (objectIds : List SeLe4n.ObjId) (st : SystemState)
-    (serviceIds : List ServiceId := []) : IO Unit := do
+def assertStateInvariantsFor (label : String) (objectIds : List SeLe4n.ObjId) (st : SystemState) :
+    IO Unit := do
   -- V8-G: Sync threadState fields before checking, since state may come from
   -- bootstrap builders or operations that don't maintain the field directly.
   let stSynced := SeLe4n.Kernel.syncThreadStates st
-  let failures := failedChecks (stateInvariantChecksFor objectIds stSynced serviceIds)
+  let failures := failedChecks (stateInvariantChecksFor objectIds stSynced)
   if failures.isEmpty then
     pure ()
   else
@@ -848,8 +835,8 @@ enabling detection of operational drift between `threadState` fields and
 runtime queue membership.  Use when you want to verify that a kernel
 operation maintained threadState consistency on its own. -/
 def assertStateInvariantsWithoutSync (label : String) (objectIds : List SeLe4n.ObjId)
-    (st : SystemState) (serviceIds : List ServiceId := []) : IO Unit := do
-  let failures := failedChecks (stateInvariantChecksFor objectIds st serviceIds)
+    (st : SystemState) : IO Unit := do
+  let failures := failedChecks (stateInvariantChecksFor objectIds st)
   if failures.isEmpty then
     pure ()
   else
@@ -934,13 +921,6 @@ private def checkNoStaleNotificationWaitRefs (st : SystemState) : Bool :=
     | some ntfn =>
       ntfn.queueEnds.all fun tid => (st.getTcb? tid).isSome
     | none => true
-
-/-- AG1-F-ii: Check registryDependencyConsistent — every dependency edge in the
-service graph references a registered service. -/
-private def checkRegistryDependencyConsistent (st : SystemState) : Bool :=
-  st.services.toList.all fun (_, entry) =>
-    entry.dependencies.all fun depId =>
-      st.services[depId]? != none
 
 /-- AG1-F-ii: Check schedContextStoreConsistent — every SchedContext referenced
 by a TCB binding exists in the store. -/
@@ -1028,21 +1008,8 @@ private def checkRegistryInterfaceValid (st : SystemState) : Bool :=
   st.serviceRegistry.toList.all fun (_, reg) =>
     st.interfaceRegistry[reg.iface.ifaceId]? != none
 
-/-- AG1-F audit: checkServiceGraphInvariant — service dependency graph is acyclic
-and service count is bounded. -/
-private def checkServiceGraphInvariant (st : SystemState) : Bool :=
-  let fuel := st.objectIndex.length
-  let serviceIds := st.services.toList.map Prod.fst
-  let acyclic := serviceIds.all fun sid =>
-    let deps := match st.services[sid]? with
-      | some entry => entry.dependencies
-      | none => []
-    !(deps.any fun dep => SeLe4n.Kernel.serviceHasPathTo st dep sid fuel)
-  let bounded := st.services.size ≤ st.objectIndex.length
-  acyclic && bounded
-
 /-- AM4 audit remediation: Runtime check for the AL6-C
-`lifecycleObjectTypeLockstep` 11th conjunct of `crossSubsystemInvariant`.
+`lifecycleObjectTypeLockstep` conjunct of `crossSubsystemInvariant`.
 For every populated ObjId, the stored object's `objectType` must match
 the recorded entry in `lifecycle.objectTypes`. Walks `objectIndex` once
 and compares each entry pair; `true` when all match. -/
@@ -1057,20 +1024,17 @@ private def checkLifecycleObjectTypeLockstep (st : SystemState) : Bool :=
       | none => false
     | none => true
 
-/-- AG1-F-iv + WS-AM AM4 audit remediation: Compose all 11
-cross-subsystem predicate checks into a single boolean function.
-Returns `true` only if all 11 checks pass. The 11th check
-(`crossSub:lifecycleObjectTypeLockstep`) was added by the WS-AM
-post-delivery audit to close the gap where the Prop-level
-`crossSubsystemInvariant` had 11 conjuncts but this runtime check
-exercised only 10. -/
+/-- AG1-F-iv + WS-AM AM4 audit remediation: Compose the cross-subsystem
+predicate checks into a single boolean function.  Returns `true` only if
+all 9 checks pass. The `crossSub:lifecycleObjectTypeLockstep` check was
+added by the WS-AM post-delivery audit to close the gap where the
+Prop-level `crossSubsystemInvariant` had a conjunct this runtime check
+did not exercise. -/
 def checkCrossSubsystemInvariant (st : SystemState) : List (String × Bool) :=
   [ ("crossSub:registryEndpointValid", checkRegistryEndpointValid st)
   , ("crossSub:registryInterfaceValid", checkRegistryInterfaceValid st)
-  , ("crossSub:registryDependencyConsistent", checkRegistryDependencyConsistent st)
   , ("crossSub:noStaleEndpointQueueRefs", checkNoStaleEndpointQueueRefs st)
   , ("crossSub:noStaleNotificationWaitRefs", checkNoStaleNotificationWaitRefs st)
-  , ("crossSub:serviceGraphInvariant", checkServiceGraphInvariant st)
   , ("crossSub:schedContextStoreConsistent", checkSchedContextStoreConsistent st)
   , ("crossSub:schedContextNotDualBound", checkSchedContextNotDualBound st)
   , ("crossSub:schedContextRunQueueConsistent", checkSchedContextRunQueueConsistent st)

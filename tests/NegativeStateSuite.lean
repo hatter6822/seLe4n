@@ -905,57 +905,6 @@ private def runDualQueueEndpointFifoNegativeChecks : IO Unit := do
   else
     throw <| IO.userError s!"off-domain malformed runnable target must not be dispatched, got current = {toString (stMalformedOff.scheduler.currentOnCore bootCoreId)}"
 
-/-- WS-D4 F-07: Service dependency cycle detection.
-    Extracted from `runNegativeChecks` (Phase 1; was lines 1045-1091). -/
-private def runServiceCycleNegativeChecks : IO Unit := do
-  -- ==========================================================================
-  -- WS-D4 F-07: Service dependency cycle detection
-  -- ==========================================================================
-
-  let svcIdA : ServiceId := ⟨100⟩
-  let svcIdB : ServiceId := ⟨101⟩
-  let svcEntryA : ServiceGraphEntry := {
-    identity := { sid := svcIdA, backingObject := ⟨200⟩, owner := ⟨300⟩ }
-    dependencies := []
-    isolatedFrom := []
-  }
-  let svcEntryB : ServiceGraphEntry := {
-    identity := { sid := svcIdB, backingObject := ⟨201⟩, owner := ⟨301⟩ }
-    dependencies := []
-    isolatedFrom := []
-  }
-  let svcState : SystemState :=
-    (BootstrapBuilder.empty
-      |>.withService svcIdA svcEntryA
-      |>.withService svcIdB svcEntryB
-      |>.buildChecked)
-
-  -- Self-dependency should be rejected
-  expectErr "service dependency self-loop rejection"
-    (SeLe4n.Kernel.serviceRegisterDependency svcIdA svcIdA svcState)
-    .cyclicDependency
-
-  -- Non-existent dependency target should be rejected
-  let svcIdMissing : ServiceId := ⟨999⟩
-  expectErr "service dependency missing target rejection"
-    (SeLe4n.Kernel.serviceRegisterDependency svcIdA svcIdMissing svcState)
-    .objectNotFound
-
-  -- Register A → B (should succeed)
-  let regResult := SeLe4n.Kernel.serviceRegisterDependency svcIdA svcIdB svcState
-  match regResult with
-  | .ok (_, svcStateAB) => do
-    IO.println "positive check passed [service dependency A→B registration]"
-    -- Now registering B → A should create a cycle and be rejected
-    expectErr "service dependency cycle detection B→A"
-      (SeLe4n.Kernel.serviceRegisterDependency svcIdB svcIdA svcStateAB)
-      .cyclicDependency
-    -- Idempotent re-registration of A → B should succeed
-    let _ ← expectOkVal "service dependency idempotent re-registration"
-      (SeLe4n.Kernel.serviceRegisterDependency svcIdA svcIdB svcStateAB)
-  | .error err =>
-    throw <| IO.userError s!"service dependency A→B registration failed: {toString err}"
-
 /-- WS-F2 + S5-G: Untyped memory negative tests + page-alignment misalignment.
     Extracted from `runNegativeChecks` (Phase 1; was lines 1093-1163). -/
 private def runUntypedF2NegativeChecks : IO Unit := do
@@ -1710,7 +1659,6 @@ private def runNegativeChecks : IO Unit := do
     (SeLe4n.Kernel.notificationWait notificationId (SeLe4n.ThreadId.ofNat 7) stN1)
     .alreadyWaiting
 
-  runServiceCycleNegativeChecks                         -- [was 1045-1091]
   runUntypedF2NegativeChecks                            -- [was 1093-1163]
 
 /-- WS-H2: Lifecycle safety guards negative tests.
@@ -2133,47 +2081,6 @@ def runWSH11Checks : IO Unit := do
               | .error err => throw <| IO.userError s!"cycle lookup failed: {toString err}"
 
   IO.println "all WS-H11 VSpace & Architecture checks passed"
-
-/-- WS-H13/Q1: Service registry negative tests (lifecycle ops removed). -/
-private def runWSH13Checks : IO Unit := do
-  -- H13-NEG-01: Self-loop dependency rejection
-  let svcA : ServiceId := ⟨700⟩
-  let svcSelfLoopState : SystemState :=
-    (BootstrapBuilder.empty
-      |>.withService svcA {
-        identity := { sid := svcA, backingObject := ⟨9999⟩, owner := ⟨10⟩ }
-        dependencies := []
-        isolatedFrom := []
-      }
-      |>.buildChecked)
-  expectErr "H13 self-loop dependency rejection"
-    (SeLe4n.Kernel.serviceRegisterDependency svcA svcA svcSelfLoopState)
-    .cyclicDependency
-
-  -- H13-NEG-02: Cyclic dependency rejection
-  let svcB : ServiceId := ⟨701⟩
-  let svcCyclicState : SystemState :=
-    (BootstrapBuilder.empty
-      |>.withObject ⟨1⟩ (.tcb {
-        tid := ⟨1⟩, priority := ⟨100⟩, domain := ⟨0⟩,
-        spaceCells := SeLe4n.Model.TCB.spaceCellsOf ⟨10⟩ ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096)
-        })
-      |>.withService svcA {
-        identity := { sid := svcA, backingObject := ⟨1⟩, owner := ⟨10⟩ }
-        dependencies := [svcB]
-        isolatedFrom := []
-      }
-      |>.withService svcB {
-        identity := { sid := svcB, backingObject := ⟨1⟩, owner := ⟨10⟩ }
-        dependencies := []
-        isolatedFrom := []
-      }
-      |>.buildChecked)
-  expectErr "H13 cyclic dependency rejection"
-    (SeLe4n.Kernel.serviceRegisterDependency svcB svcA svcCyclicState)
-    .cyclicDependency
-
-  IO.println "all WS-H13 service negative checks passed"
 
 -- S2-J: Migrated from deprecated api* wrappers to syscallInvoke path.
 /-- WS-H15e: Negative tests for syscall capability-checking wrappers. -/
@@ -2847,30 +2754,6 @@ private def runWSKGLifecycleVSpaceChecks : IO Unit := do
 private def runWSKGServiceIpcChecks : IO Unit := do
   -- ---- K-G3: Service policy and IPC boundary tests ----
 
-  -- K-G-NEG-14: Service registry: store and lookup roundtrip
-  let svcPolicyId : ServiceId := ⟨800⟩
-  let svcBackingId : SeLe4n.ObjId := ⟨801⟩
-  let registryState : SystemState :=
-    (BootstrapBuilder.empty
-      |>.withObject svcBackingId (.tcb {
-        tid := ⟨801⟩, priority := ⟨10⟩, domain := ⟨0⟩,
-        spaceCells := SeLe4n.Model.TCB.spaceCellsOf ⟨10⟩ ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096)
-        })
-      |>.withService svcPolicyId {
-        identity := { sid := svcPolicyId, backingObject := svcBackingId, owner := ⟨10⟩ }
-        dependencies := []
-        isolatedFrom := []
-      }
-      |>.buildChecked)
-  unless (SeLe4n.Model.lookupService registryState svcPolicyId).isSome do
-    throw <| IO.userError "K-G-NEG-14: expected service to be present in registry"
-  IO.println "negative check passed [K-G-NEG-14 service registry lookup present]"
-
-  -- K-G-NEG-15: Service dependency self-loop rejection
-  expectErr "K-G-NEG-15 self-loop dependency rejection"
-    (SeLe4n.Kernel.serviceRegisterDependency svcPolicyId svcPolicyId registryState)
-    .cyclicDependency
-
   -- K-G-NEG-16: extractMessageRegisters with empty msgRegs → empty result
   let emptyExtract := SeLe4n.Kernel.Architecture.RegisterDecode.extractMessageRegisters
     #[] { length := 4, extraCaps := 0, label := 0 }
@@ -3185,8 +3068,6 @@ def runL13CapTransferShortCircuitChecks : IO Unit := do
     -- L13-02: State unchanged after short-circuit
     if st'.objects != st0.objects then
       throw <| IO.userError "objects should be unchanged after short-circuit"
-    if st'.services != st0.services then
-      throw <| IO.userError "services should be unchanged after short-circuit"
     IO.println "check passed [state unchanged after short-circuit]"
   | .error e =>
     throw <| IO.userError s!"ipcUnwrapCapsLoop returned error: {toString e}"
@@ -3717,34 +3598,6 @@ private def runWSR4CoherenceChecks : IO Unit := do
             (SeLe4n.Kernel.lookupServiceByRecordedCode epForRetype stRevoked3)
             .objectNotFound
         IO.println "negative check passed [R4-NEG-03: a registered endpoint's back-links hold the retire until revocation]"
-
-    -- R4-NEG-04: Service revocation cleans dependency graph (R4-D/M-15)
-    let svcA : ServiceId := ⟨710⟩
-    let svcB : ServiceId := ⟨711⟩
-    let r4State4 := (BootstrapBuilder.empty
-        |>.withService svcA {
-          identity := { sid := svcA, backingObject := ⟨1⟩, owner := ⟨10⟩ }
-          dependencies := [svcB]
-          isolatedFrom := []
-        }
-        |>.withService svcB {
-          identity := { sid := svcB, backingObject := ⟨1⟩, owner := ⟨10⟩ }
-          dependencies := []
-          isolatedFrom := []
-        }
-        |>.buildChecked)
-    -- Run removeDependenciesOf to clean svcB from the graph
-    let stCleaned4 := SeLe4n.Kernel.removeDependenciesOf r4State4 svcB
-    -- Verify svcB is removed from services
-    if stCleaned4.services[svcB]? != none then
-      throw <| IO.userError "svcB should be erased from services"
-    -- Verify svcA's dependency on svcB is removed
-    match stCleaned4.services[svcA]? with
-    | none => throw <| IO.userError "svcA should still exist in services"
-    | some entry =>
-      if entry.dependencies.any (· == svcB) then
-        throw <| IO.userError "svcA still depends on svcB after removeDependenciesOf"
-      IO.println "negative check passed [R4-NEG-04: removeDependenciesOf cleans dependency graph edges]"
 
     -- R4-NEG-05: Duplicate endpoint rejection — two services on same endpoint (AE5-B / U-20)
     let dupEpId : SeLe4n.ObjId := ⟨33⟩
@@ -4801,7 +4654,6 @@ def main : IO Unit := do
   SeLe4n.Testing.runAuditCoverageChecks
   SeLe4n.Testing.runWSH7Checks
   SeLe4n.Testing.runWSH11Checks
-  SeLe4n.Testing.runWSH13Checks
   SeLe4n.Testing.runWSH15Checks
   SeLe4n.Testing.runWSH15PlatformChecks
   SeLe4n.Testing.runWSH16LifecycleChecks

@@ -1397,20 +1397,20 @@ def runInformationFlowChecks : IO Unit := do
        .declassificationRefusals, .declassificationTaint ].length = 23)
   expect "StateField is total over SystemState (eq_of_fieldEq_all elaborates)"
     (have _ := @SeLe4n.Kernel.SystemState.eq_of_fieldEq_all; true)
-  -- AM4 audit remediation: field-set catalog extended from 10 to 11
-  -- entries with `lifecycleObjectTypeLockstep_fields` (AL6-C / AM4).
-  expect "+ AM4: crossSubsystemFieldSets has 11 entries"
-    (SeLe4n.Kernel.crossSubsystemFieldSets.length = 11)
+  -- AM4 audit remediation added `lifecycleObjectTypeLockstep_fields`; the
+  -- service graph's removal took its two entries out.
+  expect "crossSubsystemFieldSets has 9 entries"
+    (SeLe4n.Kernel.crossSubsystemFieldSets.length = 9)
   -- Verify disjointness witnesses compile and have expected values
-  expect "regDepConsistent disjoint from staleEndpoint"
-    (SeLe4n.Kernel.fieldsDisjoint SeLe4n.Kernel.registryDependencyConsistent_fields
+  expect "registryInterfaceValid disjoint from staleEndpoint"
+    (SeLe4n.Kernel.fieldsDisjoint SeLe4n.Kernel.registryInterfaceValid_fields
                     SeLe4n.Kernel.noStaleEndpointQueueReferences_fields = true)
   expect "staleEndpoint shares staleNotification (objects overlap)"
     (SeLe4n.Kernel.fieldsDisjoint SeLe4n.Kernel.noStaleEndpointQueueReferences_fields
                     SeLe4n.Kernel.noStaleNotificationWaitReferences_fields = false)
-  expect "regDepConsistent shares serviceGraph (services overlap)"
-    (SeLe4n.Kernel.fieldsDisjoint SeLe4n.Kernel.registryDependencyConsistent_fields
-                    SeLe4n.Kernel.serviceGraphInvariant_fields = false)
+  expect "registryEndpointValid shares registryInterfaceValid (serviceRegistry overlap)"
+    (SeLe4n.Kernel.fieldsDisjoint SeLe4n.Kernel.registryEndpointValid_fields
+                    SeLe4n.Kernel.registryInterfaceValid_fields = false)
 
   IO.println "cross-subsystem field-disjointness checks passed"
 

@@ -9,6 +9,7 @@
 
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreSwitchToThread
 import SeLe4n.Kernel.IPC.Invariant.PerCore
+import SeLe4n.Kernel.Capability.Invariant.Authority
 
 /-!
 # WS-SM SM5.C — Cross-core wake via SGI (lock-sets, wake / SGI / handler theorems)

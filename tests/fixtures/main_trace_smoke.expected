@@ -16,17 +16,6 @@
 [CAT-026] TLB flush entry count: 0
 [CAT-028] adapter register write success path value: 99
 [CAT-029] adapter register write unsupported branch: SeLe4n.Model.KernelError.notImplemented
-[SST-001] service lookup svcApi: some { sid := { val := 101 }, backingObject := { val := 1 }, owner := { val := 10 } }
-[SST-003] service lookup absent ⟨9998⟩: none
-[SST-006] store service entry lookup: some { sid := { val := 200 }, backingObject := { val := 12 }, owner := { val := 10 } }
-[SST-008] register dependency result: some [{ val := 100 }]
-[SST-009] register self-loop dependency: SeLe4n.Model.KernelError.cyclicDependency
-[SST-011] service path svcApi→svcDb: true
-[SST-012] service path svcApi→svcDenied: false
-[SST-013] service isolation api↔denied: true
-[SST-014] service isolation api↔db: false
-[SST-019] service lookup missing-backing: some { sid := { val := 106 }, backingObject := { val := 9999 }, owner := { val := 10 } }
-[SST-020] service lookup svcBroken deps: some [{ val := 999 }]
 [SRG-001] register service success: true
 [SRG-002] duplicate register: SeLe4n.Model.KernelError.illegalState
 [SRG-005] revoke service success: true
@@ -36,7 +25,6 @@
 [SRG-004] invalid endpoint: SeLe4n.Model.KernelError.invalidCapability
 [SRG-006] revoke non-existent: SeLe4n.Model.KernelError.objectNotFound
 [SRG-009] chain success: iface=true svc=true
-[SRG-010] cycle detection: SeLe4n.Model.KernelError.cyclicDependency
 [SST-021] deep cnode radix fixture: some 12
 [SST-023] deep cnode path lookup rights: { bits := 3 }
 [SST-024] deep cnode path bad-depth branch: SeLe4n.Model.KernelError.illegalState
@@ -45,8 +33,6 @@
 [SST-030] large queue scheduled current: some 1
 [SST-032] context switch regs match incoming: true
 [SST-037] multi-endpoint receive senders: 1, 12
-[SST-038] service dependency chain path chainTop→chainRoot: true
-[SST-039] service dependency chain lookup chainTop: some [{ val := 201 }]
 [SST-041] boundary memory low-address byte: 0
 [SST-043] boundary memory high-address byte: 0
 [LEP-011] created sibling cap with the same target
@@ -127,7 +113,6 @@
 [KSD-003] cspaceDelete via decoded regs slot cleared: true
 [KSD-004] untyped carve via decoded regs new type: some (SeLe4n.Model.KernelObjectType.notification)
 [KSD-005] vspaceMap via decoded regs paddr: 8192
-[KSD-006] service registry lookup present: true
 [KSD-007] IPC message body from registers: #[111, 222, 333, 444]
 [KSD-008] round-trip decode msgRegs.size=4 first=10
 [PIP-001] A2 register decode correct (send, cap=0, msgRegs=4): true
@@ -217,10 +202,10 @@
 [IDLE-004] live schedule current (folded idle dispatch): some 65536
 [IDLE-005] idle-aware dispatch current (idle runs): some 65536
 [IDLE-006] dispatched idle absent from run queue (dequeue-on-dispatch): true
-[ITR-001] inter-transition invariant checks: 36 passed
-[PTY-001] parameterized topology ok: minimal (threads=1 prio=50 radix=4 asids=1 svcs=1)
-[PTY-001] parameterized topology ok: medium (threads=4 prio=10 radix=8 asids=2 svcs=2)
-[PTY-001] parameterized topology ok: large (threads=8 prio=100 radix=16 asids=4 svcs=4)
+[ITR-001] inter-transition invariant checks: 33 passed
+[PTY-001] parameterized topology ok: minimal (threads=1 prio=50 radix=4 asids=1)
+[PTY-001] parameterized topology ok: medium (threads=4 prio=10 radix=8 asids=2)
+[PTY-001] parameterized topology ok: large (threads=8 prio=100 radix=16 asids=4)
 [XVAL-001] MessageInfo roundtrip ok: encoded=2386218 length=42 extraCaps=2 label=4660
 [XVAL-002] SyscallId roundtrip ok: all 41 variants
 [XVAL-003] CSpaceMintArgs roundtrip ok: regs=#[{ val := 10 }, { val := 20 }, { val := 7 }, { val := 999 }]

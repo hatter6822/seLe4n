@@ -62,10 +62,9 @@ sub-task breakdown:
 
 * **AN11-A.2 baseline** — variants already exercised elsewhere; rows
   here serve as the canonical index entry.
-* **AN11-A.3 security-priority** — the nine variants the audit flags as
+* **AN11-A.3 security-priority** — the variants the audit flags as
   security-critical (revocation, ASID, scheduler invariant, alignment,
-  VM fault, slot occupancy, cyclic deps, dependency violation, reply
-  cap).
+  VM fault, slot occupancy, dependency violation, reply cap).
 * **AN11-A.4 IPC / SchedContext / Lifecycle** — error paths in IPC
   bounds, SchedContext budget/period validation, Lifecycle retype.
 * **AN11-A.5 Architecture / Capability / Service residual** — register
@@ -344,10 +343,13 @@ private def row_nullCapability_mint : KernelErrorRejection :=
 -- ============================================================================
 -- AN11-A.3 — Security-priority variants (audit-named)
 --
--- The nine variants the audit explicitly flags as security-critical coverage
+-- The variants the audit explicitly flags as security-critical coverage
 -- gaps: revocationRequired, asidNotBound, schedulerInvariantViolation,
--- alignmentError, vmFault, targetSlotOccupied, cyclicDependency,
--- dependencyViolation, replyCapInvalid.
+-- alignmentError, vmFault, targetSlotOccupied, dependencyViolation,
+-- replyCapInvalid.  The audit also named cyclicDependency, which only the
+-- kernel service dependency graph returned; WS-ZA ZA5.4 part 32 removed the
+-- graph, so no kernel path returns it and its two rows went with it (the
+-- variant keeps its ABI code).
 -- ============================================================================
 
 /-- Row: retyping a Reply a caller is still blocked on is refused with
@@ -428,50 +430,6 @@ private def row_targetSlotOccupied : KernelErrorRejection :=
         objects := (default : SystemState).objects.insert cnodeId
           (.cnode cn) }
       runUnit (cspaceInsertSlot ⟨cnodeId, slot⟩ occupant st) }
-
-/-- Row: `serviceRegisterDependency` rejects self-edge with
-`.cyclicDependency`. -/
-private def row_cyclicDependency_self_edge : KernelErrorRejection :=
-  { syscall       := "serviceRegisterDependency"
-    expectedError := .cyclicDependency
-    scenarioTag   := "AN11A.3.cyclicDependency.self_edge"
-    scenarioDesc  := "WS-D4/F-07: registering a service as its own" ++
-                     " dependency is cyclic by definition and is rejected"
-    runScenario   := fun _ =>
-      let svcId : ServiceId := ⟨1⟩
-      let entry : ServiceGraphEntry :=
-        { identity := { sid := svcId, backingObject := ⟨1⟩, owner := ⟨1⟩ }
-          dependencies := []
-          isolatedFrom := [] }
-      let st : SystemState := { (default : SystemState) with
-        services := (default : SystemState).services.insert svcId entry }
-      runUnit (serviceRegisterDependency svcId svcId st) }
-
-/-- Row: `serviceRegisterDependency` rejects unregistered dependency target
-with `.objectNotFound`.  Audit calls out `dependencyViolation` for unmet
-deps; the present codebase emits `.objectNotFound` from the same step
-(`lookupService st depId = none`) — the row documents the variant the
-production path actually returns and pins the boundary.  If the audit's
-recommended `.dependencyViolation` is added in a later refactor, the row
-will fail and prompt re-classification. -/
-private def row_objectNotFound_dep_unmet : KernelErrorRejection :=
-  { syscall       := "serviceRegisterDependency"
-    expectedError := .objectNotFound
-    scenarioTag   := "AN11A.3.dependencyViolation.unmet_dep_currently_objectNotFound"
-    scenarioDesc  := "Registering a dependency on a non-existent service" ++
-                     " currently returns .objectNotFound (rather than" ++
-                     " .dependencyViolation); pinning the production" ++
-                     " boundary against silent migration"
-    runScenario   := fun _ =>
-      let svcId : ServiceId := ⟨10⟩
-      let depId : ServiceId := ⟨11⟩
-      let entry : ServiceGraphEntry :=
-        { identity := { sid := svcId, backingObject := ⟨10⟩, owner := ⟨10⟩ }
-          dependencies := []
-          isolatedFrom := [] }
-      let st : SystemState := { (default : SystemState) with
-        services := (default : SystemState).services.insert svcId entry }
-      runUnit (serviceRegisterDependency svcId depId st) }
 
 /-- Row: `endpointReply` rejects when target's `replyTarget = none` with
 `.replyCapInvalid`.  Builds a TCB in `.blockedOnReply _ none` to trigger
@@ -1036,8 +994,6 @@ def errorMatrix : List KernelErrorRejection :=
     row_schedulerInvariantViolation,
     row_alignmentError_security,
     row_targetSlotOccupied,
-    row_cyclicDependency_self_edge,
-    row_objectNotFound_dep_unmet,
     row_replyCapInvalid_no_target,
     row_replyCapInvalid_not_blocked,
     -- AN11-A.4 IPC / SchedContext / Lifecycle
@@ -1081,11 +1037,12 @@ theorem errorMatrix_covers_at_least_35 :
     errorMatrix.length ≥ 35 := by decide
 
 /-- AN11-A.6: The matrix never decreases below the post-AN11 floor
-`errorMatrixFloor` (the AN11 closing count).  CI's monotonicity guard
-turns any future deletion into a pipeline failure. -/
-def errorMatrixFloor : Nat := 47
+`errorMatrixFloor` (the AN11 closing count, less the two service-graph
+rows that WS-ZA ZA5.4 part 32 removed with the graph).  CI's monotonicity
+guard turns any future deletion into a pipeline failure. -/
+def errorMatrixFloor : Nat := 46
 
-/-- AN11-A.6: The audit's nine security-priority variants are the targets
+/-- AN11-A.6: The audit's security-priority variants are the targets
 the matrix MUST exercise.  We verify coverage at runtime in `runAll` (via
 `securityPriorityVariants` below) rather than at compile time, because
 `KernelErrorRejection.runScenario` is an opaque `Unit → Except` thunk and
@@ -1098,7 +1055,6 @@ def securityPriorityVariants : List KernelError :=
   , .alignmentError
   , .vmFault
   , .targetSlotOccupied
-  , .cyclicDependency
   , .dependencyViolation  -- audit-named; current code returns .objectNotFound
   , .replyCapInvalid ]
 

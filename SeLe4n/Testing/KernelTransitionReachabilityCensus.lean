@@ -1183,10 +1183,8 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.scheduleDomain
   , `SeLe4n.Kernel.scheduleEffective
   , `SeLe4n.Kernel.scheduleOrIdleOnCore
-  , `SeLe4n.Kernel.serviceRegisterDependency
   , `SeLe4n.Kernel.setLockAt
   , `SeLe4n.Kernel.setThreadCpuAffinityOp
-  , `SeLe4n.Kernel.storeServiceEntry
   , `SeLe4n.Kernel.storeTcbIpcState_fromTcb
   , `SeLe4n.Kernel.storeTcbPendingMessage
   , `SeLe4n.Kernel.sweptAndRestored

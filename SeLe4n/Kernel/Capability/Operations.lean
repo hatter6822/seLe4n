@@ -46,9 +46,9 @@ findings for the capability subsystem that were addressed in Phase AK8-K.
   RHTable rehash on load-factor crossings does NOT affect lookup semantics
   (key→value mapping is preserved across rehashes by
   `RHTable.insert_preserves_invExt` + `getElem?_insert_self/_ne`).
-- **C-L8 (`serviceCountBounded` boot-time exposure):** the accessor
-  `crossSubsystemInvariant_to_serviceGraphInvariant.2` extracts the
-  bounded count from the cross-subsystem invariant bundle.
+- **C-L8 (`serviceCountBounded` boot-time exposure):** retired with the
+  service dependency graph (WS-ZA ZA5.4 part 32); there is no service count
+  bound left to expose.
 - **C-L9 (abstract object sizes vs seL4 RPi5):** documented in
   `docs/spec/SELE4N_SPEC.md` §6.3 "Object size abstractions". The Lean
   model uses abstract `objectTypeAllocSize` which does not bind

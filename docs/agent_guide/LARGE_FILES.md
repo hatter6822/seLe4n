@@ -217,7 +217,6 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/SyscallDispatchEntry.lean` (~1048 lines)
 - `SeLe4n/Kernel/IPC/Operations/CapTransfer.lean` (~1044 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean` (~1043 lines)
-- `SeLe4n/Kernel/Service/Invariant/Acyclicity.lean` (~1043 lines)
 - `tests/DeadlockFreedomSuite.lean` (~1008 lines)
 - `docs/dev_history/audits/AUDIT_v0.19.6_WORKSTREAM_PLAN.md` (~984 lines)
 - `SeLe4n/Platform/RPi5/Deployment.lean` (~977 lines)

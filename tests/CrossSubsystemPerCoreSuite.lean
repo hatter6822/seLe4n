@@ -566,12 +566,9 @@ private def runModifiedFieldsChecks : IO Unit := do
   -- The payoff: a disjoint read-set means the operation cannot disturb the
   -- predicate.  Decided here at the list level; the theorem above carries it to
   -- states.
-  assertBool "storeObject's writes are disjoint from registryDependencyConsistent's reads"
-    (decide (fieldsDisjoint registryDependencyConsistent_fields
+  assertBool "storeObject's writes are disjoint from registryInterfaceValid's reads"
+    (decide (fieldsDisjoint registryInterfaceValid_fields
                storeObject_modifiedFields = true))
-  assertBool "serviceRegisterDependency's writes are disjoint from noStaleEndpointQueueReferences' reads"
-    (decide (fieldsDisjoint noStaleEndpointQueueReferences_fields
-               serviceRegisterDependency_modifiedFields = true))
   -- NEGATIVE: the revoke clears its endpoint's record of the service, so it
   -- writes `.objects` and is preserved by a proof, not by the frame.
   assertBool "NEGATIVE: revokeService is NOT framed away from the queue-reference invariant"
@@ -591,12 +588,11 @@ private def runModifiedFieldsChecks : IO Unit := do
 
 /-- Elaboration pins for the write-set surface: the completeness theorem that
 holds `StateField` to `SystemState`, and one honesty theorem per declared list —
-five lists, five theorems, the dual-queue and capability composites included. -/
+four lists, the dual-queue and capability composites included. -/
 private def writeSetSurfaceElaborates : Bool :=
   have _ := @SystemState.eq_of_fieldEq_all
   have _ := @storeObject_preservesFieldsOutside
   have _ := @revokeService_preservesFieldsOutside
-  have _ := @serviceRegisterDependency_preservesFieldsOutside
   have _ := @cspaceMintWithCdt_preservesFieldsOutside
   have _ := @cspaceCopy_preservesFieldsOutside
   have _ := @cspaceMove_preservesFieldsOutside

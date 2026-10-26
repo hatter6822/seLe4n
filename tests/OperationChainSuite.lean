@@ -126,31 +126,6 @@ private def chain3MapLookupUnmapLookup : IO Unit := do
   expectErr "chain3: lookup after unmap"
     (SeLe4n.Kernel.Architecture.vspaceLookup asid vaddr st2) .translationFault
 
-private def chain4ServiceRegistryDependencyGraph : IO Unit := do
-  let baseSid : ServiceId := ⟨230⟩
-  let depSid : ServiceId := ⟨231⟩
-  let st0 :=
-    (BootstrapBuilder.empty
-      |>.withObject ⟨500⟩ (.endpoint {})
-      |>.withObject ⟨501⟩ (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
-      |>.withService baseSid {
-          identity := { sid := baseSid, backingObject := ⟨500⟩, owner := ⟨1⟩ }
-          dependencies := []
-          isolatedFrom := [] }
-      |>.withService depSid {
-          identity := { sid := depSid, backingObject := ⟨501⟩, owner := ⟨1⟩ }
-          dependencies := [baseSid]
-          isolatedFrom := [] }
-      |>.buildChecked)
-  -- Q1: Service lifecycle removed — test dependency graph operations
-  expect "chain4: depSid depends on baseSid" ((SeLe4n.Model.lookupService st0 depSid).map ServiceGraphEntry.dependencies = some [baseSid])
-  -- Register a new dependency: depSid → baseSid already exists, add baseSid → depSid to form a cycle rejection
-  expectErr "chain4: cyclic dependency registration rejected"
-    (SeLe4n.Kernel.serviceRegisterDependency baseSid depSid st0) .cyclicDependency
-  -- Self-loop rejection
-  expectErr "chain4: self-loop dependency rejected"
-    (SeLe4n.Kernel.serviceRegisterDependency baseSid baseSid st0) .cyclicDependency
-
 private def chain5CopyMoveDelete : IO Unit := do
   let cnodeId : SeLe4n.ObjId := ⟨240⟩
   let target : SeLe4n.ObjId := ⟨241⟩
@@ -2640,9 +2615,8 @@ private def chain30SyscallServiceOps : IO Unit := do
   | .ok (_, stAfter) =>
     -- Verify service was registered
     -- Verify dispatch reached the serviceRegister handler
-    -- The services map or serviceRegistry should have been modified
+    -- The service registry should have been modified
     let svcFound := stAfter.serviceRegistry.toList.length > 0
-        || stAfter.services.toList.length > 0
     if svcFound then
       IO.println "operation-chain check passed [chain30: serviceRegister dispatch modified state]"
     else
@@ -2749,8 +2723,8 @@ private def chain32SyscallCall : IO Unit := do
     -- Call dispatch reached but may fail due to IPC state — that's fine
     IO.println s!"operation-chain check passed [chain32: call dispatch reached ({toString err})]"
 
-/-- W5-C: Service lifecycle tests — registerInterface, registerService,
-serviceRegisterDependency, revokeService with success and error paths. -/
+/-- W5-C: Service lifecycle tests — registerInterface, registerService and
+revokeService with success and error paths. -/
 private def chain33ServiceLifecycle : IO Unit := do
   -- OID range: 960-962 (within OperationChainSuite's 200-962 range)
   let epId1 : SeLe4n.ObjId := ⟨960⟩
@@ -2832,48 +2806,17 @@ private def chain33ServiceLifecycle : IO Unit := do
     (st2.tableBackLinksClear epId1 == false)
   -- W5-C-9: Invariant check after registerService
   assertInvariants "chain33: invariants after registerService" st2
-  -- === W5-C-6: serviceRegisterDependency acyclic path ===
-  -- Register second service for dependency testing
+  -- A second registration on its own endpoint, so the revocation below is
+  -- checked to leave every other service's record in place.
   let reg2 : ServiceRegistration := { sid := svcId2, iface := iface1, endpointCap := epCap2 }
-  let (_, st3) ← expectOkSt "chain33: registerService svc2"
+  let (_, st4) ← expectOkSt "chain33: registerService svc2"
     (SeLe4n.Kernel.registerService reg2 st2)
-  -- Need service graph entries for dependency operations
-  let st3b := { st3 with
-    services := SeLe4n.Kernel.RobinHood.RHTable.ofList [
-      (svcId1, { identity := { sid := svcId1, backingObject := epId1, owner := ⟨1⟩ }
-                 dependencies := [], isolatedFrom := [] }),
-      (svcId2, { identity := { sid := svcId2, backingObject := epId2, owner := ⟨1⟩ }
-                 dependencies := [], isolatedFrom := [] })
-    ] }
-  let (_, st4) ← expectOkSt "chain33: dependency svc1 -> svc2"
-    (SeLe4n.Kernel.serviceRegisterDependency svcId1 svcId2 st3b)
-  -- Verify dependency was recorded
-  match SeLe4n.Model.lookupService st4 svcId1 with
-  | some entry =>
-    expect "chain33: svc1 depends on svc2" (entry.dependencies.any (· == svcId2))
-  | none => throw <| IO.userError "chain33: svc1 not found after dependency registration"
-  -- === W5-C-7: serviceRegisterDependency cycle rejection ===
-  expectErr "chain33: cyclic dependency svc2 -> svc1"
-    (SeLe4n.Kernel.serviceRegisterDependency svcId2 svcId1 st4) .cyclicDependency
-  -- Nonexistent source service
-  expectErr "chain33: dependency from nonexistent service"
-    (SeLe4n.Kernel.serviceRegisterDependency svcIdMissing svcId1 st4) .objectNotFound
-  -- Nonexistent target service
-  expectErr "chain33: dependency to nonexistent service"
-    (SeLe4n.Kernel.serviceRegisterDependency svcId1 svcIdMissing st4) .objectNotFound
-  -- W5-C-9: Invariant check after dependency registration
-  assertInvariants "chain33: invariants after dependency registration" st4
+  assertInvariants "chain33: invariants after second registerService" st4
   -- === W5-C-8: revokeService success ===
   let (_, st5) ← expectOkSt "chain33: revokeService svc1"
     (SeLe4n.Kernel.revokeService svcId1 st4)
   expect "chain33: svc1 removed from registry" (st5.serviceRegistry[svcId1]? == none)
-  -- Verify dependency edges cleaned
-  match SeLe4n.Model.lookupService st5 svcId2 with
-  | some entry =>
-    expect "chain33: svc2 no longer has svc1 dep" (!entry.dependencies.any (· == svcId1))
-  | none => pure ()  -- svc2 graph entry may also be gone after removeDependenciesOf
-  -- Verify svc1 is also removed from services dependency graph
-  expect "chain33: svc1 removed from services graph" (SeLe4n.Model.lookupService st5 svcId1 == none)
+  expect "chain33: svc2 still registered" (st5.serviceRegistry[svcId2]? != none)
   -- revokeService on nonexistent
   expectErr "chain33: revokeService nonexistent"
     (SeLe4n.Kernel.revokeService svcIdMissing st5) .objectNotFound
@@ -2950,7 +2893,6 @@ private def runOperationChainSuite : IO Unit := do
   chain1CarveMintRevoke
   chain2SendSendReceiveFifo
   chain3MapLookupUnmapLookup
-  chain4ServiceRegistryDependencyGraph
   chain5CopyMoveDelete
   chain5bLeafDeleteReclaimsNode
   chain5cCNodeRetypeReclaimsNodes

@@ -9,13 +9,12 @@
 
 -- STATUS: staged for WS-SM SM0.C (inventory build-anchor; closes SMP-H3)
 -- WS-SM SM0.C: SMP-latent inventory build-anchor.  Imports cover every
--- module that owns one of the 8 `smpLatentInventory` entry references
+-- module that owns one of the 7 `smpLatentInventory` entry references
 -- (both the `identifier` and `sourceTheorem` projections).
 import SeLe4n.Kernel.Concurrency.Assumptions
 import SeLe4n.Kernel.Capability.Operations
 import SeLe4n.Kernel.Capability.Invariant.Preservation.CopyMoveMutate
 import SeLe4n.Kernel.Lifecycle.Operations.CleanupPreservation
-import SeLe4n.Kernel.Service.Operations
 import SeLe4n.Kernel.Scheduler.Operations.Core
 import SeLe4n.Kernel.Scheduler.Invariant
 import SeLe4n.Kernel.CrossSubsystem
@@ -25,7 +24,7 @@ import SeLe4n.Platform.Boot
 /-!
 # WS-SM SM0.C — AN12-B inventory build-time anchors (closes SMP-H3)
 
-The `smpLatentInventory` in `Concurrency.Assumptions` carries 8
+The `smpLatentInventory` in `Concurrency.Assumptions` carries 7
 entries, each pointing at two named symbols — the `identifier` of
 the kernel site and the `sourceTheorem` that anchors its
 single-core/SMP correspondence.  The names are stored as
@@ -35,16 +34,15 @@ would silently leave a dangling inventory entry.
 
 This module closes the gap audit-finding **SMP-H3** raised by
 forcing every named symbol to be `@`-referenced at elaboration.
-The build-anchor `example` below carries, in total, **24
+The build-anchor `example` below carries, in total, **23
 `@`-references plus 1 `ArchAssumption` constructor witness**:
 
-* **12** for the `smpLatentInventory` entries — the `identifier`
-  and `sourceTheorem` of all 8 (several entries share a
+* **11** for the `smpLatentInventory` entries — the `identifier`
+  and `sourceTheorem` of all 7 (several entries share a
   sourceTheorem name with their identifier — e.g.,
-  `lifecyclePreRetypeCleanup`, `serviceHasPathTo`,
-  `typedIdDisjointness`).  **WS-SM SM4.E** repointed two of these:
-  entry 7's sourceTheorem is now
-  `Platform.Boot.bootFromPlatform_smp_witness` and entry 8's is
+  `lifecyclePreRetypeCleanup`, `typedIdDisjointness`).  **WS-SM SM4.E**
+  repointed two of these: entry 6's sourceTheorem is now
+  `Platform.Boot.bootFromPlatform_smp_witness` and entry 7's is
   `Platform.Boot.bootFromPlatform_smp_currentAllNone` (the retired
   `bootFromPlatform_singleCore_witness` and the no-longer-cited
   `architecture_assumptions_index` are dropped here).
@@ -61,7 +59,10 @@ The build-anchor `example` below carries, in total, **24
   `_anchor_nodup` / `_pathARetired_count` /
   `_perCoreBracketGated_count`).  The ledger's per-entry
   `identifier` / `retiredBy` names mirror the latent inventory, so
-  they are already covered by the 12 above.
+  they are already covered by the 11 above.
+
+WS-ZA ZA5.4 part 32 removed the service graph's reachability walk and its
+inventory entry with it.
 
 If any anchored symbol is renamed without updating the inventory,
 the corresponding `@`-reference fails to elaborate and the build
@@ -80,7 +81,7 @@ The `let _ := @symbol` pattern forces Lean to resolve each name at
 elaboration; a renamed symbol becomes "unknown identifier", failing
 the build.
 
-For each of the 8 inventory entries, the references are listed in
+For each of the 7 inventory entries, the references are listed in
 order matching `Concurrency.Assumptions.smpLatentInventory`. -/
 example : True := by
   -- Entry 1: cspaceLookupMultiLevel_smpLatent (H-05 / AN4-D)
@@ -91,25 +92,23 @@ example : True := by
   let _ := @SeLe4n.Kernel.cspaceCopy_preserves_capabilityInvariantBundle
   -- Entry 3: lifecyclePreRetypeCleanup_smpLatent (C-M04 / AN9-D)
   let _ := @SeLe4n.Kernel.lifecyclePreRetypeCleanup
-  -- Entry 4: serviceHasPathTo_smpLatent (SVC-M01 / AN4-H)
-  let _ := @SeLe4n.Kernel.serviceHasPathTo
-  -- Entry 5: timerTickReplenishmentPipeline_smpLatent (AK2-K / AN5-D)
+  -- Entry 4: timerTickReplenishmentPipeline_smpLatent (AK2-K / AN5-D)
   let _ := @SeLe4n.Kernel.timerTickWithBudget
   let _ := @SeLe4n.Kernel.replenishmentPipelineOrder
-  -- Entry 6: typedIdDisjointness_smpLatent (H-10 / AN2-D)
+  -- Entry 5: typedIdDisjointness_smpLatent (H-10 / AN2-D)
   let _ := @SeLe4n.Kernel.typedIdDisjointness
-  -- Entry 7: architecture_singleCoreOnly_smpLatent (AG-* / AN12-B / SM4.E.3)
+  -- Entry 6: architecture_singleCoreOnly_smpLatent (AG-* / AN12-B / SM4.E.3)
   -- `ArchAssumption` is an inductive type, not a function, so we
   -- reference it via an instance projection rather than `@`.
   let _ : SeLe4n.Kernel.Architecture.ArchAssumption :=
     SeLe4n.Kernel.Architecture.ArchAssumption.singleCoreOperation
-  -- SM4.E.3: entry 7's sourceTheorem is now the per-core SMP witness
+  -- SM4.E.3: entry 6's sourceTheorem is now the per-core SMP witness
   -- (was `architecture_assumptions_index` before SM4.E retired the
   -- single-core boot witness).
   let _ := @SeLe4n.Platform.Boot.bootFromPlatform_smp_witness
-  -- Entry 8: bootFromPlatform_currentCore_is_zero_smpLatent (CX-M03 / AN6-F / SM4.E.4)
+  -- Entry 7: bootFromPlatform_currentCore_is_zero_smpLatent (CX-M03 / AN6-F / SM4.E.4)
   let _ := @SeLe4n.Platform.Boot.bootFromPlatform
-  -- SM4.E.4: entry 8's sourceTheorem is now the substantive per-core
+  -- SM4.E.4: entry 7's sourceTheorem is now the substantive per-core
   -- boot-current witness (was the retired `bootFromPlatform_singleCore_witness`).
   let _ := @SeLe4n.Platform.Boot.bootFromPlatform_smp_currentAllNone
   -- WS-SM SM0.B: surface-anchor the new SMP-H2 closure theorems

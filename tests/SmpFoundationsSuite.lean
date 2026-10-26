@@ -306,10 +306,10 @@ example : SeLe4n.Kernel.Architecture.ArchAssumption.singleCoreOperation
           ∈ SeLe4n.Kernel.Architecture.assumptionInventory := by decide
 
 -- §2.8 — SMP-latent inventory size + NoDup
-example : SeLe4n.Kernel.Concurrency.smpLatentInventory.length = 8 := by decide
+example : SeLe4n.Kernel.Concurrency.smpLatentInventory.length = 7 := by decide
 
 -- §2.8b — SM4.E retirement ledger: size + path-a disposition + latent mirror
-example : SeLe4n.Kernel.Concurrency.smpRetiredInventory.length = 8 := by decide
+example : SeLe4n.Kernel.Concurrency.smpRetiredInventory.length = 7 := by decide
 example : (SeLe4n.Kernel.Concurrency.smpRetiredInventory.filter
             (fun e => decide (e.status = .pathARetired))).length = 2 := by decide
 example : SeLe4n.Kernel.Concurrency.smpRetiredInventory.map (·.identifier) =
@@ -555,19 +555,19 @@ private def runArchAssumptionChecks : IO Unit := do
 
 private def runSmpInventoryChecks : IO Unit := do
   IO.println "--- §2.8 SMP-latent inventory ---"
-  assertBool "smpLatentInventory.length = 8"
-    (decide (SeLe4n.Kernel.Concurrency.smpLatentInventory.length = 8))
+  assertBool "smpLatentInventory.length = 7"
+    (decide (SeLe4n.Kernel.Concurrency.smpLatentInventory.length = 7))
   IO.println "--- §2.8b SM4.E retirement ledger ---"
-  assertBool "smpRetiredInventory.length = 8"
-    (decide (SeLe4n.Kernel.Concurrency.smpRetiredInventory.length = 8))
+  assertBool "smpRetiredInventory.length = 7"
+    (decide (SeLe4n.Kernel.Concurrency.smpRetiredInventory.length = 7))
   -- Honest disposition: exactly 2 entries (scheduler-state shape + boot-core
-  -- current) are genuinely retired by SM4 path-a; the other 6 stay gated.
+  -- current) are genuinely retired by SM4 path-a; the other 5 stay gated.
   assertBool "smpRetiredInventory path-a-retired count = 2"
     (decide ((SeLe4n.Kernel.Concurrency.smpRetiredInventory.filter
                (fun e => decide (e.status = .pathARetired))).length = 2))
-  assertBool "smpRetiredInventory per-core-bracket-gated count = 6"
+  assertBool "smpRetiredInventory per-core-bracket-gated count = 5"
     (decide ((SeLe4n.Kernel.Concurrency.smpRetiredInventory.filter
-               (fun e => decide (e.status = .perCoreBracketGated))).length = 6))
+               (fun e => decide (e.status = .perCoreBracketGated))).length = 5))
   -- The ledger mirrors the latent inventory one-to-one by identifier.
   assertBool "smpRetiredInventory covers smpLatentInventory (by identifier)"
     (decide (SeLe4n.Kernel.Concurrency.smpRetiredInventory.map (·.identifier) =

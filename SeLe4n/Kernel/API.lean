@@ -6457,7 +6457,7 @@ is dischargeable per-dispatch-arm using existing subsystem preservation theorems
 - CSpace mint/copy/move/delete: `Capability/Invariant/Preservation.lean`
 - Untyped carve: `Lifecycle/Operations/ScrubAndUntyped.lean`
 - VSpace map/unmap: `Architecture/VSpaceInvariant.lean`
-- Service start/stop: `Service/Invariant/Policy.lean`
+- Service register/revoke: `Service/Registry/Invariant.lean`
 - IPC send/call/reply/recv: `IPC/Invariant/EndpointPreservation.lean`
 
 This theorem witnesses that the composition is structurally complete. -/

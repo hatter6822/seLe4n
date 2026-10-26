@@ -157,7 +157,7 @@ boundary.
 |---|---|
 | **Policy-gated** (11) | `endpointSendDualChecked`, `endpointReceiveDualChecked`, `endpointCallChecked` (U5-B), `endpointReplyChecked` (U5-C), `cspaceMintChecked`, `cspaceCopyChecked`, `cspaceMoveChecked`, `notificationSignalChecked`, `registerServiceChecked`, `notificationWaitChecked` (V2-A), `endpointReplyRecvChecked` (V2-C) |
 | **Capability-only** (5) | `cspaceLookupSlot`, `cspaceInsertSlot`, `cspaceDeleteSlot`, `cspaceRevoke`, `storeObject` |
-| **Read-only** (4) | `chooseThread`, `lookupObject`, `lookupService`, `cspaceResolvePath` |
+| **Read-only** (4) | `chooseThread`, `lookupObject`, `lookupServiceByRecordedCode`, `cspaceResolvePath` |
 
 Policy-gated operations cross domain boundaries and carry explicit information-flow
 risk. Capability-only operations derive authority entirely from capability
@@ -243,7 +243,7 @@ def enforcementBoundary : List EnforcementClass :=
   -- Read-only: no state mutation
   , .readOnly "chooseThread"
   , .readOnly "lookupObject"
-  , .readOnly "lookupService"
+  , .readOnly "lookupServiceByRecordedCode"
   , .readOnly "cspaceResolvePath"
   -- Internal/lifecycle: building blocks used under capability-guarded contexts
   , .capabilityOnly "storeObject"
@@ -408,7 +408,7 @@ def syscallIdToEnforcementName : SyscallId → String
   | .vspaceUnmap => "vspaceUnmapPageWithShootdown"
   | .serviceRegister => "registerServiceChecked"
   | .serviceRevoke => "revokeService"
-  | .serviceQuery => "lookupService"
+  | .serviceQuery => "lookupServiceByRecordedCode"
   | .notificationSignal => "notificationSignalChecked"
   | .notificationWait => "notificationWaitChecked"
   | .replyRecv => "endpointReplyRecvChecked"
