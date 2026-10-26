@@ -692,6 +692,36 @@ def reply_stashed_survives_final_retire : IO Unit := do
   expect "the same reply is retired once the stash clears"
     (retired.objects[rid.toObjId]?.isNone)
 
+/-- `v0.36.142` (WS-ZA ZA5.4 part 29, the scheduling context's own-link
+retire): **a scheduling context is retired on its own links**.  The retire reads
+the context alone — bound to no thread, lent from none, heading no reply stack —
+with no walk of the object table or the replenishment queues: a context naming
+its bound thread outlives its last capability, a context heading a reply stack
+does too, and a context with none of those links is retired. -/
+def schedContext_retired_on_own_links : IO Unit := do
+  let core := SeLe4n.Kernel.Concurrency.bootCoreId
+  let scId : SeLe4n.SchedContextId := ⟨520⟩
+  let fresh : SeLe4n.Kernel.SchedContext :=
+    { scId := scId, budget := ⟨1⟩, period := ⟨1⟩, priority := ⟨0⟩, deadline := ⟨0⟩,
+      domain := ⟨0⟩, budgetRemaining := ⟨1⟩ }
+  let holder : TCB :=
+    { tid := ⟨521⟩, priority := ⟨0⟩, domain := ⟨0⟩,
+      spaceCells := SeLe4n.Model.TCB.spaceCellsOf ⟨0⟩ ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0,
+      scBindingScCode := scId.val + 1 }
+  let stOf (t : TCB) (sc : SeLe4n.Kernel.SchedContext) : SystemState :=
+    (SeLe4n.Testing.BootstrapBuilder.empty |>.withObject ⟨521⟩ (.tcb t)
+      |>.withObject scId.toObjId (.schedContext sc) |>.build)
+  let retire (st : SystemState) :=
+    SeLe4n.Kernel.retireFinalObject core (scId.toObjId.val + 1) 0 st
+  let bound := { fresh with boundThreadCode := SeLe4n.ThreadId.optCode (some ⟨521⟩) }
+  expect "a context naming its bound thread survives its final delete's retire"
+    ((retire (stOf holder bound)).objects[scId.toObjId]?.isSome)
+  let heading := { fresh with scReply := some ⟨522⟩ }
+  expect "a context heading a reply stack survives its final delete's retire"
+    ((retire (stOf { holder with scBindingScCode := 0 } heading)).objects[scId.toObjId]?.isSome)
+  expect "a context with no link of its own, named by no thread, is retired"
+    ((retire (stOf { holder with scBindingScCode := 0 } fresh)).objects[scId.toObjId]?.isNone)
+
 /-- WS-SM SM6.D (PR #822 review): the server-first reply stash is **injective** —
 the 17th `ipcInvariantFull` conjunct (`pendingReceiveReplyWellFormed`) now requires
 no two blocked receivers to stash the same Reply id.  Operationally this is the
@@ -2235,6 +2265,7 @@ def main : IO Unit := do
   -- WS-SM SM6.D (PR #822 review): in-use Reply retype rejected, free Reply allowed
   reply_inUse_retype_rejected
   reply_stashed_survives_final_retire
+  schedContext_retired_on_own_links
   pendingReceiveReply_stash_injective
   replyStash_validated_against_preBlock_state
   mintReplyCap_derives_backed_reply_cap
