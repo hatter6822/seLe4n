@@ -679,10 +679,7 @@ theorem lifecyclePreRetypeCleanup_confinedToCores
     · injection hOk with hOk; subst hOk; exact hDetach
   | endpoint _ =>
     simp only [lifecyclePreRetypeCleanup, preRetypeCleanupWriteSetOf] at hOk ⊢
-    injection hOk with hOk; subst hOk
-    exact observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
-      (cleanupEndpointServiceRegistrations_scheduler_eq st target)
-      (cleanupEndpointServiceRegistrations_machine_eq st target)
+    injection hOk with hOk; subst hOk; exact observableSlotsConfinedToCores_refl _ _
   | reply _ =>
     simp only [lifecyclePreRetypeCleanup, preRetypeCleanupWriteSetOf] at hOk ⊢
     split at hOk

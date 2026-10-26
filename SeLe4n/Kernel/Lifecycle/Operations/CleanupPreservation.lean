@@ -1837,8 +1837,8 @@ theorem detachTcbSlots_tlbShootdown_eq (st : SystemState) (tcbId : SeLe4n.ObjId)
       reservation the way the suspend's G3 does (`cancelDonationArmOnCore`,
       since `v0.35.164`), then clean up scheduler + IPC references and splice
       its two space slots out of the derivation tree (`detachTcbSlots`).
-    - If the current object is an endpoint: revoke service registrations
-      backed by this endpoint to preserve `registryEndpointValid`.
+    - An endpoint is not swept: no registration names one whose back-links
+      the retire found clear (`SystemState.tableReferencesRecorded.notTargeted`).
     - If the current object is a CNode: refuse when a slot still records a
       frame mapping or names an installed page table, and otherwise take every
       slot out of the derivation tree as a delete does.  Retype destroys every
@@ -1894,10 +1894,10 @@ def lifecyclePreRetypeCleanup (st : SystemState) (target : SeLe4n.ObjId)
   let st := match currentObj with
     | .tcb tcb => detachTcbSlots (cleanupTcbReferences st tcb.tid) target
     | _ => st
-  -- R4-B.2 (M-13): Clean up service registrations for endpoints being retyped
-  let st := match currentObj with
-    | .endpoint _ => cleanupEndpointServiceRegistrations st target
-    | _ => st
+  -- An endpoint needs no registry sweep: the retire admits only an endpoint
+  -- recording no registration (`SystemState.tableBackLinksClear`), and on a
+  -- state that records its table references no registration then names it
+  -- (`SystemState.tableReferencesRecorded.notTargeted`, WS-ZA ZA5.4 part 31).
   match currentObj with
   | .cnode cn =>
     -- **Retype destroys every slot this CNode holds, so it owes what
@@ -2123,13 +2123,12 @@ to carry the `cleanupHookDischarged` witness; under WS-RC R4.B that
 witness now demands a `ScrubToken` produced by a successful invocation
 of this very pipeline (see `ScrubToken.fromCleanup`). External
 discharge of the predicate by re-deriving observable post-state facts
-alone is structurally impossible. The wrapper composes the four
+alone is structurally impossible. The wrapper composes the three
 per-step primitives:
 
 1. `cleanupDonatedSchedContext` (return donated SC before destroying TCB)
 2. `cleanupTcbReferences` (scheduler + IPC reference scrub)
-3. `cleanupEndpointServiceRegistrations` (service-endpoint detachment)
-4. `detachCNodeSlots` (CDT slot-level detachment)
+3. `detachCNodeSlots` (CDT slot-level detachment)
 
 into a single named entry-point so consumers can reference the pipeline by
 name rather than enumerating its steps. The per-step helpers remain public
@@ -2281,8 +2280,7 @@ theorem lifecyclePreRetypeCleanup_flat_subset
       exact h
   | endpoint _ =>
     simp only [lifecyclePreRetypeCleanup] at hOk
-    injection hOk with hOk; subst hOk
-    rw [cleanupEndpointServiceRegistrations_scheduler_eq] at h; exact h
+    injection hOk with hOk; subst hOk; exact h
   | notification _ =>
     simp only [lifecyclePreRetypeCleanup] at hOk
     injection hOk with hOk; subst hOk; exact h
@@ -2357,8 +2355,7 @@ theorem lifecyclePreRetypeCleanup_tlbShootdown_eq
       exact detachCNodeSlots_tlbShootdown_eq st target cn
   | endpoint _ =>
     simp only [lifecyclePreRetypeCleanup] at hOk
-    injection hOk with hOk; subst hOk
-    exact cleanupEndpointServiceRegistrations_tlbShootdown_eq st target
+    injection hOk with hOk; subst hOk; rfl
   | notification _ =>
     simp only [lifecyclePreRetypeCleanup] at hOk
     injection hOk with hOk; subst hOk; rfl
@@ -3297,6 +3294,7 @@ theorem returnDonatedSchedContext_runQueueStage {st st' : SystemState}
     (fun hInv => SystemState.StateMono.of_stateFields
       (returnDonatedSchedContext_getTcb?_stateFields_eq st st' serverTid scId originalOwner
         hInv newOwner? h))
+    (fun hInv => returnDonatedSchedContext_tableReferenceFrame hInv h)
     (by rw [hS])
 
 theorem returnDonatedSchedContextResolved_runQueueStage {st st' : SystemState}
@@ -3361,6 +3359,7 @@ theorem cancelBoundDonationOnCore_runQueueStage {st st' : SystemState}
         (SystemState.updateSchedContext_getTcb? st scId _ hInv x)
     · exact fun hInv => SystemState.StateMono.of_getTcb
         (SystemState.updateSchedContext_getTcb? st scId _ hInv)
+    · exact SystemState.TableReferenceFrame.updateSchedContext st scId _
     · show (st.updateSchedContext scId _).scheduler.currentCode = _
       rw [hU]
   · cases h

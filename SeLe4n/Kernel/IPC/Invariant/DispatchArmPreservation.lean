@@ -4710,11 +4710,8 @@ theorem lifecyclePreRetypeCleanup_detached_frame
         obtain ⟨cdt, hReach⟩ := detachTcbSlots_shape st target
         exact ⟨{ st with cdt := cdt }, rfl, rfl, rfl, hReach⟩
   | endpoint ep =>
-      simp only [] at hStep
       cases hStep
-      exact ⟨_, cleanupEndpointServiceRegistrations_objects_eq st target,
-        cleanupEndpointServiceRegistrations_scheduler_eq st target,
-        by rw [cleanupEndpointServiceRegistrations_machine_eq st target], .refl _⟩
+      exact ⟨_, rfl, rfl, rfl, .refl _⟩
   | cnode cn =>
       simp only [] at hStep
       split at hStep

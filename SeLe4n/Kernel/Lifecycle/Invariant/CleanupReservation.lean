@@ -284,15 +284,12 @@ theorem lifecyclePreRetypeCleanup_preserves_replenishQueueAffinityConsistent_smp
               cases (cleanupTcbReferences stArm tcb.tid).getTcb? tid <;>
               simp_all)).mpr (hS c)
   | endpoint ep =>
-    -- The service-registry revoke writes no object and no scheduler state.
+    -- An endpoint is not swept: the state is the one the arm found.
     subst hC
     simp only at h
     injection h with h
     subst h
-    exact (replenishQueueAffinityConsistent_smp_frame
-      (st := st) (st' := cleanupEndpointServiceRegistrations st target)
-      (fun c => by rw [cleanupEndpointServiceRegistrations_scheduler_eq])
-      (cleanupEndpointServiceRegistrations_objects_eq st target)).mpr hCons
+    exact hCons
   | cnode cn =>
     -- The CDT detach writes no object and no scheduler state.
     subst hC
@@ -573,13 +570,12 @@ theorem lifecyclePreRetypeCleanup_preserves_schedContextBindingConsistent
           (fun tid => TCB.map_proj_of_map_withoutLinks_eq _ (hA.getTcb? tid))
           (fun scId => by rw [hA.getSchedContext? scId]) hS
   | endpoint ep =>
-    -- The service-registry revoke writes no object.
+    -- An endpoint is not swept: the state is the one the arm found.
     subst hC
     simp only at h
     injection h with h
     subst h
-    exact schedContextBindingConsistent_of_objects_eq
-      (cleanupEndpointServiceRegistrations_objects_eq st target) hCons
+    exact hCons
   | cnode cn =>
     -- The CDT detach writes no object.
     subst hC
@@ -775,7 +771,7 @@ theorem lifecyclePreRetypeCleanup_preserves_objects_invExt
             (cancelDonationArmOnCore_preserves_objects_invExt st stArm tcb.tid tcb hInv hArm)) target).2
   | endpoint ep =>
     subst hC; simp only at h; injection h with h; subst h
-    rw [cleanupEndpointServiceRegistrations_objects_eq]; exact hInv
+    exact hInv
   | cnode cn =>
     subst hC; simp only at h
     split at h
@@ -892,8 +888,7 @@ theorem lifecyclePreRetypeCleanup_targetUnpaired
   | schedContext sc => exact absurd hC (hNotSc sc)
   | endpoint ep =>
     subst hC; simp only at h; injection h with h; subst h
-    exact retypeTargetUnpaired_of_objects_eq
-      (cleanupEndpointServiceRegistrations_objects_eq st target)
+    exact retypeTargetUnpaired_of_objects_eq rfl
       ⟨fun t hT => by rw [hStored] at hT; exact absurd hT (by simp),
        fun s0 hS => by rw [hStored] at hS; exact absurd hS (by simp)⟩
   | cnode cn =>

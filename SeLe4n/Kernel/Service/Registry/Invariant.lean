@@ -210,84 +210,6 @@ theorem revokeService_preserves_registryInvariant
    revokeService_preserves_registryInterfaceValid st st' sid hStep hInv.2 hSvcK⟩
 
 -- ============================================================================
--- T5-G (L-NEW-2): cleanupEndpointServiceRegistrations preservation
--- ============================================================================
-
-/-- T5-G (L-NEW-2): After filtering service registrations by endpoint ID,
-    remaining registrations still have valid endpoint references.
-
-    The proof uses `RHTable.filter_get_subset` to show that any registration
-    surviving the filter was present in the original state, and then
-    `cleanupEndpointServiceRegistrations_objects_eq` to show the backing
-    object still exists. -/
-theorem cleanupEndpointServiceRegistrations_preserves_registryEndpointValid
-    (st : SystemState) (epId : SeLe4n.ObjId)
-    (hInv : registryEndpointValid st)
-    (hSvcRegInv : st.serviceRegistry.invExt) :
-    registryEndpointValid (cleanupEndpointServiceRegistrations st epId) := by
-  intro sid reg hLookup
-  have hObjEq := cleanupEndpointServiceRegistrations_objects_eq st epId
-  -- Step 1: The result's serviceRegistry is the filtered original
-  -- (foldl removeDependenciesOf preserves serviceRegistry)
-  have hSvcRegResult : (cleanupEndpointServiceRegistrations st epId).serviceRegistry =
-      (st.serviceRegistry.filter fun _sid reg' =>
-        match reg'.endpointCap.target with
-        | .object id => !(id == epId)
-        | _ => true) := by
-    unfold cleanupEndpointServiceRegistrations
-    exact foldl_removeDependenciesOf_serviceRegistry_eq _ _
-  -- Step 2: Rewrite lookup using the serviceRegistry equality
-  rw [RHTable_getElem?_eq_get?] at hLookup
-  rw [hSvcRegResult] at hLookup
-  -- Step 3: Any entry in the filtered table was in the original
-  have hOrig := RHTable.filter_get_subset st.serviceRegistry _ sid reg hSvcRegInv hLookup
-  rw [← RHTable_getElem?_eq_get?] at hOrig
-  -- Step 4: Original invariant gives us a valid endpoint
-  rcases hInv sid reg hOrig with ⟨epId', hTarget, hExists⟩
-  exact ⟨epId', hTarget, hObjEq ▸ hExists⟩
-
-/-- U4-I (U-M06): After filtering service registrations by endpoint ID,
-    remaining registrations still reference known interface specifications.
-
-    The proof follows the same structure as `_preserves_registryEndpointValid`:
-    any registration surviving the filter was in the original state, and the
-    `interfaceRegistry` is unchanged by `cleanupEndpointServiceRegistrations`,
-    so the original invariant applies directly. -/
-theorem cleanupEndpointServiceRegistrations_preserves_registryInterfaceValid
-    (st : SystemState) (epId : SeLe4n.ObjId)
-    (hInv : registryInterfaceValid st)
-    (hSvcRegInv : st.serviceRegistry.invExt) :
-    registryInterfaceValid (cleanupEndpointServiceRegistrations st epId) := by
-  intro sid reg hLookup
-  have hIfaceEq := cleanupEndpointServiceRegistrations_interfaceRegistry_eq st epId
-  -- Step 1: The result's serviceRegistry is the filtered original
-  have hSvcRegResult : (cleanupEndpointServiceRegistrations st epId).serviceRegistry =
-      (st.serviceRegistry.filter fun _sid reg' =>
-        match reg'.endpointCap.target with
-        | .object id => !(id == epId)
-        | _ => true) := by
-    unfold cleanupEndpointServiceRegistrations
-    exact foldl_removeDependenciesOf_serviceRegistry_eq _ _
-  -- Step 2: Rewrite lookup using the serviceRegistry equality
-  rw [RHTable_getElem?_eq_get?] at hLookup
-  rw [hSvcRegResult] at hLookup
-  -- Step 3: Any entry in the filtered table was in the original
-  have hOrig := RHTable.filter_get_subset st.serviceRegistry _ sid reg hSvcRegInv hLookup
-  rw [← RHTable_getElem?_eq_get?] at hOrig
-  -- Step 4: Original invariant gives us a valid interface
-  rcases hInv sid reg hOrig with ⟨spec, hSpec⟩
-  exact ⟨spec, hIfaceEq ▸ hSpec⟩
-
-/-- U4-I (U-M06): cleanupEndpointServiceRegistrations preserves the full registryInvariant. -/
-theorem cleanupEndpointServiceRegistrations_preserves_registryInvariant
-    (st : SystemState) (epId : SeLe4n.ObjId)
-    (hInv : registryInvariant st)
-    (hSvcRegInv : st.serviceRegistry.invExt) :
-    registryInvariant (cleanupEndpointServiceRegistrations st epId) :=
-  ⟨cleanupEndpointServiceRegistrations_preserves_registryEndpointValid st epId hInv.1 hSvcRegInv,
-   cleanupEndpointServiceRegistrations_preserves_registryInterfaceValid st epId hInv.2 hSvcRegInv⟩
-
--- ============================================================================
 -- AE5-B (U-20): registryEndpointUnique invariant
 -- ============================================================================
 
@@ -386,30 +308,6 @@ theorem revokeService_preserves_registryEndpointUnique
     · exact hInv sid₁ sid₂ reg₁ reg₂ epId
         (by simp only [RHTable_getElem?_eq_get?]; exact h₁)
         (by simp only [RHTable_getElem?_eq_get?]; exact h₂) ht₁ ht₂
-
-/-- AE5-B: `cleanupEndpointServiceRegistrations` preserves `registryEndpointUnique`.
-    Filtering out registrations preserves the uniqueness property — surviving
-    registrations were in the original state and satisfied uniqueness there. -/
-theorem cleanupEndpointServiceRegistrations_preserves_registryEndpointUnique
-    (st : SystemState) (epId : SeLe4n.ObjId)
-    (hInv : registryEndpointUnique st)
-    (hSvcRegInv : st.serviceRegistry.invExt) :
-    registryEndpointUnique (cleanupEndpointServiceRegistrations st epId) := by
-  intro sid₁ sid₂ reg₁ reg₂ epId' h₁ h₂ ht₁ ht₂
-  have hSvcRegResult : (cleanupEndpointServiceRegistrations st epId).serviceRegistry =
-      (st.serviceRegistry.filter fun _sid reg' =>
-        match reg'.endpointCap.target with
-        | .object id => !(id == epId)
-        | _ => true) := by
-    unfold cleanupEndpointServiceRegistrations
-    exact foldl_removeDependenciesOf_serviceRegistry_eq _ _
-  rw [RHTable_getElem?_eq_get?] at h₁; rw [hSvcRegResult] at h₁
-  rw [RHTable_getElem?_eq_get?] at h₂; rw [hSvcRegResult] at h₂
-  have hOrig₁ := RHTable.filter_get_subset st.serviceRegistry _ sid₁ reg₁ hSvcRegInv h₁
-  have hOrig₂ := RHTable.filter_get_subset st.serviceRegistry _ sid₂ reg₂ hSvcRegInv h₂
-  rw [← RHTable_getElem?_eq_get?] at hOrig₁
-  rw [← RHTable_getElem?_eq_get?] at hOrig₂
-  exact hInv sid₁ sid₂ reg₁ reg₂ epId' hOrig₁ hOrig₂ ht₁ ht₂
 
 -- ============================================================================
 -- WS-ZA ZA5.4 part 30: the registrations recorded on their endpoints
@@ -590,5 +488,106 @@ theorem registryEndpointUnique_of_tableReferencesRecorded {st : SystemState}
   rw [ht₂] at he₂; cases he₂
   rw [hc₁] at hc₂
   exact serviceId_eq_of_val hc₂
+
+
+/-- The specification's fold body: the first registration naming `epId`. -/
+private abbrev lookupServiceStep (epId : SeLe4n.ObjId) :
+    Option ServiceRegistration → ServiceId → ServiceRegistration → Option ServiceRegistration :=
+  fun acc _ reg =>
+    match acc with
+    | some _ => acc
+    | none =>
+      match reg.endpointCap.target with
+      | .object id => if id == epId then some reg else none
+      | _ => none
+
+/-- The specification's fold answers only with a registration naming `epId`. -/
+private theorem lookupServiceFold_sound (st : SystemState) (epId : SeLe4n.ObjId)
+    (hExt : st.serviceRegistry.invExt) :
+    ∀ reg, st.serviceRegistry.fold (init := none) (lookupServiceStep epId) = some reg →
+      ∃ sid : ServiceId, st.serviceRegistry[sid]? = some reg ∧ reg.endpointCap.target = .object epId := by
+  refine RHTable.fold_preserves_of_lookup st.serviceRegistry none (lookupServiceStep epId)
+    (fun acc => ∀ reg, acc = some reg →
+      ∃ sid : ServiceId, st.serviceRegistry[sid]? = some reg ∧ reg.endpointCap.target = .object epId)
+    hExt (fun _ h => by cases h) ?_
+  intro acc k v hk hAcc reg hEq
+  cases acc with
+  | some r => exact hAcc reg hEq
+  | none =>
+    simp only [lookupServiceStep] at hEq
+    split at hEq
+    · rename_i id hT
+      by_cases hId : id = epId
+      · subst hId; simp at hEq; subst hEq; exact ⟨k, hk, hT⟩
+      · simp [hId] at hEq
+    · cases hEq
+
+/-- The specification's fold answers whenever a registration names `epId`. -/
+private theorem lookupServiceFold_complete (st : SystemState) (epId : SeLe4n.ObjId)
+    (hExt : st.serviceRegistry.invExt) (sid : ServiceId) (reg : ServiceRegistration)
+    (hs : st.serviceRegistry[sid]? = some reg) (hT : reg.endpointCap.target = .object epId) :
+    st.serviceRegistry.fold (init := none) (lookupServiceStep epId) ≠ none := by
+  have hQ := RHTable.fold_pointwise st.serviceRegistry none (lookupServiceStep epId)
+    (fun _ _ => True) (fun k acc => k = sid → acc ≠ none) hExt (fun _ => trivial)
+    (fun _ _ _ _ _ _ => trivial) ?_ ?_ sid reg hs
+  · exact hQ rfl
+  · intro acc k v hk _ hKs
+    subst hKs
+    have hv : v = reg := by
+      have h1 : st.serviceRegistry[k]? = some v := hk
+      rw [hs] at h1; exact (Option.some.inj h1).symm
+    subst hv
+    cases acc with
+    | some r => simp [lookupServiceStep]
+    | none => simp [lookupServiceStep, hT]
+  · intro acc k _ _ _ hAcc hKs
+    cases acc with
+    | some r => simp [lookupServiceStep]
+    | none => exact absurd rfl (hAcc hKs)
+
+
+/-- **The O(1) service lookup is the specification wherever the table
+references are recorded.**  A registration naming the endpoint records its
+code there (`registry`), and the code names that registration
+(`serviceCodes`), so reading the endpoint's code finds what the fold over the
+registry finds — and finds nothing exactly when the fold finds nothing. -/
+theorem lookupServiceByRecordedCode_eq_lookupServiceByCap {st : SystemState}
+    (hR : st.tableReferencesRecorded) (epId : SeLe4n.ObjId) :
+    lookupServiceByRecordedCode epId st = lookupServiceByCap epId st := by
+  have hExt : st.serviceRegistry.invExt := RHTable.invExtK_invExt hR.registryInvExtK
+  have hSpec : lookupServiceByCap epId st =
+      (match st.serviceRegistry.fold (init := none) (lookupServiceStep epId) with
+        | some reg => .ok (reg, st)
+        | none => .error .objectNotFound) := rfl
+  rw [hSpec]
+  unfold lookupServiceByRecordedCode
+  simp only [SystemState.getObject?]
+  cases hF : st.serviceRegistry.fold (init := none) (lookupServiceStep epId) with
+  | some reg =>
+    obtain ⟨sid, hs, hT⟩ := lookupServiceFold_sound st epId hExt reg hF
+    obtain ⟨e, he, hc⟩ := hR.registry sid reg hs
+    rw [hT] at he; cases he
+    obtain ⟨ep, hObj, hCode⟩ := objTableBackLinks_code_succ hc
+    simp only [hObj, hCode]
+    exact (show st.serviceRegistry[sid]? = some reg from hs) ▸ rfl
+  | none =>
+    cases hObj : st.objects[epId]? with
+    | none => rfl
+    | some o =>
+      cases o with
+      | endpoint ep =>
+        simp only []
+        cases hc : ep.serviceCode with
+        | zero => rfl
+        | succ n =>
+          simp only []
+          cases hs : st.serviceRegistry[(⟨n⟩ : ServiceId)]? with
+          | none => rfl
+          | some reg =>
+            exfalso
+            obtain ⟨reg', hs', hT'⟩ := hR.serviceCodes epId n (by
+              rw [hObj]; simp [KernelObject.tableBackLinks, hc])
+            exact lookupServiceFold_complete st epId hExt _ reg' hs' hT' hF
+      | _ => rfl
 
 end SeLe4n.Kernel
