@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.141` (`lakefile.toml`) |
+| **Package version** | `0.36.142` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 511,453 across 458 Lean files |
 | **Test LoC** | 87,512 across 70 Lean test suites |
@@ -5148,7 +5148,20 @@ retire reads what the finalisation left off the thread's own links
 the reachable invariants and the scheduling-context binding pair no object names
 such a thread (`threadRetirable.namedByNone` — a queue, run-queue or
 reply-waiter neighbour, a queue end, a notification binding, a reply caller, a
-donation owner or a bound context; since `v0.36.141`).  On a finalised
+donation owner or a bound context; since `v0.36.141`).  A finalised
+scheduling context is retired on its own links (`schedContextRetirable`, since
+`v0.36.142`): bound to no thread, lent from none and heading no reply stack, the
+links seL4's `finaliseCap` clears a context through (`scTCB`, `scReply`), with no
+walk of the object table or the replenishment queues.  What makes those links
+the whole truth is carried along the whole delete chain
+(`schedContextLinkInvariant`: no thread holds a timeout budget, the binding pair,
+and every queued context bound and queued on its holder's home core), kept by
+every finalise step, the slot delete, the page teardown, a thread slot's set and
+the retire, and carried by the finalising delete (`finalisingDeleteBundle`) and
+the capability dispatch's pack (`schedContextLinks`); on such a state no object
+names an admitted context (`schedContextRetirable.tcbNamesNone`,
+`schedContextRetirable.namedByNone`) and no core queues it
+(`schedContextRetirable.replenishQueuedNowhere`).  On a finalised
 scheduling context the cleanup is proven to be the identity
 (`finaliseSchedContextCleanup_eq`), so its compiled form is dropped
 (`@[csimp]`).  The finalisation keeps the IPC,
@@ -5346,9 +5359,12 @@ blocked on an endpoint (`endpointQueueLinksOnlyBlocked`), and every reply
 frame's upward link is answered (`donationChainWellFormed.nextLinkReciprocal`),
 each preserved by every transition and established at boot.  **The own-link
 reads** (`v0.36.141`, plan row 28): the passive kinds and the thread are
-retired on their own fields, as described above.  Still open: the retire walks
-the store for a scheduling context's references (plan row 29) and the service
-registry, the interrupt-handler table and the service graph (plan row 30), and
+retired on their own fields, as described above.  **The scheduling
+context's own-link read** (`v0.36.142`, plan row 29): a context is retired on
+its own links, the scheduling links that answer every other reference to it
+carried along the delete chain, as described above.  Still open: the retire
+walks the service registry, the interrupt-handler table and the service graph
+(plan row 30), and
 the finalise's admission is not carried across its own steps (plan row 31);
 each step and the retire re-check their guards.
 Exerciser: `populated-cnode-delete`, `space-cnode-cap-delete`,

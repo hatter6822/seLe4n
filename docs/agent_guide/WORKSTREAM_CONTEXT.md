@@ -369,9 +369,15 @@ theorem that no object names the admitted one (`namedByNone`, on an
 `ipcReachable` state), so new code that adds a reference by id to an object
 must extend the invariants those theorems read, not a walk.  A reply is retired
 only while no receiver has it stashed (`replyStashedAt`).  The finalise has no
-identity-cleanup step.  The retire still walks the store for a scheduling
-context's references (`storeNamesSchedContextNone`, `replenishQueuesNameNone`;
-plan row 29) and walks the service registry, the interrupt-handler table and
+identity-cleanup step.  Since `v0.36.142` a scheduling context's retire reads
+its own links (`schedContextRetirable`: bound to no thread, lent from none,
+heading no reply stack), answered by the scheduling links the delete chain
+carries (`schedContextLinkInvariant`, inside `finalisingDeleteBundle` and the
+dispatch pack's `schedContextLinks`), so new code on the delete chain must keep
+the timeout budgets clear, the binding pair, and every queued context bound and
+on its holder's home core (one `SchedLinkFrame` for a step that writes none of
+them), and new code that names a context by id must extend those invariants.
+The retire still walks the service registry, the interrupt-handler table and
 the service graph (plan row 30), and the finalise's admission is not yet
 carried across its steps (each step re-checks; plan row 31,
 `docs/REGISTERED_DEBT.md`).  The reply stack's links are reciprocal both ways
