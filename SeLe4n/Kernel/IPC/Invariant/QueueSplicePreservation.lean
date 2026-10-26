@@ -70,6 +70,12 @@ theorem spliceEndpoint_other_heads (isReceiveQ : Bool) (ep : Endpoint) (q : Intr
         (spliceEndpoint isReceiveQ ep q).receiveQ = ep.receiveQ) := by
   unfold spliceEndpoint; cases isReceiveQ <;> exact ⟨by simp, by simp⟩
 
+/-- A queue rewrite keeps the endpoint's service registration code: a splice
+writes the queue ends and nothing a table reference reads. -/
+@[simp] theorem spliceEndpoint_serviceCode (isReceiveQ : Bool) (ep : Endpoint)
+    (q : IntrusiveQueue) : (spliceEndpoint isReceiveQ ep q).serviceCode = ep.serviceCode := by
+  unfold spliceEndpoint; cases isReceiveQ <;> rfl
+
 -- ============================================================================
 -- §2  `SpliceShape` — the four branches, named once
 -- ============================================================================
@@ -373,25 +379,36 @@ theorem endpointQueueRemoveDual_shape
 
 /-- WS-RR RR7.22: the pre-state facts every splice step needs — the object
 store's external invariant, and the endpoint still being an endpoint. -/
-def SpliceCtx (endpointId : SeLe4n.ObjId) (s : SystemState) : Prop :=
-  s.objects.invExt ∧ ∃ ep : Endpoint, s.objects[endpointId]? = some (.endpoint ep)
+def SpliceCtx (endpointId : SeLe4n.ObjId) (code : Nat) (s : SystemState) : Prop :=
+  s.objects.invExt ∧ ∃ ep : Endpoint, s.objects[endpointId]? = some (.endpoint ep) ∧
+    ep.serviceCode = code
 
-theorem SpliceCtx.store {endpointId : SeLe4n.ObjId} {s s' : SystemState} {epNew : Endpoint}
-    (hCtx : SpliceCtx endpointId s)
-    (hStore : storeObject endpointId (.endpoint epNew) s = .ok ((), s')) :
-    SpliceCtx endpointId s' :=
+theorem SpliceCtx.store {endpointId : SeLe4n.ObjId} {code : Nat} {s s' : SystemState}
+    {epNew : Endpoint} (hCtx : SpliceCtx endpointId code s)
+    (hStore : storeObject endpointId (.endpoint epNew) s = .ok ((), s'))
+    (hSvc : epNew.serviceCode = code) :
+    SpliceCtx endpointId code s' :=
   ⟨storeObject_preserves_objects_invExt' s endpointId _ ((), s') hCtx.1 hStore,
-   epNew, storeObject_objects_eq' s endpointId _ ((), s') hCtx.1 hStore⟩
+   epNew, storeObject_objects_eq' s endpointId _ ((), s') hCtx.1 hStore, hSvc⟩
 
-theorem SpliceCtx.links {endpointId : SeLe4n.ObjId} {s s' : SystemState}
+theorem SpliceCtx.links {endpointId : SeLe4n.ObjId} {code : Nat} {s s' : SystemState}
     {t : SeLe4n.ThreadId} {qp : Option SeLe4n.ThreadId} {qpp : Option QueuePPrev}
     {qn : Option SeLe4n.ThreadId}
-    (hCtx : SpliceCtx endpointId s)
+    (hCtx : SpliceCtx endpointId code s)
     (hStep : storeTcbQueueLinks s t qp qpp qn = .ok s') :
-    SpliceCtx endpointId s' :=
+    SpliceCtx endpointId code s' :=
   ⟨storeTcbQueueLinks_preserves_objects_invExt s s' t qp qpp qn hCtx.1 hStep,
    hCtx.2.elim fun ep hEp =>
-     storeTcbQueueLinks_endpoint_forward s s' t qp qpp qn endpointId ep hCtx.1 hStep hEp⟩
+     (storeTcbQueueLinks_endpoint_forward s s' t qp qpp qn endpointId ep hCtx.1 hStep
+       hEp.1).elim fun ep' hEp' => ⟨ep', hEp', by
+         -- A queue-link write is kind-preserving, so the endpoint it leaves at
+         -- this key records the registration the one it replaced recorded.
+         have hB := (storeTcbQueueLinks_kindPreservingWrite hCtx.1 hStep).tableBackLinks endpointId
+         rw [hEp.1, hEp'] at hB
+         simp only [Option.map_some, KernelObject.tableBackLinks, Option.some.injEq,
+           Prod.mk.injEq] at hB
+         rw [hB.1, hEp.2]⟩⟩
+
 
 /-- WS-RR RR7.22: **the frame carrier.**  A predicate preserved by an endpoint
 write at `endpointId` and by any TCB queue-link write is preserved by the whole
@@ -407,7 +424,8 @@ theorem SpliceShape.carry {P : SystemState → Prop}
     {st st' : SystemState}
     (hStoreP : ∀ (s s' : SystemState) (epOld epNew : Endpoint),
       s.objects[endpointId]? = some (.endpoint epOld) → s.objects.invExt →
-      storeObject endpointId (.endpoint epNew) s = .ok ((), s') → P s → P s')
+      storeObject endpointId (.endpoint epNew) s = .ok ((), s') →
+      epNew.serviceCode = epOld.serviceCode → P s → P s')
     (hLinksP : ∀ (s s' : SystemState) (t : SeLe4n.ThreadId)
       (qp : Option SeLe4n.ThreadId) (qpp : Option QueuePPrev) (qn : Option SeLe4n.ThreadId),
       s.objects.invExt → storeTcbQueueLinks s t qp qpp qn = .ok s' → P s → P s')
@@ -415,41 +433,48 @@ theorem SpliceShape.carry {P : SystemState → Prop}
     (hShape : SpliceShape endpointId isReceiveQ tid st st')
     (hP : P st) : P st' := by
   -- One `SpliceCtx` per step, threaded; each step consumes the previous state's.
-  have step : ∀ {s s' : SystemState} {epNew : Endpoint}, SpliceCtx endpointId s →
-      storeObject endpointId (.endpoint epNew) s = .ok ((), s') → P s →
-      SpliceCtx endpointId s' ∧ P s' := by
-    intro s s' epNew hCtx hStore hPs
-    exact ⟨hCtx.store hStore,
-      hCtx.2.elim fun epOld hEp => hStoreP s s' epOld epNew hEp hCtx.1 hStore hPs⟩
-  have link : ∀ {s s' : SystemState} {t : SeLe4n.ThreadId} {qp : Option SeLe4n.ThreadId}
-      {qpp : Option QueuePPrev} {qn : Option SeLe4n.ThreadId}, SpliceCtx endpointId s →
-      storeTcbQueueLinks s t qp qpp qn = .ok s' → P s → SpliceCtx endpointId s' ∧ P s' := by
-    intro s s' t qp qpp qn hCtx hStep hPs
+  -- The context carries the registration code the endpoint started with, so each
+  -- store's `hStoreP` is handed the relation between what it writes and what it
+  -- replaces, not merely the fact that it wrote an endpoint.
+  have step : ∀ {code : Nat} {s s' : SystemState} {epNew : Endpoint},
+      SpliceCtx endpointId code s →
+      storeObject endpointId (.endpoint epNew) s = .ok ((), s') → epNew.serviceCode = code →
+      P s → SpliceCtx endpointId code s' ∧ P s' := by
+    intro code s s' epNew hCtx hStore hSvc hPs
+    exact ⟨hCtx.store hStore hSvc,
+      hCtx.2.elim fun epOld hEp =>
+        hStoreP s s' epOld epNew hEp.1 hCtx.1 hStore (hSvc.trans hEp.2.symm) hPs⟩
+  have link : ∀ {code : Nat} {s s' : SystemState} {t : SeLe4n.ThreadId}
+      {qp : Option SeLe4n.ThreadId}
+      {qpp : Option QueuePPrev} {qn : Option SeLe4n.ThreadId}, SpliceCtx endpointId code s →
+      storeTcbQueueLinks s t qp qpp qn = .ok s' → P s →
+      SpliceCtx endpointId code s' ∧ P s' := by
+    intro code s s' t qp qpp qn hCtx hStep hPs
     exact ⟨hCtx.links hStep, hLinksP s s' t qp qpp qn hCtx.1 hStep hPs⟩
   cases hShape with
   | headLast ep tcb s1 s2 hEp hTcb _ _ _ _ _ hStore1 hStore2 hClear =>
-    have h0 : SpliceCtx endpointId st := ⟨hObjInv, ep, hEp⟩
-    obtain ⟨c1, p1⟩ := step h0 hStore1 hP
-    obtain ⟨c2, p2⟩ := step c1 hStore2 p1
+    have h0 : SpliceCtx endpointId ep.serviceCode st := ⟨hObjInv, ep, hEp, rfl⟩
+    obtain ⟨c1, p1⟩ := step h0 hStore1 (by simp) hP
+    obtain ⟨c2, p2⟩ := step c1 hStore2 (by simp) p1
     exact (link c2 hClear p2).2
   | headMore ep tcb nextTcb nextTid s1 s2 s3 hEp hTcb _ _ _ _ _ hStore1 _ hRelink
       hStore2 hClear =>
-    have h0 : SpliceCtx endpointId st := ⟨hObjInv, ep, hEp⟩
-    obtain ⟨c1, p1⟩ := step h0 hStore1 hP
+    have h0 : SpliceCtx endpointId ep.serviceCode st := ⟨hObjInv, ep, hEp, rfl⟩
+    obtain ⟨c1, p1⟩ := step h0 hStore1 (by simp) hP
     obtain ⟨c2, p2⟩ := link c1 hRelink p1
-    obtain ⟨c3, p3⟩ := step c2 hStore2 p2
+    obtain ⟨c3, p3⟩ := step c2 hStore2 (by simp) p2
     exact (link c3 hClear p3).2
   | midLast ep tcb prevTcb prevTid s1 s2 hEp hTcb _ _ _ _ _ _ _ _ hRelink hStore hClear =>
-    have h0 : SpliceCtx endpointId st := ⟨hObjInv, ep, hEp⟩
+    have h0 : SpliceCtx endpointId ep.serviceCode st := ⟨hObjInv, ep, hEp, rfl⟩
     obtain ⟨c1, p1⟩ := link h0 hRelink hP
-    obtain ⟨c2, p2⟩ := step c1 hStore p1
+    obtain ⟨c2, p2⟩ := step c1 hStore (by simp) p1
     exact (link c2 hClear p2).2
   | midMore ep tcb prevTcb nextTcb prevTid nextTid s1 s2 s3 hEp hTcb _ _ _ _ _ _ _ _
       hRelinkPrev _ hRelinkNext hStore hClear =>
-    have h0 : SpliceCtx endpointId st := ⟨hObjInv, ep, hEp⟩
+    have h0 : SpliceCtx endpointId ep.serviceCode st := ⟨hObjInv, ep, hEp, rfl⟩
     obtain ⟨c1, p1⟩ := link h0 hRelinkPrev hP
     obtain ⟨c2, p2⟩ := link c1 hRelinkNext p1
-    obtain ⟨c3, p3⟩ := step c2 hStore p2
+    obtain ⟨c3, p3⟩ := step c2 hStore (by simp) p2
     exact (link c3 hClear p3).2
 
 -- ============================================================================
@@ -597,7 +622,8 @@ theorem endpointQueueRemoveDual_carry {P : SystemState → Prop}
     (st st' : SystemState)
     (hStoreP : ∀ (s s' : SystemState) (epOld epNew : Endpoint),
       s.objects[endpointId]? = some (.endpoint epOld) → s.objects.invExt →
-      storeObject endpointId (.endpoint epNew) s = .ok ((), s') → P s → P s')
+      storeObject endpointId (.endpoint epNew) s = .ok ((), s') →
+      epNew.serviceCode = epOld.serviceCode → P s → P s')
     (hLinksP : ∀ (s s' : SystemState) (t : SeLe4n.ThreadId)
       (qp : Option SeLe4n.ThreadId) (qpp : Option QueuePPrev) (qn : Option SeLe4n.ThreadId),
       s.objects.invExt → storeTcbQueueLinks s t qp qpp qn = .ok s' → P s → P s')
@@ -629,7 +655,7 @@ theorem endpointQueueRemoveDual_sameSchedContextBindings
     sameSchedContextBindings st st' :=
   endpointQueueRemoveDual_carry (P := fun s => sameSchedContextBindings st s)
     endpointId isReceiveQ tid st st'
-    (fun s s' _ epNew _ hInvS hStore hP =>
+    (fun s s' _ epNew _ hInvS hStore _ hP =>
       hP.trans (storeObject_endpoint_sameSchedContextBindings' s endpointId epNew ((), s')
         hInvS hStore))
     (fun s s' t qp qpp qn hInvS hStore hP =>
@@ -646,9 +672,10 @@ theorem endpointQueueRemoveDual_kindPreservingWrite
     kindPreservingWrite st st' :=
   endpointQueueRemoveDual_carry (P := fun s => kindPreservingWrite st s)
     endpointId isReceiveQ tid st st'
-    (fun _ _ _ _ hEpOld hInvS hStore hP =>
+    (fun _ _ _ _ hEpOld hInvS hStore hSvc hP =>
       hP.trans (storeObject_kindPreservingWrite hInvS hStore hEpOld rfl
-        (by simp [KernelObject.objectType])))
+        (by simp [KernelObject.objectType]) (hBackLinks := by
+          simp only [KernelObject.tableBackLinks, hSvc])))
     (fun _ _ _ _ _ _ hInvS hStore hP =>
       hP.trans (storeTcbQueueLinks_kindPreservingWrite hInvS hStore))
     hObjInv hStep (kindPreservingWrite.refl st)
@@ -662,7 +689,7 @@ theorem endpointQueueRemoveDual_donationOwnerFrame
     donationOwnerFrame st st' :=
   endpointQueueRemoveDual_carry (P := fun s => donationOwnerFrame st s)
     endpointId isReceiveQ tid st st'
-    (fun s s' epOld epNew hEpOld hInvS hStore hP =>
+    (fun s s' epOld epNew hEpOld hInvS hStore _ hP =>
       hP.trans (storeObject_endpoint_donationOwnerFrame' s endpointId epOld
         (.endpoint epNew) ((), s') hEpOld hInvS hStore))
     (fun s s' t qp qpp qn hInvS hStore hP =>
@@ -678,7 +705,7 @@ theorem endpointQueueRemoveDual_timeoutBudgetFrame
     timeoutBudgetFrame st st' :=
   endpointQueueRemoveDual_carry (P := fun s => timeoutBudgetFrame st s)
     endpointId isReceiveQ tid st st'
-    (fun s s' _ epNew _ hInvS hStore hP =>
+    (fun s s' _ epNew _ hInvS hStore _ hP =>
       hP.trans (storeObject_endpoint_timeoutBudgetFrame' s endpointId epNew ((), s')
         hInvS hStore))
     (fun s s' t qp qpp qn hInvS hStore hP =>
@@ -695,7 +722,7 @@ theorem endpointQueueRemoveDual_replyLinkageFrame
     replyLinkageFrame st st' :=
   endpointQueueRemoveDual_carry (P := fun s => replyLinkageFrame st s)
     endpointId isReceiveQ tid st st'
-    (fun s s' epOld epNew hEpOld hInvS hStore hP =>
+    (fun s s' epOld epNew hEpOld hInvS hStore _ hP =>
       hP.trans (storeObject_endpoint_replyLinkageFrame' s endpointId epOld epNew ((), s')
         hEpOld hInvS hStore))
     (fun s s' t qp qpp qn hInvS hStore hP =>
@@ -720,7 +747,7 @@ theorem endpointQueueRemoveDual_preserves_allPendingMessagesBounded
     (hInv : allPendingMessagesBounded st) : allPendingMessagesBounded st' :=
   endpointQueueRemoveDual_carry (P := allPendingMessagesBounded)
     endpointId isReceiveQ tid st st'
-    (fun s s' _ epNew _ hInvS hStore hP =>
+    (fun s s' _ epNew _ hInvS hStore _ hP =>
       storeObject_endpoint_preserves_allPendingMessagesBounded s s' endpointId epNew
         hInvS hStore hP)
     (fun s s' t qp qpp qn hInvS hStore hP =>
@@ -736,7 +763,7 @@ theorem endpointQueueRemoveDual_preserves_badgeWellFormed
     (hInv : badgeWellFormed st) : badgeWellFormed st' :=
   endpointQueueRemoveDual_carry (P := badgeWellFormed)
     endpointId isReceiveQ tid st st'
-    (fun s s' _ epNew _ hInvS hStore hP =>
+    (fun s s' _ epNew _ hInvS hStore _ hP =>
       storeObject_endpoint_preserves_badgeWellFormed s s' endpointId epNew hP hInvS hStore)
     (fun s s' t qp qpp qn hInvS hStore hP =>
       storeTcbQueueLinks_preserves_badgeWellFormed s s' t qp qpp qn hP hInvS hStore)
@@ -752,7 +779,7 @@ theorem endpointQueueRemoveDual_preserves_blockedThreadsPendingMessageConsistent
     blockedThreadsPendingMessageConsistent st' :=
   endpointQueueRemoveDual_carry (P := blockedThreadsPendingMessageConsistent)
     endpointId isReceiveQ tid st st'
-    (fun s s' _ epNew _ hInvS hStore hP =>
+    (fun s s' _ epNew _ hInvS hStore _ hP =>
       storeObject_nonTcb_preserves_blockedThreadsPendingMessageConsistent s s' endpointId
         (.endpoint epNew) (fun _ => by simp) hInvS hStore hP)
     (fun s s' t qp qpp qn hInvS hStore hP =>
@@ -769,7 +796,7 @@ theorem endpointQueueRemoveDual_preserves_blockedOnReplyHasTarget
     (hInv : blockedOnReplyHasTarget st) : blockedOnReplyHasTarget st' :=
   endpointQueueRemoveDual_carry (P := blockedOnReplyHasTarget)
     endpointId isReceiveQ tid st st'
-    (fun s s' _ epNew _ hInvS hStore hP =>
+    (fun s s' _ epNew _ hInvS hStore _ hP =>
       storeObject_endpoint_preserves_blockedOnReplyHasTarget' s endpointId epNew ((), s')
         hInvS hP hStore)
     (fun s s' t qp qpp qn hInvS hStore hP =>
@@ -785,7 +812,7 @@ theorem endpointQueueRemoveDual_preserves_pendingReceiveReplyWellFormed
     (hInv : pendingReceiveReplyWellFormed st) : pendingReceiveReplyWellFormed st' :=
   endpointQueueRemoveDual_carry (P := pendingReceiveReplyWellFormed)
     endpointId isReceiveQ tid st st'
-    (fun s s' epOld epNew hEpOld hInvS hStore hP =>
+    (fun s s' epOld epNew hEpOld hInvS hStore _ hP =>
       storeObject_endpoint_preserves_pendingReceiveReplyWellFormed' s endpointId epNew epOld
         ((), s') hInvS hEpOld hP hStore)
     (fun s s' t qp qpp qn hInvS hStore hP =>
@@ -802,7 +829,7 @@ theorem endpointQueueRemoveDual_preserves_blockedOnReplyHasReplyObject
     (hInv : blockedOnReplyHasReplyObject st) : blockedOnReplyHasReplyObject st' :=
   endpointQueueRemoveDual_carry (P := blockedOnReplyHasReplyObject)
     endpointId isReceiveQ tid st st'
-    (fun s s' _ epNew _ hInvS hStore hP =>
+    (fun s s' _ epNew _ hInvS hStore _ hP =>
       storeObject_endpoint_preserves_blockedOnReplyHasReplyObject s s' endpointId epNew
         hInvS hP hStore)
     (fun s s' t qp qpp qn hInvS hStore hP =>
@@ -869,7 +896,7 @@ theorem endpointQueueRemoveDual_ipcStateFrame
     ipcStateFrame st st' :=
   endpointQueueRemoveDual_carry (P := fun s => ipcStateFrame st s)
     endpointId isReceiveQ tid st st'
-    (fun s s' _ epNew _ hInvS hStore hP =>
+    (fun s s' _ epNew _ hInvS hStore _ hP =>
       hP.trans (storeObject_endpoint_ipcStateFrame s s' endpointId epNew hInvS hStore))
     (fun s s' t qp qpp qn hInvS hStore hP =>
       hP.trans (fun y tcb' hy =>
@@ -1025,31 +1052,31 @@ theorem endpointQueueRemoveDual_preserves_queueNextTargetBlocked
       storeObject_endpoint_preserves_queueNextTargetBlocked s s' e ep hP hi h
   cases endpointQueueRemoveDual_shape st st' endpointId isReceiveQ tid hStep with
   | headLast ep tcb s1 s2 hEp hTcb _ _ _ _ _ hStore1 hStore2 hClear =>
-    have c0 : SpliceCtx endpointId st := ⟨hObjInv, ep, hEp⟩
-    have c1 := c0.store hStore1
-    have c2 := c1.store hStore2
+    have c0 : SpliceCtx endpointId ep.serviceCode st := ⟨hObjInv, ep, hEp, rfl⟩
+    have c1 := c0.store hStore1 (by simp)
+    have c2 := c1.store hStore2 (by simp)
     exact clear _ _ _ c2.1 hClear (epStore _ _ _ _ c1.1 hStore2 (epStore _ _ _ _ c0.1 hStore1 hInv))
   | headMore ep tcb nextTcb nextTid s1 s2 s3 hEp hTcb _ _ _ _ _ hStore1 hNextTcb hRelink
       hStore2 hClear =>
-    have c0 : SpliceCtx endpointId st := ⟨hObjInv, ep, hEp⟩
-    have c1 := c0.store hStore1
+    have c0 : SpliceCtx endpointId ep.serviceCode st := ⟨hObjInv, ep, hEp, rfl⟩
+    have c1 := c0.store hStore1 (by simp)
     have c2 := c1.links hRelink
-    have c3 := c2.store hStore2
+    have c3 := c2.store hStore2 (by simp)
     exact clear _ _ _ c3.1 hClear
       (epStore _ _ _ _ c2.1 hStore2
         (relinkNext _ _ _ _ _ _ c1.1 hNextTcb hRelink (epStore _ _ _ _ c0.1 hStore1 hInv)))
   | midLast ep tcb prevTcb prevTid s1 s2 hEp hTcb _ _ _ _ _ hNext hPrevTcb hPrevNext
       hRelink hStore hClear =>
-    have c0 : SpliceCtx endpointId st := ⟨hObjInv, ep, hEp⟩
+    have c0 : SpliceCtx endpointId ep.serviceCode st := ⟨hObjInv, ep, hEp, rfl⟩
     have h1 : queueNextTargetBlocked s1 :=
       storeTcbQueueLinks_preserves_queueNextTargetBlocked st s1 prevTid prevTcb.queuePrev
         prevTcb.queuePPrev none hInv hObjInv hRelink (fun _ _ _ hNone => by cases hNone)
     have c1 := c0.links hRelink
-    have c2 := c1.store hStore
+    have c2 := c1.store hStore (by simp)
     exact clear _ _ _ c2.1 hClear (epStore _ _ _ _ c1.1 hStore h1)
   | midMore ep tcb prevTcb nextTcb prevTid nextTid s1 s2 s3 hEp hTcb _ _ _ _ _ hNext
       hPrevTcb hPrevNext hRelinkPrev hNextTcb hRelinkNext hStore hClear =>
-    have c0 : SpliceCtx endpointId st := ⟨hObjInv, ep, hEp⟩
+    have c0 : SpliceCtx endpointId ep.serviceCode st := ⟨hObjInv, ep, hEp, rfl⟩
     have hTcbObj := lookupTcb_some_objects st tid tcb hTcb
     have hPrevObj := lookupTcb_some_objects st prevTid prevTcb hPrevTcb
     -- The one created link: predecessor → successor, composed through the removed thread.
@@ -1067,7 +1094,7 @@ theorem endpointQueueRemoveDual_preserves_queueNextTargetBlocked
     have c1 := c0.links hRelinkPrev
     have h2 := relinkNext _ _ _ _ _ _ c1.1 hNextTcb hRelinkNext h1
     have c2 := c1.links hRelinkNext
-    have c3 := c2.store hStore
+    have c3 := c2.store hStore (by simp)
     exact clear _ _ _ c3.1 hClear (epStore _ _ _ _ c2.1 hStore h2)
 
 
@@ -1109,31 +1136,31 @@ theorem endpointQueueRemoveDual_preserves_endpointQueueLinksOnlyBlocked
       storeObject_endpoint_preserves_endpointQueueLinksOnlyBlocked s s' e ep hP hi h
   cases endpointQueueRemoveDual_shape st st' endpointId isReceiveQ tid hStep with
   | headLast ep tcb s1 s2 hEp hTcb _ _ _ _ _ hStore1 hStore2 hClear =>
-    have c0 : SpliceCtx endpointId st := ⟨hObjInv, ep, hEp⟩
-    have c1 := c0.store hStore1
-    have c2 := c1.store hStore2
+    have c0 : SpliceCtx endpointId ep.serviceCode st := ⟨hObjInv, ep, hEp, rfl⟩
+    have c1 := c0.store hStore1 (by simp)
+    have c2 := c1.store hStore2 (by simp)
     exact clear _ _ _ c2.1 hClear (epStore _ _ _ _ c1.1 hStore2 (epStore _ _ _ _ c0.1 hStore1 hInv))
   | headMore ep tcb nextTcb nextTid s1 s2 s3 hEp hTcb _ _ _ _ _ hStore1 hNextTcb hRelink
       hStore2 hClear =>
-    have c0 : SpliceCtx endpointId st := ⟨hObjInv, ep, hEp⟩
-    have c1 := c0.store hStore1
+    have c0 : SpliceCtx endpointId ep.serviceCode st := ⟨hObjInv, ep, hEp, rfl⟩
+    have c1 := c0.store hStore1 (by simp)
     have c2 := c1.links hRelink
-    have c3 := c2.store hStore2
+    have c3 := c2.store hStore2 (by simp)
     exact clear _ _ _ c3.1 hClear
       (epStore _ _ _ _ c2.1 hStore2
         (relinkNext _ _ _ _ _ _ c1.1 hNextTcb hRelink (epStore _ _ _ _ c0.1 hStore1 hInv)))
   | midLast ep tcb prevTcb prevTid s1 s2 hEp hTcb _ _ _ _ _ hNext hPrevTcb hPrevNext
       hRelink hStore hClear =>
-    have c0 : SpliceCtx endpointId st := ⟨hObjInv, ep, hEp⟩
+    have c0 : SpliceCtx endpointId ep.serviceCode st := ⟨hObjInv, ep, hEp, rfl⟩
     have h1 : endpointQueueLinksOnlyBlocked s1 :=
       storeTcbQueueLinks_preserves_endpointQueueLinksOnlyBlocked st s1 prevTid prevTcb.queuePrev
         prevTcb.queuePPrev none hInv hObjInv hRelink (fun hN => absurd rfl hN)
     have c1 := c0.links hRelink
-    have c2 := c1.store hStore
+    have c2 := c1.store hStore (by simp)
     exact clear _ _ _ c2.1 hClear (epStore _ _ _ _ c1.1 hStore h1)
   | midMore ep tcb prevTcb nextTcb prevTid nextTid s1 s2 s3 hEp hTcb _ _ _ _ _ hNext
       hPrevTcb hPrevNext hRelinkPrev hNextTcb hRelinkNext hStore hClear =>
-    have c0 : SpliceCtx endpointId st := ⟨hObjInv, ep, hEp⟩
+    have c0 : SpliceCtx endpointId ep.serviceCode st := ⟨hObjInv, ep, hEp, rfl⟩
     have hPrevObj := lookupTcb_some_objects st prevTid prevTcb hPrevTcb
     -- The predecessor already had a successor (the removed thread), so it is queued.
     have h1 : endpointQueueLinksOnlyBlocked s1 := by
@@ -1145,7 +1172,7 @@ theorem endpointQueueRemoveDual_preserves_endpointQueueLinksOnlyBlocked
     have c1 := c0.links hRelinkPrev
     have h2 := relinkNext _ _ _ _ _ _ c1.1 hNextTcb hRelinkNext h1
     have c2 := c1.links hRelinkNext
-    have c3 := c2.store hStore
+    have c3 := c2.store hStore (by simp)
     exact clear _ _ _ c3.1 hClear (epStore _ _ _ _ c2.1 hStore h2)
 
 /-- WS-RR RR7.22: the splice preserves the permissive intra-queue compatibility
@@ -1189,31 +1216,31 @@ theorem endpointQueueRemoveDual_preserves_queueNextBlockingConsistent
       storeObject_endpoint_preserves_queueNextBlockingConsistent s s' e ep hP hi h
   cases endpointQueueRemoveDual_shape st st' endpointId isReceiveQ tid hStep with
   | headLast ep tcb s1 s2 hEp hTcb _ _ _ _ _ hStore1 hStore2 hClear =>
-    have c0 : SpliceCtx endpointId st := ⟨hObjInv, ep, hEp⟩
-    have c1 := c0.store hStore1
-    have c2 := c1.store hStore2
+    have c0 : SpliceCtx endpointId ep.serviceCode st := ⟨hObjInv, ep, hEp, rfl⟩
+    have c1 := c0.store hStore1 (by simp)
+    have c2 := c1.store hStore2 (by simp)
     exact clear _ _ _ c2.1 hClear (epStore _ _ _ _ c1.1 hStore2 (epStore _ _ _ _ c0.1 hStore1 hInv))
   | headMore ep tcb nextTcb nextTid s1 s2 s3 hEp hTcb _ _ _ _ _ hStore1 hNextTcb hRelink
       hStore2 hClear =>
-    have c0 : SpliceCtx endpointId st := ⟨hObjInv, ep, hEp⟩
-    have c1 := c0.store hStore1
+    have c0 : SpliceCtx endpointId ep.serviceCode st := ⟨hObjInv, ep, hEp, rfl⟩
+    have c1 := c0.store hStore1 (by simp)
     have c2 := c1.links hRelink
-    have c3 := c2.store hStore2
+    have c3 := c2.store hStore2 (by simp)
     exact clear _ _ _ c3.1 hClear
       (epStore _ _ _ _ c2.1 hStore2
         (relinkNext _ _ _ _ _ _ c1.1 hNextTcb hRelink (epStore _ _ _ _ c0.1 hStore1 hInv)))
   | midLast ep tcb prevTcb prevTid s1 s2 hEp hTcb _ _ _ _ _ hNext hPrevTcb hPrevNext
       hRelink hStore hClear =>
-    have c0 : SpliceCtx endpointId st := ⟨hObjInv, ep, hEp⟩
+    have c0 : SpliceCtx endpointId ep.serviceCode st := ⟨hObjInv, ep, hEp, rfl⟩
     have h1 : queueNextBlockingConsistent s1 :=
       storeTcbQueueLinks_preserves_queueNextBlockingConsistent st s1 prevTid prevTcb.queuePrev
         prevTcb.queuePPrev none hInv hObjInv hRelink (fun _ _ _ hNone => by cases hNone)
     have c1 := c0.links hRelink
-    have c2 := c1.store hStore
+    have c2 := c1.store hStore (by simp)
     exact clear _ _ _ c2.1 hClear (epStore _ _ _ _ c1.1 hStore h1)
   | midMore ep tcb prevTcb nextTcb prevTid nextTid s1 s2 s3 hEp hTcb _ _ _ _ _ hNext
       hPrevTcb hPrevNext hRelinkPrev hNextTcb hRelinkNext hStore hClear =>
-    have c0 : SpliceCtx endpointId st := ⟨hObjInv, ep, hEp⟩
+    have c0 : SpliceCtx endpointId ep.serviceCode st := ⟨hObjInv, ep, hEp, rfl⟩
     have hTcbObj := lookupTcb_some_objects st tid tcb hTcb
     have hPrevObj := lookupTcb_some_objects st prevTid prevTcb hPrevTcb
     have h1 : queueNextBlockingConsistent s1 := by
@@ -1231,7 +1258,7 @@ theorem endpointQueueRemoveDual_preserves_queueNextBlockingConsistent
     have c1 := c0.links hRelinkPrev
     have h2 := relinkNext _ _ _ _ _ _ c1.1 hNextTcb hRelinkNext h1
     have c2 := c1.links hRelinkNext
-    have c3 := c2.store hStore
+    have c3 := c2.store hStore (by simp)
     exact clear _ _ _ c3.1 hClear (epStore _ _ _ _ c2.1 hStore h2)
 
 -- ============================================================================
@@ -1350,9 +1377,9 @@ theorem endpointQueueRemoveDual_preserves_queueHeadBlockedConsistent
         · rw [hB] at hS; simp only [Bool.false_eq_true, if_false, hEmpty] at hS; cases hS
         · rw [hB] at hS; simp only [if_true] at hS
           exact hIpcEq ▸ hS0 hS
-    have c0 : SpliceCtx endpointId st := ⟨hObjInv, ep, hEp⟩
-    have c1 := c0.store hStore1
-    have c2 := c1.store hStore2
+    have c0 : SpliceCtx endpointId ep.serviceCode st := ⟨hObjInv, ep, hEp, rfl⟩
+    have c1 := c0.store hStore1 (by simp)
+    have c2 := c1.store hStore2 (by simp)
     have f1 : ipcStateFrame st s1 :=
       storeObject_endpoint_ipcStateFrame st s1 endpointId _ c0.1 hStore1
     have f2 : ipcStateFrame st s2 :=
@@ -1393,10 +1420,10 @@ theorem endpointQueueRemoveDual_preserves_queueHeadBlockedConsistent
           exact hIpcEq ▸ (hPromoted (Option.some.inj hS).symm).2 hB
         · rw [hB] at hS; simp only [if_true] at hS
           exact hIpcEq ▸ hS0 hS
-    have c0 : SpliceCtx endpointId st := ⟨hObjInv, ep, hEp⟩
-    have c1 := c0.store hStore1
+    have c0 : SpliceCtx endpointId ep.serviceCode st := ⟨hObjInv, ep, hEp, rfl⟩
+    have c1 := c0.store hStore1 (by simp)
     have c2 := c1.links hRelink
-    have c3 := c2.store hStore2
+    have c3 := c2.store hStore2 (by simp)
     have f1 : ipcStateFrame st s1 :=
       storeObject_endpoint_ipcStateFrame st s1 endpointId _ c0.1 hStore1
     have f2 : ipcStateFrame st s2 :=
@@ -1432,9 +1459,9 @@ theorem endpointQueueRemoveDual_preserves_queueHeadBlockedConsistent
           exact hIpcEq ▸ (spliceSideBlocked_of_head hInv hEp hPre hS).2 rfl
         · rw [hB] at hS; simp only [if_true] at hS
           exact hIpcEq ▸ hS0 hS
-    have c0 : SpliceCtx endpointId st := ⟨hObjInv, ep, hEp⟩
+    have c0 : SpliceCtx endpointId ep.serviceCode st := ⟨hObjInv, ep, hEp, rfl⟩
     have c1 := c0.links hRelink
-    have c2 := c1.store hStore
+    have c2 := c1.store hStore (by simp)
     have f1 : ipcStateFrame st s1 :=
       storeTcbQueueLinks_ipcStateFrame st s1 prevTid _ _ _ c0.1 hRelink
     exact linkStep _ _ _ _ _ _ c2.1 hClear
@@ -1465,10 +1492,10 @@ theorem endpointQueueRemoveDual_preserves_queueHeadBlockedConsistent
           exact hIpcEq ▸ (spliceSideBlocked_of_head hInv hEp hPre hS).2 rfl
         · rw [hB] at hS; simp only [if_true] at hS
           exact hIpcEq ▸ hS0 hS
-    have c0 : SpliceCtx endpointId st := ⟨hObjInv, ep, hEp⟩
+    have c0 : SpliceCtx endpointId ep.serviceCode st := ⟨hObjInv, ep, hEp, rfl⟩
     have c1 := c0.links hRelinkPrev
     have c2 := c1.links hRelinkNext
-    have c3 := c2.store hStore
+    have c3 := c2.store hStore (by simp)
     have f1 : ipcStateFrame st s1 :=
       storeTcbQueueLinks_ipcStateFrame st s1 prevTid _ _ _ c0.1 hRelinkPrev
     have f2 : ipcStateFrame st s2 :=
@@ -1639,9 +1666,9 @@ theorem endpointQueueRemoveDual_preserves_endpointQueueTailBlockedConsistent
       fun h => hS0 (by simpa [spliceQueue, h] using hTail)⟩
   cases endpointQueueRemoveDual_shape st st' endpointId isReceiveQ tid hStep with
   | headLast ep tcb s1 s2 hEp hTcb _ _ _ _ _ hStore1 hStore2 hClear =>
-    have c0 : SpliceCtx endpointId st := ⟨hObjInv, ep, hEp⟩
-    have c1 := c0.store hStore1
-    have c2 := c1.store hStore2
+    have c0 : SpliceCtx endpointId ep.serviceCode st := ⟨hObjInv, ep, hEp, rfl⟩
+    have c1 := c0.store hStore1 (by simp)
+    have c2 := c1.store hStore2 (by simp)
     have f1 : ipcStateFrame st s1 :=
       storeObject_endpoint_ipcStateFrame st s1 endpointId _ c0.1 hStore1
     exact linkStep _ _ _ _ _ _ c2.1 hClear
@@ -1651,10 +1678,10 @@ theorem endpointQueueRemoveDual_preserves_endpointQueueTailBlockedConsistent
           (ipcStateFrame.refl st) (keepTail ep _ hEp rfl) hStore1 hInv))
   | headMore ep tcb nextTcb nextTid s1 s2 s3 hEp hTcb _ _ _ _ _ hStore1 hNextTcb hRelink
       hStore2 hClear =>
-    have c0 : SpliceCtx endpointId st := ⟨hObjInv, ep, hEp⟩
-    have c1 := c0.store hStore1
+    have c0 : SpliceCtx endpointId ep.serviceCode st := ⟨hObjInv, ep, hEp, rfl⟩
+    have c1 := c0.store hStore1 (by simp)
     have c2 := c1.links hRelink
-    have c3 := c2.store hStore2
+    have c3 := c2.store hStore2 (by simp)
     have f1 : ipcStateFrame st s1 :=
       storeObject_endpoint_ipcStateFrame st s1 endpointId _ c0.1 hStore1
     have f2 : ipcStateFrame st s2 :=
@@ -1667,9 +1694,9 @@ theorem endpointQueueRemoveDual_preserves_endpointQueueTailBlockedConsistent
             c0.1 (ipcStateFrame.refl st) (keepTail ep _ hEp rfl) hStore1 hInv)))
   | midLast ep tcb prevTcb prevTid s1 s2 hEp hTcb hPPrev _ _ _ _ hNext hPrevTcb _
       hRelink hStore hClear =>
-    have c0 : SpliceCtx endpointId st := ⟨hObjInv, ep, hEp⟩
+    have c0 : SpliceCtx endpointId ep.serviceCode st := ⟨hObjInv, ep, hEp, rfl⟩
     have c1 := c0.links hRelink
-    have c2 := c1.store hStore
+    have c2 := c1.store hStore (by simp)
     have f1 : ipcStateFrame st s1 :=
       storeTcbQueueLinks_ipcStateFrame st s1 prevTid _ _ _ c0.1 hRelink
     -- The promoted tail: the predecessor, covered by the stated hypothesis.
@@ -1690,10 +1717,10 @@ theorem endpointQueueRemoveDual_preserves_endpointQueueTailBlockedConsistent
         (linkStep _ _ _ _ _ _ c0.1 hRelink hInv))
   | midMore ep tcb prevTcb nextTcb prevTid nextTid s1 s2 s3 hEp hTcb _ _ _ _ _ _ _ _
       hRelinkPrev hNextTcb hRelinkNext hStore hClear =>
-    have c0 : SpliceCtx endpointId st := ⟨hObjInv, ep, hEp⟩
+    have c0 : SpliceCtx endpointId ep.serviceCode st := ⟨hObjInv, ep, hEp, rfl⟩
     have c1 := c0.links hRelinkPrev
     have c2 := c1.links hRelinkNext
-    have c3 := c2.store hStore
+    have c3 := c2.store hStore (by simp)
     have f1 : ipcStateFrame st s1 :=
       storeTcbQueueLinks_ipcStateFrame st s1 prevTid _ _ _ c0.1 hRelinkPrev
     have f2 : ipcStateFrame st s2 :=
@@ -1812,19 +1839,19 @@ theorem endpointQueueRemoveDual_queueNext_witness
     exact hQ
   cases endpointQueueRemoveDual_shape st st' endpointId isReceiveQ tid hStep with
   | headLast ep tcb s1 s2 hEp hTcb _ _ _ _ _ hStore1 hStore2 hClear =>
-    have c0 : SpliceCtx endpointId st := ⟨hObjInv, ep, hEp⟩
-    have c1 := c0.store hStore1
-    have c2 := c1.store hStore2
+    have c0 : SpliceCtx endpointId ep.serviceCode st := ⟨hObjInv, ep, hEp, rfl⟩
+    have c1 := c0.store hStore1 (by simp)
+    have c2 := c1.store hStore2 (by simp)
     have h1 := epStep st s1 _ ep p pTcb c0.1 hEp hStore1 hP
-    have h2 := epStep s1 s2 _ _ p pTcb c1.1 c1.2.choose_spec hStore2 h1
+    have h2 := epStep s1 s2 _ _ p pTcb c1.1 c1.2.choose_spec.1 hStore2 h1
     exact linkStep s2 st' tid none none none p pTcb c2.1 hClear h2 hNext
       (fun h => absurd h hPNe)
   | headMore ep tcb nextTcb nextTid s1 s2 s3 hEp hTcb _ _ _ _ hNextEq hStore1 hNextTcb
       hRelink hStore2 hClear =>
-    have c0 : SpliceCtx endpointId st := ⟨hObjInv, ep, hEp⟩
-    have c1 := c0.store hStore1
+    have c0 : SpliceCtx endpointId ep.serviceCode st := ⟨hObjInv, ep, hEp, rfl⟩
+    have c1 := c0.store hStore1 (by simp)
     have c2 := c1.links hRelink
-    have c3 := c2.store hStore2
+    have c3 := c2.store hStore2 (by simp)
     have h1 := epStep st s1 _ ep p pTcb c0.1 hEp hStore1 hP
     obtain ⟨q2, hq2, hqn2⟩ := linkStep s1 s2 nextTid none (some .endpointHead)
       nextTcb.queueNext p pTcb c1.1 hRelink h1 hNext
@@ -1834,14 +1861,14 @@ theorem endpointQueueRemoveDual_queueNext_witness
           rw [lookupTcb_some_objects s1 p nextTcb hNextTcb] at h1
           exact (KernelObject.tcb.inj (Option.some.inj h1)).symm
         rw [← this]; exact hNext)
-    have h3 := epStep s2 s3 _ _ p q2 c2.1 c2.2.choose_spec hStore2 hq2
+    have h3 := epStep s2 s3 _ _ p q2 c2.1 c2.2.choose_spec.1 hStore2 hq2
     exact linkStep s3 st' tid none none none p q2 c3.1 hClear h3 hqn2
       (fun h => absurd h hPNe)
   | midLast ep tcb prevTcb prevTid s1 s2 hEp hTcb _ _ _ _ _ hNextEq hPrevTcb hPrevNext
       hRelink hStore hClear =>
-    have c0 : SpliceCtx endpointId st := ⟨hObjInv, ep, hEp⟩
+    have c0 : SpliceCtx endpointId ep.serviceCode st := ⟨hObjInv, ep, hEp, rfl⟩
     have c1 := c0.links hRelink
-    have c2 := c1.store hStore
+    have c2 := c1.store hStore (by simp)
     obtain ⟨q1, hq1, hqn1⟩ := linkStep st s1 prevTid prevTcb.queuePrev prevTcb.queuePPrev
       none p pTcb hObjInv hRelink hP hNext
       (by
@@ -1852,15 +1879,15 @@ theorem endpointQueueRemoveDual_queueNext_witness
         subst this
         rw [hPrevNext] at hNext
         exact absurd (Option.some.inj hNext).symm hT2)
-    have h2 := epStep s1 s2 _ _ p q1 c1.1 c1.2.choose_spec hStore hq1
+    have h2 := epStep s1 s2 _ _ p q1 c1.1 c1.2.choose_spec.1 hStore hq1
     exact linkStep s2 st' tid none none none p q1 c2.1 hClear h2 hqn1
       (fun h => absurd h hPNe)
   | midMore ep tcb prevTcb nextTcb prevTid nextTid s1 s2 s3 hEp hTcb _ _ _ _ _ hNextEq
       hPrevTcb hPrevNext hRelinkPrev hNextTcb hRelinkNext hStore hClear =>
-    have c0 : SpliceCtx endpointId st := ⟨hObjInv, ep, hEp⟩
+    have c0 : SpliceCtx endpointId ep.serviceCode st := ⟨hObjInv, ep, hEp, rfl⟩
     have c1 := c0.links hRelinkPrev
     have c2 := c1.links hRelinkNext
-    have c3 := c2.store hStore
+    have c3 := c2.store hStore (by simp)
     obtain ⟨q1, hq1, hqn1⟩ := linkStep st s1 prevTid prevTcb.queuePrev prevTcb.queuePPrev
       (some nextTid) p pTcb hObjInv hRelinkPrev hP hNext
       (by
@@ -1879,7 +1906,7 @@ theorem endpointQueueRemoveDual_queueNext_witness
           rw [lookupTcb_some_objects s1 p nextTcb hNextTcb] at hq1
           exact (KernelObject.tcb.inj (Option.some.inj hq1)).symm
         rw [← this]; exact hqn1)
-    have h3 := epStep s2 s3 _ _ p q2 c2.1 c2.2.choose_spec hStore hq2
+    have h3 := epStep s2 s3 _ _ p q2 c2.1 c2.2.choose_spec.1 hStore hq2
     exact linkStep s3 st' tid none none none p q2 c3.1 hClear h3 hqn2
       (fun h => absurd h hPNe)
 
@@ -1893,7 +1920,7 @@ theorem endpointQueueRemoveDual_endpoint_forward
     ∃ ep', st'.objects[oid]? = some (.endpoint ep') :=
   endpointQueueRemoveDual_carry (P := fun s => ∃ e : Endpoint, s.objects[oid]? = some (.endpoint e))
     endpointId isReceiveQ tid st st'
-    (fun s s' _ epNew _ hInvS hStore hP => by
+    (fun s s' _ epNew _ hInvS hStore _ hP => by
       by_cases hEq : oid = endpointId
       · exact ⟨epNew, by rw [hEq]; exact storeObject_objects_eq s s' endpointId _ hInvS hStore⟩
       · obtain ⟨e, he⟩ := hP
@@ -1973,8 +2000,8 @@ theorem endpointQueueRemoveDual_headFacts
   | headLast ep tcb s1 s2 hEp hTcb _ _ hHead _ hNext hStore1 hStore2 hClear =>
     obtain rfl : ep0 = ep := by
       rw [hEp0] at hEp; exact KernelObject.endpoint.inj (Option.some.inj hEp)
-    have c0 : SpliceCtx endpointId st := ⟨hObjInv, ep0, hEp0⟩
-    have c1 := c0.store hStore1
+    have c0 : SpliceCtx endpointId ep0.serviceCode st := ⟨hObjInv, ep0, hEp0, rfl⟩
+    have c1 := c0.store hStore1 (by simp)
     refine ⟨_, finalEp s1 s2 st' _ c1.1 hStore2 hClear, ?_, ?_, Or.inr hHead, ?_⟩
     · intro h; unfold spliceEndpoint; rw [h]; rfl
     · intro h; unfold spliceEndpoint; rw [h]; rfl
@@ -1986,8 +2013,8 @@ theorem endpointQueueRemoveDual_headFacts
       hRelink hStore2 hClear =>
     obtain rfl : ep0 = ep := by
       rw [hEp0] at hEp; exact KernelObject.endpoint.inj (Option.some.inj hEp)
-    have c0 : SpliceCtx endpointId st := ⟨hObjInv, ep0, hEp0⟩
-    have c1 := c0.store hStore1
+    have c0 : SpliceCtx endpointId ep0.serviceCode st := ⟨hObjInv, ep0, hEp0, rfl⟩
+    have c1 := c0.store hStore1 (by simp)
     have c2 := c1.links hRelink
     refine ⟨_, finalEp s2 s3 st' _ c2.1 hStore2 hClear, ?_, ?_, Or.inr hHead, ?_⟩
     · intro h; unfold spliceEndpoint; rw [h]; rfl
@@ -2002,7 +2029,7 @@ theorem endpointQueueRemoveDual_headFacts
       hRelink hStore hClear =>
     obtain rfl : ep0 = ep := by
       rw [hEp0] at hEp; exact KernelObject.endpoint.inj (Option.some.inj hEp)
-    have c0 : SpliceCtx endpointId st := ⟨hObjInv, ep0, hEp0⟩
+    have c0 : SpliceCtx endpointId ep0.serviceCode st := ⟨hObjInv, ep0, hEp0, rfl⟩
     have c1 := c0.links hRelink
     refine ⟨_, finalEp s1 s2 st' _ c1.1 hStore hClear, ?_, ?_,
       Or.inl (by rw [spliceQueue_spliceEndpoint]), ?_⟩
@@ -2014,7 +2041,7 @@ theorem endpointQueueRemoveDual_headFacts
       hRelinkPrev hNextTcb hRelinkNext hStore hClear =>
     obtain rfl : ep0 = ep := by
       rw [hEp0] at hEp; exact KernelObject.endpoint.inj (Option.some.inj hEp)
-    have c0 : SpliceCtx endpointId st := ⟨hObjInv, ep0, hEp0⟩
+    have c0 : SpliceCtx endpointId ep0.serviceCode st := ⟨hObjInv, ep0, hEp0, rfl⟩
     have c1 := c0.links hRelinkPrev
     have c2 := c1.links hRelinkNext
     refine ⟨_, finalEp s2 s3 st' _ c2.1 hStore hClear, ?_, ?_,
@@ -2075,10 +2102,10 @@ theorem endpointQueueRemoveDual_successor_rehomed
     have hPrevNeNext : prevTid ≠ n := fun hEq =>
       tcbQueueChainAcyclic_no_two_cycle hAcyclic tid prevTid tcb0 prevTcb hTcbObj hPrevObj
         (by rw [hNext, hEq]) hPrevNext
-    have c0 : SpliceCtx endpointId st := ⟨hObjInv, ep, hEp⟩
+    have c0 : SpliceCtx endpointId ep.serviceCode st := ⟨hObjInv, ep, hEp, rfl⟩
     have c1 := c0.links hRelinkPrev
     have c2 := c1.links hRelinkNext
-    have c3 := c2.store hStore
+    have c3 := c2.store hStore (by simp)
     obtain ⟨orig, hOrig, hAt1⟩ := storeTcbQueueLinks_result_tcb st s1 prevTid
       prevTcb.queuePrev prevTcb.queuePPrev (some n) hObjInv hRelinkPrev
     refine Or.inl ⟨prevTid,
@@ -2335,27 +2362,27 @@ theorem endpointQueueRemoveDual_removed_links_cleared
     (hStep : endpointQueueRemoveDual endpointId isReceiveQ tid st = .ok ((), st')) :
     ∃ tcb', st'.objects[tid.toObjId]? = some (.tcb tcb') ∧
       tcb'.queuePrev = none ∧ tcb'.queuePPrev = none ∧ tcb'.queueNext = none := by
-  have clear : ∀ s : SystemState, SpliceCtx endpointId s →
+  have clear : ∀ (code : Nat) (s : SystemState), SpliceCtx endpointId code s →
       storeTcbQueueLinks s tid none none none = .ok st' →
       ∃ tcb', st'.objects[tid.toObjId]? = some (.tcb tcb') ∧
         tcb'.queuePrev = none ∧ tcb'.queuePPrev = none ∧ tcb'.queueNext = none := by
-    intro s hCtx hClear
+    intro _ s hCtx hClear
     obtain ⟨orig, _, hAt⟩ := storeTcbQueueLinks_result_tcb s st' tid none none none hCtx.1 hClear
     exact ⟨_, hAt, rfl, rfl, rfl⟩
   cases endpointQueueRemoveDual_shape st st' endpointId isReceiveQ tid hStep with
   | headLast ep tcb s1 s2 hEp _ _ _ _ _ _ hStore1 hStore2 hClear =>
-    have c0 : SpliceCtx endpointId st := ⟨hObjInv, ep, hEp⟩
-    exact clear s2 ((c0.store hStore1).store hStore2) hClear
+    have c0 : SpliceCtx endpointId ep.serviceCode st := ⟨hObjInv, ep, hEp, rfl⟩
+    exact clear _ s2 ((c0.store hStore1 (by simp)).store hStore2 (by simp)) hClear
   | headMore ep tcb nextTcb nextTid s1 s2 s3 hEp _ _ _ _ _ _ hStore1 _ hRelink hStore2 hClear =>
-    have c0 : SpliceCtx endpointId st := ⟨hObjInv, ep, hEp⟩
-    exact clear s3 (((c0.store hStore1).links hRelink).store hStore2) hClear
+    have c0 : SpliceCtx endpointId ep.serviceCode st := ⟨hObjInv, ep, hEp, rfl⟩
+    exact clear _ s3 (((c0.store hStore1 (by simp)).links hRelink).store hStore2 (by simp)) hClear
   | midLast ep tcb prevTcb prevTid s1 s2 hEp _ _ _ _ _ _ _ _ _ hRelink hStore hClear =>
-    have c0 : SpliceCtx endpointId st := ⟨hObjInv, ep, hEp⟩
-    exact clear s2 ((c0.links hRelink).store hStore) hClear
+    have c0 : SpliceCtx endpointId ep.serviceCode st := ⟨hObjInv, ep, hEp, rfl⟩
+    exact clear _ s2 ((c0.links hRelink).store hStore (by simp)) hClear
   | midMore ep tcb prevTcb nextTcb prevTid nextTid s1 s2 s3 hEp _ _ _ _ _ _ _ _ _
       hRelinkPrev _ hRelinkNext hStore hClear =>
-    have c0 : SpliceCtx endpointId st := ⟨hObjInv, ep, hEp⟩
-    exact clear s3 (((c0.links hRelinkPrev).links hRelinkNext).store hStore) hClear
+    have c0 : SpliceCtx endpointId ep.serviceCode st := ⟨hObjInv, ep, hEp, rfl⟩
+    exact clear _ s3 (((c0.links hRelinkPrev).links hRelinkNext).store hStore (by simp)) hClear
 
 -- ============================================================================
 -- §14  The capstone: what a bare splice leaves behind
@@ -2753,9 +2780,9 @@ theorem endpointQueueRemoveDual_removed_not_boundary
     exact hDual.chainAcyclic x (.single x x xt hX hSelf)
   cases endpointQueueRemoveDual_shape st st' endpointId isReceiveQ tid hStep with
   | headLast ep tcb s1 s2 hEp hTcb _ _ _ _ _ hStore1 hStore2 hClear =>
-    have c0 : SpliceCtx endpointId st := ⟨hObjInv, ep, hEp⟩
+    have c0 : SpliceCtx endpointId ep.serviceCode st := ⟨hObjInv, ep, hEp, rfl⟩
     have hFinal := spliceFinalEndpoint endpointId tid s1 s2 st' _
-      (c0.store hStore1).1 hStore2 hClear
+      (c0.store hStore1 (by simp)).1 hStore2 hClear
     rw [hEp'] at hFinal
     obtain rfl : ep' = spliceEndpoint isReceiveQ ep { head := none, tail := none } :=
       KernelObject.endpoint.inj (Option.some.inj hFinal)
@@ -2763,9 +2790,9 @@ theorem endpointQueueRemoveDual_removed_not_boundary
     exact ⟨by simp, by simp⟩
   | headMore ep tcb nextTcb nextTid s1 s2 s3 hEp hTcb _ _ hHead _ hNext hStore1 _ hRelink
       hStore2 hClear =>
-    have c0 : SpliceCtx endpointId st := ⟨hObjInv, ep, hEp⟩
+    have c0 : SpliceCtx endpointId ep.serviceCode st := ⟨hObjInv, ep, hEp, rfl⟩
     have hFinal := spliceFinalEndpoint endpointId tid s2 s3 st' _
-      ((c0.store hStore1).links hRelink).1 hStore2 hClear
+      ((c0.store hStore1 (by simp)).links hRelink).1 hStore2 hClear
     rw [hEp'] at hFinal
     obtain rfl : ep' = spliceEndpoint isReceiveQ ep
         { head := some nextTid, tail := (spliceQueue isReceiveQ ep).tail } :=
@@ -2786,7 +2813,7 @@ theorem endpointQueueRemoveDual_removed_not_boundary
       cases hTlNext
   | midLast ep tcb prevTcb prevTid s1 s2 hEp hTcb _ _ hHeadNe _ _ hNext hPrevTcb hPrevNext
       hRelink hStore hClear =>
-    have c0 : SpliceCtx endpointId st := ⟨hObjInv, ep, hEp⟩
+    have c0 : SpliceCtx endpointId ep.serviceCode st := ⟨hObjInv, ep, hEp, rfl⟩
     have hFinal := spliceFinalEndpoint endpointId tid s1 s2 st' _
       (c0.links hRelink).1 hStore hClear
     rw [hEp'] at hFinal
@@ -2800,7 +2827,7 @@ theorem endpointQueueRemoveDual_removed_not_boundary
     exact noSelf prevTid prevTcb (lookupTcb_some_objects st prevTid prevTcb hPrevTcb) hPrevNext
   | midMore ep tcb prevTcb nextTcb prevTid nextTid s1 s2 s3 hEp hTcb _ _ hHeadNe _ _ hNext
       hPrevTcb _ hRelinkPrev _ hRelinkNext hStore hClear =>
-    have c0 : SpliceCtx endpointId st := ⟨hObjInv, ep, hEp⟩
+    have c0 : SpliceCtx endpointId ep.serviceCode st := ⟨hObjInv, ep, hEp, rfl⟩
     have hFinal := spliceFinalEndpoint endpointId tid s2 s3 st' _
       ((c0.links hRelinkPrev).links hRelinkNext).1 hStore hClear
     rw [hEp'] at hFinal

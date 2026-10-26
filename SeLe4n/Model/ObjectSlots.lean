@@ -447,6 +447,23 @@ reads. -/
   | .notification n => (0, n.boundTCBCode)
   | _ => (0, 0)
 
+/-- **The table back-links an object holds**: an endpoint's registration code
+(`s + 1` for the service `⟨s⟩` registered on it, `0` for none) and a
+notification's interrupt flag; every other kind holds neither.  The part of the
+store the table references read: a registration names an endpoint, an interrupt
+names a notification, and each of those objects records the entry that names it
+(`SystemState.tableReferencesRecorded`). -/
+@[inline] def tableBackLinks (o : KernelObject) : Nat × Bool :=
+  match o with
+  | .endpoint ep => (ep.serviceCode, false)
+  | .notification n => (0, n.irqBound)
+  | _ => (0, false)
+
+/-- Clearing an object's derivation links keeps its table back-links. -/
+@[simp] theorem tableBackLinks_withoutLinks (o : KernelObject) :
+    o.withoutLinks.tableBackLinks = o.tableBackLinks := by
+  cases o <;> rfl
+
 /-- Clearing an object's derivation links keeps its binding codes. -/
 @[simp] theorem bindingCodes_withoutLinks (o : KernelObject) :
     o.withoutLinks.bindingCodes = o.bindingCodes := by

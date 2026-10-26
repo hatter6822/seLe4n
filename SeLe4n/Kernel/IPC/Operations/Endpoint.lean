@@ -1112,7 +1112,7 @@ theorem ntfnLinksRewritten.kindPreserving {st s : SystemState} (h : ntfnLinksRew
   intro k
   rcases h.2.2 k with e | ⟨t, t', ht, ht', np, nn, rfl⟩
   · exact Or.inl e
-  · exact Or.inr ⟨.tcb t, .tcb _, ht, ht', rfl, by simp [KernelObject.objectType], rfl, rfl, rfl⟩
+  · exact Or.inr ⟨.tcb t, .tcb _, ht, ht', rfl, by simp [KernelObject.objectType], rfl, rfl, rfl, rfl⟩
 
 theorem ntfnLinksRewritten_unlinkNtfnNeighbours {st s : SystemState}
     (h : ntfnLinksRewritten st s) (prev next : Option SeLe4n.ThreadId) :
@@ -4750,7 +4750,8 @@ theorem storeDonationHeadPop_kindPreservingWrite
   by_cases hRep : ∃ r : Reply, st.objects[k]? = some (.reply r)
   · obtain ⟨r, hr⟩ := hRep
     obtain ⟨r', hr', _⟩ := storeDonationHeadPop_reply_rewrite hObjInv h k r hr
-    exact Or.inr ⟨.reply r, .reply r', hr, hr', rfl, by simp [KernelObject.objectType, KernelObject.untyped?, KernelObject.bindingCodes]⟩
+    exact Or.inr ⟨.reply r, .reply r', hr, hr', rfl, by simp [KernelObject.objectType, KernelObject.untyped?, KernelObject.bindingCodes,
+      KernelObject.tableBackLinks]⟩
   · exact Or.inl (storeDonationHeadPop_non_reply_eq hObjInv h k (fun r hr => hRep ⟨r, hr⟩))
 
 /-- A non-Reply found after the pop was there before it. -/
@@ -7043,7 +7044,8 @@ theorem spliceReplyFrameOutOrSelf_kindPreservingWrite (st : SystemState)
   intro k
   rcases spliceReplyFrameOutOrSelf_objects_rewrite st rid hObjInv k with h | ⟨r, r', hr, hr', _⟩
   · exact Or.inl h
-  · exact Or.inr ⟨.reply r, .reply r', hr, hr', rfl, by simp [KernelObject.objectType, KernelObject.untyped?, KernelObject.bindingCodes]⟩
+  · exact Or.inr ⟨.reply r, .reply r', hr, hr', rfl, by simp [KernelObject.objectType, KernelObject.untyped?, KernelObject.bindingCodes,
+      KernelObject.tableBackLinks]⟩
 
 /-- **WS-RR RR8.16** (`v0.35.199`): and so is the removal — the splice above, then
 the consume, which writes a Reply for a Reply and a TCB for a TCB.
