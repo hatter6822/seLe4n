@@ -346,6 +346,13 @@ theorem storeObject {st st' : SystemState} {k : SeLe4n.ObjId} {o : KernelObject}
     · subst h; rw [storeObject_objects_eq st st' oid o hInv hS]; exact hB
     · rw [storeObject_objects_ne st st' k oid o h hInv hS]
 
+/-- A stored object that keeps its key's projections. -/
+theorem withObjectStored (st : SystemState) (k : SeLe4n.ObjId) (o : KernelObject)
+    (hInv : st.objects.invExt) (hA : tcbSchedAuxOf (some o) = tcbSchedAuxOf st.objects[k]?)
+    (hB : schedBindingLinksOf (some o) = schedBindingLinksOf st.objects[k]?) :
+    SchedLinkFrame st (st.withObjectStored k o) :=
+  storeObject hInv (SystemState.storeObject_eq_withObjectStored st k o) hA hB
+
 /-- A thread rewritten in its slot keeping its binding codes, budget and
 affinity. -/
 theorem updateTcb (st : SystemState) (t : SeLe4n.ThreadId) (f : TCB → TCB)

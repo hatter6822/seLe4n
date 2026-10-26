@@ -2710,16 +2710,8 @@ private theorem witnessSt4_links : schedContextLinkInvariant witnessSt4 := by
     rw [witnessSt3_lookup]
     simp [show (witnessScId.toObjId == SeLe4n.ObjId.ofNat 3) = false from by decide,
       show (witnessTid.toObjId == SeLe4n.ObjId.ofNat 3) = false from by decide]
-  refine SchedLinkFrame.preserves ⟨fun oid => ?_, fun oid => ?_, fun _ => by
-    unfold witnessSt4; rw [SystemState.withObjectStored_scheduler]⟩ witnessSt3_links
-  · rw [witnessSt4_lookup]
-    split
-    · next h => rw [← eq_of_beq h, hK3]; rfl
-    · rfl
-  · rw [witnessSt4_lookup]
-    split
-    · next h => rw [← eq_of_beq h, hK3]; rfl
-    · rfl
+  exact (SchedLinkFrame.withObjectStored _ _ _ witnessObjInv3 (by rw [hK3]; rfl)
+    (by rw [hK3]; rfl)).preserves witnessSt3_links
 
 private theorem witnessCapOnlyReply :
     capabilityDispatchQuiescence witnessDecodedReply witnessCapReply
