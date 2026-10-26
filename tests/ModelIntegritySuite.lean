@@ -655,6 +655,43 @@ def reply_inUse_retype_rejected : IO Unit := do
   | .ok _ => expect "free TCB retype allowed" true
   | .error _ => throw <| IO.userError "retyping a TCB with no reply link must succeed"
 
+/-- `v0.36.141` (WS-ZA ZA5.4, the retire's own-link guards): **a stashed reply
+survives its final delete's retire**, and is retired once the stash clears.  The
+retire reads a reply's stash off the reply's own record (`stasherCode`, seL4's
+`replyTCB`) and re-checks the named receiver (`SystemState.replyStashedAt`), one
+field and one thread, with no walk of the object table: while the receiver it
+records is blocked receiving with it stashed, the reply is not quiescent and
+outlives its last capability; once that receiver has left the receive, the stale
+record names no live stash and the retire takes the reply. -/
+def reply_stashed_survives_final_retire : IO Unit := do
+  let rid : SeLe4n.ReplyId := ⟨505⟩
+  let stasher : TCB :=
+    (TCB.setIpcState
+    { tid := ⟨600⟩, priority := ⟨0⟩, domain := ⟨0⟩, spaceCells := SeLe4n.Model.TCB.spaceCellsOf ⟨0⟩ ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0,
+      pendingReceiveReplyCode := SeLe4n.ReplyId.optCode (some rid) } (.blockedOnReceive ⟨700⟩))
+  let reply : KernelObject := .reply { replyId := rid, stasherCode := 601 }
+  let stStashed : SystemState :=
+    (SeLe4n.Testing.BootstrapBuilder.empty |>.withObject ⟨600⟩ (.tcb stasher)
+      |>.withObject rid.toObjId reply |>.build)
+  let core := SeLe4n.Kernel.Concurrency.bootCoreId
+  -- The final delete's retire of the reply (target word = id + 1, no recorder).
+  let kept := SeLe4n.Kernel.retireFinalObject core (rid.toObjId.val + 1) 0 stStashed
+  expect "a stashed reply whose stasher is live survives its final delete's retire"
+    (kept.objects[rid.toObjId]?.isSome)
+  expect "the reply's own record answers that it is stashed"
+    (match stStashed.objects[rid.toObjId]? with
+     | some (.reply r) => stStashed.replyStashedAt rid r
+     | _ => false)
+  -- The stash clears: the receiver leaves its receive (its stash cleared on its
+  -- own side), and the reply's record, cleared lazily, still names it.
+  let left : TCB := TCB.setIpcState { stasher with pendingReceiveReplyCode := 0 } .ready
+  let stCleared : SystemState :=
+    (SeLe4n.Testing.BootstrapBuilder.empty |>.withObject ⟨600⟩ (.tcb left)
+      |>.withObject rid.toObjId reply |>.build)
+  let retired := SeLe4n.Kernel.retireFinalObject core (rid.toObjId.val + 1) 0 stCleared
+  expect "the same reply is retired once the stash clears"
+    (retired.objects[rid.toObjId]?.isNone)
+
 /-- WS-SM SM6.D (PR #822 review): the server-first reply stash is **injective** —
 the 17th `ipcInvariantFull` conjunct (`pendingReceiveReplyWellFormed`) now requires
 no two blocked receivers to stash the same Reply id.  Operationally this is the
@@ -2197,6 +2234,7 @@ def main : IO Unit := do
   r4b_scrubToken_to_retypeTarget_endToEnd
   -- WS-SM SM6.D (PR #822 review): in-use Reply retype rejected, free Reply allowed
   reply_inUse_retype_rejected
+  reply_stashed_survives_final_retire
   pendingReceiveReply_stash_injective
   replyStash_validated_against_preBlock_state
   mintReplyCap_derives_backed_reply_cap
