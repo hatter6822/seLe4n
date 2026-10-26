@@ -68,8 +68,9 @@ theorem recordSendCap_runQueueStage (st : SystemState) (tid : SeLe4n.ThreadId)
       rw [h1, h2] at e <;> first | rfl | cases e | exact Option.some.inj e
   have hM : SystemState.StateMono st (recordSendCap st tid badge grant) :=
     SystemState.StateMono.of_stateFields (hG _ (fun _ => rfl))
-  exact ⟨fun h r => ⟨recordSendCap_objects_invExt st tid badge grant h,
-      SystemState.runQueueRefined_of_frame hL rfl rfl r⟩,
+  exact ⟨.of_tableFrame (fun h r => ⟨recordSendCap_objects_invExt st tid badge grant h,
+      SystemState.runQueueRefined_of_frame hL rfl rfl r⟩)
+      (fun _ => by unfold recordSendCap; exact .mapTcbInPlace _ _ _),
     fun _ _ _ _ d => SystemState.currentDequeuedUniqueExcept_of_eq (st := st)
       (st' := recordSendCap st tid badge grant) rfl hL hM d, fun _ _ => hM⟩
 
@@ -117,9 +118,16 @@ theorem storeTcbIpcStateAndMessage_blockedRunQueueStage {st st' : SystemState}
 /-- An endpoint stored over an endpoint. -/
 theorem storeObject_endpoint_runQueueStage {st st' : SystemState} {k : SeLe4n.ObjId}
     {ep ep' : Endpoint} (hOld : st.objects[k]? = some (.endpoint ep))
-    (hS : storeObject k (.endpoint ep') st = .ok ((), st')) : RunQueueStage st st' :=
+    (hS : storeObject k (.endpoint ep') st = .ok ((), st'))
+    (hC : ep'.serviceCode = ep.serviceCode := by
+      first
+        | rfl
+        | (split <;> rfl)
+        | (rw [apply_ite Endpoint.serviceCode]; split <;> rfl)
+        | simp_all) : RunQueueStage st st' :=
   RunQueueStage.storeObject hS (fun c => by rw [hOld]; rfl)
     (SystemState.objStateMono_nonTcb (by rw [hOld]; rfl) rfl)
+    (by rw [hOld]; simp only [objTableBackLinks_some, KernelObject.tableBackLinks, hC])
 
 /-- A TCB stored over the thread's TCB with the same run-queue fields. -/
 theorem storeObject_tcbOver_runQueueStage {st st' : SystemState} {tid : SeLe4n.ThreadId}
@@ -287,8 +295,10 @@ theorem endpointQueueEnqueue_runQueueStage {endpointId : SeLe4n.ObjId} {isReceiv
 /-- The wake keeps the link agreement whichever thread it wakes. -/
 theorem enqueueRunnableOnCore_runQueueLinkStage (st : SystemState) (c : Concurrency.CoreId)
     (tid : SeLe4n.ThreadId) : SystemState.RunQueueLinkStage st (enqueueRunnableOnCore st c tid) :=
-  fun h r => ⟨enqueueRunnableOnCore_preserves_objects_invExt st c tid h,
-    enqueueRunnableOnCore_runQueueRefined c tid h r⟩
+  .of_tableFrame (fun h r => ⟨enqueueRunnableOnCore_preserves_objects_invExt st c tid h,
+    enqueueRunnableOnCore_runQueueRefined c tid h r⟩)
+    fun h => .of_kindPreservingWrite (enqueueRunnableOnCore_kindPreservingWrite st c tid h)
+      (enqueueRunnableOnCore_onlyObjectsSchedulerDiffer st c tid).referenceTables
 
 /-- The wake marks one thread ready and moves run-queue links: every runnable
 thread stays runnable. -/
@@ -737,6 +747,113 @@ theorem endpointCallOnCore_runQueueEntryStage (endpointId : SeLe4n.ObjId)
 -- Capability transfer and donation
 -- ============================================================================
 
+/-- A free-index write writes no reference table. -/
+theorem setCapFreeIndex_referenceTables (st : SystemState) (addr : CSpaceAddr) (idx : Nat) :
+    (setCapFreeIndex st addr idx).referenceTables = st.referenceTables := by
+  cases hO : st.objects[addr.cnode]? with
+  | some o =>
+    cases o with
+    | cnode cn => exact storeObject_referenceTables (setCapFreeIndex_eq_storeObject hO)
+    | _ => unfold setCapFreeIndex SystemState.storeCNodeWith; rw [hO]
+  | none => unfold setCapFreeIndex SystemState.storeCNodeWith; rw [hO]
+
+/-- Setting an untyped source full writes no reference table. -/
+theorem untypedSourceSetFull_referenceTables (st : SystemState) (src : CSpaceAddr)
+    (cap : Capability) : (untypedSourceSetFull st src cap).referenceTables = st.referenceTables :=
+  untypedSourceSetFull_of (P := fun s => s.referenceTables = st.referenceTables) rfl
+    fun idx => setCapFreeIndex_referenceTables st src idx
+
+/-- A derivation-tree edge writes no reference table. -/
+theorem cdtAddChild_referenceTables (st : SystemState) (p c : SlotRef) (op : DerivationOp) :
+    (st.cdtAddChild p c op).referenceTables = st.referenceTables := by
+  simp only [SystemState.referenceTables, SystemState.cdtAddChild_serviceRegistry,
+    SystemState.cdtAddChild_irqHandlers, SystemState.cdtAddChild_services]
+
+/-- A slot insert writes no reference table. -/
+theorem cspaceInsertSlot_referenceTables {st st' : SystemState} {addr : CSpaceAddr}
+    {cap : Capability} (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
+    st'.referenceTables = st.referenceTables := by
+  obtain ⟨_, _, _, _, hStore⟩ := cspaceInsertSlot_ok_decompose st st' addr cap hStep
+  exact storeObject_referenceTables hStore
+
+/-- One capability's transfer writes no reference table. -/
+theorem ipcTransferSingleCap_referenceTables {cap : Capability} {srcNode : SlotRef}
+    {receiverRoot : SeLe4n.ObjId} {slotBase : SeLe4n.Slot} {scanLimit : Nat}
+    {st st' : SystemState} {result : CapTransferResult}
+    (hStep : ipcTransferSingleCap cap srcNode receiverRoot slotBase scanLimit st
+             = .ok (result, st')) :
+    st'.referenceTables = st.referenceTables := by
+  obtain ⟨_, -, ⟨rfl, -⟩ | ⟨_, _, -, -, -, hIns, -, rfl⟩⟩ := ipcTransferSingleCap_ok_cases hStep
+  · rfl
+  · rw [untypedSourceSetFull_referenceTables, cdtAddChild_referenceTables]
+    exact cspaceInsertSlot_referenceTables hIns
+
+theorem ipcUnwrapCapsLoop_referenceTables
+    (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
+    (idx : Nat) (nextBase : SeLe4n.Slot) (accResults : Array CapTransferResult)
+    (fuel : Nat) (st st' : SystemState) (summary : CapTransferSummary)
+    (hStep : ipcUnwrapCapsLoop caps receiverRoot idx nextBase accResults fuel st
+             = .ok (summary, st')) :
+    st'.referenceTables = st.referenceTables := by
+  induction fuel generalizing idx nextBase accResults st with
+  | zero =>
+    simp [ipcUnwrapCapsLoop] at hStep
+    obtain ⟨_, rfl⟩ := hStep; rfl
+  | succ n ih =>
+    simp only [ipcUnwrapCapsLoop] at hStep
+    cases hCap : caps[idx]? with
+    | none => simp [hCap] at hStep; obtain ⟨_, rfl⟩ := hStep; rfl
+    | some tc =>
+      simp [hCap] at hStep
+      cases hTransfer : ipcTransferSingleCap tc.cap tc.srcSlot
+          receiverRoot nextBase maxExtraCaps st with
+      | error e =>
+        simp [hTransfer] at hStep
+        obtain ⟨_, rfl⟩ := hStep; rfl
+      | ok pair =>
+        rcases pair with ⟨result, stNext⟩
+        have hT := ipcTransferSingleCap_referenceTables hTransfer
+        simp [hTransfer] at hStep
+        cases result with
+        | installed c s => rw [ih _ _ _ _ hStep, hT]
+        | noSlot => rw [ih _ _ _ _ hStep, hT]
+        | grantDenied => rw [ih _ _ _ _ hStep, hT]
+        | sourceRevoked => rw [ih _ _ _ _ hStep, hT]
+
+/-- The objects at a key agreeing up to derivation metadata hold the same table
+back-links: a CNode and a thread hold none. -/
+theorem _root_.SeLe4n.Model.SystemState.objectAgreesOffDerivationMetadataAt.tableBackLinks
+    {st st' : SystemState} {oid : SeLe4n.ObjId}
+    (h : SystemState.objectAgreesOffDerivationMetadataAt st' st oid) :
+    objTableBackLinks st'.objects[oid]? = objTableBackLinks st.objects[oid]? := by
+  rcases h with e | ⟨_, _, ha, hb, _⟩ | ⟨_, _, ha, hb, _⟩
+  · rw [e]
+  · rw [ha, hb]; rfl
+  · rw [ha, hb]; rfl
+
+/-- **The capability transfer keeps the table references**: it writes no
+reference table, and every object it writes is a CNode or a thread's links. -/
+theorem ipcUnwrapCaps_tableReferenceFrame {caps : Array TransferCap} {root : SeLe4n.ObjId}
+    {base : SeLe4n.Slot} {grant : Bool} {st st' : SystemState} {summary : CapTransferSummary}
+    (hObjInv : st.objects.invExt)
+    (h : ipcUnwrapCaps caps root base grant st = .ok (summary, st')) :
+    SystemState.TableReferenceFrame st st' := by
+  refine ⟨?_, fun k => ?_⟩
+  · unfold ipcUnwrapCaps at h
+    split at h
+    · simp at h; obtain ⟨_, rfl⟩ := h; rfl
+    · exact ipcUnwrapCapsLoop_referenceTables _ _ _ _ _ _ _ _ _ h
+  · by_cases hk : k = root
+    · subst hk
+      rcases ipcUnwrapCaps_objects_at_root_orig_or_cnode caps k base grant st st' summary
+        hObjInv h with e | ⟨cn', hc⟩
+      · rw [e]
+      · cases hC : st.getCNode? k with
+        | none => rw [ipcUnwrapCaps_state_eq_of_root_not_cnode caps k base grant st st' summary hC h]
+        | some cn => rw [hc, (SystemState.getCNode?_eq_some_iff st k cn).mp hC]; rfl
+    · exact (ipcUnwrapCaps_preserves_objects_ne caps root base grant st st' summary
+        k hk hObjInv h).tableBackLinks
+
 /-- The cap transfer writes CNodes, the derivation tree and slot links: every
 thread's TCB reads as it did off its slot links. -/
 theorem ipcUnwrapCaps_runQueueStage {caps : Array TransferCap} {root : SeLe4n.ObjId}
@@ -751,6 +868,7 @@ theorem ipcUnwrapCaps_runQueueStage {caps : Array TransferCap} {root : SeLe4n.Ob
     (fun hInv => SystemState.StateMono.of_stateFields fun x =>
       TCB.map_proj_of_map_withoutLinks_eq (fun t => (t.ipcState, t.threadState))
         (ipcUnwrapCaps_getTcb?_eq caps root base grant st st' summary x hInv h))
+    (fun hInv => ipcUnwrapCaps_tableReferenceFrame hInv h)
 
 /-- WS-ZA ZA4.7: the rendezvous capability lookup: CDT writes, then the
 receiver-side unwrap. -/
@@ -758,12 +876,18 @@ theorem receiveTransferCaps_runQueueStage
     {req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)} {root : SeLe4n.ObjId}
     {base : SeLe4n.Slot} {st st' : SystemState} {summary : CapTransferSummary}
     (h : receiveTransferCaps req root base st = .ok (summary, st')) : RunQueueStage st st' := by
-  obtain ⟨stR, _, hO, hS, _, hOr⟩ := receiveTransferCaps_frame h
-  have s1 : RunQueueStage st stR :=
-    RunQueueStage.of_frame hO (by rw [hS]) (by rw [hS]) (by rw [hS])
-  rcases hOr with rfl | hU
-  · exact s1
-  · exact s1.trans (ipcUnwrapCaps_runQueueStage hU)
+  unfold receiveTransferCaps at h
+  cases req with
+  | none =>
+      simp only [Except.ok.injEq, Prod.mk.injEq] at h
+      rw [← h.2]; exact .refl _
+  | some r =>
+      obtain ⟨cr, addrs, depth⟩ := r
+      simp only at h
+      split at h
+      · simp only [Except.ok.injEq, Prod.mk.injEq] at h
+        rw [← h.2]; exact .refl _
+      · exact ipcUnwrapCaps_runQueueStage h
 
 /-- The donation rebinds a context and two threads' bindings: no run-queue
 field moves. -/
@@ -777,6 +901,9 @@ theorem donateSchedContext_runQueueStage {st st' : SystemState}
     (fun hInv x => donateSchedContext_getTcb?_placement_eq st st' client server scId hInv h x)
     (fun hInv => SystemState.StateMono.of_stateFields
       (donateSchedContext_getTcb?_stateFields_eq st st' client server scId hInv h))
+    (fun hInv => .of_kindPreservingWrite
+      (donateSchedContext_kindPreservingWrite st st' client server scId hInv h)
+      (donateSchedContext_referenceTables h))
     (by rw [hS])
 
 theorem applyCallDonation_runQueueStage {st st' : SystemState}

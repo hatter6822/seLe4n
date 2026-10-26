@@ -52,11 +52,14 @@ macro_rules | `(tactic| run_queue_stage_step) => `(tactic|
 /-- A notification stored over a notification. -/
 theorem storeObject_notificationOver_runQueueStage {st st' : SystemState} {k : SeLe4n.ObjId}
     {n n' : Notification} (hOld : st.getNotification? k = some n)
-    (hS : storeObject k (.notification n') st = .ok ((), st')) : RunQueueStage st st' :=
+    (hS : storeObject k (.notification n') st = .ok ((), st'))
+    (hI : n'.irqBound = n.irqBound := by first | rfl | (simp_all; done)) : RunQueueStage st st' :=
   RunQueueStage.storeObject hS (fun c => by
     rw [(SystemState.getNotification?_eq_some_iff st k n).mp hOld]; rfl)
     (SystemState.objStateMono_nonTcb
       (by rw [(SystemState.getNotification?_eq_some_iff st k n).mp hOld]; rfl) rfl)
+    (by rw [(SystemState.getNotification?_eq_some_iff st k n).mp hOld]
+        simp only [objTableBackLinks_some, KernelObject.tableBackLinks, hI])
 
 macro_rules | `(tactic| run_queue_stage_step) => `(tactic|
   refine RunQueueStage.trans ?_
@@ -79,8 +82,13 @@ theorem runQueueStage_of_ntfnLinksRewritten {st s : SystemState}
       rcases hD.2.2 oid with e | ⟨t0, t1, h0, h1, np, nn, rfl⟩
       · exact SystemState.slotStateMono.of_eq e
       · rw [h0]; exact SystemState.slotStateMono.of_obj h1 (SystemState.objStateMono_tcb ⟨id, id⟩)
-    exact ⟨fun _ hR => ⟨hD.2.1, SystemState.runQueueRefined_of_frame (fun c t => hL c t)
-        (by rw [hD.scheduler_eq]) (by rw [hD.scheduler_eq]) hR⟩,
+    have hF : SystemState.TableReferenceFrame st s := ⟨by rw [hD.1]; rfl, fun k => by
+      rcases hD.2.2 k with e | ⟨t0, t1, h0, h1, np, nn, rfl⟩
+      · rw [e]
+      · rw [h0, h1]; rfl⟩
+    exact ⟨.of_tableFrame (fun _ hR => ⟨hD.2.1, SystemState.runQueueRefined_of_frame
+        (fun c t => hL c t) (by rw [hD.scheduler_eq]) (by rw [hD.scheduler_eq]) hR⟩)
+        (fun _ => hF),
       fun _ _ _ _ d => SystemState.currentDequeuedUniqueExcept_of_eq
         (by rw [hD.scheduler_eq]) hL hM d, fun _ _ => hM⟩
 
@@ -149,9 +157,13 @@ theorem spliceReplyFrameOutOrSelf_runQueueStage (st : SystemState) (rid : SeLe4n
     RunQueueStage st (spliceReplyFrameOutOrSelf st rid) := by
   rcases spliceReplyFrameOutOrSelf_cases st rid with h | h
   · rw [h]; exact RunQueueStage.refl _
-  · refine RunQueueStage.of_slots fun hInv =>
+  · refine RunQueueStage.of_slots (fun hInv =>
       ⟨spliceReplyFrameOut_preserves_objects_invExt hInv h, fun oid c => ?_, fun oid => ?_,
-       spliceReplyFrameOut_scheduler_eq h⟩
+       spliceReplyFrameOut_scheduler_eq h⟩) (fun hInv =>
+      ⟨spliceReplyFrameOut_referenceTables h, fun oid => by
+        rcases spliceReplyFrameOut_objects_rewrite hInv h oid with e | ⟨_, _, h1, h2, _⟩
+        · rw [e]
+        · rw [h1, h2]; rfl⟩)
     · rcases spliceReplyFrameOut_objects_rewrite hInv h oid with e | ⟨_, _, h1, h2, _⟩
       · rw [e]
       · rw [h1, h2]; rfl
@@ -200,7 +212,8 @@ theorem notificationWait_block_runQueueEntryStage {st st1 st2 st3 : SystemState}
     (hS1 : storeObject notificationId (.notification n') st = .ok ((), st1))
     (hS2 : storeTcbIpcStateAndMessage_fromTcb st1 waiter tcb s m = .ok st2)
     (hL : linkNtfnWaiter st2 waiter tail = .ok st3)
-    (hCur : st.scheduler.currentOnCore c = some waiter) (hNI : isIdleThreadId waiter = false) :
+    (hCur : st.scheduler.currentOnCore c = some waiter) (hNI : isIdleThreadId waiter = false)
+    (hI : n'.irqBound = ntfn.irqBound := by first | rfl | (simp_all; done)) :
     SystemState.RunQueueEntryStage st (removeRunnableOnCore st3 waiter c) := by
   have hC1 : st1.scheduler.currentOnCore c = some waiter :=
     currentOnCore_of_scheduler_eq (storeObject_scheduler_eq _ _ _ _ hS1) hCur
@@ -219,7 +232,7 @@ theorem notificationWait_block_runQueueEntryStage {st st1 st2 st3 : SystemState}
       split at hS2
       · cases hS2
       · rename_i hS; cases hS2
-        exact ((storeObject_notificationOver_runQueueStage hN hS1).window _).trans
+        exact ((storeObject_notificationOver_runQueueStage hN hS1 hI).window _).trans
           (SystemState.RunQueueWindowStage.storeObject_block hS
             ((SystemState.getTcb?_eq_some_iff st1 waiter tcb).mpr hT1) (fun _ => rfl) rfl hC1 hNI)
   exact (w.trans ((linkNtfnWaiter_runQueueStage hL).window _)).dispatch

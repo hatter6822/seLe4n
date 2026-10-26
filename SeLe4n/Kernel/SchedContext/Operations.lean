@@ -2116,7 +2116,7 @@ theorem schedContextUnbind_runQueueEntryStage (vScId : SeLe4n.ValidObjId) (st st
                   · exact id))) ?_
             exact .of_stage (SystemState.RunQueueStage.insert rfl rfl rfl
               (fun c => by dsimp only; rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
-                (SystemState.objStateMono_nonTcb (by dsimp only; rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl) rfl))
+                (SystemState.objStateMono_nonTcb (by dsimp only; rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl) rfl) (hB := by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl))
           have hNC : ∀ c, ({ st with scheduler := match runningCoreOf? st tid with
               | some r => (st.scheduler.setCurrentOnCore r none).markReschedulePendingOnCore r
               | none => st.scheduler } : SystemState).scheduler.currentOnCore c ≠ some tid := by
@@ -2158,7 +2158,7 @@ theorem schedContextUnbind_runQueueEntryStage (vScId : SeLe4n.ValidObjId) (st st
                   · exact id)) ?_
           · exact SystemState.RunQueueStage.insert rfl rfl rfl
               (fun c => by dsimp only; rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
-              (SystemState.objStateMono_nonTcb (by dsimp only; rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl) rfl)
+              (SystemState.objStateMono_nonTcb (by dsimp only; rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl) rfl) (hB := by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
           case hRun =>
             obtain ⟨r, hRC⟩ := Option.isSome_iff_exists.mp hW
             have hR0 := hD.runnable (runningCoreOf?_some_currentOnCore hRC)
@@ -2177,7 +2177,7 @@ theorem schedContextUnbind_runQueueEntryStage (vScId : SeLe4n.ValidObjId) (st st
           (purgeReplenishmentFromAllCores_frame (·.scheduler.runQueueEnds) _ (fun _ _ => rfl) _))
         exact SystemState.RunQueueStage.insert rfl rfl rfl
           (fun c => by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
-          (SystemState.objStateMono_nonTcb (by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl) rfl)
+          (SystemState.objStateMono_nonTcb (by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl) rfl) (hB := by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
   · contradiction
 
 end SeLe4n.Kernel.SchedContextOps

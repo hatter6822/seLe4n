@@ -181,6 +181,18 @@ theorem abortPendingIpcOnEndpoint_stateMono {epId : SeLe4n.ObjId} {isReceiveQ : 
   exact SystemState.objStateMono_tcb ⟨fun _ => rfl, fun _ => by
     simp [TCB.Active, TCB.withReturnFrame]⟩
 
+/-- The timeout's abort keeps the table references: the splice's frame, then a
+thread stored over the removed thread. -/
+theorem abortPendingIpcOnEndpoint_tableReferenceFrame {epId : SeLe4n.ObjId} {isReceiveQ : Bool}
+    {tid : SeLe4n.ThreadId} {st st' : SystemState} (hInv : st.objects.invExt)
+    (hA : abortPendingIpcOnEndpoint epId isReceiveQ tid st = .ok st') :
+    SystemState.TableReferenceFrame st st' := by
+  obtain ⟨st1, tcb1, hRem, hLook, hStore⟩ := abortPendingIpcOnEndpoint_shape hA
+  have hInv1 := endpointQueueRemove_preserves_objects_invExt _ _ _ _ _ hInv hRem
+  exact (endpointQueueRemove_tableReferenceFrame hInv hRem).trans
+    (.storeObject hInv1 hStore
+      (SystemState.TableReferenceFrame.tcb_over (lookupTcb_some_objects _ _ _ hLook)))
+
 /-- ...so it keeps the run queues in agreement with the links. -/
 theorem abortPendingIpcOnEndpoint_runQueueStage {epId : SeLe4n.ObjId} {isReceiveQ : Bool}
     {tid : SeLe4n.ThreadId} {st st' : SystemState}
@@ -192,6 +204,7 @@ theorem abortPendingIpcOnEndpoint_runQueueStage {epId : SeLe4n.ObjId} {isReceive
       hInv hA)
     (by rw [hS]) (by rw [hS]) (fun hInv x => abortPendingIpcOnEndpoint_placement_frame hInv hA x)
     (fun hInv => abortPendingIpcOnEndpoint_stateMono hInv hA)
+    (fun hInv => abortPendingIpcOnEndpoint_tableReferenceFrame hInv hA)
 
 /-- WS-RR RR8.11: the reclaim moves no thread's home core — the pop rebinds
 scheduling contexts (`returnDonatedSchedContext_getTcb?_placement_eq`). -/
