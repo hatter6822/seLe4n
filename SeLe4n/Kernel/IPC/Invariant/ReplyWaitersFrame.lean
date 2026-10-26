@@ -303,8 +303,12 @@ theorem spliceReplyFrameStores_replyViews_eq {st st' : SystemState} {rid above :
     {r a : Reply} (hInv : st.objects.invExt) (hR : st.getReply? rid = some r)
     (hA : st.getReply? above = some a) (h : spliceReplyFrameStores st rid above r a = .ok st') :
     st'.replyViews = st.replyViews := by
-  rcases spliceReplyFrameStores_cases h with ⟨_, hS⟩ | ⟨_, _, s1, s2, hB, hS1, hS2, hS3⟩
-  · exact replyViews_storeReply_eq hInv hA hS
+  rcases spliceReplyFrameStores_cases h with ⟨t1, _, hT1, hT2⟩ | ⟨_, _, s1, s2, hB, hS1, hS2, hS3⟩
+  · have hV1 := replyViews_storeReply_eq hInv hA hT1
+    have hI1 := storeObject_preserves_objects_invExt _ _ _ _ hInv hT1
+    rcases spliceReplyFrameStores_sever_cut_read hInv hR hA hT1 with hR1 | hR1
+    · exact (replyViews_storeReply_eq hI1 hR1 hT2).trans hV1
+    · exact (replyViews_storeReply_eq hI1 hR1 hT2).trans hV1
   · have hI1 := storeObject_preserves_objects_invExt _ _ _ _ hInv hS1
     have hI2 := storeObject_preserves_objects_invExt _ _ _ _ hI1 hS2
     have hV1 := replyViews_storeReply_eq hInv hA hS1

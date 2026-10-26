@@ -637,7 +637,7 @@ theorem donationChainWitness_wellFormed :
           cases hSc
           exact ⟨(SeLe4n.SchedContextId.toObjId_injective _ _ (eq_of_beq hKey)).symm, rfl⟩
         · cases hSc
-  refine ⟨?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
   · -- Every stored Reply has a caller, so `Reply.wellFormed` is immediate.
     intro rid r hR
     rw [donationChainWitness_lookup_cases] at hR
@@ -701,6 +701,26 @@ theorem donationChainWitness_wellFormed :
     intro scId sc hSc
     obtain ⟨rfl, rfl⟩ := hScCases scId sc hSc
     exact ⟨2, [donationChainWitnessInner, donationChainWitnessOuter], donationChainWitness_chain⟩
+  · -- The one `next` frame link — the outer reply's — is answered by the head.
+    intro rid r above hR hNext
+    rw [donationChainWitness_lookup_cases] at hR
+    split at hR
+    · cases hR; simp [witnessChainInnerReply] at hNext
+    · split at hR
+      · next hKey =>
+        cases hR
+        have hRid : rid = donationChainWitnessOuter :=
+          (SeLe4n.ReplyId.toObjId_injective _ _ (eq_of_beq hKey)).symm
+        subst hRid
+        have hAbove : above = donationChainWitnessInner := by
+          simpa [witnessChainOuterReply] using hNext.symm
+        subst hAbove
+        refine ⟨witnessChainInnerReply, ?_, rfl⟩
+        rw [donationChainWitness_lookup_cases]
+        simp
+      · split at hR
+        · cases hR
+        · cases hR
 
 -- ============================================================================
 -- §6  WS-ZA ZA4.6 — the live arms carry the reply-waiter queues
@@ -859,7 +879,7 @@ theorem retireFinalObject_preserves_donationChainWellFormed (ec : Concurrency.Co
       (retireFinalObject ec target recorder st).objects[o]? = st.objects[o]? :=
     fun hP hk hn => retireFinalObject_passive_kept ec target recorder st hObjInv hP
       (.inl ⟨_, _, hk, hn⟩)
-  refine ⟨?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro rid r hR
     exact h.replyWellFormed rid r (back hR (fun _ e => by cases e))
   · intro scId sc hSc rid hr
@@ -888,6 +908,12 @@ theorem retireFinalObject_preserves_donationChainWellFormed (ec : Concurrency.Co
     unfold replyStackLinksAt? SystemState.getObject?
     rw [retireFinalObject_passive_kept ec target recorder st hObjInv (by rw [hR]; trivial)
       (.inr (passiveObjectQuiescent_of_next hR hNs))]
+  · intro rid r above hR hN
+    have hR0 := back hR (fun _ e => by cases e)
+    obtain ⟨a, hA, hAP⟩ := h.nextLinkReciprocal rid r above hR0 hN
+    refine ⟨a, ?_, hAP⟩
+    rw [keepNamed (by rw [hA]; trivial) hR0 (objectNamesById_of_replyNext hN)]
+    exact hA
 
 /-- **The retire keeps every thread's reply view but a quiescent thread's**:
 a key keeps its view, or loses an idle one — the retired thread's, which waits on

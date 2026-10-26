@@ -174,6 +174,11 @@ theorem ipcUnwrapCaps_preserves_ipcInvariantFull
     ipcUnwrapCaps_preserves_endpointQueueTailBlockedConsistent caps receiverRoot
       slotBase grantRight st st' summary hObjInv hInv.endpointQueueTailBlockedConsistent hStep,
     ipcUnwrapCaps_preserves_queueNextTargetBlocked caps receiverRoot slotBase
-      grantRight st st' summary hObjInv hInv.queueNextTargetBlocked hStep⟩
+      grantRight st st' summary hObjInv hInv.queueNextTargetBlocked hStep,
+    notificationBindingReciprocal.of_codes
+      (ipcUnwrapCaps_sameNotificationBindings caps receiverRoot slotBase grantRight st st'
+        summary hObjInv hStep) hInv.notificationBindingReciprocal,
+    ipcUnwrapCaps_preserves_endpointQueueLinksOnlyBlocked caps receiverRoot slotBase
+      grantRight st st' summary hObjInv hInv.endpointQueueLinksOnlyBlocked hStep⟩
 
 end SeLe4n.Kernel

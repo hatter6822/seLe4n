@@ -222,7 +222,7 @@ waiters' admission on the state the cancel leaves (`hWait`), and the context
 unbind's binding clause on the state the release leaves (`hBind`).  That the
 pre-state admission carries to those states — so no step's guard refuses after
 an earlier step has written, which is what proves checks-before-writes for the
-thread finalisation — is `docs/planning/UNTYPED_RESET_PLAN.md` row 27; today
+thread finalisation — is `docs/planning/UNTYPED_RESET_PLAN.md` row 29; today
 each step and the retire re-check their own guards.
 
 The steps: the unbind clears the bound-notification code
@@ -261,7 +261,7 @@ theorem finaliseThread_quiesces (x : SeLe4n.ObjId) (st : SystemState)
   rename_i tx0 hO
   dsimp only at hA0
   simp only [Bool.and_eq_true] at hA0
-  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hTid, -⟩, hIdle⟩, -⟩, -⟩, -⟩, -⟩, hBnc⟩, -⟩, -⟩, -⟩ := hA0
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨hTid, -⟩, hIdle⟩, -⟩, -⟩, -⟩, -⟩, hBnc⟩, -⟩ := hA0
   simp only [beq_iff_eq] at hTid
   simp only [Bool.not_eq_true'] at hIdle
   have hX0 : st.getTcb? ⟨x.val⟩ = some tx0 := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hO

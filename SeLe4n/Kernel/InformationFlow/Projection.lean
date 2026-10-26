@@ -316,6 +316,9 @@ def projectKernelObject (ctx : LabelingContext) (observer : IfObserver) (obj : K
                        -- erased as `pendingMessage`, the field they replace, is.
                        ipcBadge := 0, ipcBadged := false, ipcCanGrant := false,
                        ipcFaultSend := false,
+                       -- The context the thread is the recorded origin of is
+                       -- erased, as the context's own `donationOrigin` is.
+                       originScCode := 0,
                        -- The derivation links of the thread's two space slots
                        -- are cleared, as a CNode's are: the tree they encode is
                        -- not projected.  The space capabilities stay visible.
@@ -617,6 +620,17 @@ theorem projectKernelObject_tcb_schedContextBinding_invariant
     (ctx : LabelingContext) (observer : IfObserver) (t : TCB)
     (c o : Nat) :
     projectKernelObject ctx observer (.tcb { t with scBindingScCode := c, scBindingOwnerCode := o })
+      = projectKernelObject ctx observer (.tcb t) := by
+  simp [projectKernelObject]
+
+/-- The projection is likewise invariant under the donor's origin back-link
+(`TCB.originScCode`), the third field the donation's donor store writes: the
+`.tcb` arm strips it with the binding. -/
+theorem projectKernelObject_tcb_donorStore_invariant
+    (ctx : LabelingContext) (observer : IfObserver) (t : TCB)
+    (c o g : Nat) :
+    projectKernelObject ctx observer
+        (.tcb { t with scBindingScCode := c, scBindingOwnerCode := o, originScCode := g })
       = projectKernelObject ctx observer (.tcb t) := by
   simp [projectKernelObject]
 

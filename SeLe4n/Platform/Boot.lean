@@ -874,7 +874,7 @@ def tcbReferencesReservedIdleSlot (tcb : TCB) : Bool :=
      pendingReceiveReplyCode, _pendingFault, _fpContext, ntfnPrevCode, ntfnNextCode,
      _runCoreCode, _runPrio, _runPrevCode, _runNextCode, _runBucketPrevCode, _runBucketNextCode,
      replyWaiterPrevCode, replyWaiterNextCode, replyWaitersHeadCode, _replyWaitersCount, _ipcStateCode,
-     _ipcBadge, _ipcBadged, _ipcCanGrant, _ipcFaultSend,
+     _ipcBadge, _ipcBadged, _ipcCanGrant, _ipcFaultSend, _originScCode,
      -- The space slots' spare records are no slot's capability (`SpareCells`).
      _spaceSpare⟩ =>
     SeLe4n.Kernel.isIdleThreadId tid ||
@@ -1483,6 +1483,38 @@ def bootCapabilityDanglingBootError : String :=
   "boot: a capability names an object the configuration does not install " ++
     "(WS-ZA ZA5.4 part 18)"
 
+/-- **Whether a configured object binding names, by code, an entry that names it
+    back**: `code = 0` (unbound), or some entry sits at `code - 1` and holds
+    `back` as the opposite code (`KernelObject.bindingCodes`). -/
+@[inline] def bootBindingNamedBack (objs : List ObjectEntry) (code back : Nat)
+    (opposite : KernelObject → Nat) : Bool :=
+  code == 0 || objs.any fun e' => e'.id.val + 1 == code && opposite e'.obj == back
+
+/-- **WS-ZA ZA5.4 part 27**: the eleventh `wellFormed` conjunct — **every boot
+    notification binding is reciprocal.**
+
+    The IPC invariant holds a thread's bound notification and a notification's
+    bound thread to name each other (`notificationBindingReciprocal`, seL4's
+    `tcbBoundNotification` / `ntfnBoundTCB` pair, which `bindNotification`
+    writes as one fact on both ends).  A configuration may pre-bind a thread to
+    a notification, and the boot installs both as given; a thread naming a
+    notification that does not name it back — or naming an object that is no
+    notification, or nothing at all — would leave the pair broken from the first
+    instruction, and the unbind and the retire both read one end to clear the
+    other.  This refuses such a configuration.  Not attacker-reachable — the
+    configuration is the integrator's. -/
+def bootNotificationBindingsReciprocal (config : PlatformConfig) : Bool :=
+  config.initialObjects.all fun e =>
+    bootBindingNamedBack config.initialObjects e.obj.bindingCodes.1 (e.id.val + 1)
+        (fun o => o.bindingCodes.2) &&
+      bootBindingNamedBack config.initialObjects e.obj.bindingCodes.2 (e.id.val + 1)
+        (fun o => o.bindingCodes.1)
+
+/-- The eleventh conjunct's diagnostic. -/
+def bootNotificationBindingBootError : String :=
+  "boot: a thread and a notification the configuration binds do not name each " ++
+    "other (WS-ZA ZA5.4 part 27)"
+
 /-- U6-E/F: A well-formed PlatformConfig has unique IRQs, unique object IDs,
     (WS-RR RR5.13, PR #889 review) keeps the per-core idle slots free,
     (PR #889 review rounds 7 and 8) stores every TCB, SchedContext and Reply
@@ -1491,13 +1523,15 @@ def bootCapabilityDanglingBootError : String :=
     `numCores` PEs, (WS-BP BP3.2) places every boot untyped over memory it
     may describe, (WS-BP BP7.1) gives every configured address space a
     table page of its own, (WS-ZA ZA5.4 part 13) names each boot untyped
-    by at most one capability, and (part 18) names only objects it installs. -/
+    by at most one capability, (part 18) names only objects it installs, and
+    (part 27) binds threads and notifications only in reciprocal pairs. -/
 def PlatformConfig.wellFormed (config : PlatformConfig) : Bool :=
   irqsUnique config.irqTable && objectIdsUnique config.initialObjects &&
     idleSlotsReserved config && embeddedIdentitiesMatchSlots config &&
     objectBudgetRespected config && declaredCoreCountInRange config &&
     untypedPlacementRespected config && bootRootTablesPlaced config &&
-    untypedCapabilitiesUnique config && bootCapabilitiesNameInstalledObjects config
+    untypedCapabilitiesUnique config && bootCapabilitiesNameInstalledObjects config &&
+    bootNotificationBindingsReciprocal config
 
 /-- **PR #889 review round 23**: a well-formed config declares at least one PE
     and no more than the model has.  Zero is what this refuses: the derivation
@@ -1523,6 +1557,12 @@ theorem PlatformConfig.wellFormed_untypedCapabilitiesUnique (config : PlatformCo
     objects the boot installs. -/
 theorem PlatformConfig.wellFormed_bootCapabilitiesNameInstalledObjects (config : PlatformConfig)
     (h : config.wellFormed = true) : bootCapabilitiesNameInstalledObjects config = true := by
+  simp_all only [PlatformConfig.wellFormed, Bool.and_eq_true]
+
+/-- **WS-ZA ZA5.4 part 27**: a well-formed config binds threads and
+    notifications only in reciprocal pairs. -/
+theorem PlatformConfig.wellFormed_bootNotificationBindingsReciprocal (config : PlatformConfig)
+    (h : config.wellFormed = true) : bootNotificationBindingsReciprocal config = true := by
   simp_all only [PlatformConfig.wellFormed, Bool.and_eq_true]
 
 /-- **WS-BP BP3.2**: a well-formed config places every boot untyped over
@@ -1565,7 +1605,8 @@ def wellFormedConjuncts (config : PlatformConfig) : List (Bool × String) :=
    (untypedPlacementRespected config, untypedPlacementBootError),
    (bootRootTablesPlaced config, bootRootTablesBootError),
    (untypedCapabilitiesUnique config, untypedCapabilityDuplicateBootError),
-   (bootCapabilitiesNameInstalledObjects config, bootCapabilityDanglingBootError)]
+   (bootCapabilitiesNameInstalledObjects config, bootCapabilityDanglingBootError),
+   (bootNotificationBindingsReciprocal config, bootNotificationBindingBootError)]
 
 /-- The first conjunct `config` fails, reported in its own words. -/
 def wellFormedDiagnostic (config : PlatformConfig) : String :=
@@ -1914,7 +1955,7 @@ def bootSafeTcbCheck (tcb : TCB) : Bool :=
      _pendingReceiveReply, _pendingFault, _fpContext, _ntfnPrevCode, _ntfnNextCode,
      _runCoreCode, _runPrio, _runPrevCode, _runNextCode, _runBucketPrevCode, _runBucketNextCode,
      _replyWaiterPrevCode, _replyWaiterNextCode, _replyWaitersHeadCode, _replyWaitersCount, _ipcStateCode,
-     _ipcBadge, _ipcBadged, _ipcCanGrant, _ipcFaultSend,
+     _ipcBadge, _ipcBadged, _ipcCanGrant, _ipcFaultSend, _originScCode,
      -- The space slots' spare records are no slot's capability (`SpareCells`).
      _spaceSpare⟩ =>
     tcb.pendingMessage.isNone && decide (tcb.ipcState = .ready) &&
@@ -4126,7 +4167,7 @@ def tcbAffinityDeclared (cores : List SeLe4n.Kernel.Concurrency.CoreId) (tcb : T
      _pendingReceiveReply, _pendingFault, _fpContext, _ntfnPrevCode, _ntfnNextCode,
      _runCoreCode, _runPrio, _runPrevCode, _runNextCode, _runBucketPrevCode, _runBucketNextCode,
      _replyWaiterPrevCode, _replyWaiterNextCode, _replyWaitersHeadCode, _replyWaitersCount, _ipcStateCode,
-     _ipcBadge, _ipcBadged, _ipcCanGrant, _ipcFaultSend,
+     _ipcBadge, _ipcBadged, _ipcCanGrant, _ipcFaultSend, _originScCode,
      -- The space slots' spare records are no slot's capability (`SpareCells`).
      _spaceSpare⟩ =>
     match tcb.cpuAffinity with
@@ -4306,6 +4347,15 @@ theorem bootCapabilitiesNameInstalledObjects_withoutExtents (c : PlatformConfig)
   simp only [List.flatMap_map, bootEntryCapabilities_withoutUntypedExtent, List.any_map,
     Function.comp_def, ObjectEntry.withoutUntypedExtent_id]
 
+theorem bootNotificationBindingsReciprocal_withoutExtents (c : PlatformConfig) :
+    bootNotificationBindingsReciprocal c.withoutExtents =
+      bootNotificationBindingsReciprocal c := by
+  have hCodes : ∀ o : KernelObject, (objectWithoutUntypedExtent o).bindingCodes = o.bindingCodes :=
+    fun o => by cases o <;> rfl
+  unfold bootNotificationBindingsReciprocal bootBindingNamedBack PlatformConfig.withoutExtents
+  simp only [List.all_map, List.any_map, Function.comp_def, ObjectEntry.withoutUntypedExtent_id,
+    ObjectEntry.withoutUntypedExtent_obj, hCodes]
+
 theorem declaredCoreCountInRange_withoutExtents (c : PlatformConfig) :
     declaredCoreCountInRange c.withoutExtents = declaredCoreCountInRange c := rfl
 
@@ -4397,11 +4447,13 @@ theorem PlatformConfig.wellFormed_of_withoutExtents (c c' : PlatformConfig)
   rw [hEq, untypedCapabilitiesUnique_withoutExtents] at h8
   have h9 := bootCapabilitiesNameInstalledObjects_withoutExtents c
   rw [hEq, bootCapabilitiesNameInstalledObjects_withoutExtents] at h9
+  have hRecip := bootNotificationBindingsReciprocal_withoutExtents c
+  rw [hEq, bootNotificationBindingsReciprocal_withoutExtents] at hRecip
   unfold PlatformConfig.wellFormed at hWf ⊢
   simp only [Bool.and_eq_true] at hWf ⊢
-  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨w1, w2⟩, w3⟩, w4⟩, w5⟩, w6⟩, _⟩, w7⟩, w8⟩, w9⟩ := hWf
-  exact ⟨⟨⟨⟨⟨⟨⟨⟨⟨h1 ▸ w1, h2 ▸ w2⟩, h3 ▸ w3⟩, h4 ▸ w4⟩, h5 ▸ w5⟩, h6 ▸ w6⟩, hPlace⟩, h7 ▸ w7⟩,
-    h8 ▸ w8⟩, h9 ▸ w9⟩
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨w1, w2⟩, w3⟩, w4⟩, w5⟩, w6⟩, _⟩, w7⟩, w8⟩, w9⟩, wRecip⟩ := hWf
+  exact ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨h1 ▸ w1, h2 ▸ w2⟩, h3 ▸ w3⟩, h4 ▸ w4⟩, h5 ▸ w5⟩, h6 ▸ w6⟩, hPlace⟩, h7 ▸ w7⟩,
+    h8 ▸ w8⟩, h9 ▸ w9⟩, hRecip ▸ wRecip⟩
 
 /-- PR #889 review round 3: the idle store over a **declared** core list — the
     cores a platform binding says exist (`PlatformBinding.declaredCores`), rather than
@@ -5729,7 +5781,8 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
     (hCur : ist.state.scheduler.currentOnCore bootCoreId = none)
     (hReplenish : replenishQueueValid ist.state)
     (hEffective : effectiveParamsMatchRunQueue ist.state)
-    (hRun : ist.state.runQueueRefined) :
+    (hRun : ist.state.runQueueRefined)
+    (hBindings : notificationBindingReciprocal ist.state) :
     Architecture.proofLayerInvariantBundle ist.state := by
   obtain ⟨hSvc, hSvcR, hTlb, hShoot, hPerCoreTlb, hPerCoreICache, hAudit⟩ := hFields
   obtain ⟨hComp, hAcyc, hLinks, hTreeShape⟩ := hTree
@@ -5904,6 +5957,7 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
          fun tidS tcbS ridS hObjS hRepS => ?_⟩,
         fun tidA _ tcbA _ _ _ _ hA _ hBA _ => ?_,
         ?_,
+        ?_,
         ?_⟩
       · have hTcb := (hBS tid.toObjId _ hObj).2.2.2.1 tcb rfl
         rw [hTcb.2.2.2.2.2.2.2.1] at hRep; cases hRep
@@ -5939,6 +5993,15 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
         intro a b tcbA tcbB hObjA _ hNext
         have hTcb := (hBS a.toObjId _ hObjA).2.2.2.1 tcbA rfl
         rw [hTcb.2.2.1] at hNext; exact absurd hNext (by simp)
+      · -- WS-ZA ZA5.4 part 27: notificationBindingReciprocal (21st) — the boot's
+        -- bindings are the configuration's, which the boot admits only in
+        -- reciprocal pairs (`bootNotificationBindingsReciprocal`).
+        refine ⟨hBindings, ?_⟩
+        -- WS-ZA ZA5.4 part 27: endpointQueueLinksOnlyBlocked (the last, vacuous — boot
+        -- TCBs have queueNext = none, which `bootSafeTcbCheck` refuses otherwise).
+        intro a tcbA hObjA hNext
+        have hTcb := (hBS a.toObjId _ hObjA).2.2.2.1 tcbA rfl
+        exact absurd hTcb.2.2.1 hNext
   -- 4. ipcSchedulerCouplingInvariantBundle
   have hCouplingBundle : ipcSchedulerCouplingInvariantBundle
       ist.state := by
@@ -7631,6 +7694,87 @@ theorem bootFromPlatformChecked_ok_capObject_of_config (config : PlatformConfig)
       cases hObj; exact absurd rfl hs
     · rw [installBootVSpaceRoot_objects_ne _ _ _ _ _ hEq] at hObj; exact hBase hObj
 
+/-- **WS-ZA ZA5.4 part 27**: **every object the checked boot holds that holds a
+    notification-binding code is a configured object at its id** — the
+    binding's VSpace root holds none. -/
+theorem bootFromPlatformChecked_ok_boundObject_of_config (config : PlatformConfig)
+    (ist : IntermediateState) (h : bootFromPlatformChecked config = .ok ist)
+    (oid : SeLe4n.ObjId) (obj : KernelObject)
+    (hObj : ist.state.objects[oid]? = some obj) (hb : obj.bindingCodes ≠ (0, 0)) :
+    ∃ e ∈ config.initialObjects, e.id = oid ∧ e.obj = obj := by
+  have hBase := bootFromPlatform_objects_of_config config oid obj
+  obtain ⟨_, _, hShape⟩ := bootFromPlatformChecked_ok_shape config ist h
+  rcases hShape with ⟨_, rfl⟩ | ⟨entry, _, rfl⟩
+  · rw [bootEnableInterruptsOp_objects_eq] at hObj; exact hBase hObj
+  · rw [bootEnableInterruptsOp_objects_eq] at hObj
+    by_cases hEq : entry.id = oid
+    · subst hEq
+      rw [installBootVSpaceRoot_objects_lookup] at hObj
+      cases hObj; exact absurd rfl hb
+    · rw [installBootVSpaceRoot_objects_ne _ _ _ _ _ hEq] at hObj; exact hBase hObj
+
+/-- **WS-ZA ZA5.4 part 27**: **the checked boot's notification bindings are
+    reciprocal.**  A slot holding a binding code holds a configured object
+    (`bootFromPlatformChecked_ok_boundObject_of_config`), whose code names an
+    entry that names it back (`bootNotificationBindingsReciprocal`, a
+    `wellFormed` conjunct), and that entry is in the state at its id
+    (`bootFromPlatformChecked_ok_objects_of_mem`). -/
+theorem bootFromPlatformChecked_ok_notificationBindingReciprocal (config : PlatformConfig)
+    (ist : IntermediateState) (h : bootFromPlatformChecked config = .ok ist) :
+    notificationBindingReciprocal ist.state := by
+  obtain ⟨hWf, _, _⟩ := bootFromPlatformChecked_ok_shape config ist h
+  have hChk := List.all_eq_true.mp (config.wellFormed_bootNotificationBindingsReciprocal hWf)
+  intro k
+  cases hO : ist.state.objects[k]? with
+  | none =>
+    exact ⟨fun c hc => absurd hc (by simp [notificationBindingCodes]),
+      fun c hc => absurd hc (by simp [notificationBindingCodes])⟩
+  | some o =>
+    simp only [notificationBindingCodes]
+    have hEntry : o.bindingCodes ≠ (0, 0) → ∃ e ∈ config.initialObjects, e.id = k ∧ e.obj = o :=
+      bootFromPlatformChecked_ok_boundObject_of_config config ist h k o hO
+    have hAt : ∀ e' ∈ config.initialObjects, ∀ c : Nat, e'.id.val + 1 = c + 1 →
+        ist.state.objects[(⟨c⟩ : SeLe4n.ObjId)]? = some e'.obj := by
+      intro e' hMem' c hc
+      have hId : e'.id = ⟨c⟩ := SeLe4n.ObjId.ext (by simp only at hc ⊢; omega)
+      rw [← hId]; exact bootFromPlatformChecked_ok_objects_of_mem config ist h e' hMem'
+    refine ⟨fun c hc => ?_, fun c hc => ?_⟩
+    · obtain ⟨e, hMem, hId, rfl⟩ := hEntry (fun h0 => by rw [h0] at hc; cases hc)
+      have hE := hChk e hMem
+      simp only [bootBindingNamedBack, Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq,
+        List.any_eq_true] at hE
+      rcases hE.1 with h0 | ⟨e', hMem', hId', hBack⟩
+      · rw [h0] at hc; cases hc
+      · rw [hAt e' hMem' c (hId'.trans hc)]
+        simp only [notificationBindingCodes]; rw [hBack, hId]
+    · obtain ⟨e, hMem, hId, rfl⟩ := hEntry (fun h0 => by rw [h0] at hc; cases hc)
+      have hE := hChk e hMem
+      simp only [bootBindingNamedBack, Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq,
+        List.any_eq_true] at hE
+      rcases hE.2 with h0 | ⟨e', hMem', hId', hBack⟩
+      · rw [h0] at hc; cases hc
+      · rw [hAt e' hMem' c (hId'.trans hc)]
+        simp only [notificationBindingCodes]; rw [hBack, hId]
+
+/-- **WS-ZA ZA5.4 part 27**: **the idle store keeps the bindings reciprocal**
+    over a store whose idle slots are empty: an idle thread is bound to nothing,
+    and it lands on a slot no binding names. -/
+theorem foldl_storeIdleThread_notificationBindingReciprocal
+    (L : List SeLe4n.Kernel.Concurrency.CoreId) (ist : IntermediateState)
+    (hFresh : idleSlotsFreshAt ist) (hR : notificationBindingReciprocal ist.state) :
+    notificationBindingReciprocal (L.foldl storeIdleThread ist).state := by
+  refine .of_boundCodes_agree hR (fun k hk => ?_) (fun k hk => ?_)
+  · cases hO : (L.foldl storeIdleThread ist).state.objects[k]? with
+    | none => rw [hO] at hk; exact absurd rfl hk
+    | some o =>
+      rcases foldl_storeIdleThread_objects_cases L ist k o hO with hB | ⟨c, _, rfl⟩
+      · rw [hB]
+      · rw [hO] at hk; exact absurd rfl hk
+  · rw [foldl_storeIdleThread_objects_frame_of_not_idle L ist k]
+    intro c _ hEq
+    rw [← hEq, hFresh c] at hk
+    exact hk rfl
+
 /-- **WS-ZA ZA5.4**: ...and the idle store keeps it so: an idle TCB holds no
     capability. -/
 theorem bootFromPlatformCheckedWithIdleThreadsFor_ok_capObject_of_config
@@ -8040,7 +8184,8 @@ def bootStartShape (ist : IntermediateState) : Prop :=
     { (default : SystemState).scheduler with
       runQueue := rq, runQueueEnds := re, reschedulePending := rp }) ∧
   ist.state.runQueueRefined ∧
-  Kernel.runQueueBootSound ist.state bootCoreId
+  Kernel.runQueueBootSound ist.state bootCoreId ∧
+  notificationBindingReciprocal ist.state
 
 /-- **WS-ZA ZA5.4**: **what the linked boot leaves** — `bootStartShape` with
     the objects read off their derivation links and the empty tree replaced by
@@ -8057,7 +8202,8 @@ def bootLinkedShape (ist : IntermediateState) : Prop :=
       runQueue := rq, runQueueEnds := re, reschedulePending := rp }) ∧
   ist.state.runQueueRefined ∧
   Kernel.runQueueBootSound ist.state bootCoreId ∧
-  bootDerivationTreeSound ist.state
+  bootDerivationTreeSound ist.state ∧
+  notificationBindingReciprocal ist.state
 
 /-- **WS-BP BP7.11**: **the proof-layer bundle of any state of linked boot
     shape.**  The scheduler half of `proofLayerInvariantBundle_of_bootShape`'s
@@ -8066,7 +8212,7 @@ def bootLinkedShape (ist : IntermediateState) : Prop :=
 theorem proofLayerInvariantBundle_of_bootLinkedShape (ist : IntermediateState)
     (h : bootLinkedShape ist) : Architecture.proofLayerInvariantBundle ist.state := by
   obtain ⟨hShape, hFields, hAsid, hUntyped, ⟨rq, re, rp, hSch⟩, hRun, ⟨hNodup, hQueue⟩,
-    hTree⟩ := h
+    hTree, hBindings⟩ := h
   have hCur : ist.state.scheduler.currentOnCore bootCoreId = none := by
     rw [hSch]; exact (default_state_perCoreInitialized bootCoreId).1
   have hRunnableTcb : ∀ tid, tid ∈ ist.state.scheduler.runnable →
@@ -8104,7 +8250,7 @@ theorem proofLayerInvariantBundle_of_bootLinkedShape (ist : IntermediateState)
       rw [hDS] at hMem
       simp at hMem
   refine proofLayerInvariantBundle_of_bootShape ist hShape hFields hTree hAsid hUntyped hSched hCur
-    ?_ ?_ hRun
+    ?_ ?_ hRun hBindings
   · simp only [replenishQueueValid, hSch]
     exact ⟨empty_sorted, empty_sizeConsistent⟩
   · intro tid hMem
@@ -8152,7 +8298,8 @@ theorem bootFromPlatformCheckedWithIdleThreadsFor_bootStartShape
       ?_, ⟨_, _, _, hSch⟩,
       foldl_storeIdleThread_runQueueRefined cores base
         (bootFromPlatformChecked_ok_runQueueRefined config base hChecked) (fun c _ c' => ?_),
-      ?_, ?_⟩
+      ⟨?_, ?_⟩, foldl_storeIdleThread_notificationBindingReciprocal cores base hFresh
+        (bootFromPlatformChecked_ok_notificationBindingReciprocal config base hChecked)⟩
     · -- Every object: the checked boot's, or an idle TCB.
       intro oid obj hObj
       rcases foldl_storeIdleThread_objects_cases cores base oid obj hObj with

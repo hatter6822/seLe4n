@@ -26,7 +26,8 @@ each delete takes one edge out of the tree, so the fuel the tree's edge bound
 gives is enough; the source has no children afterwards
 (`cspaceRevokeCdtFinalising_ok_childless`), as seL4's `cteRevoke` leaves it,
 unless a child's zombie delete ran out of fuel and kept its slot, which ends the
-revocation for a retry (row 27 proves the fuel suffices).
+revocation for a retry (`docs/planning/UNTYPED_RESET_PLAN.md` row 29 proves the
+fuel suffices).
 -/
 
 namespace SeLe4n.Kernel
@@ -395,7 +396,7 @@ kind and slots, and no edge (`finaliseFinalObject_frame`). -/
 theorem finaliseFinalObject_preserves_capabilityInvariantBundle (target : Nat) (st : SystemState)
     (h : capabilityInvariantBundle st) : capabilityInvariantBundle (finaliseFinalObject target st) :=
   have hFr := finaliseFinalObject_frame target st h.2.2.2.2.1
-  capabilityInvariantBundle_of_kindPreserving h hFr.cdt hFr.invExt hFr.kind
+  capabilityInvariantBundle_of_kindPreservingUpToBindings h hFr.cdt hFr.invExt hFr.kind
 
 /-- **The finalising delete keeps the capability invariants**: the delete keeps
 them (`cspaceDeleteSlot_preserves_capabilityInvariantBundle`), the teardown
@@ -799,7 +800,7 @@ edge out of the tree or leaves the source named by no edge, and so childless for
 good (`zombieDeleteAt_revokeProgress`), so the fuel never runs out first — or
 the loop stops at a child whose zombie delete kept its slot, its passes out of
 fuel, which a reachable state never reaches (`docs/planning/UNTYPED_RESET_PLAN.md`
-row 27); the caller then sees that slot occupied and retries. -/
+row 29); the caller then sees that slot occupied and retries. -/
 theorem revokeFirstChildLoop_childless (ec : Concurrency.CoreId) (cnode : SeLe4n.ObjId)
     (slot : SeLe4n.Slot) :
     ∀ (n : Nat) (st : SystemState), capabilityInvariantBundle st →

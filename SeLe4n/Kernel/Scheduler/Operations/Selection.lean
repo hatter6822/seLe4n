@@ -2141,7 +2141,7 @@ theorem enqueueRunnableOnCore_kindPreservingWrite (st : SystemState) (c : CoreId
     split
     · exact kindPreservingWrite.refl _
     · exact (SystemState.rewriteObject_tcb_kindPreservingWrite hw _ hInv
-        (by exact ⟨rfl, rfl⟩)).trans
+        (by exact ⟨rfl, rfl, rfl⟩)).trans
         (SystemState.runEnqueueAdmitted_objectsAgreeOffRunLinks _ c tid _).kindPreserving
 
 /-- The enqueue keeps the lifecycle metadata's consistency with the object

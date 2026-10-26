@@ -1602,6 +1602,22 @@ structure TCB where
       send or call that blocks.  seL4 decides the same question at the
       rendezvous from `tcbFault`. -/
   ipcFaultSend : Bool := false
+  /-- **The scheduling context this thread is the counted origin of**, as a
+      scalar code (`k + 1` for the context `⟨k⟩`, `0` for none): written by the
+      first push of a donation, when the donor lends the context it owns and the
+      context records it as the reservation's origin
+      (`SchedContext.donationOrigin`).  The origin a context records **counts**
+      only while this code names that context back (the
+      check `donationOriginRecipient?` makes, `donationOriginCounted`), so the two ends validate each other and
+      neither is cleared for the other's sake: a context whose origin is
+      cleared on its own side leaves this code naming it, which then counts for
+      nothing, and a thread that makes a second first push moves the code, so
+      the context it lent before keeps a superseded origin that counts for
+      nothing either -- one bounded field per context, never growing state --
+      and settles as seL4's `reply_pop` settles it.  A carved thread starts at
+      `0`, so an id reused after a thread is destroyed is the origin of no
+      context, whatever a context still records.  -/
+  originScCode : Nat := 0
   /-- WS-ZA ZA5.4 part 26: **the records the two space slots keep while
       empty**, as a CNode's slots keep theirs (`CNode.spare`): entry `i` is
       the capability cell slot `i` last held, or the one the carve made with
@@ -1917,26 +1933,26 @@ every other field is the record's. -/
 /-- WS-ZA ZA5.2: the binding of a constructed TCB is the one its two code fields
 stand for, so a record update writing a binding's codes reads back that binding
 (`SchedContextBinding.ofCodes_codes`). -/
-@[simp] theorem TCB.schedContextBinding_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47).schedContextBinding =
+@[simp] theorem TCB.schedContextBinding_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48).schedContextBinding =
       SeLe4n.Kernel.SchedContextBinding.ofCodes f19 f20 := rfl
 
 /-- The roots of a constructed TCB are the objects its two space slots name, so a
 record update leaving the slots alone reads the old roots. -/
-@[simp] theorem TCB.cspaceRoot_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47).cspaceRoot = TCB.spaceCellObject f4[0] := rfl
+@[simp] theorem TCB.cspaceRoot_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48).cspaceRoot = TCB.spaceCellObject f4[0] := rfl
 
-@[simp] theorem TCB.vspaceRoot_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47).vspaceRoot = TCB.spaceCellObject f4[1] := rfl
+@[simp] theorem TCB.vspaceRoot_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48).vspaceRoot = TCB.spaceCellObject f4[1] := rfl
 
-@[simp] theorem TCB.ipcState_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47).ipcState = ThreadIpcState.ofCodes f7 f42 := rfl
+@[simp] theorem TCB.ipcState_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48).ipcState = ThreadIpcState.ofCodes f7 f42 := rfl
 
-@[simp] theorem TCB.replyObject_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47).replyObject = SeLe4n.ReplyId.ofOptCode f26 := rfl
+@[simp] theorem TCB.replyObject_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48).replyObject = SeLe4n.ReplyId.ofOptCode f26 := rfl
 
-@[simp] theorem TCB.pendingReceiveReply_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47).pendingReceiveReply = SeLe4n.ReplyId.ofOptCode f27 := rfl
+@[simp] theorem TCB.pendingReceiveReply_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48).pendingReceiveReply = SeLe4n.ReplyId.ofOptCode f27 := rfl
 
 theorem TCB.ofCodes_ipcCodes (t : TCB) :
     ThreadIpcState.ofCodes t.ipcObjectCode t.ipcStateCode = t.ipcState := rfl
@@ -1981,14 +1997,14 @@ theorem TCB.ipcState_ext {a b : TCB} (h : a.ipcState = b.ipcState) :
 view when a code is copied from another record: together they let `simp` read
 a written link as the value written and an untouched link as the old view. -/
 
-@[simp] theorem TCB.queuePrev_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47).queuePrev = SeLe4n.ThreadId.ofOptCode f11 := rfl
+@[simp] theorem TCB.queuePrev_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48).queuePrev = SeLe4n.ThreadId.ofOptCode f11 := rfl
 
-@[simp] theorem TCB.queuePPrev_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47).queuePPrev = QueuePPrev.ofOptCode f12 := rfl
+@[simp] theorem TCB.queuePPrev_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48).queuePPrev = QueuePPrev.ofOptCode f12 := rfl
 
-@[simp] theorem TCB.queueNext_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47).queueNext = SeLe4n.ThreadId.ofOptCode f13 := rfl
+@[simp] theorem TCB.queueNext_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48).queueNext = SeLe4n.ThreadId.ofOptCode f13 := rfl
 
 /-- The notification-queue predecessor, read from its scalar code. -/
 @[inline] def TCB.ntfnPrev (t : TCB) : Option SeLe4n.ThreadId :=
@@ -1998,11 +2014,11 @@ a written link as the value written and an untouched link as the old view. -/
 @[inline] def TCB.ntfnNext (t : TCB) : Option SeLe4n.ThreadId :=
   SeLe4n.ThreadId.ofOptCode t.ntfnNextCode
 
-@[simp] theorem TCB.ntfnPrev_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47).ntfnPrev = SeLe4n.ThreadId.ofOptCode f30 := rfl
+@[simp] theorem TCB.ntfnPrev_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48).ntfnPrev = SeLe4n.ThreadId.ofOptCode f30 := rfl
 
-@[simp] theorem TCB.ntfnNext_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47).ntfnNext = SeLe4n.ThreadId.ofOptCode f31 := rfl
+@[simp] theorem TCB.ntfnNext_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48).ntfnNext = SeLe4n.ThreadId.ofOptCode f31 := rfl
 
 @[simp] theorem TCB.ofOptCode_ntfnPrevCode (t : TCB) :
     SeLe4n.ThreadId.ofOptCode t.ntfnPrevCode = t.ntfnPrev := rfl
@@ -2513,7 +2529,9 @@ theorem TCB.ext {a b : TCB}
     (hWCount : a.replyWaitersCount = b.replyWaitersCount)
     -- WS-ZA ZA4.7: and what a blocked sender's capability contributed.
     (hIBadge : a.ipcBadge = b.ipcBadge) (hIBadged : a.ipcBadged = b.ipcBadged)
-    (hIGrant : a.ipcCanGrant = b.ipcCanGrant) (hIFault : a.ipcFaultSend = b.ipcFaultSend) :
+    (hIGrant : a.ipcCanGrant = b.ipcCanGrant) (hIFault : a.ipcFaultSend = b.ipcFaultSend)
+    -- and the context it is the recorded donation origin of.
+    (hOrigin : a.originScCode = b.originScCode) :
     a = b := by
   have hNPrevC : a.ntfnPrevCode = b.ntfnPrevCode := by
     rw [← TCB.optCode_ntfnPrev a, ← TCB.optCode_ntfnPrev b, hNPrev]
@@ -2552,7 +2570,7 @@ theorem TCB.ext {a b : TCB}
          hQPrevC, hQPPrevC, hQNextC, hPend, hRC, hFhS, hFhW, hBnC, hScC, hScO, hTb, hMcp, hPipC, hTo,
          hCpuAff, hReplyC, hPendReplyC, hPendFault, hFp, hNPrevC, hNNextC,
          hRCore, hRPrio, hRPrev, hRNext, hRBPrev, hRBNext, hWPrev, hWNext, hWHead, hWCount,
-         hIpcS, hIBadge, hIBadged, hIGrant, hIFault, Subsingleton.elim _ _⟩
+         hIpcS, hIBadge, hIBadged, hIGrant, hIFault, hOrigin, Subsingleton.elim _ _⟩
 
 /-- A thread's spare space cells are logically one value (`SpareCells`). -/
 @[simp] theorem TCB.with_spaceSpare (t : TCB) (v : SpareCells) : { t with spaceSpare := v } = t := by

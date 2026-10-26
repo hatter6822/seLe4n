@@ -1486,13 +1486,15 @@ theorem updatePipBoostOnCore_objects_pointwise (st : SystemState) (c : CoreId)
     (updatePipBoostOnCore st c tid).objects[oid]? = st.objects[oid]? ∨
       ∃ pre post : TCB, st.objects[oid]? = some (.tcb pre) ∧
         (updatePipBoostOnCore st c tid).objects[oid]? = some (.tcb post) ∧
-        post.spaceCells = pre.spaceCells ∧ post.spaceLinks = pre.spaceLinks := by
+        post.spaceCells = pre.spaceCells ∧ post.spaceLinks = pre.spaceLinks ∧
+          post.boundNotificationCode = pre.boundNotificationCode := by
   -- The object write is nothing or a TCB-for-TCB rewrite, and the re-key's
   -- link writes are TCB-for-TCB (WS-ZA ZA4.5).
   have hRef : (pipBoostWrite st tid).objects[oid]? = st.objects[oid]? ∨
       ∃ pre post : TCB, st.objects[oid]? = some (.tcb pre) ∧
         (pipBoostWrite st tid).objects[oid]? = some (.tcb post) ∧
-        post.spaceCells = pre.spaceCells ∧ post.spaceLinks = pre.spaceLinks := by
+        post.spaceCells = pre.spaceCells ∧ post.spaceLinks = pre.spaceLinks ∧
+          post.boundNotificationCode = pre.boundNotificationCode := by
     cases hT : st.getTcb? tid with
     | none => left; rw [pipBoostWrite_eq_self_of_getTcb?_none st tid hT]
     | some tcb =>
@@ -1501,24 +1503,26 @@ theorem updatePipBoostOnCore_objects_pointwise (st : SystemState) (c : CoreId)
           obtain ⟨p, hAt⟩ := pipBoostWrite_objects_at st tid tcb hT hInv
           rw [SystemState.getTcb?_eq_some_iff] at hAt
           exact Or.inr ⟨tcb, { tcb with pipBoostCode := p },
-            (SystemState.getTcb?_eq_some_iff st tid tcb).mp hT, hAt, rfl, rfl⟩
+            (SystemState.getTcb?_eq_some_iff st tid tcb).mp hT, hAt, rfl, rfl, rfl⟩
         · left
           exact pipBoostWrite_objects_ne st tid oid
             (by simp only [beq_iff_eq]; exact fun e => hEq e.symm) hInv
   have hA := updatePipBoostOnCore_objectsAgreeOffRunLinks st c tid
   rcases hA.pointwise oid with
     hT | ⟨preT, postT, hPreT, hPostT⟩
-  · rcases hRef with hH | ⟨preH, postH, hPreH, hPostH, hC, hL⟩
+  · rcases hRef with hH | ⟨preH, postH, hPreH, hPostH, hC, hL, hB⟩
     · left; rw [hT, hH]
-    · exact Or.inr ⟨preH, postH, hPreH, by rw [hT]; exact hPostH, hC, hL⟩
+    · exact Or.inr ⟨preH, postH, hPreH, by rw [hT]; exact hPostH, hC, hL, hB⟩
   · obtain ⟨t, ht, hw⟩ := hA.get_tcb' hPostT
     rw [hPreT] at ht; cases ht
     have hC : postT.spaceCells = preT.spaceCells := by simpa [TCB.withoutRunLinks] using congrArg TCB.spaceCells hw
     have hL : postT.spaceLinks = preT.spaceLinks := by simpa [TCB.withoutRunLinks] using congrArg TCB.spaceLinks hw
-    rcases hRef with hH | ⟨preH, postH, hPreH, hPostH, hC', hL'⟩
-    · exact Or.inr ⟨preT, postT, by rw [← hH]; exact hPreT, hPostT, hC, hL⟩
+    have hB : postT.boundNotificationCode = preT.boundNotificationCode := by
+      simpa [TCB.withoutRunLinks] using congrArg TCB.boundNotificationCode hw
+    rcases hRef with hH | ⟨preH, postH, hPreH, hPostH, hC', hL', hB'⟩
+    · exact Or.inr ⟨preT, postT, by rw [← hH]; exact hPreT, hPostT, hC, hL, hB⟩
     · rw [hPostH] at hPreT; cases hPreT
-      exact Or.inr ⟨preH, postT, hPreH, hPostT, hC.trans hC', hL.trans hL'⟩
+      exact Or.inr ⟨preH, postT, hPreH, hPostT, hC.trans hC', hL.trans hL', hB.trans hB'⟩
 
 /-- WS-RR RR8.16 (`v0.35.197`): ...and so does the boost-with-wake step. -/
 theorem pipBoostWithWake_objects_pointwise (st : SystemState) (tid : ThreadId)
@@ -1526,7 +1530,8 @@ theorem pipBoostWithWake_objects_pointwise (st : SystemState) (tid : ThreadId)
     (pipBoostWithWake st tid ec).1.objects[oid]? = st.objects[oid]? ∨
       ∃ pre post : TCB, st.objects[oid]? = some (.tcb pre) ∧
         (pipBoostWithWake st tid ec).1.objects[oid]? = some (.tcb post) ∧
-        post.spaceCells = pre.spaceCells ∧ post.spaceLinks = pre.spaceLinks := by
+        post.spaceCells = pre.spaceCells ∧ post.spaceLinks = pre.spaceLinks ∧
+          post.boundNotificationCode = pre.boundNotificationCode := by
   rw [pipBoostWithWake_state]
   exact updatePipBoostOnCore_objects_pointwise st _ tid hInv oid
 
@@ -1541,7 +1546,8 @@ theorem propagatePipChainCrossCore_objects_pointwise :
         ∃ pre post : TCB, st.objects[oid]? = some (.tcb pre) ∧
           (propagatePipChainCrossCore st startTid ec fuel).1.objects[oid]?
             = some (.tcb post) ∧
-          post.spaceCells = pre.spaceCells ∧ post.spaceLinks = pre.spaceLinks
+          post.spaceCells = pre.spaceCells ∧ post.spaceLinks = pre.spaceLinks ∧
+          post.boundNotificationCode = pre.boundNotificationCode
   | 0, st, startTid, ec, _hInv, oid => by
       left; rw [propagatePipChainCrossCore_zero]
   | n + 1, st, startTid, ec, hInv, oid => by
@@ -1555,14 +1561,15 @@ theorem propagatePipChainCrossCore_objects_pointwise :
             (pipBoostWithWake st startTid ec).1 nextServer ec
             (pipBoostWithWake_preserves_objects_invExt st startTid ec hInv) oid
           simp only
-          rcases hHead with hH | ⟨preH, postH, hPreH, hPostH, hC, hL⟩
-          · rcases hTail with hT | ⟨preT, postT, hPreT, hPostT, hC', hL'⟩
+          rcases hHead with hH | ⟨preH, postH, hPreH, hPostH, hC, hL, hB⟩
+          · rcases hTail with hT | ⟨preT, postT, hPreT, hPostT, hC', hL', hB'⟩
             · left; rw [hT, hH]
-            · exact Or.inr ⟨preT, postT, by rw [← hH]; exact hPreT, hPostT, hC', hL'⟩
-          · rcases hTail with hT | ⟨preT, postT, hPreT, hPostT, hC', hL'⟩
-            · exact Or.inr ⟨preH, postH, hPreH, by rw [hT]; exact hPostH, hC, hL⟩
+            · exact Or.inr ⟨preT, postT, by rw [← hH]; exact hPreT, hPostT, hC', hL', hB'⟩
+          · rcases hTail with hT | ⟨preT, postT, hPreT, hPostT, hC', hL', hB'⟩
+            · exact Or.inr ⟨preH, postH, hPreH, by rw [hT]; exact hPostH, hC, hL, hB⟩
             · rw [hPostH] at hPreT; cases hPreT
-              exact Or.inr ⟨preH, postT, hPreH, hPostT, hC'.trans hC, hL'.trans hL⟩
+              exact Or.inr ⟨preH, postT, hPreH, hPostT, hC'.trans hC, hL'.trans hL,
+                hB'.trans hB⟩
 
 /-- WS-RR RR8.16 (`v0.35.197`): the boost resolves every thread the pre-state
 resolved.  Its only object write replaces a TCB with a TCB, so no key stops

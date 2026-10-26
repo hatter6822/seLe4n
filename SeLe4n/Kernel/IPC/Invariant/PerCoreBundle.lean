@@ -372,6 +372,7 @@ def queueNextTargetBlocked_perCore (st : SystemState) (c : CoreId) : Prop :=
     (∀ ep, (tcbA.ipcState = .blockedOnSend ep ∨ tcbA.ipcState = .blockedOnCall ep) →
       (tcbB.ipcState = .blockedOnSend ep ∨ tcbB.ipcState = .blockedOnCall ep))
 
+
 -- ============================================================================
 -- §2  Restriction bridges: the global conjunct weakens to every core's slice
 -- ============================================================================
@@ -769,7 +770,7 @@ the fifteen R4-era conjuncts; the bundle grew to twenty during the SM6.D
 reply-object hardening (reply↔caller linkage, server-first receive stash,
 donation-owner uniqueness, queue-tail blocking, strict link-target
 blocking), then lost `passiveServerIdle` at `v0.36.136`, and this per-core
-form mirrors the **current** nineteen-conjunct
+form mirrors the **current** twenty-conjunct
 `ipcInvariantFull` — dropping the five newer conjuncts from the per-core
 view would re-open on the SMP surface exactly the false-assurance gaps
 they closed (a stale reply cap acting on the wrong caller, a stranded
@@ -801,6 +802,9 @@ structure ipcInvariantFull_perCore (st : SystemState) (c : CoreId) : Prop where
   donationOwnerUnique : donationOwnerUnique_perCore st c
   endpointQueueTailBlockedConsistent : endpointQueueTailBlockedConsistent_perCore st c
   queueNextTargetBlocked : queueNextTargetBlocked_perCore st c
+  /-- The binding pair is a shared-object clause, carried whole. -/
+  notificationBindingReciprocal : notificationBindingReciprocal st
+  endpointQueueLinksOnlyBlocked : endpointQueueLinksOnlyBlocked st
 
 /-- WS-SM SM6.D.1: the ∀-core SMP aggregate — every core's view of the
 IPC invariant bundle holds. -/
@@ -840,6 +844,8 @@ theorem ipcInvariantFull_perCore_of_full {st : SystemState} {c : CoreId}
   endpointQueueTailBlockedConsistent :=
     endpointQueueTailBlockedConsistent_perCore_of_global h.endpointQueueTailBlockedConsistent c
   queueNextTargetBlocked := queueNextTargetBlocked_perCore_of_global h.queueNextTargetBlocked c
+  notificationBindingReciprocal := h.notificationBindingReciprocal
+  endpointQueueLinksOnlyBlocked := h.endpointQueueLinksOnlyBlocked
 
 /-- SM6.D.1 recovery: the ∀-core SMP aggregate recovers the full global
 bundle (each restricted conjunct instantiated at its subject's home core). -/
@@ -868,7 +874,8 @@ theorem ipcInvariantFull_of_smp {st : SystemState}
    donationOwnerUnique_of_forall_perCore (fun c => (h c).donationOwnerUnique),
    endpointQueueTailBlockedConsistent_of_forall_perCore
      (fun c => (h c).endpointQueueTailBlockedConsistent),
-   queueNextTargetBlocked_of_forall_perCore (fun c => (h c).queueNextTargetBlocked)⟩
+   queueNextTargetBlocked_of_forall_perCore (fun c => (h c).queueNextTargetBlocked),
+   (h bootCoreId).notificationBindingReciprocal, (h bootCoreId).endpointQueueLinksOnlyBlocked⟩
 
 /-- SM6.D.1 recovery to the plan's fifteen-conjunct structural core
 (`ipcInvariantCore` — the "15 conjuncts post-R4" the plan names). -/
@@ -958,6 +965,8 @@ theorem default_ipcInvariantFull_perCore (c : CoreId) :
   endpointQueueTailBlockedConsistent := fun epId ep tl tcb hEp _ _ => by
     rw [default_objects_getElem_none'] at hEp; cases hEp
   queueNextTargetBlocked := fun a b tcbA tcbB hA _ _ _ => absurd hA default_no_tcb
+  notificationBindingReciprocal := .of_objects_none default_objects_getElem_none'
+  endpointQueueLinksOnlyBlocked := fun _ _ hT _ => absurd ((SystemState.getTcb?_eq_some_iff _ _ _).mpr hT) default_no_tcb
 
 /-- WS-SM SM6.D: the default state satisfies the ∀-core SMP aggregate. -/
 theorem default_ipcInvariantFull_smp : ipcInvariantFull_smp (default : SystemState) :=

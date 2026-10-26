@@ -529,43 +529,6 @@ theorem cleanupDonatedSchedContext_tlbShootdown_eq
           (fun n s hs => returnDonatedSchedContext_tlbShootdown_eq st s tid _ _ n hs)
 
 
-/-- **WS-HP HP10.5: clear the recorded reservation ORIGIN of every SchedContext
-naming this thread.**
-
-`SchedContext.donationOrigin` is *history the kernel validates* rather than an
-invariant — no `donationChainWellFormed` clause relates it to the store, because
-"the origin is the bottom frame's thread, **or** a thread whose frame was removed"
-has an unstateable second disjunct.  That is sound because the pop guards what it
-reads (`donationRecipientAcceptable`), and it is sound **only** while the id the
-field holds still means the thread that owned the reservation.
-
-Thread-id reuse is the one way that fails: a `ThreadId` is an index, so destroying
-the origin thread and allocating another object at its id would leave a later pop
-handing a reservation to an unrelated thread — across a domain boundary, with the
-recipient guard satisfied, because the guard asks whether the *recipient* may take
-a context and not whether the recorded origin is still the thread that lent it.
-
-So this runs on the destroy path, from `lifecyclePreRetypeCleanup`, **before**
-anything reads the field (WS-HP HP10.5 is ordered ahead of the arm that does).  It
-is the same posture as that function's refusal of a context still heading a reply
-stack, one field over: a dangling reference is cleared rather than reasoned about.
-
-Only contexts whose origin *is* this thread are rewritten, so the sweep is a
-write-set-honest fold in the shape `removeFromAllEndpointQueues` uses. -/
-def clearDonationOriginReferences (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
-  st.objects.fold st fun acc oid obj =>
-    match obj with
-    | .schedContext sc =>
-      if sc.donationOrigin == some tid then
-        -- `v0.35.72`: the typed in-place rewrite of the accumulator's record,
-        -- which is the enumerated one -- the fold visits each key once and
-        -- writes only its own.  The guard stays outside the rewrite, so a
-        -- context that names no origin is no write at all.
-        acc.updateSchedContext (SchedContextId.ofObjId oid) fun s =>
-          { s with donationOrigin := none }
-      else acc
-    | _ => acc
-
 /-- WS-H2/H-05, R4-A.3 (M-12): Clean up external references to a TCB being retyped away.
     Removes the ThreadId from:
     1. The scheduler run queue (`removeRunnable`)
@@ -586,13 +549,11 @@ def cleanupTcbReferences (st : SystemState) (tid : SeLe4n.ThreadId) : SystemStat
   -- `chooseBestRunnableBy` failed that core's entire selection scan forever.
   let st := removeRunnableFromAllCores st tid
   let st := removeFromAllEndpointQueues st tid
-  let st := removeFromNotificationWaitQueue st tid
-  -- **WS-HP HP10.5**: and the recorded reservation origins that name this thread.
-  -- Placed here, in the reference sweep, rather than beside the donation return in
-  -- `lifecyclePreRetypeCleanup`: a *stale origin* is a dangling reference to a
-  -- destroyed thread, which is exactly what this function is for, and unlike the
-  -- donation return it needs no error channel — there is nothing to refuse.
-  clearDonationOriginReferences st tid
+  -- A context that records this thread as its reservation's origin is left as it
+  -- is: that origin counts only while the thread's own back-link names the
+  -- context (`donationOriginRecipient?`), and a thread made at this id starts
+  -- with none, so the destroyed thread's id hands nothing on.
+  removeFromNotificationWaitQueue st tid
 
 -- ============================================================================
 -- `v0.35.164`: the per-core donation-cancellation arms, and the destroy path's

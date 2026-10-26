@@ -223,6 +223,8 @@ stack — and `donationChainWellFormed`
 ([`Defs.lean`](../../SeLe4n/Kernel/IPC/Invariant/Defs.lean)): the stack is
 **doubly linked** (`Reply.prev` down, `Reply.next` up, with the context recorded
 on the head frame alone), every `prev` link is answered by the frame it names,
+and so is every upward `next` link (`nextLinkReciprocal`, since `v0.36.140`:
+seL4's `sym_refs` over `replyNext` / `replyPrev`, so no frame's `next` dangles),
 and each context's head walks a **terminating** chain (`donationChainFrom`,
 fuel-bounded). It is a conjunct of `ipcReachable`, not of
 `ipcInvariantFull`, which keeps its twenty; and it is *preserved* through
@@ -342,16 +344,17 @@ both readings.
 
 **HP6 then turned the sever into the splice** (`cancelledMiddleCallerPolicy =
 .spliceOutTheCut`): the frame above a cut takes the cut frame's own downward link,
-the frame below links back up at it, and the cut frame's own `prev` is cleared —
-seL4's `reply_unlink` downward half, and what makes `donationChainWellFormed`
+the frame below links back up at it, and the cut frame's own links are cleared —
+seL4's `reply_remove` (both links since `v0.36.140`), and what makes `donationChainWellFormed`
 survive the removal outright rather than transiently.
 `donationAccountingPreserved_atCallDepthThree` is the payoff: at depth ≥ 3 the
 reservation leaves the cut **owed outward** and the pop that answers the bottom
 frame delivers it home.  §3.22 inverted from a COST witness to a PAYOFF witness in
 the same cut and now measures that second pop.  The below side **degenerates** to
 the sever rather than refusing, so the removal's refusal set is exactly the
-pre-WS-HP one, a stale upward link is still reachable, and the reciprocity checks
-stay load-bearing.  **Depth 2 was not closed by the splice** — both policies write
+pre-WS-HP one; a stale upward link is excluded on every reachable state since
+`v0.36.140` (`nextLinkReciprocal`), and the reciprocity checks stay as fail-closed
+checks.  **Depth 2 was not closed by the splice** — both policies write
 `none` into the frame above a bottom frame — and that §3.20's depth-two halves and
 the golden trace passed byte-identically across the flip is the measurement that
 that change was confined to depth ≥ 3.  Closing depth 2 needed the reservation's

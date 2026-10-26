@@ -2320,4 +2320,600 @@ theorem storeObject_nonTcb_preserves_noIncoming
   · rw [storeObject_objects_ne st st' oid y.toObjId obj hEq hObjInv hStep] at h
     exact ⟨tcb', h, rfl⟩
 
+-- ============================================================================
+-- Section: frame family for `endpointQueueLinksOnlyBlocked`.
+-- The invariant reads one TCB at a time (its `ipcState` and its `queueNext`),
+-- so a write keeps it when every TCB it leaves either keeps both fields or is
+-- itself queued or unlinked.
+-- ============================================================================
+
+/-- **The backward combinator**: every post-state TCB with a queue successor is
+waiting on an endpoint queue, or carries both fields from the pre-state. -/
+theorem endpointQueueLinksOnlyBlocked_of_tcb_backward
+    (st st' : SystemState)
+    (hBack : ∀ (y : SeLe4n.ThreadId) (tcb' : TCB),
+      st'.objects[y.toObjId]? = some (.tcb tcb') → tcb'.queueNext ≠ none →
+      ipcStateEndpointQueued tcb'.ipcState = true ∨
+        ∃ tcb, st.objects[y.toObjId]? = some (.tcb tcb) ∧
+          tcb.ipcState = tcb'.ipcState ∧ tcb.queueNext = tcb'.queueNext)
+    (hInv : endpointQueueLinksOnlyBlocked st) :
+    endpointQueueLinksOnlyBlocked st' := by
+  intro y tcb' h hN
+  rcases hBack y tcb' h hN with hq | ⟨tcb, h0, hI, hQ⟩
+  · exact hq
+  · rw [← hI]; exact hInv y tcb h0 (hQ ▸ hN)
+
+/-- **The backward combinator, both fields carried**: every post-state TCB has a
+pre-state counterpart with the same `ipcState` and `queueNext`. -/
+theorem endpointQueueLinksOnlyBlocked_of_tcb_links_backward
+    (st st' : SystemState)
+    (hBack : ∀ (y : SeLe4n.ThreadId) (tcb' : TCB),
+      st'.objects[y.toObjId]? = some (.tcb tcb') →
+      ∃ tcb, st.objects[y.toObjId]? = some (.tcb tcb) ∧
+        tcb.ipcState = tcb'.ipcState ∧ tcb.queueNext = tcb'.queueNext)
+    (hInv : endpointQueueLinksOnlyBlocked st) :
+    endpointQueueLinksOnlyBlocked st' :=
+  endpointQueueLinksOnlyBlocked_of_tcb_backward st st' (fun y tcb' h _ => .inr (hBack y tcb' h)) hInv
+
+/-- Pointwise object lookup equality transports `endpointQueueLinksOnlyBlocked`. -/
+theorem endpointQueueLinksOnlyBlocked_of_objects_eq
+    (st st' : SystemState)
+    (hLk : ∀ (x : SeLe4n.ObjId), st'.objects[x]? = st.objects[x]?)
+    (hInv : endpointQueueLinksOnlyBlocked st) :
+    endpointQueueLinksOnlyBlocked st' := by
+  intro y tcb h hN
+  rw [hLk] at h
+  exact hInv y tcb h hN
+
+/-- A write that changes nothing but TCB run-queue links keeps
+`endpointQueueLinksOnlyBlocked`. -/
+theorem endpointQueueLinksOnlyBlocked_of_objectsAgreeOffRunLinks {st st' : SystemState}
+    (h : SystemState.objectsAgreeOffRunLinks st' st) (hInv : endpointQueueLinksOnlyBlocked st) :
+    endpointQueueLinksOnlyBlocked st' := by
+  intro y tcb hT hN
+  run_links_back h at tcb hT
+  exact hInv y tcb hT hN
+
+/-- A rewrite of notification-queue links keeps `endpointQueueLinksOnlyBlocked`. -/
+theorem endpointQueueLinksOnlyBlocked_of_ntfnLinksRewritten {st st' : SystemState}
+    (h : ntfnLinksRewritten st st') (hInv : endpointQueueLinksOnlyBlocked st) :
+    endpointQueueLinksOnlyBlocked st' := by
+  intro y tcb hT hN
+  ntfn_links_back h at tcb hT
+  exact hInv y tcb hT hN
+
+/-- `ensureRunnable` frames `endpointQueueLinksOnlyBlocked`. -/
+theorem ensureRunnable_preserves_endpointQueueLinksOnlyBlocked
+    (st : SystemState) (tid : SeLe4n.ThreadId) (hInv : endpointQueueLinksOnlyBlocked st) :
+    endpointQueueLinksOnlyBlocked (ensureRunnable st tid) :=
+  endpointQueueLinksOnlyBlocked_of_objectsAgreeOffRunLinks
+    (ensureRunnable_objectsAgreeOffRunLinks st tid) hInv
+
+/-- `removeRunnable` frames `endpointQueueLinksOnlyBlocked`. -/
+theorem removeRunnable_preserves_endpointQueueLinksOnlyBlocked
+    (st : SystemState) (tid : SeLe4n.ThreadId) (hInv : endpointQueueLinksOnlyBlocked st) :
+    endpointQueueLinksOnlyBlocked (removeRunnable st tid) :=
+  endpointQueueLinksOnlyBlocked_of_objectsAgreeOffRunLinks
+    (removeRunnable_objectsAgreeOffRunLinks st tid) hInv
+
+/-- `storeObject` of a TCB keeps `endpointQueueLinksOnlyBlocked` when the new
+TCB has no successor, waits on an endpoint queue, or keeps both fields of the
+TCB it replaces. -/
+theorem storeObject_tcb_preserves_endpointQueueLinksOnlyBlocked
+    (st st' : SystemState) (oid : SeLe4n.ObjId) (newTcb : TCB)
+    (hObjInv : st.objects.invExt)
+    (hNew : newTcb.queueNext ≠ none →
+      ipcStateEndpointQueued newTcb.ipcState = true ∨
+        ∃ old, st.objects[oid]? = some (.tcb old) ∧
+          old.ipcState = newTcb.ipcState ∧ old.queueNext = newTcb.queueNext)
+    (hInv : endpointQueueLinksOnlyBlocked st)
+    (hStore : storeObject oid (.tcb newTcb) st = .ok ((), st')) :
+    endpointQueueLinksOnlyBlocked st' := by
+  refine endpointQueueLinksOnlyBlocked_of_tcb_backward st st' (fun y tcb' h hN => ?_) hInv
+  by_cases hEq : y.toObjId = oid
+  · rw [hEq, storeObject_objects_eq st st' oid _ hObjInv hStore] at h
+    cases h
+    rcases hNew hN with hq | ⟨old, hOld, hI, hQ⟩
+    · exact .inl hq
+    · exact .inr ⟨old, hEq ▸ hOld, hI, hQ⟩
+  · rw [storeObject_objects_ne st st' oid y.toObjId _ hEq hObjInv hStore] at h
+    exact .inr ⟨tcb', h, rfl, rfl⟩
+
+/-- `storeObject` of anything but a TCB, over anything but a TCB, frames
+`endpointQueueLinksOnlyBlocked`. -/
+theorem storeObject_nonTcb_preserves_endpointQueueLinksOnlyBlocked
+    (st st' : SystemState) (oid : SeLe4n.ObjId) (obj : KernelObject)
+    (hObjInv : st.objects.invExt)
+    (hNotTcb : ∀ tcb, obj ≠ .tcb tcb)
+    (hInv : endpointQueueLinksOnlyBlocked st)
+    (hStore : storeObject oid obj st = .ok ((), st')) :
+    endpointQueueLinksOnlyBlocked st' := by
+  refine endpointQueueLinksOnlyBlocked_of_tcb_backward st st' (fun y tcb' h _ => ?_) hInv
+  by_cases hEq : y.toObjId = oid
+  · rw [hEq, storeObject_objects_eq st st' oid _ hObjInv hStore] at h
+    exact absurd (Option.some.inj h) (hNotTcb tcb')
+  · rw [storeObject_objects_ne st st' oid y.toObjId _ hEq hObjInv hStore] at h
+    exact .inr ⟨tcb', h, rfl, rfl⟩
+
+/-- `storeObject` of a non-TCB object over a non-TCB slot frames
+`endpointQueueLinksOnlyBlocked`. -/
+theorem storeObject_non_ep_non_tcb_preserves_endpointQueueLinksOnlyBlocked
+    (st st' : SystemState) (oid : SeLe4n.ObjId) (obj : KernelObject)
+    (hInv : endpointQueueLinksOnlyBlocked st)
+    (hObjInv : st.objects.invExt)
+    (hNotTcb : ∀ tcb, obj ≠ .tcb tcb)
+    (_hPrevNotTcb : ∀ tcb, st.objects[oid]? ≠ some (.tcb tcb))
+    (hStore : storeObject oid obj st = .ok ((), st')) :
+    endpointQueueLinksOnlyBlocked st' :=
+  storeObject_nonTcb_preserves_endpointQueueLinksOnlyBlocked st st' oid obj hObjInv hNotTcb hInv hStore
+
+/-- `storeObject` of an endpoint frames `endpointQueueLinksOnlyBlocked`. -/
+theorem storeObject_endpoint_preserves_endpointQueueLinksOnlyBlocked
+    (st st' : SystemState) (oid : SeLe4n.ObjId) (ep : Endpoint)
+    (hInv : endpointQueueLinksOnlyBlocked st)
+    (hObjInv : st.objects.invExt)
+    (hStore : storeObject oid (.endpoint ep) st = .ok ((), st')) :
+    endpointQueueLinksOnlyBlocked st' :=
+  storeObject_nonTcb_preserves_endpointQueueLinksOnlyBlocked st st' oid _ hObjInv
+    (fun _ h => KernelObject.noConfusion h) hInv hStore
+
+/-- `storeObject` of a TCB keeping the stored-over TCB's `ipcState` and
+`queueNext` frames `endpointQueueLinksOnlyBlocked`. -/
+theorem storeObject_tcb_preserveIpcAndQueueNext_preserves_endpointQueueLinksOnlyBlocked
+    (st st' : SystemState) (tid₀ : SeLe4n.ThreadId) (oldTcb newTcb : TCB)
+    (hObjInv : st.objects.invExt)
+    (hOld : st.objects[tid₀.toObjId]? = some (.tcb oldTcb))
+    (hSameIpc : newTcb.ipcState = oldTcb.ipcState)
+    (hSameNext : newTcb.queueNext = oldTcb.queueNext)
+    (hInv : endpointQueueLinksOnlyBlocked st)
+    (hStore : storeObject tid₀.toObjId (.tcb newTcb) st = .ok ((), st')) :
+    endpointQueueLinksOnlyBlocked st' :=
+  storeObject_tcb_preserves_endpointQueueLinksOnlyBlocked st st' tid₀.toObjId newTcb hObjInv
+    (fun _ => .inr ⟨oldTcb, hOld, hSameIpc.symm, hSameNext.symm⟩) hInv hStore
+
+/-- `storeTcbQueueLinks` keeps `endpointQueueLinksOnlyBlocked` when the
+successor it writes is none or its thread already waits on an endpoint queue:
+it rewrites only that thread's links, never an `ipcState`. -/
+theorem storeTcbQueueLinks_preserves_endpointQueueLinksOnlyBlocked
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (prev : Option SeLe4n.ThreadId) (pprev : Option QueuePPrev)
+    (next : Option SeLe4n.ThreadId)
+    (hInv : endpointQueueLinksOnlyBlocked st)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st')
+    (hNew : next ≠ none → ∀ tcbTid : TCB, st.objects[tid.toObjId]? = some (.tcb tcbTid) →
+      ipcStateEndpointQueued tcbTid.ipcState = true) :
+    endpointQueueLinksOnlyBlocked st' := by
+  have hFrame : ∀ x, x ≠ tid.toObjId → st'.objects[x]? = st.objects[x]? :=
+    fun x hNe => storeTcbQueueLinks_preserves_objects_ne st st' tid prev pprev next x hNe hObjInv hStep
+  obtain ⟨tcb', hTcb', hQN'⟩ :=
+    storeTcbQueueLinks_stored_queueNext st st' tid prev pprev next hObjInv hStep
+  intro y tcbY hY hN
+  by_cases hEq : y.toObjId = tid.toObjId
+  · obtain ⟨orig, hOrig, hIpc⟩ :=
+      storeTcbQueueLinks_tcb_ipcState_backward st st' tid prev pprev next hObjInv hStep y tcbY hY
+    rw [hEq] at hY hOrig
+    rw [hTcb'] at hY; cases hY
+    rw [← hIpc]
+    exact hNew (hQN' ▸ hN) orig hOrig
+  · rw [hFrame _ hEq] at hY
+    exact hInv y tcbY hY hN
+
+/-- `storeTcbIpcStateAndMessage` keeps `endpointQueueLinksOnlyBlocked` when the
+new state waits on an endpoint queue or the thread has no successor: it
+rewrites only that thread's state and message, never a link. -/
+theorem storeTcbIpcStateAndMessage_preserves_endpointQueueLinksOnlyBlocked
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (ipcState : ThreadIpcState) (msg : Option IpcMessage)
+    (hInv : endpointQueueLinksOnlyBlocked st)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbIpcStateAndMessage st tid ipcState msg = .ok st')
+    (hNew : ipcStateEndpointQueued ipcState = true ∨
+      ∀ tcbTid : TCB, st.objects[tid.toObjId]? = some (.tcb tcbTid) → tcbTid.queueNext = none) :
+    endpointQueueLinksOnlyBlocked st' := by
+  unfold storeTcbIpcStateAndMessage modifyTcb at hStep
+  cases hLookup : lookupTcb st tid with
+  | none => simp [hLookup] at hStep
+  | some origTcb =>
+    simp only [hLookup] at hStep
+    cases hStore : storeObject tid.toObjId
+        (.tcb (TCB.setIpcState { origTcb with pendingMessage := msg } ipcState)) st with
+    | error e => simp [hStore] at hStep
+    | ok pair =>
+      simp only [hStore] at hStep
+      have hEq := Except.ok.inj hStep; subst hEq
+      have hOrig := lookupTcb_some_objects st tid origTcb hLookup
+      refine storeObject_tcb_preserves_endpointQueueLinksOnlyBlocked st pair.2 tid.toObjId _
+        hObjInv (fun hN => ?_) hInv (by cases pair; exact hStore)
+      rcases hNew with hq | hn
+      · exact .inl (by simpa using hq)
+      · exact absurd (hn origTcb hOrig) (by simpa using hN)
+
+/-- `storeTcbIpcState` keeps `endpointQueueLinksOnlyBlocked` on the same terms. -/
+theorem storeTcbIpcState_preserves_endpointQueueLinksOnlyBlocked
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (ipcState : ThreadIpcState)
+    (hInv : endpointQueueLinksOnlyBlocked st)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbIpcState st tid ipcState = .ok st')
+    (hNew : ipcStateEndpointQueued ipcState = true ∨
+      ∀ tcbTid : TCB, st.objects[tid.toObjId]? = some (.tcb tcbTid) → tcbTid.queueNext = none) :
+    endpointQueueLinksOnlyBlocked st' := by
+  unfold storeTcbIpcState modifyTcb at hStep
+  cases hLookup : lookupTcb st tid with
+  | none => simp [hLookup] at hStep
+  | some origTcb =>
+    simp only [hLookup] at hStep
+    cases hStore : storeObject tid.toObjId (.tcb (origTcb.setIpcState ipcState)) st with
+    | error e => simp [hStore] at hStep
+    | ok pair =>
+      simp only [hStore, Except.ok.injEq] at hStep; subst hStep
+      have hOrig := lookupTcb_some_objects st tid origTcb hLookup
+      refine storeObject_tcb_preserves_endpointQueueLinksOnlyBlocked st pair.2 tid.toObjId _
+        hObjInv (fun hN => ?_) hInv (by cases pair; exact hStore)
+      rcases hNew with hq | hn
+      · exact .inl (by simpa using hq)
+      · exact absurd (hn origTcb hOrig) (by simpa using hN)
+
+/-- `storeTcbReceiveComplete` (sets the thread `.ready`) keeps
+`endpointQueueLinksOnlyBlocked` when the thread has no successor. -/
+theorem storeTcbReceiveComplete_preserves_endpointQueueLinksOnlyBlocked
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (msg : Option IpcMessage)
+    (hInv : endpointQueueLinksOnlyBlocked st)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbReceiveComplete st tid msg = .ok st')
+    (hNone : ∀ tcbTid : TCB, st.objects[tid.toObjId]? = some (.tcb tcbTid) →
+      tcbTid.queueNext = none) :
+    endpointQueueLinksOnlyBlocked st' := by
+  unfold storeTcbReceiveComplete modifyTcb at hStep
+  cases hLookup : lookupTcb st tid with
+  | none => simp [hLookup] at hStep
+  | some origTcb =>
+    simp only [hLookup] at hStep
+    cases hStore : storeObject tid.toObjId
+        (.tcb (TCB.setIpcState { origTcb with pendingMessage := msg, pendingReceiveReplyCode := 0 } .ready)) st with
+    | error e => simp [hStore] at hStep
+    | ok pair =>
+      simp only [hStore] at hStep
+      have hEq := Except.ok.inj hStep; subst hEq
+      have hOrig := lookupTcb_some_objects st tid origTcb hLookup
+      refine storeObject_tcb_preserves_endpointQueueLinksOnlyBlocked st pair.2 tid.toObjId _
+        hObjInv (fun hN => ?_) hInv (by cases pair; exact hStore)
+      exact absurd (hNone origTcb hOrig) (by simpa using hN)
+
+/-- `endpointQueuePopHead` keeps `endpointQueueLinksOnlyBlocked`: it clears the
+popped head's links and re-stores the new head's own successor unchanged, on a
+thread whose state it does not touch. -/
+theorem endpointQueuePopHead_preserves_endpointQueueLinksOnlyBlocked
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
+    (st st' : SystemState) (rTid : SeLe4n.ThreadId) (rTcb : TCB)
+    (hObjInv : st.objects.invExt)
+    (hInv : endpointQueueLinksOnlyBlocked st)
+    (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (rTid, rTcb, st')) :
+    endpointQueueLinksOnlyBlocked st' := by
+  unfold endpointQueuePopHead SystemState.getObject? at hStep
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ =>
+        simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep
+      cases hHead : (if isReceiveQ then ep.receiveQ else ep.sendQ).head with
+      | none => simp [hHead] at hStep
+      | some headTid =>
+        simp only [hHead] at hStep
+        cases hLookup : lookupTcb st headTid with
+        | none => simp [hLookup] at hStep
+        | some tcb =>
+          simp only [hLookup] at hStep
+          revert hStep
+          cases hStore : storeObject endpointId _ st with
+          | error e => simp
+          | ok pair =>
+            have hInv1 := storeObject_preserves_objects_invExt' st endpointId _ pair hObjInv hStore
+            have hP1 := storeObject_nonTcb_preserves_endpointQueueLinksOnlyBlocked
+              st pair.2 endpointId _ hObjInv (fun _ h => KernelObject.noConfusion h) hInv (by
+                rw [show pair = ((), pair.2) from by cases pair; rfl] at hStore; exact hStore)
+            cases hNext : tcb.queueNext with
+            | none =>
+              simp only []
+              cases hFinal : storeTcbQueueLinks pair.2 headTid none none none with
+              | error e => simp
+              | ok st3 =>
+                simp only [Except.ok.injEq, Prod.mk.injEq]
+                intro ⟨_, _, rfl⟩
+                exact storeTcbQueueLinks_preserves_endpointQueueLinksOnlyBlocked
+                  pair.2 st3 headTid none none none hP1 hInv1 hFinal (fun h => absurd rfl h)
+            | some nextTid =>
+              simp only []
+              cases hLookupNext : lookupTcb pair.2 nextTid with
+              | none => simp
+              | some nextTcb =>
+                simp only []
+                cases hLink : storeTcbQueueLinks pair.2 nextTid none (some QueuePPrev.endpointHead) nextTcb.queueNext with
+                | error e => simp
+                | ok st2 =>
+                  simp only []
+                  have hInv2 := storeTcbQueueLinks_preserves_objects_invExt _ _ nextTid _ _ _ hInv1 hLink
+                  have hP2 := storeTcbQueueLinks_preserves_endpointQueueLinksOnlyBlocked
+                    pair.2 st2 nextTid none (some QueuePPrev.endpointHead) nextTcb.queueNext
+                    hP1 hInv1 hLink (by
+                      intro hN tcbN hTcbN
+                      have hNTObj := lookupTcb_some_objects pair.2 nextTid nextTcb hLookupNext
+                      rw [hNTObj] at hTcbN; cases hTcbN
+                      exact hP1 nextTid _ hNTObj hN)
+                  cases hFinal : storeTcbQueueLinks st2 headTid none none none with
+                  | error e => simp
+                  | ok st3 =>
+                    simp only [Except.ok.injEq, Prod.mk.injEq]
+                    intro ⟨_, _, rfl⟩
+                    exact storeTcbQueueLinks_preserves_endpointQueueLinksOnlyBlocked
+                      st2 st3 headTid none none none hP2 hInv2 hFinal (fun h => absurd rfl h)
+
+/-- After `endpointQueuePopHead`, the popped head's `queueNext` is `none` too — the pop's final store
+(`storeTcbQueueLinks headTid none none none`) clears its links and nothing afterward touches it. -/
+theorem endpointQueuePopHead_popped_queueNext_none
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
+    (st st' : SystemState) (rTid : SeLe4n.ThreadId) (rTcb : TCB)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (rTid, rTcb, st')) :
+    ∃ tcb, st'.objects[rTid.toObjId]? = some (.tcb tcb) ∧ tcb.queueNext = none := by
+  unfold endpointQueuePopHead SystemState.getObject? at hStep
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ =>
+        simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep
+      cases hHead : (if isReceiveQ then ep.receiveQ else ep.sendQ).head with
+      | none => simp [hHead] at hStep
+      | some headTid =>
+        simp only [hHead] at hStep
+        cases hLookup : lookupTcb st headTid with
+        | none => simp [hLookup] at hStep
+        | some tcb =>
+          simp only [hLookup] at hStep
+          revert hStep
+          cases hStore : storeObject endpointId _ st with
+          | error e => simp
+          | ok pair =>
+            have hInv1 := storeObject_preserves_objects_invExt' st endpointId _ pair hObjInv hStore
+            cases hNext : tcb.queueNext with
+            | none =>
+              simp only []
+              cases hFinal : storeTcbQueueLinks pair.2 headTid none none none with
+              | error e => simp
+              | ok st3 =>
+                simp only [Except.ok.injEq, Prod.mk.injEq]
+                rintro ⟨rfl, _, rfl⟩
+                exact storeTcbQueueLinks_stored_queueNext pair.2 st3 headTid none none none hInv1 hFinal
+            | some nextTid =>
+              simp only []
+              cases hLookupNext : lookupTcb pair.2 nextTid with
+              | none => simp
+              | some nextTcb =>
+                simp only []
+                cases hLink : storeTcbQueueLinks pair.2 nextTid none (some QueuePPrev.endpointHead) nextTcb.queueNext with
+                | error e => simp
+                | ok st2 =>
+                  simp only []
+                  have hInv2 := storeTcbQueueLinks_preserves_objects_invExt _ _ nextTid _ _ _ hInv1 hLink
+                  cases hFinal : storeTcbQueueLinks st2 headTid none none none with
+                  | error e => simp
+                  | ok st3 =>
+                    simp only [Except.ok.injEq, Prod.mk.injEq]
+                    rintro ⟨rfl, _, rfl⟩
+                    exact storeTcbQueueLinks_stored_queueNext st2 st3 headTid none none none hInv2 hFinal
+
+-- ============================================================================
+-- Section: an endpoint with empty queues has no thread blocked on it.
+-- ============================================================================
+
+/-- Whether a thread's IPC state blocks it on the endpoint `epId`'s queues. -/
+def ipcStateQueuedOn (epId : SeLe4n.ObjId) : ThreadIpcState → Prop
+  | .blockedOnSend e | .blockedOnReceive e | .blockedOnCall e => e = epId
+  | _ => False
+
+theorem endpointQueue_predecessor_blocked {st : SystemState} (hInv : ipcInvariantFull st)
+    {epId : SeLe4n.ObjId} {ep : Endpoint} (hEp : st.objects[epId]? = some (.endpoint ep))
+    (hS : ep.sendQ.head = none) (hR : ep.receiveQ.head = none)
+    {t : SeLe4n.ThreadId} {tcbT : TCB} (hT : st.objects[t.toObjId]? = some (.tcb tcbT))
+    (hB : ipcStateQueuedOn epId tcbT.ipcState) :
+    ∃ (p : SeLe4n.ThreadId) (tcbP : TCB), st.objects[p.toObjId]? = some (.tcb tcbP) ∧
+      tcbP.queueNext = some t ∧ ipcStateQueuedOn epId tcbP.ipcState := by
+  have hM := hInv.ipcStateQueueMembershipConsistent t tcbT hT
+  obtain ⟨p, tcbP, hP, hN⟩ : ∃ (p : SeLe4n.ThreadId) (tcbP : TCB),
+      st.objects[p.toObjId]? = some (.tcb tcbP) ∧ tcbP.queueNext = some t := by
+    revert hM hB
+    cases tcbT.ipcState with
+    | blockedOnSend e =>
+      intro hB hM; simp only [ipcStateQueuedOn] at hB; subst hB
+      obtain ⟨ep', hE, hH | hP⟩ := hM
+      · rw [hEp] at hE; cases hE; rw [hS] at hH; cases hH
+      · exact hP
+    | blockedOnReceive e =>
+      intro hB hM; simp only [ipcStateQueuedOn] at hB; subst hB
+      obtain ⟨ep', hE, hH | hP⟩ := hM
+      · rw [hEp] at hE; cases hE; rw [hR] at hH; cases hH
+      · exact hP
+    | blockedOnCall e =>
+      intro hB hM; simp only [ipcStateQueuedOn] at hB; subst hB
+      obtain ⟨ep', hE, hH | hP⟩ := hM
+      · rw [hEp] at hE; cases hE; rw [hS] at hH; cases hH
+      · exact hP
+    | _ => intro hB _; exact absurd hB id
+  refine ⟨p, tcbP, hP, hN, ?_⟩
+  have hQ := hInv.endpointQueueLinksOnlyBlocked p tcbP hP (by rw [hN]; simp)
+  have hMatch := hInv.queueNextBlockingConsistent p t tcbP tcbT hP hT hN
+  revert hQ hMatch hB
+  cases tcbP.ipcState <;> cases tcbT.ipcState <;>
+    simp [ipcStateEndpointQueued, queueNextBlockingMatch, ipcStateQueuedOn] <;> intros <;> simp_all
+
+/-- **An endpoint whose two queues are empty has no thread blocked on it.**
+Every thread blocked on it has a predecessor blocked on it
+(`endpointQueue_predecessor_blocked`), so a chain of them runs back without
+end; the chain never revisits a thread (`tcbQueueChainAcyclic`), and the store
+holds no more distinct threads than it has entries
+(`RHTable.length_le_size_of_nodup_present`). -/
+theorem endpointQueues_empty_noneBlocked {st : SystemState} (hInv : ipcInvariantFull st)
+    (hObjInv : st.objects.invExt)
+    {epId : SeLe4n.ObjId} {ep : Endpoint} (hEp : st.objects[epId]? = some (.endpoint ep))
+    (hS : ep.sendQ.head = none) (hR : ep.receiveQ.head = none)
+    {t : SeLe4n.ThreadId} {tcbT : TCB} (hT : st.objects[t.toObjId]? = some (.tcb tcbT)) :
+    ¬ ipcStateQueuedOn epId tcbT.ipcState := by
+  intro hB
+  have hAc := hInv.dualQueueSystemInvariant.chainAcyclic
+  have build : ∀ n : Nat, ∃ (L : List SeLe4n.ThreadId) (h : SeLe4n.ThreadId) (tcbH : TCB),
+      L.length = n + 1 ∧ L.Nodup ∧ st.objects[h.toObjId]? = some (.tcb tcbH) ∧
+      ipcStateQueuedOn epId tcbH.ipcState ∧
+      ∀ m ∈ L, (∃ tm : TCB, st.objects[m.toObjId]? = some (.tcb tm)) ∧
+        (m = h ∨ QueueNextPath st h m) := by
+    intro n
+    induction n with
+    | zero =>
+      refine ⟨[t], t, tcbT, rfl, List.nodup_cons.mpr ⟨by simp, List.nodup_nil⟩, hT, hB, ?_⟩
+      intro m hm
+      simp only [List.mem_singleton] at hm
+      subst hm
+      exact ⟨⟨tcbT, hT⟩, .inl rfl⟩
+    | succ n ih =>
+      obtain ⟨L, h, tcbH, hLen, hNd, hH, hBH, hAll⟩ := ih
+      obtain ⟨p, tcbP, hP, hN, hBP⟩ := endpointQueue_predecessor_blocked hInv hEp hS hR hH hBH
+      have hEdge : QueueNextPath st p h := .single p h tcbP hP hN
+      refine ⟨p :: L, p, tcbP, by simp [hLen], List.nodup_cons.mpr ⟨fun hp => ?_, hNd⟩,
+        hP, hBP, ?_⟩
+      · rcases (hAll p hp).2 with e | path
+        · subst e; exact hAc p hEdge
+        · exact hAc p (QueueNextPath_trans hEdge path)
+      · intro m hm
+        rcases List.mem_cons.mp hm with e | hm
+        · subst e; exact ⟨⟨tcbP, hP⟩, .inl rfl⟩
+        · refine ⟨(hAll m hm).1, .inr ?_⟩
+          rcases (hAll m hm).2 with e | path
+          · subst e; exact hEdge
+          · exact QueueNextPath_trans hEdge path
+  obtain ⟨L, _h, _tcbH, hLen, hNd, _hH, _hBH, hAll⟩ := build st.objects.size
+  have hBound := SeLe4n.Kernel.RobinHood.RHTable.length_le_size_of_nodup_present st.objects
+    hObjInv (L.map SeLe4n.ThreadId.toObjId)
+    (List.Pairwise.map _ (fun a b hab e => hab (SeLe4n.ThreadId.toObjId_injective a b e)) hNd)
+    (fun k hk => by
+      obtain ⟨m, hm, rfl⟩ := List.mem_map.mp hk
+      obtain ⟨tm, htm⟩ := (hAll m hm).1
+      show st.objects[m.toObjId]? ≠ none
+      rw [htm]; simp)
+  simp only [List.length_map, hLen] at hBound
+  omega
+
+/-- The popped head has no queue successor, read at every TCB its key holds. -/
+theorem endpointQueuePopHead_popped_next_none
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
+    (st st' : SystemState) (rTid : SeLe4n.ThreadId) (rTcb : TCB)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (rTid, rTcb, st')) :
+    ∀ t : TCB, st'.objects[rTid.toObjId]? = some (.tcb t) → t.queueNext = none := by
+  obtain ⟨tcb, hT, hN⟩ :=
+    endpointQueuePopHead_popped_queueNext_none endpointId isReceiveQ st st' rTid rTcb hObjInv hStep
+  intro t ht
+  rw [hT] at ht; cases ht; exact hN
+
+/-- **What the conjunct refuses**: a state holding a thread that waits on no
+endpoint queue and still names a queue successor fails `ipcInvariantFull`.
+
+This is the state the final delete could not otherwise exclude: a `.ready`
+thread `p` with `queueNext = some t`, `t` blocked on an endpoint whose queues are
+empty.  Every other conjunct admits it (the intra-queue relation's catch-all
+matches a `.ready` source), so the retire, reading only the endpoint's own
+queues, would free an endpoint `p`'s stale link still reaches through `t`. -/
+theorem endpointQueueLinksOnlyBlocked.not_ipcInvariantFull {st : SystemState}
+    {p : SeLe4n.ThreadId} {tcbP : TCB}
+    (hP : st.objects[p.toObjId]? = some (.tcb tcbP)) (hNext : tcbP.queueNext ≠ none)
+    (hNotQueued : ipcStateEndpointQueued tcbP.ipcState = false) :
+    ¬ ipcInvariantFull st := fun hInv => by
+  have := hInv.endpointQueueLinksOnlyBlocked p tcbP hP hNext
+  rw [hNotQueued] at this; cases this
+
+/-- **The predecessor side of `endpointQueueLinksOnlyBlocked`**: a thread that
+waits on no endpoint queue has no queue predecessor either.  A predecessor
+names it back as its successor (`tcbQueueLinkIntegrity`), so the predecessor
+waits on an endpoint queue, and its blocking passes along the link
+(`queueNextTargetBlocked`). -/
+theorem endpointQueueLinksOnlyBlocked.queuePrev_none {st : SystemState}
+    (hInv : ipcInvariantFull st) {tid : SeLe4n.ThreadId} {tcb : TCB}
+    (hT : st.objects[tid.toObjId]? = some (.tcb tcb))
+    (hNQ : ipcStateEndpointQueued tcb.ipcState = false) : tcb.queuePrev = none := by
+  cases hP : tcb.queuePrev with
+  | none => rfl
+  | some a =>
+    exfalso
+    obtain ⟨tcbA, hA, hAN⟩ := hInv.dualQueueSystemInvariant.linkIntegrity.2 tid tcb hT a hP
+    have hQ := hInv.endpointQueueLinksOnlyBlocked a tcbA hA (by rw [hAN]; simp)
+    have hTB := hInv.queueNextTargetBlocked a tid tcbA tcb hA hT hAN
+    revert hQ hTB hNQ
+    cases tcbA.ipcState <;> cases tcb.ipcState <;> simp [ipcStateEndpointQueued]
+
+/-- A thread in a **non-queue-blocking** state has no queue successor
+(`endpointQueueLinksOnlyBlocked`, read at that thread). -/
+theorem endpointQueueLinksOnlyBlocked_no_incoming_of_notQueueBlocked
+    (st : SystemState) (hInv : endpointQueueLinksOnlyBlocked st)
+    (tid : SeLe4n.ThreadId) (tidTcb : TCB)
+    (hTid : st.objects[tid.toObjId]? = some (.tcb tidTcb))
+    (hNotBlocked : (∀ ep, tidTcb.ipcState ≠ .blockedOnReceive ep) ∧
+      (∀ ep, tidTcb.ipcState ≠ .blockedOnSend ep) ∧ (∀ ep, tidTcb.ipcState ≠ .blockedOnCall ep)) :
+    ∀ t : TCB, st.objects[tid.toObjId]? = some (.tcb t) → t.queueNext = none := by
+  intro t ht
+  rw [hTid] at ht; cases ht
+  cases hN : tidTcb.queueNext with
+  | none => rfl
+  | some _ =>
+    have hQ := hInv tid tidTcb hTid (by rw [hN]; simp)
+    obtain ⟨h1, h2, h3⟩ := hNotBlocked
+    revert hQ h1 h2 h3
+    cases tidTcb.ipcState <;> simp [ipcStateEndpointQueued]
+
+/-- Storing a **non-queue-blocking** state to a thread with no queue successor
+keeps `endpointQueueLinksOnlyBlocked`. -/
+theorem storeTcbIpcStateAndMessage_no_incoming_nonQueueBlocked_preserves_endpointQueueLinksOnlyBlocked
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (ipcState : ThreadIpcState) (msg : Option IpcMessage)
+    (hInv : endpointQueueLinksOnlyBlocked st)
+    (hObjInv : st.objects.invExt)
+    (_hIpcNotBlocked : (∀ ep, ipcState ≠ .blockedOnReceive ep) ∧
+      (∀ ep, ipcState ≠ .blockedOnSend ep) ∧ (∀ ep, ipcState ≠ .blockedOnCall ep))
+    (hNoNext : ∀ t : TCB, st.objects[tid.toObjId]? = some (.tcb t) → t.queueNext = none)
+    (hStep : storeTcbIpcStateAndMessage st tid ipcState msg = .ok st') :
+    endpointQueueLinksOnlyBlocked st' :=
+  storeTcbIpcStateAndMessage_preserves_endpointQueueLinksOnlyBlocked st st' tid ipcState msg hInv
+    hObjInv hStep (.inr hNoNext)
+
+/-- The message-free counterpart. -/
+theorem storeTcbIpcState_no_incoming_nonQueueBlocked_preserves_endpointQueueLinksOnlyBlocked
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (ipcState : ThreadIpcState)
+    (hInv : endpointQueueLinksOnlyBlocked st)
+    (hObjInv : st.objects.invExt)
+    (_hIpcNotBlocked : (∀ ep, ipcState ≠ .blockedOnReceive ep) ∧
+      (∀ ep, ipcState ≠ .blockedOnSend ep) ∧ (∀ ep, ipcState ≠ .blockedOnCall ep))
+    (hNoNext : ∀ t : TCB, st.objects[tid.toObjId]? = some (.tcb t) → t.queueNext = none)
+    (hStep : storeTcbIpcState st tid ipcState = .ok st') :
+    endpointQueueLinksOnlyBlocked st' :=
+  storeTcbIpcState_preserves_endpointQueueLinksOnlyBlocked st st' tid ipcState hInv hObjInv hStep
+    (.inr hNoNext)
+
+/-- Waking a `.blockedOnReply` thread to `.ready` keeps
+`endpointQueueLinksOnlyBlocked`: a reply-blocked thread waits on no endpoint
+queue, so it has no queue successor. -/
+theorem storeTcbIpcStateAndMessage_ready_of_blockedOnReply_preserves_endpointQueueLinksOnlyBlocked
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (msg : Option IpcMessage)
+    (tidTcb : TCB) (ep0 : SeLe4n.ObjId) (rt0 : Option SeLe4n.ThreadId)
+    (hInv : endpointQueueLinksOnlyBlocked st)
+    (hObjInv : st.objects.invExt)
+    (hTidTcb : st.objects[tid.toObjId]? = some (.tcb tidTcb))
+    (hTidIpc : tidTcb.ipcState = .blockedOnReply ep0 rt0)
+    (hStep : storeTcbIpcStateAndMessage st tid .ready msg = .ok st') :
+    endpointQueueLinksOnlyBlocked st' :=
+  storeTcbIpcStateAndMessage_preserves_endpointQueueLinksOnlyBlocked st st' tid .ready msg hInv
+    hObjInv hStep (.inr (endpointQueueLinksOnlyBlocked_no_incoming_of_notQueueBlocked st hInv tid
+      tidTcb hTidTcb ⟨fun _ h => (by rw [hTidIpc] at h; cases h),
+        fun _ h => (by rw [hTidIpc] at h; cases h), fun _ h => (by rw [hTidIpc] at h; cases h)⟩))
+
 end SeLe4n.Kernel

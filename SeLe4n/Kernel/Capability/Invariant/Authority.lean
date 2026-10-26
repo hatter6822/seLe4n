@@ -817,13 +817,14 @@ The `cnode` exclusion is load-bearing in one direction only: a CNode *rewrite*
 keeps the key and the kind while changing the slots, and the bundle's three
 CNode-reading conjuncts are about the **value**.  A step that genuinely rewrites
 a CNode therefore takes the general frame and discharges `hCnode` itself. -/
-theorem capabilityInvariantBundle_of_kindPreserving {st st' : SystemState}
+theorem capabilityInvariantBundle_of_kindPreservingUpToBindings {st st' : SystemState}
     (h : capabilityInvariantBundle st)
     (hCdt : st'.cdt = st.cdt)
     (hObjInv : st'.objects.invExt)
-    (hAt : kindPreservingWrite st st') :
+    (hAt : kindPreservingWriteUpToBindings st st') :
     capabilityInvariantBundle st' := by
-  refine capabilityInvariantBundle_of_frame h hCdt ?_ ?_ ?_ ?_ hObjInv (SystemState.kindPreservingWrite.present hAt)
+  refine capabilityInvariantBundle_of_frame h hCdt ?_ ?_ ?_ ?_ hObjInv
+    (SystemState.kindPreservingWriteUpToBindings.present hAt)
     (funext fun o => by
       rw [SystemState.getUntyped?_eq_bind, SystemState.getUntyped?_eq_bind]; exact hAt.untyped o)
   · intro oid cn hCn
@@ -848,6 +849,16 @@ theorem capabilityInvariantBundle_of_kindPreserving {st st' : SystemState}
       | reply r =>
           cases post <;> simp [KernelObject.objectType] at hType ⊢
       | _ => exact absurd rfl hR
+
+
+/-- The same, from the full relation: its binding codes are not read. -/
+theorem capabilityInvariantBundle_of_kindPreserving {st st' : SystemState}
+    (h : capabilityInvariantBundle st)
+    (hCdt : st'.cdt = st.cdt)
+    (hObjInv : st'.objects.invExt)
+    (hAt : kindPreservingWrite st st') :
+    capabilityInvariantBundle st' :=
+  capabilityInvariantBundle_of_kindPreservingUpToBindings h hCdt hObjInv hAt.upToBindings
 
 /-- WS-RR RR8.16 (`v0.35.197`): **a kind-preserving `storeObject` preserves the
 capability invariant bundle** — the instance every IPC step's store chain is
@@ -876,10 +887,11 @@ theorem storeObject_preserves_capabilityInvariantBundle_of_kind
     (hUntyped : obj.untyped? = pre.untyped? := by rfl) :
     capabilityInvariantBundle st' := by
   have hObjInv : st.objects.invExt := h.2.2.2.2.1
-  exact capabilityInvariantBundle_of_kindPreserving h
+  exact capabilityInvariantBundle_of_kindPreservingUpToBindings h
     (storeObject_cdt_eq st st' oid obj hStore)
     (storeObject_preserves_objects_invExt st st' oid obj hObjInv hStore)
-    (storeObject_kindPreservingWrite hObjInv hStore hPre hKind hNotCnode hSlots hUntyped)
+    (storeObject_kindPreservingWriteUpToBindings hObjInv hStore hPre hKind hNotCnode hSlots
+      hUntyped)
 
 /-- WS-RR RR8.16 (`v0.35.199`): the walk's own `kindPreservingWrite`, so a chain
 that ends in it is a `.trans` rather than a second pointwise argument. -/
@@ -890,10 +902,10 @@ theorem propagatePipChainCrossCore_kindPreservingWrite (st : SystemState)
       (SeLe4n.Kernel.PriorityInheritance.propagatePipChainCrossCore st startTid ec fuel).1 := by
   intro oid
   rcases SeLe4n.Kernel.PriorityInheritance.propagatePipChainCrossCore_objects_pointwise fuel st
-      startTid ec hInv oid with hEq | ⟨pre, post, hPre, hPost, hC, hL⟩
+      startTid ec hInv oid with hEq | ⟨pre, post, hPre, hPost, hC, hL, hB⟩
   · exact Or.inl hEq
   · exact Or.inr ⟨.tcb pre, .tcb post, hPre, hPost, rfl, by simp [KernelObject.objectType],
-      by simp [KernelObject.tcbSlots, hC, hL], rfl⟩
+      by simp [KernelObject.tcbSlots, hC, hL], rfl, by simp [KernelObject.bindingCodes, hB]⟩
 
 /-- WS-RR RR8.16 (`v0.35.197`): **the priority-inheritance chain walk preserves the
 capability invariant bundle** — the first instance of the frame above, and one of

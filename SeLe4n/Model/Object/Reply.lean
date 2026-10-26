@@ -192,11 +192,11 @@ stack**: a head is taken off its stack by the donation pop, which runs in the
 same transition right after the reply leg (plan §3.3 — the leg consumes the
 caller first, the pop reads the head afterwards and validates it by this very
 link), so clearing a head here would make the pop refuse the frame it is about
-to pop.  A frame that is *not* a head and still carries links is the cut frame
-itself, between the splice and this consume: the splice has already reconnected
-its neighbours and cleared its `prev`, and its upward link (both links, after the
-degenerate sever at a bottom frame) is what this record clears.  Nothing will ever
-pop it, so its consumption is where it leaves the structure.
+to pop.  On the removal paths the splice has already reconnected the cut frame's
+neighbours and cleared both of its links, so this record writes the same two
+fields again; a frame that is not a head and still carries links when it is
+consumed would be one no removal ran on.  Nothing will ever pop it, so its
+consumption is where it leaves the structure.
 
 **The frame below is REPAIRED rather than left stale, since WS-HP HP6.3
 (`v0.35.45`).**  The removal writes `below.next := some (.frame above)` in the same
@@ -205,14 +205,14 @@ reciprocates and the frames below stay on the context's stack
 (`removeCallerReplyFrame_splices_reciprocally`).  That is what this record's own
 caller does, not what this function does — see the precondition below.
 
-A stale upward link is still **reachable**, so no reader may trust one: the
-removal's below-side resolution refuses a `prev` that does not resolve, one naming
-the frame above, and a frame below whose own `next` does not link back, and
-degenerates to `severAtCut` there.  The stack relation is therefore still stated
-**downward** (`donationChainWellFormed.prevLinkReciprocal` — every `prev` link is
-answered by the frame it names), every walk and every pop validator follows `prev`
-and checks the answer, and `replyFrameOnLiveStack` asks one-step reciprocity rather
-than presence.
+The stack relation is stated **both ways**
+(`donationChainWellFormed.prevLinkReciprocal` and `.nextLinkReciprocal` — every
+link is answered by the frame it names), and still no reader trusts a link on its
+own: the removal's below-side resolution refuses a `prev` that does not resolve,
+one naming the frame above, and a frame below whose own `next` does not link back,
+and degenerates to `severAtCut` there; every walk and every pop validator follows
+`prev` and checks the answer; and `replyFrameOnLiveStack` asks one-step
+reciprocity rather than presence.
 
 **Precondition, and who discharges it** (WS-RM, `v0.35.6`).  The frame **above**
 is the other direction, and it is *not* safe to ignore: if some frame still
@@ -224,9 +224,9 @@ consuming.  Which value it writes into that frame's `prev` is the
 `cancelledMiddleCallerPolicy` decision: since WS-HP HP6.8 (`v0.35.45`) this kernel
 writes **this frame's own `prev`** (`spliceOutTheCut`), so the frames below the cut
 stay on the stack and the reservation goes on travelling outward to the caller that
-owns it.  The removal also clears **this** frame's `prev` in the same step — seL4's
-`reply_unlink` downward half — which is why `donationChainWellFormed` survives the
-removal outright rather than transiently.
+owns it.  The removal also clears **this** frame's `prev` and `next` in the same
+step — seL4's `reply_remove` unlink — which is why `donationChainWellFormed`
+survives the removal outright rather than transiently.
 
 Up to `v0.35.44` it wrote `none` (`severAtCut`), which is what seL4-MCS writes
 there: `REPLY_PTR(next_ptr)->replyPrev = call_stack_new(0, false)`, re-verified at
@@ -324,6 +324,81 @@ theorem empty_wellFormed (rid : SeLe4n.ReplyId) : (empty rid).wellFormed :=
 it without a second reading of the property. -/
 instance (r : Reply) : Decidable r.wellFormed := by
   unfold wellFormed; infer_instance
+
+/-- **The frame above a removed frame, when nothing below is spliced into its
+place**: its `prev` — which named the removed frame `rid` — is cleared, and so is
+its `next` where that names `rid` too.
+
+The second clause is reached only from a frame and the frame above it naming each
+other both ways (a two-frame cycle).  No operation builds one, and on a state the
+chain invariant holds of it is the only shape in which the frame above still names
+the removed frame after its `prev` is cleared; clearing that link as well is what
+lets the removal leave no frame naming a frame that no longer names it back
+(`donationChainWellFormed.nextLinkReciprocal`).  On every other frame this is
+`{ a with prev := none }`, the sever's write (`unlinkedFrom_of_next_ne`). -/
+@[inline] def unlinkedFrom (a : Reply) (rid : SeLe4n.ReplyId) : Reply :=
+  match a.next with
+  | some (.frame x) => if x == rid then { a with prev := none, next := none } else { a with prev := none }
+  | _ => { a with prev := none }
+
+theorem unlinkedFrom_of_next_ne {a : Reply} {rid : SeLe4n.ReplyId}
+    (h : a.next ≠ some (.frame rid)) : a.unlinkedFrom rid = { a with prev := none } := by
+  unfold unlinkedFrom
+  split
+  · next x hx =>
+    have hne : x ≠ rid := fun e => h (by rw [hx, e])
+    simp [hne]
+  · rfl
+
+theorem unlinkedFrom_of_next_eq {a : Reply} {rid : SeLe4n.ReplyId}
+    (h : a.next = some (.frame rid)) :
+    a.unlinkedFrom rid = { a with prev := none, next := none } := by
+  unfold unlinkedFrom
+  rw [h]
+  simp
+
+/-- The record as a stack-link rewrite: `prev` cleared, `next` kept or — where it
+named `rid` — cleared. -/
+theorem unlinkedFrom_eq (a : Reply) (rid : SeLe4n.ReplyId) :
+    a.unlinkedFrom rid =
+      { a with prev := none, next := if a.next = some (.frame rid) then none else a.next } := by
+  by_cases h : a.next = some (.frame rid)
+  · rw [unlinkedFrom_of_next_eq h, if_pos h]
+  · rw [unlinkedFrom_of_next_ne h, if_neg h]
+
+@[simp] theorem unlinkedFrom_caller (a : Reply) (rid : SeLe4n.ReplyId) :
+    (a.unlinkedFrom rid).caller = a.caller := by
+  rw [unlinkedFrom_eq]
+
+@[simp] theorem unlinkedFrom_callerCode (a : Reply) (rid : SeLe4n.ReplyId) :
+    (a.unlinkedFrom rid).callerCode = a.callerCode := by
+  rw [unlinkedFrom_eq]
+
+@[simp] theorem unlinkedFrom_stasherCode (a : Reply) (rid : SeLe4n.ReplyId) :
+    (a.unlinkedFrom rid).stasherCode = a.stasherCode := by
+  rw [unlinkedFrom_eq]
+
+@[simp] theorem unlinkedFrom_replyId (a : Reply) (rid : SeLe4n.ReplyId) :
+    (a.unlinkedFrom rid).replyId = a.replyId := by
+  rw [unlinkedFrom_eq]
+
+@[simp] theorem unlinkedFrom_prev (a : Reply) (rid : SeLe4n.ReplyId) :
+    (a.unlinkedFrom rid).prev = none := by
+  rw [unlinkedFrom_eq]
+
+/-- Its `next` is the old one, or cleared from a `.frame` link: never a new
+`.head`. -/
+theorem unlinkedFrom_next (a : Reply) (rid : SeLe4n.ReplyId) :
+    (a.unlinkedFrom rid).next = a.next ∨
+      (a.next = some (.frame rid) ∧ (a.unlinkedFrom rid).next = none) := by
+  by_cases h : a.next = some (.frame rid)
+  · exact Or.inr ⟨h, by rw [unlinkedFrom_of_next_eq h]⟩
+  · exact Or.inl (by rw [unlinkedFrom_of_next_ne h])
+
+/-- Clearing both links over it is clearing both links over the original. -/
+@[simp] theorem unlinkedFrom_clear (a : Reply) (rid : SeLe4n.ReplyId) :
+    { a.unlinkedFrom rid with prev := none, next := none } = { a with prev := none, next := none } := by
+  rw [unlinkedFrom_eq]
 
 end Reply
 end SeLe4n.Kernel

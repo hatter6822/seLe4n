@@ -397,7 +397,7 @@ theorem propagate (st : SystemState) (tid : SeLe4n.ThreadId) (ec : CoreId) (fuel
     rw [ht'] at h2; cases h2; exact zeroB
   · unfold SystemState.getObject? at hk ⊢
     rcases PriorityInheritance.propagatePipChainCrossCore_objects_pointwise fuel st tid ec hInv k with
-      e | ⟨pre, -, hp, -, -, -⟩
+      e | ⟨pre, -, hp, -, -, -, -⟩
     · rw [e]; exact hk
     · rw [hk] at hp; cases hp
 

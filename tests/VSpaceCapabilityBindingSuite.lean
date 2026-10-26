@@ -2687,10 +2687,11 @@ private def runReplyFinaliseChecks : IO Unit := do
         | .ok ((), stH) => do
           -- The loan as a call's first donation makes it (`donateSchedContext`):
           -- the context names the reply as its head, the server as its holder
-          -- and the caller as the reservation's origin; the server holds it on
-          -- loan from the caller.
-          let stL := (stH.updateSchedContext ⟨963⟩ fun sc =>
-              { sc with scReply := some ⟨961⟩, boundThreadCode := 963, donationOrigin := some ⟨960⟩ }).updateTcb ⟨962⟩ fun t =>
+          -- and the caller as the reservation's origin (the caller's back-link
+          -- names the context); the server holds it on loan from the caller.
+          let stL := ((stH.updateSchedContext ⟨963⟩ fun sc =>
+              { sc with scReply := some ⟨961⟩, boundThreadCode := 963, donationOrigin := some ⟨960⟩ }).updateTcb ⟨960⟩
+              fun t => { t with originScCode := 964 }).updateTcb ⟨962⟩ fun t =>
             { t with scBindingScCode := 964, scBindingOwnerCode := 961 }
           assertBool "setup: the server holds the context on loan from the caller, and the reply heads its stack"
             ((stL.getSchedContext? ⟨963⟩).map (fun sc => sc.scReply == some ⟨961⟩ && sc.boundThreadCode == 963) == some true &&
@@ -2759,8 +2760,9 @@ private def runReplyFinaliseChecks : IO Unit := do
             (.reply { r with next := some (.head ⟨963⟩) }) st with
         | .error _ => assertBool "staging the reply as the lent context's stack head succeeds" false
         | .ok ((), stH) => do
-          let stL := (stH.updateSchedContext ⟨963⟩ fun sc =>
-              { sc with scReply := some ⟨961⟩, boundThreadCode := 963, donationOrigin := some ⟨960⟩ }).updateTcb ⟨962⟩ fun t =>
+          let stL := ((stH.updateSchedContext ⟨963⟩ fun sc =>
+              { sc with scReply := some ⟨961⟩, boundThreadCode := 963, donationOrigin := some ⟨960⟩ }).updateTcb ⟨960⟩
+              fun t => { t with originScCode := 964 }).updateTcb ⟨962⟩ fun t =>
             { t with scBindingScCode := 964, scBindingOwnerCode := 961 }
           assertBool "setup: the server holds the caller's context on loan, and the caller's reply heads its stack"
             ((stL.getTcb? ⟨962⟩).map (·.schedContextBinding) == some (.donated ⟨963⟩ ⟨960⟩) &&
@@ -2898,8 +2900,9 @@ private def runReplyWaiterFinaliseChecks : IO Unit := do
             (.reply { r with next := some (.head ⟨963⟩) }) st with
         | .error _ => assertBool "staging the lender's reply as the lent context's stack head succeeds" false
         | .ok ((), stH) => do
-          let stL := (stH.updateSchedContext ⟨963⟩ fun sc =>
-              { sc with scReply := some ⟨961⟩, boundThreadCode := 963, donationOrigin := some ⟨960⟩ }).updateTcb ⟨962⟩ fun t =>
+          let stL := ((stH.updateSchedContext ⟨963⟩ fun sc =>
+              { sc with scReply := some ⟨961⟩, boundThreadCode := 963, donationOrigin := some ⟨960⟩ }).updateTcb ⟨960⟩
+              fun t => { t with originScCode := 964 }).updateTcb ⟨962⟩ fun t =>
             { t with scBindingScCode := 964, scBindingOwnerCode := 961 }
           assertBool "setup: the server borrows the lender's context and has two waiters"
             ((stL.getTcb? ⟨962⟩).map (fun t => t.schedContextBinding == .donated ⟨963⟩ ⟨960⟩ &&

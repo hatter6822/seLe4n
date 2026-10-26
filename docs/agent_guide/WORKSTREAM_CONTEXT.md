@@ -362,9 +362,17 @@ a refusal.  Set-space deletes each old root through the same loop
 its recorder adopts them and each child untyped names the recorder as its
 parent (`retireUnrecord`), so new code that reads an untyped's parent or child
 list must not assume either survives the retire of a neighbour.  The retire
-still walks the object table, and the finalise's admission is not yet carried
-across its steps (each step re-checks): plan row 27
-(`docs/REGISTERED_DEBT.md`).  The suspend of a thread blocked in IPC or
+still walks the object table for references by id (`storeNamesNone` and its
+thread and scheduling-context forms; plan row 28, which reads the object's own
+links through the reciprocity part 27 proves) and the service registry, the
+interrupt-handler table and the service graph (plan row 29), and the finalise's
+admission is not yet carried across its steps (each step re-checks; plan row
+30, `docs/REGISTERED_DEBT.md`).  The reply stack's links are reciprocal both ways
+(`donationChainWellFormed.nextLinkReciprocal`, since `v0.36.140`), so new code
+that clears a frame's `prev` must clear in the same step the `next` of the frame
+it named, as the removal clears both of the cut frame's links; notification
+bindings and endpoint-queue links are likewise held reciprocal by
+`ipcInvariantFull`, so a writer of either side writes both.  The suspend of a thread blocked in IPC or
 holding a donated context is the one syscall arm left on the general path
 (ZA6.1).  ZA6 covers the other
 entries and makes the rule standing.  Plan:
@@ -4772,10 +4780,10 @@ code may assume:
   `CancellationNotificationShape` — the only layer that sees every frame it
   composes, and imported by nothing that would close a cycle — and which the
   library root imports, since a module outside every root is outside every
-  census's derived domain.  (3) **The sweep frames `boundThread`, not
-  `getSchedContext?`**: its last step (`clearDonationOriginReferences`) genuinely
-  rewrites scheduling contexts, and the invariant reads only the field it leaves
-  alone, so `cleanupTcbReferences_boundThread_frame` is the projection and
+  census's derived domain.  (3) **The sweep frames `boundThread`**, the field
+  the invariant reads (since `v0.36.140` the sweep writes no scheduling context
+  at all: the origin scrub it ended with was retired for the origin's back-link),
+  so `cleanupTcbReferences_boundThread_frame` is the projection and
   `replenishQueueAffinityConsistentOnCore_transfer` is what consumes it.  (4)
   **The composite takes no detachment pack**, so it covers exactly the states on
   which the runtime arms do the work — under `retypeTargetDetached` the whole

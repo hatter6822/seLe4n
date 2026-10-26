@@ -678,7 +678,7 @@ theorem consumeReply_offSchedulerAgrees {s1 s2 r1 r2 : SystemState}
 open SeLe4n.Model.SystemState in
 /-- **WS-HP HP6.4** step congruence for the removal's composed store step: two
 states agreeing off the scheduler take the same branch of `spliceFrameBelow?` —
-it reads `getReply?` and nothing else — and each of the one or three `storeObject`
+it reads `getReply?` and nothing else — and each of the two or three `storeObject`
 writes carries the relation. -/
 theorem spliceReplyFrameStores_offSchedulerAgrees {s1 s2 t1 t2 : SystemState}
     {rid above : SeLe4n.ReplyId} {r a : Reply}
@@ -694,12 +694,16 @@ theorem spliceReplyFrameStores_offSchedulerAgrees {s1 s2 t1 t2 : SystemState}
     cases hP : r.prev with
     | none => rfl
     | some below => simp only []; rw [hGR below]
-  rcases spliceReplyFrameStores_cases h1 with ⟨hB1, hSa1⟩ |
+  rcases spliceReplyFrameStores_cases h1 with ⟨m1, hB1, hSa1, hSb1⟩ |
     ⟨below, b, m1, n1, hB1, hSa1, hSb1, hSc1⟩
-  · rcases spliceReplyFrameStores_cases h2 with ⟨_, hSa2⟩ | ⟨_, _, _, _, hB2, _, _, _⟩
-    · exact storeObject_offSchedulerAgrees _ _ hRel hInv1 hInv2 hSa1 hSa2
+  · rcases spliceReplyFrameStores_cases h2 with ⟨m2, _, hSa2, hSb2⟩ |
+      ⟨_, _, _, _, hB2, _, _, _⟩
+    · exact storeObject_offSchedulerAgrees _ _
+        (storeObject_offSchedulerAgrees _ _ hRel hInv1 hInv2 hSa1 hSa2)
+        (SeLe4n.Model.storeObject_preserves_objects_invExt s1 m1 _ _ hInv1 hSa1)
+        (SeLe4n.Model.storeObject_preserves_objects_invExt s2 m2 _ _ hInv2 hSa2) hSb1 hSb2
     · rw [hBelow, hB1] at hB2; cases hB2
-  · rcases spliceReplyFrameStores_cases h2 with ⟨hB2, _⟩ |
+  · rcases spliceReplyFrameStores_cases h2 with ⟨_, hB2, _⟩ |
       ⟨below', b', m2, n2, hB2, hSa2, hSb2, hSc2⟩
     · rw [hBelow] at hB2; rw [hB1] at hB2; cases hB2
     · rw [hBelow, hB1, Option.some.injEq, Prod.mk.injEq] at hB2
@@ -871,6 +875,58 @@ def ipcReadInert : Option KernelObject → Prop
   | some (.pageTable _) => True
   | _ => False
 
+/-- A run-queue clearing keeps a slot's binding view. -/
+theorem notificationBindingCodes_map_withoutRunLinks (o : Option KernelObject) :
+    notificationBindingCodes (o.map KernelObject.withoutRunLinks) =
+      notificationBindingCodes o := by
+  cases o with
+  | none => rfl
+  | some o => cases o <;> rfl
+
+/-- A derivation-link clearing keeps a slot's binding view. -/
+theorem notificationBindingCodes_map_withoutLinks (o : Option KernelObject) :
+    notificationBindingCodes (o.map KernelObject.withoutLinks) =
+      notificationBindingCodes o := by
+  cases o with
+  | none => rfl
+  | some o => cases o <;> rfl
+
+/-- An absent slot or one of a kind outside the read view holds no binding. -/
+theorem notificationBindingCodes_of_absentOrInert {o : Option KernelObject}
+    (h : o = none ∨ ipcReadInert o) : notificationBindingCodes o = (0, 0) := by
+  rcases h with rfl | h
+  · rfl
+  · obtain _ | o := o
+    · rfl
+    · cases o <;> first | rfl | exact absurd h (by simp [ipcReadInert])
+
+/-- A thread as every IPC bundle conjunct but the reciprocity reads it: the record
+with its run-queue fields, its space-slot links and its bound-notification code
+cleared.  The code is read by `notificationBindingReciprocal` alone, which the
+whole-bundle transports take as its own hypothesis. -/
+def _root_.SeLe4n.Model.TCB.ipcReadView (t : TCB) : TCB :=
+  TCB.withoutLinks { TCB.withoutRunLinks t with boundNotificationCode := 0 }
+
+/-- Two TCBs with the same IPC read view: the first is the second with its
+run-queue fields, space-slot links and bound-notification code rewritten. -/
+theorem _root_.SeLe4n.Model.TCB.eq_withIpcReadView_of_eq {t t' : TCB}
+    (e : t'.ipcReadView = t.ipcReadView) :
+    t' = { t with runCoreCode := t'.runCoreCode, runPrio := t'.runPrio,
+                  runPrevCode := t'.runPrevCode, runNextCode := t'.runNextCode,
+                  runBucketPrevCode := t'.runBucketPrevCode,
+                  runBucketNextCode := t'.runBucketNextCode,
+                  replyWaiterPrevCode := t'.replyWaiterPrevCode,
+                  replyWaiterNextCode := t'.replyWaiterNextCode,
+                  replyWaitersHeadCode := t'.replyWaitersHeadCode,
+                  replyWaitersCount := t'.replyWaitersCount,
+                  ipcBadge := t'.ipcBadge, ipcBadged := t'.ipcBadged,
+                  ipcCanGrant := t'.ipcCanGrant, ipcFaultSend := t'.ipcFaultSend,
+                  spaceLinks := t'.spaceLinks,
+                  boundNotificationCode := t'.boundNotificationCode } := by
+  cases t; cases t'
+  simp only [TCB.ipcReadView, TCB.withoutRunLinks, TCB.withoutLinks, TCB.mk.injEq] at e ⊢
+  simp only [e, and_self]
+
 /-- Pointwise agreement on every object kind the IPC bundle's conjuncts read
 through the store: TCBs, endpoints, notifications, replies and SchedContexts.
 CNodes are deliberately absent — `capabilityBadgesWellFormed` is the one clause
@@ -881,19 +937,20 @@ structure ipcReadViewAgreement (s1 s2 : SystemState) : Prop where
   **and the space-slot links**: no conjunct reads the six run-queue fields,
   which are the scheduler's, nor a thread's derivation-link words, which are
   the tree's, so a run-queue or link write on either side stays inside the
-  frame. -/
+  frame.  Nor does any of them read the bound-notification code: that is
+  `notificationBindingReciprocal`'s, which the whole-bundle transports take
+  separately, so a bind or unbind stays inside the frame too
+  (`TCB.ipcReadView`). -/
   tcb : ∀ (oid : SeLe4n.ObjId) (t : TCB), s2.objects[oid]? = some (.tcb t) →
-    ∃ t₀ : TCB, s1.objects[oid]? = some (.tcb t₀) ∧
-      t.withoutRunLinks.withoutLinks = t₀.withoutRunLinks.withoutLinks
+    ∃ t₀ : TCB, s1.objects[oid]? = some (.tcb t₀) ∧ t.ipcReadView = t₀.ipcReadView
   tcbFwd : ∀ (oid : SeLe4n.ObjId) (t₀ : TCB), s1.objects[oid]? = some (.tcb t₀) →
-    ∃ t : TCB, s2.objects[oid]? = some (.tcb t) ∧
-      t.withoutRunLinks.withoutLinks = t₀.withoutRunLinks.withoutLinks
+    ∃ t : TCB, s2.objects[oid]? = some (.tcb t) ∧ t.ipcReadView = t₀.ipcReadView
   endpoint : ∀ (oid : SeLe4n.ObjId) (ep : Endpoint),
     s2.objects[oid]? = some (.endpoint ep) ↔ s1.objects[oid]? = some (.endpoint ep)
   /-- The notification clause is *content* agreement, not value agreement:
-  every notification-reading conjunct reads `state`, `waitHead` and
-  `pendingBadge` only, so a rewrite that moves `boundTCB` or the lock word —
-  the `.tcbBindNotification` arms — stays inside the frame. -/
+  every notification-reading conjunct but the reciprocity reads `state`,
+  `waitHead` and `pendingBadge` only, so a rewrite that moves `boundTCB` or the
+  lock word — the `.tcbBindNotification` arms — stays inside the frame. -/
   notification : ∀ (oid : SeLe4n.ObjId) (ntfn : Notification),
     s2.objects[oid]? = some (.notification ntfn) →
     ∃ ntfn₀ : Notification, s1.objects[oid]? = some (.notification ntfn₀) ∧
@@ -911,14 +968,92 @@ structure ipcReadViewAgreement (s1 s2 : SystemState) : Prop where
     ∃ sc' : SeLe4n.Kernel.SchedContext, s2.objects[oid]? = some (.schedContext sc') ∧
       sc'.boundThread = sc.boundThread
 
+namespace sameNotificationBindings
+
+/-- Stores that agree off the run-queue links hold the same binding codes. -/
+theorem of_objectsAgreeOffRunLinks {s1 s2 : SystemState}
+    (h : s2.objectsAgreeOffRunLinks s1) : sameNotificationBindings s1 s2 := fun x => by
+  rw [← notificationBindingCodes_map_withoutRunLinks, h x,
+    notificationBindingCodes_map_withoutRunLinks]
+
+/-- Stores that agree off the derivation links hold the same binding codes. -/
+theorem of_objectsAgreeOffDerivationLinks {s1 s2 : SystemState}
+    (h : s2.objectsAgreeOffDerivationLinks s1) : sameNotificationBindings s1 s2 := fun x => by
+  rw [← notificationBindingCodes_map_withoutLinks, (h x).map_withoutLinks,
+    notificationBindingCodes_map_withoutLinks]
+
+/-- Rewrites that keep every rewritten key absent or outside the read view, on
+each side, move no binding code. -/
+theorem of_inertOrAbsentWrites {s1 s2 : SystemState}
+    (h : ∀ oid : SeLe4n.ObjId,
+      s2.objects[oid]? = s1.objects[oid]? ∨
+      ((s1.objects[oid]? = none ∨ ipcReadInert s1.objects[oid]?) ∧
+       (s2.objects[oid]? = none ∨ ipcReadInert s2.objects[oid]?))) :
+    sameNotificationBindings s1 s2 := fun oid => by
+  rcases h oid with hEq | ⟨h1, h2⟩
+  · rw [hEq]
+  · rw [notificationBindingCodes_of_absentOrInert h1,
+      notificationBindingCodes_of_absentOrInert h2]
+
+/-- Rewrites inert on both sides move no binding code. -/
+theorem of_inertWrites {s1 s2 : SystemState}
+    (h : ∀ oid : SeLe4n.ObjId,
+      s2.objects[oid]? = s1.objects[oid]? ∨
+      (ipcReadInert s1.objects[oid]? ∧ ipcReadInert s2.objects[oid]?)) :
+    sameNotificationBindings s1 s2 :=
+  of_inertOrAbsentWrites fun oid => (h oid).imp id fun ⟨h1, h2⟩ => ⟨.inr h1, .inr h2⟩
+
+/-- One rewritten slot, inert on both sides. -/
+theorem of_single_inert_write {s1 s2 : SystemState} {key : SeLe4n.ObjId}
+    (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ key → s2.objects[oid]? = s1.objects[oid]?)
+    (h1 : ipcReadInert s1.objects[key]?) (h2 : ipcReadInert s2.objects[key]?) :
+    sameNotificationBindings s1 s2 :=
+  of_inertWrites fun oid => by
+    by_cases hEq : oid = key
+    · subst hEq; exact Or.inr ⟨h1, h2⟩
+    · exact Or.inl (hNe oid hEq)
+
+/-- An absent key made a non-read kind. -/
+theorem of_fresh_inert_write {s1 s2 : SystemState} {key : SeLe4n.ObjId}
+    (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ key → s2.objects[oid]? = s1.objects[oid]?)
+    (h1 : s1.objects[key]? = none) (h2 : ipcReadInert s2.objects[key]?) :
+    sameNotificationBindings s1 s2 :=
+  of_inertOrAbsentWrites fun oid => by
+    by_cases hEq : oid = key
+    · subst hEq; exact Or.inr ⟨.inl h1, .inr h2⟩
+    · exact Or.inl (hNe oid hEq)
+
+/-- One slot rewritten to an object with the slot's codes. -/
+theorem of_single_write {s1 s2 : SystemState} {key : SeLe4n.ObjId}
+    (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ key → s2.objects[oid]? = s1.objects[oid]?)
+    (hKey : notificationBindingCodes s2.objects[key]? = notificationBindingCodes s1.objects[key]?) :
+    sameNotificationBindings s1 s2 := fun oid => by
+  by_cases hEq : oid = key
+  · subst hEq; exact hKey
+  · rw [hNe oid hEq]
+
+/-- One SchedContext rewritten: a SchedContext holds no binding code. -/
+theorem of_schedContext_content_write {s1 s2 : SystemState} {key : SeLe4n.ObjId}
+    {sc sc' : SeLe4n.Kernel.SchedContext}
+    (hPre : s1.objects[key]? = some (.schedContext sc))
+    (hAt : s2.objects[key]? = some (.schedContext sc'))
+    (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ key → s2.objects[oid]? = s1.objects[oid]?)
+    (_hBound : sc'.boundThread = sc.boundThread) :
+    sameNotificationBindings s1 s2 :=
+  of_single_write hNe (by rw [hAt, hPre]; rfl)
+
+end sameNotificationBindings
+
 namespace ipcReadViewAgreement
 
 /-- **WS-ZA ZA4.5**: object stores that agree off the run-queue links are
 read-view agreement — the relation a run-queue write induces. -/
 theorem of_objectsAgreeOffRunLinks {s1 s2 : SystemState}
     (h : s2.objectsAgreeOffRunLinks s1) : ipcReadViewAgreement s1 s2 :=
-  ⟨fun _ _ hx => (h.get_tcb' hx).elim fun t ht => ⟨t, ht.1, congrArg TCB.withoutLinks ht.2⟩,
-   fun _ _ hx => (h.get_tcb hx).elim fun t ht => ⟨t, ht.1, congrArg TCB.withoutLinks ht.2⟩,
+  ⟨fun _ _ hx => (h.get_tcb' hx).elim fun t ht =>
+     ⟨t, ht.1, congrArg (fun u : TCB => TCB.withoutLinks { u with boundNotificationCode := 0 }) ht.2⟩,
+   fun _ _ hx => (h.get_tcb hx).elim fun t ht =>
+     ⟨t, ht.1, congrArg (fun u : TCB => TCB.withoutLinks { u with boundNotificationCode := 0 }) ht.2⟩,
    fun _ _ => h.get_endpoint_iff,
    fun _ ntfn hObj => ⟨ntfn, h.get_notification_iff.mp hObj, rfl, rfl, rfl⟩,
    fun _ _ => h.get_reply_iff,
@@ -928,8 +1063,10 @@ theorem of_objectsAgreeOffRunLinks {s1 s2 : SystemState}
 a CNode is outside the view, and a thread differs only in its space-slot links. -/
 theorem of_objectsAgreeOffDerivationLinks {s1 s2 : SystemState}
     (h : s2.objectsAgreeOffDerivationLinks s1) : ipcReadViewAgreement s1 s2 :=
-  ⟨fun _ _ hx => (h.tcb_back hx).elim fun t ht => ⟨t, ht.1, congrArg TCB.withoutRunLinks ht.2⟩,
-   fun _ _ hx => (h.tcb_fwd hx).elim fun t ht => ⟨t, ht.1, congrArg TCB.withoutRunLinks ht.2⟩,
+  ⟨fun _ _ hx => (h.tcb_back hx).elim fun t ht =>
+     ⟨t, ht.1, congrArg (fun u : TCB => { TCB.withoutRunLinks u with boundNotificationCode := 0 }) ht.2⟩,
+   fun _ _ hx => (h.tcb_fwd hx).elim fun t ht =>
+     ⟨t, ht.1, congrArg (fun u : TCB => { TCB.withoutRunLinks u with boundNotificationCode := 0 }) ht.2⟩,
    fun _ _ => h.obj_iff (fun _ e => KernelObject.noConfusion e),
    fun _ ntfn hObj =>
      ⟨ntfn, h.obj_back hObj (fun _ e => KernelObject.noConfusion e), rfl, rfl, rfl⟩,
@@ -1086,6 +1223,46 @@ theorem of_notification_content_write {s1 s2 : SystemState} {key : SeLe4n.ObjId}
   · rw [hNe oid hK] at hObj
     exact ⟨n, hObj, rfl, rfl, rfl⟩
 
+/-- A single TCB rewrite that keeps the thread's IPC read view — run links,
+space-slot links and the bound-notification code are free — is read-view
+agreement.  The bind and unbind arms' thread store is exactly this shape. -/
+theorem of_tcb_ipcReadView_write {s1 s2 : SystemState} {key : SeLe4n.ObjId}
+    {t t' : TCB}
+    (hPre : s1.objects[key]? = some (.tcb t))
+    (hAt : s2.objects[key]? = some (.tcb t'))
+    (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ key → s2.objects[oid]? = s1.objects[oid]?)
+    (hView : t'.ipcReadView = t.ipcReadView) :
+    ipcReadViewAgreement s1 s2 := by
+  have step : ∀ (oid : SeLe4n.ObjId) (o : KernelObject), (∀ x : TCB, o ≠ .tcb x) →
+      (s2.objects[oid]? = some o ↔ s1.objects[oid]? = some o) := by
+    intro oid o hNo
+    by_cases hK : oid = key
+    · subst hK
+      rw [hPre, hAt]
+      constructor
+      · intro hx; exact absurd (Option.some.inj hx).symm (hNo t')
+      · intro hx; exact absurd (Option.some.inj hx).symm (hNo t)
+    · rw [hNe oid hK]
+  refine ⟨fun oid x h => ?_, fun oid x h => ?_,
+          fun oid ep => step oid (.endpoint ep) (fun _ h => KernelObject.noConfusion h),
+          fun oid n hObj =>
+            ⟨n, (step oid (.notification n) (fun _ h => KernelObject.noConfusion h)).mp hObj,
+              rfl, rfl, rfl⟩,
+          fun oid r => step oid (.reply r) (fun _ h => KernelObject.noConfusion h),
+          fun oid sc hSc =>
+            ⟨sc, (step oid (.schedContext sc) (fun _ h => KernelObject.noConfusion h)).mpr hSc,
+              rfl⟩⟩
+  · by_cases hK : oid = key
+    · subst hK
+      rw [hAt] at h; cases h
+      exact ⟨t, hPre, hView⟩
+    · rw [hNe oid hK] at h; exact ⟨x, h, rfl⟩
+  · by_cases hK : oid = key
+    · subst hK
+      rw [hPre] at h; cases h
+      exact ⟨t', hAt, hView⟩
+    · exact ⟨x, by rw [hNe oid hK]; exact h, rfl⟩
+
 /-- A single SchedContext rewrite preserving `boundThread` — budget, period,
 priority, deadline, domain and the lock word are free — is read-view
 agreement.  The `.schedContextConfigure` arm's store and the priority arms'
@@ -1155,31 +1332,31 @@ form `run_links_back` substitutes. -/
 theorem get_tcb_back {s1 s2 : SystemState} (hView : ipcReadViewAgreement s1 s2)
     {x : SeLe4n.ObjId} {t' : TCB} (hx : s2.objects[x]? = some (.tcb t')) :
     ∃ t : TCB, ∃ (rc : Nat) (rp : SeLe4n.Priority) (rpv rnx rbpv rbnx rwp rwn rwh rwc : Nat) (ib : UInt64) (ibd icg ifs : Bool)
-      (sl : Vector Nat (slotLinkWords * 2)),
+      (sl : Vector Nat (slotLinkWords * 2)) (bnc : Nat),
       s1.objects[x]? = some (.tcb t) ∧
       t' = { t with runCoreCode := rc, runPrio := rp, runPrevCode := rpv, runNextCode := rnx,
                     runBucketPrevCode := rbpv, runBucketNextCode := rbnx,
                     replyWaiterPrevCode := rwp, replyWaiterNextCode := rwn,
                     replyWaitersHeadCode := rwh, replyWaitersCount := rwc,
                     ipcBadge := ib, ipcBadged := ibd, ipcCanGrant := icg, ipcFaultSend := ifs,
-                    spaceLinks := sl } := by
+                    spaceLinks := sl, boundNotificationCode := bnc } := by
   obtain ⟨t, ht, e⟩ := hView.tcb x t' hx
-  exact ⟨t, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ht, TCB.eq_withRunAndSpaceLinks_of_eq e⟩
+  exact ⟨t, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ht, TCB.eq_withIpcReadView_of_eq e⟩
 
 /-- The same, from `s1` to `s2` — the form `run_links_fwd` substitutes. -/
 theorem get_tcb_fwd {s1 s2 : SystemState} (hView : ipcReadViewAgreement s1 s2)
     {x : SeLe4n.ObjId} {t : TCB} (hx : s1.objects[x]? = some (.tcb t)) :
     ∃ t' : TCB, ∃ (rc : Nat) (rp : SeLe4n.Priority) (rpv rnx rbpv rbnx rwp rwn rwh rwc : Nat) (ib : UInt64) (ibd icg ifs : Bool)
-      (sl : Vector Nat (slotLinkWords * 2)),
+      (sl : Vector Nat (slotLinkWords * 2)) (bnc : Nat),
       s2.objects[x]? = some (.tcb t') ∧
       t = { t' with runCoreCode := rc, runPrio := rp, runPrevCode := rpv, runNextCode := rnx,
                     runBucketPrevCode := rbpv, runBucketNextCode := rbnx,
                     replyWaiterPrevCode := rwp, replyWaiterNextCode := rwn,
                     replyWaitersHeadCode := rwh, replyWaitersCount := rwc,
                     ipcBadge := ib, ipcBadged := ibd, ipcCanGrant := icg, ipcFaultSend := ifs,
-                    spaceLinks := sl } := by
+                    spaceLinks := sl, boundNotificationCode := bnc } := by
   obtain ⟨t', ht, e⟩ := hView.tcbFwd x t hx
-  exact ⟨t', _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ht, TCB.eq_withRunAndSpaceLinks_of_eq e.symm⟩
+  exact ⟨t', _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ht, TCB.eq_withIpcReadView_of_eq e.symm⟩
 
 /-- The typed-getter form of the reply clause. -/
 theorem getReply?_iff {s1 s2 : SystemState} (hView : ipcReadViewAgreement s1 s2)
@@ -1514,15 +1691,26 @@ theorem queueNextTargetBlocked_of_readViewAgreement {s1 s2 : SystemState}
   run_links_back hView at tcbA hA; run_links_back hView at tcbB hB
   exact h a b tcbA tcbB hA hB hNext
 
+/-- Read-view transport of `endpointQueueLinksOnlyBlocked`. -/
+theorem endpointQueueLinksOnlyBlocked_of_readViewAgreement {s1 s2 : SystemState}
+    (hView : ipcReadViewAgreement s1 s2)
+    (h : endpointQueueLinksOnlyBlocked s1) : endpointQueueLinksOnlyBlocked s2 := by
+  intro a tcbA hA hNext
+  run_links_back hView at tcbA hA
+  exact h a tcbA hA hNext
+
 /-- **The read-view master transport**: two states agreeing on every object
-kind the bundle reads satisfy the eighteen CNode-free conjuncts
-interchangeably; the one CNode-reading clause (`capabilityBadgesWellFormed`) is
-supplied for the target state.  This is the lever that carries the whole bundle across the
+kind the bundle reads satisfy the eighteen conjuncts that read neither a CNode
+nor a binding code interchangeably; the CNode-reading clause
+(`capabilityBadgesWellFormed`) and the binding reciprocity are supplied for the
+target state.  This is the lever that carries the whole bundle across the
 capability, VSpace and untyped-scrub dispatch arms, whose writes the bundle
-never reads. -/
-theorem ipcInvariantFull_of_readViewAgreement {s1 s2 : SystemState}
+never reads, and across the bind and unbind arms, whose writes only the
+reciprocity reads. -/
+theorem ipcInvariantFull_of_readViewAgreement_of_reciprocal {s1 s2 : SystemState}
     (hView : ipcReadViewAgreement s1 s2)
     (hCapBadges : capabilityBadgesWellFormed s2)
+    (hNBR : notificationBindingReciprocal s2)
     (h : ipcInvariantFull s1) : ipcInvariantFull s2 :=
   ⟨ipcInvariant_of_readViewAgreement hView h.ipcInvariant,
    dualQueueSystemInvariant_of_readViewAgreement hView h.dualQueueSystemInvariant,
@@ -1545,7 +1733,19 @@ theorem ipcInvariantFull_of_readViewAgreement {s1 s2 : SystemState}
    donationOwnerUnique_of_readViewAgreement hView h.donationOwnerUnique,
    endpointQueueTailBlockedConsistent_of_readViewAgreement hView
      h.endpointQueueTailBlockedConsistent,
-   queueNextTargetBlocked_of_readViewAgreement hView h.queueNextTargetBlocked⟩
+   queueNextTargetBlocked_of_readViewAgreement hView h.queueNextTargetBlocked,
+   hNBR,
+   endpointQueueLinksOnlyBlocked_of_readViewAgreement hView h.endpointQueueLinksOnlyBlocked⟩
+
+/-- The master transport for a write that moves no binding code: the
+reciprocity carries with the codes. -/
+theorem ipcInvariantFull_of_readViewAgreement {s1 s2 : SystemState}
+    (hView : ipcReadViewAgreement s1 s2)
+    (hCodes : sameNotificationBindings s1 s2)
+    (hCapBadges : capabilityBadgesWellFormed s2)
+    (h : ipcInvariantFull s1) : ipcInvariantFull s2 :=
+  ipcInvariantFull_of_readViewAgreement_of_reciprocal hView hCapBadges
+    (.of_codes hCodes h.notificationBindingReciprocal) h
 
 /-- WS-ZA ZA4.5: object slots read the same in stores that agree off the
 run-queue links, so the capability half of `badgeWellFormed` carries across them. -/
@@ -1558,13 +1758,13 @@ theorem capabilityBadgesWellFormed_of_objectsAgreeOffRunLinks {s1 s2 : SystemSta
 
 /-- WS-SM SM6.D, restated for WS-ZA ZA4.5: **the whole-bundle transport** —
 two states whose object stores agree off the run-queue links satisfy the
-nineteen conjuncts of `ipcInvariantFull` interchangeably.  This is the lever that carries the single-core whole-bundle
+twenty-one conjuncts of `ipcInvariantFull` interchangeably.  This is the lever that carries the single-core whole-bundle
 theorems across the cross-core wake, whose run-queue placement differs. -/
 theorem ipcInvariantFull_of_objectsAgreeOffRunLinks {s1 s2 : SystemState}
     (hA : s2.objectsAgreeOffRunLinks s1)
     (h : ipcInvariantFull s1) : ipcInvariantFull s2 :=
   ipcInvariantFull_of_readViewAgreement (.of_objectsAgreeOffRunLinks hA)
-    (capabilityBadgesWellFormed_of_objectsAgreeOffRunLinks hA h.badgeWellFormed.2) h
+    (.of_objectsAgreeOffRunLinks hA) (capabilityBadgesWellFormed_of_objectsAgreeOffRunLinks hA h.badgeWellFormed.2) h
 
 /-- The same for pointwise-equal lookups. -/
 theorem ipcInvariantFull_of_getElem_eq {s1 s2 : SystemState}
@@ -1614,7 +1814,9 @@ theorem ipcInvariantFullExceptDonationOwner_of_objectsAgreeOffRunLinks {s1 s2 : 
    donationOwnerUnique_of_readViewAgreement hView h.donationOwnerUnique,
    endpointQueueTailBlockedConsistent_of_readViewAgreement hView
      h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
-   queueNextTargetBlocked_of_readViewAgreement hView h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2⟩
+   queueNextTargetBlocked_of_readViewAgreement hView h.queueNextTargetBlocked,
+   .of_codes (.of_objectsAgreeOffRunLinks hA) h.notificationBindingReciprocal,
+   endpointQueueLinksOnlyBlocked_of_readViewAgreement hView h.endpointQueueLinksOnlyBlocked⟩
 
 /-- The transition frame nearly every capability-only dispatch arm induces:
 objects untouched.  `ipcInvariantFull` reads nothing else, so it transports

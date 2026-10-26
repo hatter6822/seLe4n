@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.139` (`lakefile.toml`) |
+| **Package version** | `0.36.140` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 506,208 across 458 Lean files |
-| **Test LoC** | 87,273 across 70 Lean test suites |
-| **Proved declarations** | 18,430 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 511,247 across 458 Lean files |
+| **Test LoC** | 87,474 across 70 Lean test suites |
+| **Proved declarations** | 18,596 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits) |
 | **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2), and **BP4.1/BP4.2 (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type)** at v0.36.2 (§6.2.9), and **BP4.3/BP4.4 (the firmware's device tree reaching Lean, and the entry booting the deployment on the variant it describes)** at v0.36.2 (§6.2.10), and **BP4.5 (the image's loaded bytes cleaned to the Point of Unification before any thread can fetch)** at v0.36.2 (§6.2.11), and **BP4.6 (the verified board's RAM outside the kernel's extent mapped, and the boot map sealed before any secondary is released)** and **BP4.7 (that RAM handed to the root task as untypeds)** at v0.36.2 (§6.2.12), and **BP5.1 (the kernel image, a bare-metal binary entered at `_start` under `link.ld`)** and **BP5.2 (the Lean kernel linked into it, under `--gc-sections` from the archive lane's roots)** and **BP5.3 (the firmware's boot files, `kernel8.img` and `config.txt`, cut from that image and checked against it)** and **BP5.4 (its size and section map published with every CI run)** at v0.36.2 (§6.2.13), and **BP5.5 (the firmware's EL2 entry dropped to EL1, with the PSCI conduit following the entry level)** at v0.36.2 (§6.2.15), and **BP6 (every PE marks itself ready after its own per-PE runtime handshake and before it unmasks IRQs, and the boot halts unless every declared PE serves the kernel)** at v0.36.2 (§6.2.16), and **BP7.10 (the first gigabyte's RAM read off the firmware's account, and the constant boot map shrunk to the kernel's reserved extent)** at v0.36.3 (§6.2.17), and **BP7.1 slices 1–3 (frame capabilities, the untyped carve that mints them, and the untyped reset that returns their memory)** at v0.36.4, v0.36.5 and v0.36.6, slice 4a (child untypeds and subtree resets) at v0.36.8, the in-place VSpace-root refusal at v0.36.9, and slice 4b's VSpace-root carve at v0.36.10, `.tcbSetSpace` (a thread runs in a carved address space) at v0.36.11, intermediate page tables at v0.36.12, and every configured address space owning a table page at v0.36.13, which completes BP7.1 (§8.10.2a); BP7.2's user window and 16-bit hardware ASIDs at v0.36.14 and its physical-write ledger and translation install at v0.36.15; BP7.3–BP7.9 at v0.36.16–v0.36.22 (the whole trap frame saved, per-core restore staging, unblock-frame delivery, the live context restore, the delivered declassified badge, overflow message registers, lazily switched FP/SIMD state); and BP7.11 (the boot starts both initial threads, one per domain) at v0.36.23, which completes BP7; BP8.1's first slice (the image built for QEMU's `virt` — its device map from `src/board.rs`, its link script derived from `link.ld`, an arm64 Image header on `_start` — booted there at EL1 and at EL2 by `scripts/test_qemu.sh`) at v0.36.24, and its second (the Lean `virt` binding `SeLe4n/Platform/QemuVirt/` — its board check the RPi5 bridge's own coverage predicates, the RPi5 deployment's layout on it with every boot gate decided, and its own boot entry `lean_kernel_main_qemu_virt`, held by the boot-entry contract's table to its own approved call) at v0.36.25, and its third (the Lean-linked image booted by `scripts/test_qemu.sh --lean-kernel` on four PEs at EL1 and EL2 to every core's first idle dispatch, on every PR — §6.2.18) at v0.36.26, completing BP8.1, and BP8.2 (the four-PE bring-up gate, executed on every PR — §6.2.18) at v0.36.27. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -5209,11 +5209,11 @@ splice write each link in its slot: `severReplyFrameBelowStoresInPlace`,
 `spliceReplyFrameStoresInPlace`), so the removed reply is named
 by no other object and is retired, and the frame below becomes the new top.  The
 footprints declare the frame below on that arm too (`replyFrameBelow?` is the
-frame's `prev` unless it heads a stack).  A thread whose top reply heads a
-context it lent from the bottom of the stack is the context's recorded origin;
-its own delete's pop clears that record, so the admission accepts that one
-origin (`replyPopClearedOrigin?` in `threadFinaliseAdmitted`) rather than
-refusing the real lender.  `schedContext_completeYieldTo` has nothing to do:
+frame's `prev` unless it heads a stack).  A thread that lent a context from the bottom of a
+stack is that context's recorded origin, and the record counts only while the
+thread's own back-link (`TCB.originScCode`) names the context, so the thread's
+delete writes no context on its behalf and the admission scans no other object
+for origins naming it.  `schedContext_completeYieldTo` has nothing to do:
 the model keeps no yield-to link.  Where they differ, the finalise follows seL4
 rather than the live unbind syscall: that syscall leaves its thread queued at
 its legacy priority, the finalise dequeues it.  A caller blocked on its reply
@@ -5307,7 +5307,7 @@ root slot still non-leaf, the root delete makes no write
 capability, so a retry continues from the slot state, as seL4's preempted
 `cteDelete` does, and a revoke that keeps a child stops with `.ok`.  That the
 fuel always suffices on a reachable state is not yet proven
-(`docs/REGISTERED_DEBT.md`, plan row 27).  **Set-space** deletes each old root
+(`docs/REGISTERED_DEBT.md`, plan row 30).  **Set-space** deletes each old root
 through the same loop (`copyThreadSpacesZombie`), so a thread's last
 capability to its old CSpace root CNode empties and retires it; set-space is a
 remote writer, in the capability-destroy footprint group.  **An untyped with
@@ -5323,10 +5323,17 @@ space slots and held by no core (`finaliseThread_quiesces`, given
 `runCodeBounded` and `currentDequeuedUnique`), and a scheduling context's
 releases its record (`finaliseSchedContext_releases`), each stated on the
 states where its steps run.  The thread retire reads no masked run-queue
-neighbour code (the dequeue still clears them, `TCB.detachRun`).  Still open,
-plan row 27: the retire walks the object table (`storeNamesNone` and its thread
-and scheduling-context forms), and the finalise's admission is not carried
-across its own steps; each step and the retire re-check their guards.
+neighbour code (the dequeue still clears them, `TCB.detachRun`).  **The
+reciprocity the own-link reads need** (`v0.36.140`, plan row 27): a thread's
+bound notification and the notification's bound thread name each other
+(`notificationBindingReciprocal`), a thread with an endpoint-queue successor is
+blocked on an endpoint (`endpointQueueLinksOnlyBlocked`), and every reply
+frame's upward link is answered (`donationChainWellFormed.nextLinkReciprocal`),
+each preserved by every transition and established at boot.  Still open:
+the retire walks the object table for references by id (plan row 28) and the
+service registry, the interrupt-handler table and the service graph (plan row
+29), and the finalise's admission is not carried across its own steps (plan
+row 30); each step and the retire re-check their guards.
 Exerciser: `populated-cnode-delete`, `space-cnode-cap-delete`,
 `spaced-tcb-delete`, `tcb-set-space` and `set-carved-tcb-space` read 0 heap
 cells: a thread's space-slot delete keeps the slot's cell as its spare record
@@ -5815,7 +5822,7 @@ seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
   (`untypedResetFromCap`) and first refuses (`.revocationRequired`) while that
   slot has a derivation child, seL4's per-slot `ensureNoChildren`
   (`untypedResetFromCap_ok`); the store-wide check stays beside it until the
-  reset is restated as seL4's (WS-ZA ZA5.4 part 28, `docs/REGISTERED_DEBT.md`).
+  reset is restated as seL4's (WS-ZA ZA5.4 part 31, `docs/REGISTERED_DEBT.md`).
   Then every
   mapping of a page meeting the region is removed through the `.vspaceUnmap`
   arm's own transition — TLB flush, shootdown round, initiator drain,
@@ -8046,20 +8053,25 @@ so no live transition is ever ahead of its own proofs.
   its decidable form and the one spelling of "this Reply may be linked to a new
   caller or retyped", shared by the link guard, the stash admission, the retype
   guard and the boot check.
-- **`donationChainWellFormed`** (`SeLe4n/Kernel/IPC/Invariant/Defs.lean`) — five
+- **`donationChainWellFormed`** (`SeLe4n/Kernel/IPC/Invariant/Defs.lean`) — six
   clauses: every stored Reply is locally well formed; a context's head resolves
   to a Reply heading that context and conversely; every `prev` link is answered
-  by the frame it names (`prevLinkReciprocal`); and each context's stack, walked
-  from its head, **terminates** (`donationChainFrom`, a fuel-bounded walk).  Each
+  by the frame it names (`prevLinkReciprocal`); each context's stack, walked
+  from its head, **terminates** (`donationChainFrom`, a fuel-bounded walk); and
+  every upward `.frame` link is answered by the frame it names
+  (`nextLinkReciprocal`, since `v0.36.140`).  Each
   link is validated by the target's own **upward** link and never by its
   `caller`: Reply objects are re-linked to new callers, so a stale link over a
   reused Reply would otherwise let a donation return read the *new* caller and
   hand the original thread's scheduling context to an unrelated thread, in
   another domain, driven by object reuse.  Relinking clears both links, so a
   reused Reply carries no answer back and the walk stops at it.  The relation is
-  stated **downward** deliberately: an upward `.frame` link whose target does not
-  point back is a legitimate state — a frame below a severed cut, the degenerate
-  arm of the splice (§8.12.11) — and no reader trusts one on its own.
+  stated **both ways** since `v0.36.140` (seL4's `sym_refs` over `replyNext` /
+  `replyPrev`): an upward `.frame` link whose target does not point back is
+  excluded on every reachable state, because the removal clears the cut frame's
+  `next` in the same step that clears the frame above's `prev` (§8.12.11).  That
+  is what lets a reply's own links answer that no frame names it.  The readers
+  still validate each link they follow, as fail-closed checks.
 - **A conjunct of `ipcReachable`, not of `ipcInvariantFull`**, which keeps its
   twenty — and *preserved* rather than assumed.  `donationChainFrame` is the
   reusable frame, stated over the two projections the walk actually reads
@@ -8332,8 +8344,8 @@ respect.
 
 1. **One removal step, and both spines call it.**
    `removeCallerReplyFrame caller rid` is seL4's `reply_remove`: the splice
-   (folded to the identity when nothing links down to the answered frame, which
-   the chain relation permits by design since it is stated downward), then the
+   (folded to the identity when nothing links down to the answered frame, as at
+   the bottom of a stack), then the
    consume.  `endpointReplyOnCore`, `endpointReply` and `endpointReplyRecv` all
    run it; a Tier 3 negative refuses a bare `SystemState.consumeCallerReply` in
    any of the three.  The order inside it is the content — the splice reads the
@@ -8656,11 +8668,12 @@ context's stack and the reservation goes on travelling outward to the caller tha
 owns it.
 
 **The removal is three stores.**  `spliceReplyFrameStores` writes
-`above.prev := some below`, `below.next := some (.frame above)`, and
-`rid.prev := none` — the last being seL4's `reply_unlink` downward half.  The third
-is not optional: without it the cut frame keeps a `prev` that nothing below names
-back, which falsifies `donationChainWellFormed.prevLinkReciprocal` at the cut
-frame, so the bare splice would owe a relaxed predicate and
+`above.prev := some below`, `below.next := some (.frame above)`, and the cut
+frame's own links cleared (`prev := none, next := none`, seL4's `reply_remove`;
+the `next` too since `v0.36.140`).  The third is not optional: without it the cut
+frame keeps a `prev` that nothing below names back, which falsifies
+`donationChainWellFormed.prevLinkReciprocal` at the cut frame, and a `next`
+whose target no longer answers it, which falsifies `nextLinkReciprocal`, so the bare splice would owe a relaxed predicate and
 `SeLe4n/Testing/ReplyStackWriteCensus.lean` would have had to accept a half-step
 where the sever stated its result outright.  With it the invariant is preserved
 **outright** across the removal
@@ -8674,13 +8687,15 @@ redirects the reservation to).
 **The below side degenerates rather than refusing.**  `spliceFrameBelow?` answers
 `Option`: a `prev` that does not resolve, one naming the frame above, and a frame
 below whose own `next` does not link back are all *not followed*, and the removal
-then writes `above.prev := none`, which is the sever.  So this operation's refusal
+then clears the frame above's `prev` (and its `next` too where it names the cut
+frame back, `Reply.unlinkedFrom`) and the cut frame's links, which is the sever.  So this operation's refusal
 set is **exactly** the pre-WS-HP one — every refusal theorem carries verbatim,
 `spliceReplyFrameOutOrSelf`'s fold soundness included, and
 `spliceReplyFrameOut_eq_sever_of_no_frame_below` is the definitional equality that
-makes every repair a case split whose `none` branch is the pre-HP proof.  One
-consequence: a **stale upward link is still reachable**, so the reciprocity checks
-(`donationChainFrom`, `replyFrameOnLiveStack`) stay and stay load-bearing.
+makes every repair a case split whose `none` branch is the pre-HP proof.  A stale
+upward link is excluded on every reachable state (`nextLinkReciprocal`); the
+reciprocity checks (`donationChainFrom`, `replyFrameOnLiveStack`) stay as
+fail-closed checks on states the invariant does not vouch for.
 
 **The two facts the sever could not state.**
 `removeCallerReplyFrame_splices_reciprocally` — after a middle removal the frame
@@ -8923,9 +8938,9 @@ TCB (their `_of_none` arms exist so the *operation's* argument keeps its own
 error code), so as first landed a stale origin naming no thread was answered as a
 candidate and the pop's own lookup refused the reply with `.objectNotFound` — a
 refusal on the one shape the redirect exists to make a fallback.  Unreachable
-today, because objects are never erased and `clearDonationOriginReferences`
-clears the field when the thread it names is retyped, and closed on both surfaces
-anyway: `donationOriginRecipient?_eq_some_iff` carries resolution as its fourth
+today, because an origin counts only while the thread it names carries the
+back-link (`TCB.originScCode`) the donor's first push writes, and a thread made
+at a reused id starts with none, and closed on both surfaces anyway: `donationOriginRecipient?_eq_some_iff` carries resolution as its fourth
 fact, `replyDonationRecipient_resolves` says the pop's recipient resolves whenever
 the answered caller does, `donationAccountingPreserved_atCallDepthTwo` takes the
 origin's existence at the post-removal state as its third hypothesis, the frozen

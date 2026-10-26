@@ -308,7 +308,18 @@ theorem coreIpcInvariantBundle_to_endpointQueueTailBlockedConsistent {st : Syste
 (19th `ipcInvariantFull` conjunct). -/
 theorem coreIpcInvariantBundle_to_queueNextTargetBlocked {st : SystemState}
     (h : coreIpcInvariantBundle st) : queueNextTargetBlocked st :=
-  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+
+/-- Extract notification binding reciprocity (20th `ipcInvariantFull` conjunct). -/
+theorem coreIpcInvariantBundle_to_notificationBindingReciprocal {st : SystemState}
+    (h : coreIpcInvariantBundle st) : notificationBindingReciprocal st :=
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+
+/-- Extract the endpoint-queue link discipline (21st `ipcInvariantFull` conjunct):
+a thread with a queue successor is blocked on an endpoint. -/
+theorem coreIpcInvariantBundle_to_endpointQueueLinksOnlyBlocked {st : SystemState}
+    (h : coreIpcInvariantBundle st) : endpointQueueLinksOnlyBlocked st :=
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
 
 /-- Named M3.5 coherence component: runnable threads stay IPC-ready. -/
 def ipcSchedulerRunnableReadyComponent (st : SystemState) : Prop :=

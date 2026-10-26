@@ -242,7 +242,8 @@ theorem storeObject_tcbFieldUpdate_preserves_ipcInvariantFull
     (hBind : tcb'.schedContextBinding = tcb.schedContextBinding)
     (hSlots : ∀ (sl : SeLe4n.Slot) (c : Capability) (b : SeLe4n.Badge),
       tcb'.spaceSlotCap sl = some c → c.badge = some b → tcb.spaceSlotCap sl = some c :=
-      by intro _ _ _ h _; exact h) :
+      by intro _ _ _ h _; exact h)
+    (hBnc : tcb'.boundNotificationCode = tcb.boundNotificationCode := by rfl) :
     ipcInvariantFull st' := by
   have hAt : st'.objects[tid.toObjId]? = some (.tcb tcb') :=
     storeObject_objects_eq st st' tid.toObjId (.tcb tcb') hObjInv hStore
@@ -252,7 +253,7 @@ theorem storeObject_tcbFieldUpdate_preserves_ipcInvariantFull
   have hSched := storeObject_scheduler_eq st st' tid.toObjId (.tcb tcb') hStore
   exact ipcInvariantFull_of_tcbFieldUpdate st st' tid.toObjId tcb tcb'
     hInv hPre hAt hFrame hIpc hMsg hNext hPrev hPPrev hBudget hReply hStash hBind
-    hSlots
+    hSlots hBnc
 
 /-- `.tcbSetIPCBuffer`: rewrites one TCB's `ipcBuffer` — a field no conjunct
 reads — so the whole bundle transports. -/
@@ -282,48 +283,58 @@ theorem setIPCBufferOp_preserves_ipcInvariantFull
 -- §6  Notification-binding arms (`.tcbBindNotification`, `.tcbUnbindNotification`)
 -- ============================================================================
 
-/-- A store replacing one notification with one of identical queue content
-(`state`, `waitHead`, `pendingBadge` — the binding and lock word are
-free) preserves the whole bundle: the notification-reading conjuncts see the
-same content, no other conjunct reads the key, and the scheduler is
-untouched. -/
-theorem storeObject_notificationContentUpdate_preserves_ipcInvariantFull
-    (st st1 : SystemState) (nid : SeLe4n.ObjId) (ntfn ntfn' : Notification)
-    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+/-- A notification store keeps the capability half of the badge conjunct: a
+notification holds no capability slot. -/
+theorem capabilityBadgesWellFormed_of_notificationStore {st st1 : SystemState}
+    {nid : SeLe4n.ObjId} {ntfn ntfn' : Notification}
+    (hObjInv : st.objects.invExt) (h : capabilityBadgesWellFormed st)
     (hPre : st.objects[nid]? = some (.notification ntfn))
-    (hStore : storeObject nid (.notification ntfn') st = .ok ((), st1))
-    (hState : ntfn'.state = ntfn.state)
-    (hWaiters : ntfn'.waitHead = ntfn.waitHead)
-    (hBadge : ntfn'.pendingBadge = ntfn.pendingBadge) :
-    ipcInvariantFull st1 := by
-  have hAt := storeObject_objects_eq st st1 nid (.notification ntfn') hObjInv hStore
-  have hNe : ∀ oid : SeLe4n.ObjId, oid ≠ nid → st1.objects[oid]? = st.objects[oid]? :=
-    fun oid h => storeObject_objects_ne st st1 nid oid (.notification ntfn') h hObjInv hStore
-  have hSched := storeObject_scheduler_eq st st1 nid (.notification ntfn') hStore
-  have hView := ipcReadViewAgreement.of_notification_content_write hPre hAt hNe
-    hState hWaiters hBadge
-  have hBack : ∀ (tid : SeLe4n.ThreadId) (tcb' : TCB),
-      st1.objects[tid.toObjId]? = some (.tcb tcb') →
-      ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) ∧
-        tcb.ipcState = tcb'.ipcState ∧ tcb.schedContextBinding = tcb'.schedContextBinding := by
-    intro tid tcb' h
-    by_cases hK : tid.toObjId = nid
-    · rw [hK, hAt] at h
-      exact absurd (Option.some.inj h) (fun hx => KernelObject.noConfusion hx)
-    · rw [hNe _ hK] at h
-      exact ⟨tcb', h, rfl, rfl⟩
-  have hCap : capabilityBadgesWellFormed st1 := by
-    intro oid cn slot cap badge hCn hLk hB
-    by_cases hK : oid = nid
-    · rw [hK, hAt] at hCn
-      cases Option.some.inj hCn; simp [KernelObject.slotCap] at hLk
-    · rw [hNe _ hK] at hCn
-      exact hInv.badgeWellFormed.2 oid cn slot cap badge hCn hLk hB
-  exact ipcInvariantFull_of_readViewAgreement hView hCap hInv
+    (hStore : storeObject nid (.notification ntfn') st = .ok ((), st1)) :
+    capabilityBadgesWellFormed st1 :=
+  capabilityBadgesWellFormed_of_slotCap_back h
+    (slotCap_back_of_storeObject hObjInv hPre hStore rfl)
 
-/-- `.tcbBindNotification`: the bind writes the notification's `boundTCB` and
-the TCB's `boundNotification` — fields no conjunct reads — so the whole
-bundle transports across both stores. -/
+/-- A thread store that keeps the thread's capability slots keeps the capability
+half of the badge conjunct. -/
+theorem capabilityBadgesWellFormed_of_tcbSlotsStore {st st1 : SystemState}
+    {key : SeLe4n.ObjId} {t t' : TCB}
+    (hObjInv : st.objects.invExt) (h : capabilityBadgesWellFormed st)
+    (hPre : st.objects[key]? = some (.tcb t))
+    (hStore : storeObject key (.tcb t') st = .ok ((), st1))
+    (hCells : t'.spaceCells = t.spaceCells) :
+    capabilityBadgesWellFormed st1 :=
+  capabilityBadgesWellFormed_of_slotCap_back h
+    (slotCap_back_of_storeObject hObjInv hPre hStore (by
+      funext sl; simp only [KernelObject.slotCap, TCB.spaceSlotCap, hCells]))
+
+/-- An absent bound-thread code is the zero code. -/
+theorem Notification.boundTCBCode_eq_zero {n : Notification} (h : n.boundTCB.isSome = false) :
+    n.boundTCBCode = 0 := by
+  cases hc : n.boundTCBCode with
+  | zero => rfl
+  | succ k => simp [Notification.boundTCB, hc, SeLe4n.ThreadId.ofOptCode] at h
+
+/-- An absent bound-notification code is the zero code. -/
+theorem TCB.boundNotificationCode_eq_zero {t : TCB} (h : t.boundNotification.isSome = false) :
+    t.boundNotificationCode = 0 := by
+  cases hc : t.boundNotificationCode with
+  | zero => rfl
+  | succ k => simp [TCB.boundNotification, hc, SeLe4n.ObjId.ofOptCode] at h
+
+/-- A bound notification is the code's object. -/
+theorem TCB.boundNotificationCode_eq_succ {t : TCB} {nid : SeLe4n.ObjId}
+    (h : t.boundNotification = some nid) : t.boundNotificationCode = nid.val + 1 := by
+  cases hc : t.boundNotificationCode with
+  | zero => simp [TCB.boundNotification, hc, SeLe4n.ObjId.ofOptCode] at h
+  | succ k =>
+    simp only [TCB.boundNotification, hc, SeLe4n.ObjId.ofOptCode, Option.some.injEq] at h
+    rw [← h]
+
+/-- `.tcbBindNotification`: the bind writes the notification's bound-thread code
+and the thread's bound-notification code — fields only the reciprocity reads —
+so the other conjuncts transport across both stores, and the reciprocity holds
+of the post-state because the two codes now name each other and both were zero
+before (`notificationBindingReciprocal.of_bindCodes`). -/
 theorem bindNotification_preserves_ipcInvariantFull
     (st st' : SystemState) (nid : SeLe4n.ObjId) (tcbId : SeLe4n.ThreadId)
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
@@ -337,31 +348,52 @@ theorem bindNotification_preserves_ipcInvariantFull
     · rename_i tcb hT
       split at hStep
       · contradiction
-      · split at hStep
+      · rename_i hFree
+        split at hStep
         · contradiction
-        · rename_i hStore1
+        · rename_i st1 hStore1
           split at hStep
           · contradiction
-          · rename_i hStore2
+          · rename_i st2 hStore2
             cases hStep
+            simp only [Bool.or_eq_true, not_or, Bool.not_eq_true] at hFree
             have hNraw := (SystemState.getNotification?_eq_some_iff st nid ntfn).mp hN
             have hTraw := lookupTcb_some_objects st tcbId tcb hT
             have hNeIds : tcbId.toObjId ≠ nid := by
               intro hEq
               rw [hEq, hNraw] at hTraw
               exact absurd (Option.some.inj hTraw) (fun hx => KernelObject.noConfusion hx)
-            have hInv1 := storeObject_notificationContentUpdate_preserves_ipcInvariantFull
-              st _ nid ntfn _ hObjInv hInv hNraw hStore1 rfl rfl rfl
             have hObjInv1 := storeObject_preserves_objects_invExt st _ nid _ hObjInv hStore1
-            have hPre1 := storeObject_objects_ne st _ nid tcbId.toObjId _ hNeIds hObjInv hStore1
-            exact storeObject_tcbFieldUpdate_preserves_ipcInvariantFull _ _ tcbId
-              tcb { tcb with boundNotificationCode := SeLe4n.ObjId.optCode (some nid) } hObjInv1 hInv1
-              (hPre1.trans hTraw) hStore2 rfl rfl rfl rfl rfl rfl rfl rfl rfl
+            have hAt1 := storeObject_objects_eq st _ nid _ hObjInv hStore1
+            have hNe1 : ∀ oid : SeLe4n.ObjId, oid ≠ nid → st1.objects[oid]? = st.objects[oid]? :=
+              fun oid h => storeObject_objects_ne st _ nid oid _ h hObjInv hStore1
+            have hT1 : st1.objects[tcbId.toObjId]? = some (.tcb tcb) := (hNe1 _ hNeIds).trans hTraw
+            have hAt2 := storeObject_objects_eq _ _ tcbId.toObjId _ hObjInv1 hStore2
+            have hNe2 : ∀ oid : SeLe4n.ObjId, oid ≠ tcbId.toObjId →
+                st'.objects[oid]? = st1.objects[oid]? :=
+              fun oid h => storeObject_objects_ne _ _ tcbId.toObjId oid _ h hObjInv1 hStore2
+            have hView := (ipcReadViewAgreement.of_notification_content_write hNraw hAt1 hNe1
+              rfl rfl rfl).trans (ipcReadViewAgreement.of_tcb_ipcReadView_write hT1 hAt2 hNe2 rfl)
+            have hCap := capabilityBadgesWellFormed_of_tcbSlotsStore hObjInv1
+              (capabilityBadgesWellFormed_of_notificationStore hObjInv hInv.badgeWellFormed.2 hNraw
+                hStore1) hT1 hStore2 rfl
+            have hNBR : notificationBindingReciprocal st' :=
+              notificationBindingReciprocal.of_bindCodes hInv.notificationBindingReciprocal hNeIds
+                (by rw [hTraw]; simp only [notificationBindingCodes, KernelObject.bindingCodes,
+                  TCB.boundNotificationCode_eq_zero hFree.2])
+                (by rw [hNraw]; simp only [notificationBindingCodes, KernelObject.bindingCodes,
+                  Notification.boundTCBCode_eq_zero hFree.1])
+                (by rw [hAt2]; rfl)
+                (by rw [hNe2 _ (Ne.symm hNeIds), hAt1]; rfl)
+                (fun k hk1 hk2 => by rw [hNe2 k hk1, hNe1 k hk2])
+            exact ipcInvariantFull_of_readViewAgreement_of_reciprocal hView hCap hNBR hInv
   · split at hStep <;> contradiction
 
-/-- `.tcbUnbindNotification`: the unbind clears both directions of the
-binding — again fields no conjunct reads — so the whole bundle transports
-across the TCB store and the (fail-safe optional) notification store. -/
+/-- `.tcbUnbindNotification`: the unbind clears both directions of the binding.
+The reciprocity is what makes the notification present: the thread's bound
+notification names it back, so the fail-safe arm (notification gone) is
+unreachable from a state satisfying the bundle, and the two cleared codes were
+exactly each other's (`notificationBindingReciprocal.of_unbindCodes`). -/
 theorem unbindNotification_preserves_ipcInvariantFull
     (st st' : SystemState) (tcbId : SeLe4n.ThreadId)
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
@@ -376,25 +408,54 @@ theorem unbindNotification_preserves_ipcInvariantFull
     · rename_i nid hBound
       split at hStep
       · contradiction
-      · rename_i hStore1
+      · rename_i st1 hStore1
         have hTraw := lookupTcb_some_objects st tcbId tcb hT
+        have hCode := TCB.boundNotificationCode_eq_succ hBound
+        obtain ⟨n0, hN0, hN0c⟩ :=
+          hInv.notificationBindingReciprocal.tcb hTraw (c := nid.val) hCode
+        have hNraw : st.objects[nid]? = some (.notification n0) := hN0
+        have hNeIds : tcbId.toObjId ≠ nid := by
+          intro hEq
+          rw [hEq, hNraw] at hTraw
+          exact absurd (Option.some.inj hTraw) (fun hx => KernelObject.noConfusion hx)
         have hObjInv1 := storeObject_preserves_objects_invExt st _ tcbId.toObjId _
           hObjInv hStore1
-        have hInv1 := storeObject_tcbFieldUpdate_preserves_ipcInvariantFull st _ tcbId
-          tcb { tcb with boundNotificationCode := 0 } hObjInv hInv hTraw hStore1
-          rfl rfl rfl rfl rfl rfl rfl rfl rfl
+        have hAt1 := storeObject_objects_eq st _ tcbId.toObjId _ hObjInv hStore1
+        have hNe1 : ∀ oid : SeLe4n.ObjId, oid ≠ tcbId.toObjId →
+            st1.objects[oid]? = st.objects[oid]? :=
+          fun oid h => storeObject_objects_ne st _ tcbId.toObjId oid _ h hObjInv hStore1
+        have hN1 : st1.objects[nid]? = some (.notification n0) :=
+          (hNe1 _ (Ne.symm hNeIds)).trans hNraw
         split at hStep
-        · rename_i ntfn hN1
+        · rename_i ntfn hN1'
+          have hN1raw := (SystemState.getNotification?_eq_some_iff _ nid ntfn).mp hN1'
+          rw [hN1] at hN1raw; cases hN1raw
           split at hStep
           · contradiction
-          · rename_i hStore2
+          · rename_i st2 hStore2
             cases hStep
-            exact storeObject_notificationContentUpdate_preserves_ipcInvariantFull
-              _ _ nid ntfn _ hObjInv1 hInv1
-              ((SystemState.getNotification?_eq_some_iff _ nid ntfn).mp hN1)
-              hStore2 rfl rfl rfl
-        · cases hStep
-          exact hInv1
+            have hAt2 := storeObject_objects_eq _ _ nid _ hObjInv1 hStore2
+            have hNe2 : ∀ oid : SeLe4n.ObjId, oid ≠ nid → st'.objects[oid]? = st1.objects[oid]? :=
+              fun oid h => storeObject_objects_ne _ _ nid oid _ h hObjInv1 hStore2
+            have hView := (ipcReadViewAgreement.of_tcb_ipcReadView_write hTraw hAt1 hNe1 rfl).trans
+              (ipcReadViewAgreement.of_notification_content_write hN1 hAt2 hNe2 rfl rfl rfl)
+            have hCap := capabilityBadgesWellFormed_of_notificationStore hObjInv1
+              (capabilityBadgesWellFormed_of_tcbSlotsStore hObjInv hInv.badgeWellFormed.2 hTraw
+                hStore1 rfl) hN1 hStore2
+            have hNBR : notificationBindingReciprocal st' :=
+              notificationBindingReciprocal.of_unbindCodes hInv.notificationBindingReciprocal
+                (t := tcbId.toObjId) (n := nid)
+                (by rw [hTraw]; simp only [notificationBindingCodes, KernelObject.bindingCodes,
+                  hCode])
+                (by rw [hNraw]; simp only [notificationBindingCodes, KernelObject.bindingCodes,
+                  hN0c])
+                (by rw [hNe2 _ hNeIds, hAt1]; rfl)
+                (by rw [hAt2]; rfl)
+                (fun k hk1 hk2 => by rw [hNe2 k hk2, hNe1 k hk1])
+            exact ipcInvariantFull_of_readViewAgreement_of_reciprocal hView hCap hNBR hInv
+        · rename_i hNone
+          rw [(SystemState.getNotification?_eq_some_iff _ nid n0).mpr hN1] at hNone
+          cases hNone
 
 -- ============================================================================
 -- §7  Priority arms (`.tcbSetPriority`, `.tcbSetMCPriority`)
@@ -532,6 +593,13 @@ theorem storeObject_stashCleared_preserves_ipcInvariantFull
     (storeObject_tcb_preserveIpcAndQueueNext_preserves_queueNextTargetBlocked st st'
       receiver rTcb { rTcb with pendingReceiveReplyCode := 0 } hObjInv hRaw rfl rfl
       hInv.queueNextTargetBlocked hStep)
+    (notificationBindingReciprocal.of_codes
+      (sameNotificationBindings.of_storeObject_tcb
+        (t' := { rTcb with pendingReceiveReplyCode := 0 }) hObjInv hRaw rfl hStep)
+      hInv.notificationBindingReciprocal)
+    (storeObject_tcb_preserveIpcAndQueueNext_preserves_endpointQueueLinksOnlyBlocked st st'
+      receiver rTcb { rTcb with pendingReceiveReplyCode := 0 } hObjInv hRaw rfl rfl
+      hInv.endpointQueueLinksOnlyBlocked hStep)
 
 /-- Raw-insert form of the one-TCB-rewrite bundle lever. -/
 theorem insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull
@@ -549,7 +617,8 @@ theorem insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull
     (hBind : tcb'.schedContextBinding = tcb.schedContextBinding)
     (hSlots : ∀ (sl : SeLe4n.Slot) (c : Capability) (b : SeLe4n.Badge),
       tcb'.spaceSlotCap sl = some c → c.badge = some b → tcb.spaceSlotCap sl = some c :=
-      by intro _ _ _ h _; exact h) :
+      by intro _ _ _ h _; exact h)
+    (hBnc : tcb'.boundNotificationCode = tcb.boundNotificationCode := by rfl) :
     ipcInvariantFull { st with objects := st.objects.insert tid.toObjId (.tcb tcb') } := by
   have hAt := insertObjects_getElem_self st tid.toObjId (.tcb tcb') hObjInv
   have hFrame : ∀ oid : SeLe4n.ObjId, oid ≠ tid.toObjId →
@@ -558,7 +627,7 @@ theorem insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull
     fun oid hNe => insertObjects_getElem_ne st tid.toObjId (.tcb tcb') oid hNe hObjInv
   exact ipcInvariantFull_of_tcbFieldUpdate st _ tid.toObjId tcb tcb'
     hInv hPre hAt hFrame hIpc hMsg hNext hPrev hPPrev hBudget hReply hStash hBind
-    hSlots
+    hSlots hBnc
 
 /-- Raw-insert form of the SchedContext-content bundle lever. -/
 theorem insertObjects_schedContextContentUpdate_preserves_ipcInvariantFull
@@ -575,6 +644,7 @@ theorem insertObjects_schedContextContentUpdate_preserves_ipcInvariantFull
         : SystemState).objects[oid]? = st.objects[oid]? :=
     fun oid h => insertObjects_getElem_ne st scId.toObjId (.schedContext sc') oid h hObjInv
   have hView := ipcReadViewAgreement.of_schedContext_content_write hPre hAt hNe hBound
+  have hCodes := sameNotificationBindings.of_schedContext_content_write hPre hAt hNe hBound
   have hBack : ∀ (tid : SeLe4n.ThreadId) (tcb' : TCB),
       ({ st with objects := st.objects.insert scId.toObjId (.schedContext sc') }
         : SystemState).objects[tid.toObjId]? = some (.tcb tcb') →
@@ -594,7 +664,7 @@ theorem insertObjects_schedContextContentUpdate_preserves_ipcInvariantFull
       cases Option.some.inj hCn; simp [KernelObject.slotCap] at hLk
     · rw [hNe _ hK] at hCn
       exact hInv.badgeWellFormed.2 oid cn slot cap badge hCn hLk hB
-  exact ipcInvariantFull_of_readViewAgreement hView hCap hInv
+  exact ipcInvariantFull_of_readViewAgreement hView hCodes hCap hInv
 
 /-- Reduction of `updatePrioritySource` at a binding with **no** priority
 source — `.unbound` and, since WS-OD (v0.35.3), `.donated`.  Both write the
@@ -824,6 +894,8 @@ theorem cspaceInsertSlot_preserves_ipcInvariantFull
   have hSched := cspaceInsertSlot_preserves_scheduler st st' addr cap hStep
   have hView := ipcReadViewAgreement.of_single_inert_write hNe
     (by rw [hPre]; trivial) (by rw [hAt]; trivial)
+  have hCodes := sameNotificationBindings.of_single_inert_write hNe
+    (by rw [hPre]; trivial) (by rw [hAt]; trivial)
   have hBack : ∀ (tid : SeLe4n.ThreadId) (tcb' : TCB),
       st'.objects[tid.toObjId]? = some (.tcb tcb') →
       ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) ∧
@@ -836,7 +908,7 @@ theorem cspaceInsertSlot_preserves_ipcInvariantFull
       exact ⟨tcb', h, rfl, rfl⟩
   have hBadge := cspaceInsertSlot_preserves_badgeWellFormed st st' addr cap
     hInv.badgeWellFormed hObjInv hCapValid hStep
-  exact ipcInvariantFull_of_readViewAgreement hView
+  exact ipcInvariantFull_of_readViewAgreement hView hCodes
     hBadge.2 hInv
 
 /-- Success shape of `cspaceDeleteSlotCore`: the object at the address held
@@ -883,6 +955,8 @@ theorem cspaceDeleteSlotCore_preserves_ipcInvariantFull
   have hSched := storeObject_scheduler_eq st st' _ _ hS
   have hView := ipcReadViewAgreement.of_single_inert_write hNe
     (by rw [hPre]; trivial) (by rw [hAt]; trivial)
+  have hCodes := sameNotificationBindings.of_single_inert_write hNe
+    (by rw [hPre]; trivial) (by rw [hAt]; trivial)
   have hBack : ∀ (tid : SeLe4n.ThreadId) (tcb' : TCB),
       st'.objects[tid.toObjId]? = some (.tcb tcb') →
       ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) ∧
@@ -908,7 +982,7 @@ theorem cspaceDeleteSlotCore_preserves_ipcInvariantFull
         exact hInv.badgeWellFormed.2 addr.cnode (.cnode cn) slot cap badge (hK ▸ hPre) hLk hB
     · rw [hNe _ hK] at hCn
       exact hInv.badgeWellFormed.2 oid cn' slot cap badge hCn hLk hB
-  exact ipcInvariantFull_of_readViewAgreement hView
+  exact ipcInvariantFull_of_readViewAgreement hView hCodes
     hCap hInv
 
 /-- **A step that rewrites only derivation state keeps the IPC bundle.**  The
@@ -920,6 +994,7 @@ theorem ipcInvariantFull_of_agreeOffDerivationLinks {st st' : SystemState}
     (h : SystemState.objectsAgreeOffDerivationLinks st' st)
     (hInv : ipcInvariantFull st) : ipcInvariantFull st' := by
   have hView : ipcReadViewAgreement st st' := ipcReadViewAgreement.of_objectsAgreeOffDerivationLinks h
+  have hCodes : sameNotificationBindings st st' := sameNotificationBindings.of_objectsAgreeOffDerivationLinks h
   have hBack : ∀ (tid : SeLe4n.ThreadId) (tcb' : TCB),
       st'.objects[tid.toObjId]? = some (.tcb tcb') →
       ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) ∧
@@ -930,7 +1005,7 @@ theorem ipcInvariantFull_of_agreeOffDerivationLinks {st st' : SystemState}
   have hCap : capabilityBadgesWellFormed st' :=
     capabilityBadgesWellFormed_of_slotCap_back hInv.badgeWellFormed.2
       fun _ _ hO => (h.obj_slots_back hO).elim fun o ho => ⟨o, ho.1, ho.2.1⟩
-  exact ipcInvariantFull_of_readViewAgreement hView
+  exact ipcInvariantFull_of_readViewAgreement hView hCodes
     hCap hInv
 
 /-- A run of slot-link writes keeps the IPC bundle: it changes only CNode
@@ -1014,6 +1089,8 @@ theorem cspaceRevoke_preserves_ipcInvariantFull
     (detachRevokedSlots_agree hInvS _ _ _ _).1 ?_
   have hView := ipcReadViewAgreement.of_single_inert_write hNe
     (by rw [hPre]; trivial) (by rw [hAt]; trivial)
+  have hCodes := sameNotificationBindings.of_single_inert_write hNe
+    (by rw [hPre]; trivial) (by rw [hAt]; trivial)
   have hBack : ∀ (tid : SeLe4n.ThreadId) (tcb' : TCB),
       stS.objects[tid.toObjId]? = some (.tcb tcb') →
       ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) ∧
@@ -1035,7 +1112,7 @@ theorem cspaceRevoke_preserves_ipcInvariantFull
           (CNode.slotsUnique_holds cn) hLk) hB
     · rw [hNe _ hK] at hCn
       exact hInv.badgeWellFormed.2 oid cn' slot cap badge hCn hLk hB
-  exact ipcInvariantFull_of_readViewAgreement hView
+  exact ipcInvariantFull_of_readViewAgreement hView hCodes
     hCap hInv
 
 
@@ -1184,6 +1261,10 @@ theorem storeObject_inertNonCNode_preserves_ipcInvariantFull
     rcases hPre with hNone | hIn
     · exact ipcReadViewAgreement.of_fresh_inert_write hNe hNone (by rw [hAt]; exact hObj)
     · exact ipcReadViewAgreement.of_single_inert_write hNe hIn (by rw [hAt]; exact hObj)
+  have hCodes : sameNotificationBindings st st' := by
+    rcases hPre with hNone | hIn
+    · exact sameNotificationBindings.of_fresh_inert_write hNe hNone (by rw [hAt]; exact hObj)
+    · exact sameNotificationBindings.of_single_inert_write hNe hIn (by rw [hAt]; exact hObj)
   have hNotTcb : ∀ t, obj ≠ .tcb t := by
     intro t h; subst h; simp [ipcReadInert] at hObj
   have hBack : ∀ (tid : SeLe4n.ThreadId) (tcb' : TCB),
@@ -1206,7 +1287,7 @@ theorem storeObject_inertNonCNode_preserves_ipcInvariantFull
       cases hLk
     · rw [hNe _ hK] at hCn
       exact hInv.badgeWellFormed.2 oid cn slot cap badge hCn hLk hB
-  exact ipcInvariantFull_of_readViewAgreement hView
+  exact ipcInvariantFull_of_readViewAgreement hView hCodes
     hCap hInv
 
 /-- **A capability rewritten in its slot, its badge kept, preserves the bundle**:
@@ -1226,6 +1307,8 @@ theorem storeObject_capRewrite_preserves_ipcInvariantFull
     fun oid h => storeObject_objects_ne st st' addr.cnode oid _ h hObjInv hStore
   have hSched := storeObject_scheduler_eq st st' addr.cnode _ hStore
   have hView := ipcReadViewAgreement.of_single_inert_write hNe
+    (by rw [hPre]; trivial) (by rw [hAt]; trivial)
+  have hCodes := sameNotificationBindings.of_single_inert_write hNe
     (by rw [hPre]; trivial) (by rw [hAt]; trivial)
   have hBack : ∀ (tid : SeLe4n.ThreadId) (tcb' : TCB),
       st'.objects[tid.toObjId]? = some (.tcb tcb') →
@@ -1255,7 +1338,7 @@ theorem storeObject_capRewrite_preserves_ipcInvariantFull
         exact hInv.badgeWellFormed.2 addr.cnode (.cnode cn) slot cap'' badge (hK ▸ hPre) hLk' hB
     · rw [hNe _ hK] at hCn'
       exact hInv.badgeWellFormed.2 oid cn' slot cap'' badge hCn' hLk' hB
-  exact ⟨ipcInvariantFull_of_readViewAgreement hView
+  exact ⟨ipcInvariantFull_of_readViewAgreement hView hCodes
     hCap hInv,
     storeObject_preserves_objects_invExt st st' addr.cnode _ hObjInv hStore⟩
 
@@ -1280,6 +1363,11 @@ theorem ipcInvariantFull_of_resetTouchedWrite {st st' : SystemState}
       rcases hW oid with e | ⟨t1, t2⟩
       · exact Or.inl e
       · exact Or.inr ⟨hTouched _ t1, hTouched _ t2⟩
+  have hCodes : sameNotificationBindings st st' :=
+    sameNotificationBindings.of_inertOrAbsentWrites fun oid => by
+      rcases hW oid with e | ⟨t1, t2⟩
+      · exact Or.inl e
+      · exact Or.inr ⟨hTouched _ t1, hTouched _ t2⟩
   -- a CNode or TCB in the post-state is the pre-state's, unchanged
   have hBackObj : ∀ (oid : SeLe4n.ObjId) (o : KernelObject), ¬ resetTouched (some o) →
       st'.objects[oid]? = some o → st.objects[oid]? = some o := by
@@ -1294,7 +1382,7 @@ theorem ipcInvariantFull_of_resetTouchedWrite {st st' : SystemState}
       exact hInv.badgeWellFormed.2 oid _ slot cap badge
         (hBackObj _ _ (by simp [resetTouched]) hCn) hLk hB
     | _ => simp [KernelObject.slotCap] at hLk
-  exact ipcInvariantFull_of_readViewAgreement hView hCap hInv
+  exact ipcInvariantFull_of_readViewAgreement hView hCodes hCap hInv
 
 /-- **WS-BP BP7.1 slice 3 (`v0.36.6`)**: the untyped reset preserves
 `ipcInvariantFull`.  Every key it writes holds, on each side, nothing or a kind
@@ -1341,6 +1429,11 @@ theorem ipcInvariantFull_of_vspaceRootOnlyWrite {st st' : SystemState}
       rcases hW oid with e | ⟨⟨r, hr⟩, ⟨r', hr'⟩⟩
       · exact Or.inl e
       · exact Or.inr ⟨Or.inr (by rw [hr]; trivial), Or.inr (by rw [hr']; trivial)⟩
+  have hCodes : sameNotificationBindings st st' :=
+    sameNotificationBindings.of_inertOrAbsentWrites fun oid => by
+      rcases hW oid with e | ⟨⟨r, hr⟩, ⟨r', hr'⟩⟩
+      · exact Or.inl e
+      · exact Or.inr ⟨Or.inr (by rw [hr]; trivial), Or.inr (by rw [hr']; trivial)⟩
   have hBackObj : ∀ (oid : SeLe4n.ObjId) (o : KernelObject), (∀ r, o ≠ .vspaceRoot r) →
       st'.objects[oid]? = some o → st.objects[oid]? = some o := by
     intro oid o hNR hPost
@@ -1359,7 +1452,7 @@ theorem ipcInvariantFull_of_vspaceRootOnlyWrite {st st' : SystemState}
       exact hInv.badgeWellFormed.2 oid _ slot cap badge
         (hBackObj _ _ (fun _ hx => KernelObject.noConfusion hx) hCn) hLk hB
     | _ => simp [KernelObject.slotCap] at hLk
-  exact ipcInvariantFull_of_readViewAgreement hView
+  exact ipcInvariantFull_of_readViewAgreement hView hCodes
     hCap hInv
 
 /-- **The whole finalisation preserves the bundle** — the table detach and the
@@ -1510,6 +1603,7 @@ theorem storeObject_schedContextContentUpdate_preserves_ipcInvariantFull
   have hNe : ∀ o : SeLe4n.ObjId, o ≠ oid → st1.objects[o]? = st.objects[o]? :=
     fun o h => storeObject_objects_ne st st1 oid o (.schedContext sc') h hObjInv hStore
   have hView := ipcReadViewAgreement.of_schedContext_content_write hPre hAt hNe hBound
+  have hCodes := sameNotificationBindings.of_schedContext_content_write hPre hAt hNe hBound
   have hCap : capabilityBadgesWellFormed st1 := by
     intro o cn slot cap badge hCn hLk hB
     by_cases hK : o = oid
@@ -1517,7 +1611,7 @@ theorem storeObject_schedContextContentUpdate_preserves_ipcInvariantFull
       cases Option.some.inj hCn; simp [KernelObject.slotCap] at hLk
     · rw [hNe _ hK] at hCn
       exact hInv.badgeWellFormed.2 o cn slot cap badge hCn hLk hB
-  exact ipcInvariantFull_of_readViewAgreement hView hCap hInv
+  exact ipcInvariantFull_of_readViewAgreement hView hCodes hCap hInv
 
 /-- Re-keying a queued thread's run-queue bucket through its TCB run-queue
 links preserves the whole bundle: the objects agree off the run-queue links
@@ -1731,7 +1825,8 @@ theorem ipcInvariantFull_of_schedBindingRewrite
         sc.boundThread = some tid ∧ sc'.boundThread = none))
     (hSlots : ∀ (sl : SeLe4n.Slot) (c : Capability) (b : SeLe4n.Badge),
       tcb'.spaceSlotCap sl = some c → c.badge = some b → tcb.spaceSlotCap sl = some c :=
-      by intro _ _ _ h _; exact h) :
+      by intro _ _ _ h _; exact h)
+    (hBnc : tcb'.boundNotificationCode = tcb.boundNotificationCode := by rfl) :
     ipcInvariantFull st' := by
   have hNeIds : tid.toObjId ≠ scId.toObjId := by
     intro h
@@ -1806,7 +1901,7 @@ theorem ipcInvariantFull_of_schedBindingRewrite
       · rw [hFrame _ hT hS]
   have hAgree : donationReadAgreement st st' := by
     refine ⟨?_, ?_, ?_, replyCallerAgree_of_objectAgree hRA,
-      replyStasherAgree_of_objectAgree hRA, ?_, ?_⟩
+      replyStasherAgree_of_objectAgree hRA, ?_, ?_, ?_⟩
     · intro oid tx hx
       obtain ⟨ty, hy, h1, h2, h3, h4, h5, h6, h7, h8, _⟩ := hBwd oid tx hx
       exact ⟨ty, hy, h1, pendingMessageReadAgrees_of_eq h2, h3, h4, h5, h6, h7, h8⟩
@@ -1846,6 +1941,13 @@ theorem ipcInvariantFull_of_schedBindingRewrite
         · rw [hS, hAtS] at hO; cases hO
           exact ⟨.schedContext sc, by rw [hS]; exact hPreS, hL⟩
         · exact ⟨o', by rw [← hFrame oid hT hS]; exact hO, hL⟩
+    · intro oid
+      by_cases hT : oid = tid.toObjId
+      · rw [hT, hAtT, hPreT]
+        simp only [notificationBindingCodes, KernelObject.bindingCodes, hBnc]
+      · by_cases hS : oid = scId.toObjId
+        · rw [hS, hAtS, hPreS]; rfl
+        · rw [hFrame oid hT hS]
   refine ipcInvariantFull_of_donationReadAgreement st st' hInv hAgree ?_ ?_ ?_ ?_
   · -- donationChainAcyclic
     intro t1 t2 tcb1 tcb2 s1 s2 h1 h2 hB1 hB2
@@ -2368,7 +2470,7 @@ private theorem insertObjects_schedContextClear_preserves_ipcInvariantFull
   have hAgree : donationReadAgreement st
       { st with objects := st.objects.insert scObj (.schedContext sc') } := by
     refine ⟨?_, ?_, ?_, replyCallerAgree_of_objectAgree hRA,
-      replyStasherAgree_of_objectAgree hRA, ?_, ?_⟩
+      replyStasherAgree_of_objectAgree hRA, ?_, ?_, ?_⟩
     · intro oid tx hx
       exact ⟨tx, (hTcbEq oid tx).mp hx, rfl, pendingMessageReadAgrees_refl _, rfl, rfl, rfl, rfl, rfl, rfl⟩
     · intro oid ty hy
@@ -2389,6 +2491,10 @@ private theorem insertObjects_schedContextClear_preserves_ipcInvariantFull
       · rw [h, hAt] at hO; cases hO
         exact ⟨.schedContext sc, by rw [h]; exact hPre, hL⟩
       · exact ⟨o', by rw [← hNe oid h]; exact hO, hL⟩
+    · intro oid
+      by_cases h : oid = scObj
+      · rw [h, hAt, hPre]; rfl
+      · rw [hNe oid h]
   refine ipcInvariantFull_of_donationReadAgreement st _ hInv hAgree ?_ ?_ ?_ ?_
   · intro t1 t2 tcb1 tcb2 s1 s2 h1 h2 hB1 hB2
     exact hInv.donationChainAcyclic t1 t2 tcb1 tcb2 s1 s2
@@ -2604,6 +2710,8 @@ private theorem vspaceRootWrite_preserves_ipcInvariantFull
     ipcInvariantFull st' := by
   have hView := ipcReadViewAgreement.of_single_inert_write hNe
     (by rw [hPre]; trivial) (by rw [hAt]; trivial)
+  have hCodes := sameNotificationBindings.of_single_inert_write hNe
+    (by rw [hPre]; trivial) (by rw [hAt]; trivial)
   have hBack : ∀ (tid : SeLe4n.ThreadId) (tcb' : TCB),
       st'.objects[tid.toObjId]? = some (.tcb tcb') →
       ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) ∧
@@ -2621,7 +2729,7 @@ private theorem vspaceRootWrite_preserves_ipcInvariantFull
       cases Option.some.inj hCn; simp [KernelObject.slotCap] at hLk
     · rw [hNe _ hK] at hCn
       exact hInv.badgeWellFormed.2 oid cn slot cap badge hCn hLk hB
-  exact ipcInvariantFull_of_readViewAgreement hView
+  exact ipcInvariantFull_of_readViewAgreement hView hCodes
     hCap hInv
 
 /-- `.vspaceMap` base transition: the one object write replaces a
@@ -2876,16 +2984,21 @@ A fresh thread's two space slots hold no capability (`spaceSlotCaps = []`), as a
 fresh CNode's slots hold none: the badge clause reads both.
 
 A fresh Reply records no caller and no stasher (`stasherCode = 0`), so a carved
-Reply names no thread it was stashed by before. -/
+Reply names no thread it was stashed by before.
+
+A fresh thread is bound to no notification and a fresh notification to no thread
+(both binding codes `0`), so the replacement names nothing a binding could point
+back at, and `notificationBindingReciprocal` reads it as an unbound slot. -/
 def retypeReplacementFresh : KernelObject → Prop
   | .tcb t => t.ipcState = .ready ∧ t.pendingMessage = none ∧ t.queueNext = none ∧
       t.queuePrev = none ∧ t.queuePPrev = none ∧
       t.schedContextBinding = .unbound ∧ t.replyObject = none ∧
       t.pendingReceiveReply = none ∧ t.timeoutBudget = none ∧ t.runCoreCode = 0 ∧
-      t.spaceSlotCaps = []
+      t.spaceSlotCaps = [] ∧ t.boundNotificationCode = 0
   | .endpoint ep => ep.sendQ.head = none ∧ ep.sendQ.tail = none ∧
       ep.receiveQ.head = none ∧ ep.receiveQ.tail = none
-  | .notification n => n.state = .idle ∧ n.waitHead = none ∧ n.pendingBadge = none
+  | .notification n => n.state = .idle ∧ n.waitHead = none ∧ n.pendingBadge = none ∧
+      n.boundTCBCode = 0
   | .reply r => r.caller = none ∧ r.stasherCode = 0
   | .cnode cn => ∀ slot : SeLe4n.Slot, cn.lookup slot = none
   | .schedContext _ => True
@@ -2926,20 +3039,6 @@ structure retypeTargetDetached (st : SystemState) (target : SeLe4n.ObjId) : Prop
     ∀ scId, t.schedContextBinding ≠ .bound scId
   tcbNotWaiter : ∀ t : TCB, st.objects[target]? = some (.tcb t) →
     ∀ oid : SeLe4n.ObjId, t.ipcState ≠ .blockedOnNotification oid
-  /-- **WS-HP HP10.5**: no scheduling context records this thread as the origin of
-      a reservation on loan.
-
-      This clause is **not** implied by the others, and it must not be: a thread
-      that lent its reservation and then had its reply frame removed keeps being
-      the recorded origin while it is itself suspended and destroyed, which is
-      precisely the state `clearDonationOriginReferences` exists for.  So it is a
-      genuine caller obligation in the same class as the pack's `notSc` and
-      `tcbNotDonated` — the seL4 revoke-and-suspend-before-retype contract, one
-      field further — and the runtime sweep is what makes a *violation* safe
-      rather than what makes this clause redundant. -/
-  tcbNotDonationOrigin : ∀ t : TCB, st.objects[target]? = some (.tcb t) →
-    ∀ (oid : SeLe4n.ObjId) (sc : SchedContext), st.objects[oid]? = some (.schedContext sc) →
-    sc.donationOrigin ≠ some t.tid
   /-- The thread is on no core: out of every core's abstract queue, its own
       run-queue links name no core (WS-ZA ZA4.5: what the destroy sweep reads),
       and no core runs it. -/
@@ -2985,6 +3084,12 @@ structure retypeTargetDetached (st : SystemState) (target : SeLe4n.ObjId) : Prop
   notStashed : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (rid : SeLe4n.ReplyId),
     st.objects[tid.toObjId]? = some (.tcb tcb) → tcb.pendingReceiveReply = some rid →
     rid.toObjId ≠ target
+  /-- The object at the target holds no notification binding: a thread bound to
+      no notification, a notification bound to no thread.  Under
+      `notificationBindingReciprocal` this is also what makes every other slot's
+      binding avoid the target, so the write leaves no binding dangling — seL4's
+      `unbindNotification` / `unbindMaybeNotification` in `finaliseCap`. -/
+  unbound : notificationBindingCodes st.objects[target]? = (0, 0)
 
 /-- **The part of the detachment the bundle's erase-or-replace write reads.**
 A replace (the carve) and an erase (the final-delete retire) of the object at
@@ -3027,6 +3132,9 @@ structure erasedTargetDetached (st : SystemState) (target : SeLe4n.ObjId) : Prop
   notStashed : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (rid : SeLe4n.ReplyId),
     st.objects[tid.toObjId]? = some (.tcb tcb) → tcb.pendingReceiveReply = some rid →
     rid.toObjId ≠ target
+  /-- The object at the target holds no notification binding
+      (`retypeTargetDetached.unbound`). -/
+  unbound : notificationBindingCodes st.objects[target]? = (0, 0)
 
 /-- The carve's detachment gives the erase-or-replace part: its two
 scheduling-context clauses follow from the target holding no scheduling context,
@@ -3051,6 +3159,7 @@ theorem retypeTargetDetached.toErased {st : SystemState} {target : SeLe4n.ObjId}
   noSelfLoops := h.noSelfLoops
   notReplyLinked := h.notReplyLinked
   notStashed := h.notStashed
+  unbound := h.unbound
 
 /-- At-target lookup of a post-state kind pins the replacement object, or is
 absurd where the write erased the target. -/
@@ -3090,7 +3199,7 @@ private theorem retypeWrite_notificationBadgesWellFormed
   by_cases hK : oid = target
   · rw [hK] at hObj
     obtain rfl : newObj = .notification ntfn := retypeWrite_at_target hAt hObj
-    obtain ⟨-, -, hPBn⟩ := hFresh
+    obtain ⟨-, -, hPBn, -⟩ := hFresh
     rw [hPBn] at hPB
     cases hPB
   · rw [hNe _ hK] at hObj
@@ -3113,7 +3222,7 @@ private theorem retypeWrite_capabilityBadgesWellFormed
       cases hLk
     | tcb t =>
       obtain ⟨_, hm⟩ := TCB.mem_spaceSlotCaps hLk
-      rw [hFresh.2.2.2.2.2.2.2.2.2.2] at hm
+      rw [hFresh.2.2.2.2.2.2.2.2.2.2.1] at hm
       cases hm
     | _ => simp [KernelObject.slotCap] at hLk
   · rw [hNe _ hK] at hObj
@@ -3130,7 +3239,7 @@ private theorem retypeWrite_ipcInvariant
   by_cases hK : oid = target
   · rw [hK] at hObj
     obtain rfl : newObj = .notification ntfn := retypeWrite_at_target hAt hObj
-    obtain ⟨hState, hWT, hPB⟩ := hFresh
+    obtain ⟨hState, hWT, hPB, -⟩ := hFresh
     show notificationQueueWellFormed ntfn
     unfold notificationQueueWellFormed
     rw [hState]
@@ -3324,6 +3433,23 @@ private theorem retypeWrite_queueNextTargetBlocked
     · exact absurd hKb (hDet.notQueueLinked a tcbA b hA hN)
     · rw [hNe _ hKb] at hB
       exact hInv a b tcbA tcbB hA hB hN
+
+private theorem retypeWrite_endpointQueueLinksOnlyBlocked
+    {st st' : SystemState} {target : SeLe4n.ObjId} {newObj : KernelObject}
+    (hAt : st'.objects[target]? = some newObj ∨ st'.objects[target]? = none)
+    (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]?)
+    (hFresh : retypeReplacementFresh newObj)
+    (hDet : erasedTargetDetached st target)
+    (hInv : endpointQueueLinksOnlyBlocked st) :
+    endpointQueueLinksOnlyBlocked st' := by
+  intro a tcbA hA hN
+  by_cases hKa : a.toObjId = target
+  · rw [hKa] at hA
+    obtain rfl : newObj = .tcb tcbA := retypeWrite_at_target hAt hA
+    obtain ⟨-, -, hQN, -⟩ := hFresh
+    exact absurd hQN hN
+  · rw [hNe _ hKa] at hA
+    exact hInv a tcbA hA hN
 
 private theorem retypeWrite_queueHeadBlockedConsistent
     {st st' : SystemState} {target : SeLe4n.ObjId} {newObj : KernelObject}
@@ -3752,6 +3878,41 @@ private theorem retypeWrite_dualQueueSystemInvariant
           rw [hRH] at hHk; cases hHk
     · exact Or.inl ⟨e, by rw [← hNe _ hKe]; exact hEk, hHk⟩
 
+/-- The replacement holds no binding codes, and the erased slot holds none. -/
+private theorem retypeWrite_codes_at_target
+    {st' : SystemState} {target : SeLe4n.ObjId} {newObj : KernelObject}
+    (hAt : st'.objects[target]? = some newObj ∨ st'.objects[target]? = none)
+    (hFresh : retypeReplacementFresh newObj) :
+    notificationBindingCodes st'.objects[target]? = (0, 0) := by
+  rcases hAt with hAt | hAt
+  · rw [hAt]
+    cases newObj with
+    | tcb t => simp [notificationBindingCodes, KernelObject.bindingCodes, hFresh.2.2.2.2.2.2.2.2.2.2.2]
+    | notification n => simp [notificationBindingCodes, KernelObject.bindingCodes, hFresh.2.2.2]
+    | _ => rfl
+  · rw [hAt]; rfl
+
+/-- **The write keeps the binding reciprocity**: the target's slot holds no code
+before (`erasedTargetDetached.unbound`) or after (`retypeReplacementFresh`), so no
+other slot's code names it — reciprocity would have it name that slot back — and
+every other slot reads the pre-state. -/
+private theorem retypeWrite_notificationBindingReciprocal
+    {st st' : SystemState} {target : SeLe4n.ObjId} {newObj : KernelObject}
+    (hAt : st'.objects[target]? = some newObj ∨ st'.objects[target]? = none)
+    (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]?)
+    (hFresh : retypeReplacementFresh newObj)
+    (hDet : erasedTargetDetached st target)
+    (hInv : notificationBindingReciprocal st) :
+    notificationBindingReciprocal st' := by
+  have hPost := retypeWrite_codes_at_target hAt hFresh
+  refine .of_boundCodes_agree hInv (fun k hk => ?_) (fun k hk => ?_)
+  · by_cases hK : k = target
+    · subst hK; exact absurd hPost hk
+    · rw [hNe _ hK]
+  · by_cases hK : k = target
+    · subst hK; exact absurd hDet.unbound hk
+    · rw [hNe _ hK]
+
 /-- **A write that replaces the target by a pristine object or erases it**
 preserves the bundle: every at-target clause reads the replacement or is
 vacuous, and every other key reads the pre-state, where the detached target is
@@ -3791,7 +3952,11 @@ private theorem retypeOrEraseWrite_preserves_ipcInvariantFull
    retypeWrite_donationOwnerUnique hAt hNe hFresh hInv.donationOwnerUnique,
    retypeWrite_endpointQueueTailBlockedConsistent hAt hNe hFresh hDet
      hInv.endpointQueueTailBlockedConsistent,
-   retypeWrite_queueNextTargetBlocked hAt hNe hFresh hDet hInv.queueNextTargetBlocked⟩
+   retypeWrite_queueNextTargetBlocked hAt hNe hFresh hDet hInv.queueNextTargetBlocked,
+   retypeWrite_notificationBindingReciprocal hAt hNe hFresh hDet
+     hInv.notificationBindingReciprocal,
+   retypeWrite_endpointQueueLinksOnlyBlocked hAt hNe hFresh hDet
+     hInv.endpointQueueLinksOnlyBlocked⟩
 
 /-- The retype write — one arbitrary-kind object replaced by a pristine one at
 a fully detached slot — preserves the whole `ipcInvariantFull` bundle.  This is
@@ -3825,8 +3990,9 @@ theorem retypeTargetDetached_of_absent {st : SystemState} {target : SeLe4n.ObjId
   refine ⟨fun sc => hNo _, fun t h => absurd h (hNo _), fun t h => absurd h (hNo _),
     fun t h => absurd h (hNo _), fun t h => absurd h (hNo _), fun t h => absurd h (hNo _),
     fun t h => absurd h (hNo _), fun t h => absurd h (hNo _), fun t h => absurd h (hNo _),
-    fun t h => absurd h (hNo _), fun t h => absurd h (hNo _),
-    fun t h => absurd h (hNo _), fun t h => absurd h (hNo _), ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    fun t h => absurd h (hNo _),
+    fun t h => absurd h (hNo _), fun t h => absurd h (hNo _), ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
+    by rw [hAbs]; rfl⟩
   · intro tid tcb hT
     have hM := hInv.ipcStateQueueMembershipConsistent tid tcb hT
     refine ⟨fun hS => ?_, fun hR => ?_, fun hC => ?_⟩
@@ -3876,13 +4042,33 @@ theorem eraseWrite_preserves_ipcInvariantFull
   retypeOrEraseWrite_preserves_ipcInvariantFull (newObj := .reply (Reply.empty ⟨0⟩))
     (.inr hAt) hNe ⟨rfl, rfl⟩ hDet hInv
 
+/-- **A quiescent passive object holds no binding code**: a notification the
+retire admits is bound to no thread (`passiveObjectQuiescent`'s own-link read of
+`boundTCBCode`), and the other passive kinds hold no code. -/
+theorem passiveObjectQuiescent_bindingCodes {st : SystemState} {x : SeLe4n.ObjId}
+    (hP : passiveKernelObject st.objects[x]?) (hQ : passiveObjectQuiescent st x = true) :
+    notificationBindingCodes st.objects[x]? = (0, 0) := by
+  unfold passiveObjectQuiescent SystemState.getObject? at hQ
+  cases hO : st.objects[x]? with
+  | none => rfl
+  | some o =>
+    rw [hO] at hQ hP
+    cases o with
+    | notification n =>
+      simp only [Bool.and_eq_true, beq_iff_eq] at hQ
+      simp [notificationBindingCodes, KernelObject.bindingCodes, hQ.2]
+    | tcb _ => exact absurd hP id
+    | _ => rfl
+
 /-- **An unreferenced passive object is detached from everything the bundle
 reads**: it is no thread and no scheduling context, so every clause about the
 object at the key is vacuous; queue links, boundaries and heads name threads,
-so none names it; and no thread names it by id (`storeNamesNone`), so none is
-blocked on it, linked to it as its reply, or holds it as its stashed reply. -/
+so none names it; no thread names it by id (`storeNamesNone`), so none is
+blocked on it, linked to it as its reply, or holds it as its stashed reply; and
+it is quiescent, so as a notification it is bound to no thread. -/
 theorem erasedTargetDetached_of_unreferenced {st : SystemState} {x : SeLe4n.ObjId}
-    (hP : passiveKernelObject st.objects[x]?) (hS : storeNamesNone st x = true)
+    (hP : passiveKernelObject st.objects[x]?) (hQ : passiveObjectQuiescent st x = true)
+    (hS : storeNamesNone st x = true)
     (hInv : ipcInvariantFull st) : erasedTargetDetached st x := by
   have hNo : ∀ t : TCB, st.objects[x]? ≠ some (.tcb t) := fun t h => by rw [h] at hP; exact hP
   have hNe : ∀ (oid : SeLe4n.ObjId) (t : TCB), st.objects[oid]? = some (.tcb t) → oid ≠ x :=
@@ -3891,7 +4077,8 @@ theorem erasedTargetDetached_of_unreferenced {st : SystemState} {x : SeLe4n.ObjI
       st.objects[s.toObjId]? = some (.schedContext sc) → s.toObjId ≠ x :=
     fun s sc h hEq => by rw [hEq] at h; rw [h] at hP; exact hP
   refine ⟨fun tid tcb scId hT hTB => ?_, fun tid tcb scId owner hT hB => ?_,
-    fun t h => absurd h (hNo _), fun t h => absurd h (hNo _), ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    fun t h => absurd h (hNo _), fun t h => absurd h (hNo _), ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
+    passiveObjectQuiescent_bindingCodes hP hQ⟩
   · obtain ⟨⟨sc, hSc⟩, -⟩ := hInv.blockedThreadTimeoutConsistent tid tcb scId hT hTB
     exact hNoSc _ _ hSc
   · obtain ⟨⟨sc, hSc, -⟩, -⟩ := hInv.donationOwnerValid tid tcb scId owner hT hB
@@ -3943,7 +4130,7 @@ theorem erasedTargetDetached_of_threadRetirable {st : SystemState} {x : SeLe4n.O
     rw [hT] at h'; cases h'
   have hVal : ∀ b : SeLe4n.ThreadId, b.toObjId = x → b.val = x.val :=
     fun b hb => congrArg SeLe4n.ObjId.val hb
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro tid tcb scId hT' hTB hEq
     obtain ⟨⟨sc, hSc⟩, -⟩ := hInv.blockedThreadTimeoutConsistent tid tcb scId hT' hTB
     exact hNoSc sc (hEq ▸ hSc)
@@ -3993,6 +4180,9 @@ theorem erasedTargetDetached_of_threadRetirable {st : SystemState} {x : SeLe4n.O
     obtain ⟨-, r, hR, -⟩ := hInv.pendingReceiveReplyWellFormed.1 tid tcb rid
       ((SystemState.getTcb?_eq_some_iff st tid tcb).mpr hT') hP
     exact hNoR r (hEq ▸ (SystemState.getReply?_eq_some_iff st rid r).mp hR)
+  · rw [hT]
+    simp [notificationBindingCodes, KernelObject.bindingCodes,
+      (threadQuiescent_codes hQ).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1]
 
 /-- **A retirable scheduling context is detached from everything the bundle
 reads**: it is no thread, endpoint or reply, so every clause about a thread at
@@ -4014,7 +4204,7 @@ theorem erasedTargetDetached_of_schedContextRetirable {st : SystemState} {x : Se
   have hVal : ∀ s : SeLe4n.SchedContextId, s.toObjId = x → s.val = x.val :=
     fun s hs => congrArg SeLe4n.ObjId.val hs
   refine ⟨?_, ?_, fun t h => absurd h (hNo _), fun t h => absurd h (hNo _),
-    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, by rw [hT]; rfl⟩
   · intro tid tcb scId hT' hTB hEq
     have hn := storeNamesSchedContextNone_spec hS hT'
     simp [objectNamesSchedContext, hTB, hVal scId hEq] at hn
@@ -4067,8 +4257,8 @@ theorem erasedTargetDetached_of_admitted {st : SystemState} {x : SeLe4n.ObjId}
     (hAdm : finalRetireAdmitted st x = true) (hE : erasableKernelObject st.objects[x]?)
     (hInv : ipcInvariantFull st) : erasedTargetDetached st x := by
   by_cases hP : passiveKernelObject st.objects[x]?
-  · exact erasedTargetDetached_of_unreferenced hP
-      (passiveObjectRetirable_parts (finalRetireAdmitted.retirable hAdm hP)).2.1 hInv
+  · have hParts := passiveObjectRetirable_parts (finalRetireAdmitted.retirable hAdm hP)
+    exact erasedTargetDetached_of_unreferenced hP hParts.1 hParts.2.1 hInv
   · have hK : schedulingKindAt st x = true := by
       rw [schedulingKindAt_iff]
       unfold erasableKernelObject at hE; unfold passiveKernelObject at hP
@@ -4275,35 +4465,6 @@ private theorem removeFromNotificationWaitQueue_id_of_no_waits
     | blockedOnNotification oid => exact absurd hS (hNoWait tcb hT oid)
     | _ => rfl
 
-/-- **WS-HP HP10.5**: the reservation-origin scrub is the identity when no
-scheduling context records this thread as an origin — the pack's
-`tcbNotDonationOrigin`.
-
-The sibling of `removeFromNotificationWaitQueue_id_of_no_waits` above, in the
-same shape and for the same reason: `cleanupTcbReferences` is claimed to be an
-identity under the detachment pack, and a fold that rewrites nothing must be shown
-to rewrite nothing rather than assumed to. -/
-private theorem clearDonationOriginReferences_id_of_no_origin
-    (st : SystemState) (tid : SeLe4n.ThreadId)
-    (hObjInv : st.objects.invExt)
-    (hNoOrigin : ∀ (oid : SeLe4n.ObjId) (sc : SchedContext),
-      st.objects[oid]? = some (.schedContext sc) → sc.donationOrigin ≠ some tid) :
-    clearDonationOriginReferences st tid = st := by
-  unfold clearDonationOriginReferences
-  exact RobinHood.RHTable.fold_preserves_of_lookup st.objects st _ (· = st) hObjInv rfl
-    (fun acc oid obj hGet hAcc => by
-      rw [hAcc]
-      cases obj with
-      | schedContext sc =>
-          have hS : st.objects[oid]? = some (.schedContext sc) := by
-            rw [RHTable_getElem?_eq_get?]; exact hGet
-          have hC : (sc.donationOrigin == some tid) = false := by
-            simp [hNoOrigin oid sc hS]
-          simp only [hC]
-          rfl
-      | tcb _ | endpoint _ | cnode _ | vspaceRoot _ | untyped _
-      | notification _ | reply _ | frame _ | pageTable _ => rfl)
-
 -- `v0.35.164`: `cleanupDonatedSchedContext_ok_of_not_donated` is gone — the
 -- pipeline's first step is `cancelDonationArmOnCore`, which dispatches on the
 -- target's own binding, so the pack's two clauses reduce it to the identity
@@ -4347,17 +4508,12 @@ private theorem cleanupTcbReferences_id_of_detached
             | exact hDet.notHead oid ep tcb.tid hEp (Or.inr hBad) hSelf
             | exact hDet.notTail oid ep tcb.tid hEp (Or.inl hBad) hSelf
             | exact hDet.notTail oid ep tcb.tid hEp (Or.inr hBad) hSelf)]
-  rw [removeFromNotificationWaitQueue_id_of_no_waits stX tcb.tid
+  exact removeFromNotificationWaitQueue_id_of_no_waits stX tcb.tid
     (fun tcbX hLk => by
       have hRaw := (SystemState.getTcb?_eq_some_iff stX tcb.tid tcbX).mp hLk
       rw [hO, hDet.tcbSelfId tcb hObj, hObj] at hRaw
       cases hRaw
-      exact hDet.tcbNotWaiter _ hObj)]
-  -- **WS-HP HP10.5**: and the origin scrub, from the pack's own clause.
-  exact clearDonationOriginReferences_id_of_no_origin stX tcb.tid (hO ▸ hObjInv)
-    (fun oid sc hS => by
-      rw [hO] at hS
-      exact hDet.tcbNotDonationOrigin tcb hObj oid sc hS)
+      exact hDet.tcbNotWaiter _ hObj)
 
 /-- Under the detachment pack a successful pre-retype cleanup changes neither
 the object store nor the scheduler, up to derivation-link words: the sweeps are

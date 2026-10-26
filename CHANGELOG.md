@@ -1,3 +1,91 @@
+## v0.36.140 — WS-ZA ZA5.4 part 27: the reciprocity the retire reads
+
+The references a final delete's retire must rule out are now held reciprocal
+by invariants, so the retire's own-link read (plan row 28) has its facts.  A
+donation origin is validated by its thread's back-link, and three reference
+relations become invariant conjuncts, each preserved by every transition and
+established at boot.
+
+- **Before:** a scheduling context's recorded origin was trusted as written,
+  so the destroy path swept every context for origins naming a destroyed
+  thread (`clearDonationOriginReferences`) and the finalise admission walked
+  the store for them (`originsNameNone`).  A thread's bound notification and
+  the notification's bound thread were two unrelated fields.  A thread off
+  every queue could still carry an endpoint-queue successor.  A reply frame's
+  upward `next` link could name a frame that did not point back, and the
+  removal of a bottom frame left exactly that link behind.
+- **After:** an origin counts only while its thread's back-link
+  (`TCB.originScCode`) names the context, so a reused id inherits nothing and
+  the sweep and `originsNameNone` are deleted.  The notification binding pair
+  and the endpoint-queue links are `ipcInvariantFull` conjuncts, and the reply
+  stack's links are reciprocal both ways (`nextLinkReciprocal`).
+
+### The donation origin's back-link
+
+- The donor's first push writes `TCB.originScCode` (`donorOriginCode`), and
+  the resolver checks it (`donationOriginRecipient?` and the frozen mirror).
+  `donationOriginRecipient?_eq_of_originBackLinked` and its frozen twin show
+  the check equals the old reading wherever that reading was meaningful.
+- A first push moves the back-link, which supersedes an older origin with no
+  extra write.  SmpIpcSuite gains the id-reuse, superseded-origin and
+  onward-push witnesses.
+
+### Notification binding reciprocity
+
+- `notificationBindingReciprocal`, the 21st `ipcInvariantFull` conjunct:
+  seL4's `tcbBoundNotification` / `ntfnBoundTCB` pair.  The IPC read view
+  masks the bound-notification code (`TCB.ipcReadView`), and the binding
+  codes travel as their own frame (`sameNotificationBindings`), so the bind
+  and the unbind keep the rest of the bundle through the existing transports.
+- Boot refuses a configuration whose bindings are not reciprocal (an eleventh
+  `PlatformConfig.wellFormed` conjunct, `bootNotificationBindingsReciprocal`).
+
+### Endpoint-queue links only on blocked threads
+
+- `endpointQueueLinksOnlyBlocked`, the last `ipcInvariantFull` conjunct: a
+  thread with an endpoint-queue successor is blocked on an endpoint.  With it
+  an endpoint whose own queues are empty has no thread blocked on it
+  (`endpointQueues_empty_noneBlocked`, via a duplicate-free chain no longer
+  than the object table, `RHTable.length_le_size_of_nodup_present`).
+- A runtime check joins `stateInvariantChecksFor` (the PIP-005 count moves
+  by one; `tests/fixtures/main_trace_smoke.expected` updated).
+
+### The reply stack's upward links
+
+- `donationChainWellFormed.nextLinkReciprocal`: a frame whose `next` names a
+  frame above is answered by that frame's `prev`, seL4's `sym_refs` over
+  `replyNext` / `replyPrev`.  `donationChainWellFormed.not_of_dangling_next`
+  refuses the dangling state, and the retire keeps the frame a `next` names
+  (`objectNamesById_of_replyNext`).
+- **The removal clears both of the cut frame's links** in its last store, as
+  seL4's `reply_remove` does, on the sever arm as on the splice arm, live,
+  in place and frozen.  The consume that follows on both callers clears the
+  same links, so no syscall's final state changes.  FO-043 and SmpIpcSuite
+  §3.19 assert the cleared `next` on the primitive.
+- On the sever arm the frame above is cleared with `Reply.unlinkedFrom`, which
+  also drops a `next` naming the cut frame back: a two-frame cycle the
+  invariant does not exclude.  The cut frame's store comes last, so a
+  self-loop ends cleared.
+- Every reply-stack writer's chain result carries the field: push (given the
+  fresh frame's empty `prev`), pop, splice, cut from below, consume, head
+  consume, the context unstack and the final-delete retire.  The consume takes
+  the cut frame's cleared `prev` as a premise, produced from the fold by
+  `spliceReplyFrameOutOrSelf_cut_prev_none`.  The depth-2 witness establishes
+  it.
+- The negative suite builds the dangling state (`runReplyNextLinkReciprocalChecks`):
+  the runtime check refuses it on the lower frame's row alone, and the live
+  bottom splice leaves a clean state.
+
+### Plan
+
+- Row 27 is split before the retire's guard switch: this part lands the
+  reciprocity, and the switch to own-link reads with the four walks deleted is
+  row 28.  The table back-references move to row 29, the finalise's admission
+  and the zombie fuel to row 30, and the seL4 reset to row 31; every citation
+  is swept.
+
+Exerciser: every pin unchanged.
+
 ## v0.36.139 — WS-ZA ZA5.4 part 26: the zombie loop and the thread's space-slot deletes
 
 A final delete of a capability whose object still holds capabilities now

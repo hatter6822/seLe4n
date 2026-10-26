@@ -1709,7 +1709,7 @@ private theorem witnessSt3_lookup (oid : SeLe4n.ObjId) :
 /-- Nothing references any target in the empty boot store. -/
 private theorem retypeTargetDetached_default (target : SeLe4n.ObjId) :
     retypeTargetDetached (default : SystemState) target := by
-  constructor <;> (intros; simp_all [Architecture.default_objects_none])
+  constructor <;> (intros; simp_all [Architecture.default_objects_none, notificationBindingCodes])
 
 /-- The fresh-TCB state references nothing at the SchedContext's slot: the
 one stored thread is fully detached by construction. -/
@@ -1720,7 +1720,7 @@ private theorem witnessSt1_detached :
   all_goals simp_all [witnessSt1_lookup]
   all_goals try simp_all [show witnessTid.toObjId ≠ witnessScId.toObjId from by decide]
   all_goals try obtain ⟨-, rfl⟩ := ‹_ ∧ _›
-  all_goals simp_all [witnessTcbFresh]
+  all_goals simp_all [witnessTcbFresh, notificationBindingCodes, KernelObject.bindingCodes]
 
 private theorem witnessInv1 : ipcInvariantFull witnessSt1 := by
   refine retypeWrite_preserves_ipcInvariantFull (st := default)
@@ -2171,7 +2171,8 @@ private theorem witnessSt3_detached_of (target : SeLe4n.ObjId)
     (hTid : (witnessTid.toObjId == target) = false) :
     retypeTargetDetached witnessSt3 target := by
   have hTargetEmpty := witnessSt3_lookup_none target hSc hTid
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
+    by rw [hTargetEmpty]; rfl⟩
   · intro sc; rw [hTargetEmpty]; simp
   · intro t hLk; rw [hTargetEmpty] at hLk; cases hLk
   · intro t hLk; rw [hTargetEmpty] at hLk; cases hLk
@@ -2180,9 +2181,6 @@ private theorem witnessSt3_detached_of (target : SeLe4n.ObjId)
   · intro t hLk; rw [hTargetEmpty] at hLk; cases hLk
   · intro t hLk; rw [hTargetEmpty] at hLk; cases hLk
   -- `v0.35.164`: `tcbNotBound`, vacuous on the empty slot like its neighbours.
-  · intro t hLk; rw [hTargetEmpty] at hLk; cases hLk
-  -- **WS-HP HP10.5**: the target holds nothing in this witness, so the origin
-  -- clause is vacuous exactly as its seven neighbours above are.
   · intro t hLk; rw [hTargetEmpty] at hLk; cases hLk
   · intro t hLk; rw [hTargetEmpty] at hLk; cases hLk
   -- **WS-BP BP7.9**: `tcbFpReleased`, vacuous on the empty slot as well.

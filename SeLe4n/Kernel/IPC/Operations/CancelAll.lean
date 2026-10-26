@@ -311,40 +311,6 @@ def unbindMaybeNotification (notificationId : SeLe4n.ObjId) (st : SystemState) :
 -- §4  A thread's and a scheduling context's finalisation
 -- ============================================================================
 
-/-- **No scheduling context records `c` as the origin of a reservation on loan**
-(`c` a thread's id plus one), but the context `cleared?` the thread's own
-finalisation hands back to it (`replyPopClearedOrigin?`): the scan
-`clearDonationOriginReferences` would otherwise have work to do, which a thread
-being finalised may not leave it. -/
-@[inline] def originsNameNone (st : SystemState) (c : Nat)
-    (cleared? : Option SeLe4n.SchedContextId) : Bool :=
-  st.objects.fold true fun acc k o => acc && match o with
-    | .schedContext sc =>
-      SeLe4n.ThreadId.optCode sc.donationOrigin != c ||
-        match cleared? with
-        | some s => k == s.toObjId
-        | none => false
-    | _ => true
-
-/-- **The context a reply-blocked thread's own cancel hands back to it at the
-bottom of its stack** (`t`, its TCB): its reply heads the stack of `s` and has
-no frame below it, so the pop (`reply_pop`, through
-`finaliseReplyCallerCancel`) returns `s` to the thread with no outer caller,
-which clears the reservation's recorded origin (`donationReturnSchedContext`,
-its bottom arm).  The finalisation's cancel runs that pop when its own guard
-(`replyCallerCancelAdmitted`) admits it, so the origin it would clear is no
-reason to refuse the thread.  `O(1)` reads: the reply. -/
-@[inline] def replyPopClearedOrigin? (st : SystemState) (t : TCB) :
-    Option SeLe4n.SchedContextId :=
-  if 4 ≤ t.ipcStateCode then
-    match st.getObject? ⟨t.replyObjectCode - 1⟩ with
-    | some (.reply r) =>
-      match r.next, r.prev with
-      | some (.head s), none => some s
-      | _, _ => none
-    | _ => none
-  else none
-
 /-- A thread whose binding codes name a context and no owner is `.bound` to it
 (stated here, ahead of the compiled unbinds that read it). -/
 theorem schedContextBinding_of_codes' {tcb : TCB} (hS : tcb.scBindingScCode ≠ 0)
@@ -560,6 +526,13 @@ theorem storeObject_findsInPlace_of_findsInPlace {st st' : SystemState} {id : Se
   unfold storeObject at h; cases h
   exact SeLe4n.Kernel.RobinHood.RHTable.findsInPlace_insert_of_findsInPlace k obj hF
 
+/-- ...and reads back what it wrote at its own key. -/
+theorem storeObject_objects_self_of_findsInPlace {st st' : SystemState} {id : SeLe4n.ObjId}
+    {obj : KernelObject} (hF : st.objects.findsInPlace id = true)
+    (h : storeObject id obj st = .ok ((), st')) : st'.objects[id]? = some obj := by
+  unfold storeObject at h; cases h
+  exact SeLe4n.Kernel.RobinHood.RHTable.get?_insert_self_of_findsInPlace obj hF
+
 /-- **The cut from the frame below, as compiled**: the frame below's `next` and
 the cut frame's `prev`, each written in its slot (`storeReplyWith`), with no
 record rebuilt and no pre-state held.  The second write reads the cut frame
@@ -593,19 +566,26 @@ theorem severReplyFrameBelowStoresInPlace_eq {st : SystemState} {rid below : SeL
     rw [hs]
 
 /-- **The frame-above splice, as compiled**: the frame above's `prev`, the frame
-below's `next` and the cut frame's `prev`, each written in its slot
-(`storeReplyWith`).  Each later write reads its key where the earlier ones left
+below's `next` (when there is one) and the cut frame's two links, each written in
+its slot (`storeReplyWith`).  Each later write reads its key where the earlier ones left
 it, which is its pre-state record when the earlier keys are found in place;
 otherwise the specification's stores run. -/
 @[inline] def spliceReplyFrameStoresInPlace (st : SystemState) (rid above : SeLe4n.ReplyId)
     (r a : Reply) : SystemState :=
   match spliceFrameBelow? st rid r above with
-  | none => st.storeReplyWith above.toObjId fun a => { a with prev := none }
+  | none =>
+    if st.objects.findsInPlace above.toObjId then
+      (st.storeReplyWith above.toObjId fun a => a.unlinkedFrom rid).storeReplyWith
+        rid.toObjId fun r => { r with prev := none, next := none }
+    else
+      match spliceReplyFrameStores st rid above r a with
+      | .ok st' => st'
+      | .error _ => st
   | some (below, _) =>
     if st.objects.findsInPlace above.toObjId && st.objects.findsInPlace below.toObjId then
       ((st.storeReplyWith above.toObjId fun a => { a with prev := some below }).storeReplyWith
         below.toObjId fun b => { b with next := some (.frame above) }).storeReplyWith
-        rid.toObjId fun r => { r with prev := none }
+        rid.toObjId fun r => { r with prev := none, next := none }
     else
       match spliceReplyFrameStores st rid above r a with
       | .ok st' => st'
@@ -621,9 +601,30 @@ theorem spliceReplyFrameStoresInPlace_eq {st : SystemState} {rid above : SeLe4n.
   cases hBelow : spliceFrameBelow? st rid r above with
   | none =>
     dsimp only
-    unfold spliceReplyFrameStores
-    rw [hBelow]; dsimp only
-    rw [SystemState.storeObject_reply_eq_storeReplyWith hAo (fun a => { a with prev := none })]
+    split
+    · next hFA =>
+      have h1 := SystemState.storeObject_reply_eq_storeReplyWith hAo (fun a => a.unlinkedFrom rid)
+      generalize hS1 : st.storeReplyWith above.toObjId (fun a => a.unlinkedFrom rid) = s1 at h1
+      have hR1 : s1.objects[rid.toObjId]? = some (.reply (r.unlinkedFrom rid)) ∨
+          s1.objects[rid.toObjId]? = some (.reply r) := by
+        by_cases hAR : above.toObjId = rid.toObjId
+        · have hEq : above = rid := SeLe4n.ReplyId.toObjId_injective _ _ hAR
+          subst hEq
+          rw [hRo] at hAo
+          have hra : r = a := KernelObject.reply.inj (Option.some.inj hAo)
+          subst hra
+          exact Or.inl (by rw [← hAR]; exact storeObject_objects_self_of_findsInPlace hFA h1)
+        · exact Or.inr (by rw [storeObject_objects_ne_of_findsInPlace hFA hAR h1]; exact hRo)
+      unfold spliceReplyFrameStores
+      rw [hBelow]; dsimp only
+      rw [h1]; dsimp only
+      rcases hR1 with hR1 | hR1
+      · rw [← Reply.unlinkedFrom_clear r rid, SystemState.storeObject_reply_eq_storeReplyWith hR1
+          (fun r => { r with prev := none, next := none })]
+      · rw [SystemState.storeObject_reply_eq_storeReplyWith hR1
+          (fun r => { r with prev := none, next := none })]
+    · obtain ⟨s, hs⟩ := spliceReplyFrameStores_isOk st rid above r a
+      rw [hs]
   | some p =>
     obtain ⟨below, b⟩ := p
     dsimp only
@@ -653,7 +654,8 @@ theorem spliceReplyFrameStoresInPlace_eq {st : SystemState} {rid above : SeLe4n.
         (fun b => { b with next := some (.frame above) }) = s2 at h2
       have hR2 : s2.objects[rid.toObjId]? = some (.reply r) := by
         rw [storeObject_objects_ne_of_findsInPlace hFB1 (hk hNeBR) h2]; exact hR1
-      have h3 := SystemState.storeObject_reply_eq_storeReplyWith hR2 (fun r => { r with prev := none })
+      have h3 := SystemState.storeObject_reply_eq_storeReplyWith hR2
+        (fun r => { r with prev := none, next := none })
       unfold spliceReplyFrameStores
       rw [hBelow]; dsimp only
       rw [h1]; dsimp only; rw [h2]; dsimp only; rw [h3]
@@ -980,10 +982,11 @@ every other caller waiting on it for a reply is ended as `reply_remove` ends it
 (`replyWaitersAdmitted`, which reads each of them on this state);
 its space slots may hold capabilities, which the zombie loop deletes after
 the finalisation, by the finalising delete (`zombiePasses`); a bound
-notification and a bound scheduling context are bound back to it; and nothing
-names it as a reservation's origin, but the context its own reply's pop hands
-back to it, which clears that origin (`replyPopClearedOrigin?`), nor as a
-service's owner.  Each step
+notification and a bound scheduling context are bound back to it.  A context
+that records it as a reservation's origin is no reason to refuse it: that origin
+counts only while the thread's own back-link names the context
+(`donationOriginRecipient?`), so the thread's record leaving with it ends the
+origin.  Each step
 below re-reads its own guard, so a state outside this set is left as it is and
 the retire then refuses the thread. -/
 @[inline] def threadFinaliseAdmitted (st : SystemState) (x : SeLe4n.ObjId) : Bool :=
@@ -1002,8 +1005,7 @@ the retire then refuses the thread. -/
     (t.scBindingScCode == 0 ||
       match st.getSchedContext? ⟨t.scBindingScCode - 1⟩ with
       | some sc => sc.boundThreadCode == x.val + 1
-      | none => false) &&
-    originsNameNone st (x.val + 1) (replyPopClearedOrigin? st t) && servicesNameNone st x
+      | none => false)
   | _ => false
 
 /-- **Cancel the blocked IPC of a thread being finalised** (seL4's `suspend` →
@@ -1556,26 +1558,9 @@ theorem lifecyclePreRetypeCleanup_of_threadRetirable {st : SystemState} {x : SeL
   have hNtfn : removeFromNotificationWaitQueue st t.tid = st := by
     unfold removeFromNotificationWaitQueue
     rw [hGet]; dsimp only; rw [threadQuiescent_ipcState hQ]
-  -- The origin sweep: no context names the thread as its reservation's origin.
-  have hOrig : clearDonationOriginReferences st t.tid = st := by
-    unfold clearDonationOriginReferences
-    refine RobinHood.RHTable.fold_preserves_of_fold_and st.objects
-      (fun _ o => !objectNamesThread o (x.val + 1)) hNames st _ (· = st) rfl
-      (fun acc k v hv hacc => ?_)
-    subst acc
-    cases v with
-    | schedContext sc =>
-      simp only [objectNamesThread, Bool.not_or, Bool.and_eq_true, Bool.not_eq_true',
-        beq_eq_false_iff_ne] at hv
-      dsimp only
-      rw [if_neg]
-      intro hb
-      have := congrArg SeLe4n.ThreadId.optCode (beq_iff_eq.mp hb)
-      exact hv.2 (by rw [this]; exact hCode)
-    | _ => rfl
   have hClean : cleanupTcbReferences st t.tid = st := by
     unfold cleanupTcbReferences
-    simp only [hRun, hEp, hNtfn, hOrig]
+    simp only [hRun, hEp, hNtfn]
   -- The space slots: both empty, so neither is spliced.
   have hDet : detachTcbSlots st x = st := by
     refine detachTcbSlots_of_empty ?_ ?_

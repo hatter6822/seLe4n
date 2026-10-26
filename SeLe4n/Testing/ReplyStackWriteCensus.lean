@@ -274,15 +274,6 @@ def chainNeutralConstructors : List (Name × String) :=
       "rebuilds a SchedContext for its CBS parameters; `scReply` is not in the assignment list, so the stored record carries the value it read")
   , (`SeLe4n.Kernel.FrozenOps.frozenSchedContextBind,
       "`{ sc with boundThread := some _ }`; `scReply` is untouched by the update")
-    -- **WS-HP HP10.5**: the destroy path's reservation-origin scrub.  It is a
-    -- `{ sc with donationOrigin := none }` update and nothing else, on the
-    -- contexts whose origin names the thread being destroyed — `scReply` is not
-    -- in the assignment list, so the stored record carries the stack head it
-    -- read.  The census found this on the day the sweep landed, which is the
-    -- derivation working: a fold that rebuilds a `SchedContext` and stores it is
-    -- indistinguishable from one re-heading a stack until somebody says which.
-  , (`SeLe4n.Kernel.clearDonationOriginReferences,
-      "`{ sc with donationOrigin := none }` on the destroy path; `scReply` is untouched by the update")
     -- WS-ZA ZA5.4 part 25: the finalisation's unstack-step predicate.  A
     -- `Prop` over the two writes `finaliseSchedContextUnstack` makes (it states
     -- what a predicate survives across them), so it stores nothing: the write

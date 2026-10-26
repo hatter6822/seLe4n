@@ -1712,13 +1712,15 @@ of this scenario.
 
 **And the splice's THIRD store is not observable through the composite, which is
 why the last half asserts it on the primitive.**  Measured rather than assumed:
-with `rid.prev := none` deleted the whole suite still passes, because the
-`Reply.consumed` that follows clears the cut frame's links anyway on a frame that
-heads nothing.  So an assertion about the cut frame's `prev` taken from the
+with the cut frame's cleared links deleted from that store the whole suite still
+passes, because the `Reply.consumed` that follows clears them anyway on a frame
+that heads nothing.  So an assertion about the cut frame's links taken from the
 composite's post-state is testing `consumed`, not the splice — an inert witness
 reading as coverage, which is this project's own hazard.  The store is
-load-bearing all the same (it is seL4's `reply_unlink` downward half, and without
-it the cut frame keeps a `prev` nothing names back), and it would become
+load-bearing all the same (it is seL4's `reply_remove`: without the cleared
+`prev` the cut frame keeps a link nothing names back, and without the cleared
+`next` it names a frame whose `prev` no longer answers it, which
+`nextLinkReciprocal` refuses), and it would become
 *observable* the moment `consumed` changed, so the half below drives
 `frozenSpliceReplyFrameOut` directly with no consume after it. -/
 private def differentialEndpointReplyMiddleFrameSplices : IO Unit := do
@@ -1819,11 +1821,12 @@ private def differentialEndpointReplyMiddleFrameSplices : IO Unit := do
   -- ### The primitive, with no consume after it.
   --
   -- All three stores at once, where the composite can only show two: the cut
-  -- frame's own `prev := none` is the store `Reply.consumed` would mask, so this
-  -- is the only place a deletion of it fails.  The live counterpart is asserted
+  -- frame's own cleared links (`prev := none, next := none`, seL4's `reply_remove`)
+  -- are the store `Reply.consumed` would mask, so this is the only place a
+  -- deletion of either fails.  The live counterpart is asserted
   -- beside it, so the two are compared store for store rather than each against
   -- its own expectation.
-  expect "FO-043: the frozen PRIMITIVE writes all three links, the cut frame's own included"
+  expect "FO-043: the frozen PRIMITIVE writes all three links, clearing both of the cut frame's own"
     (match (frozenSpliceReplyFrameOut (freeze chain) midRid).toOption with
      | some post =>
          (match post.getReply? topRid with
@@ -1833,7 +1836,7 @@ private def differentialEndpointReplyMiddleFrameSplices : IO Unit := do
           | some b => b.next == some (SeLe4n.Kernel.ReplyStackLink.frame topRid)
           | none   => false) &&
          (match post.getReply? midRid with
-          | some m => m.prev == none && m.next == some (SeLe4n.Kernel.ReplyStackLink.frame topRid)
+          | some m => m.prev == none && m.next == none
           | none   => false)
      | none => false)
   expect "FO-043: ...exactly as the live primitive does"
@@ -1846,7 +1849,7 @@ private def differentialEndpointReplyMiddleFrameSplices : IO Unit := do
           | some b => b.next == some (SeLe4n.Kernel.ReplyStackLink.frame topRid)
           | none   => false) &&
          (match post.getReply? midRid with
-          | some m => m.prev == none && m.next == some (SeLe4n.Kernel.ReplyStackLink.frame topRid)
+          | some m => m.prev == none && m.next == none
           | none   => false)
      | none => false)
 
@@ -1879,7 +1882,8 @@ private def differentialEndpointReplyRedirectsToOrigin : IO Unit := do
   -- The answered caller: reply-blocked on the recorded server, holding nothing.
   let caller : TCB := (TCB.setIpcState { diffTcb 62 with
     replyObjectCode := SeLe4n.ReplyId.optCode (some rid),
-    scBindingScCode := 0, scBindingOwnerCode := 0 } (.blockedOnReply diffEpId (some diffB)))
+    scBindingScCode := 0, scBindingOwnerCode := 0,
+    originScCode := diffScId.val + 1 } (.blockedOnReply diffEpId (some diffB)))
   -- The recorded server, holding the donation.
   let server : TCB := { diffTcb 63 with
     scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated diffScId diffA), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated diffScId diffA) }
@@ -1887,7 +1891,8 @@ private def differentialEndpointReplyRedirectsToOrigin : IO Unit := do
   -- nothing, and is on no stack.  Both guards admit it — which is the state the
   -- depth-2 defect leaves behind.
   let origin : TCB := { diffTcb 65 with
-    scBindingScCode := 0, scBindingOwnerCode := 0 }
+    scBindingScCode := 0, scBindingOwnerCode := 0,
+    originScCode := diffScId.val + 1 }
   -- ### Half one: the origin DIFFERS from the answered caller.
   let redirected := diffAddSchedContext (diffAddReply (diffAddTcb (diffAddTcb (diffAddTcb
     (diffAddEndpoint mkEmptyIntermediateState diffEpId {}) caller) server) origin)
@@ -1989,8 +1994,9 @@ private def differentialEndpointReplyRedirectsToOrigin : IO Unit := do
   -- thread with no TCB (their `_of_none` arms), so a resolver that consulted the
   -- guards alone would name `diffStaleOrigin` and the pop's own lookup would then
   -- refuse the whole reply -- a refusal where the design promises a fallback.
-  -- Reachable only through a stale field, which `clearDonationOriginReferences`
-  -- prevents; the differential pins the two surfaces to one reading of "stale".
+  -- Reachable only through a stale field, which the origin's back-link check
+  -- (`originScCode`) refuses as well; the differential pins the two surfaces to
+  -- one reading of "stale".
   let staleOrigin := diffAddSchedContext (diffAddReply (diffAddTcb (diffAddTcb
     (diffAddEndpoint mkEmptyIntermediateState diffEpId {}) caller) server)
     rid { replyId := rid, callerCode := SeLe4n.ThreadId.optCode (some diffA), next := some (.head diffScId) })
@@ -2513,7 +2519,8 @@ private def differentialSchedContextBindClearsOrigin : IO Unit := do
       boundThreadCode := 0, scReply := none, donationOrigin := some diffB,
       isActive := false }
   let ist := diffAddSchedContext
-    (diffAddTcb (diffAddTcb mkEmptyIntermediateState (diffTcb 62)) (diffTcb 63))
+    (diffAddTcb (diffAddTcb mkEmptyIntermediateState (diffTcb 62))
+      { diffTcb 63 with originScCode := diffScId.val + 1 })
     diffScId scWithOrigin
   expect "FO-047 control: the frozen reservation starts with a recorded origin"
     (frozenOriginOf (freeze ist) diffScId == some (some diffB))
