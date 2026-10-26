@@ -368,7 +368,7 @@ theorem cleanupDonatedSchedContext_preserves_schedContextBindingConsistent
       rw [hB] at h
       exact returnDonatedSchedContextResolved_lift h (fun newOwner? s hPop =>
         returnDonatedSchedContext_preserves_schedContextBindingConsistent st s tid scId
-          owner newOwner? tcb hInv (getTcb?_of_lookupTcb st tid tcb hLk) hB hCons hPop)
+          owner newOwner? hInv hCons hPop)
 
 /-- **`v0.35.183`: and so does the arm that migrates its replenishments.**
 

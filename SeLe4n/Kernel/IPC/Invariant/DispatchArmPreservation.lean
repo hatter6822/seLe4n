@@ -4223,15 +4223,93 @@ theorem erasedTargetDetached_of_threadRetirable {st : SystemState} {x : SeLe4n.O
     simp [notificationBindingCodes, KernelObject.bindingCodes,
       (threadQuiescent_codes hQ).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1]
 
+/-- A binding read off its codes names the context its context word names. -/
+theorem TCB.scBindingScCode_of_names {t : TCB} {s : SeLe4n.SchedContextId}
+    (h : t.schedContextBinding.scId? = some s) : t.scBindingScCode = s.val + 1 := by
+  unfold TCB.schedContextBinding at h
+  generalize t.scBindingScCode = c at h ⊢
+  generalize t.scBindingOwnerCode = o at h
+  cases c with
+  | zero => cases h
+  | succ c => cases o <;> (simp only [SchedContextBinding.ofCodes, SchedContextBinding.scId?,
+      Option.some.injEq] at h; subst h; rfl)
+
+/-- ...and a context word names the context the binding read off it names. -/
+theorem TCB.schedContextBinding_scId?_of_code {t : TCB} {n : Nat}
+    (h : t.scBindingScCode = n + 1) : t.schedContextBinding.scId? = some ⟨n⟩ := by
+  unfold TCB.schedContextBinding
+  rw [h]
+  cases t.scBindingOwnerCode <;> rfl
+
+/-- **The thread-side half of the binding pair is a consequence**: a thread's
+own context names it by the binding pair, and a context lent to it names it by
+the loan record (`donationOwnerValid`). -/
+theorem schedContextBindingBidirectional_of_consistent {st : SystemState}
+    (hC : schedContextBindingConsistent st) (hD : donationOwnerValid st) :
+    schedContextBindingBidirectional st := by
+  intro t tcb scId hT hs
+  cases hb : tcb.schedContextBinding with
+  | unbound => rw [hb] at hs; cases hs
+  | bound s =>
+    rw [hb] at hs; cases hs; exact hC.1 t tcb hT _ hb
+  | donated s o =>
+    rw [hb] at hs; cases hs; exact (hD t tcb _ o hT hb).1
+
+/-- A context the retire guard admits is bound to no thread. -/
+theorem schedContextRetirable_boundThread {st : SystemState} {x : SeLe4n.ObjId}
+    {sc : SchedContext} (h : schedContextRetirable st x = true)
+    (hS : st.objects[x]? = some (.schedContext sc)) : sc.boundThread = none := by
+  obtain ⟨sc', hS', hB0, _⟩ := schedContextRetirable_parts h
+  rw [hS] at hS'; cases hS'
+  simp only [SchedContext.boundThread, hB0]; rfl
+
+/-- **No thread names a context the retire admits** (`objectNamesSchedContext`),
+though the guard reads the context's own links alone: a thread bound to it, as
+its own or on loan, is named by it back (`schedContextBindingConsistent`, the
+loan record `donationOwnerValid`), and it is bound to no thread; and no thread
+holds a timeout budget at all (`allTimeoutBudgetsNone`). -/
+theorem schedContextRetirable.tcbNamesNone {st : SystemState} {x : SeLe4n.ObjId}
+    (h : schedContextRetirable st x = true) (hC : schedContextBindingConsistent st)
+    (hD : donationOwnerValid st) (hB : allTimeoutBudgetsNone st)
+    {k : SeLe4n.ObjId} {t : TCB} (hK : st.objects[k]? = some (.tcb t)) :
+    objectNamesSchedContext (.tcb t) (x.val + 1) = false := by
+  obtain ⟨sc, hS, -⟩ := schedContextRetirable_parts h
+  have hT : st.objects[(SeLe4n.ThreadId.ofObjId k).toObjId]? = some (.tcb t) := hK
+  simp only [objectNamesSchedContext, hB _ _ hT, Bool.or_false]
+  cases hc : (t.scBindingScCode == x.val + 1) with
+  | false => rfl
+  | true =>
+    exfalso
+    obtain ⟨sc', hS', hb⟩ := schedContextBindingBidirectional_of_consistent hC hD _ t _ hT
+      (TCB.schedContextBinding_scId?_of_code (beq_iff_eq.mp hc))
+    have hx : (⟨x.val⟩ : SeLe4n.SchedContextId).toObjId = x := rfl
+    rw [hx, hS] at hS'; cases hS'
+    rw [schedContextRetirable_boundThread h hS] at hb; cases hb
+
+/-- **A context a thread names is not retired** (`schedContextRetirable.tcbNamesNone`
+read backwards). -/
+theorem schedContextRetirable_false_of_tcbNamed {st : SystemState} {x k : SeLe4n.ObjId}
+    {t : TCB} (hC : schedContextBindingConsistent st) (hD : donationOwnerValid st)
+    (hB : allTimeoutBudgetsNone st) (hK : st.objects[k]? = some (.tcb t))
+    (hN : objectNamesSchedContext (.tcb t) (x.val + 1) = true) :
+    schedContextRetirable st x = false := by
+  cases hR : schedContextRetirable st x with
+  | false => rfl
+  | true => rw [schedContextRetirable.tcbNamesNone hR hC hD hB hK] at hN; cases hN
+
 /-- **A retirable scheduling context is detached from everything the bundle
 reads**: it is no thread, endpoint or reply, so every clause about a thread at
 the key is vacuous and no blocked thread, queue link, boundary, reply link or
-stash names it; and no thread's timeout or donation names it
-(`storeNamesSchedContextNone`). -/
+stash names it; no thread's timeout names it, since no thread holds a timeout
+budget (`allTimeoutBudgetsNone`); and no thread's loan names it, since a lent
+context names its borrower back (`donationOwnerValid`) and an admitted one is
+bound to no thread. -/
 theorem erasedTargetDetached_of_schedContextRetirable {st : SystemState} {x : SeLe4n.ObjId}
-    (h : schedContextRetirable st x = true) (hInv : ipcInvariantFull st) :
+    (h : schedContextRetirable st x = true) (hInv : ipcInvariantFull st)
+    (hBudgets : allTimeoutBudgetsNone st) :
     erasedTargetDetached st x := by
-  obtain ⟨sc, hT, -, -, -, hS, -⟩ := schedContextRetirable_parts h
+  obtain ⟨sc, hT, -⟩ := schedContextRetirable_parts h
+  have hSb := schedContextRetirable_boundThread h hT
   have hNoEp : ∀ ep : Endpoint, st.objects[x]? ≠ some (.endpoint ep) := fun ep h' => by
     rw [hT] at h'; cases h'
   have hNoR : ∀ r : Reply, st.objects[x]? ≠ some (.reply r) := fun r h' => by
@@ -4244,15 +4322,12 @@ theorem erasedTargetDetached_of_schedContextRetirable {st : SystemState} {x : Se
     fun s hs => congrArg SeLe4n.ObjId.val hs
   refine ⟨?_, ?_, fun t h => absurd h (hNo _), fun t h => absurd h (hNo _),
     ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, by rw [hT]; rfl⟩
-  · intro tid tcb scId hT' hTB hEq
-    have hn := storeNamesSchedContextNone_spec hS hT'
-    simp [objectNamesSchedContext, hTB, hVal scId hEq] at hn
+  · intro tid tcb scId hT' hTB _
+    rw [hBudgets tid tcb hT'] at hTB; cases hTB
   · intro tid tcb scId owner hT' hB hEq
-    have hc : tcb.scBindingScCode = scId.val + 1 := by
-      have := congrArg SeLe4n.Kernel.SchedContextBinding.scCode hB
-      rwa [SeLe4n.Kernel.SchedContextBinding.scCode_ofCodes] at this
-    have hn := storeNamesSchedContextNone_spec hS hT'
-    simp [objectNamesSchedContext, hc, hVal scId hEq] at hn
+    obtain ⟨⟨sc', hS', hb⟩, -⟩ := hInv.donationOwnerValid tid tcb scId owner hT' hB
+    rw [hEq, hT] at hS'; cases hS'
+    rw [hSb] at hb; cases hb
   · intro tid tcb hT'
     have hM := hInv.ipcStateQueueMembershipConsistent tid tcb hT'
     refine ⟨fun hS' => ?_, fun hR => ?_, fun hC => ?_⟩
@@ -4294,7 +4369,8 @@ quiescent and a thread or scheduling context only retirable, and each gives
 the pack. -/
 theorem erasedTargetDetached_of_admitted {st : SystemState} {x : SeLe4n.ObjId}
     (hAdm : finalRetireAdmitted st x = true) (hE : erasableKernelObject st.objects[x]?)
-    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st) : erasedTargetDetached st x := by
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hBudgets : allTimeoutBudgetsNone st) : erasedTargetDetached st x := by
   by_cases hP : passiveKernelObject st.objects[x]?
   · have hParts := passiveObjectRetirable_parts (finalRetireAdmitted.retirable hAdm hP)
     exact erasedTargetDetached_of_unreferenced hP hParts.1 hObjInv hInv
@@ -4307,7 +4383,7 @@ theorem erasedTargetDetached_of_admitted {st : SystemState} {x : SeLe4n.ObjId}
     unfold schedulingObjectRetirable at hR
     rcases Bool.or_eq_true_iff.mp hR with hR | hR
     · exact erasedTargetDetached_of_threadRetirable hR hInv
-    · exact erasedTargetDetached_of_schedContextRetirable hR hInv
+    · exact erasedTargetDetached_of_schedContextRetirable hR hInv hBudgets
 
 /-- **The final-delete retire preserves the bundle**: the passive erase takes
 out an object nothing the bundle reads names (`eraseWrite_preserves_ipcInvariantFull`,
@@ -4315,7 +4391,7 @@ out an object nothing the bundle reads names (`eraseWrite_preserves_ipcInvariant
 touches only what a reset touches (`finalRetireWrite.resetTouched`). -/
 theorem retireFinalObject_preserves_ipcInvariantFull (ec : Concurrency.CoreId)
     (target recorder : Nat) (st : SystemState) (hObjInv : st.objects.invExt)
-    (hInv : ipcInvariantFull st) :
+    (hInv : ipcInvariantFull st) (hBudgets : allTimeoutBudgetsNone st) :
     ipcInvariantFull (retireFinalObject ec target recorder st) ∧
       (retireFinalObject ec target recorder st).objects.invExt := by
   rcases retireFinalObject_cases ec target recorder st with hE | ⟨hSz, hAdm, hE⟩
@@ -4326,7 +4402,7 @@ theorem retireFinalObject_preserves_ipcInvariantFull (ec : Concurrency.CoreId)
   have h0 : ipcInvariantFull (eraseRetiredObject st x) := by
     by_cases hP : erasableKernelObject st.objects[x]?
     · exact eraseWrite_preserves_ipcInvariantFull (eraseRetiredObject_self hP hObjInv) ne0
-        (erasedTargetDetached_of_admitted hAdm hP hObjInv hInv) hInv
+        (erasedTargetDetached_of_admitted hAdm hP hObjInv hInv hBudgets) hInv
     · rw [eraseRetiredObject_of_not st x hP]; exact hInv
   obtain ⟨hExt, -, -, -, hW⟩ := retireRecordedObject_frame ec recorder x _ i0 room0
   exact ⟨ipcInvariantFull_of_resetTouchedWrite
@@ -5023,20 +5099,6 @@ theorem threadSlotCopied_preserves_ipcInvariantFull {st : SystemState} {tid : Se
         · simp at hB
         · exact h')
 
-/-- **A thread space slot's set preserves the IPC bundle**: the copy does
-(`threadSlotCopied_preserves_ipcInvariantFull`), and so does the retire after it
-(`retireFinalObject_preserves_ipcInvariantFull`). -/
-theorem threadSlotSet_preserves_ipcInvariantFull (ec : Concurrency.CoreId) {st : SystemState}
-    {tid : SeLe4n.ThreadId} {t : TCB} (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
-    (hT : st.getTcb? tid = some t) (slot : SeLe4n.Slot) (srcCNode : SeLe4n.ObjId)
-    (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) :
-    ipcInvariantFull (threadSlotSet ec st tid slot srcCNode srcSlot rights) ∧
-      (threadSlotSet ec st tid slot srcCNode srcSlot rights).objects.invExt := by
-  unfold threadSlotSet
-  exact retireFinalObject_preserves_ipcInvariantFull ec _ _ _
-    (threadSlotCopied_tcb hObjInv hT slot srcCNode srcSlot rights).2
-    (threadSlotCopied_preserves_ipcInvariantFull hObjInv hInv hT slot srcCNode srcSlot rights)
-
 /-- A slot set from a filled source keeps the thread stored: its slot then
 holds a capability, so the retire after the copy cannot take the thread. -/
 theorem threadSlotSet_getTcb? (ec : Concurrency.CoreId) {st : SystemState}
@@ -5050,23 +5112,6 @@ theorem threadSlotSet_getTcb? (ec : Concurrency.CoreId) {st : SystemState}
   unfold threadSlotSet
   dsimp only
   rw [retireFinalObject_getTcb?_of_slotCap _ _ _ _ hI1 hT1 hF]; rfl
-
-/-- **WS-BP BP7.1 (`v0.36.11`)**: a space change preserves the IPC bundle — each
-slot set does (`threadSlotSet_preserves_ipcInvariantFull`). -/
-theorem copyThreadSpaces_preserves_ipcInvariantFull (ec : Concurrency.CoreId)
-    (st st' : SystemState) (vtid : SeLe4n.ValidThreadId) (cnSrc vrSrc : CSpaceAddr)
-    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
-    (hStep : copyThreadSpaces ec st vtid cnSrc vrSrc = .ok st') :
-    ipcInvariantFull st' := by
-  obtain ⟨tcb, hT, -, -, hCn, -, rfl⟩ := copyThreadSpaces_ok hStep
-  obtain ⟨cnCap, -, hCL, -⟩ := cspaceRootSourceAdmitted_spec hCn
-  obtain ⟨t1, hT1'⟩ := Option.isSome_iff_exists.mp
-    (threadSlotSet_getTcb? ec hObjInv hT (slot := TCB.cspaceRootSlot) (by decide)
-      cnSrc.cnode cnSrc.slot
-      TCB.cspaceRootRights hCL)
-  obtain ⟨h1, hI1⟩ := threadSlotSet_preserves_ipcInvariantFull ec hObjInv hInv hT
-    TCB.cspaceRootSlot cnSrc.cnode cnSrc.slot TCB.cspaceRootRights
-  exact (threadSlotSet_preserves_ipcInvariantFull ec hI1 h1 hT1' _ _ _ _).1
 
 /-- Review round (PR #887): and the object-store invariant. -/
 theorem setThreadFaultHandlerOp_preserves_objects_invExt

@@ -113,33 +113,23 @@ theorem faultDeliveredState_stepCovers (e : CoreId) {lctx : LabelingContext} {st
 
 /-! ### Transport across a register write -/
 
-/-- A TCB update that keeps the binding keeps the binding reciprocity. -/
-theorem schedContextBindingBidirectional_updateTcb {st : SystemState} {tid : SeLe4n.ThreadId}
-    {f : TCB → TCB} (hF : ∀ t, (f t).schedContextBinding = t.schedContextBinding)
-    (hInv : st.objects.invExt) (hBi : schedContextBindingBidirectional st) :
-    schedContextBindingBidirectional (st.updateTcb tid f) := by
-  cases hT0 : st.getTcb? tid with
-  | none => rw [SystemState.updateTcb_eq_self_of_none hT0]; exact hBi
-  | some tcb0 =>
-  have hO0 := (SystemState.getTcb?_eq_some_iff _ _ _).mp hT0
-  have hScNe : ∀ (scId : SeLe4n.SchedContextId) sc,
-      st.objects[scId.toObjId]? = some (.schedContext sc) → tid.toObjId ≠ scId.toObjId := by
-    intro scId sc hS hEq; rw [← hEq, hO0] at hS; cases hS
-  intro t tcb scId hT hB
-  by_cases hEq : tid.toObjId = t.toObjId
-  · have hId : tid = t := SeLe4n.ThreadId.toObjId_injective _ _ hEq
-    subst hId
-    have h1 : (st.updateTcb tid f).getTcb? tid = some tcb :=
-      (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
-    rw [SystemState.updateTcb_getTcb?_self _ _ _ hInv, hT0] at h1
-    simp only [Option.map_some, Option.some.injEq] at h1
-    obtain ⟨sc, hSc, hBd⟩ := hBi tid tcb0 scId hO0 (by rw [← hF, h1]; exact hB)
-    exact ⟨sc, by rw [SystemState.updateTcb_objects_ne _ _ _ _ (hScNe scId sc hSc) hInv]; exact hSc,
-      hBd⟩
-  · rw [SystemState.updateTcb_objects_ne _ _ _ _ hEq hInv] at hT
-    obtain ⟨sc, hSc, hBd⟩ := hBi t tcb scId hT hB
-    exact ⟨sc, by rw [SystemState.updateTcb_objects_ne _ _ _ _ (hScNe scId sc hSc) hInv]; exact hSc,
-      hBd⟩
+/-- **The register spill keeps the bundle the delete carries**: it rewrites one
+thread's register file, which none of the bundle's conjuncts reads. -/
+theorem finalisingDeleteBundle_writeFfiRegistersToTcb {st : SystemState} (tid : SeLe4n.ThreadId)
+    (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64) (hB : finalisingDeleteBundle st) :
+    finalisingDeleteBundle
+      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) := by
+  have hInv := hB.1.2.1
+  unfold Platform.FFI.writeFfiRegistersToTcb
+  refine ⟨⟨?_, SystemState.updateTcb_preserves_objects_invExt _ _ _ hInv,
+    hB.1.2.2.of_loanWrite (FinaliseFrame.updateTcb st tid _ hInv).loan⟩,
+    (SchedLinkFrame.updateTcb st tid _ hInv).preserves hB.2⟩
+  cases hG : st.getTcb? tid with
+  | none => rw [SystemState.updateTcb_eq_self_of_none hG]; exact hB.1.1
+  | some x =>
+    rw [SystemState.updateTcb_eq_of_some hG]
+    exact insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull st tid x _ hInv hB.1.1
+      ((SystemState.getTcb?_eq_some_iff st tid x).mp hG) rfl rfl rfl rfl rfl rfl rfl rfl rfl
 
 /-- A TCB update keeps every placed thread's TCB. -/
 theorem placedThreadsHaveTcbs_updateTcb {st : SystemState} {tid : SeLe4n.ThreadId}
@@ -171,7 +161,7 @@ a refusal record touches the refusal ledger alone. -/
 theorem syscallDispatchFromAbi_stepCovers {ctx : LabelingContext} {e : CoreId}
     {syscallId : UInt32} {x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64}
     {st st' : SystemState} {outcome : Architecture.SyscallOutcome}
-    (hInv : st.objects.invExt) (hBi : schedContextBindingBidirectional st)
+    (hInv : st.objects.invExt) (hB : finalisingDeleteBundle st)
     (hPlaced : placedThreadsHaveTcbs st)
     (h : Platform.FFI.syscallDispatchFromAbi ctx e syscallId x0 x1 x2 x3 x4 x5
       ipcBufferAddr elr spsr spEl0 x30 st = .ok (outcome, st')) :
@@ -199,16 +189,13 @@ theorem syscallDispatchFromAbi_stepCovers {ctx : LabelingContext} {e : CoreId}
         (Platform.FFI.recordSyscallRefusal_scheduler_eq _ _ _ _ _ _ _)
   · rename_i hE
     cases h
-    have hBi' : schedContextBindingBidirectional
-        (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) := by
-      unfold Platform.FFI.writeFfiRegistersToTcb
-      exact schedContextBindingBidirectional_updateTcb (fun _ => rfl) hInv hBi
+    have hB' := finalisingDeleteBundle_writeFfiRegistersToTcb tid syscallId x0 x1 x2 x3 x4 x5 hB
     have hPl : placedThreadsHaveTcbs
         (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) := by
       unfold Platform.FFI.writeFfiRegistersToTcb
       exact placedThreadsHaveTcbs_updateTcb hInv hPlaced
     exact stepCoversInv_trans hW.stepCovers
-      (syscallEntryChecked_stepCovers hW.2.2 hBi' hPl hE)
+      (syscallEntryChecked_stepCovers hW.2.2 hB' hPl hE)
 
 /-! ### The committing seams
 
@@ -237,14 +224,14 @@ settlement.  (A refused dispatch fires no SGI, so it owes nothing.) -/
 theorem syscallDispatchCrossCoreStep_stepCovers {ctx : LabelingContext} {e : CoreId}
     {syscallId : UInt32} {x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64}
     {st st' : SystemState} {outcome : Architecture.SyscallOutcome}
-    (hInv : st.objects.invExt) (hBi : schedContextBindingBidirectional st)
+    (hInv : st.objects.invExt) (hB : finalisingDeleteBundle st)
     (hPlaced : placedThreadsHaveTcbs st)
     (h : Platform.FFI.syscallDispatchFromAbi ctx e syscallId x0 x1 x2 x3 x4 x5
       ipcBufferAddr elr spsr spEl0 x30 st = .ok (outcome, st')) :
     stepCovers e st (PriorityInheritance.settleResidencyOnCore
       (PriorityInheritance.scheduleLocalSuccessor st
         (Architecture.stageCallerReturn st st' e outcome) e) e) := by
-  obtain ⟨hD, hDInv⟩ := syscallDispatchFromAbi_stepCovers hInv hBi hPlaced h
+  obtain ⟨hD, hDInv⟩ := syscallDispatchFromAbi_stepCovers hInv hB hPlaced h
   exact stepCovers_trans hD
     (syscallCommitTail_stepCovers e (st.scheduler.currentOnCore e) st' outcome hDInv)
 
@@ -300,7 +287,7 @@ settles to. -/
 theorem syscallDispatchCrossCoreStep_sgis_cover_diff {ctx : LabelingContext} {e : CoreId}
     {syscallId : UInt32} {x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64}
     {st st' : SystemState} {outcome : Architecture.SyscallOutcome}
-    (hInv : st.objects.invExt) (hBi : schedContextBindingBidirectional st)
+    (hInv : st.objects.invExt) (hB : finalisingDeleteBundle st)
     (hPlaced : placedThreadsHaveTcbs st)
     (h : Platform.FFI.syscallDispatchFromAbi ctx e syscallId x0 x1 x2 x3 x4 x5
       ipcBufferAddr elr spsr spEl0 x30 st = .ok (outcome, st'))
@@ -319,6 +306,6 @@ theorem syscallDispatchCrossCoreStep_sgis_cover_diff {ctx : LabelingContext} {e 
   dsimp only
   rw [← rescheduleSgisFromFlags_eq_sgisOfRaised]
   exact computeCrossCoreSgis_mem_flags_of_covers hId
-    (syscallDispatchCrossCoreStep_stepCovers hInv hBi hPlaced h).1 hMem
+    (syscallDispatchCrossCoreStep_stepCovers hInv hB hPlaced h).1 hMem
 
 end SeLe4n.Kernel

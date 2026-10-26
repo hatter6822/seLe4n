@@ -198,21 +198,6 @@ theorem replyViews_updateTcb_eq_of (st : SystemState) (t : SeLe4n.ThreadId) {f :
       simp only [objReplyView_tcb, hf x hG]
   · rw [SystemState.updateTcb_objects_ne _ _ _ _ e hInv]
 
-theorem modifyObject_preserves_objects_invExt {st : SystemState} {k : SeLe4n.ObjId}
-    {f : KernelObject → KernelObject} (hInv : st.objects.invExt) :
-    (st.modifyObject k f).objects.invExt := by
-  unfold SystemState.modifyObject
-  cases hG : st.objects[k]? with
-  | none =>
-    have e : st.objects.modify k f = st.objects := by
-      unfold RobinHood.RHTable.modify; rw [← RHTable_getElem?_eq_get?, hG]
-    show (st.objects.modify k f).invExt
-    rw [e]; exact hInv
-  | some o =>
-    show (st.objects.modify k f).invExt
-    rw [RobinHood.RHTable.modify_of_get? hG]
-    exact RHTable_insert_preserves_invExt _ _ _ hInv
-
 -- ============================================================================
 -- §2  An endpoint waiter's cancel
 -- ============================================================================
