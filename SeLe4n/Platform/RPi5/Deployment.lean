@@ -321,7 +321,10 @@ private def untypedEntry (id : SeLe4n.ObjId) (ut : UntypedObject) : ObjectEntry 
 private def notificationEntry (id : SeLe4n.ObjId) : ObjectEntry :=
   { id := id
     obj := .notification
-      { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }
+      -- The interrupt table names this notification, so it records the
+      -- interrupt back (`SystemState.tableReferencesRecorded`).
+      { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero,
+        irqBound := true }
     hSlots := fun _ h => nomatch h
     hMappings := fun _ h => nomatch h }
 
@@ -433,7 +436,7 @@ private theorem member_asidsDistinct :
 -- budget is raised for this theorem only.
 set_option maxRecDepth 8192 in
 private theorem member_irqHandlers :
-    ∀ v ∈ rpi5Variants, irqHandlersReferenceNotifications (rpi5BoundPlatformConfigAt v) = true := by
+    ∀ v ∈ rpi5Variants, irqHandlersAndNotificationsReciprocal (rpi5BoundPlatformConfigAt v) = true := by
   apply rpi5Variants_cases <;> decide
 
 private theorem member_rootDistinct :
@@ -616,11 +619,13 @@ theorem rpi5BoundPlatformConfigAt_asidsDistinct (v : BCM2712Config) (hv : v.Admi
     bootVSpaceAsidsDistinct_withoutExtents]
   exact member_asidsDistinct _ hv.1
 
-/-- **WS-BP BP3.3**: every IRQ's handler is a notification in the config. -/
+/-- **WS-BP BP3.3**: the config's interrupt table and its notifications are
+reciprocal -- every IRQ's handler is a notification that records the
+interrupt, and no notification records one no IRQ names. -/
 theorem rpi5BoundPlatformConfigAt_irqHandlers (v : BCM2712Config) (hv : v.Admissible) :
-    irqHandlersReferenceNotifications (rpi5BoundPlatformConfigAt v) = true := by
-  rw [← irqHandlersReferenceNotifications_withoutExtents,
-    rpi5BoundPlatformConfigAt_withoutExtents v hv, irqHandlersReferenceNotifications_withoutExtents]
+    irqHandlersAndNotificationsReciprocal (rpi5BoundPlatformConfigAt v) = true := by
+  rw [← irqHandlersAndNotificationsReciprocal_withoutExtents,
+    rpi5BoundPlatformConfigAt_withoutExtents v hv, irqHandlersAndNotificationsReciprocal_withoutExtents]
   exact member_irqHandlers _ hv.1
 
 /-- **WS-BP BP3.3, BP7.10**: the bound machine configuration is well-formed —

@@ -33,8 +33,9 @@ audit findings of WS-AN (see the *Workstream registry* of
   alignment AND region-local bounds.
 - **AK9-B (P-H02)** — `BootBoundaryContract.objectStoreEmptyAtBoot`
   renamed field asserts empty object store at boot.
-- **AK9-C (P-M01)** — `irqHandlersReferenceNotifications` validates
-  each IRQ handler ObjId refers to a notification object.
+- **AK9-C (P-M01)** — `irqHandlersAndNotificationsReciprocal` validates
+  that each IRQ handler ObjId refers to a notification object that records
+  the interrupt, and that no notification records one no IRQ names.
 - **AK9-D (P-M02)** — `isDeviceRangeWithinRegion` tightens multi-byte
   write range to a single declared device region.
 - **AK9-E (P-M03)** — `budgetSufficientCheck` fails closed on
@@ -140,14 +141,14 @@ def ak9b_02_rpi5_objectStoreEmptyAtBoot : IO Unit := do
   expect "AK9-B-02 rpi5 objectStoreEmptyAtBoot" true
 
 -- ============================================================================
--- AK9-C: irqHandlersReferenceNotifications
+-- AK9-C: irqHandlersAndNotificationsReciprocal
 -- ============================================================================
 
 /-- AK9-C: Empty IRQ table trivially passes handler-reference check. -/
 def ak9c_01_empty_irqs_accepted : IO Unit := do
   let cfg : PlatformConfig := { irqTable := [], initialObjects := [] }
   expect "AK9-C-01 empty irqTable passes"
-    (irqHandlersReferenceNotifications cfg = true)
+    (irqHandlersAndNotificationsReciprocal cfg = true)
 
 /-- AK9-C: IRQ with missing handler ObjId rejected. -/
 def ak9c_02_missing_handler_rejected : IO Unit := do
@@ -156,10 +157,14 @@ def ak9c_02_missing_handler_rejected : IO Unit := do
     { irqTable := [{ irq := ⟨1⟩, handler := ObjId.ofNat 42 }],
       initialObjects := [] }
   expect "AK9-C-02 missing handler rejected"
-    (irqHandlersReferenceNotifications cfg = false)
+    (irqHandlersAndNotificationsReciprocal cfg = false)
 
 private def minimalNotif : Notification :=
   { state := .idle }
+
+/-- A notification that records an interrupt handler of its own. -/
+private def irqBoundNotif : Notification :=
+  { state := .idle, irqBound := true }
 
 private def minimalTcb (tid : ThreadId) : TCB :=
   { tid := tid
@@ -168,9 +173,10 @@ private def minimalTcb (tid : ThreadId) : TCB :=
     spaceCells := SeLe4n.Model.TCB.spaceCellsOf ⟨0⟩ ⟨0⟩
     ipcBuffer := (SeLe4n.VAddr.ofNat 0) }
 
-private def mkNotifObjectEntry (oid : ObjId) : ObjectEntry :=
+private def mkNotifObjectEntry (oid : ObjId) (notif : Notification := irqBoundNotif) :
+    ObjectEntry :=
   { id := oid
-    obj := .notification minimalNotif
+    obj := .notification notif
     hSlots := fun cn h => by cases h
     hMappings := fun vs h => by cases h }
 
@@ -187,16 +193,36 @@ def ak9c_03_non_notification_rejected : IO Unit := do
     { irqTable := [{ irq := ⟨1⟩, handler := oid }],
       initialObjects := [mkTcbObjectEntry oid] }
   expect "AK9-C-03 TCB handler rejected"
-    (irqHandlersReferenceNotifications cfg = false)
+    (irqHandlersAndNotificationsReciprocal cfg = false)
 
-/-- AK9-C: IRQ handler pointing to a notification object is accepted. -/
+/-- AK9-C: IRQ handler pointing to a notification that records the interrupt
+    is accepted. -/
 def ak9c_04_notification_accepted : IO Unit := do
   let oid : ObjId := ObjId.ofNat 10
   let cfg : PlatformConfig :=
     { irqTable := [{ irq := ⟨1⟩, handler := oid }],
       initialObjects := [mkNotifObjectEntry oid] }
   expect "AK9-C-04 notification handler accepted"
-    (irqHandlersReferenceNotifications cfg = true)
+    (irqHandlersAndNotificationsReciprocal cfg = true)
+
+/-- AK9-C: a handler whose notification does not record the interrupt is
+    rejected — the table would name an object that does not name it back. -/
+def handlerWithoutNotificationRecordRejected : IO Unit := do
+  let oid : ObjId := ObjId.ofNat 10
+  let cfg : PlatformConfig :=
+    { irqTable := [{ irq := ⟨1⟩, handler := oid }],
+      initialObjects := [mkNotifObjectEntry oid minimalNotif] }
+  expect "a handler whose notification does not record the interrupt is rejected"
+    (irqHandlersAndNotificationsReciprocal cfg = false)
+
+/-- AK9-C: a notification that records an interrupt no IRQ names is rejected —
+    the other half of the reciprocity. -/
+def notificationRecordNoIrqNamesRejected : IO Unit := do
+  let oid : ObjId := ObjId.ofNat 10
+  let cfg : PlatformConfig :=
+    { irqTable := [], initialObjects := [mkNotifObjectEntry oid] }
+  expect "a notification recording an interrupt no IRQ names is rejected"
+    (irqHandlersAndNotificationsReciprocal cfg = false)
 
 -- ============================================================================
 -- AK9-F: classifyMemoryRegionChecked + applyMachineConfigChecked
@@ -2747,6 +2773,8 @@ def main : IO Unit := do
   ak9c_02_missing_handler_rejected
   ak9c_03_non_notification_rejected
   ak9c_04_notification_accepted
+  handlerWithoutNotificationRecordRejected
+  notificationRecordNoIrqNamesRejected
   ak9f_01_classify_empty_map
   ak9f_02_classify_unmapped
   ak9f_03_classify_mapped
