@@ -22308,4 +22308,39 @@ run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedWithIdleThreadsFor_
 run_check "INVARIANT" rg -n '^theorem startInitialThreads_untypedsSole($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean
 run_check "INVARIANT" rg -n -U '^  have hSole := startInitialThreads_untypedsSole _ _ _ hStart\n    ⟨bootFromPlatformCheckedWithIdleThreadsFor_ok_untypedCapUnique cores config base hBase,\n      bootFromPlatformCheckedWithIdleThreadsFor_ok_untypedsUncarved cores config base hBase⟩\n  exact linkBootCapabilities_bootLinkedShape config started' SeLe4n/Platform/Boot/InitialThreads.lean
 run_negative_check "INVARIANT" rg -n '\bstoreObject_absent_preserves_capabilityInvariantBundle\b' SeLe4n
+
+# --- The tables that name objects by id, and the objects' back-links to them ---
+# Three tables name kernel objects outside every slot (the service registry,
+# the interrupt-handler table, the service graph).  Each reference is answered
+# by the object it names, or by the table holding no entry at all; these
+# anchors hold the relation, not the names.
+#
+# The invariant states each direction, so a back-link can be read in place of a
+# table walk.  The registry's two directions, the interrupt table's two, and
+# the service graph's emptiness, in one structure.
+run_check "INVARIANT" rg -n -U '^structure SystemState\.tableReferencesRecorded \(st : SystemState\) : Prop where(\n([ \t][^\n]*)?)*\n  registry : ∀ \(sid : ServiceId\) \(reg : ServiceRegistration\),(\n([ \t][^\n]*)?)*\n  serviceCodes : ∀ \(e : SeLe4n\.ObjId\) \(n : Nat\), \(objTableBackLinks st\.objects\[e\]\?\)\.1 = n \+ 1 →(\n([ \t][^\n]*)?)*\n  irqHandlers : ∀ \(irq : SeLe4n\.Irq\) \(n : SeLe4n\.ObjId\), st\.irqHandlers\[irq\]\? = some n →(\n([ \t][^\n]*)?)*\n  irqBound : ∀ n : SeLe4n\.ObjId, \(objTableBackLinks st\.objects\[n\]\?\)\.2 = true →(\n([ \t][^\n]*)?)*\n  servicesEmpty : st\.services\.slotsEmpty$' SeLe4n/Model/TableReferences.lean
+# The consumer: clear back-links mean no table names the object.  Without this
+# the fields would be recorded and never read.
+run_check "INVARIANT" rg -n '^theorem SystemState\.tableBackLinksClear\.namedByNone($|[ ({:\[\]])' SeLe4n/Model/TableReferences.lean
+# The two writers of a registration code keep the invariant.  A writer that
+# stopped preserving it would leave the back-link and the table disagreeing.
+run_check "INVARIANT" rg -n '^theorem registerService_preserves_tableReferencesRecorded($|[ ({:\[\]])' SeLe4n/Kernel/Service/Registry/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem revokeService_preserves_tableReferencesRecorded($|[ ({:\[\]])' SeLe4n/Kernel/Service/Registry/Invariant.lean
+# The registration's validity and uniqueness are now derived from the
+# back-links, not separately maintained: one question, one answer.
+run_check "INVARIANT" rg -n '^theorem registryEndpointValid_of_tableReferencesRecorded($|[ ({:\[\]])' SeLe4n/Kernel/Service/Registry/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem registryEndpointUnique_of_tableReferencesRecorded($|[ ({:\[\]])' SeLe4n/Kernel/Service/Registry/Invariant.lean
+# The registry's own check reads the endpoint's field; the registry fold it
+# replaced is gone, so the two cannot drift apart.
+run_negative_check "INVARIANT" rg -n '\bhasEndpointRegistered\b' SeLe4n tests
+# Every kind-preserving write carries both back-links.  Drop the conjunct and
+# an endpoint write could silently forget the registration recorded on it.
+run_check "INVARIANT" rg -n -U '^def kindPreservingWrite \(st st. : SystemState\) : Prop :=(\n([ \t][^\n]*)?)*\n      post\.bindingCodes = pre\.bindingCodes ∧ post\.tableBackLinks = pre\.tableBackLinks$' SeLe4n/Model/State.lean
+# The boot refuses what would come up violating the invariant: an endpoint
+# already carrying a registration, and an interrupt table that is not
+# reciprocal with the notifications' flags -- BOTH directions, since a handler
+# whose notification does not record it and a notification recording an
+# interrupt no IRQ names each break a different conjunct.
+run_check "INVARIANT" rg -n -U '^def bootSafeEndpointCheck[^\n]*(\n([ \t][^\n]*)?)*ep\.serviceCode == 0' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n -U '^def irqHandlersAndNotificationsReciprocal \(config : PlatformConfig\) : Bool :=\n  config\.irqTable\.all \(fun irq =>(\n([ \t][^\n]*)?)*\n      \| \.notification n => n\.irqBound(\n([ \t][^\n]*)?)*\n  config\.initialObjects\.all fun e =>(\n([ \t][^\n]*)?)*\n      !n\.irqBound \|\| config\.irqTable\.any fun irq => irq\.handler == e\.id' SeLe4n/Platform/Boot.lean
 finalize_report
