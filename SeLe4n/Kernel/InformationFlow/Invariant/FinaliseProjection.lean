@@ -1511,8 +1511,7 @@ theorem finaliseSchedContextDeschedule_hidden (ctx : LabelingContext) (observer 
   · rfl
 
 /-- **A thread's finalisation is invisible** when the thread and what its steps
-write are hidden: the unbinds keep what the cancel reads, and the destroy
-cleanup is the identity on the finalised thread (`finaliseThread_eq`). -/
+write are hidden: the unbinds keep what the cancel reads. -/
 theorem finaliseThread_hidden (ctx : LabelingContext) (observer : IfObserver)
     {st : SystemState} {x : SeLe4n.ObjId} (hInv : st.objects.invExt)
     (hValid : LabelingContextValid ctx)
@@ -1523,7 +1522,7 @@ theorem finaliseThread_hidden (ctx : LabelingContext) (observer : IfObserver)
       threadObservable ctx observer server = false)
     (hX : objectObservable ctx observer x = false) (hH : threadFinaliseHidden ctx observer st x) :
     projectState ctx observer (finaliseThread x st) = projectState ctx observer st := by
-  rw [finaliseThread_eq]
+  unfold finaliseThread; dsimp only
   split
   · next hAd =>
     obtain ⟨t, hO⟩ : ∃ t, st.getObject? x = some (.tcb t) := by

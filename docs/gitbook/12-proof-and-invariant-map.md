@@ -127,8 +127,8 @@ capability included, with every core's FP/SIMD and resident hold released and
 a remote core running it stalled until it has left it, as seL4's
 `remoteTCBStall` does (`stallChangedCores_eq`, `threadRetirable_currentNowhere`) —
 and a scheduling context is unbound from its thread, before the retire (`finaliseThread`,
-`finaliseSchedContext`, seL4's `finaliseCap`), through the destroy cleanup
-`lifecyclePreRetypeCleanup`, with the same bundles and the run-queue entry
+`finaliseSchedContext`, seL4's `finaliseCap`), the context's through the
+destroy cleanup `lifecyclePreRetypeCleanup`, with the same bundles and the run-queue entry
 stage kept (`finaliseFinalObject_runQueueEntryStage`); since `v0.36.136` a reply
 a caller waits on is removed (`reply_remove`: the caller's call cancelled and
 the caller made inactive, a reply heading a stack popped first as `reply_pop`
@@ -143,7 +143,12 @@ emptied first by seL4's zombie loop (`zombieDeleteAt`, bounded by
 `zombieDeleteAt_run`), so a thread's delete of its own last capability runs end
 to end, set-space deletes each old root through the same loop, and an untyped
 with children is spliced out of the derivation tree, its recorder adopting
-them (`retireUnrecord`, kept by `TreeShapeOver.retire`); any other busy kernel
+them (`retireUnrecord`, kept by `TreeShapeOver.retire`); since `v0.36.141` the
+retire of an endpoint, notification, reply, CNode or thread reads the object's
+own fields instead of walking the object table, no object naming an admitted
+one on a reachable state (`passiveObjectQuiescent.namedByNone`,
+`threadRetirable.namedByNone`), and a reply a receiver has stashed is kept
+(`replyStashedAt`); any other busy kernel
 object still outlives its last capability until its kind's finalise lands
 ([`SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) §8.6).  Every slot write keeps the bundle,
 the untyped carve included (`untypedRetypeObject_preserves_capabilityInvariantBundle`;

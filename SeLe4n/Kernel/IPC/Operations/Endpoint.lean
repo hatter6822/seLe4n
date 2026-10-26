@@ -5602,7 +5602,8 @@ detaches a context from a stack of two or more frames (seL4's `schedContext_unbi
 clears the head's `replyNext` alone).  seL4's `reply_remove` takes the same arm —
 `if (prev_ptr) prev->replyNext = 0` — and without it the frame below keeps naming a
 reply whose links the consume clears, so the frame below is never a stack top again
-and the removed reply's `storeNamesNone` retire test refuses it forever.  `.error` when the frame
+and the removed reply is left named by a `next` its own cleared `prev` does not
+answer, the dangling link `donationChainWellFormed.nextLinkReciprocal` excludes.  `.error` when the frame
 above does not resolve or does not point back (`.invalidArgument`): a frame above
 that does not name this frame as its `prev` would be rewritten on the strength of a
 stale upward link, which is exactly the trust `Reply.consumed` withholds from such

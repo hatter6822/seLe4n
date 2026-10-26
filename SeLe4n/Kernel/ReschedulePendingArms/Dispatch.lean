@@ -111,7 +111,7 @@ theorem SchedContextBinding.scCode_of_scId? {b : SchedContextBinding} {sc : SeLe
 
 /-- **The retire keeps the key of every thread it keeps**: the thread's own
 fields are untouched, and the scheduling context its binding names is named by
-it, so the retire scan refuses that context and it stays. -/
+it, so the retire guard refuses that context and it stays. -/
 theorem retireFinalObject_schedKeyView (ec : CoreId) (target recorder : Nat) (st : SystemState)
     (hObjInv : st.objects.invExt) {t : SeLe4n.ThreadId} {x : TCB}
     (hx : (retireFinalObject ec target recorder st).getTcb? t = some x) :

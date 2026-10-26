@@ -4060,22 +4060,56 @@ theorem passiveObjectQuiescent_bindingCodes {st : SystemState} {x : SeLe4n.ObjId
     | tcb _ => exact absurd hP id
     | _ => rfl
 
-/-- **An unreferenced passive object is detached from everything the bundle
+/-- **No thread is queued on a quiescent passive object**: one queued on it
+names an endpoint there (`ipcStateQueueMembershipConsistent`), whose queues are
+empty, so none is blocked on it (`endpointQueues_empty_noneBlocked`). -/
+theorem passiveObjectQuiescent_notQueuedOn {st : SystemState} {x : SeLe4n.ObjId}
+    (hQ : passiveObjectQuiescent st x = true) (hObjInv : st.objects.invExt)
+    (hInv : ipcInvariantFull st) {tid : SeLe4n.ThreadId} {tcb : TCB}
+    (hT : st.objects[tid.toObjId]? = some (.tcb tcb)) : ¬ ipcStateQueuedOn x tcb.ipcState := by
+  intro hB
+  have hM := hInv.ipcStateQueueMembershipConsistent tid tcb hT
+  have hEp : ∃ ep, st.objects[x]? = some (.endpoint ep) := by
+    revert hM hB
+    cases tcb.ipcState <;> simp only [ipcStateQueuedOn, false_imp_iff, imp_false] <;>
+      first
+      | (intro hE hM; subst hE; obtain ⟨ep, hEp, -⟩ := hM; exact ⟨ep, hEp⟩)
+      | trivial
+  obtain ⟨ep, hEp⟩ := hEp
+  obtain ⟨hS, hR⟩ := passiveObjectQuiescent_endpoint hQ hEp
+  exact endpointQueues_empty_noneBlocked hInv hObjInv hEp hS hR hT hB
+
+/-- **A quiescent passive object is detached from everything the bundle
 reads**: it is no thread and no scheduling context, so every clause about the
 object at the key is vacuous; queue links, boundaries and heads name threads,
-so none names it; no thread names it by id (`storeNamesNone`), so none is
-blocked on it, linked to it as its reply, or holds it as its stashed reply; and
-it is quiescent, so as a notification it is bound to no thread. -/
+so none names it; a thread blocked on it would be queued on it
+(`ipcStateQueueMembershipConsistent`), and its queues are empty
+(`endpointQueues_empty_noneBlocked`); a caller's reply link to it is answered by
+its caller (`replyCallerLinkage`), and it has none; a receiver's stash of it is
+recorded on it (`pendingReceiveReplyWellFormed`), and it records no live stash;
+and as a notification it is bound to no thread.  Every fact is read off the
+object's own links. -/
 theorem erasedTargetDetached_of_unreferenced {st : SystemState} {x : SeLe4n.ObjId}
     (hP : passiveKernelObject st.objects[x]?) (hQ : passiveObjectQuiescent st x = true)
-    (hS : storeNamesNone st x = true)
-    (hInv : ipcInvariantFull st) : erasedTargetDetached st x := by
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st) : erasedTargetDetached st x := by
   have hNo : ∀ t : TCB, st.objects[x]? ≠ some (.tcb t) := fun t h => by rw [h] at hP; exact hP
   have hNe : ∀ (oid : SeLe4n.ObjId) (t : TCB), st.objects[oid]? = some (.tcb t) → oid ≠ x :=
     fun oid t h hEq => hNo t (hEq ▸ h)
   have hNoSc : ∀ (s : SeLe4n.SchedContextId) (sc : SchedContext),
       st.objects[s.toObjId]? = some (.schedContext sc) → s.toObjId ≠ x :=
     fun s sc h hEq => by rw [hEq] at h; rw [h] at hP; exact hP
+  have hQueued : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB), st.objects[tid.toObjId]? = some (.tcb tcb) →
+      ¬ ipcStateQueuedOn x tcb.ipcState :=
+    fun _ _ hT => passiveObjectQuiescent_notQueuedOn hQ hObjInv hInv hT
+  have hReplyAt : ∀ (rid : SeLe4n.ReplyId) (r : Reply), rid.toObjId = x →
+      st.objects[rid.toObjId]? = some (.reply r) →
+      r.callerCode = 0 ∧ st.replyStashedAt rid r = false := by
+    intro rid r hEq hR
+    have hR' := hR; rw [hEq] at hR'
+    obtain ⟨h1, h2, -⟩ := passiveObjectQuiescent_reply hQ hR'
+    refine ⟨h1, ?_⟩
+    have : rid = ⟨x.val⟩ := by rw [← hEq]; rfl
+    rw [this]; exact h2
   refine ⟨fun tid tcb scId hT hTB => ?_, fun tid tcb scId owner hT hB => ?_,
     fun t h => absurd h (hNo _), fun t h => absurd h (hNo _), ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
     passiveObjectQuiescent_bindingCodes hP hQ⟩
@@ -4084,8 +4118,8 @@ theorem erasedTargetDetached_of_unreferenced {st : SystemState} {x : SeLe4n.ObjI
   · obtain ⟨⟨sc, hSc, -⟩, -⟩ := hInv.donationOwnerValid tid tcb scId owner hT hB
     exact hNoSc _ _ hSc
   · intro tid tcb hT
-    have h := (objectNamesById_tcb (storeNamesNone_spec hS hT)).1
-    exact ⟨h.1, h.2.1, h.2.2.1⟩
+    refine ⟨fun e => hQueued tid tcb hT ?_, fun e => hQueued tid tcb hT ?_,
+      fun e => hQueued tid tcb hT ?_⟩ <;> rw [e] <;> rfl
   · intro a tcbA b hA hN
     obtain ⟨tcbB, hB, -⟩ := hInv.dualQueueSystemInvariant.linkIntegrity.1 a tcbA hA b hN
     exact hNe _ _ hB
@@ -4108,20 +4142,29 @@ theorem erasedTargetDetached_of_unreferenced {st : SystemState} {x : SeLe4n.ObjI
     · obtain ⟨tcb, hT, -⟩ := hW.2.2.2 tl hTl; exact hNe _ _ hT
   · intro tid tcb hT
     exact tcbQueueChainAcyclic_no_self_loop hInv.dualQueueSystemInvariant.chainAcyclic tid tcb hT
-  · intro tid tcb rid hT hRO
-    exact (objectNamesById_tcb (storeNamesNone_spec hS hT)).2.2.1 rid hRO
-  · intro tid tcb rid hT hPR
-    exact (objectNamesById_tcb (storeNamesNone_spec hS hT)).2.2.2 rid hPR
+  · intro tid tcb rid hT hRO hEq
+    obtain ⟨r, hR, hC⟩ := hInv.replyCallerLinkage.1.1 tid tcb rid hT hRO
+    have h0 := (hReplyAt rid r hEq hR).1
+    rw [Reply.caller, h0] at hC; cases hC
+  · intro tid tcb rid hT hPR hEq
+    obtain ⟨r, hR, hS⟩ := pendingReceiveReplyWellFormed.stashedAt
+      hInv.pendingReceiveReplyWellFormed hT hPR
+    rw [(hReplyAt rid r hEq hR).2] at hS; cases hS
 
 /-- **A retirable thread is detached from everything the bundle reads**: it is
 no endpoint, reply or scheduling context, so no blocked thread, reply link,
 stash, timeout or donation names it (each names a live object of its own
 kind); it is ready and links to no successor (`threadQuiescent`); and no queue
-link or queue boundary names it (`storeNamesThreadNone`). -/
+link or queue boundary names it — a neighbour's link is answered by its own
+(`tcbQueueLinkIntegrity`), which it does not hold, and a queue's ends are
+blocked on the queue (`queueHeadBlockedConsistent`,
+`endpointQueueTailBlockedConsistent`), which it is not. -/
 theorem erasedTargetDetached_of_threadRetirable {st : SystemState} {x : SeLe4n.ObjId}
     (h : threadRetirable st x = true) (hInv : ipcInvariantFull st) :
     erasedTargetDetached st x := by
-  obtain ⟨t, hT, -, -, hQ, -, hS, -⟩ := threadRetirable_parts h
+  obtain ⟨t, hT, hTid, -, hQ, -⟩ := threadRetirable_parts h
+  obtain ⟨-, -, -, -, hQN, hQP, -⟩ := threadQuiescent_codes hQ
+  have hReady := threadQuiescent_ipcState hQ
   have hNoEp : ∀ ep : Endpoint, st.objects[x]? ≠ some (.endpoint ep) := fun ep h' => by
     rw [hT] at h'; cases h'
   have hNoR : ∀ r : Reply, st.objects[x]? ≠ some (.reply r) := fun r h' => by
@@ -4150,27 +4193,23 @@ theorem erasedTargetDetached_of_threadRetirable {st : SystemState} {x : SeLe4n.O
     · rw [hR] at hM; obtain ⟨ep, hEp, -⟩ := hM; exact hNoEp _ hEp
     · rw [hC] at hM; obtain ⟨ep, hEp, -⟩ := hM; exact hNoEp _ hEp
   · intro a tcbA b hA hN hEq
-    have hc := threadOfOptCode_eq_some (n := tcbA.queueNextCode) hN
-    have hn := storeNamesThreadNone_spec hS hA
-    simp [objectNamesThread, hc, hVal b hEq] at hn
+    obtain ⟨tcbB, hB, hBP⟩ := hInv.dualQueueSystemInvariant.linkIntegrity.1 a tcbA hA b hN
+    rw [hEq, hT] at hB; cases hB
+    unfold TCB.queuePrev at hBP; rw [hQP] at hBP; cases hBP
   · intro b tcbB a hB hP hEq
-    have hc := threadOfOptCode_eq_some (n := tcbB.queuePrevCode) hP
-    have hn := storeNamesThreadNone_spec hS hB
-    simp [objectNamesThread, hc, hVal a hEq] at hn
+    obtain ⟨tcbA, hA, hAN⟩ := hInv.dualQueueSystemInvariant.linkIntegrity.2 b tcbB hB a hP
+    rw [hEq, hT] at hA; cases hA
+    unfold TCB.queueNext at hAN; rw [hQN] at hAN; cases hAN
   · intro epId ep hd hEp hH hEq
-    have hn := storeNamesThreadNone_spec hS hEp
+    have hB := hInv.queueHeadBlockedConsistent epId ep hd t hEp (hEq ▸ hT)
     rcases hH with hH | hH
-    · have hc := threadOfOptCode_eq_some (n := ep.sendHeadCode) hH
-      simp [objectNamesThread, hc, hVal hd hEq] at hn
-    · have hc := threadOfOptCode_eq_some (n := ep.recvHeadCode) hH
-      simp [objectNamesThread, hc, hVal hd hEq] at hn
+    · rcases hB.2 hH with e | e <;> rw [hReady] at e <;> cases e
+    · have e := hB.1 hH; rw [hReady] at e; cases e
   · intro epId ep tl hEp hTl hEq
-    have hn := storeNamesThreadNone_spec hS hEp
+    have hB := hInv.endpointQueueTailBlockedConsistent epId ep tl t hEp (hEq ▸ hT)
     rcases hTl with hTl | hTl
-    · have hc := threadOfOptCode_eq_some (n := ep.sendTailCode) hTl
-      simp [objectNamesThread, hc, hVal tl hEq] at hn
-    · have hc := threadOfOptCode_eq_some (n := ep.recvTailCode) hTl
-      simp [objectNamesThread, hc, hVal tl hEq] at hn
+    · rcases hB.2 hTl with e | e <;> rw [hReady] at e <;> cases e
+    · have e := hB.1 hTl; rw [hReady] at e; cases e
   · intro tid tcb hT'
     exact tcbQueueChainAcyclic_no_self_loop hInv.dualQueueSystemInvariant.chainAcyclic tid tcb hT'
   · intro tid tcb rid hT' hRO hEq
@@ -4251,14 +4290,14 @@ theorem erasedTargetDetached_of_schedContextRetirable {st : SystemState} {x : Se
     exact hNoR r (hEq ▸ (SystemState.getReply?_eq_some_iff st rid r).mp hR)
 
 /-- **An admitted erase is detached**: the retire admits a passive object only
-unreferenced and a thread or scheduling context only retirable, and each gives
+quiescent and a thread or scheduling context only retirable, and each gives
 the pack. -/
 theorem erasedTargetDetached_of_admitted {st : SystemState} {x : SeLe4n.ObjId}
     (hAdm : finalRetireAdmitted st x = true) (hE : erasableKernelObject st.objects[x]?)
-    (hInv : ipcInvariantFull st) : erasedTargetDetached st x := by
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st) : erasedTargetDetached st x := by
   by_cases hP : passiveKernelObject st.objects[x]?
   · have hParts := passiveObjectRetirable_parts (finalRetireAdmitted.retirable hAdm hP)
-    exact erasedTargetDetached_of_unreferenced hP hParts.1 hParts.2.1 hInv
+    exact erasedTargetDetached_of_unreferenced hP hParts.1 hObjInv hInv
   · have hK : schedulingKindAt st x = true := by
       rw [schedulingKindAt_iff]
       unfold erasableKernelObject at hE; unfold passiveKernelObject at hP
@@ -4287,7 +4326,7 @@ theorem retireFinalObject_preserves_ipcInvariantFull (ec : Concurrency.CoreId)
   have h0 : ipcInvariantFull (eraseRetiredObject st x) := by
     by_cases hP : erasableKernelObject st.objects[x]?
     · exact eraseWrite_preserves_ipcInvariantFull (eraseRetiredObject_self hP hObjInv) ne0
-        (erasedTargetDetached_of_admitted hAdm hP hInv) hInv
+        (erasedTargetDetached_of_admitted hAdm hP hObjInv hInv) hInv
     · rw [eraseRetiredObject_of_not st x hP]; exact hInv
   obtain ⟨hExt, -, -, -, hW⟩ := retireRecordedObject_frame ec recorder x _ i0 room0
   exact ⟨ipcInvariantFull_of_resetTouchedWrite

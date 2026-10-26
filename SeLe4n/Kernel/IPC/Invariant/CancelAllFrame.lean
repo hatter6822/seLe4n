@@ -832,7 +832,7 @@ theorem finaliseThread_closed (P : SystemState → Prop) (hUnbind : FinaliseUnbi
     (hRep : FinaliseReplyStep P)
     (x : SeLe4n.ObjId) (st : SystemState) (h : P st) :
     P (finaliseThread x st) := by
-  rw [finaliseThread_eq]
+  unfold finaliseThread; dsimp only
   split
   · exact finaliseThreadUnbindSchedContext_closed P hSc _ _ (hRelease _ _
       (finaliseThreadSuspend_closed P hSuspend _ _

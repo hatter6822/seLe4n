@@ -94,6 +94,13 @@ def consistent (V : ReplyViews) : Prop :=
     vw.prevCode = 0 ∧ vw.nextCode = 0) ∧
   (∀ (w : ThreadId) (vw : ReplyView), V w.toObjId = some vw → vw.server ≠ some w)
 
+/-- **A queue that starts nowhere is empty.** -/
+theorem chain_none {V : ReplyViews} {l : List ThreadId} {p : Option ThreadId}
+    (h : V.chain p none l) : l = [] := by
+  cases l with
+  | nil => rfl
+  | cons _ _ => obtain ⟨e, -⟩ := h; cases e
+
 end ReplyViews
 
 /-- WS-ZA ZA4.6: **the reply-waiter queues are consistent** (module docstring). -/

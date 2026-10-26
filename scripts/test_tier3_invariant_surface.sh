@@ -2484,7 +2484,7 @@ run_negative_check "INVARIANT" bash -lc 'rg -n "donationOrigin" SeLe4n/Kernel/IP
 run_check "INVARIANT" bash -lc 'rg -U -n "^structure donationChainWellFormed \(st : SystemState\) : Prop where(\n([ \t][^\n]*)?)*\n  nextLinkReciprocal : ∀ \(rid : SeLe4n\.ReplyId\) \(r : Reply\) \(above : SeLe4n\.ReplyId\)," SeLe4n/Kernel/IPC/Invariant/Defs.lean'
 run_check "INVARIANT" rg -n '^theorem donationChainWellFormed\.not_of_dangling_next($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 run_check "INVARIANT" rg -n '^theorem spliceReplyFrameOutOrSelf_cut_prev_none($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
-run_check "INVARIANT" rg -n '^theorem objectNamesById_of_replyNext($|[ ({:\[\]])' SeLe4n/Kernel/Capability/FinalRetire.lean
+run_check "INVARIANT" rg -n '^theorem passiveObjectQuiescent\.namedByNone ' SeLe4n/Kernel/IPC/Invariant/Reachability.lean
 # The id-reuse closure is structural: an origin counts only while its thread's
 # back-link names the context, the donor's first push writes that back-link, and
 # a thread made at a reused id starts with none.  Live resolver, frozen mirror,
@@ -4096,11 +4096,11 @@ run_check "INVARIANT" rg -n '^theorem finaliseFinalObject_closed($|[ ({:\[\]])' 
 # the pre-state admits it: notification unbind, IPC cancel, suspend (the
 # deschedule wherever the thread is placed, queued or current on any core, the
 # executing core's own thread included, then .Inactive), the release of every
-# core's FP/SIMD and resident hold, the scheduling-context unbind, then the
-# destroy cleanup.  A held or executing thread is finalised, not refused: the
-# admission no longer reads the core holds.  The cleanup is proven the identity
-# on the finalised object and compiled away, so the spec keeps it.
-run_check "INVARIANT" rg -n -U 'def finaliseThread \(x : SeLe4n\.ObjId\) \(st : SystemState\) : SystemState :=\n  if threadFinaliseAdmitted st x then\n[^\n]*\n    finaliseThreadCleanup\n      \(finaliseThreadUnbindSchedContext\n        \(finaliseThreadReleaseCores\n          \(finaliseThreadSuspend\n            \(finaliseThreadEndWaiters\n              \(finaliseThreadReturnLoan\n                \(finaliseThreadCancel\n                  \(finaliseThreadUnbindNotification st tid\) tid\) tid\) tid\) tid\) tid\) tid\) x' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+# core's FP/SIMD and resident hold, then the scheduling-context unbind.  A held
+# or executing thread is finalised, not refused: the admission no longer reads
+# the core holds.  v0.36.141: no destroy cleanup follows; the retire reads what
+# the finalisation left off the thread's own links.
+run_check "INVARIANT" rg -n -U 'def finaliseThread \(x : SeLe4n\.ObjId\) \(st : SystemState\) : SystemState :=\n  if threadFinaliseAdmitted st x then\n[^\n]*\n    finaliseThreadUnbindSchedContext\n      \(finaliseThreadReleaseCores\n        \(finaliseThreadSuspend\n          \(finaliseThreadEndWaiters\n            \(finaliseThreadReturnLoan\n              \(finaliseThreadCancel\n                \(finaliseThreadUnbindNotification st tid\) tid\) tid\) tid\) tid\) tid\) tid\n  else st' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 # The server's waiters are ended as reply_remove ends them, the lender first
 # (its context returned before the suspend), then the plain waiters head first,
 # fuel the server's own count; each step follows the server's live head.
@@ -4246,7 +4246,7 @@ run_check "INVARIANT" rg -n '^theorem finaliseScDescheduleStep_keepsIpcInvariant
 run_check "INVARIANT" rg -n '^theorem finaliseSchedContextUnstack_preserves_donationChainWellFormed($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllReachability.lean
 run_check "INVARIANT" rg -n '^theorem finaliseSchedContextDeschedule_hidden($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/FinaliseProjection.lean
 run_check "INVARIANT" rg -n '^theorem finaliseReply_hidden($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/FinaliseProjection.lean
-run_check "INVARIANT" rg -n '^theorem finaliseThreadCleanup_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_negative_check "INVARIANT" rg -n 'finaliseThreadCleanup' SeLe4n
 run_check "INVARIANT" rg -n '^theorem finaliseSchedContextCleanup_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 run_check "INVARIANT" rg -n '^theorem finaliseThread_closed($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllFrame.lean
 run_check "INVARIANT" rg -n '^theorem finaliseFinalObject_runQueueEntryStage($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Capability.lean
@@ -4340,9 +4340,13 @@ run_check "INVARIANT" rg -n '^theorem retireFinalObject_taint_cleared ' SeLe4n/K
 # it while it is quiescent and nothing names it by id (seL4's finaliseCap of a
 # passive kind with nothing to cancel); the admission is read on the pre-retire
 # state, the passive erase comes first, and a refused passive object outlives its
-# last capability.
+# last capability.  v0.36.141: quiescence is read off the object's own links, a
+# reply's live stash included (seL4's replyTCB), with no walk of the object table.
 run_check "INVARIANT" rg -n -U 'def retireFinalObject[^\n]*(\n([ \t][^\n]*)?){0,4}\n    if finalRetireAdmitted st x then\n      retireRecordedObject executingCore recorder x \(eraseRetiredObject st x\)\n    else st' SeLe4n/Kernel/Capability/FinalRetire.lean
-run_check "INVARIANT" rg -n -U 'def passiveObjectRetirable[^\n]*\n  passiveObjectQuiescent st x && storeNamesNone st x && registryNamesNone st x &&\n    servicesNameNone st x && irqHandlersNameNone st x' SeLe4n/Kernel/Capability/FinalRetire.lean
+run_check "INVARIANT" rg -n -U 'def passiveObjectRetirable[^\n]*\n  passiveObjectQuiescent st x && registryNamesNone st x &&\n    servicesNameNone st x && irqHandlersNameNone st x' SeLe4n/Kernel/Capability/FinalRetire.lean
+run_check "INVARIANT" rg -n -U '  \| some \(\.reply r\) =>\n    r\.callerCode == 0 && !st\.replyStashedAt ⟨x\.val⟩ r && r\.prev\.isNone && r\.next\.isNone' SeLe4n/Kernel/Capability/FinalRetire.lean
+run_check "INVARIANT" rg -n -U '    t\.tid\.val == x\.val && !isIdleThreadId t\.tid && threadQuiescent t &&\n      !threadHeldOnSomeCore st t\.tid && servicesNameNone st x' SeLe4n/Kernel/Capability/FinalRetire.lean
+run_negative_check "INVARIANT" rg -n 'storeNamesNone|storeNamesThreadNone' SeLe4n
 run_check "INVARIANT" rg -n -U 'def finalRetireAdmitted[^\n]*\n  \(!passiveKindAt st x \|\| passiveObjectRetirable st x\) &&\n    \(!schedulingKindAt st x \|\| schedulingObjectRetirable st x\)' SeLe4n/Kernel/Capability/FinalRetire.lean
 # The passive erase runs through the registered erase primitives (no raw
 # object-table write of its own), and its record form is a theorem.
@@ -4367,7 +4371,10 @@ run_check "INVARIANT" rg -n -U '      \| none =>\n        if \(st\.getPageTable\
 run_check "INVARIANT" rg -n '^theorem eraseRetiredObject_frame ' SeLe4n/Kernel/Capability/FinalRetire.lean
 run_check "INVARIANT" rg -n '^theorem eraseRetiredObject_preserves_teardownWellFormed ' SeLe4n/Kernel/Capability/FinalRetire.lean
 run_check "INVARIANT" rg -n '^theorem passiveObjectQuiescent\.slotCap ' SeLe4n/Kernel/Capability/FinalRetire.lean
-run_check "INVARIANT" rg -n '^theorem storeNamesNone_spec ' SeLe4n/Kernel/Capability/FinalRetire.lean
+run_check "INVARIANT" rg -n '^theorem threadRetirable\.namedByNone ' SeLe4n/Kernel/IPC/Invariant/Reachability.lean
+run_check "INVARIANT" rg -n '^theorem pendingReceiveReplyWellFormed\.stashedAt ' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem passiveObjectQuiescent_notQueuedOn ' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
+run_check "INVARIANT" rg -n '^theorem SystemState\.runQueueRefined\.neighbour_queued ' SeLe4n/Kernel/IPC/Invariant/Reachability.lean
 run_check "INVARIANT" rg -n '^theorem eraseWrite_preserves_ipcInvariantFull$' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
 run_check "INVARIANT" rg -n '^theorem erasedTargetDetached_of_unreferenced ' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
 run_check "INVARIANT" rg -n '^theorem RunQueueStage\.of_retireTouched ' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Capability.lean

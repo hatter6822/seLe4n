@@ -87,6 +87,20 @@ theorem linked_append (f : ThreadId → Nat) (pre : Nat) (A B : List ThreadId) :
   | nil => simp
   | cons x r ih => simp only [List.cons_append, linked_cons, ih, lastCode_cons, and_assoc]
 
+/-- **A member's link names its list's predecessor or another member**: what
+a reader of one link learns of the thread it names. -/
+theorem linked_mem {f : ThreadId → Nat} {pre : Nat} {l : List ThreadId} (h : Linked f pre l)
+    {x : ThreadId} (hx : x ∈ l) : f x = pre ∨ ∃ z ∈ l, f x = code z := by
+  induction l generalizing pre with
+  | nil => cases hx
+  | cons y r ih =>
+    obtain ⟨hy, hr⟩ := h
+    rcases List.mem_cons.mp hx with e | hm
+    · subst e; exact .inl hy
+    · rcases ih hr hm with e | ⟨z, hz, ez⟩
+      · exact .inr ⟨y, List.mem_cons_self .., e⟩
+      · exact .inr ⟨z, List.mem_cons_of_mem _ hz, ez⟩
+
 /-- `Linked` reads `f` only at the members. -/
 theorem linked_congr {f g : ThreadId → Nat} {pre : Nat} {l : List ThreadId}
     (h : ∀ x ∈ l, f x = g x) : Linked f pre l ↔ Linked g pre l := by

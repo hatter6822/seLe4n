@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.140` (`lakefile.toml`) |
+| **Package version** | `0.36.141` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 511,247 across 458 Lean files |
-| **Test LoC** | 87,474 across 70 Lean test suites |
-| **Proved declarations** | 18,596 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 511,453 across 458 Lean files |
+| **Test LoC** | 87,512 across 70 Lean test suites |
+| **Proved declarations** | 18,591 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits) |
 | **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2), and **BP4.1/BP4.2 (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type)** at v0.36.2 (§6.2.9), and **BP4.3/BP4.4 (the firmware's device tree reaching Lean, and the entry booting the deployment on the variant it describes)** at v0.36.2 (§6.2.10), and **BP4.5 (the image's loaded bytes cleaned to the Point of Unification before any thread can fetch)** at v0.36.2 (§6.2.11), and **BP4.6 (the verified board's RAM outside the kernel's extent mapped, and the boot map sealed before any secondary is released)** and **BP4.7 (that RAM handed to the root task as untypeds)** at v0.36.2 (§6.2.12), and **BP5.1 (the kernel image, a bare-metal binary entered at `_start` under `link.ld`)** and **BP5.2 (the Lean kernel linked into it, under `--gc-sections` from the archive lane's roots)** and **BP5.3 (the firmware's boot files, `kernel8.img` and `config.txt`, cut from that image and checked against it)** and **BP5.4 (its size and section map published with every CI run)** at v0.36.2 (§6.2.13), and **BP5.5 (the firmware's EL2 entry dropped to EL1, with the PSCI conduit following the entry level)** at v0.36.2 (§6.2.15), and **BP6 (every PE marks itself ready after its own per-PE runtime handshake and before it unmasks IRQs, and the boot halts unless every declared PE serves the kernel)** at v0.36.2 (§6.2.16), and **BP7.10 (the first gigabyte's RAM read off the firmware's account, and the constant boot map shrunk to the kernel's reserved extent)** at v0.36.3 (§6.2.17), and **BP7.1 slices 1–3 (frame capabilities, the untyped carve that mints them, and the untyped reset that returns their memory)** at v0.36.4, v0.36.5 and v0.36.6, slice 4a (child untypeds and subtree resets) at v0.36.8, the in-place VSpace-root refusal at v0.36.9, and slice 4b's VSpace-root carve at v0.36.10, `.tcbSetSpace` (a thread runs in a carved address space) at v0.36.11, intermediate page tables at v0.36.12, and every configured address space owning a table page at v0.36.13, which completes BP7.1 (§8.10.2a); BP7.2's user window and 16-bit hardware ASIDs at v0.36.14 and its physical-write ledger and translation install at v0.36.15; BP7.3–BP7.9 at v0.36.16–v0.36.22 (the whole trap frame saved, per-core restore staging, unblock-frame delivery, the live context restore, the delivered declassified badge, overflow message registers, lazily switched FP/SIMD state); and BP7.11 (the boot starts both initial threads, one per domain) at v0.36.23, which completes BP7; BP8.1's first slice (the image built for QEMU's `virt` — its device map from `src/board.rs`, its link script derived from `link.ld`, an arm64 Image header on `_start` — booted there at EL1 and at EL2 by `scripts/test_qemu.sh`) at v0.36.24, and its second (the Lean `virt` binding `SeLe4n/Platform/QemuVirt/` — its board check the RPi5 bridge's own coverage predicates, the RPi5 deployment's layout on it with every boot gate decided, and its own boot entry `lean_kernel_main_qemu_virt`, held by the boot-entry contract's table to its own approved call) at v0.36.25, and its third (the Lean-linked image booted by `scripts/test_qemu.sh --lean-kernel` on four PEs at EL1 and EL2 to every core's first idle dispatch, on every PR — §6.2.18) at v0.36.26, completing BP8.1, and BP8.2 (the four-PE bring-up gate, executed on every PR — §6.2.18) at v0.36.27. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -4951,11 +4951,18 @@ retire also takes an endpoint, a notification, a reply or a CNode whose final
 capability is destroyed, when seL4's `finaliseCap` would have nothing to cancel
 and nothing names the object outside a slot (`passiveObjectRetirable`): the
 object is quiescent (`passiveObjectQuiescent`: an endpoint's two queues empty, a
-notification with no waiter and no bound thread, a reply with no caller and no
-stack link, a CNode whose every slot is empty), no object names it by id
-(`storeNamesNone`: a thread blocked on it, bound to it or linked to it as its
-reply, another reply's stack link, a scheduling context's reply-stack head), and
-no service registration, service-graph entry or interrupt handler names it.  It
+notification with no waiter and no bound thread, a reply with no caller, no live
+stash and no stack link, a CNode whose every slot is empty), and no service
+registration, service-graph entry or interrupt handler names it.  Quiescence is
+read off the object's own links alone (`v0.36.141`): under the reachable
+invariants no object names a quiescent passive object by id
+(`passiveObjectQuiescent.namedByNone` — a thread blocked on it, bound to it or
+linked to it as its reply or stash, another reply's stack link either way, a
+scheduling context's reply-stack head), each reference answered on the object's
+own side by the reciprocity part 27 proved.  A reply is retired only while no
+receiver has it stashed: its record names its last stasher (`stasherCode`,
+seL4's `replyTCB`), and the retire re-checks that thread
+(`SystemState.replyStashedAt`), one field and one thread.  It
 leaves the store first (`retirePassiveObject`), then its recorder's child list,
 through the same `retireRecordedObject` as a carved object.  **A kernel object
 that is not quiescent, or is named outside a slot, still outlives its last
@@ -4964,8 +4971,9 @@ by its untyped: an endpoint or notification with waiters or a bound thread
 until `v0.36.134` (row 23 of `docs/planning/UNTYPED_RESET_PLAN.md`, below), a TCB or scheduling context
 until row 24, a busy reply or a scheduling context with a reply stack until
 row 25, and a CNode holding capabilities until row 26 (the zombie loop).  The
-names-by-id check walks the object table once per final delete of a passive
-kind (`docs/REGISTERED_DEBT.md`).
+service-registry, service-graph and interrupt-handler checks walk their tables
+once per final delete of a passive kind (`docs/REGISTERED_DEBT.md`, plan row
+30).
 
 The space-slot replace of `copyThreadSpaces` (seL4's `invokeTCB_ThreadControl`,
 which runs `cteDelete` on the TCB's CTable and VTable slots) retires what each
@@ -5134,9 +5142,16 @@ a message delivered to the thread and not yet read is dropped by the suspend's
 mark (`finalisedSuspendMark`), as the suspend syscall's `clearPendingState`
 drops it.  A scheduling context's refusals are narrowed by part 25 below.  A
 refused object is not finalised and the retire keeps it
-(`docs/REGISTERED_DEBT.md`).  On a finalised object the cleanup is proven to be
-the identity (`finaliseThreadCleanup_eq`, `finaliseSchedContextCleanup_eq`), so
-its compiled form is dropped (`@[csimp]`).  The finalisation keeps the IPC,
+(`docs/REGISTERED_DEBT.md`).  A finalised thread has no cleanup step: the
+retire reads what the finalisation left off the thread's own links
+(`threadRetirable`: quiescent, held by no core, owning no service), and under
+the reachable invariants and the scheduling-context binding pair no object names
+such a thread (`threadRetirable.namedByNone` — a queue, run-queue or
+reply-waiter neighbour, a queue end, a notification binding, a reply caller, a
+donation owner or a bound context; since `v0.36.141`).  On a finalised
+scheduling context the cleanup is proven to be the identity
+(`finaliseSchedContextCleanup_eq`), so its compiled form is dropped
+(`@[csimp]`).  The finalisation keeps the IPC,
 reachable-state, reply-waiter, donation, run-queue (`RunQueueEntryStage`) and
 reschedule bundles over the new steps, and it is invisible to an observer the
 thread or context and every object it touches are hidden from
@@ -5307,7 +5322,7 @@ root slot still non-leaf, the root delete makes no write
 capability, so a retry continues from the slot state, as seL4's preempted
 `cteDelete` does, and a revoke that keeps a child stops with `.ok`.  That the
 fuel always suffices on a reachable state is not yet proven
-(`docs/REGISTERED_DEBT.md`, plan row 30).  **Set-space** deletes each old root
+(`docs/REGISTERED_DEBT.md`, plan row 31).  **Set-space** deletes each old root
 through the same loop (`copyThreadSpacesZombie`), so a thread's last
 capability to its old CSpace root CNode empties and retires it; set-space is a
 remote writer, in the capability-destroy footprint group.  **An untyped with
@@ -5329,11 +5344,13 @@ bound notification and the notification's bound thread name each other
 (`notificationBindingReciprocal`), a thread with an endpoint-queue successor is
 blocked on an endpoint (`endpointQueueLinksOnlyBlocked`), and every reply
 frame's upward link is answered (`donationChainWellFormed.nextLinkReciprocal`),
-each preserved by every transition and established at boot.  Still open:
-the retire walks the object table for references by id (plan row 28) and the
-service registry, the interrupt-handler table and the service graph (plan row
-29), and the finalise's admission is not carried across its own steps (plan
-row 30); each step and the retire re-check their guards.
+each preserved by every transition and established at boot.  **The own-link
+reads** (`v0.36.141`, plan row 28): the passive kinds and the thread are
+retired on their own fields, as described above.  Still open: the retire walks
+the store for a scheduling context's references (plan row 29) and the service
+registry, the interrupt-handler table and the service graph (plan row 30), and
+the finalise's admission is not carried across its own steps (plan row 31);
+each step and the retire re-check their guards.
 Exerciser: `populated-cnode-delete`, `space-cnode-cap-delete`,
 `spaced-tcb-delete`, `tcb-set-space` and `set-carved-tcb-space` read 0 heap
 cells: a thread's space-slot delete keeps the slot's cell as its spare record
@@ -5822,7 +5839,7 @@ seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
   (`untypedResetFromCap`) and first refuses (`.revocationRequired`) while that
   slot has a derivation child, seL4's per-slot `ensureNoChildren`
   (`untypedResetFromCap_ok`); the store-wide check stays beside it until the
-  reset is restated as seL4's (WS-ZA ZA5.4 part 31, `docs/REGISTERED_DEBT.md`).
+  reset is restated as seL4's (WS-ZA ZA5.4 part 32, `docs/REGISTERED_DEBT.md`).
   Then every
   mapping of a page meeting the region is removed through the `.vspaceUnmap`
   arm's own transition — TLB flush, shootdown round, initiator drain,

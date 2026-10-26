@@ -24,12 +24,14 @@ store's one erase, which the untyped reset uses too).
 
 **The passive kernel kinds** (part 22, `v0.36.133`).  An endpoint, a
 notification, a reply or a CNode goes the same way when seL4's `finaliseCap`
-would have nothing to cancel (`passiveObjectQuiescent`) and nothing names it
-outside a slot (`passiveObjectRetirable`: no object by id, no service
-registration or graph entry, no interrupt handler); it leaves the store first
-(`eraseRetiredObject`), then its recorder's list.  One that fails either check
-outlives its last capability, recorded, until the finalise of its kind lands
-(`docs/planning/UNTYPED_RESET_PLAN.md` rows 23, 25 and 26).
+would have nothing to cancel (`passiveObjectQuiescent`, read off the object's
+own links) and nothing names it outside a slot (`passiveObjectRetirable`: no
+service registration or graph entry, no interrupt handler); it leaves the store
+first (`eraseRetiredObject`), then its recorder's list.  No object names a
+quiescent one by id under the reachable invariants
+(`passiveObjectQuiescent.namedByNone`), so the guard walks no object table.  One
+that fails either check outlives its last capability, recorded; its
+finalisation (`finaliseFinalObject`) is what brings it here.
 
 **What is decided before the slot is emptied** (`slotRetireTarget`): the
 capability names the object (`Capability.namedObject`), the capability is final
@@ -482,7 +484,9 @@ on it (`ipcCodesName`), bound to it as its notification, or linked to it as
 its reply (a caller's reply, a receiver's stashed reply); another reply's
 stack link to it; a scheduling context whose reply stack it heads.  These are
 every reference by id an endpoint, a notification, a reply or a CNode can have
-in an object; a capability naming it lies in a slot, which finality reads. -/
+in an object; a capability naming it lies in a slot, which finality reads.
+The retire reads none of these: each is answered by the object's own links
+under the reachable invariants (`passiveObjectQuiescent.namedByNone`). -/
 @[inline] def objectNamesById (o : KernelObject) (x : SeLe4n.ObjId) : Bool :=
   match o with
   | .tcb t =>
@@ -493,10 +497,6 @@ in an object; a capability naming it lies in a slot, which finality reads. -/
       (match r.next with | some (.frame a) => a.toObjId == x | _ => false)
   | .schedContext sc => match sc.scReply with | some r => r.toObjId == x | none => false
   | _ => false
-
-/-- **No object names `x` by id**: the object table walked once, in place. -/
-@[inline] def storeNamesNone (st : SystemState) (x : SeLe4n.ObjId) : Bool :=
-  st.objects.fold true fun acc _ o => acc && !objectNamesById o x
 
 /-- **No service registration holds a capability naming `x`**: a registration
 keeps its endpoint's capability outside every slot, so the finality the tree
@@ -526,25 +526,30 @@ notification, a reply or a CNode. -/
 on its last capability has nothing to cancel: an endpoint whose two queues are
 empty (`cancelAllIPC` wakes nobody); a notification with no waiter and no bound
 thread (`unbindMaybeNotification` and `cancelAllSignals` do nothing); a reply
-with no caller and no stack link (`reply_remove` does nothing); a CNode whose
-every slot is empty (the zombie loop deletes nothing), read as its occupancy
-links heading nowhere (`CNode.occHead`), one word. -/
+with no caller, stashed by no receiver and with no stack link (`reply_remove`
+does nothing; seL4 clears a reply's `replyTCB` before it frees it, and a
+stashed reply's stasher is read through the reply's own record,
+`SystemState.replyStashedAt`, one field and one thread); a CNode whose every
+slot is empty (the zombie loop deletes nothing), read as its occupancy links
+heading nowhere (`CNode.occHead`), one word.  These own-link reads are the
+whole test: under the reachable invariants no object names a quiescent
+passive object (`passiveObjectQuiescent.namedByNone`). -/
 @[inline] def passiveObjectQuiescent (st : SystemState) (x : SeLe4n.ObjId) : Bool :=
   match st.getObject? x with
   | some (.endpoint ep) => ep.sendHeadCode == 0 && ep.recvHeadCode == 0
   | some (.notification n) => n.waitHeadCode == 0 && n.boundTCBCode == 0
-  | some (.reply r) => r.callerCode == 0 && r.prev.isNone && r.next.isNone
+  | some (.reply r) =>
+    r.callerCode == 0 && !st.replyStashedAt ⟨x.val⟩ r && r.prev.isNone && r.next.isNone
   | some (.cnode cn) => cn.occHead == 0
   | _ => false
 
 /-- **Whether a final delete retires the passive object at `x`**: it is
-quiescent, and nothing names it by id: no object (`storeNamesNone`), no
-service registration or service-graph entry, no interrupt handler.  A passive
-object that fails this outlives its last capability, as every kernel object did
-before `v0.36.133`; the cancelling finalisation that would retire it is
-`docs/planning/UNTYPED_RESET_PLAN.md` rows 23, 25 and 26. -/
+quiescent, read off its own links, and no service registration, service-graph
+entry or interrupt handler names it.  A passive object that fails this outlives
+its last capability, as every kernel object did before `v0.36.133`; the
+cancelling finalisation that brings one here is `finaliseFinalObject`. -/
 @[inline] def passiveObjectRetirable (st : SystemState) (x : SeLe4n.ObjId) : Bool :=
-  passiveObjectQuiescent st x && storeNamesNone st x && registryNamesNone st x &&
+  passiveObjectQuiescent st x && registryNamesNone st x &&
     servicesNameNone st x && irqHandlersNameNone st x
 
 -- ============================================================================
@@ -564,26 +569,29 @@ linked to it in an endpoint queue, a notification queue, a run queue or a
 reply-waiter queue, heading a reply-waiter queue at it, donated a context it
 owns, or blocked on a reply it answers; an endpoint or a notification whose
 queue starts or ends at it, a notification bound to it; a reply whose caller it
-is; a scheduling context bound to it or lent from it. -/
+is; a scheduling context bound to it.  Each link is read as its readers read
+it: a run-queue neighbour code only through a core code naming a core
+(`TCB.runLinkOn`), a binding's owner code only through a context code
+(`SchedContextBinding.ofCodes`).  The retire reads none of these: under the
+reachable invariants and the binding pair no object names a retirable thread
+(`threadRetirable.namedByNone`). -/
 @[inline] def objectNamesThread (o : KernelObject) (c : Nat) : Bool :=
   match o with
   | .tcb t =>
     t.queueNextCode == c || t.queuePrevCode == c || t.queuePPrevCode == c + 1 ||
-      t.ntfnNextCode == c || t.ntfnPrevCode == c || t.runNextCode == c || t.runPrevCode == c ||
-      t.runBucketNextCode == c || t.runBucketPrevCode == c || t.replyWaiterNextCode == c ||
-      t.replyWaiterPrevCode == c || t.replyWaitersHeadCode == c || t.scBindingOwnerCode == c ||
+      t.ntfnNextCode == c || t.ntfnPrevCode == c ||
+      (t.runCoreCode != 0 && t.runCoreCode ≤ Concurrency.numCores &&
+        (t.runNextCode == c || t.runPrevCode == c || t.runBucketNextCode == c ||
+          t.runBucketPrevCode == c)) ||
+      t.replyWaiterNextCode == c || t.replyWaiterPrevCode == c ||
+      t.replyWaitersHeadCode == c || (t.scBindingScCode != 0 && t.scBindingOwnerCode == c) ||
       t.ipcStateCode == c + 4
   | .endpoint ep =>
     ep.sendHeadCode == c || ep.sendTailCode == c || ep.recvHeadCode == c || ep.recvTailCode == c
   | .notification n => n.waitHeadCode == c || n.waitTailCode == c || n.boundTCBCode == c
   | .reply r => r.callerCode == c
-  | .schedContext sc => sc.boundThreadCode == c || SeLe4n.ThreadId.optCode sc.donationOrigin == c
+  | .schedContext sc => sc.boundThreadCode == c
   | _ => false
-
-/-- **No object names the thread whose code is `c`**: the table walked once, in
-place, as `storeNamesNone` walks it. -/
-@[inline] def storeNamesThreadNone (st : SystemState) (c : Nat) : Bool :=
-  st.objects.fold true fun acc _ o => acc && !objectNamesThread o c
 
 /-- **Whether a thread's own record is quiescent but for its space slots**, so
 seL4's `suspend` has nothing left to do and nothing it holds names another
@@ -611,17 +619,16 @@ slots (`threadLinksQuiescent`), and its two space slots empty. -/
   threadLinksQuiescent t && t.spaceCells[0].isNone && t.spaceCells[1].isNone
 
 /-- **Whether a final delete retires the thread at `x`**: the thread stored
-under its own id, no core's idle thread, quiescent (`threadQuiescent`), held by
-no core (`threadHeldOnSomeCore`: current, FP owner or resident nowhere),
-named by no object (`storeNamesThreadNone`) and owning no service.  The
-finalisation (`finaliseSchedulingObject`) is what brings a thread here; one
-that fails outlives its last capability. -/
+under its own id, no core's idle thread, quiescent on its own links
+(`threadQuiescent`), held by no core (`threadHeldOnSomeCore`: current, FP owner
+or resident nowhere) and owning no service.  The finalisation
+(`finaliseSchedulingObject`) is what brings a thread here; one that fails
+outlives its last capability. -/
 @[inline] def threadRetirable (st : SystemState) (x : SeLe4n.ObjId) : Bool :=
   match st.getObject? x with
   | some (.tcb t) =>
     t.tid.val == x.val && !isIdleThreadId t.tid && threadQuiescent t &&
-      !threadHeldOnSomeCore st t.tid && storeNamesThreadNone st (x.val + 1) &&
-      servicesNameNone st x
+      !threadHeldOnSomeCore st t.tid && servicesNameNone st x
   | _ => false
 
 /-- **Whether an object names the scheduling context whose code is `c`**
@@ -1714,12 +1721,12 @@ theorem retireFinalObject_target_gone (ec : Concurrency.CoreId) (target recorder
 
 theorem passiveObjectRetirable_parts {st : SystemState} {x : SeLe4n.ObjId}
     (h : passiveObjectRetirable st x = true) :
-    passiveObjectQuiescent st x = true ∧ storeNamesNone st x = true ∧
+    passiveObjectQuiescent st x = true ∧
       registryNamesNone st x = true ∧ servicesNameNone st x = true ∧
       irqHandlersNameNone st x = true := by
   unfold passiveObjectRetirable at h
   revert h
-  cases passiveObjectQuiescent st x <;> cases storeNamesNone st x <;>
+  cases passiveObjectQuiescent st x <;>
     cases registryNamesNone st x <;> cases servicesNameNone st x <;>
     cases irqHandlersNameNone st x <;> simp
 
@@ -1771,14 +1778,45 @@ theorem passiveObjectQuiescent.slotCap {st : SystemState} {x : SeLe4n.ObjId}
   | cnode cn => exact CNode.lookup_none_of_occHead_zero h s
   | _ => first | rfl | (simp at h)
 
-/-- **What the retire scan reads of a thread it admits**: the thread stored
-under its own id, no idle thread, quiescent, held by no core, named by no
-object and owning no service. -/
+/-- **A quiescent endpoint's own links**: both queues empty. -/
+theorem passiveObjectQuiescent_endpoint {st : SystemState} {x : SeLe4n.ObjId} {ep : Endpoint}
+    (h : passiveObjectQuiescent st x = true) (hE : st.objects[x]? = some (.endpoint ep)) :
+    ep.sendQ.head = none ∧ ep.receiveQ.head = none := by
+  unfold passiveObjectQuiescent at h
+  rw [SystemState.getObject?_eq_getElem, hE] at h
+  simp only [Bool.and_eq_true, beq_iff_eq] at h
+  simp only [Endpoint.sendQ, Endpoint.receiveQ, h.1, h.2]
+  exact ⟨rfl, rfl⟩
+
+/-- **A quiescent notification's own links**: no waiter and no bound thread. -/
+theorem passiveObjectQuiescent_notification {st : SystemState} {x : SeLe4n.ObjId}
+    {n : Notification} (h : passiveObjectQuiescent st x = true)
+    (hN : st.objects[x]? = some (.notification n)) :
+    n.waitHead = none ∧ n.boundTCBCode = 0 := by
+  unfold passiveObjectQuiescent at h
+  rw [SystemState.getObject?_eq_getElem, hN] at h
+  simp only [Bool.and_eq_true, beq_iff_eq] at h
+  simp only [Notification.waitHead, h.1]
+  exact ⟨rfl, h.2⟩
+
+/-- **A quiescent reply's own links**: no caller, no live stash (the receiver it
+records stashes it no more), and no stack link. -/
+theorem passiveObjectQuiescent_reply {st : SystemState} {x : SeLe4n.ObjId} {r : Reply}
+    (h : passiveObjectQuiescent st x = true) (hR : st.objects[x]? = some (.reply r)) :
+    r.callerCode = 0 ∧ st.replyStashedAt ⟨x.val⟩ r = false ∧ r.prev = none ∧ r.next = none := by
+  unfold passiveObjectQuiescent at h
+  rw [SystemState.getObject?_eq_getElem, hR] at h
+  simp only [Bool.and_eq_true, beq_iff_eq, Bool.not_eq_true', Option.isNone_iff_eq_none] at h
+  exact ⟨h.1.1.1, h.1.1.2, h.1.2, h.2⟩
+
+/-- **What the retire guard reads of a thread it admits**: the thread stored
+under its own id, no idle thread, quiescent, held by no core and owning no
+service. -/
 theorem threadRetirable_parts {st : SystemState} {x : SeLe4n.ObjId}
     (h : threadRetirable st x = true) :
     ∃ t, st.objects[x]? = some (.tcb t) ∧ t.tid.val = x.val ∧ isIdleThreadId t.tid = false ∧
       threadQuiescent t = true ∧ threadHeldOnSomeCore st t.tid = false ∧
-      storeNamesThreadNone st (x.val + 1) = true ∧ servicesNameNone st x = true := by
+      servicesNameNone st x = true := by
   unfold threadRetirable SystemState.getObject? at h
   cases hO : st.objects[x]? with
   | none => rw [hO] at h; cases h
@@ -1787,7 +1825,7 @@ theorem threadRetirable_parts {st : SystemState} {x : SeLe4n.ObjId}
     cases o with
     | tcb t =>
       simp only [Bool.and_eq_true, beq_iff_eq, Bool.not_eq_eq_eq_not, Bool.not_true] at h
-      exact ⟨t, rfl, h.1.1.1.1.1, h.1.1.1.1.2, h.1.1.1.2, h.1.1.2, h.1.2, h.2⟩
+      exact ⟨t, rfl, h.1.1.1.1, h.1.1.1.2, h.1.1.2, h.1.2, h.2⟩
     | _ => cases h
 
 /-- **A retired thread runs on no core**: the retire admits a thread only when
@@ -1799,7 +1837,7 @@ syscall entry after its commit against these same current slots). -/
 theorem threadRetirable_currentNowhere {st : SystemState} {x : SeLe4n.ObjId}
     (h : threadRetirable st x = true) (c : Concurrency.CoreId) :
     st.scheduler.currentOnCore c ≠ some ⟨x.val⟩ := by
-  obtain ⟨t, -, hTid, -, -, hHeld, -, -⟩ := threadRetirable_parts h
+  obtain ⟨t, -, hTid, -, -, hHeld, -⟩ := threadRetirable_parts h
   intro hCur
   have hId : t.tid = ⟨x.val⟩ := by cases hT : t.tid; simp_all
   have hNot : threadCurrentOnSomeCore st t.tid = false := by
@@ -1810,7 +1848,7 @@ theorem threadRetirable_currentNowhere {st : SystemState} {x : SeLe4n.ObjId}
   have := (threadCurrentOnSomeCore_iff st ⟨x.val⟩).mpr ⟨c, hCur⟩
   rw [hNot] at this; cases this
 
-/-- **What the retire scan reads of a scheduling context it admits.** -/
+/-- **What the retire guard reads of a scheduling context it admits.** -/
 theorem schedContextRetirable_parts {st : SystemState} {x : SeLe4n.ObjId}
     (h : schedContextRetirable st x = true) :
     ∃ sc, st.objects[x]? = some (.schedContext sc) ∧ sc.boundThreadCode = 0 ∧
@@ -1903,25 +1941,6 @@ theorem retireFinalObject_touched (ec : Concurrency.CoreId) (target recorder : N
     exact .inr (.inr ⟨hn, hS,
       finalRetireAdmitted.schedulingRetirable hAdm ((schedulingKindAt_iff st _).mpr hS)⟩)
 
-/-- **The store scan answers per object**: no object the table resolves names
-`x` (`RHTable.fold_and_true_of_get?`). -/
-theorem storeNamesNone_spec {st : SystemState} {x : SeLe4n.ObjId} (h : storeNamesNone st x = true)
-    {oid : SeLe4n.ObjId} {o : KernelObject} (hO : st.objects[oid]? = some o) :
-    objectNamesById o x = false := by
-  have := SeLe4n.Kernel.RobinHood.RHTable.fold_and_true_of_get? st.objects
-    (fun _ o => !objectNamesById o x) h hO
-  simpa using this
-
-/-- **The thread scan answers per object**: no object the table resolves names
-the thread whose code is `c` (`RHTable.fold_and_true_of_get?`). -/
-theorem storeNamesThreadNone_spec {st : SystemState} {c : Nat}
-    (h : storeNamesThreadNone st c = true)
-    {oid : SeLe4n.ObjId} {o : KernelObject} (hO : st.objects[oid]? = some o) :
-    objectNamesThread o c = false := by
-  have := SeLe4n.Kernel.RobinHood.RHTable.fold_and_true_of_get? st.objects
-    (fun _ o => !objectNamesThread o c) h hO
-  simpa using this
-
 /-- **The scheduling-context scan answers per object.** -/
 theorem storeNamesSchedContextNone_spec {st : SystemState} {c : Nat}
     (h : storeNamesSchedContextNone st c = true)
@@ -1930,12 +1949,6 @@ theorem storeNamesSchedContextNone_spec {st : SystemState} {c : Nat}
   have := SeLe4n.Kernel.RobinHood.RHTable.fold_and_true_of_get? st.objects
     (fun _ o => !objectNamesSchedContext o c) h hO
   simpa using this
-
-/-- A present thread link's code is the thread's id plus one. -/
-theorem threadOfOptCode_eq_some {n : Nat} {b : SeLe4n.ThreadId}
-    (h : SeLe4n.ThreadId.ofOptCode n = some b) : n = b.val + 1 := by
-  have := congrArg SeLe4n.ThreadId.optCode h
-  rw [SeLe4n.ThreadId.optCode_ofOptCode] at this; exact this
 
 /-- **What a quiescent thread's codes are**, flattened in the order
 `threadQuiescent` reads them. -/
@@ -1962,64 +1975,6 @@ theorem threadQuiescent_queueNext {t : TCB} (h : threadQuiescent t = true) :
     t.queueNext = none := by
   obtain ⟨-, -, -, -, h1, -⟩ := threadQuiescent_codes h
   unfold TCB.queueNext; rw [h1]; rfl
-
-/-- **What a thread that does not name `x` does not do**: it is not blocked on
-`x` sending, receiving, calling or waiting, not bound to it, and neither its
-reply link nor its stashed reply is `x`. -/
-theorem objectNamesById_tcb {t : TCB} {x : SeLe4n.ObjId}
-    (h : objectNamesById (.tcb t) x = false) :
-    (t.ipcState ≠ .blockedOnSend x ∧ t.ipcState ≠ .blockedOnReceive x ∧
-      t.ipcState ≠ .blockedOnCall x ∧ t.ipcState ≠ .blockedOnNotification x) ∧
-    t.boundNotification ≠ some x ∧
-    (∀ rid, t.replyObject = some rid → rid.toObjId ≠ x) ∧
-    (∀ rid, t.pendingReceiveReply = some rid → rid.toObjId ≠ x) := by
-  unfold objectNamesById at h
-  simp only [Bool.or_eq_false_iff] at h
-  obtain ⟨⟨⟨hI, hB⟩, hR⟩, hP⟩ := h
-  have hSt : ∀ s : ThreadIpcState, ipcCodesName s.objectCode s.stateCode x = true →
-      t.ipcState ≠ s := by
-    intro s hs e
-    obtain ⟨ho, hc⟩ := (TCB.ipcState_eq_iff_codes t s).mp e
-    rw [ho, hc, hs] at hI; cases hI
-  have hCode : ∀ (c : Nat) (rid : SeLe4n.ReplyId), SeLe4n.ReplyId.ofOptCode c = some rid →
-      rid.toObjId = x → (c == x.val + 1) = true := by
-    intro c rid hc hx
-    have := congrArg SeLe4n.ReplyId.optCode hc
-    rw [SeLe4n.ReplyId.optCode_ofOptCode] at this
-    subst hx
-    simp [this, SeLe4n.ReplyId.optCode, SeLe4n.ReplyId.toObjId, SeLe4n.ObjId.ofNat,
-      SeLe4n.ReplyId.toNat]
-  refine ⟨⟨hSt _ (by simp [ipcCodesName, ThreadIpcState.objectCode, ThreadIpcState.stateCode]),
-    hSt _ (by simp [ipcCodesName, ThreadIpcState.objectCode, ThreadIpcState.stateCode]),
-    hSt _ (by simp [ipcCodesName, ThreadIpcState.objectCode, ThreadIpcState.stateCode]),
-    hSt _ (by simp [ipcCodesName, ThreadIpcState.objectCode, ThreadIpcState.stateCode])⟩,
-    fun e => ?_, fun rid hr hx => ?_, fun rid hr hx => ?_⟩
-  · have := congrArg SeLe4n.ObjId.optCode e
-    rw [SeLe4n.ObjId.optCode_ofOptCode] at this
-    rw [this] at hB; simp [SeLe4n.ObjId.optCode] at hB
-  · rw [hCode _ rid hr hx] at hR; cases hR
-  · rw [hCode _ rid hr hx] at hP; cases hP
-
-/-- **What a reply that does not name `x` does not link**: neither its stack
-predecessor nor its successor is `x`. -/
-theorem objectNamesById_reply {r : Reply} {x : SeLe4n.ObjId}
-    (h : objectNamesById (.reply r) x = false) :
-    (∀ p, r.prev = some p → p.toObjId ≠ x) ∧
-      (∀ a, r.next = some (.frame a) → a.toObjId ≠ x) := by
-  unfold objectNamesById at h
-  simp only [Bool.or_eq_false_iff] at h
-  obtain ⟨hp, hn⟩ := h
-  refine ⟨fun p e hx => ?_, fun a e hx => ?_⟩
-  · rw [e] at hp; simp [hx] at hp
-  · rw [e] at hn; simp [hx] at hn
-
-/-- A scheduling context that does not name `x` heads no reply stack at `x`. -/
-theorem objectNamesById_schedContext {sc : SchedContext} {x : SeLe4n.ObjId}
-    (h : objectNamesById (.schedContext sc) x = false) :
-    ∀ r, sc.scReply = some r → r.toObjId ≠ x := by
-  intro r e hx
-  have h' : (match sc.scReply with | some r => r.toObjId == x | none => false) = false := h
-  rw [e] at h'; simp [hx] at h'
 
 /-- The passive erase of a passive object leaves its key empty. -/
 theorem eraseRetiredObject_self {st : SystemState} {x : SeLe4n.ObjId}
@@ -2122,7 +2077,7 @@ theorem retireFinalObject_tcb_back (ec : Concurrency.CoreId) (target recorder : 
   · rw [hU] at h; cases h
 
 /-- **The retire keeps every thread but one it admits as detached**, key by
-key: a thread stays, or the retire scan admitted it (`threadRetirable`) and it
+key: a thread stays, or the retire guard admitted it (`threadRetirable`) and it
 is gone. -/
 theorem retireFinalObject_tcb_cases (ec : Concurrency.CoreId) (target recorder : Nat)
     (st : SystemState) (hInv : st.objects.invExt) {oid : SeLe4n.ObjId} {t : TCB}
@@ -2141,7 +2096,7 @@ theorem retireFinalObject_tcb_cases (ec : Concurrency.CoreId) (target recorder :
     · rw [h] at hU0; cases hU0
 
 /-- **The retire keeps a thread that holds a capability**: a thread with a
-filled space slot is not quiescent, so the retire scan refuses it. -/
+filled space slot is not quiescent, so the retire guard refuses it. -/
 theorem retireFinalObject_getTcb?_of_slotCap (ec : Concurrency.CoreId) (target recorder : Nat)
     (st : SystemState) (hInv : st.objects.invExt) {tid : SeLe4n.ThreadId} {t : TCB}
     (h : st.getTcb? tid = some t) {s : SeLe4n.Slot} (hs : (t.spaceSlotCap s).isSome = true) :
@@ -2156,7 +2111,7 @@ theorem retireFinalObject_getTcb?_of_slotCap (ec : Concurrency.CoreId) (target r
     simp only [KernelObject.slotCap] at this
     rw [this] at hs; cases hs
 
-/-- **The retire keeps every thread the retire scan refuses.** -/
+/-- **The retire keeps every thread the retire guard refuses.** -/
 theorem retireFinalObject_tcb_kept (ec : Concurrency.CoreId) (target recorder : Nat)
     (st : SystemState) (hInv : st.objects.invExt) {oid : SeLe4n.ObjId} {t : TCB}
     (h : st.objects[oid]? = some (.tcb t)) (hR : threadRetirable st oid = false) :
@@ -2575,13 +2530,11 @@ theorem retireFinalObject_tables (ec : Concurrency.CoreId) (target recorder : Na
 -- §10  What the retire keeps of the objects other objects name
 -- ============================================================================
 
-/-- **The retire keeps a passive object that is named or busy**: one an object
-names by id, or one that is not quiescent, is not admitted. -/
+/-- **The retire keeps a busy passive object**: one whose own links are not
+quiescent is not admitted. -/
 theorem retireFinalObject_passive_kept (ec : Concurrency.CoreId) (target recorder : Nat)
     (st : SystemState) (hInv : st.objects.invExt) {o : SeLe4n.ObjId}
-    (hP : passiveKernelObject st.objects[o]?)
-    (hKeep : (∃ (k : SeLe4n.ObjId) (ok : KernelObject), st.objects[k]? = some ok ∧ objectNamesById ok o = true) ∨
-      passiveObjectQuiescent st o = false) :
+    (hP : passiveKernelObject st.objects[o]?) (hKeep : passiveObjectQuiescent st o = false) :
     (retireFinalObject ec target recorder st).objects[o]? = st.objects[o]? := by
   rcases retireFinalObject_admitted ec target recorder st with hE | hAdm
   · rw [hE]
@@ -2590,9 +2543,7 @@ theorem retireFinalObject_passive_kept (ec : Concurrency.CoreId) (target recorde
   · exact e
   · subst hxo
     have hR := passiveObjectRetirable_parts (finalRetireAdmitted.retirable hAdm hP)
-    rcases hKeep with ⟨k, ok, hk, hn⟩ | hq
-    · rw [storeNamesNone_spec hR.2.1 hk] at hn; cases hn
-    · rw [hR.1] at hq; cases hq
+    rw [hR.1] at hKeep; cases hKeep
   · rw [hU] at hP; simp only [passiveKernelObject] at hP
 
 /-- **The retire keeps every key holding no carved, passive or untyped
@@ -2611,7 +2562,7 @@ theorem retireFinalObject_kept_of_unretirable (ec : Concurrency.CoreId) (target 
   · exact absurd hU0 (hU U)
 
 /-- **The retire keeps every scheduling context but one it admits as
-detached**: a context stays, or the retire scan admitted it
+detached**: a context stays, or the retire guard admitted it
 (`schedContextRetirable`) and it is gone. -/
 theorem retireFinalObject_schedContext_cases (ec : Concurrency.CoreId) (target recorder : Nat)
     (st : SystemState) (hInv : st.objects.invExt) {o : SeLe4n.ObjId} {sc : SchedContext}
@@ -2624,7 +2575,7 @@ theorem retireFinalObject_schedContext_cases (ec : Concurrency.CoreId) (target r
   · rw [h] at hT; exact hT.elim
   · exact .inr ⟨hn, schedulingObjectRetirable_schedContext hR h⟩
 
-/-- **The retire keeps every scheduling context the retire scan refuses.** -/
+/-- **The retire keeps every scheduling context the retire guard refuses.** -/
 theorem retireFinalObject_schedContext (ec : Concurrency.CoreId) (target recorder : Nat)
     (st : SystemState) (hInv : st.objects.invExt) {o : SeLe4n.ObjId} {sc : SchedContext}
     (h : st.objects[o]? = some (.schedContext sc)) (hR : schedContextRetirable st o = false) :
@@ -2645,34 +2596,6 @@ theorem retireFinalObject_back (ec : Concurrency.CoreId) (target recorder : Nat)
   · rw [hn] at h; cases h
   · rw [hU] at h; cases h; exact absurd rfl (hNU U)
 
-/-- A thread blocked on a notification names it by id. -/
-theorem objectNamesById_of_blockedOnNotification {t : TCB} {x : SeLe4n.ObjId}
-    (h : t.ipcState = .blockedOnNotification x) : objectNamesById (.tcb t) x = true := by
-  cases hn : objectNamesById (.tcb t) x with
-  | true => rfl
-  | false => exact absurd h (objectNamesById_tcb hn).1.2.2.2
-
-/-- A reply names the frame below it by id. -/
-theorem objectNamesById_of_replyPrev {r : Reply} {p : SeLe4n.ReplyId}
-    (h : r.prev = some p) : objectNamesById (.reply r) p.toObjId = true := by
-  cases hn : objectNamesById (.reply r) p.toObjId with
-  | true => rfl
-  | false => exact absurd rfl ((objectNamesById_reply hn).1 p h)
-
-/-- A reply names the frame above it by id. -/
-theorem objectNamesById_of_replyNext {r : Reply} {a : SeLe4n.ReplyId}
-    (h : r.next = some (.frame a)) : objectNamesById (.reply r) a.toObjId = true := by
-  cases hn : objectNamesById (.reply r) a.toObjId with
-  | true => rfl
-  | false => exact absurd rfl ((objectNamesById_reply hn).2 a h)
-
-/-- A scheduling context names the head of its reply stack by id. -/
-theorem objectNamesById_of_scReply {sc : SchedContext} {r : SeLe4n.ReplyId}
-    (h : sc.scReply = some r) : objectNamesById (.schedContext sc) r.toObjId = true := by
-  cases hn : objectNamesById (.schedContext sc) r.toObjId with
-  | true => rfl
-  | false => exact absurd rfl (objectNamesById_schedContext hn r h)
-
 /-- A reply linked upward is not quiescent. -/
 theorem passiveObjectQuiescent_of_next {st : SystemState} {o : SeLe4n.ObjId} {r : Reply}
     (hR : st.objects[o]? = some (.reply r)) (hN : r.next.isSome = true) :
@@ -2680,6 +2603,29 @@ theorem passiveObjectQuiescent_of_next {st : SystemState} {o : SeLe4n.ObjId} {r 
   cases hn : r.next with
   | none => rw [hn] at hN; cases hN
   | some _ => simp [passiveObjectQuiescent, SystemState.getObject?, hR, hn]
+
+/-- A reply linked downward is not quiescent. -/
+theorem passiveObjectQuiescent_of_prev {st : SystemState} {o : SeLe4n.ObjId} {r : Reply}
+    (hR : st.objects[o]? = some (.reply r)) (hP : r.prev.isSome = true) :
+    passiveObjectQuiescent st o = false := by
+  cases hp : r.prev with
+  | none => rw [hp] at hP; cases hP
+  | some _ => simp [passiveObjectQuiescent, SystemState.getObject?, hR, hp]
+
+/-- A quiescent object is a passive one. -/
+theorem passiveObjectQuiescent.passive {st : SystemState} {x : SeLe4n.ObjId}
+    (h : passiveObjectQuiescent st x = true) : passiveKernelObject st.objects[x]? := by
+  unfold passiveObjectQuiescent at h
+  rw [SystemState.getObject?_eq_getElem] at h
+  cases hO : st.objects[x]? with
+  | none => rw [hO] at h; cases h
+  | some o => rw [hO] at h; cases o <;> first | trivial | cases h
+
+/-- A scheduling context heading a reply stack is not retired. -/
+theorem schedContextRetirable_false_of_scReply {st : SystemState} {x : SeLe4n.ObjId}
+    {sc : SchedContext} (hS : st.objects[x]? = some (.schedContext sc)) {r : SeLe4n.ReplyId}
+    (hR : sc.scReply = some r) : schedContextRetirable st x = false := by
+  simp [schedContextRetirable, SystemState.getObject?, hS, hR]
 
 -- ============================================================================
 -- §  What the retire of a thread or a scheduling context leaves
@@ -2694,29 +2640,19 @@ theorem retireFinalObject_tcb_post (ec : Concurrency.CoreId) (target recorder : 
 
 /-- **The retire keeps every thread but a quiescent one it erases**: a thread
 stays, or it is gone and it was stored under its own id, quiescent, held by no
-core, no idle thread, and named by no object. -/
+core and no idle thread. -/
 theorem retireFinalObject_tcb_kept_or_quiescent (ec : Concurrency.CoreId) (target recorder : Nat)
     (st : SystemState) (hInv : st.objects.invExt) {oid : SeLe4n.ObjId} {t : TCB}
     (h : st.objects[oid]? = some (.tcb t)) :
     (retireFinalObject ec target recorder st).objects[oid]? = st.objects[oid]? ∨
       ((retireFinalObject ec target recorder st).objects[oid]? = none ∧
         t.tid.val = oid.val ∧ isIdleThreadId t.tid = false ∧ threadQuiescent t = true ∧
-        threadHeldOnSomeCore st t.tid = false ∧ storeNamesThreadNone st (oid.val + 1) = true) := by
+        threadHeldOnSomeCore st t.tid = false) := by
   rcases retireFinalObject_tcb_cases ec target recorder st hInv h with e | ⟨hn, hR⟩
   · rw [e, h]; exact .inl rfl
-  · obtain ⟨t', hT', hId, hIdle, hQ, hH, hS, -⟩ := threadRetirable_parts hR
+  · obtain ⟨t', hT', hId, hIdle, hQ, hH, -⟩ := threadRetirable_parts hR
     rw [h] at hT'; cases hT'
-    exact .inr ⟨hn, hId, hIdle, hQ, hH, hS⟩
-
-/-- **A thread some object names is not retired.** -/
-theorem threadRetirable_false_of_named {st : SystemState} {x k : SeLe4n.ObjId} {o : KernelObject}
-    (hK : st.objects[k]? = some o) (hN : objectNamesThread o (x.val + 1) = true) :
-    threadRetirable st x = false := by
-  cases hR : threadRetirable st x with
-  | false => rfl
-  | true =>
-    obtain ⟨-, -, -, -, -, -, hS, -⟩ := threadRetirable_parts hR
-    rw [storeNamesThreadNone_spec hS hK] at hN; cases hN
+    exact .inr ⟨hn, hId, hIdle, hQ, hH⟩
 
 /-- **A scheduling context some object names is not retired.** -/
 theorem schedContextRetirable_false_of_named {st : SystemState} {x k : SeLe4n.ObjId}
