@@ -703,11 +703,6 @@ theorem lookup_freeze_interfaceRegistry (ist : IntermediateState) (k : SeLe4n.In
     ist.state.interfaceRegistry.get? k = (freeze ist).interfaceRegistry.get? k := by
   exact freezeMap_get?_eq ist.state.interfaceRegistry k ist.hAllTables.2.2.2.2.2.1.1
 
-/-- Q6-A: services lookup preserved by freeze. -/
-theorem lookup_freeze_services (ist : IntermediateState) (k : SeLe4n.ServiceId) :
-    ist.state.services.get? k = (freeze ist).services.get? k := by
-  exact freezeMap_get?_eq ist.state.services k ist.hAllTables.2.2.2.2.1.1
-
 /-- Q6-A: objectTypes lookup preserved by freeze. -/
 theorem lookup_freeze_objectTypes (ist : IntermediateState) (k : SeLe4n.ObjId) :
     ist.state.lifecycle.objectTypes.get? k = (freeze ist).objectTypes.get? k := by
@@ -1316,7 +1311,7 @@ The conjuncts cover every field of `FrozenSystemState`:
 
 - **Map fields (lookup-equivalent via `freezeMap`):** `objects` (with
   `freezeObject`), `irqHandlers`, `asidTable`, `serviceRegistry`,
-  `interfaceRegistry`, `services`, `objectTypes`,
+  `interfaceRegistry`, `objectTypes`,
   `objectIndexSet`, plus scheduler sub-maps
   (`byPriority`, `threadPriority`, `membership`).
 - **Bitwise non-map fields:** `machine`, `objectIndex`, `tlb`,
@@ -1344,8 +1339,6 @@ def apiInvariantBundle_frozenDirectFull (fst : FrozenSystemState) : Prop :=
         sst.serviceRegistry.get? sid = fst.serviceRegistry.get? sid) ∧
     (∀ (iid : SeLe4n.InterfaceId),
         sst.interfaceRegistry.get? iid = fst.interfaceRegistry.get? iid) ∧
-    (∀ (sid : ServiceId),
-        sst.services.get? sid = fst.services.get? sid) ∧
     -- Lifecycle metadata
     (∀ (oid : ObjId),
         sst.lifecycle.objectTypes.get? oid = fst.objectTypes.get? oid) ∧
@@ -1415,15 +1408,14 @@ theorem freeze_preserves_direct_invariants_full (ist : IntermediateState)
     (hInv : SeLe4n.Kernel.apiInvariantBundle ist.state) :
     apiInvariantBundle_frozenDirectFull (freeze ist) := by
   refine ⟨ist.state, hInv,
-    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
     ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
-  -- Map fields (11)
+  -- Map fields (10)
   · exact fun oid => lookup_freeze_objects ist oid
   · exact fun irq => lookup_freeze_irqHandlers ist irq
   · exact fun asid => lookup_freeze_asidTable ist asid
   · exact fun sid => lookup_freeze_serviceRegistry ist sid
   · exact fun iid => lookup_freeze_interfaceRegistry ist iid
-  · exact fun sid => lookup_freeze_services ist sid
   · exact fun oid => lookup_freeze_objectTypes ist oid
   · exact fun oid => lookup_freeze_objectIndexSet ist oid
   · exact fun p => lookup_freeze_byPriority ist p (hInv.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2 bootCoreId)

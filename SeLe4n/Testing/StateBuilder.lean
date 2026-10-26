@@ -261,7 +261,6 @@ def emptyFrozenSystemState : FrozenSystemState :=
     asidTable := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
     serviceRegistry := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
     interfaceRegistry := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
-    services := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
     cdt := .empty
     scheduler :=
       { byPriority := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
