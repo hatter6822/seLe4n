@@ -1,3 +1,86 @@
+## v0.36.141 — WS-ZA ZA5.4 part 28: the retire reads the object's own links
+
+The final-delete retire of an endpoint, notification, reply, CNode or thread
+reads the object's own fields instead of walking the object table for
+references by id, answered by the reciprocity invariants part 27 proved.  The
+scheduling context's retire is split off as plan row 29.
+
+- **Before:** the retire asked `storeNamesNone` (or `storeNamesThreadNone`)
+  whether any object in the store named the target by id, an O(objects) walk on
+  every final delete, and a thread's finalise ran an identity-cleanup step
+  (`finaliseThreadCleanup`) whose only job was to clear references the
+  admission had already ruled out.  A reply a receiver had stashed was retired
+  whenever its own links were clear.
+- **After:** the passive kinds are retired on their own fields
+  (`passiveObjectQuiescent`) and a thread on its own fields and the cores'
+  current slots (`threadRetirable`).  On an `ipcReachable` state no object
+  names an admitted one (`passiveObjectQuiescent.namedByNone`,
+  `threadRetirable.namedByNone`).  A reply is kept while a receiver has it
+  stashed (`replyStashedAt`).  The two walks and the thread cleanup are deleted.
+
+### The guards
+
+- The reply arm of `passiveObjectQuiescent` also asks that the reply's stasher
+  does not name it (`replyStashedAt`), as seL4 keeps a reply bound to a
+  receiving thread.  `pendingReceiveReplyWellFormed.stashedAt` gives the stash
+  from any thread's pending reply code.
+- `passiveObjectRetirable` is the quiescence and the registry, service and
+  interrupt-handler walks; `threadRetirable` is the thread's identity,
+  non-idleness, quiescence, no core holding it, and the service walk.
+- `objectNamesThread` loses its `sc.donationOrigin` clause (part 27's
+  back-link answers it), and its owner and run-link clauses are masked as their
+  readers mask them (the binding owner code under a bound context, the run
+  links under the core code).
+
+### The consumer theorems
+
+- `passiveObjectQuiescent.namedByNone` (`IPC/Invariant/Reachability.lean`): on
+  an `ipcReachable` state, `objectNamesById o x` is false for every stored
+  object, the reply `next` arm from `nextLinkReciprocal`.
+- `threadRetirable.namedByNone`, given `schedContextBindingConsistent` too:
+  `objectNamesThread o (x+1)` is false for every stored object, the run-queue
+  neighbours through the core code (`SystemState.runQueueRefined.neighbour_queued`)
+  and the reply-waiter links through `replyWaitersConsistent`.
+- The retire's preservation proofs read the invariants in place of the walk:
+  `erasedTargetDetached_of_unreferenced`, `erasedTargetDetached_of_threadRetirable`,
+  `passiveObjectQuiescent_notQueuedOn`,
+  `retireFinalObject_preserves_notificationWaiterConsistent` and
+  `retireFinalObject_preserves_donationChainWellFormed`.
+- Helper lemmas: `LinkedQueue.linked_mem`, `ReplyViews.chain_none`.
+
+### Deleted
+
+- `storeNamesNone`, `storeNamesThreadNone`, their `_spec` theorems,
+  `threadRetirable_false_of_named`, `threadOfOptCode_eq_some` and the
+  `objectNamesById_of_*` / `objectNamesById_{tcb,reply,schedContext}` lemmas.
+- `finaliseThreadCleanup`, `finaliseThreadCleanupImpl` and its `@[csimp]`,
+  `finaliseThreadCleanup_eq`, `finaliseThread_eq`, `threadRetirable_spec`,
+  `lifecyclePreRetypeCleanup_of_threadRetirable`,
+  `removeRunnableFromAllCores_of_unoccupied`, `threadOfOptCode_beq_some_false`,
+  `spliceOccupiedSlot_of_empty` and `detachTcbSlots_of_empty`.  The scheduling
+  context's cleanup and its `@[csimp]` are kept.
+
+### Tests and gates
+
+- ModelIntegritySuite `reply_stashed_survives_final_retire`: a reply whose
+  stasher is blocked receiving with it pending survives its final delete, and
+  is retired once the stash clears.
+- Tier 3: the `finaliseThread`, `passiveObjectRetirable`, reply-arm and
+  `threadRetirable` body anchors match the new bodies; negative anchors refuse
+  `finaliseThreadCleanup`, `storeNamesNone` and `storeNamesThreadNone`; the
+  consumer theorems are anchored.
+
+### Plan
+
+- Row 28 is split before the scheduling context's retire, which needs the
+  binding pair, `allTimeoutBudgetsNone` and `replenishQueueEntriesBound_smp`
+  carried along the whole delete chain: that is row 29.  The table
+  back-references move to row 30, the finalise's admission and the zombie fuel
+  to row 31, and the seL4 reset to row 32; every citation is swept, including
+  the source comments that still cited the fuel as row 29.
+
+Exerciser: every pin unchanged.
+
 ## v0.36.140 — WS-ZA ZA5.4 part 27: the reciprocity the retire reads
 
 The references a final delete's retire must rule out are now held reciprocal
