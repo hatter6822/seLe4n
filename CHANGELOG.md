@@ -1,3 +1,92 @@
+## v0.36.142 — WS-ZA ZA5.4 part 29: the scheduling context's retire reads its own links
+
+The final-delete retire of a scheduling context reads the context's own links
+instead of walking the object table and every core's replenishment queue.  The
+scheduling links that make those links the whole truth are carried along the
+whole delete chain.
+
+- **Before:** `schedContextRetirable` asked, besides the context's own fields,
+  whether any object in the store named the context
+  (`storeNamesSchedContextNone`, an O(objects) walk) and whether any core's
+  replenishment queue held it (`replenishQueuesNameNone`, a walk of every
+  core's queue), on every final delete of a context.
+- **After:** a context is retired while it is bound to no thread, lent from none
+  and heads no reply stack: the links seL4's `finaliseCap` clears a context
+  through (`scTCB`, `scReply`).  The four walks are deleted.
+
+### The carried invariants
+
+- `schedContextLinkInvariant` (new `IPC/Invariant/SchedLinkFrame.lean`): no
+  thread holds a timeout budget (`allTimeoutBudgetsNone`), the binding pair
+  (`schedContextBindingConsistent`), and every context a replenishment queue
+  holds is bound and queued on its holder's home core
+  (`replenishQueueEntriesBound_smp`, `replenishQueueAffinityConsistent_smp`).
+- It is proven kept by every finalise step
+  (`finaliseFinalObject_preserves_schedContextLinkInvariant`), the slot delete,
+  the page teardown, a thread slot's copy and set, the space change and the
+  retire (`retireFinalObject_preserves_schedContextLinkInvariant`,
+  `retireFinalObject_preserves_replenishQueueEntriesBound_smp`).  Most steps
+  write none of what it reads and keep it by one frame (`SchedLinkFrame`); the
+  context's release of its holder and the reply's caller cancel with its loan
+  returned are proven on their own.
+- The finalising delete carries `finalisingDeleteBundle` (the loan bundle and
+  the links) through the delete, the revocation and zombie loops and the space
+  change through the zombie delete.  The capability-dispatch pack carries
+  `schedContextLinks` in place of `bindingBidirectional`, which is derived from
+  the binding pair and the loan record
+  (`schedContextBindingBidirectional_of_consistent`).
+- `returnDonatedSchedContext_preserves_schedContextBindingConsistent` no longer
+  asks for the holder's `.donated` binding: the pop only succeeds on a context
+  bound to its server, so the binding pair names it.
+
+### The retire's preservation, reproven
+
+- `erasedTargetDetached_of_schedContextRetirable` reads the budgets and the loan
+  record (`donationOwnerValid`) in place of the walk; `retireFinalObject_preserves_ipcInvariantFull`,
+  `threadSlotSet_preserves_ipcInvariantFull` and
+  `copyThreadSpaces_preserves_ipcInvariantFull` take the budgets (the last two
+  move to `SchedLinkFrame.lean`, beside the budget frame they read).
+- `retireFinalObject_schedKeyView` reads the binding pair through
+  `schedContextRetirable_false_of_tcbNamed`; the staged coverage chain carries
+  `finalisingDeleteBundle` in place of the binding reciprocity, which it
+  derives, through the delete loops and up to the ABI seams.
+
+### The consumer theorems
+
+- `schedContextRetirable.tcbNamesNone` (`DispatchArmPreservation.lean`): no
+  thread names an admitted context (`objectNamesSchedContext`), from the binding
+  pair, the loan record and the budgets.
+- `schedContextRetirable.namedByNone` (`Reachability.lean`): no object names
+  one, the reply head from `donationChainWellFormed.headLinkResolves`; and
+  `schedContextRetirable.replenishQueuedNowhere`: no core queues one.
+
+### Deleted
+
+- `storeNamesSchedContextNone`, `replenishQueuesNameNone`,
+  `replenishQueuesOnNameNone`, `replenishEntriesNameNone`,
+  `storeNamesSchedContextNone_spec`, `schedContextRetirable_false_of_named`,
+  `schedContextBindingBidirectional_updateTcb` (its one consumer now transports
+  the bundle, `finalisingDeleteBundle_writeFfiRegistersToTcb`), the staged
+  duplicate `modifyObject_preserves_objects_invExt`, and the pack field
+  `capabilityDispatchQuiescence.bindingBidirectional`.
+
+### Tests and gates
+
+- ModelIntegritySuite `schedContext_retired_on_own_links`: a context naming its
+  bound thread, or heading a reply stack, survives its final delete; a context
+  with no link of its own is retired.
+- Tier 3: the guard's body is pinned; a negative anchor refuses the four walks
+  and `schedContextRetirable_false_of_named`; the carried invariant, its
+  preservation along the chain, the bundle, the pack field and the consumer
+  theorems are anchored; the moved theorems' anchors follow them.
+- The store-reader hygiene baseline is regenerated.
+
+### Plan
+
+- Row 29 lands.  The registry, interrupt-handler and service-graph walks stay
+  for row 30; the `docs/REGISTERED_DEBT.md` row on the object-table scan is
+  narrowed to them.
+
 ## v0.36.141 — WS-ZA ZA5.4 part 28: the retire reads the object's own links
 
 The final-delete retire of an endpoint, notification, reply, CNode or thread
