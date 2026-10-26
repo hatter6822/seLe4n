@@ -584,6 +584,10 @@ import SeLe4n.Kernel.InformationFlow.Invariant.FinaliseProjection
 -- (`finaliseThreadEndWaiters_returnLoan_endsAll_of_admitted`).
 import SeLe4n.Kernel.IPC.Invariant.FinaliseWaiterCompletion
 import SeLe4n.Kernel.IPC.Invariant.FinaliseRetirable
+-- WS-ZA ZA5.4 part 29: the reachable state rides the whole delete chain with
+-- the bundle the delete carries (`reachableDeleteBundle`): the slot delete, the
+-- teardown, the finalisation, the retire, the set-space copy and the loops.
+import SeLe4n.Kernel.IPC.Invariant.DeleteReachability
 -- WS-SM SM8.A: the per-core observable state — the SMP information-flow
 -- observer `(c, L)` (plan Definition 3.1.1) and the state it observes
 -- (`ObservableState.onCore`, Definition 3.2.1), layered on the SM4.D

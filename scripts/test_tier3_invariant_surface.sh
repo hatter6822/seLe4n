@@ -4367,6 +4367,17 @@ run_check "INVARIANT" rg -n '^theorem schedContextRetirable\.tcbNamesNone($|[ ({
 run_check "INVARIANT" rg -n 'schedContextRetirable_false_of_tcbNamed hL\.binding hI\.donationOwnerValid hL\.budgets' SeLe4n/Kernel/ReschedulePendingArms/Dispatch.lean
 run_check "INVARIANT" rg -n '^theorem schedContextRetirable\.namedByNone($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Reachability.lean
 run_check "INVARIANT" rg -n '^theorem schedContextRetirable\.replenishQueuedNowhere($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Reachability.lean
+# The reachable state rides the whole delete chain with the bundle the delete
+# carries: the frame keeps its queue invariants, and the loops close over the
+# pair.
+run_check "INVARIANT" rg -n '^structure ReachLinkFrame($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DeleteReachability.lean
+run_check "INVARIANT" rg -n '^theorem preserves \(F : ReachLinkFrame st st.\) \(h : reachQueueInvariant st\)' SeLe4n/Kernel/IPC/Invariant/DeleteReachability.lean
+run_check "INVARIANT" rg -n '^def reachableDeleteBundle \(s : SystemState\) : Prop :=$' SeLe4n/Kernel/IPC/Invariant/DeleteReachability.lean
+run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlotTeardown_preserves_reachableDeleteBundle($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DeleteReachability.lean
+run_check "INVARIANT" rg -n -U 'cspaceRevokeCdtFinalising_closed reachableDeleteBundle\n    \(fun c s s. hQ hD => cspaceDeleteSlotFinalising_preserves_reachableDeleteBundle' SeLe4n/Kernel/IPC/Invariant/DeleteReachability.lean
+run_check "INVARIANT" rg -n -U 'cspaceDeleteSlotZombie_closed reachableDeleteBundle\n    \(fun c s s. hQ hD => cspaceDeleteSlotFinalising_preserves_reachableDeleteBundle' SeLe4n/Kernel/IPC/Invariant/DeleteReachability.lean
+run_check "INVARIANT" rg -n '^theorem copyThreadSpaces_preserves_ipcReachable($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DeleteReachability.lean
+run_check "INVARIANT" rg -n '^theorem copyThreadSpacesZombie_preserves_ipcReachable($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DeleteReachability.lean
 run_check "INVARIANT" rg -n -U 'def finalRetireAdmitted[^\n]*\n  \(!passiveKindAt st x \|\| passiveObjectRetirable st x\) &&\n    \(!schedulingKindAt st x \|\| schedulingObjectRetirable st x\)' SeLe4n/Kernel/Capability/FinalRetire.lean
 # The passive erase runs through the registered erase primitives (no raw
 # object-table write of its own), and its record form is a theorem.
