@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.140` (`lakefile.toml`) |
+| **Package version** | `0.36.141` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 511,247 across 458 Lean files |
 | **Test LoC** | 87,474 across 70 Lean test suites |
@@ -4951,11 +4951,18 @@ retire also takes an endpoint, a notification, a reply or a CNode whose final
 capability is destroyed, when seL4's `finaliseCap` would have nothing to cancel
 and nothing names the object outside a slot (`passiveObjectRetirable`): the
 object is quiescent (`passiveObjectQuiescent`: an endpoint's two queues empty, a
-notification with no waiter and no bound thread, a reply with no caller and no
-stack link, a CNode whose every slot is empty), no object names it by id
-(`storeNamesNone`: a thread blocked on it, bound to it or linked to it as its
-reply, another reply's stack link, a scheduling context's reply-stack head), and
-no service registration, service-graph entry or interrupt handler names it.  It
+notification with no waiter and no bound thread, a reply with no caller, no live
+stash and no stack link, a CNode whose every slot is empty), and no service
+registration, service-graph entry or interrupt handler names it.  Quiescence is
+read off the object's own links alone (`v0.36.141`): under the reachable
+invariants no object names a quiescent passive object by id
+(`passiveObjectQuiescent.namedByNone` — a thread blocked on it, bound to it or
+linked to it as its reply or stash, another reply's stack link either way, a
+scheduling context's reply-stack head), each reference answered on the object's
+own side by the reciprocity part 27 proved.  A reply is retired only while no
+receiver has it stashed: its record names its last stasher (`stasherCode`,
+seL4's `replyTCB`), and the retire re-checks that thread
+(`SystemState.replyStashedAt`), one field and one thread.  It
 leaves the store first (`retirePassiveObject`), then its recorder's child list,
 through the same `retireRecordedObject` as a carved object.  **A kernel object
 that is not quiescent, or is named outside a slot, still outlives its last
@@ -4964,8 +4971,9 @@ by its untyped: an endpoint or notification with waiters or a bound thread
 until `v0.36.134` (row 23 of `docs/planning/UNTYPED_RESET_PLAN.md`, below), a TCB or scheduling context
 until row 24, a busy reply or a scheduling context with a reply stack until
 row 25, and a CNode holding capabilities until row 26 (the zombie loop).  The
-names-by-id check walks the object table once per final delete of a passive
-kind (`docs/REGISTERED_DEBT.md`).
+service-registry, service-graph and interrupt-handler checks walk their tables
+once per final delete of a passive kind (`docs/REGISTERED_DEBT.md`, plan row
+30).
 
 The space-slot replace of `copyThreadSpaces` (seL4's `invokeTCB_ThreadControl`,
 which runs `cteDelete` on the TCB's CTable and VTable slots) retires what each
@@ -5134,9 +5142,16 @@ a message delivered to the thread and not yet read is dropped by the suspend's
 mark (`finalisedSuspendMark`), as the suspend syscall's `clearPendingState`
 drops it.  A scheduling context's refusals are narrowed by part 25 below.  A
 refused object is not finalised and the retire keeps it
-(`docs/REGISTERED_DEBT.md`).  On a finalised object the cleanup is proven to be
-the identity (`finaliseThreadCleanup_eq`, `finaliseSchedContextCleanup_eq`), so
-its compiled form is dropped (`@[csimp]`).  The finalisation keeps the IPC,
+(`docs/REGISTERED_DEBT.md`).  A finalised thread has no cleanup step: the
+retire reads what the finalisation left off the thread's own links
+(`threadRetirable`: quiescent, held by no core, owning no service), and under
+the reachable invariants and the scheduling-context binding pair no object names
+such a thread (`threadRetirable.namedByNone` — a queue, run-queue or
+reply-waiter neighbour, a queue end, a notification binding, a reply caller, a
+donation owner or a bound context; since `v0.36.141`).  On a finalised
+scheduling context the cleanup is proven to be the identity
+(`finaliseSchedContextCleanup_eq`), so its compiled form is dropped
+(`@[csimp]`).  The finalisation keeps the IPC,
 reachable-state, reply-waiter, donation, run-queue (`RunQueueEntryStage`) and
 reschedule bundles over the new steps, and it is invisible to an observer the
 thread or context and every object it touches are hidden from
@@ -5307,7 +5322,7 @@ root slot still non-leaf, the root delete makes no write
 capability, so a retry continues from the slot state, as seL4's preempted
 `cteDelete` does, and a revoke that keeps a child stops with `.ok`.  That the
 fuel always suffices on a reachable state is not yet proven
-(`docs/REGISTERED_DEBT.md`, plan row 30).  **Set-space** deletes each old root
+(`docs/REGISTERED_DEBT.md`, plan row 31).  **Set-space** deletes each old root
 through the same loop (`copyThreadSpacesZombie`), so a thread's last
 capability to its old CSpace root CNode empties and retires it; set-space is a
 remote writer, in the capability-destroy footprint group.  **An untyped with
@@ -5329,11 +5344,13 @@ bound notification and the notification's bound thread name each other
 (`notificationBindingReciprocal`), a thread with an endpoint-queue successor is
 blocked on an endpoint (`endpointQueueLinksOnlyBlocked`), and every reply
 frame's upward link is answered (`donationChainWellFormed.nextLinkReciprocal`),
-each preserved by every transition and established at boot.  Still open:
-the retire walks the object table for references by id (plan row 28) and the
-service registry, the interrupt-handler table and the service graph (plan row
-29), and the finalise's admission is not carried across its own steps (plan
-row 30); each step and the retire re-check their guards.
+each preserved by every transition and established at boot.  **The own-link
+reads** (`v0.36.141`, plan row 28): the passive kinds and the thread are
+retired on their own fields, as described above.  Still open: the retire walks
+the store for a scheduling context's references (plan row 29) and the service
+registry, the interrupt-handler table and the service graph (plan row 30), and
+the finalise's admission is not carried across its own steps (plan row 31);
+each step and the retire re-check their guards.
 Exerciser: `populated-cnode-delete`, `space-cnode-cap-delete`,
 `spaced-tcb-delete`, `tcb-set-space` and `set-carved-tcb-space` read 0 heap
 cells: a thread's space-slot delete keeps the slot's cell as its spare record
@@ -5822,7 +5839,7 @@ seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
   (`untypedResetFromCap`) and first refuses (`.revocationRequired`) while that
   slot has a derivation child, seL4's per-slot `ensureNoChildren`
   (`untypedResetFromCap_ok`); the store-wide check stays beside it until the
-  reset is restated as seL4's (WS-ZA ZA5.4 part 31, `docs/REGISTERED_DEBT.md`).
+  reset is restated as seL4's (WS-ZA ZA5.4 part 32, `docs/REGISTERED_DEBT.md`).
   Then every
   mapping of a page meeting the region is removed through the `.vspaceUnmap`
   arm's own transition — TLB flush, shootdown round, initiator drain,

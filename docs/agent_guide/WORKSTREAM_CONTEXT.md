@@ -361,13 +361,20 @@ a refusal.  Set-space deletes each old root through the same loop
 (`copyThreadSpacesZombie`).  An untyped retired with children is spliced out:
 its recorder adopts them and each child untyped names the recorder as its
 parent (`retireUnrecord`), so new code that reads an untyped's parent or child
-list must not assume either survives the retire of a neighbour.  The retire
-still walks the object table for references by id (`storeNamesNone` and its
-thread and scheduling-context forms; plan row 28, which reads the object's own
-links through the reciprocity part 27 proves) and the service registry, the
-interrupt-handler table and the service graph (plan row 29), and the finalise's
-admission is not yet carried across its steps (each step re-checks; plan row
-30, `docs/REGISTERED_DEBT.md`).  The reply stack's links are reciprocal both ways
+list must not assume either survives the retire of a neighbour.  Since
+`v0.36.141` the retire of an endpoint, notification, reply or CNode reads the
+object's own fields (`passiveObjectQuiescent`) and a thread's retire its own
+fields and the cores' current slots (`threadRetirable`), each answered by a
+theorem that no object names the admitted one (`namedByNone`, on an
+`ipcReachable` state), so new code that adds a reference by id to an object
+must extend the invariants those theorems read, not a walk.  A reply is retired
+only while no receiver has it stashed (`replyStashedAt`).  The finalise has no
+identity-cleanup step.  The retire still walks the store for a scheduling
+context's references (`storeNamesSchedContextNone`, `replenishQueuesNameNone`;
+plan row 29) and walks the service registry, the interrupt-handler table and
+the service graph (plan row 30), and the finalise's admission is not yet
+carried across its steps (each step re-checks; plan row 31,
+`docs/REGISTERED_DEBT.md`).  The reply stack's links are reciprocal both ways
 (`donationChainWellFormed.nextLinkReciprocal`, since `v0.36.140`), so new code
 that clears a frame's `prev` must clear in the same step the `next` of the frame
 it named, as the removal clears both of the cut frame's links; notification
