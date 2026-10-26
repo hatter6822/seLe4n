@@ -1773,18 +1773,12 @@ theorem spliceOccupiedSlot_shape (st : SystemState) (ref : SlotRef) :
   · exact ⟨_, spliceDeletedCdtNode_reach st ref⟩
   · exact ⟨st.cdt, .refl _⟩
 
-/-- An empty slot is left alone. -/
-theorem spliceOccupiedSlot_of_empty {st : SystemState} {ref : SlotRef}
-    (h : st.slotCapAt ref = none) : spliceOccupiedSlot st ref = st := by
-  unfold spliceOccupiedSlot; rw [h]; rfl
-
 /-- **Splice both of a thread's space slots out of the derivation tree**
 (`spliceOccupiedSlot`, the delete's own tree step on a slot that holds a
 capability), as `detachCNodeSlots` does a CNode's: run on a thread being
 destroyed, so no edge outlives its CSpace and VSpace root slots (seL4's
 `tcbCTable` and `tcbVTable`) and each slot's children are derived from its
-parent instead.  A thread whose two slots are empty is left as it is
-(`detachTcbSlots_of_empty`), which is the thread a final delete retires. -/
+parent instead. -/
 def detachTcbSlots (st : SystemState) (tcbId : SeLe4n.ObjId) : SystemState :=
   spliceOccupiedSlot
     (spliceOccupiedSlot st { cnode := tcbId, slot := TCB.cspaceRootSlot })
@@ -1800,14 +1794,6 @@ theorem detachTcbSlots_shape (st : SystemState) (tcbId : SeLe4n.ObjId) :
     (spliceOccupiedSlot st { cnode := tcbId, slot := TCB.cspaceRootSlot })
     { cnode := tcbId, slot := TCB.vspaceRootSlot }
   exact ⟨c₂, (h₁.with_cdt c₂).trans h₂⟩
-
-/-- **A thread whose two space slots are empty is left as it is.** -/
-theorem detachTcbSlots_of_empty {st : SystemState} {tcbId : SeLe4n.ObjId}
-    (h₀ : st.slotCapAt { cnode := tcbId, slot := TCB.cspaceRootSlot } = none)
-    (h₁ : st.slotCapAt { cnode := tcbId, slot := TCB.vspaceRootSlot } = none) :
-    detachTcbSlots st tcbId = st := by
-  unfold detachTcbSlots
-  rw [spliceOccupiedSlot_of_empty h₀, spliceOccupiedSlot_of_empty h₁]
 
 /-- `detachTcbSlots` keeps every object up to derivation links, and the store
 invariant. -/

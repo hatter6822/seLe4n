@@ -1265,24 +1265,6 @@ its writes. -/
       cancelBoundDonationOnCore_of_bound st tid t _ _
       (schedContextBinding_of_codes' hG.1.1.1.1 hG.1.1.1.2)]
 
-/-- **The destroy cleanup of a finalised thread** (`lifecyclePreRetypeCleanup`'s
-thread arm): run once the thread is retirable — quiescent, held by no core and
-named by no object — so its reference sweeps find nothing and only its two
-space slots leave the derivation tree.  Its guard, `threadRetirable`, walks the
-object table (`storeNamesThreadNone`); that walk is acceptable here because it
-is the specification's alone: the cleanup is proven the identity
-(`finaliseThreadCleanup_eq`) and compiled as it (`finaliseThreadCleanup_eq_impl`),
-so the kernel never runs it. -/
-def finaliseThreadCleanup (st : SystemState) (x : SeLe4n.ObjId) : SystemState :=
-  if threadRetirable st x && x.val != 0 then
-    match st.getObject? x with
-    | some (.tcb t) =>
-      match lifecyclePreRetypeCleanup st x (.tcb t) (.tcb t) with
-      | .ok st' => st'
-      | .error _ => st
-    | _ => st
-  else st
-
 /-- **Whether a reply stack's head link names the context at `x`.** -/
 @[inline] def replyStackLinkHeads (x : SeLe4n.ObjId) : Option ReplyStackLink → Bool
   | some (.head s) => s.val == x.val
@@ -1452,130 +1434,6 @@ def finaliseSchedContextCleanup (st : SystemState) (x : SeLe4n.ObjId) : SystemSt
 -- §4a  What the destroy cleanup finds on a finalised object
 -- ============================================================================
 
-/-- A thread code other than `b`'s does not decode to `b`. -/
-theorem threadOfOptCode_beq_some_false {n : Nat} {b : SeLe4n.ThreadId} (h : n ≠ b.val + 1) :
-    (SeLe4n.ThreadId.ofOptCode n == some b) = false := by
-  cases hc : (SeLe4n.ThreadId.ofOptCode n == some b)
-  · rfl
-  · exact absurd (threadOfOptCode_eq_some (beq_iff_eq.mp hc)) h
-
-/-- **The run-queue sweep has nothing to do for a thread no core holds**:
-queued on no core and current on none. -/
-theorem removeRunnableFromAllCores_of_unoccupied {st : SystemState} {tid : SeLe4n.ThreadId}
-    (h : ∀ c, threadOccupiesCore st tid c = false) : removeRunnableFromAllCores st tid = st := by
-  unfold removeRunnableFromAllCores
-  generalize SeLe4n.Kernel.Concurrency.allCores = cs
-  induction cs with
-  | nil => rfl
-  | cons c cs ih =>
-    rw [List.foldl_cons]
-    have hc : removeRunnableStepOnCore tid st c = st := by
-      unfold removeRunnableStepOnCore; rw [h c]; rfl
-    rw [hc]; exact ih
-
-/-- **What a retirable thread is**, unpacked from `threadRetirable`. -/
-theorem threadRetirable_spec {st : SystemState} {x : SeLe4n.ObjId} {t : TCB}
-    (hT : st.getObject? x = some (.tcb t)) (h : threadRetirable st x = true) :
-    t.tid = ⟨x.val⟩ ∧ threadQuiescent t = true ∧ threadHeldOnSomeCore st t.tid = false ∧
-      storeNamesThreadNone st (x.val + 1) = true := by
-  unfold threadRetirable at h; rw [hT] at h
-  simp only [Bool.and_eq_true, beq_iff_eq, Bool.not_eq_true'] at h
-  obtain ⟨⟨⟨⟨⟨hId, -⟩, hQ⟩, hH⟩, hN⟩, -⟩ := h
-  exact ⟨by cases ht : t.tid; rw [ht] at hId; simp only at hId; rw [hId], hQ, hH, hN⟩
-
-/-- **The destroy cleanup of a retirable thread is the identity.**  A thread a
-final delete may retire is quiescent, held by no core and named by no object
-(`threadRetirable`), so each sweep of `lifecyclePreRetypeCleanup`'s thread arm
-finds nothing: no reservation to end, no run queue, endpoint queue or
-notification queue to leave, no reservation origin to clear, no space slot to
-splice out of the derivation tree, and no reply link to refuse on.  This is the
-statement that the finalisation before it left the thread nothing dangling. -/
-theorem lifecyclePreRetypeCleanup_of_threadRetirable {st : SystemState} {x : SeLe4n.ObjId}
-    {t : TCB} (hT : st.getObject? x = some (.tcb t)) (hR : threadRetirable st x = true)
-    (hRes : x.val ≠ 0) :
-    lifecyclePreRetypeCleanup st x (.tcb t) (.tcb t) = .ok st := by
-  obtain ⟨hTid, hQ, hHeld, hNames⟩ := threadRetirable_spec hT hR
-  obtain ⟨-, hIS, hIO, -, hQN, hQP, -, -, -, hRC, -, -, hWH, hSC, hSO, -, hRO, -,
-    -, hS0, hS1⟩ := threadQuiescent_codes hQ
-  have hX : t.tid.toObjId = x := by rw [hTid]; rfl
-  have hObj : st.objects[x]? = some (.tcb t) := by rw [← hT]; simp
-  have hGet : st.getTcb? t.tid = some t := (SystemState.getTcb?_eq_some_iff st _ t).mpr (hX ▸ hObj)
-  have hNm : ∀ (k : SeLe4n.ObjId) (o : KernelObject), st.objects[k]? = some o → objectNamesThread o (x.val + 1) = false := by
-    intro k o hk
-    have := RobinHood.RHTable.fold_and_true_of_get? st.objects
-      (fun _ o => !objectNamesThread o (x.val + 1)) hNames hk
-    simpa using this
-  have hCode : t.tid.val + 1 = x.val + 1 := by rw [hTid]
-  -- The reservation arm: an unbound thread is left alone.
-  have hUnb : t.schedContextBinding = .unbound := by
-    unfold TCB.schedContextBinding; rw [hSC, hSO]; rfl
-  -- The run-queue sweep: queued on no core, current on none.
-  have hRun : removeRunnableFromAllCores st t.tid = st := by
-    refine removeRunnableFromAllCores_of_unoccupied (fun c => ?_)
-    unfold threadOccupiesCore SystemState.queuedOn
-    rw [hGet]; dsimp only; rw [hRC]
-    have hCur : (st.scheduler.currentOnCore c == some t.tid) = false := by
-      cases hc : (st.scheduler.currentOnCore c == some t.tid)
-      · rfl
-      · have : threadCurrentOnSomeCore st t.tid = true :=
-          (threadCurrentOnSomeCore_iff st t.tid).mpr ⟨c, beq_iff_eq.mp hc⟩
-        unfold threadHeldOnSomeCore at hHeld; rw [this] at hHeld; cases hHeld
-    rw [hCur]; simp
-  -- The endpoint sweep: no interior link to splice, no queue end to move.
-  have hSplice : spliceOutMidQueueNode st t.tid = st := by
-    unfold spliceOutMidQueueNode
-    have hL : lookupTcb st t.tid = some t := by
-      unfold lookupTcb
-      rw [hTid] at hGet ⊢
-      simp only [SeLe4n.ThreadId.isReserved, hRes, decide_false, Bool.false_eq_true, if_false]
-      exact hGet
-    rw [hL]; dsimp only
-    rw [show t.queuePrev = none by unfold TCB.queuePrev; rw [hQP]; rfl,
-      show t.queueNext = none by unfold TCB.queueNext; rw [hQN]; rfl]
-  have hEp : removeFromAllEndpointQueues st t.tid = st := by
-    unfold removeFromAllEndpointQueues
-    rw [hSplice]
-    refine RobinHood.RHTable.fold_preserves _ _ _ (· = st) rfl (fun acc k v hacc => ?_)
-    subst acc
-    cases v with
-    | endpoint _ =>
-      dsimp only
-      split
-      · rename_i ep hEp _
-        have hn := hNm k _ ((SystemState.getEndpoint?_eq_some_iff st k ep).mp hEp)
-        simp only [objectNamesThread, Bool.or_eq_false_iff, beq_eq_false_iff_ne] at hn
-        obtain ⟨⟨⟨h1, h2⟩, h3⟩, h4⟩ := hn
-        rw [if_neg]
-        simp only [Endpoint.sendQ, Endpoint.receiveQ,
-          threadOfOptCode_beq_some_false (b := t.tid) (hCode ▸ h1),
-          threadOfOptCode_beq_some_false (b := t.tid) (hCode ▸ h2),
-          threadOfOptCode_beq_some_false (b := t.tid) (hCode ▸ h3),
-          threadOfOptCode_beq_some_false (b := t.tid) (hCode ▸ h4)]
-        decide
-      · rfl
-    | _ => rfl
-  -- The notification sweep: blocked on no notification.
-  have hNtfn : removeFromNotificationWaitQueue st t.tid = st := by
-    unfold removeFromNotificationWaitQueue
-    rw [hGet]; dsimp only; rw [threadQuiescent_ipcState hQ]
-  have hClean : cleanupTcbReferences st t.tid = st := by
-    unfold cleanupTcbReferences
-    simp only [hRun, hEp, hNtfn]
-  -- The space slots: both empty, so neither is spliced.
-  have hDet : detachTcbSlots st x = st := by
-    refine detachTcbSlots_of_empty ?_ ?_
-    · rw [SystemState.slotCapAt_of_object hObj]
-      simp only [KernelObject.slotCap, TCB.spaceSlotCap, TCB.cspaceRootSlot]
-      rw [dif_pos (by decide)]; exact hS0
-    · rw [SystemState.slotCapAt_of_object hObj]
-      simp only [KernelObject.slotCap, TCB.spaceSlotCap, TCB.vspaceRootSlot]
-      rw [dif_pos (by decide)]; exact hS1
-  unfold lifecyclePreRetypeCleanup
-  simp only [hHeld, cancelDonationArmOnCore_of_unbound _ _ _ hUnb, Bool.false_eq_true, if_false]
-  rw [hClean, hDet]
-  have hRO' : t.replyObject = none := by unfold TCB.replyObject; rw [hRO]; rfl
-  simp [hRO', hWH]
-
 /-- **The destroy cleanup of a scheduling context bound to nothing and heading
 no reply stack is the identity**: its release finds no binding. -/
 theorem lifecyclePreRetypeCleanup_of_schedContextFree (st : SystemState) (x : SeLe4n.ObjId)
@@ -1585,21 +1443,6 @@ theorem lifecyclePreRetypeCleanup_of_schedContextFree (st : SystemState) (x : Se
   simp only [hR, Option.isSome_none, Bool.false_eq_true, if_false]
   rw [releaseSchedContextBinding_of_unbound _ _ _
     (by unfold SeLe4n.Kernel.SchedContext.boundThread; rw [hB]; rfl)]
-
-/-- **A finalised thread's destroy cleanup leaves the state as it is**: it runs
-only on a retirable thread, on which the cleanup is the identity
-(`lifecyclePreRetypeCleanup_of_threadRetirable`). -/
-theorem finaliseThreadCleanup_eq (st : SystemState) (x : SeLe4n.ObjId) :
-    finaliseThreadCleanup st x = st := by
-  unfold finaliseThreadCleanup
-  split
-  · rename_i h
-    simp only [Bool.and_eq_true, bne_iff_ne, ne_eq] at h
-    split
-    · rename_i t hT
-      rw [lifecyclePreRetypeCleanup_of_threadRetirable hT h.1 h.2]
-    · rfl
-  · rfl
 
 /-- **A finalised scheduling context's destroy cleanup leaves the state as it
 is**: it runs only on a context bound to nothing and heading no reply stack
@@ -1616,15 +1459,6 @@ theorem finaliseSchedContextCleanup_eq (st : SystemState) (x : SeLe4n.ObjId) :
     · rfl
   · rfl
 
-/-- The compiled destroy cleanup of a finalised thread: what it provably is,
-so the store scans its guard and sweeps would make are not run
-(`finaliseThreadCleanup_eq`). -/
-@[inline] def finaliseThreadCleanupImpl (st : SystemState) (_x : SeLe4n.ObjId) : SystemState := st
-
-@[csimp] theorem finaliseThreadCleanup_eq_impl :
-    @finaliseThreadCleanup = @finaliseThreadCleanupImpl := by
-  funext st x; exact finaliseThreadCleanup_eq st x
-
 /-- The compiled destroy cleanup of a finalised scheduling context
 (`finaliseSchedContextCleanup_eq`). -/
 @[inline] def finaliseSchedContextCleanupImpl (st : SystemState) (_x : SeLe4n.ObjId) :
@@ -1634,8 +1468,8 @@ so the store scans its guard and sweeps would make are not run
     @finaliseSchedContextCleanup = @finaliseSchedContextCleanupImpl := by
   funext st x; exact finaliseSchedContextCleanup_eq st x
 
--- The finalisations are defined after their cleanups' `@[csimp]` theorems, so
--- their compiled code takes the compiled cleanups.
+-- The scheduling-context finalisation is defined after its cleanup's `@[csimp]`
+-- theorem, so its compiled code takes the compiled cleanup.
 
 /-- **seL4's `finaliseCap` on the final capability to a thread**: unbound from
 its notification (`unbindNotification`); its blocked IPC cancelled (`suspend` →
@@ -1648,22 +1482,22 @@ objects go, and here reply authority is tied to the server, so the server's
 delete removes each caller's reply then); suspended (`.Inactive` and off the
 scheduler, a core it ran on made to choose another thread); released by every core (`fpuThreadDelete`, and the
 residency record); unbound from its scheduling context (`schedContext_unbindTCB`,
-whose own dequeue the suspend has made); then the destroy cleanup.  seL4 runs the
-context unbind before the suspend, and the cut runs it after, so the unbind finds
-the thread on no core, which is all the order changes: the whole finalisation is
-one kernel step.  All of it runs only when the pre-state admits it
+whose own dequeue the suspend has made).  seL4 runs the context unbind before
+the suspend, and the cut runs it after, so the unbind finds the thread on no
+core, which is all the order changes: the whole finalisation is one kernel
+step.  What it leaves is read by the retire off the thread's own links
+(`threadRetirable`).  All of it runs only when the pre-state admits it
 (`threadFinaliseAdmitted`), checks before writes. -/
 def finaliseThread (x : SeLe4n.ObjId) (st : SystemState) : SystemState :=
   if threadFinaliseAdmitted st x then
     let tid : SeLe4n.ThreadId := ⟨x.val⟩
-    finaliseThreadCleanup
-      (finaliseThreadUnbindSchedContext
-        (finaliseThreadReleaseCores
-          (finaliseThreadSuspend
-            (finaliseThreadEndWaiters
-              (finaliseThreadReturnLoan
-                (finaliseThreadCancel
-                  (finaliseThreadUnbindNotification st tid) tid) tid) tid) tid) tid) tid) x
+    finaliseThreadUnbindSchedContext
+      (finaliseThreadReleaseCores
+        (finaliseThreadSuspend
+          (finaliseThreadEndWaiters
+            (finaliseThreadReturnLoan
+              (finaliseThreadCancel
+                (finaliseThreadUnbindNotification st tid) tid) tid) tid) tid) tid) tid
   else st
 
 /-- **seL4's `finaliseCap` on the final capability to a scheduling context**:
@@ -1679,21 +1513,6 @@ def finaliseSchedContext (x : SeLe4n.ObjId) (st : SystemState) : SystemState :=
     finaliseSchedContextCleanup (finaliseSchedContextUnstack
       (finaliseSchedContextUnbind (finaliseSchedContextDeschedule st x) x) x) x
   else st
-
-/-- **The thread finalisation, with its cleanup read as what it is.** -/
-theorem finaliseThread_eq (x : SeLe4n.ObjId) (st : SystemState) :
-    finaliseThread x st =
-      if threadFinaliseAdmitted st x then
-        finaliseThreadUnbindSchedContext
-          (finaliseThreadReleaseCores
-            (finaliseThreadSuspend
-              (finaliseThreadEndWaiters
-                (finaliseThreadReturnLoan
-                  (finaliseThreadCancel
-                    (finaliseThreadUnbindNotification st ⟨x.val⟩) ⟨x.val⟩) ⟨x.val⟩) ⟨x.val⟩)
-              ⟨x.val⟩) ⟨x.val⟩) ⟨x.val⟩
-      else st := by
-  unfold finaliseThread; rw [finaliseThreadCleanup_eq]
 
 /-- **The scheduling-context finalisation, with its cleanup read as what it
 is.** -/

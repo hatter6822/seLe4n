@@ -836,9 +836,27 @@ end ReplyWaiters
 -- §  The final-delete retire keeps the reachable state
 -- ============================================================================
 
+/-- **A notification a thread waits on is not quiescent**: the thread is in its
+queue (`notificationWaiterConsistent`'s membership clause), so the queue has a
+head. -/
+theorem notificationWaiterConsistent.waitedOn_not_quiescent {st : SystemState}
+    (h : notificationWaiterConsistent st) {tid : SeLe4n.ThreadId} {tcb : TCB}
+    {oid : SeLe4n.ObjId} (hT : st.objects[tid.toObjId]? = some (.tcb tcb))
+    (hB : tcb.ipcState = .blockedOnNotification oid) : passiveObjectQuiescent st oid = false := by
+  have hHead : ∀ {u : SeLe4n.ThreadId}, notificationQueueReaches st oid u →
+      ∃ ntfn hd, st.objects[oid]? = some (.notification ntfn) ∧ ntfn.waitHead = some hd := by
+    intro u hR
+    induction hR with
+    | head hN hH => exact ⟨_, _, hN, hH⟩
+    | next _ _ _ ih => exact ih
+  obtain ⟨ntfn, hd, hN, hH⟩ := hHead (h.reaches hT hB)
+  cases hq : passiveObjectQuiescent st oid with
+  | false => rfl
+  | true => rw [(passiveObjectQuiescent_notification hq hN).1] at hH; cases hH
+
 /-- **The retire keeps the notification queues**: it keeps every thread, keeps
-every notification it leaves, and erases none that a blocked thread names
-(`retireFinalObject_passive_kept`). -/
+every notification it leaves, and erases none a thread waits on — that one's
+queue has a head, so it is not quiescent. -/
 theorem retireFinalObject_preserves_notificationWaiterConsistent (ec : Concurrency.CoreId)
     (target recorder : Nat) {st : SystemState} (hObjInv : st.objects.invExt)
     (h : notificationWaiterConsistent st) :
@@ -851,7 +869,7 @@ theorem retireFinalObject_preserves_notificationWaiterConsistent (ec : Concurren
     (fun _ _ hN => retireFinalObject_back ec target recorder st hObjInv hN (fun _ e => by cases e))
     (fun _ _ _ _ hN hTt hB => by
       rw [retireFinalObject_passive_kept ec target recorder st hObjInv (by rw [hN]; trivial)
-        (.inl ⟨_, _, hTt, objectNamesById_of_blockedOnNotification hB⟩)]
+        (h.waitedOn_not_quiescent hTt hB)]
       exact hN)
     (fun _ tcb _ hTt hB => by
       rcases retireFinalObject_tcb_kept_or_quiescent ec target recorder st hObjInv hTt with
@@ -862,9 +880,11 @@ theorem retireFinalObject_preserves_notificationWaiterConsistent (ec : Concurren
     (fun _ tcb hTt _ => .inl (hPost _ tcb hTt))
 
 /-- **The retire keeps the donation chains**: every reply and scheduling
-context it leaves is as it was, and no reply a chain reads is erased — a head
-is named by its context, a lower frame by the frame above it, and every member
-links upward, so none is quiescent. -/
+context it leaves is as it was, and no reply or context a chain reads is
+erased — each is linked into the chain on its own side (a head reply up to its
+context, a context down to its head, a lower frame up to the frame above, an
+upper frame down to the one below, every member upward), so none is
+quiescent. -/
 theorem retireFinalObject_preserves_donationChainWellFormed (ec : Concurrency.CoreId)
     (target recorder : Nat) {st : SystemState} (hObjInv : st.objects.invExt)
     (h : donationChainWellFormed st) :
@@ -873,32 +893,26 @@ theorem retireFinalObject_preserves_donationChainWellFormed (ec : Concurrency.Co
       (retireFinalObject ec target recorder st).objects[o]? = some obj →
       (∀ U, obj ≠ .untyped U) → st.objects[o]? = some obj :=
     fun hp hn => retireFinalObject_back ec target recorder st hObjInv hp hn
-  have keepNamed : ∀ {o k : SeLe4n.ObjId} {ok : KernelObject},
-      passiveKernelObject st.objects[o]? → st.objects[k]? = some ok →
-      objectNamesById ok o = true →
-      (retireFinalObject ec target recorder st).objects[o]? = st.objects[o]? :=
-    fun hP hk hn => retireFinalObject_passive_kept ec target recorder st hObjInv hP
-      (.inl ⟨_, _, hk, hn⟩)
+  have keepReply : ∀ {o : SeLe4n.ObjId} {r : Reply}, st.objects[o]? = some (.reply r) →
+      r.prev.isSome = true ∨ r.next.isSome = true →
+      (retireFinalObject ec target recorder st).objects[o]? = some (.reply r) :=
+    fun hR hL => by
+      rw [retireFinalObject_passive_kept ec target recorder st hObjInv (by rw [hR]; trivial)
+        (hL.elim (passiveObjectQuiescent_of_prev hR) (passiveObjectQuiescent_of_next hR))]
+      exact hR
   refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro rid r hR
     exact h.replyWellFormed rid r (back hR (fun _ e => by cases e))
   · intro scId sc hSc rid hr
-    have hSc0 := back hSc (fun _ e => by cases e)
-    obtain ⟨r, hR, hN⟩ := h.headLinkReciprocal scId sc hSc0 rid hr
-    refine ⟨r, ?_, hN⟩
-    rw [keepNamed (by rw [hR]; trivial) hSc0 (objectNamesById_of_scReply hr)]
-    exact hR
+    obtain ⟨r, hR, hN⟩ := h.headLinkReciprocal scId sc (back hSc (fun _ e => by cases e)) rid hr
+    exact ⟨r, keepReply hR (.inr (by rw [hN]; rfl)), hN⟩
   · intro rid r scId hR hN
     obtain ⟨sc, hSc, hS⟩ := h.headLinkResolves rid r scId (back hR (fun _ e => by cases e)) hN
-    refine ⟨sc, retireFinalObject_schedContext ec target recorder st hObjInv hSc
-      (schedContextRetirable_false_of_named (back hR (fun _ e => by cases e)) ?_), hS⟩
-    simp only [objectNamesSchedContext, hN, beq_iff_eq]; rfl
+    exact ⟨sc, retireFinalObject_schedContext ec target recorder st hObjInv hSc
+      (schedContextRetirable_false_of_scReply hSc hS), hS⟩
   · intro rid r below hR hP
-    have hR0 := back hR (fun _ e => by cases e)
-    obtain ⟨b, hB, hBN⟩ := h.prevLinkReciprocal rid r below hR0 hP
-    refine ⟨b, ?_, hBN⟩
-    rw [keepNamed (by rw [hB]; trivial) hR0 (objectNamesById_of_replyPrev hP)]
-    exact hB
+    obtain ⟨b, hB, hBN⟩ := h.prevLinkReciprocal rid r below (back hR (fun _ e => by cases e)) hP
+    exact ⟨b, keepReply hB (.inr (by rw [hBN]; rfl)), hBN⟩
   · intro scId sc hSc
     obtain ⟨fuel, chain, hC⟩ := h.headTerminates scId sc (back hSc (fun _ e => by cases e))
     refine ⟨fuel, chain, ?_⟩
@@ -906,14 +920,10 @@ theorem retireFinalObject_preserves_donationChainWellFormed (ec : Concurrency.Co
     refine donationChainWalk_congr_on_chain fuel _ _ chain hC (fun m hm => ?_)
     obtain ⟨r, hR, hNs⟩ := donationChainWalk_mem st fuel _ _ chain hC m hm
     unfold replyStackLinksAt? SystemState.getObject?
-    rw [retireFinalObject_passive_kept ec target recorder st hObjInv (by rw [hR]; trivial)
-      (.inr (passiveObjectQuiescent_of_next hR hNs))]
+    rw [keepReply hR (.inr hNs), hR]
   · intro rid r above hR hN
-    have hR0 := back hR (fun _ e => by cases e)
-    obtain ⟨a, hA, hAP⟩ := h.nextLinkReciprocal rid r above hR0 hN
-    refine ⟨a, ?_, hAP⟩
-    rw [keepNamed (by rw [hA]; trivial) hR0 (objectNamesById_of_replyNext hN)]
-    exact hA
+    obtain ⟨a, hA, hAP⟩ := h.nextLinkReciprocal rid r above (back hR (fun _ e => by cases e)) hN
+    exact ⟨a, keepReply hA (.inl (by rw [hAP]; rfl)), hAP⟩
 
 /-- **The retire keeps every thread's reply view but a quiescent thread's**:
 a key keeps its view, or loses an idle one — the retired thread's, which waits on
@@ -972,5 +982,374 @@ theorem retireFinalObject_preserves_ipcReachable (ec : Concurrency.CoreId)
       (by rw [hS]) (by rw [hS]) h.runQueueRefined,
     SystemState.replyWaitersConsistent.of_views_erased
       (retireFinalObject_replyViews ec target recorder hObjInv) h.replyWaitersConsistent⟩
+
+-- ============================================================================
+-- §  What the retire's own-link guards answer: an admitted object is named by none
+-- ============================================================================
+
+/-- **A thread whose state codes name `x`** (`ipcCodesName`) is queued on it as
+an endpoint or waits on it as a notification. -/
+theorem ipcCodesName_true {t : TCB} {x : SeLe4n.ObjId}
+    (h : ipcCodesName t.ipcObjectCode t.ipcStateCode x = true) :
+    ipcStateQueuedOn x t.ipcState ∨ t.ipcState = .blockedOnNotification x := by
+  unfold TCB.ipcState
+  unfold ipcCodesName at h
+  generalize t.ipcObjectCode = o at h ⊢
+  generalize t.ipcStateCode = s at h ⊢
+  rcases x with ⟨xv⟩
+  rcases s with _ | _ | _ | _ | s
+  · cases o with
+    | zero => simp at h
+    | succ o =>
+      simp only [if_true, beq_iff_eq, Nat.add_right_cancel_iff] at h
+      subst h; exact .inl rfl
+  · simp at h; subst h; exact .inl rfl
+  · simp at h; subst h; exact .inr rfl
+  · simp at h; subst h; exact .inl rfl
+  · simp at h
+
+/-- **No object names a quiescent passive object by id** (`objectNamesById`),
+under the reachable invariants: so the retire reads its own links alone.  A
+thread blocked on it would be queued on it or wait in its queue, and its queues
+are empty (`passiveObjectQuiescent_notQueuedOn`,
+`notificationWaiterConsistent.waitedOn_not_quiescent`); a thread bound to it is
+answered by its bound-thread code (`notificationBindingReciprocal`), which is
+zero; a caller's reply link to it by its caller (`replyCallerLinkage`), which it
+has none of; a receiver's stash of it by its stash record
+(`pendingReceiveReplyWellFormed.stashedAt`), which names no live stasher; a
+reply's stack link to it, either way, and a context's head link to it, by its
+own stack links (`donationChainWellFormed`), which it has none of. -/
+theorem passiveObjectQuiescent.namedByNone {st : SystemState} (h : ipcReachable st)
+    {x : SeLe4n.ObjId} (hQ : passiveObjectQuiescent st x = true)
+    {k : SeLe4n.ObjId} {o : KernelObject} (hK : st.objects[k]? = some o) :
+    objectNamesById o x = false := by
+  have hI := h.ipcInvariantFull
+  have hRx : ∀ r : Reply, st.objects[x]? = some (.reply r) →
+      r.callerCode = 0 ∧ st.replyStashedAt ⟨x.val⟩ r = false ∧ r.prev = none ∧ r.next = none :=
+    fun r hR => passiveObjectQuiescent_reply hQ hR
+  cases o with
+  | tcb t =>
+    have hT : st.objects[(SeLe4n.ThreadId.ofObjId k).toObjId]? = some (.tcb t) := hK
+    unfold objectNamesById
+    simp only [Bool.or_eq_false_iff, beq_eq_false_iff_ne, ne_eq]
+    refine ⟨⟨⟨?_, fun hc => ?_⟩, fun hc => ?_⟩, fun hc => ?_⟩
+    · cases hn : ipcCodesName t.ipcObjectCode t.ipcStateCode x with
+      | false => rfl
+      | true =>
+        rcases ipcCodesName_true hn with hq | hb
+        · exact absurd hq (passiveObjectQuiescent_notQueuedOn hQ h.objects_invExt hI hT)
+        · rw [h.notificationWaiterConsistent.waitedOn_not_quiescent hT hb] at hQ; cases hQ
+    · have hB := (hI.notificationBindingReciprocal k).1 x.val (by
+        simp [notificationBindingCodes, KernelObject.bindingCodes, hK, hc])
+      have hC := passiveObjectQuiescent_bindingCodes (passiveObjectQuiescent.passive hQ) hQ
+      have hB' : (notificationBindingCodes st.objects[x]?).2 = k.val + 1 := hB
+      rw [hC] at hB'; simp at hB'
+    · obtain ⟨r, hR, hC⟩ := hI.replyCallerLinkage.1.1 _ t ⟨x.val⟩ hT (by
+        simp only [TCB.replyObject, hc]; rfl)
+      simp [Reply.caller, (hRx r hR).1] at hC
+    · obtain ⟨r, hR, hS⟩ := pendingReceiveReplyWellFormed.stashedAt
+        hI.pendingReceiveReplyWellFormed hT (rid := ⟨x.val⟩) (by
+          simp only [TCB.pendingReceiveReply, hc]; rfl)
+      rw [(hRx r hR).2.1] at hS; cases hS
+  | reply r =>
+    have hR : st.objects[(SeLe4n.ReplyId.ofObjId k).toObjId]? = some (.reply r) := hK
+    have hPrev : (match r.prev with | some p => p.toObjId == x | none => false) = false := by
+      cases hp : r.prev with
+      | none => rfl
+      | some p =>
+        cases hx : (p.toObjId == x) with
+        | false => simp [hx]
+        | true =>
+          obtain ⟨b, hB, hBN⟩ := h.donationChainWellFormed.prevLinkReciprocal _ r p hR hp
+          rw [beq_iff_eq.mp hx] at hB
+          rw [(hRx b hB).2.2.2] at hBN; cases hBN
+    have hNext : (match r.next with | some (.frame a) => a.toObjId == x | _ => false) = false := by
+      cases hn : r.next with
+      | none => rfl
+      | some l =>
+        cases l with
+        | head _ => rfl
+        | frame a =>
+          cases hx : (a.toObjId == x) with
+          | false => simp [hx]
+          | true =>
+            obtain ⟨b, hB, hBP⟩ := h.donationChainWellFormed.nextLinkReciprocal _ r a hR hn
+            rw [beq_iff_eq.mp hx] at hB
+            rw [(hRx b hB).2.2.1] at hBP; cases hBP
+    unfold objectNamesById; rw [Bool.or_eq_false_iff]; exact ⟨hPrev, hNext⟩
+  | schedContext sc =>
+    have hS : st.objects[(SeLe4n.SchedContextId.ofObjId k).toObjId]? = some (.schedContext sc) := hK
+    have hHd : (match sc.scReply with | some r => r.toObjId == x | none => false) = false := by
+      cases hr : sc.scReply with
+      | none => rfl
+      | some rid =>
+        cases hx : (rid.toObjId == x) with
+        | false => simp [hx]
+        | true =>
+          obtain ⟨b, hB, hBN⟩ := h.donationChainWellFormed.headLinkReciprocal _ sc hS rid hr
+          rw [beq_iff_eq.mp hx] at hB
+          rw [(hRx b hB).2.2.2] at hBN; cases hBN
+    unfold objectNamesById; exact hHd
+  | _ => rfl
+
+/-- **A run-queue neighbour is queued on the same core**: a thread queued on
+core `c` (its core code names `c`) whose forward, backward or bucket link names
+`z` has `z` queued on `c` too.  The queue is one list (`RunQueue.Layout`), every
+link of a member names another member (`LinkedQueue.linked_mem`), and every
+member's entry is its thread's (`runQueueRefined`). -/
+theorem SystemState.runQueueRefined.neighbour_queued {st : SystemState} (h : st.runQueueRefined)
+    (c : Concurrency.CoreId) {K : SeLe4n.ThreadId} {u : TCB} (hU : st.getTcb? K = some u)
+    (hc : u.runCoreCode = c.val + 1) {z : SeLe4n.ThreadId}
+    (hz : u.runNextCode = LinkedQueue.code z ∨ u.runPrevCode = LinkedQueue.code z ∨
+      u.runBucketNextCode = LinkedQueue.code z ∨ u.runBucketPrevCode = LinkedQueue.code z) :
+    ∃ tz, st.getTcb? z = some tz ∧ tz.runCoreCode = c.val + 1 := by
+  have hR := (h c).2
+  generalize hq : st.scheduler.runQueueOnCore c = rq at hR
+  have hK : rq.queuedLink K = u.runLink := by
+    rw [← hR K]; unfold SystemState.runLinkOn; rw [hU]; dsimp only; unfold TCB.runLinkOn; rw [if_pos hc]
+  have hCont : rq.contains K = true := by rw [← RunQueue.queuedLink_queued, hK]; rfl
+  have hL : RunQueue.linkOf rq.links K = u.runLink :=
+    (RunQueue.queuedLink_of_contains hCont).symm.trans hK
+  have lay := rq.layout_toList
+  have hKm : K ∈ rq.toList := (lay.queued K).mp (by rw [hL]; rfl)
+  have hzNe : LinkedQueue.code z ≠ 0 := LinkedQueue.code_ne_zero z
+  have ofLink : ∀ {f : SeLe4n.ThreadId → Nat} {l : List SeLe4n.ThreadId},
+      LinkedQueue.Linked f 0 l → K ∈ l → f K = LinkedQueue.code z → z ∈ l := by
+    intro f l hl hm e
+    rcases LinkedQueue.linked_mem hl hm with e0 | ⟨w, hw, ew⟩
+    · rw [e] at e0; exact absurd e0 hzNe
+    · rw [e] at ew; rw [LinkedQueue.code_inj ew]; exact hw
+  have hBk : K ∈ rq.toList.filter (fun t => (RunQueue.linkOf rq.links t).prio ==
+      (RunQueue.linkOf rq.links K).prio) := List.mem_filter.mpr ⟨hKm, by simp⟩
+  have hzm : z ∈ rq.toList := by
+    rcases hz with e | e | e | e
+    · exact List.mem_reverse.mp (ofLink lay.queue.2.2.2 (List.mem_reverse.mpr hKm)
+        (by rw [hL]; exact e))
+    · exact ofLink lay.queue.2.2.1 hKm (by rw [hL]; exact e)
+    · exact (List.mem_filter.mp (List.mem_reverse.mp (ofLink (lay.bucket _).2.2.2
+        (List.mem_reverse.mpr hBk) (by rw [hL]; exact e)))).1
+    · exact (List.mem_filter.mp (ofLink (lay.bucket _).2.2.1 hBk (by rw [hL]; exact e))).1
+  have hzq : (rq.queuedLink z).queued = true := by
+    rw [RunQueue.queuedLink_queued]; exact (lay.queued z).mpr hzm
+  rw [← hR z] at hzq
+  unfold SystemState.runLinkOn at hzq
+  cases hT : st.getTcb? z with
+  | none => rw [hT] at hzq; cases hzq
+  | some tz =>
+    rw [hT] at hzq; dsimp only at hzq
+    refine ⟨tz, rfl, ?_⟩
+    unfold TCB.runLinkOn at hzq
+    by_cases e : tz.runCoreCode = c.val + 1
+    · exact e
+    · rw [if_neg e] at hzq; cases hzq
+
+/-- **No object names a retirable thread by id** (`objectNamesThread`), under
+the reachable invariants and the scheduling-context binding pair: so the retire
+reads the thread's own links alone.  Each reference is answered on the thread's
+side, where its quiescent record holds nothing: an endpoint-queue neighbour by
+its own link (`tcbQueueLinkIntegrity`, `queuePPrevAgreesWithPrev`); a queue end,
+a notification waiter or a donation owner by its state, which is ready
+(`queueHeadBlockedConsistent`, `endpointQueueTailBlockedConsistent`,
+`notificationWaiterConsistent`, `donationOwnerValid`); a run-queue neighbour by
+its core code (`runQueueRefined.neighbour_queued`); a reply-waiter neighbour, a
+waiter or a server's queue head by its reply view (`replyWaitersConsistent`); a
+notification's binding by its own (`notificationBindingReciprocal`); a reply's
+caller by its state (`replyCallerLinkage`); a context bound to it by its own
+binding (`schedContextBindingConsistent`). -/
+theorem threadRetirable.namedByNone {st : SystemState} (h : ipcReachable st)
+    (hBind : schedContextBindingConsistent st) {x : SeLe4n.ObjId}
+    (hRet : threadRetirable st x = true) {k : SeLe4n.ObjId} {o : KernelObject}
+    (hK : st.objects[k]? = some o) : objectNamesThread o (x.val + 1) = false := by
+  have hI := h.ipcInvariantFull
+  obtain ⟨t, hTx, -, -, hQ, -⟩ := threadRetirable_parts hRet
+  obtain ⟨-, -, -, -, hQN, hQP, -, -, -, hRC, -, -, hRWH, hSC, hSO, hBN, -⟩ :=
+    threadQuiescent_codes hQ
+  have hReady := threadQuiescent_ipcState hQ
+  have hServ := threadQuiescent_blockingServer hQ
+  have hX : st.objects[(SeLe4n.ThreadId.ofObjId x).toObjId]? = some (.tcb t) := hTx
+  have isT : ∀ {tt : TCB}, st.objects[(SeLe4n.ThreadId.ofObjId x).toObjId]? = some (.tcb tt) →
+      tt = t := fun e => by rw [hX] at e; cases e; rfl
+  have dec : ∀ {n : Nat}, n = x.val + 1 →
+      SeLe4n.ThreadId.ofOptCode n = some (SeLe4n.ThreadId.ofObjId x) := by
+    intro n e; subst e; rfl
+  have notBlocked : ∀ {tt : TCB}, st.objects[(SeLe4n.ThreadId.ofObjId x).toObjId]? =
+      some (.tcb tt) → ∀ s : ThreadIpcState, s ≠ .ready → tt.ipcState ≠ s := by
+    intro tt e s hs hE; rw [isT e, hReady] at hE; exact hs hE.symm
+  have V := h.replyWaitersConsistent
+  have hVX : st.replyViews (SeLe4n.ThreadId.ofObjId x).toObjId = some t.replyView := by
+    unfold SystemState.replyViews; rw [SystemState.getObject?_eq_getElem, hX]; rfl
+  have serverOf : ∀ {s : SeLe4n.ThreadId}, ReplyViews.waiterOf st.replyViews (SeLe4n.ThreadId.ofObjId x) s →
+      False := by
+    intro s ⟨v, hv, hs⟩
+    rw [hVX] at hv; cases hv
+    simp only [TCB.replyView, hServ] at hs; cases hs
+  cases o with
+  | tcb u =>
+    have hU : st.objects[(SeLe4n.ThreadId.ofObjId k).toObjId]? = some (.tcb u) := hK
+    have hVK : st.replyViews (SeLe4n.ThreadId.ofObjId k).toObjId = some u.replyView := by
+      unfold SystemState.replyViews; rw [SystemState.getObject?_eq_getElem, hU]; rfl
+    have f1 : (u.queueNextCode == x.val + 1) = false := beq_eq_false_iff_ne.mpr fun e => by
+      obtain ⟨tb, hB, hP⟩ := hI.dualQueueSystemInvariant.linkIntegrity.1 _ u hU _ (dec e)
+      rw [isT hB] at hP; unfold TCB.queuePrev at hP; rw [hQP] at hP; cases hP
+    have prevX : u.queuePrev ≠ some (SeLe4n.ThreadId.ofObjId x) := fun e => by
+      obtain ⟨ta, hA, hN⟩ := hI.dualQueueSystemInvariant.linkIntegrity.2 _ u hU _ e
+      rw [isT hA] at hN; unfold TCB.queueNext at hN; rw [hQN] at hN; cases hN
+    have f2 : (u.queuePrevCode == x.val + 1) = false :=
+      beq_eq_false_iff_ne.mpr fun e => prevX (dec e)
+    have f3 : (u.queuePPrevCode == x.val + 1 + 1) = false := beq_eq_false_iff_ne.mpr fun e => by
+      have hAg := hI.dualQueueSystemInvariant.pprevAgrees _ u hU
+      unfold TCB.queuePPrevAgreesWithPrev at hAg
+      simp only [TCB.queuePPrev, e, QueuePPrev.ofOptCode] at hAg
+      exact prevX hAg
+    have hNW := h.notificationWaiterConsistent
+    have f4 : (u.ntfnNextCode == x.val + 1) = false := beq_eq_false_iff_ne.mpr fun e => by
+      by_cases hb : ∃ oid, u.ipcState = .blockedOnNotification oid
+      · obtain ⟨oid, hb⟩ := hb
+        obtain ⟨_, -, -, -, hNx⟩ := hNW.2.1 _ u oid hU hb
+        obtain ⟨-, tb, hB, hBl, -⟩ := hNx _ (dec e)
+        exact notBlocked hB _ (by intro e'; cases e') hBl
+      · have := (hNW.2.2.2.2 _ u hU (fun oid e' => hb ⟨oid, e'⟩)).2
+        unfold TCB.ntfnNext at this; rw [dec e] at this; cases this
+    have f5 : (u.ntfnPrevCode == x.val + 1) = false := beq_eq_false_iff_ne.mpr fun e => by
+      have hp : u.ntfnPrev = some (SeLe4n.ThreadId.ofObjId x) := dec e
+      by_cases hb : ∃ oid, u.ipcState = .blockedOnNotification oid
+      · obtain ⟨oid, hb⟩ := hb
+        obtain ⟨ntfn, hN, hHd, -⟩ := hNW.2.1 _ u oid hU hb
+        rcases hHd with hH | ⟨a, ta, hPa, hA, hAB, -⟩
+        · rw [hNW.headNoPrev hN hH hU] at hp; cases hp
+        · rw [hp] at hPa; cases hPa
+          exact notBlocked hA _ (by intro e'; cases e') hAB
+      · have := (hNW.2.2.2.2 _ u hU (fun oid e' => hb ⟨oid, e'⟩)).1
+        rw [hp] at this; cases this
+    have fRun : (u.runCoreCode != 0 && decide (u.runCoreCode ≤ Concurrency.numCores) &&
+        (u.runNextCode == x.val + 1 || u.runPrevCode == x.val + 1 ||
+          u.runBucketNextCode == x.val + 1 || u.runBucketPrevCode == x.val + 1)) = false := by
+      cases g : (u.runCoreCode != 0 && decide (u.runCoreCode ≤ Concurrency.numCores)) with
+      | false => rfl
+      | true =>
+        simp only [Bool.and_eq_true, bne_iff_ne, ne_eq, decide_eq_true_eq] at g
+        obtain ⟨c0, hc0⟩ := Nat.exists_eq_succ_of_ne_zero g.1
+        have hlt : c0 < Concurrency.numCores := by omega
+        cases hn : (u.runNextCode == x.val + 1 || u.runPrevCode == x.val + 1 ||
+            u.runBucketNextCode == x.val + 1 || u.runBucketPrevCode == x.val + 1) with
+        | false => rfl
+        | true =>
+          exfalso
+          simp only [Bool.or_eq_true, beq_iff_eq] at hn
+          have hz : u.runNextCode = LinkedQueue.code (SeLe4n.ThreadId.ofObjId x) ∨
+              u.runPrevCode = LinkedQueue.code (SeLe4n.ThreadId.ofObjId x) ∨
+              u.runBucketNextCode = LinkedQueue.code (SeLe4n.ThreadId.ofObjId x) ∨
+              u.runBucketPrevCode = LinkedQueue.code (SeLe4n.ThreadId.ofObjId x) := by
+            rcases hn with ((e | e) | e) | e
+            · exact .inl e
+            · exact .inr (.inl e)
+            · exact .inr (.inr (.inl e))
+            · exact .inr (.inr (.inr e))
+          obtain ⟨tz, hTz, hTzc⟩ := SystemState.runQueueRefined.neighbour_queued h.runQueueRefined ⟨c0, hlt⟩
+            ((SystemState.getTcb?_eq_some_iff st _ u).mpr hU) hc0 hz
+          rw [isT ((SystemState.getTcb?_eq_some_iff st _ tz).mp hTz), hRC] at hTzc
+          cases hTzc
+    have waiterNe : ∀ {s : SeLe4n.ThreadId}, u.blockingServer? = some s →
+        ∃ vs l, ReplyViews.queue st.replyViews s vs l ∧ SeLe4n.ThreadId.ofObjId k ∈ l := by
+      intro s hs
+      obtain ⟨vs, hvs⟩ := V.2.1 _ u.replyView s hVK (by simpa [TCB.replyView])
+      obtain ⟨l, hq⟩ := V.1 s _ hvs
+      exact ⟨vs, l, hq, (hq.2.2.2 _).mpr ⟨_, hVK, by simpa [TCB.replyView]⟩⟩
+    have f6 : (u.replyWaiterNextCode == x.val + 1) = false := beq_eq_false_iff_ne.mpr fun e => by
+      cases hs : u.blockingServer? with
+      | none =>
+        have := (V.2.2.1 _ u.replyView hVK (by simpa [TCB.replyView])).2
+        simp only [TCB.replyView] at this; omega
+      | some s =>
+        obtain ⟨_, l, hq, hKl⟩ := waiterNe hs
+        have hXl := ReplyViews.chain_next_mem hq.1 hKl hVK (n := SeLe4n.ThreadId.ofObjId x)
+          (by simp only [TCB.replyView]; exact dec e)
+        exact serverOf ((hq.2.2.2 _).mp hXl)
+    have f7 : (u.replyWaiterPrevCode == x.val + 1) = false := beq_eq_false_iff_ne.mpr fun e => by
+      cases hs : u.blockingServer? with
+      | none =>
+        have := (V.2.2.1 _ u.replyView hVK (by simpa [TCB.replyView])).1
+        simp only [TCB.replyView] at this; omega
+      | some s =>
+        obtain ⟨vs, l, hq, hKl⟩ := waiterNe hs
+        by_cases hh : SeLe4n.ThreadId.ofOptCode vs.headCode = some (SeLe4n.ThreadId.ofObjId k)
+        · have hCh := hq.1
+          rw [hh] at hCh
+          cases l with
+          | nil => cases hKl
+          | cons w l' =>
+            obtain ⟨hw, v, hv, hp, -⟩ := hCh
+            cases hw
+            rw [hVK] at hv; cases hv
+            simp only [TCB.replyView, dec e] at hp; cases hp
+        · obtain ⟨z, hz, hzP⟩ := ReplyViews.chain_prev_mem hq.1 hKl hVK hh
+          simp only [TCB.replyView, dec e] at hzP; cases hzP
+          exact serverOf ((hq.2.2.2 _).mp hz)
+    have f8 : (u.replyWaitersHeadCode == x.val + 1) = false := beq_eq_false_iff_ne.mpr fun e => by
+      obtain ⟨l, hq⟩ := V.1 _ u.replyView hVK
+      have hCh := hq.1
+      simp only [TCB.replyView, dec e] at hCh
+      exact serverOf ((hq.2.2.2 _).mp (ReplyViews.chain_head_mem hCh))
+    have f9 : (u.scBindingScCode != 0 && u.scBindingOwnerCode == x.val + 1) = false := by
+      cases g : (u.scBindingScCode != 0 && u.scBindingOwnerCode == x.val + 1) with
+      | false => rfl
+      | true =>
+        exfalso
+        simp only [Bool.and_eq_true, bne_iff_ne, ne_eq, beq_iff_eq] at g
+        obtain ⟨s0, hs0⟩ := Nat.exists_eq_succ_of_ne_zero g.1
+        have hb : u.schedContextBinding = .donated ⟨s0⟩ (SeLe4n.ThreadId.ofObjId x) := by
+          unfold TCB.schedContextBinding; rw [hs0, g.2]; rfl
+        obtain ⟨-, ot, hO, -, ep, rt, hBl⟩ := hI.donationOwnerValid _ u _ _ hU hb
+        exact notBlocked hO _ (by intro e'; cases e') hBl
+    have f10 : (u.ipcStateCode == x.val + 1 + 4) = false := beq_eq_false_iff_ne.mpr fun e => by
+      have hs : u.blockingServer? = some (SeLe4n.ThreadId.ofObjId x) := by
+        simp [TCB.blockingServer?, TCB.ipcState, e, ThreadIpcState.ofCodes]; rfl
+      obtain ⟨l, hq⟩ := V.1 _ t.replyView hVX
+      have hCh := hq.1
+      simp only [TCB.replyView, hRWH] at hCh
+      have hl := ReplyViews.chain_none hCh
+      have hKl := (hq.2.2.2 (SeLe4n.ThreadId.ofObjId k)).mpr ⟨_, hVK, by simpa [TCB.replyView]⟩
+      rw [hl] at hKl; cases hKl
+    simp only [objectNamesThread, f1, f2, f3, f4, f5, fRun, f6, f7, f8, f9, f10, Bool.or_false]
+  | endpoint ep =>
+    have hHB := hI.queueHeadBlockedConsistent k ep _ t hK hX
+    have hTB := hI.endpointQueueTailBlockedConsistent k ep _ t hK hX
+    have g1 : (ep.sendHeadCode == x.val + 1) = false := beq_eq_false_iff_ne.mpr fun e => by
+      rcases hHB.2 (dec e) with hE | hE <;> rw [hReady] at hE <;> cases hE
+    have g2 : (ep.sendTailCode == x.val + 1) = false := beq_eq_false_iff_ne.mpr fun e => by
+      rcases hTB.2 (dec e) with hE | hE <;> rw [hReady] at hE <;> cases hE
+    have g3 : (ep.recvHeadCode == x.val + 1) = false := beq_eq_false_iff_ne.mpr fun e => by
+      have hE := hHB.1 (dec e); rw [hReady] at hE; cases hE
+    have g4 : (ep.recvTailCode == x.val + 1) = false := beq_eq_false_iff_ne.mpr fun e => by
+      have hE := hTB.1 (dec e); rw [hReady] at hE; cases hE
+    simp only [objectNamesThread, g1, g2, g3, g4, Bool.or_false]
+  | notification n =>
+    obtain ⟨-, hHd, hTl⟩ := h.notificationWaiterConsistent.1 k n hK
+    have g1 : (n.waitHeadCode == x.val + 1) = false := beq_eq_false_iff_ne.mpr fun e => by
+      obtain ⟨tb, hB, hBl⟩ := hHd _ (dec e)
+      exact notBlocked hB _ (by intro e'; cases e') hBl
+    have g2 : (n.waitTailCode == x.val + 1) = false := beq_eq_false_iff_ne.mpr fun e => by
+      obtain ⟨tb, hB, hBl, -⟩ := hTl _ (dec e)
+      exact notBlocked hB _ (by intro e'; cases e') hBl
+    have g3 : (n.boundTCBCode == x.val + 1) = false := beq_eq_false_iff_ne.mpr fun e => by
+      have hB := (hI.notificationBindingReciprocal k).2 x.val (by
+        simp [notificationBindingCodes, KernelObject.bindingCodes, hK, e])
+      have hB' : (notificationBindingCodes st.objects[x]?).1 = k.val + 1 := hB
+      simp [notificationBindingCodes, KernelObject.bindingCodes, hTx, hBN] at hB'
+    simp only [objectNamesThread, g1, g2, g3, Bool.or_false]
+  | reply r =>
+    have g : (r.callerCode == x.val + 1) = false := beq_eq_false_iff_ne.mpr fun e => by
+      obtain ⟨tb, hB, -, ep, rt, hBl⟩ :=
+        hI.replyCallerLinkage.1.2 (SeLe4n.ReplyId.ofObjId k) r _ hK (dec e)
+      exact notBlocked hB _ (by intro e'; cases e') hBl
+    simp only [objectNamesThread, g]
+  | schedContext sc =>
+    have g : (sc.boundThreadCode == x.val + 1) = false := beq_eq_false_iff_ne.mpr fun e => by
+      obtain ⟨tb, hB, hb⟩ := hBind.2 (SeLe4n.SchedContextId.ofObjId k) sc hK _ (dec e)
+      rw [isT hB] at hb
+      unfold TCB.schedContextBinding at hb; rw [hSC] at hb
+      rcases hb with hb | ⟨_, hb⟩ <;> cases hb
+    simp only [objectNamesThread, g]
+  | _ => rfl
 
 end SeLe4n.Kernel

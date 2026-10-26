@@ -24,9 +24,9 @@ keeps it in use.
   slots aside, which the zombie loop empties after the finalisation.
 
 What the record does not say — that no *other* object still names the
-finalised one — is the retire's store walk today, and the reciprocity
-invariants that replace it are `docs/planning/UNTYPED_RESET_PLAN.md` row 27,
-which consumes these theorems.
+finalised one — follows from the record under the reachable invariants: for the
+thread, `threadRetirable.namedByNone`, so the retire reads the thread's own links
+alone.
 -/
 
 namespace SeLe4n.Kernel
@@ -222,7 +222,7 @@ waiters' admission on the state the cancel leaves (`hWait`), and the context
 unbind's binding clause on the state the release leaves (`hBind`).  That the
 pre-state admission carries to those states — so no step's guard refuses after
 an earlier step has written, which is what proves checks-before-writes for the
-thread finalisation — is `docs/planning/UNTYPED_RESET_PLAN.md` row 29; today
+thread finalisation — is `docs/planning/UNTYPED_RESET_PLAN.md` row 31; today
 each step and the retire re-check their own guards.
 
 The steps: the unbind clears the bound-notification code
@@ -248,7 +248,7 @@ theorem finaliseThread_quiesces (x : SeLe4n.ObjId) (st : SystemState)
         (finaliseThreadAfterRelease st ⟨x.val⟩).getSchedContext? ⟨t6.scBindingScCode - 1⟩ = some sc ∧
           sc.boundThreadCode = x.val + 1)) :
     threadRecordQuiesced (finaliseThread x st) x := by
-  rw [finaliseThread_eq, if_pos hA]
+  unfold finaliseThread; dsimp only; rw [if_pos hA]
   unfold finaliseThreadAfterRelease at hBind
   unfold finaliseThreadAfterCancel at hWait hBind
   -- The admission's reads of the thread.
