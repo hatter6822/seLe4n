@@ -799,7 +799,7 @@ theorem objectIdsUnique_empty : objectIdsUnique [] = true := by
     be classified. -/
 def endpointReferencesReservedIdleSlot (ep : Endpoint) : Bool :=
   match ep with
-  | ⟨_sendHead, _sendTail, _recvHead, _recvTail, _serviceCode⟩ =>
+  | ⟨_sendHead, _sendTail, _recvHead, _recvTail⟩ =>
     ep.sendQ.head.any SeLe4n.Kernel.isIdleThreadId ||
     ep.sendQ.tail.any SeLe4n.Kernel.isIdleThreadId ||
     ep.receiveQ.head.any SeLe4n.Kernel.isIdleThreadId ||
@@ -812,8 +812,7 @@ def endpointReferencesReservedIdleSlot (ep : Endpoint) : Bool :=
     and no capability can reach the idle TCB to clear it. -/
 def notificationReferencesReservedIdleSlot (notif : Notification) : Bool :=
   match notif with
-  | ⟨_state, waitHeadCode, waitTailCode, _hasPendingBadge, _pendingWord, _cleared, boundTCBCode,
-      _irqBound⟩ =>
+  | ⟨_state, waitHeadCode, waitTailCode, _hasPendingBadge, _pendingWord, _cleared, boundTCBCode⟩ =>
     (SeLe4n.ThreadId.ofOptCode waitHeadCode).any SeLe4n.Kernel.isIdleThreadId ||
     (SeLe4n.ThreadId.ofOptCode waitTailCode).any SeLe4n.Kernel.isIdleThreadId ||
     (SeLe4n.ThreadId.ofOptCode boundTCBCode).any SeLe4n.Kernel.isIdleThreadId
@@ -1809,7 +1808,7 @@ a new `VSpaceRoot` field is that checker's to classify, in its own module. -/
 /-- A boot **endpoint** is inert: both intrusive queues empty. -/
 def bootSafeEndpointCheck (ep : Endpoint) : Bool :=
   match ep with
-  | ⟨_sendHead, _sendTail, _recvHead, _recvTail, _serviceCode⟩ =>
+  | ⟨_sendHead, _sendTail, _recvHead, _recvTail⟩ =>
     ep.sendQ.head.isNone && ep.sendQ.tail.isNone &&
     ep.receiveQ.head.isNone && ep.receiveQ.tail.isNone
 
@@ -1824,8 +1823,7 @@ def bootSafeEndpointCheck (ep : Endpoint) : Bool :=
     reservation's `notificationReferencesReservedIdleSlot`. -/
 def bootSafeNotificationCheck (notif : Notification) : Bool :=
   match notif with
-  | ⟨_state, _waitHeadCode, _waitTailCode, _hasPendingBadge, _pendingWord, _cleared, _boundTCBCode,
-      _irqBound⟩ =>
+  | ⟨_state, _waitHeadCode, _waitTailCode, _hasPendingBadge, _pendingWord, _cleared, _boundTCBCode⟩ =>
     decide (notif.state = .idle) && notif.waitHead.isNone && notif.waitTail.isNone &&
     notif.pendingBadge.isNone
 

@@ -172,7 +172,7 @@ theorem notificationSignalOnCore_preserves_ipcInvariant
       | ok pair =>
         simp only
         exact storeObject_notification_preserves_ipcInvariant st pair.2 notificationId _ hInv hObjInv
-          hStore (notificationSignal_result_wellFormed_merge _ _ _)
+          hStore (notificationSignal_result_wellFormed_merge _ _)
     | some waiter =>
       simp only
       cases hStore : storeObject notificationId _ st with
@@ -221,7 +221,7 @@ theorem notificationWaitOnCore_preserves_ipcInvariant
         simp only
         have hObjInv1 := storeObject_preserves_objects_invExt' st notificationId _ pair hObjInv hStore
         have hInv1 := storeObject_notification_preserves_ipcInvariant st pair.2 notificationId _ hInv
-          hObjInv hStore (notificationWait_result_wellFormed_badge _ _)
+          hObjInv hStore (notificationWait_result_wellFormed_badge _)
         cases hTcb : storeTcbIpcState pair.2 waiter .ready with
         | error e => simp only; exact hInv
         | ok st'' =>

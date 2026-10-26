@@ -476,7 +476,7 @@ theorem notificationSignal_badge_stored_fresh
   unfold notificationSignal SystemState.getObject? at hSignal
   simp [hObj, hNoWaiters, hNoPending] at hSignal
   exact ⟨{ state := .active, 
-           hasPendingBadge := true, pendingWord := (SeLe4n.Badge.ofNatMasked badge.toNat), boundTCBCode := ntfn.boundTCBCode, irqBound := ntfn.irqBound },
+           hasPendingBadge := true, pendingWord := (SeLe4n.Badge.ofNatMasked badge.toNat), boundTCBCode := ntfn.boundTCBCode },
     by rw [← storeObject_objects_eq st st' notifId _ hObjInv hSignal], rfl⟩
 
 /-- (H-03) When `notificationWait` returns `some badge`, that badge was the pending

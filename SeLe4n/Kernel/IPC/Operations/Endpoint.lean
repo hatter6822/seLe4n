@@ -9631,7 +9631,7 @@ def notificationSignal (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) : 
             let ntfn' : Notification := {
               state := .active
               hasPendingBadge := true, pendingWord := mergedBadge
-              boundTCBCode := ntfn.boundTCBCode, irqBound := ntfn.irqBound
+              boundTCBCode := ntfn.boundTCBCode
             }
             storeObject notificationId (.notification ntfn') st
     | some _ => .error .invalidCapability
@@ -9664,7 +9664,7 @@ def notificationWaitPark
         | some badge =>
             let ntfn' : Notification :=
               { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero,
-                boundTCBCode := ntfn.boundTCBCode, irqBound := ntfn.irqBound }
+                boundTCBCode := ntfn.boundTCBCode }
             match storeObject notificationId (.notification ntfn') st with
             | .error e => .error e
             | .ok ((), st') =>
@@ -10215,7 +10215,7 @@ theorem notificationWaitPark_badge_path_notification
         simp only [hBadge] at hStep
         let newNtfn : Notification :=
           { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero,
-            boundTCBCode := ntfn.boundTCBCode, irqBound := ntfn.irqBound }
+            boundTCBCode := ntfn.boundTCBCode }
         revert hStep
         cases hStore : storeObject notifId (.notification newNtfn) st with
         | error e => simp
@@ -10602,7 +10602,7 @@ theorem notificationWaitPark_badge_objects {st st' : SystemState} {nid : SeLe4n.
               exact hW1
             let n' : Notification :=
               { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero
-                boundTCBCode := ntfn.boundTCBCode, irqBound := ntfn.irqBound }
+                boundTCBCode := ntfn.boundTCBCode }
             exact ⟨ntfn, n', tcb, st1, rfl, hBadge, rfl, rfl, hW0, hN1,
               fun x hx => storeObject_objects_ne st st1 nid x _ hx hObjInv hStore, hW2, hO2⟩
 

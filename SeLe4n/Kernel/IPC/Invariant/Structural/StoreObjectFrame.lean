@@ -1630,7 +1630,7 @@ theorem notificationWaitPark_preserves_allPendingMessagesBounded
           cases hStore : storeObject notificationId
               (.notification
                 { state := .idle, 
-                  hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCBCode := ntfn.boundTCBCode, irqBound := ntfn.irqBound }) st with
+                  hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCBCode := ntfn.boundTCBCode }) st with
           | error e => simp
           | ok pair =>
               simp only []
@@ -1894,7 +1894,7 @@ theorem notificationWaitPark_preserves_dualQueueSystemInvariant
         cases hStore : storeObject notificationId
             (.notification
               { state := .idle, 
-                hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCBCode := ntfn.boundTCBCode, irqBound := ntfn.irqBound }) st with
+                hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCBCode := ntfn.boundTCBCode }) st with
         | error e => simp
         | ok pair =>
           simp only []
