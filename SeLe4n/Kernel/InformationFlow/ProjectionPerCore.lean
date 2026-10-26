@@ -21,9 +21,9 @@ scheduler-reading IF-M1 projection functions defined in
 `bootCoreId` after SM4.B) to per-core forms parameterised by an explicit
 `(c : CoreId)`, plus the aggregate `projectStateOnCore`.
 
-The non-scheduler projections (`projectObjects`, `projectServicePresence`,
-`projectIrqHandlers`, `projectObjectIndex`, `projectDomainSchedule`,
-`projectMemory`, `projectServiceRegistry`) read no per-core scheduler
+The non-scheduler projections (`projectObjects`, `projectIrqHandlers`,
+`projectObjectIndex`, `projectDomainSchedule`, `projectMemory`) read no
+per-core scheduler
 field, so they are unchanged; only the six scheduler-reading projections
 (`projectRunnable`, `projectCurrent`, `projectActiveDomain`,
 `projectDomainTimeRemaining`, `projectDomainScheduleIndex`,
@@ -136,7 +136,6 @@ def projectStateOnCoreByLinks (ctx : LabelingContext) (observer : IfObserver)
   { objects := projectObjects ctx observer st
     runnable := projectRunnableOnCoreByLinks ctx observer st c
     current := projectCurrentOnCore ctx observer st c
-    services := projectServicePresence ctx observer st
     activeDomain := projectActiveDomainOnCore ctx observer st c
     irqHandlers := projectIrqHandlers ctx observer st
     objectIndex := projectObjectIndex ctx observer st
@@ -144,8 +143,7 @@ def projectStateOnCoreByLinks (ctx : LabelingContext) (observer : IfObserver)
     domainSchedule := projectDomainSchedule ctx observer st
     domainScheduleIndex := projectDomainScheduleIndexOnCore ctx observer st c
     machineRegs := projectMachineRegsOnCore ctx observer st c
-    memory := projectMemory ctx observer st
-    serviceRegistry := projectServiceRegistry ctx observer st }
+    memory := projectMemory ctx observer st }
 
 theorem projectStateOnCoreByLinks_eq (ctx : LabelingContext) (observer : IfObserver)
     {st : SystemState} {c : CoreId} (h : st.runQueueRefinedOnCore c) :

@@ -460,13 +460,6 @@ private theorem saveOutgoingContext_machine (st : SystemState) :
   · rfl
   · exact SystemState.updateTcb_machine _ _ _
 
-private theorem saveOutgoingContext_services (st : SystemState) :
-    (saveOutgoingContext st).services = st.services := by
-  unfold saveOutgoingContext
-  split
-  · rfl
-  · rw [SystemState.updateTcb_eq_objects_update]
-
 private theorem saveOutgoingContext_irqHandlers (st : SystemState) :
     (saveOutgoingContext st).irqHandlers = st.irqHandlers := by
   unfold saveOutgoingContext
@@ -921,11 +914,9 @@ theorem switchDomain_preserves_lowEquivalent
         simp only [projectState, projectRunnable, SchedulerState.runnable] at hBase
         exact h₁.trans (hBase.trans h₂.symm)
       all_goals first
-        | exact congrArg ObservableState.services hLow
         | exact congrArg ObservableState.irqHandlers hLow
         | exact congrArg ObservableState.objectIndex hLow
         | exact congrArg ObservableState.memory hLow
-        | exact congrArg ObservableState.serviceRegistry hLow
         | exact congrArg ObservableState.domainSchedule hLow
         | simp [projectCurrent, projectActiveDomain, projectDomainTimeRemaining,
             projectDomainScheduleIndex, projectMachineRegs]
@@ -1205,8 +1196,6 @@ private theorem cspaceInsertSlot_preserves_projection
     · simp [projectObjects, hObs]
   · simp [projectRunnable, cspaceInsertSlot_preserves_scheduler st st' dst cap hStep]
   · simp [projectCurrent, cspaceInsertSlot_preserves_scheduler st st' dst cap hStep]
-  · funext sid; simp only [projectServicePresence, lookupService,
-      cspaceInsertSlot_preserves_services st st' dst cap hStep]
   · simp [projectActiveDomain, cspaceInsertSlot_preserves_scheduler st st' dst cap hStep]
   · funext irq; simp only [projectIrqHandlers,
       cspaceInsertSlot_preserves_irqHandlers st st' dst cap hStep]
@@ -1219,9 +1208,6 @@ private theorem cspaceInsertSlot_preserves_projection
   · -- R5-C.1: memory
     exact projectMemory_eq_of_memory_eq ctx observer st' st
       (by rw [cspaceInsertSlot_preserves_machine st st' dst cap hStep])
-  · -- V6-E: serviceRegistry
-    exact projectServiceRegistry_eq_of_services_eq ctx observer st' st
-      (cspaceInsertSlot_preserves_services st st' dst cap hStep)
 
 /-- WS-H9: cspaceCopy at non-observable CNodes preserves projection.
 cspaceCopy = cspaceLookupSlot (read-only) + cspaceInsertSlot (at non-obs dst)
@@ -3053,9 +3039,9 @@ theorem projectObjects_of_serviceCodeRewrite
   rw [h0]; simp [projectKernelObject]
 
 /-- R5-B.2/M-02: registerService preserves projection.  It writes the
-`serviceRegistry` — read by the projection only through the presence of
-observable services — and its endpoint's `serviceCode`, which the object
-projection erases. -/
+`serviceRegistry`, which no projection reads (projecting it is
+`UNTYPED_RESET_PLAN.md` part 33), and its endpoint's `serviceCode`, which the
+object projection erases. -/
 theorem registerService_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (reg : ServiceRegistration) (st st' : SystemState)
@@ -3247,12 +3233,6 @@ private theorem updatePipBoost_preserves_projection
       (threadObservable ctx observer) hTidHigh
   · -- projectCurrent
     simp only [projectCurrent, PriorityInheritance.updatePipBoost_preserves_current]
-  · -- projectServicePresence
-    have hSvc : lookupService (PriorityInheritance.updatePipBoost st tid) =
-                lookupService st := by
-      funext sid; simp [lookupService,
-        PriorityInheritance.updatePipBoost_preserves_services]
-    funext sid; simp only [projectServicePresence, hSvc]
   · -- projectActiveDomain
     simp only [projectActiveDomain,
       PriorityInheritance.updatePipBoost_preserves_activeDomain]
@@ -3278,12 +3258,6 @@ private theorem updatePipBoost_preserves_projection
   · -- projectMemory
     funext paddr; simp only [projectMemory,
       PriorityInheritance.updatePipBoost_preserves_machine]
-  · -- projectServiceRegistry
-    have hSvc : lookupService (PriorityInheritance.updatePipBoost st tid) =
-                lookupService st := by
-      funext s; simp [lookupService,
-        PriorityInheritance.updatePipBoost_preserves_services]
-    funext sid; simp only [projectServiceRegistry, hSvc]
 
 theorem propagatePIP_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
@@ -3484,7 +3458,7 @@ theorem objects_insert_preserves_projection_high
   -- Use the full projectState expansion with ObservableState.mk constructor.
   show (ObservableState.mk (projectObjects ctx observer
                               { st with objects := st.objects.insert oid obj })
-          _ _ _ _ _ _ _ _ _ _ _ _) = _
+          _ _ _ _ _ _ _ _ _ _) = _
   rw [hProjObj]
   rfl
 
@@ -4477,7 +4451,7 @@ theorem objects_insert_preserves_projection_of_proj_eq
     | false => rfl
   show (ObservableState.mk (projectObjects ctx observer
                               { st with objects := st.objects.insert oid obj })
-          _ _ _ _ _ _ _ _ _ _ _ _) = _
+          _ _ _ _ _ _ _ _ _ _) = _
   rw [hProjObj]
   rfl
 
@@ -4999,38 +4973,23 @@ theorem lookupServiceByRecordedCode_preserves_projection
 -- AK6-F.12: revokeService preservation
 -- ============================================================================
 
-/-- AK6-F.12: `revokeService` preserves projection when the revoked
-    service is non-observable AND the projection-service-registry is
-    already extensionally preserved across the operation.
+/-- AK6-F.12: `revokeService` preserves projection.  It erases the
+    registration from `serviceRegistry`, which no projection reads, and
+    clears its endpoint's `serviceCode`, which the object projection erases.
 
-    **Design note on hypothesis `hServiceProjEq`**: `revokeService` calls
-    `removeDependenciesOf` which performs an RHTable fold that may
-    rewrite entries at *other* keys (filtering the revoked sid from
-    their dependency lists). Proving general preservation of
-    `projectServiceRegistry` would require a fold-induction lemma at
-    the RHTable layer that is out of scope for AK6-F. Instead we take
-    the extensional equality as a hypothesis, to be discharged by the
-    caller under either (a) `LabelingContextValid.serviceDepClosure`
-    (no observable service depends on a non-observable one) or (b) a
-    future RHTable fold-extensionality theorem. This is identical in
-    spirit to the `hSchedProj` closure parameter used in
-    `setPriorityOp_preserves_projection` — it isolates a cleanly
-    externalised obligation at the projection layer. -/
+    Before WS-ZA ZA5.4 part 32 the operation also folded the service
+    dependency graph, which the projection did read, so the theorem took the
+    graph's projection equalities as a hypothesis (`hServiceProjEq`).  With
+    the graph gone the proof is closed from frame facts alone.  It says
+    nothing about the registry itself: projecting the registry, and proving
+    the register, revoke and query arms preserve that projection, is
+    `UNTYPED_RESET_PLAN.md` part 33. -/
 theorem revokeService_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (sid : SeLe4n.ServiceId) (st st' : SystemState)
-    (hServiceProjEq :
-        ∀ stFinal, (SeLe4n.Kernel.revokeService sid st = .ok ((), stFinal)) →
-        projectServicePresence ctx observer stFinal =
-          projectServicePresence ctx observer st ∧
-        projectServiceRegistry ctx observer stFinal =
-          projectServiceRegistry ctx observer st)
     (hObjInv : st.objects.invExt)
     (hStep : SeLe4n.Kernel.revokeService sid st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
-  -- Extract projection equalities directly from the hypothesis using hStep.
-  have hProj := hServiceProjEq st' hStep
-  obtain ⟨hPresence, hRegistry⟩ := hProj
   -- The one object write — the endpoint's `serviceCode` — is erased by the
   -- object projection.
   have hObj := projectObjects_of_serviceCodeRewrite ctx observer
@@ -5039,13 +4998,11 @@ theorem revokeService_preserves_projection
   -- st' = clearEndpointServiceCode { st with serviceRegistry := erase } ..:
   -- every other projected component is read from a field neither write
   -- touches.
-  rw [SeLe4n.Kernel.clearEndpointServiceCode_eq_withObjects] at hObj hPresence hRegistry ⊢
+  rw [SeLe4n.Kernel.clearEndpointServiceCode_eq_withObjects] at hObj ⊢
   simp only [projectState]
   congr 1 <;>
     (first
       | exact hObj
-      | exact hPresence
-      | exact hRegistry
       | (simp only [projectObjects, projectRunnable, projectCurrent,
                     projectActiveDomain, projectIrqHandlers, projectObjectIndex,
                     projectDomainTimeRemaining, projectDomainSchedule,
@@ -5410,25 +5367,21 @@ theorem retireFinalObject_preserves_projection (ctx : LabelingContext) (observer
     projectState ctx observer (retireFinalObject ec target recorder st) =
       projectState ctx observer st := by
   obtain ⟨-, hS, hM⟩ := retireFinalObject_fields ec target recorder st
-  obtain ⟨hSv, hIrq, hIdx⟩ := retireFinalObject_tables ec target recorder st hObjInv _ hx hR hK
+  obtain ⟨-, hIrq, hIdx⟩ := retireFinalObject_tables ec target recorder st hObjInv _ hx hR hK
   have hO := retireFinalObject_objects_of_excluded ec target recorder st hObjInv _ hx hU hK
-  generalize retireFinalObject ec target recorder st = s at hS hM hSv hIrq hIdx hO
+  generalize retireFinalObject ec target recorder st = s at hS hM hIrq hIdx hO
   have hPO : projectObjects ctx observer s = projectObjects ctx observer st := by
     funext o
     unfold projectObjects
     cases hob : objectObservable ctx observer o with
     | false => rfl
     | true => simp only [↓reduceIte, SystemState.getObject?, hO o hob]
-  have hPS : projectServicePresence ctx observer s = projectServicePresence ctx observer st := by
-    unfold projectServicePresence lookupService; rw [hSv]
   have hPI : projectIrqHandlers ctx observer s = projectIrqHandlers ctx observer st := by
     unfold projectIrqHandlers; rw [hIrq]
   have hPM : projectMemory ctx observer s = projectMemory ctx observer st := by
     unfold projectMemory; rw [hM]
-  have hPR : projectServiceRegistry ctx observer s = projectServiceRegistry ctx observer st := by
-    unfold projectServiceRegistry lookupService; rw [hSv]
   unfold projectState
-  rw [hPO, hPS, hPI, hPM, hPR]
+  rw [hPO, hPI, hPM]
   simp only [projectRunnable, projectCurrent, projectActiveDomain, projectObjectIndex,
     projectDomainTimeRemaining, projectDomainSchedule, projectDomainScheduleIndex,
     projectMachineRegs, hS, hM, hIdx]

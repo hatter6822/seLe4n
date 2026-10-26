@@ -3361,8 +3361,8 @@ theorem handleInterrupt_crossSubsystemInvariant_bridge
 /-- AN12-A (Theme 4.1) — closure-form discharge index marker.
 
 The full index lives in `docs/audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md`
-(active) and maps every closure-form hypothesis (`hProjEq`, `hSchedProj`,
-`hServiceProjEq`) in the proof surface to a named frame-lemma recipe in
+(active) and maps every closure-form hypothesis (`hProjEq`, `hSchedProj`)
+in the proof surface to a named frame-lemma recipe in
 `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean`.  The tree-changing
 capability operations take no such hypothesis: each derives the post-state
 tree's soundness from its pre-state bundle.

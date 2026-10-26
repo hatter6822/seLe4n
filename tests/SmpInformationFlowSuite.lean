@@ -34,7 +34,7 @@ SM8.D.6).
 * **§3 Runtime assertions** — `lake exe smp_information_flow_suite`
   computes the per-core observable state on a real four-thread /
   four-core fixture with a non-trivial labeling (two low threads, two
-  high threads, low and high endpoints / services / IRQ handlers) and
+  high threads, low and high endpoints / IRQ handlers) and
   decides every claim that is decidable.
 
 Every group carries at least one **load-bearing negative**: an assertion
@@ -149,12 +149,10 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @onCore_sharedFragment
 #check @onCore_perCoreFragment
 #check @onCore_objects
-#check @onCore_services
 #check @onCore_irqHandlers
 #check @onCore_objectIndex
 #check @onCore_domainSchedule
 #check @onCore_memory
-#check @onCore_serviceRegistry
 #check @onCore_runnable
 #check @onCore_current
 #check @onCore_activeDomain
@@ -204,7 +202,6 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 -- §1.5  SM8.A.5 — label monotonicity
 #check @objectObservable_monotone
 #check @threadObservable_monotone
-#check @serviceObservable_monotone
 #check @capTargetObservable_monotone
 #check @memoryAddressObservable_monotone
 #check @projectCNode
@@ -2236,7 +2233,7 @@ example (ctx : LabelingContext) (c : CoreId) (L : SecurityLabel) (s₁ s₂ : Sy
 
 -- SM8.A.4: the read-set characterisation names only shared state and core `c`.
 example (ctx : LabelingContext) (L : SecurityLabel) (s₁ s₂ : SystemState) (c : CoreId)
-    (hObjects : s₁.objects = s₂.objects) (hServices : s₁.services = s₂.services)
+    (hObjects : s₁.objects = s₂.objects)
     (hIrq : s₁.irqHandlers = s₂.irqHandlers) (hIndex : s₁.objectIndex = s₂.objectIndex)
     (hDomSched : s₁.scheduler.domainSchedule = s₂.scheduler.domainSchedule)
     (hMem : s₁.machine.memory = s₂.machine.memory)
@@ -2247,7 +2244,7 @@ example (ctx : LabelingContext) (L : SecurityLabel) (s₁ s₂ : SystemState) (c
     (hDSI : s₁.scheduler.domainScheduleIndexOnCore c = s₂.scheduler.domainScheduleIndexOnCore c)
     (hRegs : s₁.machine.regsOnCore c = s₂.machine.regsOnCore c) :
     ObservableState.onCore ctx c L s₁ = ObservableState.onCore ctx c L s₂ :=
-  onCore_perCore_independence ctx L hObjects hServices hIrq hIndex hDomSched hMem
+  onCore_perCore_independence ctx L hObjects hIrq hIndex hDomSched hMem
     hRQ hCur hAD hDTR hDSI hRegs
 
 -- SM8.A.4: a write to a different core's current slot is invisible.
@@ -2996,7 +2993,6 @@ private def cnRoot : SeLe4n.ObjId := ⟨1000⟩
 private def vsRoot : SeLe4n.ObjId := ⟨1001⟩
 private def lowEndpoint : SeLe4n.ObjId := ⟨1002⟩
 private def highEndpoint : SeLe4n.ObjId := ⟨1003⟩
-private def lowService : ServiceId := ⟨1004⟩
 private def highService : ServiceId := ⟨1005⟩
 private def lowIrq : SeLe4n.Irq := ⟨11⟩
 private def highIrq : SeLe4n.Irq := ⟨12⟩
@@ -3085,19 +3081,14 @@ private def mkTcb (tid : Nat) (prio : Nat) (aff : Option CoreId) : TCB :=
   { tid := ⟨tid⟩, priority := ⟨prio⟩, domain := ⟨0⟩, spaceCells := SeLe4n.Model.TCB.spaceCellsOf cnRoot vsRoot, ipcBuffer := SeLe4n.VAddr.ofNat 4096,
     cpuAffinity := aff }
 
-private def mkServiceEntry (sid : ServiceId) (backing : SeLe4n.ObjId) : ServiceGraphEntry :=
-  { identity := { sid := sid, backingObject := backing, owner := backing }
-    dependencies := []
-    isolatedFrom := [] }
-
 /-- The fixture: **core 0 runs low, core 1 runs high.**
 
 * core 0 — current `lowCurrent`, run queue `[lowQueued]` (both low-labelled);
 * core 1 — current `highCurrent`, run queue `[highQueued]` (both high-labelled);
 * cores 2 and 3 — idle;
-* shared — a low and a high endpoint, a low and a high service, a low and a
-  high IRQ handler, and the CSpace/VSpace roots every TCB names (so every TCB
-  is `KernelObject.wellFormed`, checked in §3.0).
+* shared — a low and a high endpoint, a low and a high IRQ handler, and the
+  CSpace/VSpace roots every TCB names (so every TCB is
+  `KernelObject.wellFormed`, checked in §3.0).
 
 Every thread is dequeue-on-dispatch consistent (a core's current thread is not
 in that core's run queue).  The two cores' contents are label-disjoint, which
@@ -3116,8 +3107,6 @@ private def probeState : SystemState :=
       |>.withObject highCurrent.toObjId (.tcb (mkTcb 1011 50 (some c1)))
       |>.withObject lowQueued.toObjId (.tcb (mkTcb 1012 40 none))
       |>.withObject highQueued.toObjId (.tcb (mkTcb 1013 50 (some c1)))
-      |>.withService lowService (mkServiceEntry lowService lowEndpoint)
-      |>.withService highService (mkServiceEntry highService highEndpoint)
       |>.withIrqHandler lowIrq lowEndpoint
       |>.withIrqHandler highIrq highEndpoint
       |>.build)
@@ -3324,14 +3313,6 @@ private def runPartitionChecks : IO Unit := do
     (allCores.all (fun c =>
       decide ((ObservableState.onCoreByLinks probeLabeling c lowLabel probeState).objectIndex
         = (ObservableState.onCoreByLinks probeLabeling bootCoreId lowLabel probeState).objectIndex)))
-  assertBool "the shared services component is identical on every core"
-    (allCores.all (fun c =>
-      decide ((ObservableState.onCoreByLinks probeLabeling c lowLabel probeState).services lowService
-          = (ObservableState.onCoreByLinks probeLabeling bootCoreId lowLabel probeState).services
-              lowService ∧
-        (ObservableState.onCoreByLinks probeLabeling c lowLabel probeState).services highService
-          = (ObservableState.onCoreByLinks probeLabeling bootCoreId lowLabel probeState).services
-              highService)))
   assertBool "the shared irqHandlers component is identical on every core"
     (allCores.all (fun c =>
       decide ((ObservableState.onCoreByLinks probeLabeling c lowLabel probeState).irqHandlers lowIrq
@@ -3517,8 +3498,6 @@ private def runMonotonicityChecks : IO Unit := do
   assertBool "every gate is monotone on the fixture's entities"
     (decide (objectObservable probeLabeling lowObserver lowEndpoint = true ∧
              objectObservable probeLabeling highObserver lowEndpoint = true ∧
-             serviceObservable probeLabeling lowObserver lowService = true ∧
-             serviceObservable probeLabeling highObserver lowService = true ∧
              threadObservable probeLabeling lowObserver lowQueued = true ∧
              threadObservable probeLabeling highObserver lowQueued = true))
   assertBool "onCore_label_monotone applies on every core"
@@ -3551,10 +3530,6 @@ private def runMonotonicityChecks : IO Unit := do
     (decide (lowEndpoint ∈
         (ObservableState.onCoreByLinks probeLabeling c0 lowLabel probeState).objectIndex ∧
       lowEndpoint ∈ (ObservableState.onCoreByLinks probeLabeling c0 highLabel probeState).objectIndex))
-  assertBool "STRICT: the high service is present only to the high observer"
-    (decide ((ObservableState.onCoreByLinks probeLabeling c0 lowLabel probeState).services highService
-        = false ∧
-      (ObservableState.onCoreByLinks probeLabeling c0 highLabel probeState).services highService = true))
   assertBool "STRICT: the high IRQ handler is routed only for the high observer"
     (decide ((ObservableState.onCoreByLinks probeLabeling c0 lowLabel probeState).irqHandlers highIrq
         = none ∧
@@ -3824,38 +3799,6 @@ private def runMemoryProjectionChecks : IO Unit := do
           (ObservableState.onCore probeLabelingWithMemory c highLabel probeState) :=
         onCore_label_monotone probeLabelingWithMemory c lowLabel_flowsTo_highLabel probeState
       true))
-
-/-- §3.10  Service-registry projection at the *entry* level.
-
-`services` (boolean presence) is covered in §3.5; this group covers
-`serviceRegistry`, whose `visibilityLe` clause is value-preserving rather than
-merely visibility-preserving — a strengthening that would otherwise ship without
-a runtime witness. -/
-private def runServiceRegistryChecks : IO Unit := do
-  IO.println "--- §3.10 service-registry projection (entry level) ---"
-  assertBool "the low observer gets the low service's FULL entry"
-    (allCores.all (fun c =>
-      decide ((ObservableState.onCoreByLinks probeLabeling c lowLabel probeState).serviceRegistry
-        lowService = some (mkServiceEntry lowService lowEndpoint))))
-  assertBool "STRICT: the low observer gets none for the high service"
-    (allCores.all (fun c =>
-      decide ((ObservableState.onCoreByLinks probeLabeling c lowLabel probeState).serviceRegistry
-        highService = none)))
-  assertBool "…while the high observer gets its full entry (not vacuous)"
-    (allCores.all (fun c =>
-      decide ((ObservableState.onCoreByLinks probeLabeling c highLabel probeState).serviceRegistry
-        highService = some (mkServiceEntry highService highEndpoint))))
-  assertBool "VALUE-PRESERVING: the low service's entry is IDENTICAL at both clearances"
-    (allCores.all (fun c =>
-      decide ((ObservableState.onCoreByLinks probeLabeling c lowLabel probeState).serviceRegistry
-          lowService
-        = (ObservableState.onCoreByLinks probeLabeling c highLabel probeState).serviceRegistry
-          lowService)))
-  assertBool "the registry projection agrees with the presence projection"
-    (allCores.all (fun c =>
-      decide (((ObservableState.onCoreByLinks probeLabeling c lowLabel probeState).serviceRegistry
-          lowService).isSome
-        = (ObservableState.onCoreByLinks probeLabeling c lowLabel probeState).services lowService)))
 
 /-- §3.11  The three-clearance chain `low ⊏ mid ⊏ high`.
 
@@ -4140,7 +4083,7 @@ private theorem remoteCoreWrite_confined :
 private theorem remoteCoreWrite_sharedUnchanged :
     sharedViewUnchanged niLabeling niLowObserver niState remoteCoreWriteState :=
   sharedViewUnchanged_of_state_frames niLabeling niLowObserver
-    (fun _ _ => rfl) rfl rfl rfl rfl rfl
+    (fun _ _ => rfl) rfl rfl rfl rfl
 
 /-- Plan Theorem 3.3.1 instantiated at each of the three bystander cores. -/
 private theorem remoteCoreWrite_invisible_on_c0 :
@@ -11913,7 +11856,6 @@ declassification, causal provenance and the acceptance scenarios"
   runCrossCoreInvisibilityChecks
   runCNodeRedactionChecks
   runMemoryProjectionChecks
-  runServiceRegistryChecks
   runClearanceChainChecks
   runFinerCheckChecks
   runObjectContentOrderChecks

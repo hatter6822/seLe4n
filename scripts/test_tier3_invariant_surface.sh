@@ -635,7 +635,7 @@ run_check "INVARIANT" rg -n '^theorem composedNonInterference_trace($|[ ({:\[\]]
 run_check "TRACE" rg -n 'activeDomain visible' tests/InformationFlowSuite.lean
 run_check "TRACE" rg -n 'IRQ handler' tests/InformationFlowSuite.lean
 run_check "TRACE" rg -n 'CNode slot filtering' tests/InformationFlowSuite.lean
-run_check "TRACE" rg -n '7-field low-equivalence' tests/InformationFlowSuite.lean
+run_check "TRACE" rg -n 'six-field low-equivalence' tests/InformationFlowSuite.lean
 
 # WS-F4 proof gap closure anchors — timerTick, cspaceMutate, cspaceRevoke, notification preservation.
 run_check "INVARIANT" rg -n '^theorem timerTick_preserves_schedulerInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/Preservation.lean
@@ -6235,7 +6235,7 @@ run_check "INVARIANT" rg -n '^structure SharedObservableFragment($|[ ({:\[\]])' 
 run_check "INVARIANT" rg -n '^structure PerCoreObservableFragment($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
 run_check "INVARIANT" rg -n '^theorem ObservableState.ext_fragments($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
 run_check "INVARIANT" rg -n '^def ObservableState.ofFragments($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-# The `@[simp]` layer: the fragment round-trip and the thirteen component
+# The `@[simp]` layer: the fragment round-trip and the eleven component
 # accessors.  Each is `rfl`, so they are the definition-pinning anchors —
 # re-pointing a component at a different projection breaks its `rfl`, and a
 # rename would silently drop the pin without these.
@@ -6257,8 +6257,6 @@ run_check "INVARIANT" rg -n '^@\[simp\] theorem onCore_objects' SeLe4n/Kernel/In
 run_check "INVARIANT" rg -n '^@\[simp\] theorem onCore_perCoreFragment' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
 run_check "INVARIANT" rg -n '^@\[simp\] theorem onCore_perCoreSlice' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
 run_check "INVARIANT" rg -n '^@\[simp\] theorem onCore_runnable' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^@\[simp\] theorem onCore_serviceRegistry' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^@\[simp\] theorem onCore_services' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
 run_check "INVARIANT" rg -n '^@\[simp\] theorem onCore_sharedFragment' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
 run_check "INVARIANT" rg -n '^theorem ObservableState.fragments_injective($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
 run_check "INVARIANT" rg -n '^theorem onCore_sharedFragment_eq_globalProjection($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
@@ -6301,7 +6299,6 @@ run_check "INVARIANT" rg -n '^theorem onCore_tlb ' SeLe4n/Kernel/InformationFlow
 # SM8.A.5 gate monotonicity + the visibility order + the CC-1 restatement.
 run_check "INVARIANT" rg -n '^theorem objectObservable_monotone($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
 run_check "INVARIANT" rg -n '^theorem threadObservable_monotone($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem serviceObservable_monotone($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
 run_check "INVARIANT" rg -n '^theorem capTargetObservable_monotone($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
 run_check "INVARIANT" rg -n '^theorem memoryAddressObservable_monotone($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
 run_check "INVARIANT" rg -n '^theorem projectCNode_lookup_monotone($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean

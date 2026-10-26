@@ -47,7 +47,6 @@ structure ObservableState where
   objects : SeLe4n.ObjId → Option KernelObject
   runnable : List SeLe4n.ThreadId
   current : Option SeLe4n.ThreadId
-  services : ServiceId → Bool
   /-- WS-F3: Active scheduling domain — visible to all observers (scheduling
       transparency: all threads need to know which domain is active).
       WS-H8/A-36: Documented as deliberate security assumption — scheduling
@@ -84,15 +83,6 @@ structure ObservableState where
       When `ctx.memoryOwnership = none`, this projection is empty (`none` at
       all addresses) for backward compatibility. -/
   memory : SeLe4n.PAddr → Option UInt8
-  /-- V6-E (M-IF-3): Service registry state projection. Projects the full
-      `ServiceGraphEntry` (identity, dependencies, isolation edges) for each
-      observable service, filtered by `serviceObservable`. This extends the
-      prior `services : ServiceId → Bool` presence-only projection with
-      structural visibility into the service dependency graph.
-
-      Non-observable services return `none`, preventing information leakage
-      about high-domain service topology. -/
-  serviceRegistry : ServiceId → Option ServiceGraphEntry
 
 /-- Object observability gate under a labeling context. -/
 def objectObservable (ctx : LabelingContext) (observer : IfObserver) (oid : SeLe4n.ObjId) : Bool :=
@@ -101,87 +91,6 @@ def objectObservable (ctx : LabelingContext) (observer : IfObserver) (oid : SeLe
 /-- Thread observability gate under a labeling context. -/
 def threadObservable (ctx : LabelingContext) (observer : IfObserver) (tid : SeLe4n.ThreadId) : Bool :=
   securityFlowsTo (ctx.threadLabelOf tid) observer.clearance
-
-/-- Service projection gate: a service is observable iff its label flows to the observer.
-
-    U6-J (U-M24): **NI projection coverage gap**. The service registry is
-    visible to the NI projection model only through `projectServicePresence`
-    (see below), which projects a boolean presence/absence indicator per
-    service ID. However, the service orchestration layer's internal state
-    (dependency graphs, lifecycle transitions, restart policies) is *not*
-    captured by the projection model. This means:
-
-    1. Service-layer information flows (e.g., one service observing another's
-       restart behavior) are not covered by non-interference proofs.
-    2. The NI theorems in `Invariant/Composition.lean` apply only to kernel
-       primitives (IPC, scheduling, capability operations), not to service
-       orchestration.
-    3. Service-layer information flows must be analyzed separately — either
-       by extending the projection model to include service graph state, or
-       by treating the service layer as a trusted component outside the NI
-       boundary.
-
-    This is a known limitation documented here for auditor awareness.
-
-    **AN6-E.1 (IF-M01) non-interference scope and exclusions**:
-    `serviceObservable` covers *boolean service presence only*, not
-    internal state. Cross-service covert channels — for example, one
-    service observing another's restart cadence via service-presence
-    sampling — are NOT covered by the NI property of this kernel. These
-    are accepted covert channels and appear in `SELE4N_SPEC.md` §11.2
-    "Information Flow and Non-Interference Boundary" (extended by AN6-E.1
-    with a dedicated "Service-presence covert channels" subsection).
-    The formal justification for the acceptance is that service
-    orchestration operates above the kernel-primitive NI boundary:
-    services are trusted components that the kernel merely tracks
-    presence for. A deployment that requires NI at the
-    service-orchestration layer must either (a) model service state in
-    the projection explicitly, or (b) treat the service layer as a
-    separate trusted component outside the NI analysis — the kernel
-    model itself does not attempt to close this gap at v1.0.0. See
-    `AUDIT_v0.30.6_COMPREHENSIVE.md` §2.5 IF-M01. -/
-def serviceObservable (ctx : LabelingContext) (observer : IfObserver) (sid : ServiceId) : Bool :=
-  securityFlowsTo (ctx.serviceLabelOf sid) observer.clearance
-
-/-- WS-Q1-E2: Service projection returns whether an observable service is registered.
-Replaces the old `projectServiceStatus` that projected `ServiceStatus`. -/
-def projectServicePresence (ctx : LabelingContext) (observer : IfObserver) (st : SystemState) :
-    ServiceId → Bool :=
-  fun sid =>
-    if serviceObservable ctx observer sid then
-      (lookupService st sid).isSome
-    else
-      false
-
-/-- V6-E (M-IF-3): Project service registry graph entries for observable services.
-
-    Extends the boolean presence projection (`projectServicePresence`) with
-    full `ServiceGraphEntry` visibility. For observable services, returns the
-    entry (identity, dependencies, isolation edges); for non-observable services,
-    returns `none`.
-
-    **Dependency filtering**: Dependencies referencing non-observable services
-    are preserved in the projection (the dependency *exists* but its target
-    may be opaque). This is deliberate — the dependency graph structure of
-    observable services is itself observable information. -/
-def projectServiceRegistry (ctx : LabelingContext) (observer : IfObserver) (st : SystemState) :
-    ServiceId → Option ServiceGraphEntry :=
-  fun sid =>
-    if serviceObservable ctx observer sid then
-      lookupService st sid
-    else
-      none
-
-/-- V6-E: `projectServiceRegistry` agrees with `projectServicePresence` on
-    presence: if the registry projection returns `some`, then presence is `true`,
-    and if it returns `none`, presence is `false` (when the service is observable). -/
-theorem projectServiceRegistry_consistent_with_presence
-    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
-    (sid : ServiceId) :
-    (projectServiceRegistry ctx observer st sid).isSome =
-      projectServicePresence ctx observer st sid := by
-  simp [projectServiceRegistry, projectServicePresence]
-  cases serviceObservable ctx observer sid <;> simp
 
 -- ============================================================================
 -- WS-F3/F-22: CNode slot filtering to prevent capability target leakage
@@ -394,10 +303,11 @@ def projectKernelObject (ctx : LabelingContext) (observer : IfObserver) (obj : K
   -- object is), and a page table's `base` and `installedIn`.
   -- An endpoint's `serviceCode` names the service registered on it (seL4
   -- has no such registry; it is the back-link `revokeService` and the final
-  -- delete read).  The service's own visibility is gated by
-  -- `serviceObservable` in `projectServicePresence`, so the endpoint's record
-  -- of it is erased here, or a registration of a hidden service would show
-  -- through a visible endpoint.  A notification's `irqBound` is kept: it is
+  -- delete read).  No projection carries the service registry, so the
+  -- endpoint's record of a registration is erased here, or a registration of a
+  -- hidden service would show through a visible endpoint (projecting the
+  -- registry under a service observability gate is `UNTYPED_RESET_PLAN.md`
+  -- part 33).  A notification's `irqBound` is kept: it is
   -- true exactly when an IRQ names the notification, which
   -- `projectIrqHandlers` already shows for every visible notification.
   | .endpoint e => .endpoint { e with serviceCode := 0 }
@@ -821,14 +731,6 @@ theorem projectMemory_eq_of_memory_eq
   funext paddr
   simp only [projectMemory, hMem]
 
-/-- V6-E: When services are unmodified between two states, projectServiceRegistry agrees. -/
-theorem projectServiceRegistry_eq_of_services_eq
-    (ctx : LabelingContext) (observer : IfObserver) (s₁ s₂ : SystemState)
-    (hSvc : s₁.services = s₂.services) :
-    projectServiceRegistry ctx observer s₁ = projectServiceRegistry ctx observer s₂ := by
-  funext sid
-  simp only [projectServiceRegistry, lookupService, hSvc]
-
 /-! ### U6-K (U-M23): Accepted Covert Channels
 
 The following covert channels are known and accepted in the seLe4n NI model:
@@ -1000,7 +902,6 @@ noncomputable def projectState (ctx : LabelingContext) (observer : IfObserver) (
     objects := projectObjects ctx observer st
     runnable := projectRunnable ctx observer st
     current := projectCurrent ctx observer st
-    services := projectServicePresence ctx observer st
     activeDomain := projectActiveDomain ctx observer st
     irqHandlers := projectIrqHandlers ctx observer st
     objectIndex := projectObjectIndex ctx observer st
@@ -1009,7 +910,6 @@ noncomputable def projectState (ctx : LabelingContext) (observer : IfObserver) (
     domainScheduleIndex := projectDomainScheduleIndex ctx observer st
     machineRegs := projectMachineRegs ctx observer st
     memory := projectMemory ctx observer st
-    serviceRegistry := projectServiceRegistry ctx observer st
   }
 
 /-- AK6-F.2a: Modifying `scheduler.replenishQueue` does not affect
@@ -1094,134 +994,6 @@ theorem lowEquivalent_trans
     (h₂₃ : lowEquivalent ctx observer s₂ s₃) :
     lowEquivalent ctx observer s₁ s₃ := by
   simpa [lowEquivalent] using Eq.trans h₁₂ h₂₃
-
--- ============================================================================
--- X3-A (H-3): Service orchestration NI exclusion boundary
--- ============================================================================
-
-/-- X3-A (H-3): Predicate witnessing that the `services` field affects the
-    observer's projection. This is true whenever any observable service is
-    registered — i.e., the `services` store contains at least one entry for
-    an observable service ID.
-
-    When this predicate holds, `projectServicePresence` and
-    `projectServiceRegistry` are non-trivially influenced by `st.services`.
-    When it does not hold, the projection is independent of service state. -/
-def serviceRegistryAffectsProjection
-    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState) : Prop :=
-  ∃ sid, serviceObservable ctx observer sid = true ∧
-    (lookupService st sid).isSome = true
-
-/-- X3-A (H-3): **Service orchestration NI exclusion boundary.**
-
-    The NI projection model (`projectState`) captures service state through
-    exactly two channels:
-    1. `projectServicePresence` — boolean presence per service ID
-    2. `projectServiceRegistry` — full `ServiceGraphEntry` for observable services
-
-    These projections cover the *registry* layer (which services exist and their
-    dependency edges). **Service orchestration internals** — lifecycle transitions,
-    restart policies, dependency resolution order, heartbeat state — are NOT
-    captured by the projection model and therefore NOT covered by NI theorems.
-
-    This theorem shows that when two states agree on all fields EXCEPT
-    `services`, and no observable services are registered in either state,
-    the two states are observationally equivalent to any observer. This
-    formalizes the boundary: service orchestration state changes that don't
-    create or remove observable services are invisible to the projection model.
-
-    **Scope of NI guarantees**: The 35 `NonInterferenceStep` constructors
-    (in `Invariant/Composition.lean`) cover kernel primitives (IPC, scheduling,
-    capability operations, lifecycle) and registry-level service registration
-    (`registerServiceChecked`). NI for orchestration *internals* is deferred to
-    a future workstream requiring extension of `ObservableState` with dependency
-    graph projections and NI proofs for all service operations.
-
-    **AE5-E (U-10/IF-06)**: NI Projection Boundary — Service Orchestration.
-    Service orchestration actions (lifecycle transitions, restart policies,
-    heartbeat monitoring) are explicitly OUTSIDE the NI projection boundary.
-    This means the NI proofs do not cover information flows through:
-    - Restart timing (a service restart could leak cross-domain timing)
-    - Lifecycle state transitions visible to other domains
-    - Heartbeat failure detection patterns
-
-    This is an accepted scope limitation for the current kernel model.
-    If service orchestration becomes security-relevant for a deployment,
-    extend `ObservableState` to include orchestration state and prove NI
-    preservation for orchestration transitions. -/
-theorem serviceOrchestrationOutsideNiBoundary
-    (ctx : LabelingContext) (observer : IfObserver)
-    (st₁ st₂ : SystemState)
-    (hObjects : st₁.objects = st₂.objects)
-    (hScheduler : st₁.scheduler = st₂.scheduler)
-    (hMachine : st₁.machine = st₂.machine)
-    (hIrqHandlers : st₁.irqHandlers = st₂.irqHandlers)
-    (hObjectIndex : st₁.objectIndex = st₂.objectIndex)
-    (hNoObs : ∀ sid, serviceObservable ctx observer sid = true →
-      (lookupService st₁ sid).isNone ∧ (lookupService st₂ sid).isNone) :
-    lowEquivalent ctx observer st₁ st₂ := by
-  unfold lowEquivalent projectState
-  congr 1
-  · -- projectObjects: depends on objects only
-    funext oid
-    simp only [projectObjects, SystemState.getObject?]
-    cases objectObservable ctx observer oid <;> simp [hObjects]
-  · -- projectRunnable: depends on scheduler only
-    simp [projectRunnable, hScheduler]
-  · -- projectCurrent: depends on scheduler only
-    simp [projectCurrent, hScheduler]
-  · -- projectServicePresence: depends on services, gated by serviceObservable
-    funext sid
-    simp only [projectServicePresence]
-    cases hObs : serviceObservable ctx observer sid with
-    | false => rfl
-    | true =>
-      have ⟨h₁, h₂⟩ := hNoObs sid hObs
-      simp [lookupService, Option.isNone_iff_eq_none] at h₁ h₂
-      simp [lookupService, h₁, h₂]
-  · -- projectActiveDomain: depends on scheduler only
-    simp [projectActiveDomain, hScheduler]
-  · -- projectIrqHandlers: depends on irqHandlers only
-    funext irq; simp only [projectIrqHandlers]; rw [hIrqHandlers]
-  · -- projectObjectIndex: depends on objectIndex only
-    simp [projectObjectIndex, hObjectIndex]
-  · -- projectDomainTimeRemaining: depends on scheduler only
-    simp [projectDomainTimeRemaining, hScheduler]
-  · -- projectDomainSchedule: depends on scheduler only
-    simp [projectDomainSchedule, hScheduler]
-  · -- projectDomainScheduleIndex: depends on scheduler only
-    simp [projectDomainScheduleIndex, hScheduler]
-  · -- projectMachineRegs: depends on scheduler + machine
-    simp [projectMachineRegs, hScheduler, hMachine]
-  · -- projectMemory: depends on machine only
-    exact projectMemory_eq_of_memory_eq ctx observer st₁ st₂ (by rw [hMachine])
-  · -- projectServiceRegistry: depends on services, gated by serviceObservable
-    funext sid
-    simp only [projectServiceRegistry]
-    cases hObs : serviceObservable ctx observer sid with
-    | false => rfl
-    | true =>
-      have ⟨h₁, h₂⟩ := hNoObs sid hObs
-      simp [lookupService, Option.isNone_iff_eq_none] at h₁ h₂
-      simp [lookupService, h₁, h₂]
-
-/-- X3-A (H-3): Service registry affects projection disjunction —
-    either no observable services are registered (and the projection is
-    independent of the services field), or the effect is explicitly
-    acknowledged via `serviceRegistryAffectsProjection`. -/
-theorem serviceOrchestration_boundary_disjunction
-    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState) :
-    (∀ sid, serviceObservable ctx observer sid = true →
-      (lookupService st sid) = none) ∨
-    serviceRegistryAffectsProjection ctx observer st := by
-  by_cases h : ∃ sid, serviceObservable ctx observer sid = true ∧
-      (lookupService st sid).isSome = true
-  · exact Or.inr h
-  · left
-    intro sid hObs
-    cases hLookup : lookupService st sid with
-    | none => rfl
-    | some v => exfalso; exact h ⟨sid, hObs, by simp [hLookup]⟩
 
 -- ============================================================================
 -- §14 What the endpoint admission gate admits onto a single queue

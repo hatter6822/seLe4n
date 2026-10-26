@@ -2921,17 +2921,17 @@ two low-equivalent states can differ by an audit entry whose `srcDomain` flows t
 
 Two ways to make the relation match the reader:
 
-* **Extend `ObservableState`** with the clearance-filtered trail as a fourteenth
+* **Extend `ObservableState`** with the clearance-filtered trail as a twelfth
   component.  Honest — it *is* now observable — but the SM8.A field partition is
   a bijection with `ObservableState.ofFragments_eta`, deliberately built so a
-  fourteenth field is a compile error, and every SM8.B non-interference theorem
+  twelfth field is a compile error, and every SM8.B non-interference theorem
   moves with it.
 * **A separate relation** conjoining `lowEquivalent` with agreement on what the
   reader can see.  Contained; every SM8 theorem stands unchanged; and the flow
   argument is stated in the relation that actually describes an audit reader's
   observations rather than in one that describes a subject with no reader.
 
-**Decision: the second.**  `ObservableState` stays a thirteen-component
+**Decision: the second.**  `ObservableState` stays an eleven-component
 partition and its tripwire keeps working.  The first becomes the right move only
 if a later phase adds a *second* readable-but-unprojected structure — at that
 point one relation per reader stops scaling and the partition should absorb them.
