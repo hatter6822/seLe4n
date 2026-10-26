@@ -1,3 +1,63 @@
+## v0.36.144 — WS-ZA ZA5.4 part 31: the table back-references read
+
+Part 30 recorded each table reference by id on the object it names and stated
+it as one invariant, `SystemState.tableReferencesRecorded`.  This part proves the
+invariant on every reachable state and makes the final delete read it: the
+retire reads the object's own back-links instead of walking the service
+registry, the interrupt-handler table and the service graph, as seL4's
+`finaliseCap` reads an object's own back-pointers.
+
+- **Boot**: `bootFromPlatformChecked_ok_tableReferencesRecorded` establishes the
+  invariant on a checked boot (the boot refuses an endpoint carrying a
+  registration and a non-reciprocal interrupt table, so the interrupt handlers
+  the boot folds in are exactly the flags it sets), and both boot shapes carry
+  it through the idle-thread stores, the capability links and the initial
+  threads' start (`bootStartShape`, `bootLinkedShape`).
+- **Every syscall and kernel entry**: the run-queue link stage gains a table
+  half (`RunQueueLinkStage.tables`), so every entry's stage carries the invariant
+  (`RunQueueEntryStage.tableReferencesRecorded`;
+  `syscallDispatchEntryState_preserves_tableReferencesRecorded`).  A step that
+  writes no table and leaves every object's back-links as it found them is a
+  `TableReferenceFrame`; the IPC cancellation sweeps, the reply splices, the
+  scheduler's context switch and the migrations are proven to be frames, and
+  the registry's two writers keep the invariant directly.
+- **The delete chain** carries it in `reachableDeleteBundle` beside the reachable
+  state and the finalising bundle.
+- **The guard switch**: the passive retire reads `SystemState.tableBackLinksClear`
+  (an endpoint records no registration, a notification no interrupt) and the
+  thread retire asks no table; `registryNamesNone`, `irqHandlersNameNone` and
+  `servicesNameNone` are deleted, and `tableBackLinksClear.namedByNone` answers
+  what they answered.
+- **The service lookup is O(1)**: `lookupServiceByRecordedCode` reads the code its
+  endpoint records and that one registry key.  The registry fold
+  `lookupServiceByCap` stays as the specification, and the two agree wherever
+  the references are recorded (`lookupServiceByRecordedCode_eq_lookupServiceByCap`).
+  The service-query dispatch arms, the refusal-carrying invocation, the trace
+  harness and the frozen lookup (`frozenLookupServiceByCap`) run the O(1) form,
+  and the read-only and projection lemmas are restated over it.
+- **Lock footprints follow the endpoint**: the service register and revoke write
+  the endpoint's recorded code and the query reads it, so `lockSet_serviceRegister`
+  takes its endpoint in write mode and `lockSet_serviceRevoke` (write) and
+  `lockSet_serviceQuery` (read) gain the endpoint they touch.  None of the three
+  is a declared live footprint yet (they keep the coarse serialisation), so this
+  corrects the stated footprint, not a live race.
+- **Deleted**: the pre-retype cleanup's endpoint arm and its registry sweep
+  (`cleanupEndpointServiceRegistrations` with its frame and preservation
+  lemmas).  The retire admits only an endpoint whose back-links are clear, and on
+  a state that records its references no registration names such an endpoint
+  (`tableReferencesRecorded.notTargeted`), so the sweep's filter could remove
+  nothing.  The negative check that drove it now checks that a registered
+  endpoint holds the retire until its service is revoked.
+- **Debt**: closes the row "A passive object's final delete scans the object
+  table for references by id", and the registry conjunct of `REGISTERED_DEBT.md`
+  §C.1 row 21 (`registryEndpointValid` is derived from the invariant every entry
+  keeps).
+- **Plan**: the service graph's removal (decided 2026-10-26) is the new row 32,
+  "The service graph removed", which also closes row 21's service-graph conjunct;
+  the finalise's admission carriage and the zombie fuel become row 33 and the
+  seL4 reset row 34, and every citation of the old numbering is swept.
+- Exerciser: every pin unchanged.
+
 ## v0.36.143 — WS-ZA ZA5.4 part 30: the table back-references recorded
 
 Three tables of the state name kernel objects by id from outside every slot:
