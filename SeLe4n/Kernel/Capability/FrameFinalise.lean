@@ -453,11 +453,11 @@ theorem detachPageTables_ok_frame :
     ∀ (os : List (SeLe4n.ObjId × PageTableInstall)) (st st' : SystemState),
       st.objects.invExt → detachPageTables os st = .ok ((), st') →
       st'.objects.invExt ∧ vspaceRootOnlyWrite st st' ∧ st'.scheduler = st.scheduler ∧
-        st'.machine = st.machine
+        st'.machine = st.machine ∧ st'.referenceTables = st.referenceTables
   | [], st, st', hInv, h => by
       simp only [detachPageTables, Except.ok.injEq, Prod.mk.injEq, true_and] at h
       subst h
-      exact ⟨hInv, vspaceRootOnlyWrite.refl _, rfl, rfl⟩
+      exact ⟨hInv, vspaceRootOnlyWrite.refl _, rfl, rfl, rfl⟩
   | o :: rest, st, st', hInv, h => by
       simp only [detachPageTables] at h
       cases hR : st.getVSpaceRoot? o.2.root with
@@ -473,10 +473,11 @@ theorem detachPageTables_ok_frame :
           rw [hS] at h
           have hObj := (SystemState.getVSpaceRoot?_eq_some_iff st o.2.root root).mp hR
           have hInv1 := storeObject_preserves_objects_invExt (Architecture.recordPhysicalWrites st (Architecture.detachWrites st root o.2 o.1)) _ _ _ hInv hS
-          obtain ⟨hI2, hW2, hS2, hM2⟩ := detachPageTables_ok_frame rest st1 st' hInv1 h
+          obtain ⟨hI2, hW2, hS2, hM2, hT2⟩ := detachPageTables_ok_frame rest st1 st' hInv1 h
           refine ⟨hI2, vspaceRootOnlyWrite.trans (fun oid => ?_) hW2,
             hS2.trans (storeObject_scheduler_eq (Architecture.recordPhysicalWrites st (Architecture.detachWrites st root o.2 o.1)) _ _ _ hS),
-            hM2.trans (storeObject_machine_eq (Architecture.recordPhysicalWrites st (Architecture.detachWrites st root o.2 o.1)) _ _ _ hS)⟩
+            hM2.trans (storeObject_machine_eq (Architecture.recordPhysicalWrites st (Architecture.detachWrites st root o.2 o.1)) _ _ _ hS),
+            hT2.trans ((storeObject_referenceTables hS).trans rfl)⟩
           by_cases hK : oid = o.2.root
           · subst hK
             exact Or.inr ⟨⟨root, hObj⟩, ⟨_, storeObject_objects_eq (Architecture.recordPhysicalWrites st (Architecture.detachWrites st root o.2 o.1)) _ _ _ hInv hS⟩⟩
@@ -559,11 +560,12 @@ the object table's invariant. -/
 theorem finaliseDestroyedCapabilities_ok_frame (ec : Concurrency.CoreId) (named : List SeLe4n.ObjId)
     (pages : List MappedPage) (st st' : SystemState) (hObjInv : st.objects.invExt)
     (h : finaliseDestroyedCapabilities ec named pages st = .ok ((), st')) :
-    st'.objects.invExt ∧ vspaceRootOnlyWrite st st' ∧ st'.scheduler = st.scheduler := by
+    st'.objects.invExt ∧ vspaceRootOnlyWrite st st' ∧ st'.scheduler = st.scheduler ∧
+      st'.referenceTables = st.referenceTables := by
   obtain ⟨st1, hD, hF⟩ := finaliseDestroyedCapabilities_ok ec named pages st st' h
-  obtain ⟨hI1, hW1, hS1, -⟩ := detachPageTables_ok_frame _ st st1 hObjInv hD
-  obtain ⟨hI2, hW2, hS2⟩ := unmapLivePages_ok_frame ec _ st1 st' hI1 hF
-  exact ⟨hI2, hW1.trans hW2, hS2.trans hS1⟩
+  obtain ⟨hI1, hW1, hS1, -, hT1⟩ := detachPageTables_ok_frame _ st st1 hObjInv hD
+  obtain ⟨hI2, hW2, hS2, hT2⟩ := unmapLivePages_ok_frame ec _ st1 st' hI1 hF
+  exact ⟨hI2, hW1.trans hW2, hS2.trans hS1, hT2.trans hT1⟩
 
 /-- **The payoff for frames**: on a well-formed state, no page a destroyed frame
 capability recorded survives the finalisation. -/
@@ -1435,7 +1437,7 @@ the root delete makes no write, the passes already run persist (each a
 the retry continuing from the slots as they stand, as seL4's preempted
 `cteDelete` leaves its Zombie in the slot and is restarted.  On the fuel
 `zombieDeleteAt` gives it the slot is never kept on a reachable state; that the
-fuel always suffices is `docs/planning/UNTYPED_RESET_PLAN.md` row 32
+fuel always suffices is `docs/planning/UNTYPED_RESET_PLAN.md` row 33
 (`docs/REGISTERED_DEBT.md`, "The zombie fuel always suffices on a reachable
 state").  The fuel is a parameter so a test can drive the kept branch. -/
 def zombieDeleteAtFuel (executingCore : Concurrency.CoreId) (cnode : SeLe4n.ObjId)
@@ -1689,7 +1691,7 @@ root retires the emptied object.  When the passes run out of fuel, or the
 thread no longer passes the checks, the passes' work stands and nothing else is
 written: the caller sees the thread's roots unchanged and retries, as seL4's
 preempted `TCB_SetSpace` is restarted.  Not reachable while the fuel suffices
-(`docs/planning/UNTYPED_RESET_PLAN.md` row 32).  Out of line: only a space
+(`docs/planning/UNTYPED_RESET_PLAN.md` row 33).  Out of line: only a space
 change replacing the last capability to a populated CNode takes it. -/
 @[noinline] def copyThreadSpacesAfterZombie (executingCore : Concurrency.CoreId) (st : SystemState)
     (vtid : SeLe4n.ValidThreadId) (cnSrc vrSrc : CSpaceAddr) : SystemState :=
@@ -1785,7 +1787,7 @@ thread before the child itself goes.  A child the zombie delete keeps, its
 passes out of fuel (`zombieDeleteAtFuel`), ends the loop with what it has done,
 as seL4's preempted `cteRevoke` returns and is restarted: the caller sees the
 child's slot still occupied and retries; on a reachable state it never happens
-(the fuel's sufficiency, `docs/planning/UNTYPED_RESET_PLAN.md` row 32).  A child
+(the fuel's sufficiency, `docs/planning/UNTYPED_RESET_PLAN.md` row 33).  A child
 outside every CNode ends the loop,
 which on a state the capability invariants hold in never happens: there the
 loop ends with the source childless (`cspaceRevokeCdtFinalising_ok_childless`).

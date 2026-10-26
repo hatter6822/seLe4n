@@ -9,6 +9,7 @@
 
 import SeLe4n.Kernel.IPC.Invariant.CancelAllReachability
 import SeLe4n.Kernel.IPC.Invariant.CancelAllPreservation
+import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.Capability
 
 /-!
 # The reachable state along the whole delete chain
@@ -273,7 +274,7 @@ theorem finaliseDestroyedCapabilities {ec : CoreId} {named : List SeLe4n.ObjId}
     (h : SeLe4n.Kernel.finaliseDestroyedCapabilities ec named pages st = .ok ((), st')) :
     ReachLinkFrame st st' := by
   have hF := finaliseDestroyedCapabilities_ok_frame ec named pages st st' hInv h
-  refine ⟨fun oid => ?_, hF.2.2⟩
+  refine ⟨fun oid => ?_, hF.2.2.1⟩
   rcases hF.2.1 oid with e | ⟨⟨r, hr⟩, ⟨r', hr'⟩⟩
   · rw [e]
   · rw [hr, hr']; rfl
@@ -300,10 +301,21 @@ end ReachLinkFrame
 -- §4  The reachable state along the delete chain
 -- ============================================================================
 
-/-- **The reachable state and the bundle the delete carries**, together: what
-every step of a final delete keeps. -/
+/-- **The reachable state and the bundle the delete carries**, together, with the
+table references recorded (`SystemState.tableReferencesRecorded`, which the
+retire's guard reads in place of the tables): what every step of a final
+delete keeps.  The references are carried by each step's run-queue stage, whose
+table half reads the run queues' agreement with the links that `ipcReachable`
+holds. -/
 def reachableDeleteBundle (s : SystemState) : Prop :=
-  ipcReachable s ∧ finalisingDeleteBundle s
+  ipcReachable s ∧ finalisingDeleteBundle s ∧ s.tableReferencesRecorded
+
+/-- A run-queue link stage carries the table references across a reachable state. -/
+theorem _root_.SeLe4n.Model.SystemState.RunQueueLinkStage.tableReferencesRecorded_of_reachable
+    {s s' : SystemState}
+    (hL : SystemState.RunQueueLinkStage s s') (h : ipcReachable s)
+    (hT : s.tableReferencesRecorded) : s'.tableReferencesRecorded :=
+  hL.tables h.objects_invExt h.runQueueRefined hT
 
 /-- The reachable state, from the bundle the delete carries and the queues. -/
 theorem ipcReachable_of_bundle {s : SystemState} (h : finalisingDeleteBundle s)
@@ -316,16 +328,21 @@ theorem ipcReachable.reachQueueInvariant {s : SystemState} (h : ipcReachable s) 
 /-- **The finalisation keeps the reachable state and the bundle.** -/
 theorem finaliseFinalObject_preserves_reachableDeleteBundle (target : Nat) (st : SystemState)
     (h : reachableDeleteBundle st) : reachableDeleteBundle (finaliseFinalObject target st) :=
-  ⟨finaliseFinalObject_preserves_ipcReachable target h.1 h.2.1.2.2,
-    finaliseFinalObject_preserves_finalisingDeleteBundle target st h.2⟩
+  ⟨finaliseFinalObject_preserves_ipcReachable target h.1 h.2.1.1.2.2,
+    finaliseFinalObject_preserves_finalisingDeleteBundle target st h.2.1,
+    (finaliseFinalObject_runQueueEntryStage target st).1.tableReferencesRecorded_of_reachable
+      h.1 h.2.2⟩
 
 /-- **The retire after the finalisation keeps the reachable state and the
 bundle.** -/
 theorem retireFinalisedObject_preserves_reachableDeleteBundle (ec : CoreId)
     (target recorder : Nat) (st : SystemState) (h : reachableDeleteBundle st) :
     reachableDeleteBundle (retireFinalisedObject ec target recorder st) :=
-  ⟨retireFinalisedObject_preserves_ipcReachable ec target recorder h.1 h.2.1.2.2,
-    retireFinalisedObject_preserves_finalisingDeleteBundle ec target recorder st h.2⟩
+  ⟨retireFinalisedObject_preserves_ipcReachable ec target recorder h.1 h.2.1.1.2.2,
+    retireFinalisedObject_preserves_finalisingDeleteBundle ec target recorder st h.2.1,
+    ((finaliseFinalObject_runQueueEntryStage target st).1.trans
+      (retireFinalObject_runQueueStage ec target recorder _).1).tableReferencesRecorded_of_reachable
+      h.1 h.2.2⟩
 
 /-- **The slot delete and the page teardown keep the reachable state and the
 bundle**: the bundle by its own theorem, the queues by the frame. -/
@@ -335,10 +352,13 @@ theorem cspaceDeleteSlotTeardown_preserves_reachableDeleteBundle {ec : CoreId}
     (hD : cspaceDeleteSlot addr st = .ok ((), st1))
     (hF : finaliseDestroyedCapabilities ec named pages st1 = .ok ((), st2)) :
     reachableDeleteBundle st2 := by
-  have hB := cspaceDeleteSlotTeardown_preserves_finalisingDeleteBundle h.2 hD hF
-  have hI1 := cspaceDeleteSlot_preserves_objects_invExt st st1 addr h.2.1.2.1 hD
-  exact ⟨ipcReachable_of_bundle hB (((ReachLinkFrame.cspaceDeleteSlot h.2.1.2.1 hD).trans
-    (ReachLinkFrame.finaliseDestroyedCapabilities hI1 hF)).preserves h.1.reachQueueInvariant), hB⟩
+  have hB := cspaceDeleteSlotTeardown_preserves_finalisingDeleteBundle h.2.1 hD hF
+  have hI1 := cspaceDeleteSlot_preserves_objects_invExt st st1 addr h.2.1.1.2.1 hD
+  exact ⟨ipcReachable_of_bundle hB (((ReachLinkFrame.cspaceDeleteSlot h.2.1.1.2.1 hD).trans
+    (ReachLinkFrame.finaliseDestroyedCapabilities hI1 hF)).preserves h.1.reachQueueInvariant), hB,
+    ((cspaceDeleteSlot_runQueueStage hD).1.trans
+      (finaliseDestroyedCapabilities_runQueueStage hF).1).tableReferencesRecorded_of_reachable
+      h.1 h.2.2⟩
 
 /-- `.cspaceDelete`: **the finalising delete keeps the reachable state and the
 bundle** — the slot delete's and the teardown's, then the finalisation's and
@@ -429,10 +449,10 @@ theorem copyThreadSpacesZombie_preserves_ipcReachable (ec : CoreId) {st st' : Sy
   have step : ∀ s, reachableDeleteBundle s → copyThreadSpaces ec s vtid cnSrc vrSrc = .ok st' →
       ipcReachable st' ∧ schedContextLinkInvariant st' := fun s hs hC =>
     ⟨copyThreadSpaces_preserves_ipcReachable ec hs.1 hC,
-      copyThreadSpaces_preserves_schedContextLinkInvariant ec hs.1.objects_invExt hs.2.2 hC⟩
+      copyThreadSpaces_preserves_schedContextLinkInvariant ec hs.1.objects_invExt hs.2.1.2 hC⟩
   rcases copyThreadSpacesZombie_cases hStep with h1 | ⟨n, s, hR, rfl | h2⟩
   · exact step st h h1
-  · exact ⟨(hChain n _ hR).1, (hChain n _ hR).2.2⟩
+  · exact ⟨(hChain n _ hR).1, (hChain n _ hR).2.1.2⟩
   · exact step s (hChain n s hR) h2
 
 end SeLe4n.Kernel

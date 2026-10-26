@@ -1648,12 +1648,13 @@ caller is cancelled and made inactive (`finaliseReply`).  Nothing when no object
 targeted, for any other kind, or when the object is still held outside every
 slot — a service registration's endpoint capability, an interrupt's
 notification — since seL4 would hold a capability there and the slot's would
-not be final. -/
+not be final; the object records that itself (`SystemState.tableBackLinksClear`,
+one field read in place of a walk of the registry and the interrupt table). -/
 def finaliseFinalObject (target : Nat) (st : SystemState) : SystemState :=
   if target = 0 then st
   else
     let x := SeLe4n.ObjId.ofNat (target - 1)
-    if registryNamesNone st x && irqHandlersNameNone st x then
+    if st.tableBackLinksClear x then
       match st.getObjectType? x with
       | some .endpoint => cancelAllIpc x st
       | some .notification => cancelAllSignals x (unbindMaybeNotification x st)
