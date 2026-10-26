@@ -1511,6 +1511,54 @@ private def runEndpointQueueLinksOnlyBlockedChecks : IO Unit := do
   let _ := @SeLe4n.Kernel.endpointQueueLinksOnlyBlocked.not_ipcInvariantFull
   pure ()
 
+/-- **WS-ZA ZA5.4 part 27**: `donationChainWellFormed.nextLinkReciprocal` — a
+reply frame linking up to a frame above is answered by that frame's `prev`.
+
+1. Control: a two-frame stack, the lower frame naming the upper by `next` and the
+   upper naming the lower by `prev`, satisfies the check.
+2. Clearing the upper frame's `prev` alone leaves the lower frame's `next`
+   dangling: the check fails, on the lower frame's row alone;
+   `donationChainWellFormed.not_of_dangling_next` is the proof-side refusal.
+3. The live removal of the lower (bottom) frame leaves no such link: the splice
+   clears the frame above's `prev` and, in the same step, the cut frame's own
+   `next`, so the state it returns passes the check. -/
+private def runReplyNextLinkReciprocalChecks : IO Unit := do
+  let expectBool (label : String) (actual expected : Bool) : IO Unit :=
+    if actual == expected then IO.println s!"positive check passed [{label}]"
+    else throw <| IO.userError s!"{label}: expected {expected}, got {actual}"
+  let lower : SeLe4n.ReplyId := ⟨9201⟩
+  let upper : SeLe4n.ReplyId := ⟨9202⟩
+  let ids := [lower.toObjId, upper.toObjId]
+  let withReplies (l u : SeLe4n.Kernel.Reply) : SystemState :=
+    { baseState with
+        objects := (baseState.objects.insert lower.toObjId (.reply l)).insert
+          upper.toObjId (.reply u) }
+  let check (st : SystemState) : Bool := (replyNextLinkReciprocalChecks ids st).all (·.2)
+  -- (1) the reciprocal pair.
+  let lowerR : SeLe4n.Kernel.Reply := { replyId := lower, callerCode := SeLe4n.ThreadId.optCode (some ⟨8⟩), next := some (.frame upper) }
+  let upperR : SeLe4n.Kernel.Reply := { replyId := upper, callerCode := SeLe4n.ThreadId.optCode (some ⟨9⟩), prev := some lower }
+  let stPair := withReplies lowerR upperR
+  expectBool "a reciprocal two-frame stack satisfies the check" (check stPair) true
+  -- (2) the counterexample: the upper frame no longer names the lower one.
+  let stDangling := withReplies lowerR { upperR with prev := none }
+  expectBool "NEGATIVE: a frame naming a frame above that does not name it back fails the check"
+    (check stDangling) false
+  let failing := ((replyNextLinkReciprocalChecks ids stDangling).filter (fun c => !c.2)).map (·.1)
+  expectBool "...on the lower frame's row alone"
+    (failing.length == 1 && failing.all (fun l => l.startsWith
+      s!"reply next link reciprocal: oid={lower.toObjId}")) true
+  -- (3) the live removal of the bottom frame.
+  match SeLe4n.Kernel.spliceReplyFrameOut stPair lower with
+  | .error e => throw <| IO.userError s!"reply next link: the bottom splice refused: {reprStr e}"
+  | .ok stCut =>
+      expectBool "the bottom splice leaves no dangling upward link" (check stCut) true
+      expectBool "...having cleared both the frame above's prev and the cut frame's next"
+        ((stCut.getReply? upper).any (·.prev.isNone) &&
+          (stCut.getReply? lower).any (·.next.isNone)) true
+  -- The proof-side refusal, elaborated because a run cannot exercise a theorem.
+  let _ := @SeLe4n.Kernel.donationChainWellFormed.not_of_dangling_next
+  pure ()
+
 /-- PR #932 review: `buildValidated` refuses a supplied TCB that already claims
 a run-queue place, since the fold over `runnable` would skip or refuse its
 enqueue and leave the queue it names unbuilt.  Same fixture with the placement
@@ -1648,6 +1696,7 @@ private def runNegativeChecks : IO Unit := do
   runDualQueueTailPairingChecks                         -- WS-RR RR8.4
   runEndpointQueueHeadDisjointChecks                    -- PR #897 review (v0.35.108)
   runEndpointQueueLinksOnlyBlockedChecks                -- WS-ZA ZA5.4 part 27
+  runReplyNextLinkReciprocalChecks                      -- WS-ZA ZA5.4 part 27
   runBuilderRunPlacementChecks                          -- PR #932 review
   runSlotLinkAgreementChecks                            -- PR #956 review
   runSlotLinkShapeChecks                                -- PR #958 review

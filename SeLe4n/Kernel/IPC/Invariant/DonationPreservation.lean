@@ -2645,8 +2645,8 @@ theorem donationHeadPop_preserves_donationChainWellFormed_of_except
         have hcRid : c.toObjId ≠ rid.toObjId := by intro hx; rw [hx, hRobj] at hc; cases hc
         rw [hOther c.toObjId (fun hx => h1 (SeLe4n.SchedContextId.toObjId_injective c scId hx)) hcRid]
         exact hc
-      -- §6.4a  The five conjuncts.
-      refine ⟨?_, ?_, ?_, ?_, ?_⟩
+      -- §6.4a  The six conjuncts.
+      refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
       · intro q rq hq
         rcases hReplyCases q rq hq with ⟨_, rfl⟩ | ⟨hqNe, hqPre⟩
         · intro _; exact ⟨rfl, rfl⟩
@@ -2703,6 +2703,15 @@ theorem donationHeadPop_preserves_donationChainWellFormed_of_except
             obtain ⟨rq, hrq, _⟩ := donationChainFrom_mem st c fuel' sc'.scReply chain' hWalk' q hq
             unfold replyStackLinksAt? SystemState.getObject?
             rw [hReplyFwd q rq hqRid hrq, hrq])
+      · intro q rq x hRq hNext
+        rcases hReplyCases q rq hRq with ⟨_, rfl⟩ | ⟨hNeRid, hPre⟩
+        · simp at hNext
+        · obtain ⟨a, hA, hAP⟩ := hChain.nextLinkReciprocal q rq x hPre hNext
+          have hNe : x ≠ rid := by
+            intro hx; rw [hx, hRobj] at hA
+            have ha : a = r0 := (KernelObject.reply.inj (Option.some.inj hA)).symm
+            rw [ha, hPrev] at hAP; cases hAP
+          exact ⟨a, hReplyFwd x a hNe hA, hAP⟩
     | some below =>
       -- §6.3b  A frame below: it is a Reply answering `rid` (`prevLinkReciprocal`),
       -- distinct from `rid` (it answers a frame, `rid` heads a context) and from
@@ -2797,8 +2806,8 @@ theorem donationHeadPop_preserves_donationChainWellFormed_of_except
         have hWf := hChain.replyWellFormedExcept below b0 hBelowNeRid hBobj hC
         rw [hWf.2] at hBnext
         cases hBnext
-      -- §6.4b  The five conjuncts.
-      refine ⟨?_, ?_, ?_, ?_, ?_⟩
+      -- §6.4b  The six conjuncts.
+      refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
       · intro q rq hq
         rcases hReplyCases q rq hq with ⟨_, rfl⟩ | ⟨_, rfl⟩ | ⟨hqNe, _, hqPre⟩
         · intro _; exact ⟨rfl, rfl⟩
@@ -2936,6 +2945,25 @@ theorem donationHeadPop_preserves_donationChainWellFormed_of_except
             obtain ⟨rq, hrq, _⟩ := donationChainFrom_mem st c fuel' sc'.scReply chain' hWalk' q hq
             unfold replyStackLinksAt? SystemState.getObject?
             rw [hReplyFwd q rq hqRid hqBelow hrq, hrq])
+      · -- An upward link survives only on a frame neither store wrote, and the
+        -- frame it names is the new head (its `prev` kept) or untouched.
+        intro q rq x hRq hNext
+        rcases hReplyCases q rq hRq with ⟨_, rfl⟩ | ⟨_, rfl⟩ | ⟨hNeRid, hNeBelow, hPre⟩
+        · simp at hNext
+        · simp at hNext
+        · obtain ⟨a, hA, hAP⟩ := hChain.nextLinkReciprocal q rq x hPre hNext
+          have hNe1 : x ≠ rid := by
+            intro hx; rw [hx, hRobj] at hA
+            have ha : a = r0 := (KernelObject.reply.inj (Option.some.inj hA)).symm
+            rw [ha, hPrev] at hAP
+            exact hNeBelow (Option.some.inj hAP).symm
+          by_cases hxB : x = below
+          · subst hxB
+            rw [hBobj] at hA
+            have ha : a = b0 := (KernelObject.reply.inj (Option.some.inj hA)).symm
+            subst ha
+            exact ⟨_, hS2Below, hAP⟩
+          · exact ⟨a, hReplyFwd x a hNe1 hxB hA, hAP⟩
 
 /-- WS-OD OD3.8 / `v0.35.4`: the pop's chain writes preserve the chain invariant,
 from the **unrelaxed** pre-state — the instance of
@@ -3123,7 +3151,7 @@ theorem donationHeadPush_preserves_donationChainWellFormed
     (hChain : donationChainWellFormed st)
     (hSc : st.getSchedContext? scId = some sc)
     (hRep : st.getReply? pushRid = some pushReply)
-    (hFreshNext : pushReply.next = none)
+    (hFreshPrev : pushReply.prev = none) (hFreshNext : pushReply.next = none)
     (hCaller : pushReply.caller ≠ none)
     (hStoredHead : scStored.scReply = some pushRid)
     (hS1 : storeObject scId.toObjId (.schedContext scStored) st = .ok ((), s1))
@@ -3200,7 +3228,7 @@ theorem donationHeadPush_preserves_donationChainWellFormed
       have hcRid : c.toObjId ≠ pushRid.toObjId := by intro hx; rw [hx, hRepStore] at hc; cases hc
       rw [hOther c.toObjId (fun hx => h1 (SeLe4n.SchedContextId.toObjId_injective c scId hx)) hcRid]
       exact hc
-    refine ⟨?_, ?_, ?_, ?_, ?_⟩
+    refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
     · intro q rq hq
       rcases hReplyCases q rq hq with ⟨_, rfl⟩ | ⟨_, hqPre⟩
       · intro hC; exact absurd hC hCaller
@@ -3262,6 +3290,17 @@ theorem donationHeadPush_preserves_donationChainWellFormed
           obtain ⟨rq, hrq, _⟩ := donationChainFrom_mem st c fuel' sc'.scReply chain' hWalk' q hq
           unfold replyStackLinksAt? SystemState.getObject?
           rw [hReplyFwd q rq hqRid hrq, hrq])
+    · -- The pushed frame heads the context, and nothing named it by `next`: a
+      -- frame naming it would be answered by its `prev`, which is clear.
+      intro q rq x hRq hNext
+      rcases hReplyCases q rq hRq with ⟨_, rfl⟩ | ⟨hNeRid, hPre⟩
+      · simp at hNext
+      · obtain ⟨a, hA, hAP⟩ := hChain.nextLinkReciprocal q rq x hPre hNext
+        have hNe : x ≠ pushRid := by
+          intro hx; rw [hx, hRepStore] at hA
+          have ha : a = pushReply := (KernelObject.reply.inj (Option.some.inj hA)).symm
+          rw [ha, hFreshPrev] at hAP; cases hAP
+        exact ⟨a, hReplyFwd x a hNe hA, hAP⟩
   · -- §3b  An old head: it is a Reply heading `scId` (`headLinkReciprocal`),
     -- distinct from the pushed frame (the push refuses its own head) and from the
     -- SchedContext, and the second store makes it answer the pushed frame.
@@ -3349,7 +3388,7 @@ theorem donationHeadPush_preserves_donationChainWellFormed
       have hWf := hChain.replyWellFormed old oldR hRoObj hC
       rw [hWf.2] at hRoNext
       cases hRoNext
-    refine ⟨?_, ?_, ?_, ?_, ?_⟩
+    refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
     · intro q rq hq
       rcases hReplyCases q rq hq with ⟨_, rfl⟩ | ⟨_, rfl⟩ | ⟨_, _, hqPre⟩
       · intro hC; exact absurd hC hCaller
@@ -3479,6 +3518,26 @@ theorem donationHeadPush_preserves_donationChainWellFormed
           obtain ⟨rq, hrq, _⟩ := donationChainFrom_mem st c fuel' sc'.scReply chain' hWalk' q hq
           unfold replyStackLinksAt? SystemState.getObject?
           rw [hReplyFwd q rq hqRid hqOld hrq, hrq])
+    · -- The old head's new upward link is answered by the pushed frame's `prev`;
+      -- every other upward link names a frame whose `prev` no store moved.
+      intro q rq x hRq hNext
+      rcases hReplyCases q rq hRq with ⟨_, rfl⟩ | ⟨hEq, rfl⟩ | ⟨hNeRid, hNeOld, hPre⟩
+      · simp at hNext
+      · have hx : x = pushRid := (ReplyStackLink.frame.inj (Option.some.inj hNext)).symm
+        subst hx; subst hEq
+        exact ⟨_, hRid2, rfl⟩
+      · obtain ⟨a, hA, hAP⟩ := hChain.nextLinkReciprocal q rq x hPre hNext
+        have hNe1 : x ≠ pushRid := by
+          intro hx; rw [hx, hRepStore] at hA
+          have ha : a = pushReply := (KernelObject.reply.inj (Option.some.inj hA)).symm
+          rw [ha, hFreshPrev] at hAP; cases hAP
+        by_cases hxO : x = old
+        · subst hxO
+          rw [hRoObj] at hA
+          have ha : a = oldR := (KernelObject.reply.inj (Option.some.inj hA)).symm
+          subst ha
+          exact ⟨_, hS2Old, hAP⟩
+        · exact ⟨a, hReplyFwd x a hNe1 hxO hA, hAP⟩
 
 /-- **WS-OD OD4.5: `donateSchedContext` preserves the donation chain.**
 
@@ -3500,7 +3559,7 @@ theorem donateSchedContext_preserves_donationChainWellFormed
   obtain ⟨sc, donorTcb, clientTcb, serverTcb, pushRid, pushReply, s1, s2, s3, s4,
       hSc, _, _, hFrame, hS1, hS2, hLC, hS3, hLS, hS4, hEq⟩ :=
     donateSchedContext_ok_storeChain st st' clientTid serverTid clientScId h
-  obtain ⟨_, hRep, _, hFreshNext, hCaller⟩ :=
+  obtain ⟨_, hRep, hFreshPrev, hFreshNext, hCaller⟩ :=
     donationPushFrame?_ok st donorTcb pushRid pushReply hFrame
   have hInv1 := SeLe4n.Model.storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
   have hInv2 := storeDonationFramePush_preserves_objects_invExt hInv1 hS2
@@ -3509,7 +3568,7 @@ theorem donateSchedContext_preserves_donationChainWellFormed
     donationHeadPush_preserves_donationChainWellFormed hObjInv hChain hSc hRep
       -- **WS-RR RR8**: the read-set hypothesis, discharged by the record the push
       -- itself stores -- `rfl`, since its `scReply` is written literally.
-      hFreshNext hCaller rfl hS1 hS2
+      hFreshPrev hFreshNext hCaller rfl hS1 hS2
   have hFrame23 : donationChainFrame s2 s3 :=
     donationChainFrame_of_tcb_rewrite hInv2
       (lookupTcb_some_objects s2 clientTid clientTcb hLC) hS3
@@ -3951,7 +4010,7 @@ theorem donationAccountingPreserved_atCallDepthTwo
   -- and becomes the bottom of what is left.
   have hTopPost : st'.getReply? top = some { t with prev := none } :=
     removeCallerReplyFrame_clears_prev_of_bottom_frame st st' origin rid top r t hObjInv
-      hR hN hBottom hT hTP hRemove
+      hR hN hBottom hT hTP (by rw [hTHead]; simp) hRemove
   -- The context survives, and still heads `top`.
   have hSc' : st'.getSchedContext? scId = some sc := by
     rw [removeCallerReplyFrame_getSchedContext?_eq st st' origin rid hObjInv hRemove scId]

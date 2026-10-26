@@ -240,6 +240,32 @@ witness that shows a ready thread carrying a queue successor fails it. -/
 def endpointQueueLinksOnlyBlockedBool (st : SystemState) : Bool :=
   (endpointQueueLinksOnlyBlockedChecks st.objectIndex st).all (·.2)
 
+/-- **WS-ZA ZA5.4 part 27**: `donationChainWellFormed.nextLinkReciprocal` as a
+runtime check: a reply frame linking up to a frame above is answered by that
+frame's `prev` (seL4's `sym_refs` over `replyNext` / `replyPrev`).
+
+One row per Reply carrying an upward `.frame` link, so a state with no reply
+stacks adds none.  A failing row names both frames, because the content of a
+failure is which link dangles: the frame above may be freed by its final delete
+while the frame below still names it. -/
+def replyNextLinkReciprocalChecks (objectIds : List SeLe4n.ObjId) (st : SystemState) :
+    List (String × Bool) :=
+  objectIds.foldr (fun oid acc =>
+    match st.getReply? ⟨oid.toNat⟩ with
+    | some r =>
+        match r.next with
+        | some (.frame above) =>
+            (s!"reply next link reciprocal: oid={oid} above={above.toObjId}",
+              (st.getReply? above).any (fun a => a.prev == some ⟨oid.toNat⟩)) :: acc
+        | _ => acc
+    | none => acc) []
+
+/-- **WS-ZA ZA5.4 part 27**: the same relation as a single boolean, for the
+witness that shows a frame naming a frame above that no longer names it back
+fails it. -/
+def replyNextLinkReciprocalBool (st : SystemState) : Bool :=
+  (replyNextLinkReciprocalChecks st.objectIndex st).all (·.2)
+
 /-- M-11 CSpace coherency: every capability slot — a CNode's slot or a thread's
 space slot — whose capability targets an object has that
 object present in the object store — and, where the capability names the object's
@@ -784,6 +810,8 @@ def stateInvariantChecksFor (objectIds : List SeLe4n.ObjId) (st : SystemState)
     ++ endpointQueueHeadDisjointChecks objectIds st
     -- WS-ZA ZA5.4 part 27: the 21st `ipcInvariantFull` conjunct.
     ++ endpointQueueLinksOnlyBlockedChecks objectIds st
+    -- WS-ZA ZA5.4 part 27: the chain invariant's upward reciprocity.
+    ++ replyNextLinkReciprocalChecks objectIds st
 
 /--
 Fallback invariant check surface for callers without an explicit object-id inventory.

@@ -2659,6 +2659,13 @@ theorem objectNamesById_of_replyPrev {r : Reply} {p : SeLe4n.ReplyId}
   | true => rfl
   | false => exact absurd rfl ((objectNamesById_reply hn).1 p h)
 
+/-- A reply names the frame above it by id. -/
+theorem objectNamesById_of_replyNext {r : Reply} {a : SeLe4n.ReplyId}
+    (h : r.next = some (.frame a)) : objectNamesById (.reply r) a.toObjId = true := by
+  cases hn : objectNamesById (.reply r) a.toObjId with
+  | true => rfl
+  | false => exact absurd rfl ((objectNamesById_reply hn).2 a h)
+
 /-- A scheduling context names the head of its reply stack by id. -/
 theorem objectNamesById_of_scReply {sc : SchedContext} {r : SeLe4n.ReplyId}
     (h : sc.scReply = some r) : objectNamesById (.schedContext sc) r.toObjId = true := by

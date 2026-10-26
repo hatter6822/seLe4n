@@ -1712,13 +1712,15 @@ of this scenario.
 
 **And the splice's THIRD store is not observable through the composite, which is
 why the last half asserts it on the primitive.**  Measured rather than assumed:
-with `rid.prev := none` deleted the whole suite still passes, because the
-`Reply.consumed` that follows clears the cut frame's links anyway on a frame that
-heads nothing.  So an assertion about the cut frame's `prev` taken from the
+with the cut frame's cleared links deleted from that store the whole suite still
+passes, because the `Reply.consumed` that follows clears them anyway on a frame
+that heads nothing.  So an assertion about the cut frame's links taken from the
 composite's post-state is testing `consumed`, not the splice — an inert witness
 reading as coverage, which is this project's own hazard.  The store is
-load-bearing all the same (it is seL4's `reply_unlink` downward half, and without
-it the cut frame keeps a `prev` nothing names back), and it would become
+load-bearing all the same (it is seL4's `reply_remove`: without the cleared
+`prev` the cut frame keeps a link nothing names back, and without the cleared
+`next` it names a frame whose `prev` no longer answers it, which
+`nextLinkReciprocal` refuses), and it would become
 *observable* the moment `consumed` changed, so the half below drives
 `frozenSpliceReplyFrameOut` directly with no consume after it. -/
 private def differentialEndpointReplyMiddleFrameSplices : IO Unit := do
@@ -1819,11 +1821,12 @@ private def differentialEndpointReplyMiddleFrameSplices : IO Unit := do
   -- ### The primitive, with no consume after it.
   --
   -- All three stores at once, where the composite can only show two: the cut
-  -- frame's own `prev := none` is the store `Reply.consumed` would mask, so this
-  -- is the only place a deletion of it fails.  The live counterpart is asserted
+  -- frame's own cleared links (`prev := none, next := none`, seL4's `reply_remove`)
+  -- are the store `Reply.consumed` would mask, so this is the only place a
+  -- deletion of either fails.  The live counterpart is asserted
   -- beside it, so the two are compared store for store rather than each against
   -- its own expectation.
-  expect "FO-043: the frozen PRIMITIVE writes all three links, the cut frame's own included"
+  expect "FO-043: the frozen PRIMITIVE writes all three links, clearing both of the cut frame's own"
     (match (frozenSpliceReplyFrameOut (freeze chain) midRid).toOption with
      | some post =>
          (match post.getReply? topRid with
@@ -1833,7 +1836,7 @@ private def differentialEndpointReplyMiddleFrameSplices : IO Unit := do
           | some b => b.next == some (SeLe4n.Kernel.ReplyStackLink.frame topRid)
           | none   => false) &&
          (match post.getReply? midRid with
-          | some m => m.prev == none && m.next == some (SeLe4n.Kernel.ReplyStackLink.frame topRid)
+          | some m => m.prev == none && m.next == none
           | none   => false)
      | none => false)
   expect "FO-043: ...exactly as the live primitive does"
@@ -1846,7 +1849,7 @@ private def differentialEndpointReplyMiddleFrameSplices : IO Unit := do
           | some b => b.next == some (SeLe4n.Kernel.ReplyStackLink.frame topRid)
           | none   => false) &&
          (match post.getReply? midRid with
-          | some m => m.prev == none && m.next == some (SeLe4n.Kernel.ReplyStackLink.frame topRid)
+          | some m => m.prev == none && m.next == none
           | none   => false)
      | none => false)
 

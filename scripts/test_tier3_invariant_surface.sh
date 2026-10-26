@@ -1319,13 +1319,20 @@ run_check "INVARIANT" rg -n '^def spliceThreadReplyFrameOut($|[ ({:\[\]])' SeLe4
 run_check "INVARIANT" rg -n '^def spliceReplyFrameOut($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
 # WS-HP HP6.3: the body is the composed store step, and the step is THREE stores
 # in a fixed order -- the frame above takes the frame below, the frame below takes
-# the frame above, and the cut frame loses its own downward link (seL4's
-# `reply_unlink` downward half, which is what makes `donationChainWellFormed`
+# the frame above, and the cut frame loses its own links (seL4's
+# `reply_remove`, which is what makes `donationChainWellFormed`
 # survive the removal outright rather than transiently).  Anchored on the ORDER
 # rather than on the presence of three stores: the splice reads the link the
 # consume clears, so a swap is a different program.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def spliceReplyFrameOut[^\n]*(\n([ \t][^\n]*)?)*else spliceReplyFrameStores st rid above r a" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def spliceReplyFrameStores[^\n]*(\n([ \t][^\n]*)?)*storeObject above\.toObjId \(\.reply \{ a with prev := some below \}\) st[^\n]*(\n([ \t][^\n]*)?)*storeObject below\.toObjId \(\.reply \{ b with next := some \(\.frame above\) \}\) s1[^\n]*(\n([ \t][^\n]*)?)*storeObject rid\.toObjId \(\.reply \{ r with prev := none \}\) s2" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def spliceReplyFrameStores[^\n]*(\n([ \t][^\n]*)?)*storeObject above\.toObjId \(\.reply \{ a with prev := some below \}\) st[^\n]*(\n([ \t][^\n]*)?)*storeObject below\.toObjId \(\.reply \{ b with next := some \(\.frame above\) \}\) s1[^\n]*(\n([ \t][^\n]*)?)*storeObject rid\.toObjId \(\.reply \{ r with prev := none, next := none \}\) s2" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+# The cut frame loses BOTH of its links on both arms (seL4's `reply_remove`), so
+# its upward `next` never outlives the `prev` that answered it
+# (`nextLinkReciprocal`).  On the degenerate arm the frame above is cleared
+# through `Reply.unlinkedFrom`, which also drops a `next` naming the cut frame
+# back (the two-frame cycle the invariant does not exclude), and the cut frame's
+# store comes LAST, so a self-loop ends cleared.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def spliceReplyFrameStores[^\n]*(\n([ \t][^\n]*)?)*  \| none =>\n    match storeObject above\.toObjId \(\.reply \(a\.unlinkedFrom rid\)\) st with\n    \| \.error e => \.error e\n    \| \.ok \(\(\), s1\) =>\n      match storeObject rid\.toObjId \(\.reply \{ r with prev := none, next := none \}\) s1 with" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
 # NEGATIVE: ...and the retired SEVER spelling is gone from the step's splice arm.
 # The mutation that matters keeps every store and writes `none` into the frame
 # above, which is the policy this cut replaced; anchored on the arm rather than
@@ -2469,6 +2476,15 @@ run_check "INVARIANT" rg -n '^@\[inline\] def donationFirstPush' SeLe4n/Kernel/I
 # at the pop, never asserted by the invariant; a conjunct would be false on the
 # removal states this phase exists for.
 run_negative_check "INVARIANT" bash -lc 'rg -n "donationOrigin" SeLe4n/Kernel/IPC/Invariant/Defs.lean | rg -n "donationChainWellFormed|prevLinkReciprocal|headTerminates"'
+# The reply stack's links are reciprocal BOTH ways (seL4's `sym_refs` over
+# `replyNext` / `replyPrev`): a frame's `next` naming a frame above is answered by
+# that frame's `prev`, so no retire or splice can leave a dangling upward link.
+# The conjunct, its refusal of the dangling state, the cut frame's cleared `prev`
+# the consume needs, and the retire keeping the frame a `next` names.
+run_check "INVARIANT" bash -lc 'rg -U -n "^structure donationChainWellFormed \(st : SystemState\) : Prop where(\n([ \t][^\n]*)?)*\n  nextLinkReciprocal : ∀ \(rid : SeLe4n\.ReplyId\) \(r : Reply\) \(above : SeLe4n\.ReplyId\)," SeLe4n/Kernel/IPC/Invariant/Defs.lean'
+run_check "INVARIANT" rg -n '^theorem donationChainWellFormed\.not_of_dangling_next($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem spliceReplyFrameOutOrSelf_cut_prev_none($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
+run_check "INVARIANT" rg -n '^theorem objectNamesById_of_replyNext($|[ ({:\[\]])' SeLe4n/Kernel/Capability/FinalRetire.lean
 # The id-reuse closure is structural: an origin counts only while its thread's
 # back-link names the context, the donor's first push writes that back-link, and
 # a thread made at a reused id starts with none.  Live resolver, frozen mirror,
@@ -4133,7 +4149,8 @@ run_check "INVARIANT" rg -n -U '        if a\.prev != some rid then st\n        
 # (`storeReplyWith`), with no record rebuilt; each is the specification's store
 # step (`_eq`), so the `@[csimp]` the final delete runs allocates nothing there.
 run_check "INVARIANT" rg -n -U '  if st\.objects\.findsInPlace below\.toObjId then\n    \(st\.storeReplyWith below\.toObjId fun b => \{ b with next := none \}\)\.storeReplyWith\n      rid\.toObjId fun r => \{ r with prev := none \}' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
-run_check "INVARIANT" rg -n -U '    if st\.objects\.findsInPlace above\.toObjId && st\.objects\.findsInPlace below\.toObjId then\n      \(\(st\.storeReplyWith above\.toObjId fun a => \{ a with prev := some below \}\)\.storeReplyWith\n        below\.toObjId fun b => \{ b with next := some \(\.frame above\) \}\)\.storeReplyWith\n        rid\.toObjId fun r => \{ r with prev := none \}' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n -U '    if st\.objects\.findsInPlace above\.toObjId && st\.objects\.findsInPlace below\.toObjId then\n      \(\(st\.storeReplyWith above\.toObjId fun a => \{ a with prev := some below \}\)\.storeReplyWith\n        below\.toObjId fun b => \{ b with next := some \(\.frame above\) \}\)\.storeReplyWith\n        rid\.toObjId fun r => \{ r with prev := none, next := none \}' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n -U '  \| none =>\n    if st\.objects\.findsInPlace above\.toObjId then\n      \(st\.storeReplyWith above\.toObjId fun a => a\.unlinkedFrom rid\)\.storeReplyWith\n        rid\.toObjId fun r => \{ r with prev := none, next := none \}' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 run_check "INVARIANT" rg -n '^theorem severReplyFrameBelowStoresInPlace_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 run_check "INVARIANT" rg -n '^theorem spliceReplyFrameStoresInPlace_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 run_check "INVARIANT" rg -n -U '^  runContextlessStackChecks\n  runMiddleReplyFinaliseChecks$' tests/VSpaceCapabilityBindingSuite.lean
@@ -17054,7 +17071,7 @@ run_check "INVARIANT" bash -lc 'rg -n "FO-043 NEGATIVE: the frozen removal does 
 # store is observable: through the composite `Reply.consumed` clears the cut
 # frame's links anyway, so a composite-only assertion about them tests `consumed`
 # rather than the splice -- an inert witness reading as coverage.
-run_check "INVARIANT" bash -lc 'rg -n "FO-043: the frozen PRIMITIVE writes all three links, the cut frame.s own included" tests/FrozenOpsSuite.lean'
+run_check "INVARIANT" bash -lc 'rg -n "FO-043: the frozen PRIMITIVE writes all three links, clearing both of the cut frame.s own" tests/FrozenOpsSuite.lean'
 run_check "INVARIANT" bash -lc 'rg -n "^    \(\.endpointReplyToBlockedCaller,     differentialEndpointReplyRedirectsToOrigin\) \]" tests/FrozenOpsSuite.lean'
 # The frozen reply removes before it consumes, in the order the live one does.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenEndpointReply[^\n]*(\n([ \t][^\n]*)?)*let st. := frozenSpliceReplyFrameOutOrSelf st.. replyId[^\n]*(\n([ \t][^\n]*)?)*\(\.reply r\.consumed\)" SeLe4n/Kernel/FrozenOps/Operations.lean'

@@ -1399,7 +1399,7 @@ theorem finaliseUnstack_preserves_donationChainWellFormed {s s1 : SystemState}
       s.objects[q.toObjId]? = some (.reply rq) → rq.next = some l → l ≠ ReplyStackLink.head ⟨x.val⟩ → q ≠ rid :=
     fun h hn hl e => by subst e; rw [hRO] at h; cases h; rw [hNext] at hn; cases hn; exact hl rfl
   refine ⟨fun q rq hq => ?_, fun scId sc2 hsc q hq => ?_, fun q rq scId hq hn => ?_,
-    fun q rq below hq hp => ?_, fun scId sc2 hsc => ?_⟩
+    fun q rq below hq hp => ?_, fun scId sc2 hsc => ?_, fun q rq above hq hn => ?_⟩
   · -- replyWellFormed
     rw [hO] at hq
     split at hq
@@ -1482,6 +1482,19 @@ theorem finaliseUnstack_preserves_donationChainWellFormed {s s1 : SystemState}
         obtain ⟨chain', h'⟩ := donationChainWalk_exists_of_agree_or_cut fuel (.head scId)
           sc2.scReply chain hW (fun q hq => Or.inl (hAg q hq))
         exact ⟨fuel, chain', h'⟩
+  · -- nextLinkReciprocal: the head's cleared `next` names nothing, and the head
+    -- keeps its `prev`, so a frame below it is still answered.
+    rw [hO] at hq
+    split at hq
+    · cases hq
+    · split at hq
+      · cases hq; simp at hn
+      · obtain ⟨a, ha, hap⟩ := hC.nextLinkReciprocal q rq above hq hn
+        by_cases e3 : above.toObjId = rid.toObjId
+        · refine ⟨{ r with next := none }, ?_, ?_⟩
+          · rw [hO, if_neg (hRX ha), if_pos e3]
+          · rw [e3, hRO] at ha; cases ha; exact hap
+        · exact ⟨a, by rw [hO, if_neg (hRX ha), if_neg e3]; exact ha, hap⟩
 
 /-- **A scheduling context's unstack keeps the donation chains** (seL4's
 `schedContext_unbindReply`): the stack it let go of is no context's, so every
@@ -1838,9 +1851,12 @@ theorem reply {s : SystemState} {x : SeLe4n.ObjId} {r : Reply} {c : SeLe4n.Threa
     (restoreToReadyStaging_nonTcb s1 c _ tR g1.invExt hLk1 k _ (fun _ e => by cases e)).mp hk
   have hC3 : donationChainWellFormed
       (Lifecycle.Suspend.consumeReplyLink (Lifecycle.Suspend.restoreToReadyCancelled s1 c) c t) := by
-    refine consumeReplyLink_preserves_donationChainWellFormed _ c t hR2.invExt hC2
-      (fun rid rq sc hr hq e => ?_) (fun rid a ra hr ha => ?_)
-    · rw [hRO] at hr; cases hr
+    have hNH : ∀ (rid : SeLe4n.ReplyId) (rq : Reply) (sc : SeLe4n.SchedContextId),
+        t.replyObject = some rid →
+        (Lifecycle.Suspend.restoreToReadyCancelled s1 c).getReply? rid = some rq →
+        rq.next ≠ some (.head sc) := by
+      intro rid rq sc hr hq e
+      rw [hRO] at hr; cases hr
       have hq1 := hRestR _ rq ((SystemState.getReply?_eq_some_iff _ _ _).mp hq)
       -- The spliced frame's upward link is its pre-state one, or a frame link.
       rcases spliceThreadReplyFrameOut_cases R t with e1 | ⟨rid0, hr0, e1⟩
@@ -1865,12 +1881,20 @@ theorem reply {s : SystemState} {x : SeLe4n.ObjId} {r : Reply} {c : SeLe4n.Threa
           rw [(SystemState.getReply?_eq_some_iff _ _ _).mpr hPreR] at hrp
           have hrp' : rp = rR := by cases hrp; rfl
           subst hrp'
-          rcases hnx with hn | ⟨_, y, -, hy⟩
+          rcases hnx with hn | ⟨_, -, hy⟩
           · exact hNotHeadPre sc (hn.symm.trans e)
-          · rw [e] at hy; cases hy
+          · exact hy sc e
+    refine consumeReplyLink_preserves_donationChainWellFormed _ c t hR2.invExt hC2
+      hNH (fun rid a ra hr ha => ?_) (fun rid rq hr hq => ?_)
     · rw [hRO] at hr; cases hr
       exact spliceThreadReplyFrameOut_unreferenced R t _ g0.invExt hC0 hRO a ra
         (by rw [hS1]; exact hRestR _ ra ha)
+    · have hq1 := hRestR _ rq ((SystemState.getReply?_eq_some_iff _ _ _).mp hq)
+      have hRid' := hr
+      rw [hRO] at hRid'; cases hRid'
+      exact spliceThreadReplyFrameOut_cut_prev_none R t _ g0.invExt hC0 hRO rq
+        (by rw [hS1]; exact (SystemState.getReply?_eq_some_iff _ _ _).mpr hq1)
+        (fun sc => hNH _ rq sc hr hq)
   have hC4 : donationChainWellFormed (Lifecycle.Suspend.cancelIpcBlocking s c t) := by
     rw [hEq]
     exact donationChainWellFormed_of_frame (finaliseWrite.donationChainFrame
@@ -1982,7 +2006,7 @@ theorem spliceReplyFrameOutOrSelfInPlace_preserves_donationChainWellFormed (st :
   exact spliceReplyFrameOutOrSelf_preserves_donationChainWellFormed st rid hInv hChain
 
 /-- **The compiled consume keeps the donation chain** under the premises the
-link form needs: the reply heads no stack and no frame below names it.  It is
+link form needs: the reply heads no stack, no frame's `prev` names it, and its own `prev` is clear.  It is
 `consumeCallerReplyLink` (`consumeCallerReplyInPlace_eq`). -/
 theorem consumeCallerReplyInPlace_preserves_donationChainWellFormed (st : SystemState)
     (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (hInv : st.objects.invExt)
@@ -1990,10 +2014,11 @@ theorem consumeCallerReplyInPlace_preserves_donationChainWellFormed (st : System
     (hNotHead : ∀ (r : Reply) (sc : SeLe4n.SchedContextId),
       st.getReply? rid = some r → r.next ≠ some (.head sc))
     (hUnreferenced : ∀ (a : SeLe4n.ReplyId) (ra : Reply),
-      st.objects[a.toObjId]? = some (.reply ra) → ra.prev ≠ some rid) :
+      st.objects[a.toObjId]? = some (.reply ra) → ra.prev ≠ some rid)
+    (hPrevNone : ∀ r : Reply, st.getReply? rid = some r → r.prev = none) :
     donationChainWellFormed (consumeCallerReplyInPlace st caller rid) := by
   rw [consumeCallerReplyInPlace_eq]
   exact consumeCallerReplyLink_preserves_donationChainWellFormed st caller rid hInv hChain
-    hNotHead hUnreferenced
+    hNotHead hUnreferenced hPrevNone
 
 end SeLe4n.Kernel

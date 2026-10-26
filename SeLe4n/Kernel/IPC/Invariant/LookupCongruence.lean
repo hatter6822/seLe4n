@@ -678,7 +678,7 @@ theorem consumeReply_offSchedulerAgrees {s1 s2 r1 r2 : SystemState}
 open SeLe4n.Model.SystemState in
 /-- **WS-HP HP6.4** step congruence for the removal's composed store step: two
 states agreeing off the scheduler take the same branch of `spliceFrameBelow?` —
-it reads `getReply?` and nothing else — and each of the one or three `storeObject`
+it reads `getReply?` and nothing else — and each of the two or three `storeObject`
 writes carries the relation. -/
 theorem spliceReplyFrameStores_offSchedulerAgrees {s1 s2 t1 t2 : SystemState}
     {rid above : SeLe4n.ReplyId} {r a : Reply}
@@ -694,12 +694,16 @@ theorem spliceReplyFrameStores_offSchedulerAgrees {s1 s2 t1 t2 : SystemState}
     cases hP : r.prev with
     | none => rfl
     | some below => simp only []; rw [hGR below]
-  rcases spliceReplyFrameStores_cases h1 with ⟨hB1, hSa1⟩ |
+  rcases spliceReplyFrameStores_cases h1 with ⟨m1, hB1, hSa1, hSb1⟩ |
     ⟨below, b, m1, n1, hB1, hSa1, hSb1, hSc1⟩
-  · rcases spliceReplyFrameStores_cases h2 with ⟨_, hSa2⟩ | ⟨_, _, _, _, hB2, _, _, _⟩
-    · exact storeObject_offSchedulerAgrees _ _ hRel hInv1 hInv2 hSa1 hSa2
+  · rcases spliceReplyFrameStores_cases h2 with ⟨m2, _, hSa2, hSb2⟩ |
+      ⟨_, _, _, _, hB2, _, _, _⟩
+    · exact storeObject_offSchedulerAgrees _ _
+        (storeObject_offSchedulerAgrees _ _ hRel hInv1 hInv2 hSa1 hSa2)
+        (SeLe4n.Model.storeObject_preserves_objects_invExt s1 m1 _ _ hInv1 hSa1)
+        (SeLe4n.Model.storeObject_preserves_objects_invExt s2 m2 _ _ hInv2 hSa2) hSb1 hSb2
     · rw [hBelow, hB1] at hB2; cases hB2
-  · rcases spliceReplyFrameStores_cases h2 with ⟨hB2, _⟩ |
+  · rcases spliceReplyFrameStores_cases h2 with ⟨_, hB2, _⟩ |
       ⟨below', b', m2, n2, hB2, hSa2, hSb2, hSc2⟩
     · rw [hBelow] at hB2; rw [hB1] at hB2; cases hB2
     · rw [hBelow, hB1, Option.some.injEq, Prod.mk.injEq] at hB2

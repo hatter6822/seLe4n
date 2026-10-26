@@ -2450,8 +2450,12 @@ private def runMiddleCallerRemovalChecks : IO Unit := do
     let detached := spliceThreadReplyFrameOut pushed outerTcb
     assertBool "the removal clears the `prev` of the frame ABOVE the cancelled one (a bottom frame: the splice's sever arm)"
       (pushLinksOf detached pushDonorReply == some (none, some (.head pushSc)))
-    assertBool "...and writes nothing on the cancelled frame itself — the consume does that"
-      (pushLinksOf detached pushOuterReply == some (none, some (.frame pushDonorReply)))
+    -- The cut frame's own links are cleared in the same step (seL4's
+    -- `reply_remove`), so its upward `next` never outlives the frame above's
+    -- `prev` naming it back: `nextLinkReciprocal` holds between the two stores'
+    -- results and the consume.
+    assertBool "...and clears the cancelled frame's own links in the same step"
+      (pushLinksOf detached pushOuterReply == some (none, none))
     assertBool "...and the context still heads the same frame"
       (pushHeadOf detached == some (some pushDonorReply))
     -- Step two: the consume, in the order the cancellation arm runs them.
@@ -2500,21 +2504,31 @@ private def runMiddleCallerRemovalChecks : IO Unit := do
     -- runs rather than failing — which is what keeps a severed stack's lower
     -- frames cancellable.  Both halves, since the primitive's refusal and the
     -- wrapper's fold are different facts.
-    -- The severed state is itself the shape that must be refused: the frame
-    -- below still links UP to the head, and the head no longer links down to it.
-    -- That is the state a second cancellation — of the caller below the cut —
-    -- meets, so the refusal and the wrapper's fold together are what keep a
-    -- severed stack's lower frames cancellable rather than wedged in turn.
+    -- The shape that must be refused: the frame below still links UP to the
+    -- head, and the head no longer links down to it.  The splice no longer
+    -- leaves it (it clears the cut frame's `next` with the frame above's `prev`),
+    -- and `nextLinkReciprocal` excludes it from every reachable state, so it is
+    -- built by hand here: restoring the cut frame's upward link on the detached
+    -- state.  The refusal and the wrapper's fold are still what keep such a
+    -- frame cancellable rather than wedged, on a state the invariant does not
+    -- vouch for.
+    let danglingAbove : SystemState :=
+      match detached.getReply? pushOuterReply with
+      | some r =>
+        let restored : Reply := { r with next := some (.frame pushDonorReply) }
+        { detached with
+            objects := detached.objects.insert pushOuterReply.toObjId (.reply restored) }
+      | none => detached
     assertBool "the splice refuses a frame above that does not link back"
-      (match spliceReplyFrameOut detached pushOuterReply with
+      (match spliceReplyFrameOut danglingAbove pushOuterReply with
        | .error e => e == KernelError.invalidArgument
        | .ok _ => false)
     assertBool "...and the cancellation wrapper folds that refusal to the identity"
-      (pushStackShape (spliceThreadReplyFrameOut detached outerTcb)
-         == pushStackShape detached)
+      (pushStackShape (spliceThreadReplyFrameOut danglingAbove outerTcb)
+         == pushStackShape danglingAbove)
     assertBool "...so the caller below a cut can still be cancelled, and leaves cleanly"
       (match (Lifecycle.Suspend.consumeReplyLink
-                (spliceThreadReplyFrameOut detached outerTcb)
+                (spliceThreadReplyFrameOut danglingAbove outerTcb)
                 pushOuter outerTcb).getReply? pushOuterReply with
        | some r => r.isFree
        | none => false)
@@ -3318,8 +3332,8 @@ private def runMiddleRemovalDepthThreeChecks : IO Unit := do
        | .error _ => false)
     -- **NOTHING IS PINNED BY A REMOVAL**, at either policy: a frame whose own
     -- caller is consumed while it heads no context is cleared outright
-    -- (`Reply.consumed`'s non-head branch), and since HP6.3 the removal clears the
-    -- cut frame's downward link itself -- seL4's `reply_unlink` downward half -- so
+    -- (`Reply.consumed`'s non-head branch), and the removal clears the cut
+    -- frame's own links itself -- seL4's `reply_remove` -- so
     -- `donationChainWellFormed` survives the removal rather than being transiently
     -- broken.
     assertBool "PAYOFF: the cut frame's own downward link is cleared by the removal"

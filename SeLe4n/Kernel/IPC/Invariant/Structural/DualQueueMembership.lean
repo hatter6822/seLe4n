@@ -4899,18 +4899,18 @@ open SeLe4n.Model.SystemState in
 divergence from upstream that `severAtCut` carried, closed by construction.
 
 Under the sever the frame *below* the cut kept an upward link naming a Reply that
-nothing pointed down to any more.  `donationChainWellFormed` permits that — the
-relation is stated **downward** (`prevLinkReciprocal`), so a stale `next` breaks
-no clause and every walk validates reciprocity as it reads — but it means the
-frames below the cut are off the context's stack, which is the accounting loss
-WS-HP exists to close.  The splice writes the two reciprocal links *together*, so
+nothing pointed down to any more.  `donationChainWellFormed` then permitted that —
+the relation was stated **downward** only (`prevLinkReciprocal`), so a stale
+`next` broke no clause and every walk validated reciprocity as it read; it now
+refuses it (`nextLinkReciprocal`) — but it meant the frames below the cut were off
+the context's stack, which is the accounting loss WS-HP exists to close.  The splice writes the two reciprocal links *together*, so
 after the removal the frame above names the frame below and the frame below names
 the frame above.
 
 Stated at `removeCallerReplyFrame` rather than at the splice, deliberately: the
-consume that follows clears the *cut* frame's remaining link, and a claim about
-the splice alone would say nothing about whether that clear disturbs the pair it
-just built.  It does not, and the argument needs no key-distinctness hypothesis:
+consume that follows writes the *cut* frame again, and a claim about the splice
+alone would say nothing about whether that write disturbs the pair it just
+built.  It does not, and the argument needs no key-distinctness hypothesis:
 a key at which the post-splice state holds a `.reply` is one at which the
 consume's own TCB lookup fails, so the store it would perform there never happens.
 
@@ -4938,8 +4938,9 @@ theorem removeCallerReplyFrame_splices_reciprocally (st st' : SystemState)
       unfold spliceReplyFrameOutOrSelf; rw [hOut]
     rw [hFold]; exact hS
   -- The post-splice values at the two neighbours.
-  have hAboveVal := spliceReplyFrameStores_getReply?_above hObjInv hR hN hA hP hStores
-  rw [hBelow, Option.map_some] at hAboveVal
+  have hAboveVal := spliceReplyFrameStores_getReply?_above hObjInv hR hN hA hP
+    (spliceFrameBelow?_above_ne_cut hR hA hP hBelow) hStores
+  simp only [hBelow] at hAboveVal
   have hBelowVal := spliceReplyFrameStores_getReply?_below hObjInv hR hN hA hP hBelow hStores
   have hNeBR : below ≠ rid := spliceFrameBelow?_ne_cut hR hN hBelow
   have hNeAR : above ≠ rid := spliceFrameBelow?_above_ne_cut hR hA hP hBelow
@@ -5005,22 +5006,25 @@ policy flip cannot reach this shape, and why the depth-two residue needs the
 reservation's recorded **origin** rather than a further change to the removal.
 
 Stated at `removeCallerReplyFrame` rather than at the splice, for the reason its
-sibling is: the consume that follows clears the *cut* frame's remaining link, and
-a claim about the splice alone would say nothing about whether that clear
-disturbs the frame it has just written.  It does not, and the argument needs no
+sibling is: the consume that follows writes the *cut* frame again, and a claim
+about the splice alone would say nothing about whether that write disturbs the
+frame it has just written.  It does not, and the argument needs no
 key-distinctness hypothesis — a key at which the post-splice state holds a
 `.reply` is one at which the consume's own TCB lookup fails, so the store it
 would perform there never happens.
 
 `above ≠ rid` is **derived** from `hBottom` rather than assumed: a frame that was
 its own frame above would carry `prev = some rid`, and a bottom frame carries no
-`prev` at all. -/
+`prev` at all.  `hAN` — the frame above does not also name the cut frame by its
+`next` — is assumed: it holds of every state the chain invariant holds of, and a
+frame above that heads a context (the consumer's case) satisfies it outright. -/
 theorem removeCallerReplyFrame_clears_prev_of_bottom_frame (st st' : SystemState)
     (caller : SeLe4n.ThreadId) (rid above : SeLe4n.ReplyId) (r a : Reply)
     (hObjInv : st.objects.invExt)
     (hR : st.getReply? rid = some r) (hN : r.next = some (.frame above))
     (hBottom : r.prev = none)
     (hA : st.getReply? above = some a) (hP : a.prev = some rid)
+    (hAN : a.next ≠ some (.frame rid))
     (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :
     st'.getReply? above = some { a with prev := none } := by
   -- Nothing below a bottom frame.
@@ -5048,9 +5052,9 @@ theorem removeCallerReplyFrame_clears_prev_of_bottom_frame (st st' : SystemState
     rw [hFold]; exact hS
   -- The post-splice value at the frame above: its `prev` is the frame below,
   -- which there is none of.
-  have hAboveVal := spliceReplyFrameStores_getReply?_above hObjInv hR hN hA hP hStores
-  rw [hBelow] at hAboveVal
-  simp only [Option.map_none] at hAboveVal
+  have hAboveVal := spliceReplyFrameStores_getReply?_above hObjInv hR hN hA hP hNeAR hStores
+  simp only [hBelow] at hAboveVal
+  rw [Reply.unlinkedFrom_of_next_ne hAN] at hAboveVal
   have hInvSp : (spliceReplyFrameOutOrSelf st rid).objects.invExt :=
     spliceReplyFrameOutOrSelf_preserves_objects_invExt st rid hObjInv
   rw [removeCallerReplyFrame_eq] at hStep
@@ -15445,8 +15449,15 @@ theorem spliceReplyFrameOut_transport {P : SystemState → Prop}
   rotate_left
   · exact severReplyFrameBelowStores_transport hStore hObjInv hP hR hN hB hBn hS
   · rcases spliceReplyFrameStores_cases hS with
-      ⟨_, hS1⟩ | ⟨below, b, s1, s2, hBelow, hS1, hS2, hS3⟩
-    · exact hStore (x' := { a with prev := none }) hObjInv hP hA rfl rfl hS1
+      ⟨s1, _, hS1, hS2⟩ | ⟨below, b, s1, s2, hBelow, hS1, hS2, hS3⟩
+    · have hP1 : P s1 := hStore (x' := a.unlinkedFrom rid) hObjInv hP hA
+        (Reply.unlinkedFrom_caller a rid) (Reply.unlinkedFrom_stasherCode a rid) hS1
+      have hObjInv1 : s1.objects.invExt :=
+        SeLe4n.Model.storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
+      rcases spliceReplyFrameStores_sever_cut_read hObjInv hR hA hS1 with hR1 | hR1
+      · exact hStore (x' := { r with prev := none, next := none }) hObjInv1 hP1 hR1 rfl rfl hS2
+      · exact hStore (x' := { r with prev := none, next := none }) hObjInv1 hP1 hR1
+          (Reply.unlinkedFrom_caller r rid).symm (Reply.unlinkedFrom_stasherCode r rid).symm hS2
     · obtain ⟨_, hNe, hB, _⟩ := spliceFrameBelow?_eq_some hBelow
       have hNeBR : below ≠ rid := spliceFrameBelow?_ne_cut hR hN hBelow
       have hNeAR : above ≠ rid := spliceFrameBelow?_above_ne_cut hR hA hP' hBelow
@@ -15469,7 +15480,7 @@ theorem spliceReplyFrameOut_transport {P : SystemState → Prop}
           storeObject_objects_ne st s1 above.toObjId rid.toObjId _
             (fun hEq => hNeAR (SeLe4n.ReplyId.toObjId_injective _ _ hEq).symm) hObjInv hS1]
         exact (getReply?_eq_some_iff _ _ _).mp hR
-      exact hStore (x' := { r with prev := none }) hObjInv2 hP2 hR2 rfl rfl hS3
+      exact hStore (x' := { r with prev := none, next := none }) hObjInv2 hP2 hR2 rfl rfl hS3
 
 /-- WS-RR RR8.16: the fold inherits the transport. -/
 theorem spliceReplyFrameOutOrSelf_transport {P : SystemState → Prop}

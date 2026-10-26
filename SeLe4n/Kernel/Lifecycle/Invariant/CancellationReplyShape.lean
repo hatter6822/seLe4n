@@ -874,8 +874,9 @@ theorem returnDonationToCancelledCaller_leaves_donated_at_depth_two
 * the `O(1)` splice (`spliceReplyFrameOut`, seL4's `reply_remove_tcb` on a
   non-head frame, with the middle case spliced rather than severed since WS-HP
   HP6.3) re-points the `prev` of the frame above the cancelled caller's at the
-  frame below it, links that frame back up, and clears the cut frame's own `prev`
-  — or, at a bottom frame, clears the frame above's `prev` alone;
+  frame below it, links that frame back up, and clears both of the cut frame's
+  own links — or, at a bottom frame, clears the frame above's `prev` and the cut
+  frame's links (seL4's `reply_remove`);
 * the reply-link consume (`consumeReplyLink` — the reply path's own
   `consumeCallerReply` since WS-RR RR8.5, storing `Reply.consumed`) clears the
   cancelled caller's own two links unless the frame heads a context.
@@ -887,19 +888,37 @@ the degenerate sever — shortens the stack by one and repairs the only link tha
 named the frame it cut (`donationChainWalk_exists_of_agree_or_cut`).  The consume
 needs two facts about the frame it clears, both established by the splice that
 runs first: the frame heads no context (a head is popped by the reclaim, never
-consumed in place), and no frame's `prev` still names it — which is exactly what
-the splice guarantees (`spliceThreadReplyFrameOut_unreferenced`).  A stale
-*upward* link (`next = .frame victim` on a frame below whose own link did not
-reciprocate) survives only the degenerate arm, and is one the invariant
-deliberately does not constrain: nothing trusts an upward link that is not
-answered from above, which is what keeps the cut `O(1)`. -/
+consumed in place), and no frame's link either way still names it — which is
+exactly what the splice guarantees (`spliceThreadReplyFrameOut_unreferenced`): it
+clears the cut frame's own `prev` and `next` in the step that rewrites its
+neighbours, so no frame below names it by `next` (`nextLinkReciprocal` would
+need the cut frame's `prev` to answer) and no frame above names it by `prev`. -/
+
+/-- **Where the splice finds nothing below to splice to, the cut frame's `prev`
+names nothing or the frame above.**  Under `prevLinkReciprocal` any other frame it
+names resolves and links back up to it, which is exactly what `spliceFrameBelow?`
+follows. -/
+theorem spliceFrameBelow?_none_prev {st : SystemState} {rid above : SeLe4n.ReplyId}
+    {r : Reply} (hChain : donationChainWellFormed st)
+    (hR : st.objects[rid.toObjId]? = some (.reply r))
+    (hNone : spliceFrameBelow? st rid r above = none) :
+    ∀ y, r.prev = some y → y = above := by
+  intro y hy
+  obtain ⟨b, hB, hBn⟩ := hChain.prevLinkReciprocal rid r y hR hy
+  by_cases hne : y = above
+  · exact hne
+  · exfalso
+    have hB' : st.getReply? y = some b := (SystemState.getReply?_eq_some_iff _ _ _).mpr hB
+    unfold spliceFrameBelow? at hNone
+    rw [hy] at hNone
+    simp [hne, hB', hBn] at hNone
 
 /-- `v0.35.4`: **the splice preserves the chain invariant** — since WS-HP HP6.3
 three Reply stores that reconnect the frames either side of the cut and clear the
-cut frame's own `prev` (one store, clearing the frame above's `prev`, at a bottom
-frame), so every reciprocity clause is either untouched or re-established, and
-the walk from the frame's head continues past the cut — or, at the bottom, stops
-at it. -/
+cut frame's own links (two at a bottom frame: the frame above's `prev`, and the
+cut frame's links), so every reciprocity clause is either untouched or
+re-established, and the walk from the frame's head continues past the cut — or,
+at the bottom, stops at it. -/
 theorem spliceReplyFrameOut_preserves_donationChainWellFormed {st st' : SystemState}
     {rid : SeLe4n.ReplyId} (hInv : st.objects.invExt) (hChain : donationChainWellFormed st)
     (h : spliceReplyFrameOut st rid = .ok st') : donationChainWellFormed st' := by
@@ -949,7 +968,7 @@ theorem spliceReplyFrameOut_preserves_donationChainWellFormed {st st' : SystemSt
       have h1 : c.toObjId ≠ below.toObjId := by intro hx; rw [hx, hBObj] at hc; cases hc
       have h2 : c.toObjId ≠ rid.toObjId := by intro hx; rw [hx, hRObj] at hc; cases hc
       rw [hFrame c.toObjId h1 h2]; exact hc
-    refine ⟨?_, ?_, ?_, ?_, ?_⟩
+    refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
     · intro q rq hq
       rcases hReplyCases q rq hq with ⟨_, rfl⟩ | ⟨_, rfl⟩ | ⟨_, _, hPre⟩
       · intro hC
@@ -1018,88 +1037,234 @@ theorem spliceReplyFrameOut_preserves_donationChainWellFormed {st st' : SystemSt
             unfold replyStackLinksAt? SystemState.getObject?
             rw [hFrame' q hqB hqR])
       exact ⟨fuel, chain', hWalk'⟩
+    · -- An upward link survives only off the two written frames, and the frame
+      -- it names keeps its `prev` (the frame below's own `prev` is not written).
+      intro q rq x hRq hNextQ
+      rcases hReplyCases q rq hRq with ⟨_, rfl⟩ | ⟨_, rfl⟩ | ⟨hqB, hqR, hPre⟩
+      · simp at hNextQ
+      · exact absurd hNextQ (by simp [hN])
+      · obtain ⟨xa, hXa, hXaP⟩ := hChain.nextLinkReciprocal q rq x hPre hNextQ
+        by_cases hxB : x = below
+        · rw [hxB, hBObj] at hXa
+          have hxb : xa = b := (KernelObject.reply.inj (Option.some.inj hXa)).symm
+          rw [hxb] at hXaP
+          exact ⟨{ b with next := none }, by rw [hxB]; exact hBPost, hXaP⟩
+        · by_cases hxR : x = rid
+          · exfalso
+            rw [hxR, hRObj] at hXa
+            have hxr : xa = r := (KernelObject.reply.inj (Option.some.inj hXa)).symm
+            rw [hxr, hPv] at hXaP
+            exact hqB (Option.some.inj hXaP).symm
+          · exact ⟨xa, by rw [hFrame' x hxB hxR]; exact hXa, hXaP⟩
   · rcases spliceReplyFrameStores_cases hS with
-      ⟨_, hS1⟩ | ⟨below, b, s1, s2, hBelow, hS1, hS2, hS3⟩
-    · -- **The degenerate branch**: nothing below the cut to splice to, so this is
-      -- the pre-WS-HP sever and the proof below is that cut's verbatim.
+      ⟨s1, hBelow, hS1, hS2⟩ | ⟨below, b, s1, s2, hBelow, hS1, hS2, hS3⟩
+    · -- **The degenerate branch**: nothing below the cut to splice to.  The frame
+      -- above loses its `prev` (and its `next` where that names the cut frame,
+      -- `Reply.unlinkedFrom`), and the cut frame loses both links.
       have hAObj := (SystemState.getReply?_eq_some_iff _ _ _).mp hA
-      have hAbove : st'.objects[above.toObjId]? = some (.reply { a with prev := none }) :=
-        storeObject_objects_eq' st _ _ _ hInv hS1
-      have hOther : ∀ k : SeLe4n.ObjId, k ≠ above.toObjId → st'.objects[k]? = st.objects[k]? :=
-        fun k hk => storeObject_objects_ne st st' above.toObjId k _ hk hInv hS1
+      have hRObj := (SystemState.getReply?_eq_some_iff _ _ _).mp hR
+      obtain ⟨hCutV, hAboveV, hFrameV⟩ := spliceReplyFrameStores_sever_values hInv hBelow hS
+      have hCut : st'.objects[rid.toObjId]? = some (.reply { r with prev := none, next := none }) :=
+        (SystemState.getReply?_eq_some_iff _ _ _).mp hCutV
+      -- Under the chain invariant the cut frame's `prev` names nothing, or the frame
+      -- above (a two-frame cycle): anything else reciprocates and would have been
+      -- spliced to.
+      have hPrevAbove : ∀ y, r.prev = some y → y = above :=
+        spliceFrameBelow?_none_prev hChain hRObj hBelow
+      have hOther : ∀ k : SeLe4n.ObjId, k ≠ above.toObjId → k ≠ rid.toObjId →
+          st'.objects[k]? = st.objects[k]? := hFrameV
       have hReplyCases : ∀ (q : SeLe4n.ReplyId) (rq : Reply),
           st'.objects[q.toObjId]? = some (.reply rq) →
-          (q.toObjId = above.toObjId ∧ rq = { a with prev := none }) ∨
-          (q.toObjId ≠ above.toObjId ∧ st.objects[q.toObjId]? = some (.reply rq)) := by
+          (q = rid ∧ rq = { r with prev := none, next := none }) ∨
+          (q = above ∧ q ≠ rid ∧ rq = a.unlinkedFrom rid) ∨
+          (q ≠ above ∧ q ≠ rid ∧ st.objects[q.toObjId]? = some (.reply rq)) := by
         intro q rq hq
-        by_cases hk : q.toObjId = above.toObjId
-        · left
-          rw [hk, hAbove] at hq
-          exact ⟨hk, (KernelObject.reply.inj (Option.some.inj hq)).symm⟩
-        · right
-          exact ⟨hk, by rw [← hOther q.toObjId hk]; exact hq⟩
+        by_cases h1 : q = rid
+        · rw [h1, hCut] at hq
+          exact Or.inl ⟨h1, (KernelObject.reply.inj (Option.some.inj hq)).symm⟩
+        · by_cases h2 : q = above
+          · have hNe : above ≠ rid := fun e => h1 (h2.trans e)
+            rw [h2, (SystemState.getReply?_eq_some_iff _ _ _).mp (hAboveV hNe)] at hq
+            exact Or.inr (Or.inl ⟨h2, h1, (KernelObject.reply.inj (Option.some.inj hq)).symm⟩)
+          · refine Or.inr (Or.inr ⟨h2, h1, ?_⟩)
+            rw [← hOther q.toObjId (fun hx => h2 (SeLe4n.ReplyId.toObjId_injective _ _ hx))
+              (fun hx => h1 (SeLe4n.ReplyId.toObjId_injective _ _ hx))]
+            exact hq
+      -- A pre-state Reply other than the two written keys survives verbatim.
+      have hReplyFwd : ∀ (q : SeLe4n.ReplyId) (rq : Reply), q ≠ above → q ≠ rid →
+          st.objects[q.toObjId]? = some (.reply rq) → st'.objects[q.toObjId]? = some (.reply rq) :=
+        fun q rq h1 h2 hq => by
+          rw [hOther q.toObjId (fun hx => h1 (SeLe4n.ReplyId.toObjId_injective _ _ hx))
+            (fun hx => h2 (SeLe4n.ReplyId.toObjId_injective _ _ hx))]
+          exact hq
+      have hAbovePost : above ≠ rid →
+          st'.objects[above.toObjId]? = some (.reply (a.unlinkedFrom rid)) :=
+        fun hNe => (SystemState.getReply?_eq_some_iff _ _ _).mp (hAboveV hNe)
       have hScBack : ∀ (c : SeLe4n.SchedContextId) (sc : SchedContext),
           st'.objects[c.toObjId]? = some (.schedContext sc) →
           st.objects[c.toObjId]? = some (.schedContext sc) := by
         intro c sc hc
-        have hk : c.toObjId ≠ above.toObjId := by intro hx; rw [hx, hAbove] at hc; cases hc
-        rw [← hOther c.toObjId hk]; exact hc
+        have h2 : c.toObjId ≠ rid.toObjId := by intro hx; rw [hx, hCut] at hc; cases hc
+        have h1 : c.toObjId ≠ above.toObjId := by
+          intro hx
+          have hNe : above ≠ rid := fun e => h2 (by rw [hx, e])
+          rw [hx, hAbovePost hNe] at hc; cases hc
+        rw [← hOther c.toObjId h1 h2]; exact hc
       have hScFwd : ∀ (c : SeLe4n.SchedContextId) (sc : SchedContext),
           st.objects[c.toObjId]? = some (.schedContext sc) →
           st'.objects[c.toObjId]? = some (.schedContext sc) := by
         intro c sc hc
-        have hk : c.toObjId ≠ above.toObjId := by intro hx; rw [hx, hAObj] at hc; cases hc
-        rw [hOther c.toObjId hk]; exact hc
-      refine ⟨?_, ?_, ?_, ?_, ?_⟩
+        have h1 : c.toObjId ≠ above.toObjId := by intro hx; rw [hx, hAObj] at hc; cases hc
+        have h2 : c.toObjId ≠ rid.toObjId := by intro hx; rw [hx, hRObj] at hc; cases hc
+        rw [hOther c.toObjId h1 h2]; exact hc
+      refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
       · intro q rq hq
-        rcases hReplyCases q rq hq with ⟨_, rfl⟩ | ⟨_, hqPre⟩
+        rcases hReplyCases q rq hq with ⟨_, rfl⟩ | ⟨_, _, rfl⟩ | ⟨_, _, hqPre⟩
+        · intro _; exact ⟨rfl, rfl⟩
         · intro hC
-          exact ⟨rfl, (hChain.replyWellFormed above a hAObj hC).2⟩
+          rw [Reply.unlinkedFrom_caller] at hC
+          exact absurd (hChain.replyWellFormed above a hAObj hC).1 (by rw [hP]; simp)
         · exact hChain.replyWellFormed q rq hqPre
-      · intro c sc hc rid' hRid'
-        obtain ⟨r', hR', hNext'⟩ := hChain.headLinkReciprocal c sc (hScBack c sc hc) rid' hRid'
-        by_cases hk : rid'.toObjId = above.toObjId
-        · have hra : r' = a := by
-            rw [hk, hAObj] at hR'
-            exact (KernelObject.reply.inj (Option.some.inj hR')).symm
-          refine ⟨{ a with prev := none }, by rw [hk]; exact hAbove, ?_⟩
-          show a.next = some (.head c)
-          rw [← hra]; exact hNext'
-        · exact ⟨r', by rw [hOther rid'.toObjId hk]; exact hR', hNext'⟩
-      · intro rid' r' c hR' hNext'
-        rcases hReplyCases rid' r' hR' with ⟨hk, rfl⟩ | ⟨_, hPre⟩
-        · obtain ⟨sc, hSc, hHead⟩ := hChain.headLinkResolves above a c hAObj hNext'
-          refine ⟨sc, hScFwd c sc hSc, ?_⟩
-          rw [SeLe4n.ReplyId.toObjId_injective _ _ hk]
-          exact hHead
-        · obtain ⟨sc, hSc, hHead⟩ := hChain.headLinkResolves rid' r' c hPre hNext'
+      · intro c sc hc q hQ
+        obtain ⟨rq, hRq, hNextQ⟩ := hChain.headLinkReciprocal c sc (hScBack c sc hc) q hQ
+        by_cases hqR : q = rid
+        · exfalso
+          rw [hqR, hRObj] at hRq
+          have hrr : rq = r := (KernelObject.reply.inj (Option.some.inj hRq)).symm
+          rw [hrr, hN] at hNextQ; cases hNextQ
+        · by_cases hqA : q = above
+          · rw [hqA, hAObj] at hRq
+            have hra : rq = a := (KernelObject.reply.inj (Option.some.inj hRq)).symm
+            rw [hra] at hNextQ
+            refine ⟨a.unlinkedFrom rid, by rw [hqA]; exact hAbovePost (fun e => hqR (hqA.trans e)), ?_⟩
+            rcases Reply.unlinkedFrom_next a rid with e | ⟨e, _⟩
+            · rw [e]; exact hNextQ
+            · rw [hNextQ] at e; cases e
+          · exact ⟨rq, hReplyFwd q rq hqA hqR hRq, hNextQ⟩
+      · intro q rq c hRq hNextQ
+        rcases hReplyCases q rq hRq with ⟨_, rfl⟩ | ⟨hqA, _, rfl⟩ | ⟨_, _, hPre⟩
+        · simp at hNextQ
+        · have hAN : a.next = some (.head c) := by
+            rcases Reply.unlinkedFrom_next a rid with e | ⟨_, e⟩
+            · rw [← e]; exact hNextQ
+            · rw [e] at hNextQ; cases hNextQ
+          obtain ⟨sc, hSc, hHead⟩ := hChain.headLinkResolves above a c hAObj hAN
+          exact ⟨sc, hScFwd c sc hSc, by rw [hqA]; exact hHead⟩
+        · obtain ⟨sc, hSc, hHead⟩ := hChain.headLinkResolves q rq c hPre hNextQ
           exact ⟨sc, hScFwd c sc hSc, hHead⟩
-      · intro rid' r' below hR' hPrev'
-        rcases hReplyCases rid' r' hR' with ⟨_, rfl⟩ | ⟨_, hPre⟩
-        · simp at hPrev'
-        · obtain ⟨b, hB, hBnext⟩ := hChain.prevLinkReciprocal rid' r' below hPre hPrev'
-          by_cases hk : below.toObjId = above.toObjId
-          · have hba : b = a := by
-              rw [hk, hAObj] at hB
-              exact (KernelObject.reply.inj (Option.some.inj hB)).symm
-            refine ⟨{ a with prev := none }, by rw [hk]; exact hAbove, ?_⟩
-            show a.next = some (.frame rid')
-            rw [← hba]; exact hBnext
-          · exact ⟨b, by rw [hOther below.toObjId hk]; exact hB, hBnext⟩
-      · intro c sc hc
+      · intro q rq x hRq hPrevQ
+        rcases hReplyCases q rq hRq with ⟨_, rfl⟩ | ⟨_, _, rfl⟩ | ⟨hqA, hqR, hPre⟩
+        · simp at hPrevQ
+        · simp at hPrevQ
+        · obtain ⟨bx, hBx, hBxNext⟩ := hChain.prevLinkReciprocal q rq x hPre hPrevQ
+          by_cases hxR : x = rid
+          · exfalso
+            rw [hxR, hRObj] at hBx
+            have hbr : bx = r := (KernelObject.reply.inj (Option.some.inj hBx)).symm
+            rw [hbr, hN] at hBxNext
+            exact hqA (ReplyStackLink.frame.inj (Option.some.inj hBxNext)).symm
+          · by_cases hxA : x = above
+            · rw [hxA, hAObj] at hBx
+              have hba : bx = a := (KernelObject.reply.inj (Option.some.inj hBx)).symm
+              rw [hba] at hBxNext
+              have hNeA : a.next ≠ some (.frame rid) := by
+                rw [hBxNext]; intro e; exact hqR (ReplyStackLink.frame.inj (Option.some.inj e))
+              refine ⟨a.unlinkedFrom rid,
+                by rw [hxA]; exact hAbovePost (fun e => hxR (hxA.trans e)), ?_⟩
+              rw [Reply.unlinkedFrom_of_next_ne hNeA]; exact hBxNext
+            · exact ⟨bx, hReplyFwd x bx hxA hxR hBx, hBxNext⟩
+      · -- `headTerminates`, in two steps: the frame above's write cuts the walk
+        -- there (or, on a two-frame cycle, touches no walk from a head), and the cut
+        -- frame's write is on no walk left.
+        intro c sc hc
         obtain ⟨fuel, chain, hWalk⟩ := hChain.headTerminates c sc (hScBack c sc hc)
-        obtain ⟨chain', hWalk'⟩ :=
-          donationChainWalk_exists_of_agree_or_cut (st := st) (st' := st') fuel (.head c)
+        have hInv1 := storeObject_preserves_objects_invExt st s1 _ _ hInv hS1
+        have hS1A : s1.objects[above.toObjId]? = some (.reply (a.unlinkedFrom rid)) :=
+          storeObject_objects_eq' st _ _ _ hInv hS1
+        have hS1Ne : ∀ k : SeLe4n.ObjId, k ≠ above.toObjId → s1.objects[k]? = st.objects[k]? :=
+          fun k hk => storeObject_objects_ne st s1 above.toObjId k _ hk hInv hS1
+        obtain ⟨chain1, hWalk1⟩ :=
+          donationChainWalk_exists_of_agree_or_cut (st := st) (st' := s1) fuel (.head c)
             sc.scReply chain hWalk (by
               intro q hq
-              by_cases hk : q.toObjId = above.toObjId
-              · right
-                exact ⟨a, { a with prev := none }, by rw [hk]; exact hAObj,
-                  by rw [hk]; exact hAbove, rfl, rfl⟩
+              by_cases hqA : q = above
+              · by_cases hAN : a.next = some (.frame rid)
+                · exfalso
+                  refine donationChainWalk_not_mem_of_closed st (fun y => y = rid ∨ y = above)
+                    ?_ fuel (.head c) sc.scReply chain hWalk (by intro p hp; cases hp) q hq
+                    (Or.inr hqA)
+                  intro y ry hy hRy
+                  rcases hy with hy | hy
+                  · rw [hy, hRObj] at hRy
+                    have hry : ry = r := (KernelObject.reply.inj (Option.some.inj hRy)).symm
+                    exact ⟨above, Or.inr rfl, by rw [hry]; exact hN⟩
+                  · rw [hy, hAObj] at hRy
+                    have hry : ry = a := (KernelObject.reply.inj (Option.some.inj hRy)).symm
+                    exact ⟨rid, Or.inl rfl, by rw [hry]; exact hAN⟩
+                · right
+                  refine ⟨a, a.unlinkedFrom rid, by rw [hqA]; exact hAObj, by rw [hqA]; exact hS1A,
+                    Reply.unlinkedFrom_prev a rid, by rw [Reply.unlinkedFrom_of_next_ne hAN]⟩
               · left
                 unfold replyStackLinksAt? SystemState.getObject?
-                rw [hOther q.toObjId hk])
-        exact ⟨fuel, chain', hWalk'⟩
+                rw [hS1Ne q.toObjId (fun hx => hqA (SeLe4n.ReplyId.toObjId_injective _ _ hx))])
+        have hRidNot : rid ∉ chain1 := by
+          intro hMem
+          rcases donationChainWalk_mem_prev s1 fuel (.head c) sc.scReply chain1 hWalk1 rid hMem with
+            hStart | ⟨p, rp, _, hRp, hPp⟩
+          · obtain ⟨rq, hRq, hNextQ⟩ := hChain.headLinkReciprocal c sc (hScBack c sc hc) rid hStart
+            rw [hRObj] at hRq
+            have hrr : rq = r := (KernelObject.reply.inj (Option.some.inj hRq)).symm
+            rw [hrr, hN] at hNextQ; cases hNextQ
+          · by_cases hpA : p = above
+            · rw [hpA, hS1A] at hRp
+              have hrp : rp = a.unlinkedFrom rid := (KernelObject.reply.inj (Option.some.inj hRp)).symm
+              rw [hrp] at hPp; simp at hPp
+            · rw [hS1Ne p.toObjId (fun hx => hpA (SeLe4n.ReplyId.toObjId_injective _ _ hx))] at hRp
+              obtain ⟨bx, hBx, hBxNext⟩ := hChain.prevLinkReciprocal p rp rid hRp hPp
+              rw [hRObj] at hBx
+              have hbr : bx = r := (KernelObject.reply.inj (Option.some.inj hBx)).symm
+              rw [hbr, hN] at hBxNext
+              exact hpA (ReplyStackLink.frame.inj (Option.some.inj hBxNext)).symm
+        refine ⟨fuel, chain1, ?_⟩
+        exact donationChainWalk_congr_on_chain fuel (.head c) sc.scReply chain1 hWalk1 (by
+          intro q hq
+          have hqR : q ≠ rid := fun e => hRidNot (e ▸ hq)
+          unfold replyStackLinksAt? SystemState.getObject?
+          rw [storeObject_objects_ne s1 st' rid.toObjId q.toObjId _
+            (fun hx => hqR (SeLe4n.ReplyId.toObjId_injective _ _ hx)) hInv1 hS2])
+      · intro q rq x hRq hNextQ
+        rcases hReplyCases q rq hRq with ⟨_, rfl⟩ | ⟨hqA, hqR, rfl⟩ | ⟨hqA, hqR, hPre⟩
+        · simp at hNextQ
+        · have hAN : a.next = some (.frame x) := by
+            rcases Reply.unlinkedFrom_next a rid with e | ⟨_, e⟩
+            · rw [← e]; exact hNextQ
+            · rw [e] at hNextQ; cases hNextQ
+          have hxR : x ≠ rid := by
+            intro hx
+            rw [hx] at hAN
+            simp [Reply.unlinkedFrom_of_next_eq hAN] at hNextQ
+          obtain ⟨xa, hXa, hXaP⟩ := hChain.nextLinkReciprocal above a x hAObj hAN
+          have hxA : x ≠ above := by
+            intro hx
+            rw [hx, hAObj] at hXa
+            have hxa : xa = a := (KernelObject.reply.inj (Option.some.inj hXa)).symm
+            rw [hxa, hP] at hXaP
+            exact hqR (hqA.trans (Option.some.inj hXaP).symm)
+          exact ⟨xa, hReplyFwd x xa hxA hxR hXa, by rw [hqA]; exact hXaP⟩
+        · obtain ⟨xa, hXa, hXaP⟩ := hChain.nextLinkReciprocal q rq x hPre hNextQ
+          have hxR : x ≠ rid := by
+            intro hx
+            rw [hx, hRObj] at hXa
+            have hxr : xa = r := (KernelObject.reply.inj (Option.some.inj hXa)).symm
+            rw [hxr] at hXaP
+            exact hqA (hPrevAbove q hXaP)
+          have hxA : x ≠ above := by
+            intro hx
+            rw [hx, hAObj] at hXa
+            have hxa : xa = a := (KernelObject.reply.inj (Option.some.inj hXa)).symm
+            rw [hxa, hP] at hXaP
+            exact hqR (Option.some.inj hXaP).symm
+          exact ⟨xa, hReplyFwd x xa hxA hxR hXa, hXaP⟩
     · -- **The splice branch**: three stores at pairwise-distinct keys.  Every
       -- clause is decided by which of the three the key is.
       obtain ⟨hAboveVal, hBelowVal, hCutVal, hFrame⟩ :=
@@ -1117,7 +1282,7 @@ theorem spliceReplyFrameOut_preserves_donationChainWellFormed {st st' : SystemSt
       have hBPost :
           st'.objects[below.toObjId]? = some (.reply { b with next := some (.frame above) }) :=
         (SystemState.getReply?_eq_some_iff _ _ _).mp hBelowVal
-      have hRPost : st'.objects[rid.toObjId]? = some (.reply { r with prev := none }) :=
+      have hRPost : st'.objects[rid.toObjId]? = some (.reply { r with prev := none, next := none }) :=
         (SystemState.getReply?_eq_some_iff _ _ _).mp hCutVal
       have hFrame' : ∀ q : SeLe4n.ReplyId, q ≠ above → q ≠ below → q ≠ rid →
           st'.objects[q.toObjId]? = st.objects[q.toObjId]? := by
@@ -1129,7 +1294,7 @@ theorem spliceReplyFrameOut_preserves_donationChainWellFormed {st st' : SystemSt
           st'.objects[q.toObjId]? = some (.reply rq) →
           (q = above ∧ rq = { a with prev := some below }) ∨
           (q = below ∧ rq = { b with next := some (.frame above) }) ∨
-          (q = rid ∧ rq = { r with prev := none }) ∨
+          (q = rid ∧ rq = { r with prev := none, next := none }) ∨
           (q ≠ above ∧ q ≠ below ∧ q ≠ rid ∧ st.objects[q.toObjId]? = some (.reply rq)) := by
         intro q rq hq
         by_cases h1 : q = above
@@ -1187,7 +1352,8 @@ theorem spliceReplyFrameOut_preserves_donationChainWellFormed {st st' : SystemSt
               rw [hbr, hN] at hBxNext
               exact hqA (ReplyStackLink.frame.inj (Option.some.inj hBxNext)).symm
             · exact ⟨bx, by rw [hFrame' x hxA hxB hxR]; exact hBx, hBxNext⟩
-      refine ⟨?_, ?_, ?_, ?_, ?_⟩
+      have hNeAR : above ≠ rid := spliceFrameBelow?_above_ne_cut hR hA hP hBelow
+      refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
       · -- `replyWellFormed`: each of the three written frames still has a caller,
         -- because each carries a link the pre-state invariant would have forbidden.
         intro q rq hq
@@ -1227,7 +1393,7 @@ theorem spliceReplyFrameOut_preserves_donationChainWellFormed {st st' : SystemSt
         · obtain ⟨sc, hSc, hHead⟩ := hChain.headLinkResolves above a c hAObj hNextQ
           exact ⟨sc, hScFwd c sc hSc, by rw [hqA]; exact hHead⟩
         · exact absurd hNextQ (by simp)
-        · exact absurd hNextQ (by rw [hN]; simp)
+        · exact absurd hNextQ (by simp)
         · obtain ⟨sc, hSc, hHead⟩ := hChain.headLinkResolves q rq c hPre hNextQ
           exact ⟨sc, hScFwd c sc hSc, hHead⟩
       · -- `prevLinkReciprocal`: **the reciprocal pair is written together**, so the
@@ -1256,8 +1422,6 @@ theorem spliceReplyFrameOut_preserves_donationChainWellFormed {st st' : SystemSt
           unfold replyStackLinksAt? SystemState.getObject?; rw [hAPost]; rfl
         have hLR : replyStackLinksAt? st rid = some (some below, some (.frame above)) := by
           unfold replyStackLinksAt? SystemState.getObject?; rw [hRObj]; simp [hPrevR, hN]
-        have hLRPost : replyStackLinksAt? st' rid = some (none, some (.frame above)) := by
-          unfold replyStackLinksAt? SystemState.getObject?; rw [hRPost]; simp [hN]
         have hLB : replyStackLinksAt? st below = some (b.prev, some (.frame rid)) := by
           unfold replyStackLinksAt? SystemState.getObject?; rw [hBObj]; simp [hBN]
         have hLBPost : replyStackLinksAt? st' below = some (b.prev, some (.frame above)) := by
@@ -1268,9 +1432,50 @@ theorem spliceReplyFrameOut_preserves_donationChainWellFormed {st st' : SystemSt
           unfold replyStackLinksAt? SystemState.getObject?
           rw [hFrame' q h1 h2 h3]
         obtain ⟨chain', hWalk'⟩ :=
-          (donationChainWalk_exists_of_splice hNeBR hAgreeL hLA hLAPost hLR hLRPost hLB hLBPost
+          (donationChainWalk_exists_of_splice hNeBR hNeBA hAgreeL hLA hLAPost hLR hLB hLBPost
             fuel).1 (.head c) sc.scReply chain hWalk (by rintro ⟨hx, -⟩; cases hx)
+            (by rintro ⟨hx, -⟩; cases hx)
         exact ⟨fuel, chain', hWalk'⟩
+      · -- `nextLinkReciprocal`: the frame below's new upward link is answered by the
+        -- frame above's new `prev`, the cut frame names nothing, and every other
+        -- upward link names a frame whose `prev` no store moved.
+        intro q rq x hRq hNextQ
+        -- The upward link a pre-state frame other than the cut frame and the frame
+        -- below carried is still answered after the splice.
+        have hFwdNext : ∀ (y : SeLe4n.ReplyId) (ry : Reply), y ≠ rid → y ≠ below →
+            st.objects[y.toObjId]? = some (.reply ry) → ry.next = some (.frame x) →
+            ∃ xa : Reply, st'.objects[x.toObjId]? = some (.reply xa) ∧ xa.prev = some y := by
+          intro y ry hyR hyB hRy hNy
+          obtain ⟨xa, hXa, hXaP⟩ := hChain.nextLinkReciprocal y ry x hRy hNy
+          by_cases hxA : x = above
+          · exfalso
+            subst hxA
+            rw [hAObj] at hXa
+            have hxa : xa = a := (KernelObject.reply.inj (Option.some.inj hXa)).symm
+            rw [hxa, hP] at hXaP
+            exact hyR (Option.some.inj hXaP).symm
+          · by_cases hxB : x = below
+            · subst hxB
+              rw [hBObj] at hXa
+              have hxb : xa = b := (KernelObject.reply.inj (Option.some.inj hXa)).symm
+              subst hxb
+              exact ⟨_, hBPost, hXaP⟩
+            · by_cases hxR : x = rid
+              · exfalso
+                subst hxR
+                rw [hRObj] at hXa
+                have hxr : xa = r := (KernelObject.reply.inj (Option.some.inj hXa)).symm
+                rw [hxr, hPrevR] at hXaP
+                exact hyB (Option.some.inj hXaP).symm
+              · exact ⟨xa, by rw [hFrame' x hxA hxB hxR]; exact hXa, hXaP⟩
+        rcases hReplyCases q rq hRq with ⟨hqA, rfl⟩ | ⟨hqB, rfl⟩ | ⟨_, rfl⟩ | ⟨hqA', hqB', hqR', hPre⟩
+        · obtain ⟨xa, hXa, hXaP⟩ := hFwdNext above a hNeAR (Ne.symm hNeBA) hAObj hNextQ
+          exact ⟨xa, hXa, by rw [hqA]; exact hXaP⟩
+        · have hx : x = above := (ReplyStackLink.frame.inj (Option.some.inj hNextQ)).symm
+          subst hx
+          exact ⟨_, hAPost, by rw [hqB]⟩
+        · exact absurd hNextQ (by simp)
+        · exact hFwdNext q rq hqR' hqB' hPre hNextQ
 
 /-- `v0.35.4`: the cancelled caller's frame splice preserves the chain — the
 identity where there is nothing to splice out, one `spliceReplyFrameOut` otherwise. -/
@@ -1332,16 +1537,23 @@ theorem spliceReplyFrameOutOrSelf_unreferenced (st : SystemState)
       rw [hr0, hN] at hR0next
       exact hxA (ReplyStackLink.frame.inj (Option.some.inj hR0next)).symm
     rcases spliceReplyFrameStores_cases hS with
-      ⟨_, hS1⟩ | ⟨below, b, s1, s2, hBelow, hS1, hS2, hS3⟩
-    · -- The degenerate branch: one store, clearing the frame above's `prev`.
-      by_cases hqA : q = above
-      · rw [hqA, storeObject_objects_eq' st _ _ _ hInv hS1] at hQ
+      ⟨_, hBelow, _, _⟩ | ⟨below, b, s1, s2, hBelow, hS1, hS2, hS3⟩
+    · -- The degenerate branch: the frame above's `prev` and the cut frame's own
+      -- links cleared.
+      obtain ⟨hCutV, hAboveV, hFrameV⟩ := spliceReplyFrameStores_sever_values hInv hBelow hS
+      by_cases hqR : q = rid
+      · rw [hqR, (SystemState.getReply?_eq_some_iff _ _ _).mp hCutV] at hQ
         rw [← KernelObject.reply.inj (Option.some.inj hQ)] at hPrevQ
         exact absurd hPrevQ (by simp)
-      · refine hAwayFromAbove q rq hqA ?_ hPrevQ
-        rw [← storeObject_objects_ne st _ above.toObjId q.toObjId _
-          (fun hx => hqA (SeLe4n.ReplyId.toObjId_injective _ _ hx)) hInv hS1]
-        exact hQ
+      · by_cases hqA : q = above
+        · rw [hqA, (SystemState.getReply?_eq_some_iff _ _ _).mp
+            (hAboveV (fun e => hqR (hqA.trans e)))] at hQ
+          rw [← KernelObject.reply.inj (Option.some.inj hQ)] at hPrevQ
+          exact absurd hPrevQ (by simp)
+        · refine hAwayFromAbove q rq hqA ?_ hPrevQ
+          rw [← hFrameV q.toObjId (fun hx => hqA (SeLe4n.ReplyId.toObjId_injective _ _ hx))
+            (fun hx => hqR (SeLe4n.ReplyId.toObjId_injective _ _ hx))]
+          exact hQ
     · -- The splice branch: three stores, and none of them writes `some rid`.
       obtain ⟨hAboveVal, hBelowVal, hCutVal, hFrame⟩ :=
         spliceReplyFrameStores_splice_values hInv hR hN hA hP hBelow hS
@@ -1417,6 +1629,66 @@ theorem spliceThreadReplyFrameOut_unreferenced (st : SystemState) (tcb : TCB)
     unfold spliceThreadReplyFrameOut; rw [hRid]]
   exact hA
 
+/-- **After the fold, the cut frame links down to nothing** — when it heads no
+context.  This is the producer for the consume's `hPrevNone` obligation: under
+`nextLinkReciprocal` the only frame whose `next` can name `rid` is the one `rid`'s
+own `prev` names, so a cleared `prev` means the consume, which clears a non-head
+frame's links, leaves no frame's `next` dangling at `rid`.
+
+The writing arms clear the cut frame's `prev` themselves.  On the identity arm the
+pre-state record is read: a `prev` naming a frame below would, by
+`prevLinkReciprocal`, be a frame whose `next` names `rid` — the shape the cut from
+below accepts — and a `next` naming a frame above would, by `nextLinkReciprocal`,
+be one that points back — the shape the splice accepts; the identity arm says
+neither held.  A head is excluded because a head keeps its links when consumed. -/
+theorem spliceReplyFrameOutOrSelf_cut_prev_none (st : SystemState)
+    (rid : SeLe4n.ReplyId) (hInv : st.objects.invExt) (hChain : donationChainWellFormed st)
+    (r : Reply) (hR : (spliceReplyFrameOutOrSelf st rid).getReply? rid = some r)
+    (hNotHead : ∀ sc : SeLe4n.SchedContextId, r.next ≠ some (.head sc)) :
+    r.prev = none := by
+  rcases spliceReplyFrameOutOrSelf_decision st rid with
+    ⟨r0, above, a, hR0, hN, hA, hP, hS⟩ | ⟨r0, below, b, hR0, hN, _, hB, hBn, hS⟩ |
+      ⟨hId, hNoAbove, hNoBelow⟩
+  · rcases spliceReplyFrameStores_cases hS with
+      ⟨_, hBelow, _, _⟩ | ⟨below, b, s1, s2, hBelow, _, _, _⟩
+    · obtain ⟨hCutV, -, -⟩ := spliceReplyFrameStores_sever_values hInv hBelow hS
+      rw [hCutV] at hR; cases hR; rfl
+    · obtain ⟨-, -, hCutVal, -⟩ :=
+        spliceReplyFrameStores_splice_values hInv hR0 hN hA hP hBelow hS
+      rw [hCutVal] at hR; cases hR; rfl
+  · obtain ⟨-, hRVal, -⟩ := severReplyFrameBelowStores_values hInv hR0 hN hB hBn hS
+    rw [hRVal] at hR; cases hR; rfl
+  · rw [hId] at hR
+    have hRObj := (SystemState.getReply?_eq_some_iff _ _ _).mp hR
+    cases hPrev : r.prev with
+    | none => rfl
+    | some below =>
+      exfalso
+      obtain ⟨b, hB, hBnext⟩ := hChain.prevLinkReciprocal rid r below hRObj hPrev
+      cases hNext : r.next with
+      | none =>
+        exact hNoBelow r below b hR hNext hPrev
+          ((SystemState.getReply?_eq_some_iff _ _ _).mpr hB) hBnext
+      | some link =>
+        cases link with
+        | head sc => exact hNotHead sc hNext
+        | frame above =>
+          obtain ⟨a, hA, hAprev⟩ := hChain.nextLinkReciprocal rid r above hRObj hNext
+          exact hNoAbove r above a hR hNext ((SystemState.getReply?_eq_some_iff _ _ _).mpr hA)
+            hAprev
+
+/-- The TCB-keyed instance of `spliceReplyFrameOutOrSelf_cut_prev_none`. -/
+theorem spliceThreadReplyFrameOut_cut_prev_none (st : SystemState) (tcb : TCB)
+    (rid : SeLe4n.ReplyId) (hInv : st.objects.invExt) (hChain : donationChainWellFormed st)
+    (hRid : tcb.replyObject = some rid) (r : Reply)
+    (hR : (spliceThreadReplyFrameOut st tcb).getReply? rid = some r)
+    (hNotHead : ∀ sc : SeLe4n.SchedContextId, r.next ≠ some (.head sc)) :
+    r.prev = none := by
+  refine spliceReplyFrameOutOrSelf_cut_prev_none st rid hInv hChain r ?_ hNotHead
+  rw [show spliceReplyFrameOutOrSelf st rid = spliceThreadReplyFrameOut st tcb by
+    unfold spliceThreadReplyFrameOut; rw [hRid]]
+  exact hR
+
 /-- **WS-RM (`v0.35.6`): the object-store effect of consuming a reply link
 preserves the chain**, when the frame heads no context and no frame's `prev`
 names it — the two facts a splice run beforehand establishes.
@@ -1440,6 +1712,7 @@ theorem consumedReplyStore_preserves_donationChainWellFormed (st s' : SystemStat
     (hNotHead : ∀ sc : SeLe4n.SchedContextId, r.next ≠ some (.head sc))
     (hUnreferenced : ∀ (a : SeLe4n.ReplyId) (ra : Reply),
       st.objects[a.toObjId]? = some (.reply ra) → ra.prev ≠ some rid)
+    (hPrevNone : r.prev = none)
     (hAt : s'.objects[rid.toObjId]? = some (.reply r.consumed))
     (hOther : ∀ k : SeLe4n.ObjId, k ≠ rid.toObjId → s'.objects[k]? = st.objects[k]?) :
     donationChainWellFormed s' := by
@@ -1484,7 +1757,7 @@ theorem consumedReplyStore_preserves_donationChainWellFormed (st s' : SystemStat
     have hr' : r' = r := KernelObject.reply.inj (Option.some.inj (hR'.symm.trans hRObj))
     rw [hr'] at hNext'
     exact hNotHead c hNext'
-  refine ⟨?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro q rq hq
     rcases hReplyCases q rq hq with ⟨_, rfl⟩ | ⟨_, hqPre⟩
     · intro _; exact ⟨hConsPrev, hConsNext⟩
@@ -1522,6 +1795,17 @@ theorem consumedReplyStore_preserves_donationChainWellFormed (st s' : SystemStat
       obtain ⟨rq, hrq, _⟩ := donationChainFrom_mem st c fuel sc.scReply chain hWalk q hq
       unfold replyStackLinksAt? SystemState.getObject?
       rw [hReplyFwd q rq hqNe hrq, hrq])
+  · -- A frame whose `next` named `rid` would have `rid`'s `prev` name it back,
+    -- and that `prev` is `none`; every other frame above is untouched.
+    intro q rq above hq hNext
+    rcases hReplyCases q rq hq with ⟨_, rfl⟩ | ⟨_, hPre⟩
+    · rw [hConsNext] at hNext; cases hNext
+    · obtain ⟨a, hA, hAprev⟩ := hChain.nextLinkReciprocal q rq above hPre hNext
+      have hNeA : above ≠ rid := by
+        intro hx; rw [hx, hRObj] at hA
+        rw [← KernelObject.reply.inj (Option.some.inj hA), hPrevNone] at hAprev
+        cases hAprev
+      exact ⟨a, hReplyFwd above a hNeA hA, hAprev⟩
 
 /-- **WS-RM (`v0.35.6`): the reply path's spelling preserves the chain** — the
 same instance, for the store `consumeReply` performs.  `consumeCallerReply`'s
@@ -1533,6 +1817,7 @@ theorem consumeCallerReply_preserves_donationChainWellFormed (st st' : SystemSta
       st.getReply? rid = some r → r.next ≠ some (.head sc))
     (hUnreferenced : ∀ (a : SeLe4n.ReplyId) (ra : Reply),
       st.objects[a.toObjId]? = some (.reply ra) → ra.prev ≠ some rid)
+    (hPrevNone : ∀ r : Reply, st.getReply? rid = some r → r.prev = none)
     (hStep : SystemState.consumeCallerReply caller rid st = .ok ((), st')) :
     donationChainWellFormed st' := by
   unfold SystemState.consumeCallerReply at hStep
@@ -1553,7 +1838,7 @@ theorem consumeCallerReply_preserves_donationChainWellFormed (st st' : SystemSta
       | some r =>
         simp only [hR] at hCons
         exact consumedReplyStore_preserves_donationChainWellFormed st st1 rid r hChain hR
-          (fun sc => hNotHead r sc hR) hUnreferenced
+          (fun sc => hNotHead r sc hR) hUnreferenced (hPrevNone r hR)
           (storeObject_objects_eq' st _ _ _ hInv hCons)
           (fun k hk => storeObject_objects_ne st st1 rid.toObjId k _ hk hInv hCons)
     -- The TCB leg: a `replyObject := none` store, which writes no chain data.
@@ -1577,10 +1862,11 @@ theorem consumeCallerReplyLink_preserves_donationChainWellFormed (st : SystemSta
     (hNotHead : ∀ (r : Reply) (sc : SeLe4n.SchedContextId),
       st.getReply? rid = some r → r.next ≠ some (.head sc))
     (hUnreferenced : ∀ (a : SeLe4n.ReplyId) (ra : Reply),
-      st.objects[a.toObjId]? = some (.reply ra) → ra.prev ≠ some rid) :
+      st.objects[a.toObjId]? = some (.reply ra) → ra.prev ≠ some rid)
+    (hPrevNone : ∀ r : Reply, st.getReply? rid = some r → r.prev = none) :
     donationChainWellFormed (st.consumeCallerReplyLink caller rid) :=
   consumeCallerReply_preserves_donationChainWellFormed st _ caller rid hInv hChain hNotHead
-    hUnreferenced (SystemState.consumeCallerReply_eq_link st caller rid)
+    hUnreferenced hPrevNone (SystemState.consumeCallerReply_eq_link st caller rid)
 
 /-- `v0.35.4`: **the cancellation's reply-link consume preserves the donation
 chain**, under the two facts the splice that precedes it establishes about the
@@ -1593,7 +1879,9 @@ theorem consumeReplyLink_preserves_donationChainWellFormed (st : SystemState)
     (hNotHead : ∀ (rid : SeLe4n.ReplyId) (r : Reply) (sc : SeLe4n.SchedContextId),
       tcb.replyObject = some rid → st.getReply? rid = some r → r.next ≠ some (.head sc))
     (hUnreferenced : ∀ (rid a : SeLe4n.ReplyId) (ra : Reply), tcb.replyObject = some rid →
-      st.objects[a.toObjId]? = some (.reply ra) → ra.prev ≠ some rid) :
+      st.objects[a.toObjId]? = some (.reply ra) → ra.prev ≠ some rid)
+    (hPrevNone : ∀ (rid : SeLe4n.ReplyId) (r : Reply), tcb.replyObject = some rid →
+      st.getReply? rid = some r → r.prev = none) :
     donationChainWellFormed (Lifecycle.Suspend.consumeReplyLink st tid tcb) := by
   unfold Lifecycle.Suspend.consumeReplyLink
   cases hR : tcb.replyObject with
@@ -1602,7 +1890,7 @@ theorem consumeReplyLink_preserves_donationChainWellFormed (st : SystemState)
     simp only []
     exact consumeCallerReplyLink_preserves_donationChainWellFormed st tid rid hInv hChain
       (fun r sc hR1 => hNotHead rid r sc hR hR1)
-      (fun a ra hA => hUnreferenced rid a ra hR hA)
+      (fun a ra hA => hUnreferenced rid a ra hR hA) (fun r hR1 => hPrevNone rid r hR hR1)
 
 /-- **WS-RM (`v0.35.6`): consuming a *head* frame's caller link leaves the chain
 relaxed at exactly that key.**
@@ -1662,7 +1950,7 @@ theorem consumedHeadReplyStore_preserves_donationChainWellFormedExcept
     · rw [hk, hAt, hRObj]
       simp [replyStackLinks?, hConsPrev, hConsNext]
     · rw [hOther oid hk]
-  refine ⟨?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro q rq hNe hq
     rcases hReplyCases q rq hq with ⟨hEq, _⟩ | ⟨_, hqPre⟩
     · exact absurd hEq hNe
@@ -1703,6 +1991,20 @@ theorem consumedHeadReplyStore_preserves_donationChainWellFormedExcept
     unfold donationChainFrom at hWalk ⊢
     rw [donationChainWalk_congr hLinks]
     exact hWalk
+  · intro q r' above hR' hNext'
+    have hPre : ∃ rp, st.objects[q.toObjId]? = some (.reply rp) ∧ rp.next = r'.next := by
+      rcases hReplyCases q r' hR' with ⟨hEq, hrq⟩ | ⟨_, hPre⟩
+      · exact ⟨r, by rw [hEq]; exact hRObj, by rw [hrq, hConsNext]⟩
+      · exact ⟨r', hPre, rfl⟩
+    obtain ⟨rp, hrp, hnEq⟩ := hPre
+    obtain ⟨a, hA, hAprev⟩ := hChain.nextLinkReciprocal q rp above hrp (by rw [hnEq]; exact hNext')
+    by_cases hEq : above = rid
+    · subst hEq
+      refine ⟨r.consumed, hAt, ?_⟩
+      rw [hConsPrev]
+      have ha : a = r := KernelObject.reply.inj (Option.some.inj (hA.symm.trans hRObj))
+      rw [← ha]; exact hAprev
+    · exact ⟨a, hReplyFwd above a hEq hA, hAprev⟩
 
 /-- **WS-RM (`v0.35.6`): the reply path's spelling, on a head frame.**  The Reply
 leg is the store lemma above; the TCB leg moves no chain data at all, so the
@@ -1767,8 +2069,8 @@ frame would refuse (fail-closed) rather than return the context.
 `hNotHead` is read on the **pre**-state, which is sound because the splice never
 turns a `.frame` link into a `.head` one: it writes the frame above's `prev`, the
 frame below's `next` — from one `.frame` to another, or to none on the cut from
-below — and the cut frame's own `prev`, so no reply's `next` acquires a `.head`
-link
+below — and clears the cut frame's own links, so no reply's `next` acquires a
+`.head` link
 (`spliceReplyFrameOutOrSelf_preserves_reply_caller_and_headLink`). -/
 theorem removeCallerReplyFrame_preserves_donationChainWellFormed (st st' : SystemState)
     (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (hInv : st.objects.invExt)
@@ -1778,16 +2080,20 @@ theorem removeCallerReplyFrame_preserves_donationChainWellFormed (st st' : Syste
     (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :
     donationChainWellFormed st' := by
   rw [removeCallerReplyFrame_eq] at hStep
-  refine consumeCallerReply_preserves_donationChainWellFormed _ st' caller rid
+  have hNotHead' : ∀ (r : Reply) (sc : SeLe4n.SchedContextId),
+      (spliceReplyFrameOutOrSelf st rid).getReply? rid = some r → r.next ≠ some (.head sc) := by
+    intro r sc hR
+    obtain ⟨rp, hrp, _, hNext⟩ :=
+      spliceReplyFrameOutOrSelf_preserves_reply_caller_and_headLink st rid hInv rid r hR
+    rcases hNext with hEq | ⟨_, _, hqy⟩
+    · rw [hEq]; exact hNotHead rp sc hrp
+    · exact hqy sc
+  exact consumeCallerReply_preserves_donationChainWellFormed _ st' caller rid
     (spliceReplyFrameOutOrSelf_preserves_objects_invExt st rid hInv)
     (spliceReplyFrameOutOrSelf_preserves_donationChainWellFormed st rid hInv hChain)
-    ?_ (spliceReplyFrameOutOrSelf_unreferenced st rid hInv hChain) hStep
-  intro r sc hR
-  obtain ⟨rp, hrp, _, hNext⟩ :=
-    spliceReplyFrameOutOrSelf_preserves_reply_caller_and_headLink st rid hInv rid r hR
-  rcases hNext with hEq | ⟨_, _, hqy⟩
-  · rw [hEq]; exact hNotHead rp sc hrp
-  · exact hqy sc
+    hNotHead' (spliceReplyFrameOutOrSelf_unreferenced st rid hInv hChain)
+    (fun r hR => spliceReplyFrameOutOrSelf_cut_prev_none st rid hInv hChain r hR
+      (fun sc => hNotHead' r sc hR)) hStep
 
 
 /-- **WS-RM (`v0.35.6`): on a stack *head* the removal leaves the chain relaxed at

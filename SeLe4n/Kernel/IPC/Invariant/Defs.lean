@@ -3376,7 +3376,7 @@ inductive CancelledMiddleCallerPolicy where
   the splice re-heads a frame whose recorded server is by then gone and `.unbound`.
   HP4 and HP5 moved the trigger; this row takes the splice.  `O(1)`, like the
   sever: the removal writes the two frames either side of the cut and the cut
-  frame's own downward link, and no walk. -/
+  frame's own links, and no walk. -/
   | spliceOutTheCut
   /-- **Reclaim to the cancelled thread.**  The cancellation reaches the
   context's real holder through `SchedContext.scReply` / `boundThread` and hands
@@ -3408,7 +3408,7 @@ than inherited.
    instead of settling `.bound scId` on the thread immediately above the cut.  No
    second transition and no second set of bundle proofs: the pop is the pop.
 2. **It is `O(1)`.**  The removal writes three Reply objects — the frame above, the
-   frame below, and the cut frame's own downward link — and walks nothing, so the
+   frame below, and the cut frame's own links — and walks nothing, so the
    footprint argument that ruled out `reclaimToCancelledThread` (a `LockSet` is
    capped at `maxLockSetSize` and a chain is not) does not touch it.  The cost is
    one declared write member, `maxLockSetSize` 22 → 23 (HP3.5).
@@ -3454,8 +3454,8 @@ Measured at `tests/SmpIpcSuite.lean` §3.25's COST group; registered in
 
 **And no object is pinned by a cut, at either policy.**  A frame the removal takes
 off a stack carries no `.head` link, so consuming its caller clears it outright
-(`Reply.consumed`'s non-head branch) — and since this cut the removal clears the
-cut frame's own `prev` itself, which is seL4's `reply_unlink` downward half, so
+(`Reply.consumed`'s non-head branch) — and the removal clears both of the cut
+frame's own links itself, which is seL4's `reply_remove`, so
 `donationChainWellFormed` is preserved **outright** across the removal rather than
 transiently broken (`spliceReplyFrameOut_preserves_donationChainWellFormed`,
 `removeCallerReplyFrame_preserves_donationChainWellFormed`).  Before `v0.35.4` the
@@ -3625,17 +3625,17 @@ and a field the chain starts reading has to enter a projection before any frame
 can be re-proved — where a frame stated over hand-listed fields would simply
 stop mentioning it and keep passing.
 
-**The relation is stated downward.**  Every `prev` link is answered by the frame
+**The relation is stated both ways.**  Every `prev` link is answered by the frame
 it names (`prevLinkReciprocal`: that frame's `next` is `.frame` of the one
-above), and every head is answered by its context (`headLinkReciprocal` /
-`headLinkResolves`).  The converse — every upward `.frame` link answered by a
-`prev` — is deliberately **not** required: a frame below a *severed* cut — the
-degenerate arm of the splice, taken when the frame below does not reciprocate —
-keeps an upward link naming a Reply that has since been consumed
-(`Reply.consumed`), and nothing reads an upward link without checking the answer.
-Every walk and every pop validator follows `prev` and validates the target's
-`next`, so a stale upward link below a severed cut is never trusted and never
-reached from a head. -/
+above), every upward `.frame` link is answered by a `prev` (`nextLinkReciprocal`),
+and every head is answered by its context (`headLinkReciprocal` /
+`headLinkResolves`) — seL4's `sym_refs` over `replyPrev` / `replyNext`.  The
+upward half is what lets a frame's final delete read its own links alone: a frame
+whose `prev` and `next` are clear is named by no frame either way.  It holds
+because the splice clears the cut frame's own links in the step that rewrites its
+neighbours, so no state it leaves has a frame naming one that no longer names it
+back.  Every walk and every pop validator still follows `prev` and validates the
+target's `next`, so no reader trusts a link without checking the answer. -/
 
 /-- WS-OD OD2.4 / `v0.35.4`: the reply-stack data an object carries **as a
 Reply** — the link down to the frame below it and the link up to the frame above
@@ -3939,6 +3939,41 @@ theorem donationChainWalk_mem_next (st : SystemState) :
         · exact Or.inr ⟨rid0, List.mem_cons_self, hEq⟩
         · exact Or.inr ⟨p, List.mem_cons_of_mem _ hp, hEq⟩
 
+/-- **A set of frames each naming another of the set by its upward link is on no
+walk that does not start inside it.**  A walk steps down only to a frame whose
+`next` names the frame it came from, so its first member in such a set would have
+to be entered from outside — and every member names one inside.  The form the
+splice reads of a two-frame cycle, which no context head reaches. -/
+theorem donationChainWalk_not_mem_of_closed (st : SystemState) (S : SeLe4n.ReplyId → Prop)
+    (hClosed : ∀ (q : SeLe4n.ReplyId) (r : Reply), S q →
+      st.objects[q.toObjId]? = some (.reply r) → ∃ p, S p ∧ r.next = some (.frame p)) :
+    ∀ (fuel : Nat) (expect : ReplyStackLink) (rid? : Option SeLe4n.ReplyId)
+      (chain : List SeLe4n.ReplyId),
+      donationChainWalk st expect fuel rid? = some chain →
+      (∀ p, expect = .frame p → ¬ S p) → ∀ q ∈ chain, ¬ S q := by
+  intro fuel
+  induction fuel with
+  | zero =>
+    intro expect rid? chain h _ q hMem
+    cases rid? with
+    | none => simp at h; subst h; cases hMem
+    | some _ => cases h
+  | succ n ih =>
+    intro expect rid? chain h hExpect q hMem
+    cases rid? with
+    | none => simp at h; subst h; cases hMem
+    | some rid0 =>
+      obtain ⟨r0, tail, hR0, hNext0, hRec, rfl⟩ := donationChainWalk_succ_some h
+      have hNot0 : ¬ S rid0 := by
+        intro hS
+        obtain ⟨p, hSp, hNp⟩ := hClosed rid0 r0 hS hR0
+        rw [hNp] at hNext0
+        exact hExpect p (Option.some.inj hNext0).symm hSp
+      rcases List.mem_cons.mp hMem with rfl | hTail
+      · exact hNot0
+      · exact ih (.frame rid0) r0.prev tail hRec
+          (fun p hp => by cases hp; exact hNot0) q hTail
+
 /-- Each member of a walk is either the frame the walk started from or the `prev`
 of an earlier member — the downward reading of `donationChainWalk_mem_next`, and
 what puts a frame no `prev` names on no chain but its own context's head. -/
@@ -4017,29 +4052,30 @@ theorem donationChainWalk_exists_of_agree_or_cut {st st' : SystemState} :
 /-- **WS-HP HP6.4: a walk survives a `reply_remove` *splice*.**  Where the
 post-state agrees with the pre-state on every frame's links except that one frame
 `rid` has been taken out of the middle — the frame above it now names the frame
-below it, that frame now answers the frame above, and `rid` itself has lost its
-downward link — the post-state walk exists with the same fuel: it follows the same
-frames with `rid` skipped, so it is one shorter and never a broken one.
+below it, that frame now answers the frame above, and `rid` itself is read by no
+post-state walk — the post-state walk exists with the same fuel: it follows the
+same frames with `rid` skipped, so it is one shorter and never a broken one.
 
 The `agree_or_cut` form above cannot state this.  There the removal *cleared* the
 frame above's `prev`, which stops the walk; here it is **redirected**, which is
 neither agreement nor a cut, and the walk continues past it.
 
-**One walk does not survive, and it is exactly the step the splice deletes**:
+**Two walks do not survive, and they are exactly the steps the splice deletes**:
 arriving at the frame below with `expect = .frame rid`, the step the removed frame
-used to make.  That is the excluded pair in the first conjunct, and no walk from a
-context *head* takes it once the frame above stops naming `rid` — which is why the
-second conjunct, the skip itself, is what the head case reads. -/
+used to make, and arriving at `rid` itself from the frame above, the step into the
+removed frame (whose links the splice clears).  Those are the excluded pairs in
+the first conjunct, and no walk from a context *head* takes either once the frame
+above stops naming `rid` — which is why the second conjunct, the skip itself, is
+what the head case reads. -/
 theorem donationChainWalk_exists_of_splice {st st' : SystemState}
     {rid above below : SeLe4n.ReplyId}
     {aNext : Option ReplyStackLink} {bPrev : Option SeLe4n.ReplyId}
-    (hNeBR : below ≠ rid)
+    (hNeBR : below ≠ rid) (hNeBA : below ≠ above)
     (hAgree : ∀ q : SeLe4n.ReplyId, q ≠ above → q ≠ below → q ≠ rid →
       replyStackLinksAt? st' q = replyStackLinksAt? st q)
     (hAPre : replyStackLinksAt? st above = some (some rid, aNext))
     (hAPost : replyStackLinksAt? st' above = some (some below, aNext))
     (hRPre : replyStackLinksAt? st rid = some (some below, some (.frame above)))
-    (hRPost : replyStackLinksAt? st' rid = some (none, some (.frame above)))
     (hBPre : replyStackLinksAt? st below = some (bPrev, some (.frame rid)))
     (hBPost : replyStackLinksAt? st' below = some (bPrev, some (.frame above))) :
     ∀ (fuel : Nat),
@@ -4047,6 +4083,7 @@ theorem donationChainWalk_exists_of_splice {st st' : SystemState}
           (chain : List SeLe4n.ReplyId),
           donationChainWalk st expect fuel rid? = some chain →
           ¬(expect = .frame rid ∧ rid? = some below) →
+          ¬(expect = .frame above ∧ rid? = some rid) →
           ∃ chain', donationChainWalk st' expect fuel rid? = some chain') ∧
       (∀ chain : List SeLe4n.ReplyId,
           donationChainWalk st (.frame rid) fuel (some below) = some chain →
@@ -4055,7 +4092,7 @@ theorem donationChainWalk_exists_of_splice {st st' : SystemState}
   induction fuel with
   | zero =>
     refine ⟨?_, ?_⟩
-    · intro expect rid? chain h _
+    · intro expect rid? chain h _ _
       cases rid? with
       | none => exact ⟨[], by simp⟩
       | some _ => cases h
@@ -4063,7 +4100,7 @@ theorem donationChainWalk_exists_of_splice {st st' : SystemState}
   | succ n ih =>
     obtain ⟨ihP, ihQ⟩ := ih
     refine ⟨?_, ?_⟩
-    · intro expect rid? chain h hNot
+    · intro expect rid? chain h hNot hNotCut
       cases rid? with
       | none => exact ⟨[], by simp⟩
       | some q =>
@@ -4104,21 +4141,17 @@ theorem donationChainWalk_exists_of_splice {st st' : SystemState}
               congrArg Prod.snd (Option.some.inj (hQLinks.symm.trans hQPre))
             exact absurd ⟨Option.some.inj (hNext.symm.trans hNextRid), hqB ▸ rfl⟩ hNot
           · by_cases hqR : q = rid
-            · -- The cut frame itself: its `prev` is gone, so the post-walk stops there.
+            · -- The cut frame itself: only the frame above links down to it, which is
+              -- the excluded step.
               have hQPre : replyStackLinksAt? st q = some (some below, some (.frame above)) := by
                 rw [hqR]; exact hRPre
-              have hQPost : replyStackLinksAt? st' q = some (none, some (.frame above)) := by
-                rw [hqR]; exact hRPost
               have hNextAbove : r.next = some (.frame above) :=
                 congrArg Prod.snd (Option.some.inj (hQLinks.symm.trans hQPre))
-              refine ⟨[q], ?_⟩
-              rw [donationChainWalk_succ, hQPost]
-              simp only []
-              rw [if_pos (hNextAbove.symm.trans hNext)]
-              simp
+              exact absurd ⟨Option.some.inj (hNext.symm.trans hNextAbove), hqR ▸ rfl⟩ hNotCut
             · -- Every other frame: links agree, so the post-walk steps identically.
               obtain ⟨c', hc'⟩ := ihP (.frame q) r.prev tail hRec
                 (by intro hBad; exact hqR (ReplyStackLink.frame.inj hBad.1))
+                (by intro hBad; exact hqA (ReplyStackLink.frame.inj hBad.1))
               refine ⟨q :: c', ?_⟩
               rw [donationChainWalk_succ, hAgree q hqA hqB hqR, hQLinks]
               simp only []
@@ -4132,6 +4165,7 @@ theorem donationChainWalk_exists_of_splice {st st' : SystemState}
         congrArg Prod.fst (Option.some.inj (hBLinks.symm.trans hBPre))
       obtain ⟨c', hc'⟩ := ihP (.frame below) r.prev tail hRec
         (by intro hBad; exact hNeBR (ReplyStackLink.frame.inj hBad.1))
+        (by intro hBad; exact hNeBA (ReplyStackLink.frame.inj hBad.1))
       refine ⟨below :: c', ?_⟩
       rw [donationChainWalk_succ, hBPost]
       simp only [if_true]
@@ -4399,10 +4433,13 @@ answer to one question a reader of the stack asks.
   `donationChainWalk_head_not_mem_tail` and the finiteness of the store, stated
   outright so every consumer has a walk to read the chain off.
 
-**What is deliberately absent**: any converse for upward `.frame` links (a
-cut-off part keeps stale ones, see the section docstring) and any completeness
-clause over a per-frame context field — a frame below the head does not know its
-context, which is exactly what makes the splice `O(1)`.
+* `nextLinkReciprocal` — every upward `.frame` link is answered: the frame above
+  resolves and links back down (`prev = some rid`).  The final delete of a frame
+  reads it, so that a frame with no `prev` is named by no frame's `next`.
+
+**What is deliberately absent**: any completeness clause over a per-frame context
+field — a frame below the head does not know its context, which is exactly what
+makes the splice `O(1)`.
 
 **Not a conjunct of `ipcInvariantFull`.**  That bundle has exactly twenty
 conjuncts and a family of theorems whose size a Tier-0 gate holds equal to the
@@ -4434,6 +4471,11 @@ structure donationChainWellFormed (st : SystemState) : Prop where
     st.objects[scId.toObjId]? = some (.schedContext sc) →
     ∃ (fuel : Nat) (chain : List SeLe4n.ReplyId),
       donationChainFrom st scId fuel sc.scReply = some chain
+  /-- Every upward `.frame` link is answered by the frame it names: that frame's
+  `prev` is the one below (seL4's `sym_refs` over `replyNext` / `replyPrev`). -/
+  nextLinkReciprocal : ∀ (rid : SeLe4n.ReplyId) (r : Reply) (above : SeLe4n.ReplyId),
+    st.objects[rid.toObjId]? = some (.reply r) → r.next = some (.frame above) →
+    ∃ a : Reply, st.objects[above.toObjId]? = some (.reply a) ∧ a.prev = some rid
 
 /-- **WS-RM (`v0.35.6`): the chain invariant with `Reply.wellFormed` relaxed at one
 key** — the honest statement about the state a reply leg leaves when the frame it
@@ -4475,6 +4517,11 @@ structure donationChainWellFormedExcept (st : SystemState) (rid : SeLe4n.ReplyId
     st.objects[scId.toObjId]? = some (.schedContext sc) →
     ∃ (fuel : Nat) (chain : List SeLe4n.ReplyId),
       donationChainFrom st scId fuel sc.scReply = some chain
+  /-- Every upward `.frame` link is answered by the frame it names: that frame's
+  `prev` is the one below (seL4's `sym_refs` over `replyNext` / `replyPrev`). -/
+  nextLinkReciprocal : ∀ (rid : SeLe4n.ReplyId) (r : Reply) (above : SeLe4n.ReplyId),
+    st.objects[rid.toObjId]? = some (.reply r) → r.next = some (.frame above) →
+    ∃ a : Reply, st.objects[above.toObjId]? = some (.reply a) ∧ a.prev = some rid
 
 /-- The whole invariant is the relaxed one plus well-formedness at the one key it
 relaxes — so a composite that later removes that frame discharges the transient
@@ -4492,6 +4539,19 @@ theorem donationChainWellFormed_of_except {st : SystemState} {rid : SeLe4n.Reply
   headLinkResolves := h.headLinkResolves
   prevLinkReciprocal := h.prevLinkReciprocal
   headTerminates := h.headTerminates
+  nextLinkReciprocal := h.nextLinkReciprocal
+
+/-- **What `nextLinkReciprocal` refuses**: a frame naming a frame above whose
+`prev` does not name it back.  That is the state in which the frame above could
+be freed by its final delete, reading only its own links, while the frame below
+still names it. -/
+theorem donationChainWellFormed.not_of_dangling_next {st : SystemState}
+    {rid above : SeLe4n.ReplyId} {r : Reply}
+    (hR : st.objects[rid.toObjId]? = some (.reply r)) (hN : r.next = some (.frame above))
+    (hA : ∀ a : Reply, st.objects[above.toObjId]? = some (.reply a) → a.prev ≠ some rid) :
+    ¬ donationChainWellFormed st := fun h => by
+  obtain ⟨a, hA', hP⟩ := h.nextLinkReciprocal rid r above hR hN
+  exact hA a hA' hP
 
 /-- The relaxed form is weaker, at any key. -/
 theorem donationChainWellFormedExcept_of_wellFormed {st : SystemState}
@@ -4502,6 +4562,7 @@ theorem donationChainWellFormedExcept_of_wellFormed {st : SystemState}
   headLinkResolves := h.headLinkResolves
   prevLinkReciprocal := h.prevLinkReciprocal
   headTerminates := h.headTerminates
+  nextLinkReciprocal := h.nextLinkReciprocal
 
 /-- WS-OD OD3.2: **the pop's head validation succeeds.**
 
@@ -4630,7 +4691,8 @@ theorem donationChainWellFormed_of_no_reply_or_schedContext
    fun scId sc hSc => absurd hSc (hNoSc scId sc),
    fun rid r _ hR _ => absurd hR (hNoReply rid r),
    fun rid r _ hR _ => absurd hR (hNoReply rid r),
-   fun scId sc hSc => absurd hSc (hNoSc scId sc)⟩
+   fun scId sc hSc => absurd hSc (hNoSc scId sc),
+   fun rid r _ hR _ => absurd hR (hNoReply rid r)⟩
 
 /-- WS-OD OD2.6: the chain invariant holds of a store in which no Reply carries a
 link and no context heads a stack — the two dispatch-pack witnesses. -/
@@ -4641,7 +4703,7 @@ theorem donationChainWellFormed_of_no_donations
     (hHeads : ∀ (scId : SeLe4n.SchedContextId) (sc : SchedContext),
       st.objects[scId.toObjId]? = some (.schedContext sc) → sc.scReply = none) :
     donationChainWellFormed st := by
-  refine ⟨?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro rid r hR _
     exact hReplies rid r hR
   · intro scId sc hSc rid hRid
@@ -4652,6 +4714,8 @@ theorem donationChainWellFormed_of_no_donations
     rw [(hReplies rid r hR).1] at hPrev; cases hPrev
   · intro scId sc hSc
     exact ⟨0, [], by rw [hHeads scId sc hSc]; simp⟩
+  · intro rid r above hR hNext
+    rw [(hReplies rid r hR).2] at hNext; cases hNext
 
 -- ----------------------------------------------------------------------------
 -- OD2.5: the frame family
@@ -5012,7 +5076,7 @@ theorem donationChainWellFormed_of_frame {st st' : SystemState}
     rw [hSc] at hEq
     obtain ⟨sc', hSc', hH⟩ := schedContextStackHead?_eq_some_iff.mp hEq
     exact ⟨sc', hSc', hH⟩
-  refine ⟨?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro rid r' hR' hC
     obtain ⟨r, hR, hCPre⟩ := hFrame.callerKept rid.toObjId r' hR' hC
     obtain ⟨r0, hR0, hP, hN⟩ := hReplyPre rid.toObjId r' hR'
@@ -5044,6 +5108,11 @@ theorem donationChainWellFormed_of_frame {st st' : SystemState}
     unfold donationChainFrom at hChain ⊢
     rw [donationChainWalk_congr hFrame.replyLinks]
     exact hChain
+  · intro q r' above hR' hNext'
+    obtain ⟨r, hR, _, hN⟩ := hReplyPre q.toObjId r' hR'
+    obtain ⟨a, hA, hAP⟩ := hInv.nextLinkReciprocal q r above hR (by rw [hN]; exact hNext')
+    obtain ⟨a', hA', hAP', _⟩ := hReplyPost above.toObjId a hA
+    exact ⟨a', hA', by rw [hAP']; exact hAP⟩
 
 /-- **WS-RM (`v0.35.6`): the frame transports the relaxed form too**, at the same
 key — so a step that moves no chain data cannot turn the head transient into a
@@ -5085,7 +5154,7 @@ theorem donationChainWellFormedExcept_of_frame {st st' : SystemState}
     rw [hSc] at hEq
     obtain ⟨sc', hSc', hH⟩ := schedContextStackHead?_eq_some_iff.mp hEq
     exact ⟨sc', hSc', hH⟩
-  refine ⟨?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro q r' hNe hR' hC
     obtain ⟨r, hR, hCPre⟩ := hFrame.callerKept q.toObjId r' hR' hC
     obtain ⟨r0, hR0, hP, hN⟩ := hReplyPre q.toObjId r' hR'
@@ -5117,6 +5186,11 @@ theorem donationChainWellFormedExcept_of_frame {st st' : SystemState}
     unfold donationChainFrom at hChain ⊢
     rw [donationChainWalk_congr hFrame.replyLinks]
     exact hChain
+  · intro q r' above hR' hNext'
+    obtain ⟨r, hR, _, hN⟩ := hReplyPre q.toObjId r' hR'
+    obtain ⟨a, hA, hAP⟩ := hInv.nextLinkReciprocal q r above hR (by rw [hN]; exact hNext')
+    obtain ⟨a', hA', hAP', _⟩ := hReplyPost above.toObjId a hA
+    exact ⟨a', hA', by rw [hAP']; exact hAP⟩
 
 /-- WS-OD OD3.4: the outer-caller resolution is transported across a frame. -/
 theorem replyStackOuterCallerResolves_of_frame {st st' : SystemState}

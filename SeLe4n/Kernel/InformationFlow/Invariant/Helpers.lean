@@ -768,7 +768,7 @@ theorem storeDonationFramePush_preserves_projection
       hInv1 hS2, hP1]
 
 /-- `v0.35.4`: the `O(1)` removal preserves the projection — **WS-HP HP6.5**: its
-one or two writes move a Reply's stack links, and `projectKernelObject` strips
+two or three writes move a Reply's stack links, and `projectKernelObject` strips
 both, so the removal is unobservable through a low-visible Reply.
 
 The frame below the cut is written at the *intermediate* state, so its index
@@ -809,13 +809,33 @@ theorem spliceReplyFrameOut_preserves_projection
       (hC1 rid.toObjId (by rw [hRObj1]; intro hx; cases hx))
       hInv1 hS2, hP1]
   · have hAObj := (SystemState.getReply?_eq_some_iff _ _ _).mp hA
-    rcases spliceReplyFrameStores_cases hS with ⟨_, hS1⟩ |
+    rcases spliceReplyFrameStores_cases hS with ⟨s1, _, hS1, hS2⟩ |
       ⟨below, b, s1, s2, hBelow, hS1, hS2, hS3⟩
-    · exact storeObject_projectionStable_preserves_projection ctx observer st st' above.toObjId
-        _ (.reply a) hAObj
-        (projectKernelObject_reply_prev_invariant ctx observer a none)
-        (hIdxComplete above.toObjId (by rw [hAObj]; intro hx; cases hx))
-        hObjInv hS1
+    · have hP1 : projectState ctx observer s1 = projectState ctx observer st :=
+        storeObject_projectionStable_preserves_projection ctx observer st s1 above.toObjId
+          _ (.reply a) hAObj
+          (by rw [Reply.unlinkedFrom_eq]
+              exact projectKernelObject_reply_stackLinks_invariant ctx observer a _ _)
+          (hIdxComplete above.toObjId (by rw [hAObj]; intro hx; cases hx))
+          hObjInv hS1
+      have hInv1 := SeLe4n.Model.storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
+      have hC1 := SeLe4n.Model.storeObject_preserves_objectIndexSetComplete st s1 _ _ hObjInv
+        hSetInv hIdxComplete hS1
+      rcases spliceReplyFrameStores_sever_cut_read hObjInv hR hA hS1 with hR1 | hR1
+      · have hRObj1 := (SystemState.getReply?_eq_some_iff _ _ _).mp hR1
+        rw [storeObject_projectionStable_preserves_projection ctx observer s1 st' rid.toObjId
+          _ (.reply r) hRObj1
+          (projectKernelObject_reply_stackLinks_invariant ctx observer r none none)
+          (hC1 rid.toObjId (by rw [hRObj1]; intro hx; cases hx))
+          hInv1 hS2, hP1]
+      · have hRObj1 := (SystemState.getReply?_eq_some_iff _ _ _).mp hR1
+        rw [storeObject_projectionStable_preserves_projection ctx observer s1 st' rid.toObjId
+          _ (.reply (r.unlinkedFrom rid)) hRObj1
+          ((projectKernelObject_reply_stackLinks_invariant ctx observer r none none).trans
+            (by rw [Reply.unlinkedFrom_eq]
+                exact (projectKernelObject_reply_stackLinks_invariant ctx observer r _ _).symm))
+          (hC1 rid.toObjId (by rw [hRObj1]; intro hx; cases hx))
+          hInv1 hS2, hP1]
     · obtain ⟨_, hNe, hB, _⟩ := spliceFrameBelow?_eq_some hBelow
       have hNeBR : below ≠ rid := spliceFrameBelow?_ne_cut hR hN hBelow
       have hNeAR : above ≠ rid := spliceFrameBelow?_above_ne_cut hR hA hP hBelow
@@ -852,7 +872,7 @@ theorem spliceReplyFrameOut_preserves_projection
         exact hRObj
       rw [storeObject_projectionStable_preserves_projection ctx observer s2 st' rid.toObjId
         _ (.reply r) hRObj2
-        (projectKernelObject_reply_prev_invariant ctx observer r none)
+        (projectKernelObject_reply_stackLinks_invariant ctx observer r none none)
         (hC2 rid.toObjId (by rw [hRObj2]; intro hx; cases hx))
         hInv2 hS3, hP2, hP1]
 
@@ -1001,10 +1021,13 @@ theorem spliceReplyFrameOutOrSelf_preserves_objectIndexSetComplete
       exact storeObject_preserves_objectIndexSetComplete s1 _ rid.toObjId _ hInv1 hSetInv1
         (storeObject_preserves_objectIndexSetComplete st s1 below.toObjId _ hObjInv
           hObjSetInv hIdxComplete hS1) hS2
-    · rcases spliceReplyFrameStores_cases hS with ⟨_, hS1⟩ |
+    · rcases spliceReplyFrameStores_cases hS with ⟨s1, _, hS1, hS2⟩ |
         ⟨below, b, s1, s2, hBelow, hS1, hS2, hS3⟩
-      · exact storeObject_preserves_objectIndexSetComplete st _ above.toObjId _ hObjInv
-          hObjSetInv hIdxComplete hS1
+      · exact storeObject_preserves_objectIndexSetComplete s1 _ rid.toObjId _
+          (SeLe4n.Model.storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1)
+          (SeLe4n.Model.storeObject_preserves_objectIndexSet_invExt st s1 _ _ hObjSetInv hS1)
+          (storeObject_preserves_objectIndexSetComplete st s1 above.toObjId _ hObjInv
+            hObjSetInv hIdxComplete hS1) hS2
       · have hInv1 := SeLe4n.Model.storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
         have hSetInv1 := SeLe4n.Model.storeObject_preserves_objectIndexSet_invExt st s1 _ _
           hObjSetInv hS1
