@@ -1242,9 +1242,12 @@ theorem cnodeVisibilityLe_trans {cn₁ cn₂ cn₃ : CNode}
 /-- SM8.A.5: the field list of `cnodeVisibilityLe` is **exhaustive** — two
 CNodes ordered by it whose slot maps agree are equal.  A fifth non-slot field
 added to `CNode` makes this proof fail, which is how the relation learns it has
-to grow. -/
+to grow.  WS-ZA ZA5.4 part 26: the occupancy links are not a field of the
+relation, as a narrower projection filters out slots and so links fewer; they are
+premises here. -/
 theorem eq_of_cnodeVisibilityLe_of_slots_eq {cn₁ cn₂ : CNode}
-    (h : cnodeVisibilityLe cn₁ cn₂) (hSlots : cn₁.slots = cn₂.slots) : cn₁ = cn₂ := by
+    (h : cnodeVisibilityLe cn₁ cn₂) (hSlots : cn₁.slots = cn₂.slots)
+    (hOcc : cn₁.occ = cn₂.occ) (hHead : cn₁.occHead = cn₂.occHead) : cn₁ = cn₂ := by
   -- The slot array is pinned by the map: equal radix widths give equal sizes,
   -- and `slots_agree` reads every entry back from the (equal) map.
   have hCells : cn₁.cells = cn₂.cells := by
@@ -1259,6 +1262,7 @@ theorem eq_of_cnodeVisibilityLe_of_slots_eq {cn₁ cn₂ : CNode}
   have hGhost : cn₁.slotsGhost = cn₂.slotsGhost := SeLe4n.Erased.ext hSlots
   -- The spare records are no slot's capability (`SpareCells`: logically one value).
   exact CNode.ext_of_fields h.depth h.guardWidth h.guardValue h.radixWidth hGhost hCells h.links
+    hOcc hHead
 
 /-- SM8.A.5: the visibility order on a **projected kernel object**.
 

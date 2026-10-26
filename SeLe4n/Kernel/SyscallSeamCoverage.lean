@@ -234,7 +234,7 @@ theorem dispatchWithCapChecked_coversWrites (ctx : LabelingContext)
     · cases hDisp
     · split at hDisp
       · cases hDisp
-      · exact schedLockSet_cspaceDeleteSlotFinalising_coversWrites e _ st st' S hSched hDisp
+      · exact schedLockSet_cspaceDeleteSlotZombie_coversWrites e _ st st' S hSched hDisp
   case cspaceRevoke =>
     simp only [schedLockSetForSyscall] at hSched
     cases hT : cap.target <;> rw [hT] at hDisp <;> simp only [reduceCtorEq] at hDisp
@@ -243,6 +243,10 @@ theorem dispatchWithCapChecked_coversWrites (ctx : LabelingContext)
     · split at hDisp
       · cases hDisp
       · exact schedLockSet_cspaceRevokeCdtFinalising_coversWrites e _ st st' S hSched hDisp
+  -- ---- `.tcbSetSpace` (WS-ZA ZA5.4 part 26: through the zombie delete) ----
+  case tcbSetSpace =>
+    simp only [schedLockSetForSyscall] at hSched
+    exact schedLockSet_capabilityDestroyOnCore_coversWrites st st' S hSched
   -- ---- `.tcbSuspend` ------------------------------------------------------
   case tcbSuspend =>
     cases hT : cap.target <;> rw [hT] at hOps <;> simp only [reduceCtorEq] at hOps

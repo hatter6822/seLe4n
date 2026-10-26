@@ -361,4 +361,19 @@ theorem copyThreadSpaces_preserves_capabilityInvariantBundle (ec : Concurrency.C
   rw [threadSlotCopied_getUntyped? hObjInv hT]
   exact hVrNot cap hL u hu
 
+/-- **Setting a thread's space through the zombie delete keeps the capability
+bundle**: the loop's passes are finalising deletes and finalisations, which keep
+it, and the plain space change after them does
+(`copyThreadSpaces_preserves_capabilityInvariantBundle`). -/
+theorem copyThreadSpacesZombie_preserves_capabilityInvariantBundle (ec : Concurrency.CoreId)
+    {st st' : SystemState} {vtid : SeLe4n.ValidThreadId} {cnSrc vrSrc : CSpaceAddr}
+    (hInv : capabilityInvariantBundle st)
+    (hStep : copyThreadSpacesZombie ec st vtid cnSrc vrSrc = .ok st') :
+    capabilityInvariantBundle st' :=
+  copyThreadSpacesZombie_closed capabilityInvariantBundle
+    (fun c s s' hs hD => cspaceDeleteSlotFinalising_preserves_capabilityInvariantBundle ec c s s' hs hD)
+    (fun d s hs => finaliseFinalObject_preserves_capabilityInvariantBundle d s hs)
+    (fun _ _ hs hS => copyThreadSpaces_preserves_capabilityInvariantBundle ec hs hS)
+    hInv hStep
+
 end SeLe4n.Kernel

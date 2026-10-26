@@ -447,6 +447,21 @@ theorem cspaceDeleteSlotFinalising_confinedToCores
       (cspaceDeleteSlotFinalising_framed executingCore addr st st' hStep ‹_›)
   · exact observableSlotsConfinedToCores_allCores st st'
 
+/-- WS-ZA ZA5.4 part 26: **the live `.cspaceDelete` arm, the zombie delete,
+writes only the cores `cspaceDeleteSlotFinalisingCores` names**: when its slot
+retires nothing it is the one finalising delete
+(`cspaceDeleteSlotZombie_of_target_zero`); otherwise every core is named. -/
+theorem cspaceDeleteSlotZombie_confinedToCores
+    (executingCore : CoreId) (addr : CSpaceAddr) (st st' : SystemState)
+    (hStep : cspaceDeleteSlotZombie executingCore addr st = .ok ((), st')) :
+    observableSlotsConfinedToCores st st' (cspaceDeleteSlotFinalisingCores st addr) := by
+  by_cases h0 : slotRetireTarget st addr.cnode addr.slot = 0
+  · rw [cspaceDeleteSlotZombie_of_target_zero h0] at hStep
+    exact cspaceDeleteSlotFinalising_confinedToCores executingCore addr st st' hStep
+  · unfold cspaceDeleteSlotFinalisingCores
+    rw [if_neg h0]
+    exact observableSlotsConfinedToCores_allCores st st'
+
 /-- WS-BP BP7.1 (`v0.36.7`), WS-ZA ZA5.4 part 23: **the live `.cspaceRevoke`
 arm.**  Each delete of the revocation may destroy a final capability, whose
 finalisation wakes the waiters it cancels on their own cores, so the revocation
@@ -518,6 +533,36 @@ theorem copyThreadSpaces_confinedToCores (ec : CoreId) (st st' : SystemState)
   obtain ⟨hs2, hm2⟩ := threadSlotSet_framed ec hT1 TCB.vspaceRootSlot vrSrc.cnode vrSrc.slot
     TCB.vspaceRootRights
   exact observableSlotsConfinedToCores_nil_of_framed ⟨hs2.trans hs1, hm2.trans hm1⟩
+
+/-- **The cores a space change through the zombie delete may write**: none when
+its old CSpace root names nothing holding a capability, so it is the plain
+space change; otherwise every core, since the zombie loop's finalisations wake
+the waiters they cancel on their own cores, as the zombie delete does. -/
+def copyThreadSpacesZombieCores (st : SystemState) (vtid : SeLe4n.ValidThreadId) : List CoreId :=
+  if zombieSlotClass st vtid.val.toObjId TCB.cspaceRootSlot vtid.val.toObjId TCB.cspaceRootSlot = 0
+  then [] else Concurrency.allCores
+
+/-- WS-ZA ZA5.4 part 26: **the live `.tcbSetSpace` arm, through the zombie
+delete, writes only the cores `copyThreadSpacesZombieCores` names**: with a
+leaf old CSpace root it is the plain space change, which writes no core
+(`copyThreadSpaces_confinedToCores`); otherwise every core is named. -/
+theorem copyThreadSpacesZombie_confinedToCores (ec : CoreId) (st st' : SystemState)
+    (vtid : SeLe4n.ValidThreadId) (cnSrc vrSrc : CSpaceAddr) (hInv : st.objects.invExt)
+    (hStep : copyThreadSpacesZombie ec st vtid cnSrc vrSrc = .ok st') :
+    observableSlotsConfinedToCores st st' (copyThreadSpacesZombieCores st vtid) := by
+  unfold copyThreadSpacesZombieCores
+  split
+  · next h0 =>
+    have hPlain : copyThreadSpaces ec st vtid cnSrc vrSrc = .ok st' := by
+      unfold copyThreadSpacesZombie at hStep
+      split at hStep
+      · next hA =>
+        unfold copyThreadSpacesZombiePerform at hStep
+        rw [if_pos h0] at hStep
+        rw [copyThreadSpaces_of_admitted hA]; exact hStep
+      · exact hStep
+    exact copyThreadSpaces_confinedToCores ec st st' vtid cnSrc vrSrc hInv hPlain
+  · exact observableSlotsConfinedToCores_allCores st st'
 
 -- ============================================================================
 -- §5k The live `.untypedRetype` arm, and the destroy path's cleanup

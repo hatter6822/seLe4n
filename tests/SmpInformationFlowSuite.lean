@@ -633,7 +633,7 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @SeLe4n.Kernel.untypedRetypeFromCap_crossCoreNonInterference
 #check @SeLe4n.Kernel.syscallDelegates_untypedRetype
 #check @SeLe4n.Kernel.syscallDelegates_tcbSetSpace
-#check @SeLe4n.Kernel.copyThreadSpaces_crossCoreNonInterference
+#check @SeLe4n.Kernel.copyThreadSpacesZombie_crossCoreNonInterference
 #check @SeLe4n.Kernel.syscallDelegates_vspaceMap
 #check @SeLe4n.Kernel.syscallDelegates_vspaceUnmap
 #check @CovertChannelId.mem_all
@@ -4678,13 +4678,13 @@ private def runCoreSetAlgebraChecks : IO Unit := do
   IO.println "--- §5.3 the set-of-cores confinement algebra ---"
   assertBool "thirty-four cross-core transitions are covered"
     (decide (SeLe4n.Kernel.CrossCoreTransition.all.length = 34))
-  assertBool "twenty-four of the thirty-four can name a core other than the executing one"
+  assertBool "twenty-five of the thirty-four can name a core other than the executing one"
     (decide ((SeLe4n.Kernel.CrossCoreTransition.all.filter
-      SeLe4n.Kernel.crossCoreTransitionWritesRemote).length = 24))
-  assertBool "…and the wait, the two VSpace arms, the untyped reset, the carve, the space change, the declassification, the two audit readers and the yield are the ten that cannot"
+      SeLe4n.Kernel.crossCoreTransitionWritesRemote).length = 25))
+  assertBool "…and the wait, the two VSpace arms, the untyped reset, the carve, the declassification, the two audit readers and the yield are the nine that cannot"
     ([SeLe4n.Kernel.CrossCoreTransition.notificationWait,
       .vspaceMapDispatch, .vspaceUnmapDispatch, .untypedResetDispatch,
-      .untypedRetypeDispatch, .tcbSetSpaceDispatch, .declassifyDispatch,
+      .untypedRetypeDispatch, .declassifyDispatch,
       .auditReadDispatch, .auditDrainDispatch, .yieldDispatch].all (fun t =>
         decide (SeLe4n.Kernel.crossCoreTransitionWritesRemote t = false)))
   assertBool "twenty-seven of the thirty-four are the arms the live syscall dispatch reaches"
@@ -4692,13 +4692,15 @@ private def runCoreSetAlgebraChecks : IO Unit := do
       SeLe4n.Kernel.crossCoreTransitionIsLiveArm).length = 27))
   -- WS-ZA ZA5.4 part 22: the space change takes the executing core for the
   -- retire of what its slot replace destroyed, and is a live, delegation-backed
-  -- arm naming its own syscall that writes no core.
-  assertBool "the space change is a live, delegation-backed arm that writes no core"
+  -- arm naming its own syscall.  WS-ZA ZA5.4 part 26: it may write remote cores
+  -- — an old CSpace root that is the last capability to a populated CNode is
+  -- deleted by the zombie loop, whose finalisations wake waiters on their cores.
+  assertBool "the space change is a live, delegation-backed arm that may write a remote core"
     (SeLe4n.Kernel.crossCoreTransitionIsLiveArm .tcbSetSpaceDispatch
       && (SeLe4n.Kernel.crossCoreLiveArmEvidence .tcbSetSpaceDispatch).isDelegationBacked
       && decide (SeLe4n.Kernel.crossCoreLiveArmSyscall .tcbSetSpaceDispatch
                    = some SeLe4n.Model.SyscallId.tcbSetSpace)
-      && !SeLe4n.Kernel.crossCoreTransitionWritesRemote .tcbSetSpaceDispatch)
+      && SeLe4n.Kernel.crossCoreTransitionWritesRemote .tcbSetSpaceDispatch)
   -- WS-BP BP7.1 (v0.36.7): the delete and the CDT revocation are live arms,
   -- delegation-backed and naming their own syscalls.  WS-ZA ZA5.4 part 23: they
   -- write remote cores — the finalisation of a final capability's endpoint or

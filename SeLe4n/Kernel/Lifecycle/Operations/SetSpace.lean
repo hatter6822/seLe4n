@@ -172,63 +172,110 @@ theorem threadSlotCopied_tcb {st : SystemState} {tid : SeLe4n.ThreadId} {t : TCB
     rw [SystemState.updateTcb_getTcb?_self _ _ _ hI, hT']
     rfl
 
-/-- The capability a thread's space slot holds, read through the thread's
-record. -/
-@[inline] def threadSpaceCell (st : SystemState) (tid : SeLe4n.ThreadId) (slot : SeLe4n.Slot) :
-    Option Capability :=
-  match st.getTcb? tid with
-  | some t => t.spaceSlotCap slot
-  | none => none
+/-- The spare record `a` keeps for slot `i`, if any.  Out of line, so reading
+it is no branch of its caller (`TCB.spaceCellFilledWith`). -/
+@[noinline] def spareRecordAt (a : Array (Option Capability)) (i : Nat) : Option Capability :=
+  a[i]?.join
 
-/-- The slot cell holding the capability of `target` and `rights` alone, written
-over the cell `old` and the record it holds (`Capability.overwrite`), so a cell
-nothing else holds is rewritten rather than built. -/
-@[inline] def spaceCellOver (old : Option Capability) (target : CapTarget)
+/-- The `some` cell of the capability of `target` and `rights` alone, written
+over the record `o` when there is one, built when there is none.  An object
+target is written over the record's own target cell too
+(`Capability.overwriteObject`), so the thread's capability shares no cell with
+its source's: the source slot's record, once that slot is cleared, is still its
+own to be written over in place.  Out of line, so its matches are no branch of
+its caller. -/
+@[noinline] def capabilityCellOver (o : Option Capability) (target : CapTarget)
     (rights : AccessRightSet) : Option Capability :=
-  match old with
-  | some r => some (r.overwrite target rights SeLe4n.Badge.zero false default default 0 false 0)
-  | none => some (Capability.ofFields target rights SeLe4n.Badge.zero false default default 0 false 0)
+  match target, o with
+  | .object id, some r => some (r.overwriteObject id rights)
+  | .object id, none => some (Capability.ofObject id rights)
+  | _, some r => some (r.overwrite target rights SeLe4n.Badge.zero false default default 0 false 0)
+  | _, none => some (Capability.ofFields target rights SeLe4n.Badge.zero false default default 0 false 0)
 
-theorem spaceCellOver_eq (old : Option Capability) (target : CapTarget) (rights : AccessRightSet) :
-    spaceCellOver old target rights =
+theorem capabilityCellOver_eq (o : Option Capability) (target : CapTarget)
+    (rights : AccessRightSet) :
+    capabilityCellOver o target rights =
       some ⟨target, rights, SeLe4n.Badge.zero, false, default, default, 0, false, 0⟩ := by
-  unfold spaceCellOver
-  cases old <;> simp only [Capability.overwrite_eq, Capability.ofFields]
+  unfold capabilityCellOver
+  split
+  · rw [Capability.overwriteObject_eq]
+  · rfl
+  · rw [Capability.overwrite_eq]
+  · rfl
 
-/-- The thread's space slot `slot` written with the cell `spaceCellOver` builds
-over `old`.  Out of line, on words, so the update is compiled into it. -/
+/-- **Slot `s` of `t` written with the capability of `target` and `rights`
+alone, over the spare record `a` keeps for it** (`TCB.spaceSpare`): the record
+is read (`spareRecordAt`) and then taken out of the spares, so nothing else
+holds it when the capability is written over it (`capabilityCellOver`).  The
+thread is rebuilt once, after those calls, so an unshared thread is rebuilt in
+its own cell.  Equal to the insert (`TCB.spaceCellFilledWith_eq`). -/
+@[inline] def _root_.SeLe4n.Model.TCB.spaceCellFilledWith (t : TCB) (s : SeLe4n.Slot)
+    (target : CapTarget) (rights : AccessRightSet) (a : Array (Option Capability)) : TCB :=
+  let i := s.toNat
+  let o := spareRecordAt a i
+  let a' := a.setIfInBounds i none
+  let c := capabilityCellOver o target rights
+  { t with spaceCells := t.spaceCells.setIfInBounds i c, spaceSpare := Squash.mk a' }
+
+theorem _root_.SeLe4n.Model.TCB.spaceCellFilledWith_eq (t : TCB) (s : SeLe4n.Slot)
+    (target : CapTarget) (rights : AccessRightSet) (a : Array (Option Capability)) :
+    t.spaceCellFilledWith s target rights a =
+      t.insertSpaceCap s ⟨target, rights, SeLe4n.Badge.zero, false, default, default, 0, false, 0⟩ := by
+  unfold TCB.spaceCellFilledWith TCB.insertSpaceCap
+  dsimp only
+  rw [capabilityCellOver_eq]
+  congr 1
+  exact Subsingleton.elim _ _
+
+/-- **Slot `s` of `t` written with the capability of `target` and `rights`
+alone**, over the slot's spare record (`TCB.spaceCellFilledWith`); the insert
+(`TCB.spaceCellFilled_eq`). -/
+@[inline] def _root_.SeLe4n.Model.TCB.spaceCellFilled (t : TCB) (s : SeLe4n.Slot)
+    (target : CapTarget) (rights : AccessRightSet) : TCB :=
+  Quot.lift (fun a => t.spaceCellFilledWith s target rights a)
+    (fun a b _ => (TCB.spaceCellFilledWith_eq t s target rights a).trans
+      (TCB.spaceCellFilledWith_eq t s target rights b).symm) t.spaceSpare
+
+theorem _root_.SeLe4n.Model.TCB.spaceCellFilled_eq (t : TCB) (s : SeLe4n.Slot)
+    (target : CapTarget) (rights : AccessRightSet) :
+    t.spaceCellFilled s target rights =
+      t.insertSpaceCap s ⟨target, rights, SeLe4n.Badge.zero, false, default, default, 0, false, 0⟩ := by
+  unfold TCB.spaceCellFilled
+  induction t.spaceSpare using Quot.ind with
+  | mk a => exact TCB.spaceCellFilledWith_eq t s target rights a
+
+/-- The thread's space slot `slot` written with the capability of `target` and
+`rights` alone, over the slot's spare record (`TCB.spaceCellFilled`).  Out of
+line, on words, so the update is compiled into it. -/
 @[noinline] def threadSpaceCellWritten (st : SystemState) (tid : SeLe4n.ThreadId)
-    (slot : SeLe4n.Slot) (old : Option Capability) (target : CapTarget) (rights : AccessRightSet) :
-    SystemState :=
-  st.updateTcb tid fun t =>
-    { t with spaceCells := t.spaceCells.setIfInBounds slot.toNat (spaceCellOver old target rights) }
+    (slot : SeLe4n.Slot) (target : CapTarget) (rights : AccessRightSet) : SystemState :=
+  st.updateTcb tid fun t => t.spaceCellFilled slot target rights
 
-/-- The insert and edge of `threadSlotCopied`, on the deleted state `stD`, the
-capability written over the cell `old` the slot held before its delete. -/
-@[noinline] def threadSlotRefilled (old : Option Capability) (stD : SystemState)
+/-- The insert and edge of `threadSlotCopied`, on the deleted state `stD`. -/
+@[noinline] def threadSlotRefilled (stD : SystemState)
     (tid : SeLe4n.ThreadId) (slot : SeLe4n.Slot) (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot)
     (rights : AccessRightSet) : SystemState :=
   match SystemState.lookupSlotCap stD { cnode := srcCNode, slot := srcSlot } with
   | none => stD
   | some cap =>
-    (threadSpaceCellWritten stD tid slot old cap.target (cap.rights.inter rights)).cdtAddChild
+    (threadSpaceCellWritten stD tid slot cap.target (cap.rights.inter rights)).cdtAddChild
       { cnode := srcCNode, slot := srcSlot } { cnode := tid.toObjId, slot := slot } .copy
 
-/-- `threadSlotCopied` as compiled: the cell the slot holds is read before the
-delete clears it, so it outlives the clear and the copy is written over it
-(`spaceCellOver`): setting a thread's space builds no capability. -/
+/-- `threadSlotCopied` as compiled: the delete keeps the slot's cell as its
+spare record (`TCB.removeSpaceCapImpl`), and the copy is written over that
+record (`TCB.spaceCellFilled`), or over the one the carve made for a slot
+never filled: setting a thread's space builds no capability. -/
 @[noinline] def threadSlotCopiedImpl (st : SystemState) (tid : SeLe4n.ThreadId)
     (slot : SeLe4n.Slot) (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot)
     (rights : AccessRightSet) : SystemState :=
-  let old := threadSpaceCell st tid slot
-  threadSlotRefilled old
+  threadSlotRefilled
     (spliceDeletedCdtNode (threadSlotCleared tid.toObjId slot st) { cnode := tid.toObjId, slot := slot })
     tid slot srcCNode srcSlot rights
 
 @[csimp] theorem threadSlotCopied_eq_impl : @threadSlotCopied = @threadSlotCopiedImpl := by
   funext st tid slot srcCNode srcSlot rights
   unfold threadSlotCopied threadSlotCopiedImpl threadSlotRefilled threadSpaceCellWritten
-  simp only [spaceCellOver_eq]
+  simp only [TCB.spaceCellFilled_eq]
   split <;> rfl
 
 /-- **A thread's space slot set, finalising what it held**: the slot set from

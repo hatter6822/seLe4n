@@ -106,8 +106,11 @@ def frozenObjectAgrees (f : FrozenKernelObject) (l : KernelObject) : Bool :=
     -- The derivation links are compared word for word (PR #956 review): the
     -- frozen CNode carries them, and `frozenStateAgrees` compares the tree's
     -- edges they index.  The spare records are not compared: they are no
-    -- slot's capability (`SpareCells`: logically one value).
-    .cnode (lc@⟨ld, lgw, lgv, lrw, _lslots, _lcells, _, _, llinks, _, _lspare⟩) =>
+    -- slot's capability (`SpareCells`: logically one value).  The occupancy
+    -- links are not compared: the frozen CNode keeps no order of its slots,
+    -- and the links list exactly the slots the slot map fills (`occ_agree`).
+    .cnode (lc@⟨ld, lgw, lgv, lrw, _lslots, _lcells, _, _, llinks, _, _locc, _, _lhead, _,
+      _lspare⟩) =>
       fd == ld && fgw == lgw && fgv == lgv && frw == lrw
         && frozenCNodeSlotsAgree fc lc && flinks == llinks
   -- The spare mapping cells are not compared: they are no mapping

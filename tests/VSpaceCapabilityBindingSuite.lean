@@ -960,12 +960,6 @@ private def runResetChecks : IO Unit := do
 /-- The untyped tag with a size in MR0's upper bits. -/
 private def untypedTagOfSize (sizeBits : Nat) : Nat := 5 + sizeBits * 256
 
-/-- The RETIRED reset guard (`v0.36.6`–`v0.36.7`): every **direct** child must be
-a frame.  Spelled here and nowhere else, so the witness below can show the state
-it would refuse forever. -/
-private def retiredFramesOnlyRetirable (st : SystemState) (ut : UntypedObject) : Bool :=
-  ut.children.all fun c => (st.getFrame? c.objId).isSome
-
 private def runChildUntypedChecks : IO Unit := do
   IO.println "-- §5g `.untypedRetype` carves child untypeds, and a reset returns the subtree (WS-BP BP7.1)"
   let st := carveScenario
@@ -1032,16 +1026,17 @@ private def runChildUntypedChecks : IO Unit := do
             == none &&
            SystemState.lookupSlotCap stRev { cnode := carveCn, slot := SeLe4n.Slot.ofNat 13 }
             == none)
-        -- THE RETIRED GUARD.  The parent's only child is an untyped, so the
-        -- frames-only reset refuses — and no capability to the child remains, so
-        -- nothing can ever reset the child first: the parent's memory would be
-        -- stranded for good.
-        assertBool "RETIRED: the frames-only reset guard refuses this state"
-          (match stRev.getUntyped? carveUt with
-            | some ut => !retiredFramesOnlyRetirable stRev ut
-            | none => false)
+        -- The revocation deleted the child untyped's last capability, so the
+        -- final delete retired the child with it (WS-ZA ZA5.4 part 26: an
+        -- untyped is retired and spliced out of the derivation tree), the
+        -- grandchild frame having been retired with its own capability: the
+        -- parent records no child, and no memory is stranded.
+        assertBool "the revocation retires the child untyped and the grandchild frame"
+          ((stRev.objects[SeLe4n.ObjId.ofNat 970]?).isNone &&
+           (stRev.objects[SeLe4n.ObjId.ofNat 971]?).isNone &&
+           (stRev.getUntyped? carveUt).map (·.children.length) == some 0)
         match dispatchSyscallAsCurrent (decodeReset slotUtRetype) carveOwner Concurrency.bootCoreId stRev with
-        | .error e => assertBool s!"the parent's reset retires the subtree (got {repr e})" false
+        | .error e => assertBool s!"the parent's reset succeeds (got {repr e})" false
         | .ok ((), stReset) => do
           assertBool "the child untyped and the grandchild frame are both retired"
             ((stReset.objects[SeLe4n.ObjId.ofNat 970]?).isNone &&
@@ -2087,8 +2082,9 @@ private def runFinalDeleteRetireChecks : IO Unit := do
         ((rootAt st1 980).isNone && st1.asidTable[one]? == none && !recordsChildAt st1 carveUt 980)
       assertBool "and its ASID gets an acknowledged .aside1 round"
         ((Architecture.shootdownPostedOps st st1).contains (Architecture.encodeAsidInvalidation one))
-  -- A child untyped that still records a frame stays when its capability goes;
-  -- the frame goes with its own.
+  -- A child untyped that still records a frame goes with its capability,
+  -- spliced out of the derivation tree (WS-ZA ZA5.4 part 26): its parent
+  -- records the frame in its place, and the frame goes with its own.
   match runAll carveScenario
       [decodeCarve slotUtRetype (untypedTagOfSize 12) 970 slotOwnCnRW 12,
        decodeCarve 12 frameTag 971 slotOwnCnRW 13] with
@@ -2097,13 +2093,14 @@ private def runFinalDeleteRetireChecks : IO Unit := do
     match runAll st [decodeDelete 12] with
     | .error e => assertBool s!"deleting the child untyped's capability succeeds (got {repr e})" false
     | .ok st1 => do
-      assertBool "an untyped recording a child is not retired with its capability"
-        ((st1.getUntyped? (SeLe4n.ObjId.ofNat 970)).isSome && recordsChildAt st1 (SeLe4n.ObjId.ofNat 970) 971)
+      assertBool "an untyped recording a child is retired with its capability, its parent adopting the child"
+        ((st1.objects[SeLe4n.ObjId.ofNat 970]?).isNone && !recordsChildAt st1 carveUt 970 &&
+         recordsChildAt st1 carveUt 971 && (frameAt st1 971).isSome)
       match runAll st1 [decodeDelete 13] with
       | .error e => assertBool s!"deleting the frame's capability succeeds (got {repr e})" false
       | .ok st2 =>
-        assertBool "the frame is retired from the child untyped's list"
-          ((frameAt st2 971).isNone && !recordsChildAt st2 (SeLe4n.ObjId.ofNat 970) 971)
+        assertBool "the frame is retired from the adopting parent's list"
+          ((frameAt st2 971).isNone && !recordsChildAt st2 carveUt 971)
   -- An empty child untyped goes with its last capability.
   match runAll carveScenario
       [decodeCarve slotUtRetype (untypedTagOfSize 12) 970 slotOwnCnRW 12, decodeDelete 12] with
@@ -2397,13 +2394,12 @@ private def runThreadFinaliseChecks : IO Unit := do
         (!storedAt st1 960 && !recordsChildAt st1 carveUt 960 &&
           st1.scheduler.currentOnCore c1 == none && st1.machine.fpOwnerOnCore c1 == none &&
           st1.machine.residentOnCore c1 == none && st1.scheduler.reschedulePendingOnCore c1)
-    -- Current on the executing core itself, the self-delete's state: a thread
-    -- that makes the syscall holds its CSpace root in a space slot, which the
-    -- admission refuses until row 26, so the finalisation is run on the state
-    -- directly.  It vacates the core's own slot and flags the core, so the
-    -- syscall step chooses a successor before it returns, and leaves the
-    -- thread retirable; a destroyed caller's return frame is written nowhere
-    -- (`stageCallerReturnFor_destroyed`).
+    -- Current on the executing core itself, the self-delete's state, the
+    -- finalisation run on the state directly (the syscall end to end, from a
+    -- thread holding its spaces, is §5p's).  It vacates the core's own slot and
+    -- flags the core, so the syscall step chooses a successor before it
+    -- returns, and leaves the thread retirable; a destroyed caller's return
+    -- frame is written nowhere (`stageCallerReturnFor_destroyed`).
     let ownCore : SystemState :=
       { ready with
         scheduler := ready.scheduler.setCurrentOnCore c0 (some tid)
@@ -3034,6 +3030,89 @@ private def runMiddleReplyFinaliseChecks : IO Unit := do
         assertBool "deleting a middle reply's last capability retires it"
           (!storedAt st1 965 && !recordsChildAt st1 carveUt 965)
 
+-- =====================================================================
+
+-- ============================================================================
+-- §5p  WS-ZA ZA5.4 part 26 — the zombie loop empties what a final delete
+-- destroys
+-- ============================================================================
+
+/-- Does the owner's root hold a capability at `slot`? -/
+private def ownSlotHolds (st : SystemState) (slot : Nat) : Bool :=
+  (SystemState.lookupSlotCap st { cnode := carveCn, slot := SeLe4n.Slot.ofNat slot }).isSome
+
+private def runZombieDeleteChecks : IO Unit := do
+  IO.println "-- §5p a final delete empties a populated CNode and a thread's spaces (WS-ZA ZA5.4 part 26)"
+  -- A carved CNode holding an endpoint's only capability: the CNode's last
+  -- capability's delete deletes the endpoint's slot first (the endpoint is
+  -- retired), then retires the emptied CNode.
+  match runAll carveScenario
+      [decodeCarve slotUtRetype (cnodeTagOfRadix 2) 970 slotOwnCnRW 12,
+       decodeCarve slotUtRetype endpointTag 971 12 0] with
+  | .error e => assertBool s!"carving a CNode and an endpoint into it succeeds (got {repr e})" false
+  | .ok st => do
+    assertBool "setup: the carved CNode holds the endpoint's capability"
+      (storedAt st 970 && storedAt st 971 &&
+        (SystemState.lookupSlotCap st { cnode := SeLe4n.ObjId.ofNat 970, slot := SeLe4n.Slot.ofNat 0 }).isSome)
+    -- The endpoint carries declassification provenance, which its retire
+    -- forgets, so a later carve at its id inherits none.
+    let ep := SeLe4n.ObjId.ofNat 971
+    let tainted : SystemState :=
+      { st with declassificationTaint :=
+          st.declassificationTaint.set ep (SeLe4n.Kernel.DeclassificationTaint.singleton 3) }
+    assertBool "setup: the endpoint carries a declassification tag"
+      ((tainted.declassificationTaint ep).contains 3)
+    match runAll tainted [decodeDelete 12] with
+    | .error e => assertBool s!"deleting the populated CNode's last capability succeeds (got {repr e})" false
+    | .ok st1 => do
+      assertBool "deleting a populated CNode's last capability retires the endpoint it held and the CNode"
+        (!storedAt st1 970 && !storedAt st1 971 && !recordsChildAt st1 carveUt 970 &&
+          !recordsChildAt st1 carveUt 971 && !ownSlotHolds st1 12)
+      assertBool "the retire clears the endpoint's declassification provenance"
+        (!(st1.declassificationTaint ep).contains 3)
+  -- A carved thread holding the last capability to a carved CNode, its CSpace
+  -- root: the thread's last capability's delete finalises it, then deletes its
+  -- space slots, which retires the CNode; the boot VSpace root, named by
+  -- another slot, stays.
+  match runAll carveScenario
+      [decodeCarve slotUtRetype tcbTag 960 slotOwnCnRW 12,
+       decodeCarve slotUtRetype (cnodeTagOfRadix 2) 970 slotOwnCnRW 13,
+       decodeSetSpace 12 13 slotOwnVsp,
+       decodeDelete 13] with
+  | .error e => assertBool s!"carving a thread and a CNode, setting its spaces and deleting the CNode's other capability succeeds (got {repr e})" false
+  | .ok st => do
+    assertBool "setup: the thread's CSpace slot holds the carved CNode's last capability"
+      (storedAt st 970 && !ownSlotHolds st 13 &&
+        ((st.getTcb? ⟨960⟩).map (·.spaceCells[0]!.isSome) == some true))
+    match runAll st [decodeDelete 12] with
+    | .error e => assertBool s!"deleting the spaced thread's last capability succeeds (got {repr e})" false
+    | .ok st1 =>
+      assertBool "deleting a thread holding its spaces retires the thread and the CNode only it held, and keeps the boot root"
+        (!storedAt st1 960 && !storedAt st1 970 && !recordsChildAt st1 carveUt 960 &&
+          !recordsChildAt st1 carveUt 970 && storedAt st1 carveVsp.toNat)
+  -- The self-delete end to end: a carved thread given the owner's spaces,
+  -- current on the executing core, deletes its own last capability through
+  -- the syscall.  The finalisation vacates the core and flags it; the loop
+  -- deletes the thread's space slots (copies, so nothing they name is
+  -- retired), and the thread is retired.
+  match runAll carveScenario
+      [decodeCarve slotUtRetype tcbTag 960 slotOwnCnRW 12,
+       decodeSetSpace 12 slotOwnCnGrant slotOwnVsp] with
+  | .error e => assertBool s!"carving a thread and giving it the owner's spaces succeeds (got {repr e})" false
+  | .ok st0 =>
+    let tid : SeLe4n.ThreadId := ⟨960⟩
+    let c0 := Concurrency.bootCoreId
+    let running := st0.updateTcb tid fun t => { t with threadState := .Ready }
+    let own : SystemState :=
+      { running with scheduler := running.scheduler.setCurrentOnCore c0 (some tid) }
+    match dispatchSyscallAsCurrent (decodeDelete 12) tid c0 own with
+    | .error e => assertBool s!"the executing thread's delete of its own last capability succeeds (got {repr e})" false
+    | .ok ((), st1) =>
+      assertBool "a thread deleting its own last capability is retired, its core vacated and flagged, the spaces it named kept"
+        (!storedAt st1 960 && !recordsChildAt st1 carveUt 960 &&
+          st1.scheduler.currentOnCore c0 == none && st1.scheduler.reschedulePendingOnCore c0 &&
+          storedAt st1 carveCn.toNat && storedAt st1 carveVsp.toNat)
+
 def runVSpaceCapabilityBindingChecks : IO Unit := do
   IO.println "===================================================="
   IO.println "VSpace capability-binding suite (PR #845 review, P1)"
@@ -3060,6 +3139,7 @@ def runVSpaceCapabilityBindingChecks : IO Unit := do
   runReplyWaiterFinaliseChecks
   runContextlessStackChecks
   runMiddleReplyFinaliseChecks
+  runZombieDeleteChecks
   runAuthorizedChecks
   IO.println "===================================================="
   IO.println "All VSpace capability-binding checks PASS."

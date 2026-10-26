@@ -307,17 +307,30 @@ for driver in drivers:
             "mint-busy-reply-cap", "receive-with-carved-reply", "call-to-carved-reply",
             "busy-reply-cap-delete", "busy-reply-delete",
             "mint-stashed-reply-cap", "receive-stashing-reply", "stashed-reply-cap-delete",
-            "stashed-reply-delete", "send-to-unstashed-receiver")}
+            "stashed-reply-delete", "send-to-unstashed-receiver",
+            # WS-ZA ZA5.4 part 26: a carved CNode holding an endpoint's only
+            # capability, deleted: the loop deletes the endpoint's slot, which
+            # retires it, and then retires the CNode; a carved thread holding
+            # the last capability to its CNode root, deleted: the loop deletes
+            # its space slots after the finalisation, retiring the CNode, and
+            # retires the thread.  Each delete writes in place, and so does
+            # the carved thread's first space set, over the space-slot records
+            # its carve made (`TCB.spaceCellFilled`).
+            "populated-cnode-delete", "space-cnode-cap-delete", "spaced-tcb-delete",
+            "set-carved-tcb-space")}
         # WS-ZA ZA5.1: the memory invocations' readings today, each the
         # operation's own cells (object writes, the store's copy); the rows
         # that bring them to zero lower these pins.
         pinned.update({
             # WS-ZA ZA5.4: a retype reads its new object's own cells in
             # steady state (a table 13, a frame 11: the object, its store,
-            # index and type entries, the untyped's child record); a first
-            # call also builds the destination slot's capability record.
-            "untyped-retype-page-table-1": (16, 13),
-            "untyped-retype-page-table-2": (14, 13),
+            # index and type entries, the untyped's child record); the first
+            # call of the first table also builds the destination slot's
+            # capability record.  Since part 26 a boot CNode's spare records
+            # own their object targets (`unshareSpareCell`), so neither first
+            # call builds the record's target (`CapTarget.objectOver`).
+            "untyped-retype-page-table-1": (15, 13),
+            "untyped-retype-page-table-2": (13, 13),
             "untyped-retype-page-table-3": (14, 13),
             # The first carve after boot takes one cell more than its steady
             # state; since v0.36.134 that is the busy-endpoint carve, which
@@ -338,11 +351,15 @@ for driver in drivers:
             # runs, which the small-object trace does not see.
             "untyped-retype-endpoint": (11, 11), "untyped-retype-notification": (11, 11),
             # WS-ZA ZA5.4 part 23: the same carves at the finalising deletes'
-            # own ids; the busy endpoint's is the run's first carve (12).
-            "untyped-retype-busy-endpoint": (12, 11),
+            # own ids; the busy endpoint's is the run's first carve, which
+            # since part 26 writes over its slot's boot record and that
+            # record's own target as later carves do (11).
+            "untyped-retype-busy-endpoint": (11, 11),
             "untyped-retype-busy-notification": (11, 11),
             "untyped-retype-bound-notification": (11, 11),
-            "untyped-retype-reply": (12, 12), "untyped-retype-cnode": (29, 29),
+            # Since v0.36.139 a CNode carries its occupancy link array
+            # (`CNode.occ`), one cell of its own: 30.
+            "untyped-retype-reply": (12, 12), "untyped-retype-cnode": (30, 30),
             # WS-ZA ZA5.4 part 25: the busy and the stashed reply's carves,
             # at the passive reply's id once that reply is retired.
             "untyped-retype-busy-reply": (12, 12), "untyped-retype-stashed-reply": (12, 12),
@@ -350,12 +367,19 @@ for driver in drivers:
             # (same trace).  Past the store's 9, a thread adds its TCB cell and
             # two 16-byte cells built with it (`CarveRequest.objectImpl`, 3)
             # and the carve request and its decode (`carveRequestOf?`, 2): 14.
+            # Part 26 makes the thread's space-slot cells at the carve, as
+            # seL4 makes a TCB's CTEs at the retype (QEMU trace of
+            # lean_alloc_small's callers, `KernelObject.unshareFresh`): a
+            # spare record, its `some` cell and its object target for each of
+            # the two space slots (6), the thread's own slot, link and spare
+            # arrays (3) and its own register file (1): 24.  Each is the new
+            # thread's own; its first space set then writes over them.
             # A scheduling context adds its record (`SchedContext.empty`), its
             # object cell and the request and decode (4): 13, and 14 on its
             # first call, which also builds the capability's target record
             # (`CapTarget.objectOver`).
-            "untyped-retype-tcb": (14, 14), "untyped-retype-bound-tcb": (14, 14),
-            "untyped-retype-queued-tcb": (14, 14), "untyped-retype-shared-tcb": (14, 14),
+            "untyped-retype-tcb": (24, 24), "untyped-retype-bound-tcb": (24, 24),
+            "untyped-retype-queued-tcb": (24, 24), "untyped-retype-shared-tcb": (24, 24),
             # The first resume of a carved thread enqueues a run-queue key no
             # thread has held (a QEMU trace of lean_alloc_small's callers):
             # the run queue's membership table builds the new key's entry
@@ -363,7 +387,7 @@ for driver in drivers:
             # the queue's ends record its new priority bucket
             # (`RunQueueEnds.appendImpl`, 1).  The steady state reuses both.
             "resume-carved-tcb": (3, 0),
-            "untyped-retype-sched-context": (14, 13), "untyped-retype-sc-thread": (14, 14),
+            "untyped-retype-sched-context": (14, 13), "untyped-retype-sc-thread": (24, 24),
             "vspace-unmap-first": (0, 0), "vspace-map-again": (0, 0),
             "vspace-unify-instruction": (4, 3),
             "vspace-map-copy": (7, 5), "frame-revoke": (0, 0),
@@ -376,7 +400,18 @@ for driver in drivers:
             # them the whole-store reset); 10 of the 30 are the free-index
             # rewind, copied because the reset still refuses after it writes,
             # so its dispatch keeps the pre-state alive (docs/REGISTERED_DEBT.md
-            # §C, "The reset's rewind costs 10 heap cells"; part 27 reads 0).
+            # §C, "The reset's rewind costs 10 heap cells"; part 28 reads 0).
+            # WS-ZA ZA5.4 part 26: the populated CNode's carve (a CNode's 30)
+            # and the endpoint's into its slot (an endpoint's 11), the spaced
+            # thread's carve (a thread's 24) and its CNode root's into the
+            # move slot (a CNode's 30, and the capability's target cell, 31:
+            # traced, the slot's spare record last held a reply capability
+            # whose target is the boot reply object's own (`replyCapTargetIn`
+            # shares it), so `CapTarget.objectOver` builds the new one).  The
+            # carved thread's first space set writes over the records the
+            # carve made, and the thread's cell in place (0).
+            "untyped-retype-populated-cnode": (30, 30), "untyped-retype-into-cnode": (11, 11),
+            "untyped-retype-spaced-tcb": (24, 24), "untyped-retype-space-cnode": (31, 31),
             "untyped-reset": (30, 30),
         })
         expected = set(pinned)

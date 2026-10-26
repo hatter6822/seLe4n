@@ -137,7 +137,13 @@ context's ready holder is dequeued and its reply stack unlinked
 (`finaliseReply`, `finaliseSchedContextDeschedule`), and a thread's own
 delete removes its replies, returns a borrowed context to its lender and ends
 every caller waiting on it (`finaliseThreadReturnLoan`,
-`finaliseThreadEndWaiters`); any other busy kernel
+`finaliseThreadEndWaiters`); since `v0.36.139` an object that still holds
+capabilities — a populated CNode, a thread with space-slot capabilities — is
+emptied first by seL4's zombie loop (`zombieDeleteAt`, bounded by
+`zombieDeleteAt_run`), so a thread's delete of its own last capability runs end
+to end, set-space deletes each old root through the same loop, and an untyped
+with children is spliced out of the derivation tree, its recorder adopting
+them (`retireUnrecord`, kept by `TreeShapeOver.retire`); any other busy kernel
 object still outlives its last capability until its kind's finalise lands
 ([`SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) §8.6).  Every slot write keeps the bundle,
 the untyped carve included (`untypedRetypeObject_preserves_capabilityInvariantBundle`;

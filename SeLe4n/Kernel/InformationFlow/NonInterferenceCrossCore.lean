@@ -390,6 +390,19 @@ theorem cspaceDeleteSlotFinalising_crossCoreNonInterference
   crossCoreNonInterference_ofCores ctx observer hne
     (cspaceDeleteSlotFinalising_confinedToCores executingCore addr st st' hStep) hShared
 
+/-- WS-ZA ZA5.4 part 26 (**the live `.cspaceDelete` arm, the zombie delete,
+cross-core**): invisible on every core outside `cspaceDeleteSlotFinalisingCores`
+(`cspaceDeleteSlotZombie_confinedToCores`). -/
+theorem cspaceDeleteSlotZombie_crossCoreNonInterference
+    (ctx : LabelingContext) (observer : IfObserver) (executingCore : CoreId)
+    (addr : CSpaceAddr) (st st' : SystemState) (c : CoreId)
+    (hStep : cspaceDeleteSlotZombie executingCore addr st = .ok ((), st'))
+    (hne : c ∉ cspaceDeleteSlotFinalisingCores st addr)
+    (hShared : sharedViewUnchanged ctx observer st st') :
+    projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
+  crossCoreNonInterference_ofCores ctx observer hne
+    (cspaceDeleteSlotZombie_confinedToCores executingCore addr st st' hStep) hShared
+
 /-- WS-BP BP7.1 (`v0.36.7`), WS-ZA ZA5.4 part 23 (**the live `.cspaceRevoke`
 arm, cross-core**): each delete of a finalising revocation may wake the waiters
 of an endpoint or notification whose final capability it destroys, on their
@@ -422,20 +435,21 @@ theorem untypedRetypeFromCap_crossCoreNonInterference
   exact crossCoreNonInterference_ofCores ctx observer (by simp)
     (untypedRetypeObject_confinedToCores _ _ _ _ st st' hInv hCarve) hShared
 
-/-- WS-ZA ZA5.4 part 22 (**the live `.tcbSetSpace` arm, cross-core**): the space
-change is invisible on every core.  It takes the executing core only for the
-retire of a root its slot replace destroyed the last capability to, whose
-acknowledged ASID round writes the TLB state alone, and writes the object store
-and the CDT otherwise (`copyThreadSpaces_confinedToCores`). -/
-theorem copyThreadSpaces_crossCoreNonInterference
+/-- WS-ZA ZA5.4 part 26 (**the live `.tcbSetSpace` arm, through the zombie
+delete, cross-core**): invisible on every core outside
+`copyThreadSpacesZombieCores` — every core when the old CSpace root is the last
+capability to a CNode holding capabilities, whose zombie loop may wake waiters
+on their own cores (`copyThreadSpacesZombie_confinedToCores`). -/
+theorem copyThreadSpacesZombie_crossCoreNonInterference
     (ctx : LabelingContext) (observer : IfObserver) (executingCore : CoreId)
     (vtid : SeLe4n.ValidThreadId) (cnSrc vrSrc : CSpaceAddr) (st st' : SystemState)
     (c : CoreId) (hInv : st.objects.invExt)
-    (hStep : copyThreadSpaces executingCore st vtid cnSrc vrSrc = .ok st')
+    (hStep : copyThreadSpacesZombie executingCore st vtid cnSrc vrSrc = .ok st')
+    (hne : c ∉ copyThreadSpacesZombieCores st vtid)
     (hShared : sharedViewUnchanged ctx observer st st') :
     projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
-  crossCoreNonInterference_ofCores ctx observer (by simp)
-    (copyThreadSpaces_confinedToCores executingCore st st' vtid cnSrc vrSrc hInv hStep) hShared
+  crossCoreNonInterference_ofCores ctx observer hne
+    (copyThreadSpacesZombie_confinedToCores executingCore st st' vtid cnSrc vrSrc hInv hStep) hShared
 
 -- ============================================================================
 -- §6 The non-interference instantiations
@@ -1346,10 +1360,10 @@ def crossCoreNiTheorem : CrossCoreTransition → String
   | .vspaceUnmapDispatch =>
       niName! vspaceUnmapPageWithShootdownAndIcacheBroadcast_crossCoreNonInterference
   | .untypedResetDispatch => niName! untypedResetFromCap_crossCoreNonInterference
-  | .cspaceDeleteDispatch => niName! cspaceDeleteSlotFinalising_crossCoreNonInterference
+  | .cspaceDeleteDispatch => niName! cspaceDeleteSlotZombie_crossCoreNonInterference
   | .cspaceRevokeDispatch => niName! cspaceRevokeCdtFinalising_crossCoreNonInterference
   | .untypedRetypeDispatch => niName! untypedRetypeFromCap_crossCoreNonInterference
-  | .tcbSetSpaceDispatch => niName! copyThreadSpaces_crossCoreNonInterference
+  | .tcbSetSpaceDispatch => niName! copyThreadSpacesZombie_crossCoreNonInterference
   | .declassifyDispatch =>
       niName! declassifyObjectFromCore_crossCoreNonInterference
   -- SM9.C.6: the DISPATCH-level composition, for the round-4 reason and one
@@ -1685,9 +1699,10 @@ def crossCoreTransitionWritesRemote : CrossCoreTransition → Bool
   | .cspaceRevokeDispatch => true
   -- WS-ZA ZA5.4 part 14: and the carve, which writes the object store alone
   | .untypedRetypeDispatch => false
-  -- WS-ZA ZA5.4 part 22: and the space change, which retires through the same
-  -- object-store erase
-  | .tcbSetSpaceDispatch => false
+  -- WS-ZA ZA5.4 part 26: and the space change, whose old CSpace root, when it
+  -- is the last capability to a CNode holding capabilities, is deleted by the
+  -- zombie loop, whose finalisations wake waiters on their own cores
+  | .tcbSetSpaceDispatch => true
   -- SM8.C.9: and the declassification, for a different reason — the only field
   -- it writes is not per-core at all
   | .declassifyDispatch => false
@@ -1702,6 +1717,6 @@ def crossCoreTransitionWritesRemote : CrossCoreTransition → Bool
   | .yieldDispatch => false
 
 theorem crossCoreTransitionWritesRemote_count :
-    (CrossCoreTransition.all.filter crossCoreTransitionWritesRemote).length = 24 := by decide
+    (CrossCoreTransition.all.filter crossCoreTransitionWritesRemote).length = 25 := by decide
 
 end SeLe4n.Kernel

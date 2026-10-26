@@ -2554,6 +2554,63 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 6] = [
             CNODE_CAP,
             [FRAME_SLOT, 0, 0, 0],
         ),
+        // WS-ZA ZA5.4 part 26: a carved CNode holding an endpoint's only
+        // capability, its own only capability deleted: the delete empties
+        // the CNode slot by slot (the zombie loop, seL4's `finaliseSlot`),
+        // which retires the endpoint, then retires the CNode.
+        invocation(
+            "untyped-retype-populated-cnode",
+            UNTYPED_RETYPE,
+            UNTYPED_CAP,
+            [CNODE_TYPE, PASSIVE_CHILD_IDS[3], CNODE_CAP, FRAME_SLOT],
+        ),
+        invocation(
+            "untyped-retype-into-cnode",
+            UNTYPED_RETYPE,
+            UNTYPED_CAP,
+            [ENDPOINT_TYPE, PASSIVE_CHILD_IDS[0], FRAME_CAP, 0],
+        ),
+        invocation(
+            "populated-cnode-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [FRAME_SLOT, 0, 0, 0],
+        ),
+        // A carved thread given a carved CNode as its CSpace root and the
+        // boot VSpace root, the CNode's other capability deleted so the
+        // thread's slot holds its last, then the thread's only capability
+        // deleted: the finalisation leaves its space slots, which the loop
+        // then deletes, retiring the CNode, and the thread is retired.
+        invocation(
+            "untyped-retype-spaced-tcb",
+            UNTYPED_RETYPE,
+            UNTYPED_CAP,
+            [TCB_TYPE, THREAD_CHILD_IDS[0], CNODE_CAP, FRAME_SLOT],
+        ),
+        invocation(
+            "untyped-retype-space-cnode",
+            UNTYPED_RETYPE,
+            UNTYPED_CAP,
+            [CNODE_TYPE, PASSIVE_CHILD_IDS[3], CNODE_CAP, MOVE_SLOT],
+        ),
+        invocation(
+            "set-carved-tcb-space",
+            TCB_SET_SPACE,
+            FRAME_CAP,
+            [MOVE_CAP, VSPACE_CAP, 0, 0],
+        ),
+        invocation(
+            "space-cnode-cap-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [MOVE_SLOT, 0, 0, 0],
+        ),
+        invocation(
+            "spaced-tcb-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [FRAME_SLOT, 0, 0, 0],
+        ),
         invocation("untyped-reset", UNTYPED_RESET, UNTYPED_CAP, [0; 4]),
     ],
 ];

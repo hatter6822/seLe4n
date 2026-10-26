@@ -16,6 +16,7 @@ import SeLe4n.Kernel.RobinHood
 import SeLe4n.Kernel.SchedContext.Types
 import SeLe4n.Model.Object.UniqueSlotMap
 import SeLe4n.Model.Erased
+import SeLe4n.Model.Object.SlotOccupancy
 
 namespace SeLe4n.Model
 
@@ -1226,11 +1227,14 @@ record.  Equal to the capability of those fields (`overwrite_eq`). -/
 @[noinline] def CapTarget.ofObject (id : SeLe4n.ObjId) : CapTarget := .object id
 
 /-- WS-ZA ZA5.4: the target naming object `id`, written over `t` when `t` already
-names an object.  Out of line, with a distinct second arm, so the first arm
-keeps its reuse of `t`'s cell. -/
+names an object or a reply (a constructor of one field, the same cell size, so
+the compiler reuses `t`'s cell for the new one: a slot whose last capability was
+a reply capability is carved into in place).  Out of line, with a distinct
+fallback arm, so the first two keep their reuse of `t`'s cell. -/
 @[noinline] def CapTarget.objectOver (t : CapTarget) (id : SeLe4n.ObjId) : CapTarget :=
   match t with
   | .object _ => .object id
+  | .replyCap _ => .object id
   | _ => CapTarget.ofObject id
 
 /-- WS-ZA ZA5.4: `rights`, kept as the record's own `rr` when equal.  Out of line,
@@ -1285,6 +1289,38 @@ theorem Capability.overwrite_eq (r : Capability) (target : CapTarget) (rights : 
     r.overwrite target rights badgeWord badged mapAsid mapVaddr mapEpoch mapped freeIndex =
       ⟨target, rights, badgeWord, badged, mapAsid, mapVaddr, mapEpoch, mapped, freeIndex⟩ := by
   unfold overwrite; split <;> simp_all
+
+/-- WS-ZA ZA5.3 part 6: **the records a CNode's slots keep while empty** (seL4's
+`cte_t`, which a slot owns for the CNode's life).  Entry `i` is the capability
+cell slot `i` last held, kept when the slot is cleared so the next capability
+written there overwrites it in place instead of allocating one.  Logically a
+single value (`Squash`), so no theorem reads it and a CNode with any spares is
+the CNode with any other: only the compiled kernel sees the records. -/
+abbrev SpareCells := Squash (Array (Option Capability))
+
+instance : Repr SpareCells := ⟨fun _ _ => "spare cells"⟩
+
+namespace SpareCells
+
+/-- `sp` with slot `i` keeping the cell `o` (a cleared slot's record); a `none`
+leaves the slot's spare as it was. -/
+@[inline] def keep (sp : SpareCells) (i : Nat) (o : Option Capability) : SpareCells :=
+  Quot.lift (fun a => Squash.mk (match o with
+      | some _ => a.setIfInBounds i o
+      | none => a))
+    (fun _ _ _ => Quot.sound trivial) sp
+
+/-- `sp` with each slot `i` whose cell in `cells` holds a capability `f i`
+rejects keeping that capability as its record (a bulk clear's `keep`). -/
+def keepFiltered (sp : SpareCells) (cells : Array (Option Capability))
+    (f : Nat → Capability → Bool) : SpareCells :=
+  Quot.lift (fun a => Squash.mk (a.mapIdx fun i o =>
+      match cells[i]? with
+      | some (some c) => if f i c then o else some c
+      | _ => o))
+    (fun _ _ _ => Quot.sound trivial) sp
+
+end SpareCells
 
 structure TCB where
   tid : SeLe4n.ThreadId
@@ -1566,6 +1602,13 @@ structure TCB where
       send or call that blocks.  seL4 decides the same question at the
       rendezvous from `tcbFault`. -/
   ipcFaultSend : Bool := false
+  /-- WS-ZA ZA5.4 part 26: **the records the two space slots keep while
+      empty**, as a CNode's slots keep theirs (`CNode.spare`): entry `i` is
+      the capability cell slot `i` last held, or the one the carve made with
+      the thread (seL4's TCB CTEs, which exist from the retype), so the next
+      capability written there overwrites it in place.  Logically one value
+      (`SpareCells`), so no theorem reads it. -/
+  spaceSpare : SpareCells := Squash.mk #[none, none]
   deriving Repr
 
 /-! ### A thread's space slots (seL4's `tcbCTable` and `tcbVTable`)
@@ -1874,26 +1917,26 @@ every other field is the record's. -/
 /-- WS-ZA ZA5.2: the binding of a constructed TCB is the one its two code fields
 stand for, so a record update writing a binding's codes reads back that binding
 (`SchedContextBinding.ofCodes_codes`). -/
-@[simp] theorem TCB.schedContextBinding_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46).schedContextBinding =
+@[simp] theorem TCB.schedContextBinding_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47).schedContextBinding =
       SeLe4n.Kernel.SchedContextBinding.ofCodes f19 f20 := rfl
 
 /-- The roots of a constructed TCB are the objects its two space slots name, so a
 record update leaving the slots alone reads the old roots. -/
-@[simp] theorem TCB.cspaceRoot_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46).cspaceRoot = TCB.spaceCellObject f4[0] := rfl
+@[simp] theorem TCB.cspaceRoot_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47).cspaceRoot = TCB.spaceCellObject f4[0] := rfl
 
-@[simp] theorem TCB.vspaceRoot_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46).vspaceRoot = TCB.spaceCellObject f4[1] := rfl
+@[simp] theorem TCB.vspaceRoot_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47).vspaceRoot = TCB.spaceCellObject f4[1] := rfl
 
-@[simp] theorem TCB.ipcState_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46).ipcState = ThreadIpcState.ofCodes f7 f42 := rfl
+@[simp] theorem TCB.ipcState_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47).ipcState = ThreadIpcState.ofCodes f7 f42 := rfl
 
-@[simp] theorem TCB.replyObject_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46).replyObject = SeLe4n.ReplyId.ofOptCode f26 := rfl
+@[simp] theorem TCB.replyObject_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47).replyObject = SeLe4n.ReplyId.ofOptCode f26 := rfl
 
-@[simp] theorem TCB.pendingReceiveReply_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46).pendingReceiveReply = SeLe4n.ReplyId.ofOptCode f27 := rfl
+@[simp] theorem TCB.pendingReceiveReply_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47).pendingReceiveReply = SeLe4n.ReplyId.ofOptCode f27 := rfl
 
 theorem TCB.ofCodes_ipcCodes (t : TCB) :
     ThreadIpcState.ofCodes t.ipcObjectCode t.ipcStateCode = t.ipcState := rfl
@@ -1938,14 +1981,14 @@ theorem TCB.ipcState_ext {a b : TCB} (h : a.ipcState = b.ipcState) :
 view when a code is copied from another record: together they let `simp` read
 a written link as the value written and an untouched link as the old view. -/
 
-@[simp] theorem TCB.queuePrev_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46).queuePrev = SeLe4n.ThreadId.ofOptCode f11 := rfl
+@[simp] theorem TCB.queuePrev_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47).queuePrev = SeLe4n.ThreadId.ofOptCode f11 := rfl
 
-@[simp] theorem TCB.queuePPrev_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46).queuePPrev = QueuePPrev.ofOptCode f12 := rfl
+@[simp] theorem TCB.queuePPrev_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47).queuePPrev = QueuePPrev.ofOptCode f12 := rfl
 
-@[simp] theorem TCB.queueNext_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46).queueNext = SeLe4n.ThreadId.ofOptCode f13 := rfl
+@[simp] theorem TCB.queueNext_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47).queueNext = SeLe4n.ThreadId.ofOptCode f13 := rfl
 
 /-- The notification-queue predecessor, read from its scalar code. -/
 @[inline] def TCB.ntfnPrev (t : TCB) : Option SeLe4n.ThreadId :=
@@ -1955,11 +1998,11 @@ a written link as the value written and an untouched link as the old view. -/
 @[inline] def TCB.ntfnNext (t : TCB) : Option SeLe4n.ThreadId :=
   SeLe4n.ThreadId.ofOptCode t.ntfnNextCode
 
-@[simp] theorem TCB.ntfnPrev_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46).ntfnPrev = SeLe4n.ThreadId.ofOptCode f30 := rfl
+@[simp] theorem TCB.ntfnPrev_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47).ntfnPrev = SeLe4n.ThreadId.ofOptCode f30 := rfl
 
-@[simp] theorem TCB.ntfnNext_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46).ntfnNext = SeLe4n.ThreadId.ofOptCode f31 := rfl
+@[simp] theorem TCB.ntfnNext_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47).ntfnNext = SeLe4n.ThreadId.ofOptCode f31 := rfl
 
 @[simp] theorem TCB.ofOptCode_ntfnPrevCode (t : TCB) :
     SeLe4n.ThreadId.ofOptCode t.ntfnPrevCode = t.ntfnPrev := rfl
@@ -2509,7 +2552,11 @@ theorem TCB.ext {a b : TCB}
          hQPrevC, hQPPrevC, hQNextC, hPend, hRC, hFhS, hFhW, hBnC, hScC, hScO, hTb, hMcp, hPipC, hTo,
          hCpuAff, hReplyC, hPendReplyC, hPendFault, hFp, hNPrevC, hNNextC,
          hRCore, hRPrio, hRPrev, hRNext, hRBPrev, hRBNext, hWPrev, hWNext, hWHead, hWCount,
-         hIpcS, hIBadge, hIBadged, hIGrant, hIFault⟩
+         hIpcS, hIBadge, hIBadged, hIGrant, hIFault, Subsingleton.elim _ _⟩
+
+/-- A thread's spare space cells are logically one value (`SpareCells`). -/
+@[simp] theorem TCB.with_spaceSpare (t : TCB) (v : SpareCells) : { t with spaceSpare := v } = t := by
+  cases t; congr; exact Subsingleton.elim _ _
 
 /-- Intrusive FIFO queue metadata for endpoint wait queues.
 
@@ -3317,38 +3364,6 @@ theorem slotArrayGet_mapIdx (cells : Array (Option Capability))
   unfold slotArrayGet
   by_cases h : s.toNat < cells.size <;> simp [h]
 
-/-- WS-ZA ZA5.3 part 6: **the records a CNode's slots keep while empty** (seL4's
-`cte_t`, which a slot owns for the CNode's life).  Entry `i` is the capability
-cell slot `i` last held, kept when the slot is cleared so the next capability
-written there overwrites it in place instead of allocating one.  Logically a
-single value (`Squash`), so no theorem reads it and a CNode with any spares is
-the CNode with any other: only the compiled kernel sees the records. -/
-abbrev SpareCells := Squash (Array (Option Capability))
-
-instance : Repr SpareCells := ⟨fun _ _ => "spare cells"⟩
-
-namespace SpareCells
-
-/-- `sp` with slot `i` keeping the cell `o` (a cleared slot's record); a `none`
-leaves the slot's spare as it was. -/
-@[inline] def keep (sp : SpareCells) (i : Nat) (o : Option Capability) : SpareCells :=
-  Quot.lift (fun a => Squash.mk (match o with
-      | some _ => a.setIfInBounds i o
-      | none => a))
-    (fun _ _ _ => Quot.sound trivial) sp
-
-/-- `sp` with each slot `i` whose cell in `cells` holds a capability `f i`
-rejects keeping that capability as its record (a bulk clear's `keep`). -/
-def keepFiltered (sp : SpareCells) (cells : Array (Option Capability))
-    (f : Nat → Capability → Bool) : SpareCells :=
-  Quot.lift (fun a => Squash.mk (a.mapIdx fun i o =>
-      match cells[i]? with
-      | some (some c) => if f i c then o else some c
-      | _ => o))
-    (fun _ _ _ => Quot.sound trivial) sp
-
-end SpareCells
-
 /-- WS-H13/H-01: Depth-aware CNode with compressed-path guard.
 
 `depth` = maximum remaining CSpace depth in bits from this node to any leaf.
@@ -3390,6 +3405,19 @@ structure CNode where
   records, so a link is written in place and no entry is shared. -/
   links      : Array Nat
   links_size : links.size = slotLinkWords * 2 ^ radixWidth
+  /-- WS-ZA ZA5.4 part 26: **the occupied slots, linked through the slots**:
+  two words per slot, its next and its previous occupied slot (`0` for none,
+  `j + 1` for slot `j`), written in place when a slot is filled or emptied, so
+  a walk of the occupied slots (the zombie loop of a final delete) visits no
+  empty slot and nothing is allocated (`SlotOccupancy`). -/
+  occ        : Array Nat
+  occ_size   : occ.size = 2 * 2 ^ radixWidth
+  /-- WS-ZA ZA5.4 part 26: the first occupied slot's code (`0` for none). -/
+  occHead    : Nat
+  /-- WS-ZA ZA5.4 part 26: **the links list exactly the occupied slots**, each
+  once, from the head (`SlotOccupancy.Encodes`); the list itself is a ghost
+  (`CNode.occupiedList`). -/
+  occ_agree  : ∃ L, SlotOccupancy.Encodes cells occ occHead L
   /-- WS-ZA ZA5.3 part 6: the records the slots keep while empty. -/
   spare      : SpareCells
   deriving Repr
@@ -3419,6 +3447,12 @@ def CNode.ofSlots (depth guardWidth guardValue radixWidth : Nat)
   cells_size := slotArrayOf_size _ _
   links := Array.replicate (slotLinkWords * 2 ^ radixWidth) 0
   links_size := Array.size_replicate
+  occ := SlotOccupancy.buildWords (slotArrayOf radixWidth m) (slotArrayOf radixWidth m).size
+    (Array.replicate (2 * 2 ^ radixWidth) 0) 0
+  occ_size := by rw [SlotOccupancy.size_buildWords, Array.size_replicate]
+  occHead := SlotOccupancy.buildHead (slotArrayOf radixWidth m) (slotArrayOf radixWidth m).size 0
+  occ_agree := SlotOccupancy.build_encodes _ _
+    (by rw [Array.size_replicate, slotArrayOf_size])
   spare := Squash.mk (spareCellsFor radixWidth)
   slots_agree := fun s => by
     rw [SeLe4n.Erased.out_mk, SeLe4n.UniqueSlotMap.get?_filter]

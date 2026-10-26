@@ -1855,7 +1855,8 @@ theorem finaliseFinalObject_preserves_projection (ctx : LabelingContext) (observ
 /-- **The retire after the finalisation is invisible** when the finalisation is
 (`finaliseFinalObject_preserves_projection`) and the retire is
 (`retireFinalObject_preserves_projection`): the finalisation records no untyped
-child, so the untypeds recording the object are the pre-state's. -/
+child, so the untypeds recording the object, and the children it records, are
+the pre-state's. -/
 theorem retireFinalisedObject_preserves_projection (ctx : LabelingContext)
     (observer : IfObserver) (ec : CoreId) (target recorder : Nat) {st : SystemState}
     (h : ipcReachable st) (hLc : lentContextHeadsLenderFrame st)
@@ -1877,6 +1878,8 @@ theorem retireFinalisedObject_preserves_projection (ctx : LabelingContext)
       threadObservable ctx observer server = false)
     (hU : target ≠ 0 → ∀ w, untypedRecordsChild st w (SeLe4n.ObjId.ofNat (target - 1)) = true →
       objectObservable ctx observer w = false)
+    (hK : target ≠ 0 → ∀ y, untypedRecordsChild st (SeLe4n.ObjId.ofNat (target - 1)) y = true →
+      objectObservable ctx observer y = false)
     (hR : recorder ≠ 0 →
       objectObservable ctx observer (SeLe4n.ObjId.ofNat (recorder - 1)) = false) :
     projectState ctx observer (retireFinalisedObject ec target recorder st) =
@@ -1885,7 +1888,8 @@ theorem retireFinalisedObject_preserves_projection (ctx : LabelingContext)
   have hUt := hF.getUntyped?
   unfold retireFinalisedObject
   rw [retireFinalObject_preserves_projection ctx observer ec target recorder hF.invExt hx
-    (fun h0 w hw => hU h0 w (by unfold untypedRecordsChild at hw ⊢; rw [hUt] at hw; exact hw)) hR,
+    (fun h0 w hw => hU h0 w (by unfold untypedRecordsChild at hw ⊢; rw [hUt] at hw; exact hw))
+    (fun h0 y hy => hK h0 y (by unfold untypedRecordsChild at hy ⊢; rw [hUt] at hy; exact hy)) hR,
     finaliseFinalObject_preserves_projection ctx observer target h hLc hx hW hBd hTF hSF hRF hFlow
       hValid hIdx hSet hBlockingChainHigh]
 

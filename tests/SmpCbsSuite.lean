@@ -1277,8 +1277,10 @@ private def runSyscallSchedResolverScenarios : IO Unit := do
   -- (vi) WS-ZA ZA5.4 part 23: the finalising delete and the revocation declare
   -- whatever the operands — every core's run queue, since a destroyed
   -- endpoint's or notification's cancelled waiters wake on their own cores.
-  assertBool "the capability destroys declare unconditionally"
-    ([SyscallId.cspaceDelete, .cspaceRevoke].all fun sid =>
+  -- Part 26: and the space change, whose old CSpace root may be deleted by the
+  -- zombie loop.
+  assertBool "the capability destroys and the space change declare unconditionally"
+    ([SyscallId.cspaceDelete, .cspaceRevoke, .tcbSetSpace].all fun sid =>
       declaredSchedFootprintSyscall sid &&
         (schedLockSetForSyscall sid { caller := tid0 } bootCoreId st).isSome)
 

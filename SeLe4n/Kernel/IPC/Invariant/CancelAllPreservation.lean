@@ -810,6 +810,42 @@ theorem cspaceRevokeCdtFinalising_preserves_ipcInvariantFull
     ipcInvariantFull st' :=
   (cspaceRevokeCdtFinalising_closed finaliseLoanBundle
     (fun c s s' hQ hD => cspaceDeleteSlotFinalising_preserves_finaliseLoanBundle ec c s s' hQ hD)
+    (fun d s hQ => finaliseFinalObject_preserves_finaliseLoanBundle d s hQ)
+    ⟨hInv, hObjInv, hW⟩ hStep).1
+
+/-- `.tcbSetSpace` through the zombie delete preserves the IPC bundle: the loop's
+passes are a chain of finalising deletes and finalisations carrying the bundle
+the delete carries, and the plain space change after them preserves it
+(`copyThreadSpaces_preserves_ipcInvariantFull`). -/
+theorem copyThreadSpacesZombie_preserves_ipcInvariantFull (ec : Concurrency.CoreId)
+    (st st' : SystemState) (vtid : SeLe4n.ValidThreadId) (cnSrc vrSrc : CSpaceAddr)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hW : lentContextHeadsLenderFrame st)
+    (hStep : copyThreadSpacesZombie ec st vtid cnSrc vrSrc = .ok st') :
+    ipcInvariantFull st' := by
+  have hChain : ∀ n s, ZombieRun ec n st s → finaliseLoanBundle s := fun _ _ hR =>
+    hR.chain.closed finaliseLoanBundle
+      (fun c s s' hQ hD => cspaceDeleteSlotFinalising_preserves_finaliseLoanBundle ec c s s' hQ hD)
+      (fun d s hQ => finaliseFinalObject_preserves_finaliseLoanBundle d s hQ)
+      ⟨hInv, hObjInv, hW⟩
+  rcases copyThreadSpacesZombie_cases hStep with h1 | ⟨n, s, hR, rfl | h2⟩
+  · exact copyThreadSpaces_preserves_ipcInvariantFull ec st st' vtid cnSrc vrSrc hObjInv hInv h1
+  · exact (hChain n _ hR).1
+  · obtain ⟨hI, hO, -⟩ := hChain n s hR
+    exact copyThreadSpaces_preserves_ipcInvariantFull ec s st' vtid cnSrc vrSrc hO hI h2
+
+/-- `.cspaceDelete`: the zombie delete preserves the IPC bundle — a chain of
+finalising deletes and finalisations (`cspaceDeleteSlotZombie_closed`), each
+carrying the bundle the delete carries. -/
+theorem cspaceDeleteSlotZombie_preserves_ipcInvariantFull
+    (ec : Concurrency.CoreId) (addr : CSpaceAddr) (st st' : SystemState)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hW : lentContextHeadsLenderFrame st)
+    (hStep : cspaceDeleteSlotZombie ec addr st = .ok ((), st')) :
+    ipcInvariantFull st' :=
+  (cspaceDeleteSlotZombie_closed finaliseLoanBundle
+    (fun c s s' hQ hD => cspaceDeleteSlotFinalising_preserves_finaliseLoanBundle ec c s s' hQ hD)
+    (fun d s hQ => finaliseFinalObject_preserves_finaliseLoanBundle d s hQ)
     ⟨hInv, hObjInv, hW⟩ hStep).1
 
 

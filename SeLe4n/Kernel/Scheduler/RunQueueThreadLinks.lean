@@ -92,7 +92,7 @@ theorem TCB.runLinkOn_setBucketPrev (tcb : TCB) (v : Nat) (c : CoreId) :
 
 /-- A TCB taken out of its run queue: marked on no core, with its four
 neighbour links cleared too, so a dequeued thread keeps no stale neighbour
-code (a final delete's retire reads all five, `threadQuiescent`). -/
+code, though every reader masks the four by the core code (`TCB.runLinkOn`). -/
 @[inline] def TCB.detachRun (tcb : TCB) : TCB :=
   { tcb with runCoreCode := 0, runPrevCode := 0, runNextCode := 0,
              runBucketPrevCode := 0, runBucketNextCode := 0 }

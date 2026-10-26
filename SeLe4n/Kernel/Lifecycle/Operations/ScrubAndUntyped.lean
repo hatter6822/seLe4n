@@ -781,6 +781,16 @@ theorem maxCNodeRadixBits_le_maxCSpaceDepth : maxCNodeRadixBits ≤ maxCSpaceDep
 `seL4_MinSchedContextBits` (7) to the largest untyped. -/
 def minSchedContextSizeBits : Nat := 7
 
+/-- WS-ZA ZA5.4 part 26: **a record of its own for each of a carved thread's two
+space slots**, made with the thread as seL4's TCB CTEs are made at the retype,
+so the thread's first space set writes over them rather than allocating.  Each
+record targets an object named by its slot number, so the compiler cannot share
+one record between the slots; the carve gives the thread its own copies
+(`KernelObject.unshareFresh`). -/
+def carvedTcbSpareCells : Array (Option Capability) :=
+  #[some { target := .object ⟨0⟩, rights := AccessRightSet.empty },
+    some { target := .object ⟨1⟩, rights := AccessRightSet.empty }]
+
 /-- **WS-ZA ZA5.4 part 14: the thread a carve makes** — seL4's `createObject`
 for `seL4_TCBObject`: inactive, at priority 0 with maximum controlled priority 0,
 in the creating core's current domain (`ksCurDomain`) and with the creating
@@ -795,7 +805,8 @@ def carvedTcb (childId : SeLe4n.ObjId) (domain : SeLe4n.DomainId)
     maxControlledPriority := SeLe4n.Priority.ofNat 0
     domain := domain
     cpuAffinity := some core
-    ipcBuffer := SeLe4n.VAddr.ofNat 0 }
+    ipcBuffer := SeLe4n.VAddr.ofNat 0
+    spaceSpare := Squash.mk carvedTcbSpareCells }
 
 /-- **WS-ZA ZA5.4 part 14: the CNode a carve makes** — `2 ^ radixBits` empty
 slots, no guard, resolving exactly its radix bits: the CNode seL4's
@@ -982,15 +993,18 @@ def CarveRequest.object (untypedId childId : SeLe4n.ObjId) (ut : UntypedObject) 
 from constant fields alone, are closed terms the compiler would hold as one
 shared static value, so the first in-place write to a carved one (a receive's
 queue end, a wait's) would copy it; each is given its own cells where it is
-built (`KernelObject.unshareFresh`).  Every other kind is built from the carve's
-operands, so its cells are already its own. -/
+built (`KernelObject.unshareFresh`).  A thread is too: its record is built from
+the carve's operands, but its space slots, their links and their spare records
+are constants, so the thread's first space set would copy the slot and link
+arrays and could not write over a shared record.  Every other kind is built
+from the carve's operands, so its cells are already its own. -/
 def CarveRequest.objectImpl (untypedId childId : SeLe4n.ObjId) (ut : UntypedObject) (idx : Nat) :
     CarveRequest → KernelObject
   | .frame => .frame (untypedNextFrame ut idx)
   | .untyped b => .untyped (untypedNextChild ut idx untypedId b)
   | .vspaceRoot asid => .vspaceRoot (untypedNextVSpaceRoot ut idx asid)
   | .pageTable => .pageTable (untypedNextPageTable ut idx)
-  | .tcb dom core => .tcb (carvedTcb childId dom core)
+  | .tcb dom core => (KernelObject.tcb (carvedTcb childId dom core)).unshareFresh
   | .endpoint => (KernelObject.endpoint (Endpoint.ofQueues {} {})).unshareFresh
   | .notification =>
       (KernelObject.notification ({ state := .idle } : Notification)).unshareFresh

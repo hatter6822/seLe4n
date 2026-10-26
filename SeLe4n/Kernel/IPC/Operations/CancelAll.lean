@@ -978,7 +978,8 @@ into no reply-waiter queue and holds no reply link; it holds no timeout budget;
 a context it holds on loan goes back to its lender by the lender's own pop, and
 every other caller waiting on it for a reply is ended as `reply_remove` ends it
 (`replyWaitersAdmitted`, which reads each of them on this state);
-its space slots are empty (their finalising delete is a later cut's); a bound
+its space slots may hold capabilities, which the zombie loop deletes after
+the finalisation, by the finalising delete (`zombiePasses`); a bound
 notification and a bound scheduling context are bound back to it; and nothing
 names it as a reservation's origin, but the context its own reply's pop hands
 back to it, which clears that origin (`replyPopClearedOrigin?`), nor as a
@@ -993,7 +994,6 @@ the retire then refuses the thread. -/
     (decide (4 ≤ t.ipcStateCode) ||
       t.replyWaiterNextCode == 0 && t.replyWaiterPrevCode == 0 && t.replyObjectCode == 0) &&
     t.timeoutBudget.isNone && replyWaitersAdmitted st tid t &&
-    t.spaceCells[0].isNone && t.spaceCells[1].isNone &&
     threadIpcCancelAdmitted st tid t &&
     (t.boundNotificationCode == 0 ||
       ((match st.getNotification? ⟨t.boundNotificationCode - 1⟩ with
@@ -1266,7 +1266,11 @@ its writes. -/
 /-- **The destroy cleanup of a finalised thread** (`lifecyclePreRetypeCleanup`'s
 thread arm): run once the thread is retirable — quiescent, held by no core and
 named by no object — so its reference sweeps find nothing and only its two
-space slots leave the derivation tree. -/
+space slots leave the derivation tree.  Its guard, `threadRetirable`, walks the
+object table (`storeNamesThreadNone`); that walk is acceptable here because it
+is the specification's alone: the cleanup is proven the identity
+(`finaliseThreadCleanup_eq`) and compiled as it (`finaliseThreadCleanup_eq_impl`),
+so the kernel never runs it. -/
 def finaliseThreadCleanup (st : SystemState) (x : SeLe4n.ObjId) : SystemState :=
   if threadRetirable st x && x.val != 0 then
     match st.getObject? x with
@@ -1489,7 +1493,7 @@ theorem lifecyclePreRetypeCleanup_of_threadRetirable {st : SystemState} {x : SeL
     (hRes : x.val ≠ 0) :
     lifecyclePreRetypeCleanup st x (.tcb t) (.tcb t) = .ok st := by
   obtain ⟨hTid, hQ, hHeld, hNames⟩ := threadRetirable_spec hT hR
-  obtain ⟨-, hIS, hIO, -, hQN, hQP, -, -, -, hRC, -, -, -, -, -, -, hWH, hSC, hSO, -, hRO, -,
+  obtain ⟨-, hIS, hIO, -, hQN, hQP, -, -, -, hRC, -, -, hWH, hSC, hSO, -, hRO, -,
     -, hS0, hS1⟩ := threadQuiescent_codes hQ
   have hX : t.tid.toObjId = x := by rw [hTid]; rfl
   have hObj : st.objects[x]? = some (.tcb t) := by rw [← hT]; simp

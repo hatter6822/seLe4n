@@ -821,9 +821,11 @@ def notificationReferencesReservedIdleSlot (notif : Notification) : Bool :=
     (`capTargetsReservedIdleObject`). -/
 def cnodeReferencesReservedIdleSlot (cn : CNode) : Bool :=
   match cn with
-  -- The derivation links name slots of CNodes, never an idle object; the spare
-  -- records are no slot's capability (`SpareCells`: logically one value).
-  | ⟨_depth, _guardWidth, _guardValue, _radixWidth, _slotsGhost, _cells, _, _, _links, _, _spare⟩ =>
+  -- The derivation links name slots of CNodes, never an idle object, and so do
+  -- the occupancy links; the spare records are no slot's capability
+  -- (`SpareCells`: logically one value).
+  | ⟨_depth, _guardWidth, _guardValue, _radixWidth, _slotsGhost, _cells, _, _, _links, _, _occ, _,
+      _occHead, _, _spare⟩ =>
     !(cn.allCells fun _ cap => !SeLe4n.Kernel.capTargetsReservedIdleObject cap)
 
 /-- PR #889 review round 8: every field of a boot **TCB** that can hold an
@@ -860,7 +862,9 @@ def cnodeReferencesReservedIdleSlot (cn : CNode) : Bool :=
       flags) hold no id.
     * `spaceLinks` — the space slots' derivation links, which name slots, not
       objects a capability reaches through, and which a boot thread leaves
-      clear. -/
+      clear.
+    * `spaceSpare` — the space slots' spare records, no slot's capability
+      (`SpareCells`: logically one value). -/
 def tcbReferencesReservedIdleSlot (tcb : TCB) : Bool :=
   match tcb with
   | ⟨tid, _priority, _domain, spaceCells, _spaceLinks, _ipcBuffer, _ipcObjectCode, _threadState,
@@ -870,7 +874,9 @@ def tcbReferencesReservedIdleSlot (tcb : TCB) : Bool :=
      pendingReceiveReplyCode, _pendingFault, _fpContext, ntfnPrevCode, ntfnNextCode,
      _runCoreCode, _runPrio, _runPrevCode, _runNextCode, _runBucketPrevCode, _runBucketNextCode,
      replyWaiterPrevCode, replyWaiterNextCode, replyWaitersHeadCode, _replyWaitersCount, _ipcStateCode,
-     _ipcBadge, _ipcBadged, _ipcCanGrant, _ipcFaultSend⟩ =>
+     _ipcBadge, _ipcBadged, _ipcCanGrant, _ipcFaultSend,
+     -- The space slots' spare records are no slot's capability (`SpareCells`).
+     _spaceSpare⟩ =>
     SeLe4n.Kernel.isIdleThreadId tid ||
     SeLe4n.Kernel.isIdleObjId (TCB.spaceCellObject spaceCells[0]) ||
     SeLe4n.Kernel.isIdleObjId (TCB.spaceCellObject spaceCells[1]) ||
@@ -1829,8 +1835,10 @@ def bootSafeCapCheck (cap : Capability) : Bool :=
     the slot map (`CNode.allSlots_eq_allCells`). -/
 def bootSafeCnodeCheck (cn : CNode) : Bool :=
   match cn with
-  -- The spare records are no slot's capability (`SpareCells`: logically one value).
-  | ⟨_depth, _guardWidth, _guardValue, _radixWidth, _slotsGhost, _cells, _, _, _links, _, _spare⟩ =>
+  -- The spare records are no slot's capability (`SpareCells`: logically one value);
+  -- the occupancy links name slots of this CNode alone.
+  | ⟨_depth, _guardWidth, _guardValue, _radixWidth, _slotsGhost, _cells, _, _, _links, _, _occ, _,
+      _occHead, _, _spare⟩ =>
     decide (cn.depth ≤ maxCSpaceDepth) &&
     decide (cn.bitsConsumed > 0 → cn.bitsConsumed ≤ cn.depth ∧ 0 < cn.bitsConsumed ∧ cn.guardBounded) &&
     cn.allCells (fun _ cap => bootSafeCapCheck cap) &&
@@ -1906,7 +1914,9 @@ def bootSafeTcbCheck (tcb : TCB) : Bool :=
      _pendingReceiveReply, _pendingFault, _fpContext, _ntfnPrevCode, _ntfnNextCode,
      _runCoreCode, _runPrio, _runPrevCode, _runNextCode, _runBucketPrevCode, _runBucketNextCode,
      _replyWaiterPrevCode, _replyWaiterNextCode, _replyWaitersHeadCode, _replyWaitersCount, _ipcStateCode,
-     _ipcBadge, _ipcBadged, _ipcCanGrant, _ipcFaultSend⟩ =>
+     _ipcBadge, _ipcBadged, _ipcCanGrant, _ipcFaultSend,
+     -- The space slots' spare records are no slot's capability (`SpareCells`).
+     _spaceSpare⟩ =>
     tcb.pendingMessage.isNone && decide (tcb.ipcState = .ready) &&
     tcb.queueNext.isNone && tcb.queuePrev.isNone && tcb.queuePPrev.isNone &&
     tcb.timeoutBudget.isNone &&
@@ -4116,7 +4126,9 @@ def tcbAffinityDeclared (cores : List SeLe4n.Kernel.Concurrency.CoreId) (tcb : T
      _pendingReceiveReply, _pendingFault, _fpContext, _ntfnPrevCode, _ntfnNextCode,
      _runCoreCode, _runPrio, _runPrevCode, _runNextCode, _runBucketPrevCode, _runBucketNextCode,
      _replyWaiterPrevCode, _replyWaiterNextCode, _replyWaitersHeadCode, _replyWaitersCount, _ipcStateCode,
-     _ipcBadge, _ipcBadged, _ipcCanGrant, _ipcFaultSend⟩ =>
+     _ipcBadge, _ipcBadged, _ipcCanGrant, _ipcFaultSend,
+     -- The space slots' spare records are no slot's capability (`SpareCells`).
+     _spaceSpare⟩ =>
     match tcb.cpuAffinity with
     | some c => cores.contains c
     | none   => true

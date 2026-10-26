@@ -343,9 +343,28 @@ borrowed context goes back by its lender's pop before the suspend
 (`finaliseThreadEndWaiters`, bounded by the thread's count).  New code that
 changes what a waiter's end reads or writes must keep the pre-state admission
 (`replyWaitersAdmitted`) reading exactly what the walk re-reads, and keep
-`finaliseThreadEndWaiters_returnLoan_endsAll_of_admitted` proved.  A thread
-that holds space-slot capabilities, and an untyped that still records a child,
-outlive their last capability until part 26 (`docs/REGISTERED_DEBT.md`).  The suspend of a thread blocked in IPC or
+`finaliseThreadEndWaiters_returnLoan_endsAll_of_admitted` proved.  Since part
+26 (`v0.36.139`) a final delete runs the zombie loop (`zombieDeleteAt`,
+`Capability/FrameFinalise.lean`): an object that still holds capabilities (a
+populated CNode, a thread with space-slot capabilities) is emptied first, pass
+by pass, through the finalising delete, and the slot is deleted last.  **Standing
+constraints:** a new delete path goes through `zombieDeleteAt` (or
+`cspaceDeleteSlotZombie`), not `cspaceDeleteSlotFinalising` directly; the next
+slot is chosen only by `zombieNextSlot` (most recently filled first, Adam's
+decision of 2026-10-25), so new code that fills or empties a CNode slot must
+keep its occupancy links (`CNode.occ`, `occHead`, `occ_agree`) in step; and a
+transition that removes an object clears its declassification provenance
+(`withTaintCleared`).  A final delete keeps its slot when the passes run out
+of fuel, the passes' deletes persisting for a retry (`zombieDeleteAtFuel`), so
+a caller must treat an occupied slot after a delete as a preempted delete, not
+a refusal.  Set-space deletes each old root through the same loop
+(`copyThreadSpacesZombie`).  An untyped retired with children is spliced out:
+its recorder adopts them and each child untyped names the recorder as its
+parent (`retireUnrecord`), so new code that reads an untyped's parent or child
+list must not assume either survives the retire of a neighbour.  The retire
+still walks the object table, and the finalise's admission is not yet carried
+across its steps (each step re-checks): plan row 27
+(`docs/REGISTERED_DEBT.md`).  The suspend of a thread blocked in IPC or
 holding a donated context is the one syscall arm left on the general path
 (ZA6.1).  ZA6 covers the other
 entries and makes the rule standing.  Plan:

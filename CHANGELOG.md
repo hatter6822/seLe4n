@@ -1,3 +1,213 @@
+## v0.36.139 — WS-ZA ZA5.4 part 26: the zombie loop and the thread's space-slot deletes
+
+A final delete of a capability whose object still holds capabilities now
+empties that object first, as seL4's `finaliseSlot` loop does.  This covers
+a CNode with occupied slots and a thread with capabilities in its space
+slots.  The deleted slot keeps its capability while the loop runs, like
+seL4's Zombie, and is deleted last.
+
+- **Before:** a CNode was retired only when every slot was already empty;
+  a populated CNode outlived its last capability.  A thread holding space-slot
+  capabilities was refused by the finalise.  That covers every thread that can
+  make a syscall, so a thread could not delete its own last capability end to
+  end.
+- **After:** a populated CNode's final delete deletes each slot through the
+  finalising delete, one level down at a time, then retires the CNode.  A
+  thread's final delete finalises it, deletes its two space slots, and retires
+  it.  This includes the executing thread deleting its own last capability.
+- **And:** the retire clears the freed id's declassification provenance, so
+  an object carved later at that id inherits no stale tag.
+
+### The loop
+
+- `zombieDeleteAt` (`Capability/FrameFinalise.lean`) runs the passes, then
+  deletes the slot itself.  The delete syscall (`cspaceDeleteSlotZombie`)
+  goes through it, and so does every revoke child (`revokeFirstChildLoop`).
+  A delete that finalises and retires nothing keeps the in-place fast path.
+- Each pass (`zombieDescend`) starts again from the slot.  It walks down to
+  the deepest object holding capabilities, then either deletes that object's
+  slots (`zombieEmptyObject`) or finalises a thread it reaches
+  (`zombieFinaliseAt`).  Nothing is carried between passes, so a preemption
+  point can sit between any two of them.
+- **The bound** is stated in `zombieDeleteAt_run` and in `zombieFuel`'s
+  docstring.  A delete runs at most `zombieFuel st + 1` passes, where
+  `zombieFuel st = 3 · objects.size + 2`, and each pass is a
+  `FinalisingDeleteChain`.
+- **Out of fuel** (`zombieDeleteAtFuel`): if the passes end with the root
+  slot still non-leaf, the root delete makes no write.  The passes' deletes
+  persist and the slot keeps its capability, so a retry continues from the
+  slot state, as seL4's preempted `cteDelete` does; a revoke that keeps a
+  child stops with `.ok`.  The suite drives the branch
+  (`runZombieFuelExhaustedChecks`: no fuel keeps the slot, one pass leaves
+  the root non-leaf, the retry finishes).  That the fuel always suffices on
+  a reachable state is a new debt row.
+- **Set-space** deletes each old root through the same loop
+  (`copyThreadSpacesZombie`), so a thread's last capability to its old CSpace
+  root CNode empties and retires it.  Set-space is therefore a remote writer
+  in the capability-destroy footprint group (25 remote writers, 19 in that
+  group; `tests/fixtures/smp_information_flow.expected` regenerated).
+- **Slot order, Adam's decision** (card, 2026-10-25, "list order"): the
+  loop deletes a CNode's slots most recently filled first.  It follows the
+  CNode's new occupancy links (`SlotOccupancy`, `CNode.occHead`), so the next
+  slot is read, not scanned for.  seL4 goes from the highest slot index down.
+  The order is chosen in one function, `zombieNextSlot`, which every pass
+  reads.  A thread's slots go CSpace root first, then VSpace root.
+- Revoke still ends childless.  `RevokeProgress` shows that each zombie
+  delete of a child either strictly shrinks the derivation edges, or leaves
+  the source named by no edge (`zombieDeleteAt_revokeProgress`).
+
+### Proof surface
+
+- `FinalisingDeleteChain` gains a `finalise` step, plus `.trans`; `.closed`
+  takes the finalise's preservation.  The capability bundle, the IPC bundle,
+  the run-queue entry stage, reschedule coverage, slot confinement, the
+  sched-lock write cover and cross-core non-interference are re-proven for
+  `cspaceDeleteSlotZombie`.
+- `threadFinaliseAdmitted` drops its space-slot conjuncts.  `threadQuiescent`
+  is now `threadLinksQuiescent` plus the two empty space slots.
+- `passiveObjectQuiescent` reads a CNode's occupancy head, not its slots.
+- `withTaintCleared` wraps both arms of `retireRecordedObject`.  The witnesses
+  are `retireRecordedObject_taint_cleared` and
+  `retireFinalObject_taint_cleared`.
+
+### An untyped with children is spliced out
+
+- Part 21's restriction is lifted: `retirableKind`'s untyped arm is `true`.
+  The retire splices the untyped out of the derivation tree as seL4 does
+  (`retireUnrecord`): each child untyped it records names the recorder as its
+  parent (`reparentChildren`, `recorderParent`), and the recorder records the
+  retired untyped's children in place of its record, each offset rebased onto
+  that record's (`adoptChildren`, `childListAdopt`, `childListRebase`).  With
+  no recorder (a boot untyped) the children are recorded by none.
+- `TreeShapeOver.retire` is restated over the splice (each post-state child
+  record is a pre-state record of the same untyped, or one of the retired
+  untyped's, adopted), with the retired id gone (`retireFinalObject_target_gone`).
+  `finalRetireWrite` names the splice's writes (`untypedRetireStep`).
+- The projection theorem `retireFinalObject_preserves_projection`, and its
+  set-space and finalised-object forms, now also ask that the retired object's
+  children are hidden, since the recorder's child list takes them.
+- Witness: `negative_state_suite` (`runUntypedRetireSpliceChecks`): untyped
+  30 records 31 at 0x1000, 31 records an endpoint at 0 and untyped 33 at
+  0x200; deleting the last capability to 31 leaves 30 recording both at
+  0x1000 and 0x1200, and 33 naming 30 as its parent.
+- `vspace_capability_binding_suite` §5g and the retire checks now witness the
+  splice end to end: revoking a parent capability retires the child untyped
+  and its frame with their capabilities, and deleting a child untyped's last
+  capability while its frame lives retires the untyped, its parent recording
+  the frame.  Both replaced checks witnessed the refusal the splice removes;
+  the retired frames-only guard's test-only spelling goes with the first.
+- The kernel-transition reachability census records the two names for the
+  states a thread's finalisation reaches part way
+  (`finaliseThreadAfterCancel`, `finaliseThreadAfterRelease`), which its
+  end-state theorems are stated on and no seam runs.
+
+### The finalisations' end states
+
+- `finaliseThread_quiesces` (`IPC/Invariant/FinaliseRetirable.lean`): a
+  thread's finalisation leaves it stored under its own id, quiescent but for
+  its space slots (`threadLinksQuiescent`) and held by no core.  It is stated
+  on the states where each step runs (the cancel's admission after the
+  notification unbind, the waiters' admission after the cancel, the context
+  unbind's binding clause after the release).  Its hypotheses: the
+  finalisation's invariant, the run queues' agreement, `currentDequeuedUnique`
+  (which discharges a thread's single placement) and `runCodeBounded`
+  (`runCoreCode ≤ numCores`, a hypothesis, not yet an invariant).
+  `finaliseSchedContext_releases` states a scheduling context's.  Carrying
+  the pre-state admission across the steps is plan row 27.
+- The thread retire no longer reads the four raw run-queue neighbour codes:
+  with its core code zero the thread is on no core's queue, and every reader
+  masks the four by the core code (`TCB.runLinkOn`, `runMaxCodeWalk`, the
+  compiled dequeue), so no invariant holds them at zero.  The dequeue still
+  clears them (`TCB.detachRun`).
+- `finaliseThreadCleanup`'s specification guard walks the object table; that
+  walk is in the specification only and is compiled away by its `@[csimp]`.
+
+### Tests and exerciser
+
+- `vspace_capability_binding_suite` §5p covers four cases: a populated
+  CNode's delete retires the endpoint it held and the CNode; the retire clears
+  the endpoint's taint; a thread holding the last capability to its CNode root
+  is retired together with that CNode; and the self-delete runs end to end
+  through the syscall.
+- The heap exerciser deletes a populated CNode (`populated-cnode-delete`) and
+  a thread holding the last capability to its CSpace root
+  (`spaced-tcb-delete`).  Both read 0 heap cells, as does
+  `space-cnode-cap-delete`, `tcb-set-space` and the carved thread's first
+  space set (`set-carved-tcb-space`).  A thread's carve reads 24, not 14: the
+  carve makes the cells of the thread's two space slots, as seL4 makes a TCB's
+  CTEs at the retype (`TCB.spaceSpare`, `carvedTcbSpareCells`,
+  `KernelObject.unshareFresh`): a spare record, its `some` cell and its object
+  target for each slot (6), the thread's own slot, link and spare arrays (3)
+  and its register file (1).  The CNode carve into the move slot reads 31, a
+  CNode's 30 and its capability's target cell: the slot's kept record last held
+  a reply capability, whose target is the boot reply object's own
+  (`replyCapTargetIn`), so `CapTarget.objectOver` builds a new one.  The part's
+  earlier commit message said that carve reads 30; it was never measured at 30.
+- A thread's space-slot delete keeps the slot's cell as its spare record
+  (`TCB.removeSpaceCapImpl`), and a space set writes the capability, and its
+  object target, over that record (`TCB.spaceCellFilled`,
+  `capabilityCellOver`, `Capability.overwriteObject`).  The slot read and the
+  record read are out of line (`spaceSlotCap`, `spareRecordAt`), so the thread
+  is rebuilt in its own cell.  A spare or space record a carve or boot unshares
+  now owns its object target (`unshareTarget`), and the register word is passed
+  unboxed (`opaqueWord`).  The first page-table and busy-endpoint carves read
+  15, 13 and 11, one fewer each: their destination slot's boot record now owns
+  its target.
+- A CNode carve now reads 30, not 29 (`untyped-retype-cnode`).  The extra
+  cell is the CNode's own occupancy link array.
+- The compiled slot writers (`insertCellWith`, `removeImpl`) read the slot's
+  occupancy before writing the slot array, and read the head before unlinking.
+  Each read is out of line (`occupiedAt`, `fillOccOf`, `emptyHeadOf`), so the
+  writer keeps rebuilding its CNode in place.  A first build read the
+  occupancy after the write: the slot array was copied, every copy, move,
+  mint and delete read 1, and every carve read 2 more.  The fix brings every
+  other pin back to its value from before this part.
+
+### Merge
+
+- Part 25's review fixes (`backup/za54-part25` at `26aa9cdf`) are merged in
+  with a merge commit.  The splice cuts a contextless stack top from the
+  frame below (`severReplyFrameBelowStores`), with its sever and frame-above
+  arms written in place, and `threadFinaliseAdmitted` admits the lender's
+  origin (`replyPopClearedOrigin?`).  This part's change to
+  `threadFinaliseAdmitted` (the space-slot conjuncts dropped) sits beside
+  theirs.
+
+### Debt (`docs/REGISTERED_DEBT.md`)
+
+- Closed: "A thread a final delete cannot finalise outlives its last
+  capability".  Clause (3), the space slots, is the zombie loop above.
+- Closed: "An untyped that still records a child is not retired by its
+  final delete" (the splice above).
+- Narrowed: "A destroyed object's declassification provenance is not
+  cleared".  The delete and revoke retire now clears it.  The reset's
+  removal does not yet; that is part 28, which restates the reset.
+- Narrowed and renamed: "The finalise's admission is not carried across its
+  own steps" (was "…not proven to make the retire accept").  The end states
+  are proven above; the carriage is what is left, owned by part 27.  It is
+  what proves checks-before-writes for the thread finalise; today the
+  runtime stays safe because each step and the retire re-check.
+- New: "The zombie fuel always suffices on a reachable state", owned by part
+  27, with a potential-function sketch.
+- Moved to part 27: "A passive object's final delete scans the object
+  table" (the three walks stay as the runtime check until then).
+
+### Plan
+
+- `UNTYPED_RESET_PLAN.md` gains row 27, "The retire reads the object's own
+  links" (consumes 26): notification binding reciprocity and donation-origin
+  validity as invariants every syscall preserves, the reciprocity bundle
+  carried along the delete chain, the three walks and `originsNameNone`
+  retired, replenish membership through `replenishQueueEntriesBound_smp`, the
+  IRQ, service-graph and registry back-references, the finalise's admission
+  carried across its steps, and the fuel's sufficiency.  The reset is row 28;
+  every citation is renumbered.
+
+### Documentation
+
+- `SELE4N_SPEC.md` §8.6, `CLAIM_EVIDENCE_INDEX.md`, the plan's row 26,
+  `WORKSTREAM_CONTEXT.md`, GitBook chapter 12, the debt register, and the
+  synchronised metrics and codebase map.
 ## v0.36.138 — WS-ZA ZA6.3: bring the other plans up to date before the closure
 
 Documentation only; no code changes.

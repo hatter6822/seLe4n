@@ -195,15 +195,17 @@ def schedLockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
   -- endpoint or a notification wakes its cancelled waiters on their own cores,
   -- one that destroys the last capability to a thread or a scheduling context
   -- purges a replenish entry (part 24), and the revocation is a sequence of
-  -- such deletes; neither reads an operand.
-  | .cspaceDelete | .cspaceRevoke =>
+  -- such deletes; neither reads an operand.  **Part 26**: and the space change,
+  -- whose old CSpace root, when it is the last capability to a populated CNode,
+  -- is deleted by the zombie loop, a sequence of such deletes.
+  | .cspaceDelete | .cspaceRevoke | .tcbSetSpace =>
       LockSet.ofList? schedLockSet_capabilityDestroyOnCore
   | .cspaceMint | .cspaceCopy | .cspaceMove
   | .untypedRetype | .untypedReset
   | .mintReplyCap
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction
   | .serviceRegister | .serviceRevoke | .serviceQuery
-  | .tcbSetIPCBuffer | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap
+  | .tcbSetIPCBuffer | .tcbSetFaultHandler | .pageTableMap | .pageTableUnmap
   | .tcbBindNotification | .tcbUnbindNotification
   | .declassify | .declassifySignal
   | .auditRead | .auditDrain => none
@@ -218,8 +220,8 @@ footprint without listing it here breaks
 still answers `none` is refused by that arm's own `_isSome_iff`, which states
 the exact operands under which it declares.
 
-There are `SyscallId.count = 41` arms; **eighteen** declare and twenty-three
-answer `none`.  *Which* of those twenty-three write a scheduler slot at all is this
+There are `SyscallId.count = 41` arms; **nineteen** declare and twenty-two
+answer `none`.  *Which* of those twenty-two write a scheduler slot at all is this
 enumeration's own open question — the arms above are the ones WS-RR RR8.12's
 sequence identified, and one found to write one is a footprint to declare rather
 than a row to move.  `.cspaceDelete` and `.cspaceRevoke` were in the `none` group
@@ -234,9 +236,11 @@ a page of machine memory — no scheduler field at all.  `.untypedReset` (`v0.36
 writes VSpace roots, TLB, shootdown and instruction-cache state, erased frames
 and the untyped — the `.vspaceUnmap` arm's writes, per mapping, and no run-queue
 or replenish-queue slot on any core (`untypedReset_ok_frame`: the scheduler is
-unchanged).  `.tcbSetSpace` (`v0.36.11`) rewrites one suspended TCB's two space
-slots and the derivation links (`copyThreadSpaces_ok`: two slot copies, each a
-delete, a thread rewrite and link writes) — no scheduler field. -/
+unchanged).  `.tcbSetSpace` (`v0.36.11`) rewrote one suspended TCB's two space
+slots and the derivation links alone (`copyThreadSpaces_ok`) until WS-ZA ZA5.4
+part 26 deleted an old CSpace root that is the last capability to a populated
+CNode through the zombie loop (`copyThreadSpacesZombie`), whose finalisations
+write every core's queues: it declares the capability destroys' footprint. -/
 def declaredSchedFootprintSyscall : SyscallId → Bool
   | .tcbSuspend | .tcbResume
   | .tcbSetPriority | .tcbSetMCPriority | .tcbSetAffinity
@@ -244,13 +248,13 @@ def declaredSchedFootprintSyscall : SyscallId → Bool
   | .notificationSignal | .notificationWait
   | .send | .receive | .call | .reply | .replyRecv
   | .yield
-  | .cspaceDelete | .cspaceRevoke => true
+  | .cspaceDelete | .cspaceRevoke | .tcbSetSpace => true
   | .cspaceMint | .cspaceCopy | .cspaceMove
   | .untypedRetype | .untypedReset
   | .mintReplyCap
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction
   | .serviceRegister | .serviceRevoke | .serviceQuery
-  | .tcbSetIPCBuffer | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap
+  | .tcbSetIPCBuffer | .tcbSetFaultHandler | .pageTableMap | .pageTableUnmap
   | .tcbBindNotification | .tcbUnbindNotification
   | .declassify | .declassifySignal
   | .auditRead | .auditDrain => false
@@ -304,12 +308,13 @@ does: it reads no operand and its footprint is fixed by the executing core. -/
 
 /-- **WS-ZA ZA5.4 part 23**: the finalising delete and the revocation declare
 unconditionally, as `.yield` does: they read no operand, and their footprint is
-every core's run queue and replenish queue. -/
+every core's run queue and replenish queue.  Part 26: and the space change,
+through the zombie delete. -/
 @[simp] theorem schedLockSetForSyscall_capabilityDestroy_isSome
     (sid : SyscallId) (ops : SyscallLockOperands) (executingCore : CoreId) (st : SystemState)
-    (h : sid = .cspaceDelete ∨ sid = .cspaceRevoke) :
+    (h : sid = .cspaceDelete ∨ sid = .cspaceRevoke ∨ sid = .tcbSetSpace) :
     (schedLockSetForSyscall sid ops executingCore st).isSome := by
-  rcases h with rfl | rfl <;>
+  rcases h with rfl | rfl | rfl <;>
     simp [schedLockSetForSyscall, LockSet.ofList?, schedLockSet_capabilityDestroyOnCore,
       schedFootprintOfCores_keys_nodup]
 
@@ -429,7 +434,7 @@ theorem schedLockSetForSyscall_replyRecv_isSome_iff
                   schedFootprintOfCores_keys_nodup]
 
 /-- **WS-LS LS2.3**: every scheduler footprint names the object-store table
-write lock — each of the eighteen arms is `schedFootprintOfCores` of its own
+write lock — each of the nineteen arms is `schedFootprintOfCores` of its own
 core lists, and that constructor leads with the table lock
 (`schedFootprintOfCores_contains_objStore_write`).  What makes the object
 clause of `footprintCoversWrites` vacuous at the syscall seam, so the arms'
@@ -441,7 +446,7 @@ theorem schedLockSetForSyscall_contains_objStore_write (sid : SyscallId)
     (LockKey.objStore, Concurrency.AccessMode.write) ∈ S.pairs := by
   unfold schedLockSetForSyscall at hS
   cases sid <;> simp only [Option.bind_eq_some_iff, reduceCtorEq] at hS
-  case cspaceDelete | cspaceRevoke =>
+  case cspaceDelete | cspaceRevoke | tcbSetSpace =>
     rw [LockSet.ofList?_pairs hS]
     exact schedFootprintOfCores_contains_objStore_write _ _
   all_goals
@@ -757,8 +762,8 @@ is one of the second, and coverage is monotone upward
 — which is what keeps "what does this arm's footprint cover" a single question.
 
 Stated once and generically rather than once per declared arm: an instance per
-arm would be eighteen copies of one application, and the next declared arm would
-owe a nineteenth.  **WS-LS LS2.3** discharges `hCover` at the seam
+arm would be nineteen copies of one application, and the next declared arm would
+owe a twentieth.  **WS-LS LS2.3** discharges `hCover` at the seam
 (`SyscallSeamCoverage.lean`) rather than assuming it. -/
 theorem unifiedLockSetForSyscall_coversWrites (sid : SyscallId)
     (ops : Concurrency.SyscallLockOperands) (executingCore : CoreId) (st : SystemState)

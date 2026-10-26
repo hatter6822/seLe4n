@@ -3967,7 +3967,8 @@ run_check "INVARIANT" rg -n -U 'def lockSet_untypedRetype[^\n]*(\n([ \t][^\n]*)?
 run_check "INVARIANT" rg -n -U 'def carvedObjectLock[^\n]*\n  match childKind with\n  \| \.untyped => untypedLock oid\n  \| \.vspaceRoot => vspaceRootLock oid\n  \| \.tcb => tcbLock \(ThreadId\.ofObjId oid\)\n  \| \.endpoint => endpointLock oid\n  \| \.notification => notificationLock oid\n  \| \.cnode => cnodeLock oid\n  \| \.reply => replyLock \(ReplyId\.ofObjId oid\)\n  \| \.schedContext => schedContextLock \(SchedContextId\.ofObjId oid\)\n  \| \.frame \| \.pageTable => pageLock oid$' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_negative_check "INVARIANT" rg -n '\bchildIsUntyped\b' SeLe4n
 run_check "INVARIANT" rg -n 'the child untyped and the grandchild frame are both retired' tests/VSpaceCapabilityBindingSuite.lean
-run_check "INVARIANT" rg -n 'RETIRED: the frames-only reset guard refuses this state' tests/VSpaceCapabilityBindingSuite.lean
+run_check "INVARIANT" rg -n 'the revocation retires the child untyped and the grandchild frame' tests/VSpaceCapabilityBindingSuite.lean
+run_check "INVARIANT" rg -n 'an untyped recording a child is retired with its capability, its parent adopting the child' tests/VSpaceCapabilityBindingSuite.lean
 run_check "INVARIANT" rg -n 'the carved RAM page is zeroed before any capability to it exists' tests/VSpaceCapabilityBindingSuite.lean
 run_check "INVARIANT" rg -n 'and .\.vspaceMap. maps the CARVED page, writable' tests/VSpaceCapabilityBindingSuite.lean
 # WS-BP BP7.1 slice 3: memory returns to its untyped.  The live
@@ -4016,7 +4017,7 @@ run_check "INVARIANT" rg -n '^pub fn untyped_reset\(untyped_cap: CPtr\)' rust/se
 # the frozen delete, which has no unmap, refuses what it cannot finalise.
 run_check "INVARIANT" rg -n -U '        else if capabilityMappingLive st frameCap then \.error \.invalidCapability' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U 'def vspaceMapFromFrameCap[^\n]*(\n([ \t][^\n]*)?)*            cspaceRecordFrameMapping frameSlot\n              \{ asid := args\.asid, vaddr := args\.vaddr, epoch := epoch \} st2' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n -U '  \| \.cspaceDelete =>\n    some <\| match cap\.target with(\n([ \t][^\n]*)?){0,11}            cspaceDeleteSlotFinalising executingCore addr st' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U '  \| \.cspaceDelete =>\n    some <\| match cap\.target with(\n([ \t][^\n]*)?){0,11}            cspaceDeleteSlotZombie executingCore addr st' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U '  \| \.cspaceRevoke =>\n    some <\| match cap\.target with(\n([ \t][^\n]*)?){0,9}            cspaceRevokeCdtFinalising executingCore addr st' SeLe4n/Kernel/API.lean
 # v0.36.132: the teardown lists, the retire target and its recorder are all
 # read on the pre-delete state `st` (seL4 decides finality before emptying the slot).
@@ -4090,6 +4091,25 @@ run_check "INVARIANT" rg -n '^theorem lenderEndable_of_admitted($|[ ({:\[\]])' S
 run_check "INVARIANT" rg -n '^theorem finaliseThreadEndWaiters_returnLoan_endsAll($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseWaiterCompletion.lean
 run_check "INVARIANT" rg -n '^theorem finaliseThreadEndWaiters_returnLoan_endsAll_of_admitted($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseWaiterCompletion.lean
 run_check "INVARIANT" rg -n '^theorem spliceUnframed($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseWaiterCompletion.lean
+# A finalised object's own record is retirable: the context's released, the
+# thread's quiesced (every field the retire's link guard reads, the space slots
+# aside), each step's effect on the thread read off the invariant it carries.
+run_check "INVARIANT" rg -n '^def tcbProjKept($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseThreadFrames.lean
+run_check "INVARIANT" rg -n '^def runCodeBounded($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseThreadFrames.lean
+run_check "INVARIANT" rg -n '^def finaliseCarried($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseThreadFrames.lean
+run_check "INVARIANT" rg -n '^theorem finaliseThreadUnbindNotification_self($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseThreadFrames.lean
+run_check "INVARIANT" rg -n '^theorem finaliseThreadCancel_quiets($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseThreadFrames.lean
+run_check "INVARIANT" rg -n '^theorem finaliseThreadSuspend_quiets($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseThreadFrames.lean
+run_check "INVARIANT" rg -n '^theorem readyThread_unlinked($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseThreadFrames.lean
+run_check "INVARIANT" rg -n '^theorem finaliseThreadUnbindSchedContext_self($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseThreadFrames.lean
+run_check "INVARIANT" rg -n '^theorem finaliseThreadSuspend_servers($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseThreadFrames.lean
+run_check "INVARIANT" rg -n '^theorem noWaiter_of_servers($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseThreadFrames.lean
+run_check "INVARIANT" rg -n '^def schedContextRecordReleased($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseRetirable.lean
+run_check "INVARIANT" rg -n '^def threadRecordQuiesced($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseRetirable.lean
+run_check "INVARIANT" rg -n '^theorem finaliseSchedContext_releases($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseRetirable.lean
+run_check "INVARIANT" rg -n '^theorem finaliseThread_quiesces($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseRetirable.lean
+run_check "INVARIANT" rg -n '^    threadRecordQuiesced \(finaliseThread x st\) x := by$' SeLe4n/Kernel/IPC/Invariant/FinaliseRetirable.lean
+run_check "INVARIANT" rg -n 't\.tid\.val = x\.val ∧ threadLinksQuiescent t = true ∧' SeLe4n/Kernel/IPC/Invariant/FinaliseRetirable.lean
 # A contextless stack top (the head a context's unstack leaves, no `next`) is cut
 # from the frame below, seL4's `reply_remove` `prev->replyNext = 0`: in the
 # specification's removal, the in-place splice and the frozen removal alike, so
@@ -4231,11 +4251,12 @@ run_check "INVARIANT" rg -n '^theorem finaliseFinalObject_preserves_ipcReachable
 run_check "INVARIANT" rg -n '^theorem retireFinalisedObject_preserves_ipcReachable($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllReachability.lean
 run_check "INVARIANT" rg -n '^theorem finaliseFinalObject_preserves_projection($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/FinaliseProjection.lean
 run_check "INVARIANT" rg -n '^theorem retireFinalisedObject_preserves_projection($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/FinaliseProjection.lean
-# Delete and revoke now write remote run queues (a cancelled waiter is woken on
-# its own core), so both DECLARE a scheduler footprint, and the seam proves it
+# Delete, revoke and set-space now write remote run queues (a cancelled waiter
+# is woken on its own core; set-space deletes its old roots through the zombie
+# loop), so all three DECLARE a scheduler footprint, and the seam proves it
 # covers their writes.
-run_check "INVARIANT" rg -n -U '  \| \.cspaceDelete \| \.cspaceRevoke =>\n      LockSet\.ofList\? schedLockSet_capabilityDestroyOnCore' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^theorem schedLockSet_cspaceDeleteSlotFinalising_coversWrites($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedContainment.lean
+run_check "INVARIANT" rg -n -U '  \| \.cspaceDelete \| \.cspaceRevoke \| \.tcbSetSpace =>\n      LockSet\.ofList\? schedLockSet_capabilityDestroyOnCore' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_cspaceDeleteSlotZombie_coversWrites($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedContainment.lean
 run_check "INVARIANT" rg -n '^theorem schedLockSet_cspaceRevokeCdtFinalising_coversWrites($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedContainment.lean
 # The notification step is compiled as its in-place writes, and the walk that
 # cancelAllSignals runs is defined AFTER the substitution, so the compiler takes
@@ -4248,10 +4269,45 @@ run_check "INVARIANT" rg -n -U '@\[csimp\] theorem cancelNotificationQueue_eq_im
 # the compiler may not hoist into a shared constant.
 run_check "INVARIANT" rg -n -U '  \| \.endpoint => \(KernelObject\.endpoint \(Endpoint\.ofQueues \{\} \{\}\)\)\.unshareFresh\n  \| \.notification =>\n      \(KernelObject\.notification \(\{ state := \.idle \} : Notification\)\)\.unshareFresh' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n -U '@\[csimp\] theorem CarveRequest\.object_eq_impl :\n    @CarveRequest\.object = @CarveRequest\.objectImpl' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+# v0.36.139: a carved thread's space slots, their links and their spare records
+# are its own cells, made at the carve, so its first space set writes in place.
+run_check "INVARIANT" rg -n -U '  \| \.tcb dom core => \(KernelObject\.tcb \(carvedTcb childId dom core\)\)\.unshareFresh\n' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n -U 'def carvedTcb [^\n]*(\n([ \t][^\n]*)?){0,10}\n    spaceSpare := Squash\.mk carvedTcbSpareCells \}' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n -U '      spaceSpare := Quot\.lift \(fun a => Squash\.mk \(a\.map unshareSpareCell\)\)\n        \(fun _ _ _ => Subsingleton\.elim _ _\) t\.spaceSpare \}' SeLe4n/Model/Object/Unshare.lean
+# A thread slot's delete keeps its cell as the slot's spare, and the set writes
+# over that spare.
+run_check "INVARIANT" rg -n -U '@\[csimp\] theorem removeSpaceCap_eq_impl : @removeSpaceCap = @removeSpaceCapImpl' SeLe4n/Model/ObjectSlots.lean
+run_check "INVARIANT" rg -n -U '  let o := t\.spaceSlotCap s\n  \{ t with\n    spaceCells := t\.spaceCells\.setIfInBounds s\.toNat none\n    spaceSpare := t\.spaceSpare\.keep s\.toNat o \}' SeLe4n/Model/ObjectSlots.lean
+# The slot read is out of line, so the thread is rebuilt in its own cell.
+run_check "INVARIANT" rg -n '^@\[noinline\] def spaceSlotCap ' SeLe4n/Model/ObjectSlots.lean
+# The set reads the spare record, takes it out of the spares, then writes the
+# capability and its object target over it, before the one rebuild.
+run_check "INVARIANT" rg -n -U '  let o := spareRecordAt a i\n  let a. := a\.setIfInBounds i none\n  let c := capabilityCellOver o target rights\n  \{ t with spaceCells := t\.spaceCells\.setIfInBounds i c, spaceSpare := Squash\.mk a. \}' SeLe4n/Kernel/Lifecycle/Operations/SetSpace.lean
+run_check "INVARIANT" rg -n '^  \| \.object id, some r => some \(r\.overwriteObject id rights\)$' SeLe4n/Kernel/Lifecycle/Operations/SetSpace.lean
+# A spare or space record owns its object target; a register word is passed
+# unboxed.
+run_check "INVARIANT" rg -n -c '^  \| some r => some \{ r with rights := opaqueId r\.rights, target := unshareTarget r\.target \}$' SeLe4n/Model/Object/Unshare.lean
+run_check "INVARIANT" rg -n 'registerContext := \{ t\.registerContext with x0 := opaqueWord t\.registerContext\.x0 \}' SeLe4n/Model/Object/Unshare.lean
+run_check "INVARIANT" rg -n -U '  st\.updateTcb tid fun t => t\.spaceCellFilled slot target rights' SeLe4n/Kernel/Lifecycle/Operations/SetSpace.lean
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem threadSlotCopied_eq_impl ' SeLe4n/Kernel/Lifecycle/Operations/SetSpace.lean
+run_negative_check "INVARIANT" rg -n 'spaceCellOver|threadSpaceCell ' SeLe4n
 run_check "INVARIANT" rg -n -U '@\[noinline, never_extract\] def KernelObject\.unshareFresh \(o : KernelObject\) : KernelObject :=\n  o\.unshare' SeLe4n/Model/Object/Unshare.lean
 run_check "INVARIANT" rg -n -U 'def slotRetireTarget[^\n]*(\n([ \t][^\n]*)?){0,4}\n    \| \.object x => if retirableKind st x && st\.capIsFinal cnode slot then x\.val \+ 1 else 0' SeLe4n/Kernel/Capability/FinalRetire.lean
-run_check "INVARIANT" rg -n -U 'def retirableKind[^\n]*\n  match st\.getObjectType\? x with\n  \| some \.frame \| some \.pageTable \| some \.vspaceRoot => true\n  \| some \.endpoint \| some \.notification \| some \.reply \| some \.cnode => true\n  \| some \.tcb \| some \.schedContext => true\n  \| some \.untyped =>\n    match st\.getUntyped\? x with\n    \| some U => U\.children\.isEmpty\n    \| none => false\n  \| _ => false' SeLe4n/Kernel/Capability/FinalRetire.lean
-run_check "INVARIANT" rg -n -U 'def retireRecordedObject[^\n]*(\n([ \t][^\n]*)?){0,3}\n  match st1\.getVSpaceRoot\? x with\n  \| some root => retypeAsidRoundStep executingCore root\.asid \(retireCarvedObject st1 x\)\n  \| none => retireCarvedObject st1 x' SeLe4n/Kernel/Capability/FinalRetire.lean
+run_check "INVARIANT" rg -n -U 'def retirableKind[^\n]*\n  match st\.getObjectType\? x with\n  \| some \.frame \| some \.pageTable \| some \.vspaceRoot => true\n  \| some \.endpoint \| some \.notification \| some \.reply \| some \.cnode => true\n  \| some \.tcb \| some \.schedContext => true\n  \| some \.untyped => true\n  \| _ => false' SeLe4n/Kernel/Capability/FinalRetire.lean
+# v0.36.139: a final delete of an untyped with children splices it out, as
+# seL4's derivation tree does: each child names the recorder as its parent, and
+# the recorder records the children, rebased onto the retired record's offset.
+run_check "INVARIANT" rg -n -U 'def childListAdopt : List UntypedChild → SeLe4n\.ObjId → List UntypedChild → List UntypedChild\n  \| \[\], _, _ => \[\]\n  \| ch :: rest, x, xs =>\n    if ch\.objId == x then childListRebase \(childListErase xs x\) ch\.offset \+\+ childListAdopt rest x xs\n    else ch :: childListAdopt rest x xs' SeLe4n/Kernel/Capability/FinalRetire.lean
+run_check "INVARIANT" rg -n -U '@\[inline\] def retireUnrecord \(recorder : Nat\) \(x : SeLe4n\.ObjId\) \(st : SystemState\) : SystemState :=\n  let kids := retiredChildren st x\n  let st0 := reparentChildren recorder kids st\n  if recorder = 0 then st0 else adoptChildren st0 \(SeLe4n\.ObjId\.ofNat \(recorder - 1\)\) x kids' SeLe4n/Kernel/Capability/FinalRetire.lean
+run_check "INVARIANT" rg -n -U 'def retireRecordedObject[^\n]*(\n([ \t][^\n]*)?){0,3}\n  let st1 := retireUnrecord recorder x st\n' SeLe4n/Kernel/Capability/FinalRetire.lean
+run_check "INVARIANT" rg -n '^theorem retireFinalObject_target_gone ' SeLe4n/Kernel/Capability/FinalRetire.lean
+run_negative_check "INVARIANT" rg -n 'unrecordChild|untypedWithoutChild' SeLe4n
+# A reply-capability target in a slot's spare record is written over in place.
+run_check "INVARIANT" rg -n -U '@\[noinline\] def CapTarget\.objectOver \(t : CapTarget\) \(id : SeLe4n\.ObjId\) : CapTarget :=\n  match t with\n  \| \.object _ => \.object id\n  \| \.replyCap _ => \.object id\n  \| _ => CapTarget\.ofObject id' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n -U 'def retireRecordedObject[^\n]*(\n([ \t][^\n]*)?){0,3}\n  match st1\.getVSpaceRoot\? x with\n  \| some root => withTaintCleared \(retypeAsidRoundStep executingCore root\.asid \(retireCarvedObject st1 x\)\) x\n  \| none => withTaintCleared \(retireCarvedObject st1 x\) x' SeLe4n/Kernel/Capability/FinalRetire.lean
+# v0.36.139: the retire forgets the freed id's declassification provenance.
+run_check "INVARIANT" rg -n -U '@\[inline\] def withTaintCleared \(st : SystemState\) \(x : SeLe4n\.ObjId\) : SystemState :=\n  \{ st with declassificationTaint := st\.declassificationTaint\.clearAt x \}' SeLe4n/Kernel/Capability/FinalRetire.lean
+run_check "INVARIANT" rg -n '^theorem retireFinalObject_taint_cleared ' SeLe4n/Kernel/Capability/FinalRetire.lean
 # v0.36.133: a final delete of an endpoint, notification, reply or CNode retires
 # it while it is quiescent and nothing names it by id (seL4's finaliseCap of a
 # passive kind with nothing to cancel); the admission is read on the pre-retire
@@ -4309,7 +4365,17 @@ run_check "INVARIANT" rg -n -U 'def backshiftLoopImpl[^\n]*(\n([ \t][^\n]*)?){0,
 run_check "INVARIANT" rg -n -U 'def cspaceRevokeCdtFinalising[^\n]*\n[^\n]*\n  fun st =>\n    match SystemState\.lookupSlotCap st addr with\n    \| some _ => \.ok \(\(\), cspaceRevokePerformAt executingCore addr\.cnode addr\.slot st\)' SeLe4n/Kernel/Capability/FrameFinalise.lean
 # v0.36.111: every revoke is seL4's cteRevoke, a run of finalising deletes; the
 # general revocation's batch teardown is gone.
-run_check "INVARIANT" rg -n -U '      if cspaceDeleteFinalisingAdmitted \{ cnode := cc, slot := cs \} st then\n        revokeFirstChildLoop executingCore cnode slot n\n          \(cspaceDeleteFinalisingPerformAt executingCore cc cs st\)' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n -U '      if cspaceDeleteFinalisingAdmitted \{ cnode := cc, slot := cs \} st then\n        let s := zombieDeleteAt executingCore cc cs st\n        if zombieSlotClass s cc cs cc cs = 0 then revokeFirstChildLoop executingCore cnode slot n s\n        else s' SeLe4n/Kernel/Capability/FrameFinalise.lean
+# v0.36.139: a compiled slot writer reads the slot's occupancy before it
+# writes the slot array, out of line, so both stay in place.
+run_check "INVARIANT" rg -n -U '  let i := slot\.toNat\n  let w := occupiedAt node\.cells i\n  if ha : i < a\.size then' SeLe4n/Model/Object/Structures.lean
+run_check "INVARIANT" rg -n -U '    let w := occupiedAt node\.cells slot\.toNat\n    let head := emptyHeadOf w node\.occ node\.occHead slot\.toNat' SeLe4n/Model/Object/Structures.lean
+run_check "INVARIANT" rg -n '^@\[noinline\] def occupiedAt \(cells : Array \(Option Capability\)\) \(i : Nat\) : Bool :=$' SeLe4n/Model/Object/Structures.lean
+# v0.36.139: the zombie loop's bound, stated in its theorem, and its one
+# choice of the next slot, which every pass reads.
+run_check "INVARIANT" rg -n -U '    ∃ n, n ≤ zombieFuel st \+ 1 ∧ ZombieRun ec n st \(zombieDeleteAt ec cnode slot st\)' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n '^@\[inline\] def zombieFuel \(st : SystemState\) : Nat := 3 \* st\.objects\.size \+ 2$' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n '^      let k := zombieNextSlot o \(zombieSkip root rootSlot x\)$' SeLe4n/Kernel/Capability/FrameFinalise.lean
 run_check "INVARIANT" rg -n '^theorem revokeFirstChildLoop_chain($|[ ({:\[\]])' SeLe4n/Kernel/Capability/FrameFinalise.lean
 run_check "INVARIANT" rg -n '^theorem FinalisingDeleteChain\.unmapped($|[ ({:\[\]])' SeLe4n/Kernel/Capability/FrameFinalise.lean
 run_negative_check "INVARIANT" rg -n 'cspaceRevokeThenFinalise|revokedPageTables|linkSubtreeDeletable' SeLe4n
@@ -4397,6 +4463,20 @@ run_check "INVARIANT" rg -n '^theorem threadSlotSet_runQueueStage ' SeLe4n/Kerne
 run_check "INVARIANT" rg -n '^theorem copyThreadSpaces_runQueueStage ' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Capability.lean
 run_check "INVARIANT" rg -n '^theorem threadSlotSet_stepCovers ' SeLe4n/Kernel/ReschedulePendingArms/Dispatch.lean
 run_check "INVARIANT" rg -n '^theorem copyThreadSpaces_stepCovers ' SeLe4n/Kernel/ReschedulePendingArms/Dispatch.lean
+# WS-ZA ZA5.4 part 26: the live arm deletes an old CSpace root that is the last
+# capability to a populated CNode through the zombie loop, then asks the checks
+# again of the state the passes leave before it sets the slots.
+run_check "INVARIANT" rg -n '^theorem copyThreadSpacesZombie_stepCovers ' SeLe4n/Kernel/ReschedulePendingArms/Dispatch.lean
+run_check "INVARIANT" rg -n '^theorem copyThreadSpacesZombie_runQueueEntryStage ' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Capability.lean
+run_check "INVARIANT" rg -n '^theorem copyThreadSpacesZombie_preserves_ipcInvariantFull ' SeLe4n/Kernel/IPC/Invariant/CancelAllPreservation.lean
+run_check "INVARIANT" rg -n '^theorem copyThreadSpacesZombie_preserves_capabilityInvariantBundle ' SeLe4n/Kernel/Capability/Invariant/Preservation/ThreadSpaceCopy.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_copyThreadSpacesZombie_coversWrites ' SeLe4n/Kernel/SyscallSchedContainment.lean
+run_check "INVARIANT" rg -n '^theorem copyThreadSpacesZombie_cases ' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n '^theorem copyThreadSpacesZombie_closed ' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n -U '^def copyThreadSpacesZombie [^\n]*\n[^\n]*\n  if copyThreadSpacesAdmitted st vtid cnSrc vrSrc then\n    \.ok \(copyThreadSpacesZombiePerform ' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n -U '  let s := zombiePasses executingCore vtid\.val\.toObjId TCB\.cspaceRootSlot \(zombieFuel st\) st\n  if zombieSlotClass s vtid\.val\.toObjId TCB\.cspaceRootSlot vtid\.val\.toObjId TCB\.cspaceRootSlot = 0 &&\n      copyThreadSpacesAdmitted s vtid cnSrc vrSrc then' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n -U '^def zombieDeleteAtFuel [^\n]*(\n[^\n]*){0,2}\n  let s := zombiePasses executingCore cnode slot fuel st\n  if zombieSlotClass s cnode slot cnode slot = 0 then zombieDeleteSlot executingCore cnode slot s\n  else s$' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n '^theorem zombieDeleteAtFuel_kept_or_deleted ' SeLe4n/Kernel/Capability/FrameFinalise.lean
 run_check "INVARIANT" rg -n '^theorem retireFinalObject_preserves_projection ' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
 run_check "INVARIANT" rg -n '^theorem threadSlotSet_preserves_projection ' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
 run_check "INVARIANT" rg -n -U 'theorem copyThreadSpaces_preserves_projection [^\n]*(\n([ \t][^\n]*)?){0,4}\n    \(hHid : ∀ s : SeLe4n\.Slot, s\.toNat < 2 → ∀ c o,' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
@@ -4415,8 +4495,8 @@ run_check "INVARIANT" rg -n '^theorem resolveSetSpace_ok_authorised($|[ ({:\[\]]
 run_check "INVARIANT" rg -n '^theorem resolveCallerCapObject_ok($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem resolveCallerCapSlot_ok($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U 'def resolveSetSpace [^\n]*(\n([ \t][^\n]*)?)*  match resolveCallerCapSlot callerTid args\.cspaceRoot \.grant st with(\n([ \t][^\n]*)?)*    if !cnCap\.hasRight \.write then \.error \.illegalAuthority(\n([ \t][^\n]*)?)*      match resolveCallerCapSlot callerTid args\.vspaceRoot \.write st with' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n -U '  \| \.tcbSetSpace =>\n    some <\| match cap\.target with(\n([ \t][^\n]*)?)*            match resolveSetSpace tid args st with(\n([ \t][^\n]*)?)*                match copyThreadSpaces executingCore st vtid cnSrc vrSrc with' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n -U 'case tcbSetSpace =>(\n([ \t][^\n]*)?)*                      exact copyThreadSpaces_preserves_ipcInvariantFull' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U '  \| \.tcbSetSpace =>\n    some <\| match cap\.target with(\n([ \t][^\n]*)?)*            match resolveSetSpace tid args st with(\n([ \t][^\n]*)?)*                match copyThreadSpacesZombie executingCore st vtid cnSrc vrSrc with' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'case tcbSetSpace =>(\n([ \t][^\n]*)?)*                      exact copyThreadSpacesZombie_preserves_ipcInvariantFull' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^  \| \.tcbSetSpace           => 38$' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n '^  \| \.tcbSetSpace           => \.write$' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_tcbSetSpace_size_le($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
@@ -4497,15 +4577,16 @@ run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedWithIdleThreadsFor_
 run_check "INVARIANT" rg -n '^theorem startInitialThreads_untypedNamed ' SeLe4n/Platform/Boot/InitialThreads.lean
 # v0.36.107: a revoke that finalises nothing is decided before any write and
 # performed in place, as seL4's first-child loop; since v0.36.110 so is every
-# delete, whatever its capability names.
-run_check "INVARIANT" rg -n -U '        RefusalCarrying\.ofChecked \(cnodeInvoked addr\.cnode st\)\n          \(fun st => cspaceDeleteFinalisingPerformAt executingCore cnodeId args\.targetSlot st\)' SeLe4n/Kernel/RefusalCarryingInvocation.lean
+# delete, whatever its capability names; since v0.36.139 through the zombie
+# loop, which empties what the capability destroys first.
+run_check "INVARIANT" rg -n -U '        RefusalCarrying\.ofChecked \(cnodeInvoked addr\.cnode st\)\n          \(fun st => zombieDeleteAt executingCore cnodeId args\.targetSlot st\)' SeLe4n/Kernel/RefusalCarryingInvocation.lean
 run_check "INVARIANT" rg -n -U '        RefusalCarrying\.ofChecked \(cspaceRevokeAdmitted addr st\)\n          \(fun st => cspaceRevokePerformAt executingCore cnodeId args\.targetSlot st\)' SeLe4n/Kernel/RefusalCarryingInvocation.lean
 # A CNode invocation is decoded only on a CNode capability, as seL4's
 # decodeCNodeInvocation is reached only through a cap_cnode_cap: the user delete
 # and revoke ask the one guard before they act, so neither reaches a thread's
 # space slots, which the internal destroyers do reach.
 run_check "INVARIANT" rg -n -U 'def cnodeInvoked \(cnodeId : SeLe4n\.ObjId\) \(st : SystemState\) : Bool :=\n  \(st\.getCNode\? cnodeId\)\.isSome' SeLe4n/Kernel/Capability/Operations.lean
-run_check "INVARIANT" rg -n -U '  \| \.cspaceDelete =>\n    match cap\.target with\n    \| \.object cnodeId =>\n        match decodeCSpaceDeleteArgsBy \(msgRegOfFile layout regs\) with\n        \| \.error e => \.error e\n        \| \.ok args =>\n            if !cnodeInvoked cnodeId st then \.error \.objectNotFound else\n            let addr : CSpaceAddr := \{ cnode := cnodeId, slot := args\.targetSlot \}\n            cspaceDeleteSlotFinalising executingCore addr st\n' SeLe4n/Kernel/RefusalCarryingInvocation.lean
+run_check "INVARIANT" rg -n -U '  \| \.cspaceDelete =>\n    match cap\.target with\n    \| \.object cnodeId =>\n        match decodeCSpaceDeleteArgsBy \(msgRegOfFile layout regs\) with\n        \| \.error e => \.error e\n        \| \.ok args =>\n            if !cnodeInvoked cnodeId st then \.error \.objectNotFound else\n            let addr : CSpaceAddr := \{ cnode := cnodeId, slot := args\.targetSlot \}\n            cspaceDeleteSlotZombie executingCore addr st\n' SeLe4n/Kernel/RefusalCarryingInvocation.lean
 run_check "INVARIANT" rg -n -U '  \| \.cspaceRevoke =>\n    match cap\.target with\n    \| \.object cnodeId =>\n        match decodeCSpaceDeleteArgsBy \(msgRegOfFile layout regs\) with\n        \| \.error e => \.error e\n        \| \.ok args =>\n            if !cnodeInvoked cnodeId st then \.error \.objectNotFound else\n            let addr : CSpaceAddr := \{ cnode := cnodeId, slot := args\.targetSlot \}\n            cspaceRevokeCdtFinalising executingCore addr st\n' SeLe4n/Kernel/RefusalCarryingInvocation.lean
 run_check "INVARIANT" rg -n -U '  \| \.cspaceDelete =>\n    some <\| match cap\.target with\n    \| \.object cnodeId =>\n        fun st => match decodeCSpaceDeleteArgs decoded with\n        \| \.error e => \.error e\n        \| \.ok args =>\n            if !cnodeInvoked cnodeId st then \.error \.objectNotFound else\n            let addr : CSpaceAddr := \{ cnode := cnodeId, slot := args\.targetSlot \}\n' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlotFinalising_of_admitted($|[ ({:\[\]])' SeLe4n/Kernel/Capability/FrameFinalise.lean
@@ -6789,11 +6870,16 @@ run_check "INVARIANT" rg -n '^theorem endpointReceiveDualOnCore_crossCoreNonInte
 run_negative_check "INVARIANT" rg -n '^def endpointReplyRecvWriteSet($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem crossCoreNiTheorem_count : CrossCoreTransition\.all\.length = 34' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 # WS-ZA ZA5.4 part 22: the space change takes the executing core for its retire,
-# so it is a cross-core inventory entry: delegation-backed, and writing no core.
-run_check "INVARIANT" rg -n '^  \| \.tcbSetSpaceDispatch => niName! copyThreadSpaces_crossCoreNonInterference$' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+# so it is a cross-core inventory entry, delegation-backed; part 26: through the
+# zombie delete, which may write every core.
+run_check "INVARIANT" rg -n '^  \| \.tcbSetSpaceDispatch => niName! copyThreadSpacesZombie_crossCoreNonInterference$' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^  \| \.tcbSetSpaceDispatch => true$' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^  \| \.tcbSetSpaceDispatch => \.delegationProof \.tcbSetSpace syscallDelegates_tcbSetSpace$' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem copyThreadSpaces_crossCoreNonInterference$' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem copyThreadSpacesZombie_crossCoreNonInterference$' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_negative_check "INVARIANT" rg -n '^theorem copyThreadSpaces_crossCoreNonInterference($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem copyThreadSpaces_confinedToCores ' SeLe4n/Kernel/SlotConfinement/MemoryArms.lean
+run_check "INVARIANT" rg -n '^theorem copyThreadSpacesZombie_confinedToCores ' SeLe4n/Kernel/SlotConfinement/MemoryArms.lean
+run_check "INVARIANT" rg -n '^def copyThreadSpacesZombieCores ' SeLe4n/Kernel/SlotConfinement/MemoryArms.lean
 run_check "INVARIANT" rg -n '^theorem syscallDelegates_tcbSetSpace : syscallDelegates \.tcbSetSpace' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem dispatchWithCap_tcbSetSpace_delegates$' SeLe4n/Kernel/API.lean
 # Round 14: all three SchedContext arms this cut made remote writers are audited.
