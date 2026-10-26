@@ -151,7 +151,14 @@ one on a reachable state (`passiveObjectQuiescent.namedByNone`,
 (`replyStashedAt`); since `v0.36.142` a scheduling context's retire reads its
 own links too, the scheduling links that answer every other reference to it
 (`schedContextLinkInvariant`) carried along the whole delete chain with the
-reachable state (`reachableDeleteBundle`) (`schedContextRetirable.namedByNone`);
+reachable state (`reachableDeleteBundle`) (`schedContextRetirable.namedByNone`); since
+`v0.36.143` each of the three tables that name objects by id outside every slot
+is answered by the object it names — an endpoint records its registration's code,
+a notification records the interrupt handler that names it, and the service graph
+holds no entry, stated as one invariant (`SystemState.tableReferencesRecorded`,
+`Model/TableReferences.lean`) and refused at boot otherwise — though the retire
+still walks those three tables until the invariant is carried by every syscall
+(`docs/planning/UNTYPED_RESET_PLAN.md` row 30);
 any other busy kernel
 object still outlives its last capability until its kind's finalise lands
 ([`SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) §8.6).  Every slot write keeps the bundle,
