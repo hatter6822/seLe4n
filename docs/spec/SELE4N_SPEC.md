@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.139` (`lakefile.toml`) |
+| **Package version** | `0.36.140` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 506,208 across 458 Lean files |
 | **Test LoC** | 87,273 across 70 Lean test suites |
@@ -5307,7 +5307,7 @@ root slot still non-leaf, the root delete makes no write
 capability, so a retry continues from the slot state, as seL4's preempted
 `cteDelete` does, and a revoke that keeps a child stops with `.ok`.  That the
 fuel always suffices on a reachable state is not yet proven
-(`docs/REGISTERED_DEBT.md`, plan row 29).  **Set-space** deletes each old root
+(`docs/REGISTERED_DEBT.md`, plan row 30).  **Set-space** deletes each old root
 through the same loop (`copyThreadSpacesZombie`), so a thread's last
 capability to its old CSpace root CNode empties and retires it; set-space is a
 remote writer, in the capability-destroy footprint group.  **An untyped with
@@ -5323,11 +5323,17 @@ space slots and held by no core (`finaliseThread_quiesces`, given
 `runCodeBounded` and `currentDequeuedUnique`), and a scheduling context's
 releases its record (`finaliseSchedContext_releases`), each stated on the
 states where its steps run.  The thread retire reads no masked run-queue
-neighbour code (the dequeue still clears them, `TCB.detachRun`).  Still open:
-the retire walks the service registry, the interrupt-handler table and the
-service graph for references by id (plan row 28), and the finalise's admission
-is not carried across its own steps (plan row 29); each step and the retire
-re-check their guards.
+neighbour code (the dequeue still clears them, `TCB.detachRun`).  **The
+reciprocity the own-link reads need** (`v0.36.140`, plan row 27): a thread's
+bound notification and the notification's bound thread name each other
+(`notificationBindingReciprocal`), a thread with an endpoint-queue successor is
+blocked on an endpoint (`endpointQueueLinksOnlyBlocked`), and every reply
+frame's upward link is answered (`donationChainWellFormed.nextLinkReciprocal`),
+each preserved by every transition and established at boot.  Still open:
+the retire walks the object table for references by id (plan row 28) and the
+service registry, the interrupt-handler table and the service graph (plan row
+29), and the finalise's admission is not carried across its own steps (plan
+row 30); each step and the retire re-check their guards.
 Exerciser: `populated-cnode-delete`, `space-cnode-cap-delete`,
 `spaced-tcb-delete`, `tcb-set-space` and `set-carved-tcb-space` read 0 heap
 cells: a thread's space-slot delete keeps the slot's cell as its spare record
@@ -5816,7 +5822,7 @@ seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
   (`untypedResetFromCap`) and first refuses (`.revocationRequired`) while that
   slot has a derivation child, seL4's per-slot `ensureNoChildren`
   (`untypedResetFromCap_ok`); the store-wide check stays beside it until the
-  reset is restated as seL4's (WS-ZA ZA5.4 part 30, `docs/REGISTERED_DEBT.md`).
+  reset is restated as seL4's (WS-ZA ZA5.4 part 31, `docs/REGISTERED_DEBT.md`).
   Then every
   mapping of a page meeting the region is removed through the `.vspaceUnmap`
   arm's own transition — TLB flush, shootdown round, initiator drain,
@@ -8047,20 +8053,25 @@ so no live transition is ever ahead of its own proofs.
   its decidable form and the one spelling of "this Reply may be linked to a new
   caller or retyped", shared by the link guard, the stash admission, the retype
   guard and the boot check.
-- **`donationChainWellFormed`** (`SeLe4n/Kernel/IPC/Invariant/Defs.lean`) — five
+- **`donationChainWellFormed`** (`SeLe4n/Kernel/IPC/Invariant/Defs.lean`) — six
   clauses: every stored Reply is locally well formed; a context's head resolves
   to a Reply heading that context and conversely; every `prev` link is answered
-  by the frame it names (`prevLinkReciprocal`); and each context's stack, walked
-  from its head, **terminates** (`donationChainFrom`, a fuel-bounded walk).  Each
+  by the frame it names (`prevLinkReciprocal`); each context's stack, walked
+  from its head, **terminates** (`donationChainFrom`, a fuel-bounded walk); and
+  every upward `.frame` link is answered by the frame it names
+  (`nextLinkReciprocal`, since `v0.36.140`).  Each
   link is validated by the target's own **upward** link and never by its
   `caller`: Reply objects are re-linked to new callers, so a stale link over a
   reused Reply would otherwise let a donation return read the *new* caller and
   hand the original thread's scheduling context to an unrelated thread, in
   another domain, driven by object reuse.  Relinking clears both links, so a
   reused Reply carries no answer back and the walk stops at it.  The relation is
-  stated **downward** deliberately: an upward `.frame` link whose target does not
-  point back is a legitimate state — a frame below a severed cut, the degenerate
-  arm of the splice (§8.12.11) — and no reader trusts one on its own.
+  stated **both ways** since `v0.36.140` (seL4's `sym_refs` over `replyNext` /
+  `replyPrev`): an upward `.frame` link whose target does not point back is
+  excluded on every reachable state, because the removal clears the cut frame's
+  `next` in the same step that clears the frame above's `prev` (§8.12.11).  That
+  is what lets a reply's own links answer that no frame names it.  The readers
+  still validate each link they follow, as fail-closed checks.
 - **A conjunct of `ipcReachable`, not of `ipcInvariantFull`**, which keeps its
   twenty — and *preserved* rather than assumed.  `donationChainFrame` is the
   reusable frame, stated over the two projections the walk actually reads
@@ -8333,8 +8344,8 @@ respect.
 
 1. **One removal step, and both spines call it.**
    `removeCallerReplyFrame caller rid` is seL4's `reply_remove`: the splice
-   (folded to the identity when nothing links down to the answered frame, which
-   the chain relation permits by design since it is stated downward), then the
+   (folded to the identity when nothing links down to the answered frame, as at
+   the bottom of a stack), then the
    consume.  `endpointReplyOnCore`, `endpointReply` and `endpointReplyRecv` all
    run it; a Tier 3 negative refuses a bare `SystemState.consumeCallerReply` in
    any of the three.  The order inside it is the content — the splice reads the
@@ -8657,11 +8668,12 @@ context's stack and the reservation goes on travelling outward to the caller tha
 owns it.
 
 **The removal is three stores.**  `spliceReplyFrameStores` writes
-`above.prev := some below`, `below.next := some (.frame above)`, and
-`rid.prev := none` — the last being seL4's `reply_unlink` downward half.  The third
-is not optional: without it the cut frame keeps a `prev` that nothing below names
-back, which falsifies `donationChainWellFormed.prevLinkReciprocal` at the cut
-frame, so the bare splice would owe a relaxed predicate and
+`above.prev := some below`, `below.next := some (.frame above)`, and the cut
+frame's own links cleared (`prev := none, next := none`, seL4's `reply_remove`;
+the `next` too since `v0.36.140`).  The third is not optional: without it the cut
+frame keeps a `prev` that nothing below names back, which falsifies
+`donationChainWellFormed.prevLinkReciprocal` at the cut frame, and a `next`
+whose target no longer answers it, which falsifies `nextLinkReciprocal`, so the bare splice would owe a relaxed predicate and
 `SeLe4n/Testing/ReplyStackWriteCensus.lean` would have had to accept a half-step
 where the sever stated its result outright.  With it the invariant is preserved
 **outright** across the removal
@@ -8675,13 +8687,15 @@ redirects the reservation to).
 **The below side degenerates rather than refusing.**  `spliceFrameBelow?` answers
 `Option`: a `prev` that does not resolve, one naming the frame above, and a frame
 below whose own `next` does not link back are all *not followed*, and the removal
-then writes `above.prev := none`, which is the sever.  So this operation's refusal
+then clears the frame above's `prev` (and its `next` too where it names the cut
+frame back, `Reply.unlinkedFrom`) and the cut frame's links, which is the sever.  So this operation's refusal
 set is **exactly** the pre-WS-HP one — every refusal theorem carries verbatim,
 `spliceReplyFrameOutOrSelf`'s fold soundness included, and
 `spliceReplyFrameOut_eq_sever_of_no_frame_below` is the definitional equality that
-makes every repair a case split whose `none` branch is the pre-HP proof.  One
-consequence: a **stale upward link is still reachable**, so the reciprocity checks
-(`donationChainFrom`, `replyFrameOnLiveStack`) stay and stay load-bearing.
+makes every repair a case split whose `none` branch is the pre-HP proof.  A stale
+upward link is excluded on every reachable state (`nextLinkReciprocal`); the
+reciprocity checks (`donationChainFrom`, `replyFrameOnLiveStack`) stay as
+fail-closed checks on states the invariant does not vouch for.
 
 **The two facts the sever could not state.**
 `removeCallerReplyFrame_splices_reciprocally` — after a middle removal the frame

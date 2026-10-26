@@ -362,10 +362,17 @@ a refusal.  Set-space deletes each old root through the same loop
 its recorder adopts them and each child untyped names the recorder as its
 parent (`retireUnrecord`), so new code that reads an untyped's parent or child
 list must not assume either survives the retire of a neighbour.  The retire
-reads the object's own links for every reference held in an object; it still
-walks the service registry, the interrupt-handler table and the service graph
-(plan row 28), and the finalise's admission is not yet carried across its steps
-(each step re-checks; plan row 29, `docs/REGISTERED_DEBT.md`).  The suspend of a thread blocked in IPC or
+still walks the object table for references by id (`storeNamesNone` and its
+thread and scheduling-context forms; plan row 28, which reads the object's own
+links through the reciprocity part 27 proves) and the service registry, the
+interrupt-handler table and the service graph (plan row 29), and the finalise's
+admission is not yet carried across its steps (each step re-checks; plan row
+30, `docs/REGISTERED_DEBT.md`).  The reply stack's links are reciprocal both ways
+(`donationChainWellFormed.nextLinkReciprocal`, since `v0.36.140`), so new code
+that clears a frame's `prev` must clear in the same step the `next` of the frame
+it named, as the removal clears both of the cut frame's links; notification
+bindings and endpoint-queue links are likewise held reciprocal by
+`ipcInvariantFull`, so a writer of either side writes both.  The suspend of a thread blocked in IPC or
 holding a donated context is the one syscall arm left on the general path
 (ZA6.1).  ZA6 covers the other
 entries and makes the rule standing.  Plan:
