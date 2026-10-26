@@ -3041,31 +3041,32 @@ theorem retypeFromUntyped_preserves_lowEquivalent
 -- R5-B: registerServiceChecked Non-Interference (M-02)
 -- ============================================================================
 
-/-- R5-B.2/M-02: registerService at a non-observable service preserves projection.
-registerService only modifies `serviceRegistry`, which only affects the `services`
-field of `ObservableState`. If the registered service is non-observable, the
-projected service presence is unchanged. -/
+/-- The registry's one object write — an endpoint's `serviceCode` — is erased
+by `projectKernelObject`, so it leaves the object projection unchanged. -/
+theorem projectObjects_of_serviceCodeRewrite
+    (ctx : LabelingContext) (observer : IfObserver) {st st' : SystemState}
+    (hW : ServiceCodeRewrite st.objects st'.objects) (hObjInv : st.objects.invExt) :
+    projectObjects ctx observer st' = projectObjects ctx observer st := by
+  funext oid
+  simp only [projectObjects, SystemState.getObject?]
+  rcases hW.lookup hObjInv oid with h | ⟨ep, c, h0, h⟩ <;> rw [h]
+  rw [h0]; simp [projectKernelObject]
+
+/-- R5-B.2/M-02: registerService preserves projection.  It writes the
+`serviceRegistry` — read by the projection only through the presence of
+observable services — and its endpoint's `serviceCode`, which the object
+projection erases. -/
 theorem registerService_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (reg : ServiceRegistration) (st st' : SystemState)
+    (hObjInv : st.objects.invExt)
     (hStep : registerService reg st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
-  -- registerService on success produces { st with serviceRegistry := ... }
-  -- Extract the state equality from the success case
-  unfold registerService SystemState.getObject? at hStep
-  split at hStep <;> try simp at hStep
-  split at hStep <;> try simp at hStep
-  -- Match on CapTarget cases
-  split at hStep
-  · -- .object epId
-    split at hStep <;> try simp at hStep
-    · -- endpoint found
-      split at hStep <;> try simp at hStep
-      · -- AE5-B: hasEndpointRegistered check
-        split at hStep <;> try simp at hStep
-        · -- passed — only serviceRegistry changes, projection unchanged
-          cases hStep; simp only [projectState]; congr 1
-  all_goals simp at hStep
+  have hObj := projectObjects_of_serviceCodeRewrite ctx observer
+    (registerService_serviceCodeRewrite hStep) hObjInv
+  obtain ⟨_, _, _, _, _, _, rfl⟩ := registerService_ok hStep
+  simp only [projectState]
+  congr 1
 
 /-- R5-B/M-02: registerServiceChecked NI — projection-based.
 If the registered service is non-observable, both executions preserve projection. -/
@@ -3074,6 +3075,7 @@ theorem registerServiceChecked_NI
     (caller : SeLe4n.ThreadId) (reg : ServiceRegistration)
     (s₁ s₂ s₁' s₂' : SystemState)
     (hLow : lowEquivalent ctx observer s₁ s₂)
+    (hObjInv₁ : s₁.objects.invExt) (hObjInv₂ : s₂.objects.invExt)
     (hStep₁ : registerServiceChecked ctx caller reg s₁ = .ok ((), s₁'))
     (hStep₂ : registerServiceChecked ctx caller reg s₂ = .ok ((), s₂')) :
     lowEquivalent ctx observer s₁' s₂' := by
@@ -3082,8 +3084,8 @@ theorem registerServiceChecked_NI
   rw [registerServiceChecked_eq_registerService_when_allowed ctx caller reg s₂
     (enforcementSoundness_registerServiceChecked ctx caller reg s₂ s₂' hStep₂)] at hStep₂
   unfold lowEquivalent; rw [
-    registerService_preserves_projection ctx observer reg s₁ s₁' hStep₁,
-    registerService_preserves_projection ctx observer reg s₂ s₂' hStep₂]
+    registerService_preserves_projection ctx observer reg s₁ s₁' hObjInv₁ hStep₁,
+    registerService_preserves_projection ctx observer reg s₂ s₂' hObjInv₂ hStep₂]
   exact hLow
 
 -- ============================================================================
@@ -5028,36 +5030,34 @@ theorem revokeService_preserves_projection
           projectServicePresence ctx observer st ∧
         projectServiceRegistry ctx observer stFinal =
           projectServiceRegistry ctx observer st)
+    (hObjInv : st.objects.invExt)
     (hStep : SeLe4n.Kernel.revokeService sid st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
   -- Extract projection equalities directly from the hypothesis using hStep.
   have hProj := hServiceProjEq st' hStep
   obtain ⟨hPresence, hRegistry⟩ := hProj
-  -- Now reason about the structure of st'.
-  unfold SeLe4n.Kernel.revokeService at hStep
-  split at hStep
-  · simp at hStep -- not found: contradicts .ok
-  · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-    obtain ⟨_, hStEq⟩ := hStep
-    subst hStEq
-    -- st' = removeDependenciesOf { st with serviceRegistry := erase } sid
-    -- All non-service projection components are preserved because:
-    -- - serviceRegistry.erase only touches the serviceRegistry FIELD
-    -- (not in any projection)
-    -- - removeDependenciesOf preserves objects/scheduler/lifecycle/machine
-    -- (proven: removeDependenciesOf_objects_eq etc.)
-    simp only [projectState]
-    congr 1 <;>
-      (first
-        | exact hPresence
-        | exact hRegistry
-        | (simp only [projectObjects, projectRunnable, projectCurrent,
-                      projectActiveDomain, projectIrqHandlers, projectObjectIndex,
-                      projectDomainTimeRemaining, projectDomainSchedule,
-                      projectDomainScheduleIndex, projectMachineRegs,
-                      projectMemory, SchedulerState.runnable,
-                      SeLe4n.Kernel.removeDependenciesOf]; rfl)
-        | rfl)
+  -- The one object write — the endpoint's `serviceCode` — is erased by the
+  -- object projection.
+  have hObj := projectObjects_of_serviceCodeRewrite ctx observer
+    (SeLe4n.Kernel.revokeService_serviceCodeRewrite hStep) hObjInv
+  obtain ⟨reg, _, rfl⟩ := SeLe4n.Kernel.revokeService_ok hStep
+  -- st' = removeDependenciesOf (clearEndpointServiceCode { st with
+  -- serviceRegistry := erase } ..) sid: every other projected component is
+  -- read from a field neither step writes.
+  rw [SeLe4n.Kernel.clearEndpointServiceCode_eq_withObjects] at hObj hPresence hRegistry ⊢
+  simp only [projectState]
+  congr 1 <;>
+    (first
+      | exact hObj
+      | exact hPresence
+      | exact hRegistry
+      | (simp only [projectObjects, projectRunnable, projectCurrent,
+                    projectActiveDomain, projectIrqHandlers, projectObjectIndex,
+                    projectDomainTimeRemaining, projectDomainSchedule,
+                    projectDomainScheduleIndex, projectMachineRegs,
+                    projectMemory, SchedulerState.runnable,
+                    SeLe4n.Kernel.removeDependenciesOf]; rfl)
+      | rfl)
 
 -- ============================================================================
 -- AK6-F.13: schedContextConfigure preservation

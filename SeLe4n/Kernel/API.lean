@@ -3321,7 +3321,7 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
       | error e => simp only [hDec] at hStep; cases hStep
       | ok args =>
           simp only [hDec] at hStep
-          exact revokeService_preserves_ipcInvariantFull st st' _ hInv hStep
+          exact revokeService_preserves_ipcInvariantFull st st' _ hObjInv hInv hStep
     all_goals try cases hStep
   case serviceQuery =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep

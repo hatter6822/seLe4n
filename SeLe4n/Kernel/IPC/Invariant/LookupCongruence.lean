@@ -945,8 +945,16 @@ structure ipcReadViewAgreement (s1 s2 : SystemState) : Prop where
     ∃ t₀ : TCB, s1.objects[oid]? = some (.tcb t₀) ∧ t.ipcReadView = t₀.ipcReadView
   tcbFwd : ∀ (oid : SeLe4n.ObjId) (t₀ : TCB), s1.objects[oid]? = some (.tcb t₀) →
     ∃ t : TCB, s2.objects[oid]? = some (.tcb t) ∧ t.ipcReadView = t₀.ipcReadView
+  /-- The endpoint clauses are agreement **off the service code**: no conjunct
+  reads `Endpoint.serviceCode`, which is the service registry's back-link
+  (`SystemState.tableReferencesRecorded`), so a registration or a revocation,
+  which writes it on its endpoint, stays inside the frame. -/
   endpoint : ∀ (oid : SeLe4n.ObjId) (ep : Endpoint),
-    s2.objects[oid]? = some (.endpoint ep) ↔ s1.objects[oid]? = some (.endpoint ep)
+    s2.objects[oid]? = some (.endpoint ep) →
+    ∃ c : Nat, s1.objects[oid]? = some (.endpoint { ep with serviceCode := c })
+  endpointFwd : ∀ (oid : SeLe4n.ObjId) (ep : Endpoint),
+    s1.objects[oid]? = some (.endpoint ep) →
+    ∃ c : Nat, s2.objects[oid]? = some (.endpoint { ep with serviceCode := c })
   /-- The notification clause is *content* agreement, not value agreement:
   every notification-reading conjunct but the reciprocity reads `state`,
   `waitHead` and `pendingBadge` only, so a rewrite that moves `boundTCB` or the
@@ -1044,6 +1052,22 @@ theorem of_schedContext_content_write {s1 s2 : SystemState} {key : SeLe4n.ObjId}
 
 end sameNotificationBindings
 
+/-- Lookup agreement on endpoints gives the read view's endpoint clause. -/
+theorem endpointBack_of_iff {s1 s2 : SystemState}
+    (h : ∀ (oid : SeLe4n.ObjId) (ep : Endpoint),
+      s2.objects[oid]? = some (.endpoint ep) ↔ s1.objects[oid]? = some (.endpoint ep)) :
+    ∀ (oid : SeLe4n.ObjId) (ep : Endpoint), s2.objects[oid]? = some (.endpoint ep) →
+      ∃ c : Nat, s1.objects[oid]? = some (.endpoint { ep with serviceCode := c }) :=
+  fun oid ep hx => ⟨ep.serviceCode, (h oid ep).mp hx⟩
+
+/-- ...and its forward clause. -/
+theorem endpointFwd_of_iff {s1 s2 : SystemState}
+    (h : ∀ (oid : SeLe4n.ObjId) (ep : Endpoint),
+      s2.objects[oid]? = some (.endpoint ep) ↔ s1.objects[oid]? = some (.endpoint ep)) :
+    ∀ (oid : SeLe4n.ObjId) (ep : Endpoint), s1.objects[oid]? = some (.endpoint ep) →
+      ∃ c : Nat, s2.objects[oid]? = some (.endpoint { ep with serviceCode := c }) :=
+  fun oid ep hx => ⟨ep.serviceCode, (h oid ep).mpr hx⟩
+
 namespace ipcReadViewAgreement
 
 /-- **WS-ZA ZA4.5**: object stores that agree off the run-queue links are
@@ -1054,7 +1078,8 @@ theorem of_objectsAgreeOffRunLinks {s1 s2 : SystemState}
      ⟨t, ht.1, congrArg (fun u : TCB => TCB.withoutLinks { u with boundNotificationCode := 0 }) ht.2⟩,
    fun _ _ hx => (h.get_tcb hx).elim fun t ht =>
      ⟨t, ht.1, congrArg (fun u : TCB => TCB.withoutLinks { u with boundNotificationCode := 0 }) ht.2⟩,
-   fun _ _ => h.get_endpoint_iff,
+   endpointBack_of_iff fun _ _ => h.get_endpoint_iff,
+   endpointFwd_of_iff fun _ _ => h.get_endpoint_iff,
    fun _ ntfn hObj => ⟨ntfn, h.get_notification_iff.mp hObj, rfl, rfl, rfl⟩,
    fun _ _ => h.get_reply_iff,
    fun _ sc hSc => ⟨sc, h.get_schedContext_iff.mpr hSc, rfl⟩⟩
@@ -1067,7 +1092,8 @@ theorem of_objectsAgreeOffDerivationLinks {s1 s2 : SystemState}
      ⟨t, ht.1, congrArg (fun u : TCB => { TCB.withoutRunLinks u with boundNotificationCode := 0 }) ht.2⟩,
    fun _ _ hx => (h.tcb_fwd hx).elim fun t ht =>
      ⟨t, ht.1, congrArg (fun u : TCB => { TCB.withoutRunLinks u with boundNotificationCode := 0 }) ht.2⟩,
-   fun _ _ => h.obj_iff (fun _ e => KernelObject.noConfusion e),
+   endpointBack_of_iff fun _ _ => h.obj_iff (fun _ e => KernelObject.noConfusion e),
+   endpointFwd_of_iff fun _ _ => h.obj_iff (fun _ e => KernelObject.noConfusion e),
    fun _ ntfn hObj =>
      ⟨ntfn, h.obj_back hObj (fun _ e => KernelObject.noConfusion e), rfl, rfl, rfl⟩,
    fun _ _ => h.obj_iff (fun _ e => KernelObject.noConfusion e),
@@ -1097,7 +1123,8 @@ theorem of_inertWrites {s1 s2 : SystemState}
       · intro hx; rw [hx] at h1; exact absurd h1 hNotInert
   exact ⟨fun oid t h => ⟨t, (step oid (.tcb t) (by simp [ipcReadInert])).mp h, rfl⟩,
          fun oid t h => ⟨t, (step oid (.tcb t) (by simp [ipcReadInert])).mpr h, rfl⟩,
-         fun oid ep => step oid (.endpoint ep) (by simp [ipcReadInert]),
+         endpointBack_of_iff (fun oid ep => step oid (.endpoint ep) (by simp [ipcReadInert])),
+         endpointFwd_of_iff (fun oid ep => step oid (.endpoint ep) (by simp [ipcReadInert])),
          fun oid ntfn hObj =>
            ⟨ntfn, (step oid (.notification ntfn) (by simp [ipcReadInert])).mp hObj,
              rfl, rfl, rfl⟩,
@@ -1137,7 +1164,8 @@ theorem of_fresh_inert_write {s1 s2 : SystemState} {key : SeLe4n.ObjId}
     · rw [hNe oid hK]
   exact ⟨fun oid t h => ⟨t, (step oid (.tcb t) (by simp [ipcReadInert])).mp h, rfl⟩,
          fun oid t h => ⟨t, (step oid (.tcb t) (by simp [ipcReadInert])).mpr h, rfl⟩,
-         fun oid ep => step oid (.endpoint ep) (by simp [ipcReadInert]),
+         endpointBack_of_iff (fun oid ep => step oid (.endpoint ep) (by simp [ipcReadInert])),
+         endpointFwd_of_iff (fun oid ep => step oid (.endpoint ep) (by simp [ipcReadInert])),
          fun oid ntfn hObj =>
            ⟨ntfn, (step oid (.notification ntfn) (by simp [ipcReadInert])).mp hObj,
              rfl, rfl, rfl⟩,
@@ -1172,7 +1200,8 @@ theorem of_inertOrAbsentWrites {s1 s2 : SystemState}
         · exact absurd h1 hNotInert
   exact ⟨fun oid t h => ⟨t, (step oid (.tcb t) (by simp [ipcReadInert])).mp h, rfl⟩,
          fun oid t h => ⟨t, (step oid (.tcb t) (by simp [ipcReadInert])).mpr h, rfl⟩,
-         fun oid ep => step oid (.endpoint ep) (by simp [ipcReadInert]),
+         endpointBack_of_iff (fun oid ep => step oid (.endpoint ep) (by simp [ipcReadInert])),
+         endpointFwd_of_iff (fun oid ep => step oid (.endpoint ep) (by simp [ipcReadInert])),
          fun oid ntfn hObj =>
            ⟨ntfn, (step oid (.notification ntfn) (by simp [ipcReadInert])).mp hObj,
              rfl, rfl, rfl⟩,
@@ -1208,7 +1237,8 @@ theorem of_notification_content_write {s1 s2 : SystemState} {key : SeLe4n.ObjId}
     · rw [hNe oid hK]
   refine ⟨fun oid t h => ⟨t, (step oid (.tcb t) (fun n h => KernelObject.noConfusion h)).mp h, rfl⟩,
           fun oid t h => ⟨t, (step oid (.tcb t) (fun n h => KernelObject.noConfusion h)).mpr h, rfl⟩,
-          fun oid ep => step oid (.endpoint ep) (fun n h => KernelObject.noConfusion h),
+          endpointBack_of_iff (fun oid ep => step oid (.endpoint ep) (fun n h => KernelObject.noConfusion h)),
+          endpointFwd_of_iff (fun oid ep => step oid (.endpoint ep) (fun n h => KernelObject.noConfusion h)),
           fun oid n hObj => ?_,
           fun oid r => step oid (.reply r) (fun n h => KernelObject.noConfusion h),
           fun oid sc hSc =>
@@ -1244,7 +1274,8 @@ theorem of_tcb_ipcReadView_write {s1 s2 : SystemState} {key : SeLe4n.ObjId}
       · intro hx; exact absurd (Option.some.inj hx).symm (hNo t)
     · rw [hNe oid hK]
   refine ⟨fun oid x h => ?_, fun oid x h => ?_,
-          fun oid ep => step oid (.endpoint ep) (fun _ h => KernelObject.noConfusion h),
+          endpointBack_of_iff (fun oid ep => step oid (.endpoint ep) (fun _ h => KernelObject.noConfusion h)),
+          endpointFwd_of_iff (fun oid ep => step oid (.endpoint ep) (fun _ h => KernelObject.noConfusion h)),
           fun oid n hObj =>
             ⟨n, (step oid (.notification n) (fun _ h => KernelObject.noConfusion h)).mp hObj,
               rfl, rfl, rfl⟩,
@@ -1289,7 +1320,8 @@ theorem of_schedContext_content_write {s1 s2 : SystemState} {key : SeLe4n.ObjId}
     · rw [hNe oid hK]
   refine ⟨fun oid t h => ⟨t, (step oid (.tcb t) (fun x h => KernelObject.noConfusion h)).mp h, rfl⟩,
           fun oid t h => ⟨t, (step oid (.tcb t) (fun x h => KernelObject.noConfusion h)).mpr h, rfl⟩,
-          fun oid ep => step oid (.endpoint ep) (fun x h => KernelObject.noConfusion h),
+          endpointBack_of_iff (fun oid ep => step oid (.endpoint ep) (fun x h => KernelObject.noConfusion h)),
+          endpointFwd_of_iff (fun oid ep => step oid (.endpoint ep) (fun x h => KernelObject.noConfusion h)),
           fun oid n hObj =>
             ⟨n, (step oid (.notification n)
               (fun x h => KernelObject.noConfusion h)).mp hObj, rfl, rfl, rfl⟩,
@@ -1316,7 +1348,14 @@ theorem trans {s1 s2 s3 : SystemState}
      obtain ⟨t2, h2, e2⟩ := hFore.tcbFwd oid t h1
      obtain ⟨t3, h3, e3⟩ := hAft.tcbFwd oid t2 h2
      exact ⟨t3, h3, e3.trans e2⟩,
-   fun oid ep => (hAft.endpoint oid ep).trans (hFore.endpoint oid ep),
+   fun oid ep h3 => by
+     obtain ⟨_, h2⟩ := hAft.endpoint oid ep h3
+     obtain ⟨c1, h1⟩ := hFore.endpoint oid _ h2
+     exact ⟨c1, h1⟩,
+   fun oid ep h1 => by
+     obtain ⟨_, h2⟩ := hFore.endpointFwd oid ep h1
+     obtain ⟨c3, h3⟩ := hAft.endpointFwd oid _ h2
+     exact ⟨c3, h3⟩,
    fun oid n h3 => by
      obtain ⟨n2, h2, hS2, hW2, hB2⟩ := hAft.notification oid n h3
      obtain ⟨n1, h1, hS1, hW1, hB1⟩ := hFore.notification oid n2 h2
@@ -1432,7 +1471,8 @@ theorem dualQueueEndpointWellFormed_of_readViewAgreement {s1 s2 : SystemState}
   | some obj =>
     cases obj with
     | endpoint ep =>
-      rw [(hView.endpoint _ _).mp hObj] at h
+      obtain ⟨_, hObj'⟩ := hView.endpoint _ _ hObj
+      rw [hObj'] at h
       exact ⟨intrusiveQueueWellFormed_of_readViewAgreement hView h.1,
              intrusiveQueueWellFormed_of_readViewAgreement hView h.2⟩
     | tcb _ | cnode _ | vspaceRoot _ | notification _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ =>
@@ -1449,10 +1489,13 @@ theorem dualQueueSystemInvariant_of_readViewAgreement {s1 s2 : SystemState}
           queuePPrevAgreesWithPrev_of_readViewAgreement hView hPP,
           -- **PR #897 review**: the read view agrees on endpoints, which is all the
           -- fifth conjunct reads.
-          endpointQueueHeadDisjoint_of_endpointBackward
-            (fun epId ep hEp' => by rw [hView.endpoint] at hEp'; exact hEp') hHD⟩
-  rw [hView.endpoint] at hObj
-  exact dualQueueEndpointWellFormed_of_readViewAgreement hView (hEp epId ep hObj)
+          fun epA epB eA eB hd recvA recvB hA hB =>
+            let ⟨cA, hA'⟩ := hView.endpoint _ _ hA
+            let ⟨cB, hB'⟩ := hView.endpoint _ _ hB
+            hHD epA epB { eA with serviceCode := cA } { eB with serviceCode := cB } hd recvA recvB
+              hA' hB'⟩
+  obtain ⟨_, hObj⟩ := hView.endpoint _ _ hObj
+  exact dualQueueEndpointWellFormed_of_readViewAgreement hView (hEp epId _ hObj)
 
 /-- Read-view transport of pending-message boundedness. -/
 theorem allPendingMessagesBounded_of_readViewAgreement {s1 s2 : SystemState}
@@ -1503,8 +1546,8 @@ theorem endpointQueueNoDup_of_readViewAgreement {s1 s2 : SystemState}
     (hView : ipcReadViewAgreement s1 s2)
     (h : endpointQueueNoDup s1) : endpointQueueNoDup s2 := by
   intro oid ep hEp
-  rw [hView.endpoint] at hEp
-  obtain ⟨hSelf, hDisj⟩ := h oid ep hEp
+  obtain ⟨_, hEp⟩ := hView.endpoint _ _ hEp
+  obtain ⟨hSelf, hDisj⟩ := h oid _ hEp
   refine ⟨fun tid tcb hTcb => ?_, hDisj⟩
   run_links_back hView at tcb hTcb
   exact hSelf tid tcb hTcb
@@ -1520,7 +1563,8 @@ theorem ipcStateQueueMembershipConsistent_of_readViewAgreement {s1 s2 : SystemSt
   | blockedOnSend epId =>
       simp only [hIpc] at hG
       obtain ⟨ep, hEp, hReach⟩ := hG
-      refine ⟨ep, (hView.endpoint _ _).mpr hEp, ?_⟩
+      obtain ⟨_, hEp⟩ := hView.endpointFwd _ _ hEp
+      refine ⟨_, hEp, ?_⟩
       rcases hReach with hHead | ⟨prev, prevTcb, hPrev, hNext⟩
       · exact Or.inl hHead
       · run_links_fwd hView at prevTcb hPrev
@@ -1528,7 +1572,8 @@ theorem ipcStateQueueMembershipConsistent_of_readViewAgreement {s1 s2 : SystemSt
   | blockedOnReceive epId =>
       simp only [hIpc] at hG
       obtain ⟨ep, hEp, hReach⟩ := hG
-      refine ⟨ep, (hView.endpoint _ _).mpr hEp, ?_⟩
+      obtain ⟨_, hEp⟩ := hView.endpointFwd _ _ hEp
+      refine ⟨_, hEp, ?_⟩
       rcases hReach with hHead | ⟨prev, prevTcb, hPrev, hNext⟩
       · exact Or.inl hHead
       · run_links_fwd hView at prevTcb hPrev
@@ -1536,7 +1581,8 @@ theorem ipcStateQueueMembershipConsistent_of_readViewAgreement {s1 s2 : SystemSt
   | blockedOnCall epId =>
       simp only [hIpc] at hG
       obtain ⟨ep, hEp, hReach⟩ := hG
-      refine ⟨ep, (hView.endpoint _ _).mpr hEp, ?_⟩
+      obtain ⟨_, hEp⟩ := hView.endpointFwd _ _ hEp
+      refine ⟨_, hEp, ?_⟩
       rcases hReach with hHead | ⟨prev, prevTcb, hPrev, hNext⟩
       · exact Or.inl hHead
       · run_links_fwd hView at prevTcb hPrev
@@ -1558,9 +1604,9 @@ theorem queueHeadBlockedConsistent_of_readViewAgreement {s1 s2 : SystemState}
     (hView : ipcReadViewAgreement s1 s2)
     (h : queueHeadBlockedConsistent s1) : queueHeadBlockedConsistent s2 := by
   intro epId ep hd tcb hEp hTcb
-  rw [hView.endpoint] at hEp
+  obtain ⟨c, hEp⟩ := hView.endpoint _ _ hEp
   run_links_back hView at tcb hTcb
-  exact h epId ep hd tcb hEp hTcb
+  exact h epId { ep with serviceCode := c } hd tcb hEp hTcb
 
 /-- Read-view transport of `blockedThreadTimeoutConsistent`. -/
 theorem blockedThreadTimeoutConsistent_of_readViewAgreement {s1 s2 : SystemState}
@@ -1679,9 +1725,9 @@ theorem endpointQueueTailBlockedConsistent_of_readViewAgreement {s1 s2 : SystemS
     (hView : ipcReadViewAgreement s1 s2)
     (h : endpointQueueTailBlockedConsistent s1) : endpointQueueTailBlockedConsistent s2 := by
   intro epId ep tl tcb hEp hTcb
-  rw [hView.endpoint] at hEp
+  obtain ⟨c, hEp⟩ := hView.endpoint _ _ hEp
   run_links_back hView at tcb hTcb
-  exact h epId ep tl tcb hEp hTcb
+  exact h epId { ep with serviceCode := c } tl tcb hEp hTcb
 
 /-- Read-view transport of `queueNextTargetBlocked`. -/
 theorem queueNextTargetBlocked_of_readViewAgreement {s1 s2 : SystemState}

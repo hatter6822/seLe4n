@@ -3014,6 +3014,14 @@ structure Endpoint where
   recvHeadCode : Nat := 0
   /-- The receive queue's tail, as a scalar code. -/
   recvTailCode : Nat := 0
+  /-- **The service registration that holds a capability to this endpoint**,
+      as a scalar code (`s + 1` for the service `⟨s⟩`, `0` for none): written by
+      `registerService`, cleared by the revocation of that registration.  A
+      registration keeps its endpoint capability outside every slot, so the
+      finality the tree answers does not see it; this back-reference is what a
+      final delete reads instead of walking the registry
+      (`SystemState.tableReferencesRecorded`).  A carved endpoint starts at `0`. -/
+  serviceCode : Nat := 0
   deriving Repr, DecidableEq
 
 /-- The send queue's boundaries, read from their codes.  The endpoint keeps
@@ -3108,28 +3116,34 @@ theorem withSendQ_tail (e : Endpoint) (t : Option SeLe4n.ThreadId) :
 
 @[simp] theorem receiveQ_default : (({} : Endpoint)).receiveQ = {} := rfl
 
-/-- An endpoint is its two queues: equal queues, equal endpoints. -/
-theorem ext_queues {a b : Endpoint} (hs : a.sendQ = b.sendQ) (hr : a.receiveQ = b.receiveQ) :
-    a = b := by
-  obtain ⟨a1, a2, a3, a4⟩ := a
-  obtain ⟨b1, b2, b3, b4⟩ := b
-  simp only [sendQ, receiveQ, IntrusiveQueue.mk.injEq] at hs hr
+/-- An endpoint is its two queues and the registration it records: equal
+    queues and equal registrations, equal endpoints. -/
+theorem ext_queues {a b : Endpoint} (hs : a.sendQ = b.sendQ) (hr : a.receiveQ = b.receiveQ)
+    (hc : a.serviceCode = b.serviceCode) : a = b := by
+  obtain ⟨a1, a2, a3, a4, a5⟩ := a
+  obtain ⟨b1, b2, b3, b4, b5⟩ := b
+  simp only [sendQ, receiveQ, IntrusiveQueue.mk.injEq] at hs hr hc
+  subst hc
   have inj : ∀ {x y : Nat}, SeLe4n.ThreadId.ofOptCode x = SeLe4n.ThreadId.ofOptCode y → x = y :=
     fun {x y} h => by
       rw [← SeLe4n.ThreadId.optCode_ofOptCode x, h, SeLe4n.ThreadId.optCode_ofOptCode]
   rw [inj hs.1, inj hs.2, inj hr.1, inj hr.2]
 
-theorem ext_queues_iff {a b : Endpoint} : a = b ↔ a.sendQ = b.sendQ ∧ a.receiveQ = b.receiveQ :=
-  ⟨fun h => h ▸ ⟨rfl, rfl⟩, fun ⟨hs, hr⟩ => ext_queues hs hr⟩
+theorem ext_queues_iff {a b : Endpoint} :
+    a = b ↔ a.sendQ = b.sendQ ∧ a.receiveQ = b.receiveQ ∧ a.serviceCode = b.serviceCode :=
+  ⟨fun h => h ▸ ⟨rfl, rfl, rfl⟩, fun ⟨hs, hr, hc⟩ => ext_queues hs hr hc⟩
 
 @[simp] theorem withSendQ_sendQ (e : Endpoint) : e.withSendQ e.sendQ = e :=
-  ext_queues (by simp) rfl
+  ext_queues (by simp) rfl rfl
 
 @[simp] theorem withReceiveQ_receiveQ (e : Endpoint) : e.withReceiveQ e.receiveQ = e :=
-  ext_queues rfl (by simp)
+  ext_queues rfl (by simp) rfl
 
-@[simp] theorem ofQueues_sendQ_receiveQ (e : Endpoint) : ofQueues e.sendQ e.receiveQ = e :=
-  ext_queues (by simp) (by simp)
+@[simp] theorem serviceCode_withSendQ (e : Endpoint) (q : IntrusiveQueue) :
+    (e.withSendQ q).serviceCode = e.serviceCode := rfl
+
+@[simp] theorem serviceCode_withReceiveQ (e : Endpoint) (q : IntrusiveQueue) :
+    (e.withReceiveQ q).serviceCode = e.serviceCode := rfl
 
 end Endpoint
 
@@ -3191,6 +3205,13 @@ structure Notification where
       stored as its scalar code (`SeLe4n.ThreadId.optCode`) and read through
       the view `Notification.boundTCB`, so a bind writes no `some` cell. -/
   boundTCBCode : Nat := 0
+  /-- **Whether an interrupt is handled through this notification**: the
+      interrupt table (`SystemState.irqHandlers`, written at boot only) names it
+      by id, where seL4 keeps a capability to it in the interrupt's slot.  Set
+      by the boot for every notification the table names
+      (`SystemState.tableReferencesRecorded`), so a final delete reads this flag
+      instead of walking the table.  A carved notification starts `false`. -/
+  irqBound : Bool := false
   deriving Repr, DecidableEq
 
 /-- WS-ZA ZA5.2: the bound thread, read from its code.  Reducible, so a record
@@ -3205,14 +3226,14 @@ update that leaves the code alone reads the old value by `rfl`.  Written as
 @[inline] def Notification.pendingBadge (n : Notification) : Option SeLe4n.Badge :=
   if n.hasPendingBadge then some n.pendingWord else none
 
-@[simp] theorem Notification.pendingBadge_mk (s hd tl h p c b) :
-    (Notification.mk s hd tl h p c b).pendingBadge = if h then some p else none := rfl
+@[simp] theorem Notification.pendingBadge_mk (s hd tl h p c b i) :
+    (Notification.mk s hd tl h p c b i).pendingBadge = if h then some p else none := rfl
 
-@[simp] theorem Notification.pendingBadge_mk_true (s hd tl p c b) :
-    (Notification.mk s hd tl true p c b).pendingBadge = some p := rfl
+@[simp] theorem Notification.pendingBadge_mk_true (s hd tl p c b i) :
+    (Notification.mk s hd tl true p c b i).pendingBadge = some p := rfl
 
-@[simp] theorem Notification.pendingBadge_mk_false (s hd tl p c b) :
-    (Notification.mk s hd tl false p c b).pendingBadge = none := rfl
+@[simp] theorem Notification.pendingBadge_mk_false (s hd tl p c b i) :
+    (Notification.mk s hd tl false p c b i).pendingBadge = none := rfl
 
 /-- The first waiter, read from its scalar code. -/
 @[inline] def Notification.waitHead (n : Notification) : Option SeLe4n.ThreadId :=
@@ -3222,11 +3243,11 @@ update that leaves the code alone reads the old value by `rfl`.  Written as
 @[inline] def Notification.waitTail (n : Notification) : Option SeLe4n.ThreadId :=
   SeLe4n.ThreadId.ofOptCode n.waitTailCode
 
-@[simp] theorem Notification.waitHead_mk (s hd tl h p c b) :
-    (Notification.mk s hd tl h p c b).waitHead = SeLe4n.ThreadId.ofOptCode hd := rfl
+@[simp] theorem Notification.waitHead_mk (s hd tl h p c b i) :
+    (Notification.mk s hd tl h p c b i).waitHead = SeLe4n.ThreadId.ofOptCode hd := rfl
 
-@[simp] theorem Notification.waitTail_mk (s hd tl h p c b) :
-    (Notification.mk s hd tl h p c b).waitTail = SeLe4n.ThreadId.ofOptCode tl := rfl
+@[simp] theorem Notification.waitTail_mk (s hd tl h p c b i) :
+    (Notification.mk s hd tl h p c b i).waitTail = SeLe4n.ThreadId.ofOptCode tl := rfl
 
 @[simp] theorem Notification.ofOptCode_waitHeadCode (n : Notification) :
     SeLe4n.ThreadId.ofOptCode n.waitHeadCode = n.waitHead := rfl
@@ -3263,7 +3284,7 @@ notification with waiters holds none — and the binding is carried. -/
     waitHeadCode := SeLe4n.ThreadId.optCode next
     waitTailCode := if next.isSome then n.waitTailCode else 0
     hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero
-    boundTCBCode := n.boundTCBCode }
+    boundTCBCode := n.boundTCBCode, irqBound := n.irqBound }
 
 /-- WS-ZA ZA4.4: the notification once `waiter` joins the back of its queue: the
 waiter is the new tail, and the head too when the queue was empty. -/
@@ -3274,7 +3295,7 @@ waiter is the new tail, and the head too when the queue was empty. -/
       else n.waitHeadCode
     waitTailCode := SeLe4n.ThreadId.optCode (some waiter)
     hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero
-    boundTCBCode := n.boundTCBCode }
+    boundTCBCode := n.boundTCBCode, irqBound := n.irqBound }
 
 @[simp] theorem Notification.withHeadPopped_waitHead (n : Notification)
     (next : Option SeLe4n.ThreadId) : (n.withHeadPopped next).waitHead = next := by

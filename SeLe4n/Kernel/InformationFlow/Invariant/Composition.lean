@@ -523,7 +523,7 @@ theorem step_preserves_projection
   | registerServiceChecked caller reg hOp =>
     have hFlow := enforcementSoundness_registerServiceChecked ctx caller reg st st' hOp
     rw [registerServiceChecked_eq_registerService_when_allowed ctx caller reg st hFlow] at hOp
-    exact registerService_preserves_projection ctx observer reg st st' hOp
+    exact registerService_preserves_projection ctx observer reg st st' hObjInv hOp
   | endpointCallWithDonationHigh _ hProj => exact hProj
   | endpointReplyWithReversionHigh _ hProj => exact hProj
   | handleInterrupt _ _ _ hProj => exact hProj

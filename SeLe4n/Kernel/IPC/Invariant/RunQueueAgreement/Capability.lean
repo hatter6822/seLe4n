@@ -323,16 +323,25 @@ theorem untypedResetWithShootdown_runQueueStage {ec : Concurrency.CoreId} {untyp
       ⟨h.1, h.2.1, resetTouchedWrite.retireTouched h.2.2⟩)
     (RunQueueStage.of_frame hObj (by rw [hSched]) (by rw [hSched]))
 
+/-- The registry's one object write — an endpoint's `serviceCode` — moves no
+run-queue link: the endpoint holds none, before or after. -/
+theorem serviceCodeRewrite_runQueueStage {st st' : SystemState}
+    (hW : ServiceCodeRewrite st.objects st'.objects)
+    (hS : st'.scheduler = st.scheduler) : RunQueueStage st st' := by
+  rcases hW with h | ⟨e, ep, c, hE0, h⟩
+  · exact RunQueueStage.of_frame h (by rw [hS]) (by rw [hS]) (by rw [hS])
+  · exact RunQueueStage.insert h (by rw [hS]) (by rw [hS]) (fun _ => by rw [hE0]; rfl)
+      (SystemState.objStateMono_nonTcb (by rw [hE0]; rfl) rfl) (by rw [hS])
+
 theorem revokeService_runQueueStage {sid : ServiceId} {st st' : SystemState}
     (h : revokeService sid st = .ok ((), st')) : RunQueueStage st st' :=
-  have hS := revokeService_preserves_scheduler st st' sid h
-  RunQueueStage.of_frame (revokeService_preserves_objects st st' sid h) (by rw [hS]) (by rw [hS])
+  serviceCodeRewrite_runQueueStage (revokeService_serviceCodeRewrite h)
+    (revokeService_preserves_scheduler st st' sid h)
 
 theorem registerService_runQueueStage {reg : ServiceRegistration} {st st' : SystemState}
     (h : registerService reg st = .ok ((), st')) : RunQueueStage st st' :=
-  have hS := registerService_preserves_scheduler st st' reg h
-  RunQueueStage.of_frame (registerService_preserves_objects st st' reg h) (by rw [hS])
-    (by rw [hS])
+  serviceCodeRewrite_runQueueStage (registerService_serviceCodeRewrite h)
+    (registerService_preserves_scheduler st st' reg h)
 
 theorem lookupServiceByCap_runQueueStage {epId : SeLe4n.ObjId} {st st' : SystemState}
     {reg : ServiceRegistration} (h : lookupServiceByCap epId st = .ok (reg, st')) :

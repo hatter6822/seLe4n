@@ -377,10 +377,10 @@ theorem notificationQueueWellFormed_unlink (notif : Notification)
           waitTailCode := SeLe4n.ThreadId.optCode tail'
           state := if notif.state = .waiting ∧ head'.isNone then .idle else notif.state } := by
   have hPB : ∀ st hc tc, (Notification.mk st hc tc notif.hasPendingBadge notif.pendingWord
-      notif.pendingWord_cleared notif.boundTCBCode).pendingBadge = notif.pendingBadge := fun _ _ _ => rfl
+      notif.pendingWord_cleared notif.boundTCBCode notif.irqBound).pendingBadge = notif.pendingBadge := fun _ _ _ => rfl
   have hWH : ∀ st tc, (Notification.mk st (SeLe4n.ThreadId.optCode head') tc
       notif.hasPendingBadge notif.pendingWord notif.pendingWord_cleared
-      notif.boundTCBCode).waitHead = head' :=
+      notif.boundTCBCode notif.irqBound).waitHead = head' :=
     fun _ _ => SeLe4n.ThreadId.ofOptCode_optCode head'
   unfold notificationQueueWellFormed at hWF ⊢
   rw [hPB, hWH]
@@ -2972,7 +2972,7 @@ def endpointSweepBody (stSpliced : SystemState) (tid : SeLe4n.ThreadId)
       | some ⟨ep, hEp⟩ =>
         if ep.sendQ.head == some tid || ep.sendQ.tail == some tid
             || ep.receiveQ.head == some tid || ep.receiveQ.tail == some tid then
-          let ep' : Endpoint := (Endpoint.ofQueues (removeThreadFromQueue stSpliced ep.sendQ tid) (removeThreadFromQueue stSpliced ep.receiveQ tid))
+          let ep' : Endpoint := (ep.withSendQ (removeThreadFromQueue stSpliced ep.sendQ tid)).withReceiveQ (removeThreadFromQueue stSpliced ep.receiveQ tid)
           acc.rewriteObject oid (.endpoint ep') (SystemState.rewriteAdmissible_endpoint hEp ep')
         else acc
       | none => acc

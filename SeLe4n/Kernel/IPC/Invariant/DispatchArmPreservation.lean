@@ -100,27 +100,61 @@ theorem clearReschedulePendingOnCore_preserves_ipcInvariantFull (st : SystemStat
 -- §2  Service-registry arms (`.serviceRegister`, `.serviceRevoke`)
 -- ============================================================================
 
-/-- `.serviceRegister`: the registration writes the service registry only —
-objects and scheduler are untouched, so the whole bundle transports. -/
+/-- The registry's one object write — an endpoint's `serviceCode` — is outside
+the IPC bundle's read view: every endpoint-reading conjunct reads the queues,
+and the rewrite keeps every other object. -/
+theorem ipcInvariantFull_of_serviceCodeRewrite {st st' : SystemState}
+    (hW : ServiceCodeRewrite st.objects st'.objects) (hObjInv : st.objects.invExt)
+    (hInv : ipcInvariantFull st) : ipcInvariantFull st' := by
+  have hL := hW.lookup hObjInv
+  have hView : ipcReadViewAgreement st st' := by
+    refine ⟨fun oid t ht => ?_, fun oid t ht => ?_, fun oid ep he => ?_, fun oid ep he => ?_,
+      fun oid n hn => ?_, fun oid r => ?_, fun oid sc hsc => ?_⟩ <;>
+      rcases hL oid with hE | ⟨ep0, c, h0, h1⟩
+    · rw [hE] at ht; exact ⟨t, ht, rfl⟩
+    · rw [h1] at ht; cases ht
+    · rw [← hE] at ht; exact ⟨t, ht, rfl⟩
+    · rw [h0] at ht; cases ht
+    · rw [hE] at he; exact ⟨ep.serviceCode, he⟩
+    · rw [h1] at he; cases he; exact ⟨ep0.serviceCode, h0⟩
+    · rw [← hE] at he; exact ⟨ep.serviceCode, he⟩
+    · rw [h0] at he; cases he; exact ⟨c, h1⟩
+    · rw [hE] at hn; exact ⟨n, hn, rfl, rfl, rfl⟩
+    · rw [h1] at hn; cases hn
+    · rw [hE]
+    · rw [h0, h1]; simp
+    · rw [← hE] at hsc; exact ⟨sc, hsc, rfl⟩
+    · rw [h0] at hsc; cases hsc
+  have hCodes : sameNotificationBindings st st' := fun k => by
+    rcases hL k with hE | ⟨_, _, h0, h1⟩
+    · rw [hE]
+    · rw [h0, h1]; rfl
+  have hCap : capabilityBadgesWellFormed st' :=
+    capabilityBadgesWellFormed_of_slotCap_back hInv.badgeWellFormed.2 fun oid o' hO => by
+      rcases hL oid with hE | ⟨ep0, _, h0, h1⟩
+      · rw [hE] at hO; exact ⟨o', hO, rfl⟩
+      · rw [h1] at hO; cases hO; exact ⟨_, h0, rfl⟩
+  exact ipcInvariantFull_of_readViewAgreement hView hCodes hCap hInv
+
+/-- `.serviceRegister`: the registration writes the service registry and its
+endpoint's `serviceCode`, which the bundle does not read. -/
 theorem registerService_preserves_ipcInvariantFull
     (st st' : SystemState) (reg : ServiceRegistration)
+    (hObjInv : st.objects.invExt)
     (hInv : ipcInvariantFull st)
     (hStep : registerService reg st = .ok ((), st')) :
     ipcInvariantFull st' :=
-  ipcInvariantFull_of_objects_eq
-    (registerService_preserves_objects st st' reg hStep)
-    hInv
+  ipcInvariantFull_of_serviceCodeRewrite (registerService_serviceCodeRewrite hStep) hObjInv hInv
 
 /-- `.serviceRevoke`: revocation removes registry entries and dependency
-edges — objects and scheduler are untouched, so the whole bundle transports. -/
+edges and clears its endpoint's `serviceCode`, which the bundle does not read. -/
 theorem revokeService_preserves_ipcInvariantFull
     (st st' : SystemState) (sid : ServiceId)
+    (hObjInv : st.objects.invExt)
     (hInv : ipcInvariantFull st)
     (hStep : revokeService sid st = .ok ((), st')) :
     ipcInvariantFull st' :=
-  ipcInvariantFull_of_objects_eq
-    (revokeService_preserves_objects st st' sid hStep)
-    hInv
+  ipcInvariantFull_of_serviceCodeRewrite (revokeService_serviceCodeRewrite hStep) hObjInv hInv
 
 -- ============================================================================
 -- §3  Cache-maintenance arm (`.vspaceUnifyInstruction`)

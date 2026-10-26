@@ -10038,6 +10038,7 @@ run_check "INVARIANT" rg -n '^theorem toDiscriminant_lt \(e : KernelError\) : to
 # under-declared write-set a soundness problem rather than stale documentation.
 run_check "INVARIANT" rg -n '^theorem predicateFramedByDisjointWrites($|[ ({:\[\]])' SeLe4n/Kernel/CrossSubsystem.lean
 run_check "INVARIANT" rg -n '^theorem storeObject_preserves_registryDependencyConsistent($|[ ({:\[\]])' SeLe4n/Kernel/CrossSubsystem.lean
+run_check "INVARIANT" rg -n '^theorem serviceRegisterDependency_preserves_noStaleEndpointQueueReferences($|[ ({:\[\]])' SeLe4n/Kernel/CrossSubsystem.lean
 run_check "INVARIANT" rg -n '^theorem revokeService_preserves_noStaleEndpointQueueReferences($|[ ({:\[\]])' SeLe4n/Kernel/CrossSubsystem.lean
 # The load-bearing negative: the disjointness premise is not decoration.
 # `storeObject` writes `.objects` and the queue-reference invariant reads it, so

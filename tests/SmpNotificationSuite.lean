@@ -125,7 +125,7 @@ example (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) (executingCore : 
         { state := .active, 
           hasPendingBadge := true, pendingWord := (match ntfn.pendingBadge with
             | some existing => SeLe4n.Badge.bor existing badge
-            | none => SeLe4n.Badge.ofNatMasked badge.toNat), boundTCBCode := ntfn.boundTCBCode }) st = .ok ((), st')) :
+            | none => SeLe4n.Badge.ofNatMasked badge.toNat), boundTCBCode := ntfn.boundTCBCode, irqBound := ntfn.irqBound }) st = .ok ((), st')) :
     notificationSignalOnCore notificationId badge executingCore st = (st', .ok none) :=
   notificationSignalOnCore_noWaiter_eq notificationId badge executingCore st ntfn st'
     hObj hWaiters hStore

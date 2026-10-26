@@ -838,7 +838,7 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
           | error e => simp only [hDec] at hStep; cases hStep
           | ok args =>
               simp only [hDec] at hStep
-              exact registerService_preserves_ipcInvariantFull st st' _ hInv hStep
+              exact registerService_preserves_ipcInvariantFull st st' _ hObjInv hInv hStep
         all_goals try cases hStep
       case notificationSignal =>
         cases hTgt : cap.target <;> simp only [hTgt] at hStep

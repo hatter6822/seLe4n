@@ -86,6 +86,55 @@ theorem collectQueueMembers_none (objects : SeLe4n.Kernel.RobinHood.RHTable SeLe
     (fuel : Nat) : collectQueueMembers objects none fuel = some [] := by
   cases fuel <;> rfl
 
+/-- A walk that finished within its fuel finishes the same with more. -/
+theorem collectQueueMembers_fuel_mono
+    (objects : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject) :
+    ∀ (fuel fuel' : Nat) (start : Option SeLe4n.ThreadId) (members : List SeLe4n.ThreadId),
+      collectQueueMembers objects start fuel = some members → fuel ≤ fuel' →
+      collectQueueMembers objects start fuel' = some members := by
+  intro fuel
+  induction fuel with
+  | zero =>
+    intro fuel' start members h _
+    cases start with
+    | none => cases fuel' <;> simpa [collectQueueMembers] using h
+    | some _ => simp [collectQueueMembers] at h
+  | succ n ih =>
+    intro fuel' start members h hle
+    obtain ⟨m, rfl⟩ : ∃ m, fuel' = m + 1 := ⟨fuel' - 1, by omega⟩
+    cases start with
+    | none => simpa [collectQueueMembers] using h
+    | some tid =>
+      simp only [collectQueueMembers] at h ⊢
+      split at h
+      · rename_i tcb _
+        obtain ⟨rest, hRest, rfl⟩ := Option.map_eq_some_iff.mp h
+        rw [ih m tcb.queueNext rest hRest (by omega)]; rfl
+      · exact h
+
+/-- The walk reads only which objects are TCBs, and those TCBs. -/
+theorem collectQueueMembers_congr
+    (o o' : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject)
+    (h : ∀ (k : SeLe4n.ObjId) tcb, o'[k]? = some (.tcb tcb) ↔ o[k]? = some (.tcb tcb)) :
+    ∀ (fuel : Nat) (start : Option SeLe4n.ThreadId),
+      collectQueueMembers o' start fuel = collectQueueMembers o start fuel := by
+  intro fuel
+  induction fuel with
+  | zero => intro start; cases start <;> rfl
+  | succ n ih =>
+    intro start
+    cases start with
+    | none => rfl
+    | some tid =>
+      simp only [collectQueueMembers]
+      split
+      · rename_i tcb hT
+        rw [(h _ _).1 hT, ih]
+      · rename_i hT
+        split
+        · rename_i tcb hT'; exact absurd ((h _ _).2 hT') (hT tcb)
+        · rfl
+
 -- ============================================================================
 -- W2-D (M-6): collectQueueMembers fuel sufficiency
 -- ============================================================================
@@ -1247,10 +1296,11 @@ def capabilityOp_modifiedFields : List StateField :=
   storeObject_modifiedFields ++ [.cdt]
 
 /-- W2-A1: Fields modified by `revokeService` / `removeDependenciesOf`.
-    `revokeService` erases from `serviceRegistry`, then `removeDependenciesOf`
-    modifies the service dependency graph (`services`). -/
+    `revokeService` erases from `serviceRegistry`, clears the service's record
+    on its endpoint (`objects`, the endpoint's `serviceCode`), then
+    `removeDependenciesOf` modifies the service dependency graph (`services`). -/
 def revokeService_modifiedFields : List StateField :=
-  [.services, .serviceRegistry]
+  [.services, .serviceRegistry, .objects]
 
 -- ============================================================================
 -- WS-RR RR7.19 — the write-sets become load-bearing
@@ -1477,22 +1527,19 @@ theorem updateSchedContext_preservesFieldsOutside
     | exact (hg (by decide)).elim
 
 /-- **WS-RR RR7.19**: `revokeService` writes nothing outside its declared set —
-the registry erase and the dependency-graph edit, and no more. -/
+the registry erase, the endpoint's record of the service and the
+dependency-graph edit, and no more. -/
 theorem revokeService_preservesFieldsOutside
     (sid : ServiceId) (st st' : SystemState)
     (hStep : revokeService sid st = .ok ((), st')) :
     preservesFieldsOutside revokeService_modifiedFields st st' := by
-  unfold revokeService at hStep
-  split at hStep
-  · exact absurd hStep (by simp)
-  · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-    obtain ⟨-, hEq⟩ := hStep
-    subst hEq
-    intro f hf
-    unfold removeDependenciesOf
-    cases f <;> first
-      | rfl
-      | exact (hf (by decide)).elim
+  obtain ⟨reg, _, rfl⟩ := revokeService_ok hStep
+  intro f hf
+  rw [clearEndpointServiceCode_eq_withObjects]
+  unfold removeDependenciesOf
+  cases f <;> first
+    | rfl
+    | exact (hf (by decide)).elim
 
 -- ============================================================================
 -- WS-RR RR7 audit round (v0.34.109) — the other four write-sets, proved honest
@@ -2122,6 +2169,44 @@ theorem noStaleNotificationWaitReferences_frame
   rw [hObjects]
   exact hInv oid notif hLookup tid hMem
 
+/-- An endpoint's `serviceCode` rewrite — the registry's one object write —
+keeps both queue-reference invariants: it keeps every key's presence, every
+TCB, and the queues of the endpoint it rewrites. -/
+theorem noStaleQueueReferences_of_serviceCodeRewrite {st st' : SystemState}
+    (hW : ServiceCodeRewrite st.objects st'.objects) (hInv : st.objects.invExt) :
+    (noStaleEndpointQueueReferences st → noStaleEndpointQueueReferences st') ∧
+    (noStaleNotificationWaitReferences st → noStaleNotificationWaitReferences st') := by
+  have hNone : ∀ k : SeLe4n.ObjId, st.objects[k]? ≠ none → st'.objects[k]? ≠ none := by
+    intro k hk
+    rcases hW.lookup hInv k with h | ⟨_, _, _, h⟩ <;> rw [h]
+    · exact hk
+    · simp
+  have hTcb : ∀ (k : SeLe4n.ObjId) tcb,
+      st'.objects[k]? = some (.tcb tcb) ↔ st.objects[k]? = some (.tcb tcb) := by
+    intro k tcb
+    rcases hW.lookup hInv k with h | ⟨_, _, h0, h⟩ <;> rw [h]
+    rw [h0]; simp
+  have hSize := hW.size_le hInv
+  refine ⟨fun hP oid ep' hE' => ?_, fun hP oid n hN' tid hMem => ?_⟩
+  · obtain ⟨ep, hE, hS, hR⟩ : ∃ ep, st.objects[oid]? = some (.endpoint ep) ∧
+        ep'.sendQ = ep.sendQ ∧ ep'.receiveQ = ep.receiveQ := by
+      rcases hW.lookup hInv oid with h | ⟨ep, c, h0, h⟩
+      · exact ⟨ep', h ▸ hE', rfl, rfl⟩
+      · rw [h] at hE'; cases hE'; exact ⟨ep, h0, rfl, rfl⟩
+    obtain ⟨h1, h2, h3, h4, h5, h6⟩ := hP oid ep hE
+    refine ⟨fun t ht => hNone _ (h1 t (hS ▸ ht)), fun t ht => hNone _ (h2 t (hS ▸ ht)),
+      fun t ht => hNone _ (h3 t (hR ▸ ht)), fun t ht => hNone _ (h4 t (hR ▸ ht)),
+      fun ms hm t ht => hNone _ (h5 ms ?_ t ht), fun ms hm t ht => hNone _ (h6 ms ?_ t ht)⟩
+    · rw [collectQueueMembers_congr _ _ hTcb, hS] at hm
+      exact collectQueueMembers_fuel_mono _ _ _ _ _ hm hSize
+    · rw [collectQueueMembers_congr _ _ hTcb, hR] at hm
+      exact collectQueueMembers_fuel_mono _ _ _ _ _ hm hSize
+  · have hN : st.objects[oid]? = some (.notification n) := by
+      rcases hW.lookup hInv oid with h | ⟨_, _, _, h⟩
+      · exact h ▸ hN'
+      · rw [h] at hN'; cases hN'
+    exact hNone _ (hP oid n hN tid hMem)
+
 /-- W2-A3: Frame lemma — if `serviceRegistry` and `objects` are preserved,
     `registryEndpointValid` is preserved. -/
 theorem registryEndpointValid_frame
@@ -2302,22 +2387,34 @@ theorem storeObject_preserves_registryDependencyConsistent
     registryDependencyConsistent_readsOnly (by decide)
     (storeObject_preservesFieldsOutside id obj st st' hStep) hInv
 
-/-- **WS-RR RR7.19**: the dual direction — `revokeService` writes only the
-service registry and graph, `noStaleEndpointQueueReferences` reads only the
-object store, so the revoke cannot strand an endpoint queue reference.
+/-- **WS-RR RR7.19**: the dual direction — `serviceRegisterDependency` writes
+only the service graph, `noStaleEndpointQueueReferences` reads only the object
+store, so the edge insert cannot strand an endpoint queue reference.
 
 Stated because a *second* instance is what shows the shape is general rather
 than a bespoke argument dressed up as one. -/
-theorem revokeService_preserves_noStaleEndpointQueueReferences
-    (sid : ServiceId) (st st' : SystemState)
-    (hStep : revokeService sid st = .ok ((), st'))
+theorem serviceRegisterDependency_preserves_noStaleEndpointQueueReferences
+    (svcId depId : ServiceId) (st st' : SystemState)
+    (hStep : serviceRegisterDependency svcId depId st = .ok ((), st'))
     (hInv : noStaleEndpointQueueReferences st) :
     noStaleEndpointQueueReferences st' :=
   predicateFramedByDisjointWrites
     (readFields := noStaleEndpointQueueReferences_fields)
-    (writeFields := revokeService_modifiedFields)
+    (writeFields := serviceRegisterDependency_modifiedFields)
     noStaleEndpointQueueReferences_readsOnly (by decide)
-    (revokeService_preservesFieldsOutside sid st st' hStep) hInv
+    (serviceRegisterDependency_preservesFieldsOutside svcId depId st st' hStep) hInv
+
+/-- `revokeService` writes the object store — the endpoint's record of the
+service — so its write-set is *not* disjoint from the queue invariant's reads;
+the revoke keeps it because the one object it writes keeps its queues. -/
+theorem revokeService_preserves_noStaleEndpointQueueReferences
+    (sid : ServiceId) (st st' : SystemState)
+    (hStep : revokeService sid st = .ok ((), st'))
+    (hObjInv : st.objects.invExt)
+    (hInv : noStaleEndpointQueueReferences st) :
+    noStaleEndpointQueueReferences st' :=
+  (noStaleQueueReferences_of_serviceCodeRewrite
+    (revokeService_serviceCodeRewrite hStep) hObjInv).1 hInv
 
 /-- **WS-RR RR7.19 (the load-bearing negative)**: the disjointness premise is
 not decoration.  `storeObject` writes `.objects`, and
@@ -2440,19 +2537,17 @@ theorem serviceGraphInvariant_monotone
 -- ============================================================================
 
 /-- X2-G/X2-H: Service revocation preserves notification wait-list validity.
-    `revokeService` only modifies `serviceRegistry` and `services` (via
-    `removeDependenciesOf`); it does NOT modify `objects`. Since
-    `noStaleNotificationWaitReferences` depends only on `objects`, the
-    invariant is preserved as a frame — no notification wait-list cleanup
-    is needed during service revocation. -/
+    `revokeService`'s one object write is its endpoint's `serviceCode`, which
+    keeps every notification and every key's presence — no notification
+    wait-list cleanup is needed during service revocation. -/
 theorem revokeService_preserves_noStaleNotificationWaitReferences
     (st st' : SystemState) (svcId : ServiceId)
+    (hObjInv : st.objects.invExt)
     (hPre : noStaleNotificationWaitReferences st)
     (hStep : revokeService svcId st = .ok ((), st')) :
     noStaleNotificationWaitReferences st' :=
-  noStaleNotificationWaitReferences_frame st st'
-    (revokeService_preserves_objects st st' svcId hStep)
-    hPre
+  (noStaleQueueReferences_of_serviceCodeRewrite
+    (revokeService_serviceCodeRewrite hStep) hObjInv).2 hPre
 
 -- ============================================================================
 -- X3-C (H-4, part 1): Sharing predicate pair preservation
@@ -2525,19 +2620,19 @@ theorem sharingPair4_services_frame
   ⟨registryDependencyConsistent_frame st st' hServices hPre1,
    serviceGraphInvariant_frame st st' hServices hObjIdx hPre2⟩
 
-/-- X3-C (H-4): **revokeService preserves all 3 objects-reading predicates.**
-    `revokeService` modifies `serviceRegistry` and `services` but NOT `objects`.
-    Since all three predicates that read `objects` are frame-preserved, we get
-    combined preservation for free. -/
+/-- X3-C (H-4): **revokeService preserves both queue-reading predicates.**
+    Its one object write is an endpoint's `serviceCode`, which keeps every
+    queue and every key's presence. -/
 theorem revokeService_preserves_sharingPairs_objects
     (st st' : SystemState) (svcId : ServiceId)
+    (hObjInv : st.objects.invExt)
     (hPre2 : noStaleEndpointQueueReferences st)
     (hPre3 : noStaleNotificationWaitReferences st)
     (hStep : revokeService svcId st = .ok ((), st')) :
-    noStaleEndpointQueueReferences st' ∧ noStaleNotificationWaitReferences st' := by
-  have hObj := revokeService_preserves_objects st st' svcId hStep
-  exact ⟨noStaleEndpointQueueReferences_frame st st' hObj hPre2,
-         noStaleNotificationWaitReferences_frame st st' hObj hPre3⟩
+    noStaleEndpointQueueReferences st' ∧ noStaleNotificationWaitReferences st' :=
+  let h := noStaleQueueReferences_of_serviceCodeRewrite
+    (revokeService_serviceCodeRewrite hStep) hObjInv
+  ⟨h.1 hPre2, h.2 hPre3⟩
 
 /-- X3-C (H-4): **Cross-subsystem invariant preservation under objects-only changes.**
     When an operation preserves all non-`objects` fields (specifically `services`,
